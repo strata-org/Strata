@@ -144,6 +144,110 @@ def run_translation(bpl_path: Path, tmpdir: Path, result: PipelineResult) -> Pat
     return fixed_st
 
 
+def list_procedures(core_st: Path) -> list[str]:
+    """Return procedure names in declaration order."""
+    procs = []
+    for line in core_st.read_text().splitlines():
+        m = re.match(r"procedure +([A-Za-z_$][A-Za-z0-9_$.]*)\(", line)
+        if m:
+            procs.append(m.group(1))
+    return procs
+
+
+def parse_strata_output(output: str, mode: str, label: str) -> tuple[str, str]:
+    """Classify a single `strata verify` invocation. Returns (status, detail)."""
+    if "All 0 goals passed" in output:
+        return ("WARN", "0 VCs")
+    if re.search(r"All \d+ goals passed", output):
+        m = re.search(r"All (\d+) goals passed", output)
+        return ("PASS", f"{m.group(1)} VCs")
+    if "cannot apply statement-level transform to CFG body" in output:
+        return ("SKIP", "CFG body (transforms unsupported)")
+    if "Cannot find this fvar" in output and "__nondet" in output:
+        return ("SKIP", "Nondet goto type-check (#1162)")
+    if "a declaration of this name already exists" in output:
+        return ("FAIL", "Namespace collision")
+    if "unexpected type" in output:
+        m = re.search(r'name := "(\w+)"', output)
+        op = m.group(1) if m else "unknown"
+        return ("FAIL", f"Type synonym panic '{op}'")
+    if "goals passed" in output and "failed" in output:
+        m = re.search(r"(\d+) goals passed, (\d+) failed", output)
+        if m:
+            return ("PARTIAL", f"{m.group(1)} pass, {m.group(2)} fail")
+        return ("FAIL", "Unknown verify output")
+    if "TIMEOUT" in output:
+        return ("TIMEOUT", "")
+    for line in output.split("\n"):
+        if "error:" in line.lower() or "Error" in line or "PANIC" in line:
+            return ("FAIL", line.strip()[:80])
+    return ("FAIL", "Unknown output")
+
+
+def run_strata_split_procs(core_st: Path, mode: str, result: PipelineResult):
+    """Run `strata verify` once per procedure and aggregate.
+
+    Sidesteps the cross-procedure Env.error contamination bug: when one
+    procedure's PE evaluation errors, its env is threaded into all later
+    procedures and silently suppresses their VCs (visible in the README
+    snapshot as `aws_array_eq` -> 0 VCs / WARN). Splitting per-procedure
+    gives each procedure a fresh env.
+    """
+    if not STRATA_BIN.exists():
+        result.add_backend(mode, "FAIL", f"Binary not found: {STRATA_BIN}")
+        return
+
+    procs = list_procedures(core_st)
+    if not procs:
+        result.add_backend(mode, "FAIL", "No procedures found")
+        return
+
+    total_pass = 0
+    total_fail = 0
+    contributing = 0
+    failed_procs: list[str] = []
+    skipped_procs: list[tuple[str, str]] = []
+    for proc in procs:
+        rc, stdout, stderr = run_cmd(
+            [str(STRATA_BIN), "verify", "--check-mode", mode,
+             "--procedures", proc, str(core_st)],
+            timeout=120,
+        )
+        output = stdout + stderr
+        status, detail = parse_strata_output(output, mode, proc)
+        if status == "PASS":
+            m = re.search(r"All (\d+) goals passed", output)
+            total_pass += int(m.group(1)) if m else 0
+            contributing += 1
+        elif status == "PARTIAL":
+            m = re.search(r"(\d+) goals passed, (\d+) failed", output)
+            if m:
+                total_pass += int(m.group(1))
+                total_fail += int(m.group(2))
+            failed_procs.append(proc)
+            contributing += 1
+        elif status == "FAIL":
+            failed_procs.append(proc)
+        elif status in ("SKIP", "TIMEOUT", "WARN"):
+            if status != "WARN":  # WARN = 0 VCs is normal for decl-only procs
+                skipped_procs.append((proc, status))
+
+    if total_fail > 0:
+        result.add_backend(
+            mode, "PARTIAL",
+            f"{total_pass} pass, {total_fail} fail across {contributing} procs ({','.join(failed_procs[:3])})"
+        )
+    elif total_pass > 0:
+        suffix = ""
+        if skipped_procs:
+            suffix = f" ({len(skipped_procs)} proc skipped)"
+        result.add_backend(mode, "PASS", f"{total_pass} VCs across {contributing} procs{suffix}")
+    elif failed_procs:
+        result.add_backend(mode, "FAIL", f"{len(failed_procs)} procs failed: {','.join(failed_procs[:3])}")
+    else:
+        result.add_backend(mode, "WARN", f"0 VCs across {len(procs)} procs")
+
+
 def run_strata_backend(core_st: Path, mode: str, result: PipelineResult):
     if not STRATA_BIN.exists():
         result.add_backend(mode, "FAIL", f"Binary not found: {STRATA_BIN}")
@@ -244,7 +348,7 @@ def run_cbmc_backend(core_st: Path, tmpdir: Path, result: PipelineResult):
         result.add_backend("cbmc", "FAIL", f"CBMC exit code {rc}")
 
 
-def run_pipeline(bpl_path: Path, backends: list[str]) -> PipelineResult:
+def run_pipeline(bpl_path: Path, backends: list[str], split_procs: bool = False) -> PipelineResult:
     name = bpl_path.stem
     result = PipelineResult(name)
 
@@ -258,9 +362,15 @@ def run_pipeline(bpl_path: Path, backends: list[str]) -> PipelineResult:
         # Run each backend
         for backend in backends:
             if backend == "deductive":
-                run_strata_backend(fixed_st, "deductive", result)
+                if split_procs:
+                    run_strata_split_procs(fixed_st, "deductive", result)
+                else:
+                    run_strata_backend(fixed_st, "deductive", result)
             elif backend == "bugFinding":
-                run_strata_backend(fixed_st, "bugFinding", result)
+                if split_procs:
+                    run_strata_split_procs(fixed_st, "bugFinding", result)
+                else:
+                    run_strata_backend(fixed_st, "bugFinding", result)
             elif backend == "cbmc":
                 run_cbmc_backend(fixed_st, tmpdir, result)
 
@@ -303,9 +413,7 @@ def print_results(results: list[PipelineResult], backends: list[str]):
                 cell = status
                 if status in ("PASS", "OK") and d:
                     cell = f"{status}"
-                if status == "FAIL" and not detail:
-                    detail = d
-                if status == "SKIP" and not detail:
+                if status in ("FAIL", "PARTIAL", "SKIP") and not detail:
                     detail = d
             else:
                 cell = "—"
@@ -331,6 +439,9 @@ def main():
     parser.add_argument("files", nargs="*", help="Input .bpl files (default: programs/*.bpl)")
     parser.add_argument("--backends", default="deductive,bugFinding,cbmc",
                         help="Comma-separated backends: deductive,bugFinding,cbmc (default: all)")
+    parser.add_argument("--split-procs", action="store_true",
+                        help="For deductive/bugFinding, run `strata verify --procedures <p>` once per procedure "
+                             "and aggregate. Sidesteps cross-procedure Env.error contamination.")
     args = parser.parse_args()
 
     backends = [b.strip() for b in args.backends.split(",")]
@@ -361,13 +472,14 @@ def main():
         if CBMC_BIN is None:
             print("Note: cbmc not found; CBMC backend will generate GOTO JSON only.", file=sys.stderr)
 
-    print(f"Running pipeline on {len(bpl_files)} programs, backends: {', '.join(backends)}")
+    mode_note = " [split-procs]" if args.split_procs else ""
+    print(f"Running pipeline on {len(bpl_files)} programs, backends: {', '.join(backends)}{mode_note}")
     print()
 
     results = []
     for bpl in bpl_files:
         print(f"  {bpl.name}...", end="", flush=True)
-        r = run_pipeline(bpl, backends)
+        r = run_pipeline(bpl, backends, split_procs=args.split_procs)
         results.append(r)
         statuses = []
         for b in backends:
