@@ -123,38 +123,36 @@ aws_string_eq                 |     OK |     OK |     OK |      PARTIAL |      P
   structured body, got CFG". A `procedureToGotoCtxViaCFG` already
   exists at `Strata/Backends/CBMC/GOTO/CoreCFGToGOTOPipeline.lean:188`
   but is only wired into a test E2E. Fix path: dispatch CFG bodies
-  through that. Visible on 5 of the 12 programs (`abs_func`,
-  `array_sum`, `loop_sum`, `max_func`, `nondet_branch`); the other 7
-  hit the inout blocker first.
-- **CoreToGoto: inout-parameter rename collision.** By Strata Core
-  convention, every `inout` parameter appears in BOTH
-  `Procedure.Header.inputs` AND `Procedure.Header.outputs` with the
-  same identifier (see `Strata/Languages/Core/StatementType.lean:25-30`
-  and the DDM translator at
-  `Strata/Languages/Core/DDMTransform/Translate.lean:1582-1585`).
-  `procedureToGotoCtx` does not account for this: it builds
-  `new_formals` via `mkFormalSymbol` (`main::_exn`) and `new_outputs`
-  via `mkLocalSymbol` (`main::1::_exn`), then folds both into the
-  rename map with `HashMap.insert`. Outputs come second, so any inout
-  name ends up bound to the local symbol — mismatching the symbol
-  table and parameter list. Source location:
-  `CoreToGOTOPipeline.lean:286-298` (and the parallel
-  `CoreCFGToGOTOPipeline.lean:204-213`). Surfaces as `[toGotoExprCtx]
-  Not yet implemented: LExpr.fvar () { name := "main::1::_exn" } none`.
-  Reproducible with a 12-line input that has just `inout g` and a
-  call. Affects 7 programs (the ones with `inout` globals inferred by
-  BoogieToStrata's `InferModifies`, namely `_exn` and `_CurrAddr`).
-- **CoreToGoto: typeless fvar from `CallArg.getInputExprs` (latent).**
-  `Strata/Languages/Core/Statement.lean:105-109` synthesizes
-  `LExpr.fvar () id none` for every `inoutArg` at call sites.
-  `LExpr.toGotoExprCtx` only matches fvars annotated with `(some ty)`;
-  typeless ones fall through to the catch-all error. With the rename
-  collision above fixed, the same `LExpr.fvar … none` error class
-  would still fire — just with the formal symbol name instead of the
-  local one. The type is recoverable from the procedure's input
-  signature, so the cleanest fix is to look up the type in the
-  rename/typing context at call-translation time rather than rely on
-  the synthesized fvar carrying it.
+  through that. Visible on 5 of the 25 programs (`abs_func`,
+  `array_sum`, `loop_sum`, `max_func`, `nondet_branch`).
+- **CoreToGoto: inout-parameter rename collision (resolved on this
+  branch).** By Strata Core convention, every `inout` parameter appears
+  in BOTH `Procedure.Header.inputs` AND `Procedure.Header.outputs` with
+  the same identifier. `procedureToGotoCtx` folded
+  `formals.zip new_formals ++ outputs.zip new_outputs ++ …` into the
+  rename map; outputs came second, so any inout name ended up bound to
+  the local-symbol form (`main::1::x`) instead of the formal
+  (`main::x`). At call sites, `CallArg.getInputExprs`
+  (`Strata/Languages/Core/Statement.lean:105-109`) synthesizes
+  `LExpr.fvar () id none` for inout args, and `LExpr.toGotoExprCtx`
+  rejects typeless fvars — surfacing as `[toGotoExprCtx] Not yet
+  implemented: LExpr.fvar () { name := "main::1::_exn" } none`. Fixed
+  by filtering inouts out of the outputs list (so they bind to the
+  formal-symbol form) and looking up the type from the threaded typing
+  env at call-translation time. Both the structured and CFG paths
+  patched (`CoreToGOTOPipeline.lean`, `CoreCFGToGOTOPipeline.lean`).
+  Regression tests in `StrataTest/Backends/CBMC/GOTO/E2E_CoreToGOTO.lean`.
+  See commit `f265cda63`.
+- **`run_pipeline.py` invokes `symtab2gb` with the wrong flag.** With
+  the inout collision resolved, the 20 affected programs now produce
+  well-formed `symtab.json` and `goto.json`; `run_pipeline.py:331`
+  then invokes `symtab2gb <symtab> <goto> --out …` with the GOTO file
+  as a positional argument. `symtab2gb` interprets that as a second
+  symtab and rejects it: `JSON object must have key 'symbolTable'`.
+  Fix: pass the GOTO file via `--goto-functions <goto>`. Related: the
+  cbmc invocation at `run_pipeline.py:235` is missing `--function main`,
+  which will cause an exit-code-6 misclassification once symtab2gb
+  works.
 - **bugFinding partials.** Symbolic execution finds potential
   counterexamples for assertions on programs whose preconditions are
   insufficient. Expected behaviour for SMACK programs as currently
