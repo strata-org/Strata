@@ -36,13 +36,13 @@ def processLaurelFileWithOptions (options : LaurelVerifyOptions) (input : InputC
 def processLaurelFile (input : InputContext) : IO (Array Diagnostic) :=
   processLaurelFileWithOptions default input
 
-/-- Project-root-relative path to the `IntermediatePrograms/` directory for intermediate files.
+/-- Path to the directory for intermediate files, inside the build directory.
     Resolved from the current working directory so it works on any machine. -/
 def buildDir : IO String := do
   let cwd ← IO.currentDir
-  return s!"{cwd}/IntermediatePrograms/"
+  return s!"{cwd}/.lake/build/intermediatePrograms/"
 
-/-- Debug helper: run the Laurel pipeline keeping intermediate pass outputs in `./IntermediatePrograms/`.
+/-- Debug helper: run the Laurel pipeline keeping intermediate pass outputs in `.lake/build/intermediatePrograms/`.
     Not used by any test in this repo; invoke manually via `#eval processLaurelFileKeepIntermediates (stringInputContext …)`
     when diagnosing pass-internal issues. -/
 def processLaurelFileKeepIntermediates (input : InputContext) : IO (Array Diagnostic) := do

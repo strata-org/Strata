@@ -459,8 +459,8 @@ where
       omega)
 
 def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : TransformM Procedure := do
-  let heapName : Identifier := "$heap"
-  let heapInName : Identifier := "$heap_in"
+  let heapName := heapVarName
+  let heapInName := heapInVarName
   let readsHeap := (← get).heapReaders.contains proc.name
   let writesHeap := (← get).heapWriters.contains proc.name
 
