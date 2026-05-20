@@ -4662,6 +4662,28 @@ its transfer. Used to express "this ident is not touched by the block". -/
   (blk.cmds.foldr (fun c acc => Cmd.touchedVars c ++ acc) []) ++
     DetTransferCmd.touchedVars blk.transfer
 
+/-- Extend a `SemanticStore` with a single `(ident, value)` binding.
+Returns a function that maps `ident` to `some value` and delegates other
+keys to the original store. -/
+@[expose] def extendStoreOne {P : PureExpr} [DecidableEq P.Ident]
+    (σ : SemanticStore P) (ident : P.Ident) (val : P.Expr) :
+    SemanticStore P :=
+  fun y => if y = ident then some val else σ y
+
+/-- `extendStoreOne` evaluated at the bound ident returns `some val`. -/
+theorem extendStoreOne_self {P : PureExpr} [DecidableEq P.Ident]
+    (σ : SemanticStore P) (ident : P.Ident) (val : P.Expr) :
+    extendStoreOne σ ident val ident = some val := by
+  simp [extendStoreOne]
+
+/-- `extendStoreOne` evaluated at any other ident equals the original
+store. -/
+theorem extendStoreOne_other {P : PureExpr} [DecidableEq P.Ident]
+    (σ : SemanticStore P) (ident : P.Ident) (val : P.Expr)
+    (y : P.Ident) (h : y ≠ ident) :
+    extendStoreOne σ ident val y = σ y := by
+  simp [extendStoreOne, h]
+
 /-! ## Generalized simulation
 
 The central lemma: for any continuation `k`, exit-continuation stack, and
