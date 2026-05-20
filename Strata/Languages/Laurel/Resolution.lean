@@ -665,7 +665,7 @@ def Check.resolveStmtExpr (exprMd : StmtExprMd) (expected : HighTypeMd) : Resolv
   | .Var (.Declare param) => Check.varDeclare param expected source
   | .While cond invs dec body =>
     Check.while exprMd cond invs dec body expected source (by rw [h_node])
-  | .Exit target => pure (Check.exit target expected source)
+  | .Exit target => Check.exit target expected source
   | .Return val =>
     Check.return exprMd val expected source (by rw [h_node])
   | .Assert ⟨condExpr, summary⟩ =>
