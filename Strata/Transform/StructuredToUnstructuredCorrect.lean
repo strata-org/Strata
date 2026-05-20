@@ -8722,35 +8722,25 @@ decreasing_by
 end
 
 /-- Variant of `stmtsToBlocks_simulation` for when the structured execution
-exits rather than terminates. The CFG still reaches some terminal state. -/
+"exits". Under the `exitsCoveredByBlocks` invariant such an execution is
+impossible, so the conclusion holds vacuously. -/
 private theorem stmtsToBlocks_simulation_exiting {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
     [HasVal P] [HasIdent P] [HasIntOrder P]
     (extendEval : ExtendEval P)
-    (k : String) (ss : List (Stmt P (Cmd P)))
-    (exitConts : List (Option String × String))
-    (accum : List (Cmd P))
-    (allBlocks : DetBlocks String (Cmd P) P)
-    (gen gen' : StringGenState)
-    (entry : String) (blocks : DetBlocks String (Cmd P) P)
-    (h_gen : (stmtsToBlocks k ss exitConts accum gen) = ((entry, blocks), gen'))
+    (ss : List (Stmt P (Cmd P)))
+    (entry : String)
     (σ_base : SemanticStore P)
     (hf_base : Bool)
-    (hf_accum : Bool)
     (ρ₀ ρ' : Env P) (lbl : String)
-    (hwfb : WellFormedSemanticEvalBool ρ₀.eval)
-    (hwfv : WellFormedSemanticEvalVal ρ₀.eval)
     (h_exits : Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks [] ss)
     (h_exit : StepStmtStar P (EvalCmd P) extendEval
       (.stmts ss ρ₀) (.exiting lbl ρ'))
-    (h_accum : EvalCmds P (EvalCmd P) ρ₀.eval σ_base accum.reverse ρ₀.store hf_accum)
-    (h_hf : ρ₀.hasFailure = (hf_base || hf_accum))
-    (cfg : CFG String (DetBlock String (Cmd P) P))
-    (h_cfg_blocks : ∀ b ∈ blocks, b ∈ cfg.blocks) :
+    (cfg : CFG String (DetBlock String (Cmd P) P)) :
     ∃ σ_final failed, StepDetCFGStar extendEval cfg
       (.cont entry σ_base hf_base)
-      (.terminal σ_final failed) ∧ σ_final = ρ'.store := by
-  exfalso
-  exact block_exitsCoveredByBlocks_noEscape (P := P) (EvalCmd P) extendEval ss h_exits ρ₀ lbl ρ' h_exit
+      (.terminal σ_final failed) ∧ σ_final = ρ'.store :=
+  absurd h_exit
+    (block_exitsCoveredByBlocks_noEscape (P := P) (EvalCmd P) extendEval ss h_exits ρ₀ lbl ρ')
 
 /-! ## Top-level theorems -/
 
@@ -8942,16 +8932,13 @@ theorem stmtsToCFG_terminal {P : PureExpr} [HasFvar P] [HasNot P]
   exact ⟨σ_cfg, StepDetCFGStar_trans h_sim h_end, h_agree⟩
 
 /-- If the structured program reaches an exiting state, the CFG also reaches
-    a corresponding terminal state (since `stmtsToCFG` resolves exits to jumps). -/
+    a corresponding terminal state (vacuously, since `exitsCoveredByBlocks`
+    rules out top-level `.exiting`). -/
 theorem stmtsToCFG_exiting {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
     [HasVal P] [HasIdent P] [HasIntOrder P]
     (extendEval : ExtendEval P)
     (ss : List (Stmt P (Cmd P)))
     (ρ₀ ρ' : Env P) (lbl : String)
-    (hwfb : WellFormedSemanticEvalBool ρ₀.eval)
-    (hwfv : WellFormedSemanticEvalVal ρ₀.eval)
-    (hf₀ : ρ₀.hasFailure = false)
-    (h_disj : ∀ gen', Block.userLabelsDisjoint ss gen')
     (h_exits : Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks [] ss)
     (h_exit : StepStmtStar P (EvalCmd P) extendEval
       (.stmts ss ρ₀) (.exiting lbl ρ')) :
@@ -8960,16 +8947,9 @@ theorem stmtsToCFG_exiting {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
       StepDetCFGStar extendEval cfg
         (.cont cfg.entry ρ₀.store false)
         (.terminal σ_final failed) ∧
-      σ_final = ρ'.store := by
-  intro cfg
-  have ⟨lend, gen, gen', entry, blocks, h_gen, h_entry, h_blocks, _⟩ :=
-    stmtsToCFG_stmtsToBlocks_spec ss h_disj
-  rw [h_entry]
-  have h_accum : EvalCmds P (EvalCmd P) ρ₀.eval ρ₀.store [].reverse ρ₀.store false :=
-    EvalCmds.eval_cmds_none
-  have h_hf : ρ₀.hasFailure = (false || false) := by simp [hf₀]
-  exact stmtsToBlocks_simulation_exiting extendEval lend ss [] [] blocks gen gen' entry blocks
-    h_gen ρ₀.store false false ρ₀ ρ' lbl hwfb hwfv h_exits h_exit h_accum h_hf cfg h_blocks
+      σ_final = ρ'.store :=
+  stmtsToBlocks_simulation_exiting extendEval ss (stmtsToCFG ss).entry
+    ρ₀.store false ρ₀ ρ' lbl h_exits h_exit (stmtsToCFG ss)
 
 /-! ## Main theorems -/
 
