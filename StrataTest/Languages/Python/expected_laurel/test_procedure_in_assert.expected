@@ -1,8 +1,8 @@
 test_procedure_in_assert.py(4, 4): ✅ pass - assert(55)
-unknown location: ✅ pass - (Origin_timedelta_Requires)
-unknown location: ✅ pass - (Origin_timedelta_Requires)hours_type
-unknown location: ✅ pass - (Origin_timedelta_Requires)days_pos
-unknown location: ✅ pass - (Origin_timedelta_Requires)hours_pos
+test_procedure_in_assert.py(5, 4): ✅ pass - (Origin_timedelta_Requires)
+test_procedure_in_assert.py(5, 4): ✅ pass - (Origin_timedelta_Requires)hours_type
+test_procedure_in_assert.py(5, 4): ✅ pass - (Origin_timedelta_Requires)days_pos
+test_procedure_in_assert.py(5, 4): ✅ pass - (Origin_timedelta_Requires)hours_pos
 test_procedure_in_assert.py(5, 17): ✅ pass - Check PSub exception
 test_procedure_in_assert.py(6, 4): ✅ pass - assert(117)
 test_procedure_in_assert.py(7, 4): ✅ pass - should pass

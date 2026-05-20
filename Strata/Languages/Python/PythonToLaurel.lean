@@ -1454,6 +1454,9 @@ partial def translateAssign  (ctx : TranslationContext)
       s!"{rhs.ann.start}_{rhs.ann.stop}"
   let extractionSeed := extractionSeedText.foldl (fun acc ch => acc * 131 + ch.toNat) 0
   let (moExtracts, rhs_trans, _) ← translateExprExtractingCalls rhsCtx rhs extractionSeed
+  -- Use the statement's source location for extracted assignments so that
+  -- diagnostics (e.g. requires checks) report the statement position.
+  let moExtracts := moExtracts.map fun s => ⟨s.val, source⟩
   -- When an unmodeled call produces a Hole, also havoc maybe_except since
   -- the call is a black box that could throw any exception.
   let rhsIsCall := match rhs with | .Call _ _ _ _ => true | _ => false
@@ -1707,17 +1710,25 @@ def withExceptionChecks (ctx : TranslationContext)
     : TranslationContext × List StmtExprMd :=
   let (newctx, stmts) := result
   -- Generate exception checks for the last assignment's RHS.
-  -- Insert them just before the last statement (after any preamble declarations).
-  let rhs_exprs := match stmts.getLast? with
-    | some s => match s.val with | .Assign _ value => [value] | _ => []
+  -- Find the last Assign in the list (there may be trailing type assertions).
+  let lastAssignIdx := stmts.reverse.findIdx? fun s =>
+    match s.val with | .Assign _ _ => true | _ => false
+  let rhs_exprs := match lastAssignIdx with
+    | some revIdx =>
+      let idx := stmts.length - 1 - revIdx
+      match stmts[idx]!.val with | .Assign _ value => [value] | _ => []
     | none => []
   let exceptionCheck := rhs_exprs.flatMap $ getExceptionAssertions ctx
   if exceptionCheck.isEmpty then
     (newctx, stmts)
   else
-    let preamble := stmts.dropLast
-    let last := stmts.getLast?.toList
-    (newctx, preamble ++ exceptionCheck ++ last)
+    match lastAssignIdx with
+    | some revIdx =>
+      let idx := stmts.length - 1 - revIdx
+      let before := stmts.take idx
+      let rest := stmts.drop idx
+      (newctx, before ++ exceptionCheck ++ rest)
+    | none => (newctx, exceptionCheck ++ stmts)
 
 mutual
 
