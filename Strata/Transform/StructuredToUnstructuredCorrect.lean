@@ -8739,6 +8739,7 @@ private theorem stmtsToBlocks_simulation_exiting {P : PureExpr} [HasFvar P] [Has
     (ρ₀ ρ' : Env P) (lbl : String)
     (hwfb : WellFormedSemanticEvalBool ρ₀.eval)
     (hwfv : WellFormedSemanticEvalVal ρ₀.eval)
+    (h_exits : Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks [] ss)
     (h_exit : StepStmtStar P (EvalCmd P) extendEval
       (.stmts ss ρ₀) (.exiting lbl ρ'))
     (h_accum : EvalCmds P (EvalCmd P) ρ₀.eval σ_base accum.reverse ρ₀.store hf_accum)
@@ -8748,7 +8749,8 @@ private theorem stmtsToBlocks_simulation_exiting {P : PureExpr} [HasFvar P] [Has
     ∃ σ_final failed, StepDetCFGStar extendEval cfg
       (.cont entry σ_base hf_base)
       (.terminal σ_final failed) ∧ σ_final = ρ'.store := by
-  sorry
+  exfalso
+  exact block_exitsCoveredByBlocks_noEscape (P := P) (EvalCmd P) extendEval ss h_exits ρ₀ lbl ρ' h_exit
 
 /-! ## Top-level theorems -/
 
@@ -8950,6 +8952,7 @@ theorem stmtsToCFG_exiting {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
     (hwfv : WellFormedSemanticEvalVal ρ₀.eval)
     (hf₀ : ρ₀.hasFailure = false)
     (h_disj : ∀ gen', Block.userLabelsDisjoint ss gen')
+    (h_exits : Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks [] ss)
     (h_exit : StepStmtStar P (EvalCmd P) extendEval
       (.stmts ss ρ₀) (.exiting lbl ρ')) :
     let cfg := stmtsToCFG ss
@@ -8966,7 +8969,7 @@ theorem stmtsToCFG_exiting {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
     EvalCmds.eval_cmds_none
   have h_hf : ρ₀.hasFailure = (false || false) := by simp [hf₀]
   exact stmtsToBlocks_simulation_exiting extendEval lend ss [] [] blocks gen gen' entry blocks
-    h_gen ρ₀.store false false ρ₀ ρ' lbl hwfb hwfv h_exit h_accum h_hf cfg h_blocks
+    h_gen ρ₀.store false false ρ₀ ρ' lbl hwfb hwfv h_exits h_exit h_accum h_hf cfg h_blocks
 
 /-! ## Main theorems -/
 
