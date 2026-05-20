@@ -725,8 +725,8 @@ configuration that reaches `(.terminal σ' b)` in the source CFG, we can
 build a matching GOTO trace from `(.running pc σ failed)` to
 `(.terminal σ' b)`, where `pc` is the GOTO entry for label `l`.
 
-The main theorem is a wrapper that instantiates this at
-`l := cfg.entry`, `σ := initial store`, `failed := false`. -/
+The main theorem is a wrapper that instantiates `l := cfg.entry` and
+`failed := false`; `σ` is whatever store the caller supplies. -/
 private theorem cfgStepStar_to_gotoStar
     (δ : SemanticEval Core.Expression)
     (δ_goto : SemanticEvalGoto Core.Expression)
@@ -753,17 +753,22 @@ private theorem cfgStepStar_to_gotoStar
   -- inductive and the `induction` tactic doesn't apply. Encode the
   -- conclusion as a motive over `(c₁, c₂)` so that the IH gives us a
   -- tail trace from the post-block continuation label.
+  -- The motive's universals are named `l₀ σ₀ failed₀ pc₀ σ₀' b₀` to avoid
+  -- shadowing the outer signature's `l σ failed pc σ' b`. The recursor
+  -- abstracts over `(c₁, c₂)`, so we re-introduce the outer-style indices
+  -- as universally quantified hypotheses inside the motive, and unify them
+  -- with the outer ones at the closing `exact key …`.
   let motive : Imperative.CFGConfig String Core.Expression →
                Imperative.CFGConfig String Core.Expression → Prop :=
     fun c₁ c₂ =>
-      ∀ (l : String) (σ : Imperative.SemanticStore Core.Expression)
-        (failed : Bool) (pc : Nat),
-        c₁ = .cont l σ failed →
-        wf.labelMap l = some pc →
-        ∀ (σ' : Imperative.SemanticStore Core.Expression) (b : Bool),
-          c₂ = .terminal σ' b →
+      ∀ (l₀ : String) (σ₀ : Imperative.SemanticStore Core.Expression)
+        (failed₀ : Bool) (pc₀ : Nat),
+        c₁ = .cont l₀ σ₀ failed₀ →
+        wf.labelMap l₀ = some pc₀ →
+        ∀ (σ₀' : Imperative.SemanticStore Core.Expression) (b₀ : Bool),
+          c₂ = .terminal σ₀' b₀ →
           StepGotoStar Core.Expression δ_goto δ_goto_bool pgm
-            (.running pc σ failed) (.terminal σ' b)
+            (.running pc₀ σ₀ failed₀) (.terminal σ₀' b₀)
   have key : motive (.cont l σ failed) (.terminal σ' b) := by
     apply Core.CoreCFGStepStar_rec (motive := motive) ?_ ?_ h_run
     · -- refl case: motive c c. The two equalities force
