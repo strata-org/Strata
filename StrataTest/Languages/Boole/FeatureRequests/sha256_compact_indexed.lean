@@ -204,71 +204,71 @@ spec {
 #end
 
 /-- info:
-Obligation: assert_1_3021
+Obligation: assert_1_3452
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_2_3064
+Obligation: assert_2_3495
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_3_3596
+Obligation: assert_3_4027
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_4_3627
+Obligation: assert_4_4058
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_5_3658
+Obligation: assert_5_4089
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_rotate_right_requires_0_2970_39
+Obligation: callElimAssert_rotate_right_requires_0_3401_39
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_rotate_right_requires_0_2970_35
+Obligation: callElimAssert_rotate_right_requires_0_3401_35
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_7_5332
+Obligation: assert_7_5763
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_rotate_right_requires_0_2970_31
+Obligation: callElimAssert_rotate_right_requires_0_3401_31
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_rotate_right_requires_0_2970_27
+Obligation: callElimAssert_rotate_right_requires_0_3401_27
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_8_5571
+Obligation: assert_8_6002
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_rotate_right_requires_0_2970_23
+Obligation: callElimAssert_rotate_right_requires_0_3401_23
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_rotate_right_requires_0_2970_19
+Obligation: callElimAssert_rotate_right_requires_0_3401_19
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_rotate_right_requires_0_2970_15
+Obligation: callElimAssert_rotate_right_requires_0_3401_15
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_rotate_right_requires_0_2970_11
+Obligation: callElimAssert_rotate_right_requires_0_3401_11
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_rotate_right_requires_0_2970_7
+Obligation: callElimAssert_rotate_right_requires_0_3401_7
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_rotate_right_requires_0_2970_3
+Obligation: callElimAssert_rotate_right_requires_0_3401_3
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
