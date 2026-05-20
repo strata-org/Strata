@@ -3,6 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 /-
 Tests that the type alias elimination pass correctly transforms
@@ -13,12 +14,14 @@ produced only by the Python frontend), these tests construct programs
 programmatically and run resolve + typeAliasElim.
 -/
 
-import Strata.DDM.Elab
-import Strata.DDM.BuiltinDialects.Init
-import Strata.Languages.Laurel.Grammar.LaurelGrammar
-import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
-import Strata.Languages.Laurel.TypeAliasElim
-import Strata.Languages.Laurel.Resolution
+meta import Strata.DDM.Elab
+meta import Strata.DDM.BuiltinDialects.Init
+meta import Strata.Languages.Laurel.Grammar.LaurelGrammar
+meta import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
+meta import Strata.Languages.Laurel.TypeAliasElim
+meta import Strata.Languages.Laurel.Resolution
+
+meta section
 
 open Strata.Laurel
 
@@ -128,3 +131,5 @@ return a;
 #eval! do
   let result := resolveAndElim procSigProgram
   printProcs result.staticProcedures
+
+end

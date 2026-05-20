@@ -3,9 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Python.PySpecPipeline
-import Strata.Languages.Python.Specs.DDM
+meta import all Strata.Languages.Python.PySpecPipeline
+meta import all Strata.Languages.Python.Specs.DDM
+
+meta section
 
 /-! ## Test: specArgToFuncDeclArg preserves parameter type info
 
@@ -115,3 +118,4 @@ info: procedure test_typed_func(x: Any, y: Any): Any
   IO.println (toString (formatProcedure proc))
 
 end Strata.Python.PySpecArgTypeTest
+end

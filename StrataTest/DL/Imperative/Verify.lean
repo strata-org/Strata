@@ -3,11 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import StrataTest.DL.Imperative.DDMTranslate
-import StrataTest.DL.Imperative.SMTEncoder
-import Strata.DL.Imperative.SMTUtils
-import Strata.Pipeline.Messages
+meta import all StrataTest.DL.Imperative.DDMTranslate
+meta import all StrataTest.DL.Imperative.SMTEncoder
+meta import Strata.DL.Imperative.SMTUtils
+meta import Strata.Pipeline.Messages
+
+meta section
 
 ---------------------------------------------------------------------
 namespace Arith
@@ -99,3 +102,4 @@ end ArithPrograms
 end Strata
 
 ---------------------------------------------------------------------
+end

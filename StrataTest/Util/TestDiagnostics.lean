@@ -3,9 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core.Verifier
 import Lean.Elab.Command
+
+meta section
 
 open Strata
 open String
@@ -143,3 +146,4 @@ def testInput (filename: String) (input : String) (process : Lean.Parser.InputCo
   testInputWithOffset filename input 0 process
 
 end StrataTest.Util
+end

@@ -3,19 +3,22 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 /-
 Tests that the eliminateHoles pass correctly replaces `.Hole` nodes with calls
 to freshly generated uninterpreted functions, with types inferred from context.
 -/
 
-import Strata.DDM.Elab
-import Strata.DDM.BuiltinDialects.Init
-import Strata.Languages.Laurel.Grammar.LaurelGrammar
-import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
-import Strata.Languages.Laurel.InferHoleTypes
-import Strata.Languages.Laurel.EliminateHoles
-import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
+meta import Strata.DDM.Elab
+meta import Strata.DDM.BuiltinDialects.Init
+meta import Strata.Languages.Laurel.Grammar.LaurelGrammar
+meta import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
+meta import Strata.Languages.Laurel.InferHoleTypes
+meta import Strata.Languages.Laurel.EliminateHoles
+meta import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
+
+meta section
 
 open Strata
 open Strata.Elab (parseStrataProgramFromDialect)
@@ -333,3 +336,5 @@ procedure test() { var x: int := <?>; assert <??> };
 -- the error occurs at Core translation time, which requires the full pipeline).
 
 end Laurel
+end Strata
+end

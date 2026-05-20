@@ -3,10 +3,11 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Lambda.Lambda
-import Strata.DL.Lambda.IntBoolFactory
-import Strata.DL.Lambda.TypeFactory
+meta import Strata.DL.Lambda.Lambda
+meta import Strata.DL.Lambda.IntBoolFactory
+meta import Strata.DL.Lambda.TypeFactory
 
 /-!
 # TypeFactory Tests
@@ -20,6 +21,7 @@ functions).
 
 ---------------------------------------------------------------------
 
+meta section
 namespace Lambda
 
 open Std (ToFormat Format format)
@@ -1153,3 +1155,4 @@ Constructors:
 end MutualRecursion
 
 end Lambda
+end

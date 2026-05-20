@@ -3,11 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.DDMTransform.ASTtoCST
-import Strata.Languages.Core.DDMTransform.Translate
-import Strata.DDM.Elab
-import Strata.DDM.BuiltinDialects.Init
+meta import Strata.Languages.Core.DDMTransform.ASTtoCST
+meta import Strata.Languages.Core.DDMTransform.Translate
+meta import Strata.DDM.Elab
+meta import Strata.DDM.BuiltinDialects.Init
+import Strata.DDM.Integration.Lean.HashCommands
+
+meta section
 
 /-!
 # Core Roundtrip Tests
@@ -233,3 +237,5 @@ axiom [f_ax]: f(Sequence.empty<int>()) == true;
 #eval roundtrip testSeqEmptyRoundtrip
 
 end Strata.Test.Roundtrip
+
+end

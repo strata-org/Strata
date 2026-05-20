@@ -3,8 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core.Verifier
+import Strata.DDM.Integration.Lean.HashCommands
+
+meta section
 
 /-! ## Test: parameter names containing `@` are disambiguated from `@N` suffixes
 
@@ -50,3 +54,7 @@ Model:
 #eval verify atSignDisambiguation
 
 ---------------------------------------------------------------------
+
+end Strata
+
+end
