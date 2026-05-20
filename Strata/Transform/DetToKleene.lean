@@ -27,7 +27,7 @@ def StmtToKleeneStmt {P : PureExpr} [Imperative.HasBool P] [HasNot P]
   Option (Imperative.KleeneStmt P (Cmd P)) :=
   match st with
   | .cmd cmd => some (.cmd cmd)
-  | .block _ bss _ => BlockToKleeneStmt bss
+  | .block _ bss _ => do let b ← BlockToKleeneStmt bss; return .block b
   | .ite cond tss ess md => do
     let t ← BlockToKleeneStmt tss
     let e ← BlockToKleeneStmt ess

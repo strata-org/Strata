@@ -93,7 +93,7 @@ info: [Strata.Core] Type checking succeeded.
 ---
 info: ok: program Core;
 
-function apply (f : int -> int, x : int) : int {
+inline function apply (f : int -> int, x : int) : int {
   f(x)
 }
 procedure TestLambdaApply (out result : int)
@@ -195,6 +195,10 @@ spec {
 
 /-- info:
 Obligation: applyN_body_calls_MyNat..pred_0
+Property: assert
+Result: ✅ pass
+
+Obligation: applyN_terminates_0
 Property: assert
 Result: ✅ pass
 
@@ -428,6 +432,10 @@ spec {
 #end
 
 /-- info: Obligation: intListLen_body_calls_MyList..tl_0
+Property: assert
+Result: ✅ pass
+
+Obligation: intListLen_terminates_0
 Property: assert
 Result: ✅ pass
 

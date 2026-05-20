@@ -25,6 +25,7 @@ public import Strata.Languages.Laurel.CoreDefinitionsForLaurel
 public import Strata.Languages.Laurel.CoreGroupingAndOrdering
 import Strata.DDM.Util.DecimalRat
 import Strata.DL.Imperative.Stmt
+import Strata.Pipeline.Messages
 import Strata.DL.Imperative.MetaData
 import Strata.DL.Lambda.LExpr
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
@@ -44,7 +45,7 @@ open Lambda (LMonoTy LTy LExpr)
 public section
 
 private def mdWithUnknownLoc : Imperative.MetaData Core.Expression :=
-  #[⟨Imperative.MetaData.fileRange, .fileRange FileRange.unknown⟩]
+  Imperative.MetaData.ofProvenance (.synthesized .laurelToCore)
 
 def isFieldName (fieldNames : List Identifier) (name : Identifier) : Bool :=
   fieldNames.contains name
@@ -316,8 +317,10 @@ def translateExpr (expr : StmtExprMd)
     all_goals (have := AstNode.sizeOf_val_lt expr; term_by_mem)
 
 def getNameFromMd (md : Imperative.MetaData Core.Expression): String :=
-  let fileRange := (Imperative.getFileRange md).getD (dbg_trace "BUG: metadata without a filerange"; default)
-  s!"({fileRange.range.start})"
+  match Imperative.getProvenance md with
+  | some (.loc _ range) => s!"({range.start})"
+  | some (.synthesized _) => "(0)"
+  | none => "(unknown)"
 
 def defaultExprForType (ty : HighTypeMd) : TranslateM Core.Expression.Expr := do
   match ty.val with
@@ -492,11 +495,11 @@ def translateStmt (stmt : StmtExprMd)
   | .Return valueOpt =>
       match valueOpt with
       | none =>
-          return [.exit (some "$body") md]
+          return [.exit "$body" md]
       | some _ =>
           emitDiagnostic $ md.toDiagnostic "Return statement with value should have been eliminated by EliminateValueReturns pass" DiagnosticType.StrataBug
           modify fun s => { s with coreProgramHasSuperfluousErrors := true }
-          return [.exit (some "$body") md]
+          return [.exit "$body" md]
   | .While cond invariants decreasesExpr body =>
       let condExpr ← translateExpr cond
       let invExprs ← invariants.mapM (fun i => do return ("", ← translateExpr i))
@@ -504,7 +507,7 @@ def translateStmt (stmt : StmtExprMd)
       let bodyStmts ← translateStmt body
       return [Imperative.Stmt.loop (.det condExpr) decreasingExprCore invExprs bodyStmts md]
   | .Exit target =>
-      return [Imperative.Stmt.exit (some target) md]
+      return [Imperative.Stmt.exit target md]
   | .Hole _ _ =>
       -- Hole in statement position: treat as havoc (no-op).
       -- This can occur when an unmodeled call's Block is flattened.
@@ -622,7 +625,6 @@ structure LaurelTranslateOptions where
   inlineFunctionsWhenPossible : Bool := false
   overflowChecks : Core.OverflowChecks := {}
   keepAllFilesPrefix : Option String := none
-  profile : Bool := false
 
 instance : Inhabited LaurelTranslateOptions where
   default := {}
