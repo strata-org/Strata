@@ -550,9 +550,8 @@ theorem block_body_cmds_simulation
 after* the leading `LOCATION` (i.e., at `pc + 1`). The wrapper
 `block_simulation` prepends one `step_location`.
 
-Three of four cases are proved (`goto_true`, `goto_false`, `terminal`);
-the inductive `cmd` case is sorry, requiring a separate induction
-generalization deferred to a follow-up. -/
+Decomposes via `block_body_cmds_simulation` at `k = 0`, which inducts
+on the suffix of the block's command list. -/
 theorem block_body_simulation
     (δ : Imperative.SemanticEval Core.Expression)
     (δ_goto : SemanticEvalGoto Core.Expression)
