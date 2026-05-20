@@ -68,4 +68,7 @@ import Strata.MetaVerifier
 /- Simple API -/
 import Strata.SimpleAPI
 
+/- Pipeline -/
+import Strata.Pipeline.PyAnalyzeLaurel
+
 -- noimport: Strata.Util.Random -- deletion candidate: nothing imports this module

@@ -473,12 +473,12 @@ def resolveDispatch (ctx : TranslationContext)
   | some fnOverloads =>
     let kwPairs := kwords.map Python.keyword.nameAndValue
     let some firstArg := fnOverloads.findDispatchArg args kwPairs
-      | let msg := match fnOverloads.paramName, kwPairs.filterMap (·.1) with
-          | some expected, provided@(_ :: _) =>
+      | let msg := match kwPairs.filterMap (·.1) with
+          | provided@(_ :: _) =>
             s!"Dispatched function '{funcName}' called with wrong \
-              keyword argument, expected '{expected}' but got \
+              keyword argument, expected '{fnOverloads.paramName}' but got \
               '{String.intercalate "', '" provided}'"
-          | _, _ =>
+          | _ =>
             s!"Dispatched function '{funcName}' called with no \
               arguments (expected a string literal first argument)"
         throw (.typeError msg)
@@ -489,12 +489,7 @@ def resolveDispatch (ctx : TranslationContext)
           let suffix := if fnOverloads.entries.size > 2 then s!" ... ({fnOverloads.entries.size} total)" else ""
           throwUserError range
               s!"'{funcName}' called with unknown string \"{s.val}\"; known services: {knownServices}{suffix}"
-      let className :=
-        if ident.pythonModule.isEmpty then
-          ident.name
-        else
-          ident.pythonModule.replace "." "_" ++ "_" ++ ident.name
-      return some className
+      return some <| ident.toString (sep := "_")
     | _ => return none
 
 /-! ## Expression Translation -/
@@ -2752,10 +2747,7 @@ def pythonToLaurel (info : PreludeInfo)
 
   let overloadCompositeType := Std.HashSet.ofList $
       (overloadTable.values.flatMap (·.entries.values)).map fun ident =>
-        if ident.pythonModule.isEmpty then
-          ident.name
-        else
-          ident.pythonModule ++ "_" ++ ident.name
+        ident.toString (sep := "_")
   let mut compositeTypeNames := info.compositeTypes.union overloadCompositeType
 
   -- FIRST PASS: Collect all class definitions and field type info
