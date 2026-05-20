@@ -18,6 +18,15 @@ not a bitvector. Encoding it as `bv64` requires a `bv64_to_int_u` cast to
 use it as a `Sequence` index; as an uninterpreted function that cast causes
 unknown VCs for loop invariants that mix the counter with `Sequence.length`.
 `int` with range bounds is the faithful encoding and eliminates the cast.
+
+All 17 VCs in this seed pass. It remains in FeatureRequests because the
+original Rust source uses three features not yet supported in Boole:
+- Gap #23: iterator protocol (`for x in iter.iter()` style loops)
+- Gap #15: fixed-size array syntax (`[u8; 64]`)
+- Gap #16: slice types
+
+This seed works around all three (using `Sequence`, `int` counters, and
+`Sequence bv8` instead of slices). A fuller port would need those gaps closed.
 -/
 
 private def sha256_compact_indexed_program : Strata.Program :=
