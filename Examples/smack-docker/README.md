@@ -199,10 +199,44 @@ aws_string_eq                 |     OK |     OK |     OK |      PARTIAL |      P
   combination of the SMACK prelude assumption-axiom volume and
   unbounded loops in the translation; needs a `--unwind` bound or
   smaller axiom set.
+- **Deductive PARTIAL breakdown (sample-based).** All 21 deductive
+  PARTIALs sampled across the 25-program suite split into three
+  sub-classes by failing-VC verdict and origin:
+  - **(a) Missing `ensures` on a user-defined helper** — solver
+    refutes with `🔶 can be both true and false`, label
+    `callElimAssert_assert__i32_requires_0_NN`. Every assertion of
+    the form `assert(callee(...) == expected)` where the user fn has
+    no spec block. ~17 of 25 programs, varies in VC count per program.
+    Fix lever: synthesize `ensures` from procedure bodies (Strata-side
+    pass; not a Python regex — too easy to be unsound). The previously
+    discussed approach via SMACK's `__CONTRACT_ensures` macro is
+    blocked upstream by SMACK's missing `result()` expression.
+  - **(b) `__VERIFIER_assume` is uninterpreted** — same refuted
+    verdict but label `(Origin_assert__i32_Requires)assert__i32_requires_0`,
+    indicating a top-level requires-discharge VC rather than a per-call
+    VC. Affects programs whose C source uses `assume(...)` to bound
+    inputs; the assumption is dropped because `__VERIFIER_assume` has
+    no body and no `requires`/`ensures` after `strip_smack_prelude.py`.
+    Sample: `abs_func`, `max_func`, `nondet_branch`. Fix lever: add
+    `spec { requires (_i0 != 0); }` to the stripped `__VERIFIER_assume`
+    procedure in `fix_core_st.py` (or directly in
+    `strip_smack_prelude.py`). Smallest available fix; would flip 3+
+    PARTIALs to PASS.
+  - **(e) Solver returns `unknown`** — verdict `❓ unknown`. Sample:
+    `aws_byte_buf_append`, all 7 VCs. The asserted predicate chain
+    involves nested int↔bit conversions (`_zext`, `_trunc`) over
+    memory-map loads (`_load_i64`, `_load_ref`) on a program with 13
+    `_M_N` map params. SMT formula complexity exceeds the solver's
+    reach. Fix lever: SMT encoding work in
+    `Strata/Languages/Core/SMTEncoder.lean` — array theory vs
+    axiomatized maps, axiom pruning. Significant effort; likely the
+    last sub-class to address.
 - **bugFinding partials.** Symbolic execution finds potential
   counterexamples for assertions on programs whose preconditions are
-  insufficient. Expected behaviour for SMACK programs as currently
-  translated; not a pipeline bug.
+  insufficient. Same root cause as deductive sub-class (b) for the
+  programs that use `assume(...)`; same root cause as sub-class (a)
+  for the programs that call user fns without `ensures`. Expected
+  behaviour given the current translation; not a pipeline bug.
 - **Cross-procedure PE error contamination (`aws_array_eq` → 0 VCs).**
   `Strata/Languages/Core/ProgramEval.lean` threads a single `Env`
   through every procedure in declaration order: each `.proc` decl runs
