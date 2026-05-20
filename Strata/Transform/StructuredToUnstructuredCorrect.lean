@@ -4898,6 +4898,34 @@ theorem EvalCmd_frame_extend_one
     -- σ unchanged, no eval to lift.
     exact EvalCmd.eval_cover h_wfb
 
+/-- `EvalCmds` lifts through a frame extension when no command in the list
+touches the frame ident. Proved by induction on the `EvalCmds` derivation. -/
+theorem EvalCmds_frame_extend_one
+    {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
+    [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    {δ : SemanticEval P}
+    (h_wf_congr : WellFormedSemanticEvalExprCongr δ)
+    {σ σ' : SemanticStore P} {failed : Bool}
+    {ident : P.Ident} {val : P.Expr}
+    {cs : List (Cmd P)}
+    (h_ident_unused : ∀ c ∈ cs, ident ∉ Cmd.touchedVars c)
+    (h_eval : EvalCmds P (EvalCmd P) δ σ cs σ' failed) :
+    EvalCmds P (EvalCmd P) δ (extendStoreOne σ ident val) cs
+      (extendStoreOne σ' ident val) failed := by
+  induction h_eval with
+  | eval_cmds_none =>
+    exact EvalCmds.eval_cmds_none
+  | eval_cmds_some h_head h_tail ih =>
+    rename_i _σ_start c _σ_mid _f_head cs' _σ_end _f_tail
+    have h_c_unused : ident ∉ Cmd.touchedVars c :=
+      h_ident_unused c List.mem_cons_self
+    have h_cs_unused : ∀ c' ∈ cs', ident ∉ Cmd.touchedVars c' :=
+      fun c' hc' => h_ident_unused c' (List.mem_cons_of_mem _ hc')
+    have h_head_lifted :=
+      EvalCmd_frame_extend_one (val := val) h_wf_congr h_c_unused h_head
+    have h_tail_lifted := ih h_cs_unused
+    exact EvalCmds.eval_cmds_some h_head_lifted h_tail_lifted
+
 /-! ## Generalized simulation
 
 The central lemma: for any continuation `k`, exit-continuation stack, and
