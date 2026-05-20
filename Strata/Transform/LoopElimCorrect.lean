@@ -3615,9 +3615,9 @@ private theorem simulation
             -- path is left as a focused leaf.
             rw [htgt_eq]
             by_cases hall_tt : ∀ le ∈ inv, ρ₀.eval ρ₀.store le.2 = some HasBool.tt
-            · refine .inr (fun _hnf_unused => ?_)
-              -- Re-derive hnf'' (already in scope) for clarity in the goal.
-              have hnf'_eq : ρ'.hasFailure = Bool.false := hnf''
+            · -- Return type is the disjunction directly so that the body of
+              -- `h_enter_case` (which case-splits on whether body canFails)
+              -- can choose .inl or .inr without an outer `refine` commitment.
               suffices h_enter_case : ∀ {hasInvFailure : Bool},
                   hasInvFailure = Bool.false →
                   CoreStar π φ
@@ -3626,10 +3626,14 @@ private theorem simulation
                         ({ ρ₀ with hasFailure := ρ₀.hasFailure || hasInvFailure } : Env Expression)))
                       [.loop guardE measure inv body md])
                     (.terminal ρ') →
-                  CoreStar π φ (.stmt (.block loop_label
+                  Transform.CanFail (LangCore π φ) (.block loop_label
                     [.block first_iter_label first_iter_body {},
-                     .ite guardE then_branch [] {}] {}) ρ₀)
-                    (.terminal ρ') by
+                     .ite guardE then_branch [] {}] {}) ρ₀ ∨
+                  (ρ'.hasFailure = Bool.false →
+                    CoreStar π φ (.stmt (.block loop_label
+                      [.block first_iter_label first_iter_body {},
+                       .ite guardE then_branch [] {}] {}) ρ₀)
+                      (.terminal ρ')) by
                 cases hreach with
                 | step _ _ _ h1 hrest =>
                   cases h1 with
@@ -3656,6 +3660,7 @@ private theorem simulation
                       subst hb_eq
                       exact env_or_false_eq ρ₀
                     rw [hρ'_eq]
+                    refine .inr (fun _ => ?_)
                     -- Build target trace: outer block wraps the inner stmts list.
                     let loop_num := (StringGenState.gen "loop" σ.gen).fst
                     let invSuffix : Nat → String → String := fun i lbl =>
@@ -3722,6 +3727,7 @@ private theorem simulation
                       subst hb_eq
                       exact env_or_false_eq ρ₀
                     rw [hρ'_eq]
+                    refine .inr (fun _ => ?_)
                     let loop_num := (StringGenState.gen "loop" σ.gen).fst
                     let invSuffix : Nat → String → String := fun i lbl =>
                       if lbl.isEmpty then toString i else s!"{i}_{lbl}"
@@ -3828,9 +3834,11 @@ private theorem simulation
               --   STAGE 5 (compose): Wrap fib_block + ite (stages 2-4) into
               --     stmts → block_wrap_terminal.
               --
-              -- We complete STAGE 1 here and leave stages 2-5 as a single
-              -- sorry for incremental progress.
               intro hasInvFailure hib_eq hreach_inner
+              -- For now, commit to the trace (.inr) branch.  Future work that
+              -- splits on body-canFail (the genuine reason for the disjunction)
+              -- will replace this `refine` with a case-analysis.
+              refine .inr (fun _hnf => ?_)
               -- STAGE 1: first_iter_facts block terminates at ρ₀ (assert_terminal
               -- + assume_terminal under hall_tt).
               let loop_num := (StringGenState.gen "loop" σ.gen).fst
@@ -4099,7 +4107,6 @@ private theorem simulation
                       _ _ .none ρ₀.store hreach_target)
                     (.step _ _ _ (.step_block_exit_mismatch (fun h => nomatch h)) (.refl _)))
         | .loop guard measure inv body md =>
-          -- LOOP exiting case: see strategy in agent context
           sorry
     case block_corr =>
       intro σ bss hsz hnofd hok ρ₀ hswf
