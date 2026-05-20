@@ -595,6 +595,139 @@ private theorem canFailBlock_append_left
             exact ⟨_, hf, .step _ _ _ .step_seq_exit (.refl _)⟩
           | step _ _ _ h _ => cases h⟩
 
+/-! ## Havoc trace primitives
+
+Helpers for replaying a havoc block (a list of `havoc x` commands wrapped in a
+`.block`) so it lands on a chosen target store.  `havoc` is non-deterministic,
+so the trace can pick any value for each variable — the helpers here provide
+the witness trace that lands precisely on the desired store. -/
+
+/-- A single `havoc n` command can change the store value at `n` to any target
+    value, leaving all other variables unchanged. -/
+private theorem havoc_targeting_single
+    (x : Expression.Ident) (md : MetaData Expression)
+    (ρ₀ : Env Expression) (v_target : Expression.Expr)
+    (hdef_src : (ρ₀.store x).isSome)
+    (hwfvar : WellFormedSemanticEvalVar ρ₀.eval) :
+    ∃ σ' : SemanticStore Expression,
+      σ' x = some v_target ∧
+      (∀ y, x ≠ y → σ' y = ρ₀.store y) ∧
+      CoreStar π φ
+        (.stmt (.cmd (HasHavoc.havoc x md)) ρ₀)
+        (.terminal { ρ₀ with store := σ' }) := by
+  change ∃ σ' : SemanticStore Expression,
+    σ' x = some v_target ∧
+    (∀ y, x ≠ y → σ' y = ρ₀.store y) ∧
+    CoreStar π φ
+      (.stmt (.cmd (CmdExt.cmd (Cmd.set x .nondet md))) ρ₀)
+      (.terminal { ρ₀ with store := σ' })
+  obtain ⟨v_old, hv_old⟩ := Option.isSome_iff_exists.mp hdef_src
+  let σ' : SemanticStore Expression := fun y => if x = y then some v_target else ρ₀.store y
+  have hσ'_x : σ' x = some v_target := by simp [σ']
+  have hσ'_other : ∀ y, x ≠ y → σ' y = ρ₀.store y := by
+    intro y hne; simp [σ', hne]
+  have hupdate : UpdateState Expression ρ₀.store x v_target σ' :=
+    .update hv_old hσ'_x hσ'_other
+  exact ⟨σ', hσ'_x, hσ'_other,
+    .step _ _ _
+      (.step_cmd (EvalCommand.cmd_sem (.eval_set_nondet hupdate hwfvar)))
+      (by simp [Bool.or_false]; exact .refl _)⟩
+
+/-- Execute a list of havoc commands, updating the store to match `σ_target`
+    on each variable in `vars`. -/
+private theorem havocs_targeting_stmts
+    (vars : List Expression.Ident) (md : MetaData Expression)
+    (ρ₀ : Env Expression) (σ_target : SemanticStore Expression)
+    (hwfvar : WellFormedSemanticEvalVar ρ₀.eval)
+    (hdef_src : ∀ x ∈ vars, (ρ₀.store x).isSome)
+    (hdef_tgt : ∀ x ∈ vars, (σ_target x).isSome) :
+    ∃ σ_out : SemanticStore Expression,
+      (∀ x ∈ vars, σ_out x = σ_target x) ∧
+      (∀ x, x ∉ vars → σ_out x = ρ₀.store x) ∧
+      CoreStar π φ
+        (.stmts (vars.map fun n => Stmt.cmd (HasHavoc.havoc n md)) ρ₀)
+        (.terminal { ρ₀ with store := σ_out }) := by
+  induction vars generalizing ρ₀ with
+  | nil =>
+    refine ⟨ρ₀.store, fun _ h => absurd h (List.not_mem_nil), fun _ _ => rfl, ?_⟩
+    show CoreStar π φ (.stmts (List.map _ []) ρ₀) (.terminal { ρ₀ with store := ρ₀.store })
+    rw [List.map_nil]
+    have h : ({ ρ₀ with store := ρ₀.store } : Env Expression) = ρ₀ := by
+      cases ρ₀; rfl
+    rw [h]; exact .step _ _ _ .step_stmts_nil (.refl _)
+  | cons x rest ih =>
+    have hdef_x := hdef_tgt x (.head ..)
+    obtain ⟨v_target, hv_target⟩ := Option.isSome_iff_exists.mp hdef_x
+    have ⟨σ₁, hσ₁_x, hσ₁_other, hstep_x⟩ :=
+      havoc_targeting_single π φ x md ρ₀ v_target (hdef_src x (.head ..)) hwfvar
+    let ρ₁ : Env Expression := { ρ₀ with store := σ₁ }
+    have hdef_src_rest : ∀ y ∈ rest, (σ₁ y).isSome := by
+      intro y hy
+      by_cases hxy : x = y
+      · subst hxy; rw [hσ₁_x]; simp
+      · rw [hσ₁_other y hxy]; exact hdef_src y (.tail _ hy)
+    have hdef_tgt_rest : ∀ y ∈ rest, (σ_target y).isSome :=
+      fun y hy => hdef_tgt y (.tail _ hy)
+    have ⟨σ_out, hmatch, hother, hstar_rest⟩ :=
+      ih ρ₁ hwfvar hdef_src_rest hdef_tgt_rest
+    refine ⟨σ_out, ?_, ?_, ?_⟩
+    · intro y hy
+      cases hy with
+      | head =>
+        by_cases hx_rest : x ∈ rest
+        · exact hmatch x hx_rest
+        · exact (hother x hx_rest).trans (hσ₁_x.trans hv_target.symm)
+      | tail _ hy' => exact hmatch y hy'
+    · intro y hy
+      have hy_rest : y ∉ rest := fun h => hy (.tail _ h)
+      have hxy : x ≠ y := fun h => hy (h ▸ .head ..)
+      exact (hother y hy_rest).trans (hσ₁_other y hxy)
+    · simp only [List.map]
+      exact ReflTrans_Transitive _ _ _ _
+        (stmts_cons_step Expression (EvalCommand π φ) (EvalPureFunc φ)
+          (.cmd (HasHavoc.havoc x md))
+          (rest.map fun n => Stmt.cmd (HasHavoc.havoc n md))
+          ρ₀ ρ₁ hstep_x)
+        hstar_rest
+
+/-- Execute the havoc block, targeting `ρ_target.store` on `vars`.  The
+    wrapping block uses `∅` outer metadata while the inner havoc commands use
+    `md`.  This matches the form produced by `buildHavocBlock`. -/
+private theorem havoc_block_to_target
+    (label : String) (vars : List Expression.Ident) (md : MetaData Expression)
+    (ρ₀ ρ_target : Env Expression)
+    (hwfvar : WellFormedSemanticEvalVar ρ₀.eval)
+    (hdef_src : ∀ x ∈ vars, (ρ₀.store x).isSome)
+    (hdef_tgt : ∀ x ∈ vars, (ρ_target.store x).isSome)
+    (hagree : ∀ x, x ∉ vars → ρ_target.store x = ρ₀.store x) :
+    CoreStar π φ
+      (.stmt (.block label (vars.map fun n => Stmt.cmd (HasHavoc.havoc n md)) ∅) ρ₀)
+      (.terminal { ρ₀ with store := ρ_target.store }) := by
+  have ⟨σ_out, hmatch, hother, hstar⟩ :=
+    havocs_targeting_stmts π φ vars md ρ₀ ρ_target.store hwfvar hdef_src hdef_tgt
+  have h : projectStore ρ₀.store σ_out = ρ_target.store := by
+    funext x
+    simp [projectStore]
+    split
+    · rename_i hsome
+      by_cases hx : x ∈ vars
+      · exact hmatch x hx
+      · rw [hother x hx, hagree x hx]
+    · rename_i hnone
+      simp at hnone
+      by_cases hx : x ∈ vars
+      · have := hdef_src x hx
+        simp [hnone] at this
+      · rw [← hnone, hagree x hx]
+  have := block_wrap_terminal π φ label _ ∅ ρ₀ { ρ₀ with store := σ_out } hstar
+  show CoreStar π φ (.stmt (.block label (vars.map fun n => Stmt.cmd (HasHavoc.havoc n md)) ∅) ρ₀)
+    (.terminal { ρ₀ with store := ρ_target.store })
+  have heq : { { ρ₀ with store := σ_out } with store := projectStore ρ₀.store σ_out } =
+    { ρ₀ with store := ρ_target.store } := by
+    simp [h]
+  rw [heq] at this
+  exact this
+
 /-- The loop transformation for any guard produces this structure. -/
 private theorem stmtResult_loop_struct (σ : LoopElimState)
     (guard : ExprOrNondet Expression)
@@ -3632,7 +3765,137 @@ private theorem simulation
                     have hnif := loop_step_hasInvFailure_false_of_or
                       (by simpa [Config.getEnv] using hh)
                     exact h_enter_case hnif hrest
-              sorry
+              -- ============================================================
+              -- PROOF OF h_enter_case (≥1-iter case, all-tt invariants).
+              -- ============================================================
+              -- Plan:
+              --   STAGE 1: first_iter_facts terminates at ρ₀.
+              --     Uses: stmts_mapIdx_assert_terminal + stmts_mapIdx_assume_terminal
+              --     under hall_tt.  Builds h_fib_block.
+              --
+              --   STAGE 2: Decompose hreach_inner via seqT_reaches_terminal:
+              --     body runs from ρ₀ to ρ_body (via block scope), then
+              --     loop continues from ρ_body to ρ'.  IH gives us either:
+              --       (a) block ρ₀.store body canFails, or
+              --       (b) target block-form runs to ρ_body_proj (= projected store).
+              --     For canFail (a) we'd return Or.inl up at the outer wrapping;
+              --     but we are inside `refine .inr` — so we'd need to argue
+              --     this case can't happen, OR push the dichotomy outside.
+              --     CONCERN: The `refine .inr` choice was made before we knew the
+              --     body-canFail status; if body canFails, we cannot produce
+              --     a terminal trace.  Resolution: refactor at L3618 to defer
+              --     the .inl/.inr choice into h_enter_case.
+              --
+              --   STAGE 3: Build arb_facts trace
+              --     (block "arbitrary_iter_facts_<n>" [havocd, arb_assumes,
+              --        ...preTerm, body, maintain_inv, ...postTerm] {})
+              --     - havocd: havoc_block_to_target lands on ρ_body_proj.
+              --     - arb_assumes: assume(G) and assume(I_i) at ρ_body_proj.
+              --       For assume(G): need ρ_body_proj to satisfy G; but we
+              --       haven't established this!  In source semantics, body
+              --       is reached because G held at ρ₀; but G need not hold
+              --       at ρ_body (the arb-iter snapshot).
+              --       RESOLUTION: in arb_facts, the havoc'd state is meant
+              --       to be an *arbitrary* iteration's pre-state.  The
+              --       `assume(G)` filters those where G holds.  So we should
+              --       pick a havoc target where G holds.  In our case ρ₀
+              --       satisfies G.  So havoc to ρ₀ itself.  Then
+              --       assume(I_i) holds via hall_tt, body simulation via IH
+              --       gives ρ_body_arb at ρ₀, and maintain_invariants must
+              --       hold there: this is a separate VC.  CASE-SPLIT:
+              --         * If maintain holds at ρ_body_arb: continue to
+              --           postTerm + close arb_facts block.
+              --         * If maintain fails: arb_facts canFails — Or.inl.
+              --     - preTerm: in det+some case, init m_old + assert_lb;
+              --       both can canFail (init shadowing impossible because
+              --       hreserved; assert_lb might fail if measure is negative).
+              --     - postTerm: assert_decrease — VC2c, can canFail.
+              --
+              --   STAGE 4: exit_state trace
+              --     (havocd ++ exitGuard ++ exit_invariant_assumes)
+              --     - havocd: target ρ'.store.  Need ρ' satisfies invariants
+              --       (for assume) and ¬G (for exitGuard).  Both follow from
+              --       the source semantics: loop terminated via step_loop_exit,
+              --       so G is ff at ρ'; invariants depend on whether the
+              --       source ever set hasInvFailure — it didn't (hnf'' = false).
+              --       So invariants hold at ρ'.
+              --     - exitGuard: assume(¬G) at ρ'.
+              --     - exit_invariant_assumes: assume(I_i) at ρ'.
+              --     STRATEGY: build via havoc_block_to_target with target ρ',
+              --       provided ρ' is store-compatible (variables defined +
+              --       agreement outside loop-touched set).
+              --
+              --   STAGE 5 (compose): Wrap fib_block + ite (stages 2-4) into
+              --     stmts → block_wrap_terminal.
+              --
+              -- We complete STAGE 1 here and leave stages 2-5 as a single
+              -- sorry for incremental progress.
+              intro hasInvFailure hib_eq hreach_inner
+              -- STAGE 1: first_iter_facts block terminates at ρ₀ (assert_terminal
+              -- + assume_terminal under hall_tt).
+              let loop_num := (StringGenState.gen "loop" σ.gen).fst
+              let invSuffix : Nat → String → String := fun i lbl =>
+                if lbl.isEmpty then toString i else s!"{i}_{lbl}"
+              let mkAssertLabel : Nat → String → String := fun i lbl =>
+                s!"{loopElimAssertPrefix}{loop_num}_entry_invariant_{invSuffix i lbl}"
+              let mkAssumeLabel : Nat → String → String := fun i lbl =>
+                s!"{loopElimAssumePrefix}{loop_num}_entry_invariant_{invSuffix i lbl}"
+              have hwfb := hswf.wfBool
+              have h_asserts :=
+                stmts_mapIdx_assert_terminal π φ inv ρ₀ md mkAssertLabel hwfb hall_tt
+              have h_assumes :=
+                stmts_mapIdx_assume_terminal π φ inv ρ₀ md mkAssumeLabel hwfb hall_tt
+              have h_fib_run : CoreStar π φ (.stmts first_iter_body ρ₀)
+                  (.terminal ρ₀) := by
+                rw [hfib_eq]
+                exact stmts_concat_terminal π φ _ _ ρ₀ ρ₀ ρ₀ h_asserts h_assumes
+              have h_fib_block : CoreStar π φ
+                  (.stmt (.block first_iter_label first_iter_body {}) ρ₀)
+                  (.terminal ρ₀) := by
+                have h := block_wrap_terminal π φ first_iter_label
+                  first_iter_body {} ρ₀ ρ₀ h_fib_run
+                rw [projectStore_self_env] at h; exact h
+              -- STAGE 2-4: Build target trace through ite branch to ρ'.
+              -- This is the heart of the simulation: it requires the body
+              -- IH, havoc-to-target reasoning, and the assert/assume validity
+              -- arguments described in the plan above.
+              have h_ite_terminal : CoreStar π φ
+                  (.stmt (.ite guardE then_branch [] {}) ρ₀)
+                  (.terminal ρ') := by
+                sorry
+              -- STAGE 5: compose fib_block + ite into stmts list, wrap in outer block.
+              have h_stmts : CoreStar π φ (.stmts [.block first_iter_label
+                  first_iter_body {}, .ite _ then_branch [] {}] ρ₀)
+                  (.terminal ρ') :=
+                ReflTrans_Transitive _ _ _ _
+                  (stmts_cons_step Expression (EvalCommand π φ) (EvalPureFunc φ)
+                    _ _ ρ₀ ρ₀ h_fib_block)
+                  (ReflTrans_Transitive _ _ _ _
+                    (stmts_cons_step Expression (EvalCommand π φ) (EvalPureFunc φ)
+                      _ _ ρ₀ ρ' h_ite_terminal)
+                    (.step _ _ _ .step_stmts_nil (.refl _)))
+              have h_outer := block_wrap_terminal π φ loop_label _ {} ρ₀ ρ' h_stmts
+              -- ρ'.store has the same defined-set as ρ₀: each var that's
+              -- isSome in ρ' was isSome in ρ₀ (via stmt_compound_terminal_preserves_isNone
+              -- contrapositive).  So projectStore is identity.
+              have hρ'_proj : projectStore ρ₀.store ρ'.store = ρ'.store := by
+                apply projectStore_id
+                -- Contrapositive of stmt_compound_terminal_preserves_isNone:
+                -- if (ρ'.store x) ≠ none then (ρ₀.store x) ≠ none.
+                intro x hxne hne₀
+                have hnone₀ : (ρ₀.store x).isNone :=
+                  Option.isNone_iff_eq_none.mpr hne₀
+                have hnone' : (ρ'.store x).isNone :=
+                  stmt_compound_terminal_preserves_isNone (π := π) (φ := φ) hreach
+                    (fun _ heq => by simp [Statement] at heq)
+                    (fun _ _ heq => by simp [Statement] at heq)
+                    hnofd x hnone₀
+                exact hxne (Option.isNone_iff_eq_none.mp hnone')
+              have heq_env : ({ ρ' with store := projectStore ρ₀.store ρ'.store }
+                  : Env Expression) = ρ' := by
+                rw [hρ'_proj]
+              rw [heq_env] at h_outer
+              exact h_outer
             · -- VC1 failure path: some invariant evaluates to ff at ρ₀.
               -- The target's first_iter_block contains entry-asserts on each
               -- invariant; one of these will canFail.  Works for both det and
