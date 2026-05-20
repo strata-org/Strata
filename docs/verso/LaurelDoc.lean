@@ -285,18 +285,41 @@ $$`\frac{\Gamma \vdash \mathit{cond} \Leftarrow \mathsf{TBool} \quad \Gamma \vda
 
 $$`\frac{\Gamma_0 = \Gamma \quad \Gamma_{i-1} \vdash s_i \Rightarrow \_ \dashv \Gamma_i \;(1 \le i < n) \quad \Gamma_{n-1} \vdash s_n \Rightarrow T}{\Gamma \vdash \mathsf{Block}\;[s_1; \ldots; s_n]\;\mathit{label} \Rightarrow T} \quad \text{([⇒] Block)}`
 
-$`Γ_{i-1} ⊢ s_i ⇒ \_ ⊣ Γ_i` says each statement is resolved in the scope produced by its
-predecessor and may itself extend it (`Var (.Declare …)` does); $`s_n` is typed in
-$`Γ_{n-1}`. Bindings introduced inside the block don't escape — $`Γ` is what surrounds the
-block.
+Reading the premise: $`\Gamma_{i-1} \vdash s_i \Rightarrow \_ \dashv \Gamma_i` means $`s_i`
+is resolved under the scope $`\Gamma_{i-1}` produced by its predecessor, synthesizes some
+type (the `_` discards it — non-last statements are sequenced for effect, not value), and
+produces a possibly extended scope $`\Gamma_i` that the next statement sees. In practice
+only `Var (.Declare …)` actually extends the scope; every other construct leaves it
+unchanged so $`\Gamma_i = \Gamma_{i-1}`. The last statement $`s_n` is typed in
+$`\Gamma_{n-1}` and *its* synthesized type $`T` becomes the block's type. The block
+opens a fresh nested scope, so declarations made inside don't leak out — once the block
+ends, the surrounding $`\Gamma` is restored.
+
+Discarding the types of non-last statements matches Java/Python/JavaScript, where
+`f(x);` is a normal statement even when `f` returns a value. The trade-off is that a
+stray expression like `5;` is silently accepted; flagging that belongs to a lint, not
+the type checker.
 
 $$`\frac{}{\Gamma \vdash \mathsf{Block}\;[]\;\mathit{label} \Rightarrow \mathsf{TVoid}} \quad \text{([⇒] Block-Empty)}`
+
+An empty block has no last statement to take a type from, so it defaults to `TVoid`.
 
 {docstring Strata.Laurel.Resolution.Synth.block}
 
 $$`\frac{\Gamma_0 = \Gamma \quad \Gamma_{i-1} \vdash s_i \Rightarrow \_ \dashv \Gamma_i \;(1 \le i < n) \quad \Gamma_{n-1} \vdash s_n \Leftarrow T}{\Gamma \vdash \mathsf{Block}\;[s_1; \ldots; s_n]\;\mathit{label} \Leftarrow T} \quad \text{([⇐] Block)}`
 
+The check form differs from the synth form in exactly one place: the *last* statement is
+checked against the block's expected type $`T` instead of synthesizing freely. Non-last
+statements are still synthesized-and-discarded, just as in the synth rule. Pushing $`T`
+into the tail (rather than synthesizing the whole block and applying \[⇐\] Sub at the
+boundary) means a type mismatch is reported at the offending subexpression's source
+location, and the expectation continues to propagate through nested `Block` /
+`IfThenElse` / `Hole` / `Quantifier` constructs that have their own check rules.
+
 $$`\frac{\mathsf{TVoid} <: T}{\Gamma \vdash \mathsf{Block}\;[]\;\mathit{label} \Leftarrow T} \quad \text{([⇐] Block-Empty)}`
+
+With no last statement to push the expectation into, the empty-block check falls back to
+a single subsumption test: an empty block is acceptable wherever `TVoid` is.
 
 {docstring Strata.Laurel.Resolution.Check.block}
 
