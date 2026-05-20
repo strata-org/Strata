@@ -7,7 +7,10 @@ $(BOOKS): %: build-% serve-%
 
 build-%:
 	lake exe $* --with-html-single --output _out/$*
-	@if [ "$*" = "langdef" ]; then cp strata-hourglass.png _out/langdef/html-single/; fi
+
+build-langdef:
+	lake exe langdef --with-html-single --output _out/langdef
+	cp strata-hourglass.png _out/langdef/html-single/
 
 serve-%:
 	@(sleep 1 && open http://localhost:$(PORT)/) &
