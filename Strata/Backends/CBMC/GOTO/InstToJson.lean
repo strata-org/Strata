@@ -235,7 +235,13 @@ def instructionToJson (inst : Instruction) : Except String Json := do
     ("instructionId", Json.str (toString inst.type)),
     ("locationNumber", Json.num inst.locationNum)
   ]
-  let guardField ← if inst.type == .GOTO || !Expr.beq inst.guard Expr.true then do
+  -- CBMC's symtab2gb requires `guard` on GOTO/ASSUME/ASSERT instructions
+  -- even when the guard is the constant `true`; emitting only on non-true
+  -- guards would otherwise reject any program with `assume true` or
+  -- `assert true` in its body.
+  let alwaysEmitGuard := inst.type == .GOTO ||
+                         inst.type == .ASSUME || inst.type == .ASSERT
+  let guardField ← if alwaysEmitGuard || !Expr.beq inst.guard Expr.true then do
     pure [("guard", ← exprToJsonWithNamedFields inst.guard)]
   else pure []
   let codeField ← if inst.code == Code.skip then pure [] else do
