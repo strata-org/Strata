@@ -63,11 +63,6 @@ seeds with at least one open gap remain in
   - `e as_bv{n}` lowers to `Int.ToBv{n}` (Core op) → SMT-LIB 2.7 `(_ int_to_bv n)` (truncating mod 2^n); widths 1/8/16/32/64/128.
   - All three directions fully implemented end-to-end (grammar → Core → SMT encoder → denotation).
   - Benchmarks: [`cast_expr.lean`](../StrataTest/Languages/Boole/cast_expr.lean), [`widening_casts.lean`](../StrataTest/Languages/Boole/widening_casts.lean), [`cast_all_directions.lean`](../StrataTest/Languages/Boole/cast_all_directions.lean).
-- **`type nat := int` synonym** (Gap #8 partial)
-  - Nullary synonyms expanding to `int` trigger auto-axioms `∀ x : DT . DT..isCtor(x) ⟹ DT..field(x) ≥ 0` for each `nat`-typed constructor field.
-  - Known limitation: axiom may be unsound for mixed `nat`/`int` datatypes. See [`nat_axiom_limitation.lean`](../StrataTest/Languages/Boole/FeatureRequests/nat_axiom_limitation.lean).
-  - Known limitation: only direct synonyms (`type mynat := int`) are recognised; transitive chains (`type mynat := nat`) are not followed, so fields typed `mynat` get no axiom.
-  - Benchmark: [`cast_nested.lean`](../StrataTest/Languages/Boole/cast_nested.lean).
 
 ## Semantic preservation requests
 
@@ -81,7 +76,7 @@ seeds with at least one open gap remain in
 
 ## Type/model requests
 
-8. **Native `nat` support**: `type nat := int` synonym implemented.
+8. **Native `nat` support**: Approach TBD.
 9. **Missing model types**: Add or standardize support for model types such as `Cell`, `Atomic`, `Thread`, `Rwlock`, `Unit`, and `Arithmetic_overflow`.
 10. **On-demand stdlib/pervasive stubs**: Some pervasive stubs may be droppable after pruning translation output.
 11. **Sequence slicing**: Implemented. Int-based termination for recursive seq functions: implemented (#1167).
@@ -125,14 +120,15 @@ Seeds with all gaps closed have been moved to `StrataTest/Languages/Boole/`; the
 | --- | --- | --- | --- |
 | [`datatypes_and_selectors.lean`](../StrataTest/Languages/Boole/FeatureRequests/datatypes_and_selectors.lean) | Datatype constructor/selector robustness (#24) | Verus `guide/datatypes`, `adts`; VLIR `rec_adt_structural` | Basic seed passes; richer cases still active |
 | [`abstract_types_and_stubs.lean`](../StrataTest/Languages/Boole/FeatureRequests/abstract_types_and_stubs.lean) | Missing model types (#9), stdlib/pervasive stubs (#10) | Verus `guide/quants`, `broadcast_proof`, `guide/higher_order_fns` | Active; `Sequence` lowering now implemented; primary gaps: Thread, Cell, Rwlock model types and pervasive stubs |
-| [`nat_int_boundary.lean`](../StrataTest/Languages/Boole/FeatureRequests/nat_int_boundary.lean) | Native `nat` (#8), widening coercions (#6) | Verus `quantifiers`, `guide/integers`, `power_of_2`; VLIR `rec_adt_structural` | Active |
+| [`nat_int_boundary.lean`](../StrataTest/Languages/Boole/FeatureRequests/nat_int_boundary.lean) | Native `nat` (#8) | Verus `quantifiers`, `guide/integers`, `power_of_2`; VLIR `rec_adt_structural` | Active |
 | [`map_extensionality.lean`](../StrataTest/Languages/Boole/FeatureRequests/map_extensionality.lean) | Extensional equality | Verus `guide/ext_equal` | Implemented (#684, #795); named synonyms and non-map types still open |
 | [`overflow_guard.lean`](../StrataTest/Languages/Boole/FeatureRequests/overflow_guard.lean) | Overflow guards (#5) | Verus `guide/overflow`, `overflow` | Lower priority |
 | [`opaque_reveal_hide.lean`](../StrataTest/Languages/Boole/FeatureRequests/opaque_reveal_hide.lean) | `opaque`/`reveal` (#1), `hide` (#2), `closed` (#4) | Verus `generics`, `test_expand_errors`, `debug_expand`, `modules` | Lower priority |
 | [`reveal_with_fuel.lean`](../StrataTest/Languages/Boole/FeatureRequests/reveal_with_fuel.lean) | `reveal_with_fuel` (#3) | Verus `test_expand_errors`, `recursion` | Lower priority |
 | [`early_return.lean`](../StrataTest/Languages/Boole/early_return.lean) | Early return | Verus SST `return` translation gap from `differential_status.md` | Implemented (#871) |
-| [`widening_casts.lean`](../StrataTest/Languages/Boole/widening_casts.lean) | Widening casts (#6) | Verus `guide/integers`, `quantifiers`, `statements` | Updated to use `e as_int`; map-lookup case `v[i] as_int` verified |
-| [`cast_expr.lean`](../StrataTest/Languages/Boole/cast_expr.lean) | `e as_int` widening cast (#6) | dalek-lite `scalar.rs` B2/B5 | Implemented (#1191) |
+| [`widening_casts.lean`](../StrataTest/Languages/Boole/widening_casts.lean) | SMT-LIB 2.7 cast operators (#6) | Verus `guide/integers`, `quantifiers`, `statements` | Implemented |
+| [`cast_expr.lean`](../StrataTest/Languages/Boole/cast_expr.lean) | SMT-LIB 2.7 cast operators (#6) | dalek-lite `scalar.rs` B2/B5 | Implemented |
+| [`cast_all_directions.lean`](../StrataTest/Languages/Boole/cast_all_directions.lean) | SMT-LIB 2.7 cast operators (#6) | All three cast directions: `as_int`, `as_sint`, `as_bv{n}` | Implemented |
 | [`choose_operator.lean`](../StrataTest/Languages/Boole/choose_operator.lean) | `choose` (#18) | Verus `trigger_loops` (`choose_example`, `quantifier_example`) | Implemented (#1075) |
 | [`higher_order_encoding.lean`](../StrataTest/Languages/Boole/FeatureRequests/higher_order_encoding.lean) | Higher-order values (#17) | Verus `fun_ext`, `trait_for_fn` | Active |
 | [`lambda_closure.lean`](../StrataTest/Languages/Boole/FeatureRequests/lambda_closure.lean) | Lambda / closure (#17) | Local reduced Rust/Verus-style lambda example | Implemented (#1075); remaining gap: first-class function values as procedure parameters/variables |
