@@ -211,12 +211,12 @@ direction explicit.
 
 - *Subsumption* — \[⇐\] Sub
 - *Literals* — \[⇒\] Lit-Int, \[⇒\] Lit-Bool, \[⇒\] Lit-String, \[⇒\] Lit-Decimal
-- *Variables* — \[⇒\] Var-Local, \[⇒\] Var-Field, \[⇒\] Var-Declare
+- *Variables* — \[⇒\] Var-Local, \[⇒\] Var-Field, \[⇐\] Var-Declare
 - *Control flow* — \[⇐\] If, \[⇐\] If-NoElse;
-  \[⇐\] Block, \[⇐\] Block-Empty; \[⇒\] Exit;
-  \[⇒\] Return-None, \[⇒\] Return-Some, \[⇒\] Return-Void-Error,
-  \[⇒\] Return-Multi-Error; \[⇒\] While
-- *Verification statements* — \[⇒\] Assert, \[⇒\] Assume
+  \[⇐\] Block, \[⇐\] Block-Empty; \[⇐\] Exit;
+  \[⇐\] Return-None, \[⇐\] Return-Some, \[⇐\] Return-Void-Error,
+  \[⇐\] Return-Multi-Error; \[⇐\] While
+- *Verification statements* — \[⇐\] Assert, \[⇐\] Assume
 - *Assignment* — \[⇒\] Assign
 - *Calls* — \[⇒\] Static-Call, \[⇒\] Static-Call-Multi, \[⇒\] Instance-Call
 - *Primitive operations* — \[⇒\] Op-Bool, \[⇒\] Op-Cmp, \[⇒\] Op-Eq, \[⇒\] Op-Arith,
@@ -265,9 +265,9 @@ $$`\frac{\Gamma \vdash e \Rightarrow \_ \quad \Gamma(f) = T_f}{\Gamma \vdash \ma
 
 {docstring Strata.Laurel.Resolution.Synth.varField}
 
-$$`\frac{x \notin \mathrm{dom}(\Gamma)}{\Gamma \vdash \mathsf{Var}\;(\mathsf{.Declare}\;\langle x, T\rangle) \Rightarrow \mathsf{TVoid} \dashv \Gamma, x : T} \quad \text{([⇒] Var-Declare)}`
+$$`\frac{x \notin \mathrm{dom}(\Gamma) \quad \mathsf{TVoid} <: T}{\Gamma \vdash \mathsf{Var}\;(\mathsf{.Declare}\;\langle x, T_x\rangle) \Leftarrow T \dashv \Gamma, x : T_x} \quad \text{([⇐] Var-Declare)}`
 
-{docstring Strata.Laurel.Resolution.Synth.varDeclare}
+{docstring Strata.Laurel.Resolution.Check.varDeclare}
 
 ### Control flow
 
@@ -307,33 +307,33 @@ a single subsumption test: an empty block is acceptable wherever `TVoid` is.
 
 {docstring Strata.Laurel.Resolution.Check.block}
 
-$$`\frac{}{\Gamma \vdash \mathsf{Exit}\;\mathit{target} \Rightarrow \mathsf{TVoid}} \quad \text{([⇒] Exit)}`
+$$`\frac{\mathsf{TVoid} <: T}{\Gamma \vdash \mathsf{Exit}\;\mathit{target} \Leftarrow T} \quad \text{([⇐] Exit)}`
 
-{docstring Strata.Laurel.Resolution.Synth.exit}
+{docstring Strata.Laurel.Resolution.Check.exit}
 
-$$`\frac{}{\Gamma \vdash \mathsf{Return}\;\mathsf{none} \Rightarrow \mathsf{TVoid}} \quad \text{([⇒] Return-None)}`
+$$`\frac{\mathsf{TVoid} <: T}{\Gamma \vdash \mathsf{Return}\;\mathsf{none} \Leftarrow T} \quad \text{([⇐] Return-None)}`
 
-$$`\frac{\Gamma_{\mathit{proc}}.\mathit{outputs} = [T] \quad \Gamma \vdash e \Leftarrow T}{\Gamma \vdash \mathsf{Return}\;(\mathsf{some}\;e) \Rightarrow \mathsf{TVoid}} \quad \text{([⇒] Return-Some)}`
+$$`\frac{\Gamma_{\mathit{proc}}.\mathit{outputs} = [T_o] \quad \Gamma \vdash e \Leftarrow T_o \quad \mathsf{TVoid} <: T}{\Gamma \vdash \mathsf{Return}\;(\mathsf{some}\;e) \Leftarrow T} \quad \text{([⇐] Return-Some)}`
 
-$$`\frac{\Gamma_{\mathit{proc}}.\mathit{outputs} = []}{\Gamma \vdash \mathsf{Return}\;(\mathsf{some}\;e) \rightsquigarrow \text{error: “void procedure cannot return a value”}} \quad \text{([⇒] Return-Void-Error)}`
+$$`\frac{\Gamma_{\mathit{proc}}.\mathit{outputs} = []}{\Gamma \vdash \mathsf{Return}\;(\mathsf{some}\;e) \rightsquigarrow \text{error: “void procedure cannot return a value”}} \quad \text{([⇐] Return-Void-Error)}`
 
-$$`\frac{\Gamma_{\mathit{proc}}.\mathit{outputs} = [T_1; \ldots; T_n] \quad (n \ge 2)}{\Gamma \vdash \mathsf{Return}\;(\mathsf{some}\;e) \rightsquigarrow \text{error: “multi-output procedure cannot use ‘return e’; assign to named outputs instead”}} \quad \text{([⇒] Return-Multi-Error)}`
+$$`\frac{\Gamma_{\mathit{proc}}.\mathit{outputs} = [T_1; \ldots; T_n] \quad (n \ge 2)}{\Gamma \vdash \mathsf{Return}\;(\mathsf{some}\;e) \rightsquigarrow \text{error: “multi-output procedure cannot use ‘return e’; assign to named outputs instead”}} \quad \text{([⇐] Return-Multi-Error)}`
 
-{docstring Strata.Laurel.Resolution.Synth.return}
+{docstring Strata.Laurel.Resolution.Check.return}
 
-$$`\frac{\Gamma \vdash \mathit{cond} \Leftarrow \mathsf{TBool} \quad \Gamma \vdash \mathit{invs}_i \Leftarrow \mathsf{TBool} \quad \Gamma \vdash \mathit{dec} \Leftarrow {?} \quad \Gamma \vdash \mathit{body} \Rightarrow \_}{\Gamma \vdash \mathsf{While}\;\mathit{cond}\;\mathit{invs}\;\mathit{dec}\;\mathit{body} \Rightarrow \mathsf{TVoid}} \quad \text{([⇒] While)}`
+$$`\frac{\Gamma \vdash \mathit{cond} \Leftarrow \mathsf{TBool} \quad \Gamma \vdash \mathit{invs}_i \Leftarrow \mathsf{TBool} \quad \Gamma \vdash \mathit{dec} \Leftarrow {?} \quad \Gamma \vdash \mathit{body} \Leftarrow T \quad \mathsf{TVoid} <: T}{\Gamma \vdash \mathsf{While}\;\mathit{cond}\;\mathit{invs}\;\mathit{dec}\;\mathit{body} \Leftarrow T} \quad \text{([⇐] While)}`
 
-{docstring Strata.Laurel.Resolution.Synth.while}
+{docstring Strata.Laurel.Resolution.Check.while}
 
 ### Verification statements
 
-$$`\frac{\Gamma \vdash \mathit{cond} \Leftarrow \mathsf{TBool}}{\Gamma \vdash \mathsf{Assert}\;\mathit{cond} \Rightarrow \mathsf{TVoid}} \quad \text{([⇒] Assert)}`
+$$`\frac{\Gamma \vdash \mathit{cond} \Leftarrow \mathsf{TBool} \quad \mathsf{TVoid} <: T}{\Gamma \vdash \mathsf{Assert}\;\mathit{cond} \Leftarrow T} \quad \text{([⇐] Assert)}`
 
-{docstring Strata.Laurel.Resolution.Synth.assert}
+{docstring Strata.Laurel.Resolution.Check.assert}
 
-$$`\frac{\Gamma \vdash \mathit{cond} \Leftarrow \mathsf{TBool}}{\Gamma \vdash \mathsf{Assume}\;\mathit{cond} \Rightarrow \mathsf{TVoid}} \quad \text{([⇒] Assume)}`
+$$`\frac{\Gamma \vdash \mathit{cond} \Leftarrow \mathsf{TBool} \quad \mathsf{TVoid} <: T}{\Gamma \vdash \mathsf{Assume}\;\mathit{cond} \Leftarrow T} \quad \text{([⇐] Assume)}`
 
-{docstring Strata.Laurel.Resolution.Synth.assume}
+{docstring Strata.Laurel.Resolution.Check.assume}
 
 ### Assignment
 
