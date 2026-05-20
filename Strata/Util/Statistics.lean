@@ -5,9 +5,10 @@
 -/
 module
 
-public import Std.Data.HashMap
 public meta import Lean.Elab.Command
-public meta import Lean.Parser
+public import Std.Data.HashMap.Basic
+public meta import Std.Do.Triple.SpecLemmas
+import Lean.Exception
 
 /-! # Transform statistics
 

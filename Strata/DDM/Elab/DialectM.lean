@@ -11,7 +11,6 @@ public import Strata.DDM.Elab.Core
 
 import all Strata.DDM.Util.Array
 import all Strata.DDM.Util.Fin
-import Strata.Util.DecideProp
 
 set_option autoImplicit false
 

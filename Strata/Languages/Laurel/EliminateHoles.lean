@@ -5,9 +5,9 @@
 -/
 module
 
-public import Strata.Languages.Laurel.MapStmtExpr
-public import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 public import Strata.Util.Statistics
+public import Strata.Languages.Laurel.Laurel
+import Strata.Languages.Laurel.MapStmtExpr
 
 /-!
 # Deterministic Hole Elimination

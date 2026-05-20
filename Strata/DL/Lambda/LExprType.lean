@@ -5,5 +5,3 @@
 -/
 module
 
-public import Strata.DL.Lambda.LExprTypeSpec
-public import Strata.DL.Lambda.LExprT

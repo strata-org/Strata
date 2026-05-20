@@ -5,16 +5,8 @@
 -/
 module
 
-public import Strata.Languages.Core.DDMTransform.Translate
-public import Strata.Languages.Core.DDMTransform.ASTtoCST
-public import Strata.Languages.Core.Options
-public import Strata.Languages.Core.CallGraph
 public import Strata.Languages.Core.SMTEncoder
-public import Strata.DL.Imperative.MetaData
-public import Strata.DL.Imperative.SMTUtils
-public import Strata.DDM.AST
 public import Strata.Languages.Core.PipelinePhase
-import Strata.DL.SMT.IncrementalSolver
 import Strata.Transform.CallElim
 import Strata.Transform.FilterProcedures
 import Strata.Transform.PrecondElim
@@ -23,7 +15,12 @@ import Strata.Transform.LoopElim
 import Strata.Transform.ANFEncoder
 import Strata.Languages.Core.ObligationExtraction
 public import Strata.Transform.IrrelevantAxioms
-import Strata.Pipeline.Context
+public import Std.Tactic.BVDecide.Normalize.BitVec
+import Strata.Languages.Core.Core
+import Strata.Languages.Core.DDMTransform.ASTtoCST
+import Strata.Languages.Core.DDMTransform.Translate
+import Strata.Languages.Core.Statistics
+import Strata.Util.Tactics
 
 open Strata.Pipeline (PipelineContext)
 

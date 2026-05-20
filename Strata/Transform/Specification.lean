@@ -8,7 +8,6 @@ module
 public import Strata.DL.Imperative.StmtSemantics
 import all Strata.DL.Imperative.CmdSemantics
 import Strata.DL.Util.ListUtils
-import Strata.DL.Imperative.SemanticsProps
 
 /-! # Soundness Specification
 

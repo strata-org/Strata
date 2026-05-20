@@ -5,7 +5,7 @@
 -/
 module
 
-public import Strata.DL.Imperative.StmtSemantics
+public import Strata.DL.Imperative.Stmt
 
 namespace Imperative
 

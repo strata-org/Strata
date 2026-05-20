@@ -5,11 +5,11 @@
 -/
 module
 
-public import Strata.DDM.Elab
 public import Strata.DDM.AST
-public import Strata.Languages.Laurel.Grammar.LaurelGrammar
-public meta import Strata.Languages.Laurel.Grammar.LaurelGrammar
-public import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
+public import Strata.Languages.Laurel.Laurel
+import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
+import Strata.Languages.Laurel.Grammar.LaurelGrammar
+import Strata.DDM.Integration.Lean.HashCommands -- shake: keep
 
 namespace Strata.Laurel
 

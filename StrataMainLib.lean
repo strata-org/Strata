@@ -20,6 +20,7 @@ import Strata.Pipeline.Diagnostic
 import Strata.Pipeline.PyAnalyzeLaurel
 import Strata.Languages.Boole.Boole
 import Strata.Languages.Boole.Verify
+import Strata.Languages.C_Simp.DDMTransform.Parse
 import Strata.Languages.Python.Python
 import Strata.Languages.Python.Specs.IdentifyOverloads
 import Strata.Languages.Python.Specs.ToLaurel

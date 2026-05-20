@@ -5,8 +5,8 @@
 -/
 module
 
-public import Strata.Languages.Boole.Grammar
-meta import Strata.DDM.Integration.Lean
+public import Strata.Languages.Boole.Grammar -- shake: keep
+import Strata.DDM.Integration.Lean.Gen -- shake: keep
 
 public section
 

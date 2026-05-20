@@ -5,17 +5,32 @@
 -/
 module
 
-import Lean.Meta
-import Lean.Elab.Tactic
-
-import Strata.Languages.Core.Verifier
 import Strata.Transform.LoopElim
 import Strata.Languages.Core.ObligationExtraction
-public import Strata.Languages.C_Simp.Verify
-public import Strata.Languages.Boole.Verify
-import Strata.DL.Imperative.SMTUtils
-public import Strata.DL.SMT.Denote
-public import Strata.DL.SMT.Translate
+public import Strata.Languages.Boole.Boole
+public import Strata.Languages.C_Simp.C_Simp
+public import Strata.Languages.Core.SMTEncoder
+import Std.Tactic.BVDecide.Normalize.Prop
+import Strata.DL.Lambda.Denote.LExprAnnotated
+import Strata.DL.SMT.Denote
+import Strata.Languages.Boole.Verify
+import Strata.Languages.C_Simp.DDMTransform.Translate
+import Strata.Languages.C_Simp.Verify
+import Strata.Languages.Core.Core
+import Strata.Languages.Core.DDMTransform.Translate
+import Strata.Languages.Core.ProgramEval
+
+-- For some reason shake wants to meta import the following
+-- while lake itself only requires imports.
+
+public meta import Strata.DL.SMT.Translate
+import Strata.DL.SMT.Translate -- shake: keep
+meta import Lean.Meta.Eval
+import Lean.Meta.Tactic.Rewrite -- shake: keep
+meta import Lean.Meta.Tactic.Rewrite
+import Lean.Meta.Tactic.Unfold -- shake: keep
+meta import Lean.Meta.Tactic.Unfold
+import Lean.Meta.Eval -- shake: keep
 
 open Lean hiding Options
 

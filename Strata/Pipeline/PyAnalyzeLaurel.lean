@@ -5,14 +5,14 @@
 -/
 module
 
-public import Strata.Pipeline.Diagnostic
-public import Strata.Util.Statistics
 public import Strata.Languages.Core.EntryPoint
 public import Strata.Languages.Core.Verifier
 import Strata.Languages.Python.PySpecPipeline
 import Strata.Languages.Python.PyFactory
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 import Strata.SimpleAPI
+import Strata.Languages.Core.DDMTransform.ASTtoCST
+import Strata.Pipeline.Diagnostic
 
 namespace Strata.Pipeline
 

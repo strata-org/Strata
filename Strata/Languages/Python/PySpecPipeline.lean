@@ -18,7 +18,6 @@ import Strata.Languages.Python.Specs.IdentifyOverloads
 import Strata.Languages.Python.Specs.MessageKind
 import Strata.Languages.Python.Specs.ToLaurel
 public import Strata.Pipeline.Context
-import Strata.Util.DecideProp
 public import Strata.Util.Statistics
 
 /-! ## PySpec Pipeline
