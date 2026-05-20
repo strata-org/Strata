@@ -337,12 +337,16 @@ $$`\frac{\Gamma \vdash \mathit{cond} \Leftarrow \mathsf{TBool} \quad \mathsf{TVo
 
 ### Assignment
 
-$$`\frac{\Gamma \vdash \mathit{targets}_i \Rightarrow T_i \quad \Gamma \vdash e \Rightarrow T_e \quad T_e <: \mathit{ExpectedTy}}{\Gamma \vdash \mathsf{Assign}\;\mathit{targets}\;e \Rightarrow \mathsf{TVoid}} \quad \text{([⇒] Assign)}`
+$$`\frac{\Gamma \vdash \mathit{targets}_i \Rightarrow T_i \quad \Gamma \vdash e \Leftarrow \mathit{ExpectedTy}}{\Gamma \vdash \mathsf{Assign}\;\mathit{targets}\;e \Rightarrow \mathit{ExpectedTy}} \quad \text{([⇒] Assign)}`
+
+$$`\frac{\Gamma \vdash \mathit{targets}_i \Rightarrow T_i \quad \Gamma \vdash e \Leftarrow \mathit{ExpectedTy} \quad \mathit{ExpectedTy} <: T}{\Gamma \vdash \mathsf{Assign}\;\mathit{targets}\;e \Leftarrow T} \quad \text{([⇐] Assign)}`
 
 where `ExpectedTy = T_1` if `|targets| = 1` and `MultiValuedExpr [T_1; …; T_n]` otherwise.
 The target's declared type `T_i` comes from the variable's scope entry (for
 {name Strata.Laurel.Variable.Local}`Local` and {name Strata.Laurel.Variable.Field}`Field`)
-or from the {name Strata.Laurel.Variable.Declare}`Declare`-bound parameter type.
+or from the {name Strata.Laurel.Variable.Declare}`Declare`-bound parameter type. The
+RHS receives `ExpectedTy` via `Check.resolveStmtExpr`, so bidirectional rules in the
+RHS propagate the assignment's type into nested constructs.
 
 {docstring Strata.Laurel.Resolution.Synth.assign}
 

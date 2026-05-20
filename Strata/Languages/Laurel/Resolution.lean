@@ -966,23 +966,26 @@ def Check.assume (exprMd : StmtExprMd)
 
 -- ### Assignment
 
-/-- `Γ ⊢ targets_i ⇒ T_i,  Γ ⊢ e ⇒ T_e,  T_e <: ExpectedTy  ∴  Γ ⊢ Assign targets e ⇒ TVoid`
+/-- `Γ ⊢ targets_i ⇒ T_i,  Γ ⊢ e ⇐ ExpectedTy  ∴  Γ ⊢ Assign targets e ⇒ ExpectedTy`
 
     where `ExpectedTy = T_1` if `|targets| = 1`, else `MultiValuedExpr [T_1; …; T_n]`.
 
-    Each target's declared type `T_i` (from `Local`,
-    `Field`, or fresh `Declare`) is collapsed into a tuple `ExpectedTy`
-    (single type if one target, otherwise `MultiValuedExpr [T_1; …; T_n]`)
-    and checked against the RHS's synthesized type. Both single- and
-    multi-target forms collapse into one tuple-vs-tuple check: when the RHS
-    is a `MultiValuedExpr`, both arity and per-position type mismatches
-    surface in a single diagnostic of shape *"expected '(int, int, int)',
-    got '(int, string)'"*. When the RHS is `TVoid` (a side-effecting
-    statement: `while`, `return`, …), all checks are skipped — there's no
-    value to assign. The construct synthesizes the RHS's type, so that
-    expression-position assignments like `x ++ (y := s)` see a string in
-    the second operand; statement-position uses are accommodated by
-    `Check.assign`, which accepts `TVoid` as the expected type. -/
+    Each target's declared type `T_i` (from `Local`, `Field`, or fresh
+    `Declare`) is collapsed into a tuple `ExpectedTy` (single type if one
+    target, otherwise `MultiValuedExpr [T_1; …; T_n]`) and pushed into
+    the RHS via `Check.resolveStmtExpr`. This means the RHS's bidirectional
+    rules (e.g. `Check.ifThenElse`, `Check.block`) propagate `ExpectedTy`
+    inward: `var x: int := if c then a else b` checks each branch against
+    `int` directly, with errors fired at the offending branch.
+
+    Multi-target forms produce a single tuple-vs-tuple check: when the
+    RHS is itself `MultiValuedExpr` (a multi-output procedure call), both
+    arity and per-position type mismatches surface in a single diagnostic
+    of shape *"expected '(int, int, int)', got '(int, string)'"*.
+
+    The synthesized type is `ExpectedTy`, so expression-position
+    assignments like `x ++ (y := s)` see the target type in the second
+    operand. -/
 def Synth.assign (exprMd : StmtExprMd)
     (targets : List VariableMd) (value : StmtExprMd) (source : Option FileRange)
     (h : exprMd.val = .Assign targets value) :
@@ -1001,19 +1004,17 @@ def Synth.assign (exprMd : StmtExprMd)
       let ty' ← resolveHighType param.type
       let name' ← defineNameCheckDup param.name (.var param.name ty')
       pure (⟨.Declare ⟨name', ty'⟩, vs⟩ : VariableMd)
-  let (value', valueTy) ← Synth.resolveStmtExpr value
   let targetType (t : VariableMd) : ResolveM HighTypeMd := do
     match t.val with
     | .Local ref => getVarType ref
     | .Declare param => pure param.type
     | .Field _ fieldName => getVarType fieldName
-  if valueTy.val != HighType.TVoid then
-    let targetTys ← targets'.mapM targetType
-    let expectedTy : HighTypeMd := match targetTys with
-      | [single] => single
-      | _        => { val := .MultiValuedExpr targetTys, source := source }
-    checkSubtype source expectedTy valueTy
-  pure (.Assign targets' value', valueTy)
+  let targetTys ← targets'.mapM targetType
+  let expectedTy : HighTypeMd := match targetTys with
+    | [single] => single
+    | _        => { val := .MultiValuedExpr targetTys, source := source }
+  let value' ← Check.resolveStmtExpr value expectedTy
+  pure (.Assign targets' value', expectedTy)
   termination_by (exprMd, 1)
   decreasing_by
     all_goals
@@ -1024,19 +1025,20 @@ def Synth.assign (exprMd : StmtExprMd)
       try (have := List.sizeOf_lt_of_mem ‹_ ∈ targets›; simp_all)
       omega
 
-/-- Cases on whether `expected` is `TVoid` (statement position) or some
-    other type (expression position).
+/-- `Γ ⊢ targets_i ⇒ T_i,  Γ ⊢ e ⇐ ExpectedTy,  ExpectedTy <: T  ∴  Γ ⊢ Assign targets e ⇐ T`
 
-    `Γ ⊢ targets_i ⇒ T_i,  Γ ⊢ e ⇒ T_e,  T_e <: ExpectedTy  ∴  Γ ⊢ Assign targets e ⇐ TVoid`
+    where `ExpectedTy = T_1` if `|targets| = 1`, else
+    `MultiValuedExpr [T_1; …; T_n]`.
 
-    `Γ ⊢ Assign targets e ⇒ T_e,  T_e <: T  ∴  Γ ⊢ Assign targets e ⇐ T  (T ≠ TVoid)`
-
-    An assignment in statement position (checked against `TVoid`) discards
-    its RHS value, so the synthesized type is not compared against
-    `expected`. This lets `b := 1` appear as the last statement of a block
-    in an else-less `if` (whose branch is checked against `TVoid`) without
-    firing a subsumption error against the RHS's type. For non-`TVoid`
-    expected types, falls back to subsumption. -/
+    Like `Synth.assign`, the target tuple type is pushed into the RHS so
+    bidirectional rules in the RHS receive the assignment's type. The
+    outer subsumption `ExpectedTy <: T` accommodates use as a statement
+    (`T = TVoid`, no value to compare) or as an expression
+    (`T ≠ TVoid`, the result type must match). When `T = TVoid` the
+    subsumption is satisfied trivially since `_ <: TVoid` only when the
+    LHS is also `TVoid` — the assignment value is discarded in statement
+    position and we want no further check, so the subsumption is
+    skipped. -/
 def Check.assign (exprMd : StmtExprMd)
     (targets : List VariableMd) (value : StmtExprMd)
     (expected : HighTypeMd) (source : Option FileRange)
@@ -1055,20 +1057,18 @@ def Check.assign (exprMd : StmtExprMd)
       let ty' ← resolveHighType param.type
       let name' ← defineNameCheckDup param.name (.var param.name ty')
       pure (⟨.Declare ⟨name', ty'⟩, vs⟩ : VariableMd)
-  let (value', valueTy) ← Synth.resolveStmtExpr value
   let targetType (t : VariableMd) : ResolveM HighTypeMd := do
     match t.val with
     | .Local ref => getVarType ref
     | .Declare param => pure param.type
     | .Field _ fieldName => getVarType fieldName
-  if valueTy.val != HighType.TVoid then
-    let targetTys ← targets'.mapM targetType
-    let assignedTy : HighTypeMd := match targetTys with
-      | [single] => single
-      | _        => { val := .MultiValuedExpr targetTys, source := source }
-    checkSubtype source assignedTy valueTy
+  let targetTys ← targets'.mapM targetType
+  let expectedTy : HighTypeMd := match targetTys with
+    | [single] => single
+    | _        => { val := .MultiValuedExpr targetTys, source := source }
+  let value' ← Check.resolveStmtExpr value expectedTy
   unless expected.val matches .TVoid do
-    checkSubtype source expected valueTy
+    checkSubtype source expected expectedTy
   pure { val := .Assign targets' value', source := source }
   termination_by (exprMd, 0)
   decreasing_by
