@@ -3,8 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core.Verifier
+import Strata.DDM.Integration.Lean.HashCommands
+
+meta section
 
 /-!
 # Termination Checking Tests
@@ -1210,3 +1214,5 @@ rec function bad (@[cases] xs : IntList) : int
 #eval verify decreasesNonVarPgm (options := .quiet)
 
 end Strata.TerminationCheckTest
+
+end

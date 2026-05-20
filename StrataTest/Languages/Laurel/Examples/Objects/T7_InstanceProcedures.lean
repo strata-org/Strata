@@ -3,9 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import StrataTest.Util.TestDiagnostics
-import StrataTest.Languages.Laurel.TestExamples
+meta import all StrataTest.Util.TestDiagnostics
+meta import all StrataTest.Languages.Laurel.TestExamples
+
+meta section
 
 open StrataTest.Util
 open Strata
@@ -15,8 +18,8 @@ namespace Strata.Laurel
 def instanceProcedureProgram := r"
 composite Counter {
   var count: int
-  procedure increment(self: Counter)
-//          ^^^^^^^^^ error: Instance procedure 'increment' on composite type 'Counter' is not yet supported
+  procedure self_increment(self: Counter)
+//          ^^^^^^^^^^^^^^ error: Instance procedure 'self_increment' on composite type 'Counter' is not yet supported
     opaque
   {
     self#count := self#count + 1

@@ -3,12 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 import Strata.DDM.Integration.Lean
-import Strata.Languages.Core.Core
-import Strata.Languages.Core.DDMTransform.Translate
-import Strata.Languages.Core.ProgramType
-import Strata.Transform.PrecondElim
+meta import Strata.Languages.Core.Core
+meta import Strata.Languages.Core.DDMTransform.Translate
+meta import Strata.Languages.Core.ProgramType
+meta import Strata.Transform.PrecondElim
+
+meta section
 
 open Core
 open Core.PrecondElim
@@ -495,3 +498,4 @@ private def printFirstObligation (expr : Core.Expression.Expr) : IO Unit := do
 end SeqBoundsObligations
 
 end PrecondElimTests
+end

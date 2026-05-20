@@ -3,14 +3,17 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import StrataTest.Util.TestDiagnostics
-import Strata.DDM.Elab
-import Strata.DDM.BuiltinDialects.Init
-import Strata.Util.IO
-import Strata.Languages.Laurel.Grammar.LaurelGrammar
-import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
-import Strata.Languages.Laurel.LaurelCompilationPipeline
+meta import all StrataTest.Util.TestDiagnostics
+meta import Strata.DDM.Elab
+meta import Strata.DDM.BuiltinDialects.Init
+meta import Strata.Util.IO
+meta import Strata.Languages.Laurel.Grammar.LaurelGrammar
+meta import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
+meta import Strata.Languages.Laurel.LaurelCompilationPipeline
+
+meta section
 
 open StrataTest.Util
 open Strata
@@ -36,4 +39,19 @@ def processLaurelFileWithOptions (options : LaurelVerifyOptions) (input : InputC
 def processLaurelFile (input : InputContext) : IO (Array Diagnostic) :=
   processLaurelFileWithOptions default input
 
+/-- Path to the directory for intermediate files, inside the build directory.
+    Resolved from the current working directory so it works on any machine. -/
+def buildDir : IO String := do
+  let cwd ← IO.currentDir
+  return s!"{cwd}/.lake/build/intermediatePrograms/"
+
+/-- Debug helper: run the Laurel pipeline keeping intermediate pass outputs in `.lake/build/intermediatePrograms/`.
+    Not used by any test in this repo; invoke manually via `#eval processLaurelFileKeepIntermediates (stringInputContext …)`
+    when diagnosing pass-internal issues. -/
+def processLaurelFileKeepIntermediates (input : InputContext) : IO (Array Diagnostic) := do
+  let dir ← buildDir
+  processLaurelFileWithOptions { translateOptions := { keepAllFilesPrefix := dir}} input
+
 end Laurel
+end Strata
+end

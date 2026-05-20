@@ -3,8 +3,11 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.CmdEval
+meta import Strata.Languages.Core.CmdEval
+
+meta section
 
 /-! ## Tests for CmdEval -/
 
@@ -99,3 +102,5 @@ y == 12
 #eval format $ Imperative.Cmds.eval (Env.init (empty_factory := true)) testProgram2
 
 end Core
+
+end

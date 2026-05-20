@@ -3,9 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Transform.ANFEncoder
-import Strata.Languages.Core.DDMTransform.Translate
+meta import Strata.Transform.ANFEncoder
+meta import Strata.Languages.Core.DDMTransform.Translate
+import Strata.DDM.Integration.Lean.HashCommands
+
+meta section
 
 namespace Core.ANFEncoder.Tests
 
@@ -172,3 +176,4 @@ procedure test (x : int)
 #eval IO.println (toString (anfEncodeProgram (translateCore nestedDupProg)).2)
 
 end Core.ANFEncoder.Tests
+end

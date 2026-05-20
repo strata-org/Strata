@@ -3,9 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core.Verifier
+import Strata.DDM.Integration.Lean.HashCommands
 
+meta section
 /-!
 # Datatype Tree Integration Test
 
@@ -626,3 +629,4 @@ Result: ✅ pass
 #eval verify treeDifferentValuesPgm (options := .quiet)
 
 end Strata.DatatypeTreeTest
+end

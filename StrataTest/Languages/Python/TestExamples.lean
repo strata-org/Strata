@@ -3,12 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import StrataTest.Util.TestDiagnostics
-import StrataTest.Util.Python
+public import Strata.Languages.Core.Verifier
+public import Strata.Languages.Laurel.Laurel
 import Strata.Languages.Python.PySpecPipeline
 import Strata.Languages.Python.PyFactory
-import Strata.Languages.Laurel.LaurelToCoreTranslator
+import Strata.DDM.Ion
+
+import StrataTest.Util.TestDiagnostics
 
 open StrataTest.Util
 open Strata
@@ -51,7 +54,7 @@ def withPythonToLaurel (pythonCmd : System.FilePath) (input : InputContext)
 
 /-- Run the Python → Ion → Laurel pipeline and return the Laurel program.
     The caller can inspect the Laurel IR directly or continue to Core/SMT. -/
-def processPythonToLaurel (pythonCmd : System.FilePath) (input : InputContext)
+public def processPythonToLaurel (pythonCmd : System.FilePath) (input : InputContext)
     : IO Laurel.Program :=
   withPythonToLaurel pythonCmd input fun laurel _ => pure laurel
 
@@ -60,7 +63,7 @@ def processPythonToLaurel (pythonCmd : System.FilePath) (input : InputContext)
 
     The `input` should contain raw Python source code. The `pythonCmd`
     must point to a Python 3 interpreter with `strata.gen` installed. -/
-def processPythonFile (pythonCmd : System.FilePath) (input : InputContext)
+public def processPythonFile (pythonCmd : System.FilePath) (input : InputContext)
     : IO (Array Diagnostic) := do
   withPythonToLaurel pythonCmd input fun laurel pyFile => do
     let (coreOpt, translateDiags) ← translateCombinedLaurel laurel

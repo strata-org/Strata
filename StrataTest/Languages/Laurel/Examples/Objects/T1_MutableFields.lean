@@ -3,9 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import StrataTest.Util.TestDiagnostics
-import StrataTest.Languages.Laurel.TestExamples
+meta import all StrataTest.Util.TestDiagnostics
+meta import all StrataTest.Languages.Laurel.TestExamples
+
+meta section
 
 open StrataTest.Util
 
@@ -199,5 +202,5 @@ procedure fieldTargetInMultiAssign()
 };
 "#
 
-#guard_msgs(drop info, error) in
+#guard_msgs (drop info, error) in
 #eval testInputWithOffset "MutableFields" program 14 processLaurelFile

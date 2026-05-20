@@ -3,9 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import StrataTest.Languages.B3.DDMFormatDeclarationsTests
-import Strata.Languages.B3.DDMTransform.Conversion
+meta import all StrataTest.Languages.B3.DDMFormatDeclarationsTests
+meta import Strata.Languages.B3.DDMTransform.Conversion
+import Strata.DDM.Integration.Lean.HashCommands
+
+meta section
 
 /-!
 # B3 Program Formatting Tests
@@ -383,3 +387,4 @@ procedure Print(a: string, b: string, c: string)
 end ProgramRoundtripTests
 
 end B3
+end

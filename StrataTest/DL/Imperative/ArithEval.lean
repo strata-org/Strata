@@ -3,11 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 
 
-import StrataTest.DL.Imperative.ArithExpr
-import Strata.DL.Imperative.CmdEval
+import all StrataTest.DL.Imperative.ArithExpr
+meta import Strata.DL.Imperative.CmdEval
+
+meta section
 
 namespace Arith
 
@@ -230,3 +233,4 @@ genNum: 1
 
 end Eval
 end Arith
+end

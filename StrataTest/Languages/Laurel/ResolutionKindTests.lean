@@ -3,18 +3,21 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 /-
 Tests that the resolution pass detects kind mismatches — e.g. using a variable
 where a type is expected, or calling a type as if it were a procedure.
 -/
 
-import StrataTest.Util.TestDiagnostics
-import Strata.DDM.Elab
-import Strata.DDM.BuiltinDialects.Init
-import Strata.Languages.Laurel.Grammar.LaurelGrammar
-import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
-import Strata.Languages.Laurel.Resolution
+meta import all StrataTest.Util.TestDiagnostics
+meta import Strata.DDM.Elab
+meta import Strata.DDM.BuiltinDialects.Init
+meta import Strata.Languages.Laurel.Grammar.LaurelGrammar
+meta import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
+meta import Strata.Languages.Laurel.Resolution
+
+meta section
 
 open StrataTest.Util
 open Strata
@@ -66,7 +69,7 @@ def typeAsStaticCall := r"
 composite Foo { }
 procedure bar() opaque {
   var x: int := Foo()
-//              ^^^^^ error: 'Foo' resolves to composite type, but expected parameter, static procedure, datatype constructor, constant
+//              ^^^^^ error: 'Foo' resolves to composite type, but expected parameter, static procedure, datatype constructor, datatype destructor, constant
 };
 "
 
@@ -111,3 +114,5 @@ procedure test() opaque {
 #eval testInputWithOffset "MultiOutputInExpr" multiOutputInExpr 100 processResolution
 
 end Laurel
+end Strata
+end

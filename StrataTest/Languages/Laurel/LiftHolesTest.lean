@@ -3,19 +3,22 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 /-
 Tests that the eliminateHoles pass correctly replaces `.Hole` nodes with calls
 to freshly generated uninterpreted functions, with types inferred from context.
 -/
 
-import Strata.DDM.Elab
-import Strata.DDM.BuiltinDialects.Init
-import Strata.Languages.Laurel.Grammar.LaurelGrammar
-import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
-import Strata.Languages.Laurel.InferHoleTypes
-import Strata.Languages.Laurel.EliminateHoles
-import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
+meta import Strata.DDM.Elab
+meta import Strata.DDM.BuiltinDialects.Init
+meta import Strata.Languages.Laurel.Grammar.LaurelGrammar
+meta import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
+meta import Strata.Languages.Laurel.InferHoleTypes
+meta import Strata.Languages.Laurel.EliminateHoles
+meta import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
+
+meta section
 
 open Strata
 open Strata.Elab (parseStrataProgramFromDialect)
@@ -332,4 +335,54 @@ procedure test() { var x: int := <?>; assert <??> };
 -- Nondet hole in function → should be rejected (not tested here since
 -- the error occurs at Core translation time, which requires the full pipeline).
 
+/-! ## Holes inside datatype destructor / tester arguments -/
+
+-- Hole as argument to a (safe) datatype destructor → typed as the parent
+-- datatype, then lifted to a generated `$hole_0` returning that datatype.
+-- Regression test for PR #1134: the destructor's `ResolvedNode` carries the
+-- parent datatype's resolved Identifier (with `uniqueId`), so this works
+-- without textual decoding of the override name.
+/--
+info: function $hole_0()
+  returns ($result: IntList)
+  opaque;
+procedure test()
+{ var x: int := IntList..head($hole_0()) };
+-/
+#guard_msgs in
+#eval! parseElimAndPrint r"
+datatype IntList { Nil(), Cons(head: int, tail: IntList) }
+procedure test() { var x: int := IntList..head(<?>) };
+"
+
+-- Hole as argument to an unsafe `!` destructor → same datatype recovery.
+/--
+info: function $hole_0()
+  returns ($result: IntList)
+  opaque;
+procedure test()
+{ var x: int := IntList..head!($hole_0()) };
+-/
+#guard_msgs in
+#eval! parseElimAndPrint r"
+datatype IntList { Nil(), Cons(head: int, tail: IntList) }
+procedure test() { var x: int := IntList..head!(<?>) };
+"
+
+-- Hole as argument to a tester → typed as the parent datatype.
+/--
+info: function $hole_0()
+  returns ($result: IntList)
+  opaque;
+procedure test()
+{ assert IntList..isCons($hole_0()) };
+-/
+#guard_msgs in
+#eval! parseElimAndPrint r"
+datatype IntList { Nil(), Cons(head: int, tail: IntList) }
+procedure test() { assert IntList..isCons(<?>) };
+"
+
 end Laurel
+end Strata
+end
