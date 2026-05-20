@@ -311,6 +311,34 @@ spec
 
 /--
 info:
+Obligation: Encrypt_post_Encrypt_ensures_4_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: Encrypt_post_Encrypt_ensures_4_calls_Sequence.select_1
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: Encrypt_post_Encrypt_ensures_4_calls_Sequence.select_2
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: set_cipher_calls_Sequence.take_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: loop_invariant_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: loop_invariant_calls_Sequence.select_1
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: loop_invariant_calls_Sequence.select_2
+Property: out-of-bounds access check
+Result: ✅ pass
+
 Obligation: entry_invariant_0_0
 Property: assert
 Result: ✅ pass
@@ -329,6 +357,14 @@ Result: ✅ pass
 
 Obligation: measure_lb_0
 Property: assert
+Result: ✅ pass
+
+Obligation: set_cipher_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: set_cipher_calls_Sequence.select_1
+Property: out-of-bounds access check
 Result: ✅ pass
 
 Obligation: arbitrary_iter_maintain_invariant_0_0
@@ -359,6 +395,34 @@ Obligation: Encrypt_ensures_4
 Property: assert
 Result: ✅ pass
 
+Obligation: Decrypt_post_Decrypt_ensures_4_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: Decrypt_post_Decrypt_ensures_4_calls_Sequence.select_1
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: Decrypt_post_Decrypt_ensures_4_calls_Sequence.select_2
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: set_result_calls_Sequence.take_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: loop_invariant_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: loop_invariant_calls_Sequence.select_1
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: loop_invariant_calls_Sequence.select_2
+Property: out-of-bounds access check
+Result: ✅ pass
+
 Obligation: entry_invariant_0_0
 Property: assert
 Result: ✅ pass
@@ -377,6 +441,14 @@ Result: ✅ pass
 
 Obligation: measure_lb_0
 Property: assert
+Result: ✅ pass
+
+Obligation: set_result_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: set_result_calls_Sequence.select_1
+Property: out-of-bounds access check
 Result: ✅ pass
 
 Obligation: arbitrary_iter_maintain_invariant_0_0
@@ -407,6 +479,14 @@ Obligation: Decrypt_ensures_4
 Property: assert
 Result: ✅ pass
 
+Obligation: RoundTrip_post_RoundTrip_ensures_4_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: RoundTrip_post_RoundTrip_ensures_4_calls_Sequence.select_1
+Property: out-of-bounds access check
+Result: ✅ pass
+
 Obligation: callElimAssert_Encrypt_requires_0_13
 Property: assert
 Result: ✅ pass
@@ -419,6 +499,18 @@ Obligation: callElimAssert_Encrypt_requires_2_15
 Property: assert
 Result: ✅ pass
 
+Obligation: assume_callElimAssume_Encrypt_ensures_4_17_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: assume_callElimAssume_Encrypt_ensures_4_17_calls_Sequence.select_1
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: assume_callElimAssume_Encrypt_ensures_4_17_calls_Sequence.select_2
+Property: out-of-bounds access check
+Result: ✅ pass
+
 Obligation: callElimAssert_Decrypt_requires_0_4
 Property: assert
 Result: ✅ pass
@@ -429,6 +521,18 @@ Result: ✅ pass
 
 Obligation: callElimAssert_Decrypt_requires_2_6
 Property: assert
+Result: ✅ pass
+
+Obligation: assume_callElimAssume_Decrypt_ensures_4_8_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: assume_callElimAssume_Decrypt_ensures_4_8_calls_Sequence.select_1
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: assume_callElimAssume_Decrypt_ensures_4_8_calls_Sequence.select_2
+Property: out-of-bounds access check
 Result: ✅ pass
 
 Obligation: RoundTrip_ensures_3
