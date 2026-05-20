@@ -61,7 +61,7 @@ This document tracks the selected Boole feature-request seeds kept under
   - Benchmarks: [`cast_expr.lean`](../StrataTest/Languages/Boole/FeatureRequests/cast_expr.lean), [`widening_casts.lean`](../StrataTest/Languages/Boole/FeatureRequests/widening_casts.lean).
 - **`type nat := int` synonym** (Gap #8 partial)
   - Nullary synonyms expanding to `int` trigger auto-axioms `∀ x : DT . DT..isCtor(x) ⟹ DT..field(x) ≥ 0` for each `nat`-typed constructor field.
-  - Known limitation: axiom may be unsound for mixed `nat`/`int` datatypes. See [`nat_axiom_discussion.lean`](../StrataTest/Languages/Boole/FeatureRequests/nat_axiom_discussion.lean).
+  - Known limitation: axiom may be unsound for mixed `nat`/`int` datatypes. See [`nat_axiom_limitation.lean`](../StrataTest/Languages/Boole/FeatureRequests/nat_axiom_limitation.lean).
   - Known limitation: only direct synonyms (`type mynat := int`) are recognised; transitive chains (`type mynat := nat`) are not followed, so fields typed `mynat` get no axiom.
   - Benchmark: [`cast_nested.lean`](../StrataTest/Languages/Boole/FeatureRequests/cast_nested.lean).
 

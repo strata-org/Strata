@@ -871,7 +871,7 @@ private def natAxiomsForDatatype
         dbg_trace s!"[Boole] Warning: constructor `{dtypeName}.{cname}` has both `nat`- and `int`-typed fields. \
           The auto-generated non-negativity axiom is globally quantified over all SMT terms of type `{dtypeName}`, \
           which may be unsound if the solver introduces synthetic terms with negative nat fields. \
-          See `nat_axiom_discussion.lean` for design alternatives."
+          See `nat_axiom_limitation.lean` for design alternatives."
       for field in fields do
         match field with
         | .mkBinding _ ⟨_, fieldName⟩ tp =>
