@@ -539,7 +539,7 @@ inside the mutual block below. Helpers are grouped by section to mirror the
 
 - Literals — `Synth.litInt`, `Synth.litBool`, `Synth.litString`, `Synth.litDecimal`
 - Variables — `Synth.varLocal`, `Synth.varField`, `Synth.varDeclare`
-- Control flow — `Synth.block`, `Synth.while`, `Synth.exit`,
+- Control flow — `Synth.while`, `Synth.exit`,
   `Synth.return`, `Check.block`, `Check.ifThenElse`
 - Verification statements — `Synth.assert`, `Synth.assume`
 - Assignment — `Synth.assign`, `Check.assign`
@@ -585,8 +585,6 @@ def Synth.resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTy
   match h_node: exprMd with
   | AstNode.mk expr source =>
   let (val', ty) ← match h_expr: expr with
-  | .Block stmts label =>
-    Synth.block exprMd stmts label (by rw [h_node])
   | .While cond invs dec body =>
     Synth.while exprMd cond invs dec body (by rw [h_node])
   | .Exit target => pure (Synth.exit target source)
@@ -751,39 +749,6 @@ def Synth.varField (exprMd : StmtExprMd)
     omega
 
 -- ### Control flow
-
-/-- Cases on whether the statement list is empty.
-
-    `Γ_0 = Γ,  Γ_{i-1} ⊢ s_i ⇒ _ ⊣ Γ_i (1 ≤ i < n),  Γ_{n-1} ⊢ s_n ⇒ T  ∴  Γ ⊢ Block [s_1; …; s_n] label ⇒ T`
-
-    `Γ ⊢ Block [] label ⇒ TVoid`
-
-    Each statement is resolved
-    in the scope produced by its predecessor and may itself extend it
-    (`Var (.Declare …)` does); non-last statements are synthesized but their
-    types discarded (the lax rule, matching Java/Python/JS where `f(x);` is
-    normal even when `f` returns a value — trade-off: `5;` is silently
-    accepted, flagging it belongs to a lint). The last statement's type
-    becomes the block's type, or `TVoid` for an empty block. The block opens
-    a fresh nested scope, so bindings introduced inside don't escape. -/
-def Synth.block (exprMd : StmtExprMd)
-    (stmts : List StmtExprMd) (label : Option String)
-    (h : exprMd.val = .Block stmts label) :
-    ResolveM (StmtExpr × HighTypeMd) := do
-  withScope do
-    let results ← stmts.mapM Synth.resolveStmtExpr
-    let stmts' := results.map (·.1)
-    let lastTy := match results.getLast? with
-      | some (_, ty) => ty
-      | none => { val := .TVoid, source := exprMd.source }
-    pure (.Block stmts' label, lastTy)
-  termination_by (exprMd, 1)
-  decreasing_by
-    apply Prod.Lex.left
-    have hsz := exprMd.sizeOf_val_lt
-    simp [h] at hsz
-    have := List.sizeOf_lt_of_mem ‹_ ∈ stmts›
-    omega
 
 /-- `Γ ⊢ cond ⇐ TBool,  Γ ⊢ invs_i ⇐ TBool,  Γ ⊢ dec ⇐ ?,  Γ ⊢ body ⇒ _  ∴  Γ ⊢ While cond invs dec body ⇒ TVoid`
 
