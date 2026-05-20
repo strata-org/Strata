@@ -57,10 +57,12 @@ seeds with at least one open gap remain in
   - `fun x : T => body` lowers to nested Core `.abs` nodes; `(f)(x)` lowers to `.app () f x`.
   - Remaining gap: first-class function values as procedure parameters / local variables still need abstract-type encoding for the SMT path.
   - Benchmark: [`lambda_closure.lean`](../StrataTest/Languages/Boole/FeatureRequests/lambda_closure.lean).
-- **Widening casts** (`e as_int`) (Gap #6 partial)
-  - `e as_int` lowers to `Bv{n}.ToNat` (Core op) → SMT-LIB `bv2nat`; widths 1/8/16/32/64/128.
-  - Remaining: int→BV cast (`x as bv32` etc.).
-  - Benchmarks: [`cast_expr.lean`](../StrataTest/Languages/Boole/cast_expr.lean), [`widening_casts.lean`](../StrataTest/Languages/Boole/widening_casts.lean).
+- **SMT-LIB 2.7 cast operators** (`e as_int`, `e as_sint`, `e as_bv{n}`) (Gap #6)
+  - `e as_int` lowers to `Bv{n}.ToUInt` (Core op) → SMT-LIB 2.7 `ubv_to_int` (unsigned); widths 1/8/16/32/64/128.
+  - `e as_sint` lowers to `Bv{n}.ToInt` (Core op) → SMT-LIB 2.7 `sbv_to_int` (signed/two's complement); widths 1/8/16/32/64/128.
+  - `e as_bv{n}` lowers to `Int.ToBv{n}` (Core op) → SMT-LIB 2.7 `(_ int_to_bv n)` (truncating mod 2^n); widths 1/8/16/32/64/128.
+  - All three directions fully implemented end-to-end (grammar → Core → SMT encoder → denotation).
+  - Benchmarks: [`cast_expr.lean`](../StrataTest/Languages/Boole/cast_expr.lean), [`widening_casts.lean`](../StrataTest/Languages/Boole/widening_casts.lean), [`cast_all_directions.lean`](../StrataTest/Languages/Boole/cast_all_directions.lean).
 - **`type nat := int` synonym** (Gap #8 partial)
   - Nullary synonyms expanding to `int` trigger auto-axioms `∀ x : DT . DT..isCtor(x) ⟹ DT..field(x) ≥ 0` for each `nat`-typed constructor field.
   - Known limitation: axiom may be unsound for mixed `nat`/`int` datatypes. See [`nat_axiom_limitation.lean`](../StrataTest/Languages/Boole/FeatureRequests/nat_axiom_limitation.lean).
@@ -74,7 +76,7 @@ seeds with at least one open gap remain in
 3. **`reveal_with_fuel`**: Lower priority. Preserve the requested fuel amount instead of lowering it to an unrestricted reveal.
 4. **`closed` visibility**: Lower priority. Keep closed spec-function bodies hidden across module boundaries.
 5. **Overflow guards**: Lower priority. Preserve `HasType`-style arithmetic overflow checks if Verus-specific guards are worth modeling directly.
-6. **Widening casts**: Implemented.
+6. **SMT-LIB 2.7 cast operators** (`as_int`, `as_sint`, `as_bv{n}`): Implemented.
 7. **`decreases` metadata**: Implemented.
 
 ## Type/model requests

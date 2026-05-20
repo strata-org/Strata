@@ -18,8 +18,8 @@ Near-upstream anchor:
 
 Feature: `e as_int` — widening cast from any bitvector type to `int`.
 
-Lowers to a native `Bv{n}.ToNat : bvN → int` Core op; the SMT encoder maps
-it to the standard SMT-LIB `bv2nat` function. No axioms injected.
+Lowers to a native `Bv{n}.ToUInt : bvN → int` Core op; the SMT encoder maps
+it to the SMT-LIB 2.7 `ubv_to_int` function. No axioms injected.
 -/
 
 private def castExprSeed : Strata.Program :=

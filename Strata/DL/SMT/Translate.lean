@@ -520,6 +520,15 @@ def translateTerm (t : SMT.Term) : TranslateM (Expr × Expr) := do
     let (α, x) ← translateTerm x
     let w ← getBitVecWidth α
     return (mkBitVec (w + i), mkApp3 (.const ``BitVec.zeroExtend []) (toExpr w) (toExpr (w + i)) x)
+  | .app .ubv_to_int [x] _ =>
+    let (_, x) ← translateTerm x
+    return (mkInt, mkApp (.const ``Int.ofNat []) (mkApp (.const ``BitVec.toNat []) x))
+  | .app .sbv_to_int [x] _ =>
+    let (_, x) ← translateTerm x
+    return (mkInt, mkApp (.const ``BitVec.toInt []) x)
+  | .app (.int_to_bv n) [x] _ =>
+    let (_, x) ← translateTerm x
+    return (mkBitVec n, mkApp2 (.const ``BitVec.ofInt []) (toExpr n) x)
   -- SMT-Lib theory of strings
   | .prim (.string s) =>
     return (mkString, toExpr s)
@@ -542,9 +551,6 @@ def translateTerm (t : SMT.Term) : TranslateM (Expr × Expr) := do
       expectString γ
       return e
     return (mkString, as.foldl (mkApp2 mkStringAppend) (mkApp2 mkStringAppend a b))
-  | .app .bv2nat [x] _ =>
-    let (_, x) ← translateTerm x
-    return (mkInt, mkApp (.const ``Int.ofNat []) (mkApp (.const ``BitVec.toNat []) x))
   | t => throw m!"Error: unsupported term '{repr t}'"
 where
   leftAssocOp (op : Expr) (as : List SMT.Term) : TranslateM (Expr × Expr) := do

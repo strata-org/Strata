@@ -18,7 +18,7 @@ Near-upstream anchors from `differential_status.md`:
   `quantifiers`: https://github.com/verus-lang/verus/blob/main/examples/quantifiers.rs
   `statements`: https://github.com/verus-lang/verus/blob/main/examples/statements.rs
 
-Gap #6 implemented: `e as_int` lowers to native `Bv{n}.ToNat` Core op → SMT-LIB `bv2nat`.
+Gap #6 implemented: `e as_int` lowers to native `Bv{n}.ToUInt` Core op → SMT-LIB 2.7 `ubv_to_int`.
 No axioms injected.
 -/
 
@@ -26,7 +26,7 @@ private def wideningCastsSeed : Strata.Program :=
 #strata
 program Boole;
 
-// `v[i] as_int` lowers to `Bv32.ToNat` Core op → SMT-LIB `bv2nat`.
+// `v[i] as_int` lowers to `Bv32.ToUInt` Core op → SMT-LIB 2.7 `ubv_to_int`.
 procedure widening_cast_seed(v: Map int bv32, n: int) returns ()
 spec {
   requires 0 <= n;
@@ -38,11 +38,11 @@ spec {
 #end
 
 /-- info:
-Obligation: assert_2_979
+Obligation: assert_2_997
 Property: assert
 Result: ✅ pass
 
-Obligation: widening_cast_seed_ensures_1_911
+Obligation: widening_cast_seed_ensures_1_929
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in

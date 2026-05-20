@@ -511,11 +511,23 @@ partial def toCoreExpr (e : Boole.Expr) : TranslateM Core.Expression.Expr := do
     match ty with
     | .bv1 _ | .bv8 _ | .bv16 _ | .bv32 _ | .bv64 _ | .bv128 _ => do
       let n ← bvWidth m ty
-      return mkCoreApp (.op () (mkIdent s!"Bv{n}.ToNat") none) [← toCoreExpr e]
+      return mkCoreApp (.op () (mkIdent s!"Bv{n}.ToUInt") none) [← toCoreExpr e]
     | .int _ => toCoreExpr e
     | _ =>
       if ← isNatType ty then toCoreExpr e
       else throwAt m s!"'as int' requires a bitvector source type"
+  | .cast_to_sint m ty e =>
+    match ty with
+    | .bv1 _ | .bv8 _ | .bv16 _ | .bv32 _ | .bv64 _ | .bv128 _ => do
+      let n ← bvWidth m ty
+      return mkCoreApp (.op () (mkIdent s!"Bv{n}.ToInt") none) [← toCoreExpr e]
+    | _ => throwAt m s!"'as sint' requires a bitvector source type"
+  | .cast_to_bv1   _ e => return mkCoreApp (.op () (mkIdent "Int.ToBv1")   none) [← toCoreExpr e]
+  | .cast_to_bv8   _ e => return mkCoreApp (.op () (mkIdent "Int.ToBv8")   none) [← toCoreExpr e]
+  | .cast_to_bv16  _ e => return mkCoreApp (.op () (mkIdent "Int.ToBv16")  none) [← toCoreExpr e]
+  | .cast_to_bv32  _ e => return mkCoreApp (.op () (mkIdent "Int.ToBv32")  none) [← toCoreExpr e]
+  | .cast_to_bv64  _ e => return mkCoreApp (.op () (mkIdent "Int.ToBv64")  none) [← toCoreExpr e]
+  | .cast_to_bv128 _ e => return mkCoreApp (.op () (mkIdent "Int.ToBv128") none) [← toCoreExpr e]
   | _ => throw (.fromMessage s!"Unsupported expression: {repr e}")
 
 end

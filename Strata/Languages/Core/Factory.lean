@@ -770,19 +770,39 @@ def bvExtractFunc (size hi lo : Nat) : WFLFunc CoreLParams :=
   unaryFuncUneval s!"Bv{size}.Extract_{hi}_{lo}"
     (.bitvec size) (.bitvec (hi + 1 - lo)) rfl rfl
 
-def bvToNatFunc (size : Nat) : WFLFunc CoreLParams :=
-  unaryFuncUneval s!"Bv{size}.ToNat" (.bitvec size) .int rfl rfl
+def bvToUIntFunc (size : Nat) : WFLFunc CoreLParams :=
+  unaryFuncUneval s!"Bv{size}.ToUInt" (.bitvec size) .int rfl rfl
+
+def bvToIntFunc (size : Nat) : WFLFunc CoreLParams :=
+  unaryFuncUneval s!"Bv{size}.ToInt" (.bitvec size) .int rfl rfl
+
+def intToBvFunc (size : Nat) : WFLFunc CoreLParams :=
+  unaryFuncUneval s!"Int.ToBv{size}" .int (.bitvec size) rfl rfl
 
 def bv8ConcatFunc  := bvConcatFunc 8
 def bv16ConcatFunc := bvConcatFunc 16
 def bv32ConcatFunc := bvConcatFunc 32
 
-def bv1ToNatFunc   := bvToNatFunc 1
-def bv8ToNatFunc   := bvToNatFunc 8
-def bv16ToNatFunc  := bvToNatFunc 16
-def bv32ToNatFunc  := bvToNatFunc 32
-def bv64ToNatFunc  := bvToNatFunc 64
-def bv128ToNatFunc := bvToNatFunc 128
+def bv1ToUIntFunc   := bvToUIntFunc 1
+def bv8ToUIntFunc   := bvToUIntFunc 8
+def bv16ToUIntFunc  := bvToUIntFunc 16
+def bv32ToUIntFunc  := bvToUIntFunc 32
+def bv64ToUIntFunc  := bvToUIntFunc 64
+def bv128ToUIntFunc := bvToUIntFunc 128
+
+def bv1ToIntFunc   := bvToIntFunc 1
+def bv8ToIntFunc   := bvToIntFunc 8
+def bv16ToIntFunc  := bvToIntFunc 16
+def bv32ToIntFunc  := bvToIntFunc 32
+def bv64ToIntFunc  := bvToIntFunc 64
+def bv128ToIntFunc := bvToIntFunc 128
+
+def int1ToBvFunc   := intToBvFunc 1
+def int8ToBvFunc   := intToBvFunc 8
+def int16ToBvFunc  := intToBvFunc 16
+def int32ToBvFunc  := intToBvFunc 32
+def int64ToBvFunc  := intToBvFunc 64
+def int128ToBvFunc := intToBvFunc 128
 
 def bv8Extract_7_7_Func    := bvExtractFunc  8  7  7
 def bv16Extract_15_15_Func := bvExtractFunc 16 15 15
@@ -874,12 +894,24 @@ def WFFactory : Lambda.WFLFactory CoreLParams :=
   bv8ConcatFunc,
   bv16ConcatFunc,
   bv32ConcatFunc,
-  bv1ToNatFunc,
-  bv8ToNatFunc,
-  bv16ToNatFunc,
-  bv32ToNatFunc,
-  bv64ToNatFunc,
-  bv128ToNatFunc,
+  bv1ToUIntFunc,
+  bv8ToUIntFunc,
+  bv16ToUIntFunc,
+  bv32ToUIntFunc,
+  bv64ToUIntFunc,
+  bv128ToUIntFunc,
+  bv1ToIntFunc,
+  bv8ToIntFunc,
+  bv16ToIntFunc,
+  bv32ToIntFunc,
+  bv64ToIntFunc,
+  bv128ToIntFunc,
+  int1ToBvFunc,
+  int8ToBvFunc,
+  int16ToBvFunc,
+  int32ToBvFunc,
+  int64ToBvFunc,
+  int128ToBvFunc,
   bv8Extract_7_7_Func,
   bv16Extract_15_15_Func,
   bv16Extract_7_0_Func,

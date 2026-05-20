@@ -1,3 +1,9 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
+
 import Strata.MetaVerifier
 
 open Strata
@@ -300,19 +306,19 @@ Obligation: scalar_as_canonical_body_calls_scalar..bytes_0
 Property: assert
 Result: ✅ pass
 
-Obligation: Impl__2_clone_ensures_0_2199
+Obligation: Impl__2_clone_ensures_0_2284
 Property: assert
 Result: ✅ pass
 
-Obligation: Impl__3_from_bytes_wide_ensures_1_2372
+Obligation: Impl__3_from_bytes_wide_ensures_1_2457
 Property: assert
 Result: ✅ pass
 
-Obligation: Impl__3_from_bytes_wide_ensures_2_2408
+Obligation: Impl__3_from_bytes_wide_ensures_2_2493
 Property: assert
 Result: ✅ pass
 
-Obligation: Impl__3_pack_post_Impl__3_pack_ensures_5_2741_calls_scalar..bytes_0
+Obligation: Impl__3_pack_post_Impl__3_pack_ensures_5_2826_calls_scalar..bytes_0
 Property: assert
 Result: ✅ pass
 
@@ -320,39 +326,39 @@ Obligation: set_result_calls_scalar..bytes_0
 Property: assert
 Result: ✅ pass
 
-Obligation: Impl__3_pack_ensures_5_2741
+Obligation: Impl__3_pack_ensures_5_2826
 Property: assert
 Result: ✅ pass
 
-Obligation: Impl__3_pack_ensures_6_2845
+Obligation: Impl__3_pack_ensures_6_2930
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_Impl__3_pack_requires_4_2709_25
+Obligation: callElimAssert_Impl__3_pack_requires_4_2794_25
 Property: assert
 Result: ✅ pass
 
-Obligation: assume_callElimAssume_Impl__3_pack_ensures_5_2741_26_calls_scalar..bytes_0
+Obligation: assume_callElimAssume_Impl__3_pack_ensures_5_2826_26_calls_scalar..bytes_0
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_lemma_scalar52_lt_pow2_256_if_canonical_requires_102_10101_19
+Obligation: callElimAssert_lemma_scalar52_lt_pow2_256_if_canonical_requires_102_10186_19
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_lemma_scalar52_lt_pow2_256_if_canonical_requires_103_10130_20
+Obligation: callElimAssert_lemma_scalar52_lt_pow2_256_if_canonical_requires_103_10215_20
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_Arithmetic_Div_mod_lemma_small_mod_requires_11_4213_15
+Obligation: callElimAssert_Arithmetic_Div_mod_lemma_small_mod_requires_11_4298_15
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_Arithmetic_Div_mod_lemma_small_mod_requires_12_4231_16
+Obligation: callElimAssert_Arithmetic_Div_mod_lemma_small_mod_requires_12_4316_16
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_Arithmetic_Div_mod_lemma_mod_bound_requires_15_4381_11
+Obligation: callElimAssert_Arithmetic_Div_mod_lemma_mod_bound_requires_15_4466_11
 Property: assert
 Result: ✅ pass
 
@@ -360,359 +366,359 @@ Obligation: set_tmp5_calls_scalar..bytes_0
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_Arithmetic_Div_mod_lemma_small_mod_requires_11_4213_6
+Obligation: callElimAssert_Arithmetic_Div_mod_lemma_small_mod_requires_11_4298_6
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_Arithmetic_Div_mod_lemma_small_mod_requires_12_4231_7
+Obligation: callElimAssert_Arithmetic_Div_mod_lemma_small_mod_requires_12_4316_7
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_axiom_uniform_mod_reduction_requires_105_10489_2
+Obligation: callElimAssert_axiom_uniform_mod_reduction_requires_105_10574_2
 Property: assert
 Result: ✅ pass
 
-Obligation: Impl__4_from_bytes_mod_order_wide_ensures_8_3119
+Obligation: Impl__4_from_bytes_mod_order_wide_ensures_8_3204
 Property: assert
 Result: ✅ pass
 
-Obligation: Impl__4_from_bytes_mod_order_wide_ensures_9_3202
+Obligation: Impl__4_from_bytes_mod_order_wide_ensures_9_3287
 Property: assert
 Result: ✅ pass
 
-Obligation: Impl__4_from_bytes_mod_order_wide_ensures_10_3241
+Obligation: Impl__4_from_bytes_mod_order_wide_ensures_10_3326
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Div_mod_lemma_small_mod_ensures_13_4249
+Obligation: Arithmetic_Div_mod_lemma_small_mod_ensures_13_4334
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Div_mod_lemma_mod_bound_ensures_16_4399
+Obligation: Arithmetic_Div_mod_lemma_mod_bound_ensures_16_4484
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma_pow2_adds_ensures_18_4547
+Obligation: Arithmetic_Power2_lemma_pow2_adds_ensures_18_4632
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma_pow2_strictly_increases_ensures_21_4792
+Obligation: Arithmetic_Power2_lemma_pow2_strictly_increases_ensures_21_4877
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_ensures_23_4946
+Obligation: Arithmetic_Power2_lemma2_to64_ensures_23_5031
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_ensures_24_4988
+Obligation: Arithmetic_Power2_lemma2_to64_ensures_24_5073
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_ensures_25_5030
+Obligation: Arithmetic_Power2_lemma2_to64_ensures_25_5115
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_ensures_26_5072
+Obligation: Arithmetic_Power2_lemma2_to64_ensures_26_5157
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_ensures_27_5114
+Obligation: Arithmetic_Power2_lemma2_to64_ensures_27_5199
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_ensures_28_5157
+Obligation: Arithmetic_Power2_lemma2_to64_ensures_28_5242
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_ensures_29_5200
+Obligation: Arithmetic_Power2_lemma2_to64_ensures_29_5285
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_ensures_30_5243
+Obligation: Arithmetic_Power2_lemma2_to64_ensures_30_5328
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_ensures_31_5287
+Obligation: Arithmetic_Power2_lemma2_to64_ensures_31_5372
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_ensures_32_5331
+Obligation: Arithmetic_Power2_lemma2_to64_ensures_32_5416
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_ensures_33_5375
+Obligation: Arithmetic_Power2_lemma2_to64_ensures_33_5460
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_ensures_34_5421
+Obligation: Arithmetic_Power2_lemma2_to64_ensures_34_5506
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_ensures_35_5467
+Obligation: Arithmetic_Power2_lemma2_to64_ensures_35_5552
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_ensures_36_5513
+Obligation: Arithmetic_Power2_lemma2_to64_ensures_36_5598
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_ensures_37_5559
+Obligation: Arithmetic_Power2_lemma2_to64_ensures_37_5644
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_ensures_38_5606
+Obligation: Arithmetic_Power2_lemma2_to64_ensures_38_5691
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_ensures_39_5653
+Obligation: Arithmetic_Power2_lemma2_to64_ensures_39_5738
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_ensures_40_5700
+Obligation: Arithmetic_Power2_lemma2_to64_ensures_40_5785
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_ensures_41_5748
+Obligation: Arithmetic_Power2_lemma2_to64_ensures_41_5833
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_ensures_42_5796
+Obligation: Arithmetic_Power2_lemma2_to64_ensures_42_5881
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_ensures_43_5844
+Obligation: Arithmetic_Power2_lemma2_to64_ensures_43_5929
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_ensures_44_5893
+Obligation: Arithmetic_Power2_lemma2_to64_ensures_44_5978
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_ensures_45_5942
+Obligation: Arithmetic_Power2_lemma2_to64_ensures_45_6027
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_ensures_46_5991
+Obligation: Arithmetic_Power2_lemma2_to64_ensures_46_6076
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_ensures_47_6040
+Obligation: Arithmetic_Power2_lemma2_to64_ensures_47_6125
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_ensures_48_6090
+Obligation: Arithmetic_Power2_lemma2_to64_ensures_48_6175
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_ensures_49_6140
+Obligation: Arithmetic_Power2_lemma2_to64_ensures_49_6225
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_ensures_50_6190
+Obligation: Arithmetic_Power2_lemma2_to64_ensures_50_6275
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_ensures_51_6241
+Obligation: Arithmetic_Power2_lemma2_to64_ensures_51_6326
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_ensures_52_6292
+Obligation: Arithmetic_Power2_lemma2_to64_ensures_52_6377
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_ensures_53_6343
+Obligation: Arithmetic_Power2_lemma2_to64_ensures_53_6428
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_ensures_54_6395
+Obligation: Arithmetic_Power2_lemma2_to64_ensures_54_6480
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_ensures_55_6447
+Obligation: Arithmetic_Power2_lemma2_to64_ensures_55_6532
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_ensures_56_6499
+Obligation: Arithmetic_Power2_lemma2_to64_ensures_56_6584
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_58_6653
+Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_58_6738
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_59_6705
+Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_59_6790
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_60_6758
+Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_60_6843
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_61_6811
+Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_61_6896
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_62_6864
+Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_62_6949
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_63_6918
+Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_63_7003
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_64_6972
+Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_64_7057
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_65_7026
+Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_65_7111
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_66_7081
+Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_66_7166
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_67_7136
+Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_67_7221
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_68_7191
+Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_68_7276
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_69_7246
+Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_69_7331
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_70_7302
+Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_70_7387
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_71_7358
+Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_71_7443
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_72_7414
+Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_72_7499
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_73_7471
+Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_73_7556
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_74_7528
+Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_74_7613
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_75_7585
+Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_75_7670
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_76_7643
+Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_76_7728
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_77_7701
+Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_77_7786
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_78_7759
+Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_78_7844
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_79_7817
+Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_79_7902
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_80_7876
+Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_80_7961
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_81_7935
+Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_81_8020
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_82_7994
+Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_82_8079
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_83_8054
+Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_83_8139
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_84_8114
+Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_84_8199
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_85_8174
+Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_85_8259
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_86_8235
+Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_86_8320
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_87_8296
+Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_87_8381
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_88_8357
+Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_88_8442
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_89_8418
+Obligation: Arithmetic_Power2_lemma2_to64_rest_ensures_89_8503
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_93_8755
+Obligation: assert_93_8840
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_95_8925
+Obligation: assert_95_9010
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_96_9005
+Obligation: assert_96_9090
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_Arithmetic_Power2_lemma_pow2_strictly_increases_requires_20_4772_75
+Obligation: callElimAssert_Arithmetic_Power2_lemma_pow2_strictly_increases_requires_20_4857_75
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_98_9268
+Obligation: assert_98_9353
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_99_9440
+Obligation: assert_99_9525
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_Arithmetic_Power2_lemma_pow2_strictly_increases_requires_20_4772_34
+Obligation: callElimAssert_Arithmetic_Power2_lemma_pow2_strictly_increases_requires_20_4857_34
 Property: assert
 Result: ✅ pass
 
-Obligation: lemma_group_order_bound_ensures_91_8561
+Obligation: lemma_group_order_bound_ensures_91_8646
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_Arithmetic_Power2_lemma_pow2_strictly_increases_requires_20_4772_114
+Obligation: callElimAssert_Arithmetic_Power2_lemma_pow2_strictly_increases_requires_20_4857_114
 Property: assert
 Result: ✅ pass
 
-Obligation: lemma_group_order_smaller_than_pow256_ensures_101_9809
+Obligation: lemma_group_order_smaller_than_pow256_ensures_101_9894
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_Arithmetic_Power2_lemma_pow2_strictly_increases_requires_20_4772_119
+Obligation: callElimAssert_Arithmetic_Power2_lemma_pow2_strictly_increases_requires_20_4857_119
 Property: assert
 Result: ✅ pass
 
-Obligation: lemma_scalar52_lt_pow2_256_if_canonical_ensures_104_10175
+Obligation: lemma_scalar52_lt_pow2_256_if_canonical_ensures_104_10260
 Property: assert
 Result: ✅ pass
 
-Obligation: axiom_uniform_mod_reduction_ensures_106_10572
+Obligation: axiom_uniform_mod_reduction_ensures_106_10657
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
