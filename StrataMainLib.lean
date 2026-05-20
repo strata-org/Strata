@@ -599,7 +599,7 @@ private def reportUserCodeError (range : SourceRange) (msg : String)
       h.putStrLn line
   return location
 
-def pyAnalyzeLaurelCommand : Command where
+def pyAnalyzeLaurelCommand (mkDischarge : Core.MkDischargeFn := Core.mkDischargeFn) : Command where
   name := "pyAnalyzeLaurel"
   args := [ "file" ]
   flags := verifyOptionsFlags ++ [
@@ -694,7 +694,7 @@ def pyAnalyzeLaurelCommand : Command where
       verifyOptions := options
       entryPoint, isBugFinding
       outputMode, skipVerification
-      metricsHandle
+      metricsHandle, mkDischarge
     }
 
     -- Always print pipeline warnings
@@ -1263,7 +1263,7 @@ def transformCommand : Command where
       | .ok program => IO.print (Core.formatProgram program)
       | .error e => exitFailure s!"Transform failed: {e}"
 
-def verifyCommand : Command where
+def verifyCommand (mkDischarge : Core.MkDischargeFn := Core.mkDischargeFn) : Command where
   name := "verify"
   args := [ "file" ]
   flags := verifyOptionsFlags ++ [
@@ -1332,7 +1332,7 @@ def verifyCommand : Command where
         else if pgm.dialect == "Boole" then
           Boole.verify opts.solver pgm inputCtx proceduresToVerify opts
         else
-          verify pgm inputCtx proceduresToVerify opts
+          verify pgm inputCtx proceduresToVerify opts (mkDischarge := mkDischarge)
       catch e =>
         println! f!"{e}"
         IO.Process.exit ExitCode.internalError
