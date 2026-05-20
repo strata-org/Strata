@@ -201,6 +201,10 @@ structure VerifyOptions where
       batch pipeline (write file, run solver). Opt-in via `--incremental`;
       disabled automatically with `--no-solve`. -/
   incremental : Bool
+  /-- Number of parallel solver workers. When > 1, obligations are dispatched
+      to concurrent solver processes using `IO.asTask`. Each task spawns its
+      own solver instance. Default 1 (sequential). -/
+  parallelWorkers : Nat
 
 def VerifyOptions.default : VerifyOptions := {
   verbose := .normal,
@@ -222,6 +226,7 @@ def VerifyOptions.default : VerifyOptions := {
   profile := false
   incremental := false
   pathCap := .none
+  parallelWorkers := 1
 }
 
 instance : Inhabited VerifyOptions where
