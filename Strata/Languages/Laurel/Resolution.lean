@@ -554,8 +554,10 @@ inside the mutual block below. Helpers are grouped by section to mirror the
 - ContractOf — `Synth.contractOf`
 - Holes — `Synth.hole`, `Check.holeNone`
 
-The dispatch functions `Synth.resolveStmtExpr` and `Check.resolveStmtExpr` simply pattern-match
-on the constructor and delegate to the corresponding helper. -/
+The dispatch functions `Synth.resolveStmtExpr` and `Check.resolveStmtExpr`
+pattern-match on the constructor and delegate to the corresponding helper.
+`Synth.resolveStmtExpr` is non-total: constructors without a synthesis rule
+hit a wildcard arm that emits a diagnostic and returns `Unknown`. -/
 
 namespace Resolution
 
@@ -568,19 +570,19 @@ mutual
 -- ### Dispatch
 
 /-- Synth-mode resolution: resolve `e` and synthesize its `HighType`,
-    written `Γ ⊢ e ⇒ T`. Each constructor delegates to its rule's helper.
+    written `Γ ⊢ e ⇒ T`. Each constructor with a synthesis rule delegates
+    to its rule's helper; constructors without one (statement-shaped
+    constructs like `IfThenElse`, `Block`, `While`, `Return`, `Assign`,
+    …) hit a wildcard arm that emits a `typeMismatch` diagnostic and
+    returns `Unknown` to suppress cascading errors.
 
-    Synthesis returns a type inferred from the expression itself; checking
-    (`Check.resolveStmtExpr`) verifies that the expression has a given expected
-    type. Each construct picks a mode based on whether its type is
-    determined locally (synth) or by context (check). Synth rules invoke
-    check on subexpressions whose expected type is known (e.g.
-    `cond ⇐ TBool` in `IfThenElse`); `Check.resolveStmtExpr` falls back to
-    `Synth.resolveStmtExpr` via subsumption (rule `[⇐] Sub`). The two functions
-    are mutually recursive, with termination on a lexicographic measure
-    `(exprMd, tag)` — tag `0` for check, `1` for synth — so that
-    subsumption (which calls synth on the *same* expression) can decrease
-    via `Prod.Lex.right`. -/
+    Synthesis returns a type inferred from the expression itself;
+    checking (`Check.resolveStmtExpr`) verifies that the expression has
+    a given expected type. The two functions are mutually recursive,
+    with termination on a lexicographic measure `(exprMd, tag)` — tag
+    `2` for synth, `3` for check, helpers smaller — so that subsumption
+    (which calls synth on the *same* expression) can decrease via
+    `Prod.Lex.right`. -/
 def Synth.resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) := do
   match h_node: exprMd with
   | AstNode.mk expr source =>
@@ -634,21 +636,27 @@ def Synth.resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTy
 
 /-- Check-mode resolution (rule **Sub** at the boundary): resolve `e` and
     verify its type is a consistent subtype of `expected`, written
-    `Γ ⊢ e ⇐ T`. Bidirectional rules for individual constructs (`Block`,
-    `IfThenElse`, `Assign`, `Hole`) push `expected` into subexpressions
-    rather than bouncing through synthesis, which keeps error messages
-    localized and lets the expected type propagate through nested control
-    flow. Everything else falls back to subsumption — synthesize, then
-    verify `isConsistentSubtype actual expected`.
+    `Γ ⊢ e ⇐ T`. Bidirectional rules for individual constructs push
+    `expected` into subexpressions rather than bouncing through
+    synthesis, which keeps error messages localized and lets the
+    expected type propagate through nested control flow. Constructs
+    with a dedicated `Check.<construct>` rule:
+
+    - bindings — `Var (.Declare …)`, `Assign`
+    - control flow — `Block`, `IfThenElse`, `While`, `Exit`, `Return`
+    - verification — `Assert`, `Assume`, `Old`, `ProveBy`
+    - holes — untyped `Hole`
+
+    Everything else falls back to subsumption — synthesize, then verify
+    `isConsistentSubtype actual expected`.
 
     The right principle for new call sites is: when the position has a
     known expected type (`TBool` for conditions, numeric for `decreases`,
     the declared output for a constant initializer or a functional body),
-    use `Check.resolveStmtExpr`. When it doesn't, use `resolveStmtExpr` (a thin
-    wrapper that calls `Synth.resolveStmtExpr` and discards the synthesized type,
-    used at sites where typing is not enforced — verification annotations,
-    modifies/reads clauses). `Synth.resolveStmtExpr` itself is mostly an internal
-    interface used by other rules. -/
+    use `Check.resolveStmtExpr`. When it doesn't, use `resolveStmtExpr`
+    (a thin wrapper that calls `Synth.resolveStmtExpr` and discards the
+    synthesized type, used at sites where typing is not enforced —
+    verification annotations, modifies/reads clauses). -/
 def Check.resolveStmtExpr (exprMd : StmtExprMd) (expected : HighTypeMd) : ResolveM StmtExprMd := do
   match h_node: exprMd with
   | AstNode.mk expr source =>
@@ -964,20 +972,20 @@ def Check.assume (exprMd : StmtExprMd)
 
 -- ### Assignment
 
-/-- `Γ ⊢ targets_i ⇒ T_i,  Γ ⊢ e ⇐ ExpectedTy,  ExpectedTy <: T  ∴  Γ ⊢ Assign targets e ⇐ T`
+/-- `Γ ⊢ targets_i ⇒ T_i,  Γ ⊢ e ⇐ ExpectedTy,  ExpectedTy <: T  ∴  Γ ⊢ Assign targets e ⇐ T`  (T ≠ TVoid)
+
+    `Γ ⊢ targets_i ⇒ T_i,  Γ ⊢ e ⇐ ExpectedTy  ∴  Γ ⊢ Assign targets e ⇐ TVoid`
 
     where `ExpectedTy = T_1` if `|targets| = 1`, else
     `MultiValuedExpr [T_1; …; T_n]`.
 
     The target tuple type is pushed into the RHS via
     `Check.resolveStmtExpr`, so bidirectional rules in the RHS receive
-    the assignment's type. The outer subsumption `ExpectedTy <: T`
-    accommodates use as a statement (`T = TVoid`, no value to compare)
-    or as an expression (`T ≠ TVoid`, the result type must match). When
-    `T = TVoid` the subsumption is satisfied trivially since `_ <: TVoid`
-    only when the LHS is also `TVoid` — the assignment value is
-    discarded in statement position and we want no further check, so the
-    subsumption is skipped. -/
+    the assignment's type. When `T ≠ TVoid` (expression position) the
+    outer subsumption `ExpectedTy <: T` is enforced. When `T = TVoid`
+    (statement position) the subsumption is skipped: the assignment's
+    value is discarded as a statement, so there is nothing to compare
+    against `expected`. -/
 def Check.assign (exprMd : StmtExprMd)
     (targets : List VariableMd) (value : StmtExprMd)
     (expected : HighTypeMd) (source : Option FileRange)
@@ -1086,30 +1094,32 @@ def Synth.instanceCall (exprMd : StmtExprMd)
 
 -- ### Primitive operations
 
-/-- Cases on the operator family.
+/-- Cases on the operator family. All operands are synthesized first;
+    then a per-family verification fires using `checkSubtype` (a post-synth
+    subtype test, not bidirectional check resolution).
 
-    `Γ ⊢ args_i ⇐ TBool,  op ∈ {And, Or, AndThen, OrElse, Not, Implies}  ∴  Γ ⊢ PrimitiveOp op args ⇒ TBool`
+    `Γ ⊢ args_i ⇒ U_i,  U_i <: TBool,  op ∈ {And, Or, AndThen, OrElse, Not, Implies}  ∴  Γ ⊢ PrimitiveOp op args ⇒ TBool`
 
-    `Γ ⊢ args_i ⇐ Numeric,  op ∈ {Lt, Leq, Gt, Geq}  ∴  Γ ⊢ PrimitiveOp op args ⇒ TBool`
+    `Γ ⊢ args_i ⇒ U_i,  Numeric U_i,  op ∈ {Lt, Leq, Gt, Geq}  ∴  Γ ⊢ PrimitiveOp op args ⇒ TBool`
 
     `Γ ⊢ lhs ⇒ T_l,  Γ ⊢ rhs ⇒ T_r,  T_l ~ T_r,  op ∈ {Eq, Neq}  ∴  Γ ⊢ PrimitiveOp op [lhs; rhs] ⇒ TBool`
 
-    `Γ ⊢ args_i ⇐ Numeric,  Γ ⊢ args.head ⇒ T,  op ∈ {Neg, Add, Sub, Mul, Div, Mod, DivT, ModT}  ∴  Γ ⊢ PrimitiveOp op args ⇒ T`
+    `Γ ⊢ args_i ⇒ U_i,  Numeric U_i,  Γ ⊢ args.head ⇒ T,  op ∈ {Neg, Add, Sub, Mul, Div, Mod, DivT, ModT}  ∴  Γ ⊢ PrimitiveOp op args ⇒ T`
 
-    `Γ ⊢ args_i ⇐ TString,  op = StrConcat  ∴  Γ ⊢ PrimitiveOp op args ⇒ TString`
+    `Γ ⊢ args_i ⇒ U_i,  U_i <: TString,  op = StrConcat  ∴  Γ ⊢ PrimitiveOp op args ⇒ TString`
 
-    Each operator family has its own argument-type discipline and result
-    type. Arguments are synthesized first, then the per-family check fires:
-    `⇐ TBool` for booleans, `Numeric` (consistent with `TInt`, `TReal`, or
-    `TFloat64`) for arithmetic/comparison, consistency `~` for equality
-    (symmetric — no subtype direction is privileged), `⇐ TString` for
-    concatenation. The result type is `TBool` for
-    booleans/comparisons/equality, the head argument's type for arithmetic
-    ("result is the type of the first argument" handles `int + int → int`,
-    `real + real → real`, etc. without unification — known relaxation:
-    `int + real` passes since each operand individually passes `Numeric`;
-    a proper fix needs numeric promotion or unification), `TString` for
-    concatenation. -/
+    `Numeric T` is the predicate "T unfolds to TInt / TReal / TFloat64
+    (or Unknown via the gradual escape hatch)" — not a single type, so it
+    cannot serve as an `expected` for `Check.resolveStmtExpr`. `~` is
+    symmetric consistency under the gradual relation, so equality has no
+    privileged operand direction.
+
+    The result type is `TBool` for booleans/comparisons/equality, the
+    head argument's type for arithmetic ("result is the type of the
+    first argument" handles `int + int → int`, `real + real → real`,
+    etc. without unification — known relaxation: `int + real` passes
+    since each operand individually passes `Numeric`; a proper fix needs
+    numeric promotion or unification), `TString` for concatenation. -/
 def Synth.primitiveOp (exprMd : StmtExprMd) (expr : StmtExpr)
     (op : Operation) (args : List StmtExprMd) (source : Option FileRange)
     (h_expr : expr = .PrimitiveOp op args)
