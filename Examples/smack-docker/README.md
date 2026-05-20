@@ -116,15 +116,22 @@ aws_string_eq                 |     OK |     OK |     OK |      PARTIAL |      P
 
 ## Known blockers
 
-- **CBMC: structured-body assumption.** `coreToGotoFiles` (in
-  `Strata/Backends/CBMC/GOTO/CoreToGOTOPipeline.lean:490`) dispatches
-  every procedure through `procedureToGotoCtx`, which assumes a
-  structured body and errors on CFG procedures with "expected
-  structured body, got CFG". A `procedureToGotoCtxViaCFG` already
-  exists at `Strata/Backends/CBMC/GOTO/CoreCFGToGOTOPipeline.lean:188`
-  but is only wired into a test E2E. Fix path: dispatch CFG bodies
-  through that. Visible on 5 of the 25 programs (`abs_func`,
-  `array_sum`, `loop_sum`, `max_func`, `nondet_branch`).
+- **CBMC: structured-body assumption (resolved on this branch).**
+  `coreToGotoFiles` (in `CoreToGOTOPipeline.lean`) dispatched every
+  procedure through `procedureToGotoCtx`, which errored on CFG bodies
+  with "expected structured body, got CFG". `procedureToGotoCtxViaCFG`
+  already existed in `CoreCFGToGOTOPipeline.lean` but was only wired
+  into a test E2E. Fixed by adding `procedureToGotoCtxDispatch` and
+  `coreToGotoFilesDispatch` in `CoreCFGToGOTOPipeline.lean` that
+  switch on `p.body` (avoiding the import cycle that would result from
+  adding the dispatch directly to `CoreToGOTOPipeline.lean`), and
+  pointing the `StrataCoreToGoto` binary at the dispatching wrapper.
+  Was visible on 5 of the 25 programs (`abs_func`, `array_sum`,
+  `loop_sum`, `max_func`, `nondet_branch`); they now translate cleanly
+  through the CFG path. Regression test in
+  `StrataTest/Backends/CBMC/GOTO/E2E_CoreToGOTO.lean` (programmatic CFG
+  procedure construction; the `cfg ...` surface syntax is not
+  parseable in `#strata` macros on this branch). See commit `74f0cc23a`.
 - **CoreToGoto: inout-parameter rename collision (resolved on this
   branch).** By Strata Core convention, every `inout` parameter appears
   in BOTH `Procedure.Header.inputs` AND `Procedure.Header.outputs` with
@@ -143,16 +150,28 @@ aws_string_eq                 |     OK |     OK |     OK |      PARTIAL |      P
   patched (`CoreToGOTOPipeline.lean`, `CoreCFGToGOTOPipeline.lean`).
   Regression tests in `StrataTest/Backends/CBMC/GOTO/E2E_CoreToGOTO.lean`.
   See commit `f265cda63`.
-- **`run_pipeline.py` invokes `symtab2gb` with the wrong flag.** With
-  the inout collision resolved, the 20 affected programs now produce
-  well-formed `symtab.json` and `goto.json`; `run_pipeline.py:331`
-  then invokes `symtab2gb <symtab> <goto> --out …` with the GOTO file
-  as a positional argument. `symtab2gb` interprets that as a second
-  symtab and rejects it: `JSON object must have key 'symbolTable'`.
-  Fix: pass the GOTO file via `--goto-functions <goto>`. Related: the
-  cbmc invocation at `run_pipeline.py:235` is missing `--function main`,
-  which will cause an exit-code-6 misclassification once symtab2gb
-  works.
+- **`run_pipeline.py` cbmc-invocation flags (resolved on this branch).**
+  Two latent bugs in `run_pipeline.py`'s cbmc invocation: line 331
+  passed the GOTO JSON as a second positional argument to `symtab2gb`
+  instead of via `--goto-functions`, and line 235 invoked `cbmc`
+  without `--function main`. Both fixed; commit `4f309c63b`. Related:
+  `InstToJson.lean` previously omitted the `guard` JSON field on
+  ASSUME/ASSERT instructions when the guard was the constant `true`,
+  which broke `symtab2gb` on every SMACK-generated program (which has
+  `assume true` between every two source statements). Fixed by
+  always emitting `guard` for ASSUME/ASSERT; commit `66e659656`.
+- **CBMC: non-standard `main` signature.** SMACK-translated `main`
+  takes parameters (memory maps, exception flags, address state)
+  that don't match cbmc's expected entry-point signatures
+  (`int main(void)`, `int main(int argc, char *argv[])`, etc.).
+  cbmc rejects the binary with "the program has no entry point" and
+  exits with rc=6, even when `--function main` is passed. With the
+  upstream blockers above resolved, this is now the dominant failure
+  mode on the cbmc backend: 25 of 25 programs hit it. Fix path:
+  emit a synthetic `int __cprover_entry(void)` wrapper in
+  `coreToGotoFiles`/`coreToGotoFilesDispatch` that calls the
+  Strata-translated `main` with default parameter values, then point
+  cbmc at the wrapper.
 - **bugFinding partials.** Symbolic execution finds potential
   counterexamples for assertions on programs whose preconditions are
   insufficient. Expected behaviour for SMACK programs as currently
