@@ -1,4 +1,5 @@
+test_class_mixed_init.py(19, 0): ✔️ always true if reached - Check field-access object must be Class
 test_class_mixed_init.py(19, 0): ✔️ always true if reached - class with init
 test_class_mixed_init.py(19, 0): ❓ unknown - class with init
-DETAIL: 1 passed, 0 failed, 1 inconclusive
+DETAIL: 2 passed, 0 failed, 1 inconclusive
 RESULT: Inconclusive

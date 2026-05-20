@@ -290,7 +290,7 @@ def translateExpr (expr : StmtExprMd)
   | .IsType _ _ =>
       throwExprDiagnostic $ diagnosticFromSource expr.source "IsType should have been lowered" DiagnosticType.StrataBug
   | .New _ => throwExprDiagnostic $ diagnosticFromSource expr.source s!"New should have been eliminated by typeHierarchyTransform" DiagnosticType.StrataBug
-  | .Var (.Field target fieldId) =>
+  | .Var (.Field target fieldId _) =>
       -- Field selects should have been eliminated by heap parameterization
       -- If we see one here, it's an error in the pipeline
       throwExprDiagnostic $ diagnosticFromSource expr.source s!"FieldSelect should have been eliminated by heap parameterization: {Std.ToFormat.format target}#{fieldId.text}" DiagnosticType.StrataBug
@@ -402,7 +402,7 @@ def translateStmt (stmt : StmtExprMd)
           | .Local name =>
             let ident : Core.CoreIdent := ⟨name.text, ()⟩
             result := result ++ (← onLocal ident)
-          | .Field _ _ => pure () -- already handled above
+          | .Field _ _ _ => pure () -- already handled above
         return result
       -- Partition targets into init-nondet statements and CoreIdent list (for procedure calls).
       let initTargetsNondet : TranslateM (List Core.Statement × List Core.CoreIdent) := do
@@ -418,7 +418,7 @@ def translateStmt (stmt : StmtExprMd)
           | .Local name =>
             let ident : Core.CoreIdent := ⟨name.text, ()⟩
             lhs := lhs ++ [ident]
-          | .Field _ _ => pure () -- already handled above
+          | .Field _ _ _ => pure () -- already handled above
         return (inits, lhs)
       -- Translate a procedure/instance call: init Declare targets with nondet, then emit call
       let translateCallTargets (calleeName : String) (args : List StmtExprMd) : TranslateM (List Core.Statement) := do

@@ -1,3 +1,4 @@
+unknown location: ✅ pass - Check field-access object must be Class
 test_class_field_any.py(6, 0): ❓ unknown - assert(113)
-DETAIL: 0 passed, 0 failed, 1 inconclusive
+DETAIL: 1 passed, 0 failed, 1 inconclusive
 RESULT: Inconclusive

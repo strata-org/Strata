@@ -8,6 +8,7 @@ module
 public import Strata.Languages.Laurel.Laurel
 import Strata.DL.Lambda.LExpr
 import Strata.DDM.Util.Graph.Tarjan
+public import Strata.Languages.Laurel.Resolution
 
 /-!
 ## Grouping and Ordering for Core Translation
@@ -28,21 +29,25 @@ namespace Strata.Laurel
 open Lambda (LMonoTy LExpr)
 
 /-- Collect all `UserDefined` type names referenced in a `HighType`, including nested ones. -/
-def collectTypeRefs : HighTypeMd → List String
-  | ⟨.UserDefined name, _⟩ => [name.text]
-  | ⟨.TSet elem, _⟩ => collectTypeRefs elem
-  | ⟨.TMap k v, _⟩ => collectTypeRefs k ++ collectTypeRefs v
-  | ⟨.TTypedField vt, _⟩ => collectTypeRefs vt
+def collectTypeRefs (model: SemanticModel): HighTypeMd → List String
+  | ⟨.UserDefined name, _⟩ => match name.uniqueId.bind model.refToDef.get? with
+    | some (.datatypeDefinition _)
+    | some (.datatypeConstructor _ _) => [name.text]
+    | some (.compositeType _) => [name.text, "Composite"]
+    | _ => [name.text]    -- unresolved / alias / future variant: don't synthesize a dep
+  | ⟨.TSet elem, _⟩ => collectTypeRefs model elem
+  | ⟨.TMap k v, _⟩ => collectTypeRefs model k ++ collectTypeRefs model v
+  | ⟨.TTypedField vt, _⟩ => collectTypeRefs model vt
   | ⟨.Applied base args, _⟩ =>
-      collectTypeRefs base ++ args.flatMap collectTypeRefs
-  | ⟨.Pure base, _⟩ => collectTypeRefs base
-  | ⟨.Intersection ts, _⟩ => ts.flatMap collectTypeRefs
+      collectTypeRefs model base ++ args.flatMap (collectTypeRefs model)
+  | ⟨.Pure base, _⟩ => collectTypeRefs model base
+  | ⟨.Intersection ts, _⟩ => ts.flatMap $ collectTypeRefs model
   | ⟨.TCore name, _⟩ => [name]
   | _ => []
 
 /-- Get all datatype names that a `DatatypeDefinition` references in its constructor args. -/
-def datatypeRefs (dt : DatatypeDefinition) : List String :=
-  dt.constructors.flatMap fun c => c.args.flatMap fun p => collectTypeRefs p.type
+def datatypeRefs (model: SemanticModel) (dt : DatatypeDefinition) : List String :=
+  dt.constructors.flatMap fun c => c.args.flatMap fun p => collectTypeRefs model p.type
 
 /--
 Collect all `StaticCall` callee names referenced anywhere in a `StmtExpr`.
@@ -85,7 +90,7 @@ def collectStaticCallNames (expr : StmtExprMd) : List String :=
       | some t => collectStaticCallNames t
       | none => []) ++
       collectStaticCallNames body
-  | .Var (.Field t _) => collectStaticCallNames t
+  | .Var (.Field t _ _) => collectStaticCallNames t
   | .PureFieldUpdate t _ v => collectStaticCallNames t ++ collectStaticCallNames v
   | .InstanceCall t _ args =>
       collectStaticCallNames t ++ args.flatMap (fun a => collectStaticCallNames a)
@@ -198,7 +203,7 @@ public structure OrderedLaurel where
 Group mutually recursive datatypes into SCC groups using Tarjan's SCC algorithm.
 Returns groups in topological order (dependencies before dependents).
 -/
-public def groupDatatypesByScc (program : Program) : List (List DatatypeDefinition) :=
+public def groupDatatypesByScc (model: SemanticModel) (program : Program) : List (List DatatypeDefinition) :=
   let laurelDatatypes := program.types.filterMap fun td => match td with
     | .Datatype dt => some dt
     | _ => none
@@ -208,7 +213,7 @@ public def groupDatatypesByScc (program : Program) : List (List DatatypeDefiniti
     laurelDatatypes.foldlIdx (fun m i dt => m.insert dt.name.text i) {}
   let edges : List (Nat × Nat) :=
     laurelDatatypes.foldlIdx (fun acc i dt =>
-      (datatypeRefs dt).filterMap nameToIdx.get? |>.foldl (fun acc j => (j, i) :: acc) acc) []
+      (datatypeRefs model dt).filterMap nameToIdx.get? |>.foldl (fun acc j => (j, i) :: acc) acc) []
   let g := OutGraph.ofEdges! n edges
   let dtsArr := laurelDatatypes.toArray
   OutGraph.tarjan g |>.toList.filterMap fun comp =>
@@ -226,8 +231,8 @@ public def groupProcsByScc (program : Program) : List OrderedDecl :=
 Produce an `OrderedLaurel` from a `Program` by grouping and ordering
 procedures via SCC, collecting datatypes, and constants.
 -/
-public def orderProgram (program : Program) : OrderedLaurel :=
-  let datatypeDecls := (groupDatatypesByScc program).map OrderedDecl.datatypes
+public def orderProgram (model: SemanticModel) (program : Program) : OrderedLaurel :=
+  let datatypeDecls := (groupDatatypesByScc model program).map OrderedDecl.datatypes
   let constantDecls := program.constants.map OrderedDecl.constant
   let procDecls := groupProcsByScc program
   { decls := datatypeDecls ++ constantDecls ++ procDecls }

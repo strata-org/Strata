@@ -130,7 +130,7 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd) : InferHol
       let targetType := match targets with
         | target :: _ => match target.val with
           | .Local name => computeExprType model ⟨.Var (.Local name), target.source⟩
-          | .Field _ fieldName => computeExprType model ⟨.Var (.Field ⟨.Hole, none⟩ fieldName), target.source⟩
+          | .Field _ fieldName fieldTy => fieldTy.getD $ computeExprType model ⟨.Var (.Field ⟨.Hole, none⟩ fieldName), target.source⟩
           | .Declare param => param.type
         | _ => ⟨ .Unknown, source ⟩
       return ⟨.Assign targets (← inferExpr value targetType), source⟩

@@ -1,3 +1,6 @@
+unknown location: ❓ unknown - assert_assert(0)_calls_Any_get_0
+unknown location: ❓ unknown - assert_assert(0)_calls_Any_get_1
+unknown location: ❓ unknown - Check to_string_any exception
 test_missing_models.py(8, 4): ❓ unknown - init_calls_Any_get_0
 test_missing_models.py(8, 4): ❓ unknown - init_calls_Any_get_1
 test_missing_models.py(9, 4): ❓ unknown - (Origin_test_helper_procedure_Requires)req_name_is_foo
@@ -6,8 +9,9 @@ test_missing_models.py(9, 4): ✅ pass - (Origin_test_helper_procedure_Requires)
 test_missing_models.py(12, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_name_is_foo
 test_missing_models.py(12, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_str
 test_missing_models.py(12, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar
+unknown location: ✅ pass - Check to_string_any exception
 test_missing_models.py(15, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_name_is_foo
 test_missing_models.py(15, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_str
 test_missing_models.py(15, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar
-DETAIL: 8 passed, 0 failed, 3 inconclusive
+DETAIL: 9 passed, 0 failed, 6 inconclusive
 RESULT: Inconclusive

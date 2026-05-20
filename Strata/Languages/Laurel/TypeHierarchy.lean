@@ -140,7 +140,7 @@ Walk a StmtExpr AST and collect DiagnosticModel errors for diamond-inherited fie
 def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
     (expr : StmtExprMd) : List DiagnosticModel :=
   match _h : expr.val with
-  | .Var (.Field target fieldName) =>
+  | .Var (.Field target fieldName _) =>
     let targetErrors := validateDiamondFieldAccessesForStmtExpr model target
     let fieldError := checkDiamondFieldAccess model target fieldName expr.source
     targetErrors ++ fieldError
@@ -149,7 +149,7 @@ def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
   | .Assign targets value =>
     let targetErrors := targets.attach.foldl (fun acc ⟨t, _⟩ =>
       match _hv : t.val with
-      | .Field target fieldName =>
+      | .Field target fieldName _ =>
         let innerErrors := validateDiamondFieldAccessesForStmtExpr model target
         let fieldError := checkDiamondFieldAccess model target fieldName t.source
         acc ++ innerErrors ++ fieldError

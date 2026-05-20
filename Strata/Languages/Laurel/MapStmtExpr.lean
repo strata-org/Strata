@@ -49,12 +49,12 @@ def mapStmtExprM [Monad m] (f : StmtExprMd → m StmtExprMd) (expr : StmtExprMd)
     let targets' ← targets.attach.mapM fun ⟨v, _⟩ => do
       let ⟨vv, vs⟩ := v
       match vv with
-      | .Field target fieldName =>
-        pure ⟨Variable.Field (← mapStmtExprM f target) fieldName, vs⟩
+      | .Field target fieldName fieldTy =>
+        pure ⟨Variable.Field (← mapStmtExprM f target) fieldName fieldTy, vs⟩
       | .Local _ | .Declare _ => pure v
     pure ⟨.Assign targets' (← mapStmtExprM f value), source⟩
-  | .Var (.Field target fieldName) =>
-    pure ⟨.Var (.Field (← mapStmtExprM f target) fieldName), source⟩
+  | .Var (.Field target fieldName fieldTy) =>
+    pure ⟨.Var (.Field (← mapStmtExprM f target) fieldName fieldTy), source⟩
   | .PureFieldUpdate target fieldName newValue =>
     pure ⟨.PureFieldUpdate (← mapStmtExprM f target) fieldName (← mapStmtExprM f newValue), source⟩
   | .StaticCall callee args =>

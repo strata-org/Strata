@@ -394,10 +394,13 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
       | .Local ref =>
         let ref' ← resolveRef ref source
         pure (⟨.Local ref', vs⟩ : VariableMd)
-      | .Field target fieldName =>
+      | .Field target fieldName fieldTy=>
         let target' ← resolveStmtExpr target
-        let fieldName' ← resolveFieldRef target' fieldName source
-        pure (⟨.Field target' fieldName', vs⟩ : VariableMd)
+        if fieldTy.isNone then
+          let fieldName' ← resolveFieldRef target' fieldName source
+          pure (⟨.Field target' fieldName' fieldTy, vs⟩ : VariableMd)
+        else
+          pure (⟨.Field target' fieldName fieldTy, vs⟩ : VariableMd)
       | .Declare param =>
         let ty' ← resolveHighType param.type
         let name' ← defineNameCheckDup param.name (.var param.name ty')
@@ -425,10 +428,13 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
         s!"Assignment target count mismatch: {targets'.length} targets but right-hand side produces {expectedOutputCount} values"
       modify fun s => { s with errors := s.errors.push diag }
     pure (.Assign targets' value')
-  | .Var (.Field target fieldName) =>
+  | .Var (.Field target fieldName fieldTy) =>
     let target' ← resolveStmtExpr target
-    let fieldName' ← resolveFieldRef target' fieldName source
-    pure (.Var (.Field target' fieldName'))
+    if fieldTy.isNone then
+      let fieldName' ← resolveFieldRef target' fieldName source
+      pure (.Var (.Field target' fieldName' fieldTy))
+    else
+      pure (.Var (.Field target' fieldName fieldTy))
   | .PureFieldUpdate target fieldName newVal =>
     let target' ← resolveStmtExpr target
     let fieldName' ← resolveFieldRef target' fieldName source
@@ -703,7 +709,7 @@ private def collectStmtExpr (map : Std.HashMap Nat ResolvedNode) (expr : StmtExp
         collectHighType map param.type
       | _ => map) map
     collectStmtExpr map value
-  | .Var (.Field target _) => collectStmtExpr map target
+  | .Var (.Field target _ _) => collectStmtExpr map target
   | .PureFieldUpdate target _ newVal =>
     let map := collectStmtExpr map target
     collectStmtExpr map newVal

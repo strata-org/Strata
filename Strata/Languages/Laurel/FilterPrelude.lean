@@ -100,10 +100,10 @@ private partial def collectExprNames (expr : StmtExprMd) : CollectM Unit := do
     collectExprNames value
     for ⟨t, _⟩ in targets.attach do
       match t.val with
-      | .Field target _ => collectExprNames target
+      | .Field target _ _ => collectExprNames target
       | .Local _ => pure ()
       | .Declare param => collectHighTypeNames param.type
-  | .Var (.Field target _) => collectExprNames target
+  | .Var (.Field target _ _) => collectExprNames target
   | .Var (.Declare param) => collectHighTypeNames param.type
   | .PureFieldUpdate target _ newVal =>
     collectExprNames target; collectExprNames newVal

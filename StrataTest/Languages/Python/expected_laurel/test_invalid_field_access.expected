@@ -1,0 +1,5 @@
+test_invalid_field_access.py(2, 0): ❓ unknown - Check field-access object must be Class
+unknown location: ❓ unknown - Check field-access object must be Class
+unknown location: ❓ unknown - Check field-access object must be Class
+DETAIL: 0 passed, 0 failed, 3 inconclusive
+RESULT: Inconclusive

@@ -83,7 +83,7 @@ partial def stmtExprToArg (s : StmtExprMd) : Arg :=
 where
   variableToArg : Variable → Arg
     | .Local name => laurelOp "identifier" #[ident name.text]
-    | .Field target field => laurelOp "fieldAccess" #[stmtExprToArg target, ident field.text]
+    | .Field target field _ => laurelOp "fieldAccess" #[stmtExprToArg target, ident field.text]
     -- Declare is handled specially in the `Assign [⟨.Declare …⟩]` case of `stmtExprValToArg`.
     -- This fallback drops the type; it should not be reached in normal operation.
     | .Declare param => laurelOp "identifier" #[ident param.name.text]
@@ -117,7 +117,7 @@ where
           match t.val with
           | .Declare param => laurelOp "assignTargetDecl" #[ident param.name.text, highTypeToArg param.type]
           | .Local name => laurelOp "assignTargetVar" #[ident name.text]
-          | .Field target fieldName =>
+          | .Field target fieldName _ =>
             match target.val with
             | .Var (.Local name) => laurelOp "assignTargetField" #[ident name.text, ident fieldName.text]
             | _ => laurelOp "assignTargetVar" #[ident "_"]
@@ -127,7 +127,7 @@ where
           | t :: _ => variableToArg t.val
           | [] => laurelOp "identifier" #[ident "_"]
         laurelOp "assign" #[targetArg, stmtExprToArg value]
-    | .Var (.Field target field) =>
+    | .Var (.Field target field _) =>
       laurelOp "fieldAccess" #[stmtExprToArg target, ident field.text]
     | .StaticCall callee args =>
       let calleeArg := laurelOp "identifier" #[ident callee.text]

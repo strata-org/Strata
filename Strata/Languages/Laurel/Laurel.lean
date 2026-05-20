@@ -244,8 +244,11 @@ A variable reference or declaration: a local variable, a field access on an expr
 inductive Variable : Type where
   /-- A local variable reference by name. -/
   | Local (name : Identifier)
-  /-- Read a field from a target expression. Combined with `Assign` for field writes. -/
-  | Field (target : AstNode StmtExpr) (fieldName : Identifier)
+  /-- Read a field from a target expression. Combined with `Assign` for field writes.
+      When fieldType is none, fieldName is expected to be resolved into a valid field by Laurel.
+      When fieldType is some ty (provided by user), this is a dynamic field access, Laurel will not resolve the field.
+  -/
+  | Field (target : AstNode StmtExpr) (fieldName : Identifier) (fieldType : Option (AstNode HighType):= none)
   /-- A local variable declaration with a name and type. -/
   | Declare (parameter : Parameter)
 
@@ -346,8 +349,8 @@ theorem Condition.sizeOf_condition_lt (c : Condition) : sizeOf c.condition < 1 +
 
 /-- The target expression inside a `Variable.Field` is strictly smaller than the `Field` itself.
 Useful for termination proofs when recursing into `Variable.Field` targets. -/
-theorem Variable.sizeOf_field_target_lt (target : AstNode StmtExpr) (fieldName : Identifier) :
-    sizeOf target < sizeOf (Variable.Field target fieldName) := by
+theorem Variable.sizeOf_field_target_lt (target : AstNode StmtExpr) (fieldName : Identifier) (fieldTy: Option (AstNode HighType)):
+    sizeOf target < sizeOf (Variable.Field target fieldName fieldTy) := by
   simp; omega
 
 /-- Variant of `sizeOf_field_target_lt` that works directly with an `AstNode Variable`
@@ -360,11 +363,11 @@ omega
 -/
 theorem Variable.sizeOf_field_target_lt_of_eq {v : AstNode Variable}
     {target : AstNode StmtExpr} {fieldName : Identifier}
-    (h : v.val = Variable.Field target fieldName) :
+    (h : v.val = Variable.Field target fieldName fieldTy) :
     sizeOf target < sizeOf v := by
   have := AstNode.sizeOf_val_lt v
-  have := Variable.sizeOf_field_target_lt target fieldName
-  have : sizeOf v.val = sizeOf (Variable.Field target fieldName) := congrArg sizeOf h
+  have := Variable.sizeOf_field_target_lt target fieldName fieldTy
+  have : sizeOf v.val = sizeOf (Variable.Field target fieldName fieldTy) := congrArg sizeOf h
   omega
 
 /-- Apply a monadic transformation to the condition expression, preserving the summary. -/
