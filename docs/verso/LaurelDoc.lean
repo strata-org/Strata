@@ -223,8 +223,8 @@ direction explicit.
   \[⇒\] Op-Concat
 - *Object forms* — \[⇒\] New-Ok, \[⇒\] New-Fallback; \[⇒\] AsType; \[⇒\] IsType;
   \[⇒\] RefEq; \[⇒\] PureFieldUpdate
-- *Verification expressions* — \[⇒\] Quantifier, \[⇒\] Assigned, \[⇒\] Old,
-  \[⇒\] Fresh, \[⇒\] ProveBy
+- *Verification expressions* — \[⇒\] Quantifier, \[⇒\] Assigned, \[⇐\] Old,
+  \[⇒\] Fresh, \[⇐\] ProveBy
 - *Self reference* — \[⇒\] This-Inside, \[⇒\] This-Outside
 - *Untyped forms* — \[⇒\] Abstract / All
 - *ContractOf* — \[⇒\] ContractOf-Bool, \[⇒\] ContractOf-Set, \[⇒\] ContractOf-Error
@@ -417,17 +417,17 @@ $$`\frac{\Gamma \vdash \mathit{name} \Rightarrow \_}{\Gamma \vdash \mathsf{Assig
 
 {docstring Strata.Laurel.Resolution.Synth.assigned}
 
-$$`\frac{\Gamma \vdash v \Rightarrow T}{\Gamma \vdash \mathsf{Old}\;v \Rightarrow T} \quad \text{([⇒] Old)}`
+$$`\frac{\Gamma \vdash v \Leftarrow T}{\Gamma \vdash \mathsf{Old}\;v \Leftarrow T} \quad \text{([⇐] Old)}`
 
-{docstring Strata.Laurel.Resolution.Synth.old}
+{docstring Strata.Laurel.Resolution.Check.old}
 
 $$`\frac{\Gamma \vdash v \Rightarrow T \quad \mathsf{isReference}\;T}{\Gamma \vdash \mathsf{Fresh}\;v \Rightarrow \mathsf{TBool}} \quad \text{([⇒] Fresh)}`
 
 {docstring Strata.Laurel.Resolution.Synth.fresh}
 
-$$`\frac{\Gamma \vdash v \Rightarrow T \quad \Gamma \vdash \mathit{proof} \Rightarrow \_}{\Gamma \vdash \mathsf{ProveBy}\;v\;\mathit{proof} \Rightarrow T} \quad \text{([⇒] ProveBy)}`
+$$`\frac{\Gamma \vdash v \Leftarrow T \quad \Gamma \vdash \mathit{proof} \Rightarrow \_}{\Gamma \vdash \mathsf{ProveBy}\;v\;\mathit{proof} \Leftarrow T} \quad \text{([⇐] ProveBy)}`
 
-{docstring Strata.Laurel.Resolution.Synth.proveBy}
+{docstring Strata.Laurel.Resolution.Check.proveBy}
 
 ### Self reference
 

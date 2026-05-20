@@ -547,8 +547,8 @@ inside the mutual block below. Helpers are grouped by section to mirror the
 - Primitive operations — `Synth.primitiveOp`
 - Object forms — `Synth.new`, `Synth.asType`, `Synth.isType`, `Synth.refEq`,
   `Synth.pureFieldUpdate`
-- Verification expressions — `Synth.quantifier`, `Synth.assigned`, `Synth.old`,
-  `Synth.fresh`, `Synth.proveBy`
+- Verification expressions — `Synth.quantifier`, `Synth.assigned`,
+  `Synth.fresh`, `Check.old`, `Check.proveBy`
 - Self reference — `Synth.this`
 - Untyped forms — `Synth.abstract`, `Synth.all`
 - ContractOf — `Synth.contractOf`
@@ -614,12 +614,8 @@ def Synth.resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTy
     Synth.quantifier exprMd mode param trigger body source (by rw [h_node])
   | .Assigned name =>
     Synth.assigned exprMd name source (by rw [h_node])
-  | .Old val =>
-    Synth.old exprMd val (by rw [h_node])
   | .Fresh val =>
     Synth.fresh exprMd expr val source h_expr (by rw [h_node])
-  | .ProveBy val proof =>
-    Synth.proveBy exprMd val proof (by rw [h_node])
   | .ContractOf ty fn =>
     Synth.contractOf exprMd ty fn source (by rw [h_node])
   | .Abstract => pure (Synth.abstract source)
@@ -676,6 +672,10 @@ def Check.resolveStmtExpr (exprMd : StmtExprMd) (expected : HighTypeMd) : Resolv
     Check.assert exprMd condExpr summary expected source (by rw [h_node])
   | .Assume cond =>
     Check.assume exprMd cond expected source (by rw [h_node])
+  | .Old val =>
+    Check.old exprMd val expected source (by rw [h_node])
+  | .ProveBy val proof =>
+    Check.proveBy exprMd val proof expected source (by rw [h_node])
   | _ =>
     -- Subsumption fallback: synth then check `actual <: expected`.
     let (e', actual) ← Synth.resolveStmtExpr exprMd
@@ -1383,14 +1383,17 @@ def Synth.assigned (exprMd : StmtExprMd)
     simp [h] at hsz
     omega
 
-/-- `Γ ⊢ v ⇒ T  ∴  Γ ⊢ Old v ⇒ T` -/
-def Synth.old (exprMd : StmtExprMd)
-    (val : StmtExprMd)
+/-- `Γ ⊢ v ⇐ T  ∴  Γ ⊢ Old v ⇐ T`
+
+    `Old v` has the same type as `v`, so the surrounding expectation
+    propagates straight through. -/
+def Check.old (exprMd : StmtExprMd)
+    (val : StmtExprMd) (expected : HighTypeMd) (source : Option FileRange)
     (h : exprMd.val = .Old val) :
-    ResolveM (StmtExpr × HighTypeMd) := do
-  let (val', valTy) ← Synth.resolveStmtExpr val
-  pure (.Old val', valTy)
-  termination_by (exprMd, 1)
+    ResolveM StmtExprMd := do
+  let val' ← Check.resolveStmtExpr val expected
+  pure { val := .Old val', source := source }
+  termination_by (exprMd, 0)
   decreasing_by
     apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
@@ -1419,18 +1422,20 @@ def Synth.fresh (exprMd : StmtExprMd) (expr : StmtExpr)
     simp [h] at hsz
     omega
 
-/-- `Γ ⊢ v ⇒ T,  Γ ⊢ proof ⇒ _  ∴  Γ ⊢ ProveBy v proof ⇒ T`
+/-- `Γ ⊢ v ⇐ T,  Γ ⊢ proof ⇒ _  ∴  Γ ⊢ ProveBy v proof ⇐ T`
 
-    `v` and `proof` are both synthesized; the construct's type is `v`'s
-    type — `proof` is a hint for downstream verification. -/
-def Synth.proveBy (exprMd : StmtExprMd)
-    (val proof : StmtExprMd)
+    `ProveBy v proof` has the same type as `v` (the proof is just a hint
+    for downstream verification), so the surrounding expectation
+    propagates into `v`. The proof itself has no constraint on its type
+    and is still synthesized. -/
+def Check.proveBy (exprMd : StmtExprMd)
+    (val proof : StmtExprMd) (expected : HighTypeMd) (source : Option FileRange)
     (h : exprMd.val = .ProveBy val proof) :
-    ResolveM (StmtExpr × HighTypeMd) := do
-  let (val', valTy) ← Synth.resolveStmtExpr val
+    ResolveM StmtExprMd := do
+  let val' ← Check.resolveStmtExpr val expected
   let (proof', _) ← Synth.resolveStmtExpr proof
-  pure (.ProveBy val' proof', valTy)
-  termination_by (exprMd, 1)
+  pure { val := .ProveBy val' proof', source := source }
+  termination_by (exprMd, 0)
   decreasing_by
     all_goals
       apply Prod.Lex.left
