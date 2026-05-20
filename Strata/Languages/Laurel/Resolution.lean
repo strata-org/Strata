@@ -168,13 +168,16 @@ def ResolvedNode.getType (node: ResolvedNode): HighTypeMd := match node with
 structure SemanticModel where
   nextId: Nat
   compositeCount: Nat
-  refToDef: Std.HashMap Nat ResolvedNode
+  private refToDef: Std.HashMap Nat ResolvedNode
   deriving Repr
 
+/-- Look up the resolved node for an identifier, returning `none` if the identifier
+    has no `uniqueId` or is not in the model. -/
+def SemanticModel.get? (model: SemanticModel) (iden: Identifier): Option ResolvedNode :=
+  iden.uniqueId.bind model.refToDef.get?
+
 def SemanticModel.get (model: SemanticModel) (iden: Identifier): ResolvedNode :=
-  match iden.uniqueId with
-  | some key => (model.refToDef.get? key).getD default
-  | none => default
+  (model.get? iden).getD default
 
 def SemanticModel.isFunction (model: SemanticModel) (id: Identifier): Bool :=
   match model.get id with
