@@ -62,7 +62,7 @@ public section
 
 namespace Strata
 
-open Strata.Python.Specs (ModuleName)
+open Strata.Python (ModuleName)
 
 /-! ### File I/O -/
 
@@ -404,32 +404,29 @@ inductive WarningOutput where
 deriving Inhabited, BEq
 
 /-- Recursively discover all Python modules under a directory.
-    Returns `(moduleName, filePath)` pairs. The `components` array
-    accumulates directory names as we recurse, forming the dotted
-    module name prefix. -/
+    Returns `(moduleName, filePath)` pairs. -/
 private partial def discoverModules (sourceDir : System.FilePath)
     : IO (Array (ModuleName × System.FilePath)) := do
-  let rec go (dir : System.FilePath) (components : Array String)
+  let rec go (dir : System.FilePath) (relPrefix : System.FilePath)
       : IO (Array (ModuleName × System.FilePath)) := do
     let mut acc := #[]
     let entries ← dir.readDir
     for entry in entries do
+      let relChild : System.FilePath :=
+            if relPrefix.toString.isEmpty then
+              entry.fileName
+            else
+              relPrefix / entry.fileName
       if ← entry.path.isDir then
-        acc := acc ++ (← go entry.path (components.push entry.fileName))
+        acc := acc ++ (← go entry.path relChild)
       else if entry.fileName.endsWith ".py" then
-        let parts :=
-          if entry.fileName == "__init__.py" then
-            components
-          else
-            components.push (entry.fileName.takeWhile (· != '.') |>.toString)
-        if parts.isEmpty then continue
-        let dotted := ".".intercalate parts.toList
-        match ModuleName.ofString dotted with
-        | .ok mod => acc := acc.push (mod, entry.path)
+        match ModuleName.ofRelativePath relChild with
+        | .ok info => acc := acc.push (info.moduleName, entry.path)
         | .error msg =>
           let _ ← IO.eprintln s!"warning: skipping {entry.path}: {msg}" |>.toBaseIO
+          continue
     return acc
-  go sourceDir #[]
+  go sourceDir ⟨""⟩
 
 /-- Derive the output path for a Python file by mirroring the source directory
     structure and replacing `.py` with `.pyspec.st.ion`. -/
@@ -480,9 +477,9 @@ def pySpecsDir (sourceDir strataDir dialectFile : System.FilePath)
     else
       let mut result := #[]
       for m in modules do
-        let mod ← match ModuleName.ofString m with
-          | .ok r => pure r
-          | .error e => throw s!"Invalid module name '{m}': {e}"
+        let mod ← match ModuleName.ofString? m with
+          | some r => pure r
+          | none => throw s!"Invalid module name '{m}'"
         let (path, _) ←
           match ← ModuleName.findInPath mod sourceDir |>.toBaseIO with
           | .ok r => pure r
@@ -514,9 +511,9 @@ def pySpecsDir (sourceDir strataDir dialectFile : System.FilePath)
     -- Translate
     Python.Specs.baseLogEvent events "import" s!"Translating {mod}"
     match ← Strata.Python.Specs.translateFile
-        dialectFile strataDir pythonFile sourceDir
+        dialectFile strataDir pythonFile sourceDir mod
         (events := events) (skipNames := skipIdents)
-        (moduleName := mod) (pythonCmd := pythonCmd) |>.toBaseIO with
+        (pythonCmd := pythonCmd) |>.toBaseIO with
     | .error msg =>
       Python.Specs.baseLogEvent events "import" s!"Failed {mod}: {msg}"
       failures := failures.push (toString mod, msg)
