@@ -6,19 +6,28 @@ Add agents via the UI, then click Start.
 """
 
 import asyncio
+import time
 
+t0 = time.time()
 from strataswarm import ClaudeBackend, SwarmDashboard
+print(f"[{time.time()-t0:.2f}s] imports done")
 
 
 async def main():
+    t1 = time.time()
     dashboard = SwarmDashboard(
         backend_factory=lambda: ClaudeBackend(),
         port=8420,
     )
+    print(f"[{time.time()-t1:.2f}s] dashboard created")
     await dashboard.start()
-    print("StrataSwarm Dashboard running at http://localhost:8420")
+    print(f"[{time.time()-t1:.2f}s] server started — http://localhost:8420")
     await asyncio.Event().wait()
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\nShutdown.")
+

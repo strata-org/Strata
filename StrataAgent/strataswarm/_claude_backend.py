@@ -40,6 +40,8 @@ class ClaudeBackend(AgentBackend):
         self._cumulative_output_tokens: int = 0
         self._cumulative_cache_read: int = 0
         self._turn_count: int = 0
+        self._session_id: str | None = None
+        self._config: BackendConfig | None = None
 
     def _estimate_cost(self) -> float:
         # Opus pricing: $15/M input, $75/M output, $1.5/M cache read
@@ -49,6 +51,12 @@ class ClaudeBackend(AgentBackend):
         return input_cost + output_cost + cache_cost
 
     async def connect(self, config: BackendConfig) -> None:
+        self._config = config
+        await self._do_connect(resume=False)
+
+    async def _do_connect(self, resume: bool = False) -> None:
+        config = self._config
+        assert config is not None
         opts_kwargs: dict[str, Any] = {
             "allowed_tools": config.allowed_tools,
             "disallowed_tools": config.disallowed_tools,
@@ -70,9 +78,23 @@ class ClaudeBackend(AgentBackend):
             if "mcp_servers" in config.extra:
                 opts_kwargs["mcp_servers"] = config.extra["mcp_servers"]
 
+        # Resume from previous session if available
+        if resume and self._session_id:
+            opts_kwargs["resume"] = self._session_id
+
         options = ClaudeAgentOptions(**opts_kwargs)
         self._client = ClaudeSDKClient(options=options)
         await self._client.connect()
+
+    async def reconnect(self) -> bool:
+        """Attempt to reconnect using stored session ID. Returns True if successful."""
+        if not self._session_id:
+            return False
+        try:
+            await self._do_connect(resume=True)
+            return True
+        except Exception:
+            return False
 
     async def send_query(self, prompt: str) -> None:
         assert self._client is not None
@@ -82,6 +104,8 @@ class ClaudeBackend(AgentBackend):
         assert self._client is not None
         async for message in self._client.receive_response():
             if isinstance(message, AssistantMessage):
+                if message.session_id:
+                    self._session_id = message.session_id
                 for block in message.content:
                     if isinstance(block, TextBlock):
                         yield BackendMessage(type="text", content=block.text)
@@ -138,6 +162,9 @@ class ClaudeBackend(AgentBackend):
                                 type="tool_result", content=str(content) if content else ""
                             )
             elif isinstance(message, ResultMessage):
+                # Track session ID for reconnection
+                if message.session_id:
+                    self._session_id = message.session_id
                 stop_reason = message.stop_reason
                 if not stop_reason and message.subtype and "budget" in message.subtype:
                     stop_reason = "budget"
@@ -155,6 +182,22 @@ class ClaudeBackend(AgentBackend):
     async def interrupt(self) -> None:
         if self._client:
             await self._client.interrupt()
+
+    async def get_context_percentage(self) -> float | None:
+        if not self._client:
+            return None
+        try:
+            usage = await self._client.get_context_usage()
+            return usage.get("percentage", None)
+        except Exception:
+            return None
+
+    async def compact(self) -> None:
+        if self._client:
+            await self._client.query("/compact")
+            # Consume the compaction response
+            async for _ in self._client.receive_response():
+                pass
 
     async def disconnect(self) -> None:
         if self._client:

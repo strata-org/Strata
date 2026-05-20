@@ -33,6 +33,7 @@ class Swarm:
         context: SwarmContext | None = None,
         enable_messaging: bool = True,
         wait_after_completion: bool = False,
+        name: str = "",
     ) -> None:
         self._nodes: dict[str, AgentNode] = {}
         self._results: dict[str, AgentResult[Any]] = {}
@@ -45,6 +46,11 @@ class Swarm:
         self._event_callback: EventCallback | None = None
         self._enable_messaging = enable_messaging
         self._wait_after_completion = wait_after_completion
+        self._name = name
+
+    @property
+    def name(self) -> str:
+        return self._name
 
     @property
     def context(self) -> SwarmContext:
@@ -151,7 +157,8 @@ class Swarm:
                 f"Your agent name is '{name}'.\n"
                 f"You have tools to communicate with other agents and the user:\n"
                 f"{agents_note}"
-                f"- check_messages(): Read the next pending message from your inbox.\n\n"
+                f"- check_messages(): Read the next pending message from your inbox.\n"
+                f"- get_time(): Get the current timestamp.\n\n"
                 f"Messages you receive are tagged with the sender (e.g. '[From user]: ...').\n\n"
                 f"IMPORTANT — WAITING PROTOCOL:\n"
                 f"NEVER poll or call check_messages in a loop to wait for messages. "
@@ -177,6 +184,8 @@ class Swarm:
             mcp_servers_override=mcp_servers,
             system_prompt_override=combined_system_prompt,
             wait_after_completion=self._wait_after_completion,
+            backend_factory=self._backend_factory,
+            swarm_name=self._name,
         )
 
         result = await agent.run()

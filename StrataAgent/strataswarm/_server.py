@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -13,9 +14,25 @@ from pydantic import BaseModel
 from ._backend import AgentBackend
 from ._channels import ChannelBus
 from ._types import AgentEvent, AgentSpec, AgentStatus
-from ._tools import ToolSet
 
 SWARM_SAVE_DIR = Path(__file__).parent.parent / "temp"
+CHAT_SAVE_DIR = SWARM_SAVE_DIR / "chats"
+LOG_DIR = SWARM_SAVE_DIR
+
+# Set up logging for all strataswarm modules (file + console)
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+_fmt = logging.Formatter("%(asctime)s [%(name)s] %(message)s", datefmt="%H:%M:%S")
+_file_handler = logging.FileHandler(LOG_DIR / "server.log", mode="a")
+_file_handler.setFormatter(_fmt)
+_console_handler = logging.StreamHandler()
+_console_handler.setFormatter(_fmt)
+_root_logger = logging.getLogger("strataswarm")
+_root_logger.setLevel(logging.DEBUG)
+_root_logger.addHandler(_file_handler)
+_root_logger.addHandler(_console_handler)
+logger = logging.getLogger("strataswarm.server")
+logger.info("Logger initialized")
+from ._tools import ToolSet
 
 
 class AgentCreateRequest(BaseModel):
@@ -63,7 +80,21 @@ class SwarmDashboard:
         self._swarm: Any = None
         self._swarm_task: asyncio.Task | None = None
         self._agent_specs: list[AgentCreateRequest] = []
+        self._swarm_name: str = ""
         self._setup_routes()
+        self._setup_middleware()
+
+    def _setup_middleware(self) -> None:
+        from starlette.middleware.base import BaseHTTPMiddleware
+        from starlette.requests import Request
+
+        class RequestLogger(BaseHTTPMiddleware):
+            async def dispatch(self, request: Request, call_next):
+                logger.info(f"HTTP {request.method} {request.url.path}")
+                response = await call_next(request)
+                return response
+
+        self.app.add_middleware(RequestLogger)
 
     def _setup_routes(self) -> None:
         static_dir = Path(__file__).parent / "_static"
@@ -76,16 +107,21 @@ class SwarmDashboard:
         async def websocket_endpoint(ws: WebSocket) -> None:
             await ws.accept()
             self._connections.append(ws)
+            logger.info("WebSocket client connected")
             await ws.send_json(self._get_full_state())
             try:
                 while True:
                     data = await ws.receive_json()
+                    action = data.get("action", "?")
+                    logger.info(f"WS {action}")
                     try:
                         await self._handle_client_message(data, ws)
                     except Exception as e:
+                        logger.error(f"Handler error ({action}): {e}")
                         await ws.send_json({"type": "error", "message": str(e)})
             except WebSocketDisconnect:
                 self._connections.remove(ws)
+                logger.info("WebSocket client disconnected")
 
         @self.app.get("/api/state")
         async def get_state() -> dict[str, Any]:
@@ -138,6 +174,7 @@ class SwarmDashboard:
             self._swarm = None
             self._swarm_task = None
             self._agent_specs = []
+            self._swarm_name = ""
             self._event_history = {}
             self._all_messages = []
             await self._broadcast({"type": "reset"})
@@ -168,6 +205,7 @@ class SwarmDashboard:
                 return {"status": "error", "message": f"Not found: {name}"}
             config = SwarmConfig.model_validate(yaml.safe_load(path.read_text()))
             self._agent_specs = config.agents
+            self._swarm_name = config.name
             await self._broadcast({"type": "specs_updated", "specs": self._get_specs_list()})
             await self._broadcast({"type": "swarm_loaded", "name": config.name})
             return {"status": "loaded", "name": config.name}
@@ -245,6 +283,7 @@ class SwarmDashboard:
             self._swarm = None
             self._swarm_task = None
             self._agent_specs = []
+            self._swarm_name = ""
             self._event_history = {}
             self._all_messages = []
             await self._broadcast({"type": "reset"})
@@ -287,6 +326,7 @@ class SwarmDashboard:
                 return
             config = SwarmConfig.model_validate(yaml.safe_load(path.read_text()))
             self._agent_specs = config.agents
+            self._swarm_name = config.name
             await ws.send_json({"type": "specs_updated", "specs": self._get_specs_list()})
             await ws.send_json({"type": "swarm_loaded", "name": config.name})
 
@@ -303,15 +343,54 @@ class SwarmDashboard:
             saved_list = [f.stem for f in SWARM_SAVE_DIR.glob("*.yaml")]
             await ws.send_json({"type": "saved_list", "saved_list": saved_list})
 
+        elif action == "save_chat":
+            label = data.get("label", "").strip()
+            filename = self._save_chat(label=label)
+            if filename:
+                await ws.send_json({"type": "chat_saved", "filename": filename})
+            else:
+                await ws.send_json({"type": "error", "message": "No chat to save"})
+
+        elif action == "list_chats":
+            CHAT_SAVE_DIR.mkdir(parents=True, exist_ok=True)
+            chats = sorted(
+                [f.stem for f in CHAT_SAVE_DIR.glob("*.yaml")],
+                reverse=True,
+            )
+            await ws.send_json({"type": "chat_list", "chats": chats})
+
+        elif action == "load_chat":
+            name = data.get("name", "").strip()
+            path = CHAT_SAVE_DIR / f"{name}.yaml"
+            if not path.exists():
+                await ws.send_json({"type": "error", "message": f"Chat '{name}' not found"})
+                return
+            chat_data = yaml.safe_load(path.read_text())
+            await ws.send_json({"type": "chat_loaded", "chat": chat_data})
+
+        elif action == "delete_chat":
+            name = data.get("name", "").strip()
+            path = CHAT_SAVE_DIR / f"{name}.yaml"
+            if path.exists():
+                path.unlink()
+            chats = sorted(
+                [f.stem for f in CHAT_SAVE_DIR.glob("*.yaml")],
+                reverse=True,
+            )
+            await ws.send_json({"type": "chat_list", "chats": chats})
+
     async def _create_and_run_swarm(self) -> None:
         from ._swarm import Swarm, ExecutionMode
 
         self._event_history = {}
         self._all_messages = []
+        swarm_name = self._swarm_name or "_".join(s.name for s in self._agent_specs[:3]) or "swarm"
+        self._swarm_name = swarm_name
         self._swarm = Swarm(
             backend_factory=self._backend_factory,
             enable_messaging=True,
             wait_after_completion=True,
+            name=swarm_name,
         )
 
         for spec_req in self._agent_specs:
@@ -397,6 +476,34 @@ class SwarmDashboard:
         payload = {"type": "agent_event", **entry}
         await self._broadcast(payload)
 
+    def _save_chat(self, label: str = "") -> str | None:
+        """Save current chat history to a YAML file. Returns filename."""
+        if not self._event_history and not self._all_messages:
+            return None
+        CHAT_SAVE_DIR.mkdir(parents=True, exist_ok=True)
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        swarm_name = ""
+        if self._agent_specs:
+            agents = "_".join(s.name for s in self._agent_specs[:3])
+            swarm_name = f"_{agents}"
+        if label:
+            swarm_name = f"_{label}"
+        filename = f"{timestamp}{swarm_name}.yaml"
+        path = CHAT_SAVE_DIR / filename
+
+        chat_data = {
+            "timestamp": timestamp,
+            "agents": [s.model_dump() for s in self._agent_specs],
+            "messages": {},
+            "all_messages": self._all_messages[-500:],
+        }
+        for agent_name, events in self._event_history.items():
+            chat_data["messages"][agent_name] = events[-200:]
+
+        path.write_text(yaml.dump(chat_data, default_flow_style=False, sort_keys=False, allow_unicode=True))
+        return filename
+
     async def _broadcast(self, payload: dict[str, Any]) -> None:
         for ws in list(self._connections):
             try:
@@ -418,7 +525,12 @@ class SwarmDashboard:
         import uvicorn
 
         config = uvicorn.Config(
-            self.app, host=self.host, port=self.port, log_level="warning"
+            self.app,
+            host=self.host,
+            port=self.port,
+            log_level="warning",
+            ws_ping_interval=30,
+            ws_ping_timeout=600,
         )
         server = uvicorn.Server(config)
         asyncio.create_task(server.serve())

@@ -1,13 +1,14 @@
 """
 In-process MCP tools for inter-agent messaging via ChannelBus.
 
-Agents get `send_message` and `check_messages` tools automatically,
-letting them communicate with other agents as natural tool calls.
+Agents get `send_message`, `check_messages`, and `get_time` tools automatically,
+letting them communicate with other agents and track time.
 """
 
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime
 from typing import Any
 
 from claude_agent_sdk import create_sdk_mcp_server, tool
@@ -84,8 +85,24 @@ def create_messaging_server(
 
         return {"content": [{"type": "text", "text": f"[From {msg.sender}]: {msg.payload}"}]}
 
+    @tool(
+        name="get_time",
+        description=(
+            "Get the current time. Use this to track how long operations take "
+            "or to include timestamps in your messages."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    )
+    async def get_time(input: dict[str, Any]) -> dict[str, Any]:
+        now = datetime.now()
+        return {"content": [{"type": "text", "text": now.strftime("%Y-%m-%d %H:%M:%S")}]}
+
     return create_sdk_mcp_server(
         name="agent_messaging",
         version="1.0.0",
-        tools=[send_message, check_messages],
+        tools=[send_message, check_messages, get_time],
     )

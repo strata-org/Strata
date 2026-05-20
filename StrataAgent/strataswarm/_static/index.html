@@ -88,6 +88,7 @@ header h1 { font-size: 18px; color: #4fc3f7; }
     <span id="total-cost">$0.0000</span>
     <button class="btn-save" onclick="showSaveModal()">Save</button>
     <button class="btn-load" onclick="showLoadModal()">Load</button>
+    <button style="background:#37474f;color:#90a4ae;padding:6px 14px;border:none;border-radius:4px;cursor:pointer;font-size:12px;font-weight:600;" onclick="saveChat()">Save Chat</button>
     <button class="btn-create" onclick="createNew()" title="Clear all agents and start fresh">New</button>
     <button class="btn-cancel" onclick="unloadSwarm()" title="Unload current agents (keeps saved configs)">Unload</button>
     <button class="btn-start" id="btn-start" onclick="startSwarm()">Start</button>
@@ -109,6 +110,7 @@ header h1 { font-size: 18px; color: #4fc3f7; }
       <div class="view-tab active" onclick="switchView('agent')" id="tab-agent">Agent View</div>
       <div class="view-tab" onclick="switchView('chitchat')" id="tab-chitchat">All Messages</div>
       <div class="view-tab" onclick="switchView('spec')" id="tab-spec">Agent Spec</div>
+      <div class="view-tab" onclick="switchView('history')" id="tab-history">Chat History</div>
     </div>
     <div class="messages" id="messages"><div class="empty">Add agents and start the swarm</div></div>
     <div class="controls">
@@ -186,6 +188,8 @@ let totalCost = 0;
 let isRunning = false;
 let pendingMessages = [];
 let savedList = [];
+let chatList = [];
+let loadedChat = null;
 
 function wsSend(obj) {
   if (ws && ws.readyState === WebSocket.OPEN) {
@@ -243,6 +247,14 @@ function connect() {
     } else if (data.type === 'saved_list') {
       savedList = data.saved_list || [];
       renderLoadModal();
+    } else if (data.type === 'chat_saved') {
+      alert(`Chat saved: ${data.filename}`);
+    } else if (data.type === 'chat_list') {
+      chatList = data.chats || [];
+      if (currentView === 'history') renderMessages();
+    } else if (data.type === 'chat_loaded') {
+      loadedChat = data.chat;
+      if (currentView === 'history') renderMessages();
     } else if (data.type === 'ping') {
       // keepalive, ignore
     } else if (data.type === 'error') {
@@ -258,7 +270,8 @@ function handleEvent(ev) {
   if (ev.event_type === 'message') {
     const text = ev.data || '';
     let type = 'normal';
-    if (text.startsWith('[tool]')) type = 'tool';
+    if (text === '[thinking...]') type = 'status';
+    else if (text.startsWith('[tool]')) type = 'tool';
     else if (text.startsWith('[tool_result]')) type = 'tool_result';
     else if (text.startsWith('[Injected') || text.startsWith('[Notification')) type = 'notification';
     agentMessages[name].push({ text, type, agent: name, ts: ev.timestamp_ms });
@@ -342,6 +355,49 @@ function renderSidebar() {
 function renderMessages() {
   const el = document.getElementById('messages');
 
+  if (currentView === 'history') {
+    if (loadedChat) {
+      // Show loaded chat content
+      const chat = loadedChat;
+      const agentNames = (chat.agents || []).map(a => a.name);
+      const msgs = chat.all_messages || [];
+      let html = `<div style="margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid #0f3460;">
+        <div style="font-size:14px;font-weight:700;color:#4fc3f7;">${escapeHtml(chat.timestamp || '')}</div>
+        <div style="font-size:11px;color:#888;margin-top:4px;">Agents: ${agentNames.map(n => escapeHtml(n)).join(', ')}</div>
+        <button onclick="loadedChat=null;renderMessages();" style="margin-top:6px;padding:4px 10px;border:none;border-radius:3px;background:#424242;color:#ccc;font-size:11px;cursor:pointer;">Back to list</button>
+      </div>`;
+      html += msgs.map(m => {
+        const color = m.agent ? agentColor(m.agent) : '#888';
+        const agentTag = m.agent ? `<div class="msg-agent" style="color:${color}">${escapeHtml(m.agent)}</div>` : '';
+        let type = 'normal';
+        const text = m.data || '';
+        if (text === '[thinking...]') type = 'status';
+        else if (text.startsWith('[tool]')) type = 'tool';
+        else if (text.startsWith('[tool_result]')) type = 'tool_result';
+        else if (text.startsWith('[From ') || text.startsWith('[Notification')) type = 'notification';
+        else if (m.event_type === 'status_change') type = 'status';
+        return `<div class="msg ${type}">${agentTag}${escapeHtml(text)}</div>`;
+      }).join('');
+      el.innerHTML = html;
+      el.scrollTop = el.scrollHeight;
+    } else {
+      // Show chat list
+      if (!chatList.length) {
+        el.innerHTML = '<div class="empty">No saved chats. Use "Save Chat" to save one.</div>';
+      } else {
+        el.innerHTML = `<div style="padding:4px 0;">
+          ${chatList.map(name => `
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:#1e2a3a;border-radius:5px;margin-bottom:6px;font-size:12px;">
+              <span style="cursor:pointer;color:#4fc3f7;" onclick="loadChatHistory('${escapeAttr(name)}')">${escapeHtml(name)}</span>
+              <button onclick="deleteChat('${escapeAttr(name)}')" style="padding:3px 8px;border:none;border-radius:3px;background:#b71c1c;color:#ef9a9a;font-size:10px;cursor:pointer;">Delete</button>
+            </div>
+          `).join('')}
+        </div>`;
+      }
+    }
+    return;
+  }
+
   if (currentView === 'spec') {
     const spec = specs.find(s => s.name === selectedAgent);
     if (!spec) {
@@ -407,10 +463,21 @@ function updateCostDisplay() {
 function formatCost(a) { return a.cost_usd ? `${a.cost_is_estimate ? '~' : ''}$${a.cost_usd.toFixed(4)}` : ''; }
 
 function selectAgent(name) { selectedAgent = name; document.getElementById('msg-target').value = name; render(); }
-function switchView(v) { currentView = v; document.getElementById('tab-agent').classList.toggle('active', v==='agent'); document.getElementById('tab-chitchat').classList.toggle('active', v==='chitchat'); document.getElementById('tab-spec').classList.toggle('active', v==='spec'); renderMessages(); }
+function switchView(v) {
+  currentView = v;
+  document.getElementById('tab-agent').classList.toggle('active', v==='agent');
+  document.getElementById('tab-chitchat').classList.toggle('active', v==='chitchat');
+  document.getElementById('tab-spec').classList.toggle('active', v==='spec');
+  document.getElementById('tab-history').classList.toggle('active', v==='history');
+  if (v === 'history') { wsSend({ action: 'list_chats' }); }
+  renderMessages();
+}
 
 // Swarm controls
 function createNew() { if (isRunning) { alert('Cancel the running swarm first.'); return; } wsSend({ action: 'create_new' }); }
+function saveChat() { const label = prompt('Chat label (optional):') || ''; wsSend({ action: 'save_chat', label }); }
+function loadChatHistory(name) { wsSend({ action: 'load_chat', name }); }
+function deleteChat(name) { if (confirm(`Delete chat '${name}'?`)) wsSend({ action: 'delete_chat', name }); }
 function unloadSwarm() { if (isRunning) { alert('Cancel the running swarm first.'); return; } specs = []; agents = {}; agentMessages = {}; allMessages = []; selectedAgent = null; wsSend({ action: 'create_new' }); }
 function startSwarm() { if (isRunning) { alert('Swarm already running.'); return; } wsSend({ action: 'start' }); }
 function pauseAll() { wsSend({ action: 'pause_all' }); }

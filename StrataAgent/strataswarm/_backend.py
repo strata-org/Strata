@@ -48,6 +48,18 @@ class AgentBackend(ABC):
     @abstractmethod
     async def disconnect(self) -> None: ...
 
+    async def reconnect(self) -> bool:
+        """Reconnect using stored session. Returns True if successful."""
+        return False
+
+    async def get_context_percentage(self) -> float | None:
+        """Return context usage as 0-100 percentage. None if not supported."""
+        return None
+
+    async def compact(self) -> None:
+        """Trigger context compaction. No-op if not supported."""
+        pass
+
     async def __aenter__(self) -> AgentBackend:
         return self
 
