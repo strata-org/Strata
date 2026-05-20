@@ -530,9 +530,14 @@ partial def TypeContext.ancestors (ctx : TypeContext) (name : String) : Std.Hash
         go acc' (parents ++ rest)
   go {} [name]
 
-/-- Subtyping. Walks `extending` chains for composites, unfolds aliases, and
-    unwraps constrained types to their base before falling back to structural
-    equality via `highEq`. -/
+/-- Pure subtyping `<:`. Walks the `extending` chain for `CompositeType`
+    (via `TypeContext.ancestors`), unfolds `TypeAlias` to its target, and
+    unwraps `ConstrainedType` to its base (both via `TypeContext.unfold`),
+    then falls back to structural equality via `highEq`.
+
+    Used together with `isConsistent` to form `isConsistentSubtype`, which
+    is what the bidirectional checker invokes at every check-mode boundary
+    (rule `[⇐] Sub`). -/
 def isSubtype (ctx : TypeContext) (sub sup : HighTypeMd) : Bool :=
   let sub' := ctx.unfold sub
   let sup' := ctx.unfold sup
@@ -543,9 +548,13 @@ def isSubtype (ctx : TypeContext) (sub sup : HighTypeMd) : Bool :=
     (ctx.ancestors subName.text).contains supName.text || highEq sub' sup'
   | _, _ => highEq sub' sup'
 
-/-- Consistency (Siek–Taha): the symmetric gradual relation. `Unknown` is the
-    dynamic type and is consistent with everything; otherwise structural
-    equality after unfolding aliases / constrained types. -/
+/-- Consistency `~` (Siek–Taha): the symmetric gradual relation. `Unknown`
+    is the dynamic type and is consistent with everything; otherwise
+    structural equality after unfolding aliases / constrained types.
+
+    Used directly by `[⇒] Op-Eq`, where the operand types must be mutually
+    consistent (no subtype direction is privileged), and as one half of
+    `isConsistentSubtype`. -/
 def isConsistent (ctx : TypeContext) (a b : HighTypeMd) : Bool :=
   let a' := ctx.unfold a
   let b' := ctx.unfold b
@@ -554,7 +563,22 @@ def isConsistent (ctx : TypeContext) (a b : HighTypeMd) : Bool :=
   | _, _ => highEq a' b'
 
 /-- Consistent subtyping: `∃ R. sub ~ R ∧ R <: sup`. For our flat lattice
-    this collapses to `sub ~ sup ∨ sub <: sup`. -/
+    this collapses to `sub ~ sup ∨ sub <: sup` — the standard collapse.
+
+    Used by rule `[⇐] Sub` (and every bespoke check rule). That single
+    choice is what makes the system *gradual*: an expression of type
+    `Unknown` (a hole, an unresolved name, a `Hole _ none`) flows freely
+    into any typed slot, and any expression flows freely into a slot of
+    type `Unknown`. Strict checking is applied between fully-known types
+    only.
+
+    A previous iteration was synth-only with two *bivariantly-compatible*
+    wildcards: `Unknown` and `UserDefined`. The `UserDefined` carve-out was
+    load-bearing: no assignment, call argument, or comparison involving a
+    user type was ever rejected. The bidirectional design retires that
+    carve-out — user-defined types are now a regular participant in `<:`,
+    with `isSubtype` walking inheritance chains and unwrapping aliases
+    and constrained types to deliver real checking on user-defined code. -/
 def isConsistentSubtype (ctx : TypeContext) (sub sup : HighTypeMd) : Bool :=
   isConsistent ctx sub sup || isSubtype ctx sub sup
 
