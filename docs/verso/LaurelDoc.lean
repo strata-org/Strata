@@ -205,8 +205,7 @@ Each construct is given as a derivation. `Γ` is the current lexical scope (see
 every premise and conclusion unless a rule explicitly extends it (written `Γ, x : T`).
 
 Each rule is tagged with `[⇒]` (synthesis) or `[⇐]` (checking) to make the
-direction explicit. When a construct has both modes, the `-Synth` / `-Check`
-suffix is dropped in favor of the prefix.
+direction explicit.
 
 ### Index
 
@@ -230,9 +229,6 @@ suffix is dropped in favor of the prefix.
 - *Untyped forms* — \[⇒\] Abstract / All
 - *ContractOf* — \[⇒\] ContractOf-Bool, \[⇒\] ContractOf-Set, \[⇒\] ContractOf-Error
 - *Holes* — \[⇒\] Hole-Some, \[⇒\] Hole-None, \[⇐\] Hole-None
-
-Each LaTeX rule below is followed by the docstring of the helper that implements it
-(grouped when one helper covers multiple rules).
 
 ### Subsumption
 
@@ -271,9 +267,6 @@ $$`\frac{\Gamma \vdash e \Rightarrow \_ \quad \Gamma(f) = T_f}{\Gamma \vdash \ma
 
 $$`\frac{x \notin \mathrm{dom}(\Gamma)}{\Gamma \vdash \mathsf{Var}\;(\mathsf{.Declare}\;\langle x, T\rangle) \Rightarrow \mathsf{TVoid} \dashv \Gamma, x : T} \quad \text{([⇒] Var-Declare)}`
 
-`⊣ Γ, x : T` records that the surrounding `Γ` is extended with the new binding for the
-remainder of the enclosing scope.
-
 {docstring Strata.Laurel.Resolution.Synth.varDeclare}
 
 ### Control flow
@@ -292,9 +285,9 @@ $$`\frac{\Gamma \vdash \mathit{cond} \Leftarrow \mathsf{TBool} \quad \Gamma \vda
 
 $$`\frac{\Gamma_0 = \Gamma \quad \Gamma_{i-1} \vdash s_i \Rightarrow \_ \dashv \Gamma_i \;(1 \le i < n) \quad \Gamma_{n-1} \vdash s_n \Rightarrow T}{\Gamma \vdash \mathsf{Block}\;[s_1; \ldots; s_n]\;\mathit{label} \Rightarrow T} \quad \text{([⇒] Block)}`
 
-`Γ_{i-1} ⊢ s_i ⇒ _ ⊣ Γ_i` says each statement is resolved in the scope produced by its
-predecessor and may itself extend it (`Var (.Declare …)` does); `s_n` is typed in
-`Γ_{n-1}`. Bindings introduced inside the block don't escape — `Γ` is what surrounds the
+$`Γ_{i-1} ⊢ s_i ⇒ \_ ⊣ Γ_i` says each statement is resolved in the scope produced by its
+predecessor and may itself extend it (`Var (.Declare …)` does); $`s_n` is typed in
+$`Γ_{n-1}`. Bindings introduced inside the block don't escape — $`Γ` is what surrounds the
 block.
 
 $$`\frac{}{\Gamma \vdash \mathsf{Block}\;[]\;\mathit{label} \Rightarrow \mathsf{TVoid}} \quad \text{([⇒] Block-Empty)}`

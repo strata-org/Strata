@@ -683,41 +683,46 @@ def Check.resolveStmtExpr (exprMd : StmtExprMd) (expected : HighTypeMd) : Resolv
 
 -- ### Literals
 
-/-- Rule **Lit-Int**: `Γ ⊢ LiteralInt n ⇒ TInt`. -/
+/-- `Γ ⊢ LiteralInt n ⇒ TInt` -/
 def Synth.litInt (v : Int) (source : Option FileRange) : StmtExpr × HighTypeMd :=
   (.LiteralInt v, { val := .TInt, source := source })
 
-/-- Rule **Lit-Bool**: `Γ ⊢ LiteralBool b ⇒ TBool`. -/
+/-- `Γ ⊢ LiteralBool b ⇒ TBool` -/
 def Synth.litBool (v : Bool) (source : Option FileRange) : StmtExpr × HighTypeMd :=
   (.LiteralBool v, { val := .TBool, source := source })
 
-/-- Rule **Lit-String**: `Γ ⊢ LiteralString s ⇒ TString`. -/
+/-- `Γ ⊢ LiteralString s ⇒ TString` -/
 def Synth.litString (v : String) (source : Option FileRange) : StmtExpr × HighTypeMd :=
   (.LiteralString v, { val := .TString, source := source })
 
-/-- Rule **Lit-Decimal**: `Γ ⊢ LiteralDecimal d ⇒ TReal`. -/
+/-- `Γ ⊢ LiteralDecimal d ⇒ TReal` -/
 def Synth.litDecimal (v : Decimal) (source : Option FileRange) : StmtExpr × HighTypeMd :=
   (.LiteralDecimal v, { val := .TReal, source := source })
 
 -- ### Variables
 
-/-- Rule **Var-Local**: `Γ(x) = T ⊢ Var (.Local x) ⇒ T`. Resolves `ref` against
-    the lexical scope and reads its declared type. -/
+/-- `Γ(x) = T  ∴  Γ ⊢ Var (.Local x) ⇒ T`
+
+    Resolves `ref` against the lexical scope and reads its declared type. -/
 def Synth.varLocal (ref : Identifier) (source : Option FileRange) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let ref' ← resolveRef ref source
   let ty ← getVarType ref
   pure (.Var (.Local ref'), ty)
 
-/-- Rule **Var-Declare**: extends the surrounding scope with `x : T` and
-    synthesizes `TVoid` (the declaration itself produces no value). -/
+/-- `x ∉ dom(Γ)  ∴  Γ ⊢ Var (.Declare ⟨x, T⟩) ⇒ TVoid ⊣ Γ, x : T`
+
+    `⊣ Γ, x : T` records that the surrounding scope is extended with the
+    new binding for the remainder of the enclosing scope. The declaration
+    itself produces no value, hence `TVoid`. -/
 def Synth.varDeclare (param : Parameter) (source : Option FileRange) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let ty' ← resolveHighType param.type
   let name' ← defineNameCheckDup param.name (.var param.name ty')
   pure (.Var (.Declare ⟨name', ty'⟩), { val := .TVoid, source := source })
 
-/-- Rule **Var-Field**: `Γ ⊢ e ⇒ _, Γ(f) = T_f ⊢ Var (.Field e f) ⇒ T_f`.
+/-- `Γ ⊢ e ⇒ _,  Γ(f) = T_f  ∴  Γ ⊢ Var (.Field e f) ⇒ T_f`
+
     `f` is looked up against the type of `e` (or the enclosing instance type
     for `self.f`); the typing rule itself is path-agnostic. -/
 def Synth.varField (exprMd : StmtExprMd)
@@ -738,7 +743,15 @@ def Synth.varField (exprMd : StmtExprMd)
 
 -- ### Control flow
 
-/-- Rules **If-NoElse** / **If-Synth**: `cond` is checked against `TBool`.
+/-- When there is an else branch:
+
+    `Γ ⊢ cond ⇐ TBool,  Γ ⊢ thenBr ⇒ T_t,  Γ ⊢ elseBr ⇒ T_e  ∴  Γ ⊢ IfThenElse cond thenBr (some elseBr) ⇒ T_t ⊔ T_e`
+
+    Otherwise:
+
+    `Γ ⊢ cond ⇐ TBool,  Γ ⊢ thenBr ⇐ TVoid  ∴  Γ ⊢ IfThenElse cond thenBr none ⇒ TVoid`
+
+    `cond` is checked against `TBool`.
     With no else branch, the construct is a statement — `thenBr` is checked
     against `TVoid` and the result is `TVoid`, so `x : int := if c then 5`
     is rejected at the branch rather than slipping through to a downstream
@@ -778,7 +791,13 @@ def Synth.ifThenElse (exprMd : StmtExprMd)
          try omega)
       | (apply Prod.Lex.right; decide)
 
-/-- Rules **Block-Synth** / **Block-Synth-Empty**: each statement is resolved
+/-- Cases on whether the statement list is empty.
+
+    `Γ_0 = Γ,  Γ_{i-1} ⊢ s_i ⇒ _ ⊣ Γ_i (1 ≤ i < n),  Γ_{n-1} ⊢ s_n ⇒ T  ∴  Γ ⊢ Block [s_1; …; s_n] label ⇒ T`
+
+    `Γ ⊢ Block [] label ⇒ TVoid`
+
+    Each statement is resolved
     in the scope produced by its predecessor and may itself extend it
     (`Var (.Declare …)` does); non-last statements are synthesized but their
     types discarded (the lax rule, matching Java/Python/JS where `f(x);` is
@@ -805,10 +824,11 @@ def Synth.block (exprMd : StmtExprMd)
     have := List.sizeOf_lt_of_mem ‹_ ∈ stmts›
     omega
 
-/-- Rule **While**: `cond ⇐ TBool`, each invariant `⇐ TBool`, optional
-    `decreases` is resolved without a type check today (the intended target
-    is a numeric type), body is synthesized; the construct itself
-    synthesizes `TVoid`. -/
+/-- `Γ ⊢ cond ⇐ TBool,  Γ ⊢ invs_i ⇐ TBool,  Γ ⊢ dec ⇐ ?,  Γ ⊢ body ⇒ _  ∴  Γ ⊢ While cond invs dec body ⇒ TVoid`
+
+    `cond ⇐ TBool`, each invariant `⇐ TBool`, optional `decreases` is
+    resolved without a type check today (the intended target is a numeric
+    type), body is synthesized; the construct itself synthesizes `TVoid`. -/
 def Synth.while (exprMd : StmtExprMd)
     (cond : StmtExprMd) (invs : List StmtExprMd)
     (dec : Option StmtExprMd) (body : StmtExprMd)
@@ -831,12 +851,22 @@ def Synth.while (exprMd : StmtExprMd)
       try simp_all
       omega
 
-/-- Rule **Exit**: `Γ ⊢ Exit target ⇒ TVoid`. -/
+/-- `Γ ⊢ Exit target ⇒ TVoid` -/
 def Synth.exit (target : String) (source : Option FileRange) : StmtExpr × HighTypeMd :=
   (.Exit target, { val := .TVoid, source := source })
 
-/-- Rules **Return-None** / **Return-Some** / **Return-Void-Error** /
-    **Return-Multi-Error**: matches the optional return value against the
+/-- Cases on whether the return value is `none` or `some e`, and on the
+    arity of the enclosing procedure's declared outputs.
+
+    `Γ ⊢ Return none ⇒ TVoid`
+
+    `Γ_proc.outputs = [T],  Γ ⊢ e ⇐ T  ∴  Γ ⊢ Return (some e) ⇒ TVoid`
+
+    `Γ_proc.outputs = []  ∴  Γ ⊢ Return (some e) ↝ error: "void procedure cannot return a value"`
+
+    `Γ_proc.outputs = [T_1; …; T_n] (n ≥ 2)  ∴  Γ ⊢ Return (some e) ↝ error: "multi-output procedure cannot use 'return e'; assign to named outputs instead"`
+
+    Matches the optional return value against the
     enclosing procedure's declared outputs. The expected output types are
     threaded through `ResolveState.expectedReturnTypes`, set from
     `proc.outputs` by `resolveProcedure` / `resolveInstanceProcedure` for
@@ -887,13 +917,18 @@ def Synth.return (exprMd : StmtExprMd) (source : Option FileRange)
       simp_all
       omega
 
-/-- Rules **Block-Check** / **Block-Check-Empty**: pushes `expected` into the
-    *last* statement rather than comparing the block's synthesized type at the
-    boundary. Errors fire at the offending subexpression, and `expected`
-    keeps propagating through nested `Block` / `IfThenElse` / `Hole` /
-    `Quantifier`. Empty blocks reduce to a subsumption check of `TVoid`
-    against `expected` — the same check `[⇐] Block-Empty` performs when
-    `T` admits `TVoid`. -/
+/-- Cases on whether the statement list is empty.
+
+    `Γ_0 = Γ,  Γ_{i-1} ⊢ s_i ⇒ _ ⊣ Γ_i (1 ≤ i < n),  Γ_{n-1} ⊢ s_n ⇐ T  ∴  Γ ⊢ Block [s_1; …; s_n] label ⇐ T`
+
+    `TVoid <: T  ∴  Γ ⊢ Block [] label ⇐ T`
+
+    Pushes `expected` into the *last* statement rather than comparing the
+    block's synthesized type at the boundary. Errors fire at the offending
+    subexpression, and `expected` keeps propagating through nested `Block`
+    / `IfThenElse` / `Hole` / `Quantifier`. Empty blocks reduce to a
+    subsumption check of `TVoid` against `expected` — the same check
+    `[⇐] Block-Empty` performs when `T` admits `TVoid`. -/
 def Check.block (exprMd : StmtExprMd)
     (stmts : List StmtExprMd) (label : Option String)
     (expected : HighTypeMd) (source : Option FileRange)
@@ -920,12 +955,19 @@ def Check.block (exprMd : StmtExprMd)
       try simp_all
       omega
 
-/-- Rules **If-Check** / **If-Check-NoElse**: pushes `expected` into both
-    branches (rather than going through If-Synth + Sub at the boundary).
-    Errors fire at the offending branch instead of the surrounding `if`.
-    Without an else branch, the construct can only succeed when `expected`
-    admits `TVoid` — the same subsumption check `[⇐] Block-Empty` performs
-    for an empty block. -/
+/-- When there is an else branch:
+
+    `Γ ⊢ cond ⇐ TBool,  Γ ⊢ thenBr ⇐ T,  Γ ⊢ elseBr ⇐ T  ∴  Γ ⊢ IfThenElse cond thenBr (some elseBr) ⇐ T`
+
+    Otherwise:
+
+    `Γ ⊢ cond ⇐ TBool,  Γ ⊢ thenBr ⇐ T,  TVoid <: T  ∴  Γ ⊢ IfThenElse cond thenBr none ⇐ T`
+
+    Pushes `expected` into both branches (rather than going through
+    If-Synth + Sub at the boundary). Errors fire at the offending branch
+    instead of the surrounding `if`. Without an else branch, the construct
+    can only succeed when `expected` admits `TVoid` — the same subsumption
+    check `[⇐] Block-Empty` performs for an empty block. -/
 def Check.ifThenElse (exprMd : StmtExprMd)
     (cond thenBr : StmtExprMd) (elseBr : Option StmtExprMd)
     (expected : HighTypeMd) (source : Option FileRange)
@@ -947,8 +989,9 @@ def Check.ifThenElse (exprMd : StmtExprMd)
 
 -- ### Verification statements
 
-/-- Rule **Assert**: `cond` is checked against `TBool`; the construct
-    synthesizes `TVoid`. -/
+/-- `Γ ⊢ cond ⇐ TBool  ∴  Γ ⊢ Assert cond ⇒ TVoid`
+
+    `cond` is checked against `TBool`; the construct synthesizes `TVoid`. -/
 def Synth.assert (exprMd : StmtExprMd)
     (condExpr : StmtExprMd) (summary : Option String) (source : Option FileRange)
     (h : exprMd.val = .Assert ⟨condExpr, summary⟩) :
@@ -963,8 +1006,9 @@ def Synth.assert (exprMd : StmtExprMd)
     try simp_all
     omega
 
-/-- Rule **Assume**: `cond` is checked against `TBool`; the construct
-    synthesizes `TVoid`. -/
+/-- `Γ ⊢ cond ⇐ TBool  ∴  Γ ⊢ Assume cond ⇒ TVoid`
+
+    `cond` is checked against `TBool`; the construct synthesizes `TVoid`. -/
 def Synth.assume (exprMd : StmtExprMd)
     (cond : StmtExprMd) (source : Option FileRange)
     (h : exprMd.val = .Assume cond) :
@@ -981,7 +1025,11 @@ def Synth.assume (exprMd : StmtExprMd)
 
 -- ### Assignment
 
-/-- Rule **Assign**: each target's declared type `T_i` (from `Local`,
+/-- `Γ ⊢ targets_i ⇒ T_i,  Γ ⊢ e ⇒ T_e,  T_e <: ExpectedTy  ∴  Γ ⊢ Assign targets e ⇒ TVoid`
+
+    where `ExpectedTy = T_1` if `|targets| = 1`, else `MultiValuedExpr [T_1; …; T_n]`.
+
+    Each target's declared type `T_i` (from `Local`,
     `Field`, or fresh `Declare`) is collapsed into a tuple `ExpectedTy`
     (single type if one target, otherwise `MultiValuedExpr [T_1; …; T_n]`)
     and checked against the RHS's synthesized type. Both single- and
@@ -1035,12 +1083,19 @@ def Synth.assign (exprMd : StmtExprMd)
       try (have := List.sizeOf_lt_of_mem ‹_ ∈ targets›; simp_all)
       omega
 
-/-- Rule **Assign-Check**: an assignment in statement position (checked
-    against `TVoid`) discards its RHS value, so the synthesized type is not
-    compared against `expected`. This lets `b := 1` appear as the last
-    statement of a block in an else-less `if` (whose branch is checked
-    against `TVoid`) without firing a subsumption error against the RHS's
-    type. For non-`TVoid` expected types, falls back to subsumption. -/
+/-- Cases on whether `expected` is `TVoid` (statement position) or some
+    other type (expression position).
+
+    `Γ ⊢ targets_i ⇒ T_i,  Γ ⊢ e ⇒ T_e,  T_e <: ExpectedTy  ∴  Γ ⊢ Assign targets e ⇐ TVoid`
+
+    `Γ ⊢ Assign targets e ⇒ T_e,  T_e <: T  ∴  Γ ⊢ Assign targets e ⇐ T  (T ≠ TVoid)`
+
+    An assignment in statement position (checked against `TVoid`) discards
+    its RHS value, so the synthesized type is not compared against
+    `expected`. This lets `b := 1` appear as the last statement of a block
+    in an else-less `if` (whose branch is checked against `TVoid`) without
+    firing a subsumption error against the RHS's type. For non-`TVoid`
+    expected types, falls back to subsumption. -/
 def Check.assign (exprMd : StmtExprMd)
     (targets : List VariableMd) (value : StmtExprMd)
     (expected : HighTypeMd) (source : Option FileRange)
@@ -1086,11 +1141,17 @@ def Check.assign (exprMd : StmtExprMd)
 
 -- ### Calls
 
-/-- Rules **Static-Call** / **Static-Call-Multi**: callee is resolved against
-    the expected kinds (parameter, static procedure, datatype constructor,
-    constant); each argument is synthesized and checked against the
-    corresponding parameter type. The result type is the (possibly
-    multi-valued) declared output type from `getCallInfo`. -/
+/-- Cases on the arity of the callee's declared outputs.
+
+    `Γ(callee) = static-procedure with inputs Ts and outputs [T],  Γ ⊢ args ⇒ Us,  U_i <: T_i (pairwise)  ∴  Γ ⊢ StaticCall callee args ⇒ T`
+
+    `Γ(callee) = static-procedure with inputs Ts and outputs [T_1; …; T_n] (n ≠ 1),  Γ ⊢ args ⇒ Us,  U_i <: T_i (pairwise)  ∴  Γ ⊢ StaticCall callee args ⇒ MultiValuedExpr [T_1; …; T_n]`
+
+    Callee is resolved against the expected kinds (parameter, static
+    procedure, datatype constructor, constant); each argument is
+    synthesized and checked against the corresponding parameter type. The
+    result type is the (possibly multi-valued) declared output type from
+    `getCallInfo`. -/
 def Synth.staticCall (exprMd : StmtExprMd)
     (callee : Identifier) (args : List StmtExprMd) (source : Option FileRange)
     (h : exprMd.val = .StaticCall callee args) :
@@ -1112,9 +1173,11 @@ def Synth.staticCall (exprMd : StmtExprMd)
     have := List.sizeOf_lt_of_mem ‹_ ∈ args›
     omega
 
-/-- Rule **Instance-Call**: target is synthesized; callee resolves to an
-    instance or static procedure; arguments are checked pairwise against the
-    callee's parameter types after dropping `self`. -/
+/-- `Γ ⊢ target ⇒ _,  Γ(callee) = instance-procedure with inputs [self; Ts] and outputs [T],  Γ ⊢ args ⇒ Us,  U_i <: T_i (pairwise; self dropped)  ∴  Γ ⊢ InstanceCall target callee args ⇒ T`
+
+    Target is synthesized; callee resolves to an instance or static
+    procedure; arguments are checked pairwise against the callee's
+    parameter types after dropping `self`. -/
 def Synth.instanceCall (exprMd : StmtExprMd)
     (target : StmtExprMd) (callee : Identifier) (args : List StmtExprMd)
     (source : Option FileRange)
@@ -1143,8 +1206,19 @@ def Synth.instanceCall (exprMd : StmtExprMd)
 
 -- ### Primitive operations
 
-/-- Rules **Op-Bool** / **Op-Cmp** / **Op-Eq** / **Op-Arith** / **Op-Concat**:
-    each operator family has its own argument-type discipline and result
+/-- Cases on the operator family.
+
+    `Γ ⊢ args_i ⇐ TBool,  op ∈ {And, Or, AndThen, OrElse, Not, Implies}  ∴  Γ ⊢ PrimitiveOp op args ⇒ TBool`
+
+    `Γ ⊢ args_i ⇐ Numeric,  op ∈ {Lt, Leq, Gt, Geq}  ∴  Γ ⊢ PrimitiveOp op args ⇒ TBool`
+
+    `Γ ⊢ lhs ⇒ T_l,  Γ ⊢ rhs ⇒ T_r,  T_l ~ T_r,  op ∈ {Eq, Neq}  ∴  Γ ⊢ PrimitiveOp op [lhs; rhs] ⇒ TBool`
+
+    `Γ ⊢ args_i ⇐ Numeric,  Γ ⊢ args.head ⇒ T,  op ∈ {Neg, Add, Sub, Mul, Div, Mod, DivT, ModT}  ∴  Γ ⊢ PrimitiveOp op args ⇒ T`
+
+    `Γ ⊢ args_i ⇐ TString,  op = StrConcat  ∴  Γ ⊢ PrimitiveOp op args ⇒ TString`
+
+    Each operator family has its own argument-type discipline and result
     type. Arguments are synthesized first, then the per-family check fires:
     `⇐ TBool` for booleans, `Numeric` (consistent with `TInt`, `TReal`, or
     `TFloat64`) for arithmetic/comparison, consistency `~` for equality
@@ -1205,9 +1279,15 @@ def Synth.primitiveOp (exprMd : StmtExprMd) (expr : StmtExpr)
 
 -- ### Object forms
 
-/-- Rules **New-Ok** / **New-Fallback**: when `ref` resolves to a composite or
-    datatype, the type is `UserDefined ref`; otherwise `Unknown` (suppresses
-    cascading errors after the kind diagnostic has already fired). -/
+/-- Cases on whether `ref` resolves to a composite/datatype.
+
+    `Γ(ref) is a composite or datatype T  ∴  Γ ⊢ New ref ⇒ UserDefined T`
+
+    `Γ(ref) is not a composite or datatype  ∴  Γ ⊢ New ref ⇒ Unknown`
+
+    When `ref` resolves to a composite or datatype, the type is
+    `UserDefined ref`; otherwise `Unknown` (suppresses cascading errors
+    after the kind diagnostic has already fired). -/
 def Synth.new (ref : Identifier) (source : Option FileRange) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let ref' ← resolveRef ref source
@@ -1221,8 +1301,10 @@ def Synth.new (ref : Identifier) (source : Option FileRange) :
             else { val := HighType.Unknown, source := source }
   pure (.New ref', ty)
 
-/-- Rule **AsType**: `target` is resolved but not checked against `T` — the
-    cast is the user's claim. The synthesized type is `T`.
+/-- `Γ ⊢ target ⇒ _  ∴  Γ ⊢ AsType target T ⇒ T`
+
+    `target` is resolved but not checked against `T` — the cast is the
+    user's claim. The synthesized type is `T`.
 
     `IsType` is the runtime test counterpart and synthesizes `TBool`. -/
 def Synth.asType (exprMd : StmtExprMd)
@@ -1239,7 +1321,9 @@ def Synth.asType (exprMd : StmtExprMd)
     simp [h] at hsz
     omega
 
-/-- Rule **IsType**: `target` is resolved; the synthesized type is `TBool`. -/
+/-- `Γ ⊢ target ⇒ _  ∴  Γ ⊢ IsType target T ⇒ TBool`
+
+    `target` is resolved; the synthesized type is `TBool`. -/
 def Synth.isType (exprMd : StmtExprMd)
     (target : StmtExprMd) (ty : HighTypeMd) (source : Option FileRange)
     (h : exprMd.val = .IsType target ty) :
@@ -1254,10 +1338,12 @@ def Synth.isType (exprMd : StmtExprMd)
     simp [h] at hsz
     omega
 
-/-- Rule **RefEq**: both operands must be reference types (`UserDefined` or
-    `Unknown`) — reference equality is meaningless on primitives. The
-    operands must also be mutually consistent (the symmetric `isConsistent`),
-    so `Cat === Dog` is rejected when `Cat` and `Dog` are unrelated
+/-- `Γ ⊢ lhs ⇒ T_l,  Γ ⊢ rhs ⇒ T_r,  isReference T_l,  isReference T_r,  T_l ~ T_r  ∴  Γ ⊢ ReferenceEquals lhs rhs ⇒ TBool`
+
+    Both operands must be reference types (`UserDefined` or `Unknown`) —
+    reference equality is meaningless on primitives. The operands must
+    also be mutually consistent (the symmetric `isConsistent`), so
+    `Cat === Dog` is rejected when `Cat` and `Dog` are unrelated
     user-defined types, while `Cat === Animal` is accepted when `Cat`
     extends `Animal` (the gradual `Unknown` wildcard makes either side
     flow freely against the other). -/
@@ -1287,10 +1373,12 @@ def Synth.refEq (exprMd : StmtExprMd) (expr : StmtExpr)
       simp [h] at hsz
       omega
 
-/-- Rule **PureFieldUpdate**: `target` is synthesized, `f` resolved against
-    `T_t` (or the enclosing instance type), and `newVal` checked against the
-    field's declared type. The synthesized type is `T_t` — updating a field
-    on a pure type produces a new value of the same type. -/
+/-- `Γ ⊢ target ⇒ T_t,  Γ(f) = T_f,  Γ ⊢ newVal ⇐ T_f  ∴  Γ ⊢ PureFieldUpdate target f newVal ⇒ T_t`
+
+    `target` is synthesized, `f` resolved against `T_t` (or the enclosing
+    instance type), and `newVal` checked against the field's declared
+    type. The synthesized type is `T_t` — updating a field on a pure type
+    produces a new value of the same type. -/
 def Synth.pureFieldUpdate (exprMd : StmtExprMd)
     (target : StmtExprMd) (fieldName : Identifier) (newVal : StmtExprMd)
     (h : exprMd.val = .PureFieldUpdate target fieldName newVal) :
@@ -1310,11 +1398,13 @@ def Synth.pureFieldUpdate (exprMd : StmtExprMd)
 
 -- ### Verification expressions
 
-/-- Rule **Quantifier**: opens a fresh scope, binds `x : T` (in scope only
-    for the body and trigger), resolves the optional trigger, and checks
-    the body against `TBool` since a quantifier is a proposition. Without
-    that body check, `forall x: int :: x + 1` would be silently accepted.
-    The construct itself synthesizes `TBool`. -/
+/-- `Γ, x : T ⊢ body ⇐ TBool  ∴  Γ ⊢ Quantifier mode ⟨x, T⟩ trig body ⇒ TBool`
+
+    Opens a fresh scope, binds `x : T` (in scope only for the body and
+    trigger), resolves the optional trigger, and checks the body against
+    `TBool` since a quantifier is a proposition. Without that body check,
+    `forall x: int :: x + 1` would be silently accepted. The construct
+    itself synthesizes `TBool`. -/
 def Synth.quantifier (exprMd : StmtExprMd)
     (mode : QuantifierMode) (param : Parameter)
     (trigger : Option StmtExprMd) (body : StmtExprMd) (source : Option FileRange)
@@ -1336,8 +1426,9 @@ def Synth.quantifier (exprMd : StmtExprMd)
       try simp_all
       omega
 
-/-- Rule **Assigned**: `name` is synthesized; the construct synthesizes
-    `TBool`. -/
+/-- `Γ ⊢ name ⇒ _  ∴  Γ ⊢ Assigned name ⇒ TBool`
+
+    `name` is synthesized; the construct synthesizes `TBool`. -/
 def Synth.assigned (exprMd : StmtExprMd)
     (name : StmtExprMd) (source : Option FileRange)
     (h : exprMd.val = .Assigned name) :
@@ -1351,7 +1442,7 @@ def Synth.assigned (exprMd : StmtExprMd)
     simp [h] at hsz
     omega
 
-/-- Rule **Old**: `Γ ⊢ v ⇒ T ⊢ Old v ⇒ T`. -/
+/-- `Γ ⊢ v ⇒ T  ∴  Γ ⊢ Old v ⇒ T` -/
 def Synth.old (exprMd : StmtExprMd)
     (val : StmtExprMd)
     (h : exprMd.val = .Old val) :
@@ -1365,10 +1456,11 @@ def Synth.old (exprMd : StmtExprMd)
     simp [h] at hsz
     omega
 
-/-- Rule **Fresh**: `v` is synthesized and must have a reference type
-    (`UserDefined` or `Unknown`) — `Fresh` only makes sense on
-    heap-allocated references, so `fresh(5)` is rejected. The construct
-    itself synthesizes `TBool`. -/
+/-- `Γ ⊢ v ⇒ T,  isReference T  ∴  Γ ⊢ Fresh v ⇒ TBool`
+
+    `v` is synthesized and must have a reference type (`UserDefined` or
+    `Unknown`) — `Fresh` only makes sense on heap-allocated references, so
+    `fresh(5)` is rejected. The construct itself synthesizes `TBool`. -/
 def Synth.fresh (exprMd : StmtExprMd) (expr : StmtExpr)
     (val : StmtExprMd) (source : Option FileRange)
     (h_expr : expr = .Fresh val)
@@ -1386,8 +1478,10 @@ def Synth.fresh (exprMd : StmtExprMd) (expr : StmtExpr)
     simp [h] at hsz
     omega
 
-/-- Rule **ProveBy**: `v` and `proof` are both synthesized; the construct's
-    type is `v`'s type — `proof` is a hint for downstream verification. -/
+/-- `Γ ⊢ v ⇒ T,  Γ ⊢ proof ⇒ _  ∴  Γ ⊢ ProveBy v proof ⇒ T`
+
+    `v` and `proof` are both synthesized; the construct's type is `v`'s
+    type — `proof` is a hint for downstream verification. -/
 def Synth.proveBy (exprMd : StmtExprMd)
     (val proof : StmtExprMd)
     (h : exprMd.val = .ProveBy val proof) :
@@ -1405,14 +1499,21 @@ def Synth.proveBy (exprMd : StmtExprMd)
 
 -- ### Self reference
 
-/-- Rules **This-Inside** / **This-Outside**: when `instanceTypeName` is set
-    (we're inside an instance method, populated on `ResolveState` by
-    `resolveInstanceProcedure` for the duration of an instance method body),
-    `This` synthesizes `UserDefined T`. With it, `this.field` and
-    instance-method dispatch synthesize real types instead of being
-    wildcarded through `Unknown`. Otherwise an error is emitted ("'this'
-    is not allowed outside instance methods") and the type collapses to
-    `Unknown` to suppress cascading errors. -/
+/-- Cases on whether `instanceTypeName` is set (i.e., we're inside an
+    instance method).
+
+    `Γ.instanceTypeName = some T  ∴  Γ ⊢ This ⇒ UserDefined T`
+
+    `Γ.instanceTypeName = none  ∴  Γ ⊢ This ⇒ Unknown`  (emits "'this' is not allowed outside instance methods")
+
+    When `instanceTypeName` is set (we're inside an instance method,
+    populated on `ResolveState` by `resolveInstanceProcedure` for the
+    duration of an instance method body), `This` synthesizes
+    `UserDefined T`. With it, `this.field` and instance-method dispatch
+    synthesize real types instead of being wildcarded through `Unknown`.
+    Otherwise an error is emitted ("'this' is not allowed outside instance
+    methods") and the type collapses to `Unknown` to suppress cascading
+    errors. -/
 def Synth.this (source : Option FileRange) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let s ← get
@@ -1430,17 +1531,25 @@ def Synth.this (source : Option FileRange) :
 
 -- ### Untyped forms
 
-/-- Rule **Abstract**: synthesizes `Unknown`. -/
+/-- `Γ ⊢ Abstract ⇒ Unknown` -/
 def Synth.abstract (source : Option FileRange) : StmtExpr × HighTypeMd :=
   (.Abstract, { val := .Unknown, source := source })
 
-/-- Rule **All**: synthesizes `Unknown`. -/
+/-- `Γ ⊢ All ⇒ Unknown` -/
 def Synth.all (source : Option FileRange) : StmtExpr × HighTypeMd :=
   (.All, { val := .Unknown, source := source })
 
 -- ### ContractOf
 
-/-- Rules **ContractOf-Bool** / **ContractOf-Set** / **ContractOf-Error**:
+/-- Cases on the contract type `ty` and on whether `fn` is a procedure
+    reference.
+
+    `fn = Var (.Local id),  Γ(id) ∈ {staticProcedure, instanceProcedure}  ∴  Γ ⊢ ContractOf Precondition fn ⇒ TBool  and  Γ ⊢ ContractOf PostCondition fn ⇒ TBool`
+
+    `fn = Var (.Local id),  Γ(id) ∈ {staticProcedure, instanceProcedure}  ∴  Γ ⊢ ContractOf Reads fn ⇒ TSet Unknown  and  Γ ⊢ ContractOf Modifies fn ⇒ TSet Unknown`
+
+    `fn is not a procedure reference  ∴  Γ ⊢ ContractOf _ fn ↝ error: "'contractOf' expected a procedure reference"`
+
     `ContractOf ty fn` extracts a procedure's contract clause as a value:
     its preconditions (`Precondition`), postconditions (`PostCondition`),
     reads set (`Reads`), or modifies set (`Modifies`). `fn` must be a
@@ -1492,8 +1601,14 @@ def Synth.contractOf (exprMd : StmtExprMd)
 
 -- ### Holes
 
-/-- Rules **Hole-Some** / **Hole-None-Synth**: a typed hole synthesizes its
-    annotation; an untyped hole in synth position synthesizes `Unknown`. -/
+/-- Cases on whether the hole has a type annotation.
+
+    `Γ ⊢ Hole d (some T) ⇒ T`
+
+    `Γ ⊢ Hole d none ⇒ Unknown`
+
+    A typed hole synthesizes its annotation; an untyped hole in synth
+    position synthesizes `Unknown`. -/
 def Synth.hole (det : Bool) (type : Option HighTypeMd) (source : Option FileRange) :
     ResolveM (StmtExpr × HighTypeMd) := do
   match type with
@@ -1502,8 +1617,10 @@ def Synth.hole (det : Bool) (type : Option HighTypeMd) (source : Option FileRang
     pure (.Hole det ty', ty')
   | none => pure (.Hole det none, { val := .Unknown, source := source })
 
-/-- Rule **Hole-None-Check**: an untyped hole in check mode records the
-    expected type on the node so downstream passes don't have to infer it
+/-- `Γ ⊢ Hole d none ⇐ T  ↦  Γ ⊢ Hole d (some T)`
+
+    An untyped hole in check mode records the expected type on the node
+    so downstream passes don't have to infer it
     again. The subsumption check is trivial (`Unknown <: T` always holds),
     so this rule never fails — it just preserves the type information
     available at the check-mode boundary instead of discarding it.
