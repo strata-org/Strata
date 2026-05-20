@@ -2234,6 +2234,98 @@ theorem CoreStepStar_trans
       (CoreStepStar_to_StepStmtStar h₁)
       (CoreStepStar_to_StepStmtStar h₂))
 
+/-! ## Properties of CoreCFGStep and CoreCFGStepStar.
+
+`CoreCFGStepStar` is part of the same mutual inductive bundle as
+`CoreStepStar`, so the `induction` tactic does not apply directly. We
+mirror the `CoreStepStar_*` pattern: convert to and from the non-mutual
+generic `StepCFGStar` (i.e. `ReflTrans (StepCFG …)`) and prove a usable
+induction principle `CoreCFGStepStar_rec`. -/
+
+/-- The block-evaluator function used by `StepCFG` for Core's deterministic
+    CFGs: pairs the source store with the block to produce the post-block
+    config via `EvalDetBlock` instantiated with `EvalCommand`. -/
+@[expose] def CoreEvalDetBlock
+    (π : String → Option Procedure)
+    (φ : CoreEval → PureFunc Expression → CoreEval)
+    (δ : CoreEval) :
+    Imperative.SemanticStore Expression →
+    Imperative.DetBlock String Command Expression →
+    Imperative.CFGConfig String Expression → Prop :=
+  fun σ blk config =>
+    Imperative.EvalDetBlock Expression (EvalCommand π φ) (EvalPureFunc φ)
+      δ σ blk config
+
+/-- `CoreCFGStepStar` implies the underlying `ReflTrans (StepCFG …)` over the
+    same `EvalDetBlock` instantiation. We unfold `StepCFGStar` to expose the
+    `ReflTrans` constructors directly, since `StepCFGStar` is a `def` (not an
+    `abbrev`) and so its constructors are not synthesized. -/
+theorem CoreCFGStepStar_to_StepCFGStar
+    {π : String → Option Procedure}
+    {φ : CoreEval → PureFunc Expression → CoreEval}
+    {δ : CoreEval} {cfg : DetCFG}
+    {c c' : Imperative.CFGConfig String Expression}
+    (h : CoreCFGStepStar π φ δ cfg c c') :
+    ReflTrans (@Imperative.StepCFG (Imperative.DetBlock String Command Expression)
+      String Command _ Expression (CoreEvalDetBlock π φ δ) cfg) c c' :=
+  match h with
+  | .refl => ReflTrans.refl _
+  | .step h_lookup h_blk h_rest =>
+    ReflTrans.step _ _ _
+      (.eval_next h_lookup h_blk)
+      (CoreCFGStepStar_to_StepCFGStar h_rest)
+
+/-- The underlying `ReflTrans (StepCFG …)` over `CoreEvalDetBlock` implies
+    `CoreCFGStepStar`. -/
+theorem StepCFGStar_to_CoreCFGStepStar
+    {π : String → Option Procedure}
+    {φ : CoreEval → PureFunc Expression → CoreEval}
+    {δ : CoreEval} {cfg : DetCFG}
+    {c c' : Imperative.CFGConfig String Expression} :
+    ReflTrans (@Imperative.StepCFG (Imperative.DetBlock String Command Expression)
+      String Command _ Expression (CoreEvalDetBlock π φ δ) cfg) c c' →
+    CoreCFGStepStar π φ δ cfg c c' := by
+  intro H
+  induction H with
+  | refl => exact .refl
+  | step _ _ _ hstep _ ih =>
+    cases hstep with
+    | eval_next h_lookup h_blk =>
+      exact .step h_lookup h_blk ih
+
+/-- Manual induction principle for `CoreCFGStepStar` (the `induction` tactic
+    does not support mutual inductives). Mirrors `CoreStepStar_rec`. -/
+theorem CoreCFGStepStar_rec
+    {π : String → Option Procedure}
+    {φ : CoreEval → PureFunc Expression → CoreEval}
+    {δ : CoreEval} {cfg : DetCFG}
+    {motive : Imperative.CFGConfig String Expression →
+              Imperative.CFGConfig String Expression → Prop}
+    (h_refl : ∀ c, motive c c)
+    (h_step :
+      ∀ t b σ failed config c₃,
+        List.lookup t cfg.blocks = some b →
+        Imperative.EvalDetBlock Expression (EvalCommand π φ) (EvalPureFunc φ)
+          δ σ b config →
+        CoreCFGStepStar π φ δ cfg (Imperative.updateFailure config failed) c₃ →
+        motive (Imperative.updateFailure config failed) c₃ →
+        motive (.cont t σ failed) c₃)
+    {c₁ c₂ : Imperative.CFGConfig String Expression}
+    (h : CoreCFGStepStar π φ δ cfg c₁ c₂) : motive c₁ c₂ := by
+  suffices h_gen : ∀ c₁ c₂,
+      ReflTrans (@Imperative.StepCFG (Imperative.DetBlock String Command Expression)
+        String Command _ Expression (CoreEvalDetBlock π φ δ) cfg) c₁ c₂ →
+      motive c₁ c₂ by
+    exact h_gen _ _ (CoreCFGStepStar_to_StepCFGStar h)
+  intro c₁ c₂ h'
+  induction h' with
+  | refl => exact h_refl _
+  | step _ _ _ hstep hrest ih =>
+    cases hstep with
+    | eval_next h_lookup h_blk =>
+      exact h_step _ _ _ _ _ _ h_lookup h_blk
+        (StepCFGStar_to_CoreCFGStepStar hrest) ih
+
 /-- Lift `seq_inner_star` from `StepStmtStar` to `CoreStepStar`. -/
 theorem core_seq_inner_star
     {π : String → Option Procedure}
