@@ -95,8 +95,8 @@ private def funcDeclToFunctionDecl (name : String) (args : Python.Specs.ArgDecls
     Handles both top-level functions and class methods.
     Strips `self` from class methods and expands `**kwargs` TypedDict fields. -/
 private def extractFunctionSignatures (sigs : Array Python.Specs.Signature)
-    (modulePrefix : String) : Except String (Array Python.PythonFunctionDecl) := do
-  let funcPrefix := if modulePrefix.isEmpty then "" else modulePrefix ++ "_"
+    (moduleName : Python.ModuleName) : Except String (Array Python.PythonFunctionDecl) := do
+  let funcPrefix := moduleName.toString (sep := "_") ++ "_"
   let mut result : Array Python.PythonFunctionDecl := #[]
   for sig in sigs do
     match sig with
@@ -130,10 +130,10 @@ private def mergeOverloads (old new : OverloadTable) : OverloadTable :=
     accumulated into one `Laurel.Program`, and overload dispatch entries are
     merged into a single table.
 
-    Each entry is a `(modulePrefix, ionPath)` pair. The `modulePrefix` is used
+    Each entry is a `(moduleName, ionPath)` pair. The module name is used
     to namespace all generated Laurel names (e.g., `"servicelib_Storage"` for
     module `servicelib.Storage`). -/
-private def buildPySpecLaurelM (pyspecEntries : Array (String × String))
+private def buildPySpecLaurelM (pyspecEntries : Array (Python.ModuleName × String))
     (overloads : OverloadTable) : Pipeline.PipelineM PySpecLaurelResult := do
   let mut combinedProcedures : Array (Laurel.Procedure × String) := #[]
   let mut combinedTypes : Array (Laurel.TypeDefinition × String) := #[]
@@ -141,7 +141,7 @@ private def buildPySpecLaurelM (pyspecEntries : Array (String × String))
   let mut funcSigs : Array Python.PythonFunctionDecl := #[]
   let mut allTypeAliases : Std.HashMap String String := {}
   let mut allExhaustiveClasses : Std.HashSet String := {}
-  for (modulePrefix, ionPath) in pyspecEntries do
+  for (moduleName, ionPath) in pyspecEntries do
     let ionFile : System.FilePath := ionPath
     let sigs ←
       match ← Python.Specs.readDDM ionFile |>.toBaseIO with
@@ -149,14 +149,14 @@ private def buildPySpecLaurelM (pyspecEntries : Array (String × String))
       | .error msg =>
         emitMessageAndAbort .pySpecReadError msg (file := ionFile)
     let { program, errors, overloads, typeAliases, exhaustiveClasses } :=
-      Python.Specs.ToLaurel.signaturesToLaurel ionPath sigs modulePrefix
+      Python.Specs.ToLaurel.signaturesToLaurel ionPath sigs moduleName
     for msg in errors do
       Pipeline.addMessage msg
       if msg.kind.impact.isFatal then throw ()
     allOverloads := mergeOverloads allOverloads overloads
     allTypeAliases := typeAliases.fold (init := allTypeAliases) fun m k v => m.insert k v
     allExhaustiveClasses := exhaustiveClasses.fold (init := allExhaustiveClasses) fun s name => s.insert name
-    match extractFunctionSignatures sigs modulePrefix with
+    match extractFunctionSignatures sigs moduleName with
     | .ok fs => funcSigs := funcSigs ++ fs
     | .error msg =>
       emitMessageAndAbort .functionSignatureError msg (file := ionFile)
@@ -206,7 +206,7 @@ private def buildPySpecLaurelM (pyspecEntries : Array (String × String))
     tables into a single combined result. -/
 public def buildPySpecLaurel
     (ctx : Pipeline.PipelineContext)
-    (pyspecEntries : Array (String × String))
+    (pyspecEntries : Array (Python.ModuleName × String))
     (overloads : OverloadTable) : EIO Unit PySpecLaurelResult :=
   buildPySpecLaurelM pyspecEntries overloads |>.run ctx
 
@@ -234,30 +234,35 @@ public def readDispatchOverloads
     (dispatchPaths : Array String) : EIO Unit OverloadTable :=
   readDispatchOverloadsM dispatchPaths |>.run ctx
 
-/-- Resolve a parsed module name to its spec prefix and .ion path.
+/-- Resolve a parsed module name to its .ion path.
     Returns `none` if the file is not found on disk. -/
-private def resolveModuleEntry (mod : Python.Specs.ModuleName) (specDir : System.FilePath)
-    : Pipeline.PipelineM (Option (String × String)) := do
+private def resolveModuleEntry (mod : Python.ModuleName) (specDir : System.FilePath)
+    : Pipeline.PipelineM (Option (Python.ModuleName × String)) := do
   match ← mod.specIonPath specDir with
   | some specPath =>
-    let pfx := "_".intercalate mod.components.toList
-    return some (pfx, specPath.toString)
+    return some (mod, specPath.toString)
   | none => return none
 
-/-- Resolve module names that must exist. Fatal on invalid name or missing file. -/
-private def resolveModules (modules : Array String) (specDir : System.FilePath)
-    : Pipeline.PipelineM (Array (String × String)) := do
-  let mut entries : Array (String × String) := #[]
-  for modName in modules do
-    match Python.Specs.ModuleName.ofString modName with
-    | .error _ =>
-      emitMessageAndAbort .invalidModuleName s!"invalid module name '{modName}'" (file := specDir)
-    | .ok mod =>
-      let some entry ← resolveModuleEntry mod specDir
-        | emitMessageAndAbort .missingPySpecModule
-            s!"PySpec module '{modName}' not found in {specDir}" (file := specDir)
-      entries := entries.push entry
+/-- Resolve already-parsed module names that must exist. Fatal on missing file. -/
+private def resolveModuleNames (modules : Array Python.ModuleName) (specDir : System.FilePath)
+    : Pipeline.PipelineM (Array (Python.ModuleName × String)) := do
+  let mut entries : Array (Python.ModuleName × String) := #[]
+  for mod in modules do
+    let some entry ← resolveModuleEntry mod specDir
+      | emitMessageAndAbort .missingPySpecModule
+          s!"PySpec module '{mod}' not found in {specDir}" (file := specDir)
+    entries := entries.push entry
   return entries
+
+/-- Resolve module name strings that must exist. Fatal on invalid name or missing file. -/
+private def resolveModules (modules : Array String) (specDir : System.FilePath)
+    : Pipeline.PipelineM (Array (Python.ModuleName × String)) := do
+  let mut parsed : Array Python.ModuleName := #[]
+  for modName in modules do
+    let some mod := Python.ModuleName.ofString? modName
+      | emitMessageAndAbort .invalidModuleName s!"invalid module name '{modName}'" (file := specDir)
+    parsed := parsed.push mod
+  resolveModuleNames parsed specDir
 
 
 /-- Build dispatch overload table, auto-resolve pyspec files
@@ -286,7 +291,7 @@ public def resolveAndBuildLaurelPrelude
   let autoSpecEntries ←
     if dispatchModules.size > 0 then
       let resolvedMods := resolveState.modules.toArray.qsort (· < ·)
-      resolveModules resolvedMods specDir
+      resolveModuleNames resolvedMods specDir
     else pure #[]
   -- Explicit pyspec modules (fatal on invalid name or missing file)
   let explicitEntries ← resolveModules pyspecModules specDir
