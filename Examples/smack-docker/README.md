@@ -160,18 +160,45 @@ aws_string_eq                 |     OK |     OK |     OK |      PARTIAL |      P
   which broke `symtab2gb` on every SMACK-generated program (which has
   `assume true` between every two source statements). Fixed by
   always emitting `guard` for ASSUME/ASSERT; commit `66e659656`.
-- **CBMC: non-standard `main` signature.** SMACK-translated `main`
-  takes parameters (memory maps, exception flags, address state)
-  that don't match cbmc's expected entry-point signatures
-  (`int main(void)`, `int main(int argc, char *argv[])`, etc.).
-  cbmc rejects the binary with "the program has no entry point" and
-  exits with rc=6, even when `--function main` is passed. With the
-  upstream blockers above resolved, this is now the dominant failure
-  mode on the cbmc backend: 25 of 25 programs hit it. Fix path:
-  emit a synthetic `int __cprover_entry(void)` wrapper in
-  `coreToGotoFiles`/`coreToGotoFilesDispatch` that calls the
-  Strata-translated `main` with default parameter values, then point
-  cbmc at the wrapper.
+- **CBMC: non-standard `main` signature (resolved on this branch).**
+  SMACK-translated `main` takes parameters (memory maps, exception
+  flags, address state) that don't match cbmc's expected entry-point
+  signatures, so cbmc rejected the binary with "the program has no
+  entry point" / rc=6. Fixed by emitting a synthetic `__cprover_entry()`
+  shim alongside `main`: the shim declares one local per main formal,
+  havocs each from `nondet`, calls main, ends. `buildEntryShim` lives
+  in `CoreCFGToGOTOPipeline.lean`; `run_pipeline.py` invokes
+  `cbmc --function __cprover_entry`. See commit `7e2b1fc25`.
+- **CBMC: callee bodies not emitted.** `coreToGotoFiles*` translates
+  only the entry procedure (`main`), leaving every callee — `add`,
+  `assert__i32`, `_initialize`, the SMACK prelude stubs — as bodyless
+  declarations in the symbol table. cbmc symbolically executes main,
+  reaches a call, and reports `[.no-body.<callee>] no body for
+  callee <callee>: FAILURE`. With the entry-point shim resolved, this
+  is the dominant failure mode (5 programs, including
+  `simple_assert`, `simple_add`, `aws_min_max`,
+  `aws_is_power_of_two`, `aws_round_up_to_power_of_two`). Fix path:
+  iterate over all reachable procedures in `coreToGotoFilesDispatch`,
+  not just the entry; emit each via `procedureToGotoCtxDispatch` and
+  splice all into the output JSON. The lifted-functions infrastructure
+  in `emitProcWithLifted` is the right shape for this, but currently
+  only handles `Core.Function` (purely-defined functions), not
+  `Core.Procedure` (commands with side effects).
+- **CBMC: array type mismatch on memory-map params.** Programs with
+  memory-map parameters (the AWS C Common programs that pass `Map ref
+  i8` for memory state) hit a different cbmc error after the shim:
+  `function call: parameter "main::_M_0" type mismatch — got array
+  size: integer, expected array 0: integer`. The shim's nondet
+  initializer for the memory-map params produces an array shape cbmc
+  considers incompatible with main's declared parameter type. 16 of
+  25 programs hit this. Likely fix on the array-type emission for
+  `Map ref i8` (`Strata/Backends/CBMC/GOTO/LambdaToCProverGOTO.lean`'s
+  `LMonoTy.toGotoType`).
+- **CBMC: BMC unrolling timeouts.** 4 programs (`abs_func`, `loop_sum`,
+  `max_func`, `nondet_branch`) timeout at the default 120s. Likely a
+  combination of the SMACK prelude assumption-axiom volume and
+  unbounded loops in the translation; needs a `--unwind` bound or
+  smaller axiom set.
 - **bugFinding partials.** Symbolic execution finds potential
   counterexamples for assertions on programs whose preconditions are
   insufficient. Expected behaviour for SMACK programs as currently
