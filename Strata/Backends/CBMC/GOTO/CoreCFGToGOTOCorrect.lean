@@ -749,7 +749,10 @@ private theorem cfgStepStar_to_gotoStar
         (.terminal σ' b))
     : StepGotoStar Core.Expression δ_goto δ_goto_bool pgm
         (.running pc σ failed) (.terminal σ' b) := by
-  sorry
+  cases h_run with
+  | step h_lookup h_blk h_rest =>
+    -- The `step` constructor: discharged in a later task.
+    sorry
 
 /-- Forward simulation: any terminating DetCFG run is matched by a
 terminating GOTO run with the same final store and failure flag.
