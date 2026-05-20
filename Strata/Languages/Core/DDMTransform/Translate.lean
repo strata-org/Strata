@@ -442,8 +442,8 @@ partial def dealiasTypeExpr (p : Program) (te : TypeExpr) : TypeExpr :=
   match te with
   | (.fvar _ idx #[]) =>
     match p.globalContext.kindOf! idx with
-    | .expr te => te
-    | .type [] (.some te) => te
+    | .expr te => dealiasTypeExpr p te
+    | .type [] (.some te) => dealiasTypeExpr p te
     | _ => te
   | _ => te
 
