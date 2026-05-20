@@ -146,7 +146,7 @@ which simplifies to  Pair..second(p) >= 0  (by the ADT selector axiom).
 This contradicts  Pair..second(p) < 0, making the context inconsistent.
 
 ────────────────────────────────────────────────────────────────────────────
-DESIGN ALTERNATIVES — discussion points for the meeting
+DESIGN ALTERNATIVES
 ────────────────────────────────────────────────────────────────────────────
 
 Option A — Status quo + documented restriction
