@@ -6,13 +6,11 @@ test_multi_function.py(16, 4): ✅ pass - (create_config requires) Type constrai
 test_multi_function.py(16, 4): ✅ pass - (create_config requires) Type constraint of value
 test_multi_function.py(17, 4): ✅ pass - (validate_config requires) Type constraint of config
 test_multi_function.py(17, 4): ✅ pass - assert(485)
-test_multi_function.py(18, 7): ✅ pass - Check PNot exception
-test_multi_function.py(20, 4): ❓ unknown - set_LaurelResult_calls_Any_get_0
 test_multi_function.py(23, 4): ✅ pass - (process_config requires) Type constraint of name
 test_multi_function.py(23, 4): ✅ pass - (process_config requires) Type constraint of value
 test_multi_function.py(24, 4): ❓ unknown - process_config should return value
 test_multi_function.py(26, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_name_is_foo
 test_multi_function.py(26, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_str
 test_multi_function.py(26, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar
-DETAIL: 14 passed, 0 failed, 2 inconclusive
+DETAIL: 13 passed, 0 failed, 1 inconclusive
 RESULT: Inconclusive

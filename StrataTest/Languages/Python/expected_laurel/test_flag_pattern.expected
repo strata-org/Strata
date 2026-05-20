@@ -1,9 +1,5 @@
 test_flag_pattern.py(3, 4): ✅ pass - assert(54)
 test_flag_pattern.py(4, 4): ✅ pass - assume_assume(81)_calls_PIn_0
-test_flag_pattern.py(5, 11): ✅ pass - assert_assert(108)_calls_PMod_0
-test_flag_pattern.py(5, 11): ✅ pass - Check PMod exception
-test_flag_pattern.py(5, 8): ✅ pass - ite_cond_calls_PMod_0
-test_flag_pattern.py(7, 11): ❓ unknown - Check PNot exception
-test_flag_pattern.py(7, 4): ❓ unknown - no even numbers
-DETAIL: 5 passed, 0 failed, 2 inconclusive
+test_flag_pattern.py(7, 4): ❓ unknown (pass on 1 path, unknown on 1 path) - no even numbers
+DETAIL: 2 passed, 0 failed, 1 inconclusive
 RESULT: Inconclusive

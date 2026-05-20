@@ -6,20 +6,15 @@ test_control_flow.py(15, 4): ✅ pass - assert(263)
 test_control_flow.py(25, 4): ✅ pass - nested if implemented incorrectly
 test_control_flow.py(28, 4): ✅ pass - assert(516)
 test_control_flow.py(29, 4): ✅ pass - assert(532)
-test_control_flow.py(31, 7): ✅ pass - Check PGt exception
 test_control_flow.py(36, 4): ✅ pass - if with > implemented incorrectly
 test_control_flow.py(39, 4): ✅ pass - assert(704)
 test_control_flow.py(40, 4): ✅ pass - assert(719)
-test_control_flow.py(42, 7): ✅ pass - Check PGt exception
-test_control_flow.py(43, 11): ✅ pass - Check PLt exception
 test_control_flow.py(50, 4): ✅ pass - nested if with comparisons implemented incorrectly
 test_control_flow.py(53, 4): ✅ pass - assert(953)
 test_control_flow.py(54, 4): ✅ pass - assert(968)
-test_control_flow.py(56, 7): ✅ pass - Check PLe exception
 test_control_flow.py(61, 4): ✅ pass - if with <= implemented incorrectly
 test_control_flow.py(64, 4): ✅ pass - assert(1127)
 test_control_flow.py(65, 4): ✅ pass - assert(1143)
-test_control_flow.py(67, 7): ✅ pass - Check PGe exception
 test_control_flow.py(72, 4): ✅ pass - if with >= implemented incorrectly
-DETAIL: 23 passed, 0 failed, 0 inconclusive
+DETAIL: 18 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

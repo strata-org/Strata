@@ -1,5 +1,3 @@
-test_dict_add_key.py(3, 4): ✅ pass - Check Any_sets! exception
-test_dict_add_key.py(4, 4): ✅ pass - assert_assert(56)_calls_Any_get_0
 test_dict_add_key.py(4, 4): ✅ pass - dict add key
-DETAIL: 3 passed, 0 failed, 0 inconclusive
+DETAIL: 1 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

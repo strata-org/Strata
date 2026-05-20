@@ -6,13 +6,9 @@ test_comparisons.py(8, 4): ✅ pass - assert(169)
 test_comparisons.py(9, 4): ✅ pass - string equality implemented incorrectly
 test_comparisons.py(12, 4): ✅ pass - assert(298)
 test_comparisons.py(13, 4): ✅ pass - assert(313)
-test_comparisons.py(14, 11): ✅ pass - Check PGt exception
 test_comparisons.py(14, 4): ✅ pass - greater than implemented incorrectly
-test_comparisons.py(15, 11): ✅ pass - Check PLt exception
 test_comparisons.py(15, 4): ✅ pass - less than implemented incorrectly
-test_comparisons.py(16, 11): ✅ pass - Check PGe exception
 test_comparisons.py(16, 4): ✅ pass - greater than or equal implemented incorrectly
-test_comparisons.py(17, 11): ✅ pass - Check PLe exception
 test_comparisons.py(17, 4): ✅ pass - less than or equal implemented incorrectly
-DETAIL: 16 passed, 0 failed, 0 inconclusive
+DETAIL: 12 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

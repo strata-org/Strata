@@ -1,9 +1,6 @@
 test_chained_compare.py(2, 4): ✅ pass - assert(32)
-test_chained_compare.py(3, 11): ✅ pass - Check PAnd exception
 test_chained_compare.py(3, 4): ✅ pass - chained compare
-test_chained_compare.py(4, 11): ✅ pass - Check PAnd exception
 test_chained_compare.py(4, 4): ❓ unknown - reversed bounds should fail
-test_chained_compare.py(5, 11): ✅ pass - Check PGt exception
 test_chained_compare.py(5, 4): ❓ unknown - should fail: x is 5
-DETAIL: 5 passed, 0 failed, 2 inconclusive
+DETAIL: 2 passed, 0 failed, 2 inconclusive
 RESULT: Inconclusive

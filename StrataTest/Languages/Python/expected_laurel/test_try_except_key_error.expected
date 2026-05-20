@@ -1,0 +1,5 @@
+test_try_except_key_error.py(3, 0): ✅ pass - assert no uncaught exception
+test_try_except_key_error.py(2, 0): ✅ pass - assert(29)
+test_try_except_key_error.py(7, 0): ✅ pass - caught KeyError
+DETAIL: 3 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success

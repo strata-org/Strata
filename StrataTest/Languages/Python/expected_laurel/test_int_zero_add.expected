@@ -1,6 +1,5 @@
 test_int_zero_add.py(2, 4): ✅ pass - assert(29)
 test_int_zero_add.py(3, 4): ✅ pass - assert(44)
-test_int_zero_add.py(4, 11): ✅ pass - Check PAdd exception
 test_int_zero_add.py(4, 4): ✅ pass - adding zero
-DETAIL: 4 passed, 0 failed, 0 inconclusive
+DETAIL: 3 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

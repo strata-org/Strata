@@ -1,6 +1,4 @@
-test_mixed_types_list.py(3, 4): ✅ pass - assert_assert(56)_calls_Any_get_0
 test_mixed_types_list.py(3, 4): ✅ pass - int element
-test_mixed_types_list.py(4, 4): ✅ pass - assert_assert(93)_calls_Any_get_0
 test_mixed_types_list.py(4, 4): ✅ pass - str element
-DETAIL: 4 passed, 0 failed, 0 inconclusive
+DETAIL: 2 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

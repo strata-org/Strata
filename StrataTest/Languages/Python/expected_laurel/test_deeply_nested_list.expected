@@ -1,6 +1,3 @@
-test_deeply_nested_list.py(3, 4): ✅ pass - assert_assert(33)_calls_Any_get_0
-test_deeply_nested_list.py(3, 4): ✅ pass - assert_assert(33)_calls_Any_get_1
-test_deeply_nested_list.py(3, 4): ✅ pass - assert_assert(33)_calls_Any_get_2
 test_deeply_nested_list.py(3, 4): ✅ pass - triple nested list
-DETAIL: 4 passed, 0 failed, 0 inconclusive
+DETAIL: 1 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

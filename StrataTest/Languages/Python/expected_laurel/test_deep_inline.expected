@@ -1,11 +1,8 @@
-test_deep_inline.py(6, 4): ✔️ always true if reached - Check PAdd exception
-test_deep_inline.py(10, 4): ✔️ always true if reached - double_inc_assert(135)_35
-test_deep_inline.py(10, 4): ✔️ always true if reached - Check PMul exception
+test_deep_inline.py(10, 4): ✔️ always true if reached - double_inc_assert(135)_34
 test_deep_inline.py(15, 4): ✔️ always true if reached - triple_apply_assert(206)_17
-test_deep_inline.py(11, 4): ✔️ always true if reached - Check PAdd exception
 test_deep_inline.py(15, 4): ✔️ always true if reached - triple_apply_assert(233)_18
 test_deep_inline.py(21, 4): ✔️ always true if reached - main_assert(279)_5
 test_deep_inline.py(21, 4): ✔️ always true if reached - triple_apply(3) should be 9
 test_deep_inline.py(21, 4): ✖️ always false if reached - triple_apply(3) should not be 10
-DETAIL: 8 passed, 1 failed, 0 inconclusive
+DETAIL: 5 passed, 1 failed, 0 inconclusive
 RESULT: Failures found

@@ -1,0 +1,14 @@
+test_try_except_exception_types.py(56, 0): ✅ pass - assert no uncaught exception
+test_try_except_exception_types.py(46, 0): ✅ pass - assert no uncaught exception
+test_try_except_exception_types.py(36, 0): ✅ pass - assert no uncaught exception
+test_try_except_exception_types.py(26, 0): ✅ pass - assert no uncaught exception
+test_try_except_exception_types.py(16, 0): ✅ pass - assert no uncaught exception
+test_try_except_exception_types.py(5, 0): ✅ pass - assert no uncaught exception
+test_try_except_exception_types.py(10, 0): ✅ pass - KeyError caught
+test_try_except_exception_types.py(21, 0): ✅ pass - IndexError caught
+test_try_except_exception_types.py(31, 0): ✅ pass - ZeroDivisionError from mod caught
+test_try_except_exception_types.py(41, 0): ✅ pass - LookupError catches KeyError
+test_try_except_exception_types.py(51, 0): ✅ pass - LookupError catches IndexError
+test_try_except_exception_types.py(61, 0): ✅ pass - ArithmeticError catches ZeroDivisionError
+DETAIL: 12 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success

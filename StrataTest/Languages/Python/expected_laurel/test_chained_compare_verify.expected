@@ -1,5 +1,4 @@
 test_chained_compare_verify.py(2, 4): ✅ pass - assert(39)
-test_chained_compare_verify.py(3, 11): ✅ pass - Check PAnd exception
 test_chained_compare_verify.py(3, 4): ✅ pass - chained compare
-DETAIL: 3 passed, 0 failed, 0 inconclusive
+DETAIL: 2 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

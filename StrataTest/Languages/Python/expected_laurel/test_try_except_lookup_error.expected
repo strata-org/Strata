@@ -1,0 +1,7 @@
+test_try_except_lookup_error.py(11, 0): ✅ pass - assert no uncaught exception
+test_try_except_lookup_error.py(5, 0): ✅ pass - assert no uncaught exception
+test_try_except_lookup_error.py(3, 0): ✅ pass - assert(54)
+test_try_except_lookup_error.py(9, 0): ✅ pass - caught LookupError from IndexError
+test_try_except_lookup_error.py(15, 0): ✅ pass - caught LookupError from KeyError
+DETAIL: 5 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success

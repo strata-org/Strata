@@ -1,6 +1,5 @@
 test_assert_false.py(4, 8): ✅ pass - unreachable
 test_assert_false.py(2, 4): ✅ pass - assert(16)
-test_assert_false.py(3, 7): ✅ pass - Check PGt exception
 test_assert_false.py(5, 4): ✅ pass - reachable
-DETAIL: 4 passed, 0 failed, 0 inconclusive
+DETAIL: 3 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

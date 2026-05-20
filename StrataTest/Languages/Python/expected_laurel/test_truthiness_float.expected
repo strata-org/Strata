@@ -1,14 +1,4 @@
-test_truthiness_float.py(5, 12): ✅ pass - Check PAnd exception
-test_truthiness_float.py(5, 4): ✅ pass - assert(147)
-test_truthiness_float.py(6, 12): ✅ pass - Check PAnd exception
-test_truthiness_float.py(6, 4): ✅ pass - assert(179)
-test_truthiness_float.py(9, 12): ✅ pass - Check POr exception
-test_truthiness_float.py(9, 4): ✅ pass - assert(233)
-test_truthiness_float.py(10, 12): ✅ pass - Check POr exception
-test_truthiness_float.py(10, 4): ✅ pass - assert(264)
-test_truthiness_float.py(13, 12): ✅ pass - Check PNot exception
 test_truthiness_float.py(13, 4): ✅ pass - assert(318)
-test_truthiness_float.py(14, 12): ✅ pass - Check PNot exception
 test_truthiness_float.py(14, 4): ✅ pass - assert(347)
-DETAIL: 12 passed, 0 failed, 0 inconclusive
+DETAIL: 2 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

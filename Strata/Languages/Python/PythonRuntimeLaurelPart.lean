@@ -37,13 +37,30 @@ program Laurel;
 
 datatype Error {
   NoError (),
-  TypeError (Type_msg : string),
-  AttributeError (Attribute_msg : string),
-  AssertionError (Assertion_msg : string),
-  UnimplementedError (Unimplement_msg : string),
+  UnknownError (),
   UndefinedError (Undefined_msg : string),
+  RePatternError (Re_msg : string),
+  ZeroDivisionError (),
+  OverflowError (),
+  FloatingPointError (),
   IndexError (IndexError_msg : string),
-  RePatternError (Re_msg : string)
+  KeyError (Key_msg : string),
+  AttributeError (Attribute_msg : string),
+  TypeError (Type_msg : string),
+  ValueError (Value_msg : string),
+  UnicodeError (Unicode_msg : string),
+  NameError (Name_msg : string),
+  UnboundLocalError (UnboundLocal_msg : string),
+  ImportError (Import_msg : string),
+  ModuleNotFoundError (ModuleNotFound_msg : string),
+  OSError (OS_msg : string),
+  FileNotFoundError (FileNotFound_msg : string),
+  PermissionError (Permission_msg : string),
+  TimeoutError (Timeout_msg : string),
+  RuntimeError (Runtime_msg : string),
+  RecursionError (Recursion_msg : string),
+  AssertionError (Assertion_msg : string),
+  NotImplementedError (NotImplemented_msg : string)
 }
 
 // /////////////////////////////////////////////////////////////////////////////////////
@@ -110,7 +127,7 @@ datatype DictStrAny {
 // or from_ClassInstance wrapping a re_Match).  If the pipeline ever
 // moves to concrete types, these should return re_Match | None directly.
 //
-// pos and endpos are sound as 0 / str.len
+// pos and endpos are sound as 0 / Str.Len
 // for the module-level re.match/re.search/re.fullmatch API which does
 // not accept pos/endpos arguments.  If compiled-pattern method calls
 // with explicit pos/endpos are supported later, those values must be
@@ -141,7 +158,7 @@ datatype DictStrAny {
 // error).
 //
 // On match, we return a from_ClassInstance wrapping a concrete re_Match
-// with pos=0 and endpos=str.len(s), which is sound for the module-level
+// with pos=0 and endpos=Str.Len(s), which is sound for the module-level
 // API (no pos/endpos parameters).
 //
 // Mode-specific factory functions are declared via ReFactory (with concreteEval
@@ -288,10 +305,6 @@ function isAssertionError (e: Error) : Any {
   from_bool (Error..isAssertionError(e))
 };
 
-function isUnimplementedError (e: Error) : Any {
-  from_bool (Error..isUnimplementedError(e))
-};
-
 function isUndefinedError (e: Error) : Any {
   from_bool (Error..isUndefinedError(e))
 };
@@ -349,15 +362,13 @@ function List_extend (l1 : ListAny, l2: ListAny) : ListAny
 };
 
 function List_get_non_neg (l : ListAny, i : int) : Any
-  requires i >= 0 && i < List_len(l)
 {
-  if ListAny..isListAny_nil(l) then from_None()
+  if (i < 0 || ListAny..isListAny_nil(l)) then exception(IndexError("Index out of bound"))
   else if  i == 0 then ListAny..head!(l)
   else List_get_non_neg(ListAny..tail!(l), i - 1)
 };
 
 function List_get (l : ListAny, i : int) : Any
-  requires i >= - List_len(l) && i < List_len(l)
 {
   if i >= 0 then List_get_non_neg(l, i)
   else List_get_non_neg(l, List_len(l) + i)
@@ -447,9 +458,8 @@ function DictStrAny_contains (d : DictStrAny, key: string) : bool
 };
 
 function DictStrAny_get (d : DictStrAny, key: string) : Any
-  requires DictStrAny_contains(d, key)
 {
-  if  DictStrAny..isDictStrAny_empty(d) then from_None()
+  if  DictStrAny..isDictStrAny_empty(d) then exception(KeyError(key))
   else if DictStrAny..key!(d) == key then DictStrAny..val!(d)
   else DictStrAny_get(DictStrAny..tail!(d), key)
 };
@@ -473,6 +483,32 @@ function DictStrAny_insert (d : DictStrAny, key: string, val: Any) : DictStrAny
   else DictStrAny_cons(DictStrAny..key!(d), DictStrAny..val!(d), DictStrAny_insert(DictStrAny..tail!(d), key, val))
 };
 
+function Str.Substr(s: string, start: int, stop: int): string external;
+
+function str_get(s : string, i : int) : Any
+{
+  if i >= 0 && i < Str.Length(s) then
+   from_str(Str.Substr(s, i, 1))
+  else if i < 0 && i >= - Str.Length(s) then
+    from_str(Str.Substr(s, Str.Length(s) + i, 1))
+  else
+    exception (IndexError("Index out of bound"))
+};
+
+function str_slice_non_neg (s : string, start : int, stop: int) : string
+{
+  if (start >= Str.Length(s)) || (start >= stop) then ""
+  else Str.Substr (s, start, int_min(stop, Str.Length(s)) - start)
+};
+
+function str_slice (s : string, start : int, stop: int) : Any
+{
+  from_str(str_slice_non_neg(s,
+    if start >= 0 then start else int_max (Str.Length(s) + start, 0),
+    if stop >= 0 then stop else int_max (Str.Length(s) + stop, 0)
+  ))
+};
+
 function Any_get (dictOrList: Any, index: Any): Any
   requires  (Any..isfrom_DictStrAny(dictOrList) && Any..isfrom_str(index) && DictStrAny_contains(Any..as_Dict!(dictOrList), Any..as_string!(index))) ||
             (Any..isfrom_ListAny(dictOrList) && Any..isfrom_int(index) && Any..as_int!(index) >= - List_len(Any..as_ListAny!(dictOrList)) && Any..as_int!(index) < List_len(Any..as_ListAny!(dictOrList)))
@@ -494,18 +530,55 @@ function Any_get_slice (list: Any, index: Any): Any
     else List_len(Any..as_ListAny!(list))))
 };
 
-function Any_get! (dictOrList: Any, index: Any): Any
+// Unly used in Any_sets! to keep it from dispatching strings (strings are immutable in Python, so there's nothing to set).
+function Any_get_no_string! (dictOrList: Any, index: Any): Any
 {
   if Any..isexception(dictOrList) then dictOrList
   else if Any..isexception(index) then index
-  else if !(Any..isfrom_DictStrAny(dictOrList) && Any..isfrom_str(index)) && !(Any..isfrom_ListAny(dictOrList) && Any..isfrom_int(index)) then
-    exception (TypeError("Invalid subscription type"))
-  else if Any..isfrom_DictStrAny(dictOrList) && Any..isfrom_str(index) && DictStrAny_contains(Any..as_Dict!(dictOrList), Any..as_string!(index)) then
+  else if Any..isfrom_DictStrAny(dictOrList) && Any..isfrom_str(index) then
     DictStrAny_get(Any..as_Dict!(dictOrList), Any..as_string!(index))
-  else if Any..isfrom_ListAny(dictOrList) && Any..isfrom_int(index) && Any..as_int!(index) >= - List_len(Any..as_ListAny!(dictOrList)) && Any..as_int!(index) < List_len(Any..as_ListAny!(dictOrList)) then
-      List_get(Any..as_ListAny!(dictOrList), Any..as_int!(index))
+  else if Any..isfrom_ListAny(dictOrList) && Any..isfrom_int(index) then
+    List_get(Any..as_ListAny!(dictOrList), Any..as_int!(index))
   else
-    exception (IndexError("Invalid subscription"))
+    exception (TypeError("Invalid subscription type"))
+};
+
+function Any_get! (dictOrListOrStr: Any, index: Any): Any
+{
+  if Any..isexception(dictOrListOrStr) then dictOrListOrStr
+  else if Any..isexception(index) then index
+  else if Any..isfrom_DictStrAny(dictOrListOrStr) && Any..isfrom_str(index) then
+    DictStrAny_get(Any..as_Dict!(dictOrListOrStr), Any..as_string!(index))
+  else if Any..isfrom_ListAny(dictOrListOrStr) && Any..isfrom_int(index) then
+    List_get(Any..as_ListAny!(dictOrListOrStr), Any..as_int!(index))
+  else if Any..isfrom_str(dictOrListOrStr) && Any..isfrom_int(index) then
+    str_get(Any..as_string!(dictOrListOrStr), Any..as_int!(index))
+  else
+    exception (TypeError("Invalid subscription type"))
+};
+
+
+function Any_get_slice! (listOrStr: Any, index: Any): Any
+{
+  if Any..isexception(listOrStr) then listOrStr
+  else if Any..isexception(index) then index
+  else if Any..isfrom_ListAny(listOrStr) && Any..isfrom_Slice(index) then
+    from_ListAny(List_slice(
+      Any..as_ListAny!(listOrStr),
+      Any..start!(index),
+      if OptionInt..isOptSome(Any..stop!(index))
+      then OptionInt..unwrap!(Any..stop!(index))
+      else List_len(Any..as_ListAny!(listOrStr))))
+  else if Any..isfrom_str(listOrStr) && Any..isfrom_Slice(index) then
+    str_slice(
+      Any..as_string!(listOrStr),
+      Any..start!(index),
+      if OptionInt..isOptSome(Any..stop!(index))
+      then OptionInt..unwrap!(Any..stop!(index))
+      else Str.Length(Any..as_string!(listOrStr))
+    )
+  else
+    exception (TypeError("Invalid subscription type"))
 };
 
 function Any_set (dictOrList: Any, index: Any, val: Any): Any
@@ -540,7 +613,7 @@ function Any_sets! (indices: ListAny, dictOrList: Any, val: Any): Any
   if ListAny..isListAny_nil(indices) then dictOrList
   else if ListAny..isListAny_nil(ListAny..tail!(indices)) then Any_set!(dictOrList, ListAny..head!(indices), val)
   else Any_set!(dictOrList, ListAny..head!(indices),
-    Any_sets!(ListAny..tail!(indices), Any_get!(dictOrList, ListAny..head!(indices)), val))
+    Any_sets!(ListAny..tail!(indices), Any_get_no_string!(dictOrList, ListAny..head!(indices)), val))
 };
 
 function Any_len (v: Any) : int;
@@ -626,7 +699,7 @@ function PNeg (v: Any) : Any
   else if Any..isfrom_float(v) then
     from_float(- Any..as_float!(v))
   else
-    exception(UndefinedError ("Operand Type is not defined"))
+    exception(TypeError ("Operand Type is not defined"))
 };
 
 function PBitNot (v: Any) : Any
@@ -643,7 +716,22 @@ function PBitNot (v: Any) : Any
 function PNot (v: Any) : Any
 {
   if Any..isexception(v) then v
-  else from_bool(!(Any_to_bool(v)))
+  else if Any..isfrom_bool(v) then
+    from_bool(!(Any..as_bool!(v)))
+  else if Any..isfrom_None(v) then
+    from_bool(true)
+  else if Any..isfrom_int(v) then
+    from_bool(Any..as_int!(v) == 0)
+  else if Any..isfrom_float(v) then
+    from_bool(Any..as_float!(v) == 0.0)
+  else if Any..isfrom_str(v) then
+    from_bool(Any..as_string!(v) == "")
+  else if Any..isfrom_ListAny(v) then
+    from_bool(Any..as_ListAny!(v) == ListAny_nil())
+  else if (Any..isfrom_DictStrAny(v)) then
+    from_bool(Any..as_Dict!(v) == DictStrAny_empty())
+  else
+    exception(TypeError ("Operand Type is not defined"))
 };
 
 // /////////////////////////////////////////////////////////////////////////////////////
@@ -678,7 +766,7 @@ function PAdd (v1: Any, v2: Any) : Any
   else if Any..isfrom_datetime(v1) && Any..isfrom_int(v2) then
     from_datetime((Any..as_datetime!(v1) + Any..as_int!(v2)))
   else
-    exception(UndefinedError ("Operand Type is not defined"))
+    exception(TypeError ("Operand Type is not defined"))
 };
 
 function PSub (v1: Any, v2: Any) : Any
@@ -707,7 +795,7 @@ function PSub (v1: Any, v2: Any) : Any
   else if Any..isfrom_datetime(v1) && Any..isfrom_datetime(v2) then
     from_int(Any..as_datetime!(v1) - Any..as_datetime!(v2))
   else
-    exception(UndefinedError ("Operand Type is not defined"))
+    exception(TypeError ("Operand Type is not defined"))
 };
 
 function string_repeat (s: string, i: int) : string;
@@ -746,13 +834,16 @@ function PMul (v1: Any, v2: Any) : Any
   else if Any..isfrom_float(v1) && Any..isfrom_float(v2) then
     from_float(Any..as_float!(v1) * Any..as_float!(v2))
   else
-    exception(UndefinedError ("Operand Type is not defined"))
+    exception(TypeError ("Operand Type is not defined"))
 };
 
 function PFloorDiv (v1: Any, v2: Any) : Any
-  requires (Any..isfrom_bool(v2)==>Any..as_bool!(v2)) && (Any..isfrom_int(v2)==>Any..as_int!(v2)!=0)
 {
   if Any..isexception(v1) then v1 else if Any..isexception(v2) then v2
+  else if Any..isfrom_bool(v2) && !Any..as_bool!(v2) then
+    exception(ZeroDivisionError())
+  else if Any..isfrom_int(v2) && Any..as_int!(v2) == 0 then
+    exception(ZeroDivisionError())
   else if Any..isfrom_bool(v1) && Any..isfrom_bool(v2) then
     from_int( bool_to_int(Any..as_bool!(v1)) / bool_to_int(Any..as_bool!(v2)))
   else if Any..isfrom_bool(v1) && Any..isfrom_int(v2) then
@@ -762,7 +853,7 @@ function PFloorDiv (v1: Any, v2: Any) : Any
   else if Any..isfrom_int(v1) && Any..isfrom_int(v2) then
     from_int(Any..as_int!(v1) / Any..as_int!(v2))
   else
-    exception(UndefinedError ("Operand Type is not defined"))
+    exception(TypeError ("Operand Type is not defined"))
 };
 
 // /////////////////////////////////////////////////////////////////////////////////////
@@ -806,7 +897,7 @@ function PLt (v1: Any, v2: Any) : Any
   else if Any..isfrom_datetime(v1) && Any..isfrom_datetime(v2) then
     from_bool(Any..as_datetime!(v1) <Any..as_datetime!(v2))
   else
-    exception(UndefinedError ("Operand Type is not defined"))
+    exception(TypeError ("Operand Type is not defined"))
 };
 
 function PLe (v1: Any, v2: Any) : Any
@@ -837,7 +928,7 @@ function PLe (v1: Any, v2: Any) : Any
   else if Any..isfrom_datetime(v1) && Any..isfrom_datetime(v2) then
     from_bool(Any..as_datetime!(v1) <=Any..as_datetime!(v2))
   else
-    exception(UndefinedError ("Operand Type is not defined"))
+    exception(TypeError ("Operand Type is not defined"))
 };
 
 function PGt (v1: Any, v2: Any) : Any
@@ -868,7 +959,7 @@ function PGt (v1: Any, v2: Any) : Any
   else if Any..isfrom_datetime(v1) && Any..isfrom_datetime(v2) then
     from_bool(Any..as_datetime!(v1) >Any..as_datetime!(v2))
   else
-    exception(UndefinedError ("Operand Type is not defined"))
+    exception(TypeError ("Operand Type is not defined"))
 };
 
 function PGe (v1: Any, v2: Any) : Any
@@ -899,7 +990,7 @@ function PGe (v1: Any, v2: Any) : Any
   else if Any..isfrom_datetime(v1) && Any..isfrom_datetime(v2) then
     from_bool(Any..as_datetime!(v1) >=Any..as_datetime!(v2))
   else
-    exception(UndefinedError ("Operand Type is not defined"))
+    exception(TypeError ("Operand Type is not defined"))
 };
 
 function PEq (v: Any, v': Any) : Any {
@@ -917,13 +1008,19 @@ function PNEq (v: Any, v': Any) : Any {
 function PAnd (v1: Any, v2: Any) : Any
 {
   if Any..isexception(v1) then v1 else
-  if ! Any_to_bool (v1) then v1 else v2
+  if (Any..isfrom_bool(v1) || Any..isfrom_None(v1) || Any..isfrom_str(v1) || Any..isfrom_int(v1) || Any..isfrom_DictStrAny(v1) || Any..isfrom_ListAny(v1)) then
+    if ! Any_to_bool (v1) then v1 else v2
+  else
+    exception(UndefinedError("Unable to convert operand to bool"))
 };
 
 function POr (v1: Any, v2: Any) : Any
 {
   if Any..isexception(v1) then v1 else
-  if Any_to_bool (v1) then v1 else v2
+  if (Any..isfrom_bool(v1) || Any..isfrom_None(v1) || Any..isfrom_str(v1) || Any..isfrom_int(v1) || Any..isfrom_DictStrAny(v1) || Any..isfrom_ListAny(v1)) then
+    if Any_to_bool (v1) then v1 else v2
+  else
+    exception(UndefinedError("Unable to convert operand to bool"))
 };
 
 // /////////////////////////////////////////////////////////////////////////////////////
@@ -953,13 +1050,16 @@ function PPow (v1: Any, v2: Any) : Any
   else if (Any..isfrom_int(v1) && Any..isfrom_bool(v2)) then
     from_int(int_pow(Any..as_int!(v1), bool_to_int(Any..as_bool!(v2))))
   else
-    exception(UnimplementedError("Pow is not defined on these input types"))
+    exception(TypeError("Pow is not defined on these input types"))
 };
 
 function PMod (v1: Any, v2: Any) : Any
-  requires (Any..isfrom_bool(v2)==>Any..as_bool!(v2)) && (Any..isfrom_int(v2)==>Any..as_int!(v2)!=0)
 {
   if Any..isexception(v1) then v1 else if Any..isexception(v2) then v2
+  else if Any..isfrom_bool(v2) && !Any..as_bool!(v2) then
+    exception(ZeroDivisionError())
+  else if Any..isfrom_int(v2) && Any..as_int!(v2) == 0 then
+    exception(ZeroDivisionError())
   else if Any..isfrom_bool(v1) && Any..isfrom_bool(v2) then
     from_int( bool_to_int(Any..as_bool!(v1)) % bool_to_int(Any..as_bool!(v2)))
   else if Any..isfrom_bool(v1) && Any..isfrom_int(v2) then
@@ -1095,8 +1195,11 @@ Parse the Laurel DDM prelude into a Laurel Program.
 
 -- Prelude functions that may return an exception value as Any.
 -- We should make sure that all functions in this list propagate the exceptions from their arguments.
-public def AnyMaybeExceptionList := ["Any_get!", "Any_set!", "Any_sets!", "PNeg", "PBitNot", "PNot", "PAdd", "PSub", "PMul",
-   "PFloorDiv", "PLt", "PLe", "PGt", "PGe", "PPow", "PMod", "PLShift", "PRShift", "PAnd", "POr"]
+public def AnyMaybeExceptionList := [
+  "List_get_non_neg", "List_get", "DictStrAny_get", "str_get", "str_slice_non_neg", "str_slice",
+  "Any_get!", "Any_get_no_string!", "Any_get_slice!", "Any_set!", "Any_sets!",
+  "PNeg", "PBitNot", "PNot", "PAdd", "PSub", "PMul",
+  "PFloorDiv", "PLt", "PLe", "PGt", "PGe", "PPow", "PMod", "PLShift", "PRShift", "PAnd", "POr"]
 
 public def pythonRuntimeLaurelPart : Laurel.Program :=
   match Laurel.TransM.run (some $ .file "") (Laurel.parseProgram pythonRuntimeLaurelPartDDM) with

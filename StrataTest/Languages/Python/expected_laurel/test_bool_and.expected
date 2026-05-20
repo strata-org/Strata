@@ -1,9 +1,7 @@
 test_bool_and.py(2, 4): ✅ pass - assert(25)
 test_bool_and.py(3, 4): ✅ pass - assert(44)
 test_bool_and.py(4, 4): ✅ pass - assert(63)
-test_bool_and.py(5, 11): ✅ pass - Check PAnd exception
 test_bool_and.py(5, 4): ✅ pass - true and true
-test_bool_and.py(6, 11): ✅ pass - Check PNot exception
 test_bool_and.py(6, 4): ✅ pass - true and false
-DETAIL: 7 passed, 0 failed, 0 inconclusive
+DETAIL: 5 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

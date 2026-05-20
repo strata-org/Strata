@@ -1,26 +1,11 @@
 test_loops.py(3, 4): ✅ pass - assert(38)
 test_loops.py(4, 4): ✅ pass - assume_assume(53)_calls_PIn_0
-test_loops.py(5, 12): ❓ unknown - Check PAdd exception
-test_loops.py(6, 11): ❓ unknown - Check PGt exception
 test_loops.py(6, 4): ❓ unknown - simple loop incremented
 test_loops.py(9, 4): ✅ pass - assert(174)
-test_loops.py(10, 4): ❓ unknown - set_a_calls_Any_get_0
-test_loops.py(10, 4): ❓ unknown - set_b_calls_Any_get_0
-test_loops.py(11, 13): ❓ unknown - Check PSub exception
-test_loops.py(12, 11): ❓ unknown - Check PLt exception
 test_loops.py(12, 4): ❓ unknown - tuple unpacking decremented
 test_loops.py(15, 4): ✅ pass - assert(337)
-test_loops.py(16, 4): ❓ unknown - set_x_calls_Any_get_0
-test_loops.py(16, 4): ❓ unknown - set_tuple_360_calls_Any_get_0
-test_loops.py(16, 4): ❓ unknown - set_y_calls_Any_get_0
-test_loops.py(16, 4): ❓ unknown - set_z_calls_Any_get_0
-test_loops.py(17, 13): ❓ unknown - Check PAdd exception
-test_loops.py(18, 11): ❓ unknown - Check PGt exception
 test_loops.py(18, 4): ❓ unknown - nested unpacking incremented
 test_loops.py(21, 4): ✅ pass - assert(477)
-test_loops.py(22, 10): ✅ pass - Check PGt exception
-test_loops.py(23, 13): ❓ unknown - Check PSub exception
-test_loops.py(24, 11): ❓ unknown - Check PLe exception
 test_loops.py(24, 4): ❓ unknown - while loop did not increase n4
-DETAIL: 6 passed, 0 failed, 18 inconclusive
+DETAIL: 5 passed, 0 failed, 4 inconclusive
 RESULT: Inconclusive

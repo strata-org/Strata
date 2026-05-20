@@ -1,7 +1,5 @@
 test_bug_finding_unreachable.py(3, 4): ✖️ always false if reached - impossible condition
-test_bug_finding_unreachable.py(4, 7): ✔️ always true if reached - Check PGt exception
-test_bug_finding_unreachable.py(5, 11): ✔️ always true if reached - Check PLt exception
+test_bug_finding_unreachable.py(2, 44): ✔️ always true if reached (always true if reached on 2 paths, fail (❗path unreachable) on 2 paths) - (test_bug_finding_unreachable ensures) Return type constraint
 test_bug_finding_unreachable.py(6, 12): ❌ fail (❗path unreachable) - dead code
-test_bug_finding_unreachable.py(2, 44): ✔️ always true if reached - (test_bug_finding_unreachable ensures) Return type constraint
-DETAIL: 3 passed, 2 failed, 0 inconclusive, 1 unreachable
+DETAIL: 1 passed, 2 failed, 0 inconclusive, 1 unreachable
 RESULT: Failures found

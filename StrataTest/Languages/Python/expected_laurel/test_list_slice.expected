@@ -1,22 +1,8 @@
-test_list_slice.py(3, 0): ✅ pass - assert_assert(32)_calls_Any_get_slice_0
-test_list_slice.py(3, 0): ✅ pass - assert_assert(32)_calls_Any_get_1
 test_list_slice.py(3, 0): ✅ pass - assert(32)
-test_list_slice.py(7, 0): ✅ pass - assert_assert(145)_calls_Any_get_slice_0
-test_list_slice.py(7, 0): ✅ pass - assert_assert(145)_calls_Any_get_1
-test_list_slice.py(7, 0): ✅ pass - assert_assert(145)_calls_Any_get_2
 test_list_slice.py(7, 0): ✅ pass - assert(145)
-test_list_slice.py(9, 0): ✅ pass - assert_assert(187)_calls_Any_get_slice_0
 test_list_slice.py(9, 0): ✅ pass - assert(187)
-test_list_slice.py(11, 16): ✅ pass - Check PNeg exception
-test_list_slice.py(11, 19): ✅ pass - Check PNeg exception
-test_list_slice.py(11, 0): ✅ pass - assert_assert(220)_calls_Any_get_slice_0
 test_list_slice.py(11, 0): ✅ pass - assert(220)
-test_list_slice.py(13, 16): ✅ pass - Check PNeg exception
-test_list_slice.py(13, 21): ✅ pass - Check PNeg exception
-test_list_slice.py(13, 0): ✅ pass - assert_assert(260)_calls_Any_get_slice_0
 test_list_slice.py(13, 0): ✅ pass - assert(260)
-test_list_slice.py(15, 18): ✅ pass - Check PNeg exception
-test_list_slice.py(15, 0): ✅ pass - assert_assert(307)_calls_Any_get_slice_0
 test_list_slice.py(15, 0): ✅ pass - assert(307)
-DETAIL: 20 passed, 0 failed, 0 inconclusive
+DETAIL: 6 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

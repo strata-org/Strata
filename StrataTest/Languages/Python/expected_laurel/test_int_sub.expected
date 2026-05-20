@@ -1,7 +1,6 @@
 test_int_sub.py(2, 4): ✅ pass - assert(24)
 test_int_sub.py(3, 4): ✅ pass - assert(40)
-test_int_sub.py(4, 13): ✅ pass - Check PSub exception
 test_int_sub.py(4, 4): ✅ pass - assert(55)
 test_int_sub.py(5, 4): ✅ pass - int subtraction
-DETAIL: 5 passed, 0 failed, 0 inconclusive
+DETAIL: 4 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

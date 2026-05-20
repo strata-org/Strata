@@ -1,9 +1,6 @@
 test_int_floordiv.py(2, 4): ✅ pass - assert(29)
 test_int_floordiv.py(3, 4): ✅ pass - assert(45)
-test_int_floordiv.py(4, 13): ✅ pass - assert_assert(69)_calls_PFloorDiv_0
-test_int_floordiv.py(4, 13): ✅ pass - Check PFloorDiv exception
-test_int_floordiv.py(4, 4): ✅ pass - set_c_calls_PFloorDiv_0
 test_int_floordiv.py(4, 4): ✅ pass - assert(60)
 test_int_floordiv.py(5, 4): ✅ pass - int floor division
-DETAIL: 7 passed, 0 failed, 0 inconclusive
+DETAIL: 4 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

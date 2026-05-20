@@ -1,12 +1,8 @@
-test_default_params.py(2, 18): ✅ pass - Check PAdd exception
-test_default_params.py(2, 4): ✅ pass - assert(58)
 test_default_params.py(1, 49): ✅ pass - (greet ensures) Return type constraint
+test_default_params.py(2, 4): ✅ pass - assert(58)
 test_default_params.py(6, 4): ✅ pass - assert(160)
 test_default_params.py(7, 4): ✅ pass - assert(180)
-test_default_params.py(8, 10): ✅ pass - Check PLt exception
-test_default_params.py(9, 17): ❓ unknown - Check PMul exception
-test_default_params.py(10, 12): ❓ unknown - Check PAdd exception
-test_default_params.py(5, 38): ❓ unknown - (power ensures) Return type constraint
+test_default_params.py(5, 38): ❓ unknown (pass on 2 paths, unknown on 3 paths) - (power ensures) Return type constraint
 test_default_params.py(14, 4): ✅ pass - (greet requires) Type constraint of name
 test_default_params.py(14, 4): ✅ pass - (greet requires) Type constraint of greeting
 test_default_params.py(14, 4): ✅ pass - assert(294)
@@ -23,5 +19,5 @@ test_default_params.py(23, 4): ✅ pass - (power requires) Type constraint of ba
 test_default_params.py(23, 4): ✅ pass - (power requires) Type constraint of exp
 test_default_params.py(23, 4): ✅ pass - assert(545)
 test_default_params.py(24, 4): ❓ unknown - explicit power failed
-DETAIL: 18 passed, 0 failed, 7 inconclusive
+DETAIL: 16 passed, 0 failed, 5 inconclusive
 RESULT: Inconclusive
