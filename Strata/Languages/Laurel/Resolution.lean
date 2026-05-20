@@ -542,7 +542,7 @@ inside the mutual block below. Helpers are grouped by section to mirror the
 - Control flow — `Check.while`, `Check.exit`, `Check.return`,
   `Check.block`, `Check.ifThenElse`
 - Verification statements — `Check.assert`, `Check.assume`
-- Assignment — `Synth.assign`, `Check.assign`
+- Assignment — `Check.assign`
 - Calls — `Synth.staticCall`, `Synth.instanceCall`
 - Primitive operations — `Synth.primitiveOp`
 - Object forms — `Synth.new`, `Synth.asType`, `Synth.isType`, `Synth.refEq`,
@@ -592,8 +592,6 @@ def Synth.resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTy
   | .Var (.Local ref) => Synth.varLocal ref source
   | .Var (.Field target fieldName) =>
     Synth.varField exprMd target fieldName source (by rw [h_node])
-  | .Assign targets value =>
-    Synth.assign exprMd targets value source (by rw [h_node])
   | .PureFieldUpdate target fieldName newVal =>
     Synth.pureFieldUpdate exprMd target fieldName newVal (by rw [h_node])
   | .StaticCall callee args =>
@@ -966,79 +964,20 @@ def Check.assume (exprMd : StmtExprMd)
 
 -- ### Assignment
 
-/-- `Γ ⊢ targets_i ⇒ T_i,  Γ ⊢ e ⇐ ExpectedTy  ∴  Γ ⊢ Assign targets e ⇒ ExpectedTy`
-
-    where `ExpectedTy = T_1` if `|targets| = 1`, else `MultiValuedExpr [T_1; …; T_n]`.
-
-    Each target's declared type `T_i` (from `Local`, `Field`, or fresh
-    `Declare`) is collapsed into a tuple `ExpectedTy` (single type if one
-    target, otherwise `MultiValuedExpr [T_1; …; T_n]`) and pushed into
-    the RHS via `Check.resolveStmtExpr`. This means the RHS's bidirectional
-    rules (e.g. `Check.ifThenElse`, `Check.block`) propagate `ExpectedTy`
-    inward: `var x: int := if c then a else b` checks each branch against
-    `int` directly, with errors fired at the offending branch.
-
-    Multi-target forms produce a single tuple-vs-tuple check: when the
-    RHS is itself `MultiValuedExpr` (a multi-output procedure call), both
-    arity and per-position type mismatches surface in a single diagnostic
-    of shape *"expected '(int, int, int)', got '(int, string)'"*.
-
-    The synthesized type is `ExpectedTy`, so expression-position
-    assignments like `x ++ (y := s)` see the target type in the second
-    operand. -/
-def Synth.assign (exprMd : StmtExprMd)
-    (targets : List VariableMd) (value : StmtExprMd) (source : Option FileRange)
-    (h : exprMd.val = .Assign targets value) :
-    ResolveM (StmtExpr × HighTypeMd) := do
-  let targets' ← targets.attach.mapM fun ⟨v, _⟩ => do
-    let ⟨vv, vs⟩ := v
-    match vv with
-    | .Local ref =>
-      let ref' ← resolveRef ref source
-      pure (⟨.Local ref', vs⟩ : VariableMd)
-    | .Field target fieldName =>
-      let (target', _) ← Synth.resolveStmtExpr target
-      let fieldName' ← resolveFieldRef target' fieldName source
-      pure (⟨.Field target' fieldName', vs⟩ : VariableMd)
-    | .Declare param =>
-      let ty' ← resolveHighType param.type
-      let name' ← defineNameCheckDup param.name (.var param.name ty')
-      pure (⟨.Declare ⟨name', ty'⟩, vs⟩ : VariableMd)
-  let targetType (t : VariableMd) : ResolveM HighTypeMd := do
-    match t.val with
-    | .Local ref => getVarType ref
-    | .Declare param => pure param.type
-    | .Field _ fieldName => getVarType fieldName
-  let targetTys ← targets'.mapM targetType
-  let expectedTy : HighTypeMd := match targetTys with
-    | [single] => single
-    | _        => { val := .MultiValuedExpr targetTys, source := source }
-  let value' ← Check.resolveStmtExpr value expectedTy
-  pure (.Assign targets' value', expectedTy)
-  termination_by (exprMd, 1)
-  decreasing_by
-    all_goals
-      apply Prod.Lex.left
-      have hsz := exprMd.sizeOf_val_lt
-      simp [h] at hsz
-      try simp_all
-      try (have := List.sizeOf_lt_of_mem ‹_ ∈ targets›; simp_all)
-      omega
-
 /-- `Γ ⊢ targets_i ⇒ T_i,  Γ ⊢ e ⇐ ExpectedTy,  ExpectedTy <: T  ∴  Γ ⊢ Assign targets e ⇐ T`
 
     where `ExpectedTy = T_1` if `|targets| = 1`, else
     `MultiValuedExpr [T_1; …; T_n]`.
 
-    Like `Synth.assign`, the target tuple type is pushed into the RHS so
-    bidirectional rules in the RHS receive the assignment's type. The
-    outer subsumption `ExpectedTy <: T` accommodates use as a statement
-    (`T = TVoid`, no value to compare) or as an expression
-    (`T ≠ TVoid`, the result type must match). When `T = TVoid` the
-    subsumption is satisfied trivially since `_ <: TVoid` only when the
-    LHS is also `TVoid` — the assignment value is discarded in statement
-    position and we want no further check, so the subsumption is
-    skipped. -/
+    The target tuple type is pushed into the RHS via
+    `Check.resolveStmtExpr`, so bidirectional rules in the RHS receive
+    the assignment's type. The outer subsumption `ExpectedTy <: T`
+    accommodates use as a statement (`T = TVoid`, no value to compare)
+    or as an expression (`T ≠ TVoid`, the result type must match). When
+    `T = TVoid` the subsumption is satisfied trivially since `_ <: TVoid`
+    only when the LHS is also `TVoid` — the assignment value is
+    discarded in statement position and we want no further check, so the
+    subsumption is skipped. -/
 def Check.assign (exprMd : StmtExprMd)
     (targets : List VariableMd) (value : StmtExprMd)
     (expected : HighTypeMd) (source : Option FileRange)
