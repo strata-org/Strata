@@ -4684,6 +4684,49 @@ theorem extendStoreOne_other {P : PureExpr} [DecidableEq P.Ident]
     extendStoreOne σ ident val y = σ y := by
   simp [extendStoreOne, h]
 
+/-- `InitState` lifts through a frame extension when the init target is
+distinct from the frame ident. -/
+theorem InitState_frame_extend_one
+    {P : PureExpr} [DecidableEq P.Ident]
+    {σ σ' : SemanticStore P} {x : P.Ident} {v : P.Expr}
+    (h_init : InitState P σ x v σ')
+    {ident : P.Ident} {val : P.Expr}
+    (h_x_ne : x ≠ ident) :
+    InitState P (extendStoreOne σ ident val) x v (extendStoreOne σ' ident val) := by
+  cases h_init with
+  | init h_σ_x_none h_σ'_x_some h_other =>
+    refine InitState.init ?_ ?_ ?_
+    · rw [extendStoreOne_other σ ident val x h_x_ne]; exact h_σ_x_none
+    · rw [extendStoreOne_other σ' ident val x h_x_ne]; exact h_σ'_x_some
+    · intro y h_x_ne_y
+      by_cases h_y_eq : y = ident
+      · subst h_y_eq; rw [extendStoreOne_self, extendStoreOne_self]
+      · rw [extendStoreOne_other σ' ident val y h_y_eq,
+            extendStoreOne_other σ ident val y h_y_eq]
+        exact h_other y h_x_ne_y
+
+/-- `UpdateState` lifts through a frame extension when the update target
+is distinct from the frame ident. -/
+theorem UpdateState_frame_extend_one
+    {P : PureExpr} [DecidableEq P.Ident]
+    {σ σ' : SemanticStore P} {x : P.Ident} {v : P.Expr}
+    (h_update : UpdateState P σ x v σ')
+    {ident : P.Ident} {val : P.Expr}
+    (h_x_ne : x ≠ ident) :
+    UpdateState P (extendStoreOne σ ident val) x v (extendStoreOne σ' ident val) := by
+  cases h_update with
+  | update h_σ_x_some h_σ'_x_some h_other =>
+    rename_i v'
+    refine UpdateState.update (v' := v') ?_ ?_ ?_
+    · rw [extendStoreOne_other σ ident val x h_x_ne]; exact h_σ_x_some
+    · rw [extendStoreOne_other σ' ident val x h_x_ne]; exact h_σ'_x_some
+    · intro y h_x_ne_y
+      by_cases h_y_eq : y = ident
+      · subst h_y_eq; rw [extendStoreOne_self, extendStoreOne_self]
+      · rw [extendStoreOne_other σ' ident val y h_y_eq,
+            extendStoreOne_other σ ident val y h_y_eq]
+        exact h_other y h_x_ne_y
+
 /-- Evaluating an expression at `extendStoreOne σ ident val` yields the
 same value as evaluating at `σ`, provided `ident` is not a free variable
 of the expression. Direct corollary of `WellFormedSemanticEvalExprCongr`. -/
@@ -4700,6 +4743,160 @@ theorem Expr_eval_frame_extend_one
   by_cases h_eq : y = ident
   · rw [h_eq] at h_y_in; exact absurd h_y_in h_ident_unused
   · exact extendStoreOne_other σ ident val y h_eq
+
+/-- A single command's evaluation lifts through a frame extension when the
+frame ident is not in `Cmd.touchedVars c`. Proved by case analysis on the
+8 `EvalCmd` constructors: each rebuilds the corresponding `InitState` /
+`UpdateState` (or no-op for assert/assume/cover) on the extended stores,
+using `extendStoreOne_self` / `extendStoreOne_other` and lifting
+expression evaluations via `Expr_eval_frame_extend_one`. -/
+theorem EvalCmd_frame_extend_one
+    {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
+    [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    {δ : SemanticEval P}
+    (h_wf_congr : WellFormedSemanticEvalExprCongr δ)
+    {σ σ' : SemanticStore P} {failed : Bool}
+    {ident : P.Ident} {val : P.Expr}
+    {c : Cmd P}
+    (h_ident_unused : ident ∉ Cmd.touchedVars c)
+    (h_eval : EvalCmd P δ σ c σ' failed) :
+    EvalCmd P δ (extendStoreOne σ ident val) c
+      (extendStoreOne σ' ident val) failed := by
+  -- Project h_ident_unused to no-getVars / no-definedVars / no-modifiedVars
+  have h_not_in_get : ident ∉ Cmd.getVars c := fun h => h_ident_unused (by
+    unfold Cmd.touchedVars
+    exact List.mem_append.mpr (Or.inl (List.mem_append.mpr (Or.inl h))))
+  have h_not_in_def : ident ∉ Cmd.definedVars c := fun h => h_ident_unused (by
+    unfold Cmd.touchedVars
+    exact List.mem_append.mpr (Or.inl (List.mem_append.mpr (Or.inr h))))
+  have h_not_in_mod : ident ∉ Cmd.modifiedVars c := fun h => h_ident_unused (by
+    unfold Cmd.touchedVars
+    exact List.mem_append.mpr (Or.inr h))
+  cases h_eval with
+  | eval_init h_eval_e h_init h_wf_var =>
+    rename_i ty md x v e
+    -- ident ∉ definedVars (.init x ty _ md) = [x], so ident ≠ x.
+    have h_x_ne_ident : x ≠ ident := by
+      intro h_eq
+      apply h_not_in_def
+      have h_dv :
+          Cmd.definedVars (Cmd.init x ty (ExprOrNondet.det e) md) = [x] := by
+        with_unfolding_all rfl
+      rw [h_dv, h_eq]
+      exact List.mem_singleton.mpr rfl
+    -- Lift eval: e doesn't reference ident.
+    have h_e_unused : ident ∉ HasVarsPure.getVars e := by
+      intro h
+      apply h_not_in_get
+      have h_gv : Cmd.getVars (Cmd.init x ty (ExprOrNondet.det e) md)
+          = HasVarsPure.getVars e := by
+        with_unfolding_all rfl
+      rw [h_gv]
+      exact h
+    have h_eval_e_lifted :
+        δ (extendStoreOne σ ident val) e = .some v := by
+      rw [Expr_eval_frame_extend_one h_wf_congr h_e_unused]
+      exact h_eval_e
+    exact EvalCmd.eval_init h_eval_e_lifted
+      (InitState_frame_extend_one h_init h_x_ne_ident) h_wf_var
+  | eval_init_unconstrained h_init h_wf_var =>
+    rename_i ty md x v
+    have h_x_ne_ident : x ≠ ident := by
+      intro h_eq
+      apply h_not_in_def
+      have h_dv :
+          Cmd.definedVars (Cmd.init x ty ExprOrNondet.nondet md) = [x] := by
+        with_unfolding_all rfl
+      rw [h_dv, h_eq]
+      exact List.mem_singleton.mpr rfl
+    exact EvalCmd.eval_init_unconstrained
+      (InitState_frame_extend_one h_init h_x_ne_ident) h_wf_var
+  | eval_set h_eval_e h_update h_wf_var =>
+    rename_i md x v e
+    -- ident ∉ modifiedVars (.set x (.det e) md) = [x], so ident ≠ x.
+    have h_x_ne_ident : x ≠ ident := by
+      intro h_eq
+      apply h_not_in_mod
+      have h_mv :
+          Cmd.modifiedVars (Cmd.set x (ExprOrNondet.det e) md) = [x] := by
+        with_unfolding_all rfl
+      rw [h_mv, h_eq]
+      exact List.mem_singleton.mpr rfl
+    have h_e_unused : ident ∉ HasVarsPure.getVars e := by
+      intro h
+      apply h_not_in_get
+      have h_gv : Cmd.getVars (Cmd.set x (ExprOrNondet.det e) md)
+          = HasVarsPure.getVars e := by
+        with_unfolding_all rfl
+      rw [h_gv]
+      exact h
+    have h_eval_e_lifted :
+        δ (extendStoreOne σ ident val) e = .some v := by
+      rw [Expr_eval_frame_extend_one h_wf_congr h_e_unused]
+      exact h_eval_e
+    exact EvalCmd.eval_set h_eval_e_lifted
+      (UpdateState_frame_extend_one h_update h_x_ne_ident) h_wf_var
+  | eval_set_nondet h_update h_wf_var =>
+    rename_i md x v
+    have h_x_ne_ident : x ≠ ident := by
+      intro h_eq
+      apply h_not_in_mod
+      have h_mv :
+          Cmd.modifiedVars (Cmd.set x ExprOrNondet.nondet md) = [x] := by
+        with_unfolding_all rfl
+      rw [h_mv, h_eq]
+      exact List.mem_singleton.mpr rfl
+    exact EvalCmd.eval_set_nondet
+      (UpdateState_frame_extend_one h_update h_x_ne_ident) h_wf_var
+  | eval_assert_pass h_eval_e h_wfb =>
+    rename_i l md e
+    -- σ' = σ; just lift the eval.
+    have h_e_unused : ident ∉ HasVarsPure.getVars e := by
+      intro h
+      apply h_not_in_get
+      have h_gv : Cmd.getVars (Cmd.assert l e md)
+          = HasVarsPure.getVars e := by
+        with_unfolding_all rfl
+      rw [h_gv]
+      exact h
+    have h_eval_e_lifted :
+        δ (extendStoreOne σ ident val) e = .some HasBool.tt := by
+      rw [Expr_eval_frame_extend_one h_wf_congr h_e_unused]
+      exact h_eval_e
+    exact EvalCmd.eval_assert_pass h_eval_e_lifted h_wfb
+  | eval_assert_fail h_eval_e h_wfb =>
+    rename_i l md e
+    have h_e_unused : ident ∉ HasVarsPure.getVars e := by
+      intro h
+      apply h_not_in_get
+      have h_gv : Cmd.getVars (Cmd.assert l e md)
+          = HasVarsPure.getVars e := by
+        with_unfolding_all rfl
+      rw [h_gv]
+      exact h
+    have h_eval_e_lifted :
+        δ (extendStoreOne σ ident val) e = .some HasBool.ff := by
+      rw [Expr_eval_frame_extend_one h_wf_congr h_e_unused]
+      exact h_eval_e
+    exact EvalCmd.eval_assert_fail h_eval_e_lifted h_wfb
+  | eval_assume h_eval_e h_wfb =>
+    rename_i l md e
+    have h_e_unused : ident ∉ HasVarsPure.getVars e := by
+      intro h
+      apply h_not_in_get
+      have h_gv : Cmd.getVars (Cmd.assume l e md)
+          = HasVarsPure.getVars e := by
+        with_unfolding_all rfl
+      rw [h_gv]
+      exact h
+    have h_eval_e_lifted :
+        δ (extendStoreOne σ ident val) e = .some HasBool.tt := by
+      rw [Expr_eval_frame_extend_one h_wf_congr h_e_unused]
+      exact h_eval_e
+    exact EvalCmd.eval_assume h_eval_e_lifted h_wfb
+  | eval_cover h_wfb =>
+    -- σ unchanged, no eval to lift.
+    exact EvalCmd.eval_cover h_wfb
 
 /-! ## Generalized simulation
 
