@@ -4684,6 +4684,23 @@ theorem extendStoreOne_other {P : PureExpr} [DecidableEq P.Ident]
     extendStoreOne σ ident val y = σ y := by
   simp [extendStoreOne, h]
 
+/-- Evaluating an expression at `extendStoreOne σ ident val` yields the
+same value as evaluating at `σ`, provided `ident` is not a free variable
+of the expression. Direct corollary of `WellFormedSemanticEvalExprCongr`. -/
+theorem Expr_eval_frame_extend_one
+    {P : PureExpr} [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    {δ : SemanticEval P}
+    (h_wf_congr : WellFormedSemanticEvalExprCongr δ)
+    {σ : SemanticStore P} {ident : P.Ident} {val : P.Expr}
+    {e : P.Expr}
+    (h_ident_unused : ident ∉ HasVarsPure.getVars e) :
+    δ (extendStoreOne σ ident val) e = δ σ e := by
+  apply h_wf_congr
+  intro y h_y_in
+  by_cases h_eq : y = ident
+  · rw [h_eq] at h_y_in; exact absurd h_y_in h_ident_unused
+  · exact extendStoreOne_other σ ident val y h_eq
+
 /-! ## Generalized simulation
 
 The central lemma: for any continuation `k`, exit-continuation stack, and
