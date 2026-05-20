@@ -9,10 +9,10 @@ import Strata.Languages.Core.Env
 
 /-! ## Tests for `Env.merge` preserving deferred obligations across an error wall.
 
-Regression test for the second leak documented in issue #1185: when one ITE
-branch errors during partial evaluation, `Env.merge` must NOT silently discard
-the clean branch's already-accumulated `deferred` obligations. Pre-fix it
-returned the errored side verbatim; post-fix it unions `deferred`. -/
+When one ITE branch errors during partial evaluation, `Env.merge` must NOT
+silently discard the clean branch's already-accumulated `deferred`
+obligations. The merge unions `deferred` across the error wall so those
+obligations still reach the verifier. -/
 
 ---------------------------------------------------------------------
 namespace Core
@@ -117,17 +117,14 @@ private def E_err_b : Env :=
     error := some (.Misc f!"error B"),
     deferred := #[synthOblig] }
 
--- Both errored: deferred is unioned (size 2).
 /--
 info: 2
 -/
 #guard_msgs in
 #eval (Env.merge dummyCond E_err_a E_err_b).deferred.size
 
--- E1 wins on the error value when both error: arbitrary controller choice, not
--- a soundness requirement (the merged env carries an error flag and
--- short-circuits regardless). The actual value is `some "[ERROR] error A"`,
--- not `some "[ERROR] error B"`, despite both inputs erroring.
+-- E1 wins arbitrarily — the merged env carries an error flag either way,
+-- so downstream short-circuits regardless of which side's value is kept.
 /--
 info: some "[ERROR] error A"
 -/

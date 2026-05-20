@@ -9,20 +9,19 @@ import Strata.Languages.Core.Verifier
 
 /-! ## Tests for cross-procedure error isolation in `Program.eval`
 
-Regression tests for issue #1185 — when one procedure's partial evaluation
-errors (e.g., function-name collision), the error must NOT contaminate
-subsequent procedures' evaluation. Each procedure's evaluation should start
-from a clean `Env.error` state. -/
+When one procedure's partial evaluation errors (e.g., function-name
+collision), the error must NOT contaminate subsequent procedures'
+evaluation. Each procedure's evaluation should start from a clean
+`Env.error` state. -/
 
 ---------------------------------------------------------------------
 namespace Strata
 
 
-/-- Issue #1185 exact repro. proc_a registers `foo`; proc_b's redefinition of
-    `foo` raises a partial-evaluation error; proc_c's `assert false` MUST still
-    be evaluated and reported as failing. Pre-fix: "All 0 goals passed" (the
-    soundness bug). Post-fix: assert_0 reports ❌ fail. -/
-private def issue1185Repro :=
+/-- proc_a registers `foo`; proc_b's redefinition of `foo` raises a
+    partial-evaluation error; proc_c's `assert false` MUST still be
+    evaluated and reported as failing. -/
+private def collisionThenAssertFalse :=
 #strata
 program Core;
 
@@ -50,13 +49,12 @@ Property: assert
 Result: ❌ fail
 -/
 #guard_msgs in
-#eval verify issue1185Repro (options := .quiet)
+#eval verify collisionThenAssertFalse (options := .quiet)
 
 
-/-- Reorder regression: proc_c first, then the colliding pair. This already
-    worked pre-fix (the issue's "Reordering Rescues the Obligation" section).
-    Protect against regression. -/
-private def issue1185Reordered :=
+/-- Reordered variant: proc_c runs before the colliding pair. Guards against
+    a regression where ordering becomes load-bearing again. -/
+private def assertFalseThenCollision :=
 #strata
 program Core;
 
@@ -84,7 +82,7 @@ Property: assert
 Result: ❌ fail
 -/
 #guard_msgs in
-#eval verify issue1185Reordered (options := .quiet)
+#eval verify assertFalseThenCollision (options := .quiet)
 
 
 end Strata

@@ -356,15 +356,12 @@ def Env.performMerge (cond : Expression.Expr) (E1 E2 : Env)
   { E1 with exprEnv := exprEnv, pathConditions := pcs, deferred := deferred }
 
 def Env.merge (cond : Expression.Expr) (E1 E2 : Env) : Env :=
-  -- Issue #1185: when one branch errors, return the errored side's structure
-  -- (state, scope, error, pathConditions) but UNION `deferred` across both
-  -- sides. Without the union, an errored ITE branch silently discards its
-  -- sibling's already-accumulated proof obligations. Path conditions on the
-  -- non-errored side are dropped on the error path, but this is fine: the
-  -- merged env carries an error, so future statements short-circuit
-  -- (StatementEval.lean:632-633) and PCs are never consulted again. When both
-  -- sides error, E1's error value is kept (the choice is arbitrary; both sides
-  -- carry an error flag and the caller's short-circuit fires regardless).
+  -- When one branch errors, take that side's structure (state, scope, error,
+  -- pathConditions) but UNION `deferred`, so the sibling's already-accumulated
+  -- obligations survive the error wall. Dropping the non-errored side's path
+  -- conditions is sound: the merged env carries an error and downstream
+  -- evaluation short-circuits before PCs are consulted again. When both sides
+  -- error, E1's error value wins arbitrarily — the error flag is what matters.
   if h1: E1.error.isSome then
     { E1 with deferred := E1.deferred ++ E2.deferred }
   else if h2: E2.error.isSome then

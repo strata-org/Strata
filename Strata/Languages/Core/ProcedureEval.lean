@@ -21,11 +21,10 @@ open Std
 open Statement Lambda LExpr
 
 def fixupError (E : Env) : Env :=
-  -- Issue #1185: pop frames AND clear `error` unconditionally. Keeping `error`
-  -- across the procedure boundary contaminates subsequent procedures
-  -- (StatementEval.lean:632-633 short-circuits on Env.error.isSome). Clean-path
-  -- obligations already in `E.deferred` are preserved as-is — they are
-  -- independently provable (each carries its own assumption list).
+  -- Clearing `error` and popping frames must be unconditional: a leftover
+  -- error short-circuits the next procedure's evaluation in `StatementEval`.
+  -- Clean-path obligations in `E.deferred` survive — each carries its own
+  -- assumptions and is independently provable.
   { E with error := none,
            exprEnv.state := E.exprEnv.state.pop,
            pathConditions := E.pathConditions.pop }
@@ -35,10 +34,10 @@ Merge multiple procedure evaluation results into one.
 
 After `fixupError`, all paths through a procedure have identical variable state
 and path conditions — the procedure scope and its path-condition scope have been
-popped, leaving only the outer (global) scope which is the same on every path.
+popped, leaving only the outer (global) scope, which is the same on every path.
 This holds for both clean and errored paths: `fixupError` pops frames and
 clears `Env.error` unconditionally, so an errored procedure does not
-contaminate the env handed to the next procedure (see issue #1185).
+contaminate the env handed to the next procedure.
 The differences across paths are:
 
 - `deferred`: path-specific proof obligations (each already carries its own
