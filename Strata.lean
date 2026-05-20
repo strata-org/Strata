@@ -71,4 +71,28 @@ import Strata.SimpleAPI
 /- Pipeline -/
 import Strata.Pipeline.PyAnalyzeLaurel
 
--- noimport: Strata.Util.Random -- deletion candidate: nothing imports this module
+ -- deletion candidates: nothing imports these modules:
+
+-- noimport: Strata.DL.Imperative.CFGSemantics
+-- noimport: Strata.DL.Imperative.SemanticsProps
+-- noimport: Strata.DL.Lambda.Denote.Assumptions
+-- noimport: Strata.DL.Lambda.Denote.CallOfLFuncDenote
+-- noimport: Strata.DL.Lambda.Denote.LExprDenote
+-- noimport: Strata.DL.Lambda.Denote.LExprDenoteConstrs
+-- noimport: Strata.DL.Lambda.Denote.LExprDenoteEq
+-- noimport: Strata.DL.Lambda.Denote.LExprDenoteProps
+-- noimport: Strata.DL.Lambda.Denote.LExprDenoteSubst
+-- noimport: Strata.DL.Lambda.Denote.LExprDenoteTySubst
+-- noimport: Strata.DL.Lambda.Denote.LExprSemanticsConsistent
+-- noimport: Strata.DL.Lambda.LExprType
+-- noimport: Strata.DL.Lambda.LExprTypeSpec
+-- noimport: Strata.DL.Lambda.MetaData
+-- noimport: Strata.DL.Lambda.Reflect
+-- noimport: Strata.DL.Lambda.Semantics
+-- noimport: Strata.DL.Lambda.TypeFactoryWF
+-- noimport: Strata.DL.Util.HList
+-- noimport: Strata.Languages.Core.ProgramWF
+-- noimport: Strata.Languages.Core.StatementWF
+-- noimport: Strata.Languages.Dyn.DDMTransform.Parse
+-- noimport: Strata.Languages.Dyn.DDMTransform.Translate
+-- noimport: Strata.Util.Random
