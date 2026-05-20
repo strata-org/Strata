@@ -217,7 +217,7 @@ direction explicit.
   \[⇐\] Return-None, \[⇐\] Return-Some, \[⇐\] Return-Void-Error,
   \[⇐\] Return-Multi-Error; \[⇐\] While
 - *Verification statements* — \[⇐\] Assert, \[⇐\] Assume
-- *Assignment* — \[⇒\] Assign
+- *Assignment* — \[⇒\] Assign, \[⇐\] Assign
 - *Calls* — \[⇒\] Static-Call, \[⇒\] Static-Call-Multi, \[⇒\] Instance-Call
 - *Primitive operations* — \[⇒\] Op-Bool, \[⇒\] Op-Cmp, \[⇒\] Op-Eq, \[⇒\] Op-Arith,
   \[⇒\] Op-Concat
