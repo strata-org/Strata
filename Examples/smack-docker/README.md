@@ -71,28 +71,47 @@ strip prelude → BoogieToStrata → fix_core_st → backend(s).
 
 ## Current verification results
 
-Snapshot from the latest run on the 12-program benchmark. `OK` columns
-report pipeline-stage success; backend columns report verification outcome.
+Snapshot from the latest run on the 25-program benchmark (12 original +
+13 simplified AWS C Common functions). `OK` columns report pipeline-stage
+success; backend columns report verification outcome. Run with
+`--split-procs` to surface obligations the env-error contamination would
+otherwise suppress.
 
 ```
-Program                  |  Strip |    B2S |    Fix |    deductive |   bugFinding |         cbmc
----------------------------------------------------------------------------------------------------
-abs_func                 |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
-array_sum                |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
-aws_array_eq             |     OK |     OK |     OK |         WARN |         WARN |         FAIL
-aws_byte_cursor_advance  |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
-aws_ring_buffer          |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
-loop_sum                 |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
-max_func                 |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
-nondet_branch            |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
-pointer_arith            |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
-simple_add               |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
-simple_assert            |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
-swap                     |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+Program                       |  Strip |    B2S |    Fix |    deductive |   bugFinding |         cbmc
+-------------------------------------------------------------------------------------------------------
+# Original benchmark
+abs_func                      |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+array_sum                     |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
+aws_array_eq                  |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+aws_byte_cursor_advance       |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+aws_ring_buffer               |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+loop_sum                      |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
+max_func                      |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+nondet_branch                 |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+pointer_arith                 |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
+simple_add                    |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
+simple_assert                 |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+swap                          |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
 
-     deductive: 4 pass, 7 partial, 1 warn
-    bugFinding: 0 pass, 11 partial, 1 warn
-          cbmc: 0 pass, 12 fail
+# Extended benchmark (simplified AWS C Common)
+aws_add_size_checked          |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+aws_array_list_get            |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+aws_array_list_set            |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+aws_byte_buf_append           |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+aws_byte_buf_init             |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+aws_byte_cursor_eq            |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+aws_hash_string               |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+aws_is_power_of_two           |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+aws_linked_list_push          |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+aws_min_max                   |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+aws_mul_size_checked          |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+aws_round_up_to_power_of_two  |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+aws_string_eq                 |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+
+     deductive: 4 pass, 21 partial, 0 warn, 0 fail, 0 n/a
+    bugFinding: 0 pass, 25 partial, 0 warn, 0 fail, 0 n/a
+          cbmc: 0 pass, 25 fail, 0 n/a
 ```
 
 ## Known blockers
