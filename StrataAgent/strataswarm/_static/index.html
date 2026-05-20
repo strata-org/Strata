@@ -71,6 +71,7 @@ header h1 { font-size: 18px; color: #4fc3f7; }
 .modal-actions button { padding: 7px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600; }
 .btn-modal-add { background: #4fc3f7; color: #1a1a2e; }
 .btn-modal-cancel { background: #424242; color: #ccc; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
 .btn-save { background: #0288d1; color: white; }
 .btn-load { background: #6a1b9a; color: white; }
 .saved-list { margin-top: 10px; }
@@ -242,6 +243,8 @@ function connect() {
     } else if (data.type === 'saved_list') {
       savedList = data.saved_list || [];
       renderLoadModal();
+    } else if (data.type === 'ping') {
+      // keepalive, ignore
     } else if (data.type === 'error') {
       alert('Server error: ' + (data.message || 'Unknown error'));
     }
@@ -265,6 +268,12 @@ function handleEvent(ev) {
     else agents[name].status = ev.data;
     agentMessages[name].push({ text: `status: ${ev.data}`, type: 'status', agent: name, ts: ev.timestamp_ms });
     allMessages.push({ text: `[${name}] status: ${ev.data}`, type: 'status', agent: name, ts: ev.timestamp_ms });
+  } else if (ev.event_type === 'heartbeat') {
+    if (!agents[name]) agents[name] = { name };
+    agents[name].last_heartbeat = Date.now();
+    // Don't add to message log — just update sidebar
+    renderSidebar();
+    return;
   } else if (ev.event_type === 'cost_estimate' && ev.data) {
     if (!agents[name]) agents[name] = { name };
     agents[name].cost_usd = parseFloat(ev.data);
@@ -318,12 +327,15 @@ function renderSidebar() {
       el.innerHTML += '<div class="empty" style="padding:20px;font-size:12px;">No agents yet. Click "+ Add Agent" or Load a saved swarm.</div>';
     }
   } else {
-    el.innerHTML = Object.values(agents).map(a => `
+    el.innerHTML = Object.values(agents).map(a => {
+      const alive = a.last_heartbeat && (Date.now() - a.last_heartbeat < 8000) && a.status === 'running';
+      const pulse = alive ? '<span style="display:inline-block;width:6px;height:6px;background:#00c853;border-radius:50%;margin-left:6px;animation:pulse 1s infinite;"></span>' : '';
+      return `
       <div class="agent-item ${a.name === selectedAgent ? 'active' : ''}" onclick="selectAgent('${escapeAttr(a.name)}')">
-        <div class="name">${escapeHtml(a.name)} <span class="badge badge-${a.status || 'pending'}">${a.status || 'pending'}</span></div>
+        <div class="name">${escapeHtml(a.name)} <span class="badge badge-${a.status || 'pending'}">${a.status || 'pending'}</span>${pulse}</div>
         <div class="meta">${formatCost(a)} ${a.num_turns ? a.num_turns + ' turns' : ''} ${a.halted_by && a.halted_by !== 'completion' ? '(' + a.halted_by + ')' : ''}</div>
-      </div>
-    `).join('');
+      </div>`;
+    }).join('');
   }
 }
 

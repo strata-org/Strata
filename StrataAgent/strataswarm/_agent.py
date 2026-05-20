@@ -43,6 +43,7 @@ class SwarmAgent(Generic[T]):
         self._mcp_servers_override = mcp_servers_override
         self._system_prompt_override = system_prompt_override
         self._wait_after_completion = wait_after_completion
+        self._last_emit_time = time.monotonic()
 
     async def _emit(self, event_type: str, data: Any = None) -> None:
         if self._on_event:
@@ -53,6 +54,12 @@ class SwarmAgent(Generic[T]):
                 timestamp_ms=int(time.time() * 1000),
             )
             await self._on_event(event)
+        self._last_emit_time = time.monotonic()
+
+    async def _emit_heartbeat_if_needed(self) -> None:
+        elapsed = time.monotonic() - self._last_emit_time
+        if elapsed >= 5.0:
+            await self._emit("heartbeat", "working...")
 
     def _build_config(self) -> BackendConfig:
         output_format = None
@@ -103,6 +110,7 @@ class SwarmAgent(Generic[T]):
         inbox_channel = self.spec.inbox_channel or f"{self.spec.name}:inbox"
 
         await self.backend.connect(config)
+        self._last_emit_time = time.monotonic()
 
         try:
             await self.backend.send_query(prompt)
@@ -129,6 +137,7 @@ class SwarmAgent(Generic[T]):
                         return result
 
                     self._messages.append(message)
+                    await self._emit_heartbeat_if_needed()
 
                     # Emit message to UI BEFORE pause gate
                     if message.type == "text" and message.content:

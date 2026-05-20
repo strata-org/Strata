@@ -404,6 +404,16 @@ class SwarmDashboard:
             except Exception:
                 self._connections.remove(ws)
 
+    async def _heartbeat_loop(self) -> None:
+        """Send periodic pings to keep WebSocket connections alive."""
+        while True:
+            await asyncio.sleep(10)
+            for ws in list(self._connections):
+                try:
+                    await ws.send_json({"type": "ping"})
+                except Exception:
+                    self._connections.remove(ws)
+
     async def start(self) -> None:
         import uvicorn
 
@@ -412,3 +422,4 @@ class SwarmDashboard:
         )
         server = uvicorn.Server(config)
         asyncio.create_task(server.serve())
+        asyncio.create_task(self._heartbeat_loop())
