@@ -477,3 +477,41 @@ private def E2E_CFGDispatchProc : Core.Procedure :=
   match procedureToGotoCtx Env E2E_CFGDispatchProc with
   | .error _ => pure ()  -- expected
   | .ok _ => IO.throwServerError "structured path unexpectedly accepted CFG body"
+
+-------------------------------------------------------------------------------
+
+-- Regression: buildEntryShim produces a __cprover_entry function that
+-- declares one local per main formal, havocs each from nondet, calls main,
+-- and ends. Without this shim, cbmc rejects SMACK-translated `main`
+-- (which has memory-map / exception parameters) as having no valid entry
+-- point and exits with rc=6.
+
+#eval do
+  let formals : Map String CProverGOTO.Ty :=
+    [("p_in", CProverGOTO.Ty.Integer), ("p_inout", CProverGOTO.Ty.Boolean)]
+  let retTy : CProverGOTO.Ty := CProverGOTO.Ty.Integer
+  let (.ok (symtabJson, gotoFn)) := buildEntryShim "__cprover_entry" "main" formals retTy
+    | IO.throwServerError "buildEntryShim failed"
+  -- The function symbol exists.
+  let symtabStr := symtabJson.pretty
+  assert! (symtabStr.splitOn "__cprover_entry").length > 1
+  -- Locals for both formals exist, prefixed with the entry name.
+  assert! (symtabStr.splitOn "__cprover_entry::1::p_in").length > 1
+  assert! (symtabStr.splitOn "__cprover_entry::1::p_inout").length > 1
+  -- A return local exists since main has a non-Empty return type.
+  assert! (symtabStr.splitOn "__cprover_entry::1::_ret").length > 1
+  -- The GOTO function body contains a FUNCTION_CALL to main.
+  let gotoStr := gotoFn.pretty
+  assert! (gotoStr.splitOn "FUNCTION_CALL").length > 1
+  assert! (gotoStr.splitOn "\"main\"").length > 1
+
+-- Empty-return regression: if main has no output, no _ret local is emitted.
+#eval do
+  let formals : Map String CProverGOTO.Ty := [("x", CProverGOTO.Ty.Integer)]
+  let retTy : CProverGOTO.Ty := CProverGOTO.Ty.Empty
+  let (.ok (symtabJson, _)) := buildEntryShim "__cprover_entry" "main" formals retTy
+    | IO.throwServerError "buildEntryShim (void return) failed"
+  let symtabStr := symtabJson.pretty
+  -- Only one local (the formal), no _ret entry.
+  assert! (symtabStr.splitOn "__cprover_entry::1::x").length > 1
+  assert! (symtabStr.splitOn "__cprover_entry::1::_ret").length == 1

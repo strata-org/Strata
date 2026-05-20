@@ -317,6 +317,134 @@ def procedureToGotoCtxViaCFG
       localTypes := localTypes }
   return (ctx, liftedFuncs)
 
+/-! ### JSON splice helpers -/
+
+/--
+Merge a `Json.obj` of symbol-table entries (keyed by symbol name) into
+the existing symtab JSON, which has shape `{"symbolTable": {...}}`.
+Later entries win on key collision.
+-/
+private def mergeSymtabEntries (symtab : Lean.Json) (newEntries : Lean.Json)
+    : Lean.Json :=
+  match symtab with
+  | .obj outer =>
+    match outer.toList.find? (·.1 == "symbolTable") with
+    | some (_, .obj inner) =>
+      let merged := match newEntries with
+        | .obj add => add.toList.foldl (fun m (k, v) => m.insert k v) inner
+        | _ => inner
+      .obj (outer.insert "symbolTable" (.obj merged))
+    | _ => symtab
+  | _ => symtab
+
+/--
+Append a single GOTO-function JSON object to the `"functions"` array
+inside the existing GOTO JSON, which has shape
+`{"functions": [...]}`.
+-/
+private def appendGotoFunction (goto : Lean.Json) (newFn : Lean.Json)
+    : Lean.Json :=
+  match goto with
+  | .obj outer =>
+    match outer.toList.find? (·.1 == "functions") with
+    | some (_, .arr fns) =>
+      .obj (outer.insert "functions" (.arr (fns.push newFn)))
+    | _ => goto
+  | _ => goto
+
+/-! ### CBMC entry-point shim -/
+
+/--
+Build a synthetic `__cprover_entry()` GOTO program that calls the
+Strata-translated `main` with nondet-initialized parameter values.
+
+CBMC accepts only the standard C entry-point signatures (`int main(void)`,
+`int main(int, char**)`, etc.). SMACK-translated `main` takes parameters
+(memory maps, exception flags, address state, return value), so cbmc
+rejects it with "the program has no entry point" / rc=6 even when
+`--function main` is passed.
+
+Returns a JSON pair `(symtab_entries, goto_function)`:
+- `symtab_entries`: a `Json.obj` mapping each new symbol name to its
+  CBMCSymbol entry (the entry function itself plus one local per
+  declared shim variable).
+- `goto_function`: a single `Json.obj` for the entry program's body,
+  suitable for appending to the existing GOTO functions array.
+-/
+def buildEntryShim
+    (entryName : String)
+    (mainName : String)
+    (mainFormals : Map String CProverGOTO.Ty)
+    (mainRetTy : CProverGOTO.Ty)
+    : Except String (Lean.Json × Lean.Json) := do
+  -- Declare one local per main formal, named `entryName::1::<formal>`,
+  -- initialize from nondet, then call main with those locals.
+  let mkLocal := CProverGOTO.mkLocalSymbol entryName
+  let argLocals : List (String × CProverGOTO.Ty) :=
+    mainFormals.map fun (name, ty) => (mkLocal name, ty)
+  let mut insts : Array CProverGOTO.Instruction := #[]
+  let mut loc : Nat := 0
+  -- DECL + ASSIGN nondet for each formal local
+  for (lname, lty) in argLocals do
+    let sym := CProverGOTO.Expr.symbol lname lty
+    insts := insts.push
+      { type := .DECL, code := CProverGOTO.Code.decl sym, locationNum := loc }
+    loc := loc + 1
+    let nondetExpr := CProverGOTO.Expr.nondet lname lty
+    insts := insts.push
+      { type := .ASSIGN, code := CProverGOTO.Code.assign sym nondetExpr,
+        locationNum := loc }
+    loc := loc + 1
+  -- Possibly DECL a local for main's return value (so the call has somewhere to land)
+  let retLocal := mkLocal "_ret"
+  let hasReturn := mainRetTy != CProverGOTO.Ty.Empty
+  let lhsExpr : CProverGOTO.Expr :=
+    if hasReturn then CProverGOTO.Expr.symbol retLocal mainRetTy
+    else CProverGOTO.Expr.symbol "" .Empty
+  if hasReturn then
+    insts := insts.push
+      { type := .DECL, code := CProverGOTO.Code.decl lhsExpr, locationNum := loc }
+    loc := loc + 1
+  -- FUNCTION_CALL main(arg_locals...)
+  let argExprs : List CProverGOTO.Expr :=
+    argLocals.map fun (lname, lty) => CProverGOTO.Expr.symbol lname lty
+  let calleeExpr := CProverGOTO.Expr.symbol mainName
+    (CProverGOTO.Ty.mkCode (argExprs.map (·.type)) lhsExpr.type)
+  insts := insts.push
+    { type := .FUNCTION_CALL,
+      code := CProverGOTO.Code.functionCall lhsExpr calleeExpr argExprs,
+      locationNum := loc }
+  loc := loc + 1
+  -- END_FUNCTION
+  insts := insts.push
+    { type := .END_FUNCTION, locationNum := loc }
+  let pgm : CProverGOTO.Program :=
+    { name := entryName,
+      parameterIdentifiers := #[],
+      instructions := insts }
+  -- Build symtab entries: one function symbol for entryName (signature: () -> Empty)
+  -- plus one local symbol per arg local (and the optional return local).
+  let entryFnSymbol : Map String CProverGOTO.CBMCSymbol :=
+    [CProverGOTO.createFunctionSymbol entryName ([] : Map String CProverGOTO.Ty)
+      CProverGOTO.Ty.Empty []]
+  let argSymbols : Map String CProverGOTO.CBMCSymbol :=
+    argLocals.map fun (lname, lty) =>
+      -- baseName is the original (unprefixed) ident for prettyName; recover
+      -- by stripping the entryName::1:: prefix. Since we always prefix via
+      -- mkLocalSymbol, mirror that here.
+      let base := lname  -- using full local name as baseName too is harmless
+      CProverGOTO.createGOTOSymbol entryName base lname
+        (isParameter := false) (isStateVar := false) (ty := some lty)
+  let retSymList : Map String CProverGOTO.CBMCSymbol :=
+    if hasReturn then
+      [CProverGOTO.createGOTOSymbol entryName retLocal retLocal
+         (isParameter := false) (isStateVar := false) (ty := some mainRetTy)]
+    else []
+  let allSymbols := entryFnSymbol ++ argSymbols ++ retSymList
+  let symtabJson := Lean.Json.mkObj (allSymbols.map fun (k, v) => (k, Lean.toJson v))
+  let gotoFn ← CProverGOTO.programToJson entryName pgm
+  return (symtabJson, gotoFn)
+
 /-! ### Body-aware dispatch -/
 
 /--
@@ -372,6 +500,17 @@ public def coreToGotoFilesDispatch (tcPgm : Core.Program)
               (moduleName := baseName) |>.toBaseIO with
       | .ok r => pure r
       | .error e => throw s!"{e}"
+    -- Splice in the synthetic CBMC entry-point shim. CBMC requires a
+    -- standard-C entry signature; SMACK's `main` has memory-map + exception
+    -- params that don't match. The shim has signature `void(void)` and calls
+    -- main with nondet-initialized arguments.
+    let entryName := "__cprover_entry"
+    let (shimSyms, shimFn) ←
+      match buildEntryShim entryName procName ctx.formals ctx.ret with
+      | .ok r => pure r
+      | .error e => throw s!"buildEntryShim: {e}"
+    let symtab := mergeSymtabEntries symtab shimSyms
+    let goto := appendGotoFunction goto shimFn
     let symTabFile := s!"{baseName}.symtab.json"
     let gotoFile := s!"{baseName}.goto.json"
     match ← writeJsonFile symTabFile symtab |>.toBaseIO with

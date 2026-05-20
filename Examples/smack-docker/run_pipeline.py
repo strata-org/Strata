@@ -335,12 +335,12 @@ def run_cbmc_backend(core_st: Path, tmpdir: Path, result: PipelineResult):
         result.add_backend("cbmc", "FAIL", f"symtab2gb: {stderr.strip()[:60]}")
         return
 
-    # Step 4: Run CBMC. `--function main` is required because Strata-emitted
-    # `main` has parameters that don't match cbmc's standard C entrypoint
-    # signatures; without it cbmc rejects the binary as "no entry point" and
-    # exits with rc=6 rather than the rc=0/10 PASS/FAIL contract used below.
+    # Step 4: Run CBMC against the synthetic `__cprover_entry` shim emitted
+    # by coreToGotoFilesDispatch. The shim has signature `void(void)` (which
+    # cbmc accepts as an entry point) and calls the Strata-translated `main`
+    # with nondet-initialized arguments.
     rc, stdout, stderr = run_cmd([
-        CBMC_BIN, "--function", "main", str(goto_bin)
+        CBMC_BIN, "--function", "__cprover_entry", str(goto_bin)
     ], timeout=120)
     if rc == 0:
         result.add_backend("cbmc", "PASS", "All properties hold")
