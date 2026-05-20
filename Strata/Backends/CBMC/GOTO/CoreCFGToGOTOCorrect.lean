@@ -809,10 +809,20 @@ private theorem cfgStepStar_to_gotoStar
           exact ReflTrans_Transitive _ _ _ _ h_blk_steps h_tail
       | terminal σ_blk f_blk =>
         -- updateFailure (.terminal σ_blk f_blk) failed_step
-        -- = .terminal σ_blk (f_blk || failed_step)
+        -- = .terminal σ_blk (f_blk || failed_step). After cases h_sim,
+        -- h_blk_steps lands at the GOTO terminal config matching this.
         cases h_sim with
         | sim_terminal =>
-          sorry
+          -- CoreCFGStepStar.step requires a `.cont` source; from a
+          -- `.terminal` source the only inhabitant is `.refl`, which
+          -- unifies c₃ with `.terminal σ_blk (f_blk || failed_step)`.
+          cases h_rest with
+          | refl =>
+            -- h_eq_r : .terminal σ_blk (f_blk || failed_step) = .terminal σ_r b_r
+            cases h_eq_r
+            -- σ_r and b_r are now σ_blk and (f_blk || failed_step).
+            -- h_blk_steps already lands at the goal.
+            exact h_blk_steps
   exact key l σ failed pc rfl h_pc σ' b rfl
 
 /-- Forward simulation: any terminating DetCFG run is matched by a
