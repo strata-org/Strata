@@ -3,11 +3,16 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.SMT.Encoder
+meta import all Strata.DL.SMT.Encoder
+import all Strata.DL.SMT.Encoder
+import all Init.Data.Repr
+import all Strata.Util.Name
 
 /-! ## Tests and proofs for Strata.Name.disambiguate / Strata.Name.breakDisambiguated -/
 
+meta section
 namespace Strata.SMT.Encoder
 
 /-! ### Concrete roundtrip checks -/
@@ -23,6 +28,11 @@ namespace Strata.SMT.Encoder
 #guard Strata.Name.breakDisambiguated "x@y" == ("x@y", 1)
 -- Names with existing disambiguation
 #guard Strata.Name.breakDisambiguated "x@1" == ("x", 2)
+
+end Strata.SMT.Encoder
+end
+
+namespace Strata.SMT.Encoder
 
 /-! ### Roundtrip proof -/
 

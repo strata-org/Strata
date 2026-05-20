@@ -3,10 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import StrataTest.Backends.CBMC.GOTO.LambdaToCProverGOTO
-import Strata.DL.Imperative.ToCProverGOTO
-import Strata.Backends.CBMC.GOTO.InstToJson
+meta import all StrataTest.Backends.CBMC.GOTO.LambdaToCProverGOTO
+meta import all Strata.DL.Imperative.ToCProverGOTO
+meta import all Strata.Backends.CBMC.GOTO.InstToJson
+
+meta section
 
 -------------------------------------------------------------------------------
 
@@ -541,5 +544,7 @@ def ExampleNoPropertySummary : Imperative.Cmds LExprTP :=
   assert! asserts[0]!.sourceLoc.comment == "my_label"
 
 -------------------------------------------------------------------------------
+
+end
 
 end

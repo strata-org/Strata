@@ -3,6 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 /-
 Tests that the expression lifter correctly handles statement constructs
@@ -10,11 +11,13 @@ Tests that the expression lifter correctly handles statement constructs
 by comparing the lifted Laurel against expected output.
 -/
 
-import Strata.DDM.Elab
-import Strata.DDM.BuiltinDialects.Init
-import Strata.Languages.Laurel.Grammar.LaurelGrammar
-import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
-import Strata.Languages.Laurel.LaurelToCoreTranslator
+meta import Strata.DDM.Elab
+meta import Strata.DDM.BuiltinDialects.Init
+meta import Strata.Languages.Laurel.Grammar.LaurelGrammar
+meta import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
+meta import Strata.Languages.Laurel.LaurelToCoreTranslator
+
+meta section
 
 open Strata
 open Strata.Elab (parseStrataProgramFromDialect)
@@ -53,3 +56,5 @@ info: procedure assertInBlockExpr()
     IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
 
 end Laurel
+end Strata
+end

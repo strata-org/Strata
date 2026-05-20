@@ -3,8 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core.Verifier
+import Strata.DDM.Integration.Lean.HashCommands
+
+meta section
 
 ---------------------------------------------------------------------
 namespace Strata
@@ -76,3 +80,7 @@ info: program Core;
 #eval IO.println funcDeclBlockPgm
 
 ---------------------------------------------------------------------
+
+end Strata
+
+end

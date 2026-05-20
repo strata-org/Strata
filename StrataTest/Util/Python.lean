@@ -5,6 +5,7 @@
 -/
 
 module
+public meta import Strata.DDM.Util.Fin
 import all Strata.DDM.Util.Fin
 
 /-
@@ -16,7 +17,7 @@ It also provides a few functions for checking Python versions and
 running `mise`.
 -/
 
-public section
+public meta section
 namespace Strata.Python
 
 /--

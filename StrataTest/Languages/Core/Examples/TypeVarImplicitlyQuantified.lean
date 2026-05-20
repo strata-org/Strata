@@ -3,11 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 -- Fix for https://github.com/strata-org/Strata/issues/105.
 
-import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core.Verifier
+import Strata.DDM.Integration.Lean.HashCommands
 
+meta section
 namespace Strata
 
 private def pgm :=
@@ -52,3 +55,6 @@ axiom [a2]: forall l_0 : bool :: forall l_1 : int :: forall l_2 : int :: forall 
 -/
 #guard_msgs in
 #eval Core.typeCheck .default core_pgm.fst
+
+end Strata
+end
