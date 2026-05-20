@@ -212,7 +212,7 @@ direction explicit.
 - *Subsumption* — \[⇐\] Sub
 - *Literals* — \[⇒\] Lit-Int, \[⇒\] Lit-Bool, \[⇒\] Lit-String, \[⇒\] Lit-Decimal
 - *Variables* — \[⇒\] Var-Local, \[⇒\] Var-Field, \[⇒\] Var-Declare
-- *Control flow* — \[⇒\] If-NoElse, \[⇒\] If, \[⇐\] If, \[⇐\] If-NoElse;
+- *Control flow* — \[⇐\] If, \[⇐\] If-NoElse;
   \[⇒\] Block, \[⇒\] Block-Empty, \[⇐\] Block, \[⇐\] Block-Empty; \[⇒\] Exit;
   \[⇒\] Return-None, \[⇒\] Return-Some, \[⇒\] Return-Void-Error,
   \[⇒\] Return-Multi-Error; \[⇒\] While
@@ -270,12 +270,6 @@ $$`\frac{x \notin \mathrm{dom}(\Gamma)}{\Gamma \vdash \mathsf{Var}\;(\mathsf{.De
 {docstring Strata.Laurel.Resolution.Synth.varDeclare}
 
 ### Control flow
-
-$$`\frac{\Gamma \vdash \mathit{cond} \Leftarrow \mathsf{TBool} \quad \Gamma \vdash \mathit{thenBr} \Leftarrow \mathsf{TVoid}}{\Gamma \vdash \mathsf{IfThenElse}\;\mathit{cond}\;\mathit{thenBr}\;\mathsf{none} \Rightarrow \mathsf{TVoid}} \quad \text{([⇒] If-NoElse)}`
-
-$$`\frac{\Gamma \vdash \mathit{cond} \Leftarrow \mathsf{TBool} \quad \Gamma \vdash \mathit{thenBr} \Rightarrow T_t \quad \Gamma \vdash \mathit{elseBr} \Rightarrow T_e}{\Gamma \vdash \mathsf{IfThenElse}\;\mathit{cond}\;\mathit{thenBr}\;(\mathsf{some}\;\mathit{elseBr}) \Rightarrow T_t \sqcup T_e} \quad \text{([⇒] If)}`
-
-{docstring Strata.Laurel.Resolution.Synth.ifThenElse}
 
 $$`\frac{\Gamma \vdash \mathit{cond} \Leftarrow \mathsf{TBool} \quad \Gamma \vdash \mathit{thenBr} \Leftarrow T \quad \Gamma \vdash \mathit{elseBr} \Leftarrow T}{\Gamma \vdash \mathsf{IfThenElse}\;\mathit{cond}\;\mathit{thenBr}\;(\mathsf{some}\;\mathit{elseBr}) \Leftarrow T} \quad \text{([⇐] If)}`
 

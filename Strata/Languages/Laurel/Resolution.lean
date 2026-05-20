@@ -454,13 +454,18 @@ private def formatType (ty : HighTypeMd) : String :=
 
 /-- Emit a type mismatch diagnostic. With a `construct`, the message is
     "'<construct.constrName>' <problem>, got '<actual>'"; without,
-    "<problem>, got '<actual>'". -/
+    "<problem>, got '<actual>'". When `actual` is `Unknown` the trailing
+    `got '…'` is dropped — "we couldn't synthesize a type" is the
+    statement, not "the type we got was Unknown". -/
 private def typeMismatch (source : Option FileRange) (construct : Option StmtExpr)
     (problem : String) (actual : HighTypeMd) : ResolveM Unit := do
   let constructor := match construct with
     | some c => s!"'{c.constrName}' "
     | none   => ""
-  let diag := diagnosticFromSource source s!"{constructor}{problem}, got '{formatType actual}'"
+  let suffix := match actual.val with
+    | .Unknown => ""
+    | _        => s!", got '{formatType actual}'"
+  let diag := diagnosticFromSource source s!"{constructor}{problem}{suffix}"
   modify fun s => { s with errors := s.errors.push diag }
 
 /-- Type-level subtype check: emits the standard "expected/got" diagnostic when
@@ -534,7 +539,7 @@ inside the mutual block below. Helpers are grouped by section to mirror the
 
 - Literals — `Synth.litInt`, `Synth.litBool`, `Synth.litString`, `Synth.litDecimal`
 - Variables — `Synth.varLocal`, `Synth.varField`, `Synth.varDeclare`
-- Control flow — `Synth.ifThenElse`, `Synth.block`, `Synth.while`, `Synth.exit`,
+- Control flow — `Synth.block`, `Synth.while`, `Synth.exit`,
   `Synth.return`, `Check.block`, `Check.ifThenElse`
 - Verification statements — `Synth.assert`, `Synth.assume`
 - Assignment — `Synth.assign`, `Check.assign`
@@ -580,8 +585,6 @@ def Synth.resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTy
   match h_node: exprMd with
   | AstNode.mk expr source =>
   let (val', ty) ← match h_expr: expr with
-  | .IfThenElse cond thenBr elseBr =>
-    Synth.ifThenElse exprMd cond thenBr elseBr (by rw [h_node])
   | .Block stmts label =>
     Synth.block exprMd stmts label (by rw [h_node])
   | .While cond invs dec body =>
@@ -634,6 +637,12 @@ def Synth.resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTy
   | .Abstract => pure (Synth.abstract source)
   | .All => pure (Synth.all source)
   | .Hole det type => Synth.hole det type source
+  | _ =>
+    let unknown : HighTypeMd := { val := .Unknown, source := source }
+    typeMismatch source (some expr)
+      "has no synthesis rule; use it in a position with a known expected type"
+      unknown
+    pure (expr, unknown)
   return ({ val := val', source := source }, ty)
   termination_by (exprMd, 2)
   decreasing_by all_goals first
@@ -742,54 +751,6 @@ def Synth.varField (exprMd : StmtExprMd)
     omega
 
 -- ### Control flow
-
-/-- When there is an else branch:
-
-    `Γ ⊢ cond ⇐ TBool,  Γ ⊢ thenBr ⇒ T_t,  Γ ⊢ elseBr ⇒ T_e  ∴  Γ ⊢ IfThenElse cond thenBr (some elseBr) ⇒ T_t ⊔ T_e`
-
-    Otherwise:
-
-    `Γ ⊢ cond ⇐ TBool,  Γ ⊢ thenBr ⇐ TVoid  ∴  Γ ⊢ IfThenElse cond thenBr none ⇒ TVoid`
-
-    `cond` is checked against `TBool`.
-    With no else branch, the construct is a statement — `thenBr` is checked
-    against `TVoid` and the result is `TVoid`, so `x : int := if c then 5`
-    is rejected at the branch rather than slipping through to a downstream
-    subsumption.
-
-    With an else branch, the result type is the join (LUB) of the two
-    branches' synthesized types, so `if c then small else big` synthesizes
-    the common supertype rather than committing to one branch arbitrarily;
-    `if c then new Left else new Right` synthesizes the common ancestor.
-    When no common supertype exists (e.g. a value branch paired with a
-    `TVoid` `return`/`exit`), `joinTypes` falls back to the then-branch's
-    type and the enclosing context's check (`[⇐] Sub`, or a containing
-    `checkSubtype` like an assignment) surfaces any mismatch downstream
-    against the then-branch's type. -/
-def Synth.ifThenElse (exprMd : StmtExprMd)
-    (cond thenBr : StmtExprMd) (elseBr : Option StmtExprMd)
-    (h : exprMd.val = .IfThenElse cond thenBr elseBr) :
-    ResolveM (StmtExpr × HighTypeMd) := do
-  let cond' ← Check.resolveStmtExpr cond { val := .TBool, source := cond.source }
-  let voidTy : HighTypeMd := { val := .TVoid, source := exprMd.source }
-  match elseBr with
-  | none =>
-    let thenBr' ← Check.resolveStmtExpr thenBr voidTy
-    pure (.IfThenElse cond' thenBr' none, voidTy)
-  | some e =>
-    let (thenBr', thenTy) ← Synth.resolveStmtExpr thenBr
-    let (elseBr', elseTy) ← Synth.resolveStmtExpr e
-    let ctx := (← get).typeContext
-    pure (.IfThenElse cond' thenBr' (some elseBr'), joinTypes ctx thenTy elseTy)
-  termination_by (exprMd, 1)
-  decreasing_by
-    all_goals first
-      | (apply Prod.Lex.left
-         have hsz := exprMd.sizeOf_val_lt
-         simp [h] at hsz
-         try simp_all
-         try omega)
-      | (apply Prod.Lex.right; decide)
 
 /-- Cases on whether the statement list is empty.
 
