@@ -2239,6 +2239,138 @@ the original map. -/
   unfold labelMapInsert
   simp [h]
 
+/-! ## Per-cmd / per-block step preservation (refactor-aware)
+
+After the round-3 refactor of `coreCFGToGotoTransform`, the translator
+is structured as
+
+```
+cfg.blocks.foldlM (Strata.coreCFGToGotoBlockStep fname) initSt
+  >>= λ st => st.pendingPatches.foldlM (Strata.coreCFGToGotoPatchStep ..) ([], st.trans)
+  >>= λ (resolved, trans) => Imperative.patchGotoTargets trans resolved
+```
+
+with named per-cmd / per-block / per-patch step functions. The
+preservation lemmas below characterise each step's effect on the
+partial `WellFormedTranslation` invariant. -/
+
+/-- The per-cmd step `Strata.coreCFGToGotoCmdStep` agrees with
+`Cmd.toGotoInstructions` on the `.cmd c` case, and produces a single
+appended FUNCTION_CALL instruction on the `.call` case. -/
+theorem coreCFGToGotoCmdStep_cmd
+    (fname : String) (c : Imperative.Cmd Core.Expression)
+    (trans : Imperative.GotoTransform Core.Expression.TyEnv) :
+    Strata.coreCFGToGotoCmdStep fname trans (.cmd c) =
+      Imperative.Cmd.toGotoInstructions trans.T fname c trans := by
+  unfold Strata.coreCFGToGotoCmdStep
+  rfl
+
+/-- The per-cmd step preserves `instructions.size = nextLoc` on
+admitted commands (i.e., `.cmd c`; `.call` is rejected by
+`isAdmittedCmd`). -/
+theorem coreCFGToGotoCmdStep_preserves_size_eq
+    (fname : String) (cmd : Core.Command)
+    (trans ans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_admitted : Core.CmdExt.isAdmittedCmd cmd = true)
+    (h_run : Strata.coreCFGToGotoCmdStep fname trans cmd = Except.ok ans)
+    (h_size : trans.instructions.size = trans.nextLoc) :
+    ans.instructions.size = ans.nextLoc := by
+  cases cmd with
+  | cmd c =>
+    rw [coreCFGToGotoCmdStep_cmd] at h_run
+    exact toGotoInstructions_preserves_size_eq trans.T fname c trans ans h_run h_size
+  | call _ _ _ =>
+    simp [Core.CmdExt.isAdmittedCmd] at h_admitted
+
+/-- The per-cmd step preserves `locationNum = index` on admitted
+commands. -/
+theorem coreCFGToGotoCmdStep_preserves_locationNum_eq_index
+    (fname : String) (cmd : Core.Command)
+    (trans ans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_admitted : Core.CmdExt.isAdmittedCmd cmd = true)
+    (h_run : Strata.coreCFGToGotoCmdStep fname trans cmd = Except.ok ans)
+    (h_size : trans.instructions.size = trans.nextLoc)
+    (h_loc :
+      ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+        trans.instructions[i]? = some instr → instr.locationNum = i) :
+    ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+      ans.instructions[i]? = some instr → instr.locationNum = i := by
+  cases cmd with
+  | cmd c =>
+    rw [coreCFGToGotoCmdStep_cmd] at h_run
+    exact toGotoInstructions_preserves_locationNum_eq_index
+      trans.T fname c trans ans h_run h_size h_loc
+  | call _ _ _ =>
+    simp [Core.CmdExt.isAdmittedCmd] at h_admitted
+
+/-- The cmds-fold via `foldlM` preserves `size_eq`, when each cmd is
+admitted by `isAdmittedCmd`. -/
+theorem cmdsFoldlM_preserves_size_eq
+    (fname : String) (cmds : List Core.Command)
+    (trans ans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_admitted : ∀ c ∈ cmds, Core.CmdExt.isAdmittedCmd c = true)
+    (h_run : cmds.foldlM (Strata.coreCFGToGotoCmdStep fname) trans = Except.ok ans)
+    (h_size : trans.instructions.size = trans.nextLoc) :
+    ans.instructions.size = ans.nextLoc := by
+  induction cmds generalizing trans with
+  | nil =>
+    simp [List.foldlM, pure, Except.pure] at h_run
+    subst h_run; exact h_size
+  | cons cmd rest ih =>
+    rw [List.foldlM_cons] at h_run
+    match h_step : Strata.coreCFGToGotoCmdStep fname trans cmd with
+    | .ok trans' =>
+      rw [h_step] at h_run
+      simp at h_run
+      have h_admitted_cmd := h_admitted cmd (by simp)
+      have h_size' : trans'.instructions.size = trans'.nextLoc :=
+        coreCFGToGotoCmdStep_preserves_size_eq fname cmd trans trans'
+          h_admitted_cmd h_step h_size
+      have h_admitted_rest : ∀ c ∈ rest, Core.CmdExt.isAdmittedCmd c = true :=
+        fun c hc => h_admitted c (by simp [hc])
+      exact ih trans' h_admitted_rest h_run h_size'
+    | .error _ =>
+      rw [h_step] at h_run
+      simp [Bind.bind, Except.bind] at h_run
+
+/-- The cmds-fold via `foldlM` preserves `locationNum_eq_index`. -/
+theorem cmdsFoldlM_preserves_locationNum_eq_index
+    (fname : String) (cmds : List Core.Command)
+    (trans ans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_admitted : ∀ c ∈ cmds, Core.CmdExt.isAdmittedCmd c = true)
+    (h_run : cmds.foldlM (Strata.coreCFGToGotoCmdStep fname) trans = Except.ok ans)
+    (h_size : trans.instructions.size = trans.nextLoc)
+    (h_loc :
+      ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+        trans.instructions[i]? = some instr → instr.locationNum = i) :
+    ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+      ans.instructions[i]? = some instr → instr.locationNum = i := by
+  induction cmds generalizing trans with
+  | nil =>
+    simp [List.foldlM, pure, Except.pure] at h_run
+    subst h_run; exact h_loc
+  | cons cmd rest ih =>
+    rw [List.foldlM_cons] at h_run
+    match h_step : Strata.coreCFGToGotoCmdStep fname trans cmd with
+    | .ok trans' =>
+      rw [h_step] at h_run
+      simp at h_run
+      have h_admitted_cmd := h_admitted cmd (by simp)
+      have h_size' : trans'.instructions.size = trans'.nextLoc :=
+        coreCFGToGotoCmdStep_preserves_size_eq fname cmd trans trans'
+          h_admitted_cmd h_step h_size
+      have h_loc' :
+          ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+            trans'.instructions[i]? = some instr → instr.locationNum = i :=
+        coreCFGToGotoCmdStep_preserves_locationNum_eq_index
+          fname cmd trans trans' h_admitted_cmd h_step h_size h_loc
+      have h_admitted_rest : ∀ c ∈ rest, Core.CmdExt.isAdmittedCmd c = true :=
+        fun c hc => h_admitted c (by simp [hc])
+      exact ih trans' h_admitted_rest h_run h_size' h_loc'
+    | .error _ =>
+      rw [h_step] at h_run
+      simp [Bind.bind, Except.bind] at h_run
+
 /-! ## Top-level theorem (statement + interface)
 
 The top-level `coreCFGToGotoTransform_wellFormed` theorem proves that
