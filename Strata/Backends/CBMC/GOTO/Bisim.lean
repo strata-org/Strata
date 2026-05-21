@@ -351,6 +351,95 @@ theorem stepGoto_dead_to_stepInstr
         exact ⟨e, v, by rw [h_imp_eq]; exact h_imp_s, h_to,
                        by rw [h_goto_eq]; exact h_goto_s⟩
 
+/-! ## Bridge for `step_assign`
+
+Bridges `step_assign` (this branch) to `StepInstr.assign` (tautschnig)
+via three external pieces:
+
+* `EvalCorr` for the value-returning evaluator: the GOTO-side
+  evaluator `δ_goto` agrees with tautschnig's `eval` on translated
+  expressions. Stated as a hypothesis on this bridge rather than a
+  global typeclass (mirroring `EvalBoolCorr` for the boolean
+  bridges).
+* `Function.Injective nameMap`: distinct source identifiers must not
+  collide on the same GOTO-side symbol, otherwise `StoreCorr` cannot
+  be preserved across the assignment.
+* The instruction-code lookup giving the assign's `lhs` and `rhs`
+  components on the GOTO side, plus the agreement that the source
+  identifier `x` translates to the GOTO-side symbol name. -/
+
+/-- The full value-evaluator correspondence (cousin of
+`EvalBoolCorr`). The GOTO-side evaluator `δ_goto`, applied to a
+source-side expression, agrees with tautschnig's `eval` on the
+translated GOTO `Expr`, modulo `StoreCorr` and `vc.toValue`. -/
+@[expose] def EvalValueCorr {P : Imperative.PureExpr}
+    [SemanticsTautschnig.ValueCorr P]
+    (nameMap : P.Ident → String)
+    (exprTrans : P.Expr → Expr)
+    (δ_goto : SemanticEvalGoto P)
+    (eval : SemanticsTautschnig.ExprEval) : Prop :=
+  ∀ σ_imp σ_goto e_imp v_imp,
+    SemanticsTautschnig.StoreCorr nameMap σ_imp σ_goto →
+    δ_goto σ_imp (exprTrans e_imp) = some v_imp →
+    eval σ_goto (exprTrans e_imp) =
+      (SemanticsTautschnig.ValueCorr.toValue v_imp : Option SemanticsTautschnig.Value)
+
+/-- Bridge for `step_assign`. -/
+theorem stepGoto_assign_to_stepInstr
+    {P : Imperative.PureExpr} [SemanticsTautschnig.ValueCorr P]
+    {δ_goto : SemanticEvalGoto P}
+    {pgm : Program} {pc : Nat}
+    {σ_imp σ_imp' : Imperative.SemanticStore P}
+    {instr : Instruction}
+    {nameMap : P.Ident → String}
+    {exprTrans : P.Expr → Expr}
+    (h_inj : Function.Injective nameMap)
+    {x : P.Ident}
+    {rhs_imp : P.Expr} {v_imp : P.Expr}
+    {callResult : SemanticsTautschnig.CallResultRel}
+    {eval : SemanticsTautschnig.ExprEval}
+    {fenv : SemanticsTautschnig.FuncEnv}
+    {σ_goto : SemanticsTautschnig.Store}
+    (h_eval_corr : EvalValueCorr nameMap exprTrans δ_goto eval)
+    (h_at : pgm.instrAt pc = some instr) (h_ty : instr.type = .ASSIGN)
+    (h_eval_imp : δ_goto σ_imp (exprTrans rhs_imp) = some v_imp)
+    (h_upd : Imperative.UpdateState P σ_imp x v_imp σ_imp')
+    (h_codeLhs : (SemanticsTautschnig.instrCode pgm pc).bind
+                   SemanticsTautschnig.getAssignLhs = some (nameMap x))
+    (h_codeRhs : (SemanticsTautschnig.instrCode pgm pc).bind
+                   SemanticsTautschnig.getAssignRhs = some (exprTrans rhs_imp))
+    {v_goto : SemanticsTautschnig.Value}
+    (h_value_corr :
+      (SemanticsTautschnig.ValueCorr.toValue v_imp : Option SemanticsTautschnig.Value) = some v_goto)
+    (h_corr : SemanticsTautschnig.StoreCorr nameMap σ_imp σ_goto) :
+    ∃ σ_goto', SemanticsTautschnig.StoreCorr nameMap σ_imp' σ_goto' ∧
+      SemanticsTautschnig.StepInstr callResult eval fenv pgm
+        pc σ_goto (pc + 1) σ_goto' := by
+  refine ⟨σ_goto.update (nameMap x) v_goto, ?_,
+    .assign (instrAt_to_instrType h_at h_ty) h_codeLhs h_codeRhs ?_⟩
+  · -- StoreCorr preservation. Mirror of stepGoto_dead bridge.
+    intro y
+    cases h_upd with
+    | update h_pre h_post h_other =>
+      by_cases h_eq : x = y
+      · subst h_eq
+        right
+        refine ⟨v_imp, v_goto, h_post, h_value_corr, ?_⟩
+        simp [SemanticsTautschnig.Store.update]
+      · have h_imp_eq : σ_imp' y = σ_imp y := h_other y h_eq
+        have h_goto_eq : (σ_goto.update (nameMap x) v_goto) (nameMap y) = σ_goto (nameMap y) := by
+          simp [SemanticsTautschnig.Store.update]
+          intro h_collide
+          exact absurd (h_inj h_collide).symm h_eq
+        rcases h_corr y with ⟨h_imp_n, h_goto_n⟩ | ⟨e, v, h_imp_s, h_to, h_goto_s⟩
+        · left; exact ⟨by rw [h_imp_eq]; exact h_imp_n, by rw [h_goto_eq]; exact h_goto_n⟩
+        · right
+          exact ⟨e, v, by rw [h_imp_eq]; exact h_imp_s, h_to,
+                         by rw [h_goto_eq]; exact h_goto_s⟩
+  · -- Eval correspondence: eval σ_goto (exprTrans rhs_imp) = some v_goto.
+    rw [h_eval_corr σ_imp σ_goto rhs_imp v_imp h_corr h_eval_imp]
+    exact h_value_corr
+
 /-! ## Structural divergences not yet bridged at this commit
 
 The remaining `StepGoto` constructors do not bridge directly to a
