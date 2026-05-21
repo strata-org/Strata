@@ -1314,6 +1314,17 @@ partial def pySpecClassBody (loc : SourceRange) (className : String)
           | .Expr _ (.Constant _ (.ConEllipsis _) _) => pure ()
           | .Pass .. => pure ()
           | _ => specWarning initStmt.ann s!"unsupported statement in __init__"
+        -- Also register `__init__` as a method on the class so decorators
+        -- attached to it (notably `@icontract.ensure`) can be lowered just
+        -- like any other method's. The body is dropped: field-extraction
+        -- above already consumed the assignments, and re-walking them
+        -- through `pySpecFunctionArgs` would warn on each one.
+        if "__init__" ∈ usedNames then
+          specError loc "__init__ already defined."
+        let d ← pySpecFunctionArgs (className := some className) loc name args
+                                   #[] decorators returns
+        methods := methods.push d
+        usedNames := usedNames.insert "__init__"
       else
         if name ∈ usedNames then
           specError loc s!"{name} already defined."
