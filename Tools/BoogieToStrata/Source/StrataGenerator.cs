@@ -1961,15 +1961,36 @@ public class StrataGenerator : ReadOnlyVisitor {
                 node.Requires.Add(syntheticReq);
             }
 
+            // Under --smack, SMACK encodes C assume(expr) as a call to
+            // __VERIFIER_assume(cond). Inject a synthetic `free ensures`
+            // postcondition so call-elimination adds (cond != 0) to the
+            // caller's path conditions after the call. The Free flag means
+            // the procedure body has no obligation to prove it (we have no
+            // body anyway), but callers may assume it. We add it to
+            // node.Ensures so WriteProcedureHeader emits it inside the
+            // single merged spec block alongside any existing specs.
+            Ensures? syntheticEns = null;
+            if (_smack && node.Name.Equals("__VERIFIER_assume") && node.InParams.Count > 0) {
+                var param = node.InParams[0];
+                var paramExpr = new IdentifierExpr(param.tok, param);
+                var zero = new LiteralExpr(param.tok, Microsoft.BaseTypes.BigNum.FromInt(0));
+                var neqExpr = Expr.Neq(paramExpr, zero);
+                syntheticEns = new Ensures(free: true, neqExpr);
+                node.Ensures.Add(syntheticEns);
+            }
+
             try {
                 WriteProcedureHeader(node);
                 WriteLine(";");
                 WriteLine();
             } finally {
-                // Remove the synthetic requires to avoid mutating the shared
-                // AST, even if WriteProcedureHeader threw.
+                // Remove the synthetic requires/ensures to avoid mutating
+                // the shared AST, even if WriteProcedureHeader threw.
                 if (syntheticReq != null) {
                     node.Requires.Remove(syntheticReq);
+                }
+                if (syntheticEns != null) {
+                    node.Ensures.Remove(syntheticEns);
                 }
             }
         }

@@ -320,6 +320,76 @@ public class BoogieToStrataIntegrationTests(ITestOutputHelper output) {
     }
 
     /// <summary>
+    /// Pin down the --smack gate for __VERIFIER_assume: without the flag,
+    /// the name pattern is treated as an opaque procedure (no synthetic
+    /// free ensures injected). Translation succeeds; the output does not
+    /// contain an `ensures` clause for the __VERIFIER_assume procedure.
+    /// </summary>
+    [Fact]
+    public void VerifierAssumeWithoutFlagDoesNotInjectEnsures() {
+        var filePath = Path.Combine(TestsDirectory, "VerifierAssume.bpl");
+        Assert.True(File.Exists(filePath), $"Test file does not exist: {filePath}");
+
+        var (exitCode, standardOutput, errorOutput) = RunTranslation(filePath, smack: false);
+
+        output.WriteLine($"Output:\n{standardOutput}");
+        if (!string.IsNullOrEmpty(errorOutput)) {
+            output.WriteLine($"Error output: {errorOutput}");
+        }
+
+        Assert.Equal(0, exitCode);
+
+        // Without --smack, no synthetic ensures is added. The .bpl has no
+        // user-written ensures either, so no `ensures` clause should
+        // appear anywhere in the translation.
+        Assert.DoesNotContain("ensures", standardOutput);
+    }
+
+    /// <summary>
+    /// Regression test: __VERIFIER_assume must produce a single merged
+    /// spec block, not duplicates, when the input already has a
+    /// user-written ensures. Mirrors
+    /// SmackAssertProducesSingleMergedSpecBlock for the dual case.
+    /// </summary>
+    [Fact]
+    public void VerifierAssumeProducesSingleMergedSpecBlock() {
+        var filePath = Path.Combine(TestsDirectory, "VerifierAssumeDuplicateSpec.bpl");
+        Assert.True(File.Exists(filePath), $"Test file does not exist: {filePath}");
+
+        var (exitCode, standardOutput, errorOutput) = RunTranslation(filePath);
+        Assert.Equal(0, exitCode);
+
+        output.WriteLine($"Output:\n{standardOutput}");
+
+        // Exactly one spec block should appear: __VERIFIER_assume's. main
+        // has no specs.
+        var specCount = 0;
+        var searchFrom = 0;
+        while (true) {
+            var idx = standardOutput.IndexOf("spec {", searchFrom, StringComparison.Ordinal);
+            if (idx < 0) break;
+            specCount++;
+            searchFrom = idx + 1;
+        }
+        Assert.Equal(1, specCount);
+
+        // Locate the (only) spec block and assert BOTH clauses are inside.
+        var specStart = standardOutput.IndexOf("spec {", StringComparison.Ordinal);
+        Assert.True(specStart >= 0, "Expected a spec block");
+        var specEnd = standardOutput.IndexOf("}", specStart, StringComparison.Ordinal);
+        Assert.True(specEnd > specStart, "Spec block missing closing brace");
+        var spec = standardOutput.Substring(specStart, specEnd - specStart);
+
+        // The user-written `ensures (i0 > -1)` (sanitized to `i0 > -(1)`)
+        // and the synthetic `free ensures (i0 != 0)` must both be present.
+        Assert.Contains("i0 > -(1)", spec);
+        Assert.Contains("i0 != 0", spec);
+
+        // The synthetic clause has the `free` keyword.
+        Assert.Contains("free ensures", spec);
+    }
+
+    /// <summary>
     /// Pin down the --smack gate: without the flag, InferModifies is off.
     /// A program that omits an explicit `modifies` clause on a procedure
     /// that mutates a global is rejected at typecheck.
