@@ -183,7 +183,11 @@ spec {
 #end
 
 /-- info:
-Obligation: seq_oob_seed_ensures_0_3481
+Obligation: set_v_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ❓ unknown
+
+Obligation: seq_oob_seed_ensures_0_4964
 Property: assert
 Result: ❓ unknown-/
 #guard_msgs in
