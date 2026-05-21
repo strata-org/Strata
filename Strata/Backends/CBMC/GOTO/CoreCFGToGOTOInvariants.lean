@@ -337,5 +337,17 @@ structure WellFormedTranslation
   /-- The CFG's entry label is in the label map. -/
   entry_in_map :
     ∃ pc, labelMap cfg.entry = some pc
+  /-- Each instruction's `locationNum` equals its array index. The
+  translator preserves this invariant: every emit-helper advances
+  `nextLoc` and pushes an instruction whose `locationNum = nextLoc`,
+  starting from `nextLoc = axiomLoc = instructions.size` at the entry
+  to `coreCFGToGotoTransform`. The patcher only edits `target`
+  fields, never `locationNum`s.
+
+  Consumed by `findLocIdx_resolves` to bridge tautschnig-style
+  `locationNum`-keyed GOTO targets to this branch's index-keyed
+  `instr.target` field. -/
+  locationNum_eq_index :
+    ∀ i, ∀ instr, pgm.instrAt i = some instr → instr.locationNum = i
 
 end CProverGOTO

@@ -165,6 +165,13 @@ def trivialWF :
     subst h_blk_eq
     simp [trivialBlock] at h_k
   entry_in_map := trivial_entry_in_map
+  locationNum_eq_index := by
+    -- trivialPgm has instructions with locationNum 0 and 1 at indices 0 and 1.
+    intro i instr h
+    match i, h with
+    | 0, h => simp [trivialPgm, Program.instrAt] at h; cases h; rfl
+    | 1, h => simp [trivialPgm, Program.instrAt] at h; cases h; rfl
+    | n+2, h => simp [trivialPgm, Program.instrAt] at h
 
 /-! ## Test: `block_simulation_empty_finish` instantiates correctly
 
