@@ -110,8 +110,12 @@ def run_translation(bpl_path: Path, tmpdir: Path, result: PipelineResult) -> Pat
         result.add_step("BoogieToStrata", "FAIL", "dotnet not found")
         return None
 
+    # Pass --smack: this suite is entirely SMACK-generated. The flag enables
+    # InferModifies = true (SMACK omits explicit `modifies` clauses) and the
+    # synthetic `requires (p != 0)` injection on assert_.<type> stubs.
     rc, stdout, stderr = run_cmd(
-        [DOTNET, "run", "--project", str(BOOGIE_TO_STRATA_PROJ), "--", str(stripped)],
+        [DOTNET, "run", "--project", str(BOOGIE_TO_STRATA_PROJ), "--",
+         "--smack", str(stripped)],
         cwd=str(BOOGIE_TO_STRATA_PROJ.parent.parent),
         timeout=120,
     )
