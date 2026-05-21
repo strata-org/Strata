@@ -466,9 +466,43 @@ public def pyAnalyzeLaurelV2
     | .ok r => pure r
     | .error msg => throw (.internal msg)
 
+  -- Step 1.5: Load imported module stubs for Resolution context
+  let importedCtx ← profileStep profile "Load imported module stubs" do
+    let mut ctx : Python.Resolution.Ctx := {}
+    let modules := stmts.toList.filterMap fun s => match s with
+      | .ImportFrom _ modOpt _ _ => match modOpt.val with
+        | some modAnn => some modAnn.val
+        | none => none
+      | _ => none
+    for modName in modules do
+      let ionPath := System.FilePath.mk pythonIonPath |>.parent.getD "." |> (· / (modName ++ ".python.st.ion"))
+      match ← Python.readPythonStrata ionPath.toString |>.toBaseIO with
+      | .ok stubStmts =>
+        let stubResolved := Python.Resolution.resolve stubStmts
+        let _ := stubResolved -- extract context entries from stub
+        -- The stub's top-level functions are in the resolved output's moduleLocals
+        -- We need the Ctx that Resolution built internally. For now, re-resolve to get it.
+        let stubLocals := Python.Resolution.computeLocals stubStmts []
+        let stubCtx := stubLocals.foldl (fun c (n, ty) => c.insert n (Python.Resolution.CtxEntry.variable ty)) Python.Resolution.builtinContext
+        let (finalCtx, _) := stubStmts.foldl (init := (stubCtx, (#[] : Array _))) fun acc stmt =>
+          let (c, arr) := acc
+          let f : SourceRange → Python.Resolution.ResolvedAnn := fun sr => { sr, info := .irrelevant }
+          let (c', resolved) := Python.Resolution.resolveStmt c f stmt
+          (c', arr.push resolved)
+        -- Merge function entries from stub into imported context
+        for (name, entry) in finalCtx.toList do
+          match entry with
+          | .function _ => ctx := ctx.insert name entry
+          | .class_ _ _ _ => ctx := ctx.insert name entry
+          | _ => pure ()
+      | .error _ =>
+        unless quiet do
+          let _ ← IO.eprintln s!"warning: stub not found for module '{modName}'" |>.toBaseIO
+    pure ctx
+
   -- Step 2: Resolution (scope the Python AST)
   let resolvedStmts ← profileStep profile "Resolution (scope Python AST)" do
-    pure (Python.Resolution.resolve stmts)
+    pure (Python.Resolution.resolve stmts importedCtx)
 
   -- Step 3: Translation (fold resolved AST → Laurel)
   let metadataPath := sourcePath.getD pythonIonPath
