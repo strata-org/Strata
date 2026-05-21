@@ -12,8 +12,7 @@ Laurel programs by comparing the output against expected results.
 
 meta import Strata.DDM.Elab
 meta import Strata.DDM.BuiltinDialects.Init
-meta import Strata.Languages.Laurel.Grammar.LaurelGrammar
-meta import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
+meta import Strata.Languages.Laurel.Grammar
 meta import Strata.Languages.Laurel.ConstrainedTypeElim
 meta import Strata.Languages.Laurel.Resolution
 

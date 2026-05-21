@@ -18,6 +18,7 @@ meta import Strata.DDM.Elab
 meta import Strata.DDM.BuiltinDialects.Init
 meta import Strata.Languages.Laurel.Grammar.LaurelGrammar
 meta import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
+meta import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 meta import Strata.Languages.Laurel.TypeAliasElim
 meta import Strata.Languages.Laurel.Resolution
 
@@ -66,7 +67,7 @@ info: procedure test(x: int)
 return x;
 -/
 #guard_msgs in
-#eval! do
+#eval do
   let result := resolveAndElim chainedProgram
   printProcs result.staticProcedures
 
@@ -128,7 +129,7 @@ info: procedure compute(a: int, b: bool)
 return a;
 -/
 #guard_msgs in
-#eval! do
+#eval do
   let result := resolveAndElim procSigProgram
   printProcs result.staticProcedures
 

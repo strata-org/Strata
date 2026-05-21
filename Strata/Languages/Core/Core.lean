@@ -5,10 +5,11 @@
 -/
 module
 
-public import Strata.Languages.Core.Options
+public import Strata.Languages.Core.DDMTransform.ASTtoCST -- shake: keep
 public import Strata.Languages.Core.Env
+public import Strata.Languages.Core.Options
 public import Strata.Util.Statistics
-import Strata.Languages.Core.ProgramEval
+public import Strata.Languages.Core.ProgramEval
 import Strata.Languages.Core.ProgramType
 import Strata.Languages.Core.Statistics
 

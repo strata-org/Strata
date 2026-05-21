@@ -7,6 +7,7 @@ module
 
 meta import Strata.DL.Imperative.CmdType
 import all StrataTest.DL.Imperative.ArithExpr
+public meta import Strata.DL.Util.Map
 
 open Strata
 

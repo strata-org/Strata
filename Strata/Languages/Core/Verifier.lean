@@ -16,10 +16,10 @@ import Strata.Transform.ANFEncoder
 import Strata.Languages.Core.ObligationExtraction
 public import Strata.Transform.IrrelevantAxioms
 public import Std.Tactic.BVDecide.Normalize.BitVec
-import Strata.Languages.Core.Core
-import Strata.Languages.Core.DDMTransform.ASTtoCST
-import Strata.Languages.Core.DDMTransform.Translate
-import Strata.Languages.Core.Statistics
+public import Strata.Languages.Core.Core -- shake: keep
+public import Strata.Languages.Core.DDMTransform.ASTtoCST -- shake: keep
+public import Strata.Languages.Core.DDMTransform.Translate -- shake: keep
+public import Strata.Languages.Core.Statistics -- shake: keep
 import Strata.Util.Tactics
 
 open Strata.Pipeline (PipelineContext)
@@ -912,7 +912,6 @@ def VCOutcome.merge (a b : VCOutcome) : VCOutcome :=
     validityProperty := a.validityProperty.merge b.validityProperty
     solverLog := a.solverLog ++ b.solverLog
     mergedFrom := aPaths ++ bPaths }
-
 
 /--
 A model with values lifted to LExpr for display purposes.

@@ -12,9 +12,9 @@ import Strata.DDM.Integration.Lean
 import Strata.DDM.Ion
 
 /- Dialect Library -/
-import Strata.DL.SMT.SMT
+import Strata.DL.SMT
 import Strata.DL.Lambda.Lambda
-import Strata.DL.Imperative.Imperative
+import Strata.DL.Imperative
 
 /- Utilities -/
 import Strata.Util.NameProofs
@@ -73,26 +73,26 @@ import Strata.Pipeline.PyAnalyzeLaurel
 
  -- deletion candidates: nothing imports these modules:
 
--- noimport: Strata.DL.Imperative.CFGSemantics
--- noimport: Strata.DL.Imperative.SemanticsProps
--- noimport: Strata.DL.Lambda.Denote.Assumptions
--- noimport: Strata.DL.Lambda.Denote.CallOfLFuncDenote
--- noimport: Strata.DL.Lambda.Denote.LExprDenote
--- noimport: Strata.DL.Lambda.Denote.LExprDenoteConstrs
--- noimport: Strata.DL.Lambda.Denote.LExprDenoteEq
--- noimport: Strata.DL.Lambda.Denote.LExprDenoteProps
--- noimport: Strata.DL.Lambda.Denote.LExprDenoteSubst
--- noimport: Strata.DL.Lambda.Denote.LExprDenoteTySubst
--- noimport: Strata.DL.Lambda.Denote.LExprSemanticsConsistent
--- noimport: Strata.DL.Lambda.LExprType
--- noimport: Strata.DL.Lambda.LExprTypeSpec
--- noimport: Strata.DL.Lambda.MetaData
--- noimport: Strata.DL.Lambda.Reflect
--- noimport: Strata.DL.Lambda.Semantics
--- noimport: Strata.DL.Lambda.TypeFactoryWF
--- noimport: Strata.DL.Util.HList
--- noimport: Strata.Languages.Core.ProgramWF
--- noimport: Strata.Languages.Core.StatementWF
--- noimport: Strata.Languages.Dyn.DDMTransform.Parse
--- noimport: Strata.Languages.Dyn.DDMTransform.Translate
--- noimport: Strata.Util.Random
+-- noimport:
+import Strata.DL.Imperative.CFGSemantics
+import Strata.DL.Imperative.SemanticsProps
+import Strata.DL.Lambda.Denote.Assumptions
+import Strata.DL.Lambda.Denote.CallOfLFuncDenote
+import Strata.DL.Lambda.Denote.LExprDenote
+import Strata.DL.Lambda.Denote.LExprDenoteConstrs
+import Strata.DL.Lambda.Denote.LExprDenoteEq
+import Strata.DL.Lambda.Denote.LExprDenoteProps
+import Strata.DL.Lambda.Denote.LExprDenoteSubst
+import Strata.DL.Lambda.Denote.LExprDenoteTySubst
+import Strata.DL.Lambda.Denote.LExprSemanticsConsistent
+import Strata.DL.Lambda.LExprTypeSpec
+import Strata.DL.Lambda.MetaData
+import Strata.DL.Lambda.Reflect
+import Strata.DL.Lambda.Semantics
+import Strata.DL.Lambda.TypeFactoryWF
+import Strata.DL.Util.HList
+import Strata.Languages.Core.ProgramWF
+import Strata.Languages.Core.StatementWF
+import Strata.Languages.Dyn.DDMTransform.Parse
+import Strata.Languages.Dyn.DDMTransform.Translate
+import Strata.Util.Random

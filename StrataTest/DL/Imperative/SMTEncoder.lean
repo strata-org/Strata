@@ -7,7 +7,7 @@ module
 
 meta import all StrataTest.DL.Imperative.Arith
 meta import Strata.DL.Imperative.EvalContext
-meta import Strata.DL.SMT.SMT
+meta import Strata.DL.SMT
 import Init.Data.String.Extra
 
 meta section

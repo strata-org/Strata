@@ -7,6 +7,7 @@ module
 
 meta import all Strata.Languages.Python.PySpecPipeline
 meta import all Strata.Languages.Python.Specs.DDM
+import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 
 meta section
 

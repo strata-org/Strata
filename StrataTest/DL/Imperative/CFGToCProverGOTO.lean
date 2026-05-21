@@ -8,6 +8,7 @@ module
 meta import Strata.DL.Imperative.CFGToCProverGOTO
 meta import Strata.Transform.StructuredToUnstructured
 meta import all StrataTest.Backends.CBMC.GOTO.LambdaToCProverGOTO
+import Strata.DL.Lambda.LState
 
 meta section
 

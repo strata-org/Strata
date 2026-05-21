@@ -6,6 +6,7 @@
 module
 
 public import Strata.DL.Lambda.Reflect
+import Lean
 
 /-! ## Tests for Reflect -/
 

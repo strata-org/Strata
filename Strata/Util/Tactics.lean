@@ -9,7 +9,7 @@ public meta import Init.Grind.Cases
 public meta import Init.Grind.Ext
 public meta import Lean.Elab.Tactic.Basic
 public meta import Lean.Meta.Tactic.Generalize
-public meta import Std.Do.Triple.SpecLemmas
+public meta import Std.Do -- shake: keep
 import Lean.Exception
 
 public section

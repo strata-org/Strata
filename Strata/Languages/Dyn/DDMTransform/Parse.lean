@@ -7,7 +7,7 @@ module
 
 public import Strata.DDM.HNF
 public import Strata.DDM.Integration.Lean.OfAstM
-import Strata.DDM.Integration.Lean.Gen
+import Strata.DDM.Integration.Lean
 
 public section
 

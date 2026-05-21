@@ -8,6 +8,7 @@ module
 public import Strata.DL.Imperative.Stmt
 public import Strata.DL.Lambda.LExprTypeEnv
 public import Strata.DL.Lambda.LState
+public import Strata.Languages.C_Simp.DDMTransform.Parse -- strata: keep
 
 public section
 

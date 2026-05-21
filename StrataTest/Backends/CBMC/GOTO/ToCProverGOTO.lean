@@ -8,6 +8,7 @@ module
 meta import all StrataTest.Backends.CBMC.GOTO.LambdaToCProverGOTO
 meta import all Strata.DL.Imperative.ToCProverGOTO
 meta import all Strata.Backends.CBMC.GOTO.InstToJson
+import all Strata.DL.Lambda.LState
 
 meta section
 

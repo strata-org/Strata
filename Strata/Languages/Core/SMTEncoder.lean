@@ -11,7 +11,7 @@ public import Strata.DL.SMT.Factory
 public import Strata.Languages.Core.Env
 public import Strata.Util.Name
 public import Strata.Util.Statistics
-import Strata.DL.SMT.DDMTransform.Translate
+public import Strata.DL.SMT.DDMTransform.Translate -- shake: keep
 import Strata.Languages.Core.Statistics
 
 ---------------------------------------------------------------------

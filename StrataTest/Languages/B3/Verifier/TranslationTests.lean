@@ -5,6 +5,7 @@
 -/
 module
 
+import Strata.DDM.Integration.Lean.HashCommands
 meta import Strata.Languages.B3.Verifier
 meta import Strata.Languages.B3.DDMTransform.ParseCST
 meta import Strata.Languages.B3.DDMTransform.Conversion

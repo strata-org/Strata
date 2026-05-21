@@ -7,8 +7,8 @@ module
 
 import Strata.Util.Tactics
 public meta import Lean.Elab.Term.TermElabM
-import Std.Data.DTreeMap.Internal.Operations
-import Std.Tactic.BVDecide.Normalize.Prop
+import Std.Data.DTreeMap -- shake: keep
+import Std.Tactic.BVDecide -- shake: keep
 
 /-! ## Formalization of Mono- and Poly- Types in Lambda
 
