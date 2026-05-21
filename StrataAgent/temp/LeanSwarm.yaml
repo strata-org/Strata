@@ -83,8 +83,13 @@ agents:
   - Read(/StrataTest/Transform/Sandbox/**)
   - Write(/StrataTest/Transform/Temp/**)
   - Bash(lake lean*)
+  - mcp__lean_lsp__lean_verify
+  - mcp__lean_lsp__lean_goal
+  - mcp__lean_lsp__lean_build
+  - mcp__lean_lsp__lean_diagnostic_messages
   disallowed_tools:
   - Edit
+  - mcp__lean_lsp__lean_local_search
   max_turns: 1000
   max_budget_usd: 20.0
   timeout_seconds: 1000000.0
@@ -158,8 +163,11 @@ agents:
     WORKFLOW:
     1. Get task from TaskManager (with context about definitions/lemmas)
     2. Read sandbox file to understand the goal
-    3. Ask SearchAgent for ALL relevant context upfront — definitions, related
-       lemmas, type signatures, everything the proof might need. 
+    3. Ask ProofValidator to compile-check the sandbox file FIRST. If it doesn't
+       compile with just `sorry`s, report the error to TaskManager immediately —
+       don't start proving on a broken file.
+    4. Ask SearchAgent for ALL relevant context upfront — definitions, related
+       lemmas, type signatures, everything the proof might need.
        Try not reading all files yourself — ask SearchAgent for the specific info you need.
        DON'T READ FILES and waste your tokens — ask SearchAgent instead.
     4. Decide approach: direct iteration vs. sub-agents vs. both
@@ -225,7 +233,8 @@ agents:
 
     Rules:
     - Wait for TaskManager to give you work
-    - Ask SearchAgent if you need to understand definitions
+    - You CANNOT read files yourself. Use SearchAgent for ALL exploration:
+      definitions, types, lemmas, file contents, imports — ask SearchAgent.
     - Ask ProofValidator to run your temp files (it has lean_verify for fast checks)
     - You can write temp files but cannot read project files or edit existing ones
     - Reply directly to whoever asked
@@ -310,7 +319,11 @@ agents:
     4. DEFINITION CHANGES — gather signals from agents first, then ask USER,
        then involve Editor, then relay Editor's proposal to USER for approval.
        Never approve changes yourself.
-    5. After Editor edits anything → tell SearchAgent to re-read those files.
+    5. After Editor edits anything (especially definition changes):
+       a. Ask ProofValidator to compile-check the stub file for errors.
+       b. If it fails → tell Editor to fix the compilation error (with user approval).
+       c. If it passes → tell SearchAgent to re-read the modified files.
+       Only proceed to re-copy stub→sandbox after the stub compiles cleanly.
     6. React to Prover progress: LOW confidence → suggest new direction (from
        SearchAgent findings). MEDIUM → let it continue. Can send "PAUSE" if needed.
     7. NEGATION CHECK — if CounterExampleAgent reports a counterexample but with
