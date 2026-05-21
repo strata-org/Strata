@@ -95,6 +95,16 @@ op intEqExpr(lhs : SpecExprDecl, rhs : SpecExprDecl) : SpecExprDecl =>
   @[prec(15)] lhs " ==_int " rhs;
 op intNeExpr(lhs : SpecExprDecl, rhs : SpecExprDecl) : SpecExprDecl =>
   @[prec(15)] lhs " !=_int " rhs;
+op intAddExpr(lhs : SpecExprDecl, rhs : SpecExprDecl) : SpecExprDecl =>
+  @[prec(20), leftassoc] lhs " +_int " rhs;
+op intSubExpr(lhs : SpecExprDecl, rhs : SpecExprDecl) : SpecExprDecl =>
+  @[prec(20), leftassoc] lhs " -_int " rhs;
+op intMulExpr(lhs : SpecExprDecl, rhs : SpecExprDecl) : SpecExprDecl =>
+  @[prec(25), leftassoc] lhs " *_int " rhs;
+op intDivExpr(lhs : SpecExprDecl, rhs : SpecExprDecl) : SpecExprDecl =>
+  @[prec(25), leftassoc] lhs " //_int " rhs;
+op intModExpr(lhs : SpecExprDecl, rhs : SpecExprDecl) : SpecExprDecl =>
+  @[prec(25), leftassoc] lhs " %_int " rhs;
 op floatExpr(value : Str) : SpecExprDecl => value;
 op floatGeExpr(subject : SpecExprDecl, bound : SpecExprDecl) : SpecExprDecl =>
   @[prec(15)] subject " >=_float " bound;
@@ -295,6 +305,11 @@ protected def SpecExpr.toDDM (e : SpecExpr) : DDM.SpecExprDecl SourceRange :=
   | .intLt subj bound loc => .intLtExpr loc subj.toDDM bound.toDDM
   | .intEq l r loc => .intEqExpr loc l.toDDM r.toDDM
   | .intNe l r loc => .intNeExpr loc l.toDDM r.toDDM
+  | .intAdd l r loc => .intAddExpr loc l.toDDM r.toDDM
+  | .intSub l r loc => .intSubExpr loc l.toDDM r.toDDM
+  | .intMul l r loc => .intMulExpr loc l.toDDM r.toDDM
+  | .intDiv l r loc => .intDivExpr loc l.toDDM r.toDDM
+  | .intMod l r loc => .intModExpr loc l.toDDM r.toDDM
   | .floatLit v loc => .floatExpr loc ⟨loc, v⟩
   | .floatGe subj bound loc => .floatGeExpr loc subj.toDDM bound.toDDM
   | .floatLe subj bound loc => .floatLeExpr loc subj.toDDM bound.toDDM
@@ -444,6 +459,11 @@ private def DDM.SpecExprDecl.fromDDM (d : DDM.SpecExprDecl SourceRange) : Specs.
   | .intLtExpr loc subj bound => .intLt subj.fromDDM bound.fromDDM loc
   | .intEqExpr loc l r => .intEq l.fromDDM r.fromDDM loc
   | .intNeExpr loc l r => .intNe l.fromDDM r.fromDDM loc
+  | .intAddExpr loc l r => .intAdd l.fromDDM r.fromDDM loc
+  | .intSubExpr loc l r => .intSub l.fromDDM r.fromDDM loc
+  | .intMulExpr loc l r => .intMul l.fromDDM r.fromDDM loc
+  | .intDivExpr loc l r => .intDiv l.fromDDM r.fromDDM loc
+  | .intModExpr loc l r => .intMod l.fromDDM r.fromDDM loc
   | .floatExpr loc ⟨_, v⟩ => .floatLit v loc
   | .floatGeExpr loc subj bound => .floatGe subj.fromDDM bound.fromDDM loc
   | .floatLeExpr loc subj bound => .floatLe subj.fromDDM bound.fromDDM loc

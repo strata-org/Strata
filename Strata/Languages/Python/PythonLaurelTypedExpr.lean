@@ -90,6 +90,29 @@ def intNe (x y : TypedStmtExpr .TInt)
     (source : Option FileRange := x.stmt.source) : TypedStmtExpr .TBool :=
   .ofStmt (.PrimitiveOp .Neq [x.stmt, y.stmt]) source
 
+def intAdd (x y : TypedStmtExpr .TInt)
+    (source : Option FileRange := x.stmt.source) : TypedStmtExpr .TInt :=
+  .ofStmt (.PrimitiveOp .Add [x.stmt, y.stmt]) source
+
+def intSub (x y : TypedStmtExpr .TInt)
+    (source : Option FileRange := x.stmt.source) : TypedStmtExpr .TInt :=
+  .ofStmt (.PrimitiveOp .Sub [x.stmt, y.stmt]) source
+
+def intMul (x y : TypedStmtExpr .TInt)
+    (source : Option FileRange := x.stmt.source) : TypedStmtExpr .TInt :=
+  .ofStmt (.PrimitiveOp .Mul [x.stmt, y.stmt]) source
+
+/-- Python `//` is floor (Euclidean) division → Laurel `Div`. -/
+def intFloorDiv (x y : TypedStmtExpr .TInt)
+    (source : Option FileRange := x.stmt.source) : TypedStmtExpr .TInt :=
+  .ofStmt (.PrimitiveOp .Div [x.stmt, y.stmt]) source
+
+/-- Python `%` is Euclidean modulus → Laurel `Mod`. -/
+def intMod (x y : TypedStmtExpr .TInt)
+    (source : Option FileRange := x.stmt.source) : TypedStmtExpr .TInt :=
+  .ofStmt (.PrimitiveOp .Mod [x.stmt, y.stmt]) source
+
+
 def realGeq (x y : TypedStmtExpr .TReal)
     (source : Option FileRange := x.stmt.source) : TypedStmtExpr .TBool :=
   .ofStmt (.PrimitiveOp .Geq [x.stmt, y.stmt]) source

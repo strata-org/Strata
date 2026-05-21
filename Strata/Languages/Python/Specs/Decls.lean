@@ -494,6 +494,13 @@ inductive SpecExpr where
 | intLt (subject : SpecExpr) (bound : SpecExpr) (loc : SourceRange)
 | intEq (lhs : SpecExpr) (rhs : SpecExpr) (loc : SourceRange)
 | intNe (lhs : SpecExpr) (rhs : SpecExpr) (loc : SourceRange)
+| intAdd (lhs rhs : SpecExpr) (loc : SourceRange)
+| intSub (lhs rhs : SpecExpr) (loc : SourceRange)
+| intMul (lhs rhs : SpecExpr) (loc : SourceRange)
+/-- Python `//` (floor division). -/
+| intDiv (lhs rhs : SpecExpr) (loc : SourceRange)
+/-- Python `%` (modulus). -/
+| intMod (lhs rhs : SpecExpr) (loc : SourceRange)
 /-- A floating-point literal, stored as a string to preserve precision. -/
 | floatLit (value : String) (loc : SourceRange)
 | floatGe (subject : SpecExpr) (bound : SpecExpr) (loc : SourceRange)
@@ -539,6 +546,11 @@ def SpecExpr.softBEq : SpecExpr → SpecExpr → Bool
   | .intLt s₁ b₁ _, .intLt s₂ b₂ _ => s₁.softBEq s₂ && b₁.softBEq b₂
   | .intEq a₁ b₁ _, .intEq a₂ b₂ _ => a₁.softBEq a₂ && b₁.softBEq b₂
   | .intNe a₁ b₁ _, .intNe a₂ b₂ _ => a₁.softBEq a₂ && b₁.softBEq b₂
+  | .intAdd a₁ b₁ _, .intAdd a₂ b₂ _ => a₁.softBEq a₂ && b₁.softBEq b₂
+  | .intSub a₁ b₁ _, .intSub a₂ b₂ _ => a₁.softBEq a₂ && b₁.softBEq b₂
+  | .intMul a₁ b₁ _, .intMul a₂ b₂ _ => a₁.softBEq a₂ && b₁.softBEq b₂
+  | .intDiv a₁ b₁ _, .intDiv a₂ b₂ _ => a₁.softBEq a₂ && b₁.softBEq b₂
+  | .intMod a₁ b₁ _, .intMod a₂ b₂ _ => a₁.softBEq a₂ && b₁.softBEq b₂
   | .floatLit v₁ _, .floatLit v₂ _ => v₁ == v₂
   | .floatGe s₁ b₁ _, .floatGe s₂ b₂ _ => s₁.softBEq s₂ && b₁.softBEq b₂
   | .floatLe s₁ b₁ _, .floatLe s₂ b₂ _ => s₁.softBEq s₂ && b₁.softBEq b₂

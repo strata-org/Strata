@@ -360,6 +360,31 @@ def specExprToLaurel (e : SpecExpr) (source : Option FileRange)
     let l ← asAny loc <| specExprToLaurel lhs src
     let r ← asAny loc <| specExprToLaurel rhs src
     return .mkSome <| .intNe (.anyAsInt l) (.anyAsInt r)
+  | .intAdd l r loc => do
+    let src ← nodeSource loc
+    let lv ← asAny loc <| specExprToLaurel l src
+    let rv ← asAny loc <| specExprToLaurel r src
+    return .mkSome <| .fromInt (.intAdd (.anyAsInt lv) (.anyAsInt rv))
+  | .intSub l r loc => do
+    let src ← nodeSource loc
+    let lv ← asAny loc <| specExprToLaurel l src
+    let rv ← asAny loc <| specExprToLaurel r src
+    return .mkSome <| .fromInt (.intSub (.anyAsInt lv) (.anyAsInt rv))
+  | .intMul l r loc => do
+    let src ← nodeSource loc
+    let lv ← asAny loc <| specExprToLaurel l src
+    let rv ← asAny loc <| specExprToLaurel r src
+    return .mkSome <| .fromInt (.intMul (.anyAsInt lv) (.anyAsInt rv))
+  | .intDiv l r loc => do
+    let src ← nodeSource loc
+    let lv ← asAny loc <| specExprToLaurel l src
+    let rv ← asAny loc <| specExprToLaurel r src
+    return .mkSome <| .fromInt (.intFloorDiv (.anyAsInt lv) (.anyAsInt rv))
+  | .intMod l r loc => do
+    let src ← nodeSource loc
+    let lv ← asAny loc <| specExprToLaurel l src
+    let rv ← asAny loc <| specExprToLaurel r src
+    return .mkSome <| .fromInt (.intMod (.anyAsInt lv) (.anyAsInt rv))
   | .floatGe subject bound loc => do
     let src ← nodeSource loc
     let s ← asAny loc <| specExprToLaurel subject src

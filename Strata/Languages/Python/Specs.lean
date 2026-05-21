@@ -934,6 +934,29 @@ partial def transExpr (e : expr SourceRange)
     return (.intLit (Int.negOfNat n) (loc := loc), intType)
   | .UnaryOp _ (.USub _) (.Constant _ (.ConFloat _ ⟨_, s⟩) _) =>
     return (.floatLit s!"-{s}" (loc := loc), floatType)
+  -- Integer arithmetic in predicate bodies. Both sides must translate
+  -- cleanly to int-typed (or Any-typed, e.g. function parameters whose
+  -- types weren't seeded into `localTypes`) SpecExprs; the result is
+  -- int-typed. Anything other than int / Any (float, str, …) falls
+  -- through to placeholder so transExpr doesn't claim a type it can't
+  -- justify.
+  | .BinOp _ left op right =>
+    let (lhs, lhsTp) ← transExpr left
+    let (rhs, rhsTp) ← transExpr right
+    let okType (tp : SpecType) : Bool := tp.isIntType || tp.isAnyType
+    if okType lhsTp && okType rhsTp then
+      match op with
+      | .Add _ => return (.intAdd lhs rhs (loc := loc), intType)
+      | .Sub _ => return (.intSub lhs rhs (loc := loc), intType)
+      | .Mult _ => return (.intMul lhs rhs (loc := loc), intType)
+      | .FloorDiv _ => return (.intDiv lhs rhs (loc := loc), intType)
+      | .Mod _ => return (.intMod lhs rhs (loc := loc), intType)
+      | _ =>
+        specWarning loc s!"unsupported BinOp in predicate: {repr op}"
+        return placeholder
+    else
+      specWarning loc s!"BinOp with non-int operand: lhs={repr lhsTp}, rhs={repr rhsTp}"
+      return placeholder
   -- String literal (extract value for use in messages)
   | .Constant _ (.ConString _ ⟨_, _s⟩) _ =>
     return (.placeholder (loc := loc), SpecType.ident loc .builtinsStr)
