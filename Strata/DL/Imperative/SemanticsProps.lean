@@ -137,7 +137,6 @@ private theorem step_hasFailure_monotone
   | step_seq_exit => exact hf
   | step_block_body _ ih => exact ih hf
   | step_block_done => exact hf
-  | step_block_exit_none => exact hf
   | step_block_exit_match _ => exact hf
   | step_block_exit_mismatch _ => exact hf
 
