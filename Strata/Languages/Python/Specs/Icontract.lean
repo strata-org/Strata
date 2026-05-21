@@ -41,6 +41,7 @@ open Strata.Python.Specs
     later under the right `SpecAssertionM` context. -/
 public structure MethodBundle where
   requires : Array (expr SourceRange) := #[]
+  ensures  : Array (expr SourceRange) := #[]
 deriving Inhabited
 
 /-! ## Recognition helpers -/
@@ -97,6 +98,25 @@ public def absorbMethodDecorator
         return (true, bundle)
     else
       warn pyd.ann "icontract.require requires at least one argument"
+      return (true, bundle)
+  -- @icontract.ensure(lambda result, <params>?: <pred>): a postcondition.
+  -- The lambda may bind `result` (the return value) and any function
+  -- parameter.
+  if let some (_, args, _) := asIcontractCall? "ensure" pyd then
+    if h : args.size ≥ 1 then
+      match args[0] with
+      | .Lambda _ lamArgs lamBody =>
+        let allowed := validParams ++ #["result"]
+        for lamName in lambdaParamNames lamArgs do
+          unless allowed.contains lamName do
+            warn pyd.ann
+              s!"icontract.ensure: lambda parameter '{lamName}' does not match any function parameter (or 'result'); predicate will be vacuous"
+        return (true, { bundle with ensures := bundle.ensures.push lamBody })
+      | _ =>
+        warn pyd.ann "icontract.ensure expects a lambda argument"
+        return (true, bundle)
+    else
+      warn pyd.ann "icontract.ensure requires at least one argument"
       return (true, bundle)
   return (false, bundle)
 

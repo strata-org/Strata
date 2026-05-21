@@ -1292,6 +1292,12 @@ def pySpecFunctionArgs (fnLoc : SourceRange)
       modify fun s => { s with
         assertions := s.assertions.push
           { message := #[MessagePart.str "@icontract.require"], formula } }
+    -- @icontract.ensure predicates: each lambda body becomes a
+    -- postcondition SpecExpr. The lambda may reference `result` (the
+    -- return value) and any function parameter.
+    for ensExpr in icontractBundle.ensures do
+      let (formula, _) ← transExpr ensExpr
+      modify fun s => { s with postconditions := s.postconditions.push formula }
 
   return {
     loc := fnLoc
