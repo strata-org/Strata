@@ -114,78 +114,58 @@ aws_string_eq                 |     OK |     OK |     OK |      PARTIAL |      P
           cbmc: 0 pass, 24 fail, 1 timeout, 0 n/a
 ```
 
+## What this branch ships (vs `origin/main`)
+
+Pipeline / benchmark:
+
+- `run_pipeline.py` — `--split-procs` mode (sidesteps cross-procedure
+  env-error contamination) and corrected `symtab2gb`/`cbmc` flags.
+  Commits `38c13c272`, `4f309c63b`, `451b06560`.
+- 13 new simplified AWS C Common programs in `programs/`, expanding
+  the suite from 12 to 25. Commit `ee57bb2b7`.
+
+BoogieToStrata (cherry-picked from PR 1149 plus follow-up):
+
+- `--smack` CLI flag, gating SMACK-specific behavior (`InferModifies`
+  + `assert_.<type>` requires injection). Commits `6b04d9399`,
+  `0e54ff2bd`, `ac814e582`.
+- `__VERIFIER_assume` `free ensures (_i0 != 0)` synthesis under
+  `--smack`, mirroring the `assert_` pattern with dual polarity.
+  Commit `1b2231f99`.
+
+CBMC backend (`Strata/Backends/CBMC/GOTO/`):
+
+- Body-aware dispatch — CFG bodies now route through
+  `procedureToGotoCtxViaCFG` instead of erroring "expected structured
+  body, got CFG". Commit `74f0cc23a`.
+- Inout-parameter rename-collision fix and call-site type lookup,
+  patched in both the structured and CFG paths. Commit `f265cda63`.
+- Synthetic `__cprover_entry()` shim with nondet-initialized main
+  args, so cbmc accepts the entry point. Commit `7e2b1fc25`.
+- `guard` JSON field always emitted on ASSUME/ASSERT (was elided
+  when guard was constant `true`, which `symtab2gb` rejected).
+  Commit `66e659656`.
+- CFG block emission in reverse-postorder, eliminating the spurious
+  back-edges that triggered cbmc unwinding-assertion timeouts.
+  Commit `520f3f573`.
+
+Regression coverage in `StrataTest/Backends/CBMC/GOTO/E2E_CoreToGOTO.lean`
+and `Tools/BoogieToStrata/IntegrationTests/BoogieToStrataIntegrationTests.cs`.
+
 ## Known blockers
 
-- **CBMC: structured-body assumption (resolved on this branch).**
-  `coreToGotoFiles` (in `CoreToGOTOPipeline.lean`) dispatched every
-  procedure through `procedureToGotoCtx`, which errored on CFG bodies
-  with "expected structured body, got CFG". `procedureToGotoCtxViaCFG`
-  already existed in `CoreCFGToGOTOPipeline.lean` but was only wired
-  into a test E2E. Fixed by adding `procedureToGotoCtxDispatch` and
-  `coreToGotoFilesDispatch` in `CoreCFGToGOTOPipeline.lean` that
-  switch on `p.body` (avoiding the import cycle that would result from
-  adding the dispatch directly to `CoreToGOTOPipeline.lean`), and
-  pointing the `StrataCoreToGoto` binary at the dispatching wrapper.
-  Was visible on 5 of the 25 programs (`abs_func`, `array_sum`,
-  `loop_sum`, `max_func`, `nondet_branch`); they now translate cleanly
-  through the CFG path. Regression test in
-  `StrataTest/Backends/CBMC/GOTO/E2E_CoreToGOTO.lean` (programmatic CFG
-  procedure construction; the `cfg ...` surface syntax is not
-  parseable in `#strata` macros on this branch). See commit `74f0cc23a`.
-- **CoreToGoto: inout-parameter rename collision (resolved on this
-  branch).** By Strata Core convention, every `inout` parameter appears
-  in BOTH `Procedure.Header.inputs` AND `Procedure.Header.outputs` with
-  the same identifier. `procedureToGotoCtx` folded
-  `formals.zip new_formals ++ outputs.zip new_outputs ++ …` into the
-  rename map; outputs came second, so any inout name ended up bound to
-  the local-symbol form (`main::1::x`) instead of the formal
-  (`main::x`). At call sites, `CallArg.getInputExprs`
-  (`Strata/Languages/Core/Statement.lean:105-109`) synthesizes
-  `LExpr.fvar () id none` for inout args, and `LExpr.toGotoExprCtx`
-  rejects typeless fvars — surfacing as `[toGotoExprCtx] Not yet
-  implemented: LExpr.fvar () { name := "main::1::_exn" } none`. Fixed
-  by filtering inouts out of the outputs list (so they bind to the
-  formal-symbol form) and looking up the type from the threaded typing
-  env at call-translation time. Both the structured and CFG paths
-  patched (`CoreToGOTOPipeline.lean`, `CoreCFGToGOTOPipeline.lean`).
-  Regression tests in `StrataTest/Backends/CBMC/GOTO/E2E_CoreToGOTO.lean`.
-  See commit `f265cda63`.
-- **`run_pipeline.py` cbmc-invocation flags (resolved on this branch).**
-  Two latent bugs in `run_pipeline.py`'s cbmc invocation: line 331
-  passed the GOTO JSON as a second positional argument to `symtab2gb`
-  instead of via `--goto-functions`, and line 235 invoked `cbmc`
-  without `--function main`. Both fixed; commit `4f309c63b`. Related:
-  `InstToJson.lean` previously omitted the `guard` JSON field on
-  ASSUME/ASSERT instructions when the guard was the constant `true`,
-  which broke `symtab2gb` on every SMACK-generated program (which has
-  `assume true` between every two source statements). Fixed by
-  always emitting `guard` for ASSUME/ASSERT; commit `66e659656`.
-- **CBMC: non-standard `main` signature (resolved on this branch).**
-  SMACK-translated `main` takes parameters (memory maps, exception
-  flags, address state) that don't match cbmc's expected entry-point
-  signatures, so cbmc rejected the binary with "the program has no
-  entry point" / rc=6. Fixed by emitting a synthetic `__cprover_entry()`
-  shim alongside `main`: the shim declares one local per main formal,
-  havocs each from `nondet`, calls main, ends. `buildEntryShim` lives
-  in `CoreCFGToGOTOPipeline.lean`; `run_pipeline.py` invokes
-  `cbmc --function __cprover_entry`. See commit `7e2b1fc25`.
 - **CBMC: callee bodies not emitted.** `coreToGotoFiles*` translates
   only the entry procedure (`main`), leaving every callee — `add`,
-  `assert__i32`, `_initialize`, the SMACK prelude stubs, and any
-  user-defined helper — as bodyless declarations in the symbol
-  table. cbmc symbolically executes main, reaches a call, and
-  reports `[.no-body.<callee>] no body for callee <callee>:
-  FAILURE`. With the upstream blockers resolved (entry-point shim,
-  spurious back-edges, etc.), this is the dominant cbmc failure
-  mode for programs without memory-map parameters: every program
-  that calls a user function or SMACK runtime stub trips it. Fix
-  path: iterate over all reachable procedures in
+  `assert__i32`, `_initialize`, SMACK prelude stubs, user-defined
+  helpers — as bodyless declarations. cbmc reaches a call and reports
+  `[.no-body.<callee>] no body for callee <callee>: FAILURE`. This is
+  the dominant cbmc failure mode for programs without memory-map
+  parameters. Fix path: iterate over all reachable procedures in
   `coreToGotoFilesDispatch`, not just the entry; emit each via
-  `procedureToGotoCtxDispatch` and splice all into the output JSON.
-  The lifted-functions infrastructure in `emitProcWithLifted` is
-  the right shape for this, but currently only handles
-  `Core.Function` (purely-defined functions), not `Core.Procedure`
-  (commands with side effects).
+  `procedureToGotoCtxDispatch` and splice into the output JSON. The
+  lifted-functions infrastructure in `emitProcWithLifted` is the right
+  shape but currently only handles `Core.Function`, not
+  `Core.Procedure`.
 - **CBMC: array type mismatch on memory-map params.** Programs with
   memory-map parameters (the AWS C Common programs that pass `Map ref
   i8` for memory state) hit a different cbmc error after the shim:
@@ -196,28 +176,15 @@ aws_string_eq                 |     OK |     OK |     OK |      PARTIAL |      P
   25 programs hit this. Likely fix on the array-type emission for
   `Map ref i8` (`Strata/Backends/CBMC/GOTO/LambdaToCProverGOTO.lean`'s
   `LMonoTy.toGotoType`).
-- **CBMC: BMC unrolling timeouts (mostly resolved on this branch).**
-  4 programs (`abs_func`, `loop_sum`, `max_func`, `nondet_branch`)
-  previously timed out at the default 120s. Cause:
-  `coreCFGToGotoTransform` iterated blocks in `cfg.blocks` source
-  order, where SMACK's CFG emission has if/else join points landing
-  textually before their predecessors. Forward CFG edges thus
-  rendered as `GOTO N` to earlier-numbered locations, which CBMC's
-  loop detector classified as back-edges and instrumented with
-  unwinding-assertions; the unwinding logic blew the timeout.
-  `cbmc --show-loops` reported 8 spurious "loops" on `nondet_branch`
-  despite the C source having zero loops. Fixed by emitting blocks
-  in reverse-postorder via a new `cfgReversePostorder` helper in
-  `CoreCFGToGOTOPipeline.lean`. After the fix, `--show-loops`
-  reports 0 spurious loops on the 3 loop-free programs (abs_func,
-  max_func, nondet_branch); they reach real verdicts in <100ms.
-  `loop_sum` remains TIMEOUT because it has a real C `for` loop:
-  cbmc correctly identifies the genuine back-edge and unrolls it,
-  hitting the unwinding-assertion bound. That's the next-tier
-  problem (real-loop bound or loop invariants), distinct from the
-  spurious-back-edge issue this fix addresses. Regression test in
-  `StrataTest/Backends/CBMC/GOTO/E2E_CoreToGOTO.lean`
-  (`E2E_CFGRPOReorder`). See commit `520f3f573`.
+- **CBMC: real-loop unwinding bound.** `loop_sum` has a real C `for`
+  loop, so cbmc's BMC unroller correctly identifies the genuine
+  back-edge and tries to unroll without bound, hitting the default
+  120s timeout. Fix path: pass `--unwind <N>` (with `N` chosen per
+  program) or attach a loop invariant. The 3 other previously-timing-out
+  programs (`abs_func`, `max_func`, `nondet_branch`) had **spurious**
+  back-edges from the GOTO emission order; that's resolved on this
+  branch — see *What this branch ships → CFG block emission in
+  reverse-postorder*.
 - **Deductive PARTIAL breakdown (sample-based).** The 20 deductive
   PARTIALs across the 25-program suite (post sub-class (b) fix)
   split into three sub-classes by failing-VC verdict and origin:
@@ -231,41 +198,17 @@ aws_string_eq                 |     OK |     OK |     OK |      PARTIAL |      P
     discussed approach via SMACK's `__CONTRACT_ensures` macro is
     blocked upstream by SMACK's missing `result()` expression.
   - **(b) `__VERIFIER_assume` is uninterpreted (partially resolved on
-    this branch).** Same refuted verdict but label
-    `(Origin_assert__i32_Requires)assert__i32_requires_0`, indicating
-    a top-level requires-discharge VC rather than a per-call VC.
-    Affected programs whose C source uses `assume(...)` to bound
-    inputs; the assumption was dropped because `__VERIFIER_assume`
-    had no spec after `strip_smack_prelude.py`. Fixed by synthesizing
+    this branch).** Failing-VC label
+    `(Origin_assert__i32_Requires)assert__i32_requires_0` — a
+    top-level requires-discharge VC. Affected programs whose C source
+    uses `assume(...)` to bound inputs; the assumption was dropped
+    because `__VERIFIER_assume` had no spec. Fixed by synthesizing
     `free ensures (_i0 != 0)` on `__VERIFIER_assume` declarations
-    during BoogieToStrata translation, gated on `--smack`. The
-    `free ensures` form (Boogie semantics: callers may assume,
-    implementation has no proof obligation) matches `assume`'s
-    polarity. Mirrors the existing `assert_.<type>` `Requires`
-    synthesis at `StrataGenerator.cs:VisitProcedure` with the dual
-    polarity. Regression tests in
-    `Tools/BoogieToStrata/IntegrationTests/BoogieToStrataIntegrationTests.cs`.
-    See commit `1b2231f99`.
-
-    Empirically verified the synthesis propagates: every
-    `[__VERIFIER_assume_ensures_0]` VC is discharged by the verifier
-    (`✅ always true and is reachable from declaration entry`).
-    `nondet_branch` flipped PARTIAL → PASS (one direct gain on the
-    deductive backend). `abs_func` improved from 0 pass / 1 fail to
-    7 pass / 1 fail; `max_func` from 0 pass / 1 fail to 1 pass / 1 fail.
-    The remaining single failing VC on each is a separate sub-class
-    (a) issue: an assert downstream of a user function call (`abs_val`,
-    `max`) that lacks an `ensures` clause. Closing those needs the
-    sub-class (a) lever, not more `__VERIFIER_assume` work.
-
-    Side effect on cbmc (resolved by the RPO emission fix below):
-    the synthesis briefly added path-condition constraints that
-    cbmc's BMC unrolling expanded further on the
-    `__VERIFIER_assume`-using programs, which then timed out due to
-    spurious back-edges in the GOTO listing. After the
-    reverse-postorder reorder (commit `520f3f573`), 3 of the 4 are
-    back to fast FAIL with real cbmc verdicts; only `loop_sum` (real
-    C `for` loop) stays TIMEOUT.
+    under `--smack`; commit `1b2231f99`. `nondet_branch` flipped
+    PARTIAL → PASS; `abs_func`, `max_func` retained one failing VC
+    each, now traced to sub-class (a) — an assert downstream of a
+    user-function call (`abs_val`, `max`) with no `ensures`. Closing
+    those needs the sub-class (a) lever.
   - **(e) Solver returns `unknown`** — verdict `❓ unknown`. Sample:
     `aws_byte_buf_append`, all 7 VCs. The asserted predicate chain
     involves nested int↔bit conversions (`_zext`, `_trunc`) over
@@ -275,83 +218,28 @@ aws_string_eq                 |     OK |     OK |     OK |      PARTIAL |      P
     `Strata/Languages/Core/SMTEncoder.lean` — array theory vs
     axiomatized maps, axiom pruning. Significant effort; likely the
     last sub-class to address.
-- **`strip_smack_prelude.py` rationale is obsolete.** The strip
-  pass's docstring claims the SMACK prelude bodies "use unstructured
-  multi-target gotos incompatible with BoogieToStrata." Audited the
-  actual bodies: only `__SMACK_and{32,16,8}` and `__SMACK_or32` have
-  multi-target gotos (192/48/24/64 blocks each). All other names the
-  strip removes (`__VERIFIER_assume`, `__SMACK_dummy`,
-  `__SMACK_or{8,16,64}`, `__SMACK_check_overflow`,
-  `__SMACK_loop_exit`, `boogie_si_record_*`, `corral_*`, `$alloc`)
-  have structured bodies that BoogieToStrata translates cleanly —
-  even with `--smack` and the now-required `InferModifies = true`,
-  exit 0, no errors. The strip is broader than necessary by historical
-  accident (prefix-match collateral damage); narrowing to just the
-  bitwise-decompose family would be safe. Empirically, removing the
-  strip does NOT close sub-class (b) on its own — see (b) above for
-  why. So the strip narrowing is a code-hygiene improvement, not a
-  verdict-improvement lever.
+- **`strip_smack_prelude.py` is overbroad.** The strip removes prelude
+  bodies whose multi-target gotos BoogieToStrata used to choke on. With
+  `--smack` and `InferModifies = true`, only `__SMACK_and{32,16,8}` and
+  `__SMACK_or32` still need stripping; the rest translate cleanly. Code-
+  hygiene cleanup (narrow the strip list), not a verdict-improvement
+  lever.
 - **bugFinding partials.** Symbolic execution finds potential
   counterexamples for assertions on programs whose preconditions are
   insufficient. Same root cause as deductive sub-class (b) for the
   programs that use `assume(...)`; same root cause as sub-class (a)
   for the programs that call user fns without `ensures`. Expected
   behaviour given the current translation; not a pipeline bug.
-- **Cross-procedure PE error contamination (`aws_array_eq` → 0 VCs).**
-  `Strata/Languages/Core/ProgramEval.lean` threads a single `Env`
-  through every procedure in declaration order: each `.proc` decl runs
-  `Procedure.eval declsE proc`, and the resulting env is passed as
-  `declsE` to the next procedure. If any procedure's evaluation sets
-  `Env.error`, `Procedure.fixupError`
-  (`Strata/Languages/Core/ProcedureEval.lean:23-27`) leaves the error
-  in place rather than clearing it. Subsequent procedures' bodies then
-  short-circuit on every command — `Statement.Command.eval` and
-  `evalAuxGo` both early-return when `env.error.isSome`
-  (`Strata/Languages/Core/StatementEval.lean:64-65, 618-619`) — so
-  their `deferred` obligations are never produced and
-  `extractObligations` walks empty bodies.
-
-  On `aws_array_eq`, the upstream procedure that errors is
-  `aws_array_eq` itself: its CFG body has a back-edge
-  (`_bb5 → _bb4` in the SMACK output, encoding the C `for` loop) and
-  `Procedure.eval`'s CFG branch
-  (`ProcedureEval.lean:204-211`) unrolls it with bounded fuel,
-  producing an `Env.error` on at least one path. That error rides
-  through to `main`'s evaluation, killing the three
-  `callElimAssert_assert__i32_requires_*` obligations.
-
-  Empirical confirmation:
-  - `strata verify --procedures main aws_array_eq.core.st` → 3 VCs
-    (skips `aws_array_eq` evaluation entirely, so no error to
-    propagate).
-  - Reordering the `.core.st` so `main` precedes `aws_array_eq` → 12
-    VCs (previously-suppressed obligations from `main`,
-    `__SMACK_static_init`, `_initialize`, etc. all reappear).
-  - Replacing `aws_array_eq`'s body with a linear CFG (no back-edge)
-    → 3 VCs.
-
-  The visible `WARN` is on `aws_array_eq` because SMACK's translation
-  emits `aws_array_eq` (a CFG procedure with a loop) ahead of `main`
-  in the program. The same mechanism would suppress VCs in any
-  benchmark where a procedure with a looping CFG body is declared
-  before any procedure that contains assert calls.
-
-  Fix path: clear `Env.error` (and reset the affected per-procedure
-  state) at the boundary between procedures in `Program.eval` (or in
-  `Procedure.eval`'s return), so per-procedure evaluation failures
-  don't bleed into the rest of the program.
-- **`Strata.Transform.ProcBodyVerifyCorrect` proof file (fixed on
-  this branch tip).** Surfaced during this reproduction on the prior
-  tip: the merge from `main` left three call sites in
-  `Strata/Transform/ProcBodyVerifyCorrect.lean:856,859,862` passing
-  `proc.body` (now `Procedure.Body`) where a `List Statement` was
-  expected. Symptom: `Application type mismatch ... Config.stmts
-  proc.body`. The file has no importers in the runtime graph, so the
-  three executables (`strata`, `StrataCoreToGoto`, `StrataToCBMC`)
-  build despite the failure — but `lake build` exits non-zero. Fixed
-  by substituting the destructured `ss` (already in scope from
-  `procToVerifyStmt_is_structured`) for `proc.body` at the three
-  sites; build now passes 585/585.
+- **Cross-procedure PE error contamination (silently dropped VCs,
+  issue #1185).** `ProgramEval.lean` threads a single `Env` through
+  every procedure in declaration order. If `Procedure.eval` sets
+  `Env.error` (e.g. CFG fuel exhaustion on a loop), `fixupError`
+  doesn't clear it; subsequent procedures short-circuit on every
+  command and emit no obligations. Use `--split-procs` mode in
+  `run_pipeline.py` as a workaround — it runs each procedure
+  independently. Fix path: clear `Env.error` at the boundary between
+  procedures in `Program.eval`. See issue #1185 for full repro and
+  empirical analysis.
 
 See [`Tools/BoogieToStrata/Docs/STATUS.md`](../../Tools/BoogieToStrata/Docs/STATUS.md)
 for translator-level status.
@@ -360,8 +248,9 @@ for translator-level status.
 
 - `run_pipeline.py` — end-to-end multi-backend driver.
 - `strip_smack_prelude.py` — removes SMACK prelude bodies before
-  translation; reduces translation work and avoids unstructured CFGs in
-  prelude-only procedures.
+  translation. Mostly historical now (BoogieToStrata translates the
+  prelude under `--smack`); kept for the `__SMACK_and{32,16,8}` and
+  `__SMACK_or32` bitwise-decompose stubs that still trip translation.
 - `fix_core_st.py` — post-processes BoogieToStrata output to work around
   a few known translation issues.
 - `Dockerfile` — builds the SMACK container image.

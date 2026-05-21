@@ -28,6 +28,15 @@ translator. For ongoing work, the GitHub issue tracker is authoritative.
   output, which omits `modifies` everywhere.
 - **`old(...)` expression rename consistency.** `old(x)` references use
   the same renamed identifier as the un-old version of `x`.
+- **`--smack` CLI flag.** Gates SMACK-specific translation behavior:
+  enables `InferModifies` and injects a `Requires` clause on calls to
+  `assert_.<type>` so SMACK's `assert(...)` lowers verify against the
+  asserted predicate. Off by default for non-SMACK Boogie.
+- **`__VERIFIER_assume` `free ensures` synthesis.** Under `--smack`, a
+  `free ensures (_i0 != 0)` is synthesized on `__VERIFIER_assume`
+  declarations so callers of `assume(...)` carry the assumption through
+  procedure-call elimination. Mirrors the `assert_` pattern with dual
+  polarity.
 
 ## Test fixtures
 
@@ -39,28 +48,19 @@ translator. For ongoing work, the GitHub issue tracker is authoritative.
 
 ## Known issues
 
-- [#1148](https://github.com/strata-org/Strata/issues/1148) — Umbrella
-  issue tracking remaining blockers preventing end-to-end verification of
-  SMACK-generated Boogie.
-- [#1152](https://github.com/strata-org/Strata/issues/1152) — Sanitization
-  can still map distinct Boogie names to the same Strata identifier in
-  edge cases not covered by the entity-prefix fix.
 - [#1162](https://github.com/strata-org/Strata/issues/1162) — Type checker
   errored on nondet goto with undeclared `$__nondet_N`. Resolved on
   `htd/smack` by emitting an `init` command for the synthetic variable
   in `translateTransfer`; tracked here for cross-reference.
-- **`FormatCore.lean` not updated for new `command_cfg_procedure`
-  signature.** CI build fails on `Strata/Languages/Core/DDMTransform/FormatCore.lean:991`:
-  the call to `Command.command_cfg_procedure` still passes 5 args but
-  the grammar now expects 6 (added `locals : Block`). Symptom:
-  `Application type mismatch: cfgBody has type CFGBody M but is expected
-  to have type CoreDDM.Block M`, plus a downstream `noncomputable`
-  failure on `Core.formatProcedure`. Fix path: update the CST builder
-  in `FormatCore.lean` to thread the locals block through. Address
-  after the branch cleanup is merged.
+- [#1184](https://github.com/strata-org/Strata/issues/1184) — Multi
+  out-parameter support for the CBMC backend.
+- [#1185](https://github.com/strata-org/Strata/issues/1185) — Cross-
+  procedure PE error contamination silently drops obligations.
+  `--split-procs` in `run_pipeline.py` is the current workaround.
 
 ## Pipeline status
 
-End-to-end results for the 12-program SMACK benchmark
-(`Examples/smack-docker/programs/*.c`) are summarized in
+End-to-end results for the 25-program SMACK benchmark (12 original +
+13 simplified AWS C Common functions, in
+`Examples/smack-docker/programs/*.c`) are summarized in
 `Examples/smack-docker/README.md`.
