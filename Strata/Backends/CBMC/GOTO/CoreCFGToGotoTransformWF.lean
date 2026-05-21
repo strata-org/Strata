@@ -2744,6 +2744,82 @@ theorem patchesFoldlM_preserves_locationNum_no_contracts
       rw [h_step] at h_run
       simp [Bind.bind, Except.bind] at h_run
 
+/-! ## Structural soundness of the translator output
+
+`coreCFGToGotoTransform_size_eq_and_loc` is the structural half of the
+top-level theorem: under the right hypotheses, the translator's output
+satisfies `instructions.size = nextLoc` and every instruction's
+`locationNum` equals its array index. This is the foundation for the
+remaining layout fields of the eventual `CoreCFGToGotoTransformShadow`. -/
+
+/-- After the translator runs (under no-loop-contracts and admitted-cmds
+hypotheses), the output `ans : GotoTransform` satisfies:
+* `ans.instructions.size = ans.nextLoc`,
+* every instruction's `locationNum` equals its array index. -/
+theorem coreCFGToGotoTransform_size_eq_and_loc
+    (Env : Core.Expression.TyEnv) (functionName : String)
+    (cfg : Core.DetCFG)
+    (trans₀ : Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_init_size : trans₀.instructions.size = trans₀.nextLoc)
+    (h_init_loc :
+      ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+        trans₀.instructions[i]? = some instr → instr.locationNum = i)
+    (h_admitted_blocks :
+      ∀ (l : String) blk, (l, blk) ∈ cfg.blocks →
+      ∀ c ∈ blk.cmds, Core.CmdExt.isAdmittedCmd c = true)
+    (ans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_run : Strata.coreCFGToGotoTransform Env functionName cfg trans₀
+              = Except.ok ans)
+    (st_final : Strata.CoreCFGTransLoopState)
+    (h_blocks_run :
+      cfg.blocks.foldlM (Strata.coreCFGToGotoBlockStep functionName)
+        ({ trans := trans₀, pendingPatches := #[], labelMap := {},
+           loopContracts := {} } : Strata.CoreCFGTransLoopState)
+      = Except.ok st_final)
+    (h_loopContracts_empty : st_final.loopContracts = ∅)
+    (resolved : List (Nat × Nat))
+    (trans_post : Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_patches_run :
+      st_final.pendingPatches.foldlM
+        (Strata.coreCFGToGotoPatchStep st_final.labelMap st_final.loopContracts)
+        ([], st_final.trans)
+      = Except.ok (resolved, trans_post))
+    (h_ans_eq : ans = Imperative.patchGotoTargets trans_post resolved) :
+    ans.instructions.size = ans.nextLoc ∧
+    ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+      ans.instructions[i]? = some instr → instr.locationNum = i := by
+  -- Step 1: the blocks-fold preserves size_eq + locationNum_eq_index.
+  have h_size_st : st_final.trans.instructions.size = st_final.trans.nextLoc :=
+    blocksFoldlM_preserves_size_eq functionName cfg.blocks _ st_final
+      (fun lblBlk h_lb => h_admitted_blocks lblBlk.1 lblBlk.2 h_lb) h_blocks_run h_init_size
+  have h_loc_st :
+      ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+        st_final.trans.instructions[i]? = some instr → instr.locationNum = i :=
+    blocksFoldlM_preserves_locationNum_eq_index functionName cfg.blocks _ st_final
+      (fun lblBlk h_lb => h_admitted_blocks lblBlk.1 lblBlk.2 h_lb) h_blocks_run h_init_size h_init_loc
+  -- Step 2: the patches-fold preserves them under the empty-loopContracts hypothesis.
+  rw [h_loopContracts_empty] at h_patches_run
+  have h_size_post : trans_post.instructions.size = trans_post.nextLoc :=
+    patchesFoldlM_preserves_size_eq_no_contracts st_final.labelMap _
+      ([], st_final.trans) (resolved, trans_post) h_patches_run h_size_st
+  have h_loc_post :
+      ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+        trans_post.instructions[i]? = some instr → instr.locationNum = i :=
+    patchesFoldlM_preserves_locationNum_no_contracts st_final.labelMap _
+      ([], st_final.trans) (resolved, trans_post) h_patches_run h_loc_st
+  -- Step 3: patchGotoTargets preserves them.
+  have h_size_ans : ans.instructions.size = ans.nextLoc := by
+    rw [h_ans_eq]
+    rw [patchGotoTargets_preserves_size, patchGotoTargets_preserves_nextLoc]
+    exact h_size_post
+  have h_loc_ans :
+      ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+        ans.instructions[i]? = some instr → instr.locationNum = i := by
+    intro i instr h
+    rw [h_ans_eq] at h
+    exact patchGotoTargets_preserves_locationNum_eq_index trans_post resolved h_loc_post i instr h
+  exact ⟨h_size_ans, h_loc_ans⟩
+
 /-! ## Top-level theorem (statement + interface)
 
 The top-level `coreCFGToGotoTransform_wellFormed` theorem proves that
