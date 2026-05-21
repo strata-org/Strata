@@ -2371,6 +2371,70 @@ theorem cmdsFoldlM_preserves_locationNum_eq_index
       rw [h_step] at h_run
       simp [Bind.bind, Except.bind] at h_run
 
+/-! ### Per-block step preservation
+
+The per-block step's body is a sequence of three pieces: `emitLabel`,
+`block.cmds.foldlM coreCFGToGotoCmdStep`, and the transfer-emit branch
+(condGoto or finish). The lemmas below establish that this composition
+preserves `size_eq` and `locationNum_eq_index`. -/
+
+/-- The per-block step preserves `size_eq` (admitted cmds only). -/
+theorem coreCFGToGotoBlockStep_preserves_size_eq
+    (fname : String) (lblBlk : String × Imperative.DetBlock String Core.Command Core.Expression)
+    (st st' : Strata.CoreCFGTransLoopState)
+    (h_admitted : ∀ c ∈ lblBlk.2.cmds, Core.CmdExt.isAdmittedCmd c = true)
+    (h_run : Strata.coreCFGToGotoBlockStep fname st lblBlk = Except.ok st')
+    (h_size : st.trans.instructions.size = st.trans.nextLoc) :
+    st'.trans.instructions.size = st'.trans.nextLoc := by
+  obtain ⟨label, blk⟩ := lblBlk
+  -- Step 1: emitLabel produces a state with size_eq.
+  have h_size₁ :
+      (Imperative.emitLabel label
+        { CProverGOTO.SourceLocation.nil with function := fname }
+        st.trans).instructions.size =
+      (Imperative.emitLabel label
+        { CProverGOTO.SourceLocation.nil with function := fname }
+        st.trans).nextLoc :=
+    emitLabel_preserves_size_eq label
+      { CProverGOTO.SourceLocation.nil with function := fname } st.trans h_size
+  -- Unfold the step function and the inner do-block.
+  unfold Strata.coreCFGToGotoBlockStep at h_run
+  simp only [Bind.bind, Except.bind, pure, Except.pure] at h_run
+  -- Now `h_run` has shape `match (foldlM ...) with .ok x => match transfer with ... | .error => Except.error _`.
+  -- Case on the inner-fold result.
+  generalize h_inner :
+    blk.cmds.foldlM (Strata.coreCFGToGotoCmdStep fname)
+      (Imperative.emitLabel label
+        { CProverGOTO.SourceLocation.nil with function := fname } st.trans) = inner at h_run
+  match inner, h_inner with
+  | .ok trans₂, h_inner =>
+    have h_size₂ : trans₂.instructions.size = trans₂.nextLoc :=
+      cmdsFoldlM_preserves_size_eq fname blk.cmds _ trans₂
+        h_admitted h_inner h_size₁
+    -- h_run now is `(match transfer ...) = Except.ok st'`. Case on transfer.
+    cases h_t : blk.transfer with
+    | condGoto cond lt lf md =>
+      rw [h_t] at h_run
+      simp only at h_run
+      generalize h_cond_eval :
+          Lambda.LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩) [] cond = cond_eval at h_run
+      match cond_eval, h_cond_eval with
+      | .ok cond_expr, h_cond_eval =>
+        simp only at h_run
+        injection h_run with h_run
+        rw [← h_run]
+        simp [Imperative.emitCondGoto, Imperative.emitUncondGoto, Imperative.emitGoto, Array.size_push, h_size₂]
+      | .error e, h_cond_eval =>
+        simp at h_run
+    | finish md =>
+      rw [h_t] at h_run
+      simp only at h_run
+      injection h_run with h_run
+      rw [← h_run]
+      simp [Array.size_push, h_size₂]
+  | .error e, h_inner =>
+    simp at h_run
+
 /-! ## Top-level theorem (statement + interface)
 
 The top-level `coreCFGToGotoTransform_wellFormed` theorem proves that
