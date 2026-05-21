@@ -179,7 +179,7 @@ class Swarm:
                 f"Polling wastes budget and is strictly forbidden.\n\n"
                 f"IMPORTANT — STALL PREVENTION:\n"
                 f"If you are processing something that takes time, emit a brief status update "
-                f"every few minutes (e.g. 'Still working on X...'). If 10 minutes pass with no "
+                f"every few minutes (e.g. 'Still working on X...'). If 30 minutes pass with no "
                 f"output from you, the framework will interrupt and ask for your status.\n"
                 f"================="
             )

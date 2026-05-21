@@ -83,6 +83,9 @@ class ClaudeBackend(AgentBackend):
         # Resume from previous session if available
         if resume and self._session_id:
             opts_kwargs["resume"] = self._session_id
+        elif config.resume_session_id:
+            opts_kwargs["resume"] = config.resume_session_id
+            self._session_id = config.resume_session_id
 
         options = ClaudeAgentOptions(**opts_kwargs)
         self._client = ClaudeSDKClient(options=options)

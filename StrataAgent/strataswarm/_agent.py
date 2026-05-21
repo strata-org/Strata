@@ -20,7 +20,7 @@ logger = logging.getLogger("strataswarm.agent")
 
 EventCallback = Callable[[AgentEvent], Awaitable[None]]
 
-STALL_TIMEOUT = 600  # 10 minutes with no message = stalled
+STALL_TIMEOUT = 1800  # 30 minutes with no message = stalled
 
 
 class SwarmAgent(Generic[T]):
@@ -171,6 +171,7 @@ class SwarmAgent(Generic[T]):
             output_format=output_format,
             extra={"mcp_servers": mcp_servers} if mcp_servers else None,
             cwd=self._cwd,
+            resume_session_id=self.spec.resume_session_id,
         )
 
     # ─── Message processing (one response stream) ────────────────────────
@@ -266,6 +267,8 @@ class SwarmAgent(Generic[T]):
                 result.session_id = message.session_id
                 result.duration_ms = message.duration_ms
                 await self._emit("cost_update", message.cost_usd)
+                if message.session_id:
+                    await self._emit("session_id", message.session_id)
 
                 if self.spec.result_parser:
                     result.output = self.spec.result_parser.parse(

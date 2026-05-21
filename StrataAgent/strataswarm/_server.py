@@ -82,6 +82,7 @@ class SwarmDashboard:
         self._swarm_task: asyncio.Task | None = None
         self._agent_specs: list[AgentCreateRequest] = []
         self._swarm_name: str = ""
+        self._agent_sessions: dict[str, str] = {}
         self._setup_routes()
         self._setup_middleware()
 
@@ -369,6 +370,16 @@ class SwarmDashboard:
             chat_data = yaml.safe_load(path.read_text())
             await ws.send_json({"type": "chat_loaded", "chat": chat_data})
 
+        elif action == "resume_chat":
+            name = data.get("name", "").strip()
+            path = CHAT_SAVE_DIR / f"{name}.yaml"
+            if not path.exists():
+                await ws.send_json({"type": "error", "message": f"Chat '{name}' not found"})
+                return
+            chat_data = yaml.safe_load(path.read_text())
+            await self._resume_from_chat(chat_data)
+            await ws.send_json({"type": "swarm_resumed", "name": name})
+
         elif action == "delete_chat":
             name = data.get("name", "").strip()
             path = CHAT_SAVE_DIR / f"{name}.yaml"
@@ -379,6 +390,70 @@ class SwarmDashboard:
                 reverse=True,
             )
             await ws.send_json({"type": "chat_list", "chats": chats})
+
+    async def _resume_from_chat(self, chat_data: dict[str, Any]) -> None:
+        """Resume a swarm from a saved chat using session IDs."""
+        from ._swarm import Swarm, ExecutionMode
+
+        sessions = chat_data.get("sessions", {})
+        agents_data = chat_data.get("agents", [])
+        swarm_name = chat_data.get("swarm_name", "resumed")
+
+        # Load agent specs from the saved chat
+        self._agent_specs = [AgentCreateRequest(**a) for a in agents_data]
+        self._swarm_name = swarm_name
+        self._event_history = {}
+        self._all_messages = []
+
+        project_root = str(Path(__file__).parent.parent.parent)
+        self._swarm = Swarm(
+            backend_factory=self._backend_factory,
+            enable_messaging=True,
+            wait_after_completion=True,
+            name=swarm_name,
+            cwd=project_root,
+        )
+
+        for spec_req in self._agent_specs:
+            tools = ToolSet()
+            for t in spec_req.allowed_tools:
+                tools.allow(t)
+            for t in spec_req.disallowed_tools:
+                tools.disallow(t)
+
+            # Get session ID for this agent from saved chat
+            session_id = sessions.get(spec_req.name)
+
+            agent_spec = AgentSpec(
+                name=spec_req.name,
+                system_prompt=spec_req.system_prompt,
+                prompt=spec_req.prompt,
+                tools=tools,
+                max_turns=spec_req.max_turns,
+                max_budget_usd=spec_req.max_budget_usd,
+                timeout_seconds=spec_req.timeout_seconds,
+                is_super_agent=spec_req.is_super_agent,
+                resume_session_id=session_id,
+            )
+            self._swarm.add(agent_spec)
+
+        self._swarm.set_event_callback(self.on_agent_event)
+        await self._broadcast({"type": "swarm_started", "agents": self._get_specs_list()})
+
+        async def run_swarm():
+            results = await self._swarm.run(mode=ExecutionMode.AWAIT_ALL)
+            summary = {}
+            for name, r in results.items():
+                summary[name] = {
+                    "status": r.status.value,
+                    "halted_by": r.halted_by,
+                    "cost_usd": r.cost_usd,
+                    "num_turns": r.num_turns,
+                }
+            await self._broadcast({"type": "swarm_completed", "results": summary})
+
+        self._swarm_task = asyncio.create_task(run_swarm())
+        logger.info(f"Swarm resumed from chat with sessions: {sessions}")
 
     async def _create_and_run_swarm(self) -> None:
         from ._swarm import Swarm, ExecutionMode
@@ -513,12 +588,14 @@ class SwarmDashboard:
 
         if event.event_type == "message":
             self._all_messages.append(entry)
+        elif event.event_type == "session_id" and event.data:
+            self._agent_sessions[event.agent_name] = str(event.data)
 
         payload = {"type": "agent_event", **entry}
         await self._broadcast(payload)
 
     def _save_chat(self, label: str = "") -> str | None:
-        """Save current chat history to a YAML file. Returns filename."""
+        """Save current chat history to a YAML file with session IDs for resume."""
         if not self._event_history and not self._all_messages:
             return None
         CHAT_SAVE_DIR.mkdir(parents=True, exist_ok=True)
@@ -533,9 +610,20 @@ class SwarmDashboard:
         filename = f"{timestamp}{swarm_name}.yaml"
         path = CHAT_SAVE_DIR / filename
 
+        # Collect session IDs from results + live tracking
+        sessions: dict[str, str | None] = {}
+        if self._swarm:
+            for name, r in self._swarm.results.items():
+                if r.session_id:
+                    sessions[name] = r.session_id
+        # Merge with any tracked from events
+        sessions.update(self._agent_sessions)
+
         chat_data = {
             "timestamp": timestamp,
+            "swarm_name": self._swarm_name,
             "agents": [s.model_dump() for s in self._agent_specs],
+            "sessions": sessions,
             "messages": {},
             "all_messages": self._all_messages[-500:],
         }

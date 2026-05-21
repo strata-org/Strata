@@ -272,6 +272,9 @@ function connect() {
     } else if (data.type === 'saved_list') {
       savedList = data.saved_list || [];
       renderLoadModal();
+    } else if (data.type === 'swarm_resumed') {
+      isRunning = true;
+      render();
     } else if (data.type === 'chat_saved') {
       alert(`Chat saved: ${data.filename}`);
     } else if (data.type === 'chat_list') {
@@ -414,7 +417,10 @@ function renderMessages() {
           ${chatList.map(name => `
             <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:#1e2a3a;border-radius:5px;margin-bottom:6px;font-size:12px;">
               <span style="cursor:pointer;color:#4fc3f7;" onclick="loadChatHistory('${escapeAttr(name)}')">${escapeHtml(name)}</span>
-              <button onclick="deleteChat('${escapeAttr(name)}')" style="padding:3px 8px;border:none;border-radius:3px;background:#b71c1c;color:#ef9a9a;font-size:10px;cursor:pointer;">Delete</button>
+              <div>
+                <button onclick="resumeChat('${escapeAttr(name)}')" style="padding:3px 8px;border:none;border-radius:3px;background:#1b5e20;color:#a5d6a7;font-size:10px;cursor:pointer;margin-right:4px;">Resume</button>
+                <button onclick="deleteChat('${escapeAttr(name)}')" style="padding:3px 8px;border:none;border-radius:3px;background:#b71c1c;color:#ef9a9a;font-size:10px;cursor:pointer;">Delete</button>
+              </div>
             </div>
           `).join('')}
         </div>`;
@@ -511,6 +517,7 @@ function switchView(v) {
 function createNew() { if (isRunning) { alert('Cancel the running swarm first.'); return; } wsSend({ action: 'create_new' }); }
 function saveChat() { const label = prompt('Chat label (optional):') || ''; wsSend({ action: 'save_chat', label }); }
 function loadChatHistory(name) { wsSend({ action: 'load_chat', name }); }
+function resumeChat(name) { if (confirm(`Resume swarm from chat '${name}'? This will start all agents from their saved sessions.`)) { wsSend({ action: 'resume_chat', name }); switchView('chitchat'); } }
 function deleteChat(name) { if (confirm(`Delete chat '${name}'?`)) wsSend({ action: 'delete_chat', name }); }
 function unloadSwarm() { if (isRunning) { alert('Cancel the running swarm first.'); return; } specs = []; agents = {}; agentMessages = {}; allMessages = []; selectedAgent = null; wsSend({ action: 'create_new' }); }
 function startSwarm() { if (isRunning) { alert('Swarm already running.'); return; } wsSend({ action: 'start' }); }

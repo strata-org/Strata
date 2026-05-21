@@ -40,6 +40,7 @@ class AgentSpec(Generic[T]):
     mcp_servers: dict[str, Any] = field(default_factory=dict)
     inbox_channel: str | None = None
     is_super_agent: bool = False
+    resume_session_id: str | None = None
 
 
 @dataclass

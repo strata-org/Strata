@@ -31,6 +31,7 @@ class BackendConfig:
     output_format: dict[str, Any] | None = None
     extra: dict[str, Any] | None = None
     cwd: str | None = None
+    resume_session_id: str | None = None
 
 
 class AgentBackend(ABC):
