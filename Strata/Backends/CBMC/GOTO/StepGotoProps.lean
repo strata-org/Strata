@@ -164,4 +164,140 @@ theorem StepGotoRange_single
       (.running pc σ failed) c' :=
   .step pc h_lt σ failed h_step .refl
 
+/-! ## Per-instruction progress
+
+Progress lemmas state that, given a well-formed instruction at `pc`,
+the configuration can take a `StepGoto`. Each lemma takes the
+minimal hypotheses needed to construct the matching constructor.
+
+For state-changing instructions (`DECL`, `DEAD`, `ASSIGN`,
+`ASSIGN`-nondet) the caller must additionally supply the existential
+witness — name, value, and an `InitState` / `UpdateState` /
+`RemoveState` derivation — because the abstract state-update
+relations are not pinned down by the instruction alone in this
+branch's `StepGoto`. -/
+
+theorem progress_location
+    {P : PureExpr} [HasBool P] [HasNot P]
+    {δ_goto : SemanticEvalGoto P} {δ_goto_bool : SemanticEvalGotoBool P}
+    {pgm : Program} {pc : Nat} {σ : SemanticStore P} {failed : Bool}
+    {instr : Instruction}
+    (h_at : pgm.instrAt pc = some instr) (h_ty : instr.type = .LOCATION) :
+    ∃ c', StepGoto P δ_goto δ_goto_bool pgm
+            (.running pc σ failed) c' :=
+  ⟨_, .step_location h_at h_ty⟩
+
+theorem progress_skip
+    {P : PureExpr} [HasBool P] [HasNot P]
+    {δ_goto : SemanticEvalGoto P} {δ_goto_bool : SemanticEvalGotoBool P}
+    {pgm : Program} {pc : Nat} {σ : SemanticStore P} {failed : Bool}
+    {instr : Instruction}
+    (h_at : pgm.instrAt pc = some instr) (h_ty : instr.type = .SKIP) :
+    ∃ c', StepGoto P δ_goto δ_goto_bool pgm
+            (.running pc σ failed) c' :=
+  ⟨_, .step_skip h_at h_ty⟩
+
+theorem progress_decl
+    {P : PureExpr} [HasBool P] [HasNot P]
+    {δ_goto : SemanticEvalGoto P} {δ_goto_bool : SemanticEvalGotoBool P}
+    {pgm : Program} {pc : Nat} {σ : SemanticStore P} {failed : Bool}
+    {instr : Instruction}
+    (h_at : pgm.instrAt pc = some instr) (h_ty : instr.type = .DECL)
+    (x : P.Ident) (v : P.Expr) (σ' : SemanticStore P)
+    (h_init : InitState P σ x v σ') :
+    ∃ c', StepGoto P δ_goto δ_goto_bool pgm
+            (.running pc σ failed) c' :=
+  ⟨_, .step_decl h_at h_ty h_init⟩
+
+theorem progress_dead
+    {P : PureExpr} [HasBool P] [HasNot P]
+    {δ_goto : SemanticEvalGoto P} {δ_goto_bool : SemanticEvalGotoBool P}
+    {pgm : Program} {pc : Nat} {σ : SemanticStore P} {failed : Bool}
+    {instr : Instruction}
+    (h_at : pgm.instrAt pc = some instr) (h_ty : instr.type = .DEAD)
+    (x : P.Ident) (σ' : SemanticStore P)
+    (h_remove : RemoveState P σ x σ') :
+    ∃ c', StepGoto P δ_goto δ_goto_bool pgm
+            (.running pc σ failed) c' :=
+  ⟨_, .step_dead h_at h_ty h_remove⟩
+
+theorem progress_assign
+    {P : PureExpr} [HasBool P] [HasNot P]
+    {δ_goto : SemanticEvalGoto P} {δ_goto_bool : SemanticEvalGotoBool P}
+    {pgm : Program} {pc : Nat} {σ : SemanticStore P} {failed : Bool}
+    {instr : Instruction}
+    (h_at : pgm.instrAt pc = some instr) (h_ty : instr.type = .ASSIGN)
+    (x : P.Ident) (rhs : Expr) (v : P.Expr) (σ' : SemanticStore P)
+    (h_eval : δ_goto σ rhs = some v)
+    (h_upd : UpdateState P σ x v σ') :
+    ∃ c', StepGoto P δ_goto δ_goto_bool pgm
+            (.running pc σ failed) c' :=
+  ⟨_, .step_assign h_at h_ty h_eval h_upd⟩
+
+theorem progress_assign_nondet
+    {P : PureExpr} [HasBool P] [HasNot P]
+    {δ_goto : SemanticEvalGoto P} {δ_goto_bool : SemanticEvalGotoBool P}
+    {pgm : Program} {pc : Nat} {σ : SemanticStore P} {failed : Bool}
+    {instr : Instruction}
+    (h_at : pgm.instrAt pc = some instr) (h_ty : instr.type = .ASSIGN)
+    (x : P.Ident) (v : P.Expr) (σ' : SemanticStore P)
+    (h_upd : UpdateState P σ x v σ') :
+    ∃ c', StepGoto P δ_goto δ_goto_bool pgm
+            (.running pc σ failed) c' :=
+  ⟨_, .step_assign_nondet h_at h_ty h_upd⟩
+
+theorem progress_assert
+    {P : PureExpr} [HasBool P] [HasNot P]
+    {δ_goto : SemanticEvalGoto P} {δ_goto_bool : SemanticEvalGotoBool P}
+    {pgm : Program} {pc : Nat} {σ : SemanticStore P} {failed : Bool}
+    {instr : Instruction}
+    (h_at : pgm.instrAt pc = some instr) (h_ty : instr.type = .ASSERT)
+    (b : Bool) (h_g : δ_goto_bool σ instr.guard = some b) :
+    ∃ c', StepGoto P δ_goto δ_goto_bool pgm
+            (.running pc σ failed) c' := by
+  cases b with
+  | true => exact ⟨_, .step_assert_pass h_at h_ty h_g⟩
+  | false => exact ⟨_, .step_assert_fail h_at h_ty h_g⟩
+
+/-- ASSUME progress is partial: a `false` guard has *no* `StepGoto`
+derivation (mirrors tautschnig's "ASSUME blocks the path" reading).
+The caller learns whether the guard holds and dispatches accordingly. -/
+theorem progress_assume_pass
+    {P : PureExpr} [HasBool P] [HasNot P]
+    {δ_goto : SemanticEvalGoto P} {δ_goto_bool : SemanticEvalGotoBool P}
+    {pgm : Program} {pc : Nat} {σ : SemanticStore P} {failed : Bool}
+    {instr : Instruction}
+    (h_at : pgm.instrAt pc = some instr) (h_ty : instr.type = .ASSUME)
+    (h_g : δ_goto_bool σ instr.guard = some true) :
+    ∃ c', StepGoto P δ_goto δ_goto_bool pgm
+            (.running pc σ failed) c' :=
+  ⟨_, .step_assume_pass h_at h_ty h_g⟩
+
+theorem progress_goto
+    {P : PureExpr} [HasBool P] [HasNot P]
+    {δ_goto : SemanticEvalGoto P} {δ_goto_bool : SemanticEvalGotoBool P}
+    {pgm : Program} {pc : Nat} {σ : SemanticStore P} {failed : Bool}
+    {instr : Instruction}
+    (h_at : pgm.instrAt pc = some instr) (h_ty : instr.type = .GOTO)
+    (b : Bool) (h_g : δ_goto_bool σ instr.guard = some b)
+    (h_target : b = true →
+      ∃ tgt, instr.target = some tgt) :
+    ∃ c', StepGoto P δ_goto δ_goto_bool pgm
+            (.running pc σ failed) c' := by
+  cases b with
+  | false => exact ⟨_, .step_goto_fallthrough h_at h_ty h_g⟩
+  | true =>
+    obtain ⟨tgt, h_tgt⟩ := h_target rfl
+    exact ⟨_, .step_goto_taken h_at h_ty h_tgt h_g⟩
+
+theorem progress_end_function
+    {P : PureExpr} [HasBool P] [HasNot P]
+    {δ_goto : SemanticEvalGoto P} {δ_goto_bool : SemanticEvalGotoBool P}
+    {pgm : Program} {pc : Nat} {σ : SemanticStore P} {failed : Bool}
+    {instr : Instruction}
+    (h_at : pgm.instrAt pc = some instr) (h_ty : instr.type = .END_FUNCTION) :
+    ∃ c', StepGoto P δ_goto δ_goto_bool pgm
+            (.running pc σ failed) c' :=
+  ⟨_, .step_end_function h_at h_ty⟩
+
 end CProverGOTO
