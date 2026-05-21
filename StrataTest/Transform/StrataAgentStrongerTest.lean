@@ -39,7 +39,7 @@ replace later with the full inductive proof.
 -/
 
 -- For the general statement case, we state this as an axiom.
--- The full proof requires ~80 lines of induction on StepStmt (see LoopElimCorrect.lean).
+-- The full proof requires ~80 lines of induction on StepStmt.
 -- The key ideas:
 -- 1. Only `eval_init` can grow the store, but definedVars=[] excludes it
 -- 2. `step_block_done` applies projectStore which only shrinks

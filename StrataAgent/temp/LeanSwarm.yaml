@@ -27,12 +27,15 @@ agents:
   allowed_tools:
   - Read
   - Bash
+  - Grep
+  - Glob
   disallowed_tools:
   - Edit
   - Write
-  max_turns: 1000
-  max_budget_usd: 20.0
-  timeout_seconds: 1000000.0
+  - Bash(git*)
+  max_turns: 100000
+  max_budget_usd: 200.0
+  timeout_seconds: 300000.0
 
 - name: ProofValidator
   system_prompt: >
@@ -90,9 +93,9 @@ agents:
   disallowed_tools:
   - Edit
   - mcp__lean_lsp__lean_local_search
-  max_turns: 1000
-  max_budget_usd: 20.0
-  timeout_seconds: 1000000.0
+  max_turns: 100000
+  max_budget_usd: 200.0
+  timeout_seconds: 300000.0
   mcp_servers:
     lean_lsp:
       command: uvx
@@ -207,9 +210,9 @@ agents:
   - Glob
   - Bash
   is_super_agent: true
-  max_turns: 10000
-  max_budget_usd: 20.0
-  timeout_seconds: 6000000
+  max_turns: 100000
+  max_budget_usd: 200.0
+  timeout_seconds: 300000.0
 
 - name: CounterExampleAgent
   system_prompt: >
@@ -252,9 +255,9 @@ agents:
   - Read
   - Grep
   - Glob
-  max_turns: 10000
-  max_budget_usd: 20.0
-  timeout_seconds: 120000.0
+  max_turns: 100000
+  max_budget_usd: 200.0
+  timeout_seconds: 300000.0
 
 - name: Editor
   system_prompt: >
@@ -292,9 +295,9 @@ agents:
   - Write(/StrataTest/Transform/**)
   - Bash(cp *)
   disallowed_tools: []
-  max_turns: 1000
-  max_budget_usd: 20.0
-  timeout_seconds: 1000000.0
+  max_turns: 100000
+  max_budget_usd: 200.0
+  timeout_seconds: 300000.0
 
 - name: TaskManager
   system_prompt: >
@@ -360,6 +363,6 @@ agents:
   - Bash
   - Read
   - Write
-  max_turns: 1000
-  max_budget_usd: 20.0
-  timeout_seconds: 1022000.0
+  max_turns: 100000
+  max_budget_usd: 200.0
+  timeout_seconds: 300000.0
