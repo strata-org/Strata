@@ -143,6 +143,14 @@ Pipeline / benchmark:
   Commits `38c13c272`, `4f309c63b`, `451b06560`.
 - 13 new simplified AWS C Common programs in `programs/`, expanding
   the suite from 12 to 25. Commit `ee57bb2b7`.
+- 6 verbatim CBMC harnesses imported from `awslabs/aws-c-common`'s
+  `verification/cbmc/proofs/` tree, expanding the suite to 31. The
+  fetcher (a throwaway `wt-test/fetch_cbmc_harness.py`) prefilters
+  for self-contained harnesses, inlines the function-under-test body
+  from upstream's `math.inl` / `math.fallback.inl`, and emits one
+  self-contained `.c` per program with an adapter prelude that shims
+  CBMC primitives onto SMACK's `__VERIFIER_*` family. Commit
+  `283bdac16`.
 
 BoogieToStrata (cherry-picked from PR 1149 plus follow-up):
 
@@ -193,7 +201,9 @@ and `Tools/BoogieToStrata/IntegrationTests/BoogieToStrataIntegrationTests.cs`.
   size: integer, expected array 0: integer`. The shim's nondet
   initializer for the memory-map params produces an array shape cbmc
   considers incompatible with main's declared parameter type. 16 of
-  25 programs hit this. Likely fix on the array-type emission for
+  31 programs hit this (the 6 verbatim CBMC harnesses use only
+  primitive scalar params, so they avoid this blocker). Likely fix
+  on the array-type emission for
   `Map ref i8` (`Strata/Backends/CBMC/GOTO/LambdaToCProverGOTO.lean`'s
   `LMonoTy.toGotoType`).
 - **CBMC: real-loop unwinding bound.** `loop_sum` has a real C `for`
@@ -206,13 +216,13 @@ and `Tools/BoogieToStrata/IntegrationTests/BoogieToStrataIntegrationTests.cs`.
   branch — see *What this branch ships → CFG block emission in
   reverse-postorder*.
 - **Deductive PARTIAL breakdown (sample-based).** The 20 deductive
-  PARTIALs across the 25-program suite split into two sub-classes by
+  PARTIALs across the 31-program suite split into two sub-classes by
   failing-VC verdict and origin:
   - **(a) Missing `ensures` on a user-defined helper** — solver
     refutes with `🔶 can be both true and false`, label
     `callElimAssert_assert__i32_requires_0_NN`. Every assertion of
     the form `assert(callee(...) == expected)` where the user fn has
-    no spec block. ~17 of 25 programs, varies in VC count per program.
+    no spec block. ~17 of 31 programs, varies in VC count per program.
     `abs_func` and `max_func` were previously masked as a separate
     `__VERIFIER_assume` blocker; once that was fixed (commit
     `1b2231f99`) their residual VCs landed here. Fix lever: synthesize
@@ -247,6 +257,48 @@ and `Tools/BoogieToStrata/IntegrationTests/BoogieToStrataIntegrationTests.cs`.
 
 See [`Tools/BoogieToStrata/Docs/STATUS.md`](../../Tools/BoogieToStrata/Docs/STATUS.md)
 for translator-level status.
+
+## Potential future work
+
+Benchmark expansion — additional CBMC harness sources surveyed but
+not yet imported:
+
+- **`FreeRTOS/coreJSON`** (MIT, 15 harnesses under `test/cbmc/proofs/`).
+  Cleanest external source identified. Each harness is a 4–10 line
+  caller of one JSON parser function; contracts live in
+  `core_json_contracts.h` as CBMC function annotations rather than
+  proof_helpers infrastructure. Almost all 15 should translate.
+- **`aws/s2n-tls`** (Apache-2.0, 161 harnesses under
+  `tests/cbmc/proofs/`). Richest source by far, but most depend on
+  s2n's `cbmc_proof/make_common_datastructures.h`. The
+  arithmetic/predicate slice (`s2n_add_overflow`, `s2n_sub_overflow`,
+  `s2n_mul_overflow`, `s2n_is_base64_char`,
+  `s2n_constant_time_equals`) is verbatim-importable; ~5–10 programs.
+- **`FreeRTOS/coreMQTT`** (MIT, 58 harnesses under
+  `test/cbmc/proofs/`). The property-getter family
+  (`MQTTPropGet_*`) verifies memory safety only (no functional
+  postconditions), so values as a benchmark are limited.
+
+Other surveyed repos with negative results: the broader `awslabs/aws-c-*`
+family (cal/io/compression/checksums/etc.) has no CBMC proofs upstream;
+`diffblue/cbmc/regression` is for compiler/solver regressions, not
+function-under-test harnesses; `aws/aws-encryption-sdk-c`'s ~100
+harnesses depend on OpenSSL EVP types and a two-level proof_helpers
+hierarchy that would require nontrivial stub work.
+
+To extend the existing fetcher (`wt-test/fetch_cbmc_harness.py`) for
+these: parameterize `REPO`/`REF`/`PROOFS_DIR`/`BODY_SOURCES`, run once
+per source repo, and curate the union into `programs/`.
+
+Other levers (orthogonal to benchmark expansion):
+
+- Address the deductive sub-class (a) blocker (synthesize `ensures`
+  from procedure bodies in a Strata-side pass). Would flip ~17 of 31
+  rows from PARTIAL → PASS deductive. See *Known blockers*.
+- Address the cbmc callee-bodies blocker (iterate over all reachable
+  procedures in `coreToGotoFilesDispatch`, not just `main`). Would
+  unblock the cbmc column for the ~9 programs that currently hit
+  `[.no-body.<callee>]`. See *Known blockers*.
 
 ## Scripts in this directory
 
