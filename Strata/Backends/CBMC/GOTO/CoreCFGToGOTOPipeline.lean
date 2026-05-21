@@ -148,8 +148,21 @@ def coreCFGToGotoTransform
       let (trans', trueIdx) := Imperative.emitUncondGoto transferSrcLoc trans
       trans := trans'
       pendingPatches := pendingPatches.push (trueIdx, lt)
-    | .finish _md =>
-      pure ()
+    | .finish md =>
+      -- Emit one END_FUNCTION per `.finish` block. Without this, a CFG
+      -- with multiple `.finish` blocks would have intermediate finishes
+      -- silently fall through into the next block's LOCATION; the wrapper's
+      -- single trailing END_FUNCTION only correctly terminates the last
+      -- such block. See `docs/CoreToGOTO_CorrectnessAnalysis.md` §6 (Gap E)
+      -- and the WellFormedTranslation.layout_finish field.
+      let transferSrcLoc := Imperative.metadataToSourceLoc md functionName trans.sourceText
+      let endInst : CProverGOTO.Instruction :=
+        { type := .END_FUNCTION,
+          locationNum := trans.nextLoc,
+          sourceLoc := transferSrcLoc }
+      trans := { trans with
+        instructions := trans.instructions.push endInst,
+        nextLoc := trans.nextLoc + 1 }
   -- Second pass: resolve labels and annotate backward-edge GOTOs with loop contracts
   let mut resolvedPatches : List (Nat × Nat) := []
   for (idx, label) in pendingPatches do
@@ -263,14 +276,14 @@ def procedureToGotoCtxViaCFG
     | .cfg c => do
       let cfg := renameCoreDetCFG rn c
       pure (cfg, [])
-  -- Translate CFG to GOTO
+  -- Translate CFG to GOTO. `coreCFGToGotoTransform` now emits one
+  -- END_FUNCTION per `.finish` block inline, so the wrapper no longer
+  -- needs to append a trailing END_FUNCTION here.
   let ans ← coreCFGToGotoTransform Env' pname cfg
     { instructions := axiomInsts, nextLoc := axiomLoc, T := Env', sourceText := sourceText }
-  let ending_insts : Array CProverGOTO.Instruction :=
-    #[{ type := .END_FUNCTION, locationNum := ans.nextLoc + 1 }]
   let pgm := { name := pname,
                parameterIdentifiers := new_formals.toArray,
-               instructions := ans.instructions ++ ending_insts }
+               instructions := ans.instructions }
   -- Translate procedure contracts
   let mut contracts : List (String × Lean.Json) := []
   let preExprs := p.spec.preconditions.values.filter (fun c => c.attr == .Default)
