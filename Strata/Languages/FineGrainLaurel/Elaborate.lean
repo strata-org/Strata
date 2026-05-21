@@ -213,6 +213,7 @@ def eraseType : HighType → LowType
   | .UserDefined id => match id.text with
     | "Any" => .TCore "Any" | "Error" => .TCore "Error"
     | "ListAny" => .TCore "ListAny" | "DictStrAny" => .TCore "DictStrAny"
+    | "OptionInt" => .TCore "OptionInt"
     | "Box" => .TCore "Box" | "Field" => .TCore "Field" | "TypeTag" => .TCore "TypeTag"
     | _ => .TCore "Composite"
   | .THeap => .TCore "Heap"
@@ -619,16 +620,19 @@ partial def synthValueFieldSelect (md : Md) (obj : StmtExprMd) (field : Identifi
   let (ov, objTy) ← synthValue obj
   match (← get).heapVar with
   | some hv =>
-    let owner := match objTy with
-      | .UserDefined id => id.text
-      | _ => ""
-    guard (owner != "")
-    let fieldTy ← lookupFieldType owner field.text
-    recordBoxUse fieldTy
-    let qualifiedName := "$field." ++ owner ++ "." ++ field.text
-    let compositeObj := applySubtype ov (eraseType objTy) (.TCore "Composite")
-    let read := FGLValue.staticCall md "readField" [.var md hv, compositeObj, .staticCall md qualifiedName []]
-    pure (.staticCall md (boxDestructorName fieldTy) [read], fieldTy)
+    match objTy with
+    | .UserDefined id =>
+      let owner := id.text
+      let fieldTy ← lookupFieldType owner field.text
+      recordBoxUse fieldTy
+      let qualifiedName := "$field." ++ owner ++ "." ++ field.text
+      let compositeObj := applySubtype ov (eraseType objTy) (.TCore "Composite")
+      let read := FGLValue.staticCall md "readField" [.var md hv, compositeObj, .staticCall md qualifiedName []]
+      pure (.staticCall md (boxDestructorName fieldTy) [read], fieldTy)
+    | _ =>
+      let hv ← freshVar "havoc"
+      modify fun s => { s with usedHoles := s.usedHoles ++ [(hv, false, .TCore "Any")] }
+      pure (.staticCall md hv [], .TCore "Any")
   | none => failure
 
 /-- ⟦·⟧⇒ᵥ (pure call):
@@ -845,9 +849,14 @@ partial def elaborateCall (md : Md) (callee : Identifier) (args : List StmtExprM
     dbg_trace s!"elaborateCall: leftResidual {repr callGrade} {repr grade} = none for {callee.text}"; failure
   let sig ← lookupFuncSig callee.text
   bindArgs md args sig.params grade fun boundVars => do
-    let declaredOutputs ← lookupProcOutputs callee.text
-    mkGradedCall md callee.text boundVars declaredOutputs callGrade fun rv =>
+    match callGrade with
+    | .pure =>
+      let rv := FGLValue.staticCall md callee.text boundVars
       body rv residual
+    | _ =>
+      let declaredOutputs ← lookupProcOutputs callee.text
+      mkGradedCall md callee.text boundVars declaredOutputs callGrade fun rv =>
+        body rv residual
 
 /-- ⟦·⟧⇐ₚ (bare call, discards return value):
 ```
@@ -873,8 +882,12 @@ D :: Γ ⊢ g(e₁,…,eₙ); k : A   [call]
 -/
 partial def checkProducerStaticCall (md : Md) (callee : Identifier) (args : List StmtExprMd)
     (rest : List StmtExprMd) (retTy : HighType) (grade : Grade) : ElabM FGLProducer := do
-  elaborateCall md callee args grade fun _rv residual => do
-    checkProducers rest retTy residual
+  elaborateCall md callee args grade fun rv residual => do
+    match rest with
+    | [] =>
+      let sig ← lookupFuncSig callee.text
+      pure (.produce md (applySubtype rv (eraseType sig.returnType) (eraseType retTy)))
+    | _ => checkProducers rest retTy residual
 
 /-- ⟦·⟧⇐ₚ (block):
 ```
@@ -989,29 +1002,31 @@ partial def checkAssignFieldWrite (md : Md) (obj : StmtExprMd) (field : Identifi
     (value : StmtExprMd) (rest : List StmtExprMd) (retTy : HighType) (grade : Grade) : ElabM FGLProducer := do
   guard (Grade.leftResidual .heap grade |>.isSome)
   let (_, objHighTy) ← synthValue obj
-  let owner := match objHighTy with | .UserDefined id => id.text | _ => ""
-  guard (owner != "")
-  let fieldTy ← lookupFieldType owner field.text
-  let M_obj ← checkProducer obj [] objHighTy grade
-  let x_obj ← freshVar "obj"
-  let qualifiedName := "$field." ++ owner ++ "." ++ field.text
-  recordBoxUse fieldTy
-  let body_obj ← extendEnv x_obj objHighTy do
-    let M_v ← checkProducer value [] fieldTy grade
-    let x_v ← freshVar "val"
-    let body_v ← extendEnv x_v fieldTy do
-      match (← get).heapVar with
-      | some hv =>
-        let boxed := FGLValue.staticCall md (boxConstructorName fieldTy) [.var md x_v]
-        let newHeap := FGLValue.staticCall md "updateField" [.var md hv, .var md x_obj, .staticCall md qualifiedName [], boxed]
-        let freshH ← freshVar "heap"
-        modify fun s => { s with heapVar := some freshH }
-        let body_h ← extendEnv freshH .THeap do
-          checkProducers rest retTy grade
-        pure (.varDecl md freshH (.TCore "Heap") (.produce md newHeap) body_h)
-      | none => failure
-    pure (.varDecl md x_v (eraseType fieldTy) M_v body_v)
-  pure (.varDecl md x_obj (.TCore "Composite") M_obj body_obj)
+  match objHighTy with
+  | .UserDefined id =>
+    let owner := id.text
+    let fieldTy ← lookupFieldType owner field.text
+    let M_obj ← checkProducer obj [] objHighTy grade
+    let x_obj ← freshVar "obj"
+    let qualifiedName := "$field." ++ owner ++ "." ++ field.text
+    recordBoxUse fieldTy
+    let body_obj ← extendEnv x_obj objHighTy do
+      let M_v ← checkProducer value [] fieldTy grade
+      let x_v ← freshVar "val"
+      let body_v ← extendEnv x_v fieldTy do
+        match (← get).heapVar with
+        | some hv =>
+          let boxed := FGLValue.staticCall md (boxConstructorName fieldTy) [.var md x_v]
+          let newHeap := FGLValue.staticCall md "updateField" [.var md hv, .var md x_obj, .staticCall md qualifiedName [], boxed]
+          let freshH ← freshVar "heap"
+          modify fun s => { s with heapVar := some freshH }
+          let body_h ← extendEnv freshH .THeap do
+            checkProducers rest retTy grade
+          pure (.varDecl md freshH (.TCore "Heap") (.produce md newHeap) body_h)
+        | none => failure
+      pure (.varDecl md x_v (eraseType fieldTy) M_v body_v)
+    pure (.varDecl md x_obj (.TCore "Composite") M_obj body_obj)
+  | _ => checkProducers rest retTy grade
 
 /-- Dispatches on LHS to get assignee, then on RHS form. -/
 partial def checkAssign (target value : StmtExprMd) (rest : List StmtExprMd) (retTy : HighType) (grade : Grade) : ElabM FGLProducer := do
@@ -1160,11 +1175,21 @@ partial def tryGrades (callee : String) (env : ElabEnv) (body : StmtExprMd)
 /-! ## Projection (Destination Passing Style)
 
 Projection reverses elaboration: GFGL derivations → Laurel derivations.
+Uses a writer monad that accumulates declarations (hoisted to procedure top).
 
 ```
 ⟦D⟧ₓ⁻¹ : (⟦Γ⟧ ⊢ M ⇐ ⟦A⟧ & d) → ∃e⃗. (Γ, x : A ⊢ e⃗ : TVoid)
 ```
 -/
+
+structure ProjM (α : Type) where
+  run : α × List StmtExprMd
+
+instance : Monad ProjM where
+  pure a := ⟨(a, [])⟩
+  bind ma f := let (a, d1) := ma.run; let (b, d2) := (f a).run; ⟨(b, d1 ++ d2)⟩
+
+def projDecl (decl : StmtExprMd) : ProjM Unit := ⟨((), [decl])⟩
 
 def projectValue : FGLValue → StmtExprMd
   | .litInt md n => mkLaurel md (.LiteralInt n)
@@ -1190,7 +1215,7 @@ mutual
 ⟦·⟧⁻¹  : (⟦Γ⟧ ⊢ V ⇔ ⟦A⟧)     → ∃e. (Γ ⊢ e : A)
 ```
 Dispatches to per-constructor helpers. -/
-partial def proj (dest : StmtExprMd) : FGLProducer → List StmtExprMd
+partial def proj (dest : StmtExprMd) : FGLProducer → ProjM (List StmtExprMd)
   | .produce md v => projProduce dest md v
   | .varDecl md name ty init body => projVarDecl dest md name ty init body
   | .assign md target val body => projAssign dest md target val body
@@ -1215,8 +1240,8 @@ D :: ⟦Γ⟧ ⊢ produce V ⇐ ⟦A⟧ & d   [produce]
 └─ Γ ⊢ skip : TVoid   [skip]
 ```
 -/
-partial def projProduce (dest : StmtExprMd) (md : Md) (v : FGLValue) : List StmtExprMd :=
-  [mkLaurel md (.Assign [dest] (projectValue v))]
+partial def projProduce (dest : StmtExprMd) (md : Md) (v : FGLValue) : ProjM (List StmtExprMd) :=
+  pure [mkLaurel md (.Assign [dest] (projectValue v))]
 
 /-- projVarDecl:
 ```
@@ -1232,10 +1257,13 @@ D :: ⟦Γ⟧ ⊢ varDecl y T M N ⇐ ⟦A⟧ & d
 ```
 -/
 partial def projVarDecl (dest : StmtExprMd) (md : Md) (name : String) (ty : LowType)
-    (init : FGLProducer) (body : FGLProducer) : List StmtExprMd :=
+    (init : FGLProducer) (body : FGLProducer) : ProjM (List StmtExprMd) := do
   let nameExpr := mkLaurel md (.Identifier (Identifier.mk name none))
   let decl := mkLaurel md (.LocalVariable (Identifier.mk name none) (mkHighTypeMd md (liftType ty)) none)
-  [decl] ++ proj nameExpr init ++ proj dest body
+  projDecl decl
+  let initStmts ← proj nameExpr init
+  let bodyStmts ← proj dest body
+  pure (initStmts ++ bodyStmts)
 
 /-- projAssign:
 ```
@@ -1251,8 +1279,10 @@ D :: ⟦Γ⟧ ⊢ assign y M K ⇐ ⟦A⟧ & d
 ```
 -/
 partial def projAssign (dest : StmtExprMd) (_md : Md) (target : FGLValue)
-    (val : FGLProducer) (body : FGLProducer) : List StmtExprMd :=
-  proj (projectValue target) val ++ proj dest body
+    (val : FGLProducer) (body : FGLProducer) : ProjM (List StmtExprMd) := do
+  let valStmts ← proj (projectValue target) val
+  let bodyStmts ← proj dest body
+  pure (valStmts ++ bodyStmts)
 
 /-- projIfThenElse:
 ```
@@ -1272,11 +1302,14 @@ D :: ⟦Γ⟧ ⊢ ifThenElse V M N K ⇐ ⟦A⟧ & d
 ```
 -/
 partial def projIfThenElse (dest : StmtExprMd) (md : Md) (cond : FGLValue)
-    (thn els after : FGLProducer) : List StmtExprMd :=
-  let thnBlock := mkLaurel md (.Block (proj dest thn) none)
-  let elsBlock := mkLaurel md (.Block (proj dest els) none)
+    (thn els after : FGLProducer) : ProjM (List StmtExprMd) := do
+  let thnStmts ← proj dest thn
+  let elsStmts ← proj dest els
+  let thnBlock := mkLaurel md (.Block thnStmts none)
+  let elsBlock := mkLaurel md (.Block elsStmts none)
   let ite := mkLaurel md (.IfThenElse (projectValue cond) thnBlock (some elsBlock))
-  [ite] ++ proj dest after
+  let afterStmts ← proj dest after
+  pure ([ite] ++ afterStmts)
 
 /-- projWhileLoop:
 ```
@@ -1294,10 +1327,12 @@ D :: ⟦Γ⟧ ⊢ whileLoop V M K ⇐ ⟦A⟧ & d
 ```
 -/
 partial def projWhileLoop (dest : StmtExprMd) (md : Md) (cond : FGLValue)
-    (body after : FGLProducer) : List StmtExprMd :=
-  let bodyBlock := mkLaurel md (.Block (proj dest body) none)
+    (body after : FGLProducer) : ProjM (List StmtExprMd) := do
+  let bodyStmts ← proj dest body
+  let bodyBlock := mkLaurel md (.Block bodyStmts none)
   let loop := mkLaurel md (.While (projectValue cond) [] none bodyBlock)
-  [loop] ++ proj dest after
+  let afterStmts ← proj dest after
+  pure ([loop] ++ afterStmts)
 
 /-- projProcedureCall:
 ```
@@ -1313,12 +1348,13 @@ D :: ⟦Γ⟧ ⊢ procedureCall f [Vᵢ] [outⱼ : Tⱼ] K ⇐ ⟦A⟧ & d
 ```
 -/
 partial def projProcedureCall (dest : StmtExprMd) (md : Md) (callee : String)
-    (args : List FGLValue) (outputs : List (String × LowType)) (body : FGLProducer) : List StmtExprMd :=
-  let decls := outputs.map fun (n, ty) =>
-    mkLaurel md (.LocalVariable (Identifier.mk n none) (mkHighTypeMd md (liftType ty)) none)
+    (args : List FGLValue) (outputs : List (String × LowType)) (body : FGLProducer) : ProjM (List StmtExprMd) := do
+  for (n, ty) in outputs do
+    projDecl (mkLaurel md (.LocalVariable (Identifier.mk n none) (mkHighTypeMd md (liftType ty)) none))
   let targets := outputs.map fun (n, _) => mkLaurel md (.Identifier (Identifier.mk n none))
   let call := mkLaurel md (.Assign targets (mkLaurel md (.StaticCall (Identifier.mk callee none) (args.map projectValue))))
-  decls ++ [call] ++ proj dest body
+  let bodyStmts ← proj dest body
+  pure ([call] ++ bodyStmts)
 
 /-- projAssert:
 ```
@@ -1334,8 +1370,9 @@ D :: ⟦Γ⟧ ⊢ assert V K ⇐ ⟦A⟧ & d
 ```
 -/
 partial def projAssert (dest : StmtExprMd) (md : Md) (cond : FGLValue)
-    (body : FGLProducer) : List StmtExprMd :=
-  [mkLaurel md (.Assert (projectValue cond))] ++ proj dest body
+    (body : FGLProducer) : ProjM (List StmtExprMd) := do
+  let bodyStmts ← proj dest body
+  pure ([mkLaurel md (.Assert (projectValue cond))] ++ bodyStmts)
 
 /-- projAssume:
 ```
@@ -1351,8 +1388,9 @@ D :: ⟦Γ⟧ ⊢ assume V K ⇐ ⟦A⟧ & d
 ```
 -/
 partial def projAssume (dest : StmtExprMd) (md : Md) (cond : FGLValue)
-    (body : FGLProducer) : List StmtExprMd :=
-  [mkLaurel md (.Assume (projectValue cond))] ++ proj dest body
+    (body : FGLProducer) : ProjM (List StmtExprMd) := do
+  let bodyStmts ← proj dest body
+  pure ([mkLaurel md (.Assume (projectValue cond))] ++ bodyStmts)
 
 /-- projLabeledBlock:
 ```
@@ -1368,9 +1406,11 @@ D :: ⟦Γ⟧ ⊢ labeledBlock l M K ⇐ ⟦A⟧ & d
 ```
 -/
 partial def projLabeledBlock (dest : StmtExprMd) (md : Md) (label : String)
-    (body after : FGLProducer) : List StmtExprMd :=
-  let bodyBlock := mkLaurel md (.Block (proj dest body) (some label))
-  [bodyBlock] ++ proj dest after
+    (body after : FGLProducer) : ProjM (List StmtExprMd) := do
+  let bodyStmts ← proj dest body
+  let bodyBlock := mkLaurel md (.Block bodyStmts (some label))
+  let afterStmts ← proj dest after
+  pure ([bodyBlock] ++ afterStmts)
 
 /-- projExit:
 ```
@@ -1382,21 +1422,22 @@ D :: ⟦Γ⟧ ⊢ exit l ⇐ ⟦A⟧ & d
 └─ l ∈ Γ
 ```
 -/
-partial def projExit (md : Md) (label : String) : List StmtExprMd :=
-  [mkLaurel md (.Exit label)]
+partial def projExit (md : Md) (label : String) : ProjM (List StmtExprMd) :=
+  pure [mkLaurel md (.Exit label)]
 
 /-- projSkip:
 ```
 ⟦skip⟧ₓ⁻¹ :: Γ, x : A ⊢ skip : TVoid   [skip]
 ```
 -/
-partial def projSkip : List StmtExprMd := []
+partial def projSkip : ProjM (List StmtExprMd) := pure []
 
 end
 
-/-- Run projection with `LaurelResult` as destination. -/
+/-- Run projection with `LaurelResult` as destination. Declarations hoisted to top. -/
 def projectProducer (prod : FGLProducer) : List StmtExprMd :=
-  proj (mkLaurel #[] (.Identifier (Identifier.mk "LaurelResult" none))) prod
+  let (stmts, decls) := (proj (mkLaurel #[] (.Identifier (Identifier.mk "LaurelResult" none))) prod).run
+  decls ++ stmts
 
 /-- Run projection, return as a block. -/
 def projectBody (md : Md) (prod : FGLProducer) : StmtExprMd :=
@@ -1447,6 +1488,7 @@ def fullElaborate (program : Laurel.Program) (runtime : Laurel.Program := defaul
   let mut allBoxConstructors : List (String × String × HighType) := []
   let mut allHoles : List (String × Bool × List (String × HighType) × HighType) := []
   let mut elabFailures : List String := []
+  let mut globalCounter : Nat := 0
   for proc in program.staticProcedures do
     match proc.body with
     | .Transparent bodyExpr =>
@@ -1458,10 +1500,11 @@ def fullElaborate (program : Laurel.Program) (runtime : Laurel.Program := defaul
       let retTy := match (proc.outputs.filter fun o => eraseType o.type.val != .TCore "Error").head? with
         | some o => o.type.val | none => .TVoid
       let st : ElabState := {
-        freshCounter := 0
+        freshCounter := globalCounter
         heapVar := if g == .heap || g == .heapErr then some "$heap" else none }
       match (checkProducer bodyExpr [] retTy g).run procEnv |>.run st with
       | some (fgl, st') =>
+        globalCounter := st'.freshCounter
         allBoxConstructors := allBoxConstructors ++ st'.usedBoxConstructors.filter
           (fun (c, _, _) => !allBoxConstructors.any (fun (c2, _, _) => c == c2))
         let newHoles := (st'.usedHoles.map fun (name, det, outTy) => (name, det, inputList, outTy)).filter
