@@ -74,6 +74,7 @@ op mkKwargsDecl(name : Ident, kwargsType : SpecType) : KwargsDecl =>
 category SpecExprDecl;
 op placeholderExpr() : SpecExprDecl => "placeholder";
 op varExpr(name : Ident) : SpecExprDecl => name;
+op snapshotRefExpr(name : Ident) : SpecExprDecl => "OLD." name;
 op getIndexExpr(subject : SpecExprDecl, field : Ident) : SpecExprDecl =>
   @[prec(50)] subject "[" field "]";
 op isInstanceOfExpr(subject : SpecExprDecl, typeName : Str) : SpecExprDecl =>
@@ -124,6 +125,10 @@ category InvariantEntry;
 op mkInvariantEntry(expr : SpecExprDecl) : InvariantEntry =>
   expr "\n";
 
+category SnapshotEntry;
+op mkSnapshotEntry(name : Str, expr : SpecExprDecl) : SnapshotEntry =>
+  name " = " expr "\n";
+
 category FunDecl;
 op mkFunDecl (name : Str,
               args : Seq ArgDecl,
@@ -132,7 +137,8 @@ op mkFunDecl (name : Str,
               returnType : SpecType,
               isOverload : Bool,
               preconditions : Seq Assertion,
-              postconditions : Seq PostconditionEntry)
+              postconditions : Seq PostconditionEntry,
+              snapshots : Seq SnapshotEntry)
     : FunDecl =>
   "function " name "{\n"
   indent(2,
@@ -150,6 +156,9 @@ op mkFunDecl (name : Str,
     "]\n"
     "postconditions" ": " "[\n"
     indent(2, postconditions)
+    "]\n"
+    "snapshots" ": " "[\n"
+    indent(2, snapshots)
     "]\n")
   "}\n";
 
@@ -277,6 +286,7 @@ protected def SpecExpr.toDDM (e : SpecExpr) : DDM.SpecExprDecl SourceRange :=
   match e with
   | .placeholder loc => .placeholderExpr loc
   | .var name loc => .varExpr loc ⟨loc, name⟩
+  | .snapshotRef name loc => .snapshotRefExpr loc ⟨loc, name⟩
   | .getIndex subj field loc => .getIndexExpr loc subj.toDDM ⟨loc, field⟩
   | .isInstanceOf subj tn loc => .isInstanceOfExpr loc subj.toDDM ⟨loc, tn⟩
   | .stringLen subj loc => .stringLenExpr loc subj.toDDM
@@ -334,6 +344,9 @@ private def FunctionDecl.toDDM (d : FunctionDecl) : DDM.FunDecl SourceRange :=
     (postconditions := ⟨.none,
       d.postconditions.map fun e =>
         .mkPostconditionEntry .none e.toDDM⟩)
+    (snapshots := ⟨.none,
+      d.snapshots.map fun s =>
+        .mkSnapshotEntry s.loc ⟨s.loc, s.name⟩ s.expr.toDDM⟩)
 
 private def ClassVariable.toDDM (cv : ClassVariable) : DDM.ClassVarDecl SourceRange :=
   .mkClassVarDecl .none ⟨.none, cv.name⟩ ⟨.none, cv.value⟩
@@ -418,6 +431,7 @@ private def DDM.SpecExprDecl.fromDDM (d : DDM.SpecExprDecl SourceRange) : Specs.
   match d with
   | .placeholderExpr loc => .placeholder loc
   | .varExpr loc ⟨_, name⟩ => .var name loc
+  | .snapshotRefExpr loc ⟨_, name⟩ => .snapshotRef name loc
   | .getIndexExpr loc subj ⟨_, field⟩ => .getIndex subj.fromDDM field loc
   | .isInstanceOfExpr loc subj ⟨_, tn⟩ => .isInstanceOf subj.fromDDM tn loc
   | .lenExpr loc subj => .stringLen subj.fromDDM loc
@@ -450,7 +464,8 @@ private def DDM.Assertion.fromDDM (d : DDM.Assertion SourceRange) : Specs.Assert
 private def DDM.FunDecl.fromDDM (d : DDM.FunDecl SourceRange) : Specs.FunctionDecl :=
   let .mkFunDecl loc ⟨nameLoc, name⟩ ⟨_, args⟩ ⟨_, kwonly⟩
                  ⟨_, kwargs⟩ returnType ⟨_, isOverload⟩
-                 ⟨_, preconditions⟩ ⟨_, postconditions⟩ := d
+                 ⟨_, preconditions⟩ ⟨_, postconditions⟩
+                 ⟨_, snapshots⟩ := d
   let kwargsOpt : Option (String × Specs.SpecType) :=
     match kwargs with
     | some (.mkKwargsDecl _ ⟨_, kn⟩ tp) => some (kn, tp.fromDDM)
@@ -469,6 +484,8 @@ private def DDM.FunDecl.fromDDM (d : DDM.FunDecl SourceRange) : Specs.FunctionDe
     preconditions := preconditions.map (·.fromDDM)
     postconditions := postconditions.map fun
       | .mkPostconditionEntry _ e => e.fromDDM
+    snapshots := snapshots.map fun
+      | .mkSnapshotEntry l ⟨_, n⟩ e => { name := n, expr := e.fromDDM, loc := l }
   }
 
 private def DDM.ClassDecl.fromDDM (d : DDM.ClassDecl SourceRange) : Specs.ClassDef :=

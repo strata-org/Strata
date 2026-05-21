@@ -307,6 +307,12 @@ def specExprToLaurel (e : SpecExpr) (source : Option FileRange)
   | .var name loc => do
     let src ← nodeSource loc
     lookupIdentifier name loc src
+  | .snapshotRef name loc => do
+    -- OLD.<name> resolves to the ghost local `__snapshot_<name>` that
+    -- buildSpecBody declared and assigned at procedure entry from the
+    -- @icontract.snapshot capture body.
+    let src ← nodeSource loc
+    lookupIdentifier s!"__snapshot_{name}" loc src
   | .intLit v loc => do
     let src ← nodeSource loc
     return .mkSome <| .fromInt (.literalInt v src)
@@ -411,6 +417,7 @@ def SpecAssertMsg.render : SpecAssertMsg → String
 def buildSpecBody (allArgs : Array Arg)
     (preconditions : Array Assertion)
     (postconditions : Array SpecExpr)
+    (snapshots : Array Snapshot)
     (returnType : SpecType)
     (source : Option FileRange)
     (ctx : SpecExprContext)
@@ -422,6 +429,18 @@ def buildSpecBody (allArgs : Array Arg)
   let resultId : AstNode Variable := { val := Variable.Local (mkId "result"), source := source }
   let assignStmt ← mkStmtWithLoc (.Assign [resultId] holeExpr) default
   stmts := stmts.push assignStmt
+  -- 1.5. Declare ghost locals for @icontract.snapshot captures and
+  -- assign them the translated capture expression evaluated at entry.
+  -- Postcondition references via `OLD.<name>` resolve to these locals
+  -- (see specExprToLaurel's `.snapshotRef` arm).
+  for snap in snapshots do
+    let (⟨_, snapExpr⟩, success) ← runChecked <| specExprToLaurel snap.expr source ctx
+    if success then
+      let ghostName := s!"__snapshot_{snap.name}"
+      let ghostId : AstNode Variable :=
+        { val := .Declare ⟨mkId ghostName, tyAny⟩, source := source }
+      let declStmt ← mkStmtWithLoc (.Assign [ghostId] snapExpr.stmt) default
+      stmts := stmts.push declStmt
   -- 2. Assert type / required-param preconditions
   for arg in allArgs do
     let paramId : StmtExprMd := { val := .Var $ Variable.Local (mkId arg.name), source := source }
@@ -515,12 +534,17 @@ def funcDeclToLaurel (procName : String) (func : FunctionDecl)
     let ty ← specTypeToLaurelType a.type
     return ({ name := a.name, type := ty } : Parameter)
   let outputs : List Parameter := [{ name := "result", type := tyAny }]
+  -- Seed argTypes with parameters, `result`, and ghost snapshot locals
+  -- so `lookupIdentifier "__snapshot_<name>"` succeeds.
   let argTypes : Std.HashMap String HighType :=
-    inputs.foldl (init := ({} : Std.HashMap String HighType).insert "result" Laurel.tyAny) fun m p =>
-      m.insert p.name.text p.type.val
+    let m := inputs.foldl
+      (init := ({} : Std.HashMap String HighType).insert "result" Laurel.tyAny)
+      fun m p => m.insert p.name.text p.type.val
+    func.snapshots.foldl (init := m) fun m s =>
+      m.insert s!"__snapshot_{s.name}" Laurel.tyAny
   let specCtx : SpecExprContext := { procName, argTypes }
   let body ← buildSpecBody allArgs func.preconditions func.postconditions
-    func.returnType none specCtx
+    func.snapshots func.returnType none specCtx
   let src ← mkSourceWithFileRange func.loc
   return {
     name := { text := procName, source := src }

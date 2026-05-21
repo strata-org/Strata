@@ -480,6 +480,9 @@ inductive SpecExpr where
     The original Python expression is preserved in `Assertion.message`. -/
 | placeholder (loc : SourceRange)
 | var (name : String) (loc : SourceRange)
+/-- Reference to a value captured by `@icontract.snapshot(... name="n")`.
+    Resolved against `FunctionDecl.snapshots` by the downstream layer. -/
+| snapshotRef (name : String) (loc : SourceRange)
 | getIndex (subject : SpecExpr) (field : String) (loc : SourceRange)
 | isInstanceOf (subject : SpecExpr) (typeName : String) (loc : SourceRange)
 /-- `stringLen subject` represents `len(subject)` where `subject` is a string.
@@ -519,6 +522,7 @@ deriving Inhabited
 def SpecExpr.softBEq : SpecExpr → SpecExpr → Bool
   | .placeholder _, .placeholder _ => true
   | .var n₁ _, .var n₂ _ => n₁ == n₂
+  | .snapshotRef n₁ _, .snapshotRef n₂ _ => n₁ == n₂
   | .getIndex s₁ f₁ _, .getIndex s₂ f₂ _ => s₁.softBEq s₂ && f₁ == f₂
   | .isInstanceOf s₁ t₁ _, .isInstanceOf s₂ t₂ _ => s₁.softBEq s₂ && t₁ == t₂
   | .stringLen s₁ _, .stringLen s₂ _ => s₁.softBEq s₂
@@ -549,6 +553,14 @@ structure Assertion where
   formula : SpecExpr
 deriving Inhabited
 
+/-- A pre-state value captured by `@icontract.snapshot(lambda …: e, name="n")`.
+    Available in `@icontract.ensure` lambdas as `OLD.n`. -/
+structure Snapshot where
+  name : String
+  expr : SpecExpr
+  loc : SourceRange
+deriving Inhabited
+
 structure FunctionDecl where
   loc : SourceRange
   nameLoc : SourceRange
@@ -558,6 +570,10 @@ structure FunctionDecl where
   isOverload : Bool
   preconditions : Array Assertion
   postconditions : Array SpecExpr
+  /-- Pre-state captures from `@icontract.snapshot`. Each entry is
+      assigned to a ghost local at procedure entry by the lowering
+      layer; references appear as `SpecExpr.snapshotRef`. -/
+  snapshots : Array Snapshot := #[]
 deriving Inhabited
 
 structure ClassField where

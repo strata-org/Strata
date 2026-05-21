@@ -740,11 +740,16 @@ structure SpecAssertionContext where
       `<receiver>.<field>` arm to resolve field types on class-typed
       receivers. -/
   classFields : Std.HashMap String (Std.HashMap String SpecType) := {}
+  /-- Snapshot names declared by `@icontract.snapshot(name="n")`,
+      consulted by the `OLD.<name>` arm in `transExpr`. -/
+  snapshotNames : Std.HashSet String := {}
 
 /-- State for `SpecAssertionM`. -/
 structure SpecAssertionState where
   assertions : Array Assertion := #[]
   postconditions : Array SpecExpr := #[]
+  /-- Translated `@icontract.snapshot` captures (pre-state context). -/
+  snapshots : Array Snapshot := #[]
   errors : Array SpecError := #[]
   warnings : Array SpecError := #[]
 
@@ -897,6 +902,9 @@ partial def transExpr (e : expr SourceRange)
 
   let placeholder := (.placeholder (loc := loc), anyType)
   match e with
+  | .Attribute _ (.Name _ ⟨_, "OLD"⟩ (.Load _)) ⟨_, snapName⟩ (.Load _) =>
+    Icontract.resolveOldRef specWarning (← read).snapshotNames
+      snapName loc anyType placeholder
   -- <receiver>.<field> on a class-typed receiver. The receiver must be
   -- bound in localTypes to a class identifier; the class's field map
   -- (populated by pySpecClassBody's pre-pass) supplies the field's
@@ -1187,34 +1195,22 @@ def pySpecFunctionArgs (fnLoc : SourceRange)
                        (decorators : Array (expr SourceRange))
                        (returns : Option (expr SourceRange)) : PySpecM FunctionDecl := do
   let mut overload : Bool := false
-  -- Pre-extract function parameter names for icontract lambda binder
-  -- validation. icontract binds the lambda by name at runtime, so a
-  -- binder that doesn't match a function parameter resolves to a free
-  -- variable and yields a vacuous predicate.
   let .mk_arguments _ ⟨_, posonly⟩ ⟨_, posArgs⟩ ⟨_, vararg⟩ ⟨_, kwonly⟩ ⟨_, kw_defaults⟩ ⟨_, kwarg⟩ ⟨_, defaults⟩ := arguments
-  let funcParamNames : Array String := posArgs.map fun a =>
-    let .mk_arg _ ⟨_, n⟩ _ _ := a; n
-  let kwParamNames : Array String := kwonly.map fun a =>
-    let .mk_arg _ ⟨_, n⟩ _ _ := a; n
-  let validParamNames := funcParamNames ++ kwParamNames
-
-  -- Absorb @icontract.* method decorators into a bundle. Lambda bodies
-  -- are translated below (under `collectAssertions`) so the predicate
-  -- translator runs in the same scope as the function's argument types.
+  -- Lambda binders referencing names not in this list yield vacuous
+  -- predicates at runtime; the icontract absorber warns on any mismatch.
+  let validParamNames : Array String :=
+    (posArgs ++ kwonly).map fun a => let .mk_arg _ ⟨_, n⟩ _ _ := a; n
   let mut icontractBundle : Icontract.MethodBundle := {}
   for pyd in decorators do
     let (absorbed, b) ← Icontract.absorbMethodDecorator
-      (warn := specWarning) (_err := specError)
-      validParamNames icontractBundle pyd
+      (warn := specWarning) (err := specError) validParamNames icontractBundle pyd
     icontractBundle := b
     unless absorbed do
       let (success, d) ← runChecked <| pySpecValue pyd
       if success then
         match d with
-        | .typingOverload =>
-          overload := true
-        | _ =>
-          specError pyd.ann s!"Decorator {repr d} not supported."
+        | .typingOverload => overload := true
+        | _ => specError pyd.ann s!"Decorator {repr d} not supported."
 
   assert! posonly.size = 0
   let argc := posArgs.size
@@ -1284,19 +1280,21 @@ def pySpecFunctionArgs (fnLoc : SourceRange)
         specWarning fnLoc "overload body is not `...`"
     else
       body.forM blockStmt
-    -- @icontract.require predicates: each lambda body becomes a
-    -- precondition Assertion. Translated in the function's pre-state
-    -- context (parameters in scope).
+    -- @icontract.snapshot captures and @icontract.require predicates
+    -- run in pre-state context with no `OLD` visible. @icontract.ensure
+    -- runs with the snapshot-name set in scope so `OLD.<name>` resolves.
+    for (snapName, snapExpr, snapLoc) in icontractBundle.snapshots do
+      let (e, _) ← transExpr snapExpr
+      modify fun s => { s with
+        snapshots := s.snapshots.push { name := snapName, expr := e, loc := snapLoc } }
     for reqExpr in icontractBundle.requires do
       let (formula, _) ← transExpr reqExpr
-      modify fun s => { s with
-        assertions := s.assertions.push
-          { message := #[MessagePart.str "@icontract.require"], formula } }
-    -- @icontract.ensure predicates: each lambda body becomes a
-    -- postcondition SpecExpr. The lambda may reference `result` (the
-    -- return value) and any function parameter.
+      let a : Assertion := { message := #[MessagePart.str "@icontract.require"], formula }
+      modify fun s => { s with assertions := s.assertions.push a }
+    let snapNames := icontractBundle.snapshotNameSet
     for ensExpr in icontractBundle.ensures do
-      let (formula, _) ← transExpr ensExpr
+      let (formula, _) ← withReader (fun c => { c with snapshotNames := snapNames }) <|
+        transExpr ensExpr
       modify fun s => { s with postconditions := s.postconditions.push formula }
 
   return {
@@ -1308,6 +1306,7 @@ def pySpecFunctionArgs (fnLoc : SourceRange)
     isOverload := overload
     preconditions := as.assertions
     postconditions := as.postconditions
+    snapshots := as.snapshots
   }
 
 /-- Resolve an array of base class expressions into PythonIdents. -/
@@ -1753,9 +1752,6 @@ partial def translate (body : Array (stmt Strata.SourceRange)) : PySpecM Unit :=
       assert! _classNameLoc.isNone
       assert! keywords.size = 0
       assert! typeParams.size = 0
-      -- Collect class-level decorators: `@exhaustive` (Strata-internal)
-      -- and `@icontract.invariant(lambda self: …)` (delegated to
-      -- `Icontract.absorbClassDecorator`). Other decorators warn.
       let mut isExhaustive := false
       let mut invariantBundle : Icontract.ClassBundle := {}
       for d in decorators do
@@ -1774,23 +1770,16 @@ partial def translate (body : Array (stmt Strata.SourceRange)) : PySpecM Unit :=
       setNameValue className (.typeValue (.ident loc { pythonModule := mod, name := className } #[]))
       let d ← pySpecClassBody loc className baseIdents stmts
       let d := { d with exhaustive := isExhaustive }
-      -- Translate invariant bodies after the class body has populated
-      -- `classFields`. Each invariant runs in a context where `self` is
-      -- typed as the class's qualified-ident type so the Attribute arm
-      -- in `transExpr` can route `self.<field>` lookups.
+      -- Run invariant bodies after pySpecClassBody so `classFields` is
+      -- populated (else `self.x` lookups would resolve to placeholders).
       let selfType : SpecType :=
         .ident loc { pythonModule := mod, name := className } #[]
+      let selfArgs : ArgDecls := { args := #[{ name := "self", type := selfType }], kwonly := #[] }
       let invariants ← invariantBundle.invariants.mapM fun bodyExpr => do
-        let dummyArgs : ArgDecls :=
-          { args := #[{ name := "self", type := selfType }],
-            kwonly := #[] }
-        let dummyRet : SpecType := .ident loc .typingAny
-        let st ← collectAssertions dummyArgs dummyRet <| do
+        let st ← collectAssertions selfArgs (.ident loc .typingAny) <| do
           let (e, _) ← transExpr bodyExpr
           modify fun s => { s with postconditions := s.postconditions.push e }
-        match st.postconditions[0]? with
-        | some e => pure e
-        | none => pure (.placeholder (loc := loc))
+        return st.postconditions[0]?.getD (.placeholder (loc := loc))
       let d := { d with invariants }
       if success then
         pushSignature (.classDef d)
