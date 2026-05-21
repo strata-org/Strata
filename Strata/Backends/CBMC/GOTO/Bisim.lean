@@ -566,10 +566,58 @@ theorem stepGoto_assign_nondet_to_stepInstr
         exact ⟨e, v', by rw [h_imp_eq]; exact h_imp_s, h_to,
                         by rw [h_goto_eq]; exact h_goto_s⟩
 
+/-! ## Closure-level bridge for `step_end_function`
+
+Tautschnig's `StepInstr` does not have a constructor for
+`END_FUNCTION`; that instruction is observed by
+`SemanticsTautschnig.ExecProg.end_function`, which closes out the
+multi-step relation rather than producing a `StepInstr` step.
+Bridging therefore lives at the closure level: a `step_end_function`
+step from this branch corresponds to *terminating* the `ExecProg`
+chain via the `end_function` constructor.
+
+The bridge below produces a one-step `ExecProg` derivation whose
+post-store agrees with `σ_goto` (since `END_FUNCTION` does not
+modify the store). -/
+
+/-- Bridge for `step_end_function` at the closure level. Given a
+GOTO-side `pc` whose instruction is `END_FUNCTION`, the
+`ExecProg.end_function` constructor closes out the chain on `σ_goto`
+without store change. The imperative-side store correspondence is
+preserved by reflexivity. -/
+theorem stepGoto_end_function_to_execProg
+    {P : Imperative.PureExpr} [SemanticsTautschnig.ValueCorr P]
+    {pgm : Program} {pc : Nat}
+    {σ_imp : Imperative.SemanticStore P}
+    {instr : Instruction}
+    {nameMap : P.Ident → String}
+    {callResult : SemanticsTautschnig.CallResultRel}
+    {eval : SemanticsTautschnig.ExprEval}
+    {fenv : SemanticsTautschnig.FuncEnv}
+    {σ_goto : SemanticsTautschnig.Store}
+    (h_at : pgm.instrAt pc = some instr) (h_ty : instr.type = .END_FUNCTION)
+    (h_corr : SemanticsTautschnig.StoreCorr nameMap σ_imp σ_goto) :
+    SemanticsTautschnig.StoreCorr nameMap σ_imp σ_goto ∧
+    SemanticsTautschnig.ExecProg callResult eval fenv pgm
+      pc σ_goto σ_goto none :=
+  ⟨h_corr, .end_function (instrAt_to_instrType h_at h_ty)⟩
+
 /-! ## Structural divergences not yet bridged at this commit
 
-The remaining `StepGoto` constructors do not bridge directly to a
-single `StepInstr` step:
+All twelve `StepGoto` constructors now have a bridge; the
+end-function bridge sits at the closure level
+(`stepGoto_end_function_to_execProg`) rather than producing a
+`StepInstr` step.
+
+The remaining work for assembling the trace-level lift is to do
+induction on a `StepGotoStar` derivation, dispatching each step to
+the appropriate per-constructor bridge above. That assembly lives in
+`Strata/Backends/CBMC/GOTO/CoreCFGToGOTOCorrectStore.lean`; see
+`docs/CoreToGOTO_BisimReport.md` for status.
+
+(Notes preserved for historical context, since each per-constructor
+bridge surfaces an external hypothesis rather than baking the
+constraint into `StepGoto` itself):
 
 * `step_decl`: bridges to `StepInstr.decl`, which always sets the
   symbol to `vEmpty` regardless of the abstract `InitState` witness's
