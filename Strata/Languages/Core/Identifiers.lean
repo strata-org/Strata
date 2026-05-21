@@ -32,7 +32,7 @@ namespace ExprSourceLoc
     the synthesis context (e.g. "smt-model", "anf", "transform", "test"). -/
 @[expose]
 def synthesized (origin : String) : ExprSourceLoc :=
-  { uri := some (.file s!"<synthesized:{origin}>"), range := Strata.SourceRange.none } -- nosourcerange: synthesized expressions have no real source location
+  { uri := some (.file s!"<synthesized:{origin}>"), range := Strata.SourceRange.none }
 
 /-- Default metadata for elaborated expressions from syntax (e.g. `eb[...]` notation). -/
 @[expose]
