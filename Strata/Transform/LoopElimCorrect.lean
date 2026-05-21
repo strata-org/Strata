@@ -6419,15 +6419,17 @@ private theorem loop_cf_iteration_extract
         -- Since all-tt, hasInvFailure = false, so ρ_init = ρ.
         have hnot_true : ¬(_ = Bool.true) := fun h => hno_ff (hinv_iff.1 h)
         have hif_false := Bool.eq_false_iff.mpr hnot_true
-        -- Save the length bound from the original hrest, then simplify
-        have hrest_len_val : hrest.len ≤ k' := by
-          simp only [ReflTransT.len] at hlen; omega
-        simp only [hif_false, Bool.or_false] at hrest
+        subst hif_false
+        simp only [Bool.or_false] at hrest
         have hρ_simp : ({ ρ with hasFailure := ρ.hasFailure } : Env Expression) = ρ := by
           cases ρ; rfl
         rw [hρ_simp] at hrest
-        -- Now hrest has simplified type. hrest_len_val refers to original hrest (now hrest✝✝).
-        -- The decomposition bounds are relative to the NEW hrest.len.
+        -- Now hrest has simplified type. Prove bound.
+        have hrest_len : hrest.len ≤ k' := by
+          simp only [ReflTransT.len] at hlen
+          omega
+        -- Now hrest has simplified type. hrest_len refers to the CURRENT hrest.
+        -- The decomposition bounds are relative to hrest.len.
         -- Key: from hlen (original), 1 + orig_hrest.len ≤ k'+1 ⇒ sub-traces < orig_hrest.len ≤ k'.
         match seqT_canfail hrest hfail with
         | .inl ⟨cfg', h_block_fail, hf_block, _⟩ =>
@@ -6499,8 +6501,6 @@ private theorem loop_cf_iteration_extract
               -- Extract loop trace from h_tail_fail
               have ⟨cfg_loop, h_loop_mid, hfail_loop, hlen_loop⟩ :=
                 stmtsT_singleton_canfail h_tail_fail hfail
-              have hrest_len_eq : hrest.len ≤ k' := by
-                sorry
               have hlen_bound : h_loop_mid.len ≤ k' := by omega
               exact ih ρ_mid heval_mid hnf_mid hall_tt_mid hdef_mid
                 cfg_loop hfail_loop h_loop_mid hlen_bound
@@ -6511,12 +6511,15 @@ private theorem loop_cf_iteration_extract
         -- Same structure as deterministic enter
         have hnot_true : ¬(_ = Bool.true) := fun h => hno_ff (hinv_iff.1 h)
         have hif_false := Bool.eq_false_iff.mpr hnot_true
-        have hrest_len_val : hrest.len ≤ k' := by
-          simp only [ReflTransT.len] at hlen; omega
-        simp only [hif_false, Bool.or_false] at hrest
+        subst hif_false
+        simp only [Bool.or_false] at hrest
         have hρ_simp : ({ ρ with hasFailure := ρ.hasFailure } : Env Expression) = ρ := by
           cases ρ; rfl
         rw [hρ_simp] at hrest
+        -- Now hrest has simplified type. Prove bound.
+        have hrest_len : hrest.len ≤ k' := by
+          simp only [ReflTransT.len] at hlen
+          omega
         match seqT_canfail hrest hfail with
         | .inl ⟨cfg', h_block_fail, hf_block, _⟩ =>
           have ⟨inner', h_inner, hf_inner, _⟩ := blockT_canfail_to_inner h_block_fail hf_block
@@ -6576,10 +6579,7 @@ private theorem loop_cf_iteration_extract
                 exact hall_inner le hle
               have ⟨cfg_loop, h_loop_mid, hfail_loop, hlen_loop⟩ :=
                 stmtsT_singleton_canfail h_tail_fail hfail
-              have hlen_bound : h_loop_mid.len ≤ k' := by
-                have hrest_le : hrest.len ≤ k' := by
-                  sorry
-                omega
+              have hlen_bound : h_loop_mid.len ≤ k' := by omega
               exact ih ρ_mid heval_mid hnf_mid hall_tt_mid hdef_mid
                 cfg_loop hfail_loop h_loop_mid hlen_bound
             · exact ⟨ρ, heval_ρ, hnf_ρ, hall_tt_ρ,
