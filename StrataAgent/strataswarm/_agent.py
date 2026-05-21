@@ -312,8 +312,9 @@ class SwarmAgent(Generic[T]):
                     await self._emit("status_change", AgentStatus.RUNNING.value)
                     ts = datetime.now().strftime("%H:%M:%S")
                     injection = f"[{ts}] [From {msg.sender}]: {msg.payload}"
-                    logger.info(f"[WAKE] {self.spec.name}: from '{msg.sender}'")
+                    logger.info(f"[WAKE] {self.spec.name}: super from '{msg.sender}', sending query...")
                     await self.backend.send_query(injection)
+                    logger.info(f"[WAKE] {self.spec.name}: send_query done, returning to loop")
                     await self._emit("message", injection)
                     return True
                 else:
@@ -324,8 +325,9 @@ class SwarmAgent(Generic[T]):
                         f"[{ts}] [HEARTBEAT]: 30s elapsed. No new messages. "
                         f"Check on your sub-agents — use check_sub_agents to see status."
                     )
-                    logger.debug(f"[POLL] {self.spec.name}: 30s heartbeat nudge")
+                    logger.info(f"[POLL] {self.spec.name}: 30s heartbeat, sending nudge...")
                     await self.backend.send_query(nudge)
+                    logger.info(f"[POLL] {self.spec.name}: nudge sent, returning to loop")
                     await self._emit("message", nudge)
                     return True
             else:
@@ -335,8 +337,9 @@ class SwarmAgent(Generic[T]):
                     await self._emit("status_change", AgentStatus.RUNNING.value)
                     ts = datetime.now().strftime("%H:%M:%S")
                     injection = f"[{ts}] [From {msg.sender}]: {msg.payload}"
-                    logger.info(f"[WAKE] {self.spec.name}: from '{msg.sender}'")
+                    logger.info(f"[WAKE] {self.spec.name}: from '{msg.sender}', sending query...")
                     await self.backend.send_query(injection)
+                    logger.info(f"[WAKE] {self.spec.name}: send_query done, returning to loop")
                     await self._emit("message", injection)
                     return True
 
@@ -460,6 +463,7 @@ class SwarmAgent(Generic[T]):
                     break
 
                 # Compact if context is large
+                logger.debug(f"[LOOP] {self.spec.name}: checking context usage...")
                 ctx_pct = await self.backend.get_context_percentage()
                 if ctx_pct is not None and ctx_pct >= 70.0:
                     logger.info(f"[COMPACT] {self.spec.name}: context at {ctx_pct:.0f}%, compacting")
