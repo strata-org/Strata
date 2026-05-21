@@ -60,7 +60,7 @@ inductive EvalDetBlock
   (P : PureExpr)
   (EvalCmd : EvalCmdParam P CmdT)
   (extendEval : ExtendEval P)
-  [HasNot P] :
+  [HasNot P] [HasVarsPure P P.Expr] :
   SemanticStore P → DetBlock l CmdT P → CFGConfig l P → Prop where
 
   | cmd :
@@ -72,12 +72,14 @@ inductive EvalDetBlock
   | goto_true :
     δ σ c = .some HasBool.tt →
     WellFormedSemanticEvalBool δ →
+    WellFormedSemanticEvalExprCongr δ →
     EvalDetBlock P EvalCmd extendEval
       σ ⟨ [], .condGoto c t e _ ⟩ (.cont t σ false)
 
   | goto_false :
     δ σ c = .some HasBool.ff →
     WellFormedSemanticEvalBool δ →
+    WellFormedSemanticEvalExprCongr δ →
     EvalDetBlock P EvalCmd extendEval
       σ ⟨ [], .condGoto c t e _ ⟩ (.cont e σ false)
 

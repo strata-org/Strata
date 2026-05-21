@@ -141,7 +141,7 @@ namespace EvalDetBlock
 variable {l : Type} {P : PureExpr} {CmdT : Type}
     {EvalCmdR : EvalCmdParam P CmdT}
     {extendEval : ExtendEval P}
-    [HasNot P]
+    [HasNot P] [HasVarsPure P P.Expr]
 
 /-- Build an `EvalDetBlock` derivation that runs the entire command list `cs`
 sequentially via `EvalCmds`, then takes the true branch of a `condGoto`. -/
@@ -151,12 +151,13 @@ theorem step_goto_true
     {failed : Bool}
     (h_cmds : EvalCmds P EvalCmdR δ σ cs σ' failed)
     (h_cond : δ σ' c = .some HasBool.tt)
-    (hwfb : WellFormedSemanticEvalBool δ) :
+    (hwfb : WellFormedSemanticEvalBool δ)
+    (hwfcongr : WellFormedSemanticEvalExprCongr δ) :
     EvalDetBlock P EvalCmdR extendEval
       σ ⟨ cs, .condGoto c t e md ⟩ (.cont t σ' failed) := by
   induction h_cmds with
   | eval_cmds_none =>
-    exact EvalDetBlock.goto_true h_cond hwfb
+    exact EvalDetBlock.goto_true h_cond hwfb hwfcongr
   | eval_cmds_some hcmd hcmds ih =>
     rename_i σ_in c_h σ_mid f_h cs_t σ_out f_t
     have h_inner :
@@ -179,12 +180,13 @@ theorem step_goto_false
     {failed : Bool}
     (h_cmds : EvalCmds P EvalCmdR δ σ cs σ' failed)
     (h_cond : δ σ' c = .some HasBool.ff)
-    (hwfb : WellFormedSemanticEvalBool δ) :
+    (hwfb : WellFormedSemanticEvalBool δ)
+    (hwfcongr : WellFormedSemanticEvalExprCongr δ) :
     EvalDetBlock P EvalCmdR extendEval
       σ ⟨ cs, .condGoto c t e md ⟩ (.cont e σ' failed) := by
   induction h_cmds with
   | eval_cmds_none =>
-    exact EvalDetBlock.goto_false h_cond hwfb
+    exact EvalDetBlock.goto_false h_cond hwfb hwfcongr
   | eval_cmds_some hcmd hcmds ih =>
     rename_i σ_in c_h σ_mid f_h cs_t σ_out f_t
     have h_inner :
@@ -433,7 +435,7 @@ private theorem EvalCmd_under_agreement {P : PureExpr}
     ∃ σ_cfg₁, @EvalCmd P _ _ _ _ δ σ_cfg₀ c σ_cfg₁ failed
             ∧ StoreAgreement σ_struct₁ σ_cfg₁ := by
   cases h_eval with
-  | eval_init heval hinit hwfvar =>
+  | eval_init heval hinit hwfvar hwfcongr =>
     -- Constructor: EvalCmd δ σ_struct₀ (.init x ty (.det e) md) σ_struct₁ false
     -- rename_i introduces in order: ty, md, x, v, e
     rename_i ty md x v e
@@ -463,7 +465,7 @@ private theorem EvalCmd_under_agreement {P : PureExpr}
       rw [if_neg hne]
     have h_init_cfg : InitState P σ_cfg₀ x v σ_cfg₁ :=
       InitState.init h_x_fresh h_cfg_x h_cfg_other
-    refine ⟨σ_cfg₁, EvalCmd.eval_init h_eval_cfg h_init_cfg hwfvar, ?_⟩
+    refine ⟨σ_cfg₁, EvalCmd.eval_init h_eval_cfg h_init_cfg hwfvar hwfcongr, ?_⟩
     -- StoreAgreement σ_struct₁ σ_cfg₁
     intro y h_def_y
     cases hinit with
@@ -521,7 +523,7 @@ private theorem EvalCmd_under_agreement {P : PureExpr}
           rw [h_struct_y] at h_y_def_in_σ'
           exact h_y_def_in_σ'
         exact h_agree y h_def_y'
-  | eval_set heval hupdate hwfvar =>
+  | eval_set heval hupdate hwfvar hwfcongr =>
     rename_i md x v e
     have h_def_e : isDefined σ_struct₀ (HasVarsPure.getVars e) :=
       h_wf_def e v σ_struct₀ heval
@@ -552,7 +554,7 @@ private theorem EvalCmd_under_agreement {P : PureExpr}
         rw [if_neg hne]
       have h_upd : UpdateState P σ_cfg₀ x v σ_cfg₁ :=
         UpdateState.update h_cfg_x_old h_cfg_x_new h_cfg_other
-      refine ⟨σ_cfg₁, EvalCmd.eval_set h_eval_cfg h_upd hwfvar, ?_⟩
+      refine ⟨σ_cfg₁, EvalCmd.eval_set h_eval_cfg h_upd hwfvar hwfcongr, ?_⟩
       intro y h_def_y
       by_cases hyx : y = x
       · subst hyx
@@ -610,7 +612,7 @@ private theorem EvalCmd_under_agreement {P : PureExpr}
           rw [h_struct_y] at h_y_def_in_σ'
           exact h_y_def_in_σ'
         exact h_agree y h_def_y'
-  | eval_assert_pass hcond hwfb =>
+  | eval_assert_pass hcond hwfb hwfcongr =>
     rename_i l md e
     have h_def_e : isDefined σ_struct₀ (HasVarsPure.getVars e) :=
       h_wf_def e HasBool.tt σ_struct₀ hcond
@@ -619,8 +621,8 @@ private theorem EvalCmd_under_agreement {P : PureExpr}
       store_agreement_pointwise_on_expr_vars σ_struct₀ σ_cfg₀ e h_agree h_def_e
     have h_eval_cfg : δ σ_cfg₀ e = .some HasBool.tt := by
       rw [← hcond]; exact (h_congr e σ_struct₀ σ_cfg₀ h_pointwise).symm
-    exact ⟨σ_cfg₀, EvalCmd.eval_assert_pass h_eval_cfg hwfb, h_agree⟩
-  | eval_assert_fail hcond hwfb =>
+    exact ⟨σ_cfg₀, EvalCmd.eval_assert_pass h_eval_cfg hwfb hwfcongr, h_agree⟩
+  | eval_assert_fail hcond hwfb hwfcongr =>
     rename_i l md e
     have h_def_e : isDefined σ_struct₀ (HasVarsPure.getVars e) :=
       h_wf_def e HasBool.ff σ_struct₀ hcond
@@ -629,8 +631,8 @@ private theorem EvalCmd_under_agreement {P : PureExpr}
       store_agreement_pointwise_on_expr_vars σ_struct₀ σ_cfg₀ e h_agree h_def_e
     have h_eval_cfg : δ σ_cfg₀ e = .some HasBool.ff := by
       rw [← hcond]; exact (h_congr e σ_struct₀ σ_cfg₀ h_pointwise).symm
-    exact ⟨σ_cfg₀, EvalCmd.eval_assert_fail h_eval_cfg hwfb, h_agree⟩
-  | eval_assume hcond hwfb =>
+    exact ⟨σ_cfg₀, EvalCmd.eval_assert_fail h_eval_cfg hwfb hwfcongr, h_agree⟩
+  | eval_assume hcond hwfb hwfcongr =>
     rename_i l md e
     have h_def_e : isDefined σ_struct₀ (HasVarsPure.getVars e) :=
       h_wf_def e HasBool.tt σ_struct₀ hcond
@@ -639,7 +641,7 @@ private theorem EvalCmd_under_agreement {P : PureExpr}
       store_agreement_pointwise_on_expr_vars σ_struct₀ σ_cfg₀ e h_agree h_def_e
     have h_eval_cfg : δ σ_cfg₀ e = .some HasBool.tt := by
       rw [← hcond]; exact (h_congr e σ_struct₀ σ_cfg₀ h_pointwise).symm
-    exact ⟨σ_cfg₀, EvalCmd.eval_assume h_eval_cfg hwfb, h_agree⟩
+    exact ⟨σ_cfg₀, EvalCmd.eval_assume h_eval_cfg hwfb hwfcongr, h_agree⟩
   | eval_cover hwfb =>
     exact ⟨σ_cfg₀, EvalCmd.eval_cover hwfb, h_agree⟩
 
@@ -655,7 +657,7 @@ private theorem isDefined_of_EvalCmd {P : PureExpr}
   intro x hx
   have h_def_x : (σ x).isSome = true := h_def x hx
   cases h_eval with
-  | eval_init heval hinit hwfvar =>
+  | eval_init heval hinit hwfvar hwfcongr =>
     rename_i ty md x_init v e
     cases hinit with
     | init h_xn h_xv h_other =>
@@ -671,7 +673,7 @@ private theorem isDefined_of_EvalCmd {P : PureExpr}
       · subst hxx'; rw [h_xv]; rfl
       · have h_eq : σ' x = σ x := h_other x (fun h => hxx' h.symm)
         rw [h_eq]; exact h_def_x
-  | eval_set heval hupdate hwfvar =>
+  | eval_set heval hupdate hwfvar hwfcongr =>
     rename_i md x_set v e
     cases hupdate with
     | update h_xv' h_xv h_other =>
@@ -687,9 +689,9 @@ private theorem isDefined_of_EvalCmd {P : PureExpr}
       · subst hxx'; rw [h_xv]; rfl
       · have h_eq : σ' x = σ x := h_other x (fun h => hxx' h.symm)
         rw [h_eq]; exact h_def_x
-  | eval_assert_pass _ _ => exact h_def_x
-  | eval_assert_fail _ _ => exact h_def_x
-  | eval_assume _ _ => exact h_def_x
+  | eval_assert_pass _ _ _ => exact h_def_x
+  | eval_assert_fail _ _ _ => exact h_def_x
+  | eval_assume _ _ _ => exact h_def_x
   | eval_cover _ => exact h_def_x
 
 /-- A helper: if `EvalCmd c σ σ' f` succeeds and `x` is not in `c`'s definedVars
@@ -705,7 +707,7 @@ private theorem agreement_helper_unchanged_at_x {P : PureExpr}
     (h_σ_x : σ x = none) :
     σ' x = none := by
   cases h_eval with
-  | eval_init heval hinit hwfvar =>
+  | eval_init heval hinit hwfvar hwfcongr =>
     cases hinit with
     | init h_xn h_xv h_other =>
       -- After cases on hinit, anonymous vars (from EvalCmd's eval_init constructor):
@@ -735,7 +737,7 @@ private theorem agreement_helper_unchanged_at_x {P : PureExpr}
         rw [h_dv, h_eq]
         exact List.mem_singleton.mpr rfl
       rw [h_other x h_x_ne]; exact h_σ_x
-  | eval_set heval hupdate hwfvar =>
+  | eval_set heval hupdate hwfvar hwfcongr =>
     cases hupdate with
     | update h_xv' h_xv h_other =>
       rename_i md x_set v e v'
@@ -753,9 +755,9 @@ private theorem agreement_helper_unchanged_at_x {P : PureExpr}
         rw [h_σ_x] at h_xv'
         cases h_xv'
       · rw [h_other x h_eq]; exact h_σ_x
-  | eval_assert_pass _ _ => exact h_σ_x
-  | eval_assert_fail _ _ => exact h_σ_x
-  | eval_assume _ _ => exact h_σ_x
+  | eval_assert_pass _ _ _ => exact h_σ_x
+  | eval_assert_fail _ _ _ => exact h_σ_x
+  | eval_assume _ _ _ => exact h_σ_x
   | eval_cover _ => exact h_σ_x
 
 /-- Multi-command extension of `agreement_helper_unchanged_at_x`: if `EvalCmds`
@@ -4018,6 +4020,7 @@ private theorem flushCmds_condGoto_true {P : PureExpr} [HasFvar P] [HasNot P] [H
     (σ_base : SemanticStore P) (hf_base hf_accum : Bool)
     (ρ₀ : Env P)
     (hwfb : WellFormedSemanticEvalBool ρ₀.eval)
+    (hwfcongr : WellFormedSemanticEvalExprCongr ρ₀.eval)
     (h_accum : EvalCmds P (EvalCmd P) ρ₀.eval σ_base accum.reverse ρ₀.store hf_accum)
     (h_hf : ρ₀.hasFailure = (hf_base || hf_accum))
     (h_cond : ρ₀.eval ρ₀.store e = .some HasBool.tt)
@@ -4040,7 +4043,7 @@ private theorem flushCmds_condGoto_true {P : PureExpr} [HasFvar P] [HasNot P] [H
   have h_eval_block : EvalDetBlock P (EvalCmd P) extendEval
       σ_base ⟨accum.reverse, .condGoto e tl fl md⟩
       (.cont tl ρ₀.store hf_accum) :=
-    EvalDetBlock.step_goto_true (δ := ρ₀.eval) h_accum h_cond hwfb
+    EvalDetBlock.step_goto_true (δ := ρ₀.eval) h_accum h_cond hwfb hwfcongr
   have h_step : @StepCFG _ _ (Cmd P) _ P
       (EvalDetBlock P (EvalCmd P) extendEval) cfg
       (.cont (StringGenState.gen "ite$" gen_e).fst σ_base hf_base)
@@ -4066,6 +4069,7 @@ private theorem flushCmds_condGoto_false {P : PureExpr} [HasFvar P] [HasNot P] [
     (σ_base : SemanticStore P) (hf_base hf_accum : Bool)
     (ρ₀ : Env P)
     (hwfb : WellFormedSemanticEvalBool ρ₀.eval)
+    (hwfcongr : WellFormedSemanticEvalExprCongr ρ₀.eval)
     (h_accum : EvalCmds P (EvalCmd P) ρ₀.eval σ_base accum.reverse ρ₀.store hf_accum)
     (h_hf : ρ₀.hasFailure = (hf_base || hf_accum))
     (h_cond : ρ₀.eval ρ₀.store e = .some HasBool.ff)
@@ -4087,7 +4091,7 @@ private theorem flushCmds_condGoto_false {P : PureExpr} [HasFvar P] [HasNot P] [
   have h_eval_block : EvalDetBlock P (EvalCmd P) extendEval
       σ_base ⟨accum.reverse, .condGoto e tl fl md⟩
       (.cont fl ρ₀.store hf_accum) :=
-    EvalDetBlock.step_goto_false (δ := ρ₀.eval) h_accum h_cond hwfb
+    EvalDetBlock.step_goto_false (δ := ρ₀.eval) h_accum h_cond hwfb hwfcongr
   have h_step : @StepCFG _ _ (Cmd P) _ P
       (EvalDetBlock P (EvalCmd P) extendEval) cfg
       (.cont (StringGenState.gen "ite$" gen_e).fst σ_base hf_base)
@@ -4151,7 +4155,7 @@ private theorem flushCmds_condGoto_true_agree {P : PureExpr} [HasFvar P] [HasNot
   have h_eval_block : EvalDetBlock P (EvalCmd P) extendEval
       σ_base ⟨accum.reverse, .condGoto e tl fl md⟩
       (.cont tl σ_cfg_after hf_accum) :=
-    EvalDetBlock.step_goto_true (δ := ρ₀.eval) h_accum_cfg h_cond_cfg hwfb
+    EvalDetBlock.step_goto_true (δ := ρ₀.eval) h_accum_cfg h_cond_cfg hwfb h_congr
   have h_step : @StepCFG _ _ (Cmd P) _ P
       (EvalDetBlock P (EvalCmd P) extendEval) cfg
       (.cont (StringGenState.gen "ite$" gen_e).fst σ_base hf_base)
@@ -4207,7 +4211,7 @@ private theorem flushCmds_condGoto_false_agree {P : PureExpr} [HasFvar P] [HasNo
   have h_eval_block : EvalDetBlock P (EvalCmd P) extendEval
       σ_base ⟨accum.reverse, .condGoto e tl fl md⟩
       (.cont fl σ_cfg_after hf_accum) :=
-    EvalDetBlock.step_goto_false (δ := ρ₀.eval) h_accum_cfg h_cond_cfg hwfb
+    EvalDetBlock.step_goto_false (δ := ρ₀.eval) h_accum_cfg h_cond_cfg hwfb h_congr
   have h_step : @StepCFG _ _ (Cmd P) _ P
       (EvalDetBlock P (EvalCmd P) extendEval) cfg
       (.cont (StringGenState.gen "ite$" gen_e).fst σ_base hf_base)
@@ -4232,7 +4236,7 @@ private theorem EvalCmd_value_preserved_at_x {P : PureExpr}
     (h_x_not_mod : x ∉ Cmd.modifiedVars c) :
     σ' x = σ x := by
   cases h_eval with
-  | eval_init heval hinit hwfvar =>
+  | eval_init heval hinit hwfvar hwfcongr =>
     cases hinit with
     | init h_xn h_xv h_other =>
       rename_i ty md x_init v e
@@ -4260,7 +4264,7 @@ private theorem EvalCmd_value_preserved_at_x {P : PureExpr}
         rw [h_dv, h_eq]
         exact List.mem_singleton.mpr rfl
       exact h_other x h_x_ne
-  | eval_set heval hupdate hwfvar =>
+  | eval_set heval hupdate hwfvar hwfcongr =>
     cases hupdate with
     | update h_xv' h_xv h_other =>
       rename_i md x_set v e v'
@@ -4288,9 +4292,9 @@ private theorem EvalCmd_value_preserved_at_x {P : PureExpr}
         rw [h_mv, h_eq]
         exact List.mem_singleton.mpr rfl
       exact h_other x h_x_ne
-  | eval_assert_pass _ _ => rfl
-  | eval_assert_fail _ _ => rfl
-  | eval_assume _ _ => rfl
+  | eval_assert_pass _ _ _ => rfl
+  | eval_assert_fail _ _ _ => rfl
+  | eval_assume _ _ _ => rfl
   | eval_cover _ => rfl
 
 /-- Multi-command extension of `EvalCmd_value_preserved_at_x`. -/
@@ -4517,7 +4521,7 @@ private theorem flushCmds_condGoto_nondet_agree {P : PureExpr} [HasFvar P] [HasN
               (HasFvar.mkFvar (P := P) freshIdent) tl fl md⟩
           (.cont tl σ_cfg_final hf_accum) := by
       rw [h_reverse_eq]
-      exact EvalDetBlock.step_goto_true (δ := ρ₀.eval) h_full_chain' h_cond_tt hwfb
+      exact EvalDetBlock.step_goto_true (δ := ρ₀.eval) h_full_chain' h_cond_tt hwfb h_congr
     have h_step : @StepCFG _ _ (Cmd P) _ P
         (EvalDetBlock P (EvalCmd P) extendEval) cfg
         (.cont (StringGenState.gen "ite$" gen_e).fst σ_base hf_base)
@@ -4555,7 +4559,7 @@ private theorem flushCmds_condGoto_nondet_agree {P : PureExpr} [HasFvar P] [HasN
               (HasFvar.mkFvar (P := P) freshIdent) tl fl md⟩
           (.cont fl σ_cfg_final hf_accum) := by
       rw [h_reverse_eq]
-      exact EvalDetBlock.step_goto_false (δ := ρ₀.eval) h_full_chain' h_cond_ff hwfb
+      exact EvalDetBlock.step_goto_false (δ := ρ₀.eval) h_full_chain' h_cond_ff hwfb h_congr
     have h_step : @StepCFG _ _ (Cmd P) _ P
         (EvalDetBlock P (EvalCmd P) extendEval) cfg
         (.cont (StringGenState.gen "ite$" gen_e).fst σ_base hf_base)
@@ -4754,7 +4758,6 @@ theorem EvalCmd_frame_extend_one
     {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
     [HasVarsPure P P.Expr] [DecidableEq P.Ident]
     {δ : SemanticEval P}
-    (h_wf_congr : WellFormedSemanticEvalExprCongr δ)
     {σ σ' : SemanticStore P} {failed : Bool}
     {ident : P.Ident} {val : P.Expr}
     {c : Cmd P}
@@ -4773,7 +4776,7 @@ theorem EvalCmd_frame_extend_one
     unfold Cmd.touchedVars
     exact List.mem_append.mpr (Or.inr h))
   cases h_eval with
-  | eval_init h_eval_e h_init h_wf_var =>
+  | eval_init h_eval_e h_init h_wf_var h_wf_congr =>
     rename_i ty md x v e
     -- ident ∉ definedVars (.init x ty _ md) = [x], so ident ≠ x.
     have h_x_ne_ident : x ≠ ident := by
@@ -4798,7 +4801,7 @@ theorem EvalCmd_frame_extend_one
       rw [Expr_eval_frame_extend_one h_wf_congr h_e_unused]
       exact h_eval_e
     exact EvalCmd.eval_init h_eval_e_lifted
-      (InitState_frame_extend_one h_init h_x_ne_ident) h_wf_var
+      (InitState_frame_extend_one h_init h_x_ne_ident) h_wf_var h_wf_congr
   | eval_init_unconstrained h_init h_wf_var =>
     rename_i ty md x v
     have h_x_ne_ident : x ≠ ident := by
@@ -4811,7 +4814,7 @@ theorem EvalCmd_frame_extend_one
       exact List.mem_singleton.mpr rfl
     exact EvalCmd.eval_init_unconstrained
       (InitState_frame_extend_one h_init h_x_ne_ident) h_wf_var
-  | eval_set h_eval_e h_update h_wf_var =>
+  | eval_set h_eval_e h_update h_wf_var h_wf_congr =>
     rename_i md x v e
     -- ident ∉ modifiedVars (.set x (.det e) md) = [x], so ident ≠ x.
     have h_x_ne_ident : x ≠ ident := by
@@ -4835,7 +4838,7 @@ theorem EvalCmd_frame_extend_one
       rw [Expr_eval_frame_extend_one h_wf_congr h_e_unused]
       exact h_eval_e
     exact EvalCmd.eval_set h_eval_e_lifted
-      (UpdateState_frame_extend_one h_update h_x_ne_ident) h_wf_var
+      (UpdateState_frame_extend_one h_update h_x_ne_ident) h_wf_var h_wf_congr
   | eval_set_nondet h_update h_wf_var =>
     rename_i md x v
     have h_x_ne_ident : x ≠ ident := by
@@ -4848,7 +4851,7 @@ theorem EvalCmd_frame_extend_one
       exact List.mem_singleton.mpr rfl
     exact EvalCmd.eval_set_nondet
       (UpdateState_frame_extend_one h_update h_x_ne_ident) h_wf_var
-  | eval_assert_pass h_eval_e h_wfb =>
+  | eval_assert_pass h_eval_e h_wfb h_wf_congr =>
     rename_i l md e
     -- σ' = σ; just lift the eval.
     have h_e_unused : ident ∉ HasVarsPure.getVars e := by
@@ -4863,8 +4866,8 @@ theorem EvalCmd_frame_extend_one
         δ (extendStoreOne σ ident val) e = .some HasBool.tt := by
       rw [Expr_eval_frame_extend_one h_wf_congr h_e_unused]
       exact h_eval_e
-    exact EvalCmd.eval_assert_pass h_eval_e_lifted h_wfb
-  | eval_assert_fail h_eval_e h_wfb =>
+    exact EvalCmd.eval_assert_pass h_eval_e_lifted h_wfb h_wf_congr
+  | eval_assert_fail h_eval_e h_wfb h_wf_congr =>
     rename_i l md e
     have h_e_unused : ident ∉ HasVarsPure.getVars e := by
       intro h
@@ -4878,8 +4881,8 @@ theorem EvalCmd_frame_extend_one
         δ (extendStoreOne σ ident val) e = .some HasBool.ff := by
       rw [Expr_eval_frame_extend_one h_wf_congr h_e_unused]
       exact h_eval_e
-    exact EvalCmd.eval_assert_fail h_eval_e_lifted h_wfb
-  | eval_assume h_eval_e h_wfb =>
+    exact EvalCmd.eval_assert_fail h_eval_e_lifted h_wfb h_wf_congr
+  | eval_assume h_eval_e h_wfb h_wf_congr =>
     rename_i l md e
     have h_e_unused : ident ∉ HasVarsPure.getVars e := by
       intro h
@@ -4893,7 +4896,7 @@ theorem EvalCmd_frame_extend_one
         δ (extendStoreOne σ ident val) e = .some HasBool.tt := by
       rw [Expr_eval_frame_extend_one h_wf_congr h_e_unused]
       exact h_eval_e
-    exact EvalCmd.eval_assume h_eval_e_lifted h_wfb
+    exact EvalCmd.eval_assume h_eval_e_lifted h_wfb h_wf_congr
   | eval_cover h_wfb =>
     -- σ unchanged, no eval to lift.
     exact EvalCmd.eval_cover h_wfb
@@ -4904,7 +4907,6 @@ theorem EvalCmds_frame_extend_one
     {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
     [HasVarsPure P P.Expr] [DecidableEq P.Ident]
     {δ : SemanticEval P}
-    (h_wf_congr : WellFormedSemanticEvalExprCongr δ)
     {σ σ' : SemanticStore P} {failed : Bool}
     {ident : P.Ident} {val : P.Expr}
     {cs : List (Cmd P)}
@@ -4922,7 +4924,7 @@ theorem EvalCmds_frame_extend_one
     have h_cs_unused : ∀ c' ∈ cs', ident ∉ Cmd.touchedVars c' :=
       fun c' hc' => h_ident_unused c' (List.mem_cons_of_mem _ hc')
     have h_head_lifted :=
-      EvalCmd_frame_extend_one (val := val) h_wf_congr h_c_unused h_head
+      EvalCmd_frame_extend_one (val := val) h_c_unused h_head
     have h_tail_lifted := ih h_cs_unused
     exact EvalCmds.eval_cmds_some h_head_lifted h_tail_lifted
 
@@ -4942,6 +4944,86 @@ theorem updateFailure_extendStoreOne_commute
     updateFailure (cfgConfigExtendStoreOne config ident val) failed =
     cfgConfigExtendStoreOne (updateFailure config failed) ident val := by
   cases config <;> simp [updateFailure, cfgConfigExtendStoreOne]
+
+/-- A single `EvalDetBlock` derivation lifts through a frame extension when
+the block doesn't touch the frame ident.
+
+The proof case-splits on `h_eval` and recurses manually in the `cmd` arm.
+WFCongr is extracted from the inverted constructor field, not from the
+lemma's signature. -/
+theorem evalDetBlock_frame_extend_one
+    {l : Type} {P : PureExpr} [HasFvar P] [HasNot P]
+    [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    (extendEval : ExtendEval P)
+    {σ : SemanticStore P}
+    {blk : DetBlock l (Cmd P) P}
+    {config : CFGConfig l P}
+    {ident : P.Ident} {val : P.Expr}
+    (h_ident_unused : ident ∉ Block.cfgFrameTouches blk)
+    (h_eval : EvalDetBlock P (EvalCmd P) extendEval σ blk config) :
+    EvalDetBlock P (EvalCmd P) extendEval (extendStoreOne σ ident val) blk
+      (cfgConfigExtendStoreOne config ident val) := by
+  match h_eval with
+  | EvalDetBlock.cmd (c := c) (cs := cs) (transfer := transfer) h_cmd h_rest =>
+    -- h_ident_unused : ident ∉ Block.cfgFrameTouches ⟨c :: cs, transfer⟩
+    have h_unfold : Block.cfgFrameTouches (⟨c :: cs, transfer⟩ : DetBlock l (Cmd P) P)
+        = Cmd.touchedVars c ++
+          Block.cfgFrameTouches (⟨cs, transfer⟩ : DetBlock l (Cmd P) P) := by
+      unfold Block.cfgFrameTouches
+      simp [List.foldr, List.append_assoc]
+    have h_c_unused : ident ∉ Cmd.touchedVars c := by
+      intro hin
+      apply h_ident_unused
+      rw [h_unfold]
+      exact List.mem_append.mpr (Or.inl hin)
+    have h_inner_unused : ident ∉ Block.cfgFrameTouches
+        (⟨cs, transfer⟩ : DetBlock l (Cmd P) P) := by
+      intro hin
+      apply h_ident_unused
+      rw [h_unfold]
+      exact List.mem_append.mpr (Or.inr hin)
+    have h_cmd_lifted :=
+      EvalCmd_frame_extend_one (val := val) h_c_unused h_cmd
+    have h_rest_lifted :=
+      evalDetBlock_frame_extend_one (val := val) extendEval
+        h_inner_unused h_rest
+    have h_step :=
+      EvalDetBlock.cmd (extendEval := extendEval)
+        (transfer := transfer) h_cmd_lifted h_rest_lifted
+    rw [updateFailure_extendStoreOne_commute] at h_step
+    exact h_step
+  | EvalDetBlock.goto_true (δ := δ') (σ := σ') (c := c) h_cond h_wfb h_wf_congr =>
+    have h_c_unused : ident ∉ HasVarsPure.getVars (P := P) c := by
+      intro hin
+      apply h_ident_unused
+      unfold Block.cfgFrameTouches
+      simp only [List.foldr_nil, List.nil_append]
+      unfold DetTransferCmd.touchedVars
+      exact hin
+    have h_cond_lifted : δ' (extendStoreOne σ' ident val) c = .some HasBool.tt := by
+      have h_eq := Expr_eval_frame_extend_one (val := val) h_wf_congr h_c_unused
+        (σ := σ') (e := c)
+      rw [h_eq]; exact h_cond
+    simp only [cfgConfigExtendStoreOne]
+    exact EvalDetBlock.goto_true h_cond_lifted h_wfb h_wf_congr
+  | EvalDetBlock.goto_false (δ := δ') (σ := σ') (c := c) h_cond h_wfb h_wf_congr =>
+    have h_c_unused : ident ∉ HasVarsPure.getVars (P := P) c := by
+      intro hin
+      apply h_ident_unused
+      unfold Block.cfgFrameTouches
+      simp only [List.foldr_nil, List.nil_append]
+      unfold DetTransferCmd.touchedVars
+      exact hin
+    have h_cond_lifted : δ' (extendStoreOne σ' ident val) c = .some HasBool.ff := by
+      have h_eq := Expr_eval_frame_extend_one (val := val) h_wf_congr h_c_unused
+        (σ := σ') (e := c)
+      rw [h_eq]; exact h_cond
+    simp only [cfgConfigExtendStoreOne]
+    exact EvalDetBlock.goto_false h_cond_lifted h_wfb h_wf_congr
+  | EvalDetBlock.terminal =>
+    simp only [cfgConfigExtendStoreOne]
+    exact EvalDetBlock.terminal
+termination_by blk.cmds.length
 
 /-! ## Generalized simulation
 
@@ -4964,6 +5046,7 @@ private theorem flushCmds_simulation {P : PureExpr} [HasFvar P] [HasNot P] [HasV
     (hf_accum : Bool)
     (ρ₀ : Env P)
     (hwfb : WellFormedSemanticEvalBool ρ₀.eval)
+    (hwfcongr : WellFormedSemanticEvalExprCongr ρ₀.eval)
     (hwfv : WellFormedSemanticEvalVal ρ₀.eval)
     (h_accum : EvalCmds P (EvalCmd P) ρ₀.eval σ_base accum.reverse ρ₀.store hf_accum)
     (h_hf : ρ₀.hasFailure = (hf_base || hf_accum))
@@ -5010,7 +5093,7 @@ private theorem flushCmds_simulation {P : PureExpr} [HasFvar P] [HasNot P] [HasV
         σ_base ⟨accum.reverse, DetTransferCmd.goto k⟩
         (.cont k ρ₀.store hf_accum) := by
       rw [h_goto_eq]
-      exact EvalDetBlock.step_goto_true (δ := ρ₀.eval) h_accum h_cond_tt hwfb
+      exact EvalDetBlock.step_goto_true (δ := ρ₀.eval) h_accum h_cond_tt hwfb hwfcongr
     have h_lkp : cfg.blocks.lookup (StringGenState.gen pfx gen).fst =
         some { cmds := accum.reverse, transfer := DetTransferCmd.goto k } :=
       List.lookup_of_mem_nodup cfg.blocks h_cfg_nodup _ _ h_mem
@@ -5096,7 +5179,7 @@ private theorem flushCmds_simulation_agree {P : PureExpr} [HasFvar P] [HasNot P]
         σ_base ⟨accum.reverse, DetTransferCmd.goto k⟩
         (.cont k σ_cfg_after hf_accum) := by
       rw [h_goto_eq]
-      exact EvalDetBlock.step_goto_true (δ := ρ₀.eval) h_accum_cfg h_cond_tt hwfb
+      exact EvalDetBlock.step_goto_true (δ := ρ₀.eval) h_accum_cfg h_cond_tt hwfb h_congr
     have h_lkp : cfg.blocks.lookup (StringGenState.gen pfx gen).fst =
         some { cmds := accum.reverse, transfer := DetTransferCmd.goto k } :=
       List.lookup_of_mem_nodup cfg.blocks h_cfg_nodup _ _ h_mem
@@ -5169,7 +5252,7 @@ private theorem flushCmds_goto_simulation_agree {P : PureExpr} [HasFvar P] [HasN
       σ_base ⟨accum.reverse, DetTransferCmd.goto bk md⟩
       (.cont bk σ_cfg_after hf_accum) := by
     rw [h_goto_eq]
-    exact EvalDetBlock.step_goto_true (δ := ρ₀.eval) h_accum_cfg h_cond_tt hwfb
+    exact EvalDetBlock.step_goto_true (δ := ρ₀.eval) h_accum_cfg h_cond_tt hwfb h_congr
   have h_lkp : cfg.blocks.lookup (StringGenState.gen pfx gen).fst =
       some { cmds := accum.reverse, transfer := DetTransferCmd.goto bk md } :=
     List.lookup_of_mem_nodup cfg.blocks h_cfg_nodup _ _ h_mem
