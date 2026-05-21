@@ -2539,6 +2539,86 @@ theorem coreCFGToGotoBlockStep_preserves_locationNum_eq_index
   | .error e, h_inner =>
     simp at h_run
 
+/-! ### Outer-loop foldlM preservation
+
+Lift the per-block preservation lemmas across `List.foldlM` over
+`cfg.blocks`. The outer-loop result is the post-state after processing
+all blocks. -/
+
+/-- The outer-loop fold preserves `size_eq` if every block's body is
+admitted. -/
+theorem blocksFoldlM_preserves_size_eq
+    (fname : String)
+    (blocks : List (String × Imperative.DetBlock String Core.Command Core.Expression))
+    (st st' : Strata.CoreCFGTransLoopState)
+    (h_admitted :
+      ∀ lblBlk ∈ blocks, ∀ c ∈ lblBlk.2.cmds, Core.CmdExt.isAdmittedCmd c = true)
+    (h_run : blocks.foldlM (Strata.coreCFGToGotoBlockStep fname) st = Except.ok st')
+    (h_size : st.trans.instructions.size = st.trans.nextLoc) :
+    st'.trans.instructions.size = st'.trans.nextLoc := by
+  induction blocks generalizing st with
+  | nil =>
+    simp [List.foldlM, pure, Except.pure] at h_run
+    subst h_run; exact h_size
+  | cons head rest ih =>
+    rw [List.foldlM_cons] at h_run
+    match h_step : Strata.coreCFGToGotoBlockStep fname st head with
+    | .ok st₁ =>
+      rw [h_step] at h_run
+      simp only [Bind.bind, Except.bind] at h_run
+      have h_admitted_head : ∀ c ∈ head.2.cmds, Core.CmdExt.isAdmittedCmd c = true :=
+        h_admitted head (by simp)
+      have h_size₁ : st₁.trans.instructions.size = st₁.trans.nextLoc :=
+        coreCFGToGotoBlockStep_preserves_size_eq fname head st st₁ h_admitted_head h_step h_size
+      have h_admitted_rest :
+          ∀ lblBlk ∈ rest, ∀ c ∈ lblBlk.2.cmds, Core.CmdExt.isAdmittedCmd c = true :=
+        fun lblBlk hlb => h_admitted lblBlk (by simp [hlb])
+      exact ih st₁ h_admitted_rest h_run h_size₁
+    | .error _ =>
+      rw [h_step] at h_run
+      simp [Bind.bind, Except.bind] at h_run
+
+/-- The outer-loop fold preserves `locationNum_eq_index`. -/
+theorem blocksFoldlM_preserves_locationNum_eq_index
+    (fname : String)
+    (blocks : List (String × Imperative.DetBlock String Core.Command Core.Expression))
+    (st st' : Strata.CoreCFGTransLoopState)
+    (h_admitted :
+      ∀ lblBlk ∈ blocks, ∀ c ∈ lblBlk.2.cmds, Core.CmdExt.isAdmittedCmd c = true)
+    (h_run : blocks.foldlM (Strata.coreCFGToGotoBlockStep fname) st = Except.ok st')
+    (h_size : st.trans.instructions.size = st.trans.nextLoc)
+    (h_loc :
+      ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+        st.trans.instructions[i]? = some instr → instr.locationNum = i) :
+    ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+      st'.trans.instructions[i]? = some instr → instr.locationNum = i := by
+  induction blocks generalizing st with
+  | nil =>
+    simp [List.foldlM, pure, Except.pure] at h_run
+    subst h_run; exact h_loc
+  | cons head rest ih =>
+    rw [List.foldlM_cons] at h_run
+    match h_step : Strata.coreCFGToGotoBlockStep fname st head with
+    | .ok st₁ =>
+      rw [h_step] at h_run
+      simp only [Bind.bind, Except.bind] at h_run
+      have h_admitted_head : ∀ c ∈ head.2.cmds, Core.CmdExt.isAdmittedCmd c = true :=
+        h_admitted head (by simp)
+      have h_size₁ : st₁.trans.instructions.size = st₁.trans.nextLoc :=
+        coreCFGToGotoBlockStep_preserves_size_eq fname head st st₁ h_admitted_head h_step h_size
+      have h_loc₁ :
+          ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+            st₁.trans.instructions[i]? = some instr → instr.locationNum = i :=
+        coreCFGToGotoBlockStep_preserves_locationNum_eq_index fname head st st₁
+          h_admitted_head h_step h_size h_loc
+      have h_admitted_rest :
+          ∀ lblBlk ∈ rest, ∀ c ∈ lblBlk.2.cmds, Core.CmdExt.isAdmittedCmd c = true :=
+        fun lblBlk hlb => h_admitted lblBlk (by simp [hlb])
+      exact ih st₁ h_admitted_rest h_run h_size₁ h_loc₁
+    | .error _ =>
+      rw [h_step] at h_run
+      simp [Bind.bind, Except.bind] at h_run
+
 /-! ## Top-level theorem (statement + interface)
 
 The top-level `coreCFGToGotoTransform_wellFormed` theorem proves that
