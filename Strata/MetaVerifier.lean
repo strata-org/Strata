@@ -101,6 +101,9 @@ namespace Strata
 /--
 Generate verification conditions for a `Strata.Program` by translating it to the
 appropriate frontend verifier and collecting its deferred proof obligations.
+
+Note that this can be extended to new dialects by using
+`unsafe/@[implemented_by]` as in `StrataBoole.MetaVerifier`.
 -/
 def genCoreVCs (program : Program) : Option Core.coreVCs := do
   if program.dialect == "Core" then
