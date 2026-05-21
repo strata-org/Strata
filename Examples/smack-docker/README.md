@@ -186,30 +186,21 @@ and `Tools/BoogieToStrata/IntegrationTests/BoogieToStrataIntegrationTests.cs`.
   branch — see *What this branch ships → CFG block emission in
   reverse-postorder*.
 - **Deductive PARTIAL breakdown (sample-based).** The 20 deductive
-  PARTIALs across the 25-program suite (post sub-class (b) fix)
-  split into three sub-classes by failing-VC verdict and origin:
+  PARTIALs across the 25-program suite split into two sub-classes by
+  failing-VC verdict and origin:
   - **(a) Missing `ensures` on a user-defined helper** — solver
     refutes with `🔶 can be both true and false`, label
     `callElimAssert_assert__i32_requires_0_NN`. Every assertion of
     the form `assert(callee(...) == expected)` where the user fn has
     no spec block. ~17 of 25 programs, varies in VC count per program.
-    Fix lever: synthesize `ensures` from procedure bodies (Strata-side
-    pass; not a Python regex — too easy to be unsound). The previously
-    discussed approach via SMACK's `__CONTRACT_ensures` macro is
-    blocked upstream by SMACK's missing `result()` expression.
-  - **(b) `__VERIFIER_assume` is uninterpreted (partially resolved on
-    this branch).** Failing-VC label
-    `(Origin_assert__i32_Requires)assert__i32_requires_0` — a
-    top-level requires-discharge VC. Affected programs whose C source
-    uses `assume(...)` to bound inputs; the assumption was dropped
-    because `__VERIFIER_assume` had no spec. Fixed by synthesizing
-    `free ensures (_i0 != 0)` on `__VERIFIER_assume` declarations
-    under `--smack`; commit `1b2231f99`. `nondet_branch` flipped
-    PARTIAL → PASS; `abs_func`, `max_func` retained one failing VC
-    each, now traced to sub-class (a) — an assert downstream of a
-    user-function call (`abs_val`, `max`) with no `ensures`. Closing
-    those needs the sub-class (a) lever.
-  - **(e) Solver returns `unknown`** — verdict `❓ unknown`. Sample:
+    `abs_func` and `max_func` were previously masked as a separate
+    `__VERIFIER_assume` blocker; once that was fixed (commit
+    `1b2231f99`) their residual VCs landed here. Fix lever: synthesize
+    `ensures` from procedure bodies (Strata-side pass; not a Python
+    regex — too easy to be unsound). The previously discussed approach
+    via SMACK's `__CONTRACT_ensures` macro is blocked upstream by
+    SMACK's missing `result()` expression.
+  - **(b) Solver returns `unknown`** — verdict `❓ unknown`. Sample:
     `aws_byte_buf_append`, all 7 VCs. The asserted predicate chain
     involves nested int↔bit conversions (`_zext`, `_trunc`) over
     memory-map loads (`_load_i64`, `_load_ref`) on a program with 13
@@ -218,18 +209,11 @@ and `Tools/BoogieToStrata/IntegrationTests/BoogieToStrataIntegrationTests.cs`.
     `Strata/Languages/Core/SMTEncoder.lean` — array theory vs
     axiomatized maps, axiom pruning. Significant effort; likely the
     last sub-class to address.
-- **`strip_smack_prelude.py` is overbroad.** The strip removes prelude
-  bodies whose multi-target gotos BoogieToStrata used to choke on. With
-  `--smack` and `InferModifies = true`, only `__SMACK_and{32,16,8}` and
-  `__SMACK_or32` still need stripping; the rest translate cleanly. Code-
-  hygiene cleanup (narrow the strip list), not a verdict-improvement
-  lever.
 - **bugFinding partials.** Symbolic execution finds potential
   counterexamples for assertions on programs whose preconditions are
-  insufficient. Same root cause as deductive sub-class (b) for the
-  programs that use `assume(...)`; same root cause as sub-class (a)
-  for the programs that call user fns without `ensures`. Expected
-  behaviour given the current translation; not a pipeline bug.
+  insufficient. Same root cause as deductive sub-class (a) (callees
+  with no `ensures`). Expected behaviour given the current translation;
+  not a pipeline bug.
 - **Cross-procedure PE error contamination (silently dropped VCs,
   issue #1185).** `ProgramEval.lean` threads a single `Env` through
   every procedure in declaration order. If `Procedure.eval` sets

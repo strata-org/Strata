@@ -41,10 +41,15 @@ translator. For ongoing work, the GitHub issue tracker is authoritative.
 ## Test fixtures
 
 - `Tools/BoogieToStrata/Tests/*.bpl` — small per-feature regression
-  inputs, each paired with a `.expect` golden file.
+  inputs. Each `.bpl` may be paired with an optional `.expect` golden
+  file pinning the expected `strata verify` output; without one, the
+  runner only checks that `strata verify --check` accepts the input.
+  Files carrying a `{:smack}` marker in the first 5 lines are
+  translated with `--smack` to exercise the SMACK-specific path.
 - `Tools/BoogieToStrata/IntegrationTests/BoogieToStrataIntegrationTests.cs`
-  runs the translator against every `.bpl` in `Tests/` and diffs the
-  output against `.expect`.
+  iterates every `.bpl` in `Tests/`, translates it, and (when an
+  `.expect` is present) diffs the verifier output against the golden
+  file.
 
 ## Known issues
 
@@ -52,8 +57,9 @@ translator. For ongoing work, the GitHub issue tracker is authoritative.
   errored on nondet goto with undeclared `$__nondet_N`. Resolved on
   `htd/smack` by emitting an `init` command for the synthetic variable
   in `translateTransfer`; tracked here for cross-reference.
-- [#1184](https://github.com/strata-org/Strata/issues/1184) — Multi
-  out-parameter support for the CBMC backend.
+- [#1184](https://github.com/strata-org/Strata/issues/1184) — CBMC
+  backend lacks multi-return support, and the unimplemented-feature
+  error is silently swallowed.
 - [#1185](https://github.com/strata-org/Strata/issues/1185) — Cross-
   procedure PE error contamination silently drops obligations.
   `--split-procs` in `run_pipeline.py` is the current workaround.
