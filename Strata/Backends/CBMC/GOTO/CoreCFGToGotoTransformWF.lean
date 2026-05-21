@@ -2820,6 +2820,99 @@ theorem coreCFGToGotoTransform_size_eq_and_loc
     exact patchGotoTargets_preserves_locationNum_eq_index trans_post resolved h_loc_post i instr h
   exact ⟨h_size_ans, h_loc_ans⟩
 
+/-! ### Translator decomposition
+
+Initial state for the translator's forward pass and an explicit
+unfolding of the translator into `do let st ← ...; let (r, t) ← ...;
+return ...` form. -/
+
+/-- Initial loop-state for `coreCFGToGotoTransform`'s forward pass. -/
+@[expose] def coreCFGToGotoInitState
+    (trans₀ : Imperative.GotoTransform Core.Expression.TyEnv)
+    : Strata.CoreCFGTransLoopState :=
+  { trans := trans₀, pendingPatches := #[], labelMap := {}, loopContracts := {} }
+
+/-- The translator's output factors through the post-blocks-fold,
+post-patches-fold, and a final `patchGotoTargets`. The proof works by
+case-analysis on `cfg.blocks` to dispense with the entry-check, then
+walking the two foldlM chains with `match`. -/
+theorem coreCFGToGotoTransform_decompose
+    (Env : Core.Expression.TyEnv) (functionName : String)
+    (cfg : Core.DetCFG)
+    (trans₀ : Imperative.GotoTransform Core.Expression.TyEnv)
+    (ans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_run : Strata.coreCFGToGotoTransform Env functionName cfg trans₀
+              = Except.ok ans) :
+    ∃ (st_final : Strata.CoreCFGTransLoopState)
+      (resolved : List (Nat × Nat))
+      (trans_post : Imperative.GotoTransform Core.Expression.TyEnv),
+      cfg.blocks.foldlM (Strata.coreCFGToGotoBlockStep functionName)
+        (coreCFGToGotoInitState trans₀)
+      = Except.ok st_final ∧
+      st_final.pendingPatches.foldlM
+        (Strata.coreCFGToGotoPatchStep st_final.labelMap st_final.loopContracts)
+        ([], st_final.trans)
+      = Except.ok (resolved, trans_post) ∧
+      ans = Imperative.patchGotoTargets trans_post resolved := by
+  unfold Strata.coreCFGToGotoTransform at h_run
+  -- Two cases on cfg.blocks for the entry-check; both dispatch to the same body.
+  -- We use a unified strategy: rewrite the entry-check to `pure ()` first when the
+  -- entry condition holds; in the empty-blocks case, the entry-check is `pure ()`
+  -- directly. Use `match` on cfg.blocks via h_blocks.
+  match h_blocks : cfg.blocks with
+  | [] =>
+    -- With empty blocks, both folds are trivial and the entry-check is `pure ()`.
+    -- After the `match h_blocks : cfg.blocks with | [] =>`, in this branch
+    -- `cfg.blocks` may already be substituted, so we don't `rw [h_blocks]`.
+    refine ⟨coreCFGToGotoInitState trans₀, [], trans₀, ?_, ?_, ?_⟩
+    · -- Goal: [].foldlM ... = ok (initState trans₀). Holds by rfl.
+      rfl
+    · rfl
+    · -- ans = patchGotoTargets trans₀ [].
+      rw [h_blocks] at h_run
+      simp only [Bind.bind, Except.bind, pure, Except.pure, List.foldlM] at h_run
+      injection h_run with h_run
+      rw [← h_run]
+  | (firstLabel, firstBlk) :: tail =>
+    rw [h_blocks] at h_run
+    simp only at h_run
+    by_cases h_eq : firstLabel = cfg.entry
+    · -- Entry match; if-bypassed.
+      have h_neq : (firstLabel != cfg.entry) = false := by simp [h_eq]
+      simp only [h_neq, Bool.false_eq_true, if_false] at h_run
+      simp only [Bind.bind, Except.bind, pure, Except.pure] at h_run
+      -- Match on the blocks-fold result. Use the literal initSt record so it unifies with h_run.
+      generalize h_blocks_fold :
+        ((firstLabel, firstBlk) :: tail).foldlM
+          (Strata.coreCFGToGotoBlockStep functionName)
+          ({ trans := trans₀, pendingPatches := #[], labelMap := {},
+             loopContracts := {} } : Strata.CoreCFGTransLoopState)
+          = blocks_fold at h_run
+      match blocks_fold, h_blocks_fold with
+      | .ok st_final, h_blocks_fold =>
+        simp only at h_run -- reduce `match Except.ok st_final` step
+        generalize h_patches_fold :
+          st_final.pendingPatches.foldlM
+            (Strata.coreCFGToGotoPatchStep st_final.labelMap st_final.loopContracts)
+            ([], st_final.trans) = patches_fold at h_run
+        match patches_fold, h_patches_fold with
+        | .ok (resolved, trans_post), h_patches_fold =>
+          refine ⟨st_final, resolved, trans_post, ?_, h_patches_fold, ?_⟩
+          · -- Goal: ((firstLabel, firstBlk) :: tail).foldlM ... (initState trans₀) = ok st_final.
+            -- (cfg.blocks already substituted by Lean's match-rewrite.)
+            -- coreCFGToGotoInitState unfolds to the literal record in h_blocks_fold.
+            simp only [coreCFGToGotoInitState]
+            exact h_blocks_fold
+          · simp only at h_run
+            injection h_run with h_run; rw [← h_run]
+        | .error _, _ => simp at h_run
+      | .error _, _ => simp at h_run
+    · -- Entry mismatch; throws.
+      have h_neq : (firstLabel != cfg.entry) = true := by simp [h_eq]
+      simp only [h_neq, if_true, throw, throwThe, MonadExcept.throw,
+                 Bind.bind, Except.bind] at h_run
+      cases h_run
+
 /-! ## Top-level theorem (statement + interface)
 
 The top-level `coreCFGToGotoTransform_wellFormed` theorem proves that
