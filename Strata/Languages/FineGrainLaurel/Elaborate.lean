@@ -162,23 +162,24 @@ def Grade.join : Grade → Grade → Grade
   | .heap, .heapErr => .heapErr | .heapErr, .heap => .heapErr
   | .heapErr, .heapErr => .heapErr
 
-/-- Left residual: `d\e` = grade remaining for the continuation after a call
-    at grade `d` within ambient grade `e`. Returns `none` if `d > e` (elaboration fails).
+/-- Left residual: `d\e` = grade for the continuation after a call at grade `d`
+    within ambient grade `e`. Returns `none` if `d > e` (elaboration fails).
+
+    Satisfies the residuation law for an idempotent semilattice:
+    `d ⊔ x ≤ e` iff `x ≤ d\e`. Since `⊔` is idempotent (join),
+    the largest `x` with `d ⊔ x ≤ e` is `e` itself (when `d ≤ e`).
+    So `d\e = e` whenever `d ≤ e`, and undefined otherwise.
 ```
-pure\e       = e
-proc\proc    = pure     proc\err    = err      proc\heap   = heap     proc\heapErr = heapErr
-err\err      = pure     err\heapErr = heap
-heap\heap    = pure     heap\heapErr = err
-heapErr\heapErr = pure
+d\e = e    if d ≤ e
+d\e = ⊥    otherwise
 ```
 -/
 def Grade.leftResidual : Grade → Grade → Option Grade
   | .pure, e => some e
-  | .proc, .proc => some .pure | .proc, .err => some .err
-  | .proc, .heap => some .heap | .proc, .heapErr => some .heapErr
-  | .err, .err => some .pure | .err, .heapErr => some .heap
-  | .heap, .heap => some .pure | .heap, .heapErr => some .err
-  | .heapErr, .heapErr => some .pure
+  | .proc, e => if e == .pure then none else some e
+  | .err, e => match e with | .err | .heapErr => some e | _ => none
+  | .heap, e => match e with | .heap | .heapErr => some e | _ => none
+  | .heapErr, .heapErr => some .heapErr
   | _, _ => none
 
 /-! ## Type Erasure
@@ -300,7 +301,7 @@ inductive FGLProducer where
   /-- Labeled block: body may exit to label, then continue after. -/
   | labeledBlock (md : Md) (label : String) (body : FGLProducer) (after : FGLProducer)
   /-- Empty continuation (end of block). -/
-  | unit
+  | skip
   deriving Inhabited
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -397,19 +398,18 @@ def gradeFromSignature (proc : Laurel.Procedure) : Grade :=
 -- Env helpers
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-def lookupEnv (name : String) : ElabM (Option NameInfo) := do pure (← read).typeEnv.names[name]?
+def lookupEnv (name : String) : ElabM NameInfo := do
+  match (← read).typeEnv.names[name]? with | some info => pure info | none => dbg_trace s!"lookupEnv: {name} not found"; failure
 def extendEnv (name : String) (ty : HighType) (action : ElabM α) : ElabM α :=
   withReader (fun env => { env with typeEnv := { env.typeEnv with names := env.typeEnv.names.insert name (.variable ty) } }) action
-def lookupFuncSig (name : String) : ElabM (Option FuncSig) := do
-  match (← read).typeEnv.names[name]? with | some (.function sig) => pure (some sig) | _ => pure none
-def lookupFieldType (className fieldName : String) : ElabM (Option HighType) := do
+def lookupFuncSig (name : String) : ElabM FuncSig := do
+  match (← read).typeEnv.names[name]? with | some (.function sig) => pure sig | _ => failure
+def lookupFieldType (className fieldName : String) : ElabM HighType := do
   match (← read).typeEnv.classFields[className]? with
-  | some fields => pure (fields.find? (fun (n, _) => n == fieldName) |>.map (·.2))
-  | none => pure none
-def resolveFieldOwner (fieldName : String) : ElabM (Option String) := do
-  for (className, fields) in (← read).typeEnv.classFields.toList do
-    if fields.any (fun (n, _) => n == fieldName) then return some className
-  pure none
+  | some fields => match fields.find? (fun (n, _) => n == fieldName) with
+    | some (_, ty) => pure ty
+    | none => failure
+  | none => failure
 
 /-! ## HOAS Smart Constructors
 
@@ -518,6 +518,8 @@ def subtype (actual expected : LowType) : CoercionResult :=
   | .TCore "Any", .TString => .coerce (fun md v => .staticCall md "Any..as_string!" [v])
   | .TCore "Any", .TFloat64 => .coerce (fun md v => .staticCall md "Any..as_float!" [v])
   | .TCore "Any", .TCore "Composite" => .coerce (fun md v => .staticCall md "Any..as_Composite!" [v])
+  | .TCore "Any", .TCore "DictStrAny" => .coerce (fun md v => .staticCall md "Any..as_Dict!" [v])
+  | .TCore "Any", .TCore "ListAny" => .coerce (fun md v => .staticCall md "Any..as_ListAny!" [v])
   | _, _ => .unrelated
 
 /-- Apply the coercion witness for `actual <= expected` to a value. Identity if equal. -/
@@ -548,7 +550,7 @@ partial def lookupProcOutputs (callee : String) : ElabM (List (String × HighTyp
       | .heapErr => pure ([("$heap", .THeap)] ++ resultList ++ [("maybe_except", .TCore "Error")])
       | .err => pure (resultList ++ [("maybe_except", .TCore "Error")])
       | _ => pure (proc.outputs.map fun o => (o.name.text, o.type.val))
-    | none => pure [("result", .TCore "Any")]
+    | none => failure
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- The Translation ⟦·⟧ : Laurel → GFGL
@@ -560,50 +562,106 @@ partial def lookupProcOutputs (callee : String) : ElabM (List (String × HighTyp
 
 mutual
 
-/-- ⟦·⟧⇒ᵥ: Value synthesis. Discovers the type of a pure expression.
-    Handles literals, variables, pure calls, field access, holes.
-    Fails (returns none) on producers. -/
-partial def synthValue (expr : StmtExprMd) : ElabM (FGLValue × LowType) := do
+/-- ⟦·⟧⇒ᵥ (literal):
+```
+D :: Γ ⊢ n : int   [lit]
+
+    ↦
+
+⟦D⟧⇒ᵥ :: ⟦Γ⟧ ⊢ litInt n ⇒ TInt   [litInt]
+```
+(analogous for bool, string)
+-/
+partial def synthValueLiteral (md : Md) (expr : StmtExpr) : Option (FGLValue × HighType) :=
+  match expr with
+  | .LiteralInt n => some (.litInt md n, .TInt)
+  | .LiteralBool b => some (.litBool md b, .TBool)
+  | .LiteralString s => some (.litString md s, .TString)
+  | _ => none
+
+/-- ⟦·⟧⇒ᵥ (variable):
+```
+D :: Γ ⊢ x : A   [var, (x:A) ∈ Γ]
+
+    ↦
+
+⟦D⟧⇒ᵥ :: ⟦Γ⟧ ⊢ var x ⇒ ⟦A⟧   [var, (x:⟦A⟧) ∈ ⟦Γ⟧]
+```
+-/
+partial def synthValueVar (md : Md) (id : Identifier) : ElabM (FGLValue × HighType) := do
+  match (← lookupEnv id.text) with
+  | .variable ty => pure (.var md id.text, ty)
+  | _ => dbg_trace s!"synthValueVar: {id.text} not a variable"; failure
+
+/-- ⟦·⟧⇒ᵥ (field access):
+```
+D :: Γ ⊢ obj.f : T   [fieldSelect]
+└─ D_obj :: Γ ⊢ obj : C
+
+    ↦    precondition: ($heap : Heap) ∈ ⟦Γ⟧
+
+⟦D⟧⇒ᵥ :: ⟦Γ⟧ ⊢ functionCall unbox_T [functionCall readField [$heap, V_obj, $field.C.f]] ⇒ ⟦T⟧   [functionCall]
+└─ ⟦Γ⟧ ⊢ functionCall readField [$heap, V_obj, $field.C.f] ⇐ Box   [subsumption]
+   ├─ ⟦Γ⟧ ⊢ functionCall readField [$heap, V_obj, $field.C.f] ⇒ Box   [functionCall]
+   │  ├─ ⟦Γ⟧ ⊢ $heap ⇐ Heap   [subsumption]
+   │  │  ├─ ⟦Γ⟧ ⊢ $heap ⇒ Heap   [var]
+   │  │  └─ Heap ≤ Heap ↦ id
+   │  ├─ ⟦D_obj⟧⇐ᵥ :: ⟦Γ⟧ ⊢ V_obj ⇐ Composite   [subsumption]
+   │  │  ├─ ⟦D_obj⟧⇒ᵥ :: ⟦Γ⟧ ⊢ V_obj ⇒ Composite   (since ⟦C⟧ = Composite for user-defined C)
+   │  │  └─ Composite ≤ Composite ↦ id
+   │  └─ ⟦Γ⟧ ⊢ functionCall $field.C.f [] ⇐ Field   [subsumption]
+   │     ├─ ⟦Γ⟧ ⊢ functionCall $field.C.f [] ⇒ Field   [functionCall]
+   │     └─ Field ≤ Field ↦ id
+   └─ Box ≤ Box ↦ id
+```
+-/
+partial def synthValueFieldSelect (md : Md) (obj : StmtExprMd) (field : Identifier) : ElabM (FGLValue × HighType) := do
+  let (ov, objTy) ← synthValue obj
+  match (← get).heapVar with
+  | some hv =>
+    let owner := match objTy with
+      | .UserDefined id => id.text
+      | _ => ""
+    guard (owner != "")
+    let fieldTy ← lookupFieldType owner field.text
+    recordBoxUse fieldTy
+    let qualifiedName := "$field." ++ owner ++ "." ++ field.text
+    let compositeObj := applySubtype ov (eraseType objTy) (.TCore "Composite")
+    let read := FGLValue.staticCall md "readField" [.var md hv, compositeObj, .staticCall md qualifiedName []]
+    pure (.staticCall md (boxDestructorName fieldTy) [read], fieldTy)
+  | none => failure
+
+/-- ⟦·⟧⇒ᵥ (pure call):
+```
+D :: Γ ⊢ f(e₁,…,eₙ) : B   [call, f : (Aᵢ) → B & pure]
+└─ D_i :: Γ ⊢ eᵢ : Aᵢ  (for each i)
+
+    ↦
+
+⟦D⟧⇒ᵥ :: ⟦Γ⟧ ⊢ functionCall f [V₁,…,Vₙ] ⇒ ⟦B⟧   [functionCall]
+└─ ⟦D_i⟧⇐ᵥ :: ⟦Γ⟧ ⊢ Vᵢ ⇐ ⟦Aᵢ⟧  (for each i)   [subsumption]
+   ├─ ⟦D_i⟧⇒ᵥ :: ⟦Γ⟧ ⊢ Vᵢ ⇒ Bᵢ   (Bᵢ discovered by recursive synthValue)
+   └─ Bᵢ ≤ ⟦Aᵢ⟧ ↦ cᵢ
+```
+-/
+partial def synthValueStaticCall (md : Md) (callee : Identifier) (args : List StmtExprMd) : ElabM (FGLValue × HighType) := do
+  let some g := (← read).procGrades[callee.text]? | failure
+  guard (g == .pure)
+  let sig ← lookupFuncSig callee.text
+  let checkedArgs ← checkArgValues args sig.params
+  pure (.staticCall md callee.text checkedArgs, sig.returnType)
+
+/-- ⟦·⟧⇒ᵥ: Value synthesis. Dispatches to clause helpers. -/
+partial def synthValue (expr : StmtExprMd) : ElabM (FGLValue × HighType) := do
   let md := expr.md
   match expr.val with
-  | .LiteralInt n => pure (.litInt md n, .TInt)
-  | .LiteralBool b => pure (.litBool md b, .TBool)
-  | .LiteralString s => pure (.litString md s, .TString)
-  | .Identifier id =>
-    match (← lookupEnv id.text) with
-    | some (.variable ty) => pure (.var md id.text, eraseType ty)
-    | some (.function sig) => pure (.var md id.text, eraseType sig.returnType)
-    | _ => pure (.var md id.text, .TCore "Any")
-  | .FieldSelect obj field =>
-    let (ov, objTy) ← synthValue obj
-    match (← get).heapVar with
-    | some hv =>
-      let owner ← resolveFieldOwner field.text
-      match owner with
-      | some cn =>
-        let fieldTy ← do let ft ← lookupFieldType cn field.text; pure (ft.getD (.TCore "Any"))
-        recordBoxUse fieldTy
-        let qualifiedName := "$field." ++ cn ++ "." ++ field.text
-        let compositeObj := applySubtype ov objTy (.TCore "Composite")
-        let read := FGLValue.staticCall md "readField" [.var md hv, compositeObj, .staticCall md qualifiedName []]
-        pure (.staticCall md (boxDestructorName fieldTy) [read], eraseType fieldTy)
-      | none =>
-        -- Field access on Any: unknowable, emit havoc
-        let hv ← freshVar "havoc"
-        modify fun s => { s with usedHoles := s.usedHoles ++ [(hv, false, .TCore "Any")] }
-        pure (.staticCall md hv [], .TCore "Any")
+  | .LiteralInt _ | .LiteralBool _ | .LiteralString _ =>
+    match synthValueLiteral md expr.val with
+    | some r => pure r
     | none => failure
-  | .StaticCall callee args =>
-    let g := (← read).procGrades[callee.text]?.getD .pure
-    guard (g == .pure)
-    let sig ← lookupFuncSig callee.text
-    match sig with
-    | some s =>
-      let checkedArgs ← checkArgValues args s.params
-      pure (.staticCall md callee.text checkedArgs, eraseType s.returnType)
-    | none =>
-      let checkedArgs ← args.mapM fun arg => checkValue arg (.TCore "Any")
-      pure (.staticCall md callee.text checkedArgs, .TCore "Any")
+  | .Identifier id => synthValueVar md id
+  | .FieldSelect obj field => synthValueFieldSelect md obj field
+  | .StaticCall callee args => synthValueStaticCall md callee args
   | _ => failure
 
 /-- Helper: check a list of arguments as values against parameter types. -/
@@ -614,128 +672,265 @@ partial def checkArgValues (args : List StmtExprMd) (params : List (String × Hi
     let v ← checkValue arg pty
     let vs ← checkArgValues rest prest
     pure (v :: vs)
-  | arg :: rest, [] => do
-    let v ← checkValue arg (.TCore "Any")
-    let vs ← checkArgValues rest []
-    pure (v :: vs)
+  | _ :: _, [] => failure
 
 /-- ⟦·⟧⇐ᵥ: Value checking. Synthesizes then applies subtyping coercion.
-    This is the ONE site where coercions are inserted. -/
+```
+⟦D⟧⇐ᵥ (deterministic hole) :: ⟦Γ⟧ ⊢ functionCall hole_N [input₁,...,inputₖ] ⇐ ⟦A⟧   [functionCall]
+└─ (hole_N : (⟦T₁⟧,...,⟦Tₖ⟧) → ⟦A⟧ & pure) ∈ ⟦Γ⟧
+```
+-/
 partial def checkValue (expr : StmtExprMd) (expected : HighType) : ElabM FGLValue := do
-  let (val, actual) ← synthValue expr
-  pure (applySubtype val actual (eraseType expected))
+  let md := expr.md
+  match expr.val with
+  | .Hole deterministic _ =>
+    guard deterministic
+    let hv ← freshVar "hole"
+    let args := (← read).procInputs.map fun (name, _) => FGLValue.var md name
+    modify fun s => { s with usedHoles := s.usedHoles ++ [(hv, true, expected)] }
+    pure (.staticCall md hv args)
+  | _ =>
+    let (val, actual) ← synthValue expr
+    pure (applySubtype val (eraseType actual) (eraseType expected))
 
 /-- ⟦·⟧⇐ₚ*: Check a list of statements as a producer (list extension). -/
 partial def checkProducers (stmts : List StmtExprMd) (retTy : HighType) (grade : Grade) : ElabM FGLProducer := do
   match stmts with
-  | [] => pure .unit
+  | [] => pure .skip
   | stmt :: rest => checkProducer stmt rest retTy grade
+
+/-- ⟦·⟧⇐ₚ (if):
+```
+D :: Γ ⊢ (if c then t else f); k : A   [if]
+├─ D_c :: Γ ⊢ c : bool
+├─ D_t :: Γ ⊢ t : A
+├─ D_f :: Γ ⊢ f : A
+└─ D_k :: Γ ⊢ k : A
+
+    ↦
+
+⟦D⟧⇐ₚ :: ⟦Γ⟧ ⊢ varDecl x_c bool M_c (ifThenElse x_c M_t M_f M_k) ⇐ ⟦A⟧ & d   [varDecl]
+├─ ⟦D_c⟧⇐ₚ :: ⟦Γ⟧ ⊢ M_c ⇐ bool & d
+└─ ⟦Γ⟧, x_c:bool ⊢ ifThenElse x_c M_t M_f M_k ⇐ ⟦A⟧ & d   [ifThenElse]
+   ├─ ⟦Γ⟧, x_c:bool ⊢ x_c ⇐ bool   [subsumption]
+   │  ├─ ⟦Γ⟧, x_c:bool ⊢ x_c ⇒ bool   [var]
+   │  └─ bool ≤ bool ↦ id
+   ├─ ⟦D_t⟧⇐ₚ :: ⟦Γ⟧, x_c:bool ⊢ M_t ⇐ ⟦A⟧ & d
+   ├─ ⟦D_f⟧⇐ₚ :: ⟦Γ⟧, x_c:bool ⊢ M_f ⇐ ⟦A⟧ & d
+   └─ ⟦D_k⟧⇐ₚ* :: ⟦Γ⟧, x_c:bool ⊢ M_k ⇐ ⟦A⟧ & d
+```
+-/
+partial def checkProducerIf (md : Md) (cond thn : StmtExprMd) (els : Option StmtExprMd)
+    (rest : List StmtExprMd) (retTy : HighType) (grade : Grade) : ElabM FGLProducer := do
+  let M_c ← checkProducer cond [] .TBool grade
+  let x_c ← freshVar "cond"
+  let body ← extendEnv x_c .TBool do
+    let M_t ← checkProducer thn [] retTy grade
+    let M_f ← match els with
+      | some e => checkProducer e [] retTy grade
+      | none => pure .skip
+    let M_k ← checkProducers rest retTy grade
+    pure (.ifThenElse md (.var md x_c) M_t M_f M_k)
+  pure (.varDecl md x_c .TBool M_c body)
+
+/-- ⟦·⟧⇐ₚ (while):
+```
+D :: Γ ⊢ (while c do body); k : A   [while]
+├─ D_c :: Γ ⊢ c : bool
+├─ D_b :: Γ ⊢ body : A
+└─ D_k :: Γ ⊢ k : A
+
+    ↦
+
+⟦D⟧⇐ₚ :: ⟦Γ⟧ ⊢ varDecl x_c bool M_c (whileLoop x_c M_b M_k) ⇐ ⟦A⟧ & d   [varDecl]
+├─ ⟦D_c⟧⇐ₚ :: ⟦Γ⟧ ⊢ M_c ⇐ bool & d
+└─ ⟦Γ⟧, x_c:bool ⊢ whileLoop x_c M_b M_k ⇐ ⟦A⟧ & d   [whileLoop]
+   ├─ ⟦Γ⟧, x_c:bool ⊢ x_c ⇐ bool   [subsumption]
+   │  ├─ ⟦Γ⟧, x_c:bool ⊢ x_c ⇒ bool   [var]
+   │  └─ bool ≤ bool ↦ id
+   ├─ ⟦D_b⟧⇐ₚ :: ⟦Γ⟧, x_c:bool ⊢ M_b ⇐ ⟦A⟧ & d
+   └─ ⟦D_k⟧⇐ₚ* :: ⟦Γ⟧, x_c:bool ⊢ M_k ⇐ ⟦A⟧ & d
+```
+-/
+partial def checkProducerWhile (md : Md) (cond loopBody : StmtExprMd)
+    (rest : List StmtExprMd) (retTy : HighType) (grade : Grade) : ElabM FGLProducer := do
+  let M_c ← checkProducer cond [] .TBool grade
+  let x_c ← freshVar "cond"
+  let body ← extendEnv x_c .TBool do
+    let M_b ← checkProducer loopBody [] retTy grade
+    let M_k ← checkProducers rest retTy grade
+    pure (.whileLoop md (.var md x_c) M_b M_k)
+  pure (.varDecl md x_c .TBool M_c body)
+
+/-- ⟦·⟧⇐ₚ (varDecl):
+```
+D :: Γ ⊢ (var x:T := e); k : A   [varDecl]
+├─ D_e :: Γ ⊢ e : T
+└─ D_k :: Γ, x:T ⊢ k : A
+
+    ↦
+
+⟦D⟧⇐ₚ :: ⟦Γ⟧ ⊢ varDecl x ⟦T⟧ M_e M_k ⇐ ⟦A⟧ & d   [varDecl]
+├─ ⟦D_e⟧⇐ₚ :: ⟦Γ⟧ ⊢ M_e ⇐ ⟦T⟧ & d
+└─ ⟦D_k⟧⇐ₚ* :: ⟦Γ⟧, x:⟦T⟧ ⊢ M_k ⇐ ⟦A⟧ & d
+```
+-/
+partial def checkProducerVarDecl (md : Md) (nameId : Identifier) (typeMd : HighTypeMd)
+    (initOpt : Option StmtExprMd) (rest : List StmtExprMd) (retTy : HighType) (grade : Grade) : ElabM FGLProducer := do
+  let M_e ← match initOpt with
+    | some init => checkProducer init [] typeMd.val grade
+    | none => do
+      let v ← checkValue (mkLaurel md (.Hole true none)) typeMd.val
+      pure (.produce md v)
+  let body ← extendEnv nameId.text typeMd.val do
+    checkProducers rest retTy grade
+  pure (.varDecl md nameId.text (eraseType typeMd.val) M_e body)
+
+/-- ⟦·⟧⇐ₚ (assert):
+```
+D :: Γ ⊢ (assert c); k : A   [assert]
+├─ D_c :: Γ ⊢ c : bool
+└─ D_k :: Γ ⊢ k : A
+
+    ↦
+
+⟦D⟧⇐ₚ :: ⟦Γ⟧ ⊢ varDecl x_c bool M_c (assert x_c M_k) ⇐ ⟦A⟧ & d   [varDecl]
+├─ ⟦D_c⟧⇐ₚ :: ⟦Γ⟧ ⊢ M_c ⇐ bool & d
+└─ ⟦Γ⟧, x_c:bool ⊢ assert x_c M_k ⇐ ⟦A⟧ & d   [assert]
+   ├─ ⟦Γ⟧, x_c:bool ⊢ x_c ⇐ bool   [subsumption]
+   │  ├─ ⟦Γ⟧, x_c:bool ⊢ x_c ⇒ bool   [var]
+   │  └─ bool ≤ bool ↦ id
+   └─ ⟦D_k⟧⇐ₚ* :: ⟦Γ⟧, x_c:bool ⊢ M_k ⇐ ⟦A⟧ & d
+```
+-/
+partial def checkProducerAssert (md : Md) (cond : StmtExprMd)
+    (rest : List StmtExprMd) (retTy : HighType) (grade : Grade) : ElabM FGLProducer := do
+  let M_c ← checkProducer cond [] .TBool grade
+  let x_c ← freshVar "cond"
+  let body ← extendEnv x_c .TBool do
+    let M_k ← checkProducers rest retTy grade
+    pure (.assert md (.var md x_c) M_k)
+  pure (.varDecl md x_c .TBool M_c body)
+
+/-- ⟦·⟧⇐ₚ (assume):
+```
+D :: Γ ⊢ (assume c); k : A   [assume]
+├─ D_c :: Γ ⊢ c : bool
+└─ D_k :: Γ ⊢ k : A
+
+    ↦
+
+⟦D⟧⇐ₚ :: ⟦Γ⟧ ⊢ varDecl x_c bool M_c (assume x_c M_k) ⇐ ⟦A⟧ & d   [varDecl]
+├─ ⟦D_c⟧⇐ₚ :: ⟦Γ⟧ ⊢ M_c ⇐ bool & d
+└─ ⟦Γ⟧, x_c:bool ⊢ assume x_c M_k ⇐ ⟦A⟧ & d   [assume]
+   ├─ ⟦Γ⟧, x_c:bool ⊢ x_c ⇐ bool   [subsumption]
+   │  ├─ ⟦Γ⟧, x_c:bool ⊢ x_c ⇒ bool   [var]
+   │  └─ bool ≤ bool ↦ id
+   └─ ⟦D_k⟧⇐ₚ* :: ⟦Γ⟧, x_c:bool ⊢ M_k ⇐ ⟦A⟧ & d
+```
+-/
+partial def checkProducerAssume (md : Md) (cond : StmtExprMd)
+    (rest : List StmtExprMd) (retTy : HighType) (grade : Grade) : ElabM FGLProducer := do
+  let M_c ← checkProducer cond [] .TBool grade
+  let x_c ← freshVar "cond"
+  let body ← extendEnv x_c .TBool do
+    let M_k ← checkProducers rest retTy grade
+    pure (.assume md (.var md x_c) M_k)
+  pure (.varDecl md x_c .TBool M_c body)
+
+partial def elaborateCall (md : Md) (callee : Identifier) (args : List StmtExprMd)
+    (grade : Grade) (body : FGLValue → Grade → ElabM FGLProducer) : ElabM FGLProducer := do
+  let callGrade := (← read).procGrades[callee.text]?.getD .pure
+  let some residual := Grade.leftResidual callGrade grade |
+    dbg_trace s!"elaborateCall: leftResidual {repr callGrade} {repr grade} = none for {callee.text}"; failure
+  let sig ← lookupFuncSig callee.text
+  bindArgs md args sig.params grade fun boundVars => do
+    let declaredOutputs ← lookupProcOutputs callee.text
+    mkGradedCall md callee.text boundVars declaredOutputs callGrade fun rv =>
+      body rv residual
+
+/-- ⟦·⟧⇐ₚ (bare call, discards return value):
+```
+D :: Γ ⊢ g(e₁,…,eₙ); k : A   [call]
+├─ (g : (A₁,...,Aₙ) → B) ∈ Γ
+├─ Dᵢ :: Γ ⊢ eᵢ : Aᵢ  (for each i)
+└─ D_k :: Γ ⊢ k : A
+
+    ↦
+
+⟦D⟧⇐ₚ :: ⟦Γ⟧ ⊢ varDecl x₁ ⟦A₁⟧ M₁ (...(varDecl xₙ ⟦Aₙ⟧ Mₙ (procedureCall g (pre ++ [x₁,...,xₙ]) outs M_k))) ⇐ ⟦A⟧ & d
+├─ ⟦D₁⟧⇐ₚ :: ⟦Γ⟧ ⊢ M₁ ⇐ ⟦A₁⟧ & d
+├─ ...   [varDecl]
+├─ ⟦Dₙ⟧⇐ₚ :: ⟦Γ⟧, x₁:⟦A₁⟧,...,xₙ₋₁:⟦Aₙ₋₁⟧ ⊢ Mₙ ⇐ ⟦Aₙ⟧ & d
+└─ ⟦Γ⟧, x₁:⟦A₁⟧,...,xₙ:⟦Aₙ⟧ ⊢ procedureCall g (pre ++ [x₁,...,xₙ]) outs M_k ⇐ ⟦A⟧ & d   [producerSubsumption]
+   ├─ (g : (⟦A₁⟧,...,⟦Aₙ⟧) → ⟦B⟧ & d') ∈ ⟦Γ⟧
+   ├─ ⟦Γ⟧, x₁:⟦A₁⟧,...,xₙ:⟦Aₙ⟧ ⊢ xᵢ ⇐ ⟦Aᵢ⟧   [subsumption]
+   │  ├─ ⟦Γ⟧, x₁:⟦A₁⟧,...,xₙ:⟦Aₙ⟧ ⊢ xᵢ ⇒ ⟦Aᵢ⟧   [var]
+   │  └─ ⟦Aᵢ⟧ ≤ ⟦Aᵢ⟧ ↦ id
+   ├─ d' ≤ d ↦ (pre, outs)
+   └─ ⟦D_k⟧⇐ₚ* :: ⟦Γ⟧, x₁:⟦A₁⟧,...,xₙ:⟦Aₙ⟧, outs ⊢ M_k ⇐ ⟦A⟧ & (d'\d)
+```
+-/
+partial def checkProducerStaticCall (md : Md) (callee : Identifier) (args : List StmtExprMd)
+    (rest : List StmtExprMd) (retTy : HighType) (grade : Grade) : ElabM FGLProducer := do
+  elaborateCall md callee args grade fun _rv residual => do
+    checkProducers rest retTy residual
+
+/-- ⟦·⟧⇐ₚ (block):
+```
+D :: Γ ⊢ {body}_l; k : A   [block]
+├─ D_b :: Γ, l ⊢ body : A
+└─ D_k :: Γ ⊢ k : A
+
+    ↦
+
+⟦D⟧⇐ₚ :: ⟦Γ⟧ ⊢ labeledBlock l M_b M_k ⇐ ⟦A⟧ & d   [labeledBlock]
+├─ ⟦D_b⟧⇐ₚ :: ⟦Γ⟧, l ⊢ M_b ⇐ ⟦A⟧ & d
+└─ ⟦D_k⟧⇐ₚ* :: ⟦Γ⟧ ⊢ M_k ⇐ ⟦A⟧ & d
+```
+Unlabeled blocks are flattened into the enclosing scope.
+-/
+partial def checkProducerBlock (md : Md) (stmts : List StmtExprMd) (label : Option String)
+    (rest : List StmtExprMd) (retTy : HighType) (grade : Grade) : ElabM FGLProducer := do
+  match label with
+  | some l =>
+    let M_b ← checkProducers stmts retTy grade
+    let M_k ← checkProducers rest retTy grade
+    pure (.labeledBlock md l M_b M_k)
+  | none => checkProducers (stmts ++ rest) retTy grade
 
 /-- ⟦·⟧⇐ₚ: Producer checking. Entry point of the translation.
     Dispatches on statement form to clause helpers. -/
 partial def checkProducer (stmt : StmtExprMd) (rest : List StmtExprMd) (retTy : HighType) (grade : Grade) : ElabM FGLProducer := do
   let md := stmt.md
   match stmt.val with
-  | .IfThenElse cond thn els => do
-    -- Rule: varDecl x_c bool M_c (ifThenElse x_c M_t M_f M_k)
-    let M_c ← checkProducer cond [] (.TCore "bool") grade
-    let x_c ← freshVar "cond"
-    let body ← extendEnv x_c .TBool do
-      let M_t ← checkProducer thn [] retTy grade
-      let M_f ← match els with
-        | some e => checkProducer e [] retTy grade
-        | none => pure .unit
-      let M_k ← checkProducers rest retTy grade
-      pure (.ifThenElse md (.var md x_c) M_t M_f M_k)
-    pure (.varDecl md x_c .TBool M_c body)
-
-  | .While cond _invs _dec loopBody => do
-    -- Rule: varDecl x_c bool M_c (whileLoop x_c M_b M_k)
-    let M_c ← checkProducer cond [] (.TCore "bool") grade
-    let x_c ← freshVar "cond"
-    let body ← extendEnv x_c .TBool do
-      let M_b ← checkProducer loopBody [] retTy grade
-      let M_k ← checkProducers rest retTy grade
-      pure (.whileLoop md (.var md x_c) M_b M_k)
-    pure (.varDecl md x_c .TBool M_c body)
-
+  | .IfThenElse cond thn els => checkProducerIf md cond thn els rest retTy grade
+  | .While cond _invs _dec loopBody => checkProducerWhile md cond loopBody rest retTy grade
   | .Exit target => pure (.exit md target)
-
-  | .LocalVariable nameId typeMd initOpt => do
-    -- Rule: varDecl x T M_e M_k
-    let M_e ← match initOpt with
-      | some init => checkProducer init [] typeMd.val grade
-      | none => pure (.produce md (.fromNone md))
-    let body ← extendEnv nameId.text typeMd.val do
-      checkProducers rest retTy grade
-    pure (.varDecl md nameId.text (eraseType typeMd.val) M_e body)
-
-  | .Assert cond => do
-    -- Rule: varDecl x_c bool M_c (assert x_c M_k)
-    let M_c ← checkProducer cond [] (.TCore "bool") grade
-    let x_c ← freshVar "cond"
-    let body ← extendEnv x_c .TBool do
-      let M_k ← checkProducers rest retTy grade
-      pure (.assert md (.var md x_c) M_k)
-    pure (.varDecl md x_c .TBool M_c body)
-
-  | .Assume cond => do
-    -- Rule: varDecl x_c bool M_c (assume x_c M_k)
-    let M_c ← checkProducer cond [] (.TCore "bool") grade
-    let x_c ← freshVar "cond"
-    let body ← extendEnv x_c .TBool do
-      let M_k ← checkProducers rest retTy grade
-      pure (.assume md (.var md x_c) M_k)
-    pure (.varDecl md x_c .TBool M_c body)
-
+  | .LocalVariable nameId typeMd initOpt => checkProducerVarDecl md nameId typeMd initOpt rest retTy grade
+  | .Assert cond => checkProducerAssert md cond rest retTy grade
+  | .Assume cond => checkProducerAssume md cond rest retTy grade
   | .Assign targets value => match targets with
-    | [target] => checkAssign md target value rest retTy grade
-    | _ => checkProducers rest retTy grade
-
-  | .StaticCall callee args => do
-    -- Rule: bind each arg via varDecl, then procedureCall with subgrading
-    let callGrade := (← read).procGrades[callee.text]?.getD .pure
-    let some residual := Grade.leftResidual callGrade grade | failure
-    let sig ← lookupFuncSig callee.text
-    let params := match sig with | some s => s.params | none => []
-    bindArgs md args params grade fun boundVars => do
-      let declaredOutputs ← lookupProcOutputs callee.text
-      mkGradedCall md callee.text boundVars declaredOutputs callGrade fun _rv => do
-        checkProducers rest retTy residual
-
-  | .Block stmts label => do
-    match label with
-    | some l =>
-      let M_b ← checkProducers stmts retTy grade
-      let M_k ← checkProducers rest retTy grade
-      pure (.labeledBlock md l M_b M_k)
-    | none => checkProducers (stmts ++ rest) retTy grade
-
+    | [target] => checkAssign target value rest retTy grade
+    | _ => failure
+  | .StaticCall callee args => checkProducerStaticCall md callee args rest retTy grade
+  | .Block stmts label => checkProducerBlock md stmts label rest retTy grade
   | .New _ => failure
-
   | .Hole deterministic _ => do
-    if deterministic then
-      -- Create fresh pure function, emit produce(functionCall hole_N [inputs])
-      let hv ← freshVar "hole"
-      let inputs := (← read).procInputs
-      let args := inputs.map fun (name, _) => FGLValue.var md name
-      modify fun s => { s with usedHoles := s.usedHoles ++ [(hv, true, retTy)] }
+    let hv ← freshVar "havoc"
+    modify fun s => { s with usedHoles := s.usedHoles ++ [(hv, deterministic, retTy)] }
+    let declaredOutputs := [("result", retTy)]
+    mkGradedCall md hv [] declaredOutputs .proc fun rv => do
       let M_k ← checkProducers rest retTy grade
-      -- Hole is pure: produce the functionCall, then continue
-      pure (.varDecl md "hole_result" (eraseType retTy) (.produce md (.staticCall md hv args)) M_k)
-    else
-      -- Create fresh proc function, emit procedureCall
-      let hv ← freshVar "havoc"
-      modify fun s => { s with usedHoles := s.usedHoles ++ [(hv, false, retTy)] }
-      let declaredOutputs := [("result", retTy)]
-      mkGradedCall md hv [] declaredOutputs .proc fun _rv => do
-        checkProducers rest retTy grade
-
+      match rest with
+      | [] => pure (.produce md rv)
+      | _ => pure M_k
   | _ => do
-    -- Unhandled: emit havoc
-    let hv ← freshVar "unhandled"
-    modify fun s => { s with usedHoles := s.usedHoles ++ [(hv, false, .TCore "Any")] }
-    pure (.produce md (.staticCall md hv []))
+    dbg_trace s!"checkProducer catch-all at grade={repr grade}"
+    let v ← checkValue stmt retTy
+    match rest with
+    | [] => pure (.produce md v)
+    | _ => dbg_trace s!"checkProducer catch-all: non-empty rest"; failure
 
 /-- Bind a list of arguments as producers via nested varDecls.
     Each arg is checked as a producer, bound to a fresh var, and the
@@ -751,54 +946,191 @@ partial def bindArgs (md : Md) (args : List StmtExprMd) (params : List (String �
       bindArgs md restArgs restParams grade fun restVars =>
         cont (.var md x_arg :: restVars)
     pure (.varDecl md x_arg (eraseType pty) M_arg body)
-  | arg :: restArgs, [] => do
-    let M_arg ← checkProducer arg [] (.TCore "Any") grade
-    let x_arg ← freshVar "arg"
-    let body ← extendEnv x_arg (.TCore "Any") do
-      bindArgs md restArgs [] grade fun restVars =>
-        cont (.var md x_arg :: restVars)
-    pure (.varDecl md x_arg (.TCore "Any") M_arg body)
+  | _ :: _, [] => failure
 
-/-- Let-floating for assignments. Dispatches on target/RHS form. -/
-partial def checkAssign (md : Md) (target value : StmtExprMd) (rest : List StmtExprMd) (retTy : HighType) (grade : Grade) : ElabM FGLProducer := do
+/-- ⟦·⟧⇐ₚ (field write):
+```
+D :: Γ ⊢ (obj.f := v); k : A   [fieldWrite]
+├─ D_obj :: Γ ⊢ obj : C   (C discovered by synthesis on obj)
+├─ fieldType(C, f) = T
+├─ D_v :: Γ ⊢ v : T
+└─ D_k :: Γ ⊢ k : A
+
+    ↦
+
+⟦D⟧⇐ₚ :: ⟦Γ⟧ ⊢ varDecl x_obj ⟦C⟧ M_obj (varDecl x_v ⟦T⟧ M_v (varDecl h' Heap M_update M_k)) ⇐ ⟦A⟧ & d   [varDecl]
+├─ ⟦D_obj⟧⇐ₚ :: ⟦Γ⟧ ⊢ M_obj ⇐ ⟦C⟧ & d
+└─ ⟦Γ⟧, x_obj:⟦C⟧ ⊢ varDecl x_v ⟦T⟧ M_v (varDecl h' Heap M_update M_k) ⇐ ⟦A⟧ & d   [varDecl]
+   ├─ ⟦D_v⟧⇐ₚ :: ⟦Γ⟧, x_obj ⊢ M_v ⇐ ⟦T⟧ & d
+   └─ ⟦Γ⟧, x_obj, x_v ⊢ varDecl h' Heap M_update M_k ⇐ ⟦A⟧ & d   [varDecl]
+      ├─ ⟦Γ⟧, x_obj, x_v ⊢ produce (functionCall updateField [$heap, x_obj, $field.C.f, functionCall box_T [x_v]]) ⇐ Heap & d   [produce]
+      │  └─ ⟦Γ⟧, x_obj, x_v ⊢ functionCall updateField [$heap, x_obj, $field.C.f, functionCall box_T [x_v]] ⇐ Heap   [subsumption]
+      │     ├─ ⟦Γ⟧, x_obj, x_v ⊢ functionCall updateField [$heap, x_obj, $field.C.f, functionCall box_T [x_v]] ⇒ Heap   [functionCall]
+      │     │  ├─ ⟦Γ⟧, x_obj, x_v ⊢ $heap ⇐ Heap   [subsumption]
+      │     │  │  ├─ ⟦Γ⟧, x_obj, x_v ⊢ $heap ⇒ Heap   [var]
+      │     │  │  └─ Heap ≤ Heap ↦ id
+      │     │  ├─ ⟦Γ⟧, x_obj, x_v ⊢ x_obj ⇐ Composite   [subsumption]
+      │     │  │  ├─ ⟦Γ⟧, x_obj, x_v ⊢ x_obj ⇒ Composite   [var]
+      │     │  │  └─ Composite ≤ Composite ↦ id
+      │     │  ├─ ⟦Γ⟧, x_obj, x_v ⊢ functionCall $field.C.f [] ⇐ Field   [subsumption]
+      │     │  │  ├─ ⟦Γ⟧, x_obj, x_v ⊢ functionCall $field.C.f [] ⇒ Field   [functionCall]
+      │     │  │  └─ Field ≤ Field ↦ id
+      │     │  └─ ⟦Γ⟧, x_obj, x_v ⊢ functionCall box_T [x_v] ⇐ Box   [subsumption]
+      │     │     ├─ ⟦Γ⟧, x_obj, x_v ⊢ functionCall box_T [x_v] ⇒ Box   [functionCall]
+      │     │     │  └─ ⟦Γ⟧, x_obj, x_v ⊢ x_v ⇐ ⟦T⟧   [subsumption]
+      │     │     │     ├─ ⟦Γ⟧, x_obj, x_v ⊢ x_v ⇒ ⟦T⟧   [var]
+      │     │     │     └─ ⟦T⟧ ≤ ⟦T⟧ ↦ id
+      │     │     └─ Box ≤ Box ↦ id
+      │     └─ Heap ≤ Heap ↦ id
+      └─ ⟦D_k⟧⇐ₚ* :: ⟦Γ⟧, x_obj, x_v, h':Heap ⊢ M_k ⇐ ⟦A⟧ & d
+```
+-/
+partial def checkAssignFieldWrite (md : Md) (obj : StmtExprMd) (field : Identifier)
+    (value : StmtExprMd) (rest : List StmtExprMd) (retTy : HighType) (grade : Grade) : ElabM FGLProducer := do
+  guard (Grade.leftResidual .heap grade |>.isSome)
+  let (_, objHighTy) ← synthValue obj
+  let owner := match objHighTy with | .UserDefined id => id.text | _ => ""
+  guard (owner != "")
+  let fieldTy ← lookupFieldType owner field.text
+  let M_obj ← checkProducer obj [] objHighTy grade
+  let x_obj ← freshVar "obj"
+  let qualifiedName := "$field." ++ owner ++ "." ++ field.text
+  recordBoxUse fieldTy
+  let body_obj ← extendEnv x_obj objHighTy do
+    let M_v ← checkProducer value [] fieldTy grade
+    let x_v ← freshVar "val"
+    let body_v ← extendEnv x_v fieldTy do
+      match (← get).heapVar with
+      | some hv =>
+        let boxed := FGLValue.staticCall md (boxConstructorName fieldTy) [.var md x_v]
+        let newHeap := FGLValue.staticCall md "updateField" [.var md hv, .var md x_obj, .staticCall md qualifiedName [], boxed]
+        let freshH ← freshVar "heap"
+        modify fun s => { s with heapVar := some freshH }
+        let body_h ← extendEnv freshH .THeap do
+          checkProducers rest retTy grade
+        pure (.varDecl md freshH (.TCore "Heap") (.produce md newHeap) body_h)
+      | none => failure
+    pure (.varDecl md x_v (eraseType fieldTy) M_v body_v)
+  pure (.varDecl md x_obj (.TCore "Composite") M_obj body_obj)
+
+/-- Dispatches on LHS to get assignee, then on RHS form. -/
+partial def checkAssign (target value : StmtExprMd) (rest : List StmtExprMd) (retTy : HighType) (grade : Grade) : ElabM FGLProducer := do
+  let md := target.md
   match target.val with
-  | .FieldSelect obj field => do
-    -- Field write: bind obj and val as producers, update heap
-    guard (Grade.leftResidual .heap grade |>.isSome)
-    let M_obj ← checkProducer obj [] (.UserDefined (Identifier.mk "Composite" none)) grade
-    let x_obj ← freshVar "obj"
-    let owner ← resolveFieldOwner field.text
-    let qualifiedName := match owner with | some cn => "$field." ++ cn ++ "." ++ field.text | none => "$field." ++ field.text
-    let fieldTy ← match owner with
-      | some cn => do let ft ← lookupFieldType cn field.text; pure (ft.getD (.TCore "Any"))
-      | none => pure (.TCore "Any")
-    recordBoxUse fieldTy
-    let body_obj ← extendEnv x_obj (.UserDefined (Identifier.mk "Composite" none)) do
-      let M_v ← checkProducer value [] fieldTy grade
-      let x_v ← freshVar "val"
-      let body_v ← extendEnv x_v fieldTy do
-        match (← get).heapVar with
-        | some hv =>
-          let boxed := FGLValue.staticCall md (boxConstructorName fieldTy) [.var md x_v]
-          let newHeap := FGLValue.staticCall md "updateField" [.var md hv, .var md x_obj, .staticCall md qualifiedName [], boxed]
-          let freshH ← freshVar "heap"
-          modify fun s => { s with heapVar := some freshH }
-          let body_h ← extendEnv freshH .THeap do
-            checkProducers rest retTy grade
-          pure (.varDecl md freshH (.TCore "Heap") (.produce md newHeap) body_h)
-        | none => failure
-      pure (.varDecl md x_v (eraseType fieldTy) M_v body_v)
-    pure (.varDecl md x_obj (.TCore "Composite") M_obj body_obj)
+  | .FieldSelect obj field => checkAssignFieldWrite md obj field value rest retTy grade
+  | .Identifier id =>
+    let .variable targetTy := (← lookupEnv id.text) | failure
+    match value.val with
+    | .StaticCall callee args => checkAssignStaticCall md id.text targetTy callee args rest retTy grade
+    | .New classId => checkAssignNew md id.text targetTy classId rest retTy grade
+    | _ => checkAssignVar md id.text targetTy value rest retTy grade
+  | _ => failure
 
-  | _ => do
-    -- Default: check RHS as producer, assign to target
-    let targetTy ← match target.val with
-      | .Identifier id => match (← lookupEnv id.text) with | some (.variable t) => pure t | _ => pure (.TCore "Any")
-      | _ => pure (.TCore "Any")
-    let M_v ← checkProducer value [] targetTy grade
-    let (tv, _) ← synthValue target
-    let M_k ← checkProducers rest retTy grade
-    pure (.assign md tv M_v M_k)
+/-- ⟦·⟧⇐ₚ (assign, generic RHS):
+```
+D :: Γ ⊢ (x := e); k : A   [assign]
+├─ D_e :: Γ ⊢ e : Γ(x)
+└─ D_k :: Γ ⊢ k : A
+
+    ↦
+
+⟦D⟧⇐ₚ :: ⟦Γ⟧ ⊢ assign x M M_k ⇐ ⟦A⟧ & d   [assign]
+├─ ⟦D_e⟧⇐ₚ :: ⟦Γ⟧ ⊢ M ⇐ ⟦Γ(x)⟧ & d
+└─ ⟦D_k⟧⇐ₚ* :: ⟦Γ⟧ ⊢ M_k ⇐ ⟦A⟧ & d
+```
+-/
+partial def checkAssignVar (md : Md) (targetName : String) (targetTy : HighType)
+    (value : StmtExprMd) (rest : List StmtExprMd) (retTy : HighType) (grade : Grade) : ElabM FGLProducer := do
+  let M ← checkProducer value [] targetTy grade
+  let M_k ← checkProducers rest retTy grade
+  pure (.assign md (.var md targetName) M M_k)
+
+/-- ⟦·⟧⇐ₚ (assign + call):
+```
+D :: Γ ⊢ (x := f(e₁,...,eₙ)); k : A   [assign]
+├─ D_e :: Γ ⊢ f(e₁,...,eₙ) : Γ(x)   [call]
+│  ├─ (f : (A₁,...,Aₙ) → B) ∈ Γ
+│  └─ Dᵢ :: Γ ⊢ eᵢ : Aᵢ   (for i = 1,...,n)
+└─ D_k :: Γ ⊢ k : A
+
+    ↦
+
+⟦D⟧⇐ₚ :: ⟦Γ⟧ ⊢ varDecl x₁ ⟦A₁⟧ M₁ (...(varDecl xₙ ⟦Aₙ⟧ Mₙ (procedureCall f (pre ++ [x₁,...,xₙ]) outs (assign x (produce c(rv)) M_k)))) ⇐ ⟦A⟧ & d   [varDecl]
+├─ ⟦D₁⟧⇐ₚ :: ⟦Γ⟧ ⊢ M₁ ⇐ ⟦A₁⟧ & d
+├─ ...   [varDecl]
+├─ ⟦Dₙ⟧⇐ₚ :: ⟦Γ⟧, x₁:⟦A₁⟧,...,xₙ₋₁:⟦Aₙ₋₁⟧ ⊢ Mₙ ⇐ ⟦Aₙ⟧ & d
+└─ ⟦Γ⟧, x₁:⟦A₁⟧,...,xₙ:⟦Aₙ⟧ ⊢ procedureCall f (pre ++ [x₁,...,xₙ]) outs (assign x (produce c(rv)) M_k) ⇐ ⟦A⟧ & d   [producerSubsumption]
+   ├─ (f : (⟦A₁⟧,...,⟦Aₙ⟧) → ⟦B⟧ & d') ∈ ⟦Γ⟧
+   ├─ ⟦Γ⟧, x₁:⟦A₁⟧,...,xₙ:⟦Aₙ⟧ ⊢ xᵢ ⇐ ⟦Aᵢ⟧   [subsumption]
+   │  ├─ ⟦Γ⟧, x₁:⟦A₁⟧,...,xₙ:⟦Aₙ⟧ ⊢ xᵢ ⇒ ⟦Aᵢ⟧   [var]
+   │  └─ ⟦Aᵢ⟧ ≤ ⟦Aᵢ⟧ ↦ id
+   ├─ d' ≤ d ↦ (pre, outs)   where (rv : ⟦B⟧) ∈ outs
+   └─ ⟦Γ⟧, x₁:⟦A₁⟧,...,xₙ:⟦Aₙ⟧, outs ⊢ assign x (produce c(rv)) M_k ⇐ ⟦A⟧ & (d'\d)   [assign]
+      ├─ ⟦Γ⟧, x₁:⟦A₁⟧,...,xₙ:⟦Aₙ⟧, outs ⊢ produce c(rv) ⇐ ⟦Γ(x)⟧ & (d'\d)   [produce]
+      │  └─ ⟦Γ⟧, x₁:⟦A₁⟧,...,xₙ:⟦Aₙ⟧, outs ⊢ c(rv) ⇐ ⟦Γ(x)⟧   [subsumption]
+      │     ├─ ⟦Γ⟧, x₁:⟦A₁⟧,...,xₙ:⟦Aₙ⟧, outs ⊢ rv ⇒ ⟦B⟧   [var]
+      │     └─ ⟦B⟧ ≤ ⟦Γ(x)⟧ ↦ c
+      └─ ⟦D_k⟧⇐ₚ* :: ⟦Γ⟧, x₁:⟦A₁⟧,...,xₙ:⟦Aₙ⟧, outs ⊢ M_k ⇐ ⟦A⟧ & (d'\d)
+```
+-/
+partial def checkAssignStaticCall (md : Md) (targetName : String) (targetTy : HighType)
+    (callee : Identifier) (args : List StmtExprMd)
+    (rest : List StmtExprMd) (retTy : HighType) (grade : Grade) : ElabM FGLProducer := do
+  dbg_trace s!"checkAssignStaticCall: {targetName} := {callee.text}(...) at grade={repr grade}"
+  let sig ← lookupFuncSig callee.text
+  elaborateCall md callee args grade fun rv residual => do
+    let coerced := applySubtype rv (eraseType sig.returnType) (eraseType targetTy)
+    let M_k ← checkProducers rest retTy residual
+    pure (.assign md (.var md targetName) (.produce md coerced) M_k)
+
+/-- ⟦·⟧⇐ₚ (assign + new):
+```
+D :: Γ ⊢ (x := new C); k : A   [assign]
+├─ D_e :: Γ ⊢ new C : Γ(x)   [new]
+│  └─ C is a class ∈ Γ
+└─ D_k :: Γ ⊢ k : A
+
+    ↦
+
+⟦D⟧⇐ₚ :: ⟦Γ⟧ ⊢ varDecl h' Heap (produce (functionCall increment [$heap])) (assign x (produce c(functionCall MkComposite [functionCall Heap..nextReference! [$heap], functionCall C_TypeTag []])) M_k) ⇐ ⟦A⟧ & d   [varDecl]
+├─ ⟦Γ⟧ ⊢ produce (functionCall increment [$heap]) ⇐ Heap & d   [produce]
+│  └─ ⟦Γ⟧ ⊢ functionCall increment [$heap] ⇐ Heap   [subsumption]
+│     ├─ ⟦Γ⟧ ⊢ functionCall increment [$heap] ⇒ Heap   [functionCall]
+│     │  └─ ⟦Γ⟧ ⊢ $heap ⇐ Heap   [subsumption]
+│     │     ├─ ⟦Γ⟧ ⊢ $heap ⇒ Heap   [var]
+│     │     └─ Heap ≤ Heap ↦ id
+│     └─ Heap ≤ Heap ↦ id
+└─ ⟦Γ⟧, h':Heap ⊢ assign x (produce c(functionCall MkComposite [functionCall Heap..nextReference! [$heap], functionCall C_TypeTag []])) M_k ⇐ ⟦A⟧ & d   [assign]
+   ├─ ⟦Γ⟧, h':Heap ⊢ produce c(functionCall MkComposite [...]) ⇐ ⟦Γ(x)⟧ & d   [produce]
+   │  └─ ⟦Γ⟧, h':Heap ⊢ c(functionCall MkComposite [...]) ⇐ ⟦Γ(x)⟧   [subsumption]
+   │     ├─ ⟦Γ⟧, h':Heap ⊢ functionCall MkComposite [functionCall Heap..nextReference! [$heap], functionCall C_TypeTag []] ⇒ Composite   [functionCall]
+   │     │  ├─ ⟦Γ⟧, h':Heap ⊢ functionCall Heap..nextReference! [$heap] ⇐ int   [subsumption]
+   │     │  │  ├─ ⟦Γ⟧, h':Heap ⊢ functionCall Heap..nextReference! [$heap] ⇒ int   [functionCall]
+   │     │  │  │  └─ ⟦Γ⟧, h':Heap ⊢ $heap ⇐ Heap   [subsumption]
+   │     │  │  │     ├─ ⟦Γ⟧, h':Heap ⊢ $heap ⇒ Heap   [var]
+   │     │  │  │     └─ Heap ≤ Heap ↦ id
+   │     │  │  └─ int ≤ int ↦ id
+   │     │  └─ ⟦Γ⟧, h':Heap ⊢ functionCall C_TypeTag [] ⇐ TypeTag   [subsumption]
+   │     │     ├─ ⟦Γ⟧, h':Heap ⊢ functionCall C_TypeTag [] ⇒ TypeTag   [functionCall]
+   │     │     └─ TypeTag ≤ TypeTag ↦ id
+   │     └─ Composite ≤ ⟦Γ(x)⟧ ↦ c
+   └─ ⟦D_k⟧⇐ₚ* :: ⟦Γ⟧, h':Heap ⊢ M_k ⇐ ⟦A⟧ & d
+```
+-/
+partial def checkAssignNew (md : Md) (targetName : String) (targetTy : HighType)
+    (classId : Identifier) (rest : List StmtExprMd) (retTy : HighType) (grade : Grade) : ElabM FGLProducer := do
+  match (← get).heapVar with
+  | some hv =>
+    let newHeap := FGLValue.staticCall md "increment" [.var md hv]
+    let ref := FGLValue.staticCall md "Heap..nextReference!" [.var md hv]
+    let obj := FGLValue.staticCall md "MkComposite" [ref, .staticCall md (classId.text ++ "_TypeTag") []]
+    let coerced := applySubtype obj (.TCore "Composite") (eraseType targetTy)
+    let freshH ← freshVar "heap"
+    modify fun s => { s with heapVar := some freshH }
+    let M_k ← extendEnv freshH .THeap do checkProducers rest retTy grade
+    pure (.varDecl md freshH (.TCore "Heap") (.produce md newHeap)
+      (.assign md (.var md targetName) (.produce md coerced) M_k))
+  | none => failure
 
 end
 
@@ -825,28 +1157,16 @@ partial def tryGrades (callee : String) (env : ElabEnv) (body : StmtExprMd)
     | some _ => some g
     | none => tryGrades callee env body retTy rest
 
-/-! ## Projection
+/-! ## Projection (Destination Passing Style)
 
-Projection is the inverse translation: GFGL derivations → Laurel derivations.
-It is a writer monad that tells Laurel statements and returns the value
-the producer resolves to. `collect` runs projection in a sub-scope (for
-branches/blocks). -/
+Projection reverses elaboration: GFGL derivations → Laurel derivations.
 
-structure ProjM (α : Type) where
-  run : α × List StmtExprMd
+```
+⟦D⟧ₓ⁻¹ : (⟦Γ⟧ ⊢ M ⇐ ⟦A⟧ & d) → ∃e⃗. (Γ, x : A ⊢ e⃗ : TVoid)
+```
+-/
 
-instance : Monad ProjM where
-  pure a := ⟨(a, [])⟩
-  bind ma f := let (a, w1) := ma.run; let r := f a; let (b, w2) := r.run; ⟨(b, w1 ++ w2)⟩
-
-private def projTell (stmts : List StmtExprMd) : ProjM Unit :=
-  ⟨((), stmts)⟩
-
-private def projCollect (ma : ProjM StmtExprMd) : ProjM (StmtExprMd × List StmtExprMd) :=
-  let (a, stmts) := ma.run; ⟨((a, stmts), [])⟩
-
-mutual
-partial def projectValue : FGLValue → StmtExprMd
+def projectValue : FGLValue → StmtExprMd
   | .litInt md n => mkLaurel md (.LiteralInt n)
   | .litBool md b => mkLaurel md (.LiteralBool b)
   | .litString md s => mkLaurel md (.LiteralString s)
@@ -862,56 +1182,223 @@ partial def projectValue : FGLValue → StmtExprMd
   | .fieldAccess md obj f => mkLaurel md (.FieldSelect (projectValue obj) (Identifier.mk f none))
   | .staticCall md name args => mkLaurel md (.StaticCall (Identifier.mk name none) (args.map projectValue))
 
-/-- Projection writer monad: tells Laurel statements, returns the value
-    the producer resolves to. -/
-partial def proj : FGLProducer → ProjM StmtExprMd
-  | .produce _md v => pure (projectValue v)
-  | .varDecl md name ty init body => do
-    let val ← proj init
-    projTell [mkLaurel md (.LocalVariable (Identifier.mk name none) (mkHighTypeMd md (liftType ty)) (some val))]
-    proj body
-  | .assign md target val body => do
-    let v ← proj val
-    projTell [mkLaurel md (.Assign [projectValue target] v)]
-    proj body
-  | .procedureCall md callee args outputs body => do
-    let call := mkLaurel md (.StaticCall (Identifier.mk callee none) (args.map projectValue))
-    let decls := outputs.map fun (n, ty) => mkLaurel md (.LocalVariable (Identifier.mk n none) (mkHighTypeMd md (liftType ty)) (some (mkLaurel md (.Hole))))
-    let targets := outputs.map fun (n, _) => mkLaurel md (.Identifier (Identifier.mk n none))
-    projTell (decls ++ [mkLaurel md (.Assign targets call)])
-    proj body
-  | .ifThenElse md cond thn els after => do
-    let (_, stmts_t) ← projCollect (proj thn)
-    let (_, stmts_f) ← projCollect (proj els)
-    let elsBlock := if stmts_f.isEmpty then none else some (mkLaurel md (.Block stmts_f none))
-    projTell [mkLaurel md (.IfThenElse (projectValue cond) (mkLaurel md (.Block stmts_t none)) elsBlock)]
-    proj after
-  | .whileLoop md cond body after => do
-    let (_, stmts_b) ← projCollect (proj body)
-    projTell [mkLaurel md (.While (projectValue cond) [] none (mkLaurel md (.Block stmts_b none)))]
-    proj after
-  | .assert md cond body => do
-    projTell [mkLaurel md (.Assert (projectValue cond))]
-    proj body
-  | .assume md cond body => do
-    projTell [mkLaurel md (.Assume (projectValue cond))]
-    proj body
-  | .labeledBlock md label body after => do
-    let (_, stmts_b) ← projCollect (proj body)
-    projTell [mkLaurel md (.Block stmts_b (some label))]
-    proj after
-  | .exit md label => do
-    projTell [mkLaurel md (.Exit label)]
-    pure (mkLaurel md (.StaticCall (Identifier.mk "from_None" none) []))
-  | .unit => pure (mkLaurel #[] (.StaticCall (Identifier.mk "from_None" none) []))
+mutual
+
+/-- Destination-passing projection.
+```
+⟦·⟧ₓ⁻¹ : (⟦Γ⟧ ⊢ M ⇔ ⟦A⟧ & d) → ∃e⃗. (Γ, x : A ⊢ e⃗ : TVoid)
+⟦·⟧⁻¹  : (⟦Γ⟧ ⊢ V ⇔ ⟦A⟧)     → ∃e. (Γ ⊢ e : A)
+```
+Dispatches to per-constructor helpers. -/
+partial def proj (dest : StmtExprMd) : FGLProducer → List StmtExprMd
+  | .produce md v => projProduce dest md v
+  | .varDecl md name ty init body => projVarDecl dest md name ty init body
+  | .assign md target val body => projAssign dest md target val body
+  | .ifThenElse md cond thn els after => projIfThenElse dest md cond thn els after
+  | .whileLoop md cond body after => projWhileLoop dest md cond body after
+  | .procedureCall md callee args outputs body => projProcedureCall dest md callee args outputs body
+  | .assert md cond body => projAssert dest md cond body
+  | .assume md cond body => projAssume dest md cond body
+  | .labeledBlock md label body after => projLabeledBlock dest md label body after
+  | .exit md label => projExit md label
+  | .skip => projSkip
+
+/-- projProduce:
+```
+D :: ⟦Γ⟧ ⊢ produce V ⇐ ⟦A⟧ & d   [produce]
+└─ D_V :: ⟦Γ⟧ ⊢ V ⇐ ⟦A⟧
+
+    ↦
+
+⟦D⟧ₓ⁻¹ :: Γ, x : A ⊢ (x := e_V); skip : TVoid   [assign]
+├─ ⟦D_V⟧⁻¹ :: Γ ⊢ e_V : A
+└─ Γ ⊢ skip : TVoid   [skip]
+```
+-/
+partial def projProduce (dest : StmtExprMd) (md : Md) (v : FGLValue) : List StmtExprMd :=
+  [mkLaurel md (.Assign [dest] (projectValue v))]
+
+/-- projVarDecl:
+```
+D :: ⟦Γ⟧ ⊢ varDecl y T M N ⇐ ⟦A⟧ & d
+├─ D_M :: ⟦Γ⟧ ⊢ M ⇐ T & d
+└─ D_N :: ⟦Γ⟧, y:T ⊢ N ⇐ ⟦A⟧ & d
+
+    ↦
+
+⟦D⟧ₓ⁻¹ :: Γ, x : A ⊢ (var y : T; e⃗_M; e⃗_N) : TVoid   [varDecl]
+├─ ⟦D_M⟧ᵧ⁻¹ :: Γ, y : T ⊢ e⃗_M : TVoid
+└─ ⟦D_N⟧ₓ⁻¹ :: Γ, x : A, y : T ⊢ e⃗_N : TVoid
+```
+-/
+partial def projVarDecl (dest : StmtExprMd) (md : Md) (name : String) (ty : LowType)
+    (init : FGLProducer) (body : FGLProducer) : List StmtExprMd :=
+  let nameExpr := mkLaurel md (.Identifier (Identifier.mk name none))
+  let decl := mkLaurel md (.LocalVariable (Identifier.mk name none) (mkHighTypeMd md (liftType ty)) none)
+  [decl] ++ proj nameExpr init ++ proj dest body
+
+/-- projAssign:
+```
+D :: ⟦Γ⟧ ⊢ assign y M K ⇐ ⟦A⟧ & d
+├─ D_M :: ⟦Γ⟧ ⊢ M ⇐ ⟦Γ(y)⟧ & d
+└─ D_K :: ⟦Γ⟧ ⊢ K ⇐ ⟦A⟧ & d
+
+    ↦
+
+⟦D⟧ₓ⁻¹ :: Γ, x : A ⊢ (e⃗_M; e⃗_K) : TVoid   [assign]
+├─ ⟦D_M⟧ᵧ⁻¹ :: Γ, y : Γ(y) ⊢ e⃗_M : TVoid
+└─ ⟦D_K⟧ₓ⁻¹ :: Γ, x : A ⊢ e⃗_K : TVoid
+```
+-/
+partial def projAssign (dest : StmtExprMd) (_md : Md) (target : FGLValue)
+    (val : FGLProducer) (body : FGLProducer) : List StmtExprMd :=
+  proj (projectValue target) val ++ proj dest body
+
+/-- projIfThenElse:
+```
+D :: ⟦Γ⟧ ⊢ ifThenElse V M N K ⇐ ⟦A⟧ & d
+├─ D_V :: ⟦Γ⟧ ⊢ V ⇐ bool
+├─ D_M :: ⟦Γ⟧ ⊢ M ⇐ ⟦A⟧ & d
+├─ D_N :: ⟦Γ⟧ ⊢ N ⇐ ⟦A⟧ & d
+└─ D_K :: ⟦Γ⟧ ⊢ K ⇐ ⟦A⟧ & d
+
+    ↦
+
+⟦D⟧ₓ⁻¹ :: Γ, x : A ⊢ (if e_V then {e⃗_M} else {e⃗_N}); e⃗_K : TVoid   [if]
+├─ ⟦D_V⟧⁻¹ :: Γ ⊢ e_V : bool
+├─ ⟦D_M⟧ₓ⁻¹ :: Γ, x : A ⊢ e⃗_M : TVoid
+├─ ⟦D_N⟧ₓ⁻¹ :: Γ, x : A ⊢ e⃗_N : TVoid
+└─ ⟦D_K⟧ₓ⁻¹ :: Γ, x : A ⊢ e⃗_K : TVoid
+```
+-/
+partial def projIfThenElse (dest : StmtExprMd) (md : Md) (cond : FGLValue)
+    (thn els after : FGLProducer) : List StmtExprMd :=
+  let thnBlock := mkLaurel md (.Block (proj dest thn) none)
+  let elsBlock := mkLaurel md (.Block (proj dest els) none)
+  let ite := mkLaurel md (.IfThenElse (projectValue cond) thnBlock (some elsBlock))
+  [ite] ++ proj dest after
+
+/-- projWhileLoop:
+```
+D :: ⟦Γ⟧ ⊢ whileLoop V M K ⇐ ⟦A⟧ & d
+├─ D_V :: ⟦Γ⟧ ⊢ V ⇐ bool
+├─ D_M :: ⟦Γ⟧ ⊢ M ⇐ ⟦A⟧ & d
+└─ D_K :: ⟦Γ⟧ ⊢ K ⇐ ⟦A⟧ & d
+
+    ↦
+
+⟦D⟧ₓ⁻¹ :: Γ, x : A ⊢ (while e_V {e⃗_M}); e⃗_K : TVoid   [while]
+├─ ⟦D_V⟧⁻¹ :: Γ ⊢ e_V : bool
+├─ ⟦D_M⟧ₓ⁻¹ :: Γ, x : A ⊢ e⃗_M : TVoid
+└─ ⟦D_K⟧ₓ⁻¹ :: Γ, x : A ⊢ e⃗_K : TVoid
+```
+-/
+partial def projWhileLoop (dest : StmtExprMd) (md : Md) (cond : FGLValue)
+    (body after : FGLProducer) : List StmtExprMd :=
+  let bodyBlock := mkLaurel md (.Block (proj dest body) none)
+  let loop := mkLaurel md (.While (projectValue cond) [] none bodyBlock)
+  [loop] ++ proj dest after
+
+/-- projProcedureCall:
+```
+D :: ⟦Γ⟧ ⊢ procedureCall f [Vᵢ] [outⱼ : Tⱼ] K ⇐ ⟦A⟧ & d
+├─ D_Vᵢ :: ⟦Γ⟧ ⊢ Vᵢ ⇐ ⟦Aᵢ⟧
+└─ D_K :: ⟦Γ⟧, outⱼ:Tⱼ ⊢ K ⇐ ⟦A⟧ & d
+
+    ↦
+
+⟦D⟧ₓ⁻¹ :: Γ, x : A ⊢ (var out₁:T₁; ...; var outₙ:Tₙ; (out₁,...,outₙ) := f(e_Vᵢ); e⃗_K) : TVoid   [call]
+├─ ⟦D_Vᵢ⟧⁻¹ :: Γ ⊢ e_Vᵢ : Aᵢ
+└─ ⟦D_K⟧ₓ⁻¹ :: Γ, x : A, out₁:T₁, ..., outₙ:Tₙ ⊢ e⃗_K : TVoid
+```
+-/
+partial def projProcedureCall (dest : StmtExprMd) (md : Md) (callee : String)
+    (args : List FGLValue) (outputs : List (String × LowType)) (body : FGLProducer) : List StmtExprMd :=
+  let decls := outputs.map fun (n, ty) =>
+    mkLaurel md (.LocalVariable (Identifier.mk n none) (mkHighTypeMd md (liftType ty)) none)
+  let targets := outputs.map fun (n, _) => mkLaurel md (.Identifier (Identifier.mk n none))
+  let call := mkLaurel md (.Assign targets (mkLaurel md (.StaticCall (Identifier.mk callee none) (args.map projectValue))))
+  decls ++ [call] ++ proj dest body
+
+/-- projAssert:
+```
+D :: ⟦Γ⟧ ⊢ assert V K ⇐ ⟦A⟧ & d
+├─ D_V :: ⟦Γ⟧ ⊢ V ⇐ bool
+└─ D_K :: ⟦Γ⟧ ⊢ K ⇐ ⟦A⟧ & d
+
+    ↦
+
+⟦D⟧ₓ⁻¹ :: Γ, x : A ⊢ (assert e_V); e⃗_K : TVoid   [assert]
+├─ ⟦D_V⟧⁻¹ :: Γ ⊢ e_V : bool
+└─ ⟦D_K⟧ₓ⁻¹ :: Γ, x : A ⊢ e⃗_K : TVoid
+```
+-/
+partial def projAssert (dest : StmtExprMd) (md : Md) (cond : FGLValue)
+    (body : FGLProducer) : List StmtExprMd :=
+  [mkLaurel md (.Assert (projectValue cond))] ++ proj dest body
+
+/-- projAssume:
+```
+D :: ⟦Γ⟧ ⊢ assume V K ⇐ ⟦A⟧ & d
+├─ D_V :: ⟦Γ⟧ ⊢ V ⇐ bool
+└─ D_K :: ⟦Γ⟧ ⊢ K ⇐ ⟦A⟧ & d
+
+    ↦
+
+⟦D⟧ₓ⁻¹ :: Γ, x : A ⊢ (assume e_V); e⃗_K : TVoid   [assume]
+├─ ⟦D_V⟧⁻¹ :: Γ ⊢ e_V : bool
+└─ ⟦D_K⟧ₓ⁻¹ :: Γ, x : A ⊢ e⃗_K : TVoid
+```
+-/
+partial def projAssume (dest : StmtExprMd) (md : Md) (cond : FGLValue)
+    (body : FGLProducer) : List StmtExprMd :=
+  [mkLaurel md (.Assume (projectValue cond))] ++ proj dest body
+
+/-- projLabeledBlock:
+```
+D :: ⟦Γ⟧ ⊢ labeledBlock l M K ⇐ ⟦A⟧ & d
+├─ D_M :: ⟦Γ⟧, l ⊢ M ⇐ ⟦A⟧ & d
+└─ D_K :: ⟦Γ⟧ ⊢ K ⇐ ⟦A⟧ & d
+
+    ↦
+
+⟦D⟧ₓ⁻¹ :: Γ, x : A ⊢ {e⃗_M}_l; e⃗_K : TVoid   [labeledBlock]
+├─ ⟦D_M⟧ₓ⁻¹ :: Γ, x : A, l ⊢ e⃗_M : TVoid
+└─ ⟦D_K⟧ₓ⁻¹ :: Γ, x : A ⊢ e⃗_K : TVoid
+```
+-/
+partial def projLabeledBlock (dest : StmtExprMd) (md : Md) (label : String)
+    (body after : FGLProducer) : List StmtExprMd :=
+  let bodyBlock := mkLaurel md (.Block (proj dest body) (some label))
+  [bodyBlock] ++ proj dest after
+
+/-- projExit:
+```
+D :: ⟦Γ⟧ ⊢ exit l ⇐ ⟦A⟧ & d
+
+    ↦
+
+⟦D⟧ₓ⁻¹ :: Γ, x : A ⊢ exit l : TVoid   [exit]
+└─ l ∈ Γ
+```
+-/
+partial def projExit (md : Md) (label : String) : List StmtExprMd :=
+  [mkLaurel md (.Exit label)]
+
+/-- projSkip:
+```
+⟦skip⟧ₓ⁻¹ :: Γ, x : A ⊢ skip : TVoid   [skip]
+```
+-/
+partial def projSkip : List StmtExprMd := []
+
 end
 
-/-- Run projection, return the accumulated statements. -/
+/-- Run projection with `LaurelResult` as destination. -/
 def projectProducer (prod : FGLProducer) : List StmtExprMd :=
-  let (_, stmts) := (proj prod).run
-  stmts
+  proj (mkLaurel #[] (.Identifier (Identifier.mk "LaurelResult" none))) prod
 
-/-- Run projection, return the accumulated statements as a block. -/
+/-- Run projection, return as a block. -/
 def projectBody (md : Md) (prod : FGLProducer) : StmtExprMd :=
   mkLaurel md (.Block (projectProducer prod) none)
 
@@ -945,7 +1432,7 @@ def fullElaborate (program : Laurel.Program) (runtime : Laurel.Program := defaul
         let inputList := proc.inputs.map fun p => (p.name.text, p.type.val)
         let procEnv : ElabEnv := { baseEnv with typeEnv := extEnv, procGrades := knownGrades, procInputs := inputList }
         let retTy := match (proc.outputs.filter fun o => eraseType o.type.val != .TCore "Error").head? with
-          | some o => o.type.val | none => .TCore "Any"
+          | some o => o.type.val | none => .TVoid
         match tryGrades proc.name.text procEnv bodyExpr retTy [.pure, .proc, .err, .heap, .heapErr] with
         | some g =>
           let g := if proc.outputs.length > 1 then Grade.join g .err else g
@@ -969,7 +1456,7 @@ def fullElaborate (program : Laurel.Program) (runtime : Laurel.Program := defaul
       let procEnv : ElabEnv := { baseEnv with typeEnv := extEnv, procGrades := knownGrades, procInputs := inputList }
       let g := knownGrades[proc.name.text]?.getD .pure
       let retTy := match (proc.outputs.filter fun o => eraseType o.type.val != .TCore "Error").head? with
-        | some o => o.type.val | none => .TCore "Any"
+        | some o => o.type.val | none => .TVoid
       let st : ElabState := {
         freshCounter := 0
         heapVar := if g == .heap || g == .heapErr then some "$heap" else none }

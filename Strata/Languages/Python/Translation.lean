@@ -31,9 +31,13 @@ public section
 -- Error
 -- ═══════════════════════════════════════════════════════════════════════════════
 
+/-- Errors that can occur during translation. -/
 inductive TransError where
+  /-- A Python construct with no Laurel equivalent. -/
   | unsupportedConstruct (msg : String)
+  /-- A bug in the translator (should never occur on well-resolved input). -/
   | internalError (msg : String)
+  /-- An error in the user's Python code detected during translation. -/
   | userError (range : SourceRange) (msg : String)
   deriving Repr
 
@@ -47,15 +51,24 @@ instance : ToString TransError where
 -- Monad (State for fresh counter + loop labels)
 -- ═══════════════════════════════════════════════════════════════════════════════
 
+/-- Mutable state threaded through translation: fresh name counter, source file path,
+    and a stack of loop break/continue labels for translating `break`/`continue`. -/
 structure TransState where
+  /-- Counter for generating unique temporary names. -/
   freshCounter : Nat := 0
+  /-- Path of the source file being translated (used for metadata). -/
   filePath : System.FilePath := ""
+  /-- Stack of (break_label, continue_label) pairs for enclosing loops. -/
   loopLabels : List (Laurel.Identifier × Laurel.Identifier) := []
   deriving Inhabited
 
 abbrev BaseM := StateT TransState (Except TransError)
 
+/-- Writer monad for translation. Produces a value plus a list of emitted Laurel statements.
+    Allows expressions that need prefix statements (e.g., `classNew` emits `New` + `__init__`)
+    to `tell` those statements and return just the expression value. -/
 structure TransM (α : Type) where
+  /-- Run the writer, producing the value and accumulated statement list. -/
   run : BaseM (α × List StmtExprMd)
 
 instance : Monad TransM where
@@ -119,6 +132,8 @@ def currentContinueLabel : TransM (Option Laurel.Identifier) := do return (← g
 -- PythonType → HighType
 -- ═══════════════════════════════════════════════════════════════════════════════
 
+/-- Maps Python type annotations to Laurel's `HighType`. Primitive types map directly
+    (`int` → `TInt`, `str` → `TString`, etc.). Unknown or complex types map to `TCore "Any"`. -/
 def pythonTypeToHighType : PythonType → HighType
   | .Name _ n _ => match n.val with
     | "int" => .TInt
@@ -127,6 +142,8 @@ def pythonTypeToHighType : PythonType → HighType
     | "float" => .TFloat64
     | "None" => .TVoid
     | "Any" => .TCore "Any"
+    | "dict" => .TCore "DictStrAny"
+    | "list" => .TCore "ListAny"
     | name => .UserDefined { text := name, uniqueId := none }
   | .Constant _ (.ConNone _) _ => .TVoid
   | .BinOp _ _ (.BitOr _) _ => .TCore "Any"
@@ -251,21 +268,18 @@ partial def translateExpr (e : Python.expr ResolvedAnn) : TransM StmtExprMd := d
   | .List _ elts _ => do
       let es ← elts.val.toList.mapM translateExpr
       let nil ← mkExpr sr (.StaticCall rtListAnyNil [])
-      let cons ← es.foldrM (fun e acc => mkExpr sr (.StaticCall rtListAnyCons [e, acc])) nil
-      mkExpr sr (.StaticCall rtFromListAny [cons])
+      es.foldrM (fun e acc => mkExpr sr (.StaticCall rtListAnyCons [e, acc])) nil
   | .Tuple _ elts _ => do
       let es ← elts.val.toList.mapM translateExpr
       let nil ← mkExpr sr (.StaticCall rtListAnyNil [])
-      let cons ← es.foldrM (fun e acc => mkExpr sr (.StaticCall rtListAnyCons [e, acc])) nil
-      mkExpr sr (.StaticCall rtFromListAny [cons])
+      es.foldrM (fun e acc => mkExpr sr (.StaticCall rtListAnyCons [e, acc])) nil
   | .Dict _ keys vals => do
       let ks ← keys.val.toList.mapM (fun k => match k with
         | .some_expr _ e => translateExpr e | .missing_expr _ => mkExpr sr .Hole)
       let vs ← vals.val.toList.mapM translateExpr
       let empty ← mkExpr sr (.StaticCall rtDictStrAnyEmpty [])
-      let cons ← (List.zip ks vs).foldrM (fun (k, v) acc =>
+      (List.zip ks vs).foldrM (fun (k, v) acc =>
         mkExpr sr (.StaticCall rtDictStrAnyCons [k, v, acc])) empty
-      mkExpr sr (.StaticCall rtFromDictStrAny [cons])
   | .IfExp _ test body orelse => do
       mkExpr sr (.IfThenElse (← translateExpr test) (← translateExpr body) (some (← translateExpr orelse)))
   | .JoinedStr _ values => do
@@ -604,6 +618,8 @@ end -- mutual
 -- Runner
 -- ═══════════════════════════════════════════════════════════════════════════════
 
+/-- Entry point: translates a resolved Python program to a Laurel program.
+    Returns the Laurel program and final translator state, or a `TransError`. -/
 def runTranslation (program : ResolvedPythonProgram)
     (filePath : String := "")
     : Except TransError (Laurel.Program × TransState) :=

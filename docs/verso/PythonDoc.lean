@@ -22,7 +22,6 @@ open Verso.Genre Manual
 open Verso.Genre.Manual.InlineLean
 
 set_option pp.rawOnError true
-set_option verso.docstring.allowMissing true
 
 #doc (Manual) "The Python to Laurel Translation Pipeline" =>
 %%%
@@ -260,6 +259,7 @@ then resolved default. It includes the receiver slot for instance methods.
 It lives in Resolution (not Translation) because it accesses the private
 `ParamList` fields and the resolved default expressions.
 
+
 # Translation
 %%%
 tag := "translation"
@@ -426,6 +426,8 @@ $$`\frac{\Gamma \vdash c : \mathsf{bool} \quad \Gamma \vdash \text{rest} : A}{\G
 
 $$`\frac{\Gamma \vdash \text{obj} : C \quad \Gamma \vdash v : \text{fieldType}(C, f) \quad \Gamma \vdash \text{rest} : A}{\Gamma \vdash (\text{obj}.f := v);\ \text{rest} : A}`
 
+$$`\frac{}{\Gamma \vdash \mathbf{skip} : \mathsf{TVoid}}`
+
 ## GFGL: The Type System
 
 GFGL has two sorts — values (pure, duplicable) and producers (effectful,
@@ -506,30 +508,7 @@ The translation is a transformation of Laurel typing derivations
 even literals and variables (they become `produce V`). This is the
 CBV-to-FGCBV embedding.
 
-One translation function:
-
-```
-⟦·⟧ : (Γ : LaurelCtx) → (e : StmtExpr) → (A : HighType) → (d : Grade)
-    → (Γ ⊢ e : A)
-    → ∃(M : FGLProducer). (⟦Γ⟧ ⊢ M ⇐ ⟦A⟧ & d)
-```
-
-Implemented by `checkProducer`. Sub-expressions that need to be in value
-form (call arguments, conditions, field access receivers) are sequenced
-via `varDecl` — the bound variable is then a value.
-
-`synthValue` and `checkValue` are internal helpers, not translation
-functions. They build value sub-terms (`FGLValue`) that appear inside
-producer forms — in `produce V`, in `functionCall f [Vᵢ]`, in
-`readField($heap, V, ...)`. They operate on expressions that are already
-known to be values (bound variables, literals) or pure function calls.
-
-Producer synthesis (⟦·⟧⇒ₚ) does not have its own translation function.
-By inversion on the single synthesis rule, the synthesized producer is
-always a call. Producer subsumption immediately consumes it within
-`checkProducer`'s call clause.
-
-The four function signatures (three translation functions, one entry point):
+Three functions:
 
 ```
 ⟦·⟧⇐ₚ : (Γ : LaurelCtx) → (s : StmtExpr) → (k : List StmtExpr)
@@ -546,11 +525,10 @@ The four function signatures (three translation functions, one entry point):
        → ∃(V : FGLValue). (⟦Γ⟧ ⊢ V ⇐ ⟦A⟧)
 ```
 
-`⟦·⟧⇐ₚ` (`checkProducer`) is the entry point — always produces a
-producer. `⟦·⟧⇒ᵥ` (`synthValue`) and `⟦·⟧⇐ᵥ` (`checkValue`) are
-called internally to build value sub-terms after sequencing via
-`varDecl`. They operate on expressions already in value form (bound
-variables, literals, pure calls) — they fail on producers.
+`⟦·⟧⇐ₚ` (`checkProducer`) is the entry point. `⟦·⟧⇒ᵥ` (`synthValue`)
+and `⟦·⟧⇐ᵥ` (`checkValue`) build value sub-terms inside producer forms.
+Producer synthesis (⟦·⟧⇒ₚ) is handled by inversion within
+`checkProducerStaticCall` — the single synthesis rule is always a call.
 
 ### Setup: Environment and Grades
 
@@ -600,8 +578,12 @@ is the continuation — `checkProducers(k, A, d)` translates it.
 - `.LocalVariable` → `checkProducerVarDecl`
 - `.Assert` / `.Assume` → `checkProducerAssert` / `checkProducerAssume`
 - `.Block` → `checkProducerBlock`
-- `.Assign` → `checkAssign`
-- `.StaticCall` → `checkProducerStaticCall` (producer subsumption)
+- `.Assign` → `checkAssign` (dispatches on LHS/RHS)
+- `.StaticCall` → `checkProducerStaticCall` (bare call, discards return value)
+- `.New` → failure (bare `new` in statement position is pathological)
+- `.Hole` → inline (deterministic or nondeterministic)
+- `.Return` / `.InstanceCall` → failure (not yet supported)
+- All other `StmtExpr` constructors → failure (bare value expressions are ill-typed in Laurel)
 
 {docstring Strata.FineGrainLaurel.checkProducer}
 
@@ -621,35 +603,30 @@ The clause helpers, each implementing one translation rule:
 
 {docstring Strata.FineGrainLaurel.checkProducerBlock}
 
-### `checkAssign` — let-floating for assignments
+### `checkAssign` — assignment elaboration
 
-Laurel's `x := e` has an arbitrary RHS expression `e` that may be
-effectful (a procedure call, a heap allocation, a field read). The
-translation let-floats: it binds sub-expressions via `varDecl` until
-the RHS is in value form, then assigns. Each RHS form produces a
-different let-floating pattern:
+Dispatches on LHS to get the assignee, then on RHS:
 
-- `.FieldSelect` as target (LHS) → `checkAssignFieldWrite`
-- `.StaticCall` as RHS (effectful) → `checkAssignStaticCall` (producer subsumption)
-- `.New` as RHS → `checkAssignNew`
-- Default RHS → `checkAssignDefault`
+- `.FieldSelect` LHS → `checkAssignFieldWrite` (heap write)
+- `.Identifier` LHS, `.StaticCall` RHS → `checkAssignStaticCall`
+- `.Identifier` LHS, `.New` RHS → `checkAssignNew`
+- `.Identifier` LHS, other RHS → `checkAssignVar`
+
+`StaticCall` and `New` RHS need the assignee inside the effect scope.
 
 {docstring Strata.FineGrainLaurel.checkAssign}
 
-{docstring Strata.FineGrainLaurel.checkAssignFieldWrite}
+{docstring Strata.FineGrainLaurel.checkAssignVar}
 
 {docstring Strata.FineGrainLaurel.checkAssignStaticCall}
 
 {docstring Strata.FineGrainLaurel.checkAssignNew}
 
-{docstring Strata.FineGrainLaurel.checkAssignDefault}
+{docstring Strata.FineGrainLaurel.checkAssignFieldWrite}
 
 ### `checkValue` — internal helper (⟦·⟧⇐ᵥ)
 
-Called by `checkProducer` for value positions (after sequencing via
-`varDecl`). Calls `synthValue`, then applies the coercion from `subtype`.
-This is the ONLY site where `applySubtype` is called — the bidirectional
-discipline concentrates all coercion insertion here.
+Calls `synthValue`, then applies the coercion from `subtype`.
 
 {docstring Strata.FineGrainLaurel.checkValue}
 
@@ -668,14 +645,54 @@ expressions already in value form (bound variables, literals, pure calls).
 
 {docstring Strata.FineGrainLaurel.synthValueStaticCall}
 
-{docstring Strata.FineGrainLaurel.synthValueHole}
+## Projection: GFGL → Laurel (Destination Passing Style)
 
+Elaboration maps Laurel derivations (`Γ ⊢ e : A`) to GFGL derivations
+(`⟦Γ⟧ ⊢ M ⇐ ⟦A⟧ & d`). Projection reverses this:
 
-## Projection: GFGL → Laurel
+```
+⟦D⟧ₓ⁻¹ : (⟦Γ⟧ ⊢ M ⇐ ⟦A⟧ & d) → ∃e⃗. (Γ, x : A ⊢ e⃗ : TVoid)
+```
 
-The `FGLProducer` tree carries continuations. `projectProducer` flattens
-it to a Laurel statement list. Each constructor maps mechanically — the
-CPS structure uniquely determines the output. No choices.
+Given a GFGL checking derivation `D` and a destination variable `x : A`,
+projection produces a Laurel statement list `e⃗` that assigns to `x`.
+One GFGL rule maps to one or more Laurel typing rules in the output.
+
+`proj` is a plain function — no monad. The destination is a parameter.
+The output is a list. Branches are recursive calls.
+
+```
+proj : StmtExprMd → FGLProducer → List StmtExprMd
+```
+
+Top-level call passes `LaurelResult` as destination.
+
+Each helper carries its derivation tree showing the GFGL rule on top
+and the Laurel rules on bottom:
+
+{docstring Strata.FineGrainLaurel.proj}
+
+{docstring Strata.FineGrainLaurel.projProduce}
+
+{docstring Strata.FineGrainLaurel.projVarDecl}
+
+{docstring Strata.FineGrainLaurel.projAssign}
+
+{docstring Strata.FineGrainLaurel.projIfThenElse}
+
+{docstring Strata.FineGrainLaurel.projWhileLoop}
+
+{docstring Strata.FineGrainLaurel.projProcedureCall}
+
+{docstring Strata.FineGrainLaurel.projAssert}
+
+{docstring Strata.FineGrainLaurel.projAssume}
+
+{docstring Strata.FineGrainLaurel.projLabeledBlock}
+
+{docstring Strata.FineGrainLaurel.projExit}
+
+{docstring Strata.FineGrainLaurel.projSkip}
 
 # Tech Debt
 %%%
