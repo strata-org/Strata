@@ -465,47 +465,6 @@ $$`\frac{}{\Gamma \vdash \mathsf{Hole}\;d\;\mathsf{none} \Leftarrow T \;\;\mapst
 
 {docstring Strata.Laurel.Resolution.Check.holeNone}
 
-## Future structural changes
-
-The current pipeline has resolution and several downstream passes that recompute or
-re-derive type information that resolution already synthesized. A few cleanups worth
-considering:
-
-### Rename `Resolution.lean` → `NameTypeResolution.lean`
-
-The pass resolves names *and* type-checks expressions in one walk; the file name only
-advertises the first half. A rename (e.g. `NameTypeResolution.lean` or
-`ResolutionAndTyping.lean`) would describe what the pass actually does. The
-`SemanticModel` and `ResolvedNode` types could keep their names — they're about resolved
-references, not typing.
-
-### Eliminate `LaurelTypes.computeExprType` by caching types
-
-`LaurelTypes.lean` exports `computeExprType : SemanticModel → StmtExprMd → HighTypeMd`,
-which five later passes call (`LaurelToCoreTranslator`, `ModifiesClauses`,
-`LiftImperativeExpressions`, `HeapParameterization`, `TypeHierarchy`) to ask "what's the
-type of this expression?" after resolution. Resolution already synthesizes the same types
-during its walk, then discards them. Two ways to remove the duplication:
-
-- *Cache types on the AST.* Add a `HighTypeMd` field to `StmtExpr` (or a parallel
-  `Std.HashMap Nat HighTypeMd` keyed by node-id, attached to `SemanticModel`), populate it
-  during resolution, and have later passes read it. `computeExprType` becomes a lookup,
-  not a re-traversal.
-- *Make the cache opt-in.* Same idea, but only enable the type-cache for passes that need
-  it. Less invasive but partially defeats the point.
-
-The duplication isn't a correctness issue today (both paths produce consistent results),
-just wasted work and a maintenance hazard.
-
-### Shrink or remove `InferHoleTypes`
-
-`InferHoleTypes` walks the post-resolution AST a second time to annotate holes. Now that
-holes are check-only — \[⇐\] Hole-Some validates user annotations against context, and
-\[⇐\] Hole-None records the expected type for untyped holes — every hole reachable in a
-check-mode position already carries a type after resolution. `InferHoleTypes` is left
-with whatever residue (in principle nothing, since synth-position holes are now flagged
-as errors at resolution time and don't reach the inference pass).
-
 # Translation Pipeline
 
 Laurel programs are verified by translating them to Strata Core and then invoking the Core

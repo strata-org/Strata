@@ -104,26 +104,6 @@ Each of these nodes carries a `uniqueId : Option Nat` field (defaulting to
 `none`). Phase 1 fills in unique values; Phase 2 then builds a map from
 reference IDs to `ResolvedNode` values describing the definition each
 reference resolves to.
-
-## Future structural changes
-
-A few open structural questions worth recording — see the *Type checking* section of
-`LaurelDoc.lean` for context.
-
-- *Rename to `NameTypeResolution`.* This pass resolves names and type-checks expressions in
-  one walk. The current name only mentions half of what it does. `NameTypeResolution.lean`
-  (or similar) would advertise both responsibilities.
-- *Eliminate `LaurelTypes.computeExprType` by caching types.* Five later passes
-  (`LaurelToCoreTranslator`, `ModifiesClauses`, `LiftImperativeExpressions`,
-  `HeapParameterization`, `TypeHierarchy`) re-derive `StmtExpr` types after resolution.
-  Resolution already synthesizes those types and discards them. Caching per-node types on
-  `SemanticModel` (or directly on the AST) would let the later passes look them up instead
-  of recomputing.
-- *Shrink or remove `InferHoleTypes`.* Holes are check-only now: `Hole-Some` validates
-  user annotations against the surrounding type, and `Hole-None` records the expected
-  type for untyped holes. Every hole reachable in a check-mode position already carries
-  a type after resolution; the inference pass is left handling whatever residue remains
-  and can plausibly be deleted entirely.
 -/
 
 namespace Strata.Laurel
