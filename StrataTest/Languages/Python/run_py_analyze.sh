@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# Usage: ./run_py_analyze.sh [--update] [--filter <pattern>] [--vc-directory <dir>] [--pending] [--check-pending]
-
+# Usage: ./run_py_analyze.sh [--incremental] [--update] [--filter <pattern>] [--vc-directory <dir>]
 # Runs pyAnalyzeLaurel on all test_*.py files and compares output to expected.
+# With --incremental, use pyAnalyzeLaurel --incremental
 # With --update, overwrite existing expected files with actual output
 # With --filter <pattern>, only run tests whose name contains <pattern>
 # With --vc-directory <dir>, store VCs in SMT-Lib format in <dir>
@@ -16,6 +16,7 @@
 
 failed=0
 update=0
+incremental=false
 pending=0
 check_pending=0
 filter=""
@@ -24,18 +25,25 @@ vc_directory=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --update) update=1 ;;
+        --incremental) incremental=true ;;
         --filter) filter="$2"; shift ;;
         --vc-directory) vc_directory="$2"; shift ;;
         --pending) pending=1 ;;
         --check-pending) pending=1; check_pending=1 ;;
-        laurel) ;; # accepted for backward compatibility
         *) echo "Unknown argument: $1"; exit 1 ;;
     esac
     shift
 done
 
-command="pyAnalyzeLaurel"
-expected_dir="expected_laurel"
+if [ "$incremental" = true ]; then
+    command="pyAnalyzeLaurel --incremental"
+    expected_dir="expected_incremental"
+    skip_tests=""
+else
+    command="pyAnalyzeLaurel"
+    expected_dir="expected_laurel"
+    skip_tests=""
+fi
 
 (cd ../../.. && lake exe strata --help > /dev/null)
 

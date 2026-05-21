@@ -284,6 +284,9 @@ def mkIncrementalSolver : AbstractSolver Term TermType IncrementalSolverM where
   mkExists bindings callback := do
     mkQuantHelper .exist bindings callback
 
+  push := emitln "(push 1)"
+  pop := emitln "(pop 1)"
+
   assert t := do
     let s ← termToStr t
     emitln s!"(assert {s})"
@@ -356,6 +359,72 @@ def mkIncrementalSolver : AbstractSolver Term TermType IncrementalSolverM where
   reset := emitln "(reset)"
 
   close := emitln "(exit)"
+
+/-- Lift the incremental solver to `IO` by storing state in an `IORef`. -/
+def mkIncrementalSolverIO (solver : SMTLibSolver) : IO (AbstractSolver Term TermType IO) := do
+  let ref ← IO.mkRef ({ solver } : IncrementalSolverState)
+  let run {α} (action : IncrementalSolverM α) : IO α := do
+    let st ← ref.get
+    let (a, st') ← action.run st
+    ref.set st'
+    return a
+  let s := mkIncrementalSolver
+  return {
+    setLogic := fun logic => run (s.setLogic logic)
+    setOption := fun name value => run (s.setOption name value)
+    comment := fun c => run (s.comment c)
+    boolSort := run s.boolSort
+    intSort := run s.intSort
+    realSort := run s.realSort
+    stringSort := run s.stringSort
+    bitvecSort := fun n => run (s.bitvecSort n)
+    arraySort := fun k v => run (s.arraySort k v)
+    regexSort := run s.regexSort
+    constrSort := fun name args => run (s.constrSort name args)
+    mkBool := fun b => run (s.mkBool b)
+    mkInt := fun i => run (s.mkInt i)
+    mkPrim := fun p => run (s.mkPrim p)
+    mkAppOp := fun op args retTy => run (s.mkAppOp op args retTy)
+    mkAnd := fun ts => run (s.mkAnd ts)
+    mkOr := fun ts => run (s.mkOr ts)
+    mkNot := fun t => run (s.mkNot t)
+    mkImplies := fun t1 t2 => run (s.mkImplies t1 t2)
+    mkAdd := fun ts => run (s.mkAdd ts)
+    mkSub := fun ts => run (s.mkSub ts)
+    mkMul := fun ts => run (s.mkMul ts)
+    mkDiv := fun t1 t2 => run (s.mkDiv t1 t2)
+    mkMod := fun t1 t2 => run (s.mkMod t1 t2)
+    mkNeg := fun t => run (s.mkNeg t)
+    mkAbs := fun t => run (s.mkAbs t)
+    mkEq := fun ts => run (s.mkEq ts)
+    mkLt := fun ts => run (s.mkLt ts)
+    mkLe := fun ts => run (s.mkLe ts)
+    mkGt := fun ts => run (s.mkGt ts)
+    mkGe := fun ts => run (s.mkGe ts)
+    mkIte := fun c t f => run (s.mkIte c t f)
+    mkSelect := fun arr idx => run (s.mkSelect arr idx)
+    mkStore := fun arr idx val => run (s.mkStore arr idx val)
+    mkApp := fun fn args => run (s.mkApp fn args)
+    mkForall := fun bindings callback => run (s.mkForall bindings (fun vars => run (callback vars)))
+    mkExists := fun bindings callback => run (s.mkExists bindings (fun vars => run (callback vars)))
+    declareNew := fun name ty => run (s.declareNew name ty)
+    declareFun := fun name argTys retTy => run (s.declareFun name argTys retTy)
+    defineFun := fun name args retTy body => run (s.defineFun name args retTy body)
+    declareSort := fun name arity => run (s.declareSort name arity)
+    declareDatatype := fun name params callback => run (s.declareDatatype name params callback)
+    declareDatatypes := fun dts callback => run (s.declareDatatypes dts callback)
+    push := run s.push
+    pop := run s.pop
+    assert := fun t => run (s.assert t)
+    checkSat := run s.checkSat
+    checkSatAssuming := fun assumptions => run (s.checkSatAssuming assumptions)
+    getUnsatAssumptions := run s.getUnsatAssumptions
+    getModel := run s.getModel
+    getValue := fun ts => run (s.getValue ts)
+    termToSMTLibString := fun t => run (s.termToSMTLibString t)
+    reset := run s.reset
+    close := run s.close
+  }
 
 end IncrementalSolver
 

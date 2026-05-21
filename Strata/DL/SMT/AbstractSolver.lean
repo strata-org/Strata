@@ -162,6 +162,11 @@ structure AbstractSolver (τ : Type) (σ : Type) (m : Type → Type) [Monad m] [
 
   -- Session operations
 
+  /-- Push a new assertion scope onto the solver stack. -/
+  push : m Unit
+  /-- Pop the top assertion scope from the solver stack. -/
+  pop : m Unit
+
   /-- Assert a term (must be Bool-typed). -/
   assert : τ → m Unit
 

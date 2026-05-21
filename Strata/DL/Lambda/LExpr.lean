@@ -978,6 +978,7 @@ open Lean Elab Meta
 meta class MkLExprParams (T: LExprParams) where
   elabIdent : Lean.Syntax → MetaM Expr
   toExpr : Expr
+  defaultMetadata : MetaM Expr := mkAppM ``Unit.unit #[]
 
 declare_syntax_cat lident
 
@@ -1004,30 +1005,30 @@ meta def mkNegLit (n: NumLit) := Expr.app (.const ``Int.neg []) (mkIntLit n)
 
 meta def elabLConst [MkLExprParams T] : Lean.Syntax → MetaM Expr
   | `(lconst| #$n:num)  => do
-    let metadata ← mkAppM ``Unit.unit #[]
+    let metadata ← MkLExprParams.defaultMetadata T
     let baseParams := MkLExprParams.toExpr T
     let tParams := mkApp2 (mkConst ``LExprParamsT.mk) baseParams (mkConst ``LTy)
     let lconstVal ← mkAppM ``LConst.intConst #[mkIntLit n]
     return mkAppN (.const ``LExpr.const []) #[tParams, metadata, lconstVal]
   | `(lconst| #-$n:num) => do
-    let metadata ← mkAppM ``Unit.unit #[]
+    let metadata ← MkLExprParams.defaultMetadata T
     let baseParams := MkLExprParams.toExpr T
     let tParams := mkApp2 (mkConst ``LExprParamsT.mk) baseParams (mkConst ``LTy)
     let lconstVal ← mkAppM ``LConst.intConst #[mkNegLit n]
     return mkAppN (.const ``LExpr.const []) #[tParams, metadata, lconstVal]
   | `(lconst| #true)    => do
-    let metadata ← mkAppM ``Unit.unit #[]
+    let metadata ← MkLExprParams.defaultMetadata T
     let baseParams := MkLExprParams.toExpr T
     let tParams := mkApp2 (mkConst ``LExprParamsT.mk) baseParams (mkConst ``LTy)
     return mkAppN (.const ``LExpr.boolConst []) #[tParams, metadata, toExpr true]
   | `(lconst| #false)   =>  do
-    let metadata ← mkAppM ``Unit.unit #[]
+    let metadata ← MkLExprParams.defaultMetadata T
     let baseParams := MkLExprParams.toExpr T
     let tParams := mkApp2 (mkConst ``LExprParamsT.mk) baseParams (mkConst ``LTy)
     return mkAppN (.const ``LExpr.boolConst []) #[tParams, metadata, toExpr false]
   | `(lconst| #$s:ident) => do
     let s := toString s.getId
-    let metadata ← mkAppM ``Unit.unit #[]
+    let metadata ← MkLExprParams.defaultMetadata T
     let baseParams := MkLExprParams.toExpr T
     let tParams := mkApp2 (mkConst ``LExprParamsT.mk) baseParams (mkConst ``LTy)
     return mkAppN (.const ``LExpr.const []) #[tParams, metadata, mkStrLit s]
@@ -1042,14 +1043,14 @@ meta def elabLOp [MkLExprParams T] : Lean.Syntax → MetaM Expr
   | `(lop| ~$s:lident)  => do
     let none ← mkNone (mkConst ``LTy)
     let ident ← MkLExprParams.elabIdent T s
-    let metadata ← mkAppM ``Unit.unit #[]
+    let metadata ← MkLExprParams.defaultMetadata T
     let baseParams := MkLExprParams.toExpr T
     let tParams := mkApp2 (mkConst ``LExprParamsT.mk) baseParams (mkConst ``LTy)
     return mkAppN (.const ``LExpr.op []) #[tParams, metadata, ident, none]
   | `(lop| (~$s:lident : $ty:lty)) => do
     let lty ← Lambda.LTy.Syntax.elabLTy ty
     let lty ← mkSome (mkConst ``LTy) lty
-    let metadata ← mkAppM ``Unit.unit #[]
+    let metadata ← MkLExprParams.defaultMetadata T
     let baseParams := MkLExprParams.toExpr T
     let tParams := mkApp2 (mkConst ``LExprParamsT.mk) baseParams (mkConst ``LTy)
     return mkAppN (.const ``LExpr.op []) #[tParams, metadata, ← MkLExprParams.elabIdent T s, lty]
@@ -1060,7 +1061,7 @@ scoped syntax "%" noWs num : lbvar
 
 meta def elabLBVar [MkLExprParams T] : Lean.Syntax → MetaM Expr
   | `(lbvar| %$n:num) => do
-    let metadata ← mkAppM ``Unit.unit #[]
+    let metadata ← MkLExprParams.defaultMetadata T
     let baseParams := MkLExprParams.toExpr T
     let tParams := mkApp2 (mkConst ``LExprParamsT.mk) baseParams (mkConst ``LTy)
     return mkAppN (.const ``LExpr.bvar []) #[tParams, metadata, mkNatLit n.getNat]
@@ -1074,14 +1075,14 @@ scoped syntax "(" lident ":" lty ")" : lfvar
 meta def elabLFVar [MkLExprParams T] : Lean.Syntax → MetaM Expr
   | `(lfvar| $i:lident) => do
     let none ← mkNone (mkConst ``LTy)
-    let metadata ← mkAppM ``Unit.unit #[]
+    let metadata ← MkLExprParams.defaultMetadata T
     let baseParams := MkLExprParams.toExpr T
     let tParams := mkApp2 (mkConst ``LExprParamsT.mk) baseParams (mkConst ``LTy)
     return mkAppN (.const ``LExpr.fvar []) #[tParams, metadata, ← MkLExprParams.elabIdent T i, none]
   | `(lfvar| ($i:lident : $ty:lty)) => do
     let lty ← Lambda.LTy.Syntax.elabLTy ty
     let lty ← mkSome (mkConst ``LTy) lty
-    let metadata ← mkAppM ``Unit.unit #[]
+    let metadata ← MkLExprParams.defaultMetadata T
     let baseParams := MkLExprParams.toExpr T
     let tParams := mkApp2 (mkConst ``LExprParamsT.mk) baseParams (mkConst ``LTy)
     return mkAppN (.const ``LExpr.fvar []) #[tParams, metadata, ← MkLExprParams.elabIdent T i, lty]
@@ -1131,7 +1132,7 @@ meta partial def elabLExpr [MkLExprParams T] : Lean.Syntax → MetaM Expr
   | `(lexpr| $f:lfvar) => elabLFVar (T:=T) f
   | `(lexpr| λ $e:lexpr) => do
      let e' ← elabLExpr (T:=T) e
-     let metadata ← mkAppM ``Unit.unit #[]
+     let metadata ← MkLExprParams.defaultMetadata T
      let baseParams := MkLExprParams.toExpr T
      let tParams := mkApp2 (mkConst ``LExprParamsT.mk) baseParams (mkConst ``LTy)
      return mkAppN (.const ``LExpr.absUntyped []) #[tParams, metadata, e']
@@ -1139,20 +1140,20 @@ meta partial def elabLExpr [MkLExprParams T] : Lean.Syntax → MetaM Expr
      let lty ← Lambda.LTy.Syntax.elabLTy mty
      let lty ← mkSome (mkConst ``LTy) lty
      let e' ← elabLExpr (T:=T) e
-     let metadata ← mkAppM ``Unit.unit #[]
+     let metadata ← MkLExprParams.defaultMetadata T
      let baseParams := MkLExprParams.toExpr T
      let tParams := mkApp2 (mkConst ``LExprParamsT.mk) baseParams (mkConst ``LTy)
      return mkAppN (.const ``LExpr.abs []) #[tParams, metadata, mkStrLit "", lty, e']
   | `(lexpr| ∀ $e:lexpr) => do
      let e' ← elabLExpr (T:=T) e
-     let metadata ← mkAppM ``Unit.unit #[]
+     let metadata ← MkLExprParams.defaultMetadata T
      let baseParams := MkLExprParams.toExpr T
      let tParams := mkApp2 (mkConst ``LExprParamsT.mk) baseParams (mkConst ``LTy)
      return mkAppN (.const ``LExpr.allUntyped []) #[tParams, metadata, e']
   | `(lexpr| ∀{$tr}$e:lexpr) => do
      let e' ← elabLExpr (T:=T) e
      let tr' ← elabLExpr (T:=T) tr
-     let metadata ← mkAppM ``Unit.unit #[]
+     let metadata ← MkLExprParams.defaultMetadata T
      let baseParams := MkLExprParams.toExpr T
      let tParams := mkApp2 (mkConst ``LExprParamsT.mk) baseParams (mkConst ``LTy)
      return mkAppN (.const ``LExpr.allUntypedTr []) #[tParams, metadata, tr', e']
@@ -1160,7 +1161,7 @@ meta partial def elabLExpr [MkLExprParams T] : Lean.Syntax → MetaM Expr
      let lty ← Lambda.LTy.Syntax.elabLTy mty
      let lty ← mkSome (mkConst ``LTy) lty
      let e' ← elabLExpr (T:=T) e
-     let metadata ← mkAppM ``Unit.unit #[]
+     let metadata ← MkLExprParams.defaultMetadata T
      let baseParams := MkLExprParams.toExpr T
      let tParams := mkApp2 (mkConst ``LExprParamsT.mk) baseParams (mkConst ``LTy)
      let emptyName := mkStrLit ""
@@ -1170,7 +1171,7 @@ meta partial def elabLExpr [MkLExprParams T] : Lean.Syntax → MetaM Expr
      let lty ← mkSome (mkConst ``LTy) lty
      let e' ← elabLExpr (T:=T) e
      let tr' ← elabLExpr (T:=T) tr
-     let metadata ← mkAppM ``Unit.unit #[]
+     let metadata ← MkLExprParams.defaultMetadata T
      let baseParams := MkLExprParams.toExpr T
      let tParams := mkApp2 (mkConst ``LExprParamsT.mk) baseParams (mkConst ``LTy)
      let emptyName := mkStrLit ""
@@ -1179,7 +1180,7 @@ meta partial def elabLExpr [MkLExprParams T] : Lean.Syntax → MetaM Expr
      let lty ← Lambda.LTy.Syntax.elabLTy mty
      let lty ← mkSome (mkConst ``LTy) lty
      let e' ← elabLExpr (T:=T) e
-     let metadata ← mkAppM ``Unit.unit #[]
+     let metadata ← MkLExprParams.defaultMetadata T
      let baseParams := MkLExprParams.toExpr T
      let tParams := mkApp2 (mkConst ``LExprParamsT.mk) baseParams (mkConst ``LTy)
      let emptyName := mkStrLit ""
@@ -1189,35 +1190,35 @@ meta partial def elabLExpr [MkLExprParams T] : Lean.Syntax → MetaM Expr
      let lty ← mkSome (mkConst ``LTy) lty
      let e' ← elabLExpr (T:=T) e
      let tr' ← elabLExpr (T:=T) tr
-     let metadata ← mkAppM ``Unit.unit #[]
+     let metadata ← MkLExprParams.defaultMetadata T
      let baseParams := MkLExprParams.toExpr T
      let tParams := mkApp2 (mkConst ``LExprParamsT.mk) baseParams (mkConst ``LTy)
      let emptyName := mkStrLit ""
      return mkAppN (.const ``LExpr.existTr []) #[tParams, metadata, emptyName, lty, tr', e']
   | `(lexpr| ∃ $e:lexpr) => do
      let e' ← elabLExpr (T:=T) e
-     let metadata ← mkAppM ``Unit.unit #[]
+     let metadata ← MkLExprParams.defaultMetadata T
      let baseParams := MkLExprParams.toExpr T
      let tParams := mkApp2 (mkConst ``LExprParamsT.mk) baseParams (mkConst ``LTy)
      return mkAppN (.const ``LExpr.existUntyped []) #[tParams, metadata, e']
   | `(lexpr| ∃ {$tr} $e:lexpr) => do
      let e' ← elabLExpr (T:=T) e
      let tr' ← elabLExpr (T:=T) tr
-     let metadata ← mkAppM ``Unit.unit #[]
+     let metadata ← MkLExprParams.defaultMetadata T
      let baseParams := MkLExprParams.toExpr T
      let tParams := mkApp2 (mkConst ``LExprParamsT.mk) baseParams (mkConst ``LTy)
      return mkAppN (.const ``LExpr.existUntypedTr []) #[tParams, metadata, tr', e']
   | `(lexpr| ($e1:lexpr $e2:lexpr)) => do
      let e1' ← elabLExpr (T:=T) e1
      let e2' ← elabLExpr (T:=T) e2
-     let metadata ← mkAppM ``Unit.unit #[]
+     let metadata ← MkLExprParams.defaultMetadata T
      let baseParams := MkLExprParams.toExpr T
      let tParams := mkApp2 (mkConst ``LExprParamsT.mk) baseParams (mkConst ``LTy)
      return mkAppN (.const ``LExpr.app []) #[tParams, metadata, e1', e2']
   | `(lexpr| $e1:lexpr == $e2:lexpr) => do
      let e1' ← elabLExpr (T:=T) e1
      let e2' ← elabLExpr (T:=T) e2
-     let metadata ← mkAppM ``Unit.unit #[]
+     let metadata ← MkLExprParams.defaultMetadata T
      let baseParams := MkLExprParams.toExpr T
      let tParams := mkApp2 (mkConst ``LExprParamsT.mk) baseParams (mkConst ``LTy)
      return mkAppN (.const ``LExpr.eq []) #[tParams, metadata, e1', e2']
@@ -1225,7 +1226,7 @@ meta partial def elabLExpr [MkLExprParams T] : Lean.Syntax → MetaM Expr
      let e1' ← elabLExpr (T:=T) e1
      let e2' ← elabLExpr (T:=T) e2
      let e3' ← elabLExpr (T:=T) e3
-     let metadata ← mkAppM ``Unit.unit #[]
+     let metadata ← MkLExprParams.defaultMetadata T
      let baseParams := MkLExprParams.toExpr T
      let tParams := mkApp2 (mkConst ``LExprParamsT.mk) baseParams (mkConst ``LTy)
      return mkAppN (.const ``LExpr.ite []) #[tParams, metadata, e1', e2', e3']
