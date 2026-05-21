@@ -296,6 +296,61 @@ theorem stepGoto_goto_taken_to_stepInstr
   rw [instrAt_to_instrGuard h_at, Option.bind_some]
   exact h_eval_bool_corr σ_imp σ_goto instr.guard true h_corr h_g
 
+/-! ## Bridge for `step_dead`
+
+Bridges via `RemoveState ↔ Store.kill`. Both sides remove the binding
+for the same identifier (`nameMap` translates between `P.Ident` and
+the GOTO-side `String`). Preserves `StoreCorr` because:
+
+* For the killed key `x`: `RemoveState` sets `σ_imp' x = none` and
+  `Store.kill` sets `σ_goto' (nameMap x) = none`. The "both none"
+  branch of `StoreCorr` is satisfied.
+* For other keys: both stores agree with their predecessors, so
+  `StoreCorr` propagates from the input. -/
+
+theorem stepGoto_dead_to_stepInstr
+    {P : Imperative.PureExpr} [SemanticsTautschnig.ValueCorr P]
+    {pgm : Program} {pc : Nat}
+    {σ_imp σ_imp' : Imperative.SemanticStore P}
+    {instr : Instruction}
+    {nameMap : P.Ident → String}
+    (h_inj : Function.Injective nameMap)
+    {x : P.Ident}
+    {callResult : SemanticsTautschnig.CallResultRel}
+    {eval : SemanticsTautschnig.ExprEval}
+    {fenv : SemanticsTautschnig.FuncEnv}
+    {σ_goto : SemanticsTautschnig.Store}
+    (h_at : pgm.instrAt pc = some instr) (h_ty : instr.type = .DEAD)
+    (h_remove : RemoveState P σ_imp x σ_imp')
+    (h_codeName : (SemanticsTautschnig.instrCode pgm pc).bind
+                    SemanticsTautschnig.getSymbolName = some (nameMap x))
+    (h_corr : SemanticsTautschnig.StoreCorr nameMap σ_imp σ_goto) :
+    ∃ σ_goto', SemanticsTautschnig.StoreCorr nameMap σ_imp' σ_goto' ∧
+      SemanticsTautschnig.StepInstr callResult eval fenv pgm
+        pc σ_goto (pc + 1) σ_goto' := by
+  refine ⟨σ_goto.kill (nameMap x), ?_, .dead (instrAt_to_instrType h_at h_ty) h_codeName⟩
+  -- StoreCorr preservation: RemoveState removes x on imp side;
+  -- Store.kill removes (nameMap x) on goto side.
+  intro y
+  cases h_remove with
+  | remove h_y_none h_other =>
+    by_cases h_eq : x = y
+    · -- y = x: both stores have the binding removed.
+      subst h_eq
+      left; refine ⟨h_y_none, ?_⟩
+      simp [SemanticsTautschnig.Store.kill]
+    · -- y ≠ x: both stores agree with their predecessors at y.
+      have h_imp_eq : σ_imp' y = σ_imp y := h_other y h_eq
+      have h_goto_eq : (σ_goto.kill (nameMap x)) (nameMap y) = σ_goto (nameMap y) := by
+        simp [SemanticsTautschnig.Store.kill]
+        intro h_collide
+        exact absurd (h_inj h_collide).symm h_eq
+      rcases h_corr y with ⟨h_imp_n, h_goto_n⟩ | ⟨e, v, h_imp_s, h_to, h_goto_s⟩
+      · left; exact ⟨by rw [h_imp_eq]; exact h_imp_n, by rw [h_goto_eq]; exact h_goto_n⟩
+      · right
+        exact ⟨e, v, by rw [h_imp_eq]; exact h_imp_s, h_to,
+                       by rw [h_goto_eq]; exact h_goto_s⟩
+
 /-! ## Structural divergences not yet bridged at this commit
 
 The remaining `StepGoto` constructors do not bridge directly to a
