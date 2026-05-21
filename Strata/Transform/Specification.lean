@@ -106,12 +106,12 @@ abbrev Lang.imperative (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P]
    .stmt, .terminal, .exiting, isAtAssert, Config.getEnv⟩
 
 /-- The standard `Lang` for `Cmd P` / `EvalCmd P` / `isAtAssert`. -/
-abbrev Lang.standard (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P]
+abbrev Lang.standard (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
     (extendEval : ExtendEval P) : Lang P :=
   Lang.imperative P (Cmd P) (EvalCmd P) extendEval (Imperative.isAtAssert P)
 
 
-variable {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVal P]
+variable {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasVarsPure P P.Expr]
 variable (L : Lang P)
 
 
@@ -171,10 +171,12 @@ namespace Hoare
     TODO: We will want to define Triple for total correctness. It will be useful
     when proving preservation of termination after program transformation.
 -/
-def Triple
+def Triple [HasVarsPure P P.Expr]
     (Pre : Env P → Prop) (s : L.StmtT) (Post : Env P → Prop) : Prop :=
   ∀ (ρ₀ ρ' : Env P),
-    Pre ρ₀ → WellFormedSemanticEvalBool ρ₀.eval → ρ₀.hasFailure = false →
+    Pre ρ₀ → WellFormedSemanticEvalBool ρ₀.eval →
+    WellFormedSemanticEvalExprCongr ρ₀.eval →
+    ρ₀.hasFailure = false →
     L.star (L.stmtCfg s ρ₀) (L.terminalCfg ρ') →
     Post ρ' ∧ ρ'.hasFailure = false
 
@@ -193,8 +195,8 @@ theorem consequence
     (h : Triple L Pre s Post)
     (hpre : ∀ ρ, Pre' ρ → Pre ρ) (hpost : ∀ ρ, Post ρ → Post' ρ) :
     Triple L Pre' s Post' := by
-  intro ρ₀ ρ' hpre' hwfb hf₀ hstar
-  have ⟨hp, hf⟩ := h ρ₀ ρ' (hpre ρ₀ hpre') hwfb hf₀ hstar
+  intro ρ₀ ρ' hpre' hwfb hwfcongr hf₀ hstar
+  have ⟨hp, hf⟩ := h ρ₀ ρ' (hpre ρ₀ hpre') hwfb hwfcongr hf₀ hstar
   exact ⟨hpost ρ' hp, hf⟩
 
 
@@ -208,11 +210,13 @@ variable (isAtAssertFn : Config P CmdT → AssertId P → Prop)
 /-- Partial-correctness Hoare triple for a block body.
     The output configuration is allowed to be still in an exiting mode
     (see Config.exiting) because the outer block can catch the exit. -/
-def TripleBlock
+def TripleBlock [HasVarsPure P P.Expr]
     {CmdT : Type} (evalCmd : EvalCmdParam P CmdT) (extendEval : ExtendEval P)
     (Pre : Env P → Prop) (ss : List (Stmt P CmdT)) (Post : Env P → Prop) : Prop :=
   ∀ (ρ₀ ρ' : Env P),
-    Pre ρ₀ → WellFormedSemanticEvalBool ρ₀.eval → ρ₀.hasFailure = false →
+    Pre ρ₀ → WellFormedSemanticEvalBool ρ₀.eval →
+    WellFormedSemanticEvalExprCongr ρ₀.eval →
+    ρ₀.hasFailure = false →
     (StepStmtStar P evalCmd extendEval (.stmts ss ρ₀) (.terminal ρ') ∨
      ∃ lbl, StepStmtStar P evalCmd extendEval (.stmts ss ρ₀) (.exiting lbl ρ')) →
     Post ρ' ∧ ρ'.hasFailure = false
@@ -221,7 +225,7 @@ def TripleBlock
 /-- Empty statement list is skip. -/
 theorem skip_block (Pre : Env P → Prop) :
     TripleBlock evalCmd extendEval Pre [] Pre := by
-  intro ρ₀ ρ' hpre _ hf₀ hstar
+  intro ρ₀ ρ' hpre _ _ hf₀ hstar
   match hstar with
   | .inl hterm =>
     cases hterm with
@@ -241,7 +245,7 @@ theorem cmd (c : CmdT) (Pre Post : Env P → Prop)
       evalCmd ρ₀.eval ρ₀.store c σ' f →
       Post { ρ₀ with store := σ', hasFailure := f } ∧ f = false) :
     Triple (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) Pre (.cmd c) Post := by
-  intro ρ₀ ρ' hpre hwfb hf₀ hstar
+  intro ρ₀ ρ' hpre hwfb _hwfcongr hf₀ hstar
   cases hstar with
   | step _ _ _ h1 r1 => cases h1 with
     | step_cmd hcmd =>
@@ -260,20 +264,25 @@ theorem seq_cons {s : Stmt P CmdT} {ss : List (Stmt P CmdT)}
     (hnofd : Stmt.noFuncDecl s = true)
     (hnoesc : Stmt.exitsCoveredByBlocks [] s) :
     TripleBlock evalCmd extendEval Pre (s :: ss) Post := by
-  intro ρ₀ ρ' hpre hwfb hf₀ hdone
+  intro ρ₀ ρ' hpre hwfb hwfcongr hf₀ hdone
   have hwfb_preserved : ∀ ρ₁, StepStmtStar P evalCmd extendEval (.stmt s ρ₀) (.terminal ρ₁) →
       WellFormedSemanticEvalBool ρ₁.eval := by
     intro ρ₁ hterm
     have this := smallStep_noFuncDecl_preserves_eval P evalCmd extendEval s ρ₀ ρ₁ hnofd hterm
     rw [this]; exact hwfb
+  have hwfcongr_preserved : ∀ ρ₁, StepStmtStar P evalCmd extendEval (.stmt s ρ₀) (.terminal ρ₁) →
+      WellFormedSemanticEvalExprCongr ρ₁.eval := by
+    intro ρ₁ hterm
+    have this := smallStep_noFuncDecl_preserves_eval P evalCmd extendEval s ρ₀ ρ₁ hnofd hterm
+    rw [this]; exact hwfcongr
   match hdone with
   | .inl hterm =>
     cases hterm with
     | step _ _ _ hstep hrest => cases hstep with
       | step_stmts_cons =>
         have ⟨ρ₁, hterm_s, hrest_ss⟩ := seq_reaches_terminal P evalCmd extendEval hrest
-        have ⟨hmid, hf₁⟩ := h₁ ρ₀ ρ₁ hpre hwfb hf₀ hterm_s
-        exact h₂ ρ₁ ρ' hmid (hwfb_preserved ρ₁ hterm_s) hf₁ (.inl hrest_ss)
+        have ⟨hmid, hf₁⟩ := h₁ ρ₀ ρ₁ hpre hwfb hwfcongr hf₀ hterm_s
+        exact h₂ ρ₁ ρ' hmid (hwfb_preserved ρ₁ hterm_s) (hwfcongr_preserved ρ₁ hterm_s) hf₁ (.inl hrest_ss)
   | .inr ⟨lbl, hexit⟩ =>
     cases hexit with
     | step _ _ _ hstep hrest => cases hstep with
@@ -283,8 +292,8 @@ theorem seq_cons {s : Stmt P CmdT} {ss : List (Stmt P CmdT)}
           exact absurd hexit_inner
             (exitsCoveredByBlocks_noEscape P evalCmd extendEval s hnoesc ρ₀ lbl ρ')
         | .inr ⟨ρ₁, hterm_s, hexit_ss⟩ =>
-          have ⟨hmid, hf₁⟩ := h₁ ρ₀ ρ₁ hpre hwfb hf₀ hterm_s
-          exact h₂ ρ₁ ρ' hmid (hwfb_preserved ρ₁ hterm_s) hf₁ (.inr ⟨lbl, hexit_ss⟩)
+          have ⟨hmid, hf₁⟩ := h₁ ρ₀ ρ₁ hpre hwfb hwfcongr hf₀ hterm_s
+          exact h₂ ρ₁ ρ' hmid (hwfb_preserved ρ₁ hterm_s) (hwfcongr_preserved ρ₁ hterm_s) hf₁ (.inr ⟨lbl, hexit_ss⟩)
 
 omit [HasVal P] in
 /-- A postcondition is well-formed if it is stable under `projectStore`. -/
@@ -302,16 +311,16 @@ theorem TripleBlock.toTriple {ss : List (Stmt P CmdT)} {l : String} {md : MetaDa
     (h : TripleBlock evalCmd extendEval Pre ss Post)
     (hpost_proj : PostWF Post) :
     Triple (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) Pre (.block l ss md) Post := by
-  intro ρ₀ ρ' hpre hwfb hf₀ hstar
+  intro ρ₀ ρ' hpre hwfb hwfcongr hf₀ hstar
   cases hstar with
   | step _ _ _ hstep hrest => cases hstep with
     | step_block =>
       match block_reaches_terminal P evalCmd extendEval hrest with
       | .inl ⟨ρ_inner, hterm, heq⟩ =>
-        have ⟨hpost, hf⟩ := h ρ₀ ρ_inner hpre hwfb hf₀ (.inl hterm)
+        have ⟨hpost, hf⟩ := h ρ₀ ρ_inner hpre hwfb hwfcongr hf₀ (.inl hterm)
         subst heq; exact hpost_proj ρ_inner _ hpost hf
       | .inr ⟨lbl, ρ_inner, hexit, heq⟩ =>
-        have ⟨hpost, hf⟩ := h ρ₀ ρ_inner hpre hwfb hf₀ (.inr ⟨lbl, hexit⟩)
+        have ⟨hpost, hf⟩ := h ρ₀ ρ_inner hpre hwfb hwfcongr hf₀ (.inr ⟨lbl, hexit⟩)
         subst heq; exact hpost_proj ρ_inner _ hpost hf
 
 omit [HasVal P] in
@@ -321,14 +330,14 @@ theorem Triple.toTripleBlock {s : Stmt P CmdT}
     (h : Triple (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) Pre s Post)
     (hnoesc : Stmt.exitsCoveredByBlocks [] s) :
     TripleBlock evalCmd extendEval Pre [s] Post := by
-  intro ρ₀ ρ' hpre hwfb hf₀ hdone
+  intro ρ₀ ρ' hpre hwfb hwfcongr hf₀ hdone
   match hdone with
   | .inl hterm =>
     cases hterm with
     | step _ _ _ hstep hrest => cases hstep with
       | step_stmts_cons =>
         have ⟨ρ₁, hterm_s, hrest_nil⟩ := seq_reaches_terminal P evalCmd extendEval hrest
-        have ⟨hp, hf⟩ := h ρ₀ ρ₁ hpre hwfb hf₀ hterm_s
+        have ⟨hp, hf⟩ := h ρ₀ ρ₁ hpre hwfb hwfcongr hf₀ hterm_s
         cases hrest_nil with
         | step _ _ _ h1 r1 => cases h1 with
           | step_stmts_nil => cases r1 with
@@ -361,11 +370,11 @@ theorem ite {c : P.Expr} {tss ess : List (Stmt P CmdT)} {md : MetaData P}
     (ht : TripleBlock evalCmd extendEval (fun ρ => Pre ρ ∧ ρ.eval ρ.store c = some HasBool.tt) tss Post)
     (he : TripleBlock evalCmd extendEval (fun ρ => Pre ρ ∧ ρ.eval ρ.store c = some HasBool.ff) ess Post) :
     Triple (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) Pre (.ite (.det c) tss ess md) Post := by
-  intro ρ₀ ρ' hpre hwfb hf₀ hstar
+  intro ρ₀ ρ' hpre hwfb hwfcongr hf₀ hstar
   cases hstar with
   | step _ _ _ h1 r1 => cases h1 with
-    | step_ite_true hc _ => exact ht ρ₀ ρ' ⟨hpre, hc⟩ hwfb hf₀ (.inl r1)
-    | step_ite_false hc _ => exact he ρ₀ ρ' ⟨hpre, hc⟩ hwfb hf₀ (.inl r1)
+    | step_ite_true hc _ => exact ht ρ₀ ρ' ⟨hpre, hc⟩ hwfb hwfcongr hf₀ (.inl r1)
+    | step_ite_false hc _ => exact he ρ₀ ρ' ⟨hpre, hc⟩ hwfb hwfcongr hf₀ (.inl r1)
 
 /- TODO: the WHILE rule -/
 
@@ -376,7 +385,7 @@ end StmtRules
 
 section StandardConnection
 
-variable (P' : PureExpr) [HasFvar P'] [HasBool P'] [HasNot P']
+variable (P' : PureExpr) [HasFvar P'] [HasBool P'] [HasNot P'] [HasVarsPure P' P'.Expr]
 variable (extendEval : ExtendEval P')
 
 /-- The composite statement `assume pre; st; assert post` wrapped in a block. -/
@@ -459,14 +468,14 @@ theorem hoareTriple_implies_assertValid
                     cases h_assume_step with
                     | step_cmd hcmd =>
                       cases hcmd with
-                      | eval_assume hpre hwfb =>
+                      | eval_assume hpre hwfb hwfcongr =>
                         cases h_assume_rest with
                         | refl =>
                           have ⟨ρ'_clean, hterm_clean, hs_eq, he_eq⟩ :=
                             smallStep_hasFailure_irrel P' (EvalCmd P') extendEval
                               st _ ρ' hterm_st { ρ₀ with hasFailure := false } rfl rfl
                           have ⟨hpost, _⟩ := hoare { ρ₀ with hasFailure := false } ρ'_clean
-                            hpre hwfb rfl hterm_clean
+                            hpre hwfb hwfcongr rfl hterm_clean
                           simp only [hs_eq, he_eq] at hpost
                           have ⟨he, hs⟩ := assert_tail_getEvalStore P' extendEval
                             ρ' post_label post_expr post_md inner ⟨post_label, post_expr⟩
@@ -488,7 +497,7 @@ theorem allAssertsValid_implies_hoareTriple
       (fun ρ => ρ.eval ρ.store pre_expr = some HasBool.tt)
       st
       (fun ρ => ρ.eval ρ.store post_expr = some HasBool.tt) := by
-  intro ρ₀ ρ' hpre hwfb hf₀ hstar
+  intro ρ₀ ρ' hpre hwfb hwfcongr hf₀ hstar
   let assume_stmt : Stmt P' (Cmd P') := .cmd (.assume pre_label pre_expr pre_md)
   let assert_stmt : Stmt P' (Cmd P') := .cmd (.assert post_label post_expr post_md)
   let body : List (Stmt P' (Cmd P')) := [assume_stmt, st, assert_stmt]
@@ -499,7 +508,7 @@ theorem allAssertsValid_implies_hoareTriple
     intro a cfg hstar_st hat
     have h_assume : StepStmtStar P' (EvalCmd P') extendEval
         (.stmt assume_stmt ρ₀) (.terminal { ρ₀ with store := ρ₀.store, hasFailure := ρ₀.hasFailure || false }) :=
-      .step _ _ _ (StepStmt.step_cmd (EvalCmd.eval_assume hpre hwfb)) (.refl _)
+      .step _ _ _ (StepStmt.step_cmd (EvalCmd.eval_assume hpre hwfb hwfcongr)) (.refl _)
     have h_ρ₁_eq : ({ store := ρ₀.store, eval := ρ₀.eval, hasFailure := ρ₀.hasFailure || false } : Env P') = ρ₀ := by
       cases ρ₀; simp [Bool.or_false]
     have h1 := stmts_cons_step P' (EvalCmd P') extendEval assume_stmt [st, assert_stmt] ρ₀ _ h_assume
@@ -519,7 +528,7 @@ theorem allAssertsValid_implies_hoareTriple
     exact h_result
   have h_assume : StepStmtStar P' (EvalCmd P') extendEval
       (.stmt assume_stmt ρ₀) (.terminal { ρ₀ with store := ρ₀.store, hasFailure := ρ₀.hasFailure || false }) :=
-    .step _ _ _ (StepStmt.step_cmd (EvalCmd.eval_assume hpre hwfb)) (.refl _)
+    .step _ _ _ (StepStmt.step_cmd (EvalCmd.eval_assume hpre hwfb hwfcongr)) (.refl _)
   have h_ρ₁_eq : ({ store := ρ₀.store, eval := ρ₀.eval, hasFailure := ρ₀.hasFailure || false } : Env P') = ρ₀ := by
     cases ρ₀; simp [Bool.or_false]
   have h1 := stmts_cons_step P' (EvalCmd P') extendEval assume_stmt [st, assert_stmt] ρ₀ _ h_assume
@@ -597,6 +606,7 @@ def Overapproximates (L₁ L₂ : Lang P) (T : L₁.StmtT → Option L₂.StmtT)
     ∀ (ρ₀ ρ' : Env P),
       WellFormedSemanticEvalBool ρ₀.eval →
       WellFormedSemanticEvalVal ρ₀.eval →
+      WellFormedSemanticEvalExprCongr ρ₀.eval →
       (L₁.star (L₁.stmtCfg st ρ₀) (L₁.terminalCfg ρ') →
        L₂.star (L₂.stmtCfg s' ρ₀) (L₂.terminalCfg ρ'))
       ∧
@@ -613,13 +623,13 @@ theorem overapproximates_triple (L₁ L₂ : Lang P)
     (htriple : Hoare.Triple L₂ Pre s' Post)
     (hwfv : ∀ ρ₀ : Env P, Pre ρ₀ → WellFormedSemanticEvalVal ρ₀.eval) :
     Hoare.Triple L₁ Pre st Post := by
-  intro ρ₀ ρ' hpre hwfb hf₀ hstar
-  exact htriple ρ₀ ρ' hpre hwfb hf₀
-    ((hsem st s' ht ρ₀ ρ' hwfb (hwfv ρ₀ hpre)).1 hstar)
+  intro ρ₀ ρ' hpre hwfb hwfcongr hf₀ hstar
+  exact htriple ρ₀ ρ' hpre hwfb hwfcongr hf₀
+    ((hsem st s' ht ρ₀ ρ' hwfb (hwfv ρ₀ hpre) hwfcongr).1 hstar)
 
 theorem overapproximates_id (L₁ : Lang P) :
     Overapproximates L₁ L₁ some := by
-  intro st s' ht ρ₀ ρ' _ _
+  intro st s' ht ρ₀ ρ' _ _ _
   simp at ht; subst ht
   exact ⟨id, fun _ => id⟩
 
@@ -628,13 +638,13 @@ theorem overapproximates_comp (L₁ L₂ L₃ : Lang P)
     (h₁ : Overapproximates L₁ L₂ T₁)
     (h₂ : Overapproximates L₂ L₃ T₂) :
     Overapproximates L₁ L₃ (fun s => T₁ s >>= T₂) := by
-  intro st s'' ht ρ₀ ρ' hwfb hwfv
+  intro st s'' ht ρ₀ ρ' hwfb hwfv hwfcongr
   simp [bind, Option.bind] at ht
   match h : T₁ st with
   | some s' =>
     rw [h] at ht
-    have hr₁ := h₁ st s' h ρ₀ ρ' hwfb hwfv
-    have hr₂ := h₂ s' s'' ht ρ₀ ρ' hwfb hwfv
+    have hr₁ := h₁ st s' h ρ₀ ρ' hwfb hwfv hwfcongr
+    have hr₂ := h₂ s' s'' ht ρ₀ ρ' hwfb hwfv hwfcongr
     refine ⟨?_, ?_⟩
     · intro hstar; exact hr₂.1 (hr₁.1 hstar)
     · intro lbl hstar; exact hr₂.2 lbl (hr₁.2 lbl hstar)
@@ -686,6 +696,7 @@ private theorem overapproximates_stmts_aux
       ∀ (ρ₀ ρ' : Env P),
         WellFormedSemanticEvalBool ρ₀.eval →
         WellFormedSemanticEvalVal ρ₀.eval →
+        WellFormedSemanticEvalExprCongr ρ₀.eval →
         (StepStmtStar P evalCmd extendEval (.stmts ss ρ₀) (.terminal ρ') →
          StepStmtStar P evalCmd extendEval (.stmts ss' ρ₀) (.terminal ρ'))
         ∧
@@ -693,32 +704,33 @@ private theorem overapproximates_stmts_aux
                 StepStmtStar P evalCmd extendEval (.stmts ss' ρ₀) (.exiting lbl ρ')) := by
   induction ss with
   | nil =>
-    intro ss' hmap ρ₀ ρ' _ _
+    intro ss' hmap ρ₀ ρ' _ _ _
     have : ss' = [] := by simp [List.mapM_nil] at hmap; exact hmap
     subst this; exact ⟨id, fun _ => id⟩
   | cons s rest ih =>
-    intro ss' hmap ρ₀ ρ' hwfb hwfv
+    intro ss' hmap ρ₀ ρ' hwfb hwfv hwfcongr
     simp [Block.noFuncDecl, Bool.and_eq_true] at hnofd
     have ⟨hnofd_s, hnofd_rest⟩ := hnofd
     have ⟨s', rest', hs, hrm, hss'⟩ := List.mapM_cons_some hmap
     subst hss'
     have eval_preserved : ∀ ρ₁ : Env P,
         StepStmtStar P evalCmd extendEval (.stmt s ρ₀) (.terminal ρ₁) →
-        WellFormedSemanticEvalBool ρ₁.eval ∧ WellFormedSemanticEvalVal ρ₁.eval := by
+        WellFormedSemanticEvalBool ρ₁.eval ∧ WellFormedSemanticEvalVal ρ₁.eval ∧
+          WellFormedSemanticEvalExprCongr ρ₁.eval := by
       intro ρ₁ hterm_s
       have heq := smallStep_noFuncDecl_preserves_eval P evalCmd extendEval s ρ₀ ρ₁ hnofd_s hterm_s
-      exact ⟨heq ▸ hwfb, heq ▸ hwfv⟩
+      exact ⟨heq ▸ hwfb, heq ▸ hwfv, heq ▸ hwfcongr⟩
     constructor
     · intro hstar
       cases hstar with
       | step _ _ _ hstep hrest_exec => cases hstep with
         | step_stmts_cons =>
           have ⟨ρ₁, hterm_s, hterm_rest⟩ := seq_reaches_terminal P evalCmd extendEval hrest_exec
-          have ⟨hwfb₁, hwfv₁⟩ := eval_preserved ρ₁ hterm_s
+          have ⟨hwfb₁, hwfv₁, hwfcongr₁⟩ := eval_preserved ρ₁ hterm_s
           exact ReflTrans_Transitive _ _ _ _
             (stmts_cons_step P evalCmd extendEval s' rest' ρ₀ ρ₁
-              ((hsem s s' hs ρ₀ ρ₁ hwfb hwfv).1 hterm_s))
-            ((ih hnofd_rest rest' hrm ρ₁ ρ' hwfb₁ hwfv₁).1 hterm_rest)
+              ((hsem s s' hs ρ₀ ρ₁ hwfb hwfv hwfcongr).1 hterm_s))
+            ((ih hnofd_rest rest' hrm ρ₁ ρ' hwfb₁ hwfv₁ hwfcongr₁).1 hterm_rest)
     · intro lbl hstar
       cases hstar with
       | step _ _ _ hstep hrest_exec => cases hstep with
@@ -727,14 +739,14 @@ private theorem overapproximates_stmts_aux
           | .inl hexit_s =>
             exact .step _ _ _ .step_stmts_cons
               (ReflTrans_Transitive _ _ _ _ (seq_inner_star P evalCmd extendEval _ _ rest'
-                ((hsem s s' hs ρ₀ ρ' hwfb hwfv).2 lbl hexit_s))
+                ((hsem s s' hs ρ₀ ρ' hwfb hwfv hwfcongr).2 lbl hexit_s))
                 (.step _ _ _ .step_seq_exit (.refl _)))
           | .inr ⟨ρ₁, hterm_s, hexit_rest⟩ =>
-            have ⟨hwfb₁, hwfv₁⟩ := eval_preserved ρ₁ hterm_s
+            have ⟨hwfb₁, hwfv₁, hwfcongr₁⟩ := eval_preserved ρ₁ hterm_s
             exact ReflTrans_Transitive _ _ _ _
               (stmts_cons_step P evalCmd extendEval s' rest' ρ₀ ρ₁
-                ((hsem s s' hs ρ₀ ρ₁ hwfb hwfv).1 hterm_s))
-              ((ih hnofd_rest rest' hrm ρ₁ ρ' hwfb₁ hwfv₁).2 lbl hexit_rest)
+                ((hsem s s' hs ρ₀ ρ₁ hwfb hwfv hwfcongr).1 hterm_s))
+              ((ih hnofd_rest rest' hrm ρ₁ ρ' hwfb₁ hwfv₁ hwfcongr₁).2 lbl hexit_rest)
 
 theorem overapproximates_stmts
     (T : Stmt P CmdT → Option (Stmt P CmdT))
@@ -744,9 +756,9 @@ theorem overapproximates_stmts
       (Lang.imperativeBlock evalCmd extendEval isAtAssertFn)
       (Lang.imperativeBlock evalCmd extendEval isAtAssertFn)
       (fun ss => ss.mapM T) := by
-  intro ss ss' hmap ρ₀ ρ' hwfb hwfv
+  intro ss ss' hmap ρ₀ ρ' hwfb hwfv hwfcongr
   exact overapproximates_stmts_aux evalCmd extendEval isAtAssertFn T hsem ss
-    (mapM_noFuncDecl T hnofd_T ss ss' hmap) ss' hmap ρ₀ ρ' hwfb hwfv
+    (mapM_noFuncDecl T hnofd_T ss ss' hmap) ss' hmap ρ₀ ρ' hwfb hwfv hwfcongr
 
 end ImperativeStmts
 

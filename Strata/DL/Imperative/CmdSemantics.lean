@@ -319,13 +319,14 @@ sets it to `true`; all other constructors report `false`.
 The failure flag is accumulated in `Env.hasFailure` by the statement
 semantics (`EvalStmt`).
 -/
-inductive EvalCmd [HasFvar P] [HasBool P] [HasNot P] :
+inductive EvalCmd [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] :
   SemanticEval P → SemanticStore P → Cmd P → SemanticStore P → Bool → Prop where
   /-- If `e` evaluates to a value `v`, initialize `x` according to `InitState`. -/
   | eval_init :
     δ σ e = .some v →
     InitState P σ x v σ' →
     WellFormedSemanticEvalVar δ →
+    WellFormedSemanticEvalExprCongr δ →
     ---
     EvalCmd δ σ (.init x _ (.det e) _) σ' false
 
@@ -341,6 +342,7 @@ inductive EvalCmd [HasFvar P] [HasBool P] [HasNot P] :
     δ σ e = .some v →
     UpdateState P σ x v σ' →
     WellFormedSemanticEvalVar δ →
+    WellFormedSemanticEvalExprCongr δ →
     ----
     EvalCmd δ σ (.set x (.det e) _) σ' false
 
@@ -355,6 +357,7 @@ inductive EvalCmd [HasFvar P] [HasBool P] [HasNot P] :
   | eval_assert_pass :
     δ σ e = .some HasBool.tt →
     WellFormedSemanticEvalBool δ →
+    WellFormedSemanticEvalExprCongr δ →
     ----
     EvalCmd δ σ (.assert _ e _) σ false
 
@@ -364,6 +367,7 @@ inductive EvalCmd [HasFvar P] [HasBool P] [HasNot P] :
   | eval_assert_fail :
     δ σ e = .some HasBool.ff →
     WellFormedSemanticEvalBool δ →
+    WellFormedSemanticEvalExprCongr δ →
     ----
     EvalCmd δ σ (.assert _ e _) σ true
 
@@ -371,6 +375,7 @@ inductive EvalCmd [HasFvar P] [HasBool P] [HasNot P] :
   | eval_assume :
     δ σ e = .some HasBool.tt →
     WellFormedSemanticEvalBool δ →
+    WellFormedSemanticEvalExprCongr δ →
     ----
     EvalCmd δ σ (.assume _ e _) σ false
 

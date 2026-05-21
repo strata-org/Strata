@@ -16,14 +16,14 @@ namespace Imperative
 public section
 
 theorem eval_assert_store_cst
-  [HasFvar P] [HasBool P] [HasNot P]:
+  [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]:
   EvalCmd P δ σ (.assert l e md) σ' f → σ = σ' := by
   intros Heval; cases Heval with
   | eval_assert_pass _ => rfl
   | eval_assert_fail _ => rfl
 
 theorem eval_stmt_assert_store_cst
-  [HasFvar P] [HasBool P] [HasNot P] :
+  [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] :
   EvalStmtSmall P (EvalCmd P) extendEval ρ (.cmd (Cmd.assert l e md)) ρ' → ρ.store = ρ'.store := by
   intro Heval
   unfold EvalStmtSmall at Heval
@@ -37,7 +37,7 @@ theorem eval_stmt_assert_store_cst
     | step _ _ _ hstep _ => exact absurd hstep (by intro h; cases h)
 
 theorem eval_stmt_assert_eval_cst
-  [HasFvar P] [HasBool P] [HasNot P] :
+  [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] :
   EvalStmtSmall P (EvalCmd P) extendEval ρ (.cmd (Cmd.assert l e md)) ρ' → ρ.eval = ρ'.eval := by
   intro Heval
   unfold EvalStmtSmall at Heval
@@ -48,7 +48,7 @@ theorem eval_stmt_assert_eval_cst
     | step _ _ _ hstep _ => exact absurd hstep (by intro h; cases h)
 
 theorem eval_stmts_assert_store_cst
-  [HasFvar P] [HasBool P] [HasNot P] :
+  [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] :
   EvalStmtsSmall P (EvalCmd P) extendEval ρ [(.cmd (Cmd.assert l e md))] ρ' → ρ.store = ρ'.store := by
   intro Heval
   -- Use stmts_cons_step inversion: the singleton list steps through
@@ -75,7 +75,7 @@ theorem eval_stmts_assert_store_cst
   exact eval_stmt_assert_store_cst hstmt
 
 theorem eval_stmt_assert_eq_of_pure_expr_eq
-  [HasFvar P] [HasBool P] [HasNot P] :
+  [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] :
   WellFormedSemanticEvalBool ρ.eval →
   (EvalStmtSmall P (EvalCmd P) extendEval ρ (.cmd (Cmd.assert l1 e md1)) ρ' ↔
   EvalStmtSmall P (EvalCmd P) extendEval ρ (.cmd (Cmd.assert l2 e md2)) ρ') := by
@@ -89,10 +89,10 @@ theorem eval_stmt_assert_eq_of_pure_expr_eq
       cases hrest with
       | refl =>
         cases hcmd with
-        | eval_assert_pass htt _ =>
-          exact .step _ _ _ (.step_cmd (EvalCmd.eval_assert_pass htt Hwf)) (.refl _)
-        | eval_assert_fail hne _ =>
-          exact .step _ _ _ (.step_cmd (EvalCmd.eval_assert_fail hne Hwf)) (.refl _)
+        | eval_assert_pass htt _ hcongr =>
+          exact .step _ _ _ (.step_cmd (EvalCmd.eval_assert_pass htt Hwf hcongr)) (.refl _)
+        | eval_assert_fail hne _ hcongr =>
+          exact .step _ _ _ (.step_cmd (EvalCmd.eval_assert_fail hne Hwf hcongr)) (.refl _)
       | step _ _ _ hstep _ => exact absurd hstep (by intro h; cases h)
   )
 
@@ -227,7 +227,7 @@ theorem EvalStmtsSmall_hasFailure_irrel
 /-! ### Assert elimination -/
 
 theorem eval_stmts_assert_elim
-  [HasFvar P] [HasBool P] [HasNot P] :
+  [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] :
   WellFormedSemanticEvalBool ρ.eval →
   EvalStmtsSmall P (EvalCmd P) extendEval ρ (.cmd (.assert l1 e md1) :: cmds) ρ' →
   ∃ ρ'', EvalStmtsSmall P (EvalCmd P) extendEval ρ cmds ρ'' ∧
@@ -268,7 +268,7 @@ theorem eval_stmts_assert_elim
         exact absurd (EvalStmtsSmall_hasFailure_monotone htail hf1) (by simp [Hf])
 
 theorem assert_elim
-  [HasFvar P] [HasBool P] [HasNot P] :
+  [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] :
   WellFormedSemanticEvalBool ρ.eval →
   EvalStmtsSmall P (EvalCmd P) extendEval ρ (.cmd (.assert l1 e md1) :: [.cmd (.assert l2 e md2)]) ρ' →
   EvalStmtsSmall P (EvalCmd P) extendEval ρ [.cmd (.assert l3 e md3)] ρ' := by
@@ -292,32 +292,32 @@ theorem assert_elim
             -- hcmd1 and hcmd2 both evaluate e in the same store/eval
             -- They must agree on pass/fail
             cases hcmd1 with
-            | eval_assert_pass h1 _ =>
+            | eval_assert_pass h1 _ hcongr =>
               -- e evaluates to tt; hcmd2 also sees tt (same store/eval)
               -- Build single assert3 that passes, producing same ρ'
               -- ρ' = { store := ρ.store, eval := ρ.eval, hasFailure := (ρ.hasFailure || false) || f₂ }
               -- We need to produce the same env with a single assert
               -- Since h1 : ρ.eval ρ.store e = some tt, hcmd2 must also pass
               cases hcmd2 with
-              | eval_assert_pass _ _ =>
+              | eval_assert_pass _ _ _ =>
                 apply ReflTrans.step _ _ _ .step_stmts_cons
-                apply ReflTrans.step _ _ _ (.step_seq_inner (.step_cmd (EvalCmd.eval_assert_pass h1 Hwf)))
+                apply ReflTrans.step _ _ _ (.step_seq_inner (.step_cmd (EvalCmd.eval_assert_pass h1 Hwf hcongr)))
                 apply ReflTrans.step _ _ _ .step_seq_done
                 apply ReflTrans.step _ _ _ .step_stmts_nil
                 simp_all [Bool.or_false]; exact .refl _
-              | eval_assert_fail h2 _ =>
+              | eval_assert_fail h2 _ _ =>
                 simp at h2
                 exact absurd (h1.symm.trans h2)
                   (by exact fun h => HasBool.tt_is_not_ff (Option.some.inj h))
-            | eval_assert_fail h1 _ =>
+            | eval_assert_fail h1 _ hcongr =>
               cases hcmd2 with
-              | eval_assert_pass h2 _ =>
+              | eval_assert_pass h2 _ _ =>
                 simp at h2
                 exact absurd (h2.symm.trans h1)
                   (by exact fun h => HasBool.tt_is_not_ff (Option.some.inj h))
-              | eval_assert_fail _ _ =>
+              | eval_assert_fail _ _ _ =>
                 apply ReflTrans.step _ _ _ .step_stmts_cons
-                apply ReflTrans.step _ _ _ (.step_seq_inner (.step_cmd (EvalCmd.eval_assert_fail h1 Hwf)))
+                apply ReflTrans.step _ _ _ (.step_seq_inner (.step_cmd (EvalCmd.eval_assert_fail h1 Hwf hcongr)))
                 apply ReflTrans.step _ _ _ .step_seq_done
                 apply ReflTrans.step _ _ _ .step_stmts_nil
                 simp_all [Bool.or_true]; exact .refl _
@@ -398,7 +398,7 @@ theorem semantic_eval_eq_of_eval_cmd_set_unrelated_var
   exact Hwf this
 
 theorem eval_cmd_set_comm'
-  [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)]
+  [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)] [HasVarsPure P P.Expr]
   [HasFvar P] [HasVal P] [HasBool P] [HasNot P] [DecidableEq P.Ident] :
   ¬ x1 = x2 →
   δ σ v1 = δ σ2 v1 →
@@ -409,10 +409,10 @@ theorem eval_cmd_set_comm'
   EvalCmd P δ σ2 (Cmd.set x1 (.det v1) md1') σ'' f4 →
   σ' = σ'' := by
   intro Hneq Heq1 Heq2 Hs1 Hs2 Hs3 Hs4
-  cases Hs1 with | eval_set _ Hu1 _ =>
-  cases Hs2 with | eval_set _ Hu2 _ =>
-  cases Hs3 with | eval_set _ Hu3 _ =>
-  cases Hs4 with | eval_set _ Hu4 _ =>
+  cases Hs1 with | eval_set _ Hu1 _ _ =>
+  cases Hs2 with | eval_set _ Hu2 _ _ =>
+  cases Hs3 with | eval_set _ Hu3 _ _ =>
+  cases Hs4 with | eval_set _ Hu4 _ _ =>
   simp_all
   exact UpdateStateComm Hneq Hu1 Hu2 Hu3 Hu4
 

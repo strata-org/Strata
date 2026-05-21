@@ -55,7 +55,7 @@ open Imperative Specification
 
 /-- The structured `Lang` for `Cmd P`. -/
 abbrev Lang.structured {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVal P]
-    [HasIdent P] [HasIntOrder P]
+    [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr]
     (extendEval : ExtendEval P) : Lang P :=
   Lang.imperative P (Cmd P) (EvalCmd P) extendEval (isAtAssert P)
 
@@ -86,7 +86,7 @@ def cfgIsAtAssert {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
 
 /-- The CFG `Lang` for `Cmd P`. -/
 abbrev Lang.cfg {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVal P]
-    [HasIdent P] [HasIntOrder P]
+    [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr]
     (extendEval : ExtendEval P)
     (cfg : CFG String (DetBlock String (Cmd P) P)) : Lang P where
   StmtT := CFG String (DetBlock String (Cmd P) P)
@@ -101,12 +101,12 @@ abbrev Lang.cfg {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVal P]
 
 /-! ## Abbreviations -/
 @[simp]
-abbrev StepDetCFGStar {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
+abbrev StepDetCFGStar {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
     (extendEval : ExtendEval P)
     (cfg : CFG String (DetBlock String (Cmd P) P)) :=
   @StepCFGStar _ _ (Cmd P) _ P (EvalDetBlock P (EvalCmd P) extendEval) cfg
 
-theorem StepDetCFGStar_trans {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
+theorem StepDetCFGStar_trans {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
     {extendEval : ExtendEval P}
     {cfg : CFG String (DetBlock String (Cmd P) P)}
     {a b c : CFGConfig String P}
@@ -245,12 +245,12 @@ theorem stmts_nil_terminal {P : PureExpr} [HasBool P] [HasNot P]
   · rename_i h₁ _
     cases h₁
 
-theorem EvalCmds_snoc {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
+theorem EvalCmds_snoc {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
     (δ : SemanticEval P) (σ σ' σ'' : SemanticStore P)
     (cs : List (Cmd P)) (c : Cmd P) (f₁ f₂ : Bool)
-    (h₁ : EvalCmds P (@EvalCmd P _ _ _) δ σ cs σ' f₁)
-    (h₂ : @EvalCmd P _ _ _ δ σ' c σ'' f₂) :
-    EvalCmds P (@EvalCmd P _ _ _) δ σ (cs ++ [c]) σ'' (f₁ || f₂) := by
+    (h₁ : EvalCmds P (@EvalCmd P _ _ _ _) δ σ cs σ' f₁)
+    (h₂ : @EvalCmd P _ _ _ _ δ σ' c σ'' f₂) :
+    EvalCmds P (@EvalCmd P _ _ _ _) δ σ (cs ++ [c]) σ'' (f₁ || f₂) := by
   induction cs generalizing σ f₁ with
   | nil =>
     cases h₁
@@ -265,9 +265,9 @@ theorem EvalCmds_snoc {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
       rw [Bool.or_assoc]
       exact EvalCmds.eval_cmds_some hcmd (ih _ _ hrest)
 
-theorem EvalCmds_inv {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
+theorem EvalCmds_inv {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
     (δ : SemanticEval P) (σ σ' : SemanticStore P) (f : Bool)
-    (h : EvalCmds P (@EvalCmd P _ _ _) δ σ [] σ' f) :
+    (h : EvalCmds P (@EvalCmd P _ _ _ _) δ σ [] σ' f) :
     σ = σ' ∧ f = false := by
   cases h;
   exact ⟨ rfl, rfl ⟩
@@ -426,11 +426,11 @@ private theorem EvalCmd_under_agreement {P : PureExpr}
     (δ : SemanticEval P) (σ_struct₀ σ_cfg₀ : SemanticStore P)
     (c : Cmd P) (σ_struct₁ : SemanticStore P) (failed : Bool)
     (h_agree : StoreAgreement σ_struct₀ σ_cfg₀)
-    (h_eval : @EvalCmd P _ _ _ δ σ_struct₀ c σ_struct₁ failed)
+    (h_eval : @EvalCmd P _ _ _ _ δ σ_struct₀ c σ_struct₁ failed)
     (h_wf_def : WellFormedSemanticEvalDef δ)
     (h_congr : WellFormedSemanticEvalExprCongr δ)
     (h_fresh : ∀ x ∈ Cmd.definedVars c, σ_cfg₀ x = none) :
-    ∃ σ_cfg₁, @EvalCmd P _ _ _ δ σ_cfg₀ c σ_cfg₁ failed
+    ∃ σ_cfg₁, @EvalCmd P _ _ _ _ δ σ_cfg₀ c σ_cfg₁ failed
             ∧ StoreAgreement σ_struct₁ σ_cfg₁ := by
   cases h_eval with
   | eval_init heval hinit hwfvar =>
@@ -646,10 +646,10 @@ private theorem EvalCmd_under_agreement {P : PureExpr}
 /-- A single `EvalCmd` step preserves the `isDefined` predicate over an
 arbitrary list of variables: commands only ever introduce or modify variables. -/
 private theorem isDefined_of_EvalCmd {P : PureExpr}
-    [HasFvar P] [HasBool P] [HasNot P] [DecidableEq P.Ident]
+    [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
     {δ : SemanticEval P} {σ σ' : SemanticStore P} {c : Cmd P} {failed : Bool}
     {vs : List P.Ident}
-    (h_eval : @EvalCmd P _ _ _ δ σ c σ' failed)
+    (h_eval : @EvalCmd P _ _ _ _ δ σ c σ' failed)
     (h_def : isDefined σ vs) :
     isDefined σ' vs := by
   intro x hx
@@ -697,10 +697,10 @@ private theorem isDefined_of_EvalCmd {P : PureExpr}
 `c` either doesn't touch x, or modifies x via `set` (which requires `σ x = some _`,
 contradicting `σ x = none`). -/
 private theorem agreement_helper_unchanged_at_x {P : PureExpr}
-    [HasFvar P] [HasBool P] [HasNot P] [DecidableEq P.Ident]
+    [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
     {δ : SemanticEval P} {σ σ' : SemanticStore P} {c : Cmd P} {failed : Bool}
     {x : P.Ident}
-    (h_eval : @EvalCmd P _ _ _ δ σ c σ' failed)
+    (h_eval : @EvalCmd P _ _ _ _ δ σ c σ' failed)
     (h_x_not_def : x ∉ Cmd.definedVars c)
     (h_σ_x : σ x = none) :
     σ' x = none := by
@@ -762,10 +762,10 @@ private theorem agreement_helper_unchanged_at_x {P : PureExpr}
 takes σ to σ' over a list `cmds`, and `x` is not in `cmds.definedVars`, and
 `σ x = none`, then `σ' x = none`. By induction on `EvalCmds`. -/
 private theorem agreement_helper_unchanged_at_x_multi {P : PureExpr}
-    [HasFvar P] [HasBool P] [HasNot P] [DecidableEq P.Ident]
+    [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
     {δ : SemanticEval P} {σ σ' : SemanticStore P} {cmds : List (Cmd P)} {failed : Bool}
     {x : P.Ident}
-    (h_eval : EvalCmds P (@EvalCmd P _ _ _) δ σ cmds σ' failed)
+    (h_eval : EvalCmds P (@EvalCmd P _ _ _ _) δ σ cmds σ' failed)
     (h_x_not_def : x ∉ Cmds.definedVars cmds)
     (h_σ_x : σ x = none) :
     σ' x = none := by
@@ -799,10 +799,10 @@ private theorem EvalCmds_under_agreement {P : PureExpr}
     (h_congr : WellFormedSemanticEvalExprCongr δ) :
     ∀ (σ_struct₀ σ_cfg₀ σ_struct₁ : SemanticStore P) (failed : Bool),
       StoreAgreement σ_struct₀ σ_cfg₀ →
-      EvalCmds P (@EvalCmd P _ _ _) δ σ_struct₀ cs σ_struct₁ failed →
+      EvalCmds P (@EvalCmd P _ _ _ _) δ σ_struct₀ cs σ_struct₁ failed →
       (∀ x ∈ Cmds.definedVars cs, σ_cfg₀ x = none) →
       (Cmds.definedVars cs).Nodup →
-      ∃ σ_cfg₁, EvalCmds P (@EvalCmd P _ _ _) δ σ_cfg₀ cs σ_cfg₁ failed
+      ∃ σ_cfg₁, EvalCmds P (@EvalCmd P _ _ _ _) δ σ_cfg₀ cs σ_cfg₁ failed
               ∧ StoreAgreement σ_struct₁ σ_cfg₁ := by
   induction cs with
   | nil =>
@@ -852,20 +852,20 @@ private theorem EvalCmds_under_agreement {P : PureExpr}
           h_unique_tail
       exact ⟨σ_cfg_end, EvalCmds.eval_cmds_some h_cmd_cfg h_rest_cfg, h_agree_end⟩
 
-theorem single_cmd_eval {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
+theorem single_cmd_eval {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
     (extendEval : ExtendEval P)
     (c : Cmd P) (ρ₀ ρ₁ : Env P)
-    (h : StepStmtStar P (@EvalCmd P _ _ _) extendEval
+    (h : StepStmtStar P (@EvalCmd P _ _ _ _) extendEval
       (.stmts [.cmd c] ρ₀) (.terminal ρ₁)) :
-    ∃ σ' failed, @EvalCmd P _ _ _ ρ₀.eval ρ₀.store c σ' failed ∧
+    ∃ σ' failed, @EvalCmd P _ _ _ _ ρ₀.eval ρ₀.store c σ' failed ∧
       ρ₁.store = σ' ∧ ρ₁.eval = ρ₀.eval ∧
       ρ₁.hasFailure = (ρ₀.hasFailure || failed) := by
   cases h with
   | step _ _ _ hstep1 hrest1 =>
     cases hstep1 with
     | step_stmts_cons =>
-      have ⟨ρ_mid, h_inner, h_tail⟩ := seq_reaches_terminal P (@EvalCmd P _ _ _) extendEval hrest1
-      have h_eq := stmts_nil_terminal (@EvalCmd P _ _ _) extendEval _ _ h_tail
+      have ⟨ρ_mid, h_inner, h_tail⟩ := seq_reaches_terminal P (@EvalCmd P _ _ _ _) extendEval hrest1
+      have h_eq := stmts_nil_terminal (@EvalCmd P _ _ _ _) extendEval _ _ h_tail
       subst h_eq
       cases h_inner with
       | step _ _ _ hstep2 hrest2 =>
@@ -882,12 +882,12 @@ content of a single block, executing that block via `EvalCmds` produces
 the same store transitions as executing each command sequentially in the
 structured semantics. -/
 
-private theorem evalCmds_of_stmtStar_cmds_gen {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
+private theorem evalCmds_of_stmtStar_cmds_gen {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
     (extendEval : ExtendEval P)
     (cmds : List (Cmd P)) (δ : SemanticEval P) (σ σ' : SemanticStore P)
     (failed : Bool) (hf : Bool)
-    (h : EvalCmds P (@EvalCmd P _ _ _) δ σ cmds σ' failed) :
-    StepStmtStar P (@EvalCmd P _ _ _) extendEval
+    (h : EvalCmds P (@EvalCmd P _ _ _ _) δ σ cmds σ' failed) :
+    StepStmtStar P (@EvalCmd P _ _ _ _) extendEval
       (.stmts (cmds.map Stmt.cmd) ⟨σ, δ, hf⟩)
       (.terminal ⟨σ', δ, hf || failed⟩) := by
   induction h generalizing hf with
@@ -903,12 +903,12 @@ private theorem evalCmds_of_stmtStar_cmds_gen {P : PureExpr} [HasFvar P] [HasBoo
     rw [← Bool.or_assoc]
     exact ih (hf || _)
 
-private theorem evalCmds_of_stmtStar_cmds {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
+private theorem evalCmds_of_stmtStar_cmds {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
     (extendEval : ExtendEval P)
     (cmds : List (Cmd P)) (δ : SemanticEval P) (σ σ' : SemanticStore P)
     (failed : Bool)
-    (h : EvalCmds P (@EvalCmd P _ _ _) δ σ cmds σ' failed) :
-    StepStmtStar P (@EvalCmd P _ _ _) extendEval
+    (h : EvalCmds P (@EvalCmd P _ _ _ _) δ σ cmds σ' failed) :
+    StepStmtStar P (@EvalCmd P _ _ _ _) extendEval
       (.stmts (cmds.map Stmt.cmd) ⟨σ, δ, false⟩)
       (.terminal ⟨σ', δ, failed⟩) := by
   have := evalCmds_of_stmtStar_cmds_gen extendEval cmds δ σ σ' failed false h
@@ -917,12 +917,12 @@ private theorem evalCmds_of_stmtStar_cmds {P : PureExpr} [HasFvar P] [HasBool P]
 
 /-- Generalized version of `stmtStar_cmds_to_evalCmds` that separates the
 env's `hasFailure` from the `EvalCmds` failure accumulation. -/
-private theorem stmtStar_cmds_to_evalCmds {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
+private theorem stmtStar_cmds_to_evalCmds {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
     (extendEval : ExtendEval P)
     (cmds : List (Cmd P)) (ρ₀ ρ' : Env P)
-    (h : StepStmtStar P (@EvalCmd P _ _ _) extendEval
+    (h : StepStmtStar P (@EvalCmd P _ _ _ _) extendEval
       (.stmts (cmds.map Stmt.cmd) ρ₀) (.terminal ρ')) :
-    ∃ failed, EvalCmds P (@EvalCmd P _ _ _) ρ₀.eval ρ₀.store cmds ρ'.store failed ∧
+    ∃ failed, EvalCmds P (@EvalCmd P _ _ _ _) ρ₀.eval ρ₀.store cmds ρ'.store failed ∧
       ρ'.hasFailure = (ρ₀.hasFailure || failed) := by
   induction cmds generalizing ρ₀ with
   | nil =>
@@ -937,13 +937,13 @@ private theorem stmtStar_cmds_to_evalCmds {P : PureExpr} [HasFvar P] [HasBool P]
     exact ⟨false, EvalCmds.eval_cmds_none, by simp⟩
   | cons c cs ih =>
     simp [List.map] at h
-    have ⟨ρ₁, hcmd_star, hrest⟩ := stmts_append_terminates P (@EvalCmd P _ _ _) extendEval
+    have ⟨ρ₁, hcmd_star, hrest⟩ := stmts_append_terminates P (@EvalCmd P _ _ _ _) extendEval
       [.cmd c] (List.map Stmt.cmd cs) ρ₀ ρ' h
     cases hcmd_star with
     | step _ _ _ hstep1 hrest1 => cases hstep1 with
       | step_stmts_cons =>
-        have ⟨ρ_s, h_s_term, h_nil⟩ := seq_reaches_terminal P (@EvalCmd P _ _ _) extendEval hrest1
-        have hrest' : StepStmtStar P (@EvalCmd P _ _ _) extendEval
+        have ⟨ρ_s, h_s_term, h_nil⟩ := seq_reaches_terminal P (@EvalCmd P _ _ _ _) extendEval hrest1
+        have hrest' : StepStmtStar P (@EvalCmd P _ _ _ _) extendEval
             (.stmts (List.map Stmt.cmd cs) ρ_s) (.terminal ρ') := by
           cases h_nil with
           | step _ _ _ hstep3 hrest3 => cases hstep3 with
@@ -3978,7 +3978,7 @@ private theorem stmtsToCFG_nodup_keys {P : PureExpr}
 no `funcDecl` statements are executed (i.e., the evaluator doesn't change).
 This holds because only `step_funcDecl` modifies `eval`. -/
 private theorem StepStmtStar_wfb_preserved {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
-    [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P]
+    [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr]
     (extendEval : ExtendEval P)
     (ss : List (Stmt P (Cmd P))) (ρ₀ ρ' : Env P)
     (h : StepStmtStar P (EvalCmd P) extendEval (.stmts ss ρ₀) (.terminal ρ'))
@@ -3992,7 +3992,7 @@ private theorem StepStmtStar_wfb_preserved {P : PureExpr} [HasFvar P] [HasBool P
 
 /-- Same as above but for `WellFormedSemanticEvalVal`. -/
 private theorem StepStmtStar_wfv_preserved {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
-    [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P]
+    [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr]
     (extendEval : ExtendEval P)
     (ss : List (Stmt P (Cmd P))) (ρ₀ ρ' : Env P)
     (h : StepStmtStar P (EvalCmd P) extendEval (.stmts ss ρ₀) (.terminal ρ'))
@@ -4007,7 +4007,7 @@ private theorem StepStmtStar_wfv_preserved {P : PureExpr} [HasFvar P] [HasBool P
 /-- When `flushCmds` emits a block with a `condGoto` transfer and the condition
 evaluates to true at the post-command store `ρ₀.store`, the CFG steps from the
 entry to the true-branch label. -/
-private theorem flushCmds_condGoto_true {P : PureExpr} [HasFvar P] [HasNot P]
+private theorem flushCmds_condGoto_true {P : PureExpr} [HasFvar P] [HasNot P] [HasVarsPure P P.Expr]
     (extendEval : ExtendEval P)
     (accum : List (Cmd P))
     (e : P.Expr) (tl fl : String) (md : MetaData P)
@@ -4055,7 +4055,7 @@ private theorem flushCmds_condGoto_true {P : PureExpr} [HasFvar P] [HasNot P]
 /-- When `flushCmds` emits a block with a `condGoto` transfer and the condition
 evaluates to false at the post-command store `ρ₀.store`, the CFG steps from the
 entry to the false-branch label. -/
-private theorem flushCmds_condGoto_false {P : PureExpr} [HasFvar P] [HasNot P]
+private theorem flushCmds_condGoto_false {P : PureExpr} [HasFvar P] [HasNot P] [HasVarsPure P P.Expr]
     (extendEval : ExtendEval P)
     (accum : List (Cmd P))
     (e : P.Expr) (tl fl : String) (md : MetaData P)
@@ -4224,10 +4224,10 @@ This is the value-preserving generalization of `agreement_helper_unchanged_at_x`
 if `c` does not define or modify `x`, then `σ' x = σ x` regardless of whether
 the value is `none` or `some _`. -/
 private theorem EvalCmd_value_preserved_at_x {P : PureExpr}
-    [HasFvar P] [HasBool P] [HasNot P] [DecidableEq P.Ident]
+    [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
     {δ : SemanticEval P} {σ σ' : SemanticStore P} {c : Cmd P} {failed : Bool}
     {x : P.Ident}
-    (h_eval : @EvalCmd P _ _ _ δ σ c σ' failed)
+    (h_eval : @EvalCmd P _ _ _ _ δ σ c σ' failed)
     (h_x_not_def : x ∉ Cmd.definedVars c)
     (h_x_not_mod : x ∉ Cmd.modifiedVars c) :
     σ' x = σ x := by
@@ -4295,10 +4295,10 @@ private theorem EvalCmd_value_preserved_at_x {P : PureExpr}
 
 /-- Multi-command extension of `EvalCmd_value_preserved_at_x`. -/
 private theorem EvalCmds_value_preserved_at_x {P : PureExpr}
-    [HasFvar P] [HasBool P] [HasNot P] [DecidableEq P.Ident]
+    [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
     {δ : SemanticEval P} {σ σ' : SemanticStore P} {cmds : List (Cmd P)} {failed : Bool}
     {x : P.Ident}
-    (h_eval : EvalCmds P (@EvalCmd P _ _ _) δ σ cmds σ' failed)
+    (h_eval : EvalCmds P (@EvalCmd P _ _ _ _) δ σ cmds σ' failed)
     (h_x_not_def : x ∉ Cmds.definedVars cmds)
     (h_x_not_mod : x ∉ Cmds.modifiedVars cmds) :
     σ' x = σ x := by
@@ -4431,7 +4431,7 @@ private theorem flushCmds_condGoto_nondet_agree {P : PureExpr} [HasFvar P] [HasN
     rw [if_neg hne]
   have h_init_state : InitState P σ_base freshIdent chosenVal σ_post_init :=
     InitState.init h_freshName_not_in_σ_base h_freshIdent_post h_other_post
-  have h_init_step : @EvalCmd P _ _ _ ρ₀.eval σ_base initCmd σ_post_init false :=
+  have h_init_step : @EvalCmd P _ _ _ _ ρ₀.eval σ_base initCmd σ_post_init false :=
     EvalCmd.eval_init_unconstrained h_init_state h_wf_var
   -- 3. Re-lift accum from σ_post_init via EvalCmds_under_agreement.
   --    StoreAgreement σ_base σ_post_init: σ_post_init has σ_base's bindings plus freshIdent.
@@ -4469,12 +4469,12 @@ private theorem flushCmds_condGoto_nondet_agree {P : PureExpr} [HasFvar P] [HasN
     rw [h_pres, h_freshIdent_post]
   -- 5. Build the EvalCmds chain on initCmd :: accum.reverse from σ_base.
   have h_full_chain :
-      EvalCmds P (@EvalCmd P _ _ _) ρ₀.eval σ_base
+      EvalCmds P (@EvalCmd P _ _ _ _) ρ₀.eval σ_base
         (initCmd :: accum.reverse) σ_cfg_final (false || hf_accum) :=
     EvalCmds.eval_cmds_some h_init_step h_accum_post
   have h_or : (false || hf_accum) = hf_accum := Bool.false_or hf_accum
   have h_full_chain' :
-      EvalCmds P (@EvalCmd P _ _ _) ρ₀.eval σ_base
+      EvalCmds P (@EvalCmd P _ _ _ _) ρ₀.eval σ_base
         (initCmd :: accum.reverse) σ_cfg_final hf_accum := by
     rw [← h_or]; exact h_full_chain
   -- 6. Evaluate the cond at σ_cfg_final.
@@ -4649,16 +4649,16 @@ over-approximation. -/
 
 /-- Idents that a `DetTransferCmd`'s expression can read. `goto` and
 `finish` read no idents; `condGoto` reads its predicate. -/
-@[expose] def DetTransferCmd.touchedVars {P : PureExpr}
+@[expose] def DetTransferCmd.touchedVars {l : Type} {P : PureExpr}
     [HasVarsPure P P.Expr] :
-    DetTransferCmd String P → List P.Ident
+    DetTransferCmd l P → List P.Ident
   | .condGoto e _ _ _ => HasVarsPure.getVars e
   | .finish _ => []
 
 /-- Idents that a `DetBlock` can read or write across all its commands and
 its transfer. Used to express "this ident is not touched by the block". -/
-@[expose] def Block.cfgFrameTouches {P : PureExpr} [HasVarsPure P P.Expr]
-    (blk : DetBlock String (Cmd P) P) : List P.Ident :=
+@[expose] def Block.cfgFrameTouches {l : Type} {P : PureExpr} [HasVarsPure P P.Expr]
+    (blk : DetBlock l (Cmd P) P) : List P.Ident :=
   (blk.cmds.foldr (fun c acc => Cmd.touchedVars c ++ acc) []) ++
     DetTransferCmd.touchedVars blk.transfer
 
@@ -4926,6 +4926,23 @@ theorem EvalCmds_frame_extend_one
     have h_tail_lifted := ih h_cs_unused
     exact EvalCmds.eval_cmds_some h_head_lifted h_tail_lifted
 
+/-- Apply `extendStoreOne` to the store inside a `CFGConfig`. -/
+@[expose] def cfgConfigExtendStoreOne {l : Type} {P : PureExpr} [DecidableEq P.Ident]
+    (config : CFGConfig l P)
+    (ident : P.Ident) (val : P.Expr) :
+    CFGConfig l P :=
+  match config with
+  | .cont t σ f => .cont t (extendStoreOne σ ident val) f
+  | .terminal σ f => .terminal (extendStoreOne σ ident val) f
+
+/-- `updateFailure` commutes with `cfgConfigExtendStoreOne`. -/
+theorem updateFailure_extendStoreOne_commute
+    {l : Type} {P : PureExpr} [DecidableEq P.Ident]
+    (config : CFGConfig l P) (ident : P.Ident) (val : P.Expr) (failed : Bool) :
+    updateFailure (cfgConfigExtendStoreOne config ident val) failed =
+    cfgConfigExtendStoreOne (updateFailure config failed) ident val := by
+  cases config <;> simp [updateFailure, cfgConfigExtendStoreOne]
+
 /-! ## Generalized simulation
 
 The central lemma: for any continuation `k`, exit-continuation stack, and
@@ -4933,7 +4950,7 @@ accumulated commands, if the structured execution of `ss` from `ρ₀` terminate
 (or exits), then the CFG blocks produced by `stmtsToBlocks` can step from the
 entry label to the continuation `k` (or the resolved exit target). -/
 
-private theorem flushCmds_simulation {P : PureExpr} [HasFvar P] [HasNot P]
+private theorem flushCmds_simulation {P : PureExpr} [HasFvar P] [HasNot P] [HasVarsPure P P.Expr]
     [HasVal P] [HasBoolVal P]
     (extendEval : ExtendEval P)
     (pfx : String)
@@ -5219,10 +5236,10 @@ accum-defined variable has a digit-suffixed shape to argue that
 `ident s ∉ Cmds.definedVars accum.reverse`, then invokes
 `agreement_helper_unchanged_at_x_multi`. -/
 private theorem store_no_gens_lift_after_accum {P : PureExpr}
-    [HasFvar P] [HasBool P] [HasNot P] [HasIdent P] [DecidableEq P.Ident]
+    [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] [HasIdent P] [DecidableEq P.Ident]
     {δ : SemanticEval P} {σ_base σ_cfg_after : SemanticStore P}
     {accum : List (Cmd P)} {failed : Bool}
-    (h_accum_cfg : EvalCmds P (@EvalCmd P _ _ _) δ σ_base accum.reverse σ_cfg_after failed)
+    (h_accum_cfg : EvalCmds P (@EvalCmd P _ _ _ _) δ σ_base accum.reverse σ_cfg_after failed)
     (gen : StringGenState)
     (h_store_no_gens : ∀ x : String,
         String.HasUnderscoreDigitSuffix x →
@@ -8971,7 +8988,7 @@ end
 "exits". Under the `exitsCoveredByBlocks` invariant such an execution is
 impossible, so the conclusion holds vacuously. -/
 private theorem stmtsToBlocks_simulation_exiting {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
-    [HasVal P] [HasIdent P] [HasIntOrder P]
+    [HasVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr]
     (extendEval : ExtendEval P)
     (ss : List (Stmt P (Cmd P)))
     (entry : String)
@@ -9072,7 +9089,7 @@ theorem stmtsToCFG_stmtsToBlocks_spec {P : PureExpr}
     simp [List.lookup, Option.or]
     rfl
 
-private theorem end_block_terminal {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
+private theorem end_block_terminal {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
     (extendEval : ExtendEval P)
     (cfg : CFG String (DetBlock String (Cmd P) P))
     (lend : String) (σ : SemanticStore P) (δ : SemanticEval P) (failed : Bool)
@@ -9181,7 +9198,7 @@ theorem stmtsToCFG_terminal {P : PureExpr} [HasFvar P] [HasNot P]
     a corresponding terminal state (vacuously, since `exitsCoveredByBlocks`
     rules out top-level `.exiting`). -/
 theorem stmtsToCFG_exiting {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
-    [HasVal P] [HasIdent P] [HasIntOrder P]
+    [HasVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr]
     (extendEval : ExtendEval P)
     (ss : List (Stmt P (Cmd P)))
     (ρ₀ ρ' : Env P) (lbl : String)
@@ -9243,7 +9260,7 @@ theorem structuredToUnstructured_sound {P : PureExpr} [HasFvar P] [HasNot P]
     reachable from the structured execution. Together with soundness, this
     establishes bisimulation. -/
 theorem structuredToUnstructured_complete {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
-    [HasVal P] [HasIdent P] [HasIntOrder P]
+    [HasVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr]
     (extendEval : ExtendEval P)
     (ss : List (Stmt P (Cmd P)))
     (ρ₀ : Env P) (σ_final : SemanticStore P) (failed : Bool)

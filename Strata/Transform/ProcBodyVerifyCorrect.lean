@@ -214,7 +214,8 @@ private theorem PrefixStepsOK_assumes
     (h_preconds : ∀ (label : CoreLabel) (check : Procedure.Check),
       (label, check) ∈ preconds.toList →
       ρ.eval ρ.store check.expr = some HasBool.tt)
-    (h_wfBool : WellFormedSemanticEvalBool ρ.eval) :
+    (h_wfBool : WellFormedSemanticEvalBool ρ.eval)
+    (h_wfCongr : WellFormedSemanticEvalExprCongr ρ.eval) :
     PrefixStepsOK π φ (requiresToAssumes preconds) ρ := by
   suffices h : ∀ (items : List (CoreLabel × Procedure.Check)),
       (∀ (label : CoreLabel) (check : Procedure.Check),
@@ -243,7 +244,7 @@ private theorem PrefixStepsOK_assumes
     exact ⟨h_rest_ok, _, rfl, _,
       by rw [h_store_eq]
          exact EvalCommand.cmd_sem (EvalCmd.eval_assume
-           (h_items label check List.mem_cons_self) h_wfBool),
+           (h_items label check List.mem_cons_self) h_wfBool h_wfCongr),
       by show _ = (prefixInitEnv _ ρ).store; rw [h_env_eq]⟩
 
 /-- For a nondet init statement, if `x` is none in the pre-state and some in the target,
@@ -306,6 +307,7 @@ private theorem PrefixStepsOK_det_init_cons
     (id : Expression.Ident) (oldG : Expression.Ident) (ty : Expression.Ty) (rest : List Statement)
     (ρ : Imperative.Env Expression)
     (h_wfVar : WellFormedSemanticEvalVar ρ.eval)
+    (h_wfCongr : WellFormedSemanticEvalExprCongr ρ.eval)
     (h_rest : PrefixStepsOK π φ rest ρ)
     (_h_id_some : ((prefixInitEnv rest ρ).store id).isSome)
     (h_old_some : ((prefixInitEnv rest ρ).store oldG).isSome)
@@ -331,7 +333,7 @@ private theorem PrefixStepsOK_det_init_cons
     exact EvalCommand.cmd_sem (EvalCmd.eval_init h_eval
       (InitState.init h_none hv (fun y hne => by
         exact (prefixInitEnv_store_other _ _ _ y oldG rfl hne).symm))
-      h_wfVar)
+      h_wfVar h_wfCongr)
 
 /-- PrefixStepsOK for a list of det init statements `init (mkOld id.name) ty (.det (fvar id))`. -/
 private theorem PrefixStepsOK_det_init_map
@@ -339,6 +341,7 @@ private theorem PrefixStepsOK_det_init_map
     (entries : List (Expression.Ident × Lambda.LMonoTy))
     (ρ : Imperative.Env Expression)
     (h_wfVar : WellFormedSemanticEvalVar ρ.eval)
+    (h_wfCongr : WellFormedSemanticEvalExprCongr ρ.eval)
     (h_defined : ∀ id ∈ entries.map Prod.fst,
       (ρ.store id).isSome)
     (h_old_defined : ∀ id ∈ entries.map Prod.fst,
@@ -359,7 +362,7 @@ private theorem PrefixStepsOK_det_init_map
     simp only [List.map] at h_defined h_old_defined h_old_match h_nodup h_not_old h_nodup_old ⊢
     rw [List.nodup_cons] at h_nodup h_nodup_old
     apply PrefixStepsOK_det_init_cons π φ id (CoreIdent.mkOld id.name)
-      (Lambda.LTy.forAll [] ty) _ ρ h_wfVar
+      (Lambda.LTy.forAll [] ty) _ ρ h_wfVar h_wfCongr
     · exact ih (fun i hi => h_defined i (List.mem_cons_of_mem _ hi))
               (fun i hi => h_old_defined i (List.mem_cons_of_mem _ hi))
               (fun i hi => h_old_match i (List.mem_cons_of_mem _ hi))
@@ -526,7 +529,7 @@ theorem procToVerifyStmt_structure
       simp only [assumes, requiresToAssumes, List.mem_map] at hs
       obtain ⟨⟨l, c⟩, _, rfl⟩ := hs; simp [stmtInitVar]
     refine ⟨PrefixStepsOK_assumes π φ proc.spec.preconditions ρ₀
-      h_wf.preconditionsHold h_wf.wfBool, ?_⟩
+      h_wf.preconditionsHold h_wf.wfBool h_wf.wfExprCongr, ?_⟩
     rw [h_assumes_id]
     -- Split: (inputInits ++ outputOnlyInits) ++ oldInoutInits
     rw [show inputInits ++ outputOnlyInits ++ oldInoutInits =
@@ -543,7 +546,7 @@ theorem procToVerifyStmt_structure
       exact absurd hsx.symm (h_wf_proc.ioNotOld x hx id.name)
     constructor
     · -- PrefixStepsOK for oldInoutInits at ρ₀
-      apply PrefixStepsOK_det_init_map π φ _ _ h_wf.wfVar
+      apply PrefixStepsOK_det_init_map π φ _ _ h_wf.wfVar h_wf.wfExprCongr
       · -- inout params are defined in store (they are inputs)
         intro id hid
         rw [← ListMap.keys_eq_map_fst] at hid
@@ -899,7 +902,9 @@ theorem procBodyVerify_procedureCorrect
               .step _ _ _
                 (.step_cmd (@EvalCommand.cmd_sem π φ ρ_proj.eval ρ_proj.store
                   (Cmd.assert lh eh mdh) ρ_proj.store false
-                  (EvalCmd.eval_assert_pass h_head_eval_proj (by rw [h_proj_eval]; exact h_wfb_term))))
+                  (EvalCmd.eval_assert_pass h_head_eval_proj
+                    (by rw [h_proj_eval]; exact h_wfb_term)
+                    (by rw [h_proj_eval]; exact h_wfExprCongr_term))))
                 (.refl _)
             have h2 : (⟨ρ_proj.store, ρ_proj.eval, ρ_proj.hasFailure || false⟩ : Env Expression) = ρ_proj := by
               cases ρ'; simp [ρ_proj, Bool.or_false]
