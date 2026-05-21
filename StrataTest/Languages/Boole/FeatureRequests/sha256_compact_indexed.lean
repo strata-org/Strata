@@ -195,6 +195,14 @@ spec {
 #end
 
 /-- info:
+Obligation: Seq_lib_insert_body_calls_Sequence.take_0
+Property: out-of-bounds access check
+Result: ❓ unknown
+
+Obligation: Seq_lib_insert_body_calls_Sequence.drop_1
+Property: out-of-bounds access check
+Result: ❓ unknown
+
 Obligation: assert_1_3021
 Property: assert
 Result: ✅ pass
@@ -215,6 +223,66 @@ Obligation: assert_5_3658
 Property: assert
 Result: ✅ pass
 
+Obligation: set_res_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ❓ unknown
+
+Obligation: set_res_calls_Sequence.select_1
+Property: out-of-bounds access check
+Result: ❓ unknown
+
+Obligation: set_res_calls_Sequence.select_2
+Property: out-of-bounds access check
+Result: ❓ unknown
+
+Obligation: set_res_calls_Sequence.select_3
+Property: out-of-bounds access check
+Result: ❓ unknown
+
+Obligation: set_res_calls_Sequence.update_4
+Property: out-of-bounds access check
+Result: ❓ unknown
+
+Obligation: set_a_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ❓ unknown
+
+Obligation: set_b_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ❓ unknown
+
+Obligation: set_c_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ❓ unknown
+
+Obligation: set_d_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ❓ unknown
+
+Obligation: set_e_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ❓ unknown
+
+Obligation: set_f_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ❓ unknown
+
+Obligation: set_g_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ❓ unknown
+
+Obligation: set_h_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ❓ unknown
+
+Obligation: set_tmp36_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ❓ unknown
+
+Obligation: set_w15_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ❓ unknown
+
 Obligation: callElimAssert_rotate_right_requires_0_2970_39
 Property: assert
 Result: ✅ pass
@@ -226,6 +294,10 @@ Result: ✅ pass
 Obligation: assert_7_5332
 Property: assert
 Result: ✅ pass
+
+Obligation: set_w2_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ❓ unknown
 
 Obligation: callElimAssert_rotate_right_requires_0_2970_31
 Property: assert
@@ -239,6 +311,18 @@ Obligation: assert_8_5571
 Property: assert
 Result: ✅ pass
 
+Obligation: set_new_w_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ❓ unknown
+
+Obligation: set_new_w_calls_Sequence.select_1
+Property: out-of-bounds access check
+Result: ❓ unknown
+
+Obligation: set_block_local_calls_Sequence.update_0
+Property: out-of-bounds access check
+Result: ❓ unknown
+
 Obligation: callElimAssert_rotate_right_requires_0_2970_23
 Property: assert
 Result: ✅ pass
@@ -251,6 +335,10 @@ Obligation: callElimAssert_rotate_right_requires_0_2970_15
 Property: assert
 Result: ✅ pass
 
+Obligation: set_t1_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ❓ unknown
+
 Obligation: callElimAssert_rotate_right_requires_0_2970_11
 Property: assert
 Result: ✅ pass
@@ -261,6 +349,74 @@ Result: ✅ pass
 
 Obligation: callElimAssert_rotate_right_requires_0_2970_3
 Property: assert
-Result: ✅ pass-/
+Result: ✅ pass
+
+Obligation: set_state_out_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ❓ unknown
+
+Obligation: set_state_out_calls_Sequence.update_1
+Property: out-of-bounds access check
+Result: ❓ unknown
+
+Obligation: set_state_out_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ❓ unknown
+
+Obligation: set_state_out_calls_Sequence.update_1
+Property: out-of-bounds access check
+Result: ❓ unknown
+
+Obligation: set_state_out_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ❓ unknown
+
+Obligation: set_state_out_calls_Sequence.update_1
+Property: out-of-bounds access check
+Result: ❓ unknown
+
+Obligation: set_state_out_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ❓ unknown
+
+Obligation: set_state_out_calls_Sequence.update_1
+Property: out-of-bounds access check
+Result: ❓ unknown
+
+Obligation: set_state_out_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ❓ unknown
+
+Obligation: set_state_out_calls_Sequence.update_1
+Property: out-of-bounds access check
+Result: ❓ unknown
+
+Obligation: set_state_out_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ❓ unknown
+
+Obligation: set_state_out_calls_Sequence.update_1
+Property: out-of-bounds access check
+Result: ❓ unknown
+
+Obligation: set_state_out_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ❓ unknown
+
+Obligation: set_state_out_calls_Sequence.update_1
+Property: out-of-bounds access check
+Result: ❓ unknown
+
+Obligation: set_state_out_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ❓ unknown
+
+Obligation: set_state_out_calls_Sequence.update_1
+Property: out-of-bounds access check
+Result: ❓ unknown
+
+Obligation: init_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ❓ unknown-/
 #guard_msgs in
 #eval Strata.Boole.verify "cvc5" sha256_compact_indexed_program (options := .quiet)

@@ -105,4 +105,43 @@ info: [WFObligation(safeDiv, (∀ (bvar:int) ((~Bool.Implies : (arrow bool (arro
 #eval collectWFObligations testFactory
   esM[((λ (int): %0) ((~safeDiv a) b))]
 
+/-! ### Polymorphic preconditions: type substitution at call site
+
+A polymorphic function whose precondition mentions the type variable `%a`
+must have that variable substituted with the call site's instantiated type.
+Without this, downstream SMT encoding fails on unresolved type vars (issue #1201).
+-/
+
+-- A polymorphic function `polySel<a>(s : Sequence a) : a` whose precondition
+-- contains an operator annotated with the type variable `%a`. This mirrors
+-- `Sequence.select`'s `0 <= i && i < Sequence.length(s : Sequence %a)`
+-- bound check, which uses an annotated `Sequence.length` op.
+private def polySelFunc : LFunc TestParams :=
+  { name := "polySel"
+    typeArgs := ["a"]
+    inputs := [("s", mty[Sequence %a])]
+    output := mty[%a]
+    -- precondition: ((~lenOf : (Sequence %a) → int) s)
+    -- The op carries a `%a` annotation that must be substituted at the call site.
+    preconditions := [⟨esM[((~lenOf : (Sequence %a) → int) s)], ()⟩]
+  }
+
+private def polyFactory : Factory TestParams := .ofArray #[polySelFunc]
+
+-- Call site annotates the operator with the instantiated arrow type
+-- `Sequence int → int`. After value substitution alone, the op annotation
+-- `(~lenOf : (Sequence %a) → int)` would still carry `%a`; the fix must also
+-- apply the call-site type substitution `[%a → int]`.
+/-- info: [WFObligation(polySel, ((~lenOf : (arrow (Sequence int) int)) myseq), ())] -/
+#guard_msgs in
+#eval collectWFObligations polyFactory
+  esM[((~polySel : (Sequence int) → int) myseq)]
+
+-- Same expectation when the operator is unannotated: the argument-types
+-- fallback unifies `Sequence int` against `Sequence %a` to derive `[%a → int]`.
+/-- info: [WFObligation(polySel, ((~lenOf : (arrow (Sequence int) int)) (myseq : (Sequence int))), ())] -/
+#guard_msgs in
+#eval collectWFObligations polyFactory
+  esM[(~polySel (myseq : (Sequence int)))]
+
 end Lambda

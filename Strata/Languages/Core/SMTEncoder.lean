@@ -236,7 +236,15 @@ def LMonoTy.toSMTType (E: Env) (ty : LMonoTy) (ctx : SMT.Context) (useArrayTheor
   | .ftvar tyv => match ctx.tySubst.find? tyv with
                     | .some termTy =>
                       .ok (termTy, ctx)
-                    | _ => .error f!"Unimplemented encoding for type var {tyv}"
+                    | _ =>
+                      -- Unresolved type variable from a polymorphic precondition
+                      -- whose call-site type couldn't be inferred (e.g. inside a
+                      -- polymorphic function body, or with polymorphic args).
+                      -- Treat as a fresh uninterpreted sort so the obligation can
+                      -- still be encoded; the solver will report `unknown` rather
+                      -- than the encoder failing outright (issue #1201).
+                      let ctx := ctx.addSort { name := tyv, arity := 0 }
+                      .ok ((.constr tyv []), ctx)
 
 def LMonoTys.toSMTType (E: Env) (args : LMonoTys) (ctx : SMT.Context) (useArrayTheory : Bool := false) :
     Except Format ((List TermType) × SMT.Context) := do

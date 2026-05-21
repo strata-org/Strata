@@ -54,6 +54,33 @@ def substitutePrecondition
   LExpr.substFvarsLifting precond substitution
 
 /--
+Derive a type substitution at a call site for instantiating a polymorphic
+precondition. Prefers concrete information from the arguments' types over the
+operator's type annotation, because the operator's annotation may still be the
+generic type when `PrecondElim` runs before type checking. Falls back to the
+operator annotation when arguments carry no type information.
+
+Returns `Subst.empty` for monomorphic functions or when no useful constraints
+are available; the resulting unsubstituted precondition will be handled
+downstream (the SMT encoder treats unresolved type variables as uninterpreted
+sorts, yielding `unknown` rather than failing).
+-/
+def callSiteTypeSubst (fn : LFunc T) (callee : LExpr T.mono)
+    (args : List (LExpr T.mono)) : Subst :=
+  if fn.typeArgs.isEmpty then Subst.empty
+  else
+    let argConstraints := (args.zip fn.inputs.values).filterMap
+      (fun (arg, formal) => arg.typeOf.map (·, formal))
+    let argSubst :=
+      if argConstraints.isEmpty then none
+      else match Constraints.unify argConstraints SubstInfo.empty with
+        | .ok substInfo => some substInfo.subst
+        | .error _ => none
+    match argSubst with
+    | some s => s
+    | none => fn.opTypeSubst callee |>.getD Subst.empty
+
+/--
 Collect all WF obligations from an expression by traversing it and finding
 all calls to functions with preconditions.
 
@@ -71,12 +98,19 @@ where
     -- A function call generates an obligation that the precondition is
     -- satisfied under the current assumptions
     let callObligations := match Factory.callOfLFunc F e with
-      | some (_op, args, func) =>
+      | some (op, args, func) =>
         if func.preconditions.isEmpty then []
         else
           let md := e.metadata
+          -- Resolve polymorphic type variables in the precondition with the
+          -- type substitution implied by this call site. Without this, a
+          -- precondition expression like `(~Sequence.length : (Sequence %a) → int) s`
+          -- would carry the formal type variable `%a` into the obligation,
+          -- which the SMT encoder cannot resolve (issue #1201).
+          let tySubst := callSiteTypeSubst func op args
           func.preconditions.map fun precond =>
             let substedPrecond := substitutePrecondition precond.expr func.inputs args
+            let substedPrecond := substedPrecond.applySubst tySubst
             { funcName := func.name.name
               obligation := wrapImplications implications substedPrecond
               callSiteMetadata := md
