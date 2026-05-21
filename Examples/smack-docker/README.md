@@ -81,14 +81,14 @@ otherwise suppress.
 Program                       |  Strip |    B2S |    Fix |    deductive |   bugFinding |         cbmc
 -------------------------------------------------------------------------------------------------------
 # Original benchmark
-abs_func                      |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+abs_func                      |     OK |     OK |     OK |      PARTIAL |      PARTIAL |      TIMEOUT
 array_sum                     |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
 aws_array_eq                  |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
 aws_byte_cursor_advance       |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
 aws_ring_buffer               |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
-loop_sum                      |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
-max_func                      |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
-nondet_branch                 |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+loop_sum                      |     OK |     OK |     OK |         PASS |      PARTIAL |      TIMEOUT
+max_func                      |     OK |     OK |     OK |      PARTIAL |      PARTIAL |      TIMEOUT
+nondet_branch                 |     OK |     OK |     OK |         PASS |      PARTIAL |      TIMEOUT
 pointer_arith                 |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
 simple_add                    |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
 simple_assert                 |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
@@ -109,9 +109,9 @@ aws_mul_size_checked          |     OK |     OK |     OK |      PARTIAL |      P
 aws_round_up_to_power_of_two  |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
 aws_string_eq                 |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
 
-     deductive: 4 pass, 21 partial, 0 warn, 0 fail, 0 n/a
+     deductive: 5 pass, 20 partial, 0 warn, 0 fail, 0 n/a
     bugFinding: 0 pass, 25 partial, 0 warn, 0 fail, 0 n/a
-          cbmc: 0 pass, 25 fail, 0 n/a
+          cbmc: 0 pass, 21 fail, 4 timeout, 0 n/a
 ```
 
 ## Known blockers
@@ -211,26 +211,40 @@ aws_string_eq                 |     OK |     OK |     OK |      PARTIAL |      P
     pass; not a Python regex — too easy to be unsound). The previously
     discussed approach via SMACK's `__CONTRACT_ensures` macro is
     blocked upstream by SMACK's missing `result()` expression.
-  - **(b) `__VERIFIER_assume` is uninterpreted** — same refuted
-    verdict but label `(Origin_assert__i32_Requires)assert__i32_requires_0`,
-    indicating a top-level requires-discharge VC rather than a per-call
-    VC. Affects programs whose C source uses `assume(...)` to bound
-    inputs; the assumption is dropped because `__VERIFIER_assume` has
-    no body and no `requires`/`ensures` after `strip_smack_prelude.py`.
-    Sample: `abs_func`, `max_func`, `nondet_branch`. Empirically
-    verified that **simply preserving the body is not sufficient** —
-    BoogieToStrata translates `__VERIFIER_assume`'s body
-    `assume $i0 != $0` into a Strata Core `assume (_i0 != _0)` inside
-    the procedure, but this `assume` is local to the procedure's own
-    VC and does not propagate to callers under modular deductive
-    verification. Fix lever: synthesize a `spec { free ensures (_i0
-    != 0); }` on the `__VERIFIER_assume` declaration. The
-    `free ensures` form (Boogie semantics: assumed by callers, not
-    checked by the implementation) matches `assume`'s polarity, unlike
-    `requires` which would force callers to *prove* the bound. The
-    natural place is BoogieToStrata's existing `assert_.<type>`
-    pattern at `StrataGenerator.cs:VisitProcedure` — extend it with a
-    sister case for `__VERIFIER_assume` emitting `free ensures`.
+  - **(b) `__VERIFIER_assume` is uninterpreted (partially resolved on
+    this branch).** Same refuted verdict but label
+    `(Origin_assert__i32_Requires)assert__i32_requires_0`, indicating
+    a top-level requires-discharge VC rather than a per-call VC.
+    Affected programs whose C source uses `assume(...)` to bound
+    inputs; the assumption was dropped because `__VERIFIER_assume`
+    had no spec after `strip_smack_prelude.py`. Fixed by synthesizing
+    `free ensures (_i0 != 0)` on `__VERIFIER_assume` declarations
+    during BoogieToStrata translation, gated on `--smack`. The
+    `free ensures` form (Boogie semantics: callers may assume,
+    implementation has no proof obligation) matches `assume`'s
+    polarity. Mirrors the existing `assert_.<type>` `Requires`
+    synthesis at `StrataGenerator.cs:VisitProcedure` with the dual
+    polarity. Regression tests in
+    `Tools/BoogieToStrata/IntegrationTests/BoogieToStrataIntegrationTests.cs`.
+    See commit `1b2231f99`.
+
+    Empirically verified the synthesis propagates: every
+    `[__VERIFIER_assume_ensures_0]` VC is discharged by the verifier
+    (`✅ always true and is reachable from declaration entry`).
+    `nondet_branch` flipped PARTIAL → PASS (one direct gain on the
+    deductive backend). `abs_func` improved from 0 pass / 1 fail to
+    7 pass / 1 fail; `max_func` from 0 pass / 1 fail to 1 pass / 1 fail.
+    The remaining single failing VC on each is a separate sub-class
+    (a) issue: an assert downstream of a user function call (`abs_val`,
+    `max`) that lacks an `ensures` clause. Closing those needs the
+    sub-class (a) lever, not more `__VERIFIER_assume` work.
+
+    Side effect on cbmc: the synthesis adds path-condition constraints
+    that cbmc's BMC unrolling now expands further on the
+    `__VERIFIER_assume`-using programs. 4 of those (`abs_func`,
+    `loop_sum`, `max_func`, `nondet_branch`) now timeout where they
+    previously fast-FAILed at the symtab2gb stage; net cbmc column
+    count moved from 0/25/0 pass/fail/timeout to 0/21/4.
   - **(e) Solver returns `unknown`** — verdict `❓ unknown`. Sample:
     `aws_byte_buf_append`, all 7 VCs. The asserted predicate chain
     involves nested int↔bit conversions (`_zext`, `_trunc`) over
