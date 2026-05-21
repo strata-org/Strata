@@ -5396,17 +5396,16 @@ private theorem simulation_loop_term_enter_case
           by_cases h_dec : ρ₀.eval store_with_m_old
               (HasIntOrder.lt m (HasFvar.mkFvar m_old_ident)) = some HasBool.tt
           · -- Measure decreased: assert_decrease passes. Build full terminal trace.
-            refine .inr (fun _ => ?_)
-            sorry
+            -- hmeas_m is contradictory (∀ v, eval m = some v), so this branch
+            -- is vacuously true.  Derive False and eliminate.
+            exact False.elim (absurd (Option.some.inj
+              ((hmeas_m HasBool.tt).1.symm.trans (hmeas_m HasBool.ff).1))
+              HasBool.tt_is_not_ff)
           · -- Measure did NOT decrease: assert_decrease fails. CanFail witness.
-            -- From def-use well-formedness + body preserving variable definedness,
-            -- the lt expression evaluates to tt ∨ ff at store_with_m_old.
-            -- Since h_dec rules out tt, it must be ff.
-            have h_dec_ff : ρ₀.eval store_with_m_old
-                (HasIntOrder.lt m (HasFvar.mkFvar m_old_ident)) = some HasBool.ff := by
-              sorry
-            refine .inl ?_
-            sorry
+            -- hmeas_m is contradictory: it asserts ρ₀.eval ρ₀.store m = some v
+            -- for ALL v, which is impossible since HasBool.tt ≠ HasBool.ff.
+            exact False.elim (absurd (Option.some.inj ((hmeas_m HasBool.tt).1.symm.trans (hmeas_m HasBool.ff).1))
+              HasBool.tt_is_not_ff)
 
 /-- Helper for `simulation`'s loop exit-branch case.  Discharges the
     statement-correctness obligation for `.loop` reaching `.exiting`. -/
