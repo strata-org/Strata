@@ -2435,6 +2435,110 @@ theorem coreCFGToGotoBlockStep_preserves_size_eq
   | .error e, h_inner =>
     simp at h_run
 
+/-- The per-block step preserves `locationNum_eq_index`. -/
+theorem coreCFGToGotoBlockStep_preserves_locationNum_eq_index
+    (fname : String) (lblBlk : String × Imperative.DetBlock String Core.Command Core.Expression)
+    (st st' : Strata.CoreCFGTransLoopState)
+    (h_admitted : ∀ c ∈ lblBlk.2.cmds, Core.CmdExt.isAdmittedCmd c = true)
+    (h_run : Strata.coreCFGToGotoBlockStep fname st lblBlk = Except.ok st')
+    (h_size : st.trans.instructions.size = st.trans.nextLoc)
+    (h_loc :
+      ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+        st.trans.instructions[i]? = some instr → instr.locationNum = i) :
+    ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+      st'.trans.instructions[i]? = some instr → instr.locationNum = i := by
+  obtain ⟨label, blk⟩ := lblBlk
+  -- Step 1: emitLabel preserves size_eq + locationNum_eq_index.
+  have h_size₁ :
+      (Imperative.emitLabel label
+        { CProverGOTO.SourceLocation.nil with function := fname }
+        st.trans).instructions.size =
+      (Imperative.emitLabel label
+        { CProverGOTO.SourceLocation.nil with function := fname }
+        st.trans).nextLoc :=
+    emitLabel_preserves_size_eq label
+      { CProverGOTO.SourceLocation.nil with function := fname } st.trans h_size
+  have h_loc₁ :
+      ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+        (Imperative.emitLabel label
+          { CProverGOTO.SourceLocation.nil with function := fname }
+          st.trans).instructions[i]? = some instr → instr.locationNum = i :=
+    emitLabel_preserves_locationNum_eq_index label
+      { CProverGOTO.SourceLocation.nil with function := fname } st.trans h_size h_loc
+  unfold Strata.coreCFGToGotoBlockStep at h_run
+  simp only [Bind.bind, Except.bind, pure, Except.pure] at h_run
+  generalize h_inner :
+    blk.cmds.foldlM (Strata.coreCFGToGotoCmdStep fname)
+      (Imperative.emitLabel label
+        { CProverGOTO.SourceLocation.nil with function := fname } st.trans) = inner at h_run
+  match inner, h_inner with
+  | .ok trans₂, h_inner =>
+    have h_size₂ : trans₂.instructions.size = trans₂.nextLoc :=
+      cmdsFoldlM_preserves_size_eq fname blk.cmds _ trans₂
+        h_admitted h_inner h_size₁
+    have h_loc₂ :
+        ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+          trans₂.instructions[i]? = some instr → instr.locationNum = i :=
+      cmdsFoldlM_preserves_locationNum_eq_index fname blk.cmds _ trans₂
+        h_admitted h_inner h_size₁ h_loc₁
+    cases h_t : blk.transfer with
+    | condGoto cond lt lf md =>
+      rw [h_t] at h_run
+      simp only at h_run
+      generalize h_cond_eval :
+          Lambda.LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩) [] cond = cond_eval at h_run
+      match cond_eval, h_cond_eval with
+      | .ok cond_expr, h_cond_eval =>
+        simp only at h_run
+        injection h_run with h_run
+        intro i instr h
+        rw [← h_run] at h
+        -- After two emitGoto pushes, the array has 2 more instructions.
+        -- Use emitCondGoto / emitUncondGoto preservation lemmas.
+        have h_after_neg :
+          ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+            (Imperative.emitCondGoto (CProverGOTO.Expr.not cond_expr)
+              (Imperative.metadataToSourceLoc md fname trans₂.sourceText)
+              trans₂).fst.instructions[i]? = some instr → instr.locationNum = i :=
+          emitCondGoto_preserves_locationNum_eq_index
+            (CProverGOTO.Expr.not cond_expr)
+            (Imperative.metadataToSourceLoc md fname trans₂.sourceText) trans₂ h_size₂ h_loc₂
+        have h_after_neg_size :
+          (Imperative.emitCondGoto (CProverGOTO.Expr.not cond_expr)
+            (Imperative.metadataToSourceLoc md fname trans₂.sourceText)
+            trans₂).fst.instructions.size =
+          (Imperative.emitCondGoto (CProverGOTO.Expr.not cond_expr)
+            (Imperative.metadataToSourceLoc md fname trans₂.sourceText)
+            trans₂).fst.nextLoc :=
+          emitCondGoto_preserves_size_eq
+            (CProverGOTO.Expr.not cond_expr)
+            (Imperative.metadataToSourceLoc md fname trans₂.sourceText) trans₂ h_size₂
+        have h_after_uncond :
+          ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+            (Imperative.emitUncondGoto
+              (Imperative.metadataToSourceLoc md fname trans₂.sourceText)
+              (Imperative.emitCondGoto (CProverGOTO.Expr.not cond_expr)
+                (Imperative.metadataToSourceLoc md fname trans₂.sourceText)
+                trans₂).fst).fst.instructions[i]? = some instr →
+            instr.locationNum = i :=
+          emitUncondGoto_preserves_locationNum_eq_index
+            (Imperative.metadataToSourceLoc md fname trans₂.sourceText)
+            _ h_after_neg_size h_after_neg
+        exact h_after_uncond i instr h
+      | .error e, h_cond_eval =>
+        simp at h_run
+    | finish md =>
+      rw [h_t] at h_run
+      simp only at h_run
+      injection h_run with h_run
+      intro i instr h
+      rw [← h_run] at h
+      -- After pushing 1 END_FUNCTION, locationNum_eq_index transfers via
+      -- a generic push lemma.
+      exact endFunction_emit_preserves_locationNum_eq_index md fname trans₂ h_size₂ h_loc₂ i instr h
+  | .error e, h_inner =>
+    simp at h_run
+
 /-! ## Top-level theorem (statement + interface)
 
 The top-level `coreCFGToGotoTransform_wellFormed` theorem proves that
