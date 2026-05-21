@@ -1,3 +1,8 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
 import StrataBooleTest.array_2d
 import StrataBooleTest.array_assignment
 import StrataBooleTest.bit_vectors

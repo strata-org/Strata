@@ -65,6 +65,9 @@ jobs:
           git diff --exit-code editors/vscode/syntaxes/ editors/emacs/
       - name: Build and run strata verify
         run: lake exe strata verify Examples/SimpleProc.core.st
+      - name: Build StrataBoole
+        run: lake build StrataBoole StrataBooleTest
+        working-directory: StrataBoole
       - name: Build BoogieToStrata
         run: dotnet build -warnaserror ${SOLUTION}
       - name: Test BoogieToStrata
@@ -96,27 +99,6 @@ jobs:
       - name: Run regex differential tests
         working-directory: StrataTest/Languages/Python/Regex
         run: python diff_test.py
-
-  build_strata_boole:
-    needs: build_and_test_lean
-    name: Build StrataBoole
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-      - name: Restore lake cache
-        uses: ./.github/actions/restore-lake-cache
-        with:
-          fail-on-cache-miss: "true"
-          use-restore-keys: "false"
-      - name: Install Lean
-        uses: leanprover/lean-action@v1
-        with:
-          auto-config: false
-          build: false
-      - name: Build StrataBoole
-        run: lake build StrataBoole StrataBooleTest
-        working-directory: StrataBoole
 
   check_pending_python:
     needs: build_and_test_lean
