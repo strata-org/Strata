@@ -15,3 +15,6 @@ vcs/*.smt2
 Strata.code-workspace
 
 docs/superpowers/
+
+# Working directory for benchmark fetcher / candidate harnesses.
+wt-test/
