@@ -502,6 +502,70 @@ theorem stepGoto_decl_to_stepInstr
         exact ⟨e, v', by rw [h_imp_eq]; exact h_imp_s, h_to,
                         by rw [h_goto_eq]; exact h_goto_s⟩
 
+/-! ## Bridge for `step_assign_nondet`
+
+Bridges `step_assign_nondet` (this branch) to `StepInstr.assign_nondet`
+(tautschnig). The structural difference is on the syntactic side:
+tautschnig's `assign_nondet` requires `rhs.id = .side_effect .Nondet`
+on the GOTO-side instruction; this branch's `step_assign_nondet`
+does not impose that constraint at the constructor level (it relies
+on the upstream `CmdEmittedAt.set_nondet` layout predicate to gate
+where the rule fires).
+
+The bridge takes the syntactic check as an external hypothesis
+(`h_rhs_nondet`), plus the lhs/rhs lookups and the
+`toValue v = some v_goto` correspondence on the assigned value.
+StoreCorr preservation is identical to `step_assign`. -/
+
+theorem stepGoto_assign_nondet_to_stepInstr
+    {P : Imperative.PureExpr} [SemanticsTautschnig.ValueCorr P]
+    {pgm : Program} {pc : Nat}
+    {σ_imp σ_imp' : Imperative.SemanticStore P}
+    {instr : Instruction}
+    {nameMap : P.Ident → String}
+    (h_inj : Function.Injective nameMap)
+    {x : P.Ident} {v_imp : P.Expr}
+    {callResult : SemanticsTautschnig.CallResultRel}
+    {eval : SemanticsTautschnig.ExprEval}
+    {fenv : SemanticsTautschnig.FuncEnv}
+    {σ_goto : SemanticsTautschnig.Store}
+    (h_at : pgm.instrAt pc = some instr) (h_ty : instr.type = .ASSIGN)
+    (h_upd : Imperative.UpdateState P σ_imp x v_imp σ_imp')
+    (h_codeLhs : (SemanticsTautschnig.instrCode pgm pc).bind
+                   SemanticsTautschnig.getAssignLhs = some (nameMap x))
+    {rhs_g : Expr}
+    (h_codeRhs : (SemanticsTautschnig.instrCode pgm pc).bind
+                   SemanticsTautschnig.getAssignRhs = some rhs_g)
+    (h_rhs_nondet : rhs_g.id = .side_effect .Nondet)
+    {v_goto : SemanticsTautschnig.Value}
+    (h_value_corr :
+      (SemanticsTautschnig.ValueCorr.toValue v_imp : Option SemanticsTautschnig.Value) = some v_goto)
+    (h_corr : SemanticsTautschnig.StoreCorr nameMap σ_imp σ_goto) :
+    ∃ σ_goto', SemanticsTautschnig.StoreCorr nameMap σ_imp' σ_goto' ∧
+      SemanticsTautschnig.StepInstr callResult eval fenv pgm
+        pc σ_goto (pc + 1) σ_goto' := by
+  refine ⟨σ_goto.update (nameMap x) v_goto, ?_,
+    .assign_nondet (instrAt_to_instrType h_at h_ty) h_codeLhs h_codeRhs h_rhs_nondet⟩
+  -- StoreCorr preservation: identical to step_assign.
+  intro y
+  cases h_upd with
+  | update h_pre h_post h_other =>
+    by_cases h_eq : x = y
+    · subst h_eq
+      right
+      refine ⟨v_imp, v_goto, h_post, h_value_corr, ?_⟩
+      simp [SemanticsTautschnig.Store.update]
+    · have h_imp_eq : σ_imp' y = σ_imp y := h_other y h_eq
+      have h_goto_eq : (σ_goto.update (nameMap x) v_goto) (nameMap y) = σ_goto (nameMap y) := by
+        simp [SemanticsTautschnig.Store.update]
+        intro h_collide
+        exact absurd (h_inj h_collide).symm h_eq
+      rcases h_corr y with ⟨h_imp_n, h_goto_n⟩ | ⟨e, v', h_imp_s, h_to, h_goto_s⟩
+      · left; exact ⟨by rw [h_imp_eq]; exact h_imp_n, by rw [h_goto_eq]; exact h_goto_n⟩
+      · right
+        exact ⟨e, v', by rw [h_imp_eq]; exact h_imp_s, h_to,
+                        by rw [h_goto_eq]; exact h_goto_s⟩
+
 /-! ## Structural divergences not yet bridged at this commit
 
 The remaining `StepGoto` constructors do not bridge directly to a
