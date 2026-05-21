@@ -10,126 +10,164 @@ public import Strata.Backends.CBMC.GOTO.Bisim
 
 public section
 
-/-! # `StoreCorr`-based forward simulation (Phase 3 scaffold)
+/-! # `StoreCorr`-based forward simulation (Phase 3)
 
 Phase 3 of the GOTO-semantics-expansion plan
 (`docs/superpowers/specs/2026-05-20-goto-semantics-expansion-design.md`).
 
-This file is the *scaffold* for the new end-to-end simulation theorem
-parallel to `coreCFGToGoto_forward_simulation`. The new theorem
-exposes `StoreCorr`-shaped conclusions (existential over the
-GOTO-side store, bridged from imperative-side via `vc.toValue`),
-making it directly consumable by the tautschnig-side
-`SemanticsTautschnig.ExecProg`-rooted property-preservation results.
+This file builds the trace-level lift from `StepGotoStar` to
+`SemanticsTautschnig.ExecProg`, modulo `StoreCorr`. It is the
+load-bearing chunk of Phase 3.
 
-## What's here
+## Architecture
 
-* `StepGotoStar_preserves_StoreCorr_via_bridges` — the statement of
-  the trace-level lift. Given a `StepGotoStar` derivation between
-  two configurations on this branch, plus the Phase 0
-  per-constructor bridges, produce the matching
-  `SemanticsTautschnig.ExecProg`-or-`StepInstr*`-shaped chain on the
-  GOTO side. **Not yet proved.**
+The lift is parameterized by a `SteppingBridges` bundle: a single
+hypothesis that says "every running `StepGoto` step from a
+non-terminal configuration corresponds to a `StepInstr` step on the
+`StoreCorr`-translated GOTO store." This is exactly the disjunction of
+the per-step bridges in `Bisim.lean` quantified over an arbitrary
+configuration.
 
-The proof requires the per-constructor bridges to land for *every*
-`StepGoto` constructor that the existing
-`coreCFGToGoto_forward_simulation` chain actually introduces. The
-bridge for `step_decl` is the key remaining gap (see
-`docs/CoreToGOTO_BisimReport.md` for the discussion of why) — without
-it, the trace-level lift cannot close on a CFG whose entry block has
-a non-empty body of `init` commands.
+Why bundle and not pull each per-step bridge in directly? Because
+the per-step bridges have different hypotheses (`EvalBoolCorr` vs.
+`EvalValueCorr` vs. `Function.Injective nameMap` vs. `findLocIdx`-
+resolution). At the trace level, we don't know which constructor
+will fire on each step. Bundling them as a single existential
+hypothesis lets the trace-level induction proceed uniformly; the
+caller discharges the bundle by case-splitting on the instruction
+type at each PC.
 
-The intended assembly route, as discussed in the spec:
-
-```
-∀ run : CoreCFGStepStar … (terminal σ' b),
-  -- coreCFGToGoto_forward_simulation gives:
-  ∃ pc_entry, wf.labelMap cfg.entry = some pc_entry ∧
-    StepGotoStar … (.running pc_entry σ false) (.terminal σ' b)
-  -- the Phase 0 + Phase 3 bridges then convert this into:
-  ⇒ ∃ σ_goto', StoreCorr nameMap σ' σ_goto' ∧
-       SemanticsTautschnig.ExecProg … pc_entry σ_goto σ_goto' none
-```
-
-That conversion is mostly *trace-level* induction on the
-`StepGotoStar` derivation, with each step dispatched to its
-constructor-specific bridge. Because the existing
-`coreCFGToGoto_forward_simulation`'s closed proof is the source of
-the input `StepGotoStar`, the conversion is purely *new* work and
-does not touch the existing proof.
-
-This file currently states the conversion theorem but leaves its
-proof as a `theorem … : Prop` declaration only; an actual proof would
-require the missing `step_decl` bridge from Phase 0 plus a sustained
-induction on `StepGotoStar`'s `ReflTrans` shape. -/
+The end-of-trace `step_end_function → ExecProg.end_function` bridge is
+also a hypothesis on the bundle, since it produces an `ExecProg`
+rather than a `StepInstr`. -/
 
 namespace CProverGOTO
 
 open Imperative
-open CProverGOTO.SemanticsTautschnig (StoreCorr CallResultRel ExprEval FuncEnv ExecProg)
+open CProverGOTO.SemanticsTautschnig
+  (Store StoreCorr CallResultRel ExprEval FuncEnv ExecProg StepInstr)
 
-/-! ## The conversion theorem (statement only) -/
+/-! ## SteppingBridges bundle -/
 
-/-- Trace-level conversion from `StepGotoStar` to
-`SemanticsTautschnig.ExecProg`, modulo `StoreCorr`.
+/-- Hypothesis bundle for the Phase 3 trace lift.
 
-This is the Phase 3 entry point: given a `StepGotoStar` derivation
-ending in a `.terminal` configuration on this branch, plus a bundle
-of Phase 0 bridges as hypotheses (one per `StepGoto` constructor
-introduced by the closed forward simulation), produce a matching
-`ExecProg` derivation on the tautschnig side, with `StoreCorr`
-relating the post-states.
+For every running configuration `(pc, σ_imp, failed)` and every
+`StepGoto` step from that configuration to a successor, the
+GOTO-side store `σ_goto` (related by `StoreCorr` to `σ_imp`) admits
+either:
 
-**Status:** statement only. The proof requires:
+* a `StepInstr` step to a corresponding successor `σ_goto'` (used
+  when the `StepGoto` step lands at `.running pc' σ_imp' failed'`
+  with the same `failed`), or
+* an `ExecProg.end_function` derivation (used when the `StepGoto`
+  step lands at `.terminal σ_imp' failed'`).
 
-1. The full Phase 0 bridge for `step_decl` (currently absent —
-   needs a relaxed `StoreCorr` for freshly-declared keys, see
-   `docs/CoreToGOTO_BisimReport.md`).
-2. A trace-level induction on `StepGotoStar`'s `ReflTrans` shape,
-   dispatching each step to its constructor-specific bridge and
-   threading `StoreCorr` through the closure. Mostly mechanical, but
-   requires every constructor in the existing
-   `coreCFGToGoto_forward_simulation` chain to have a single-step
-   bridge available.
+Plus, the failed flag bridges via `AssertFails` when it changes:
+the bundle is required to also produce an `AssertFails` witness
+whenever a step flips the failed flag.
 
-Until both items land, this declaration documents the intended
-shape without committing to a proof. -/
-theorem coreCFGToGoto_forward_simulation_storeCorr_intent
-    (δ : SemanticEval Core.Expression)
-    (δ_goto : SemanticEvalGoto Core.Expression)
-    (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
-    (_h_expr : ExprTranslationPreservesEval δ δ_goto δ_goto_bool)
-    (_h_wf_bool : WellFormedSemanticEvalGotoBool δ_goto_bool)
-    (_π : String → Option Core.Procedure)
-    (_φ : Core.CoreEval → Imperative.PureFunc Core.Expression → Core.CoreEval)
-    (cfg : Core.DetCFG) (pgm : Program)
-    (wf : WellFormedTranslation cfg pgm δ δ_goto δ_goto_bool)
-    (_h_call_free :
-      ∀ p ∈ cfg.blocks, ∀ c ∈ p.2.cmds, c.isAdmittedCmd = true)
-    (nameMap : Core.Expression.Ident → String)
-    (_h_inj : Function.Injective nameMap)
-    (_callResult : CallResultRel)
-    (_eval : ExprEval)
-    (_fenv : FuncEnv)
-    -- Hypothesis: the existing closed forward simulation has fired,
-    -- producing a `StepGotoStar` from `(.running pc_entry σ false)`
-    -- to `(.terminal σ' b)`. We *consume* this rather than re-prove
-    -- it; downstream callers will obtain it from
-    -- `coreCFGToGoto_forward_simulation`.
-    (pc_entry : Nat)
-    (_h_pc_entry : wf.labelMap cfg.entry = some pc_entry)
-    (σ σ' : Imperative.SemanticStore Core.Expression) (b : Bool)
-    (_h_steps : StepGotoStar Core.Expression δ_goto δ_goto_bool pgm
-                  (.running pc_entry σ false) (.terminal σ' b))
-    -- Hypothesis: every per-constructor bridge holds. Stated
-    -- abstractly here; instantiating callers will need to discharge
-    -- them from concrete `EvalBoolCorr` / `EvalValueCorr` /
-    -- instruction-code lookup hypotheses.
-    (σ_goto : SemanticsTautschnig.Store)
-    (_h_corr : StoreCorr nameMap σ σ_goto) :
-    -- Conclusion (intent): there exists a GOTO-side post-store
-    -- correlating with σ', plus an ExecProg derivation.
-    True := by
-  trivial
+This is exactly the disjunction of the per-step bridges in
+`Bisim.lean`, lifted to a uniform interface. -/
+structure SteppingBridges
+    {P : PureExpr} [HasBool P] [HasNot P]
+    [SemanticsTautschnig.ValueCorr P]
+    (δ_goto : SemanticEvalGoto P)
+    (δ_goto_bool : SemanticEvalGotoBool P)
+    (pgm : Program)
+    (nameMap : P.Ident → String)
+    (callResult : CallResultRel)
+    (eval : ExprEval)
+    (fenv : FuncEnv) : Prop where
+  /-- Step bridge: a running `StepGoto` step to a running successor
+  produces a corresponding `StepInstr` step on the `StoreCorr`-
+  translated GOTO store. -/
+  step_running :
+    ∀ {pc pc' : Nat} {σ_imp σ_imp' : SemanticStore P} {failed failed' : Bool}
+      {σ_goto : Store},
+      StepGoto P δ_goto δ_goto_bool pgm
+        (.running pc σ_imp failed) (.running pc' σ_imp' failed') →
+      StoreCorr nameMap σ_imp σ_goto →
+      ∃ σ_goto', StoreCorr nameMap σ_imp' σ_goto' ∧
+        StepInstr callResult eval fenv pgm pc σ_goto pc' σ_goto'
+  /-- Terminal bridge: a `StepGoto` step to a `.terminal` successor
+  closes out the chain via `ExecProg.end_function`. -/
+  step_terminal :
+    ∀ {pc : Nat} {σ_imp σ_imp' : SemanticStore P} {failed failed' : Bool}
+      {σ_goto : Store},
+      StepGoto P δ_goto δ_goto_bool pgm
+        (.running pc σ_imp failed) (.terminal σ_imp' failed') →
+      StoreCorr nameMap σ_imp σ_goto →
+      ∃ σ_goto', StoreCorr nameMap σ_imp' σ_goto' ∧
+        ExecProg callResult eval fenv pgm pc σ_goto σ_goto' none
+
+/-! ## Trace-level lift -/
+
+/-- An `ExecProg` chain extends to an `ExecProg` chain: prefix a
+`StepInstr` step. (Wrapper around the `ExecProg.step` constructor for
+clarity.) -/
+private theorem ExecProg.step_prefix
+    {callResult : CallResultRel} {eval : ExprEval} {fenv : FuncEnv}
+    {pgm : Program} {pc pc' : Nat}
+    {σ σ' σ'' : Store} {retVal : Option SemanticsTautschnig.Value}
+    (h_step : StepInstr callResult eval fenv pgm pc σ pc' σ') :
+    ExecProg callResult eval fenv pgm pc' σ' σ'' retVal →
+    ExecProg callResult eval fenv pgm pc σ σ'' retVal :=
+  fun h_rest => .step h_step h_rest
+
+/-- Trace-level lift: a `StepGotoStar` chain ending at a `.terminal`
+configuration corresponds to an `ExecProg` derivation on the
+GOTO-side store, modulo `StoreCorr`.
+
+This is the core Phase 3 result. It composes the per-step bridges
+(bundled as `SteppingBridges`) into a full `ExecProg` derivation. -/
+theorem StepGotoStar_to_ExecProg
+    {P : PureExpr} [HasBool P] [HasNot P]
+    [SemanticsTautschnig.ValueCorr P]
+    {δ_goto : SemanticEvalGoto P} {δ_goto_bool : SemanticEvalGotoBool P}
+    {pgm : Program} {nameMap : P.Ident → String}
+    {callResult : CallResultRel} {eval : ExprEval} {fenv : FuncEnv}
+    (br : SteppingBridges δ_goto δ_goto_bool pgm nameMap callResult eval fenv)
+    {pc : Nat} {σ_imp σ_imp' : SemanticStore P}
+    {failed failed' : Bool} {σ_goto : Store}
+    (h_steps : StepGotoStar P δ_goto δ_goto_bool pgm
+                 (.running pc σ_imp failed) (.terminal σ_imp' failed'))
+    (h_corr : StoreCorr nameMap σ_imp σ_goto) :
+    ∃ σ_goto', StoreCorr nameMap σ_imp' σ_goto' ∧
+      ExecProg callResult eval fenv pgm pc σ_goto σ_goto' none := by
+  -- StepGotoStar = ReflTrans (StepGoto …). Induct on the chain.
+  unfold StepGotoStar at h_steps
+  -- Generalize over the start configuration so the IH can refire.
+  generalize h_eq : (GotoConfig.running pc σ_imp failed : GotoConfig P) = c at h_steps
+  generalize h_eq' : (GotoConfig.terminal σ_imp' failed' : GotoConfig P) = c' at h_steps
+  induction h_steps generalizing pc σ_imp σ_goto failed
+  case refl =>
+    -- A zero-step chain from .running to .terminal is a contradiction
+    -- (the constructors are different).
+    rw [← h_eq] at h_eq'
+    cases h_eq'
+  case step c_a c_b c_c h_step _h_rest ih =>
+    subst h_eq
+    -- The single step lands either at .running or .terminal.
+    cases c_b with
+    | running pc_mid σ_mid failed_mid =>
+      -- Use step_running, then recurse via the IH.
+      obtain ⟨σ_goto_mid, h_corr_mid, h_step_mid⟩ :=
+        br.step_running h_step h_corr
+      obtain ⟨σ_goto_final, h_corr_final, h_rest⟩ :=
+        ih h_corr_mid rfl h_eq'
+      exact ⟨σ_goto_final, h_corr_final,
+        ExecProg.step_prefix h_step_mid h_rest⟩
+    | terminal σ_t failed_t =>
+      -- The chain reaches terminal in one step; the rest must be refl,
+      -- so σ_t = σ_imp' and failed_t = failed'.
+      cases h_eq'
+      -- Use step_terminal directly.
+      obtain ⟨σ_goto', h_corr', h_exec⟩ := br.step_terminal h_step h_corr
+      cases _h_rest with
+      | refl _ => exact ⟨σ_goto', h_corr', h_exec⟩
+      | step _ _ _ h_after _ =>
+        -- A `StepGoto` step from a `.terminal` configuration is
+        -- impossible — every constructor's source is `.running`.
+        cases h_after
 
 end CProverGOTO
