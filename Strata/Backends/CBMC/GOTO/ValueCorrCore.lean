@@ -27,9 +27,11 @@ following the pattern in `tautschnig/goto-semantics`'s
   and `fromValue : Value → Option P.Expr` for an arbitrary
   `PureExpr P`. Required for any `StoreCorr` bridge.
 * `valueCorrCore : ValueCorr Core.Expression` — concrete instance.
-  Coverage at this commit: booleans (via `Lambda.LConst.boolConst`)
-  and integers (via `Lambda.LConst.intConst`). Other constructors
-  return `none`. Strict subset; extend as proof obligations demand.
+  Coverage at this commit: booleans (via `Lambda.LConst.boolConst`),
+  integers (via `Lambda.LConst.intConst`), and the `vEmpty` sentinel
+  (via `Lambda.LExpr.fvar` named `coreVEmptySentinel`). Other
+  constructors return `none`. Strict subset; extend as proof
+  obligations demand.
 * `StoreCorr nameMap σ_imp σ_goto` — the imperative-side store and
   the GOTO-side store agree on the `nameMap`-translated keys, modulo
   `toValue`.
@@ -68,38 +70,81 @@ Coverage:
 
 * Booleans: `Lambda.LConst.boolConst b ↔ Value.vBool b`.
 * Integers: `Lambda.LConst.intConst n ↔ Value.vInt n`.
+* `vEmpty` sentinel: `Lambda.LExpr.fvar` whose identifier name
+  matches `coreVEmptySentinelName` ↔ `Value.vEmpty`.
 
-Other shapes return `none`. -/
+Other shapes return `none`.
+
+The `vEmpty` sentinel handles the `step_decl` bridge in
+`Strata/Backends/CBMC/GOTO/Bisim.lean`. Tautschnig's
+`StepInstr.decl` always sets the freshly-declared symbol to
+`vEmpty`; this branch's `step_decl` uses an abstract `InitState`
+producing some witness value. To bridge the two, the source-side
+caller initialises freshly-declared variables to a sentinel
+expression, and `valueCorrCore.toValue` recognises the sentinel as
+`vEmpty`.
+
+Convention: the sentinel identifier is a free variable named
+`__strata_vEmpty__`. This name never appears in real source
+programs because (a) it is double-underscored and (b) the `<proc>::
+<scope>::<name>` renaming pass on real procedure-level identifiers
+always inserts `::` separators. -/
+
+/-- Magic name for the `vEmpty` sentinel free variable. -/
+@[expose] def coreVEmptySentinelName : String := "__strata_vEmpty__"
+
+/-- The sentinel expression: a free variable with the magic name.
+Type annotation is `none` since the sentinel is type-erased on the
+GOTO side (it always maps to `vEmpty`). -/
+@[expose] def coreVEmptySentinel : Core.Expression.Expr :=
+  Lambda.LExpr.fvar (T := ⟨⟨Core.ExpressionMetadata, Unit⟩, Lambda.LMonoTy⟩)
+    () { name := coreVEmptySentinelName, metadata := () } none
 
 @[expose] def coreToValue (e : Core.Expression.Expr) : Option Value :=
   match e with
   | .const _ (.boolConst b) => some (.vBool b)
   | .const _ (.intConst n) => some (.vInt n)
+  | .fvar _ ⟨name, _⟩ none =>
+    if name = coreVEmptySentinelName then some .vEmpty else none
   | _ => none
 
 @[expose] def coreFromValue (v : Value) : Option Core.Expression.Expr :=
   match v with
   | .vBool b => some (.boolConst () b)
   | .vInt n => some (.intConst () n)
+  | .vEmpty => some coreVEmptySentinel
   | _ => none
 
 instance valueCorrCore : ValueCorr Core.Expression where
   toValue   := coreToValue
   fromValue := coreFromValue
 
+/-- The sentinel maps to `vEmpty` under `coreToValue`. This is the
+load-bearing fact for the `step_decl` bridge in `Bisim.lean`. -/
+@[simp] theorem coreToValue_vEmptySentinel :
+    coreToValue coreVEmptySentinel = some .vEmpty := by
+  simp [coreToValue, coreVEmptySentinel]
+
 /-- Round-trip: every `coreFromValue` output that is `some _` is
 mapped back to its input by `coreToValue`. -/
 theorem coreToValue_coreFromValue (v : Value) (e : Core.Expression.Expr)
     (h : coreFromValue v = some e) :
     coreToValue e = some v := by
-  cases v <;> simp [coreFromValue] at h <;> rcases h with ⟨rfl⟩ <;> rfl
+  cases v with
+  | vBool b => simp [coreFromValue] at h; rcases h with ⟨rfl⟩; rfl
+  | vInt n  => simp [coreFromValue] at h; rcases h with ⟨rfl⟩; rfl
+  | vEmpty  =>
+    simp [coreFromValue] at h; rcases h with ⟨rfl⟩
+    simp [coreToValue, coreVEmptySentinel]
+  | _ => simp [coreFromValue] at h
 
 /-- Round-trip in the other direction: every `coreToValue` output
 that is `some _` is mapped back by `coreFromValue`.
 
 Holds because `Core.Expression`'s metadata type is `Unit`, so the
 `()` filled in by `coreFromValue` matches whatever metadata the
-original `.const` carried. -/
+original `.const` carried, and the sentinel free variable's metadata
+is also `()`. -/
 theorem coreFromValue_coreToValue (e : Core.Expression.Expr) (v : Value)
     (h : coreToValue e = some v) :
     coreFromValue v = some e := by
@@ -115,6 +160,22 @@ theorem coreFromValue_coreToValue (e : Core.Expression.Expr) (v : Value)
     subst this
     rcases m
     rfl
+  · -- fvar with no type annotation, conditional on the magic name.
+    -- Split's destructured pattern was `.fvar _ ⟨name, _⟩ none`, so the
+    -- introduced binders are m : Metadata (= Unit), name : String,
+    -- and _ : IDMeta (= Unit).
+    next m name idmeta =>
+      split at h
+      · -- name matches sentinel
+        rename_i h_name
+        have hv : v = .vEmpty := by injection h with h'; exact h'.symm
+        subst hv
+        simp only [coreFromValue, coreVEmptySentinel]
+        -- Goal: LExpr.fvar () ⟨sentinelName, ()⟩ none = LExpr.fvar m ⟨name, idmeta⟩ none
+        have hm : (m : Unit) = () := rfl
+        have hidm : (idmeta : Unit) = () := rfl
+        rw [h_name, hm, hidm]
+      · cases h
   · cases h
 
 /-! ## StoreCorr -/
