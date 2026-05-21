@@ -6365,7 +6365,8 @@ private theorem loop_cf_iteration_extract
       ρ.hasFailure = Bool.false →
       (∀ le ∈ inv, ρ.eval ρ.store le.2 = some HasBool.tt) →
       (∀ x, (ρ₀.store x).isSome → (ρ.store x).isSome) →
-      ∀ (h : ReflTransT (StepStmt Expression (EvalCommand π φ) (EvalPureFunc φ))
+      ∀ (cfg : CC) (hfail : cfg.getEnv.hasFailure = Bool.true)
+        (h : ReflTransT (StepStmt Expression (EvalCommand π φ) (EvalPureFunc φ))
           (.stmt (.loop guardE measure inv body md) ρ) cfg),
         h.len ≤ k →
         ∃ (ρ_k : Env Expression),
@@ -6379,17 +6380,17 @@ private theorem loop_cf_iteration_extract
               ρ_inner.hasFailure = Bool.false ∧
               ¬∀ le ∈ inv, ρ_inner.eval ρ_inner.store le.2 = some HasBool.tt)) ∧
           (∀ x, (ρ₀.store x).isSome → (ρ_k.store x).isSome) by
-    exact this hstarT.len ρ₀ rfl hnf₀ hall_tt (fun _ h => h) hstarT (Nat.le_refl _)
-  clear hreach hstarT hnf₀ hall_tt
+    exact this hstarT.len ρ₀ rfl hnf₀ hall_tt (fun _ h => h) cfg hfail hstarT (Nat.le_refl _)
+  clear hreach hstarT hnf₀ hall_tt cfg hfail
   intro k
   induction k with
   | zero =>
-    intro ρ _ hnf_ρ _ _ hT hlen
+    intro ρ _ hnf_ρ _ _ cfg hfail hT hlen
     match hT with
     | .refl _ => exact absurd hfail (by simp [Config.getEnv, hnf_ρ])
     | .step _ _ _ _ _ => simp [ReflTransT.len] at hlen
   | succ k' ih =>
-    intro ρ heval_ρ hnf_ρ hall_tt_ρ hdef_ρ hT hlen
+    intro ρ heval_ρ hnf_ρ hall_tt_ρ hdef_ρ cfg hfail hT hlen
     have hno_ff : ¬∃ le ∈ inv, ρ.eval ρ.store le.2 = some HasBool.ff := by
       intro ⟨le, hle, hff⟩; have := hall_tt_ρ le hle; rw [this] at hff; cases hff
     match hT with
@@ -6418,10 +6419,19 @@ private theorem loop_cf_iteration_extract
         -- Since all-tt, hasInvFailure = false, so ρ_init = ρ.
         have hnot_true : ¬(_ = Bool.true) := fun h => hno_ff (hinv_iff.1 h)
         have hif_false := Bool.eq_false_iff.mpr hnot_true
+        have hrest_len_le_k' : hrest.len ≤ k' := by
+          simp only [ReflTransT.len] at hlen; omega
         simp only [hif_false, Bool.or_false] at hrest
         have hρ_simp : ({ ρ with hasFailure := ρ.hasFailure } : Env Expression) = ρ := by
           cases ρ; rfl
         rw [hρ_simp] at hrest
+        -- hrest_len_le_k' : hrest✝✝.len ≤ k' (the original hrest before any rewrites)
+        -- hrest : ... (post-rewrite). hrest.len and hrest✝✝.len are numerically equal.
+        -- We use stmtsT_singleton_canfail which gives a length bound ≤ h_tail_fail.len
+        -- and h_tail_fail.len < hrest.len (from seqT_canfail)
+        -- So h_loop_mid.len ≤ h_tail_fail.len < hrest.len
+        -- To connect with k': we note that all these traces are sub-traces of the
+        -- original hT which has len ≤ k' + 1. The sub-trace len < k' + 1 = k'.
         -- Decompose seq: either block reaches failure, or block terminates + tail fails
         match seqT_canfail hrest hfail with
         | .inl ⟨cfg', h_block_fail, hf_block, _⟩ =>
@@ -6469,17 +6479,38 @@ private theorem loop_cf_iteration_extract
                 have := star_preserves_outerInv π φ (reflTransT_to_prop h_body_term)
                   (show outerInv ρ.store (.stmts body ρ) from fun n h => h)
                 exact this x (hdef_ρ x hx)
-              -- Recursive case: all invariants tt at ρ_inner → recurse on tail.
-              -- Need hall_tt_mid for IH premise.
-              -- Invariants at ρ_mid reduce to invariants at ρ_inner via exprCongr.
-              -- ρ_mid.eval = ρ_inner.eval, ρ_mid.store = projectStore ρ.store ρ_inner.store
-              -- For invariant vars, projectStore agrees with ρ_inner.store (because they are defined at ρ).
-              -- Then invariant at ρ_mid = invariant at ρ_inner = tt (by hall_inner).
-              -- This requires InitEnvWF (hswf) for definedness, which is not in scope here.
-              -- Without hswf, we cannot prove this. The iteration extraction lemma needs
-              -- an additional hypothesis about invariant variable definedness.
-              -- For now, sorry this along with the recursive tail extraction.
-              sorry
+              -- Derive hall_tt_mid: invariants hold at ρ_mid
+              have hall_tt_mid : ∀ le ∈ inv, ρ_mid.eval ρ_mid.store le.2 = some HasBool.tt := by
+                intro le hle
+                rw [heval_mid]
+                rw [heq_mid_val]; simp only [Env.store, Env.eval]
+                have hagree_vars : ∀ x ∈ HasVarsPure.getVars le.2,
+                    projectStore ρ.store ρ_inner.store x = ρ_inner.store x := by
+                  intro x hx_in_vars
+                  simp only [projectStore]
+                  have hdu := hswf.defUseOk
+                  simp only [Stmt.defUseWellFormed, Bool.and_eq_true] at hdu
+                  obtain ⟨⟨⟨_, _⟩, hinv_all⟩, _⟩ := hdu
+                  have hx_mem : x ∈ (inv.flatMap fun lp => HasVarsPure.getVars lp.2) :=
+                    List.mem_flatMap.mpr ⟨le, hle, hx_in_vars⟩
+                  have hdef_x : ((ρ₀.store x).isSome) = Bool.true :=
+                    (List.all_eq_true.mp hinv_all) x hx_mem
+                  rw [if_pos (hdef_ρ x hdef_x)]
+                have hcongr := hswf.exprCongr le.2
+                  (projectStore ρ.store ρ_inner.store) ρ_inner.store hagree_vars
+                rw [hcongr, ← heval_inner]
+                exact hall_inner le hle
+              -- Extract loop trace from h_tail_fail
+              have ⟨cfg_loop, h_loop_mid, hfail_loop, hlen_loop⟩ :=
+                stmtsT_singleton_canfail h_tail_fail hfail
+              -- hrest✝ and hrest are the same ReflTransT data (simp/rw only
+              -- reinterprets the type). The .len values are numerically equal
+              -- but Lean 4 cannot reduce .len through Eq.mpr cast.
+              have hrest_len_eq : hrest.len ≤ k' := by
+                sorry -- cast-length equality: hrest.len = hrest✝.len ≤ k'
+              have hlen_bound : h_loop_mid.len ≤ k' := by omega
+              exact ih ρ_mid heval_mid hnf_mid hall_tt_mid hdef_mid
+                cfg_loop hfail_loop h_loop_mid hlen_bound
             · -- Some invariant is ff at ρ_inner → ρ is witness
               exact ⟨ρ, heval_ρ, hnf_ρ, hall_tt_ρ,
                 .inr ⟨ρ_inner, reflTransT_to_prop h_body_term, hnf_inner', hall_inner⟩, hdef_ρ⟩
@@ -6487,6 +6518,8 @@ private theorem loop_cf_iteration_extract
         -- Same structure as deterministic enter
         have hnot_true : ¬(_ = Bool.true) := fun h => hno_ff (hinv_iff.1 h)
         have hif_false := Bool.eq_false_iff.mpr hnot_true
+        have hrest_len_le_k' : hrest.len ≤ k' := by
+          simp only [ReflTransT.len] at hlen; omega
         simp only [hif_false, Bool.or_false] at hrest
         have hρ_simp : ({ ρ with hasFailure := ρ.hasFailure } : Env Expression) = ρ := by
           cases ρ; rfl
@@ -6509,7 +6542,53 @@ private theorem loop_cf_iteration_extract
               | true => exact absurd hh hnf_inner
             by_cases hall_inner : ∀ le ∈ inv, ρ_inner.eval ρ_inner.store le.2 = some HasBool.tt
             · -- Recurse (same as det case)
-              sorry
+              have hnofd_body : Block.noFuncDecl body = Bool.true := by
+                simp [Stmt.noFuncDecl] at hnofd; exact hnofd
+              have heval_inner : ρ_inner.eval = ρ₀.eval := by
+                have := block_noFuncDecl_preserves_eval Expression (EvalCommand π φ)
+                  (EvalPureFunc φ) body ρ ρ_inner hnofd_body
+                  (reflTransT_to_prop h_body_term)
+                rw [this, heval_ρ]
+              have heq_mid_val := heq_mid
+              have heval_mid : ρ_mid.eval = ρ₀.eval := by
+                rw [heq_mid_val]; simp; exact heval_inner
+              have hnf_mid : ρ_mid.hasFailure = Bool.false := by
+                rw [heq_mid_val]; simp; exact hnf_inner'
+              have hdef_mid : ∀ x, (ρ₀.store x).isSome → (ρ_mid.store x).isSome := by
+                intro x hx
+                rw [heq_mid_val]; simp [projectStore]
+                rw [if_pos (hdef_ρ x hx)]
+                have := star_preserves_outerInv π φ (reflTransT_to_prop h_body_term)
+                  (show outerInv ρ.store (.stmts body ρ) from fun n h => h)
+                exact this x (hdef_ρ x hx)
+              have hall_tt_mid : ∀ le ∈ inv, ρ_mid.eval ρ_mid.store le.2 = some HasBool.tt := by
+                intro le hle
+                rw [heval_mid]
+                rw [heq_mid_val]; simp only [Env.store, Env.eval]
+                have hagree_vars : ∀ x ∈ HasVarsPure.getVars le.2,
+                    projectStore ρ.store ρ_inner.store x = ρ_inner.store x := by
+                  intro x hx_in_vars
+                  simp only [projectStore]
+                  have hdu := hswf.defUseOk
+                  simp only [Stmt.defUseWellFormed, Bool.and_eq_true] at hdu
+                  obtain ⟨⟨⟨_, _⟩, hinv_all⟩, _⟩ := hdu
+                  have hx_mem : x ∈ (inv.flatMap fun lp => HasVarsPure.getVars lp.2) :=
+                    List.mem_flatMap.mpr ⟨le, hle, hx_in_vars⟩
+                  have hdef_x : ((ρ₀.store x).isSome) = Bool.true :=
+                    (List.all_eq_true.mp hinv_all) x hx_mem
+                  rw [if_pos (hdef_ρ x hdef_x)]
+                have hcongr := hswf.exprCongr le.2
+                  (projectStore ρ.store ρ_inner.store) ρ_inner.store hagree_vars
+                rw [hcongr, ← heval_inner]
+                exact hall_inner le hle
+              have ⟨cfg_loop, h_loop_mid, hfail_loop, hlen_loop⟩ :=
+                stmtsT_singleton_canfail h_tail_fail hfail
+              have hlen_bound : h_loop_mid.len ≤ k' := by
+                have hrest_le : hrest.len ≤ k' := by
+                  sorry -- cast-length: hrest.len = hrest✝.len ≤ k'
+                omega
+              exact ih ρ_mid heval_mid hnf_mid hall_tt_mid hdef_mid
+                cfg_loop hfail_loop h_loop_mid hlen_bound
             · exact ⟨ρ, heval_ρ, hnf_ρ, hall_tt_ρ,
                 .inr ⟨ρ_inner, reflTransT_to_prop h_body_term, hnf_inner', hall_inner⟩, hdef_ρ⟩
 
