@@ -11,15 +11,49 @@ import Strata.DDM.Util.SourceRange
 /-!
 # Pass 1: Name Resolution
 
-Fold over the Python AST that threads a growing context as accumulator.
-Each declaration extends the context; each reference is annotated with
-its resolution from the current context.
+Resolution is a fold over the Python AST that threads a growing context
+as accumulator. Its job is to **disambiguate** what each AST node means
+and attach the result as a `NodeInfo` annotation. The process of
+disambiguation produces Laurel-ready identifiers and auxiliary data
+(FuncSig, field lists) that Translation uses mechanically.
 
-Input:  PythonProgram
-Output: ResolvedPythonProgram
+**Input:**  `Array (Python.stmt SourceRange)` (raw, unscoped)
+**Output:** `ResolvedPythonProgram` (scoped, every node annotated with NodeInfo)
 
 The output AST is the scoping derivation for the Python program —
 every node carries proof of what it refers to.
+
+## Phase Distinction
+
+All Resolution types are purely Python-level. No `Laurel.Identifier` is
+stored anywhere. Translation obtains Laurel identifiers by calling accessor
+functions on the Python-level structures. This makes the phase boundary
+explicit and prevents mixing.
+
+## What Resolution Does
+
+At the top level (module scope), each declaration extends the context:
+- `def f(...)` → extends context, annotates FunctionDef with `.funcDecl sig`
+- `class C` → extends context with class + methods, annotates with `.classDecl`
+- `import M` → extends context internally (module tracked in Ctx only)
+- `x : T = ...` → extends context with variable
+
+At each reference, Resolution annotates with the appropriate `NodeInfo`:
+- Name use (variable/function/class) → `.variable name`
+- Call (function) → `.funcCall sig`
+- Call (class) → `.classNew className initSig`
+- Call (method) → `.funcCall sig` (sig has `className = some _`)
+- Attribute access → `.attribute name` (bare field name; Elaboration resolves based on receiver type)
+- BinOp/Compare/UnaryOp → `.funcCall sig` (operator runtime procedure)
+- Unresolvable → `.unresolved`
+- Non-reference → `.irrelevant`
+
+## What Resolution Does NOT
+
+- Determine effects (Elaboration does that)
+- Map PythonType → HighType (Translation does that)
+- Emit Laurel constructs (Translation does that)
+- Resolve field access to class (Elaboration does that via synthesized receiver type)
 -/
 
 namespace Strata.Python.Resolution
@@ -28,14 +62,19 @@ open Strata.Laurel
 
 public section
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- Core Types
--- ═══════════════════════════════════════════════════════════════════════════════
+/-! ## Core Types
+
+`PythonIdentifier` is a newtype with a private constructor. The only ways to
+create one are from the AST (`.fromAst`), from an import path (`.fromImport`),
+or for builtins (`.builtin`). This prevents fabrication of identifiers like
+`"ClassName@method"` — all identifiers trace back to source or builtins. -/
 
 abbrev PythonExpr := Python.expr SourceRange
 abbrev PythonStmt := Python.stmt SourceRange
 abbrev PythonProgram := Array PythonStmt
 abbrev PythonType := PythonExpr
+/-- A Python identifier with a private constructor. Can only be created via `.fromAst`,
+    `.fromImport`, or `.builtin` — preventing fabrication of identifiers from arbitrary strings. -/
 structure PythonIdentifier where
   private mk ::
   private val : String
@@ -52,37 +91,88 @@ def PythonIdentifier.fromImport (modName : Ann String SourceRange) : PythonIdent
 def PythonIdentifier.builtin (name : String) : PythonIdentifier :=
   ⟨name⟩
 
+/-! ## Intermediate Types (mutually recursive)
+
+These types are mutually recursive because `ParamList` stores resolved default
+expressions (`Python.expr ResolvedAnn`) which depend on `ResolvedAnn` which
+depends on `NodeInfo` which depends on `FuncSig` which depends on `ParamList`.
+
+**FuncParams** distinguishes instance methods (with explicit receiver) from
+static functions. The receiver is NOT in `ParamList` — it's separated so that
+`matchArgs` can handle it correctly (receiver gets its own slot in the zip-fold).
+
+**FuncSig** carries the Python-level function signature. `params` and `locals`
+are private — Translation accesses them only via `matchArgs`, `laurelDeclInputs`,
+and `laurelLocals` accessors.
+
+**NodeInfo** is the output annotation on each AST node. Pattern matching on it
+determines Translation's action. Complements:
+- `funcDecl` / `funcCall` — declaration and use site of a function
+- `classDecl` / `classNew` — declaration and instantiation site of a class
+- `withCtx` — resolved `__enter__`/`__exit__` sigs on a with-item
+- Operators are `funcCall` with correct arity (2 for binary, 1 for unary) -/
+
 mutual
 
+/-- The parameter list of a function/method, split into required, optional (with defaults),
+    and keyword-only parameters. Defaults are resolved expressions (carry `ResolvedAnn`). -/
 structure ParamList where
+  /-- Parameters with no default value — must be provided at every call site. -/
   required : List (PythonIdentifier × PythonType)
+  /-- Parameters with default values — may be omitted at call sites. -/
   optional : List (PythonIdentifier × PythonType × Python.expr ResolvedAnn)
+  /-- Keyword-only parameters (after `*` in Python). Default is optional. -/
   kwonly : List (PythonIdentifier × PythonType × Option (Python.expr ResolvedAnn))
 
+/-- Distinguishes instance methods (with explicit receiver) from static functions.
+    The receiver is NOT in `ParamList` — it gets its own slot in `matchArgs`. -/
 inductive FuncParams where
+  /-- Instance method: first Python param is the receiver (typically `self`). -/
   | instance (receiver : PythonIdentifier) (params : ParamList)
+  /-- Static function or top-level function: no receiver. -/
   | static (params : ParamList)
 
+/-- The complete signature of a Python function or method. Carries everything Translation
+    needs to emit a Laurel procedure declaration and match call-site arguments. -/
 structure FuncSig where
+  /-- The Python name of the function/method. -/
   name : PythonIdentifier
+  /-- If this is a method, the class it belongs to. `none` for top-level functions. -/
   className : Option PythonIdentifier
+  /-- Instance vs static params (receiver separated from ParamList). -/
   params : FuncParams
+  /-- The declared return type annotation (defaults to Any if absent). -/
   returnType : PythonType
+  /-- All local variables in the function body (computed by `computeLocals`). -/
   locals : List (PythonIdentifier × PythonType)
 
+/-- The resolution annotation on each Python AST node.
+    Each variant carries exactly what Translation needs to emit Laurel. -/
 inductive NodeInfo where
+  /-- A variable reference (local, param, or global). -/
   | variable (name : PythonIdentifier)
+  /-- A function/method call site with the callee's full signature. -/
   | funcCall (sig : FuncSig)
+  /-- A function/method declaration site with its signature. -/
   | funcDecl (sig : FuncSig)
+  /-- A class instantiation (`ClassName(...)`) with class name and `__init__` sig. -/
   | classNew (className : PythonIdentifier) (initSig : FuncSig)
+  /-- A class declaration with its fields and method signatures. -/
   | classDecl (name : PythonIdentifier) (attributes : List (PythonIdentifier × PythonType)) (methods : List FuncSig)
+  /-- An attribute access (bare field name; Elaboration resolves via receiver type). -/
   | attribute (name : PythonIdentifier)
+  /-- A `with` item with resolved `__enter__` and `__exit__` signatures. -/
   | withCtx (enterSig : FuncSig) (exitSig : FuncSig)
+  /-- A reference that could not be resolved (unknown name/module). -/
   | unresolved
+  /-- A non-reference node (literals, operators as nodes, etc.). -/
   | irrelevant
 
+/-- The annotation type on resolved AST nodes: source range plus resolution info. -/
 structure ResolvedAnn where
+  /-- Original source location. -/
   sr : SourceRange
+  /-- What Resolution determined about this node. -/
   info : NodeInfo
 
 end
@@ -96,19 +186,44 @@ instance : Inhabited FuncSig where default := { name := default, className := no
 instance : Inhabited NodeInfo where default := .irrelevant
 instance : Inhabited ResolvedAnn where default := { sr := .none, info := .irrelevant }
 
+/-- The output of Resolution: fully-annotated AST plus module-level local list. -/
 structure ResolvedPythonProgram where
+  /-- The resolved top-level statements. -/
   stmts : Array ResolvedPythonStmt
+  /-- Module-level local variables (assignment targets at module scope). -/
   moduleLocals : List (PythonIdentifier × PythonType)
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- Internal Context (Resolution's working state — not exposed to Translation)
--- ═══════════════════════════════════════════════════════════════════════════════
+/-! ## Internal Context
 
+Resolution's working state — NOT exposed to Translation. `Ctx` maps
+`PythonIdentifier` keys to `CtxEntry` values. Keys are bare Python names
+from the AST (no fabricated compound keys like "ClassName@method").
+
+Method lookup goes through `CtxEntry.class_`'s method list, not through
+top-level keys. This prevents name collision between methods of different
+classes with the same name.
+
+Within a class body, the context is extended with:
+- `self` typed as the enclosing class (enables method resolution on `self`)
+- All methods registered under their bare Python names (enables `self.method()` lookup)
+
+Within a function body, the context is extended with:
+- Parameters (a param with no annotation does NOT override a more specific
+  type already in context, e.g. `self` typed by the enclosing class)
+- Locals (Python's scoping rule: any assignment target in the body is function-local)
+- FunctionDef/ClassDef names are NOT included in locals (they're declarations) -/
+
+/-- An entry in Resolution's context. Determines what a `PythonIdentifier` key refers to. -/
 inductive CtxEntry where
+  /-- A function or method with its full signature. -/
   | function (sig : FuncSig)
+  /-- A class with its field list and method signatures. -/
   | class_ (name : PythonIdentifier) (fields : List (PythonIdentifier × PythonType)) (methods : List (PythonIdentifier × FuncSig))
+  /-- A variable with its type annotation. -/
   | variable (ty : PythonType)
+  /-- An imported module (tracked for `module.name` attribute resolution). -/
   | module_ (name : PythonIdentifier)
+  /-- An imported name whose type/kind is unknown. -/
   | unresolved
   deriving Inhabited
 
@@ -129,12 +244,14 @@ def annotationToPythonType (ann : Option PythonExpr) : PythonType :=
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 mutual
+/-- Collects walrus operator (`:=`) targets from comprehension iterables and filters. -/
 partial def collectWalrusFromComprehensions (comps : List (Python.comprehension SourceRange)) : List PythonIdentifier :=
   comps.flatMap fun comp =>
     match comp with
     | .mk_comprehension _ _target iter ifs _isAsync =>
         collectWalrusNames iter ++ ifs.val.toList.flatMap collectWalrusNames
 
+/-- Extracts assigned names from an assignment target (handles tuple/list unpacking, starred). -/
 partial def collectNamesFromTarget (target : PythonExpr) : List PythonIdentifier :=
   match target with
   | .Name _ n _ => [PythonIdentifier.fromAst n]
@@ -145,6 +262,7 @@ partial def collectNamesFromTarget (target : PythonExpr) : List PythonIdentifier
   | .Attribute _ _ _ _ => []
   | e => collectWalrusNames e
 
+/-- Recursively finds all walrus operator (`:=`) targets within an expression tree. -/
 partial def collectWalrusNames (expr : PythonExpr) : List PythonIdentifier :=
   match expr with
   | .NamedExpr _ target _ => collectNamesFromTarget target
@@ -183,6 +301,9 @@ partial def collectWalrusNames (expr : PythonExpr) : List PythonIdentifier :=
   | .Interpolation _ _ _ _ _ => []
 end
 
+/-- Collects all local variable bindings from a statement (assignment targets, for targets,
+    except-as names, with-as names, walrus targets). Recurses into sub-blocks but NOT into
+    nested FunctionDef/ClassDef (those introduce their own scope). -/
 partial def collectLocalsFromStmt (s : PythonStmt) : List (PythonIdentifier × PythonType) :=
   match s with
   | .Assign _ targets value _ =>
@@ -318,6 +439,8 @@ partial def collectLocalsFromStmt (s : PythonStmt) : List (PythonIdentifier × P
   | .TypeAlias _ nameExpr _ _ =>
       (collectNamesFromTarget nameExpr).map fun n => (n, annotationToPythonType none)
 
+/-- Collects names declared `global` or `nonlocal` in a function body (including nested blocks).
+    These are excluded from locals — they refer to enclosing/global scope. -/
 partial def collectGlobalNonlocalNames (s : PythonStmt) : List PythonIdentifier :=
   match s with
   | .Global _ names => names.val.toList.map PythonIdentifier.fromAst
@@ -353,6 +476,9 @@ partial def collectGlobalNonlocalNames (s : PythonStmt) : List PythonIdentifier 
         | .mk_match_case _ _ _ caseBody => caseBody.val.toList.flatMap collectGlobalNonlocalNames
   | _ => []
 
+/-- Python scoping: any assignment target in a function body is local to that function.
+    Collects all such names (excluding params, globals, nonlocals, and nested def/class names),
+    deduplicates preserving first-occurrence order. Used by `extractFuncSig` to populate `FuncSig.locals`. -/
 def computeLocals (body : PythonProgram) (paramNames : List PythonIdentifier)
     : List (PythonIdentifier × PythonType) :=
   let allPairs := body.toList.flatMap collectLocalsFromStmt
@@ -387,9 +513,17 @@ private def hasStaticmethodDecorator (decorators : Array PythonExpr) : Bool :=
     | .Name _ n _ => n.val == "staticmethod"
     | _ => false
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- Python Name → Laurel Name (builtin mapping, applied when minting identifiers)
--- ═══════════════════════════════════════════════════════════════════════════════
+/-! ## Python Name → Laurel Name Mapping
+
+The builtin mapping (`len` → `Any_len_to_Any`), method qualification
+(`get_x` → `Account@get_x`), and module qualification
+(`timedelta` → `datetime_timedelta`) are encoded in accessor functions.
+Translation calls these accessors — it never fabricates Laurel identifiers
+from strings or applies naming conventions itself.
+
+`PythonIdentifier.toLaurel` is identity — bare name to Laurel.Identifier.
+`FuncSig.laurelName` applies the builtin mapping for top-level functions and
+`ClassName@method` qualification for class methods. -/
 
 def pythonNameToLaurel : String → String
   | "len" => "Any_len_to_Any"
@@ -443,13 +577,20 @@ def unaryopToLaurel : Python.unaryop SourceRange → String
 def boolopToLaurel : Python.boolop SourceRange → String
   | .And _ => "PAnd" | .Or _ => "POr"
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- Accessor Functions (Python → Laurel, called by Translation)
--- ═══════════════════════════════════════════════════════════════════════════════
+/-! ## Accessor Functions (Python → Laurel)
 
+Translation calls these to obtain `Laurel.Identifier` values on demand.
+They encode the naming conventions in one place. Translation never
+fabricates identifiers from raw strings — it calls these accessors. -/
+
+/-- Identity: bare Python name → Laurel.Identifier. No mapping applied.
+    Used for variable names, param names, field names, local names. -/
 def PythonIdentifier.toLaurel (id : PythonIdentifier) : Laurel.Identifier :=
   { text := id.val, uniqueId := none }
 
+/-- Produces the Laurel procedure name. Applies builtin mapping for top-level
+    functions (`len` → `Any_len_to_Any`) and class qualification for methods
+    (`get_x` with `className = some "Account"` → `Account@get_x`). -/
 def FuncSig.laurelName (sig : FuncSig) : Laurel.Identifier :=
   match sig.className with
   | some cls => { text := s!"{cls.val}@{sig.name.val}", uniqueId := none }
@@ -458,6 +599,10 @@ def FuncSig.laurelName (sig : FuncSig) : Laurel.Identifier :=
 private def ParamList.allParams (pl : ParamList) : List (PythonIdentifier × PythonType) :=
   pl.required ++ pl.optional.map (fun (n, ty, _) => (n, ty)) ++ pl.kwonly.map (fun (n, ty, _) => (n, ty))
 
+/-- All procedure inputs as `(Laurel.Identifier × PythonType)`. For instance
+    methods, includes the receiver as first element (typed Any). For static
+    functions, just the params. Translation uses this to declare procedure inputs.
+    Inputs are named `$in_X` at the Laurel level (body uses mutable local `X`). -/
 def FuncSig.laurelDeclInputs (sig : FuncSig) : List (Laurel.Identifier × PythonType) :=
   let anyTy : PythonType := .Name SourceRange.none ⟨SourceRange.none, "Any"⟩ (.Load SourceRange.none)
   match sig.params with
@@ -466,6 +611,14 @@ def FuncSig.laurelDeclInputs (sig : FuncSig) : List (Laurel.Identifier × Python
   | .static pl =>
     pl.allParams.map fun (id, ty) => ({ text := id.val, uniqueId := none }, ty)
 
+/-- Zip-fold arg matching. Each param slot is filled in order:
+    1. If a positional arg remains → consume it
+    2. Else if a kwarg matches by name → use it
+    3. Else if a default exists → translate it via `translateDefault`
+    4. Else → panic (Resolution bug: required param without arg)
+
+    Includes receiver slot for instance methods. Lives in Resolution
+    because it accesses private `ParamList` fields and resolved defaults. -/
 def FuncSig.matchArgs [Monad m] [Inhabited (m α)] (sig : FuncSig) (posArgs : List α) (kwargs : List (String × α))
     (translateDefault : ResolvedPythonExpr → m α) : m (List α) := do
   let (receiverSlot, pl) := match sig.params with
@@ -489,9 +642,11 @@ def FuncSig.matchArgs [Monad m] [Inhabited (m α)] (sig : FuncSig) (posArgs : Li
   ) ([], posArgs)
   pure result
 
+/-- Locals as `(Laurel.Identifier × PythonType)` for `LocalVariable` declarations. -/
 def FuncSig.laurelLocals (sig : FuncSig) : List (Laurel.Identifier × PythonType) :=
   sig.locals.map fun (id, ty) => ({ text := id.val, uniqueId := none }, ty)
 
+/-- The receiver's Laurel.Identifier, if this is an instance method. -/
 def FuncSig.laurelReceiver (sig : FuncSig) : Option Laurel.Identifier :=
   match sig.params with
   | .instance recv _ => some { text := recv.val, uniqueId := none }
@@ -512,6 +667,8 @@ private def mkBuiltinSig (pythonName : String) (params : List (String × PythonT
     params := .static { required, optional := [], kwonly := [] },
     returnType := retTy, locals := [] }
 
+/-- The initial context: all Python builtins with their FuncSig (correct arity, param names,
+    return types). Resolution starts from this and extends with user-defined declarations. -/
 def builtinContext : Ctx :=
   let entries : List (PythonIdentifier × CtxEntry) := [
     (.builtin "len", .function (mkBuiltinSig "len" [("obj", anyType)] intType)),
@@ -552,6 +709,10 @@ def builtinContext : Ctx :=
 -- Spine type resolution (chases .Name and .Attribute chains)
 -- ═══════════════════════════════════════════════════════════════════════════════
 
+/-- Spine type resolution: chases `.Name` and `.Attribute` chains to determine the
+    PythonType of an expression. Used for method lookup — if `typeOfExpr ctx receiver`
+    yields a class name, we can look up methods in that class's CtxEntry. Returns `none`
+    for expressions whose type can't be statically determined (most things). -/
 def typeOfExpr (ctx : Ctx) : PythonExpr → Option PythonType
   | .Name _ n _ => match ctx[PythonIdentifier.fromAst n]? with
     | some (.variable ty) => some ty
@@ -569,6 +730,9 @@ def typeOfExpr (ctx : Ctx) : PythonExpr → Option PythonType
     | _ => none
   | _ => none
 
+/-- Resolves `receiver.method(...)` calls. Uses `typeOfExpr` to get the receiver's class,
+    then looks up `methodName` in that class's method list. Returns `.funcCall sig` on success,
+    `.unresolved` if the receiver type is unknown or the method doesn't exist. -/
 private def resolveMethodCall (ctx : Ctx) (receiver : PythonExpr) (methodName : Ann String SourceRange) : NodeInfo :=
   let methId := PythonIdentifier.fromAst methodName
   match typeOfExpr ctx receiver with
@@ -607,6 +771,8 @@ private def mapAnnArr (f : α → β) (mapT : T₁ → T₂) (a : Ann (Array T�
 
 mutual
 
+/-- Extracts a `ParamList` from Python's `arguments` AST node. Resolves default expressions
+    via `resolveExpr` so they carry `ResolvedAnn` annotations for later Translation use. -/
 partial def extractParamList (ctx : Ctx) (f : SourceRange → ResolvedAnn) (args : Python.arguments SourceRange) : ParamList :=
   match args with
   | .mk_arguments _ posonlyargs argList _ kwonlyargs kwDefaults _ defaults =>
@@ -624,6 +790,9 @@ partial def extractParamList (ctx : Ctx) (f : SourceRange → ResolvedAnn) (args
         | .missing_expr _ => (n, ty, none)
       { required, optional, kwonly }
 
+/-- Builds a complete `FuncSig` for a function/method definition. Determines instance vs static
+    (if `className` is set and no `@staticmethod`, first param becomes receiver), computes locals,
+    and stores the resolved param list. This is the single point where FuncSig is created. -/
 partial def extractFuncSig (ctx : Ctx) (f : SourceRange → ResolvedAnn)
     (pythonName : PythonIdentifier) (className : Option PythonIdentifier)
     (args : Python.arguments SourceRange) (decorators : Array PythonExpr)
@@ -641,6 +810,9 @@ partial def extractFuncSig (ctx : Ctx) (f : SourceRange → ResolvedAnn)
       | [] => .static paramList
   { name := pythonName, className, params := funcParams, returnType := retTy, locals }
 
+/-- Builds the body context for resolving statements inside a function. Extends ctx with
+    all params (including vararg/kwarg) and locals. Used by `resolveFuncDef` to create the
+    scope in which the function body is resolved. -/
 partial def resolveFunctionBody (ctx : Ctx) (f : SourceRange → ResolvedAnn) (args : Python.arguments SourceRange) (body : PythonProgram) : Ctx :=
   let pl := extractParamList ctx f args
   let allParams := pl.required ++ pl.optional.map (fun (n, ty, _) => (n, ty)) ++ pl.kwonly.map (fun (n, ty, _) => (n, ty))
@@ -727,6 +899,12 @@ partial def resolveTypeParam (ctx : Ctx) (f : SourceRange → ResolvedAnn) : Pyt
   | .TypeVarTuple a name def_ => .TypeVarTuple (f a) (mapAnnVal f name) (mapAnnOpt f (resolveExpr ctx f) def_)
   | .ParamSpec a name def_ => .ParamSpec (f a) (mapAnnVal f name) (mapAnnOpt f (resolveExpr ctx f) def_)
 
+/-- The core expression resolver. Annotates each expression node with appropriate `NodeInfo`:
+    - `.Name` → look up in ctx, annotate with `.variable`
+    - `.Call` → determine callee (function/class/method), annotate with `.funcCall` or `.classNew`
+    - `.Attribute` → annotate with `.attribute` (bare field name; Elaboration resolves via receiver type)
+    - `.BinOp`/`.UnaryOp`/`.Compare`/`.BoolOp` → create operator FuncSig, annotate with `.funcCall`
+    - Comprehensions → extend ctx with iteration variables before resolving element expression -/
 partial def resolveExpr (ctx : Ctx) (f : SourceRange → ResolvedAnn) (e : PythonExpr) : ResolvedPythonExpr :=
   match e with
   | .Name a n ectx =>
@@ -812,6 +990,9 @@ partial def resolveExpr (ctx : Ctx) (f : SourceRange → ResolvedAnn) (e : Pytho
 partial def resolveAlias (f : SourceRange → ResolvedAnn) : Python.alias SourceRange → Python.alias ResolvedAnn
   | .mk_alias a name asname => .mk_alias (f a) (mapAnnVal f name) (mapAnnOpt f (mapAnnVal f) asname)
 
+/-- Resolves a `with` item: uses `typeOfExpr` on the context expression to find the class,
+    then looks up `__enter__` and `__exit__` in its method list. Annotates with `.withCtx`
+    carrying both sigs so Translation can emit `StaticCall enter [mgr]` / `StaticCall exit [mgr]`. -/
 partial def resolveWithitem (ctx : Ctx) (f : SourceRange → ResolvedAnn) : Python.withitem SourceRange → Python.withitem ResolvedAnn
   | .mk_withitem a ctxExpr optVars =>
       let enterId := PythonIdentifier.builtin "__enter__"
@@ -840,6 +1021,9 @@ partial def resolveExcepthandler (ctx : Ctx) (f : SourceRange → ResolvedAnn) :
 partial def resolveMatchCase (ctx : Ctx) (f : SourceRange → ResolvedAnn) : Python.match_case SourceRange → Python.match_case ResolvedAnn
   | .mk_match_case a pat guard body => .mk_match_case (f a) (sorry) (mapAnnOpt f (resolveExpr ctx f) guard) ⟨f body.ann, resolveBlock ctx f body.val⟩
 
+/-- Resolves an array of statements sequentially, threading the growing context.
+    Each statement may extend the context (e.g., assignments, imports, defs) which
+    subsequent statements in the same block can see. -/
 partial def resolveBlock (ctx : Ctx) (f : SourceRange → ResolvedAnn) (stmts : Array PythonStmt) : Array ResolvedPythonStmt :=
   let (_, resolved) := stmts.foldl (init := (ctx, (#[] : Array ResolvedPythonStmt))) fun acc stmt =>
     let (c, arr) := acc
@@ -847,6 +1031,10 @@ partial def resolveBlock (ctx : Ctx) (f : SourceRange → ResolvedAnn) (stmts : 
     (c', arr.push r)
   resolved
 
+/-- Resolves a function definition. Takes the pre-computed `FuncSig` (from the ClassDef handler
+    or freshly extracted), extends the context with the function name, builds the body context,
+    and resolves the body. Returns the updated ctx and all resolved sub-trees for the caller to
+    assemble into `FunctionDef` or `AsyncFunctionDef`. -/
 partial def resolveFuncDef (ctx : Ctx) (f : SourceRange → ResolvedAnn)
     (sig : FuncSig)
     (a : SourceRange) (name : Ann String SourceRange) (args : Python.arguments SourceRange)
@@ -863,6 +1051,15 @@ partial def resolveFuncDef (ctx : Ctx) (f : SourceRange → ResolvedAnn)
     mapAnnOpt f (mapAnnVal f) tc,
     mapAnnArr f (resolveTypeParam ctx' f) typeParams)
 
+/-- The core statement resolver. Threads the context as accumulator:
+    - `FunctionDef`/`AsyncFunctionDef` → reuses existing sig from ctx if already registered
+      (e.g., by ClassDef's pre-scan), otherwise extracts fresh. Annotates with `.funcDecl`.
+    - `ClassDef` → pre-scans body for fields and methods, registers class in ctx with full
+      method list, resolves body in classCtx (self typed as class, methods visible).
+    - `Import`/`ImportFrom` → extends ctx with module or imported names.
+    - `Assign`/`AnnAssign` → extends ctx with assigned names.
+    - `AugAssign` → annotates with operator sig (`.funcCall`) for Translation.
+    - Control flow → resolves sub-blocks in current ctx (no ctx extension from if/for/while). -/
 partial def resolveStmt (ctx : Ctx) (f : SourceRange → ResolvedAnn) (s : PythonStmt) : Ctx × ResolvedPythonStmt :=
   match s with
   | .FunctionDef a name args body decorators returns tc typeParams =>
@@ -919,7 +1116,9 @@ partial def resolveStmt (ctx : Ctx) (f : SourceRange → ResolvedAnn) (s : Pytho
             let registeredId := match asName.val with
               | some aliasName => PythonIdentifier.fromAst aliasName
               | none => PythonIdentifier.fromAst impName
-            c.insert registeredId CtxEntry.unresolved) ctx
+            match c[registeredId]? with
+            | some _ => c
+            | none => c.insert registeredId CtxEntry.unresolved) ctx
       (ctx', .ImportFrom (f a) (mapAnnOpt f (mapAnnVal f) modName) (mapAnnArr f (resolveAlias f) imports) (mapAnnOpt f (resolveInt f) level))
   | .Assign a targets value tc =>
       let newNames := targets.val.toList.flatMap collectNamesFromTarget
@@ -963,10 +1162,14 @@ partial def resolveStmt (ctx : Ctx) (f : SourceRange → ResolvedAnn) (s : Pytho
       (ctx, .TypeAlias (f a) (resolveExpr ctx f name) (mapAnnArr f (resolveTypeParam ctx f) typeParams) (resolveExpr ctx f value))
 end
 
-def resolve (stmts : PythonProgram) : ResolvedPythonProgram :=
+/-- Entry point: resolves a full Python module. Computes module-level locals, seeds the
+    context with builtins + those locals, then folds `resolveStmt` over all top-level statements.
+    Returns `ResolvedPythonProgram` with fully-annotated AST and module locals list. -/
+def resolve (stmts : PythonProgram) (importedContext : Ctx := {}) : ResolvedPythonProgram :=
   let f : SourceRange → ResolvedAnn := fun sr => { sr, info := .irrelevant }
   let moduleLocals := computeLocals stmts []
-  let initCtx := moduleLocals.foldl (fun c (n, ty) => c.insert n (CtxEntry.variable ty)) builtinContext
+  let baseCtx := importedContext.fold (fun c k v => c.insert k v) builtinContext
+  let initCtx := moduleLocals.foldl (fun c (n, ty) => c.insert n (CtxEntry.variable ty)) baseCtx
   let (_, resolved) := stmts.foldl (init := (initCtx, (#[] : Array ResolvedPythonStmt))) fun acc stmt =>
     let (ctx, arr) := acc
     let (ctx', resolved) := resolveStmt ctx f stmt
