@@ -30,6 +30,7 @@ class BackendConfig:
     system_prompt: str | None = None
     output_format: dict[str, Any] | None = None
     extra: dict[str, Any] | None = None
+    cwd: str | None = None
 
 
 class AgentBackend(ABC):

@@ -74,6 +74,8 @@ class ClaudeBackend(AgentBackend):
             opts_kwargs["output_format"] = config.output_format
         if self._cli_path:
             opts_kwargs["cli_path"] = self._cli_path
+        if config.cwd:
+            opts_kwargs["cwd"] = config.cwd
         if config.extra:
             if "mcp_servers" in config.extra:
                 opts_kwargs["mcp_servers"] = config.extra["mcp_servers"]

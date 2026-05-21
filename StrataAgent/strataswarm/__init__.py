@@ -3,6 +3,7 @@
 from ._agent import SwarmAgent
 from ._backend import AgentBackend, BackendConfig, BackendMessage
 from ._messaging import create_messaging_server
+from ._spawn import create_spawn_server
 from ._channels import Channel, ChannelBus, ChannelMessage
 from ._claude_backend import ClaudeBackend
 from ._result_parsers import (

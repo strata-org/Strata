@@ -44,6 +44,7 @@ class AgentCreateRequest(BaseModel):
     max_turns: int | None = None
     max_budget_usd: float | None = None
     timeout_seconds: float | None = None
+    is_super_agent: bool = False
 
 
 class SwarmConfig(BaseModel):
@@ -386,11 +387,14 @@ class SwarmDashboard:
         self._all_messages = []
         swarm_name = self._swarm_name or "_".join(s.name for s in self._agent_specs[:3]) or "swarm"
         self._swarm_name = swarm_name
+        # Project root is parent of StrataAgent (where relative paths in tool perms resolve)
+        project_root = str(Path(__file__).parent.parent.parent)
         self._swarm = Swarm(
             backend_factory=self._backend_factory,
             enable_messaging=True,
             wait_after_completion=True,
             name=swarm_name,
+            cwd=project_root,
         )
 
         for spec_req in self._agent_specs:
@@ -408,6 +412,7 @@ class SwarmDashboard:
                 max_turns=spec_req.max_turns,
                 max_budget_usd=spec_req.max_budget_usd,
                 timeout_seconds=spec_req.timeout_seconds,
+                is_super_agent=spec_req.is_super_agent,
             )
             self._swarm.add(agent_spec)
 
@@ -443,9 +448,26 @@ class SwarmDashboard:
                     "num_turns": result.num_turns,
                     "halted_by": result.halted_by,
                 }
-            for name in self._swarm._nodes:
+            for name, node in self._swarm._nodes.items():
+                spawned_by = getattr(node.spec, "_spawned_by", None)
                 if name not in agents:
-                    agents[name] = {"name": name, "status": "pending", "session_id": None}
+                    agents[name] = {"name": name, "status": "pending", "session_id": None, "spawned_by": spawned_by}
+                else:
+                    if spawned_by:
+                        agents[name]["spawned_by"] = spawned_by
+                # Include spec info for all running agents (including spawned)
+                agents[name]["spec"] = {
+                    "name": node.spec.name,
+                    "system_prompt": node.spec.system_prompt or "",
+                    "prompt": str(node.spec.prompt),
+                    "allowed_tools": [t.to_claude_format() for t in node.spec.tools.allowed],
+                    "disallowed_tools": [t.to_claude_format() for t in node.spec.tools.disallowed],
+                    "max_turns": node.spec.max_turns,
+                    "max_budget_usd": node.spec.max_budget_usd,
+                    "timeout_seconds": node.spec.timeout_seconds,
+                    "is_super_agent": node.spec.is_super_agent,
+                    "spawned_by": spawned_by,
+                }
 
         SWARM_SAVE_DIR.mkdir(parents=True, exist_ok=True)
         saved_list = [f.stem for f in SWARM_SAVE_DIR.glob("*.yaml")]

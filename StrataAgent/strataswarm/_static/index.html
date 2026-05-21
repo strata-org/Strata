@@ -145,6 +145,10 @@ header h1 { font-size: 18px; color: #4fc3f7; }
       <div><label>Max Budget ($)</label><input type="number" id="agent-max-budget" step="0.01" placeholder="0.50"></div>
       <div><label>Timeout (s)</label><input type="number" id="agent-timeout" placeholder="120"></div>
     </div>
+    <label style="margin-top:12px;display:flex;align-items:center;gap:8px;cursor:pointer;">
+      <input type="checkbox" id="agent-is-super" style="width:auto;">
+      <span>SuperAgent (can spawn sub-agents)</span>
+    </label>
     <div class="modal-actions">
       <button class="btn-modal-cancel" onclick="hideModal()">Cancel</button>
       <button class="btn-modal-add" onclick="addAgent()">Add Agent</button>
@@ -277,7 +281,7 @@ function handleEvent(ev) {
     agentMessages[name].push({ text, type, agent: name, ts: ev.timestamp_ms });
     allMessages.push({ text, type, agent: name, ts: ev.timestamp_ms });
   } else if (ev.event_type === 'status_change') {
-    if (!agents[name]) agents[name] = { name, status: ev.data };
+    if (!agents[name]) agents[name] = { name, status: ev.data, spawned_by: ev.spawned_by || null };
     else agents[name].status = ev.data;
     agentMessages[name].push({ text: `status: ${ev.data}`, type: 'status', agent: name, ts: ev.timestamp_ms });
     allMessages.push({ text: `[${name}] status: ${ev.data}`, type: 'status', agent: name, ts: ev.timestamp_ms });
@@ -315,7 +319,7 @@ function renderSidebar() {
     el.innerHTML = specs.map(s => `
       <div class="agent-item ${s.name === selectedAgent ? 'active' : ''}" onclick="selectAgent('${escapeAttr(s.name)}')">
         <div class="name" style="display:flex;justify-content:space-between;align-items:center;">
-          <span>${escapeHtml(s.name)} <span class="badge badge-draft">draft</span></span>
+          <span>${escapeHtml(s.name)} <span class="badge badge-draft">draft</span>${s.is_super_agent ? ' <span class="badge" style="background:#ff6f00;color:white;">super</span>' : ''}</span>
           <span>
             <button onclick="event.stopPropagation();editAgent('${escapeAttr(s.name)}')" style="padding:2px 6px;border:none;border-radius:3px;background:#0288d1;color:white;font-size:10px;cursor:pointer;margin-right:3px;">Edit</button>
             <button onclick="event.stopPropagation();removeAgent('${escapeAttr(s.name)}')" style="padding:2px 6px;border:none;border-radius:3px;background:#b71c1c;color:#ef9a9a;font-size:10px;cursor:pointer;">X</button>
@@ -343,9 +347,10 @@ function renderSidebar() {
     el.innerHTML = Object.values(agents).map(a => {
       const alive = a.last_heartbeat && (Date.now() - a.last_heartbeat < 8000) && a.status === 'running';
       const pulse = alive ? '<span style="display:inline-block;width:6px;height:6px;background:#00c853;border-radius:50%;margin-left:6px;animation:pulse 1s infinite;"></span>' : '';
+      const subBadge = a.spawned_by ? ` <span class="badge" style="background:#455a64;color:#b0bec5;">sub:${escapeHtml(a.spawned_by)}</span>` : '';
       return `
-      <div class="agent-item ${a.name === selectedAgent ? 'active' : ''}" onclick="selectAgent('${escapeAttr(a.name)}')">
-        <div class="name">${escapeHtml(a.name)} <span class="badge badge-${a.status || 'pending'}">${a.status || 'pending'}</span>${pulse}</div>
+      <div class="agent-item ${a.name === selectedAgent ? 'active' : ''}" onclick="selectAgent('${escapeAttr(a.name)}')" ${a.spawned_by ? 'style="padding-left:28px;border-left:2px solid #455a64;"' : ''}>
+        <div class="name">${escapeHtml(a.name)} <span class="badge badge-${a.status || 'pending'}">${a.status || 'pending'}</span>${subBadge}${pulse}</div>
         <div class="meta">${formatCost(a)} ${a.num_turns ? a.num_turns + ' turns' : ''} ${a.halted_by && a.halted_by !== 'completion' ? '(' + a.halted_by + ')' : ''}</div>
       </div>`;
     }).join('');
@@ -399,7 +404,11 @@ function renderMessages() {
   }
 
   if (currentView === 'spec') {
-    const spec = specs.find(s => s.name === selectedAgent);
+    // Look in original specs first, then in live agent data (for spawned sub-agents)
+    let spec = specs.find(s => s.name === selectedAgent);
+    if (!spec && agents[selectedAgent] && agents[selectedAgent].spec) {
+      spec = agents[selectedAgent].spec;
+    }
     if (!spec) {
       el.innerHTML = '<div class="empty">Select an agent to view its spec</div>';
       return;
@@ -429,6 +438,8 @@ function renderMessages() {
           <div style="font-size:12px;color:#aaa;">Max turns: <strong>${spec.max_turns || 'unlimited'}</strong></div>
           <div style="font-size:12px;color:#aaa;">Budget: <strong>${spec.max_budget_usd ? '$' + spec.max_budget_usd : 'unlimited'}</strong></div>
           <div style="font-size:12px;color:#aaa;">Timeout: <strong>${spec.timeout_seconds ? spec.timeout_seconds + 's' : 'none'}</strong></div>
+          ${spec.is_super_agent ? '<div style="font-size:12px;color:#ff6f00;"><strong>SuperAgent</strong></div>' : ''}
+          ${spec.spawned_by ? '<div style="font-size:12px;color:#90a4ae;">Spawned by: <strong>' + escapeHtml(spec.spawned_by) + '</strong></div>' : ''}
         </div>
       </div>`;
     return;
@@ -497,6 +508,7 @@ function editAgent(name) {
   document.getElementById('agent-max-turns').value = spec.max_turns || '';
   document.getElementById('agent-max-budget').value = spec.max_budget_usd || '';
   document.getElementById('agent-timeout').value = spec.timeout_seconds || '';
+  document.getElementById('agent-is-super').checked = spec.is_super_agent || false;
   // Remove the old one, then show modal (re-adding will create updated version)
   wsSend({ action: 'remove_agent', agent: name });
   showAddAgent();
@@ -554,12 +566,14 @@ function addAgent() {
   const maxTurns = parseInt(document.getElementById('agent-max-turns').value) || null;
   const maxBudget = parseFloat(document.getElementById('agent-max-budget').value) || null;
   const timeout = parseFloat(document.getElementById('agent-timeout').value) || null;
+  const isSuper = document.getElementById('agent-is-super').checked;
   if (!name || !systemPrompt || !prompt) { alert('Name, system prompt, and task prompt are required.'); return; }
-  const spec = { name, system_prompt: systemPrompt, prompt, allowed_tools: allowed, disallowed_tools: disallowed, max_turns: maxTurns, max_budget_usd: maxBudget, timeout_seconds: timeout };
+  const spec = { name, system_prompt: systemPrompt, prompt, allowed_tools: allowed, disallowed_tools: disallowed, max_turns: maxTurns, max_budget_usd: maxBudget, timeout_seconds: timeout, is_super_agent: isSuper };
   wsSend({ action: 'add_agent', spec });
   hideModal();
   // Clear form
   ['agent-name','agent-system-prompt','agent-prompt','agent-allowed-tools','agent-disallowed-tools','agent-max-turns','agent-max-budget','agent-timeout'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('agent-is-super').checked = false;
 }
 
 // Save/Load Swarm

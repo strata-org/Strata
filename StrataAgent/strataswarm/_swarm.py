@@ -9,6 +9,7 @@ from ._agent import EventCallback, SwarmAgent
 from ._backend import AgentBackend
 from ._channels import ChannelBus
 from ._messaging import create_messaging_server
+from ._spawn import create_spawn_server
 from ._tokens import CancellationToken, PauseToken
 from ._types import AgentEvent, AgentResult, AgentSpec, AgentStatus, SwarmContext
 
@@ -34,6 +35,7 @@ class Swarm:
         enable_messaging: bool = True,
         wait_after_completion: bool = False,
         name: str = "",
+        cwd: str | None = None,
     ) -> None:
         self._nodes: dict[str, AgentNode] = {}
         self._results: dict[str, AgentResult[Any]] = {}
@@ -45,6 +47,7 @@ class Swarm:
         self._backend_factory = backend_factory
         self._event_callback: EventCallback | None = None
         self._enable_messaging = enable_messaging
+        self._cwd = cwd
         self._wait_after_completion = wait_after_completion
         self._name = name
 
@@ -152,8 +155,18 @@ class Swarm:
                 f"'to' must be one of: {', '.join(other_agents)}.\n"
                 if other_agents else ""
             )
+            cwd_note = (
+                f"Project root: {self._cwd}\n"
+                f"CRITICAL: When using Read, Edit, or Write tools, ALWAYS use RELATIVE paths "
+                f"(e.g. 'src/module/file.ext'). "
+                f"NEVER use absolute paths starting with /. "
+                f"The tools resolve paths from the project root automatically.\n"
+            ) if self._cwd else ""
             messaging_suffix = (
-                f"\n\n=== MESSAGING ===\n"
+                f"\n\n=== ENVIRONMENT ===\n"
+                f"{cwd_note}"
+                f"===================\n"
+                f"\n=== MESSAGING ===\n"
                 f"Your agent name is '{name}'.\n"
                 f"You have tools to communicate with other agents and the user:\n"
                 f"{agents_note}"
@@ -168,6 +181,28 @@ class Swarm:
                 f"Polling wastes budget and is strictly forbidden.\n"
                 f"================="
             )
+
+            # SuperAgent: inject spawn_agent tool
+            if node.spec.is_super_agent:
+                spawn_server = create_spawn_server(
+                    parent_name=name,
+                    parent_spec=node.spec,
+                    channel_bus=self._channel_bus,
+                    swarm=self,
+                )
+                mcp_servers["agent_spawn"] = spawn_server
+                messaging_suffix += (
+                    f"\n\n=== SUPER AGENT ===\n"
+                    f"You are a SuperAgent. You can spawn sub-agents using:\n"
+                    f"- spawn_agent(name, system_prompt, prompt, max_budget_usd, max_turns, timeout_seconds)\n"
+                    f"- sleep(seconds): Sleep for 5-300 seconds. Use this to control your polling interval. "
+                    f"Sleep longer (60-120s) when sub-agents need time, shorter (10-15s) when expecting results soon.\n\n"
+                    f"Sub-agents inherit your exact tool permissions. "
+                    f"You set their name, system prompt, task prompt, and budget (<= yours). "
+                    f"They join the swarm and can communicate via messaging.\n"
+                    f"You will be nudged every 30s if idle. Use sleep() to override this interval.\n"
+                    f"==================="
+                )
 
             combined_system_prompt = node.spec.system_prompt + messaging_suffix
         else:
@@ -186,6 +221,7 @@ class Swarm:
             wait_after_completion=self._wait_after_completion,
             backend_factory=self._backend_factory,
             swarm_name=self._name,
+            cwd=self._cwd,
         )
 
         result = await agent.run()

@@ -39,6 +39,7 @@ class AgentSpec(Generic[T]):
     system_prompt: str | None = None
     mcp_servers: dict[str, Any] = field(default_factory=dict)
     inbox_channel: str | None = None
+    is_super_agent: bool = False
 
 
 @dataclass

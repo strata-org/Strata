@@ -36,6 +36,7 @@ class SwarmAgent(Generic[T]):
         wait_after_completion: bool = False,
         backend_factory: Any = None,
         swarm_name: str = "",
+        cwd: str | None = None,
     ) -> None:
         self.spec = spec
         self.backend = backend
@@ -50,6 +51,7 @@ class SwarmAgent(Generic[T]):
         self._wait_after_completion = wait_after_completion
         self._backend_factory = backend_factory
         self._swarm_name = swarm_name
+        self._cwd = cwd
         self._last_emit_time = time.monotonic()
 
     async def _emit(self, event_type: str, data: Any = None) -> None:
@@ -147,6 +149,15 @@ class SwarmAgent(Generic[T]):
         system_prompt = self._system_prompt_override or self.spec.system_prompt
 
         allowed_tools = self.spec.tools.to_claude_allowed()
+        disallowed_tools = self.spec.tools.to_claude_disallowed()
+
+        # If agent has Edit or Write in allowed_tools, use acceptEdits mode
+        # (path-scoped Edit/Write only work via acceptEdits, not via --allowedTools)
+        has_write_tools = any(
+            t.startswith("Edit") or t.startswith("Write")
+            for t in allowed_tools
+        )
+        permission_mode = "acceptEdits" if has_write_tools else self.spec.permission_mode
 
         if mcp_servers and "agent_messaging" in mcp_servers:
             allowed_tools = allowed_tools + [
@@ -154,17 +165,24 @@ class SwarmAgent(Generic[T]):
                 "mcp__agent_messaging__check_messages",
                 "mcp__agent_messaging__get_time",
             ]
+        if mcp_servers and "agent_spawn" in mcp_servers:
+            allowed_tools = allowed_tools + [
+                "mcp__agent_spawn__spawn_agent",
+                "mcp__agent_spawn__check_sub_agents",
+                "mcp__agent_spawn__sleep",
+            ]
 
         return BackendConfig(
             allowed_tools=allowed_tools,
-            disallowed_tools=self.spec.tools.to_claude_disallowed(),
-            permission_mode=self.spec.permission_mode,
+            disallowed_tools=disallowed_tools,
+            permission_mode=permission_mode,
             max_turns=self.spec.max_turns,
             max_budget_usd=self.spec.max_budget_usd,
             model=self.spec.model,
             system_prompt=system_prompt,
             output_format=output_format,
             extra={"mcp_servers": mcp_servers} if mcp_servers else None,
+            cwd=self._cwd,
         )
 
     async def run(self) -> AgentResult[T]:
@@ -333,22 +351,56 @@ class SwarmAgent(Generic[T]):
                     break
 
                 # Enter waiting state
+                is_super = self.spec.is_super_agent
                 result.status = AgentStatus.COMPLETED
                 await self._emit("status_change", AgentStatus.COMPLETED.value)
-                await self._emit("message", "[Waiting for messages or cancellation...]")
+                await self._emit("message",
+                    "[Polling every 30s for sub-agent updates...]" if is_super
+                    else "[Waiting for messages or cancellation...]"
+                )
 
                 while not self.cancellation.is_cancelled:
                     messages_ch = self.channel_bus.get_or_create(f"{self.spec.name}:messages")
-                    msg = await messages_ch.receive(timeout=1.0)
-                    if msg:
-                        result.status = AgentStatus.RUNNING
-                        await self._emit("status_change", AgentStatus.RUNNING.value)
-                        ts = datetime.now().strftime("%H:%M:%S")
-                        injection = f"[{ts}] [From {msg.sender}]: {msg.payload}"
-                        logger.info(f"[WAKE] {self.spec.name}: from '{msg.sender}'")
-                        await self.backend.send_query(injection)
-                        await self._emit("message", injection)
-                        break
+
+                    if is_super:
+                        # SuperAgent: eager poll — check messages with 30s timeout
+                        # If nothing arrives in 30s, nudge with time so it can check sub-agents
+                        msg = await messages_ch.receive(timeout=30.0)
+                        if msg:
+                            result.status = AgentStatus.RUNNING
+                            await self._emit("status_change", AgentStatus.RUNNING.value)
+                            ts = datetime.now().strftime("%H:%M:%S")
+                            injection = f"[{ts}] [From {msg.sender}]: {msg.payload}"
+                            logger.info(f"[WAKE] {self.spec.name}: from '{msg.sender}'")
+                            await self.backend.send_query(injection)
+                            await self._emit("message", injection)
+                            break
+                        else:
+                            # No message in 30s — nudge the super agent with current time
+                            result.status = AgentStatus.RUNNING
+                            await self._emit("status_change", AgentStatus.RUNNING.value)
+                            ts = datetime.now().strftime("%H:%M:%S")
+                            nudge = (
+                                f"[{ts}] [HEARTBEAT]: 30s elapsed. No new messages. "
+                                f"Check on your sub-agents — use check_messages to see if "
+                                f"any have reported back, or use get_time to track progress."
+                            )
+                            logger.debug(f"[POLL] {self.spec.name}: 30s heartbeat nudge")
+                            await self.backend.send_query(nudge)
+                            await self._emit("message", nudge)
+                            break
+                    else:
+                        # Regular agent: passive wait
+                        msg = await messages_ch.receive(timeout=1.0)
+                        if msg:
+                            result.status = AgentStatus.RUNNING
+                            await self._emit("status_change", AgentStatus.RUNNING.value)
+                            ts = datetime.now().strftime("%H:%M:%S")
+                            injection = f"[{ts}] [From {msg.sender}]: {msg.payload}"
+                            logger.info(f"[WAKE] {self.spec.name}: from '{msg.sender}'")
+                            await self.backend.send_query(injection)
+                            await self._emit("message", injection)
+                            break
                 else:
                     result.halted_by = "cancelled"
                     result.status = AgentStatus.CANCELLED

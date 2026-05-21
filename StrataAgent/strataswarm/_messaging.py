@@ -29,8 +29,7 @@ def create_messaging_server(
     @tool(
         name="send_message",
         description=(
-            "Send a message to another agent. The message will appear in their inbox. "
-            f"Available agents: {', '.join(known_agents)}. "
+            "Send a message to another agent by name. The message will appear in their inbox. "
             "Use this to coordinate, request information, or respond to other agents."
         ),
         input_schema={
@@ -38,7 +37,7 @@ def create_messaging_server(
             "properties": {
                 "to": {
                     "type": "string",
-                    "description": f"Name of the recipient agent. One of: {', '.join(known_agents)}",
+                    "description": "Name of the recipient agent.",
                 },
                 "message": {
                     "type": "string",
@@ -55,9 +54,8 @@ def create_messaging_server(
         if recipient == agent_name:
             return {"content": [{"type": "text", "text": "ERROR: Cannot send a message to yourself."}]}
 
-        if recipient not in known_agents:
-            return {"content": [{"type": "text", "text": f"ERROR: Unknown agent '{recipient}'. Known agents: {', '.join(known_agents)}"}]}
-
+        # Allow sending to any agent (including dynamically spawned ones)
+        # The known_agents list is just for the tool description hint
         messages_channel = f"{recipient}:messages"
         await channel_bus.send_to(messages_channel, sender=agent_name, payload=message)
         return {"content": [{"type": "text", "text": f"Message sent to '{recipient}' successfully."}]}
