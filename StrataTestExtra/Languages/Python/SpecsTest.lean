@@ -31,6 +31,8 @@ function "dict_function" {
   ]
   postconditions: [
   ]
+  snapshots: [
+  ]
 }
 function "list_function" {
   args: [
@@ -43,6 +45,8 @@ function "list_function" {
   preconditions: [
   ]
   postconditions: [
+  ]
+  snapshots: [
   ]
 }
 function "sequence_function" {
@@ -57,6 +61,8 @@ function "sequence_function" {
   ]
   postconditions: [
   ]
+  snapshots: [
+  ]
 }
 function "base_function"{
   args: [
@@ -70,6 +76,8 @@ function "base_function"{
   ]
   postconditions: [
   ]
+  snapshots: [
+  ]
 }
 class "MainClass" {
   bases: []
@@ -77,6 +85,8 @@ class "MainClass" {
   classVars: []
   subclasses: []
   exhaustive: false
+  invariants: [
+  ]
   function "main_method"{
     args: [
       self : ident("main.MainClass") [default: ]
@@ -89,6 +99,8 @@ class "MainClass" {
     preconditions: [
     ]
     postconditions: [
+    ]
+    snapshots: [
     ]
   }
 }
@@ -104,6 +116,8 @@ function "main_function"{
   ]
   postconditions: [
   ]
+  snapshots: [
+  ]
 }
 function "kwargs_function"{
   args: [
@@ -118,6 +132,8 @@ function "kwargs_function"{
     ensure(kw[count] >=_int 1, "Expected count >= 1")
   ]
   postconditions: [
+  ]
+  snapshots: [
   ]
 }
 type "TestRequest" = dict(
@@ -147,6 +163,8 @@ function "fstring_and_regex"{
   ]
   postconditions: [
   ]
+  snapshots: [
+  ]
 }
 type "FloatRequest" = dict(
   SampleSize : ident("builtins.float") [required=false]
@@ -175,6 +193,8 @@ function "float_and_negative_bounds"{
   ]
   postconditions: [
   ]
+  snapshots: [
+  ]
 }
 class "InnerHelper" {
   bases: []
@@ -182,6 +202,8 @@ class "InnerHelper" {
   classVars: []
   subclasses: []
   exhaustive: false
+  invariants: [
+  ]
 }
 class "ClassWithInit" {
   bases: []
@@ -196,6 +218,8 @@ class "ClassWithInit" {
       classVars: []
       subclasses: []
       exhaustive: false
+      invariants: [
+      ]
       function "do_work"{
         args: [
           self : ident("main._InnerHelper") [default: ]
@@ -208,10 +232,29 @@ class "ClassWithInit" {
         ]
         postconditions: [
         ]
+        snapshots: [
+        ]
       }
     }
   ]
   exhaustive: false
+  invariants: [
+  ]
+  function "__init__"{
+    args: [
+      self : ident("main.ClassWithInit") [default: ]
+    ]
+    kwonly: [
+    ]
+    return: ident("typing.Any")
+    overload: false
+    preconditions: [
+    ]
+    postconditions: [
+    ]
+    snapshots: [
+    ]
+  }
 }
 #end
 
@@ -291,6 +334,125 @@ meta def warningTestCase : IO Unit := withPython fun pythonCmd => do
 
 #guard_msgs in
 #eval warningTestCase
+
+/-! ## icontract decorator tests
+
+Table-driven end-to-end tests for `@icontract.{require,ensure,
+invariant,snapshot}` and `OLD.<name>`. Each row pairs a fixture
+under `Specs/icontract_cases/` with a check on the translation
+result. -/
+
+private meta structure CaseResult where
+  sigs     : Array Specs.Signature := #[]
+  warnings : Array String := #[]
+  error?   : Option String := none
+
+private meta abbrev Check := CaseResult → IO Unit
+
+private meta def fail {α} (msg : String) : IO α := throw (.userError msg)
+
+private meta def CaseResult.expectOk (r : CaseResult) : IO Unit := do
+  if let some e := r.error? then fail s!"unexpected translation error: {e}"
+  unless r.warnings.isEmpty do
+    fail s!"unexpected warnings:\n  {"\n  ".intercalate r.warnings.toList}"
+
+private meta def CaseResult.expectWarn (r : CaseResult) (needle : String) : IO Unit := do
+  if let some e := r.error? then fail s!"unexpected translation error: {e}"
+  unless r.warnings.any (containsSubstr · needle) do
+    fail s!"expected warning containing \"{needle}\", got:\n  {"\n  ".intercalate r.warnings.toList}"
+
+private meta def CaseResult.expectErr (r : CaseResult) (needle : String) : IO Unit := do
+  let some e := r.error?
+    | fail "expected translation error, but it succeeded"
+  unless containsSubstr e needle do
+    fail s!"expected error containing \"{needle}\", got:\n{e}"
+
+private meta def CaseResult.fn (r : CaseResult) (name : String) : IO Specs.FunctionDecl :=
+  match r.sigs.findSome? (fun | .functionDecl f => if f.name == name then some f else none | _ => none) with
+  | some f => pure f
+  | none   => fail s!"function `{name}` not found"
+
+private meta def CaseResult.cls (r : CaseResult) (name : String) : IO Specs.ClassDef :=
+  match r.sigs.findSome? (fun | .classDef c => if c.name == name then some c else none | _ => none) with
+  | some c => pure c
+  | none   => fail s!"class `{name}` not found"
+
+private meta def methodOf (c : Specs.ClassDef) (name : String) : IO Specs.FunctionDecl :=
+  match c.methods.find? (·.name == name) with
+  | some m => pure m
+  | none   => fail s!"method `{name}` not found"
+
+/-- `expectSize n what xs`: throw if `xs.size ≠ n`, naming `what` in
+    the error. Used for precondition / postcondition / invariant /
+    snapshot count assertions. -/
+private meta def expectSize {α} (n : Nat) (what : String) (xs : Array α) : IO Unit :=
+  unless xs.size = n do
+    fail s!"expected {n} {what}, got {xs.size}"
+
+private meta def fnPreCount (name : String) (n : Nat) : Check := fun r => do
+  r.expectOk
+  expectSize n s!"preconditions on {name}" (← r.fn name).preconditions
+
+private meta def fnPostCount (name : String) (n : Nat) : Check := fun r => do
+  r.expectOk
+  expectSize n s!"postconditions on {name}" (← r.fn name).postconditions
+
+private meta def clsInvariantCount (name : String) (n : Nat) : Check := fun r => do
+  r.expectOk
+  expectSize n s!"invariants on class {name}" (← r.cls name).invariants
+
+private meta def methodSnapshotNames (cls method : String) (names : List String) : Check := fun r => do
+  r.expectOk
+  let m ← methodOf (← r.cls cls) method
+  expectSize names.length s!"snapshots on {cls}.{method}" m.snapshots
+  let actual := m.snapshots.toList.map (·.name)
+  unless names.all actual.contains do
+    fail s!"expected snapshots {names}; got {actual}"
+
+private meta def icontractCases : List (String × Check) := [
+  ("require_basic.py",            fnPreCount  "f" 1),
+  ("require_multiple.py",         fnPreCount  "g" 2),
+  ("require_bad_binder.py",       (·.expectWarn "does not match any function parameter")),
+  ("ensure_basic.py",             fnPostCount "f" 1),
+  ("ensure_multiple.py",          fnPostCount "f" 2),
+  ("invariant_basic.py",          clsInvariantCount "C" 1),
+  ("invariant_multiple.py",       clsInvariantCount "C" 2),
+  ("invariant_bad_binder.py",     fun r => do
+      r.expectWarn "lambda binder must be 'self'"
+      expectSize 0 "invariants on class C" (← r.cls "C").invariants),
+  ("snapshot_basic.py",           methodSnapshotNames "C" "m" ["v0"]),
+  ("snapshot_multiple.py",        methodSnapshotNames "C" "step" ["x0", "y0"]),
+  ("snapshot_missing_name.py",    (·.expectErr  "requires a name= keyword argument")),
+  ("snapshot_duplicate_name.py",  (·.expectErr  "duplicate name=")),
+  ("ensure_with_old_ref.py",      fun r => do
+      r.expectOk
+      let m ← methodOf (← r.cls "C") "grow"
+      expectSize 1 "snapshots on C.grow" m.snapshots
+      expectSize 1 "postconditions on C.grow" m.postconditions),
+  ("old_undeclared.py",           (·.expectWarn "no @icontract.snapshot named")),
+  ("init_with_ensure.py",         fun r => do
+      r.expectOk
+      expectSize 1 "postconditions on C.__init__"
+        (← methodOf (← r.cls "C") "__init__").postconditions)
+]
+
+private meta def runIcontractCase (pythonCmd : System.FilePath)
+    (filename : String) (check : Check) : IO Unit := do
+  IO.FS.withTempFile fun _ dialectFile => do
+    IO.FS.writeBinFile dialectFile Strata.Python.Python.toIon
+    IO.FS.withTempDir fun strataDir => do
+      let r ← (translateFile (pythonCmd := toString pythonCmd) (dialectFile := dialectFile)
+                (strataDir := strataDir) (pythonFile := testDir / "icontract_cases" / filename)
+                (searchPath := testDir)).toBaseIO
+      let result : CaseResult := match r with
+        | .ok (sigs, warnings) => { sigs, warnings }
+        | .error e             => { error? := some e }
+      try check result catch e => fail s!"[{filename}] {e}"
+
+meta def icontractCasesTest : IO Unit := withPython fun pythonCmd =>
+  icontractCases.forM fun (filename, check) => runIcontractCase pythonCmd filename check
+#guard_msgs in
+#eval icontractCasesTest
 
 
 meta def testNegRoundTrip (v : Nat) : Bool :=
