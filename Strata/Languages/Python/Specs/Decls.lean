@@ -387,6 +387,8 @@ def asIdent (tp : SpecType) : Option PythonIdent := do
 
 def isIntType (tp : SpecType) : Bool := tp.asIdent == some .builtinsInt
 
+def isAnyType (tp : SpecType) : Bool := tp.asIdent == some .typingAny
+
 def isFloatType (tp : SpecType) : Bool := tp.asIdent == some .builtinsFloat
 
 def isStringType (tp : SpecType) : Bool := tp.asIdent == some .builtinsStr
@@ -488,10 +490,18 @@ inductive SpecExpr where
 | intLit (value : Int) (loc : SourceRange)
 | intGe (subject : SpecExpr) (bound : SpecExpr) (loc : SourceRange)
 | intLe (subject : SpecExpr) (bound : SpecExpr) (loc : SourceRange)
+| intGt (subject : SpecExpr) (bound : SpecExpr) (loc : SourceRange)
+| intLt (subject : SpecExpr) (bound : SpecExpr) (loc : SourceRange)
+| intEq (lhs : SpecExpr) (rhs : SpecExpr) (loc : SourceRange)
+| intNe (lhs : SpecExpr) (rhs : SpecExpr) (loc : SourceRange)
 /-- A floating-point literal, stored as a string to preserve precision. -/
 | floatLit (value : String) (loc : SourceRange)
 | floatGe (subject : SpecExpr) (bound : SpecExpr) (loc : SourceRange)
 | floatLe (subject : SpecExpr) (bound : SpecExpr) (loc : SourceRange)
+| floatGt (subject : SpecExpr) (bound : SpecExpr) (loc : SourceRange)
+| floatLt (subject : SpecExpr) (bound : SpecExpr) (loc : SourceRange)
+| floatEq (lhs : SpecExpr) (rhs : SpecExpr) (loc : SourceRange)
+| floatNe (lhs : SpecExpr) (rhs : SpecExpr) (loc : SourceRange)
 | enumMember (subject : SpecExpr) (values : Array String) (loc : SourceRange)
 /-- `regexMatch subject pattern` asserts that `subject` matches the regular
     expression `pattern`. Corresponds to `compile(pattern).search(subject) is not None`
@@ -525,9 +535,17 @@ def SpecExpr.softBEq : SpecExpr → SpecExpr → Bool
   | .intLit v₁ _, .intLit v₂ _ => v₁ == v₂
   | .intGe s₁ b₁ _, .intGe s₂ b₂ _ => s₁.softBEq s₂ && b₁.softBEq b₂
   | .intLe s₁ b₁ _, .intLe s₂ b₂ _ => s₁.softBEq s₂ && b₁.softBEq b₂
+  | .intGt s₁ b₁ _, .intGt s₂ b₂ _ => s₁.softBEq s₂ && b₁.softBEq b₂
+  | .intLt s₁ b₁ _, .intLt s₂ b₂ _ => s₁.softBEq s₂ && b₁.softBEq b₂
+  | .intEq a₁ b₁ _, .intEq a₂ b₂ _ => a₁.softBEq a₂ && b₁.softBEq b₂
+  | .intNe a₁ b₁ _, .intNe a₂ b₂ _ => a₁.softBEq a₂ && b₁.softBEq b₂
   | .floatLit v₁ _, .floatLit v₂ _ => v₁ == v₂
   | .floatGe s₁ b₁ _, .floatGe s₂ b₂ _ => s₁.softBEq s₂ && b₁.softBEq b₂
   | .floatLe s₁ b₁ _, .floatLe s₂ b₂ _ => s₁.softBEq s₂ && b₁.softBEq b₂
+  | .floatGt s₁ b₁ _, .floatGt s₂ b₂ _ => s₁.softBEq s₂ && b₁.softBEq b₂
+  | .floatLt s₁ b₁ _, .floatLt s₂ b₂ _ => s₁.softBEq s₂ && b₁.softBEq b₂
+  | .floatEq a₁ b₁ _, .floatEq a₂ b₂ _ => a₁.softBEq a₂ && b₁.softBEq b₂
+  | .floatNe a₁ b₁ _, .floatNe a₂ b₂ _ => a₁.softBEq a₂ && b₁.softBEq b₂
   | .enumMember s₁ v₁ _, .enumMember s₂ v₂ _ => s₁.softBEq s₂ && v₁ == v₂
   | .regexMatch s₁ p₁ _, .regexMatch s₂ p₂ _ => s₁.softBEq s₂ && p₁ == p₂
   | .containsKey c₁ k₁ _, .containsKey c₂ k₂ _ => c₁.softBEq c₂ && k₁ == k₂

@@ -340,6 +340,26 @@ def specExprToLaurel (e : SpecExpr) (source : Option FileRange)
     let s ← asAny loc <| specExprToLaurel subject src
     let b ← asAny loc <| specExprToLaurel bound src
     return .mkSome <| .intLeq (.anyAsInt s) (.anyAsInt b)
+  | .intGt subject bound loc => do
+    let src ← nodeSource loc
+    let s ← asAny loc <| specExprToLaurel subject src
+    let b ← asAny loc <| specExprToLaurel bound src
+    return .mkSome <| .intGt (.anyAsInt s) (.anyAsInt b)
+  | .intLt subject bound loc => do
+    let src ← nodeSource loc
+    let s ← asAny loc <| specExprToLaurel subject src
+    let b ← asAny loc <| specExprToLaurel bound src
+    return .mkSome <| .intLt (.anyAsInt s) (.anyAsInt b)
+  | .intEq lhs rhs loc => do
+    let src ← nodeSource loc
+    let l ← asAny loc <| specExprToLaurel lhs src
+    let r ← asAny loc <| specExprToLaurel rhs src
+    return .mkSome <| .intEq (.anyAsInt l) (.anyAsInt r)
+  | .intNe lhs rhs loc => do
+    let src ← nodeSource loc
+    let l ← asAny loc <| specExprToLaurel lhs src
+    let r ← asAny loc <| specExprToLaurel rhs src
+    return .mkSome <| .intNe (.anyAsInt l) (.anyAsInt r)
   | .floatGe subject bound loc => do
     let src ← nodeSource loc
     let s ← asAny loc <| specExprToLaurel subject src
@@ -350,6 +370,26 @@ def specExprToLaurel (e : SpecExpr) (source : Option FileRange)
     let s ← asAny loc <| specExprToLaurel subject src
     let b ← asAny loc <| specExprToLaurel bound src
     return .mkSome <| .realLeq (.anyAsFloat s) (.anyAsFloat b)
+  | .floatGt subject bound loc => do
+    let src ← nodeSource loc
+    let s ← asAny loc <| specExprToLaurel subject src
+    let b ← asAny loc <| specExprToLaurel bound src
+    return .mkSome <| .realGt (.anyAsFloat s) (.anyAsFloat b)
+  | .floatLt subject bound loc => do
+    let src ← nodeSource loc
+    let s ← asAny loc <| specExprToLaurel subject src
+    let b ← asAny loc <| specExprToLaurel bound src
+    return .mkSome <| .realLt (.anyAsFloat s) (.anyAsFloat b)
+  | .floatEq lhs rhs loc => do
+    let src ← nodeSource loc
+    let l ← asAny loc <| specExprToLaurel lhs src
+    let r ← asAny loc <| specExprToLaurel rhs src
+    return .mkSome <| .realEq (.anyAsFloat l) (.anyAsFloat r)
+  | .floatNe lhs rhs loc => do
+    let src ← nodeSource loc
+    let l ← asAny loc <| specExprToLaurel lhs src
+    let r ← asAny loc <| specExprToLaurel rhs src
+    return .mkSome <| .realNe (.anyAsFloat l) (.anyAsFloat r)
   | .not inner loc => do
     let src ← nodeSource loc
     let i ← asBool loc <| specExprToLaurel inner src

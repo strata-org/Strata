@@ -802,7 +802,10 @@ private def makeComparison
   else if subjType.isIntType then
     match bound with
     | .intLit .. => some (intCtor subj bound)
-    | _ => none
+    | _ =>
+      -- subj is int, bound is int- or Any-typed (a parameter etc.) →
+      -- use the int comparison constructor.
+      if boundType.isIntType || boundType.isAnyType then some (intCtor subj bound) else none
   else if boundType.isFloatType then
     match bound with
     | .floatLit .. => some (floatCtor subj bound)
@@ -810,7 +813,12 @@ private def makeComparison
   else if boundType.isIntType then
     match bound with
     | .intLit .. => some (intCtor subj bound)
-    | _ => none
+    | _ =>
+      if subjType.isIntType || subjType.isAnyType then some (intCtor subj bound) else none
+  else if subjType.isAnyType && boundType.isAnyType then
+    -- Both sides Any-typed (e.g. two function parameters whose types
+    -- aren't seeded). Trust the user and use the int comparison.
+    some (intCtor subj bound)
   else
     none
 
@@ -825,7 +833,7 @@ private def transCompare (loc : SourceRange)
   let .isTrue h₂ := decideProp (comparators.size = 1)
     | return none
   match lhsExpr with
-  -- len(subject) >= N / len(subject) <= N
+  -- len(subject) >= N / len(subject) <= N / len(subject) > N / len(subject) < N
   | .stringLen _ _ =>
     let (clean, (boundExpr, _)) ← runNoWarn (transExpr comparators[0])
     if clean then
@@ -834,6 +842,8 @@ private def transCompare (loc : SourceRange)
         match ops[0] with
         | .GtE _ => return some (.intGe lhsExpr boundExpr (loc := loc))
         | .LtE _ => return some (.intLe lhsExpr boundExpr (loc := loc))
+        | .Gt _ => return some (.intGt lhsExpr boundExpr (loc := loc))
+        | .Lt _ => return some (.intLt lhsExpr boundExpr (loc := loc))
         | _ => pure ()
       | _ => pure ()
     -- compile("pattern").search(subject) is not None
@@ -852,7 +862,7 @@ private def transCompare (loc : SourceRange)
     | _ => pure ()
   | _ => pure ()
 
-  -- subject >= N / subject <= N (type-checked: int or float)
+  -- subject {>=, <=, >, <, ==, !=} N (type-checked: int or float)
   let (clean, (boundExpr, boundType)) ← runNoWarn (transExpr comparators[0])
   if not clean then
     return none
@@ -862,6 +872,14 @@ private def transCompare (loc : SourceRange)
     return makeComparison (.floatGe · · (loc := loc)) (.intGe · · (loc := loc)) lhsExpr lhsType boundExpr boundType
   | .LtE _ =>
     return makeComparison (.floatLe · · (loc := loc)) (.intLe · · (loc := loc)) lhsExpr lhsType boundExpr boundType
+  | .Gt _ =>
+    return makeComparison (.floatGt · · (loc := loc)) (.intGt · · (loc := loc)) lhsExpr lhsType boundExpr boundType
+  | .Lt _ =>
+    return makeComparison (.floatLt · · (loc := loc)) (.intLt · · (loc := loc)) lhsExpr lhsType boundExpr boundType
+  | .Eq _ =>
+    return makeComparison (.floatEq · · (loc := loc)) (.intEq · · (loc := loc)) lhsExpr lhsType boundExpr boundType
+  | .NotEq _ =>
+    return makeComparison (.floatNe · · (loc := loc)) (.intNe · · (loc := loc)) lhsExpr lhsType boundExpr boundType
   | _ =>
     return none
 

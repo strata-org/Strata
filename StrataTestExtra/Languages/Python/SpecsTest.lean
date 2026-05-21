@@ -292,6 +292,34 @@ meta def warningTestCase : IO Unit := withPython fun pythonCmd => do
 #guard_msgs in
 #eval warningTestCase
 
+/-- Test that the new strict comparison and equality shapes (`<`, `>`,
+    `==`, `!=`) translate cleanly, both with literal bounds and
+    between two integer-typed operands. -/
+meta def predicateCompareTestCase : IO Unit := withPython fun pythonCmd => do
+  IO.FS.withTempFile fun _handle dialectFile => do
+    IO.FS.writeBinFile dialectFile Strata.Python.Python.toIon
+    IO.FS.withTempDir fun strataDir => do
+      let r ←
+        translateFile
+          (pythonCmd := toString pythonCmd)
+          (dialectFile := dialectFile)
+          (strataDir := strataDir)
+          (pythonFile := testDir / "predicate_compare.py")
+          (searchPath := testDir)
+          |>.toBaseIO
+      match r with
+      | .ok (sigs, warnings) =>
+        if sigs.isEmpty then
+          throw <| IO.userError "Expected signatures from predicate_compare.py but got none"
+        if !warnings.isEmpty then
+          let warnStr := warnings.foldl (init := "") fun acc w => s!"{acc}\n  {w}"
+          throw <| IO.userError s!"Unexpected warnings from predicate_compare.py:{warnStr}"
+      | .error e =>
+        throw <| IO.userError e
+
+#guard_msgs in
+#eval predicateCompareTestCase
+
 
 meta def testNegRoundTrip (v : Nat) : Bool :=
   DDM.Int.ofDDM (.negInt SourceRange.none ⟨.none, v⟩) = .negOfNat v

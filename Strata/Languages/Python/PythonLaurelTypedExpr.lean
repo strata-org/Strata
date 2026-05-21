@@ -74,6 +74,22 @@ def intLeq (x y : TypedStmtExpr .TInt)
     (source : Option FileRange := x.stmt.source) : TypedStmtExpr .TBool :=
   .ofStmt (.PrimitiveOp .Leq [x.stmt, y.stmt]) source
 
+def intGt (x y : TypedStmtExpr .TInt)
+    (source : Option FileRange := x.stmt.source) : TypedStmtExpr .TBool :=
+  .ofStmt (.PrimitiveOp .Gt [x.stmt, y.stmt]) source
+
+def intLt (x y : TypedStmtExpr .TInt)
+    (source : Option FileRange := x.stmt.source) : TypedStmtExpr .TBool :=
+  .ofStmt (.PrimitiveOp .Lt [x.stmt, y.stmt]) source
+
+def intEq (x y : TypedStmtExpr .TInt)
+    (source : Option FileRange := x.stmt.source) : TypedStmtExpr .TBool :=
+  .ofStmt (.PrimitiveOp .Eq [x.stmt, y.stmt]) source
+
+def intNe (x y : TypedStmtExpr .TInt)
+    (source : Option FileRange := x.stmt.source) : TypedStmtExpr .TBool :=
+  .ofStmt (.PrimitiveOp .Neq [x.stmt, y.stmt]) source
+
 def realGeq (x y : TypedStmtExpr .TReal)
     (source : Option FileRange := x.stmt.source) : TypedStmtExpr .TBool :=
   .ofStmt (.PrimitiveOp .Geq [x.stmt, y.stmt]) source
@@ -81,6 +97,22 @@ def realGeq (x y : TypedStmtExpr .TReal)
 def realLeq (x y : TypedStmtExpr .TReal)
     (source : Option FileRange := x.stmt.source) : TypedStmtExpr .TBool :=
   .ofStmt (.PrimitiveOp .Leq [x.stmt, y.stmt]) source
+
+def realGt (x y : TypedStmtExpr .TReal)
+    (source : Option FileRange := x.stmt.source) : TypedStmtExpr .TBool :=
+  .ofStmt (.PrimitiveOp .Gt [x.stmt, y.stmt]) source
+
+def realLt (x y : TypedStmtExpr .TReal)
+    (source : Option FileRange := x.stmt.source) : TypedStmtExpr .TBool :=
+  .ofStmt (.PrimitiveOp .Lt [x.stmt, y.stmt]) source
+
+def realEq (x y : TypedStmtExpr .TReal)
+    (source : Option FileRange := x.stmt.source) : TypedStmtExpr .TBool :=
+  .ofStmt (.PrimitiveOp .Eq [x.stmt, y.stmt]) source
+
+def realNe (x y : TypedStmtExpr .TReal)
+    (source : Option FileRange := x.stmt.source) : TypedStmtExpr .TBool :=
+  .ofStmt (.PrimitiveOp .Neq [x.stmt, y.stmt]) source
 
 def not (x : TypedStmtExpr .TBool)
     (source : Option FileRange := x.stmt.source) : TypedStmtExpr .TBool :=
