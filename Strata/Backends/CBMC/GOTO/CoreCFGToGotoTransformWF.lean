@@ -2913,6 +2913,46 @@ theorem coreCFGToGotoTransform_decompose
                  Bind.bind, Except.bind] at h_run
       cases h_run
 
+/-! ### Direct structural soundness
+
+Composes `coreCFGToGotoTransform_decompose` with
+`coreCFGToGotoTransform_size_eq_and_loc` to deliver the structural
+guarantees of `coreCFGToGotoTransform`'s output directly from input
+hypotheses + a "post-blocks-fold loopContracts is empty" hypothesis. -/
+
+/-- The translator's output satisfies `size_eq` and
+`locationNum_eq_index`, given input hypotheses + the post-blocks-fold
+hypothesis that `loopContracts` is empty (true for any CFG without
+loop-invariant or decreases metadata). -/
+theorem coreCFGToGotoTransform_size_eq_and_loc_direct
+    (Env : Core.Expression.TyEnv) (functionName : String)
+    (cfg : Core.DetCFG)
+    (trans₀ : Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_init_size : trans₀.instructions.size = trans₀.nextLoc)
+    (h_init_loc :
+      ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+        trans₀.instructions[i]? = some instr → instr.locationNum = i)
+    (h_admitted_blocks :
+      ∀ (l : String) blk, (l, blk) ∈ cfg.blocks →
+      ∀ c ∈ blk.cmds, Core.CmdExt.isAdmittedCmd c = true)
+    (h_loopContracts_empty_post :
+      ∀ (st_final : Strata.CoreCFGTransLoopState),
+        cfg.blocks.foldlM (Strata.coreCFGToGotoBlockStep functionName)
+          (coreCFGToGotoInitState trans₀)
+        = Except.ok st_final → st_final.loopContracts = ∅)
+    (ans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_run : Strata.coreCFGToGotoTransform Env functionName cfg trans₀
+              = Except.ok ans) :
+    ans.instructions.size = ans.nextLoc ∧
+    ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+      ans.instructions[i]? = some instr → instr.locationNum = i := by
+  obtain ⟨st_final, resolved, trans_post, h_blocks_run, h_patches_run, h_ans_eq⟩ :=
+    coreCFGToGotoTransform_decompose Env functionName cfg trans₀ ans h_run
+  exact coreCFGToGotoTransform_size_eq_and_loc Env functionName cfg trans₀
+    h_init_size h_init_loc h_admitted_blocks ans h_run
+    st_final h_blocks_run (h_loopContracts_empty_post st_final h_blocks_run)
+    resolved trans_post h_patches_run h_ans_eq
+
 /-! ## Top-level theorem (statement + interface)
 
 The top-level `coreCFGToGotoTransform_wellFormed` theorem proves that
