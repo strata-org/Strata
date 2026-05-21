@@ -330,6 +330,10 @@ structure PySpecState where
     preludeAtoms.foldl (init := {}) fun m (nm, pyIdent) =>
       m.insert nm (.typeValue (.ident default pyIdent))
   typeReferences : Std.HashMap String ClassRef := {}
+  /-- Per-class field-type map: qualified class name → field name → field type.
+      Populated when each `ClassDef` is processed; consulted by `transExpr`
+      to lower `<receiver>.<field>` access on class-typed receivers. -/
+  classFields : Std.HashMap String (Std.HashMap String SpecType) := {}
   /--
   Signatures being generated (declarations, functions, classes, etc).
   -/
@@ -730,6 +734,11 @@ structure SpecAssertionContext where
   kwargs : Option (String × SpecType) := none
   /-- Local variable type bindings (e.g., from for-loop iteration variables). -/
   localTypes : Std.HashMap String SpecType := {}
+  /-- Per-class field-type map snapshotted from `PySpecState.classFields`
+      when entering an assertion context. Consulted by `transExpr`'s
+      `<receiver>.<field>` arm to resolve field types on class-typed
+      receivers. -/
+  classFields : Std.HashMap String (Std.HashMap String SpecType) := {}
 
 /-- State for `SpecAssertionM`. -/
 structure SpecAssertionState where
@@ -887,6 +896,36 @@ partial def transExpr (e : expr SourceRange)
 
   let placeholder := (.placeholder (loc := loc), anyType)
   match e with
+  -- <receiver>.<field> on a class-typed receiver. The receiver must be
+  -- bound in localTypes to a class identifier; the class's field map
+  -- (populated by pySpecClassBody's pre-pass) supplies the field's
+  -- type. Lowers to the same `getIndex` shape used for TypedDicts so
+  -- downstream Laurel lowering goes through the existing string-keyed
+  -- Any-get path.
+  | .Attribute _ (.Name _ ⟨_, recvName⟩ (.Load _)) ⟨_, fieldName⟩ (.Load _) =>
+    let ctx ← read
+    match ctx.localTypes[recvName]? with
+    | some recvType =>
+      match recvType.asIdent with
+      | some pyIdent =>
+        let qualName := s!"{pyIdent.pythonModule}.{pyIdent.name}"
+        match ctx.classFields[qualName]? with
+        | some fieldMap =>
+          match fieldMap[fieldName]? with
+          | some fieldTp =>
+            return (.getIndex (.var recvName (loc := loc)) fieldName (loc := loc), fieldTp)
+          | none =>
+            specWarning loc s!"{recvName}.{fieldName}: no field '{fieldName}' on class {qualName}"
+            return placeholder
+        | none =>
+          specWarning loc s!"{recvName}.{fieldName}: receiver type {qualName} is not a known class"
+          return placeholder
+      | none =>
+        specWarning loc s!"{recvName}.{fieldName}: receiver type is not a class"
+        return placeholder
+    | none =>
+      specWarning loc s!"{recvName}.{fieldName}: receiver '{recvName}' has no known type"
+      return placeholder
   -- Variable name
   | .Name _ ⟨_, name⟩ (.Load _) =>
     let tp := match (←read).localTypes[name]? with
@@ -1117,13 +1156,24 @@ end
 def collectAssertions (decls : ArgDecls) (_returnType : SpecType)
     (action : SpecAssertionM Unit)
     : PySpecM SpecAssertionState := do
-  let errors := (←get).errors
-  let warnings := (←get).warnings
+  let st0 ← get
+  let errors := st0.errors
+  let warnings := st0.warnings
   modify fun s => { s with errors := #[], warnings := #[] }
   let filePath := (←read).pythonFile
+  -- Seed localTypes from the function's positional and keyword-only
+  -- arguments (including `self` on methods, which gets the class's
+  -- qualified-ident type via pySpecArg). This lets transExpr's
+  -- `<receiver>.<field>` arm resolve `self.x` and `param.field`
+  -- lookups inside assert predicates.
+  let localTypes : Std.HashMap String SpecType :=
+    let m := decls.args.foldl (init := {}) fun m a => m.insert a.name a.type
+    decls.kwonly.foldl (init := m) fun m a => m.insert a.name a.type
   let ctx : SpecAssertionContext :=
     { filePath
-      kwargs := decls.kwargs }
+      kwargs := decls.kwargs
+      localTypes := localTypes
+      classFields := st0.classFields }
   let ((), as) := action ctx { errors, warnings }
   modify fun s => { s with errors := as.errors, warnings := as.warnings }
   pure as
@@ -1251,6 +1301,32 @@ private def resolveBaseClasses (bases : Array (expr SourceRange))
 partial def pySpecClassBody (loc : SourceRange) (className : String)
     (bases : Array PythonIdent)
     (body : Array (Strata.Python.stmt Strata.SourceRange)) : PySpecM ClassDef := do
+  -- Pre-pass: collect AnnAssign field declarations and stash the
+  -- field-type map on `PySpecState.classFields` before any method body
+  -- is translated, so that `transExpr`'s `<receiver>.<field>` arm can
+  -- resolve `self.<field>` lookups inside method-level predicates.
+  -- Diagnostics from `pySpecType` are suppressed here: the regular
+  -- AnnAssign pass below re-runs `pySpecType` on the same annotation
+  -- and emits the authoritative diagnostic. Fields whose type fails to
+  -- parse simply don't make it into the pre-pass map (and predicates
+  -- referring to them resolve as 'no field' downstream).
+  let mod := toString (← read).currentModule
+  let qualName := s!"{mod}.{className}"
+  let mut prefields : Std.HashMap String SpecType := {}
+  let preSnapshot ← get
+  for stmt in body do
+    match stmt with
+    | .AnnAssign _ target annotation _ _ =>
+      match target with
+      | .Name _ ⟨_, fieldName⟩ _ =>
+        let (clean, fieldType) ← runNoWarn <| pySpecType annotation
+        if clean then
+          prefields := prefields.insert fieldName fieldType
+      | _ => pure ()
+    | _ => pure ()
+  -- Restore diagnostic counters; the body loop is the source of truth.
+  modify fun s => { s with errors := preSnapshot.errors, warnings := preSnapshot.warnings }
+  modify fun s => { s with classFields := s.classFields.insert qualName prefields }
   let mut usedNames : Std.HashSet String := {}
   let mut fields : Array ClassField := #[]
   let mut classVars : Array ClassVariable := #[]
