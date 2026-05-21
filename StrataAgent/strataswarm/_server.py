@@ -35,6 +35,13 @@ logger.info("Logger initialized")
 from ._tools import ToolSet
 
 
+class McpServerDef(BaseModel):
+    command: str
+    args: list[str] = []
+    env: dict[str, str] = {}
+    type: str = "stdio"
+
+
 class AgentCreateRequest(BaseModel):
     name: str
     system_prompt: str
@@ -45,11 +52,46 @@ class AgentCreateRequest(BaseModel):
     max_budget_usd: float | None = None
     timeout_seconds: float | None = None
     is_super_agent: bool = False
+    mcp_servers: dict[str, McpServerDef] = {}
 
 
 class SwarmConfig(BaseModel):
     name: str
     agents: list[AgentCreateRequest]
+
+
+def check_mcp_dependencies(agent_specs: list[AgentCreateRequest]) -> tuple[list[str], list[str]]:
+    """Check external MCP server commands. Returns (errors, warnings)."""
+    import shutil
+
+    errors: list[str] = []
+    warnings: list[str] = []
+    checked: set[str] = set()
+
+    for spec in agent_specs:
+        for server_name, server_def in spec.mcp_servers.items():
+            cmd = server_def.command
+            if cmd in checked:
+                continue
+            checked.add(cmd)
+
+            if not shutil.which(cmd):
+                errors.append(
+                    f"MCP server '{server_name}' (agent '{spec.name}') requires "
+                    f"'{cmd}' but it is not installed or not in PATH."
+                )
+
+            # Check args for known tools that have secondary deps
+            if cmd == "uvx" and server_def.args:
+                package = server_def.args[0] if server_def.args else ""
+                if package == "lean-lsp-mcp":
+                    if not shutil.which("rg"):
+                        warnings.append(
+                            f"MCP server '{server_name}' (lean-lsp-mcp): 'ripgrep' (rg) "
+                            f"not found. lean_local_search and some lean_verify features "
+                            f"will be degraded."
+                        )
+    return errors, warnings
 
 
 class SwarmDashboard:
@@ -424,6 +466,18 @@ class SwarmDashboard:
             # Get session ID for this agent from saved chat
             session_id = sessions.get(spec_req.name)
 
+            # Convert MCP server defs
+            external_mcp: dict[str, Any] = {}
+            for server_name, server_def in spec_req.mcp_servers.items():
+                config: dict[str, Any] = {"command": server_def.command}
+                if server_def.args:
+                    config["args"] = server_def.args
+                if server_def.env:
+                    config["env"] = server_def.env
+                if server_def.type:
+                    config["type"] = server_def.type
+                external_mcp[server_name] = config
+
             agent_spec = AgentSpec(
                 name=spec_req.name,
                 system_prompt=spec_req.system_prompt,
@@ -434,6 +488,7 @@ class SwarmDashboard:
                 timeout_seconds=spec_req.timeout_seconds,
                 is_super_agent=spec_req.is_super_agent,
                 resume_session_id=session_id,
+                mcp_servers=external_mcp,
             )
             self._swarm.add(agent_spec)
 
@@ -458,6 +513,17 @@ class SwarmDashboard:
     async def _create_and_run_swarm(self) -> None:
         from ._swarm import Swarm, ExecutionMode
 
+        # Check MCP dependencies before starting
+        dep_errors, dep_warnings = check_mcp_dependencies(self._agent_specs)
+        if dep_errors:
+            error_msg = "Cannot start swarm — missing dependencies:\n" + "\n".join(f"  • {e}" for e in dep_errors)
+            logger.error(error_msg)
+            await self._broadcast({"type": "error", "message": error_msg})
+            return
+        for w in dep_warnings:
+            logger.warning(w)
+            await self._broadcast({"type": "warning", "message": w})
+
         self._event_history = {}
         self._all_messages = []
         swarm_name = self._swarm_name or "_".join(s.name for s in self._agent_specs[:3]) or "swarm"
@@ -479,6 +545,18 @@ class SwarmDashboard:
             for t in spec_req.disallowed_tools:
                 tools.disallow(t)
 
+            # Convert MCP server defs to the format Claude SDK expects
+            external_mcp: dict[str, Any] = {}
+            for server_name, server_def in spec_req.mcp_servers.items():
+                config: dict[str, Any] = {"command": server_def.command}
+                if server_def.args:
+                    config["args"] = server_def.args
+                if server_def.env:
+                    config["env"] = server_def.env
+                if server_def.type:
+                    config["type"] = server_def.type
+                external_mcp[server_name] = config
+
             agent_spec = AgentSpec(
                 name=spec_req.name,
                 system_prompt=spec_req.system_prompt,
@@ -488,6 +566,7 @@ class SwarmDashboard:
                 max_budget_usd=spec_req.max_budget_usd,
                 timeout_seconds=spec_req.timeout_seconds,
                 is_super_agent=spec_req.is_super_agent,
+                mcp_servers=external_mcp,
             )
             self._swarm.add(agent_spec)
 
