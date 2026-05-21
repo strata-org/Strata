@@ -473,10 +473,17 @@ public def pyAnalyzeLaurelV2
       | .ImportFrom _ modOpt _ _ => match modOpt.val with
         | some modAnn => some modAnn.val
         | none => none
+      | .Import _ aliases => aliases.val.toList.head?.bind fun a => match a with
+        | .mk_alias _ modName _ => some modName.val
       | _ => none
     for modName in modules do
-      let ionPath := System.FilePath.mk pythonIonPath |>.parent.getD "." |> (· / (modName ++ ".python.st.ion"))
-      match ← Python.readPythonStrata ionPath.toString |>.toBaseIO with
+      let baseDir := System.FilePath.mk pythonIonPath |>.parent.getD "."
+      let ionPath := baseDir / (modName ++ ".python.st.ion")
+      let ionPathParent := baseDir / ".." / (modName ++ ".python.st.ion")
+      let readResult ← match ← Python.readPythonStrata ionPath.toString |>.toBaseIO with
+        | .ok stmts => pure (.ok stmts)
+        | .error _ => Python.readPythonStrata ionPathParent.toString |>.toBaseIO
+      match readResult with
       | .ok stubStmts =>
         let stubResolved := Python.Resolution.resolve stubStmts
         let _ := stubResolved -- extract context entries from stub
