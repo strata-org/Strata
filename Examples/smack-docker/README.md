@@ -81,14 +81,14 @@ otherwise suppress.
 Program                       |  Strip |    B2S |    Fix |    deductive |   bugFinding |         cbmc
 -------------------------------------------------------------------------------------------------------
 # Original benchmark
-abs_func                      |     OK |     OK |     OK |      PARTIAL |      PARTIAL |      TIMEOUT
+abs_func                      |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
 array_sum                     |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
 aws_array_eq                  |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
 aws_byte_cursor_advance       |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
 aws_ring_buffer               |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
 loop_sum                      |     OK |     OK |     OK |         PASS |      PARTIAL |      TIMEOUT
-max_func                      |     OK |     OK |     OK |      PARTIAL |      PARTIAL |      TIMEOUT
-nondet_branch                 |     OK |     OK |     OK |         PASS |      PARTIAL |      TIMEOUT
+max_func                      |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+nondet_branch                 |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
 pointer_arith                 |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
 simple_add                    |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
 simple_assert                 |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
@@ -111,7 +111,7 @@ aws_string_eq                 |     OK |     OK |     OK |      PARTIAL |      P
 
      deductive: 5 pass, 20 partial, 0 warn, 0 fail, 0 n/a
     bugFinding: 0 pass, 25 partial, 0 warn, 0 fail, 0 n/a
-          cbmc: 0 pass, 21 fail, 4 timeout, 0 n/a
+          cbmc: 0 pass, 24 fail, 1 timeout, 0 n/a
 ```
 
 ## Known blockers
@@ -194,11 +194,28 @@ aws_string_eq                 |     OK |     OK |     OK |      PARTIAL |      P
   25 programs hit this. Likely fix on the array-type emission for
   `Map ref i8` (`Strata/Backends/CBMC/GOTO/LambdaToCProverGOTO.lean`'s
   `LMonoTy.toGotoType`).
-- **CBMC: BMC unrolling timeouts.** 4 programs (`abs_func`, `loop_sum`,
-  `max_func`, `nondet_branch`) timeout at the default 120s. Likely a
-  combination of the SMACK prelude assumption-axiom volume and
-  unbounded loops in the translation; needs a `--unwind` bound or
-  smaller axiom set.
+- **CBMC: BMC unrolling timeouts (mostly resolved on this branch).**
+  4 programs (`abs_func`, `loop_sum`, `max_func`, `nondet_branch`)
+  previously timed out at the default 120s. Cause:
+  `coreCFGToGotoTransform` iterated blocks in `cfg.blocks` source
+  order, where SMACK's CFG emission has if/else join points landing
+  textually before their predecessors. Forward CFG edges thus
+  rendered as `GOTO N` to earlier-numbered locations, which CBMC's
+  loop detector classified as back-edges and instrumented with
+  unwinding-assertions; the unwinding logic blew the timeout.
+  `cbmc --show-loops` reported 8 spurious "loops" on `nondet_branch`
+  despite the C source having zero loops. Fixed by emitting blocks
+  in reverse-postorder via a new `cfgReversePostorder` helper in
+  `CoreCFGToGOTOPipeline.lean`. After the fix, `--show-loops`
+  reports 0 spurious loops on the 3 loop-free programs (abs_func,
+  max_func, nondet_branch); they reach real verdicts in <100ms.
+  `loop_sum` remains TIMEOUT because it has a real C `for` loop:
+  cbmc correctly identifies the genuine back-edge and unrolls it,
+  hitting the unwinding-assertion bound. That's the next-tier
+  problem (real-loop bound or loop invariants), distinct from the
+  spurious-back-edge issue this fix addresses. Regression test in
+  `StrataTest/Backends/CBMC/GOTO/E2E_CoreToGOTO.lean`
+  (`E2E_CFGRPOReorder`). See commit `520f3f573`.
 - **Deductive PARTIAL breakdown (sample-based).** All 21 deductive
   PARTIALs sampled across the 25-program suite split into three
   sub-classes by failing-VC verdict and origin:
