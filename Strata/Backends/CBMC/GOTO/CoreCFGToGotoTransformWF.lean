@@ -728,103 +728,1729 @@ theorem cmdEmittedAt_init_nondet_of_toGotoInstructions
   exact cmdEmittedAt_init_nondet δ δ_goto δ_goto_bool pgm trans.nextLoc
     v ty md i_decl h_at h_decl_ty
 
-/-! ## Outline of the remaining loop-induction work
+/-! ## Per-`Cmd` dispatcher
 
-The full `coreCFGToGotoTransform_wellFormed` theorem requires three more
-substantial pieces of infrastructure on top of what is in this module.
+`cmdEmittedAt_of_toGotoInstructions` covers all five admitted single-step
+shapes (init_nondet, set_det, assert, assume, cover) by case-splitting
+on the inner `Cmd` and dispatching to the matching driver. The two
+shapes outside the dispatcher are:
 
-### Step 1: per-`Imperative.Cmd` driver lemma
+* `.init _ _ (.det _)`  — emits two instructions; covered by a separate
+  driver below.
+* `.set _ .nondet`      — admitted only when surfaced via the explicit
+  builder `cmdEmittedAt_set_nondet`; the dispatcher below treats it as
+  excluded so its caller doesn't have to thread an `isAdmittedCmd`
+  predicate just for the `cover`/`set_nondet` cases.
 
-A single lemma that consumes any one of the seven `Imperative.Cmd`
-shapes and produces a `CmdEmittedAt` for the post-translation `pgm`,
-*provided* `pgm.instructions` extends `ans.instructions` as a prefix.
-This is essentially a case-split that dispatches to the appropriate
-`Cmd_toGotoInstructions_*_ok` and `cmdEmittedAt_*` pair from this file.
+The dispatcher's hypothesis `h_admitted` is `Core.CmdExt.isAdmittedCmd
+(.cmd c) = true`, which excludes `cover` and `init _ _ .nondet` per
+`isAdmittedCmd`'s definition. We *do* admit `.set _ .nondet`
+syntactically here (the corresponding constructor of
+`CmdEmittedAt.set_nondet` exists), even though the translator currently
+does not produce that case in the call-free admitted fragment.
+-/
 
-```
+/-- `cmdEmittedAt_of_toGotoInstructions` dispatches to the per-Cmd
+driver matching the shape of `c`. The two-instruction case
+(`.init _ _ (.det _)`) is *not* covered here — see
+`cmdEmittedAt_init_det_of_toGotoInstructions` below. -/
+theorem cmdEmittedAt_init_det_of_toGotoInstructions
+    (T : Core.Expression.TyEnv) (fname : String)
+    (v : Core.Expression.Ident) (ty : Core.Expression.Ty)
+    (e : Core.Expression.Expr)
+    (md : Imperative.MetaData Core.Expression)
+    (trans ans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_run : Imperative.Cmd.toGotoInstructions T fname
+              (.init v ty (.det e) md) trans = Except.ok ans)
+    (h_invariant : trans.instructions.size = trans.nextLoc)
+    (pgm : Program)
+    (δ : Imperative.SemanticEval Core.Expression)
+    (δ_goto : SemanticEvalGoto Core.Expression)
+    (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
+    (h_expr_corr : ExprTranslationPreservesEval δ δ_goto δ_goto_bool)
+    (h_tx_eq : Imperative.ToGoto.toGotoExpr (P := Core.Expression) e
+        = Except.ok (h_expr_corr.tx e))
+    (h_prefix :
+      ∀ (k : Nat) (h : k < ans.instructions.size),
+        pgm.instructions[k]? = some ans.instructions[k]) :
+    CmdEmittedAt δ δ_goto δ_goto_bool pgm trans.nextLoc
+      (.init v ty (.det e) md) := by
+  obtain ⟨gty, e_goto, i_decl, i_assn, _h_ty, h_expr,
+          h_decl_ty, _h_decl_code, _h_decl_loc,
+          h_assn_ty, h_assn_code, _h_assn_loc,
+          h_inst, _h_next, _h_T⟩ :=
+    Cmd_toGotoInstructions_init_det_ok T fname v ty e md trans ans h_run
+  -- Build a temporary program whose `instructions` field equals
+  -- `ans.instructions = trans.instructions.append #[i_decl, i_assn]`,
+  -- so that `instrAt_of_append_two` applies directly. The transfer
+  -- to `pgm` then goes via `h_prefix`.
+  let pgm_temp : Program := { pgm with instructions := ans.instructions }
+  have h_pgm_temp : pgm_temp.instructions = ans.instructions := rfl
+  have h_temp_eq : pgm_temp.instructions
+      = trans.instructions.append #[i_decl, i_assn] := by
+    rw [h_pgm_temp, h_inst]
+  obtain ⟨h_at0_temp, h_at1_temp⟩ :=
+    instrAt_of_append_two pgm_temp trans.instructions i_decl i_assn
+      trans.nextLoc h_temp_eq h_invariant
+  -- Convert pgm_temp.instrAt to ans.instructions[k]?, then to pgm.instrAt
+  -- via h_prefix.
+  have h_size_eq : ans.instructions.size = trans.instructions.size + 2 := by
+    rw [h_inst]
+    show (trans.instructions ++ #[i_decl, i_assn]).size = _
+    rw [Array.size_append]
+    simp
+  have h_lt0 : trans.nextLoc < ans.instructions.size := by
+    rw [h_size_eq, ← h_invariant]; omega
+  have h_lt1 : trans.nextLoc + 1 < ans.instructions.size := by
+    rw [h_size_eq, ← h_invariant]; omega
+  -- pgm_temp.instrAt = ans.instructions[k]? for k < ans.instructions.size,
+  -- by definition of instrAt and pgm_temp.
+  have h_at0 : pgm.instrAt trans.nextLoc = some i_decl := by
+    unfold Program.instrAt
+    have h_eq : ans.instructions[trans.nextLoc]? = some i_decl := by
+      have := h_at0_temp
+      unfold Program.instrAt at this
+      exact this
+    rw [h_prefix trans.nextLoc h_lt0]
+    rw [Array.getElem?_eq_getElem h_lt0] at h_eq
+    exact h_eq
+  have h_at1 : pgm.instrAt (trans.nextLoc + 1) = some i_assn := by
+    unfold Program.instrAt
+    have h_eq : ans.instructions[trans.nextLoc + 1]? = some i_assn := by
+      have := h_at1_temp
+      unfold Program.instrAt at this
+      exact this
+    rw [h_prefix (trans.nextLoc + 1) h_lt1]
+    rw [Array.getElem?_eq_getElem h_lt1] at h_eq
+    exact h_eq
+  -- Translate the expression matching the translator's output.
+  have h_tx_e : h_expr_corr.tx e = e_goto := by
+    rw [h_tx_eq] at h_expr
+    injection h_expr
+  have h_translated : ExprTranslated δ δ_goto δ_goto_bool e e_goto := by
+    rw [← h_tx_e]
+    exact h_expr_corr.tx_correct e
+  exact cmdEmittedAt_init_det δ δ_goto δ_goto_bool pgm trans.nextLoc
+    v ty e md i_decl i_assn h_at0 h_decl_ty h_at1 h_assn_ty
+    e_goto ⟨_, h_assn_code⟩ h_translated
+
+/-! ## `set_nondet` shape and driver
+
+Worker A's mechanical sub-lemmas covered the four single-instruction
+emit cases that take an `ExprTranslated` witness. The `set _ .nondet`
+case is structurally similar — single ASSIGN at `pc` — but with a
+side-effect-Nondet RHS rather than a translated expression. Adding
+the missing shape lemma + driver here unblocks the dispatcher. -/
+
+/-- `.set v .nondet md` succeeds iff `lookupType T v` succeeds; the
+result has one new ASSIGN appended whose RHS is a side-effect Nondet. -/
+theorem Cmd_toGotoInstructions_set_nondet_ok
+    (T : Core.Expression.TyEnv) (fname : String)
+    (v : Core.Expression.Ident)
+    (md : Imperative.MetaData Core.Expression)
+    (trans ans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (h : Imperative.Cmd.toGotoInstructions T fname
+          (.set v .nondet md) trans = Except.ok ans) :
+    ∃ gty i_assn,
+      Imperative.ToGoto.lookupType (P := Core.Expression) T v = Except.ok gty ∧
+      i_assn.type = .ASSIGN ∧
+      (∃ lhs e_nondet, i_assn.code = Code.assign lhs e_nondet) ∧
+      i_assn.locationNum = trans.nextLoc ∧
+      ans.instructions = trans.instructions.push i_assn ∧
+      ans.nextLoc = trans.nextLoc + 1 := by
+  unfold Imperative.Cmd.toGotoInstructions at h
+  simp only at h
+  match h_ty :
+      Imperative.ToGoto.lookupType (P := Core.Expression) T v with
+  | .ok gty =>
+    simp only [h_ty, Bind.bind, Except.bind, pure, Except.pure] at h
+    injection h with h
+    let srcLoc := metadataToSourceLoc md fname trans.sourceText
+    refine ⟨gty,
+      { type := .ASSIGN, locationNum := trans.nextLoc,
+        sourceLoc := srcLoc,
+        code := CProverGOTO.Code.assign
+          (CProverGOTO.Expr.symbol
+            (Imperative.ToGoto.identToString (P := Core.Expression) v) gty)
+          { id := .side_effect .Nondet, sourceLoc := srcLoc, type := gty } },
+      rfl, rfl, ⟨_, _, rfl⟩, rfl, ?_, ?_⟩
+    all_goals (subst h; rfl)
+  | .error _ =>
+    simp [h_ty, Bind.bind, Except.bind] at h
+
+/-- Bridge from `Cmd_toGotoInstructions_set_nondet_ok` to
+`CmdEmittedAt.set_nondet`. -/
+theorem cmdEmittedAt_set_nondet
+    (δ : Imperative.SemanticEval Core.Expression)
+    (δ_goto : SemanticEvalGoto Core.Expression)
+    (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
+    (pgm : Program) (pc : Nat)
+    (v : Core.Expression.Ident)
+    (md : Imperative.MetaData Core.Expression)
+    (i_assn : Instruction)
+    (h_assn_at : pgm.instrAt pc = some i_assn)
+    (h_assn_ty : i_assn.type = .ASSIGN)
+    (h_assn_code : ∃ lhs e_nondet, i_assn.code = Code.assign lhs e_nondet) :
+    CmdEmittedAt δ δ_goto δ_goto_bool pgm pc (.set v .nondet md) :=
+  CmdEmittedAt.set_nondet pc v md i_assn h_assn_at h_assn_ty h_assn_code
+
+theorem cmdEmittedAt_set_nondet_of_toGotoInstructions
+    (T : Core.Expression.TyEnv) (fname : String)
+    (v : Core.Expression.Ident)
+    (md : Imperative.MetaData Core.Expression)
+    (trans ans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_run : Imperative.Cmd.toGotoInstructions T fname
+              (.set v .nondet md) trans = Except.ok ans)
+    (h_invariant : trans.instructions.size = trans.nextLoc)
+    (pgm : Program)
+    (δ : Imperative.SemanticEval Core.Expression)
+    (δ_goto : SemanticEvalGoto Core.Expression)
+    (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
+    (h_prefix :
+      ∀ (k : Nat) (h : k < ans.instructions.size),
+        pgm.instructions[k]? = some ans.instructions[k]) :
+    CmdEmittedAt δ δ_goto δ_goto_bool pgm trans.nextLoc (.set v .nondet md) := by
+  obtain ⟨_gty, i_assn, _h_ty, h_assn_ty, h_assn_code, _h_loc, h_inst, _h_next⟩ :=
+    Cmd_toGotoInstructions_set_nondet_ok T fname v md trans ans h_run
+  have h_at : pgm.instrAt trans.nextLoc = some i_assn :=
+    pgm_instrAt_of_push_invariant pgm trans.instructions i_assn ans.instructions
+      trans.nextLoc h_invariant h_inst h_prefix
+  exact cmdEmittedAt_set_nondet δ δ_goto δ_goto_bool pgm trans.nextLoc
+    v md i_assn h_at h_assn_ty h_assn_code
+
+/-! ## Per-Cmd dispatcher
+
+The dispatcher case-splits on an `Imperative.Cmd Core.Expression`
+admitted by `isAdmittedCmd` and produces a `CmdEmittedAt` witness from
+a successful `Cmd.toGotoInstructions` call. It uses the per-shape
+drivers above (`cmdEmittedAt_init_det_of_toGotoInstructions`,
+`cmdEmittedAt_init_nondet_of_toGotoInstructions`,
+`cmdEmittedAt_set_det_of_toGotoInstructions`,
+`cmdEmittedAt_assert_of_toGotoInstructions`,
+`cmdEmittedAt_assume_of_toGotoInstructions`).
+
+The translator never emits `.cover` (excluded by `isAdmittedCmd`) nor
+`.set _ .nondet` (excluded under the same flag); both cases are
+discharged contradictorily from `h_admitted`.
+-/
+
 theorem cmdEmittedAt_of_toGotoInstructions
     (T : Core.Expression.TyEnv) (fname : String)
     (c : Imperative.Cmd Core.Expression)
-    (h_admitted :
-      Core.CmdExt.isAdmittedCmd (.cmd c) = true)
+    (h_admitted : Core.CmdExt.isAdmittedCmd (.cmd c) = true)
     (trans ans : Imperative.GotoTransform Core.Expression.TyEnv)
-    (h_run : Imperative.Cmd.toGotoInstructions T fname c trans
-      = Except.ok ans)
+    (h_run : Imperative.Cmd.toGotoInstructions T fname c trans = Except.ok ans)
+    (h_invariant : trans.instructions.size = trans.nextLoc)
     (pgm : Program)
+    (δ : Imperative.SemanticEval Core.Expression)
+    (δ_goto : SemanticEvalGoto Core.Expression)
+    (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
+    (h_expr_corr : ExprTranslationPreservesEval δ δ_goto δ_goto_bool)
+    (h_tx_eq :
+      ∀ e : Core.Expression.Expr,
+        Imperative.ToGoto.toGotoExpr (P := Core.Expression) e
+          = Except.ok (h_expr_corr.tx e))
     (h_prefix :
-      ∀ (k : Nat), k < ans.instructions.size →
-        pgm.instrAt k = ans.instructions[k]?)
-    (δ δ_goto δ_goto_bool : ...)
-    (h_expr_corr : ExprTranslationPreservesEval δ δ_goto δ_goto_bool) :
-    CmdEmittedAt δ δ_goto δ_goto_bool pgm trans.nextLoc c
+      ∀ (k : Nat) (h : k < ans.instructions.size),
+        pgm.instructions[k]? = some ans.instructions[k]) :
+    CmdEmittedAt δ δ_goto δ_goto_bool pgm trans.nextLoc c := by
+  cases c with
+  | init v ty initVal md =>
+    cases initVal with
+    | det e =>
+      exact cmdEmittedAt_init_det_of_toGotoInstructions
+        T fname v ty e md trans ans h_run h_invariant
+        pgm δ δ_goto δ_goto_bool h_expr_corr (h_tx_eq e) h_prefix
+    | nondet =>
+      -- `init _ _ .nondet` is excluded by `isAdmittedCmd`.
+      simp [Core.CmdExt.isAdmittedCmd] at h_admitted
+  | set v src md =>
+    cases src with
+    | det e =>
+      exact cmdEmittedAt_set_det_of_toGotoInstructions
+        T fname v e md trans ans h_run h_invariant
+        pgm δ δ_goto δ_goto_bool h_expr_corr (h_tx_eq e) h_prefix
+    | nondet =>
+      -- `set _ .nondet` is admitted under `isAdmittedCmd` but the
+      -- caller (loop-induction) treats it specially because it has a
+      -- different RHS shape. We could discharge it via a
+      -- `cmdEmittedAt_set_nondet_of_toGotoInstructions` driver — for
+      -- now we leave this as a documented gap because the parallel-A
+      -- run did not land that driver. The pattern is identical to
+      -- the `set_det` driver minus the `ExprTranslated` witness.
+      exact cmdEmittedAt_set_nondet_of_toGotoInstructions
+        T fname v md trans ans h_run h_invariant pgm
+        δ δ_goto δ_goto_bool h_prefix
+  | assert label e md =>
+    exact cmdEmittedAt_assert_of_toGotoInstructions
+      T fname label e md trans ans h_run h_invariant
+      pgm δ δ_goto δ_goto_bool h_expr_corr (h_tx_eq e) h_prefix
+  | assume label e md =>
+    exact cmdEmittedAt_assume_of_toGotoInstructions
+      T fname label e md trans ans h_run h_invariant
+      pgm δ δ_goto δ_goto_bool h_expr_corr (h_tx_eq e) h_prefix
+  | cover label e md =>
+    -- `cover` is excluded by `isAdmittedCmd`.
+    simp [Core.CmdExt.isAdmittedCmd] at h_admitted
+
+/-! ## Loop invariant for `coreCFGToGotoTransform`'s outer for-loop
+
+`PartialWellFormedTranslation` is a "prefix" version of
+`WellFormedTranslation` indexed by the number of CFG blocks already
+processed. It's the natural induction hypothesis for the outer loop.
+
+Differences from `WellFormedTranslation`:
+
+* `cfg.blocks` is replaced by `cfg.blocks.take n` (the prefix processed
+  so far) wherever the predicate quantifies "for each block".
+* `labelMap_total` is restricted to the prefix.
+* The `entry_in_map` field is dropped (the entry block may not yet have
+  been processed when `n = 0`); we recover it after the full iteration
+  by noting `n = cfg.blocks.length` and that the entry block is in
+  `cfg.blocks` (an external well-formedness assumption on `cfg`).
+* `pendingPatches` is carried explicitly: each pending patch records
+  a forward GOTO target that hasn't yet been resolved.
+
+The translator's iteration produces a `PartialWellFormedTranslation`
+after `n` iterations; the patch pass at the end converts this (with
+`n = cfg.blocks.length`) into a full `WellFormedTranslation`. -/
+
+/-- The invariant carried by `coreCFGToGotoTransform`'s outer for-loop
+through `n` iterations. Quantifies layout fields over
+`cfg.blocks.take n` instead of all of `cfg.blocks`. -/
+structure PartialWellFormedTranslation
+    (cfg : Core.DetCFG)
+    (trans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (labelMap : LabelMap)
+    (n : Nat)
+    (_δ : Imperative.SemanticEval Core.Expression)
+    (_δ_goto : SemanticEvalGoto Core.Expression)
+    (_δ_goto_bool : SemanticEvalGotoBool Core.Expression) : Prop where
+  /-- The transform's `instructions.size = nextLoc` invariant: every
+  emit-helper advances both by the same amount. -/
+  size_eq : trans.instructions.size = trans.nextLoc
+  /-- Every instruction emitted so far has `locationNum = index`. -/
+  locationNum_eq_index :
+    ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+      trans.instructions[i]? = some instr → instr.locationNum = i
+  /-- Every block label in the processed prefix has a `pc` in `labelMap`. -/
+  labelMap_total :
+    ∀ l, l ∈ (cfg.blocks.take n).map Prod.fst → (labelMap l).isSome
+  /-- Distinct labels map to distinct `pc`s. -/
+  labelMap_inj :
+    ∀ l₁ l₂ pc, labelMap l₁ = some pc → labelMap l₂ = some pc → l₁ = l₂
+  /-- The labelMap's image is contained in the current range
+  `[0, trans.nextLoc)`. -/
+  labelMap_lt :
+    ∀ l pc, labelMap l = some pc → pc < trans.nextLoc
+
+/-! ## Initial-state `PartialWellFormedTranslation`
+
+At the start of the outer loop (before any iteration), `n = 0`,
+`labelMap = (fun _ => none)` (empty), and `trans` is the entry-state
+transform produced by the wrapper. The partial WF holds vacuously for
+all the prefix-quantified fields. -/
+
+/-- An empty `LabelMap`: returns `none` for every label. -/
+@[expose] def emptyLabelMap : LabelMap := fun _ => none
+
+/-- The initial state (before any block has been processed) satisfies
+`PartialWellFormedTranslation` with `n = 0` whenever the entry-state
+`trans` already has its instruction array's `locationNum`s aligned with
+their indices. The wrapper `procedureToGotoCtxViaCFG` ensures this by
+constructing the axiom-emit prologue with `locationNum = axiomLoc` and
+`axiomLoc = i` for each emitted axiom. -/
+theorem partialWellFormedTranslation_initial
+    (cfg : Core.DetCFG)
+    (trans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_size : trans.instructions.size = trans.nextLoc)
+    (h_loc :
+      ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+        trans.instructions[i]? = some instr → instr.locationNum = i)
+    (δ : Imperative.SemanticEval Core.Expression)
+    (δ_goto : SemanticEvalGoto Core.Expression)
+    (δ_goto_bool : SemanticEvalGotoBool Core.Expression) :
+    PartialWellFormedTranslation cfg trans emptyLabelMap 0
+      δ δ_goto δ_goto_bool where
+  size_eq := h_size
+  locationNum_eq_index := h_loc
+  labelMap_total := by
+    intro l h_in
+    simp at h_in
+  labelMap_inj := by
+    intro l₁ l₂ pc h₁ _h₂
+    simp [emptyLabelMap] at h₁
+  labelMap_lt := by
+    intro l pc h
+    simp [emptyLabelMap] at h
+
+/-! ## Preservation under `emitLabel`
+
+The outer loop body starts each iteration by emitting a LOCATION
+instruction via `emitLabel`. We need to know that this preserves the
+`size_eq` and `locationNum_eq_index` invariants, and that the new
+`labelMap` (extended with `label ↦ trans.nextLoc`) keeps the partial
+WF working. -/
+
+/-- After `emitLabel`, the new transform's `instructions.size` still
+equals its `nextLoc` (each goes up by 1). -/
+theorem emitLabel_preserves_size_eq
+    (label : String) (srcLoc : CProverGOTO.SourceLocation)
+    (trans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_size : trans.instructions.size = trans.nextLoc) :
+    (Imperative.emitLabel label srcLoc trans).instructions.size =
+      (Imperative.emitLabel label srcLoc trans).nextLoc := by
+  simp [Imperative.emitLabel, Array.size_push, h_size]
+
+/-- After `emitLabel`, the new transform's `locationNum`s still match
+their array indices: the existing prefix is preserved, and the
+freshly-pushed LOCATION has `locationNum = trans.nextLoc =
+trans.instructions.size`. -/
+theorem emitLabel_preserves_locationNum_eq_index
+    (label : String) (srcLoc : CProverGOTO.SourceLocation)
+    (trans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_size : trans.instructions.size = trans.nextLoc)
+    (h_loc :
+      ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+        trans.instructions[i]? = some instr → instr.locationNum = i) :
+    ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+      (Imperative.emitLabel label srcLoc trans).instructions[i]? = some instr →
+      instr.locationNum = i := by
+  intro i instr h
+  -- Compute `(emitLabel ..).instructions` as a `push` so the rewrite
+  -- patterns apply.
+  let new_instr : CProverGOTO.Instruction :=
+    { type := .LOCATION, locationNum := trans.nextLoc, sourceLoc := srcLoc,
+      labels := [label], code := CProverGOTO.Code.skip }
+  have h_unfold : (Imperative.emitLabel label srcLoc trans).instructions
+      = trans.instructions.push new_instr := by rfl
+  rw [h_unfold] at h
+  by_cases h_lt : i < trans.instructions.size
+  · rw [Array.getElem?_push_lt h_lt] at h
+    -- h : some trans.instructions[i] = some instr
+    have h' : trans.instructions[i]? = some instr := by
+      rw [Array.getElem?_eq_getElem h_lt]; exact h
+    exact h_loc i instr h'
+  · have h_ge : trans.instructions.size ≤ i := Nat.le_of_not_lt h_lt
+    by_cases h_eq : i = trans.instructions.size
+    · subst h_eq
+      rw [Array.getElem?_push_size] at h
+      injection h with h
+      subst h
+      show new_instr.locationNum = trans.instructions.size
+      simp [new_instr, h_size]
+    · have h_lt' : trans.instructions.size < i := by omega
+      have h_push_size :
+          (trans.instructions.push new_instr).size = trans.instructions.size + 1 := by
+        simp [Array.size_push]
+      have h_oor : (trans.instructions.push new_instr).size ≤ i := by
+        rw [h_push_size]; omega
+      rw [Array.getElem?_eq_none h_oor] at h
+      exact absurd h (by simp)
+
+/-! ## Preservation under `Cmd.toGotoInstructions`
+
+After processing one Core command via the imperative
+`Cmd.toGotoInstructions`, the resulting `trans'` still satisfies the
+`size_eq` and `locationNum_eq_index` invariants. Because each branch of
+`Cmd.toGotoInstructions` either pushes one or two instructions and
+advances `nextLoc` by the same number (provided by the per-shape
+sub-lemmas above), the calculation is direct. -/
+
+/-- `Cmd.toGotoInstructions` preserves `instructions.size = nextLoc`. -/
+theorem toGotoInstructions_preserves_size_eq
+    (T : Core.Expression.TyEnv) (fname : String)
+    (c : Imperative.Cmd Core.Expression)
+    (trans ans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_run : Imperative.Cmd.toGotoInstructions T fname c trans = Except.ok ans)
+    (h_size : trans.instructions.size = trans.nextLoc) :
+    ans.instructions.size = ans.nextLoc := by
+  cases c with
+  | init v ty initVal md =>
+    cases initVal with
+    | det e =>
+      obtain ⟨_gty, _e_goto, _i_decl, _i_assn, _, _, _, _, _, _, _, _,
+              h_inst, h_next, _⟩ :=
+        Cmd_toGotoInstructions_init_det_ok T fname v ty e md trans ans h_run
+      rw [h_inst, h_next]
+      show (trans.instructions ++ #[_, _]).size = _
+      simp [Array.size_append, h_size]
+    | nondet =>
+      obtain ⟨_gty, _i_decl, _, _, _, _, h_inst, h_next, _⟩ :=
+        Cmd_toGotoInstructions_init_nondet_ok T fname v ty md trans ans h_run
+      rw [h_inst, h_next, Array.size_push, h_size]
+  | set v src md =>
+    cases src with
+    | det e =>
+      obtain ⟨_gty, _e_goto, _i_assn, _, _, _, _, _, h_inst, h_next⟩ :=
+        Cmd_toGotoInstructions_set_det_ok T fname v e md trans ans h_run
+      rw [h_inst, h_next, Array.size_push, h_size]
+    | nondet =>
+      obtain ⟨_gty, _i_assn, _, _, _, _, h_inst, h_next⟩ :=
+        Cmd_toGotoInstructions_set_nondet_ok T fname v md trans ans h_run
+      rw [h_inst, h_next, Array.size_push, h_size]
+  | assert label e md =>
+    obtain ⟨_e_goto, _i, _, _, _, _, h_inst, h_next⟩ :=
+      Cmd_toGotoInstructions_assert_ok T fname label e md trans ans h_run
+    rw [h_inst, h_next, Array.size_push, h_size]
+  | assume label e md =>
+    obtain ⟨_e_goto, _i, _, _, _, _, h_inst, h_next⟩ :=
+      Cmd_toGotoInstructions_assume_ok T fname label e md trans ans h_run
+    rw [h_inst, h_next, Array.size_push, h_size]
+  | cover label e md =>
+    -- `cover` is structurally similar to `assert` but emits an ASSERT
+    -- with a different comment. The shape lemma was not landed by
+    -- Worker A; for the size-preservation argument we directly unfold.
+    unfold Imperative.Cmd.toGotoInstructions at h_run
+    simp only at h_run
+    match h_expr :
+        Imperative.ToGoto.toGotoExpr (P := Core.Expression) e with
+    | .ok e_goto =>
+      simp only [h_expr, Bind.bind, Except.bind, pure, Except.pure] at h_run
+      injection h_run with h_run
+      subst h_run
+      simp [Array.size_push, h_size]
+    | .error _ =>
+      simp [h_expr, Bind.bind, Except.bind] at h_run
+
+/-- Generic helper: pushing one fresh instruction whose `locationNum =
+trans.nextLoc` preserves `locationNum_eq_index`, given the loop
+invariant. -/
+private theorem push_preserves_locationNum_eq_index
+    (trans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (new_instr : CProverGOTO.Instruction)
+    (h_size : trans.instructions.size = trans.nextLoc)
+    (h_loc :
+      ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+        trans.instructions[i]? = some instr → instr.locationNum = i)
+    (h_new : new_instr.locationNum = trans.nextLoc) :
+    ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+      (trans.instructions.push new_instr)[i]? = some instr →
+      instr.locationNum = i := by
+  intro i instr h
+  by_cases h_lt : i < trans.instructions.size
+  · rw [Array.getElem?_push_lt h_lt] at h
+    have h' : trans.instructions[i]? = some instr := by
+      rw [Array.getElem?_eq_getElem h_lt]; exact h
+    exact h_loc i instr h'
+  · have h_ge : trans.instructions.size ≤ i := Nat.le_of_not_lt h_lt
+    by_cases h_eq : i = trans.instructions.size
+    · subst h_eq
+      rw [Array.getElem?_push_size] at h
+      injection h with h
+      subst h
+      rw [h_new, h_size]
+    · have h_lt' : trans.instructions.size < i := by omega
+      have h_oor : (trans.instructions.push new_instr).size ≤ i := by
+        rw [Array.size_push]; omega
+      rw [Array.getElem?_eq_none h_oor] at h
+      exact absurd h (by simp)
+
+/-- Generic helper: appending two fresh instructions whose `locationNum`
+fields are `trans.nextLoc` and `trans.nextLoc + 1` preserves
+`locationNum_eq_index`. Used for the `init_det` case. -/
+private theorem append_two_preserves_locationNum_eq_index
+    (trans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (i₀ i₁ : CProverGOTO.Instruction)
+    (h_size : trans.instructions.size = trans.nextLoc)
+    (h_loc :
+      ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+        trans.instructions[i]? = some instr → instr.locationNum = i)
+    (h_new0 : i₀.locationNum = trans.nextLoc)
+    (h_new1 : i₁.locationNum = trans.nextLoc + 1) :
+    ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+      (trans.instructions.append #[i₀, i₁])[i]? = some instr →
+      instr.locationNum = i := by
+  intro i instr h
+  -- Replace .append with `++ #[i₀, i₁]`.
+  have h_eq : trans.instructions.append #[i₀, i₁]
+      = trans.instructions ++ #[i₀, i₁] := rfl
+  rw [h_eq] at h
+  by_cases h_lt : i < trans.instructions.size
+  · rw [Array.getElem?_append_left h_lt] at h
+    exact h_loc i instr h
+  · have h_ge : trans.instructions.size ≤ i := Nat.le_of_not_lt h_lt
+    by_cases h_eq0 : i = trans.instructions.size
+    · subst h_eq0
+      rw [Array.getElem?_append_right (Nat.le_refl _)] at h
+      simp at h
+      subst h
+      rw [h_new0, h_size]
+    · by_cases h_eq1 : i = trans.instructions.size + 1
+      · subst h_eq1
+        rw [Array.getElem?_append_right (Nat.le_add_right _ _)] at h
+        simp at h
+        subst h
+        rw [h_new1, h_size]
+      · -- i > size + 1: out of bounds.
+        have h_oor : (trans.instructions ++ #[i₀, i₁]).size ≤ i := by
+          rw [Array.size_append]
+          simp; omega
+        rw [Array.getElem?_eq_none h_oor] at h
+        exact absurd h (by simp)
+
+/-- `Cmd.toGotoInstructions` preserves `locationNum_eq_index` on the
+emitted prefix. -/
+theorem toGotoInstructions_preserves_locationNum_eq_index
+    (T : Core.Expression.TyEnv) (fname : String)
+    (c : Imperative.Cmd Core.Expression)
+    (trans ans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_run : Imperative.Cmd.toGotoInstructions T fname c trans = Except.ok ans)
+    (h_size : trans.instructions.size = trans.nextLoc)
+    (h_loc :
+      ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+        trans.instructions[i]? = some instr → instr.locationNum = i) :
+    ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+      ans.instructions[i]? = some instr → instr.locationNum = i := by
+  cases c with
+  | init v ty initVal md =>
+    cases initVal with
+    | det e =>
+      obtain ⟨_gty, _e_goto, i_decl, i_assn, _, _, _, _, h_decl_loc,
+              _, _, h_assn_loc, h_inst, _, _⟩ :=
+        Cmd_toGotoInstructions_init_det_ok T fname v ty e md trans ans h_run
+      rw [h_inst]
+      exact append_two_preserves_locationNum_eq_index
+        trans i_decl i_assn h_size h_loc h_decl_loc h_assn_loc
+    | nondet =>
+      obtain ⟨_gty, i_decl, _, _, _, h_loc_new, h_inst, _, _⟩ :=
+        Cmd_toGotoInstructions_init_nondet_ok T fname v ty md trans ans h_run
+      rw [h_inst]
+      exact push_preserves_locationNum_eq_index
+        trans i_decl h_size h_loc h_loc_new
+  | set v src md =>
+    cases src with
+    | det e =>
+      obtain ⟨_gty, _e_goto, i_assn, _, _, _, _, h_loc_new, h_inst, _⟩ :=
+        Cmd_toGotoInstructions_set_det_ok T fname v e md trans ans h_run
+      rw [h_inst]
+      exact push_preserves_locationNum_eq_index
+        trans i_assn h_size h_loc h_loc_new
+    | nondet =>
+      obtain ⟨_gty, i_assn, _, _, _, h_loc_new, h_inst, _⟩ :=
+        Cmd_toGotoInstructions_set_nondet_ok T fname v md trans ans h_run
+      rw [h_inst]
+      exact push_preserves_locationNum_eq_index
+        trans i_assn h_size h_loc h_loc_new
+  | assert label e md =>
+    obtain ⟨_e_goto, i, _, _, _, h_loc_new, h_inst, _⟩ :=
+      Cmd_toGotoInstructions_assert_ok T fname label e md trans ans h_run
+    rw [h_inst]
+    exact push_preserves_locationNum_eq_index
+      trans i h_size h_loc h_loc_new
+  | assume label e md =>
+    obtain ⟨_e_goto, i, _, _, _, h_loc_new, h_inst, _⟩ :=
+      Cmd_toGotoInstructions_assume_ok T fname label e md trans ans h_run
+    rw [h_inst]
+    exact push_preserves_locationNum_eq_index
+      trans i h_size h_loc h_loc_new
+  | cover label e md =>
+    -- Direct unfold + push.
+    unfold Imperative.Cmd.toGotoInstructions at h_run
+    simp only at h_run
+    match h_expr :
+        Imperative.ToGoto.toGotoExpr (P := Core.Expression) e with
+    | .ok e_goto =>
+      simp only [h_expr, Bind.bind, Except.bind, pure, Except.pure] at h_run
+      injection h_run with h_run
+      subst h_run
+      -- ans.instructions = trans.instructions.push assert_inst
+      -- where assert_inst.locationNum = trans.nextLoc.
+      apply push_preserves_locationNum_eq_index trans _ h_size h_loc
+      rfl
+    | .error _ =>
+      simp [h_expr, Bind.bind, Except.bind] at h_run
+
+/-! ## Preservation under transfer-emit helpers -/
+
+/-- `emitCondGoto` preserves `instructions.size = nextLoc`. -/
+theorem emitCondGoto_preserves_size_eq
+    (guard : CProverGOTO.Expr) (srcLoc : CProverGOTO.SourceLocation)
+    (trans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_size : trans.instructions.size = trans.nextLoc) :
+    let p := Imperative.emitCondGoto guard srcLoc trans
+    p.fst.instructions.size = p.fst.nextLoc := by
+  simp [Imperative.emitCondGoto, Imperative.emitGoto, Array.size_push, h_size]
+
+/-- `emitCondGoto` preserves `locationNum_eq_index`. -/
+theorem emitCondGoto_preserves_locationNum_eq_index
+    (guard : CProverGOTO.Expr) (srcLoc : CProverGOTO.SourceLocation)
+    (trans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_size : trans.instructions.size = trans.nextLoc)
+    (h_loc :
+      ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+        trans.instructions[i]? = some instr → instr.locationNum = i) :
+    ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+      (Imperative.emitCondGoto guard srcLoc trans).fst.instructions[i]? =
+        some instr →
+      instr.locationNum = i := by
+  intro i instr h
+  let new_instr : CProverGOTO.Instruction :=
+    { type := .GOTO, locationNum := trans.nextLoc, sourceLoc := srcLoc,
+      guard := guard, target := none }
+  have h_unfold : (Imperative.emitCondGoto guard srcLoc trans).fst.instructions
+      = trans.instructions.push new_instr := by rfl
+  rw [h_unfold] at h
+  exact push_preserves_locationNum_eq_index trans new_instr
+    h_size h_loc rfl i instr h
+
+/-- `emitUncondGoto` preserves `instructions.size = nextLoc`. -/
+theorem emitUncondGoto_preserves_size_eq
+    (srcLoc : CProverGOTO.SourceLocation)
+    (trans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_size : trans.instructions.size = trans.nextLoc) :
+    let p := Imperative.emitUncondGoto srcLoc trans
+    p.fst.instructions.size = p.fst.nextLoc := by
+  simp [Imperative.emitUncondGoto, Imperative.emitGoto, Array.size_push, h_size]
+
+/-- `emitUncondGoto` preserves `locationNum_eq_index`. -/
+theorem emitUncondGoto_preserves_locationNum_eq_index
+    (srcLoc : CProverGOTO.SourceLocation)
+    (trans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_size : trans.instructions.size = trans.nextLoc)
+    (h_loc :
+      ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+        trans.instructions[i]? = some instr → instr.locationNum = i) :
+    ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+      (Imperative.emitUncondGoto srcLoc trans).fst.instructions[i]? =
+        some instr →
+      instr.locationNum = i := by
+  intro i instr h
+  let new_instr : CProverGOTO.Instruction :=
+    { type := .GOTO, locationNum := trans.nextLoc, sourceLoc := srcLoc,
+      guard := CProverGOTO.Expr.true, target := none }
+  have h_unfold : (Imperative.emitUncondGoto srcLoc trans).fst.instructions
+      = trans.instructions.push new_instr := by rfl
+  rw [h_unfold] at h
+  exact push_preserves_locationNum_eq_index trans new_instr
+    h_size h_loc rfl i instr h
+
+/-! ## Preservation under `END_FUNCTION` emission
+
+The `.finish` branch of `coreCFGToGotoTransform`'s outer-loop body
+inlines an END_FUNCTION emit (no helper exists), so we model it
+directly as a push of an instruction with the right shape. -/
+
+/-- The shape of the `.finish md` branch's emitted END_FUNCTION
+instruction. The translator hardcodes:
+* `type = .END_FUNCTION`,
+* `locationNum = trans.nextLoc`,
+* `sourceLoc = metadataToSourceLoc md fname trans.sourceText`. -/
+@[expose] def endFunctionInstr
+    (md : Imperative.MetaData Core.Expression) (fname : String)
+    (trans : Imperative.GotoTransform Core.Expression.TyEnv) :
+    CProverGOTO.Instruction :=
+  { type := .END_FUNCTION,
+    locationNum := trans.nextLoc,
+    sourceLoc := Imperative.metadataToSourceLoc md fname trans.sourceText }
+
+/-- After the `.finish` branch's END_FUNCTION emit, the new transform
+satisfies `instructions.size = nextLoc`. -/
+theorem endFunction_emit_preserves_size_eq
+    (md : Imperative.MetaData Core.Expression) (fname : String)
+    (trans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_size : trans.instructions.size = trans.nextLoc) :
+    let trans' : Imperative.GotoTransform Core.Expression.TyEnv :=
+      { trans with
+        instructions := trans.instructions.push (endFunctionInstr md fname trans),
+        nextLoc := trans.nextLoc + 1 }
+    trans'.instructions.size = trans'.nextLoc := by
+  simp [Array.size_push, h_size]
+
+/-- `END_FUNCTION` emit preserves `locationNum_eq_index`. -/
+theorem endFunction_emit_preserves_locationNum_eq_index
+    (md : Imperative.MetaData Core.Expression) (fname : String)
+    (trans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_size : trans.instructions.size = trans.nextLoc)
+    (h_loc :
+      ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+        trans.instructions[i]? = some instr → instr.locationNum = i) :
+    ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+      (trans.instructions.push (endFunctionInstr md fname trans))[i]? =
+        some instr →
+      instr.locationNum = i :=
+  push_preserves_locationNum_eq_index trans (endFunctionInstr md fname trans)
+    h_size h_loc rfl
+
+/-! ## Preservation under `patchGotoTargets`
+
+The patcher only edits `target` fields, never `locationNum`s. So the
+`locationNum_eq_index` invariant transfers unchanged. -/
+
+/-- `Array.set!` with a record update on `target` doesn't change
+`locationNum`. -/
+private theorem patch_one_preserves_locationNum
+    (a : Array CProverGOTO.Instruction) (idx tgt : Nat)
+    (h_loc :
+      ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+        a[i]? = some instr → instr.locationNum = i) :
+    ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+      (a.set! idx { a[idx]! with target := some tgt })[i]? = some instr →
+      instr.locationNum = i := by
+  intro i instr h
+  rw [Array.set!_eq_setIfInBounds] at h
+  by_cases h_idx : idx < a.size
+  · -- Set at in-bounds idx via setIfInBounds.
+    by_cases h_eq : i = idx
+    · subst h_eq
+      have h_lt_set :
+          i < (a.setIfInBounds i { a[i]! with target := some tgt }).size := by
+        simp [h_idx]
+      rw [Array.getElem?_eq_getElem h_lt_set] at h
+      rw [Array.getElem_setIfInBounds_self] at h
+      injection h with h
+      subst h
+      -- The patched record's locationNum = a[i]!.locationNum.
+      -- And a[i]!.locationNum = a[i].locationNum (in-bounds) = i by h_loc.
+      have h_at : a[i]? = some a[i] := Array.getElem?_eq_getElem h_idx
+      have h_loc_eq : a[i].locationNum = i := h_loc i a[i] h_at
+      have h_getD : a[i]! = a[i] := getElem!_pos a i h_idx
+      simp [h_getD, h_loc_eq]
+    · -- i ≠ idx: setIfInBounds preserves a[i]?.
+      rw [Array.getElem?_setIfInBounds_ne (Ne.symm h_eq)] at h
+      exact h_loc i instr h
+  · -- idx out of range: setIfInBounds is a no-op.
+    rw [Array.setIfInBounds_eq_of_size_le (Nat.le_of_not_lt h_idx)] at h
+    exact h_loc i instr h
+
+/-- `patchGotoTargets` preserves `locationNum_eq_index` on the underlying
+array — the patcher only writes the `target` field. -/
+theorem patchGotoTargets_preserves_locationNum_eq_index
+    (trans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (patches : List (Nat × Nat))
+    (h_loc :
+      ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+        trans.instructions[i]? = some instr → instr.locationNum = i) :
+    ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+      (Imperative.patchGotoTargets trans patches).instructions[i]? = some instr →
+      instr.locationNum = i := by
+  -- Generalise so the IH works at every prefix.
+  unfold Imperative.patchGotoTargets
+  simp only
+  -- We're in the foldl shape now; induct on patches.
+  intro i instr
+  -- A more general statement: for any `a` satisfying `h_loc`, the
+  -- foldl over `patches` preserves `h_loc`.
+  have hgen :
+      ∀ (a : Array CProverGOTO.Instruction) (ps : List (Nat × Nat))
+        (h : ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+          a[i]? = some instr → instr.locationNum = i),
+        ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+          (List.foldl
+            (fun acc (p : Nat × Nat) =>
+              acc.set! p.fst { acc[p.fst]! with target := some p.snd })
+            a ps)[i]? = some instr → instr.locationNum = i := by
+    intro a ps h
+    induction ps generalizing a with
+    | nil =>
+      intro i instr h2
+      simp only [List.foldl] at h2
+      exact h i instr h2
+    | cons p ps ih =>
+      intro i instr h2
+      simp only [List.foldl] at h2
+      apply ih (a.set! p.fst { a[p.fst]! with target := some p.snd })
+        (patch_one_preserves_locationNum a p.fst p.snd h)
+      exact h2
+  exact hgen _ _ h_loc i instr
+
+/-! ## Inner-loop shadow: a foldlM over the admitted `.cmd c` cases
+
+The `coreCFGToGotoTransform`'s inner `for cmd in block.cmds do` loop is
+imperative and dispatches on `cmd.cmd / cmd.call`. Under the
+admitted-commands fragment (`isAdmittedCmd`), only the `.cmd c` branch
+is taken, so the inner loop is morally a `foldlM` of
+`Cmd.toGotoInstructions` over the `c`-extractions of `block.cmds`.
+
+We give this a clean recursive name here, and prove that the empty
+list and inductive step both preserve the loop invariants we care
+about. -/
+
+/-- Run `Cmd.toGotoInstructions` on each admitted `.cmd c` of a block's
+command list, threading the transform state. Errors out on any
+non-admitted command. -/
+@[expose] def innerCmdLoop
+    (T : Core.Expression.TyEnv) (fname : String)
+    (cmds : List Core.Command)
+    (trans : Imperative.GotoTransform Core.Expression.TyEnv) :
+    Except Std.Format (Imperative.GotoTransform Core.Expression.TyEnv) :=
+  match cmds with
+  | [] => Except.ok trans
+  | .cmd c :: rest => do
+    let trans' ← (Imperative.Cmd.toGotoInstructions T fname c trans).mapError
+      (fun e => f!"{e}")
+    innerCmdLoop trans'.T fname rest trans'
+  | .call _ _ _ :: _ =>
+    Except.error f!"[innerCmdLoop] .call is not in the admitted fragment"
+
+/-- Empty body: the inner loop is a no-op. -/
+theorem innerCmdLoop_nil
+    (T : Core.Expression.TyEnv) (fname : String)
+    (trans : Imperative.GotoTransform Core.Expression.TyEnv) :
+    innerCmdLoop T fname [] trans = Except.ok trans := rfl
+
+/-- The inner loop preserves the size invariant. -/
+theorem innerCmdLoop_preserves_size_eq
+    (T : Core.Expression.TyEnv) (fname : String)
+    (cmds : List Core.Command)
+    (trans ans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_run : innerCmdLoop T fname cmds trans = Except.ok ans)
+    (h_size : trans.instructions.size = trans.nextLoc) :
+    ans.instructions.size = ans.nextLoc := by
+  induction cmds generalizing T trans with
+  | nil =>
+    rw [innerCmdLoop_nil] at h_run
+    injection h_run with h_run
+    rw [← h_run]; exact h_size
+  | cons cmd rest ih =>
+    cases cmd with
+    | cmd c =>
+      unfold innerCmdLoop at h_run
+      match h_step :
+          Imperative.Cmd.toGotoInstructions T fname c trans with
+      | .ok trans' =>
+        simp only [h_step, Except.mapError, Bind.bind, Except.bind] at h_run
+        have h_size' : trans'.instructions.size = trans'.nextLoc :=
+          toGotoInstructions_preserves_size_eq T fname c trans trans' h_step h_size
+        exact ih trans'.T trans' h_run h_size'
+      | .error e =>
+        simp only [h_step, Except.mapError, Bind.bind, Except.bind] at h_run
+        cases h_run
+    | call _ _ _ =>
+      unfold innerCmdLoop at h_run
+      simp at h_run
+
+/-- The inner loop preserves the locationNum_eq_index invariant. -/
+theorem innerCmdLoop_preserves_locationNum_eq_index
+    (T : Core.Expression.TyEnv) (fname : String)
+    (cmds : List Core.Command)
+    (trans ans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_run : innerCmdLoop T fname cmds trans = Except.ok ans)
+    (h_size : trans.instructions.size = trans.nextLoc)
+    (h_loc :
+      ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+        trans.instructions[i]? = some instr → instr.locationNum = i) :
+    ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+      ans.instructions[i]? = some instr → instr.locationNum = i := by
+  induction cmds generalizing T trans with
+  | nil =>
+    rw [innerCmdLoop_nil] at h_run
+    injection h_run with h_run
+    rw [← h_run]; exact h_loc
+  | cons cmd rest ih =>
+    cases cmd with
+    | cmd c =>
+      unfold innerCmdLoop at h_run
+      match h_step :
+          Imperative.Cmd.toGotoInstructions T fname c trans with
+      | .ok trans' =>
+        simp only [h_step, Except.mapError, Bind.bind, Except.bind] at h_run
+        have h_size' : trans'.instructions.size = trans'.nextLoc :=
+          toGotoInstructions_preserves_size_eq T fname c trans trans' h_step h_size
+        have h_loc' :
+            ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+              trans'.instructions[i]? = some instr → instr.locationNum = i :=
+          toGotoInstructions_preserves_locationNum_eq_index
+            T fname c trans trans' h_step h_size h_loc
+        exact ih trans'.T trans' h_run h_size' h_loc'
+      | .error e =>
+        simp only [h_step, Except.mapError, Bind.bind, Except.bind] at h_run
+        cases h_run
+    | call _ _ _ =>
+      unfold innerCmdLoop at h_run
+      simp at h_run
+
+/-- The inner loop's `nextLoc` advance equals the per-cmd instruction
+counts summed. Specifically, `ans.nextLoc = trans.nextLoc + Σ
+gotoInstrCount`, where the sum is over each admitted command. This is
+the analogue of `cmdsPrefixInstrCount` and is what `layout_block_body`
+needs to address each command's emitted slot. -/
+theorem innerCmdLoop_nextLoc_advance
+    (T : Core.Expression.TyEnv) (fname : String)
+    (cmds : List Core.Command)
+    (trans ans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_run : innerCmdLoop T fname cmds trans = Except.ok ans) :
+    ans.nextLoc = trans.nextLoc +
+      cmds.foldl (fun acc c => acc + Core.CmdExt.gotoInstrCount c) 0 := by
+  induction cmds generalizing T trans with
+  | nil =>
+    rw [innerCmdLoop_nil] at h_run
+    injection h_run with h_run
+    simp [← h_run]
+  | cons cmd rest ih =>
+    cases cmd with
+    | cmd c =>
+      unfold innerCmdLoop at h_run
+      match h_step :
+          Imperative.Cmd.toGotoInstructions T fname c trans with
+      | .ok trans' =>
+        simp only [h_step, Except.mapError, Bind.bind, Except.bind] at h_run
+        -- Per-cmd nextLoc advance from each shape lemma, dispatched by `c`.
+        have h_step_advance :
+            trans'.nextLoc = trans.nextLoc + Imperative.Cmd.gotoInstrCount c := by
+          cases c with
+          | init v ty init md =>
+            cases init with
+            | det e =>
+              obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, h_next, _⟩ :=
+                Cmd_toGotoInstructions_init_det_ok T fname v ty e md trans trans' h_step
+              rw [h_next]; rfl
+            | nondet =>
+              obtain ⟨_, _, _, _, _, _, _, h_next, _⟩ :=
+                Cmd_toGotoInstructions_init_nondet_ok T fname v ty md trans trans' h_step
+              rw [h_next]; rfl
+          | set v src md =>
+            cases src with
+            | det e =>
+              obtain ⟨_, _, _, _, _, _, _, _, _, h_next⟩ :=
+                Cmd_toGotoInstructions_set_det_ok T fname v e md trans trans' h_step
+              rw [h_next]; rfl
+            | nondet =>
+              obtain ⟨_, _, _, _, _, _, _, h_next⟩ :=
+                Cmd_toGotoInstructions_set_nondet_ok T fname v md trans trans' h_step
+              rw [h_next]; rfl
+          | assert label e md =>
+            obtain ⟨_, _, _, _, _, _, _, h_next⟩ :=
+              Cmd_toGotoInstructions_assert_ok T fname label e md trans trans' h_step
+            rw [h_next]; rfl
+          | assume label e md =>
+            obtain ⟨_, _, _, _, _, _, _, h_next⟩ :=
+              Cmd_toGotoInstructions_assume_ok T fname label e md trans trans' h_step
+            rw [h_next]; rfl
+          | cover label e md =>
+            unfold Imperative.Cmd.toGotoInstructions at h_step
+            simp only at h_step
+            match h_expr :
+                Imperative.ToGoto.toGotoExpr (P := Core.Expression) e with
+            | .ok e_goto =>
+              simp only [h_expr, Bind.bind, Except.bind, pure, Except.pure] at h_step
+              injection h_step with h_step
+              rw [← h_step]
+              rfl
+            | .error _ =>
+              simp [h_expr, Bind.bind, Except.bind] at h_step
+        have hih := ih trans'.T trans' h_run
+        rw [hih, h_step_advance]
+        -- Goal: trans.nextLoc + count(c) + foldl 0 rest =
+        --       trans.nextLoc + foldl 0 ((Core.CmdExt.cmd c) :: rest).
+        -- The cons case of foldl: foldl init ((Core.CmdExt.cmd c) :: rest) =
+        -- foldl (init + Core.CmdExt.gotoInstrCount (Core.CmdExt.cmd c)) rest =
+        -- foldl (init + Imperative.Cmd.gotoInstrCount c) rest.
+        -- Use foldl_eq_init_add (or move the initial value out).
+        have h_cmd_count : Core.CmdExt.gotoInstrCount (Core.CmdExt.cmd c) =
+            Imperative.Cmd.gotoInstrCount c := rfl
+        -- We use Nat.add_comm and `List.foldl_assoc` if available; fall
+        -- back to manual induction.
+        have h_foldl_acc :
+            ∀ (l : List Core.Command) (k : Nat),
+              List.foldl (fun acc c => acc + Core.CmdExt.gotoInstrCount c) k l =
+              k + List.foldl (fun acc c => acc + Core.CmdExt.gotoInstrCount c) 0 l := by
+          intro l
+          induction l with
+          | nil => simp
+          | cons hd tl ih =>
+            intro k
+            simp only [List.foldl]
+            rw [ih (k + Core.CmdExt.gotoInstrCount hd),
+                ih (0 + Core.CmdExt.gotoInstrCount hd)]
+            omega
+        rw [show List.foldl
+                  (fun acc c => acc + Core.CmdExt.gotoInstrCount c) 0
+                  ((Core.CmdExt.cmd c) :: rest) =
+              List.foldl
+                  (fun acc c => acc + Core.CmdExt.gotoInstrCount c)
+                  (0 + Imperative.Cmd.gotoInstrCount c) rest from rfl,
+            h_foldl_acc rest (0 + Imperative.Cmd.gotoInstrCount c)]
+        omega
+      | .error e =>
+        simp only [h_step, Except.mapError, Bind.bind, Except.bind] at h_run
+        cases h_run
+    | call _ _ _ =>
+      unfold innerCmdLoop at h_run
+      simp at h_run
+
+/-! ## Monotonicity of `Cmd.toGotoInstructions` -/
+
+/-- `Cmd.toGotoInstructions` only grows the instruction array. -/
+theorem toGotoInstructions_size_le
+    (T : Core.Expression.TyEnv) (fname : String)
+    (c : Imperative.Cmd Core.Expression)
+    (trans ans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_run : Imperative.Cmd.toGotoInstructions T fname c trans = Except.ok ans) :
+    trans.instructions.size ≤ ans.instructions.size := by
+  cases c with
+  | init v ty initVal md =>
+    cases initVal with
+    | det e =>
+      obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, h_inst, _, _⟩ :=
+        Cmd_toGotoInstructions_init_det_ok T fname v ty e md trans ans h_run
+      rw [h_inst]
+      show trans.instructions.size ≤ (trans.instructions ++ #[_,_]).size
+      rw [Array.size_append]; simp
+    | nondet =>
+      obtain ⟨_, _, _, _, _, _, h_inst, _, _⟩ :=
+        Cmd_toGotoInstructions_init_nondet_ok T fname v ty md trans ans h_run
+      rw [h_inst, Array.size_push]; omega
+  | set v src md =>
+    cases src with
+    | det e =>
+      obtain ⟨_, _, _, _, _, _, _, _, h_inst, _⟩ :=
+        Cmd_toGotoInstructions_set_det_ok T fname v e md trans ans h_run
+      rw [h_inst, Array.size_push]; omega
+    | nondet =>
+      obtain ⟨_, _, _, _, _, _, h_inst, _⟩ :=
+        Cmd_toGotoInstructions_set_nondet_ok T fname v md trans ans h_run
+      rw [h_inst, Array.size_push]; omega
+  | assert label e md =>
+    obtain ⟨_, _, _, _, _, _, h_inst, _⟩ :=
+      Cmd_toGotoInstructions_assert_ok T fname label e md trans ans h_run
+    rw [h_inst, Array.size_push]; omega
+  | assume label e md =>
+    obtain ⟨_, _, _, _, _, _, h_inst, _⟩ :=
+      Cmd_toGotoInstructions_assume_ok T fname label e md trans ans h_run
+    rw [h_inst, Array.size_push]; omega
+  | cover label e md =>
+    unfold Imperative.Cmd.toGotoInstructions at h_run
+    simp only at h_run
+    match h_expr :
+        Imperative.ToGoto.toGotoExpr (P := Core.Expression) e with
+    | .ok e_goto =>
+      simp only [h_expr, Bind.bind, Except.bind, pure, Except.pure] at h_run
+      injection h_run with h_run
+      rw [← h_run, Array.size_push]; omega
+    | .error _ =>
+      simp [h_expr, Bind.bind, Except.bind] at h_run
+
+/-- `Cmd.toGotoInstructions` preserves the input prefix on `?`-lookups:
+any index `k < trans.instructions.size` reads the same in
+`ans.instructions[k]?` as `trans.instructions[k]?`. (The `?`-lookup
+form avoids the dependent-type elaboration issues that the
+proof-style lookup hits.) -/
+theorem toGotoInstructions_instructions_prefix?
+    (T : Core.Expression.TyEnv) (fname : String)
+    (c : Imperative.Cmd Core.Expression)
+    (trans ans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_run : Imperative.Cmd.toGotoInstructions T fname c trans = Except.ok ans)
+    (k : Nat) (h_k : k < trans.instructions.size) :
+    ans.instructions[k]? = trans.instructions[k]? := by
+  cases c with
+  | init v ty initVal md =>
+    cases initVal with
+    | det e =>
+      obtain ⟨_, _, i₀, i₁, _, _, _, _, _, _, _, _, h_inst, _, _⟩ :=
+        Cmd_toGotoInstructions_init_det_ok T fname v ty e md trans ans h_run
+      rw [h_inst]
+      have h_eq : trans.instructions.append #[i₀, i₁] = trans.instructions ++ #[i₀, i₁] := rfl
+      rw [h_eq, Array.getElem?_append_left h_k]
+    | nondet =>
+      obtain ⟨_, _, _, _, _, _, h_inst, _, _⟩ :=
+        Cmd_toGotoInstructions_init_nondet_ok T fname v ty md trans ans h_run
+      rw [h_inst, Array.getElem?_push_lt h_k, Array.getElem?_eq_getElem h_k]
+  | set v src md =>
+    cases src with
+    | det e =>
+      obtain ⟨_, _, _, _, _, _, _, _, h_inst, _⟩ :=
+        Cmd_toGotoInstructions_set_det_ok T fname v e md trans ans h_run
+      rw [h_inst, Array.getElem?_push_lt h_k, Array.getElem?_eq_getElem h_k]
+    | nondet =>
+      obtain ⟨_, _, _, _, _, _, h_inst, _⟩ :=
+        Cmd_toGotoInstructions_set_nondet_ok T fname v md trans ans h_run
+      rw [h_inst, Array.getElem?_push_lt h_k, Array.getElem?_eq_getElem h_k]
+  | assert label e md =>
+    obtain ⟨_, _, _, _, _, _, h_inst, _⟩ :=
+      Cmd_toGotoInstructions_assert_ok T fname label e md trans ans h_run
+    rw [h_inst, Array.getElem?_push_lt h_k, Array.getElem?_eq_getElem h_k]
+  | assume label e md =>
+    obtain ⟨_, _, _, _, _, _, h_inst, _⟩ :=
+      Cmd_toGotoInstructions_assume_ok T fname label e md trans ans h_run
+    rw [h_inst, Array.getElem?_push_lt h_k, Array.getElem?_eq_getElem h_k]
+  | cover label e md =>
+    unfold Imperative.Cmd.toGotoInstructions at h_run
+    simp only at h_run
+    match h_expr :
+        Imperative.ToGoto.toGotoExpr (P := Core.Expression) e with
+    | .ok e_goto =>
+      simp only [h_expr, Bind.bind, Except.bind, pure, Except.pure] at h_run
+      injection h_run with h_run
+      let assert_inst : CProverGOTO.Instruction :=
+        { type := .ASSERT, locationNum := trans.nextLoc,
+          sourceLoc := Imperative.metadataToSourceLoc md fname trans.sourceText
+            (comment := md.getPropertySummary.getD s!"cover {label}"),
+          guard := e_goto }
+      have h_inst : ans.instructions = trans.instructions.push assert_inst := by
+        rw [← h_run]
+      rw [h_inst]
+      rw [Array.getElem?_push_lt h_k, Array.getElem?_eq_getElem h_k]
+    | .error _ =>
+      simp [h_expr, Bind.bind, Except.bind] at h_run
+
+/-- `innerCmdLoop` only grows the instruction array. -/
+theorem innerCmdLoop_size_le
+    (T : Core.Expression.TyEnv) (fname : String)
+    (cmds : List Core.Command)
+    (trans ans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_run : innerCmdLoop T fname cmds trans = Except.ok ans) :
+    trans.instructions.size ≤ ans.instructions.size := by
+  induction cmds generalizing T trans with
+  | nil =>
+    rw [innerCmdLoop_nil] at h_run
+    injection h_run with h_run
+    rw [← h_run]; exact Nat.le_refl _
+  | cons cmd rest ih =>
+    cases cmd with
+    | cmd c =>
+      unfold innerCmdLoop at h_run
+      match h_step :
+          Imperative.Cmd.toGotoInstructions T fname c trans with
+      | .ok trans' =>
+        simp only [h_step, Except.mapError, Bind.bind, Except.bind] at h_run
+        have := toGotoInstructions_size_le T fname c trans trans' h_step
+        have := ih trans'.T trans' h_run
+        omega
+      | .error _ =>
+        simp only [h_step, Except.mapError, Bind.bind, Except.bind] at h_run
+        cases h_run
+    | call _ _ _ =>
+      unfold innerCmdLoop at h_run
+      simp at h_run
+
+/-- `innerCmdLoop` preserves the input prefix on `?`-lookups: any
+index `k < trans.instructions.size` reads the same in
+`ans.instructions[k]?` as `trans.instructions[k]?`. -/
+theorem innerCmdLoop_instructions_prefix?
+    (T : Core.Expression.TyEnv) (fname : String)
+    (cmds : List Core.Command)
+    (trans ans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_run : innerCmdLoop T fname cmds trans = Except.ok ans)
+    (k : Nat) (h_k : k < trans.instructions.size) :
+    ans.instructions[k]? = trans.instructions[k]? := by
+  induction cmds generalizing T trans with
+  | nil =>
+    rw [innerCmdLoop_nil] at h_run
+    injection h_run with h_run
+    subst h_run
+    rfl
+  | cons cmd rest ih =>
+    cases cmd with
+    | cmd c =>
+      unfold innerCmdLoop at h_run
+      match h_step :
+          Imperative.Cmd.toGotoInstructions T fname c trans with
+      | .ok trans' =>
+        simp only [h_step, Except.mapError, Bind.bind, Except.bind] at h_run
+        have h_k_trans' : k < trans'.instructions.size := by
+          have := toGotoInstructions_size_le T fname c trans trans' h_step; omega
+        rw [ih trans'.T trans' h_run h_k_trans']
+        exact toGotoInstructions_instructions_prefix? T fname c trans trans' h_step k h_k
+      | .error _ =>
+        simp only [h_step, Except.mapError, Bind.bind, Except.bind] at h_run
+        cases h_run
+    | call _ _ _ =>
+      unfold innerCmdLoop at h_run
+      simp at h_run
+
+/-! ## Per-block layout production
+
+The layout_block_body theorem: each admitted `.cmd c` at position `k`
+in `cmds` was emitted at offset `trans.nextLoc + cmdsPrefixInstrCount
+cmds k`. We use a `pgm.instructions[i]?`-style prefix hypothesis (so
+the proof avoids the dependent-type-rewrite issues of the
+`?`-less form). -/
+
+/-- Foldl-accumulator extraction: `foldl f k l = k + foldl f 0 l` for
+the per-cmd instr-count function. Used in the offset calculations. -/
+private theorem foldl_gotoInstrCount_extract_acc :
+    ∀ (l : List Core.Command) (k : Nat),
+      List.foldl (fun acc c => acc + Core.CmdExt.gotoInstrCount c) k l =
+      k + List.foldl (fun acc c => acc + Core.CmdExt.gotoInstrCount c) 0 l := by
+  intro l
+  induction l with
+  | nil => simp
+  | cons hd tl ih =>
+    intro k
+    simp only [List.foldl]
+    rw [ih (k + Core.CmdExt.gotoInstrCount hd),
+        ih (0 + Core.CmdExt.gotoInstrCount hd)]
+    omega
+
+/-- Per-Cmd nextLoc-advance: `Cmd.toGotoInstructions T fname c trans
+= .ok ans` implies `ans.nextLoc = trans.nextLoc +
+Imperative.Cmd.gotoInstrCount c`. -/
+theorem toGotoInstructions_nextLoc_advance
+    (T : Core.Expression.TyEnv) (fname : String)
+    (c : Imperative.Cmd Core.Expression)
+    (trans ans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_run : Imperative.Cmd.toGotoInstructions T fname c trans = Except.ok ans) :
+    ans.nextLoc = trans.nextLoc + Imperative.Cmd.gotoInstrCount c := by
+  cases c with
+  | init v ty initVal md =>
+    cases initVal with
+    | det e =>
+      obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, h_next, _⟩ :=
+        Cmd_toGotoInstructions_init_det_ok T fname v ty e md trans ans h_run
+      rw [h_next]; rfl
+    | nondet =>
+      obtain ⟨_, _, _, _, _, _, _, h_next, _⟩ :=
+        Cmd_toGotoInstructions_init_nondet_ok T fname v ty md trans ans h_run
+      rw [h_next]; rfl
+  | set v src md =>
+    cases src with
+    | det e =>
+      obtain ⟨_, _, _, _, _, _, _, _, _, h_next⟩ :=
+        Cmd_toGotoInstructions_set_det_ok T fname v e md trans ans h_run
+      rw [h_next]; rfl
+    | nondet =>
+      obtain ⟨_, _, _, _, _, _, _, h_next⟩ :=
+        Cmd_toGotoInstructions_set_nondet_ok T fname v md trans ans h_run
+      rw [h_next]; rfl
+  | assert label e md =>
+    obtain ⟨_, _, _, _, _, _, _, h_next⟩ :=
+      Cmd_toGotoInstructions_assert_ok T fname label e md trans ans h_run
+    rw [h_next]; rfl
+  | assume label e md =>
+    obtain ⟨_, _, _, _, _, _, _, h_next⟩ :=
+      Cmd_toGotoInstructions_assume_ok T fname label e md trans ans h_run
+    rw [h_next]; rfl
+  | cover label e md =>
+    unfold Imperative.Cmd.toGotoInstructions at h_run
+    simp only at h_run
+    match h_expr :
+        Imperative.ToGoto.toGotoExpr (P := Core.Expression) e with
+    | .ok e_goto =>
+      simp only [h_expr, Bind.bind, Except.bind, pure, Except.pure] at h_run
+      injection h_run with h_run
+      rw [← h_run]; rfl
+    | .error _ =>
+      simp [h_expr, Bind.bind, Except.bind] at h_run
+
+/-- The full per-block layout theorem: each admitted `.cmd c` at
+position `k` in `cmds` was emitted at offset `trans.nextLoc +
+cmdsPrefixInstrCount cmds k`. -/
+theorem innerCmdLoop_layout_block_body
+    (T : Core.Expression.TyEnv) (fname : String)
+    (cmds : List Core.Command)
+    (trans ans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_run : innerCmdLoop T fname cmds trans = Except.ok ans)
+    (h_size : trans.instructions.size = trans.nextLoc)
+    (pgm : Program)
+    (δ : Imperative.SemanticEval Core.Expression)
+    (δ_goto : SemanticEvalGoto Core.Expression)
+    (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
+    (h_expr_corr : ExprTranslationPreservesEval δ δ_goto δ_goto_bool)
+    (h_tx_eq :
+      ∀ e : Core.Expression.Expr,
+        Imperative.ToGoto.toGotoExpr (P := Core.Expression) e
+          = Except.ok (h_expr_corr.tx e))
+    (h_admitted :
+      ∀ (k : Nat) (h : k < cmds.length),
+        Core.CmdExt.isAdmittedCmd (cmds[k]'h) = true)
+    (h_prefix :
+      ∀ (k : Nat) (h : k < ans.instructions.size),
+        pgm.instructions[k]? = some ans.instructions[k]) :
+    ∀ (k : Nat) (inner : Imperative.Cmd Core.Expression)
+      (h : k < cmds.length),
+      cmds[k]'h = .cmd inner →
+      CmdEmittedAt δ δ_goto δ_goto_bool pgm
+        (trans.nextLoc + cmdsPrefixInstrCount cmds k) inner := by
+  induction cmds generalizing T trans with
+  | nil =>
+    intro k inner h_lt _
+    simp at h_lt
+  | cons cmd rest ih =>
+    intro k inner h_lt h_at
+    cases cmd with
+    | cmd c =>
+      unfold innerCmdLoop at h_run
+      match h_step :
+          Imperative.Cmd.toGotoInstructions T fname c trans with
+      | .ok trans' =>
+        simp only [h_step, Except.mapError, Bind.bind, Except.bind] at h_run
+        match k with
+        | 0 =>
+          -- Head case. h_at : (.cmd c) = .cmd inner, so after simp,
+          -- h_at : c = inner.
+          simp at h_at
+          -- We substitute `inner` (the binding from `intro inner`) with
+          -- `c` (the case-split variable). h_at says they're equal.
+          rw [← h_at]
+          -- Now goal mentions `c` in place of `inner`.
+          have h_prefix0 : cmdsPrefixInstrCount (Core.CmdExt.cmd c :: rest) 0 = 0 :=
+            rfl
+          rw [h_prefix0, Nat.add_zero]
+          -- Build h_prefix' for trans' from h_prefix on ans.
+          have h_prefix' :
+              ∀ (k : Nat) (h : k < trans'.instructions.size),
+                pgm.instructions[k]? = some trans'.instructions[k] := by
+            intro k h_k
+            have h_size' : trans'.instructions.size = trans'.nextLoc :=
+              toGotoInstructions_preserves_size_eq T fname c trans trans' h_step h_size
+            have h_size_le_ans :
+                trans'.instructions.size ≤ ans.instructions.size :=
+              innerCmdLoop_size_le trans'.T fname rest trans' ans h_run
+            have h_k_ans : k < ans.instructions.size := by omega
+            have h_eq_q :
+                ans.instructions[k]? = trans'.instructions[k]? :=
+              innerCmdLoop_instructions_prefix? trans'.T fname rest trans' ans h_run k h_k
+            rw [h_prefix k h_k_ans]
+            rw [Array.getElem?_eq_getElem h_k_ans] at h_eq_q
+            rw [Array.getElem?_eq_getElem h_k] at h_eq_q
+            injection h_eq_q with h_eq_q
+            rw [h_eq_q]
+          have h_admitted0 := h_admitted 0 (by simp)
+          exact cmdEmittedAt_of_toGotoInstructions
+            T fname c h_admitted0 trans trans' h_step h_size
+            pgm δ δ_goto δ_goto_bool h_expr_corr h_tx_eq h_prefix'
+        | k + 1 =>
+          -- Tail case: recurse.
+          have h_admitted' :
+              ∀ (k' : Nat) (h : k' < rest.length),
+                Core.CmdExt.isAdmittedCmd (rest[k']'h) = true := by
+            intro k' h_k'
+            have : k' + 1 < (Core.CmdExt.cmd c :: rest).length := by
+              show Nat.succ k' < Nat.succ rest.length
+              exact Nat.succ_lt_succ h_k'
+            have := h_admitted (k' + 1) this
+            simpa using this
+          have h_lt_rest : k < rest.length := by
+            simp at h_lt
+            exact Nat.lt_of_succ_lt_succ (Nat.succ_lt_succ h_lt)
+          have h_at_rest : rest[k]'h_lt_rest = .cmd inner := by
+            have := h_at
+            simp at this
+            exact this
+          have h_size' : trans'.instructions.size = trans'.nextLoc :=
+            toGotoInstructions_preserves_size_eq T fname c trans trans' h_step h_size
+          have h_advance :
+              trans'.nextLoc = trans.nextLoc + Imperative.Cmd.gotoInstrCount c :=
+            toGotoInstructions_nextLoc_advance T fname c trans trans' h_step
+          have h_ih := ih trans'.T trans' h_run h_size' h_admitted' k inner h_lt_rest h_at_rest
+          -- Adjust the offset.
+          have h_offset_eq :
+              trans'.nextLoc + cmdsPrefixInstrCount rest k =
+              trans.nextLoc + cmdsPrefixInstrCount (Core.CmdExt.cmd c :: rest) (k + 1) := by
+            rw [h_advance]
+            -- cmdsPrefixInstrCount (cmd c :: rest) (k+1)
+            --   = ((cmd c :: rest).take (k+1)).foldl ...
+            --   = (cmd c :: rest.take k).foldl ...
+            -- via List.take_succ_cons.
+            simp only [cmdsPrefixInstrCount, List.take_succ_cons, List.foldl]
+            -- Apply foldl-acc-extraction lemma to factor out the initial
+            -- accumulator.
+            rw [foldl_gotoInstrCount_extract_acc (rest.take k)
+                (0 + Core.CmdExt.gotoInstrCount (Core.CmdExt.cmd c))]
+            -- Both sides have foldl 0 (rest.take k) plus various
+            -- Imperative.Cmd.gotoInstrCount c terms.
+            -- Core.CmdExt.gotoInstrCount (.cmd c) = Imperative.Cmd.gotoInstrCount c.
+            show trans.nextLoc + Imperative.Cmd.gotoInstrCount c +
+                cmdsPrefixInstrCount rest k =
+              trans.nextLoc + (0 + Core.CmdExt.gotoInstrCount (Core.CmdExt.cmd c) +
+                List.foldl (fun acc c => acc + Core.CmdExt.gotoInstrCount c) 0 (rest.take k))
+            simp [cmdsPrefixInstrCount, Core.CmdExt.gotoInstrCount]
+            omega
+          rw [h_offset_eq] at h_ih
+          exact h_ih
+      | .error _ =>
+        simp only [h_step, Except.mapError, Bind.bind, Except.bind] at h_run
+        cases h_run
+    | call _ _ _ =>
+      have h_contra := h_admitted 0 (by simp)
+      simp [Core.CmdExt.isAdmittedCmd] at h_contra
+
+/-! ## LabelMap operations and invariants
+
+The translator threads a `Std.HashMap String Nat` for `labelMap`,
+inserting `label ↦ trans.nextLoc` at the start of each outer-loop
+iteration. We model the labelMap as a `LabelMap = String → Option Nat`
+function, which is the form `WellFormedTranslation` consumes.
+
+The key operation: extending an existing `labelMap` with `label ↦ pc`.
+This only preserves injectivity when `label` is fresh (not already in
+the map's domain), which corresponds to the implicit
+`BlockLabelsDistinct cfg` requirement on the input CFG. -/
+
+/-- Extend a `LabelMap` with one new `label ↦ pc` mapping. -/
+@[expose] def labelMapInsert
+    (m : LabelMap) (label : String) (pc : Nat) : LabelMap :=
+  fun l => if l = label then some pc else m l
+
+/-- Inserting a fresh label preserves injectivity, provided the new
+`pc` is also fresh (not already in the codomain of `m`). -/
+theorem labelMapInsert_preserves_inj
+    (m : LabelMap) (label : String) (pc : Nat)
+    (h_inj :
+      ∀ l₁ l₂ pc', m l₁ = some pc' → m l₂ = some pc' → l₁ = l₂)
+    (h_fresh_dom : m label = none)
+    (h_fresh_cod : ∀ l pc', m l = some pc' → pc' ≠ pc) :
+    ∀ l₁ l₂ pc', (labelMapInsert m label pc) l₁ = some pc' →
+      (labelMapInsert m label pc) l₂ = some pc' →
+      l₁ = l₂ := by
+  intro l₁ l₂ pc' h₁ h₂
+  unfold labelMapInsert at h₁ h₂
+  by_cases hl₁ : l₁ = label
+  · by_cases hl₂ : l₂ = label
+    · rw [hl₁, hl₂]
+    · -- l₁ = label, l₂ ≠ label.
+      -- h₁ says some pc = some pc', so pc' = pc.
+      simp [hl₁] at h₁
+      simp [hl₂] at h₂
+      -- But m l₂ = some pc' and pc' = pc, contradicting h_fresh_cod.
+      subst h₁
+      have := h_fresh_cod l₂ pc h₂
+      contradiction
+  · by_cases hl₂ : l₂ = label
+    · -- Symmetric to above.
+      simp [hl₁] at h₁
+      simp [hl₂] at h₂
+      subst h₂
+      have := h_fresh_cod l₁ pc h₁
+      contradiction
+    · -- Neither is `label`; both lookups go to `m`.
+      simp [hl₁] at h₁
+      simp [hl₂] at h₂
+      exact h_inj l₁ l₂ pc' h₁ h₂
+
+/-- Inserting a label preserves the `pc < nextLoc` bound provided the
+new `pc` is also `< nextLoc`. -/
+theorem labelMapInsert_preserves_lt
+    (m : LabelMap) (label : String) (pc : Nat) (nextLoc : Nat)
+    (h_lt_old : ∀ l pc', m l = some pc' → pc' < nextLoc)
+    (h_pc_lt : pc < nextLoc) :
+    ∀ l pc', (labelMapInsert m label pc) l = some pc' → pc' < nextLoc := by
+  intro l pc' h
+  unfold labelMapInsert at h
+  by_cases h_eq : l = label
+  · simp [h_eq] at h
+    rw [← h]; exact h_pc_lt
+  · simp [h_eq] at h
+    exact h_lt_old l pc' h
+
+/-- After `labelMapInsert`, the inserted label resolves to its `pc`. -/
+@[simp] theorem labelMapInsert_self
+    (m : LabelMap) (label : String) (pc : Nat) :
+    (labelMapInsert m label pc) label = some pc := by
+  unfold labelMapInsert
+  simp
+
+/-- After `labelMapInsert`, an unrelated label resolves the same as in
+the original map. -/
+@[simp] theorem labelMapInsert_other
+    (m : LabelMap) (label l : String) (pc : Nat) (h : l ≠ label) :
+    (labelMapInsert m label pc) l = m l := by
+  unfold labelMapInsert
+  simp [h]
+
+/-! ## Top-level theorem (statement + interface)
+
+The top-level `coreCFGToGotoTransform_wellFormed` theorem proves that
+`coreCFGToGotoTransform` produces a `WellFormedTranslation`-witnessed
+GOTO program. Its proof requires the outer-loop equivalence (the actual
+translator's imperative for-loop equals an explicit fold over a
+per-block step), which is the largest remaining gap.
+
+In the interim, we expose the theorem's *interface* — its statement
+plus the wiring lemmas that close from a stipulated post-loop state to
+`WellFormedTranslation`. Concrete callers can plug in their own
+loop-equivalence proof and obtain `WellFormedTranslation`. -/
+
+/-- The hypothesis bundle for `coreCFGToGotoTransform_wellFormed_via_shadow`:
+captures all the facts that an outer-loop equivalence proof must
+supply about the `coreCFGToGotoTransform`'s output. -/
+structure CoreCFGToGotoTransformShadow
+    (cfg : Core.DetCFG)
+    (Env : Core.Expression.TyEnv) (functionName : String)
+    (trans₀ ans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (δ : Imperative.SemanticEval Core.Expression)
+    (δ_goto : SemanticEvalGoto Core.Expression)
+    (δ_goto_bool : SemanticEvalGotoBool Core.Expression) where
+  /-- The final labelMap, total over `cfg.blocks`. -/
+  finalLabelMap : LabelMap
+  /-- Every CFG block label has a `pc` in `finalLabelMap`. -/
+  labelMap_total :
+    ∀ l, l ∈ cfg.blocks.map Prod.fst → (finalLabelMap l).isSome
+  /-- Distinct labels map to distinct `pc`s. -/
+  labelMap_inj :
+    ∀ l₁ l₂ pc, finalLabelMap l₁ = some pc → finalLabelMap l₂ = some pc → l₁ = l₂
+  /-- The `instructions.size = nextLoc` invariant on the final state. -/
+  size_eq : ans.instructions.size = ans.nextLoc
+  /-- Every instruction's `locationNum = index`. -/
+  locationNum_eq_index :
+    ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+      ans.instructions[i]? = some instr → instr.locationNum = i
+  /-- For each CFG block label, `instrAt` of its `pc` returns a LOCATION
+  instruction. -/
+  layout_location :
+    ∀ l blk pc,
+      (l, blk) ∈ cfg.blocks → finalLabelMap l = some pc →
+      ∃ instr, ans.instructions[pc]? = some instr ∧ instr.type = .LOCATION
+  /-- For each `condGoto` block, two GOTO instructions appear at the
+  end with proper targets. -/
+  layout_cond_goto :
+    ∀ l blk pc cond lt lf md, (l, blk) ∈ cfg.blocks →
+      finalLabelMap l = some pc →
+      blk.transfer = .condGoto cond lt lf md →
+      ∃ pc_neg pc_uncond pc_lf pc_lt instr_neg instr_uncond,
+        pc_neg = pc + 1 + DetBlockBodyInstrCount blk ∧
+        pc_uncond = pc_neg + 1 ∧
+        ans.instructions[pc_neg]? = some instr_neg ∧
+        instr_neg.type = .GOTO ∧
+        instr_neg.target = some pc_lf ∧
+        finalLabelMap lf = some pc_lf ∧
+        ans.instructions[pc_uncond]? = some instr_uncond ∧
+        instr_uncond.type = .GOTO ∧
+        instr_uncond.target = some pc_lt ∧
+        finalLabelMap lt = some pc_lt
+  /-- The condGoto guards have the right shape. -/
+  layout_cond_goto_guards :
+    ∀ l blk pc cond lt lf md instr_neg instr_uncond,
+      (l, blk) ∈ cfg.blocks →
+      finalLabelMap l = some pc →
+      blk.transfer = .condGoto cond lt lf md →
+      ans.instructions[pc + 1 + DetBlockBodyInstrCount blk]? = some instr_neg →
+      ans.instructions[pc + 1 + DetBlockBodyInstrCount blk + 1]? = some instr_uncond →
+      ∃ e_goto,
+        instr_neg.guard = e_goto.not ∧
+        ExprTranslated δ δ_goto δ_goto_bool cond e_goto ∧
+        instr_uncond.guard = CProverGOTO.Expr.true
+  /-- For each `finish` block, an END_FUNCTION appears after the body. -/
+  layout_finish :
+    ∀ l blk pc md, (l, blk) ∈ cfg.blocks →
+      finalLabelMap l = some pc →
+      blk.transfer = .finish md →
+      ∃ pc_end instr_end,
+        pc_end = pc + 1 + DetBlockBodyInstrCount blk ∧
+        ans.instructions[pc_end]? = some instr_end ∧
+        instr_end.type = .END_FUNCTION
+  /-- For each block body, the per-Cmd layout holds. -/
+  layout_block_body :
+    ∀ l blk pc, (l, blk) ∈ cfg.blocks → finalLabelMap l = some pc →
+    ∀ k inner,
+      (h : k < blk.cmds.length) →
+      blk.cmds[k]'h = .cmd inner →
+      CmdEmittedAt δ δ_goto δ_goto_bool
+        { name := "", parameterIdentifiers := #[],
+          instructions := ans.instructions } -- temporary program
+        (pc + 1 + cmdsPrefixInstrCount blk.cmds k)
+        inner
+  /-- The CFG's entry label is in the map. -/
+  entry_in_map : ∃ pc, finalLabelMap cfg.entry = some pc
+
+/-- Bridge from `CoreCFGToGotoTransformShadow` to
+`WellFormedTranslation`: build the witness over the program whose
+instructions equal `ans.instructions`. The bridge is essentially a
+field-by-field copy — each field of `WellFormedTranslation` is provided
+directly by the corresponding field of `CoreCFGToGotoTransformShadow`,
+modulo the `instrAt`-vs-`instructions[?]` rephrasing.
+
+This lemma's existence means the *only* remaining work to close the
+top-level theorem is producing a `CoreCFGToGotoTransformShadow` from
+the actual translator's output — i.e., the outer-loop equivalence
+proof. Once that lands, this lemma converts it directly into a
+`WellFormedTranslation`. -/
+def wellFormedTranslation_of_shadow
+    (cfg : Core.DetCFG)
+    (Env : Core.Expression.TyEnv) (functionName : String)
+    (trans₀ ans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (δ : Imperative.SemanticEval Core.Expression)
+    (δ_goto : SemanticEvalGoto Core.Expression)
+    (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
+    (shadow : CoreCFGToGotoTransformShadow cfg Env functionName
+                trans₀ ans δ δ_goto δ_goto_bool) :
+    WellFormedTranslation cfg
+      { name := "", parameterIdentifiers := #[],
+        instructions := ans.instructions }
+      δ δ_goto δ_goto_bool where
+  labelMap := shadow.finalLabelMap
+  labelMap_total := shadow.labelMap_total
+  labelMap_inj := shadow.labelMap_inj
+  layout_location := by
+    intro l blk pc h_in h_lookup
+    obtain ⟨instr, h_at, h_ty⟩ := shadow.layout_location l blk pc h_in h_lookup
+    refine ⟨instr, ?_, h_ty⟩
+    -- Goal: pgm.instrAt pc = some instr, where pgm.instructions = ans.instructions.
+    show ans.instructions[pc]? = some instr
+    exact h_at
+  layout_cond_goto := by
+    intro l blk pc cond lt lf md h_in h_lookup h_transfer
+    obtain ⟨pc_neg, pc_uncond, pc_lf, pc_lt, instr_neg, instr_uncond,
+            h_pc_neg, h_pc_uncond, h_at_neg, h_ty_neg, h_target_neg, h_lf_lookup,
+            h_at_uncond, h_ty_uncond, h_target_uncond, h_lt_lookup⟩ :=
+      shadow.layout_cond_goto l blk pc cond lt lf md h_in h_lookup h_transfer
+    refine ⟨pc_neg, pc_uncond, pc_lf, pc_lt, instr_neg, instr_uncond,
+            h_pc_neg, h_pc_uncond, ?_, h_ty_neg, h_target_neg, h_lf_lookup,
+            ?_, h_ty_uncond, h_target_uncond, h_lt_lookup⟩
+    · show ans.instructions[pc_neg]? = some instr_neg
+      exact h_at_neg
+    · show ans.instructions[pc_uncond]? = some instr_uncond
+      exact h_at_uncond
+  layout_cond_goto_guards := by
+    intro l blk pc cond lt lf md instr_neg instr_uncond h_in h_lookup h_transfer h_neg h_uncond
+    -- The hypotheses use Program.instrAt; convert to ans.instructions[?].
+    have h_neg' : ans.instructions[pc + 1 + DetBlockBodyInstrCount blk]? = some instr_neg := h_neg
+    have h_uncond' : ans.instructions[pc + 1 + DetBlockBodyInstrCount blk + 1]? = some instr_uncond := h_uncond
+    exact shadow.layout_cond_goto_guards l blk pc cond lt lf md instr_neg instr_uncond
+      h_in h_lookup h_transfer h_neg' h_uncond'
+  layout_finish := by
+    intro l blk pc md h_in h_lookup h_transfer
+    obtain ⟨pc_end, instr_end, h_pc_end, h_at_end, h_ty_end⟩ :=
+      shadow.layout_finish l blk pc md h_in h_lookup h_transfer
+    refine ⟨pc_end, instr_end, h_pc_end, ?_, h_ty_end⟩
+    show ans.instructions[pc_end]? = some instr_end
+    exact h_at_end
+  layout_block_body := shadow.layout_block_body
+  entry_in_map := shadow.entry_in_map
+  locationNum_eq_index := by
+    intro i instr h
+    -- Goal: instr.locationNum = i, where h : pgm.instrAt i = some instr.
+    -- pgm.instrAt i = ans.instructions[i]? by the program's instructions field.
+    have h' : ans.instructions[i]? = some instr := h
+    exact shadow.locationNum_eq_index i instr h'
+
+/-! Documentation of the remaining work to close
+`coreCFGToGotoTransform_wellFormed`:
+
+```lean
+theorem coreCFGToGotoTransform_wellFormed
+    (cfg : Core.DetCFG)
+    (Env : Core.Expression.TyEnv) (functionName : String)
+    (trans₀ : Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_init_size : trans₀.instructions.size = trans₀.nextLoc)
+    (h_init_loc : ∀ i instr, trans₀.instructions[i]? = some instr →
+                              instr.locationNum = i)
+    (h_distinct : List.Pairwise (· ≠ ·) (cfg.blocks.map Prod.fst))
+    (h_admitted_blocks :
+      ∀ l blk, (l, blk) ∈ cfg.blocks →
+      ∀ k h, Core.CmdExt.isAdmittedCmd (blk.cmds[k]'h) = true)
+    (h_blocks_nonempty : ∀ l blk, (l, blk) ∈ cfg.blocks → True)
+    (h_entry_first : cfg.blocks.head?.map Prod.fst = some cfg.entry)
+    (ans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_run : coreCFGToGotoTransform Env functionName cfg trans₀
+              = Except.ok ans)
+    (δ : Imperative.SemanticEval Core.Expression)
+    (δ_goto : SemanticEvalGoto Core.Expression)
+    (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
+    (h_expr_corr : ExprTranslationPreservesEval δ δ_goto δ_goto_bool)
+    (h_tx_eq : ∀ e, Imperative.ToGoto.toGotoExpr e = .ok (h_expr_corr.tx e)) :
+    WellFormedTranslation cfg
+      { name := functionName, parameterIdentifiers := #[],
+        instructions := ans.instructions }
+      δ δ_goto δ_goto_bool := by
+  -- Build the shadow witness from the actual translator's output.
+  have shadow : CoreCFGToGotoTransformShadow cfg Env functionName
+                  trans₀ ans δ δ_goto δ_goto_bool := by
+    -- HERE: the missing 500-900 LoC outer-loop equivalence proof.
+    -- It walks `coreCFGToGotoTransform`'s body, threading the partial
+    -- WF invariant through emitLabel + innerCmdLoop + transfer-emit +
+    -- patchGotoTargets, building each shadow field.
+    admit -- placeholder; replace with the loop-induction proof.
+  exact wellFormedTranslation_of_shadow cfg Env functionName
+    trans₀ ans δ δ_goto δ_goto_bool shadow
 ```
 
-The proof case-splits on `c` and uses each per-`Cmd` shape lemma plus
-the matching `cmdEmittedAt_*` builder. The `h_admitted` hypothesis
-rules out `.cover` and `.set _ .nondet`.
-
-### Step 2: per-block (one outer-loop-iteration) driver lemma
-
-Captures what changes during one iteration of the
-`for (label, block) in cfg.blocks do ...` loop. The mutable state
-threads `(trans, labelMap, pendingPatches)`; the body emits:
-- one LOCATION (via `emitLabel`),
-- `block.cmds.foldlM` (via `Cmd.toGotoInstructions` for `.cmd c` cases;
-  `.call` cases are out of scope under `isAdmittedCmd`),
-- the transfer instructions (`condGoto` → 2 GOTOs, `finish` → 1
-  END_FUNCTION).
-
-The lemma's conclusion is that, after one iteration, the new `trans'`
-satisfies a *partial* `WellFormedTranslation` over `cfg.blocks.take k+1`
-relative to the old `trans`'s partial WF over `cfg.blocks.take k`.
-
-The *partial* `WellFormedTranslation` is the obvious weakening of the
-full predicate that quantifies over `(l, blk) ∈ blocks_so_far` (using
-`List.take`) instead of all `cfg.blocks`. It also needs to drop
-`labelMap_total` (some labels haven't been visited yet) and refers to
-`pendingPatches` as forward references.
-
-### Step 3: loop induction + final patching
-
-The for-loop induction proves that after iterating over all
-`cfg.blocks`, the `trans` state satisfies an "almost-WF" predicate
-where `pendingPatches` records the unresolved forward references.
-
-The patching pass then resolves these (one `Array.set!` per pending
-patch), turning the "almost-WF" into a full
-`WellFormedTranslation`. The key facts needed here:
-
-1. `patchGotoTargets_preserves_size` (proved here),
-2. `patchGotoTargets_preserves_nextLoc` (proved here),
-3. `patchGotoTargets` only changes the `target` field (proved here
-   indirectly; the `at_unpatched` direction is one short induction
-   away),
-4. `labelMap` after all iterations is total over `cfg.blocks.map Prod.fst`
-   (a direct consequence of "every iteration inserts the block's
-   label"),
-5. `labelMap` is injective: each insertion uses `nextLoc` as the value,
-   `nextLoc` is strictly monotonic across iterations, so the inverse is
-   a function (any value occurs at most once).
-
-### Risk: `labelMap_inj` and shadowing
-
-The injectivity of `labelMap` requires the *labels* to be distinct
-across iterations. `Std.HashMap.insert` overwrites, so two iterations
-inserting the same label would still produce a hash map, but the
-witness for injectivity would fail.
-
-The `Core.DetCFG` invariant that block labels are distinct is currently
-implicit (no Lean predicate enforces it). Either:
-
-* The wrapper `procedureToGotoCtxViaCFG` rejects CFGs with duplicate
-  labels (currently it doesn't), or
-* `WellFormedTranslation` is restricted to CFGs satisfying a
-  `BlockLabelsDistinct cfg` predicate.
-
-The closer of the two is to add `BlockLabelsDistinct` as an explicit
-hypothesis on `coreCFGToGotoTransform_wellFormed`. The translator's
-output is "well-formed" only on well-formed inputs.
--/
+The body's `admit` is the loop-induction work — *this code is in a
+documentation block, not in the live module*. Everything else
+(per-emit preservation, per-Cmd dispatcher, `innerCmdLoop_layout_block_body`,
+`labelMapInsert` invariants, `wellFormedTranslation_of_shadow`) is
+already proven in this file. -/
 
 end -- public section
 
