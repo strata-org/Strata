@@ -71,17 +71,34 @@ strip prelude → BoogieToStrata → fix_core_st → backend(s).
 
 ## Current verification results
 
-Snapshot from the latest run on the 31-program benchmark (12 original +
-13 simplified AWS C Common + 6 verbatim CBMC harnesses imported from
-`awslabs/aws-c-common`'s `verification/cbmc/proofs/`). The verbatim
-harnesses use small adapter shims to map CBMC primitives onto SMACK's
-`__VERIFIER_*` family; the bar for inclusion was translatability
-(Strip / B2S / Fix all OK), not verification, so PARTIAL/FAIL counts
-are expected to dominate that group until the open backend blockers
-are addressed. `OK` columns report pipeline-stage success; backend
-columns report verification outcome. Run with `--split-procs` to
-surface obligations the env-error contamination would otherwise
-suppress.
+Snapshot from the latest run on the 43-program benchmark:
+
+- 12 original benchmark programs.
+- 13 simplified AWS C Common functions (hand-written, in the
+  `programs/` style of `aws_array_eq.c`).
+- 6 verbatim CBMC harnesses imported from `awslabs/aws-c-common`'s
+  `verification/cbmc/proofs/`.
+- 12 verbatim CBMC harnesses imported from `FreeRTOS/coreJSON`'s
+  `test/cbmc/proofs/` (each bundles `core_json.h` + `core_json.c`
+  alongside the harness body).
+
+The verbatim harness groups use small adapter shims to map CBMC
+primitives onto SMACK's `__VERIFIER_*` family; the bar for inclusion
+was translatability (Strip / B2S / Fix all OK), not verification.
+
+The deductive / bugFinding columns below are from a non-`--split-procs`
+run; the cbmc column on the first 31 rows is the prior `--split-procs`
+snapshot from the smaller suite. The 12 coreJSON harnesses were not
+re-run through cbmc — vendoring full `core_json.c` produces large
+.bpl files that hit the same callee-bodies blocker as everything else
+(see *Known blockers*); marked as `n/a` to flag the lack of fresh
+data.
+
+`OK` columns report pipeline-stage success; backend columns report
+verification outcome. Run with `--split-procs` to surface obligations
+the env-error contamination would otherwise suppress (some PASS rows
+in non-split mode become PARTIAL when split-procs runs each procedure
+independently).
 
 ```
 Program                               |  Strip |    B2S |    Fix |    deductive |   bugFinding |         cbmc
@@ -89,7 +106,7 @@ Program                               |  Strip |    B2S |    Fix |    deductive 
 # Original benchmark
 abs_func                              |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
 array_sum                             |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
-aws_array_eq                          |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+aws_array_eq                          |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
 aws_byte_cursor_advance               |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
 aws_ring_buffer                       |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
 loop_sum                              |     OK |     OK |     OK |         PASS |      PARTIAL |      TIMEOUT
@@ -102,20 +119,20 @@ swap                                  |     OK |     OK |     OK |      PARTIAL 
 
 # Extended benchmark (simplified AWS C Common)
 aws_add_size_checked                  |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
-aws_array_list_get                    |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
-aws_array_list_set                    |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
-aws_byte_buf_append                   |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+aws_array_list_get                    |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
+aws_array_list_set                    |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
+aws_byte_buf_append                   |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
 aws_byte_buf_init                     |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
-aws_byte_cursor_eq                    |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
-aws_hash_string                       |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+aws_byte_cursor_eq                    |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
+aws_hash_string                       |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
 aws_is_power_of_two                   |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
 aws_linked_list_push                  |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
 aws_min_max                           |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
 aws_mul_size_checked                  |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
 aws_round_up_to_power_of_two          |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
-aws_string_eq                         |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+aws_string_eq                         |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
 
-# CBMC harness import (verbatim from upstream)
+# CBMC harness import (verbatim from awslabs/aws-c-common)
 aws_add_size_checked_harness          |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
 aws_add_size_saturating_harness       |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
 aws_is_power_of_two_harness           |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
@@ -123,16 +140,35 @@ aws_mul_size_checked_harness          |     OK |     OK |     OK |         PASS 
 aws_mul_size_saturating_harness       |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
 aws_round_up_to_power_of_two_harness  |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
 
-     deductive: 11 pass, 20 partial, 0 warn, 0 fail, 0 n/a
-    bugFinding: 0 pass, 31 partial, 0 warn, 0 fail, 0 n/a
-          cbmc: 0 pass, 30 fail, 1 timeout, 0 n/a
+# CBMC harness import (verbatim from FreeRTOS/coreJSON)
+JSON_Iterate_harness                  |     OK |     OK |     OK |         PASS |      PARTIAL |          n/a
+JSON_SearchConst_harness              |     OK |     OK |     OK |         PASS |      PARTIAL |          n/a
+JSON_Validate_harness                 |     OK |     OK |     OK |         PASS |      PARTIAL |          n/a
+skipAnyScalar_harness                 |     OK |     OK |     OK |         PASS |      PARTIAL |          n/a
+skipCollection_harness                |     OK |     OK |     OK |         PASS |      PARTIAL |          n/a
+skipDigits_harness                    |     OK |     OK |     OK |         PASS |      PARTIAL |          n/a
+skipEscape_harness                    |     OK |     OK |     OK |         FAIL |         FAIL |          n/a
+skipObjectScalars_harness             |     OK |     OK |     OK |         PASS |      PARTIAL |          n/a
+skipScalars_harness                   |     OK |     OK |     OK |         PASS |      PARTIAL |          n/a
+skipSpace_harness                     |     OK |     OK |     OK |         PASS |      PARTIAL |          n/a
+skipString_harness                    |     OK |     OK |     OK |         PASS |      PARTIAL |          n/a
+skipUTF8_harness                      |     OK |     OK |     OK |         PASS |      PARTIAL |          n/a
+
+     deductive: 29 pass, 13 partial, 0 warn, 1 fail, 0 n/a
+    bugFinding: 0 pass, 42 partial, 0 warn, 1 fail, 0 n/a
+          cbmc: 0 pass, 30 fail, 1 timeout, 12 n/a
 ```
 
-The "CBMC harness import" group represents the easy-to-translate slice
-of upstream's 190-proof tree: programs that don't depend on AWS struct
-types (`aws_byte_buf`, `aws_array_list`, `aws_hash_*`) or
-`proof_helpers/` infrastructure. The remaining ~180 upstream proofs
-need stub work for those dependencies before they could be imported.
+The two CBMC-import groups represent the easy-to-translate slice of
+their respective upstream proof trees:
+- **aws-c-common.** 6 of ~190 upstream proofs — the rest depend on
+  AWS struct types (`aws_byte_buf`, `aws_array_list`, `aws_hash_*`)
+  or `proof_helpers/` infrastructure that requires stub work.
+- **coreJSON.** 12 of 15 upstream proofs translate cleanly (the 3
+  search harnesses — `arraySearch`, `objectSearch`, `multiSearch` —
+  segfault inside SMACK's clang frontend). One of the 12,
+  `skipEscape_harness`, exits the deductive verifier with SIGABRT,
+  surfacing a Strata-side bug worth tracking as a regression input.
 
 ## What this branch ships (vs `origin/main`)
 
@@ -144,13 +180,19 @@ Pipeline / benchmark:
 - 13 new simplified AWS C Common programs in `programs/`, expanding
   the suite from 12 to 25. Commit `ee57bb2b7`.
 - 6 verbatim CBMC harnesses imported from `awslabs/aws-c-common`'s
-  `verification/cbmc/proofs/` tree, expanding the suite to 31. The
-  fetcher (a throwaway `wt-test/fetch_cbmc_harness.py`) prefilters
-  for self-contained harnesses, inlines the function-under-test body
-  from upstream's `math.inl` / `math.fallback.inl`, and emits one
-  self-contained `.c` per program with an adapter prelude that shims
-  CBMC primitives onto SMACK's `__VERIFIER_*` family. Commit
-  `283bdac16`.
+  `verification/cbmc/proofs/` tree. The fetcher (a throwaway
+  `wt-test/fetch_cbmc_harness.py`) prefilters for self-contained
+  harnesses, inlines the function-under-test body from upstream's
+  `math.inl` / `math.fallback.inl`, and emits one self-contained `.c`
+  per program with an adapter prelude that shims CBMC primitives onto
+  SMACK's `__VERIFIER_*` family. Commit `283bdac16`.
+- 12 verbatim CBMC harnesses imported from `FreeRTOS/coreJSON`'s
+  `test/cbmc/proofs/` tree, expanding the suite to 43. Each program
+  bundles `core_json.h` + `core_json.c` verbatim alongside the harness
+  body folded into `main()`; the prelude reroutes `coreJSON_ASSERT`
+  through `__VERIFIER_assume` so the asserts CBMC enforces as
+  preconditions become assumptions for the deductive verifier.
+  Generator at `wt-test/fetch_corejson_harness.py`. Commit `2c7a49181`.
 
 BoogieToStrata (cherry-picked from PR 1149 plus follow-up):
 
@@ -201,8 +243,9 @@ and `Tools/BoogieToStrata/IntegrationTests/BoogieToStrataIntegrationTests.cs`.
   size: integer, expected array 0: integer`. The shim's nondet
   initializer for the memory-map params produces an array shape cbmc
   considers incompatible with main's declared parameter type. 16 of
-  31 programs hit this (the 6 verbatim CBMC harnesses use only
-  primitive scalar params, so they avoid this blocker). Likely fix
+  the 25 hand-written programs hit this; the 18 verbatim CBMC
+  harnesses use only primitive scalar params, so they avoid this
+  blocker. Likely fix
   on the array-type emission for
   `Map ref i8` (`Strata/Backends/CBMC/GOTO/LambdaToCProverGOTO.lean`'s
   `LMonoTy.toGotoType`).
@@ -215,14 +258,17 @@ and `Tools/BoogieToStrata/IntegrationTests/BoogieToStrataIntegrationTests.cs`.
   back-edges from the GOTO emission order; that's resolved on this
   branch — see *What this branch ships → CFG block emission in
   reverse-postorder*.
-- **Deductive PARTIAL breakdown (sample-based).** The 20 deductive
-  PARTIALs across the 31-program suite split into two sub-classes by
+- **Deductive PARTIAL breakdown (sample-based).** The deductive
+  PARTIALs across the 43-program suite split into two sub-classes by
   failing-VC verdict and origin:
   - **(a) Missing `ensures` on a user-defined helper** — solver
     refutes with `🔶 can be both true and false`, label
     `callElimAssert_assert__i32_requires_0_NN`. Every assertion of
     the form `assert(callee(...) == expected)` where the user fn has
-    no spec block. ~17 of 31 programs, varies in VC count per program.
+    no spec block. ~17 of the 25 hand-written programs hit this; the
+    18 verbatim CBMC harnesses don't trip it because their callees
+    have no postconditions to discharge (they verify call shape, not
+    functional correctness).
     `abs_func` and `max_func` were previously masked as a separate
     `__VERIFIER_assume` blocker; once that was fixed (commit
     `1b2231f99`) their residual VCs landed here. Fix lever: synthesize
@@ -263,11 +309,6 @@ for translator-level status.
 Benchmark expansion — additional CBMC harness sources surveyed but
 not yet imported:
 
-- **`FreeRTOS/coreJSON`** (MIT, 15 harnesses under `test/cbmc/proofs/`).
-  Cleanest external source identified. Each harness is a 4–10 line
-  caller of one JSON parser function; contracts live in
-  `core_json_contracts.h` as CBMC function annotations rather than
-  proof_helpers infrastructure. Almost all 15 should translate.
 - **`aws/s2n-tls`** (Apache-2.0, 161 harnesses under
   `tests/cbmc/proofs/`). Richest source by far, but most depend on
   s2n's `cbmc_proof/make_common_datastructures.h`. The
@@ -293,8 +334,9 @@ per source repo, and curate the union into `programs/`.
 Other levers (orthogonal to benchmark expansion):
 
 - Address the deductive sub-class (a) blocker (synthesize `ensures`
-  from procedure bodies in a Strata-side pass). Would flip ~17 of 31
-  rows from PARTIAL → PASS deductive. See *Known blockers*.
+  from procedure bodies in a Strata-side pass). Would flip ~17 of the
+  25 hand-written programs from PARTIAL → PASS deductive. See *Known
+  blockers*.
 - Address the cbmc callee-bodies blocker (iterate over all reachable
   procedures in `coreToGotoFilesDispatch`, not just `main`). Would
   unblock the cbmc column for the ~9 programs that currently hit
