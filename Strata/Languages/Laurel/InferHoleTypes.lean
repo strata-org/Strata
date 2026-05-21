@@ -51,8 +51,6 @@ inductive InferHoleTypesStats where
 
 structure InferHoleState where
   model : SemanticModel
-  /-- Type-relation tables used by the consistency check on pre-annotated holes. -/
-  typeContext : TypeContext
   currentOutputType : HighTypeMd
   statistics : Statistics := {}
   diagnostics : List DiagnosticModel := []
@@ -89,7 +87,7 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd) : InferHol
   match expr with
   | AstNode.mk val source =>
   match val with
-  | .Hole det existingTy =>
+  | .Hole det _ =>
       if expectedType.val == .Unknown then
         modify fun s => { s with
           statistics := s.statistics.increment s!"{InferHoleTypesStats.holesLeftUnknown}"
@@ -97,18 +95,6 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd) : InferHol
         }
         return expr
       else
-        -- If the hole already carried a type (from resolution's Hole-None-Check
-        -- rule, or from a user-written `?: T`), flag a conflict when the two
-        -- types disagree under consistency (gradual ~).
-        match existingTy with
-        | some prior =>
-          let ctx := (← get).typeContext
-          unless isConsistent ctx prior expectedType do
-            modify fun s => { s with
-              diagnostics := s.diagnostics ++ [diagnosticFromSource source
-                s!"hole annotated with '{formatHighTypeVal prior.val}' but context expects '{formatHighTypeVal expectedType.val}'"]
-            }
-        | none => pure ()
         modify fun s => { s with statistics := s.statistics.increment s!"{InferHoleTypesStats.holesAnnotated}" }
         return ⟨.Hole det (some expectedType), source⟩
   | .PrimitiveOp op args =>
@@ -186,10 +172,7 @@ private def inferProcedure (proc : Procedure) : InferHoleM Procedure := do
 Annotate every `.Hole` in the program with a type inferred from context.
 -/
 def inferHoleTypes (model : SemanticModel) (program : Program) : Program × List DiagnosticModel × Statistics :=
-  let initState : InferHoleState := {
-    model := model,
-    typeContext := TypeContext.ofTypes program.types,
-    currentOutputType := { val := .Unknown, source := none } }
+  let initState : InferHoleState := { model := model, currentOutputType := { val := .Unknown, source := none }}
   let (procs, finalState) := (program.staticProcedures.mapM inferProcedure).run initState
   ({ program with staticProcedures := procs }, finalState.diagnostics, finalState.statistics)
 

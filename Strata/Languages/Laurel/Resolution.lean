@@ -119,10 +119,11 @@ A few open structural questions worth recording — see the *Type checking* sect
   Resolution already synthesizes those types and discards them. Caching per-node types on
   `SemanticModel` (or directly on the AST) would let the later passes look them up instead
   of recomputing.
-- *Shrink or remove `InferHoleTypes`.* `Hole-None-Check` already records expected types
-  during resolution for holes in check-mode positions. Holes in synth-only positions still
-  need the post-pass, but as more constructs gain bespoke check rules, fewer holes need
-  it; eventually the pass can go away.
+- *Shrink or remove `InferHoleTypes`.* Holes are check-only now: `Hole-Some` validates
+  user annotations against the surrounding type, and `Hole-None` records the expected
+  type for untyped holes. Every hole reachable in a check-mode position already carries
+  a type after resolution; the inference pass is left handling whatever residue remains
+  and can plausibly be deleted entirely.
 -/
 
 namespace Strata.Laurel
@@ -552,7 +553,7 @@ inside the mutual block below. Helpers are grouped by section to mirror the
 - Self reference — `Synth.this`
 - Untyped forms — `Synth.abstract`, `Synth.all`
 - ContractOf — `Synth.contractOf`
-- Holes — `Synth.hole`, `Check.holeNone`
+- Holes — `Check.holeSome`, `Check.holeNone`
 
 The dispatch functions `Synth.resolveStmtExpr` and `Check.resolveStmtExpr`
 pattern-match on the constructor and delegate to the corresponding helper.
@@ -620,7 +621,6 @@ def Synth.resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTy
     Synth.contractOf exprMd ty fn source (by rw [h_node])
   | .Abstract => pure (Synth.abstract source)
   | .All => pure (Synth.all source)
-  | .Hole det type => Synth.hole det type source
   | _ =>
     let unknown : HighTypeMd := { val := .Unknown, source := source }
     typeMismatch source (some expr)
@@ -645,7 +645,7 @@ def Synth.resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTy
     - bindings — `Var (.Declare …)`, `Assign`
     - control flow — `Block`, `IfThenElse`, `While`, `Exit`, `Return`
     - verification — `Assert`, `Assume`, `Old`, `ProveBy`
-    - holes — untyped `Hole`
+    - holes — `Hole` (typed and untyped)
 
     Everything else falls back to subsumption — synthesize, then verify
     `isConsistentSubtype actual expected`.
@@ -668,6 +668,7 @@ def Check.resolveStmtExpr (exprMd : StmtExprMd) (expected : HighTypeMd) : Resolv
   | .Assign targets value =>
     Check.assign exprMd targets value expected source (by rw [h_node])
   | .Hole det none => pure (Check.holeNone det expected source)
+  | .Hole det (some ty) => Check.holeSome det ty expected source
   | .Var (.Declare param) => Check.varDeclare param expected source
   | .While cond invs dec body =>
     Check.while exprMd cond invs dec body expected source (by rw [h_node])
@@ -1496,38 +1497,24 @@ def Synth.contractOf (exprMd : StmtExprMd)
 
 -- ### Holes
 
-/-- Cases on whether the hole has a type annotation.
+/-- `T_h <: T  ∴  Γ ⊢ Hole d (some T_h) ⇐ T`
 
-    `Γ ⊢ Hole d (some T) ⇒ T`
-
-    `Γ ⊢ Hole d none ⇒ Unknown`
-
-    A typed hole synthesizes its annotation; an untyped hole in synth
-    position synthesizes `Unknown`. -/
-def Synth.hole (det : Bool) (type : Option HighTypeMd) (source : Option FileRange) :
-    ResolveM (StmtExpr × HighTypeMd) := do
-  match type with
-  | some ty =>
-    let ty' ← resolveHighType ty
-    pure (.Hole det ty', ty')
-  | none => pure (.Hole det none, { val := .Unknown, source := source })
+    A typed hole carries the user's annotation `T_h`. The annotation is
+    resolved and verified against the surrounding `expected` type via
+    subsumption; the resolved annotation is preserved on the node so
+    downstream passes (hole elimination) can generate correctly typed
+    uninterpreted functions. -/
+def Check.holeSome (det : Bool) (ty : HighTypeMd) (expected : HighTypeMd)
+    (source : Option FileRange) : ResolveM StmtExprMd := do
+  let ty' ← resolveHighType ty
+  checkSubtype source expected ty'
+  pure { val := .Hole det (some ty'), source := source }
 
 /-- `Γ ⊢ Hole d none ⇐ T  ↦  Γ ⊢ Hole d (some T)`
 
     An untyped hole in check mode records the expected type on the node
-    so downstream passes don't have to infer it
-    again. The subsumption check is trivial (`Unknown <: T` always holds),
-    so this rule never fails — it just preserves the type information
-    available at the check-mode boundary instead of discarding it.
-
-    A separate `InferHoleTypes` pass still runs after resolution to
-    annotate holes that ended up in synth-only positions. When that pass
-    encounters a hole whose type was already set (by `[⇐] Hole-None` or by
-    a user-written `?: T`), it checks the resolution-time and
-    inference-time types for consistency under `~`; a disagreement fires
-    the diagnostic *"hole annotated with 'T_resolution' but context
-    expects 'T_inference'"*, surfacing what would otherwise be a silent
-    overwrite. -/
+    so downstream passes (hole elimination) don't have to infer it
+    again. -/
 def Check.holeNone (det : Bool) (expected : HighTypeMd) (source : Option FileRange) :
     StmtExprMd :=
   { val := .Hole det (some expected), source := source }

@@ -228,7 +228,7 @@ direction explicit.
 - *Self reference* — \[⇒\] This-Inside, \[⇒\] This-Outside
 - *Untyped forms* — \[⇒\] Abstract / All
 - *ContractOf* — \[⇒\] ContractOf-Bool, \[⇒\] ContractOf-Set, \[⇒\] ContractOf-Error
-- *Holes* — \[⇒\] Hole-Some, \[⇒\] Hole-None, \[⇐\] Hole-None
+- *Holes* — \[⇐\] Hole-Some, \[⇐\] Hole-None
 
 ### Subsumption
 
@@ -457,11 +457,9 @@ $$`\frac{\mathit{fn} \text{ is not a procedure reference}}{\Gamma \vdash \mathsf
 
 ### Holes
 
-$$`\frac{}{\Gamma \vdash \mathsf{Hole}\;d\;(\mathsf{some}\;T) \Rightarrow T} \quad \text{([⇒] Hole-Some)}`
+$$`\frac{T_h <: T}{\Gamma \vdash \mathsf{Hole}\;d\;(\mathsf{some}\;T_h) \Leftarrow T} \quad \text{([⇐] Hole-Some)}`
 
-$$`\frac{}{\Gamma \vdash \mathsf{Hole}\;d\;\mathsf{none} \Rightarrow \mathsf{Unknown}} \quad \text{([⇒] Hole-None)}`
-
-{docstring Strata.Laurel.Resolution.Synth.hole}
+{docstring Strata.Laurel.Resolution.Check.holeSome}
 
 $$`\frac{}{\Gamma \vdash \mathsf{Hole}\;d\;\mathsf{none} \Leftarrow T \;\;\mapsto\;\; \mathsf{Hole}\;d\;(\mathsf{some}\;T)} \quad \text{([⇐] Hole-None)}`
 
@@ -502,11 +500,11 @@ just wasted work and a maintenance hazard.
 ### Shrink or remove `InferHoleTypes`
 
 `InferHoleTypes` walks the post-resolution AST a second time to annotate holes. Now that
-\[⇐\] Hole-None writes the expected type during resolution for holes in check-mode
-positions, the post-pass only needs to handle holes in synth-only positions (e.g. call
-arguments resolved through `Synth.resolveStmtExpr` instead of `Check.resolveStmtExpr`). As more constructs
-gain bespoke check rules, fewer holes will reach `InferHoleTypes`; eventually the pass
-can be deleted entirely.
+holes are check-only — \[⇐\] Hole-Some validates user annotations against context, and
+\[⇐\] Hole-None records the expected type for untyped holes — every hole reachable in a
+check-mode position already carries a type after resolution. `InferHoleTypes` is left
+with whatever residue (in principle nothing, since synth-position holes are now flagged
+as errors at resolution time and don't reach the inference pass).
 
 # Translation Pipeline
 
