@@ -7,7 +7,9 @@ module
 
 meta import Strata.Transform.ANFEncoder
 meta import Strata.Languages.Core.DDMTransform.Translate
+meta import Strata.Languages.Core.DDMTransform.ASTtoCST
 import Strata.DDM.Integration.Lean.HashCommands
+
 
 meta section
 

@@ -3,7 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
+module -- shake: keep-all
 
 public import Strata.DL.Imperative.PureExpr
 public import Strata.DL.Imperative.HasVars
@@ -20,6 +20,3 @@ public import Strata.DL.Imperative.KleeneStmtSemantics
 public import Strata.DL.Imperative.SemanticsProps
 
 public import Strata.DL.Imperative.SMTUtils
-
-import Strata.DL.Imperative.BasicBlock
-import Strata.DL.Imperative.CFGSemantics

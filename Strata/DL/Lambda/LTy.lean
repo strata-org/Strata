@@ -5,9 +5,10 @@
 -/
 module
 
-public import Strata.DL.Util.Map
 import Strata.Util.Tactics
-public meta import Lean.Elab.Term
+public meta import Lean.Elab.Term.TermElabM
+import Std.Data.DTreeMap -- shake: keep
+import Std.Tactic.BVDecide -- shake: keep
 
 /-! ## Formalization of Mono- and Poly- Types in Lambda
 

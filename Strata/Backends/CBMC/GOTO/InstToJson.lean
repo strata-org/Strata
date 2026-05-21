@@ -5,11 +5,12 @@
 -/
 module
 
-public import Strata.Backends.CBMC.Common
-public import Strata.Util.Json
 public import Strata.Backends.CBMC.GOTO.Program
 
 import Strata.Util.Tactics
+public import Strata.DL.Util.Map
+import Strata.Backends.CBMC.Common
+import Strata.Util.Json
 
 public section
 

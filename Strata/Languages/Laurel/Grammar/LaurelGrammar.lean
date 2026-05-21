@@ -10,8 +10,9 @@ module
 -- NOTE: Changes to LaurelGrammar.st are not automatically tracked by the build system.
 -- Update this file (e.g. this comment) to trigger a recompile after modifying LaurelGrammar.st.
 -- Last grammar change: multiAssign supports field access targets, added opaque keyword.
-public import Strata.DDM.Integration.Lean
-public meta import Strata.DDM.Integration.Lean
+public import Strata.DDM.AST
+import Strata.DDM.BuiltinDialects.Init
+import Strata.DDM.Integration.Lean.HashCommands
 
 namespace Strata.Laurel
 

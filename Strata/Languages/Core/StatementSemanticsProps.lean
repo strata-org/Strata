@@ -5,25 +5,18 @@
 -/
 module
 
-public import Strata.DL.Imperative.CmdSemantics
 import all Strata.DL.Imperative.CmdSemantics
-public import Strata.DL.Imperative.StmtSemantics
 import all Strata.DL.Imperative.StmtSemantics
-public import Strata.DL.Imperative.HasVars
 import all Strata.DL.Imperative.HasVars
-public import Strata.DL.Util.Nodup
 import all Strata.DL.Util.Nodup
 public import Strata.DL.Util.ListUtils
 import all Strata.DL.Util.ListUtils
-public import Strata.Languages.Core.Procedure
-public import Strata.Languages.Core.Statement
 import all Strata.Languages.Core.Statement
 public import Strata.Languages.Core.StatementSemantics
 import all Strata.Languages.Core.StatementSemantics
 import all Strata.DL.Imperative.Cmd
 import all Strata.DL.Imperative.Stmt
-import Strata.Util.Tactics
-public import Strata.Languages.Core.WF
+import Std.Tactic.BVDecide.Normalize.BitVec
 
 public section
 

@@ -5,12 +5,11 @@
 -/
 module
 
-public import Strata.DDM.Integration.Lean
 public import Strata.Languages.Python.Specs.Decls
-import Strata.DDM.BuiltinDialects.Init
-public import Strata.DDM.Integration.Lean.OfAstM
+public import Strata.DDM.AST
 import Strata.DDM.Format
 import Strata.DDM.Ion
+import Strata.DDM.Integration.Lean -- shake: keep
 
 namespace Strata.Python
 

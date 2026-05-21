@@ -8,8 +8,9 @@ module
 public import Strata.DL.SMT.DDMTransform.Parse
 public import Strata.DL.SMT.Term
 public import Strata.Util.Provenance
-public import Strata.Util.Tactics
-import Strata.DDM.Elab.LoadedDialects
+public import Strata.DDM.Elab.LoadedDialects
+import Strata.DDM.BuiltinDialects.Init
+import Strata.Util.Tactics
 
 namespace Strata
 

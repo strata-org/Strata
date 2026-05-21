@@ -11,10 +11,9 @@
 -/
 module
 
-public import Strata.DDM.AST
 public import Strata.DDM.HNF
-import Strata.DDM.Integration.Lean
 public import Strata.DDM.Integration.Lean.OfAstM
+import Strata.DDM.Integration.Lean -- shake: keep
 
 ---------------------------------------------------------------------
 public section

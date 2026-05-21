@@ -11,8 +11,8 @@ import Strata.DDM.HNF
 import all Strata.DDM.Util.Array
 import all Strata.DDM.Util.Fin
 import all Strata.DDM.Util.Lean
-import Strata.DDM.Util.Fin
-import Strata.Util.DecideProp
+public import Strata.DDM.Util.Fin
+public import Strata.Util.DecideProp
 
 open Lean (
     Message

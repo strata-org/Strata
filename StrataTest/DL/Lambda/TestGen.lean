@@ -22,8 +22,10 @@ import all Strata.DL.Lambda.LTy
 public meta import Strata.DL.Lambda.LExprTypeEnv
 public meta import Strata.DL.Lambda.LExprWF
 public meta import Strata.DL.Lambda.MetaData
-
 public import StrataTest.DL.Lambda.PlausibleHelpers
+
+import Strata.DL.Lambda.LState
+import Strata.DL.Lambda.LExprEval
 
 -- -- Add these if depending on Chamelean for instance generation.
 -- import Plausible.Chamelean.ArbitrarySizedSuchThat

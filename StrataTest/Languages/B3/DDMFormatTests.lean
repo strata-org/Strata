@@ -8,6 +8,7 @@ module
 meta import Strata.Languages.B3.DDMTransform.ParseCST
 meta import Strata.Languages.B3.DDMTransform.DefinitionAST
 meta import Strata.Languages.B3.DDMTransform.Conversion
+import Strata.DDM.Integration.Lean.HashCommands
 
 meta section
 

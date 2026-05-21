@@ -6,6 +6,7 @@
 module
 
 meta import Strata.Languages.Core.ProcedureType
+import Strata.Languages.Core.Factory
 
 meta section
 

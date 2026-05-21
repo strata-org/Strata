@@ -5,13 +5,10 @@
 -/
 module
 
-public import Strata.DL.SMT.DDMTransform.Translate
 public import Strata.DL.SMT.Term
-public import Strata.DL.SMT.TermType
-public import Strata.Languages.Core.Options
-import Strata.DDM.Format
-public import Strata.DDM.Util.String
-import Std.Data.HashMap
+import Strata.DDM.Util.String
+import Strata.DL.SMT.DDMTransform.Translate
+import Strata.Languages.Core.Options
 
 /-!
 Based on Cedar's Term language.

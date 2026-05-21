@@ -5,12 +5,7 @@
 -/
 module
 
-public import Strata.DDM.AST
-public import Strata.Languages.Core.DDMTransform.Grammar
-public import Strata.Languages.Core.Core
-public import Strata.Languages.Core.CoreGen
-public import Strata.Languages.Core.CoreOp
-public import Strata.DDM.Util.DecimalRat
+public import Strata.Languages.Core.Env
 
 
 ---------------------------------------------------------------------

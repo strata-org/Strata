@@ -16,6 +16,7 @@ public import Strata.DL.Imperative.BasicBlock
 public import Strata.Languages.Core.Statement
 public import Strata.Languages.Core.Expressions
 import Strata.DDM.Integration.Lean.HashCommands
+import Strata.Languages.Core.StatementSemantics
 
 public section
 namespace Strata

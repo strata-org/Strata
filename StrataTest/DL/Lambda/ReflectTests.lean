@@ -5,7 +5,9 @@
 -/
 module
 
-public import Strata.DL.Lambda.Reflect
+public import Strata.DL.Lambda.Reflect -- shake: keep
+import Lean.Elab.Term.TermElabM
+meta import Lean.Meta.Eval
 
 /-! ## Tests for Reflect -/
 

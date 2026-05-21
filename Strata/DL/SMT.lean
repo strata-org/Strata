@@ -3,7 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
+module-- shake: keep-all
 
 public import Strata.DL.SMT.AbstractSolver
 public import Strata.DL.SMT.Encoder

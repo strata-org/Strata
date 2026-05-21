@@ -5,10 +5,10 @@
 -/
 module
 
-public import Strata.Transform.CoreTransform
-public import Strata.DL.Lambda.AdtRankAxioms
-public import Strata.DL.Lambda.TypeFactory
 public import Strata.Languages.Core.PipelinePhase
+import Strata.DL.Lambda.AdtRankAxioms
+import Strata.Languages.Core.Factory
+import Strata.Util.Tactics
 
 /-! # Termination Checking for Recursive Functions
 

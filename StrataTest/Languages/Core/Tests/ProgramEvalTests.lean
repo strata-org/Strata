@@ -6,6 +6,7 @@
 module
 
 meta import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core.ProcedureEval
 meta import Strata.Languages.Core.StatementEval
 import Strata.DDM.Integration.Lean.HashCommands
 
@@ -404,7 +405,7 @@ Proof Obligation:
 -/
 #guard_msgs in
 #eval do let E := Env.init
-         let (E, _stats) := eval E
+         let (E, _stats) := Core.Procedure.eval E
               { header := {name := "P",
                            typeArgs := [],
                            inputs := [("x", mty[int])],

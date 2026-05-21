@@ -13,9 +13,9 @@ by comparing the lifted Laurel against expected output.
 
 meta import Strata.DDM.Elab
 meta import Strata.DDM.BuiltinDialects.Init
-meta import Strata.Languages.Laurel.Grammar.LaurelGrammar
-meta import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
+meta import Strata.Languages.Laurel.Grammar
 meta import Strata.Languages.Laurel.LaurelToCoreTranslator
+meta import Strata.Languages.Laurel.LiftImperativeExpressions
 
 meta section
 

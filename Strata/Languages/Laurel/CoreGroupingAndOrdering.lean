@@ -6,8 +6,8 @@
 
 module
 public import Strata.Languages.Laurel.Laurel
-import Strata.DL.Lambda.LExpr
 import Strata.DDM.Util.Graph.Tarjan
+import Strata.Util.Tactics
 
 /-!
 ## Grouping and Ordering for Core Translation
