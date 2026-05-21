@@ -7,7 +7,7 @@ module
 
 public import Strata.DL.Lambda.Lambda
 public import Strata.Backends.CBMC.GOTO.Expr
-import Strata.Languages.Core.CoreOp
+public import Strata.Languages.Core.CoreOp
 
 public section
 namespace Lambda
@@ -50,7 +50,7 @@ handle these correctly.
 -/
 open Std (ToFormat Format format)
 -------------------------------------------------------------------------------
-def LMonoTy.toGotoType (ty : LMonoTy) : Except Format CProverGOTO.Ty :=
+@[expose] def LMonoTy.toGotoType (ty : LMonoTy) : Except Format CProverGOTO.Ty :=
   match ty with
   | .bitvec n => .ok (CProverGOTO.Ty.UnsignedBV n)
   | .int => .ok .Integer
@@ -71,7 +71,7 @@ def LExprT.getGotoType {T : LExprParamsT} (e : LExprT T) :
   ty.toGotoType
 
 
-def fnToGotoID (fn : String) : Except Format CProverGOTO.Expr.Identifier :=
+@[expose] def fnToGotoID (fn : String) : Except Format CProverGOTO.Expr.Identifier :=
   open Core in
   match CoreOp.ofString fn with
   -- Bitvector operations
@@ -139,7 +139,7 @@ def fnToGotoID (fn : String) : Except Format CProverGOTO.Expr.Identifier :=
   | _ => .ok (.functionApplication fn)
 
 /-- Parse the lower bit index from a BV Extract operator. -/
-def parseBvExtractLo (fn : String) : Option Nat :=
+@[expose] def parseBvExtractLo (fn : String) : Option Nat :=
   open Core in
   match CoreOp.ofString fn with
   | .bvExtract _ _ lo => some lo
@@ -147,14 +147,14 @@ def parseBvExtractLo (fn : String) : Option Nat :=
 
 /-- Check if a function name is a signed bitvector operation.
     Signed ops need operands cast to signedbv so CBMC interprets them correctly. -/
-private def isSignedBvOp (fn : String) : Bool :=
+@[expose] def isSignedBvOp (fn : String) : Bool :=
   open Core in
   match CoreOp.ofString fn with
   | .bv ⟨_, kind⟩ => kind.isSigned
   | _ => false
 
 /-- Build SDivOverflow(x, y) = (x == INT_MIN) && (y == -1) for signed bitvectors. -/
-private def mkSDivOverflow (x y : CProverGOTO.Expr) : CProverGOTO.Expr :=
+@[expose] def mkSDivOverflow (x y : CProverGOTO.Expr) : CProverGOTO.Expr :=
   open CProverGOTO in
   open CProverGOTO.Ty in
   let bvTy := x.type
@@ -170,7 +170,7 @@ private def mkSDivOverflow (x y : CProverGOTO.Expr) : CProverGOTO.Expr :=
 
 /-- Build Euclidean division from truncating division:
     ediv(a, b) = tdiv(a, b) + ite(tmod(a, b) < 0, ite(b > 0, -1, 1), 0) -/
-private def mkEuclideanDiv (a b : CProverGOTO.Expr) : CProverGOTO.Expr :=
+@[expose] def mkEuclideanDiv (a b : CProverGOTO.Expr) : CProverGOTO.Expr :=
   open CProverGOTO in
   let zero := Expr.constant "0" .Integer
   let one := Expr.constant "1" .Integer
@@ -185,7 +185,7 @@ private def mkEuclideanDiv (a b : CProverGOTO.Expr) : CProverGOTO.Expr :=
 
 /-- Build Euclidean modulo from truncating modulo:
     emod(a, b) = tmod(a, b) + ite(tmod(a, b) < 0, ite(b > 0, b, -b), 0) -/
-private def mkEuclideanMod (a b : CProverGOTO.Expr) : CProverGOTO.Expr :=
+@[expose] def mkEuclideanMod (a b : CProverGOTO.Expr) : CProverGOTO.Expr :=
   open CProverGOTO in
   let zero := Expr.constant "0" .Integer
   let tmod := Expr.mod a b
@@ -261,7 +261,7 @@ def LExprT.toGotoExpr {TBase: LExprParamsT} [ToString TBase.base.IDMeta] (e : LE
 Mapping `LExpr` to GOTO expressions (for LMonoTy-typed expressions).
 Accepts a bound variable context for de Bruijn indices (innermost binding first).
 -/
-def LExpr.toGotoExprCtx {TBase: LExprParams} [ToString $ LExpr TBase.mono]
+@[expose] def LExpr.toGotoExprCtx {TBase: LExprParams} [ToString $ LExpr TBase.mono]
     (bvars : List (String × CProverGOTO.Ty)) (e : LExpr TBase.mono) :
     Except Format CProverGOTO.Expr :=
   open CProverGOTO in
