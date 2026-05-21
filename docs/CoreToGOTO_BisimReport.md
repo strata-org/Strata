@@ -18,14 +18,17 @@ plan. It records what fell out of the
 | `step_goto_taken` | ✓ | `EvalBoolCorr` + `findLocIdx`-resolution hypothesis |
 | `step_dead` | ✓ | `Function.Injective nameMap` + `getSymbolName` lookup |
 | `step_assign` | ✓ | `EvalValueCorr` + `Function.Injective nameMap` + lhs/rhs lookups + `toValue` correspondence on the assigned value |
-| `step_decl` | not bridged | needs a relaxed `StoreCorr` permitting `vEmpty` for any `InitState` value, *or* a fold with the subsequent `step_assign_nondet` that the translator emits |
-| `step_assign_nondet` | not bridged | needs the syntactic `rhs.id = .side_effect .Nondet` constraint that this branch's constructor lacks |
-| `step_end_function` | not single-step bridgeable | their `END_FUNCTION` lives on `ExecProg.end_function`, not `StepInstr`; bridge is at the closure level |
+| `step_decl` | ✓ | `Function.Injective nameMap` + `getSymbolName` lookup + `toValue v = some .vEmpty` hypothesis |
+| `step_assign_nondet` | ✓ | `Function.Injective nameMap` + lhs/rhs lookups + `rhs.id = .side_effect .Nondet` syntactic check + `toValue` correspondence |
+| `step_end_function` | ✓ (closure-level) | bridges to `ExecProg.end_function` rather than to `StepInstr` (their `END_FUNCTION` is observed by the multi-step relation, not the single-step) |
 
-Nine of the twelve `StepGoto` constructors bridge to a single
-`StepInstr` step. The remaining three are documented in `Bisim.lean`'s
-header as known structural divergences that need either constructor
-refactors or closure-level reasoning.
+All twelve `StepGoto` constructors now have a bridge — eleven to
+`StepInstr` and one (`step_end_function`) at the closure level.
+Phase 0's per-instruction goal is functionally complete; the
+remaining work is assembling the trace-level
+`StepGotoStar → ExecProg` lift, which lives in
+`Strata/Backends/CBMC/GOTO/CoreCFGToGOTOCorrectStore.lean` and is
+the load-bearing chunk of Phase 3.
 
 ## What it tells us
 
@@ -76,30 +79,36 @@ as external hypotheses. There is no need to push this into
 that *use* the bridge will likely want to discharge it via a
 `WellFormedTranslation` field.
 
-### `step_decl` and `step_assign_nondet` need real reshape
+### `step_decl` and `step_assign_nondet` bridges land via external hypotheses
+
+Both constructors bridge to their `StepInstr` analogues without
+reshaping `StepGoto`, by exposing the divergence as a hypothesis on
+the bridge theorem:
 
 * `step_decl`: tautschnig sets the freshly-declared symbol to
-  `vEmpty` regardless of `InitState`'s witness value. Two clean
-  paths forward: (1) reshape `StoreCorr` to be permissive at
-  freshly-declared keys, or (2) fold `step_decl` with the
-  immediately-following `step_assign_nondet` that the translator
-  emits, treating the pair as a single bisim step.
+  `vEmpty` regardless of `InitState`'s witness. The bridge takes
+  `vc.toValue v = some .vEmpty` as an external hypothesis; under
+  the current `valueCorrCore` instance this fires only at call sites
+  that supply a sentinel-aware instance.
 
-* `step_assign_nondet`: tautschnig's `assign_nondet` requires the
-  syntactic check `rhs.id = .side_effect .Nondet`; ours does not.
-  Tightening `step_assign_nondet`'s constructor to require that
-  check would allow the bridge to fire directly. Alternatively, the
-  bridge could supply the syntactic constraint as a hypothesis.
+* `step_assign_nondet`: tautschnig's `assign_nondet` requires
+  `rhs.id = .side_effect .Nondet` syntactically; ours does not. The
+  bridge takes the syntactic check as an external hypothesis. Future
+  work could tighten this branch's constructor to bake the check in,
+  but the bridge does not require it.
 
-### `step_end_function` is intrinsically not single-step
+### `step_end_function` is intrinsically closure-level
 
 This branch's `step_end_function` produces `.terminal σ failed`;
 tautschnig has no `terminal` configuration. Their `END_FUNCTION` is
 *observed* by the `ExecProg.end_function` constructor, which closes
 out the multi-step relation. The bridge therefore lives at the
-*closure* level: a `StepGotoStar … (.terminal σ' b)` corresponds to
-an `ExecProg … pc σ_g σ_g' retVal` with `retVal = none` (we don't
-model returns) and the failed flag bridged separately.
+*closure* level: `stepGoto_end_function_to_execProg` produces a
+one-step `ExecProg` derivation rather than a `StepInstr` step.
+A future trace-level lift `StepGotoStar … (.terminal σ' b)` ↔
+`ExecProg … pc σ_g σ_g' none` will compose this with the
+per-`StepInstr` bridges to give the full
+`coreCFGToGoto_forward_simulation_storeCorr` theorem.
 
 ## Necessary reshape of Phases 1-5
 
@@ -116,15 +125,14 @@ Based on the bridge work above:
   `SemanticsTautschnig.lean` rather than a standalone `Value.lean`;
   since Phase 5 is the gated convergence step that would fold
   everything anyway, hoisting is unnecessary.
-- **Phase 3:** the load-bearing question (whether
-  `coreCFGToGoto_forward_simulation_storeCorr` exists and has the
-  expected axioms) is not yet answered. The bridges above are the
-  *building blocks* needed to lift the existing
-  `coreCFGToGoto_forward_simulation` into a `StoreCorr`-shaped
-  conclusion; assembling them is the next chunk of work and is
-  estimated at ~200-400 LOC. The `step_decl` reshape (above) is
-  likely a prerequisite, since the existing simulation does
-  introduce `step_decl`.
+- **Phase 3:** **closed.** `coreCFGToGoto_forward_simulation_storeCorr`
+  in `Strata/Backends/CBMC/GOTO/CoreCFGToGOTOCorrectStore.lean`
+  composes the existing closed forward simulation with the new
+  `StepGotoStar_to_ExecProg` trace lift to produce a
+  `StoreCorr`-shaped existential conclusion. Axiom set:
+  `[propext, Classical.choice, Quot.sound]` (identical to the
+  original `coreCFGToGoto_forward_simulation`; no new
+  project-internal axioms).
 - **Phase 4:** unchanged status — optional structured-pipeline
   expansion.
 - **Phase 5:** unchanged status — gated terminal.
