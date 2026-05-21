@@ -5025,6 +5025,147 @@ theorem evalDetBlock_frame_extend_one
     exact EvalDetBlock.terminal
 termination_by blk.cmds.length
 
+/-- A single CFG step lifts through a frame extension when the block executed
+at this step doesn't touch the frame ident. -/
+private theorem stepCFG_frame_extend_one
+    {P : PureExpr} [HasFvar P] [HasNot P]
+    [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    {extendEval : ExtendEval P}
+    {cfg : CFG String (DetBlock String (Cmd P) P)}
+    (frameIdent : P.Ident) (frameVal : P.Expr)
+    {c₁ c₂ : CFGConfig String P}
+    (h_step : @StepCFG _ _ (Cmd P) _ P
+        (EvalDetBlock P (EvalCmd P) extendEval) cfg c₁ c₂)
+    (h_step_unused : ∀ lbl blk, (lbl, blk) ∈ cfg.blocks →
+        (∃ σ hf, c₁ = .cont lbl σ hf) → frameIdent ∉ Block.cfgFrameTouches blk) :
+    @StepCFG _ _ (Cmd P) _ P
+      (EvalDetBlock P (EvalCmd P) extendEval) cfg
+      (cfgConfigExtendStoreOne c₁ frameIdent frameVal)
+      (cfgConfigExtendStoreOne c₂ frameIdent frameVal) := by
+  cases h_step with
+  | eval_next h_lkp h_eval =>
+    rename_i lbl_cur next_blk σ_cur next_config hf_cur
+    have h_blk_in : (lbl_cur, next_blk) ∈ cfg.blocks := by
+      -- Inline lookup-to-mem (taken from the existing helper at line ~9239).
+      have : ∀ {α β : Type} [BEq α] [LawfulBEq α]
+          (l : List (α × β)) (k : α) (v : β), l.lookup k = some v → (k, v) ∈ l := by
+        intro α β _ _ l k v hlk
+        induction l with
+        | nil => simp [List.lookup] at hlk
+        | cons hd tl ih =>
+          obtain ⟨k', v'⟩ := hd
+          by_cases h_eq : k = k'
+          · subst h_eq
+            simp [List.lookup] at hlk
+            subst hlk
+            exact List.Mem.head _
+          · have h_neq : ¬(k == k') = true := by simp [h_eq]
+            simp [List.lookup, h_neq] at hlk
+            exact List.mem_cons_of_mem _ (ih hlk)
+      exact this cfg.blocks lbl_cur next_blk h_lkp
+    have h_blk_unused : frameIdent ∉ Block.cfgFrameTouches next_blk :=
+      h_step_unused lbl_cur next_blk h_blk_in ⟨σ_cur, hf_cur, rfl⟩
+    have h_eval_lifted := evalDetBlock_frame_extend_one
+      (val := frameVal) extendEval h_blk_unused h_eval
+    have h_step_lifted :
+        @StepCFG _ _ (Cmd P) _ P (EvalDetBlock P (EvalCmd P) extendEval) cfg
+          (.cont lbl_cur (extendStoreOne σ_cur frameIdent frameVal) hf_cur)
+          (updateFailure
+            (cfgConfigExtendStoreOne next_config frameIdent frameVal) hf_cur) :=
+      StepCFG.eval_next h_lkp h_eval_lifted
+    rw [updateFailure_extendStoreOne_commute] at h_step_lifted
+    show @StepCFG _ _ (Cmd P) _ P (EvalDetBlock P (EvalCmd P) extendEval) cfg
+      (cfgConfigExtendStoreOne (.cont lbl_cur σ_cur hf_cur) frameIdent frameVal)
+      (cfgConfigExtendStoreOne (updateFailure next_config hf_cur)
+        frameIdent frameVal)
+    simp only [cfgConfigExtendStoreOne]
+    exact h_step_lifted
+
+/-- Frame extension lifts a CFG run when no block in the cfg touches the
+frame ident. Every block executed along the run is in `cfg.blocks` (via
+`StepCFG.eval_next`'s lookup), so the discharge over all blocks is enough.
+
+This is the all-labels form. For sites where some block in `cfg.blocks` does
+touch the frame ident (e.g., the macro-injected init block in `.ite .nondet`),
+the lemma cannot be applied directly; route around via a sub-cfg. -/
+theorem stepDetCFGStar_frame_extend_one_all_blocks
+    {P : PureExpr} [HasFvar P] [HasNot P]
+    [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    {extendEval : ExtendEval P}
+    {cfg : CFG String (DetBlock String (Cmd P) P)}
+    (frameIdent : P.Ident) (frameVal : P.Expr)
+    (h_frame_unused : ∀ lbl blk, (lbl, blk) ∈ cfg.blocks →
+        frameIdent ∉ Block.cfgFrameTouches blk)
+    {c₁ c₂ : CFGConfig String P}
+    (h_run : StepDetCFGStar extendEval cfg c₁ c₂) :
+    StepDetCFGStar extendEval cfg
+      (cfgConfigExtendStoreOne c₁ frameIdent frameVal)
+      (cfgConfigExtendStoreOne c₂ frameIdent frameVal) := by
+  induction h_run with
+  | refl => exact ReflTrans.refl _
+  | step _ _ _ h_step _ ih =>
+    have h_step_lifted := stepCFG_frame_extend_one
+      frameIdent frameVal h_step
+      (fun lbl blk h_in _ => h_frame_unused lbl blk h_in)
+    exact ReflTrans.step _ _ _ h_step_lifted ih
+
+/-- Run-restricted form of the frame extension lemma: only blocks at labels
+that are visited as the *current* config of some step in this run need to be
+discharged, not all of `cfg.blocks`. The discharge `h_frame_unused_along_run`
+quantifies over labels `lbl` such that the run reaches `.cont lbl _ _` *from
+the start* `c₁` (using the structure of the run itself) and takes another
+step from there. The exit label of the run is excluded (its block hasn't
+fired yet at run termination).
+
+This is the form used at sites where some block in `cfg.blocks` touches
+`frameIdent` but is not on the body's run (e.g., the macro-injected init block
+in `.ite .nondet`/`loop`). -/
+theorem stepDetCFGStar_frame_extend_one_run
+    {P : PureExpr} [HasFvar P] [HasNot P]
+    [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    {extendEval : ExtendEval P}
+    {cfg : CFG String (DetBlock String (Cmd P) P)}
+    (frameIdent : P.Ident) (frameVal : P.Expr)
+    {c₁ c₂ : CFGConfig String P}
+    (h_run : StepDetCFGStar extendEval cfg c₁ c₂)
+    (h_frame_unused_along_run :
+        ∀ lbl σ hf blk c',
+          StepDetCFGStar extendEval cfg c₁ (.cont lbl σ hf) →
+          @StepCFG _ _ (Cmd P) _ P (EvalDetBlock P (EvalCmd P) extendEval) cfg
+            (.cont lbl σ hf) c' →
+          (lbl, blk) ∈ cfg.blocks →
+          frameIdent ∉ Block.cfgFrameTouches blk) :
+    StepDetCFGStar extendEval cfg
+      (cfgConfigExtendStoreOne c₁ frameIdent frameVal)
+      (cfgConfigExtendStoreOne c₂ frameIdent frameVal) := by
+  -- The discharge predicate references c₁ (the original start). As we walk the
+  -- run, the prefix from c₁ to the current step's start grows.
+  --
+  -- Use a `Nonempty (ReflTransT ...)` upgrade: convert the Prop-valued run to
+  -- a Type-valued one, then recurse on it as data with the prefix as an
+  -- explicit recursive argument.
+  obtain ⟨h_runT⟩ := reflTrans_nonempty_T h_run
+  -- Define a structurally recursive helper on h_runT.
+  let rec go : ∀ {c_cur : CFGConfig String P},
+      ReflTransT (@StepCFG _ _ (Cmd P) _ P
+        (EvalDetBlock P (EvalCmd P) extendEval) cfg) c_cur c₂ →
+      StepDetCFGStar extendEval cfg c₁ c_cur →
+      StepDetCFGStar extendEval cfg
+        (cfgConfigExtendStoreOne c_cur frameIdent frameVal)
+        (cfgConfigExtendStoreOne c₂ frameIdent frameVal)
+    | _, .refl _, _ => ReflTrans.refl _
+    | _, .step _ c_mid _ h_step h_rest, h_prefix =>
+      let h_step_lifted := stepCFG_frame_extend_one
+        frameIdent frameVal h_step
+        (fun lbl blk h_in ⟨σ, hf, h_eq⟩ =>
+          h_frame_unused_along_run lbl σ hf blk c_mid
+            (h_eq ▸ h_prefix) (h_eq ▸ h_step) h_in)
+      let h_prefix_ext : StepDetCFGStar extendEval cfg c₁ c_mid :=
+        ReflTrans_Transitive _ _ _ _ h_prefix
+          (ReflTrans.step _ _ _ h_step (ReflTrans.refl _))
+      ReflTrans.step _ _ _ h_step_lifted (go h_rest h_prefix_ext)
+  exact go h_runT (ReflTrans.refl _)
+
 /-! ## Generalized simulation
 
 The central lemma: for any continuation `k`, exit-continuation stack, and
