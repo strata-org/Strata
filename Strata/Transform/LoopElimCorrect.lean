@@ -7608,15 +7608,15 @@ private theorem loop_cf_iteration_extract
                   ρ_mid.eval ρ_mid.store le.2 = some HasBool.ff := by
                 cases h_loop_mid with
                 | refl =>
-                  exact absurd hfail_loop (by simp [Config.getEnv]; cases hh : ρ_mid.hasFailure with
-                    | false => simp
-                    | true => rw [heq_mid_val] at hh; simp at hh; exact absurd hh hnf_inner)
+                  exfalso
+                  simp only [Config.getEnv] at hfail_loop
+                  rw [heq_mid_val] at hfail_loop
+                  simp at hfail_loop
+                  exact hnf_inner hfail_loop
                 | step _ _ _ hstep _ =>
                   cases hstep with
                   | step_loop_exit _ hinvb _ _ => exact hinvb
                   | step_loop_enter _ hinvb _ _ _ => exact hinvb
-                  | step_loop_nondet_exit hinvb _ => exact hinvb
-                  | step_loop_nondet_enter hinvb _ => exact hinvb
               -- Transfer bool-valuedness from ρ_mid to ρ_inner via exprCongr
               have hinvb_inner : ∀ le ∈ inv,
                   ρ_inner.eval ρ_inner.store le.2 = some HasBool.tt ∨
@@ -7637,20 +7637,20 @@ private theorem loop_cf_iteration_extract
                   rw [if_pos ((hsame_ρ x).mpr hdef_x)]
                 have hcongr := hswf.exprCongr le.2
                   (projectStore ρ.store ρ_inner.store) ρ_inner.store hagree_vars
-                rw [heval_mid, heq_mid_val] at hb_mid
+                rw [heq_mid_val] at hb_mid
                 simp only [Env.store, Env.eval] at hb_mid
-                rw [hcongr] at hb_mid
-                rw [heval_inner, ← heval_ρ]
-                rw [← heval_inner] at hb_mid
+                rw [heval_inner] at hb_mid
+                rw [hcongr, ← heval_inner] at hb_mid
                 exact hb_mid
               have hsome_ff : ∃ le ∈ inv,
                   ρ_inner.eval ρ_inner.store le.2 = some HasBool.ff := by
-                by_contra h_none_ff
+                apply Classical.byContradiction
+                intro h_none_ff
                 apply hall_inner
                 intro le hle
-                rcases hinvb_inner le hle with htt | hff
-                · exact htt
-                · exact absurd ⟨le, hle, hff⟩ h_none_ff
+                cases hinvb_inner le hle with
+                | inl htt => exact htt
+                | inr hff => exact (h_none_ff ⟨le, hle, hff⟩).elim
               refine ⟨ρ, heval_ρ, hnf_ρ, hall_tt_ρ,
                 .inr ⟨ρ_inner, reflTransT_to_prop h_body_term, hnf_inner',
                   hinvb_inner, hsome_ff⟩,
@@ -7783,13 +7783,13 @@ private theorem loop_cf_iteration_extract
                   ρ_mid.eval ρ_mid.store le.2 = some HasBool.ff := by
                 cases h_loop_mid with
                 | refl =>
-                  exact absurd hfail_loop (by simp [Config.getEnv]; cases hh : ρ_mid.hasFailure with
-                    | false => simp
-                    | true => rw [heq_mid_val] at hh; simp at hh; exact absurd hh hnf_inner)
+                  exfalso
+                  simp only [Config.getEnv] at hfail_loop
+                  rw [heq_mid_val] at hfail_loop
+                  simp at hfail_loop
+                  exact hnf_inner hfail_loop
                 | step _ _ _ hstep _ =>
                   cases hstep with
-                  | step_loop_exit _ hinvb _ _ => exact hinvb
-                  | step_loop_enter _ hinvb _ _ _ => exact hinvb
                   | step_loop_nondet_exit hinvb _ => exact hinvb
                   | step_loop_nondet_enter hinvb _ => exact hinvb
               have hinvb_inner : ∀ le ∈ inv,
@@ -7811,20 +7811,20 @@ private theorem loop_cf_iteration_extract
                   rw [if_pos ((hsame_ρ x).mpr hdef_x)]
                 have hcongr := hswf.exprCongr le.2
                   (projectStore ρ.store ρ_inner.store) ρ_inner.store hagree_vars
-                rw [heval_mid, heq_mid_val] at hb_mid
+                rw [heq_mid_val] at hb_mid
                 simp only [Env.store, Env.eval] at hb_mid
-                rw [hcongr] at hb_mid
-                rw [heval_inner, ← heval_ρ]
-                rw [← heval_inner] at hb_mid
+                rw [heval_inner] at hb_mid
+                rw [hcongr, ← heval_inner] at hb_mid
                 exact hb_mid
               have hsome_ff : ∃ le ∈ inv,
                   ρ_inner.eval ρ_inner.store le.2 = some HasBool.ff := by
-                by_contra h_none_ff
+                apply Classical.byContradiction
+                intro h_none_ff
                 apply hall_inner
                 intro le hle
-                rcases hinvb_inner le hle with htt | hff
-                · exact htt
-                · exact absurd ⟨le, hle, hff⟩ h_none_ff
+                cases hinvb_inner le hle with
+                | inl htt => exact htt
+                | inr hff => exact (h_none_ff ⟨le, hle, hff⟩).elim
               refine ⟨ρ, heval_ρ, hnf_ρ, hall_tt_ρ,
                 .inr ⟨ρ_inner, reflTransT_to_prop h_body_term, hnf_inner',
                   hinvb_inner, hsome_ff⟩,
@@ -7975,7 +7975,7 @@ private theorem simulation_loop_cf_all_tt_det_nomeasure
       exact canFailBlock_append_left π φ body maintain_stmts ρ_k ⟨cfg_f, hf_f, hr_f⟩
     | inr hbody_term =>
       -- Body terminates at ρ_inner with some inv ff → maintain fires
-      obtain ⟨ρ_inner, h_body_term, hnf_inner, hnot_all_tt⟩ := hbody_term
+      obtain ⟨ρ_inner, h_body_term, _hnf_inner, hinv_bool_inner, hsome_ff⟩ := hbody_term
       have hnofd_body : Block.noFuncDecl body = Bool.true := by
         simp [Stmt.noFuncDecl] at hnofd; exact hnofd
       have heval_inner : ρ_inner.eval = ρ_k.eval :=
@@ -7983,46 +7983,6 @@ private theorem simulation_loop_cf_all_tt_det_nomeasure
           body ρ_k ρ_inner hnofd_body h_body_term
       have hwfb_inner : WellFormedSemanticEvalBool ρ_inner.eval := by
         rw [heval_inner]; exact hwfb_k
-      -- Get hinv_bool at ρ_inner: each inv evaluates to tt or ff
-      have hinv_bool_inner : ∀ le ∈ inv,
-          ρ_inner.eval ρ_inner.store le.2 = some HasBool.tt ∨
-          ρ_inner.eval ρ_inner.store le.2 = some HasBool.ff := by
-        intro le hle
-        -- inv vars are subset of ρ₀-defined vars (defUseOk)
-        have hdu := hswf.defUseOk
-        simp only [Stmt.defUseWellFormed, Bool.and_eq_true] at hdu
-        obtain ⟨⟨⟨_, _⟩, hinv_all⟩, _⟩ := hdu
-        -- Use that le.2's vars are all ρ₀-defined and use exprBool
-        -- The simplest path: use hswf.exprBool which gives bool-valuedness for all stores
-        have hbool_k : ρ_k.eval ρ_k.store le.2 = some HasBool.tt ∨
-            ρ_k.eval ρ_k.store le.2 = some HasBool.ff := .inl (hall_tt_k le hle)
-        -- For ρ_inner: use exprBool with appropriate guarantees
-        -- Actually the fastest path: get bool-valuedness from hwfb_inner
-        have hbool_via_ev : ∀ se : SemanticStore Expression,
-            (∀ x ∈ HasVarsPure.getVars le.2, (se x).isSome) →
-            ρ_inner.eval se le.2 = some HasBool.tt ∨
-            ρ_inner.eval se le.2 = some HasBool.ff := by
-          intro se hvars
-          exact hswf.exprBool le.2 (le.1, le.2) hle se (by
-            -- hvars: every x in getVars le.2 has (se x).isSome
-            intro x hx
-            -- exprBool requires (∀ x ∈ HasVarsPure.getVars, (se x).isSome)?
-            -- We have hvars
-            exact hvars x hx) hwfb_inner
-        -- Need: invariants' vars are defined at ρ_inner
-        have hinner_defined : ∀ x ∈ HasVarsPure.getVars le.2, (ρ_inner.store x).isSome := by
-          intro x hx_in_vars
-          have hx_mem : x ∈ (inv.flatMap fun lp => HasVarsPure.getVars lp.2) :=
-            List.mem_flatMap.mpr ⟨le, hle, hx_in_vars⟩
-          have hdef_x : ((ρ₀.store x).isSome) = Bool.true :=
-            (List.all_eq_true.mp hinv_all) x hx_mem
-          have hk_some : (ρ_k.store x).isSome := (hsame_k x).mpr hdef_x
-          have h_oi := star_preserves_outerInv π φ h_body_term
-            (show outerInv ρ_k.store (.stmts body ρ_k) from fun _ h => h)
-          exact h_oi x hk_some
-        exact hbool_via_ev ρ_inner.store hinner_defined
-      have hsome_ff : ∃ le ∈ inv, ρ_inner.eval ρ_inner.store le.2 = some HasBool.ff :=
-        not_all_tt_implies_some_ff inv ρ_inner hinv_bool_inner hnot_all_tt
       have h_maintain_cf : CanFailBlock π φ maintain_stmts ρ_inner :=
         stmts_mapIdx_assert_canFail π φ inv ρ_inner md mkMaintainLabel
           hwfb_inner hinv_bool_inner hsome_ff
@@ -8177,7 +8137,7 @@ private theorem simulation_loop_cf_all_tt_nondet
       obtain ⟨cfg_f, hf_f, hr_f⟩ := hbody_fail
       exact canFailBlock_append_left π φ body maintain_stmts ρ_k ⟨cfg_f, hf_f, hr_f⟩
     | inr hbody_term =>
-      obtain ⟨ρ_inner, h_body_term, hnf_inner, hnot_all_tt⟩ := hbody_term
+      obtain ⟨ρ_inner, h_body_term, _hnf_inner, hinv_bool_inner, hsome_ff⟩ := hbody_term
       have hnofd_body : Block.noFuncDecl body = Bool.true := by
         simp [Stmt.noFuncDecl] at hnofd; exact hnofd
       have heval_inner : ρ_inner.eval = ρ_k.eval :=
@@ -8185,27 +8145,6 @@ private theorem simulation_loop_cf_all_tt_nondet
           body ρ_k ρ_inner hnofd_body h_body_term
       have hwfb_inner : WellFormedSemanticEvalBool ρ_inner.eval := by
         rw [heval_inner]; exact hwfb_k
-      have hinv_bool_inner : ∀ le ∈ inv,
-          ρ_inner.eval ρ_inner.store le.2 = some HasBool.tt ∨
-          ρ_inner.eval ρ_inner.store le.2 = some HasBool.ff := by
-        intro le hle
-        have hdu := hswf.defUseOk
-        simp only [Stmt.defUseWellFormed, Bool.and_eq_true] at hdu
-        obtain ⟨⟨⟨_, _⟩, hinv_all⟩, _⟩ := hdu
-        have hinner_defined : ∀ x ∈ HasVarsPure.getVars le.2, (ρ_inner.store x).isSome := by
-          intro x hx_in_vars
-          have hx_mem : x ∈ (inv.flatMap fun lp => HasVarsPure.getVars lp.2) :=
-            List.mem_flatMap.mpr ⟨le, hle, hx_in_vars⟩
-          have hdef_x : ((ρ₀.store x).isSome) = Bool.true :=
-            (List.all_eq_true.mp hinv_all) x hx_mem
-          have hk_some : (ρ_k.store x).isSome := (hsame_k x).mpr hdef_x
-          have h_oi := star_preserves_outerInv π φ h_body_term
-            (show outerInv ρ_k.store (.stmts body ρ_k) from fun _ h => h)
-          exact h_oi x hk_some
-        exact hswf.exprBool le.2 (le.1, le.2) hle ρ_inner.store
-          (by intro x hx; exact hinner_defined x hx) hwfb_inner
-      have hsome_ff : ∃ le ∈ inv, ρ_inner.eval ρ_inner.store le.2 = some HasBool.ff :=
-        not_all_tt_implies_some_ff inv ρ_inner hinv_bool_inner hnot_all_tt
       have h_maintain_cf : CanFailBlock π φ maintain_stmts ρ_inner :=
         stmts_mapIdx_assert_canFail π φ inv ρ_inner md mkMaintainLabel
           hwfb_inner hinv_bool_inner hsome_ff
@@ -8366,22 +8305,15 @@ private theorem simulation_loop_cf_all_tt
     -- The det+measure case is vacuously impossible: step_loop_enter's hmeas_enter
     -- premise (∀ v, ρ.eval ρ.store me = some v) is contradictory.
     case h_2.isFalse.isTrue =>
-      -- Det guard, measure = some m: derive contradiction.
-      -- Source loop must step (else hreach=refl, contradicting hfail+hnf₀').
-      -- Only step_loop_exit and step_loop_enter apply for det.
-      -- step_loop_exit can't fail with all-tt; step_loop_enter has contradictory hmeas_enter.
+      -- Det guard, measure = some m: derive contradiction via step_loop_enter's hmeas_enter.
       exfalso
+      rename_i g _ m _ _
       cases hreach with
       | refl =>
-        -- cfg = .stmt loop ρ₀, getEnv = ρ₀, hasFailure = false, contradicts hfail
-        have : (Config.getEnv (Config.stmt _ ρ₀)).hasFailure = Bool.false := by
-          simp [Config.getEnv]; exact hnf₀'
-        rw [this] at hfail; cases hfail
+        simp [Config.getEnv, hnf₀'] at hfail
       | step _ _ _ h1 hrest =>
-        cases h1 with
-        | step_loop_exit hg_ff hib hff_iff hwfb' =>
-          -- Exit makes hasFailure = ρ₀.hasFailure || hasInvFailure = false (all-tt → no inv ff)
-          rename_i hasInvF _ _ _
+        cases h1
+        case step_loop_exit hasInvF hwfb' hg_ff hib hff_iff =>
           have hno_ff : ¬∃ le ∈ inv, ρ₀.eval ρ₀.store le.2 = some HasBool.ff := by
             intro ⟨le, hle, hff⟩; have := hall_tt le hle; rw [this] at hff; cases hff
           have hif_false : hasInvF = Bool.false := by
@@ -8393,13 +8325,10 @@ private theorem simulation_loop_cf_all_tt
             cases ρ₀; simp_all
           rw [hρ_eq] at hrest
           cases hrest with
-          | refl =>
-            have : (Config.getEnv (Config.terminal ρ₀)).hasFailure = Bool.false := by
-              simp [Config.getEnv]; exact hnf₀'
-            rw [this] at hfail; cases hfail
+          | refl => simp [Config.getEnv, hnf₀'] at hfail
           | step _ _ _ h _ => exact nomatch h
-        | step_loop_enter _ _ _ _ hmeas_enter =>
-          -- hmeas_enter applied to m and tt vs ff gives tt = ff, contradiction
+        case step_loop_enter =>
+          rename_i _ _ hmeas_enter _ _
           have hmeas_m := fun v => hmeas_enter _ v rfl
           exact absurd (Option.some.inj
             ((hmeas_m HasBool.tt).1.symm.trans (hmeas_m HasBool.ff).1))
