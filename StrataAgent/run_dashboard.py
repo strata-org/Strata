@@ -6,11 +6,12 @@ Add agents via the UI, then click Start.
 """
 
 import asyncio
+import os
 import time
 
 t0 = time.time()
 from strataswarm import ClaudeBackend, SwarmDashboard
-print(f"[{time.time()-t0:.2f}s] imports done")
+print(f"[{time.time()-t0:.2f}s] imports done (PID: {os.getpid()})")
 
 
 async def main():

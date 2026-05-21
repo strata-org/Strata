@@ -16,3 +16,5 @@ Strata.code-workspace
 StrataTest/Transform/Temp
 StrataAgent/temp
 StrataTest/Transform/Sandbox
+
+nohup.out
