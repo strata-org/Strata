@@ -217,11 +217,20 @@ aws_string_eq                 |     OK |     OK |     OK |      PARTIAL |      P
     VC. Affects programs whose C source uses `assume(...)` to bound
     inputs; the assumption is dropped because `__VERIFIER_assume` has
     no body and no `requires`/`ensures` after `strip_smack_prelude.py`.
-    Sample: `abs_func`, `max_func`, `nondet_branch`. Fix lever: add
-    `spec { requires (_i0 != 0); }` to the stripped `__VERIFIER_assume`
-    procedure in `fix_core_st.py` (or directly in
-    `strip_smack_prelude.py`). Smallest available fix; would flip 3+
-    PARTIALs to PASS.
+    Sample: `abs_func`, `max_func`, `nondet_branch`. Empirically
+    verified that **simply preserving the body is not sufficient** —
+    BoogieToStrata translates `__VERIFIER_assume`'s body
+    `assume $i0 != $0` into a Strata Core `assume (_i0 != _0)` inside
+    the procedure, but this `assume` is local to the procedure's own
+    VC and does not propagate to callers under modular deductive
+    verification. Fix lever: synthesize a `spec { free ensures (_i0
+    != 0); }` on the `__VERIFIER_assume` declaration. The
+    `free ensures` form (Boogie semantics: assumed by callers, not
+    checked by the implementation) matches `assume`'s polarity, unlike
+    `requires` which would force callers to *prove* the bound. The
+    natural place is BoogieToStrata's existing `assert_.<type>`
+    pattern at `StrataGenerator.cs:VisitProcedure` — extend it with a
+    sister case for `__VERIFIER_assume` emitting `free ensures`.
   - **(e) Solver returns `unknown`** — verdict `❓ unknown`. Sample:
     `aws_byte_buf_append`, all 7 VCs. The asserted predicate chain
     involves nested int↔bit conversions (`_zext`, `_trunc`) over
@@ -231,6 +240,22 @@ aws_string_eq                 |     OK |     OK |     OK |      PARTIAL |      P
     `Strata/Languages/Core/SMTEncoder.lean` — array theory vs
     axiomatized maps, axiom pruning. Significant effort; likely the
     last sub-class to address.
+- **`strip_smack_prelude.py` rationale is obsolete.** The strip
+  pass's docstring claims the SMACK prelude bodies "use unstructured
+  multi-target gotos incompatible with BoogieToStrata." Audited the
+  actual bodies: only `__SMACK_and{32,16,8}` and `__SMACK_or32` have
+  multi-target gotos (192/48/24/64 blocks each). All other names the
+  strip removes (`__VERIFIER_assume`, `__SMACK_dummy`,
+  `__SMACK_or{8,16,64}`, `__SMACK_check_overflow`,
+  `__SMACK_loop_exit`, `boogie_si_record_*`, `corral_*`, `$alloc`)
+  have structured bodies that BoogieToStrata translates cleanly —
+  even with `--smack` and the now-required `InferModifies = true`,
+  exit 0, no errors. The strip is broader than necessary by historical
+  accident (prefix-match collateral damage); narrowing to just the
+  bitwise-decompose family would be safe. Empirically, removing the
+  strip does NOT close sub-class (b) on its own — see (b) above for
+  why. So the strip narrowing is a code-hygiene improvement, not a
+  verdict-improvement lever.
 - **bugFinding partials.** Symbolic execution finds potential
   counterexamples for assertions on programs whose preconditions are
   insufficient. Same root cause as deductive sub-class (b) for the
