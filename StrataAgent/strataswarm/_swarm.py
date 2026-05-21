@@ -151,9 +151,11 @@ class Swarm:
             mcp_servers["agent_messaging"] = messaging_server
 
             agents_note = (
-                f"- send_message(to, message): Send a message to another agent. "
-                f"'to' must be one of: {', '.join(other_agents)}.\n"
-                if other_agents else ""
+                f"- send_message(to, message): Send a message to any agent by name. "
+                # f"Known agents at startup: {', '.join(other_agents)}. "
+                # f"Additional agents may be spawned at runtime — you can message them too.\n"
+                # if other_agents else
+                # f"- send_message(to, message): Send a message to any agent by name.\n"
             )
             cwd_note = (
                 f"Project root: {self._cwd}\n"
