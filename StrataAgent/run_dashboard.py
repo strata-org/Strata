@@ -22,7 +22,7 @@ async def main():
     )
     print(f"[{time.time()-t1:.2f}s] dashboard created")
     await dashboard.start()
-    print(f"[{time.time()-t1:.2f}s] server started — http://localhost:8420")
+    print(f"[{time.time()-t1:.2f}s] server started — http://localhost:8420 (PID: {os.getpid()})")
     await asyncio.Event().wait()
 
 
