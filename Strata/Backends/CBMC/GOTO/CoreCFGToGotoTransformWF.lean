@@ -2619,6 +2619,131 @@ theorem blocksFoldlM_preserves_locationNum_eq_index
       rw [h_step] at h_run
       simp [Bind.bind, Except.bind] at h_run
 
+/-! ### Patch-step preservation (under empty loopContracts)
+
+The patch step (`coreCFGToGotoPatchStep`) either fails (label
+unresolved), prepends `(idx, targetLoc)` to `resolvedPatches`, or also
+mutates `trans.instructions[idx].guard` for loop contracts. Reasoning
+about the loop-contract guard tweak requires loop-contract-specific
+infrastructure beyond Gap A. We discharge the patch step under the
+hypothesis `loopContracts = ∅`, which is the case for any CFG without
+loop-invariant or loop-decreases metadata; concrete callers verifying
+the WF property pass this hypothesis. -/
+
+/-- When `loopContracts` is empty, the patch step returns the input
+`trans` unchanged (only modifies `resolvedPatches`). -/
+theorem coreCFGToGotoPatchStep_no_contracts_trans_eq
+    (labelMap : Std.HashMap String Nat)
+    (acc acc' : List (Nat × Nat) × Imperative.GotoTransform Core.Expression.TyEnv)
+    (idxLabel : Nat × String)
+    (h_run : Strata.coreCFGToGotoPatchStep labelMap ∅ acc idxLabel = Except.ok acc') :
+    acc'.2 = acc.2 := by
+  obtain ⟨resolvedPatches, trans⟩ := acc
+  obtain ⟨idx, label⟩ := idxLabel
+  unfold Strata.coreCFGToGotoPatchStep at h_run
+  simp only [Bind.bind, Except.bind] at h_run
+  cases h_lookup : labelMap[label]? with
+  | none =>
+    rw [h_lookup] at h_run
+    simp at h_run
+  | some targetLoc =>
+    rw [h_lookup] at h_run
+    -- With empty loopContracts, there are no entries.
+    have h_lc : (∅ : Std.HashMap String (Imperative.MetaData Core.Expression))[label]? = none := by
+      simp
+    rw [h_lc] at h_run
+    simp [pure, Except.pure] at h_run
+    rw [← h_run]
+
+/-- The patch step preserves `size_eq` when `loopContracts` is empty. -/
+theorem coreCFGToGotoPatchStep_preserves_size_eq_no_contracts
+    (labelMap : Std.HashMap String Nat)
+    (acc acc' : List (Nat × Nat) × Imperative.GotoTransform Core.Expression.TyEnv)
+    (idxLabel : Nat × String)
+    (h_run : Strata.coreCFGToGotoPatchStep labelMap ∅ acc idxLabel = Except.ok acc')
+    (h_size : acc.2.instructions.size = acc.2.nextLoc) :
+    acc'.2.instructions.size = acc'.2.nextLoc := by
+  rw [coreCFGToGotoPatchStep_no_contracts_trans_eq labelMap acc acc' idxLabel h_run]
+  exact h_size
+
+/-- The patch step preserves `locationNum_eq_index` when `loopContracts` is empty. -/
+theorem coreCFGToGotoPatchStep_preserves_locationNum_no_contracts
+    (labelMap : Std.HashMap String Nat)
+    (acc acc' : List (Nat × Nat) × Imperative.GotoTransform Core.Expression.TyEnv)
+    (idxLabel : Nat × String)
+    (h_run : Strata.coreCFGToGotoPatchStep labelMap ∅ acc idxLabel = Except.ok acc')
+    (h_loc :
+      ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+        acc.2.instructions[i]? = some instr → instr.locationNum = i) :
+    ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+      acc'.2.instructions[i]? = some instr → instr.locationNum = i := by
+  rw [coreCFGToGotoPatchStep_no_contracts_trans_eq labelMap acc acc' idxLabel h_run]
+  exact h_loc
+
+/-- The patches-fold preserves `size_eq` (no loop contracts). -/
+theorem patchesFoldlM_preserves_size_eq_no_contracts
+    (labelMap : Std.HashMap String Nat)
+    (patches : Array (Nat × String))
+    (acc acc' : List (Nat × Nat) × Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_run : patches.foldlM (Strata.coreCFGToGotoPatchStep labelMap ∅) acc = Except.ok acc')
+    (h_size : acc.2.instructions.size = acc.2.nextLoc) :
+    acc'.2.instructions.size = acc'.2.nextLoc := by
+  -- Convert to list-foldlM for inductive reasoning.
+  rw [← Array.foldlM_toList] at h_run
+  -- Now `patches.toList.foldlM ... acc = .ok acc'`.
+  generalize h_eq : patches.toList = patchesL at h_run
+  clear h_eq
+  induction patchesL generalizing acc with
+  | nil =>
+    simp [List.foldlM, pure, Except.pure] at h_run
+    subst h_run; exact h_size
+  | cons head rest ih =>
+    rw [List.foldlM_cons] at h_run
+    match h_step : Strata.coreCFGToGotoPatchStep labelMap ∅ acc head with
+    | .ok acc₁ =>
+      rw [h_step] at h_run
+      simp only [Bind.bind, Except.bind] at h_run
+      have h_size₁ : acc₁.2.instructions.size = acc₁.2.nextLoc :=
+        coreCFGToGotoPatchStep_preserves_size_eq_no_contracts labelMap acc acc₁ head h_step h_size
+      exact ih acc₁ h_size₁ h_run
+    | .error _ =>
+      rw [h_step] at h_run
+      simp [Bind.bind, Except.bind] at h_run
+
+/-- The patches-fold preserves `locationNum_eq_index` (no loop contracts). -/
+theorem patchesFoldlM_preserves_locationNum_no_contracts
+    (labelMap : Std.HashMap String Nat)
+    (patches : Array (Nat × String))
+    (acc acc' : List (Nat × Nat) × Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_run : patches.foldlM (Strata.coreCFGToGotoPatchStep labelMap ∅) acc = Except.ok acc')
+    (h_loc :
+      ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+        acc.2.instructions[i]? = some instr → instr.locationNum = i) :
+    ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+      acc'.2.instructions[i]? = some instr → instr.locationNum = i := by
+  rw [← Array.foldlM_toList] at h_run
+  generalize h_eq : patches.toList = patchesL at h_run
+  clear h_eq
+  induction patchesL generalizing acc with
+  | nil =>
+    simp [List.foldlM, pure, Except.pure] at h_run
+    subst h_run; exact h_loc
+  | cons head rest ih =>
+    rw [List.foldlM_cons] at h_run
+    match h_step : Strata.coreCFGToGotoPatchStep labelMap ∅ acc head with
+    | .ok acc₁ =>
+      rw [h_step] at h_run
+      simp only [Bind.bind, Except.bind] at h_run
+      have h_loc₁ :
+          ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+            acc₁.2.instructions[i]? = some instr → instr.locationNum = i :=
+        coreCFGToGotoPatchStep_preserves_locationNum_no_contracts
+          labelMap acc acc₁ head h_step h_loc
+      exact ih acc₁ h_loc₁ h_run
+    | .error _ =>
+      rw [h_step] at h_run
+      simp [Bind.bind, Except.bind] at h_run
+
 /-! ## Top-level theorem (statement + interface)
 
 The top-level `coreCFGToGotoTransform_wellFormed` theorem proves that
