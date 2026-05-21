@@ -14,3 +14,5 @@ vcs/*.smt2
 
 Strata.code-workspace
 StrataTest/Transform/Temp
+StrataAgent/temp
+StrataTest/Transform/Sandbox
