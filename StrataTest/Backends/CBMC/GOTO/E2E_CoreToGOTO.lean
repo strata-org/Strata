@@ -515,3 +515,54 @@ private def E2E_CFGDispatchProc : Core.Procedure :=
   -- Only one local (the formal), no _ret entry.
   assert! (symtabStr.splitOn "__cprover_entry::1::x").length > 1
   assert! (symtabStr.splitOn "__cprover_entry::1::_ret").length == 1
+
+-------------------------------------------------------------------------------
+
+-- Regression: cfgReversePostorder reorders blocks so forward CFG edges
+-- emit as forward-only GOTOs. Without the reorder, a CFG whose blocks
+-- list has a join point before its predecessors emits listing-order
+-- back-edges that CBMC's loop detector treats as real loops.
+--
+-- This 4-block diamond CFG has zero real loops. It's listed with `join`
+-- before `branch_a` and `branch_b` to force the would-be-bug pattern.
+-- After RPO reordering, all forward CFG edges land on later locations.
+
+private def E2E_CFGRPOReorder : Core.Procedure :=
+  let bTrue : Core.Expression.Expr := .boolConst () Bool.true
+  let entryBlk : Imperative.DetBlock String Core.Command Core.Expression :=
+    { cmds := [], transfer := .condGoto bTrue "branch_a" "branch_b" }
+  let branchA : Imperative.DetBlock String Core.Command Core.Expression :=
+    { cmds := [], transfer := .condGoto bTrue "join" "join" }
+  let branchB : Imperative.DetBlock String Core.Command Core.Expression :=
+    { cmds := [], transfer := .condGoto bTrue "join" "join" }
+  let join : Imperative.DetBlock String Core.Command Core.Expression :=
+    { cmds := [], transfer := .finish }
+  { header := { name := "rpoTest", typeArgs := [], inputs := [], outputs := [] },
+    spec := { preconditions := [], postconditions := [] },
+    body := .cfg
+      { entry := "entry",
+        -- Deliberately out of order: `join` precedes its predecessors.
+        blocks := [("entry", entryBlk), ("join", join),
+                   ("branch_a", branchA), ("branch_b", branchB)] }
+  }
+
+-- Count GOTO instructions whose target is at-or-before the source's
+-- locationNum (a "backward edge in the listing").
+private def countBackwardGotos (insts : Array CProverGOTO.Instruction) : Nat :=
+  insts.foldl (init := 0) fun acc inst =>
+    if inst.type == .GOTO then
+      match inst.target with
+      | some tgt => if tgt ≤ inst.locationNum then acc + 1 else acc
+      | none => acc
+    else acc
+
+-- The diamond has zero real loops, so any backward GOTO in the emitted
+-- listing is the bug. After RPO reordering, all forward CFG edges land
+-- on later locationNums.
+#eval do
+  let Env := Lambda.TEnv.default
+  match procedureToGotoCtxViaCFG Env E2E_CFGRPOReorder with
+  | .error e => IO.throwServerError s!"RPO test translation failed: {e}"
+  | .ok (ctx, _) =>
+    let backwardEdgeCount := countBackwardGotos ctx.program.instructions
+    assert! backwardEdgeCount == 0

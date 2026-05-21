@@ -70,6 +70,55 @@ private def renameCoreDetCFG
 /-! ### Core-specific CFG-to-GOTO translation -/
 
 /--
+Reorder a Core `DetCFG`'s blocks into reverse-postorder from `cfg.entry`.
+
+Standard recursive DFS: visit each successor before prepending the current
+block to the accumulator. Real CFG cycles (genuine loops) terminate via
+the `seen` set; back-edges to already-visited blocks don't recurse, and
+the target's RPO position is determined by its first DFS visit.
+
+After reordering, every forward CFG edge `u → v` has `index(u) < index(v)`
+in the returned list. Backward edges in the listing correspond exactly to
+real CFG back-edges. Used by `coreCFGToGotoTransform` so that the emitted
+GOTO `locationNum` ordering aligns with CFG forward flow, eliminating
+spurious back-edges that CBMC's loop detector would otherwise treat as
+real loops and instrument with unwinding-assertions.
+
+Blocks unreachable from `cfg.entry` are silently dropped (they emit no
+runtime-reachable instructions anyway). Edges to non-existent labels are
+defensively ignored here; the downstream label-resolution pass throws
+"Unresolved label" if any actually surface.
+
+`partial` because the recursion's termination depends on `seen` set
+membership rather than a structural decrease, which Lean can't prove
+automatically. Same convention as the other `partial def`s in this file.
+-/
+private partial def cfgReversePostorder
+    (cfg : Core.DetCFG)
+    : List (String × Imperative.DetBlock String Core.Command Core.Expression) :=
+  let blockMap : Std.HashMap String (Imperative.DetBlock String Core.Command Core.Expression) :=
+    cfg.blocks.foldl (fun m (l, b) => m.insert l b) {}
+  let succs (blk : Imperative.DetBlock String Core.Command Core.Expression) : List String :=
+    match blk.transfer with
+    | .condGoto _ lt lf _ => [lt, lf]
+    | .finish _ => []
+  let rec visit (label : String)
+      (st : List (String × Imperative.DetBlock String Core.Command Core.Expression)
+            × Std.HashSet String)
+      : List (String × Imperative.DetBlock String Core.Command Core.Expression)
+        × Std.HashSet String :=
+    let (acc, seen) := st
+    if seen.contains label then (acc, seen)
+    else match blockMap[label]? with
+      | none => (acc, seen)
+      | some blk =>
+        let seen := seen.insert label
+        let st := (succs blk).foldl (fun s succLabel => visit succLabel s) (acc, seen)
+        ((label, blk) :: st.1, st.2)
+  let (rpo, _) := visit cfg.entry ([], {})
+  rpo
+
+/--
 Translate a Core `DetCFG` to CProver GOTO instructions.
 
 Like `detCFGToGotoTransform` but handles `Core.Command` (which includes
@@ -94,7 +143,12 @@ def coreCFGToGotoTransform
   let mut pendingPatches : Array (Nat × String) := #[]
   let mut labelMap : Std.HashMap String Nat := {}
   let mut loopContracts : Std.HashMap String (Imperative.MetaData Core.Expression) := {}
-  for (label, block) in cfg.blocks do
+  -- Iterate blocks in reverse-postorder so forward CFG edges emit as
+  -- forward-only GOTOs. Without the reorder, SMACK-translated programs
+  -- with branches emit blocks in an order where forward control flow
+  -- looks like back-edges to CBMC's loop detector, triggering
+  -- unwinding-assertion timeouts. See `cfgReversePostorder` above.
+  for (label, block) in cfgReversePostorder cfg do
     labelMap := labelMap.insert label trans.nextLoc
     let srcLoc : CProverGOTO.SourceLocation :=
       { CProverGOTO.SourceLocation.nil with function := functionName }
