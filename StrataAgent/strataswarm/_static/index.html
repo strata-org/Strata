@@ -203,6 +203,15 @@ function wsSend(obj) {
   }
 }
 
+function classifyMsg(text) {
+  if (text === '[thinking...]') return 'status';
+  if (text.startsWith('[tool]')) return 'tool';
+  if (text.startsWith('[tool_result]')) return 'tool_result';
+  if (text.startsWith('[From ') || text.startsWith('[Notification') || text.startsWith('[STALL') || text.startsWith('[HEARTBEAT')) return 'notification';
+  if (text.startsWith('[Waiting') || text.startsWith('[Polling') || text.startsWith('[Compacting')) return 'status';
+  return 'normal';
+}
+
 const AGENT_COLORS = ['#4fc3f7','#81c784','#ffcc02','#ce93d8','#ef9a9a','#80cbc4','#ffab91','#b39ddb'];
 function agentColor(name) {
   const idx = Object.keys(agents).indexOf(name);
@@ -216,12 +225,24 @@ function connect() {
   ws.onmessage = (e) => {
     const data = JSON.parse(e.data);
     if (data.agents !== undefined && data.specs !== undefined) {
-      // Full state
-      Object.entries(data.agents).forEach(([name, info]) => { agents[name] = info; if (!agentMessages[name]) agentMessages[name] = []; });
+      // Full state restore (handles page refresh / reconnect)
+      Object.entries(data.agents).forEach(([name, info]) => { agents[name] = info; });
       specs = data.specs;
       isRunning = data.running;
-      allMessages = data.all_messages || [];
       savedList = data.saved_list || [];
+      // Restore message history from server
+      allMessages = (data.all_messages || []).map(m => ({
+        text: m.data || '', type: classifyMsg(m.data || ''), agent: m.agent, ts: m.timestamp_ms
+      }));
+      agentMessages = {};
+      if (data.agent_messages) {
+        Object.entries(data.agent_messages).forEach(([name, msgs]) => {
+          agentMessages[name] = msgs.map(m => ({
+            text: m.data || '', type: classifyMsg(m.data || ''), agent: name, ts: m.timestamp_ms
+          }));
+        });
+      }
+      Object.keys(agents).forEach(name => { if (!agentMessages[name]) agentMessages[name] = []; });
       render();
     } else if (data.type === 'agent_event') {
       handleEvent(data);
@@ -273,11 +294,7 @@ function handleEvent(ev) {
   if (!agentMessages[name]) agentMessages[name] = [];
   if (ev.event_type === 'message') {
     const text = ev.data || '';
-    let type = 'normal';
-    if (text === '[thinking...]') type = 'status';
-    else if (text.startsWith('[tool]')) type = 'tool';
-    else if (text.startsWith('[tool_result]')) type = 'tool_result';
-    else if (text.startsWith('[Injected') || text.startsWith('[Notification')) type = 'notification';
+    const type = classifyMsg(text);
     agentMessages[name].push({ text, type, agent: name, ts: ev.timestamp_ms });
     allMessages.push({ text, type, agent: name, ts: ev.timestamp_ms });
   } else if (ev.event_type === 'status_change') {
@@ -384,7 +401,10 @@ function renderMessages() {
         return `<div class="msg ${type}">${agentTag}${escapeHtml(text)}</div>`;
       }).join('');
       el.innerHTML = html;
-      el.scrollTop = el.scrollHeight;
+      // Only auto-scroll if user is already near the bottom
+  if (el.scrollHeight - el.scrollTop - el.clientHeight < 100) {
+    el.scrollTop = el.scrollHeight;
+  }
     } else {
       // Show chat list
       if (!chatList.length) {
@@ -461,7 +481,10 @@ function renderMessages() {
     const agentTag = showAgent ? `<div class="msg-agent" style="color:${color}">${m.agent}</div>` : '';
     return `<div class="msg ${m.type}">${agentTag}${escapeHtml(m.text)}</div>`;
   }).join('');
-  el.scrollTop = el.scrollHeight;
+  // Only auto-scroll if user is already near the bottom
+  if (el.scrollHeight - el.scrollTop - el.clientHeight < 100) {
+    el.scrollTop = el.scrollHeight;
+  }
 }
 
 function escapeHtml(t) { return (t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }

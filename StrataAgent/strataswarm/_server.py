@@ -451,7 +451,18 @@ class SwarmDashboard:
             for name, node in self._swarm._nodes.items():
                 spawned_by = getattr(node.spec, "_spawned_by", None)
                 if name not in agents:
-                    agents[name] = {"name": name, "status": "pending", "session_id": None, "spawned_by": spawned_by}
+                    # Determine status: check event history first, then task state
+                    status = "pending"
+                    if name in self._event_history:
+                        # Find last status_change event
+                        for evt in reversed(self._event_history[name]):
+                            if evt.get("event_type") == "status_change" and evt.get("data"):
+                                status = evt["data"]
+                                break
+                    elif name in self._swarm._tasks:
+                        task = self._swarm._tasks[name]
+                        status = "running" if not task.done() else "completed"
+                    agents[name] = {"name": name, "status": status, "session_id": None, "spawned_by": spawned_by}
                 else:
                     if spawned_by:
                         agents[name]["spawned_by"] = spawned_by
@@ -472,11 +483,19 @@ class SwarmDashboard:
         SWARM_SAVE_DIR.mkdir(parents=True, exist_ok=True)
         saved_list = [f.stem for f in SWARM_SAVE_DIR.glob("*.yaml")]
 
+        # Per-agent message history (last 100 per agent)
+        agent_messages: dict[str, list[dict[str, Any]]] = {}
+        for agent_name, events in self._event_history.items():
+            agent_messages[agent_name] = [
+                e for e in events[-100:] if e.get("event_type") == "message"
+            ]
+
         return {
             "agents": agents,
             "specs": self._get_specs_list(),
             "running": self._swarm_task is not None and not self._swarm_task.done(),
             "all_messages": self._all_messages[-200:],
+            "agent_messages": agent_messages,
             "saved_list": saved_list,
         }
 

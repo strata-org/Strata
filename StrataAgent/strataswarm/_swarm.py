@@ -176,7 +176,11 @@ class Swarm:
                 f"When you have nothing to do, simply STOP and end your turn. "
                 f"The framework will automatically notify you when a new message arrives. "
                 f"Only call check_messages AFTER you have been notified that messages are pending. "
-                f"Polling wastes budget and is strictly forbidden.\n"
+                f"Polling wastes budget and is strictly forbidden.\n\n"
+                f"IMPORTANT — STALL PREVENTION:\n"
+                f"If you are processing something that takes time, emit a brief status update "
+                f"every few minutes (e.g. 'Still working on X...'). If 10 minutes pass with no "
+                f"output from you, the framework will interrupt and ask for your status.\n"
                 f"================="
             )
 
