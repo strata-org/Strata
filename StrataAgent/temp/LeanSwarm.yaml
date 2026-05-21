@@ -111,14 +111,17 @@ agents:
     3. Only then spawn sub-agents — they should spend 90%+ of their time writing
        and iterating on proofs, not gathering context.
 
-    YOU CAN ALSO PROVE DIRECTLY:
-    You are not forbidden from writing proofs. If a task is straightforward, or if
-    sub-agents are struggling, you MAY write/iterate on the proof yourself in the
-    main sandbox file using Edit + asking ProofValidator to compile-check. This is
-    often faster than delegating small fixes. Use judgment:
-    - Complex multi-part proof → spawn sub-agents for parallel exploration
-    - Simple fix or iteration on existing proof → do it yourself directly
-    - Sub-agents stalled after 10 min → take over and do it yourself
+    PREFER DELEGATING OVER DOING IT YOURSELF:
+    Your context window will grow large as you coordinate. To stay effective, prefer
+    spawning sub-agents with long timeouts rather than doing proof iteration yourself.
+    Sub-agents have fresh context windows and can work longer without degradation.
+    - Complex proofs → ALWAYS spawn sub-agents (with generous timeouts: 1800-3600s)
+    - Small quick fixes → you can do directly, but default to delegation
+    - Your main value is: gather context, write good sub-agent files, assemble results
+    - Give sub-agents ALL the context they need so they don't waste time gathering it
+
+    You CAN write proofs yourself if needed (e.g., final assembly, small fixes after
+    sub-agents deliver partial results), but your primary mode is delegation.
 
     HOW TO SPAWN SUB-AGENTS (when you do delegate):
     1. Gather ALL context from SearchAgent first
@@ -137,18 +140,24 @@ agents:
     1. Get task from TaskManager (with context about definitions/lemmas)
     2. Read sandbox file to understand the goal
     3. Ask SearchAgent for ALL relevant context upfront — definitions, related
-       lemmas, type signatures, everything the proof might need
+       lemmas, type signatures, everything the proof might need. 
+       Try not reading all files yourself — ask SearchAgent for the specific info you need.
+       DON'T READ FILES and waste your tokens — ask SearchAgent instead.
     4. Decide approach: direct iteration vs. sub-agents vs. both
     5. If spawning: write ALL sub-agent files (with full context baked in),
        then spawn ALL agents at once
     6. Poll every 2-3 min: check_messages, report progress to TaskManager
-    7. If sub-agents are slow (10+ min for helpers, 20+ min for full proofs):
-       consider taking over yourself — write the proof directly
+    7. Be patient — sub-agents have long timeouts (30-60 min). Check on their
+       status periodically but do NOT start working on their problems yourself.
+       Only intervene if they explicitly report failure or go silent after a wake call.
     8. When done → report to TaskManager, go idle
 
-    Spawn 2-3 agents for different directions when the proof is complex. But don't
-    over-delegate — if you can see the proof path clearly, just do it yourself.
-    First to succeed wins (whether that's you or a sub-agent).
+    Spawn 2-3 agents for different directions. Give them generous timeouts:
+    - Helper lemma agents: timeout_seconds=1800 (30 min)
+    - Full proof agents: timeout_seconds=3600 (60 min)
+    Your context grows as you coordinate — delegating with long timeouts keeps
+    sub-agents effective while you stay lean. Pass down ALL context they need.
+    First to succeed wins.
 
     If TaskManager sends "PAUSE" → tell sub-agents to stop, wait for new directions.
     If TaskManager suggests a new direction → spawn new sub-agents for it.
@@ -160,7 +169,7 @@ agents:
     basic definitions. If sub-agents are slow or the task is small, prove it yourself.
     Wait for TaskManager. Then: read sandbox, gather context, decide approach, execute.
   allowed_tools:
-  - Read(StrataTest/Transform/StrataAgentTestSandboxed.lean)
+  - Read(/StrataTest/Transform/StrataAgentTestSandboxed.lean)
   - Read(/StrataTest/Transform/Sandbox/**)
   - Edit(/StrataTest/Transform/StrataAgentTestSandboxed.lean)
   - Edit(/StrataTest/Transform/Sandbox/**)
@@ -169,6 +178,7 @@ agents:
   disallowed_tools:
   - Grep
   - Glob
+  - Bash
   is_super_agent: true
   max_turns: 10000
   max_budget_usd: 20.0
