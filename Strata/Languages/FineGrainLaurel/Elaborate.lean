@@ -620,16 +620,22 @@ partial def synthValueFieldSelect (md : Md) (obj : StmtExprMd) (field : Identifi
   let (ov, objTy) ← synthValue obj
   match (← get).heapVar with
   | some hv =>
-    match objTy with
-    | .UserDefined id =>
-      let owner := id.text
-      let fieldTy ← lookupFieldType owner field.text
-      recordBoxUse fieldTy
-      let qualifiedName := "$field." ++ owner ++ "." ++ field.text
-      let compositeObj := applySubtype ov (eraseType objTy) (.TCore "Composite")
-      let read := FGLValue.staticCall md "readField" [.var md hv, compositeObj, .staticCall md qualifiedName []]
-      pure (.staticCall md (boxDestructorName fieldTy) [read], fieldTy)
-    | _ =>
+    let owner := match objTy with | .UserDefined id => some id.text | _ => none
+    match owner with
+    | some cn =>
+      match (← read).typeEnv.classFields[cn]? with
+      | some _ =>
+        let fieldTy ← lookupFieldType cn field.text
+        recordBoxUse fieldTy
+        let qualifiedName := "$field." ++ cn ++ "." ++ field.text
+        let compositeObj := applySubtype ov (eraseType objTy) (.TCore "Composite")
+        let read := FGLValue.staticCall md "readField" [.var md hv, compositeObj, .staticCall md qualifiedName []]
+        pure (.staticCall md (boxDestructorName fieldTy) [read], fieldTy)
+      | none =>
+        let hv ← freshVar "havoc"
+        modify fun s => { s with usedHoles := s.usedHoles ++ [(hv, false, .TCore "Any")] }
+        pure (.staticCall md hv [], .TCore "Any")
+    | none =>
       let hv ← freshVar "havoc"
       modify fun s => { s with usedHoles := s.usedHoles ++ [(hv, false, .TCore "Any")] }
       pure (.staticCall md hv [], .TCore "Any")
