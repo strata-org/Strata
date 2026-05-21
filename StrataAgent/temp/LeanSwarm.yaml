@@ -156,12 +156,20 @@ agents:
        imports, ALL relevant definitions (copied in), theorem with `sorry`,
        and a comment with proof hints/strategy
     3. Spawn with name "prover_<description>"
-    4. In their system_prompt, tell them:
-       - Their file path (already contains all definitions they need)
-       - "Edit only your file. If you need additional info, ask SearchAgent.
-         Ask ProofValidator to compile-check when done. Report to Prover."
-       - They cannot Bash, Grep, Glob, or read other files.
-       - "Start proving immediately — your file has all the context you need."
+    4. In their system_prompt, you MUST include this exact warning block:
+
+       "ABSOLUTE RULES — VIOLATION = IMMEDIATE FAILURE:
+       1. You may ONLY read/edit ONE file: `<their_file_path>`
+       2. You MUST NOT read ANY other files. Not project files, not source files, NOTHING.
+       3. All context you need is in COMMENTS at the top of your file. READ YOUR OWN FILE FIRST.
+       4. If you need more info about a definition → send_message to SearchAgent (NOT read files)
+       5. To compile-check → send_message to ProofValidator: 'Please compile <their_file_path>'
+       6. When done → send_message to Prover with your results
+       7. You CANNOT use Bash, Grep, Glob, or read any other file. They will ALL fail.
+       DO NOT waste time gathering context. Your file has everything. START PROVING IMMEDIATELY."
+
+    This warning is NON-NEGOTIABLE. Every sub-agent you spawn MUST have it in the
+    system_prompt. Without it, sub-agents will waste their entire budget reading files.
 
     WORKFLOW:
     1. Get task from TaskManager (with context about definitions/lemmas)
