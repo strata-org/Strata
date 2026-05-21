@@ -1752,12 +1752,21 @@ partial def translate (body : Array (stmt Strata.SourceRange)) : PySpecM Unit :=
         continue
       assert! _classNameLoc.isNone
       assert! keywords.size = 0
-      let isExhaustive := decorators.any fun d =>
-        match d with
-        | .Name _ ⟨_, "exhaustive"⟩ _ => true
-        | _ => false
-      assert! decorators.size = 0 || (decorators.size = 1 && isExhaustive)
       assert! typeParams.size = 0
+      -- Collect class-level decorators: `@exhaustive` (Strata-internal)
+      -- and `@icontract.invariant(lambda self: …)` (delegated to
+      -- `Icontract.absorbClassDecorator`). Other decorators warn.
+      let mut isExhaustive := false
+      let mut invariantBundle : Icontract.ClassBundle := {}
+      for d in decorators do
+        match d with
+        | .Name _ ⟨_, "exhaustive"⟩ _ => isExhaustive := true
+        | _ =>
+          let (absorbed, b) ← Icontract.absorbClassDecorator
+            (warn := specWarning) invariantBundle d
+          invariantBundle := b
+          unless absorbed do
+            specWarning d.ann s!"Class decorator not supported: {repr d}"
       let baseIdents ← resolveBaseClasses bases
       let (success, _) ← runChecked <| recordTypeDef loc className
       -- Add the class to nameMap so it can be used in forward references
@@ -1765,6 +1774,24 @@ partial def translate (body : Array (stmt Strata.SourceRange)) : PySpecM Unit :=
       setNameValue className (.typeValue (.ident loc { pythonModule := mod, name := className } #[]))
       let d ← pySpecClassBody loc className baseIdents stmts
       let d := { d with exhaustive := isExhaustive }
+      -- Translate invariant bodies after the class body has populated
+      -- `classFields`. Each invariant runs in a context where `self` is
+      -- typed as the class's qualified-ident type so the Attribute arm
+      -- in `transExpr` can route `self.<field>` lookups.
+      let selfType : SpecType :=
+        .ident loc { pythonModule := mod, name := className } #[]
+      let invariants ← invariantBundle.invariants.mapM fun bodyExpr => do
+        let dummyArgs : ArgDecls :=
+          { args := #[{ name := "self", type := selfType }],
+            kwonly := #[] }
+        let dummyRet : SpecType := .ident loc .typingAny
+        let st ← collectAssertions dummyArgs dummyRet <| do
+          let (e, _) ← transExpr bodyExpr
+          modify fun s => { s with postconditions := s.postconditions.push e }
+        match st.postconditions[0]? with
+        | some e => pure e
+        | none => pure (.placeholder (loc := loc))
+      let d := { d with invariants }
       if success then
         pushSignature (.classDef d)
     | _ => specError stmt.ann s!"Unknown statement {stmt}"

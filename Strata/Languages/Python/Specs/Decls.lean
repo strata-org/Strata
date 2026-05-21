@@ -584,6 +584,11 @@ structure ClassDef where
       Calls to unlisted methods are flagged as "Unknown method".
       Set via `@exhaustive` decorator on the pyspec class body. -/
   exhaustive : Bool := false
+  /-- Class-level invariants from `@icontract.invariant(lambda self: …)`
+      decorators. Translated `SpecExpr`s; each invariant must take a
+      single `self` binder. Replicated by the lowering layer onto every
+      method's pre and post (post-only on `__init__`). -/
+  invariants : Array SpecExpr := #[]
 deriving Inhabited
 
 structure TypeDef where

@@ -44,6 +44,14 @@ public structure MethodBundle where
   ensures  : Array (expr SourceRange) := #[]
 deriving Inhabited
 
+/-! ## Class-level bundle -/
+
+/-- Class-level: `@icontract.invariant` lambda bodies. The binder is
+    required to be `self` and gets validated at absorption time. -/
+public structure ClassBundle where
+  invariants : Array (expr SourceRange) := #[]
+deriving Inhabited
+
 /-! ## Recognition helpers -/
 
 /-- Extract the lambda parameter names from a Python `Lambda` arguments
@@ -117,6 +125,40 @@ public def absorbMethodDecorator
         return (true, bundle)
     else
       warn pyd.ann "icontract.ensure requires at least one argument"
+      return (true, bundle)
+  return (false, bundle)
+
+/-! ## Class-level absorption -/
+
+/-- Try to absorb a class decorator. Recognized: `@icontract.invariant`
+    only. Returns `(absorbed, bundle')`. -/
+public def absorbClassDecorator
+    {m : Type → Type} [Monad m]
+    (warn : SourceRange → String → m Unit)
+    (bundle : ClassBundle) (pyd : expr SourceRange)
+    : m (Bool × ClassBundle) := do
+  if let some (_, args, _) := asIcontractCall? "invariant" pyd then
+    if h : args.size ≥ 1 then
+      match args[0] with
+      | .Lambda _ lamArgs lamBody =>
+        let .mk_arguments _ _ ⟨_, lamPos⟩ _ ⟨_, lamKwonly⟩ _ _ _ := lamArgs
+        if lamPos.size = 1 ∧ lamKwonly.size = 0 then
+          let .mk_arg _ ⟨_, n⟩ _ _ := lamPos[0]!
+          if n == "self" then
+            return (true, { bundle with invariants := bundle.invariants.push lamBody })
+          else
+            warn pyd.ann
+              s!"icontract.invariant: lambda binder must be 'self', got '{n}'; invariant skipped"
+            return (true, bundle)
+        else
+          warn pyd.ann
+            "icontract.invariant: lambda must take exactly one 'self' parameter; invariant skipped"
+          return (true, bundle)
+      | _ =>
+        warn pyd.ann "icontract.invariant expects a lambda argument"
+        return (true, bundle)
+    else
+      warn pyd.ann "icontract.invariant requires at least one argument"
       return (true, bundle)
   return (false, bundle)
 

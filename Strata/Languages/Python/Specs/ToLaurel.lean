@@ -551,8 +551,21 @@ def classDefToLaurel (cls : ClassDef) : ToLaurelM Unit := do
     fields := laurelFields
     instanceProcedures := []
   })
+  -- Replicate class invariants onto each method's pre and post.
+  -- `__init__` only gets them as post: the object's fields are
+  -- uninitialised on entry, so requiring the invariant would be vacuous.
+  let invariantAssertions : Array Assertion := cls.invariants.map fun e =>
+    { message := #[MessagePart.str "@icontract.invariant"], formula := e }
   for method in cls.methods do
-    let proc ← funcDeclToLaurel (prefixedName ++ "@" ++ method.name) method (isMethod := true)
+    let isInit := method.name == "__init__"
+    let augmentedPre :=
+      if isInit then method.preconditions
+      else invariantAssertions ++ method.preconditions
+    let augmentedPost := method.postconditions ++ cls.invariants
+    let augmented := { method with
+      preconditions := augmentedPre,
+      postconditions := augmentedPost }
+    let proc ← funcDeclToLaurel (prefixedName ++ "@" ++ method.name) augmented (isMethod := true)
     pushProcedure proc
   for sub in cls.subclasses do
     classDefToLaurel sub
