@@ -455,37 +455,31 @@ where
 
 def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : TransformM Procedure := do
   let heapName : Identifier := "$heap"
-  let heapInName : Identifier := "$heap_in"
   let readsHeap := (← get).heapReaders.contains proc.name
   let writesHeap := (← get).heapWriters.contains proc.name
 
   if writesHeap then
-    -- This procedure writes the heap - add $heap_in as input and $heap as output
-    -- At the start, assign $heap_in to $heap, then use $heap throughout
-    let heapInParam : Parameter := { name := heapInName, type := ⟨.THeap, none⟩ }
-    let heapOutParam : Parameter := { name := heapName, type := ⟨.THeap, none⟩ }
+    -- This procedure writes the heap — $heap appears in both inputs and outputs
+    -- (true inout). Core's two-state semantics provide `old $heap` automatically.
+    let heapParam : Parameter := { name := heapName, type := ⟨.THeap, none⟩ }
 
-    let inputs' := heapInParam :: proc.inputs
-    let outputs' := heapOutParam :: proc.outputs
+    let inputs' := heapParam :: proc.inputs
+    let outputs' := heapParam :: proc.outputs
 
-    -- Preconditions use $heap_in (the input state)
-    let preconditions' ← proc.preconditions.mapM (·.mapM (heapTransformExpr heapInName model))
+    -- Preconditions reference $heap (evaluated at entry before any mutation)
+    let preconditions' ← proc.preconditions.mapM (·.mapM (heapTransformExpr heapName model))
 
     let bodyValueIsUsed := !proc.outputs.isEmpty
     let body' ← match proc.body with
       | .Transparent bodyExpr =>
-          -- First assign $heap_in to $heap, then transform body using $heap
-          let assignHeap := mkMd (.Assign [mkVarMd (.Local heapName)] (mkMd (.Var (.Local heapInName))))
           let bodyExpr' ← heapTransformExpr heapName model bodyExpr bodyValueIsUsed
-          pure (.Transparent (mkMd (.Block [assignHeap, bodyExpr'] none)))
+          pure (.Transparent bodyExpr')
       | .Opaque postconds impl modif =>
-          -- Postconditions use $heap (the output state)
           let postconds' ← postconds.mapM (·.mapM (heapTransformExpr heapName model))
           let impl' ← match impl with
             | some implExpr =>
-                let assignHeap := mkMd (.Assign [mkVarMd (.Local heapName)] (mkMd (.Var (.Local heapInName))))
                 let implExpr' ← heapTransformExpr heapName model implExpr bodyValueIsUsed
-                pure (some (mkMd (.Block [assignHeap, implExpr'] none)))
+                pure (some implExpr')
             | none => pure none
           let modif' ← modif.mapM (heapTransformExpr heapName model ·)
           pure (.Opaque postconds' impl' modif')

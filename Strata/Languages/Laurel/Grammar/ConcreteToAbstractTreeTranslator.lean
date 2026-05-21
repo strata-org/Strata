@@ -339,6 +339,9 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
       let whileBody := mkStmtExprMd (.Block [body, step] none) src
       let whileStmt := mkStmtExprMd (.While cond invariants none whileBody) src
       return mkStmtExprMd (.Block [init, whileStmt] none) src
+    | q`Laurel.old, #[arg0] =>
+      let inner ← translateStmtExpr arg0
+      return mkStmtExprMd (.Old inner) src
     | q`Laurel.forallExpr, #[nameArg, tyArg, triggerArg, bodyArg] =>
       let name ← translateIdent nameArg
       let ty ← translateHighType tyArg
