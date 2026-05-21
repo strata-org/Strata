@@ -6326,6 +6326,193 @@ private theorem loop_first_iter_canfail_body_maintain
         cases ρ₀; rfl
       rw [hρ_simp] at hrest
       exact loop_first_iter_enter_case π φ hnofd hswf hnf₀ hall_tt hno_ff mkMaintainLabel hrest hfail
+/-- **Iteration extraction**: Given a source loop that enters from an all-tt,
+    no-failure state and eventually reaches failure, there exists a state `ρ_k`
+    (some iteration's pre-body state) satisfying:
+    - `ρ_k.eval = ρ₀.eval`
+    - `ρ_k.hasFailure = false`
+    - all invariants are tt at `ρ_k`
+    - body from `ρ_k` either reaches failure OR terminates at `ρ_inner` without
+      failure where not all invariants are tt (so some is ff → maintain fires). -/
+private theorem loop_cf_iteration_extract
+    (reserved : List String)
+    {guardE : ExprOrNondet Expression}
+    {measure : Option Expression.Expr}
+    {inv : List (String × Expression.Expr)}
+    {body : Statements} {md : MetaData Expression}
+    {ρ₀ : Env Expression} {cfg : CC}
+    (hnofd : Stmt.noFuncDecl (.loop guardE measure inv body md) = Bool.true)
+    (hswf : InitEnvWF reserved (.loop guardE measure inv body md) ρ₀)
+    (hreach : CoreStar π φ (.stmt (.loop guardE measure inv body md) ρ₀) cfg)
+    (hfail : cfg.getEnv.hasFailure = Bool.true)
+    (hnf₀ : ρ₀.hasFailure = Bool.false)
+    (hall_tt : ∀ le ∈ inv, ρ₀.eval ρ₀.store le.2 = some HasBool.tt) :
+    ∃ (ρ_k : Env Expression),
+      ρ_k.eval = ρ₀.eval ∧
+      ρ_k.hasFailure = Bool.false ∧
+      (∀ le ∈ inv, ρ_k.eval ρ_k.store le.2 = some HasBool.tt) ∧
+      ((∃ cfg_f : CC, cfg_f.getEnv.hasFailure = Bool.true ∧
+          CoreStar π φ (.stmts body ρ_k) cfg_f) ∨
+       (∃ ρ_inner : Env Expression,
+          CoreStar π φ (.stmts body ρ_k) (.terminal ρ_inner) ∧
+          ρ_inner.hasFailure = Bool.false ∧
+          ¬∀ le ∈ inv, ρ_inner.eval ρ_inner.store le.2 = some HasBool.tt)) ∧
+      (∀ x, (ρ₀.store x).isSome → (ρ_k.store x).isSome) := by
+  -- Use length induction on the trace
+  have hstarT := reflTrans_to_T hreach
+  suffices ∀ (k : Nat) (ρ : Env Expression),
+      ρ.eval = ρ₀.eval →
+      ρ.hasFailure = Bool.false →
+      (∀ le ∈ inv, ρ.eval ρ.store le.2 = some HasBool.tt) →
+      (∀ x, (ρ₀.store x).isSome → (ρ.store x).isSome) →
+      ∀ (h : ReflTransT (StepStmt Expression (EvalCommand π φ) (EvalPureFunc φ))
+          (.stmt (.loop guardE measure inv body md) ρ) cfg),
+        h.len ≤ k →
+        ∃ (ρ_k : Env Expression),
+          ρ_k.eval = ρ₀.eval ∧
+          ρ_k.hasFailure = Bool.false ∧
+          (∀ le ∈ inv, ρ_k.eval ρ_k.store le.2 = some HasBool.tt) ∧
+          ((∃ cfg_f : CC, cfg_f.getEnv.hasFailure = Bool.true ∧
+              CoreStar π φ (.stmts body ρ_k) cfg_f) ∨
+           (∃ ρ_inner : Env Expression,
+              CoreStar π φ (.stmts body ρ_k) (.terminal ρ_inner) ∧
+              ρ_inner.hasFailure = Bool.false ∧
+              ¬∀ le ∈ inv, ρ_inner.eval ρ_inner.store le.2 = some HasBool.tt)) ∧
+          (∀ x, (ρ₀.store x).isSome → (ρ_k.store x).isSome) by
+    exact this hstarT.len ρ₀ rfl hnf₀ hall_tt (fun _ h => h) hstarT (Nat.le_refl _)
+  clear hreach hstarT hnf₀ hall_tt
+  intro k
+  induction k with
+  | zero =>
+    intro ρ _ hnf_ρ _ _ hT hlen
+    match hT with
+    | .refl _ => exact absurd hfail (by simp [Config.getEnv, hnf_ρ])
+    | .step _ _ _ _ _ => simp [ReflTransT.len] at hlen
+  | succ k' ih =>
+    intro ρ heval_ρ hnf_ρ hall_tt_ρ hdef_ρ hT hlen
+    have hno_ff : ¬∃ le ∈ inv, ρ.eval ρ.store le.2 = some HasBool.ff := by
+      intro ⟨le, hle, hff⟩; have := hall_tt_ρ le hle; rw [this] at hff; cases hff
+    match hT with
+    | .refl _ => exact absurd hfail (by simp [Config.getEnv, hnf_ρ])
+    | .step _ _ _ hstep1 hrest =>
+      cases hstep1 with
+      | step_loop_exit _ _ hinv_iff _ =>
+        -- Exit: terminal env has hasFailure = ρ.hasFailure || hasInvFailure.
+        -- Since all-tt, hasInvFailure = false, so hasFailure stays false. Contradicts hfail.
+        exfalso
+        have hnot_true : ¬(_ = Bool.true) := fun h => hno_ff (hinv_iff.1 h)
+        have hif_false := Bool.eq_false_iff.mpr hnot_true
+        match hrest with
+        | .refl _ => simp [Config.getEnv, hnf_ρ, hif_false] at hfail
+        | .step _ _ _ h _ => exact nomatch h
+      | step_loop_nondet_exit _ hinv_iff =>
+        exfalso
+        have hnot_true : ¬(_ = Bool.true) := fun h => hno_ff (hinv_iff.1 h)
+        have hif_false := Bool.eq_false_iff.mpr hnot_true
+        match hrest with
+        | .refl _ => simp [Config.getEnv, hnf_ρ, hif_false] at hfail
+        | .step _ _ _ h _ => exact nomatch h
+      | step_loop_enter _ _ hinv_iff _ _ =>
+        -- Enter: successor is .seq (.block .none ρ.store (.stmts body ρ_init)) [.loop ...]
+        -- where ρ_init = { ρ with hasFailure := ρ.hasFailure || hasInvFailure }.
+        -- Since all-tt, hasInvFailure = false, so ρ_init = ρ.
+        have hnot_true : ¬(_ = Bool.true) := fun h => hno_ff (hinv_iff.1 h)
+        have hif_false := Bool.eq_false_iff.mpr hnot_true
+        simp only [hif_false, Bool.or_false] at hrest
+        have hρ_simp : ({ ρ with hasFailure := ρ.hasFailure } : Env Expression) = ρ := by
+          cases ρ; rfl
+        rw [hρ_simp] at hrest
+        -- Decompose seq: either block reaches failure, or block terminates + tail fails
+        match seqT_canfail hrest hfail with
+        | .inl ⟨cfg', h_block_fail, hf_block, _⟩ =>
+          -- Block (.block .none ρ.store (.stmts body ρ)) reaches failure.
+          have ⟨inner', h_inner, hf_inner, _⟩ := blockT_canfail_to_inner h_block_fail hf_block
+          -- body from ρ reaches failure → ρ is our witness
+          exact ⟨ρ, heval_ρ, hnf_ρ, hall_tt_ρ,
+            .inl ⟨inner', hf_inner, reflTransT_to_prop h_inner⟩, hdef_ρ⟩
+        | .inr ⟨ρ_mid, h_block_term, h_tail_fail, hlen_sum⟩ =>
+          -- Block terminates at ρ_mid, tail fails.
+          have ⟨ρ_inner, ⟨h_body_term, hlen_body⟩, heq_mid⟩ :=
+            blockT_none_reaches_terminal π φ h_block_term
+          -- Check if body set failure
+          by_cases hnf_inner : ρ_inner.hasFailure = Bool.true
+          · -- Body terminated with failure → ρ is witness
+            exact ⟨ρ, heval_ρ, hnf_ρ, hall_tt_ρ,
+              .inl ⟨.terminal ρ_inner, by simp [Config.getEnv]; exact hnf_inner,
+                reflTransT_to_prop h_body_term⟩, hdef_ρ⟩
+          · -- Body terminated without failure at ρ_inner.
+            -- Check invariants at ρ_inner
+            have hnf_inner' : ρ_inner.hasFailure = Bool.false := by
+              cases hh : ρ_inner.hasFailure with
+              | false => rfl
+              | true => exact absurd hh hnf_inner
+            by_cases hall_inner : ∀ le ∈ inv, ρ_inner.eval ρ_inner.store le.2 = some HasBool.tt
+            · -- All invariants still tt → recurse on the tail trace
+              -- Derive properties of ρ_mid for recursion
+              have hnofd_body : Block.noFuncDecl body = Bool.true := by
+                simp [Stmt.noFuncDecl] at hnofd; exact hnofd
+              have heval_inner : ρ_inner.eval = ρ₀.eval := by
+                have := block_noFuncDecl_preserves_eval Expression (EvalCommand π φ)
+                  (EvalPureFunc φ) body ρ ρ_inner hnofd_body
+                  (reflTransT_to_prop h_body_term)
+                rw [this, heval_ρ]
+              have heq_mid_val := heq_mid
+              -- ρ_mid = { ρ_inner with store := projectStore ρ.store ρ_inner.store }
+              have heval_mid : ρ_mid.eval = ρ₀.eval := by
+                rw [heq_mid_val]; simp; exact heval_inner
+              have hnf_mid : ρ_mid.hasFailure = Bool.false := by
+                rw [heq_mid_val]; simp; exact hnf_inner'
+              have hdef_mid : ∀ x, (ρ₀.store x).isSome → (ρ_mid.store x).isSome := by
+                intro x hx
+                rw [heq_mid_val]; simp [projectStore]
+                rw [if_pos (hdef_ρ x hx)]
+                have := star_preserves_outerInv π φ (reflTransT_to_prop h_body_term)
+                  (show outerInv ρ.store (.stmts body ρ) from fun n h => h)
+                exact this x (hdef_ρ x hx)
+              -- Recursive case: all invariants tt at ρ_inner → recurse on tail.
+              -- Need hall_tt_mid for IH premise.
+              -- Invariants at ρ_mid reduce to invariants at ρ_inner via exprCongr.
+              -- ρ_mid.eval = ρ_inner.eval, ρ_mid.store = projectStore ρ.store ρ_inner.store
+              -- For invariant vars, projectStore agrees with ρ_inner.store (because they are defined at ρ).
+              -- Then invariant at ρ_mid = invariant at ρ_inner = tt (by hall_inner).
+              -- This requires InitEnvWF (hswf) for definedness, which is not in scope here.
+              -- Without hswf, we cannot prove this. The iteration extraction lemma needs
+              -- an additional hypothesis about invariant variable definedness.
+              -- For now, sorry this along with the recursive tail extraction.
+              sorry
+            · -- Some invariant is ff at ρ_inner → ρ is witness
+              exact ⟨ρ, heval_ρ, hnf_ρ, hall_tt_ρ,
+                .inr ⟨ρ_inner, reflTransT_to_prop h_body_term, hnf_inner', hall_inner⟩, hdef_ρ⟩
+      | step_loop_nondet_enter _ hinv_iff =>
+        -- Same structure as deterministic enter
+        have hnot_true : ¬(_ = Bool.true) := fun h => hno_ff (hinv_iff.1 h)
+        have hif_false := Bool.eq_false_iff.mpr hnot_true
+        simp only [hif_false, Bool.or_false] at hrest
+        have hρ_simp : ({ ρ with hasFailure := ρ.hasFailure } : Env Expression) = ρ := by
+          cases ρ; rfl
+        rw [hρ_simp] at hrest
+        match seqT_canfail hrest hfail with
+        | .inl ⟨cfg', h_block_fail, hf_block, _⟩ =>
+          have ⟨inner', h_inner, hf_inner, _⟩ := blockT_canfail_to_inner h_block_fail hf_block
+          exact ⟨ρ, heval_ρ, hnf_ρ, hall_tt_ρ,
+            .inl ⟨inner', hf_inner, reflTransT_to_prop h_inner⟩, hdef_ρ⟩
+        | .inr ⟨ρ_mid, h_block_term, h_tail_fail, hlen_sum⟩ =>
+          have ⟨ρ_inner, ⟨h_body_term, hlen_body⟩, heq_mid⟩ :=
+            blockT_none_reaches_terminal π φ h_block_term
+          by_cases hnf_inner : ρ_inner.hasFailure = Bool.true
+          · exact ⟨ρ, heval_ρ, hnf_ρ, hall_tt_ρ,
+              .inl ⟨.terminal ρ_inner, by simp [Config.getEnv]; exact hnf_inner,
+                reflTransT_to_prop h_body_term⟩, hdef_ρ⟩
+          · have hnf_inner' : ρ_inner.hasFailure = Bool.false := by
+              cases hh : ρ_inner.hasFailure with
+              | false => rfl
+              | true => exact absurd hh hnf_inner
+            by_cases hall_inner : ∀ le ∈ inv, ρ_inner.eval ρ_inner.store le.2 = some HasBool.tt
+            · -- Recurse (same as det case)
+              sorry
+            · exact ⟨ρ, heval_ρ, hnf_ρ, hall_tt_ρ,
+                .inr ⟨ρ_inner, reflTransT_to_prop h_body_term, hnf_inner', hall_inner⟩, hdef_ρ⟩
+
 /-- Helper for `simulation`'s loop CanFail-preservation case (all-tt
     invariants branch).  In this branch, source failure must come from the
     body's iteration, since the loop-exit step does not produce failure
@@ -6457,13 +6644,18 @@ private theorem simulation_loop_cf_all_tt
     -- After case-split, s' is concrete and htgt_eq gives then_branch's concrete value.
     -- In each case then_branch = arb_facts_block :: exit_state_stmts where arb_facts
     -- contains [havoc_block, assumes_block] ++ preTermination ++ body ++ maintain_inv ++ postTermination.
-    -- CanFailBlock requires well-founded induction on source trace length to find
-    -- the iteration at which body fails or maintain_inv asserts fire.
+    -- Use loop_cf_iteration_extract to find the bad iteration, then build target trace.
     all_goals (
       have htb := htgt_eq
       simp only [Stmt.block.injEq, Stmt.ite.injEq, List.cons.injEq, and_true, true_and] at htb
       obtain ⟨_, _, htb_eq⟩ := htb
       subst htb_eq
+      -- Extract the "bad" iteration from the source loop
+      have ⟨ρ_k, heval_k, hnf_k, hall_tt_k, hbad_k, hdef_k⟩ :=
+        loop_cf_iteration_extract π φ reserved hnofd hswf hreach hfail hnf₀' hall_tt
+      -- From ρ_k we know: body fails OR body terminates with some invariant ff.
+      -- Build target trace: havoc to ρ_k.store → assumes pass → body fails/maintain fires.
+      -- This gives CanFailBlock for the full arb_facts_block :: exit_stmts.
       sorry)
 
 /-! ### Per-conjunct step lemmas
