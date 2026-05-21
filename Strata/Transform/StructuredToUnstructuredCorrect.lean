@@ -4688,6 +4688,26 @@ theorem extendStoreOne_other {P : PureExpr} [DecidableEq P.Ident]
     extendStoreOne σ ident val y = σ y := by
   simp [extendStoreOne, h]
 
+/-- Extending the right-hand store at an ident undefined in the left store
+preserves `StoreAgreement`: any variable defined in the left store is not
+that ident, so the extension on the right doesn't change its value. -/
+theorem StoreAgreement_extend_with_undefined
+    {P : PureExpr} [DecidableEq P.Ident]
+    {σ_struct σ_cfg : SemanticStore P}
+    (h_agree : StoreAgreement σ_struct σ_cfg)
+    {ident : P.Ident} {val : P.Expr}
+    (h_undef : σ_struct ident = none) :
+    StoreAgreement σ_struct (extendStoreOne σ_cfg ident val) := by
+  intro x h_def_x
+  have h_x_ne_ident : x ≠ ident := by
+    intro h_eq
+    have h_x_some : (σ_struct x).isSome = true :=
+      h_def_x x List.mem_cons_self
+    rw [h_eq, h_undef] at h_x_some
+    simp at h_x_some
+  rw [extendStoreOne_other σ_cfg ident val x h_x_ne_ident]
+  exact h_agree x h_def_x
+
 /-- `InitState` lifts through a frame extension when the init target is
 distinct from the frame ident. -/
 theorem InitState_frame_extend_one
