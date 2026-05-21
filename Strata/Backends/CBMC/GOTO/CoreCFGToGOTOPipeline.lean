@@ -92,6 +92,51 @@ structure CoreCFGTransLoopState where
   labelMap : Std.HashMap String Nat
   loopContracts : Std.HashMap String (Imperative.MetaData Core.Expression)
 
+/-- Per-command step function: process one `Core.Command` inside a block
+body. Mirrors the body of the inner `for cmd in block.cmds do` loop
+inside `coreCFGToGotoBlockStep`.
+
+The state threaded is just the `GotoTransform` (only `trans` is mutated
+in the inner loop; the outer-state pieces — `pendingPatches`,
+`labelMap`, `loopContracts` — are untouched per-cmd). -/
+def coreCFGToGotoCmdStep
+    (functionName : String)
+    (trans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (cmd : Core.Command)
+    : Except Std.Format (Imperative.GotoTransform Core.Expression.TyEnv) := do
+  let toExpr := Lambda.LExpr.toGotoExprCtx
+    (TBase := ⟨Core.ExpressionMetadata, Unit⟩) []
+  match cmd with
+  | .cmd c =>
+    Imperative.Cmd.toGotoInstructions trans.T functionName c trans
+  | .call procName callArgs _md =>
+    let lhs := Core.CallArg.getLhs callArgs
+    let args := Core.CallArg.getInputExprs callArgs
+    let argExprs ← args.mapM toExpr
+    let lhsExpr := match lhs with
+      | id :: _ =>
+        let name := Core.CoreIdent.toPretty id
+        let ty := match trans.T.context.types.find? id with
+          | some lty =>
+            match lty.toMonoTypeUnsafe.toGotoType with
+            | .ok gty => gty
+            | .error _ =>
+              dbg_trace s!"warning: type conversion failed for {name}, defaulting to Integer"
+              .Integer
+          | none =>
+            dbg_trace s!"warning: no type found for {name}, defaulting to Integer"
+            .Integer
+        CProverGOTO.Expr.symbol name ty
+      | [] => CProverGOTO.Expr.symbol "" .Empty
+    let calleeExpr := CProverGOTO.Expr.symbol procName
+      (CProverGOTO.Ty.mkCode (argExprs.map (·.type)) lhsExpr.type)
+    let callCode := CProverGOTO.Code.functionCall lhsExpr calleeExpr argExprs
+    let inst : CProverGOTO.Instruction :=
+      { type := .FUNCTION_CALL, code := callCode, locationNum := trans.nextLoc }
+    return { trans with
+      instructions := trans.instructions.push inst
+      nextLoc := trans.nextLoc + 1 }
+
 /-- Per-block step function: process one `(label, block)` pair, threading
 the loop state. Mirrors the body of `coreCFGToGotoTransform`'s outer
 `for (label, block) in cfg.blocks do`. -/
@@ -103,46 +148,12 @@ def coreCFGToGotoBlockStep
   let toExpr := Lambda.LExpr.toGotoExprCtx
     (TBase := ⟨Core.ExpressionMetadata, Unit⟩) []
   let (label, block) := lblBlk
-  let mut trans := st.trans
-  let mut pendingPatches := st.pendingPatches
-  let mut labelMap := st.labelMap
-  let mut loopContracts := st.loopContracts
-  labelMap := labelMap.insert label trans.nextLoc
+  let labelMap := st.labelMap.insert label st.trans.nextLoc
   let srcLoc : CProverGOTO.SourceLocation :=
     { CProverGOTO.SourceLocation.nil with function := functionName }
-  trans := Imperative.emitLabel label srcLoc trans
-  -- Translate each command
-  for cmd in block.cmds do
-    match cmd with
-    | .cmd c =>
-      trans ← Imperative.Cmd.toGotoInstructions trans.T functionName c trans
-    | .call procName callArgs _md =>
-      let lhs := Core.CallArg.getLhs callArgs
-      let args := Core.CallArg.getInputExprs callArgs
-      let argExprs ← args.mapM toExpr
-      let lhsExpr := match lhs with
-        | id :: _ =>
-          let name := Core.CoreIdent.toPretty id
-          let ty := match trans.T.context.types.find? id with
-            | some lty =>
-              match lty.toMonoTypeUnsafe.toGotoType with
-              | .ok gty => gty
-              | .error _ =>
-                dbg_trace s!"warning: type conversion failed for {name}, defaulting to Integer"
-                .Integer
-            | none =>
-              dbg_trace s!"warning: no type found for {name}, defaulting to Integer"
-              .Integer
-          CProverGOTO.Expr.symbol name ty
-        | [] => CProverGOTO.Expr.symbol "" .Empty
-      let calleeExpr := CProverGOTO.Expr.symbol procName
-        (CProverGOTO.Ty.mkCode (argExprs.map (·.type)) lhsExpr.type)
-      let callCode := CProverGOTO.Code.functionCall lhsExpr calleeExpr argExprs
-      let inst : CProverGOTO.Instruction :=
-        { type := .FUNCTION_CALL, code := callCode, locationNum := trans.nextLoc }
-      trans := { trans with
-        instructions := trans.instructions.push inst
-        nextLoc := trans.nextLoc + 1 }
+  let trans := Imperative.emitLabel label srcLoc st.trans
+  -- Translate each command via the per-cmd step function.
+  let trans ← block.cmds.foldlM (coreCFGToGotoCmdStep functionName) trans
   -- Translate the transfer command
   match block.transfer with
   | .condGoto cond lt lf md =>
@@ -151,15 +162,17 @@ def coreCFGToGotoBlockStep
     let hasLoopContract := md.any fun elem =>
       elem.fld == Imperative.MetaData.specLoopInvariant ||
       elem.fld == Imperative.MetaData.specDecreases
-    if hasLoopContract then
-      loopContracts := loopContracts.insert label md
-    let (trans', falseIdx) :=
+    let loopContracts :=
+      if hasLoopContract then
+        st.loopContracts.insert label md
+      else
+        st.loopContracts
+    let (trans, falseIdx) :=
       Imperative.emitCondGoto (CProverGOTO.Expr.not cond_expr) transferSrcLoc trans
-    trans := trans'
-    pendingPatches := pendingPatches.push (falseIdx, lf)
-    let (trans', trueIdx) := Imperative.emitUncondGoto transferSrcLoc trans
-    trans := trans'
-    pendingPatches := pendingPatches.push (trueIdx, lt)
+    let pendingPatches := st.pendingPatches.push (falseIdx, lf)
+    let (trans, trueIdx) := Imperative.emitUncondGoto transferSrcLoc trans
+    let pendingPatches := pendingPatches.push (trueIdx, lt)
+    return { trans, pendingPatches, labelMap, loopContracts }
   | .finish md =>
     -- Emit one END_FUNCTION per `.finish` block. Without this, a CFG
     -- with multiple `.finish` blocks would have intermediate finishes
@@ -172,10 +185,11 @@ def coreCFGToGotoBlockStep
       { type := .END_FUNCTION,
         locationNum := trans.nextLoc,
         sourceLoc := transferSrcLoc }
-    trans := { trans with
+    let trans := { trans with
       instructions := trans.instructions.push endInst,
       nextLoc := trans.nextLoc + 1 }
-  return { trans, pendingPatches, labelMap, loopContracts }
+    return { trans, pendingPatches := st.pendingPatches, labelMap,
+             loopContracts := st.loopContracts }
 
 /-- Per-patch step function: process one `(idx, label)` pending patch,
 threading the loop state. Mirrors the body of
