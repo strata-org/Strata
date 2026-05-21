@@ -67,7 +67,155 @@ private def renameCoreDetCFG
                   .condGoto (renameExpr rn cond) lt lf md
                 | .finish md => .finish md }) }
 
-/-! ### Core-specific CFG-to-GOTO translation -/
+/-! ### Core-specific CFG-to-GOTO translation
+
+The translator is structured as a two-pass refinement of the CFG:
+
+1. **Forward pass** (`coreCFGToGotoForwardPass`) walks `cfg.blocks` in
+   order, threading a `CoreCFGTransLoopState` (instructions, pending
+   patches, label map, loop contracts).
+2. **Patch-resolution pass** (`coreCFGToGotoResolvePatches`) walks the
+   pending patches, looking up each label's location and optionally
+   annotating loop-contract guards on backward edges.
+
+This decomposition is mathematically equivalent to inline imperative
+loops with `mut` state, but exposes named per-block / per-patch step
+functions that the well-formedness proof in
+`CoreCFGToGotoTransformWF.lean` recurses on directly. -/
+
+/-- The state threaded through `coreCFGToGotoTransform`'s forward pass:
+the GOTO transform under construction, the pending-patches buffer, the
+label-to-location map, and the loop-contract metadata map. -/
+structure CoreCFGTransLoopState where
+  trans : Imperative.GotoTransform Core.Expression.TyEnv
+  pendingPatches : Array (Nat × String)
+  labelMap : Std.HashMap String Nat
+  loopContracts : Std.HashMap String (Imperative.MetaData Core.Expression)
+
+/-- Per-block step function: process one `(label, block)` pair, threading
+the loop state. Mirrors the body of `coreCFGToGotoTransform`'s outer
+`for (label, block) in cfg.blocks do`. -/
+def coreCFGToGotoBlockStep
+    (functionName : String)
+    (st : CoreCFGTransLoopState)
+    (lblBlk : String × Imperative.DetBlock String Core.Command Core.Expression)
+    : Except Std.Format CoreCFGTransLoopState := do
+  let toExpr := Lambda.LExpr.toGotoExprCtx
+    (TBase := ⟨Core.ExpressionMetadata, Unit⟩) []
+  let (label, block) := lblBlk
+  let mut trans := st.trans
+  let mut pendingPatches := st.pendingPatches
+  let mut labelMap := st.labelMap
+  let mut loopContracts := st.loopContracts
+  labelMap := labelMap.insert label trans.nextLoc
+  let srcLoc : CProverGOTO.SourceLocation :=
+    { CProverGOTO.SourceLocation.nil with function := functionName }
+  trans := Imperative.emitLabel label srcLoc trans
+  -- Translate each command
+  for cmd in block.cmds do
+    match cmd with
+    | .cmd c =>
+      trans ← Imperative.Cmd.toGotoInstructions trans.T functionName c trans
+    | .call procName callArgs _md =>
+      let lhs := Core.CallArg.getLhs callArgs
+      let args := Core.CallArg.getInputExprs callArgs
+      let argExprs ← args.mapM toExpr
+      let lhsExpr := match lhs with
+        | id :: _ =>
+          let name := Core.CoreIdent.toPretty id
+          let ty := match trans.T.context.types.find? id with
+            | some lty =>
+              match lty.toMonoTypeUnsafe.toGotoType with
+              | .ok gty => gty
+              | .error _ =>
+                dbg_trace s!"warning: type conversion failed for {name}, defaulting to Integer"
+                .Integer
+            | none =>
+              dbg_trace s!"warning: no type found for {name}, defaulting to Integer"
+              .Integer
+          CProverGOTO.Expr.symbol name ty
+        | [] => CProverGOTO.Expr.symbol "" .Empty
+      let calleeExpr := CProverGOTO.Expr.symbol procName
+        (CProverGOTO.Ty.mkCode (argExprs.map (·.type)) lhsExpr.type)
+      let callCode := CProverGOTO.Code.functionCall lhsExpr calleeExpr argExprs
+      let inst : CProverGOTO.Instruction :=
+        { type := .FUNCTION_CALL, code := callCode, locationNum := trans.nextLoc }
+      trans := { trans with
+        instructions := trans.instructions.push inst
+        nextLoc := trans.nextLoc + 1 }
+  -- Translate the transfer command
+  match block.transfer with
+  | .condGoto cond lt lf md =>
+    let transferSrcLoc := Imperative.metadataToSourceLoc md functionName trans.sourceText
+    let cond_expr ← toExpr cond
+    let hasLoopContract := md.any fun elem =>
+      elem.fld == Imperative.MetaData.specLoopInvariant ||
+      elem.fld == Imperative.MetaData.specDecreases
+    if hasLoopContract then
+      loopContracts := loopContracts.insert label md
+    let (trans', falseIdx) :=
+      Imperative.emitCondGoto (CProverGOTO.Expr.not cond_expr) transferSrcLoc trans
+    trans := trans'
+    pendingPatches := pendingPatches.push (falseIdx, lf)
+    let (trans', trueIdx) := Imperative.emitUncondGoto transferSrcLoc trans
+    trans := trans'
+    pendingPatches := pendingPatches.push (trueIdx, lt)
+  | .finish md =>
+    -- Emit one END_FUNCTION per `.finish` block. Without this, a CFG
+    -- with multiple `.finish` blocks would have intermediate finishes
+    -- silently fall through into the next block's LOCATION; the wrapper's
+    -- single trailing END_FUNCTION only correctly terminates the last
+    -- such block. See `docs/CoreToGOTO_CorrectnessAnalysis.md` §6 (Gap E)
+    -- and the WellFormedTranslation.layout_finish field.
+    let transferSrcLoc := Imperative.metadataToSourceLoc md functionName trans.sourceText
+    let endInst : CProverGOTO.Instruction :=
+      { type := .END_FUNCTION,
+        locationNum := trans.nextLoc,
+        sourceLoc := transferSrcLoc }
+    trans := { trans with
+      instructions := trans.instructions.push endInst,
+      nextLoc := trans.nextLoc + 1 }
+  return { trans, pendingPatches, labelMap, loopContracts }
+
+/-- Per-patch step function: process one `(idx, label)` pending patch,
+threading the loop state. Mirrors the body of
+`coreCFGToGotoTransform`'s second `for (idx, label) in pendingPatches`
+loop, accumulating into a `(resolvedPatches, trans)` pair. -/
+def coreCFGToGotoPatchStep
+    (labelMap : Std.HashMap String Nat)
+    (loopContracts : Std.HashMap String (Imperative.MetaData Core.Expression))
+    (acc : List (Nat × Nat) × Imperative.GotoTransform Core.Expression.TyEnv)
+    (idxLabel : Nat × String)
+    : Except Std.Format
+        (List (Nat × Nat) × Imperative.GotoTransform Core.Expression.TyEnv) := do
+  let toExpr := Lambda.LExpr.toGotoExprCtx
+    (TBase := ⟨Core.ExpressionMetadata, Unit⟩) []
+  let (resolvedPatches, trans) := acc
+  let (idx, label) := idxLabel
+  match labelMap[label]? with
+  | some targetLoc =>
+    let mut resolvedPatches := (idx, targetLoc) :: resolvedPatches
+    let mut trans := trans
+    if let some md := loopContracts[label]? then
+      let instLoc := trans.instructions[idx]!.locationNum
+      if targetLoc ≤ instLoc then
+        let mut guard := trans.instructions[idx]!.guard
+        for elem in md do
+          if elem.fld == Imperative.MetaData.specLoopInvariant then
+            if let .expr e := elem.value then
+              let gotoExpr ← toExpr e
+              guard := guard.setNamedField "#spec_loop_invariant" gotoExpr
+          if elem.fld == Imperative.MetaData.specDecreases then
+            if let .expr e := elem.value then
+              let gotoExpr ← toExpr e
+              guard := guard.setNamedField "#spec_decreases" gotoExpr
+        trans := { trans with
+          instructions := trans.instructions.set! idx
+            { trans.instructions[idx]! with guard := guard } }
+    return (resolvedPatches, trans)
+  | none =>
+    throw f!"[coreCFGToGotoTransform] Unresolved label '{label}' referenced \
+             by GOTO at instruction index {idx}."
 
 /--
 Translate a Core `DetCFG` to CProver GOTO instructions.
@@ -75,14 +223,18 @@ Translate a Core `DetCFG` to CProver GOTO instructions.
 Like `detCFGToGotoTransform` but handles `Core.Command` (which includes
 `CmdExt.call`). The CFG should already have identifiers renamed via
 `renameCoreDetCFG`.
+
+The forward pass and patch-resolution pass are factored as
+`foldlM` over the per-block / per-patch step functions
+`coreCFGToGotoBlockStep` and `coreCFGToGotoPatchStep`. This makes the
+translator amenable to inductive proof in
+`CoreCFGToGotoTransformWF.lean`.
 -/
 def coreCFGToGotoTransform
     (_Env : Core.Expression.TyEnv) (functionName : String)
     (cfg : Core.DetCFG)
     (trans : Imperative.GotoTransform Core.Expression.TyEnv)
     : Except Std.Format (Imperative.GotoTransform Core.Expression.TyEnv) := do
-  let toExpr := Lambda.LExpr.toGotoExprCtx
-    (TBase := ⟨Core.ExpressionMetadata, Unit⟩) []
   -- Verify entry block is first
   match cfg.blocks with
   | (firstLabel, _) :: _ =>
@@ -90,104 +242,13 @@ def coreCFGToGotoTransform
       throw f!"[coreCFGToGotoTransform] Entry label '{cfg.entry}' does not match \
                first block label '{firstLabel}'."
   | [] => pure ()
-  let mut trans := trans
-  let mut pendingPatches : Array (Nat × String) := #[]
-  let mut labelMap : Std.HashMap String Nat := {}
-  let mut loopContracts : Std.HashMap String (Imperative.MetaData Core.Expression) := {}
-  for (label, block) in cfg.blocks do
-    labelMap := labelMap.insert label trans.nextLoc
-    let srcLoc : CProverGOTO.SourceLocation :=
-      { CProverGOTO.SourceLocation.nil with function := functionName }
-    trans := Imperative.emitLabel label srcLoc trans
-    -- Translate each command
-    for cmd in block.cmds do
-      match cmd with
-      | .cmd c =>
-        trans ← Imperative.Cmd.toGotoInstructions trans.T functionName c trans
-      | .call procName callArgs _md =>
-        let lhs := Core.CallArg.getLhs callArgs
-        let args := Core.CallArg.getInputExprs callArgs
-        let argExprs ← args.mapM toExpr
-        let lhsExpr := match lhs with
-          | id :: _ =>
-            let name := Core.CoreIdent.toPretty id
-            let ty := match trans.T.context.types.find? id with
-              | some lty =>
-                match lty.toMonoTypeUnsafe.toGotoType with
-                | .ok gty => gty
-                | .error _ =>
-                  dbg_trace s!"warning: type conversion failed for {name}, defaulting to Integer"
-                  .Integer
-              | none =>
-                dbg_trace s!"warning: no type found for {name}, defaulting to Integer"
-                .Integer
-            CProverGOTO.Expr.symbol name ty
-          | [] => CProverGOTO.Expr.symbol "" .Empty
-        let calleeExpr := CProverGOTO.Expr.symbol procName
-          (CProverGOTO.Ty.mkCode (argExprs.map (·.type)) lhsExpr.type)
-        let callCode := CProverGOTO.Code.functionCall lhsExpr calleeExpr argExprs
-        let inst : CProverGOTO.Instruction :=
-          { type := .FUNCTION_CALL, code := callCode, locationNum := trans.nextLoc }
-        trans := { trans with
-          instructions := trans.instructions.push inst
-          nextLoc := trans.nextLoc + 1 }
-    -- Translate the transfer command
-    match block.transfer with
-    | .condGoto cond lt lf md =>
-      let transferSrcLoc := Imperative.metadataToSourceLoc md functionName trans.sourceText
-      let cond_expr ← toExpr cond
-      let hasLoopContract := md.any fun elem =>
-        elem.fld == Imperative.MetaData.specLoopInvariant ||
-        elem.fld == Imperative.MetaData.specDecreases
-      if hasLoopContract then
-        loopContracts := loopContracts.insert label md
-      let (trans', falseIdx) :=
-        Imperative.emitCondGoto (CProverGOTO.Expr.not cond_expr) transferSrcLoc trans
-      trans := trans'
-      pendingPatches := pendingPatches.push (falseIdx, lf)
-      let (trans', trueIdx) := Imperative.emitUncondGoto transferSrcLoc trans
-      trans := trans'
-      pendingPatches := pendingPatches.push (trueIdx, lt)
-    | .finish md =>
-      -- Emit one END_FUNCTION per `.finish` block. Without this, a CFG
-      -- with multiple `.finish` blocks would have intermediate finishes
-      -- silently fall through into the next block's LOCATION; the wrapper's
-      -- single trailing END_FUNCTION only correctly terminates the last
-      -- such block. See `docs/CoreToGOTO_CorrectnessAnalysis.md` §6 (Gap E)
-      -- and the WellFormedTranslation.layout_finish field.
-      let transferSrcLoc := Imperative.metadataToSourceLoc md functionName trans.sourceText
-      let endInst : CProverGOTO.Instruction :=
-        { type := .END_FUNCTION,
-          locationNum := trans.nextLoc,
-          sourceLoc := transferSrcLoc }
-      trans := { trans with
-        instructions := trans.instructions.push endInst,
-        nextLoc := trans.nextLoc + 1 }
+  -- Forward pass: emit instructions for each block
+  let initSt : CoreCFGTransLoopState :=
+    { trans := trans, pendingPatches := #[], labelMap := {}, loopContracts := {} }
+  let st ← cfg.blocks.foldlM (coreCFGToGotoBlockStep functionName) initSt
   -- Second pass: resolve labels and annotate backward-edge GOTOs with loop contracts
-  let mut resolvedPatches : List (Nat × Nat) := []
-  for (idx, label) in pendingPatches do
-    match labelMap[label]? with
-    | some targetLoc =>
-      resolvedPatches := (idx, targetLoc) :: resolvedPatches
-      if let some md := loopContracts[label]? then
-        let instLoc := trans.instructions[idx]!.locationNum
-        if targetLoc ≤ instLoc then
-          let mut guard := trans.instructions[idx]!.guard
-          for elem in md do
-            if elem.fld == Imperative.MetaData.specLoopInvariant then
-              if let .expr e := elem.value then
-                let gotoExpr ← toExpr e
-                guard := guard.setNamedField "#spec_loop_invariant" gotoExpr
-            if elem.fld == Imperative.MetaData.specDecreases then
-              if let .expr e := elem.value then
-                let gotoExpr ← toExpr e
-                guard := guard.setNamedField "#spec_decreases" gotoExpr
-          trans := { trans with
-            instructions := trans.instructions.set! idx
-              { trans.instructions[idx]! with guard := guard } }
-    | none =>
-      throw f!"[coreCFGToGotoTransform] Unresolved label '{label}' referenced \
-               by GOTO at instruction index {idx}."
+  let (resolvedPatches, trans) ← st.pendingPatches.foldlM
+    (coreCFGToGotoPatchStep st.labelMap st.loopContracts) ([], st.trans)
   return Imperative.patchGotoTargets trans resolvedPatches
 
 /-! ### Pipeline wrapper -/
