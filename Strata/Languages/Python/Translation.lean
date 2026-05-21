@@ -399,9 +399,10 @@ partial def translateStmt (s : Python.stmt ResolvedAnn) : TransM Unit := do
         | .Tuple _ elts _ => do
           let tmp ← freshId "for_iter"
           let tmpRef ← mkExpr sr (.Identifier tmp)
+          let decl ← mkExpr sr (.LocalVariable tmp (mkTypeDefault (.TCore "Any")) none)
           let havoc ← mkExpr sr (.Assign [tmpRef] (← mkExpr sr (.Hole (deterministic := false))))
           let (_, unpacks) ← collect (unpackTargets sr elts.val.toList tmpRef)
-          pure ([havoc] ++ unpacks, tmpRef)
+          pure ([decl, havoc] ++ unpacks, tmpRef)
         | _ => do
           let tgt ← translateExpr target
           let havoc ← mkExpr sr (.Assign [tgt] (← mkExpr sr (.Hole (deterministic := false))))
