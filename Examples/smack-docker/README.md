@@ -171,19 +171,21 @@ aws_string_eq                 |     OK |     OK |     OK |      PARTIAL |      P
   `cbmc --function __cprover_entry`. See commit `7e2b1fc25`.
 - **CBMC: callee bodies not emitted.** `coreToGotoFiles*` translates
   only the entry procedure (`main`), leaving every callee — `add`,
-  `assert__i32`, `_initialize`, the SMACK prelude stubs — as bodyless
-  declarations in the symbol table. cbmc symbolically executes main,
-  reaches a call, and reports `[.no-body.<callee>] no body for
-  callee <callee>: FAILURE`. With the entry-point shim resolved, this
-  is the dominant failure mode (5 programs, including
-  `simple_assert`, `simple_add`, `aws_min_max`,
-  `aws_is_power_of_two`, `aws_round_up_to_power_of_two`). Fix path:
-  iterate over all reachable procedures in `coreToGotoFilesDispatch`,
-  not just the entry; emit each via `procedureToGotoCtxDispatch` and
-  splice all into the output JSON. The lifted-functions infrastructure
-  in `emitProcWithLifted` is the right shape for this, but currently
-  only handles `Core.Function` (purely-defined functions), not
-  `Core.Procedure` (commands with side effects).
+  `assert__i32`, `_initialize`, the SMACK prelude stubs, and any
+  user-defined helper — as bodyless declarations in the symbol
+  table. cbmc symbolically executes main, reaches a call, and
+  reports `[.no-body.<callee>] no body for callee <callee>:
+  FAILURE`. With the upstream blockers resolved (entry-point shim,
+  spurious back-edges, etc.), this is the dominant cbmc failure
+  mode for programs without memory-map parameters: every program
+  that calls a user function or SMACK runtime stub trips it. Fix
+  path: iterate over all reachable procedures in
+  `coreToGotoFilesDispatch`, not just the entry; emit each via
+  `procedureToGotoCtxDispatch` and splice all into the output JSON.
+  The lifted-functions infrastructure in `emitProcWithLifted` is
+  the right shape for this, but currently only handles
+  `Core.Function` (purely-defined functions), not `Core.Procedure`
+  (commands with side effects).
 - **CBMC: array type mismatch on memory-map params.** Programs with
   memory-map parameters (the AWS C Common programs that pass `Map ref
   i8` for memory state) hit a different cbmc error after the shim:
@@ -216,9 +218,9 @@ aws_string_eq                 |     OK |     OK |     OK |      PARTIAL |      P
   spurious-back-edge issue this fix addresses. Regression test in
   `StrataTest/Backends/CBMC/GOTO/E2E_CoreToGOTO.lean`
   (`E2E_CFGRPOReorder`). See commit `520f3f573`.
-- **Deductive PARTIAL breakdown (sample-based).** All 21 deductive
-  PARTIALs sampled across the 25-program suite split into three
-  sub-classes by failing-VC verdict and origin:
+- **Deductive PARTIAL breakdown (sample-based).** The 20 deductive
+  PARTIALs across the 25-program suite (post sub-class (b) fix)
+  split into three sub-classes by failing-VC verdict and origin:
   - **(a) Missing `ensures` on a user-defined helper** — solver
     refutes with `🔶 can be both true and false`, label
     `callElimAssert_assert__i32_requires_0_NN`. Every assertion of
@@ -256,12 +258,14 @@ aws_string_eq                 |     OK |     OK |     OK |      PARTIAL |      P
     `max`) that lacks an `ensures` clause. Closing those needs the
     sub-class (a) lever, not more `__VERIFIER_assume` work.
 
-    Side effect on cbmc: the synthesis adds path-condition constraints
-    that cbmc's BMC unrolling now expands further on the
-    `__VERIFIER_assume`-using programs. 4 of those (`abs_func`,
-    `loop_sum`, `max_func`, `nondet_branch`) now timeout where they
-    previously fast-FAILed at the symtab2gb stage; net cbmc column
-    count moved from 0/25/0 pass/fail/timeout to 0/21/4.
+    Side effect on cbmc (resolved by the RPO emission fix below):
+    the synthesis briefly added path-condition constraints that
+    cbmc's BMC unrolling expanded further on the
+    `__VERIFIER_assume`-using programs, which then timed out due to
+    spurious back-edges in the GOTO listing. After the
+    reverse-postorder reorder (commit `520f3f573`), 3 of the 4 are
+    back to fast FAIL with real cbmc verdicts; only `loop_sum` (real
+    C `for` loop) stays TIMEOUT.
   - **(e) Solver returns `unknown`** — verdict `❓ unknown`. Sample:
     `aws_byte_buf_append`, all 7 VCs. The asserted predicate chain
     involves nested int↔bit conversions (`_zext`, `_trunc`) over
