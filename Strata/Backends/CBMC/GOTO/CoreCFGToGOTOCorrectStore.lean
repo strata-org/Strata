@@ -170,4 +170,64 @@ theorem StepGotoStar_to_ExecProg
         -- impossible — every constructor's source is `.running`.
         cases h_after
 
+/-! ## End-to-end Phase 3 theorem -/
+
+/-- `StoreCorr`-shaped forward-simulation theorem on the call-free
+`DetCFG` slice, parallel to `coreCFGToGoto_forward_simulation`.
+
+Given:
+* the closed forward-simulation hypotheses
+  (`ExprTranslationPreservesEval`, `WellFormedSemanticEvalGotoBool`,
+  `WellFormedTranslation`, `h_call_free`),
+* a `StoreCorr nameMap σ σ_goto` witness for the input stores,
+* a `SteppingBridges` bundle that converts each `StepGoto` step into
+  a corresponding `StepInstr` (or `ExecProg.end_function`) step,
+
+a multi-step `Core.CoreCFGStepStar` run from the entry to a
+terminal config gives, on the GOTO side, an `ExecProg` chain from
+the entry PC to a post-store correlated with the source post-store.
+
+Concretely, this theorem composes:
+  `coreCFGToGoto_forward_simulation` (the closed equational result)
+  +
+  `StepGotoStar_to_ExecProg` (the trace lift)
+into the final existential-`StoreCorr`-shaped conclusion. -/
+theorem coreCFGToGoto_forward_simulation_storeCorr
+    (δ : SemanticEval Core.Expression)
+    (δ_goto : SemanticEvalGoto Core.Expression)
+    (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
+    (h_expr : ExprTranslationPreservesEval δ δ_goto δ_goto_bool)
+    (h_wf_bool : WellFormedSemanticEvalGotoBool δ_goto_bool)
+    (π : String → Option Core.Procedure)
+    (φ : Core.CoreEval → Imperative.PureFunc Core.Expression → Core.CoreEval)
+    (cfg : Core.DetCFG) (pgm : Program)
+    (wf : WellFormedTranslation cfg pgm δ δ_goto δ_goto_bool)
+    (h_call_free :
+      ∀ p ∈ cfg.blocks, ∀ c ∈ p.2.cmds, c.isAdmittedCmd = true)
+    (nameMap : Core.Expression.Ident → String)
+    [SemanticsTautschnig.ValueCorr Core.Expression]
+    (callResult : CallResultRel)
+    (eval : ExprEval)
+    (fenv : FuncEnv)
+    (br : SteppingBridges δ_goto δ_goto_bool pgm nameMap callResult eval fenv)
+    (σ σ' : Imperative.SemanticStore Core.Expression) (b : Bool)
+    (σ_goto : Store)
+    (h_corr : StoreCorr nameMap σ σ_goto)
+    (h_run :
+      Core.CoreCFGStepStar π φ δ cfg
+        (.cont cfg.entry σ false)
+        (.terminal σ' b))
+    : ∃ pc_entry σ_goto',
+        wf.labelMap cfg.entry = some pc_entry ∧
+        StoreCorr nameMap σ' σ_goto' ∧
+        ExecProg callResult eval fenv pgm pc_entry σ_goto σ_goto' none := by
+  -- Step 1: invoke the closed forward simulation to get a StepGotoStar.
+  obtain ⟨pc_entry, h_pc_entry, h_steps⟩ :=
+    coreCFGToGoto_forward_simulation δ δ_goto δ_goto_bool
+      h_expr h_wf_bool π φ cfg pgm wf h_call_free σ σ' b h_run
+  -- Step 2: convert StepGotoStar -> ExecProg via the trace lift.
+  obtain ⟨σ_goto', h_corr', h_exec⟩ :=
+    StepGotoStar_to_ExecProg br h_steps h_corr
+  exact ⟨pc_entry, σ_goto', h_pc_entry, h_corr', h_exec⟩
+
 end CProverGOTO
