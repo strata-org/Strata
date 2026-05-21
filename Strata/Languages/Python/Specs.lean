@@ -11,6 +11,7 @@ import        Strata.Languages.Python.ReadPython
 import Strata.Languages.Python.Specs.DDM
 public import Strata.Languages.Python.Specs.Decls
 import        Strata.Languages.Python.Specs.Error
+public import Strata.Languages.Python.Specs.Icontract
 import        Strata.Util.DecideProp
 
 namespace Strata.Python.Specs
@@ -1186,16 +1187,35 @@ def pySpecFunctionArgs (fnLoc : SourceRange)
                        (decorators : Array (expr SourceRange))
                        (returns : Option (expr SourceRange)) : PySpecM FunctionDecl := do
   let mut overload : Bool := false
-  for pyd in decorators do
-    let (success, d) ← runChecked <| pySpecValue pyd
-    if success then
-      match d with
-      | .typingOverload =>
-        overload := true
-      | _ =>
-        specError pyd.ann s!"Decorator {repr d} not supported."
-
+  -- Pre-extract function parameter names for icontract lambda binder
+  -- validation. icontract binds the lambda by name at runtime, so a
+  -- binder that doesn't match a function parameter resolves to a free
+  -- variable and yields a vacuous predicate.
   let .mk_arguments _ ⟨_, posonly⟩ ⟨_, posArgs⟩ ⟨_, vararg⟩ ⟨_, kwonly⟩ ⟨_, kw_defaults⟩ ⟨_, kwarg⟩ ⟨_, defaults⟩ := arguments
+  let funcParamNames : Array String := posArgs.map fun a =>
+    let .mk_arg _ ⟨_, n⟩ _ _ := a; n
+  let kwParamNames : Array String := kwonly.map fun a =>
+    let .mk_arg _ ⟨_, n⟩ _ _ := a; n
+  let validParamNames := funcParamNames ++ kwParamNames
+
+  -- Absorb @icontract.* method decorators into a bundle. Lambda bodies
+  -- are translated below (under `collectAssertions`) so the predicate
+  -- translator runs in the same scope as the function's argument types.
+  let mut icontractBundle : Icontract.MethodBundle := {}
+  for pyd in decorators do
+    let (absorbed, b) ← Icontract.absorbMethodDecorator
+      (warn := specWarning) (_err := specError)
+      validParamNames icontractBundle pyd
+    icontractBundle := b
+    unless absorbed do
+      let (success, d) ← runChecked <| pySpecValue pyd
+      if success then
+        match d with
+        | .typingOverload =>
+          overload := true
+        | _ =>
+          specError pyd.ann s!"Decorator {repr d} not supported."
+
   assert! posonly.size = 0
   let argc := posArgs.size
 
@@ -1256,7 +1276,7 @@ def pySpecFunctionArgs (fnLoc : SourceRange)
         match returns with
         | none => pure <| .ident fnLoc .typingAny
         | some tp => pySpecType tp
-  let as ← collectAssertions argDecls returnType <|
+  let as ← collectAssertions argDecls returnType <| do
     if overload then
       -- Overload stubs should have `...` as their only body statement.
       unless body.size = 1 &&
@@ -1264,6 +1284,14 @@ def pySpecFunctionArgs (fnLoc : SourceRange)
         specWarning fnLoc "overload body is not `...`"
     else
       body.forM blockStmt
+    -- @icontract.require predicates: each lambda body becomes a
+    -- precondition Assertion. Translated in the function's pre-state
+    -- context (parameters in scope).
+    for reqExpr in icontractBundle.requires do
+      let (formula, _) ← transExpr reqExpr
+      modify fun s => { s with
+        assertions := s.assertions.push
+          { message := #[MessagePart.str "@icontract.require"], formula } }
 
   return {
     loc := fnLoc
