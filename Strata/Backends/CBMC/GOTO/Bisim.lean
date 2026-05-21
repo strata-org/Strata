@@ -222,22 +222,84 @@ theorem stepGoto_goto_fallthrough_to_stepInstr
   rw [instrAt_to_instrGuard h_at, Option.bind_some]
   exact h_eval_bool_corr σ_imp σ_goto instr.guard false h_corr h_g
 
-/-! ## Structural divergences not bridged at this commit
+/-! ## Bridges with extra structural hypotheses
+
+The next two bridges need information that the `StepGoto` constructor
+alone does not carry: the failure flag (for `step_assert_fail`) and a
+`locationNum`-to-instruction-index resolution (for `step_goto_taken`).
+Both are surfaced as explicit hypotheses on the bridge theorem rather
+than encoded in `StepGoto`. -/
+
+/-- Bridge for `step_assert_fail`. This branch's `step_assert_fail`
+flips the failed flag in the configuration; tautschnig's
+`StepInstr.assert_fail` advances PC normally and surfaces failure
+via the separate `AssertFails` predicate. The bridge therefore
+produces *both* a `StepInstr` step *and* an `AssertFails` witness on
+the GOTO-side store. -/
+theorem stepGoto_assert_fail_to_stepInstr
+    {P : Imperative.PureExpr} [HasBool P] [HasNot P]
+    [SemanticsTautschnig.ValueCorr P]
+    {δ_goto_bool : SemanticEvalGotoBool P}
+    {pgm : Program} {pc : Nat} {σ_imp : Imperative.SemanticStore P}
+    {instr : Instruction}
+    {nameMap : P.Ident → String}
+    {callResult : SemanticsTautschnig.CallResultRel}
+    {eval : SemanticsTautschnig.ExprEval}
+    {fenv : SemanticsTautschnig.FuncEnv}
+    {σ_goto : SemanticsTautschnig.Store}
+    (h_eval_bool_corr : EvalBoolCorr nameMap δ_goto_bool eval)
+    (h_at : pgm.instrAt pc = some instr) (h_ty : instr.type = .ASSERT)
+    (h_g : δ_goto_bool σ_imp instr.guard = some false)
+    (h_corr : SemanticsTautschnig.StoreCorr nameMap σ_imp σ_goto) :
+    ∃ σ_goto', SemanticsTautschnig.StoreCorr nameMap σ_imp σ_goto' ∧
+      SemanticsTautschnig.StepInstr callResult eval fenv pgm
+        pc σ_goto (pc + 1) σ_goto' ∧
+      SemanticsTautschnig.AssertFails eval pgm pc σ_goto := by
+  refine ⟨σ_goto, h_corr, ?_, ?_, ?_⟩
+  · exact .assert_fail (instrAt_to_instrType h_at h_ty)
+      (by rw [instrAt_to_instrGuard h_at, Option.bind_some]
+          exact h_eval_bool_corr σ_imp σ_goto instr.guard false h_corr h_g)
+  · exact instrAt_to_instrType h_at h_ty
+  · rw [instrAt_to_instrGuard h_at, Option.bind_some]
+    exact h_eval_bool_corr σ_imp σ_goto instr.guard false h_corr h_g
+
+/-- Bridge for `step_goto_taken`. This branch's `step_goto_taken`
+uses a pre-resolved instruction index (`instr.target = some target`);
+tautschnig's `StepInstr.goto_taken` walks `findLocIdx` over a
+`locationNum`. The bridge needs the resolution as an external
+hypothesis: there must exist a `locationNum` `loc` whose `findLocIdx`
+yields the same target index. -/
+theorem stepGoto_goto_taken_to_stepInstr
+    {P : Imperative.PureExpr} [HasBool P] [HasNot P]
+    [SemanticsTautschnig.ValueCorr P]
+    {δ_goto_bool : SemanticEvalGotoBool P}
+    {pgm : Program} {pc target : Nat} {σ_imp : Imperative.SemanticStore P}
+    {instr : Instruction}
+    {nameMap : P.Ident → String}
+    {callResult : SemanticsTautschnig.CallResultRel}
+    {eval : SemanticsTautschnig.ExprEval}
+    {fenv : SemanticsTautschnig.FuncEnv}
+    {σ_goto : SemanticsTautschnig.Store}
+    (h_eval_bool_corr : EvalBoolCorr nameMap δ_goto_bool eval)
+    (h_at : pgm.instrAt pc = some instr) (h_ty : instr.type = .GOTO)
+    (_h_target : instr.target = some target)
+    (h_g : δ_goto_bool σ_imp instr.guard = some true)
+    (h_findLoc : ∃ loc, SemanticsTautschnig.instrTarget pgm pc = some (some loc) ∧
+                        SemanticsTautschnig.findLocIdx pgm.instructions loc = some target)
+    (h_corr : SemanticsTautschnig.StoreCorr nameMap σ_imp σ_goto) :
+    ∃ σ_goto', SemanticsTautschnig.StoreCorr nameMap σ_imp σ_goto' ∧
+      SemanticsTautschnig.StepInstr callResult eval fenv pgm
+        pc σ_goto target σ_goto' := by
+  obtain ⟨loc, h_loc, h_idx⟩ := h_findLoc
+  refine ⟨σ_goto, h_corr,
+    .goto_taken (instrAt_to_instrType h_at h_ty) h_loc ?_ h_idx⟩
+  rw [instrAt_to_instrGuard h_at, Option.bind_some]
+  exact h_eval_bool_corr σ_imp σ_goto instr.guard true h_corr h_g
+
+/-! ## Structural divergences not yet bridged at this commit
 
 The remaining `StepGoto` constructors do not bridge directly to a
 single `StepInstr` step:
-
-* `step_assert_fail`: ours flips the failed flag and advances PC;
-  theirs (`StepInstr.assert_fail`) advances PC but leaves observation
-  to a separate `AssertFails` predicate. Bridging requires lifting
-  the failed flag to an external `AssertFails` witness — see the
-  spec's `failureFlag_corresponds` plan.
-
-* `step_goto_taken`: ours uses `instr.target = some pc_lt` directly
-  (a pre-resolved instruction index); theirs uses `findLocIdx` over a
-  `locationNum`. The bridge needs an external hypothesis
-  `findLocIdx pgm.instructions locNum = some pc_lt`, exactly the
-  `findLocIdx_resolves` field discussed in the spec.
 
 * `step_decl`: bridges to `StepInstr.decl`, which always sets the
   symbol to `vEmpty` regardless of the abstract `InitState` witness's
