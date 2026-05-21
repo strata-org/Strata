@@ -38,8 +38,6 @@ import Strata.Transform.Specification
 
 /- Strata Languages — additional -/
 import Strata.Languages.B3
-import Strata.Languages.Boole.Boole
-import Strata.Languages.Boole.Verify
 import Strata.Languages.C_Simp.C_Simp
 import Strata.Languages.C_Simp.Verify
 import Strata.Languages.Core.EntryPoint

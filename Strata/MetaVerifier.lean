@@ -7,13 +7,11 @@ module
 
 import Strata.Transform.LoopElim
 import Strata.Languages.Core.ObligationExtraction
-public import Strata.Languages.Boole.Boole
 public import Strata.Languages.C_Simp.C_Simp
 public import Strata.Languages.Core.SMTEncoder
 import Std.Tactic.BVDecide.Normalize.Prop
 import Strata.DL.Lambda.Denote.LExprAnnotated
 import Strata.DL.SMT.Denote
-import Strata.Languages.Boole.Verify
 import Strata.Languages.C_Simp.DDMTransform.Translate
 import Strata.Languages.C_Simp.Verify
 import Strata.Languages.Core.Core
@@ -98,14 +96,6 @@ def genVCs (program : Strata.C_Simp.Program) (options : Core.VerifyOptions := .d
 
 end C_Simp
 
-namespace Boole
-
-def genVCs (program : Strata.Boole.Program) (gctx : Strata.GlobalContext) (options : Core.VerifyOptions := .default) : Option Core.coreVCs := do
-  let program ← (Strata.Boole.toCoreProgram program gctx).toOption
-  Core.genVCs program options
-
-end Boole
-
 namespace Strata
 
 /--
@@ -119,11 +109,6 @@ def genCoreVCs (program : Program) : Option Core.coreVCs := do
   else if program.dialect == "C_Simp" then
     let (program, #[]) := C_Simp.TransM.run default (C_Simp.translateProgram program.commands) | none
     C_Simp.genVCs program { (default : Core.VerifyOptions) with verbose := .quiet : Core.VerifyOptions }
-  else if program.dialect == "Boole" then
-    match Boole.getProgram program with
-    | .ok booleProgram =>
-      Boole.genVCs booleProgram program.globalContext { (default : Core.VerifyOptions) with verbose := .quiet : Core.VerifyOptions }
-    | .error _ => none
   else
     none
 

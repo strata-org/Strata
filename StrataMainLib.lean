@@ -18,8 +18,6 @@ import Strata.Languages.B3.Verifier.Program
 import Strata.Languages.Laurel.LaurelCompilationPipeline
 import Strata.Pipeline.Diagnostic
 import Strata.Pipeline.PyAnalyzeLaurel
-import Strata.Languages.Boole.Boole
-import Strata.Languages.Boole.Verify
 import Strata.Languages.C_Simp.DDMTransform.Parse
 import Strata.Languages.Python.Python
 import Strata.Languages.Python.Specs.IdentifyOverloads
@@ -138,7 +136,6 @@ def buildDialectFileMap (pflags : ParsedFlags) : IO Strata.DialectFileMap := do
     |>.addDialect! Strata.Python.Python
     |>.addDialect! Strata.Python.Specs.DDM.PythonSpecs
     |>.addDialect! Strata.Core
-    |>.addDialect! Strata.Boole
     |>.addDialect! Strata.Laurel.Laurel
     |>.addDialect! Strata.smtReservedKeywordsDialect
     |>.addDialect! Strata.SMTCore
@@ -318,7 +315,6 @@ private def readStrataProgram (file : String)
   let inputCtx := Lean.Parser.mkInputContext text (Strata.Util.displayName file)
   let dctx := Elab.LoadedDialects.builtin
   let dctx := dctx.addDialect! Core
-  let dctx := dctx.addDialect! Boole
   let dctx := dctx.addDialect! C_Simp
   let dctx := dctx.addDialect! B3CST
   let leanEnv ← Lean.mkEmptyEnvironment 0
@@ -1296,8 +1292,6 @@ def verifyCommand (mkDischarge : Core.MkDischargeFn := Core.mkDischargeFn) : Com
       if opts.typeCheckOnly then
         let ans := if file.endsWith ".csimp.st" then
                      C_Simp.typeCheck pgm opts
-                   else if pgm.dialect == "Boole" then
-                     Boole.typeCheck pgm opts
                    else
                      typeCheck inputCtx pgm opts
         match ans with
@@ -1331,7 +1325,7 @@ def verifyCommand (mkDischarge : Core.MkDischargeFn := Core.mkDischargeFn) : Com
               IO.println s!"  {marker} {desc}"
           pure #[]
         else if pgm.dialect == "Boole" then
-          Boole.verify opts.solver pgm inputCtx proceduresToVerify opts
+          throw <| IO.Error.userError "Boole dialect support requires the StrataBoole package"
         else
           verify pgm inputCtx proceduresToVerify opts (mkDischarge := mkDischarge)
       catch e =>
