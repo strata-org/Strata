@@ -770,26 +770,30 @@ def Check.while (exprMd : StmtExprMd)
       try simp_all
       omega
 
-/-- `TVoid <: T  ∴  Γ ⊢ Exit target ⇐ T` -/
-def Check.exit (target : String) (expected : HighTypeMd)
+/-- `Γ ⊢ Exit target ⇐ T`
+
+    `exit` is a control-flow jump out of a labeled block; it doesn't
+    deliver a value to the enclosing block, so no subsumption against
+    `expected` is required. -/
+def Check.exit (target : String) (_expected : HighTypeMd)
     (source : Option FileRange) : ResolveM StmtExprMd := do
-  checkSubtype source expected { val := .TVoid, source := source }
   pure { val := .Exit target, source := source }
 
 /-- Cases on whether the return value is `none` or `some e`, and on the
     arity of the enclosing procedure's declared outputs.
 
-    `TVoid <: T  ∴  Γ ⊢ Return none ⇐ T`
+    `Γ ⊢ Return none ⇐ T`
 
-    `Γ_proc.outputs = [T_o],  Γ ⊢ e ⇐ T_o,  TVoid <: T  ∴  Γ ⊢ Return (some e) ⇐ T`
+    `Γ_proc.outputs = [T_o],  Γ ⊢ e ⇐ T_o  ∴  Γ ⊢ Return (some e) ⇐ T`
 
     `Γ_proc.outputs = []  ∴  Γ ⊢ Return (some e) ↝ error: "void procedure cannot return a value"`
 
     `Γ_proc.outputs = [T_1; …; T_n] (n ≥ 2)  ∴  Γ ⊢ Return (some e) ↝ error: "multi-output procedure cannot use 'return e'; assign to named outputs instead"`
 
-    The `Return` construct itself produces no value, so `expected` must
-    admit `TVoid`. The optional payload is matched against the enclosing
-    procedure's declared outputs (threaded through
+    `return` is a control-flow jump out of the procedure; it doesn't
+    deliver a value to the enclosing block, so no subsumption against the
+    surrounding `expected` is required. The optional payload is matched
+    against the enclosing procedure's declared outputs (threaded through
     `ResolveState.expectedReturnTypes`, set from `proc.outputs` by
     `resolveProcedure` / `resolveInstanceProcedure` for the duration of
     the body; `none` means "no enclosing procedure" — e.g. resolving a
@@ -829,7 +833,10 @@ def Check.return (exprMd : StmtExprMd)
       "multi-output procedure cannot use 'return e'; assign to named outputs instead"
     modify fun s => { s with errors := s.errors.push diag }
   | _,      none             => pure ()
-  checkSubtype source expected { val := .TVoid, source := source }
+  -- `return` is a control-flow jump; it doesn't deliver a value to the
+  -- enclosing block, so no TVoid-vs-expected subsumption is required.
+  -- The return value (if any) was already checked against the declared
+  -- output above via `expectedReturnTypes`.
   pure { val := .Return val', source := source }
   termination_by (exprMd, 0)
   decreasing_by
@@ -842,24 +849,37 @@ def Check.return (exprMd : StmtExprMd)
 
 /-- Cases on whether the statement list is empty.
 
-    `Γ_0 = Γ,  Γ_{i-1} ⊢ s_i ⇒ _ ⊣ Γ_i (1 ≤ i < n),  Γ_{n-1} ⊢ s_n ⇐ T  ∴  Γ ⊢ Block [s_1; …; s_n] label ⇐ T`
+    `Γ_0 = Γ,  Γ_{i-1} ⊢ s_i ⇐ Unknown ⊣ Γ_i (1 ≤ i < n),  Γ_{n-1} ⊢ s_n ⇐ T  ∴  Γ ⊢ Block [s_1; …; s_n] label ⇐ T`
 
     `TVoid <: T  ∴  Γ ⊢ Block [] label ⇐ T`
 
     Pushes `expected` into the *last* statement rather than comparing the
     block's synthesized type at the boundary. Errors fire at the offending
     subexpression, and `expected` keeps propagating through nested `Block`
-    / `IfThenElse` / `Hole` / `Quantifier`. Empty blocks reduce to a
-    subsumption check of `TVoid` against `expected` — the same check
-    `[⇐] Block-Empty` performs when `T` admits `TVoid`. -/
+    / `IfThenElse` / `Hole` / `Quantifier`.
+
+    Non-last statements are checked against `Unknown` so their type is
+    accepted regardless: this matches the Java/Python/JavaScript discipline
+    where `f(x);` is a valid statement even when `f` returns a value (the
+    value is discarded). Routing through check mode (rather than synth)
+    means that constructs without a synth rule — control-flow constructs
+    in particular — are still resolved correctly, with their own
+    bidirectional rules pushing `Unknown` into their subexpressions. The
+    trade-off is that a stray expression like `5;` is silently accepted;
+    flagging that belongs to a lint, not the type checker.
+
+    Empty blocks reduce to a subsumption check of `TVoid` against
+    `expected` — the same check `[⇐] Block-Empty` performs when `T`
+    admits `TVoid`. -/
 def Check.block (exprMd : StmtExprMd)
     (stmts : List StmtExprMd) (label : Option String)
     (expected : HighTypeMd) (source : Option FileRange)
     (h : exprMd.val = .Block stmts label) : ResolveM StmtExprMd := do
   withScope do
+    let unknownTy : HighTypeMd := { val := .Unknown, source := source }
     let init' ← stmts.dropLast.attach.mapM (fun ⟨s, hMem⟩ => do
       have : s ∈ stmts := List.dropLast_subset stmts hMem
-      let (s', _) ← Synth.resolveStmtExpr s; pure s')
+      Check.resolveStmtExpr s unknownTy)
     match _lastResult: stmts.getLast? with
     | none =>
       checkSubtype source expected { val := .TVoid, source := source }
@@ -1515,21 +1535,38 @@ def resolveParameter (param : Parameter) : ResolveM Parameter := do
   let name' ← defineNameCheckDup param.name (.parameter ⟨param.name, ty'⟩)
   return ⟨name', ty'⟩
 
-/-- Resolve a procedure body. Returns the resolved body and its type. -/
-def resolveBody (body : Body) : ResolveM (Body × HighTypeMd) := do
+/-- Resolve a procedure body, checking its impl block (if any) against
+    `expected`. The expected type comes from the procedure's declared
+    output: a single output `T` for functional procedures, `TVoid`
+    otherwise. Bodies without an impl block (`Abstract`, `External`) ignore
+    `expected`. -/
+def resolveBody (body : Body) (expected : HighTypeMd) : ResolveM Body := do
   match body with
   | .Transparent b =>
-    let (b', ty) ← Synth.resolveStmtExpr b
-    return (.Transparent b', ty)
+    let b' ← Check.resolveStmtExpr b expected
+    return .Transparent b'
   | .Opaque posts impl mods =>
     let posts' ← posts.mapM (·.mapM resolveStmtExpr)
-    let impl' ← impl.mapM resolveStmtExpr
+    let impl' ← impl.mapM (Check.resolveStmtExpr · expected)
     let mods' ← mods.mapM resolveStmtExpr
-    return (.Opaque posts' impl' mods', { val := .TVoid, source := none })
+    return .Opaque posts' impl' mods'
   | .Abstract posts =>
     let posts' ← posts.mapM (·.mapM resolveStmtExpr)
-    return (.Abstract posts', { val := .TVoid, source := none })
-  | .External => return (.External, { val := .TVoid, source := none })
+    return .Abstract posts'
+  | .External => return .External
+
+/-- Compute the expected body type for a procedure. Functional
+    procedures with a single output `T` expect `T` — the body's last
+    statement is the result and must produce a `T`. Non-functional
+    procedures expect `Unknown`: their body is statement-typed and the
+    last statement (if any) is discarded — outputs are observed via
+    `return e` or named-output assignment, validated independently
+    inside `Check.return` via `expectedReturnTypes`. -/
+private def procedureBodyType (isFunctional : Bool) (outputs : List Parameter)
+    (source : Option FileRange) : HighTypeMd :=
+  match isFunctional, outputs with
+  | true, [singleOutput] => singleOutput.type
+  | _, _ => { val := .Unknown, source := source }
 
 /-- Resolve a procedure: resolve its name, then resolve params, contracts, and body in a new scope. -/
 def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
@@ -1541,20 +1578,13 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
     let dec' ← proc.decreases.mapM resolveStmtExpr
     let savedReturns := (← get).expectedReturnTypes
     modify fun s => { s with expectedReturnTypes := some (outputs'.map (·.type)) }
-    let (body', bodyTy) ← resolveBody proc.body
+    let bodyExpected := procedureBodyType proc.isFunctional outputs' proc.name.source
+    let body' ← resolveBody proc.body bodyExpected
     modify fun s => { s with expectedReturnTypes := savedReturns }
     if !proc.isFunctional && body'.isTransparent then
       let diag := diagnosticFromSource proc.name.source
         s!"transparent procedures are not yet supported. Add 'opaque' to make the procedure opaque"
       modify fun s => { s with errors := s.errors.push diag }
-    -- Check body type matches declared output type for functional procedures with transparent bodies
-    if proc.isFunctional && body'.isTransparent then
-      match proc.outputs with
-      | [singleOutput] =>
-        -- Only check when body produces a value (not void from return/while/assign)
-        if bodyTy.val != HighType.TVoid then
-          checkSubtype proc.name.source singleOutput.type bodyTy
-      | _ => pure ()
     let invokeOn' ← proc.invokeOn.mapM resolveStmtExpr
     return { name := procName', inputs := inputs', outputs := outputs',
              isFunctional := proc.isFunctional,
@@ -1585,19 +1615,13 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
     let dec' ← proc.decreases.mapM resolveStmtExpr
     let savedReturns := (← get).expectedReturnTypes
     modify fun s => { s with expectedReturnTypes := some (outputs'.map (·.type)) }
-    let (body', bodyTy) ← resolveBody proc.body
+    let bodyExpected := procedureBodyType proc.isFunctional outputs' proc.name.source
+    let body' ← resolveBody proc.body bodyExpected
     modify fun s => { s with expectedReturnTypes := savedReturns }
     if !proc.isFunctional && body'.isTransparent then
       let diag := diagnosticFromSource proc.name.source
         s!"transparent procedures are not yet supported. Add 'opaque' to make the procedure opaque"
       modify fun s => { s with errors := s.errors.push diag }
-    -- Check body type matches declared output type for functional procedures with transparent bodies
-    if proc.isFunctional && body'.isTransparent then
-      match proc.outputs with
-      | [singleOutput] =>
-        if bodyTy.val != HighType.TVoid then
-          checkSubtype proc.name.source singleOutput.type bodyTy
-      | _ => pure ()
     let invokeOn' ← proc.invokeOn.mapM resolveStmtExpr
     modify fun s => { s with instanceTypeName := savedInstType }
     return { name := procName', inputs := inputs', outputs := outputs',
