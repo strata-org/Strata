@@ -950,6 +950,53 @@ private theorem isBoolIntTranslated_of_toGotoExprCtx_eq
       cases h_tx
       exact .eq m e1c e2c e1g e2g (ih1 e1g h_frag1 h_e1g) (ih2 e2g h_frag2 h_e2g)
 
+
+/-! ### Translator-output reductions for supported operators
+
+We need `simp` rewrites that reduce `fnToGotoID` and related helper
+functions when their input is one of our supported operator name
+strings. These are `rfl` lemmas (the inputs are concrete strings, so
+the helpers compute by definitional unfolding). -/
+
+/-! Hypotheses-based reductions: `fnToGotoID` calls `Core.CoreOp.ofString`
+which is not `@[expose]`-marked at its definition site, so we can't
+compute these reductions externally. Instead, we collect the necessary
+reductions into a **bundle** that the user supplies. In any module
+where `Core.CoreOp.ofString` is reducible (e.g. by `simp` with the
+right unfold lemmas, or by `decide` / `rfl` if exposed), the user
+discharges them once per concrete program. -/
+
+/-- Bundle of `fnToGotoID` reduction facts for the bool+int fragment. -/
+structure FnToGotoIDReductions : Prop where
+  intAdd  : fnToGotoID "Int.Add"  = .ok (.multiary .Plus)
+  intSub  : fnToGotoID "Int.Sub"  = .ok (.binary .Minus)
+  intMul  : fnToGotoID "Int.Mul"  = .ok (.multiary .Mult)
+  intDivT : fnToGotoID "Int.DivT" = .ok (.binary .Div)
+  intModT : fnToGotoID "Int.ModT" = .ok (.binary .Mod)
+  intLt   : fnToGotoID "Int.Lt"   = .ok (.binary .Lt)
+  intLe   : fnToGotoID "Int.Le"   = .ok (.binary .Le)
+  intGt   : fnToGotoID "Int.Gt"   = .ok (.binary .Gt)
+  intGe   : fnToGotoID "Int.Ge"   = .ok (.binary .Ge)
+  boolNot : fnToGotoID "Bool.Not" = .ok (.unary .Not)
+  boolAnd : fnToGotoID "Bool.And" = .ok (.multiary .And)
+  boolOr  : fnToGotoID "Bool.Or"  = .ok (.multiary .Or)
+  boolImplies : fnToGotoID "Bool.Implies" = .ok (.binary .Implies)
+  /-- For each supported binary operator, `isSignedBvOp` returns false. -/
+  isSignedBvOp_intAdd  : isSignedBvOp "Int.Add"  = false
+  isSignedBvOp_intSub  : isSignedBvOp "Int.Sub"  = false
+  isSignedBvOp_intMul  : isSignedBvOp "Int.Mul"  = false
+  isSignedBvOp_intDivT : isSignedBvOp "Int.DivT" = false
+  isSignedBvOp_intModT : isSignedBvOp "Int.ModT" = false
+  isSignedBvOp_intLt   : isSignedBvOp "Int.Lt"   = false
+  isSignedBvOp_intLe   : isSignedBvOp "Int.Le"   = false
+  isSignedBvOp_intGt   : isSignedBvOp "Int.Gt"   = false
+  isSignedBvOp_intGe   : isSignedBvOp "Int.Ge"   = false
+  isSignedBvOp_boolAnd : isSignedBvOp "Bool.And" = false
+  isSignedBvOp_boolOr  : isSignedBvOp "Bool.Or"  = false
+  isSignedBvOp_boolImplies : isSignedBvOp "Bool.Implies" = false
+  /-- For each supported binary integer operator, `parseBvExtractLo` returns none. -/
+  parseBvExtractLo_boolNot : parseBvExtractLo "Bool.Not" = none
+
 /-- Structural-induction theorem: every `IsBoolIntTranslated` pair is
 `ExprTranslated`-correct under the hypothesis bundle.
 
