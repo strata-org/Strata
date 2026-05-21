@@ -440,6 +440,68 @@ theorem stepGoto_assign_to_stepInstr
     rw [h_eval_corr σ_imp σ_goto rhs_imp v_imp h_corr h_eval_imp]
     exact h_value_corr
 
+/-! ## Bridge for `step_decl`
+
+Bridges `step_decl` (this branch) to `StepInstr.decl` (tautschnig).
+The two constructors disagree on the *value* a freshly-declared
+binding gets: this branch's `InitState` produces some witness value
+`v` (whatever the caller supplied), while tautschnig's `decl` always
+sets the symbol to `vEmpty`.
+
+The bridge therefore takes a hypothesis
+`SemanticsTautschnig.ValueCorr.toValue v = some .vEmpty`: the
+caller-supplied initialization value translates to `vEmpty` on the
+GOTO side. For `Core.Expression`, no `Lambda.LExpr` constructor
+satisfies this hypothesis under the `valueCorrCore` instance — so
+the bridge fires only at call sites that supply a different
+`ValueCorr P` instance whose `toValue` recognizes some sentinel
+expression as `vEmpty`. -/
+
+theorem stepGoto_decl_to_stepInstr
+    {P : Imperative.PureExpr} [SemanticsTautschnig.ValueCorr P]
+    {pgm : Program} {pc : Nat}
+    {σ_imp σ_imp' : Imperative.SemanticStore P}
+    {instr : Instruction}
+    {nameMap : P.Ident → String}
+    (h_inj : Function.Injective nameMap)
+    {x : P.Ident} {v : P.Expr}
+    {callResult : SemanticsTautschnig.CallResultRel}
+    {eval : SemanticsTautschnig.ExprEval}
+    {fenv : SemanticsTautschnig.FuncEnv}
+    {σ_goto : SemanticsTautschnig.Store}
+    (h_at : pgm.instrAt pc = some instr) (h_ty : instr.type = .DECL)
+    (h_init : Imperative.InitState P σ_imp x v σ_imp')
+    (h_codeName : (SemanticsTautschnig.instrCode pgm pc).bind
+                    SemanticsTautschnig.getSymbolName = some (nameMap x))
+    (h_value_empty :
+      (SemanticsTautschnig.ValueCorr.toValue v : Option SemanticsTautschnig.Value)
+        = some .vEmpty)
+    (h_corr : SemanticsTautschnig.StoreCorr nameMap σ_imp σ_goto) :
+    ∃ σ_goto', SemanticsTautschnig.StoreCorr nameMap σ_imp' σ_goto' ∧
+      SemanticsTautschnig.StepInstr callResult eval fenv pgm
+        pc σ_goto (pc + 1) σ_goto' := by
+  refine ⟨σ_goto.declare (nameMap x), ?_,
+    .decl (instrAt_to_instrType h_at h_ty) h_codeName⟩
+  -- StoreCorr preservation. Mirror of step_dead and step_assign.
+  intro y
+  cases h_init with
+  | init h_pre h_post h_other =>
+    by_cases h_eq : x = y
+    · subst h_eq
+      right
+      refine ⟨v, .vEmpty, h_post, h_value_empty, ?_⟩
+      simp [SemanticsTautschnig.Store.declare]
+    · have h_imp_eq : σ_imp' y = σ_imp y := h_other y h_eq
+      have h_goto_eq : (σ_goto.declare (nameMap x)) (nameMap y) = σ_goto (nameMap y) := by
+        simp [SemanticsTautschnig.Store.declare]
+        intro h_collide
+        exact absurd (h_inj h_collide).symm h_eq
+      rcases h_corr y with ⟨h_imp_n, h_goto_n⟩ | ⟨e, v', h_imp_s, h_to, h_goto_s⟩
+      · left; exact ⟨by rw [h_imp_eq]; exact h_imp_n, by rw [h_goto_eq]; exact h_goto_n⟩
+      · right
+        exact ⟨e, v', by rw [h_imp_eq]; exact h_imp_s, h_to,
+                        by rw [h_goto_eq]; exact h_goto_s⟩
+
 /-! ## Structural divergences not yet bridged at this commit
 
 The remaining `StepGoto` constructors do not bridge directly to a
