@@ -71,48 +71,68 @@ strip prelude → BoogieToStrata → fix_core_st → backend(s).
 
 ## Current verification results
 
-Snapshot from the latest run on the 25-program benchmark (12 original +
-13 simplified AWS C Common functions). `OK` columns report pipeline-stage
-success; backend columns report verification outcome. Run with
-`--split-procs` to surface obligations the env-error contamination would
-otherwise suppress.
+Snapshot from the latest run on the 31-program benchmark (12 original +
+13 simplified AWS C Common + 6 verbatim CBMC harnesses imported from
+`awslabs/aws-c-common`'s `verification/cbmc/proofs/`). The verbatim
+harnesses use small adapter shims to map CBMC primitives onto SMACK's
+`__VERIFIER_*` family; the bar for inclusion was translatability
+(Strip / B2S / Fix all OK), not verification, so PARTIAL/FAIL counts
+are expected to dominate that group until the open backend blockers
+are addressed. `OK` columns report pipeline-stage success; backend
+columns report verification outcome. Run with `--split-procs` to
+surface obligations the env-error contamination would otherwise
+suppress.
 
 ```
-Program                       |  Strip |    B2S |    Fix |    deductive |   bugFinding |         cbmc
--------------------------------------------------------------------------------------------------------
+Program                               |  Strip |    B2S |    Fix |    deductive |   bugFinding |         cbmc
+---------------------------------------------------------------------------------------------------------------
 # Original benchmark
-abs_func                      |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
-array_sum                     |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
-aws_array_eq                  |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
-aws_byte_cursor_advance       |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
-aws_ring_buffer               |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
-loop_sum                      |     OK |     OK |     OK |         PASS |      PARTIAL |      TIMEOUT
-max_func                      |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
-nondet_branch                 |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
-pointer_arith                 |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
-simple_add                    |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
-simple_assert                 |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
-swap                          |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+abs_func                              |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+array_sum                             |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
+aws_array_eq                          |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+aws_byte_cursor_advance               |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+aws_ring_buffer                       |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+loop_sum                              |     OK |     OK |     OK |         PASS |      PARTIAL |      TIMEOUT
+max_func                              |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+nondet_branch                         |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
+pointer_arith                         |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
+simple_add                            |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
+simple_assert                         |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+swap                                  |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
 
 # Extended benchmark (simplified AWS C Common)
-aws_add_size_checked          |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
-aws_array_list_get            |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
-aws_array_list_set            |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
-aws_byte_buf_append           |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
-aws_byte_buf_init             |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
-aws_byte_cursor_eq            |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
-aws_hash_string               |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
-aws_is_power_of_two           |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
-aws_linked_list_push          |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
-aws_min_max                   |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
-aws_mul_size_checked          |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
-aws_round_up_to_power_of_two  |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
-aws_string_eq                 |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+aws_add_size_checked                  |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+aws_array_list_get                    |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+aws_array_list_set                    |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+aws_byte_buf_append                   |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+aws_byte_buf_init                     |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+aws_byte_cursor_eq                    |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+aws_hash_string                       |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+aws_is_power_of_two                   |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+aws_linked_list_push                  |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+aws_min_max                           |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+aws_mul_size_checked                  |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+aws_round_up_to_power_of_two          |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+aws_string_eq                         |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
 
-     deductive: 5 pass, 20 partial, 0 warn, 0 fail, 0 n/a
-    bugFinding: 0 pass, 25 partial, 0 warn, 0 fail, 0 n/a
-          cbmc: 0 pass, 24 fail, 1 timeout, 0 n/a
+# CBMC harness import (verbatim from upstream)
+aws_add_size_checked_harness          |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
+aws_add_size_saturating_harness       |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
+aws_is_power_of_two_harness           |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
+aws_mul_size_checked_harness          |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
+aws_mul_size_saturating_harness       |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
+aws_round_up_to_power_of_two_harness  |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
+
+     deductive: 11 pass, 20 partial, 0 warn, 0 fail, 0 n/a
+    bugFinding: 0 pass, 31 partial, 0 warn, 0 fail, 0 n/a
+          cbmc: 0 pass, 30 fail, 1 timeout, 0 n/a
 ```
+
+The "CBMC harness import" group represents the easy-to-translate slice
+of upstream's 190-proof tree: programs that don't depend on AWS struct
+types (`aws_byte_buf`, `aws_array_list`, `aws_hash_*`) or
+`proof_helpers/` infrastructure. The remaining ~180 upstream proofs
+need stub work for those dependencies before they could be imported.
 
 ## What this branch ships (vs `origin/main`)
 
