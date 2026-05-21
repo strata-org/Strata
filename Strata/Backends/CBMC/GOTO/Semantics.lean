@@ -18,10 +18,18 @@ This module defines a small-step operational semantics for the subset of
 
   `LOCATION`, `DECL`, `ASSIGN`, `ASSERT`, `ASSUME`, `GOTO`, `END_FUNCTION`.
 
+In addition, `SKIP` and `DEAD` are admitted as additive constructors
+(Phase 1.a of the GOTO-semantics-expansion plan): `SKIP` is treated like
+`LOCATION`, and `DEAD` mirrors `DECL` by removing a binding from the
+store. The translator does not currently emit either, so the existing
+forward-simulation chain ignores them; their presence does not weaken
+the closed theorem because the new constructors are never *introduced*
+by the simulation, only *available* to downstream consumers.
+
 `FUNCTION_CALL` is intentionally not modeled at this milestone (the correctness
 theorem is restricted to call-free programs). Other instruction types
-(`SKIP`, `SET_RETURN_VALUE`, `DEAD`, `INCOMPLETE_GOTO`, threading, atomicity,
-exceptions) are also out of scope.
+(`SET_RETURN_VALUE`, `INCOMPLETE_GOTO`, threading, atomicity, exceptions)
+are also out of scope.
 
 The shape mirrors `Strata.DL.Imperative.CFGSemantics`:
 
@@ -78,6 +86,16 @@ def GotoConfig.updateFailure : GotoConfig P → Bool → GotoConfig P
 @[expose] def Program.instrAt (pgm : Program) (pc : Nat) : Option Instruction :=
   pgm.instructions[pc]?
 
+/-- Abstract variable removal: `σ'` agrees with `σ` everywhere except at `x`,
+where the binding is removed (`σ' x = none`). Used by the `step_dead`
+constructor to model `DEAD` instructions ending the lifetime of a local. -/
+inductive RemoveState (P : PureExpr) : SemanticStore P → P.Ident → SemanticStore P → Prop where
+  | remove :
+    σ' x = none →
+    (∀ y, x ≠ y → σ' y = σ y) →
+    ----
+    RemoveState P σ x σ'
+
 /-- Small-step operational semantics for GOTO programs.
 
 Parameters:
@@ -116,6 +134,19 @@ inductive StepGoto
     StepGoto P δ_goto δ_goto_bool pgm
       (.running pc σ failed) (.running (pc + 1) σ failed)
 
+  /-- A `SKIP` instruction is semantically identical to `LOCATION`:
+  advance `pc`, leave the store and failure flag unchanged.
+
+  Phase 1.a of the GOTO-semantics-expansion plan. The translator does
+  not currently emit `SKIP`, so this constructor is *available* (for
+  bisimulation with `tautschnig`'s `SemanticsTautschnig.StepInstr.skip`)
+  but not *exercised* by `coreCFGToGoto_forward_simulation`. -/
+  | step_skip :
+    pgm.instrAt pc = some instr →
+    instr.type = .SKIP →
+    StepGoto P δ_goto δ_goto_bool pgm
+      (.running pc σ failed) (.running (pc + 1) σ failed)
+
   /-- A `DECL` instruction introduces a new variable, initialized to an
   unspecified value. The abstract `InitState` relation describes the
   resulting store. The plain DECL form maps to havoc-style initialization;
@@ -126,6 +157,19 @@ inductive StepGoto
     pgm.instrAt pc = some instr →
     instr.type = .DECL →
     InitState P σ x v σ' →
+    StepGoto P δ_goto δ_goto_bool pgm
+      (.running pc σ failed) (.running (pc + 1) σ' failed)
+
+  /-- A `DEAD` instruction marks the end of a local variable's lifetime,
+  removing its binding from the store. Phase 1.a of the
+  GOTO-semantics-expansion plan; mirrors
+  `tautschnig`'s `SemanticsTautschnig.StepInstr.dead`. The translator
+  does not currently emit `DEAD`, so this constructor is *available*
+  but not *exercised* by `coreCFGToGoto_forward_simulation`. -/
+  | step_dead :
+    pgm.instrAt pc = some instr →
+    instr.type = .DEAD →
+    RemoveState P σ x σ' →
     StepGoto P δ_goto δ_goto_bool pgm
       (.running pc σ failed) (.running (pc + 1) σ' failed)
 
