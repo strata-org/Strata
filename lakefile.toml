@@ -45,3 +45,8 @@ root = "Scripts.ImportStats"
 
 [[lean_exe]]
 name = "DiffTestCore"
+
+[[require]]
+name = "repl"
+git = "https://github.com/leanprover-community/repl"
+rev = "v4.29.0"

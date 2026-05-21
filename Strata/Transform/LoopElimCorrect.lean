@@ -6419,20 +6419,16 @@ private theorem loop_cf_iteration_extract
         -- Since all-tt, hasInvFailure = false, so ρ_init = ρ.
         have hnot_true : ¬(_ = Bool.true) := fun h => hno_ff (hinv_iff.1 h)
         have hif_false := Bool.eq_false_iff.mpr hnot_true
-        have hrest_len_le_k' : hrest.len ≤ k' := by
+        -- Save the length bound from the original hrest, then simplify
+        have hrest_len_val : hrest.len ≤ k' := by
           simp only [ReflTransT.len] at hlen; omega
         simp only [hif_false, Bool.or_false] at hrest
         have hρ_simp : ({ ρ with hasFailure := ρ.hasFailure } : Env Expression) = ρ := by
           cases ρ; rfl
         rw [hρ_simp] at hrest
-        -- hrest_len_le_k' : hrest✝✝.len ≤ k' (the original hrest before any rewrites)
-        -- hrest : ... (post-rewrite). hrest.len and hrest✝✝.len are numerically equal.
-        -- We use stmtsT_singleton_canfail which gives a length bound ≤ h_tail_fail.len
-        -- and h_tail_fail.len < hrest.len (from seqT_canfail)
-        -- So h_loop_mid.len ≤ h_tail_fail.len < hrest.len
-        -- To connect with k': we note that all these traces are sub-traces of the
-        -- original hT which has len ≤ k' + 1. The sub-trace len < k' + 1 = k'.
-        -- Decompose seq: either block reaches failure, or block terminates + tail fails
+        -- Now hrest has simplified type. hrest_len_val refers to original hrest (now hrest✝✝).
+        -- The decomposition bounds are relative to the NEW hrest.len.
+        -- Key: from hlen (original), 1 + orig_hrest.len ≤ k'+1 ⇒ sub-traces < orig_hrest.len ≤ k'.
         match seqT_canfail hrest hfail with
         | .inl ⟨cfg', h_block_fail, hf_block, _⟩ =>
           -- Block (.block .none ρ.store (.stmts body ρ)) reaches failure.
@@ -6503,11 +6499,8 @@ private theorem loop_cf_iteration_extract
               -- Extract loop trace from h_tail_fail
               have ⟨cfg_loop, h_loop_mid, hfail_loop, hlen_loop⟩ :=
                 stmtsT_singleton_canfail h_tail_fail hfail
-              -- hrest✝ and hrest are the same ReflTransT data (simp/rw only
-              -- reinterprets the type). The .len values are numerically equal
-              -- but Lean 4 cannot reduce .len through Eq.mpr cast.
               have hrest_len_eq : hrest.len ≤ k' := by
-                sorry -- cast-length equality: hrest.len = hrest✝.len ≤ k'
+                sorry
               have hlen_bound : h_loop_mid.len ≤ k' := by omega
               exact ih ρ_mid heval_mid hnf_mid hall_tt_mid hdef_mid
                 cfg_loop hfail_loop h_loop_mid hlen_bound
@@ -6518,7 +6511,7 @@ private theorem loop_cf_iteration_extract
         -- Same structure as deterministic enter
         have hnot_true : ¬(_ = Bool.true) := fun h => hno_ff (hinv_iff.1 h)
         have hif_false := Bool.eq_false_iff.mpr hnot_true
-        have hrest_len_le_k' : hrest.len ≤ k' := by
+        have hrest_len_val : hrest.len ≤ k' := by
           simp only [ReflTransT.len] at hlen; omega
         simp only [hif_false, Bool.or_false] at hrest
         have hρ_simp : ({ ρ with hasFailure := ρ.hasFailure } : Env Expression) = ρ := by
@@ -6585,7 +6578,7 @@ private theorem loop_cf_iteration_extract
                 stmtsT_singleton_canfail h_tail_fail hfail
               have hlen_bound : h_loop_mid.len ≤ k' := by
                 have hrest_le : hrest.len ≤ k' := by
-                  sorry -- cast-length: hrest.len = hrest✝.len ≤ k'
+                  sorry
                 omega
               exact ih ρ_mid heval_mid hnf_mid hall_tt_mid hdef_mid
                 cfg_loop hfail_loop h_loop_mid hlen_bound
