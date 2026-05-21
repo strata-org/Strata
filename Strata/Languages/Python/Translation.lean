@@ -543,14 +543,19 @@ partial def translateFunction (sig : FuncSig) (body : Array (Python.stmt Resolve
       (some (mkExprDefault (.Identifier { text := s!"$in_{lId.text}", uniqueId := none }))))
   let localDecls := sig.laurelLocals.map fun (lId, lTy) =>
     mkExprDefault (.LocalVariable lId (mkTypeDefault (pythonTypeToHighType lTy)) none)
-  let bodyStmts ← execWriter body.toList
+  let (preAsserts, restBody) := body.toList.span fun s => match s with
+    | .Assert _ _ _ => true | _ => false
+  let preconditions ← preAsserts.mapM fun s => match s with
+    | .Assert _ test _ => translateExpr test
+    | _ => unreachable!
+  let bodyStmts ← execWriter restBody
   let bodyBlock ← mkExpr sr (.Block (paramCopies ++ localDecls ++ bodyStmts) none)
   let md := sourceRangeToMd (← get).filePath sr
   pure {
     name := sig.laurelName
     inputs := inputs
     outputs := outputs
-    preconditions := []
+    preconditions := preconditions
     determinism := .deterministic none
     decreases := none
     isFunctional := false
