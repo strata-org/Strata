@@ -7834,6 +7834,164 @@ private theorem store_no_gens_lift_through_subsim {P : PureExpr}
     exact h_sub_no_gen_suffix _ h_in x rfl h_suf
   exact h_preserve _ (h_store_no_gens x h_suf h_not_in) h_nil h_not_sub
 
+/-! ## PB-T10: reachability lemma for `stmtsToBlocks` runs
+
+The lemma `stmtsToBlocks_run_visited_subset` is required to discharge
+`stepDetCFGStar_frame_extend_one_run`'s `h_frame_unused_along_run` for the
+body's IH-run when introducing a fresh boolean variable in the
+`.ite .nondet` and `.loop .nondet` cases.
+
+PROOF DECOMPOSITION:
+
+1. A monolithic structural fact `stmtsToBlocks_step_source_in_blocks`
+   (sorry-stubbed, ~700 LOC of structural induction over the 8 cases of
+   `stmtsToBlocks`): along any CFG run starting at `entry`, every label
+   from which control proceeds further is one of the labels emitted in
+   `blocks`. That is, all step-source labels live in `blocks.map Prod.fst`.
+
+2. A short wrapper combining the structural fact with `cfg.blocks.Nodup`
+   to extract the unique block at the visited label.
+
+The structural fact's proof sketch (cases mirror `stmtsToBlocks`):
+- Base case `[]` (`flushCmds k accum .none k`):
+  - If accum is empty: emitted `blocks = []`, entry = k.  No step from
+    entry stays in this stmtsToBlocks's "world".
+  - Otherwise: emitted single block at fresh label `l`, transfer = goto k.
+    Step source is `l` ∈ blocks. ✓
+- `.cmd c :: rest`: recurse with extended accum (same emitted blocks). ✓
+- `.funcDecl _ _ :: rest`, `.typeDecl _ _ :: rest`: recurse with same accum. ✓
+- `.block l bss md :: rest`: emitted blocks include accumBlocks ∪
+  [(l, ⟨[], goto bl md⟩)]? ∪ bbs ∪ bsNext.  Step sources are all of these.
+  - Transfers: accumBlocks → bl (in bbs); the label-block → bl (in bbs);
+    bbs (by IH on bss with extended exitConts) → bbs ∪ {kNext} ∪ exitConts.snd
+    where kNext is bsNext's entry; bsNext (by IH on rest) → bsNext ∪ {k} ∪
+    exitConts.snd.  All targets land in this stmtsToBlocks's set. ✓
+- `.ite c tss fss md :: rest`: emitted blocks include accumBlocks ∪ tbs ∪
+  fbs ∪ bsNext.  flushCmds emits a single block with transfer condGoto _ tl fl,
+  whose targets [tl, fl] are entries of tbs, fbs.  IH on tss/fss/rest. ✓
+- `.loop ... :: rest`: emitted blocks include accumBlocks ∪
+  [(lentry, ⟨..., condGoto _ bl kNext⟩)] ∪ bbs ∪ decreaseBlocks ∪ bsNext.
+  Lentry's targets are [bl, kNext]; bl ∈ bbs, kNext ∈ bsNext.  IH on bss/rest. ✓
+- `.exit l md :: _`: emitted single block at fresh `exitName` with transfer
+  goto bk where `bk = exitConts.lookup (.some l) <|> k`.  Target = bk, in
+  exitConts.snd ∪ {k}.  ✓
+
+The structural fact is parameterized by the call site's full input, so the
+wrapper just delegates to it.
+-/
+
+/-- **Monolithic structural fact (PB-T10) — STUB (~700 LOC)**: along any CFG
+run starting at `entry`, every step source's label is in `blocks.map Prod.fst`.
+
+This combines the "entry is the right kind of label" and
+"transfer targets stay in the right set" lemmas into one statement, parameterized
+by the run.  Its proof requires structural induction over `stmtsToBlocks`'s 8
+cases (see doc comment for the file-level skeleton).
+
+Notes for future closure:
+- The `cfg.blocks` argument lets the structural fact apply to any CFG that
+  *contains* the emitted blocks (specifically `(stmtsToCFG ss).blocks`).
+- The `h_run` argument is needed to scope step sources to those reachable
+  along a body run that ends at `k` (so `k` itself is not a step source).
+- To close the trivial-emit edge case (entry = k, blocks = []), an
+  additional precondition such as `entry ≠ k` or `(blocks ≠ []) ∨ (accum = [] ∧ ss = [])`
+  may be needed.
+
+If this lemma is ever generalized further, see Agent A's prior work for
+the helpers `flushCmds_targets_subset` (~100 LOC) and
+`stmtsToBlocks_targets_subset` (~600 LOC) which were the planned
+decomposition; this monolithic form simply combines them. -/
+private theorem stmtsToBlocks_step_source_in_blocks
+    {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
+    [HasVal P] [HasIdent P] [HasIntOrder P]
+    [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    {extendEval : ExtendEval P}
+    {k : String} {ss : List (Stmt P (Cmd P))}
+    {exitConts : List (Option String × String)}
+    {accum : List (Cmd P)} {gen gen' : StringGenState}
+    {entry : String} {blocks : DetBlocks String (Cmd P) P}
+    (h_gen : stmtsToBlocks k ss exitConts accum gen = ((entry, blocks), gen'))
+    (cfg : CFG String (DetBlock String (Cmd P) P))
+    (h_cfg_blocks : ∀ b ∈ blocks, b ∈ cfg.blocks)
+    (h_cfg_nodup : (cfg.blocks.map Prod.fst).Nodup)
+    {σ_entry σ_exit : SemanticStore P} {hf_entry hf_exit : Bool}
+    (h_run : StepDetCFGStar extendEval cfg
+              (.cont entry σ_entry hf_entry)
+              (.cont k σ_exit hf_exit))
+    {lbl : String} {σ : SemanticStore P} {hf : Bool} {c' : CFGConfig String P}
+    (h_prefix : StepDetCFGStar extendEval cfg
+        (.cont entry σ_entry hf_entry) (.cont lbl σ hf))
+    (h_step : @StepCFG _ _ (Cmd P) _ P
+        (EvalDetBlock P (EvalCmd P) extendEval) cfg
+        (.cont lbl σ hf) c') :
+    lbl ∈ blocks.map Prod.fst := by
+  -- See doc comment for the proof sketch.
+  -- This stub must be replaced with the full structural induction (~700 LOC).
+  -- All hypotheses are used by the eventual proof:
+  -- - h_gen: the source of truth for what `blocks` contains.
+  -- - cfg, h_cfg_blocks, h_cfg_nodup: blocks ⊆ cfg.blocks; cfg labels Nodup.
+  -- - h_run: scopes step sources to those reachable along a body run ending at k
+  --   (so k itself is not a step source — needed for the strengthened conclusion).
+  -- - h_prefix, h_step: the visited (lbl, σ, hf) and the next step.
+  sorry
+
+/-- **PB-T10 reachability lemma**: any CFG run starting at the emitted
+`entry` of `stmtsToBlocks` reaches only labels of `blocks` (when stepping
+further). The conclusion `(lbl, blk) ∈ blocks` is the strengthened form
+(NOT a disjunction): step-source labels are in `blocks` strictly.
+
+This is used to discharge `stepDetCFGStar_frame_extend_one_run`'s
+`h_frame_unused_along_run` at the call site for `.ite .nondet` and
+`.loop .nondet` cases.  The structural fact
+`stmtsToBlocks_step_source_in_blocks` (sorry-stubbed) is the heavy
+structural induction; this wrapper combines it with `cfg.blocks.Nodup`
+to extract the unique block at the visited label. -/
+private theorem stmtsToBlocks_run_visited_subset
+    {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
+    [HasVal P] [HasIdent P] [HasIntOrder P]
+    [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    {extendEval : ExtendEval P}
+    {k : String} {ss : List (Stmt P (Cmd P))}
+    {exitConts : List (Option String × String)}
+    {accum : List (Cmd P)} {gen gen' : StringGenState}
+    {entry : String} {blocks : DetBlocks String (Cmd P) P}
+    (h_gen : stmtsToBlocks k ss exitConts accum gen = ((entry, blocks), gen'))
+    (cfg : CFG String (DetBlock String (Cmd P) P))
+    (h_cfg_blocks : ∀ b ∈ blocks, b ∈ cfg.blocks)
+    (h_cfg_nodup : (cfg.blocks.map Prod.fst).Nodup)
+    {σ_entry σ_exit : SemanticStore P} {hf_entry hf_exit : Bool}
+    (h_run : StepDetCFGStar extendEval cfg
+              (.cont entry σ_entry hf_entry)
+              (.cont k σ_exit hf_exit)) :
+    ∀ lbl σ hf blk c',
+      StepDetCFGStar extendEval cfg
+        (.cont entry σ_entry hf_entry) (.cont lbl σ hf) →
+      @StepCFG _ _ (Cmd P) _ P (EvalDetBlock P (EvalCmd P) extendEval) cfg
+        (.cont lbl σ hf) c' →
+      (lbl, blk) ∈ cfg.blocks →
+      (lbl, blk) ∈ blocks := by
+  intro lbl σ hf blk c' h_prefix h_step h_in_cfg
+  -- Step 1: Use the structural fact to get lbl ∈ blocks.map Prod.fst.
+  have h_lbl_in_blocks : lbl ∈ blocks.map Prod.fst :=
+    stmtsToBlocks_step_source_in_blocks h_gen cfg h_cfg_blocks h_cfg_nodup h_run
+      h_prefix h_step
+  -- Step 2: Extract the unique block at lbl in `blocks`.
+  obtain ⟨pair, h_pair_mem, h_pair_eq⟩ := List.mem_map.mp h_lbl_in_blocks
+  obtain ⟨lbl_p, blk_p⟩ := pair
+  -- h_pair_eq : (lbl_p, blk_p).1 = lbl, i.e. lbl_p = lbl.
+  simp only [Prod.fst] at h_pair_eq
+  -- Now h_pair_eq : lbl_p = lbl. Rewrite blocks so we have (lbl, blk_p) ∈ blocks.
+  rw [h_pair_eq] at h_pair_mem
+  -- h_pair_mem : (lbl, blk_p) ∈ blocks. Lift to cfg.blocks.
+  have h_blk_p_in_cfg : (lbl, blk_p) ∈ cfg.blocks := h_cfg_blocks _ h_pair_mem
+  -- Both (lbl, blk) and (lbl, blk_p) are in cfg.blocks. By Nodup, the block is unique.
+  have h_lkp_blk := List.lookup_of_mem_nodup cfg.blocks h_cfg_nodup _ _ h_in_cfg
+  have h_lkp_blk_p := List.lookup_of_mem_nodup cfg.blocks h_cfg_nodup _ _ h_blk_p_in_cfg
+  rw [h_lkp_blk] at h_lkp_blk_p
+  have h_blk_eq : blk = blk_p := Option.some.inj h_lkp_blk_p
+  rw [h_blk_eq]
+  exact h_pair_mem
+
 set_option maxHeartbeats 3200000 in
 set_option maxRecDepth 4096 in
 mutual
