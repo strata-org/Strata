@@ -5914,6 +5914,181 @@ private theorem loop_measure_getVars_subset {P : PureExpr}
   refine List.mem_append.mpr (Or.inr ?_)
   exact h
 
+/-- `Block.modifiedVars` (from `Stmt.lean`) and `transformBlockModVars` (this
+file's `@[expose]` mirror) compute the same list. Proved by sized induction
+on the block / statement structure (same pattern as `Block_modOrDef_set_eq`). -/
+private theorem Block_modifiedVars_eq_transformBlockModVars {P : PureExpr}
+    (ss : List (Stmt P (Cmd P))) :
+    Block.modifiedVars ss = transformBlockModVars ss := by
+  match ss with
+  | [] => rfl
+  | .cmd c :: rest =>
+    show Cmd.modifiedVars c ++ Block.modifiedVars rest =
+      Cmd.modifiedVars c ++ transformBlockModVars rest
+    rw [Block_modifiedVars_eq_transformBlockModVars rest]
+  | .block _ bss _ :: rest =>
+    show Block.modifiedVars bss ++ Block.modifiedVars rest =
+      transformBlockModVars bss ++ transformBlockModVars rest
+    rw [Block_modifiedVars_eq_transformBlockModVars bss,
+        Block_modifiedVars_eq_transformBlockModVars rest]
+  | .ite _ tbss ebss _ :: rest =>
+    show (Block.modifiedVars tbss ++ Block.modifiedVars ebss) ++ Block.modifiedVars rest =
+      (transformBlockModVars tbss ++ transformBlockModVars ebss) ++ transformBlockModVars rest
+    rw [Block_modifiedVars_eq_transformBlockModVars tbss,
+        Block_modifiedVars_eq_transformBlockModVars ebss,
+        Block_modifiedVars_eq_transformBlockModVars rest]
+  | .loop _ _ _ body _ :: rest =>
+    show Block.modifiedVars body ++ Block.modifiedVars rest =
+      transformBlockModVars body ++ transformBlockModVars rest
+    rw [Block_modifiedVars_eq_transformBlockModVars body,
+        Block_modifiedVars_eq_transformBlockModVars rest]
+  | .exit _ _ :: rest =>
+    show [] ++ Block.modifiedVars rest = [] ++ transformBlockModVars rest
+    rw [Block_modifiedVars_eq_transformBlockModVars rest]
+  | .funcDecl _ _ :: rest =>
+    show [] ++ Block.modifiedVars rest = [] ++ transformBlockModVars rest
+    rw [Block_modifiedVars_eq_transformBlockModVars rest]
+  | .typeDecl _ _ :: rest =>
+    show [] ++ Block.modifiedVars rest = [] ++ transformBlockModVars rest
+    rw [Block_modifiedVars_eq_transformBlockModVars rest]
+  termination_by sizeOf ss
+
+/-- Under `Block.noFuncDecl`, every var in `Block.definedVars ss` is also
+in `Block.initVars ss`. The two definitions agree on every constructor
+except `.funcDecl` (excluded by `noFuncDecl`). Sized induction parallels
+`Block_modOrDef_set_eq`. -/
+private theorem Block_definedVars_subset_initVars_of_noFuncDecl {P : PureExpr}
+    (ss : List (Stmt P (Cmd P)))
+    (h_nofd : Block.noFuncDecl ss = true)
+    {x : P.Ident} (h : x ∈ Block.definedVars ss) :
+    x ∈ Block.initVars ss := by
+  match ss with
+  | [] => exact absurd h (by simp [Block.definedVars])
+  | .cmd c :: rest =>
+    have h_nofd_rest : Block.noFuncDecl rest = true := by
+      simp [Block.noFuncDecl, Stmt.noFuncDecl] at h_nofd; exact h_nofd
+    rw [Block.initVars]
+    have h_app : x ∈ Cmd.definedVars c ++ Block.definedVars rest := h
+    rcases List.mem_append.mp h_app with h_c | h_r
+    · apply List.mem_append.mpr; left
+      cases c with
+      | init name _ _ _ =>
+        unfold Stmt.initVars
+        simpa [Cmd.definedVars] using h_c
+      | _ => simp [Cmd.definedVars] at h_c
+    · apply List.mem_append.mpr; right
+      exact Block_definedVars_subset_initVars_of_noFuncDecl rest h_nofd_rest h_r
+  | .block label bss md :: rest =>
+    have h_nofd_pair : Block.noFuncDecl bss = true ∧ Block.noFuncDecl rest = true := by
+      simp [Block.noFuncDecl, Stmt.noFuncDecl] at h_nofd
+      exact ⟨h_nofd.1, h_nofd.2⟩
+    rw [Block.initVars]
+    unfold Stmt.initVars
+    have h_app : x ∈ Block.definedVars bss ++ Block.definedVars rest := h
+    rcases List.mem_append.mp h_app with h_b | h_r
+    · apply List.mem_append.mpr; left
+      exact Block_definedVars_subset_initVars_of_noFuncDecl bss h_nofd_pair.1 h_b
+    · apply List.mem_append.mpr; right
+      exact Block_definedVars_subset_initVars_of_noFuncDecl rest h_nofd_pair.2 h_r
+  | .ite cond tbss ebss md :: rest =>
+    have h_nofd_triple :
+        Block.noFuncDecl tbss = true ∧ Block.noFuncDecl ebss = true ∧
+          Block.noFuncDecl rest = true := by
+      simp [Block.noFuncDecl, Stmt.noFuncDecl] at h_nofd
+      exact ⟨h_nofd.1.1, h_nofd.1.2, h_nofd.2⟩
+    rw [Block.initVars]
+    unfold Stmt.initVars
+    have h_app : x ∈ (Block.definedVars tbss ++ Block.definedVars ebss) ++ Block.definedVars rest := h
+    rcases List.mem_append.mp h_app with h_te | h_r
+    · apply List.mem_append.mpr; left
+      rcases List.mem_append.mp h_te with h_t | h_e
+      · exact List.mem_append.mpr (Or.inl
+          (Block_definedVars_subset_initVars_of_noFuncDecl tbss h_nofd_triple.1 h_t))
+      · exact List.mem_append.mpr (Or.inr
+          (Block_definedVars_subset_initVars_of_noFuncDecl ebss h_nofd_triple.2.1 h_e))
+    · apply List.mem_append.mpr; right
+      exact Block_definedVars_subset_initVars_of_noFuncDecl rest h_nofd_triple.2.2 h_r
+  | .loop guard measure invariants body md :: rest =>
+    have h_nofd_pair : Block.noFuncDecl body = true ∧ Block.noFuncDecl rest = true := by
+      simp [Block.noFuncDecl, Stmt.noFuncDecl] at h_nofd
+      exact ⟨h_nofd.1, h_nofd.2⟩
+    rw [Block.initVars]
+    unfold Stmt.initVars
+    have h_app : x ∈ Block.definedVars body ++ Block.definedVars rest := h
+    rcases List.mem_append.mp h_app with h_b | h_r
+    · apply List.mem_append.mpr; left
+      exact Block_definedVars_subset_initVars_of_noFuncDecl body h_nofd_pair.1 h_b
+    · apply List.mem_append.mpr; right
+      exact Block_definedVars_subset_initVars_of_noFuncDecl rest h_nofd_pair.2 h_r
+  | .exit l md :: rest =>
+    have h_nofd_rest : Block.noFuncDecl rest = true := by
+      simp [Block.noFuncDecl, Stmt.noFuncDecl] at h_nofd; exact h_nofd
+    rw [Block.initVars]
+    unfold Stmt.initVars
+    -- h : x ∈ Stmt.definedVars (.exit l md) ++ Block.definedVars rest = [] ++ Block.definedVars rest
+    have h_r : x ∈ Block.definedVars rest := by
+      have h1 : x ∈ ([] : List P.Ident) ++ Block.definedVars rest := h
+      simpa using h1
+    have h_init_rest : x ∈ Block.initVars rest :=
+      Block_definedVars_subset_initVars_of_noFuncDecl rest h_nofd_rest h_r
+    -- Goal: x ∈ [] ++ Block.initVars rest.
+    simpa using h_init_rest
+  | .funcDecl _ _ :: _ =>
+    -- noFuncDecl is false on a head funcDecl; contradiction.
+    simp [Block.noFuncDecl, Stmt.noFuncDecl] at h_nofd
+  | .typeDecl tc md :: rest =>
+    have h_nofd_rest : Block.noFuncDecl rest = true := by
+      simp [Block.noFuncDecl, Stmt.noFuncDecl] at h_nofd; exact h_nofd
+    rw [Block.initVars]
+    unfold Stmt.initVars
+    have h_r : x ∈ Block.definedVars rest := by
+      have h1 : x ∈ ([] : List P.Ident) ++ Block.definedVars rest := h
+      simpa using h1
+    have h_init_rest : x ∈ Block.initVars rest :=
+      Block_definedVars_subset_initVars_of_noFuncDecl rest h_nofd_rest h_r
+    simpa using h_init_rest
+  termination_by sizeOf ss
+
+/-- Bridge for PB-T10/T11 dispatch: combine the three separate hypotheses
+provided by `stmtsToBlocks_simulation`/`stmtsToBlocks_simulation_to_cont`
+into the single `Block.touchedVars`-typed precondition required by
+`stmtsToBlocks_blocks_no_genFuture` (PB-T9).
+
+Specifically:
+- `h_init` covers `Block.initVars ss`, which under `noFuncDecl` includes
+  every var in `Block.definedVars ss`.
+- `h_mod` covers `transformBlockModVars ss`, which equals
+  `Block.modifiedVars ss`.
+- `h_get` covers `Block.getVars ss` directly.
+
+Together, these cover `Block.modifiedOrDefinedVars ss ++ Block.getVars ss`,
+i.e., `Block.touchedVars ss`. -/
+private theorem touchedVars_no_gen_suffix_of_combined
+    {P : PureExpr} [HasVarsPure P P.Expr] [HasIdent P]
+    (ss : List (Stmt P (Cmd P)))
+    (h_nofd : Block.noFuncDecl ss = true)
+    (h_init : ∀ x ∈ Block.initVars ss, ∀ s : String,
+      x = HasIdent.ident (P := P) s → ¬ String.HasUnderscoreDigitSuffix s)
+    (h_mod : ∀ x ∈ transformBlockModVars ss, ∀ s : String,
+      x = HasIdent.ident (P := P) s → ¬ String.HasUnderscoreDigitSuffix s)
+    (h_get : ∀ x ∈ Block.getVars ss, ∀ s : String,
+      x = HasIdent.ident (P := P) s → ¬ String.HasUnderscoreDigitSuffix s) :
+    ∀ x ∈ Block.touchedVars ss, ∀ s : String,
+      x = HasIdent.ident (P := P) s → ¬ String.HasUnderscoreDigitSuffix s := by
+  intro x h_x s heq
+  -- Block.touchedVars ss = Block.modifiedOrDefinedVars ss ++ Block.getVars ss.
+  rcases List.mem_append.mp h_x with h_modOrDef | h_get_x
+  · -- x ∈ Block.modifiedOrDefinedVars ss; split via Block_modOrDef_set_eq.
+    rcases (Block_modOrDef_set_eq ss x).mp h_modOrDef with h_def | h_mod_x
+    · -- x ∈ Block.definedVars ss; under noFuncDecl, x ∈ Block.initVars ss.
+      exact h_init x
+        (Block_definedVars_subset_initVars_of_noFuncDecl ss h_nofd h_def) s heq
+    · -- x ∈ Block.modifiedVars ss = transformBlockModVars ss.
+      rw [Block_modifiedVars_eq_transformBlockModVars] at h_mod_x
+      exact h_mod x h_mod_x s heq
+  · -- x ∈ Block.getVars ss; direct.
+    exact h_get x h_get_x s heq
+
 set_option maxHeartbeats 1600000 in
 /-- The PB-T9 main structural lemma: every block emitted by `stmtsToBlocks`
 has its `cfgFrameTouches` lying in the user-source-shape-free idents of
