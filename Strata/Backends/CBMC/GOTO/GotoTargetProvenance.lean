@@ -506,4 +506,213 @@ theorem patchesFoldlM_preserves_no_goto_target_no_contracts
   rw [patchesFoldlM_no_contracts_trans_eq labelMap patches acc acc' h_run]
   exact h_no_target
 
+/-! ## Patcher reverse-target lemma
+
+We need: if `patchGotoTargets trans patches` produces a GOTO with
+`target = some t` at index `pc`, and the pre-patcher target at `pc`
+was `none`, then `(pc, t) ∈ patches`.
+
+Strategy: prove the contrapositive. If `pc` doesn't appear as a first
+projection in `patches`, the patcher leaves `(pc).target` alone.
+Equivalently: if the post target is `some t` and the pre target is
+`none`, `pc` must appear as a first projection. Then we extract `t`
+via the patcher's "last patch wins" lemma. -/
+
+/-- Single-patch: setting target at index `i ≠ idx` leaves the value
+at `i` unchanged. -/
+private theorem patch_one_other_index
+    (a : Array CProverGOTO.Instruction) (idx tgt : Nat)
+    (i : Nat) (h_neq : i ≠ idx) :
+    (a.set! idx { a[idx]! with target := some tgt })[i]? = a[i]? := by
+  rw [Array.set!_eq_setIfInBounds]
+  by_cases h_idx : idx < a.size
+  · exact Array.getElem?_setIfInBounds_ne h_neq.symm
+  · rw [Array.setIfInBounds_eq_of_size_le (Nat.le_of_not_lt h_idx)]
+
+/-- Single-patch: setting target at idx (in-bounds) gives `target =
+some tgt` at idx. -/
+private theorem patch_one_target_local
+    (a : Array CProverGOTO.Instruction) (idx tgt : Nat)
+    (h_idx : idx < a.size) :
+    ∃ instr,
+      (a.set! idx { a[idx]! with target := some tgt })[idx]? = some instr ∧
+      instr.target = some tgt := by
+  rw [Array.set!_eq_setIfInBounds]
+  have h_lt : idx < (a.setIfInBounds idx { a[idx]! with target := some tgt }).size := by
+    simp [h_idx]
+  refine ⟨{ a[idx]! with target := some tgt }, ?_, rfl⟩
+  rw [Array.getElem?_eq_getElem h_lt]
+  rw [Array.getElem_setIfInBounds_self]
+
+/-- Patcher fold preserves size. -/
+private theorem patch_foldl_preserves_size_local
+    (a : Array CProverGOTO.Instruction) (ps : List (Nat × Nat)) :
+    (List.foldl
+      (fun acc (p : Nat × Nat) =>
+        acc.set! p.fst { acc[p.fst]! with target := some p.snd })
+      a ps).size = a.size := by
+  induction ps generalizing a with
+  | nil => simp
+  | cons p ps ih =>
+    simp only [List.foldl]
+    rw [ih]
+    rw [Array.set!_eq_setIfInBounds, Array.size_setIfInBounds]
+
+/-- If `pc` is not the first projection of any patch, the patcher
+doesn't touch index `pc`. -/
+private theorem patch_foldl_unchanged_when_idx_not_in
+    (a : Array CProverGOTO.Instruction) (ps : List (Nat × Nat))
+    (pc : Nat) (h_no_idx : ∀ p ∈ ps, p.1 ≠ pc) :
+    (List.foldl
+      (fun acc (p : Nat × Nat) =>
+        acc.set! p.fst { acc[p.fst]! with target := some p.snd })
+      a ps)[pc]? = a[pc]? := by
+  induction ps generalizing a with
+  | nil => simp
+  | cons p rest ih =>
+    simp only [List.foldl]
+    have h_p_neq : p.1 ≠ pc := h_no_idx p (by simp)
+    have h_rest_neq : ∀ q ∈ rest, q.1 ≠ pc :=
+      fun q hq => h_no_idx q (by simp [hq])
+    rw [ih _ h_rest_neq]
+    have h_neq : pc ≠ p.1 := Ne.symm h_p_neq
+    exact patch_one_other_index a p.1 p.2 pc h_neq
+
+/-- Patcher's foldl preserves `target = some tgt` at `idx`, provided
+no later patch in the list has first projection `idx`. -/
+private theorem patch_foldl_target_preserved_when_idx_unique_in_tail
+    (a : Array CProverGOTO.Instruction) (idx : Nat) (tgt : Nat)
+    (ps : List (Nat × Nat))
+    (h_target : ∃ instr, a[idx]? = some instr ∧ instr.target = some tgt)
+    (h_tail_no_idx : ∀ p ∈ ps, p.1 ≠ idx) :
+    ∃ instr,
+      (List.foldl
+        (fun acc (p : Nat × Nat) =>
+          acc.set! p.fst { acc[p.fst]! with target := some p.snd })
+        a ps)[idx]? = some instr ∧
+      instr.target = some tgt := by
+  induction ps generalizing a with
+  | nil => exact h_target
+  | cons p rest ih =>
+    simp only [List.foldl]
+    have h_p_neq : p.1 ≠ idx := h_tail_no_idx p (by simp)
+    have h_rest_neq : ∀ q ∈ rest, q.1 ≠ idx :=
+      fun q hq => h_tail_no_idx q (by simp [hq])
+    apply ih
+    · obtain ⟨instr, h_at, h_tgt⟩ := h_target
+      have h_neq : idx ≠ p.1 := Ne.symm h_p_neq
+      rw [patch_one_other_index a p.1 p.2 idx h_neq]
+      exact ⟨instr, h_at, h_tgt⟩
+    · exact h_rest_neq
+
+/-- Existence of "last occurrence" decomposition. -/
+private theorem last_occurrence_split
+    (ps : List (Nat × Nat)) (pc : Nat)
+    (h : ∃ p ∈ ps, p.1 = pc) :
+    ∃ pre t suf, ps = pre ++ (pc, t) :: suf ∧
+                 ∀ p ∈ suf, p.1 ≠ pc := by
+  induction ps with
+  | nil => obtain ⟨p, hp, _⟩ := h; cases hp
+  | cons head rest ih =>
+    by_cases h_rest : ∃ p ∈ rest, p.1 = pc
+    · obtain ⟨pre', t', suf', h_eq', h_no_idx'⟩ := ih h_rest
+      refine ⟨head :: pre', t', suf', ?_, h_no_idx'⟩
+      rw [List.cons_append, h_eq']
+    · -- ¬∃ p ∈ rest, p.1 = pc means ∀ p ∈ rest, p.1 ≠ pc.
+      have h_rest' : ∀ p ∈ rest, p.1 ≠ pc := by
+        intro p hp h_eq
+        exact h_rest ⟨p, hp, h_eq⟩
+      by_cases h_head : head.1 = pc
+      · refine ⟨[], head.2, rest, ?_, ?_⟩
+        · simp; rw [← h_head]
+        · exact h_rest'
+      · obtain ⟨p, hp, h_eq⟩ := h
+        rw [List.mem_cons] at hp
+        rcases hp with h_phead | h_prest
+        · subst h_phead
+          exact absurd h_eq h_head
+        · exact absurd h_eq (h_rest' p h_prest)
+
+/-- "Last patch at pc determines the target". -/
+private theorem patch_foldl_target_at_last
+    (a : Array CProverGOTO.Instruction) (ps : List (Nat × Nat))
+    (pc t : Nat)
+    (h_last_eq : ∃ pre suf, ps = pre ++ (pc, t) :: suf ∧
+                            ∀ p ∈ suf, p.1 ≠ pc)
+    (h_idx : pc < a.size) :
+    ∃ instr,
+      (List.foldl
+        (fun acc (p : Nat × Nat) =>
+          acc.set! p.fst { acc[p.fst]! with target := some p.snd })
+        a ps)[pc]? = some instr ∧
+      instr.target = some t := by
+  obtain ⟨pre, suf, h_eq, h_suf_no_idx⟩ := h_last_eq
+  rw [h_eq]
+  rw [List.foldl_append, List.foldl_cons]
+  let a_pre := List.foldl
+    (fun acc (p : Nat × Nat) =>
+      acc.set! p.fst { acc[p.fst]! with target := some p.snd })
+    a pre
+  have h_size_apre : a_pre.size = a.size := patch_foldl_preserves_size_local a pre
+  have h_idx_apre : pc < a_pre.size := h_size_apre ▸ h_idx
+  obtain ⟨_, h_at_apre_set, h_target_apre_set⟩ := patch_one_target_local a_pre pc t h_idx_apre
+  exact patch_foldl_target_preserved_when_idx_unique_in_tail
+    (a_pre.set! pc { a_pre[pc]! with target := some t }) pc t suf
+    ⟨_, h_at_apre_set, h_target_apre_set⟩ h_suf_no_idx
+
+/-- **Reverse-direction patcher post-condition.** If the post-patcher
+target at `pc` is `some t` and the pre-patcher target at `pc` is
+`none`, then `(pc, t) ∈ ps`. -/
+private theorem patch_foldl_target_some_in_list
+    (a : Array CProverGOTO.Instruction) (ps : List (Nat × Nat))
+    (pc t : Nat) (instr_pre instr_post : CProverGOTO.Instruction)
+    (h_pre_at : a[pc]? = some instr_pre)
+    (h_pre_target : instr_pre.target = none)
+    (h_post_at :
+      (List.foldl
+        (fun acc (p : Nat × Nat) =>
+          acc.set! p.fst { acc[p.fst]! with target := some p.snd })
+        a ps)[pc]? = some instr_post)
+    (h_post_target : instr_post.target = some t) :
+    (pc, t) ∈ ps := by
+  by_cases h_some : ∃ p ∈ ps, p.1 = pc
+  · have h_idx_lt : pc < a.size := by
+      rcases Array.getElem?_eq_some_iff.mp h_pre_at with ⟨h_lt, _⟩
+      exact h_lt
+    obtain ⟨pre, t', suf, h_eq, h_suf_no_idx⟩ := last_occurrence_split ps pc h_some
+    obtain ⟨_, h_at_post', h_target_post'⟩ :=
+      patch_foldl_target_at_last a ps pc t' ⟨pre, suf, h_eq, h_suf_no_idx⟩ h_idx_lt
+    rw [h_at_post'] at h_post_at
+    injection h_post_at with h_eq2
+    rw [← h_eq2, h_target_post'] at h_post_target
+    injection h_post_target with h_t_eq
+    rw [h_eq, ← h_t_eq]
+    exact List.mem_append_right pre (by simp)
+  · -- ¬∃ p ∈ ps, p.1 = pc means ∀ p ∈ ps, p.1 ≠ pc.
+    have h_no_idx : ∀ p ∈ ps, p.1 ≠ pc := by
+      intro p hp h_eq
+      exact h_some ⟨p, hp, h_eq⟩
+    rw [patch_foldl_unchanged_when_idx_not_in a ps pc h_no_idx] at h_post_at
+    rw [h_pre_at] at h_post_at
+    injection h_post_at with h_eq
+    rw [← h_eq, h_pre_target] at h_post_target
+    cases h_post_target
+
+/-- Reverse-direction patcher post-condition (top-level form). If the
+post-patcher target at `pc` is `some t` and the pre-patcher target at
+`pc` was `none`, then `(pc, t) ∈ patches`. -/
+theorem patchGotoTargets_target_some_in_patches
+    (trans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (patches : List (Nat × Nat))
+    (pc t : Nat) (instr_pre instr_post : Instruction)
+    (h_pre_at : trans.instructions[pc]? = some instr_pre)
+    (h_pre_target : instr_pre.target = none)
+    (h_post_at : (Imperative.patchGotoTargets trans patches).instructions[pc]? = some instr_post)
+    (h_post_target : instr_post.target = some t) :
+    (pc, t) ∈ patches := by
+  unfold Imperative.patchGotoTargets at h_post_at
+  simp only at h_post_at
+  exact patch_foldl_target_some_in_list trans.instructions patches pc t
+    instr_pre instr_post h_pre_at h_pre_target h_post_at h_post_target
+
 end CProverGOTO.GotoTargetProvenance
