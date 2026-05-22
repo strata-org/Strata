@@ -385,6 +385,16 @@ private partial def toCoreQuantExpr? (e : Boole.Expr) : Option (TranslateM Core.
       some (toCoreQuant false ds body)
   | _ => none
 
+/-- Lower a `Sequence.of_<ty>[v0, ..., vn]` literal to a left-fold of
+    `seq_build` over a typed `seq_empty`. The element type is required on
+    the seed so that empty literals retain their type and the
+    bounds-precondition pass does not emit polymorphic obligations. -/
+partial def seqLitToCore (elemTy : Lambda.LMonoTy) (vs : Array Boole.Expr)
+    : TranslateM Core.Expression.Expr := do
+  let vals ← vs.toList.mapM toCoreExpr
+  return vals.foldl (fun acc v => mkCoreApp Core.seqBuildOp [acc, v])
+                    (Core.seqEmptyOp (some elemTy))
+
 partial def toCoreExpr (e : Boole.Expr) : TranslateM Core.Expression.Expr := do
   if let some q := toCoreQuantExpr? e then
     return ← q
@@ -474,12 +484,16 @@ partial def toCoreExpr (e : Boole.Expr) : TranslateM Core.Expression.Expr := do
   | .seq_empty_bv32 _ => return Core.seqEmptyOp (some (.bitvec 32))
   | .seq_empty_bv64 _ => return Core.seqEmptyOp (some (.bitvec 64))
   | .seq_empty_int _  => return Core.seqEmptyOp (some .int)
-  -- Sequence literals: Sequence.of_bv32[v0, v1, ..., vn]
-  -- Lowers to a left-fold of seq_build over seq_empty.
-  | .seq_of_bv8  _ ⟨_, vs⟩ | .seq_of_bv16 _ ⟨_, vs⟩ | .seq_of_bv32 _ ⟨_, vs⟩
-  | .seq_of_bv64 _ ⟨_, vs⟩ | .seq_of_int  _ ⟨_, vs⟩ => do
-    let vals ← vs.toList.mapM toCoreExpr
-    return vals.foldl (fun acc v => mkCoreApp Core.seqBuildOp [acc, v]) Core.seqEmptyOp
+  -- Sequence literals: Sequence.of_<ty>[v0, v1, ..., vn]
+  -- Lowers to a left-fold of seq_build over a typed seq_empty seed. The
+  -- element type must be threaded onto the seed: for vs = [] it is the only
+  -- place the type lives, and the bounds-precondition pass otherwise emits
+  -- polymorphic obligations like `0 < Sequence.length (Sequence.empty)`.
+  | .seq_of_bv8  _ ⟨_, vs⟩ => seqLitToCore (.bitvec 8)  vs
+  | .seq_of_bv16 _ ⟨_, vs⟩ => seqLitToCore (.bitvec 16) vs
+  | .seq_of_bv32 _ ⟨_, vs⟩ => seqLitToCore (.bitvec 32) vs
+  | .seq_of_bv64 _ ⟨_, vs⟩ => seqLitToCore (.bitvec 64) vs
+  | .seq_of_int  _ ⟨_, vs⟩ => seqLitToCore .int         vs
   -- Lambda abstraction: `fun x : T => body`  →  Core .abs
   | .lambda _ _ decls body => do
       let declsList := declListToList decls
