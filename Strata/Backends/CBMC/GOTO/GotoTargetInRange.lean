@@ -93,7 +93,7 @@ target`.
 Discharable from `coreCFGToGotoTransform`'s structure (every GOTO
 is emitted by `emitCondGoto` or `emitUncondGoto`, both resolving
 targets via the same `labelMap`); held here as a hypothesis. -/
-def EveryGotoTargetIsLabelMapEntry
+@[expose] def EveryGotoTargetIsLabelMapEntry
     (cfg : Core.DetCFG) (pgm : Program) (labelMap : LabelMap) : Prop :=
   ∀ {pc target : Nat} {instr : Instruction},
     pgm.instrAt pc = some instr → instr.type = .GOTO →
