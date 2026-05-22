@@ -16,6 +16,8 @@ import Strata.Languages.Core.StatementEval
 import Strata.Languages.C_Simp.Verify
 import Strata.Languages.B3.Verifier.Program
 import Strata.Languages.Laurel.LaurelCompilationPipeline
+import Strata.Pipeline.Diagnostic
+import Strata.Pipeline.PyAnalyzeLaurel
 import Strata.Languages.Boole.Boole
 import Strata.Languages.Boole.Verify
 import Strata.Languages.Python.Python
@@ -28,7 +30,6 @@ import Strata.Transform.ProcedureInlining
 import Strata.Util.IO
 
 import Strata.SimpleAPI
-import Strata.Util.Profile
 import Strata.Util.Json
 import Strata.DDM.BuiltinDialects
 import Strata.DDM.Util.String
@@ -209,7 +210,10 @@ def verifyOptionsFlags : List Flag := [
     help := "Use incremental solver backend (stdin/stdout) instead of batch file I/O." },
   { name := "path-cap",
     help := "Maximum continuing paths between statements. 'none' (default) disables; N merges paths when count exceeds N.",
-    takesArg := .arg "N|none" }
+    takesArg := .arg "N|none" },
+  { name := "parallel",
+    help := "Number of parallel solver workers (default: 1, sequential).",
+    takesArg := .arg "N" }
 ]
 
 /-- Build a VerifyOptions from parsed CLI flags, starting from a base config.
@@ -249,6 +253,12 @@ def parseVerifyOptions (pflags : ParsedFlags)
       | .some n => if n == 0 then exitFailure "--path-cap must be at least 1 or 'none'."
                    else pure (.some n)
       | .none => exitFailure s!"Invalid path-cap: '{s}'. Must be a positive number or 'none'."
+  let parallelWorkers ← match pflags.getString "parallel" with
+    | .none => pure base.parallelWorkers
+    | .some s => match s.toNat? with
+      | .some n => if n == 0 then exitFailure "--parallel must be at least 1."
+                   else pure n
+      | .none => exitFailure s!"Invalid parallel workers: '{s}'. Must be a positive number."
   let vcDirectory := (pflags.getString "vc-directory" |>.map (⟨·⟩ : String → System.FilePath)).orElse (fun _ => base.vcDirectory)
   let skipSolver := noSolve || base.skipSolver
   if skipSolver && vcDirectory.isNone then
@@ -271,7 +281,8 @@ def parseVerifyOptions (pflags : ParsedFlags)
     alwaysGenerateSMT := noSolve || base.alwaysGenerateSMT,
     overflowChecks,
     vcDirectory,
-    pathCap
+    pathCap,
+    parallelWorkers
   }
 
 /-- Additional CLI flags for `LaurelVerifyOptions` fields that are not already
@@ -294,8 +305,7 @@ def parseLaurelVerifyOptions (pflags : ParsedFlags)
   let translateOptions : LaurelTranslateOptions :=
     { base.translateOptions with
       keepAllFilesPrefix
-      overflowChecks := verifyOptions.overflowChecks
-      profile := verifyOptions.profile }
+      overflowChecks := verifyOptions.overflowChecks }
   return { translateOptions, verifyOptions }
 
 /-- Read and parse a Strata program file, loading the Core, C_Simp, and B3CST
@@ -565,6 +575,30 @@ private def deriveBaseName (file : String) : String :=
   | none     => name
 
 
+/-- Write SMT-style user-error diagnostics to stdout and `user_errors.txt`,
+    and return a human-readable location suffix (e.g., " at line 42, col 5"). -/
+private def reportUserCodeError (range : SourceRange) (msg : String)
+    (mfm : Option (String × Lean.FileMap)) (filePath : String) : IO String := do
+  let location := if range.isNone then "" else
+    match mfm with
+    | some (_, fm) =>
+      let pos := fm.toPosition range.start
+      s!" at line {pos.line}, col {pos.column}"
+    | none => ""
+  let mut lines := #[
+    s!"(set-info :file {Strata.escapeSMTStringLit filePath})"
+  ]
+  unless range.isNone do
+    lines := lines.push s!"(set-info :start {range.start})"
+    lines := lines.push s!"(set-info :stop {range.stop})"
+  lines := lines.push s!"(set-info :error-message {Strata.escapeSMTStringLit msg})"
+  for line in lines do
+    IO.println line
+  IO.FS.Handle.mk "user_errors.txt" .write >>= fun h =>
+    for line in lines do
+      h.putStrLn line
+  return location
+
 def pyAnalyzeLaurelCommand : Command where
   name := "pyAnalyzeLaurel"
   args := [ "file" ]
@@ -584,8 +618,8 @@ def pyAnalyzeLaurelCommand : Command where
             { name := "entry-point",
               help := "Which procedures to verify: main (main fn only), roots (user procs with no user callers, default), or all (all user procs). Only valid in bugFinding mode.",
               takesArg := .arg "mode" },
-            { name := "warning-summary",
-              help := "Write PySpec warning summary as JSON to <file>.",
+            { name := "metrics",
+              help := "Write pipeline metrics (diagnostics, timing, outcome) as JSONL to <file>.",
               takesArg := .arg "file" },
             { name := "skip-verification",
               help := "Run Python-to-Laurel and Laurel-to-Core translation only (skip SMT verification).",
@@ -613,88 +647,12 @@ def pyAnalyzeLaurelCommand : Command where
     let mfm : Option (String × Lean.FileMap) := match pySourceOpt with
       | some (pyPath, srcText) => some (pyPath, .ofString srcText)
       | none => none
-    let warningSummaryFile := pflags.getString "warning-summary"
-    let combinedLaurel ←
-      match ← Strata.pythonAndSpecToLaurel filePath dispatchModules pyspecModules sourcePath
-                (specDir := specDir) (profile := profile)
-                (quiet := quiet)
-                (warningSummaryFile := warningSummaryFile) |>.toBaseIO with
-      | .ok r => pure r
-      | .error (.userCode range msg) =>
-        let location := if range.isNone then "" else
-          match mfm with
-          | some (_, fm) =>
-            let pos := fm.toPosition range.start
-            s!" at line {pos.line}, col {pos.column}"
-          | none => ""
-        let filePath' := sourcePath.getD filePath
-        let mut lines := #[
-          s!"(set-info :file {Strata.escapeSMTStringLit filePath'})"
-        ]
-        unless range.isNone do
-          lines := lines.push s!"(set-info :start {range.start})"
-          lines := lines.push s!"(set-info :stop {range.stop})"
-        lines := lines.push s!"(set-info :error-message {Strata.escapeSMTStringLit msg})"
-        for line in lines do
-          IO.println line
-        IO.FS.writeFile "user_errors.txt" (String.intercalate "\n" lines.toList ++ "\n")
-        exitPyAnalyzeUserError s!"{msg}{location}"
-      | .error (.knownLimitation msg) =>
-        exitPyAnalyzeKnownLimitation msg
-      | .error (.internal msg) =>
-        exitPyAnalyzeInternalError msg
+    let metricsHandle ← match pflags.getString "metrics" with
+      | some path => some <$> IO.FS.Handle.mk path .write
+      | none => pure none
 
-    if verbose then
-      IO.println "\n==== Laurel Program ===="
-      IO.println f!"{combinedLaurel}"
-
+    -- Parse verify options early (needed for pipeline config).
     let keepPrefix := keepDir.map (s!"{·}/{baseName}")
-
-    let (coreProgramOption, laurelTranslateErrors, _loweredLaurel, laurelPassStats) ←
-      profileStep profile "Laurel to Core translation" do
-        Strata.translateCombinedLaurelWithLowered combinedLaurel
-          (keepAllFilesPrefix := keepPrefix) (profile := profile)
-
-    if profile && !laurelPassStats.data.isEmpty then
-      IO.println laurelPassStats.format
-
-    let coreProgram ←
-      match coreProgramOption with
-      | none =>
-        exitPyAnalyzeInternalError s!"Laurel to Core translation failed: {laurelTranslateErrors}"
-      | some core => pure core
-
-    if verbose then
-      IO.println "\n==== Core Program ===="
-      IO.print (Core.formatProgram coreProgram)
-
-    -- When --skip-verification is set, report translation diagnostics and exit
-    -- without running SMT verification (stages 3-4).
-    if pflags.getBool "skip-verification" then do
-      if !laurelTranslateErrors.isEmpty then
-        IO.eprintln "\n==== Errors ===="
-        for err in laurelTranslateErrors do
-          IO.eprintln err
-      if outputSarif then
-        let files := match mfm with
-          | some (pyPath, fm) => Map.empty.insert (Strata.Uri.file pyPath) fm
-          | none => Map.empty
-        Core.Sarif.writeSarifOutput .deductive files #[] (filePath ++ ".sarif")
-      let nStrataBug := laurelTranslateErrors.filter (·.type == .StrataBug) |>.length
-      let nNotYetImpl := laurelTranslateErrors.filter (·.type == .NotYetImplemented) |>.length
-      let nUserError := laurelTranslateErrors.filter (·.type == .UserError) |>.length
-      let nWarning := laurelTranslateErrors.filter (·.type == .Warning) |>.length
-      let counts := s!"{nUserError} user errors, {nWarning} warnings, {nNotYetImpl} not yet implemented, {nStrataBug} internal errors"
-      if nStrataBug > 0 then
-        exitPyAnalyzeInternalError s!"Translation produced internal errors. {counts}"
-      else if nNotYetImpl > 0 then
-        exitPyAnalyzeKnownLimitation s!"Translation encountered unsupported constructs. {counts}"
-      else
-        printPyAnalyzeResult "Analysis success" counts
-      return
-
-    -- Verify using Core verifier
-    -- --keep-all-files implies vc-directory if not explicitly set
     let baseVcDir := keepDir.map (fun dir => (s!"{dir}/{baseName}" : System.FilePath))
     let pyAnalyzeBase : VerifyOptions :=
       { VerifyOptions.default with
@@ -720,57 +678,101 @@ def pyAnalyzeLaurelCommand : Command where
           exitPyAnalyzeUserError s!"--entry-point is unsupported in {options.checkMode} mode"
         else pure .all
 
-    -- Pick the procedures to verify and set up inlining phases.
-    let userSourcePath := sourcePath.getD filePath
-    let (_, userProcNames) :=
-      Strata.splitProcNames coreProgram [userSourcePath]
-    let (proceduresToVerify, inlinePhases) :=
-      if isBugFinding then
-        let ⟨p, i⟩ := Core.chooseEntryProceduresAndBuildInlinePhases coreProgram userProcNames entryPoint
-        (p, [i])
-      else (userProcNames, [])
+    -- Derive output mode from CLI flags.
+    let outputMode : Strata.Pipeline.OutputMode :=
+      if verbose then .verbose
+      else if profile then .profile
+      else if quiet then .quiet
+      else .default
+    let skipVerification := pflags.getBool "skip-verification"
 
-    let vcResults ← profileStep profile "SMT verification" do
-      match ← Core.verifyProgram coreProgram options
-                (moreFns := Strata.Python.ReFactory)
-                (proceduresToVerify := some proceduresToVerify)
-                (externalPhases := [Strata.frontEndPhase])
-                (prefixPhases := inlinePhases)
-                (keepAllFilesPrefix := keepPrefix)
-                |>.toBaseIO with
-      | .ok r => pure r.mergeByAssertion
-      | .error msg => exitPyAnalyzeInternalError msg
+    -- Run the pipeline
+    let (outcome, laurelPassStats, pctx) ← Strata.Pipeline.runPyAnalyzePipeline {
+      filePath, specDir
+      dispatchModules, pyspecModules, sourcePath
+      keepAllFilesPrefix := keepPrefix
+      verifyOptions := options
+      entryPoint, isBugFinding
+      outputMode, skipVerification
+      metricsHandle
+    }
 
-    -- Print translation errors (always on stderr)
-    if !laurelTranslateErrors.isEmpty then
-      IO.eprintln "\n==== Errors ===="
-      for err in laurelTranslateErrors do
-        IO.eprintln err
+    -- Always print pipeline warnings
+    let msgs ← pctx.getMessages
+    if !quiet && msgs.size > 0 then
+      IO.eprintln s!"{msgs.size} pipeline warning(s)"
+      if verbose then
+        for err in msgs do
+          IO.eprintln s!"  {err.file}: {err.phase}.{err.kind}: {err.message}"
 
-    -- Print per-VC results by default, unless SARIF mode is used
-    if !outputSarif then
-      let mut s := ""
-      for vcResult in vcResults do
-        let fileMap := mfm.map (·.2)
-        let location := match Imperative.getFileRange vcResult.obligation.metadata with
-          | some fr =>
-            if fr.range.isNone then ""
-            else s!"{fr.format fileMap (includeEnd? := false)}"
-          | none => ""
-        let messageSuffix := match vcResult.obligation.metadata.getPropertySummary with
-          | some msg => s!" - {msg}"
-          | none => s!" - {vcResult.obligation.label}"
-        let outcomeStr := vcResult.formatOutcome
-        let loc := if !location.isEmpty then s!"{location}: " else "unknown location: "
-        s := s ++ s!"{loc}{outcomeStr}{messageSuffix}\n"
-      IO.print s
-    -- Output in SARIF format if requested
-    if outputSarif then
-      let files := match mfm with
-        | some (pyPath, fm) => Map.empty.insert (Strata.Uri.file pyPath) fm
-        | none => Map.empty
-      Core.Sarif.writeSarifOutput options.checkMode files vcResults (filePath ++ ".sarif")
-    printPyAnalyzeSummary vcResults options.checkMode
+    if profile && !laurelPassStats.data.isEmpty then
+      IO.println laurelPassStats.format
+
+    -- Write outcome record to metrics file.
+    let emitOutcome (resultStr : String) (exitCode : UInt8) (detail : Option String := none) : IO Unit := do
+      let totalMs ← pctx.elapsedNs
+      let mut fields : List (String × Lean.Json) := [
+        ("type", .str "outcome"), ("result", .str resultStr),
+        ("exit_code", .num exitCode.toNat), ("total_ms", .num (Strata.Pipeline.nsToMs totalMs))]
+      if let some d := detail then
+        fields := fields ++ [("detail", .str d)]
+      pctx.emitMetric (Lean.Json.mkObj fields)
+
+    -- Handle pipeline outcome.
+    -- Exit code is f(outcome, messages) — see priority ordering in unify.md.
+    let toolErrors ← pctx.getToolErrors
+    let userErrors ← pctx.getUserCodeErrors
+
+    -- Priority 1: internal/configuration errors always dominate
+    if let some lastErr := toolErrors.back? then
+      emitOutcome "internalError" ExitCode.internalError (detail := lastErr.message)
+      exitPyAnalyzeInternalError lastErr.message
+    -- Priority 2: user code errors
+    if let some lastErr := userErrors.back? then
+      emitOutcome "userError" ExitCode.userError (detail := lastErr.message)
+      let location ← reportUserCodeError lastErr.loc lastErr.message mfm (sourcePath.getD filePath)
+      exitPyAnalyzeUserError s!"{lastErr.message}{location}"
+    match outcome with
+    | .verified vcResults _coreProgram =>
+      emitOutcome "verified" 0
+      -- Print per-VC results by default, unless SARIF mode is used
+      if !outputSarif then
+        let mut s := ""
+        for vcResult in vcResults do
+          let fileMap := mfm.map (·.2)
+          let location := match Imperative.getFileRange vcResult.obligation.metadata with
+            | some fr =>
+              if fr.range.isNone then ""
+              else s!"{fr.format fileMap (includeEnd? := false)}"
+            | none => ""
+          let messageSuffix := match vcResult.obligation.metadata.getPropertySummary with
+            | some msg => s!" - {msg}"
+            | none => s!" - {vcResult.obligation.label}"
+          let outcomeStr := vcResult.formatOutcome
+          let loc := if !location.isEmpty then s!"{location}: " else "unknown location: "
+          s := s ++ s!"{loc}{outcomeStr}{messageSuffix}\n"
+        IO.print s
+      -- Output in SARIF format if requested
+      if outputSarif then
+        let files := match mfm with
+          | some (pyPath, fm) => Map.empty.insert (Strata.Uri.file pyPath) fm
+          | none => Map.empty
+        Core.Sarif.writeSarifOutput options.checkMode files vcResults (filePath ++ ".sarif")
+      printPyAnalyzeSummary vcResults options.checkMode
+    | .failed =>
+      -- Priority 4: known limitations
+      let knownLimitations := msgs.filter (·.kind.impact == .knownLimitation)
+      match knownLimitations.back? with
+      | some lastErr =>
+        emitOutcome "knownLimitation" ExitCode.knownLimitation (detail := lastErr.message)
+        exitPyAnalyzeKnownLimitation lastErr.message
+      | none =>
+        -- .failed with no classified impact = internal error
+        let msg : String := match msgs.back? with
+          | some m => m.message
+          | none => "Pipeline aborted"
+        emitOutcome "internalError" ExitCode.internalError (detail := msg)
+        exitPyAnalyzeInternalError msg
 
 def pyAnalyzeToGotoCommand : Command where
   name := "pyAnalyzeToGoto"
@@ -923,14 +925,14 @@ def pySpecToLaurelCommand : Command where
     let strataDir : System.FilePath := v[1]
     let some mod := pythonFile.fileStem
       | exitFailure s!"No stem {pythonFile}"
-    let .ok mod := Strata.Python.Specs.ModuleName.ofString mod
+    let some mod := Strata.Python.ModuleName.ofString? mod
       | exitFailure s!"Invalid module {mod}"
     let ionFile := strataDir / mod.strataFileName
     let sigs ←
       match ← Strata.Python.Specs.readDDM ionFile |>.toBaseIO with
       | .ok t => pure t
       | .error msg => exitFailure s!"Could not read {ionFile}: {msg}"
-    let result := Strata.Python.Specs.ToLaurel.signaturesToLaurel pythonFile sigs ""
+    let result := Strata.Python.Specs.ToLaurel.signaturesToLaurel pythonFile sigs mod
     if result.errors.size > 0 then
       IO.eprintln s!"{result.errors.size} translation warning(s):"
       for err in result.errors do
@@ -953,10 +955,13 @@ def pyResolveOverloadsCommand : Command where
     let pythonFile : System.FilePath := v[0]
     let dispatchPath := v[1]
     -- Read dispatch overload table
-    let overloads ←
-      match ← readDispatchOverloads #[dispatchPath] |>.toBaseIO with
-      | .ok (r, _) => pure r
-      | .error msg => exitFailure msg
+    let pctx ← Strata.Pipeline.PipelineContext.create
+    let overloads ← match ← (readDispatchOverloads pctx #[dispatchPath]).toBaseIO with
+      | .ok r => pure r
+      | .error () =>
+        for m in ← pctx.getMessages do
+          IO.eprintln s!"{m}"
+        exitFailure "readDispatchOverloads: fatal error"
     -- Convert .py to Python AST
     let stmts ←
       IO.FS.withTempFile fun _handle dialectFile => do
@@ -1375,8 +1380,9 @@ def pyInterpretCommand : Command where
         | .none => exitFailure s!"Invalid fuel: '{s}'"
       | none => pure 10000
 
+    let quietCtx ← Strata.Pipeline.PipelineContext.create (outputMode := .quiet)
     let (core, _diags) ←
-      match ← Strata.pythonAndSpecToLaurel filePath (specDir := ".") |>.toBaseIO with
+      match ← (Strata.pythonAndSpecToLaurel filePath (specDir := ".")).run quietCtx |>.toBaseIO with
       | .ok laurel =>
         if let some dir := keepDir then
           IO.FS.createDirAll dir
@@ -1384,7 +1390,10 @@ def pyInterpretCommand : Command where
         match ← Strata.translateCombinedLaurel laurel with
         | (some core, diags) => pure (core, diags)
         | (none, diags) => exitFailure s!"Laurel to Core translation failed: {diags}"
-      | .error msg => exitFailure (toString msg)
+      | .error () =>
+        let msgs ← quietCtx.getMessages
+        let detail := match msgs.back? with | some m => m.message | none => "Pipeline aborted"
+        exitFailure detail
     if let some dir := keepDir then
       IO.FS.writeFile (dir ++ "/core.st") (toString (Std.format core))
     let core ← match Core.typeCheck Core.VerifyOptions.quiet core
@@ -1448,7 +1457,7 @@ private def printFlag (indent : Nat) (flag : Flag) : IO Unit := do
     IO.println s!"{pad}--{flag.name}  {flag.help}"
 
 /-- Print help for all command groups. -/
-def printGlobalHelp (groups : List CommandGroup := commandGroups) : IO Unit := do
+private def printGlobalHelp (groups : List CommandGroup := commandGroups) : IO Unit := do
   IO.println "Usage: strata <command> [flags]...\n"
   IO.println "Command-line utilities for working with Strata.\n"
   for group in groups do
@@ -1472,7 +1481,7 @@ def printGlobalHelp (groups : List CommandGroup := commandGroups) : IO Unit := d
       IO.println ""
 
 /-- Print help for a single command. -/
-def printCommandHelp (cmd : Command) : IO Unit := do
+private def printCommandHelp (cmd : Command) : IO Unit := do
   let cmdLine := cmd.args.foldl (init := s!"strata {cmd.name}") fun s a => s!"{s} <{a}>"
   let flagSummary := cmd.flags.foldl (init := "") fun s f =>
     match f.takesArg with
@@ -1487,7 +1496,7 @@ def printCommandHelp (cmd : Command) : IO Unit := do
 
 /-- Parse interleaved flags and positional arguments. Returns the collected
     positional arguments and parsed flags. -/
-def parseArgs (cmdName : String)
+private def parseArgs (cmdName : String)
     (flagMap : Std.HashMap String Flag)
     (acc : Array String) (pflags : ParsedFlags)
     (cmdArgs : List String) : IO (Array String × ParsedFlags) := do

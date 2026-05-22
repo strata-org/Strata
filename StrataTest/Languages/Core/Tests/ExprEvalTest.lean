@@ -60,6 +60,7 @@ Check whether concrete evaluation of e matches the SMT encoding of e.
 Returns false if e did not reduce to a constant.
 -/
 def checkValid (e:LExpr CoreLParams.mono): IO Bool := do
+  let pctx ← Strata.Pipeline.PipelineContext.create (outputMode := .quiet) (profilePipeline := false)
   let tenv := TEnv.default
   let init_state := LState.init
   let e_fvs := LExpr.freeVars e
@@ -76,7 +77,7 @@ def checkValid (e:LExpr CoreLParams.mono): IO Bool := do
       let ans ← Core.SMT.dischargeObligation
         { Core.VerifyOptions.default with verbose := .quiet }
         e_fvs_typed Imperative.MetaData.empty filename.toString
-        [] smt_term ctx true false (label := "exprEvalTest")
+        [] smt_term ctx true false (label := "exprEvalTest") (pctx := pctx)
       match ans with
       | .ok (.sat _, _, _) => return true
       | _ =>

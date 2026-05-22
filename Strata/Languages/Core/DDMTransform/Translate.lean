@@ -442,8 +442,8 @@ partial def dealiasTypeExpr (p : Program) (te : TypeExpr) : TypeExpr :=
   match te with
   | (.fvar _ idx #[]) =>
     match p.globalContext.kindOf! idx with
-    | .expr te => te
-    | .type [] (.some te) => te
+    | .expr te => dealiasTypeExpr p te
+    | .type [] (.some te) => dealiasTypeExpr p te
     | _ => te
   | _ => te
 
@@ -976,7 +976,6 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
      let x ← translateExpr p bindings xa
      return .mkApp (loc m) fn [mv, i, x]
   -- Seq operations
-  -- TODO: seq_empty is not yet parseable (see Grammar.lean); handle here when added.
   | .fn m q`Core.seq_length, [_atp, sa] =>
      let ety ← translateLMonoTy bindings _atp
      let fn : LExpr Core.CoreLParams.mono :=

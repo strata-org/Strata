@@ -66,7 +66,7 @@ def typeAsStaticCall := r"
 composite Foo { }
 procedure bar() opaque {
   var x: int := Foo()
-//              ^^^^^ error: 'Foo' resolves to composite type, but expected parameter, static procedure, datatype constructor, constant
+//              ^^^^^ error: 'Foo' resolves to composite type, but expected parameter, static procedure, datatype constructor, datatype destructor, constant
 };
 "
 
@@ -96,5 +96,18 @@ composite Foo extends nat { }
 
 #guard_msgs (error, drop all) in
 #eval testInputWithOffset "ExtendConstrained" extendConstrained 90 processResolution
+
+/-! ## Multi-output procedure used in expression position -/
+
+def multiOutputInExpr := r"
+procedure multi(x: int) returns (a: int, b: int) opaque;
+procedure test() opaque {
+  assert multi(1) == 1
+//       ^^^^^^^^ error: Multi-output procedure 'multi' used in expression position
+};
+"
+
+#guard_msgs (error, drop all) in
+#eval testInputWithOffset "MultiOutputInExpr" multiOutputInExpr 100 processResolution
 
 end Laurel
