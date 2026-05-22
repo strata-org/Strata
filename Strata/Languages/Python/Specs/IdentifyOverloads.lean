@@ -7,7 +7,7 @@ module
 
 public import Strata.Languages.Python.OverloadTable
 public import Strata.Languages.Python.PythonDialect
-import Strata.Languages.Python.Specs.ToLaurel
+import Strata.Languages.Core.Factory
 
 /-!
 # Overload Resolution for Python Programs
@@ -29,7 +29,7 @@ open Strata.Python (stmt expr keyword FunctionOverloads OverloadTable PythonIden
 
 /-- State accumulated while walking the AST. -/
 public structure ResolveState where
-  modules  : Std.HashSet String := {}
+  modules  : Std.HashSet ModuleName := {}
   warnings : Array String := #[]
 
 /-- Monad for the overload-resolution walker.
@@ -43,7 +43,7 @@ def warn (msg : String) : ResolveM Unit :=
     { s with warnings := s.warnings.push msg }
 
 /-- Record a module name from a resolved overload. -/
-def recordModule (mod : String) : ResolveM Unit :=
+def recordModule (mod : ModuleName) : ResolveM Unit :=
   modify fun s =>
     { s with modules := s.modules.insert mod }
 

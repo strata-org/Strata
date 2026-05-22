@@ -5,11 +5,13 @@
 -/
 module
 
-public import Strata.Languages.Core.DDMTransform.Grammar
-meta import Strata.DDM.Integration.Lean
+public import Strata.Languages.Core.DDMTransform.Grammar -- shake: keep
+import Strata.DDM.Integration.Lean.HashCommands -- shake: keep
+import Strata.DDM.BuiltinDialects.Init
 
 ---------------------------------------------------------------------
 
+public section
 namespace Strata
 
 ---------------------------------------------------------------------
@@ -163,3 +165,4 @@ op prog (commands : SpacePrefixSepBy Command) : Program =>
 ---------------------------------------------------------------------
 
 end Strata
+end

@@ -5,10 +5,7 @@
 -/
 module
 
-public import Strata.Languages.Laurel.Laurel
-public import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 public import Strata.Languages.Laurel.Resolution
-import Strata.Util.Tactics
 
 public section
 
@@ -24,6 +21,7 @@ namespace Strata.Laurel
 def getCallType (source : Option FileRange) (model : SemanticModel) (callee : Identifier): HighTypeMd :=
   match model.get callee with
     | .datatypeConstructor t _ => ⟨ .UserDefined t, source ⟩
+    | .datatypeDestructor _ fld => fld.type
     | .parameter p => p.type
     | .staticProcedure proc => match proc.outputs with
       | [singleOutput] => singleOutput.type

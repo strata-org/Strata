@@ -7,9 +7,8 @@ module
 
 public import Strata.DL.Imperative.MetaData
 public import Strata.Languages.Core.Expressions
-public import Strata.Languages.Core.Procedure
 import Strata.Util.Tactics
-import Strata.DDM.Util.Decimal
+public import Strata.DDM.Util.Decimal
 
 /-
 Documentation for Laurel can be found in docs/verso/LaurelDoc.lean

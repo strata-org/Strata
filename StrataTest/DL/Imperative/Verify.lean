@@ -3,10 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import StrataTest.DL.Imperative.DDMTranslate
-import StrataTest.DL.Imperative.SMTEncoder
-import Strata.DL.Imperative.SMTUtils
+meta import all StrataTest.DL.Imperative.DDMTranslate
+meta import all StrataTest.DL.Imperative.SMTEncoder
+meta import Strata.DL.Imperative.SMTUtils
+meta import Strata.Pipeline.Messages
+
+meta section
 
 ---------------------------------------------------------------------
 namespace Arith
@@ -27,6 +31,7 @@ def typedVarToSMT (v : String) (ty : Ty) : Except Format (String × Strata.SMT.T
 
 def verify (cmds : Commands) (verbose : Bool) :
   EIO Format (Imperative.VCResults Arith.PureExpr) := do
+  let pctx ← Strata.Pipeline.PipelineContext.create (outputMode := .quiet) (profilePipeline := false)
   match typeCheckAndPartialEval cmds with
   | .error err =>
     .error s!"[Strata.Arith.verify] Error during evaluation!\n\
@@ -56,7 +61,7 @@ def verify (cmds : Commands) (verbose : Bool) :
                -- (FIXME)
                ((Arith.Eval.ProofObligation.freeVars obligation).map (fun v => (v, Arith.Ty.Num)))
                 "cvc5" filename.toString
-                #["--produce-models"] false false true false)
+                #["--produce-models"] false false true false pctx)
         match ans with
         | Except.ok (_, result, estate) =>
            let vcres := { obligation, result, estate }
@@ -97,3 +102,4 @@ end ArithPrograms
 end Strata
 
 ---------------------------------------------------------------------
+end

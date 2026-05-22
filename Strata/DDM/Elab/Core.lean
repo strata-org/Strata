@@ -11,8 +11,8 @@ import Strata.DDM.HNF
 import all Strata.DDM.Util.Array
 import all Strata.DDM.Util.Fin
 import all Strata.DDM.Util.Lean
-import Strata.DDM.Util.Fin
-import Strata.Util.DecideProp
+public import Strata.DDM.Util.Fin
+public import Strata.Util.DecideProp
 
 open Lean (
     Message
@@ -111,6 +111,14 @@ def applyNArgs (tctx : TypingContext) (e : TypeExpr) (n : Nat) := aux #[] e
     if argsLt : args.size < n then
       match tctx.hnf e with
       | .arrow _ a r => aux (args.push a) r
+      -- A tvar already represents an unresolved type — filling remaining
+      -- slots with placeholders is consistent with existing tvar semantics.
+      -- This runs regardless of the `typecheck` flag; downstream unifyTypes
+      -- still catches genuine mismatches when typecheck is on.
+      | .tvar ann _ =>
+        let placeholder := .placeholder ann
+        let tvars := Array.replicate (n - args.size) placeholder
+        .ok (⟨args ++ tvars, by simp [tvars]; omega⟩, placeholder)
       | e => .error (args, e)
     else
       if argsGt : args.size > n then
@@ -142,6 +150,8 @@ structure ElabContext where
   globalContext : GlobalContext
   /-- Flag to indicate we are missing an import (silences some warnings)-/
   missingImport : Bool
+  /-- When false, type inference and unification are skipped during elaboration. -/
+  typecheck : Bool := true
 
 structure ElabState where
   -- Errors found in elaboration.
@@ -1119,7 +1129,14 @@ partial def elabOperation (tctx : TypingContext) (stx : Syntax) : ElabM Tree := 
   if not success then
     return default
   let getKind i := .ofArgDeclKind argDecls[i].kind
+  let typecheck := (← read).typecheck
   let ((args, newCtx), success) ← runChecked <|
+    -- When typecheck is off, skip pre-registration passes. Global context
+    -- is already populated by `computeGlobalContext` at program creation.
+    if !typecheck then do
+      let args ← runSyntaxElaborator (argc := argDecls.size) getKind se tctx stxArgs
+      return (args, resultContext se tctx args)
+    else
     match se.preRegisterTypesScope with
     | some scopeArgLevel =>
       elaborateWithPreRegistrationCore argDecls se tctx loc stxArgs scopeArgLevel
@@ -1155,10 +1172,13 @@ partial def elabSyntaxArg
     (argIdx : Fin argc)
     (trees : Vector (Option Tree) argc)
     : ElabM (Vector (Option Tree) argc) := do
+  let typecheck := (← read).typecheck
   match getKind argIdx with
   | .preType expectedType =>
     let (tree, success) ← runChecked <| elabExpr tctx astx
     if success then
+      if !typecheck then
+        return trees.set argIdx (some tree)
       let expr := tree.info.asExpr!.expr
       let inferredType ← inferType tctx expr
       let dialects := (← read).dialects
@@ -1178,6 +1198,8 @@ partial def elabSyntaxArg
   | .typeExpr expectedType =>
     let (tree, success) ← runChecked <| elabExpr tctx astx
     if success then
+      if !typecheck then
+        return trees.set argIdx (some tree)
       let expr := tree.info.asExpr!.expr
       let inferredType ← inferType tctx expr
       let trees ← unifyTypes isTypeP argIdx
@@ -1246,6 +1268,19 @@ partial def runSyntaxElaborator
       trees ← elabSyntaxArg getKind isTypeP t.resultContext astx ⟨argLevel, argLevelP⟩ trees
     else
       trees ← elabSyntaxArg getKind isTypeP tctx0 astx ⟨argLevel, argLevelP⟩ trees
+  -- Fill unfilled type parameter slots with skip types when type checking is skipped.
+  if !(← read).typecheck then
+    for i in Fin.range argc do
+      if trees[i].isNone ∧ isTypeP i then
+        let loc := SourceRange.none
+        -- Synthesize placeholder type expr.
+        let info : TypeInfo := {
+          loc,
+          inputCtx := tctx0,
+          typeExpr := .placeholder loc,
+          isInferred := true
+        }
+        trees := trees.set i (some (.node (.ofTypeInfo info) #[]))
   return trees.map (·.getD default)
 
 /--
@@ -1778,7 +1813,8 @@ def runElab {α} (action : ElabM α) : DeclM α := do
         metadataDeclMap := s.metadataDeclMap,
         globalContext := s.globalContext,
         inputContext := (←read).inputContext,
-        missingImport := (← read).missingImport
+        missingImport := (← read).missingImport,
+        typecheck := (← read).typecheck
   }
   let errors := (←get).errors
   -- Clear errors from decl

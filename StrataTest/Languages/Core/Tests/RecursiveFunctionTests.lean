@@ -3,8 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core.Verifier
+import Strata.DDM.Integration.Lean.HashCommands
+
+meta section
 
 /-!
 # Recursive Function Integration Tests
@@ -61,10 +65,10 @@ Obligation:
 Label: listLen_terminates_0
 Property: assert
 Assumptions:
-IntList..adtRank_0: forall __q0 : IntList ::  { IntList..adtRank(__q0) }
-  IntList..adtRank(__q0) >= 0
-IntList..adtRank_1: forall __q0 : int :: forall __q1 : IntList ::  { IntList..adtRank(Cons(__q0, __q1)) }
-  IntList..adtRank(__q1) < IntList..adtRank(Cons(__q0, __q1))
+IntList..adtRank_0: forall x : IntList ::  { IntList..adtRank(x) }
+  IntList..adtRank(x) >= 0
+IntList..adtRank_1: forall hd : int :: forall tl : IntList ::  { IntList..adtRank(Cons(hd, tl)) }
+  IntList..adtRank(tl) < IntList..adtRank(Cons(hd, tl))
 Obligation:
 !(IntList..isNil(xs@2)) ==> IntList..adtRank(IntList..tl(xs@2)) < IntList..adtRank(xs@2)
 
@@ -168,10 +172,10 @@ Obligation:
 Label: listLen_terminates_0
 Property: assert
 Assumptions:
-IntList..adtRank_0: forall __q0 : IntList ::  { IntList..adtRank(__q0) }
-  IntList..adtRank(__q0) >= 0
-IntList..adtRank_1: forall __q0 : int :: forall __q1 : IntList ::  { IntList..adtRank(Cons(__q0, __q1)) }
-  IntList..adtRank(__q1) < IntList..adtRank(Cons(__q0, __q1))
+IntList..adtRank_0: forall x : IntList ::  { IntList..adtRank(x) }
+  IntList..adtRank(x) >= 0
+IntList..adtRank_1: forall hd : int :: forall tl : IntList ::  { IntList..adtRank(Cons(hd, tl)) }
+  IntList..adtRank(tl) < IntList..adtRank(Cons(hd, tl))
 Obligation:
 !(IntList..isNil(xs@2)) ==> IntList..adtRank(IntList..tl(xs@2)) < IntList..adtRank(xs@2)
 
@@ -360,10 +364,10 @@ Obligation:
 Label: listLen_terminates_0
 Property: assert
 Assumptions:
-IntList..adtRank_0: forall __q0 : IntList ::  { IntList..adtRank(__q0) }
-  IntList..adtRank(__q0) >= 0
-IntList..adtRank_1: forall __q0 : int :: forall __q1 : IntList ::  { IntList..adtRank(Cons(__q0, __q1)) }
-  IntList..adtRank(__q1) < IntList..adtRank(Cons(__q0, __q1))
+IntList..adtRank_0: forall x : IntList ::  { IntList..adtRank(x) }
+  IntList..adtRank(x) >= 0
+IntList..adtRank_1: forall hd : int :: forall tl : IntList ::  { IntList..adtRank(Cons(hd, tl)) }
+  IntList..adtRank(tl) < IntList..adtRank(Cons(hd, tl))
 Obligation:
 !(IntList..isNil(xs@2)) ==> IntList..adtRank(IntList..tl(xs@2)) < IntList..adtRank(xs@2)
 
@@ -575,3 +579,5 @@ Result: ✅ pass
 #eval verify recPrecondPgm (options := .quiet)
 
 end Strata.RecursiveFunctionTest
+
+end

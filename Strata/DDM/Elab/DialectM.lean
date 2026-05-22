@@ -11,7 +11,6 @@ public import Strata.DDM.Elab.Core
 
 import all Strata.DDM.Util.Array
 import all Strata.DDM.Util.Fin
-import Strata.Util.DecideProp
 
 set_option autoImplicit false
 
@@ -909,6 +908,19 @@ def elabMdCommand : DialectElab := fun tree => do
       metadataDeclMap := s.metadataDeclMap.add dialect decl
     }
 
+def elabSetOptionCommand : DialectElab := fun tree => do
+  let .isTrue _ := checkTreeSize tree 2
+    | logError tree.info.loc "setOptionCommand: unexpected tree size"; return
+  let nameInfo := tree[0].info.asIdent!
+  let valueInfo := tree[1].info.asIdent!
+  match nameInfo.val with
+  | "typecheck" =>
+    match valueInfo.val with
+    | "on" => modifyDialect fun d => { d with typecheck := true }
+    | "off" => modifyDialect fun d => { d with typecheck := false }
+    | _ => logError valueInfo.loc s!"Expected 'on' or 'off' for option 'typecheck'."
+  | _ => logError nameInfo.loc s!"Unknown option '{nameInfo.val}'."
+
 def dialectElabs : Std.HashMap QualifiedIdent DialectElab :=
   Std.HashMap.ofList <|
     [ (q`StrataDDL.importCommand, elabDialectImportCommand),
@@ -917,6 +929,7 @@ def dialectElabs : Std.HashMap QualifiedIdent DialectElab :=
       (q`StrataDDL.typeCommand, elabTypeCommand),
       (q`StrataDDL.fnCommand,   elabFnCommand),
       (q`StrataDDL.mdCommand,   elabMdCommand),
+      (q`StrataDDL.setOptionCommand, elabSetOptionCommand),
     ]
 
 partial def runDialectCommand (leanEnv : Lean.Environment) : DialectM Bool := do

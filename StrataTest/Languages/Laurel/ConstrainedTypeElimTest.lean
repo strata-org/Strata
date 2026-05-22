@@ -3,18 +3,20 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 /-
 Tests that the constrained type elimination pass correctly transforms
 Laurel programs by comparing the output against expected results.
 -/
 
-import Strata.DDM.Elab
-import Strata.DDM.BuiltinDialects.Init
-import Strata.Languages.Laurel.Grammar.LaurelGrammar
-import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
-import Strata.Languages.Laurel.ConstrainedTypeElim
-import Strata.Languages.Laurel.Resolution
+meta import Strata.DDM.Elab
+meta import Strata.DDM.BuiltinDialects.Init
+meta import Strata.Languages.Laurel.Grammar
+meta import Strata.Languages.Laurel.ConstrainedTypeElim
+meta import Strata.Languages.Laurel.Resolution
+
+meta section
 
 open Strata
 open Strata.Elab (parseStrataProgramFromDialect)
@@ -52,6 +54,7 @@ procedure test(n: int)
   ensures nat$constraint(r)
 { assert r >= 0; var y: int := n; assert nat$constraint(y); return y };
 procedure $witness_nat()
+  opaque
 { var $witness: int := 0; assert nat$constraint($witness) };
 -/
 #guard_msgs in
@@ -80,6 +83,7 @@ info: function pos$constraint(v: int): bool
 procedure test(b: bool)
 { if b then { var x: int := 1; assert pos$constraint(x) }; { var x: int := -5; x := -10 } };
 procedure $witness_pos()
+  opaque
 { var $witness: int := 1; assert pos$constraint($witness) };
 -/
 #guard_msgs in
@@ -104,6 +108,7 @@ info: function posint$constraint(x: int): bool
 procedure f()
 { var x: int; assume posint$constraint(x); assert x == 1 };
 procedure $witness_posint()
+  opaque
 { var $witness: int := 1; assert posint$constraint($witness) };
 -/
 #guard_msgs in
@@ -113,3 +118,5 @@ procedure $witness_posint()
     IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
 
 end Laurel
+end Strata
+end

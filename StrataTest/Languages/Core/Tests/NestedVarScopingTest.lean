@@ -3,9 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Core
-import Strata.Languages.Core.DDMTransform.Translate
+meta import Strata.Languages.Core.Core
+meta import Strata.Languages.Core.DDMTransform.Translate
+import Strata.DDM.Integration.Lean.HashCommands
+
+meta section
 
 namespace Strata
 
@@ -139,3 +143,7 @@ procedure test ()
 -/
 #guard_msgs in
 #eval (Std.format (Core.typeCheck .default (translatePgm issue445Pgm).stripMetaData))
+
+end Strata
+
+end

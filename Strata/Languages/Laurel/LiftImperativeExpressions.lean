@@ -5,12 +5,9 @@
 -/
 module
 
-public import Strata.Languages.Laurel.Laurel
-public import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
-public import Strata.Languages.Laurel.LaurelTypes
-public import Strata.Languages.Core.Verifier
-public import Strata.DL.Util.Map
 import Strata.Util.Tactics
+public import Strata.Languages.Laurel.Resolution
+import Strata.Languages.Laurel.LaurelTypes
 
 namespace Strata
 namespace Laurel
@@ -169,6 +166,24 @@ def containsAssignment (expr : StmtExprMd) : Bool :=
   | .IfThenElse cond th el =>
       containsAssignment cond || containsAssignment th ||
       match el with | some e => containsAssignment e | none => false
+  | _ => false
+  termination_by expr
+  decreasing_by
+    all_goals ((try cases x); simp_all; try term_by_mem)
+
+/-- Like containsAssignment but does NOT recurse into Blocks (treats them as opaque).
+    Used by assert/assume handlers to allow generated Block wrappers through. -/
+def containsBareAssignment (expr : StmtExprMd) : Bool :=
+  match expr with
+  | AstNode.mk val _ =>
+  match val with
+  | .Assign .. => true
+  | .StaticCall _ args => args.attach.any (fun x => containsBareAssignment x.val)
+  | .PrimitiveOp _ args => args.attach.any (fun x => containsBareAssignment x.val)
+  | .Block _ _ => false
+  | .IfThenElse cond th el =>
+      containsBareAssignment cond || containsBareAssignment th ||
+      match el with | some e => containsBareAssignment e | none => false
   | _ => false
   termination_by expr
   decreasing_by
@@ -345,7 +360,30 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
 
   | .Block stmts labelOption =>
       let newStmts := (← stmts.reverse.mapM transformExpr).reverse
-      return ⟨ .Block (← onlyKeepSideEffectStmtsAndLast newStmts) labelOption, source⟩
+      -- Flatten generated multi-output call wrappers BEFORE onlyKeepSideEffectStmtsAndLast
+      -- which would drop the multi-target assign. Pattern: [VarDecl, MultiAssign, VarRef].
+      match newStmts with
+      | [decl, assign, last] =>
+        match decl.val, assign.val with
+        | .Assign [t] _, .Assign targets _ =>
+          match t.val with
+          | .Declare _ =>
+            if targets.length ≥ 2 then
+              prepend assign
+              prepend decl
+              return last
+            else
+              let filtered ← onlyKeepSideEffectStmtsAndLast newStmts
+              return ⟨ .Block filtered labelOption, source⟩
+          | _ =>
+            let filtered ← onlyKeepSideEffectStmtsAndLast newStmts
+            return ⟨ .Block filtered labelOption, source⟩
+        | _, _ =>
+          let filtered ← onlyKeepSideEffectStmtsAndLast newStmts
+          return ⟨ .Block filtered labelOption, source⟩
+      | _ =>
+        let filtered ← onlyKeepSideEffectStmtsAndLast newStmts
+        return ⟨ .Block filtered labelOption, source⟩
 
   | .Var (.Declare param) =>
       -- If the substitution map has an entry for this variable, it was
@@ -372,9 +410,11 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
   | AstNode.mk val source =>
   match val with
   | .Assert cond =>
-      -- Do not transform assert conditions with assignments — they must be rejected.
-      -- But nondeterministic holes and imperative calls need to be lifted.
-      if !containsAssignment cond.condition then
+      -- Do not transform assert conditions with bare assignments — they are
+      -- semantic errors that should be rejected downstream.
+      -- But Blocks with assignments (generated multi-output call wrappers)
+      -- are handled by the Block case in transformExpr above.
+      if !containsBareAssignment cond.condition then
         let seqCond ← transformExpr cond.condition
         let prepends ← takePrepends
         modify fun s => { s with subst := [] }
@@ -383,9 +423,7 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
         return [stmt]
 
   | .Assume cond =>
-      -- Do not transform assume conditions with assignments — they must be rejected.
-      -- But nondeterministic holes and imperative calls need to be lifted.
-      if !containsAssignment cond then
+      if !containsBareAssignment cond then
         let seqCond ← transformExpr cond
         let prepends ← takePrepends
         modify fun s => { s with subst := [] }

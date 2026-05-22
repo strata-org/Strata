@@ -3,11 +3,16 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.B3.Verifier
-import Strata.Languages.B3.DDMTransform.ParseCST
-import Strata.Languages.B3.DDMTransform.Conversion
-import Strata.DL.SMT.Solver
+import Strata.DDM.Format
+import Strata.DDM.Integration.Lean.HashCommands
+meta import Strata.Languages.B3.Verifier
+meta import Strata.Languages.B3.DDMTransform.ParseCST
+meta import Strata.Languages.B3.DDMTransform.Conversion
+meta import Strata.DL.SMT.Solver
+
+meta section
 
 /-!
 # B3 Verifier Integration Tests
@@ -542,3 +547,4 @@ procedure test_all_expressions() {
 }
 #end
 end B3.Verifier.Tests
+end

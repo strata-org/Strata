@@ -3,9 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.SMTEncoder
-import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core.SMTEncoder
+meta import Strata.Languages.Core.Verifier
+import Strata.DDM.Integration.Lean.HashCommands
+
+meta section
 
 /-! ## Tests for SMTEncoder -/
 
@@ -298,6 +302,7 @@ end ArrayTheory
 /-- info: (["c"], true) -/
 #guard_msgs in
 #eval show IO _ from do
+  let pctx ← Strata.Pipeline.PipelineContext.create (outputMode := .quiet) (profilePipeline := false)
   -- Non-nullary UF: f(x : Int) : Int — should be excluded from ids
   let uf_f := UF.mk "f" [TermVar.mk "x" TermType.int] TermType.int
   -- Nullary UF: c : Int — should be included in ids
@@ -310,7 +315,8 @@ end ArrayTheory
   let ((ids, _estate), _) ←
     Strata.SMT.SolverM.run solver
       (Strata.SMT.Encoder.encodeCore ctx (pure ()) [] obligationTerm md
-        (satisfiabilityCheck := false) (validityCheck := true) (label := "test"))
+        (satisfiabilityCheck := false) (validityCheck := true) (label := "test")
+        (pctx := pctx))
   -- ids should contain "c" but not "f"
   let hasF := ids.any (· == "f")
   return (ids, !hasF)
@@ -326,6 +332,7 @@ info: (set-logic ALL)
 -/
 #guard_msgs in
 #eval show IO _ from do
+  let pctx ← Strata.Pipeline.PipelineContext.create (outputMode := .quiet) (profilePipeline := false)
   let ctx : SMT.Context := SMT.Context.default
   let obligationTerm := Term.prim (.bool true)
   let md : Imperative.MetaData Core.Expression := #[]
@@ -334,7 +341,8 @@ info: (set-logic ALL)
   let _ ←
     Strata.SMT.SolverM.run solver
       (Strata.SMT.Encoder.encodeCore ctx (pure ()) [] obligationTerm md
-        (satisfiabilityCheck := false) (validityCheck := true) (label := "assert_bounds_check"))
+        (satisfiabilityCheck := false) (validityCheck := true) (label := "assert_bounds_check")
+        (pctx := pctx))
   let contents ← b.get
   let smt :=
     if h : contents.data.IsValidUTF8
@@ -353,6 +361,7 @@ info: (set-logic ALL)
 -/
 #guard_msgs in
 #eval show IO _ from do
+  let pctx ← Strata.Pipeline.PipelineContext.create (outputMode := .quiet) (profilePipeline := false)
   let ctx : SMT.Context := SMT.Context.default
   let obligationTerm := Term.prim (.bool true)
   let md : Imperative.MetaData Core.Expression :=
@@ -362,7 +371,8 @@ info: (set-logic ALL)
   let _ ←
     Strata.SMT.SolverM.run solver
       (Strata.SMT.Encoder.encodeCore ctx (pure ()) [] obligationTerm md
-        (satisfiabilityCheck := false) (validityCheck := true) (label := "assert_bounds_check"))
+        (satisfiabilityCheck := false) (validityCheck := true) (label := "assert_bounds_check")
+        (pctx := pctx))
   let contents ← b.get
   let smt :=
     if h : contents.data.IsValidUTF8
@@ -386,6 +396,7 @@ info: (set-logic ALL)
     and check flags, and return the resulting SMT-LIB text. -/
 private def captureEncodeCore (md : Imperative.MetaData Core.Expression)
     (satCheck validityCheck : Bool) (label : String := "test") : IO String := do
+  let pctx ← Strata.Pipeline.PipelineContext.create (outputMode := .quiet) (profilePipeline := false)
   let ctx : SMT.Context := SMT.Context.default
   let obligationTerm := Term.prim (.bool true)
   let b ← IO.mkRef { : IO.FS.Stream.Buffer }
@@ -393,7 +404,8 @@ private def captureEncodeCore (md : Imperative.MetaData Core.Expression)
   let _ ←
     Strata.SMT.SolverM.run solver
       (Strata.SMT.Encoder.encodeCore ctx (pure ()) [] obligationTerm md
-        (satisfiabilityCheck := satCheck) (validityCheck := validityCheck) (label := label))
+        (satisfiabilityCheck := satCheck) (validityCheck := validityCheck) (label := label)
+        (pctx := pctx))
   let contents ← b.get
   return if h : contents.data.IsValidUTF8
          then String.fromUTF8 contents.data h
@@ -540,3 +552,5 @@ Result: ✅ pass
 #eval! verify quotedStringProgram (options := Core.VerifyOptions.quiet)
 
 end Strata
+
+end

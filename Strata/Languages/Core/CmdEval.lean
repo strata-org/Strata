@@ -5,10 +5,7 @@
 -/
 module
 
-public import Strata.Languages.Core.Expressions
 public import Strata.Languages.Core.Env
-public import Strata.DL.Imperative.EvalContext
-public import Strata.DL.Imperative.CmdEval
 
 public section
 

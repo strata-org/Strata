@@ -3,9 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
-import Strata.Languages.Core.StatementEval
+meta import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core.ProcedureEval
+meta import Strata.Languages.Core.StatementEval
+import Strata.DDM.Integration.Lean.HashCommands
+
+meta section
 
 namespace Core
 
@@ -85,12 +90,16 @@ func update : ∀[k, v]. ((m : (Map k v)) (i : k) (x : v)) → (Map k v);
 func Sequence.length : ∀[a]. ((s : (Sequence a))) → int;
 func Sequence.empty : ∀[a]. () → (Sequence a);
 func Sequence.append : ∀[a]. ((s1 : (Sequence a)) (s2 : (Sequence a))) → (Sequence a);
-func Sequence.select : ∀[a]. ((s : (Sequence a)) (i : int)) → a;
+func Sequence.select : ∀[a]. ((s : (Sequence a)) (i : int)) → a
+  requires 0 <= i && i < Sequence.length(s);
 func Sequence.build : ∀[a]. ((s : (Sequence a)) (v : a)) → (Sequence a);
-func Sequence.update : ∀[a]. ((s : (Sequence a)) (i : int) (v : a)) → (Sequence a);
+func Sequence.update : ∀[a]. ((s : (Sequence a)) (i : int) (v : a)) → (Sequence a)
+  requires 0 <= i && i < Sequence.length(s);
 func Sequence.contains : ∀[a]. ((s : (Sequence a)) (v : a)) → bool;
-func Sequence.take : ∀[a]. ((s : (Sequence a)) (n : int)) → (Sequence a);
-func Sequence.drop : ∀[a]. ((s : (Sequence a)) (n : int)) → (Sequence a);
+func Sequence.take : ∀[a]. ((s : (Sequence a)) (n : int)) → (Sequence a)
+  requires 0 <= n && n <= Sequence.length(s);
+func Sequence.drop : ∀[a]. ((s : (Sequence a)) (n : int)) → (Sequence a)
+  requires 0 <= n && n <= Sequence.length(s);
 func Triggers.empty :  () → Triggers;
 func Triggers.addGroup :  ((g : TriggerGroup) (t : Triggers)) → Triggers;
 func TriggerGroup.empty :  () → TriggerGroup;
@@ -268,115 +277,115 @@ func Bv64.UAddOverflow :  ((x : bv64) (y : bv64)) → bool;
 func Bv64.USubOverflow :  ((x : bv64) (y : bv64)) → bool;
 func Bv64.UMulOverflow :  ((x : bv64) (y : bv64)) → bool;
 func Bv1.SafeAdd :  ((x : bv1) (y : bv1)) → bv1
-  requires !(x <= y);
+  requires !(Bv.SAddOverflow(x, y));
 func Bv1.SafeSub :  ((x : bv1) (y : bv1)) → bv1
-  requires !(x <= y);
+  requires !(Bv.SSubOverflow(x, y));
 func Bv1.SafeMul :  ((x : bv1) (y : bv1)) → bv1
-  requires !(x <= y);
+  requires !(Bv.SMulOverflow(x, y));
 func Bv1.SafeNeg :  ((x : bv1)) → bv1
-  requires !(!x);
+  requires !(Bv.SNegOverflow(x));
 func Bv1.SafeUAdd :  ((x : bv1) (y : bv1)) → bv1
-  requires !(x <= y);
+  requires !(Bv.UAddOverflow(x, y));
 func Bv1.SafeUSub :  ((x : bv1) (y : bv1)) → bv1
-  requires !(x <= y);
+  requires !(Bv.USubOverflow(x, y));
 func Bv1.SafeUMul :  ((x : bv1) (y : bv1)) → bv1
-  requires !(x <= y);
+  requires !(Bv.UMulOverflow(x, y));
 func Bv1.SafeUNeg :  ((x : bv1)) → bv1
-  requires !(!x);
+  requires !(Bv.UNegOverflow(x));
 func Bv8.SafeAdd :  ((x : bv8) (y : bv8)) → bv8
-  requires !(x <= y);
+  requires !(Bv.SAddOverflow(x, y));
 func Bv8.SafeSub :  ((x : bv8) (y : bv8)) → bv8
-  requires !(x <= y);
+  requires !(Bv.SSubOverflow(x, y));
 func Bv8.SafeMul :  ((x : bv8) (y : bv8)) → bv8
-  requires !(x <= y);
+  requires !(Bv.SMulOverflow(x, y));
 func Bv8.SafeNeg :  ((x : bv8)) → bv8
-  requires !(!x);
+  requires !(Bv.SNegOverflow(x));
 func Bv8.SafeUAdd :  ((x : bv8) (y : bv8)) → bv8
-  requires !(x <= y);
+  requires !(Bv.UAddOverflow(x, y));
 func Bv8.SafeUSub :  ((x : bv8) (y : bv8)) → bv8
-  requires !(x <= y);
+  requires !(Bv.USubOverflow(x, y));
 func Bv8.SafeUMul :  ((x : bv8) (y : bv8)) → bv8
-  requires !(x <= y);
+  requires !(Bv.UMulOverflow(x, y));
 func Bv8.SafeUNeg :  ((x : bv8)) → bv8
-  requires !(!x);
+  requires !(Bv.UNegOverflow(x));
 func Bv16.SafeAdd :  ((x : bv16) (y : bv16)) → bv16
-  requires !(x <= y);
+  requires !(Bv.SAddOverflow(x, y));
 func Bv16.SafeSub :  ((x : bv16) (y : bv16)) → bv16
-  requires !(x <= y);
+  requires !(Bv.SSubOverflow(x, y));
 func Bv16.SafeMul :  ((x : bv16) (y : bv16)) → bv16
-  requires !(x <= y);
+  requires !(Bv.SMulOverflow(x, y));
 func Bv16.SafeNeg :  ((x : bv16)) → bv16
-  requires !(!x);
+  requires !(Bv.SNegOverflow(x));
 func Bv16.SafeUAdd :  ((x : bv16) (y : bv16)) → bv16
-  requires !(x <= y);
+  requires !(Bv.UAddOverflow(x, y));
 func Bv16.SafeUSub :  ((x : bv16) (y : bv16)) → bv16
-  requires !(x <= y);
+  requires !(Bv.USubOverflow(x, y));
 func Bv16.SafeUMul :  ((x : bv16) (y : bv16)) → bv16
-  requires !(x <= y);
+  requires !(Bv.UMulOverflow(x, y));
 func Bv16.SafeUNeg :  ((x : bv16)) → bv16
-  requires !(!x);
+  requires !(Bv.UNegOverflow(x));
 func Bv32.SafeAdd :  ((x : bv32) (y : bv32)) → bv32
-  requires !(x <= y);
+  requires !(Bv.SAddOverflow(x, y));
 func Bv32.SafeSub :  ((x : bv32) (y : bv32)) → bv32
-  requires !(x <= y);
+  requires !(Bv.SSubOverflow(x, y));
 func Bv32.SafeMul :  ((x : bv32) (y : bv32)) → bv32
-  requires !(x <= y);
+  requires !(Bv.SMulOverflow(x, y));
 func Bv32.SafeNeg :  ((x : bv32)) → bv32
-  requires !(!x);
+  requires !(Bv.SNegOverflow(x));
 func Bv32.SafeUAdd :  ((x : bv32) (y : bv32)) → bv32
-  requires !(x <= y);
+  requires !(Bv.UAddOverflow(x, y));
 func Bv32.SafeUSub :  ((x : bv32) (y : bv32)) → bv32
-  requires !(x <= y);
+  requires !(Bv.USubOverflow(x, y));
 func Bv32.SafeUMul :  ((x : bv32) (y : bv32)) → bv32
-  requires !(x <= y);
+  requires !(Bv.UMulOverflow(x, y));
 func Bv32.SafeUNeg :  ((x : bv32)) → bv32
-  requires !(!x);
+  requires !(Bv.UNegOverflow(x));
 func Bv64.SafeAdd :  ((x : bv64) (y : bv64)) → bv64
-  requires !(x <= y);
+  requires !(Bv.SAddOverflow(x, y));
 func Bv64.SafeSub :  ((x : bv64) (y : bv64)) → bv64
-  requires !(x <= y);
+  requires !(Bv.SSubOverflow(x, y));
 func Bv64.SafeMul :  ((x : bv64) (y : bv64)) → bv64
-  requires !(x <= y);
+  requires !(Bv.SMulOverflow(x, y));
 func Bv64.SafeNeg :  ((x : bv64)) → bv64
-  requires !(!x);
+  requires !(Bv.SNegOverflow(x));
 func Bv64.SafeUAdd :  ((x : bv64) (y : bv64)) → bv64
-  requires !(x <= y);
+  requires !(Bv.UAddOverflow(x, y));
 func Bv64.SafeUSub :  ((x : bv64) (y : bv64)) → bv64
-  requires !(x <= y);
+  requires !(Bv.USubOverflow(x, y));
 func Bv64.SafeUMul :  ((x : bv64) (y : bv64)) → bv64
-  requires !(x <= y);
+  requires !(Bv.UMulOverflow(x, y));
 func Bv64.SafeUNeg :  ((x : bv64)) → bv64
-  requires !(!x);
+  requires !(Bv.UNegOverflow(x));
 func Bv1.SafeSDiv :  ((x : bv1) (y : bv1)) → bv1
   requires !(y == bv{1}(0))
-  requires !(x <= y);
+  requires !(Bv.SDivOverflow(x, y));
 func Bv1.SafeSMod :  ((x : bv1) (y : bv1)) → bv1
   requires !(y == bv{1}(0))
-  requires !(x <= y);
+  requires !(Bv.SDivOverflow(x, y));
 func Bv8.SafeSDiv :  ((x : bv8) (y : bv8)) → bv8
   requires !(y == bv{8}(0))
-  requires !(x <= y);
+  requires !(Bv.SDivOverflow(x, y));
 func Bv8.SafeSMod :  ((x : bv8) (y : bv8)) → bv8
   requires !(y == bv{8}(0))
-  requires !(x <= y);
+  requires !(Bv.SDivOverflow(x, y));
 func Bv16.SafeSDiv :  ((x : bv16) (y : bv16)) → bv16
   requires !(y == bv{16}(0))
-  requires !(x <= y);
+  requires !(Bv.SDivOverflow(x, y));
 func Bv16.SafeSMod :  ((x : bv16) (y : bv16)) → bv16
   requires !(y == bv{16}(0))
-  requires !(x <= y);
+  requires !(Bv.SDivOverflow(x, y));
 func Bv32.SafeSDiv :  ((x : bv32) (y : bv32)) → bv32
   requires !(y == bv{32}(0))
-  requires !(x <= y);
+  requires !(Bv.SDivOverflow(x, y));
 func Bv32.SafeSMod :  ((x : bv32) (y : bv32)) → bv32
   requires !(y == bv{32}(0))
-  requires !(x <= y);
+  requires !(Bv.SDivOverflow(x, y));
 func Bv64.SafeSDiv :  ((x : bv64) (y : bv64)) → bv64
   requires !(y == bv{64}(0))
-  requires !(x <= y);
+  requires !(Bv.SDivOverflow(x, y));
 func Bv64.SafeSMod :  ((x : bv64) (y : bv64)) → bv64
   requires !(y == bv{64}(0))
-  requires !(x <= y);
+  requires !(Bv.SDivOverflow(x, y));
 
 
 Datatypes:
@@ -396,7 +405,7 @@ Proof Obligation:
 -/
 #guard_msgs in
 #eval do let E := Env.init
-         let (E, _stats) := eval E
+         let (E, _stats) := Core.Procedure.eval E
               { header := {name := "P",
                            typeArgs := [],
                            inputs := [("x", mty[int])],
@@ -614,3 +623,5 @@ end ConcreteInterpretation
 ---------------------------------------------------------------------
 
 end Core
+
+end

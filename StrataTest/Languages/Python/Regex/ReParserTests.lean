@@ -3,8 +3,11 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Python.Regex.ReParser
+meta import Strata.Languages.Python.Regex.ReParser
+
+meta section
 
 /-! ## Tests for Python Regex ReParser -/
 
@@ -494,3 +497,4 @@ info: Except.error (Strata.Python.ParseError.patternError "Unbalanced parenthesi
 end Test.parseTop
 
 end Strata.Python
+end

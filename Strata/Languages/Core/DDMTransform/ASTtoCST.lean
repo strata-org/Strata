@@ -5,7 +5,6 @@
 -/
 module
 
-public import Strata.Languages.Core.DDMTransform.FormatCore
 public import Strata.Languages.Core.Program
 
 public section
@@ -195,7 +194,9 @@ def funcToCST {M} [Inhabited M]
     -- Convert preconditions
     let preconds ← precondsToSpecElts func.preconditions
     let bodyExpr ← lexprToExpr body 0
-    let inline? : Ann (Option (Inline M)) M := ⟨default, none⟩
+    let inline? : Ann (Option (Inline M)) M :=
+      if func.attr.any (· == .inline) then ⟨default, some (.inline default)⟩
+      else ⟨default, none⟩
     pure (.command_fndef default name typeArgs b r preconds bodyExpr inline?)
   modify ToCSTContext.popScope
   -- Register function name as free variable.

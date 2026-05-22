@@ -12,9 +12,9 @@ import Strata.DDM.Integration.Lean
 import Strata.DDM.Ion
 
 /- Dialect Library -/
-import Strata.DL.SMT.SMT
+import Strata.DL.SMT
 import Strata.DL.Lambda.Lambda
-import Strata.DL.Imperative.Imperative
+import Strata.DL.Imperative
 
 /- Utilities -/
 import Strata.Util.NameProofs
@@ -25,6 +25,8 @@ import Strata.Languages.Core.FactoryWF
 import Strata.Languages.Core.SeqModel
 import Strata.Languages.Core.StatementSemantics
 import Strata.Languages.Core.SarifOutput
+
+import Strata.Languages.Laurel.Grammar
 import Strata.Languages.Laurel.LaurelCompilationPipeline
 
 /- Code Transforms -/
@@ -68,4 +70,31 @@ import Strata.MetaVerifier
 /- Simple API -/
 import Strata.SimpleAPI
 
--- noimport: Strata.Util.Random -- deletion candidate: nothing imports this module
+/- Pipeline -/
+import Strata.Pipeline.PyAnalyzeLaurel
+
+ -- deletion candidates: nothing imports these modules:
+
+-- noimport:
+import Strata.DL.Imperative.CFGSemantics
+import Strata.DL.Imperative.SemanticsProps
+import Strata.DL.Lambda.Denote.Assumptions
+import Strata.DL.Lambda.Denote.CallOfLFuncDenote
+import Strata.DL.Lambda.Denote.LExprDenote
+import Strata.DL.Lambda.Denote.LExprDenoteConstrs
+import Strata.DL.Lambda.Denote.LExprDenoteEq
+import Strata.DL.Lambda.Denote.LExprDenoteProps
+import Strata.DL.Lambda.Denote.LExprDenoteSubst
+import Strata.DL.Lambda.Denote.LExprDenoteTySubst
+import Strata.DL.Lambda.Denote.LExprSemanticsConsistent
+import Strata.DL.Lambda.LExprTypeSpec
+import Strata.DL.Lambda.MetaData
+import Strata.DL.Lambda.Reflect
+import Strata.DL.Lambda.Semantics
+import Strata.DL.Lambda.TypeFactoryWF
+import Strata.DL.Util.HList
+import Strata.Languages.Core.ProgramWF
+import Strata.Languages.Core.StatementWF
+import Strata.Languages.Dyn.DDMTransform.Parse
+import Strata.Languages.Dyn.DDMTransform.Translate
+import Strata.Util.Random
