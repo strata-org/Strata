@@ -7,6 +7,7 @@ module
 
 public import Strata.Backends.CBMC.GOTO.SteppingBridgesDischarge
 public import Strata.Backends.CBMC.GOTO.WellFormedTranslationProps
+public import Strata.Backends.CBMC.GOTO.InstructionLookups
 public import Strata.Languages.Core.Procedure
 
 public section
@@ -231,5 +232,143 @@ theorem wellFormedTranslation_to_translatorBridgeHyps
   decl_empty_value := h_decl_empty_value
   assign_value_corr := h_assign_value_corr
   assign_nondet_value_corr := h_assign_nondet_value_corr
+
+/-! ## v2: lookup-field decomposition via `InstructionLookups`
+
+Round-7c introduces an alternative bridge that consumes the
+`InstructionLookups` lemmas to refactor the three lookup-field
+caller passthroughs into:
+
+* per-PC structural witnesses (`provenance`, mechanically discharable
+  from `wf` + strengthened `CmdEmittedAt` + a future CFG-PC inversion),
+* per-firing trace-level witnesses (`pinned`, irreducibly caller-side
+  bisimulation invariants).
+
+The total hypothesis count goes up (5 instead of 3), but each new
+hypothesis is *strictly smaller* than the original lookup field it
+replaces: each new hypothesis quantifies over a single PC (no `x`
+universal in the conclusion) plus a single firing's data, and produces
+either a pure structural fact about the GOTO code or an equality
+linking the firing's `x` to the source-cmd's `v_src`.
+
+Future rounds can close `*_provenance` from `wf` via a CFG-PC
+inversion lemma (~100-200 LoC). The `*_pinned` hypotheses are
+trace-level and are typically discharged at the simulation
+consumer's level (e.g., the `coreCFGToGotoTransform_forward_simulation`
+chain in `CoreCFGToGOTOConcrete.lean`). -/
+
+theorem wellFormedTranslation_to_translatorBridgeHyps_v2
+    (cfg : Core.DetCFG) (pgm : Program)
+    (δ : Imperative.SemanticEval Core.Expression)
+    (δ_goto : SemanticEvalGoto Core.Expression)
+    (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
+    (wf : WellFormedTranslation cfg pgm δ δ_goto δ_goto_bool)
+    (nameMap : Core.Expression.Ident → String)
+    (h_inj : Function.Injective nameMap)
+    (eval : SemanticsTautschnig.ExprEval)
+    (h_goto_target_in_range :
+      ∀ {pc target : Nat} {instr : Instruction},
+        pgm.instrAt pc = some instr → instr.type = .GOTO →
+        instr.target = some target →
+        ∃ instr_target, pgm.instrAt target = some instr_target)
+    (h_no_dead :
+      ∀ {pc : Nat} {instr : Instruction},
+        pgm.instrAt pc = some instr → instr.type ≠ .DEAD)
+    -- Provenance hypotheses (mechanically from wf + strengthened CmdEmittedAt
+    -- via a CFG-PC inversion; deferred to a follow-up round).
+    (h_decl_provenance :
+      ∀ {pc : Nat} {instr : Instruction},
+        pgm.instrAt pc = some instr → instr.type = .DECL →
+        ∃ v_src gty, instr.code = Code.decl (Expr.symbol (nameMap v_src) gty))
+    (h_assn_provenance :
+      ∀ {pc : Nat} {instr : Instruction},
+        pgm.instrAt pc = some instr → instr.type = .ASSIGN →
+        ∃ v_src gty rhs_emitted,
+          instr.code = Code.assign
+            (Expr.symbol (nameMap v_src) gty) rhs_emitted)
+    (h_assn_nondet_provenance :
+      ∀ {pc : Nat} {instr : Instruction},
+        pgm.instrAt pc = some instr → instr.type = .ASSIGN →
+        ∃ v_src gty rhs_emitted,
+          instr.code = Code.assign
+            (Expr.symbol (nameMap v_src) gty) rhs_emitted ∧
+          rhs_emitted.id = .side_effect .Nondet)
+    -- Trace-level pinning (caller-side; irreducible at this layer).
+    (h_decl_x_pinned :
+      ∀ {pc : Nat} {instr : Instruction}
+        {x : Core.Expression.Ident}
+        {σ σ' : Imperative.SemanticStore Core.Expression}
+        {v : Core.Expression.Expr},
+        pgm.instrAt pc = some instr → instr.type = .DECL →
+        Imperative.InitState Core.Expression σ x v σ' →
+        ∀ v_src gty, instr.code = Code.decl (Expr.symbol (nameMap v_src) gty) →
+        x = v_src)
+    (h_assn_x_pinned :
+      ∀ {pc : Nat} {instr : Instruction}
+        {x : Core.Expression.Ident}
+        {σ σ' : Imperative.SemanticStore Core.Expression}
+        {v_imp : Core.Expression.Expr},
+        pgm.instrAt pc = some instr → instr.type = .ASSIGN →
+        Imperative.UpdateState Core.Expression σ x v_imp σ' →
+        ∀ v_src gty rhs_emitted,
+          instr.code = Code.assign
+            (Expr.symbol (nameMap v_src) gty) rhs_emitted →
+          x = v_src)
+    (h_assn_rhs_pinned :
+      ∀ {pc : Nat} {instr : Instruction}
+        {σ : Imperative.SemanticStore Core.Expression}
+        {rhs_g : Expr} {v_imp : Core.Expression.Expr},
+        pgm.instrAt pc = some instr → instr.type = .ASSIGN →
+        δ_goto σ rhs_g = some v_imp →
+        ∀ v_src gty rhs_emitted,
+          instr.code = Code.assign
+            (Expr.symbol (nameMap v_src) gty) rhs_emitted →
+          rhs_g = rhs_emitted)
+    -- Value-side passthroughs (caller-side; out of scope for this bridge).
+    (h_decl_empty_value :
+      ∀ {pc : Nat} {instr : Instruction} {x : Core.Expression.Ident}
+        {v : Core.Expression.Expr}
+        {σ σ' : Imperative.SemanticStore Core.Expression},
+        pgm.instrAt pc = some instr → instr.type = .DECL →
+        Imperative.InitState Core.Expression σ x v σ' →
+        (SemanticsTautschnig.ValueCorr.toValue v
+          : Option SemanticsTautschnig.Value)
+          = some .vEmpty)
+    (h_assign_value_corr :
+      ∀ {pc : Nat} {instr : Instruction} {x : Core.Expression.Ident}
+        {σ_imp σ_imp' : Imperative.SemanticStore Core.Expression}
+        {σ_goto : SemanticsTautschnig.Store}
+        {rhs_g : Expr} {v_imp : Core.Expression.Expr},
+        pgm.instrAt pc = some instr → instr.type = .ASSIGN →
+        δ_goto σ_imp rhs_g = some v_imp →
+        Imperative.UpdateState Core.Expression σ_imp x v_imp σ_imp' →
+        SemanticsTautschnig.StoreCorr nameMap σ_imp σ_goto →
+        ∃ v_goto,
+          (SemanticsTautschnig.ValueCorr.toValue v_imp
+            : Option SemanticsTautschnig.Value) = some v_goto ∧
+          eval σ_goto rhs_g = some v_goto)
+    (h_assign_nondet_value_corr :
+      ∀ {pc : Nat} {instr : Instruction} {x : Core.Expression.Ident}
+        {σ σ' : Imperative.SemanticStore Core.Expression}
+        {v_imp : Core.Expression.Expr},
+        pgm.instrAt pc = some instr → instr.type = .ASSIGN →
+        Imperative.UpdateState Core.Expression σ x v_imp σ' →
+        ∃ v_goto,
+          (SemanticsTautschnig.ValueCorr.toValue v_imp
+            : Option SemanticsTautschnig.Value)
+            = some v_goto) :
+    TranslatorBridgeHyps pgm nameMap δ_goto eval :=
+  wellFormedTranslation_to_translatorBridgeHyps cfg pgm δ δ_goto δ_goto_bool wf
+    nameMap h_inj eval h_goto_target_in_range h_no_dead
+    -- decl_lookup: discharged via InstructionLookups.
+    (CProverGOTO.InstructionLookups.decl_lookup_of_provenance_and_pinned
+      pgm nameMap h_inj h_decl_provenance h_decl_x_pinned)
+    -- assign_lookup: discharged via InstructionLookups.
+    (CProverGOTO.InstructionLookups.assign_lookup_of_provenance_and_pinned
+      pgm δ_goto nameMap h_inj h_assn_provenance h_assn_x_pinned h_assn_rhs_pinned)
+    -- assign_nondet_lookup: discharged via InstructionLookups.
+    (CProverGOTO.InstructionLookups.assign_nondet_lookup_of_provenance_and_pinned
+      pgm nameMap h_inj h_assn_nondet_provenance h_assn_x_pinned)
+    h_decl_empty_value h_assign_value_corr h_assign_nondet_value_corr
 
 end CProverGOTO.TranslatorBridgeHypsDischarge
