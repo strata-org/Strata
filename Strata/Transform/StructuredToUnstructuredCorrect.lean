@@ -5817,6 +5817,81 @@ private theorem loop_inv_getVars_subset {P : PureExpr}
   refine List.mem_append.mpr (Or.inr ?_)
   exact h
 
+/-- Generic mapM-pointwise lemma: if every step of `mapM f xs` produces a
+`b` whose `Cmd.touchedVars b ⊆ T(a)` for `T : α → List P.Ident`, then every
+ident in `ys.flatMap Cmd.touchedVars` is in `xs.flatMap T`. -/
+private theorem mapM_touchedVars_subset {α : Type} {P : PureExpr}
+    [HasVarsPure P P.Expr]
+    (f : α → LabelGen.StringGenM (Cmd P))
+    (T : α → List P.Ident)
+    (h_step : ∀ (a : α) (gen gen' : StringGenState) (b : Cmd P),
+                f a gen = (b, gen') →
+                ∀ x ∈ Cmd.touchedVars b, x ∈ T a)
+    (xs : List α)
+    (gen gen' : StringGenState) (ys : List (Cmd P))
+    (h_eq : xs.mapM f gen = (ys, gen'))
+    {x : P.Ident}
+    (h_x : x ∈ ys.flatMap Cmd.touchedVars) :
+    x ∈ xs.flatMap T := by
+  induction xs generalizing gen gen' ys with
+  | nil =>
+    rw [List.mapM_nil] at h_eq
+    simp only [pure, StateT.pure] at h_eq
+    have h_ys : ys = [] := (Prod.mk.inj h_eq).1.symm
+    rw [h_ys] at h_x
+    simp [List.flatMap] at h_x
+  | cons hd tl ih =>
+    rw [List.mapM_cons] at h_eq
+    simp only [bind, StateT.bind, pure, StateT.pure] at h_eq
+    generalize h_f : f hd gen = r1 at h_eq
+    obtain ⟨b, gen_mid⟩ := r1
+    simp only at h_eq
+    generalize h_tail : tl.mapM f gen_mid = r2 at h_eq
+    obtain ⟨ys', gen_end⟩ := r2
+    simp only at h_eq
+    have h_ys_eq : ys = b :: ys' := (Prod.mk.inj h_eq).1.symm
+    rw [h_ys_eq] at h_x
+    simp only [List.flatMap_cons, List.mem_append] at h_x
+    rw [List.flatMap_cons, List.mem_append]
+    cases h_x with
+    | inl h_x_in_b =>
+      exact Or.inl (h_step hd gen gen_mid b h_f x h_x_in_b)
+    | inr h_x_in_ys' =>
+      exact Or.inr (ih gen_mid gen_end ys' h_tail h_x_in_ys')
+
+/-- Cmd.touchedVars projection: an `assert` cmd's touchedVars equals the
+expression's getVars (assert reads no-defines/no-modifies). -/
+private theorem Cmd_touchedVars_assert {P : PureExpr} [HasVarsPure P P.Expr]
+    (l : String) (e : P.Expr) (md : MetaData P) :
+    Cmd.touchedVars (HasPassiveCmds.assert (P := P) (CmdT := Cmd P) l e md : Cmd P)
+      = HasVarsPure.getVars e := by
+  show Cmd.getVars (Cmd.assert _ e md) ++
+        Cmd.definedVars (Cmd.assert (P := P) _ e md) ++
+        Cmd.modifiedVars (Cmd.assert (P := P) _ e md) =
+        HasVarsPure.getVars e
+  simp [Cmd.getVars, Cmd.definedVars, Cmd.modifiedVars]
+
+/-- Cmd.touchedVars projection: `init x ty .nondet md`'s touchedVars equals `[x]`. -/
+private theorem Cmd_touchedVars_init_nondet {P : PureExpr} [HasVarsPure P P.Expr]
+    (x : P.Ident) (ty : P.Ty) (md : MetaData P) :
+    Cmd.touchedVars (HasInit.init x ty (ExprOrNondet.nondet) md : Cmd P) = [x] := by
+  show Cmd.getVars (Cmd.init x ty ExprOrNondet.nondet md) ++
+        Cmd.definedVars (Cmd.init x ty ExprOrNondet.nondet md) ++
+        Cmd.modifiedVars (Cmd.init x ty ExprOrNondet.nondet md) =
+        [x]
+  simp [Cmd.getVars, Cmd.definedVars, Cmd.modifiedVars, ExprOrNondet.getVars]
+
+/-- Cmd.touchedVars projection: `assume`'s touchedVars equals expression's getVars. -/
+private theorem Cmd_touchedVars_assume {P : PureExpr} [HasVarsPure P P.Expr]
+    (l : String) (e : P.Expr) (md : MetaData P) :
+    Cmd.touchedVars (HasPassiveCmds.assume (P := P) (CmdT := Cmd P) l e md : Cmd P)
+      = HasVarsPure.getVars e := by
+  show Cmd.getVars (Cmd.assume _ e md) ++
+        Cmd.definedVars (Cmd.assume (P := P) _ e md) ++
+        Cmd.modifiedVars (Cmd.assume (P := P) _ e md) =
+        HasVarsPure.getVars e
+  simp [Cmd.getVars, Cmd.definedVars, Cmd.modifiedVars]
+
 /-- Loop measure expression's getVars is in `.loop`'s touchedVars (when measure is some). -/
 private theorem loop_measure_getVars_subset {P : PureExpr}
     [HasVarsPure P P.Expr]
@@ -6514,43 +6589,155 @@ private theorem stmtsToBlocks_blocks_no_genFuture
           (gen := gen_le) (gen' := gen_b) (entry := bl) (blocks := bbs)
           h_body_eq h_tt_getVars h_mkFvar_getVars_subset h_ident_inj
           h_nil_no_gen h_bss_no_gen
-      -- Each invCmd's touchedVars has source-shape. Build h_invCmds_classifies.
+      -- Each invCmd's touchedVars has source-shape. Use mapM_touchedVars_subset
+      -- to lift to the source-side `is.flatMap getVars`, then apply h_inv_no_gen.
       have h_invCmds_no_gen :
           ∀ x ∈ invCmds.flatMap Cmd.touchedVars, ∀ s : String,
             x = HasIdent.ident (P := P) s → ¬ String.HasUnderscoreDigitSuffix s := by
-        -- invCmds came from is.mapM (fun (srcLabel, i) => assert ... i ...).
-        -- Each invCmd is `assert label i md` for some `(_, i) ∈ is`. Its touchedVars is
-        -- HasVarsPure.getVars i ++ [] ++ [] = i.getVars, which is in `is.flatMap getVars`.
         intro x h_x s heq
-        -- Flat-induct on is/invCmds via h_inv_def.
-        -- Use mapM-extracted relation: invCmds[k] is built from is[k] by a deterministic
-        -- transformation that preserves getVars i = Cmd.touchedVars (assert _ i _).
-        -- We rely on a generic principle:
-        have h_x_in_invCmds : ∃ c ∈ invCmds, x ∈ Cmd.touchedVars c :=
-          List.mem_flatMap.mp h_x
-        obtain ⟨c, h_c_in, h_x_in_c⟩ := h_x_in_invCmds
-        -- Project: the structure of invCmds means each c is HasPassiveCmds.assert _ inv _
-        -- for some inv ∈ is.map Prod.snd. We don't have a direct lemma for this, so we
-        -- fall back to mapM_pointwise reasoning.
-        -- For simplicity, prove this via: if x ∈ Cmd.touchedVars c, then
-        -- x ∈ Cmd.getVars c (since assert has empty defined/modified). Then map back.
-        have h_x_in_getVars_c : x ∈ Cmd.getVars c := by
-          unfold Cmd.touchedVars at h_x_in_c
-          rcases List.mem_append.mp h_x_in_c with h_g_d | h_m
-          · rcases List.mem_append.mp h_g_d with h_g | h_d
-            · exact h_g
-            · -- Cmd.definedVars c = [] for assert — but we need to know c IS an assert.
-              -- This requires proper mapM_pointwise reasoning. For now, use sorry.
-              sorry
-          · sorry
-        -- Now project x ∈ Cmd.getVars c via `is.flatMap getVars` membership.
-        -- This requires knowing c is `assert _ i _` for some `(_, i) ∈ is`, which is
-        -- guaranteed by h_inv_def. Encode via mapM_eq_some_implies_pointwise.
+        have h_x_in_is : x ∈ is.flatMap (fun p => HasVarsPure.getVars p.snd) := by
+          apply mapM_touchedVars_subset
+            (f := fun (srcLabel, i) => do
+              let assertLabel ←
+                if srcLabel.isEmpty then StringGenState.gen "inv$"
+                else pure srcLabel
+              pure (HasPassiveCmds.assert (P := P) (CmdT := Cmd P)
+                assertLabel i synthesizedMd))
+            (T := fun p => HasVarsPure.getVars p.snd)
+            ?_ is gen_b gen_i invCmds h_inv_def h_x
+          intro a g g' b h_step y h_y_in_b
+          obtain ⟨srcLabel, i⟩ := a
+          -- Step f to identify b = assert _ i _, then apply Cmd_touchedVars_assert.
+          by_cases h_empty : srcLabel.isEmpty
+          · simp only [h_empty, if_true, bind, StateT.bind, pure, StateT.pure] at h_step
+            have h_b_eq : b = HasPassiveCmds.assert (P := P) (CmdT := Cmd P)
+                            (StringGenState.gen "inv$" g).1 i synthesizedMd :=
+              (Prod.mk.inj h_step).1.symm
+            rw [h_b_eq, Cmd_touchedVars_assert] at h_y_in_b
+            exact h_y_in_b
+          · have h_b_false : (srcLabel.isEmpty : Bool) = false := by simp [h_empty]
+            simp only [h_b_false, if_false, pure, StateT.pure, bind, StateT.bind] at h_step
+            have h_b_eq : b = HasPassiveCmds.assert (P := P) (CmdT := Cmd P)
+                            srcLabel i synthesizedMd :=
+              (Prod.mk.inj h_step).1.symm
+            rw [h_b_eq, Cmd_touchedVars_assert] at h_y_in_b
+            exact h_y_in_b
+        exact h_inv_no_gen x h_x_in_is s heq
+      -- Now flush + lentry block discharge in m=none case.
+      cases h_c : c with
+      | det e =>
+        rw [h_c] at h_gen
+        simp only [bind, StateT.bind, pure, StateT.pure] at h_gen
+        generalize h_flush_eq : @flushCmds P (Cmd P) _ "before_loop$" accum
+          Option.none lentry gen_i = r_flush at h_gen
+        obtain ⟨⟨accumEntry, accumBlocks⟩, gen_f⟩ := r_flush
+        simp only [pure, StateT.pure] at h_gen
+        -- The lentry block: cmds = invCmds ++ measureCmds (= invCmds ++ []), transfer = condGoto e bl kNext contractMd.
+        let contractMd : MetaData P := is.foldl (fun md (_, inv) =>
+            md.pushElem MetaData.specLoopInvariant (.expr inv)) md
+        let lentryBlk : DetBlock String (Cmd P) P :=
+          { cmds := invCmds ++ [],
+            transfer := DetTransferCmd.condGoto e bl kNext contractMd }
+        have h_pair := (Prod.mk.inj h_gen).1
+        have h_blocks_eq :
+            accumBlocks ++ [(lentry, lentryBlk)] ++ bbs ++ [] ++ bsNext = blocks :=
+          (Prod.mk.inj h_pair).2
+        have h_gen_eq : gen_f = gen' := (Prod.mk.inj h_gen).2
+        have h_step_flush : StringGenState.GenStep gen_i gen_f :=
+          flushCmds_genStep "before_loop$" accum _ lentry gen_i gen_f
+            accumEntry accumBlocks h_flush_eq
+        have h_subset_r_gen' : StringGenState.stringGens gen_r ⊆ StringGenState.stringGens gen' := by
+          rw [← h_gen_eq]
+          exact ((((h_step_le.trans h_step_body).trans h_step_inv).trans h_step_flush).subset)
+        have h_subset_b_gen' : StringGenState.stringGens gen_b ⊆ StringGenState.stringGens gen' := by
+          rw [← h_gen_eq]
+          exact ((h_step_inv.trans h_step_flush).subset)
+        -- Lift IHs to gen'.
+        have h_ih_rest_at_gen' :
+            ∀ blk ∈ bsNext.map Prod.snd,
+              ∀ x ∈ Block.cfgFrameTouches blk, identClassifies (P := P) x gen' :=
+          fun blk h_blk x h_x =>
+            identClassifies_mono h_subset_r_gen' (h_ih_rest blk h_blk x h_x)
+        have h_ih_body_at_gen' :
+            ∀ blk ∈ bbs.map Prod.snd,
+              ∀ x ∈ Block.cfgFrameTouches blk, identClassifies (P := P) x gen' :=
+          fun blk h_blk x h_x =>
+            identClassifies_mono h_subset_b_gen' (h_ih_body blk h_blk x h_x)
+        -- The flushCmds-emitted accumBlocks: their cfgFrameTouches is bounded by
+        -- accum's touchedVars (only — there's no transfer touched-vars beyond getVars HasBool.tt = []).
+        have h_accum_classifies_at_gen_f :
+            listClassifies (P := P) (accum.flatMap Cmd.touchedVars) gen_f :=
+          listClassifies_of_no_gen_suffix h_accum_no_gen_suffix
+        have h_tr_classifies_at_gen_f :
+            ∀ tr, (Option.none : Option (DetTransferCmd String P)) = some tr →
+              listClassifies (P := P) (DetTransferCmd.touchedVars tr) gen_f := by
+          intro tr h_eq; cases h_eq
+        have h_ih_flush :
+            ∀ blk ∈ accumBlocks.map Prod.snd,
+              ∀ x ∈ Block.cfgFrameTouches blk, identClassifies (P := P) x gen_f :=
+          flushCmds_blocks_no_genFuture h_flush_eq h_tt_getVars
+            h_accum_classifies_at_gen_f h_tr_classifies_at_gen_f
+        have h_ih_flush_at_gen' :
+            ∀ blk ∈ accumBlocks.map Prod.snd,
+              ∀ x ∈ Block.cfgFrameTouches blk, identClassifies (P := P) x gen' := by
+          rw [h_gen_eq] at h_ih_flush; exact h_ih_flush
+        -- The lentry block: cfgFrameTouches = (invCmds ++ []).flatMap Cmd.touchedVars
+        --   ++ DetTransferCmd.touchedVars (condGoto e bl kNext contractMd)
+        -- = invCmds.flatMap touchedVars ++ HasVarsPure.getVars e
+        -- All shape-free via h_invCmds_no_gen and ite_cond_getVars_subset doesn't apply for loop;
+        -- instead use loop_guard_det_getVars_subset.
+        have h_lentry_classifies :
+            ∀ x ∈ Block.cfgFrameTouches lentryBlk, identClassifies (P := P) x gen' := by
+          intro x h_x s heq
+          rw [mem_cfgFrameTouches_iff] at h_x
+          cases h_x with
+          | inl h_in_cmds =>
+            -- x ∈ (invCmds ++ []).flatMap Cmd.touchedVars
+            have h_x_in_inv : x ∈ invCmds.flatMap Cmd.touchedVars := by
+              simp only [List.append_nil, List.flatMap_append] at h_in_cmds
+              -- (invCmds ++ []).flatMap = invCmds.flatMap ++ [].flatMap = invCmds.flatMap
+              -- Direct projection.
+              exact h_in_cmds
+            exact Or.inl (h_invCmds_no_gen x h_x_in_inv s heq)
+          | inr h_in_tr =>
+            -- transfer is condGoto e bl kNext contractMd; touchedVars = e.getVars.
+            have h_x_in_e : x ∈ HasVarsPure.getVars e := by
+              show x ∈ HasVarsPure.getVars e
+              exact h_in_tr
+            -- e is the loop's guard; we have c = .det e (via h_c); so e.getVars are user-source.
+            have h_x_in_outer : x ∈ Block.touchedVars (.loop c m is bss md :: rest) := by
+              rw [h_c, h_m_cases]
+              exact loop_guard_det_getVars_subset e none is bss md rest h_x_in_e
+            exact Or.inl (h_ss_no_gen_suffix x h_x_in_outer s heq)
+        -- Combine.
+        intro blk h_blk
+        rw [← h_blocks_eq] at h_blk
+        simp only [List.mem_map, List.mem_append, List.mem_singleton, List.append_nil] at h_blk
+        obtain ⟨pair, h_pair_in, h_pair_eq⟩ := h_blk
+        subst h_pair_eq
+        -- pair ∈ accumBlocks ++ [(lentry, lentryBlk)] ++ bbs ++ bsNext
+        -- (after List.append_nil simplifies the [] from decreaseBlocks)
+        cases h_pair_in with
+        | inl h_l =>
+          cases h_l with
+          | inl h_ll =>
+            cases h_ll with
+            | inl h_in_accum =>
+              exact h_ih_flush_at_gen' pair.snd
+                (List.mem_map.mpr ⟨pair, h_in_accum, rfl⟩)
+            | inr h_pair_eq_l =>
+              -- pair = (lentry, lentryBlk).
+              intro x h_x
+              rw [show pair.snd = lentryBlk from by rw [h_pair_eq_l]] at h_x
+              exact h_lentry_classifies x h_x
+          | inr h_in_bbs =>
+            exact h_ih_body_at_gen' pair.snd
+              (List.mem_map.mpr ⟨pair, h_in_bbs, rfl⟩)
+        | inr h_in_bsNext =>
+          exact h_ih_rest_at_gen' pair.snd
+            (List.mem_map.mpr ⟨pair, h_in_bsNext, rfl⟩)
+      | nondet =>
         sorry
-      -- Build IH conclusions at gen' via subset relations.
-      -- Defer to a uniform handler. For now, complete the structural plumbing
-      -- common to all 4 sub-cases via a shared helper.
-      sorry
     | some mExpr =>
       sorry
 
