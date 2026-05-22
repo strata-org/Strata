@@ -187,6 +187,7 @@ class SwarmAgent(Generic[T]):
         while True:
             # Stall detection: if no message in STALL_TIMEOUT seconds, nudge
             try:
+                await self._emit("message", "[waiting for receiving message from backend model...]")
                 message = await asyncio.wait_for(msg_iter.__anext__(), timeout=STALL_TIMEOUT)
             except StopAsyncIteration:
                 return True  # Response complete, continue outer loop
@@ -448,6 +449,7 @@ class SwarmAgent(Generic[T]):
         )
 
         try:
+            self._emit("message", "[Sending initial query to backend...]")
             await self.backend.send_query(prompt)
 
             while True:
@@ -478,6 +480,7 @@ class SwarmAgent(Generic[T]):
                         ts = datetime.now().strftime("%H:%M:%S")
                         injection = f"[{ts}] [From {msg.sender}]: {msg.payload}"
                         logger.debug(f"[MID] {self.spec.name}: from '{msg.sender}', injecting")
+                        self._emit("message", f"[Received message from '{msg.sender}', sending to backend...]")
                         await self.backend.send_query(injection)
                         await self._emit("message", injection)
                         continue
