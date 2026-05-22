@@ -108,7 +108,7 @@ function cmp(x: string, y: int): bool {
 def assignTypeMismatch := r"
 procedure foo() opaque {
   var x: int := true
-//^^^^^^^^^^^^^^^^^^ error: expected 'int', got 'bool'
+//              ^^^^ error: expected 'int', got 'bool'
 };
 "
 
@@ -119,8 +119,8 @@ procedure foo() opaque {
 
 def returnTypeMismatch := r"
 function foo(): int {
-//       ^^^ error: expected 'int', got 'bool'
   true
+//^^^^ error: expected 'int', got 'bool'
 };
 "
 
@@ -169,7 +169,7 @@ def assignTargetCountMismatch := r"
 procedure multi() returns (a: int, b: int) opaque;
 procedure test() opaque {
   var x: int := multi()
-//^^^^^^^^^^^^^^^^^^^^^ error: expected 'int', got '(int, int)'
+//              ^^^^^^^ error: expected 'int', got '(int, int)'
 };
 "
 
@@ -187,7 +187,7 @@ composite Dog { }
 composite Cat { }
 procedure test() opaque {
   var x: Dog := new Cat
-//^^^^^^^^^^^^^^^^^^^^^ error: expected 'Dog', got 'Cat'
+//              ^^^^^^^ error: expected 'Dog', got 'Cat'
 };
 "
 

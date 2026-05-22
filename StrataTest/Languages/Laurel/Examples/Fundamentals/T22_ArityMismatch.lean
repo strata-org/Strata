@@ -39,7 +39,7 @@ procedure mismatch()
 {
   var x: int;
   assign x := twoReturns()
-//^^^^^^^^^^^^^^^^^^^^^^^^ error: expected 'int', got '(int, int)'
+//            ^^^^^^^^^^^^ error: expected 'int', got '(int, int)'
 };
 "
 
