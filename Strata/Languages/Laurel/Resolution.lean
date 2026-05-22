@@ -525,7 +525,7 @@ inside the mutual block below. Helpers are grouped by section to mirror the
 - Verification statements — `Check.assert`, `Check.assume`
 - Assignment — `Check.assign`
 - Calls — `Synth.staticCall`, `Synth.instanceCall`
-- Primitive operations — `Synth.primitiveOp`
+- Primitive operations — `Synth.primitiveOp`, `Check.primitiveOp`
 - Object forms — `Synth.new`, `Synth.asType`, `Synth.isType`, `Synth.refEq`,
   `Synth.pureFieldUpdate`
 - Verification expressions — `Synth.quantifier`, `Synth.assigned`,
@@ -626,6 +626,9 @@ def Synth.resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTy
     - control flow — `Block`, `IfThenElse`, `While`, `Exit`, `Return`
     - verification — `Assert`, `Assume`, `Old`, `ProveBy`
     - holes — `Hole` (typed and untyped)
+    - primitive operations — `PrimitiveOp` (arithmetic and boolean
+      families only; comparison/equality/string-concat fall through to
+      the synth-then-subsume wildcard)
 
     Everything else falls back to subsumption — synthesize, then verify
     `isConsistentSubtype actual expected`.
@@ -663,6 +666,34 @@ def Check.resolveStmtExpr (exprMd : StmtExprMd) (expected : HighTypeMd) : Resolv
     Check.old exprMd val expected source (by rw [h_node])
   | .ProveBy val proof =>
     Check.proveBy exprMd val proof expected source (by rw [h_node])
+  | .PrimitiveOp .Neg args =>
+    Check.primitiveOp exprMd .Neg args expected source (by rw [h_node])
+  | .PrimitiveOp .Add args =>
+    Check.primitiveOp exprMd .Add args expected source (by rw [h_node])
+  | .PrimitiveOp .Sub args =>
+    Check.primitiveOp exprMd .Sub args expected source (by rw [h_node])
+  | .PrimitiveOp .Mul args =>
+    Check.primitiveOp exprMd .Mul args expected source (by rw [h_node])
+  | .PrimitiveOp .Div args =>
+    Check.primitiveOp exprMd .Div args expected source (by rw [h_node])
+  | .PrimitiveOp .Mod args =>
+    Check.primitiveOp exprMd .Mod args expected source (by rw [h_node])
+  | .PrimitiveOp .DivT args =>
+    Check.primitiveOp exprMd .DivT args expected source (by rw [h_node])
+  | .PrimitiveOp .ModT args =>
+    Check.primitiveOp exprMd .ModT args expected source (by rw [h_node])
+  | .PrimitiveOp .And args =>
+    Check.primitiveOp exprMd .And args expected source (by rw [h_node])
+  | .PrimitiveOp .Or args =>
+    Check.primitiveOp exprMd .Or args expected source (by rw [h_node])
+  | .PrimitiveOp .AndThen args =>
+    Check.primitiveOp exprMd .AndThen args expected source (by rw [h_node])
+  | .PrimitiveOp .OrElse args =>
+    Check.primitiveOp exprMd .OrElse args expected source (by rw [h_node])
+  | .PrimitiveOp .Not args =>
+    Check.primitiveOp exprMd .Not args expected source (by rw [h_node])
+  | .PrimitiveOp .Implies args =>
+    Check.primitiveOp exprMd .Implies args expected source (by rw [h_node])
   | _ =>
     -- Subsumption fallback: synth then check `actual <: expected`.
     let (e', actual) ← Synth.resolveStmtExpr exprMd
@@ -849,24 +880,19 @@ def Check.return (exprMd : StmtExprMd)
 
 /-- Cases on whether the statement list is empty.
 
-    `Γ_0 = Γ,  Γ_{i-1} ⊢ s_i ⇐ Unknown ⊣ Γ_i (1 ≤ i < n),  Γ_{n-1} ⊢ s_n ⇐ T  ∴  Γ ⊢ Block [s_1; …; s_n] label ⇐ T`
-
     `TVoid <: T  ∴  Γ ⊢ Block [] label ⇐ T`
 
-    Pushes `expected` into the *last* statement rather than comparing the
-    block's synthesized type at the boundary. Errors fire at the offending
-    subexpression, and `expected` keeps propagating through nested `Block`
-    / `IfThenElse` / `Hole` / `Quantifier`.
+    `Γ_0 = Γ,  Γ_{i-1} ⊢ s_i ⇐ Unknown ⊣ Γ_i (1 ≤ i < n),  Γ_{n-1} ⊢ s_n ⇐ T  ∴  Γ ⊢ Block [s_1; …; s_n] label ⇐ T`
 
-    Non-last statements are checked against `Unknown` so their type is
-    accepted regardless: this matches the Java/Python/JavaScript discipline
-    where `f(x);` is a valid statement even when `f` returns a value (the
-    value is discarded). Routing through check mode (rather than synth)
-    means that constructs without a synth rule — control-flow constructs
-    in particular — are still resolved correctly, with their own
-    bidirectional rules pushing `Unknown` into their subexpressions. The
-    trade-off is that a stray expression like `5;` is silently accepted;
-    flagging that belongs to a lint, not the type checker.
+    The last statement carries the block's value, so it is checked
+    against the surrounding `expected`. Non-last statements are checked
+    against `Unknown`, which accepts any type via gradual subsumption —
+    matching the Java/Python/JavaScript discipline where `f(x);` is a
+    valid statement even when `f` returns a value (the value is
+    discarded). Routing through check mode (rather than synth) means
+    that constructs without a synth rule are still resolved correctly,
+    with their bidirectional rules pushing `Unknown` into their
+    subexpressions.
 
     Empty blocks reduce to a subsumption check of `TVoid` against
     `expected` — the same check `[⇐] Block-Empty` performs when `T`
@@ -875,14 +901,15 @@ def Check.block (exprMd : StmtExprMd)
     (stmts : List StmtExprMd) (label : Option String)
     (expected : HighTypeMd) (source : Option FileRange)
     (h : exprMd.val = .Block stmts label) : ResolveM StmtExprMd := do
+  let voidTy : HighTypeMd := { val := .TVoid, source := source }
+  let unknownTy : HighTypeMd := { val := .Unknown, source := source }
   withScope do
-    let unknownTy : HighTypeMd := { val := .Unknown, source := source }
     let init' ← stmts.dropLast.attach.mapM (fun ⟨s, hMem⟩ => do
       have : s ∈ stmts := List.dropLast_subset stmts hMem
       Check.resolveStmtExpr s unknownTy)
     match _lastResult: stmts.getLast? with
     | none =>
-      checkSubtype source expected { val := .TVoid, source := source }
+      checkSubtype source expected voidTy
       pure { val := .Block init' label, source := source }
     | some last =>
       have := List.mem_of_getLast? _lastResult
@@ -973,20 +1000,20 @@ def Check.assume (exprMd : StmtExprMd)
 
 -- ### Assignment
 
-/-- `Γ ⊢ targets_i ⇒ T_i,  Γ ⊢ e ⇐ ExpectedTy,  ExpectedTy <: T  ∴  Γ ⊢ Assign targets e ⇐ T`  (T ≠ TVoid)
-
-    `Γ ⊢ targets_i ⇒ T_i,  Γ ⊢ e ⇐ ExpectedTy  ∴  Γ ⊢ Assign targets e ⇐ TVoid`
+/-- `Γ ⊢ targets_i ⇒ T_i,  Γ ⊢ e ⇐ ExpectedTy  ∴  Γ ⊢ Assign targets e ⇐ TVoid`
 
     where `ExpectedTy = T_1` if `|targets| = 1`, else
     `MultiValuedExpr [T_1; …; T_n]`.
 
-    The target tuple type is pushed into the RHS via
+    Assignment is strictly statement-position: `expected` must be
+    `TVoid`. The target tuple type is pushed into the RHS via
     `Check.resolveStmtExpr`, so bidirectional rules in the RHS receive
-    the assignment's type. When `T ≠ TVoid` (expression position) the
-    outer subsumption `ExpectedTy <: T` is enforced. When `T = TVoid`
-    (statement position) the subsumption is skipped: the assignment's
-    value is discarded as a statement, so there is nothing to compare
-    against `expected`. -/
+    the assignment's type. Expression-position uses (e.g.
+    `x ++ (y := s)`) are rejected — the assignment's "value" is its
+    target type only by convention, and accepting it as an expression
+    invites bugs like the impure-side-effect-inside-expression case
+    where `(if c then { b := false } else (b := true)) || b`
+    typechecked because `bool <: bool` trivially holds. -/
 def Check.assign (exprMd : StmtExprMd)
     (targets : List VariableMd) (value : StmtExprMd)
     (expected : HighTypeMd) (source : Option FileRange)
@@ -1015,8 +1042,7 @@ def Check.assign (exprMd : StmtExprMd)
     | [single] => single
     | _        => { val := .MultiValuedExpr targetTys, source := source }
   let value' ← Check.resolveStmtExpr value expectedTy
-  unless expected.val matches .TVoid do
-    checkSubtype source expected expectedTy
+  checkSubtype source expected { val := .TVoid, source := source }
   pure { val := .Assign targets' value', source := source }
   termination_by (exprMd, 0)
   decreasing_by
@@ -1096,8 +1122,8 @@ def Synth.instanceCall (exprMd : StmtExprMd)
 -- ### Primitive operations
 
 /-- Cases on the operator family. All operands are synthesized first;
-    then a per-family verification fires using `checkSubtype` (a post-synth
-    subtype test, not bidirectional check resolution).
+    then a per-family verification fires using `checkSubtype` (a
+    post-synth subtype test, not bidirectional check resolution).
 
     `Γ ⊢ args_i ⇒ U_i,  U_i <: TBool,  op ∈ {And, Or, AndThen, OrElse, Not, Implies}  ∴  Γ ⊢ PrimitiveOp op args ⇒ TBool`
 
@@ -1120,7 +1146,16 @@ def Synth.instanceCall (exprMd : StmtExprMd)
     first argument" handles `int + int → int`, `real + real → real`,
     etc. without unification — known relaxation: `int + real` passes
     since each operand individually passes `Numeric`; a proper fix needs
-    numeric promotion or unification), `TString` for concatenation. -/
+    numeric promotion or unification), `TString` for concatenation.
+
+    The arithmetic and boolean families also have a check-mode rule
+    (`Check.primitiveOp`) which is preferred when an `expected` type is
+    available: it pushes the operand type into each operand via
+    `Check.resolveStmtExpr`, surfacing operand-shaped errors at their
+    natural location instead of via the gradual subsumption fallthrough.
+    `Synth.primitiveOp` remains the entry point for synth-position
+    primitive ops (e.g. an unannotated `var x := a + b` or use as an
+    operand of a non-Check.primitiveOp construct). -/
 def Synth.primitiveOp (exprMd : StmtExprMd) (expr : StmtExpr)
     (op : Operation) (args : List StmtExprMd) (source : Option FileRange)
     (h_expr : expr = .PrimitiveOp op args)
@@ -1161,6 +1196,61 @@ def Synth.primitiveOp (exprMd : StmtExprMd) (expr : StmtExpr)
       checkSubtype a.source { val := .TString, source := a.source } aTy
   pure (.PrimitiveOp op args', { val := resultTy, source := source })
   termination_by (exprMd, 1)
+  decreasing_by
+    apply Prod.Lex.left
+    have hsz := exprMd.sizeOf_val_lt
+    simp [h] at hsz
+    have := List.sizeOf_lt_of_mem ‹_ ∈ args›
+    omega
+
+/-- Cases on the operator family.
+
+    `Numeric T,  Γ ⊢ args_i ⇐ T,  op ∈ {Neg, Add, Sub, Mul, Div, Mod, DivT, ModT}  ∴  Γ ⊢ PrimitiveOp op args ⇐ T`
+
+    `TBool <: T,  Γ ⊢ args_i ⇐ TBool,  op ∈ {And, Or, AndThen, OrElse, Not, Implies}  ∴  Γ ⊢ PrimitiveOp op args ⇐ T`
+
+    Both families run in check mode: the surrounding `expected` must
+    admit the family's natural result type (numeric for arithmetic,
+    `TBool` for boolean), and that operand type is pushed into every
+    operand via `Check.resolveStmtExpr`. Pushing `expected` (or `TBool`)
+    into operands replaces the synth-then-`checkSubtype` discipline of
+    `Synth.primitiveOp`, with two consequences: (a) control-flow
+    operands like `(if c then 1 else 2) + 3` or `(if c then a else b) && z`
+    are resolved correctly via `Check.ifThenElse` instead of hitting the
+    synth wildcard, and (b) `int + real` errors at the second operand
+    instead of being silently accepted under gradual mixing — the rule
+    now requires every operand to subtype the pushed type.
+
+    The remaining operator families (comparison, equality, string
+    concatenation) stay in `Synth.primitiveOp`: their result types are
+    fixed (`TBool` / `TString`) and their operand constraints can't be
+    expressed as a single pushable type (Numeric is a predicate;
+    equality is symmetric). The dispatcher routes those to the wildcard
+    `_ =>` arm of `Check.resolveStmtExpr`. -/
+def Check.primitiveOp (exprMd : StmtExprMd)
+    (op : Operation) (args : List StmtExprMd)
+    (expected : HighTypeMd) (source : Option FileRange)
+    (h : exprMd.val = .PrimitiveOp op args) :
+    ResolveM StmtExprMd := do
+  let operandTy : HighTypeMd ← match op with
+    | .Neg | .Add | .Sub | .Mul | .Div | .Mod | .DivT | .ModT =>
+      let ctx := (← get).typeContext
+      unless isNumeric ctx expected do
+        typeMismatch source none "expected a numeric type" expected
+      pure expected
+    | .And | .Or | .AndThen | .OrElse | .Not | .Implies =>
+      let boolTy : HighTypeMd := { val := .TBool, source := source }
+      checkSubtype source expected boolTy
+      pure boolTy
+    | _ =>
+      -- Unreachable: dispatcher routes only the arithmetic and boolean
+      -- families to this rule. `Unknown` keeps the function total in
+      -- case the dispatcher's pattern list ever drifts.
+      pure { val := .Unknown, source := source }
+  let args' ← args.attach.mapM (fun a => have := a.property; do
+    Check.resolveStmtExpr a.val operandTy)
+  pure { val := .PrimitiveOp op args', source := source }
+  termination_by (exprMd, 0)
   decreasing_by
     apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt

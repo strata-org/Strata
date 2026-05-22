@@ -220,7 +220,7 @@ direction explicit.
 - *Assignment* — \[⇐\] Assign
 - *Calls* — \[⇒\] Static-Call, \[⇒\] Static-Call-Multi, \[⇒\] Instance-Call
 - *Primitive operations* — \[⇒\] Op-Bool, \[⇒\] Op-Cmp, \[⇒\] Op-Eq, \[⇒\] Op-Arith,
-  \[⇒\] Op-Concat
+  \[⇒\] Op-Concat; \[⇐\] Op-Arith, \[⇐\] Op-Bool
 - *Object forms* — \[⇒\] New-Ok, \[⇒\] New-Fallback; \[⇒\] AsType; \[⇒\] IsType;
   \[⇒\] RefEq; \[⇒\] PureFieldUpdate
 - *Verification expressions* — \[⇒\] Quantifier, \[⇒\] Assigned, \[⇐\] Old,
@@ -337,7 +337,7 @@ $$`\frac{\Gamma \vdash \mathit{cond} \Leftarrow \mathsf{TBool} \quad \mathsf{TVo
 
 ### Assignment
 
-$$`\frac{\Gamma \vdash \mathit{targets}_i \Rightarrow T_i \quad \Gamma \vdash e \Leftarrow \mathit{ExpectedTy} \quad \mathit{ExpectedTy} <: T}{\Gamma \vdash \mathsf{Assign}\;\mathit{targets}\;e \Leftarrow T} \quad \text{([⇐] Assign)}`
+$$`\frac{\Gamma \vdash \mathit{targets}_i \Rightarrow T_i \quad \Gamma \vdash e \Leftarrow \mathit{ExpectedTy}}{\Gamma \vdash \mathsf{Assign}\;\mathit{targets}\;e \Leftarrow \mathsf{TVoid}} \quad \text{([⇐] Assign)}`
 
 where `ExpectedTy = T_1` if `|targets| = 1` and `MultiValuedExpr [T_1; …; T_n]` otherwise.
 The target's declared type `T_i` comes from the variable's scope entry (for
@@ -345,6 +345,11 @@ The target's declared type `T_i` comes from the variable's scope entry (for
 or from the {name Strata.Laurel.Variable.Declare}`Declare`-bound parameter type. The
 RHS receives `ExpectedTy` via `Check.resolveStmtExpr`, so bidirectional rules in the
 RHS propagate the assignment's type into nested constructs.
+
+Assignment is strictly statement-position: `expected` must be `TVoid`. Expression-position
+uses (e.g. `x ++ (y := s)`) are rejected — accepting an assignment as an expression with
+its target's type as "value" silently masks impure-side-effect-inside-expression bugs
+where the target type happens to coincide with the surrounding expectation.
 
 {docstring Strata.Laurel.Resolution.Check.assign}
 
@@ -377,6 +382,17 @@ $$`\frac{\Gamma \vdash \mathit{args}_i \Leftarrow \mathit{Numeric} \quad \Gamma 
 $$`\frac{\Gamma \vdash \mathit{args}_i \Leftarrow \mathsf{TString} \quad \mathit{op} = \mathsf{StrConcat}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;\mathit{args} \Rightarrow \mathsf{TString}} \quad \text{([⇒] Op-Concat)}`
 
 {docstring Strata.Laurel.Resolution.Synth.primitiveOp}
+
+The arithmetic and boolean families also have a check-mode rule, used when the
+surrounding context provides an `expected` type. The rule pushes the operand type
+into each operand via `Check.resolveStmtExpr`, replacing the synth-then-`checkSubtype`
+discipline with bidirectional check.
+
+$$`\frac{\mathit{Numeric}\;T \quad \Gamma \vdash \mathit{args}_i \Leftarrow T \quad \mathit{op} \in \{\mathsf{Neg}, \mathsf{Add}, \mathsf{Sub}, \mathsf{Mul}, \mathsf{Div}, \mathsf{Mod}, \mathsf{DivT}, \mathsf{ModT}\}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;\mathit{args} \Leftarrow T} \quad \text{([⇐] Op-Arith)}`
+
+$$`\frac{\mathsf{TBool} <: T \quad \Gamma \vdash \mathit{args}_i \Leftarrow \mathsf{TBool} \quad \mathit{op} \in \{\mathsf{And}, \mathsf{Or}, \mathsf{AndThen}, \mathsf{OrElse}, \mathsf{Not}, \mathsf{Implies}\}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;\mathit{args} \Leftarrow T} \quad \text{([⇐] Op-Bool)}`
+
+{docstring Strata.Laurel.Resolution.Check.primitiveOp}
 
 ### Object forms
 
