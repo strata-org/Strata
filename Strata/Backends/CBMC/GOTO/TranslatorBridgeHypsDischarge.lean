@@ -119,6 +119,14 @@ theorem wellFormedTranslation_to_translatorBridgeHyps
         pgm.instrAt pc = some instr → instr.type = .GOTO →
         instr.target = some target →
         ∃ instr_target, pgm.instrAt target = some instr_target)
+    -- The translator never emits DEAD instructions. A separate
+    -- "no-DEAD" property of `coreCFGToGotoTransform`'s output, stable
+    -- under all rounds; provable by induction on the translator
+    -- (every emit-helper pushes DECL/ASSIGN/ASSERT/ASSUME/GOTO/LOCATION,
+    -- never DEAD). With it `dead_lookup` is vacuous.
+    (h_no_dead :
+      ∀ {pc : Nat} {instr : Instruction},
+        pgm.instrAt pc = some instr → instr.type ≠ .DEAD)
     -- Lookup fields: the source-side `x` matches the GOTO's
     -- symbol/lhs operand. Cannot be discharged from current `wf`
     -- because `CmdEmittedAt` carries existential `lhs` rather than
@@ -129,13 +137,6 @@ theorem wellFormedTranslation_to_translatorBridgeHyps
         {v : Core.Expression.Expr},
         pgm.instrAt pc = some instr → instr.type = .DECL →
         Imperative.InitState Core.Expression σ x v σ' →
-        (SemanticsTautschnig.instrCode pgm pc).bind
-          SemanticsTautschnig.getSymbolName = some (nameMap x))
-    (h_dead_lookup :
-      ∀ {pc : Nat} {instr : Instruction} {x : Core.Expression.Ident}
-        {σ σ' : Imperative.SemanticStore Core.Expression},
-        pgm.instrAt pc = some instr → instr.type = .DEAD →
-        RemoveState Core.Expression σ x σ' →
         (SemanticsTautschnig.instrCode pgm pc).bind
           SemanticsTautschnig.getSymbolName = some (nameMap x))
     (h_assign_lookup :
@@ -198,7 +199,10 @@ theorem wellFormedTranslation_to_translatorBridgeHyps
     TranslatorBridgeHyps pgm nameMap δ_goto eval where
   nameMap_inj := h_inj
   decl_lookup := h_decl_lookup
-  dead_lookup := h_dead_lookup
+  dead_lookup := by
+    -- Vacuous from `h_no_dead`: no DEAD instructions ever fire.
+    intro pc instr x σ σ' h_at h_ty _h_remove
+    exact absurd h_ty (h_no_dead h_at)
   assign_lookup := h_assign_lookup
   assign_nondet_lookup := h_assign_nondet_lookup
   goto_target_resolves := by
