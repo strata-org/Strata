@@ -310,7 +310,11 @@ mutual
   | .cmd cmd => HasVarsPure.getVars cmd
   | .block _ bss _ => Block.getVars bss
   | .ite cond tbss ebss _ => cond.getVars ++ Block.getVars tbss ++ Block.getVars ebss
-  | .loop guard _ _ bss _ => guard.getVars ++ Block.getVars bss
+  | .loop guard measure invariants bss _ =>
+    guard.getVars ++
+      (invariants.flatMap (fun p => HasVarsPure.getVars p.snd)) ++
+      (match measure with | none => [] | some m => HasVarsPure.getVars m) ++
+      Block.getVars bss
   | .exit _ _  => []
   | .funcDecl decl _ =>
     -- Get free variables from function body, excluding formal parameters

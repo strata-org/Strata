@@ -5764,7 +5764,10 @@ private theorem loop_body_touchedVars_subset {P : PureExpr}
   · apply List.mem_append.mpr; right
     show x ∈ Stmt.getVars (.loop g m is bss md) ++ Block.getVars rest
     apply List.mem_append.mpr; left
-    show x ∈ ExprOrNondet.getVars g ++ Block.getVars bss
+    show x ∈ ExprOrNondet.getVars g ++
+              (is.flatMap (fun p => HasVarsPure.getVars p.snd)) ++
+              (match m with | none => [] | some m => HasVarsPure.getVars m) ++
+              Block.getVars bss
     exact List.mem_append.mpr (Or.inr h_get)
 
 /-- Loop guard expression's getVars (det case) is contained in the touchedVars. -/
@@ -5781,9 +5784,59 @@ private theorem loop_guard_det_getVars_subset {P : PureExpr}
   refine List.mem_append.mpr (Or.inr ?_)
   show x ∈ Stmt.getVars (.loop (.det e) m is bss md) ++ Block.getVars rest
   refine List.mem_append.mpr (Or.inl ?_)
-  show x ∈ ExprOrNondet.getVars (.det e) ++ Block.getVars bss
+  show x ∈ ExprOrNondet.getVars (.det e) ++
+            (is.flatMap (fun p => HasVarsPure.getVars p.snd)) ++
+            (match m with | none => [] | some m => HasVarsPure.getVars m) ++
+            Block.getVars bss
+  refine List.mem_append.mpr (Or.inl ?_)
+  refine List.mem_append.mpr (Or.inl ?_)
   refine List.mem_append.mpr (Or.inl ?_)
   show x ∈ ExprOrNondet.getVars (.det e)
+  exact h
+
+/-- Loop invariant inclusion: each invariant's getVars is in `.loop`'s touchedVars. -/
+private theorem loop_inv_getVars_subset {P : PureExpr}
+    [HasVarsPure P P.Expr]
+    (g : ExprOrNondet P) (m : Option P.Expr) (is : List (String × P.Expr))
+    (bss : List (Stmt P (Cmd P))) (md : MetaData P)
+    (rest : List (Stmt P (Cmd P)))
+    {x : P.Ident}
+    (h : x ∈ is.flatMap (fun p => HasVarsPure.getVars p.snd)) :
+    x ∈ Block.touchedVars (.loop g m is bss md :: rest) := by
+  show x ∈ Block.modifiedOrDefinedVars (.loop g m is bss md :: rest) ++
+            Block.getVars (.loop g m is bss md :: rest)
+  refine List.mem_append.mpr (Or.inr ?_)
+  show x ∈ Stmt.getVars (.loop g m is bss md) ++ Block.getVars rest
+  refine List.mem_append.mpr (Or.inl ?_)
+  show x ∈ ExprOrNondet.getVars g ++
+            (is.flatMap (fun p => HasVarsPure.getVars p.snd)) ++
+            (match m with | none => [] | some m => HasVarsPure.getVars m) ++
+            Block.getVars bss
+  refine List.mem_append.mpr (Or.inl ?_)
+  refine List.mem_append.mpr (Or.inl ?_)
+  refine List.mem_append.mpr (Or.inr ?_)
+  exact h
+
+/-- Loop measure expression's getVars is in `.loop`'s touchedVars (when measure is some). -/
+private theorem loop_measure_getVars_subset {P : PureExpr}
+    [HasVarsPure P P.Expr]
+    (g : ExprOrNondet P) (mExpr : P.Expr) (is : List (String × P.Expr))
+    (bss : List (Stmt P (Cmd P))) (md : MetaData P)
+    (rest : List (Stmt P (Cmd P)))
+    {x : P.Ident}
+    (h : x ∈ HasVarsPure.getVars mExpr) :
+    x ∈ Block.touchedVars (.loop g (some mExpr) is bss md :: rest) := by
+  show x ∈ Block.modifiedOrDefinedVars (.loop g (some mExpr) is bss md :: rest) ++
+            Block.getVars (.loop g (some mExpr) is bss md :: rest)
+  refine List.mem_append.mpr (Or.inr ?_)
+  show x ∈ Stmt.getVars (.loop g (some mExpr) is bss md) ++ Block.getVars rest
+  refine List.mem_append.mpr (Or.inl ?_)
+  show x ∈ ExprOrNondet.getVars g ++
+            (is.flatMap (fun p => HasVarsPure.getVars p.snd)) ++
+            (match (some mExpr) with | none => [] | some m => HasVarsPure.getVars m) ++
+            Block.getVars bss
+  refine List.mem_append.mpr (Or.inl ?_)
+  refine List.mem_append.mpr (Or.inr ?_)
   exact h
 
 set_option maxHeartbeats 1600000 in
@@ -6377,7 +6430,129 @@ private theorem stmtsToBlocks_blocks_no_genFuture
         exact h_ih_rest_at_gen' pair.snd
           (List.mem_map.mpr ⟨pair, h_in_bsNext, rfl⟩)
   | .loop c m is bss md :: rest =>
-    sorry
+    -- Decompose monadic chain.
+    unfold stmtsToBlocks at h_gen
+    simp only [bind, StateT.bind] at h_gen
+    generalize h_rest_eq : stmtsToBlocks k rest exitConts [] gen = r_rest at h_gen
+    obtain ⟨⟨kNext, bsNext⟩, gen_r⟩ := r_rest
+    simp only at h_gen
+    generalize h_lentry_def : StringGenState.gen "loop_entry$" gen_r = r_le at h_gen
+    obtain ⟨lentry, gen_le⟩ := r_le
+    simp only at h_gen
+    have h_step_rest : StringGenState.GenStep gen gen_r :=
+      stmtsToBlocks_genStep k rest exitConts [] gen gen_r kNext bsNext h_rest_eq
+    have h_step_le : StringGenState.GenStep gen_r gen_le := by
+      rw [show gen_le = (StringGenState.gen "loop_entry$" gen_r).2 from
+            (by rw [h_lentry_def])]
+      exact StringGenState.GenStep.of_gen "loop_entry$" gen_r
+    have h_rest_no_gen :
+        ∀ x ∈ Block.touchedVars rest, ∀ s : String,
+          x = HasIdent.ident (P := P) s → ¬ String.HasUnderscoreDigitSuffix s := by
+      intro x h_x s heq
+      exact h_ss_no_gen_suffix x (Block_touchedVars_tail_subset _ _ h_x) s heq
+    have h_bss_no_gen :
+        ∀ x ∈ Block.touchedVars bss, ∀ s : String,
+          x = HasIdent.ident (P := P) s → ¬ String.HasUnderscoreDigitSuffix s := by
+      intro x h_x s heq
+      exact h_ss_no_gen_suffix x
+        (loop_body_touchedVars_subset c m is bss md rest h_x) s heq
+    have h_inv_no_gen :
+        ∀ x ∈ is.flatMap (fun p => HasVarsPure.getVars p.snd), ∀ s : String,
+          x = HasIdent.ident (P := P) s → ¬ String.HasUnderscoreDigitSuffix s := by
+      intro x h_x s heq
+      exact h_ss_no_gen_suffix x
+        (loop_inv_getVars_subset c m is bss md rest h_x) s heq
+    have h_nil_no_gen :
+        ∀ x ∈ ([] : List (Cmd P)).flatMap Cmd.touchedVars, ∀ s : String,
+          x = HasIdent.ident (P := P) s → ¬ String.HasUnderscoreDigitSuffix s := by
+      intro x h_x; simp [List.flatMap] at h_x
+    have h_ih_rest :
+        ∀ blk ∈ bsNext.map Prod.snd,
+          ∀ x ∈ Block.cfgFrameTouches blk, identClassifies (P := P) x gen_r :=
+      stmtsToBlocks_blocks_no_genFuture
+        (k := k) (ss := rest) (exitConts := exitConts) (accum := []) (gen := gen)
+        (gen' := gen_r) (entry := kNext) (blocks := bsNext)
+        h_rest_eq h_tt_getVars h_mkFvar_getVars_subset h_ident_inj h_nil_no_gen h_rest_no_gen
+    -- We branch on m and c. For each combination, produce the same-shaped
+    -- conclusion.
+    cases h_m_cases : m with
+    | none =>
+      rw [h_m_cases] at h_gen
+      simp only [pure, StateT.pure, bind, StateT.bind] at h_gen
+      generalize h_body_eq :
+        stmtsToBlocks lentry bss ((none, kNext) :: exitConts) [] gen_le = r_body at h_gen
+      obtain ⟨⟨bl, bbs⟩, gen_b⟩ := r_body
+      simp only at h_gen
+      generalize h_inv_def :
+        ((is.mapM (fun (srcLabel, i) => do
+            let assertLabel ←
+              if srcLabel.isEmpty then StringGenState.gen "inv$"
+              else pure srcLabel
+            pure (HasPassiveCmds.assert (P := P) (CmdT := Cmd P) assertLabel i synthesizedMd)))
+         : LabelGen.StringGenM (List (Cmd P))) gen_b = r_inv at h_gen
+      obtain ⟨invCmds, gen_i⟩ := r_inv
+      simp only at h_gen
+      have h_step_body : StringGenState.GenStep gen_le gen_b :=
+        stmtsToBlocks_genStep lentry bss _ [] gen_le gen_b bl bbs h_body_eq
+      have h_step_inv : StringGenState.GenStep gen_b gen_i := by
+        apply mapM_genStep _ _ is gen_b gen_i invCmds h_inv_def
+        intro a g g' b' h_step
+        obtain ⟨srcLabel, i⟩ := a
+        by_cases h_empty : srcLabel.isEmpty
+        · simp only [h_empty, if_true, bind, StateT.bind, pure, StateT.pure] at h_step
+          have h_g_eq : g' = (StringGenState.gen "inv$" g).2 := (Prod.mk.inj h_step).2.symm
+          rw [h_g_eq]; exact StringGenState.GenStep.of_gen "inv$" g
+        · simp only [h_empty, bind, pure] at h_step
+          have h_g_eq : g' = g := (Prod.mk.inj h_step).2.symm
+          rw [h_g_eq]; exact StringGenState.GenStep.refl g
+      -- Build IH on body.
+      have h_ih_body :
+          ∀ blk ∈ bbs.map Prod.snd,
+            ∀ x ∈ Block.cfgFrameTouches blk, identClassifies (P := P) x gen_b :=
+        stmtsToBlocks_blocks_no_genFuture
+          (k := lentry) (ss := bss) (exitConts := (none, kNext) :: exitConts) (accum := [])
+          (gen := gen_le) (gen' := gen_b) (entry := bl) (blocks := bbs)
+          h_body_eq h_tt_getVars h_mkFvar_getVars_subset h_ident_inj
+          h_nil_no_gen h_bss_no_gen
+      -- Each invCmd's touchedVars has source-shape. Build h_invCmds_classifies.
+      have h_invCmds_no_gen :
+          ∀ x ∈ invCmds.flatMap Cmd.touchedVars, ∀ s : String,
+            x = HasIdent.ident (P := P) s → ¬ String.HasUnderscoreDigitSuffix s := by
+        -- invCmds came from is.mapM (fun (srcLabel, i) => assert ... i ...).
+        -- Each invCmd is `assert label i md` for some `(_, i) ∈ is`. Its touchedVars is
+        -- HasVarsPure.getVars i ++ [] ++ [] = i.getVars, which is in `is.flatMap getVars`.
+        intro x h_x s heq
+        -- Flat-induct on is/invCmds via h_inv_def.
+        -- Use mapM-extracted relation: invCmds[k] is built from is[k] by a deterministic
+        -- transformation that preserves getVars i = Cmd.touchedVars (assert _ i _).
+        -- We rely on a generic principle:
+        have h_x_in_invCmds : ∃ c ∈ invCmds, x ∈ Cmd.touchedVars c :=
+          List.mem_flatMap.mp h_x
+        obtain ⟨c, h_c_in, h_x_in_c⟩ := h_x_in_invCmds
+        -- Project: the structure of invCmds means each c is HasPassiveCmds.assert _ inv _
+        -- for some inv ∈ is.map Prod.snd. We don't have a direct lemma for this, so we
+        -- fall back to mapM_pointwise reasoning.
+        -- For simplicity, prove this via: if x ∈ Cmd.touchedVars c, then
+        -- x ∈ Cmd.getVars c (since assert has empty defined/modified). Then map back.
+        have h_x_in_getVars_c : x ∈ Cmd.getVars c := by
+          unfold Cmd.touchedVars at h_x_in_c
+          rcases List.mem_append.mp h_x_in_c with h_g_d | h_m
+          · rcases List.mem_append.mp h_g_d with h_g | h_d
+            · exact h_g
+            · -- Cmd.definedVars c = [] for assert — but we need to know c IS an assert.
+              -- This requires proper mapM_pointwise reasoning. For now, use sorry.
+              sorry
+          · sorry
+        -- Now project x ∈ Cmd.getVars c via `is.flatMap getVars` membership.
+        -- This requires knowing c is `assert _ i _` for some `(_, i) ∈ is`, which is
+        -- guaranteed by h_inv_def. Encode via mapM_eq_some_implies_pointwise.
+        sorry
+      -- Build IH conclusions at gen' via subset relations.
+      -- Defer to a uniform handler. For now, complete the structural plumbing
+      -- common to all 4 sub-cases via a shared helper.
+      sorry
+    | some mExpr =>
+      sorry
 
 
 /-! ## Generalized simulation
