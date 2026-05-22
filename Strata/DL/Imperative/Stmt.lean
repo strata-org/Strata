@@ -305,7 +305,7 @@ end
 
 mutual
 /-- Get all variables accessed by `s`. -/
-def Stmt.getVars [HasVarsPure P P.Expr] [HasVarsPure P C] (s : Stmt P C) : List P.Ident :=
+@[expose] def Stmt.getVars [HasVarsPure P P.Expr] [HasVarsPure P C] (s : Stmt P C) : List P.Ident :=
   match s with
   | .cmd cmd => HasVarsPure.getVars cmd
   | .block _ bss _ => Block.getVars bss
@@ -322,7 +322,7 @@ def Stmt.getVars [HasVarsPure P P.Expr] [HasVarsPure P C] (s : Stmt P C) : List 
       bodyVars.filter (fun v => formals.all (fun f => ¬(P.EqIdent v f).decide))
   | .typeDecl _ _ => []  -- Type declarations don't reference variables
 
-def Block.getVars [HasVarsPure P P.Expr] [HasVarsPure P C] (ss : Block P C) : List P.Ident :=
+@[expose] def Block.getVars [HasVarsPure P P.Expr] [HasVarsPure P C] (ss : Block P C) : List P.Ident :=
   match ss with
   | [] => []
   | s :: srest => Stmt.getVars s ++ Block.getVars srest
@@ -338,7 +338,7 @@ instance (P : PureExpr) [HasVarsPure P P.Expr] [HasVarsPure P C]
 
 mutual
 /-- Get all variables defined by the statement `s`. -/
-def Stmt.definedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
+@[expose] def Stmt.definedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
   match s with
   | .cmd cmd => HasVarsImp.definedVars cmd
   | .block _ bss _ => Block.definedVars bss
@@ -348,7 +348,7 @@ def Stmt.definedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
   | .typeDecl _ _ => []  -- Type declarations don't define variables
   | _ => []
 
-def Block.definedVars [HasVarsImp P C] (ss : Block P C) : List P.Ident :=
+@[expose] def Block.definedVars [HasVarsImp P C] (ss : Block P C) : List P.Ident :=
   match ss with
   | [] => []
   | s :: srest => Stmt.definedVars s ++ Block.definedVars srest
@@ -356,7 +356,7 @@ end
 
 mutual
 /-- Get all variables modified by the statement `s`. -/
-def Stmt.modifiedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
+@[expose] def Stmt.modifiedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
   match s with
   | .cmd cmd => HasVarsImp.modifiedVars cmd
   | .exit _ _ => []
@@ -366,7 +366,7 @@ def Stmt.modifiedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
   | .funcDecl _ _ => []  -- Function declarations don't modify variables
   | .typeDecl _ _ => []  -- Type declarations don't modify variables
 
-def Block.modifiedVars [HasVarsImp P C] (ss : Block P C) : List P.Ident :=
+@[expose] def Block.modifiedVars [HasVarsImp P C] (ss : Block P C) : List P.Ident :=
   match ss with
   | [] => []
   | s :: srest => Stmt.modifiedVars s ++ Block.modifiedVars srest
@@ -376,13 +376,13 @@ mutual
 /-- Get all variables modified/defined by the statement `s`.
     Note that we need a separate function because order matters here for sub-blocks
  -/
-def Stmt.modifiedOrDefinedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
+@[expose] def Stmt.modifiedOrDefinedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
   match s with
   | .block _ bss _ => Block.modifiedOrDefinedVars bss
   | .ite _ tbss ebss _ => Block.modifiedOrDefinedVars tbss ++ Block.modifiedOrDefinedVars ebss
   | _ => Stmt.definedVars s ++ Stmt.modifiedVars s
 
-def Block.modifiedOrDefinedVars [HasVarsImp P C] (ss : Block P C) : List P.Ident :=
+@[expose] def Block.modifiedOrDefinedVars [HasVarsImp P C] (ss : Block P C) : List P.Ident :=
   match ss with
   | [] => []
   | s :: srest => Stmt.modifiedOrDefinedVars s ++ Block.modifiedOrDefinedVars srest
@@ -390,11 +390,11 @@ end
 
 mutual
 /-- Get all variables touched (modified, defined, or read) by the statement `s`. -/
-def Stmt.touchedVars [HasVarsImp P C] [HasVarsPure P P.Expr] [HasVarsPure P C]
+@[expose] def Stmt.touchedVars [HasVarsImp P C] [HasVarsPure P P.Expr] [HasVarsPure P C]
     (s : Stmt P C) : List P.Ident :=
   Stmt.modifiedOrDefinedVars s ++ Stmt.getVars s
 
-def Block.touchedVars [HasVarsImp P C] [HasVarsPure P P.Expr] [HasVarsPure P C]
+@[expose] def Block.touchedVars [HasVarsImp P C] [HasVarsPure P P.Expr] [HasVarsPure P C]
     (ss : Block P C) : List P.Ident :=
   Block.modifiedOrDefinedVars ss ++ Block.getVars ss
 end

@@ -5356,6 +5356,556 @@ private theorem flushCmds_blocks_no_genFuture
     | inr h_in_tr =>
       exact h_tr_classifies tr h_tr x h_in_tr
 
+/-- Projection: `Block.touchedVars (s :: rest)` rewritten with the head's
+`Stmt.modifiedOrDefinedVars`/`Stmt.getVars` separated from the tail's
+`Block.modifiedOrDefinedVars`/`Block.getVars`. -/
+private theorem Block_touchedVars_cons {P : PureExpr} [HasVarsPure P P.Expr]
+    (s : Stmt P (Cmd P)) (rest : List (Stmt P (Cmd P))) :
+    Block.touchedVars (s :: rest)
+      = Stmt.modifiedOrDefinedVars s ++ Block.modifiedOrDefinedVars rest ++
+        (Stmt.getVars s ++ Block.getVars rest) := by
+  simp only [Block.touchedVars, Block.modifiedOrDefinedVars, Block.getVars]
+
+/-- The set of vars in `Block.modifiedOrDefinedVars` is the union of
+`Block.definedVars` and `Block.modifiedVars`. Proved by induction on the
+sizeOf-measure of the block.
+
+We use a sized induction so we can recurse through nested `.block`/`.ite`
+heads without having to set up a mutual proof. -/
+private theorem Block_modOrDef_set_eq {P : PureExpr} [HasVarsImp P (Cmd P)]
+    [HasVarsPure P P.Expr] (ss : List (Stmt P (Cmd P))) (x : P.Ident) :
+    x ∈ Block.modifiedOrDefinedVars ss ↔
+      x ∈ Block.definedVars ss ∨ x ∈ Block.modifiedVars ss := by
+  match ss with
+  | [] =>
+    simp [Block.modifiedOrDefinedVars, Block.definedVars, Block.modifiedVars]
+  | .cmd c :: rest =>
+    show x ∈ (HasVarsImp.definedVars c ++ HasVarsImp.modifiedVars c) ++
+              Block.modifiedOrDefinedVars rest ↔
+      x ∈ (HasVarsImp.definedVars c ++ Block.definedVars rest) ∨
+      x ∈ (HasVarsImp.modifiedVars c ++ Block.modifiedVars rest)
+    simp only [List.mem_append]
+    constructor
+    · intro h
+      cases h with
+      | inl h_c =>
+        cases h_c with
+        | inl h_d => exact Or.inl (Or.inl h_d)
+        | inr h_m => exact Or.inr (Or.inl h_m)
+      | inr h_t =>
+        rcases (Block_modOrDef_set_eq rest x).mp h_t with h_d | h_m
+        · exact Or.inl (Or.inr h_d)
+        · exact Or.inr (Or.inr h_m)
+    · intro h
+      cases h with
+      | inl h =>
+        cases h with
+        | inl h_d => exact Or.inl (Or.inl h_d)
+        | inr h_d => exact Or.inr ((Block_modOrDef_set_eq rest x).mpr (Or.inl h_d))
+      | inr h =>
+        cases h with
+        | inl h_m => exact Or.inl (Or.inr h_m)
+        | inr h_m => exact Or.inr ((Block_modOrDef_set_eq rest x).mpr (Or.inr h_m))
+  | .block _ bss _ :: rest =>
+    show x ∈ Block.modifiedOrDefinedVars bss ++ Block.modifiedOrDefinedVars rest ↔
+      x ∈ (Block.definedVars bss ++ Block.definedVars rest) ∨
+      x ∈ (Block.modifiedVars bss ++ Block.modifiedVars rest)
+    simp only [List.mem_append]
+    constructor
+    · intro h
+      cases h with
+      | inl h_h =>
+        rcases (Block_modOrDef_set_eq bss x).mp h_h with h_d | h_m
+        · exact Or.inl (Or.inl h_d)
+        · exact Or.inr (Or.inl h_m)
+      | inr h_t =>
+        rcases (Block_modOrDef_set_eq rest x).mp h_t with h_d | h_m
+        · exact Or.inl (Or.inr h_d)
+        · exact Or.inr (Or.inr h_m)
+    · intro h
+      cases h with
+      | inl h =>
+        cases h with
+        | inl h_d => exact Or.inl ((Block_modOrDef_set_eq bss x).mpr (Or.inl h_d))
+        | inr h_d => exact Or.inr ((Block_modOrDef_set_eq rest x).mpr (Or.inl h_d))
+      | inr h =>
+        cases h with
+        | inl h_m => exact Or.inl ((Block_modOrDef_set_eq bss x).mpr (Or.inr h_m))
+        | inr h_m => exact Or.inr ((Block_modOrDef_set_eq rest x).mpr (Or.inr h_m))
+  | .ite _ tbss ebss _ :: rest =>
+    show x ∈ (Block.modifiedOrDefinedVars tbss ++ Block.modifiedOrDefinedVars ebss) ++
+              Block.modifiedOrDefinedVars rest ↔
+      x ∈ ((Block.definedVars tbss ++ Block.definedVars ebss) ++ Block.definedVars rest) ∨
+      x ∈ ((Block.modifiedVars tbss ++ Block.modifiedVars ebss) ++ Block.modifiedVars rest)
+    simp only [List.mem_append]
+    constructor
+    · intro h
+      cases h with
+      | inl h_h =>
+        cases h_h with
+        | inl h_t =>
+          rcases (Block_modOrDef_set_eq tbss x).mp h_t with h_d | h_m
+          · exact Or.inl (Or.inl (Or.inl h_d))
+          · exact Or.inr (Or.inl (Or.inl h_m))
+        | inr h_e =>
+          rcases (Block_modOrDef_set_eq ebss x).mp h_e with h_d | h_m
+          · exact Or.inl (Or.inl (Or.inr h_d))
+          · exact Or.inr (Or.inl (Or.inr h_m))
+      | inr h_r =>
+        rcases (Block_modOrDef_set_eq rest x).mp h_r with h_d | h_m
+        · exact Or.inl (Or.inr h_d)
+        · exact Or.inr (Or.inr h_m)
+    · intro h
+      cases h with
+      | inl h =>
+        cases h with
+        | inl h_h =>
+          cases h_h with
+          | inl h_t => exact Or.inl (Or.inl ((Block_modOrDef_set_eq tbss x).mpr (Or.inl h_t)))
+          | inr h_e => exact Or.inl (Or.inr ((Block_modOrDef_set_eq ebss x).mpr (Or.inl h_e)))
+        | inr h_r => exact Or.inr ((Block_modOrDef_set_eq rest x).mpr (Or.inl h_r))
+      | inr h =>
+        cases h with
+        | inl h_h =>
+          cases h_h with
+          | inl h_t => exact Or.inl (Or.inl ((Block_modOrDef_set_eq tbss x).mpr (Or.inr h_t)))
+          | inr h_e => exact Or.inl (Or.inr ((Block_modOrDef_set_eq ebss x).mpr (Or.inr h_e)))
+        | inr h_r => exact Or.inr ((Block_modOrDef_set_eq rest x).mpr (Or.inr h_r))
+  | .loop g_l m_l is_l body_l md_l :: rest =>
+    show x ∈ (Stmt.definedVars (.loop g_l m_l is_l body_l md_l) ++
+              Stmt.modifiedVars (.loop g_l m_l is_l body_l md_l)) ++
+              Block.modifiedOrDefinedVars rest ↔
+      x ∈ (Stmt.definedVars (.loop g_l m_l is_l body_l md_l) ++ Block.definedVars rest) ∨
+      x ∈ (Stmt.modifiedVars (.loop g_l m_l is_l body_l md_l) ++ Block.modifiedVars rest)
+    simp only [List.mem_append]
+    constructor
+    · intro h
+      cases h with
+      | inl h_h =>
+        cases h_h with
+        | inl h_d => exact Or.inl (Or.inl h_d)
+        | inr h_m => exact Or.inr (Or.inl h_m)
+      | inr h_t =>
+        rcases (Block_modOrDef_set_eq rest x).mp h_t with h_d | h_m
+        · exact Or.inl (Or.inr h_d)
+        · exact Or.inr (Or.inr h_m)
+    · intro h
+      cases h with
+      | inl h =>
+        cases h with
+        | inl h_d => exact Or.inl (Or.inl h_d)
+        | inr h_d => exact Or.inr ((Block_modOrDef_set_eq rest x).mpr (Or.inl h_d))
+      | inr h =>
+        cases h with
+        | inl h_m => exact Or.inl (Or.inr h_m)
+        | inr h_m => exact Or.inr ((Block_modOrDef_set_eq rest x).mpr (Or.inr h_m))
+  | .exit _ _ :: rest =>
+    show x ∈ ([] ++ []) ++ Block.modifiedOrDefinedVars rest ↔
+      x ∈ ([] ++ Block.definedVars rest) ∨ x ∈ ([] ++ Block.modifiedVars rest)
+    simp only [List.append_nil, List.nil_append, List.not_mem_nil, false_or, List.mem_append]
+    exact Block_modOrDef_set_eq rest x
+  | .funcDecl decl _ :: rest =>
+    show x ∈ ([decl.name] ++ []) ++ Block.modifiedOrDefinedVars rest ↔
+      x ∈ ([decl.name] ++ Block.definedVars rest) ∨
+      x ∈ ([] ++ Block.modifiedVars rest)
+    -- Simplify the `[] ++` and `++ []` parts.
+    have h_name_app_nil : ([decl.name] ++ []) = ([decl.name] : List P.Ident) := by simp
+    rw [h_name_app_nil]
+    simp only [List.nil_append, List.mem_append]
+    constructor
+    · intro h
+      cases h with
+      | inl h_n =>
+        -- x ∈ [decl.name]
+        exact Or.inl (Or.inl h_n)
+      | inr h_r =>
+        rcases (Block_modOrDef_set_eq rest x).mp h_r with h_d | h_m
+        · exact Or.inl (Or.inr h_d)
+        · exact Or.inr h_m
+    · intro h
+      cases h with
+      | inl h =>
+        cases h with
+        | inl h_n => exact Or.inl h_n
+        | inr h_d => exact Or.inr ((Block_modOrDef_set_eq rest x).mpr (Or.inl h_d))
+      | inr h =>
+        exact Or.inr ((Block_modOrDef_set_eq rest x).mpr (Or.inr h))
+  | .typeDecl _ _ :: rest =>
+    show x ∈ ([] ++ []) ++ Block.modifiedOrDefinedVars rest ↔
+      x ∈ ([] ++ Block.definedVars rest) ∨ x ∈ ([] ++ Block.modifiedVars rest)
+    simp only [List.append_nil, List.nil_append, List.not_mem_nil, false_or, List.mem_append]
+    exact Block_modOrDef_set_eq rest x
+  termination_by sizeOf ss
+
+/-- Tail subset: every var touched by `rest` is touched by `s :: rest`. -/
+private theorem Block_touchedVars_tail_subset {P : PureExpr}
+    [HasVarsPure P P.Expr]
+    (s : Stmt P (Cmd P)) (rest : List (Stmt P (Cmd P)))
+    {x : P.Ident} (h : x ∈ Block.touchedVars rest) :
+    x ∈ Block.touchedVars (s :: rest) := by
+  rw [Block_touchedVars_cons]
+  -- h : x ∈ Block.modifiedOrDefinedVars rest ++ Block.getVars rest
+  rcases List.mem_append.mp h with h_mod | h_get
+  · apply List.mem_append.mpr
+    left
+    apply List.mem_append.mpr
+    right
+    exact h_mod
+  · apply List.mem_append.mpr
+    right
+    apply List.mem_append.mpr
+    right
+    exact h_get
+
+/-- Cons-accum: source-shape-free idents in `Cmd.touchedVars c` together with
+accum's hypothesis give the same property for `(c :: accum).flatMap`. -/
+private theorem cons_accum_no_gen_suffix {P : PureExpr}
+    [HasVarsPure P P.Expr] [HasIdent P]
+    (c : Cmd P) (accum : List (Cmd P))
+    (h_c : ∀ x ∈ Cmd.touchedVars c, ∀ s : String,
+        x = HasIdent.ident (P := P) s → ¬ String.HasUnderscoreDigitSuffix s)
+    (h_accum : ∀ x ∈ accum.flatMap Cmd.touchedVars, ∀ s : String,
+        x = HasIdent.ident (P := P) s → ¬ String.HasUnderscoreDigitSuffix s) :
+    ∀ x ∈ (c :: accum).flatMap Cmd.touchedVars, ∀ s : String,
+      x = HasIdent.ident (P := P) s → ¬ String.HasUnderscoreDigitSuffix s := by
+  intro x h_in s heq
+  simp only [List.flatMap_cons, List.mem_append] at h_in
+  cases h_in with
+  | inl h_in_c => exact h_c x h_in_c s heq
+  | inr h_in_acc => exact h_accum x h_in_acc s heq
+
+/-- Source-shape-free idents in `Cmd.touchedVars c` are derivable from
+membership of `.cmd c` in `Block.touchedVars`. -/
+private theorem cmd_touchedVars_subset_block {P : PureExpr}
+    [HasVarsPure P P.Expr]
+    (c : Cmd P) (rest : List (Stmt P (Cmd P)))
+    {x : P.Ident} (h : x ∈ Cmd.touchedVars c) :
+    x ∈ Block.touchedVars (.cmd c :: rest) := by
+  rw [Block_touchedVars_cons]
+  -- Stmt.modifiedOrDefinedVars (.cmd c) = HasVarsImp.definedVars c ++ HasVarsImp.modifiedVars c
+  --   = Cmd.definedVars c ++ Cmd.modifiedVars c
+  -- Stmt.getVars (.cmd c) = HasVarsPure.getVars c = Cmd.getVars c
+  -- Cmd.touchedVars c = Cmd.getVars c ++ Cmd.definedVars c ++ Cmd.modifiedVars c
+  show x ∈ (Cmd.definedVars c ++ Cmd.modifiedVars c ++
+              Block.modifiedOrDefinedVars rest) ++
+            (Cmd.getVars c ++ Block.getVars rest)
+  unfold Cmd.touchedVars at h
+  rcases List.mem_append.mp h with h_g_d | h_m
+  · rcases List.mem_append.mp h_g_d with h_g | h_d
+    · -- x ∈ Cmd.getVars c
+      apply List.mem_append.mpr
+      right
+      apply List.mem_append.mpr
+      left
+      exact h_g
+    · -- x ∈ Cmd.definedVars c
+      apply List.mem_append.mpr
+      left
+      apply List.mem_append.mpr
+      left
+      apply List.mem_append.mpr
+      left
+      exact h_d
+  · -- x ∈ Cmd.modifiedVars c
+    apply List.mem_append.mpr
+    left
+    apply List.mem_append.mpr
+    left
+    apply List.mem_append.mpr
+    right
+    exact h_m
+
+/-- Block-body inclusion: every var in `Block.touchedVars bss` is in
+`Block.touchedVars (.block l bss md :: rest)`. -/
+private theorem block_body_touchedVars_subset {P : PureExpr}
+    [HasVarsPure P P.Expr]
+    (l : String) (bss : List (Stmt P (Cmd P))) (md : MetaData P)
+    (rest : List (Stmt P (Cmd P)))
+    {x : P.Ident} (h : x ∈ Block.touchedVars bss) :
+    x ∈ Block.touchedVars (.block l bss md :: rest) := by
+  rw [Block_touchedVars_cons]
+  -- Stmt.modifiedOrDefinedVars (.block l bss md) = Block.modifiedOrDefinedVars bss
+  -- Stmt.getVars (.block l bss md) = Block.getVars bss
+  show x ∈ (Block.modifiedOrDefinedVars bss ++ Block.modifiedOrDefinedVars rest) ++
+            (Block.getVars bss ++ Block.getVars rest)
+  -- h : x ∈ Block.modifiedOrDefinedVars bss ++ Block.getVars bss
+  rcases List.mem_append.mp h with h_mod | h_get
+  · apply List.mem_append.mpr
+    left
+    apply List.mem_append.mpr
+    left
+    exact h_mod
+  · apply List.mem_append.mpr
+    right
+    apply List.mem_append.mpr
+    left
+    exact h_get
+
+/-- Then-branch inclusion for `.ite`. -/
+private theorem ite_then_touchedVars_subset {P : PureExpr}
+    [HasVarsPure P P.Expr]
+    (c : ExprOrNondet P) (tss fss : List (Stmt P (Cmd P))) (md : MetaData P)
+    (rest : List (Stmt P (Cmd P)))
+    {x : P.Ident} (h : x ∈ Block.touchedVars tss) :
+    x ∈ Block.touchedVars (.ite c tss fss md :: rest) := by
+  rw [Block_touchedVars_cons]
+  -- Stmt.modifiedOrDefinedVars (.ite c tss fss md) =
+  --   Block.modifiedOrDefinedVars tss ++ Block.modifiedOrDefinedVars fss
+  -- Stmt.getVars (.ite c tss fss md) =
+  --   c.getVars ++ Block.getVars tss ++ Block.getVars fss
+  show x ∈ ((Block.modifiedOrDefinedVars tss ++ Block.modifiedOrDefinedVars fss) ++
+              Block.modifiedOrDefinedVars rest) ++
+            ((c.getVars ++ Block.getVars tss ++ Block.getVars fss) ++ Block.getVars rest)
+  rcases List.mem_append.mp h with h_mod | h_get
+  · apply List.mem_append.mpr
+    left
+    apply List.mem_append.mpr
+    left
+    exact List.mem_append.mpr (Or.inl h_mod)
+  · apply List.mem_append.mpr
+    right
+    apply List.mem_append.mpr
+    left
+    apply List.mem_append.mpr
+    left
+    exact List.mem_append.mpr (Or.inr h_get)
+
+/-- Else-branch inclusion for `.ite`. -/
+private theorem ite_else_touchedVars_subset {P : PureExpr}
+    [HasVarsPure P P.Expr]
+    (c : ExprOrNondet P) (tss fss : List (Stmt P (Cmd P))) (md : MetaData P)
+    (rest : List (Stmt P (Cmd P)))
+    {x : P.Ident} (h : x ∈ Block.touchedVars fss) :
+    x ∈ Block.touchedVars (.ite c tss fss md :: rest) := by
+  rw [Block_touchedVars_cons]
+  show x ∈ ((Block.modifiedOrDefinedVars tss ++ Block.modifiedOrDefinedVars fss) ++
+              Block.modifiedOrDefinedVars rest) ++
+            ((c.getVars ++ Block.getVars tss ++ Block.getVars fss) ++ Block.getVars rest)
+  rcases List.mem_append.mp h with h_mod | h_get
+  · apply List.mem_append.mpr
+    left
+    apply List.mem_append.mpr
+    left
+    exact List.mem_append.mpr (Or.inr h_mod)
+  · apply List.mem_append.mpr
+    right
+    apply List.mem_append.mpr
+    left
+    apply List.mem_append.mpr
+    right
+    exact h_get
+
+/-- ite condition expression's getVars is contained in `.ite`'s touchedVars
+(specifically in the getVars side). -/
+private theorem ite_cond_getVars_subset {P : PureExpr}
+    [HasVarsPure P P.Expr]
+    (e : P.Expr) (tss fss : List (Stmt P (Cmd P))) (md : MetaData P)
+    (rest : List (Stmt P (Cmd P)))
+    {x : P.Ident} (h : x ∈ HasVarsPure.getVars e) :
+    x ∈ Block.touchedVars (.ite (.det e) tss fss md :: rest) := by
+  rw [Block_touchedVars_cons]
+  show x ∈ ((Block.modifiedOrDefinedVars tss ++ Block.modifiedOrDefinedVars fss) ++
+              Block.modifiedOrDefinedVars rest) ++
+            (((ExprOrNondet.det e).getVars ++ Block.getVars tss ++ Block.getVars fss) ++
+              Block.getVars rest)
+  apply List.mem_append.mpr
+  right
+  apply List.mem_append.mpr
+  left
+  apply List.mem_append.mpr
+  left
+  apply List.mem_append.mpr
+  left
+  show x ∈ ExprOrNondet.getVars (.det e)
+  unfold ExprOrNondet.getVars
+  exact h
+
+/-- Loop body inclusion. -/
+private theorem loop_body_touchedVars_subset {P : PureExpr}
+    [HasVarsPure P P.Expr]
+    (g : ExprOrNondet P) (m : Option P.Expr) (is : List (String × P.Expr))
+    (bss : List (Stmt P (Cmd P))) (md : MetaData P)
+    (rest : List (Stmt P (Cmd P)))
+    {x : P.Ident} (h : x ∈ Block.touchedVars bss) :
+    x ∈ Block.touchedVars (.loop g m is bss md :: rest) := by
+  -- We expand both sides via Block.touchedVars, Block.modifiedOrDefinedVars,
+  -- Block.getVars step by step (all are exposed). Use simp to flatten.
+  -- The key fact: Block.modifiedOrDefinedVars bss ⊆ (set-wise)
+  -- (Block.definedVars bss ++ Block.modifiedVars bss).
+  have h_unfold_bss : Block.touchedVars bss =
+      Block.modifiedOrDefinedVars bss ++ Block.getVars bss := by
+    simp only [Block.touchedVars]
+  rw [h_unfold_bss] at h
+  -- Now goal: x ∈ Block.touchedVars (.loop ... :: rest).
+  -- That equals: Block.modifiedOrDefinedVars (.loop ... :: rest) ++
+  --              Block.getVars (.loop ... :: rest)
+  -- Cons-step:
+  --   = Stmt.modifiedOrDefinedVars (.loop ...) ++ Block.modifiedOrDefinedVars rest
+  --     ++ (Stmt.getVars (.loop ...) ++ Block.getVars rest)
+  -- And Stmt.modifiedOrDefinedVars (.loop ...) reduces to
+  --   Stmt.definedVars (.loop ...) ++ Stmt.modifiedVars (.loop ...)
+  -- = Block.definedVars bss ++ Block.modifiedVars bss.
+  -- Stmt.getVars (.loop ...) = g.getVars ++ Block.getVars bss.
+  show x ∈ Block.modifiedOrDefinedVars
+              ((.loop g m is bss md : Stmt P (Cmd P)) :: rest) ++
+            Block.getVars
+              ((.loop g m is bss md : Stmt P (Cmd P)) :: rest)
+  rcases List.mem_append.mp h with h_mod | h_get
+  · -- x ∈ Block.modifiedOrDefinedVars bss ⇒ x ∈ Block.definedVars bss ∨ Block.modifiedVars bss.
+    have h_dm := (Block_modOrDef_set_eq bss x).mp h_mod
+    apply List.mem_append.mpr; left
+    show x ∈ (Stmt.definedVars (.loop g m is bss md) ++
+                Stmt.modifiedVars (.loop g m is bss md)) ++
+              Block.modifiedOrDefinedVars rest
+    apply List.mem_append.mpr; left
+    rcases h_dm with h_d | h_m
+    · exact List.mem_append.mpr (Or.inl h_d)
+    · exact List.mem_append.mpr (Or.inr h_m)
+  · apply List.mem_append.mpr; right
+    show x ∈ Stmt.getVars (.loop g m is bss md) ++ Block.getVars rest
+    apply List.mem_append.mpr; left
+    show x ∈ ExprOrNondet.getVars g ++ Block.getVars bss
+    exact List.mem_append.mpr (Or.inr h_get)
+
+/-- Loop guard expression's getVars (det case) is contained in the touchedVars. -/
+private theorem loop_guard_det_getVars_subset {P : PureExpr}
+    [HasVarsPure P P.Expr]
+    (e : P.Expr) (m : Option P.Expr) (is : List (String × P.Expr))
+    (bss : List (Stmt P (Cmd P))) (md : MetaData P)
+    (rest : List (Stmt P (Cmd P)))
+    {x : P.Ident} (h : x ∈ HasVarsPure.getVars e) :
+    x ∈ Block.touchedVars (.loop (.det e) m is bss md :: rest) := by
+  -- Goal is x ∈ <flat union>; we navigate to the e.getVars piece in Stmt.getVars (.loop (.det e) ...).
+  show x ∈ Block.modifiedOrDefinedVars (.loop (.det e) m is bss md :: rest) ++
+            Block.getVars (.loop (.det e) m is bss md :: rest)
+  refine List.mem_append.mpr (Or.inr ?_)
+  show x ∈ Stmt.getVars (.loop (.det e) m is bss md) ++ Block.getVars rest
+  refine List.mem_append.mpr (Or.inl ?_)
+  show x ∈ ExprOrNondet.getVars (.det e) ++ Block.getVars bss
+  refine List.mem_append.mpr (Or.inl ?_)
+  show x ∈ ExprOrNondet.getVars (.det e)
+  exact h
+
+set_option maxHeartbeats 1600000 in
+/-- The PB-T9 main structural lemma: every block emitted by `stmtsToBlocks`
+has its `cfgFrameTouches` lying in the user-source-shape-free idents of
+`accum` and `ss`, plus idents whose strings are ∈ `stringGens gen'`.
+
+By contrast: an ident with gen-suffix shape generated *after* gen' (e.g.,
+the manufactured `freshIdent` for `.ite .nondet`'s init-and-condGoto block)
+is not in either set, so it cannot appear in any emitted block's
+`cfgFrameTouches`. This is what unlocks the discharge of
+`stepDetCFGStar_frame_extend_one_run` at the four blocked sorries. -/
+private theorem stmtsToBlocks_blocks_no_genFuture
+    {P : PureExpr} [HasBool P] [HasFvar P] [HasNot P] [HasIdent P]
+    [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    {k : String} {ss : List (Stmt P (Cmd P))}
+    {exitConts : List (Option String × String)}
+    {accum : List (Cmd P)} {gen gen' : StringGenState}
+    {entry : String} {blocks : DetBlocks String (Cmd P) P}
+    (h_gen : stmtsToBlocks k ss exitConts accum gen = ((entry, blocks), gen'))
+    (h_tt_getVars : HasVarsPure.getVars (P := P) (HasBool.tt : P.Expr) = [])
+    (h_mkFvar_getVars_subset : ∀ x : P.Ident,
+        HasVarsPure.getVars (HasFvar.mkFvar (P := P) x) ⊆ [x])
+    (h_accum_no_gen_suffix :
+      ∀ x ∈ accum.flatMap Cmd.touchedVars, ∀ s : String,
+        x = HasIdent.ident (P := P) s → ¬ String.HasUnderscoreDigitSuffix s)
+    (h_ss_no_gen_suffix :
+      ∀ x ∈ Block.touchedVars ss, ∀ s : String,
+        x = HasIdent.ident (P := P) s → ¬ String.HasUnderscoreDigitSuffix s) :
+    ∀ blk ∈ blocks.map Prod.snd,
+      ∀ x ∈ Block.cfgFrameTouches blk, identClassifies (P := P) x gen' := by
+  match h_match : ss with
+  | [] =>
+    -- stmtsToBlocks reduces to flushCmds "l$" accum .none k.
+    unfold stmtsToBlocks at h_gen
+    have h_accum_classifies :
+        listClassifies (P := P) (accum.flatMap Cmd.touchedVars) gen' :=
+      listClassifies_of_no_gen_suffix h_accum_no_gen_suffix
+    have h_tr_classifies :
+        ∀ tr, (Option.none : Option (DetTransferCmd String P)) = some tr →
+          listClassifies (P := P) (DetTransferCmd.touchedVars tr) gen' := by
+      intro tr h_eq; cases h_eq
+    exact flushCmds_blocks_no_genFuture h_gen h_tt_getVars
+      h_accum_classifies h_tr_classifies
+  | .cmd c :: rest =>
+    -- Recurse with extended accumulator.
+    unfold stmtsToBlocks at h_gen
+    have h_c_no_gen :
+        ∀ x ∈ Cmd.touchedVars c, ∀ s : String,
+          x = HasIdent.ident (P := P) s → ¬ String.HasUnderscoreDigitSuffix s := by
+      intro x h_x s heq
+      exact h_ss_no_gen_suffix x (cmd_touchedVars_subset_block c rest h_x) s heq
+    have h_rest_no_gen :
+        ∀ x ∈ Block.touchedVars rest, ∀ s : String,
+          x = HasIdent.ident (P := P) s → ¬ String.HasUnderscoreDigitSuffix s := by
+      intro x h_x s heq
+      exact h_ss_no_gen_suffix x (Block_touchedVars_tail_subset _ _ h_x) s heq
+    have h_accum' := cons_accum_no_gen_suffix c accum h_c_no_gen h_accum_no_gen_suffix
+    exact stmtsToBlocks_blocks_no_genFuture (k := k) (ss := rest) (exitConts := exitConts)
+      (accum := c :: accum) (gen := gen) (gen' := gen') (entry := entry) (blocks := blocks)
+      h_gen h_tt_getVars h_mkFvar_getVars_subset h_accum' h_rest_no_gen
+  | .funcDecl _ _ :: rest =>
+    -- Skip funcDecl, recurse on rest. Tail subset suffices.
+    unfold stmtsToBlocks at h_gen
+    have h_rest_no_gen :
+        ∀ x ∈ Block.touchedVars rest, ∀ s : String,
+          x = HasIdent.ident (P := P) s → ¬ String.HasUnderscoreDigitSuffix s := by
+      intro x h_x s heq
+      exact h_ss_no_gen_suffix x (Block_touchedVars_tail_subset _ _ h_x) s heq
+    exact stmtsToBlocks_blocks_no_genFuture (k := k) (ss := rest) (exitConts := exitConts)
+      (accum := accum) (gen := gen) (gen' := gen') (entry := entry) (blocks := blocks)
+      h_gen h_tt_getVars h_mkFvar_getVars_subset h_accum_no_gen_suffix h_rest_no_gen
+  | .typeDecl _ _ :: rest =>
+    unfold stmtsToBlocks at h_gen
+    have h_rest_no_gen :
+        ∀ x ∈ Block.touchedVars rest, ∀ s : String,
+          x = HasIdent.ident (P := P) s → ¬ String.HasUnderscoreDigitSuffix s := by
+      intro x h_x s heq
+      exact h_ss_no_gen_suffix x (Block_touchedVars_tail_subset _ _ h_x) s heq
+    exact stmtsToBlocks_blocks_no_genFuture (k := k) (ss := rest) (exitConts := exitConts)
+      (accum := accum) (gen := gen) (gen' := gen') (entry := entry) (blocks := blocks)
+      h_gen h_tt_getVars h_mkFvar_getVars_subset h_accum_no_gen_suffix h_rest_no_gen
+  | .exit l? md :: _ =>
+    -- stmtsToBlocks reduces to flushCmds with explicit transfer (.goto bk md).
+    -- The bk is computed purely (no gen advance); only flushCmds is stateful.
+    unfold stmtsToBlocks at h_gen
+    -- The transfer is `.some (.goto bk md)` for some bk; touchedVars is
+    -- HasVarsPure.getVars HasBool.tt = [] via h_tt_getVars.
+    have h_accum_classifies :
+        listClassifies (P := P) (accum.flatMap Cmd.touchedVars) gen' :=
+      listClassifies_of_no_gen_suffix h_accum_no_gen_suffix
+    have h_tr_classifies :
+        ∀ tr,
+          (Option.some (DetTransferCmd.goto
+            (match exitConts.lookup (.some l?) with
+              | .some kk => kk
+              | .none => k) md) : Option (DetTransferCmd String P)) = some tr →
+          listClassifies (P := P) (DetTransferCmd.touchedVars tr) gen' := by
+      intro tr h_eq
+      cases h_eq
+      -- DetTransferCmd.goto kk md = condGoto HasBool.tt kk kk md
+      -- touchedVars = getVars HasBool.tt = [] via h_tt_getVars
+      have h_empty :
+          DetTransferCmd.touchedVars
+            (DetTransferCmd.goto
+              (match exitConts.lookup (.some l?) with
+                | .some kk => kk
+                | .none => k) (P := P) md) = [] := by
+        show HasVarsPure.getVars (P := P) (HasBool.tt : P.Expr) = []
+        exact h_tt_getVars
+      rw [h_empty]
+      intro x h_x; exact absurd h_x List.not_mem_nil
+    exact flushCmds_blocks_no_genFuture h_gen h_tt_getVars
+      h_accum_classifies h_tr_classifies
+  | .block l bss md :: rest =>
+    sorry
+  | .ite c tss fss md :: rest =>
+    sorry
+  | .loop c m is bss md :: rest =>
+    sorry
+
+
 /-! ## Generalized simulation
 
 The central lemma: for any continuation `k`, exit-continuation stack, and
