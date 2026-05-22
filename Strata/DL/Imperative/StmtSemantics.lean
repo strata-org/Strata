@@ -182,6 +182,36 @@ def Config.noFuncDecl : Config P CmdT → Prop
 @[expose] def projectStore (σ_parent σ_inner : SemanticStore P) : SemanticStore P :=
   fun x => if (σ_parent x).isSome then σ_inner x else none
 
+/-- If every var that's defined in `σ'` is also defined in `σ`, then projection
+    through `σ` is the identity on `σ'`. -/
+theorem projectStore_id {P : PureExpr} {σ σ' : SemanticStore P}
+    (h : ∀ x, σ' x ≠ none → σ x ≠ none) :
+    projectStore σ σ' = σ' := by
+  funext x
+  simp [projectStore]
+  intro hx
+  cases heq : σ' x
+  · rfl
+  · exact absurd hx (h x (by simp [heq]))
+
+/-- Projecting a store through itself is the identity. -/
+theorem projectStore_self {P : PureExpr} (σ : SemanticStore P) :
+    projectStore σ σ = σ := projectStore_id (fun _ h => h)
+
+/-- Projecting a store through itself, lifted to envs. -/
+theorem projectStore_self_env {P : PureExpr} (ρ : Env P) :
+    ({ ρ with store := projectStore ρ.store ρ.store } : Env P) = ρ := by
+  have h : projectStore ρ.store ρ.store = ρ.store := projectStore_self ρ.store
+  simp [h]
+
+/-- `projectStore` preserves `isSome` for any variable that is `isSome`
+    in both the parent and the inner store. -/
+theorem projectStore_isSome {P : PureExpr} {σ_parent σ_inner : SemanticStore P}
+    {n : P.Ident}
+    (hp : (σ_parent n).isSome) (hi : (σ_inner n).isSome) :
+    (projectStore σ_parent σ_inner n).isSome := by
+  simp [projectStore, hp, hi]
+
 /-! ## Single-step relation -/
 
 section

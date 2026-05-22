@@ -7,13 +7,17 @@ module
 
 public import Strata.Transform.LoopElim
 public import Strata.Transform.CoreSpecification
+public import Strata.Transform.CoreSpecificationProps
 public import Strata.Transform.Specification
+public import Strata.Transform.SpecificationProps
 public import Strata.DL.Imperative.StmtSemantics
 public import Strata.DL.Imperative.SemanticsProps
 public import Strata.DL.Util.Relations
 import all Strata.Transform.LoopElim
 import all Strata.Transform.Specification
+import all Strata.Transform.SpecificationProps
 import all Strata.Transform.CoreSpecification
+import all Strata.Transform.CoreSpecificationProps
 import all Strata.DL.Imperative.StmtSemantics
 import all Strata.DL.Imperative.SemanticsProps
 import all Strata.DL.Util.Relations
@@ -46,27 +50,6 @@ abbrev LangCore :=
   Core.Specification.Lang.core π φ
 abbrev CoreStar := StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
 abbrev CC := Config Expression Command
-
-/-! ## projectStore helpers -/
-
-private theorem projectStore_id {σ σ' : SemanticStore Expression}
-    (h : ∀ x, σ' x ≠ none → σ x ≠ none) :
-    projectStore σ σ' = σ' := by
-  funext x
-  simp [projectStore]
-  intro hx
-  cases heq : σ' x
-  · rfl
-  · exact absurd hx (h x (by simp [heq]))
-
-private theorem projectStore_self (σ : SemanticStore Expression) :
-    projectStore σ σ = σ := by
-  exact projectStore_id (fun _ h => h)
-
-private theorem projectStore_self_env (ρ : Env Expression) :
-    ({ ρ with store := projectStore ρ.store ρ.store } : Env Expression) = ρ := by
-  have h : projectStore ρ.store ρ.store = ρ.store := projectStore_self ρ.store
-  simp [h]
 
 /-! ## Projecting removeLoopsM results -/
 
@@ -108,8 +91,9 @@ noncomputable def blockResult (σ : LoopElimState) (ss : Statements) : Statement
 
 /-! ## CanFail for statement lists (block bodies) -/
 
-private def CanFailBlock (ss : Statements) (ρ₀ : Env Expression) : Prop :=
-  ∃ cfg : CC, cfg.getEnv.hasFailure = Bool.true ∧ CoreStar π φ (.stmts ss ρ₀) cfg
+private abbrev CanFailBlock (ss : Statements) (ρ₀ : Env Expression) : Prop :=
+  Imperative.Specification.Transform.CanFailBlock (P := Expression) (CmdT := Command)
+    (EvalCommand π φ) (EvalPureFunc φ) ss ρ₀
 
 /-! ## Identity lemmas -/
 
@@ -212,29 +196,13 @@ private theorem hasFailure_false_backwards
   · rfl
   · exact absurd (StepStmtStar_hasFailure_monotone hstar h) (by simp [hnf])
 
-/-! ## Lifting lemmas for CanFail -/
+/-! ## Lifting lemmas for CanFail
 
-private theorem canFail_head_to_block
-    (s : Statement) (ss : Statements) (ρ₀ : Env Expression)
-    (h : Transform.CanFail (LangCore π φ) s ρ₀) :
-    CanFailBlock π φ (s :: ss) ρ₀ := by
-  obtain ⟨cfg, hfail, hreach⟩ := h
-  refine ⟨.seq cfg ss, ?_, ?_⟩
-  · simp [Config.getEnv]; exact hfail
-  · exact ReflTrans_Transitive _ _ _ _
-      (.step _ _ _ .step_stmts_cons (.refl _))
-      (seq_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ ss hreach)
-
-private theorem canFail_tail_to_block
-    (s : Statement) (ss : Statements) (ρ₀ ρ₁ : Env Expression)
-    (hhead : CoreStar π φ (.stmt s ρ₀) (.terminal ρ₁))
-    (htail : CanFailBlock π φ ss ρ₁) :
-    CanFailBlock π φ (s :: ss) ρ₀ := by
-  obtain ⟨cfg, hfail, hreach⟩ := htail
-  exact ⟨cfg, hfail,
-    ReflTrans_Transitive _ _ _ _
-      (stmts_cons_step Expression (EvalCommand π φ) (EvalPureFunc φ) s ss ρ₀ ρ₁ hhead)
-      hreach⟩
+The general versions (over arbitrary `CmdT`/`evalCmd`/`extendEval`) live in
+`Imperative.Specification.Transform` (see `Strata.Transform.SpecificationProps`):
+`canFail_head_to_block`, `canFail_tail_to_block`,
+`canFailBlock_to_canFail_block`, `canFailBlock_append_left`,
+`canFailBlock_append_right`. -/
 
 private theorem block_wrap_terminal
     (l : String) (bss : Statements) (md : MetaData Expression)
@@ -379,16 +347,6 @@ private theorem block_reaches_exiting_refined
       cases hrest with
       | refl => exact ⟨_, fun heq => hne (congrArg Option.some heq.symm), .refl _, rfl⟩
       | step _ _ _ h _ => cases h
-
-private theorem canFailBlock_to_canFail_block
-    (l : String) (bss : Statements) (md : MetaData Expression) (ρ₀ : Env Expression)
-    (h : CanFailBlock π φ bss ρ₀) :
-    Transform.CanFail (LangCore π φ) (.block l bss md) ρ₀ := by
-  obtain ⟨cfg, hfail, hreach⟩ := h
-  exact ⟨.block (.some l) ρ₀.store cfg, by show cfg.getEnv.hasFailure = Bool.true; exact hfail,
-    ReflTrans_Transitive _ _ _ _
-      (step_block_enter Expression (EvalCommand π φ) (EvalPureFunc φ) l bss md ρ₀)
-      (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ (.some l) ρ₀.store hreach)⟩
 
 private theorem stmts_cons_exiting
     (s : Statement) (ss : Statements) (lbl : String)
@@ -578,92 +536,6 @@ private theorem not_all_tt_implies_some_ff
         cases hle with | head => exact htt | tail _ hmem => exact h le hmem
       have ⟨le, hle, hff⟩ := ih (fun le hle => hinv_bool le (.tail _ hle)) this
       exact ⟨le, .tail _ hle, hff⟩
-
-/-- CanFail in a prefix lifts to CanFail in prefix ++ suffix.
-    Uses the Prop→Type lifting `reflTrans_to_T` and structural inversion. -/
-private theorem canFailBlock_append_left
-    (ss₁ ss₂ : Statements) (ρ₀ : Env Expression)
-    (h : CanFailBlock π φ ss₁ ρ₀) :
-    CanFailBlock π φ (ss₁ ++ ss₂) ρ₀ := by
-  obtain ⟨cfg, hfail, hreach⟩ := h
-  -- Strategy: any reachable config from (.stmts ss₁ ρ₀) can be wrapped in a
-  -- context carrying extra ss₂. The failing config is wrapped as (.seq cfg ss₂)
-  -- which also has hasFailure = true (since getEnv only looks at cfg).
-  -- Actually, we need a more careful proof. Let's just use the general
-  -- monotonicity of hasFailure. If ss₁ reaches a failing config, then ρ₀
-  -- itself might have hasFailure=true (in which case ss₁++ss₂ trivially CanFails)
-  -- or some step sets it.
-  -- Simplest approach: just use (.stmts (ss₁ ++ ss₂) ρ₀) with hasFailure monotonicity
-  by_cases hnf : ρ₀.hasFailure = Bool.true
-  · exact ⟨.stmts (ss₁ ++ ss₂) ρ₀, by simp [Config.getEnv]; exact hnf, .refl _⟩
-  · -- ρ₀.hasFailure = false. The execution through ss₁ sets hasFailure at some point.
-    -- In ss₁ ++ ss₂, the execution follows the same path for the ss₁ prefix.
-    -- The key insight: embed the failing execution in the seq context with extra ss₂.
-    -- We construct: (.stmts (ss₁ ++ ss₂) ρ₀) →* (.seq cfg ss₂) where cfg.hasFailure = true
-    suffices ∀ src tgt, CoreStar π φ src tgt → tgt.getEnv.hasFailure = Bool.true →
-        (∀ ss ρ, src = .stmts ss ρ →
-          ∃ tgt', tgt'.getEnv.hasFailure = Bool.true ∧
-            CoreStar π φ (.stmts (ss ++ ss₂) ρ) tgt') ∧
-        (∀ inner ss, src = .seq inner ss →
-          ∃ tgt', tgt'.getEnv.hasFailure = Bool.true ∧
-            CoreStar π φ (.seq inner (ss ++ ss₂)) tgt') by
-      have ⟨tgt', hf', hr'⟩ := (this _ _ hreach hfail).1 ss₁ ρ₀ rfl
-      exact ⟨tgt', hf', hr'⟩
-    intro src tgt hstar hf
-    induction hstar with
-    | refl =>
-      exact ⟨fun ss ρ heq => by subst heq; exact ⟨_, by simp [Config.getEnv] at hf ⊢; exact hf, .refl _⟩,
-             fun inner ss heq => by subst heq; exact ⟨_, by simp [Config.getEnv] at hf ⊢; exact hf, .refl _⟩⟩
-    | step _ mid _ hstep hrest ih =>
-      have ⟨ih1, ih2⟩ := ih hf
-      exact ⟨fun ss ρ heq => by
-        subst heq; cases hstep with
-        | step_stmts_nil =>
-          -- .stmts [] ρ →step .terminal ρ →* tgt, hasFailure = true
-          -- So ρ.hasFailure || ... = true at some point during hrest
-          -- But from .terminal ρ, no more steps. So tgt = .terminal ρ.
-          -- And hf says ρ.hasFailure = true. But we assumed ρ₀.hasFailure = false...
-          -- Actually ρ is the env from the stmts, which could be different from ρ₀
-          -- after prior steps. We need (.stmts ([] ++ ss₂) ρ) = (.stmts ss₂ ρ).
-          -- mid = .terminal ρ after step_stmts_nil. hrest goes from mid to tgt.
-          -- Since terminal is stuck, hf implies the failure is already in mid.
-          -- Our witness: (.stmts ss₂ ρ) with same env ρ which has hasFailure = true
-          -- since mid.getEnv = ρ and hf propagates back through stuck terminal.
-          have hf_ρ : ρ.hasFailure = Bool.true := by
-            cases hrest with
-            | refl => simp [Config.getEnv] at hf; exact hf
-            | step _ _ _ hstep' _ => cases hstep'
-          exact ⟨.stmts ss₂ ρ, by simp [Config.getEnv]; exact hf_ρ, .refl _⟩
-        | step_stmts_cons =>
-          have ⟨tgt', hf', hr'⟩ := ih2 _ _ rfl
-          exact ⟨tgt', hf', .step _ _ _ .step_stmts_cons hr'⟩,
-      fun inner ss heq => by
-        subst heq; cases hstep with
-        | step_seq_inner h =>
-          have ⟨tgt', hf', hr'⟩ := ih2 _ _ rfl
-          exact ⟨tgt', hf', .step _ _ _ (.step_seq_inner h) hr'⟩
-        | step_seq_done =>
-          have ⟨tgt', hf', hr'⟩ := ih1 _ _ rfl
-          exact ⟨tgt', hf', .step _ _ _ .step_seq_done hr'⟩
-        | step_seq_exit =>
-          -- inner = .exiting lbl ρ, step to .exiting lbl ρ
-          -- hrest is from .exiting to tgt, but exiting is stuck
-          cases hrest with
-          | refl =>
-            exact ⟨_, hf, .step _ _ _ .step_seq_exit (.refl _)⟩
-          | step _ _ _ h _ => cases h⟩
-
-/-- CanFail in a suffix lifts to CanFail in prefix ++ suffix, given the prefix
-    terminates.  Dual to `canFailBlock_append_left`. -/
-private theorem canFailBlock_append_right
-    (ss₁ ss₂ : Statements) (ρ₀ ρ₁ : Env Expression)
-    (hpfx : CoreStar π φ (.stmts ss₁ ρ₀) (.terminal ρ₁))
-    (h : CanFailBlock π φ ss₂ ρ₁) :
-    CanFailBlock π φ (ss₁ ++ ss₂) ρ₀ := by
-  obtain ⟨cfg, hfail, hreach⟩ := h
-  exact ⟨cfg, hfail, ReflTrans_Transitive _ _ _ _
-    (stmts_prefix_terminal_append Expression (EvalCommand π φ) (EvalPureFunc φ) ss₁ ss₂ ρ₀ ρ₁ hpfx)
-    hreach⟩
 
 /-! ## Havoc trace primitives
 
@@ -965,13 +837,6 @@ private theorem evalCommand_preserves_isSome
     exact (EvalCmdDefMonotone' hdef' hcmd) n (List.Mem.head _)
   | call_sem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hups =>
     exact (UpdateStatesDefMonotone hdef' hups) n (List.Mem.head _)
-
-/-- projectStore preserves isSome for any variable defined in σ_parent and in σ_inner. -/
-private theorem projectStore_isSome {σ_parent σ_inner : SemanticStore Expression}
-    {n : Expression.Ident}
-    (hp : (σ_parent n).isSome) (hi : (σ_inner n).isSome) :
-    (projectStore σ_parent σ_inner n).isSome := by
-  simp [projectStore, hp, hi]
 
 /-- Block-scope invariant indexed by an outer store `σ_outer`: inside every nested
     `.block _ σ_parent inner`, `σ_parent` contains all vars defined in `σ_outer`,
@@ -3421,12 +3286,6 @@ private theorem BlockInitEnvWF.toBlock_tail_via_defUseOk {reserved : List String
 
 /-! ## Simulation -/
 
-/-- The prefix that loop-elim claims for its fresh names. Defined here (early)
-    so that `simulation`'s and `canfail_simulation`'s signatures can refer to it.
-    Any caller invoking `loopElim_overapproximatesAggressive` must include this
-    in `reserved`. -/
-def loopElimReservedPrefixSig : String := "$__loop"
-
 /-! ### Property abbreviations for the simulation conjuncts
 
 The four conjuncts of the simulation property are bundled into named
@@ -3669,7 +3528,7 @@ private theorem block_term_case
   | inl hterm_inner =>
     match hsim_bss.1 ρ_inner hterm_inner with
     | .inl hcf =>
-      exact .inl (canFailBlock_to_canFail_block π φ l _ md ρ₀ hcf)
+      exact .inl (Transform.canFailBlock_to_canFail_block (EvalCommand π φ) (EvalPureFunc φ) coreIsAtAssert l _ md ρ₀ hcf)
     | .inr hok_bss =>
       refine .inr (fun hnf => ?_)
       have hnf_inner : ρ_inner.hasFailure = Bool.false := by
@@ -3680,7 +3539,7 @@ private theorem block_term_case
   | inr hexit_inner =>
     match hsim_bss.2 l ρ_inner hexit_inner with
     | .inl hcf =>
-      exact .inl (canFailBlock_to_canFail_block π φ l _ md ρ₀ hcf)
+      exact .inl (Transform.canFailBlock_to_canFail_block (EvalCommand π φ) (EvalPureFunc φ) coreIsAtAssert l _ md ρ₀ hcf)
     | .inr hok_bss =>
       refine .inr (fun hnf => ?_)
       have hnf_inner : ρ_inner.hasFailure = Bool.false := by
@@ -3705,7 +3564,7 @@ private theorem block_exit_case
   obtain ⟨ρ_inner, hne, hexit_inner, hρ'eq⟩ := block_reaches_exiting_refined π φ r1
   match hsim_bss.2 lbl ρ_inner hexit_inner with
   | .inl hcf =>
-    exact .inl (canFailBlock_to_canFail_block π φ l _ md ρ₀ hcf)
+    exact .inl (Transform.canFailBlock_to_canFail_block (EvalCommand π φ) (EvalPureFunc φ) coreIsAtAssert l _ md ρ₀ hcf)
   | .inr hok_bss =>
     refine .inr (fun hnf => ?_)
     have hnf_inner : ρ_inner.hasFailure = Bool.false := by
@@ -3727,7 +3586,7 @@ private theorem block_canfail_case
     Transform.CanFail (LangCore π φ) (.block l (blockResult σ_bss_tgt bss) md) ρ₀ := by
   have ⟨inner_cfg, hfail', hinner⟩ := block_canfail_to_inner r1 hfail
   have ⟨cfg', hfail'', hreach'⟩ := hcf_inner ⟨inner_cfg, hfail', hinner⟩
-  exact canFailBlock_to_canFail_block π φ l _ md ρ₀ ⟨cfg', hfail'', hreach'⟩
+  exact Transform.canFailBlock_to_canFail_block (EvalCommand π φ) (EvalPureFunc φ) coreIsAtAssert l _ md ρ₀ ⟨cfg', hfail'', hreach'⟩
 
 /-- Block-corr cons-step "head-terminates" pattern (term endpoint).
     Given: head simulation result `hsim_s_term`/`hsim_s_cf`, head terminates
@@ -3756,13 +3615,13 @@ private theorem block_corr_cons_term_head_term
         blockResult σ_tail_tgt ss) ρ₀) (.terminal ρ')) := by
   match hsim_s_term hterm_s with
   | .inl hcf_s =>
-    exact .inl (canFail_head_to_block π φ (stmtResult σ_head_tgt s) _ ρ₀ hcf_s)
+    exact .inl (Transform.canFail_head_to_block (EvalCommand π φ) (EvalPureFunc φ) coreIsAtAssert (stmtResult σ_head_tgt s) _ ρ₀ hcf_s)
   | .inr hok_s =>
     by_cases hnf₁ : ρ₁.hasFailure = Bool.true
     · refine .inl ?_
       have hcf_src_s : Transform.CanFail (LangCore π φ) s ρ₀ :=
         ⟨.terminal ρ₁, by show ρ₁.hasFailure = Bool.true; exact hnf₁, hterm_s⟩
-      exact canFail_head_to_block π φ _ _ ρ₀ (hsim_s_cf hcf_src_s)
+      exact Transform.canFail_head_to_block (EvalCommand π φ) (EvalPureFunc φ) coreIsAtAssert _ _ ρ₀ (hsim_s_cf hcf_src_s)
     · have hnf₁' : ρ₁.hasFailure = Bool.false := by
         cases h : ρ₁.hasFailure <;> simp_all
       have htgt_s := hok_s hnf₁'
@@ -3809,13 +3668,13 @@ private theorem block_corr_cons_exit_head_term
         blockResult σ_tail_tgt ss) ρ₀) (.exiting lbl ρ')) := by
   match hsim_s_term hterm_s with
   | .inl hcf_s =>
-    exact .inl (canFail_head_to_block π φ _ _ ρ₀ hcf_s)
+    exact .inl (Transform.canFail_head_to_block (EvalCommand π φ) (EvalPureFunc φ) coreIsAtAssert _ _ ρ₀ hcf_s)
   | .inr hok_s =>
     by_cases hnf₁ : ρ₁.hasFailure = Bool.true
     · refine .inl ?_
       have hcf_src_s : Transform.CanFail (LangCore π φ) s ρ₀ :=
         ⟨.terminal ρ₁, by show ρ₁.hasFailure = Bool.true; exact hnf₁, hterm_s⟩
-      exact canFail_head_to_block π φ _ _ ρ₀ (hsim_s_cf hcf_src_s)
+      exact Transform.canFail_head_to_block (EvalCommand π φ) (EvalPureFunc φ) coreIsAtAssert _ _ ρ₀ (hsim_s_cf hcf_src_s)
     · have hnf₁' : ρ₁.hasFailure = Bool.false := by
         cases h : ρ₁.hasFailure <;> simp_all
       have htgt_s := hok_s hnf₁'
@@ -3858,19 +3717,19 @@ private theorem block_cf_cons_head_term
       blockResult σ_tail_tgt ss) ρ₀ := by
   match hsim_s_term hterm_s with
   | .inl hcf_s =>
-    exact canFail_head_to_block π φ (stmtResult σ_head_tgt s)
+    exact Transform.canFail_head_to_block (EvalCommand π φ) (EvalPureFunc φ) coreIsAtAssert (stmtResult σ_head_tgt s)
       (blockResult σ_tail_tgt ss) ρ₀ hcf_s
   | .inr hok_s =>
     by_cases hnf₁ : ρ₁.hasFailure = Bool.true
     · have hcf_src_s : Transform.CanFail (LangCore π φ) s ρ₀ :=
         ⟨.terminal ρ₁, by show ρ₁.hasFailure = Bool.true; exact hnf₁, hterm_s⟩
-      exact canFail_head_to_block π φ (stmtResult σ_head_tgt s)
+      exact Transform.canFail_head_to_block (EvalCommand π φ) (EvalPureFunc φ) coreIsAtAssert (stmtResult σ_head_tgt s)
         (blockResult σ_tail_tgt ss) ρ₀ (hsim_s_cf hcf_src_s)
     · have hnf₁' : ρ₁.hasFailure = Bool.false := by
         cases h : ρ₁.hasFailure <;> simp_all
       have htgt_s := hok_s hnf₁'
       have ⟨kcfg2, hkf2, hkstar2⟩ := hsim_ss_cf hcf_tail
-      exact canFail_tail_to_block π φ (stmtResult σ_head_tgt s)
+      exact Transform.canFail_tail_to_block (EvalCommand π φ) (EvalPureFunc φ) (stmtResult σ_head_tgt s)
         (blockResult σ_tail_tgt ss) ρ₀ ρ₁ htgt_s ⟨kcfg2, hkf2, hkstar2⟩
 
 /-- VC1-failure helper: when `hfib_eq` decomposes `first_iter_body` as
@@ -3918,14 +3777,14 @@ private theorem loop_vc1_failure_canFail
     stmts_mapIdx_assert_canFail π φ inv ρ₀ md mkAssertLabel hwfb
       hinv_bool hsome_ff
   have hcf_fib : CanFailBlock π φ (asserts ++ assumes) ρ₀ :=
-    canFailBlock_append_left π φ asserts assumes ρ₀ hcf_asserts
+    Transform.canFailBlock_append_left (EvalCommand π φ) (EvalPureFunc φ) asserts assumes ρ₀ hcf_asserts
   have hfib : first_iter_body = asserts ++ assumes := hfib_eq
   have hcf_first_block : Transform.CanFail (LangCore π φ)
       (.block first_iter_label first_iter_body {}) ρ₀ := by
     rw [hfib]
-    exact canFailBlock_to_canFail_block π φ first_iter_label _ {} ρ₀ hcf_fib
-  exact canFailBlock_to_canFail_block π φ loop_label _ {} ρ₀
-    (canFail_head_to_block π φ
+    exact Transform.canFailBlock_to_canFail_block (EvalCommand π φ) (EvalPureFunc φ) coreIsAtAssert first_iter_label _ {} ρ₀ hcf_fib
+  exact Transform.canFailBlock_to_canFail_block (EvalCommand π φ) (EvalPureFunc φ) coreIsAtAssert loop_label _ {} ρ₀
+    (Transform.canFail_head_to_block (EvalCommand π φ) (EvalPureFunc φ) coreIsAtAssert
       (.block first_iter_label first_iter_body {}) _ ρ₀ hcf_first_block)
 
 /-! ### Loop simulation helpers
@@ -7816,7 +7675,7 @@ private theorem simulation_loop_cf_all_tt_det_nomeasure
     | inl hbody_fail =>
       -- Body fails directly from ρ_k
       obtain ⟨cfg_f, hf_f, hr_f⟩ := hbody_fail
-      exact canFailBlock_append_left π φ body maintain_stmts ρ_k ⟨cfg_f, hf_f, hr_f⟩
+      exact Transform.canFailBlock_append_left (EvalCommand π φ) (EvalPureFunc φ) body maintain_stmts ρ_k ⟨cfg_f, hf_f, hr_f⟩
     | inr hbody_term =>
       -- Body terminates at ρ_inner with some inv ff → maintain fires
       obtain ⟨ρ_inner, h_body_term, _hnf_inner, hinv_bool_inner, hsome_ff⟩ := hbody_term
@@ -7830,7 +7689,7 @@ private theorem simulation_loop_cf_all_tt_det_nomeasure
       have h_maintain_cf : CanFailBlock π φ maintain_stmts ρ_inner :=
         stmts_mapIdx_assert_canFail π φ inv ρ_inner md mkMaintainLabel
           hwfb_inner hinv_bool_inner hsome_ff
-      exact canFailBlock_append_right π φ body maintain_stmts ρ_k ρ_inner h_body_term
+      exact Transform.canFailBlock_append_right (EvalCommand π φ) (EvalPureFunc φ) body maintain_stmts ρ_k ρ_inner h_body_term
         h_maintain_cf
   -- Now: arb_facts_body = [havoc_block, assumes_block] ++ [] ++ body ++ maintain ++ []
   -- = havoc :: assumes :: (body ++ maintain)
@@ -7840,7 +7699,7 @@ private theorem simulation_loop_cf_all_tt_det_nomeasure
       .block arb_assumes_label arb_assumes_body md] ++ [] ++ body ++ maintain_stmts ++ []) ρ₀
     simp only [List.append_nil, List.nil_append, List.append_assoc]
     -- = [havoc, assumes] ++ (body ++ maintain)
-    apply canFailBlock_append_right π φ
+    apply Transform.canFailBlock_append_right (EvalCommand π φ) (EvalPureFunc φ)
       [.block havoc_label havoc_stmts ∅, .block arb_assumes_label arb_assumes_body md]
       (body ++ maintain_stmts) ρ₀ ρ_k
     · -- [havoc, assumes] terminates from ρ₀ to ρ_k
@@ -7856,9 +7715,9 @@ private theorem simulation_loop_cf_all_tt_det_nomeasure
   -- Wrap arb_facts_body in arb_facts_block
   have h_arb_block_cf : Transform.CanFail (LangCore π φ)
       (.block arb_facts_label arb_facts_body ∅) ρ₀ :=
-    canFailBlock_to_canFail_block π φ arb_facts_label arb_facts_body ∅ ρ₀ h_arb_body_cf
+    Transform.canFailBlock_to_canFail_block (EvalCommand π φ) (EvalPureFunc φ) coreIsAtAssert arb_facts_label arb_facts_body ∅ ρ₀ h_arb_body_cf
   -- Then prepend it to the full then-branch list
-  exact canFail_head_to_block π φ (.block arb_facts_label arb_facts_body ∅) _ ρ₀ h_arb_block_cf
+  exact Transform.canFail_head_to_block (EvalCommand π φ) (EvalPureFunc φ) coreIsAtAssert (.block arb_facts_label arb_facts_body ∅) _ ρ₀ h_arb_block_cf
 
 /-- Sub-helper for the nondet CanFail case.  Builds the target trace
     from a known failing source iteration. -/
@@ -7970,7 +7829,7 @@ private theorem simulation_loop_cf_all_tt_nondet
     cases hbad_k with
     | inl hbody_fail =>
       obtain ⟨cfg_f, hf_f, hr_f⟩ := hbody_fail
-      exact canFailBlock_append_left π φ body maintain_stmts ρ_k ⟨cfg_f, hf_f, hr_f⟩
+      exact Transform.canFailBlock_append_left (EvalCommand π φ) (EvalPureFunc φ) body maintain_stmts ρ_k ⟨cfg_f, hf_f, hr_f⟩
     | inr hbody_term =>
       obtain ⟨ρ_inner, h_body_term, _hnf_inner, hinv_bool_inner, hsome_ff⟩ := hbody_term
       have hnofd_body : Block.noFuncDecl body = Bool.true := by
@@ -7983,13 +7842,13 @@ private theorem simulation_loop_cf_all_tt_nondet
       have h_maintain_cf : CanFailBlock π φ maintain_stmts ρ_inner :=
         stmts_mapIdx_assert_canFail π φ inv ρ_inner md mkMaintainLabel
           hwfb_inner hinv_bool_inner hsome_ff
-      exact canFailBlock_append_right π φ body maintain_stmts ρ_k ρ_inner h_body_term
+      exact Transform.canFailBlock_append_right (EvalCommand π φ) (EvalPureFunc φ) body maintain_stmts ρ_k ρ_inner h_body_term
         h_maintain_cf
   have h_arb_body_cf : CanFailBlock π φ arb_facts_body ρ₀ := by
     show CanFailBlock π φ ([.block havoc_label havoc_stmts ∅,
       .block arb_assumes_label arb_assumes_body md] ++ [] ++ body ++ maintain_stmts ++ []) ρ₀
     simp only [List.append_nil, List.nil_append, List.append_assoc]
-    apply canFailBlock_append_right π φ
+    apply Transform.canFailBlock_append_right (EvalCommand π φ) (EvalPureFunc φ)
       [.block havoc_label havoc_stmts ∅, .block arb_assumes_label arb_assumes_body md]
       (body ++ maintain_stmts) ρ₀ ρ_k
     · exact ReflTrans_Transitive _ _ _ _
@@ -8002,8 +7861,8 @@ private theorem simulation_loop_cf_all_tt_nondet
     · exact h_body_maintain_cf
   have h_arb_block_cf : Transform.CanFail (LangCore π φ)
       (.block arb_facts_label arb_facts_body ∅) ρ₀ :=
-    canFailBlock_to_canFail_block π φ arb_facts_label arb_facts_body ∅ ρ₀ h_arb_body_cf
-  exact canFail_head_to_block π φ (.block arb_facts_label arb_facts_body ∅) _ ρ₀ h_arb_block_cf
+    Transform.canFailBlock_to_canFail_block (EvalCommand π φ) (EvalPureFunc φ) coreIsAtAssert arb_facts_label arb_facts_body ∅ ρ₀ h_arb_body_cf
+  exact Transform.canFail_head_to_block (EvalCommand π φ) (EvalPureFunc φ) coreIsAtAssert (.block arb_facts_label arb_facts_body ∅) _ ρ₀ h_arb_block_cf
 
 /-- Helper for `simulation`'s loop CanFail-preservation case (all-tt
     invariants branch).  In this branch, source failure must come from the
@@ -8052,12 +7911,12 @@ private theorem simulation_loop_cf_all_tt
     rw [projectStore_self_env] at h; exact h
   -- Reduce to: CanFailBlock for the ite singleton list at ρ₀
   suffices hite_cf : CanFailBlock π φ [.ite guardE then_branch [] {}] ρ₀ from
-    canFailBlock_to_canFail_block π φ loop_label _ {} ρ₀
-      (canFail_tail_to_block π φ (.block first_iter_label first_iter_body {}) _ ρ₀ ρ₀
+    Transform.canFailBlock_to_canFail_block (EvalCommand π φ) (EvalPureFunc φ) coreIsAtAssert loop_label _ {} ρ₀
+      (Transform.canFail_tail_to_block (EvalCommand π φ) (EvalPureFunc φ) (.block first_iter_label first_iter_body {}) _ ρ₀ ρ₀
         h_fib_block hite_cf)
   -- CanFailBlock [.ite guardE then_branch [] {}] ρ₀ reduces to CanFail of the ite
   suffices hite : Transform.CanFail (LangCore π φ) (.ite guardE then_branch [] {}) ρ₀ from
-    canFail_head_to_block π φ (.ite guardE then_branch [] {}) [] ρ₀ hite
+    Transform.canFail_head_to_block (EvalCommand π φ) (EvalPureFunc φ) coreIsAtAssert (.ite guardE then_branch [] {}) [] ρ₀ hite
   -- CanFail of ITE: enter then_branch (via nondet_true or det_true),
   -- then then_branch reaches failure.
   suffices hthen_cf : CanFailBlock π φ then_branch ρ₀ by
@@ -8195,7 +8054,7 @@ allows agents to edit each conjunct independently. -/
 private theorem stmt_corr_step
     (hwf_ext : WFEvalExtension φ)
     (reserved : List String)
-    (h_loop_reserved : loopElimReservedPrefixSig ∈ reserved)
+    (h_loop_reserved : loopElimReservedPrefix ∈ reserved)
     (n : Nat) (ih : SimAllProp π φ reserved n) :
     SimStmtCorrProp π φ reserved (n + 1) := by
   intro σ st hsz hnofd hok ρ₀ hswf
@@ -8475,7 +8334,7 @@ private theorem block_corr_step
               (BlockInitEnvWF.toStmt_head hswf)
             match hsim_s.2 lbl ρ' hexit_s with
             | .inl hcf_s =>
-              exact .inl (canFail_head_to_block π φ _ _ ρ₀ hcf_s)
+              exact .inl (Transform.canFail_head_to_block (EvalCommand π φ) (EvalPureFunc φ) coreIsAtAssert _ _ ρ₀ hcf_s)
             | .inr hok_s =>
               refine .inr (fun hnf => ?_)
               exact stmts_cons_exiting π φ _ _ lbl ρ₀ ρ' (hok_s hnf)
@@ -8493,7 +8352,7 @@ private theorem block_corr_step
 private theorem stmt_cf_step
     (hwf_ext : WFEvalExtension φ)
     (reserved : List String)
-    (h_loop_reserved : loopElimReservedPrefixSig ∈ reserved)
+    (h_loop_reserved : loopElimReservedPrefix ∈ reserved)
     (n : Nat) (ih : SimAllProp π φ reserved n) :
     SimStmtCFProp π φ reserved (n + 1) := by
   intro σ st hsz hnofd hok ρ₀ hswf hcf
@@ -8601,7 +8460,7 @@ private theorem block_cf_step
           have ⟨kcfg, hkf, hkstar⟩ := ih.2.2.1 σ s hsz_s hnofd_s
             (blockOk_cons_left hok) ρ₀ (BlockInitEnvWF.toStmt_head hswf)
             ⟨cfg', hf', hstar'⟩
-          exact canFail_head_to_block π φ (stmtResult σ s)
+          exact Transform.canFail_head_to_block (EvalCommand π φ) (EvalPureFunc φ) coreIsAtAssert (stmtResult σ s)
             (blockResult (stmtPostState σ s) ss) ρ₀ ⟨kcfg, hkf, hkstar⟩
         | .inr ⟨ρ₁, hterm_s, cfg', hf', hstar_rest⟩ =>
           have hswf_s := BlockInitEnvWF.toStmt_head hswf
@@ -8617,7 +8476,7 @@ set_option maxHeartbeats 400000 in
 private theorem simulation
     (hwf_ext : WFEvalExtension φ) (sz : Nat)
     (reserved : List String)
-    (h_loop_reserved : loopElimReservedPrefixSig ∈ reserved) :
+    (h_loop_reserved : loopElimReservedPrefix ∈ reserved) :
     -- Statement level
     (∀ (σ : LoopElimState) (st : Statement),
       Stmt.sizeOf st ≤ sz →
@@ -8717,7 +8576,7 @@ private theorem simulation
 private theorem canfail_simulation
     (hwf_ext : WFEvalExtension φ) (sz : Nat)
     (reserved : List String)
-    (h_loop_reserved : loopElimReservedPrefixSig ∈ reserved) :
+    (h_loop_reserved : loopElimReservedPrefix ∈ reserved) :
     (∀ (σ : LoopElimState) (st : Statement),
       Stmt.sizeOf st ≤ sz →
       stmtOk σ st →
@@ -8742,10 +8601,6 @@ private theorem canfail_simulation
            hsim.2.2.2 σ bss hsz hnofd hok ρ₀ hswf hcf⟩
 
 /-! ## Top-level theorem -/
-
-/-- The prefix that loop-elim claims for its fresh names. Any caller invoking
-    `loopElim_overapproximatesAggressive` must include this in `reserved`. -/
-def loopElimReservedPrefix : String := "$__loop"
 
 /-- Havoc-only command lists have empty `Block.definedVars`. -/
 private theorem definedVars_havoc_map (xs : List Expression.Ident)
@@ -11446,11 +11301,7 @@ theorem loopElim_overapproximatesAggressive
   have hreserved_sig : ∀ n, (ρ₀.store n).isSome →
       ∀ p ∈ reserved, ¬ p.toList.isPrefixOf n.name.toList :=
     fun n hsome p hp => hswf.reservedFresh n hsome p hp
-  -- `loopElimReservedPrefixSig` and `loopElimReservedPrefix` are definitionally
-  -- equal (both `"$__loop"`); this lets us discharge `simulation`'s
-  -- `h_loop_reserved` premise from the top-level `h_loop_reserved`.
-  have h_loop_reserved' : loopElimReservedPrefixSig ∈ reserved := h_loop_reserved
-  have hsim := (simulation π φ hwf_ext (Stmt.sizeOf st) reserved h_loop_reserved').1
+  have hsim := (simulation π φ hwf_ext (Stmt.sizeOf st) reserved h_loop_reserved).1
     σ st (Nat.le_refl _) hnofd hok ρ₀ hswf'
   refine ⟨?_, ?_, ?_, ?_⟩
   · intro ρ' hstar; exact hsim.1 ρ' hstar
@@ -11458,7 +11309,7 @@ theorem loopElim_overapproximatesAggressive
   · intro ⟨cfg, hfail, hreach⟩
     by_cases hnf₀ : ρ₀.hasFailure = Bool.true
     · exact ⟨.stmt (stmtResult σ st) ρ₀, by show ρ₀.hasFailure = Bool.true; exact hnf₀, .refl _⟩
-    · exact (canfail_simulation π φ hwf_ext (Stmt.sizeOf st) reserved h_loop_reserved').1
+    · exact (canfail_simulation π φ hwf_ext (Stmt.sizeOf st) reserved h_loop_reserved).1
         σ st (Nat.le_refl _) hok hnofd ρ₀ hswf' ⟨cfg, hfail, hreach⟩
   · -- Show `InitEnvWF reserved (stmtResult σ st) ρ₀` from `InitEnvWF reserved st ρ₀`.
     -- The transform's fresh `$__loop_measure_N` names start with the reserved

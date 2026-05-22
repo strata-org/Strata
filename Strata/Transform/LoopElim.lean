@@ -21,6 +21,10 @@ def loopElimAssumePrefix : String := "loopElimAssume_"
 def loopElimAssertPrefix : String := "loopElimAssert_"
 /-- Label prefix of blocks created by LoopElim. -/
 def loopElimBlockPrefix : String := "loopElim_"
+/-- The identifier prefix that loop-elimination claims for its fresh names
+    (e.g. measure-snapshot variables `$__loop_measure_<n>`). Any caller of
+    `loopElim_overapproximatesAggressive` must include this in `reserved`. -/
+def loopElimReservedPrefix : String := "$__loop"
 
 /-- Statistics keys tracked by the loop elimination transformation. -/
 inductive Stats where
@@ -209,7 +213,7 @@ through a giant monadic term. -/
     [HasIntOrder P] [HasNot P]
     (loop_num : String) (m : P.Expr) (md : MetaData P) :
     List (Stmt P C) × List (Stmt P C) :=
-  let m_old_ident := HasIdent.ident s!"$__loop_measure_{loop_num}"
+  let m_old_ident := HasIdent.ident s!"{loopElimReservedPrefix}_measure_{loop_num}"
   let m_old_expr := HasFvar.mkFvar m_old_ident
   let init_m_old := Stmt.cmd (HasInit.init m_old_ident HasIntOrder.intTy (.det m) md)
   let assert_lb := Stmt.cmd (HasPassiveCmds.assert
@@ -222,7 +226,7 @@ through a giant monadic term. -/
 /-- The fresh measure-snapshot identifier for a given loop number.
     Returns `Some` when measure is `Some _` and freshness check passes. -/
 @[expose, reducible] def measureOldIdent [HasIdent P] (loop_num : String) : P.Ident :=
-  HasIdent.ident s!"$__loop_measure_{loop_num}"
+  HasIdent.ident s!"{loopElimReservedPrefix}_measure_{loop_num}"
 
 /-- A guard-specific bundle as a tuple: (assumeGuard, preTermination,
     postTermination, exitGuard). Returned by `buildGuardParts`. The four pieces
