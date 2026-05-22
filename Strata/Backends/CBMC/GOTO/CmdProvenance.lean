@@ -292,4 +292,81 @@ theorem assn_provenance_of_translator
       subst h_eq
       exact ⟨v, gty, e_goto, h_assn_code⟩
 
+/-! ## ASSIGN-Nondet provenance — partial
+
+The v2 bridge's `h_assn_nondet_provenance` field is universal over
+ASSIGN PCs and demands a nondet rhs for every ASSIGN. This is **false**
+in general — `init_det` and `set_det` both emit ASSIGNs whose rhs is a
+translated source expression, not a nondet side-effect.
+
+The closable version is under a **strict** inversion that pinpoints
+each ASSIGN PC to the `set _ .nondet _` constructor. Such an inversion
+is not satisfied by typical translator outputs (any source CFG
+containing `set _ (.det _) _` or `init _ _ (.det _) _` cmds emits
+non-nondet ASSIGNs), so the partial theorem is a strong-precondition
+form rather than a general bridge for the v2 hypothesis.
+
+For the v2 bridge to close cleanly, the right path is one of:
+
+1. **Refactor `InstructionLookups.lean`** so that
+   `assign_nondet_lookup_of_provenance_and_pinned` consumes only a
+   per-PC partial provenance (existential under "this PC is a nondet
+   ASSIGN"), wired with a trace-level "the firing is a
+   step_assign_nondet" precondition.
+2. **Strengthen the v2 bridge's assumptions** to a per-firing form
+   conditional on source-side `EvalCmd.eval_set_nondet` having fired
+   at this PC.
+
+Both are bridge-level refactors; the present partial theorem
+documents what the translator-level metaproperty looks like
+(`assn_nondet_provenance_of_translator_strict`). -/
+
+/-- Strict inversion hypothesis: every ASSIGN PC corresponds *exactly*
+to a `set _ .nondet _` cmd-start. Excludes `init_det` ASSIGNs and
+`set_det` ASSIGNs. -/
+abbrev AssignNondetPcInversion
+    (cfg : Core.DetCFG) (pgm : Program)
+    (δ : Imperative.SemanticEval Core.Expression)
+    (δ_goto : SemanticEvalGoto Core.Expression)
+    (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
+    (_wf : WellFormedTranslation cfg pgm δ δ_goto δ_goto_bool) : Prop :=
+  ∀ {pc : Nat} {instr : Instruction},
+    pgm.instrAt pc = some instr → instr.type = .ASSIGN →
+    ∃ v md, CmdEmittedAt δ δ_goto δ_goto_bool pgm pc (.set v .nondet md)
+
+/-- **ASSIGN-Nondet provenance — strict form**: under the strict
+inversion (every ASSIGN PC is a `set _ .nondet _` cmd-start), the
+GOTO code's lhs is `Expr.symbol (identToString v_src) gty` and the
+rhs has `id = .side_effect .Nondet`.
+
+This is the form the v2 bridge wants, but the strict inversion is
+satisfied only for source CFGs where every ASSIGN is a nondet one —
+a strong restriction. See module-level discussion. -/
+theorem assn_nondet_provenance_of_translator_strict
+    (cfg : Core.DetCFG) (pgm : Program)
+    (δ : Imperative.SemanticEval Core.Expression)
+    (δ_goto : SemanticEvalGoto Core.Expression)
+    (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
+    (wf : WellFormedTranslation cfg pgm δ δ_goto δ_goto_bool)
+    (h_inversion :
+      AssignNondetPcInversion cfg pgm δ δ_goto δ_goto_bool wf) :
+    ∀ {pc : Nat} {instr : Instruction},
+      pgm.instrAt pc = some instr → instr.type = .ASSIGN →
+      ∃ v_src gty rhs_emitted,
+        instr.code = Code.assign
+          (Expr.symbol
+            (Imperative.ToGoto.identToString (P := Core.Expression) v_src)
+            gty)
+          rhs_emitted ∧
+        rhs_emitted.id = .side_effect .Nondet := by
+  intro pc instr h_at h_ty
+  obtain ⟨v, _md, h_emit⟩ := h_inversion h_at h_ty
+  cases h_emit with
+  | set_nondet _ _ i_assn h_assn_at _h_assn_ty gty h_assn_code =>
+    have h_eq : instr = i_assn :=
+      Option.some.inj (h_at.symm.trans h_assn_at)
+    subst h_eq
+    obtain ⟨e_nondet, h_code, h_id, _h_ty_eq⟩ := h_assn_code
+    exact ⟨v, gty, e_nondet, h_code, h_id⟩
+
 end CProverGOTO.CmdProvenance
