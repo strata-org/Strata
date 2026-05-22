@@ -359,7 +359,7 @@ Accepts a bound variable context for de Bruijn indices (innermost binding first)
 /--
 Mapping `LExpr` to GOTO expressions (for LMonoTy-typed expressions).
 -/
-def LExpr.toGotoExpr {TBase: LExprParams} [ToString $ LExpr TBase.mono] (e : LExpr TBase.mono) :
+@[expose] def LExpr.toGotoExpr {TBase: LExprParams} [ToString $ LExpr TBase.mono] (e : LExpr TBase.mono) :
     Except Format CProverGOTO.Expr :=
   toGotoExprCtx [] e
 
