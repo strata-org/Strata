@@ -5807,6 +5807,7 @@ private theorem stmtsToBlocks_blocks_no_genFuture
     (h_tt_getVars : HasVarsPure.getVars (P := P) (HasBool.tt : P.Expr) = [])
     (h_mkFvar_getVars_subset : ∀ x : P.Ident,
         HasVarsPure.getVars (HasFvar.mkFvar (P := P) x) ⊆ [x])
+    (h_ident_inj : Function.Injective (HasIdent.ident (P := P)))
     (h_accum_no_gen_suffix :
       ∀ x ∈ accum.flatMap Cmd.touchedVars, ∀ s : String,
         x = HasIdent.ident (P := P) s → ¬ String.HasUnderscoreDigitSuffix s)
@@ -5844,7 +5845,7 @@ private theorem stmtsToBlocks_blocks_no_genFuture
     have h_accum' := cons_accum_no_gen_suffix c accum h_c_no_gen h_accum_no_gen_suffix
     exact stmtsToBlocks_blocks_no_genFuture (k := k) (ss := rest) (exitConts := exitConts)
       (accum := c :: accum) (gen := gen) (gen' := gen') (entry := entry) (blocks := blocks)
-      h_gen h_tt_getVars h_mkFvar_getVars_subset h_accum' h_rest_no_gen
+      h_gen h_tt_getVars h_mkFvar_getVars_subset h_ident_inj h_accum' h_rest_no_gen
   | .funcDecl _ _ :: rest =>
     -- Skip funcDecl, recurse on rest. Tail subset suffices.
     unfold stmtsToBlocks at h_gen
@@ -5855,7 +5856,7 @@ private theorem stmtsToBlocks_blocks_no_genFuture
       exact h_ss_no_gen_suffix x (Block_touchedVars_tail_subset _ _ h_x) s heq
     exact stmtsToBlocks_blocks_no_genFuture (k := k) (ss := rest) (exitConts := exitConts)
       (accum := accum) (gen := gen) (gen' := gen') (entry := entry) (blocks := blocks)
-      h_gen h_tt_getVars h_mkFvar_getVars_subset h_accum_no_gen_suffix h_rest_no_gen
+      h_gen h_tt_getVars h_mkFvar_getVars_subset h_ident_inj h_accum_no_gen_suffix h_rest_no_gen
   | .typeDecl _ _ :: rest =>
     unfold stmtsToBlocks at h_gen
     have h_rest_no_gen :
@@ -5865,7 +5866,7 @@ private theorem stmtsToBlocks_blocks_no_genFuture
       exact h_ss_no_gen_suffix x (Block_touchedVars_tail_subset _ _ h_x) s heq
     exact stmtsToBlocks_blocks_no_genFuture (k := k) (ss := rest) (exitConts := exitConts)
       (accum := accum) (gen := gen) (gen' := gen') (entry := entry) (blocks := blocks)
-      h_gen h_tt_getVars h_mkFvar_getVars_subset h_accum_no_gen_suffix h_rest_no_gen
+      h_gen h_tt_getVars h_mkFvar_getVars_subset h_ident_inj h_accum_no_gen_suffix h_rest_no_gen
   | .exit l? md :: _ =>
     -- stmtsToBlocks reduces to flushCmds with explicit transfer (.goto bk md).
     -- The bk is computed purely (no gen advance); only flushCmds is stateful.
@@ -5899,9 +5900,482 @@ private theorem stmtsToBlocks_blocks_no_genFuture
     exact flushCmds_blocks_no_genFuture h_gen h_tt_getVars
       h_accum_classifies h_tr_classifies
   | .block l bss md :: rest =>
-    sorry
+    -- Decompose monadic chain: rest, body, flushCmds, optional user-block.
+    unfold stmtsToBlocks at h_gen
+    simp only [bind, StateT.bind, pure] at h_gen
+    generalize h_rest_eq : stmtsToBlocks k rest exitConts [] gen = r_rest at h_gen
+    obtain ⟨⟨kNext, bsNext⟩, gen_r⟩ := r_rest
+    simp at h_gen
+    generalize h_body_eq : stmtsToBlocks kNext bss
+      ((some l, kNext) :: exitConts) [] gen_r = r_body at h_gen
+    obtain ⟨⟨bl, bbs⟩, gen_b⟩ := r_body
+    simp at h_gen
+    generalize h_flush_eq :
+      @flushCmds P (Cmd P) _ "blk$" accum .none bl gen_b = r_flush at h_gen
+    obtain ⟨⟨accumEntry, accumBlocks⟩, gen_f⟩ := r_flush
+    -- gen_r ⊆ gen_b ⊆ gen_f = gen' (the last via h_gen).
+    have h_step_rest : StringGenState.GenStep gen gen_r :=
+      stmtsToBlocks_genStep k rest exitConts [] gen gen_r kNext bsNext h_rest_eq
+    have h_step_body : StringGenState.GenStep gen_r gen_b :=
+      stmtsToBlocks_genStep kNext bss _ [] gen_r gen_b bl bbs h_body_eq
+    have h_step_flush : StringGenState.GenStep gen_b gen_f :=
+      flushCmds_genStep "blk$" accum .none bl gen_b gen_f
+        accumEntry accumBlocks h_flush_eq
+    simp only at h_gen
+    have h_gen_eq : gen_f = gen' := by
+      by_cases h_eq : l = bl
+      · rw [if_pos h_eq] at h_gen
+        simp only [pure, StateT.pure] at h_gen
+        exact (Prod.mk.inj h_gen).2
+      · rw [if_neg h_eq] at h_gen
+        simp only [pure, StateT.pure] at h_gen
+        exact (Prod.mk.inj h_gen).2
+    -- Subset relations to gen'.
+    have h_subset_r_gen' : StringGenState.stringGens gen_r ⊆ StringGenState.stringGens gen' := by
+      rw [← h_gen_eq]; exact (h_step_body.trans h_step_flush).subset
+    have h_subset_b_gen' : StringGenState.stringGens gen_b ⊆ StringGenState.stringGens gen' := by
+      rw [← h_gen_eq]; exact h_step_flush.subset
+    -- Project hypotheses for sub-calls.
+    have h_rest_no_gen :
+        ∀ x ∈ Block.touchedVars rest, ∀ s : String,
+          x = HasIdent.ident (P := P) s → ¬ String.HasUnderscoreDigitSuffix s := by
+      intro x h_x s heq
+      exact h_ss_no_gen_suffix x (Block_touchedVars_tail_subset _ _ h_x) s heq
+    have h_bss_no_gen :
+        ∀ x ∈ Block.touchedVars bss, ∀ s : String,
+          x = HasIdent.ident (P := P) s → ¬ String.HasUnderscoreDigitSuffix s := by
+      intro x h_x s heq
+      exact h_ss_no_gen_suffix x
+        (block_body_touchedVars_subset l bss md rest h_x) s heq
+    -- IH on `rest` (empty accum).
+    have h_nil_no_gen :
+        ∀ x ∈ ([] : List (Cmd P)).flatMap Cmd.touchedVars, ∀ s : String,
+          x = HasIdent.ident (P := P) s → ¬ String.HasUnderscoreDigitSuffix s := by
+      intro x h_x; simp [List.flatMap] at h_x
+    have h_ih_rest :
+        ∀ blk ∈ bsNext.map Prod.snd,
+          ∀ x ∈ Block.cfgFrameTouches blk, identClassifies (P := P) x gen_r :=
+      stmtsToBlocks_blocks_no_genFuture
+        (k := k) (ss := rest) (exitConts := exitConts) (accum := []) (gen := gen)
+        (gen' := gen_r) (entry := kNext) (blocks := bsNext)
+        h_rest_eq h_tt_getVars h_mkFvar_getVars_subset h_ident_inj h_nil_no_gen h_rest_no_gen
+    -- IH on `bss` (empty accum).
+    have h_ih_body :
+        ∀ blk ∈ bbs.map Prod.snd,
+          ∀ x ∈ Block.cfgFrameTouches blk, identClassifies (P := P) x gen_b :=
+      stmtsToBlocks_blocks_no_genFuture
+        (k := kNext) (ss := bss) (exitConts := (some l, kNext) :: exitConts) (accum := [])
+        (gen := gen_r) (gen' := gen_b) (entry := bl) (blocks := bbs)
+        h_body_eq h_tt_getVars h_mkFvar_getVars_subset h_ident_inj h_nil_no_gen h_bss_no_gen
+    -- flushCmds_blocks_no_genFuture for accumBlocks at gen_f.
+    have h_accum_classifies_at_gen_f :
+        listClassifies (P := P) (accum.flatMap Cmd.touchedVars) gen_f :=
+      listClassifies_of_no_gen_suffix h_accum_no_gen_suffix
+    have h_tr_classifies_at_gen_f :
+        ∀ tr, (Option.none : Option (DetTransferCmd String P)) = some tr →
+          listClassifies (P := P) (DetTransferCmd.touchedVars tr) gen_f := by
+      intro tr h_eq; cases h_eq
+    have h_ih_flush :
+        ∀ blk ∈ accumBlocks.map Prod.snd,
+          ∀ x ∈ Block.cfgFrameTouches blk, identClassifies (P := P) x gen_f :=
+      flushCmds_blocks_no_genFuture h_flush_eq h_tt_getVars
+        h_accum_classifies_at_gen_f h_tr_classifies_at_gen_f
+    -- Lift IHs to gen' via subset relations.
+    have h_ih_rest_at_gen' :
+        ∀ blk ∈ bsNext.map Prod.snd,
+          ∀ x ∈ Block.cfgFrameTouches blk, identClassifies (P := P) x gen' :=
+      fun blk h_blk x h_x =>
+        identClassifies_mono h_subset_r_gen' (h_ih_rest blk h_blk x h_x)
+    have h_ih_body_at_gen' :
+        ∀ blk ∈ bbs.map Prod.snd,
+          ∀ x ∈ Block.cfgFrameTouches blk, identClassifies (P := P) x gen' :=
+      fun blk h_blk x h_x =>
+        identClassifies_mono h_subset_b_gen' (h_ih_body blk h_blk x h_x)
+    have h_ih_flush_at_gen' :
+        ∀ blk ∈ accumBlocks.map Prod.snd,
+          ∀ x ∈ Block.cfgFrameTouches blk, identClassifies (P := P) x gen' := by
+      rw [h_gen_eq] at h_ih_flush; exact h_ih_flush
+    -- Now case-split on l = bl.
+    by_cases h_eq : l = bl
+    · rw [if_pos h_eq] at h_gen
+      simp only [pure, StateT.pure] at h_gen
+      have h_blocks_eq : accumBlocks ++ (bbs ++ bsNext) = blocks :=
+        (Prod.mk.inj (Prod.mk.inj h_gen).1).2
+      -- blocks = accumBlocks ++ bbs ++ bsNext.
+      intro blk h_blk
+      rw [← h_blocks_eq] at h_blk
+      simp only [List.mem_map, List.mem_append] at h_blk
+      obtain ⟨pair, h_pair_in, h_pair_eq⟩ := h_blk
+      subst h_pair_eq
+      cases h_pair_in with
+      | inl h_in_accum =>
+        exact h_ih_flush_at_gen' pair.snd
+          (List.mem_map.mpr ⟨pair, h_in_accum, rfl⟩)
+      | inr h_in_rest_or_bbs =>
+        cases h_in_rest_or_bbs with
+        | inl h_in_bbs =>
+          exact h_ih_body_at_gen' pair.snd
+            (List.mem_map.mpr ⟨pair, h_in_bbs, rfl⟩)
+        | inr h_in_bsNext =>
+          exact h_ih_rest_at_gen' pair.snd
+            (List.mem_map.mpr ⟨pair, h_in_bsNext, rfl⟩)
+    · rw [if_neg h_eq] at h_gen
+      simp only [pure, StateT.pure] at h_gen
+      let lBlk : DetBlock String (Cmd P) P :=
+        { cmds := [], transfer := DetTransferCmd.goto bl md }
+      have h_blocks_eq : accumBlocks ++ (l, lBlk) :: (bbs ++ bsNext) = blocks :=
+        (Prod.mk.inj (Prod.mk.inj h_gen).1).2
+      -- The user-labeled block (l, lBlk) has cfgFrameTouches = [] via h_tt_getVars.
+      have h_lBlk_empty : Block.cfgFrameTouches lBlk = [] := by
+        unfold lBlk Block.cfgFrameTouches
+        simp only [List.foldr_nil, List.nil_append]
+        show DetTransferCmd.touchedVars (P := P) (DetTransferCmd.goto bl md) = []
+        unfold DetTransferCmd.goto
+        change HasVarsPure.getVars (P := P) (HasBool.tt : P.Expr) = []
+        exact h_tt_getVars
+      intro blk h_blk
+      rw [← h_blocks_eq] at h_blk
+      simp only [List.mem_map, List.mem_append, List.mem_cons] at h_blk
+      obtain ⟨pair, h_pair_in, h_pair_eq⟩ := h_blk
+      subst h_pair_eq
+      cases h_pair_in with
+      | inl h_in_accum =>
+        exact h_ih_flush_at_gen' pair.snd
+          (List.mem_map.mpr ⟨pair, h_in_accum, rfl⟩)
+      | inr h_rest =>
+        cases h_rest with
+        | inl h_pair_eq_l =>
+          -- pair = (l, lBlk); cfgFrameTouches is empty.
+          intro x h_x
+          rw [show pair.snd = lBlk from by rw [h_pair_eq_l]] at h_x
+          rw [h_lBlk_empty] at h_x
+          exact absurd h_x List.not_mem_nil
+        | inr h_in_bbs_bsNext =>
+          cases h_in_bbs_bsNext with
+          | inl h_in_bbs =>
+            exact h_ih_body_at_gen' pair.snd
+              (List.mem_map.mpr ⟨pair, h_in_bbs, rfl⟩)
+          | inr h_in_bsNext =>
+            exact h_ih_rest_at_gen' pair.snd
+              (List.mem_map.mpr ⟨pair, h_in_bsNext, rfl⟩)
   | .ite c tss fss md :: rest =>
-    sorry
+    -- Decompose monadic chain: rest, gen "ite", tss, fss, optional gen "$__nondet_ite$",
+    -- flushCmds with condGoto transfer.
+    unfold stmtsToBlocks at h_gen
+    simp only [bind, StateT.bind, pure, StateT.pure] at h_gen
+    generalize h_rest_eq : stmtsToBlocks k rest exitConts [] gen = r_rest at h_gen
+    obtain ⟨⟨kNext, bsNext⟩, gen_r⟩ := r_rest
+    simp only at h_gen
+    generalize h_ite_label : StringGenState.gen "ite" gen_r = r_ite at h_gen
+    obtain ⟨l_ite, gen_ite⟩ := r_ite
+    simp only at h_gen
+    generalize h_then_eq : stmtsToBlocks kNext tss exitConts [] gen_ite = r_then at h_gen
+    obtain ⟨⟨tl, tbs⟩, gen_t⟩ := r_then
+    simp only at h_gen
+    generalize h_else_eq : stmtsToBlocks kNext fss exitConts [] gen_t = r_else at h_gen
+    obtain ⟨⟨fl, fbs⟩, gen_e⟩ := r_else
+    simp only at h_gen
+    have h_step_rest : StringGenState.GenStep gen gen_r :=
+      stmtsToBlocks_genStep k rest exitConts [] gen gen_r kNext bsNext h_rest_eq
+    have h_step_ite : StringGenState.GenStep gen_r gen_ite := by
+      rw [show gen_ite = (StringGenState.gen "ite" gen_r).2 from
+            (by rw [h_ite_label])]
+      exact StringGenState.GenStep.of_gen "ite" gen_r
+    have h_step_then : StringGenState.GenStep gen_ite gen_t :=
+      stmtsToBlocks_genStep kNext tss exitConts [] gen_ite gen_t tl tbs h_then_eq
+    have h_step_else : StringGenState.GenStep gen_t gen_e :=
+      stmtsToBlocks_genStep kNext fss exitConts [] gen_t gen_e fl fbs h_else_eq
+    -- Project hypotheses for sub-calls: tss, fss, rest.
+    have h_rest_no_gen :
+        ∀ x ∈ Block.touchedVars rest, ∀ s : String,
+          x = HasIdent.ident (P := P) s → ¬ String.HasUnderscoreDigitSuffix s := by
+      intro x h_x s heq
+      exact h_ss_no_gen_suffix x (Block_touchedVars_tail_subset _ _ h_x) s heq
+    have h_tss_no_gen :
+        ∀ x ∈ Block.touchedVars tss, ∀ s : String,
+          x = HasIdent.ident (P := P) s → ¬ String.HasUnderscoreDigitSuffix s := by
+      intro x h_x s heq
+      exact h_ss_no_gen_suffix x
+        (ite_then_touchedVars_subset c tss fss md rest h_x) s heq
+    have h_fss_no_gen :
+        ∀ x ∈ Block.touchedVars fss, ∀ s : String,
+          x = HasIdent.ident (P := P) s → ¬ String.HasUnderscoreDigitSuffix s := by
+      intro x h_x s heq
+      exact h_ss_no_gen_suffix x
+        (ite_else_touchedVars_subset c tss fss md rest h_x) s heq
+    have h_nil_no_gen :
+        ∀ x ∈ ([] : List (Cmd P)).flatMap Cmd.touchedVars, ∀ s : String,
+          x = HasIdent.ident (P := P) s → ¬ String.HasUnderscoreDigitSuffix s := by
+      intro x h_x; simp [List.flatMap] at h_x
+    have h_ih_rest :
+        ∀ blk ∈ bsNext.map Prod.snd,
+          ∀ x ∈ Block.cfgFrameTouches blk, identClassifies (P := P) x gen_r :=
+      stmtsToBlocks_blocks_no_genFuture
+        (k := k) (ss := rest) (exitConts := exitConts) (accum := []) (gen := gen)
+        (gen' := gen_r) (entry := kNext) (blocks := bsNext)
+        h_rest_eq h_tt_getVars h_mkFvar_getVars_subset h_ident_inj h_nil_no_gen h_rest_no_gen
+    have h_ih_then :
+        ∀ blk ∈ tbs.map Prod.snd,
+          ∀ x ∈ Block.cfgFrameTouches blk, identClassifies (P := P) x gen_t :=
+      stmtsToBlocks_blocks_no_genFuture
+        (k := kNext) (ss := tss) (exitConts := exitConts) (accum := []) (gen := gen_ite)
+        (gen' := gen_t) (entry := tl) (blocks := tbs)
+        h_then_eq h_tt_getVars h_mkFvar_getVars_subset h_ident_inj h_nil_no_gen h_tss_no_gen
+    have h_ih_else :
+        ∀ blk ∈ fbs.map Prod.snd,
+          ∀ x ∈ Block.cfgFrameTouches blk, identClassifies (P := P) x gen_e :=
+      stmtsToBlocks_blocks_no_genFuture
+        (k := kNext) (ss := fss) (exitConts := exitConts) (accum := []) (gen := gen_t)
+        (gen' := gen_e) (entry := fl) (blocks := fbs)
+        h_else_eq h_tt_getVars h_mkFvar_getVars_subset h_ident_inj h_nil_no_gen h_fss_no_gen
+    -- Branch on c (det vs nondet).
+    cases h_c : c with
+    | det e =>
+      rw [h_c] at h_gen
+      simp only [bind, StateT.bind, pure, StateT.pure, List.append_nil] at h_gen
+      generalize h_flush_eq : @flushCmds P (Cmd P) _ "ite$" accum
+        (.some (DetTransferCmd.condGoto e tl fl md)) l_ite gen_e = r_flush at h_gen
+      obtain ⟨⟨accumEntry, accumBlocks⟩, gen_f⟩ := r_flush
+      simp only [pure, StateT.pure] at h_gen
+      have h_blocks_eq : accumBlocks ++ tbs ++ fbs ++ bsNext = blocks :=
+        (Prod.mk.inj (Prod.mk.inj h_gen).1).2
+      have h_gen_eq : gen_f = gen' := (Prod.mk.inj h_gen).2
+      have h_step_flush : StringGenState.GenStep gen_e gen_f :=
+        flushCmds_genStep "ite$" accum _ l_ite gen_e gen_f
+          accumEntry accumBlocks h_flush_eq
+      -- Subset relations to gen'.
+      have h_subset_r_gen' : StringGenState.stringGens gen_r ⊆ StringGenState.stringGens gen' := by
+        rw [← h_gen_eq]
+        exact ((((h_step_ite.trans h_step_then).trans h_step_else)).trans h_step_flush).subset
+      have h_subset_t_gen' : StringGenState.stringGens gen_t ⊆ StringGenState.stringGens gen' := by
+        rw [← h_gen_eq]
+        exact (h_step_else.trans h_step_flush).subset
+      have h_subset_e_gen' : StringGenState.stringGens gen_e ⊆ StringGenState.stringGens gen' := by
+        rw [← h_gen_eq]
+        exact h_step_flush.subset
+      -- flushCmds_blocks_no_genFuture for accumBlocks. The transfer reads e's getVars
+      -- (from .ite (.det e), i.e., source-side); discharge via h_ss_no_gen_suffix.
+      have h_accum_classifies_at_gen_f :
+          listClassifies (P := P) (accum.flatMap Cmd.touchedVars) gen_f :=
+        listClassifies_of_no_gen_suffix h_accum_no_gen_suffix
+      have h_tr_classifies_at_gen_f :
+          ∀ tr,
+            (Option.some (DetTransferCmd.condGoto (P := P) e tl fl md) :
+              Option (DetTransferCmd String P)) = some tr →
+            listClassifies (P := P) (DetTransferCmd.touchedVars tr) gen_f := by
+        intro tr h_eq
+        cases h_eq
+        intro x h_x s heq
+        -- DetTransferCmd.touchedVars (condGoto e tl fl md) = HasVarsPure.getVars e
+        have h_x_in_e : x ∈ HasVarsPure.getVars e := by
+          show x ∈ HasVarsPure.getVars e
+          exact h_x
+        -- e's vars are source-side: derive via ite_cond_getVars_subset
+        have h_x_in_outer : x ∈ Block.touchedVars (.ite c tss fss md :: rest) := by
+          rw [h_c]
+          exact ite_cond_getVars_subset e tss fss md rest h_x_in_e
+        exact Or.inl (h_ss_no_gen_suffix x h_x_in_outer s heq)
+      have h_ih_flush :
+          ∀ blk ∈ accumBlocks.map Prod.snd,
+            ∀ x ∈ Block.cfgFrameTouches blk, identClassifies (P := P) x gen_f :=
+        flushCmds_blocks_no_genFuture h_flush_eq h_tt_getVars
+          h_accum_classifies_at_gen_f h_tr_classifies_at_gen_f
+      -- Lift IHs to gen' via subset relations.
+      have h_ih_rest_at_gen' :
+          ∀ blk ∈ bsNext.map Prod.snd,
+            ∀ x ∈ Block.cfgFrameTouches blk, identClassifies (P := P) x gen' :=
+        fun blk h_blk x h_x =>
+          identClassifies_mono h_subset_r_gen' (h_ih_rest blk h_blk x h_x)
+      have h_ih_then_at_gen' :
+          ∀ blk ∈ tbs.map Prod.snd,
+            ∀ x ∈ Block.cfgFrameTouches blk, identClassifies (P := P) x gen' :=
+        fun blk h_blk x h_x =>
+          identClassifies_mono h_subset_t_gen' (h_ih_then blk h_blk x h_x)
+      have h_ih_else_at_gen' :
+          ∀ blk ∈ fbs.map Prod.snd,
+            ∀ x ∈ Block.cfgFrameTouches blk, identClassifies (P := P) x gen' :=
+        fun blk h_blk x h_x =>
+          identClassifies_mono h_subset_e_gen' (h_ih_else blk h_blk x h_x)
+      have h_ih_flush_at_gen' :
+          ∀ blk ∈ accumBlocks.map Prod.snd,
+            ∀ x ∈ Block.cfgFrameTouches blk, identClassifies (P := P) x gen' := by
+        rw [h_gen_eq] at h_ih_flush; exact h_ih_flush
+      -- Combine.
+      intro blk h_blk
+      rw [← h_blocks_eq] at h_blk
+      simp only [List.mem_map, List.mem_append] at h_blk
+      obtain ⟨pair, h_pair_in, h_pair_eq⟩ := h_blk
+      subst h_pair_eq
+      cases h_pair_in with
+      | inl h_l =>
+        cases h_l with
+        | inl h_ll =>
+          cases h_ll with
+          | inl h_in_accum =>
+            exact h_ih_flush_at_gen' pair.snd
+              (List.mem_map.mpr ⟨pair, h_in_accum, rfl⟩)
+          | inr h_in_tbs =>
+            exact h_ih_then_at_gen' pair.snd
+              (List.mem_map.mpr ⟨pair, h_in_tbs, rfl⟩)
+        | inr h_in_fbs =>
+          exact h_ih_else_at_gen' pair.snd
+            (List.mem_map.mpr ⟨pair, h_in_fbs, rfl⟩)
+      | inr h_in_bsNext =>
+        exact h_ih_rest_at_gen' pair.snd
+          (List.mem_map.mpr ⟨pair, h_in_bsNext, rfl⟩)
+    | nondet =>
+      rw [h_c] at h_gen
+      simp only [bind, StateT.bind, pure, StateT.pure] at h_gen
+      generalize h_nondet_gen : StringGenState.gen "$__nondet_ite$" gen_e = r_nd at h_gen
+      obtain ⟨freshName, gen_n⟩ := r_nd
+      simp only at h_gen
+      generalize h_flush_eq : @flushCmds P (Cmd P) _ "ite$"
+        (accum ++ [HasInit.init (HasIdent.ident (P := P) freshName) HasBool.boolTy
+            ExprOrNondet.nondet synthesizedMd])
+        (.some (DetTransferCmd.condGoto
+          (HasFvar.mkFvar (HasIdent.ident (P := P) freshName)) tl fl md)) l_ite gen_n =
+        r_flush at h_gen
+      obtain ⟨⟨accumEntry, accumBlocks⟩, gen_f⟩ := r_flush
+      simp only [pure, StateT.pure] at h_gen
+      have h_blocks_eq : accumBlocks ++ tbs ++ fbs ++ bsNext = blocks :=
+        (Prod.mk.inj (Prod.mk.inj h_gen).1).2
+      have h_gen_eq : gen_f = gen' := (Prod.mk.inj h_gen).2
+      have h_step_nondet : StringGenState.GenStep gen_e gen_n := by
+        rw [show gen_n = (StringGenState.gen "$__nondet_ite$" gen_e).2 from
+              (by rw [h_nondet_gen])]
+        exact StringGenState.GenStep.of_gen "$__nondet_ite$" gen_e
+      have h_step_flush : StringGenState.GenStep gen_n gen_f :=
+        flushCmds_genStep "ite$" _ _ l_ite gen_n gen_f
+          accumEntry accumBlocks h_flush_eq
+      -- Subset relations to gen'.
+      have h_subset_r_gen' : StringGenState.stringGens gen_r ⊆ StringGenState.stringGens gen' := by
+        rw [← h_gen_eq]
+        exact ((((h_step_ite.trans h_step_then).trans h_step_else).trans h_step_nondet).trans
+                h_step_flush).subset
+      have h_subset_t_gen' : StringGenState.stringGens gen_t ⊆ StringGenState.stringGens gen' := by
+        rw [← h_gen_eq]
+        exact ((h_step_else.trans h_step_nondet).trans h_step_flush).subset
+      have h_subset_e_gen' : StringGenState.stringGens gen_e ⊆ StringGenState.stringGens gen' := by
+        rw [← h_gen_eq]
+        exact (h_step_nondet.trans h_step_flush).subset
+      -- freshName ∈ stringGens gen_n via the gen step.
+      have h_freshName_in_gen_n : freshName ∈ StringGenState.stringGens gen_n := by
+        rw [show freshName = (StringGenState.gen "$__nondet_ite$" gen_e).1 from
+              (by rw [h_nondet_gen])]
+        rw [show gen_n = (StringGenState.gen "$__nondet_ite$" gen_e).2 from
+              (by rw [h_nondet_gen])]
+        rw [StringGenState.stringGens_gen]
+        exact List.mem_cons_self
+      have h_freshName_in_gen' : freshName ∈ StringGenState.stringGens gen' := by
+        rw [← h_gen_eq]
+        exact h_step_flush.subset h_freshName_in_gen_n
+      -- The freshIdent classifies via right disjunct (∈ stringGens gen').
+      let freshIdent : P.Ident := HasIdent.ident (P := P) freshName
+      have h_freshIdent_classifies : identClassifies (P := P) freshIdent gen' := by
+        intro s heq
+        -- freshIdent = HasIdent.ident s. By injectivity, s = freshName.
+        have h_s_eq : s = freshName := by
+          have : HasIdent.ident (P := P) freshName = HasIdent.ident (P := P) s := heq
+          exact (h_ident_inj this).symm
+        subst h_s_eq
+        exact Or.inr h_freshName_in_gen'
+      -- Build accum_classifies_at_gen_f: accum ++ [initCmd]'s touchedVars classifies.
+      -- Cmd.touchedVars (init freshIdent boolTy .nondet) =
+      --   getVars (.nondet) ++ [freshIdent] ++ []
+      -- = [] ++ [freshIdent] ++ [] = [freshIdent]
+      have h_initCmd_touched :
+          Cmd.touchedVars (HasInit.init freshIdent HasBool.boolTy
+              (ExprOrNondet.nondet) synthesizedMd : Cmd P) = [freshIdent] := by
+        unfold Cmd.touchedVars HasInit.init
+        show (Cmd.getVars (Cmd.init freshIdent HasBool.boolTy ExprOrNondet.nondet
+                synthesizedMd) ++
+              Cmd.definedVars (Cmd.init freshIdent HasBool.boolTy ExprOrNondet.nondet
+                synthesizedMd)) ++
+              Cmd.modifiedVars (Cmd.init freshIdent HasBool.boolTy ExprOrNondet.nondet
+                synthesizedMd) = [freshIdent]
+        simp [Cmd.getVars, Cmd.definedVars, Cmd.modifiedVars, ExprOrNondet.getVars]
+      have h_accum_ext_classifies :
+          listClassifies (P := P)
+            ((accum ++ [HasInit.init freshIdent HasBool.boolTy ExprOrNondet.nondet
+                synthesizedMd]).flatMap Cmd.touchedVars) gen_f := by
+        intro x h_x
+        rw [List.flatMap_append, List.mem_append] at h_x
+        cases h_x with
+        | inl h_in_accum =>
+          have := listClassifies_of_no_gen_suffix
+            (gen' := gen_f) h_accum_no_gen_suffix x h_in_accum
+          exact this
+        | inr h_in_init =>
+          simp only [List.flatMap_cons, List.flatMap_nil, List.append_nil] at h_in_init
+          rw [h_initCmd_touched] at h_in_init
+          rw [List.mem_singleton] at h_in_init
+          subst h_in_init
+          rw [h_gen_eq]; exact h_freshIdent_classifies
+      have h_tr_classifies_at_gen_f :
+          ∀ tr,
+            (Option.some (DetTransferCmd.condGoto (P := P)
+              (HasFvar.mkFvar freshIdent) tl fl md) :
+              Option (DetTransferCmd String P)) = some tr →
+            listClassifies (P := P) (DetTransferCmd.touchedVars tr) gen_f := by
+        intro tr h_eq
+        cases h_eq
+        intro x h_x
+        have h_x_in_mkFvar : x ∈ HasVarsPure.getVars (HasFvar.mkFvar (P := P) freshIdent) := by
+          show x ∈ HasVarsPure.getVars (HasFvar.mkFvar (P := P) freshIdent)
+          exact h_x
+        have h_x_eq_fresh : x = freshIdent := by
+          have := h_mkFvar_getVars_subset freshIdent h_x_in_mkFvar
+          rw [List.mem_singleton] at this
+          exact this
+        subst h_x_eq_fresh
+        rw [h_gen_eq]; exact h_freshIdent_classifies
+      have h_ih_flush :
+          ∀ blk ∈ accumBlocks.map Prod.snd,
+            ∀ x ∈ Block.cfgFrameTouches blk, identClassifies (P := P) x gen_f :=
+        flushCmds_blocks_no_genFuture h_flush_eq h_tt_getVars
+          h_accum_ext_classifies h_tr_classifies_at_gen_f
+      -- Lift IHs to gen'.
+      have h_ih_rest_at_gen' :
+          ∀ blk ∈ bsNext.map Prod.snd,
+            ∀ x ∈ Block.cfgFrameTouches blk, identClassifies (P := P) x gen' :=
+        fun blk h_blk x h_x =>
+          identClassifies_mono h_subset_r_gen' (h_ih_rest blk h_blk x h_x)
+      have h_ih_then_at_gen' :
+          ∀ blk ∈ tbs.map Prod.snd,
+            ∀ x ∈ Block.cfgFrameTouches blk, identClassifies (P := P) x gen' :=
+        fun blk h_blk x h_x =>
+          identClassifies_mono h_subset_t_gen' (h_ih_then blk h_blk x h_x)
+      have h_ih_else_at_gen' :
+          ∀ blk ∈ fbs.map Prod.snd,
+            ∀ x ∈ Block.cfgFrameTouches blk, identClassifies (P := P) x gen' :=
+        fun blk h_blk x h_x =>
+          identClassifies_mono h_subset_e_gen' (h_ih_else blk h_blk x h_x)
+      have h_ih_flush_at_gen' :
+          ∀ blk ∈ accumBlocks.map Prod.snd,
+            ∀ x ∈ Block.cfgFrameTouches blk, identClassifies (P := P) x gen' := by
+        rw [h_gen_eq] at h_ih_flush; exact h_ih_flush
+      intro blk h_blk
+      rw [← h_blocks_eq] at h_blk
+      simp only [List.mem_map, List.mem_append] at h_blk
+      obtain ⟨pair, h_pair_in, h_pair_eq⟩ := h_blk
+      subst h_pair_eq
+      cases h_pair_in with
+      | inl h_l =>
+        cases h_l with
+        | inl h_ll =>
+          cases h_ll with
+          | inl h_in_accum =>
+            exact h_ih_flush_at_gen' pair.snd
+              (List.mem_map.mpr ⟨pair, h_in_accum, rfl⟩)
+          | inr h_in_tbs =>
+            exact h_ih_then_at_gen' pair.snd
+              (List.mem_map.mpr ⟨pair, h_in_tbs, rfl⟩)
+        | inr h_in_fbs =>
+          exact h_ih_else_at_gen' pair.snd
+            (List.mem_map.mpr ⟨pair, h_in_fbs, rfl⟩)
+      | inr h_in_bsNext =>
+        exact h_ih_rest_at_gen' pair.snd
+          (List.mem_map.mpr ⟨pair, h_in_bsNext, rfl⟩)
   | .loop c m is bss md :: rest =>
     sorry
 
