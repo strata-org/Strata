@@ -13,7 +13,7 @@ public section
 
 /-! # End-to-end concrete forward simulation for `coreCFGToGotoTransform`
 
-This module composes the four parallel-worker outputs into a single
+This module composes the parallel-worker outputs into a single
 end-to-end theorem stating that, for any CFG admitted by the
 restricted fragment, the actual translator output simulates the
 source under `StoreCorr` and produces an `ExecProg` derivation:
@@ -30,11 +30,13 @@ coreCFGToGotoTransform_forward_simulation_concrete :
 
 The chain composes:
 
-* **A2/A3/A4** — `coreCFGToGotoTransform_wellFormed_nonempty`
+* **A2/A3/A4/A5a/A5b** —
+  `coreCFGToGotoTransform_wellFormed_strengthened`
   (`CoreCFGToGotoTransformWF.lean`): produces a
   `Nonempty (WellFormedTranslation cfg pgm δ δ_goto δ_goto_bool)`
-  from the translator output, modulo four hypothesis bundles for
-  the layout fields A4 left as parameters.
+  from the translator output. **All five A4 hypothesis-parameter
+  fields closed in round 5**, so this only needs the structural
+  inputs + caller-supplied evaluator-translation hypotheses.
 * **B3** — `toGotoExprCtx_preservesEval_boolInt`
   (`ExprTranslationPreservesEvalBoolInt.lean`): per-LExpr translation
   correctness on the bool+int fragment.
@@ -45,25 +47,39 @@ The chain composes:
   (`CoreCFGToGOTOCorrectStore.lean`): consumes a `WellFormedTranslation`
   and a `SteppingBridges` to produce an `ExecProg` derivation.
 
-The theorem still takes a number of hypotheses as parameters:
+The theorem still takes a number of hypotheses as parameters
+(remaining open obligations after rounds 1-5):
 
-* A4's four open layout-field hypotheses.
-* C's `TranslatorBridgeHyps` (which depends on A4's labelMap output).
-* `EvalBoolCorr` (the cross-evaluator boolean agreement).
-* `ExprTranslationPreservesEval` (B3's bridge consumes
-  `BoolIntOpHypotheses` + `BoolIntGtyAgrees` and produces this for
-  the bool+int fragment; we take it as input here so the theorem
-  remains pipeline-shape).
-
-These are the "still open" obligations after rounds 1-4. They are
-documented in `docs/_workers/integration_notes.md` and the round
-reports.
+* `h_loopContracts_empty_post` — A3's loop-contracts simplification
+  (the patch step's guard-tweak branch is sidestepped by assuming
+  no loop contracts in the translator state). Inhabited for any
+  CFG without `specLoopInvariant`/`specDecreases` metadata.
+* `h_distinct` — `BlockLabelsDistinct cfg.blocks`. The source CFG
+  must have pairwise distinct block labels (a global invariant of
+  any well-formed input).
+* `h_admitted_blocks` — every Cmd is `isAdmittedCmd` (no `.call`,
+  no `.cover`, no nondet `.init`). The original Gap A scope.
+* `h_entry_first` — `cfg.blocks.head?.map Prod.fst = some cfg.entry`.
+  The translator already checks and rejects on violation; for any
+  CFG the translator accepts, this holds.
+* `h_init_size` / `h_init_loc` — translator-state-initial
+  invariants (typically `trans₀.instructions = #[]` and
+  `trans₀.nextLoc = 0`, in which case both are trivial).
+* `h_expr_corr` — caller-supplied `ExprTranslationPreservesEval`.
+  B3 produces this for the bool+int fragment.
+* `h_tx_eq` — technical equality between
+  `Imperative.ToGoto.toGotoExpr` and `h_expr_corr.tx`.
+* `h_expr_translated_witness` — finer-grained translation
+  correctness needed by the cond-goto-guards layout proof.
+* `h_brHyps` — Worker C's `TranslatorBridgeHyps` (per-PC structural
+  facts about the actual translator output).
+* `h_eval_bool_corr` — `EvalBoolCorr` (target/target evaluator
+  agreement; caller-supplied).
+* `h_corr` — initial-store `StoreCorr`.
 
 This file is the top of the assembly tower. It does not introduce
 any new proof obligations beyond what the workers already produced;
-it just shows that the pieces compose.
-
--/
+it just shows that the pieces compose. -/
 
 namespace CProverGOTO
 
@@ -73,12 +89,9 @@ open CProverGOTO.SemanticsTautschnig
 
 /-- End-to-end concrete forward simulation for `coreCFGToGotoTransform`.
 
-Composes A2/A3/A4 (translator well-formedness), B3 (expression
-translation correctness, supplied as `ExprTranslationPreservesEval`
-hypothesis), and C (per-step bridges) with the existing closed
-forward-simulation theorems. The conclusion is a
-`StoreCorr`-shaped `ExecProg` derivation matching the source's
-terminating run. -/
+After round 5, the WF discharge requires only the structural
+hypotheses and caller-supplied evaluator hypotheses; A4's five
+"open" layout-field hypotheses have been closed by A5a/A5b. -/
 theorem coreCFGToGotoTransform_forward_simulation_concrete
     -- Source-side semantics
     (δ : Imperative.SemanticEval Core.Expression)
@@ -96,7 +109,7 @@ theorem coreCFGToGotoTransform_forward_simulation_concrete
     (ans : Imperative.GotoTransform Core.Expression.TyEnv)
     (h_run : Strata.coreCFGToGotoTransform Env functionName cfg trans₀
               = Except.ok ans)
-    -- A4 hypotheses for the structural side of WellFormedTranslation
+    -- Structural inputs
     (h_init_size : trans₀.instructions.size = trans₀.nextLoc)
     (h_init_loc :
       ∀ (i : Nat) (instr : CProverGOTO.Instruction),
@@ -110,64 +123,17 @@ theorem coreCFGToGotoTransform_forward_simulation_concrete
         cfg.blocks.foldlM (Strata.coreCFGToGotoBlockStep functionName)
           (coreCFGToGotoInitState trans₀)
         = Except.ok st_final → st_final.loopContracts = ∅)
-    -- A4 hypotheses for the layout fields not closed by round 4
-    (h_layout_cond_goto :
-      ∀ (st_final : Strata.CoreCFGTransLoopState),
-        cfg.blocks.foldlM (Strata.coreCFGToGotoBlockStep functionName)
-          (coreCFGToGotoInitState trans₀) = Except.ok st_final →
-      ∀ l blk pc cond lt lf md, (l, blk) ∈ cfg.blocks →
-        hashMapToLabelMap st_final.labelMap l = some pc →
-        blk.transfer = .condGoto cond lt lf md →
-        ∃ pc_neg pc_uncond pc_lf pc_lt instr_neg instr_uncond,
-          pc_neg = pc + 1 + DetBlockBodyInstrCount blk ∧
-          pc_uncond = pc_neg + 1 ∧
-          ans.instructions[pc_neg]? = some instr_neg ∧
-          instr_neg.type = .GOTO ∧
-          instr_neg.target = some pc_lf ∧
-          hashMapToLabelMap st_final.labelMap lf = some pc_lf ∧
-          ans.instructions[pc_uncond]? = some instr_uncond ∧
-          instr_uncond.type = .GOTO ∧
-          instr_uncond.target = some pc_lt ∧
-          hashMapToLabelMap st_final.labelMap lt = some pc_lt)
-    (h_layout_cond_goto_guards :
-      ∀ (st_final : Strata.CoreCFGTransLoopState),
-        cfg.blocks.foldlM (Strata.coreCFGToGotoBlockStep functionName)
-          (coreCFGToGotoInitState trans₀) = Except.ok st_final →
-      ∀ l blk pc cond lt lf md instr_neg instr_uncond,
-        (l, blk) ∈ cfg.blocks →
-        hashMapToLabelMap st_final.labelMap l = some pc →
-        blk.transfer = .condGoto cond lt lf md →
-        ans.instructions[pc + 1 + DetBlockBodyInstrCount blk]? = some instr_neg →
-        ans.instructions[pc + 1 + DetBlockBodyInstrCount blk + 1]? = some instr_uncond →
-        ∃ e_goto,
-          instr_neg.guard = e_goto.not ∧
-          ExprTranslated δ δ_goto δ_goto_bool cond e_goto ∧
-          instr_uncond.guard = CProverGOTO.Expr.true)
-    (h_layout_block_body :
-      ∀ (st_final : Strata.CoreCFGTransLoopState),
-        cfg.blocks.foldlM (Strata.coreCFGToGotoBlockStep functionName)
-          (coreCFGToGotoInitState trans₀) = Except.ok st_final →
-      ∀ l blk pc, (l, blk) ∈ cfg.blocks →
-        hashMapToLabelMap st_final.labelMap l = some pc →
-      ∀ k inner,
-        (h : k < blk.cmds.length) →
-        blk.cmds[k]'h = .cmd inner →
-        CmdEmittedAt δ δ_goto δ_goto_bool
-          { name := "", parameterIdentifiers := #[],
-            instructions := ans.instructions }
-          (pc + 1 + cmdsPrefixInstrCount blk.cmds k) inner)
-    (h_labelMap_inj :
-      ∀ (st_final : Strata.CoreCFGTransLoopState),
-        cfg.blocks.foldlM (Strata.coreCFGToGotoBlockStep functionName)
-          (coreCFGToGotoInitState trans₀) = Except.ok st_final →
-      ∀ l₁ l₂ pc,
-        hashMapToLabelMap st_final.labelMap l₁ = some pc →
-        hashMapToLabelMap st_final.labelMap l₂ = some pc → l₁ = l₂)
-    (h_entry_in_map :
-      ∀ (st_final : Strata.CoreCFGTransLoopState),
-        cfg.blocks.foldlM (Strata.coreCFGToGotoBlockStep functionName)
-          (coreCFGToGotoInitState trans₀) = Except.ok st_final →
-        ∃ pc, hashMapToLabelMap st_final.labelMap cfg.entry = some pc)
+    (h_entry_first : cfg.blocks.head?.map Prod.fst = some cfg.entry)
+    -- Caller-supplied evaluator hypotheses
+    (h_tx_eq :
+      ∀ e : Core.Expression.Expr,
+        Imperative.ToGoto.toGotoExpr (P := Core.Expression) e
+          = Except.ok (h_expr.tx e))
+    (h_expr_translated_witness :
+      ∀ (cond : Core.Expression.Expr) (e_goto : CProverGOTO.Expr),
+        Lambda.LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩) [] cond
+          = .ok e_goto →
+        ExprTranslated δ δ_goto δ_goto_bool cond e_goto)
     -- Worker C parameters for the SteppingBridges discharge
     (nameMap : Core.Expression.Ident → String)
     [SemanticsTautschnig.ValueCorr Core.Expression]
@@ -196,15 +162,15 @@ theorem coreCFGToGotoTransform_forward_simulation_concrete
         { name := "", parameterIdentifiers := #[],
           instructions := ans.instructions }
         pc_entry σ_goto σ_goto' none := by
-  -- Step 1: A4's WF theorem produces a Nonempty witness.
+  -- Step 1: A5-strengthened WF theorem produces a Nonempty witness.
   have h_wf_nonempty :=
-    coreCFGToGotoTransform_wellFormed_nonempty
-      cfg Env functionName trans₀ h_init_size h_init_loc h_distinct
-      h_admitted_blocks h_loopContracts_empty_post ans h_run
-      δ δ_goto δ_goto_bool
-      h_layout_cond_goto h_layout_cond_goto_guards h_layout_block_body
-      h_labelMap_inj h_entry_in_map
-  -- Step 2: extract a concrete WellFormedTranslation (Nonempty + Classical.choice).
+    coreCFGToGotoTransform_wellFormed_strengthened
+      cfg Env functionName trans₀
+      h_init_size h_init_loc h_distinct h_admitted_blocks
+      h_loopContracts_empty_post h_entry_first
+      ans h_run
+      δ δ_goto δ_goto_bool h_expr h_tx_eq h_expr_translated_witness
+  -- Step 2: extract a concrete WellFormedTranslation.
   obtain ⟨wf⟩ := h_wf_nonempty
   -- Step 3: discharge SteppingBridges from C's theorem.
   let pgm : Program :=
