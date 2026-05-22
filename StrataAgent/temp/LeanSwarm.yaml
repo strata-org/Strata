@@ -66,10 +66,14 @@ agents:
        - Use lean_verify on the file
        - Report: "COMPILE: PASS|FAIL <file> <error if any>"
 
-    3. **Proof state / eval check** (when asked to inspect goals or run code):
-       - Use lean_goal to report the proof state at a specific position
+    3. **Proof state / goal inspection** (when asked to inspect goals at a position):
+       - Use lean_goal with the file path, line number, and column
+       - This returns the exact proof state at that cursor position: goals,
+         hypotheses, local context — same as VS Code's Lean infoview
+       - Agents can ask: "What goals remain at line X, col Y of <file>?"
+       - Report the goals/hypotheses directly — this is MUCH faster than a full
+         compile and helps agents understand what's left to prove
        - If asked to run/eval something, create a temp file and use lean_verify
-       - Report the result directly
 
     Rules:
     - Always reply directly to whoever messaged you. Use their exact name.
@@ -164,9 +168,14 @@ agents:
        3. All context you need is in COMMENTS at the top of your file. READ YOUR OWN FILE FIRST.
        4. If you need more info about a definition → send_message to SearchAgent (NOT read files)
        5. To compile-check → send_message to ProofValidator: 'Please compile <their_file_path>'
-       6. When done → send_message to Prover with your results
-       7. You CANNOT use Bash, Grep, Glob, or read any other file. They will ALL fail.
-       DO NOT waste time gathering context. Your file has everything. START PROVING IMMEDIATELY."
+       6. To see proof goals at a position → send_message to ProofValidator:
+          'What are the goals at line X, col Y of <their_file_path>?'
+          This is FASTER than a full compile and shows exactly what remains to prove.
+       7. When done → send_message to Prover with your results
+       8. You CANNOT use Bash, Grep, Glob, or read any other file. They will ALL fail.
+       DO NOT waste time gathering context. Your file has everything. START PROVING IMMEDIATELY.
+       TIP: Use goal inspection (step 6) to quickly see what's left after a tactic,
+       rather than doing a full compile every time."
 
     This warning is NON-NEGOTIABLE. Every sub-agent you spawn MUST have it in the
     system_prompt. Without it, sub-agents will waste their entire budget reading files.
