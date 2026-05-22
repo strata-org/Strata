@@ -73,7 +73,44 @@ rec function reconstruct(naf: Sequence int) : int
 ;
 #end
 
-/-- info:
+/--
+info:
+Obligation: seq_slicing_seed_post_seq_slicing_seed_ensures_2_1470_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: seq_slicing_seed_post_seq_slicing_seed_ensures_5_1607_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: seq_slicing_seed_post_seq_slicing_seed_ensures_5_1607_calls_Sequence.select_1
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: seq_slicing_seed_post_seq_slicing_seed_ensures_6_1667_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: seq_slicing_seed_post_seq_slicing_seed_ensures_6_1667_calls_Sequence.select_1
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: set_head_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: set_tail_calls_Sequence.drop_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: set_mid_calls_Sequence.drop_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: set_mid_calls_Sequence.take_1
+Property: out-of-bounds access check
+Result: ✅ pass
+
 Obligation: seq_slicing_seed_ensures_2_1470
 Property: assert
 Result: ✅ pass
@@ -94,6 +131,10 @@ Obligation: seq_slicing_seed_ensures_6_1667
 Property: assert
 Result: ✅ pass
 
+Obligation: seq_empty_bv64_seed_post_seq_empty_bv64_seed_ensures_8_1938_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
 Obligation: seq_empty_bv64_seed_ensures_7_1903
 Property: assert
 Result: ✅ pass
@@ -102,13 +143,22 @@ Obligation: seq_empty_bv64_seed_ensures_8_1938
 Property: assert
 Result: ✅ pass
 
+Obligation: reconstruct_body_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: reconstruct_body_calls_Sequence.drop_1
+Property: out-of-bounds access check
+Result: ✅ pass
+
 Obligation: reconstruct_terminates_0
 Property: assert
 Result: ✅ pass
 
 Obligation: reconstruct_terminates_1
 Property: assert
-Result: ✅ pass-/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Strata.Boole.verify "cvc5" seqSlicingSeed (options := .quiet)
 
@@ -133,7 +183,11 @@ spec {
 #end
 
 /-- info:
-Obligation: seq_oob_seed_ensures_0_3481
+Obligation: set_v_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ❓ unknown
+
+Obligation: seq_oob_seed_ensures_0_4964
 Property: assert
 Result: ❓ unknown-/
 #guard_msgs in
