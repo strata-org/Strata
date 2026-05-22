@@ -1031,4 +1031,86 @@ theorem everyGotoTargetIsLabelMapEntry_of_translator_translatorMap
     show st_final.labelMap[l']? = some target
     exact h_lookup
 
+/-! ## `wf.labelMap` form (caller-supplied bridge)
+
+The supervisor's spec asks for the property keyed by `wf.labelMap`
+(an arbitrary `WellFormedTranslation`'s labelMap), not by the
+translator's `hashMapToLabelMap st_final.labelMap`.
+
+For an *arbitrary* `wf`, the bridge requires uniqueness of the
+labelMap over `cfg.blocks` labels — i.e., `wf.labelMap l = some pc'`
+implies `pc' = hashMapToLabelMap st_final.labelMap l`. This is
+genuinely outside `WellFormedTranslation`'s current vocabulary
+(which only constrains forward CFG → program direction; see R7a's
+report for the analysis).
+
+The clean way to deliver the `wf.labelMap` form is to either
+1. add a labelMap-uniqueness field to `WellFormedTranslation`, or
+2. take an explicit `h_labelMap_agree` hypothesis bridging
+   `wf.labelMap` and `hashMapToLabelMap st_final.labelMap` over
+   `cfg.blocks` labels.
+
+We choose option 2: take the bridge as a caller obligation. For the
+v4 caller (which constructs `wf` via
+`coreCFGToGotoTransform_wellFormed_strengthened`), the bridge is
+trivially provable: the strengthened theorem's WF is built from
+`hashMapToLabelMap st_final.labelMap`, so the equality holds
+definitionally. -/
+
+/-- **Top-level theorem (`wf.labelMap` form).** Given a successful
+run of `coreCFGToGotoTransform`, an arbitrary
+`WellFormedTranslation` for the resulting program, and a bridge
+hypothesis `h_labelMap_agree` connecting `wf.labelMap` with the
+translator's `hashMapToLabelMap st_final.labelMap` on `cfg.blocks`
+labels, every emitted GOTO instruction's target value is a
+`wf.labelMap` entry for some block in `cfg.blocks`. -/
+theorem everyGotoTargetIsLabelMapEntry_of_translator
+    (Env : Core.Expression.TyEnv) (functionName : String)
+    (cfg : Core.DetCFG)
+    (trans₀ : Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_init_no_goto_target : NoGotoHasTarget trans₀)
+    (h_loopContracts_empty_post :
+      ∀ (st_final : Strata.CoreCFGTransLoopState),
+        cfg.blocks.foldlM (Strata.coreCFGToGotoBlockStep functionName)
+          (coreCFGToGotoInitState trans₀)
+        = Except.ok st_final → st_final.loopContracts = ∅)
+    (ans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_run : Strata.coreCFGToGotoTransform Env functionName cfg trans₀
+              = Except.ok ans)
+    (st_final : Strata.CoreCFGTransLoopState)
+    (h_blocks_run :
+      cfg.blocks.foldlM (Strata.coreCFGToGotoBlockStep functionName)
+        (coreCFGToGotoInitState trans₀)
+      = Except.ok st_final)
+    (δ : Imperative.SemanticEval Core.Expression)
+    (δ_goto : SemanticEvalGoto Core.Expression)
+    (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
+    (wf : WellFormedTranslation cfg
+      { name := "", parameterIdentifiers := #[],
+        instructions := ans.instructions }
+      δ δ_goto δ_goto_bool)
+    -- Bridge: `wf.labelMap` agrees with the translator's hashmap-keyed
+    -- labelMap on the `target`-direction (consequence of `wf.labelMap_total`
+    -- + LOCATION-uniqueness of `pgm.instructions`; trivially provable for
+    -- `wf` constructed via `coreCFGToGotoTransform_wellFormed_strengthened`).
+    (h_labelMap_agree :
+      ∀ l blk target, (l, blk) ∈ cfg.blocks →
+        st_final.labelMap[l]? = some target →
+        wf.labelMap l = some target) :
+    GotoTargetInRange.EveryGotoTargetIsLabelMapEntry cfg
+      { name := "", parameterIdentifiers := #[],
+        instructions := ans.instructions }
+      wf.labelMap := by
+  intros pc target instr h_at h_ty h_target
+  obtain ⟨l, blk, h_in, h_lookup⟩ :=
+    everyGotoTargetIsLabelMapEntry_of_translator_translatorMap
+      Env functionName cfg trans₀ h_init_no_goto_target
+      h_loopContracts_empty_post ans h_run st_final h_blocks_run
+      h_at h_ty h_target
+  refine ⟨l, blk, h_in, ?_⟩
+  -- h_lookup : hashMapToLabelMap st_final.labelMap l = some target.
+  -- Bridge to wf.labelMap via the agreement hypothesis.
+  have h_lookup_st : st_final.labelMap[l]? = some target := h_lookup
+  exact h_labelMap_agree l blk target h_in h_lookup_st
+
 end CProverGOTO.GotoTargetProvenance
