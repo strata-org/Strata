@@ -8,7 +8,9 @@ import Strata.Backends.CBMC.GOTO.NoDead
 
 /-! # Axiom check for the `h_no_dead` discharge
 
-Pure smoke test — ensures `no_dead_of_translator_no_contracts`
-elaborates and tracks its axiom dependencies. -/
+Pure smoke test — ensures the no-DEAD theorems elaborate and tracks
+their axiom dependencies. -/
 
-#print axioms CProverGOTO.NoDead.no_dead_of_translator_no_contracts
+#print axioms CProverGOTO.NoDead.no_dead_of_translator_no_contracts_explicit
+#print axioms CProverGOTO.NoDead.no_dead_of_translator
+#print axioms CProverGOTO.NoDead.no_dead_program_of_translator

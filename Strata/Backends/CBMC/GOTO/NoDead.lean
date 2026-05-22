@@ -586,14 +586,18 @@ existing call sites.) -/
 
 Under the assumption that the initial transform has no DEAD
 instructions and the no-loop-contracts assumption (consistent with
-R6a's call sites), the translator's output also has no DEAD. -/
-theorem no_dead_of_translator_no_contracts
+R6a's call sites), the translator's output also has no DEAD.
+
+This `_explicit` form takes the decomposition pieces as inputs.
+For the version that takes only `h_run`, see `no_dead_of_translator`
+below. -/
+theorem no_dead_of_translator_no_contracts_explicit
     (Env : Core.Expression.TyEnv) (functionName : String)
     (cfg : Core.DetCFG)
     (trans₀ : Imperative.GotoTransform Core.Expression.TyEnv)
     (h_init_no_dead : HasNoDead trans₀)
     (ans : Imperative.GotoTransform Core.Expression.TyEnv)
-    (h_run : Strata.coreCFGToGotoTransform Env functionName cfg trans₀
+    (_h_run : Strata.coreCFGToGotoTransform Env functionName cfg trans₀
               = Except.ok ans)
     (st_final : Strata.CoreCFGTransLoopState)
     (h_blocks_run :
@@ -632,5 +636,81 @@ theorem no_dead_of_translator_no_contracts
   rw [h_ans_eq]
   apply patchGotoTargets_preserves_no_dead trans_post resolved
   exact h_after_patches
+
+/-- **Translator never emits DEAD instructions** — direct form.
+
+Takes only `h_run` plus the no-loop-contracts side condition.
+Internally invokes `coreCFGToGotoTransform_decompose` to extract
+the per-stage results. The no-loop-contracts side condition is the
+analog of A4's `h_loopContracts_empty_post` — it's true for any CFG
+without `LoopInvariant` / `Decreases` metadata, which is the case
+for the round-6 / round-7 forward-simulation pipeline. -/
+theorem no_dead_of_translator
+    (Env : Core.Expression.TyEnv) (functionName : String)
+    (cfg : Core.DetCFG)
+    (trans₀ : Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_init_no_dead : HasNoDead trans₀)
+    (h_loopContracts_empty_post :
+      ∀ (st_final : Strata.CoreCFGTransLoopState),
+        cfg.blocks.foldlM (Strata.coreCFGToGotoBlockStep functionName)
+          (coreCFGToGotoInitState trans₀)
+        = Except.ok st_final → st_final.loopContracts = ∅)
+    (ans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_run : Strata.coreCFGToGotoTransform Env functionName cfg trans₀
+              = Except.ok ans) :
+    HasNoDead ans := by
+  obtain ⟨st_final, resolved, trans_post, h_blocks_run, h_patches_run, h_ans_eq⟩ :=
+    coreCFGToGotoTransform_decompose Env functionName cfg trans₀ ans h_run
+  -- `coreCFGToGotoInitState trans₀` unfolds to the literal initial
+  -- state we need.
+  have h_blocks_run' :
+      cfg.blocks.foldlM (Strata.coreCFGToGotoBlockStep functionName)
+        ({ trans := trans₀, pendingPatches := #[], labelMap := {},
+           loopContracts := {} } : Strata.CoreCFGTransLoopState)
+      = Except.ok st_final := by
+    have : coreCFGToGotoInitState trans₀ =
+        ({ trans := trans₀, pendingPatches := #[], labelMap := {},
+           loopContracts := {} } : Strata.CoreCFGTransLoopState) := by
+      simp [coreCFGToGotoInitState]
+    rw [this] at h_blocks_run
+    exact h_blocks_run
+  intro pc instr h
+  exact no_dead_of_translator_no_contracts_explicit Env functionName cfg trans₀
+    h_init_no_dead ans h_run st_final h_blocks_run'
+    (h_loopContracts_empty_post st_final h_blocks_run)
+    resolved trans_post h_patches_run h_ans_eq h
+
+/-! ## Wrapper at the `Program` level
+
+R6a's `h_no_dead` field works at the `Program.instrAt` level, not
+directly on `trans.instructions[pc]?`. The two are interconvertible:
+`Program.instrAt pgm pc` unfolds to `pgm.instructions[pc]?`. -/
+
+/-- The translator never emits DEAD — at the `Program` level.
+
+This is the precise shape of R6a's `h_no_dead` side hypothesis. -/
+theorem no_dead_program_of_translator
+    (Env : Core.Expression.TyEnv) (functionName : String)
+    (cfg : Core.DetCFG)
+    (trans₀ : Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_init_no_dead : HasNoDead trans₀)
+    (h_loopContracts_empty_post :
+      ∀ (st_final : Strata.CoreCFGTransLoopState),
+        cfg.blocks.foldlM (Strata.coreCFGToGotoBlockStep functionName)
+          (coreCFGToGotoInitState trans₀)
+        = Except.ok st_final → st_final.loopContracts = ∅)
+    (ans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_run : Strata.coreCFGToGotoTransform Env functionName cfg trans₀
+              = Except.ok ans) :
+    ∀ {pc : Nat} {instr : Instruction},
+      ({ name := "", parameterIdentifiers := #[],
+         instructions := ans.instructions } : Program).instrAt pc =
+        some instr →
+      instr.type ≠ .DEAD := by
+  intro pc instr h
+  -- Program.instrAt pgm pc = pgm.instructions[pc]?.
+  unfold Program.instrAt at h
+  exact no_dead_of_translator Env functionName cfg trans₀ h_init_no_dead
+    h_loopContracts_empty_post ans h_run h
 
 end CProverGOTO.NoDead
