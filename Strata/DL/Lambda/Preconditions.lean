@@ -64,6 +64,15 @@ Returns `Subst.empty` for monomorphic functions or when no useful constraints
 are available; the resulting unsubstituted precondition will be handled
 downstream (the SMT encoder treats unresolved type variables as uninterpreted
 sorts, yielding `unknown` rather than failing).
+
+Note: this is structurally similar to `LFunc.computeTypeSubst` in `Factory.lean`,
+but with the priority *reversed*. `computeTypeSubst` prefers `.op` annotations
+because it is called after type inference, where the `.op` always carries the
+instantiated arrow type. Here we run before type checking, so the `.op` may
+still carry the generic type — argument types are the more reliable source.
+The two helpers cannot be unified by a flag without destabilising the
+`computeTypeSubst`-based proofs in `Semantics.lean` (e.g.
+`computeTypeSubst_of_opTypeSubst`).
 -/
 def callSiteTypeSubst (fn : LFunc T) (callee : LExpr T.mono)
     (args : List (LExpr T.mono)) : Subst :=
