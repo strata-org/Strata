@@ -6,6 +6,7 @@
 module
 
 public import Strata.Backends.CBMC.GOTO.Semantics
+public import Strata.Backends.CBMC.GOTO.CoreToCProverGOTO
 public import Strata.Languages.Core.Procedure
 public import Strata.Languages.Core.StatementSemantics
 public import Strata.DL.Imperative.BasicBlock
@@ -152,7 +153,12 @@ inductive CmdEmittedAt
     (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
     (pgm : Program) :
     Nat → Imperative.Cmd Core.Expression → Prop where
-  /-- `.init v ty (.det e_core) md` → DECL at `pc`, ASSIGN at `pc + 1`. -/
+  /-- `.init v ty (.det e_core) md` → DECL at `pc`, ASSIGN at `pc + 1`.
+
+  Round-7 strengthening: `h_decl_code` and `h_assn_code` now expose the
+  exact symbol the translator emits (`Expr.symbol (identToString v) gty`)
+  rather than an existential `lhs`. Required by the lookup-field bridge
+  lemmas in `InstructionLookups.lean`. -/
   | init_det
     (pc : Nat)
     (v : Core.Expression.Ident) (ty : Core.Expression.Ty)
@@ -162,20 +168,31 @@ inductive CmdEmittedAt
     (h_decl_ty : i_decl.type = .DECL)
     (h_assn_at : pgm.instrAt (pc + 1) = some i_assn)
     (h_assn_ty : i_assn.type = .ASSIGN)
-    (e_goto : Expr)
-    (h_assn_code : ∃ lhs, i_assn.code = Code.assign lhs e_goto)
+    (e_goto : Expr) (gty : CProverGOTO.Ty)
+    (h_decl_code : i_decl.code = Code.decl
+      (Expr.symbol (Imperative.ToGoto.identToString (P := Core.Expression) v) gty))
+    (h_assn_code : i_assn.code = Code.assign
+      (Expr.symbol (Imperative.ToGoto.identToString (P := Core.Expression) v) gty)
+      e_goto)
     (h_translated : ExprTranslated δ δ_goto δ_goto_bool e_core e_goto) :
     CmdEmittedAt δ δ_goto δ_goto_bool pgm pc (.init v ty (.det e_core) md)
-  /-- `.init v ty .nondet md` → DECL at `pc` only. -/
+  /-- `.init v ty .nondet md` → DECL at `pc` only.
+
+  Round-7 strengthening: `h_decl_code` exposes the exact symbol. -/
   | init_nondet
     (pc : Nat)
     (v : Core.Expression.Ident) (ty : Core.Expression.Ty)
     (md : Imperative.MetaData Core.Expression)
     (i_decl : Instruction)
     (h_decl_at : pgm.instrAt pc = some i_decl)
-    (h_decl_ty : i_decl.type = .DECL) :
+    (h_decl_ty : i_decl.type = .DECL)
+    (gty : CProverGOTO.Ty)
+    (h_decl_code : i_decl.code = Code.decl
+      (Expr.symbol (Imperative.ToGoto.identToString (P := Core.Expression) v) gty)) :
     CmdEmittedAt δ δ_goto δ_goto_bool pgm pc (.init v ty .nondet md)
-  /-- `.set v (.det e_core) md` → ASSIGN at `pc` with translated rhs. -/
+  /-- `.set v (.det e_core) md` → ASSIGN at `pc` with translated rhs.
+
+  Round-7 strengthening: `h_assn_code` exposes the exact symbol. -/
   | set_det
     (pc : Nat)
     (v : Core.Expression.Ident) (e_core : Core.Expression.Expr)
@@ -183,11 +200,18 @@ inductive CmdEmittedAt
     (i_assn : Instruction)
     (h_assn_at : pgm.instrAt pc = some i_assn)
     (h_assn_ty : i_assn.type = .ASSIGN)
-    (e_goto : Expr)
-    (h_assn_code : ∃ lhs, i_assn.code = Code.assign lhs e_goto)
+    (e_goto : Expr) (gty : CProverGOTO.Ty)
+    (h_assn_code : i_assn.code = Code.assign
+      (Expr.symbol (Imperative.ToGoto.identToString (P := Core.Expression) v) gty)
+      e_goto)
     (h_translated : ExprTranslated δ δ_goto δ_goto_bool e_core e_goto) :
     CmdEmittedAt δ δ_goto δ_goto_bool pgm pc (.set v (.det e_core) md)
-  /-- `.set v .nondet md` → ASSIGN at `pc` with side-effect Nondet rhs. -/
+  /-- `.set v .nondet md` → ASSIGN at `pc` with side-effect Nondet rhs.
+
+  Round-7 strengthening: `h_assn_code` exposes the exact lhs symbol and
+  the rhs's identifier (`.side_effect .Nondet`) and type (matching the
+  translator's emit). The rhs's source-loc and other fields remain
+  underspecified via the existential `e_nondet`. -/
   | set_nondet
     (pc : Nat)
     (v : Core.Expression.Ident)
@@ -195,7 +219,13 @@ inductive CmdEmittedAt
     (i_assn : Instruction)
     (h_assn_at : pgm.instrAt pc = some i_assn)
     (h_assn_ty : i_assn.type = .ASSIGN)
-    (h_assn_code : ∃ lhs e_nondet, i_assn.code = Code.assign lhs e_nondet) :
+    (gty : CProverGOTO.Ty)
+    (h_assn_code : ∃ e_nondet,
+      i_assn.code = Code.assign
+        (Expr.symbol (Imperative.ToGoto.identToString (P := Core.Expression) v) gty)
+        e_nondet ∧
+      e_nondet.id = .side_effect .Nondet ∧
+      e_nondet.type = gty) :
     CmdEmittedAt δ δ_goto δ_goto_bool pgm pc (.set v .nondet md)
   /-- `.assert label e_core md` → ASSERT at `pc` with translated guard. -/
   | assert_emit

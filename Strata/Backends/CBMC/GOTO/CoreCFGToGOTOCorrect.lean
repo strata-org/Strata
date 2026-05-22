@@ -202,7 +202,7 @@ theorem single_cmd_simulation
     rw [Bool.or_false]
     cases h_layout with
     | init_det _ _ _ _ _ _ h_decl_at h_decl_ty h_assn_at h_assn_ty
-                _ h_assn_code h_translated =>
+                _ _ _ h_assn_code h_translated =>
       -- After step_decl's InitState lands at σ', we have σ' x = some v.
       cases h_init with
       | init hpre hpost hother =>
@@ -217,7 +217,7 @@ theorem single_cmd_simulation
     show ReflTrans _ _ (GotoConfig.running (pc + 1) _ (failed || false))
     rw [Bool.or_false]
     cases h_layout with
-    | init_nondet _ _ _ _ h_decl_at h_decl_ty =>
+    | init_nondet _ _ _ _ h_decl_at h_decl_ty _ _ =>
       refine ReflTrans.step _ _ _ ?_ (ReflTrans.refl _)
       exact StepGoto.step_decl h_decl_at h_decl_ty h_init
   | eval_set h_eval h_upd _ =>
@@ -225,7 +225,7 @@ theorem single_cmd_simulation
     show ReflTrans _ _ (GotoConfig.running (pc + 1) _ (failed || false))
     rw [Bool.or_false]
     cases h_layout with
-    | set_det _ _ _ _ h_assn_at h_assn_ty _ h_assn_code h_translated =>
+    | set_det _ _ _ _ h_assn_at h_assn_ty _ _ h_assn_code h_translated =>
       have h_goto_eval := (h_translated.value_agree _ _).mp h_eval
       refine ReflTrans.step _ _ _ ?_ (ReflTrans.refl _)
       exact StepGoto.step_assign h_assn_at h_assn_ty h_goto_eval h_upd
@@ -235,7 +235,7 @@ theorem single_cmd_simulation
     show ReflTrans _ _ (GotoConfig.running (pc + 1) _ (failed || false))
     rw [Bool.or_false]
     cases h_layout with
-    | set_nondet _ _ _ h_assn_at h_assn_ty _ =>
+    | set_nondet _ _ _ h_assn_at h_assn_ty _ _ =>
       refine ReflTrans.step _ _ _ ?_ (ReflTrans.refl _)
       exact StepGoto.step_assign_nondet h_assn_at h_assn_ty h_upd
   | eval_assert_pass h_eval _ =>

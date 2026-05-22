@@ -468,7 +468,12 @@ them together is part of the loop-induction work.
 -/
 
 /-- Bridge from `Cmd_toGotoInstructions_init_det_ok` to
-`CmdEmittedAt.init_det`. -/
+`CmdEmittedAt.init_det`.
+
+Round-7 update: `h_decl_code`/`h_assn_code` now expose the exact symbol
+shape (`Expr.symbol (identToString v) gty`) instead of the existential
+`∃ lhs`. The shape lemma in `Cmd_toGotoInstructions_init_det_ok` already
+provides this evidence directly. -/
 theorem cmdEmittedAt_init_det
     (δ : Imperative.SemanticEval Core.Expression)
     (δ_goto : SemanticEvalGoto Core.Expression)
@@ -482,15 +487,22 @@ theorem cmdEmittedAt_init_det
     (h_decl_ty : i_decl.type = .DECL)
     (h_assn_at : pgm.instrAt (pc + 1) = some i_assn)
     (h_assn_ty : i_assn.type = .ASSIGN)
-    (e_goto : Expr)
-    (h_assn_code : ∃ lhs, i_assn.code = Code.assign lhs e_goto)
+    (e_goto : Expr) (gty : CProverGOTO.Ty)
+    (h_decl_code : i_decl.code = Code.decl
+      (Expr.symbol (Imperative.ToGoto.identToString (P := Core.Expression) v) gty))
+    (h_assn_code : i_assn.code = Code.assign
+      (Expr.symbol (Imperative.ToGoto.identToString (P := Core.Expression) v) gty)
+      e_goto)
     (h_translated : ExprTranslated δ δ_goto δ_goto_bool e_core e_goto) :
     CmdEmittedAt δ δ_goto δ_goto_bool pgm pc (.init v ty (.det e_core) md) :=
   CmdEmittedAt.init_det pc v ty e_core md i_decl i_assn
-    h_decl_at h_decl_ty h_assn_at h_assn_ty e_goto h_assn_code h_translated
+    h_decl_at h_decl_ty h_assn_at h_assn_ty e_goto gty
+    h_decl_code h_assn_code h_translated
 
 /-- Bridge from `Cmd_toGotoInstructions_init_nondet_ok` to
-`CmdEmittedAt.init_nondet`. -/
+`CmdEmittedAt.init_nondet`.
+
+Round-7 update: `h_decl_code` now exposes the exact symbol shape. -/
 theorem cmdEmittedAt_init_nondet
     (δ : Imperative.SemanticEval Core.Expression)
     (δ_goto : SemanticEvalGoto Core.Expression)
@@ -500,12 +512,18 @@ theorem cmdEmittedAt_init_nondet
     (md : Imperative.MetaData Core.Expression)
     (i_decl : Instruction)
     (h_decl_at : pgm.instrAt pc = some i_decl)
-    (h_decl_ty : i_decl.type = .DECL) :
+    (h_decl_ty : i_decl.type = .DECL)
+    (gty : CProverGOTO.Ty)
+    (h_decl_code : i_decl.code = Code.decl
+      (Expr.symbol (Imperative.ToGoto.identToString (P := Core.Expression) v) gty)) :
     CmdEmittedAt δ δ_goto δ_goto_bool pgm pc (.init v ty .nondet md) :=
   CmdEmittedAt.init_nondet pc v ty md i_decl h_decl_at h_decl_ty
+    gty h_decl_code
 
 /-- Bridge from `Cmd_toGotoInstructions_set_det_ok` to
-`CmdEmittedAt.set_det`. -/
+`CmdEmittedAt.set_det`.
+
+Round-7 update: `h_assn_code` now exposes the exact symbol shape. -/
 theorem cmdEmittedAt_set_det
     (δ : Imperative.SemanticEval Core.Expression)
     (δ_goto : SemanticEvalGoto Core.Expression)
@@ -516,12 +534,14 @@ theorem cmdEmittedAt_set_det
     (i_assn : Instruction)
     (h_assn_at : pgm.instrAt pc = some i_assn)
     (h_assn_ty : i_assn.type = .ASSIGN)
-    (e_goto : Expr)
-    (h_assn_code : ∃ lhs, i_assn.code = Code.assign lhs e_goto)
+    (e_goto : Expr) (gty : CProverGOTO.Ty)
+    (h_assn_code : i_assn.code = Code.assign
+      (Expr.symbol (Imperative.ToGoto.identToString (P := Core.Expression) v) gty)
+      e_goto)
     (h_translated : ExprTranslated δ δ_goto δ_goto_bool e_core e_goto) :
     CmdEmittedAt δ δ_goto δ_goto_bool pgm pc (.set v (.det e_core) md) :=
   CmdEmittedAt.set_det pc v e_core md i_assn
-    h_assn_at h_assn_ty e_goto h_assn_code h_translated
+    h_assn_at h_assn_ty e_goto gty h_assn_code h_translated
 
 /-- Bridge from `Cmd_toGotoInstructions_assert_ok` to
 `CmdEmittedAt.assert_emit`. -/
@@ -700,7 +720,7 @@ theorem cmdEmittedAt_set_det_of_toGotoInstructions
     rw [← h_tx_e]
     exact h_expr_corr.tx_correct e
   exact cmdEmittedAt_set_det δ δ_goto δ_goto_bool pgm trans.nextLoc
-    v e md i_assn h_at h_assn_ty e_goto ⟨_, h_assn_code⟩ h_translated
+    v e md i_assn h_at h_assn_ty e_goto gty h_assn_code h_translated
 
 theorem cmdEmittedAt_init_nondet_of_toGotoInstructions
     (T : Core.Expression.TyEnv) (fname : String)
@@ -719,14 +739,14 @@ theorem cmdEmittedAt_init_nondet_of_toGotoInstructions
         pgm.instructions[k]? = some ans.instructions[k]) :
     CmdEmittedAt δ δ_goto δ_goto_bool pgm trans.nextLoc
       (.init v ty .nondet md) := by
-  obtain ⟨gty, i_decl, _h_ty, h_decl_ty, _h_decl_code, _h_decl_loc,
+  obtain ⟨gty, i_decl, _h_ty, h_decl_ty, h_decl_code, _h_decl_loc,
     h_inst, _h_next, _h_T⟩ :=
     Cmd_toGotoInstructions_init_nondet_ok T fname v ty md trans ans h_run
   have h_at : pgm.instrAt trans.nextLoc = some i_decl :=
     pgm_instrAt_of_push_invariant pgm trans.instructions i_decl ans.instructions
       trans.nextLoc h_invariant h_inst h_prefix
   exact cmdEmittedAt_init_nondet δ δ_goto δ_goto_bool pgm trans.nextLoc
-    v ty md i_decl h_at h_decl_ty
+    v ty md i_decl h_at h_decl_ty gty h_decl_code
 
 /-! ## Per-`Cmd` dispatcher
 
@@ -776,7 +796,7 @@ theorem cmdEmittedAt_init_det_of_toGotoInstructions
     CmdEmittedAt δ δ_goto δ_goto_bool pgm trans.nextLoc
       (.init v ty (.det e) md) := by
   obtain ⟨gty, e_goto, i_decl, i_assn, _h_ty, h_expr,
-          h_decl_ty, _h_decl_code, _h_decl_loc,
+          h_decl_ty, h_decl_code, _h_decl_loc,
           h_assn_ty, h_assn_code, _h_assn_loc,
           h_inst, _h_next, _h_T⟩ :=
     Cmd_toGotoInstructions_init_det_ok T fname v ty e md trans ans h_run
@@ -832,7 +852,7 @@ theorem cmdEmittedAt_init_det_of_toGotoInstructions
     exact h_expr_corr.tx_correct e
   exact cmdEmittedAt_init_det δ δ_goto δ_goto_bool pgm trans.nextLoc
     v ty e md i_decl i_assn h_at0 h_decl_ty h_at1 h_assn_ty
-    e_goto ⟨_, h_assn_code⟩ h_translated
+    e_goto gty h_decl_code h_assn_code h_translated
 
 /-! ## `set_nondet` shape and driver
 
@@ -843,7 +863,11 @@ side-effect-Nondet RHS rather than a translated expression. Adding
 the missing shape lemma + driver here unblocks the dispatcher. -/
 
 /-- `.set v .nondet md` succeeds iff `lookupType T v` succeeds; the
-result has one new ASSIGN appended whose RHS is a side-effect Nondet. -/
+result has one new ASSIGN appended whose RHS is a side-effect Nondet.
+
+Round-7 update: the lhs operand is now exposed as
+`Expr.symbol (identToString v) gty` (matching the strengthened
+`CmdEmittedAt.set_nondet`). The rhs's `id`/`type` are exposed as well. -/
 theorem Cmd_toGotoInstructions_set_nondet_ok
     (T : Core.Expression.TyEnv) (fname : String)
     (v : Core.Expression.Ident)
@@ -854,7 +878,12 @@ theorem Cmd_toGotoInstructions_set_nondet_ok
     ∃ gty i_assn,
       Imperative.ToGoto.lookupType (P := Core.Expression) T v = Except.ok gty ∧
       i_assn.type = .ASSIGN ∧
-      (∃ lhs e_nondet, i_assn.code = Code.assign lhs e_nondet) ∧
+      (∃ e_nondet,
+        i_assn.code = Code.assign
+          (Expr.symbol (Imperative.ToGoto.identToString (P := Core.Expression) v) gty)
+          e_nondet ∧
+        e_nondet.id = .side_effect .Nondet ∧
+        e_nondet.type = gty) ∧
       i_assn.locationNum = trans.nextLoc ∧
       ans.instructions = trans.instructions.push i_assn ∧
       ans.nextLoc = trans.nextLoc + 1 := by
@@ -873,13 +902,19 @@ theorem Cmd_toGotoInstructions_set_nondet_ok
           (CProverGOTO.Expr.symbol
             (Imperative.ToGoto.identToString (P := Core.Expression) v) gty)
           { id := .side_effect .Nondet, sourceLoc := srcLoc, type := gty } },
-      rfl, rfl, ⟨_, _, rfl⟩, rfl, ?_, ?_⟩
+      rfl, rfl,
+      ⟨{ id := .side_effect .Nondet, sourceLoc := srcLoc, type := gty },
+        rfl, rfl, rfl⟩,
+      rfl, ?_, ?_⟩
     all_goals (subst h; rfl)
   | .error _ =>
     simp [h_ty, Bind.bind, Except.bind] at h
 
 /-- Bridge from `Cmd_toGotoInstructions_set_nondet_ok` to
-`CmdEmittedAt.set_nondet`. -/
+`CmdEmittedAt.set_nondet`.
+
+Round-7 update: the strengthened constructor takes `gty` and the
+detailed nondet-rhs witness directly. -/
 theorem cmdEmittedAt_set_nondet
     (δ : Imperative.SemanticEval Core.Expression)
     (δ_goto : SemanticEvalGoto Core.Expression)
@@ -890,9 +925,15 @@ theorem cmdEmittedAt_set_nondet
     (i_assn : Instruction)
     (h_assn_at : pgm.instrAt pc = some i_assn)
     (h_assn_ty : i_assn.type = .ASSIGN)
-    (h_assn_code : ∃ lhs e_nondet, i_assn.code = Code.assign lhs e_nondet) :
+    (gty : CProverGOTO.Ty)
+    (h_assn_code : ∃ e_nondet,
+      i_assn.code = Code.assign
+        (Expr.symbol (Imperative.ToGoto.identToString (P := Core.Expression) v) gty)
+        e_nondet ∧
+      e_nondet.id = .side_effect .Nondet ∧
+      e_nondet.type = gty) :
     CmdEmittedAt δ δ_goto δ_goto_bool pgm pc (.set v .nondet md) :=
-  CmdEmittedAt.set_nondet pc v md i_assn h_assn_at h_assn_ty h_assn_code
+  CmdEmittedAt.set_nondet pc v md i_assn h_assn_at h_assn_ty gty h_assn_code
 
 theorem cmdEmittedAt_set_nondet_of_toGotoInstructions
     (T : Core.Expression.TyEnv) (fname : String)
@@ -910,13 +951,13 @@ theorem cmdEmittedAt_set_nondet_of_toGotoInstructions
       ∀ (k : Nat) (h : k < ans.instructions.size),
         pgm.instructions[k]? = some ans.instructions[k]) :
     CmdEmittedAt δ δ_goto δ_goto_bool pgm trans.nextLoc (.set v .nondet md) := by
-  obtain ⟨_gty, i_assn, _h_ty, h_assn_ty, h_assn_code, _h_loc, h_inst, _h_next⟩ :=
+  obtain ⟨gty, i_assn, _h_ty, h_assn_ty, h_assn_code, _h_loc, h_inst, _h_next⟩ :=
     Cmd_toGotoInstructions_set_nondet_ok T fname v md trans ans h_run
   have h_at : pgm.instrAt trans.nextLoc = some i_assn :=
     pgm_instrAt_of_push_invariant pgm trans.instructions i_assn ans.instructions
       trans.nextLoc h_invariant h_inst h_prefix
   exact cmdEmittedAt_set_nondet δ δ_goto δ_goto_bool pgm trans.nextLoc
-    v md i_assn h_at h_assn_ty h_assn_code
+    v md i_assn h_at h_assn_ty gty h_assn_code
 
 /-! ## Per-Cmd dispatcher
 
@@ -5271,36 +5312,37 @@ theorem layout_block_body_of_translator
   -- doesn't bind a fresh name for it.
   cases h_emit_st with
   | init_det v ty e_core md i_decl i_assn h_decl_at h_decl_ty h_assn_at h_assn_ty
-              e_goto h_assn_code h_translated =>
-    obtain ⟨i_decl', h_at_decl', h_ty_decl', _, _⟩ :=
+              e_goto gty h_decl_code h_assn_code h_translated =>
+    obtain ⟨i_decl', h_at_decl', h_ty_decl', _, h_c_decl'⟩ :=
       h_st_to_ans _ i_decl h_decl_at
     obtain ⟨i_assn', h_at_assn', h_ty_assn', _, h_c_assn'⟩ :=
       h_st_to_ans _ i_assn h_assn_at
-    obtain ⟨lhs, h_assn_code_eq⟩ := h_assn_code
     refine CmdEmittedAt.init_det _ v ty e_core md i_decl' i_assn'
       h_at_decl' (h_ty_decl'.trans h_decl_ty)
       h_at_assn' (h_ty_assn'.trans h_assn_ty)
-      e_goto ⟨lhs, ?_⟩ h_translated
-    rw [h_c_assn']; exact h_assn_code_eq
-  | init_nondet v ty md i_decl h_decl_at h_decl_ty =>
-    obtain ⟨i_decl', h_at_decl', h_ty_decl', _, _⟩ :=
+      e_goto gty ?_ ?_ h_translated
+    · rw [h_c_decl']; exact h_decl_code
+    · rw [h_c_assn']; exact h_assn_code
+  | init_nondet v ty md i_decl h_decl_at h_decl_ty gty h_decl_code =>
+    obtain ⟨i_decl', h_at_decl', h_ty_decl', _, h_c_decl'⟩ :=
       h_st_to_ans _ i_decl h_decl_at
-    exact CmdEmittedAt.init_nondet _ v ty md i_decl' h_at_decl' (h_ty_decl'.trans h_decl_ty)
-  | set_det v e_core md i_assn h_assn_at h_assn_ty e_goto h_assn_code h_translated =>
+    refine CmdEmittedAt.init_nondet _ v ty md i_decl' h_at_decl'
+      (h_ty_decl'.trans h_decl_ty) gty ?_
+    rw [h_c_decl']; exact h_decl_code
+  | set_det v e_core md i_assn h_assn_at h_assn_ty e_goto gty h_assn_code h_translated =>
     obtain ⟨i_assn', h_at_assn', h_ty_assn', _, h_c_assn'⟩ :=
       h_st_to_ans _ i_assn h_assn_at
-    obtain ⟨lhs, h_assn_code_eq⟩ := h_assn_code
     refine CmdEmittedAt.set_det _ v e_core md i_assn'
       h_at_assn' (h_ty_assn'.trans h_assn_ty)
-      e_goto ⟨lhs, ?_⟩ h_translated
-    rw [h_c_assn']; exact h_assn_code_eq
-  | set_nondet v md i_assn h_assn_at h_assn_ty h_assn_code =>
+      e_goto gty ?_ h_translated
+    rw [h_c_assn']; exact h_assn_code
+  | set_nondet v md i_assn h_assn_at h_assn_ty gty h_assn_code =>
     obtain ⟨i_assn', h_at_assn', h_ty_assn', _, h_c_assn'⟩ :=
       h_st_to_ans _ i_assn h_assn_at
-    obtain ⟨lhs, e_nondet, h_assn_code_eq⟩ := h_assn_code
+    obtain ⟨e_nondet, h_assn_code_eq, h_id, h_ty_e⟩ := h_assn_code
     refine CmdEmittedAt.set_nondet _ v md i_assn'
-      h_at_assn' (h_ty_assn'.trans h_assn_ty)
-      ⟨lhs, e_nondet, ?_⟩
+      h_at_assn' (h_ty_assn'.trans h_assn_ty) gty
+      ⟨e_nondet, ?_, h_id, h_ty_e⟩
     rw [h_c_assn']; exact h_assn_code_eq
   | assert_emit label e_core md i h_at_st h_ty e_goto h_guard h_translated =>
     obtain ⟨i', h_at', h_ty', h_g', _⟩ := h_st_to_ans _ i h_at_st
