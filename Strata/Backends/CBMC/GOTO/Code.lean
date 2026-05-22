@@ -185,7 +185,7 @@ def Code.setNamedField (c : Code) (name : String) (value : String) : Code :=
 namespace Code
 
 /-- Assignment statement -/
-def assign (lhs rhs : Expr) : Code :=
+@[expose] def assign (lhs rhs : Expr) : Code :=
   { id := .assignment .assign, operands := [lhs, rhs] }
 
 /-- Assume statement -/
@@ -197,7 +197,7 @@ def assert (condition : Expr) : Code :=
   { id := .assertion .assert, operands := [condition] }
 
 /-- Declaration statement -/
-def decl (symbol : Expr) : Code :=
+@[expose] def decl (symbol : Expr) : Code :=
   { id := .assignment .decl, operands := [symbol] }
 
 /-- Dead statement -/

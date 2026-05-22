@@ -288,7 +288,7 @@ def Expr.setNamedField (e : Expr) (name : String) (value : Expr) : Expr :=
 namespace Expr
 
 /-- Symbol expression -/
-def symbol (name : String) (type : Ty) : Expr :=
+@[expose] def symbol (name : String) (type : Ty) : Expr :=
   { id := .nullary (.symbol name), type := type }
 
 /-- Constant expression -/
