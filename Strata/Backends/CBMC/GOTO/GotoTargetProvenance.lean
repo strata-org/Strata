@@ -715,4 +715,104 @@ theorem patchGotoTargets_target_some_in_patches
   exact patch_foldl_target_some_in_list trans.instructions patches pc t
     instr_pre instr_post h_pre_at h_pre_target h_post_at h_post_target
 
+/-! ## Patches-fold reverse direction
+
+Given the patches-fold succeeds with output `acc'.1 = resolved`, every
+`(pc, target) ∈ resolved` either was in the initial `acc.1`, or comes
+from some `(pc, label) ∈ patches` with `labelMap[label]? = some
+target`. -/
+
+/-- Per-step reverse direction: for `(pc, target) ∈ acc'.1`, either
+`(pc, target) ∈ acc.1` or `(pc, target)` is the new prepended pair
+(in which case `pc = idxLabel.1` and there exists `label` with
+`labelMap[label]? = some target` — namely `idxLabel.2`). -/
+theorem coreCFGToGotoPatchStep_no_contracts_resolved_reverse
+    (labelMap : Std.HashMap String Nat)
+    (acc acc' : List (Nat × Nat) × Imperative.GotoTransform Core.Expression.TyEnv)
+    (idxLabel : Nat × String)
+    (h_run : Strata.coreCFGToGotoPatchStep labelMap ∅ acc idxLabel = Except.ok acc')
+    (pc target : Nat) (h_in : (pc, target) ∈ acc'.1) :
+    (pc, target) ∈ acc.1 ∨
+    (pc = idxLabel.1 ∧ labelMap[idxLabel.2]? = some target) := by
+  obtain ⟨resolvedPatches, trans⟩ := acc
+  obtain ⟨idx, label⟩ := idxLabel
+  -- Get a labelMap lookup for `label` from the patch step's success.
+  obtain ⟨targetLoc, h_lookup⟩ :=
+    coreCFGToGotoPatchStep_success_lookup labelMap ∅
+      (resolvedPatches, trans) acc' (idx, label) h_run
+  -- The patch step prepends (idx, targetLoc) to resolvedPatches.
+  have h_acc'_eq : acc'.1 = (idx, targetLoc) :: resolvedPatches :=
+    coreCFGToGotoPatchStep_no_contracts_resolvedPatches labelMap
+      (resolvedPatches, trans) acc' (idx, label) targetLoc h_lookup h_run
+  rw [h_acc'_eq] at h_in
+  simp only [List.mem_cons] at h_in
+  rcases h_in with h_eq | h_old
+  · -- (idx, targetLoc) = (pc, target).
+    injection h_eq with h_pc h_target
+    -- h_pc : pc = idx, h_target : target = targetLoc.
+    right
+    refine ⟨h_pc, ?_⟩
+    rw [h_target]
+    exact h_lookup
+  · left; exact h_old
+
+/-- Patches-fold reverse: every `(pc, target) ∈ acc'.1` either was in
+`acc.1`, or comes from some `(pc, label) ∈ patches` with
+`labelMap[label]? = some target`. -/
+theorem patchesFoldlM_no_contracts_resolved_reverse
+    (labelMap : Std.HashMap String Nat)
+    (patches : List (Nat × String))
+    (acc acc' : List (Nat × Nat) × Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_run : patches.foldlM (Strata.coreCFGToGotoPatchStep labelMap ∅) acc = Except.ok acc')
+    (pc target : Nat) (h_in : (pc, target) ∈ acc'.1) :
+    (pc, target) ∈ acc.1 ∨
+    ∃ label, (pc, label) ∈ patches ∧ labelMap[label]? = some target := by
+  induction patches generalizing acc with
+  | nil =>
+    simp [List.foldlM, pure, Except.pure] at h_run
+    subst h_run
+    left; exact h_in
+  | cons head rest ih =>
+    rw [List.foldlM_cons] at h_run
+    match h_step : Strata.coreCFGToGotoPatchStep labelMap ∅ acc head with
+    | .ok acc₁ =>
+      rw [h_step] at h_run
+      simp only [Bind.bind, Except.bind] at h_run
+      have h_ih := ih acc₁ h_run
+      rcases h_ih with h_in_acc₁ | ⟨lbl, h_in_rest, h_lookup⟩
+      · -- (pc, target) ∈ acc₁.1. Reverse the head step.
+        have := coreCFGToGotoPatchStep_no_contracts_resolved_reverse
+          labelMap acc acc₁ head h_step pc target h_in_acc₁
+        rcases this with h_acc | ⟨h_pc, h_lookup⟩
+        · left; exact h_acc
+        · right
+          refine ⟨head.2, ?_, h_lookup⟩
+          obtain ⟨h₁, h₂⟩ := head
+          subst h_pc
+          exact List.mem_cons_self
+      · -- (pc, lbl) ∈ rest. So (pc, lbl) ∈ head :: rest.
+        right
+        exact ⟨lbl, by simp [h_in_rest], h_lookup⟩
+    | .error _ =>
+      rw [h_step] at h_run
+      simp [Bind.bind, Except.bind] at h_run
+
+/-- Array form of `patchesFoldlM_no_contracts_resolved_reverse`. -/
+theorem patchesFoldlM_no_contracts_resolved_reverse_array
+    (labelMap : Std.HashMap String Nat)
+    (patches : Array (Nat × String))
+    (acc acc' : List (Nat × Nat) × Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_run : patches.foldlM (Strata.coreCFGToGotoPatchStep labelMap ∅) acc = Except.ok acc')
+    (pc target : Nat) (h_in : (pc, target) ∈ acc'.1) :
+    (pc, target) ∈ acc.1 ∨
+    ∃ label, (pc, label) ∈ patches ∧ labelMap[label]? = some target := by
+  rw [← Array.foldlM_toList] at h_run
+  obtain h := patchesFoldlM_no_contracts_resolved_reverse
+    labelMap patches.toList acc acc' h_run pc target h_in
+  rcases h with h | ⟨lbl, h_in', h_lookup⟩
+  · left; exact h
+  · right
+    refine ⟨lbl, ?_, h_lookup⟩
+    exact Array.mem_toList_iff.mp h_in'
+
 end CProverGOTO.GotoTargetProvenance
