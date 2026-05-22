@@ -815,4 +815,220 @@ theorem patchesFoldlM_no_contracts_resolved_reverse_array
     refine ⟨lbl, ?_, h_lookup⟩
     exact Array.mem_toList_iff.mp h_in'
 
+/-! ## labelMap keys are block labels
+
+Every key in the post-blocks-fold labelMap was inserted by some
+block-step, hence corresponds to a block in the input list. -/
+
+/-- One-step block-fold: any key in `st'.labelMap` either was in
+`st.labelMap` or is the head block's label. -/
+theorem coreCFGToGotoBlockStep_labelMap_key
+    (fname : String) (lblBlk : String × Imperative.DetBlock String Core.Command Core.Expression)
+    (st st' : Strata.CoreCFGTransLoopState)
+    (h_run : Strata.coreCFGToGotoBlockStep fname st lblBlk = Except.ok st')
+    (label : String) (pc : Nat)
+    (h_lookup : st'.labelMap[label]? = some pc) :
+    label = lblBlk.1 ∨ st.labelMap[label]? = some pc := by
+  rw [coreCFGToGotoBlockStep_labelMap fname lblBlk st st' h_run] at h_lookup
+  rw [Std.HashMap.getElem?_insert] at h_lookup
+  by_cases h : lblBlk.1 = label
+  · left; exact h.symm
+  · simp [h] at h_lookup
+    right; exact h_lookup
+
+/-- Blocks-fold preserves "labelMap keys are in initial keys ∪ blocks
+labels". -/
+theorem blocksFoldlM_labelMap_keys_subset
+    (fname : String)
+    (blocks : List (String × Imperative.DetBlock String Core.Command Core.Expression))
+    (st st' : Strata.CoreCFGTransLoopState)
+    (h_run : blocks.foldlM (Strata.coreCFGToGotoBlockStep fname) st = Except.ok st')
+    (label : String) (pc : Nat)
+    (h_lookup : st'.labelMap[label]? = some pc) :
+    (∃ pc', st.labelMap[label]? = some pc') ∨
+    label ∈ blocks.map Prod.fst := by
+  induction blocks generalizing st with
+  | nil =>
+    simp [List.foldlM, pure, Except.pure] at h_run
+    subst h_run
+    left; exact ⟨pc, h_lookup⟩
+  | cons head rest ih =>
+    rw [List.foldlM_cons] at h_run
+    match h_step : Strata.coreCFGToGotoBlockStep fname st head with
+    | .ok st₁ =>
+      rw [h_step] at h_run
+      simp only [Bind.bind, Except.bind] at h_run
+      have h_ih := ih st₁ h_run
+      rcases h_ih with ⟨pc₁, h_in_st₁⟩ | h_in_rest
+      · -- label is in st₁.labelMap. Reverse the head step.
+        rcases coreCFGToGotoBlockStep_labelMap_key fname head st st₁ h_step
+                label pc₁ h_in_st₁ with h_eq | h_in_st
+        · -- label = head.1, so it's a block label.
+          right
+          rw [h_eq]
+          exact List.mem_cons_self
+        · left; exact ⟨pc₁, h_in_st⟩
+      · -- label is in rest.
+        right
+        exact List.mem_cons_of_mem _ h_in_rest
+    | .error _ =>
+      rw [h_step] at h_run
+      simp [Bind.bind, Except.bind] at h_run
+
+/-- After the blocks-fold from the initial state (empty labelMap),
+every labelMap key is a block label. -/
+theorem blocksFoldlM_labelMap_keys_in_blocks
+    (fname : String)
+    (blocks : List (String × Imperative.DetBlock String Core.Command Core.Expression))
+    (trans₀ : Imperative.GotoTransform Core.Expression.TyEnv)
+    (st_final : Strata.CoreCFGTransLoopState)
+    (h_run : blocks.foldlM (Strata.coreCFGToGotoBlockStep fname)
+              ({ trans := trans₀, pendingPatches := #[], labelMap := {},
+                 loopContracts := {} } : Strata.CoreCFGTransLoopState)
+            = Except.ok st_final)
+    (label : String) (pc : Nat)
+    (h_lookup : st_final.labelMap[label]? = some pc) :
+    label ∈ blocks.map Prod.fst := by
+  rcases blocksFoldlM_labelMap_keys_subset fname blocks _ st_final h_run label pc h_lookup
+    with ⟨pc', h_init⟩ | h_block
+  · -- Initial labelMap is empty, so this is impossible.
+    show label ∈ blocks.map Prod.fst
+    have : (∅ : Std.HashMap String Nat)[label]? = some pc' := h_init
+    rw [Std.HashMap.getElem?_empty] at this
+    cases this
+  · exact h_block
+
+/-! ## Final composition: `EveryGotoTargetIsBlockLabel` of the translator's output
+
+We now compose:
+
+1. `coreCFGToGotoTransform_decompose` to extract `st_final, resolved,
+   trans_post`.
+2. `blocksFoldlM_preserves_no_goto_target` to establish
+   `NoGotoHasTarget st_final.trans` (with the trivial empty initial
+   state base case).
+3. Under `loopContracts = ∅`, `trans_post = st_final.trans` via
+   `patchesFoldlM_no_contracts_trans_eq`. So `NoGotoHasTarget
+   trans_post`.
+4. `ans = patchGotoTargets trans_post resolved`, so a GOTO at `pc` in
+   `ans` with `target = some t` had pre-target `none`, hence by the
+   reverse-target lemma `(pc, t) ∈ resolved`.
+5. `(pc, t) ∈ resolved` reverse-traces to `∃ label, (pc, label) ∈
+   pendingPatches ∧ labelMap[label]? = some t`.
+6. Such a `label` is a block label by `blocksFoldlM_labelMap_keys_in_blocks`.
+7. Find the corresponding `(label, blk) ∈ cfg.blocks`. -/
+
+/-- **Top-level theorem.** Given a successful run of
+`coreCFGToGotoTransform`, every emitted GOTO instruction's target
+value is a `labelMap` entry for some block in `cfg.blocks` (where
+`labelMap` is the translator's hashmap-keyed labelMap). -/
+theorem everyGotoTargetIsLabelMapEntry_of_translator_translatorMap
+    (Env : Core.Expression.TyEnv) (functionName : String)
+    (cfg : Core.DetCFG)
+    (trans₀ : Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_init_no_goto_target : NoGotoHasTarget trans₀)
+    (h_loopContracts_empty_post :
+      ∀ (st_final : Strata.CoreCFGTransLoopState),
+        cfg.blocks.foldlM (Strata.coreCFGToGotoBlockStep functionName)
+          (coreCFGToGotoInitState trans₀)
+        = Except.ok st_final → st_final.loopContracts = ∅)
+    (ans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_run : Strata.coreCFGToGotoTransform Env functionName cfg trans₀
+              = Except.ok ans)
+    (st_final : Strata.CoreCFGTransLoopState)
+    (h_blocks_run :
+      cfg.blocks.foldlM (Strata.coreCFGToGotoBlockStep functionName)
+        (coreCFGToGotoInitState trans₀)
+      = Except.ok st_final) :
+    GotoTargetInRange.EveryGotoTargetIsLabelMapEntry cfg
+      { name := "", parameterIdentifiers := #[],
+        instructions := ans.instructions }
+      (hashMapToLabelMap st_final.labelMap) := by
+  -- Step 1: decompose ans's structure.
+  obtain ⟨st_final', resolved, trans_post, h_blocks_run', h_patches_run, h_ans_eq⟩ :=
+    coreCFGToGotoTransform_decompose Env functionName cfg trans₀ ans h_run
+  -- The blocks-fold result is unique.
+  have h_st_final_eq : st_final = st_final' := by
+    rw [h_blocks_run] at h_blocks_run'
+    injection h_blocks_run'
+  subst h_st_final_eq
+  -- Step 2: NoGotoHasTarget through blocks-fold + patches-fold.
+  have h_init_no_goto_target_st :
+      NoGotoHasTarget (coreCFGToGotoInitState trans₀).trans := h_init_no_goto_target
+  have h_no_goto_target_st_final : NoGotoHasTarget st_final.trans :=
+    blocksFoldlM_preserves_no_goto_target functionName cfg.blocks _ st_final
+      h_blocks_run h_init_no_goto_target_st
+  -- Step 3: patchesFoldlM with empty contracts: trans unchanged.
+  have h_lc_empty := h_loopContracts_empty_post st_final h_blocks_run
+  rw [h_lc_empty] at h_patches_run
+  have h_trans_post_eq : trans_post = st_final.trans :=
+    patchesFoldlM_no_contracts_trans_eq st_final.labelMap st_final.pendingPatches
+      ([], st_final.trans) (resolved, trans_post) h_patches_run
+  -- Step 4: feed everyone into the predicate.
+  intros pc target instr h_at h_ty h_target
+  -- ans.instrAt pc = ans.instructions[pc]?, so unfolding:
+  have h_at' : ans.instructions[pc]? = some instr := h_at
+  rw [h_ans_eq] at h_at'
+  -- The GOTO at pc has target = some target in patchGotoTargets trans_post resolved.
+  -- The pre-patcher target is in trans_post = st_final.trans, which has NoGotoHasTarget.
+  -- So pre-target = none. Apply patchGotoTargets_target_some_in_patches.
+  -- We need access to trans_post.instructions[pc]?.
+  have h_size_post : (Imperative.patchGotoTargets trans_post resolved).instructions.size
+                      = trans_post.instructions.size :=
+    patchGotoTargets_preserves_size trans_post resolved
+  have h_pc_lt_post : pc < (Imperative.patchGotoTargets trans_post resolved).instructions.size := by
+    rcases Array.getElem?_eq_some_iff.mp h_at' with ⟨h_lt, _⟩
+    exact h_lt
+  have h_pc_lt_pre : pc < trans_post.instructions.size := h_size_post ▸ h_pc_lt_post
+  obtain ⟨instr_pre, h_pre_at, _, _, _, _⟩ :=
+    patchGotoTargets_preserves_full_except_target trans_post resolved pc instr h_at'
+  have h_pre_target_none : instr_pre.target = none := by
+    rw [h_trans_post_eq] at h_pre_at
+    -- instr_pre.type = instr.type (preserved by patcher), and instr.type = .GOTO.
+    -- We need instr_pre to be a GOTO. Let's deduce.
+    have h_pre_ty : instr_pre.type = .GOTO := by
+      -- Use patchGotoTargets_preserves_type to get instr.type = instr_pre.type.
+      obtain ⟨instr_pre', h_at_pre', h_ty_eq⟩ :=
+        patchGotoTargets_preserves_type trans_post resolved pc instr h_at'
+      rw [h_trans_post_eq] at h_at_pre'
+      rw [h_at_pre'] at h_pre_at
+      injection h_pre_at with h_inj
+      -- h_inj : instr_pre' = instr_pre.
+      rw [← h_inj, ← h_ty_eq]
+      exact h_ty
+    exact h_no_goto_target_st_final h_pre_at h_pre_ty
+  have h_in_resolved : (pc, target) ∈ resolved := by
+    rw [h_trans_post_eq] at h_pre_at
+    -- patch direction: in_resolved follows from reverse-target lemma applied to st_final.trans.
+    have h_pre_at_post : trans_post.instructions[pc]? = some instr_pre := by
+      rw [h_trans_post_eq]; exact h_pre_at
+    -- The post-patcher form.
+    have h_post_at_post : (Imperative.patchGotoTargets trans_post resolved).instructions[pc]? = some instr := h_at'
+    exact patchGotoTargets_target_some_in_patches trans_post resolved pc target
+      instr_pre instr h_pre_at_post h_pre_target_none h_post_at_post h_target
+  -- Step 5: reverse-trace (pc, target) ∈ resolved to a pendingPatch with labelMap lookup.
+  have h_resolved_initial_acc : (pc, target) ∉ ([] : List (Nat × Nat)) := by simp
+  rcases patchesFoldlM_no_contracts_resolved_reverse_array st_final.labelMap
+    st_final.pendingPatches ([], st_final.trans) (resolved, trans_post)
+    h_patches_run pc target h_in_resolved with h_in_acc | ⟨lbl, h_in_pp, h_lookup⟩
+  · simp at h_in_acc
+  · -- lbl: ∃ label, (pc, label) ∈ pendingPatches ∧ labelMap[label]? = some target.
+    -- By blocksFoldlM_labelMap_keys_in_blocks, lbl is a block label.
+    have h_lbl_in : lbl ∈ cfg.blocks.map Prod.fst := by
+      apply blocksFoldlM_labelMap_keys_in_blocks functionName cfg.blocks trans₀ st_final
+      · simp [coreCFGToGotoInitState] at h_blocks_run
+        exact h_blocks_run
+      · exact h_lookup
+    -- Find the corresponding block.
+    rw [List.mem_map] at h_lbl_in
+    obtain ⟨pair, h_pair_in, h_pair_eq⟩ := h_lbl_in
+    obtain ⟨l', blk⟩ := pair
+    simp at h_pair_eq
+    -- h_pair_eq : l' = lbl. Substitute (eliminates lbl, keeps l').
+    subst h_pair_eq
+    refine ⟨l', blk, h_pair_in, ?_⟩
+    -- Goal: hashMapToLabelMap st_final.labelMap l' = some target.
+    show st_final.labelMap[l']? = some target
+    exact h_lookup
+
 end CProverGOTO.GotoTargetProvenance
