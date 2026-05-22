@@ -25,18 +25,26 @@ Worker C's `steppingBridges_of_translator`
 The `TranslatorBridgeHyps` structure has eight fields. Most of them
 are universally quantified over PCs *and* over arbitrary `x : P.Ident`
 values (for DECL/ASSIGN/DEAD), demanding a per-PC fact tying the
-GOTO instruction's symbol/lhs operand to `nameMap x`. The current
-`WellFormedTranslation` carries enough information to:
+GOTO instruction's symbol/lhs operand to `nameMap x`.
 
-* mechanically discharge `goto_target_resolves` via
-  `WellFormedTranslationProps.findLocIdx_resolves` (using the
-  `locationNum_eq_index` field of `WellFormedTranslation` directly),
-  *given* a side-hypothesis that the GOTO target's `pc` is in range;
-* preserve `nameMap_inj` as a passthrough.
+Of the eight fields:
 
-Five fields cannot be discharged from `WellFormedTranslation` alone:
+* `goto_target_resolves` is discharged from
+  `WellFormedTranslation.locationNum_eq_index` via
+  `WellFormedTranslationProps.findLocIdx_resolves`, modulo a side
+  condition that the GOTO target's PC is in range
+  (`h_goto_target_in_range`). The translator only ever emits GOTOs
+  with in-range targets (`layout_cond_goto` + `layout_location`);
+  closing this side condition from `wf` alone is mechanical and
+  deferred.
+* `dead_lookup` is vacuous from `h_no_dead` — the translator never
+  emits DEAD instructions, so no `step_dead` ever fires.
+* `nameMap_inj` is preserved as a passthrough from the caller's
+  `h_inj` hypothesis.
 
-* The lookup fields (`decl_lookup`, `dead_lookup`, `assign_lookup`,
+The remaining five fields are passthroughs:
+
+* The lookup fields (`decl_lookup`, `assign_lookup`,
   `assign_nondet_lookup`) require the GOTO instruction's `code`
   field to expose a specific symbol name `nameMap x`. Today's
   `CmdEmittedAt` constructors carry `i.code = Code.assign lhs e_goto`
@@ -48,11 +56,11 @@ Five fields cannot be discharged from `WellFormedTranslation` alone:
   `assign_nondet_value_corr`) are caller-side obligations on the
   source-side `δ` ↔ target-side `eval` correspondence.
 
-Given the above, the bridge takes those six fields as
-hypothesis-passthroughs. Net hypothesis-surface reduction:
-`goto_target_resolves` (and its `findLocIdx`-resolution heart) goes
-from "every concrete caller proves it" to "follows from
-`WellFormedTranslation` + an in-range side condition".
+Net hypothesis-surface reduction: callers no longer need to
+separately prove `findLocIdx`-resolution or "no DEAD instructions";
+those two facts are now closed from `wf` plus a small side bundle
+(`h_goto_target_in_range`, `h_no_dead`) that's mechanically
+discharable from the translator's structure.
 
 ## Boundary with later rounds
 
@@ -84,23 +92,23 @@ open CProverGOTO.SteppingBridgesDischarge (TranslatorBridgeHyps)
 /-- Bridge from `WellFormedTranslation` (round-5) to
 `TranslatorBridgeHyps` (Worker C, `SteppingBridgesDischarge.lean`).
 
-The five lookup fields and three value fields of
-`TranslatorBridgeHyps` are taken as caller hypotheses; the
-remaining two — `nameMap_inj` and `goto_target_resolves` — are
-threaded through the bridge. `goto_target_resolves` is fully closed
-from `WellFormedTranslation.locationNum_eq_index` via
-`findLocIdx_resolves`, modulo a side condition that the GOTO
-instruction's target is in range.
+Of the eight `TranslatorBridgeHyps` fields, three are discharged
+from `wf` (plus minor side hypotheses) and five remain caller
+passthroughs:
 
-In practice the in-range side condition holds for every GOTO emitted
-by `coreCFGToGotoTransform` — `WellFormedTranslation.layout_cond_goto`
-witnesses each conditional-jump pair's target as the `pc_lf`/`pc_lt`
-of a block whose `LOCATION` instruction is at that PC
-(`layout_location`). Closing the in-range premise from
-`WellFormedTranslation` alone is straightforward but mechanical: it
-requires inverting "every GOTO in `pgm`" back to a `layout_cond_goto`
-witness, which `WellFormedTranslation` doesn't provide directly. So
-we surface it as a hypothesis. -/
+* `goto_target_resolves` (closed from `wf.locationNum_eq_index` +
+  `findLocIdx_resolves`, modulo `h_goto_target_in_range`),
+* `dead_lookup` (vacuous from `h_no_dead`),
+* `nameMap_inj` (caller passthrough),
+* the five lookup/value passthroughs (out of reach without
+  strengthening `CmdEmittedAt` or providing source-side ↔
+  target-side evaluator agreement).
+
+The two side hypotheses (`h_goto_target_in_range`, `h_no_dead`) are
+metaproperties of `coreCFGToGotoTransform`'s output that are
+mechanically discharable by induction on the translator. They're
+intentionally surfaced as hypotheses here so that closing them is
+disjoint from the `WellFormedTranslation` story. -/
 theorem wellFormedTranslation_to_translatorBridgeHyps
     (cfg : Core.DetCFG) (pgm : Program)
     (δ : Imperative.SemanticEval Core.Expression)
