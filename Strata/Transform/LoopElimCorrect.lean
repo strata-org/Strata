@@ -92,29 +92,19 @@ noncomputable def stmtPostState (σ : LoopElimState) (s : Statement) : LoopElimS
 noncomputable def blockPostState (σ : LoopElimState) (ss : Statements) : LoopElimState :=
   (blockRun σ ss).snd
 
-mutual
-/-- Extract the transformed statement, defined structurally on the AST.
-    For non-loop cases this agrees with the monadic `removeLoopsM` result.
-    For the loop case it delegates to `stmtRun`.
-    When the transformation fails (loop with measure conflict), returns `default`. -/
+/-- Extract the transformed statement as a projection of `stmtRun`.
+    When the transformation fails, returns `default`. -/
 noncomputable def stmtResult (σ : LoopElimState) (s : Statement) : Statement :=
-  match s with
-  | .cmd c => .cmd c
-  | .exit l md => .exit l md
-  | .funcDecl d md => .funcDecl d md
-  | .typeDecl tc md => .typeDecl tc md
-  | .block l bss md => .block l (blockResult σ bss) md
-  | .ite c tss ess md => .ite c (blockResult σ tss) (blockResult (blockPostState σ tss) ess) md
-  | .loop guard measure inv body md =>
-      match (stmtRun σ (.loop guard measure inv body md)).fst with
-      | .ok (_, s') => s'
-      | .error _ => default
+  match (stmtRun σ s).fst with
+  | .ok (_, s') => s'
+  | .error _ => default
 
+/-- Extract the transformed block as a projection of `blockRun`.
+    When the transformation fails, returns `default`. -/
 noncomputable def blockResult (σ : LoopElimState) (ss : Statements) : Statements :=
-  match ss with
-  | [] => []
-  | s :: rest => stmtResult σ s :: blockResult (stmtPostState σ s) rest
-end
+  match (blockRun σ ss).fst with
+  | .ok (_, ss') => ss'
+  | .error _ => default
 
 /-! ## CanFail for statement lists (block bodies) -/
 
@@ -125,43 +115,93 @@ private def CanFailBlock (ss : Statements) (ρ₀ : Env Expression) : Prop :=
 
 private theorem stmtResult_cmd (σ : LoopElimState) (c : Command) :
     stmtResult σ (.cmd c) = .cmd c := by
-  simp [stmtResult]
+  simp [stmtResult, stmtRun, Stmt.removeLoopsM, StateT.run, ExceptT.run,
+        pure, StateT.pure, ExceptT.pure, ExceptT.mk]
 
 private theorem stmtResult_exit (σ : LoopElimState) (l : String)
     (md : MetaData Expression) :
     stmtResult σ (.exit l md) = .exit l md := by
-  simp [stmtResult]
+  simp [stmtResult, stmtRun, Stmt.removeLoopsM, StateT.run, ExceptT.run,
+        pure, StateT.pure, ExceptT.pure, ExceptT.mk]
 
 private theorem stmtResult_funcDecl (σ : LoopElimState) (d : PureFunc Expression)
     (md : MetaData Expression) :
     stmtResult σ (.funcDecl d md) = .funcDecl d md := by
-  simp [stmtResult]
+  simp [stmtResult, stmtRun, Stmt.removeLoopsM, StateT.run, ExceptT.run,
+        pure, StateT.pure, ExceptT.pure, ExceptT.mk]
 
 private theorem stmtResult_typeDecl (σ : LoopElimState) (tc : TypeConstructor)
     (md : MetaData Expression) :
     stmtResult σ (.typeDecl tc md) = .typeDecl tc md := by
-  simp [stmtResult]
+  simp [stmtResult, stmtRun, Stmt.removeLoopsM, StateT.run, ExceptT.run,
+        pure, StateT.pure, ExceptT.pure, ExceptT.mk]
 
 private theorem stmtResult_block (σ : LoopElimState) (l : String)
-    (bss : Statements) (md : MetaData Expression) :
+    (bss : Statements) (md : MetaData Expression)
+    (hok : stmtOk σ (.block l bss md)) :
     stmtResult σ (.block l bss md) = .block l (blockResult σ bss) md := by
-  simp [stmtResult]
+  simp only [stmtResult, stmtRun, blockResult, blockRun, Stmt.removeLoopsM,
+    StateT.run, ExceptT.run, bind, ExceptT.bind, ExceptT.mk, ExceptT.bindCont,
+    StateT.bind, pure, StateT.pure, ExceptT.pure]
+  have hok' := hok
+  simp only [stmtOk, stmtRun, Stmt.removeLoopsM, StateT.run, ExceptT.run,
+    bind, ExceptT.bind, ExceptT.mk, ExceptT.bindCont, StateT.bind,
+    pure, StateT.pure, ExceptT.pure, Except.isOk, Except.toBool] at hok'
+  generalize hq : Block.removeLoopsM bss σ = r at hok' ⊢
+  obtain ⟨fst_res, snd_st⟩ := r
+  cases fst_res with
+  | ok v => rfl
+  | error e => exact Bool.noConfusion hok'
 
 private theorem stmtResult_ite (σ : LoopElimState) (c : ExprOrNondet Expression)
-    (tss ess : Statements) (md : MetaData Expression) :
+    (tss ess : Statements) (md : MetaData Expression)
+    (hok : stmtOk σ (.ite c tss ess md)) :
     stmtResult σ (.ite c tss ess md) =
       .ite c (blockResult σ tss) (blockResult (blockPostState σ tss) ess) md := by
-  simp [stmtResult]
+  have hok' := hok
+  simp only [stmtOk, stmtRun, stmtResult, blockResult, blockRun, blockPostState,
+    Stmt.removeLoopsM, StateT.run, ExceptT.run, bind, ExceptT.bind, ExceptT.mk,
+    ExceptT.bindCont, StateT.bind, pure, StateT.pure, ExceptT.pure,
+    Except.isOk, Except.toBool] at hok' ⊢
+  generalize hq : Block.removeLoopsM tss σ = r at hok' ⊢
+  obtain ⟨fst_res, snd_st⟩ := r
+  cases fst_res with
+  | error e => exact Bool.noConfusion hok'
+  | ok v =>
+    simp only [StateT.bind, ExceptT.bindCont, pure, StateT.pure, ExceptT.pure,
+      ExceptT.mk] at hok' ⊢
+    generalize hq2 : Block.removeLoopsM ess snd_st = r2 at hok' ⊢
+    obtain ⟨fst_res2, snd_st2⟩ := r2
+    cases fst_res2 with
+    | error e2 => exact Bool.noConfusion hok'
+    | ok v2 => rfl
 
 private theorem blockResult_nil (σ : LoopElimState) :
     blockResult σ [] = [] := by
-  simp [blockResult]
+  simp [blockResult, blockRun, Block.removeLoopsM, StateT.run, ExceptT.run,
+        pure, StateT.pure, ExceptT.pure, ExceptT.mk]
 
 private theorem blockResult_cons (σ : LoopElimState) (s : Statement)
-    (ss : Statements) :
+    (ss : Statements) (hok : blockOk σ (s :: ss)) :
     blockResult σ (s :: ss) =
       stmtResult σ s :: blockResult (stmtPostState σ s) ss := by
-  simp [blockResult]
+  have hok' := hok
+  simp only [blockOk, blockRun, blockResult, stmtResult, stmtRun, stmtPostState,
+    Block.removeLoopsM, StateT.run, ExceptT.run, bind, ExceptT.bind, ExceptT.mk,
+    ExceptT.bindCont, StateT.bind, pure, StateT.pure, ExceptT.pure,
+    Except.isOk, Except.toBool] at hok' ⊢
+  generalize hq : Stmt.removeLoopsM s σ = r at hok' ⊢
+  obtain ⟨fst_res, snd_st⟩ := r
+  cases fst_res with
+  | error e => exact Bool.noConfusion hok'
+  | ok v =>
+    simp only [StateT.bind, ExceptT.bindCont, pure, StateT.pure, ExceptT.pure,
+      ExceptT.mk] at hok' ⊢
+    generalize hq2 : Block.removeLoopsM ss snd_st = r2 at hok' ⊢
+    obtain ⟨fst_res2, snd_st2⟩ := r2
+    cases fst_res2 with
+    | error e2 => exact Bool.noConfusion hok'
+    | ok v2 => rfl
 
 private theorem hasFailure_false_backwards
     {c₁ c₂ : CC}
@@ -540,7 +580,7 @@ private theorem not_all_tt_implies_some_ff
       exact ⟨le, .tail _ hle, hff⟩
 
 /-- CanFail in a prefix lifts to CanFail in prefix ++ suffix.
-    Uses the Prop→Type lifting `ReflTrans_to_ReflTransT` and structural inversion. -/
+    Uses the Prop→Type lifting `reflTrans_to_T` and structural inversion. -/
 private theorem canFailBlock_append_left
     (ss₁ ss₂ : Statements) (ρ₀ : Env Expression)
     (h : CanFailBlock π φ ss₁ ρ₀) :
@@ -851,11 +891,7 @@ private theorem initState_store_frame
     σ' y = σ y := by
   cases hinit with | init _ _ hframe => exact hframe y hne
 
-/-! ### EvalCmd store frame -/
-
 /-! ### EvalCommand store frame -/
-
-/-! ### evalCommand store frame -/
 
 /-- `EvalCommand` preserves the store at variables not in `Stmt.modifiedVars (.cmd c)`
     or `Stmt.definedVars (.cmd c)`.  Stated with `Stmt` wrappers so that the
@@ -1541,8 +1577,6 @@ private theorem step_touchedVars_subset
   | step_block_exit_match _ => simp [Config.touchedVarsSet] at hx
   | step_block_exit_mismatch _ => simp [Config.touchedVarsSet] at hx
 
-/-! ### Multi-step store preservation (outerInv-based, block-exit-safe) -/
-
 /-! ### Multi-step store preservation (isNone-preservation, no outerInv needed)
 
 For the `BlockInitEnvWF.toBlock_tail_post` derivation we need to argue that
@@ -1755,10 +1789,6 @@ private theorem stmts_prefix_exiting_append
             (stmts_cons_step Expression (EvalCommand π φ) (EvalPureFunc φ)
               s (rest ++ ss₂) ρ₀ ρ₁ hterm_s)
             (ih ρ₁ hexit_rest)
-
-/-! ## Store preservation lemmas -/
-
-/-! ## Assert list CanFail for maintain invariants -/
 
 /-! ## Block-none decomposition and hcov-free stmts decomposition -/
 
@@ -3191,16 +3221,9 @@ private theorem stmt_compound_terminal_preserves_isNone
             have hlen_loop : hT_loop'.len ≤ k := by omega
             exact ih ρ_mid ρ_mid' hnone_mid hT_loop' hlen_loop
 
-/-! ### Note: The old `_disjoint` bridges (cons_head_disjoint, ite_left_disjoint,
-    ite_right_disjoint) have been removed. The `toBlock_ite_left/right` and
-    `toStmt_head` lemmas now use `defUseOk` directly via
-    `defUseWellFormed_modGetVars_implies_outer`, eliminating the need for
-    disjointness hypotheses entirely. -/
-
 /-- `BlockInitEnvWF ss ρ₁` follows from `BlockInitEnvWF (s :: ss) ρ₀` after `s`
     ran from `ρ₀` to `ρ₁`, using the block's own `defUseOk` to discharge the
-    side conditions.  This avoids the need for callers to supply a `hdisj`
-    hypothesis or a `hnewVars_in_def` proof. -/
+    side conditions. -/
 private theorem BlockInitEnvWF.toBlock_tail_via_defUseOk {reserved : List String}
     {s : Statement} {ss : Statements} {ρ₀ ρ₁ : Env Expression}
     (h : BlockInitEnvWF reserved (s :: ss) ρ₀)
@@ -8196,7 +8219,7 @@ private theorem stmt_corr_step
     | .typeDecl tc md =>
       rw [stmtResult_typeDecl]; exact .inr (fun _ => hreach)
     | .block l bss md =>
-      rw [stmtResult_block]
+      rw [stmtResult_block (hok := hok)]
       have hnofd_bss : Block.noFuncDecl bss = Bool.true := by
         simp [Stmt.noFuncDecl] at hnofd; exact hnofd
       have hsz_bss : Block.sizeOf bss ≤ n := by
@@ -8208,7 +8231,7 @@ private theorem stmt_corr_step
         cases h1 with
         | step_block => exact block_term_case π φ r1 hsim_bss
     | .ite c tss ess md =>
-      rw [stmtResult_ite]
+      rw [stmtResult_ite (hok := hok)]
       have hsz_tss : Block.sizeOf tss ≤ n := by
         simp [Stmt.sizeOf] at hsz; omega
       have hsz_ess : Block.sizeOf ess ≤ n := by
@@ -8342,7 +8365,7 @@ private theorem stmt_corr_step
           cases r1 with
           | step _ _ _ h2 _ => cases h2
     | .block l bss md =>
-      rw [stmtResult_block]
+      rw [stmtResult_block (hok := hok)]
       have hnofd_bss : Block.noFuncDecl bss = Bool.true := by
         simp [Stmt.noFuncDecl] at hnofd; exact hnofd
       have hsz_bss : Block.sizeOf bss ≤ n := by
@@ -8354,7 +8377,7 @@ private theorem stmt_corr_step
         cases h1 with
         | step_block => exact block_exit_case π φ r1 hsim_bss
     | .ite c tss ess md =>
-      rw [stmtResult_ite]
+      rw [stmtResult_ite (hok := hok)]
       have hsz_tss : Block.sizeOf tss ≤ n := by
         simp [Stmt.sizeOf] at hsz; omega
       have hsz_ess : Block.sizeOf ess ≤ n := by
@@ -8395,7 +8418,7 @@ private theorem block_corr_step
       rw [blockResult_nil]
       exact .inr (fun _ => hreach)
     | s :: ss =>
-      rw [blockResult_cons]
+      rw [blockResult_cons (hok := hok)]
       have hsz_s : Stmt.sizeOf s ≤ n := by
         simp [Block.sizeOf] at hsz; omega
       have hsz_ss : Block.sizeOf ss ≤ n := by
@@ -8432,7 +8455,7 @@ private theorem block_corr_step
           cases r1 with
           | step _ _ _ h2 _ => cases h2
     | s :: ss =>
-      rw [blockResult_cons]
+      rw [blockResult_cons (hok := hok)]
       have hsz_s : Stmt.sizeOf s ≤ n := by
         simp [Block.sizeOf] at hsz; omega
       have hsz_ss : Block.sizeOf ss ≤ n := by
@@ -8481,7 +8504,7 @@ private theorem stmt_cf_step
   | .funcDecl d md => rw [stmtResult_funcDecl]; exact ⟨cfg, hfail, hreach⟩
   | .typeDecl tc md => rw [stmtResult_typeDecl]; exact ⟨cfg, hfail, hreach⟩
   | .block l bss md =>
-    rw [stmtResult_block]
+    rw [stmtResult_block (hok := hok)]
     have hnofd_bss : Block.noFuncDecl bss = Bool.true := by
       simp [Stmt.noFuncDecl] at hnofd; exact hnofd
     have hsz_bss : Block.sizeOf bss ≤ n := by
@@ -8494,7 +8517,7 @@ private theorem stmt_cf_step
     | step _ _ _ h1 r1 => cases h1 with
       | step_block => exact block_canfail_case π φ hfail r1 hcf_inner
   | .ite c tss ess md =>
-    rw [stmtResult_ite]
+    rw [stmtResult_ite (hok := hok)]
     have hsz_tss : Block.sizeOf tss ≤ n := by
       simp [Stmt.sizeOf] at hsz; omega
     have hsz_ess : Block.sizeOf ess ≤ n := by
@@ -8559,7 +8582,7 @@ private theorem block_cf_step
   match bss with
   | [] => rw [blockResult_nil]; exact ⟨cfg, hfail, hreach⟩
   | s :: ss =>
-    rw [blockResult_cons]
+    rw [blockResult_cons (hok := hok)]
     have hsz_s : Stmt.sizeOf s ≤ n := by
       simp [Block.sizeOf] at hsz; omega
     have hsz_ss : Block.sizeOf ss ≤ n := by
@@ -9095,7 +9118,7 @@ private theorem mem_definedVars_stmtResult
   | .typeDecl tc md =>
     rw [stmtResult_typeDecl] at hn; exact .inl hn
   | .block l bss md =>
-    rw [stmtResult_block] at hn
+    rw [stmtResult_block (hok := hok)] at hn
     have hn' : n ∈ Block.definedVars (blockResult σ bss) false := by
       simpa [Stmt.definedVars] using hn
     have := mem_definedVars_blockResult σ bss (stmtOk_block_inner hok) n hn'
@@ -9103,7 +9126,7 @@ private theorem mem_definedVars_stmtResult
     · exact .inl (by simpa [Stmt.definedVars] using h)
     · exact .inr h
   | .ite c tss ess md =>
-    rw [stmtResult_ite] at hn
+    rw [stmtResult_ite (hok := hok)] at hn
     have hn' : n ∈ Block.definedVars (blockResult σ tss) false ++
                    Block.definedVars (blockResult (blockPostState σ tss) ess) false := by
       simpa [Stmt.definedVars] using hn
@@ -9135,7 +9158,7 @@ private theorem mem_definedVars_blockResult
     rw [blockResult_nil] at hn
     simp [Block.definedVars] at hn
   | s :: rest =>
-    rw [blockResult_cons] at hn
+    rw [blockResult_cons (hok := hok)] at hn
     have hn' : n ∈ Stmt.definedVars (stmtResult σ s) false ++
                    Block.definedVars (blockResult (stmtPostState σ s) rest) false := by
       simpa [Block.definedVars] using hn
@@ -9304,12 +9327,12 @@ private theorem definedVars_subset_stmtResult
   | .funcDecl d md => rw [stmtResult_funcDecl]; exact hn
   | .typeDecl tc md => rw [stmtResult_typeDecl]; exact hn
   | .block l bss md =>
-    rw [stmtResult_block]
+    rw [stmtResult_block (hok := hok)]
     simp only [Stmt.definedVars]
     have h : n ∈ Block.definedVars bss false := by simpa [Stmt.definedVars] using hn
     exact definedVars_subset_blockResult σ bss (stmtOk_block_inner hok) n h
   | .ite c tss ess md =>
-    rw [stmtResult_ite]
+    rw [stmtResult_ite (hok := hok)]
     simp only [Stmt.definedVars]
     have h : n ∈ Block.definedVars tss false ++ Block.definedVars ess false := by
       simpa [Stmt.definedVars] using hn
@@ -9331,7 +9354,7 @@ private theorem definedVars_subset_blockResult
   match ss with
   | [] => exact hn
   | s :: rest =>
-    rw [blockResult_cons]
+    rw [blockResult_cons (hok := hok)]
     simp only [Block.definedVars]
     have h : n ∈ Stmt.definedVars s false ++ Block.definedVars rest false := by
       simpa [Block.definedVars] using hn
@@ -10021,7 +10044,7 @@ private theorem mem_touchedVars_stmtResult
     rw [stmtResult_typeDecl] at hn hnd
     exact ⟨hn, hnd⟩
   | .block l bss md =>
-    rw [stmtResult_block] at hn hnd
+    rw [stmtResult_block (hok := hok)] at hn hnd
     have hnd' : n ∉ Block.definedVars (blockResult σ bss) false := by
       simpa [Stmt.definedVars] using hnd
     have hn' : n ∈ Block.touchedVars (blockResult σ bss) := by
@@ -10042,7 +10065,7 @@ private theorem mem_touchedVars_stmtResult
       · exact Or.inr hg
     · simpa [Stmt.definedVars] using hndef
   | .ite c tss ess md =>
-    rw [stmtResult_ite] at hn hnd
+    rw [stmtResult_ite (hok := hok)] at hn hnd
     have hnd' : n ∉ Block.definedVars (blockResult σ tss) false ∧
                 n ∉ Block.definedVars (blockResult (blockPostState σ tss) ess) false := by
       simp only [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte, List.mem_append, not_or] at hnd
@@ -10145,7 +10168,7 @@ private theorem mem_touchedVars_blockResult
     -- Block.touchedVars [] = [] ++ [] = [] → contradiction
     simp [Block.touchedVars, Block.modifiedOrDefinedVars, Block.getVars] at hn
   | s :: rest =>
-    rw [blockResult_cons] at hn hnd
+    rw [blockResult_cons (hok := hok)] at hn hnd
     simp only [Block.touchedVars, Block.modifiedOrDefinedVars, Block.modifiedVars,
       Block.definedVars, Block.getVars, List.mem_append] at hn ⊢
     simp only [Block.definedVars, List.mem_append, not_or] at hnd ⊢
@@ -10242,9 +10265,9 @@ private theorem stmtResult_definedVars_true_eq
   | .funcDecl d md => rw [stmtResult_funcDecl]
   | .typeDecl tc md => rw [stmtResult_typeDecl]
   | .block l bss md =>
-    rw [stmtResult_block]; simp [Stmt.definedVars]
+    rw [stmtResult_block (hok := hok)]; simp [Stmt.definedVars]
   | .ite c tss ess md =>
-    rw [stmtResult_ite]; simp [Stmt.definedVars]
+    rw [stmtResult_ite (hok := hok)]; simp [Stmt.definedVars]
   | .loop guard measure inv body md =>
     have ⟨_, _, _, _, hs', _⟩ := stmtResult_loop_struct σ guard measure inv body md hok
     rw [hs']; simp [Stmt.definedVars]
@@ -11251,7 +11274,7 @@ private theorem defUseWellFormed_stmtResultAux
   | .funcDecl d md => rw [stmtResult_funcDecl]; exact hwf
   | .typeDecl tc md => rw [stmtResult_typeDecl]; exact hwf
   | .block l bss md =>
-    rw [stmtResult_block]
+    rw [stmtResult_block (hok := hok)]
     have hwf' : Block.defUseWellFormed outer bss = Bool.true := by
       simpa [defUseWellFormed_block] using hwf
     have hdef_block : ∀ n ∈ Block.definedVars bss false,
@@ -11264,7 +11287,7 @@ private theorem defUseWellFormed_stmtResultAux
                 h_outer_fresh hdef_block hwf'
     simpa [defUseWellFormed_block] using ih
   | .ite c tss ess md =>
-    rw [stmtResult_ite]
+    rw [stmtResult_ite (hok := hok)]
     have ⟨hwf_t, hwf_e⟩ := defUseWellFormed_ite_branches hwf
     have hcond : ∀ n ∈ ExprOrNondet.getVars c, outer n = Bool.true := by
       intro n hn
@@ -11317,7 +11340,7 @@ private theorem defUseWellFormed_blockResultAux
   match bss with
   | [] => rw [blockResult_nil]; rfl
   | s :: rest =>
-    rw [blockResult_cons]
+    rw [blockResult_cons (hok := hok)]
     have ⟨hwf_s, hwf_rest⟩ := defUseWellFormed_cons hwf
     have hdef_s : ∀ n ∈ Stmt.definedVars s false,
         ¬ loopElimReservedPrefix.toList.isPrefixOf n.name.toList := by
@@ -11376,110 +11399,135 @@ theorem loopElim_overapproximatesAggressive
     Transform.OverapproximatesAggressively
       (LangCore π φ)
       (LangCore π φ)
-      (fun s => open Classical in
-                if Stmt.noFuncDecl s = Bool.true ∧ stmtOk σ s
-                then some (stmtResult σ s) else none)
+      (fun s =>
+        if Stmt.noFuncDecl s = Bool.true then
+          match (StateT.run (ExceptT.run (Stmt.removeLoopsM s)) σ).fst with
+          | .ok (_, s') => some s'
+          | .error _ => none
+        else none)
       loopElimReservedPrefix := by
   intro reserved st st' ht h_loop_reserved h_pd ρ₀ hswf
+  -- Re-derive `stmtOk σ st` and `stmtResult σ st = st'` from the
+  -- removeLoopsM-form of `ht`.
+  simp only at ht
+  have hnofd : Stmt.noFuncDecl st = Bool.true := by
+    cases h : Stmt.noFuncDecl st
+    · rw [h] at ht; simp at ht
+    · rfl
+  rw [hnofd] at ht
+  simp only [if_true] at ht
+  -- Bridge to `stmtOk` / `stmtResult` form by case-splitting on the
+  -- `removeLoopsM` result once.  The `error` branch contradicts `ht`,
+  -- so we get both `stmtOk σ st` and `stmtResult σ st = st'` from the `ok` case.
+  have hbridge : ∃ b, (stmtRun σ st).fst = .ok (b, st') := by
+    show ∃ b, ((Stmt.removeLoopsM st).run.run σ).fst = .ok (b, st')
+    cases h : ((Stmt.removeLoopsM st).run.run σ).fst with
+    | ok p =>
+      rw [h] at ht
+      cases p with
+      | mk b s' => simp at ht; exact ⟨b, ht ▸ rfl⟩
+    | error e =>
+      rw [h] at ht; cases ht
+  obtain ⟨b, hbridge⟩ := hbridge
+  have hok : stmtOk σ st := by
+    simp only [stmtOk, hbridge]; rfl
+  have hres_eq : stmtResult σ st = st' := by
+    simp only [stmtResult, hbridge]
+  clear ht hbridge
   -- hswf has type (LangCore π φ).initEnvWF reserved st ρ₀, which unfolds to
   -- InitEnvWF reserved st ρ₀.  We extract its WF eval fields explicitly.
   have hswf' : InitEnvWF reserved st ρ₀ := hswf
   have hwfb := hswf'.wfBool
   have hwfv := hswf'.wfVal
   have hwfvar := hswf'.wfVar
-  simp only at ht
-  split at ht
-  · rename_i hcond
-    obtain ⟨hnofd, hok⟩ := hcond
-    simp only [Option.some.injEq] at ht; subst ht
-    -- Derive the freshness precondition for `simulation`/`canfail_simulation`
-    -- generically over `reserved` (matches the new signature).
-    have hreserved_sig : ∀ n, (ρ₀.store n).isSome →
-        ∀ p ∈ reserved, ¬ p.toList.isPrefixOf n.name.toList :=
-      fun n hsome p hp => hswf.reservedFresh n hsome p hp
-    -- `loopElimReservedPrefixSig` and `loopElimReservedPrefix` are definitionally
-    -- equal (both `"$__loop"`); this lets us discharge `simulation`'s
-    -- `h_loop_reserved` premise from the top-level `h_loop_reserved`.
-    have h_loop_reserved' : loopElimReservedPrefixSig ∈ reserved := h_loop_reserved
-    have hsim := (simulation π φ hwf_ext (Stmt.sizeOf st) reserved h_loop_reserved').1
-      σ st (Nat.le_refl _) hnofd hok ρ₀ hswf'
-    refine ⟨?_, ?_, ?_, ?_⟩
-    · intro ρ' hstar; exact hsim.1 ρ' hstar
-    · intro lbl ρ' hstar; exact hsim.2 lbl ρ' hstar
-    · intro ⟨cfg, hfail, hreach⟩
-      by_cases hnf₀ : ρ₀.hasFailure = Bool.true
-      · exact ⟨.stmt (stmtResult σ st) ρ₀, by show ρ₀.hasFailure = Bool.true; exact hnf₀, .refl _⟩
-      · exact (canfail_simulation π φ hwf_ext (Stmt.sizeOf st) reserved h_loop_reserved').1
-          σ st (Nat.le_refl _) hok hnofd ρ₀ hswf' ⟨cfg, hfail, hreach⟩
-    · -- Show `InitEnvWF reserved (stmtResult σ st) ρ₀` from `InitEnvWF reserved st ρ₀`.
-      -- The transform's fresh `$__loop_measure_N` names start with the reserved
-      -- prefix `$__loop`; `hswf.reservedFresh` rules them out of `ρ₀.store`.
-      -- The output InitEnvWF uses `reserved.erase loopElimReservedPrefix` since
-      -- the output may have introduced names with `loopElimReservedPrefix`.
-      refine
-        { readWritesDefined := ?readWritesDefined,
-          defsUndefined := ?defsUndefined,
-          definedVarsNotReserved := ?definedVarsNotReserved,
-          reservedFresh := ?reservedFresh,
-          wfBool := hswf.wfBool,
-          wfVal := hswf.wfVal,
-          wfVar := hswf.wfVar,
-          evalCong := hswf.evalCong,
-          exprCongr := hswf.exprCongr,
-          defUseOk := ?defUseOk }
-      case readWritesDefined =>
-        intro n hn hnd
-        have ⟨hn_src, hnd_src⟩ := mem_touchedVars_stmtResult σ st hok n hn hnd
-        exact hswf.readWritesDefined n hn_src hnd_src
-      case defsUndefined =>
-        intro n hn
-        rcases mem_definedVars_stmtResult σ st hok n hn with hold | hpref
-        · exact hswf.defsUndefined n hold
-        · -- n.name has reserved prefix; reservedFresh's contrapositive gives isNone.
-          rw [Option.isNone_iff_eq_none]
-          cases h : ρ₀.store n with
-          | none => rfl
-          | some v =>
-            exfalso
-            have hsome : (ρ₀.store n).isSome := by rw [h]; rfl
-            exact hswf.reservedFresh n hsome loopElimReservedPrefix h_loop_reserved hpref
-      case reservedFresh =>
-        -- Weaker than the input since `reserved.erase` is a subset.
-        intro n hsome p hp_mem
-        exact hswf.reservedFresh n hsome p (List.mem_of_mem_erase hp_mem)
-      case definedVarsNotReserved =>
-        -- Output's `definedVarsNotReserved` for `reserved.erase loopElimReservedPrefix`.
-        -- Each n in transform's definedVars is either in source's definedVars
-        -- or has the `loopElimReservedPrefix` prefix (per `mem_definedVars_stmtResult`).
-        intro n hn p hp_mem
-        rcases mem_definedVars_stmtResult σ st hok n hn with hold | hpref
-        · -- Source's defs don't have any prefix from `reserved`, hence not from
-          -- `reserved.erase loopElimReservedPrefix` (a subset).
-          exact hswf.definedVarsNotReserved n hold p (List.mem_of_mem_erase hp_mem)
-        · -- n has `loopElimReservedPrefix` as prefix.  Suppose for contradiction
-          -- p is also a prefix of n.  Then since both `p` and `loopElimReservedPrefix`
-          -- are prefixes of `n.name`, one of them is a prefix of the other.
-          -- But `h_pd` says they're prefix-disjoint — contradiction.
-          intro h_p_prefix
-          have ⟨h_pd_left, h_pd_right⟩ := h_pd p hp_mem
-          -- Two `Char`-list prefixes of the same list: one is a prefix of the other.
-          have h_pp_or : p.toList.isPrefixOf loopElimReservedPrefix.toList = Bool.true ∨
-                        loopElimReservedPrefix.toList.isPrefixOf p.toList = Bool.true := by
-            -- Use the helper: two prefixes of the same list are comparable.
-            have h1 : p.toList.IsPrefix n.name.toList := by
-              rw [List.isPrefixOf_iff_prefix] at h_p_prefix; exact h_p_prefix
-            have h2 : loopElimReservedPrefix.toList.IsPrefix n.name.toList := by
-              rw [List.isPrefixOf_iff_prefix] at hpref; exact hpref
-            rcases List.prefix_or_prefix_of_prefix h1 h2 with h | h
-            · left; rw [List.isPrefixOf_iff_prefix]; exact h
-            · right; rw [List.isPrefixOf_iff_prefix]; exact h
-          rcases h_pp_or with h | h
-          · exact h_pd_left h
-          · exact h_pd_right h
-      case defUseOk =>
-        exact defUseWellFormed_stmtResult σ st hok reserved
-          h_loop_reserved hswf'
-  · exact absurd ht (by nofun)
+  subst hres_eq
+  -- Derive the freshness precondition for `simulation`/`canfail_simulation`
+  -- generically over `reserved` (matches the new signature).
+  have hreserved_sig : ∀ n, (ρ₀.store n).isSome →
+      ∀ p ∈ reserved, ¬ p.toList.isPrefixOf n.name.toList :=
+    fun n hsome p hp => hswf.reservedFresh n hsome p hp
+  -- `loopElimReservedPrefixSig` and `loopElimReservedPrefix` are definitionally
+  -- equal (both `"$__loop"`); this lets us discharge `simulation`'s
+  -- `h_loop_reserved` premise from the top-level `h_loop_reserved`.
+  have h_loop_reserved' : loopElimReservedPrefixSig ∈ reserved := h_loop_reserved
+  have hsim := (simulation π φ hwf_ext (Stmt.sizeOf st) reserved h_loop_reserved').1
+    σ st (Nat.le_refl _) hnofd hok ρ₀ hswf'
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro ρ' hstar; exact hsim.1 ρ' hstar
+  · intro lbl ρ' hstar; exact hsim.2 lbl ρ' hstar
+  · intro ⟨cfg, hfail, hreach⟩
+    by_cases hnf₀ : ρ₀.hasFailure = Bool.true
+    · exact ⟨.stmt (stmtResult σ st) ρ₀, by show ρ₀.hasFailure = Bool.true; exact hnf₀, .refl _⟩
+    · exact (canfail_simulation π φ hwf_ext (Stmt.sizeOf st) reserved h_loop_reserved').1
+        σ st (Nat.le_refl _) hok hnofd ρ₀ hswf' ⟨cfg, hfail, hreach⟩
+  · -- Show `InitEnvWF reserved (stmtResult σ st) ρ₀` from `InitEnvWF reserved st ρ₀`.
+    -- The transform's fresh `$__loop_measure_N` names start with the reserved
+    -- prefix `$__loop`; `hswf.reservedFresh` rules them out of `ρ₀.store`.
+    -- The output InitEnvWF uses `reserved.erase loopElimReservedPrefix` since
+    -- the output may have introduced names with `loopElimReservedPrefix`.
+    refine
+      { readWritesDefined := ?readWritesDefined,
+        defsUndefined := ?defsUndefined,
+        definedVarsNotReserved := ?definedVarsNotReserved,
+        reservedFresh := ?reservedFresh,
+        wfBool := hswf.wfBool,
+        wfVal := hswf.wfVal,
+        wfVar := hswf.wfVar,
+        evalCong := hswf.evalCong,
+        exprCongr := hswf.exprCongr,
+        defUseOk := ?defUseOk }
+    case readWritesDefined =>
+      intro n hn hnd
+      have ⟨hn_src, hnd_src⟩ := mem_touchedVars_stmtResult σ st hok n hn hnd
+      exact hswf.readWritesDefined n hn_src hnd_src
+    case defsUndefined =>
+      intro n hn
+      rcases mem_definedVars_stmtResult σ st hok n hn with hold | hpref
+      · exact hswf.defsUndefined n hold
+      · -- n.name has reserved prefix; reservedFresh's contrapositive gives isNone.
+        rw [Option.isNone_iff_eq_none]
+        cases h : ρ₀.store n with
+        | none => rfl
+        | some v =>
+          exfalso
+          have hsome : (ρ₀.store n).isSome := by rw [h]; rfl
+          exact hswf.reservedFresh n hsome loopElimReservedPrefix h_loop_reserved hpref
+    case reservedFresh =>
+      -- Weaker than the input since `reserved.erase` is a subset.
+      intro n hsome p hp_mem
+      exact hswf.reservedFresh n hsome p (List.mem_of_mem_erase hp_mem)
+    case definedVarsNotReserved =>
+      -- Output's `definedVarsNotReserved` for `reserved.erase loopElimReservedPrefix`.
+      -- Each n in transform's definedVars is either in source's definedVars
+      -- or has the `loopElimReservedPrefix` prefix (per `mem_definedVars_stmtResult`).
+      intro n hn p hp_mem
+      rcases mem_definedVars_stmtResult σ st hok n hn with hold | hpref
+      · -- Source's defs don't have any prefix from `reserved`, hence not from
+        -- `reserved.erase loopElimReservedPrefix` (a subset).
+        exact hswf.definedVarsNotReserved n hold p (List.mem_of_mem_erase hp_mem)
+      · -- n has `loopElimReservedPrefix` as prefix.  Suppose for contradiction
+        -- p is also a prefix of n.  Then since both `p` and `loopElimReservedPrefix`
+        -- are prefixes of `n.name`, one of them is a prefix of the other.
+        -- But `h_pd` says they're prefix-disjoint — contradiction.
+        intro h_p_prefix
+        have ⟨h_pd_left, h_pd_right⟩ := h_pd p hp_mem
+        -- Two `Char`-list prefixes of the same list: one is a prefix of the other.
+        have h_pp_or : p.toList.isPrefixOf loopElimReservedPrefix.toList = Bool.true ∨
+                      loopElimReservedPrefix.toList.isPrefixOf p.toList = Bool.true := by
+          -- Use the helper: two prefixes of the same list are comparable.
+          have h1 : p.toList.IsPrefix n.name.toList := by
+            rw [List.isPrefixOf_iff_prefix] at h_p_prefix; exact h_p_prefix
+          have h2 : loopElimReservedPrefix.toList.IsPrefix n.name.toList := by
+            rw [List.isPrefixOf_iff_prefix] at hpref; exact hpref
+          rcases List.prefix_or_prefix_of_prefix h1 h2 with h | h
+          · left; rw [List.isPrefixOf_iff_prefix]; exact h
+          · right; rw [List.isPrefixOf_iff_prefix]; exact h
+        rcases h_pp_or with h | h
+        · exact h_pd_left h
+        · exact h_pd_right h
+    case defUseOk =>
+      exact defUseWellFormed_stmtResult σ st hok reserved
+        h_loop_reserved hswf'
 
 end Core.LoopElim
 
