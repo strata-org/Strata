@@ -4358,6 +4358,7 @@ The helper:
 5. Applies `EvalDetBlock.step_goto_{true,false}` based on `b_chosen`. -/
 private theorem flushCmds_condGoto_nondet_agree {P : PureExpr} [HasFvar P] [HasNot P]
     [HasVarsPure P P.Expr] [HasIdent P] [DecidableEq P.Ident]
+    [LawfulHasFvar P]
     (extendEval : ExtendEval P)
     (accum : List (Cmd P))
     (freshName : String)
@@ -4377,8 +4378,6 @@ private theorem flushCmds_condGoto_nondet_agree {P : PureExpr} [HasFvar P] [HasN
     (h_wf_def : WellFormedSemanticEvalDef ρ₀.eval)
     (h_congr : WellFormedSemanticEvalExprCongr ρ₀.eval)
     (h_wf_var : WellFormedSemanticEvalVar ρ₀.eval)
-    (h_lawful_fvar : ∀ x : P.Ident,
-        HasFvar.getFvar (HasFvar.mkFvar (P := P) x) = some x)
     (h_accum_cfg : EvalCmds P (EvalCmd P) ρ₀.eval σ_base accum.reverse σ_cfg_after hf_accum)
     (h_agree_after : StoreAgreement ρ₀.store σ_cfg_after)
     (h_hf : ρ₀.hasFailure = (hf_base || hf_accum))
@@ -4486,7 +4485,7 @@ private theorem flushCmds_condGoto_nondet_agree {P : PureExpr} [HasFvar P] [HasN
       ρ₀.eval σ_cfg_final
         (HasFvar.mkFvar (P := P) freshIdent) = some chosenVal := by
     rw [h_wf_var (HasFvar.mkFvar (P := P) freshIdent) freshIdent σ_cfg_final
-        (h_lawful_fvar freshIdent)]
+        (LawfulHasFvar.getFvar_mkFvar freshIdent)]
     exact h_final_freshIdent
   -- 7. Block lookup
   have h_mem := h_cfg_accum _ (List.Mem.head _)
@@ -5284,12 +5283,12 @@ since `.goto = condGoto tt k k`).
 The conclusion is the disjunctive form, lifted to `gen'`. -/
 private theorem flushCmds_blocks_no_genFuture
     {P : PureExpr} [HasBool P] [HasIdent P] [HasVarsPure P P.Expr]
+    [LawfulHasBool P]
     {pfx : String} {accum : List (Cmd P)}
     {tr? : Option (DetTransferCmd String P)} {k : String}
     {gen gen' : StringGenState}
     {entry : String} {blocks : DetBlocks String (Cmd P) P}
     (h_gen : flushCmds pfx accum tr? k gen = ((entry, blocks), gen'))
-    (h_tt_getVars : HasVarsPure.getVars (P := P) (HasBool.tt : P.Expr) = [])
     (h_accum_classifies :
       listClassifies (P := P) (accum.flatMap Cmd.touchedVars) gen')
     (h_tr_classifies :
@@ -5331,10 +5330,10 @@ private theorem flushCmds_blocks_no_genFuture
         exact h_accum_classifies x h_in_accum
       | inr h_in_tr =>
         -- transfer is .goto k = condGoto tt k k md; touchedVars = getVars tt = [];
-        -- vacuous via h_tt_getVars.
+        -- vacuous via LawfulHasBool.tt_getVars.
         unfold DetTransferCmd.goto at h_in_tr
         change x ∈ HasVarsPure.getVars (HasBool.tt : P.Expr) at h_in_tr
-        rw [h_tt_getVars] at h_in_tr
+        rw [LawfulHasBool.tt_getVars] at h_in_tr
         exact absurd h_in_tr List.not_mem_nil
   | some tr =>
     rw [h_tr] at h_gen
@@ -6102,24 +6101,13 @@ is not in either set, so it cannot appear in any emitted block's
 private theorem stmtsToBlocks_blocks_no_genFuture
     {P : PureExpr} [HasBool P] [HasFvar P] [HasNot P] [HasIdent P]
     [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [LawfulHasFvar P] [LawfulHasBool P] [LawfulHasIdent P]
+    [LawfulHasIntOrder P] [LawfulHasNot P]
     {k : String} {ss : List (Stmt P (Cmd P))}
     {exitConts : List (Option String × String)}
     {accum : List (Cmd P)} {gen gen' : StringGenState}
     {entry : String} {blocks : DetBlocks String (Cmd P) P}
     (h_gen : stmtsToBlocks k ss exitConts accum gen = ((entry, blocks), gen'))
-    (h_tt_getVars : HasVarsPure.getVars (P := P) (HasBool.tt : P.Expr) = [])
-    (h_mkFvar_getVars_subset : ∀ x : P.Ident,
-        HasVarsPure.getVars (HasFvar.mkFvar (P := P) x) ⊆ [x])
-    (h_ident_inj : Function.Injective (HasIdent.ident (P := P)))
-    (h_intOrder_eq_getVars : ∀ a b : P.Expr,
-        HasVarsPure.getVars (P := P) (HasIntOrder.eq a b)
-          ⊆ HasVarsPure.getVars (P := P) a ++ HasVarsPure.getVars (P := P) b)
-    (h_intOrder_lt_getVars : ∀ a b : P.Expr,
-        HasVarsPure.getVars (P := P) (HasIntOrder.lt a b)
-          ⊆ HasVarsPure.getVars (P := P) a ++ HasVarsPure.getVars (P := P) b)
-    (h_intOrder_zero_getVars : HasVarsPure.getVars (P := P) (HasIntOrder.zero : P.Expr) = [])
-    (h_not_getVars : ∀ a : P.Expr,
-        HasVarsPure.getVars (P := P) (HasNot.not a) ⊆ HasVarsPure.getVars (P := P) a)
     (h_accum_no_gen_suffix :
       ∀ x ∈ accum.flatMap Cmd.touchedVars, ∀ s : String,
         x = HasIdent.ident (P := P) s → ¬ String.HasUnderscoreDigitSuffix s)
@@ -6139,7 +6127,7 @@ private theorem stmtsToBlocks_blocks_no_genFuture
         ∀ tr, (Option.none : Option (DetTransferCmd String P)) = some tr →
           listClassifies (P := P) (DetTransferCmd.touchedVars tr) gen' := by
       intro tr h_eq; cases h_eq
-    exact flushCmds_blocks_no_genFuture h_gen h_tt_getVars
+    exact flushCmds_blocks_no_genFuture h_gen
       h_accum_classifies h_tr_classifies
   | .cmd c :: rest =>
     -- Recurse with extended accumulator.
@@ -6157,9 +6145,7 @@ private theorem stmtsToBlocks_blocks_no_genFuture
     have h_accum' := cons_accum_no_gen_suffix c accum h_c_no_gen h_accum_no_gen_suffix
     exact stmtsToBlocks_blocks_no_genFuture (k := k) (ss := rest) (exitConts := exitConts)
       (accum := c :: accum) (gen := gen) (gen' := gen') (entry := entry) (blocks := blocks)
-      h_gen h_tt_getVars h_mkFvar_getVars_subset h_ident_inj
-      h_intOrder_eq_getVars h_intOrder_lt_getVars h_intOrder_zero_getVars
-      h_not_getVars h_accum' h_rest_no_gen
+      h_gen h_accum' h_rest_no_gen
   | .funcDecl _ _ :: rest =>
     -- Skip funcDecl, recurse on rest. Tail subset suffices.
     unfold stmtsToBlocks at h_gen
@@ -6170,9 +6156,7 @@ private theorem stmtsToBlocks_blocks_no_genFuture
       exact h_ss_no_gen_suffix x (Block_touchedVars_tail_subset _ _ h_x) s heq
     exact stmtsToBlocks_blocks_no_genFuture (k := k) (ss := rest) (exitConts := exitConts)
       (accum := accum) (gen := gen) (gen' := gen') (entry := entry) (blocks := blocks)
-      h_gen h_tt_getVars h_mkFvar_getVars_subset h_ident_inj
-      h_intOrder_eq_getVars h_intOrder_lt_getVars h_intOrder_zero_getVars
-      h_not_getVars h_accum_no_gen_suffix h_rest_no_gen
+      h_gen h_accum_no_gen_suffix h_rest_no_gen
   | .typeDecl _ _ :: rest =>
     unfold stmtsToBlocks at h_gen
     have h_rest_no_gen :
@@ -6182,9 +6166,7 @@ private theorem stmtsToBlocks_blocks_no_genFuture
       exact h_ss_no_gen_suffix x (Block_touchedVars_tail_subset _ _ h_x) s heq
     exact stmtsToBlocks_blocks_no_genFuture (k := k) (ss := rest) (exitConts := exitConts)
       (accum := accum) (gen := gen) (gen' := gen') (entry := entry) (blocks := blocks)
-      h_gen h_tt_getVars h_mkFvar_getVars_subset h_ident_inj
-      h_intOrder_eq_getVars h_intOrder_lt_getVars h_intOrder_zero_getVars
-      h_not_getVars h_accum_no_gen_suffix h_rest_no_gen
+      h_gen h_accum_no_gen_suffix h_rest_no_gen
   | .exit l? md :: _ =>
     -- stmtsToBlocks reduces to flushCmds with explicit transfer (.goto bk md).
     -- The bk is computed purely (no gen advance); only flushCmds is stateful.
@@ -6212,10 +6194,10 @@ private theorem stmtsToBlocks_blocks_no_genFuture
                 | .some kk => kk
                 | .none => k) (P := P) md) = [] := by
         show HasVarsPure.getVars (P := P) (HasBool.tt : P.Expr) = []
-        exact h_tt_getVars
+        exact LawfulHasBool.tt_getVars
       rw [h_empty]
       intro x h_x; exact absurd h_x List.not_mem_nil
-    exact flushCmds_blocks_no_genFuture h_gen h_tt_getVars
+    exact flushCmds_blocks_no_genFuture h_gen
       h_accum_classifies h_tr_classifies
   | .block l bss md :: rest =>
     -- Decompose monadic chain: rest, body, flushCmds, optional user-block.
@@ -6276,9 +6258,7 @@ private theorem stmtsToBlocks_blocks_no_genFuture
       stmtsToBlocks_blocks_no_genFuture
         (k := k) (ss := rest) (exitConts := exitConts) (accum := []) (gen := gen)
         (gen' := gen_r) (entry := kNext) (blocks := bsNext)
-        h_rest_eq h_tt_getVars h_mkFvar_getVars_subset h_ident_inj
-        h_intOrder_eq_getVars h_intOrder_lt_getVars h_intOrder_zero_getVars
-        h_not_getVars h_nil_no_gen h_rest_no_gen
+        h_rest_eq h_nil_no_gen h_rest_no_gen
     -- IH on `bss` (empty accum).
     have h_ih_body :
         ∀ blk ∈ bbs.map Prod.snd,
@@ -6286,9 +6266,7 @@ private theorem stmtsToBlocks_blocks_no_genFuture
       stmtsToBlocks_blocks_no_genFuture
         (k := kNext) (ss := bss) (exitConts := (some l, kNext) :: exitConts) (accum := [])
         (gen := gen_r) (gen' := gen_b) (entry := bl) (blocks := bbs)
-        h_body_eq h_tt_getVars h_mkFvar_getVars_subset h_ident_inj
-        h_intOrder_eq_getVars h_intOrder_lt_getVars h_intOrder_zero_getVars
-        h_not_getVars h_nil_no_gen h_bss_no_gen
+        h_body_eq h_nil_no_gen h_bss_no_gen
     -- flushCmds_blocks_no_genFuture for accumBlocks at gen_f.
     have h_accum_classifies_at_gen_f :
         listClassifies (P := P) (accum.flatMap Cmd.touchedVars) gen_f :=
@@ -6300,7 +6278,7 @@ private theorem stmtsToBlocks_blocks_no_genFuture
     have h_ih_flush :
         ∀ blk ∈ accumBlocks.map Prod.snd,
           ∀ x ∈ Block.cfgFrameTouches blk, identClassifies (P := P) x gen_f :=
-      flushCmds_blocks_no_genFuture h_flush_eq h_tt_getVars
+      flushCmds_blocks_no_genFuture h_flush_eq
         h_accum_classifies_at_gen_f h_tr_classifies_at_gen_f
     -- Lift IHs to gen' via subset relations.
     have h_ih_rest_at_gen' :
@@ -6354,7 +6332,7 @@ private theorem stmtsToBlocks_blocks_no_genFuture
         show DetTransferCmd.touchedVars (P := P) (DetTransferCmd.goto bl md) = []
         unfold DetTransferCmd.goto
         change HasVarsPure.getVars (P := P) (HasBool.tt : P.Expr) = []
-        exact h_tt_getVars
+        exact LawfulHasBool.tt_getVars
       intro blk h_blk
       rw [← h_blocks_eq] at h_blk
       simp only [List.mem_map, List.mem_append, List.mem_cons] at h_blk
@@ -6435,27 +6413,21 @@ private theorem stmtsToBlocks_blocks_no_genFuture
       stmtsToBlocks_blocks_no_genFuture
         (k := k) (ss := rest) (exitConts := exitConts) (accum := []) (gen := gen)
         (gen' := gen_r) (entry := kNext) (blocks := bsNext)
-        h_rest_eq h_tt_getVars h_mkFvar_getVars_subset h_ident_inj
-        h_intOrder_eq_getVars h_intOrder_lt_getVars h_intOrder_zero_getVars
-        h_not_getVars h_nil_no_gen h_rest_no_gen
+        h_rest_eq h_nil_no_gen h_rest_no_gen
     have h_ih_then :
         ∀ blk ∈ tbs.map Prod.snd,
           ∀ x ∈ Block.cfgFrameTouches blk, identClassifies (P := P) x gen_t :=
       stmtsToBlocks_blocks_no_genFuture
         (k := kNext) (ss := tss) (exitConts := exitConts) (accum := []) (gen := gen_ite)
         (gen' := gen_t) (entry := tl) (blocks := tbs)
-        h_then_eq h_tt_getVars h_mkFvar_getVars_subset h_ident_inj
-        h_intOrder_eq_getVars h_intOrder_lt_getVars h_intOrder_zero_getVars
-        h_not_getVars h_nil_no_gen h_tss_no_gen
+        h_then_eq h_nil_no_gen h_tss_no_gen
     have h_ih_else :
         ∀ blk ∈ fbs.map Prod.snd,
           ∀ x ∈ Block.cfgFrameTouches blk, identClassifies (P := P) x gen_e :=
       stmtsToBlocks_blocks_no_genFuture
         (k := kNext) (ss := fss) (exitConts := exitConts) (accum := []) (gen := gen_t)
         (gen' := gen_e) (entry := fl) (blocks := fbs)
-        h_else_eq h_tt_getVars h_mkFvar_getVars_subset h_ident_inj
-        h_intOrder_eq_getVars h_intOrder_lt_getVars h_intOrder_zero_getVars
-        h_not_getVars h_nil_no_gen h_fss_no_gen
+        h_else_eq h_nil_no_gen h_fss_no_gen
     -- Branch on c (det vs nondet).
     cases h_c : c with
     | det e =>
@@ -6506,7 +6478,7 @@ private theorem stmtsToBlocks_blocks_no_genFuture
       have h_ih_flush :
           ∀ blk ∈ accumBlocks.map Prod.snd,
             ∀ x ∈ Block.cfgFrameTouches blk, identClassifies (P := P) x gen_f :=
-        flushCmds_blocks_no_genFuture h_flush_eq h_tt_getVars
+        flushCmds_blocks_no_genFuture h_flush_eq
           h_accum_classifies_at_gen_f h_tr_classifies_at_gen_f
       -- Lift IHs to gen' via subset relations.
       have h_ih_rest_at_gen' :
@@ -6604,7 +6576,7 @@ private theorem stmtsToBlocks_blocks_no_genFuture
         -- freshIdent = HasIdent.ident s. By injectivity, s = freshName.
         have h_s_eq : s = freshName := by
           have : HasIdent.ident (P := P) freshName = HasIdent.ident (P := P) s := heq
-          exact (h_ident_inj this).symm
+          exact (LawfulHasIdent.ident_inj this).symm
         subst h_s_eq
         exact Or.inr h_freshName_in_gen'
       -- Build accum_classifies_at_gen_f: accum ++ [initCmd]'s touchedVars classifies.
@@ -6652,7 +6624,7 @@ private theorem stmtsToBlocks_blocks_no_genFuture
           show x ∈ HasVarsPure.getVars (HasFvar.mkFvar (P := P) freshIdent)
           exact h_x
         have h_x_eq_fresh : x = freshIdent := by
-          have := h_mkFvar_getVars_subset freshIdent h_x_in_mkFvar
+          have := LawfulHasFvar.mkFvar_getVars freshIdent h_x_in_mkFvar
           rw [List.mem_singleton] at this
           exact this
         subst h_x_eq_fresh
@@ -6660,7 +6632,7 @@ private theorem stmtsToBlocks_blocks_no_genFuture
       have h_ih_flush :
           ∀ blk ∈ accumBlocks.map Prod.snd,
             ∀ x ∈ Block.cfgFrameTouches blk, identClassifies (P := P) x gen_f :=
-        flushCmds_blocks_no_genFuture h_flush_eq h_tt_getVars
+        flushCmds_blocks_no_genFuture h_flush_eq
           h_accum_ext_classifies h_tr_classifies_at_gen_f
       -- Lift IHs to gen'.
       have h_ih_rest_at_gen' :
@@ -6747,9 +6719,7 @@ private theorem stmtsToBlocks_blocks_no_genFuture
       stmtsToBlocks_blocks_no_genFuture
         (k := k) (ss := rest) (exitConts := exitConts) (accum := []) (gen := gen)
         (gen' := gen_r) (entry := kNext) (blocks := bsNext)
-        h_rest_eq h_tt_getVars h_mkFvar_getVars_subset h_ident_inj
-        h_intOrder_eq_getVars h_intOrder_lt_getVars h_intOrder_zero_getVars
-        h_not_getVars h_nil_no_gen h_rest_no_gen
+        h_rest_eq h_nil_no_gen h_rest_no_gen
     -- We branch on m and c. For each combination, produce the same-shaped
     -- conclusion.
     cases h_m_cases : m with
@@ -6789,9 +6759,7 @@ private theorem stmtsToBlocks_blocks_no_genFuture
         stmtsToBlocks_blocks_no_genFuture
           (k := lentry) (ss := bss) (exitConts := (none, kNext) :: exitConts) (accum := [])
           (gen := gen_le) (gen' := gen_b) (entry := bl) (blocks := bbs)
-          h_body_eq h_tt_getVars h_mkFvar_getVars_subset h_ident_inj
-          h_intOrder_eq_getVars h_intOrder_lt_getVars h_intOrder_zero_getVars
-          h_not_getVars h_nil_no_gen h_bss_no_gen
+          h_body_eq h_nil_no_gen h_bss_no_gen
       -- Each invCmd's touchedVars has source-shape. Use mapM_touchedVars_subset
       -- to lift to the source-side `is.flatMap getVars`, then apply h_inv_no_gen.
       have h_invCmds_no_gen :
@@ -6878,7 +6846,7 @@ private theorem stmtsToBlocks_blocks_no_genFuture
         have h_ih_flush :
             ∀ blk ∈ accumBlocks.map Prod.snd,
               ∀ x ∈ Block.cfgFrameTouches blk, identClassifies (P := P) x gen_f :=
-          flushCmds_blocks_no_genFuture h_flush_eq h_tt_getVars
+          flushCmds_blocks_no_genFuture h_flush_eq
             h_accum_classifies_at_gen_f h_tr_classifies_at_gen_f
         have h_ih_flush_at_gen' :
             ∀ blk ∈ accumBlocks.map Prod.snd,
@@ -6996,7 +6964,7 @@ private theorem stmtsToBlocks_blocks_no_genFuture
           intro s heq
           have h_s_eq : s = freshNameLoop := by
             have : HasIdent.ident (P := P) freshNameLoop = HasIdent.ident (P := P) s := heq
-            exact (h_ident_inj this).symm
+            exact (LawfulHasIdent.ident_inj this).symm
           subst h_s_eq
           exact Or.inr h_freshNameLoop_in_gen'
         -- Lift IHs.
@@ -7020,7 +6988,7 @@ private theorem stmtsToBlocks_blocks_no_genFuture
         have h_ih_flush :
             ∀ blk ∈ accumBlocks.map Prod.snd,
               ∀ x ∈ Block.cfgFrameTouches blk, identClassifies (P := P) x gen_f :=
-          flushCmds_blocks_no_genFuture h_flush_eq h_tt_getVars
+          flushCmds_blocks_no_genFuture h_flush_eq
             h_accum_classifies_at_gen_f h_tr_classifies_at_gen_f
         have h_ih_flush_at_gen' :
             ∀ blk ∈ accumBlocks.map Prod.snd,
@@ -7055,7 +7023,7 @@ private theorem stmtsToBlocks_blocks_no_genFuture
               show x ∈ HasVarsPure.getVars (HasFvar.mkFvar (P := P) freshIdentLoop)
               exact h_in_tr
             have h_x_eq : x = freshIdentLoop := by
-              have := h_mkFvar_getVars_subset freshIdentLoop h_x_in_mkFvar
+              have := LawfulHasFvar.mkFvar_getVars freshIdentLoop h_x_in_mkFvar
               rw [List.mem_singleton] at this
               exact this
             subst h_x_eq
@@ -7132,9 +7100,7 @@ private theorem stmtsToBlocks_blocks_no_genFuture
         stmtsToBlocks_blocks_no_genFuture
           (k := ldec) (ss := bss) (exitConts := (none, kNext) :: exitConts) (accum := [])
           (gen := gen_ldec) (gen' := gen_b) (entry := bl) (blocks := bbs)
-          h_body_eq h_tt_getVars h_mkFvar_getVars_subset h_ident_inj
-          h_intOrder_eq_getVars h_intOrder_lt_getVars h_intOrder_zero_getVars
-          h_not_getVars h_nil_no_gen h_bss_no_gen
+          h_body_eq h_nil_no_gen h_bss_no_gen
       -- mIdent and ldec gen-shape bookkeeping.
       let mIdent := HasIdent.ident (P := P) mLabel
       let mOldExpr := HasFvar.mkFvar (P := P) mIdent
@@ -7233,7 +7199,7 @@ private theorem stmtsToBlocks_blocks_no_genFuture
           intro s heq
           have h_s_eq : s = mLabel := by
             have : HasIdent.ident (P := P) mLabel = HasIdent.ident (P := P) s := heq
-            exact (h_ident_inj this).symm
+            exact (LawfulHasIdent.ident_inj this).symm
           subst h_s_eq
           exact Or.inr (h_subset_ml_gen' h_mLabel_in_gen_ml)
         have h_ih_rest_at_gen' :
@@ -7256,7 +7222,7 @@ private theorem stmtsToBlocks_blocks_no_genFuture
         have h_ih_flush :
             ∀ blk ∈ accumBlocks.map Prod.snd,
               ∀ x ∈ Block.cfgFrameTouches blk, identClassifies (P := P) x gen_f :=
-          flushCmds_blocks_no_genFuture h_flush_eq h_tt_getVars
+          flushCmds_blocks_no_genFuture h_flush_eq
             h_accum_classifies_at_gen_f h_tr_classifies_at_gen_f
         have h_ih_flush_at_gen' :
             ∀ blk ∈ accumBlocks.map Prod.snd,
@@ -7309,12 +7275,12 @@ private theorem stmtsToBlocks_blocks_no_genFuture
                 -- getVars ⊆ getVars mOldExpr ++ getVars mExpr (via h_intOrder_eq_getVars).
                 -- mOldExpr = mkFvar mIdent; getVars mOldExpr ⊆ [mIdent] (via h_mkFvar_getVars_subset).
                 have h_x_in_split :=
-                  h_intOrder_eq_getVars mOldExpr mExpr h_assume
+                  LawfulHasIntOrder.eq_getVars mOldExpr mExpr h_assume
                 rw [List.mem_append] at h_x_in_split
                 cases h_x_in_split with
                 | inl h_x_in_old =>
                   have h_x_in_mIdent :=
-                    h_mkFvar_getVars_subset mIdent h_x_in_old
+                    LawfulHasFvar.mkFvar_getVars mIdent h_x_in_old
                   rw [List.mem_singleton] at h_x_in_mIdent
                   subst h_x_in_mIdent
                   exact h_mIdent_classifies
@@ -7325,19 +7291,19 @@ private theorem stmtsToBlocks_blocks_no_genFuture
                 -- lbCmd's expr is `HasNot.not (HasIntOrder.lt mOldExpr HasIntOrder.zero)`.
                 -- getVars ⊆ getVars (lt mOldExpr zero) ⊆ getVars mOldExpr ++ getVars zero
                 -- = [mIdent] ++ [] = [mIdent].
-                have h_x_in_lt := h_not_getVars _ h_lb
+                have h_x_in_lt := LawfulHasNot.not_getVars _ h_lb
                 have h_x_in_split :=
-                  h_intOrder_lt_getVars mOldExpr HasIntOrder.zero h_x_in_lt
+                  LawfulHasIntOrder.lt_getVars mOldExpr HasIntOrder.zero h_x_in_lt
                 rw [List.mem_append] at h_x_in_split
                 cases h_x_in_split with
                 | inl h_x_in_old =>
                   have h_x_in_mIdent :=
-                    h_mkFvar_getVars_subset mIdent h_x_in_old
+                    LawfulHasFvar.mkFvar_getVars mIdent h_x_in_old
                   rw [List.mem_singleton] at h_x_in_mIdent
                   subst h_x_in_mIdent
                   exact h_mIdent_classifies
                 | inr h_x_in_zero =>
-                  rw [h_intOrder_zero_getVars] at h_x_in_zero
+                  rw [LawfulHasIntOrder.zero_getVars] at h_x_in_zero
                   exact absurd h_x_in_zero List.not_mem_nil
           | inr h_in_tr =>
             -- transfer = condGoto e bl kNext contractMd; touchedVars = e.getVars.
@@ -7361,7 +7327,7 @@ private theorem stmtsToBlocks_blocks_no_genFuture
             rw [Cmd_touchedVars_assert] at h_in_cmds
             -- h_in_cmds: x ∈ getVars (HasIntOrder.lt mExpr mOldExpr).
             have h_x_in_split :=
-              h_intOrder_lt_getVars mExpr mOldExpr h_in_cmds
+              LawfulHasIntOrder.lt_getVars mExpr mOldExpr h_in_cmds
             rw [List.mem_append] at h_x_in_split
             cases h_x_in_split with
             | inl h_x_in_m =>
@@ -7369,14 +7335,14 @@ private theorem stmtsToBlocks_blocks_no_genFuture
               exact Or.inl (h_mExpr_no_gen x h_x_in_m s heq)
             | inr h_x_in_old =>
               have h_x_in_mIdent :=
-                h_mkFvar_getVars_subset mIdent h_x_in_old
+                LawfulHasFvar.mkFvar_getVars mIdent h_x_in_old
               rw [List.mem_singleton] at h_x_in_mIdent
               subst h_x_in_mIdent
               exact h_mIdent_classifies
           | inr h_in_tr =>
             -- transfer = goto lentry = condGoto tt lentry lentry _; touchedVars = getVars tt = []
             simp only [DetTransferCmd.goto, DetTransferCmd.touchedVars] at h_in_tr
-            rw [h_tt_getVars] at h_in_tr
+            rw [LawfulHasBool.tt_getVars] at h_in_tr
             exact absurd h_in_tr List.not_mem_nil
         intro blk h_blk
         rw [← h_blocks_eq] at h_blk
@@ -7473,7 +7439,7 @@ private theorem stmtsToBlocks_blocks_no_genFuture
           intro s heq
           have h_s_eq : s = mLabel := by
             have : HasIdent.ident (P := P) mLabel = HasIdent.ident (P := P) s := heq
-            exact (h_ident_inj this).symm
+            exact (LawfulHasIdent.ident_inj this).symm
           subst h_s_eq
           exact Or.inr (h_subset_ml_gen' h_mLabel_in_gen_ml)
         have h_freshNameLoop_in_gen_n :
@@ -7493,7 +7459,7 @@ private theorem stmtsToBlocks_blocks_no_genFuture
           intro s heq
           have h_s_eq : s = freshNameLoop := by
             have : HasIdent.ident (P := P) freshNameLoop = HasIdent.ident (P := P) s := heq
-            exact (h_ident_inj this).symm
+            exact (LawfulHasIdent.ident_inj this).symm
           subst h_s_eq
           exact Or.inr h_freshNameLoop_in_gen'
         have h_ih_rest_at_gen' :
@@ -7516,7 +7482,7 @@ private theorem stmtsToBlocks_blocks_no_genFuture
         have h_ih_flush :
             ∀ blk ∈ accumBlocks.map Prod.snd,
               ∀ x ∈ Block.cfgFrameTouches blk, identClassifies (P := P) x gen_f :=
-          flushCmds_blocks_no_genFuture h_flush_eq h_tt_getVars
+          flushCmds_blocks_no_genFuture h_flush_eq
             h_accum_classifies_at_gen_f h_tr_classifies_at_gen_f
         have h_ih_flush_at_gen' :
             ∀ blk ∈ accumBlocks.map Prod.snd,
@@ -7563,12 +7529,12 @@ private theorem stmtsToBlocks_blocks_no_genFuture
               rcases List.mem_append.mp h_rest with h_assume | h_lb
               · rw [Cmd_touchedVars_assume] at h_assume
                 have h_x_in_split :=
-                  h_intOrder_eq_getVars mOldExpr mExpr h_assume
+                  LawfulHasIntOrder.eq_getVars mOldExpr mExpr h_assume
                 rw [List.mem_append] at h_x_in_split
                 cases h_x_in_split with
                 | inl h_x_in_old =>
                   have h_x_in_mIdent :=
-                    h_mkFvar_getVars_subset mIdent h_x_in_old
+                    LawfulHasFvar.mkFvar_getVars mIdent h_x_in_old
                   rw [List.mem_singleton] at h_x_in_mIdent
                   subst h_x_in_mIdent
                   exact h_mIdent_classifies
@@ -7576,26 +7542,26 @@ private theorem stmtsToBlocks_blocks_no_genFuture
                   intro s heq
                   exact Or.inl (h_mExpr_no_gen x h_x_in_m s heq)
               · rw [Cmd_touchedVars_assert] at h_lb
-                have h_x_in_lt := h_not_getVars _ h_lb
+                have h_x_in_lt := LawfulHasNot.not_getVars _ h_lb
                 have h_x_in_split :=
-                  h_intOrder_lt_getVars mOldExpr HasIntOrder.zero h_x_in_lt
+                  LawfulHasIntOrder.lt_getVars mOldExpr HasIntOrder.zero h_x_in_lt
                 rw [List.mem_append] at h_x_in_split
                 cases h_x_in_split with
                 | inl h_x_in_old =>
                   have h_x_in_mIdent :=
-                    h_mkFvar_getVars_subset mIdent h_x_in_old
+                    LawfulHasFvar.mkFvar_getVars mIdent h_x_in_old
                   rw [List.mem_singleton] at h_x_in_mIdent
                   subst h_x_in_mIdent
                   exact h_mIdent_classifies
                 | inr h_x_in_zero =>
-                  rw [h_intOrder_zero_getVars] at h_x_in_zero
+                  rw [LawfulHasIntOrder.zero_getVars] at h_x_in_zero
                   exact absurd h_x_in_zero List.not_mem_nil
           | inr h_in_tr =>
             -- transfer = condGoto (mkFvar freshIdentLoop) bl kNext contractMd
             have h_x_in_mkFvar :
                 x ∈ HasVarsPure.getVars (HasFvar.mkFvar (P := P) freshIdentLoop) := h_in_tr
             have h_x_eq : x = freshIdentLoop := by
-              have := h_mkFvar_getVars_subset freshIdentLoop h_x_in_mkFvar
+              have := LawfulHasFvar.mkFvar_getVars freshIdentLoop h_x_in_mkFvar
               rw [List.mem_singleton] at this
               exact this
             subst h_x_eq
@@ -7609,7 +7575,7 @@ private theorem stmtsToBlocks_blocks_no_genFuture
             simp only [List.flatMap_cons, List.flatMap_nil, List.append_nil] at h_in_cmds
             rw [Cmd_touchedVars_assert] at h_in_cmds
             have h_x_in_split :=
-              h_intOrder_lt_getVars mExpr mOldExpr h_in_cmds
+              LawfulHasIntOrder.lt_getVars mExpr mOldExpr h_in_cmds
             rw [List.mem_append] at h_x_in_split
             cases h_x_in_split with
             | inl h_x_in_m =>
@@ -7617,13 +7583,13 @@ private theorem stmtsToBlocks_blocks_no_genFuture
               exact Or.inl (h_mExpr_no_gen x h_x_in_m s heq)
             | inr h_x_in_old =>
               have h_x_in_mIdent :=
-                h_mkFvar_getVars_subset mIdent h_x_in_old
+                LawfulHasFvar.mkFvar_getVars mIdent h_x_in_old
               rw [List.mem_singleton] at h_x_in_mIdent
               subst h_x_in_mIdent
               exact h_mIdent_classifies
           | inr h_in_tr =>
             simp only [DetTransferCmd.goto, DetTransferCmd.touchedVars] at h_in_tr
-            rw [h_tt_getVars] at h_in_tr
+            rw [LawfulHasBool.tt_getVars] at h_in_tr
             exact absurd h_in_tr List.not_mem_nil
         intro blk h_blk
         rw [← h_blocks_eq] at h_blk
@@ -8192,6 +8158,8 @@ the recursive call on the rest of the program. -/
 private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
     [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P]
     [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [LawfulHasFvar P] [LawfulHasBool P] [LawfulHasIdent P]
+    [LawfulHasIntOrder P] [LawfulHasNot P]
     (extendEval : ExtendEval P)
     (k : String) (ss : List (Stmt P (Cmd P)))
     (exitConts : List (Option String × String))
@@ -8210,21 +8178,6 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
     (hwf_def : WellFormedSemanticEvalDef ρ₀.eval)
     (hwf_congr : WellFormedSemanticEvalExprCongr ρ₀.eval)
     (hwf_var : WellFormedSemanticEvalVar ρ₀.eval)
-    (h_lawful_fvar : ∀ x : P.Ident,
-        HasFvar.getFvar (HasFvar.mkFvar (P := P) x) = some x)
-    (h_tt_getVars : HasVarsPure.getVars (P := P) (HasBool.tt : P.Expr) = [])
-    (h_mkFvar_getVars_subset : ∀ x : P.Ident,
-        HasVarsPure.getVars (HasFvar.mkFvar (P := P) x) ⊆ [x])
-    (h_ident_inj : Function.Injective (HasIdent.ident (P := P)))
-    (h_intOrder_eq_getVars : ∀ a b : P.Expr,
-        HasVarsPure.getVars (P := P) (HasIntOrder.eq a b)
-          ⊆ HasVarsPure.getVars (P := P) a ++ HasVarsPure.getVars (P := P) b)
-    (h_intOrder_lt_getVars : ∀ a b : P.Expr,
-        HasVarsPure.getVars (P := P) (HasIntOrder.lt a b)
-          ⊆ HasVarsPure.getVars (P := P) a ++ HasVarsPure.getVars (P := P) b)
-    (h_intOrder_zero_getVars : HasVarsPure.getVars (P := P) (HasIntOrder.zero : P.Expr) = [])
-    (h_not_getVars : ∀ a : P.Expr,
-        HasVarsPure.getVars (P := P) (HasNot.not a) ⊆ HasVarsPure.getVars (P := P) a)
     (h_term : StepStmtStar P (EvalCmd P) extendEval
       (.stmts ss ρ₀) (.terminal ρ'))
     (h_accum : EvalCmds P (EvalCmd P) ρ₀.eval σ_struct_base accum.reverse ρ₀.store hf_accum)
@@ -8394,10 +8347,8 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
       stmtsToBlocks_simulation extendEval k rest exitConts (c :: accum) gen gen'
         entry blocks h_gen h_nofd_rest h_unique_rest
         σ_struct_base σ_base hf_base (hf_accum || failed_c)
-        ρ₁ ρ' hwfb' hwfv' hwf_def' hwf_congr' hwf_var' h_lawful_fvar
-        h_tt_getVars h_mkFvar_getVars_subset h_ident_inj
-        h_intOrder_eq_getVars h_intOrder_lt_getVars h_intOrder_zero_getVars
-        h_not_getVars h_rest_star h_accum'
+        ρ₁ ρ' hwfb' hwfv' hwf_def' hwf_congr' hwf_var'
+       h_rest_star h_accum'
         h_agree_entry h_fresh_combined' h_unique_combined' h_hf'
         h_wf_gen h_store_no_gens h_combined_no_gen_suffix' h_combined_no_gen_suffix_mod'
         h_combined_no_gen_suffix_get'
@@ -8785,10 +8736,8 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
         stmtsToBlocks_simulation extendEval kNext thenBranch exitConts []
           gen_ite gen_t tl tbs h_then_eq h_nofd_then h_unique_then
           ρ₀.store σ_cfg_after ρ₀.hasFailure false
-          ρ₀ ρ₁ hwfb hwfv hwf_def hwf_congr hwf_var h_lawful_fvar
-          h_tt_getVars h_mkFvar_getVars_subset h_ident_inj
-          h_intOrder_eq_getVars h_intOrder_lt_getVars h_intOrder_zero_getVars
-          h_not_getVars h_then_term h_accum_nil_t h_agree_after
+          ρ₀ ρ₁ hwfb hwfv hwf_def hwf_congr hwf_var
+          h_then_term h_accum_nil_t h_agree_after
           h_combined_then h_unique_combined_then h_hf_t
           h_wf_ite h_store_no_gens_after_ite h_then_no_gen_suffix h_then_no_gen_suffix_mod
           h_then_no_gen_suffix_get
@@ -8845,10 +8794,8 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
       have ⟨σ_cfg, h_rest_sim, h_agree_rest, h_preserve_rest⟩ :=
         stmtsToBlocks_simulation extendEval k rest exitConts [] gen gen_r kNext bsNext
           h_rest_eq h_nofd_rest h_unique_rest ρ₁.store σ_branch ρ₁.hasFailure false
-          ρ₁ ρ' hwfb₁ hwfv₁ hwf_def₁ hwf_congr₁ hwf_var₁ h_lawful_fvar
-          h_tt_getVars h_mkFvar_getVars_subset h_ident_inj
-          h_intOrder_eq_getVars h_intOrder_lt_getVars h_intOrder_zero_getVars
-          h_not_getVars h_rest_star h_accum_nil_r h_agree_then
+          ρ₁ ρ' hwfb₁ hwfv₁ hwf_def₁ hwf_congr₁ hwf_var₁
+          h_rest_star h_accum_nil_r h_agree_then
           h_combined_rest h_unique_combined_rest h_hf_r
           h_wf_gen h_store_no_gens_branch_t h_rest_no_gen_suffix h_rest_no_gen_suffix_mod
           h_rest_no_gen_suffix_get
@@ -8902,10 +8849,8 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
         stmtsToBlocks_simulation extendEval kNext elseBranch exitConts []
           gen_t gen_e fl fbs h_else_eq h_nofd_else h_unique_else
           ρ₀.store σ_cfg_after ρ₀.hasFailure false
-          ρ₀ ρ₁ hwfb hwfv hwf_def hwf_congr hwf_var h_lawful_fvar
-          h_tt_getVars h_mkFvar_getVars_subset h_ident_inj
-          h_intOrder_eq_getVars h_intOrder_lt_getVars h_intOrder_zero_getVars
-          h_not_getVars h_else_term h_accum_nil_f h_agree_after
+          ρ₀ ρ₁ hwfb hwfv hwf_def hwf_congr hwf_var
+          h_else_term h_accum_nil_f h_agree_after
           h_combined_else h_unique_combined_else h_hf_f
           h_wf_t h_store_no_gens_after_t h_else_no_gen_suffix h_else_no_gen_suffix_mod
           h_else_no_gen_suffix_get
@@ -8962,10 +8907,8 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
       have ⟨σ_cfg, h_rest_sim, h_agree_rest, h_preserve_rest⟩ :=
         stmtsToBlocks_simulation extendEval k rest exitConts [] gen gen_r kNext bsNext
           h_rest_eq h_nofd_rest h_unique_rest ρ₁.store σ_branch ρ₁.hasFailure false
-          ρ₁ ρ' hwfb₁ hwfv₁ hwf_def₁ hwf_congr₁ hwf_var₁ h_lawful_fvar
-          h_tt_getVars h_mkFvar_getVars_subset h_ident_inj
-          h_intOrder_eq_getVars h_intOrder_lt_getVars h_intOrder_zero_getVars
-          h_not_getVars h_rest_star h_accum_nil_r h_agree_else
+          ρ₁ ρ' hwfb₁ hwfv₁ hwf_def₁ hwf_congr₁ hwf_var₁
+          h_rest_star h_accum_nil_r h_agree_else
           h_combined_rest h_unique_combined_rest h_hf_r
           h_wf_gen h_store_no_gens_branch_e h_rest_no_gen_suffix h_rest_no_gen_suffix_mod
           h_rest_no_gen_suffix_get
@@ -9250,10 +9193,8 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
             ((some label, kNext) :: exitConts) [] gen_r gen_b bl bbs h_body_eq
             h_nofd_body h_unique_body
             ρ₀.store σ_cfg_after ρ₀.hasFailure false
-            ρ₀ ρ_inner hwfb hwfv hwf_def hwf_congr hwf_var h_lawful_fvar
-            h_tt_getVars h_mkFvar_getVars_subset h_ident_inj
-            h_intOrder_eq_getVars h_intOrder_lt_getVars h_intOrder_zero_getVars
-            h_not_getVars h_body_term h_accum_nil h_agree_after
+            ρ₀ ρ_inner hwfb hwfv hwf_def hwf_congr hwf_var
+            h_body_term h_accum_nil h_agree_after
             h_combined_body h_unique_combined_body h_hf_body
             h_wf_r h_store_no_gens_after_r h_body_no_gen_suffix h_body_no_gen_suffix_mod
             h_body_no_gen_suffix_get
@@ -9348,10 +9289,8 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
         have ⟨σ_cfg_rest, h_step_rest, h_agree_rest, h_preserve_rest⟩ :=
           stmtsToBlocks_simulation extendEval k rest exitConts [] gen gen_r kNext bsNext
             h_rest_eq h_nofd_rest h_unique_rest ρ_blk.store σ_cfg_body
-            ρ_blk.hasFailure false ρ_blk ρ' hwfb₁ hwfv₁ hwf_def₁ hwf_congr₁ hwf_var₁ h_lawful_fvar
-            h_tt_getVars h_mkFvar_getVars_subset h_ident_inj
-            h_intOrder_eq_getVars h_intOrder_lt_getVars h_intOrder_zero_getVars
-            h_not_getVars h_rest_star h_accum_nil_r h_agree_block_body
+            ρ_blk.hasFailure false ρ_blk ρ' hwfb₁ hwfv₁ hwf_def₁ hwf_congr₁ hwf_var₁
+            h_rest_star h_accum_nil_r h_agree_block_body
             h_combined_rest h_unique_combined_rest h_hf_r
             h_wf_gen h_store_no_gens_body h_rest_no_gen_suffix h_rest_no_gen_suffix_mod
             h_rest_no_gen_suffix_get
@@ -9455,10 +9394,8 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
             ((some label, kNext) :: exitConts) [] gen_r gen_b bl bbs h_body_eq
             h_nofd_body h_unique_body
             ρ₀.store σ_cfg_after ρ₀.hasFailure false
-            ρ₀ ρ_inner label kNext h_label_lookup hwfb hwfv hwf_def hwf_congr hwf_var h_lawful_fvar
-            h_tt_getVars h_mkFvar_getVars_subset h_ident_inj
-            h_intOrder_eq_getVars h_intOrder_lt_getVars h_intOrder_zero_getVars
-            h_not_getVars h_body_exit_star h_accum_nil h_agree_after
+            ρ₀ ρ_inner label kNext h_label_lookup hwfb hwfv hwf_def hwf_congr hwf_var
+            h_body_exit_star h_accum_nil h_agree_after
             h_combined_body h_unique_combined_body h_hf_body
             h_wf_r h_store_no_gens_after_r h_body_no_gen_suffix h_body_no_gen_suffix_mod
             h_body_no_gen_suffix_get
@@ -9551,10 +9488,8 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
         have ⟨σ_cfg_rest, h_step_rest, h_agree_rest, h_preserve_rest⟩ :=
           stmtsToBlocks_simulation extendEval k rest exitConts [] gen gen_r kNext bsNext
             h_rest_eq h_nofd_rest h_unique_rest ρ_blk.store σ_cfg_body
-            ρ_blk.hasFailure false ρ_blk ρ' hwfb₁ hwfv₁ hwf_def₁ hwf_congr₁ hwf_var₁ h_lawful_fvar
-            h_tt_getVars h_mkFvar_getVars_subset h_ident_inj
-            h_intOrder_eq_getVars h_intOrder_lt_getVars h_intOrder_zero_getVars
-            h_not_getVars h_rest_star h_accum_nil_r h_agree_block_body
+            ρ_blk.hasFailure false ρ_blk ρ' hwfb₁ hwfv₁ hwf_def₁ hwf_congr₁ hwf_var₁
+            h_rest_star h_accum_nil_r h_agree_block_body
             h_combined_rest h_unique_combined_rest h_hf_r
             h_wf_gen h_store_no_gens_body h_rest_no_gen_suffix h_rest_no_gen_suffix_mod
             h_rest_no_gen_suffix_get
@@ -9685,10 +9620,8 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
             ((some label, kNext) :: exitConts) [] gen_r gen_b bl bbs h_body_eq
             h_nofd_body h_unique_body
             ρ₀.store σ_cfg_after ρ₀.hasFailure false
-            ρ₀ ρ_inner hwfb hwfv hwf_def hwf_congr hwf_var h_lawful_fvar
-            h_tt_getVars h_mkFvar_getVars_subset h_ident_inj
-            h_intOrder_eq_getVars h_intOrder_lt_getVars h_intOrder_zero_getVars
-            h_not_getVars h_body_term h_accum_nil h_agree_after
+            ρ₀ ρ_inner hwfb hwfv hwf_def hwf_congr hwf_var
+            h_body_term h_accum_nil h_agree_after
             h_combined_body h_unique_combined_body h_hf_body
             h_wf_r h_store_no_gens_after_r h_body_no_gen_suffix h_body_no_gen_suffix_mod
             h_body_no_gen_suffix_get
@@ -9777,10 +9710,8 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
         have ⟨σ_cfg_rest, h_step_rest, h_agree_rest, h_preserve_rest⟩ :=
           stmtsToBlocks_simulation extendEval k rest exitConts [] gen gen_r kNext bsNext
             h_rest_eq h_nofd_rest h_unique_rest ρ_blk.store σ_cfg_body
-            ρ_blk.hasFailure false ρ_blk ρ' hwfb₁ hwfv₁ hwf_def₁ hwf_congr₁ hwf_var₁ h_lawful_fvar
-            h_tt_getVars h_mkFvar_getVars_subset h_ident_inj
-            h_intOrder_eq_getVars h_intOrder_lt_getVars h_intOrder_zero_getVars
-            h_not_getVars h_rest_star h_accum_nil_r h_agree_block_body
+            ρ_blk.hasFailure false ρ_blk ρ' hwfb₁ hwfv₁ hwf_def₁ hwf_congr₁ hwf_var₁
+            h_rest_star h_accum_nil_r h_agree_block_body
             h_combined_rest h_unique_combined_rest h_hf_r
             h_wf_gen h_store_no_gens_body h_rest_no_gen_suffix h_rest_no_gen_suffix_mod
             h_rest_no_gen_suffix_get
@@ -9847,10 +9778,8 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
             ((some label, kNext) :: exitConts) [] gen_r gen_b bl bbs h_body_eq
             h_nofd_body h_unique_body
             ρ₀.store σ_cfg_after ρ₀.hasFailure false
-            ρ₀ ρ_inner label kNext h_label_lookup hwfb hwfv hwf_def hwf_congr hwf_var h_lawful_fvar
-            h_tt_getVars h_mkFvar_getVars_subset h_ident_inj
-            h_intOrder_eq_getVars h_intOrder_lt_getVars h_intOrder_zero_getVars
-            h_not_getVars h_body_exit_star h_accum_nil h_agree_after
+            ρ₀ ρ_inner label kNext h_label_lookup hwfb hwfv hwf_def hwf_congr hwf_var
+            h_body_exit_star h_accum_nil h_agree_after
             h_combined_body h_unique_combined_body h_hf_body
             h_wf_r h_store_no_gens_after_r h_body_no_gen_suffix h_body_no_gen_suffix_mod
             h_body_no_gen_suffix_get
@@ -9939,10 +9868,8 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
         have ⟨σ_cfg_rest, h_step_rest, h_agree_rest, h_preserve_rest⟩ :=
           stmtsToBlocks_simulation extendEval k rest exitConts [] gen gen_r kNext bsNext
             h_rest_eq h_nofd_rest h_unique_rest ρ_blk.store σ_cfg_body
-            ρ_blk.hasFailure false ρ_blk ρ' hwfb₁ hwfv₁ hwf_def₁ hwf_congr₁ hwf_var₁ h_lawful_fvar
-            h_tt_getVars h_mkFvar_getVars_subset h_ident_inj
-            h_intOrder_eq_getVars h_intOrder_lt_getVars h_intOrder_zero_getVars
-            h_not_getVars h_rest_star h_accum_nil_r h_agree_block_body
+            ρ_blk.hasFailure false ρ_blk ρ' hwfb₁ hwfv₁ hwf_def₁ hwf_congr₁ hwf_var₁
+            h_rest_star h_accum_nil_r h_agree_block_body
             h_combined_rest h_unique_combined_rest h_hf_r
             h_wf_gen h_store_no_gens_body h_rest_no_gen_suffix h_rest_no_gen_suffix_mod
             h_rest_no_gen_suffix_get
@@ -10063,10 +9990,8 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
     have ⟨σ_cfg, h_step, h_agree, h_preserve⟩ :=
       stmtsToBlocks_simulation extendEval k rest exitConts accum gen gen'
         entry blocks h_gen h_nofd_rest h_unique_rest σ_struct_base σ_base hf_base hf_accum
-        ρ₀ ρ' hwfb hwfv hwf_def hwf_congr hwf_var h_lawful_fvar
-        h_tt_getVars h_mkFvar_getVars_subset h_ident_inj
-        h_intOrder_eq_getVars h_intOrder_lt_getVars h_intOrder_zero_getVars
-        h_not_getVars h_rest_star h_accum h_agree_entry
+        ρ₀ ρ' hwfb hwfv hwf_def hwf_congr hwf_var
+       h_rest_star h_accum h_agree_entry
         h_fresh_combined' h_unique_combined' h_hf
         h_wf_gen h_store_no_gens h_combined_no_gen_suffix' h_combined_no_gen_suffix_mod'
         h_combined_no_gen_suffix_get'
@@ -10096,6 +10021,8 @@ so the body's exit resolves to a goto to `kNext`. -/
 private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [HasNot P]
     [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P]
     [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [LawfulHasFvar P] [LawfulHasBool P] [LawfulHasIdent P]
+    [LawfulHasIntOrder P] [LawfulHasNot P]
     (extendEval : ExtendEval P)
     (k : String) (ss : List (Stmt P (Cmd P)))
     (exitConts : List (Option String × String))
@@ -10117,21 +10044,6 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
     (hwf_def : WellFormedSemanticEvalDef ρ₀.eval)
     (hwf_congr : WellFormedSemanticEvalExprCongr ρ₀.eval)
     (hwf_var : WellFormedSemanticEvalVar ρ₀.eval)
-    (h_lawful_fvar : ∀ x : P.Ident,
-        HasFvar.getFvar (HasFvar.mkFvar (P := P) x) = some x)
-    (h_tt_getVars : HasVarsPure.getVars (P := P) (HasBool.tt : P.Expr) = [])
-    (h_mkFvar_getVars_subset : ∀ x : P.Ident,
-        HasVarsPure.getVars (HasFvar.mkFvar (P := P) x) ⊆ [x])
-    (h_ident_inj : Function.Injective (HasIdent.ident (P := P)))
-    (h_intOrder_eq_getVars : ∀ a b : P.Expr,
-        HasVarsPure.getVars (P := P) (HasIntOrder.eq a b)
-          ⊆ HasVarsPure.getVars (P := P) a ++ HasVarsPure.getVars (P := P) b)
-    (h_intOrder_lt_getVars : ∀ a b : P.Expr,
-        HasVarsPure.getVars (P := P) (HasIntOrder.lt a b)
-          ⊆ HasVarsPure.getVars (P := P) a ++ HasVarsPure.getVars (P := P) b)
-    (h_intOrder_zero_getVars : HasVarsPure.getVars (P := P) (HasIntOrder.zero : P.Expr) = [])
-    (h_not_getVars : ∀ a : P.Expr,
-        HasVarsPure.getVars (P := P) (HasNot.not a) ⊆ HasVarsPure.getVars (P := P) a)
     (h_exit : StepStmtStar P (EvalCmd P) extendEval
       (.stmts ss ρ₀) (.exiting label ρ'))
     (h_accum : EvalCmds P (EvalCmd P) ρ₀.eval σ_struct_base accum.reverse ρ₀.store hf_accum)
@@ -10312,10 +10224,8 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
       stmtsToBlocks_simulation_to_cont extendEval k rest exitConts (c :: accum) gen gen'
         entry blocks h_gen h_nofd_rest h_unique_rest
         σ_struct_base σ_base hf_base (hf_accum || failed_c)
-        ρ₁ ρ' label bk_target h_label hwfb' hwfv' hwf_def' hwf_congr' hwf_var' h_lawful_fvar
-        h_tt_getVars h_mkFvar_getVars_subset h_ident_inj
-        h_intOrder_eq_getVars h_intOrder_lt_getVars h_intOrder_zero_getVars
-        h_not_getVars h_rest_exit h_accum'
+        ρ₁ ρ' label bk_target h_label hwfb' hwfv' hwf_def' hwf_congr' hwf_var'
+       h_rest_exit h_accum'
         h_agree_entry h_fresh_combined' h_unique_combined' h_hf'
         h_wf_gen h_store_no_gens h_combined_no_gen_suffix' h_combined_no_gen_suffix_mod'
         h_combined_no_gen_suffix_get'
@@ -10424,10 +10334,8 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
     have ⟨σ_cfg, h_step, h_agree, h_preserve⟩ :=
       stmtsToBlocks_simulation_to_cont extendEval k rest exitConts accum gen gen'
         entry blocks h_gen h_nofd_rest h_unique_rest σ_struct_base σ_base hf_base hf_accum
-        ρ₀ ρ' label bk_target h_label hwfb hwfv hwf_def hwf_congr hwf_var h_lawful_fvar
-        h_tt_getVars h_mkFvar_getVars_subset h_ident_inj
-        h_intOrder_eq_getVars h_intOrder_lt_getVars h_intOrder_zero_getVars
-        h_not_getVars h_rest_exit h_accum h_agree_entry
+        ρ₀ ρ' label bk_target h_label hwfb hwfv hwf_def hwf_congr hwf_var
+       h_rest_exit h_accum h_agree_entry
         h_fresh_combined' h_unique_combined' h_hf
         h_wf_gen h_store_no_gens h_combined_no_gen_suffix' h_combined_no_gen_suffix_mod'
         h_combined_no_gen_suffix_get'
@@ -10746,10 +10654,8 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
             ((some label', kNext) :: exitConts) [] gen_r gen_b bl bbs h_body_eq
             h_nofd_body h_unique_body
             ρ₀.store σ_cfg_after ρ₀.hasFailure false
-            ρ₀ ρ_inner label bk_target h_label_lookup hwfb hwfv hwf_def hwf_congr hwf_var h_lawful_fvar
-            h_tt_getVars h_mkFvar_getVars_subset h_ident_inj
-            h_intOrder_eq_getVars h_intOrder_lt_getVars h_intOrder_zero_getVars
-            h_not_getVars h_body_exit h_accum_nil h_agree_after
+            ρ₀ ρ_inner label bk_target h_label_lookup hwfb hwfv hwf_def hwf_congr hwf_var
+            h_body_exit h_accum_nil h_agree_after
             h_combined_body h_unique_combined_body h_hf_body
             h_wf_r h_store_no_gens_after_r h_body_no_gen_suffix h_body_no_gen_suffix_mod
             h_body_no_gen_suffix_get
@@ -10826,10 +10732,8 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
               ((some label', kNext) :: exitConts) [] gen_r gen_b bl bbs h_body_eq
               h_nofd_body h_unique_body
               ρ₀.store σ_cfg_after ρ₀.hasFailure false
-              ρ₀ ρ_inner hwfb hwfv hwf_def hwf_congr hwf_var h_lawful_fvar
-              h_tt_getVars h_mkFvar_getVars_subset h_ident_inj
-              h_intOrder_eq_getVars h_intOrder_lt_getVars h_intOrder_zero_getVars
-              h_not_getVars h_body_term h_accum_nil h_agree_after
+              ρ₀ ρ_inner hwfb hwfv hwf_def hwf_congr hwf_var
+              h_body_term h_accum_nil h_agree_after
               h_combined_body h_unique_combined_body h_hf_body
               h_wf_r h_store_no_gens_after_r h_body_no_gen_suffix h_body_no_gen_suffix_mod
               h_body_no_gen_suffix_get
@@ -10919,10 +10823,8 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
             stmtsToBlocks_simulation_to_cont extendEval k rest exitConts [] gen gen_r kNext bsNext
               h_rest_eq h_nofd_rest h_unique_rest ρ_blk.store σ_cfg_body
               ρ_blk.hasFailure false ρ_blk ρ' label bk_target h_label
-              hwfb₁ hwfv₁ hwf_def₁ hwf_congr₁ hwf_var₁ h_lawful_fvar
-              h_tt_getVars h_mkFvar_getVars_subset h_ident_inj
-              h_intOrder_eq_getVars h_intOrder_lt_getVars h_intOrder_zero_getVars
-              h_not_getVars h_rest_exit h_accum_nil_r h_agree_block_body
+              hwfb₁ hwfv₁ hwf_def₁ hwf_congr₁ hwf_var₁
+              h_rest_exit h_accum_nil_r h_agree_block_body
               h_combined_rest h_unique_combined_rest h_hf_r
               h_wf_gen h_store_no_gens_body h_rest_no_gen_suffix h_rest_no_gen_suffix_mod
               h_rest_no_gen_suffix_get
@@ -10958,10 +10860,8 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
               ((some label', kNext) :: exitConts) [] gen_r gen_b bl bbs h_body_eq
               h_nofd_body h_unique_body
               ρ₀.store σ_cfg_after ρ₀.hasFailure false
-              ρ₀ ρ_inner label' kNext h_label_lookup hwfb hwfv hwf_def hwf_congr hwf_var h_lawful_fvar
-              h_tt_getVars h_mkFvar_getVars_subset h_ident_inj
-              h_intOrder_eq_getVars h_intOrder_lt_getVars h_intOrder_zero_getVars
-              h_not_getVars h_body_match h_accum_nil h_agree_after
+              ρ₀ ρ_inner label' kNext h_label_lookup hwfb hwfv hwf_def hwf_congr hwf_var
+              h_body_match h_accum_nil h_agree_after
               h_combined_body h_unique_combined_body h_hf_body
               h_wf_r h_store_no_gens_after_r h_body_no_gen_suffix h_body_no_gen_suffix_mod
               h_body_no_gen_suffix_get
@@ -11051,10 +10951,8 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
             stmtsToBlocks_simulation_to_cont extendEval k rest exitConts [] gen gen_r kNext bsNext
               h_rest_eq h_nofd_rest h_unique_rest ρ_blk.store σ_cfg_body
               ρ_blk.hasFailure false ρ_blk ρ' label bk_target h_label
-              hwfb₁ hwfv₁ hwf_def₁ hwf_congr₁ hwf_var₁ h_lawful_fvar
-              h_tt_getVars h_mkFvar_getVars_subset h_ident_inj
-              h_intOrder_eq_getVars h_intOrder_lt_getVars h_intOrder_zero_getVars
-              h_not_getVars h_rest_exit h_accum_nil_r h_agree_block_body
+              hwfb₁ hwfv₁ hwf_def₁ hwf_congr₁ hwf_var₁
+              h_rest_exit h_accum_nil_r h_agree_block_body
               h_combined_rest h_unique_combined_rest h_hf_r
               h_wf_gen h_store_no_gens_body h_rest_no_gen_suffix h_rest_no_gen_suffix_mod
               h_rest_no_gen_suffix_get
@@ -11188,10 +11086,8 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
             ((some label', kNext) :: exitConts) [] gen_r gen_b bl bbs h_body_eq
             h_nofd_body h_unique_body
             ρ₀.store σ_cfg_after ρ₀.hasFailure false
-            ρ₀ ρ_inner label bk_target h_label_lookup hwfb hwfv hwf_def hwf_congr hwf_var h_lawful_fvar
-            h_tt_getVars h_mkFvar_getVars_subset h_ident_inj
-            h_intOrder_eq_getVars h_intOrder_lt_getVars h_intOrder_zero_getVars
-            h_not_getVars h_body_exit h_accum_nil h_agree_after
+            ρ₀ ρ_inner label bk_target h_label_lookup hwfb hwfv hwf_def hwf_congr hwf_var
+            h_body_exit h_accum_nil h_agree_after
             h_combined_body h_unique_combined_body h_hf_body
             h_wf_r h_store_no_gens_after_r h_body_no_gen_suffix h_body_no_gen_suffix_mod
             h_body_no_gen_suffix_get
@@ -11260,10 +11156,8 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
               ((some label', kNext) :: exitConts) [] gen_r gen_b bl bbs h_body_eq
               h_nofd_body h_unique_body
               ρ₀.store σ_cfg_after ρ₀.hasFailure false
-              ρ₀ ρ_inner hwfb hwfv hwf_def hwf_congr hwf_var h_lawful_fvar
-              h_tt_getVars h_mkFvar_getVars_subset h_ident_inj
-              h_intOrder_eq_getVars h_intOrder_lt_getVars h_intOrder_zero_getVars
-              h_not_getVars h_body_term h_accum_nil h_agree_after
+              ρ₀ ρ_inner hwfb hwfv hwf_def hwf_congr hwf_var
+              h_body_term h_accum_nil h_agree_after
               h_combined_body h_unique_combined_body h_hf_body
               h_wf_r h_store_no_gens_after_r h_body_no_gen_suffix h_body_no_gen_suffix_mod
               h_body_no_gen_suffix_get
@@ -11353,10 +11247,8 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
             stmtsToBlocks_simulation_to_cont extendEval k rest exitConts [] gen gen_r kNext bsNext
               h_rest_eq h_nofd_rest h_unique_rest ρ_blk.store σ_cfg_body
               ρ_blk.hasFailure false ρ_blk ρ' label bk_target h_label
-              hwfb₁ hwfv₁ hwf_def₁ hwf_congr₁ hwf_var₁ h_lawful_fvar
-              h_tt_getVars h_mkFvar_getVars_subset h_ident_inj
-              h_intOrder_eq_getVars h_intOrder_lt_getVars h_intOrder_zero_getVars
-              h_not_getVars h_rest_exit h_accum_nil_r h_agree_block_body
+              hwfb₁ hwfv₁ hwf_def₁ hwf_congr₁ hwf_var₁
+              h_rest_exit h_accum_nil_r h_agree_block_body
               h_combined_rest h_unique_combined_rest h_hf_r
               h_wf_gen h_store_no_gens_body h_rest_no_gen_suffix h_rest_no_gen_suffix_mod
               h_rest_no_gen_suffix_get
@@ -11392,10 +11284,8 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
               ((some label', kNext) :: exitConts) [] gen_r gen_b bl bbs h_body_eq
               h_nofd_body h_unique_body
               ρ₀.store σ_cfg_after ρ₀.hasFailure false
-              ρ₀ ρ_inner label' kNext h_label_lookup hwfb hwfv hwf_def hwf_congr hwf_var h_lawful_fvar
-              h_tt_getVars h_mkFvar_getVars_subset h_ident_inj
-              h_intOrder_eq_getVars h_intOrder_lt_getVars h_intOrder_zero_getVars
-              h_not_getVars h_body_match h_accum_nil h_agree_after
+              ρ₀ ρ_inner label' kNext h_label_lookup hwfb hwfv hwf_def hwf_congr hwf_var
+              h_body_match h_accum_nil h_agree_after
               h_combined_body h_unique_combined_body h_hf_body
               h_wf_r h_store_no_gens_after_r h_body_no_gen_suffix h_body_no_gen_suffix_mod
               h_body_no_gen_suffix_get
@@ -11485,10 +11375,8 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
             stmtsToBlocks_simulation_to_cont extendEval k rest exitConts [] gen gen_r kNext bsNext
               h_rest_eq h_nofd_rest h_unique_rest ρ_blk.store σ_cfg_body
               ρ_blk.hasFailure false ρ_blk ρ' label bk_target h_label
-              hwfb₁ hwfv₁ hwf_def₁ hwf_congr₁ hwf_var₁ h_lawful_fvar
-              h_tt_getVars h_mkFvar_getVars_subset h_ident_inj
-              h_intOrder_eq_getVars h_intOrder_lt_getVars h_intOrder_zero_getVars
-              h_not_getVars h_rest_exit h_accum_nil_r h_agree_block_body
+              hwfb₁ hwfv₁ hwf_def₁ hwf_congr₁ hwf_var₁
+              h_rest_exit h_accum_nil_r h_agree_block_body
               h_combined_rest h_unique_combined_rest h_hf_r
               h_wf_gen h_store_no_gens_body h_rest_no_gen_suffix h_rest_no_gen_suffix_mod
               h_rest_no_gen_suffix_get
@@ -11865,10 +11753,8 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
           stmtsToBlocks_simulation_to_cont extendEval kNext thenBranch exitConts []
             gen_ite gen_t tl tbs h_then_eq h_nofd_then h_unique_then
             ρ₀.store σ_cfg_after ρ₀.hasFailure false
-            ρ₀ ρ' label bk_target h_label hwfb hwfv hwf_def hwf_congr hwf_var h_lawful_fvar
-            h_tt_getVars h_mkFvar_getVars_subset h_ident_inj
-            h_intOrder_eq_getVars h_intOrder_lt_getVars h_intOrder_zero_getVars
-            h_not_getVars h_then_exit h_accum_nil_t h_agree_after
+            ρ₀ ρ' label bk_target h_label hwfb hwfv hwf_def hwf_congr hwf_var
+            h_then_exit h_accum_nil_t h_agree_after
             h_combined_then h_unique_combined_then h_hf_t
             h_wf_ite h_store_no_gens_after_ite h_then_no_gen_suffix h_then_no_gen_suffix_mod
             h_then_no_gen_suffix_get
@@ -11906,10 +11792,8 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
           stmtsToBlocks_simulation_to_cont extendEval kNext elseBranch exitConts []
             gen_t gen_e fl fbs h_else_eq h_nofd_else h_unique_else
             ρ₀.store σ_cfg_after ρ₀.hasFailure false
-            ρ₀ ρ' label bk_target h_label hwfb hwfv hwf_def hwf_congr hwf_var h_lawful_fvar
-            h_tt_getVars h_mkFvar_getVars_subset h_ident_inj
-            h_intOrder_eq_getVars h_intOrder_lt_getVars h_intOrder_zero_getVars
-            h_not_getVars h_else_exit h_accum_nil_f h_agree_after
+            ρ₀ ρ' label bk_target h_label hwfb hwfv hwf_def hwf_congr hwf_var
+            h_else_exit h_accum_nil_f h_agree_after
             h_combined_else h_unique_combined_else h_hf_f
             h_wf_t h_store_no_gens_after_t h_else_no_gen_suffix h_else_no_gen_suffix_mod
             h_else_no_gen_suffix_get
@@ -11974,10 +11858,8 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
           stmtsToBlocks_simulation extendEval kNext thenBranch exitConts []
             gen_ite gen_t tl tbs h_then_eq h_nofd_then h_unique_then
             ρ₀.store σ_cfg_after ρ₀.hasFailure false
-            ρ₀ ρ_mid hwfb hwfv hwf_def hwf_congr hwf_var h_lawful_fvar
-            h_tt_getVars h_mkFvar_getVars_subset h_ident_inj
-            h_intOrder_eq_getVars h_intOrder_lt_getVars h_intOrder_zero_getVars
-            h_not_getVars h_then_term h_accum_nil_t h_agree_after
+            ρ₀ ρ_mid hwfb hwfv hwf_def hwf_congr hwf_var
+            h_then_term h_accum_nil_t h_agree_after
             h_combined_then h_unique_combined_then h_hf_t
             h_wf_ite h_store_no_gens_after_ite h_then_no_gen_suffix h_then_no_gen_suffix_mod
             h_then_no_gen_suffix_get
@@ -12033,10 +11915,8 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
           stmtsToBlocks_simulation_to_cont extendEval k rest exitConts [] gen gen_r kNext bsNext
             h_rest_eq h_nofd_rest h_unique_rest ρ_mid.store σ_branch ρ_mid.hasFailure false
             ρ_mid ρ' label bk_target h_label
-            hwfb₁ hwfv₁ hwf_def₁ hwf_congr₁ hwf_var₁ h_lawful_fvar
-            h_tt_getVars h_mkFvar_getVars_subset h_ident_inj
-            h_intOrder_eq_getVars h_intOrder_lt_getVars h_intOrder_zero_getVars
-            h_not_getVars h_rest_exit h_accum_nil_r h_agree_then
+            hwfb₁ hwfv₁ hwf_def₁ hwf_congr₁ hwf_var₁
+            h_rest_exit h_accum_nil_r h_agree_then
             h_combined_rest h_unique_combined_rest h_hf_r
             h_wf_gen h_store_no_gens_branch_t h_rest_no_gen_suffix h_rest_no_gen_suffix_mod
             h_rest_no_gen_suffix_get
@@ -12081,10 +11961,8 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
           stmtsToBlocks_simulation extendEval kNext elseBranch exitConts []
             gen_t gen_e fl fbs h_else_eq h_nofd_else h_unique_else
             ρ₀.store σ_cfg_after ρ₀.hasFailure false
-            ρ₀ ρ_mid hwfb hwfv hwf_def hwf_congr hwf_var h_lawful_fvar
-            h_tt_getVars h_mkFvar_getVars_subset h_ident_inj
-            h_intOrder_eq_getVars h_intOrder_lt_getVars h_intOrder_zero_getVars
-            h_not_getVars h_else_term h_accum_nil_f h_agree_after
+            ρ₀ ρ_mid hwfb hwfv hwf_def hwf_congr hwf_var
+            h_else_term h_accum_nil_f h_agree_after
             h_combined_else h_unique_combined_else h_hf_f
             h_wf_t h_store_no_gens_after_t h_else_no_gen_suffix h_else_no_gen_suffix_mod
             h_else_no_gen_suffix_get
@@ -12139,10 +12017,8 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
           stmtsToBlocks_simulation_to_cont extendEval k rest exitConts [] gen gen_r kNext bsNext
             h_rest_eq h_nofd_rest h_unique_rest ρ_mid.store σ_branch ρ_mid.hasFailure false
             ρ_mid ρ' label bk_target h_label
-            hwfb₁ hwfv₁ hwf_def₁ hwf_congr₁ hwf_var₁ h_lawful_fvar
-            h_tt_getVars h_mkFvar_getVars_subset h_ident_inj
-            h_intOrder_eq_getVars h_intOrder_lt_getVars h_intOrder_zero_getVars
-            h_not_getVars h_rest_exit h_accum_nil_r h_agree_else
+            hwfb₁ hwfv₁ hwf_def₁ hwf_congr₁ hwf_var₁
+            h_rest_exit h_accum_nil_r h_agree_else
             h_combined_rest h_unique_combined_rest h_hf_r
             h_wf_gen h_store_no_gens_branch_e h_rest_no_gen_suffix h_rest_no_gen_suffix_mod
             h_rest_no_gen_suffix_get
@@ -12310,6 +12186,8 @@ private theorem end_block_terminal {P : PureExpr} [HasFvar P] [HasBool P] [HasNo
 theorem stmtsToCFG_terminal {P : PureExpr} [HasFvar P] [HasNot P]
     [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P]
     [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [LawfulHasFvar P] [LawfulHasBool P] [LawfulHasIdent P]
+    [LawfulHasIntOrder P] [LawfulHasNot P]
     (extendEval : ExtendEval P)
     (ss : List (Stmt P (Cmd P)))
     (ρ₀ ρ' : Env P)
@@ -12318,21 +12196,6 @@ theorem stmtsToCFG_terminal {P : PureExpr} [HasFvar P] [HasNot P]
     (hwf_def : WellFormedSemanticEvalDef ρ₀.eval)
     (hwf_congr : WellFormedSemanticEvalExprCongr ρ₀.eval)
     (hwf_var : WellFormedSemanticEvalVar ρ₀.eval)
-    (h_lawful_fvar : ∀ x : P.Ident,
-        HasFvar.getFvar (HasFvar.mkFvar (P := P) x) = some x)
-    (h_tt_getVars : HasVarsPure.getVars (P := P) (HasBool.tt : P.Expr) = [])
-    (h_mkFvar_getVars_subset : ∀ x : P.Ident,
-        HasVarsPure.getVars (HasFvar.mkFvar (P := P) x) ⊆ [x])
-    (h_ident_inj : Function.Injective (HasIdent.ident (P := P)))
-    (h_intOrder_eq_getVars : ∀ a b : P.Expr,
-        HasVarsPure.getVars (P := P) (HasIntOrder.eq a b)
-          ⊆ HasVarsPure.getVars (P := P) a ++ HasVarsPure.getVars (P := P) b)
-    (h_intOrder_lt_getVars : ∀ a b : P.Expr,
-        HasVarsPure.getVars (P := P) (HasIntOrder.lt a b)
-          ⊆ HasVarsPure.getVars (P := P) a ++ HasVarsPure.getVars (P := P) b)
-    (h_intOrder_zero_getVars : HasVarsPure.getVars (P := P) (HasIntOrder.zero : P.Expr) = [])
-    (h_not_getVars : ∀ a : P.Expr,
-        HasVarsPure.getVars (P := P) (HasNot.not a) ⊆ HasVarsPure.getVars (P := P) a)
     (hf₀ : ρ₀.hasFailure = false)
     (h_nofd : Block.noFuncDecl ss = true)
     (h_unique : Block.uniqueInits ss)
@@ -12397,10 +12260,8 @@ theorem stmtsToCFG_terminal {P : PureExpr} [HasFvar P] [HasNot P]
         ρ₀.store (HasIdent.ident (P := P) x) = none := fun x _ _ => h_store_clean _
   have ⟨σ_cfg, h_sim, h_agree, _h_preserve⟩ :=
     stmtsToBlocks_simulation extendEval lend ss [] [] gen gen' entry blocks
-      h_gen h_nofd h_unique ρ₀.store ρ₀.store false false ρ₀ ρ' hwfb hwfv hwf_def hwf_congr hwf_var h_lawful_fvar
-      h_tt_getVars h_mkFvar_getVars_subset h_ident_inj
-      h_intOrder_eq_getVars h_intOrder_lt_getVars h_intOrder_zero_getVars
-      h_not_getVars h_term h_accum (StoreAgreement.refl _) h_fresh_combined h_unique_combined h_hf
+      h_gen h_nofd h_unique ρ₀.store ρ₀.store false false ρ₀ ρ' hwfb hwfv hwf_def hwf_congr hwf_var
+      h_term h_accum (StoreAgreement.refl _) h_fresh_combined h_unique_combined h_hf
       h_wf_gen h_store_no_gens h_combined_no_gen_suffix h_combined_no_gen_suffix_mod
       h_combined_no_gen_suffix_get
       gen' (fun _ h => h) h_store_no_gens_upper
@@ -12439,6 +12300,8 @@ theorem stmtsToCFG_exiting {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
 theorem structuredToUnstructured_sound {P : PureExpr} [HasFvar P] [HasNot P]
     [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P]
     [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [LawfulHasFvar P] [LawfulHasBool P] [LawfulHasIdent P]
+    [LawfulHasIntOrder P] [LawfulHasNot P]
     (extendEval : ExtendEval P)
     (ss : List (Stmt P (Cmd P)))
     (ρ₀ ρ' : Env P)
@@ -12447,21 +12310,6 @@ theorem structuredToUnstructured_sound {P : PureExpr} [HasFvar P] [HasNot P]
     (hwf_def : WellFormedSemanticEvalDef ρ₀.eval)
     (hwf_congr : WellFormedSemanticEvalExprCongr ρ₀.eval)
     (hwf_var : WellFormedSemanticEvalVar ρ₀.eval)
-    (h_lawful_fvar : ∀ x : P.Ident,
-        HasFvar.getFvar (HasFvar.mkFvar (P := P) x) = some x)
-    (h_tt_getVars : HasVarsPure.getVars (P := P) (HasBool.tt : P.Expr) = [])
-    (h_mkFvar_getVars_subset : ∀ x : P.Ident,
-        HasVarsPure.getVars (HasFvar.mkFvar (P := P) x) ⊆ [x])
-    (h_ident_inj : Function.Injective (HasIdent.ident (P := P)))
-    (h_intOrder_eq_getVars : ∀ a b : P.Expr,
-        HasVarsPure.getVars (P := P) (HasIntOrder.eq a b)
-          ⊆ HasVarsPure.getVars (P := P) a ++ HasVarsPure.getVars (P := P) b)
-    (h_intOrder_lt_getVars : ∀ a b : P.Expr,
-        HasVarsPure.getVars (P := P) (HasIntOrder.lt a b)
-          ⊆ HasVarsPure.getVars (P := P) a ++ HasVarsPure.getVars (P := P) b)
-    (h_intOrder_zero_getVars : HasVarsPure.getVars (P := P) (HasIntOrder.zero : P.Expr) = [])
-    (h_not_getVars : ∀ a : P.Expr,
-        HasVarsPure.getVars (P := P) (HasNot.not a) ⊆ HasVarsPure.getVars (P := P) a)
     (hf₀ : ρ₀.hasFailure = false)
     (h_nofd : Block.noFuncDecl ss = true)
     (h_unique : Block.uniqueInits ss)
@@ -12481,10 +12329,8 @@ theorem structuredToUnstructured_sound {P : PureExpr} [HasFvar P] [HasNot P]
       (.cont cfg.entry ρ₀.store false)
       (.terminal σ_cfg ρ'.hasFailure)
       ∧ StoreAgreement ρ'.store σ_cfg :=
-  stmtsToCFG_terminal extendEval ss ρ₀ ρ' hwfb hwfv hwf_def hwf_congr hwf_var h_lawful_fvar
-    h_tt_getVars h_mkFvar_getVars_subset h_ident_inj
-    h_intOrder_eq_getVars h_intOrder_lt_getVars h_intOrder_zero_getVars
-    h_not_getVars hf₀
+  stmtsToCFG_terminal extendEval ss ρ₀ ρ' hwfb hwfv hwf_def hwf_congr hwf_var
+    hf₀
     h_nofd h_unique h_fresh_inits h_disj h_store_clean h_input_no_gen_suffix
     h_input_no_gen_suffix_mod h_input_no_gen_suffix_get h_term
 
