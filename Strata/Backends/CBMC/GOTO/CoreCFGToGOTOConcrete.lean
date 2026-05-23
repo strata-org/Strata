@@ -1168,11 +1168,10 @@ witnesses that R8a left as parameters:
 
 Both are derivable from `h_run` via `coreCFGToGotoTransform_decompose`.
 `_v7` performs that derivation internally: callers no longer have to
-guess `st_final`. To keep `h_labelMap_agree` caller-suppliable
-without forcing the caller to know `st_final` ahead of time, the
-parameter is quantified over an arbitrary `st_final'` paired with its
-run-equation. We instantiate after the `obtain` and forward the rest
-to `_v6`. -/
+guess `st_final` or supply it. The parameters are gone from the
+hypothesis surface entirely. (R10a — landed alongside R10b — already
+internalised `h_labelMap_agree` inside `_v6`, so `_v7` doesn't need
+to thread it through either.) -/
 
 theorem coreCFGToGotoTransform_forward_simulation_concrete_v7
     -- Source-side semantics
@@ -1200,6 +1199,10 @@ theorem coreCFGToGotoTransform_forward_simulation_concrete_v7
     (h_init_empty_decl_assign : ∀ {pc : Nat} {instr : Instruction},
       trans₀.instructions[pc]? = some instr →
       instr.type ≠ .DECL ∧ instr.type ≠ .ASSIGN)
+    -- R10a: trans₀ carries no LOCATION at any PC.
+    (h_init_no_location :
+      ∀ {pc : Nat} {instr : Instruction},
+        trans₀.instructions[pc]? = some instr → instr.type ≠ .LOCATION)
     (h_distinct : BlockLabelsDistinct cfg.blocks)
     (h_admitted_blocks :
       ∀ (l : String) blk, (l, blk) ∈ cfg.blocks →
@@ -1229,21 +1232,6 @@ theorem coreCFGToGotoTransform_forward_simulation_concrete_v7
     (h_inj :
       Function.Injective
         (Imperative.ToGoto.identToString (P := Core.Expression)))
-    -- R8a's labelMap-agreement bridge in universally-quantified shape:
-    -- the caller need not witness the post-blocks-fold state because
-    -- the agreement is required only for the actual fold result.
-    (h_labelMap_agree :
-      ∀ (st_final' : Strata.CoreCFGTransLoopState),
-        cfg.blocks.foldlM (Strata.coreCFGToGotoBlockStep functionName)
-          (coreCFGToGotoInitState trans₀)
-        = Except.ok st_final' →
-      ∀ (wf : WellFormedTranslation cfg
-        { name := "", parameterIdentifiers := #[],
-          instructions := ans.instructions }
-        δ δ_goto δ_goto_bool),
-      ∀ l blk target, (l, blk) ∈ cfg.blocks →
-        st_final'.labelMap[l]? = some target →
-        wf.labelMap l = some target)
     -- R8b's strict ASSIGN-Nondet PC-inversion remains (caller-side).
     (h_assn_nondet_pc_inv :
       ∀ (wf : WellFormedTranslation cfg
@@ -1363,16 +1351,18 @@ theorem coreCFGToGotoTransform_forward_simulation_concrete_v7
   obtain ⟨st_final, _resolved, _trans_post,
           h_blocks_run, _h_patches_run, _h_ans_eq⟩ :=
     coreCFGToGotoTransform_decompose Env functionName cfg trans₀ ans h_run
-  -- Delegate to v6 with the obtained witnesses.
+  -- Delegate to v6 with the obtained witnesses. R10a internally
+  -- discharges `h_labelMap_agree` so we don't pass it through.
   exact coreCFGToGotoTransform_forward_simulation_concrete_v6
     δ δ_goto δ_goto_bool h_wf_bool π φ
     cfg Env functionName trans₀ ans h_run
     h_init_size h_init_loc h_init_no_dead h_init_no_goto_target
-    h_init_empty_decl_assign h_distinct h_admitted_blocks
+    h_init_empty_decl_assign h_init_no_location
+    h_distinct h_admitted_blocks
     h_loopContracts_empty_post h_entry_first
     h_red h_op h_uniform h_commutes_not
     callResult eval fenv h_eval_bool_corr h_inj
-    st_final h_blocks_run (h_labelMap_agree st_final h_blocks_run)
+    st_final h_blocks_run
     h_assn_nondet_pc_inv
     h_decl_x_pinned h_assn_x_pinned h_assn_rhs_pinned
     h_decl_empty_value h_assign_value_corr h_assign_nondet_value_corr
