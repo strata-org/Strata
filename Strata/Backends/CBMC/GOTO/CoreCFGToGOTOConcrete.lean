@@ -16,6 +16,7 @@ public import Strata.Backends.CBMC.GOTO.InstructionLookups
 public import Strata.Backends.CBMC.GOTO.GotoTargetProvenance
 public import Strata.Backends.CBMC.GOTO.CmdProvenance
 public import Strata.Backends.CBMC.GOTO.PcInversion
+public import Strata.Backends.CBMC.GOTO.WfLabelMapAgree
 
 public section
 
@@ -881,17 +882,18 @@ inductive base case requires it.
 
 ## Remaining hypotheses on `_v6`
 
-After v6, the only "structural" hypotheses left are:
+After v6 (post-R10a), the only "structural" hypotheses left are:
 
 * **Translator-input invariants**: `h_init_size`, `h_init_loc`,
   `h_init_no_dead`, `h_init_no_goto_target`,
-  `h_init_empty_decl_assign`, `h_distinct`, `h_admitted_blocks`,
-  `h_loopContracts_empty_post`, `h_entry_first`. All *trivial* for
-  any standard `trans₀` with `instructions := #[]`.
-* **R8a's structural witnesses**: `st_final`, `h_blocks_run`,
-  `h_labelMap_agree`. Mechanically discharable from
-  `coreCFGToGotoTransform_decompose` plus a uniqueness-of-WF-labelMap
-  lemma.
+  `h_init_empty_decl_assign`, `h_init_no_location`, `h_distinct`,
+  `h_admitted_blocks`, `h_loopContracts_empty_post`, `h_entry_first`.
+  All *trivial* for any standard `trans₀` with `instructions := #[]`.
+* **R10a's structural witnesses**: `st_final`, `h_blocks_run`. Both
+  mechanically discharable from `coreCFGToGotoTransform_decompose`
+  (R10b's territory). The previously-required `h_labelMap_agree`
+  closure is now internalised via
+  `WfLabelMapAgree.labelMap_agree_of_translator` — R10a Tier 1.
 * **R8b's strict ASSIGN-Nondet PC-inversion**: `h_assn_nondet_pc_inv`.
   Bridge-level [bridge-required].
 * **R7c's pinning hypotheses**: `h_decl_x_pinned`, `h_assn_x_pinned`,
@@ -934,6 +936,13 @@ theorem coreCFGToGotoTransform_forward_simulation_concrete_v6
     (h_init_empty_decl_assign : ∀ {pc : Nat} {instr : Instruction},
       trans₀.instructions[pc]? = some instr →
       instr.type ≠ .DECL ∧ instr.type ≠ .ASSIGN)
+    -- New in v6 (R10a): trans₀ carries no LOCATION at any PC. Trivial
+    -- for the standard `trans₀` with `instructions := #[]`. Used by
+    -- `WfLabelMapAgree.labelMap_agree_of_translator` to internally
+    -- discharge the labelMap-agreement hypothesis.
+    (h_init_no_location :
+      ∀ {pc : Nat} {instr : Instruction},
+        trans₀.instructions[pc]? = some instr → instr.type ≠ .LOCATION)
     (h_distinct : BlockLabelsDistinct cfg.blocks)
     (h_admitted_blocks :
       ∀ (l : String) blk, (l, blk) ∈ cfg.blocks →
@@ -969,15 +978,6 @@ theorem coreCFGToGotoTransform_forward_simulation_concrete_v6
       cfg.blocks.foldlM (Strata.coreCFGToGotoBlockStep functionName)
         (coreCFGToGotoInitState trans₀)
       = Except.ok st_final)
-    -- R8a's labelMap-agreement bridge.
-    (h_labelMap_agree :
-      ∀ (wf : WellFormedTranslation cfg
-        { name := "", parameterIdentifiers := #[],
-          instructions := ans.instructions }
-        δ δ_goto δ_goto_bool),
-      ∀ l blk target, (l, blk) ∈ cfg.blocks →
-        st_final.labelMap[l]? = some target →
-        wf.labelMap l = some target)
     -- R8b's strict ASSIGN-Nondet PC-inversion remains (provably false in general).
     (h_assn_nondet_pc_inv :
       ∀ (wf : WellFormedTranslation cfg
@@ -1099,6 +1099,20 @@ theorem coreCFGToGotoTransform_forward_simulation_concrete_v6
       Imperative.ToGoto.toGotoExpr (P := Core.Expression) e
         = Except.ok (h_expr.tx e) :=
     ConcreteExprCorr.h_tx_eq_holds h_uniform
+  -- Discharge h_labelMap_agree via R10a.
+  have h_labelMap_agree :
+      ∀ (wf : WellFormedTranslation cfg
+        { name := "", parameterIdentifiers := #[],
+          instructions := ans.instructions }
+        δ δ_goto δ_goto_bool),
+      ∀ l blk target, (l, blk) ∈ cfg.blocks →
+        st_final.labelMap[l]? = some target →
+        wf.labelMap l = some target := by
+    intro wf
+    exact WfLabelMapAgree.labelMap_agree_of_translator
+      Env functionName cfg trans₀ h_init_size h_init_no_location
+      h_distinct h_admitted_blocks h_loopContracts_empty_post
+      ans h_run st_final h_blocks_run δ δ_goto δ_goto_bool wf
   -- Discharge h_decl_pc_inv via R9.
   have h_decl_pc_inv :
       ∀ (wf : WellFormedTranslation cfg
