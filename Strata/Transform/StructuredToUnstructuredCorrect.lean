@@ -51,54 +51,6 @@ namespace StructuredToUnstructuredCorrect
 
 open Imperative Specification
 
-/-! ## Lang instances -/
-
-/-- The structured `Lang` for `Cmd P`. -/
-abbrev Lang.structured {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVal P]
-    [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr]
-    (extendEval : ExtendEval P) : Lang P :=
-  Lang.imperative P (Cmd P) (EvalCmd P) extendEval (isAtAssert P)
-
-/-- Configuration for the CFG `Lang`: wraps `CFGConfig` with the eval function
-    so that `getEnv` can reconstruct a full `Env P`. -/
-structure CFGLangConfig (P : PureExpr) where
-  cfgConfig : CFGConfig String P
-  eval : SemanticEval P
-
-/-- Extract an `Env P` from a `CFGLangConfig`. -/
-def CFGLangConfig.toEnv {P : PureExpr} (c : CFGLangConfig P) : Env P :=
-  match c.cfgConfig with
-  | .cont _ σ f => ⟨σ, c.eval, f⟩
-  | .terminal σ f => ⟨σ, c.eval, f⟩
-
-/-- Assert detection in a CFG configuration: an assert is active if the
-    current block's command list head is an assert matching the given id. -/
-def cfgIsAtAssert {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
-    (cfg : CFG String (DetBlock String (Cmd P) P))
-    : CFGLangConfig P → AssertId P → Prop
-  | ⟨.cont lbl _ _, _⟩, aid =>
-    match cfg.blocks.lookup lbl with
-    | some blk => match blk.cmds with
-      | .assert label expr _ :: _ => aid.label = label ∧ aid.expr = expr
-      | _ => False
-    | none => False
-  | ⟨.terminal _ _, _⟩, _ => False
-
-/-- The CFG `Lang` for `Cmd P`. -/
-abbrev Lang.cfg {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVal P]
-    [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr]
-    (extendEval : ExtendEval P)
-    (cfg : CFG String (DetBlock String (Cmd P) P)) : Lang P where
-  StmtT := CFG String (DetBlock String (Cmd P) P)
-  CfgT := CFGLangConfig P
-  star := fun c₁ c₂ =>
-    @StepCFGStar _ _ (Cmd P) _ P (EvalDetBlock P (EvalCmd P) extendEval) cfg c₁.cfgConfig c₂.cfgConfig
-  stmtCfg := fun _ ρ => ⟨.cont cfg.entry ρ.store false, ρ.eval⟩
-  terminalCfg := fun ρ => ⟨.terminal ρ.store ρ.hasFailure, ρ.eval⟩
-  exitingCfg := fun _ ρ => ⟨.terminal ρ.store ρ.hasFailure, ρ.eval⟩
-  isAtAssert := cfgIsAtAssert cfg
-  getEnv := CFGLangConfig.toEnv
-
 /-! ## Abbreviations -/
 @[simp]
 abbrev StepDetCFGStar {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
@@ -303,53 +255,6 @@ private theorem store_agreement_pointwise_on_expr_vars
     exact h_def x hx
   exact h_agree x h_def_x
 
-/-- Unfolding lemmas for Cmd.getVars on each constructor.  Used because
-the underlying `Cmd.getVars` is not exposed. -/
-private theorem Cmd.getVars_init {P : PureExpr} [HasVarsPure P P.Expr]
-    (x : P.Ident) (ty : P.Ty) (e : P.Expr) (md : MetaData P) :
-    (HasVarsPure.getVars (Cmd.init x ty (ExprOrNondet.det e) md) : List P.Ident)
-      = (HasVarsPure.getVars e : List P.Ident) := by
-  with_unfolding_all rfl
-
-private theorem Cmd.getVars_init_nondet {P : PureExpr} [HasVarsPure P P.Expr]
-    (x : P.Ident) (ty : P.Ty) (md : MetaData P) :
-    (HasVarsPure.getVars (Cmd.init x ty ExprOrNondet.nondet md) : List P.Ident)
-      = ([] : List P.Ident) := by
-  with_unfolding_all rfl
-
-private theorem Cmd.getVars_set {P : PureExpr} [HasVarsPure P P.Expr]
-    (x : P.Ident) (e : P.Expr) (md : MetaData P) :
-    (HasVarsPure.getVars (Cmd.set x (ExprOrNondet.det e) md) : List P.Ident)
-      = (HasVarsPure.getVars e : List P.Ident) := by
-  with_unfolding_all rfl
-
-private theorem Cmd.getVars_assert {P : PureExpr} [HasVarsPure P P.Expr]
-    (l : String) (e : P.Expr) (md : MetaData P) :
-    (HasVarsPure.getVars (Cmd.assert l e md) : List P.Ident)
-      = (HasVarsPure.getVars e : List P.Ident) := by
-  with_unfolding_all rfl
-
-private theorem Cmd.getVars_assume {P : PureExpr} [HasVarsPure P P.Expr]
-    (l : String) (e : P.Expr) (md : MetaData P) :
-    (HasVarsPure.getVars (Cmd.assume l e md) : List P.Ident)
-      = (HasVarsPure.getVars e : List P.Ident) := by
-  with_unfolding_all rfl
-
-private theorem Cmd.getVars_cover {P : PureExpr} [HasVarsPure P P.Expr]
-    (l : String) (e : P.Expr) (md : MetaData P) :
-    (HasVarsPure.getVars (Cmd.cover l e md) : List P.Ident)
-      = (HasVarsPure.getVars e : List P.Ident) := by
-  with_unfolding_all rfl
-
-private theorem Cmds.getVars_cons {P : PureExpr} [HasVarsPure P P.Expr]
-    (c : Cmd P) (cs : List (Cmd P)) :
-    (HasVarsPure.getVars (c :: cs) : List P.Ident)
-      = (HasVarsPure.getVars c : List P.Ident) ++
-        (HasVarsPure.getVars cs : List P.Ident) := by
-  show Cmds.getVars (c :: cs) = _
-  unfold Cmds.getVars
-  rfl
-
 private theorem Cmds.definedVars_cons
     {P : PureExpr} (c : Cmd P) (cs : List (Cmd P)) :
     Cmds.definedVars (c :: cs) = Cmd.definedVars c ++ Cmds.definedVars cs := by
@@ -388,9 +293,6 @@ private theorem transformBlockModVars_cons {P : PureExpr}
     transformBlockModVars (s :: rest) =
     transformStmtModVars s ++ transformBlockModVars rest := rfl
 
-private theorem transformBlockModVars_nil {P : PureExpr} :
-    transformBlockModVars ([] : List (Stmt P (Cmd P))) = [] := rfl
-
 private theorem transformStmtModVars_cmd {P : PureExpr} (c : Cmd P) :
     transformStmtModVars (P := P) (Stmt.cmd c) = Cmd.modifiedVars c := rfl
 
@@ -404,23 +306,9 @@ private theorem transformStmtModVars_ite {P : PureExpr}
     transformStmtModVars (P := P) (Stmt.ite c tss ess md) =
     transformBlockModVars tss ++ transformBlockModVars ess := rfl
 
-private theorem transformStmtModVars_loop {P : PureExpr}
-    (g : ExprOrNondet P) (m : Option P.Expr) (i : List (String × P.Expr))
-    (bss : List (Stmt P (Cmd P))) (md : MetaData P) :
-    transformStmtModVars (P := P) (Stmt.loop g m i bss md) =
-    transformBlockModVars bss := rfl
-
 private theorem transformStmtModVars_typeDecl {P : PureExpr}
     (tc : TypeConstructor) (md : MetaData P) :
     transformStmtModVars (P := P) (Stmt.typeDecl tc md : Stmt P (Cmd P)) = [] := rfl
-
-private theorem transformStmtModVars_exit {P : PureExpr}
-    (l : String) (md : MetaData P) :
-    transformStmtModVars (P := P) (Stmt.exit l md : Stmt P (Cmd P)) = [] := rfl
-
-private theorem transformStmtModVars_funcDecl {P : PureExpr}
-    (decl : PureFunc P) (md : MetaData P) :
-    transformStmtModVars (P := P) (Stmt.funcDecl decl md : Stmt P (Cmd P)) = [] := rfl
 
 /-- Single-command agreement-preservation. -/
 private theorem EvalCmd_under_agreement {P : PureExpr}
@@ -645,55 +533,6 @@ private theorem EvalCmd_under_agreement {P : PureExpr}
   | eval_cover hwfb =>
     exact ⟨σ_cfg₀, EvalCmd.eval_cover hwfb, h_agree⟩
 
-/-- A single `EvalCmd` step preserves the `isDefined` predicate over an
-arbitrary list of variables: commands only ever introduce or modify variables. -/
-private theorem isDefined_of_EvalCmd {P : PureExpr}
-    [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
-    {δ : SemanticEval P} {σ σ' : SemanticStore P} {c : Cmd P} {failed : Bool}
-    {vs : List P.Ident}
-    (h_eval : @EvalCmd P _ _ _ _ δ σ c σ' failed)
-    (h_def : isDefined σ vs) :
-    isDefined σ' vs := by
-  intro x hx
-  have h_def_x : (σ x).isSome = true := h_def x hx
-  cases h_eval with
-  | eval_init heval hinit hwfvar hwfcongr =>
-    rename_i ty md x_init v e
-    cases hinit with
-    | init h_xn h_xv h_other =>
-      by_cases hxx' : x = x_init
-      · subst hxx'; rw [h_xv]; rfl
-      · have h_eq : σ' x = σ x := h_other x (fun h => hxx' h.symm)
-        rw [h_eq]; exact h_def_x
-  | eval_init_unconstrained hinit hwfvar =>
-    rename_i ty md x_init v
-    cases hinit with
-    | init h_xn h_xv h_other =>
-      by_cases hxx' : x = x_init
-      · subst hxx'; rw [h_xv]; rfl
-      · have h_eq : σ' x = σ x := h_other x (fun h => hxx' h.symm)
-        rw [h_eq]; exact h_def_x
-  | eval_set heval hupdate hwfvar hwfcongr =>
-    rename_i md x_set v e
-    cases hupdate with
-    | update h_xv' h_xv h_other =>
-      by_cases hxx' : x = x_set
-      · subst hxx'; rw [h_xv]; rfl
-      · have h_eq : σ' x = σ x := h_other x (fun h => hxx' h.symm)
-        rw [h_eq]; exact h_def_x
-  | eval_set_nondet hupdate hwfvar =>
-    rename_i md x_set v
-    cases hupdate with
-    | update h_xv' h_xv h_other =>
-      by_cases hxx' : x = x_set
-      · subst hxx'; rw [h_xv]; rfl
-      · have h_eq : σ' x = σ x := h_other x (fun h => hxx' h.symm)
-        rw [h_eq]; exact h_def_x
-  | eval_assert_pass _ _ _ => exact h_def_x
-  | eval_assert_fail _ _ _ => exact h_def_x
-  | eval_assume _ _ _ => exact h_def_x
-  | eval_cover _ => exact h_def_x
-
 /-- A helper: if `EvalCmd c σ σ' f` succeeds and `x` is not in `c`'s definedVars
 (so `c` does not init x), and `σ x = none`, then `σ' x = none`.  This holds because
 `c` either doesn't touch x, or modifies x via `set` (which requires `σ x = some _`,
@@ -876,91 +715,6 @@ theorem single_cmd_eval {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVa
           cases hrest2 with
           | refl => exact ⟨_, _, heval, rfl, rfl, rfl⟩
           | step _ _ _ hstep3 _ => exact absurd hstep3 (by intro h; cases h)
-
-/-! ## Helper: flushCmds simulation
-
-If we have accumulated commands `accum` (stored in reverse) that form the
-content of a single block, executing that block via `EvalCmds` produces
-the same store transitions as executing each command sequentially in the
-structured semantics. -/
-
-private theorem evalCmds_of_stmtStar_cmds_gen {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
-    (extendEval : ExtendEval P)
-    (cmds : List (Cmd P)) (δ : SemanticEval P) (σ σ' : SemanticStore P)
-    (failed : Bool) (hf : Bool)
-    (h : EvalCmds P (@EvalCmd P _ _ _ _) δ σ cmds σ' failed) :
-    StepStmtStar P (@EvalCmd P _ _ _ _) extendEval
-      (.stmts (cmds.map Stmt.cmd) ⟨σ, δ, hf⟩)
-      (.terminal ⟨σ', δ, hf || failed⟩) := by
-  induction h generalizing hf with
-  | eval_cmds_none =>
-    simp [List.map, Bool.or_false]
-    exact ReflTrans.step _ _ _ StepStmt.step_stmts_nil (ReflTrans.refl _)
-  | eval_cmds_some hcmd hcmds ih =>
-    simp only [List.map]
-    -- Three steps: stmts_cons, seq_inner (step_cmd), seq_done, then IH
-    apply ReflTrans.step _ _ _ StepStmt.step_stmts_cons
-    apply ReflTrans.step _ _ _ (StepStmt.step_seq_inner (StepStmt.step_cmd hcmd))
-    apply ReflTrans.step _ _ _ StepStmt.step_seq_done
-    rw [← Bool.or_assoc]
-    exact ih (hf || _)
-
-private theorem evalCmds_of_stmtStar_cmds {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
-    (extendEval : ExtendEval P)
-    (cmds : List (Cmd P)) (δ : SemanticEval P) (σ σ' : SemanticStore P)
-    (failed : Bool)
-    (h : EvalCmds P (@EvalCmd P _ _ _ _) δ σ cmds σ' failed) :
-    StepStmtStar P (@EvalCmd P _ _ _ _) extendEval
-      (.stmts (cmds.map Stmt.cmd) ⟨σ, δ, false⟩)
-      (.terminal ⟨σ', δ, failed⟩) := by
-  have := evalCmds_of_stmtStar_cmds_gen extendEval cmds δ σ σ' failed false h
-  simp [Bool.false_or] at this
-  exact this
-
-/-- Generalized version of `stmtStar_cmds_to_evalCmds` that separates the
-env's `hasFailure` from the `EvalCmds` failure accumulation. -/
-private theorem stmtStar_cmds_to_evalCmds {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
-    (extendEval : ExtendEval P)
-    (cmds : List (Cmd P)) (ρ₀ ρ' : Env P)
-    (h : StepStmtStar P (@EvalCmd P _ _ _ _) extendEval
-      (.stmts (cmds.map Stmt.cmd) ρ₀) (.terminal ρ')) :
-    ∃ failed, EvalCmds P (@EvalCmd P _ _ _ _) ρ₀.eval ρ₀.store cmds ρ'.store failed ∧
-      ρ'.hasFailure = (ρ₀.hasFailure || failed) := by
-  induction cmds generalizing ρ₀ with
-  | nil =>
-    simp [List.map] at h
-    have hnil : ρ' = ρ₀ := by
-      cases h with
-      | step _ _ _ hstep hrest => cases hstep with
-        | step_stmts_nil => cases hrest with
-          | refl => rfl
-          | step _ _ _ h _ => exact absurd h (by intro h; cases h)
-    subst hnil
-    exact ⟨false, EvalCmds.eval_cmds_none, by simp⟩
-  | cons c cs ih =>
-    simp [List.map] at h
-    have ⟨ρ₁, hcmd_star, hrest⟩ := stmts_append_terminates P (@EvalCmd P _ _ _ _) extendEval
-      [.cmd c] (List.map Stmt.cmd cs) ρ₀ ρ' h
-    cases hcmd_star with
-    | step _ _ _ hstep1 hrest1 => cases hstep1 with
-      | step_stmts_cons =>
-        have ⟨ρ_s, h_s_term, h_nil⟩ := seq_reaches_terminal P (@EvalCmd P _ _ _ _) extendEval hrest1
-        have hrest' : StepStmtStar P (@EvalCmd P _ _ _ _) extendEval
-            (.stmts (List.map Stmt.cmd cs) ρ_s) (.terminal ρ') := by
-          cases h_nil with
-          | step _ _ _ hstep3 hrest3 => cases hstep3 with
-            | step_stmts_nil => cases hrest3 with
-              | refl => exact hrest
-              | step _ _ _ h _ => exact absurd h (by intro h; cases h)
-        cases h_s_term with
-        | step _ _ _ hstep2 hrest2 => cases hstep2 with
-          | step_cmd heval =>
-            cases hrest2 with
-            | refl =>
-              have ⟨failed', heval_rest, hfail'⟩ := ih _ hrest'
-              refine ⟨_ || failed', EvalCmds.eval_cmds_some heval heval_rest, ?_⟩
-              rw [hfail', Bool.or_assoc]
-            | step _ _ _ h _ => exact absurd h (by intro h; cases h)
 
 /-! ## Sub-theorems for ite case -/
 
@@ -1190,17 +944,6 @@ private theorem GenInv.trans {P : PureExpr}
                 (h₁.user_shape x h_x_user₁)) h_x_gen₂.1 |>.elim
       | inr h_x_user₂ =>
         exact h_user_disj x h_x_user₁ h_x_user₂
-
-/-- Trivial GenInv: same state, no blocks, no user labels. -/
-private theorem GenInv.refl {P : PureExpr}
-    (gen : StringGenState) (hwf : StringGenState.WF gen) :
-    @GenInv P gen gen [] [] := by
-  refine ⟨StringGenState.GenStep.refl _, hwf, ?_, ?_, ?_, ?_, ?_⟩
-  · intro l hl; simp at hl
-  · intro l hl; simp at hl
-  · simp
-  · intro l hl; simp at hl
-  · simp
 
 /-- `GenInv` is closed under list permutation of the blocks (the freshness
 and Nodup properties are permutation-invariant). -/
@@ -1810,40 +1553,6 @@ private theorem Block.userLabel_of_block_head {P : PureExpr}
     have h_disj_lr := (List.nodup_append.mp h_nodup).2.2
     intro h_in
     exact h_disj_lr l (List.mem_cons.mpr (Or.inl rfl)) l h_in rfl
-
-/-! ### User labels vs generated labels
-
-A label produced by `StringGenState.gen pf σ` is always `pf ++ "_" ++ toString n`.
-User-provided block labels carry no such guarantee.  We expose the shape lemmas
-from `StringGen.lean` here in the form most directly useful for the
-`stmtsToBlocks_invariant` proof: a user label that does not have the
-`_<digits>` suffix is automatically disjoint from any future `gen` output. -/
-
-/-- A user label that lacks the `_<digits>` suffix shape is never produced by
-`gen`. This is the structural guarantee the user supplies for free by choosing
-labels that are "human-readable" rather than counter-shaped. -/
-theorem userLabel_ne_gen
-    (pf : String) (σ : StringGenState) (s : String)
-    (h : ¬ String.HasUnderscoreDigitSuffix s) :
-    s ≠ (StringGenState.gen pf σ).1 :=
-  StringGenState.gen_ne_of_not_hasUnderscoreDigitSuffix pf σ s h
-
-/-- A label inside a WF generator state has the generator suffix shape. So a
-shape-free user label is automatically not in `stringGens`. -/
-theorem userLabel_not_in_stringGens
-    {σ : StringGenState} (hwf : StringGenState.WF σ)
-    {s : String} (h : ¬ String.HasUnderscoreDigitSuffix s) :
-    s ∉ σ.stringGens :=
-  StringGenState.not_mem_stringGens_of_not_hasUnderscoreDigitSuffix hwf h
-
-/-- Generated labels from inside a WF state always have the suffix shape, so a
-shape-free string is disjoint from the generated set even when reasoning
-positionally. -/
-theorem hasUnderscoreDigitSuffix_of_mem
-    {σ : StringGenState} (hwf : StringGenState.WF σ)
-    {s : String} (h : s ∈ σ.stringGens) :
-    String.HasUnderscoreDigitSuffix s :=
-  StringGenState.hasUnderscoreDigitSuffix_of_mem_generated hwf h
 
 /-- `flushCmds` always produces a `GenStep`, regardless of WF. -/
 private theorem flushCmds_genStep {P : PureExpr} [HasBool P]
@@ -5238,15 +4947,6 @@ private theorem listClassifies_of_no_gen_suffix
     listClassifies (P := P) xs gen' :=
   fun x hx s heq => Or.inl (h x hx s heq)
 
-/-- Monotonicity for `listClassifies` over the gen state. -/
-private theorem listClassifies_mono
-    {P : PureExpr} [HasIdent P]
-    {xs : List P.Ident} {gen gen' : StringGenState}
-    (h_subset : StringGenState.stringGens gen ⊆ StringGenState.stringGens gen')
-    (h : listClassifies (P := P) xs gen) :
-    listClassifies (P := P) xs gen' :=
-  fun x hx => identClassifies_mono h_subset (h x hx)
-
 /-- Membership-projection in `Block.cfgFrameTouches` of a list-built block:
 if `x ∈ cfgFrameTouches ⟨cs, tr⟩`, then either `x ∈ cs.flatMap Cmd.touchedVars`
 or `x ∈ DetTransferCmd.touchedVars tr`. -/
@@ -7663,85 +7363,9 @@ accumulated commands, if the structured execution of `ss` from `ρ₀` terminate
 (or exits), then the CFG blocks produced by `stmtsToBlocks` can step from the
 entry label to the continuation `k` (or the resolved exit target). -/
 
-private theorem flushCmds_simulation {P : PureExpr} [HasFvar P] [HasNot P] [HasVarsPure P P.Expr]
-    [HasVal P] [HasBoolVal P]
-    (extendEval : ExtendEval P)
-    (pfx : String)
-    (k : String)
-    (accum : List (Cmd P))
-    (gen gen' : StringGenState)
-    (entry : String) (blocks : DetBlocks String (Cmd P) P)
-    (h_gen : (flushCmds pfx accum .none k gen) = ((entry, blocks), gen'))
-    (σ_base : SemanticStore P)
-    (hf_base : Bool)
-    (hf_accum : Bool)
-    (ρ₀ : Env P)
-    (hwfb : WellFormedSemanticEvalBool ρ₀.eval)
-    (hwfcongr : WellFormedSemanticEvalExprCongr ρ₀.eval)
-    (hwfv : WellFormedSemanticEvalVal ρ₀.eval)
-    (h_accum : EvalCmds P (EvalCmd P) ρ₀.eval σ_base accum.reverse ρ₀.store hf_accum)
-    (h_hf : ρ₀.hasFailure = (hf_base || hf_accum))
-    (cfg : CFG String (DetBlock String (Cmd P) P))
-    (h_cfg_blocks : ∀ b ∈ blocks, b ∈ cfg.blocks)
-    (h_cfg_nodup : (cfg.blocks.map Prod.fst).Nodup) :
-    StepDetCFGStar extendEval cfg
-      (.cont entry σ_base hf_base)
-      (.cont k ρ₀.store ρ₀.hasFailure) := by
-  unfold flushCmds at h_gen
-  simp only at h_gen  -- reduce the `match tr? with | none => ...` to just the none branch
-  split at h_gen
-  case isTrue h_empty =>
-    have ⟨h_entry, h_blocks⟩ := Prod.mk.inj (Prod.mk.inj h_gen).1
-    subst h_entry; subst h_blocks
-    have h_nil : accum.reverse = [] := by
-      simp [List.isEmpty_iff] at h_empty; simp [h_empty]
-    have ⟨h_store, h_fail⟩ := EvalCmds_inv ρ₀.eval σ_base ρ₀.store hf_accum
-      (h_nil ▸ h_accum)
-    subst h_store; subst h_fail
-    simp [Bool.or_false] at h_hf
-    rw [h_hf]
-    exact ReflTrans.refl _
-  case isFalse h_nonempty =>
-    -- accum is non-empty: flushCmds generates a fresh label `entry` and a single block
-    -- (entry, { cmds := accum.reverse, transfer := .goto k })
-    simp only [bind, StateT.bind, pure, StateT.pure, Id] at h_gen
-    injection h_gen with h_pair h_gen_eq
-    injection h_pair with h_entry_eq h_blks_eq
-    subst h_entry_eq; subst h_blks_eq
-    -- entry = (gen pfx gen).fst, blocks = [(entry, { cmds := accum.reverse, transfer := .goto k })]
-    have h_mem :
-        ((StringGenState.gen pfx gen).fst,
-          ({ cmds := accum.reverse, transfer := DetTransferCmd.goto k }
-            : DetBlock String (Cmd P) P)) ∈ cfg.blocks :=
-      h_cfg_blocks _ (List.Mem.head _)
-    -- Build EvalDetBlock via the goto bridge: .goto k = .condGoto HasBool.tt k k _.
-    have h_cond_tt : ρ₀.eval ρ₀.store HasBool.tt = .some HasBool.tt :=
-      eval_tt_is_tt ρ₀.eval ρ₀.store hwfv
-    have h_goto_eq :
-        (DetTransferCmd.goto k : DetTransferCmd String P) =
-          DetTransferCmd.condGoto HasBool.tt k k .empty := rfl
-    have h_eval_block : EvalDetBlock P (EvalCmd P) extendEval
-        σ_base ⟨accum.reverse, DetTransferCmd.goto k⟩
-        (.cont k ρ₀.store hf_accum) := by
-      rw [h_goto_eq]
-      exact EvalDetBlock.step_goto_true (δ := ρ₀.eval) h_accum h_cond_tt hwfb hwfcongr
-    have h_lkp : cfg.blocks.lookup (StringGenState.gen pfx gen).fst =
-        some { cmds := accum.reverse, transfer := DetTransferCmd.goto k } :=
-      List.lookup_of_mem_nodup cfg.blocks h_cfg_nodup _ _ h_mem
-    have h_step : @StepCFG _ _ (Cmd P) _ P
-        (EvalDetBlock P (EvalCmd P) extendEval) cfg
-        (.cont (StringGenState.gen pfx gen).fst σ_base hf_base)
-        (updateFailure (.cont k ρ₀.store hf_accum) hf_base) :=
-      StepCFG.eval_next (failed := hf_base) h_lkp h_eval_block
-    have h_uf : @updateFailure String P (.cont k ρ₀.store hf_accum) hf_base =
-        CFGConfig.cont k ρ₀.store ρ₀.hasFailure := by
-      simp [updateFailure, h_hf, Bool.or_comm]
-    rw [h_uf] at h_step
-    exact ReflTrans.step _ _ _ h_step (ReflTrans.refl _)
-
-/-- Variant of `flushCmds_simulation` that operates under StoreAgreement: the
-input accum trace runs from `σ_struct_base` (struct side) to `ρ₀.store`
-(struct side), and `StoreAgreement σ_struct_base σ_base` holds at the entry. -/
+/-- Simulation lemma operating under StoreAgreement: the input accum trace
+runs from `σ_struct_base` (struct side) to `ρ₀.store` (struct side), and
+`StoreAgreement σ_struct_base σ_base` holds at the entry. -/
 private theorem flushCmds_simulation_agree {P : PureExpr} [HasFvar P] [HasNot P]
     [HasVal P] [HasBoolVal P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
     (extendEval : ExtendEval P)
