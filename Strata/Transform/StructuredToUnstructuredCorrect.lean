@@ -8263,6 +8263,9 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
       ∧ StoreAgreement ρ'.store σ_cfg
       ∧ (∀ x, σ_base x = none →
           x ∉ Cmds.definedVars accum.reverse → x ∉ Block.initVars ss →
+          (∀ s : String, x = HasIdent.ident (P := P) s →
+              s ∈ StringGenState.stringGens gen ∨
+              s ∉ StringGenState.stringGens gen') →
           σ_cfg x = none) := by
   match h_match : ss with
   | [] =>
@@ -8285,7 +8288,7 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
         σ_struct_base σ_base hf_base hf_accum ρ₀ hwfb hwfv hwf_def hwf_congr h_accum
         h_agree_entry h_fresh_accum h_unique_accum h_hf cfg h_cfg_blocks h_cfg_nodup
     refine ⟨σ_cfg, h_step, h_agree, ?_⟩
-    intro x h_σ_x h_x_not_accum _
+    intro x h_σ_x h_x_not_accum _ _
     exact h_preserve x h_σ_x h_x_not_accum
   | .cmd c :: rest =>
     unfold stmtsToBlocks at h_gen
@@ -8404,7 +8407,7 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
         genUpperBound h_outer_upper h_store_no_gens_upper
         cfg h_cfg_blocks h_cfg_nodup
     refine ⟨σ_cfg, h_step, h_agree, ?_⟩
-    intro x h_σ_x h_x_not_accum h_x_not_inits
+    intro x h_σ_x h_x_not_accum h_x_not_inits h_outer_guard
     -- σ_base x = none ∧ x ∉ accum ∧ x ∉ Block.initVars (.cmd c :: rest)
     -- Need: σ_cfg x = none.
     -- Goal premises for h_preserve:
@@ -8429,7 +8432,7 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
       rw [Block.initVars]
       -- Stmt.initVars (.cmd _) is either [x'] or [], in either case x ∈ rhs ∪ Block.initVars rest
       cases c <;> simp [Stmt.initVars] <;> first | right; exact h | exact h
-    exact h_preserve x h_σ_x h_x_not_new_accum h_x_not_rest_inits
+    exact h_preserve x h_σ_x h_x_not_new_accum h_x_not_rest_inits h_outer_guard
   | .ite (.det e) thenBranch elseBranch md :: rest =>
     unfold stmtsToBlocks at h_gen
     simp [bind, StateT.bind, pure, StateT.pure, List.append_nil] at h_gen
@@ -8810,6 +8813,9 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
         have h_σ_after_x : σ_cfg_after x = none := h_fresh_rest_inits_after x hx
         have : x ∉ Cmds.definedVars [].reverse := by simp [Cmds.definedVars]
         exact h_preserve_then x h_σ_after_x this h_x_not_then
+          (fun s heq => Or.inr
+            (StringGenState.not_mem_stringGens_of_not_hasUnderscoreDigitSuffix h_wf_t
+              (h_rest_no_gen_suffix x (by simp [Cmds.definedVars]; exact hx) s heq)))
       -- Combined freshness for rest recursion.
       have h_combined_rest :
           ∀ x ∈ Cmds.definedVars [].reverse ++ Block.initVars rest,
@@ -8828,18 +8834,28 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
       have h_accum_nil_r : EvalCmds P (EvalCmd P) ρ₁.eval ρ₁.store
           [].reverse ρ₁.store false := EvalCmds.eval_cmds_none
       have h_hf_r : ρ₁.hasFailure = (ρ₁.hasFailure || false) := by simp
+      -- PATTERN 2 (Pathway B Phase 1.5 Commit C will close): wrap the
+      -- strengthened `h_preserve_then` to discharge the new guard premise so
+      -- the OLD-shape helper accepts it. Sorry placeholder until Commit C
+      -- adjusts `store_no_gens_lift_through_subsim`'s signature.
+      have h_preserve_then_old :
+          ∀ x : P.Ident, σ_cfg_after x = none →
+              x ∉ Cmds.definedVars ([] : List (Cmd P)).reverse →
+              x ∉ Block.initVars thenBranch →
+              σ_branch x = none := fun x hσ haccum hinit =>
+        h_preserve_then x hσ haccum hinit (by sorry)
       have h_store_no_gens_branch_t :
           ∀ x : String, String.HasUnderscoreDigitSuffix x →
             x ∉ StringGenState.stringGens gen →
             σ_branch (HasIdent.ident (P := P) x) = none :=
-        store_no_gens_lift_through_subsim h_preserve_then gen
+        store_no_gens_lift_through_subsim h_preserve_then_old gen
           h_store_no_gens_after
           (fun x hx s heq => h_then_no_gen_suffix x (List.mem_append_right _ hx) s heq)
       have h_store_no_gens_upper_branch_t :
           ∀ x : String, String.HasUnderscoreDigitSuffix x →
             x ∉ StringGenState.stringGens genUpperBound →
             σ_branch (HasIdent.ident (P := P) x) = none :=
-        store_no_gens_lift_through_subsim h_preserve_then genUpperBound
+        store_no_gens_lift_through_subsim h_preserve_then_old genUpperBound
           h_store_no_gens_upper_after
           (fun x hx s heq => h_then_no_gen_suffix x (List.mem_append_right _ hx) s heq)
       have ⟨σ_cfg, h_rest_sim, h_agree_rest, h_preserve_rest⟩ :=
@@ -8858,7 +8874,7 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
       · exact StepDetCFGStar_trans
           (StepDetCFGStar_trans h_flush_sim h_then_step) h_rest_sim
       · -- Freshness preservation for the outer call.
-        intro x h_σ_x h_x_not_accum h_x_not_inits
+        intro x h_σ_x h_x_not_accum h_x_not_inits h_outer_guard
         -- Decompose h_x_not_inits: x ∉ Block.initVars (.ite ... :: rest)
         --   = x ∉ Block.initVars tss ∧ x ∉ Block.initVars ess ∧ x ∉ Block.initVars rest
         have h_x_not_then : x ∉ Block.initVars thenBranch := by
@@ -8875,9 +8891,27 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
           rw [h_initvars_eq]; exact List.mem_append_right _ hx
         have h_σ_after_x : σ_cfg_after x = none := h_preserve_after x h_σ_x h_x_not_accum
         have h_nil_not : x ∉ Cmds.definedVars [].reverse := by simp [Cmds.definedVars]
+        -- Build inner guards from the outer guard via GenStep monotonicity.
+        -- Chain: gen → gen_r → gen_ite → gen_t → gen_e → gen_f = gen'.
+        have h_inner_guard_t : ∀ s : String, x = HasIdent.ident (P := P) s →
+            s ∈ StringGenState.stringGens gen_ite ∨
+            s ∉ StringGenState.stringGens gen_t :=
+          fun s heq => match h_outer_guard s heq with
+          | Or.inl h_in => Or.inl (h_step_gen_to_ite.subset h_in)
+          | Or.inr h_not_in => Or.inr
+              (fun h_in_t => h_not_in
+                (h_gen_eq_f ▸ h_step_e_to_f.subset (h_step_t_to_e.subset h_in_t)))
+        have h_inner_guard_r : ∀ s : String, x = HasIdent.ident (P := P) s →
+            s ∈ StringGenState.stringGens gen ∨
+            s ∉ StringGenState.stringGens gen_r :=
+          fun s heq => match h_outer_guard s heq with
+          | Or.inl h_in => Or.inl h_in
+          | Or.inr h_not_in => Or.inr (fun h_in_r => h_not_in
+              (h_gen_eq_f ▸ h_step_e_to_f.subset (h_step_t_to_e.subset
+                (h_step_ite_to_t.subset (h_step_r_to_ite.subset h_in_r)))))
         have h_σ_branch_x : σ_branch x = none :=
-          h_preserve_then x h_σ_after_x h_nil_not h_x_not_then
-        exact h_preserve_rest x h_σ_branch_x h_nil_not h_x_not_rest
+          h_preserve_then x h_σ_after_x h_nil_not h_x_not_then h_inner_guard_t
+        exact h_preserve_rest x h_σ_branch_x h_nil_not h_x_not_rest h_inner_guard_r
     | inr h_false =>
       obtain ⟨h_else_term, h_cond_ff⟩ := h_false
       -- Step from accumEntry to fl via the lifted accum + condGoto.
@@ -8927,6 +8961,9 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
         have h_σ_after_x : σ_cfg_after x = none := h_fresh_rest_inits_after x hx
         have : x ∉ Cmds.definedVars [].reverse := by simp [Cmds.definedVars]
         exact h_preserve_else x h_σ_after_x this h_x_not_else
+          (fun s heq => Or.inr
+            (StringGenState.not_mem_stringGens_of_not_hasUnderscoreDigitSuffix h_wf_e
+              (h_rest_no_gen_suffix x (by simp [Cmds.definedVars]; exact hx) s heq)))
       -- Combined freshness for rest recursion.
       have h_combined_rest :
           ∀ x ∈ Cmds.definedVars [].reverse ++ Block.initVars rest,
@@ -8945,18 +8982,25 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
       have h_accum_nil_r : EvalCmds P (EvalCmd P) ρ₁.eval ρ₁.store
           [].reverse ρ₁.store false := EvalCmds.eval_cmds_none
       have h_hf_r : ρ₁.hasFailure = (ρ₁.hasFailure || false) := by simp
+      -- PATTERN 2 (closes in Commit C): wrap strengthened h_preserve_else for OLD-shape helper.
+      have h_preserve_else_old :
+          ∀ x : P.Ident, σ_cfg_after x = none →
+              x ∉ Cmds.definedVars ([] : List (Cmd P)).reverse →
+              x ∉ Block.initVars elseBranch →
+              σ_branch x = none := fun x hσ haccum hinit =>
+        h_preserve_else x hσ haccum hinit (by sorry)
       have h_store_no_gens_branch_e :
           ∀ x : String, String.HasUnderscoreDigitSuffix x →
             x ∉ StringGenState.stringGens gen →
             σ_branch (HasIdent.ident (P := P) x) = none :=
-        store_no_gens_lift_through_subsim h_preserve_else gen
+        store_no_gens_lift_through_subsim h_preserve_else_old gen
           h_store_no_gens_after
           (fun x hx s heq => h_else_no_gen_suffix x (List.mem_append_right _ hx) s heq)
       have h_store_no_gens_upper_branch_e :
           ∀ x : String, String.HasUnderscoreDigitSuffix x →
             x ∉ StringGenState.stringGens genUpperBound →
             σ_branch (HasIdent.ident (P := P) x) = none :=
-        store_no_gens_lift_through_subsim h_preserve_else genUpperBound
+        store_no_gens_lift_through_subsim h_preserve_else_old genUpperBound
           h_store_no_gens_upper_after
           (fun x hx s heq => h_else_no_gen_suffix x (List.mem_append_right _ hx) s heq)
       have ⟨σ_cfg, h_rest_sim, h_agree_rest, h_preserve_rest⟩ :=
@@ -8974,7 +9018,7 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
       refine ⟨σ_cfg, ?_, h_agree_rest, ?_⟩
       · exact StepDetCFGStar_trans
           (StepDetCFGStar_trans h_flush_sim h_else_step) h_rest_sim
-      · intro x h_σ_x h_x_not_accum h_x_not_inits
+      · intro x h_σ_x h_x_not_accum h_x_not_inits h_outer_guard
         have h_x_not_then : x ∉ Block.initVars thenBranch := by
           intro hx
           apply h_x_not_inits
@@ -8989,9 +9033,26 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
           rw [h_initvars_eq]; exact List.mem_append_right _ hx
         have h_σ_after_x : σ_cfg_after x = none := h_preserve_after x h_σ_x h_x_not_accum
         have h_nil_not : x ∉ Cmds.definedVars [].reverse := by simp [Cmds.definedVars]
+        -- Build inner guards from outer guard via GenStep monotonicity.
+        -- Chain: gen → gen_r → gen_ite → gen_t → gen_e → gen_f = gen'.
+        have h_inner_guard_e : ∀ s : String, x = HasIdent.ident (P := P) s →
+            s ∈ StringGenState.stringGens gen_t ∨
+            s ∉ StringGenState.stringGens gen_e :=
+          fun s heq => match h_outer_guard s heq with
+          | Or.inl h_in => Or.inl (h_step_gen_to_t.subset h_in)
+          | Or.inr h_not_in => Or.inr (fun h_in_e => h_not_in
+              (h_gen_eq_f ▸ h_step_e_to_f.subset h_in_e))
+        have h_inner_guard_r : ∀ s : String, x = HasIdent.ident (P := P) s →
+            s ∈ StringGenState.stringGens gen ∨
+            s ∉ StringGenState.stringGens gen_r :=
+          fun s heq => match h_outer_guard s heq with
+          | Or.inl h_in => Or.inl h_in
+          | Or.inr h_not_in => Or.inr (fun h_in_r => h_not_in
+              (h_gen_eq_f ▸ h_step_e_to_f.subset (h_step_t_to_e.subset
+                (h_step_ite_to_t.subset (h_step_r_to_ite.subset h_in_r)))))
         have h_σ_branch_x : σ_branch x = none :=
-          h_preserve_else x h_σ_after_x h_nil_not h_x_not_else
-        exact h_preserve_rest x h_σ_branch_x h_nil_not h_x_not_rest
+          h_preserve_else x h_σ_after_x h_nil_not h_x_not_else h_inner_guard_e
+        exact h_preserve_rest x h_σ_branch_x h_nil_not h_x_not_rest h_inner_guard_r
   | .ite .nondet thenBranch elseBranch md :: rest =>
     sorry
   | .loop guard measure invariants body md :: rest =>
@@ -9312,6 +9373,9 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
           have h_σ_after_x : σ_cfg_after x = none := h_fresh_rest_inits_after x hx
           have h_nil_not : x ∉ Cmds.definedVars [].reverse := by simp [Cmds.definedVars]
           exact h_preserve_body x h_σ_after_x h_nil_not h_x_not_body
+            (fun s heq => Or.inr
+              (StringGenState.not_mem_stringGens_of_not_hasUnderscoreDigitSuffix h_wf_b
+                (h_rest_no_gen_suffix x (by simp [Cmds.definedVars]; exact hx) s heq)))
         have h_combined_rest :
             ∀ x ∈ Cmds.definedVars [].reverse ++ Block.initVars rest,
             σ_cfg_body x = none := by
@@ -9329,19 +9393,26 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
         -- ρ_blk.hasFailure = ρ_inner.hasFailure (since projection only changes store)
         have h_hasFail_blk : ρ_blk.hasFailure = ρ_inner.hasFailure := by
           rw [h_ρ_blk_eq]
+        -- PATTERN 2 (closes in Commit C): wrap strengthened h_preserve_body for OLD-shape helper.
+        have h_preserve_body_old :
+            ∀ x : P.Ident, σ_cfg_after x = none →
+                x ∉ Cmds.definedVars ([] : List (Cmd P)).reverse →
+                x ∉ Block.initVars body →
+                σ_cfg_body x = none := fun x hσ haccum hinit =>
+          h_preserve_body x hσ haccum hinit (by sorry)
         -- Lift store-no-gens to σ_cfg_body for the rest recursion.
         have h_store_no_gens_body :
             ∀ x : String, String.HasUnderscoreDigitSuffix x →
               x ∉ StringGenState.stringGens gen →
               σ_cfg_body (HasIdent.ident (P := P) x) = none :=
-          store_no_gens_lift_through_subsim h_preserve_body gen
+          store_no_gens_lift_through_subsim h_preserve_body_old gen
             h_store_no_gens_after
             (fun x hx s heq => h_body_no_gen_suffix x (List.mem_append_right _ hx) s heq)
         have h_store_no_gens_upper_body :
             ∀ x : String, String.HasUnderscoreDigitSuffix x →
               x ∉ StringGenState.stringGens genUpperBound →
               σ_cfg_body (HasIdent.ident (P := P) x) = none :=
-          store_no_gens_lift_through_subsim h_preserve_body genUpperBound
+          store_no_gens_lift_through_subsim h_preserve_body_old genUpperBound
             h_store_no_gens_upper_after
             (fun x hx s heq => h_body_no_gen_suffix x (List.mem_append_right _ hx) s heq)
         -- Recurse on rest.
@@ -9368,7 +9439,7 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
           exact StepDetCFGStar_trans
             (StepDetCFGStar_trans h_step_flush h_step_body') h_step_rest
         · -- Freshness preservation for the outer call.
-          intro x h_σ_x h_x_not_accum h_x_not_inits
+          intro x h_σ_x h_x_not_accum h_x_not_inits h_outer_guard
           have h_x_not_body : x ∉ Block.initVars body := by
             intro hx
             apply h_x_not_inits
@@ -9381,9 +9452,25 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
             exact List.mem_append_right _ hx
           have h_σ_after_x : σ_cfg_after x = none := h_preserve_flush x h_σ_x h_x_not_accum
           have h_nil_not : x ∉ Cmds.definedVars [].reverse := by simp [Cmds.definedVars]
+          -- Build inner guards from outer guard via GenStep monotonicity.
+          -- Chain: gen → gen_r → gen_b → gen_f = gen'.
+          have h_inner_guard_b : ∀ s : String, x = HasIdent.ident (P := P) s →
+              s ∈ StringGenState.stringGens gen_r ∨
+              s ∉ StringGenState.stringGens gen_b :=
+            fun s heq => match h_outer_guard s heq with
+            | Or.inl h_in => Or.inl (h_step_gen_to_r.subset h_in)
+            | Or.inr h_not_in => Or.inr (fun h_in_b => h_not_in
+                (h_gen_eq_f ▸ h_step_b_to_f.subset h_in_b))
+          have h_inner_guard_r : ∀ s : String, x = HasIdent.ident (P := P) s →
+              s ∈ StringGenState.stringGens gen ∨
+              s ∉ StringGenState.stringGens gen_r :=
+            fun s heq => match h_outer_guard s heq with
+            | Or.inl h_in => Or.inl h_in
+            | Or.inr h_not_in => Or.inr (fun h_in_r => h_not_in
+                (h_gen_eq_f ▸ h_step_b_to_f.subset (h_step_r_to_b.subset h_in_r)))
           have h_σ_body_x : σ_cfg_body x = none :=
-            h_preserve_body x h_σ_after_x h_nil_not h_x_not_body
-          exact h_preserve_rest x h_σ_body_x h_nil_not h_x_not_rest
+            h_preserve_body x h_σ_after_x h_nil_not h_x_not_body h_inner_guard_b
+          exact h_preserve_rest x h_σ_body_x h_nil_not h_x_not_rest h_inner_guard_r
       | inr h_body_exit_star =>
         -- Body exits with matching label.  Same final-store shape as inl:
         -- ρ_blk = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store }.
@@ -9516,6 +9603,9 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
           have h_σ_after_x : σ_cfg_after x = none := h_fresh_rest_inits_after x hx
           have h_nil_not : x ∉ Cmds.definedVars [].reverse := by simp [Cmds.definedVars]
           exact h_preserve_body x h_σ_after_x h_nil_not h_x_not_body
+            (fun s heq => Or.inr
+              (StringGenState.not_mem_stringGens_of_not_hasUnderscoreDigitSuffix h_wf_b
+                (h_rest_no_gen_suffix x (by simp [Cmds.definedVars]; exact hx) s heq)))
         have h_combined_rest :
             ∀ x ∈ Cmds.definedVars [].reverse ++ Block.initVars rest,
             σ_cfg_body x = none := by
@@ -9532,19 +9622,26 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
         have h_hf_r : ρ_blk.hasFailure = (ρ_blk.hasFailure || false) := by simp
         have h_hasFail_blk : ρ_blk.hasFailure = ρ_inner.hasFailure := by
           rw [h_ρ_blk_eq]
+        -- PATTERN 2 (closes in Commit C): wrap strengthened h_preserve_body for OLD-shape helper.
+        have h_preserve_body_old :
+            ∀ x : P.Ident, σ_cfg_after x = none →
+                x ∉ Cmds.definedVars ([] : List (Cmd P)).reverse →
+                x ∉ Block.initVars body →
+                σ_cfg_body x = none := fun x hσ haccum hinit =>
+          h_preserve_body x hσ haccum hinit (by sorry)
         -- Lift store-no-gens to σ_cfg_body for the rest recursion.
         have h_store_no_gens_body :
             ∀ x : String, String.HasUnderscoreDigitSuffix x →
               x ∉ StringGenState.stringGens gen →
               σ_cfg_body (HasIdent.ident (P := P) x) = none :=
-          store_no_gens_lift_through_subsim h_preserve_body gen
+          store_no_gens_lift_through_subsim h_preserve_body_old gen
             h_store_no_gens_after
             (fun x hx s heq => h_body_no_gen_suffix x (List.mem_append_right _ hx) s heq)
         have h_store_no_gens_upper_body :
             ∀ x : String, String.HasUnderscoreDigitSuffix x →
               x ∉ StringGenState.stringGens genUpperBound →
               σ_cfg_body (HasIdent.ident (P := P) x) = none :=
-          store_no_gens_lift_through_subsim h_preserve_body genUpperBound
+          store_no_gens_lift_through_subsim h_preserve_body_old genUpperBound
             h_store_no_gens_upper_after
             (fun x hx s heq => h_body_no_gen_suffix x (List.mem_append_right _ hx) s heq)
         -- Recurse on rest with _simulation.
@@ -9567,7 +9664,7 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
             rw [h_hasFail_blk]; exact h_step_body
           exact StepDetCFGStar_trans
             (StepDetCFGStar_trans h_step_flush h_step_body') h_step_rest
-        · intro x h_σ_x h_x_not_accum h_x_not_inits
+        · intro x h_σ_x h_x_not_accum h_x_not_inits h_outer_guard
           have h_x_not_body : x ∉ Block.initVars body := by
             intro hx
             apply h_x_not_inits
@@ -9580,9 +9677,25 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
             exact List.mem_append_right _ hx
           have h_σ_after_x : σ_cfg_after x = none := h_preserve_flush x h_σ_x h_x_not_accum
           have h_nil_not : x ∉ Cmds.definedVars [].reverse := by simp [Cmds.definedVars]
+          -- Build inner guards from outer guard via GenStep monotonicity.
+          -- Chain: gen → gen_r → gen_b → gen_f = gen'.
+          have h_inner_guard_b : ∀ s : String, x = HasIdent.ident (P := P) s →
+              s ∈ StringGenState.stringGens gen_r ∨
+              s ∉ StringGenState.stringGens gen_b :=
+            fun s heq => match h_outer_guard s heq with
+            | Or.inl h_in => Or.inl (h_step_gen_to_r.subset h_in)
+            | Or.inr h_not_in => Or.inr (fun h_in_b => h_not_in
+                (h_gen_eq_f ▸ h_step_b_to_f.subset h_in_b))
+          have h_inner_guard_r : ∀ s : String, x = HasIdent.ident (P := P) s →
+              s ∈ StringGenState.stringGens gen ∨
+              s ∉ StringGenState.stringGens gen_r :=
+            fun s heq => match h_outer_guard s heq with
+            | Or.inl h_in => Or.inl h_in
+            | Or.inr h_not_in => Or.inr (fun h_in_r => h_not_in
+                (h_gen_eq_f ▸ h_step_b_to_f.subset (h_step_r_to_b.subset h_in_r)))
           have h_σ_body_x : σ_cfg_body x = none :=
-            h_preserve_body x h_σ_after_x h_nil_not h_x_not_body
-          exact h_preserve_rest x h_σ_body_x h_nil_not h_x_not_rest
+            h_preserve_body x h_σ_after_x h_nil_not h_x_not_body h_inner_guard_b
+          exact h_preserve_rest x h_σ_body_x h_nil_not h_x_not_rest h_inner_guard_r
     · -- Case l ≠ bl: blocks = accumBlocks ++ [(label, {cmds:=[], goto bl})] ++ bbs ++ bsNext,
       -- entry = accumEntry (after the bug fix).  CFG flow is the same as l = bl:
       -- accumEntry → bl (via accumBlocks) → kNext (via body) → k (via rest).
@@ -9743,6 +9856,9 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
           have h_σ_after_x : σ_cfg_after x = none := h_fresh_rest_inits_after x hx
           have h_nil_not : x ∉ Cmds.definedVars [].reverse := by simp [Cmds.definedVars]
           exact h_preserve_body x h_σ_after_x h_nil_not h_x_not_body
+            (fun s heq => Or.inr
+              (StringGenState.not_mem_stringGens_of_not_hasUnderscoreDigitSuffix h_wf_b
+                (h_rest_no_gen_suffix x (by simp [Cmds.definedVars]; exact hx) s heq)))
         have h_combined_rest :
             ∀ x ∈ Cmds.definedVars [].reverse ++ Block.initVars rest,
             σ_cfg_body x = none := by
@@ -9759,19 +9875,26 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
         have h_hf_r : ρ_blk.hasFailure = (ρ_blk.hasFailure || false) := by simp
         have h_hasFail_blk : ρ_blk.hasFailure = ρ_inner.hasFailure := by
           rw [h_ρ_blk_eq]
+        -- PATTERN 2 (closes in Commit C): wrap strengthened h_preserve_body for OLD-shape helper.
+        have h_preserve_body_old :
+            ∀ x : P.Ident, σ_cfg_after x = none →
+                x ∉ Cmds.definedVars ([] : List (Cmd P)).reverse →
+                x ∉ Block.initVars body →
+                σ_cfg_body x = none := fun x hσ haccum hinit =>
+          h_preserve_body x hσ haccum hinit (by sorry)
         -- Lift store-no-gens to σ_cfg_body for the rest recursion.
         have h_store_no_gens_body :
             ∀ x : String, String.HasUnderscoreDigitSuffix x →
               x ∉ StringGenState.stringGens gen →
               σ_cfg_body (HasIdent.ident (P := P) x) = none :=
-          store_no_gens_lift_through_subsim h_preserve_body gen
+          store_no_gens_lift_through_subsim h_preserve_body_old gen
             h_store_no_gens_after
             (fun x hx s heq => h_body_no_gen_suffix x (List.mem_append_right _ hx) s heq)
         have h_store_no_gens_upper_body :
             ∀ x : String, String.HasUnderscoreDigitSuffix x →
               x ∉ StringGenState.stringGens genUpperBound →
               σ_cfg_body (HasIdent.ident (P := P) x) = none :=
-          store_no_gens_lift_through_subsim h_preserve_body genUpperBound
+          store_no_gens_lift_through_subsim h_preserve_body_old genUpperBound
             h_store_no_gens_upper_after
             (fun x hx s heq => h_body_no_gen_suffix x (List.mem_append_right _ hx) s heq)
         have ⟨σ_cfg_rest, h_step_rest, h_agree_rest, h_preserve_rest⟩ :=
@@ -9793,7 +9916,7 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
             rw [h_hasFail_blk]; exact h_step_body
           exact StepDetCFGStar_trans
             (StepDetCFGStar_trans h_step_flush h_step_body') h_step_rest
-        · intro x h_σ_x h_x_not_accum h_x_not_inits
+        · intro x h_σ_x h_x_not_accum h_x_not_inits h_outer_guard
           have h_x_not_body : x ∉ Block.initVars body := by
             intro hx
             apply h_x_not_inits
@@ -9806,9 +9929,24 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
             exact List.mem_append_right _ hx
           have h_σ_after_x : σ_cfg_after x = none := h_preserve_flush x h_σ_x h_x_not_accum
           have h_nil_not : x ∉ Cmds.definedVars [].reverse := by simp [Cmds.definedVars]
+          -- Build inner guards from outer guard via GenStep monotonicity.
+          have h_inner_guard_b : ∀ s : String, x = HasIdent.ident (P := P) s →
+              s ∈ StringGenState.stringGens gen_r ∨
+              s ∉ StringGenState.stringGens gen_b :=
+            fun s heq => match h_outer_guard s heq with
+            | Or.inl h_in => Or.inl (h_step_gen_to_r.subset h_in)
+            | Or.inr h_not_in => Or.inr (fun h_in_b => h_not_in
+                (h_gen_eq_f ▸ h_step_b_to_f.subset h_in_b))
+          have h_inner_guard_r : ∀ s : String, x = HasIdent.ident (P := P) s →
+              s ∈ StringGenState.stringGens gen ∨
+              s ∉ StringGenState.stringGens gen_r :=
+            fun s heq => match h_outer_guard s heq with
+            | Or.inl h_in => Or.inl h_in
+            | Or.inr h_not_in => Or.inr (fun h_in_r => h_not_in
+                (h_gen_eq_f ▸ h_step_b_to_f.subset (h_step_r_to_b.subset h_in_r)))
           have h_σ_body_x : σ_cfg_body x = none :=
-            h_preserve_body x h_σ_after_x h_nil_not h_x_not_body
-          exact h_preserve_rest x h_σ_body_x h_nil_not h_x_not_rest
+            h_preserve_body x h_σ_after_x h_nil_not h_x_not_body h_inner_guard_b
+          exact h_preserve_rest x h_σ_body_x h_nil_not h_x_not_rest h_inner_guard_r
       | inr h_body_exit_star =>
         -- Body exits with matching label; same as l = bl body-exit case.
         have h_label_lookup :
@@ -9905,6 +10043,9 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
           have h_σ_after_x : σ_cfg_after x = none := h_fresh_rest_inits_after x hx
           have h_nil_not : x ∉ Cmds.definedVars [].reverse := by simp [Cmds.definedVars]
           exact h_preserve_body x h_σ_after_x h_nil_not h_x_not_body
+            (fun s heq => Or.inr
+              (StringGenState.not_mem_stringGens_of_not_hasUnderscoreDigitSuffix h_wf_b
+                (h_rest_no_gen_suffix x (by simp [Cmds.definedVars]; exact hx) s heq)))
         have h_combined_rest :
             ∀ x ∈ Cmds.definedVars [].reverse ++ Block.initVars rest,
             σ_cfg_body x = none := by
@@ -9921,19 +10062,26 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
         have h_hf_r : ρ_blk.hasFailure = (ρ_blk.hasFailure || false) := by simp
         have h_hasFail_blk : ρ_blk.hasFailure = ρ_inner.hasFailure := by
           rw [h_ρ_blk_eq]
+        -- PATTERN 2 (closes in Commit C): wrap strengthened h_preserve_body for OLD-shape helper.
+        have h_preserve_body_old :
+            ∀ x : P.Ident, σ_cfg_after x = none →
+                x ∉ Cmds.definedVars ([] : List (Cmd P)).reverse →
+                x ∉ Block.initVars body →
+                σ_cfg_body x = none := fun x hσ haccum hinit =>
+          h_preserve_body x hσ haccum hinit (by sorry)
         -- Lift store-no-gens to σ_cfg_body for the rest recursion.
         have h_store_no_gens_body :
             ∀ x : String, String.HasUnderscoreDigitSuffix x →
               x ∉ StringGenState.stringGens gen →
               σ_cfg_body (HasIdent.ident (P := P) x) = none :=
-          store_no_gens_lift_through_subsim h_preserve_body gen
+          store_no_gens_lift_through_subsim h_preserve_body_old gen
             h_store_no_gens_after
             (fun x hx s heq => h_body_no_gen_suffix x (List.mem_append_right _ hx) s heq)
         have h_store_no_gens_upper_body :
             ∀ x : String, String.HasUnderscoreDigitSuffix x →
               x ∉ StringGenState.stringGens genUpperBound →
               σ_cfg_body (HasIdent.ident (P := P) x) = none :=
-          store_no_gens_lift_through_subsim h_preserve_body genUpperBound
+          store_no_gens_lift_through_subsim h_preserve_body_old genUpperBound
             h_store_no_gens_upper_after
             (fun x hx s heq => h_body_no_gen_suffix x (List.mem_append_right _ hx) s heq)
         have ⟨σ_cfg_rest, h_step_rest, h_agree_rest, h_preserve_rest⟩ :=
@@ -9955,7 +10103,7 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
             rw [h_hasFail_blk]; exact h_step_body
           exact StepDetCFGStar_trans
             (StepDetCFGStar_trans h_step_flush h_step_body') h_step_rest
-        · intro x h_σ_x h_x_not_accum h_x_not_inits
+        · intro x h_σ_x h_x_not_accum h_x_not_inits h_outer_guard
           have h_x_not_body : x ∉ Block.initVars body := by
             intro hx
             apply h_x_not_inits
@@ -9968,9 +10116,24 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
             exact List.mem_append_right _ hx
           have h_σ_after_x : σ_cfg_after x = none := h_preserve_flush x h_σ_x h_x_not_accum
           have h_nil_not : x ∉ Cmds.definedVars [].reverse := by simp [Cmds.definedVars]
+          -- Build inner guards from outer guard via GenStep monotonicity.
+          have h_inner_guard_b : ∀ s : String, x = HasIdent.ident (P := P) s →
+              s ∈ StringGenState.stringGens gen_r ∨
+              s ∉ StringGenState.stringGens gen_b :=
+            fun s heq => match h_outer_guard s heq with
+            | Or.inl h_in => Or.inl (h_step_gen_to_r.subset h_in)
+            | Or.inr h_not_in => Or.inr (fun h_in_b => h_not_in
+                (h_gen_eq_f ▸ h_step_b_to_f.subset h_in_b))
+          have h_inner_guard_r : ∀ s : String, x = HasIdent.ident (P := P) s →
+              s ∈ StringGenState.stringGens gen ∨
+              s ∉ StringGenState.stringGens gen_r :=
+            fun s heq => match h_outer_guard s heq with
+            | Or.inl h_in => Or.inl h_in
+            | Or.inr h_not_in => Or.inr (fun h_in_r => h_not_in
+                (h_gen_eq_f ▸ h_step_b_to_f.subset (h_step_r_to_b.subset h_in_r)))
           have h_σ_body_x : σ_cfg_body x = none :=
-            h_preserve_body x h_σ_after_x h_nil_not h_x_not_body
-          exact h_preserve_rest x h_σ_body_x h_nil_not h_x_not_rest
+            h_preserve_body x h_σ_after_x h_nil_not h_x_not_body h_inner_guard_b
+          exact h_preserve_rest x h_σ_body_x h_nil_not h_x_not_rest h_inner_guard_r
   | .exit label md :: rest =>
     -- Vacuous: structured semantics for .exit produces .exiting, never .terminal.
     exfalso
@@ -10170,6 +10333,9 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
       ∧ StoreAgreement ρ'.store σ_cfg
       ∧ (∀ x, σ_base x = none →
           x ∉ Cmds.definedVars accum.reverse → x ∉ Block.initVars ss →
+          (∀ s : String, x = HasIdent.ident (P := P) s →
+              s ∈ StringGenState.stringGens gen ∨
+              s ∉ StringGenState.stringGens gen') →
           σ_cfg x = none) := by
   match h_match : ss with
   | [] =>
@@ -10322,7 +10488,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
         genUpperBound h_outer_upper h_store_no_gens_upper
         cfg h_cfg_blocks h_cfg_nodup
     refine ⟨σ_cfg, h_step, h_agree, ?_⟩
-    intro x h_σ_x h_x_not_accum h_x_not_inits
+    intro x h_σ_x h_x_not_accum h_x_not_inits h_outer_guard
     have h_x_not_new_accum : x ∉ Cmds.definedVars (c :: accum).reverse := by
       rw [List.reverse_cons, h_definedVars_snoc]
       intro h_in
@@ -10341,7 +10507,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
       apply h_x_not_inits
       rw [Block.initVars]
       cases c <;> simp [Stmt.initVars] <;> first | right; exact h | exact h
-    exact h_preserve x h_σ_x h_x_not_new_accum h_x_not_rest
+    exact h_preserve x h_σ_x h_x_not_new_accum h_x_not_rest h_outer_guard
   | .funcDecl _ _ :: _ =>
     -- Excluded by h_nofd
     simp [Block.noFuncDecl, Stmt.noFuncDecl] at h_nofd
@@ -10434,12 +10600,12 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
         genUpperBound h_outer_upper h_store_no_gens_upper
         cfg h_cfg_blocks h_cfg_nodup
     refine ⟨σ_cfg, h_step, h_agree, ?_⟩
-    intro x h_σ_x h_x_not_accum h_x_not_inits
+    intro x h_σ_x h_x_not_accum h_x_not_inits h_outer_guard
     have h_x_not_rest : x ∉ Block.initVars rest := by
       intro hx
       apply h_x_not_inits
       simp [Block.initVars, Stmt.initVars]; exact hx
-    exact h_preserve x h_σ_x h_x_not_accum h_x_not_rest
+    exact h_preserve x h_σ_x h_x_not_accum h_x_not_rest h_outer_guard
   | .exit l' md :: _ =>
     -- The structured side: `.exit l'` produces `.exiting l'`.  For the trace
     -- to reach `.exiting label`, we need `l' = label`.
@@ -10492,7 +10658,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
         hwfb hwfv hwf_def hwf_congr h_accum h_agree_entry h_fresh_accum h_unique_accum h_hf
         cfg h_cfg_blocks h_cfg_nodup
     refine ⟨σ_cfg, h_step, h_agree, ?_⟩
-    intro x h_σ_x h_x_not_accum _
+    intro x h_σ_x h_x_not_accum _ _
     exact h_preserve x h_σ_x h_x_not_accum
   | .block label' body md :: rest =>
     unfold stmtsToBlocks at h_gen
@@ -10772,7 +10938,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
               (.cont bk_target σ_cfg_body ρ'.hasFailure) := by
             rw [h_hasFail_ρ']; exact h_step_body
           exact StepDetCFGStar_trans h_step_flush h_step_body'
-        · intro x h_σ_x h_x_not_accum h_x_not_inits
+        · intro x h_σ_x h_x_not_accum h_x_not_inits h_outer_guard
           have h_x_not_body : x ∉ Block.initVars body := by
             intro hx
             apply h_x_not_inits
@@ -10780,7 +10946,15 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
             exact List.mem_append_left _ hx
           have h_σ_after_x : σ_cfg_after x = none := h_preserve_flush x h_σ_x h_x_not_accum
           have h_nil_not : x ∉ Cmds.definedVars [].reverse := by simp [Cmds.definedVars]
-          exact h_preserve_body x h_σ_after_x h_nil_not h_x_not_body
+          -- Build inner guard at (gen_r, gen_b) from outer guard at (gen, gen').
+          have h_inner_guard_b : ∀ s : String, x = HasIdent.ident (P := P) s →
+              s ∈ StringGenState.stringGens gen_r ∨
+              s ∉ StringGenState.stringGens gen_b :=
+            fun s heq => match h_outer_guard s heq with
+            | Or.inl h_in => Or.inl (h_step_gen_to_r.subset h_in)
+            | Or.inr h_not_in => Or.inr (fun h_in_b => h_not_in
+                (h_gen_eq_f ▸ h_step_b_to_f.subset h_in_b))
+          exact h_preserve_body x h_σ_after_x h_nil_not h_x_not_body h_inner_guard_b
       | inr h_caseB =>
         -- (B) Block terminates with ρ_blk, then rest exits.
         obtain ⟨ρ_blk, h_body_or_match, h_rest_exit⟩ := h_caseB
@@ -10884,6 +11058,9 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
             have h_σ_after_x : σ_cfg_after x = none := h_fresh_rest_inits_after x hx
             have h_nil_not : x ∉ Cmds.definedVars [].reverse := by simp [Cmds.definedVars]
             exact h_preserve_body x h_σ_after_x h_nil_not h_x_not_body
+              (fun s heq => Or.inr
+                (StringGenState.not_mem_stringGens_of_not_hasUnderscoreDigitSuffix h_wf_b
+                  (h_rest_no_gen_suffix x (by simp [Cmds.definedVars]; exact hx) s heq)))
           have h_combined_rest :
               ∀ x ∈ Cmds.definedVars [].reverse ++ Block.initVars rest,
               σ_cfg_body x = none := by
@@ -10900,19 +11077,26 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
           have h_hf_r : ρ_blk.hasFailure = (ρ_blk.hasFailure || false) := by simp
           have h_hasFail_blk : ρ_blk.hasFailure = ρ_inner.hasFailure := by
             rw [h_ρ_blk_eq]
+          -- PATTERN 2 (closes in Commit C): wrap strengthened h_preserve_body for OLD-shape helper.
+          have h_preserve_body_old :
+              ∀ x : P.Ident, σ_cfg_after x = none →
+                  x ∉ Cmds.definedVars ([] : List (Cmd P)).reverse →
+                  x ∉ Block.initVars body →
+                  σ_cfg_body x = none := fun x hσ haccum hinit =>
+            h_preserve_body x hσ haccum hinit (by sorry)
           -- Lift store-no-gens to σ_cfg_body for the rest recursion.
           have h_store_no_gens_body :
               ∀ x : String, String.HasUnderscoreDigitSuffix x →
                 x ∉ StringGenState.stringGens gen →
                 σ_cfg_body (HasIdent.ident (P := P) x) = none :=
-            store_no_gens_lift_through_subsim h_preserve_body gen
+            store_no_gens_lift_through_subsim h_preserve_body_old gen
               h_store_no_gens_after
               (fun x hx s heq => h_body_no_gen_suffix x (List.mem_append_right _ hx) s heq)
           have h_store_no_gens_upper_body :
               ∀ x : String, String.HasUnderscoreDigitSuffix x →
                 x ∉ StringGenState.stringGens genUpperBound →
                 σ_cfg_body (HasIdent.ident (P := P) x) = none :=
-            store_no_gens_lift_through_subsim h_preserve_body genUpperBound
+            store_no_gens_lift_through_subsim h_preserve_body_old genUpperBound
               h_store_no_gens_upper_after
               (fun x hx s heq => h_body_no_gen_suffix x (List.mem_append_right _ hx) s heq)
           have ⟨σ_cfg_rest, h_step_rest, h_agree_rest, h_preserve_rest⟩ :=
@@ -10935,7 +11119,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
               rw [h_hasFail_blk]; exact h_step_body
             exact StepDetCFGStar_trans
               (StepDetCFGStar_trans h_step_flush h_step_body') h_step_rest
-          · intro x h_σ_x h_x_not_accum h_x_not_inits
+          · intro x h_σ_x h_x_not_accum h_x_not_inits h_outer_guard
             have h_x_not_body : x ∉ Block.initVars body := by
               intro hx
               apply h_x_not_inits
@@ -10948,9 +11132,24 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
               exact List.mem_append_right _ hx
             have h_σ_after_x : σ_cfg_after x = none := h_preserve_flush x h_σ_x h_x_not_accum
             have h_nil_not : x ∉ Cmds.definedVars [].reverse := by simp [Cmds.definedVars]
+            -- Build inner guards from outer guard via GenStep monotonicity.
+            have h_inner_guard_b : ∀ s : String, x = HasIdent.ident (P := P) s →
+                s ∈ StringGenState.stringGens gen_r ∨
+                s ∉ StringGenState.stringGens gen_b :=
+              fun s heq => match h_outer_guard s heq with
+              | Or.inl h_in => Or.inl (h_step_gen_to_r.subset h_in)
+              | Or.inr h_not_in => Or.inr (fun h_in_b => h_not_in
+                  (h_gen_eq_f ▸ h_step_b_to_f.subset h_in_b))
+            have h_inner_guard_r : ∀ s : String, x = HasIdent.ident (P := P) s →
+                s ∈ StringGenState.stringGens gen ∨
+                s ∉ StringGenState.stringGens gen_r :=
+              fun s heq => match h_outer_guard s heq with
+              | Or.inl h_in => Or.inl h_in
+              | Or.inr h_not_in => Or.inr (fun h_in_r => h_not_in
+                  (h_gen_eq_f ▸ h_step_b_to_f.subset (h_step_r_to_b.subset h_in_r)))
             have h_σ_body_x : σ_cfg_body x = none :=
-              h_preserve_body x h_σ_after_x h_nil_not h_x_not_body
-            exact h_preserve_rest x h_σ_body_x h_nil_not h_x_not_rest
+              h_preserve_body x h_σ_after_x h_nil_not h_x_not_body h_inner_guard_b
+            exact h_preserve_rest x h_σ_body_x h_nil_not h_x_not_rest h_inner_guard_r
         | inr h_match_branch =>
           obtain ⟨ρ_inner, h_body_match, h_ρ_blk_eq⟩ := h_match_branch
           have ⟨σ_cfg_body, h_step_body, h_agree_body, h_preserve_body⟩ :=
@@ -11016,6 +11215,9 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
             have h_σ_after_x : σ_cfg_after x = none := h_fresh_rest_inits_after x hx
             have h_nil_not : x ∉ Cmds.definedVars [].reverse := by simp [Cmds.definedVars]
             exact h_preserve_body x h_σ_after_x h_nil_not h_x_not_body
+              (fun s heq => Or.inr
+                (StringGenState.not_mem_stringGens_of_not_hasUnderscoreDigitSuffix h_wf_b
+                  (h_rest_no_gen_suffix x (by simp [Cmds.definedVars]; exact hx) s heq)))
           have h_combined_rest :
               ∀ x ∈ Cmds.definedVars [].reverse ++ Block.initVars rest,
               σ_cfg_body x = none := by
@@ -11032,19 +11234,26 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
           have h_hf_r : ρ_blk.hasFailure = (ρ_blk.hasFailure || false) := by simp
           have h_hasFail_blk : ρ_blk.hasFailure = ρ_inner.hasFailure := by
             rw [h_ρ_blk_eq]
+          -- PATTERN 2 (closes in Commit C): wrap strengthened h_preserve_body for OLD-shape helper.
+          have h_preserve_body_old :
+              ∀ x : P.Ident, σ_cfg_after x = none →
+                  x ∉ Cmds.definedVars ([] : List (Cmd P)).reverse →
+                  x ∉ Block.initVars body →
+                  σ_cfg_body x = none := fun x hσ haccum hinit =>
+            h_preserve_body x hσ haccum hinit (by sorry)
           -- Lift store-no-gens to σ_cfg_body for the rest recursion.
           have h_store_no_gens_body :
               ∀ x : String, String.HasUnderscoreDigitSuffix x →
                 x ∉ StringGenState.stringGens gen →
                 σ_cfg_body (HasIdent.ident (P := P) x) = none :=
-            store_no_gens_lift_through_subsim h_preserve_body gen
+            store_no_gens_lift_through_subsim h_preserve_body_old gen
               h_store_no_gens_after
               (fun x hx s heq => h_body_no_gen_suffix x (List.mem_append_right _ hx) s heq)
           have h_store_no_gens_upper_body :
               ∀ x : String, String.HasUnderscoreDigitSuffix x →
                 x ∉ StringGenState.stringGens genUpperBound →
                 σ_cfg_body (HasIdent.ident (P := P) x) = none :=
-            store_no_gens_lift_through_subsim h_preserve_body genUpperBound
+            store_no_gens_lift_through_subsim h_preserve_body_old genUpperBound
               h_store_no_gens_upper_after
               (fun x hx s heq => h_body_no_gen_suffix x (List.mem_append_right _ hx) s heq)
           have ⟨σ_cfg_rest, h_step_rest, h_agree_rest, h_preserve_rest⟩ :=
@@ -11067,7 +11276,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
               rw [h_hasFail_blk]; exact h_step_body
             exact StepDetCFGStar_trans
               (StepDetCFGStar_trans h_step_flush h_step_body') h_step_rest
-          · intro x h_σ_x h_x_not_accum h_x_not_inits
+          · intro x h_σ_x h_x_not_accum h_x_not_inits h_outer_guard
             have h_x_not_body : x ∉ Block.initVars body := by
               intro hx
               apply h_x_not_inits
@@ -11080,9 +11289,24 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
               exact List.mem_append_right _ hx
             have h_σ_after_x : σ_cfg_after x = none := h_preserve_flush x h_σ_x h_x_not_accum
             have h_nil_not : x ∉ Cmds.definedVars [].reverse := by simp [Cmds.definedVars]
+            -- Build inner guards from outer guard via GenStep monotonicity.
+            have h_inner_guard_b : ∀ s : String, x = HasIdent.ident (P := P) s →
+                s ∈ StringGenState.stringGens gen_r ∨
+                s ∉ StringGenState.stringGens gen_b :=
+              fun s heq => match h_outer_guard s heq with
+              | Or.inl h_in => Or.inl (h_step_gen_to_r.subset h_in)
+              | Or.inr h_not_in => Or.inr (fun h_in_b => h_not_in
+                  (h_gen_eq_f ▸ h_step_b_to_f.subset h_in_b))
+            have h_inner_guard_r : ∀ s : String, x = HasIdent.ident (P := P) s →
+                s ∈ StringGenState.stringGens gen ∨
+                s ∉ StringGenState.stringGens gen_r :=
+              fun s heq => match h_outer_guard s heq with
+              | Or.inl h_in => Or.inl h_in
+              | Or.inr h_not_in => Or.inr (fun h_in_r => h_not_in
+                  (h_gen_eq_f ▸ h_step_b_to_f.subset (h_step_r_to_b.subset h_in_r)))
             have h_σ_body_x : σ_cfg_body x = none :=
-              h_preserve_body x h_σ_after_x h_nil_not h_x_not_body
-            exact h_preserve_rest x h_σ_body_x h_nil_not h_x_not_rest
+              h_preserve_body x h_σ_after_x h_nil_not h_x_not_body h_inner_guard_b
+            exact h_preserve_rest x h_σ_body_x h_nil_not h_x_not_rest h_inner_guard_r
     · -- Case label' ≠ bl: blocks = accumBlocks ++ (label', lBlk) :: (bbs ++ bsNext),
       -- entry = accumEntry.  Same flow as label' = bl plus a vestigial (label', goto bl) block.
       simp [h_l_eq_bl] at h_gen
@@ -11210,7 +11434,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
               (.cont bk_target σ_cfg_body ρ'.hasFailure) := by
             rw [h_hasFail_ρ']; exact h_step_body
           exact StepDetCFGStar_trans h_step_flush h_step_body'
-        · intro x h_σ_x h_x_not_accum h_x_not_inits
+        · intro x h_σ_x h_x_not_accum h_x_not_inits h_outer_guard
           have h_x_not_body : x ∉ Block.initVars body := by
             intro hx
             apply h_x_not_inits
@@ -11218,7 +11442,15 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
             exact List.mem_append_left _ hx
           have h_σ_after_x : σ_cfg_after x = none := h_preserve_flush x h_σ_x h_x_not_accum
           have h_nil_not : x ∉ Cmds.definedVars [].reverse := by simp [Cmds.definedVars]
-          exact h_preserve_body x h_σ_after_x h_nil_not h_x_not_body
+          -- Build inner guard at (gen_r, gen_b) from outer guard at (gen, gen').
+          have h_inner_guard_b : ∀ s : String, x = HasIdent.ident (P := P) s →
+              s ∈ StringGenState.stringGens gen_r ∨
+              s ∉ StringGenState.stringGens gen_b :=
+            fun s heq => match h_outer_guard s heq with
+            | Or.inl h_in => Or.inl (h_step_gen_to_r.subset h_in)
+            | Or.inr h_not_in => Or.inr (fun h_in_b => h_not_in
+                (h_gen_eq_f ▸ h_step_b_to_f.subset h_in_b))
+          exact h_preserve_body x h_σ_after_x h_nil_not h_x_not_body h_inner_guard_b
       | inr h_caseB =>
         obtain ⟨ρ_blk, h_body_or_match, h_rest_exit⟩ := h_caseB
         have h_fresh_body_inits_after : ∀ x ∈ Block.initVars body, σ_cfg_after x = none := by
@@ -11318,6 +11550,9 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
             have h_σ_after_x : σ_cfg_after x = none := h_fresh_rest_inits_after x hx
             have h_nil_not : x ∉ Cmds.definedVars [].reverse := by simp [Cmds.definedVars]
             exact h_preserve_body x h_σ_after_x h_nil_not h_x_not_body
+              (fun s heq => Or.inr
+                (StringGenState.not_mem_stringGens_of_not_hasUnderscoreDigitSuffix h_wf_b
+                  (h_rest_no_gen_suffix x (by simp [Cmds.definedVars]; exact hx) s heq)))
           have h_combined_rest :
               ∀ x ∈ Cmds.definedVars [].reverse ++ Block.initVars rest,
               σ_cfg_body x = none := by
@@ -11334,19 +11569,26 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
           have h_hf_r : ρ_blk.hasFailure = (ρ_blk.hasFailure || false) := by simp
           have h_hasFail_blk : ρ_blk.hasFailure = ρ_inner.hasFailure := by
             rw [h_ρ_blk_eq]
+          -- PATTERN 2 (closes in Commit C): wrap strengthened h_preserve_body for OLD-shape helper.
+          have h_preserve_body_old :
+              ∀ x : P.Ident, σ_cfg_after x = none →
+                  x ∉ Cmds.definedVars ([] : List (Cmd P)).reverse →
+                  x ∉ Block.initVars body →
+                  σ_cfg_body x = none := fun x hσ haccum hinit =>
+            h_preserve_body x hσ haccum hinit (by sorry)
           -- Lift store-no-gens to σ_cfg_body for the rest recursion.
           have h_store_no_gens_body :
               ∀ x : String, String.HasUnderscoreDigitSuffix x →
                 x ∉ StringGenState.stringGens gen →
                 σ_cfg_body (HasIdent.ident (P := P) x) = none :=
-            store_no_gens_lift_through_subsim h_preserve_body gen
+            store_no_gens_lift_through_subsim h_preserve_body_old gen
               h_store_no_gens_after
               (fun x hx s heq => h_body_no_gen_suffix x (List.mem_append_right _ hx) s heq)
           have h_store_no_gens_upper_body :
               ∀ x : String, String.HasUnderscoreDigitSuffix x →
                 x ∉ StringGenState.stringGens genUpperBound →
                 σ_cfg_body (HasIdent.ident (P := P) x) = none :=
-            store_no_gens_lift_through_subsim h_preserve_body genUpperBound
+            store_no_gens_lift_through_subsim h_preserve_body_old genUpperBound
               h_store_no_gens_upper_after
               (fun x hx s heq => h_body_no_gen_suffix x (List.mem_append_right _ hx) s heq)
           have ⟨σ_cfg_rest, h_step_rest, h_agree_rest, h_preserve_rest⟩ :=
@@ -11369,7 +11611,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
               rw [h_hasFail_blk]; exact h_step_body
             exact StepDetCFGStar_trans
               (StepDetCFGStar_trans h_step_flush h_step_body') h_step_rest
-          · intro x h_σ_x h_x_not_accum h_x_not_inits
+          · intro x h_σ_x h_x_not_accum h_x_not_inits h_outer_guard
             have h_x_not_body : x ∉ Block.initVars body := by
               intro hx
               apply h_x_not_inits
@@ -11382,9 +11624,24 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
               exact List.mem_append_right _ hx
             have h_σ_after_x : σ_cfg_after x = none := h_preserve_flush x h_σ_x h_x_not_accum
             have h_nil_not : x ∉ Cmds.definedVars [].reverse := by simp [Cmds.definedVars]
+            -- Build inner guards from outer guard via GenStep monotonicity.
+            have h_inner_guard_b : ∀ s : String, x = HasIdent.ident (P := P) s →
+                s ∈ StringGenState.stringGens gen_r ∨
+                s ∉ StringGenState.stringGens gen_b :=
+              fun s heq => match h_outer_guard s heq with
+              | Or.inl h_in => Or.inl (h_step_gen_to_r.subset h_in)
+              | Or.inr h_not_in => Or.inr (fun h_in_b => h_not_in
+                  (h_gen_eq_f ▸ h_step_b_to_f.subset h_in_b))
+            have h_inner_guard_r : ∀ s : String, x = HasIdent.ident (P := P) s →
+                s ∈ StringGenState.stringGens gen ∨
+                s ∉ StringGenState.stringGens gen_r :=
+              fun s heq => match h_outer_guard s heq with
+              | Or.inl h_in => Or.inl h_in
+              | Or.inr h_not_in => Or.inr (fun h_in_r => h_not_in
+                  (h_gen_eq_f ▸ h_step_b_to_f.subset (h_step_r_to_b.subset h_in_r)))
             have h_σ_body_x : σ_cfg_body x = none :=
-              h_preserve_body x h_σ_after_x h_nil_not h_x_not_body
-            exact h_preserve_rest x h_σ_body_x h_nil_not h_x_not_rest
+              h_preserve_body x h_σ_after_x h_nil_not h_x_not_body h_inner_guard_b
+            exact h_preserve_rest x h_σ_body_x h_nil_not h_x_not_rest h_inner_guard_r
         | inr h_match_branch =>
           obtain ⟨ρ_inner, h_body_match, h_ρ_blk_eq⟩ := h_match_branch
           have ⟨σ_cfg_body, h_step_body, h_agree_body, h_preserve_body⟩ :=
@@ -11450,6 +11707,9 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
             have h_σ_after_x : σ_cfg_after x = none := h_fresh_rest_inits_after x hx
             have h_nil_not : x ∉ Cmds.definedVars [].reverse := by simp [Cmds.definedVars]
             exact h_preserve_body x h_σ_after_x h_nil_not h_x_not_body
+              (fun s heq => Or.inr
+                (StringGenState.not_mem_stringGens_of_not_hasUnderscoreDigitSuffix h_wf_b
+                  (h_rest_no_gen_suffix x (by simp [Cmds.definedVars]; exact hx) s heq)))
           have h_combined_rest :
               ∀ x ∈ Cmds.definedVars [].reverse ++ Block.initVars rest,
               σ_cfg_body x = none := by
@@ -11466,19 +11726,26 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
           have h_hf_r : ρ_blk.hasFailure = (ρ_blk.hasFailure || false) := by simp
           have h_hasFail_blk : ρ_blk.hasFailure = ρ_inner.hasFailure := by
             rw [h_ρ_blk_eq]
+          -- PATTERN 2 (closes in Commit C): wrap strengthened h_preserve_body for OLD-shape helper.
+          have h_preserve_body_old :
+              ∀ x : P.Ident, σ_cfg_after x = none →
+                  x ∉ Cmds.definedVars ([] : List (Cmd P)).reverse →
+                  x ∉ Block.initVars body →
+                  σ_cfg_body x = none := fun x hσ haccum hinit =>
+            h_preserve_body x hσ haccum hinit (by sorry)
           -- Lift store-no-gens to σ_cfg_body for the rest recursion.
           have h_store_no_gens_body :
               ∀ x : String, String.HasUnderscoreDigitSuffix x →
                 x ∉ StringGenState.stringGens gen →
                 σ_cfg_body (HasIdent.ident (P := P) x) = none :=
-            store_no_gens_lift_through_subsim h_preserve_body gen
+            store_no_gens_lift_through_subsim h_preserve_body_old gen
               h_store_no_gens_after
               (fun x hx s heq => h_body_no_gen_suffix x (List.mem_append_right _ hx) s heq)
           have h_store_no_gens_upper_body :
               ∀ x : String, String.HasUnderscoreDigitSuffix x →
                 x ∉ StringGenState.stringGens genUpperBound →
                 σ_cfg_body (HasIdent.ident (P := P) x) = none :=
-            store_no_gens_lift_through_subsim h_preserve_body genUpperBound
+            store_no_gens_lift_through_subsim h_preserve_body_old genUpperBound
               h_store_no_gens_upper_after
               (fun x hx s heq => h_body_no_gen_suffix x (List.mem_append_right _ hx) s heq)
           have ⟨σ_cfg_rest, h_step_rest, h_agree_rest, h_preserve_rest⟩ :=
@@ -11501,7 +11768,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
               rw [h_hasFail_blk]; exact h_step_body
             exact StepDetCFGStar_trans
               (StepDetCFGStar_trans h_step_flush h_step_body') h_step_rest
-          · intro x h_σ_x h_x_not_accum h_x_not_inits
+          · intro x h_σ_x h_x_not_accum h_x_not_inits h_outer_guard
             have h_x_not_body : x ∉ Block.initVars body := by
               intro hx
               apply h_x_not_inits
@@ -11514,9 +11781,24 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
               exact List.mem_append_right _ hx
             have h_σ_after_x : σ_cfg_after x = none := h_preserve_flush x h_σ_x h_x_not_accum
             have h_nil_not : x ∉ Cmds.definedVars [].reverse := by simp [Cmds.definedVars]
+            -- Build inner guards from outer guard via GenStep monotonicity.
+            have h_inner_guard_b : ∀ s : String, x = HasIdent.ident (P := P) s →
+                s ∈ StringGenState.stringGens gen_r ∨
+                s ∉ StringGenState.stringGens gen_b :=
+              fun s heq => match h_outer_guard s heq with
+              | Or.inl h_in => Or.inl (h_step_gen_to_r.subset h_in)
+              | Or.inr h_not_in => Or.inr (fun h_in_b => h_not_in
+                  (h_gen_eq_f ▸ h_step_b_to_f.subset h_in_b))
+            have h_inner_guard_r : ∀ s : String, x = HasIdent.ident (P := P) s →
+                s ∈ StringGenState.stringGens gen ∨
+                s ∉ StringGenState.stringGens gen_r :=
+              fun s heq => match h_outer_guard s heq with
+              | Or.inl h_in => Or.inl h_in
+              | Or.inr h_not_in => Or.inr (fun h_in_r => h_not_in
+                  (h_gen_eq_f ▸ h_step_b_to_f.subset (h_step_r_to_b.subset h_in_r)))
             have h_σ_body_x : σ_cfg_body x = none :=
-              h_preserve_body x h_σ_after_x h_nil_not h_x_not_body
-            exact h_preserve_rest x h_σ_body_x h_nil_not h_x_not_rest
+              h_preserve_body x h_σ_after_x h_nil_not h_x_not_body h_inner_guard_b
+            exact h_preserve_rest x h_σ_body_x h_nil_not h_x_not_rest h_inner_guard_r
   | .ite (.det e) thenBranch elseBranch md :: rest =>
     unfold stmtsToBlocks at h_gen
     simp [bind, StateT.bind, pure, StateT.pure, List.append_nil] at h_gen
@@ -11876,14 +12158,22 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
             cfg h_cfg_tbs h_cfg_nodup
         refine ⟨σ_cfg_branch, ?_, h_agree_branch, ?_⟩
         · exact StepDetCFGStar_trans h_flush_sim h_then_step
-        · intro x h_σ_x h_x_not_accum h_x_not_inits
+        · intro x h_σ_x h_x_not_accum h_x_not_inits h_outer_guard
           have h_x_not_then : x ∉ Block.initVars thenBranch := by
             intro hx
             apply h_x_not_inits
             rw [h_initvars_eq]; exact List.mem_append_left _ (List.mem_append_left _ hx)
           have h_σ_after_x : σ_cfg_after x = none := h_preserve_after x h_σ_x h_x_not_accum
           have h_nil_not : x ∉ Cmds.definedVars [].reverse := by simp [Cmds.definedVars]
-          exact h_preserve_branch x h_σ_after_x h_nil_not h_x_not_then
+          -- Build inner guard at (gen_ite, gen_t) from outer guard at (gen, gen').
+          have h_inner_guard_t : ∀ s : String, x = HasIdent.ident (P := P) s →
+              s ∈ StringGenState.stringGens gen_ite ∨
+              s ∉ StringGenState.stringGens gen_t :=
+            fun s heq => match h_outer_guard s heq with
+            | Or.inl h_in => Or.inl (h_step_gen_to_ite.subset h_in)
+            | Or.inr h_not_in => Or.inr (fun h_in_t => h_not_in
+                (h_gen_eq_f ▸ h_step_e_to_f.subset (h_step_t_to_e.subset h_in_t)))
+          exact h_preserve_branch x h_σ_after_x h_nil_not h_x_not_then h_inner_guard_t
       | inr h_false =>
         obtain ⟨h_else_exit, h_cond_ff⟩ := h_false
         have h_flush_sim : StepDetCFGStar extendEval cfg
@@ -11917,14 +12207,22 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
             cfg h_cfg_fbs h_cfg_nodup
         refine ⟨σ_cfg_branch, ?_, h_agree_branch, ?_⟩
         · exact StepDetCFGStar_trans h_flush_sim h_else_step
-        · intro x h_σ_x h_x_not_accum h_x_not_inits
+        · intro x h_σ_x h_x_not_accum h_x_not_inits h_outer_guard
           have h_x_not_else : x ∉ Block.initVars elseBranch := by
             intro hx
             apply h_x_not_inits
             rw [h_initvars_eq]; exact List.mem_append_left _ (List.mem_append_right _ hx)
           have h_σ_after_x : σ_cfg_after x = none := h_preserve_after x h_σ_x h_x_not_accum
           have h_nil_not : x ∉ Cmds.definedVars [].reverse := by simp [Cmds.definedVars]
-          exact h_preserve_branch x h_σ_after_x h_nil_not h_x_not_else
+          -- Build inner guard at (gen_t, gen_e) from outer guard at (gen, gen').
+          have h_inner_guard_e : ∀ s : String, x = HasIdent.ident (P := P) s →
+              s ∈ StringGenState.stringGens gen_t ∨
+              s ∉ StringGenState.stringGens gen_e :=
+            fun s heq => match h_outer_guard s heq with
+            | Or.inl h_in => Or.inl (h_step_gen_to_t.subset h_in)
+            | Or.inr h_not_in => Or.inr (fun h_in_e => h_not_in
+                (h_gen_eq_f ▸ h_step_e_to_f.subset h_in_e))
+          exact h_preserve_branch x h_σ_after_x h_nil_not h_x_not_else h_inner_guard_e
     | inr h_caseB =>
       -- Branch terminates at ρ_mid, then rest exits with `label`.
       obtain ⟨ρ_mid, h_branch_term_or, h_rest_exit⟩ := h_caseB
@@ -11999,6 +12297,9 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
           have h_σ_after_x : σ_cfg_after x = none := h_fresh_rest_inits_after x hx
           have : x ∉ Cmds.definedVars [].reverse := by simp [Cmds.definedVars]
           exact h_preserve_then x h_σ_after_x this h_x_not_then
+            (fun s heq => Or.inr
+              (StringGenState.not_mem_stringGens_of_not_hasUnderscoreDigitSuffix h_wf_t
+                (h_rest_no_gen_suffix x (by simp [Cmds.definedVars]; exact hx) s heq)))
         have h_combined_rest :
             ∀ x ∈ Cmds.definedVars [].reverse ++ Block.initVars rest,
             σ_branch x = none := by
@@ -12015,18 +12316,25 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
         have h_accum_nil_r : EvalCmds P (EvalCmd P) ρ_mid.eval ρ_mid.store
             [].reverse ρ_mid.store false := EvalCmds.eval_cmds_none
         have h_hf_r : ρ_mid.hasFailure = (ρ_mid.hasFailure || false) := by simp
+        -- PATTERN 2 (closes in Commit C): wrap strengthened h_preserve_then for OLD-shape helper.
+        have h_preserve_then_old :
+            ∀ x : P.Ident, σ_cfg_after x = none →
+                x ∉ Cmds.definedVars ([] : List (Cmd P)).reverse →
+                x ∉ Block.initVars thenBranch →
+                σ_branch x = none := fun x hσ haccum hinit =>
+          h_preserve_then x hσ haccum hinit (by sorry)
         have h_store_no_gens_branch_t :
             ∀ x : String, String.HasUnderscoreDigitSuffix x →
               x ∉ StringGenState.stringGens gen →
               σ_branch (HasIdent.ident (P := P) x) = none :=
-          store_no_gens_lift_through_subsim h_preserve_then gen
+          store_no_gens_lift_through_subsim h_preserve_then_old gen
             h_store_no_gens_after
             (fun x hx s heq => h_then_no_gen_suffix x (List.mem_append_right _ hx) s heq)
         have h_store_no_gens_upper_branch_t :
             ∀ x : String, String.HasUnderscoreDigitSuffix x →
               x ∉ StringGenState.stringGens genUpperBound →
               σ_branch (HasIdent.ident (P := P) x) = none :=
-          store_no_gens_lift_through_subsim h_preserve_then genUpperBound
+          store_no_gens_lift_through_subsim h_preserve_then_old genUpperBound
             h_store_no_gens_upper_after
             (fun x hx s heq => h_then_no_gen_suffix x (List.mem_append_right _ hx) s heq)
         have ⟨σ_cfg, h_rest_sim, h_agree_rest, h_preserve_rest⟩ :=
@@ -12045,7 +12353,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
         refine ⟨σ_cfg, ?_, h_agree_rest, ?_⟩
         · exact StepDetCFGStar_trans
             (StepDetCFGStar_trans h_flush_sim h_then_step) h_rest_sim
-        · intro x h_σ_x h_x_not_accum h_x_not_inits
+        · intro x h_σ_x h_x_not_accum h_x_not_inits h_outer_guard
           have h_x_not_then : x ∉ Block.initVars thenBranch := by
             intro hx
             apply h_x_not_inits
@@ -12056,9 +12364,25 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
             rw [h_initvars_eq]; exact List.mem_append_right _ hx
           have h_σ_after_x : σ_cfg_after x = none := h_preserve_after x h_σ_x h_x_not_accum
           have h_nil_not : x ∉ Cmds.definedVars [].reverse := by simp [Cmds.definedVars]
+          -- Build inner guards from outer guard via GenStep monotonicity.
+          have h_inner_guard_t : ∀ s : String, x = HasIdent.ident (P := P) s →
+              s ∈ StringGenState.stringGens gen_ite ∨
+              s ∉ StringGenState.stringGens gen_t :=
+            fun s heq => match h_outer_guard s heq with
+            | Or.inl h_in => Or.inl (h_step_gen_to_ite.subset h_in)
+            | Or.inr h_not_in => Or.inr (fun h_in_t => h_not_in
+                (h_gen_eq_f ▸ h_step_e_to_f.subset (h_step_t_to_e.subset h_in_t)))
+          have h_inner_guard_r : ∀ s : String, x = HasIdent.ident (P := P) s →
+              s ∈ StringGenState.stringGens gen ∨
+              s ∉ StringGenState.stringGens gen_r :=
+            fun s heq => match h_outer_guard s heq with
+            | Or.inl h_in => Or.inl h_in
+            | Or.inr h_not_in => Or.inr (fun h_in_r => h_not_in
+                (h_gen_eq_f ▸ h_step_e_to_f.subset (h_step_t_to_e.subset
+                  (h_step_ite_to_t.subset (h_step_r_to_ite.subset h_in_r)))))
           have h_σ_branch_x : σ_branch x = none :=
-            h_preserve_then x h_σ_after_x h_nil_not h_x_not_then
-          exact h_preserve_rest x h_σ_branch_x h_nil_not h_x_not_rest
+            h_preserve_then x h_σ_after_x h_nil_not h_x_not_then h_inner_guard_t
+          exact h_preserve_rest x h_σ_branch_x h_nil_not h_x_not_rest h_inner_guard_r
       | inr h_false =>
         obtain ⟨h_else_term, h_cond_ff⟩ := h_false
         have h_flush_sim : StepDetCFGStar extendEval cfg
@@ -12105,6 +12429,9 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
           have h_σ_after_x : σ_cfg_after x = none := h_fresh_rest_inits_after x hx
           have : x ∉ Cmds.definedVars [].reverse := by simp [Cmds.definedVars]
           exact h_preserve_else x h_σ_after_x this h_x_not_else
+            (fun s heq => Or.inr
+              (StringGenState.not_mem_stringGens_of_not_hasUnderscoreDigitSuffix h_wf_e
+                (h_rest_no_gen_suffix x (by simp [Cmds.definedVars]; exact hx) s heq)))
         have h_combined_rest :
             ∀ x ∈ Cmds.definedVars [].reverse ++ Block.initVars rest,
             σ_branch x = none := by
@@ -12121,18 +12448,25 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
         have h_accum_nil_r : EvalCmds P (EvalCmd P) ρ_mid.eval ρ_mid.store
             [].reverse ρ_mid.store false := EvalCmds.eval_cmds_none
         have h_hf_r : ρ_mid.hasFailure = (ρ_mid.hasFailure || false) := by simp
+        -- PATTERN 2 (closes in Commit C): wrap strengthened h_preserve_else for OLD-shape helper.
+        have h_preserve_else_old :
+            ∀ x : P.Ident, σ_cfg_after x = none →
+                x ∉ Cmds.definedVars ([] : List (Cmd P)).reverse →
+                x ∉ Block.initVars elseBranch →
+                σ_branch x = none := fun x hσ haccum hinit =>
+          h_preserve_else x hσ haccum hinit (by sorry)
         have h_store_no_gens_branch_e :
             ∀ x : String, String.HasUnderscoreDigitSuffix x →
               x ∉ StringGenState.stringGens gen →
               σ_branch (HasIdent.ident (P := P) x) = none :=
-          store_no_gens_lift_through_subsim h_preserve_else gen
+          store_no_gens_lift_through_subsim h_preserve_else_old gen
             h_store_no_gens_after
             (fun x hx s heq => h_else_no_gen_suffix x (List.mem_append_right _ hx) s heq)
         have h_store_no_gens_upper_branch_e :
             ∀ x : String, String.HasUnderscoreDigitSuffix x →
               x ∉ StringGenState.stringGens genUpperBound →
               σ_branch (HasIdent.ident (P := P) x) = none :=
-          store_no_gens_lift_through_subsim h_preserve_else genUpperBound
+          store_no_gens_lift_through_subsim h_preserve_else_old genUpperBound
             h_store_no_gens_upper_after
             (fun x hx s heq => h_else_no_gen_suffix x (List.mem_append_right _ hx) s heq)
         have ⟨σ_cfg, h_rest_sim, h_agree_rest, h_preserve_rest⟩ :=
@@ -12151,7 +12485,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
         refine ⟨σ_cfg, ?_, h_agree_rest, ?_⟩
         · exact StepDetCFGStar_trans
             (StepDetCFGStar_trans h_flush_sim h_else_step) h_rest_sim
-        · intro x h_σ_x h_x_not_accum h_x_not_inits
+        · intro x h_σ_x h_x_not_accum h_x_not_inits h_outer_guard
           have h_x_not_else : x ∉ Block.initVars elseBranch := by
             intro hx
             apply h_x_not_inits
@@ -12162,9 +12496,25 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
             rw [h_initvars_eq]; exact List.mem_append_right _ hx
           have h_σ_after_x : σ_cfg_after x = none := h_preserve_after x h_σ_x h_x_not_accum
           have h_nil_not : x ∉ Cmds.definedVars [].reverse := by simp [Cmds.definedVars]
+          -- Build inner guards from outer guard via GenStep monotonicity.
+          have h_inner_guard_e : ∀ s : String, x = HasIdent.ident (P := P) s →
+              s ∈ StringGenState.stringGens gen_t ∨
+              s ∉ StringGenState.stringGens gen_e :=
+            fun s heq => match h_outer_guard s heq with
+            | Or.inl h_in => Or.inl (h_step_gen_to_t.subset h_in)
+            | Or.inr h_not_in => Or.inr (fun h_in_e => h_not_in
+                (h_gen_eq_f ▸ h_step_e_to_f.subset h_in_e))
+          have h_inner_guard_r : ∀ s : String, x = HasIdent.ident (P := P) s →
+              s ∈ StringGenState.stringGens gen ∨
+              s ∉ StringGenState.stringGens gen_r :=
+            fun s heq => match h_outer_guard s heq with
+            | Or.inl h_in => Or.inl h_in
+            | Or.inr h_not_in => Or.inr (fun h_in_r => h_not_in
+                (h_gen_eq_f ▸ h_step_e_to_f.subset (h_step_t_to_e.subset
+                  (h_step_ite_to_t.subset (h_step_r_to_ite.subset h_in_r)))))
           have h_σ_branch_x : σ_branch x = none :=
-            h_preserve_else x h_σ_after_x h_nil_not h_x_not_else
-          exact h_preserve_rest x h_σ_branch_x h_nil_not h_x_not_rest
+            h_preserve_else x h_σ_after_x h_nil_not h_x_not_else h_inner_guard_e
+          exact h_preserve_rest x h_σ_branch_x h_nil_not h_x_not_rest h_inner_guard_r
   | .ite .nondet thenBranch elseBranch md :: rest =>
     sorry
   | .loop guard measure invariants body md :: rest =>
