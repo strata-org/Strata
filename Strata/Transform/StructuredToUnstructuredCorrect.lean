@@ -7606,66 +7606,86 @@ The lemma `stmtsToBlocks_run_visited_subset` is required to discharge
 body's IH-run when introducing a fresh boolean variable in the
 `.ite .nondet` and `.loop .nondet` cases.
 
-PROOF DECOMPOSITION:
+PROOF DECOMPOSITION (Phase 2c-finish, Option B — *factored*):
 
-1. A monolithic structural fact `stmtsToBlocks_step_source_in_blocks`
-   (sorry-stubbed, ~700 LOC of structural induction over the 8 cases of
-   `stmtsToBlocks`): along any CFG run starting at `entry`, every label
-   from which control proceeds further is one of the labels emitted in
-   `blocks`. That is, all step-source labels live in `blocks.map Prod.fst`.
+1. A run-induction lemma `stmtsToBlocks_step_source_in_blocks` parameterized
+   by THREE structural-classification preconditions:
+   - `h_entry_classify`: `entry ∈ blocks.map Prod.fst ∨ entry = k`.
+   - `h_targets_classify`: from any block in `blocks`, all transfer targets
+     land in `blocks.map Prod.fst ∪ {k}`.
+   - `h_k_finish`: stepping from `k` always yields a `.terminal` config (so
+     `k` is not a productive step-source for `.cont` configs).
+   The conclusion is the **disjunction** `lbl ∈ blocks.map Prod.fst ∨ lbl = k`.
+   Walks `h_prefix` via `ReflTrans` induction, using the three classifications
+   as preservation laws.
 
-2. A short wrapper combining the structural fact with `cfg.blocks.Nodup`
-   to extract the unique block at the visited label.
+2. A short wrapper combining the run-induction with `cfg.blocks.Nodup` to
+   extract the unique block at the visited label, propagating the disjunction.
 
-The structural fact's proof sketch (cases mirror `stmtsToBlocks`):
-- Base case `[]` (`flushCmds k accum .none k`):
-  - If accum is empty: emitted `blocks = []`, entry = k.  No step from
-    entry stays in this stmtsToBlocks's "world".
-  - Otherwise: emitted single block at fresh label `l`, transfer = goto k.
-    Step source is `l` ∈ blocks. ✓
-- `.cmd c :: rest`: recurse with extended accum (same emitted blocks). ✓
-- `.funcDecl _ _ :: rest`, `.typeDecl _ _ :: rest`: recurse with same accum. ✓
-- `.block l bss md :: rest`: emitted blocks include accumBlocks ∪
-  [(l, ⟨[], goto bl md⟩)]? ∪ bbs ∪ bsNext.  Step sources are all of these.
-  - Transfers: accumBlocks → bl (in bbs); the label-block → bl (in bbs);
-    bbs (by IH on bss with extended exitConts) → bbs ∪ {kNext} ∪ exitConts.snd
-    where kNext is bsNext's entry; bsNext (by IH on rest) → bsNext ∪ {k} ∪
-    exitConts.snd.  All targets land in this stmtsToBlocks's set. ✓
-- `.ite c tss fss md :: rest`: emitted blocks include accumBlocks ∪ tbs ∪
-  fbs ∪ bsNext.  flushCmds emits a single block with transfer condGoto _ tl fl,
-  whose targets [tl, fl] are entries of tbs, fbs.  IH on tss/fss/rest. ✓
-- `.loop ... :: rest`: emitted blocks include accumBlocks ∪
-  [(lentry, ⟨..., condGoto _ bl kNext⟩)] ∪ bbs ∪ decreaseBlocks ∪ bsNext.
-  Lentry's targets are [bl, kNext]; bl ∈ bbs, kNext ∈ bsNext.  IH on bss/rest. ✓
-- `.exit l md :: _`: emitted single block at fresh `exitName` with transfer
-  goto bk where `bk = exitConts.lookup (.some l) <|> k`.  Target = bk, in
-  exitConts.snd ∪ {k}.  ✓
+The structural classifications are LOCAL to each call site of the wrapper —
+PB-T9-style structural induction is deferred to the consumer (the four
+PB-T closure tasks consuming this wrapper).
 
-The structural fact is parameterized by the call site's full input, so the
-wrapper just delegates to it.
+If this lemma is ever generalized further to internalize the structural
+induction, see Agent A's prior work for `flushCmds_targets_subset` (~100 LOC)
+and `stmtsToBlocks_targets_subset` (~600 LOC) which decompose the recursion
+over `stmtsToBlocks`'s 8 cases.
 -/
 
-/-- **Monolithic structural fact (PB-T10) — STUB (~700 LOC)**: along any CFG
-run starting at `entry`, every step source's label is in `blocks.map Prod.fst`.
+/-- Helper: list of explicit transfer targets of a `DetTransferCmd`.  This
+   is the set of labels the transfer can branch into.  `condGoto e lt lf`
+   has targets `[lt, lf]`; `finish` has no targets. -/
+@[expose] def DetTransferCmd_targets {l : Type} {P : PureExpr} :
+    DetTransferCmd l P → List l
+  | .condGoto _ lt lf _ => [lt, lf]
+  | .finish _ => []
 
-This combines the "entry is the right kind of label" and
-"transfer targets stay in the right set" lemmas into one statement, parameterized
-by the run.  Its proof requires structural induction over `stmtsToBlocks`'s 8
-cases (see doc comment for the file-level skeleton).
+/-- Auxiliary: `EvalDetBlock σ blk config` produces a config that is either
+`.terminal _` (when transfer is `.finish`) or `.cont l' _ _` for some `l'`
+that's a target of `blk.transfer` (when transfer is `.condGoto`).  This is
+purely an unpacking of the four constructors of `EvalDetBlock`. -/
+private theorem EvalDetBlock_config_classify
+    {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
+    {extendEval : ExtendEval P}
+    {l : Type}
+    {σ : SemanticStore P}
+    {blk : DetBlock l (Cmd P) P}
+    {config : CFGConfig l P}
+    (h_eval : EvalDetBlock P (EvalCmd P) extendEval σ blk config) :
+    (∃ σ' hf', config = .terminal σ' hf') ∨
+    (∃ l' σ' hf', config = .cont l' σ' hf' ∧
+      l' ∈ DetTransferCmd_targets blk.transfer) := by
+  induction h_eval with
+  | cmd _h_evalCmd _h_evalRest ih =>
+    -- Outer block is ⟨c :: cs, transfer⟩; inner block is ⟨cs, transfer⟩
+    -- (same `transfer` ⟹ same `DetTransferCmd_targets`).
+    -- Outer config = updateFailure (inner_config) failed_outer.
+    rcases ih with ⟨σ_out, hf_out, h_eq⟩ | ⟨l_out, σ_out, hf_out, h_eq, h_tgt⟩
+    · -- Inner config is .terminal σ_out hf_out; outer = .terminal σ_out (hf_out || _).
+      rw [h_eq]
+      simp only [updateFailure]
+      refine Or.inl ⟨σ_out, _, rfl⟩
+    · -- Inner config is .cont l_out σ_out hf_out; outer = .cont l_out σ_out (hf_out || _).
+      rw [h_eq]
+      simp only [updateFailure]
+      refine Or.inr ⟨l_out, σ_out, _, rfl, h_tgt⟩
+  | @goto_true _ _ _ _ _ _ _h_eval _ _ =>
+    refine Or.inr ⟨_, _, false, rfl, ?_⟩
+    simp [DetTransferCmd_targets]
+  | @goto_false _ _ _ _ _ _ _h_eval _ _ =>
+    refine Or.inr ⟨_, _, false, rfl, ?_⟩
+    simp [DetTransferCmd_targets]
+  | @terminal _ _ =>
+    exact Or.inl ⟨_, false, rfl⟩
 
-Notes for future closure:
-- The `cfg.blocks` argument lets the structural fact apply to any CFG that
-  *contains* the emitted blocks (specifically `(stmtsToCFG ss).blocks`).
-- The `h_run` argument is needed to scope step sources to those reachable
-  along a body run that ends at `k` (so `k` itself is not a step source).
-- To close the trivial-emit edge case (entry = k, blocks = []), an
-  additional precondition such as `entry ≠ k` or `(blocks ≠ []) ∨ (accum = [] ∧ ss = [])`
-  may be needed.
+/-- **Run-induction structural fact (PB-T10, Option B factored)**: along any
+prefix of a run from `entry`, the prefix's end-label is in
+`blocks.map Prod.fst ∪ {k}`.
 
-If this lemma is ever generalized further, see Agent A's prior work for
-the helpers `flushCmds_targets_subset` (~100 LOC) and
-`stmtsToBlocks_targets_subset` (~600 LOC) which were the planned
-decomposition; this monolithic form simply combines them. -/
+The three classifications (`h_entry_classify`, `h_targets_classify`,
+`h_k_finish`) must be proven LOCALLY at the call site by inspection of
+`h_gen` and the specific `stmtsToBlocks` decomposition.  See doc comment
+for closure plan. -/
 private theorem stmtsToBlocks_step_source_in_blocks
     {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
     [HasVal P] [HasIdent P] [HasIntOrder P]
@@ -7675,42 +7695,156 @@ private theorem stmtsToBlocks_step_source_in_blocks
     {exitConts : List (Option String × String)}
     {accum : List (Cmd P)} {gen gen' : StringGenState}
     {entry : String} {blocks : DetBlocks String (Cmd P) P}
-    (h_gen : stmtsToBlocks k ss exitConts accum gen = ((entry, blocks), gen'))
+    (_h_gen : stmtsToBlocks k ss exitConts accum gen = ((entry, blocks), gen'))
     (cfg : CFG String (DetBlock String (Cmd P) P))
     (h_cfg_blocks : ∀ b ∈ blocks, b ∈ cfg.blocks)
     (h_cfg_nodup : (cfg.blocks.map Prod.fst).Nodup)
+    -- Structural-classification preconditions (Option B, factored):
+    (h_entry_classify : entry ∈ blocks.map Prod.fst ∨ entry = k)
+    (h_targets_classify :
+      ∀ pair ∈ blocks, ∀ tgt ∈ DetTransferCmd_targets pair.2.transfer,
+        tgt ∈ blocks.map Prod.fst ∨ tgt = k)
+    (h_k_finish :
+      ∀ σk hfk c'k, @StepCFG _ _ (Cmd P) _ P
+        (EvalDetBlock P (EvalCmd P) extendEval) cfg
+        (.cont k σk hfk) c'k →
+        ∃ σk' hfk', c'k = .terminal σk' hfk')
     {σ_entry σ_exit : SemanticStore P} {hf_entry hf_exit : Bool}
-    (h_run : StepDetCFGStar extendEval cfg
+    (_h_run : StepDetCFGStar extendEval cfg
               (.cont entry σ_entry hf_entry)
               (.cont k σ_exit hf_exit))
     {lbl : String} {σ : SemanticStore P} {hf : Bool} {c' : CFGConfig String P}
     (h_prefix : StepDetCFGStar extendEval cfg
         (.cont entry σ_entry hf_entry) (.cont lbl σ hf))
-    (h_step : @StepCFG _ _ (Cmd P) _ P
+    (_h_step : @StepCFG _ _ (Cmd P) _ P
         (EvalDetBlock P (EvalCmd P) extendEval) cfg
         (.cont lbl σ hf) c') :
-    lbl ∈ blocks.map Prod.fst := by
-  -- See doc comment for the proof sketch.
-  -- This stub must be replaced with the full structural induction (~700 LOC).
-  -- All hypotheses are used by the eventual proof:
-  -- - h_gen: the source of truth for what `blocks` contains.
-  -- - cfg, h_cfg_blocks, h_cfg_nodup: blocks ⊆ cfg.blocks; cfg labels Nodup.
-  -- - h_run: scopes step sources to those reachable along a body run ending at k
-  --   (so k itself is not a step source — needed for the strengthened conclusion).
-  -- - h_prefix, h_step: the visited (lbl, σ, hf) and the next step.
-  sorry
+    lbl ∈ blocks.map Prod.fst ∨ lbl = k := by
+  -- The unused hypotheses (`_h_gen`, `_h_run`, `_h_step`) are preserved
+  -- in the signature because callers will rely on them when discharging
+  -- the structural classifications via PB-T9-style structural induction
+  -- (or when downstream lemmas combine multiple uses of the structural fact).
+  --
+  -- ## Strategy
+  -- Walk `h_prefix` accumulating the invariant
+  --     ConfigInSet c := (∃ l' σ' hf', c = .cont l' σ' hf' ∧
+  --                          (l' ∈ blocks.map Prod.fst ∨ l' = k))
+  --                       ∨ (∃ σ' hf', c = .terminal σ' hf')
+  -- which holds at the start (entry is `.cont` with classified label, by
+  -- `h_entry_classify`) and is preserved by `StepCFG`.  The preservation
+  -- step uses `EvalDetBlock_config_classify` to project the next config's
+  -- shape, then `h_targets_classify` (when `l ∈ blocks`) or `h_k_finish`
+  -- (when `l = k`) to classify its label.  At the end, applying the
+  -- invariant to `(.cont lbl σ hf)` yields the disjunction.
+  -- ## Step 1: Preservation lemma.
+  have h_step_preserve :
+      ∀ (c c2 : CFGConfig String P),
+        ((∃ l1 σ1 hf1, c = .cont l1 σ1 hf1 ∧
+            (l1 ∈ blocks.map Prod.fst ∨ l1 = k)) ∨
+         (∃ σ1 hf1, c = .terminal σ1 hf1)) →
+        @StepCFG _ _ (Cmd P) _ P
+          (EvalDetBlock P (EvalCmd P) extendEval) cfg c c2 →
+        ((∃ l2 σ2 hf2, c2 = .cont l2 σ2 hf2 ∧
+            (l2 ∈ blocks.map Prod.fst ∨ l2 = k)) ∨
+         (∃ σ2 hf2, c2 = .terminal σ2 hf2)) := by
+    intro c c2 h_c h_step_cc2
+    cases h_step_cc2 with
+    | eval_next h_lookup h_eval =>
+      rename_i t b_lookup σ_c config failed
+      -- The starting config is `.cont t σ_c failed`, so `h_c`'s `.terminal`
+      -- branch is impossible.
+      rcases h_c with ⟨l1, σ1, hf1, h_eq, h_class⟩ | ⟨σ1, hf1, h_eq⟩
+      · -- Match labels: t = l1.
+        injection h_eq with h_t_eq_l1 h_σ_eq h_hf_eq
+        subst h_t_eq_l1
+        subst h_σ_eq
+        subst h_hf_eq
+        rcases h_class with h_l1_in | h_l1_eq_k
+        · -- l1 ∈ blocks; use Nodup to identify the unique block at l1.
+          obtain ⟨pair, h_pair_mem, h_pair_lbl⟩ := List.mem_map.mp h_l1_in
+          have h_pair_in_cfg : pair ∈ cfg.blocks := h_cfg_blocks _ h_pair_mem
+          have h_lkp : List.lookup pair.fst cfg.blocks = some pair.snd := by
+            have hp : (pair.fst, pair.snd) ∈ cfg.blocks := by
+              obtain ⟨a, bb⟩ := pair; exact h_pair_in_cfg
+            exact List.lookup_of_mem_nodup cfg.blocks h_cfg_nodup _ _ hp
+          rw [h_pair_lbl] at h_lkp
+          rw [h_lookup] at h_lkp
+          have h_b_eq : pair.snd = b_lookup := Option.some.inj h_lkp.symm
+          -- Project config's shape.
+          have h_config_class :
+              (∃ σ' hf', config = .terminal σ' hf') ∨
+              (∃ l' σ' hf', config = .cont l' σ' hf' ∧
+                l' ∈ DetTransferCmd_targets b_lookup.transfer) :=
+            EvalDetBlock_config_classify (extendEval := extendEval) h_eval
+          rcases h_config_class with ⟨σ', hf', h_term⟩ | ⟨l', σ', hf', h_cont, h_tgt⟩
+          · -- config = .terminal _; updateFailure preserves terminal.
+            refine Or.inr ⟨σ', hf' || failed, ?_⟩
+            rw [h_term]; rfl
+          · -- config = .cont l' _ _; l' is a target of b_lookup.transfer
+            -- = pair.snd.transfer, classified by h_targets_classify.
+            have h_tgt_pair : l' ∈ DetTransferCmd_targets pair.snd.transfer := by
+              rw [h_b_eq]; exact h_tgt
+            have h_l'_class : l' ∈ blocks.map Prod.fst ∨ l' = k :=
+              h_targets_classify pair h_pair_mem l' h_tgt_pair
+            refine Or.inl ⟨l', σ', hf' || failed, ?_, h_l'_class⟩
+            rw [h_cont]; rfl
+        · -- t = k; use h_k_finish on the reconstructed step.
+          -- After substs, h_l1_eq_k : t = k.  Don't use subst (Lean might
+          -- eliminate the wrong var); use the equality directly.
+          rw [h_l1_eq_k] at h_lookup
+          have h_step_full : @StepCFG _ _ (Cmd P) _ P
+              (EvalDetBlock P (EvalCmd P) extendEval) cfg
+              (.cont k σ_c failed) (updateFailure config failed) :=
+            StepCFG.eval_next h_lookup h_eval
+          obtain ⟨σk', hfk', h_term⟩ := h_k_finish σ_c failed _ h_step_full
+          refine Or.inr ⟨σk', hfk', h_term⟩
+      · -- h_eq : .cont t σ_c failed = .terminal σ1 hf1; impossible.
+        cases h_eq
+  -- ## Step 2: Walk `h_prefix` via induction on `ReflTrans`, threading the
+  -- preservation through.
+  have h_walk :
+      ∀ (c1 c2 : CFGConfig String P),
+        StepDetCFGStar extendEval cfg c1 c2 →
+        ((∃ l1 σ1 hf1, c1 = .cont l1 σ1 hf1 ∧
+            (l1 ∈ blocks.map Prod.fst ∨ l1 = k)) ∨
+         (∃ σ1 hf1, c1 = .terminal σ1 hf1)) →
+        ((∃ l2 σ2 hf2, c2 = .cont l2 σ2 hf2 ∧
+            (l2 ∈ blocks.map Prod.fst ∨ l2 = k)) ∨
+         (∃ σ2 hf2, c2 = .terminal σ2 hf2)) := by
+    intro c1 c2 h_run h_inv
+    induction h_run with
+    | refl => exact h_inv
+    | step _ c_mid _ h_step_first h_rest ih =>
+      have h_mid_inv := h_step_preserve _ _ h_inv h_step_first
+      exact ih h_mid_inv
+  -- ## Step 3: Apply h_walk to h_prefix.
+  have h_start :
+      (∃ l1 σ1 hf1, (CFGConfig.cont entry σ_entry hf_entry : CFGConfig String P) = .cont l1 σ1 hf1 ∧
+        (l1 ∈ blocks.map Prod.fst ∨ l1 = k)) ∨
+      (∃ σ1 hf1, (CFGConfig.cont entry σ_entry hf_entry : CFGConfig String P) = .terminal σ1 hf1) :=
+    Or.inl ⟨entry, σ_entry, hf_entry, rfl, h_entry_classify⟩
+  have h_inv_lbl := h_walk _ _ h_prefix h_start
+  -- ## Step 4: Extract the disjunction.
+  rcases h_inv_lbl with ⟨l2, σ2, hf2, h_eq, h_class⟩ | ⟨σ2, hf2, h_eq⟩
+  · have h_l2_eq : l2 = lbl := by injection h_eq with h _ _; exact h.symm
+    rw [h_l2_eq] at h_class
+    exact h_class
+  · cases h_eq
 
 /-- **PB-T10 reachability lemma**: any CFG run starting at the emitted
-`entry` of `stmtsToBlocks` reaches only labels of `blocks` (when stepping
-further). The conclusion `(lbl, blk) ∈ blocks` is the strengthened form
-(NOT a disjunction): step-source labels are in `blocks` strictly.
+`entry` of `stmtsToBlocks` reaches only labels of `blocks ∪ {k}` (when
+stepping further).
 
 This is used to discharge `stepDetCFGStar_frame_extend_one_run`'s
 `h_frame_unused_along_run` at the call site for `.ite .nondet` and
 `.loop .nondet` cases.  The structural fact
-`stmtsToBlocks_step_source_in_blocks` (sorry-stubbed) is the heavy
-structural induction; this wrapper combines it with `cfg.blocks.Nodup`
-to extract the unique block at the visited label. -/
+`stmtsToBlocks_step_source_in_blocks` is the run-induction lemma; this
+wrapper combines it with `cfg.blocks.Nodup` to extract the unique block
+at the visited label.  The conclusion is the disjunction
+`(lbl, blk) ∈ blocks ∨ lbl = k`; the consumer (PB-T closure tasks) is
+expected to handle the `lbl = k` branch separately (typically by noting
+that `k` is the loop continuation, whose block is the trivial finish-block
+with empty `cfgFrameTouches`). -/
 private theorem stmtsToBlocks_run_visited_subset
     {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
     [HasVal P] [HasIdent P] [HasIntOrder P]
@@ -7724,6 +7858,16 @@ private theorem stmtsToBlocks_run_visited_subset
     (cfg : CFG String (DetBlock String (Cmd P) P))
     (h_cfg_blocks : ∀ b ∈ blocks, b ∈ cfg.blocks)
     (h_cfg_nodup : (cfg.blocks.map Prod.fst).Nodup)
+    -- Structural-classification preconditions (Option B, factored):
+    (h_entry_classify : entry ∈ blocks.map Prod.fst ∨ entry = k)
+    (h_targets_classify :
+      ∀ pair ∈ blocks, ∀ tgt ∈ DetTransferCmd_targets pair.2.transfer,
+        tgt ∈ blocks.map Prod.fst ∨ tgt = k)
+    (h_k_finish :
+      ∀ σk hfk c'k, @StepCFG _ _ (Cmd P) _ P
+        (EvalDetBlock P (EvalCmd P) extendEval) cfg
+        (.cont k σk hfk) c'k →
+        ∃ σk' hfk', c'k = .terminal σk' hfk')
     {σ_entry σ_exit : SemanticStore P} {hf_entry hf_exit : Bool}
     (h_run : StepDetCFGStar extendEval cfg
               (.cont entry σ_entry hf_entry)
@@ -7734,28 +7878,30 @@ private theorem stmtsToBlocks_run_visited_subset
       @StepCFG _ _ (Cmd P) _ P (EvalDetBlock P (EvalCmd P) extendEval) cfg
         (.cont lbl σ hf) c' →
       (lbl, blk) ∈ cfg.blocks →
-      (lbl, blk) ∈ blocks := by
+      (lbl, blk) ∈ blocks ∨ lbl = k := by
   intro lbl σ hf blk c' h_prefix h_step h_in_cfg
-  -- Step 1: Use the structural fact to get lbl ∈ blocks.map Prod.fst.
-  have h_lbl_in_blocks : lbl ∈ blocks.map Prod.fst :=
-    stmtsToBlocks_step_source_in_blocks h_gen cfg h_cfg_blocks h_cfg_nodup h_run
-      h_prefix h_step
-  -- Step 2: Extract the unique block at lbl in `blocks`.
-  obtain ⟨pair, h_pair_mem, h_pair_eq⟩ := List.mem_map.mp h_lbl_in_blocks
-  obtain ⟨lbl_p, blk_p⟩ := pair
-  -- h_pair_eq : (lbl_p, blk_p).1 = lbl, i.e. lbl_p = lbl.
-  simp only [Prod.fst] at h_pair_eq
-  -- Now h_pair_eq : lbl_p = lbl. Rewrite blocks so we have (lbl, blk_p) ∈ blocks.
-  rw [h_pair_eq] at h_pair_mem
-  -- h_pair_mem : (lbl, blk_p) ∈ blocks. Lift to cfg.blocks.
-  have h_blk_p_in_cfg : (lbl, blk_p) ∈ cfg.blocks := h_cfg_blocks _ h_pair_mem
-  -- Both (lbl, blk) and (lbl, blk_p) are in cfg.blocks. By Nodup, the block is unique.
-  have h_lkp_blk := List.lookup_of_mem_nodup cfg.blocks h_cfg_nodup _ _ h_in_cfg
-  have h_lkp_blk_p := List.lookup_of_mem_nodup cfg.blocks h_cfg_nodup _ _ h_blk_p_in_cfg
-  rw [h_lkp_blk] at h_lkp_blk_p
-  have h_blk_eq : blk = blk_p := Option.some.inj h_lkp_blk_p
-  rw [h_blk_eq]
-  exact h_pair_mem
+  -- Step 1: Use the run-induction structural fact.
+  have h_lbl_or_k : lbl ∈ blocks.map Prod.fst ∨ lbl = k :=
+    stmtsToBlocks_step_source_in_blocks h_gen cfg h_cfg_blocks h_cfg_nodup
+      h_entry_classify h_targets_classify h_k_finish h_run h_prefix h_step
+  -- Step 2: Project the disjunction.
+  rcases h_lbl_or_k with h_lbl_in | h_lbl_eq_k
+  · -- lbl ∈ blocks.map Prod.fst.  Extract unique block via Nodup.
+    left
+    obtain ⟨pair, h_pair_mem, h_pair_eq⟩ := List.mem_map.mp h_lbl_in
+    obtain ⟨lbl_p, blk_p⟩ := pair
+    simp only at h_pair_eq
+    rw [h_pair_eq] at h_pair_mem
+    have h_blk_p_in_cfg : (lbl, blk_p) ∈ cfg.blocks := h_cfg_blocks _ h_pair_mem
+    have h_lkp_blk := List.lookup_of_mem_nodup cfg.blocks h_cfg_nodup _ _ h_in_cfg
+    have h_lkp_blk_p := List.lookup_of_mem_nodup cfg.blocks h_cfg_nodup _ _ h_blk_p_in_cfg
+    rw [h_lkp_blk] at h_lkp_blk_p
+    have h_blk_eq : blk = blk_p := Option.some.inj h_lkp_blk_p
+    rw [h_blk_eq]
+    exact h_pair_mem
+  · -- lbl = k.
+    right
+    exact h_lbl_eq_k
 
 set_option maxHeartbeats 3200000 in
 set_option maxRecDepth 4096 in
