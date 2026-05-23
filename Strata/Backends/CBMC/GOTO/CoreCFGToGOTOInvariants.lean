@@ -311,6 +311,22 @@ structure WellFormedTranslation
     ∀ l blk pc,
       (l, blk) ∈ cfg.blocks → labelMap l = some pc →
       ∃ instr, pgm.instrAt pc = some instr ∧ instr.type = .LOCATION
+  /-- The LOCATION instruction at `labelMap l`'s `pc` carries `[l]` in its
+  `labels` field. The translator emits LOCATION instructions via
+  `Imperative.emitLabel` whose shape is
+  `{ type := .LOCATION, locationNum := nextLoc, labels := [label], ... }`,
+  and the patcher only writes the `target` field, so this fact transfers
+  unchanged to the final `pgm.instructions`.
+
+  R10a uses this field to pin `labelMap` to the translator's
+  hashmap-keyed labelMap on `cfg.blocks` labels: a LOCATION whose
+  `labels = [l]` has a unique pc in the actual program, and the
+  translator emits exactly one such LOCATION per CFG block label. -/
+  layout_location_labels :
+    ∀ l blk pc,
+      (l, blk) ∈ cfg.blocks → labelMap l = some pc →
+      ∃ instr, pgm.instrAt pc = some instr ∧
+        instr.type = .LOCATION ∧ instr.labels = [l]
   /-- For each `condGoto` transfer in block `(l, blk)`, two `GOTO`
   instructions appear at the end of the block's instruction range. -/
   layout_cond_goto :

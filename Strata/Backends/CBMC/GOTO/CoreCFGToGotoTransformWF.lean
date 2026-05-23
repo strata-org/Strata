@@ -1657,6 +1657,68 @@ theorem patchGotoTargets_preserves_locationNum_eq_index
       exact h2
   exact hgen _ _ h_loc i instr
 
+/-- A single patch step preserves the `labels` field. R10a uses this
+to lift the `labels = [l]` invariant from `st_final.trans` to `ans`. -/
+private theorem patch_one_preserves_labels
+    (a : Array CProverGOTO.Instruction) (idx tgt : Nat)
+    (i : Nat) (instr : CProverGOTO.Instruction)
+    (h : (a.set! idx { a[idx]! with target := some tgt })[i]? = some instr) :
+    ∃ instr_pre,
+      a[i]? = some instr_pre ∧
+      instr.labels = instr_pre.labels := by
+  rw [Array.set!_eq_setIfInBounds] at h
+  by_cases h_idx : idx < a.size
+  · by_cases h_eq : i = idx
+    · subst h_eq
+      have h_lt_set :
+          i < (a.setIfInBounds i { a[i]! with target := some tgt }).size := by
+        simp [h_idx]
+      rw [Array.getElem?_eq_getElem h_lt_set] at h
+      rw [Array.getElem_setIfInBounds_self] at h
+      injection h with h
+      have h_at : a[i]? = some a[i] := Array.getElem?_eq_getElem h_idx
+      refine ⟨a[i], h_at, ?_⟩
+      have h_getD : a[i]! = a[i] := getElem!_pos a i h_idx
+      rw [← h]
+      simp [h_getD]
+    · rw [Array.getElem?_setIfInBounds_ne (Ne.symm h_eq)] at h
+      exact ⟨instr, h, rfl⟩
+  · rw [Array.setIfInBounds_eq_of_size_le (Nat.le_of_not_lt h_idx)] at h
+    exact ⟨instr, h, rfl⟩
+
+/-- `patchGotoTargets` preserves the `labels` field. -/
+theorem patchGotoTargets_preserves_labels
+    (trans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (patches : List (Nat × Nat))
+    (i : Nat) (instr : CProverGOTO.Instruction)
+    (h : (Imperative.patchGotoTargets trans patches).instructions[i]? = some instr) :
+    ∃ instr_pre,
+      trans.instructions[i]? = some instr_pre ∧
+      instr.labels = instr_pre.labels := by
+  unfold Imperative.patchGotoTargets at h
+  simp only at h
+  have hgen :
+      ∀ (a : Array CProverGOTO.Instruction) (ps : List (Nat × Nat))
+        (i : Nat) (instr : CProverGOTO.Instruction),
+        (List.foldl
+          (fun acc (p : Nat × Nat) =>
+            acc.set! p.fst { acc[p.fst]! with target := some p.snd })
+          a ps)[i]? = some instr →
+        ∃ instr_pre, a[i]? = some instr_pre ∧
+          instr.labels = instr_pre.labels := by
+    intro a ps i instr h
+    induction ps generalizing a with
+    | nil =>
+      simp at h
+      exact ⟨instr, h, rfl⟩
+    | cons p ps ih =>
+      simp only [List.foldl] at h
+      obtain ⟨instr_after_first, h_after_first, h_lab_after⟩ := ih _ h
+      obtain ⟨instr_pre, h_pre, h_lab_pre⟩ :=
+        patch_one_preserves_labels a p.1 p.2 i instr_after_first h_after_first
+      exact ⟨instr_pre, h_pre, h_lab_after.trans h_lab_pre⟩
+  exact hgen _ _ _ _ h
+
 /-! ## Inner-loop shadow: a foldlM over the admitted `.cmd c` cases
 
 The `coreCFGToGotoTransform`'s inner `for cmd in block.cmds do` loop is
@@ -3207,6 +3269,109 @@ theorem coreCFGToGotoBlockStep_location_at_pc
       exact ⟨_, rfl, rfl⟩
   | .error _, _ => simp at h_run
 
+/-- Strengthened version of `coreCFGToGotoBlockStep_location_at_pc`:
+the LOCATION instruction at `st.trans.nextLoc` carries the block's
+label in its `labels` field — exactly `[label]`.
+
+R10a uses this to pin `wf.labelMap l` to the translator's
+hashmap-keyed labelMap, by exhibiting at most one LOCATION per label
+in the program. -/
+theorem coreCFGToGotoBlockStep_location_at_pc_with_labels
+    (fname : String) (lblBlk : String × Imperative.DetBlock String Core.Command Core.Expression)
+    (st st' : Strata.CoreCFGTransLoopState)
+    (h_admitted : ∀ c ∈ lblBlk.2.cmds, Core.CmdExt.isAdmittedCmd c = true)
+    (h_run : Strata.coreCFGToGotoBlockStep fname st lblBlk = Except.ok st')
+    (h_size : st.trans.instructions.size = st.trans.nextLoc) :
+    ∃ instr,
+      st'.trans.instructions[st.trans.nextLoc]? = some instr ∧
+      instr.type = .LOCATION ∧
+      instr.labels = [lblBlk.1] := by
+  obtain ⟨label, blk⟩ := lblBlk
+  unfold Strata.coreCFGToGotoBlockStep at h_run
+  simp only [Bind.bind, Except.bind, pure, Except.pure] at h_run
+  generalize h_inner :
+    blk.cmds.foldlM (Strata.coreCFGToGotoCmdStep fname)
+      (Imperative.emitLabel label
+        { CProverGOTO.SourceLocation.nil with function := fname } st.trans) = inner at h_run
+  match inner, h_inner with
+  | .ok trans₂, h_inner =>
+    have h_label_unfold :
+        (Imperative.emitLabel label
+          { CProverGOTO.SourceLocation.nil with function := fname }
+          st.trans).instructions =
+        st.trans.instructions.push
+          { type := .LOCATION, locationNum := st.trans.nextLoc,
+            sourceLoc := { CProverGOTO.SourceLocation.nil with function := fname },
+            labels := [label], code := CProverGOTO.Code.skip } := rfl
+    have h_label_size :
+        (Imperative.emitLabel label
+          { CProverGOTO.SourceLocation.nil with function := fname }
+          st.trans).instructions.size = st.trans.instructions.size + 1 := by
+      rw [h_label_unfold, Array.size_push]
+    have h_label_at :
+        (Imperative.emitLabel label
+          { CProverGOTO.SourceLocation.nil with function := fname }
+          st.trans).instructions[st.trans.instructions.size]? = some
+          { type := .LOCATION, locationNum := st.trans.nextLoc,
+            sourceLoc := { CProverGOTO.SourceLocation.nil with function := fname },
+            labels := [label], code := CProverGOTO.Code.skip } := by
+      rw [h_label_unfold, Array.getElem?_push_eq]
+    have h_pc_lt : st.trans.instructions.size <
+        (Imperative.emitLabel label
+          { CProverGOTO.SourceLocation.nil with function := fname }
+          st.trans).instructions.size := by
+      rw [h_label_size]; omega
+    have h_pc_in_trans₂ :
+        trans₂.instructions[st.trans.instructions.size]? = some
+          { type := .LOCATION, locationNum := st.trans.nextLoc,
+            sourceLoc := { CProverGOTO.SourceLocation.nil with function := fname },
+            labels := [label], code := CProverGOTO.Code.skip } := by
+      rw [cmdsFoldlM_instructions_prefix? fname blk.cmds _ trans₂ h_admitted h_inner _ h_pc_lt]
+      exact h_label_at
+    have h_pc_eq : st.trans.nextLoc = st.trans.instructions.size := h_size.symm
+    cases h_t : blk.transfer with
+    | condGoto cond lt lf md =>
+      rw [h_t] at h_run
+      simp only at h_run
+      generalize h_cond_eval :
+          Lambda.LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩) [] cond = cond_eval at h_run
+      match cond_eval, h_cond_eval with
+      | .ok cond_expr, _ =>
+        simp only at h_run
+        injection h_run with h_run
+        rw [← h_run]
+        simp only [Imperative.emitCondGoto, Imperative.emitUncondGoto, Imperative.emitGoto]
+        rw [h_pc_eq]
+        have h_pc_in_trans₂_size : st.trans.instructions.size < trans₂.instructions.size := by
+          have := cmdsFoldlM_size_le fname blk.cmds _ trans₂ h_admitted h_inner
+          rw [h_label_size] at this; omega
+        have h_pc_in_first :
+            st.trans.instructions.size < (trans₂.instructions.push
+              { type := .GOTO, guard := cond_expr.not,
+                sourceLoc := Imperative.metadataToSourceLoc md fname trans₂.sourceText,
+                locationNum := trans₂.nextLoc, target := .none }).size := by
+          simp [Array.size_push]; omega
+        rw [Array.getElem?_push_lt h_pc_in_first,
+            Array.getElem_push_lt h_pc_in_trans₂_size,
+            ← Array.getElem?_eq_getElem h_pc_in_trans₂_size]
+        rw [h_pc_in_trans₂]
+        exact ⟨_, rfl, rfl, rfl⟩
+      | .error _, _ => simp at h_run
+    | finish md =>
+      rw [h_t] at h_run
+      simp only at h_run
+      injection h_run with h_run
+      rw [← h_run]
+      rw [h_pc_eq]
+      have h_pc_in_trans₂_size : st.trans.instructions.size < trans₂.instructions.size := by
+        have := cmdsFoldlM_size_le fname blk.cmds _ trans₂ h_admitted h_inner
+        rw [h_label_size] at this; omega
+      rw [Array.getElem?_push_lt h_pc_in_trans₂_size,
+          ← Array.getElem?_eq_getElem h_pc_in_trans₂_size]
+      rw [h_pc_in_trans₂]
+      exact ⟨_, rfl, rfl, rfl⟩
+  | .error _, _ => simp at h_run
+
 /-- After one block step on a `.finish md` block, the END_FUNCTION
 instruction is at `st.trans.nextLoc + 1 + bodyCount` in
 `st'.trans.instructions`. -/
@@ -3723,6 +3888,84 @@ theorem blocksFoldlM_layout_location
       rw [h_step] at h_run
       simp [Bind.bind, Except.bind] at h_run
 
+/-- Strengthened `blocksFoldlM_layout_location`: also exposes that the
+LOCATION instruction's `labels` field equals `[l]`. R10a uses this to
+prove that any `WellFormedTranslation`'s `labelMap l` agrees with the
+translator's hashmap-keyed labelMap on `cfg.blocks` labels. -/
+theorem blocksFoldlM_layout_location_with_labels
+    (fname : String)
+    (blocks : List (String × Imperative.DetBlock String Core.Command Core.Expression))
+    (st st' : Strata.CoreCFGTransLoopState)
+    (h_admitted :
+      ∀ lblBlk ∈ blocks, ∀ c ∈ lblBlk.2.cmds, Core.CmdExt.isAdmittedCmd c = true)
+    (h_run : blocks.foldlM (Strata.coreCFGToGotoBlockStep fname) st = Except.ok st')
+    (h_size : st.trans.instructions.size = st.trans.nextLoc)
+    (h_distinct : BlockLabelsDistinct blocks) :
+    ∀ l blk, (l, blk) ∈ blocks →
+      ∃ pc instr,
+        st'.labelMap[l]? = some pc ∧
+        st'.trans.instructions[pc]? = some instr ∧
+        instr.type = .LOCATION ∧
+        instr.labels = [l] ∧
+        pc < st'.trans.instructions.size := by
+  induction blocks generalizing st with
+  | nil =>
+    intro l blk h_in
+    simp at h_in
+  | cons hd rest ih =>
+    intro l blk h_in
+    rw [List.foldlM_cons] at h_run
+    match h_step : Strata.coreCFGToGotoBlockStep fname st hd with
+    | .ok st₁ =>
+      rw [h_step] at h_run
+      simp only [Bind.bind, Except.bind] at h_run
+      have h_admitted_head : ∀ c ∈ hd.2.cmds, Core.CmdExt.isAdmittedCmd c = true :=
+        h_admitted hd (by simp)
+      have h_size₁ : st₁.trans.instructions.size = st₁.trans.nextLoc :=
+        coreCFGToGotoBlockStep_preserves_size_eq fname hd st st₁ h_admitted_head h_step h_size
+      have h_admitted_rest :
+          ∀ lblBlk ∈ rest, ∀ c ∈ lblBlk.2.cmds, Core.CmdExt.isAdmittedCmd c = true :=
+        fun lblBlk hlb => h_admitted lblBlk (by simp [hlb])
+      have h_distinct_rest : BlockLabelsDistinct rest := BlockLabelsDistinct_tail hd rest h_distinct
+      have h_le_st₁ : st.trans.instructions.size ≤ st₁.trans.instructions.size :=
+        coreCFGToGotoBlockStep_size_le fname hd st st₁ h_admitted_head h_step
+      have h_le_st' : st₁.trans.instructions.size ≤ st'.trans.instructions.size :=
+        blocksFoldlM_size_le fname rest st₁ st' h_admitted_rest h_run
+      rw [List.mem_cons] at h_in
+      rcases h_in with h_eq | h_in_rest
+      · -- (l, blk) = hd.
+        subst h_eq
+        obtain ⟨instr, h_at_st₁, h_ty, h_labels⟩ :=
+          coreCFGToGotoBlockStep_location_at_pc_with_labels fname (l, blk) st st₁
+            h_admitted_head h_step h_size
+        have h_pc_lt_st₁ : st.trans.nextLoc < st₁.trans.instructions.size := by
+          rw [Array.getElem?_eq_some_iff] at h_at_st₁
+          exact h_at_st₁.1
+        have h_pc_lt_st' : st.trans.nextLoc < st'.trans.instructions.size :=
+          Nat.lt_of_lt_of_le h_pc_lt_st₁ h_le_st'
+        have h_at_st' : st'.trans.instructions[st.trans.nextLoc]? = some instr := by
+          rw [blocksFoldlM_instructions_prefix? fname rest st₁ st' h_admitted_rest h_run _ h_pc_lt_st₁]
+          exact h_at_st₁
+        have h_lbl₁ : st₁.labelMap = st.labelMap.insert l st.trans.nextLoc :=
+          coreCFGToGotoBlockStep_labelMap fname (l, blk) st st₁ h_step
+        have h_head_not_in_rest : ∀ p ∈ rest, p.1 ≠ l := by
+          intro p hp h_eq
+          have : l ≠ p.1 := BlockLabelsDistinct_head_neq_tail (l, blk) rest h_distinct p hp
+          exact this h_eq.symm
+        have h_lbl_st' :
+            st'.labelMap[l]? = st₁.labelMap[l]? := by
+          exact blocksFoldlM_labelMap_preserves_external fname rest st₁ st' h_admitted_rest
+            h_run l h_head_not_in_rest
+        rw [h_lbl₁] at h_lbl_st'
+        rw [Std.HashMap.getElem?_insert] at h_lbl_st'
+        simp at h_lbl_st'
+        refine ⟨st.trans.nextLoc, instr, h_lbl_st', h_at_st', h_ty, h_labels, h_pc_lt_st'⟩
+      · -- (l, blk) ∈ rest. Apply IH.
+        exact ih st₁ h_admitted_rest h_run h_size₁ h_distinct_rest l blk h_in_rest
+    | .error _ =>
+      rw [h_step] at h_run
+      simp [Bind.bind, Except.bind] at h_run
+
 /-- For each `(l, blk) ∈ blocks` such that `blk.transfer = .finish md`,
 the foldlM puts an END_FUNCTION at `pc + 1 + bodyCount` for the
 appropriate pc. -/
@@ -4190,6 +4433,13 @@ structure CoreCFGToGotoTransformShadow
     ∀ l blk pc,
       (l, blk) ∈ cfg.blocks → finalLabelMap l = some pc →
       ∃ instr, ans.instructions[pc]? = some instr ∧ instr.type = .LOCATION
+  /-- The LOCATION instruction at `finalLabelMap l`'s `pc` carries `[l]` in
+  its `labels` field. -/
+  layout_location_labels :
+    ∀ l blk pc,
+      (l, blk) ∈ cfg.blocks → finalLabelMap l = some pc →
+      ∃ instr, ans.instructions[pc]? = some instr ∧
+        instr.type = .LOCATION ∧ instr.labels = [l]
   /-- For each `condGoto` block, two GOTO instructions appear at the
   end with proper targets. -/
   layout_cond_goto :
@@ -4275,6 +4525,13 @@ def wellFormedTranslation_of_shadow
     obtain ⟨instr, h_at, h_ty⟩ := shadow.layout_location l blk pc h_in h_lookup
     refine ⟨instr, ?_, h_ty⟩
     -- Goal: pgm.instrAt pc = some instr, where pgm.instructions = ans.instructions.
+    show ans.instructions[pc]? = some instr
+    exact h_at
+  layout_location_labels := by
+    intro l blk pc h_in h_lookup
+    obtain ⟨instr, h_at, h_ty, h_labels⟩ :=
+      shadow.layout_location_labels l blk pc h_in h_lookup
+    refine ⟨instr, ?_, h_ty, h_labels⟩
     show ans.instructions[pc]? = some instr
     exact h_at
   layout_cond_goto := by
@@ -4437,6 +4694,10 @@ theorem coreCFGToGotoTransform_wellFormed_nonempty
     blocksFoldlM_layout_location functionName cfg.blocks _ st_final
       (fun lblBlk h_lb => h_admitted_blocks lblBlk.1 lblBlk.2 h_lb)
       h_blocks_run h_init_size h_distinct
+  have h_layout_loc_labels_st :=
+    blocksFoldlM_layout_location_with_labels functionName cfg.blocks _ st_final
+      (fun lblBlk h_lb => h_admitted_blocks lblBlk.1 lblBlk.2 h_lb)
+      h_blocks_run h_init_size h_distinct
   have h_layout_fin_st :=
     blocksFoldlM_layout_finish functionName cfg.blocks _ st_final
       (fun lblBlk h_lb => h_admitted_blocks lblBlk.1 lblBlk.2 h_lb)
@@ -4512,6 +4773,32 @@ theorem coreCFGToGotoTransform_wellFormed_nonempty
       obtain ⟨instr_ans, h_at_ans, h_ty_eq⟩ := h_ans_type_at pc' instr h_at_st
       refine ⟨instr_ans, h_pc_eq ▸ h_at_ans, ?_⟩
       rw [h_ty_eq]; exact h_ty_st
+    layout_location_labels := by
+      intro l blk pc h_in h_lookup
+      obtain ⟨pc', instr_st, h_lookup', h_at_st, h_ty_st, h_labels_st, _⟩ :=
+        h_layout_loc_labels_st l blk h_in
+      have h_pc_eq : pc = pc' := by
+        unfold hashMapToLabelMap at h_lookup
+        rw [h_lookup'] at h_lookup
+        exact (Option.some.inj h_lookup).symm
+      -- Lift the LOCATION fact + labels through the patcher.
+      obtain ⟨instr_ans, h_at_ans, h_ty_eq⟩ := h_ans_type_at pc' instr_st h_at_st
+      -- Use the labels-preserving lemma.
+      have h_at_patched :
+          (Imperative.patchGotoTargets st_final.trans resolved).instructions[pc']?
+            = some instr_ans := by
+        have h_at_ans_eq : ans.instructions =
+            (Imperative.patchGotoTargets st_final.trans resolved).instructions := by
+          rw [h_ans_eq']
+        rw [← h_at_ans_eq]; exact h_at_ans
+      obtain ⟨instr_pre_lab, h_pre_lab, h_lab_eq⟩ :=
+        patchGotoTargets_preserves_labels st_final.trans resolved pc' _ h_at_patched
+      have h_inst_eq : instr_pre_lab = instr_st := by
+        rw [h_pre_lab] at h_at_st
+        injection h_at_st
+      refine ⟨instr_ans, h_pc_eq ▸ h_at_ans, ?_, ?_⟩
+      · rw [h_ty_eq]; exact h_ty_st
+      · rw [h_lab_eq, h_inst_eq]; exact h_labels_st
     layout_cond_goto := h_layout_cond_goto st_final h_blocks_run
     layout_cond_goto_guards := h_layout_cond_goto_guards st_final h_blocks_run
     layout_finish := by
