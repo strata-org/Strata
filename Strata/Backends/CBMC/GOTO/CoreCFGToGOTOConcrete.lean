@@ -15,6 +15,7 @@ public import Strata.Backends.CBMC.GOTO.NoDead
 public import Strata.Backends.CBMC.GOTO.InstructionLookups
 public import Strata.Backends.CBMC.GOTO.GotoTargetProvenance
 public import Strata.Backends.CBMC.GOTO.CmdProvenance
+public import Strata.Backends.CBMC.GOTO.PcInversion
 
 public section
 
@@ -1344,6 +1345,299 @@ theorem coreCFGToGotoTransform_forward_simulation_concrete_v5
     callResult eval fenv h_eval_bool_corr h_inj
     h_aux_goto_target
     h_decl_provenance h_assn_provenance h_assn_nondet_provenance
+    h_decl_x_pinned h_assn_x_pinned h_assn_rhs_pinned
+    h_decl_empty_value h_assign_value_corr h_assign_nondet_value_corr
+    σ σ' b σ_goto h_corr h_run_src
+
+/-! ## v6: also discharge R8b's two non-strict PC-inversion auxiliaries
+
+`coreCFGToGotoTransform_forward_simulation_concrete_v6` extends v5 by
+internally discharging:
+
+* **`h_decl_pc_inv`** (R8b's `DeclPcInversion`)
+  via R9's `declPcInversion_of_translator_abbrev`.
+* **`h_assn_pc_inv`** (R8b's `AssignPcInversion`)
+  via R9's `assignPcInversion_of_translator_abbrev`.
+
+The third PC-inversion auxiliary, `h_assn_nondet_pc_inv` (R8b's
+strict `AssignNondetPcInversion`), **remains as a hypothesis** because
+it is *provably false* in general (per R8b's finding) — closing it
+cleanly would require a bridge-level refactor of
+`assign_nondet_lookup_of_provenance_and_pinned` in
+`InstructionLookups.lean` to accept a per-firing-trace gating
+precondition. See `docs/CoreToGOTO_ProofStatusRound8.md` for the
+full discussion.
+
+## New hypothesis introduced
+
+`_v6` adds a single small hypothesis `h_init_empty_decl_assign`:
+that `trans₀.instructions` carries no DECL or ASSIGN instructions.
+This is **trivial** for the standard caller (whose `trans₀` is the
+identity-initialised state with `instructions := #[]`). The
+hypothesis appears here because R9's `BodyPcCovered` predicate's
+inductive base case requires it.
+
+## Remaining hypotheses on `_v6`
+
+After v6, the only "structural" hypotheses left are:
+
+* **Translator-input invariants**: `h_init_size`, `h_init_loc`,
+  `h_init_no_dead`, `h_init_no_goto_target`,
+  `h_init_empty_decl_assign`, `h_distinct`, `h_admitted_blocks`,
+  `h_loopContracts_empty_post`, `h_entry_first`. All *trivial* for
+  any standard `trans₀` with `instructions := #[]`.
+* **R8a's structural witnesses**: `st_final`, `h_blocks_run`,
+  `h_labelMap_agree`. Mechanically discharable from
+  `coreCFGToGotoTransform_decompose` plus a uniqueness-of-WF-labelMap
+  lemma.
+* **R8b's strict ASSIGN-Nondet PC-inversion**: `h_assn_nondet_pc_inv`.
+  Bridge-level [bridge-required].
+* **R7c's pinning hypotheses**: `h_decl_x_pinned`, `h_assn_x_pinned`,
+  `h_assn_rhs_pinned`. Trace-level [caller-irreducible].
+* **R7c's value-side hypotheses**: `h_decl_empty_value`,
+  `h_assign_value_corr`, `h_assign_nondet_value_corr`.
+  Caller-side [caller-irreducible].
+* **B3 expression-side bundle**, **Worker C parameters**,
+  **source-side run + initial-store correspondence**.
+
+This is the absolute minimum hypothesis surface the translator-side
+work can deliver; remaining gaps are documented as either
+trivial-for-standard-callers or fundamentally caller-side. -/
+
+theorem coreCFGToGotoTransform_forward_simulation_concrete_v6
+    -- Source-side semantics
+    (δ : Imperative.SemanticEval Core.Expression)
+    (δ_goto : SemanticEvalGoto Core.Expression)
+    (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
+    (h_wf_bool : WellFormedSemanticEvalGotoBool δ_goto_bool)
+    -- Source-side environment
+    (π : String → Option Core.Procedure)
+    (φ : Core.CoreEval → Imperative.PureFunc Core.Expression → Core.CoreEval)
+    -- Translator inputs and output
+    (cfg : Core.DetCFG)
+    (Env : Core.Expression.TyEnv) (functionName : String)
+    (trans₀ : Imperative.GotoTransform Core.Expression.TyEnv)
+    (ans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_run : Strata.coreCFGToGotoTransform Env functionName cfg trans₀
+              = Except.ok ans)
+    -- Structural inputs
+    (h_init_size : trans₀.instructions.size = trans₀.nextLoc)
+    (h_init_loc :
+      ∀ (i : Nat) (instr : CProverGOTO.Instruction),
+        trans₀.instructions[i]? = some instr → instr.locationNum = i)
+    (h_init_no_dead : NoDead.HasNoDead trans₀)
+    (h_init_no_goto_target : GotoTargetProvenance.NoGotoHasTarget trans₀)
+    -- New in v6: trans₀ carries no DECL/ASSIGN at any PC. Trivial for
+    -- the standard `trans₀` with `instructions := #[]`.
+    (h_init_empty_decl_assign : ∀ {pc : Nat} {instr : Instruction},
+      trans₀.instructions[pc]? = some instr →
+      instr.type ≠ .DECL ∧ instr.type ≠ .ASSIGN)
+    (h_distinct : BlockLabelsDistinct cfg.blocks)
+    (h_admitted_blocks :
+      ∀ (l : String) blk, (l, blk) ∈ cfg.blocks →
+      ∀ c ∈ blk.cmds, Core.CmdExt.isAdmittedCmd c = true)
+    (h_loopContracts_empty_post :
+      ∀ (st_final : Strata.CoreCFGTransLoopState),
+        cfg.blocks.foldlM (Strata.coreCFGToGotoBlockStep functionName)
+          (coreCFGToGotoInitState trans₀)
+        = Except.ok st_final → st_final.loopContracts = ∅)
+    (h_entry_first : cfg.blocks.head?.map Prod.fst = some cfg.entry)
+    -- B3 replacement bundle
+    (h_red : ExprTranslationBoolInt.FnToGotoIDReductions)
+    (h_op : ExprTranslationBoolInt.BoolIntOpHypotheses δ δ_goto δ_goto_bool)
+    (h_uniform : ConcreteExprCorr.UniformBoolIntFragment)
+    (h_commutes_not :
+      ∀ e : Core.Expression.Expr,
+        ConcreteExprCorr.tx h_uniform (HasNot.not (P := Core.Expression) e)
+          = (ConcreteExprCorr.tx h_uniform e).not)
+    -- Worker C parameters: nameMap fixed to identToString.
+    (callResult : CallResultRel)
+    (eval : ExprEval)
+    (fenv : FuncEnv)
+    (h_eval_bool_corr :
+      Bisim.EvalBoolCorr
+        (Imperative.ToGoto.identToString (P := Core.Expression))
+        δ_goto_bool eval)
+    (h_inj :
+      Function.Injective
+        (Imperative.ToGoto.identToString (P := Core.Expression)))
+    -- R8a's structural witnesses (translator state at the post-blocks-fold).
+    (st_final : Strata.CoreCFGTransLoopState)
+    (h_blocks_run :
+      cfg.blocks.foldlM (Strata.coreCFGToGotoBlockStep functionName)
+        (coreCFGToGotoInitState trans₀)
+      = Except.ok st_final)
+    -- R8a's labelMap-agreement bridge.
+    (h_labelMap_agree :
+      ∀ (wf : WellFormedTranslation cfg
+        { name := "", parameterIdentifiers := #[],
+          instructions := ans.instructions }
+        δ δ_goto δ_goto_bool),
+      ∀ l blk target, (l, blk) ∈ cfg.blocks →
+        st_final.labelMap[l]? = some target →
+        wf.labelMap l = some target)
+    -- R8b's strict ASSIGN-Nondet PC-inversion remains (provably false in general).
+    (h_assn_nondet_pc_inv :
+      ∀ (wf : WellFormedTranslation cfg
+        { name := "", parameterIdentifiers := #[],
+          instructions := ans.instructions }
+        δ δ_goto δ_goto_bool),
+      CmdProvenance.AssignNondetPcInversion cfg
+        { name := "", parameterIdentifiers := #[],
+          instructions := ans.instructions }
+        δ δ_goto δ_goto_bool wf)
+    -- R7c's pinning hypotheses (caller-side; trace-level info).
+    (h_decl_x_pinned :
+      ∀ {pc : Nat} {instr : Instruction}
+        {x : Core.Expression.Ident}
+        {σ σ' : Imperative.SemanticStore Core.Expression}
+        {v : Core.Expression.Expr},
+        ({ name := "", parameterIdentifiers := #[],
+           instructions := ans.instructions } : Program).instrAt pc
+          = some instr →
+        instr.type = .DECL →
+        Imperative.InitState Core.Expression σ x v σ' →
+        ∀ v_src gty, instr.code = Code.decl
+          (Expr.symbol
+            (Imperative.ToGoto.identToString (P := Core.Expression) v_src)
+            gty) → x = v_src)
+    (h_assn_x_pinned :
+      ∀ {pc : Nat} {instr : Instruction}
+        {x : Core.Expression.Ident}
+        {σ σ' : Imperative.SemanticStore Core.Expression}
+        {v_imp : Core.Expression.Expr},
+        ({ name := "", parameterIdentifiers := #[],
+           instructions := ans.instructions } : Program).instrAt pc
+          = some instr →
+        instr.type = .ASSIGN →
+        Imperative.UpdateState Core.Expression σ x v_imp σ' →
+        ∀ v_src gty rhs_emitted, instr.code = Code.assign
+          (Expr.symbol
+            (Imperative.ToGoto.identToString (P := Core.Expression) v_src)
+            gty) rhs_emitted → x = v_src)
+    (h_assn_rhs_pinned :
+      ∀ {pc : Nat} {instr : Instruction}
+        {σ : Imperative.SemanticStore Core.Expression}
+        {rhs_g : Expr} {v_imp : Core.Expression.Expr},
+        ({ name := "", parameterIdentifiers := #[],
+           instructions := ans.instructions } : Program).instrAt pc
+          = some instr →
+        instr.type = .ASSIGN →
+        δ_goto σ rhs_g = some v_imp →
+        ∀ v_src gty rhs_emitted, instr.code = Code.assign
+          (Expr.symbol
+            (Imperative.ToGoto.identToString (P := Core.Expression) v_src)
+            gty) rhs_emitted →
+          rhs_g = rhs_emitted)
+    -- R7c's value-side hypotheses (caller-side).
+    (h_decl_empty_value :
+      ∀ {pc : Nat} {instr : Instruction} {x : Core.Expression.Ident}
+        {v : Core.Expression.Expr}
+        {σ σ' : Imperative.SemanticStore Core.Expression},
+        ({ name := "", parameterIdentifiers := #[],
+           instructions := ans.instructions } : Program).instrAt pc
+          = some instr →
+        instr.type = .DECL →
+        Imperative.InitState Core.Expression σ x v σ' →
+        (SemanticsTautschnig.ValueCorr.toValue v
+          : Option SemanticsTautschnig.Value) = some .vEmpty)
+    (h_assign_value_corr :
+      ∀ {pc : Nat} {instr : Instruction} {x : Core.Expression.Ident}
+        {σ_imp σ_imp' : Imperative.SemanticStore Core.Expression}
+        {σ_goto : SemanticsTautschnig.Store}
+        {rhs_g : Expr} {v_imp : Core.Expression.Expr},
+        ({ name := "", parameterIdentifiers := #[],
+           instructions := ans.instructions } : Program).instrAt pc
+          = some instr →
+        instr.type = .ASSIGN →
+        δ_goto σ_imp rhs_g = some v_imp →
+        Imperative.UpdateState Core.Expression σ_imp x v_imp σ_imp' →
+        SemanticsTautschnig.StoreCorr
+          (Imperative.ToGoto.identToString (P := Core.Expression))
+          σ_imp σ_goto →
+        ∃ v_goto,
+          (SemanticsTautschnig.ValueCorr.toValue v_imp
+            : Option SemanticsTautschnig.Value) = some v_goto ∧
+          eval σ_goto rhs_g = some v_goto)
+    (h_assign_nondet_value_corr :
+      ∀ {pc : Nat} {instr : Instruction} {x : Core.Expression.Ident}
+        {σ σ' : Imperative.SemanticStore Core.Expression}
+        {v_imp : Core.Expression.Expr},
+        ({ name := "", parameterIdentifiers := #[],
+           instructions := ans.instructions } : Program).instrAt pc
+          = some instr →
+        instr.type = .ASSIGN →
+        Imperative.UpdateState Core.Expression σ x v_imp σ' →
+        ∃ v_goto,
+          (SemanticsTautschnig.ValueCorr.toValue v_imp
+            : Option SemanticsTautschnig.Value) = some v_goto)
+    -- Source-side terminating run + initial-store correspondence
+    (σ σ' : Imperative.SemanticStore Core.Expression) (b : Bool)
+    (σ_goto : Store)
+    (h_corr :
+      StoreCorr
+        (Imperative.ToGoto.identToString (P := Core.Expression))
+        σ σ_goto)
+    (h_run_src :
+      Core.CoreCFGStepStar π φ δ cfg
+        (.cont cfg.entry σ false)
+        (.terminal σ' b)) :
+    -- Conclusion (matches v5).
+    ∃ pc_entry σ_goto',
+      StoreCorr
+        (Imperative.ToGoto.identToString (P := Core.Expression))
+        σ' σ_goto' ∧
+      ExecProg callResult eval fenv
+        { name := "", parameterIdentifiers := #[],
+          instructions := ans.instructions }
+        pc_entry σ_goto σ_goto' none := by
+  -- Build the expression-correspondence for use in PcInversion theorems.
+  let h_expr := ConcreteExprCorr.buildExprCorr h_red h_op h_uniform h_commutes_not
+  have h_tx_eq : ∀ e : Core.Expression.Expr,
+      Imperative.ToGoto.toGotoExpr (P := Core.Expression) e
+        = Except.ok (h_expr.tx e) :=
+    ConcreteExprCorr.h_tx_eq_holds h_uniform
+  -- Discharge h_decl_pc_inv via R9.
+  have h_decl_pc_inv :
+      ∀ (wf : WellFormedTranslation cfg
+        { name := "", parameterIdentifiers := #[],
+          instructions := ans.instructions }
+        δ δ_goto δ_goto_bool),
+      CmdProvenance.DeclPcInversion cfg
+        { name := "", parameterIdentifiers := #[],
+          instructions := ans.instructions }
+        δ δ_goto δ_goto_bool wf := by
+    intro wf
+    exact PcInversion.declPcInversion_of_translator_abbrev
+      Env functionName cfg trans₀ h_init_size h_init_empty_decl_assign
+      h_distinct h_admitted_blocks h_loopContracts_empty_post
+      ans h_run δ δ_goto δ_goto_bool h_expr h_tx_eq wf
+  -- Discharge h_assn_pc_inv via R9.
+  have h_assn_pc_inv :
+      ∀ (wf : WellFormedTranslation cfg
+        { name := "", parameterIdentifiers := #[],
+          instructions := ans.instructions }
+        δ δ_goto δ_goto_bool),
+      CmdProvenance.AssignPcInversion cfg
+        { name := "", parameterIdentifiers := #[],
+          instructions := ans.instructions }
+        δ δ_goto δ_goto_bool wf := by
+    intro wf
+    exact PcInversion.assignPcInversion_of_translator_abbrev
+      Env functionName cfg trans₀ h_init_size h_init_empty_decl_assign
+      h_distinct h_admitted_blocks h_loopContracts_empty_post
+      ans h_run δ δ_goto δ_goto_bool h_expr h_tx_eq wf
+  -- Delegate to v5.
+  exact coreCFGToGotoTransform_forward_simulation_concrete_v5
+    δ δ_goto δ_goto_bool h_wf_bool π φ
+    cfg Env functionName trans₀ ans h_run
+    h_init_size h_init_loc h_init_no_dead h_init_no_goto_target
+    h_distinct h_admitted_blocks
+    h_loopContracts_empty_post h_entry_first
+    h_red h_op h_uniform h_commutes_not
+    callResult eval fenv h_eval_bool_corr h_inj
+    st_final h_blocks_run h_labelMap_agree
+    h_decl_pc_inv h_assn_pc_inv h_assn_nondet_pc_inv
     h_decl_x_pinned h_assn_x_pinned h_assn_rhs_pinned
     h_decl_empty_value h_assign_value_corr h_assign_nondet_value_corr
     σ σ' b σ_goto h_corr h_run_src
