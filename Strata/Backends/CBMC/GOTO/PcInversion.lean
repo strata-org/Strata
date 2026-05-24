@@ -456,25 +456,18 @@ theorem cmdsFoldlM_preserves_body_pc_covered
           h_admitted_cmd h_step h_invariant
       have h_admitted_rest : ∀ c ∈ rest, Core.CmdExt.isAdmittedCmd c = true :=
         fun c h => h_admitted c (List.mem_cons_of_mem _ h)
-      -- Need the prefix property for trans' relative to ans.
+      -- Build the prefix property for trans' (a prefix of ans).
       have h_size_le : trans'.instructions.size ≤ ans.instructions.size :=
         cmdsFoldlM_size_le fname rest trans' ans h_admitted_rest h_run
-      have h_prefix' :
-          ∀ (k : Nat) (h : k < ans.instructions.size),
-            pgm.instructions[k]? = some ans.instructions[k] := h_prefix
       have h_prefix_trans' :
           ∀ (k : Nat) (h : k < trans'.instructions.size),
             pgm.instructions[k]? = some trans'.instructions[k] := by
         intro k h_k
-        have h_k' : k < ans.instructions.size := by
-          have h_le : trans'.instructions.size ≤ ans.instructions.size :=
-            h_size_le
-          omega
-        rw [h_prefix' k h_k']
+        have h_k' : k < ans.instructions.size := Nat.lt_of_lt_of_le h_k h_size_le
+        rw [h_prefix k h_k']
         have h_eq :=
           cmdsFoldlM_instructions_prefix? fname rest trans' ans h_admitted_rest h_run k h_k
-        rw [Array.getElem?_eq_getElem h_k'] at h_eq
-        rw [Array.getElem?_eq_getElem h_k] at h_eq
+        rw [Array.getElem?_eq_getElem h_k', Array.getElem?_eq_getElem h_k] at h_eq
         injection h_eq with h_eq
         rw [h_eq]
       have h_cov' : BodyPcCovered δ δ_goto δ_goto_bool trans' pgm :=
@@ -678,8 +671,7 @@ theorem blocksFoldlM_preserves_body_pc_covered
         rw [h_prefix k h_k']
         have h_eq :=
           blocksFoldlM_instructions_prefix? fname rest st₁ st' h_admitted_rest h_run k h_k
-        rw [Array.getElem?_eq_getElem h_k'] at h_eq
-        rw [Array.getElem?_eq_getElem h_k] at h_eq
+        rw [Array.getElem?_eq_getElem h_k', Array.getElem?_eq_getElem h_k] at h_eq
         injection h_eq with h_eq
         rw [h_eq]
       have h_cov₁ : BodyPcCovered δ δ_goto δ_goto_bool st₁.trans pgm :=
@@ -1041,31 +1033,16 @@ theorem assignPcInversion_of_translator_abbrev
       h_loopContracts_empty_post ans h_run δ δ_goto δ_goto_bool
       h_expr_corr h_tx_eq h_at).2 h_ty
 
-/-! ## Strict ASSIGN-Nondet PC inversion — Tier 3
+/-! ## Strict `AssignNondetPcInversion` is bridge-layer
 
-R8b discovered that the universal `AssignNondetPcInversion` is
+The strict form (every ASSIGN PC is exactly `.set _ .nondet _`) is
 provably false for any source CFG containing `init_det` or `set_det`
-cmds — those emit ASSIGNs whose rhs is a translated source
-expression, not `Side_effect.Nondet`. The strict variant says every
-ASSIGN PC is exactly a `set _ .nondet _` cmd-start, which is only
-satisfied by source CFGs where every ASSIGN is a nondet one.
-
-R9 cannot close `AssignNondetPcInversion` from `BodyPcCovered` alone:
-the predicate yields *some* `CmdEmittedAt` witness for each ASSIGN
-PC, but the constructor it lands in (`set_det`, `set_nondet`, or
-`init_det`) is not recoverable from `BodyPcCovered`'s proof structure
-without enriching the predicate to track source-cmd shape per emit.
-
-The "right" closure for this is at the **bridge layer**, not the
-translator layer (per R8b's report): refactor
-`assign_nondet_lookup_of_provenance_and_pinned` in
-`InstructionLookups.lean` to take a *per-PC partial* provenance gated
-on a `step_assign_nondet`-firing trace precondition. This is
-documented in `docs/CoreToGOTO_ProofStatusRound8.md` as a
-**[bridge-required]** task.
-
-We therefore continue to surface the strict `AssignNondetPcInversion`
-as a hypothesis on `_v6` (matching `_v5`'s shape). A future round
-that takes on the bridge refactor would close this cleanly. -/
+cmds, and `BodyPcCovered`'s proof structure cannot recover the
+emitting constructor without enrichment. The right closure is at the
+bridge layer — refactor `assign_nondet_lookup_of_provenance_and_pinned`
+in `InstructionLookups.lean` to a per-PC partial provenance gated on
+a `step_assign_nondet`-firing trace precondition (see
+`docs/CoreToGOTO_ProofStatusRound8.md`, **[bridge-required]**). The
+hypothesis remains surfaced on `_v6`. -/
 
 end CProverGOTO.PcInversion
