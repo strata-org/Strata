@@ -584,123 +584,6 @@ theorem binOp_translated_of_corr
       ⟨od.opId, od.outTy, [e1g, e2g], .nil, []⟩ :=
   ExprTranslated.ofValueAgree h _ _ h_corr
 
-/-- `Int.Add`: integer addition. -/
-theorem intAdd_translated
-    {δ : SemanticEval Core.Expression}
-    {δ_goto : SemanticEvalGoto Core.Expression}
-    {δ_goto_bool : SemanticEvalGotoBool Core.Expression}
-    (h : BoolIntOpHypotheses δ δ_goto δ_goto_bool)
-    (m₁ m₂ : Core.ExpressionMetadata) (ty : Option LMonoTy)
-    (e1c e2c : Core.Expression.Expr) (e1g e2g : CProverGOTO.Expr) :
-    ExprTranslated δ δ_goto δ_goto_bool
-      (LExpr.app m₂ (LExpr.app m₁ (LExpr.op () ⟨"Int.Add", ()⟩ ty) e1c) e2c)
-      ⟨.multiary .Plus, .Integer, [e1g, e2g], .nil, []⟩ :=
-  ExprTranslated.ofValueAgree h _ _ (fun σ v => h.intAdd_corr σ m₁ m₂ ty e1c e2c e1g e2g v)
-
-/-- `Int.Sub`: integer subtraction. -/
-theorem intSub_translated
-    {δ : SemanticEval Core.Expression}
-    {δ_goto : SemanticEvalGoto Core.Expression}
-    {δ_goto_bool : SemanticEvalGotoBool Core.Expression}
-    (h : BoolIntOpHypotheses δ δ_goto δ_goto_bool)
-    (m₁ m₂ : Core.ExpressionMetadata) (ty : Option LMonoTy)
-    (e1c e2c : Core.Expression.Expr) (e1g e2g : CProverGOTO.Expr) :
-    ExprTranslated δ δ_goto δ_goto_bool
-      (LExpr.app m₂ (LExpr.app m₁ (LExpr.op () ⟨"Int.Sub", ()⟩ ty) e1c) e2c)
-      ⟨.binary .Minus, .Integer, [e1g, e2g], .nil, []⟩ :=
-  ExprTranslated.ofValueAgree h _ _ (fun σ v => h.intSub_corr σ m₁ m₂ ty e1c e2c e1g e2g v)
-
-/-- `Int.Mul`: integer multiplication. -/
-theorem intMul_translated
-    {δ : SemanticEval Core.Expression}
-    {δ_goto : SemanticEvalGoto Core.Expression}
-    {δ_goto_bool : SemanticEvalGotoBool Core.Expression}
-    (h : BoolIntOpHypotheses δ δ_goto δ_goto_bool)
-    (m₁ m₂ : Core.ExpressionMetadata) (ty : Option LMonoTy)
-    (e1c e2c : Core.Expression.Expr) (e1g e2g : CProverGOTO.Expr) :
-    ExprTranslated δ δ_goto δ_goto_bool
-      (LExpr.app m₂ (LExpr.app m₁ (LExpr.op () ⟨"Int.Mul", ()⟩ ty) e1c) e2c)
-      ⟨.multiary .Mult, .Integer, [e1g, e2g], .nil, []⟩ :=
-  ExprTranslated.ofValueAgree h _ _ (fun σ v => h.intMul_corr σ m₁ m₂ ty e1c e2c e1g e2g v)
-
-/-- `Int.DivT`: integer truncating division. -/
-theorem intDivT_translated
-    {δ : SemanticEval Core.Expression}
-    {δ_goto : SemanticEvalGoto Core.Expression}
-    {δ_goto_bool : SemanticEvalGotoBool Core.Expression}
-    (h : BoolIntOpHypotheses δ δ_goto δ_goto_bool)
-    (m₁ m₂ : Core.ExpressionMetadata) (ty : Option LMonoTy)
-    (e1c e2c : Core.Expression.Expr) (e1g e2g : CProverGOTO.Expr) :
-    ExprTranslated δ δ_goto δ_goto_bool
-      (LExpr.app m₂ (LExpr.app m₁ (LExpr.op () ⟨"Int.DivT", ()⟩ ty) e1c) e2c)
-      ⟨.binary .Div, .Integer, [e1g, e2g], .nil, []⟩ :=
-  ExprTranslated.ofValueAgree h _ _ (fun σ v => h.intDivT_corr σ m₁ m₂ ty e1c e2c e1g e2g v)
-
-/-- `Int.ModT`: integer truncating modulo. -/
-theorem intModT_translated
-    {δ : SemanticEval Core.Expression}
-    {δ_goto : SemanticEvalGoto Core.Expression}
-    {δ_goto_bool : SemanticEvalGotoBool Core.Expression}
-    (h : BoolIntOpHypotheses δ δ_goto δ_goto_bool)
-    (m₁ m₂ : Core.ExpressionMetadata) (ty : Option LMonoTy)
-    (e1c e2c : Core.Expression.Expr) (e1g e2g : CProverGOTO.Expr) :
-    ExprTranslated δ δ_goto δ_goto_bool
-      (LExpr.app m₂ (LExpr.app m₁ (LExpr.op () ⟨"Int.ModT", ()⟩ ty) e1c) e2c)
-      ⟨.binary .Mod, .Integer, [e1g, e2g], .nil, []⟩ :=
-  ExprTranslated.ofValueAgree h _ _ (fun σ v => h.intModT_corr σ m₁ m₂ ty e1c e2c e1g e2g v)
-
-/-- `Int.Lt`: integer less-than. -/
-theorem intLt_translated
-    {δ : SemanticEval Core.Expression}
-    {δ_goto : SemanticEvalGoto Core.Expression}
-    {δ_goto_bool : SemanticEvalGotoBool Core.Expression}
-    (h : BoolIntOpHypotheses δ δ_goto δ_goto_bool)
-    (m₁ m₂ : Core.ExpressionMetadata) (ty : Option LMonoTy)
-    (e1c e2c : Core.Expression.Expr) (e1g e2g : CProverGOTO.Expr) :
-    ExprTranslated δ δ_goto δ_goto_bool
-      (LExpr.app m₂ (LExpr.app m₁ (LExpr.op () ⟨"Int.Lt", ()⟩ ty) e1c) e2c)
-      ⟨.binary .Lt, .Boolean, [e1g, e2g], .nil, []⟩ :=
-  ExprTranslated.ofValueAgree h _ _ (fun σ v => h.intLt_corr σ m₁ m₂ ty e1c e2c e1g e2g v)
-
-/-- `Int.Le`: integer less-or-equal. -/
-theorem intLe_translated
-    {δ : SemanticEval Core.Expression}
-    {δ_goto : SemanticEvalGoto Core.Expression}
-    {δ_goto_bool : SemanticEvalGotoBool Core.Expression}
-    (h : BoolIntOpHypotheses δ δ_goto δ_goto_bool)
-    (m₁ m₂ : Core.ExpressionMetadata) (ty : Option LMonoTy)
-    (e1c e2c : Core.Expression.Expr) (e1g e2g : CProverGOTO.Expr) :
-    ExprTranslated δ δ_goto δ_goto_bool
-      (LExpr.app m₂ (LExpr.app m₁ (LExpr.op () ⟨"Int.Le", ()⟩ ty) e1c) e2c)
-      ⟨.binary .Le, .Boolean, [e1g, e2g], .nil, []⟩ :=
-  ExprTranslated.ofValueAgree h _ _ (fun σ v => h.intLe_corr σ m₁ m₂ ty e1c e2c e1g e2g v)
-
-/-- `Int.Gt`: integer greater-than. -/
-theorem intGt_translated
-    {δ : SemanticEval Core.Expression}
-    {δ_goto : SemanticEvalGoto Core.Expression}
-    {δ_goto_bool : SemanticEvalGotoBool Core.Expression}
-    (h : BoolIntOpHypotheses δ δ_goto δ_goto_bool)
-    (m₁ m₂ : Core.ExpressionMetadata) (ty : Option LMonoTy)
-    (e1c e2c : Core.Expression.Expr) (e1g e2g : CProverGOTO.Expr) :
-    ExprTranslated δ δ_goto δ_goto_bool
-      (LExpr.app m₂ (LExpr.app m₁ (LExpr.op () ⟨"Int.Gt", ()⟩ ty) e1c) e2c)
-      ⟨.binary .Gt, .Boolean, [e1g, e2g], .nil, []⟩ :=
-  ExprTranslated.ofValueAgree h _ _ (fun σ v => h.intGt_corr σ m₁ m₂ ty e1c e2c e1g e2g v)
-
-/-- `Int.Ge`: integer greater-or-equal. -/
-theorem intGe_translated
-    {δ : SemanticEval Core.Expression}
-    {δ_goto : SemanticEvalGoto Core.Expression}
-    {δ_goto_bool : SemanticEvalGotoBool Core.Expression}
-    (h : BoolIntOpHypotheses δ δ_goto δ_goto_bool)
-    (m₁ m₂ : Core.ExpressionMetadata) (ty : Option LMonoTy)
-    (e1c e2c : Core.Expression.Expr) (e1g e2g : CProverGOTO.Expr) :
-    ExprTranslated δ δ_goto δ_goto_bool
-      (LExpr.app m₂ (LExpr.app m₁ (LExpr.op () ⟨"Int.Ge", ()⟩ ty) e1c) e2c)
-      ⟨.binary .Ge, .Boolean, [e1g, e2g], .nil, []⟩ :=
-  ExprTranslated.ofValueAgree h _ _ (fun σ v => h.intGe_corr σ m₁ m₂ ty e1c e2c e1g e2g v)
-
 /-! ### Per-operator boolean lemmas -/
 
 /-- `Bool.Not`: boolean negation. -/
@@ -715,45 +598,6 @@ theorem boolNot_translated
       (LExpr.app m (LExpr.op () ⟨"Bool.Not", ()⟩ ty) e1c)
       ⟨.unary .Not, .Boolean, [e1g], .nil, []⟩ :=
   ExprTranslated.ofValueAgree h _ _ (fun σ v => h.boolNot_corr σ m ty e1c e1g v)
-
-/-- `Bool.And`. -/
-theorem boolAnd_translated
-    {δ : SemanticEval Core.Expression}
-    {δ_goto : SemanticEvalGoto Core.Expression}
-    {δ_goto_bool : SemanticEvalGotoBool Core.Expression}
-    (h : BoolIntOpHypotheses δ δ_goto δ_goto_bool)
-    (m₁ m₂ : Core.ExpressionMetadata) (ty : Option LMonoTy)
-    (e1c e2c : Core.Expression.Expr) (e1g e2g : CProverGOTO.Expr) :
-    ExprTranslated δ δ_goto δ_goto_bool
-      (LExpr.app m₂ (LExpr.app m₁ (LExpr.op () ⟨"Bool.And", ()⟩ ty) e1c) e2c)
-      ⟨.multiary .And, .Boolean, [e1g, e2g], .nil, []⟩ :=
-  ExprTranslated.ofValueAgree h _ _ (fun σ v => h.boolAnd_corr σ m₁ m₂ ty e1c e2c e1g e2g v)
-
-/-- `Bool.Or`. -/
-theorem boolOr_translated
-    {δ : SemanticEval Core.Expression}
-    {δ_goto : SemanticEvalGoto Core.Expression}
-    {δ_goto_bool : SemanticEvalGotoBool Core.Expression}
-    (h : BoolIntOpHypotheses δ δ_goto δ_goto_bool)
-    (m₁ m₂ : Core.ExpressionMetadata) (ty : Option LMonoTy)
-    (e1c e2c : Core.Expression.Expr) (e1g e2g : CProverGOTO.Expr) :
-    ExprTranslated δ δ_goto δ_goto_bool
-      (LExpr.app m₂ (LExpr.app m₁ (LExpr.op () ⟨"Bool.Or", ()⟩ ty) e1c) e2c)
-      ⟨.multiary .Or, .Boolean, [e1g, e2g], .nil, []⟩ :=
-  ExprTranslated.ofValueAgree h _ _ (fun σ v => h.boolOr_corr σ m₁ m₂ ty e1c e2c e1g e2g v)
-
-/-- `Bool.Implies`. -/
-theorem boolImplies_translated
-    {δ : SemanticEval Core.Expression}
-    {δ_goto : SemanticEvalGoto Core.Expression}
-    {δ_goto_bool : SemanticEvalGotoBool Core.Expression}
-    (h : BoolIntOpHypotheses δ δ_goto δ_goto_bool)
-    (m₁ m₂ : Core.ExpressionMetadata) (ty : Option LMonoTy)
-    (e1c e2c : Core.Expression.Expr) (e1g e2g : CProverGOTO.Expr) :
-    ExprTranslated δ δ_goto δ_goto_bool
-      (LExpr.app m₂ (LExpr.app m₁ (LExpr.op () ⟨"Bool.Implies", ()⟩ ty) e1c) e2c)
-      ⟨.binary .Implies, .Boolean, [e1g, e2g], .nil, []⟩ :=
-  ExprTranslated.ofValueAgree h _ _ (fun σ v => h.boolImplies_corr σ m₁ m₂ ty e1c e2c e1g e2g v)
 
 /-- `LExpr.ite`: conditional expression. -/
 theorem ite_translated
@@ -2100,31 +1944,43 @@ theorem IsBoolIntTranslated.translated
   | boolConst b => exact boolConst_translated h b
   | fvar v mty gty h_ty => exact fvar_translated h v mty gty h_ty
   | intAdd m₁ m₂ ty e1c e2c e1g e2g _ _ _ _ =>
-    exact intAdd_translated h m₁ m₂ ty e1c e2c e1g e2g
+    exact binOp_translated_of_corr h .intAdd m₁ m₂ ty e1c e2c e1g e2g
+      (fun σ v => h.intAdd_corr σ m₁ m₂ ty e1c e2c e1g e2g v)
   | intSub m₁ m₂ ty e1c e2c e1g e2g _ _ _ _ =>
-    exact intSub_translated h m₁ m₂ ty e1c e2c e1g e2g
+    exact binOp_translated_of_corr h .intSub m₁ m₂ ty e1c e2c e1g e2g
+      (fun σ v => h.intSub_corr σ m₁ m₂ ty e1c e2c e1g e2g v)
   | intMul m₁ m₂ ty e1c e2c e1g e2g _ _ _ _ =>
-    exact intMul_translated h m₁ m₂ ty e1c e2c e1g e2g
+    exact binOp_translated_of_corr h .intMul m₁ m₂ ty e1c e2c e1g e2g
+      (fun σ v => h.intMul_corr σ m₁ m₂ ty e1c e2c e1g e2g v)
   | intDivT m₁ m₂ ty e1c e2c e1g e2g _ _ _ _ =>
-    exact intDivT_translated h m₁ m₂ ty e1c e2c e1g e2g
+    exact binOp_translated_of_corr h .intDivT m₁ m₂ ty e1c e2c e1g e2g
+      (fun σ v => h.intDivT_corr σ m₁ m₂ ty e1c e2c e1g e2g v)
   | intModT m₁ m₂ ty e1c e2c e1g e2g _ _ _ _ =>
-    exact intModT_translated h m₁ m₂ ty e1c e2c e1g e2g
+    exact binOp_translated_of_corr h .intModT m₁ m₂ ty e1c e2c e1g e2g
+      (fun σ v => h.intModT_corr σ m₁ m₂ ty e1c e2c e1g e2g v)
   | intLt m₁ m₂ ty e1c e2c e1g e2g _ _ _ _ =>
-    exact intLt_translated h m₁ m₂ ty e1c e2c e1g e2g
+    exact binOp_translated_of_corr h .intLt m₁ m₂ ty e1c e2c e1g e2g
+      (fun σ v => h.intLt_corr σ m₁ m₂ ty e1c e2c e1g e2g v)
   | intLe m₁ m₂ ty e1c e2c e1g e2g _ _ _ _ =>
-    exact intLe_translated h m₁ m₂ ty e1c e2c e1g e2g
+    exact binOp_translated_of_corr h .intLe m₁ m₂ ty e1c e2c e1g e2g
+      (fun σ v => h.intLe_corr σ m₁ m₂ ty e1c e2c e1g e2g v)
   | intGt m₁ m₂ ty e1c e2c e1g e2g _ _ _ _ =>
-    exact intGt_translated h m₁ m₂ ty e1c e2c e1g e2g
+    exact binOp_translated_of_corr h .intGt m₁ m₂ ty e1c e2c e1g e2g
+      (fun σ v => h.intGt_corr σ m₁ m₂ ty e1c e2c e1g e2g v)
   | intGe m₁ m₂ ty e1c e2c e1g e2g _ _ _ _ =>
-    exact intGe_translated h m₁ m₂ ty e1c e2c e1g e2g
+    exact binOp_translated_of_corr h .intGe m₁ m₂ ty e1c e2c e1g e2g
+      (fun σ v => h.intGe_corr σ m₁ m₂ ty e1c e2c e1g e2g v)
   | boolNot m ty e1c e1g _ _ =>
     exact boolNot_translated h m ty e1c e1g
   | boolAnd m₁ m₂ ty e1c e2c e1g e2g _ _ _ _ =>
-    exact boolAnd_translated h m₁ m₂ ty e1c e2c e1g e2g
+    exact binOp_translated_of_corr h .boolAnd m₁ m₂ ty e1c e2c e1g e2g
+      (fun σ v => h.boolAnd_corr σ m₁ m₂ ty e1c e2c e1g e2g v)
   | boolOr m₁ m₂ ty e1c e2c e1g e2g _ _ _ _ =>
-    exact boolOr_translated h m₁ m₂ ty e1c e2c e1g e2g
+    exact binOp_translated_of_corr h .boolOr m₁ m₂ ty e1c e2c e1g e2g
+      (fun σ v => h.boolOr_corr σ m₁ m₂ ty e1c e2c e1g e2g v)
   | boolImplies m₁ m₂ ty e1c e2c e1g e2g _ _ _ _ =>
-    exact boolImplies_translated h m₁ m₂ ty e1c e2c e1g e2g
+    exact binOp_translated_of_corr h .boolImplies m₁ m₂ ty e1c e2c e1g e2g
+      (fun σ v => h.boolImplies_corr σ m₁ m₂ ty e1c e2c e1g e2g v)
   | eq m e1c e2c e1g e2g _ _ _ _ =>
     exact eq_translated h m e1c e2c e1g e2g
   | ite m cc tc ec cg tg eg _ _ _ _ _ _ =>
