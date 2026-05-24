@@ -13,8 +13,8 @@ public section
 
 /-! # Provenance theorems for DECL/ASSIGN instructions
 
-Round-8 deliverable (Worker R8b): close the three provenance hypotheses
-that R7c's v2 bridge in `TranslatorBridgeHypsDischarge.lean` consumes:
+Close the provenance hypotheses that the v2 bridge in
+`TranslatorBridgeHypsDischarge.lean` consumes:
 
 * `decl_provenance_of_translator` — at every DECL PC, the GOTO code is
   `Code.decl (Expr.symbol (nameMap v_src) gty)` for some source-side
@@ -22,18 +22,17 @@ that R7c's v2 bridge in `TranslatorBridgeHypsDischarge.lean` consumes:
 * `assn_provenance_of_translator` — at every ASSIGN PC, the GOTO code is
   `Code.assign (Expr.symbol (nameMap v_src) gty) rhs_emitted` for some
   source-side identifier `v_src`, GOTO type `gty`, and emitted rhs.
-* `assn_nondet_provenance_of_translator` — see discussion below; this
-  one is **not** a metaproperty of the translator and is omitted.
+* `assn_nondet_provenance_of_translator_strict` — strict variant; see
+  discussion at the relevant section.
 
 ## Strategy
 
-Round-7's strengthened `CmdEmittedAt` (in
-`CoreCFGToGOTOInvariants.lean`) exposes the exact symbol shape in each
-constructor — `Expr.symbol (identToString v) gty` for `init_det`,
-`init_nondet`, `set_det`, and `set_nondet`. Combined with
-`WellFormedTranslation.layout_block_body`, every cmd in every block
-admits a `CmdEmittedAt` witness whose constructors pin the GOTO code
-shape.
+`CmdEmittedAt` (in `CoreCFGToGOTOInvariants.lean`) exposes the exact
+symbol shape in each constructor — `Expr.symbol (identToString v) gty`
+for `init_det`, `init_nondet`, `set_det`, and `set_nondet`. Combined
+with `WellFormedTranslation.layout_block_body`, every cmd in every
+block admits a `CmdEmittedAt` witness whose constructors pin the GOTO
+code shape.
 
 The remaining work to derive the provenance theorems from `wf` alone
 is the **CFG-PC inversion**: from a `pc` carrying a DECL/ASSIGN
@@ -41,54 +40,28 @@ instruction, find the block `(l, blk) ∈ cfg.blocks` and offset `k`
 such that `pc = labelMap l + 1 + cmdsPrefixInstrCount blk.cmds k` (or
 `+ 1` for the ASSIGN of an `init_det`).
 
-A full inversion is mechanical from the translator's outer-loop
-induction (each emit step preserves a PC-to-block-cmd map). It is
-estimated to require 100-200 LoC of structural translator
-reasoning.
-
-This file delivers a **Tier-2 (Good)** version: the inversion is
-hoisted to an explicit hypothesis on each provenance theorem (instead
-of being closed from `wf`). With the inversion in hand, the proof of
-each theorem is a clean case-split on the strengthened `CmdEmittedAt`
+This file's theorems hoist the inversion as an explicit hypothesis;
+the proof of each is then a clean case-split on the `CmdEmittedAt`
 constructors.
 
-## The third theorem (`assn_nondet_provenance_of_translator`)
+## The strict ASSIGN-nondet theorem
 
-The hypothesis as written in the v2 bridge says: "every ASSIGN has a
-nondet rhs", i.e.,
+The "every ASSIGN has a nondet rhs" hypothesis is **provably false**
+for any translator output containing an ASSIGN emitted by `init_det`
+or `set_det` — those ASSIGNs have a translated source expression as
+rhs, not a nondet side-effect.
 
-```
-∀ {pc instr}, pgm.instrAt pc = some instr → instr.type = .ASSIGN →
-  ∃ v_src gty rhs_emitted,
-    instr.code = Code.assign (Expr.symbol (nameMap v_src) gty) rhs_emitted ∧
-    rhs_emitted.id = .side_effect .Nondet
-```
-
-This is **provably false** for any translator output containing an
-ASSIGN emitted by `init_det` or `set_det` — those ASSIGNs have a
-translated source expression as rhs, not a nondet side-effect.
-
-R7c's `assign_nondet_lookup_of_provenance_and_pinned` consumes this
-hypothesis, but `assign_nondet_lookup` itself is only intended to be
-"valid" for actual `step_assign_nondet` firings. The right fix is to
-restructure the v2 bridge so that `h_assn_nondet_provenance` only
-fires under a precondition tying the PC to a `step_assign_nondet`
-trace. That's a bridge-level refactor in
-`InstructionLookups.lean`/`TranslatorBridgeHypsDischarge.lean`, not a
-translator-level theorem.
-
-We therefore **omit** `assn_nondet_provenance_of_translator` from
-this file with a documentation note. Closing the v2 bridge's
-`assign_nondet_lookup` field requires either (a) the refactor above,
-or (b) a global precondition on the source CFG that every ASSIGN is
-nondet (very strong, ruling out `set_det`/`init_det`). Neither is in
-scope for this round.
-
-## Boundary
-
-Like R7c's `InstructionLookups.lean`, this file does not discharge the
-inversion hypothesis. The inversion is the genuine remaining gap; once
-closed, plugging it into these theorems closes the v2 bridge cleanly. -/
+The closable variant is therefore the *strict* form
+(`assn_nondet_provenance_of_translator_strict`): under a strict
+inversion that pinpoints each ASSIGN PC to the
+`set _ .nondet _` constructor. Such an inversion is satisfied only
+for source CFGs where every ASSIGN is a nondet one, so this is a
+strong-precondition form rather than a general bridge for the v2
+hypothesis. Closing the v2 bridge's `assign_nondet_lookup` field for
+arbitrary CFGs requires a per-firing form conditional on
+`step_assign_nondet` having fired — a bridge-level shape change in
+`InstructionLookups.lean`/`TranslatorBridgeHypsDischarge.lean`, not
+a translator-level theorem. -/
 
 namespace CProverGOTO.CmdProvenance
 
@@ -273,34 +246,14 @@ theorem assn_provenance_of_translator
       inj_subst h_at h_assn_at
       exact ⟨v, gty, e_goto, h_assn_code⟩
 
-/-! ## ASSIGN-Nondet provenance — partial
+/-! ## ASSIGN-Nondet provenance — strict form only
 
-The v2 bridge's `h_assn_nondet_provenance` field is universal over
-ASSIGN PCs and demands a nondet rhs for every ASSIGN. This is **false**
-in general — `init_det` and `set_det` both emit ASSIGNs whose rhs is a
-translated source expression, not a nondet side-effect.
-
-The closable version is under a **strict** inversion that pinpoints
-each ASSIGN PC to the `set _ .nondet _` constructor. Such an inversion
-is not satisfied by typical translator outputs (any source CFG
-containing `set _ (.det _) _` or `init _ _ (.det _) _` cmds emits
-non-nondet ASSIGNs), so the partial theorem is a strong-precondition
-form rather than a general bridge for the v2 hypothesis.
-
-For the v2 bridge to close cleanly, the right path is one of:
-
-1. **Refactor `InstructionLookups.lean`** so that
-   `assign_nondet_lookup_of_provenance_and_pinned` consumes only a
-   per-PC partial provenance (existential under "this PC is a nondet
-   ASSIGN"), wired with a trace-level "the firing is a
-   step_assign_nondet" precondition.
-2. **Strengthen the v2 bridge's assumptions** to a per-firing form
-   conditional on source-side `EvalCmd.eval_set_nondet` having fired
-   at this PC.
-
-Both are bridge-level refactors; the present partial theorem
-documents what the translator-level metaproperty looks like
-(`assn_nondet_provenance_of_translator_strict`). -/
+A "every ASSIGN has a nondet rhs" claim is **false** in general:
+`init_det` and `set_det` both emit ASSIGNs whose rhs is a translated
+source expression. The closable version is under a **strict**
+inversion that pinpoints each ASSIGN PC to the `set _ .nondet _`
+constructor. The strict form below is satisfied only for source CFGs
+where every ASSIGN is a nondet one. -/
 
 /-- Strict inversion hypothesis: every ASSIGN PC corresponds *exactly*
 to a `set _ .nondet _` cmd-start. Excludes `init_det` ASSIGNs and
