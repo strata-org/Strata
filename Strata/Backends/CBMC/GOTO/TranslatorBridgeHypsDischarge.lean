@@ -359,15 +359,15 @@ theorem wellFormedTranslation_to_translatorBridgeHyps_v2
     nameMap h_inj eval h_goto_target_in_range h_no_dead
     -- decl_lookup: discharged via InstructionLookups.
     (CProverGOTO.InstructionLookups.decl_lookup_of_provenance_and_pinned
-      pgm nameMap h_inj h_decl_provenance h_decl_x_pinned)
+      pgm nameMap h_decl_provenance h_decl_x_pinned)
     -- assign_lookup: discharged via InstructionLookups.
     (CProverGOTO.InstructionLookups.assign_lookup_of_provenance_and_pinned
-      pgm δ_goto nameMap h_inj h_assn_provenance h_assn_x_pinned h_assn_rhs_pinned)
+      pgm δ_goto nameMap h_assn_provenance h_assn_x_pinned h_assn_rhs_pinned)
     -- assign_nondet_lookup: discharged via InstructionLookups.
     -- R11: now uses h_assn_provenance (not h_assn_nondet_provenance);
     -- the rhs-shape witness comes from the constructor.
     (CProverGOTO.InstructionLookups.assign_nondet_lookup_of_provenance_and_pinned
-      pgm nameMap h_inj h_assn_provenance h_assn_x_pinned)
+      pgm nameMap h_assn_provenance h_assn_x_pinned)
     h_decl_empty_value h_assign_value_corr h_assign_nondet_value_corr
 
 end CProverGOTO.TranslatorBridgeHypsDischarge

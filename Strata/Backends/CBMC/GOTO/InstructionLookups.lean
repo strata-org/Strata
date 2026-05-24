@@ -177,7 +177,6 @@ trace because `EvalCmd.eval_init` fires only with the cmd's own `v`. -/
 theorem decl_lookup_of_provenance_and_pinned
     (pgm : Program)
     (nameMap : Core.Expression.Ident → String)
-    (_h_inj : Function.Injective nameMap)
     (h_decl_provenance :
       ∀ {pc : Nat} {instr : Instruction},
         pgm.instrAt pc = some instr → instr.type = .DECL →
@@ -229,7 +228,6 @@ theorem assign_lookup_of_provenance_and_pinned
     (pgm : Program)
     (δ_goto : SemanticEvalGoto Core.Expression)
     (nameMap : Core.Expression.Ident → String)
-    (_h_inj : Function.Injective nameMap)
     (h_assn_provenance :
       ∀ {pc : Nat} {instr : Instruction},
         pgm.instrAt pc = some instr → instr.type = .ASSIGN →
@@ -293,7 +291,6 @@ to the new `assign_nondet_lookup` field shape (R11). -/
 theorem assign_nondet_lookup_of_provenance_and_pinned
     (pgm : Program)
     (nameMap : Core.Expression.Ident → String)
-    (_h_inj : Function.Injective nameMap)
     (h_assn_provenance :
       ∀ {pc : Nat} {instr : Instruction},
         pgm.instrAt pc = some instr → instr.type = .ASSIGN →
