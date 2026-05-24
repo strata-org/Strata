@@ -14,83 +14,32 @@ public section
 
 /-! # Discharging R8b's three PC-inversion auxiliaries
 
-Round-9 deliverable. Closes the three "PC inversion" hypotheses
-(`DeclPcInversion`, `AssignPcInversion`, `AssignNondetPcInversion`)
-that R8b left as auxiliary preconditions on its three provenance
-theorems (`decl_provenance_of_translator`,
-`assn_provenance_of_translator`,
-`assn_nondet_provenance_of_translator_strict`).
+Round-9 deliverable. Closes the `DeclPcInversion` and
+`AssignPcInversion` hypotheses that R8b left as auxiliary
+preconditions on its provenance theorems
+(`decl_provenance_of_translator`, `assn_provenance_of_translator`).
+The strict `AssignNondetPcInversion` is provably false in general
+(see the trailing comment block) and is left as a hypothesis.
 
 ## Strategy
 
 Rather than directly inverting "PC carrying a DECL/ASSIGN" into a
-block + offset, we prove a **coverage predicate** by translator-fold
-induction:
-
-```
-def BodyPcCovered (trans : ...) (pgm : Program) : Prop :=
-  ∀ pc instr, trans.instructions[pc]? = some instr →
-    -- DECL → there's a CmdEmittedAt over pgm with init_* shape at pc
-    (instr.type = .DECL → ∃ inner, CmdEmittedAt ... pgm pc inner) ∧
-    -- ASSIGN → either offset-0 set _ _ _, or offset-1 init _ _ (.det _) _
-    (instr.type = .ASSIGN →
-      (∃ v cv md, CmdEmittedAt ... pgm pc (.set v cv md)) ∨
-      (∃ pc_pred v ty e_core md, pc = pc_pred + 1 ∧
-        CmdEmittedAt ... pgm pc_pred (.init v ty (.det e_core) md)))
-```
-
-Each translator emit step preserves the predicate or strictly extends
-it; the patcher only modifies `target` fields, preserving the
-predicate trivially.
-
-This predicate gives us **directly** what R8b's `DeclPcInversion`
-and `AssignPcInversion` ask for. The strict `AssignNondetPcInversion`
-(which says every ASSIGN PC is *exactly* a `.set _ .nondet _`
-cmd-start) is **provably false** for any source CFG containing a
-`.set _ (.det _) _` or `.init _ _ (.det _) _` cmd, per R8b's finding.
-We close the strict form only under an extra, narrowing precondition
-that constrains the source CFG.
-
-## File layout
-
-* **`BodyPcCovered`** predicate over a translator state and a target
-  program.
-* **Push/append preservation primitives** for in-bounds PCs.
-* **`Cmd.toGotoInstructions`** preservation (5 admitted shapes):
-  `init_det`, `init_nondet`, `set_det`, `set_nondet`, `assert`,
-  `assume`, `cover`. Each branch's emitted DECL/ASSIGN at `nextLoc`
-  (and possibly `nextLoc + 1` for `init_det`) is covered by the
-  matching `cmdEmittedAt_*_of_toGotoInstructions` lemma from
-  `CoreCFGToGotoTransformWF.lean`.
-* **Lifts through `coreCFGToGotoCmdStep`, `cmdsFoldlM`, emit helpers,
-  `coreCFGToGotoBlockStep`, `blocksFoldlM`** mirroring the existing
-  templates in `NoDead.lean` and `GotoTargetProvenance.lean`.
-* **Patcher preservation** via `patchGotoTargets_preserves_full_except_target`.
-* **Top-level theorems**: `declPcInversion_of_translator_abbrev`,
-  `assignPcInversion_of_translator_abbrev`. Each closes the
-  corresponding abbrev from `CmdProvenance.lean` directly.
--/
+block + offset, we prove a coverage predicate `BodyPcCovered` by
+translator-fold induction: every emit step preserves it; the patcher
+only modifies `target` fields and preserves it trivially. The
+predicate yields directly what `DeclPcInversion` /
+`AssignPcInversion` ask for. -/
 
 namespace CProverGOTO.PcInversion
 
 open Imperative
 open CProverGOTO
 
-/-! ## The `BodyPcCovered` predicate
-
-Records, for the translator's current `instructions` array, that
-every body-instruction PC (DECL or ASSIGN) is covered by an
-appropriately-placed `CmdEmittedAt` witness over a fixed target
-program `pgm`.
-
-The predicate is parameterised by the target program because during
-the translator fold we don't yet have `ans`; we use the post-fold
-`ans` (or `st_final.trans`) as the "target" program for the chain
-preservation argument. -/
-
 /-- `BodyPcCovered trans pgm`: for every PC of `trans.instructions`
 whose type is DECL or ASSIGN, there is a corresponding `CmdEmittedAt`
-witness over `pgm`. -/
+witness over `pgm`. The predicate is parameterised by `pgm` because
+during the fold we don't yet have `ans`; we use the post-fold `ans`
+(or `st_final.trans`) as the target. -/
 abbrev BodyPcCovered
     (δ : Imperative.SemanticEval Core.Expression)
     (δ_goto : SemanticEvalGoto Core.Expression)
