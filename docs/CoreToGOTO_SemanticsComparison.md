@@ -15,6 +15,30 @@ differ in scope, value modeling, expression evaluation, and how function
 calls and termination are handled. This branch's semantics is narrower
 and lighter; the tautschnig branch's is broader and more concrete.
 
+**Important caveat on what each branch delivers.** This branch carries
+a *closed* end-to-end simulation theorem
+(`coreCFGToGoto_forward_simulation`, `#print axioms` =
+`[propext, Classical.choice, Quot.sound]`) on the call-free CFG slice.
+After rounds 5-11 of work the structural well-formedness hypothesis
+has been discharged against the actual translator (live theorem
+`coreCFGToGotoTransform_forward_simulation_concrete_v7`); the only
+remaining hypotheses are caller-irreducible (B3 expression-side
+bundle, R7c trace-level pinning, value-side correspondence,
+evaluator agreement). See
+`docs/CoreToGOTO_CurrentStatus.md` for the current hypothesis
+classification.
+
+The tautschnig branch builds *more infrastructure* (concrete
+`Value`, `concreteEval`, determinism, progress, `sim_X` building
+blocks) but does *not* assemble these into an end-to-end
+translator-correctness theorem: `sim_end_to_end` is compositional
+plumbing whose preconditions (`hstmt_sim` and `hrange`) are
+themselves undischarged for the actual `transformToGoto` output.
+Both branches share the open obligation of committing a concrete
+`Value` correspondence and discharging a concrete evaluator.
+Neither alone is a complete concrete-soundness proof; they cover
+*different* halves of the picture.
+
 ## Snapshot
 
 | Aspect | This branch | `tautschnig/goto-semantics` |
@@ -23,7 +47,7 @@ and lighter; the tautschnig branch's is broader and more concrete.
 | Module pattern | Lean 4 `module` / `public import` / `public section` | Plain `import` (legacy module style) |
 | Pipeline target | Unstructured (`Core.DetCFG` → GOTO) | Structured (`Imperative.EvalBlock` → GOTO) |
 | Top-level theorem | `coreCFGToGoto_forward_simulation` (forward simulation, terminating runs) | `sim_end_to_end` (existential store correspondence + `ExecProg` composition) |
-| Open hypotheses | `WellFormedTranslation`, `ExprTranslationPreservesEval` | `StoreCorr`/`EvalCorr` correspondences supplied by callers; `concreteEval` provided but its correspondence to Lambda eval is left open |
+| Open hypotheses | Caller-irreducible only after R10/R11: B3 expression-side bundle, trace-level pinning (R7c), value-side correspondence, evaluator agreement. Structural `WellFormedTranslation` is internally discharged in `_v7`. | `StoreCorr`/`EvalCorr` correspondences supplied by callers; `concreteEval` provided but its correspondence to Lambda eval is left open |
 | Termination model | Reflexive-transitive closure of `StepGoto`; `.terminal` config | Inductive `ExecProg` rooted at `END_FUNCTION` / out-of-bounds; explicit `.set_return_value` |
 | Failure model | `failed : Bool` flag accumulates assert failures inside the config | `assert_fail` advances PC normally; failure observed via separate `AssertFails` and `ProgramSafe` predicates |
 | Instructions modeled | 7 (`LOCATION`, `DECL`, `ASSIGN`, `ASSERT`, `ASSUME`, `GOTO`, `END_FUNCTION`) plus `step_assign_nondet` | 11 (the 7 above plus `SKIP`, `DEAD`, `FUNCTION_CALL`, `SET_RETURN_VALUE`) |
@@ -395,20 +419,109 @@ A merged form would also let us share the open obligations
 discharge, `concreteEval` correctness vs. Lambda) so each only needs
 to be proved once.
 
+## What the tautschnig branch is *not* doing
+
+It is worth being explicit about gaps, since the file count
+(`Semantics.lean` + `SemanticsEval.lean` + `SemanticsProps.lean` +
+`SemanticsSim.lean` ≈ 1640 lines) overstates the closed-proof content.
+
+1. **No end-to-end translator-correctness theorem.** A search for
+   uses of `sim_end_to_end` outside its own definition site
+   (`SemanticsSim.lean:574`) finds none.  The theorem is stated and
+   proved, but never instantiated against `transformToGoto` output.
+   `sim_end_to_end`'s preconditions include `hrange : ExecRange ...`
+   (the translated GOTO instructions execute as a range) and
+   `hstmt_sim` (each statement preserves store correspondence) — both
+   are caller-supplied; no theorem on the branch discharges them for
+   the actual translator.
+2. **`eval` is still abstract.** Their `StepInstr` is parameterized by
+   `eval : ExprEval = Store → Expr → Option Value`, exactly as our
+   `StepGoto` is parameterized by `δ_goto`. The concrete `concreteEval`
+   exists in `SemanticsEval.lean`, but it is *not* threaded into the
+   simulation theorems — those still take `eval` as an opaque
+   argument. The "concreteness gap" is the value type and the
+   *available-but-disconnected* concrete evaluator, not the step
+   relation itself.
+3. **`concreteEval` is `partial def`.** It is not directly usable in
+   Lean proofs without a non-`partial` reformulation.  Its
+   correspondence with Lambda-level expression evaluation is listed
+   as a TODO (`SemanticsEval.lean` header).
+4. **No `ValueCorr` instance for `Core.Expression`.** The `ValueCorr P`
+   typeclass is defined and `StoreCorr nameMap` consumes it, but no
+   instance is provided for any concrete `P`. Any caller of `sim_set`
+   / `sim_init` / etc. has to define `toValue : Core.Expression.Expr →
+   Option Value` themselves, including the numeric-width and
+   structured-value conventions.
+5. **`Function.Injective nameMap` is a hypothesis, not a theorem.**
+   Their `sim_set`/`sim_init` lemmas require it; nothing on the branch
+   discharges it for `Lambda.LExpr.toGotoExprCtx`'s actual renaming
+   (`<proc>::<scope>::<name>`).
+
+In short: theirs is **infrastructure that hasn't been assembled into
+a concrete soundness statement**. Ours is **a closed simulation
+skeleton parametric over abstract evaluators and abstract values**.
+Both branches stop short of concrete soundness; the gaps are
+complementary.
+
+## What concrete soundness requires
+
+A "real" translator-correctness theorem instantiated against
+`transformToGoto`'s actual output, capable of expressing properties
+like "no integer overflow," would need all of the following pieces.
+Neither branch alone has them:
+
+| Piece | This branch | Tautschnig | Open on both? |
+|---|---|---|---|
+| Source-side semantics | parametric (`δ`) | parametric (`δ`) | yes |
+| Target-side step relation | `StepGoto` (abstract `δ_goto`) | `StepInstr` (abstract `eval`) | partial — both abstract |
+| Target-side concrete value type | `P.Expr` (abstract) | `Value` ✓ | one branch only |
+| Target-side concrete evaluator | none | `concreteEval` (`partial def`) | one branch only |
+| End-to-end forward simulation against translator | `coreCFGToGoto_forward_simulation` ✓ | none | one branch only |
+| `WellFormedTranslation` discharge against `transformToGoto` | open | open (no analogue) | yes |
+| `ExprTranslationPreservesEval` (a.k.a. `EvalCorr`) discharge against `Lambda.LExpr.toGotoExprCtx` | open | open | yes |
+| `ValueCorr P` instance for `Core.Expression` | n/a | open | one branch only |
+| `Function.Injective nameMap` discharge | n/a | open | one branch only |
+| Determinism, progress, store-operation lemmas | none | proven for `StepInstr` | one branch only |
+
+The cheapest path through this table is **additive**: keep this
+branch's closed forward-simulation skeleton, layer the tautschnig
+infrastructure (concrete `Value`, `concreteEval`, `StoreCorr`,
+determinism, progress) on top of `StepGoto`, and discharge the open
+hypotheses against the concrete pieces as they land.  The
+foundational store-type swap (replacing `SemanticStore P` with
+`Store`) is *not* required for soundness; bridging via
+`StoreCorr nameMap` is sufficient, leaves our existing proof intact,
+and is exactly the path the tautschnig branch already chose for *its*
+side.
+
+See `docs/superpowers/specs/2026-05-20-goto-semantics-expansion-design.md`
+for the staged plan that operationalizes this, including the
+`StepGoto ↔ StepInstr` bisimulation bridge that lets downstream
+consumers move between the two step relations without committing to
+a single canonical one up front.
+
 ## Summary
 
-This branch aims for a **narrow, sharp** result: forward simulation
-on the call-free `DetCFG` fragment, with all infrastructure in three
-files (Semantics + Invariants + Correct), and the proof chain closed
-modulo two well-named hypotheses.
+This branch aims for a **narrow, sharp** result: a closed forward
+simulation on the call-free `DetCFG` fragment, with all proof
+infrastructure under `Strata/Backends/CBMC/GOTO/` (split across
+several files since the rounds-5-through-12 cleanup work; the
+`WellFormedTranslation` construction in particular is now under
+`CoreCFGToGotoTransformWF/` as 6 sub-modules of ≤1.5k LoC each), and
+the proof chain closed modulo a small set of caller-irreducible
+hypotheses (per-PC trace-level pinning, evaluator agreement). See
+`docs/CoreToGOTO_CurrentStatus.md` for the up-to-date hypothesis
+inventory.
 
 The tautschnig branch aims for a **broader infrastructure**: a more
-faithful semantics (concrete `Value`, function calls, loops, returns,
-`old()`), a concrete expression evaluator, and an end-to-end
-existential simulation through the structured pipeline.
+faithful semantics surface (concrete `Value`, function calls, loops,
+returns, `old()`), a concrete expression evaluator, determinism,
+progress, and statement-level simulation building blocks — with no
+end-to-end translator-correctness theorem assembled from them.
 
-Neither is strictly better — they target different parts of the
-problem. The most leveraged next step would be merging the two
-toward a single semantics file (per-instruction rules), with the two
-simulation theorems sitting on top, sharing the determinism /
-progress / `concreteEval` infrastructure underneath.
+Neither is strictly better; they cover different halves of the
+concrete-soundness story. The most leveraged next step is **not** to
+replace one with the other, but to grow the two halves toward each
+other additively: keep the closed simulation here, port the concrete
+infrastructure from there, and discharge the shared open hypotheses
+against the concrete instantiations as they land.
