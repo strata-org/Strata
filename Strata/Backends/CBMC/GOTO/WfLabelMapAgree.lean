@@ -373,15 +373,13 @@ theorem labelMap_agree_of_translator
       st_final.labelMap[l]? = some target →
       wf.labelMap l = some target := by
   intro l blk target h_in h_lookup
-  -- Step 1: get wf.labelMap l = some pc1 by total + layout_location_labels.
-  have h_l_in : l ∈ cfg.blocks.map Prod.fst := by
-    rw [List.mem_map]; exact ⟨(l, blk), h_in, rfl⟩
+  -- Step 1: get wf.labelMap l = some pc1 + the LOCATION at pc1 with labels [l].
   rcases h_pc1 : wf.labelMap l with _ | pc1
-  · have := wf.labelMap_total l h_l_in
+  · have := wf.labelMap_total l (List.mem_map.mpr ⟨(l, blk), h_in, rfl⟩)
     rw [h_pc1] at this; cases this
   obtain ⟨instr1, h_at1, h_ty1, h_lab1⟩ :=
     wf.layout_location_labels l blk pc1 h_in h_pc1
-  -- Step 2: build the LocationsTrackLabelMap invariant for ans.instructions.
+  -- Step 2: build LocationsTrackLabelMap for st_final.trans via blocksFoldlM_preserves.
   have h_inv_init : LocationsTrackLabelMap (coreCFGToGotoInitState trans₀).trans
                       (coreCFGToGotoInitState trans₀).labelMap := by
     intro pc instr l' h h_ty _
@@ -389,14 +387,10 @@ theorem labelMap_agree_of_translator
     exact absurd h_ty (h_init_no_location h)
   have h_inv_st_final : LocationsTrackLabelMap st_final.trans st_final.labelMap :=
     blocksFoldlM_preserves functionName cfg.blocks _ st_final
-      (fun lblBlk h_lb => h_admitted_blocks lblBlk.1 lblBlk.2 h_lb)
-      h_blocks_run
+      (fun lblBlk h_lb => h_admitted_blocks lblBlk.1 lblBlk.2 h_lb) h_blocks_run
       (by simp [coreCFGToGotoInitState]; exact h_init_size)
-      h_inv_init h_distinct
-      (fun p _ => Std.HashMap.getElem?_empty)
-  -- Step 3: extend through the patcher to ans.
-  -- ans = patchGotoTargets trans_post resolved where trans_post = st_final.trans
-  -- under the empty-loopContracts hypothesis.
+      h_inv_init h_distinct (fun _ _ => Std.HashMap.getElem?_empty)
+  -- Step 3: extend through the patcher to ans (= patchGotoTargets st_final.trans resolved).
   obtain ⟨st_final', resolved, trans_post, h_blocks_run', h_patches_run, h_ans_eq⟩ :=
     coreCFGToGotoTransform_decompose Env functionName cfg trans₀ ans h_run
   have h_st_final_eq : st_final = st_final' := by
@@ -406,20 +400,17 @@ theorem labelMap_agree_of_translator
   have h_trans_post_eq : trans_post = st_final.trans :=
     patchesFoldlM_no_contracts_trans_eq st_final.labelMap st_final.pendingPatches
       ([], st_final.trans) (resolved, trans_post) h_patches_run
-  have h_inv_ans :
-      LocationsTrackLabelMap (Imperative.patchGotoTargets st_final.trans resolved)
-        st_final.labelMap :=
+  have h_inv_ans : LocationsTrackLabelMap (Imperative.patchGotoTargets st_final.trans resolved)
+      st_final.labelMap :=
     patchGotoTargets_preserves st_final.trans resolved _ h_inv_st_final
-  -- Step 4: instr1 at pc1 in ans.instructions has labels [l]. Apply h_inv_ans.
+  -- Step 4: apply h_inv_ans to instr1 at pc1 to get st_final.labelMap[l]? = some pc1.
   have h_at1_post : (Imperative.patchGotoTargets st_final.trans resolved).instructions[pc1]?
                      = some instr1 := by
     have : ans.instructions[pc1]? = some instr1 := h_at1
     rw [h_ans_eq, h_trans_post_eq] at this; exact this
-  have h_lookup_pc1 : st_final.labelMap[l]? = some pc1 :=
-    h_inv_ans h_at1_post h_ty1 h_lab1
-  -- Step 5: combine with h_lookup : st_final.labelMap[l]? = some target.
   have h_eq : pc1 = target := by
-    have := h_lookup_pc1.symm.trans h_lookup; injection this
+    have := (h_inv_ans h_at1_post h_ty1 h_lab1).symm.trans h_lookup
+    injection this
   rw [h_eq]
 
 end CProverGOTO.WfLabelMapAgree

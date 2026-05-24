@@ -527,26 +527,22 @@ theorem everyGotoTargetIsLabelMapEntry_of_translator_translatorMap
   have h_trans_post_eq : trans_post = st_final.trans :=
     patchesFoldlM_no_contracts_trans_eq st_final.labelMap st_final.pendingPatches
       ([], st_final.trans) (resolved, trans_post) h_patches_run
-  -- Feed the predicate.
   intros pc target instr h_at h_ty h_target
   have h_at' : ans.instructions[pc]? = some instr := h_at
   rw [h_ans_eq] at h_at'
-  -- The pre-patcher GOTO had target = none (by NoGotoHasTarget'). Apply reverse-target.
+  -- Pre-patcher GOTO at pc had target = none (by NoGotoHasTarget'). Apply reverse-target.
   obtain ⟨instr_pre, h_pre_at, _, _, _, _⟩ :=
     patchGotoTargets_preserves_full_except_target trans_post resolved pc instr h_at'
   rw [h_trans_post_eq] at h_pre_at
   have h_pre_ty : instr_pre.type = .GOTO := by
-    obtain ⟨instr_pre', h_at_pre', h_ty_eq⟩ :=
+    obtain ⟨_, h_at_pre', h_ty_eq⟩ :=
       patchGotoTargets_preserves_type trans_post resolved pc instr h_at'
-    rw [h_trans_post_eq] at h_at_pre'
-    rw [h_at_pre'] at h_pre_at
-    injection h_pre_at with h_inj
-    rw [← h_inj, ← h_ty_eq]; exact h_ty
-  have h_pre_target_none : instr_pre.target = none :=
-    h_no_goto_target_st_final h_pre_at h_pre_ty
+    rw [h_trans_post_eq] at h_at_pre'; rw [h_at_pre'] at h_pre_at
+    injection h_pre_at with h_inj; rw [← h_inj, ← h_ty_eq]; exact h_ty
   have h_in_resolved : (pc, target) ∈ resolved :=
     patchGotoTargets_target_some_in_patches trans_post resolved pc target
-      instr_pre instr (by rw [h_trans_post_eq]; exact h_pre_at) h_pre_target_none
+      instr_pre instr (by rw [h_trans_post_eq]; exact h_pre_at)
+      (h_no_goto_target_st_final h_pre_at h_pre_ty)
       (by rw [← h_ans_eq]; exact h_at) h_target
   -- Reverse-trace (pc, target) ∈ resolved to a pendingPatch + labelMap lookup.
   rcases patchesFoldlM_no_contracts_resolved_reverse_array st_final.labelMap
@@ -554,13 +550,11 @@ theorem everyGotoTargetIsLabelMapEntry_of_translator_translatorMap
     h_patches_run pc target h_in_resolved with h_in_acc | ⟨lbl, _, h_lookup⟩
   · simp at h_in_acc
   · -- lbl is a block label by blocksFoldlM_labelMap_keys_in_blocks.
-    have h_lbl_in : lbl ∈ cfg.blocks.map Prod.fst := by
-      apply blocksFoldlM_labelMap_keys_in_blocks functionName cfg.blocks trans₀ st_final
-      · simp [coreCFGToGotoInitState] at h_blocks_run; exact h_blocks_run
-      · exact h_lookup
+    have h_lbl_in : lbl ∈ cfg.blocks.map Prod.fst :=
+      blocksFoldlM_labelMap_keys_in_blocks functionName cfg.blocks trans₀ st_final
+        (by simp [coreCFGToGotoInitState] at h_blocks_run; exact h_blocks_run) lbl _ h_lookup
     rw [List.mem_map] at h_lbl_in
-    obtain ⟨pair, h_pair_in, h_pair_eq⟩ := h_lbl_in
-    obtain ⟨l', blk⟩ := pair
+    obtain ⟨⟨l', blk⟩, h_pair_in, h_pair_eq⟩ := h_lbl_in
     simp at h_pair_eq
     subst h_pair_eq
     exact ⟨l', blk, h_pair_in, h_lookup⟩
