@@ -66,9 +66,9 @@ that constrains the source CFG.
   `coreCFGToGotoBlockStep`, `blocksFoldlM`** mirroring the existing
   templates in `NoDead.lean` and `GotoTargetProvenance.lean`.
 * **Patcher preservation** via `patchGotoTargets_preserves_full_except_target`.
-* **Top-level theorems**: `declPcInversion_of_translator`,
-  `assignPcInversion_of_translator`. Each closes the corresponding
-  abbrev from `CmdProvenance.lean`.
+* **Top-level theorems**: `declPcInversion_of_translator_abbrev`,
+  `assignPcInversion_of_translator_abbrev`. Each closes the
+  corresponding abbrev from `CmdProvenance.lean` directly.
 -/
 
 namespace CProverGOTO.PcInversion
@@ -1094,8 +1094,8 @@ theorem bodyPcCovered_of_empty
 
 /-- Build `BodyPcCovered` over the translator output `ans` by composing
 the blocks-fold preservation and the patcher preservation. Both
-`declPcInversion_of_translator` and `assignPcInversion_of_translator`
-project from this. -/
+`declPcInversion_of_translator_abbrev` and
+`assignPcInversion_of_translator_abbrev` project from this. -/
 private theorem bodyPcCovered_of_translator
     (Env : Core.Expression.TyEnv) (functionName : String)
     (cfg : Core.DetCFG)
@@ -1183,57 +1183,12 @@ private theorem bodyPcCovered_of_translator
     exact h_at'
   exact h_cov_post h_at_post
 
-/-- **DECL PC inversion** from the translator: every DECL PC in
-`ans.instructions` corresponds to an `init_*` cmd-start.
+/-- **Discharge `DeclPcInversion`** from the translator. Every DECL PC
+in `ans.instructions` corresponds to an `init_*` cmd-start.
 
 The auxiliary hypotheses are the standard translator-input invariants
 (empty/admitted initial state, distinct labels, admitted blocks,
 empty-loopContracts post-fold). -/
-theorem declPcInversion_of_translator
-    (Env : Core.Expression.TyEnv) (functionName : String)
-    (cfg : Core.DetCFG)
-    (trans₀ : Imperative.GotoTransform Core.Expression.TyEnv)
-    (h_init_size : trans₀.instructions.size = trans₀.nextLoc)
-    (h_init_empty_decl_assign : ∀ {pc : Nat} {instr : Instruction},
-      trans₀.instructions[pc]? = some instr →
-      instr.type ≠ .DECL ∧ instr.type ≠ .ASSIGN)
-    (h_distinct : BlockLabelsDistinct cfg.blocks)
-    (h_admitted_blocks :
-      ∀ (l : String) blk, (l, blk) ∈ cfg.blocks →
-      ∀ c ∈ blk.cmds, Core.CmdExt.isAdmittedCmd c = true)
-    (h_loopContracts_empty_post :
-      ∀ (st_final : Strata.CoreCFGTransLoopState),
-        cfg.blocks.foldlM (Strata.coreCFGToGotoBlockStep functionName)
-          (coreCFGToGotoInitState trans₀)
-        = Except.ok st_final → st_final.loopContracts = ∅)
-    (ans : Imperative.GotoTransform Core.Expression.TyEnv)
-    (h_run : Strata.coreCFGToGotoTransform Env functionName cfg trans₀
-              = Except.ok ans)
-    (δ : Imperative.SemanticEval Core.Expression)
-    (δ_goto : SemanticEvalGoto Core.Expression)
-    (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
-    (h_expr_corr : ExprTranslationPreservesEval δ δ_goto δ_goto_bool)
-    (h_tx_eq :
-      ∀ e : Core.Expression.Expr,
-        Imperative.ToGoto.toGotoExpr (P := Core.Expression) e
-          = Except.ok (h_expr_corr.tx e)) :
-    ∀ {pc : Nat} {instr : Instruction},
-      ({ name := "", parameterIdentifiers := #[],
-         instructions := ans.instructions } : Program).instrAt pc
-        = some instr →
-      instr.type = .DECL →
-      ∃ inner, CmdEmittedAt δ δ_goto δ_goto_bool
-        { name := "", parameterIdentifiers := #[],
-          instructions := ans.instructions } pc inner := by
-  intro pc instr h_at h_ty
-  let _ := h_distinct
-  exact (bodyPcCovered_of_translator Env functionName cfg trans₀
-      h_init_size h_init_empty_decl_assign h_admitted_blocks
-      h_loopContracts_empty_post ans h_run δ δ_goto δ_goto_bool
-      h_expr_corr h_tx_eq h_at).1 h_ty
-
-/-- **Discharge `DeclPcInversion`** from the translator. Wraps the
-above into the precise abbrev form expected by R8b. -/
 theorem declPcInversion_of_translator_abbrev
     (Env : Core.Expression.TyEnv) (functionName : String)
     (cfg : Core.DetCFG)
@@ -1242,7 +1197,7 @@ theorem declPcInversion_of_translator_abbrev
     (h_init_empty_decl_assign : ∀ {pc : Nat} {instr : Instruction},
       trans₀.instructions[pc]? = some instr →
       instr.type ≠ .DECL ∧ instr.type ≠ .ASSIGN)
-    (h_distinct : BlockLabelsDistinct cfg.blocks)
+    (_h_distinct : BlockLabelsDistinct cfg.blocks)
     (h_admitted_blocks :
       ∀ (l : String) blk, (l, blk) ∈ cfg.blocks →
       ∀ c ∈ blk.cmds, Core.CmdExt.isAdmittedCmd c = true)
@@ -1271,63 +1226,14 @@ theorem declPcInversion_of_translator_abbrev
         instructions := ans.instructions }
       δ δ_goto δ_goto_bool wf := by
   intro pc instr h_at h_ty
-  exact declPcInversion_of_translator Env functionName cfg trans₀
-    h_init_size h_init_empty_decl_assign h_distinct h_admitted_blocks
-    h_loopContracts_empty_post ans h_run δ δ_goto δ_goto_bool
-    h_expr_corr h_tx_eq h_at h_ty
-
-/-- **ASSIGN PC inversion** from the translator: every ASSIGN PC in
-`ans.instructions` is either offset-0 of a `set _ _ _` cmd or
-offset-1 of an `init _ _ (.det _) _` cmd. -/
-theorem assignPcInversion_of_translator
-    (Env : Core.Expression.TyEnv) (functionName : String)
-    (cfg : Core.DetCFG)
-    (trans₀ : Imperative.GotoTransform Core.Expression.TyEnv)
-    (h_init_size : trans₀.instructions.size = trans₀.nextLoc)
-    (h_init_empty_decl_assign : ∀ {pc : Nat} {instr : Instruction},
-      trans₀.instructions[pc]? = some instr →
-      instr.type ≠ .DECL ∧ instr.type ≠ .ASSIGN)
-    (h_distinct : BlockLabelsDistinct cfg.blocks)
-    (h_admitted_blocks :
-      ∀ (l : String) blk, (l, blk) ∈ cfg.blocks →
-      ∀ c ∈ blk.cmds, Core.CmdExt.isAdmittedCmd c = true)
-    (h_loopContracts_empty_post :
-      ∀ (st_final : Strata.CoreCFGTransLoopState),
-        cfg.blocks.foldlM (Strata.coreCFGToGotoBlockStep functionName)
-          (coreCFGToGotoInitState trans₀)
-        = Except.ok st_final → st_final.loopContracts = ∅)
-    (ans : Imperative.GotoTransform Core.Expression.TyEnv)
-    (h_run : Strata.coreCFGToGotoTransform Env functionName cfg trans₀
-              = Except.ok ans)
-    (δ : Imperative.SemanticEval Core.Expression)
-    (δ_goto : SemanticEvalGoto Core.Expression)
-    (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
-    (h_expr_corr : ExprTranslationPreservesEval δ δ_goto δ_goto_bool)
-    (h_tx_eq :
-      ∀ e : Core.Expression.Expr,
-        Imperative.ToGoto.toGotoExpr (P := Core.Expression) e
-          = Except.ok (h_expr_corr.tx e)) :
-    ∀ {pc : Nat} {instr : Instruction},
-      ({ name := "", parameterIdentifiers := #[],
-         instructions := ans.instructions } : Program).instrAt pc
-        = some instr →
-      instr.type = .ASSIGN →
-      let pgm : Program :=
-        { name := "", parameterIdentifiers := #[],
-          instructions := ans.instructions }
-      (∃ v cv md, CmdEmittedAt δ δ_goto δ_goto_bool pgm pc (.set v cv md)) ∨
-      (∃ pc_pred v ty e_core md, pc = pc_pred + 1 ∧
-        CmdEmittedAt δ δ_goto δ_goto_bool pgm pc_pred
-          (.init v ty (.det e_core) md)) := by
-  intro pc instr h_at h_ty
-  let _ := h_distinct
   exact (bodyPcCovered_of_translator Env functionName cfg trans₀
       h_init_size h_init_empty_decl_assign h_admitted_blocks
       h_loopContracts_empty_post ans h_run δ δ_goto δ_goto_bool
-      h_expr_corr h_tx_eq h_at).2 h_ty
+      h_expr_corr h_tx_eq h_at).1 h_ty
 
-/-- **Discharge `AssignPcInversion`** from the translator. Wraps the
-above into the abbrev form expected by R8b. -/
+/-- **Discharge `AssignPcInversion`** from the translator. Every
+ASSIGN PC in `ans.instructions` is either offset-0 of a `set _ _ _`
+cmd or offset-1 of an `init _ _ (.det _) _` cmd. -/
 theorem assignPcInversion_of_translator_abbrev
     (Env : Core.Expression.TyEnv) (functionName : String)
     (cfg : Core.DetCFG)
@@ -1336,7 +1242,7 @@ theorem assignPcInversion_of_translator_abbrev
     (h_init_empty_decl_assign : ∀ {pc : Nat} {instr : Instruction},
       trans₀.instructions[pc]? = some instr →
       instr.type ≠ .DECL ∧ instr.type ≠ .ASSIGN)
-    (h_distinct : BlockLabelsDistinct cfg.blocks)
+    (_h_distinct : BlockLabelsDistinct cfg.blocks)
     (h_admitted_blocks :
       ∀ (l : String) blk, (l, blk) ∈ cfg.blocks →
       ∀ c ∈ blk.cmds, Core.CmdExt.isAdmittedCmd c = true)
@@ -1365,10 +1271,10 @@ theorem assignPcInversion_of_translator_abbrev
         instructions := ans.instructions }
       δ δ_goto δ_goto_bool wf := by
   intro pc instr h_at h_ty
-  exact assignPcInversion_of_translator Env functionName cfg trans₀
-    h_init_size h_init_empty_decl_assign h_distinct h_admitted_blocks
-    h_loopContracts_empty_post ans h_run δ δ_goto δ_goto_bool
-    h_expr_corr h_tx_eq h_at h_ty
+  exact (bodyPcCovered_of_translator Env functionName cfg trans₀
+      h_init_size h_init_empty_decl_assign h_admitted_blocks
+      h_loopContracts_empty_post ans h_run δ δ_goto δ_goto_bool
+      h_expr_corr h_tx_eq h_at).2 h_ty
 
 /-! ## Strict ASSIGN-Nondet PC inversion — Tier 3
 
