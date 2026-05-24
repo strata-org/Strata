@@ -30,23 +30,16 @@ namespace CProverGOTO.GotoTargetProvenance
 open Imperative
 open CProverGOTO
 
-/-! ## "No GOTO has target set" predicate -/
+/-! ## "No GOTO has target set" predicate + push/append primitives -/
 
 /-- Array-level: every `GOTO` in `a` has `target = none`. -/
 abbrev NoGotoHasTarget' (a : Array CProverGOTO.Instruction) : Prop :=
   ∀ {pc : Nat} {instr : Instruction},
     a[pc]? = some instr → instr.type = .GOTO → instr.target = none
 
-/-- Transform-level (legacy public name): every `GOTO` in
-`trans.instructions` has `target = none`. -/
+/-- Transform-level (legacy public name). -/
 abbrev NoGotoHasTarget (trans : Imperative.GotoTransform Core.Expression.TyEnv) : Prop :=
   NoGotoHasTarget' trans.instructions
-
-/-! ## Push/append safety primitives
-
-The leaf-emit "safe" predicate: an instruction is safe iff it is not a
-GOTO with a non-`none` target. Pushing/appending safe instructions
-preserves `NoGotoHasTarget'`. -/
 
 private theorem noGotoHasTarget'_push
     (a : Array CProverGOTO.Instruction) (new_instr : Instruction)
@@ -146,17 +139,8 @@ instance instBlocksFoldClosed_NoGotoHasTarget' :
       (nonGoto_isSafe (T := .END_FUNCTION) (by unfold endFunctionInstr; rfl) (by decide))
       h_at h_ty
 
-/-! ## Patcher reverse-target lemma
+/-! ## Patcher reverse-target lemma: post-target = some t implies (pc, t) ∈ patches -/
 
-If `patchGotoTargets trans patches` produces a GOTO with `target =
-some t` at index `pc`, and the pre-patcher target at `pc` was `none`,
-then `(pc, t) ∈ patches`. Strategy: prove the contrapositive — if `pc`
-doesn't appear as a first projection in `patches`, the patcher leaves
-`(pc).target` alone. Then extract `t` via the patcher's "last patch
-wins" lemma. -/
-
-/-- Single-patch: setting target at index `i ≠ idx` leaves the value
-at `i` unchanged. -/
 private theorem patch_one_other_index
     (a : Array CProverGOTO.Instruction) (idx tgt : Nat)
     (i : Nat) (h_neq : i ≠ idx) :
@@ -166,8 +150,6 @@ private theorem patch_one_other_index
   · exact Array.getElem?_setIfInBounds_ne h_neq.symm
   · rw [Array.setIfInBounds_eq_of_size_le (Nat.le_of_not_lt h_idx)]
 
-/-- Single-patch: setting target at idx (in-bounds) gives `target =
-some tgt` at idx. -/
 private theorem patch_one_target_local
     (a : Array CProverGOTO.Instruction) (idx tgt : Nat)
     (h_idx : idx < a.size) :
@@ -180,7 +162,6 @@ private theorem patch_one_target_local
   refine ⟨{ a[idx]! with target := some tgt }, ?_, rfl⟩
   rw [Array.getElem?_eq_getElem h_lt, Array.getElem_setIfInBounds_self]
 
-/-- Patcher fold preserves size. -/
 private theorem patch_foldl_preserves_size_local
     (a : Array CProverGOTO.Instruction) (ps : List (Nat × Nat)) :
     (List.foldl
@@ -193,8 +174,6 @@ private theorem patch_foldl_preserves_size_local
     simp only [List.foldl]
     rw [ih, Array.set!_eq_setIfInBounds, Array.size_setIfInBounds]
 
-/-- If `pc` is not the first projection of any patch, the patcher
-doesn't touch index `pc`. -/
 private theorem patch_foldl_unchanged_when_idx_not_in
     (a : Array CProverGOTO.Instruction) (ps : List (Nat × Nat))
     (pc : Nat) (h_no_idx : ∀ p ∈ ps, p.1 ≠ pc) :
@@ -210,8 +189,6 @@ private theorem patch_foldl_unchanged_when_idx_not_in
     rw [ih _ (fun q hq => h_no_idx q (by simp [hq]))]
     exact patch_one_other_index a p.1 p.2 pc (Ne.symm h_p_neq)
 
-/-- Patcher's foldl preserves `target = some tgt` at `idx`, provided
-no later patch in the list has first projection `idx`. -/
 private theorem patch_foldl_target_preserved_when_idx_unique_in_tail
     (a : Array CProverGOTO.Instruction) (idx : Nat) (tgt : Nat)
     (ps : List (Nat × Nat))
@@ -234,7 +211,6 @@ private theorem patch_foldl_target_preserved_when_idx_unique_in_tail
       exact ⟨instr, h_at, h_tgt⟩
     · exact fun q hq => h_tail_no_idx q (by simp [hq])
 
-/-- Existence of "last occurrence" decomposition. -/
 private theorem last_occurrence_split
     (ps : List (Nat × Nat)) (pc : Nat)
     (h : ∃ p ∈ ps, p.1 = pc) :
@@ -257,7 +233,6 @@ private theorem last_occurrence_split
         · exact absurd (h_phead ▸ h_eq) h_head
         · exact absurd h_eq (h_rest' p h_prest)
 
-/-- "Last patch at pc determines the target". -/
 private theorem patch_foldl_target_at_last
     (a : Array CProverGOTO.Instruction) (ps : List (Nat × Nat))
     (pc t : Nat)
@@ -283,9 +258,6 @@ private theorem patch_foldl_target_at_last
     (a_pre.set! pc { a_pre[pc]! with target := some t }) pc t suf
     ⟨_, h_at_apre_set, h_target_apre_set⟩ h_suf_no_idx
 
-/-- **Reverse-direction patcher post-condition.** If the post-patcher
-target at `pc` is `some t` and the pre-patcher target at `pc` is
-`none`, then `(pc, t) ∈ ps`. -/
 private theorem patch_foldl_target_some_in_list
     (a : Array CProverGOTO.Instruction) (ps : List (Nat × Nat))
     (pc t : Nat) (instr_pre instr_post : CProverGOTO.Instruction)
@@ -333,13 +305,8 @@ theorem patchGotoTargets_target_some_in_patches
   exact patch_foldl_target_some_in_list trans.instructions patches pc t
     instr_pre instr_post h_pre_at h_pre_target h_post_at h_post_target
 
-/-! ## Patches-fold reverse direction
+/-! ## Patches-fold reverse direction -/
 
-Given the patches-fold succeeds with output `acc'.1 = resolved`, every
-`(pc, target) ∈ resolved` either was in `acc.1` or comes from some
-`(pc, label) ∈ patches` with `labelMap[label]? = some target`. -/
-
-/-- Per-step reverse direction. -/
 theorem coreCFGToGotoPatchStep_no_contracts_resolved_reverse
     (labelMap : Std.HashMap String Nat)
     (acc acc' : List (Nat × Nat) × Imperative.GotoTransform Core.Expression.TyEnv)
@@ -365,7 +332,6 @@ theorem coreCFGToGotoPatchStep_no_contracts_resolved_reverse
     rw [h_target]; exact h_lookup
   · left; exact h_old
 
-/-- Patches-fold reverse direction. -/
 theorem patchesFoldlM_no_contracts_resolved_reverse
     (labelMap : Std.HashMap String Nat)
     (patches : List (Nat × String))
@@ -399,7 +365,6 @@ theorem patchesFoldlM_no_contracts_resolved_reverse
       rw [h_step] at h_run
       simp [Bind.bind, Except.bind] at h_run
 
-/-- Array form. -/
 theorem patchesFoldlM_no_contracts_resolved_reverse_array
     (labelMap : Std.HashMap String Nat)
     (patches : Array (Nat × String))
@@ -417,8 +382,6 @@ theorem patchesFoldlM_no_contracts_resolved_reverse_array
 
 /-! ## labelMap keys are block labels -/
 
-/-- One-step block-fold: any key in `st'.labelMap` either was in
-`st.labelMap` or is the head block's label. -/
 theorem coreCFGToGotoBlockStep_labelMap_key
     (fname : String) (lblBlk : String × Imperative.DetBlock String Core.Command Core.Expression)
     (st st' : Strata.CoreCFGTransLoopState)
@@ -433,8 +396,6 @@ theorem coreCFGToGotoBlockStep_labelMap_key
   · simp [h] at h_lookup
     right; exact h_lookup
 
-/-- Blocks-fold preserves "labelMap keys are in initial keys ∪ blocks
-labels". -/
 theorem blocksFoldlM_labelMap_keys_subset
     (fname : String)
     (blocks : List (String × Imperative.DetBlock String Core.Command Core.Expression))
@@ -464,8 +425,6 @@ theorem blocksFoldlM_labelMap_keys_subset
       rw [h_step] at h_run
       simp [Bind.bind, Except.bind] at h_run
 
-/-- After the blocks-fold from the initial state (empty labelMap),
-every labelMap key is a block label. -/
 theorem blocksFoldlM_labelMap_keys_in_blocks
     (fname : String)
     (blocks : List (String × Imperative.DetBlock String Core.Command Core.Expression))
