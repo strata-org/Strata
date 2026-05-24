@@ -14,49 +14,17 @@ public section
 
 /-! # R10a: discharge `h_labelMap_agree` from `WellFormedTranslation`
 
-Round-10a deliverable: prove the universal-form labelMap-agreement
-hypothesis that R8a left as a parameter on
-`coreCFGToGotoTransform_forward_simulation_concrete_v6`:
+Proves that for any `WellFormedTranslation` over the translator's
+output, `wf.labelMap` agrees with the translator's hashmap-keyed
+labelMap on `cfg.blocks` labels.
 
-```
-∀ (wf : WellFormedTranslation cfg pgm δ δ_goto δ_goto_bool),
-∀ l blk target, (l, blk) ∈ cfg.blocks →
-  st_final.labelMap[l]? = some target →
-  wf.labelMap l = some target
-```
-
-i.e., for **any** WF on the translator output, the labelMap agrees with
-the translator's hashmap-keyed labelMap on `cfg.blocks` labels.
-
-## Strategy
-
-Closing this for arbitrary `wf` requires the new
-`wf.layout_location_labels` field (R10a step 1, in
-`CoreCFGToGOTOInvariants.lean`):
-
-* `wf.layout_location_labels l blk pc1` gives an instruction at `pc1`
-  with `type = .LOCATION` and `labels = [l]`.
-* From the translator's structure (`blocksFoldlM_layout_location_with_labels`
-  + `patchGotoTargets_preserves_labels`), the LOCATION at
-  `hashMapToLabelMap st_final.labelMap l` carries `labels = [l]`.
-
-To force `pc1 = pc2`, we need: **at most one LOCATION instruction in
-`ans.instructions` carries `labels = [l]`** for each `l`.
-
-This uniqueness follows from a structural induction over the
-translator's outer loop, threading the invariant
-`LocationsTrackLabelMap`: every LOCATION-with-labels-`[l]` in
-`st.trans.instructions` has its pc tracked by `st.labelMap[l]?`. The
-inner cmds-fold and the transfer push emit no LOCATIONs (only
-DECL/ASSIGN/ASSERT/ASSUME/GOTO/END_FUNCTION); the only LOCATION
-emission is `emitLabel`, which inserts the new label/pc pair into the
-labelMap atomically.
-
-Composing with `patchGotoTargets_preserves_labels` (which trivially
-preserves the invariant since the patcher writes only `target`),
-we conclude that for `(l, blk) ∈ cfg.blocks`, the unique
-LOCATION-with-labels-`[l]` in `ans.instructions` has
-`pc = hashMapToLabelMap st_final.labelMap l`. -/
+The argument threads the invariant `LocationsTrackLabelMap` (every
+LOCATION-with-`labels = [l]` in `trans.instructions` has its pc tracked
+by `labelMap[l]?`) through the blocks-fold (only `emitLabel` emits
+LOCATIONs; everything else pushes non-LOCATIONs) and the patcher
+(which only writes targets). Combined with `wf.layout_location_labels`
+(which gives a LOCATION at `wf.labelMap l` carrying `labels = [l]`),
+the agreement falls out. -/
 
 namespace CProverGOTO.WfLabelMapAgree
 
@@ -95,15 +63,13 @@ private theorem push_non_location_preserves
     have h' : trans.instructions[pc]? = some instr := by
       rw [Array.getElem?_eq_getElem h_lt]; exact h_at
     exact h_inv h' h_ty h_labels
-  · have h_ge : trans.instructions.size ≤ pc := Nat.le_of_not_lt h_lt
-    by_cases h_eq : pc = trans.instructions.size
+  · by_cases h_eq : pc = trans.instructions.size
     · subst h_eq
       rw [Array.getElem?_push_size] at h_at
       injection h_at with h_at
       subst h_at
       exact absurd h_ty h_new
-    · have h_lt' : trans.instructions.size < pc := by omega
-      have h_oor : (trans.instructions.push new_instr).size ≤ pc := by
+    · have h_oor : (trans.instructions.push new_instr).size ≤ pc := by
         rw [Array.size_push]; omega
       rw [Array.getElem?_eq_none h_oor] at h_at
       exact absurd h_at (by simp)
@@ -158,66 +124,59 @@ theorem toGotoInstructions_preserves
     (h_run : Imperative.Cmd.toGotoInstructions T fname c trans = Except.ok ans)
     (h_inv : LocationsTrackLabelMap trans labelMap) :
     LocationsTrackLabelMap ans labelMap := by
+  -- Helper: for the single-push cases, given `h_inst : ans.instructions = trans.instructions.push i`
+  -- and `h_ty : i.type = T` for some non-LOCATION T, the result follows from
+  -- `push_non_location_preserves`.
+  intro pc instr l h h_ty h_labels
   cases c with
   | init v ty initVal md =>
     cases initVal with
     | det e =>
-      obtain ⟨_gty, _e_goto, i_decl, i_assn,
-              _, _, h_decl_ty, _, _, h_assn_ty, _, _, h_inst, _, _⟩ :=
+      obtain ⟨_, _, i_decl, i_assn, _, _, h_decl_ty, _, _, h_assn_ty, _, _, h_inst, _, _⟩ :=
         Cmd_toGotoInstructions_init_det_ok T fname v ty e md trans ans h_run
-      intro pc instr l h h_ty h_labels
       rw [h_inst] at h
-      have h_decl_nl : i_decl.type ≠ .LOCATION := by rw [h_decl_ty]; decide
-      have h_assn_nl : i_assn.type ≠ .LOCATION := by rw [h_assn_ty]; decide
       exact append_two_non_location_preserves trans labelMap i_decl i_assn h_inv
-        h_decl_nl h_assn_nl h h_ty h_labels
+        (by rw [h_decl_ty]; decide) (by rw [h_assn_ty]; decide) h h_ty h_labels
     | nondet =>
-      obtain ⟨_gty, i_decl, _, h_decl_ty, _, _, h_inst, _, _⟩ :=
+      obtain ⟨_, i_decl, _, h_decl_ty, _, _, h_inst, _, _⟩ :=
         Cmd_toGotoInstructions_init_nondet_ok T fname v ty md trans ans h_run
-      intro pc instr l h h_ty h_labels
       rw [h_inst] at h
-      have h_decl_nl : i_decl.type ≠ .LOCATION := by rw [h_decl_ty]; decide
-      exact push_non_location_preserves trans labelMap i_decl h_inv h_decl_nl h h_ty h_labels
+      exact push_non_location_preserves trans labelMap i_decl h_inv
+        (by rw [h_decl_ty]; decide) h h_ty h_labels
   | set v src md =>
     cases src with
     | det e =>
-      obtain ⟨_gty, _e_goto, i_assn, _, _, h_assn_ty, _, _, h_inst, _⟩ :=
+      obtain ⟨_, _, i_assn, _, _, h_assn_ty, _, _, h_inst, _⟩ :=
         Cmd_toGotoInstructions_set_det_ok T fname v e md trans ans h_run
-      intro pc instr l h h_ty h_labels
       rw [h_inst] at h
-      have h_assn_nl : i_assn.type ≠ .LOCATION := by rw [h_assn_ty]; decide
-      exact push_non_location_preserves trans labelMap i_assn h_inv h_assn_nl h h_ty h_labels
+      exact push_non_location_preserves trans labelMap i_assn h_inv
+        (by rw [h_assn_ty]; decide) h h_ty h_labels
     | nondet =>
-      obtain ⟨_gty, i_assn, _, h_assn_ty, _, _, h_inst, _⟩ :=
+      obtain ⟨_, i_assn, _, h_assn_ty, _, _, h_inst, _⟩ :=
         Cmd_toGotoInstructions_set_nondet_ok T fname v md trans ans h_run
-      intro pc instr l h h_ty h_labels
       rw [h_inst] at h
-      have h_assn_nl : i_assn.type ≠ .LOCATION := by rw [h_assn_ty]; decide
-      exact push_non_location_preserves trans labelMap i_assn h_inv h_assn_nl h h_ty h_labels
+      exact push_non_location_preserves trans labelMap i_assn h_inv
+        (by rw [h_assn_ty]; decide) h h_ty h_labels
   | assert label e md =>
-    obtain ⟨_e_goto, i, _, h_assert_ty, _, _, h_inst, _⟩ :=
+    obtain ⟨_, i, _, h_assert_ty, _, _, h_inst, _⟩ :=
       Cmd_toGotoInstructions_assert_ok T fname label e md trans ans h_run
-    intro pc instr l h h_ty h_labels
     rw [h_inst] at h
-    have h_assert_nl : i.type ≠ .LOCATION := by rw [h_assert_ty]; decide
-    exact push_non_location_preserves trans labelMap i h_inv h_assert_nl h h_ty h_labels
+    exact push_non_location_preserves trans labelMap i h_inv
+      (by rw [h_assert_ty]; decide) h h_ty h_labels
   | assume label e md =>
-    obtain ⟨_e_goto, i, _, h_assume_ty, _, _, h_inst, _⟩ :=
+    obtain ⟨_, i, _, h_assume_ty, _, _, h_inst, _⟩ :=
       Cmd_toGotoInstructions_assume_ok T fname label e md trans ans h_run
-    intro pc instr l h h_ty h_labels
     rw [h_inst] at h
-    have h_assume_nl : i.type ≠ .LOCATION := by rw [h_assume_ty]; decide
-    exact push_non_location_preserves trans labelMap i h_inv h_assume_nl h h_ty h_labels
+    exact push_non_location_preserves trans labelMap i h_inv
+      (by rw [h_assume_ty]; decide) h h_ty h_labels
   | cover label e md =>
     -- `cover` emits an ASSERT — never LOCATION.
     unfold Imperative.Cmd.toGotoInstructions at h_run
     simp only at h_run
-    match h_expr :
-        Imperative.ToGoto.toGotoExpr (P := Core.Expression) e with
+    match h_expr : Imperative.ToGoto.toGotoExpr (P := Core.Expression) e with
     | .ok e_goto =>
       simp only [h_expr, Bind.bind, Except.bind, pure, Except.pure] at h_run
       injection h_run with h_run
-      intro pc instr l h h_ty h_labels
       subst h_run
       let assert_inst : Instruction :=
         { type := .ASSERT, locationNum := trans.nextLoc,
@@ -225,10 +184,8 @@ theorem toGotoInstructions_preserves
             (comment := md.getPropertySummary.getD s!"cover {label}"),
           guard := e_goto }
       have h' : (trans.instructions.push assert_inst)[pc]? = some instr := h
-      have h_assert_nl : assert_inst.type ≠ .LOCATION := by
-        show InstructionType.ASSERT ≠ InstructionType.LOCATION
-        decide
-      exact push_non_location_preserves trans labelMap assert_inst h_inv h_assert_nl h' h_ty h_labels
+      exact push_non_location_preserves trans labelMap assert_inst h_inv
+        (show InstructionType.ASSERT ≠ InstructionType.LOCATION by decide) h' h_ty h_labels
     | .error _ =>
       simp [h_expr, Bind.bind, Except.bind] at h_run
 
@@ -269,14 +226,12 @@ theorem cmdsFoldlM_preserves
     | .ok trans₁ =>
       rw [h_step] at h_run
       simp only [Bind.bind, Except.bind] at h_run
-      have h_admitted_hd : Core.CmdExt.isAdmittedCmd hd = true := h_admitted hd (by simp)
-      have h_admitted_rest : ∀ c ∈ rest, Core.CmdExt.isAdmittedCmd c = true :=
-        fun c hc => h_admitted c (by simp [hc])
       have h_inv₁ : LocationsTrackLabelMap trans₁ labelMap :=
         coreCFGToGotoCmdStep_preserves fname hd trans trans₁ labelMap
-          h_admitted_hd h_step h_inv
+          (h_admitted hd (by simp)) h_step h_inv
       intro pc instr l h_at h_ty h_labels
-      exact ih trans₁ h_admitted_rest h_run h_inv₁ h_at h_ty h_labels
+      exact ih trans₁ (fun c hc => h_admitted c (by simp [hc])) h_run h_inv₁
+        h_at h_ty h_labels
     | .error _ =>
       rw [h_step] at h_run
       simp [Bind.bind, Except.bind] at h_run
@@ -320,7 +275,6 @@ theorem emitLabel_preserves
       have h_neq : ¬ label = l := fun h => h_l_eq h.symm
       simp [h_neq]; exact h_old
   · -- pc is at the new push position.
-    have h_ge : trans.instructions.size ≤ pc := Nat.le_of_not_lt h_lt
     by_cases h_eq : pc = trans.instructions.size
     · subst h_eq
       rw [Array.getElem?_push_size] at h_at
@@ -332,8 +286,7 @@ theorem emitLabel_preserves
       -- l = label, pc = trans.instructions.size = trans.nextLoc.
       rw [Std.HashMap.getElem?_insert]
       simp; exact h_size.symm
-    · have h_lt' : trans.instructions.size < pc := by omega
-      have h_oor : (trans.instructions.push
+    · have h_oor : (trans.instructions.push
         ({ type := .LOCATION, locationNum := trans.nextLoc,
            sourceLoc := srcLoc, labels := [label],
            code := CProverGOTO.Code.skip } : Instruction)).size ≤ pc := by
@@ -341,74 +294,13 @@ theorem emitLabel_preserves
       rw [Array.getElem?_eq_none h_oor] at h_at
       exact absurd h_at (by simp)
 
-/-- `emitCondGoto`'s push is a GOTO, not LOCATION; the invariant is
-preserved. The labelMap is unchanged. -/
-theorem emitCondGoto_preserves
-    (guard : CProverGOTO.Expr) (srcLoc : CProverGOTO.SourceLocation)
-    (trans : Imperative.GotoTransform Core.Expression.TyEnv)
-    (labelMap : Std.HashMap String Nat)
-    (h_inv : LocationsTrackLabelMap trans labelMap) :
-    LocationsTrackLabelMap (Imperative.emitCondGoto guard srcLoc trans).fst
-      labelMap := by
-  intro pc instr l h_at h_ty h_labels
-  let new_instr : Instruction :=
-    { type := .GOTO, locationNum := trans.nextLoc,
-      sourceLoc := srcLoc, guard := guard, target := none }
-  have h_unfold :
-      (Imperative.emitCondGoto guard srcLoc trans).fst.instructions =
-      trans.instructions.push new_instr := rfl
-  rw [h_unfold] at h_at
-  have h_new_ne : new_instr.type ≠ .LOCATION := by
-    show InstructionType.GOTO ≠ InstructionType.LOCATION; decide
-  exact push_non_location_preserves trans labelMap new_instr h_inv h_new_ne h_at h_ty h_labels
+/-! ## Outer block / blocks step preservation
 
-/-- `emitUncondGoto`'s push is a GOTO, not LOCATION. -/
-theorem emitUncondGoto_preserves
-    (srcLoc : CProverGOTO.SourceLocation)
-    (trans : Imperative.GotoTransform Core.Expression.TyEnv)
-    (labelMap : Std.HashMap String Nat)
-    (h_inv : LocationsTrackLabelMap trans labelMap) :
-    LocationsTrackLabelMap (Imperative.emitUncondGoto srcLoc trans).fst
-      labelMap := by
-  intro pc instr l h_at h_ty h_labels
-  let new_instr : Instruction :=
-    { type := .GOTO, locationNum := trans.nextLoc,
-      sourceLoc := srcLoc, guard := CProverGOTO.Expr.true,
-      target := none }
-  have h_unfold :
-      (Imperative.emitUncondGoto srcLoc trans).fst.instructions =
-      trans.instructions.push new_instr := rfl
-  rw [h_unfold] at h_at
-  have h_new_ne : new_instr.type ≠ .LOCATION := by
-    show InstructionType.GOTO ≠ InstructionType.LOCATION; decide
-  exact push_non_location_preserves trans labelMap new_instr h_inv h_new_ne h_at h_ty h_labels
+The block-step composes `emitLabel`, `cmdsFoldlM_preserves`, and a
+non-LOCATION transfer push (either two GOTOs from `condGoto` or one
+END_FUNCTION from `finish`). All three preserve the invariant. -/
 
-/-- The END_FUNCTION push is not LOCATION. -/
-theorem endFunction_emit_preserves
-    (md : Imperative.MetaData Core.Expression) (fname : String)
-    (trans : Imperative.GotoTransform Core.Expression.TyEnv)
-    (labelMap : Std.HashMap String Nat)
-    (h_inv : LocationsTrackLabelMap trans labelMap) :
-    ∀ {pc : Nat} {instr : Instruction} {l : String},
-      (trans.instructions.push (endFunctionInstr md fname trans))[pc]? = some instr →
-      instr.type = .LOCATION → instr.labels = [l] →
-      labelMap[l]? = some pc := by
-  intro pc instr l h_at h_ty h_labels
-  have h_new : (endFunctionInstr md fname trans).type ≠ .LOCATION := by
-    show InstructionType.END_FUNCTION ≠ InstructionType.LOCATION; decide
-  exact push_non_location_preserves trans labelMap (endFunctionInstr md fname trans) h_inv h_new
-    h_at h_ty h_labels
-
-/-- `coreCFGToGotoBlockStep` preserves the invariant. The block step:
-1. emitLabel for `head_label` (push LOCATION + labelMap.insert).
-2. cmds-fold over admitted cmds (no LOCATIONs emitted).
-3. transfer push (GOTO or END_FUNCTION; no LOCATION).
-
-The invariant `LocationsTrackLabelMap` threads through all three.
-
-The `h_label_fresh` hypothesis says `labelMap[head_label]? = none`,
-required by `emitLabel_preserves`. For the outer `blocksFoldlM`, this
-is supplied by `BlockLabelsDistinct` + the inductive hypothesis. -/
+/-- `coreCFGToGotoBlockStep` preserves the invariant. -/
 theorem coreCFGToGotoBlockStep_preserves
     (fname : String) (lblBlk : String × Imperative.DetBlock String Core.Command Core.Expression)
     (st st' : Strata.CoreCFGTransLoopState)
@@ -421,28 +313,27 @@ theorem coreCFGToGotoBlockStep_preserves
   obtain ⟨label, blk⟩ := lblBlk
   unfold Strata.coreCFGToGotoBlockStep at h_run
   simp only [Bind.bind, Except.bind, pure, Except.pure] at h_run
-  -- Step 1: emitLabel.
+  -- After emitLabel, the labelMap is `st.labelMap.insert label st.trans.nextLoc`.
+  -- This is what `st'` will eventually carry.
   have h_inv_after_label :
       LocationsTrackLabelMap
         (Imperative.emitLabel label
           { CProverGOTO.SourceLocation.nil with function := fname } st.trans)
         (st.labelMap.insert label st.trans.nextLoc) :=
     emitLabel_preserves label _ st.trans st.labelMap h_inv h_size h_label_fresh
-  -- The post-emitLabel labelMap is what st' will eventually carry.
   generalize h_inner :
     blk.cmds.foldlM (Strata.coreCFGToGotoCmdStep fname)
       (Imperative.emitLabel label
         { CProverGOTO.SourceLocation.nil with function := fname } st.trans) = inner at h_run
   match inner, h_inner with
   | .ok trans₂, h_inner =>
-    -- Step 2: cmds-fold preserves invariant.
     have h_inv_after_cmds :
         LocationsTrackLabelMap trans₂
           (st.labelMap.insert label st.trans.nextLoc) :=
       cmdsFoldlM_preserves fname blk.cmds _ trans₂
         (st.labelMap.insert label st.trans.nextLoc)
         h_admitted h_inner h_inv_after_label
-    -- Step 3: transfer push (GOTO or END_FUNCTION).
+    -- Transfer push (GOTO×2 or END_FUNCTION). Both are non-LOCATION.
     cases h_t : blk.transfer with
     | condGoto cond lt lf md =>
       rw [h_t] at h_run
@@ -455,43 +346,44 @@ theorem coreCFGToGotoBlockStep_preserves
         simp only at h_run
         injection h_run with h_run
         rw [← h_run]
-        -- st'.trans.instructions = (emit two GOTOs after trans₂).
-        -- pendingPatches and labelMap unchanged from post-cmds-fold.
-        have h_invc :
-            LocationsTrackLabelMap
-              (Imperative.emitCondGoto cond_expr.not
-                (Imperative.metadataToSourceLoc md fname trans₂.sourceText) trans₂).fst
-              (st.labelMap.insert label st.trans.nextLoc) :=
-          emitCondGoto_preserves _ _ trans₂ _ h_inv_after_cmds
-        have h_invu :
-            LocationsTrackLabelMap
-              (Imperative.emitUncondGoto
-                (Imperative.metadataToSourceLoc md fname trans₂.sourceText)
-                (Imperative.emitCondGoto cond_expr.not
-                  (Imperative.metadataToSourceLoc md fname trans₂.sourceText) trans₂).fst).fst
-              (st.labelMap.insert label st.trans.nextLoc) :=
-          emitUncondGoto_preserves _ _ _ h_invc
-        -- Goal is the same shape, just with the literal record. Reduce.
         intro pc instr l h_at h_ty h_labels
-        -- Unfold the literal record's instructions field.
-        change ((Imperative.emitUncondGoto _ (Imperative.emitCondGoto _ _ _).fst).fst).instructions[pc]?
-          = some instr at h_at
+        -- The transfer pushes two GOTO instructions (cond + uncond). Both
+        -- are non-LOCATION; reduce to push_non_location_preserves twice.
+        let srcLoc := Imperative.metadataToSourceLoc md fname trans₂.sourceText
+        let cond_inst : Instruction :=
+          { type := .GOTO, locationNum := trans₂.nextLoc,
+            sourceLoc := srcLoc, guard := cond_expr.not, target := none }
+        let trans₃ := (Imperative.emitCondGoto cond_expr.not srcLoc trans₂).fst
+        let uncond_inst : Instruction :=
+          { type := .GOTO, locationNum := trans₃.nextLoc,
+            sourceLoc := srcLoc, guard := CProverGOTO.Expr.true, target := none }
+        have h_invc : LocationsTrackLabelMap trans₃
+            (st.labelMap.insert label st.trans.nextLoc) := by
+          intro pc' instr' l' h_at' h_ty' h_labels'
+          change (trans₂.instructions.push cond_inst)[pc']? = some instr' at h_at'
+          exact push_non_location_preserves trans₂ _ cond_inst h_inv_after_cmds
+            (show InstructionType.GOTO ≠ InstructionType.LOCATION by decide)
+            h_at' h_ty' h_labels'
+        change ((Imperative.emitUncondGoto _ _).fst).instructions[pc]? = some instr at h_at
         change (st.labelMap.insert label st.trans.nextLoc)[l]? = some pc
-        exact h_invu h_at h_ty h_labels
+        change (trans₃.instructions.push uncond_inst)[pc]? = some instr at h_at
+        exact push_non_location_preserves trans₃ _ uncond_inst h_invc
+          (show InstructionType.GOTO ≠ InstructionType.LOCATION by decide)
+          h_at h_ty h_labels
       | .error _, _ => simp at h_run
     | finish md =>
       rw [h_t] at h_run
       simp only at h_run
       injection h_run with h_run
       rw [← h_run]
-      -- st'.trans.instructions = trans₂.instructions.push (endFunctionInstr md fname trans₂).
       intro pc instr l h_at h_ty h_labels
       change (trans₂.instructions.push (endFunctionInstr md fname trans₂))[pc]? = some instr at h_at
       change (st.labelMap.insert label st.trans.nextLoc)[l]? = some pc
-      exact endFunction_emit_preserves md fname trans₂ _ h_inv_after_cmds h_at h_ty h_labels
+      exact push_non_location_preserves trans₂ _ (endFunctionInstr md fname trans₂)
+        h_inv_after_cmds
+        (show InstructionType.END_FUNCTION ≠ InstructionType.LOCATION by decide)
+        h_at h_ty h_labels
   | .error _, _ => simp at h_run
-
-/-! ## Outer-fold preservation -/
 
 /-- `blocksFoldlM` preserves the invariant, given the freshness
 hypothesis for each head label. -/
@@ -517,20 +409,13 @@ theorem blocksFoldlM_preserves
     | .ok st₁ =>
       rw [h_step] at h_run
       simp only [Bind.bind, Except.bind] at h_run
-      have h_admitted_hd : ∀ c ∈ hd.2.cmds, Core.CmdExt.isAdmittedCmd c = true :=
-        h_admitted hd (by simp)
-      have h_admitted_rest :
-          ∀ lblBlk ∈ rest, ∀ c ∈ lblBlk.2.cmds, Core.CmdExt.isAdmittedCmd c = true :=
-        fun lblBlk h_lb => h_admitted lblBlk (by simp [h_lb])
-      have h_label_fresh : st.labelMap[hd.1]? = none :=
-        h_no_blocks_in_init hd (by simp)
       have h_inv₁ : LocationsTrackLabelMap st₁.trans st₁.labelMap :=
-        coreCFGToGotoBlockStep_preserves fname hd st st₁ h_admitted_hd h_step h_size
-          h_inv h_label_fresh
+        coreCFGToGotoBlockStep_preserves fname hd st st₁
+          (h_admitted hd (by simp)) h_step h_size h_inv
+          (h_no_blocks_in_init hd (by simp))
       have h_size₁ : st₁.trans.instructions.size = st₁.trans.nextLoc :=
-        coreCFGToGotoBlockStep_preserves_size_eq fname hd st st₁ h_admitted_hd h_step h_size
-      have h_distinct_rest : BlockLabelsDistinct rest :=
-        BlockLabelsDistinct_tail hd rest h_distinct
+        coreCFGToGotoBlockStep_preserves_size_eq fname hd st st₁
+          (h_admitted hd (by simp)) h_step h_size
       -- For rest's head labels: each was distinct from hd.1 (by h_distinct),
       -- so their lookups in st₁.labelMap = (st.labelMap.insert hd.1 _) are
       -- the same as in st.labelMap.
@@ -540,16 +425,12 @@ theorem blocksFoldlM_preserves
         intro p h_p_in
         have h_neq : hd.1 ≠ p.1 :=
           BlockLabelsDistinct_head_neq_tail hd rest h_distinct p h_p_in
-        have h_p_in_cfg : p ∈ hd :: rest := List.mem_cons_of_mem hd h_p_in
-        have h_old : st.labelMap[p.1]? = none := h_no_blocks_in_init p h_p_in_cfg
-        rw [h_lbl₁]
-        rw [Std.HashMap.getElem?_insert]
-        have h_neq' : ¬ hd.1 == p.1 := by
-          simp; exact h_neq
-        rw [if_neg h_neq']
-        exact h_old
+        rw [h_lbl₁, Std.HashMap.getElem?_insert]
+        rw [if_neg (by simp; exact h_neq)]
+        exact h_no_blocks_in_init p (List.mem_cons_of_mem hd h_p_in)
       intro pc instr l h_at h_ty h_labels
-      exact ih st₁ h_admitted_rest h_run h_size₁ h_inv₁ h_distinct_rest h_no_blocks_in_st₁
+      exact ih st₁ (fun lblBlk h_lb => h_admitted lblBlk (by simp [h_lb])) h_run
+        h_size₁ h_inv₁ (BlockLabelsDistinct_tail hd rest h_distinct) h_no_blocks_in_st₁
         h_at h_ty h_labels
     | .error _ =>
       rw [h_step] at h_run
@@ -557,9 +438,8 @@ theorem blocksFoldlM_preserves
 
 /-! ## Patcher preservation -/
 
-/-- The patcher preserves the invariant: the patcher writes only
-`target`, and labels-preservation is already established. The labelMap
-is unchanged by patching. -/
+/-- The patcher preserves the invariant: it writes only `target`, and
+the type/labels are preserved. The labelMap is unchanged by patching. -/
 theorem patchGotoTargets_preserves
     (trans : Imperative.GotoTransform Core.Expression.TyEnv)
     (resolved : List (Nat × Nat))
@@ -567,20 +447,14 @@ theorem patchGotoTargets_preserves
     (h_inv : LocationsTrackLabelMap trans labelMap) :
     LocationsTrackLabelMap (Imperative.patchGotoTargets trans resolved) labelMap := by
   intro pc instr l h_at h_ty h_labels
-  -- Use patchGotoTargets_preserves_type and patchGotoTargets_preserves_labels.
-  obtain ⟨instr_pre_ty, h_at_pre_ty, h_ty_eq⟩ :=
+  obtain ⟨instr_pre, h_at_pre, h_ty_eq⟩ :=
     patchGotoTargets_preserves_type trans resolved pc instr h_at
-  obtain ⟨instr_pre_lab, h_at_pre_lab, h_lab_eq⟩ :=
+  obtain ⟨instr_pre', h_at_pre', h_lab_eq⟩ :=
     patchGotoTargets_preserves_labels trans resolved pc instr h_at
-  -- Both pre-instructions are the same (same pc, same trans).
-  have h_pre_eq : instr_pre_ty = instr_pre_lab := by
-    rw [h_at_pre_ty] at h_at_pre_lab
-    injection h_at_pre_lab
-  -- Apply h_inv.
-  have h_ty_pre : instr_pre_ty.type = .LOCATION := by rw [← h_ty_eq]; exact h_ty
-  have h_lab_pre : instr_pre_ty.labels = [l] := by
-    rw [h_pre_eq, ← h_lab_eq]; exact h_labels
-  exact h_inv h_at_pre_ty h_ty_pre h_lab_pre
+  have h_pre_eq : instr_pre = instr_pre' := by
+    rw [h_at_pre] at h_at_pre'; injection h_at_pre'
+  exact h_inv h_at_pre (by rw [← h_ty_eq]; exact h_ty)
+    (by rw [h_pre_eq, ← h_lab_eq]; exact h_labels)
 
 /-! ## Top-level theorem: labelMap-agreement for arbitrary WF -/
 
@@ -630,40 +504,28 @@ theorem labelMap_agree_of_translator
       st_final.labelMap[l]? = some target →
       wf.labelMap l = some target := by
   intro l blk target h_in h_lookup
-  -- Step 1: get wf.labelMap l = some pc1 by total.
+  -- Step 1: get wf.labelMap l = some pc1 by total + layout_location_labels.
   have h_l_in : l ∈ cfg.blocks.map Prod.fst := by
-    rw [List.mem_map]
-    exact ⟨(l, blk), h_in, rfl⟩
-  have h_total : (wf.labelMap l).isSome := wf.labelMap_total l h_l_in
+    rw [List.mem_map]; exact ⟨(l, blk), h_in, rfl⟩
   rcases h_pc1 : wf.labelMap l with _ | pc1
-  · rw [h_pc1] at h_total; cases h_total
-  -- Step 2: by layout_location_labels, instr at pc1 with labels [l].
+  · have := wf.labelMap_total l h_l_in
+    rw [h_pc1] at this; cases this
   obtain ⟨instr1, h_at1, h_ty1, h_lab1⟩ :=
     wf.layout_location_labels l blk pc1 h_in h_pc1
-  -- Step 3: build the LocationsTrackLabelMap invariant for ans.instructions.
+  -- Step 2: build the LocationsTrackLabelMap invariant for ans.instructions.
   have h_inv_init : LocationsTrackLabelMap (coreCFGToGotoInitState trans₀).trans
                       (coreCFGToGotoInitState trans₀).labelMap := by
     intro pc instr l' h h_ty _
     show (∅ : Std.HashMap String Nat)[l']? = some pc
-    -- pc has a LOCATION in trans₀ — contradicts h_init_no_location.
     exact absurd h_ty (h_init_no_location h)
-  have h_size_init : (coreCFGToGotoInitState trans₀).trans.instructions.size =
-                       (coreCFGToGotoInitState trans₀).trans.nextLoc := by
-    simp [coreCFGToGotoInitState]; exact h_init_size
-  have h_admitted_st :
-      ∀ lblBlk ∈ cfg.blocks, ∀ c ∈ lblBlk.2.cmds,
-        Core.CmdExt.isAdmittedCmd c = true :=
-    fun lblBlk h_lb => h_admitted_blocks lblBlk.1 lblBlk.2 h_lb
-  have h_no_blocks_in_init :
-      ∀ p ∈ cfg.blocks, (coreCFGToGotoInitState trans₀).labelMap[p.1]? = none := by
-    intro p _
-    show (∅ : Std.HashMap String Nat)[p.1]? = none
-    exact Std.HashMap.getElem?_empty
-  have h_inv_st_final :
-      LocationsTrackLabelMap st_final.trans st_final.labelMap :=
-    blocksFoldlM_preserves functionName cfg.blocks _ st_final h_admitted_st h_blocks_run
-      h_size_init h_inv_init h_distinct h_no_blocks_in_init
-  -- Step 4: extend through the patcher to ans.
+  have h_inv_st_final : LocationsTrackLabelMap st_final.trans st_final.labelMap :=
+    blocksFoldlM_preserves functionName cfg.blocks _ st_final
+      (fun lblBlk h_lb => h_admitted_blocks lblBlk.1 lblBlk.2 h_lb)
+      h_blocks_run
+      (by simp [coreCFGToGotoInitState]; exact h_init_size)
+      h_inv_init h_distinct
+      (fun p _ => Std.HashMap.getElem?_empty)
+  -- Step 3: extend through the patcher to ans.
   -- ans = patchGotoTargets trans_post resolved where trans_post = st_final.trans
   -- under the empty-loopContracts hypothesis.
   obtain ⟨st_final', resolved, trans_post, h_blocks_run', h_patches_run, h_ans_eq⟩ :=
@@ -671,28 +533,24 @@ theorem labelMap_agree_of_translator
   have h_st_final_eq : st_final = st_final' := by
     rw [h_blocks_run] at h_blocks_run'; injection h_blocks_run'
   subst h_st_final_eq
-  have h_lc_empty := h_loopContracts_empty_post st_final h_blocks_run
-  rw [h_lc_empty] at h_patches_run
+  rw [h_loopContracts_empty_post st_final h_blocks_run] at h_patches_run
   have h_trans_post_eq : trans_post = st_final.trans :=
     patchesFoldlM_no_contracts_trans_eq st_final.labelMap st_final.pendingPatches
       ([], st_final.trans) (resolved, trans_post) h_patches_run
-  have h_ans_eq' : ans = Imperative.patchGotoTargets st_final.trans resolved := by
-    rw [h_ans_eq, h_trans_post_eq]
   have h_inv_ans :
       LocationsTrackLabelMap (Imperative.patchGotoTargets st_final.trans resolved)
         st_final.labelMap :=
     patchGotoTargets_preserves st_final.trans resolved _ h_inv_st_final
-  -- Step 5: instr1 at pc1 in ans.instructions has labels [l]. Apply h_inv_ans.
+  -- Step 4: instr1 at pc1 in ans.instructions has labels [l]. Apply h_inv_ans.
   have h_at1_post : (Imperative.patchGotoTargets st_final.trans resolved).instructions[pc1]?
                      = some instr1 := by
-    have h_at1_ans : ans.instructions[pc1]? = some instr1 := h_at1
-    rw [h_ans_eq'] at h_at1_ans; exact h_at1_ans
+    have : ans.instructions[pc1]? = some instr1 := h_at1
+    rw [h_ans_eq, h_trans_post_eq] at this; exact this
   have h_lookup_pc1 : st_final.labelMap[l]? = some pc1 :=
     h_inv_ans h_at1_post h_ty1 h_lab1
-  -- Step 6: combine with h_lookup : st_final.labelMap[l]? = some target.
-  have h_lookup' : (some pc1 : Option Nat) = some target := by
-    rw [← h_lookup_pc1]; exact h_lookup
-  have h_eq : pc1 = target := by injection h_lookup'
+  -- Step 5: combine with h_lookup : st_final.labelMap[l]? = some target.
+  have h_eq : pc1 = target := by
+    have := h_lookup_pc1.symm.trans h_lookup; injection this
   rw [h_eq]
 
 end CProverGOTO.WfLabelMapAgree
