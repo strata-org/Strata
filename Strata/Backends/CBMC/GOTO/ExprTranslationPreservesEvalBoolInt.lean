@@ -410,16 +410,12 @@ theorem boolConst_translated
 /-! ### Binary operator descriptor
 
 The 12 binary arithmetic-ish operators (`Int.{Add,Sub,Mul,DivT,ModT,
-Lt,Le,Gt,Ge}` plus `Bool.{And,Or,Implies}`) have a near-identical
-proof skeleton. Following the L1 OpDesc smoke test, we factor the
-per-op data into a `BoolIntBinOpDesc` and generalise both the
-`<op>_translated` lemmas and the bridge helpers into single generic
-theorems parametrised by the descriptor. -/
+Lt,Le,Gt,Ge}` plus `Bool.{And,Or,Implies}`) share a near-identical proof
+skeleton. We factor the per-op data into a `BoolIntBinOpDesc` and
+generalise the `_translated` lemmas / bridge helpers via the descriptor. -/
 
 /-- Descriptor for one binary boolean/integer operator: its Core name,
-the GOTO `Expr.Identifier` it translates to, and the GOTO output type
-(`.Integer` for integer arithmetic, `.Boolean` for comparisons and
-boolean ops). -/
+the GOTO `Expr.Identifier` it translates to, and the GOTO output type. -/
 structure BoolIntBinOpDesc where
   /-- The Core operator name, e.g. `"Int.Add"`. -/
   opName : String
@@ -430,53 +426,32 @@ structure BoolIntBinOpDesc where
 
 namespace BoolIntBinOpDesc
 
-/-- `Int.Add` → `.multiary .Plus, .Integer`. -/
-def intAdd : BoolIntBinOpDesc := ⟨"Int.Add", .multiary .Plus, .Integer⟩
-/-- `Int.Sub` → `.binary .Minus, .Integer`. -/
-def intSub : BoolIntBinOpDesc := ⟨"Int.Sub", .binary .Minus, .Integer⟩
-/-- `Int.Mul` → `.multiary .Mult, .Integer`. -/
-def intMul : BoolIntBinOpDesc := ⟨"Int.Mul", .multiary .Mult, .Integer⟩
-/-- `Int.DivT` → `.binary .Div, .Integer`. -/
-def intDivT : BoolIntBinOpDesc := ⟨"Int.DivT", .binary .Div, .Integer⟩
-/-- `Int.ModT` → `.binary .Mod, .Integer`. -/
-def intModT : BoolIntBinOpDesc := ⟨"Int.ModT", .binary .Mod, .Integer⟩
-/-- `Int.Lt` → `.binary .Lt, .Boolean`. -/
-def intLt : BoolIntBinOpDesc := ⟨"Int.Lt", .binary .Lt, .Boolean⟩
-/-- `Int.Le` → `.binary .Le, .Boolean`. -/
-def intLe : BoolIntBinOpDesc := ⟨"Int.Le", .binary .Le, .Boolean⟩
-/-- `Int.Gt` → `.binary .Gt, .Boolean`. -/
-def intGt : BoolIntBinOpDesc := ⟨"Int.Gt", .binary .Gt, .Boolean⟩
-/-- `Int.Ge` → `.binary .Ge, .Boolean`. -/
-def intGe : BoolIntBinOpDesc := ⟨"Int.Ge", .binary .Ge, .Boolean⟩
-/-- `Bool.And` → `.multiary .And, .Boolean`. -/
-def boolAnd : BoolIntBinOpDesc := ⟨"Bool.And", .multiary .And, .Boolean⟩
-/-- `Bool.Or` → `.multiary .Or, .Boolean`. -/
-def boolOr : BoolIntBinOpDesc := ⟨"Bool.Or", .multiary .Or, .Boolean⟩
-/-- `Bool.Implies` → `.binary .Implies, .Boolean`. -/
-def boolImplies : BoolIntBinOpDesc := ⟨"Bool.Implies", .binary .Implies, .Boolean⟩
+/-- The 12 supported binary operators. Each maps a Core operator name to
+its GOTO `Expr.Identifier` and output `Ty`. -/
+def intAdd       : BoolIntBinOpDesc := ⟨"Int.Add", .multiary .Plus, .Integer⟩
+def intSub       : BoolIntBinOpDesc := ⟨"Int.Sub", .binary .Minus, .Integer⟩
+def intMul       : BoolIntBinOpDesc := ⟨"Int.Mul", .multiary .Mult, .Integer⟩
+def intDivT      : BoolIntBinOpDesc := ⟨"Int.DivT", .binary .Div, .Integer⟩
+def intModT      : BoolIntBinOpDesc := ⟨"Int.ModT", .binary .Mod, .Integer⟩
+def intLt        : BoolIntBinOpDesc := ⟨"Int.Lt", .binary .Lt, .Boolean⟩
+def intLe        : BoolIntBinOpDesc := ⟨"Int.Le", .binary .Le, .Boolean⟩
+def intGt        : BoolIntBinOpDesc := ⟨"Int.Gt", .binary .Gt, .Boolean⟩
+def intGe        : BoolIntBinOpDesc := ⟨"Int.Ge", .binary .Ge, .Boolean⟩
+def boolAnd      : BoolIntBinOpDesc := ⟨"Bool.And", .multiary .And, .Boolean⟩
+def boolOr       : BoolIntBinOpDesc := ⟨"Bool.Or", .multiary .Or, .Boolean⟩
+def boolImplies  : BoolIntBinOpDesc := ⟨"Bool.Implies", .binary .Implies, .Boolean⟩
 
 end BoolIntBinOpDesc
 
-/-! ### Per-operator binary integer lemmas
+/-! ### Per-operator binary lemmas
 
-Each lemma takes the value-agreement hypothesis on the full
-operator-application (provided by the corresponding field of the
-`BoolIntOpHypotheses` bundle) and lifts it to a full `ExprTranslated`
-witness via `ExprTranslated.ofValueAgree`.
+Each takes a `BoolIntOpHypotheses` field (full value-agreement on the
+operator-application) and produces an `ExprTranslated` witness via
+`ExprTranslated.ofValueAgree`. -/
 
-Note: the IH on the children isn't needed *to derive value_agree at the
-parent*, because the per-operator hypothesis already states agreement on
-the parent application directly. The IH would matter if we wanted to go
-the other direction (peel off "value_agree at parent" into facts about
-children), but `ExprTranslated` doesn't require that. -/
-
-/-- Generic per-op `_translated` lemma: from a value-agreement
-hypothesis matching the descriptor's pattern, build an
-`ExprTranslated`. Replaces the 12 individual `<op>_translated` lemmas.
-
-`h_corr` has the same shape as the per-op fields of `BoolIntOpHypotheses`
-(quantified over all of `σ m₁ m₂ ty e1c e2c e1g e2g v`), so call sites
-pass the field directly without a lambda. -/
+/-- Generic per-op `_translated` lemma. `h_corr` has the same shape as
+the per-op fields of `BoolIntOpHypotheses`, so call sites pass the field
+directly. -/
 theorem binOp_translated_of_corr
     {δ : SemanticEval Core.Expression}
     {δ_goto : SemanticEvalGoto Core.Expression}
