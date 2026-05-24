@@ -538,79 +538,13 @@ theorem cmdsFoldlM_preserves_body_pc_covered
       rw [h_step] at h_run
       simp [Bind.bind, Except.bind] at h_run
 
-/-! ## Preservation through emit helpers (LOCATION / GOTO / END_FUNCTION)
+/-! ## Preservation through `coreCFGToGotoBlockStep`
 
-None emit DECL or ASSIGN instructions. For LOCATION / GOTO /
-END_FUNCTION pushes, we just push an instruction whose type is
-trivially not DECL or ASSIGN. -/
-
-theorem emitLabel_preserves_body_pc_covered
-    (label : String) (srcLoc : SourceLocation)
-    (trans : Imperative.GotoTransform Core.Expression.TyEnv)
-    (pgm : Program)
-    (δ : Imperative.SemanticEval Core.Expression)
-    (δ_goto : SemanticEvalGoto Core.Expression)
-    (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
-    (h_cov : BodyPcCovered δ δ_goto δ_goto_bool trans pgm) :
-    BodyPcCovered δ δ_goto δ_goto_bool
-      (Imperative.emitLabel label srcLoc trans) pgm := by
-  intro pc instr h
-  exact push_non_body_preserves_body_pc_covered δ δ_goto δ_goto_bool trans pgm
-    _ (by intro h_eq; cases h_eq) (by intro h_eq; cases h_eq) h_cov h
-
-theorem emitCondGoto_preserves_body_pc_covered
-    (guard : Expr) (srcLoc : SourceLocation)
-    (trans : Imperative.GotoTransform Core.Expression.TyEnv)
-    (pgm : Program)
-    (δ : Imperative.SemanticEval Core.Expression)
-    (δ_goto : SemanticEvalGoto Core.Expression)
-    (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
-    (h_cov : BodyPcCovered δ δ_goto δ_goto_bool trans pgm) :
-    BodyPcCovered δ δ_goto δ_goto_bool
-      (Imperative.emitCondGoto guard srcLoc trans).fst pgm := by
-  intro pc instr h
-  exact push_non_body_preserves_body_pc_covered δ δ_goto δ_goto_bool trans pgm
-    _ (by intro h_eq; cases h_eq) (by intro h_eq; cases h_eq) h_cov h
-
-theorem emitUncondGoto_preserves_body_pc_covered
-    (srcLoc : SourceLocation)
-    (trans : Imperative.GotoTransform Core.Expression.TyEnv)
-    (pgm : Program)
-    (δ : Imperative.SemanticEval Core.Expression)
-    (δ_goto : SemanticEvalGoto Core.Expression)
-    (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
-    (h_cov : BodyPcCovered δ δ_goto δ_goto_bool trans pgm) :
-    BodyPcCovered δ δ_goto δ_goto_bool
-      (Imperative.emitUncondGoto srcLoc trans).fst pgm := by
-  intro pc instr h
-  exact push_non_body_preserves_body_pc_covered δ δ_goto δ_goto_bool trans pgm
-    _ (by intro h_eq; cases h_eq) (by intro h_eq; cases h_eq) h_cov h
-
-theorem endFunction_emit_preserves_body_pc_covered
-    (md : Imperative.MetaData Core.Expression) (fname : String)
-    (trans : Imperative.GotoTransform Core.Expression.TyEnv)
-    (pgm : Program)
-    (δ : Imperative.SemanticEval Core.Expression)
-    (δ_goto : SemanticEvalGoto Core.Expression)
-    (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
-    (h_cov : BodyPcCovered δ δ_goto δ_goto_bool trans pgm) :
-    ∀ {pc : Nat} {instr : Instruction},
-      (trans.instructions.push (endFunctionInstr md fname trans))[pc]? =
-        some instr →
-      (instr.type = .DECL →
-        ∃ inner, CmdEmittedAt δ δ_goto δ_goto_bool pgm pc inner) ∧
-      (instr.type = .ASSIGN →
-        (∃ v cv md', CmdEmittedAt δ δ_goto δ_goto_bool pgm pc
-          (.set v cv md')) ∨
-        (∃ pc_pred v ty e_core md', pc = pc_pred + 1 ∧
-          CmdEmittedAt δ δ_goto δ_goto_bool pgm pc_pred
-            (.init v ty (.det e_core) md'))) := by
-  intro pc instr h
-  exact push_non_body_preserves_body_pc_covered δ δ_goto δ_goto_bool trans pgm
-    _ (fun h_eq => by unfold endFunctionInstr at h_eq; cases h_eq)
-      (fun h_eq => by unfold endFunctionInstr at h_eq; cases h_eq) h_cov h
-
-/-! ## Preservation through `coreCFGToGotoBlockStep` -/
+The `emitLabel`/`emitCondGoto`/`emitUncondGoto`/`endFunctionInstr`
+emits each push exactly one instruction whose type is statically
+known to be LOCATION / GOTO / END_FUNCTION (not DECL or ASSIGN), so
+`push_non_body_preserves_body_pc_covered` discharges the obligation
+inline at each use site. -/
 
 theorem coreCFGToGotoBlockStep_preserves_body_pc_covered
     (fname : String)
@@ -647,10 +581,11 @@ theorem coreCFGToGotoBlockStep_preserves_body_pc_covered
     blk.cmds.foldlM (Strata.coreCFGToGotoCmdStep fname) trans₁ = inner at h_run
   match inner, h_inner with
   | .ok trans₂, h_inner =>
-    -- emitLabel preservation.
-    have h_cov₁ : BodyPcCovered δ δ_goto δ_goto_bool trans₁ pgm :=
-      emitLabel_preserves_body_pc_covered label _ st.trans pgm
-        δ δ_goto δ_goto_bool h_cov
+    -- emitLabel preservation: pushes a LOCATION instruction.
+    have h_cov₁ : BodyPcCovered δ δ_goto δ_goto_bool trans₁ pgm := by
+      intro pc instr h
+      exact push_non_body_preserves_body_pc_covered δ δ_goto δ_goto_bool st.trans
+        pgm _ (by intro h_eq; cases h_eq) (by intro h_eq; cases h_eq) h_cov h
     -- Case-split on transfer first; in each branch we know st'.trans
     -- explicitly (a 1- or 2-push extension of trans₂), which gives us
     -- both the prefix property for trans₂ and the post-transfer
@@ -697,16 +632,18 @@ theorem coreCFGToGotoBlockStep_preserves_body_pc_covered
             h_inner h_size₁ h_admitted pgm δ δ_goto δ_goto_bool h_expr_corr h_tx_eq
             h_prefix₂ h_cov₁
         let transferSrcLoc := Imperative.metadataToSourceLoc md fname trans₂.sourceText
+        -- Two GOTO pushes (cond + uncond), neither DECL nor ASSIGN.
         have h_cov₃ : BodyPcCovered δ δ_goto δ_goto_bool
-            (Imperative.emitCondGoto cond_expr.not transferSrcLoc trans₂).fst pgm :=
-          emitCondGoto_preserves_body_pc_covered cond_expr.not transferSrcLoc trans₂ pgm
-            δ δ_goto δ_goto_bool h_cov₂
+            (Imperative.emitCondGoto cond_expr.not transferSrcLoc trans₂).fst pgm := by
+          intro pc instr h
+          exact push_non_body_preserves_body_pc_covered δ δ_goto δ_goto_bool trans₂
+            pgm _ (by intro h_eq; cases h_eq) (by intro h_eq; cases h_eq) h_cov₂ h
         have h_cov₄ : BodyPcCovered δ δ_goto δ_goto_bool
             (Imperative.emitUncondGoto transferSrcLoc
-              (Imperative.emitCondGoto cond_expr.not transferSrcLoc trans₂).fst).fst pgm :=
-          emitUncondGoto_preserves_body_pc_covered transferSrcLoc
-            (Imperative.emitCondGoto cond_expr.not transferSrcLoc trans₂).fst pgm
-            δ δ_goto δ_goto_bool h_cov₃
+              (Imperative.emitCondGoto cond_expr.not transferSrcLoc trans₂).fst).fst pgm := by
+          intro pc instr h
+          exact push_non_body_preserves_body_pc_covered δ δ_goto δ_goto_bool _
+            pgm _ (by intro h_eq; cases h_eq) (by intro h_eq; cases h_eq) h_cov₃ h
         rw [← h_run]
         intro pc instr h
         exact h_cov₄ h
@@ -733,8 +670,9 @@ theorem coreCFGToGotoBlockStep_preserves_body_pc_covered
       rw [← h_run]
       intro pc instr h
       simp only at h ⊢
-      exact endFunction_emit_preserves_body_pc_covered md fname trans₂ pgm
-        δ δ_goto δ_goto_bool h_cov₂ h
+      -- Single END_FUNCTION push: not DECL, not ASSIGN.
+      exact push_non_body_preserves_body_pc_covered δ δ_goto δ_goto_bool trans₂
+        pgm _ (by intro h_eq; cases h_eq) (by intro h_eq; cases h_eq) h_cov₂ h
   | .error _, _ => simp at h_run
 
 /-! ## Preservation through `blocksFoldlM` -/
