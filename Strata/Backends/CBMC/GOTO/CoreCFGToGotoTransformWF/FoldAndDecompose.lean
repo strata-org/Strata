@@ -237,8 +237,9 @@ theorem blocksFoldlM_layout_location
       rcases h_in with h_eq | h_in_rest
       · -- (l, blk) = hd.
         subst h_eq
-        obtain ⟨instr, h_at_st₁, h_ty⟩ :=
-          coreCFGToGotoBlockStep_location_at_pc fname (l, blk) st st₁ h_admitted_head h_step h_size
+        obtain ⟨instr, h_at_st₁, h_ty, _⟩ :=
+          coreCFGToGotoBlockStep_location_at_pc_with_labels fname (l, blk) st st₁
+            h_admitted_head h_step h_size
         have h_pc_lt_st₁ : st.trans.nextLoc < st₁.trans.instructions.size := by
           rw [Array.getElem?_eq_some_iff] at h_at_st₁
           exact h_at_st₁.1

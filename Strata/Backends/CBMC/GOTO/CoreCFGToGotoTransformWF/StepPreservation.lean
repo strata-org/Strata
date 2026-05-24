@@ -807,111 +807,11 @@ After one block step, certain instructions are at specific positions in
 These results are stable through subsequent block steps because of
 `coreCFGToGotoBlockStep_instructions_prefix?`. -/
 
-/-- After one block step, the LOCATION instruction is at
-`st.trans.nextLoc` in `st'.trans.instructions`. -/
-theorem coreCFGToGotoBlockStep_location_at_pc
-    (fname : String) (lblBlk : String × Imperative.DetBlock String Core.Command Core.Expression)
-    (st st' : Strata.CoreCFGTransLoopState)
-    (h_admitted : ∀ c ∈ lblBlk.2.cmds, Core.CmdExt.isAdmittedCmd c = true)
-    (h_run : Strata.coreCFGToGotoBlockStep fname st lblBlk = Except.ok st')
-    (h_size : st.trans.instructions.size = st.trans.nextLoc) :
-    ∃ instr,
-      st'.trans.instructions[st.trans.nextLoc]? = some instr ∧
-      instr.type = .LOCATION := by
-  obtain ⟨label, blk⟩ := lblBlk
-  unfold Strata.coreCFGToGotoBlockStep at h_run
-  simp only [Bind.bind, Except.bind, pure, Except.pure] at h_run
-  generalize h_inner :
-    blk.cmds.foldlM (Strata.coreCFGToGotoCmdStep fname)
-      (Imperative.emitLabel label
-        { CProverGOTO.SourceLocation.nil with function := fname } st.trans) = inner at h_run
-  match inner, h_inner with
-  | .ok trans₂, h_inner =>
-    -- The LOCATION instruction is the LAST one pushed by emitLabel.
-    have h_label_unfold :
-        (Imperative.emitLabel label
-          { CProverGOTO.SourceLocation.nil with function := fname }
-          st.trans).instructions =
-        st.trans.instructions.push
-          { type := .LOCATION, locationNum := st.trans.nextLoc,
-            sourceLoc := { CProverGOTO.SourceLocation.nil with function := fname },
-            labels := [label], code := CProverGOTO.Code.skip } := rfl
-    have h_label_size :
-        (Imperative.emitLabel label
-          { CProverGOTO.SourceLocation.nil with function := fname }
-          st.trans).instructions.size = st.trans.instructions.size + 1 := by
-      rw [h_label_unfold, Array.size_push]
-    have h_label_at :
-        (Imperative.emitLabel label
-          { CProverGOTO.SourceLocation.nil with function := fname }
-          st.trans).instructions[st.trans.instructions.size]? = some
-          { type := .LOCATION, locationNum := st.trans.nextLoc,
-            sourceLoc := { CProverGOTO.SourceLocation.nil with function := fname },
-            labels := [label], code := CProverGOTO.Code.skip } := by
-      rw [h_label_unfold, Array.getElem?_push_eq]
-    -- Show that the inner cmds-fold preserves this LOCATION.
-    have h_pc_lt : st.trans.instructions.size <
-        (Imperative.emitLabel label
-          { CProverGOTO.SourceLocation.nil with function := fname }
-          st.trans).instructions.size := by
-      rw [h_label_size]; omega
-    have h_pc_in_trans₂ :
-        trans₂.instructions[st.trans.instructions.size]? = some
-          { type := .LOCATION, locationNum := st.trans.nextLoc,
-            sourceLoc := { CProverGOTO.SourceLocation.nil with function := fname },
-            labels := [label], code := CProverGOTO.Code.skip } := by
-      rw [cmdsFoldlM_instructions_prefix? fname blk.cmds _ trans₂ h_admitted h_inner _ h_pc_lt]
-      exact h_label_at
-    -- pc = st.trans.nextLoc = st.trans.instructions.size by h_size.
-    have h_pc_eq : st.trans.nextLoc = st.trans.instructions.size := h_size.symm
-    cases h_t : blk.transfer with
-    | condGoto cond lt lf md =>
-      rw [h_t] at h_run
-      simp only at h_run
-      generalize h_cond_eval :
-          Lambda.LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩) [] cond = cond_eval at h_run
-      match cond_eval, h_cond_eval with
-      | .ok cond_expr, _ =>
-        simp only at h_run
-        injection h_run with h_run
-        rw [← h_run]
-        simp only [Imperative.emitCondGoto, Imperative.emitUncondGoto, Imperative.emitGoto]
-        rw [h_pc_eq]
-        have h_pc_in_trans₂_size : st.trans.instructions.size < trans₂.instructions.size := by
-          have := cmdsFoldlM_size_le fname blk.cmds _ trans₂ h_admitted h_inner
-          rw [h_label_size] at this; omega
-        have h_pc_in_first :
-            st.trans.instructions.size < (trans₂.instructions.push
-              { type := .GOTO, guard := cond_expr.not,
-                sourceLoc := Imperative.metadataToSourceLoc md fname trans₂.sourceText,
-                locationNum := trans₂.nextLoc, target := .none }).size := by
-          simp [Array.size_push]; omega
-        rw [Array.getElem?_push_lt h_pc_in_first,
-            Array.getElem_push_lt h_pc_in_trans₂_size,
-            ← Array.getElem?_eq_getElem h_pc_in_trans₂_size]
-        rw [h_pc_in_trans₂]
-        exact ⟨_, rfl, rfl⟩
-      | .error _, _ => simp at h_run
-    | finish md =>
-      rw [h_t] at h_run
-      simp only at h_run
-      injection h_run with h_run
-      rw [← h_run]
-      rw [h_pc_eq]
-      have h_pc_in_trans₂_size : st.trans.instructions.size < trans₂.instructions.size := by
-        have := cmdsFoldlM_size_le fname blk.cmds _ trans₂ h_admitted h_inner
-        rw [h_label_size] at this; omega
-      rw [Array.getElem?_push_lt h_pc_in_trans₂_size,
-          ← Array.getElem?_eq_getElem h_pc_in_trans₂_size]
-      rw [h_pc_in_trans₂]
-      exact ⟨_, rfl, rfl⟩
-  | .error _, _ => simp at h_run
-
-/-- Strengthened version of `coreCFGToGotoBlockStep_location_at_pc`:
-the LOCATION instruction at `st.trans.nextLoc` carries the block's
-label in its `labels` field — exactly `[label]`. Used to pin
-`wf.labelMap l` to the translator's hashmap-keyed labelMap by
-exhibiting at most one LOCATION per label. -/
+/-- After one block step, the LOCATION instruction at
+`st.trans.nextLoc` carries type `.LOCATION` and the block's label in
+its `labels` field — exactly `[label]`. Used to pin `wf.labelMap l`
+to the translator's hashmap-keyed labelMap by exhibiting at most one
+LOCATION per label. -/
 theorem coreCFGToGotoBlockStep_location_at_pc_with_labels
     (fname : String) (lblBlk : String × Imperative.DetBlock String Core.Command Core.Expression)
     (st st' : Strata.CoreCFGTransLoopState)
