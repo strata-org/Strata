@@ -180,21 +180,27 @@ structure TranslatorBridgeHyps
       (SemanticsTautschnig.instrCode pgm pc).bind
           SemanticsTautschnig.getAssignRhs = some rhs_g
   /-- For every PC carrying an ASSIGN instruction whose
-  `StepGoto.step_assign_nondet` derivation fires (with arbitrary
-  source-side value `v_imp`), the underlying `Code` has
-  `getAssignLhs = nameMap x` and rhs whose `id` is
-  `.side_effect .Nondet`. -/
+  `StepGoto.step_assign_nondet` derivation fires, the underlying
+  `Code` has `getAssignLhs = nameMap x` and `getAssignRhs = rhs`,
+  where `rhs` is the constructor's rhs.
+
+  R11: `step_assign_nondet`'s constructor now carries the rhs-shape
+  witnesses (`instr.code = Code.assign lhs rhs` and
+  `rhs.id = .side_effect .Nondet`) directly, so the field receives
+  them as preconditions. The lookup chain reduces structurally from
+  `h_code` via `assign_code_to_lhsRhs`. -/
   assign_nondet_lookup :
     ∀ {pc : Nat} {instr : Instruction} {x : P.Ident}
+      {lhs rhs : Expr}
       {σ σ' : Imperative.SemanticStore P} {v_imp : P.Expr},
       pgm.instrAt pc = some instr → instr.type = .ASSIGN →
+      instr.code = Code.assign lhs rhs →
+      rhs.id = .side_effect .Nondet →
       Imperative.UpdateState P σ x v_imp σ' →
-      ∃ rhs_g,
-        (SemanticsTautschnig.instrCode pgm pc).bind
-            SemanticsTautschnig.getAssignLhs = some (nameMap x) ∧
-        (SemanticsTautschnig.instrCode pgm pc).bind
-            SemanticsTautschnig.getAssignRhs = some rhs_g ∧
-        rhs_g.id = .side_effect .Nondet
+      (SemanticsTautschnig.instrCode pgm pc).bind
+          SemanticsTautschnig.getAssignLhs = some (nameMap x) ∧
+      (SemanticsTautschnig.instrCode pgm pc).bind
+          SemanticsTautschnig.getAssignRhs = some rhs
   /-- For every PC carrying a GOTO instruction with a pre-resolved
   index target, there's a matching `findLocIdx` resolution: the
   `instrTarget` exposes a `locationNum` whose `findLocIdx` lands
@@ -356,17 +362,15 @@ theorem steppingBridges_of_translator
       exact storeCorr_preserve_update h_brHyps.nameMap_inj h_upd h_vc h_corr
     | step_assign_nondet h_at h_ty h_code h_id h_upd =>
       -- R11: `step_assign_nondet`'s constructor now carries the
-      -- rhs-shape witness directly via `h_code` and `h_id`. We still
-      -- consult the bridge field for the `getAssignLhs/getAssignRhs`
-      -- option-bind chain (which `Bisim.stepGoto_assign_nondet_to_stepInstr`
-      -- expects); the bridge field's `h_nondet` agrees with the
-      -- constructor's `h_id` by construction.
-      obtain ⟨rhs_g, h_lhs, h_rhs, h_nondet⟩ :=
-        h_brHyps.assign_nondet_lookup h_at h_ty h_upd
+      -- rhs-shape witness directly via `h_code` and `h_id`. The bridge
+      -- field receives them as preconditions and reduces the
+      -- `getAssignLhs/getAssignRhs` lookup chain structurally.
+      obtain ⟨h_lhs, h_rhs⟩ :=
+        h_brHyps.assign_nondet_lookup h_at h_ty h_code h_id h_upd
       obtain ⟨v_goto, h_vc⟩ :=
         h_brHyps.assign_nondet_value_corr h_at h_ty h_upd
       exact Bisim.stepGoto_assign_nondet_to_stepInstr h_brHyps.nameMap_inj
-        h_at h_ty h_upd h_lhs h_rhs h_nondet h_vc h_corr
+        h_at h_ty h_upd h_lhs h_rhs h_id h_vc h_corr
     | step_assert_pass h_at h_ty h_g =>
       exact Bisim.stepGoto_assert_pass_to_stepInstr h_eval_bool_corr
         h_at h_ty h_g h_corr

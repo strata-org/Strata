@@ -351,16 +351,9 @@ theorem coreCFGToGotoTransform_forward_simulation_concrete_v4
         ∃ v_src gty rhs_emitted,
           instr.code = Code.assign
             (Expr.symbol (nameMap v_src) gty) rhs_emitted)
-    (h_assn_nondet_provenance :
-      ∀ {pc : Nat} {instr : Instruction},
-        ({ name := "", parameterIdentifiers := #[],
-           instructions := ans.instructions } : Program).instrAt pc
-          = some instr →
-        instr.type = .ASSIGN →
-        ∃ v_src gty rhs_emitted,
-          instr.code = Code.assign
-            (Expr.symbol (nameMap v_src) gty) rhs_emitted ∧
-          rhs_emitted.id = .side_effect .Nondet)
+    -- R11: `h_assn_nondet_provenance` (the strict nondet-rhs variant)
+    -- has been removed. The rhs-shape witness now arrives via the
+    -- tightened `step_assign_nondet` constructor.
     -- R7c's pinning hypotheses (caller-side; trace-level info).
     (h_decl_x_pinned :
       ∀ {pc : Nat} {instr : Instruction}
@@ -498,11 +491,13 @@ theorem coreCFGToGotoTransform_forward_simulation_concrete_v4
     exact NoDead.no_dead_program_of_translator Env functionName cfg trans₀
       h_init_no_dead h_loopContracts_empty_post ans h_run h
   -- Step 5: discharge h_brHyps via R7c's v2 bridge.
+  -- R11: h_assn_nondet_provenance is no longer needed at this layer;
+  -- the rhs-shape witness comes from step_assign_nondet's constructor.
   have h_brHyps :=
     TranslatorBridgeHypsDischarge.wellFormedTranslation_to_translatorBridgeHyps_v2
       cfg pgm δ δ_goto δ_goto_bool wf nameMap h_inj eval
       h_goto_target_in_range h_no_dead
-      h_decl_provenance h_assn_provenance h_assn_nondet_provenance
+      h_decl_provenance h_assn_provenance
       h_decl_x_pinned h_assn_x_pinned h_assn_rhs_pinned
       h_decl_empty_value h_assign_value_corr h_assign_nondet_value_corr
   -- Step 6: discharge SteppingBridges and forward simulation.
@@ -662,15 +657,11 @@ theorem coreCFGToGotoTransform_forward_simulation_concrete_v5
         { name := "", parameterIdentifiers := #[],
           instructions := ans.instructions }
         δ δ_goto δ_goto_bool wf)
-    (h_assn_nondet_pc_inv :
-      ∀ (wf : WellFormedTranslation cfg
-        { name := "", parameterIdentifiers := #[],
-          instructions := ans.instructions }
-        δ δ_goto δ_goto_bool),
-      CmdProvenance.AssignNondetPcInversion cfg
-        { name := "", parameterIdentifiers := #[],
-          instructions := ans.instructions }
-        δ δ_goto δ_goto_bool wf)
+    -- R11: `h_assn_nondet_pc_inv` (R8b's strict
+    -- `AssignNondetPcInversion`) has been removed. The rhs-shape
+    -- witness now arrives via the tightened `step_assign_nondet`
+    -- constructor, eliminating the need for any per-PC nondet-cmd
+    -- inversion.
     -- R7c's pinning hypotheses (caller-side; trace-level info).
     (h_decl_x_pinned :
       ∀ {pc : Nat} {instr : Instruction}
@@ -841,18 +832,9 @@ theorem coreCFGToGotoTransform_forward_simulation_concrete_v5
     intro pc instr h_at h_ty
     exact CmdProvenance.assn_provenance_of_translator cfg pgm
       δ δ_goto δ_goto_bool wf (h_assn_pc_inv wf) h_at h_ty
-  have h_assn_nondet_provenance :
-      ∀ {pc : Nat} {instr : Instruction},
-        pgm.instrAt pc = some instr → instr.type = .ASSIGN →
-        ∃ v_src gty rhs_emitted,
-          instr.code = Code.assign
-            (Expr.symbol
-              (Imperative.ToGoto.identToString (P := Core.Expression) v_src)
-              gty) rhs_emitted ∧
-          rhs_emitted.id = .side_effect .Nondet := by
-    intro pc instr h_at h_ty
-    exact CmdProvenance.assn_nondet_provenance_of_translator_strict cfg pgm
-      δ δ_goto δ_goto_bool wf (h_assn_nondet_pc_inv wf) h_at h_ty
+  -- R11: h_assn_nondet_provenance (the strict nondet-rhs variant)
+  -- is no longer needed; the rhs-shape witness now arrives via the
+  -- tightened `step_assign_nondet` constructor.
   -- Step 4: Delegate to v4 with the discharged hypotheses.
   exact coreCFGToGotoTransform_forward_simulation_concrete_v4
     δ δ_goto δ_goto_bool h_wf_bool h_init_extension π φ
@@ -863,7 +845,7 @@ theorem coreCFGToGotoTransform_forward_simulation_concrete_v5
     (Imperative.ToGoto.identToString (P := Core.Expression))
     callResult eval fenv h_eval_bool_corr h_inj
     h_aux_goto_target
-    h_decl_provenance h_assn_provenance h_assn_nondet_provenance
+    h_decl_provenance h_assn_provenance
     h_decl_x_pinned h_assn_x_pinned h_assn_rhs_pinned
     h_decl_empty_value h_assign_value_corr h_assign_nondet_value_corr
     σ σ' b σ_goto h_corr h_run_src
@@ -1002,15 +984,11 @@ theorem coreCFGToGotoTransform_forward_simulation_concrete_v6
         (coreCFGToGotoInitState trans₀)
       = Except.ok st_final)
     -- R8b's strict ASSIGN-Nondet PC-inversion remains (provably false in general).
-    (h_assn_nondet_pc_inv :
-      ∀ (wf : WellFormedTranslation cfg
-        { name := "", parameterIdentifiers := #[],
-          instructions := ans.instructions }
-        δ δ_goto δ_goto_bool),
-      CmdProvenance.AssignNondetPcInversion cfg
-        { name := "", parameterIdentifiers := #[],
-          instructions := ans.instructions }
-        δ δ_goto δ_goto_bool wf)
+    -- R11: `h_assn_nondet_pc_inv` (R8b's strict
+    -- `AssignNondetPcInversion`) has been removed. The rhs-shape
+    -- witness now arrives via the tightened `step_assign_nondet`
+    -- constructor, eliminating the need for any per-PC nondet-cmd
+    -- inversion.
     -- R7c's pinning hypotheses (caller-side; trace-level info).
     (h_decl_x_pinned :
       ∀ {pc : Nat} {instr : Instruction}
@@ -1176,7 +1154,7 @@ theorem coreCFGToGotoTransform_forward_simulation_concrete_v6
     h_red h_op h_uniform h_commutes_not
     callResult eval fenv h_eval_bool_corr h_inj
     st_final h_blocks_run h_labelMap_agree
-    h_decl_pc_inv h_assn_pc_inv h_assn_nondet_pc_inv
+    h_decl_pc_inv h_assn_pc_inv
     h_decl_x_pinned h_assn_x_pinned h_assn_rhs_pinned
     h_decl_empty_value h_assign_value_corr h_assign_nondet_value_corr
     σ σ' b σ_goto h_corr h_run_src
@@ -1263,15 +1241,11 @@ theorem coreCFGToGotoTransform_forward_simulation_concrete_v7
       Function.Injective
         (Imperative.ToGoto.identToString (P := Core.Expression)))
     -- R8b's strict ASSIGN-Nondet PC-inversion remains (caller-side).
-    (h_assn_nondet_pc_inv :
-      ∀ (wf : WellFormedTranslation cfg
-        { name := "", parameterIdentifiers := #[],
-          instructions := ans.instructions }
-        δ δ_goto δ_goto_bool),
-      CmdProvenance.AssignNondetPcInversion cfg
-        { name := "", parameterIdentifiers := #[],
-          instructions := ans.instructions }
-        δ δ_goto δ_goto_bool wf)
+    -- R11: `h_assn_nondet_pc_inv` (R8b's strict
+    -- `AssignNondetPcInversion`) has been removed. The rhs-shape
+    -- witness now arrives via the tightened `step_assign_nondet`
+    -- constructor, eliminating the need for any per-PC nondet-cmd
+    -- inversion.
     -- R7c's pinning hypotheses (caller-side; trace-level info).
     (h_decl_x_pinned :
       ∀ {pc : Nat} {instr : Instruction}
@@ -1393,7 +1367,6 @@ theorem coreCFGToGotoTransform_forward_simulation_concrete_v7
     h_red h_op h_uniform h_commutes_not
     callResult eval fenv h_eval_bool_corr h_inj
     st_final h_blocks_run
-    h_assn_nondet_pc_inv
     h_decl_x_pinned h_assn_x_pinned h_assn_rhs_pinned
     h_decl_empty_value h_assign_value_corr h_assign_nondet_value_corr
     σ σ' b σ_goto h_corr h_run_src

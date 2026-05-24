@@ -278,29 +278,28 @@ theorem assign_lookup_of_provenance_and_pinned
 
 /-! ## `assign_nondet_lookup` discharge
 
-For `step_assign_nondet`, no `δ_goto` evaluation appears in the bridge
-field's body — only an `UpdateState`. The bridge field's conclusion is
-existentially quantified over `rhs_g`: there exists `rhs_g` such that
-`getAssignLhs = some (nameMap x)`, `getAssignRhs = some rhs_g`, and
-`rhs_g.id = .side_effect .Nondet`. The strengthened
-`CmdEmittedAt.set_nondet` already exposes the `.id`/`.type` of the
-nondet rhs, so the structural witness includes those facts. -/
+R11: `step_assign_nondet`'s constructor now carries the rhs-shape
+witnesses directly (`instr.code = Code.assign lhs rhs ∧
+rhs.id = .side_effect .Nondet`). The bridge field receives them as
+preconditions; the discharge here just unifies them with the
+translator's emitted shape via R7c's `assn_provenance` and
+`assn_x_pinned` hypotheses (the same ones used by `assign_lookup`).
+
+In particular, no `AssignNondetPcInversion` is needed: the rhs-shape
+witness comes from the constructor, not from the structural lemma. -/
 
 /-- Bridge from per-PC structural witness + per-firing trace witnesses
-to the `assign_nondet_lookup` field. The structural witness now
-includes the rhs's `.id = .side_effect .Nondet` (from the strengthened
-`CmdEmittedAt.set_nondet` constructor). -/
+to the new `assign_nondet_lookup` field shape (R11). -/
 theorem assign_nondet_lookup_of_provenance_and_pinned
     (pgm : Program)
     (nameMap : Core.Expression.Ident → String)
     (_h_inj : Function.Injective nameMap)
-    (h_assn_nondet_provenance :
+    (h_assn_provenance :
       ∀ {pc : Nat} {instr : Instruction},
         pgm.instrAt pc = some instr → instr.type = .ASSIGN →
         ∃ v_src gty rhs_emitted,
           instr.code = Code.assign
-            (Expr.symbol (nameMap v_src) gty) rhs_emitted ∧
-          rhs_emitted.id = .side_effect .Nondet)
+            (Expr.symbol (nameMap v_src) gty) rhs_emitted)
     (h_x_pinned :
       ∀ {pc : Nat} {instr : Instruction}
         {x : Core.Expression.Ident}
@@ -313,21 +312,43 @@ theorem assign_nondet_lookup_of_provenance_and_pinned
             (Expr.symbol (nameMap v_src) gty) rhs_emitted →
           x = v_src) :
     ∀ {pc : Nat} {instr : Instruction} {x : Core.Expression.Ident}
+      {lhs rhs : Expr}
       {σ σ' : Imperative.SemanticStore Core.Expression}
       {v_imp : Core.Expression.Expr},
       pgm.instrAt pc = some instr → instr.type = .ASSIGN →
+      instr.code = Code.assign lhs rhs →
+      rhs.id = .side_effect .Nondet →
       Imperative.UpdateState Core.Expression σ x v_imp σ' →
-      ∃ rhs_g,
-        (instrCode pgm pc).bind getAssignLhs = some (nameMap x) ∧
-        (instrCode pgm pc).bind getAssignRhs = some rhs_g ∧
-        rhs_g.id = .side_effect .Nondet := by
-  intro pc instr x σ σ' v_imp h_at h_ty h_upd
-  obtain ⟨v_src, gty, rhs_emitted, h_code, h_id⟩ :=
-    h_assn_nondet_provenance h_at h_ty
-  have h_x : x = v_src := h_x_pinned h_at h_ty h_upd v_src gty rhs_emitted h_code
+      (instrCode pgm pc).bind getAssignLhs = some (nameMap x) ∧
+      (instrCode pgm pc).bind getAssignRhs = some rhs := by
+  intro pc instr x lhs rhs σ σ' v_imp h_at h_ty h_code _h_id h_upd
+  obtain ⟨v_src, gty, rhs_emitted, h_code_prov⟩ :=
+    h_assn_provenance h_at h_ty
+  have h_x : x = v_src := h_x_pinned h_at h_ty h_upd v_src gty rhs_emitted h_code_prov
+  -- The lookup chain via `instrCode pgm pc` doesn't depend on the
+  -- specific decomposition; reduce it directly via `h_code_prov`.
   obtain ⟨h_lhs_eq, h_rhs_eq⟩ :=
-    assign_code_to_lhsRhs pgm (nameMap v_src) gty rhs_emitted h_at h_code
-  refine ⟨rhs_emitted, ?_, h_rhs_eq, h_id⟩
-  rw [h_x]; exact h_lhs_eq
+    assign_code_to_lhsRhs pgm (nameMap v_src) gty rhs_emitted h_at h_code_prov
+  -- From `h_code` and `h_code_prov`, both equate `instr.code` to
+  -- `Code.assign _ _` shapes. Unfolding shows the operands lists
+  -- coincide, so `lhs = Expr.symbol (nameMap v_src) gty` and
+  -- `rhs = rhs_emitted`.
+  have h_code_eq : Code.assign lhs rhs =
+      Code.assign (Expr.symbol (nameMap v_src) gty) rhs_emitted := by
+    rw [← h_code, h_code_prov]
+  -- Inject through Code.mk; both have id `.assignment .assign`
+  -- and operands `[_, _]`.
+  have h_ops_eq : ([lhs, rhs] : List Expr) =
+      [Expr.symbol (nameMap v_src) gty, rhs_emitted] := by
+    injection h_code_eq
+  -- List.cons.injEq peels two times.
+  have h_lhs_eq_sym : lhs = Expr.symbol (nameMap v_src) gty := by
+    injection h_ops_eq
+  have h_rhs_eq_emit : rhs = rhs_emitted := by
+    injection h_ops_eq with _ h_rest
+    injection h_rest
+  refine ⟨?_, ?_⟩
+  · rw [h_x]; exact h_lhs_eq
+  · rw [h_rhs_eq_emit]; exact h_rhs_eq
 
 end CProverGOTO.InstructionLookups
