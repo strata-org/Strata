@@ -861,13 +861,13 @@ internally discharging:
   via R9's `assignPcInversion_of_translator_abbrev`.
 
 The third PC-inversion auxiliary, `h_assn_nondet_pc_inv` (R8b's
-strict `AssignNondetPcInversion`), **remains as a hypothesis** because
-it is *provably false* in general (per R8b's finding) — closing it
-cleanly would require a bridge-level refactor of
-`assign_nondet_lookup_of_provenance_and_pinned` in
-`InstructionLookups.lean` to accept a per-firing-trace gating
-precondition. See `docs/CoreToGOTO_ProofStatusRound8.md` for the
-full discussion.
+strict `AssignNondetPcInversion`), **has been removed in R11** by
+tightening `StepGoto.step_assign_nondet`'s constructor to carry the
+rhs-shape witness directly (`instr.code = Code.assign lhs rhs ∧
+rhs.id = .side_effect .Nondet`). The previously-blocked
+`init_det × eval_init` arm now uses `step_assign` (with a
+δ_goto-eval witness on the post-DECL store, derived via the new
+`h_init_extension` hypothesis). See R11's report.
 
 ## New hypothesis introduced
 
@@ -892,8 +892,10 @@ After v6 (post-R10a), the only "structural" hypotheses left are:
   (R10b's territory). The previously-required `h_labelMap_agree`
   closure is now internalised via
   `WfLabelMapAgree.labelMap_agree_of_translator` — R10a Tier 1.
-* **R8b's strict ASSIGN-Nondet PC-inversion**: `h_assn_nondet_pc_inv`.
-  Bridge-level [bridge-required].
+* **R11's δ_goto monotonicity**: `h_init_extension` (small
+  well-formedness assumption: δ_goto is monotone across `InitState`
+  for any expression). Standard property of any sane evaluator;
+  callers discharge it from the concrete evaluator's structure.
 * **R7c's pinning hypotheses**: `h_decl_x_pinned`, `h_assn_x_pinned`,
   `h_assn_rhs_pinned`. Trace-level [caller-irreducible].
 * **R7c's value-side hypotheses**: `h_decl_empty_value`,
