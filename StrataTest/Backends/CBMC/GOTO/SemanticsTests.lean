@@ -147,6 +147,14 @@ def trivialWF :
   labelMap_total := trivial_labelMap_total
   labelMap_inj := trivial_labelMap_inj
   layout_location := trivial_layout_location
+  layout_location_labels := by
+    intro l blk pc h_blk h_pc
+    simp [trivialCfg] at h_blk
+    obtain ⟨h_l, _⟩ := h_blk
+    subst h_l
+    simp [trivialLabelMap] at h_pc
+    subst h_pc
+    exact ⟨_, rfl, rfl, rfl⟩
   layout_cond_goto := trivial_layout_cond_goto
   layout_cond_goto_guards := by
     intro l blk pc cond lt lf md instr_neg instr_uncond h_blk h_pc h_xfer
