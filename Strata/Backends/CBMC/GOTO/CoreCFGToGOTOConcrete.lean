@@ -55,11 +55,14 @@ open CProverGOTO.SemanticsTautschnig
 
 /-! ## Concrete forward simulation: live versions
 
-Two public theorems (`_v6`, `_v7`) are exposed downstream. They
-delegate through two private waypoints (`_v4`, `_v5`) that
-discharge progressively more of the worker-output hypothesis surface.
+Two public theorems are exposed downstream:
+* `_v6` — full hypothesis surface (caller supplies `st_final` /
+  `h_blocks_run`).
+* `_v7` — same as `_v6` but `st_final` / `h_blocks_run` are
+  internalised via `coreCFGToGotoTransform_decompose`.
+
 The `ConcreteExprCorr` namespace below builds the B3 expression-side
-correspondence consumed by all four. -/
+correspondence consumed by both. -/
 
 namespace ConcreteExprCorr
 
@@ -169,23 +172,20 @@ noncomputable def buildExprCorr
 
 end ConcreteExprCorr
 
-/-! ## `_v6`: R9 PC-inversion auxiliaries + R10a labelMap-agree discharged
+/-! ## `_v6`: full-surface forward simulation
 
-First public theorem. Extends `_v5` by internally discharging R8b's
-two non-strict PC-inversion auxiliaries (`DeclPcInversion`,
-`AssignPcInversion`) via R9, and R10a's `labelMap_agree` via
-`WfLabelMapAgree.labelMap_agree_of_translator`.
+First public theorem. Builds a `WellFormedTranslation` via the
+strengthened theorem; discharges R7a/R7b/R7c bridge fields, R8a/R8b
+auxiliaries, R9 PC-inversion auxiliaries, and R10a `labelMap_agree`
+internally. Caller still supplies `st_final` / `h_blocks_run` (R10a
+witnesses — internalised in `_v7`), R11 δ_goto monotonicity
+(`h_init_extension`), R7c pinning + value-side hypotheses, the B3
+bundle, Worker C parameters, and the source-side run + initial-store
+correspondence.
 
-Adds two small `trans₀`-shape hypotheses (`h_init_empty_decl_assign`,
-`h_init_no_location`) trivial for any standard `trans₀` with
-`instructions := #[]`. R8b's strict `AssignNondetPcInversion` was
-removed in R11 by tightening `step_assign_nondet`'s constructor.
-
-Remaining surface: translator-input invariants, R10a witnesses
-(`st_final`, `h_blocks_run` — closed in `_v7`), R11 δ_goto
-monotonicity (`h_init_extension`), R7c pinning + value-side
-hypotheses, B3 bundle, Worker C parameters, source-side run +
-initial-store correspondence. -/
+Two small `trans₀`-shape hypotheses (`h_init_empty_decl_assign`,
+`h_init_no_location`) are required by R9/R10a's induction; both are
+trivial for any standard `trans₀` with `instructions := #[]`. -/
 
 theorem coreCFGToGotoTransform_forward_simulation_concrete_v6
     -- Source-side semantics
@@ -366,7 +366,7 @@ theorem coreCFGToGotoTransform_forward_simulation_concrete_v6
       Core.CoreCFGStepStar π φ δ cfg
         (.cont cfg.entry σ false)
         (.terminal σ' b)) :
-    -- Conclusion (matches v5).
+    -- Conclusion.
     ∃ pc_entry σ_goto',
       StoreCorr
         (Imperative.ToGoto.identToString (P := Core.Expression))
@@ -686,7 +686,7 @@ theorem coreCFGToGotoTransform_forward_simulation_concrete_v7
       Core.CoreCFGStepStar π φ δ cfg
         (.cont cfg.entry σ false)
         (.terminal σ' b)) :
-    -- Conclusion (matches v6).
+    -- Conclusion.
     ∃ pc_entry σ_goto',
       StoreCorr
         (Imperative.ToGoto.identToString (P := Core.Expression))
