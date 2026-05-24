@@ -7,6 +7,7 @@ module
 
 public import Strata.Backends.CBMC.GOTO.CoreCFGToGotoTransformWF
 public import Strata.Backends.CBMC.GOTO.GotoTargetInRange
+public import Strata.Backends.CBMC.GOTO.BlocksFoldClosed
 import all Strata.DL.Imperative.ToCProverGOTO
 import all Strata.Backends.CBMC.GOTO.CoreCFGToGOTOPipeline
 
@@ -66,202 +67,184 @@ namespace CProverGOTO.GotoTargetProvenance
 open Imperative
 open CProverGOTO
 
-/-! ## "No GOTO has target set" predicate -/
+/-! ## "No GOTO has target set" predicate
 
-/-- Every `GOTO` instruction in the translator state has `target =
-none`. Held throughout the blocks-fold (the translator only emits
-GOTOs with no target; the patcher fills targets in later). -/
-def NoGotoHasTarget (trans : Imperative.GotoTransform Core.Expression.TyEnv) : Prop :=
+Two equivalent shapes are useful: an array-level predicate
+`NoGotoHasTarget'` (which the BlocksFoldClosed combinator consumes) and
+the transform-level `NoGotoHasTarget` (legacy public name). They are
+linked by definitional unfolding. -/
+
+/-- Array-level: every `GOTO` in `a` has `target = none`. -/
+def NoGotoHasTarget' (a : Array CProverGOTO.Instruction) : Prop :=
   ∀ {pc : Nat} {instr : Instruction},
-    trans.instructions[pc]? = some instr → instr.type = .GOTO →
-    instr.target = none
+    a[pc]? = some instr → instr.type = .GOTO → instr.target = none
 
-/-! ## Push/append preservation primitives
+/-- Transform-level (legacy public name): every `GOTO` in
+`trans.instructions` has `target = none`. Held throughout the
+blocks-fold (the translator only emits GOTOs with no target; the
+patcher fills targets in later). -/
+abbrev NoGotoHasTarget (trans : Imperative.GotoTransform Core.Expression.TyEnv) : Prop :=
+  NoGotoHasTarget' trans.instructions
+
+/-! ## Push/append safety primitives
 
 Pushing or appending instructions whose targets are `none` (or that
-aren't GOTO at all) preserves `NoGotoHasTarget`. -/
+aren't GOTO at all) preserves `NoGotoHasTarget'`. These are the
+ingredients to the `BlocksFoldClosed.ofPushSafe` helper. -/
 
-/-- Pushing an instruction whose `target = none` (or whose `type ≠
-.GOTO`) preserves `NoGotoHasTarget`. -/
-private theorem push_preserves_no_goto_target
-    (trans : Imperative.GotoTransform Core.Expression.TyEnv)
-    (new_instr : Instruction)
-    (h_no_target : NoGotoHasTarget trans)
-    (h_new : new_instr.type = .GOTO → new_instr.target = none) :
-    ∀ {pc : Nat} {instr : Instruction},
-      (trans.instructions.push new_instr)[pc]? = some instr →
-      instr.type = .GOTO → instr.target = none := by
-  intro pc instr h h_ty
-  by_cases h_lt : pc < trans.instructions.size
-  · rw [Array.getElem?_push_lt h_lt] at h
-    have h' : trans.instructions[pc]? = some instr := by
-      rw [Array.getElem?_eq_getElem h_lt]; exact h
-    exact h_no_target h' h_ty
-  · have h_ge : trans.instructions.size ≤ pc := Nat.le_of_not_lt h_lt
-    by_cases h_eq : pc = trans.instructions.size
+/-- Per-instruction safety predicate: an instruction is safe for
+`NoGotoHasTarget'` if it isn't a GOTO with a non-`none` target. The
+translator only emits GOTOs with `target = none`, so every leaf-emit
+produces a safe instruction. -/
+private def IsSafeForNoGotoTarget (instr : CProverGOTO.Instruction) : Prop :=
+  instr.type = .GOTO → instr.target = none
+
+private theorem noGotoHasTarget'_push
+    (a : Array CProverGOTO.Instruction) (new_instr : Instruction)
+    (h : NoGotoHasTarget' a) (h_safe : IsSafeForNoGotoTarget new_instr) :
+    NoGotoHasTarget' (a.push new_instr) := by
+  intro pc instr h_at h_ty
+  by_cases h_lt : pc < a.size
+  · rw [Array.getElem?_push_lt h_lt] at h_at
+    have h' : a[pc]? = some instr := by
+      rw [Array.getElem?_eq_getElem h_lt]; exact h_at
+    exact h h' h_ty
+  · have h_ge : a.size ≤ pc := Nat.le_of_not_lt h_lt
+    by_cases h_eq : pc = a.size
     · subst h_eq
-      rw [Array.getElem?_push_size] at h
-      injection h with h
-      subst h
-      exact h_new h_ty
-    · have h_lt' : trans.instructions.size < pc := by omega
-      have h_oor : (trans.instructions.push new_instr).size ≤ pc := by
+      rw [Array.getElem?_push_size] at h_at
+      injection h_at with h_at
+      subst h_at
+      exact h_safe h_ty
+    · have h_lt' : a.size < pc := by omega
+      have h_oor : (a.push new_instr).size ≤ pc := by
         rw [Array.size_push]; omega
-      rw [Array.getElem?_eq_none h_oor] at h
-      exact absurd h (by simp)
+      rw [Array.getElem?_eq_none h_oor] at h_at
+      exact absurd h_at (by simp)
 
-/-- Appending two instructions whose targets are `none` (or that
-aren't GOTO) preserves `NoGotoHasTarget`. -/
-private theorem append_two_preserves_no_goto_target
-    (trans : Imperative.GotoTransform Core.Expression.TyEnv)
-    (i₀ i₁ : Instruction)
-    (h_no_target : NoGotoHasTarget trans)
-    (h_new0 : i₀.type = .GOTO → i₀.target = none)
-    (h_new1 : i₁.type = .GOTO → i₁.target = none) :
-    ∀ {pc : Nat} {instr : Instruction},
-      (trans.instructions.append #[i₀, i₁])[pc]? = some instr →
-      instr.type = .GOTO → instr.target = none := by
-  intro pc instr h h_ty
-  have h_eq : trans.instructions.append #[i₀, i₁]
-      = trans.instructions ++ #[i₀, i₁] := rfl
-  rw [h_eq] at h
-  by_cases h_lt : pc < trans.instructions.size
-  · rw [Array.getElem?_append_left h_lt] at h
-    exact h_no_target h h_ty
-  · have h_ge : trans.instructions.size ≤ pc := Nat.le_of_not_lt h_lt
-    by_cases h_eq0 : pc = trans.instructions.size
+private theorem noGotoHasTarget'_append_two
+    (a : Array CProverGOTO.Instruction) (i₀ i₁ : Instruction)
+    (h : NoGotoHasTarget' a)
+    (h_safe0 : IsSafeForNoGotoTarget i₀)
+    (h_safe1 : IsSafeForNoGotoTarget i₁) :
+    NoGotoHasTarget' (a ++ #[i₀, i₁]) := by
+  intro pc instr h_at h_ty
+  by_cases h_lt : pc < a.size
+  · rw [Array.getElem?_append_left h_lt] at h_at
+    exact h h_at h_ty
+  · have h_ge : a.size ≤ pc := Nat.le_of_not_lt h_lt
+    by_cases h_eq0 : pc = a.size
     · subst h_eq0
-      rw [Array.getElem?_append_right (Nat.le_refl _)] at h
-      simp at h
-      subst h
-      exact h_new0 h_ty
-    · by_cases h_eq1 : pc = trans.instructions.size + 1
+      rw [Array.getElem?_append_right (Nat.le_refl _)] at h_at
+      simp at h_at
+      subst h_at
+      exact h_safe0 h_ty
+    · by_cases h_eq1 : pc = a.size + 1
       · subst h_eq1
-        rw [Array.getElem?_append_right (Nat.le_add_right _ _)] at h
-        simp at h
-        subst h
-        exact h_new1 h_ty
-      · have h_oor : (trans.instructions ++ #[i₀, i₁]).size ≤ pc := by
+        rw [Array.getElem?_append_right (Nat.le_add_right _ _)] at h_at
+        simp at h_at
+        subst h_at
+        exact h_safe1 h_ty
+      · have h_oor : (a ++ #[i₀, i₁]).size ≤ pc := by
           rw [Array.size_append]
           simp; omega
-        rw [Array.getElem?_eq_none h_oor] at h
-        exact absurd h (by simp)
+        rw [Array.getElem?_eq_none h_oor] at h_at
+        exact absurd h_at (by simp)
 
-/-! ## Preservation through `Cmd.toGotoInstructions`
+/-! ## `BlocksFoldClosed` instance for `NoGotoHasTarget'`
 
-Each branch pushes (or appends) one or two of
-DECL / ASSIGN / ASSERT / ASSUME — never GOTO. So every emitted
-instruction's `(type ≠ .GOTO) → (target = none)` premise is
-vacuously OK. -/
+Every leaf emit pushes either:
+* a non-GOTO instruction (DECL, ASSIGN, ASSERT, ASSUME, FUNCTION_CALL,
+  LOCATION, END_FUNCTION) — vacuously safe; or
+* a GOTO with `target = none` (`emitCondGoto`, `emitUncondGoto`).
 
-theorem toGotoInstructions_preserves_no_goto_target
-    (T : Core.Expression.TyEnv) (fname : String)
-    (c : Imperative.Cmd Core.Expression)
-    (trans ans : Imperative.GotoTransform Core.Expression.TyEnv)
-    (h_run : Imperative.Cmd.toGotoInstructions T fname c trans = Except.ok ans)
-    (h_no_target : NoGotoHasTarget trans) :
-    NoGotoHasTarget ans := by
-  cases c with
-  | init v ty initVal md =>
-    cases initVal with
-    | det e =>
-      obtain ⟨_gty, _e_goto, i_decl, i_assn,
-              _, _, h_decl_ty, _, _, h_assn_ty, _, _, h_inst, _, _⟩ :=
-        Cmd_toGotoInstructions_init_det_ok T fname v ty e md trans ans h_run
-      intro pc instr h h_ty
-      rw [h_inst] at h
-      have h_decl_ng : i_decl.type = .GOTO → i_decl.target = none := by
-        intro h'; rw [h_decl_ty] at h'; cases h'
-      have h_assn_ng : i_assn.type = .GOTO → i_assn.target = none := by
-        intro h'; rw [h_assn_ty] at h'; cases h'
-      exact append_two_preserves_no_goto_target trans i_decl i_assn h_no_target
-        h_decl_ng h_assn_ng h h_ty
-    | nondet =>
-      obtain ⟨_gty, i_decl, _, h_decl_ty, _, _, h_inst, _, _⟩ :=
-        Cmd_toGotoInstructions_init_nondet_ok T fname v ty md trans ans h_run
-      intro pc instr h h_ty
-      rw [h_inst] at h
-      have h_decl_ng : i_decl.type = .GOTO → i_decl.target = none := by
-        intro h'; rw [h_decl_ty] at h'; cases h'
-      exact push_preserves_no_goto_target trans i_decl h_no_target h_decl_ng h h_ty
-  | set v src md =>
-    cases src with
-    | det e =>
-      obtain ⟨_gty, _e_goto, i_assn, _, _, h_assn_ty, _, _, h_inst, _⟩ :=
-        Cmd_toGotoInstructions_set_det_ok T fname v e md trans ans h_run
-      intro pc instr h h_ty
-      rw [h_inst] at h
-      have h_assn_ng : i_assn.type = .GOTO → i_assn.target = none := by
-        intro h'; rw [h_assn_ty] at h'; cases h'
-      exact push_preserves_no_goto_target trans i_assn h_no_target h_assn_ng h h_ty
-    | nondet =>
-      obtain ⟨_gty, i_assn, _, h_assn_ty, _, _, h_inst, _⟩ :=
-        Cmd_toGotoInstructions_set_nondet_ok T fname v md trans ans h_run
-      intro pc instr h h_ty
-      rw [h_inst] at h
-      have h_assn_ng : i_assn.type = .GOTO → i_assn.target = none := by
-        intro h'; rw [h_assn_ty] at h'; cases h'
-      exact push_preserves_no_goto_target trans i_assn h_no_target h_assn_ng h h_ty
-  | assert label e md =>
-    obtain ⟨_e_goto, i, _, h_assert_ty, _, _, h_inst, _⟩ :=
-      Cmd_toGotoInstructions_assert_ok T fname label e md trans ans h_run
-    intro pc instr h h_ty
-    rw [h_inst] at h
-    have h_assert_ng : i.type = .GOTO → i.target = none := by
-      intro h'; rw [h_assert_ty] at h'; cases h'
-    exact push_preserves_no_goto_target trans i h_no_target h_assert_ng h h_ty
-  | assume label e md =>
-    obtain ⟨_e_goto, i, _, h_assume_ty, _, _, h_inst, _⟩ :=
-      Cmd_toGotoInstructions_assume_ok T fname label e md trans ans h_run
-    intro pc instr h h_ty
-    rw [h_inst] at h
-    have h_assume_ng : i.type = .GOTO → i.target = none := by
-      intro h'; rw [h_assume_ty] at h'; cases h'
-    exact push_preserves_no_goto_target trans i h_no_target h_assume_ng h h_ty
-  | cover label e md =>
-    unfold Imperative.Cmd.toGotoInstructions at h_run
-    simp only at h_run
-    match h_expr :
-        Imperative.ToGoto.toGotoExpr (P := Core.Expression) e with
-    | .ok e_goto =>
-      simp only [h_expr, Bind.bind, Except.bind, pure, Except.pure] at h_run
-      injection h_run with h_run
-      intro pc instr h h_ty
-      subst h_run
-      let assert_inst : Instruction :=
-        { type := .ASSERT, locationNum := trans.nextLoc,
-          sourceLoc := metadataToSourceLoc md fname trans.sourceText
-            (comment := md.getPropertySummary.getD s!"cover {label}"),
-          guard := e_goto }
-      have h' : (trans.instructions.push assert_inst)[pc]? = some instr := h
-      have h_assert_ng : assert_inst.type = .GOTO → assert_inst.target = none := by
-        intro h_eq
-        have : InstructionType.ASSERT = InstructionType.GOTO := h_eq
-        cases this
-      exact push_preserves_no_goto_target trans assert_inst h_no_target h_assert_ng h' h_ty
-    | .error _ =>
-      simp [h_expr, Bind.bind, Except.bind] at h_run
+But the per-type vocabulary facts in `ofPushSafe` only see the type,
+not the GOTO's target. The trick: for non-GOTO types, `IsSafeForNoGotoTarget`
+is vacuously true; for GOTO, we'd need the target-is-none fact, which
+isn't visible to type-only vocabulary. So we don't use `ofPushSafe`
+directly — instead we provide the GOTO closures by hand, since they
+naturally know `target = none`. The non-GOTO leaves can still be
+discharged via push/append using the type-non-GOTO vocabulary. -/
 
-/-! ## Preservation through `coreCFGToGotoCmdStep`
-
-The per-cmd step in the CFG translator either:
-* delegates to `Cmd.toGotoInstructions` (`.cmd c` case), or
-* pushes a single FUNCTION_CALL instruction (`.call` case).
-
-Neither emits a GOTO. -/
-
-theorem coreCFGToGotoCmdStep_preserves_no_goto_target
-    (fname : String) (cmd : Core.Command)
-    (trans ans : Imperative.GotoTransform Core.Expression.TyEnv)
-    (h_run : Strata.coreCFGToGotoCmdStep fname trans cmd = Except.ok ans)
-    (h_no_target : NoGotoHasTarget trans) :
-    NoGotoHasTarget ans := by
-  cases cmd with
-  | cmd c =>
-    rw [coreCFGToGotoCmdStep_cmd] at h_run
-    exact toGotoInstructions_preserves_no_goto_target trans.T fname c trans ans h_run h_no_target
-  | call procName callArgs md =>
-    -- The `.call` branch pushes a FUNCTION_CALL instruction.
+instance instBlocksFoldClosed_NoGotoHasTarget' :
+    BlocksFoldClosed NoGotoHasTarget' where
+  toGotoInstructions T fname c trans ans h_run h := by
+    show NoGotoHasTarget' ans.instructions
+    cases c with
+    | init v ty initVal md =>
+      cases initVal with
+      | det e =>
+        obtain ⟨_gty, _e_goto, i_decl, i_assn,
+                _, _, h_decl_ty, _, _, h_assn_ty, _, _, h_inst, _, _⟩ :=
+          Cmd_toGotoInstructions_init_det_ok T fname v ty e md trans ans h_run
+        rw [h_inst]
+        have h_eq : trans.instructions.append #[i_decl, i_assn]
+                  = trans.instructions ++ #[i_decl, i_assn] := rfl
+        rw [h_eq]
+        have h_safe0 : IsSafeForNoGotoTarget i_decl := fun h' => by
+          rw [h_decl_ty] at h'; exact (InstructionType.noConfusion h')
+        have h_safe1 : IsSafeForNoGotoTarget i_assn := fun h' => by
+          rw [h_assn_ty] at h'; exact (InstructionType.noConfusion h')
+        intro pc instr h_at h_ty
+        exact noGotoHasTarget'_append_two trans.instructions i_decl i_assn h
+          h_safe0 h_safe1 h_at h_ty
+      | nondet =>
+        obtain ⟨_gty, i_decl, _, h_decl_ty, _, _, h_inst, _, _⟩ :=
+          Cmd_toGotoInstructions_init_nondet_ok T fname v ty md trans ans h_run
+        rw [h_inst]
+        exact noGotoHasTarget'_push trans.instructions i_decl h
+          (fun h' => by rw [h_decl_ty] at h'; exact (InstructionType.noConfusion h'))
+    | set v src md =>
+      cases src with
+      | det e =>
+        obtain ⟨_gty, _e_goto, i_assn, _, _, h_assn_ty, _, _, h_inst, _⟩ :=
+          Cmd_toGotoInstructions_set_det_ok T fname v e md trans ans h_run
+        rw [h_inst]
+        exact noGotoHasTarget'_push trans.instructions i_assn h
+          (fun h' => by rw [h_assn_ty] at h'; exact (InstructionType.noConfusion h'))
+      | nondet =>
+        obtain ⟨_gty, i_assn, _, h_assn_ty, _, _, h_inst, _⟩ :=
+          Cmd_toGotoInstructions_set_nondet_ok T fname v md trans ans h_run
+        rw [h_inst]
+        exact noGotoHasTarget'_push trans.instructions i_assn h
+          (fun h' => by rw [h_assn_ty] at h'; exact (InstructionType.noConfusion h'))
+    | assert label e md =>
+      obtain ⟨_e_goto, i, _, h_assert_ty, _, _, h_inst, _⟩ :=
+        Cmd_toGotoInstructions_assert_ok T fname label e md trans ans h_run
+      rw [h_inst]
+      exact noGotoHasTarget'_push trans.instructions i h
+        (fun h' => by rw [h_assert_ty] at h'; exact (InstructionType.noConfusion h'))
+    | assume label e md =>
+      obtain ⟨_e_goto, i, _, h_assume_ty, _, _, h_inst, _⟩ :=
+        Cmd_toGotoInstructions_assume_ok T fname label e md trans ans h_run
+      rw [h_inst]
+      exact noGotoHasTarget'_push trans.instructions i h
+        (fun h' => by rw [h_assume_ty] at h'; exact (InstructionType.noConfusion h'))
+    | cover label e md =>
+      unfold Imperative.Cmd.toGotoInstructions at h_run
+      simp only at h_run
+      match h_expr :
+          Imperative.ToGoto.toGotoExpr (P := Core.Expression) e with
+      | .ok e_goto =>
+        simp only [h_expr, Bind.bind, Except.bind, pure, Except.pure] at h_run
+        injection h_run with h_run
+        subst h_run
+        let assert_inst : CProverGOTO.Instruction :=
+          { type := .ASSERT, locationNum := trans.nextLoc,
+            sourceLoc := metadataToSourceLoc md fname trans.sourceText
+              (comment := md.getPropertySummary.getD s!"cover {label}"),
+            guard := e_goto }
+        show NoGotoHasTarget' (trans.instructions.push assert_inst)
+        exact noGotoHasTarget'_push trans.instructions assert_inst h
+          (fun h_eq => by
+            have : InstructionType.ASSERT = InstructionType.GOTO := h_eq
+            cases this)
+      | .error _ =>
+        simp [h_expr, Bind.bind, Except.bind] at h_run
+  cmdStep_call fname cmd trans ans h_call h_run h := by
+    obtain ⟨procName, callArgs, md, h_eq⟩ := h_call
+    subst h_eq
+    -- The .call branch pushes a single FUNCTION_CALL.
     unfold Strata.coreCFGToGotoCmdStep at h_run
     simp only at h_run
     generalize h_args :
@@ -272,229 +255,50 @@ theorem coreCFGToGotoCmdStep_preserves_no_goto_target
     | .ok argExprs, _ =>
       simp only [Bind.bind, Except.bind, pure, Except.pure] at h_run
       injection h_run with h_run
-      intro pc instr h h_ty
-      rw [← h_run] at h
-      by_cases h_lt : pc < trans.instructions.size
-      · rw [Array.getElem?_push_lt h_lt] at h
-        have h' : trans.instructions[pc]? = some instr := by
-          rw [Array.getElem?_eq_getElem h_lt]; exact h
-        exact h_no_target h' h_ty
-      · have h_ge : trans.instructions.size ≤ pc := Nat.le_of_not_lt h_lt
-        by_cases h_eq : pc = trans.instructions.size
-        · subst h_eq
-          rw [Array.getElem?_push_size] at h
-          injection h with h
-          subst h
-          -- The pushed inst has type FUNCTION_CALL; but h_ty says .GOTO.
-          exfalso
-          have : InstructionType.FUNCTION_CALL = InstructionType.GOTO := h_ty
-          cases this
-        · have h_lt' : trans.instructions.size < pc := by omega
-          have h_size_h : (trans.instructions.size + 1) ≤ pc := by omega
-          rw [Array.getElem?_eq_none] at h
-          · exact absurd h (by simp)
-          · rw [Array.size_push]; omega
+      rw [← h_run]
+      apply noGotoHasTarget'_push _ _ h
+      intro h_eq
+      -- The pushed FUNCTION_CALL instruction's type ≠ GOTO.
+      have : InstructionType.FUNCTION_CALL = InstructionType.GOTO := h_eq
+      cases this
     | .error _, _ =>
       simp [Bind.bind, Except.bind] at h_run
-
-/-! ## Preservation through `cmdsFoldlM` -/
-
-theorem cmdsFoldlM_preserves_no_goto_target
-    (fname : String) (cmds : List Core.Command)
-    (trans ans : Imperative.GotoTransform Core.Expression.TyEnv)
-    (h_run : cmds.foldlM (Strata.coreCFGToGotoCmdStep fname) trans = Except.ok ans)
-    (h_no_target : NoGotoHasTarget trans) :
-    NoGotoHasTarget ans := by
-  induction cmds generalizing trans with
-  | nil =>
-    simp [List.foldlM, pure, Except.pure] at h_run
-    subst h_run; exact h_no_target
-  | cons cmd rest ih =>
-    rw [List.foldlM_cons] at h_run
-    match h_step : Strata.coreCFGToGotoCmdStep fname trans cmd with
-    | .ok trans' =>
-      rw [h_step] at h_run
-      simp at h_run
-      have h_no_target' : NoGotoHasTarget trans' :=
-        coreCFGToGotoCmdStep_preserves_no_goto_target fname cmd trans trans' h_step h_no_target
-      apply ih trans' h_run
-      exact h_no_target'
-    | .error _ =>
-      rw [h_step] at h_run
-      simp [Bind.bind, Except.bind] at h_run
-
-/-! ## Preservation through emit helpers (LOCATION / GOTO / END_FUNCTION)
-
-For LOCATION/END_FUNCTION: not GOTO, so vacuously OK.
-For GOTO emit-helpers: pushed GOTO has `target := none` by construction. -/
-
-/-- `emitLabel` pushes a LOCATION instruction. -/
-theorem emitLabel_preserves_no_goto_target
-    (label : String) (srcLoc : SourceLocation)
-    (trans : Imperative.GotoTransform Core.Expression.TyEnv)
-    (h_no_target : NoGotoHasTarget trans) :
-    NoGotoHasTarget (Imperative.emitLabel label srcLoc trans) := by
-  intro pc instr h h_ty
-  let new_instr : Instruction :=
-    { type := .LOCATION, locationNum := trans.nextLoc, sourceLoc := srcLoc,
-      labels := [label], code := Code.skip }
-  have h' : (trans.instructions.push new_instr)[pc]? = some instr := h
-  have h_new_ng : new_instr.type = .GOTO → new_instr.target = none := by
-    intro h_eq
-    have : InstructionType.LOCATION = InstructionType.GOTO := h_eq
-    cases this
-  exact push_preserves_no_goto_target trans new_instr h_no_target h_new_ng h' h_ty
-
-/-- `emitCondGoto` pushes a GOTO with `target := none`. -/
-theorem emitCondGoto_preserves_no_goto_target
-    (guard : Expr) (srcLoc : SourceLocation)
-    (trans : Imperative.GotoTransform Core.Expression.TyEnv)
-    (h_no_target : NoGotoHasTarget trans) :
-    NoGotoHasTarget (Imperative.emitCondGoto guard srcLoc trans).fst := by
-  intro pc instr h h_ty
-  let new_instr : Instruction :=
-    { type := .GOTO, locationNum := trans.nextLoc, sourceLoc := srcLoc,
-      guard := guard, target := none }
-  have h' : (trans.instructions.push new_instr)[pc]? = some instr := h
-  have h_new_ng : new_instr.type = .GOTO → new_instr.target = none := fun _ => rfl
-  exact push_preserves_no_goto_target trans new_instr h_no_target h_new_ng h' h_ty
-
-/-- `emitUncondGoto` pushes a GOTO with `target := none`. -/
-theorem emitUncondGoto_preserves_no_goto_target
-    (srcLoc : SourceLocation)
-    (trans : Imperative.GotoTransform Core.Expression.TyEnv)
-    (h_no_target : NoGotoHasTarget trans) :
-    NoGotoHasTarget (Imperative.emitUncondGoto srcLoc trans).fst := by
-  intro pc instr h h_ty
-  let new_instr : Instruction :=
-    { type := .GOTO, locationNum := trans.nextLoc, sourceLoc := srcLoc,
-      guard := Expr.true, target := none }
-  have h' : (trans.instructions.push new_instr)[pc]? = some instr := h
-  have h_new_ng : new_instr.type = .GOTO → new_instr.target = none := fun _ => rfl
-  exact push_preserves_no_goto_target trans new_instr h_no_target h_new_ng h' h_ty
-
-/-- The `.finish` branch's END_FUNCTION emit. -/
-theorem endFunction_emit_preserves_no_goto_target
-    (md : Imperative.MetaData Core.Expression) (fname : String)
-    (trans : Imperative.GotoTransform Core.Expression.TyEnv)
-    (h_no_target : NoGotoHasTarget trans) :
-    ∀ {pc : Nat} {instr : Instruction},
-      (trans.instructions.push (endFunctionInstr md fname trans))[pc]? =
-        some instr →
-      instr.type = .GOTO → instr.target = none := by
-  intro pc instr h h_ty
-  have h_new_ng : (endFunctionInstr md fname trans).type = .GOTO →
-      (endFunctionInstr md fname trans).target = none := by
+  emitLabel label srcLoc trans h := by
+    -- emitLabel pushes a LOCATION instruction.
+    let new_instr : CProverGOTO.Instruction :=
+      { type := .LOCATION, locationNum := trans.nextLoc, sourceLoc := srcLoc,
+        labels := [label], code := Code.skip }
+    show NoGotoHasTarget' (trans.instructions.push new_instr)
+    exact noGotoHasTarget'_push trans.instructions new_instr h
+      (fun h_eq => by
+        have : InstructionType.LOCATION = InstructionType.GOTO := h_eq
+        cases this)
+  emitCondGoto guard srcLoc trans h := by
+    -- emitCondGoto pushes a GOTO with target := none.
+    let new_instr : CProverGOTO.Instruction :=
+      { type := .GOTO, locationNum := trans.nextLoc, sourceLoc := srcLoc,
+        guard := guard, target := none }
+    show NoGotoHasTarget' (trans.instructions.push new_instr)
+    exact noGotoHasTarget'_push trans.instructions new_instr h (fun _ => rfl)
+  emitUncondGoto srcLoc trans h := by
+    -- emitUncondGoto pushes a GOTO with guard := true, target := none.
+    let new_instr : CProverGOTO.Instruction :=
+      { type := .GOTO, locationNum := trans.nextLoc, sourceLoc := srcLoc,
+        guard := Expr.true, target := none }
+    show NoGotoHasTarget' (trans.instructions.push new_instr)
+    exact noGotoHasTarget'_push trans.instructions new_instr h (fun _ => rfl)
+  endFunctionEmit md fname trans h := by
+    apply noGotoHasTarget'_push _ _ h
     intro h_eq
     unfold endFunctionInstr at h_eq
     have : InstructionType.END_FUNCTION = InstructionType.GOTO := h_eq
     cases this
-  exact push_preserves_no_goto_target trans (endFunctionInstr md fname trans) h_no_target h_new_ng h h_ty
 
-/-! ## Preservation through `coreCFGToGotoBlockStep` -/
-
-theorem coreCFGToGotoBlockStep_preserves_no_goto_target
-    (fname : String) (lblBlk : String × Imperative.DetBlock String Core.Command Core.Expression)
-    (st st' : Strata.CoreCFGTransLoopState)
-    (h_run : Strata.coreCFGToGotoBlockStep fname st lblBlk = Except.ok st')
-    (h_no_target : NoGotoHasTarget st.trans) :
-    NoGotoHasTarget st'.trans := by
-  obtain ⟨label, blk⟩ := lblBlk
-  have h_after_label : NoGotoHasTarget (Imperative.emitLabel label
-      { CProverGOTO.SourceLocation.nil with function := fname }
-      st.trans) :=
-    emitLabel_preserves_no_goto_target label
-      { CProverGOTO.SourceLocation.nil with function := fname } st.trans h_no_target
-  unfold Strata.coreCFGToGotoBlockStep at h_run
-  simp only [Bind.bind, Except.bind, pure, Except.pure] at h_run
-  generalize h_inner :
-    blk.cmds.foldlM (Strata.coreCFGToGotoCmdStep fname)
-      (Imperative.emitLabel label
-        { CProverGOTO.SourceLocation.nil with function := fname } st.trans) = inner at h_run
-  match inner, h_inner with
-  | .ok trans₂, h_inner =>
-    have h_after_cmds : NoGotoHasTarget trans₂ :=
-      cmdsFoldlM_preserves_no_goto_target fname blk.cmds _ trans₂ h_inner h_after_label
-    cases h_t : blk.transfer with
-    | condGoto cond lt lf md =>
-      rw [h_t] at h_run
-      simp only at h_run
-      generalize h_cond_eval :
-          Lambda.LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩) [] cond = cond_eval at h_run
-      match cond_eval, h_cond_eval with
-      | .ok cond_expr, _ =>
-        simp only at h_run
-        injection h_run with h_run
-        rw [← h_run]
-        intro pc instr h h_ty
-        have h_after_neg : NoGotoHasTarget
-            (Imperative.emitCondGoto (Expr.not cond_expr)
-              (Imperative.metadataToSourceLoc md fname trans₂.sourceText)
-              trans₂).fst :=
-          emitCondGoto_preserves_no_goto_target
-            (Expr.not cond_expr)
-            (Imperative.metadataToSourceLoc md fname trans₂.sourceText) trans₂ h_after_cmds
-        have h_after_uncond : NoGotoHasTarget
-            (Imperative.emitUncondGoto
-              (Imperative.metadataToSourceLoc md fname trans₂.sourceText)
-              (Imperative.emitCondGoto (Expr.not cond_expr)
-                (Imperative.metadataToSourceLoc md fname trans₂.sourceText)
-                trans₂).fst).fst :=
-          emitUncondGoto_preserves_no_goto_target
-            (Imperative.metadataToSourceLoc md fname trans₂.sourceText) _ h_after_neg
-        exact h_after_uncond h h_ty
-      | .error _, _ => simp at h_run
-    | finish md =>
-      rw [h_t] at h_run
-      simp only at h_run
-      injection h_run with h_run
-      rw [← h_run]
-      intro pc instr h h_ty
-      exact endFunction_emit_preserves_no_goto_target md fname trans₂ h_after_cmds h h_ty
-  | .error _, _ => simp at h_run
-
-/-! ## Preservation through `blocksFoldlM` -/
-
-theorem blocksFoldlM_preserves_no_goto_target
-    (fname : String)
-    (blocks : List (String × Imperative.DetBlock String Core.Command Core.Expression))
-    (st st' : Strata.CoreCFGTransLoopState)
-    (h_run : blocks.foldlM (Strata.coreCFGToGotoBlockStep fname) st = Except.ok st')
-    (h_no_target : NoGotoHasTarget st.trans) :
-    NoGotoHasTarget st'.trans := by
-  induction blocks generalizing st with
-  | nil =>
-    simp [List.foldlM, pure, Except.pure] at h_run
-    subst h_run; exact h_no_target
-  | cons head rest ih =>
-    rw [List.foldlM_cons] at h_run
-    match h_step : Strata.coreCFGToGotoBlockStep fname st head with
-    | .ok st₁ =>
-      rw [h_step] at h_run
-      simp only [Bind.bind, Except.bind] at h_run
-      have h_no_target₁ : NoGotoHasTarget st₁.trans :=
-        coreCFGToGotoBlockStep_preserves_no_goto_target fname head st st₁ h_step h_no_target
-      apply ih st₁ h_run
-      exact h_no_target₁
-    | .error _ =>
-      rw [h_step] at h_run
-      simp [Bind.bind, Except.bind] at h_run
-
-/-! ## Preservation through `coreCFGToGotoPatchStep` (no contracts)
+/-! ## Preservation through the patches-fold (no-contracts case)
 
 Under empty `loopContracts`, the patch step is a no-op on `trans`
 (per A4's `coreCFGToGotoPatchStep_no_contracts_trans_eq`). So
 `NoGotoHasTarget` transfers trivially. -/
-
-theorem coreCFGToGotoPatchStep_preserves_no_goto_target_no_contracts
-    (labelMap : Std.HashMap String Nat)
-    (acc acc' : List (Nat × Nat) × Imperative.GotoTransform Core.Expression.TyEnv)
-    (idxLabel : Nat × String)
-    (h_run : Strata.coreCFGToGotoPatchStep labelMap ∅ acc idxLabel = Except.ok acc')
-    (h_no_target : NoGotoHasTarget acc.2) :
-    NoGotoHasTarget acc'.2 := by
-  rw [coreCFGToGotoPatchStep_no_contracts_trans_eq labelMap acc acc' idxLabel h_run]
-  exact h_no_target
 
 theorem patchesFoldlM_preserves_no_goto_target_no_contracts
     (labelMap : Std.HashMap String Nat)
@@ -952,12 +756,12 @@ theorem everyGotoTargetIsLabelMapEntry_of_translator_translatorMap
     rw [h_blocks_run] at h_blocks_run'
     injection h_blocks_run'
   subst h_st_final_eq
-  -- Step 2: NoGotoHasTarget through blocks-fold + patches-fold.
-  have h_init_no_goto_target_st :
-      NoGotoHasTarget (coreCFGToGotoInitState trans₀).trans := h_init_no_goto_target
-  have h_no_goto_target_st_final : NoGotoHasTarget st_final.trans :=
-    blocksFoldlM_preserves_no_goto_target functionName cfg.blocks _ st_final
-      h_blocks_run h_init_no_goto_target_st
+  -- Step 2: NoGotoHasTarget through blocks-fold (via BlocksFoldClosed) +
+  -- patches-fold no-op.
+  have h_init' : NoGotoHasTarget' trans₀.instructions := h_init_no_goto_target
+  have h_no_goto_target_st_final : NoGotoHasTarget' st_final.trans.instructions :=
+    BlocksFoldClosed.of_blocks_run (P := NoGotoHasTarget') functionName cfg trans₀
+      h_init' st_final h_blocks_run
   -- Step 3: patchesFoldlM with empty contracts: trans unchanged.
   have h_lc_empty := h_loopContracts_empty_post st_final h_blocks_run
   rw [h_lc_empty] at h_patches_run
