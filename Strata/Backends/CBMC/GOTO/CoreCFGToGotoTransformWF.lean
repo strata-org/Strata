@@ -14,47 +14,30 @@ import all Strata.Backends.CBMC.GOTO.CoreCFGToGOTOPipeline
 
 /-! # Discharging `WellFormedTranslation` against `coreCFGToGotoTransform`
 
-This module is the start of Gap A in
-`docs/CoreToGOTO_CorrectnessAnalysis.md`: prove that the program output
-by `Strata.coreCFGToGotoTransform` (composed with `procedureToGotoCtxViaCFG`)
-satisfies the `WellFormedTranslation` predicate consumed by
-`CProverGOTO.coreCFGToGoto_forward_simulation`.
+This module proves that the program output by
+`Strata.coreCFGToGotoTransform` (composed with
+`procedureToGotoCtxViaCFG`) satisfies the `WellFormedTranslation`
+predicate consumed by `CProverGOTO.coreCFGToGoto_forward_simulation`.
 
-## What's here
-
-This file isolates the **mechanical sub-lemmas** that any full discharge
-will need, plus a small number of layout invariants that follow directly
-from `Cmd.toGotoInstructions`'s shape:
+The file is organised in three layers:
 
 1. **Per-`Cmd` shape lemmas** (`Cmd_toGotoInstructions_*_ok`): for each
    constructor of `Imperative.Cmd Core.Expression` (in the admitted
-   fragment), if `Cmd.toGotoInstructions` succeeds, the resulting
-   `GotoTransform` has a precisely-described `instructions` array
-   appended and `nextLoc` advanced by exactly the count predicted by
+   fragment), the resulting `GotoTransform` has a precisely-described
+   `instructions` suffix appended and `nextLoc` advanced by exactly
    `Imperative.Cmd.gotoInstrCount`.
 
 2. **Emit-helper shape lemmas** (`emitLabel_shape`, `emitCondGoto_shape`,
-   `emitUncondGoto_shape`): each one-line, characterising the suffix
-   each helper appends.
+   `emitUncondGoto_shape`): one-liners characterising each helper's
+   suffix.
 
-3. **`patchGotoTargets` invariants**: the second pass changes only the
-   `target` field of selected instructions, so all type/guard/code
-   /locationNum invariants above transfer through patching unchanged.
+3. **`patchGotoTargets` invariants**: the second pass mutates only the
+   `target` field, so all type/guard/code/locationNum invariants
+   transfer through patching unchanged.
 
-## What's not here
-
-The full `coreCFGToGotoTransform_wellFormed` theorem requires an
-**inductive invariant over the imperative `for`-loop** in the translator,
-relating the partial-translation state after `k` blocks to a *partial*
-`WellFormedTranslation` over `cfg.blocks.take k`. That invariant — and
-the patching-correctness arguments tying `pendingPatches` to the final
-`labelMap` — is the next, larger step. See
-`docs/_workers/A_gap_a_report.md` for the concrete plan.
-
-To keep `lake build` green at every commit we deliberately do **not**
-state the top-level theorem in this module; it would either need a
-`sorry` (forbidden) or a 500+-line proof we don't have. The sub-lemmas
-below stand alone and remain useful when the loop induction is added.
+These layers compose into `coreCFGToGotoTransform_wellFormed_nonempty`
+and the strengthened `coreCFGToGotoTransform_wellFormed_strengthened`
+at the bottom of the module.
 -/
 
 namespace CProverGOTO
@@ -447,9 +430,8 @@ theorem instrAt_of_append_two
 
 /-! ## Per-`Cmd` `CmdEmittedAt` builders
 
-These are the bridges from the per-`Cmd` shape lemmas above to the
-`CmdEmittedAt` predicate consumed by `WellFormedTranslation`. Each
-takes:
+Bridges from the per-`Cmd` shape lemmas above to the `CmdEmittedAt`
+predicate consumed by `WellFormedTranslation`. Each takes:
 
 * the result `ans` of `Cmd.toGotoInstructions` (matched via the
   corresponding shape lemma),
@@ -460,20 +442,11 @@ takes:
 
 and produces `CmdEmittedAt pgm trans.nextLoc cmd`. The "prefix" form
 abstracts away the patching pass and the trailing instructions emitted
-by later blocks.
-
-These builders are deliberately narrow — each handles exactly one of
-the seven `Imperative.Cmd` constructors. The driver lemma that pieces
-them together is part of the loop-induction work.
+by later blocks. One bridge per `Imperative.Cmd` constructor.
 -/
 
 /-- Bridge from `Cmd_toGotoInstructions_init_det_ok` to
-`CmdEmittedAt.init_det`.
-
-Round-7 update: `h_decl_code`/`h_assn_code` now expose the exact symbol
-shape (`Expr.symbol (identToString v) gty`) instead of the existential
-`∃ lhs`. The shape lemma in `Cmd_toGotoInstructions_init_det_ok` already
-provides this evidence directly. -/
+`CmdEmittedAt.init_det`. -/
 theorem cmdEmittedAt_init_det
     (δ : Imperative.SemanticEval Core.Expression)
     (δ_goto : SemanticEvalGoto Core.Expression)
@@ -500,9 +473,7 @@ theorem cmdEmittedAt_init_det
     h_decl_code h_assn_code h_translated
 
 /-- Bridge from `Cmd_toGotoInstructions_init_nondet_ok` to
-`CmdEmittedAt.init_nondet`.
-
-Round-7 update: `h_decl_code` now exposes the exact symbol shape. -/
+`CmdEmittedAt.init_nondet`. -/
 theorem cmdEmittedAt_init_nondet
     (δ : Imperative.SemanticEval Core.Expression)
     (δ_goto : SemanticEvalGoto Core.Expression)
@@ -521,9 +492,7 @@ theorem cmdEmittedAt_init_nondet
     gty h_decl_code
 
 /-- Bridge from `Cmd_toGotoInstructions_set_det_ok` to
-`CmdEmittedAt.set_det`.
-
-Round-7 update: `h_assn_code` now exposes the exact symbol shape. -/
+`CmdEmittedAt.set_det`. -/
 theorem cmdEmittedAt_set_det
     (δ : Imperative.SemanticEval Core.Expression)
     (δ_goto : SemanticEvalGoto Core.Expression)
@@ -608,19 +577,11 @@ theorem pgm_instrAt_of_push_invariant
   unfold Program.instrAt
   rw [h_prefix nextLoc h_lt, h_eq]
 
-/-! ## Per-`Cmd` driver lemma
+/-! ## Per-`Cmd` driver lemmas
 
-`cmdEmittedAt_of_toGotoInstructions_pushCases` packages the four
-`Cmd.toGotoInstructions` cases that emit a *single* instruction
-(set_det, assert, assume, init_nondet) into one drive-by lemma. The
-two-instruction case (`init_det`) and the unsupported nondet-set case
-need separate handling — a fuller driver expanding to all five cases
-is the next step.
-
-The lemma takes the loop invariant `trans.instructions.size =
-trans.nextLoc` explicitly: this holds at the start (when
-`trans.instructions = #[]` and `trans.nextLoc = 0`), and is preserved
-by every emit-helper and `Cmd.toGotoInstructions` branch. -/
+The per-Cmd drivers package each `Cmd.toGotoInstructions` case into a
+`CmdEmittedAt` builder, taking the loop invariant
+`trans.instructions.size = trans.nextLoc` explicitly. -/
 
 theorem cmdEmittedAt_assert_of_toGotoInstructions
     (T : Core.Expression.TyEnv) (fname : String)
@@ -856,18 +817,14 @@ theorem cmdEmittedAt_init_det_of_toGotoInstructions
 
 /-! ## `set_nondet` shape and driver
 
-Worker A's mechanical sub-lemmas covered the four single-instruction
-emit cases that take an `ExprTranslated` witness. The `set _ .nondet`
-case is structurally similar — single ASSIGN at `pc` — but with a
-side-effect-Nondet RHS rather than a translated expression. Adding
-the missing shape lemma + driver here unblocks the dispatcher. -/
+Structurally similar to the four other single-instruction emit cases
+(single ASSIGN at `pc`), but with a side-effect-Nondet RHS rather than
+a translated expression. -/
 
 /-- `.set v .nondet md` succeeds iff `lookupType T v` succeeds; the
 result has one new ASSIGN appended whose RHS is a side-effect Nondet.
-
-Round-7 update: the lhs operand is now exposed as
-`Expr.symbol (identToString v) gty` (matching the strengthened
-`CmdEmittedAt.set_nondet`). The rhs's `id`/`type` are exposed as well. -/
+The lhs is exposed as `Expr.symbol (identToString v) gty` and the rhs's
+`id`/`type` are exposed (matching `CmdEmittedAt.set_nondet`). -/
 theorem Cmd_toGotoInstructions_set_nondet_ok
     (T : Core.Expression.TyEnv) (fname : String)
     (v : Core.Expression.Ident)
@@ -911,10 +868,7 @@ theorem Cmd_toGotoInstructions_set_nondet_ok
     simp [h_ty, Bind.bind, Except.bind] at h
 
 /-- Bridge from `Cmd_toGotoInstructions_set_nondet_ok` to
-`CmdEmittedAt.set_nondet`.
-
-Round-7 update: the strengthened constructor takes `gty` and the
-detailed nondet-rhs witness directly. -/
+`CmdEmittedAt.set_nondet`. -/
 theorem cmdEmittedAt_set_nondet
     (δ : Imperative.SemanticEval Core.Expression)
     (δ_goto : SemanticEvalGoto Core.Expression)
@@ -961,18 +915,12 @@ theorem cmdEmittedAt_set_nondet_of_toGotoInstructions
 
 /-! ## Per-Cmd dispatcher
 
-The dispatcher case-splits on an `Imperative.Cmd Core.Expression`
-admitted by `isAdmittedCmd` and produces a `CmdEmittedAt` witness from
-a successful `Cmd.toGotoInstructions` call. It uses the per-shape
-drivers above (`cmdEmittedAt_init_det_of_toGotoInstructions`,
-`cmdEmittedAt_init_nondet_of_toGotoInstructions`,
-`cmdEmittedAt_set_det_of_toGotoInstructions`,
-`cmdEmittedAt_assert_of_toGotoInstructions`,
-`cmdEmittedAt_assume_of_toGotoInstructions`).
-
-The translator never emits `.cover` (excluded by `isAdmittedCmd`) nor
-`.set _ .nondet` (excluded under the same flag); both cases are
-discharged contradictorily from `h_admitted`.
+Case-splits on an `Imperative.Cmd Core.Expression` admitted by
+`isAdmittedCmd` and produces a `CmdEmittedAt` witness from a successful
+`Cmd.toGotoInstructions` call, dispatching to the per-shape drivers
+above. `.cover` and `.init _ _ .nondet` are excluded by
+`isAdmittedCmd` and discharged contradictorily; `.set _ .nondet` is
+admitted and routed through `cmdEmittedAt_set_nondet_of_toGotoInstructions`.
 -/
 
 theorem cmdEmittedAt_of_toGotoInstructions
@@ -1012,13 +960,6 @@ theorem cmdEmittedAt_of_toGotoInstructions
         T fname v e md trans ans h_run h_invariant
         pgm δ δ_goto δ_goto_bool h_expr_corr (h_tx_eq e) h_prefix
     | nondet =>
-      -- `set _ .nondet` is admitted under `isAdmittedCmd` but the
-      -- caller (loop-induction) treats it specially because it has a
-      -- different RHS shape. We could discharge it via a
-      -- `cmdEmittedAt_set_nondet_of_toGotoInstructions` driver — for
-      -- now we leave this as a documented gap because the parallel-A
-      -- run did not land that driver. The pattern is identical to
-      -- the `set_det` driver minus the `ExprTranslated` witness.
       exact cmdEmittedAt_set_nondet_of_toGotoInstructions
         T fname v md trans ans h_run h_invariant pgm
         δ δ_goto δ_goto_bool h_prefix
@@ -1240,8 +1181,7 @@ theorem toGotoInstructions_preserves_size_eq
     rw [h_inst, h_next, Array.size_push, h_size]
   | cover label e md =>
     -- `cover` is structurally similar to `assert` but emits an ASSERT
-    -- with a different comment. The shape lemma was not landed by
-    -- Worker A; for the size-preservation argument we directly unfold.
+    -- with a different comment. We unfold directly for size-preservation.
     unfold Imperative.Cmd.toGotoInstructions at h_run
     simp only at h_run
     match h_expr :
@@ -1657,8 +1597,8 @@ theorem patchGotoTargets_preserves_locationNum_eq_index
       exact h2
   exact hgen _ _ h_loc i instr
 
-/-- A single patch step preserves the `labels` field. R10a uses this
-to lift the `labels = [l]` invariant from `st_final.trans` to `ans`. -/
+/-- A single patch step preserves the `labels` field. Used to lift the
+`labels = [l]` invariant from `st_final.trans` to `ans`. -/
 private theorem patch_one_preserves_labels
     (a : Array CProverGOTO.Instruction) (idx tgt : Nat)
     (i : Nat) (instr : CProverGOTO.Instruction)
@@ -2434,10 +2374,9 @@ theorem hashMapToLabelMap_insert
   · have h' : ¬ label = l := fun h' => h h'.symm
     simp [h, h']
 
-/-! ## Per-cmd / per-block step preservation (refactor-aware)
+/-! ## Per-cmd / per-block step preservation
 
-After the round-3 refactor of `coreCFGToGotoTransform`, the translator
-is structured as
+`coreCFGToGotoTransform` is structured as
 
 ```
 cfg.blocks.foldlM (Strata.coreCFGToGotoBlockStep fname) initSt
@@ -3271,11 +3210,9 @@ theorem coreCFGToGotoBlockStep_location_at_pc
 
 /-- Strengthened version of `coreCFGToGotoBlockStep_location_at_pc`:
 the LOCATION instruction at `st.trans.nextLoc` carries the block's
-label in its `labels` field — exactly `[label]`.
-
-R10a uses this to pin `wf.labelMap l` to the translator's
-hashmap-keyed labelMap, by exhibiting at most one LOCATION per label
-in the program. -/
+label in its `labels` field — exactly `[label]`. Used to pin
+`wf.labelMap l` to the translator's hashmap-keyed labelMap by
+exhibiting at most one LOCATION per label. -/
 theorem coreCFGToGotoBlockStep_location_at_pc_with_labels
     (fname : String) (lblBlk : String × Imperative.DetBlock String Core.Command Core.Expression)
     (st st' : Strata.CoreCFGTransLoopState)
@@ -3889,9 +3826,9 @@ theorem blocksFoldlM_layout_location
       simp [Bind.bind, Except.bind] at h_run
 
 /-- Strengthened `blocksFoldlM_layout_location`: also exposes that the
-LOCATION instruction's `labels` field equals `[l]`. R10a uses this to
-prove that any `WellFormedTranslation`'s `labelMap l` agrees with the
-translator's hashmap-keyed labelMap on `cfg.blocks` labels. -/
+LOCATION instruction's `labels` field equals `[l]`. Used to prove that
+any `WellFormedTranslation`'s `labelMap l` agrees with the translator's
+hashmap-keyed labelMap on `cfg.blocks` labels. -/
 theorem blocksFoldlM_layout_location_with_labels
     (fname : String)
     (blocks : List (String × Imperative.DetBlock String Core.Command Core.Expression))
@@ -4044,12 +3981,11 @@ theorem blocksFoldlM_layout_finish
 
 The patch step (`coreCFGToGotoPatchStep`) either fails (label
 unresolved), prepends `(idx, targetLoc)` to `resolvedPatches`, or also
-mutates `trans.instructions[idx].guard` for loop contracts. Reasoning
-about the loop-contract guard tweak requires loop-contract-specific
-infrastructure beyond Gap A. We discharge the patch step under the
-hypothesis `loopContracts = ∅`, which is the case for any CFG without
-loop-invariant or loop-decreases metadata; concrete callers verifying
-the WF property pass this hypothesis. -/
+mutates `trans.instructions[idx].guard` for loop contracts. We
+discharge the patch step under the hypothesis `loopContracts = ∅`,
+which is the case for any CFG without loop-invariant or loop-decreases
+metadata; concrete callers verifying the WF property pass this
+hypothesis. -/
 
 /-- When `loopContracts` is empty, the patch step returns the input
 `trans` unchanged (only modifies `resolvedPatches`). -/
@@ -4197,8 +4133,7 @@ theorem patchesFoldlM_preserves_locationNum_no_contracts
 `coreCFGToGotoTransform_size_eq_and_loc` is the structural half of the
 top-level theorem: under the right hypotheses, the translator's output
 satisfies `instructions.size = nextLoc` and every instruction's
-`locationNum` equals its array index. This is the foundation for the
-remaining layout fields of the eventual `CoreCFGToGotoTransformShadow`. -/
+`locationNum` equals its array index. -/
 
 /-- After the translator runs (under no-loop-contracts and admitted-cmds
 hypotheses), the output `ans : GotoTransform` satisfies:
@@ -4495,15 +4430,10 @@ structure CoreCFGToGotoTransformShadow
 /-- Bridge from `CoreCFGToGotoTransformShadow` to
 `WellFormedTranslation`: build the witness over the program whose
 instructions equal `ans.instructions`. The bridge is essentially a
-field-by-field copy — each field of `WellFormedTranslation` is provided
-directly by the corresponding field of `CoreCFGToGotoTransformShadow`,
-modulo the `instrAt`-vs-`instructions[?]` rephrasing.
-
-This lemma's existence means the *only* remaining work to close the
-top-level theorem is producing a `CoreCFGToGotoTransformShadow` from
-the actual translator's output — i.e., the outer-loop equivalence
-proof. Once that lands, this lemma converts it directly into a
-`WellFormedTranslation`. -/
+field-by-field copy — each field of `WellFormedTranslation` is
+provided directly by the corresponding field of
+`CoreCFGToGotoTransformShadow`, modulo the
+`instrAt`-vs-`instructions[?]` rephrasing. -/
 def wellFormedTranslation_of_shadow
     (cfg : Core.DetCFG)
     (Env : Core.Expression.TyEnv) (functionName : String)
@@ -4816,19 +4746,16 @@ theorem coreCFGToGotoTransform_wellFormed_nonempty
     entry_in_map := h_entry_in_map st_final h_blocks_run
   }
 
-/-! ## Worker A5a: closing three of A4's hypothesis-parameter fields
+/-! ## Closures for hypothesis-parameter fields of `_wellFormed_nonempty`
 
-Round-5 (Worker A5a) closes the `entry_in_map`, `labelMap_inj`, and
-`layout_block_body` hypotheses that A4 left as parameters of
-`coreCFGToGotoTransform_wellFormed_nonempty`. Each closure theorem takes
-the same inputs as A4's theorem and produces the matching hypothesis
-shape — the supervisor will integrate them into a tighter top-level
-theorem.
+Each closure theorem (`entry_in_map_of_translator`,
+`labelMap_inj_of_translator`, `layout_block_body_of_translator`) takes
+the same inputs as `coreCFGToGotoTransform_wellFormed_nonempty` and
+produces the matching hypothesis shape. The
+`layout_cond_goto`/`layout_cond_goto_guards` closures are below
+(`layout_cond_goto_of_translator`, `layout_cond_goto_guards_of_translator`). -/
 
-The remaining `layout_cond_goto` + `layout_cond_goto_guards` hypotheses
-are closed by Worker A5b (added later in this file). -/
-
-/-- A5a closure: `entry_in_map`. Trivial corollary of
+/-- Closure for `entry_in_map`. Trivial corollary of
 `blocksFoldlM_layout_location` — given `cfg.blocks.head?.map Prod.fst =
 some cfg.entry` (the entry-first invariant the translator checks), the
 first block's label IS `cfg.entry`, so `(cfg.entry, _) ∈ cfg.blocks`,
@@ -5023,7 +4950,7 @@ theorem blocksFoldlM_preserves_labelMapBoundedAndInj
       rw [h_step] at h_run
       simp [Bind.bind, Except.bind] at h_run
 
-/-- A5a closure: `labelMap_inj`. Distinct CFG block labels map to
+/-- Closure for `labelMap_inj`. Distinct CFG block labels map to
 distinct pcs in the post-blocks-fold state, by way of the invariant
 `labelMapBoundedAndInj`. -/
 theorem labelMap_inj_of_translator
@@ -5064,7 +4991,7 @@ The closure proceeds in three layers:
 1. **Equivalence**: `cmdsFoldlM_eq_innerCmdLoop_on_admitted` — on
    admitted commands, `cmdsFoldlM coreCFGToGotoCmdStep trans = ok ans`
    iff `innerCmdLoop trans.T fname cmds trans = ok ans`. This lets us
-   reuse A2's `innerCmdLoop_layout_block_body` directly.
+   reuse `innerCmdLoop_layout_block_body` directly.
 
 2. **Per-block extraction**: `coreCFGToGotoBlockStep_layout_block_body`
    — for a successful per-block step, the body cmds emit at
@@ -5468,7 +5395,7 @@ theorem patchGotoTargets_preserves_full_except_target
       · exact h_l_after.trans h_l_pre
   exact hgen _ _ _ _ h
 
-/-- A5a closure: `layout_block_body`. Given the per-block-body layout
+/-- Closure for `layout_block_body`. Given the per-block-body layout
 on `st_final.trans.instructions` (from `blocksFoldlM_layout_block_body`),
 lift to `ans.instructions` via `patchGotoTargets_preserves_full_except_target`.
 Only `type`, `guard`, `code` fields matter for `CmdEmittedAt`, all of
@@ -5647,64 +5574,9 @@ theorem layout_block_body_of_translator
       e_goto ?_ h_translated
     rw [h_g']; exact h_guard
 
-/-! Documentation of the original (round 2) plan for the
-`coreCFGToGotoTransform_wellFormed` theorem. Round 4 has now closed
-this in `Nonempty` form (see `coreCFGToGotoTransform_wellFormed_nonempty`
-above) — the structural soundness theorem and the lifted layout
-lemmas (`blocksFoldlM_layout_location`, `blocksFoldlM_layout_finish`)
-discharge the proven shadow fields, and hypotheses cover
-`layout_cond_goto`, `layout_cond_goto_guards`, `layout_block_body`,
-`labelMap_inj`, and `entry_in_map`.
+/-! ## `layout_cond_goto` + guards closures
 
-Original round 2 sketch (kept for reference, includes an `admit`
-inside a markdown block — not a live proof):
-
-```lean
-theorem coreCFGToGotoTransform_wellFormed
-    (cfg : Core.DetCFG)
-    (Env : Core.Expression.TyEnv) (functionName : String)
-    (trans₀ : Imperative.GotoTransform Core.Expression.TyEnv)
-    (h_init_size : trans₀.instructions.size = trans₀.nextLoc)
-    (h_init_loc : ∀ i instr, trans₀.instructions[i]? = some instr →
-                              instr.locationNum = i)
-    (h_distinct : List.Pairwise (· ≠ ·) (cfg.blocks.map Prod.fst))
-    (h_admitted_blocks :
-      ∀ l blk, (l, blk) ∈ cfg.blocks →
-      ∀ k h, Core.CmdExt.isAdmittedCmd (blk.cmds[k]'h) = true)
-    (h_blocks_nonempty : ∀ l blk, (l, blk) ∈ cfg.blocks → True)
-    (h_entry_first : cfg.blocks.head?.map Prod.fst = some cfg.entry)
-    (ans : Imperative.GotoTransform Core.Expression.TyEnv)
-    (h_run : coreCFGToGotoTransform Env functionName cfg trans₀
-              = Except.ok ans)
-    (δ : Imperative.SemanticEval Core.Expression)
-    (δ_goto : SemanticEvalGoto Core.Expression)
-    (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
-    (h_expr_corr : ExprTranslationPreservesEval δ δ_goto δ_goto_bool)
-    (h_tx_eq : ∀ e, Imperative.ToGoto.toGotoExpr e = .ok (h_expr_corr.tx e)) :
-    WellFormedTranslation cfg
-      { name := functionName, parameterIdentifiers := #[],
-        instructions := ans.instructions }
-      δ δ_goto δ_goto_bool := by
-  -- Build the shadow witness from the actual translator's output.
-  have shadow : CoreCFGToGotoTransformShadow cfg Env functionName
-                  trans₀ ans δ δ_goto δ_goto_bool := by
-    -- HERE: the missing 500-900 LoC outer-loop equivalence proof.
-    -- It walks `coreCFGToGotoTransform`'s body, threading the partial
-    -- WF invariant through emitLabel + innerCmdLoop + transfer-emit +
-    -- patchGotoTargets, building each shadow field.
-    admit -- placeholder; replace with the loop-induction proof.
-  exact wellFormedTranslation_of_shadow cfg Env functionName
-    trans₀ ans δ δ_goto δ_goto_bool shadow
-```
-
-The body's `admit` is the loop-induction work — *this code is in a
-documentation block, not in the live module*. Everything else
-(per-emit preservation, per-Cmd dispatcher, `innerCmdLoop_layout_block_body`,
-`labelMapInsert` invariants, `wellFormedTranslation_of_shadow`) is
-already proven in this file. -/
-/-! ## A5b: layout_cond_goto + guards
-
-This section discharges two of A4's open hypotheses:
+This section discharges:
 * `layout_cond_goto` — every `.condGoto` block produces two GOTO
   instructions at the right pcs with the right targets *after patching*.
 * `layout_cond_goto_guards` — those two GOTO instructions carry the
@@ -6770,7 +6642,7 @@ theorem patchesFoldlM_no_contracts_resolvedPatches_pairwise_distinct
 
 /-! ### Top-level closures
 
-Two closure theorems matching A4's hypothesis shape:
+Two closure theorems:
 * `layout_cond_goto_of_translator`
 * `layout_cond_goto_guards_of_translator`
 -/
@@ -6791,10 +6663,9 @@ theorem coreCFGToGotoInitState_pendingPatches_bounded
   intro p hp
   simp [coreCFGToGotoInitState] at hp
 
-/-- A5b's main result for `layout_cond_goto`: under structural
-hypotheses on the CFG and translator, every `.condGoto` block at offset
-`pc` produces two GOTO instructions (after patching) with the right
-targets. Discharges A4's `h_layout_cond_goto` hypothesis. -/
+/-- Closure for `layout_cond_goto`: under structural hypotheses on the
+CFG and translator, every `.condGoto` block at offset `pc` produces two
+GOTO instructions (after patching) with the right targets. -/
 theorem layout_cond_goto_of_translator
     (cfg : Core.DetCFG)
     (Env : Core.Expression.TyEnv) (functionName : String)
@@ -7039,17 +6910,14 @@ theorem patchGotoTargets_preserves_guard
       exact ⟨instr_pre, h_pre, h_g_after_first.trans h_g_pre⟩
   exact hgen _ _ _ _ h
 
-/-! ### Top-level closure for layout_cond_goto_guards
+/-! ### Top-level closure for `layout_cond_goto_guards`
 
-A5b's main result for `layout_cond_goto_guards`. Discharges A4's
-`h_layout_cond_goto_guards` hypothesis. Uses the per-block-step's
-guard shape (`e_goto.not` and `Expr.true`) plus the patcher's
-preservation of guards. -/
+Uses the per-block-step's guard shape (`e_goto.not` and `Expr.true`)
+plus the patcher's preservation of guards. -/
 
-/-- A5b's main result for `layout_cond_goto_guards`: every `.condGoto`
-block produces two GOTO instructions with the expected guards
-`e_goto.not` and `Expr.true` (after patching, which preserves guards).
-Discharges A4's `h_layout_cond_goto_guards` hypothesis. -/
+/-- Closure for `layout_cond_goto_guards`: every `.condGoto` block
+produces two GOTO instructions with the expected guards `e_goto.not`
+and `Expr.true` (after patching, which preserves guards). -/
 theorem layout_cond_goto_guards_of_translator
     (cfg : Core.DetCFG)
     (Env : Core.Expression.TyEnv) (functionName : String)
@@ -7147,17 +7015,14 @@ theorem layout_cond_goto_guards_of_translator
   · rw [h_g_neg_eq, ← h_neg_eq]; exact h_guard_neg_pre
   · rw [h_g_uncond_eq, ← h_uncond_eq]; exact h_guard_uncond_pre
 
-/-! ## Round 5 supervisor: strengthened top-level theorem
+/-! ## Strengthened top-level theorem
 
-A4's `coreCFGToGotoTransform_wellFormed_nonempty` took 5 hypothesis
-parameters (`h_layout_cond_goto`, `h_layout_cond_goto_guards`,
-`h_layout_block_body`, `h_labelMap_inj`, `h_entry_in_map`).
-Round 5 closed all five via `layout_*_of_translator` and
-`{labelMap_inj,entry_in_map}_of_translator`. This section composes
-them into a tighter theorem that takes only the structural and
-caller-supplied inputs.
+`coreCFGToGotoTransform_wellFormed_strengthened` composes the
+`layout_*_of_translator` and `{labelMap_inj,entry_in_map}_of_translator`
+closures with `coreCFGToGotoTransform_wellFormed_nonempty`, internalising
+its five hypothesis parameters covering layout and labelMap fields.
 
-New external hypotheses (which the round-5 closures need):
+External hypotheses still required from callers:
 
 * `h_entry_first` — `cfg.blocks.head?.map Prod.fst = some cfg.entry`.
   The translator already checks this and rejects on violation.
@@ -7205,8 +7070,8 @@ theorem coreCFGToGotoTransform_wellFormed_strengthened
       { name := "", parameterIdentifiers := #[],
         instructions := ans.instructions }
       δ δ_goto δ_goto_bool) := by
-  -- Discharge each of A4's five hypothesis parameters via the
-  -- round-5 closure theorems, then plug into A4's theorem.
+  -- Discharge each of `_wellFormed_nonempty`'s five hypothesis
+  -- parameters via the closure theorems, then plug into it.
   have h_layout_cond_goto :=
     layout_cond_goto_of_translator cfg Env functionName trans₀
       h_init_size h_distinct h_admitted_blocks
