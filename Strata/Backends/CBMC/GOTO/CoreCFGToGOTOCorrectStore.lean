@@ -10,14 +10,10 @@ public import Strata.Backends.CBMC.GOTO.Bisim
 
 public section
 
-/-! # `StoreCorr`-based forward simulation (Phase 3)
-
-Phase 3 of the GOTO-semantics-expansion plan
-(`docs/superpowers/specs/2026-05-20-goto-semantics-expansion-design.md`).
+/-! # `StoreCorr`-based forward simulation
 
 This file builds the trace-level lift from `StepGotoStar` to
-`SemanticsTautschnig.ExecProg`, modulo `StoreCorr`. It is the
-load-bearing chunk of Phase 3.
+`SemanticsTautschnig.ExecProg`, modulo `StoreCorr`.
 
 ## Architecture
 
@@ -49,7 +45,7 @@ open CProverGOTO.SemanticsTautschnig
 
 /-! ## SteppingBridges bundle -/
 
-/-- Hypothesis bundle for the Phase 3 trace lift.
+/-- Hypothesis bundle for the trace-level lift.
 
 For every running configuration `(pc, σ_imp, failed)` and every
 `StepGoto` step from that configuration to a successor, the
@@ -118,8 +114,8 @@ private theorem ExecProg.step_prefix
 configuration corresponds to an `ExecProg` derivation on the
 GOTO-side store, modulo `StoreCorr`.
 
-This is the core Phase 3 result. It composes the per-step bridges
-(bundled as `SteppingBridges`) into a full `ExecProg` derivation. -/
+Composes the per-step bridges (bundled as `SteppingBridges`) into a
+full `ExecProg` derivation. -/
 theorem StepGotoStar_to_ExecProg
     {P : PureExpr} [HasBool P] [HasNot P]
     [SemanticsTautschnig.ValueCorr P]
@@ -170,7 +166,7 @@ theorem StepGotoStar_to_ExecProg
         -- impossible — every constructor's source is `.running`.
         cases h_after
 
-/-! ## End-to-end Phase 3 theorem -/
+/-! ## End-to-end theorem -/
 
 /-- `StoreCorr`-shaped forward-simulation theorem on the call-free
 `DetCFG` slice, parallel to `coreCFGToGoto_forward_simulation`.
