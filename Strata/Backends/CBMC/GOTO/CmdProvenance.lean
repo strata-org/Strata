@@ -6,6 +6,7 @@
 module
 
 public import Strata.Backends.CBMC.GOTO.CoreCFGToGOTOInvariants
+public import Strata.Backends.CBMC.GOTO.Tactics
 public import Strata.Languages.Core.Procedure
 
 public section
@@ -146,48 +147,34 @@ theorem decl_provenance_of_translator
               _h_assn_at _h_assn_ty _e_goto gty h_decl_code _h_assn_code
               _h_translated =>
     -- `instr = i_decl` from `h_at` and `h_decl_at`.
-    have h_eq : instr = i_decl :=
-      Option.some.inj (h_at.symm.trans h_decl_at)
-    subst h_eq
+    inj_subst h_at h_decl_at
     exact ⟨v, gty, h_decl_code⟩
   | init_nondet v _ty _md i_decl h_decl_at _h_decl_ty gty h_decl_code =>
-    have h_eq : instr = i_decl :=
-      Option.some.inj (h_at.symm.trans h_decl_at)
-    subst h_eq
+    inj_subst h_at h_decl_at
     exact ⟨v, gty, h_decl_code⟩
   | set_det _v _e_core _md i_assn h_assn_at h_assn_ty _e_goto _gty
             _h_assn_code _h_translated =>
     -- Contradiction: instr.type = .DECL but h_assn_ty : i_assn.type = .ASSIGN.
-    have h_eq : instr = i_assn :=
-      Option.some.inj (h_at.symm.trans h_assn_at)
-    subst h_eq
+    inj_subst h_at h_assn_at
     rw [h_assn_ty] at h_ty
     cases h_ty
   | set_nondet _v _md i_assn h_assn_at h_assn_ty _gty _h_assn_code =>
-    have h_eq : instr = i_assn :=
-      Option.some.inj (h_at.symm.trans h_assn_at)
-    subst h_eq
+    inj_subst h_at h_assn_at
     rw [h_assn_ty] at h_ty
     cases h_ty
   | assert_emit _label _e_core _md i h_at_assert h_ty_assert _e_goto
                 _h_guard _h_translated =>
-    have h_eq : instr = i :=
-      Option.some.inj (h_at.symm.trans h_at_assert)
-    subst h_eq
+    inj_subst h_at h_at_assert
     rw [h_ty_assert] at h_ty
     cases h_ty
   | assume_emit _label _e_core _md i h_at_assume h_ty_assume _e_goto
                 _h_guard _h_translated =>
-    have h_eq : instr = i :=
-      Option.some.inj (h_at.symm.trans h_at_assume)
-    subst h_eq
+    inj_subst h_at h_at_assume
     rw [h_ty_assume] at h_ty
     cases h_ty
   | cover_emit _label _e_core _md i h_at_cover h_ty_cover _e_goto
                 _h_guard _h_translated =>
-    have h_eq : instr = i :=
-      Option.some.inj (h_at.symm.trans h_at_cover)
-    subst h_eq
+    inj_subst h_at h_at_cover
     rw [h_ty_cover] at h_ty
     cases h_ty
 
@@ -268,17 +255,13 @@ theorem assn_provenance_of_translator
       cases h_emit with
       | set_det _ _ _ i_assn h_assn_at _h_assn_ty e_goto gty
                 h_assn_code _h_translated =>
-        have h_eq : instr = i_assn :=
-          Option.some.inj (h_at.symm.trans h_assn_at)
-        subst h_eq
+        inj_subst h_at h_assn_at
         exact ⟨v, gty, e_goto, h_assn_code⟩
     | nondet =>
       -- The CmdEmittedAt for `.set v .nondet md` must be `set_nondet`.
       cases h_emit with
       | set_nondet _ _ i_assn h_assn_at _h_assn_ty gty h_assn_code =>
-        have h_eq : instr = i_assn :=
-          Option.some.inj (h_at.symm.trans h_assn_at)
-        subst h_eq
+        inj_subst h_at h_assn_at
         obtain ⟨e_nondet, h_code, _h_id, _h_ty_eq⟩ := h_assn_code
         exact ⟨v, gty, e_nondet, h_code⟩
   · -- offset-1 case: cmd is `.init v ty (.det e_core) md`, ASSIGN at pc_pred + 1.
@@ -287,9 +270,7 @@ theorem assn_provenance_of_translator
     | init_det _ _ _ _ _i_decl i_assn _h_decl_at _h_decl_ty
                 h_assn_at _h_assn_ty e_goto gty _h_decl_code h_assn_code
                 _h_translated =>
-      have h_eq : instr = i_assn :=
-        Option.some.inj (h_at.symm.trans h_assn_at)
-      subst h_eq
+      inj_subst h_at h_assn_at
       exact ⟨v, gty, e_goto, h_assn_code⟩
 
 /-! ## ASSIGN-Nondet provenance — partial
@@ -363,9 +344,7 @@ theorem assn_nondet_provenance_of_translator_strict
   obtain ⟨v, _md, h_emit⟩ := h_inversion h_at h_ty
   cases h_emit with
   | set_nondet _ _ i_assn h_assn_at _h_assn_ty gty h_assn_code =>
-    have h_eq : instr = i_assn :=
-      Option.some.inj (h_at.symm.trans h_assn_at)
-    subst h_eq
+    inj_subst h_at h_assn_at
     obtain ⟨e_nondet, h_code, h_id, _h_ty_eq⟩ := h_assn_code
     exact ⟨v, gty, e_nondet, h_code, h_id⟩
 
