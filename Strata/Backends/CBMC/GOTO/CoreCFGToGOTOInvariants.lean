@@ -63,19 +63,14 @@ not `CmdExt.call`. -/
 
 /-- Total number of GOTO instructions emitted for a `Core.Command`. The call
 case yields `0` so we can state predicates uniformly; the simulation
-theorem rules out calls via a separate hypothesis (`isPlainCmd`). -/
+theorem rules out calls via the `isAdmittedCmd` hypothesis. -/
 @[expose] def Core.CmdExt.gotoInstrCount : Core.Command → Nat
   | .cmd c => Imperative.Cmd.gotoInstrCount c
-  -- `.call` is excluded by `isPlainCmd` in the call-free fragment we are
+  -- `.call` is excluded by `isAdmittedCmd` in the call-free fragment we are
   -- proving correct. The actual translator emits 1 FUNCTION_CALL
   -- instruction for a call; updating to `1` is a follow-up when calls are
   -- admitted into the proof.
   | .call _ _ _ => 0
-
-/-- Discriminator: is this a non-call command? -/
-def Core.CmdExt.isPlainCmd : Core.Command → Bool
-  | .cmd _ => true
-  | .call _ _ _ => false
 
 /-- A `Core.Command` is admitted by the simulation theorem when it is a
 plain `CmdExt.cmd` whose inner `Imperative.Cmd` is *not* a `cover` and
@@ -263,23 +258,6 @@ inductive CmdEmittedAt
     (h_guard : i.guard = e_goto)
     (h_translated : ExprTranslated δ δ_goto δ_goto_bool e_core e_goto) :
     CmdEmittedAt δ δ_goto δ_goto_bool pgm pc (.cover label e_core md)
-
-/-- Number of trailing transfer instructions emitted for a block:
-
-  * `condGoto _ _ _` → 2 (`GOTO [¬cond] lf`, `GOTO lt`)
-  * `finish _`       → 0 (the procedure-final `END_FUNCTION` is appended by
-                          the pipeline wrapper, not the per-block code) -/
-def DetBlockTransferInstrCount
-    (blk : Imperative.DetBlock String Core.Command Core.Expression) : Nat :=
-  match blk.transfer with
-  | .condGoto _ _ _ _ => 2
-  | .finish _ => 0
-
-/-- Total instructions for a block, including its leading `LOCATION`
-(`+1`) and trailing transfer. -/
-def DetBlockTotalInstrCount
-    (blk : Imperative.DetBlock String Core.Command Core.Expression) : Nat :=
-  1 + DetBlockBodyInstrCount blk + DetBlockTransferInstrCount blk
 
 /-! ## Well-formedness predicate
 
