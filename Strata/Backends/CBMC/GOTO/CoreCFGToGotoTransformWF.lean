@@ -2056,56 +2056,6 @@ the map's domain), which corresponds to the implicit
     (m : LabelMap) (label : String) (pc : Nat) : LabelMap :=
   fun l => if l = label then some pc else m l
 
-/-- Inserting a fresh label preserves injectivity, provided the new
-`pc` is also fresh (not already in the codomain of `m`). -/
-theorem labelMapInsert_preserves_inj
-    (m : LabelMap) (label : String) (pc : Nat)
-    (h_inj :
-      ∀ l₁ l₂ pc', m l₁ = some pc' → m l₂ = some pc' → l₁ = l₂)
-    (h_fresh_cod : ∀ l pc', m l = some pc' → pc' ≠ pc) :
-    ∀ l₁ l₂ pc', (labelMapInsert m label pc) l₁ = some pc' →
-      (labelMapInsert m label pc) l₂ = some pc' →
-      l₁ = l₂ := by
-  intro l₁ l₂ pc' h₁ h₂
-  unfold labelMapInsert at h₁ h₂
-  by_cases hl₁ : l₁ = label
-  · by_cases hl₂ : l₂ = label
-    · rw [hl₁, hl₂]
-    · -- l₁ = label, l₂ ≠ label.
-      -- h₁ says some pc = some pc', so pc' = pc.
-      simp [hl₁] at h₁
-      simp [hl₂] at h₂
-      -- But m l₂ = some pc' and pc' = pc, contradicting h_fresh_cod.
-      subst h₁
-      have := h_fresh_cod l₂ pc h₂
-      contradiction
-  · by_cases hl₂ : l₂ = label
-    · -- Symmetric to above.
-      simp [hl₁] at h₁
-      simp [hl₂] at h₂
-      subst h₂
-      have := h_fresh_cod l₁ pc h₁
-      contradiction
-    · -- Neither is `label`; both lookups go to `m`.
-      simp [hl₁] at h₁
-      simp [hl₂] at h₂
-      exact h_inj l₁ l₂ pc' h₁ h₂
-
-/-- Inserting a label preserves the `pc < nextLoc` bound provided the
-new `pc` is also `< nextLoc`. -/
-theorem labelMapInsert_preserves_lt
-    (m : LabelMap) (label : String) (pc : Nat) (nextLoc : Nat)
-    (h_lt_old : ∀ l pc', m l = some pc' → pc' < nextLoc)
-    (h_pc_lt : pc < nextLoc) :
-    ∀ l pc', (labelMapInsert m label pc) l = some pc' → pc' < nextLoc := by
-  intro l pc' h
-  unfold labelMapInsert at h
-  by_cases h_eq : l = label
-  · simp [h_eq] at h
-    rw [← h]; exact h_pc_lt
-  · simp [h_eq] at h
-    exact h_lt_old l pc' h
-
 /-- After `labelMapInsert`, the inserted label resolves to its `pc`. -/
 @[simp] theorem labelMapInsert_self
     (m : LabelMap) (label : String) (pc : Nat) :
@@ -2134,22 +2084,6 @@ function form. -/
   funext l
   unfold hashMapToLabelMap emptyLabelMap
   simp
-
-/-- Conversion of an inserted hashmap pulls the inserted entry out and
-falls through to the underlying map. We use the underlying-LabelMap
-function `labelMapInsert` to model this. -/
-theorem hashMapToLabelMap_insert
-    (m : Std.HashMap String Nat) (label : String) (pc : Nat) :
-    hashMapToLabelMap (m.insert label pc) =
-      labelMapInsert (hashMapToLabelMap m) label pc := by
-  funext l
-  unfold hashMapToLabelMap labelMapInsert
-  rw [Std.HashMap.getElem?_insert]
-  by_cases h : l = label
-  · subst h
-    simp
-  · have h' : ¬ label = l := fun h' => h h'.symm
-    simp [h, h']
 
 /-! ## Per-cmd / per-block step preservation
 
