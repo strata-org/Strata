@@ -161,16 +161,17 @@ theorem wellFormedTranslation_to_translatorBridgeHyps
             SemanticsTautschnig.getAssignRhs = some rhs_g)
     (h_assign_nondet_lookup :
       ∀ {pc : Nat} {instr : Instruction} {x : Core.Expression.Ident}
+        {lhs rhs : Expr}
         {σ σ' : Imperative.SemanticStore Core.Expression}
         {v_imp : Core.Expression.Expr},
         pgm.instrAt pc = some instr → instr.type = .ASSIGN →
+        instr.code = Code.assign lhs rhs →
+        rhs.id = .side_effect .Nondet →
         Imperative.UpdateState Core.Expression σ x v_imp σ' →
-        ∃ rhs_g,
-          (SemanticsTautschnig.instrCode pgm pc).bind
-              SemanticsTautschnig.getAssignLhs = some (nameMap x) ∧
-          (SemanticsTautschnig.instrCode pgm pc).bind
-              SemanticsTautschnig.getAssignRhs = some rhs_g ∧
-          rhs_g.id = .side_effect .Nondet)
+        (SemanticsTautschnig.instrCode pgm pc).bind
+            SemanticsTautschnig.getAssignLhs = some (nameMap x) ∧
+        (SemanticsTautschnig.instrCode pgm pc).bind
+            SemanticsTautschnig.getAssignRhs = some rhs)
     -- Value fields: caller-side source ↔ target evaluator agreement.
     -- Out of scope for this bridge.
     (h_decl_empty_value :
