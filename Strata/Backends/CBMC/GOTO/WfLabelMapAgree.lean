@@ -238,8 +238,8 @@ theorem cmdsFoldlM_preserves
 
 /-! ## Per-block step preservation -/
 
-/-- `emitLabel` extends both `trans` (with a new LOCATION at
-`trans.nextLoc` carrying `labels = [label]`) and `labelMap` (insert
+/-- `emitLabel` extends `trans` (with a new LOCATION at `trans.nextLoc`
+carrying `labels = [label]`) and `labelMap` (insert
 `(label, trans.nextLoc)`). The invariant is preserved. -/
 theorem emitLabel_preserves
     (label : String) (srcLoc : CProverGOTO.SourceLocation)
@@ -251,45 +251,32 @@ theorem emitLabel_preserves
     LocationsTrackLabelMap (Imperative.emitLabel label srcLoc trans)
       (labelMap.insert label trans.nextLoc) := by
   intro pc instr l h_at h_ty h_labels
-  -- emitLabel pushes a single LOCATION instruction.
-  have h_emit_unfold :
-      (Imperative.emitLabel label srcLoc trans).instructions =
-      trans.instructions.push
-        { type := .LOCATION, locationNum := trans.nextLoc,
-          sourceLoc := srcLoc, labels := [label],
-          code := CProverGOTO.Code.skip } := rfl
-  rw [h_emit_unfold] at h_at
+  -- emitLabel definitionally pushes the LOCATION instruction below.
+  change (trans.instructions.push
+    { type := .LOCATION, locationNum := trans.nextLoc, sourceLoc := srcLoc,
+      labels := [label], code := CProverGOTO.Code.skip })[pc]? = some instr at h_at
   by_cases h_lt : pc < trans.instructions.size
-  · -- pc is in the old prefix. The instruction is unchanged.
-    rw [Array.getElem?_push_lt h_lt] at h_at
+  · rw [Array.getElem?_push_lt h_lt] at h_at
     have h_at' : trans.instructions[pc]? = some instr := by
       rw [Array.getElem?_eq_getElem h_lt]; exact h_at
     have h_old : labelMap[l]? = some pc := h_inv h_at' h_ty h_labels
-    -- After insert: if l ≠ label, lookup is unchanged.
     by_cases h_l_eq : l = label
-    · -- l = label: but labelMap[label]? = none, contradiction with h_old.
-      subst h_l_eq
-      rw [h_label_fresh] at h_old
-      cases h_old
+    · subst h_l_eq; rw [h_label_fresh] at h_old; cases h_old
     · rw [Std.HashMap.getElem?_insert]
       have h_neq : ¬ label = l := fun h => h_l_eq h.symm
       simp [h_neq]; exact h_old
-  · -- pc is at the new push position.
-    by_cases h_eq : pc = trans.instructions.size
+  · by_cases h_eq : pc = trans.instructions.size
     · subst h_eq
       rw [Array.getElem?_push_size] at h_at
       injection h_at with h_at
-      -- instr is the new LOCATION with labels [label].
       subst h_at
       simp at h_labels
       subst h_labels
-      -- l = label, pc = trans.instructions.size = trans.nextLoc.
       rw [Std.HashMap.getElem?_insert]
       simp; exact h_size.symm
     · have h_oor : (trans.instructions.push
-        ({ type := .LOCATION, locationNum := trans.nextLoc,
-           sourceLoc := srcLoc, labels := [label],
-           code := CProverGOTO.Code.skip } : Instruction)).size ≤ pc := by
+        ({ type := .LOCATION, locationNum := trans.nextLoc, sourceLoc := srcLoc,
+           labels := [label], code := CProverGOTO.Code.skip } : Instruction)).size ≤ pc := by
         rw [Array.size_push]; omega
       rw [Array.getElem?_eq_none h_oor] at h_at
       exact absurd h_at (by simp)
