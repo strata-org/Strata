@@ -386,16 +386,16 @@ theorem toGotoInstructions_preserves_body_pc_covered
     intro pc instr h
     rw [h_inst] at h
     exact push_non_body_preserves_body_pc_covered δ δ_goto δ_goto_bool trans pgm
-      i (fun h_eq => by rw [h_assert_ty] at h_eq; cases h_eq)
-        (fun h_eq => by rw [h_assert_ty] at h_eq; cases h_eq) h_cov h
+      i (fun h_eq => absurd (h_assert_ty.symm.trans h_eq) (by decide))
+        (fun h_eq => absurd (h_assert_ty.symm.trans h_eq) (by decide)) h_cov h
   | assume label e md =>
     obtain ⟨_e_goto, i, _, h_assume_ty, _, _, h_inst, _⟩ :=
       Cmd_toGotoInstructions_assume_ok T fname label e md trans ans h_run
     intro pc instr h
     rw [h_inst] at h
     exact push_non_body_preserves_body_pc_covered δ δ_goto δ_goto_bool trans pgm
-      i (fun h_eq => by rw [h_assume_ty] at h_eq; cases h_eq)
-        (fun h_eq => by rw [h_assume_ty] at h_eq; cases h_eq) h_cov h
+      i (fun h_eq => absurd (h_assume_ty.symm.trans h_eq) (by decide))
+        (fun h_eq => absurd (h_assume_ty.symm.trans h_eq) (by decide)) h_cov h
   | cover label e md =>
     -- Cover is *not* admitted (`isAdmittedCmd (.cover _ _ _) = false`),
     -- but cover at the source level emits an ASSERT instruction. Since
@@ -647,96 +647,14 @@ theorem coreCFGToGotoBlockStep_preserves_body_pc_covered
     blk.cmds.foldlM (Strata.coreCFGToGotoCmdStep fname) trans₁ = inner at h_run
   match inner, h_inner with
   | .ok trans₂, h_inner =>
-    have h_size₂ : trans₂.instructions.size = trans₂.nextLoc :=
-      cmdsFoldlM_preserves_size_eq fname blk.cmds _ trans₂ h_admitted h_inner h_size₁
-    -- Now we need the prefix property for trans₂ relative to st'.trans.
-    -- Show trans₂.instructions.size ≤ st'.trans.instructions.size by case-splitting on transfer.
-    have h_size_le_st' : trans₂.instructions.size ≤ st'.trans.instructions.size := by
-      cases h_t : blk.transfer with
-      | condGoto cond lt lf md =>
-        rw [h_t] at h_run
-        simp only at h_run
-        generalize h_cond_eval :
-            Lambda.LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩) [] cond
-              = cond_eval at h_run
-        match cond_eval, h_cond_eval with
-        | .ok cond_expr, _ =>
-          simp only at h_run
-          injection h_run with h_run
-          rw [← h_run]
-          simp [Imperative.emitCondGoto, Imperative.emitUncondGoto, Imperative.emitGoto, Array.size_push]
-          omega
-        | .error _, _ => simp at h_run
-      | finish md =>
-        rw [h_t] at h_run
-        simp only at h_run
-        injection h_run with h_run
-        rw [← h_run]
-        simp [Array.size_push]
-    -- Build the prefix property for trans₂.
-    have h_st_to_trans₂_prefix :
-        ∀ (k : Nat) (h : k < trans₂.instructions.size),
-          st'.trans.instructions[k]? = some trans₂.instructions[k] := by
-      intro k h_k
-      have h_eq : st'.trans.instructions[k]? = trans₂.instructions[k]? := by
-        cases h_t : blk.transfer with
-        | condGoto cond lt lf md =>
-          rw [h_t] at h_run
-          simp only at h_run
-          generalize h_cond_eval :
-              Lambda.LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩) [] cond
-                = cond_eval at h_run
-          match cond_eval, h_cond_eval with
-          | .ok cond_expr, _ =>
-            simp only at h_run
-            injection h_run with h_run
-            rw [← h_run]
-            simp only [Imperative.emitCondGoto, Imperative.emitUncondGoto, Imperative.emitGoto]
-            -- Goal: ((trans₂.instructions.push i₁).push i₂)[k]? = trans₂.instructions[k]?.
-            have h_k_post_first :
-                k < (trans₂.instructions.push
-                  ({ type := .GOTO, guard := cond_expr.not,
-                     sourceLoc := Imperative.metadataToSourceLoc md fname trans₂.sourceText,
-                     locationNum := trans₂.nextLoc } : CProverGOTO.Instruction)).size := by
-              rw [Array.size_push]; exact Nat.lt_succ_of_lt h_k
-            rw [Array.getElem?_push_lt h_k_post_first]
-            rw [Array.getElem_push_lt h_k]
-            rw [Array.getElem?_eq_getElem h_k]
-          | .error _, _ => simp at h_run
-        | finish md =>
-          rw [h_t] at h_run
-          simp only at h_run
-          injection h_run with h_run
-          rw [← h_run]
-          rw [Array.getElem?_push_lt h_k]
-          rw [Array.getElem?_eq_getElem h_k]
-      rw [h_eq]
-      exact Array.getElem?_eq_getElem h_k
-    have h_prefix₂ :
-        ∀ (k : Nat) (h : k < trans₂.instructions.size),
-          pgm.instructions[k]? = some trans₂.instructions[k] := by
-      intro k h_k
-      have h_k' : k < st'.trans.instructions.size :=
-        Nat.lt_of_lt_of_le h_k h_size_le_st'
-      rw [h_prefix k h_k']
-      have h_eq := h_st_to_trans₂_prefix k h_k
-      rw [Array.getElem?_eq_getElem h_k'] at h_eq
-      injection h_eq with h_eq
-      rw [h_eq]
     -- emitLabel preservation.
     have h_cov₁ : BodyPcCovered δ δ_goto δ_goto_bool trans₁ pgm :=
       emitLabel_preserves_body_pc_covered label _ st.trans pgm
         δ δ_goto δ_goto_bool h_cov
-    -- cmdsFoldlM preservation.
-    have h_cov₂ : BodyPcCovered δ δ_goto δ_goto_bool trans₂ pgm :=
-      cmdsFoldlM_preserves_body_pc_covered fname blk.cmds trans₁ trans₂
-        h_inner h_size₁ h_admitted pgm δ δ_goto δ_goto_bool h_expr_corr h_tx_eq
-        (by
-          intro k h_k
-          have h_k' : k < trans₂.instructions.size := h_k
-          exact h_prefix₂ k h_k')
-        h_cov₁
-    -- Now case-split on transfer to handle the trailing emits.
+    -- Case-split on transfer first; in each branch we know st'.trans
+    -- explicitly (a 1- or 2-push extension of trans₂), which gives us
+    -- both the prefix property for trans₂ and the post-transfer
+    -- preservation in one pass.
     cases h_t : blk.transfer with
     | condGoto cond lt lf md =>
       rw [h_t] at h_run
@@ -748,8 +666,36 @@ theorem coreCFGToGotoBlockStep_preserves_body_pc_covered
       | .ok cond_expr, _ =>
         simp only at h_run
         injection h_run with h_run
-        -- After two GOTO pushes, st'.trans.instructions = trans₂.instructions ++ [GOTO_neg, GOTO_uncond].
-        -- Both GOTOs are not DECL or ASSIGN, so apply emitCondGoto/emitUncondGoto preservation.
+        -- st'.trans = ((trans₂.push GOTO_neg).push GOTO_uncond).
+        -- Build h_prefix₂ by transporting through two pushes.
+        have h_prefix₂ :
+            ∀ (k : Nat) (h : k < trans₂.instructions.size),
+              pgm.instructions[k]? = some trans₂.instructions[k] := by
+          intro k h_k
+          have h_k_st' : k < st'.trans.instructions.size := by
+            rw [← h_run]
+            simp [Imperative.emitCondGoto, Imperative.emitUncondGoto,
+                  Imperative.emitGoto, Array.size_push]
+            omega
+          have h_st_eq : st'.trans.instructions[k]? = trans₂.instructions[k]? := by
+            rw [← h_run]
+            simp only [Imperative.emitCondGoto, Imperative.emitUncondGoto,
+                       Imperative.emitGoto]
+            have h_k_post_first :
+                k < (trans₂.instructions.push
+                  ({ type := .GOTO, guard := cond_expr.not,
+                     sourceLoc := Imperative.metadataToSourceLoc md fname trans₂.sourceText,
+                     locationNum := trans₂.nextLoc } : CProverGOTO.Instruction)).size := by
+              rw [Array.size_push]; exact Nat.lt_succ_of_lt h_k
+            rw [Array.getElem?_push_lt h_k_post_first]
+            rw [Array.getElem_push_lt h_k]
+            rw [Array.getElem?_eq_getElem h_k]
+          rw [h_prefix k h_k_st', ← Array.getElem?_eq_getElem h_k_st', h_st_eq,
+              Array.getElem?_eq_getElem h_k]
+        have h_cov₂ : BodyPcCovered δ δ_goto δ_goto_bool trans₂ pgm :=
+          cmdsFoldlM_preserves_body_pc_covered fname blk.cmds trans₁ trans₂
+            h_inner h_size₁ h_admitted pgm δ δ_goto δ_goto_bool h_expr_corr h_tx_eq
+            h_prefix₂ h_cov₁
         let transferSrcLoc := Imperative.metadataToSourceLoc md fname trans₂.sourceText
         have h_cov₃ : BodyPcCovered δ δ_goto δ_goto_bool
             (Imperative.emitCondGoto cond_expr.not transferSrcLoc trans₂).fst pgm :=
@@ -769,10 +715,23 @@ theorem coreCFGToGotoBlockStep_preserves_body_pc_covered
       rw [h_t] at h_run
       simp only at h_run
       injection h_run with h_run
-      -- Single END_FUNCTION push.
+      -- st'.trans = trans₂.push endFunctionInstr.
+      have h_prefix₂ :
+          ∀ (k : Nat) (h : k < trans₂.instructions.size),
+            pgm.instructions[k]? = some trans₂.instructions[k] := by
+        intro k h_k
+        have h_k_st' : k < st'.trans.instructions.size := by
+          rw [← h_run]; simp [Array.size_push]; omega
+        have h_st_eq : st'.trans.instructions[k]? = trans₂.instructions[k]? := by
+          rw [← h_run, Array.getElem?_push_lt h_k, Array.getElem?_eq_getElem h_k]
+        rw [h_prefix k h_k_st', ← Array.getElem?_eq_getElem h_k_st', h_st_eq,
+            Array.getElem?_eq_getElem h_k]
+      have h_cov₂ : BodyPcCovered δ δ_goto δ_goto_bool trans₂ pgm :=
+        cmdsFoldlM_preserves_body_pc_covered fname blk.cmds trans₁ trans₂
+          h_inner h_size₁ h_admitted pgm δ δ_goto δ_goto_bool h_expr_corr h_tx_eq
+          h_prefix₂ h_cov₁
       rw [← h_run]
       intro pc instr h
-      -- st'.trans.instructions = trans₂.instructions.push endFunctionInstr.
       simp only at h ⊢
       exact endFunction_emit_preserves_body_pc_covered md fname trans₂ pgm
         δ δ_goto δ_goto_bool h_cov₂ h
