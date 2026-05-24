@@ -987,19 +987,13 @@ def BoolIntGtyAgrees :
       BoolIntGtyAgrees c ∧ BoolIntGtyAgrees t ∧ BoolIntGtyAgrees e
   | _ => True
 
-/-! ### Per-operator bridge helpers (binary integer ops)
+/-! ### Generic bridge helper for binary operators
 
-Each helper takes a `FnToGotoIDReductions` bundle and a side
-hypothesis on the GOTO output type, then reduces
-`LExpr.toGotoExprCtx` on the binary-app shape and produces an
-`IsBoolIntTranslated` witness.
-
-The proof skeleton is the same for all binary integer ops; only the
-operator name string and the corresponding fields of `h_red` change.
-We follow the structure of `_eq` above: `simp only` to unfold the
-translator, `cases` on each recursive translation, and then unfold
-the post-processing logic (which depends on `op`'s specific identity).
--/
+A single generic theorem handles all 12 binary operators. It takes a
+`BoolIntBinOpDesc` plus side-conditions specialising the shared proof
+skeleton (see `isBoolIntTranslated_of_toGotoExprCtx_binOp` below), and
+the dispatch site in `toGotoExprCtx_preservesEval_boolInt` invokes it
+per-operator. -/
 
 /-- Helper: when `op_id` is one of the simple `.multiary` / `.binary`
 / `.unary` constructors, it cannot equal `.functionApplication` for
@@ -1098,729 +1092,6 @@ private theorem isBoolIntTranslated_of_toGotoExprCtx_binOp
       rw [h_e2g] at h_tx
       cases h_tx
       exact mk m_inner m_outer (some mty) e1c e2c e1g e2g
-            (ih1 e1g h_frag1 h_e1g) (ih2 e2g h_frag2 h_e2g)
-
-/-- Bridge helper: `Int.Add`. -/
-private theorem isBoolIntTranslated_of_toGotoExprCtx_intAdd
-    (h_red : FnToGotoIDReductions)
-    (m_outer m_inner m_op : Core.ExpressionMetadata)
-    (id_meta : Unit) (mty : LMonoTy)
-    (e1c e2c : CoreLExpr) (e_goto : CProverGOTO.Expr)
-    (h_op_gty : mty.destructArrow.getLast!.toGotoType = .ok .Integer)
-    (ih1 : ∀ (e_goto : CProverGOTO.Expr),
-        isBoolIntFragment e1c = true →
-        LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩)
-              [] e1c = .ok e_goto →
-        IsBoolIntTranslated e1c e_goto)
-    (ih2 : ∀ (e_goto : CProverGOTO.Expr),
-        isBoolIntFragment e2c = true →
-        LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩)
-              [] e2c = .ok e_goto → IsBoolIntTranslated e2c e_goto)
-    (h_frag : isBoolIntFragment
-        (LExpr.app m_outer
-          (LExpr.app m_inner
-            (LExpr.op m_op ⟨"Int.Add", id_meta⟩ (some mty)) e1c) e2c) = true)
-    (h_tx : LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩)
-              [] (LExpr.app m_outer
-                (LExpr.app m_inner
-                  (LExpr.op m_op ⟨"Int.Add", id_meta⟩ (some mty)) e1c) e2c)
-              = .ok e_goto) :
-    IsBoolIntTranslated
-      (LExpr.app m_outer
-        (LExpr.app m_inner
-          (LExpr.op m_op ⟨"Int.Add", id_meta⟩ (some mty)) e1c) e2c)
-      e_goto := by
-  have h_frag1 : isBoolIntFragment e1c = true := by
-    have h := h_frag
-    simp [isBoolIntFragment, isSupportedIntBinOp, isSupportedBoolBinOp] at h
-    exact h.1
-  have h_frag2 : isBoolIntFragment e2c = true := by
-    have h := h_frag
-    simp [isBoolIntFragment, isSupportedIntBinOp, isSupportedBoolBinOp] at h
-    exact h.2
-  exact isBoolIntTranslated_of_toGotoExprCtx_binOp .intAdd
-    h_red.intAdd h_red.isSignedBvOp_intAdd
-    (op_id_ne_funApp_multiary _) (by decide)
-    (fun _ _ _ _ _ _ _ ih1 ih2 => .intAdd _ _ _ _ _ _ _ ih1 ih2)
-    m_outer m_inner m_op id_meta mty e1c e2c e_goto h_op_gty ih1 ih2
-    h_frag1 h_frag2 h_tx
-
-/-- Bridge helper: `Int.Sub`. -/
-private theorem isBoolIntTranslated_of_toGotoExprCtx_intSub
-    (h_red : FnToGotoIDReductions)
-    (m_outer m_inner m_op : Core.ExpressionMetadata)
-    (id_meta : Unit) (mty : LMonoTy)
-    (e1c e2c : CoreLExpr) (e_goto : CProverGOTO.Expr)
-    (h_op_gty : mty.destructArrow.getLast!.toGotoType = .ok .Integer)
-    (ih1 : ∀ (e_goto : CProverGOTO.Expr),
-        isBoolIntFragment e1c = true →
-        LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩)
-              [] e1c = .ok e_goto →
-        IsBoolIntTranslated e1c e_goto)
-    (ih2 : ∀ (e_goto : CProverGOTO.Expr),
-        isBoolIntFragment e2c = true →
-        LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩)
-              [] e2c = .ok e_goto → IsBoolIntTranslated e2c e_goto)
-    (h_frag : isBoolIntFragment
-        (LExpr.app m_outer
-          (LExpr.app m_inner
-            (LExpr.op m_op ⟨"Int.Sub", id_meta⟩ (some mty)) e1c) e2c) = true)
-    (h_tx : LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩)
-              [] (LExpr.app m_outer
-                (LExpr.app m_inner
-                  (LExpr.op m_op ⟨"Int.Sub", id_meta⟩ (some mty)) e1c) e2c)
-              = .ok e_goto) :
-    IsBoolIntTranslated
-      (LExpr.app m_outer
-        (LExpr.app m_inner
-          (LExpr.op m_op ⟨"Int.Sub", id_meta⟩ (some mty)) e1c) e2c)
-      e_goto := by
-  have h_frag1 : isBoolIntFragment e1c = true := by
-    have h := h_frag
-    simp [isBoolIntFragment, isSupportedIntBinOp,
-          isSupportedBoolBinOp] at h
-    exact h.1
-  have h_frag2 : isBoolIntFragment e2c = true := by
-    have h := h_frag
-    simp [isBoolIntFragment, isSupportedIntBinOp,
-          isSupportedBoolBinOp] at h
-    exact h.2
-  simp only [LExpr.toGotoExprCtx, bind, Except.bind, pure, Except.pure] at h_tx
-  simp only [show (toString (⟨"Int.Sub", id_meta⟩ : Lambda.Identifier Unit))
-             = "Int.Sub" from rfl,
-             show ("Int.Sub" == "old") = false from rfl,
-             h_red.intSub, h_red.isSignedBvOp_intSub] at h_tx
-  simp only [op_id_ne_funApp_binary] at h_tx
-  rw [h_op_gty] at h_tx
-  cases h_e1g :
-      LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩) [] e1c with
-  | error _ => rw [h_e1g] at h_tx; cases h_tx
-  | ok e1g =>
-    rw [h_e1g] at h_tx
-    cases h_e2g :
-        LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩) [] e2c with
-    | error _ => rw [h_e2g] at h_tx; cases h_tx
-    | ok e2g =>
-      rw [h_e2g] at h_tx
-      cases h_tx
-      exact .intSub m_inner m_outer (some mty) e1c e2c e1g e2g
-            (ih1 e1g h_frag1 h_e1g) (ih2 e2g h_frag2 h_e2g)
-
-/-- Bridge helper: `Int.Mul`. -/
-private theorem isBoolIntTranslated_of_toGotoExprCtx_intMul
-    (h_red : FnToGotoIDReductions)
-    (m_outer m_inner m_op : Core.ExpressionMetadata)
-    (id_meta : Unit) (mty : LMonoTy)
-    (e1c e2c : CoreLExpr) (e_goto : CProverGOTO.Expr)
-    (h_op_gty : mty.destructArrow.getLast!.toGotoType = .ok .Integer)
-    (ih1 : ∀ (e_goto : CProverGOTO.Expr),
-        isBoolIntFragment e1c = true →
-        LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩)
-              [] e1c = .ok e_goto →
-        IsBoolIntTranslated e1c e_goto)
-    (ih2 : ∀ (e_goto : CProverGOTO.Expr),
-        isBoolIntFragment e2c = true →
-        LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩)
-              [] e2c = .ok e_goto → IsBoolIntTranslated e2c e_goto)
-    (h_frag : isBoolIntFragment
-        (LExpr.app m_outer
-          (LExpr.app m_inner
-            (LExpr.op m_op ⟨"Int.Mul", id_meta⟩ (some mty)) e1c) e2c) = true)
-    (h_tx : LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩)
-              [] (LExpr.app m_outer
-                (LExpr.app m_inner
-                  (LExpr.op m_op ⟨"Int.Mul", id_meta⟩ (some mty)) e1c) e2c)
-              = .ok e_goto) :
-    IsBoolIntTranslated
-      (LExpr.app m_outer
-        (LExpr.app m_inner
-          (LExpr.op m_op ⟨"Int.Mul", id_meta⟩ (some mty)) e1c) e2c)
-      e_goto := by
-  have h_frag1 : isBoolIntFragment e1c = true := by
-    have h := h_frag
-    simp [isBoolIntFragment, isSupportedIntBinOp,
-          isSupportedBoolBinOp] at h
-    exact h.1
-  have h_frag2 : isBoolIntFragment e2c = true := by
-    have h := h_frag
-    simp [isBoolIntFragment, isSupportedIntBinOp,
-          isSupportedBoolBinOp] at h
-    exact h.2
-  simp only [LExpr.toGotoExprCtx, bind, Except.bind, pure, Except.pure] at h_tx
-  simp only [show (toString (⟨"Int.Mul", id_meta⟩ : Lambda.Identifier Unit))
-             = "Int.Mul" from rfl,
-             show ("Int.Mul" == "old") = false from rfl,
-             h_red.intMul, h_red.isSignedBvOp_intMul] at h_tx
-  simp only [op_id_ne_funApp_multiary] at h_tx
-  rw [h_op_gty] at h_tx
-  cases h_e1g :
-      LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩) [] e1c with
-  | error _ => rw [h_e1g] at h_tx; cases h_tx
-  | ok e1g =>
-    rw [h_e1g] at h_tx
-    cases h_e2g :
-        LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩) [] e2c with
-    | error _ => rw [h_e2g] at h_tx; cases h_tx
-    | ok e2g =>
-      rw [h_e2g] at h_tx
-      cases h_tx
-      exact .intMul m_inner m_outer (some mty) e1c e2c e1g e2g
-            (ih1 e1g h_frag1 h_e1g) (ih2 e2g h_frag2 h_e2g)
-
-/-- Bridge helper: `Int.DivT`. -/
-private theorem isBoolIntTranslated_of_toGotoExprCtx_intDivT
-    (h_red : FnToGotoIDReductions)
-    (m_outer m_inner m_op : Core.ExpressionMetadata)
-    (id_meta : Unit) (mty : LMonoTy)
-    (e1c e2c : CoreLExpr) (e_goto : CProverGOTO.Expr)
-    (h_op_gty : mty.destructArrow.getLast!.toGotoType = .ok .Integer)
-    (ih1 : ∀ (e_goto : CProverGOTO.Expr),
-        isBoolIntFragment e1c = true →
-        LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩)
-              [] e1c = .ok e_goto →
-        IsBoolIntTranslated e1c e_goto)
-    (ih2 : ∀ (e_goto : CProverGOTO.Expr),
-        isBoolIntFragment e2c = true →
-        LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩)
-              [] e2c = .ok e_goto → IsBoolIntTranslated e2c e_goto)
-    (h_frag : isBoolIntFragment
-        (LExpr.app m_outer
-          (LExpr.app m_inner
-            (LExpr.op m_op ⟨"Int.DivT", id_meta⟩ (some mty)) e1c) e2c) = true)
-    (h_tx : LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩)
-              [] (LExpr.app m_outer
-                (LExpr.app m_inner
-                  (LExpr.op m_op ⟨"Int.DivT", id_meta⟩ (some mty)) e1c) e2c)
-              = .ok e_goto) :
-    IsBoolIntTranslated
-      (LExpr.app m_outer
-        (LExpr.app m_inner
-          (LExpr.op m_op ⟨"Int.DivT", id_meta⟩ (some mty)) e1c) e2c)
-      e_goto := by
-  have h_frag1 : isBoolIntFragment e1c = true := by
-    have h := h_frag
-    simp [isBoolIntFragment, isSupportedIntBinOp,
-          isSupportedBoolBinOp] at h
-    exact h.1
-  have h_frag2 : isBoolIntFragment e2c = true := by
-    have h := h_frag
-    simp [isBoolIntFragment, isSupportedIntBinOp,
-          isSupportedBoolBinOp] at h
-    exact h.2
-  simp only [LExpr.toGotoExprCtx, bind, Except.bind, pure, Except.pure] at h_tx
-  simp only [show (toString (⟨"Int.DivT", id_meta⟩ : Lambda.Identifier Unit))
-             = "Int.DivT" from rfl,
-             show ("Int.DivT" == "old") = false from rfl,
-             h_red.intDivT, h_red.isSignedBvOp_intDivT] at h_tx
-  simp only [op_id_ne_funApp_binary] at h_tx
-  rw [h_op_gty] at h_tx
-  cases h_e1g :
-      LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩) [] e1c with
-  | error _ => rw [h_e1g] at h_tx; cases h_tx
-  | ok e1g =>
-    rw [h_e1g] at h_tx
-    cases h_e2g :
-        LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩) [] e2c with
-    | error _ => rw [h_e2g] at h_tx; cases h_tx
-    | ok e2g =>
-      rw [h_e2g] at h_tx
-      cases h_tx
-      exact .intDivT m_inner m_outer (some mty) e1c e2c e1g e2g
-            (ih1 e1g h_frag1 h_e1g) (ih2 e2g h_frag2 h_e2g)
-
-/-- Bridge helper: `Int.ModT`. -/
-private theorem isBoolIntTranslated_of_toGotoExprCtx_intModT
-    (h_red : FnToGotoIDReductions)
-    (m_outer m_inner m_op : Core.ExpressionMetadata)
-    (id_meta : Unit) (mty : LMonoTy)
-    (e1c e2c : CoreLExpr) (e_goto : CProverGOTO.Expr)
-    (h_op_gty : mty.destructArrow.getLast!.toGotoType = .ok .Integer)
-    (ih1 : ∀ (e_goto : CProverGOTO.Expr),
-        isBoolIntFragment e1c = true →
-        LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩)
-              [] e1c = .ok e_goto →
-        IsBoolIntTranslated e1c e_goto)
-    (ih2 : ∀ (e_goto : CProverGOTO.Expr),
-        isBoolIntFragment e2c = true →
-        LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩)
-              [] e2c = .ok e_goto → IsBoolIntTranslated e2c e_goto)
-    (h_frag : isBoolIntFragment
-        (LExpr.app m_outer
-          (LExpr.app m_inner
-            (LExpr.op m_op ⟨"Int.ModT", id_meta⟩ (some mty)) e1c) e2c) = true)
-    (h_tx : LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩)
-              [] (LExpr.app m_outer
-                (LExpr.app m_inner
-                  (LExpr.op m_op ⟨"Int.ModT", id_meta⟩ (some mty)) e1c) e2c)
-              = .ok e_goto) :
-    IsBoolIntTranslated
-      (LExpr.app m_outer
-        (LExpr.app m_inner
-          (LExpr.op m_op ⟨"Int.ModT", id_meta⟩ (some mty)) e1c) e2c)
-      e_goto := by
-  have h_frag1 : isBoolIntFragment e1c = true := by
-    have h := h_frag
-    simp [isBoolIntFragment, isSupportedIntBinOp,
-          isSupportedBoolBinOp] at h
-    exact h.1
-  have h_frag2 : isBoolIntFragment e2c = true := by
-    have h := h_frag
-    simp [isBoolIntFragment, isSupportedIntBinOp,
-          isSupportedBoolBinOp] at h
-    exact h.2
-  simp only [LExpr.toGotoExprCtx, bind, Except.bind, pure, Except.pure] at h_tx
-  simp only [show (toString (⟨"Int.ModT", id_meta⟩ : Lambda.Identifier Unit))
-             = "Int.ModT" from rfl,
-             show ("Int.ModT" == "old") = false from rfl,
-             h_red.intModT, h_red.isSignedBvOp_intModT] at h_tx
-  simp only [op_id_ne_funApp_binary] at h_tx
-  rw [h_op_gty] at h_tx
-  cases h_e1g :
-      LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩) [] e1c with
-  | error _ => rw [h_e1g] at h_tx; cases h_tx
-  | ok e1g =>
-    rw [h_e1g] at h_tx
-    cases h_e2g :
-        LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩) [] e2c with
-    | error _ => rw [h_e2g] at h_tx; cases h_tx
-    | ok e2g =>
-      rw [h_e2g] at h_tx
-      cases h_tx
-      exact .intModT m_inner m_outer (some mty) e1c e2c e1g e2g
-            (ih1 e1g h_frag1 h_e1g) (ih2 e2g h_frag2 h_e2g)
-
-/-! ### Per-operator bridge helpers (binary integer comparisons)
-
-These produce `.Boolean` GOTO output type. Otherwise identical
-structure to the integer arithmetic ops. -/
-
-/-- Bridge helper: `Int.Lt`. -/
-private theorem isBoolIntTranslated_of_toGotoExprCtx_intLt
-    (h_red : FnToGotoIDReductions)
-    (m_outer m_inner m_op : Core.ExpressionMetadata)
-    (id_meta : Unit) (mty : LMonoTy)
-    (e1c e2c : CoreLExpr) (e_goto : CProverGOTO.Expr)
-    (h_op_gty : mty.destructArrow.getLast!.toGotoType = .ok .Boolean)
-    (ih1 : ∀ (e_goto : CProverGOTO.Expr),
-        isBoolIntFragment e1c = true →
-        LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩)
-              [] e1c = .ok e_goto →
-        IsBoolIntTranslated e1c e_goto)
-    (ih2 : ∀ (e_goto : CProverGOTO.Expr),
-        isBoolIntFragment e2c = true →
-        LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩)
-              [] e2c = .ok e_goto → IsBoolIntTranslated e2c e_goto)
-    (h_frag : isBoolIntFragment
-        (LExpr.app m_outer
-          (LExpr.app m_inner
-            (LExpr.op m_op ⟨"Int.Lt", id_meta⟩ (some mty)) e1c) e2c) = true)
-    (h_tx : LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩)
-              [] (LExpr.app m_outer
-                (LExpr.app m_inner
-                  (LExpr.op m_op ⟨"Int.Lt", id_meta⟩ (some mty)) e1c) e2c)
-              = .ok e_goto) :
-    IsBoolIntTranslated
-      (LExpr.app m_outer
-        (LExpr.app m_inner
-          (LExpr.op m_op ⟨"Int.Lt", id_meta⟩ (some mty)) e1c) e2c)
-      e_goto := by
-  have h_frag1 : isBoolIntFragment e1c = true := by
-    have h := h_frag
-    simp [isBoolIntFragment, isSupportedIntBinOp,
-          isSupportedBoolBinOp] at h
-    exact h.1
-  have h_frag2 : isBoolIntFragment e2c = true := by
-    have h := h_frag
-    simp [isBoolIntFragment, isSupportedIntBinOp,
-          isSupportedBoolBinOp] at h
-    exact h.2
-  simp only [LExpr.toGotoExprCtx, bind, Except.bind, pure, Except.pure] at h_tx
-  simp only [show (toString (⟨"Int.Lt", id_meta⟩ : Lambda.Identifier Unit))
-             = "Int.Lt" from rfl,
-             show ("Int.Lt" == "old") = false from rfl,
-             h_red.intLt, h_red.isSignedBvOp_intLt] at h_tx
-  simp only [op_id_ne_funApp_binary] at h_tx
-  rw [h_op_gty] at h_tx
-  cases h_e1g :
-      LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩) [] e1c with
-  | error _ => rw [h_e1g] at h_tx; cases h_tx
-  | ok e1g =>
-    rw [h_e1g] at h_tx
-    cases h_e2g :
-        LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩) [] e2c with
-    | error _ => rw [h_e2g] at h_tx; cases h_tx
-    | ok e2g =>
-      rw [h_e2g] at h_tx
-      cases h_tx
-      exact .intLt m_inner m_outer (some mty) e1c e2c e1g e2g
-            (ih1 e1g h_frag1 h_e1g) (ih2 e2g h_frag2 h_e2g)
-
-/-- Bridge helper: `Int.Le`. -/
-private theorem isBoolIntTranslated_of_toGotoExprCtx_intLe
-    (h_red : FnToGotoIDReductions)
-    (m_outer m_inner m_op : Core.ExpressionMetadata)
-    (id_meta : Unit) (mty : LMonoTy)
-    (e1c e2c : CoreLExpr) (e_goto : CProverGOTO.Expr)
-    (h_op_gty : mty.destructArrow.getLast!.toGotoType = .ok .Boolean)
-    (ih1 : ∀ (e_goto : CProverGOTO.Expr),
-        isBoolIntFragment e1c = true →
-        LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩)
-              [] e1c = .ok e_goto →
-        IsBoolIntTranslated e1c e_goto)
-    (ih2 : ∀ (e_goto : CProverGOTO.Expr),
-        isBoolIntFragment e2c = true →
-        LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩)
-              [] e2c = .ok e_goto → IsBoolIntTranslated e2c e_goto)
-    (h_frag : isBoolIntFragment
-        (LExpr.app m_outer
-          (LExpr.app m_inner
-            (LExpr.op m_op ⟨"Int.Le", id_meta⟩ (some mty)) e1c) e2c) = true)
-    (h_tx : LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩)
-              [] (LExpr.app m_outer
-                (LExpr.app m_inner
-                  (LExpr.op m_op ⟨"Int.Le", id_meta⟩ (some mty)) e1c) e2c)
-              = .ok e_goto) :
-    IsBoolIntTranslated
-      (LExpr.app m_outer
-        (LExpr.app m_inner
-          (LExpr.op m_op ⟨"Int.Le", id_meta⟩ (some mty)) e1c) e2c)
-      e_goto := by
-  have h_frag1 : isBoolIntFragment e1c = true := by
-    have h := h_frag
-    simp [isBoolIntFragment, isSupportedIntBinOp,
-          isSupportedBoolBinOp] at h
-    exact h.1
-  have h_frag2 : isBoolIntFragment e2c = true := by
-    have h := h_frag
-    simp [isBoolIntFragment, isSupportedIntBinOp,
-          isSupportedBoolBinOp] at h
-    exact h.2
-  simp only [LExpr.toGotoExprCtx, bind, Except.bind, pure, Except.pure] at h_tx
-  simp only [show (toString (⟨"Int.Le", id_meta⟩ : Lambda.Identifier Unit))
-             = "Int.Le" from rfl,
-             show ("Int.Le" == "old") = false from rfl,
-             h_red.intLe, h_red.isSignedBvOp_intLe] at h_tx
-  simp only [op_id_ne_funApp_binary] at h_tx
-  rw [h_op_gty] at h_tx
-  cases h_e1g :
-      LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩) [] e1c with
-  | error _ => rw [h_e1g] at h_tx; cases h_tx
-  | ok e1g =>
-    rw [h_e1g] at h_tx
-    cases h_e2g :
-        LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩) [] e2c with
-    | error _ => rw [h_e2g] at h_tx; cases h_tx
-    | ok e2g =>
-      rw [h_e2g] at h_tx
-      cases h_tx
-      exact .intLe m_inner m_outer (some mty) e1c e2c e1g e2g
-            (ih1 e1g h_frag1 h_e1g) (ih2 e2g h_frag2 h_e2g)
-
-/-- Bridge helper: `Int.Gt`. -/
-private theorem isBoolIntTranslated_of_toGotoExprCtx_intGt
-    (h_red : FnToGotoIDReductions)
-    (m_outer m_inner m_op : Core.ExpressionMetadata)
-    (id_meta : Unit) (mty : LMonoTy)
-    (e1c e2c : CoreLExpr) (e_goto : CProverGOTO.Expr)
-    (h_op_gty : mty.destructArrow.getLast!.toGotoType = .ok .Boolean)
-    (ih1 : ∀ (e_goto : CProverGOTO.Expr),
-        isBoolIntFragment e1c = true →
-        LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩)
-              [] e1c = .ok e_goto →
-        IsBoolIntTranslated e1c e_goto)
-    (ih2 : ∀ (e_goto : CProverGOTO.Expr),
-        isBoolIntFragment e2c = true →
-        LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩)
-              [] e2c = .ok e_goto → IsBoolIntTranslated e2c e_goto)
-    (h_frag : isBoolIntFragment
-        (LExpr.app m_outer
-          (LExpr.app m_inner
-            (LExpr.op m_op ⟨"Int.Gt", id_meta⟩ (some mty)) e1c) e2c) = true)
-    (h_tx : LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩)
-              [] (LExpr.app m_outer
-                (LExpr.app m_inner
-                  (LExpr.op m_op ⟨"Int.Gt", id_meta⟩ (some mty)) e1c) e2c)
-              = .ok e_goto) :
-    IsBoolIntTranslated
-      (LExpr.app m_outer
-        (LExpr.app m_inner
-          (LExpr.op m_op ⟨"Int.Gt", id_meta⟩ (some mty)) e1c) e2c)
-      e_goto := by
-  have h_frag1 : isBoolIntFragment e1c = true := by
-    have h := h_frag
-    simp [isBoolIntFragment, isSupportedIntBinOp,
-          isSupportedBoolBinOp] at h
-    exact h.1
-  have h_frag2 : isBoolIntFragment e2c = true := by
-    have h := h_frag
-    simp [isBoolIntFragment, isSupportedIntBinOp,
-          isSupportedBoolBinOp] at h
-    exact h.2
-  simp only [LExpr.toGotoExprCtx, bind, Except.bind, pure, Except.pure] at h_tx
-  simp only [show (toString (⟨"Int.Gt", id_meta⟩ : Lambda.Identifier Unit))
-             = "Int.Gt" from rfl,
-             show ("Int.Gt" == "old") = false from rfl,
-             h_red.intGt, h_red.isSignedBvOp_intGt] at h_tx
-  simp only [op_id_ne_funApp_binary] at h_tx
-  rw [h_op_gty] at h_tx
-  cases h_e1g :
-      LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩) [] e1c with
-  | error _ => rw [h_e1g] at h_tx; cases h_tx
-  | ok e1g =>
-    rw [h_e1g] at h_tx
-    cases h_e2g :
-        LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩) [] e2c with
-    | error _ => rw [h_e2g] at h_tx; cases h_tx
-    | ok e2g =>
-      rw [h_e2g] at h_tx
-      cases h_tx
-      exact .intGt m_inner m_outer (some mty) e1c e2c e1g e2g
-            (ih1 e1g h_frag1 h_e1g) (ih2 e2g h_frag2 h_e2g)
-
-/-- Bridge helper: `Int.Ge`. -/
-private theorem isBoolIntTranslated_of_toGotoExprCtx_intGe
-    (h_red : FnToGotoIDReductions)
-    (m_outer m_inner m_op : Core.ExpressionMetadata)
-    (id_meta : Unit) (mty : LMonoTy)
-    (e1c e2c : CoreLExpr) (e_goto : CProverGOTO.Expr)
-    (h_op_gty : mty.destructArrow.getLast!.toGotoType = .ok .Boolean)
-    (ih1 : ∀ (e_goto : CProverGOTO.Expr),
-        isBoolIntFragment e1c = true →
-        LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩)
-              [] e1c = .ok e_goto →
-        IsBoolIntTranslated e1c e_goto)
-    (ih2 : ∀ (e_goto : CProverGOTO.Expr),
-        isBoolIntFragment e2c = true →
-        LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩)
-              [] e2c = .ok e_goto → IsBoolIntTranslated e2c e_goto)
-    (h_frag : isBoolIntFragment
-        (LExpr.app m_outer
-          (LExpr.app m_inner
-            (LExpr.op m_op ⟨"Int.Ge", id_meta⟩ (some mty)) e1c) e2c) = true)
-    (h_tx : LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩)
-              [] (LExpr.app m_outer
-                (LExpr.app m_inner
-                  (LExpr.op m_op ⟨"Int.Ge", id_meta⟩ (some mty)) e1c) e2c)
-              = .ok e_goto) :
-    IsBoolIntTranslated
-      (LExpr.app m_outer
-        (LExpr.app m_inner
-          (LExpr.op m_op ⟨"Int.Ge", id_meta⟩ (some mty)) e1c) e2c)
-      e_goto := by
-  have h_frag1 : isBoolIntFragment e1c = true := by
-    have h := h_frag
-    simp [isBoolIntFragment, isSupportedIntBinOp,
-          isSupportedBoolBinOp] at h
-    exact h.1
-  have h_frag2 : isBoolIntFragment e2c = true := by
-    have h := h_frag
-    simp [isBoolIntFragment, isSupportedIntBinOp,
-          isSupportedBoolBinOp] at h
-    exact h.2
-  simp only [LExpr.toGotoExprCtx, bind, Except.bind, pure, Except.pure] at h_tx
-  simp only [show (toString (⟨"Int.Ge", id_meta⟩ : Lambda.Identifier Unit))
-             = "Int.Ge" from rfl,
-             show ("Int.Ge" == "old") = false from rfl,
-             h_red.intGe, h_red.isSignedBvOp_intGe] at h_tx
-  simp only [op_id_ne_funApp_binary] at h_tx
-  rw [h_op_gty] at h_tx
-  cases h_e1g :
-      LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩) [] e1c with
-  | error _ => rw [h_e1g] at h_tx; cases h_tx
-  | ok e1g =>
-    rw [h_e1g] at h_tx
-    cases h_e2g :
-        LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩) [] e2c with
-    | error _ => rw [h_e2g] at h_tx; cases h_tx
-    | ok e2g =>
-      rw [h_e2g] at h_tx
-      cases h_tx
-      exact .intGe m_inner m_outer (some mty) e1c e2c e1g e2g
-            (ih1 e1g h_frag1 h_e1g) (ih2 e2g h_frag2 h_e2g)
-
-/-! ### Per-operator bridge helpers (boolean binary ops) -/
-
-/-- Bridge helper: `Bool.And`. -/
-private theorem isBoolIntTranslated_of_toGotoExprCtx_boolAnd
-    (h_red : FnToGotoIDReductions)
-    (m_outer m_inner m_op : Core.ExpressionMetadata)
-    (id_meta : Unit) (mty : LMonoTy)
-    (e1c e2c : CoreLExpr) (e_goto : CProverGOTO.Expr)
-    (h_op_gty : mty.destructArrow.getLast!.toGotoType = .ok .Boolean)
-    (ih1 : ∀ (e_goto : CProverGOTO.Expr),
-        isBoolIntFragment e1c = true →
-        LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩)
-              [] e1c = .ok e_goto →
-        IsBoolIntTranslated e1c e_goto)
-    (ih2 : ∀ (e_goto : CProverGOTO.Expr),
-        isBoolIntFragment e2c = true →
-        LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩)
-              [] e2c = .ok e_goto → IsBoolIntTranslated e2c e_goto)
-    (h_frag : isBoolIntFragment
-        (LExpr.app m_outer
-          (LExpr.app m_inner
-            (LExpr.op m_op ⟨"Bool.And", id_meta⟩ (some mty)) e1c) e2c) = true)
-    (h_tx : LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩)
-              [] (LExpr.app m_outer
-                (LExpr.app m_inner
-                  (LExpr.op m_op ⟨"Bool.And", id_meta⟩ (some mty)) e1c) e2c)
-              = .ok e_goto) :
-    IsBoolIntTranslated
-      (LExpr.app m_outer
-        (LExpr.app m_inner
-          (LExpr.op m_op ⟨"Bool.And", id_meta⟩ (some mty)) e1c) e2c)
-      e_goto := by
-  have h_frag1 : isBoolIntFragment e1c = true := by
-    have h := h_frag
-    simp [isBoolIntFragment, isSupportedIntBinOp,
-          isSupportedBoolBinOp] at h
-    exact h.1
-  have h_frag2 : isBoolIntFragment e2c = true := by
-    have h := h_frag
-    simp [isBoolIntFragment, isSupportedIntBinOp,
-          isSupportedBoolBinOp] at h
-    exact h.2
-  simp only [LExpr.toGotoExprCtx, bind, Except.bind, pure, Except.pure] at h_tx
-  simp only [show (toString (⟨"Bool.And", id_meta⟩ : Lambda.Identifier Unit))
-             = "Bool.And" from rfl,
-             show ("Bool.And" == "old") = false from rfl,
-             h_red.boolAnd, h_red.isSignedBvOp_boolAnd] at h_tx
-  simp only [op_id_ne_funApp_multiary] at h_tx
-  rw [h_op_gty] at h_tx
-  cases h_e1g :
-      LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩) [] e1c with
-  | error _ => rw [h_e1g] at h_tx; cases h_tx
-  | ok e1g =>
-    rw [h_e1g] at h_tx
-    cases h_e2g :
-        LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩) [] e2c with
-    | error _ => rw [h_e2g] at h_tx; cases h_tx
-    | ok e2g =>
-      rw [h_e2g] at h_tx
-      cases h_tx
-      exact .boolAnd m_inner m_outer (some mty) e1c e2c e1g e2g
-            (ih1 e1g h_frag1 h_e1g) (ih2 e2g h_frag2 h_e2g)
-
-/-- Bridge helper: `Bool.Or`. -/
-private theorem isBoolIntTranslated_of_toGotoExprCtx_boolOr
-    (h_red : FnToGotoIDReductions)
-    (m_outer m_inner m_op : Core.ExpressionMetadata)
-    (id_meta : Unit) (mty : LMonoTy)
-    (e1c e2c : CoreLExpr) (e_goto : CProverGOTO.Expr)
-    (h_op_gty : mty.destructArrow.getLast!.toGotoType = .ok .Boolean)
-    (ih1 : ∀ (e_goto : CProverGOTO.Expr),
-        isBoolIntFragment e1c = true →
-        LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩)
-              [] e1c = .ok e_goto →
-        IsBoolIntTranslated e1c e_goto)
-    (ih2 : ∀ (e_goto : CProverGOTO.Expr),
-        isBoolIntFragment e2c = true →
-        LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩)
-              [] e2c = .ok e_goto → IsBoolIntTranslated e2c e_goto)
-    (h_frag : isBoolIntFragment
-        (LExpr.app m_outer
-          (LExpr.app m_inner
-            (LExpr.op m_op ⟨"Bool.Or", id_meta⟩ (some mty)) e1c) e2c) = true)
-    (h_tx : LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩)
-              [] (LExpr.app m_outer
-                (LExpr.app m_inner
-                  (LExpr.op m_op ⟨"Bool.Or", id_meta⟩ (some mty)) e1c) e2c)
-              = .ok e_goto) :
-    IsBoolIntTranslated
-      (LExpr.app m_outer
-        (LExpr.app m_inner
-          (LExpr.op m_op ⟨"Bool.Or", id_meta⟩ (some mty)) e1c) e2c)
-      e_goto := by
-  have h_frag1 : isBoolIntFragment e1c = true := by
-    have h := h_frag
-    simp [isBoolIntFragment, isSupportedIntBinOp,
-          isSupportedBoolBinOp] at h
-    exact h.1
-  have h_frag2 : isBoolIntFragment e2c = true := by
-    have h := h_frag
-    simp [isBoolIntFragment, isSupportedIntBinOp,
-          isSupportedBoolBinOp] at h
-    exact h.2
-  simp only [LExpr.toGotoExprCtx, bind, Except.bind, pure, Except.pure] at h_tx
-  simp only [show (toString (⟨"Bool.Or", id_meta⟩ : Lambda.Identifier Unit))
-             = "Bool.Or" from rfl,
-             show ("Bool.Or" == "old") = false from rfl,
-             h_red.boolOr, h_red.isSignedBvOp_boolOr] at h_tx
-  simp only [op_id_ne_funApp_multiary] at h_tx
-  rw [h_op_gty] at h_tx
-  cases h_e1g :
-      LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩) [] e1c with
-  | error _ => rw [h_e1g] at h_tx; cases h_tx
-  | ok e1g =>
-    rw [h_e1g] at h_tx
-    cases h_e2g :
-        LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩) [] e2c with
-    | error _ => rw [h_e2g] at h_tx; cases h_tx
-    | ok e2g =>
-      rw [h_e2g] at h_tx
-      cases h_tx
-      exact .boolOr m_inner m_outer (some mty) e1c e2c e1g e2g
-            (ih1 e1g h_frag1 h_e1g) (ih2 e2g h_frag2 h_e2g)
-
-/-- Bridge helper: `Bool.Implies`. -/
-private theorem isBoolIntTranslated_of_toGotoExprCtx_boolImplies
-    (h_red : FnToGotoIDReductions)
-    (m_outer m_inner m_op : Core.ExpressionMetadata)
-    (id_meta : Unit) (mty : LMonoTy)
-    (e1c e2c : CoreLExpr) (e_goto : CProverGOTO.Expr)
-    (h_op_gty : mty.destructArrow.getLast!.toGotoType = .ok .Boolean)
-    (ih1 : ∀ (e_goto : CProverGOTO.Expr),
-        isBoolIntFragment e1c = true →
-        LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩)
-              [] e1c = .ok e_goto →
-        IsBoolIntTranslated e1c e_goto)
-    (ih2 : ∀ (e_goto : CProverGOTO.Expr),
-        isBoolIntFragment e2c = true →
-        LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩)
-              [] e2c = .ok e_goto → IsBoolIntTranslated e2c e_goto)
-    (h_frag : isBoolIntFragment
-        (LExpr.app m_outer
-          (LExpr.app m_inner
-            (LExpr.op m_op ⟨"Bool.Implies", id_meta⟩ (some mty)) e1c) e2c) = true)
-    (h_tx : LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩)
-              [] (LExpr.app m_outer
-                (LExpr.app m_inner
-                  (LExpr.op m_op ⟨"Bool.Implies", id_meta⟩ (some mty)) e1c) e2c)
-              = .ok e_goto) :
-    IsBoolIntTranslated
-      (LExpr.app m_outer
-        (LExpr.app m_inner
-          (LExpr.op m_op ⟨"Bool.Implies", id_meta⟩ (some mty)) e1c) e2c)
-      e_goto := by
-  have h_frag1 : isBoolIntFragment e1c = true := by
-    have h := h_frag
-    simp [isBoolIntFragment, isSupportedIntBinOp,
-          isSupportedBoolBinOp] at h
-    exact h.1
-  have h_frag2 : isBoolIntFragment e2c = true := by
-    have h := h_frag
-    simp [isBoolIntFragment, isSupportedIntBinOp,
-          isSupportedBoolBinOp] at h
-    exact h.2
-  simp only [LExpr.toGotoExprCtx, bind, Except.bind, pure, Except.pure] at h_tx
-  simp only [show (toString (⟨"Bool.Implies", id_meta⟩ : Lambda.Identifier Unit))
-             = "Bool.Implies" from rfl,
-             show ("Bool.Implies" == "old") = false from rfl,
-             h_red.boolImplies, h_red.isSignedBvOp_boolImplies] at h_tx
-  simp only [op_id_ne_funApp_binary] at h_tx
-  rw [h_op_gty] at h_tx
-  cases h_e1g :
-      LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩) [] e1c with
-  | error _ => rw [h_e1g] at h_tx; cases h_tx
-  | ok e1g =>
-    rw [h_e1g] at h_tx
-    cases h_e2g :
-        LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩) [] e2c with
-    | error _ => rw [h_e2g] at h_tx; cases h_tx
-    | ok e2g =>
-      rw [h_e2g] at h_tx
-      cases h_tx
-      exact .boolImplies m_inner m_outer (some mty) e1c e2c e1g e2g
             (ih1 e1g h_frag1 h_e1g) (ih2 e2g h_frag2 h_e2g)
 
 /-! ### Per-operator bridge helper (unary boolean op: Bool.Not)
@@ -2085,61 +1356,94 @@ theorem toGotoExprCtx_preservesEval_boolInt
       rcases h_int with
         ((((((((h | h) | h) | h) | h) | h) | h) | h) | h)
       · subst h
-        have h_op_gty :=
-          h_gty_int_arith (Or.inl (by simp))
-        exact isBoolIntTranslated_of_toGotoExprCtx_intAdd h_red m_outer m_inner m_op
-          id_meta mty e1c e2c e_goto h_op_gty ih1 ih2 h_frag h_tx
+        exact isBoolIntTranslated_of_toGotoExprCtx_binOp .intAdd
+          h_red.intAdd h_red.isSignedBvOp_intAdd
+          (op_id_ne_funApp_multiary _) (by decide)
+          (fun _ _ _ _ _ _ _ ih1 ih2 => .intAdd _ _ _ _ _ _ _ ih1 ih2)
+          m_outer m_inner m_op id_meta mty e1c e2c e_goto
+          (h_gty_int_arith (Or.inl (by simp))) ih1 ih2 h_frag1 h_frag2 h_tx
       · subst h
-        have h_op_gty :=
-          h_gty_int_arith (Or.inr (Or.inl (by simp)))
-        exact isBoolIntTranslated_of_toGotoExprCtx_intSub h_red m_outer m_inner m_op
-          id_meta mty e1c e2c e_goto h_op_gty ih1 ih2 h_frag h_tx
+        exact isBoolIntTranslated_of_toGotoExprCtx_binOp .intSub
+          h_red.intSub h_red.isSignedBvOp_intSub
+          (op_id_ne_funApp_binary _) (by decide)
+          (fun _ _ _ _ _ _ _ ih1 ih2 => .intSub _ _ _ _ _ _ _ ih1 ih2)
+          m_outer m_inner m_op id_meta mty e1c e2c e_goto
+          (h_gty_int_arith (Or.inr (Or.inl (by simp)))) ih1 ih2 h_frag1 h_frag2 h_tx
       · subst h
-        have h_op_gty :=
-          h_gty_int_arith (Or.inr (Or.inr (Or.inl (by simp))))
-        exact isBoolIntTranslated_of_toGotoExprCtx_intMul h_red m_outer m_inner m_op
-          id_meta mty e1c e2c e_goto h_op_gty ih1 ih2 h_frag h_tx
+        exact isBoolIntTranslated_of_toGotoExprCtx_binOp .intMul
+          h_red.intMul h_red.isSignedBvOp_intMul
+          (op_id_ne_funApp_multiary _) (by decide)
+          (fun _ _ _ _ _ _ _ ih1 ih2 => .intMul _ _ _ _ _ _ _ ih1 ih2)
+          m_outer m_inner m_op id_meta mty e1c e2c e_goto
+          (h_gty_int_arith (Or.inr (Or.inr (Or.inl (by simp))))) ih1 ih2 h_frag1 h_frag2 h_tx
       · subst h
-        have h_op_gty :=
-          h_gty_int_arith (Or.inr (Or.inr (Or.inr (Or.inl (by simp)))))
-        exact isBoolIntTranslated_of_toGotoExprCtx_intDivT h_red m_outer m_inner m_op
-          id_meta mty e1c e2c e_goto h_op_gty ih1 ih2 h_frag h_tx
+        exact isBoolIntTranslated_of_toGotoExprCtx_binOp .intDivT
+          h_red.intDivT h_red.isSignedBvOp_intDivT
+          (op_id_ne_funApp_binary _) (by decide)
+          (fun _ _ _ _ _ _ _ ih1 ih2 => .intDivT _ _ _ _ _ _ _ ih1 ih2)
+          m_outer m_inner m_op id_meta mty e1c e2c e_goto
+          (h_gty_int_arith (Or.inr (Or.inr (Or.inr (Or.inl (by simp)))))) ih1 ih2
+          h_frag1 h_frag2 h_tx
       · subst h
-        have h_op_gty :=
-          h_gty_int_arith (Or.inr (Or.inr (Or.inr (Or.inr (by simp)))))
-        exact isBoolIntTranslated_of_toGotoExprCtx_intModT h_red m_outer m_inner m_op
-          id_meta mty e1c e2c e_goto h_op_gty ih1 ih2 h_frag h_tx
+        exact isBoolIntTranslated_of_toGotoExprCtx_binOp .intModT
+          h_red.intModT h_red.isSignedBvOp_intModT
+          (op_id_ne_funApp_binary _) (by decide)
+          (fun _ _ _ _ _ _ _ ih1 ih2 => .intModT _ _ _ _ _ _ _ ih1 ih2)
+          m_outer m_inner m_op id_meta mty e1c e2c e_goto
+          (h_gty_int_arith (Or.inr (Or.inr (Or.inr (Or.inr (by simp)))))) ih1 ih2
+          h_frag1 h_frag2 h_tx
       · subst h
-        have h_op_gty := h_gty_int_cmp (Or.inl (by simp))
-        exact isBoolIntTranslated_of_toGotoExprCtx_intLt h_red m_outer m_inner m_op
-          id_meta mty e1c e2c e_goto h_op_gty ih1 ih2 h_frag h_tx
+        exact isBoolIntTranslated_of_toGotoExprCtx_binOp .intLt
+          h_red.intLt h_red.isSignedBvOp_intLt
+          (op_id_ne_funApp_binary _) (by decide)
+          (fun _ _ _ _ _ _ _ ih1 ih2 => .intLt _ _ _ _ _ _ _ ih1 ih2)
+          m_outer m_inner m_op id_meta mty e1c e2c e_goto
+          (h_gty_int_cmp (Or.inl (by simp))) ih1 ih2 h_frag1 h_frag2 h_tx
       · subst h
-        have h_op_gty := h_gty_int_cmp (Or.inr (Or.inl (by simp)))
-        exact isBoolIntTranslated_of_toGotoExprCtx_intLe h_red m_outer m_inner m_op
-          id_meta mty e1c e2c e_goto h_op_gty ih1 ih2 h_frag h_tx
+        exact isBoolIntTranslated_of_toGotoExprCtx_binOp .intLe
+          h_red.intLe h_red.isSignedBvOp_intLe
+          (op_id_ne_funApp_binary _) (by decide)
+          (fun _ _ _ _ _ _ _ ih1 ih2 => .intLe _ _ _ _ _ _ _ ih1 ih2)
+          m_outer m_inner m_op id_meta mty e1c e2c e_goto
+          (h_gty_int_cmp (Or.inr (Or.inl (by simp)))) ih1 ih2 h_frag1 h_frag2 h_tx
       · subst h
-        have h_op_gty := h_gty_int_cmp (Or.inr (Or.inr (Or.inl (by simp))))
-        exact isBoolIntTranslated_of_toGotoExprCtx_intGt h_red m_outer m_inner m_op
-          id_meta mty e1c e2c e_goto h_op_gty ih1 ih2 h_frag h_tx
+        exact isBoolIntTranslated_of_toGotoExprCtx_binOp .intGt
+          h_red.intGt h_red.isSignedBvOp_intGt
+          (op_id_ne_funApp_binary _) (by decide)
+          (fun _ _ _ _ _ _ _ ih1 ih2 => .intGt _ _ _ _ _ _ _ ih1 ih2)
+          m_outer m_inner m_op id_meta mty e1c e2c e_goto
+          (h_gty_int_cmp (Or.inr (Or.inr (Or.inl (by simp))))) ih1 ih2 h_frag1 h_frag2 h_tx
       · subst h
-        have h_op_gty := h_gty_int_cmp (Or.inr (Or.inr (Or.inr (by simp))))
-        exact isBoolIntTranslated_of_toGotoExprCtx_intGe h_red m_outer m_inner m_op
-          id_meta mty e1c e2c e_goto h_op_gty ih1 ih2 h_frag h_tx
+        exact isBoolIntTranslated_of_toGotoExprCtx_binOp .intGe
+          h_red.intGe h_red.isSignedBvOp_intGe
+          (op_id_ne_funApp_binary _) (by decide)
+          (fun _ _ _ _ _ _ _ ih1 ih2 => .intGe _ _ _ _ _ _ _ ih1 ih2)
+          m_outer m_inner m_op id_meta mty e1c e2c e_goto
+          (h_gty_int_cmp (Or.inr (Or.inr (Or.inr (by simp))))) ih1 ih2 h_frag1 h_frag2 h_tx
     | inr h_bool =>
       simp only [isSupportedBoolBinOp, Bool.or_eq_true, beq_iff_eq] at h_bool
       rcases h_bool with ((h | h) | h)
       · subst h
-        have h_op_gty := h_gty_bool_bin (Or.inl (by simp))
-        exact isBoolIntTranslated_of_toGotoExprCtx_boolAnd h_red m_outer m_inner m_op
-          id_meta mty e1c e2c e_goto h_op_gty ih1 ih2 h_frag h_tx
+        exact isBoolIntTranslated_of_toGotoExprCtx_binOp .boolAnd
+          h_red.boolAnd h_red.isSignedBvOp_boolAnd
+          (op_id_ne_funApp_multiary _) (by decide)
+          (fun _ _ _ _ _ _ _ ih1 ih2 => .boolAnd _ _ _ _ _ _ _ ih1 ih2)
+          m_outer m_inner m_op id_meta mty e1c e2c e_goto
+          (h_gty_bool_bin (Or.inl (by simp))) ih1 ih2 h_frag1 h_frag2 h_tx
       · subst h
-        have h_op_gty := h_gty_bool_bin (Or.inr (Or.inl (by simp)))
-        exact isBoolIntTranslated_of_toGotoExprCtx_boolOr h_red m_outer m_inner m_op
-          id_meta mty e1c e2c e_goto h_op_gty ih1 ih2 h_frag h_tx
+        exact isBoolIntTranslated_of_toGotoExprCtx_binOp .boolOr
+          h_red.boolOr h_red.isSignedBvOp_boolOr
+          (op_id_ne_funApp_multiary _) (by decide)
+          (fun _ _ _ _ _ _ _ ih1 ih2 => .boolOr _ _ _ _ _ _ _ ih1 ih2)
+          m_outer m_inner m_op id_meta mty e1c e2c e_goto
+          (h_gty_bool_bin (Or.inr (Or.inl (by simp)))) ih1 ih2 h_frag1 h_frag2 h_tx
       · subst h
-        have h_op_gty := h_gty_bool_bin (Or.inr (Or.inr (by simp)))
-        exact isBoolIntTranslated_of_toGotoExprCtx_boolImplies h_red m_outer m_inner m_op
-          id_meta mty e1c e2c e_goto h_op_gty ih1 ih2 h_frag h_tx
+        exact isBoolIntTranslated_of_toGotoExprCtx_binOp .boolImplies
+          h_red.boolImplies h_red.isSignedBvOp_boolImplies
+          (op_id_ne_funApp_binary _) (by decide)
+          (fun _ _ _ _ _ _ _ ih1 ih2 => .boolImplies _ _ _ _ _ _ _ ih1 ih2)
+          m_outer m_inner m_op id_meta mty e1c e2c e_goto
+          (h_gty_bool_bin (Or.inr (Or.inr (by simp)))) ih1 ih2 h_frag1 h_frag2 h_tx
   -- Unary boolean op (fn = .op m_op id (some mty))
   | .app m_outer (.op m_op fn_id (some mty)) e1c, h_gty, h_frag, h_tx =>
     obtain ⟨fn_name, id_meta⟩ := fn_id
