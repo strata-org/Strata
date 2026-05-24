@@ -166,16 +166,15 @@ This is proved by `cases` on both the evaluation step and the
 applications per case. All sub-cases are closed:
 * `eval_init × init_det` uses `step_decl` then `step_assign` on σ',
   with the rhs's δ_goto-eval witness on σ' obtained from the witness
-  on σ via the `h_init_extension` hypothesis (round 11);
-* `eval_set_nondet × set_nondet` uses the new `step_assign_nondet`;
-* `eval_cover` is unreachable under the tightened `isAdmittedCmd`.
+  on σ via the `h_init_extension` hypothesis;
+* `eval_set_nondet × set_nondet` uses `step_assign_nondet`;
+* `eval_cover` is unreachable under `isAdmittedCmd`.
 
-R11: `h_init_extension` is a small well-formedness hypothesis on
+`h_init_extension` is a small well-formedness hypothesis on
 `δ_goto`: `δ_goto` agrees on σ and σ' whenever σ' extends σ with a
-fresh binding (via `InitState`). This is the standard "fresh-variable
-monotonicity" property and is required to switch the `init_det` arm
-from `step_assign_nondet` (no-op padding) to `step_assign` (with
-δ_goto-eval witness on σ'). -/
+fresh binding (via `InitState`). This "fresh-variable monotonicity"
+property is required to use `step_assign` (with δ_goto-eval witness
+on σ') in the `init_det` arm. -/
 theorem single_cmd_simulation
     (δ : Imperative.SemanticEval Core.Expression)
     (δ_goto : SemanticEvalGoto Core.Expression)
@@ -206,7 +205,7 @@ theorem single_cmd_simulation
     --  (1) `step_decl` with the source's InitState `h_init`, which puts
     --      x ↦ v into σ to get σ';
     --  (2) `step_assign` on σ' with the eval witness on σ' obtained from
-    --      the σ-witness via `h_init_extension` (R11). The `UpdateState`
+    --      the σ-witness via `h_init_extension`. The `UpdateState`
     --      writes `v` into `σ'` at `x` — but `σ' x = some v` already, so
     --      `UpdateState_self` discharges it.
     show ReflTrans _ _ (GotoConfig.running (pc + 2) _ (failed || false))
@@ -247,8 +246,8 @@ theorem single_cmd_simulation
       exact StepGoto.step_assign h_assn_at h_assn_ty h_goto_eval h_upd
   | eval_set_nondet h_upd _ =>
     -- `.set v .nondet md` — single ASSIGN with nondet RHS. Uses the
-    -- tightened `step_assign_nondet` constructor (R11), which now
-    -- carries the rhs-shape witness directly.
+    -- `step_assign_nondet` constructor, which carries the rhs-shape
+    -- witness directly.
     show ReflTrans _ _ (GotoConfig.running (pc + 1) _ (failed || false))
     rw [Bool.or_false]
     cases h_layout with

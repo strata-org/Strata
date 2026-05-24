@@ -150,10 +150,10 @@ inductive CmdEmittedAt
     Nat → Imperative.Cmd Core.Expression → Prop where
   /-- `.init v ty (.det e_core) md` → DECL at `pc`, ASSIGN at `pc + 1`.
 
-  Round-7 strengthening: `h_decl_code` and `h_assn_code` now expose the
-  exact symbol the translator emits (`Expr.symbol (identToString v) gty`)
-  rather than an existential `lhs`. Required by the lookup-field bridge
-  lemmas in `InstructionLookups.lean`. -/
+  `h_decl_code` and `h_assn_code` expose the exact symbol the
+  translator emits (`Expr.symbol (identToString v) gty`); the
+  lookup-field bridge lemmas in `InstructionLookups.lean` rely on
+  this. -/
   | init_det
     (pc : Nat)
     (v : Core.Expression.Ident) (ty : Core.Expression.Ty)
@@ -173,7 +173,7 @@ inductive CmdEmittedAt
     CmdEmittedAt δ δ_goto δ_goto_bool pgm pc (.init v ty (.det e_core) md)
   /-- `.init v ty .nondet md` → DECL at `pc` only.
 
-  Round-7 strengthening: `h_decl_code` exposes the exact symbol. -/
+  `h_decl_code` exposes the exact symbol. -/
   | init_nondet
     (pc : Nat)
     (v : Core.Expression.Ident) (ty : Core.Expression.Ty)
@@ -187,7 +187,7 @@ inductive CmdEmittedAt
     CmdEmittedAt δ δ_goto δ_goto_bool pgm pc (.init v ty .nondet md)
   /-- `.set v (.det e_core) md` → ASSIGN at `pc` with translated rhs.
 
-  Round-7 strengthening: `h_assn_code` exposes the exact symbol. -/
+  `h_assn_code` exposes the exact symbol. -/
   | set_det
     (pc : Nat)
     (v : Core.Expression.Ident) (e_core : Core.Expression.Expr)
@@ -203,10 +203,10 @@ inductive CmdEmittedAt
     CmdEmittedAt δ δ_goto δ_goto_bool pgm pc (.set v (.det e_core) md)
   /-- `.set v .nondet md` → ASSIGN at `pc` with side-effect Nondet rhs.
 
-  Round-7 strengthening: `h_assn_code` exposes the exact lhs symbol and
-  the rhs's identifier (`.side_effect .Nondet`) and type (matching the
-  translator's emit). The rhs's source-loc and other fields remain
-  underspecified via the existential `e_nondet`. -/
+  `h_assn_code` exposes the exact lhs symbol and the rhs's identifier
+  (`.side_effect .Nondet`) and type (matching the translator's emit).
+  The rhs's source-loc and other fields remain underspecified via
+  the existential `e_nondet`. -/
   | set_nondet
     (pc : Nat)
     (v : Core.Expression.Ident)
@@ -296,10 +296,10 @@ structure WellFormedTranslation
   and the patcher only writes the `target` field, so this fact transfers
   unchanged to the final `pgm.instructions`.
 
-  R10a uses this field to pin `labelMap` to the translator's
-  hashmap-keyed labelMap on `cfg.blocks` labels: a LOCATION whose
-  `labels = [l]` has a unique pc in the actual program, and the
-  translator emits exactly one such LOCATION per CFG block label. -/
+  Used to pin `labelMap` to the translator's hashmap-keyed labelMap
+  on `cfg.blocks` labels: a LOCATION whose `labels = [l]` has a
+  unique pc in the actual program, and the translator emits exactly
+  one such LOCATION per CFG block label. -/
   layout_location_labels :
     ∀ l blk pc,
       (l, blk) ∈ cfg.blocks → labelMap l = some pc →
