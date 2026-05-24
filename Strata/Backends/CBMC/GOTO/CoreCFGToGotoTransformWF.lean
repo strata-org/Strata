@@ -2284,7 +2284,6 @@ theorem labelMapInsert_preserves_inj
     (m : LabelMap) (label : String) (pc : Nat)
     (h_inj :
       ∀ l₁ l₂ pc', m l₁ = some pc' → m l₂ = some pc' → l₁ = l₂)
-    (h_fresh_dom : m label = none)
     (h_fresh_cod : ∀ l pc', m l = some pc' → pc' ≠ pc) :
     ∀ l₁ l₂ pc', (labelMapInsert m label pc) l₁ = some pc' →
       (labelMapInsert m label pc) l₂ = some pc' →
