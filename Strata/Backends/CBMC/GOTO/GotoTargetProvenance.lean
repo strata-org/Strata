@@ -148,7 +148,7 @@ private theorem patch_one_other_index
   rw [Array.set!_eq_setIfInBounds]
   by_cases h_idx : idx < a.size
   · exact Array.getElem?_setIfInBounds_ne h_neq.symm
-  · rw [Array.setIfInBounds_eq_of_size_le (Nat.le_of_not_lt h_idx)]
+  · rw [Array.setIfInBounds_eq_of_size_le (by omega)]
 
 private theorem patch_one_target_local
     (a : Array CProverGOTO.Instruction) (idx tgt : Nat)

@@ -78,15 +78,13 @@ private theorem hasNoDead'_push
     have h' : a[pc]? = some instr := by
       rw [Array.getElem?_eq_getElem h_lt]; exact h_at
     exact h h'
-  · have h_ge : a.size ≤ pc := Nat.le_of_not_lt h_lt
-    by_cases h_eq : pc = a.size
+  · by_cases h_eq : pc = a.size
     · subst h_eq
       rw [Array.getElem?_push_size] at h_at
       injection h_at with h_at
       subst h_at
       exact h_new
-    · have h_lt' : a.size < pc := by omega
-      have h_oor : (a.push new_instr).size ≤ pc := by
+    · have h_oor : (a.push new_instr).size ≤ pc := by
         rw [Array.size_push]; omega
       rw [Array.getElem?_eq_none h_oor] at h_at
       exact absurd h_at (by simp)
@@ -100,8 +98,7 @@ private theorem hasNoDead'_append_two
   by_cases h_lt : pc < a.size
   · rw [Array.getElem?_append_left h_lt] at h_at
     exact h h_at
-  · have h_ge : a.size ≤ pc := Nat.le_of_not_lt h_lt
-    by_cases h_eq0 : pc = a.size
+  · by_cases h_eq0 : pc = a.size
     · subst h_eq0
       rw [Array.getElem?_append_right (Nat.le_refl _)] at h_at
       simp at h_at
