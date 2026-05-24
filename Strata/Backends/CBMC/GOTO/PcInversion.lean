@@ -849,11 +849,8 @@ The strict `AssignNondetPcInversion` is *provably false* in general,
 per R8b's discovery; we close it under an extra precondition that
 narrows the source CFG. -/
 
-/-- Build `BodyPcCovered` over the translator output `ans` by composing
-the blocks-fold preservation and the patcher preservation. Both
-`declPcInversion_of_translator_abbrev` and
-`assignPcInversion_of_translator_abbrev` project from this. -/
-private theorem bodyPcCovered_of_translator
+section TopLevel
+variable
     (Env : Core.Expression.TyEnv) (functionName : String)
     (cfg : Core.DetCFG)
     (trans₀ : Imperative.GotoTransform Core.Expression.TyEnv)
@@ -861,6 +858,7 @@ private theorem bodyPcCovered_of_translator
     (h_init_empty_decl_assign : ∀ {pc : Nat} {instr : Instruction},
       trans₀.instructions[pc]? = some instr →
       instr.type ≠ .DECL ∧ instr.type ≠ .ASSIGN)
+    (h_distinct : BlockLabelsDistinct cfg.blocks)
     (h_admitted_blocks :
       ∀ (l : String) blk, (l, blk) ∈ cfg.blocks →
       ∀ c ∈ blk.cmds, Core.CmdExt.isAdmittedCmd c = true)
@@ -879,7 +877,19 @@ private theorem bodyPcCovered_of_translator
     (h_tx_eq :
       ∀ e : Core.Expression.Expr,
         Imperative.ToGoto.toGotoExpr (P := Core.Expression) e
-          = Except.ok (h_expr_corr.tx e)) :
+          = Except.ok (h_expr_corr.tx e))
+    (wf : WellFormedTranslation cfg
+      { name := "", parameterIdentifiers := #[],
+        instructions := ans.instructions }
+      δ δ_goto δ_goto_bool)
+
+include h_init_size h_init_empty_decl_assign h_admitted_blocks
+        h_loopContracts_empty_post h_run h_expr_corr h_tx_eq in
+/-- Build `BodyPcCovered` over the translator output `ans` by composing
+the blocks-fold preservation and the patcher preservation. Both
+`declPcInversion_of_translator_abbrev` and
+`assignPcInversion_of_translator_abbrev` project from this. -/
+private theorem bodyPcCovered_of_translator :
     BodyPcCovered δ δ_goto δ_goto_bool ans
       { name := "", parameterIdentifiers := #[],
         instructions := ans.instructions } := by
@@ -939,40 +949,6 @@ private theorem bodyPcCovered_of_translator
     rw [← this]
     exact h_at'
   exact h_cov_post h_at_post
-
-section TopLevel
-variable
-    (Env : Core.Expression.TyEnv) (functionName : String)
-    (cfg : Core.DetCFG)
-    (trans₀ : Imperative.GotoTransform Core.Expression.TyEnv)
-    (h_init_size : trans₀.instructions.size = trans₀.nextLoc)
-    (h_init_empty_decl_assign : ∀ {pc : Nat} {instr : Instruction},
-      trans₀.instructions[pc]? = some instr →
-      instr.type ≠ .DECL ∧ instr.type ≠ .ASSIGN)
-    (h_distinct : BlockLabelsDistinct cfg.blocks)
-    (h_admitted_blocks :
-      ∀ (l : String) blk, (l, blk) ∈ cfg.blocks →
-      ∀ c ∈ blk.cmds, Core.CmdExt.isAdmittedCmd c = true)
-    (h_loopContracts_empty_post :
-      ∀ (st_final : Strata.CoreCFGTransLoopState),
-        cfg.blocks.foldlM (Strata.coreCFGToGotoBlockStep functionName)
-          (coreCFGToGotoInitState trans₀)
-        = Except.ok st_final → st_final.loopContracts = ∅)
-    (ans : Imperative.GotoTransform Core.Expression.TyEnv)
-    (h_run : Strata.coreCFGToGotoTransform Env functionName cfg trans₀
-              = Except.ok ans)
-    (δ : Imperative.SemanticEval Core.Expression)
-    (δ_goto : SemanticEvalGoto Core.Expression)
-    (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
-    (h_expr_corr : ExprTranslationPreservesEval δ δ_goto δ_goto_bool)
-    (h_tx_eq :
-      ∀ e : Core.Expression.Expr,
-        Imperative.ToGoto.toGotoExpr (P := Core.Expression) e
-          = Except.ok (h_expr_corr.tx e))
-    (wf : WellFormedTranslation cfg
-      { name := "", parameterIdentifiers := #[],
-        instructions := ans.instructions }
-      δ δ_goto δ_goto_bool)
 
 include h_init_size h_init_empty_decl_assign h_distinct h_admitted_blocks
         h_loopContracts_empty_post h_run h_expr_corr h_tx_eq
