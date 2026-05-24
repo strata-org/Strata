@@ -354,7 +354,13 @@ theorem steppingBridges_of_translator
       refine ⟨_, ?_,
         .assign (Bisim.instrAt_to_instrType h_at h_ty) h_lhs h_rhs h_eval⟩
       exact storeCorr_preserve_update h_brHyps.nameMap_inj h_upd h_vc h_corr
-    | step_assign_nondet h_at h_ty h_upd =>
+    | step_assign_nondet h_at h_ty h_code h_id h_upd =>
+      -- R11: `step_assign_nondet`'s constructor now carries the
+      -- rhs-shape witness directly via `h_code` and `h_id`. We still
+      -- consult the bridge field for the `getAssignLhs/getAssignRhs`
+      -- option-bind chain (which `Bisim.stepGoto_assign_nondet_to_stepInstr`
+      -- expects); the bridge field's `h_nondet` agrees with the
+      -- constructor's `h_id` by construction.
       obtain ⟨rhs_g, h_lhs, h_rhs, h_nondet⟩ :=
         h_brHyps.assign_nondet_lookup h_at h_ty h_upd
       obtain ⟨v_goto, h_vc⟩ :=

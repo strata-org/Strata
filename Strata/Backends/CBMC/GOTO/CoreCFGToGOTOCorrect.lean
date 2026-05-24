@@ -247,13 +247,15 @@ theorem single_cmd_simulation
       exact StepGoto.step_assign h_assn_at h_assn_ty h_goto_eval h_upd
   | eval_set_nondet h_upd _ =>
     -- `.set v .nondet md` — single ASSIGN with nondet RHS. Uses the
-    -- new `step_assign_nondet` constructor.
+    -- tightened `step_assign_nondet` constructor (R11), which now
+    -- carries the rhs-shape witness directly.
     show ReflTrans _ _ (GotoConfig.running (pc + 1) _ (failed || false))
     rw [Bool.or_false]
     cases h_layout with
-    | set_nondet _ _ _ h_assn_at h_assn_ty _ _ =>
+    | set_nondet _ _ _ h_assn_at h_assn_ty _ h_assn_code =>
+      obtain ⟨e_nondet, h_code, h_id, _⟩ := h_assn_code
       refine ReflTrans.step _ _ _ ?_ (ReflTrans.refl _)
-      exact StepGoto.step_assign_nondet h_assn_at h_assn_ty h_upd
+      exact StepGoto.step_assign_nondet h_assn_at h_assn_ty h_code h_id h_upd
   | eval_assert_pass h_eval _ =>
     show ReflTrans _ _ (GotoConfig.running (pc + 1) _ (failed || false))
     rw [Bool.or_false]

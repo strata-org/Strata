@@ -186,13 +186,19 @@ inductive StepGoto
 
   /-- An `ASSIGN` instruction whose RHS is a side-effect Nondet GOTO
   expression: arbitrary value `v` is assigned. Mirrors
-  `EvalCmd.eval_set_nondet` on the source side. The RHS shape is not
-  constrained at the constructor level; the layout predicate
-  `CmdEmittedAt.set_nondet` carries that structural witness, gating
-  where this rule may fire. -/
+  `EvalCmd.eval_set_nondet` on the source side.
+
+  R11: the constructor now carries the rhs-shape witness directly
+  (`instr.code = Code.assign lhs rhs ∧ rhs.id = .side_effect .Nondet`).
+  This makes the rule structurally distinguishable from the generic
+  `step_assign` and rules out using it as no-op padding for non-nondet
+  rhs (which previously led to R8b's strict
+  `AssignNondetPcInversion` being provably false in general). -/
   | step_assign_nondet :
     pgm.instrAt pc = some instr →
     instr.type = .ASSIGN →
+    instr.code = Code.assign lhs rhs →
+    rhs.id = .side_effect .Nondet →
     UpdateState P σ x v σ' →
     StepGoto P δ_goto δ_goto_bool pgm
       (.running pc σ failed) (.running (pc + 1) σ' failed)
