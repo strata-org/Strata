@@ -321,6 +321,8 @@ theorem coreCFGToGotoBlockStep_preserves
         (st.labelMap.insert label st.trans.nextLoc)
         h_admitted h_inner h_inv_after_label
     -- Transfer push (GOTO×2 or END_FUNCTION). Both are non-LOCATION.
+    have h_GOTO_not_LOC : InstructionType.GOTO ≠ InstructionType.LOCATION := by decide
+    have h_EF_not_LOC : InstructionType.END_FUNCTION ≠ InstructionType.LOCATION := by decide
     cases h_t : blk.transfer with
     | condGoto cond lt lf md =>
       rw [h_t] at h_run
@@ -334,29 +336,16 @@ theorem coreCFGToGotoBlockStep_preserves
         injection h_run with h_run
         rw [← h_run]
         intro pc instr l h_at h_ty h_labels
-        -- The transfer pushes two GOTO instructions (cond + uncond). Both
-        -- are non-LOCATION; reduce to push_non_location_preserves twice.
+        -- The transfer pushes two GOTOs (cond + uncond). Both are non-LOCATION.
         let srcLoc := Imperative.metadataToSourceLoc md fname trans₂.sourceText
-        let cond_inst : Instruction :=
-          { type := .GOTO, locationNum := trans₂.nextLoc,
-            sourceLoc := srcLoc, guard := cond_expr.not, target := none }
         let trans₃ := (Imperative.emitCondGoto cond_expr.not srcLoc trans₂).fst
-        let uncond_inst : Instruction :=
-          { type := .GOTO, locationNum := trans₃.nextLoc,
-            sourceLoc := srcLoc, guard := CProverGOTO.Expr.true, target := none }
         have h_invc : LocationsTrackLabelMap trans₃
             (st.labelMap.insert label st.trans.nextLoc) := by
           intro pc' instr' l' h_at' h_ty' h_labels'
-          change (trans₂.instructions.push cond_inst)[pc']? = some instr' at h_at'
-          exact push_non_location_preserves trans₂ _ cond_inst h_inv_after_cmds
-            (show InstructionType.GOTO ≠ InstructionType.LOCATION by decide)
-            h_at' h_ty' h_labels'
-        change ((Imperative.emitUncondGoto _ _).fst).instructions[pc]? = some instr at h_at
-        change (st.labelMap.insert label st.trans.nextLoc)[l]? = some pc
-        change (trans₃.instructions.push uncond_inst)[pc]? = some instr at h_at
-        exact push_non_location_preserves trans₃ _ uncond_inst h_invc
-          (show InstructionType.GOTO ≠ InstructionType.LOCATION by decide)
-          h_at h_ty h_labels
+          exact push_non_location_preserves trans₂ _ _ h_inv_after_cmds
+            h_GOTO_not_LOC h_at' h_ty' h_labels'
+        change (trans₃.instructions.push _)[pc]? = some instr at h_at
+        exact push_non_location_preserves trans₃ _ _ h_invc h_GOTO_not_LOC h_at h_ty h_labels
       | .error _, _ => simp at h_run
     | finish md =>
       rw [h_t] at h_run
@@ -364,12 +353,9 @@ theorem coreCFGToGotoBlockStep_preserves
       injection h_run with h_run
       rw [← h_run]
       intro pc instr l h_at h_ty h_labels
-      change (trans₂.instructions.push (endFunctionInstr md fname trans₂))[pc]? = some instr at h_at
-      change (st.labelMap.insert label st.trans.nextLoc)[l]? = some pc
-      exact push_non_location_preserves trans₂ _ (endFunctionInstr md fname trans₂)
-        h_inv_after_cmds
-        (show InstructionType.END_FUNCTION ≠ InstructionType.LOCATION by decide)
-        h_at h_ty h_labels
+      change (trans₂.instructions.push _)[pc]? = some instr at h_at
+      exact push_non_location_preserves trans₂ _ _ h_inv_after_cmds
+        h_EF_not_LOC h_at h_ty h_labels
   | .error _, _ => simp at h_run
 
 /-- `blocksFoldlM` preserves the invariant, given the freshness
