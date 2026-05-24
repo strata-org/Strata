@@ -394,6 +394,45 @@ theorem endFunction_emit_preserves_locationNum_eq_index
 The patcher only edits `target` fields, never `locationNum`s. So the
 `locationNum_eq_index` invariant transfers unchanged. -/
 
+/-- A target-only patch at index `idx` leaves all other indices'
+elements unchanged. Shared utility used by both the WF tree's
+patcher analysis and `GotoTargetProvenance`'s reverse-direction
+proofs. -/
+theorem patch_one_other_index
+    (a : Array CProverGOTO.Instruction) (idx tgt : Nat)
+    (i : Nat) (h_neq : i ≠ idx) :
+    (a.set! idx { a[idx]! with target := some tgt })[i]? = a[i]? := by
+  rw [Array.set!_eq_setIfInBounds]
+  by_cases h_idx : idx < a.size
+  · exact Array.getElem?_setIfInBounds_ne h_neq.symm
+  · rw [Array.setIfInBounds_eq_of_size_le (by omega)]
+
+/-- The patcher's `foldl` preserves `target = some tgt` at `idx`,
+provided no later patch in the list has first projection `idx`. -/
+theorem patch_foldl_target_preserved_when_idx_unique_in_tail
+    (a : Array CProverGOTO.Instruction) (idx : Nat) (tgt : Nat)
+    (ps : List (Nat × Nat))
+    (h_target : ∃ instr, a[idx]? = some instr ∧ instr.target = some tgt)
+    (h_tail_no_idx : ∀ p ∈ ps, p.1 ≠ idx) :
+    ∃ instr,
+      (List.foldl
+        (fun acc (p : Nat × Nat) =>
+          acc.set! p.fst { acc[p.fst]! with target := some p.snd })
+        a ps)[idx]? = some instr ∧
+      instr.target = some tgt := by
+  induction ps generalizing a with
+  | nil => exact h_target
+  | cons p rest ih =>
+    simp only [List.foldl]
+    have h_p_neq : p.1 ≠ idx := h_tail_no_idx p (by simp)
+    have h_rest_neq : ∀ q ∈ rest, q.1 ≠ idx := fun q hq => h_tail_no_idx q (by simp [hq])
+    apply ih
+    · obtain ⟨instr, h_at, h_tgt⟩ := h_target
+      have h_neq : idx ≠ p.1 := Ne.symm h_p_neq
+      rw [patch_one_other_index a p.1 p.2 idx h_neq]
+      exact ⟨instr, h_at, h_tgt⟩
+    · exact h_rest_neq
+
 /-- `Array.set!` with a record update on `target` doesn't change
 `locationNum`. -/
 private theorem patch_one_preserves_locationNum
