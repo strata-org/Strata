@@ -4151,8 +4151,6 @@ theorem coreCFGToGotoTransform_size_eq_and_loc
       ∀ (l : String) blk, (l, blk) ∈ cfg.blocks →
       ∀ c ∈ blk.cmds, Core.CmdExt.isAdmittedCmd c = true)
     (ans : Imperative.GotoTransform Core.Expression.TyEnv)
-    (h_run : Strata.coreCFGToGotoTransform Env functionName cfg trans₀
-              = Except.ok ans)
     (st_final : Strata.CoreCFGTransLoopState)
     (h_blocks_run :
       cfg.blocks.foldlM (Strata.coreCFGToGotoBlockStep functionName)
@@ -4332,7 +4330,7 @@ theorem coreCFGToGotoTransform_size_eq_and_loc_direct
   obtain ⟨st_final, resolved, trans_post, h_blocks_run, h_patches_run, h_ans_eq⟩ :=
     coreCFGToGotoTransform_decompose Env functionName cfg trans₀ ans h_run
   exact coreCFGToGotoTransform_size_eq_and_loc Env functionName cfg trans₀
-    h_init_size h_init_loc h_admitted_blocks ans h_run
+    h_init_size h_init_loc h_admitted_blocks ans
     st_final h_blocks_run (h_loopContracts_empty_post st_final h_blocks_run)
     resolved trans_post h_patches_run h_ans_eq
 
