@@ -229,6 +229,31 @@ private theorem append_two_preserves_body_pc_covered
         rw [Array.getElem?_eq_none h_oor] at h
         exact absurd h (by simp)
 
+/-- Pushing a non-DECL, non-ASSIGN instruction preserves
+`BodyPcCovered`. The DECL/ASSIGN obligations are vacuous. -/
+private theorem push_non_body_preserves_body_pc_covered
+    (δ : Imperative.SemanticEval Core.Expression)
+    (δ_goto : SemanticEvalGoto Core.Expression)
+    (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
+    (trans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (pgm : Program)
+    (new_instr : Instruction)
+    (h_not_decl : new_instr.type ≠ .DECL)
+    (h_not_assn : new_instr.type ≠ .ASSIGN)
+    (h_cov : BodyPcCovered δ δ_goto δ_goto_bool trans pgm) :
+    ∀ {pc : Nat} {instr : Instruction},
+      (trans.instructions.push new_instr)[pc]? = some instr →
+      (instr.type = .DECL →
+        ∃ inner, CmdEmittedAt δ δ_goto δ_goto_bool pgm pc inner) ∧
+      (instr.type = .ASSIGN →
+        (∃ v cv md, CmdEmittedAt δ δ_goto δ_goto_bool pgm pc
+          (.set v cv md)) ∨
+        (∃ pc_pred v ty e_core md, pc = pc_pred + 1 ∧
+          CmdEmittedAt δ δ_goto δ_goto_bool pgm pc_pred
+            (.init v ty (.det e_core) md))) :=
+  push_preserves_body_pc_covered δ δ_goto δ_goto_bool trans pgm new_instr h_cov
+    (fun h => absurd h h_not_decl) (fun h => absurd h h_not_assn)
+
 /-! ## Preservation through `Cmd.toGotoInstructions`
 
 For each `Imperative.Cmd` constructor in the admitted fragment, we
@@ -415,47 +440,17 @@ theorem toGotoInstructions_preserves_body_pc_covered
       Cmd_toGotoInstructions_assert_ok T fname label e md trans ans h_run
     intro pc instr h
     rw [h_inst] at h
-    have h_new_decl : i.type = .DECL →
-        ∃ inner, CmdEmittedAt δ δ_goto δ_goto_bool pgm
-          trans.instructions.size inner := by
-      intro h'
-      rw [h_assert_ty] at h'
-      cases h'
-    have h_new_assn : i.type = .ASSIGN →
-        (∃ v' cv' md', CmdEmittedAt δ δ_goto δ_goto_bool pgm
-          trans.instructions.size (.set v' cv' md')) ∨
-        (∃ pc_pred v' ty' e_core md',
-          trans.instructions.size = pc_pred + 1 ∧
-          CmdEmittedAt δ δ_goto δ_goto_bool pgm pc_pred
-            (.init v' ty' (.det e_core) md')) := by
-      intro h'
-      rw [h_assert_ty] at h'
-      cases h'
-    exact push_preserves_body_pc_covered δ δ_goto δ_goto_bool trans pgm
-      i h_cov h_new_decl h_new_assn h
+    exact push_non_body_preserves_body_pc_covered δ δ_goto δ_goto_bool trans pgm
+      i (fun h_eq => by rw [h_assert_ty] at h_eq; cases h_eq)
+        (fun h_eq => by rw [h_assert_ty] at h_eq; cases h_eq) h_cov h
   | assume label e md =>
     obtain ⟨_e_goto, i, _, h_assume_ty, _, _, h_inst, _⟩ :=
       Cmd_toGotoInstructions_assume_ok T fname label e md trans ans h_run
     intro pc instr h
     rw [h_inst] at h
-    have h_new_decl : i.type = .DECL →
-        ∃ inner, CmdEmittedAt δ δ_goto δ_goto_bool pgm
-          trans.instructions.size inner := by
-      intro h'
-      rw [h_assume_ty] at h'
-      cases h'
-    have h_new_assn : i.type = .ASSIGN →
-        (∃ v' cv' md', CmdEmittedAt δ δ_goto δ_goto_bool pgm
-          trans.instructions.size (.set v' cv' md')) ∨
-        (∃ pc_pred v' ty' e_core md',
-          trans.instructions.size = pc_pred + 1 ∧
-          CmdEmittedAt δ δ_goto δ_goto_bool pgm pc_pred
-            (.init v' ty' (.det e_core) md')) := by
-      intro h'
-      rw [h_assume_ty] at h'
-      cases h'
-    exact push_preserves_body_pc_covered δ δ_goto δ_goto_bool trans pgm
-      i h_cov h_new_decl h_new_assn h
+    exact push_non_body_preserves_body_pc_covered δ δ_goto δ_goto_bool trans pgm
+      i (fun h_eq => by rw [h_assume_ty] at h_eq; cases h_eq)
+        (fun h_eq => by rw [h_assume_ty] at h_eq; cases h_eq) h_cov h
   | cover label e md =>
     -- Cover is *not* admitted (`isAdmittedCmd (.cover _ _ _) = false`),
     -- but cover at the source level emits an ASSERT instruction. Since
@@ -476,24 +471,8 @@ theorem toGotoInstructions_preserves_body_pc_covered
             (comment := md.getPropertySummary.getD s!"cover {label}"),
           guard := e_goto }
       have h' : (trans.instructions.push assert_inst)[pc]? = some instr := h
-      have h_new_decl : assert_inst.type = .DECL →
-          ∃ inner, CmdEmittedAt δ δ_goto δ_goto_bool pgm
-            trans.instructions.size inner := by
-        intro h'
-        have : InstructionType.ASSERT = InstructionType.DECL := h'
-        cases this
-      have h_new_assn : assert_inst.type = .ASSIGN →
-          (∃ v' cv' md', CmdEmittedAt δ δ_goto δ_goto_bool pgm
-            trans.instructions.size (.set v' cv' md')) ∨
-          (∃ pc_pred v' ty' e_core md',
-            trans.instructions.size = pc_pred + 1 ∧
-            CmdEmittedAt δ δ_goto δ_goto_bool pgm pc_pred
-              (.init v' ty' (.det e_core) md')) := by
-        intro h'
-        have : InstructionType.ASSERT = InstructionType.ASSIGN := h'
-        cases this
-      exact push_preserves_body_pc_covered δ δ_goto δ_goto_bool trans pgm
-        assert_inst h_cov h_new_decl h_new_assn h'
+      exact push_non_body_preserves_body_pc_covered δ δ_goto δ_goto_bool trans pgm
+        assert_inst (by intro h_eq; cases h_eq) (by intro h_eq; cases h_eq) h_cov h'
     | .error _ =>
       simp [h_expr, Bind.bind, Except.bind] at h_run
 
@@ -538,29 +517,8 @@ theorem coreCFGToGotoCmdStep_preserves_body_pc_covered
       injection h_run with h_run
       intro pc instr h
       rw [← h_run] at h
-      by_cases h_lt : pc < trans.instructions.size
-      · rw [Array.getElem?_push_lt h_lt] at h
-        have h' : trans.instructions[pc]? = some instr := by
-          rw [Array.getElem?_eq_getElem h_lt]; exact h
-        exact h_cov h'
-      · have h_ge : trans.instructions.size ≤ pc := Nat.le_of_not_lt h_lt
-        by_cases h_eq : pc = trans.instructions.size
-        · subst h_eq
-          rw [Array.getElem?_push_size] at h
-          injection h with h
-          subst h
-          refine ⟨?_, ?_⟩
-          · intro h'
-            have : InstructionType.FUNCTION_CALL = InstructionType.DECL := h'
-            cases this
-          · intro h'
-            have : InstructionType.FUNCTION_CALL = InstructionType.ASSIGN := h'
-            cases this
-        · have h_lt' : trans.instructions.size < pc := by omega
-          have h_size_h : (trans.instructions.size + 1) ≤ pc := by omega
-          rw [Array.getElem?_eq_none] at h
-          · exact absurd h (by simp)
-          · rw [Array.size_push]; omega
+      exact push_non_body_preserves_body_pc_covered δ δ_goto δ_goto_bool trans pgm
+        _ (by intro h_eq; cases h_eq) (by intro h_eq; cases h_eq) h_cov h
     | .error _, _ =>
       simp [Bind.bind, Except.bind] at h_run
 
@@ -652,28 +610,8 @@ theorem emitLabel_preserves_body_pc_covered
     BodyPcCovered δ δ_goto δ_goto_bool
       (Imperative.emitLabel label srcLoc trans) pgm := by
   intro pc instr h
-  let new_instr : Instruction :=
-    { type := .LOCATION, locationNum := trans.nextLoc, sourceLoc := srcLoc,
-      labels := [label], code := Code.skip }
-  have h' : (trans.instructions.push new_instr)[pc]? = some instr := h
-  have h_new_decl : new_instr.type = .DECL →
-      ∃ inner, CmdEmittedAt δ δ_goto δ_goto_bool pgm
-        trans.instructions.size inner := by
-    intro h_eq
-    have : InstructionType.LOCATION = InstructionType.DECL := h_eq
-    cases this
-  have h_new_assn : new_instr.type = .ASSIGN →
-      (∃ v cv md, CmdEmittedAt δ δ_goto δ_goto_bool pgm
-        trans.instructions.size (.set v cv md)) ∨
-      (∃ pc_pred v ty e_core md,
-        trans.instructions.size = pc_pred + 1 ∧
-        CmdEmittedAt δ δ_goto δ_goto_bool pgm pc_pred
-          (.init v ty (.det e_core) md)) := by
-    intro h_eq
-    have : InstructionType.LOCATION = InstructionType.ASSIGN := h_eq
-    cases this
-  exact push_preserves_body_pc_covered δ δ_goto δ_goto_bool trans pgm
-    new_instr h_cov h_new_decl h_new_assn h'
+  exact push_non_body_preserves_body_pc_covered δ δ_goto δ_goto_bool trans pgm
+    _ (by intro h_eq; cases h_eq) (by intro h_eq; cases h_eq) h_cov h
 
 theorem emitCondGoto_preserves_body_pc_covered
     (guard : Expr) (srcLoc : SourceLocation)
@@ -686,28 +624,8 @@ theorem emitCondGoto_preserves_body_pc_covered
     BodyPcCovered δ δ_goto δ_goto_bool
       (Imperative.emitCondGoto guard srcLoc trans).fst pgm := by
   intro pc instr h
-  let new_instr : Instruction :=
-    { type := .GOTO, locationNum := trans.nextLoc, sourceLoc := srcLoc,
-      guard := guard, target := none }
-  have h' : (trans.instructions.push new_instr)[pc]? = some instr := h
-  have h_new_decl : new_instr.type = .DECL →
-      ∃ inner, CmdEmittedAt δ δ_goto δ_goto_bool pgm
-        trans.instructions.size inner := by
-    intro h_eq
-    have : InstructionType.GOTO = InstructionType.DECL := h_eq
-    cases this
-  have h_new_assn : new_instr.type = .ASSIGN →
-      (∃ v cv md, CmdEmittedAt δ δ_goto δ_goto_bool pgm
-        trans.instructions.size (.set v cv md)) ∨
-      (∃ pc_pred v ty e_core md,
-        trans.instructions.size = pc_pred + 1 ∧
-        CmdEmittedAt δ δ_goto δ_goto_bool pgm pc_pred
-          (.init v ty (.det e_core) md)) := by
-    intro h_eq
-    have : InstructionType.GOTO = InstructionType.ASSIGN := h_eq
-    cases this
-  exact push_preserves_body_pc_covered δ δ_goto δ_goto_bool trans pgm
-    new_instr h_cov h_new_decl h_new_assn h'
+  exact push_non_body_preserves_body_pc_covered δ δ_goto δ_goto_bool trans pgm
+    _ (by intro h_eq; cases h_eq) (by intro h_eq; cases h_eq) h_cov h
 
 theorem emitUncondGoto_preserves_body_pc_covered
     (srcLoc : SourceLocation)
@@ -720,28 +638,8 @@ theorem emitUncondGoto_preserves_body_pc_covered
     BodyPcCovered δ δ_goto δ_goto_bool
       (Imperative.emitUncondGoto srcLoc trans).fst pgm := by
   intro pc instr h
-  let new_instr : Instruction :=
-    { type := .GOTO, locationNum := trans.nextLoc, sourceLoc := srcLoc,
-      guard := Expr.true, target := none }
-  have h' : (trans.instructions.push new_instr)[pc]? = some instr := h
-  have h_new_decl : new_instr.type = .DECL →
-      ∃ inner, CmdEmittedAt δ δ_goto δ_goto_bool pgm
-        trans.instructions.size inner := by
-    intro h_eq
-    have : InstructionType.GOTO = InstructionType.DECL := h_eq
-    cases this
-  have h_new_assn : new_instr.type = .ASSIGN →
-      (∃ v cv md, CmdEmittedAt δ δ_goto δ_goto_bool pgm
-        trans.instructions.size (.set v cv md)) ∨
-      (∃ pc_pred v ty e_core md,
-        trans.instructions.size = pc_pred + 1 ∧
-        CmdEmittedAt δ δ_goto δ_goto_bool pgm pc_pred
-          (.init v ty (.det e_core) md)) := by
-    intro h_eq
-    have : InstructionType.GOTO = InstructionType.ASSIGN := h_eq
-    cases this
-  exact push_preserves_body_pc_covered δ δ_goto δ_goto_bool trans pgm
-    new_instr h_cov h_new_decl h_new_assn h'
+  exact push_non_body_preserves_body_pc_covered δ δ_goto δ_goto_bool trans pgm
+    _ (by intro h_eq; cases h_eq) (by intro h_eq; cases h_eq) h_cov h
 
 theorem endFunction_emit_preserves_body_pc_covered
     (md : Imperative.MetaData Core.Expression) (fname : String)
@@ -763,26 +661,9 @@ theorem endFunction_emit_preserves_body_pc_covered
           CmdEmittedAt δ δ_goto δ_goto_bool pgm pc_pred
             (.init v ty (.det e_core) md'))) := by
   intro pc instr h
-  have h_new_decl : (endFunctionInstr md fname trans).type = .DECL →
-      ∃ inner, CmdEmittedAt δ δ_goto δ_goto_bool pgm
-        trans.instructions.size inner := by
-    intro h_eq
-    unfold endFunctionInstr at h_eq
-    have : InstructionType.END_FUNCTION = InstructionType.DECL := h_eq
-    cases this
-  have h_new_assn : (endFunctionInstr md fname trans).type = .ASSIGN →
-      (∃ v cv md', CmdEmittedAt δ δ_goto δ_goto_bool pgm
-        trans.instructions.size (.set v cv md')) ∨
-      (∃ pc_pred v ty e_core md',
-        trans.instructions.size = pc_pred + 1 ∧
-        CmdEmittedAt δ δ_goto δ_goto_bool pgm pc_pred
-          (.init v ty (.det e_core) md')) := by
-    intro h_eq
-    unfold endFunctionInstr at h_eq
-    have : InstructionType.END_FUNCTION = InstructionType.ASSIGN := h_eq
-    cases this
-  exact push_preserves_body_pc_covered δ δ_goto δ_goto_bool trans pgm
-    (endFunctionInstr md fname trans) h_cov h_new_decl h_new_assn h
+  exact push_non_body_preserves_body_pc_covered δ δ_goto δ_goto_bool trans pgm
+    _ (fun h_eq => by unfold endFunctionInstr at h_eq; cases h_eq)
+      (fun h_eq => by unfold endFunctionInstr at h_eq; cases h_eq) h_cov h
 
 /-! ## Preservation through `coreCFGToGotoBlockStep` -/
 
