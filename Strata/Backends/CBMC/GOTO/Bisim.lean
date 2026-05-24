@@ -13,33 +13,26 @@ public section
 
 /-! # Bisimulation bridge between `StepGoto` and `StepInstr`
 
-Phase 0 of the GOTO-semantics-expansion plan
-(`docs/superpowers/specs/2026-05-20-goto-semantics-expansion-design.md`).
-
 This module connects this branch's `CProverGOTO.StepGoto` (over an
 expression-valued `Imperative.SemanticStore`) to the ported tautschnig
 relation `CProverGOTO.SemanticsTautschnig.StepInstr` (over a concrete
-`Value`-valued `Store`). The bridge is *partial*: only the
-non-state-changing constructors elaborate as direct bridges at this
-commit. State-changing constructors (`DECL`, `DEAD`, `ASSIGN`,
-`ASSIGN`-nondet) need additional structural hypotheses (well-formed
-instruction code on the GOTO side, plus `EvalCorr` for `ASSIGN`) and
-are stated as separate theorem-shaped predicates whose proofs land
-when downstream consumers force them.
+`Value`-valued `Store`).
 
-## What's bridged at this commit
+Each per-constructor forward bridge (`StepGoto → StepInstr`) is stated
+as a theorem here. Non-state-changing constructors (`step_location`,
+`step_skip`, `step_assert_pass`, `step_assume_pass`,
+`step_goto_fallthrough`) are direct: they leave the store unchanged so
+`StoreCorr` is trivially preserved. State-changing constructors
+(`step_decl`, `step_dead`, `step_assign`, `step_assign_nondet`) plus
+the failure / branching constructors (`step_assert_fail`,
+`step_goto_taken`) take additional structural hypotheses (well-formed
+instruction code on the GOTO side, plus `EvalCorr` for `ASSIGN`,
+plus a `findLocIdx` resolution for `step_goto_taken`).
 
-The forward direction (`StepGoto → StepInstr`) is proved for
-`step_location`, `step_skip`, `step_assert_pass`, `step_assume_pass`,
-`step_goto_fallthrough`. These all leave the store unchanged, so
-`StoreCorr` is trivially preserved.
-
-The remaining cases (DECL, DEAD, ASSIGN, ASSIGN-nondet, ASSERT-fail,
-GOTO-taken, END_FUNCTION) have known structural divergences from
-`StepInstr` documented in the design spec. Bridging each requires
-specific hypotheses beyond what `StoreCorr` alone provides. They are
-not stated as `theorem`s here to keep the ratchet — every theorem in
-this module elaborates without `sorry`. -/
+The closure-level `step_end_function` bridge produces an `ExecProg`
+rather than a `StepInstr`. The trace-level lift assembling these
+per-step bridges into `StepGotoStar → ExecProg` lives in
+`Strata/Backends/CBMC/GOTO/CoreCFGToGOTOCorrectStore.lean`. -/
 
 namespace CProverGOTO.Bisim
 
@@ -67,18 +60,6 @@ theorem instrAt_to_instrGuard
   unfold Program.instrAt at h_at
   unfold SemanticsTautschnig.instrGuard
   rw [h_at, Option.map_some]
-
-/-- `StoreCorr` is reflexive in its store argument: passing the same
-imperative-side store to the bridge witness is a no-op. Used by every
-non-state-changing constructor's bridge proof. -/
-theorem storeCorr_preserve_skip
-    {P : Imperative.PureExpr} [SemanticsTautschnig.ValueCorr P]
-    {nameMap : P.Ident → String}
-    {σ_imp : Imperative.SemanticStore P}
-    {σ_goto : SemanticsTautschnig.Store}
-    (h : SemanticsTautschnig.StoreCorr nameMap σ_imp σ_goto) :
-    SemanticsTautschnig.StoreCorr nameMap σ_imp σ_goto :=
-  h
 
 /-! ## Forward bridges for non-state-changing constructors
 
@@ -602,49 +583,5 @@ theorem stepGoto_end_function_to_execProg
       pc σ_goto σ_goto none :=
   ⟨h_corr, .end_function (instrAt_to_instrType h_at h_ty)⟩
 
-/-! ## Structural divergences not yet bridged at this commit
-
-All twelve `StepGoto` constructors now have a bridge; the
-end-function bridge sits at the closure level
-(`stepGoto_end_function_to_execProg`) rather than producing a
-`StepInstr` step.
-
-The remaining work for assembling the trace-level lift is to do
-induction on a `StepGotoStar` derivation, dispatching each step to
-the appropriate per-constructor bridge above. That assembly lives in
-`Strata/Backends/CBMC/GOTO/CoreCFGToGOTOCorrectStore.lean`; see
-`docs/CoreToGOTO_BisimReport.md` for status.
-
-(Notes preserved for historical context, since each per-constructor
-bridge surfaces an external hypothesis rather than baking the
-constraint into `StepGoto` itself):
-
-* `step_decl`: bridges to `StepInstr.decl`, which always sets the
-  symbol to `vEmpty` regardless of the abstract `InitState` witness's
-  value. The bridge needs `StoreCorr` to permit `vEmpty` as the
-  GOTO-side image of *any* `v` from `InitState` — i.e. a slightly
-  weaker `StoreCorr` for freshly-declared variables, or a follow-up
-  `StepInstr.assign` that pins the value.
-
-* `step_dead`: bridges to `StepInstr.dead`. Direct match modulo
-  `RemoveState` ↔ `Store.kill`.
-
-* `step_assign`: bridges via `EvalCorr` (the value-returning
-  `ExprEval` correspondence, not the boolean-only `EvalBoolCorr`).
-  This needs a `Function.Injective nameMap` hypothesis to preserve
-  `StoreCorr` (so distinct source identifiers do not collide on the
-  same GOTO-side symbol).
-
-* `step_assign_nondet`: bridges to `StepInstr.assign_nondet`, which
-  requires `rhs.id = .side_effect .Nondet` syntactically. Our
-  `step_assign_nondet` does not currently carry that constraint; the
-  bridge would need to either tighten `StepGoto.step_assign_nondet`
-  or supply the syntactic check as an external hypothesis.
-
-* `step_end_function`: not a single-step bisimulation. Ours produces
-  `.terminal σ failed`; theirs has no `terminal` config and observes
-  `END_FUNCTION` via `ExecProg.end_function`. The bridge lives at the
-  *closure* level, connecting `StepGotoStar … (.terminal σ' b)` to
-  `ExecProg`. -/
 
 end CProverGOTO.Bisim
