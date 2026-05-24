@@ -17,18 +17,6 @@ This module produces a `SteppingBridges` value (consumed by
 `Strata/Backends/CBMC/GOTO/CoreCFGToGOTOCorrectStore.lean`) from a
 *single* hypothesis package describing the actual translator output.
 
-This is "Gap C" in `docs/CoreToGOTO_CorrectnessAnalysis.md` §4: the
-last load-bearing piece of Phase 3, sitting between
-
-* Worker A's `WellFormedTranslation`-style witness (structural shape
-  of `coreCFGToGotoTransform`'s output), and
-* Worker B's `EvalBoolCorr` / `EvalValueCorr` (semantic agreement of
-  the source-side and tautschnig-side expression evaluators on
-  translated expressions),
-
-and the trace-level lift that `StepGotoStar_to_ExecProg` already
-provides.
-
 ## Architecture
 
 `SteppingBridges` (in `CoreCFGToGOTOCorrectStore.lean`) has two
@@ -48,73 +36,40 @@ lookups for ASSIGN, symbol-name lookups for DECL/DEAD,
 `findLocIdx`-resolution for GOTO-taken). Those hypotheses must be
 provided uniformly across PCs.
 
-The interface chosen here packages those hypotheses as a structure
-`TranslatorBridgeHyps`, parameterised by the program and the
-running source-side configuration. A consumer that already has
-Worker A's `WellFormedTranslation` witness can derive a
-`TranslatorBridgeHyps` value from it (see §"Coverage and gaps"
-below for the boundary).
+The interface here packages those hypotheses as a structure
+`TranslatorBridgeHyps`, parameterised by the program. A consumer that
+already has a `WellFormedTranslation` witness can derive a
+`TranslatorBridgeHyps` value via
+`TranslatorBridgeHypsDischarge.wellFormedTranslation_to_translatorBridgeHyps`.
 
-## Coverage and gaps
+## Per-constructor coverage
 
-Per-constructor status (out of the 12 `StepGoto` constructors):
-
-* **Closed.** Five non-state-changing cases (`location`, `skip`,
-  `assert_pass`, `assume_pass`, `goto_fallthrough`) plus
-  `assert_fail` and the closure-level `end_function` discharge
-  cleanly using the bridges in `Bisim.lean`.
+* **Direct from `Bisim.lean` bridges.** The five non-state-changing
+  cases (`location`, `skip`, `assert_pass`, `assume_pass`,
+  `goto_fallthrough`), `assert_fail`, and the closure-level
+  `end_function`.
 * **Closed under `TranslatorBridgeHyps`.** `decl`, `dead`, `assign`,
-  `assign_nondet`, `goto_taken` discharge from per-PC instruction-
-  shape information that the translator emits. We carry this
-  information in `TranslatorBridgeHyps`.
+  `assign_nondet`, `goto_taken` discharge from per-PC
+  instruction-shape information that the translator emits, carried
+  in `TranslatorBridgeHyps`.
 
-Two structural obligations cannot be discharged from current
-`WellFormedTranslation` + `valueCorrCore`; they are surfaced as
+Two structural obligations cannot be discharged from
+`WellFormedTranslation` + `valueCorrCore` alone and are surfaced as
 fields on `TranslatorBridgeHyps`:
 
 * **`step_decl` empty-value condition.**
   `Bisim.stepGoto_decl_to_stepInstr` requires
-  `vc.toValue v = some .vEmpty`; under the `valueCorrCore` instance
-  no `Lambda.LExpr` constructor satisfies this. Surfaced as
-  `decl_empty_value`. The translator pairs every `step_decl` with
-  an immediately-following `ASSIGN` that pins the value, but
-  folding the two `StepGoto` steps into one `StepInstr` step
-  requires a different bridge shape (one StepGoto ↔ two StepInstrs).
-  Documented in `Bisim.lean`'s closing docstring and §4.6 of the
-  analysis.
+  `vc.toValue v = some .vEmpty`; under `valueCorrCore` no
+  `Lambda.LExpr` constructor satisfies this. Surfaced as
+  `decl_empty_value`. Folding the translator's DECL+ASSIGN pair
+  into one `StepInstr` step would require a different bridge
+  shape (one StepGoto ↔ two StepInstrs).
 * **`findLocIdx` resolution.**
-  `Bisim.stepGoto_goto_taken_to_stepInstr` requires the second-pass
-  patcher's `locationNum`-to-instruction-index resolution. Today
+  `Bisim.stepGoto_goto_taken_to_stepInstr` needs the second-pass
+  patcher's `locationNum`-to-instruction-index resolution.
   `WellFormedTranslation.layout_cond_goto` gives the index target
   but says nothing about the underlying `locationNum`. Surfaced as
-  `goto_target_resolves`.
-
-## Boundary with Worker A and Worker B
-
-This file does **not** synthesise a `TranslatorBridgeHyps` from
-`WellFormedTranslation`. That synthesis is mechanical for the
-shape-related fields but requires Worker A's bundle to expose
-*post-patcher* facts about each emitted GOTO instruction's
-`locationNum` (currently absent from `WellFormedTranslation`).
-
-The fields needing Worker A:
-
-* `decl_lookup`, `dead_lookup`, `assign_lookup`,
-  `assign_nondet_lookup`: from `layout_block_body`'s
-  `CmdEmittedAt` cases (each carries `i.code = Code.symbol …` /
-  `i.code = Code.assign lhs e_goto`, which `getSymbolName` /
-  `getAssignLhs` / `getAssignRhs` decode).
-* `goto_target_resolves`: needs an *additional* post-condition on
-  the patcher (see above).
-
-The fields needing Worker B:
-
-* `assign_value_corr`, `assign_nondet_value_corr`: pinned to the
-  rhs that the translator actually emits, *plus* a
-  `vc.toValue`-recognises-this-value claim. Worker B's
-  `ExprTranslationPreservesEval` gives `δ_goto` ↔ source-side
-  evaluator agreement; pulling out the `vc.toValue v_imp = some
-  v_goto` claim depends on which `ValueCorr` instance is used. -/
+  `goto_target_resolves`. -/
 
 namespace CProverGOTO.SteppingBridgesDischarge
 
@@ -182,13 +137,12 @@ structure TranslatorBridgeHyps
   /-- For every PC carrying an ASSIGN instruction whose
   `StepGoto.step_assign_nondet` derivation fires, the underlying
   `Code` has `getAssignLhs = nameMap x` and `getAssignRhs = rhs`,
-  where `rhs` is the constructor's rhs.
-
-  R11: `step_assign_nondet`'s constructor now carries the rhs-shape
+  where `rhs` is the constructor's rhs. The
+  `step_assign_nondet` constructor itself carries the rhs-shape
   witnesses (`instr.code = Code.assign lhs rhs` and
-  `rhs.id = .side_effect .Nondet`) directly, so the field receives
-  them as preconditions. The lookup chain reduces structurally from
-  `h_code` via `assign_code_to_lhsRhs`. -/
+  `rhs.id = .side_effect .Nondet`), passed in as preconditions; the
+  lookup chain reduces structurally from `h_code` via
+  `assign_code_to_lhsRhs`. -/
   assign_nondet_lookup :
     ∀ {pc : Nat} {instr : Instruction} {x : P.Ident}
       {lhs rhs : Expr}
@@ -234,8 +188,8 @@ structure TranslatorBridgeHyps
   Combines `vc.toValue v_imp = some v_goto` with the
   `eval σ_goto rhs_g = some v_goto` step that
   `tautschnig.StepInstr.assign` needs. The GOTO-side `eval`
-  agreement is exactly Worker B's `EvalCorr`/`EvalValueCorr` output
-  pinned to the rhs `rhs_g` that the translator emits. -/
+  agreement is the `EvalCorr` / `EvalValueCorr` output pinned to
+  the rhs `rhs_g` that the translator emits. -/
   assign_value_corr :
     ∀ {pc : Nat} {instr : Instruction} {x : P.Ident}
       {σ_imp σ_imp' : Imperative.SemanticStore P}
@@ -312,10 +266,11 @@ constructor that produces a `.terminal` configuration). -/
 
 /-- The main theorem. Build a `SteppingBridges` value from:
 
-* `Bisim.EvalBoolCorr` (Worker B's boolean evaluator output),
+* `Bisim.EvalBoolCorr` (boolean-evaluator output),
 * a `TranslatorBridgeHyps` describing the actual translator output
-  (Worker A + the extra `findLocIdx`, value-correspondence, and
-  `vEmpty` obligations documented in §4.4 / §4.6 of the analysis).
+  (`WellFormedTranslation`-derivable lookups plus the extra
+  `findLocIdx` resolution, value-correspondence, and `vEmpty`
+  obligations).
 
 The `Bisim.EvalValueCorr` interface is *not* taken as a hypothesis
 here; instead, the value-side correspondence is folded into
@@ -323,8 +278,7 @@ here; instead, the value-side correspondence is folded into
 `StepGoto.step_assign`'s rhs is an arbitrary GOTO `Expr` (not
 necessarily of the form `exprTrans rhs_imp`), so we cannot rely on
 the `exprTrans`-shaped `EvalValueCorr` directly; we need a per-PC
-fact tying the rhs the translator emits to the `eval` outcome.
-Worker B's `EvalCorr` discharges this point per-PC. -/
+fact tying the rhs the translator emits to the `eval` outcome. -/
 theorem steppingBridges_of_translator
     {P : Imperative.PureExpr} [HasBool P] [HasNot P]
     [SemanticsTautschnig.ValueCorr P]
@@ -361,9 +315,9 @@ theorem steppingBridges_of_translator
         .assign (Bisim.instrAt_to_instrType h_at h_ty) h_lhs h_rhs h_eval⟩
       exact storeCorr_preserve_update h_brHyps.nameMap_inj h_upd h_vc h_corr
     | step_assign_nondet h_at h_ty h_code h_id h_upd =>
-      -- R11: `step_assign_nondet`'s constructor now carries the
-      -- rhs-shape witness directly via `h_code` and `h_id`. The bridge
-      -- field receives them as preconditions and reduces the
+      -- The `step_assign_nondet` constructor carries the rhs-shape
+      -- witness directly via `h_code` and `h_id`; the bridge field
+      -- receives them as preconditions and reduces the
       -- `getAssignLhs/getAssignRhs` lookup chain structurally.
       obtain ⟨h_lhs, h_rhs⟩ :=
         h_brHyps.assign_nondet_lookup h_at h_ty h_code h_id h_upd
