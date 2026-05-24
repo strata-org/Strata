@@ -386,59 +386,11 @@ theorem intConst_translated
     (n : Int) :
     ExprTranslated δ δ_goto δ_goto_bool
       (LExpr.intConst () n)
-      (Expr.constant (toString (LConst.intConst n)) .Integer) := by
-  -- Both sides evaluate the constant to itself, so value_agree, bool_tt_agree
-  -- and bool_ff_agree all reduce to "they agree on this specific value".
-  refine ⟨?vagree, ?ttagree, ?ffagree⟩
-  case vagree =>
+      (Expr.constant (toString (LConst.intConst n)) .Integer) :=
+  ExprTranslated.ofValueAgree h _ _ <| by
     intro σ v
     obtain ⟨h_src, h_tgt⟩ := h.intConst_value σ n
     rw [h_src, h_tgt]
-  case ttagree =>
-    -- HasBool.tt = Core.true = boolConst true ≠ intConst n.
-    intro σ
-    obtain ⟨h_src, h_tgt⟩ := h.intConst_value σ n
-    constructor
-    · intro h_eq
-      -- δ σ (intConst n) = some intConst n by h_src; that contradicts boolConst.
-      rw [h_src] at h_eq
-      -- some (intConst n) ≠ some (boolConst true) by injection on the LExpr.
-      simp only [show (HasBool.tt (P := Core.Expression)) =
-        LExpr.const () (LConst.boolConst true) from rfl] at h_eq
-      injection h_eq with h_eq
-      injection h_eq with _ h_const
-      cases h_const
-    · intro h_eq
-      -- δ_goto_bool σ (constant "...") = some true contradicts via the hypothesis
-      -- chain with goto_bool_agrees_value plus intConst_value.
-      have h_iff := h.goto_bool_agrees_value σ
-        (Expr.constant (toString (LConst.intConst n)) .Integer) true
-      have h_dgoto : δ_goto σ (Expr.constant (toString (LConst.intConst n)) .Integer)
-                       = some (LExpr.boolConst () true) := h_iff.mpr h_eq
-      rw [h_tgt] at h_dgoto
-      injection h_dgoto with h_eq
-      injection h_eq with _ h_const
-      cases h_const
-  case ffagree =>
-    intro σ
-    obtain ⟨h_src, h_tgt⟩ := h.intConst_value σ n
-    constructor
-    · intro h_eq
-      rw [h_src] at h_eq
-      simp only [show (HasBool.ff (P := Core.Expression)) =
-        LExpr.const () (LConst.boolConst false) from rfl] at h_eq
-      injection h_eq with h_eq
-      injection h_eq with _ h_const
-      cases h_const
-    · intro h_eq
-      have h_iff := h.goto_bool_agrees_value σ
-        (Expr.constant (toString (LConst.intConst n)) .Integer) false
-      have h_dgoto : δ_goto σ (Expr.constant (toString (LConst.intConst n)) .Integer)
-                       = some (LExpr.boolConst () false) := h_iff.mpr h_eq
-      rw [h_tgt] at h_dgoto
-      injection h_dgoto with h_eq
-      injection h_eq with _ h_const
-      cases h_const
 
 /-- `boolConst`: the boolean-constant case. -/
 theorem boolConst_translated
@@ -449,56 +401,11 @@ theorem boolConst_translated
     (b : Bool) :
     ExprTranslated δ δ_goto δ_goto_bool
       (LExpr.boolConst () b)
-      (Expr.constant (toString (LConst.boolConst b)) .Boolean) := by
-  refine ⟨?vagree, ?ttagree, ?ffagree⟩
-  case vagree =>
+      (Expr.constant (toString (LConst.boolConst b)) .Boolean) :=
+  ExprTranslated.ofValueAgree h _ _ <| by
     intro σ v
     obtain ⟨h_src, h_tgt, _⟩ := h.boolConst_value σ b
     rw [h_src, h_tgt]
-  case ttagree =>
-    intro σ
-    obtain ⟨h_src, _, h_bool⟩ := h.boolConst_value σ b
-    -- Note `HasBool.tt = LExpr.const () (.boolConst true)` (`Core.Core.true`)
-    -- and `LExpr.boolConst` is sugar for the same; injectivity reduces both
-    -- sides to `b = true`.
-    constructor
-    · intro h_eq
-      rw [h_src] at h_eq
-      -- h_eq : some (boolConst b) = some Core.true ; want b = true.
-      have hb : b = true := by
-        injection h_eq with h_eq
-        -- h_eq : LExpr.const () (LConst.boolConst b) = Core.Core.true
-        -- Core.Core.true unfolds to LExpr.const () (LConst.boolConst true).
-        injection h_eq with _ h_const
-        injection h_const
-      subst hb
-      exact h_bool
-    · intro h_eq
-      have hb : b = true := by
-        rw [h_bool] at h_eq
-        injection h_eq
-      subst hb
-      rw [h_src]
-      rfl
-  case ffagree =>
-    intro σ
-    obtain ⟨h_src, _, h_bool⟩ := h.boolConst_value σ b
-    constructor
-    · intro h_eq
-      rw [h_src] at h_eq
-      have hb : b = false := by
-        injection h_eq with h_eq
-        injection h_eq with _ h_const
-        injection h_const
-      subst hb
-      exact h_bool
-    · intro h_eq
-      have hb : b = false := by
-        rw [h_bool] at h_eq
-        injection h_eq
-      subst hb
-      rw [h_src]
-      rfl
 
 /-! ### Binary operator descriptor
 
