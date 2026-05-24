@@ -262,7 +262,7 @@ caller obligations) plus the translator-input invariants:
 * Target-side `h_eval_bool_corr` and `h_init_no_dead`.
 * Source-side: `σ`, `σ'`, `b`, `σ_goto`, `h_corr`, `h_run_src`. -/
 
-theorem coreCFGToGotoTransform_forward_simulation_concrete_v4
+private theorem coreCFGToGotoTransform_forward_simulation_concrete_v4
     -- Source-side semantics
     (δ : Imperative.SemanticEval Core.Expression)
     (δ_goto : SemanticEvalGoto Core.Expression)
@@ -564,7 +564,7 @@ All of these are mechanically discharable; they are surfaced as
 hypotheses on v5 to keep this round's deliverables auditable. A
 follow-up round (R9) can close them all internally. -/
 
-theorem coreCFGToGotoTransform_forward_simulation_concrete_v5
+private theorem coreCFGToGotoTransform_forward_simulation_concrete_v5
     -- Source-side semantics
     (δ : Imperative.SemanticEval Core.Expression)
     (δ_goto : SemanticEvalGoto Core.Expression)
