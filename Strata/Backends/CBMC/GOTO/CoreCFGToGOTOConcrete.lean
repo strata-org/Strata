@@ -22,73 +22,30 @@ public section
 
 /-! # End-to-end concrete forward simulation for `coreCFGToGotoTransform`
 
-This module composes the parallel-worker outputs into a single
-end-to-end theorem stating that, for any CFG admitted by the
+Top of the assembly tower: composes the parallel-worker outputs
+into a single end-to-end theorem. For any CFG admitted by the
 restricted fragment, the actual translator output simulates the
 source under `StoreCorr` and produces an `ExecProg` derivation:
 
 ```
-coreCFGToGotoTransform_forward_simulation_concrete :
-  ...
-  Strata.coreCFGToGotoTransform Env fname cfg trans₀ = .ok ans →
-  CoreCFGStepStar π φ δ cfg (.cont cfg.entry σ false) (.terminal σ' b) →
-  ∃ pc_entry σ_goto',
-    StoreCorr nameMap σ' σ_goto' ∧
-    ExecProg callResult eval fenv pgm pc_entry σ_goto σ_goto' none
+Strata.coreCFGToGotoTransform Env fname cfg trans₀ = .ok ans →
+CoreCFGStepStar π φ δ cfg (.cont cfg.entry σ false) (.terminal σ' b) →
+∃ pc_entry σ_goto',
+  StoreCorr nameMap σ' σ_goto' ∧
+  ExecProg callResult eval fenv pgm pc_entry σ_goto σ_goto' none
 ```
 
 The chain composes:
-
-* **A2/A3/A4/A5a/A5b** —
-  `coreCFGToGotoTransform_wellFormed_strengthened`
-  (`CoreCFGToGotoTransformWF.lean`): produces a
-  `Nonempty (WellFormedTranslation cfg pgm δ δ_goto δ_goto_bool)`
-  from the translator output. **All five A4 hypothesis-parameter
-  fields closed in round 5**, so this only needs the structural
-  inputs + caller-supplied evaluator-translation hypotheses.
-* **B3** — `toGotoExprCtx_preservesEval_boolInt`
-  (`ExprTranslationPreservesEvalBoolInt.lean`): per-LExpr translation
+* `coreCFGToGotoTransform_wellFormed_strengthened` (A2/A3/A4/A5a/A5b)
+  — builds `Nonempty (WellFormedTranslation …)` from the translator output.
+* `toGotoExprCtx_preservesEval_boolInt` (B3) — per-LExpr translation
   correctness on the bool+int fragment.
-* **C** — `steppingBridges_of_translator`
-  (`SteppingBridgesDischarge.lean`): `SteppingBridges` bundle from
-  `EvalBoolCorr` + `TranslatorBridgeHyps`.
-* **Phase 3** — `coreCFGToGoto_forward_simulation_storeCorr`
-  (`CoreCFGToGOTOCorrectStore.lean`): consumes a `WellFormedTranslation`
-  and a `SteppingBridges` to produce an `ExecProg` derivation.
+* `steppingBridges_of_translator` (C) — `SteppingBridges` bundle.
+* `coreCFGToGoto_forward_simulation_storeCorr` (Phase 3) — consumes
+  the WF + bridges to produce the `ExecProg` derivation.
 
-The theorem still takes a number of hypotheses as parameters
-(remaining open obligations after rounds 1-5):
-
-* `h_loopContracts_empty_post` — A3's loop-contracts simplification
-  (the patch step's guard-tweak branch is sidestepped by assuming
-  no loop contracts in the translator state). Inhabited for any
-  CFG without `specLoopInvariant`/`specDecreases` metadata.
-* `h_distinct` — `BlockLabelsDistinct cfg.blocks`. The source CFG
-  must have pairwise distinct block labels (a global invariant of
-  any well-formed input).
-* `h_admitted_blocks` — every Cmd is `isAdmittedCmd` (no `.call`,
-  no `.cover`, no nondet `.init`). The original Gap A scope.
-* `h_entry_first` — `cfg.blocks.head?.map Prod.fst = some cfg.entry`.
-  The translator already checks and rejects on violation; for any
-  CFG the translator accepts, this holds.
-* `h_init_size` / `h_init_loc` — translator-state-initial
-  invariants (typically `trans₀.instructions = #[]` and
-  `trans₀.nextLoc = 0`, in which case both are trivial).
-* `h_expr_corr` — caller-supplied `ExprTranslationPreservesEval`.
-  B3 produces this for the bool+int fragment.
-* `h_tx_eq` — technical equality between
-  `Imperative.ToGoto.toGotoExpr` and `h_expr_corr.tx`.
-* `h_expr_translated_witness` — finer-grained translation
-  correctness needed by the cond-goto-guards layout proof.
-* `h_brHyps` — Worker C's `TranslatorBridgeHyps` (per-PC structural
-  facts about the actual translator output).
-* `h_eval_bool_corr` — `EvalBoolCorr` (target/target evaluator
-  agreement; caller-supplied).
-* `h_corr` — initial-store `StoreCorr`.
-
-This file is the top of the assembly tower. It does not introduce
-any new proof obligations beyond what the workers already produced;
-it just shows that the pieces compose. -/
+Per-round archaeology and per-hypothesis discharge details live in
+`docs/_workers/round*_supervisor_report.md`. -/
 
 namespace CProverGOTO
 
@@ -98,23 +55,11 @@ open CProverGOTO.SemanticsTautschnig
 
 /-! ## Concrete forward simulation: live versions
 
-Three live theorems are exposed downstream:
-
-* `coreCFGToGotoTransform_forward_simulation_concrete_v4` — discharges
-  R7a/R7b/R7c (goto-target-in-range, no-dead, lookup fields). Builds
-  the `WellFormedTranslation` from scratch via the strengthened
-  theorem.
-* `_v5` — extends `_v4` by discharging R7a's
-  `EveryGotoTargetIsLabelMapEntry` aux (R8a) and R7c's three
-  provenance hypotheses (R8b); fixes `nameMap = identToString`.
-* `_v6` — extends `_v5` by discharging R8b's two non-strict
-  PC-inversion auxiliaries (R9).
-
-The earlier waypoint versions (unsuffixed v1, `_v2`, `_v3`) were
-removed in the round-9 cleanup — they had no live callers (`_v5`
-calls `_v4` directly; `_v4` does not delegate to a previous
-version). The `ConcreteExprCorr` namespace below builds the B3
-expression-side correspondence used by `_v4`/`_v5`/`_v6`. -/
+Two public theorems (`_v6`, `_v7`) are exposed downstream. They
+delegate through two private waypoints (`_v4`, `_v5`) that
+discharge progressively more of the worker-output hypothesis surface.
+The `ConcreteExprCorr` namespace below builds the B3 expression-side
+correspondence consumed by all four. -/
 
 namespace ConcreteExprCorr
 
@@ -224,43 +169,13 @@ noncomputable def buildExprCorr
 
 end ConcreteExprCorr
 
-/-! ## v4: end-to-end concrete forward simulation, R7-discharged
+/-! ## `_v4`: R7-discharged base layer (private)
 
-`coreCFGToGotoTransform_forward_simulation_concrete_v4` is the
-first live theorem in the chain. It builds a `WellFormedTranslation`
-internally via `coreCFGToGotoTransform_wellFormed_strengthened`
-(round 5) and discharges B3's expression-side bundle (round 6),
-the lookup fields via R7c's `_v2` bridge, and:
-
-* **`h_goto_target_in_range`** via R7a's `goto_target_in_range_of_wf`
-  (modulo a small `EveryGotoTargetIsLabelMapEntry` aux hypothesis).
-* **`h_no_dead`** via R7b's `no_dead_program_of_translator` (using
-  the empty translator-state base case `HasNoDead trans₀` —
-  trivially satisfied for any `trans₀.instructions = #[]` initial
-  state).
-* **`h_decl_lookup` / `h_assign_lookup` / `h_assign_nondet_lookup`**
-  via R7c's `wellFormedTranslation_to_translatorBridgeHyps_v2`
-  (modulo provenance + pinning hypotheses; the provenance
-  hypotheses are mechanically discharable from `wf` and
-  `CmdEmittedAt` per R7c's report).
-
-The remaining hypotheses on `_v4` are all category-3 (genuine
-caller obligations) plus the translator-input invariants:
-
-* Translator-input invariants (mostly trivial for `stmtsToCFG`
-  + empty initial state).
-* B3 expression-side bundle.
-* `nameMap` + `Function.Injective nameMap`.
-* R7a's `EveryGotoTargetIsLabelMapEntry` aux (mechanically
-  discharable; deferred).
-* R7c's provenance hypotheses (mechanically discharable;
-  deferred).
-* R7c's pinning hypotheses (irreducible at the WF layer; trace-
-  level caller obligation).
-* R7c's value-side hypotheses (caller obligations about source
-  ↔ target evaluator agreement).
-* Target-side `h_eval_bool_corr` and `h_init_no_dead`.
-* Source-side: `σ`, `σ'`, `b`, `σ_goto`, `h_corr`, `h_run_src`. -/
+Builds a `WellFormedTranslation` via the strengthened theorem,
+discharges goto-target-in-range (R7a), no-dead (R7b), and the
+TranslatorBridgeHyps lookup fields (R7c). Remaining parameters are
+caller-side pinning/value hypotheses and the still-open R7a/R7c
+auxiliary hypotheses (closed in `_v5`). -/
 
 private theorem coreCFGToGotoTransform_forward_simulation_concrete_v4
     -- Source-side semantics
@@ -517,52 +432,14 @@ private theorem coreCFGToGotoTransform_forward_simulation_concrete_v4
       σ σ' b σ_goto h_corr h_run_src
   exact ⟨pc_entry, σ_goto', h_storeCorr', h_exec⟩
 
-/-! ## v5: also discharge the R7 auxiliary hypotheses via R8a/R8b
+/-! ## `_v5`: R8a/R8b auxiliary hypotheses discharged (private)
 
-`coreCFGToGotoTransform_forward_simulation_concrete_v5` extends v4 by
-internally discharging the three "mechanically-discharable structural
-auxiliaries" left as parameters in v4:
-
-* **`h_aux_goto_target`** (R7a's `EveryGotoTargetIsLabelMapEntry`)
-  via R8a's `everyGotoTargetIsLabelMapEntry_of_translator_translatorMap`
-  bridged to `wf.labelMap` via the caller-supplied `h_labelMap_agree`
-  hypothesis (trivially provable for any WF built via the strengthened
-  theorem, since that WF's `labelMap` is definitionally
-  `hashMapToLabelMap st_final.labelMap`).
-* **`h_decl_provenance` / `h_assn_provenance` /
-  `h_assn_nondet_provenance`** via R8b's three theorems. R8b takes
-  three PC-inversion auxiliaries (`DeclPcInversion`,
-  `AssignPcInversion`, `AssignNondetPcInversion`) characterizing
-  which translator constructor emitted each DECL/ASSIGN PC.
-
-## `nameMap = identToString` constraint
-
-R8b's theorems prove `instr.code = Code.decl (Expr.symbol
-(identToString v_src) gty)` (literal `identToString`), while v4
-expects `instr.code = Code.decl (Expr.symbol (nameMap v_src) gty)`
-(caller-supplied `nameMap`). To bridge, **v5 fixes
-`nameMap = Imperative.ToGoto.identToString`**. This is the natural
-choice for `Core.Expression` (matches the `Imperative.ToGoto`
-instance in `CoreToCProverGOTO.lean`), so this restriction does not
-exclude any practical caller.
-
-## Remaining hypotheses on `_v5`
-
-After v5, the only "structural" hypotheses left are:
-* `NoGotoHasTarget trans₀` — trivial for any `trans₀` with empty
-  `instructions = #[]` (the standard initial state).
-* `st_final` and `h_blocks_run` — explicit witness for the inner
-  blocks-fold result.
-* `h_labelMap_agree` — agreement of the WF's `labelMap` with the
-  translator's hashmap-keyed labelMap. Trivially provable for any WF
-  built via the strengthened theorem (definitional unfolding).
-* `DeclPcInversion`, `AssignPcInversion`, `AssignNondetPcInversion` —
-  R8b's PC-to-cmd inversions. Mechanically discharable from the
-  translator's outer-loop structure.
-
-All of these are mechanically discharable; they are surfaced as
-hypotheses on v5 to keep this round's deliverables auditable. A
-follow-up round (R9) can close them all internally. -/
+Extends `_v4` by internally discharging the R7a goto-target aux
+(via R8a) and the R7c DECL/ASSIGN provenance hypotheses (via R8b).
+Fixes `nameMap = Imperative.ToGoto.identToString` (the natural
+choice for `Core.Expression`). Surfaces R8b's `DeclPcInversion` /
+`AssignPcInversion` and the `labelMap` agreement bridge as
+parameters; those are closed in `_v6`. -/
 
 private theorem coreCFGToGotoTransform_forward_simulation_concrete_v5
     -- Source-side semantics
@@ -850,63 +727,23 @@ private theorem coreCFGToGotoTransform_forward_simulation_concrete_v5
     h_decl_empty_value h_assign_value_corr h_assign_nondet_value_corr
     σ σ' b σ_goto h_corr h_run_src
 
-/-! ## v6: also discharge R8b's two non-strict PC-inversion auxiliaries
+/-! ## `_v6`: R9 PC-inversion auxiliaries + R10a labelMap-agree discharged
 
-`coreCFGToGotoTransform_forward_simulation_concrete_v6` extends v5 by
-internally discharging:
+First public theorem. Extends `_v5` by internally discharging R8b's
+two non-strict PC-inversion auxiliaries (`DeclPcInversion`,
+`AssignPcInversion`) via R9, and R10a's `labelMap_agree` via
+`WfLabelMapAgree.labelMap_agree_of_translator`.
 
-* **`h_decl_pc_inv`** (R8b's `DeclPcInversion`)
-  via R9's `declPcInversion_of_translator_abbrev`.
-* **`h_assn_pc_inv`** (R8b's `AssignPcInversion`)
-  via R9's `assignPcInversion_of_translator_abbrev`.
+Adds two small `trans₀`-shape hypotheses (`h_init_empty_decl_assign`,
+`h_init_no_location`) trivial for any standard `trans₀` with
+`instructions := #[]`. R8b's strict `AssignNondetPcInversion` was
+removed in R11 by tightening `step_assign_nondet`'s constructor.
 
-The third PC-inversion auxiliary, `h_assn_nondet_pc_inv` (R8b's
-strict `AssignNondetPcInversion`), **has been removed in R11** by
-tightening `StepGoto.step_assign_nondet`'s constructor to carry the
-rhs-shape witness directly (`instr.code = Code.assign lhs rhs ∧
-rhs.id = .side_effect .Nondet`). The previously-blocked
-`init_det × eval_init` arm now uses `step_assign` (with a
-δ_goto-eval witness on the post-DECL store, derived via the new
-`h_init_extension` hypothesis). See R11's report.
-
-## New hypothesis introduced
-
-`_v6` adds a single small hypothesis `h_init_empty_decl_assign`:
-that `trans₀.instructions` carries no DECL or ASSIGN instructions.
-This is **trivial** for the standard caller (whose `trans₀` is the
-identity-initialised state with `instructions := #[]`). The
-hypothesis appears here because R9's `BodyPcCovered` predicate's
-inductive base case requires it.
-
-## Remaining hypotheses on `_v6`
-
-After v6 (post-R10a), the only "structural" hypotheses left are:
-
-* **Translator-input invariants**: `h_init_size`, `h_init_loc`,
-  `h_init_no_dead`, `h_init_no_goto_target`,
-  `h_init_empty_decl_assign`, `h_init_no_location`, `h_distinct`,
-  `h_admitted_blocks`, `h_loopContracts_empty_post`, `h_entry_first`.
-  All *trivial* for any standard `trans₀` with `instructions := #[]`.
-* **R10a's structural witnesses**: `st_final`, `h_blocks_run`. Both
-  mechanically discharable from `coreCFGToGotoTransform_decompose`
-  (R10b's territory). The previously-required `h_labelMap_agree`
-  closure is now internalised via
-  `WfLabelMapAgree.labelMap_agree_of_translator` — R10a Tier 1.
-* **R11's δ_goto monotonicity**: `h_init_extension` (small
-  well-formedness assumption: δ_goto is monotone across `InitState`
-  for any expression). Standard property of any sane evaluator;
-  callers discharge it from the concrete evaluator's structure.
-* **R7c's pinning hypotheses**: `h_decl_x_pinned`, `h_assn_x_pinned`,
-  `h_assn_rhs_pinned`. Trace-level [caller-irreducible].
-* **R7c's value-side hypotheses**: `h_decl_empty_value`,
-  `h_assign_value_corr`, `h_assign_nondet_value_corr`.
-  Caller-side [caller-irreducible].
-* **B3 expression-side bundle**, **Worker C parameters**,
-  **source-side run + initial-store correspondence**.
-
-This is the absolute minimum hypothesis surface the translator-side
-work can deliver; remaining gaps are documented as either
-trivial-for-standard-callers or fundamentally caller-side. -/
+Remaining surface: translator-input invariants, R10a witnesses
+(`st_final`, `h_blocks_run` — closed in `_v7`), R11 δ_goto
+monotonicity (`h_init_extension`), R7c pinning + value-side
+hypotheses, B3 bundle, Worker C parameters, source-side run +
+initial-store correspondence. -/
 
 theorem coreCFGToGotoTransform_forward_simulation_concrete_v6
     -- Source-side semantics
@@ -1161,20 +998,11 @@ theorem coreCFGToGotoTransform_forward_simulation_concrete_v6
     h_decl_empty_value h_assign_value_corr h_assign_nondet_value_corr
     σ σ' b σ_goto h_corr h_run_src
 
-/-! ### `_v7`: drop the structural witnesses `st_final`/`h_blocks_run`
+/-! ## `_v7`: structural witnesses `st_final`/`h_blocks_run` internalised
 
-`coreCFGToGotoTransform_forward_simulation_concrete_v6` exposes two
-witnesses that R8a left as parameters:
-
-* `st_final` — the post-blocks-fold loop-state.
-* `h_blocks_run` — its run-equation.
-
-Both are derivable from `h_run` via `coreCFGToGotoTransform_decompose`.
-`_v7` performs that derivation internally: callers no longer have to
-guess `st_final` or supply it. The parameters are gone from the
-hypothesis surface entirely. (R10a — landed alongside R10b — already
-internalised `h_labelMap_agree` inside `_v6`, so `_v7` doesn't need
-to thread it through either.) -/
+Public theorem; identical hypothesis surface to `_v6` minus the two
+structural witnesses, which are derived internally via
+`coreCFGToGotoTransform_decompose`. -/
 
 theorem coreCFGToGotoTransform_forward_simulation_concrete_v7
     -- Source-side semantics
