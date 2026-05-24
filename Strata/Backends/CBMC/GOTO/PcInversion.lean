@@ -916,13 +916,6 @@ private theorem cmdEmittedAt_preserved_target_only
     (δ_goto : SemanticEvalGoto Core.Expression)
     (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
     (pgm pgm' : Program)
-    (h_preserves :
-      ∀ idx (instr_post : Instruction),
-        pgm'.instrAt idx = some instr_post →
-        ∃ instr_pre, pgm.instrAt idx = some instr_pre ∧
-          instr_post.type = instr_pre.type ∧
-          instr_post.guard = instr_pre.guard ∧
-          instr_post.code = instr_pre.code)
     (h_preserves_back :
       ∀ idx (instr_pre : Instruction),
         pgm.instrAt idx = some instr_pre →
@@ -999,31 +992,7 @@ theorem patchGotoTargets_preserves_body_pc_covered
     (h_cov : BodyPcCovered δ δ_goto δ_goto_bool trans pgm_pre) :
     BodyPcCovered δ δ_goto δ_goto_bool
       (Imperative.patchGotoTargets trans resolved) pgm_post := by
-  -- Build the bidirectional preservation lemmas.
-  have h_size : pgm_post.instructions.size = pgm_pre.instructions.size := by
-    rw [h_post_eq, h_pre_eq]
-    exact patchGotoTargets_preserves_size trans resolved
-  have h_preserves :
-      ∀ idx (instr_post : Instruction),
-        pgm_post.instrAt idx = some instr_post →
-        ∃ instr_pre, pgm_pre.instrAt idx = some instr_pre ∧
-          instr_post.type = instr_pre.type ∧
-          instr_post.guard = instr_pre.guard ∧
-          instr_post.code = instr_pre.code := by
-    intro idx instr_post h_at_post
-    -- pgm_post.instrAt idx = pgm_post.instructions[idx]? = (patchGotoTargets ...)[idx]?
-    have h_at_post' :
-        (Imperative.patchGotoTargets trans resolved).instructions[idx]? =
-          some instr_post := by
-      have : pgm_post.instructions[idx]? = some instr_post := h_at_post
-      rw [h_post_eq] at this
-      exact this
-    obtain ⟨instr_pre', h_pre_at, h_ty, h_g, h_c, _⟩ :=
-      patchGotoTargets_preserves_full_except_target trans resolved idx instr_post h_at_post'
-    refine ⟨instr_pre', ?_, h_ty, h_g, h_c⟩
-    show pgm_pre.instructions[idx]? = some instr_pre'
-    rw [h_pre_eq]
-    exact h_pre_at
+  -- Build the back-direction preservation lemma.
   have h_preserves_back :
       ∀ idx (instr_pre : Instruction),
         pgm_pre.instrAt idx = some instr_pre →
@@ -1072,7 +1041,7 @@ theorem patchGotoTargets_preserves_body_pc_covered
     obtain ⟨inner, h_emit_pre⟩ := h_cov'.1 h_decl
     refine ⟨inner, ?_⟩
     exact cmdEmittedAt_preserved_target_only δ δ_goto δ_goto_bool pgm_pre pgm_post
-      h_preserves h_preserves_back pc inner h_emit_pre
+      h_preserves_back pc inner h_emit_pre
   · intro h_assn
     rw [h_ty_eq] at h_assn
     rcases h_cov'.2 h_assn with
@@ -1080,11 +1049,11 @@ theorem patchGotoTargets_preserves_body_pc_covered
     · left
       refine ⟨v, cv, md, ?_⟩
       exact cmdEmittedAt_preserved_target_only δ δ_goto δ_goto_bool pgm_pre pgm_post
-        h_preserves h_preserves_back pc _ h_emit_pre
+        h_preserves_back pc _ h_emit_pre
     · right
       refine ⟨pc_pred, v, ty, e_core, md, h_pc_eq, ?_⟩
       exact cmdEmittedAt_preserved_target_only δ δ_goto δ_goto_bool pgm_pre pgm_post
-        h_preserves h_preserves_back pc_pred _ h_emit_pre
+        h_preserves_back pc_pred _ h_emit_pre
 
 /-! ## Top-level theorems closing R8b's PC inversions
 
