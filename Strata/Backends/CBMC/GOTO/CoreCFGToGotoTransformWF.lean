@@ -4139,7 +4139,7 @@ hypotheses), the output `ans : GotoTransform` satisfies:
 * `ans.instructions.size = ans.nextLoc`,
 * every instruction's `locationNum` equals its array index. -/
 theorem coreCFGToGotoTransform_size_eq_and_loc
-    (Env : Core.Expression.TyEnv) (functionName : String)
+    (functionName : String)
     (cfg : Core.DetCFG)
     (trans₀ : Imperative.GotoTransform Core.Expression.TyEnv)
     (h_init_size : trans₀.instructions.size = trans₀.nextLoc)
@@ -4328,7 +4328,7 @@ theorem coreCFGToGotoTransform_size_eq_and_loc_direct
       ans.instructions[i]? = some instr → instr.locationNum = i := by
   obtain ⟨st_final, resolved, trans_post, h_blocks_run, h_patches_run, h_ans_eq⟩ :=
     coreCFGToGotoTransform_decompose Env functionName cfg trans₀ ans h_run
-  exact coreCFGToGotoTransform_size_eq_and_loc Env functionName cfg trans₀
+  exact coreCFGToGotoTransform_size_eq_and_loc functionName cfg trans₀
     h_init_size h_init_loc h_admitted_blocks ans
     st_final h_blocks_run (h_loopContracts_empty_post st_final h_blocks_run)
     resolved trans_post h_patches_run h_ans_eq
