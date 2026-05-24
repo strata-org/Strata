@@ -169,330 +169,6 @@ noncomputable def buildExprCorr
 
 end ConcreteExprCorr
 
-/-! ## `_v5`: R8a/R8b auxiliary hypotheses discharged (private)
-
-Extends `_v4` by internally discharging the R7a goto-target aux
-(via R8a) and the R7c DECL/ASSIGN provenance hypotheses (via R8b).
-Fixes `nameMap = Imperative.ToGoto.identToString` (the natural
-choice for `Core.Expression`). Surfaces R8b's `DeclPcInversion` /
-`AssignPcInversion` and the `labelMap` agreement bridge as
-parameters; those are closed in `_v6`. -/
-
-private theorem coreCFGToGotoTransform_forward_simulation_concrete_v5
-    -- Source-side semantics
-    (δ : Imperative.SemanticEval Core.Expression)
-    (δ_goto : SemanticEvalGoto Core.Expression)
-    (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
-    (h_wf_bool : WellFormedSemanticEvalGotoBool δ_goto_bool)
-    -- R11: fresh-variable monotonicity of `δ_goto` across `InitState`.
-    (h_init_extension :
-      ∀ {σ σ' : Imperative.SemanticStore Core.Expression}
-        {x : Core.Expression.Ident} {v_init : Core.Expression.Expr}
-        {e : Expr} {v : Core.Expression.Expr},
-        Imperative.InitState Core.Expression σ x v_init σ' →
-        δ_goto σ e = some v → δ_goto σ' e = some v)
-    -- Source-side environment
-    (π : String → Option Core.Procedure)
-    (φ : Core.CoreEval → Imperative.PureFunc Core.Expression → Core.CoreEval)
-    -- Translator inputs and output
-    (cfg : Core.DetCFG)
-    (Env : Core.Expression.TyEnv) (functionName : String)
-    (trans₀ : Imperative.GotoTransform Core.Expression.TyEnv)
-    (ans : Imperative.GotoTransform Core.Expression.TyEnv)
-    (h_run : Strata.coreCFGToGotoTransform Env functionName cfg trans₀
-              = Except.ok ans)
-    -- Structural inputs
-    (h_init_size : trans₀.instructions.size = trans₀.nextLoc)
-    (h_init_loc :
-      ∀ (i : Nat) (instr : CProverGOTO.Instruction),
-        trans₀.instructions[i]? = some instr → instr.locationNum = i)
-    (h_init_no_dead : NoDead.HasNoDead trans₀)
-    (h_init_no_goto_target : GotoTargetProvenance.NoGotoHasTarget trans₀)
-    (h_distinct : BlockLabelsDistinct cfg.blocks)
-    (h_admitted_blocks :
-      ∀ (l : String) blk, (l, blk) ∈ cfg.blocks →
-      ∀ c ∈ blk.cmds, Core.CmdExt.isAdmittedCmd c = true)
-    (h_loopContracts_empty_post :
-      ∀ (st_final : Strata.CoreCFGTransLoopState),
-        cfg.blocks.foldlM (Strata.coreCFGToGotoBlockStep functionName)
-          (coreCFGToGotoInitState trans₀)
-        = Except.ok st_final → st_final.loopContracts = ∅)
-    (h_entry_first : cfg.blocks.head?.map Prod.fst = some cfg.entry)
-    -- B3 replacement bundle
-    (h_red : ExprTranslationBoolInt.FnToGotoIDReductions)
-    (h_op : ExprTranslationBoolInt.BoolIntOpHypotheses δ δ_goto δ_goto_bool)
-    (h_uniform : ConcreteExprCorr.UniformBoolIntFragment)
-    (h_commutes_not :
-      ∀ e : Core.Expression.Expr,
-        ConcreteExprCorr.tx h_uniform (HasNot.not (P := Core.Expression) e)
-          = (ConcreteExprCorr.tx h_uniform e).not)
-    -- Worker C parameters: nameMap is fixed to identToString.
-    (callResult : CallResultRel)
-    (eval : ExprEval)
-    (fenv : FuncEnv)
-    (h_eval_bool_corr :
-      Bisim.EvalBoolCorr
-        (Imperative.ToGoto.identToString (P := Core.Expression))
-        δ_goto_bool eval)
-    (h_inj :
-      Function.Injective
-        (Imperative.ToGoto.identToString (P := Core.Expression)))
-    -- R8a's structural witnesses (translator state at the post-blocks-fold).
-    (st_final : Strata.CoreCFGTransLoopState)
-    (h_blocks_run :
-      cfg.blocks.foldlM (Strata.coreCFGToGotoBlockStep functionName)
-        (coreCFGToGotoInitState trans₀)
-      = Except.ok st_final)
-    -- R8a's labelMap-agreement bridge.
-    (h_labelMap_agree :
-      ∀ (wf : WellFormedTranslation cfg
-        { name := "", parameterIdentifiers := #[],
-          instructions := ans.instructions }
-        δ δ_goto δ_goto_bool),
-      ∀ l blk target, (l, blk) ∈ cfg.blocks →
-        st_final.labelMap[l]? = some target →
-        wf.labelMap l = some target)
-    -- R8b's PC-inversion auxiliaries.
-    (h_decl_pc_inv :
-      ∀ (wf : WellFormedTranslation cfg
-        { name := "", parameterIdentifiers := #[],
-          instructions := ans.instructions }
-        δ δ_goto δ_goto_bool),
-      CmdProvenance.DeclPcInversion cfg
-        { name := "", parameterIdentifiers := #[],
-          instructions := ans.instructions }
-        δ δ_goto δ_goto_bool wf)
-    (h_assn_pc_inv :
-      ∀ (wf : WellFormedTranslation cfg
-        { name := "", parameterIdentifiers := #[],
-          instructions := ans.instructions }
-        δ δ_goto δ_goto_bool),
-      CmdProvenance.AssignPcInversion cfg
-        { name := "", parameterIdentifiers := #[],
-          instructions := ans.instructions }
-        δ δ_goto δ_goto_bool wf)
-    -- R11: `h_assn_nondet_pc_inv` (R8b's strict
-    -- `AssignNondetPcInversion`) has been removed. The rhs-shape
-    -- witness now arrives via the tightened `step_assign_nondet`
-    -- constructor, eliminating the need for any per-PC nondet-cmd
-    -- inversion.
-    -- R7c's pinning hypotheses (caller-side; trace-level info).
-    (h_decl_x_pinned :
-      ∀ {pc : Nat} {instr : Instruction}
-        {x : Core.Expression.Ident}
-        {σ σ' : Imperative.SemanticStore Core.Expression}
-        {v : Core.Expression.Expr},
-        ({ name := "", parameterIdentifiers := #[],
-           instructions := ans.instructions } : Program).instrAt pc
-          = some instr →
-        instr.type = .DECL →
-        Imperative.InitState Core.Expression σ x v σ' →
-        ∀ v_src gty, instr.code = Code.decl
-          (Expr.symbol
-            (Imperative.ToGoto.identToString (P := Core.Expression) v_src)
-            gty) → x = v_src)
-    (h_assn_x_pinned :
-      ∀ {pc : Nat} {instr : Instruction}
-        {x : Core.Expression.Ident}
-        {σ σ' : Imperative.SemanticStore Core.Expression}
-        {v_imp : Core.Expression.Expr},
-        ({ name := "", parameterIdentifiers := #[],
-           instructions := ans.instructions } : Program).instrAt pc
-          = some instr →
-        instr.type = .ASSIGN →
-        Imperative.UpdateState Core.Expression σ x v_imp σ' →
-        ∀ v_src gty rhs_emitted, instr.code = Code.assign
-          (Expr.symbol
-            (Imperative.ToGoto.identToString (P := Core.Expression) v_src)
-            gty) rhs_emitted → x = v_src)
-    (h_assn_rhs_pinned :
-      ∀ {pc : Nat} {instr : Instruction}
-        {σ : Imperative.SemanticStore Core.Expression}
-        {rhs_g : Expr} {v_imp : Core.Expression.Expr},
-        ({ name := "", parameterIdentifiers := #[],
-           instructions := ans.instructions } : Program).instrAt pc
-          = some instr →
-        instr.type = .ASSIGN →
-        δ_goto σ rhs_g = some v_imp →
-        ∀ v_src gty rhs_emitted, instr.code = Code.assign
-          (Expr.symbol
-            (Imperative.ToGoto.identToString (P := Core.Expression) v_src)
-            gty) rhs_emitted →
-          rhs_g = rhs_emitted)
-    -- R7c's value-side hypotheses (caller-side).
-    (h_decl_empty_value :
-      ∀ {pc : Nat} {instr : Instruction} {x : Core.Expression.Ident}
-        {v : Core.Expression.Expr}
-        {σ σ' : Imperative.SemanticStore Core.Expression},
-        ({ name := "", parameterIdentifiers := #[],
-           instructions := ans.instructions } : Program).instrAt pc
-          = some instr →
-        instr.type = .DECL →
-        Imperative.InitState Core.Expression σ x v σ' →
-        (SemanticsTautschnig.ValueCorr.toValue v
-          : Option SemanticsTautschnig.Value) = some .vEmpty)
-    (h_assign_value_corr :
-      ∀ {pc : Nat} {instr : Instruction} {x : Core.Expression.Ident}
-        {σ_imp σ_imp' : Imperative.SemanticStore Core.Expression}
-        {σ_goto : SemanticsTautschnig.Store}
-        {rhs_g : Expr} {v_imp : Core.Expression.Expr},
-        ({ name := "", parameterIdentifiers := #[],
-           instructions := ans.instructions } : Program).instrAt pc
-          = some instr →
-        instr.type = .ASSIGN →
-        δ_goto σ_imp rhs_g = some v_imp →
-        Imperative.UpdateState Core.Expression σ_imp x v_imp σ_imp' →
-        SemanticsTautschnig.StoreCorr
-          (Imperative.ToGoto.identToString (P := Core.Expression))
-          σ_imp σ_goto →
-        ∃ v_goto,
-          (SemanticsTautschnig.ValueCorr.toValue v_imp
-            : Option SemanticsTautschnig.Value) = some v_goto ∧
-          eval σ_goto rhs_g = some v_goto)
-    (h_assign_nondet_value_corr :
-      ∀ {pc : Nat} {instr : Instruction} {x : Core.Expression.Ident}
-        {σ σ' : Imperative.SemanticStore Core.Expression}
-        {v_imp : Core.Expression.Expr},
-        ({ name := "", parameterIdentifiers := #[],
-           instructions := ans.instructions } : Program).instrAt pc
-          = some instr →
-        instr.type = .ASSIGN →
-        Imperative.UpdateState Core.Expression σ x v_imp σ' →
-        ∃ v_goto,
-          (SemanticsTautschnig.ValueCorr.toValue v_imp
-            : Option SemanticsTautschnig.Value) = some v_goto)
-    -- Source-side terminating run + initial-store correspondence
-    (σ σ' : Imperative.SemanticStore Core.Expression) (b : Bool)
-    (σ_goto : Store)
-    (h_corr :
-      StoreCorr
-        (Imperative.ToGoto.identToString (P := Core.Expression))
-        σ σ_goto)
-    (h_run_src :
-      Core.CoreCFGStepStar π φ δ cfg
-        (.cont cfg.entry σ false)
-        (.terminal σ' b)) :
-    -- Conclusion (matches v4 with nameMap = identToString).
-    ∃ pc_entry σ_goto',
-      StoreCorr
-        (Imperative.ToGoto.identToString (P := Core.Expression))
-        σ' σ_goto' ∧
-      ExecProg callResult eval fenv
-        { name := "", parameterIdentifiers := #[],
-          instructions := ans.instructions }
-        pc_entry σ_goto σ_goto' none := by
-  let pgm : Program :=
-    { name := "", parameterIdentifiers := #[],
-      instructions := ans.instructions }
-  -- Step 1: Build a WF for use with R8b's provenance theorems.
-  let h_expr := ConcreteExprCorr.buildExprCorr h_red h_op h_uniform h_commutes_not
-  have h_tx_eq_pre : ∀ e : Core.Expression.Expr,
-      Imperative.ToGoto.toGotoExpr (P := Core.Expression) e
-        = Except.ok (h_expr.tx e) :=
-    ConcreteExprCorr.h_tx_eq_holds h_uniform
-  have h_expr_translated_witness :
-      ∀ (cond : Core.Expression.Expr) (e_goto : CProverGOTO.Expr),
-        Lambda.LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩) [] cond
-          = .ok e_goto →
-        ExprTranslated δ δ_goto δ_goto_bool cond e_goto :=
-    ConcreteExprCorr.h_expr_translated_witness_holds h_red h_op h_uniform
-  have h_wf_nonempty :=
-    coreCFGToGotoTransform_wellFormed_strengthened
-      cfg Env functionName trans₀
-      h_init_size h_init_loc h_distinct h_admitted_blocks
-      h_loopContracts_empty_post h_entry_first
-      ans h_run
-      δ δ_goto δ_goto_bool h_expr h_tx_eq_pre h_expr_translated_witness
-  obtain ⟨wf⟩ := h_wf_nonempty
-  -- Step 2: Discharge R7a's `h_aux_goto_target` via R8a.
-  have h_aux_goto_target :
-      ∀ {pc target : Nat} {instr : Instruction},
-        pgm.instrAt pc = some instr →
-        instr.type = .GOTO →
-        instr.target = some target →
-        ∃ l blk, (l, blk) ∈ cfg.blocks ∧
-          (∀ wf' : WellFormedTranslation cfg pgm
-            δ δ_goto δ_goto_bool, wf'.labelMap l = some target) := by
-    intro pc target instr h_at h_ty h_target
-    have h_aux_translatorMap :=
-      GotoTargetProvenance.everyGotoTargetIsLabelMapEntry_of_translator_translatorMap
-        Env functionName cfg trans₀ h_init_no_goto_target
-        h_loopContracts_empty_post ans h_run st_final h_blocks_run
-        h_at h_ty h_target
-    obtain ⟨l, blk, h_in, h_lookup⟩ := h_aux_translatorMap
-    have h_lookup_st : st_final.labelMap[l]? = some target := h_lookup
-    refine ⟨l, blk, h_in, ?_⟩
-    intro wf'
-    exact h_labelMap_agree wf' l blk target h_in h_lookup_st
-  -- Step 3: Discharge R7c's three provenance hypotheses via R8b.
-  have h_decl_provenance :
-      ∀ {pc : Nat} {instr : Instruction},
-        pgm.instrAt pc = some instr → instr.type = .DECL →
-        ∃ v_src gty, instr.code = Code.decl
-          (Expr.symbol
-            (Imperative.ToGoto.identToString (P := Core.Expression) v_src)
-            gty) := by
-    intro pc instr h_at h_ty
-    exact CmdProvenance.decl_provenance_of_translator cfg pgm
-      δ δ_goto δ_goto_bool wf (h_decl_pc_inv wf) h_at h_ty
-  have h_assn_provenance :
-      ∀ {pc : Nat} {instr : Instruction},
-        pgm.instrAt pc = some instr → instr.type = .ASSIGN →
-        ∃ v_src gty rhs_emitted,
-          instr.code = Code.assign
-            (Expr.symbol
-              (Imperative.ToGoto.identToString (P := Core.Expression) v_src)
-              gty) rhs_emitted := by
-    intro pc instr h_at h_ty
-    exact CmdProvenance.assn_provenance_of_translator cfg pgm
-      δ δ_goto δ_goto_bool wf (h_assn_pc_inv wf) h_at h_ty
-  -- Step 4: discharge h_goto_target_in_range via R7a.
-  let nameMap : Core.Expression.Ident → String :=
-    Imperative.ToGoto.identToString (P := Core.Expression)
-  have h_aux_for_r7a : GotoTargetInRange.EveryGotoTargetIsLabelMapEntry cfg pgm wf.labelMap := by
-    intros pc target instr h_at h_ty h_target
-    obtain ⟨l, blk, h_in, h_lookup⟩ := h_aux_goto_target h_at h_ty h_target
-    exact ⟨l, blk, h_in, h_lookup wf⟩
-  have h_goto_target_in_range :
-      ∀ {pc target : Nat} {instr : Instruction},
-        pgm.instrAt pc = some instr → instr.type = .GOTO →
-        instr.target = some target →
-        ∃ instr_target, pgm.instrAt target = some instr_target := by
-    intros pc target instr h_at h_ty h_target
-    exact GotoTargetInRange.goto_target_in_range_of_wf cfg pgm
-      δ δ_goto δ_goto_bool wf h_aux_for_r7a h_at h_ty h_target
-  -- Step 5: discharge h_no_dead via R7b.
-  have h_no_dead :
-      ∀ {pc : Nat} {instr : Instruction},
-        pgm.instrAt pc = some instr → instr.type ≠ .DEAD := by
-    intros pc instr h
-    exact NoDead.no_dead_program_of_translator Env functionName cfg trans₀
-      h_init_no_dead h_loopContracts_empty_post ans h_run h
-  -- Step 6: discharge h_brHyps via R7c's v2 bridge.
-  have h_brHyps :=
-    TranslatorBridgeHypsDischarge.wellFormedTranslation_to_translatorBridgeHyps_v2
-      cfg pgm δ δ_goto δ_goto_bool wf nameMap h_inj eval
-      h_goto_target_in_range h_no_dead
-      h_decl_provenance h_assn_provenance
-      h_decl_x_pinned h_assn_x_pinned h_assn_rhs_pinned
-      h_decl_empty_value h_assign_value_corr h_assign_nondet_value_corr
-  -- Step 7: discharge SteppingBridges and forward simulation.
-  have h_call_free :
-      ∀ p ∈ cfg.blocks, ∀ c ∈ p.2.cmds, c.isAdmittedCmd = true := by
-    intro p h_p_mem c h_c_mem
-    obtain ⟨l, blk⟩ := p
-    exact h_admitted_blocks l blk h_p_mem c h_c_mem
-  let br : SteppingBridges δ_goto δ_goto_bool pgm nameMap callResult eval fenv :=
-    SteppingBridgesDischarge.steppingBridges_of_translator
-      h_eval_bool_corr h_brHyps
-  obtain ⟨pc_entry, σ_goto', _, h_storeCorr', h_exec⟩ :=
-    coreCFGToGoto_forward_simulation_storeCorr
-      δ δ_goto δ_goto_bool h_expr h_wf_bool h_init_extension π φ
-      cfg pgm wf h_call_free
-      nameMap callResult eval fenv br
-      σ σ' b σ_goto h_corr h_run_src
-  exact ⟨pc_entry, σ_goto', h_storeCorr', h_exec⟩
-
 /-! ## `_v6`: R9 PC-inversion auxiliaries + R10a labelMap-agree discharged
 
 First public theorem. Extends `_v5` by internally discharging R8b's
@@ -699,70 +375,142 @@ theorem coreCFGToGotoTransform_forward_simulation_concrete_v6
         { name := "", parameterIdentifiers := #[],
           instructions := ans.instructions }
         pc_entry σ_goto σ_goto' none := by
-  -- Build the expression-correspondence for use in PcInversion theorems.
+  let pgm : Program :=
+    { name := "", parameterIdentifiers := #[],
+      instructions := ans.instructions }
+  let nameMap : Core.Expression.Ident → String :=
+    Imperative.ToGoto.identToString (P := Core.Expression)
+  -- Build h_expr and the WellFormedTranslation.
   let h_expr := ConcreteExprCorr.buildExprCorr h_red h_op h_uniform h_commutes_not
   have h_tx_eq : ∀ e : Core.Expression.Expr,
       Imperative.ToGoto.toGotoExpr (P := Core.Expression) e
         = Except.ok (h_expr.tx e) :=
     ConcreteExprCorr.h_tx_eq_holds h_uniform
+  have h_expr_translated_witness :
+      ∀ (cond : Core.Expression.Expr) (e_goto : CProverGOTO.Expr),
+        Lambda.LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩) [] cond
+          = .ok e_goto →
+        ExprTranslated δ δ_goto δ_goto_bool cond e_goto :=
+    ConcreteExprCorr.h_expr_translated_witness_holds h_red h_op h_uniform
+  have h_wf_nonempty :=
+    coreCFGToGotoTransform_wellFormed_strengthened
+      cfg Env functionName trans₀
+      h_init_size h_init_loc h_distinct h_admitted_blocks
+      h_loopContracts_empty_post h_entry_first
+      ans h_run
+      δ δ_goto δ_goto_bool h_expr h_tx_eq h_expr_translated_witness
+  obtain ⟨wf⟩ := h_wf_nonempty
   -- Discharge h_labelMap_agree via R10a.
   have h_labelMap_agree :
-      ∀ (wf : WellFormedTranslation cfg
-        { name := "", parameterIdentifiers := #[],
-          instructions := ans.instructions }
-        δ δ_goto δ_goto_bool),
       ∀ l blk target, (l, blk) ∈ cfg.blocks →
         st_final.labelMap[l]? = some target →
-        wf.labelMap l = some target := by
-    intro wf
-    exact WfLabelMapAgree.labelMap_agree_of_translator
+        wf.labelMap l = some target :=
+    WfLabelMapAgree.labelMap_agree_of_translator
       Env functionName cfg trans₀ h_init_size h_init_no_location
       h_distinct h_admitted_blocks h_loopContracts_empty_post
       ans h_run st_final h_blocks_run δ δ_goto δ_goto_bool wf
   -- Discharge h_decl_pc_inv via R9.
-  have h_decl_pc_inv :
-      ∀ (wf : WellFormedTranslation cfg
-        { name := "", parameterIdentifiers := #[],
-          instructions := ans.instructions }
-        δ δ_goto δ_goto_bool),
-      CmdProvenance.DeclPcInversion cfg
-        { name := "", parameterIdentifiers := #[],
-          instructions := ans.instructions }
-        δ δ_goto δ_goto_bool wf := by
-    intro wf
-    exact PcInversion.declPcInversion_of_translator_abbrev
+  have h_decl_pc_inv : CmdProvenance.DeclPcInversion cfg pgm
+      δ δ_goto δ_goto_bool wf :=
+    PcInversion.declPcInversion_of_translator_abbrev
       Env functionName cfg trans₀ h_init_size h_init_empty_decl_assign
       h_distinct h_admitted_blocks h_loopContracts_empty_post
       ans h_run δ δ_goto δ_goto_bool h_expr h_tx_eq wf
   -- Discharge h_assn_pc_inv via R9.
-  have h_assn_pc_inv :
-      ∀ (wf : WellFormedTranslation cfg
-        { name := "", parameterIdentifiers := #[],
-          instructions := ans.instructions }
-        δ δ_goto δ_goto_bool),
-      CmdProvenance.AssignPcInversion cfg
-        { name := "", parameterIdentifiers := #[],
-          instructions := ans.instructions }
-        δ δ_goto δ_goto_bool wf := by
-    intro wf
-    exact PcInversion.assignPcInversion_of_translator_abbrev
+  have h_assn_pc_inv : CmdProvenance.AssignPcInversion cfg pgm
+      δ δ_goto δ_goto_bool wf :=
+    PcInversion.assignPcInversion_of_translator_abbrev
       Env functionName cfg trans₀ h_init_size h_init_empty_decl_assign
       h_distinct h_admitted_blocks h_loopContracts_empty_post
       ans h_run δ δ_goto δ_goto_bool h_expr h_tx_eq wf
-  -- Delegate to v5.
-  exact coreCFGToGotoTransform_forward_simulation_concrete_v5
-    δ δ_goto δ_goto_bool h_wf_bool h_init_extension π φ
-    cfg Env functionName trans₀ ans h_run
-    h_init_size h_init_loc h_init_no_dead h_init_no_goto_target
-    h_distinct h_admitted_blocks
-    h_loopContracts_empty_post h_entry_first
-    h_red h_op h_uniform h_commutes_not
-    callResult eval fenv h_eval_bool_corr h_inj
-    st_final h_blocks_run h_labelMap_agree
-    h_decl_pc_inv h_assn_pc_inv
-    h_decl_x_pinned h_assn_x_pinned h_assn_rhs_pinned
-    h_decl_empty_value h_assign_value_corr h_assign_nondet_value_corr
-    σ σ' b σ_goto h_corr h_run_src
+  -- Discharge R7a's `h_aux_goto_target` via R8a.
+  have h_aux_goto_target :
+      ∀ {pc target : Nat} {instr : Instruction},
+        pgm.instrAt pc = some instr →
+        instr.type = .GOTO →
+        instr.target = some target →
+        ∃ l blk, (l, blk) ∈ cfg.blocks ∧
+          (∀ wf' : WellFormedTranslation cfg pgm
+            δ δ_goto δ_goto_bool, wf'.labelMap l = some target) := by
+    intro pc target instr h_at h_ty h_target
+    have h_aux_translatorMap :=
+      GotoTargetProvenance.everyGotoTargetIsLabelMapEntry_of_translator_translatorMap
+        Env functionName cfg trans₀ h_init_no_goto_target
+        h_loopContracts_empty_post ans h_run st_final h_blocks_run
+        h_at h_ty h_target
+    obtain ⟨l, blk, h_in, h_lookup⟩ := h_aux_translatorMap
+    have h_lookup_st : st_final.labelMap[l]? = some target := h_lookup
+    refine ⟨l, blk, h_in, ?_⟩
+    intro wf'
+    -- For wf' = wf this is h_labelMap_agree; for any other wf' we
+    -- still need agreement. Re-prove via R10a applied to wf'.
+    exact WfLabelMapAgree.labelMap_agree_of_translator
+      Env functionName cfg trans₀ h_init_size h_init_no_location
+      h_distinct h_admitted_blocks h_loopContracts_empty_post
+      ans h_run st_final h_blocks_run δ δ_goto δ_goto_bool wf'
+      l blk target h_in h_lookup_st
+  -- Discharge R7c's two provenance hypotheses via R8b.
+  have h_decl_provenance :
+      ∀ {pc : Nat} {instr : Instruction},
+        pgm.instrAt pc = some instr → instr.type = .DECL →
+        ∃ v_src gty, instr.code = Code.decl
+          (Expr.symbol (nameMap v_src) gty) := by
+    intro pc instr h_at h_ty
+    exact CmdProvenance.decl_provenance_of_translator cfg pgm
+      δ δ_goto δ_goto_bool wf h_decl_pc_inv h_at h_ty
+  have h_assn_provenance :
+      ∀ {pc : Nat} {instr : Instruction},
+        pgm.instrAt pc = some instr → instr.type = .ASSIGN →
+        ∃ v_src gty rhs_emitted,
+          instr.code = Code.assign
+            (Expr.symbol (nameMap v_src) gty) rhs_emitted := by
+    intro pc instr h_at h_ty
+    exact CmdProvenance.assn_provenance_of_translator cfg pgm
+      δ δ_goto δ_goto_bool wf h_assn_pc_inv h_at h_ty
+  -- Discharge h_goto_target_in_range via R7a.
+  have h_aux_for_r7a : GotoTargetInRange.EveryGotoTargetIsLabelMapEntry cfg pgm wf.labelMap := by
+    intros pc target instr h_at h_ty h_target
+    obtain ⟨l, blk, h_in, h_lookup⟩ := h_aux_goto_target h_at h_ty h_target
+    exact ⟨l, blk, h_in, h_lookup wf⟩
+  have h_goto_target_in_range :
+      ∀ {pc target : Nat} {instr : Instruction},
+        pgm.instrAt pc = some instr → instr.type = .GOTO →
+        instr.target = some target →
+        ∃ instr_target, pgm.instrAt target = some instr_target := by
+    intros pc target instr h_at h_ty h_target
+    exact GotoTargetInRange.goto_target_in_range_of_wf cfg pgm
+      δ δ_goto δ_goto_bool wf h_aux_for_r7a h_at h_ty h_target
+  -- Discharge h_no_dead via R7b.
+  have h_no_dead :
+      ∀ {pc : Nat} {instr : Instruction},
+        pgm.instrAt pc = some instr → instr.type ≠ .DEAD := by
+    intros pc instr h
+    exact NoDead.no_dead_program_of_translator Env functionName cfg trans₀
+      h_init_no_dead h_loopContracts_empty_post ans h_run h
+  -- Discharge h_brHyps via R7c's v2 bridge.
+  have h_brHyps :=
+    TranslatorBridgeHypsDischarge.wellFormedTranslation_to_translatorBridgeHyps_v2
+      cfg pgm δ δ_goto δ_goto_bool wf nameMap h_inj eval
+      h_goto_target_in_range h_no_dead
+      h_decl_provenance h_assn_provenance
+      h_decl_x_pinned h_assn_x_pinned h_assn_rhs_pinned
+      h_decl_empty_value h_assign_value_corr h_assign_nondet_value_corr
+  -- Discharge SteppingBridges and forward simulation.
+  have h_call_free :
+      ∀ p ∈ cfg.blocks, ∀ c ∈ p.2.cmds, c.isAdmittedCmd = true := by
+    intro p h_p_mem c h_c_mem
+    obtain ⟨l, blk⟩ := p
+    exact h_admitted_blocks l blk h_p_mem c h_c_mem
+  let br : SteppingBridges δ_goto δ_goto_bool pgm nameMap callResult eval fenv :=
+    SteppingBridgesDischarge.steppingBridges_of_translator
+      h_eval_bool_corr h_brHyps
+  obtain ⟨pc_entry, σ_goto', _, h_storeCorr', h_exec⟩ :=
+    coreCFGToGoto_forward_simulation_storeCorr
+      δ δ_goto δ_goto_bool h_expr h_wf_bool h_init_extension π φ
+      cfg pgm wf h_call_free
+      nameMap callResult eval fenv br
+      σ σ' b σ_goto h_corr h_run_src
+  exact ⟨pc_entry, σ_goto', h_storeCorr', h_exec⟩
 
 /-! ## `_v7`: structural witnesses `st_final`/`h_blocks_run` internalised
 
