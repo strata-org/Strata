@@ -1066,32 +1066,6 @@ The strict `AssignNondetPcInversion` is *provably false* in general,
 per R8b's discovery; we close it under an extra precondition that
 narrows the source CFG. -/
 
-/-- The initial state's `BodyPcCovered`: vacuously true if
-`trans₀.instructions` carries no DECL or ASSIGN instructions. The
-caller usually starts with `trans₀.instructions = #[]`, in which
-case both predicates are trivially satisfied. -/
-def InitBodyPcCovered
-    (δ : Imperative.SemanticEval Core.Expression)
-    (δ_goto : SemanticEvalGoto Core.Expression)
-    (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
-    (trans : Imperative.GotoTransform Core.Expression.TyEnv)
-    (pgm : Program) : Prop :=
-  BodyPcCovered δ δ_goto δ_goto_bool trans pgm
-
-/-- For an empty initial state (`trans₀.instructions = #[]`),
-`BodyPcCovered` is vacuously true. -/
-theorem bodyPcCovered_of_empty
-    (δ : Imperative.SemanticEval Core.Expression)
-    (δ_goto : SemanticEvalGoto Core.Expression)
-    (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
-    (trans : Imperative.GotoTransform Core.Expression.TyEnv)
-    (h : trans.instructions = #[])
-    (pgm : Program) :
-    BodyPcCovered δ δ_goto δ_goto_bool trans pgm := by
-  intro pc instr h_at
-  rw [h] at h_at
-  simp at h_at
-
 /-- Build `BodyPcCovered` over the translator output `ans` by composing
 the blocks-fold preservation and the patcher preservation. Both
 `declPcInversion_of_translator_abbrev` and
