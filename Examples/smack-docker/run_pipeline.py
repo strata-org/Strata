@@ -18,6 +18,7 @@ Optional:
 """
 
 import argparse
+import json
 import os
 import re
 import shutil
@@ -356,6 +357,53 @@ def run_cbmc_backend(core_st: Path, tmpdir: Path, result: PipelineResult):
         result.add_backend("cbmc", "FAIL", f"CBMC exit code {rc}")
 
 
+def run_cbmc_native_backend(bpl_path: Path, result: PipelineResult):
+    """Run cbmc directly on the .c, bypassing Strata.
+
+    The .c lives next to the .bpl in programs/. We map __VERIFIER_*
+    primitives onto __CPROVER_* via macro defines passed as -D flags.
+    """
+    c_path = bpl_path.with_suffix(".c")
+    if not c_path.exists():
+        result.add_backend("cbmc-native", "n/a", "no .c source")
+        return
+
+    flags_path = SCRIPT_DIR / "cbmc_native_flags.json"
+    flags_data = {}
+    if flags_path.exists():
+        flags_data = json.loads(flags_path.read_text())
+    program_name = bpl_path.stem
+    flags = flags_data.get(program_name, flags_data.get("_default", [
+        "--bounds-check", "--pointer-check",
+        "--unwind", "10", "--no-unwinding-assertions",
+    ]))
+
+    cmd = ["cbmc", str(c_path),
+           "-D__VERIFIER_assume(x)=__CPROVER_assume(x)",
+           "-D__VERIFIER_nondet_int()=nondet_int()",
+           "-D__VERIFIER_nondet_long()=nondet_long()",
+           "-D__VERIFIER_nondet_u64()=((uint64_t)nondet_long())",
+           "-Dsmack_assert(x)=__CPROVER_assert(x,\"smack\")",
+           "-I", str(SCRIPT_DIR / "programs"),
+           ] + flags
+
+    rc, stdout, stderr = run_cmd(cmd, timeout=120)
+    out = stdout + stderr
+    if rc == 0 and "VERIFICATION SUCCESSFUL" in out:
+        result.add_backend("cbmc-native", "PASS", "")
+    elif "VERIFICATION FAILED" in out:
+        first_fail = next((line for line in out.splitlines()
+                           if "FAILURE" in line), "FAILURE")
+        result.add_backend("cbmc-native", "FAIL", first_fail.strip()[:60])
+    elif rc == 124 or "Timed out" in out:
+        result.add_backend("cbmc-native", "TIMEOUT", "")
+    else:
+        first_err = next((line for line in out.splitlines()
+                          if "error:" in line.lower()), "")
+        result.add_backend("cbmc-native", "FAIL",
+                           first_err.strip()[:60] or f"exit {rc}")
+
+
 def run_pipeline(bpl_path: Path, backends: list[str], split_procs: bool = False) -> PipelineResult:
     name = bpl_path.stem
     result = PipelineResult(name)
@@ -381,6 +429,8 @@ def run_pipeline(bpl_path: Path, backends: list[str], split_procs: bool = False)
                     run_strata_backend(fixed_st, "bugFinding", result)
             elif backend == "cbmc":
                 run_cbmc_backend(fixed_st, tmpdir, result)
+            elif backend == "cbmc-native":
+                run_cbmc_native_backend(bpl_path, result)
 
     return result
 
@@ -446,18 +496,18 @@ def main():
     parser = argparse.ArgumentParser(description="Run SMACK -> BoogieToStrata -> verify pipeline")
     parser.add_argument("files", nargs="*", help="Input .bpl files (default: programs/*.bpl)")
     parser.add_argument("--backends", default="deductive,bugFinding,cbmc",
-                        help="Comma-separated backends: deductive,bugFinding,cbmc (default: all)")
+                        help="Comma-separated backends: "
+                             "deductive,bugFinding,cbmc,cbmc-native (default: all but cbmc-native)")
     parser.add_argument("--split-procs", action="store_true",
                         help="For deductive/bugFinding, run `strata verify --procedures <p>` once per procedure "
                              "and aggregate. Sidesteps cross-procedure Env.error contamination.")
     args = parser.parse_args()
 
+    valid_backends = {"deductive", "bugFinding", "cbmc", "cbmc-native"}
     backends = [b.strip() for b in args.backends.split(",")]
-    valid = {"deductive", "bugFinding", "cbmc"}
     for b in backends:
-        if b not in valid:
-            print(f"Unknown backend: {b}. Valid: {', '.join(valid)}", file=sys.stderr)
-            sys.exit(1)
+        if b not in valid_backends:
+            parser.error(f"Unknown backend: {b}. Valid: {valid_backends}")
 
     if args.files:
         bpl_files = [Path(f) for f in args.files]

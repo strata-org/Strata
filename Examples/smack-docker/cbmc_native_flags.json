@@ -1,0 +1,16 @@
+{
+  "_default": [
+    "--bounds-check",
+    "--pointer-check",
+    "--unwind",
+    "10",
+    "--no-unwinding-assertions"
+  ],
+  "loop_sum": [
+    "--bounds-check",
+    "--pointer-check",
+    "--unwind",
+    "20",
+    "--no-unwinding-assertions"
+  ]
+}
