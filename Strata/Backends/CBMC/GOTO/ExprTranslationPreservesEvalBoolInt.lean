@@ -1010,12 +1010,6 @@ private theorem op_id_ne_funApp_binary
   simp only [BEq.beq, decide_eq_false_iff_not]
   intro h; cases h
 
-private theorem op_id_ne_funApp_unary
-    (u : Expr.Identifier.Unary) (s : String) :
-    ((Expr.Identifier.unary u) == Expr.Identifier.functionApplication s) = false := by
-  simp only [BEq.beq, decide_eq_false_iff_not]
-  intro h; cases h
-
 /-- Generic bridge helper for the 12 binary operators. Replaces the 12
 per-op `isBoolIntTranslated_of_toGotoExprCtx_<op>` helpers.
 
