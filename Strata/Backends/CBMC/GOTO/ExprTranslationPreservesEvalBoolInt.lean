@@ -472,24 +472,30 @@ children), but `ExprTranslated` doesn't require that. -/
 
 /-- Generic per-op `_translated` lemma: from a value-agreement
 hypothesis matching the descriptor's pattern, build an
-`ExprTranslated`. Replaces the 12 individual `<op>_translated` lemmas. -/
+`ExprTranslated`. Replaces the 12 individual `<op>_translated` lemmas.
+
+`h_corr` has the same shape as the per-op fields of `BoolIntOpHypotheses`
+(quantified over all of `σ m₁ m₂ ty e1c e2c e1g e2g v`), so call sites
+pass the field directly without a lambda. -/
 theorem binOp_translated_of_corr
     {δ : SemanticEval Core.Expression}
     {δ_goto : SemanticEvalGoto Core.Expression}
     {δ_goto_bool : SemanticEvalGotoBool Core.Expression}
     (h : BoolIntOpHypotheses δ δ_goto δ_goto_bool)
     (od : BoolIntBinOpDesc)
-    (m₁ m₂ : Core.ExpressionMetadata) (ty : Option LMonoTy)
-    (e1c e2c : Core.Expression.Expr) (e1g e2g : CProverGOTO.Expr)
     (h_corr :
-      ∀ σ v,
+      ∀ σ (m₁ m₂ : Core.ExpressionMetadata) (ty : Option LMonoTy)
+        (e1c e2c : Core.Expression.Expr)
+        (e1g e2g : CProverGOTO.Expr) (v : Core.Expression.Expr),
         δ σ (LExpr.app m₂ (LExpr.app m₁
               (LExpr.op () ⟨od.opName, ()⟩ ty) e1c) e2c) = some v ↔
-        δ_goto σ ⟨od.opId, od.outTy, [e1g, e2g], .nil, []⟩ = some v) :
+        δ_goto σ ⟨od.opId, od.outTy, [e1g, e2g], .nil, []⟩ = some v)
+    (m₁ m₂ : Core.ExpressionMetadata) (ty : Option LMonoTy)
+    (e1c e2c : Core.Expression.Expr) (e1g e2g : CProverGOTO.Expr) :
     ExprTranslated δ δ_goto δ_goto_bool
       (LExpr.app m₂ (LExpr.app m₁ (LExpr.op () ⟨od.opName, ()⟩ ty) e1c) e2c)
       ⟨od.opId, od.outTy, [e1g, e2g], .nil, []⟩ :=
-  ExprTranslated.ofValueAgree h _ _ h_corr
+  ExprTranslated.ofValueAgree h _ _ (h_corr · m₁ m₂ ty e1c e2c e1g e2g)
 
 /-! ### Per-operator boolean lemmas -/
 
@@ -927,43 +933,31 @@ theorem IsBoolIntTranslated.translated
   | boolConst b => exact boolConst_translated h b
   | fvar v mty gty h_ty => exact fvar_translated h v mty gty h_ty
   | intAdd m₁ m₂ ty e1c e2c e1g e2g _ _ _ _ =>
-    exact binOp_translated_of_corr h .intAdd m₁ m₂ ty e1c e2c e1g e2g
-      (fun σ v => h.intAdd_corr σ m₁ m₂ ty e1c e2c e1g e2g v)
+    exact binOp_translated_of_corr h .intAdd h.intAdd_corr m₁ m₂ ty e1c e2c e1g e2g
   | intSub m₁ m₂ ty e1c e2c e1g e2g _ _ _ _ =>
-    exact binOp_translated_of_corr h .intSub m₁ m₂ ty e1c e2c e1g e2g
-      (fun σ v => h.intSub_corr σ m₁ m₂ ty e1c e2c e1g e2g v)
+    exact binOp_translated_of_corr h .intSub h.intSub_corr m₁ m₂ ty e1c e2c e1g e2g
   | intMul m₁ m₂ ty e1c e2c e1g e2g _ _ _ _ =>
-    exact binOp_translated_of_corr h .intMul m₁ m₂ ty e1c e2c e1g e2g
-      (fun σ v => h.intMul_corr σ m₁ m₂ ty e1c e2c e1g e2g v)
+    exact binOp_translated_of_corr h .intMul h.intMul_corr m₁ m₂ ty e1c e2c e1g e2g
   | intDivT m₁ m₂ ty e1c e2c e1g e2g _ _ _ _ =>
-    exact binOp_translated_of_corr h .intDivT m₁ m₂ ty e1c e2c e1g e2g
-      (fun σ v => h.intDivT_corr σ m₁ m₂ ty e1c e2c e1g e2g v)
+    exact binOp_translated_of_corr h .intDivT h.intDivT_corr m₁ m₂ ty e1c e2c e1g e2g
   | intModT m₁ m₂ ty e1c e2c e1g e2g _ _ _ _ =>
-    exact binOp_translated_of_corr h .intModT m₁ m₂ ty e1c e2c e1g e2g
-      (fun σ v => h.intModT_corr σ m₁ m₂ ty e1c e2c e1g e2g v)
+    exact binOp_translated_of_corr h .intModT h.intModT_corr m₁ m₂ ty e1c e2c e1g e2g
   | intLt m₁ m₂ ty e1c e2c e1g e2g _ _ _ _ =>
-    exact binOp_translated_of_corr h .intLt m₁ m₂ ty e1c e2c e1g e2g
-      (fun σ v => h.intLt_corr σ m₁ m₂ ty e1c e2c e1g e2g v)
+    exact binOp_translated_of_corr h .intLt h.intLt_corr m₁ m₂ ty e1c e2c e1g e2g
   | intLe m₁ m₂ ty e1c e2c e1g e2g _ _ _ _ =>
-    exact binOp_translated_of_corr h .intLe m₁ m₂ ty e1c e2c e1g e2g
-      (fun σ v => h.intLe_corr σ m₁ m₂ ty e1c e2c e1g e2g v)
+    exact binOp_translated_of_corr h .intLe h.intLe_corr m₁ m₂ ty e1c e2c e1g e2g
   | intGt m₁ m₂ ty e1c e2c e1g e2g _ _ _ _ =>
-    exact binOp_translated_of_corr h .intGt m₁ m₂ ty e1c e2c e1g e2g
-      (fun σ v => h.intGt_corr σ m₁ m₂ ty e1c e2c e1g e2g v)
+    exact binOp_translated_of_corr h .intGt h.intGt_corr m₁ m₂ ty e1c e2c e1g e2g
   | intGe m₁ m₂ ty e1c e2c e1g e2g _ _ _ _ =>
-    exact binOp_translated_of_corr h .intGe m₁ m₂ ty e1c e2c e1g e2g
-      (fun σ v => h.intGe_corr σ m₁ m₂ ty e1c e2c e1g e2g v)
-  | boolNot m ty e1c e1g _ _ =>
-    exact boolNot_translated h m ty e1c e1g
+    exact binOp_translated_of_corr h .intGe h.intGe_corr m₁ m₂ ty e1c e2c e1g e2g
+  | boolNot m ty e1c e1g _ _ => exact boolNot_translated h m ty e1c e1g
   | boolAnd m₁ m₂ ty e1c e2c e1g e2g _ _ _ _ =>
-    exact binOp_translated_of_corr h .boolAnd m₁ m₂ ty e1c e2c e1g e2g
-      (fun σ v => h.boolAnd_corr σ m₁ m₂ ty e1c e2c e1g e2g v)
+    exact binOp_translated_of_corr h .boolAnd h.boolAnd_corr m₁ m₂ ty e1c e2c e1g e2g
   | boolOr m₁ m₂ ty e1c e2c e1g e2g _ _ _ _ =>
-    exact binOp_translated_of_corr h .boolOr m₁ m₂ ty e1c e2c e1g e2g
-      (fun σ v => h.boolOr_corr σ m₁ m₂ ty e1c e2c e1g e2g v)
+    exact binOp_translated_of_corr h .boolOr h.boolOr_corr m₁ m₂ ty e1c e2c e1g e2g
   | boolImplies m₁ m₂ ty e1c e2c e1g e2g _ _ _ _ =>
-    exact binOp_translated_of_corr h .boolImplies m₁ m₂ ty e1c e2c e1g e2g
-      (fun σ v => h.boolImplies_corr σ m₁ m₂ ty e1c e2c e1g e2g v)
+    exact binOp_translated_of_corr h .boolImplies h.boolImplies_corr
+      m₁ m₂ ty e1c e2c e1g e2g
   | eq m e1c e2c e1g e2g _ _ _ _ =>
     exact eq_translated h m e1c e2c e1g e2g
   | ite m cc tc ec cg tg eg _ _ _ _ _ _ =>
