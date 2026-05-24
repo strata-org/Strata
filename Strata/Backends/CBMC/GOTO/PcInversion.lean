@@ -1123,6 +1123,97 @@ theorem bodyPcCovered_of_empty
   rw [h] at h_at
   simp at h_at
 
+/-- Build `BodyPcCovered` over the translator output `ans` by composing
+the blocks-fold preservation and the patcher preservation. Both
+`declPcInversion_of_translator` and `assignPcInversion_of_translator`
+project from this. -/
+private theorem bodyPcCovered_of_translator
+    (Env : Core.Expression.TyEnv) (functionName : String)
+    (cfg : Core.DetCFG)
+    (trans₀ : Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_init_size : trans₀.instructions.size = trans₀.nextLoc)
+    (h_init_empty_decl_assign : ∀ {pc : Nat} {instr : Instruction},
+      trans₀.instructions[pc]? = some instr →
+      instr.type ≠ .DECL ∧ instr.type ≠ .ASSIGN)
+    (h_admitted_blocks :
+      ∀ (l : String) blk, (l, blk) ∈ cfg.blocks →
+      ∀ c ∈ blk.cmds, Core.CmdExt.isAdmittedCmd c = true)
+    (h_loopContracts_empty_post :
+      ∀ (st_final : Strata.CoreCFGTransLoopState),
+        cfg.blocks.foldlM (Strata.coreCFGToGotoBlockStep functionName)
+          (coreCFGToGotoInitState trans₀)
+        = Except.ok st_final → st_final.loopContracts = ∅)
+    (ans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_run : Strata.coreCFGToGotoTransform Env functionName cfg trans₀
+              = Except.ok ans)
+    (δ : Imperative.SemanticEval Core.Expression)
+    (δ_goto : SemanticEvalGoto Core.Expression)
+    (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
+    (h_expr_corr : ExprTranslationPreservesEval δ δ_goto δ_goto_bool)
+    (h_tx_eq :
+      ∀ e : Core.Expression.Expr,
+        Imperative.ToGoto.toGotoExpr (P := Core.Expression) e
+          = Except.ok (h_expr_corr.tx e)) :
+    BodyPcCovered δ δ_goto δ_goto_bool ans
+      { name := "", parameterIdentifiers := #[],
+        instructions := ans.instructions } := by
+  obtain ⟨st_final, resolved, trans_post, h_blocks_run, h_patches_run, h_ans_eq⟩ :=
+    coreCFGToGotoTransform_decompose Env functionName cfg trans₀ ans h_run
+  have h_lc_empty := h_loopContracts_empty_post st_final h_blocks_run
+  rw [h_lc_empty] at h_patches_run
+  have h_trans_post_eq : trans_post = st_final.trans :=
+    patchesFoldlM_no_contracts_trans_eq st_final.labelMap st_final.pendingPatches
+      ([], st_final.trans) (resolved, trans_post) h_patches_run
+  have h_ans_eq' : ans = Imperative.patchGotoTargets st_final.trans resolved := by
+    rw [h_ans_eq, h_trans_post_eq]
+  let pgm_st : Program :=
+    { name := "", parameterIdentifiers := #[],
+      instructions := st_final.trans.instructions }
+  let pgm : Program :=
+    { name := "", parameterIdentifiers := #[],
+      instructions := ans.instructions }
+  have h_cov₀ : BodyPcCovered δ δ_goto δ_goto_bool trans₀ pgm_st := by
+    intro pc' instr' h_at'
+    refine ⟨?_, ?_⟩
+    · intro h_d
+      exact absurd h_d (h_init_empty_decl_assign h_at').1
+    · intro h_a
+      exact absurd h_a (h_init_empty_decl_assign h_at').2
+  have h_init_size_st :
+      (coreCFGToGotoInitState trans₀).trans.instructions.size =
+        (coreCFGToGotoInitState trans₀).trans.nextLoc := by
+    simp [coreCFGToGotoInitState]; exact h_init_size
+  have h_admitted_st :
+      ∀ lblBlk ∈ cfg.blocks, ∀ c ∈ lblBlk.2.cmds,
+        Core.CmdExt.isAdmittedCmd c = true :=
+    fun lblBlk h => h_admitted_blocks lblBlk.1 lblBlk.2 h
+  have h_prefix_st :
+      ∀ (k : Nat) (h : k < st_final.trans.instructions.size),
+        pgm_st.instructions[k]? = some st_final.trans.instructions[k] := by
+    intro k h_k
+    show st_final.trans.instructions[k]? = some st_final.trans.instructions[k]
+    exact Array.getElem?_eq_getElem h_k
+  have h_cov_st : BodyPcCovered δ δ_goto δ_goto_bool st_final.trans pgm_st :=
+    blocksFoldlM_preserves_body_pc_covered functionName cfg.blocks _ st_final
+      h_admitted_st h_blocks_run h_init_size_st pgm_st δ δ_goto δ_goto_bool
+      h_expr_corr h_tx_eq h_prefix_st h_cov₀
+  have h_pre_eq : pgm_st.instructions = st_final.trans.instructions := rfl
+  have h_post_eq : pgm.instructions =
+      (Imperative.patchGotoTargets st_final.trans resolved).instructions := by
+    show ans.instructions = (Imperative.patchGotoTargets st_final.trans resolved).instructions
+    rw [h_ans_eq']
+  have h_cov_post : BodyPcCovered δ δ_goto δ_goto_bool
+      (Imperative.patchGotoTargets st_final.trans resolved) pgm :=
+    patchGotoTargets_preserves_body_pc_covered δ δ_goto δ_goto_bool st_final.trans
+      resolved pgm_st pgm h_pre_eq h_post_eq h_cov_st
+  intro pc' instr' h_at'
+  have h_at_post : (Imperative.patchGotoTargets st_final.trans resolved).instructions[pc']? = some instr' := by
+    have : ans.instructions = (Imperative.patchGotoTargets st_final.trans resolved).instructions := by
+      rw [h_ans_eq']
+    rw [← this]
+    exact h_at'
+  exact h_cov_post h_at_post
+
 /-- **DECL PC inversion** from the translator: every DECL PC in
 `ans.instructions` corresponds to an `init_*` cmd-start.
 
@@ -1166,76 +1257,11 @@ theorem declPcInversion_of_translator
         { name := "", parameterIdentifiers := #[],
           instructions := ans.instructions } pc inner := by
   intro pc instr h_at h_ty
-  -- Strategy: build BodyPcCovered for ans by translator induction,
-  -- then project.
-  obtain ⟨st_final, resolved, trans_post, h_blocks_run, h_patches_run, h_ans_eq⟩ :=
-    coreCFGToGotoTransform_decompose Env functionName cfg trans₀ ans h_run
-  -- patches preserve trans (loopContracts empty).
-  have h_lc_empty := h_loopContracts_empty_post st_final h_blocks_run
-  rw [h_lc_empty] at h_patches_run
-  have h_trans_post_eq : trans_post = st_final.trans :=
-    patchesFoldlM_no_contracts_trans_eq st_final.labelMap st_final.pendingPatches
-      ([], st_final.trans) (resolved, trans_post) h_patches_run
-  have h_ans_eq' : ans = Imperative.patchGotoTargets st_final.trans resolved := by
-    rw [h_ans_eq, h_trans_post_eq]
-  let pgm_st : Program :=
-    { name := "", parameterIdentifiers := #[],
-      instructions := st_final.trans.instructions }
-  let pgm : Program :=
-    { name := "", parameterIdentifiers := #[],
-      instructions := ans.instructions }
-  -- Initial BodyPcCovered: the prior assumption gives it vacuously over trans₀.
-  have h_cov₀ : BodyPcCovered δ δ_goto δ_goto_bool trans₀ pgm_st := by
-    intro pc' instr' h_at'
-    refine ⟨?_, ?_⟩
-    · intro h_d
-      have := h_init_empty_decl_assign h_at'
-      exact absurd h_d this.1
-    · intro h_a
-      have := h_init_empty_decl_assign h_at'
-      exact absurd h_a this.2
-  -- Lift to BodyPcCovered for st_final.trans over pgm_st.
-  have h_init_size_st :
-      (coreCFGToGotoInitState trans₀).trans.instructions.size =
-        (coreCFGToGotoInitState trans₀).trans.nextLoc := by
-    simp [coreCFGToGotoInitState]; exact h_init_size
-  have h_admitted_st :
-      ∀ lblBlk ∈ cfg.blocks, ∀ c ∈ lblBlk.2.cmds,
-        Core.CmdExt.isAdmittedCmd c = true :=
-    fun lblBlk h => h_admitted_blocks lblBlk.1 lblBlk.2 h
-  have h_prefix_st :
-      ∀ (k : Nat) (h : k < st_final.trans.instructions.size),
-        pgm_st.instructions[k]? = some st_final.trans.instructions[k] := by
-    intro k h_k
-    show st_final.trans.instructions[k]? = some st_final.trans.instructions[k]
-    exact Array.getElem?_eq_getElem h_k
-  have h_cov_st : BodyPcCovered δ δ_goto δ_goto_bool st_final.trans pgm_st :=
-    blocksFoldlM_preserves_body_pc_covered functionName cfg.blocks _ st_final
-      h_admitted_st h_blocks_run h_init_size_st pgm_st δ δ_goto δ_goto_bool
-      h_expr_corr h_tx_eq h_prefix_st h_cov₀
-  -- Patcher preservation: lift to pgm.
-  have h_pre_eq : pgm_st.instructions = st_final.trans.instructions := rfl
-  have h_post_eq : pgm.instructions =
-      (Imperative.patchGotoTargets st_final.trans resolved).instructions := by
-    show ans.instructions = (Imperative.patchGotoTargets st_final.trans resolved).instructions
-    rw [h_ans_eq']
-  have h_cov_post : BodyPcCovered δ δ_goto δ_goto_bool
-      (Imperative.patchGotoTargets st_final.trans resolved) pgm :=
-    patchGotoTargets_preserves_body_pc_covered δ δ_goto δ_goto_bool st_final.trans
-      resolved pgm_st pgm h_pre_eq h_post_eq h_cov_st
-  -- Bridge from h_cov_post over (patchGotoTargets ...) to over ans.
-  have h_cov_ans : BodyPcCovered δ δ_goto δ_goto_bool ans pgm := by
-    intro pc' instr' h_at'
-    -- ans.instructions = (patchGotoTargets ...).instructions.
-    have h_at_post : (Imperative.patchGotoTargets st_final.trans resolved).instructions[pc']? = some instr' := by
-      have : ans.instructions = (Imperative.patchGotoTargets st_final.trans resolved).instructions := by
-        rw [h_ans_eq']
-      rw [← this]
-      exact h_at'
-    exact h_cov_post h_at_post
-  -- Now project to the DECL case.
-  have h_at_pgm : ans.instructions[pc]? = some instr := h_at
-  exact (h_cov_ans h_at_pgm).1 h_ty
+  let _ := h_distinct
+  exact (bodyPcCovered_of_translator Env functionName cfg trans₀
+      h_init_size h_init_empty_decl_assign h_admitted_blocks
+      h_loopContracts_empty_post ans h_run δ δ_goto δ_goto_bool
+      h_expr_corr h_tx_eq h_at).1 h_ty
 
 /-- **Discharge `DeclPcInversion`** from the translator. Wraps the
 above into the precise abbrev form expected by R8b. -/
@@ -1325,67 +1351,11 @@ theorem assignPcInversion_of_translator
         CmdEmittedAt δ δ_goto δ_goto_bool pgm pc_pred
           (.init v ty (.det e_core) md)) := by
   intro pc instr h_at h_ty
-  obtain ⟨st_final, resolved, trans_post, h_blocks_run, h_patches_run, h_ans_eq⟩ :=
-    coreCFGToGotoTransform_decompose Env functionName cfg trans₀ ans h_run
-  have h_lc_empty := h_loopContracts_empty_post st_final h_blocks_run
-  rw [h_lc_empty] at h_patches_run
-  have h_trans_post_eq : trans_post = st_final.trans :=
-    patchesFoldlM_no_contracts_trans_eq st_final.labelMap st_final.pendingPatches
-      ([], st_final.trans) (resolved, trans_post) h_patches_run
-  have h_ans_eq' : ans = Imperative.patchGotoTargets st_final.trans resolved := by
-    rw [h_ans_eq, h_trans_post_eq]
-  let pgm_st : Program :=
-    { name := "", parameterIdentifiers := #[],
-      instructions := st_final.trans.instructions }
-  let pgm : Program :=
-    { name := "", parameterIdentifiers := #[],
-      instructions := ans.instructions }
-  have h_cov₀ : BodyPcCovered δ δ_goto δ_goto_bool trans₀ pgm_st := by
-    intro pc' instr' h_at'
-    refine ⟨?_, ?_⟩
-    · intro h_d
-      have := h_init_empty_decl_assign h_at'
-      exact absurd h_d this.1
-    · intro h_a
-      have := h_init_empty_decl_assign h_at'
-      exact absurd h_a this.2
-  have h_init_size_st :
-      (coreCFGToGotoInitState trans₀).trans.instructions.size =
-        (coreCFGToGotoInitState trans₀).trans.nextLoc := by
-    simp [coreCFGToGotoInitState]; exact h_init_size
-  have h_admitted_st :
-      ∀ lblBlk ∈ cfg.blocks, ∀ c ∈ lblBlk.2.cmds,
-        Core.CmdExt.isAdmittedCmd c = true :=
-    fun lblBlk h => h_admitted_blocks lblBlk.1 lblBlk.2 h
-  have h_prefix_st :
-      ∀ (k : Nat) (h : k < st_final.trans.instructions.size),
-        pgm_st.instructions[k]? = some st_final.trans.instructions[k] := by
-    intro k h_k
-    show st_final.trans.instructions[k]? = some st_final.trans.instructions[k]
-    exact Array.getElem?_eq_getElem h_k
-  have h_cov_st : BodyPcCovered δ δ_goto δ_goto_bool st_final.trans pgm_st :=
-    blocksFoldlM_preserves_body_pc_covered functionName cfg.blocks _ st_final
-      h_admitted_st h_blocks_run h_init_size_st pgm_st δ δ_goto δ_goto_bool
-      h_expr_corr h_tx_eq h_prefix_st h_cov₀
-  have h_pre_eq : pgm_st.instructions = st_final.trans.instructions := rfl
-  have h_post_eq : pgm.instructions =
-      (Imperative.patchGotoTargets st_final.trans resolved).instructions := by
-    show ans.instructions = (Imperative.patchGotoTargets st_final.trans resolved).instructions
-    rw [h_ans_eq']
-  have h_cov_post : BodyPcCovered δ δ_goto δ_goto_bool
-      (Imperative.patchGotoTargets st_final.trans resolved) pgm :=
-    patchGotoTargets_preserves_body_pc_covered δ δ_goto δ_goto_bool st_final.trans
-      resolved pgm_st pgm h_pre_eq h_post_eq h_cov_st
-  have h_cov_ans : BodyPcCovered δ δ_goto δ_goto_bool ans pgm := by
-    intro pc' instr' h_at'
-    have h_at_post : (Imperative.patchGotoTargets st_final.trans resolved).instructions[pc']? = some instr' := by
-      have : ans.instructions = (Imperative.patchGotoTargets st_final.trans resolved).instructions := by
-        rw [h_ans_eq']
-      rw [← this]
-      exact h_at'
-    exact h_cov_post h_at_post
-  have h_at_pgm : ans.instructions[pc]? = some instr := h_at
-  exact (h_cov_ans h_at_pgm).2 h_ty
+  let _ := h_distinct
+  exact (bodyPcCovered_of_translator Env functionName cfg trans₀
+      h_init_size h_init_empty_decl_assign h_admitted_blocks
+      h_loopContracts_empty_post ans h_run δ δ_goto δ_goto_bool
+      h_expr_corr h_tx_eq h_at).2 h_ty
 
 /-- **Discharge `AssignPcInversion`** from the translator. Wraps the
 above into the abbrev form expected by R8b. -/
