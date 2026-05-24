@@ -254,6 +254,36 @@ private theorem push_non_body_preserves_body_pc_covered
   push_preserves_body_pc_covered δ δ_goto δ_goto_bool trans pgm new_instr h_cov
     (fun h => absurd h h_not_decl) (fun h => absurd h h_not_assn)
 
+/-- Pushing an ASSIGN instruction whose `.set` emit witness is already
+discharged preserves `BodyPcCovered`. -/
+private theorem push_assn_set_preserves_body_pc_covered
+    (δ : Imperative.SemanticEval Core.Expression)
+    (δ_goto : SemanticEvalGoto Core.Expression)
+    (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
+    (trans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (pgm : Program)
+    (new_instr : Instruction)
+    (h_assn_ty : new_instr.type = .ASSIGN)
+    (h_invariant : trans.instructions.size = trans.nextLoc)
+    (v : Core.Expression.Ident) (cv : Imperative.ExprOrNondet Core.Expression)
+    (md : Imperative.MetaData Core.Expression)
+    (h_emit : CmdEmittedAt δ δ_goto δ_goto_bool pgm trans.nextLoc
+                (.set v cv md))
+    (h_cov : BodyPcCovered δ δ_goto δ_goto_bool trans pgm) :
+    ∀ {pc : Nat} {instr : Instruction},
+      (trans.instructions.push new_instr)[pc]? = some instr →
+      (instr.type = .DECL →
+        ∃ inner, CmdEmittedAt δ δ_goto δ_goto_bool pgm pc inner) ∧
+      (instr.type = .ASSIGN →
+        (∃ v cv md, CmdEmittedAt δ δ_goto δ_goto_bool pgm pc
+          (.set v cv md)) ∨
+        (∃ pc_pred v ty e_core md, pc = pc_pred + 1 ∧
+          CmdEmittedAt δ δ_goto δ_goto_bool pgm pc_pred
+            (.init v ty (.det e_core) md))) :=
+  push_preserves_body_pc_covered δ δ_goto δ_goto_bool trans pgm new_instr h_cov
+    (fun h_d => absurd (h_assn_ty.symm.trans h_d) (by decide))
+    (fun _ => Or.inl ⟨v, cv, md, h_invariant ▸ h_emit⟩)
+
 /-! ## Preservation through `Cmd.toGotoInstructions`
 
 For each `Imperative.Cmd` constructor in the admitted fragment, we
@@ -303,47 +333,13 @@ theorem toGotoInstructions_preserves_body_pc_covered
           h_run h_invariant pgm δ δ_goto δ_goto_bool h_expr_corr (h_tx_eq e) h_prefix
       intro pc instr h
       rw [h_inst] at h
-      -- Now h : (trans.instructions.append #[i_decl, i_assn])[pc]? = some instr.
-      -- We supply the per-position obligations:
-      -- i_decl is at trans.instructions.size = trans.nextLoc — DECL.
-      -- i_assn is at trans.instructions.size + 1 = trans.nextLoc + 1 — ASSIGN.
-      have h_decl_decl : i_decl.type = .DECL →
-          ∃ inner, CmdEmittedAt δ δ_goto δ_goto_bool pgm
-            trans.instructions.size inner := by
-        intro _
-        rw [h_invariant]
-        exact ⟨_, h_emit⟩
-      have h_decl_assn : i_decl.type = .ASSIGN →
-          (∃ v' cv' md', CmdEmittedAt δ δ_goto δ_goto_bool pgm
-            trans.instructions.size (.set v' cv' md')) ∨
-          (∃ pc_pred v' ty' e_core md',
-            trans.instructions.size = pc_pred + 1 ∧
-            CmdEmittedAt δ δ_goto δ_goto_bool pgm pc_pred
-              (.init v' ty' (.det e_core) md')) := by
-        intro h'
-        rw [h_decl_ty] at h'
-        cases h'
-      have h_assn_decl : i_assn.type = .DECL →
-          ∃ inner, CmdEmittedAt δ δ_goto δ_goto_bool pgm
-            (trans.instructions.size + 1) inner := by
-        intro h'
-        rw [h_assn_ty] at h'
-        cases h'
-      have h_assn_assn : i_assn.type = .ASSIGN →
-          (∃ v' cv' md', CmdEmittedAt δ δ_goto δ_goto_bool pgm
-            (trans.instructions.size + 1) (.set v' cv' md')) ∨
-          (∃ pc_pred v' ty' e_core md',
-            trans.instructions.size + 1 = pc_pred + 1 ∧
-            CmdEmittedAt δ δ_goto δ_goto_bool pgm pc_pred
-              (.init v' ty' (.det e_core) md')) := by
-        intro _
-        right
-        refine ⟨trans.instructions.size, v, ty, e, md, ?_, ?_⟩
-        · rfl
-        · rw [h_invariant]
-          exact h_emit
       exact append_two_preserves_body_pc_covered δ δ_goto δ_goto_bool trans pgm
-        i_decl i_assn h_cov h_decl_decl h_decl_assn h_assn_decl h_assn_assn h
+        i_decl i_assn h_cov
+        (fun _ => h_invariant ▸ ⟨_, h_emit⟩)
+        (fun h_a => absurd (h_decl_ty.symm.trans h_a) (by decide))
+        (fun h_d => absurd (h_assn_ty.symm.trans h_d) (by decide))
+        (fun _ => Or.inr ⟨trans.instructions.size, v, ty, e, md, rfl,
+                          h_invariant ▸ h_emit⟩) h
     | nondet =>
       -- One-instruction case: DECL at nextLoc.
       obtain ⟨_gty, i_decl, _, h_decl_ty, _, _, h_inst, _, _⟩ :=
@@ -354,24 +350,9 @@ theorem toGotoInstructions_preserves_body_pc_covered
           h_run h_invariant pgm δ δ_goto δ_goto_bool h_prefix
       intro pc instr h
       rw [h_inst] at h
-      have h_new_decl : i_decl.type = .DECL →
-          ∃ inner, CmdEmittedAt δ δ_goto δ_goto_bool pgm
-            trans.instructions.size inner := by
-        intro _
-        rw [h_invariant]
-        exact ⟨_, h_emit⟩
-      have h_new_assn : i_decl.type = .ASSIGN →
-          (∃ v' cv' md', CmdEmittedAt δ δ_goto δ_goto_bool pgm
-            trans.instructions.size (.set v' cv' md')) ∨
-          (∃ pc_pred v' ty' e_core md',
-            trans.instructions.size = pc_pred + 1 ∧
-            CmdEmittedAt δ δ_goto δ_goto_bool pgm pc_pred
-              (.init v' ty' (.det e_core) md')) := by
-        intro h'
-        rw [h_decl_ty] at h'
-        cases h'
-      exact push_preserves_body_pc_covered δ δ_goto δ_goto_bool trans pgm
-        i_decl h_cov h_new_decl h_new_assn h
+      exact push_preserves_body_pc_covered δ δ_goto δ_goto_bool trans pgm i_decl h_cov
+        (fun _ => h_invariant ▸ ⟨_, h_emit⟩)
+        (fun h_a => absurd (h_decl_ty.symm.trans h_a) (by decide)) h
   | set v src md =>
     cases src with
     | det e =>
@@ -384,26 +365,8 @@ theorem toGotoInstructions_preserves_body_pc_covered
           h_run h_invariant pgm δ δ_goto δ_goto_bool h_expr_corr (h_tx_eq e) h_prefix
       intro pc instr h
       rw [h_inst] at h
-      have h_new_decl : i_assn.type = .DECL →
-          ∃ inner, CmdEmittedAt δ δ_goto δ_goto_bool pgm
-            trans.instructions.size inner := by
-        intro h'
-        rw [h_assn_ty] at h'
-        cases h'
-      have h_new_assn : i_assn.type = .ASSIGN →
-          (∃ v' cv' md', CmdEmittedAt δ δ_goto δ_goto_bool pgm
-            trans.instructions.size (.set v' cv' md')) ∨
-          (∃ pc_pred v' ty' e_core md',
-            trans.instructions.size = pc_pred + 1 ∧
-            CmdEmittedAt δ δ_goto δ_goto_bool pgm pc_pred
-              (.init v' ty' (.det e_core) md')) := by
-        intro _
-        left
-        refine ⟨v, .det e, md, ?_⟩
-        rw [h_invariant]
-        exact h_emit
-      exact push_preserves_body_pc_covered δ δ_goto δ_goto_bool trans pgm
-        i_assn h_cov h_new_decl h_new_assn h
+      exact push_assn_set_preserves_body_pc_covered δ δ_goto δ_goto_bool
+        trans pgm i_assn h_assn_ty h_invariant v (.det e) md h_emit h_cov h
     | nondet =>
       -- One-instruction case: ASSIGN at nextLoc, set_nondet.
       obtain ⟨_gty, i_assn, _, h_assn_ty, _h_assn_code, _, h_inst, _⟩ :=
@@ -414,26 +377,8 @@ theorem toGotoInstructions_preserves_body_pc_covered
           h_run h_invariant pgm δ δ_goto δ_goto_bool h_prefix
       intro pc instr h
       rw [h_inst] at h
-      have h_new_decl : i_assn.type = .DECL →
-          ∃ inner, CmdEmittedAt δ δ_goto δ_goto_bool pgm
-            trans.instructions.size inner := by
-        intro h'
-        rw [h_assn_ty] at h'
-        cases h'
-      have h_new_assn : i_assn.type = .ASSIGN →
-          (∃ v' cv' md', CmdEmittedAt δ δ_goto δ_goto_bool pgm
-            trans.instructions.size (.set v' cv' md')) ∨
-          (∃ pc_pred v' ty' e_core md',
-            trans.instructions.size = pc_pred + 1 ∧
-            CmdEmittedAt δ δ_goto δ_goto_bool pgm pc_pred
-              (.init v' ty' (.det e_core) md')) := by
-        intro _
-        left
-        refine ⟨v, .nondet, md, ?_⟩
-        rw [h_invariant]
-        exact h_emit
-      exact push_preserves_body_pc_covered δ δ_goto δ_goto_bool trans pgm
-        i_assn h_cov h_new_decl h_new_assn h
+      exact push_assn_set_preserves_body_pc_covered δ δ_goto δ_goto_bool
+        trans pgm i_assn h_assn_ty h_invariant v .nondet md h_emit h_cov h
   | assert label e md =>
     -- One-instruction case: ASSERT at nextLoc, not DECL or ASSIGN.
     obtain ⟨_e_goto, i, _, h_assert_ty, _, _, h_inst, _⟩ :=
