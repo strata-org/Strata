@@ -500,6 +500,56 @@ theorem boolConst_translated
       rw [h_src]
       rfl
 
+/-! ### Binary operator descriptor
+
+The 12 binary arithmetic-ish operators (`Int.{Add,Sub,Mul,DivT,ModT,
+Lt,Le,Gt,Ge}` plus `Bool.{And,Or,Implies}`) have a near-identical
+proof skeleton. Following the L1 OpDesc smoke test, we factor the
+per-op data into a `BoolIntBinOpDesc` and generalise both the
+`<op>_translated` lemmas and the bridge helpers into single generic
+theorems parametrised by the descriptor. -/
+
+/-- Descriptor for one binary boolean/integer operator: its Core name,
+the GOTO `Expr.Identifier` it translates to, and the GOTO output type
+(`.Integer` for integer arithmetic, `.Boolean` for comparisons and
+boolean ops). -/
+structure BoolIntBinOpDesc where
+  /-- The Core operator name, e.g. `"Int.Add"`. -/
+  opName : String
+  /-- The GOTO `Expr.Identifier` for the translated form. -/
+  opId   : Expr.Identifier
+  /-- The GOTO output type (`.Integer` or `.Boolean`). -/
+  outTy  : Ty
+
+namespace BoolIntBinOpDesc
+
+/-- `Int.Add` → `.multiary .Plus, .Integer`. -/
+def intAdd : BoolIntBinOpDesc := ⟨"Int.Add", .multiary .Plus, .Integer⟩
+/-- `Int.Sub` → `.binary .Minus, .Integer`. -/
+def intSub : BoolIntBinOpDesc := ⟨"Int.Sub", .binary .Minus, .Integer⟩
+/-- `Int.Mul` → `.multiary .Mult, .Integer`. -/
+def intMul : BoolIntBinOpDesc := ⟨"Int.Mul", .multiary .Mult, .Integer⟩
+/-- `Int.DivT` → `.binary .Div, .Integer`. -/
+def intDivT : BoolIntBinOpDesc := ⟨"Int.DivT", .binary .Div, .Integer⟩
+/-- `Int.ModT` → `.binary .Mod, .Integer`. -/
+def intModT : BoolIntBinOpDesc := ⟨"Int.ModT", .binary .Mod, .Integer⟩
+/-- `Int.Lt` → `.binary .Lt, .Boolean`. -/
+def intLt : BoolIntBinOpDesc := ⟨"Int.Lt", .binary .Lt, .Boolean⟩
+/-- `Int.Le` → `.binary .Le, .Boolean`. -/
+def intLe : BoolIntBinOpDesc := ⟨"Int.Le", .binary .Le, .Boolean⟩
+/-- `Int.Gt` → `.binary .Gt, .Boolean`. -/
+def intGt : BoolIntBinOpDesc := ⟨"Int.Gt", .binary .Gt, .Boolean⟩
+/-- `Int.Ge` → `.binary .Ge, .Boolean`. -/
+def intGe : BoolIntBinOpDesc := ⟨"Int.Ge", .binary .Ge, .Boolean⟩
+/-- `Bool.And` → `.multiary .And, .Boolean`. -/
+def boolAnd : BoolIntBinOpDesc := ⟨"Bool.And", .multiary .And, .Boolean⟩
+/-- `Bool.Or` → `.multiary .Or, .Boolean`. -/
+def boolOr : BoolIntBinOpDesc := ⟨"Bool.Or", .multiary .Or, .Boolean⟩
+/-- `Bool.Implies` → `.binary .Implies, .Boolean`. -/
+def boolImplies : BoolIntBinOpDesc := ⟨"Bool.Implies", .binary .Implies, .Boolean⟩
+
+end BoolIntBinOpDesc
+
 /-! ### Per-operator binary integer lemmas
 
 Each lemma takes the value-agreement hypothesis on the full
@@ -512,6 +562,27 @@ parent*, because the per-operator hypothesis already states agreement on
 the parent application directly. The IH would matter if we wanted to go
 the other direction (peel off "value_agree at parent" into facts about
 children), but `ExprTranslated` doesn't require that. -/
+
+/-- Generic per-op `_translated` lemma: from a value-agreement
+hypothesis matching the descriptor's pattern, build an
+`ExprTranslated`. Replaces the 12 individual `<op>_translated` lemmas. -/
+theorem binOp_translated_of_corr
+    {δ : SemanticEval Core.Expression}
+    {δ_goto : SemanticEvalGoto Core.Expression}
+    {δ_goto_bool : SemanticEvalGotoBool Core.Expression}
+    (h : BoolIntOpHypotheses δ δ_goto δ_goto_bool)
+    (od : BoolIntBinOpDesc)
+    (m₁ m₂ : Core.ExpressionMetadata) (ty : Option LMonoTy)
+    (e1c e2c : Core.Expression.Expr) (e1g e2g : CProverGOTO.Expr)
+    (h_corr :
+      ∀ σ v,
+        δ σ (LExpr.app m₂ (LExpr.app m₁
+              (LExpr.op () ⟨od.opName, ()⟩ ty) e1c) e2c) = some v ↔
+        δ_goto σ ⟨od.opId, od.outTy, [e1g, e2g], .nil, []⟩ = some v) :
+    ExprTranslated δ δ_goto δ_goto_bool
+      (LExpr.app m₂ (LExpr.app m₁ (LExpr.op () ⟨od.opName, ()⟩ ty) e1c) e2c)
+      ⟨od.opId, od.outTy, [e1g, e2g], .nil, []⟩ :=
+  ExprTranslated.ofValueAgree h _ _ h_corr
 
 /-- `Int.Add`: integer addition. -/
 theorem intAdd_translated
@@ -1107,6 +1178,84 @@ private theorem op_id_ne_funApp_unary
   simp only [BEq.beq, decide_eq_false_iff_not]
   intro h; cases h
 
+/-- Generic bridge helper for the 12 binary operators. Replaces the 12
+per-op `isBoolIntTranslated_of_toGotoExprCtx_<op>` helpers.
+
+Takes a `BoolIntBinOpDesc` plus the four side-conditions that
+specialise the proof skeleton:
+
+* `h_red_op`  — `fnToGotoID od.opName = .ok od.opId`;
+* `h_signed`  — `isSignedBvOp od.opName = false`;
+* `h_funApp`  — `od.opId` cannot equal `.functionApplication s`;
+* `h_not_old` — `(od.opName == "old") = false`.
+
+The `mk` argument supplies the operator-specific `IsBoolIntTranslated`
+constructor — this is necessary because the inductive's binary
+constructors hardcode the operator name in their conclusion's LExpr
+pattern, so the generic cannot derive it. -/
+private theorem isBoolIntTranslated_of_toGotoExprCtx_binOp
+    (od : BoolIntBinOpDesc)
+    (h_red_op  : fnToGotoID od.opName = .ok od.opId)
+    (h_signed  : isSignedBvOp od.opName = false)
+    (h_funApp  : ∀ s, (od.opId == Expr.Identifier.functionApplication s) = false)
+    (h_not_old : (od.opName == "old") = false)
+    (mk : ∀ (m₁ m₂ : Core.ExpressionMetadata) (ty : Option LMonoTy)
+            (e1c e2c : CoreLExpr) (e1g e2g : CProverGOTO.Expr),
+          IsBoolIntTranslated e1c e1g →
+          IsBoolIntTranslated e2c e2g →
+          IsBoolIntTranslated
+            (LExpr.app m₂ (LExpr.app m₁
+              (LExpr.op () ⟨od.opName, ()⟩ ty) e1c) e2c)
+            ⟨od.opId, od.outTy, [e1g, e2g], .nil, []⟩)
+    (m_outer m_inner m_op : Core.ExpressionMetadata)
+    (id_meta : Unit) (mty : LMonoTy)
+    (e1c e2c : CoreLExpr) (e_goto : CProverGOTO.Expr)
+    (h_op_gty : mty.destructArrow.getLast!.toGotoType = .ok od.outTy)
+    (ih1 : ∀ (e_goto : CProverGOTO.Expr),
+        isBoolIntFragment e1c = true →
+        LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩)
+              [] e1c = .ok e_goto →
+        IsBoolIntTranslated e1c e_goto)
+    (ih2 : ∀ (e_goto : CProverGOTO.Expr),
+        isBoolIntFragment e2c = true →
+        LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩)
+              [] e2c = .ok e_goto → IsBoolIntTranslated e2c e_goto)
+    (h_frag1 : isBoolIntFragment e1c = true)
+    (h_frag2 : isBoolIntFragment e2c = true)
+    (h_tx : LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩)
+              [] (LExpr.app m_outer
+                (LExpr.app m_inner
+                  (LExpr.op m_op ⟨od.opName, id_meta⟩ (some mty)) e1c) e2c)
+              = .ok e_goto) :
+    IsBoolIntTranslated
+      (LExpr.app m_outer
+        (LExpr.app m_inner
+          (LExpr.op m_op ⟨od.opName, id_meta⟩ (some mty)) e1c) e2c)
+      e_goto := by
+  -- Unfold the translator on the binary-app shape.
+  simp only [LExpr.toGotoExprCtx, bind, Except.bind, pure, Except.pure] at h_tx
+  -- toString reduces to `od.opName` by definitional unfolding of the
+  -- `Lambda.Identifier` `ToString` instance.
+  simp only [show (toString (⟨od.opName, id_meta⟩ : Lambda.Identifier Unit))
+             = od.opName from rfl,
+             h_not_old, h_red_op, h_signed] at h_tx
+  -- Eliminate the .functionApplication-comparison if-checks.
+  simp only [h_funApp] at h_tx
+  rw [h_op_gty] at h_tx
+  cases h_e1g :
+      LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩) [] e1c with
+  | error _ => rw [h_e1g] at h_tx; cases h_tx
+  | ok e1g =>
+    rw [h_e1g] at h_tx
+    cases h_e2g :
+        LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩) [] e2c with
+    | error _ => rw [h_e2g] at h_tx; cases h_tx
+    | ok e2g =>
+      rw [h_e2g] at h_tx
+      cases h_tx
+      exact mk m_inner m_outer (some mty) e1c e2c e1g e2g
+            (ih1 e1g h_frag1 h_e1g) (ih2 e2g h_frag2 h_e2g)
+
 /-- Bridge helper: `Int.Add`. -/
 private theorem isBoolIntTranslated_of_toGotoExprCtx_intAdd
     (h_red : FnToGotoIDReductions)
@@ -1137,42 +1286,20 @@ private theorem isBoolIntTranslated_of_toGotoExprCtx_intAdd
         (LExpr.app m_inner
           (LExpr.op m_op ⟨"Int.Add", id_meta⟩ (some mty)) e1c) e2c)
       e_goto := by
-  -- Children are in fragment.
   have h_frag1 : isBoolIntFragment e1c = true := by
     have h := h_frag
-    simp [isBoolIntFragment, isSupportedIntBinOp,
-          isSupportedBoolBinOp] at h
+    simp [isBoolIntFragment, isSupportedIntBinOp, isSupportedBoolBinOp] at h
     exact h.1
   have h_frag2 : isBoolIntFragment e2c = true := by
     have h := h_frag
-    simp [isBoolIntFragment, isSupportedIntBinOp,
-          isSupportedBoolBinOp] at h
+    simp [isBoolIntFragment, isSupportedIntBinOp, isSupportedBoolBinOp] at h
     exact h.2
-  -- Unfold the translator on the binary-app shape.
-  simp only [LExpr.toGotoExprCtx, bind, Except.bind, pure, Except.pure] at h_tx
-  -- toString of the identifier: name field. Then "Int.Add" ≠ "old".
-  -- After fnToGotoID reduction via h_red, op = .multiary .Plus, which is
-  -- not .functionApplication. The signed-BV check returns false.
-  simp only [show (toString (⟨"Int.Add", id_meta⟩ : Lambda.Identifier Unit))
-             = "Int.Add" from rfl,
-             show ("Int.Add" == "old") = false from rfl,
-             h_red.intAdd, h_red.isSignedBvOp_intAdd] at h_tx
-  -- Eliminate the three .functionApplication-comparison if-checks.
-  simp only [op_id_ne_funApp_multiary] at h_tx
-  rw [h_op_gty] at h_tx
-  cases h_e1g :
-      LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩) [] e1c with
-  | error _ => rw [h_e1g] at h_tx; cases h_tx
-  | ok e1g =>
-    rw [h_e1g] at h_tx
-    cases h_e2g :
-        LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩) [] e2c with
-    | error _ => rw [h_e2g] at h_tx; cases h_tx
-    | ok e2g =>
-      rw [h_e2g] at h_tx
-      cases h_tx
-      exact .intAdd m_inner m_outer (some mty) e1c e2c e1g e2g
-            (ih1 e1g h_frag1 h_e1g) (ih2 e2g h_frag2 h_e2g)
+  exact isBoolIntTranslated_of_toGotoExprCtx_binOp .intAdd
+    h_red.intAdd h_red.isSignedBvOp_intAdd
+    (op_id_ne_funApp_multiary _) (by decide)
+    (fun _ _ _ _ _ _ _ ih1 ih2 => .intAdd _ _ _ _ _ _ _ ih1 ih2)
+    m_outer m_inner m_op id_meta mty e1c e2c e_goto h_op_gty ih1 ih2
+    h_frag1 h_frag2 h_tx
 
 /-- Bridge helper: `Int.Sub`. -/
 private theorem isBoolIntTranslated_of_toGotoExprCtx_intSub
