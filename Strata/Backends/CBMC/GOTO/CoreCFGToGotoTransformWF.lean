@@ -5402,14 +5402,6 @@ We track three properties of `pendingPatches` through `coreCFGToGotoBlockStep`:
   members of `pendingPatches` after processing.
 -/
 
-/-- All indices in a `pendingPatches` array are distinct. -/
-def PendingPatchesIndicesDistinct (patches : Array (Nat × String)) : Prop :=
-  List.Pairwise (fun a b => a.1 ≠ b.1) patches.toList
-
-/-- All indices in `pendingPatches` are < `bound`. -/
-def PendingPatchesIndicesBounded (patches : Array (Nat × String)) (bound : Nat) : Prop :=
-  ∀ p ∈ patches, p.1 < bound
-
 /-- After the per-block step, the `pendingPatches` from input `st` are
 preserved (via push for `.condGoto`, identity for `.finish`). -/
 theorem coreCFGToGotoBlockStep_pendingPatches_preserves
@@ -5877,59 +5869,6 @@ theorem blocksFoldlM_pendingPatches_indices_distinct
           ∀ lblBlk ∈ rest, ∀ c ∈ lblBlk.2.cmds, Core.CmdExt.isAdmittedCmd c = true :=
         fun lblBlk hlb => h_admitted lblBlk (by simp [hlb])
       exact ih st₁ h_admitted_rest h_run h_size₁ h_bound₁ h_distinct₁
-    | .error _ =>
-      rw [h_step] at h_run
-      simp [Bind.bind, Except.bind] at h_run
-
-/-! ### resolvedPatches index distinctness
-
-Each `coreCFGToGotoPatchStep` prepends `(idx, targetLoc)` for the
-input `(idx, label)`. Under empty contracts, the indices in
-`resolvedPatches` are exactly the indices that appear (as first
-projections) in the input pendingPatches plus `acc.1`'s indices. -/
-
-/-- Per-step under empty contracts: `acc'.1 = (idx, targetLoc) :: acc.1`.
-This characterises the structure of resolvedPatches. -/
-theorem patchesFoldlM_no_contracts_resolvedPatches_indices_subset
-    (labelMap : Std.HashMap String Nat)
-    (patches : List (Nat × String))
-    (acc acc' : List (Nat × Nat) × Imperative.GotoTransform Core.Expression.TyEnv)
-    (h_run : patches.foldlM (Strata.coreCFGToGotoPatchStep labelMap ∅) acc = Except.ok acc') :
-    ∀ p ∈ acc'.1, p.1 ∈ acc.1.map Prod.fst ∨ p.1 ∈ patches.map Prod.fst := by
-  induction patches generalizing acc with
-  | nil =>
-    simp [List.foldlM, pure, Except.pure] at h_run
-    subst h_run
-    intro p hp
-    left
-    exact List.mem_map_of_mem hp
-  | cons head rest ih =>
-    rw [List.foldlM_cons] at h_run
-    match h_step : Strata.coreCFGToGotoPatchStep labelMap ∅ acc head with
-    | .ok acc₁ =>
-      rw [h_step] at h_run
-      simp only [Bind.bind, Except.bind] at h_run
-      intro p hp
-      have h_ih := ih acc₁ h_run p hp
-      rcases h_ih with h_old | h_new
-      · obtain ⟨idx, label⟩ := head
-        cases h_lookup : labelMap[label]? with
-        | none =>
-          unfold Strata.coreCFGToGotoPatchStep at h_step
-          simp only [Bind.bind, Except.bind] at h_step
-          rw [h_lookup] at h_step
-          simp at h_step
-        | some targetLoc =>
-          have h_acc₁_eq := coreCFGToGotoPatchStep_no_contracts_resolvedPatches
-            labelMap acc acc₁ (idx, label) targetLoc h_lookup h_step
-          rw [h_acc₁_eq] at h_old
-          simp only [List.map_cons, List.mem_cons] at h_old
-          rcases h_old with h_eq | h_old
-          · right; simp [List.mem_cons, List.map_cons]; left; exact h_eq
-          · left; exact h_old
-      · right
-        simp only [List.map_cons, List.mem_cons]
-        right; exact h_new
     | .error _ =>
       rw [h_step] at h_run
       simp [Bind.bind, Except.bind] at h_run
