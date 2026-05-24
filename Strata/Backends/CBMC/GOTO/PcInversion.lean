@@ -940,13 +940,8 @@ private theorem bodyPcCovered_of_translator
     exact h_at'
   exact h_cov_post h_at_post
 
-/-- **Discharge `DeclPcInversion`** from the translator. Every DECL PC
-in `ans.instructions` corresponds to an `init_*` cmd-start.
-
-The auxiliary hypotheses are the standard translator-input invariants
-(empty/admitted initial state, distinct labels, admitted blocks,
-empty-loopContracts post-fold). -/
-theorem declPcInversion_of_translator_abbrev
+section TopLevel
+variable
     (Env : Core.Expression.TyEnv) (functionName : String)
     (cfg : Core.DetCFG)
     (trans₀ : Imperative.GotoTransform Core.Expression.TyEnv)
@@ -954,7 +949,7 @@ theorem declPcInversion_of_translator_abbrev
     (h_init_empty_decl_assign : ∀ {pc : Nat} {instr : Instruction},
       trans₀.instructions[pc]? = some instr →
       instr.type ≠ .DECL ∧ instr.type ≠ .ASSIGN)
-    (_h_distinct : BlockLabelsDistinct cfg.blocks)
+    (h_distinct : BlockLabelsDistinct cfg.blocks)
     (h_admitted_blocks :
       ∀ (l : String) blk, (l, blk) ∈ cfg.blocks →
       ∀ c ∈ blk.cmds, Core.CmdExt.isAdmittedCmd c = true)
@@ -977,7 +972,15 @@ theorem declPcInversion_of_translator_abbrev
     (wf : WellFormedTranslation cfg
       { name := "", parameterIdentifiers := #[],
         instructions := ans.instructions }
-      δ δ_goto δ_goto_bool) :
+      δ δ_goto δ_goto_bool)
+
+include h_init_size h_init_empty_decl_assign h_distinct h_admitted_blocks
+        h_loopContracts_empty_post h_run h_expr_corr h_tx_eq
+
+set_option linter.unusedSectionVars false in
+/-- **Discharge `DeclPcInversion`** from the translator. Every DECL PC
+in `ans.instructions` corresponds to an `init_*` cmd-start. -/
+theorem declPcInversion_of_translator_abbrev :
     CmdProvenance.DeclPcInversion cfg
       { name := "", parameterIdentifiers := #[],
         instructions := ans.instructions }
@@ -988,41 +991,11 @@ theorem declPcInversion_of_translator_abbrev
       h_loopContracts_empty_post ans h_run δ δ_goto δ_goto_bool
       h_expr_corr h_tx_eq h_at).1 h_ty
 
+set_option linter.unusedSectionVars false in
 /-- **Discharge `AssignPcInversion`** from the translator. Every
 ASSIGN PC in `ans.instructions` is either offset-0 of a `set _ _ _`
 cmd or offset-1 of an `init _ _ (.det _) _` cmd. -/
-theorem assignPcInversion_of_translator_abbrev
-    (Env : Core.Expression.TyEnv) (functionName : String)
-    (cfg : Core.DetCFG)
-    (trans₀ : Imperative.GotoTransform Core.Expression.TyEnv)
-    (h_init_size : trans₀.instructions.size = trans₀.nextLoc)
-    (h_init_empty_decl_assign : ∀ {pc : Nat} {instr : Instruction},
-      trans₀.instructions[pc]? = some instr →
-      instr.type ≠ .DECL ∧ instr.type ≠ .ASSIGN)
-    (_h_distinct : BlockLabelsDistinct cfg.blocks)
-    (h_admitted_blocks :
-      ∀ (l : String) blk, (l, blk) ∈ cfg.blocks →
-      ∀ c ∈ blk.cmds, Core.CmdExt.isAdmittedCmd c = true)
-    (h_loopContracts_empty_post :
-      ∀ (st_final : Strata.CoreCFGTransLoopState),
-        cfg.blocks.foldlM (Strata.coreCFGToGotoBlockStep functionName)
-          (coreCFGToGotoInitState trans₀)
-        = Except.ok st_final → st_final.loopContracts = ∅)
-    (ans : Imperative.GotoTransform Core.Expression.TyEnv)
-    (h_run : Strata.coreCFGToGotoTransform Env functionName cfg trans₀
-              = Except.ok ans)
-    (δ : Imperative.SemanticEval Core.Expression)
-    (δ_goto : SemanticEvalGoto Core.Expression)
-    (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
-    (h_expr_corr : ExprTranslationPreservesEval δ δ_goto δ_goto_bool)
-    (h_tx_eq :
-      ∀ e : Core.Expression.Expr,
-        Imperative.ToGoto.toGotoExpr (P := Core.Expression) e
-          = Except.ok (h_expr_corr.tx e))
-    (wf : WellFormedTranslation cfg
-      { name := "", parameterIdentifiers := #[],
-        instructions := ans.instructions }
-      δ δ_goto δ_goto_bool) :
+theorem assignPcInversion_of_translator_abbrev :
     CmdProvenance.AssignPcInversion cfg
       { name := "", parameterIdentifiers := #[],
         instructions := ans.instructions }
@@ -1032,6 +1005,8 @@ theorem assignPcInversion_of_translator_abbrev
       h_init_size h_init_empty_decl_assign h_admitted_blocks
       h_loopContracts_empty_post ans h_run δ δ_goto δ_goto_bool
       h_expr_corr h_tx_eq h_at).2 h_ty
+
+end TopLevel
 
 /-! ## Strict `AssignNondetPcInversion` is bridge-layer
 
