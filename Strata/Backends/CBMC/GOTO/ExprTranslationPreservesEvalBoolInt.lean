@@ -1164,114 +1164,87 @@ theorem toGotoExprCtx_preservesEval_boolInt
     -- Dispatch on which operator name we have. Use the disjunction.
     have h_or : isSupportedIntBinOp fn_name = true ∨
                 isSupportedBoolBinOp fn_name = true := h_frag_split.1
-    -- Pre-extract the implications from h_gty (before splitting cases).
-    have h_gty_int_arith :
-        (fn_name == "Int.Add" ∨ fn_name == "Int.Sub" ∨ fn_name == "Int.Mul"
-         ∨ fn_name == "Int.DivT" ∨ fn_name == "Int.ModT") →
-        mty.destructArrow.getLast!.toGotoType = .ok .Integer := h_gty.1
-    have h_gty_int_cmp :
-        (fn_name == "Int.Lt" ∨ fn_name == "Int.Le"
-         ∨ fn_name == "Int.Gt" ∨ fn_name == "Int.Ge") →
-        mty.destructArrow.getLast!.toGotoType = .ok .Boolean := h_gty.2.1
-    have h_gty_bool_bin :
-        (fn_name == "Bool.And" ∨ fn_name == "Bool.Or"
-         ∨ fn_name == "Bool.Implies") →
-        mty.destructArrow.getLast!.toGotoType = .ok .Boolean := h_gty.2.2.1
     cases h_or with
     | inl h_int =>
       -- One of Int.Add, Sub, Mul, DivT, ModT, Lt, Le, Gt, Ge.
       simp only [isSupportedIntBinOp, Bool.or_eq_true, beq_iff_eq] at h_int
       rcases h_int with
-        ((((((((h | h) | h) | h) | h) | h) | h) | h) | h)
-      · subst h
-        exact isBoolIntTranslated_of_toGotoExprCtx_binOp .intAdd
+        ((((((((h | h) | h) | h) | h) | h) | h) | h) | h) <;> subst h
+      · exact isBoolIntTranslated_of_toGotoExprCtx_binOp .intAdd
           h_red.intAdd h_red.isSignedBvOp_intAdd
           (op_id_ne_funApp_multiary _) (by decide)
           (fun _ _ _ _ _ _ _ ih1 ih2 => .intAdd _ _ _ _ _ _ _ ih1 ih2)
           m_outer m_inner m_op id_meta mty e1c e2c e_goto
-          (h_gty_int_arith (Or.inl (by simp))) ih1 ih2 h_frag1 h_frag2 h_tx
-      · subst h
-        exact isBoolIntTranslated_of_toGotoExprCtx_binOp .intSub
+          (h_gty.1 (by simp)) ih1 ih2 h_frag1 h_frag2 h_tx
+      · exact isBoolIntTranslated_of_toGotoExprCtx_binOp .intSub
           h_red.intSub h_red.isSignedBvOp_intSub
           (op_id_ne_funApp_binary _) (by decide)
           (fun _ _ _ _ _ _ _ ih1 ih2 => .intSub _ _ _ _ _ _ _ ih1 ih2)
           m_outer m_inner m_op id_meta mty e1c e2c e_goto
-          (h_gty_int_arith (Or.inr (Or.inl (by simp)))) ih1 ih2 h_frag1 h_frag2 h_tx
-      · subst h
-        exact isBoolIntTranslated_of_toGotoExprCtx_binOp .intMul
+          (h_gty.1 (by simp)) ih1 ih2 h_frag1 h_frag2 h_tx
+      · exact isBoolIntTranslated_of_toGotoExprCtx_binOp .intMul
           h_red.intMul h_red.isSignedBvOp_intMul
           (op_id_ne_funApp_multiary _) (by decide)
           (fun _ _ _ _ _ _ _ ih1 ih2 => .intMul _ _ _ _ _ _ _ ih1 ih2)
           m_outer m_inner m_op id_meta mty e1c e2c e_goto
-          (h_gty_int_arith (Or.inr (Or.inr (Or.inl (by simp))))) ih1 ih2 h_frag1 h_frag2 h_tx
-      · subst h
-        exact isBoolIntTranslated_of_toGotoExprCtx_binOp .intDivT
+          (h_gty.1 (by simp)) ih1 ih2 h_frag1 h_frag2 h_tx
+      · exact isBoolIntTranslated_of_toGotoExprCtx_binOp .intDivT
           h_red.intDivT h_red.isSignedBvOp_intDivT
           (op_id_ne_funApp_binary _) (by decide)
           (fun _ _ _ _ _ _ _ ih1 ih2 => .intDivT _ _ _ _ _ _ _ ih1 ih2)
           m_outer m_inner m_op id_meta mty e1c e2c e_goto
-          (h_gty_int_arith (Or.inr (Or.inr (Or.inr (Or.inl (by simp)))))) ih1 ih2
-          h_frag1 h_frag2 h_tx
-      · subst h
-        exact isBoolIntTranslated_of_toGotoExprCtx_binOp .intModT
+          (h_gty.1 (by simp)) ih1 ih2 h_frag1 h_frag2 h_tx
+      · exact isBoolIntTranslated_of_toGotoExprCtx_binOp .intModT
           h_red.intModT h_red.isSignedBvOp_intModT
           (op_id_ne_funApp_binary _) (by decide)
           (fun _ _ _ _ _ _ _ ih1 ih2 => .intModT _ _ _ _ _ _ _ ih1 ih2)
           m_outer m_inner m_op id_meta mty e1c e2c e_goto
-          (h_gty_int_arith (Or.inr (Or.inr (Or.inr (Or.inr (by simp)))))) ih1 ih2
-          h_frag1 h_frag2 h_tx
-      · subst h
-        exact isBoolIntTranslated_of_toGotoExprCtx_binOp .intLt
+          (h_gty.1 (by simp)) ih1 ih2 h_frag1 h_frag2 h_tx
+      · exact isBoolIntTranslated_of_toGotoExprCtx_binOp .intLt
           h_red.intLt h_red.isSignedBvOp_intLt
           (op_id_ne_funApp_binary _) (by decide)
           (fun _ _ _ _ _ _ _ ih1 ih2 => .intLt _ _ _ _ _ _ _ ih1 ih2)
           m_outer m_inner m_op id_meta mty e1c e2c e_goto
-          (h_gty_int_cmp (Or.inl (by simp))) ih1 ih2 h_frag1 h_frag2 h_tx
-      · subst h
-        exact isBoolIntTranslated_of_toGotoExprCtx_binOp .intLe
+          (h_gty.2.1 (by simp)) ih1 ih2 h_frag1 h_frag2 h_tx
+      · exact isBoolIntTranslated_of_toGotoExprCtx_binOp .intLe
           h_red.intLe h_red.isSignedBvOp_intLe
           (op_id_ne_funApp_binary _) (by decide)
           (fun _ _ _ _ _ _ _ ih1 ih2 => .intLe _ _ _ _ _ _ _ ih1 ih2)
           m_outer m_inner m_op id_meta mty e1c e2c e_goto
-          (h_gty_int_cmp (Or.inr (Or.inl (by simp)))) ih1 ih2 h_frag1 h_frag2 h_tx
-      · subst h
-        exact isBoolIntTranslated_of_toGotoExprCtx_binOp .intGt
+          (h_gty.2.1 (by simp)) ih1 ih2 h_frag1 h_frag2 h_tx
+      · exact isBoolIntTranslated_of_toGotoExprCtx_binOp .intGt
           h_red.intGt h_red.isSignedBvOp_intGt
           (op_id_ne_funApp_binary _) (by decide)
           (fun _ _ _ _ _ _ _ ih1 ih2 => .intGt _ _ _ _ _ _ _ ih1 ih2)
           m_outer m_inner m_op id_meta mty e1c e2c e_goto
-          (h_gty_int_cmp (Or.inr (Or.inr (Or.inl (by simp))))) ih1 ih2 h_frag1 h_frag2 h_tx
-      · subst h
-        exact isBoolIntTranslated_of_toGotoExprCtx_binOp .intGe
+          (h_gty.2.1 (by simp)) ih1 ih2 h_frag1 h_frag2 h_tx
+      · exact isBoolIntTranslated_of_toGotoExprCtx_binOp .intGe
           h_red.intGe h_red.isSignedBvOp_intGe
           (op_id_ne_funApp_binary _) (by decide)
           (fun _ _ _ _ _ _ _ ih1 ih2 => .intGe _ _ _ _ _ _ _ ih1 ih2)
           m_outer m_inner m_op id_meta mty e1c e2c e_goto
-          (h_gty_int_cmp (Or.inr (Or.inr (Or.inr (by simp))))) ih1 ih2 h_frag1 h_frag2 h_tx
+          (h_gty.2.1 (by simp)) ih1 ih2 h_frag1 h_frag2 h_tx
     | inr h_bool =>
       simp only [isSupportedBoolBinOp, Bool.or_eq_true, beq_iff_eq] at h_bool
-      rcases h_bool with ((h | h) | h)
-      · subst h
-        exact isBoolIntTranslated_of_toGotoExprCtx_binOp .boolAnd
+      rcases h_bool with ((h | h) | h) <;> subst h
+      · exact isBoolIntTranslated_of_toGotoExprCtx_binOp .boolAnd
           h_red.boolAnd h_red.isSignedBvOp_boolAnd
           (op_id_ne_funApp_multiary _) (by decide)
           (fun _ _ _ _ _ _ _ ih1 ih2 => .boolAnd _ _ _ _ _ _ _ ih1 ih2)
           m_outer m_inner m_op id_meta mty e1c e2c e_goto
-          (h_gty_bool_bin (Or.inl (by simp))) ih1 ih2 h_frag1 h_frag2 h_tx
-      · subst h
-        exact isBoolIntTranslated_of_toGotoExprCtx_binOp .boolOr
+          (h_gty.2.2.1 (by simp)) ih1 ih2 h_frag1 h_frag2 h_tx
+      · exact isBoolIntTranslated_of_toGotoExprCtx_binOp .boolOr
           h_red.boolOr h_red.isSignedBvOp_boolOr
           (op_id_ne_funApp_multiary _) (by decide)
           (fun _ _ _ _ _ _ _ ih1 ih2 => .boolOr _ _ _ _ _ _ _ ih1 ih2)
           m_outer m_inner m_op id_meta mty e1c e2c e_goto
-          (h_gty_bool_bin (Or.inr (Or.inl (by simp)))) ih1 ih2 h_frag1 h_frag2 h_tx
-      · subst h
-        exact isBoolIntTranslated_of_toGotoExprCtx_binOp .boolImplies
+          (h_gty.2.2.1 (by simp)) ih1 ih2 h_frag1 h_frag2 h_tx
+      · exact isBoolIntTranslated_of_toGotoExprCtx_binOp .boolImplies
           h_red.boolImplies h_red.isSignedBvOp_boolImplies
           (op_id_ne_funApp_binary _) (by decide)
           (fun _ _ _ _ _ _ _ ih1 ih2 => .boolImplies _ _ _ _ _ _ _ ih1 ih2)
           m_outer m_inner m_op id_meta mty e1c e2c e_goto
-          (h_gty_bool_bin (Or.inr (Or.inr (by simp)))) ih1 ih2 h_frag1 h_frag2 h_tx
+          (h_gty.2.2.1 (by simp)) ih1 ih2 h_frag1 h_frag2 h_tx
   -- Unary boolean op (fn = .op m_op id (some mty)) — only Bool.Not is supported.
   | .app m_outer (.op m_op fn_id (some mty)) e1c, h_gty, h_frag, h_tx =>
     obtain ⟨fn_name, id_meta⟩ := fn_id
