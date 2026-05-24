@@ -361,14 +361,6 @@ theorem patchGotoTargets_preserves_nextLoc
   unfold Imperative.patchGotoTargets
   rfl
 
-/-- `patchGotoTargets` doesn't change the `T` field. -/
-theorem patchGotoTargets_preserves_T
-    {T : Type} (trans : Imperative.GotoTransform T)
-    (patches : List (Nat × Nat)) :
-    (Imperative.patchGotoTargets trans patches).T = trans.T := by
-  unfold Imperative.patchGotoTargets
-  rfl
-
 /-! ## Instruction-array lookup helpers
 
 The translator's loop produces instructions by repeatedly appending
@@ -388,18 +380,6 @@ theorem instrAt_of_push
   unfold Program.instrAt
   rw [h_eq, ← h_size]
   exact Array.getElem?_push_size
-
-/-- If `pgm.instructions = pre.push i` and `pc < pre.size`, then
-the lookup at `pc` agrees with the lookup in `pre` (specifically,
-returns `some (pre[pc])`). -/
-theorem instrAt_of_push_lt
-    (pgm : Program) (pre : Array Instruction) (i : Instruction) (pc : Nat)
-    (h_pc : pc < pre.size)
-    (h_eq : pgm.instructions = pre.push i) :
-    pgm.instrAt pc = some pre[pc] := by
-  unfold Program.instrAt
-  rw [h_eq]
-  exact Array.getElem?_push_lt h_pc
 
 /-- If `pgm.instructions = pre.append #[i₀, i₁]` and `pre.size = pc`,
 then `pgm.instrAt pc = some i₀` and `pgm.instrAt (pc + 1) = some i₁`.
@@ -1375,15 +1355,6 @@ theorem emitCondGoto_preserves_locationNum_eq_index
   exact push_preserves_locationNum_eq_index trans new_instr
     h_size h_loc rfl i instr h
 
-/-- `emitUncondGoto` preserves `instructions.size = nextLoc`. -/
-theorem emitUncondGoto_preserves_size_eq
-    (srcLoc : CProverGOTO.SourceLocation)
-    (trans : Imperative.GotoTransform Core.Expression.TyEnv)
-    (h_size : trans.instructions.size = trans.nextLoc) :
-    let p := Imperative.emitUncondGoto srcLoc trans
-    p.fst.instructions.size = p.fst.nextLoc := by
-  simp [Imperative.emitUncondGoto, Imperative.emitGoto, Array.size_push, h_size]
-
 /-- `emitUncondGoto` preserves `locationNum_eq_index`. -/
 theorem emitUncondGoto_preserves_locationNum_eq_index
     (srcLoc : CProverGOTO.SourceLocation)
@@ -1424,19 +1395,6 @@ instruction. The translator hardcodes:
   { type := .END_FUNCTION,
     locationNum := trans.nextLoc,
     sourceLoc := Imperative.metadataToSourceLoc md fname trans.sourceText }
-
-/-- After the `.finish` branch's END_FUNCTION emit, the new transform
-satisfies `instructions.size = nextLoc`. -/
-theorem endFunction_emit_preserves_size_eq
-    (md : Imperative.MetaData Core.Expression) (fname : String)
-    (trans : Imperative.GotoTransform Core.Expression.TyEnv)
-    (h_size : trans.instructions.size = trans.nextLoc) :
-    let trans' : Imperative.GotoTransform Core.Expression.TyEnv :=
-      { trans with
-        instructions := trans.instructions.push (endFunctionInstr md fname trans),
-        nextLoc := trans.nextLoc + 1 }
-    trans'.instructions.size = trans'.nextLoc := by
-  simp [Array.size_push, h_size]
 
 /-- `END_FUNCTION` emit preserves `locationNum_eq_index`. -/
 theorem endFunction_emit_preserves_locationNum_eq_index
