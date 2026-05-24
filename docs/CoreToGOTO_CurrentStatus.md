@@ -172,6 +172,10 @@ infrastructure":
 * [`CoreToGOTO_SemanticsComparison.md`](CoreToGOTO_SemanticsComparison.md)
   — comparison with `tautschnig/goto-semantics`'s alternative
   semantics.
+* [`CoreToGOTO_WhyDifficult.md`](CoreToGOTO_WhyDifficult.md) —
+  explanatory doc: why the simulation proof is ~20k LoC even though
+  the source and target look one-to-one, with concrete examples
+  from the actual proof.
 * [`historical/CoreToGOTO_ProofProgress.md`](historical/CoreToGOTO_ProofProgress.md)
   — the original sketch of the proof chain (line numbers may have
   drifted; structure remains).
