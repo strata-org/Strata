@@ -198,6 +198,12 @@ theorem coreCFGToGoto_forward_simulation_storeCorr
     (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
     (h_expr : ExprTranslationPreservesEval δ δ_goto δ_goto_bool)
     (h_wf_bool : WellFormedSemanticEvalGotoBool δ_goto_bool)
+    (h_init_extension :
+      ∀ {σ σ' : Imperative.SemanticStore Core.Expression}
+        {x : Core.Expression.Ident} {v_init : Core.Expression.Expr}
+        {e : Expr} {v : Core.Expression.Expr},
+        Imperative.InitState Core.Expression σ x v_init σ' →
+        δ_goto σ e = some v → δ_goto σ' e = some v)
     (π : String → Option Core.Procedure)
     (φ : Core.CoreEval → Imperative.PureFunc Core.Expression → Core.CoreEval)
     (cfg : Core.DetCFG) (pgm : Program)
@@ -224,7 +230,7 @@ theorem coreCFGToGoto_forward_simulation_storeCorr
   -- Step 1: invoke the closed forward simulation to get a StepGotoStar.
   obtain ⟨pc_entry, h_pc_entry, h_steps⟩ :=
     coreCFGToGoto_forward_simulation δ δ_goto δ_goto_bool
-      h_expr h_wf_bool π φ cfg pgm wf h_call_free σ σ' b h_run
+      h_expr h_wf_bool h_init_extension π φ cfg pgm wf h_call_free σ σ' b h_run
   -- Step 2: convert StepGotoStar -> ExecProg via the trace lift.
   obtain ⟨σ_goto', h_corr', h_exec⟩ :=
     StepGotoStar_to_ExecProg br h_steps h_corr

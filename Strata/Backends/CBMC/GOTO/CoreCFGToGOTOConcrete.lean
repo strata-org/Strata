@@ -268,6 +268,15 @@ theorem coreCFGToGotoTransform_forward_simulation_concrete_v4
     (δ_goto : SemanticEvalGoto Core.Expression)
     (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
     (h_wf_bool : WellFormedSemanticEvalGotoBool δ_goto_bool)
+    -- R11: fresh-variable monotonicity of `δ_goto` across `InitState`.
+    -- Required to switch the `init_det` arm from `step_assign_nondet`
+    -- (no-op padding) to `step_assign` (with eval witness on σ').
+    (h_init_extension :
+      ∀ {σ σ' : Imperative.SemanticStore Core.Expression}
+        {x : Core.Expression.Ident} {v_init : Core.Expression.Expr}
+        {e : Expr} {v : Core.Expression.Expr},
+        Imperative.InitState Core.Expression σ x v_init σ' →
+        δ_goto σ e = some v → δ_goto σ' e = some v)
     -- Source-side environment
     (π : String → Option Core.Procedure)
     (φ : Core.CoreEval → Imperative.PureFunc Core.Expression → Core.CoreEval)
@@ -507,7 +516,7 @@ theorem coreCFGToGotoTransform_forward_simulation_concrete_v4
       h_eval_bool_corr h_brHyps
   obtain ⟨pc_entry, σ_goto', _, h_storeCorr', h_exec⟩ :=
     coreCFGToGoto_forward_simulation_storeCorr
-      δ δ_goto δ_goto_bool h_expr h_wf_bool π φ
+      δ δ_goto δ_goto_bool h_expr h_wf_bool h_init_extension π φ
       cfg pgm wf h_call_free
       nameMap callResult eval fenv br
       σ σ' b σ_goto h_corr h_run_src
@@ -566,6 +575,13 @@ theorem coreCFGToGotoTransform_forward_simulation_concrete_v5
     (δ_goto : SemanticEvalGoto Core.Expression)
     (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
     (h_wf_bool : WellFormedSemanticEvalGotoBool δ_goto_bool)
+    -- R11: fresh-variable monotonicity of `δ_goto` across `InitState`.
+    (h_init_extension :
+      ∀ {σ σ' : Imperative.SemanticStore Core.Expression}
+        {x : Core.Expression.Ident} {v_init : Core.Expression.Expr}
+        {e : Expr} {v : Core.Expression.Expr},
+        Imperative.InitState Core.Expression σ x v_init σ' →
+        δ_goto σ e = some v → δ_goto σ' e = some v)
     -- Source-side environment
     (π : String → Option Core.Procedure)
     (φ : Core.CoreEval → Imperative.PureFunc Core.Expression → Core.CoreEval)
@@ -839,7 +855,7 @@ theorem coreCFGToGotoTransform_forward_simulation_concrete_v5
       δ δ_goto δ_goto_bool wf (h_assn_nondet_pc_inv wf) h_at h_ty
   -- Step 4: Delegate to v4 with the discharged hypotheses.
   exact coreCFGToGotoTransform_forward_simulation_concrete_v4
-    δ δ_goto δ_goto_bool h_wf_bool π φ
+    δ δ_goto δ_goto_bool h_wf_bool h_init_extension π φ
     cfg Env functionName trans₀ ans h_run
     h_init_size h_init_loc h_init_no_dead h_distinct h_admitted_blocks
     h_loopContracts_empty_post h_entry_first
@@ -914,6 +930,13 @@ theorem coreCFGToGotoTransform_forward_simulation_concrete_v6
     (δ_goto : SemanticEvalGoto Core.Expression)
     (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
     (h_wf_bool : WellFormedSemanticEvalGotoBool δ_goto_bool)
+    -- R11: fresh-variable monotonicity of `δ_goto` across `InitState`.
+    (h_init_extension :
+      ∀ {σ σ' : Imperative.SemanticStore Core.Expression}
+        {x : Core.Expression.Ident} {v_init : Core.Expression.Expr}
+        {e : Expr} {v : Core.Expression.Expr},
+        Imperative.InitState Core.Expression σ x v_init σ' →
+        δ_goto σ e = some v → δ_goto σ' e = some v)
     -- Source-side environment
     (π : String → Option Core.Procedure)
     (φ : Core.CoreEval → Imperative.PureFunc Core.Expression → Core.CoreEval)
@@ -1145,7 +1168,7 @@ theorem coreCFGToGotoTransform_forward_simulation_concrete_v6
       ans h_run δ δ_goto δ_goto_bool h_expr h_tx_eq wf
   -- Delegate to v5.
   exact coreCFGToGotoTransform_forward_simulation_concrete_v5
-    δ δ_goto δ_goto_bool h_wf_bool π φ
+    δ δ_goto δ_goto_bool h_wf_bool h_init_extension π φ
     cfg Env functionName trans₀ ans h_run
     h_init_size h_init_loc h_init_no_dead h_init_no_goto_target
     h_distinct h_admitted_blocks
@@ -1179,6 +1202,13 @@ theorem coreCFGToGotoTransform_forward_simulation_concrete_v7
     (δ_goto : SemanticEvalGoto Core.Expression)
     (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
     (h_wf_bool : WellFormedSemanticEvalGotoBool δ_goto_bool)
+    -- R11: fresh-variable monotonicity of `δ_goto` across `InitState`.
+    (h_init_extension :
+      ∀ {σ σ' : Imperative.SemanticStore Core.Expression}
+        {x : Core.Expression.Ident} {v_init : Core.Expression.Expr}
+        {e : Expr} {v : Core.Expression.Expr},
+        Imperative.InitState Core.Expression σ x v_init σ' →
+        δ_goto σ e = some v → δ_goto σ' e = some v)
     -- Source-side environment
     (π : String → Option Core.Procedure)
     (φ : Core.CoreEval → Imperative.PureFunc Core.Expression → Core.CoreEval)
@@ -1354,7 +1384,7 @@ theorem coreCFGToGotoTransform_forward_simulation_concrete_v7
   -- Delegate to v6 with the obtained witnesses. R10a internally
   -- discharges `h_labelMap_agree` so we don't pass it through.
   exact coreCFGToGotoTransform_forward_simulation_concrete_v6
-    δ δ_goto δ_goto_bool h_wf_bool π φ
+    δ δ_goto δ_goto_bool h_wf_bool h_init_extension π φ
     cfg Env functionName trans₀ ans h_run
     h_init_size h_init_loc h_init_no_dead h_init_no_goto_target
     h_init_empty_decl_assign h_init_no_location

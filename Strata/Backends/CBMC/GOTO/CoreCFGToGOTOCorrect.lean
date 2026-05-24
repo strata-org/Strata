@@ -164,16 +164,29 @@ instructions emitted for `c`.
 This is proved by `cases` on both the evaluation step and the
 `CmdEmittedAt` layout, producing one or two `StepGoto` constructor
 applications per case. All sub-cases are closed:
-* `eval_init × init_det` uses `step_decl` then `step_assign_nondet` as
-  a no-op (via `UpdateState_self`), sidestepping the δ_goto monotonicity
-  question that `step_assign` would have raised;
+* `eval_init × init_det` uses `step_decl` then `step_assign` on σ',
+  with the rhs's δ_goto-eval witness on σ' obtained from the witness
+  on σ via the `h_init_extension` hypothesis (round 11);
 * `eval_set_nondet × set_nondet` uses the new `step_assign_nondet`;
-* `eval_cover` is unreachable under the tightened `isAdmittedCmd`. -/
+* `eval_cover` is unreachable under the tightened `isAdmittedCmd`.
+
+R11: `h_init_extension` is a small well-formedness hypothesis on
+`δ_goto`: `δ_goto` agrees on σ and σ' whenever σ' extends σ with a
+fresh binding (via `InitState`). This is the standard "fresh-variable
+monotonicity" property and is required to switch the `init_det` arm
+from `step_assign_nondet` (no-op padding) to `step_assign` (with
+δ_goto-eval witness on σ'). -/
 theorem single_cmd_simulation
     (δ : Imperative.SemanticEval Core.Expression)
     (δ_goto : SemanticEvalGoto Core.Expression)
     (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
     (h_wf_bool_goto : WellFormedSemanticEvalGotoBool δ_goto_bool)
+    (h_init_extension :
+      ∀ {σ σ' : Imperative.SemanticStore Core.Expression}
+        {x : Core.Expression.Ident} {v_init : Core.Expression.Expr}
+        {e : Expr} {v : Core.Expression.Expr},
+        Imperative.InitState Core.Expression σ x v_init σ' →
+        δ_goto σ e = some v → δ_goto σ' e = some v)
     (pgm : Program) (c : Imperative.Cmd Core.Expression)
     (σ σ' : Imperative.SemanticStore Core.Expression)
     (failed cmd_failed : Bool)
@@ -192,12 +205,10 @@ theorem single_cmd_simulation
     -- `eval_init` by:
     --  (1) `step_decl` with the source's InitState `h_init`, which puts
     --      x ↦ v into σ to get σ';
-    --  (2) `step_assign_nondet` (rather than `step_assign`) on σ' as a
-    --      no-op via `UpdateState_self`. We sidestep the δ_goto
-    --      evaluation premise of `step_assign` (which would otherwise
-    --      require expression-evaluator monotonicity from σ to σ').
-    --      `step_assign_nondet` only requires `instr.type = .ASSIGN`,
-    --      which the `init_det` layout supplies via `h_assn_ty`.
+    --  (2) `step_assign` on σ' with the eval witness on σ' obtained from
+    --      the σ-witness via `h_init_extension` (R11). The `UpdateState`
+    --      writes `v` into `σ'` at `x` — but `σ' x = some v` already, so
+    --      `UpdateState_self` discharges it.
     show ReflTrans _ _ (GotoConfig.running (pc + 2) _ (failed || false))
     rw [Bool.or_false]
     cases h_layout with
@@ -206,11 +217,16 @@ theorem single_cmd_simulation
       -- After step_decl's InitState lands at σ', we have σ' x = some v.
       cases h_init with
       | init hpre hpost hother =>
+        have h_init_rel : Imperative.InitState _ σ _ _ σ' := .init hpre hpost hother
         have h_upd_self := UpdateState_self hpost
+        -- δ σ e_core = some v gives δ_goto σ e_goto = some v via value_agree;
+        -- then h_init_extension lifts to δ_goto σ' e_goto = some v.
+        have h_goto_eval_pre := (h_translated.value_agree _ _).mp h_eval
+        have h_goto_eval := h_init_extension h_init_rel h_goto_eval_pre
         exact ReflTrans.step _ _ _
-          (StepGoto.step_decl h_decl_at h_decl_ty (.init hpre hpost hother))
+          (StepGoto.step_decl h_decl_at h_decl_ty h_init_rel)
           (ReflTrans.step _ _ _
-            (StepGoto.step_assign_nondet h_assn_at h_assn_ty h_upd_self)
+            (StepGoto.step_assign h_assn_at h_assn_ty h_goto_eval h_upd_self)
             (ReflTrans.refl _))
   | eval_init_unconstrained h_init _ =>
     -- `.init v ty .nondet md` — single DECL.
@@ -300,6 +316,12 @@ theorem block_body_cmds_simulation
     (δ_goto : SemanticEvalGoto Core.Expression)
     (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
     (h_wf_bool_goto : WellFormedSemanticEvalGotoBool δ_goto_bool)
+    (h_init_extension :
+      ∀ {σ σ' : Imperative.SemanticStore Core.Expression}
+        {x : Core.Expression.Ident} {v_init : Core.Expression.Expr}
+        {e : Expr} {v : Core.Expression.Expr},
+        Imperative.InitState Core.Expression σ x v_init σ' →
+        δ_goto σ e = some v → δ_goto σ' e = some v)
     (π : String → Option Core.Procedure)
     (φ : Core.CoreEval → Imperative.PureFunc Core.Expression → Core.CoreEval)
     (cfg : Core.DetCFG) (pgm : Program)
@@ -384,6 +406,7 @@ theorem block_body_cmds_simulation
         -- Step the head via single_cmd_simulation.
         have h_head :=
           single_cmd_simulation δ δ_goto δ_goto_bool h_wf_bool_goto
+            h_init_extension
             pgm inner σ σ_step failed head_failed h_admitted_inner
             h_evalCmd (pc + 1 + cmdsPrefixInstrCount blk.cmds k) h_layout
         -- The head's post-pc equals (pc + 1 + cmdsPrefixInstrCount blk.cmds (k+1)).
@@ -557,6 +580,12 @@ theorem block_body_simulation
     (δ_goto : SemanticEvalGoto Core.Expression)
     (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
     (h_wf_bool_goto : WellFormedSemanticEvalGotoBool δ_goto_bool)
+    (h_init_extension :
+      ∀ {σ σ' : Imperative.SemanticStore Core.Expression}
+        {x : Core.Expression.Ident} {v_init : Core.Expression.Expr}
+        {e : Expr} {v : Core.Expression.Expr},
+        Imperative.InitState Core.Expression σ x v_init σ' →
+        δ_goto σ e = some v → δ_goto σ' e = some v)
     (π : String → Option Core.Procedure)
     (φ : Core.CoreEval → Imperative.PureFunc Core.Expression → Core.CoreEval)
     (cfg : Core.DetCFG) (pgm : Program)
@@ -591,6 +620,7 @@ theorem block_body_simulation
         ⟨blk.cmds, blk.transfer⟩ c_after := h_step
   obtain ⟨c_after_goto, h_steps, h_sim⟩ :=
     block_body_cmds_simulation δ δ_goto δ_goto_bool h_wf_bool_goto
+      h_init_extension
       π φ cfg pgm wf l blk h_block h_call_free pc h_pc
       blk.transfer rfl 0 blk.cmds h_suffix σ failed c_after h_step'
   rw [h_offset] at h_steps
@@ -678,6 +708,12 @@ theorem block_simulation
     (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
     (h_expr : ExprTranslationPreservesEval δ δ_goto δ_goto_bool)
     (h_wf_bool : WellFormedSemanticEvalGotoBool δ_goto_bool)
+    (h_init_extension :
+      ∀ {σ σ' : Imperative.SemanticStore Core.Expression}
+        {x : Core.Expression.Ident} {v_init : Core.Expression.Expr}
+        {e : Expr} {v : Core.Expression.Expr},
+        Imperative.InitState Core.Expression σ x v_init σ' →
+        δ_goto σ e = some v → δ_goto σ' e = some v)
     (π : String → Option Core.Procedure)
     (φ : Core.CoreEval → Imperative.PureFunc Core.Expression → Core.CoreEval)
     (cfg : Core.DetCFG) (pgm : Program)
@@ -701,7 +737,7 @@ theorem block_simulation
     wf.layout_location l blk pc h_block h_pc
   -- Step 2: delegate to block_body_simulation.
   obtain ⟨c_after_goto, h_body_steps, h_sim⟩ :=
-    block_body_simulation δ δ_goto δ_goto_bool h_wf_bool π φ
+    block_body_simulation δ δ_goto δ_goto_bool h_wf_bool h_init_extension π φ
       cfg pgm wf l blk h_block h_call_free σ failed c_after h_step pc h_pc
   -- Step 3: prepend the LOCATION step to the body trace.
   refine ⟨c_after_goto, ?_, h_sim⟩
@@ -733,6 +769,12 @@ private theorem cfgStepStar_to_gotoStar
     (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
     (h_expr : ExprTranslationPreservesEval δ δ_goto δ_goto_bool)
     (h_wf_bool : WellFormedSemanticEvalGotoBool δ_goto_bool)
+    (h_init_extension :
+      ∀ {σ σ' : Imperative.SemanticStore Core.Expression}
+        {x : Core.Expression.Ident} {v_init : Core.Expression.Expr}
+        {e : Expr} {v : Core.Expression.Expr},
+        Imperative.InitState Core.Expression σ x v_init σ' →
+        δ_goto σ e = some v → δ_goto σ' e = some v)
     (π : String → Option Core.Procedure)
     (φ : Core.CoreEval → Imperative.PureFunc Core.Expression → Core.CoreEval)
     (cfg : Core.DetCFG) (pgm : Program)
@@ -793,6 +835,7 @@ private theorem cfgStepStar_to_gotoStar
       -- Apply block_simulation.
       obtain ⟨c_after_goto, h_blk_steps, h_sim⟩ :=
         block_simulation δ δ_goto δ_goto_bool h_expr h_wf_bool
+          h_init_extension
           π φ cfg pgm wf t blk_step h_mem
           (h_call_free (t, blk_step) h_mem)
           σ_step failed_step _ h_blk pc_l h_pc_l
@@ -852,6 +895,12 @@ theorem coreCFGToGoto_forward_simulation
     (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
     (h_expr : ExprTranslationPreservesEval δ δ_goto δ_goto_bool)
     (h_wf_bool : WellFormedSemanticEvalGotoBool δ_goto_bool)
+    (h_init_extension :
+      ∀ {σ σ' : Imperative.SemanticStore Core.Expression}
+        {x : Core.Expression.Ident} {v_init : Core.Expression.Expr}
+        {e : Expr} {v : Core.Expression.Expr},
+        Imperative.InitState Core.Expression σ x v_init σ' →
+        δ_goto σ e = some v → δ_goto σ' e = some v)
     (π : String → Option Core.Procedure)
     (φ : Core.CoreEval → Imperative.PureFunc Core.Expression → Core.CoreEval)
     (cfg : Core.DetCFG) (pgm : Program)
@@ -871,6 +920,7 @@ theorem coreCFGToGoto_forward_simulation
   obtain ⟨pc_entry, h_pc_entry⟩ := wf.entry_in_map
   refine ⟨pc_entry, h_pc_entry, ?_⟩
   exact cfgStepStar_to_gotoStar δ δ_goto δ_goto_bool h_expr h_wf_bool
+    h_init_extension
     π φ cfg pgm wf h_call_free
     cfg.entry σ false σ' b pc_entry h_pc_entry h_run
 
