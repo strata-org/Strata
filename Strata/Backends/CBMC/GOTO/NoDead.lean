@@ -14,9 +14,8 @@ public section
 
 /-! # `coreCFGToGotoTransform` never emits DEAD instructions
 
-Round-7b deliverable, refactored in L3 to use the
-`BlocksFoldClosed` preservation combinator. Discharges R6a's
-`h_no_dead` side hypothesis by induction on the translator's structure.
+Discharges the `h_no_dead` side hypothesis on `TranslatorBridgeHyps`
+by induction on the translator's structure.
 
 ## What we prove
 
@@ -33,14 +32,13 @@ theorem no_dead_program_of_translator
                   instr.type ≠ .DEAD
 ```
 
-## Refactor strategy (L3)
+## Strategy
 
-The 9 per-step preservation lemmas (steps 1-9 of the blocks-fold
-chain in the L2 audit) are replaced by a single `BlocksFoldClosed`
-typeclass instance for `HasNoDead'` (the array-level predicate
-underlying `HasNoDead`). The `BlocksFoldClosed.of_blocks_run` theorem
-exposes the post-blocks-fold preservation; the patcher chain (steps
-10-12) is handled directly. -/
+A single `BlocksFoldClosed` typeclass instance for `HasNoDead'`
+(the array-level predicate underlying `HasNoDead`) handles the per-step
+preservation across the blocks-fold chain. The `BlocksFoldClosed.of_blocks_run`
+theorem exposes the post-blocks-fold preservation; the patcher chain
+is handled directly. -/
 
 namespace CProverGOTO.NoDead
 
@@ -177,18 +175,18 @@ Assemble the per-step preservation lemmas to get:
    `BlocksFoldClosed.of_blocks_run`.
 3. `st.pendingPatches.foldlM (coreCFGToGotoPatchStep ...) ([], st.trans)`
    — under the no-loop-contracts assumption, the trans is unchanged
-   (A4's `patchesFoldlM_no_contracts_trans_eq`).
+   (`patchesFoldlM_no_contracts_trans_eq`).
 4. Wrap with `patchGotoTargets`.
 
-(R6a's pipeline already only invokes the bridge with no-contract
-inputs, so requiring `loopContracts = ∅` is consistent with the
-existing call sites.) -/
+(The forward-simulation pipeline only invokes the bridge with
+no-contract inputs, so requiring `loopContracts = ∅` is consistent
+with the existing call sites.) -/
 
 /-- **Translator never emits DEAD instructions.**
 
 Under the assumption that the initial transform has no DEAD
-instructions and the no-loop-contracts assumption (consistent with
-R6a's call sites), the translator's output also has no DEAD.
+instructions and the no-loop-contracts side condition, the translator's
+output also has no DEAD.
 
 This `_explicit` form takes the decomposition pieces as inputs.
 For the version that takes only `h_run`, see `no_dead_of_translator`
@@ -246,10 +244,9 @@ theorem no_dead_of_translator_no_contracts_explicit
 
 Takes only `h_run` plus the no-loop-contracts side condition.
 Internally invokes `coreCFGToGotoTransform_decompose` to extract
-the per-stage results. The no-loop-contracts side condition is the
-analog of A4's `h_loopContracts_empty_post` — it's true for any CFG
-without `LoopInvariant` / `Decreases` metadata, which is the case
-for the round-6 / round-7 forward-simulation pipeline. -/
+the per-stage results. The no-loop-contracts side condition is true
+for any CFG without `LoopInvariant` / `Decreases` metadata, which is
+the case for the forward-simulation pipeline. -/
 theorem no_dead_of_translator
     (Env : Core.Expression.TyEnv) (functionName : String)
     (cfg : Core.DetCFG)
@@ -285,13 +282,15 @@ theorem no_dead_of_translator
 
 /-! ## Wrapper at the `Program` level
 
-R6a's `h_no_dead` field works at the `Program.instrAt` level, not
-directly on `trans.instructions[pc]?`. The two are interconvertible:
-`Program.instrAt pgm pc` unfolds to `pgm.instructions[pc]?`. -/
+The `TranslatorBridgeHyps.h_no_dead` field works at the
+`Program.instrAt` level, not directly on `trans.instructions[pc]?`.
+The two are interconvertible: `Program.instrAt pgm pc` unfolds to
+`pgm.instructions[pc]?`. -/
 
 /-- The translator never emits DEAD — at the `Program` level.
 
-This is the precise shape of R6a's `h_no_dead` side hypothesis. -/
+This is the precise shape of the `h_no_dead` side hypothesis on
+`TranslatorBridgeHyps`. -/
 theorem no_dead_program_of_translator
     (Env : Core.Expression.TyEnv) (functionName : String)
     (cfg : Core.DetCFG)
