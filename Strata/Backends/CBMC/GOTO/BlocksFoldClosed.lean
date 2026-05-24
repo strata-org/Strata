@@ -38,6 +38,14 @@ A consumer file:
    reproving them.
 4. Bridges the post-blocks-fold result through its own patcher reasoning
    to the final `ans`.
+
+For predicates that don't fit the unary `P : Array Instruction → Prop`
+shape (e.g., binary predicates parameterised by an auxiliary state
+that's invariant through the cmds-fold), the standalone helpers
+`toGotoInstructions_preserves_of_pushSafe`, `cmdStep_call_preserves_of_pushSafe`,
+`coreCFGToGotoCmdStep_preserves_of_pushSafe`, and
+`cmdsFoldlM_preserves_of_pushSafe` expose the cmds-fold portion (steps
+1–3 of the 9-step matrix) without requiring a typeclass instance.
 -/
 
 namespace CProverGOTO
@@ -96,7 +104,177 @@ namespace BlocksFoldClosed
 
 variable {P : Array CProverGOTO.Instruction → Prop}
 
-/-! ## Derived: `coreCFGToGotoCmdStep` -/
+/-! ## Standalone cmds-fold preservation (no typeclass)
+
+These helpers expose the per-cmd / cmds-fold preservation skeleton
+without requiring a `BlocksFoldClosed` instance. Useful for binary
+predicates `P × Q → Prop` whose `Q`-component is invariant through the
+cmds-fold (e.g., `LocationsTrackLabelMap` in `WfLabelMapAgree.lean`,
+where the labelMap is unchanged by cmd-emits). -/
+
+/-- Per-`Cmd` preservation: `Imperative.Cmd.toGotoInstructions` preserves
+`P` whenever every cmd-emit-pushed instruction is `IsSafe`. -/
+theorem toGotoInstructions_preserves_of_pushSafe
+    (IsSafe : CProverGOTO.Instruction → Prop)
+    (h_push : ∀ a x, P a → IsSafe x → P (a.push x))
+    (h_append : ∀ a x y, P a → IsSafe x → IsSafe y → P (a ++ #[x, y]))
+    (h_DECL : ∀ instr, instr.type = .DECL → IsSafe instr)
+    (h_ASSIGN : ∀ instr, instr.type = .ASSIGN → IsSafe instr)
+    (h_ASSERT : ∀ instr, instr.type = .ASSERT → IsSafe instr)
+    (h_ASSUME : ∀ instr, instr.type = .ASSUME → IsSafe instr)
+    (T : Core.Expression.TyEnv) (fname : String) (c : Imperative.Cmd Core.Expression)
+    (trans ans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_run : Imperative.Cmd.toGotoInstructions T fname c trans = Except.ok ans)
+    (h : P trans.instructions) :
+    P ans.instructions := by
+  cases c with
+  | init v ty initVal md =>
+    cases initVal with
+    | det e =>
+      obtain ⟨_, _, i_decl, i_assn,
+              _, _, h_decl_ty, _, _, h_assn_ty, _, _, h_inst, _, _⟩ :=
+        Cmd_toGotoInstructions_init_det_ok T fname v ty e md trans ans h_run
+      rw [h_inst]
+      have h_eq : trans.instructions.append #[i_decl, i_assn]
+                = trans.instructions ++ #[i_decl, i_assn] := rfl
+      rw [h_eq]
+      exact h_append trans.instructions i_decl i_assn h
+        (h_DECL i_decl h_decl_ty) (h_ASSIGN i_assn h_assn_ty)
+    | nondet =>
+      obtain ⟨_, i_decl, _, h_decl_ty, _, _, h_inst, _, _⟩ :=
+        Cmd_toGotoInstructions_init_nondet_ok T fname v ty md trans ans h_run
+      rw [h_inst]
+      exact h_push trans.instructions i_decl h (h_DECL i_decl h_decl_ty)
+  | set v src md =>
+    cases src with
+    | det e =>
+      obtain ⟨_, _, i_assn, _, _, h_assn_ty, _, _, h_inst, _⟩ :=
+        Cmd_toGotoInstructions_set_det_ok T fname v e md trans ans h_run
+      rw [h_inst]
+      exact h_push trans.instructions i_assn h (h_ASSIGN i_assn h_assn_ty)
+    | nondet =>
+      obtain ⟨_, i_assn, _, h_assn_ty, _, _, h_inst, _⟩ :=
+        Cmd_toGotoInstructions_set_nondet_ok T fname v md trans ans h_run
+      rw [h_inst]
+      exact h_push trans.instructions i_assn h (h_ASSIGN i_assn h_assn_ty)
+  | assert label e md =>
+    obtain ⟨_, i, _, h_assert_ty, _, _, h_inst, _⟩ :=
+      Cmd_toGotoInstructions_assert_ok T fname label e md trans ans h_run
+    rw [h_inst]
+    exact h_push trans.instructions i h (h_ASSERT i h_assert_ty)
+  | assume label e md =>
+    obtain ⟨_, i, _, h_assume_ty, _, _, h_inst, _⟩ :=
+      Cmd_toGotoInstructions_assume_ok T fname label e md trans ans h_run
+    rw [h_inst]
+    exact h_push trans.instructions i h (h_ASSUME i h_assume_ty)
+  | cover label e md =>
+    unfold Imperative.Cmd.toGotoInstructions at h_run
+    simp only at h_run
+    match h_expr : Imperative.ToGoto.toGotoExpr (P := Core.Expression) e with
+    | .ok e_goto =>
+      simp only [h_expr, Bind.bind, Except.bind, pure, Except.pure] at h_run
+      injection h_run with h_run
+      subst h_run
+      let assert_inst : CProverGOTO.Instruction :=
+        { type := .ASSERT, locationNum := trans.nextLoc,
+          sourceLoc := metadataToSourceLoc md fname trans.sourceText
+            (comment := md.getPropertySummary.getD s!"cover {label}"),
+          guard := e_goto }
+      show P (trans.instructions.push assert_inst)
+      exact h_push trans.instructions assert_inst h (h_ASSERT assert_inst rfl)
+    | .error _ =>
+      simp [h_expr, Bind.bind, Except.bind] at h_run
+
+/-- The `.call` case of `coreCFGToGotoCmdStep` pushes a single
+FUNCTION_CALL instruction. -/
+theorem cmdStep_call_preserves_of_pushSafe
+    (IsSafe : CProverGOTO.Instruction → Prop)
+    (h_push : ∀ a x, P a → IsSafe x → P (a.push x))
+    (h_FUNCTION_CALL : ∀ instr, instr.type = .FUNCTION_CALL → IsSafe instr)
+    (fname : String) (cmd : Core.Command)
+    (trans ans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_call : ∃ procName callArgs md, cmd = .call procName callArgs md)
+    (h_run : Strata.coreCFGToGotoCmdStep fname trans cmd = Except.ok ans)
+    (h : P trans.instructions) :
+    P ans.instructions := by
+  obtain ⟨procName, callArgs, md, h_eq⟩ := h_call
+  subst h_eq
+  unfold Strata.coreCFGToGotoCmdStep at h_run
+  simp only at h_run
+  generalize h_args :
+      (Core.CallArg.getInputExprs callArgs).mapM
+        (Lambda.LExpr.toGotoExprCtx
+          (TBase := ⟨Core.ExpressionMetadata, Unit⟩) []) = argRes at h_run
+  match argRes, h_args with
+  | .ok argExprs, _ =>
+    simp only [Bind.bind, Except.bind, pure, Except.pure] at h_run
+    injection h_run with h_run
+    rw [← h_run]
+    exact h_push _ _ h (h_FUNCTION_CALL _ rfl)
+  | .error _, _ =>
+    simp [Bind.bind, Except.bind] at h_run
+
+/-- Per-cmd preservation: dispatches between
+`toGotoInstructions_preserves_of_pushSafe` and
+`cmdStep_call_preserves_of_pushSafe`. -/
+theorem coreCFGToGotoCmdStep_preserves_of_pushSafe
+    (IsSafe : CProverGOTO.Instruction → Prop)
+    (h_push : ∀ a x, P a → IsSafe x → P (a.push x))
+    (h_append : ∀ a x y, P a → IsSafe x → IsSafe y → P (a ++ #[x, y]))
+    (h_DECL : ∀ instr, instr.type = .DECL → IsSafe instr)
+    (h_ASSIGN : ∀ instr, instr.type = .ASSIGN → IsSafe instr)
+    (h_ASSERT : ∀ instr, instr.type = .ASSERT → IsSafe instr)
+    (h_ASSUME : ∀ instr, instr.type = .ASSUME → IsSafe instr)
+    (h_FUNCTION_CALL : ∀ instr, instr.type = .FUNCTION_CALL → IsSafe instr)
+    (fname : String) (cmd : Core.Command)
+    (trans ans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_run : Strata.coreCFGToGotoCmdStep fname trans cmd = Except.ok ans)
+    (h : P trans.instructions) :
+    P ans.instructions := by
+  cases cmd with
+  | cmd c =>
+    rw [coreCFGToGotoCmdStep_cmd] at h_run
+    exact toGotoInstructions_preserves_of_pushSafe IsSafe h_push h_append
+      h_DECL h_ASSIGN h_ASSERT h_ASSUME trans.T fname c trans ans h_run h
+  | call procName callArgs md =>
+    exact cmdStep_call_preserves_of_pushSafe IsSafe h_push h_FUNCTION_CALL
+      fname _ trans ans ⟨procName, callArgs, md, rfl⟩ h_run h
+
+/-- Cmds-fold preservation: applies `coreCFGToGotoCmdStep_preserves_of_pushSafe`
+inductively over the cmds list. -/
+theorem cmdsFoldlM_preserves_of_pushSafe
+    (IsSafe : CProverGOTO.Instruction → Prop)
+    (h_push : ∀ a x, P a → IsSafe x → P (a.push x))
+    (h_append : ∀ a x y, P a → IsSafe x → IsSafe y → P (a ++ #[x, y]))
+    (h_DECL : ∀ instr, instr.type = .DECL → IsSafe instr)
+    (h_ASSIGN : ∀ instr, instr.type = .ASSIGN → IsSafe instr)
+    (h_ASSERT : ∀ instr, instr.type = .ASSERT → IsSafe instr)
+    (h_ASSUME : ∀ instr, instr.type = .ASSUME → IsSafe instr)
+    (h_FUNCTION_CALL : ∀ instr, instr.type = .FUNCTION_CALL → IsSafe instr)
+    (fname : String) (cmds : List Core.Command)
+    (trans ans : Imperative.GotoTransform Core.Expression.TyEnv)
+    (h_run : cmds.foldlM (Strata.coreCFGToGotoCmdStep fname) trans = Except.ok ans)
+    (h : P trans.instructions) :
+    P ans.instructions := by
+  induction cmds generalizing trans with
+  | nil =>
+    simp [List.foldlM, pure, Except.pure] at h_run
+    subst h_run; exact h
+  | cons cmd rest ih =>
+    rw [List.foldlM_cons] at h_run
+    match h_step : Strata.coreCFGToGotoCmdStep fname trans cmd with
+    | .ok trans' =>
+      rw [h_step] at h_run
+      simp at h_run
+      exact ih trans' h_run
+        (coreCFGToGotoCmdStep_preserves_of_pushSafe IsSafe h_push h_append
+          h_DECL h_ASSIGN h_ASSERT h_ASSUME h_FUNCTION_CALL
+          fname cmd trans trans' h_step h)
+    | .error _ =>
+      rw [h_step] at h_run
+      simp [Bind.bind, Except.bind] at h_run
+
+/-! ## Derived: per-typeclass-instance preservation theorems -/
 
 /-- The per-cmd step preserves `P`: dispatches to either
 `toGotoInstructions` (for `.cmd c`) or `cmdStep_call` (for `.call`). -/
@@ -115,8 +293,6 @@ theorem coreCFGToGotoCmdStep_preserves
     exact inst.cmdStep_call fname _ trans ans
       ⟨procName, callArgs, md, rfl⟩ h_run h
 
-/-! ## Derived: `cmdsFoldlM` -/
-
 theorem cmdsFoldlM_preserves
     [BlocksFoldClosed P]
     (fname : String) (cmds : List Core.Command)
@@ -134,19 +310,14 @@ theorem cmdsFoldlM_preserves
     | .ok trans' =>
       rw [h_step] at h_run
       simp at h_run
-      have h' : P trans'.instructions :=
-        coreCFGToGotoCmdStep_preserves fname cmd trans trans' h_step h
-      exact ih trans' h_run h'
+      exact ih trans' h_run (coreCFGToGotoCmdStep_preserves fname cmd trans trans' h_step h)
     | .error _ =>
       rw [h_step] at h_run
       simp [Bind.bind, Except.bind] at h_run
 
-/-! ## Derived: `coreCFGToGotoBlockStep`
-
-A block step is `emitLabel`, then `cmds.foldlM coreCFGToGotoCmdStep`,
+/-- A block step is `emitLabel`, then `cmds.foldlM coreCFGToGotoCmdStep`,
 then either `(emitCondGoto, emitUncondGoto)` or the END_FUNCTION push.
 Each piece preserves `P`. -/
-
 theorem coreCFGToGotoBlockStep_preserves
     [inst : BlocksFoldClosed P]
     (fname : String)
@@ -156,7 +327,6 @@ theorem coreCFGToGotoBlockStep_preserves
     (h : P st.trans.instructions) :
     P st'.trans.instructions := by
   obtain ⟨label, blk⟩ := lblBlk
-  -- Step 1: emitLabel preserves P.
   have h_after_label : P (Imperative.emitLabel label
       { CProverGOTO.SourceLocation.nil with function := fname }
       st.trans).instructions :=
@@ -183,7 +353,6 @@ theorem coreCFGToGotoBlockStep_preserves
         simp only at h_run
         injection h_run with h_run
         rw [← h_run]
-        -- Apply emitCondGoto and emitUncondGoto in sequence.
         have h_after_neg : P
             (Imperative.emitCondGoto (Expr.not cond_expr)
               (Imperative.metadataToSourceLoc md fname trans₂.sourceText)
@@ -198,11 +367,8 @@ theorem coreCFGToGotoBlockStep_preserves
       simp only at h_run
       injection h_run with h_run
       rw [← h_run]
-      -- After the .finish branch, st'.trans.instructions = trans₂.instructions.push endFunctionInstr.
       exact inst.endFunctionEmit md fname trans₂ h_after_cmds
   | .error _, _ => simp at h_run
-
-/-! ## Derived: `blocksFoldlM` -/
 
 theorem blocksFoldlM_preserves
     [BlocksFoldClosed P]
@@ -222,18 +388,14 @@ theorem blocksFoldlM_preserves
     | .ok st₁ =>
       rw [h_step] at h_run
       simp only [Bind.bind, Except.bind] at h_run
-      have h₁ : P st₁.trans.instructions :=
-        coreCFGToGotoBlockStep_preserves fname head st st₁ h_step h
-      exact ih st₁ h_run h₁
+      exact ih st₁ h_run (coreCFGToGotoBlockStep_preserves fname head st st₁ h_step h)
     | .error _ =>
       rw [h_step] at h_run
       simp [Bind.bind, Except.bind] at h_run
 
-/-! ## Top-level: `P` survives the blocks-fold from the initial state -/
-
-/-- Given `P trans₀.instructions` and a successful blocks-fold,
-expose `P st_final.trans.instructions`. The patcher chain is left
-to the consumer. -/
+/-- Given `P trans₀.instructions` and a successful blocks-fold, expose
+`P st_final.trans.instructions`. The patcher chain is left to the
+consumer. -/
 theorem of_blocks_run
     [BlocksFoldClosed P]
     (functionName : String)
@@ -252,20 +414,9 @@ theorem of_blocks_run
 
 /-! ## Helper: `ofPushSafe`
 
-For predicates whose closure under leaf emits is captured by a
-single "push-of-`IsSafe`-instruction preserves `P`" lemma, this helper
-assembles a `BlocksFoldClosed` instance from:
-
-1. `IsSafe : Instruction → Prop`, the per-instruction safety predicate.
-2. `h_push : ∀ a x, P a → IsSafe x → P (a.push x)`.
-3. `h_append : ∀ a x y, P a → IsSafe x → IsSafe y → P (a ++ #[x, y])`.
-4. Vocabulary facts establishing `IsSafe` for each instruction-type
-   the leaf emits push (DECL, ASSIGN, ASSERT, ASSUME, FUNCTION_CALL,
-   LOCATION, GOTO, END_FUNCTION).
-
-The helper uses the existing per-shape `_ok` lemmas in
-`CoreCFGToGotoTransformWF.lean` to reduce each leaf-emit to the
-corresponding push/append. -/
+Assembles a `BlocksFoldClosed` instance from per-instruction-type
+safety vocabulary, using the standalone helpers above for the cmds-
+fold portion. -/
 @[reducible] def ofPushSafe
     (IsSafe : CProverGOTO.Instruction → Prop)
     (h_push : ∀ (a : Array CProverGOTO.Instruction) (x : CProverGOTO.Instruction),
@@ -282,103 +433,25 @@ corresponding push/append. -/
     (h_GOTO : ∀ instr, instr.type = .GOTO → IsSafe instr)
     (h_END_FUNCTION : ∀ instr, instr.type = .END_FUNCTION → IsSafe instr) :
     BlocksFoldClosed P where
-  toGotoInstructions T fname c trans ans h_run h := by
-    cases c with
-    | init v ty initVal md =>
-      cases initVal with
-      | det e =>
-        obtain ⟨_gty, _e_goto, i_decl, i_assn,
-                _, _, h_decl_ty, _, _, h_assn_ty, _, _, h_inst, _, _⟩ :=
-          Cmd_toGotoInstructions_init_det_ok T fname v ty e md trans ans h_run
-        rw [h_inst]
-        -- ans.instructions = trans.instructions.append #[i_decl, i_assn]
-        have h_eq : trans.instructions.append #[i_decl, i_assn]
-                  = trans.instructions ++ #[i_decl, i_assn] := rfl
-        rw [h_eq]
-        exact h_append trans.instructions i_decl i_assn h
-          (h_DECL i_decl h_decl_ty) (h_ASSIGN i_assn h_assn_ty)
-      | nondet =>
-        obtain ⟨_gty, i_decl, _, h_decl_ty, _, _, h_inst, _, _⟩ :=
-          Cmd_toGotoInstructions_init_nondet_ok T fname v ty md trans ans h_run
-        rw [h_inst]
-        exact h_push trans.instructions i_decl h (h_DECL i_decl h_decl_ty)
-    | set v src md =>
-      cases src with
-      | det e =>
-        obtain ⟨_gty, _e_goto, i_assn, _, _, h_assn_ty, _, _, h_inst, _⟩ :=
-          Cmd_toGotoInstructions_set_det_ok T fname v e md trans ans h_run
-        rw [h_inst]
-        exact h_push trans.instructions i_assn h (h_ASSIGN i_assn h_assn_ty)
-      | nondet =>
-        obtain ⟨_gty, i_assn, _, h_assn_ty, _, _, h_inst, _⟩ :=
-          Cmd_toGotoInstructions_set_nondet_ok T fname v md trans ans h_run
-        rw [h_inst]
-        exact h_push trans.instructions i_assn h (h_ASSIGN i_assn h_assn_ty)
-    | assert label e md =>
-      obtain ⟨_e_goto, i, _, h_assert_ty, _, _, h_inst, _⟩ :=
-        Cmd_toGotoInstructions_assert_ok T fname label e md trans ans h_run
-      rw [h_inst]
-      exact h_push trans.instructions i h (h_ASSERT i h_assert_ty)
-    | assume label e md =>
-      obtain ⟨_e_goto, i, _, h_assume_ty, _, _, h_inst, _⟩ :=
-        Cmd_toGotoInstructions_assume_ok T fname label e md trans ans h_run
-      rw [h_inst]
-      exact h_push trans.instructions i h (h_ASSUME i h_assume_ty)
-    | cover label e md =>
-      unfold Imperative.Cmd.toGotoInstructions at h_run
-      simp only at h_run
-      match h_expr :
-          Imperative.ToGoto.toGotoExpr (P := Core.Expression) e with
-      | .ok e_goto =>
-        simp only [h_expr, Bind.bind, Except.bind, pure, Except.pure] at h_run
-        injection h_run with h_run
-        subst h_run
-        let assert_inst : CProverGOTO.Instruction :=
-          { type := .ASSERT, locationNum := trans.nextLoc,
-            sourceLoc := metadataToSourceLoc md fname trans.sourceText
-              (comment := md.getPropertySummary.getD s!"cover {label}"),
-            guard := e_goto }
-        show P (trans.instructions.push assert_inst)
-        exact h_push trans.instructions assert_inst h
-          (h_ASSERT assert_inst rfl)
-      | .error _ =>
-        simp [h_expr, Bind.bind, Except.bind] at h_run
-  cmdStep_call fname cmd trans ans h_call h_run h := by
-    obtain ⟨procName, callArgs, md, h_eq⟩ := h_call
-    subst h_eq
-    -- The .call branch pushes a single FUNCTION_CALL.
-    unfold Strata.coreCFGToGotoCmdStep at h_run
-    simp only at h_run
-    generalize h_args :
-        (Core.CallArg.getInputExprs callArgs).mapM
-          (Lambda.LExpr.toGotoExprCtx
-            (TBase := ⟨Core.ExpressionMetadata, Unit⟩) []) = argRes at h_run
-    match argRes, h_args with
-    | .ok argExprs, _ =>
-      simp only [Bind.bind, Except.bind, pure, Except.pure] at h_run
-      injection h_run with h_run
-      rw [← h_run]
-      -- The pushed instruction has type FUNCTION_CALL.
-      apply h_push _ _ h
-      exact h_FUNCTION_CALL _ rfl
-    | .error _, _ =>
-      simp [Bind.bind, Except.bind] at h_run
+  toGotoInstructions T fname c trans ans h_run h :=
+    toGotoInstructions_preserves_of_pushSafe IsSafe h_push h_append
+      h_DECL h_ASSIGN h_ASSERT h_ASSUME T fname c trans ans h_run h
+  cmdStep_call fname cmd trans ans h_call h_run h :=
+    cmdStep_call_preserves_of_pushSafe IsSafe h_push h_FUNCTION_CALL
+      fname cmd trans ans h_call h_run h
   emitLabel label srcLoc trans h := by
-    -- emitLabel pushes a LOCATION instruction.
     let new_instr : CProverGOTO.Instruction :=
       { type := .LOCATION, locationNum := trans.nextLoc, sourceLoc := srcLoc,
         labels := [label], code := Code.skip }
     show P (trans.instructions.push new_instr)
     exact h_push trans.instructions new_instr h (h_LOCATION new_instr rfl)
   emitCondGoto guard srcLoc trans h := by
-    -- emitCondGoto pushes a GOTO with target := none.
     let new_instr : CProverGOTO.Instruction :=
       { type := .GOTO, locationNum := trans.nextLoc, sourceLoc := srcLoc,
         guard := guard, target := none }
     show P (trans.instructions.push new_instr)
     exact h_push trans.instructions new_instr h (h_GOTO new_instr rfl)
   emitUncondGoto srcLoc trans h := by
-    -- emitUncondGoto pushes a GOTO with guard := true, target := none.
     let new_instr : CProverGOTO.Instruction :=
       { type := .GOTO, locationNum := trans.nextLoc, sourceLoc := srcLoc,
         guard := Expr.true, target := none }
