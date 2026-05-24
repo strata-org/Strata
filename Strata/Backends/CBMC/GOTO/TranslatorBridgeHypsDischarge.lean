@@ -39,14 +39,14 @@ Of the eight fields:
 * `nameMap_inj` is preserved as a passthrough from the caller's
   `h_inj` hypothesis.
 
-The remaining five fields are passthroughs:
+The remaining five fields:
 
 * The lookup fields (`decl_lookup`, `assign_lookup`,
   `assign_nondet_lookup`) require the GOTO instruction's `code`
-  field to expose a specific symbol name `nameMap x`. The v2 bridge
-  (`wellFormedTranslation_to_translatorBridgeHyps_v2` below)
-  decomposes them via the `InstructionLookups` lemmas into a
-  per-PC structural witness plus a per-firing trace witness.
+  field to expose a specific symbol name `nameMap x`. They are
+  decomposed via the `InstructionLookups` lemmas into per-PC
+  structural witnesses (`provenance`) plus per-firing trace
+  witnesses (`pinned`).
 * The value fields (`decl_empty_value`, `assign_value_corr`,
   `assign_nondet_value_corr`) are caller-side obligations on the
   source-side `δ` ↔ target-side `eval` correspondence. -/
@@ -63,163 +63,15 @@ open CProverGOTO.SteppingBridgesDischarge (TranslatorBridgeHyps)
 /-- Bridge from `WellFormedTranslation` to `TranslatorBridgeHyps`.
 
 Of the eight `TranslatorBridgeHyps` fields, three are discharged
-from `wf` (plus minor side hypotheses) and five remain caller
-passthroughs:
-
-* `goto_target_resolves` (closed from `wf.locationNum_eq_index` +
-  `findLocIdx_resolves`, modulo `h_goto_target_in_range`),
-* `dead_lookup` (vacuous from `h_no_dead`),
-* `nameMap_inj` (caller passthrough),
-* the five lookup/value passthroughs.
+from `wf` (plus minor side hypotheses), three are decomposed via
+the `InstructionLookups` lemmas into per-PC `provenance` + per-firing
+`pinned` hypotheses, and the remaining three (the value fields) are
+caller passthroughs.
 
 The two side hypotheses (`h_goto_target_in_range`, `h_no_dead`) are
 metaproperties of `coreCFGToGotoTransform`'s output that are
 discharged by `GotoTargetInRange.lean` and `NoDead.lean`
-respectively. They are surfaced here so that closing them is
-disjoint from the `WellFormedTranslation` story. -/
-theorem wellFormedTranslation_to_translatorBridgeHyps
-    (cfg : Core.DetCFG) (pgm : Program)
-    (δ : Imperative.SemanticEval Core.Expression)
-    (δ_goto : SemanticEvalGoto Core.Expression)
-    (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
-    (wf : WellFormedTranslation cfg pgm δ δ_goto δ_goto_bool)
-    (nameMap : Core.Expression.Ident → String)
-    (h_inj : Function.Injective nameMap)
-    (eval : SemanticsTautschnig.ExprEval)
-    -- For every GOTO instruction with a target, the target PC is in range.
-    -- Holds for every GOTO emitted by `coreCFGToGotoTransform` (per
-    -- `WellFormedTranslation.layout_cond_goto`'s `labelMap lf = some pc_lf`
-    -- + `layout_location`); a future round can close it from `wf`.
-    (h_goto_target_in_range :
-      ∀ {pc target : Nat} {instr : Instruction},
-        pgm.instrAt pc = some instr → instr.type = .GOTO →
-        instr.target = some target →
-        ∃ instr_target, pgm.instrAt target = some instr_target)
-    -- The translator never emits DEAD instructions. A separate
-    -- "no-DEAD" property of `coreCFGToGotoTransform`'s output, stable
-    -- under all rounds; provable by induction on the translator
-    -- (every emit-helper pushes DECL/ASSIGN/ASSERT/ASSUME/GOTO/LOCATION,
-    -- never DEAD). With it `dead_lookup` is vacuous.
-    (h_no_dead :
-      ∀ {pc : Nat} {instr : Instruction},
-        pgm.instrAt pc = some instr → instr.type ≠ .DEAD)
-    -- Lookup fields: the source-side `x` matches the GOTO's
-    -- symbol/lhs operand. Caller passthrough; the v2 variant below
-    -- decomposes these via the `InstructionLookups` lemmas.
-    (h_decl_lookup :
-      ∀ {pc : Nat} {instr : Instruction} {x : Core.Expression.Ident}
-        {σ σ' : Imperative.SemanticStore Core.Expression}
-        {v : Core.Expression.Expr},
-        pgm.instrAt pc = some instr → instr.type = .DECL →
-        Imperative.InitState Core.Expression σ x v σ' →
-        (SemanticsTautschnig.instrCode pgm pc).bind
-          SemanticsTautschnig.getSymbolName = some (nameMap x))
-    (h_assign_lookup :
-      ∀ {pc : Nat} {instr : Instruction} {x : Core.Expression.Ident}
-        {σ σ' : Imperative.SemanticStore Core.Expression}
-        {rhs_g : Expr} {v_imp : Core.Expression.Expr},
-        pgm.instrAt pc = some instr → instr.type = .ASSIGN →
-        δ_goto σ rhs_g = some v_imp →
-        Imperative.UpdateState Core.Expression σ x v_imp σ' →
-        (SemanticsTautschnig.instrCode pgm pc).bind
-            SemanticsTautschnig.getAssignLhs = some (nameMap x) ∧
-        (SemanticsTautschnig.instrCode pgm pc).bind
-            SemanticsTautschnig.getAssignRhs = some rhs_g)
-    (h_assign_nondet_lookup :
-      ∀ {pc : Nat} {instr : Instruction} {x : Core.Expression.Ident}
-        {lhs rhs : Expr}
-        {σ σ' : Imperative.SemanticStore Core.Expression}
-        {v_imp : Core.Expression.Expr},
-        pgm.instrAt pc = some instr → instr.type = .ASSIGN →
-        instr.code = Code.assign lhs rhs →
-        rhs.id = .side_effect .Nondet →
-        Imperative.UpdateState Core.Expression σ x v_imp σ' →
-        (SemanticsTautschnig.instrCode pgm pc).bind
-            SemanticsTautschnig.getAssignLhs = some (nameMap x) ∧
-        (SemanticsTautschnig.instrCode pgm pc).bind
-            SemanticsTautschnig.getAssignRhs = some rhs)
-    -- Value fields: caller-side source ↔ target evaluator agreement.
-    -- Out of scope for this bridge.
-    (h_decl_empty_value :
-      ∀ {pc : Nat} {instr : Instruction} {x : Core.Expression.Ident}
-        {v : Core.Expression.Expr}
-        {σ σ' : Imperative.SemanticStore Core.Expression},
-        pgm.instrAt pc = some instr → instr.type = .DECL →
-        Imperative.InitState Core.Expression σ x v σ' →
-        (SemanticsTautschnig.ValueCorr.toValue v
-          : Option SemanticsTautschnig.Value)
-          = some .vEmpty)
-    (h_assign_value_corr :
-      ∀ {pc : Nat} {instr : Instruction} {x : Core.Expression.Ident}
-        {σ_imp σ_imp' : Imperative.SemanticStore Core.Expression}
-        {σ_goto : SemanticsTautschnig.Store}
-        {rhs_g : Expr} {v_imp : Core.Expression.Expr},
-        pgm.instrAt pc = some instr → instr.type = .ASSIGN →
-        δ_goto σ_imp rhs_g = some v_imp →
-        Imperative.UpdateState Core.Expression σ_imp x v_imp σ_imp' →
-        SemanticsTautschnig.StoreCorr nameMap σ_imp σ_goto →
-        ∃ v_goto,
-          (SemanticsTautschnig.ValueCorr.toValue v_imp
-            : Option SemanticsTautschnig.Value) = some v_goto ∧
-          eval σ_goto rhs_g = some v_goto)
-    (h_assign_nondet_value_corr :
-      ∀ {pc : Nat} {instr : Instruction} {x : Core.Expression.Ident}
-        {σ σ' : Imperative.SemanticStore Core.Expression}
-        {v_imp : Core.Expression.Expr},
-        pgm.instrAt pc = some instr → instr.type = .ASSIGN →
-        Imperative.UpdateState Core.Expression σ x v_imp σ' →
-        ∃ v_goto,
-          (SemanticsTautschnig.ValueCorr.toValue v_imp
-            : Option SemanticsTautschnig.Value)
-            = some v_goto) :
-    TranslatorBridgeHyps pgm nameMap δ_goto eval where
-  nameMap_inj := h_inj
-  decl_lookup := h_decl_lookup
-  dead_lookup := by
-    -- Vacuous from `h_no_dead`: no DEAD instructions ever fire.
-    intro pc instr x σ σ' h_at h_ty _h_remove
-    exact absurd h_ty (h_no_dead h_at)
-  assign_lookup := h_assign_lookup
-  assign_nondet_lookup := h_assign_nondet_lookup
-  goto_target_resolves := by
-    -- Discharge: instr.type = .GOTO + instr.target = some target
-    -- gives instrTarget pgm pc = some (some target). Then
-    -- locationNum_eq_index + findLocIdx_resolves give findLocIdx pgm.instructions target
-    -- = some target.
-    intro pc target instr h_at h_ty h_target
-    refine ⟨target, ?_, ?_⟩
-    · -- instrTarget pgm pc = some (some target)
-      simp only [SemanticsTautschnig.instrTarget, Program.instrAt] at *
-      rw [h_at]
-      simp [h_target]
-    · -- findLocIdx pgm.instructions target = some target
-      obtain ⟨instr_target, h_at_target⟩ :=
-        h_goto_target_in_range h_at h_ty h_target
-      exact findLocIdx_resolves target instr_target wf.locationNum_eq_index h_at_target
-  decl_empty_value := h_decl_empty_value
-  assign_value_corr := h_assign_value_corr
-  assign_nondet_value_corr := h_assign_nondet_value_corr
-
-/-! ## v2: lookup-field decomposition via `InstructionLookups`
-
-The v2 bridge consumes the `InstructionLookups` lemmas to refactor
-the three lookup-field caller passthroughs into:
-
-* per-PC structural witnesses (`provenance`, discharged from `wf` +
-  strengthened `CmdEmittedAt` via `CmdProvenance.lean` plus a CFG-PC
-  inversion).
-* per-firing trace-level witnesses (`pinned`, caller-side bisimulation
-  invariants typically discharged at the simulation consumer's level —
-  e.g., the `coreCFGToGotoTransform_forward_simulation` chain in
-  `CoreCFGToGOTOConcrete.lean`).
-
-The total hypothesis count goes up (5 instead of 3), but each new
-hypothesis is *strictly smaller* than the original lookup field it
-replaces: it quantifies over a single PC (no `x` universal in the
-conclusion) plus a single firing's data, and produces either a pure
-structural fact about the GOTO code or an equality linking the
-firing's `x` to the source-cmd's `v_src`. -/
-
+respectively. -/
 theorem wellFormedTranslation_to_translatorBridgeHyps_v2
     (cfg : Core.DetCFG) (pgm : Program)
     (δ : Imperative.SemanticEval Core.Expression)
@@ -315,20 +167,43 @@ theorem wellFormedTranslation_to_translatorBridgeHyps_v2
           (SemanticsTautschnig.ValueCorr.toValue v_imp
             : Option SemanticsTautschnig.Value)
             = some v_goto) :
-    TranslatorBridgeHyps pgm nameMap δ_goto eval :=
-  wellFormedTranslation_to_translatorBridgeHyps cfg pgm δ δ_goto δ_goto_bool wf
-    nameMap h_inj eval h_goto_target_in_range h_no_dead
-    -- decl_lookup: discharged via InstructionLookups.
-    (CProverGOTO.InstructionLookups.decl_lookup_of_provenance_and_pinned
-      pgm nameMap h_decl_provenance h_decl_x_pinned)
-    -- assign_lookup: discharged via InstructionLookups.
-    (CProverGOTO.InstructionLookups.assign_lookup_of_provenance_and_pinned
-      pgm δ_goto nameMap h_assn_provenance h_assn_x_pinned h_assn_rhs_pinned)
-    -- assign_nondet_lookup: discharged via InstructionLookups using
-    -- `h_assn_provenance` (the rhs-shape witness comes from the
-    -- `step_assign_nondet` constructor, not from a separate hypothesis).
-    (CProverGOTO.InstructionLookups.assign_nondet_lookup_of_provenance_and_pinned
-      pgm nameMap h_assn_provenance h_assn_x_pinned)
-    h_decl_empty_value h_assign_value_corr h_assign_nondet_value_corr
+    TranslatorBridgeHyps pgm nameMap δ_goto eval where
+  nameMap_inj := h_inj
+  decl_lookup :=
+    -- decl_lookup: decomposed via InstructionLookups.
+    CProverGOTO.InstructionLookups.decl_lookup_of_provenance_and_pinned
+      pgm nameMap h_decl_provenance h_decl_x_pinned
+  dead_lookup := by
+    -- Vacuous from `h_no_dead`: no DEAD instructions ever fire.
+    intro pc instr x σ σ' h_at h_ty _h_remove
+    exact absurd h_ty (h_no_dead h_at)
+  assign_lookup :=
+    -- assign_lookup: decomposed via InstructionLookups.
+    CProverGOTO.InstructionLookups.assign_lookup_of_provenance_and_pinned
+      pgm δ_goto nameMap h_assn_provenance h_assn_x_pinned h_assn_rhs_pinned
+  assign_nondet_lookup :=
+    -- assign_nondet_lookup: decomposed via InstructionLookups; the
+    -- rhs-shape witness comes from the `step_assign_nondet` constructor
+    -- itself, not from a separate hypothesis.
+    CProverGOTO.InstructionLookups.assign_nondet_lookup_of_provenance_and_pinned
+      pgm nameMap h_assn_provenance h_assn_x_pinned
+  goto_target_resolves := by
+    -- Discharge: instr.type = .GOTO + instr.target = some target
+    -- gives instrTarget pgm pc = some (some target). Then
+    -- locationNum_eq_index + findLocIdx_resolves give findLocIdx pgm.instructions
+    -- target = some target.
+    intro pc target instr h_at h_ty h_target
+    refine ⟨target, ?_, ?_⟩
+    · -- instrTarget pgm pc = some (some target)
+      simp only [SemanticsTautschnig.instrTarget, Program.instrAt] at *
+      rw [h_at]
+      simp [h_target]
+    · -- findLocIdx pgm.instructions target = some target
+      obtain ⟨instr_target, h_at_target⟩ :=
+        h_goto_target_in_range h_at h_ty h_target
+      exact findLocIdx_resolves target instr_target wf.locationNum_eq_index h_at_target
+  decl_empty_value := h_decl_empty_value
+  assign_value_corr := h_assign_value_corr
+  assign_nondet_value_corr := h_assign_nondet_value_corr
 
 end CProverGOTO.TranslatorBridgeHypsDischarge

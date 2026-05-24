@@ -15,7 +15,7 @@ public section
 Bridge from `WellFormedTranslation cfg pgm δ δ_goto δ_goto_bool`
 (`CoreCFGToGOTOInvariants.lean`) plus a small auxiliary hypothesis
 to the `h_goto_target_in_range` predicate consumed by
-`wellFormedTranslation_to_translatorBridgeHyps`
+`wellFormedTranslation_to_translatorBridgeHyps_v2`
 (`TranslatorBridgeHypsDischarge.lean`).
 
 ## What we prove

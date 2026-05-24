@@ -40,7 +40,7 @@ The interface here packages those hypotheses as a structure
 `TranslatorBridgeHyps`, parameterised by the program. A consumer that
 already has a `WellFormedTranslation` witness can derive a
 `TranslatorBridgeHyps` value via
-`TranslatorBridgeHypsDischarge.wellFormedTranslation_to_translatorBridgeHyps`.
+`TranslatorBridgeHypsDischarge.wellFormedTranslation_to_translatorBridgeHyps_v2`.
 
 ## Per-constructor coverage
 
