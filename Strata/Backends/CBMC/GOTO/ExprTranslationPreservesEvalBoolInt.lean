@@ -1171,11 +1171,6 @@ theorem toGotoExprCtx_preservesEval_boolInt
       rw [h_e1g] at h_tx; cases h_tx
       exact .boolNot m_outer (some mty) e1c e1g
         (toGotoExprCtx_preservesEval_boolInt h_red e1c e1g h_gty_e1 h_frag1 h_e1g)
-  -- All other shapes: not in fragment.
-  | .op _ _ _, _, h_frag, _ => simp [isBoolIntFragment] at h_frag
-  | .bvar _ _, _, h_frag, _ => simp [isBoolIntFragment] at h_frag
-  | .abs _ _ _ _, _, h_frag, _ => simp [isBoolIntFragment] at h_frag
-  | .quant _ _ _ _ _ _, _, h_frag, _ => simp [isBoolIntFragment] at h_frag
   | .ite m cc tc ec, h_gty, h_frag, h_tx =>
     have h_frag' := h_frag; simp [isBoolIntFragment] at h_frag'
     have h_gty_c : BoolIntGtyAgrees cc := h_gty.1
@@ -1201,28 +1196,24 @@ theorem toGotoExprCtx_preservesEval_boolInt
             (toGotoExprCtx_preservesEval_boolInt h_red cc cg h_gty_c h_frag'.1.1 h_cg)
             (toGotoExprCtx_preservesEval_boolInt h_red tc tg h_gty_t h_frag'.1.2 h_tg)
             (toGotoExprCtx_preservesEval_boolInt h_red ec eg h_gty_e h_frag'.2 h_eg)
-  -- Unary app with `none` annotation: not in fragment.
-  | .app _ (.op _ _ none) _, _, h_frag, _ => simp [isBoolIntFragment] at h_frag
-  -- Other binary apps where the inner shape doesn't match (.op with none, or non-op):
-  -- not in the binary-supported pattern, so fragment is false.
-  | .app _ (.app _ (.op _ _ none) _) _, _, h_frag, _ =>
+  -- All remaining shapes: not in fragment.
+  | .op _ _ _, _, h_frag, _ | .bvar _ _, _, h_frag, _
+  | .abs _ _ _ _, _, h_frag, _ | .quant _ _ _ _ _ _, _, h_frag, _
+  | .app _ (.op _ _ none) _, _, h_frag, _
+  | .app _ (.app _ (.op _ _ none) _) _, _, h_frag, _
+  | .app _ (.const _ _) _, _, h_frag, _ | .app _ (.bvar _ _) _, _, h_frag, _
+  | .app _ (.fvar _ _ _) _, _, h_frag, _ | .app _ (.abs _ _ _ _) _, _, h_frag, _
+  | .app _ (.quant _ _ _ _ _ _) _, _, h_frag, _
+  | .app _ (.ite _ _ _ _) _, _, h_frag, _ | .app _ (.eq _ _ _) _, _, h_frag, _
+  | .app _ (.app _ (.const _ _) _) _, _, h_frag, _
+  | .app _ (.app _ (.bvar _ _) _) _, _, h_frag, _
+  | .app _ (.app _ (.fvar _ _ _) _) _, _, h_frag, _
+  | .app _ (.app _ (.abs _ _ _ _) _) _, _, h_frag, _
+  | .app _ (.app _ (.quant _ _ _ _ _ _) _) _, _, h_frag, _
+  | .app _ (.app _ (.app _ _ _) _) _, _, h_frag, _
+  | .app _ (.app _ (.ite _ _ _ _) _) _, _, h_frag, _
+  | .app _ (.app _ (.eq _ _ _) _) _, _, h_frag, _ =>
       simp [isBoolIntFragment] at h_frag
-  -- "fn" is not an op or app-of-op: not in fragment.
-  | .app _ (.const _ _) _, _, h_frag, _ => simp [isBoolIntFragment] at h_frag
-  | .app _ (.bvar _ _) _, _, h_frag, _ => simp [isBoolIntFragment] at h_frag
-  | .app _ (.fvar _ _ _) _, _, h_frag, _ => simp [isBoolIntFragment] at h_frag
-  | .app _ (.abs _ _ _ _) _, _, h_frag, _ => simp [isBoolIntFragment] at h_frag
-  | .app _ (.quant _ _ _ _ _ _) _, _, h_frag, _ => simp [isBoolIntFragment] at h_frag
-  | .app _ (.ite _ _ _ _) _, _, h_frag, _ => simp [isBoolIntFragment] at h_frag
-  | .app _ (.eq _ _ _) _, _, h_frag, _ => simp [isBoolIntFragment] at h_frag
-  | .app _ (.app _ (.const _ _) _) _, _, h_frag, _ => simp [isBoolIntFragment] at h_frag
-  | .app _ (.app _ (.bvar _ _) _) _, _, h_frag, _ => simp [isBoolIntFragment] at h_frag
-  | .app _ (.app _ (.fvar _ _ _) _) _, _, h_frag, _ => simp [isBoolIntFragment] at h_frag
-  | .app _ (.app _ (.abs _ _ _ _) _) _, _, h_frag, _ => simp [isBoolIntFragment] at h_frag
-  | .app _ (.app _ (.quant _ _ _ _ _ _) _) _, _, h_frag, _ => simp [isBoolIntFragment] at h_frag
-  | .app _ (.app _ (.app _ _ _) _) _, _, h_frag, _ => simp [isBoolIntFragment] at h_frag
-  | .app _ (.app _ (.ite _ _ _ _) _) _, _, h_frag, _ => simp [isBoolIntFragment] at h_frag
-  | .app _ (.app _ (.eq _ _ _) _) _, _, h_frag, _ => simp [isBoolIntFragment] at h_frag
 termination_by sizeOf e_core
 decreasing_by
   all_goals
