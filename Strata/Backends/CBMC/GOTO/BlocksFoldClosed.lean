@@ -23,8 +23,7 @@ END_FUNCTION emit) are automatically preserved by the full blocks-fold
 chain (cmdsFoldlM, blockStep, blocksFoldlM).
 
 The patcher chain (steps 10–12) is handled separately by each consumer
-file because the patcher's behaviour on each predicate differs (see the
-L2 design audit, section 1).
+file because the patcher's behaviour on each predicate differs.
 
 ## Usage pattern
 

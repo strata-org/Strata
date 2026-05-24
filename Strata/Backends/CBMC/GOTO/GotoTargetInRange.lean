@@ -12,10 +12,9 @@ public section
 
 /-! # Discharging `h_goto_target_in_range` from `WellFormedTranslation`
 
-Round-7a deliverable: bridge from `WellFormedTranslation cfg pgm δ
-δ_goto δ_goto_bool` (`CoreCFGToGOTOInvariants.lean`) plus a small
-auxiliary hypothesis to the
-`h_goto_target_in_range` predicate consumed by R6a's
+Bridge from `WellFormedTranslation cfg pgm δ δ_goto δ_goto_bool`
+(`CoreCFGToGOTOInvariants.lean`) plus a small auxiliary hypothesis
+to the `h_goto_target_in_range` predicate consumed by
 `wellFormedTranslation_to_translatorBridgeHyps`
 (`TranslatorBridgeHypsDischarge.lean`).
 
@@ -31,19 +30,10 @@ auxiliary hypothesis to the
 — i.e., the target of every emitted GOTO is in the program's
 instruction array.
 
-## Tier outcome
-
-**Tier 2 (Good).** Closed under one stable auxiliary hypothesis,
-`EveryGotoTargetIsLabelMapEntry`: every GOTO target is a `labelMap`
-entry for a label in `cfg.blocks`.
-
-The auxiliary is mechanically discharable from
-`coreCFGToGotoTransform`'s structure (every GOTO instruction is
-emitted by either `emitCondGoto` or `emitUncondGoto`, both of which
-resolve targets via `labelMap`), but proving that requires
-structural induction over the translator's outer loop — separable
-from the structural-soundness story `WellFormedTranslation` tells
-and deferred to a future round.
+The auxiliary `EveryGotoTargetIsLabelMapEntry` (every GOTO target
+is a `labelMap` entry for a label in `cfg.blocks`) is discharged in
+`GotoTargetProvenance.lean` via structural induction over the
+translator's outer loop.
 
 Given the auxiliary, the proof is mechanical:
 

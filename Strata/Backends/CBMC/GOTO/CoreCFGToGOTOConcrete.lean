@@ -36,16 +36,13 @@ CoreCFGStepStar π φ δ cfg (.cont cfg.entry σ false) (.terminal σ' b) →
 ```
 
 The chain composes:
-* `coreCFGToGotoTransform_wellFormed_strengthened` (A2/A3/A4/A5a/A5b)
-  — builds `Nonempty (WellFormedTranslation …)` from the translator output.
-* `toGotoExprCtx_preservesEval_boolInt` (B3) — per-LExpr translation
+* `coreCFGToGotoTransform_wellFormed_strengthened` — builds
+  `Nonempty (WellFormedTranslation …)` from the translator output.
+* `toGotoExprCtx_preservesEval_boolInt` — per-LExpr translation
   correctness on the bool+int fragment.
-* `steppingBridges_of_translator` (C) — `SteppingBridges` bundle.
-* `coreCFGToGoto_forward_simulation_storeCorr` (Phase 3) — consumes
-  the WF + bridges to produce the `ExecProg` derivation.
-
-Per-round archaeology and per-hypothesis discharge details live in
-`docs/_workers/round*_supervisor_report.md`. -/
+* `steppingBridges_of_translator` — `SteppingBridges` bundle.
+* `coreCFGToGoto_forward_simulation_storeCorr` — consumes the WF +
+  bridges to produce the `ExecProg` derivation. -/
 
 namespace CProverGOTO
 
@@ -175,17 +172,18 @@ end ConcreteExprCorr
 /-! ## `_v6`: full-surface forward simulation
 
 First public theorem. Builds a `WellFormedTranslation` via the
-strengthened theorem; discharges R7a/R7b/R7c bridge fields, R8a/R8b
-auxiliaries, R9 PC-inversion auxiliaries, and R10a `labelMap_agree`
-internally. Caller still supplies `st_final` / `h_blocks_run` (R10a
-witnesses — internalised in `_v7`), R11 δ_goto monotonicity
-(`h_init_extension`), R7c pinning + value-side hypotheses, the B3
-bundle, Worker C parameters, and the source-side run + initial-store
-correspondence.
+strengthened theorem; discharges all bridge fields, structural
+auxiliaries, PC-inversion auxiliaries, and labelMap-agreement
+internally. Caller still supplies `st_final` / `h_blocks_run`
+(internalised in `_v7`), δ_goto monotonicity (`h_init_extension`),
+trace-level pinning + value-side hypotheses, the bool+int expression
+bundle, the bisimulation parameters, and the source-side run +
+initial-store correspondence.
 
 Two small `trans₀`-shape hypotheses (`h_init_empty_decl_assign`,
-`h_init_no_location`) are required by R9/R10a's induction; both are
-trivial for any standard `trans₀` with `instructions := #[]`. -/
+`h_init_no_location`) are required by the PC-inversion +
+labelMap-agreement inductions; both are trivial for any standard
+`trans₀` with `instructions := #[]`. -/
 
 theorem coreCFGToGotoTransform_forward_simulation_concrete_v6
     -- Source-side semantics
@@ -193,7 +191,7 @@ theorem coreCFGToGotoTransform_forward_simulation_concrete_v6
     (δ_goto : SemanticEvalGoto Core.Expression)
     (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
     (h_wf_bool : WellFormedSemanticEvalGotoBool δ_goto_bool)
-    -- R11: fresh-variable monotonicity of `δ_goto` across `InitState`.
+    -- Fresh-variable monotonicity of `δ_goto` across `InitState`.
     (h_init_extension :
       ∀ {σ σ' : Imperative.SemanticStore Core.Expression}
         {x : Core.Expression.Ident} {v_init : Core.Expression.Expr}
@@ -217,13 +215,13 @@ theorem coreCFGToGotoTransform_forward_simulation_concrete_v6
         trans₀.instructions[i]? = some instr → instr.locationNum = i)
     (h_init_no_dead : NoDead.HasNoDead trans₀)
     (h_init_no_goto_target : GotoTargetProvenance.NoGotoHasTarget trans₀)
-    -- New in v6: trans₀ carries no DECL/ASSIGN at any PC. Trivial for
-    -- the standard `trans₀` with `instructions := #[]`.
+    -- `trans₀` carries no DECL/ASSIGN at any PC (trivial for the
+    -- standard `trans₀` with `instructions := #[]`).
     (h_init_empty_decl_assign : ∀ {pc : Nat} {instr : Instruction},
       trans₀.instructions[pc]? = some instr →
       instr.type ≠ .DECL ∧ instr.type ≠ .ASSIGN)
-    -- New in v6 (R10a): trans₀ carries no LOCATION at any PC. Trivial
-    -- for the standard `trans₀` with `instructions := #[]`. Used by
+    -- `trans₀` carries no LOCATION at any PC (trivial for the
+    -- standard `trans₀` with `instructions := #[]`). Used by
     -- `WfLabelMapAgree.labelMap_agree_of_translator` to internally
     -- discharge the labelMap-agreement hypothesis.
     (h_init_no_location :
@@ -247,7 +245,7 @@ theorem coreCFGToGotoTransform_forward_simulation_concrete_v6
       ∀ e : Core.Expression.Expr,
         ConcreteExprCorr.tx h_uniform (HasNot.not (P := Core.Expression) e)
           = (ConcreteExprCorr.tx h_uniform e).not)
-    -- Worker C parameters: nameMap fixed to identToString.
+    -- Bisimulation parameters: nameMap fixed to identToString.
     (callResult : CallResultRel)
     (eval : ExprEval)
     (fenv : FuncEnv)
@@ -258,19 +256,16 @@ theorem coreCFGToGotoTransform_forward_simulation_concrete_v6
     (h_inj :
       Function.Injective
         (Imperative.ToGoto.identToString (P := Core.Expression)))
-    -- R8a's structural witnesses (translator state at the post-blocks-fold).
+    -- Structural witnesses (translator state at the post-blocks-fold).
     (st_final : Strata.CoreCFGTransLoopState)
     (h_blocks_run :
       cfg.blocks.foldlM (Strata.coreCFGToGotoBlockStep functionName)
         (coreCFGToGotoInitState trans₀)
       = Except.ok st_final)
-    -- R8b's strict ASSIGN-Nondet PC-inversion remains (provably false in general).
-    -- R11: `h_assn_nondet_pc_inv` (R8b's strict
-    -- `AssignNondetPcInversion`) has been removed. The rhs-shape
-    -- witness now arrives via the tightened `step_assign_nondet`
-    -- constructor, eliminating the need for any per-PC nondet-cmd
-    -- inversion.
-    -- R7c's pinning hypotheses (caller-side; trace-level info).
+    -- The strict ASSIGN-Nondet rhs witness is no longer required:
+    -- the tightened `step_assign_nondet` constructor carries the
+    -- `rhs.id = .side_effect .Nondet` evidence directly.
+    -- Trace-level pinning hypotheses (caller-side).
     (h_decl_x_pinned :
       ∀ {pc : Nat} {instr : Instruction}
         {x : Core.Expression.Ident}
@@ -313,7 +308,7 @@ theorem coreCFGToGotoTransform_forward_simulation_concrete_v6
             (Imperative.ToGoto.identToString (P := Core.Expression) v_src)
             gty) rhs_emitted →
           rhs_g = rhs_emitted)
-    -- R7c's value-side hypotheses (caller-side).
+    -- Value-side hypotheses (caller-side).
     (h_decl_empty_value :
       ∀ {pc : Nat} {instr : Instruction} {x : Core.Expression.Ident}
         {v : Core.Expression.Expr}
@@ -400,7 +395,7 @@ theorem coreCFGToGotoTransform_forward_simulation_concrete_v6
       ans h_run
       δ δ_goto δ_goto_bool h_expr h_tx_eq h_expr_translated_witness
   obtain ⟨wf⟩ := h_wf_nonempty
-  -- Discharge h_labelMap_agree via R10a.
+  -- Discharge h_labelMap_agree.
   have h_labelMap_agree :
       ∀ l blk target, (l, blk) ∈ cfg.blocks →
         st_final.labelMap[l]? = some target →
@@ -409,21 +404,21 @@ theorem coreCFGToGotoTransform_forward_simulation_concrete_v6
       Env functionName cfg trans₀ h_init_size h_init_no_location
       h_distinct h_admitted_blocks h_loopContracts_empty_post
       ans h_run st_final h_blocks_run δ δ_goto δ_goto_bool wf
-  -- Discharge h_decl_pc_inv via R9.
+  -- Discharge h_decl_pc_inv.
   have h_decl_pc_inv : CmdProvenance.DeclPcInversion cfg pgm
       δ δ_goto δ_goto_bool wf :=
     PcInversion.declPcInversion_of_translator_abbrev
       Env functionName cfg trans₀ h_init_size h_init_empty_decl_assign
       h_distinct h_admitted_blocks h_loopContracts_empty_post
       ans h_run δ δ_goto δ_goto_bool h_expr h_tx_eq wf
-  -- Discharge h_assn_pc_inv via R9.
+  -- Discharge h_assn_pc_inv.
   have h_assn_pc_inv : CmdProvenance.AssignPcInversion cfg pgm
       δ δ_goto δ_goto_bool wf :=
     PcInversion.assignPcInversion_of_translator_abbrev
       Env functionName cfg trans₀ h_init_size h_init_empty_decl_assign
       h_distinct h_admitted_blocks h_loopContracts_empty_post
       ans h_run δ δ_goto δ_goto_bool h_expr h_tx_eq wf
-  -- Discharge R7a's `h_aux_goto_target` via R8a.
+  -- Discharge `h_aux_goto_target`.
   have h_aux_goto_target :
       ∀ {pc target : Nat} {instr : Instruction},
         pgm.instrAt pc = some instr →
@@ -443,13 +438,14 @@ theorem coreCFGToGotoTransform_forward_simulation_concrete_v6
     refine ⟨l, blk, h_in, ?_⟩
     intro wf'
     -- For wf' = wf this is h_labelMap_agree; for any other wf' we
-    -- still need agreement. Re-prove via R10a applied to wf'.
+    -- still need agreement. Re-prove via `labelMap_agree_of_translator`
+    -- applied to wf'.
     exact WfLabelMapAgree.labelMap_agree_of_translator
       Env functionName cfg trans₀ h_init_size h_init_no_location
       h_distinct h_admitted_blocks h_loopContracts_empty_post
       ans h_run st_final h_blocks_run δ δ_goto δ_goto_bool wf'
       l blk target h_in h_lookup_st
-  -- Discharge R7c's two provenance hypotheses via R8b.
+  -- Discharge the two provenance hypotheses.
   have h_decl_provenance :
       ∀ {pc : Nat} {instr : Instruction},
         pgm.instrAt pc = some instr → instr.type = .DECL →
@@ -467,7 +463,7 @@ theorem coreCFGToGotoTransform_forward_simulation_concrete_v6
     intro pc instr h_at h_ty
     exact CmdProvenance.assn_provenance_of_translator cfg pgm
       δ δ_goto δ_goto_bool wf h_assn_pc_inv h_at h_ty
-  -- Discharge h_goto_target_in_range via R7a.
+  -- Discharge h_goto_target_in_range.
   have h_aux_for_r7a : GotoTargetInRange.EveryGotoTargetIsLabelMapEntry cfg pgm wf.labelMap := by
     intros pc target instr h_at h_ty h_target
     obtain ⟨l, blk, h_in, h_lookup⟩ := h_aux_goto_target h_at h_ty h_target
@@ -480,14 +476,14 @@ theorem coreCFGToGotoTransform_forward_simulation_concrete_v6
     intros pc target instr h_at h_ty h_target
     exact GotoTargetInRange.goto_target_in_range_of_wf cfg pgm
       δ δ_goto δ_goto_bool wf h_aux_for_r7a h_at h_ty h_target
-  -- Discharge h_no_dead via R7b.
+  -- Discharge h_no_dead.
   have h_no_dead :
       ∀ {pc : Nat} {instr : Instruction},
         pgm.instrAt pc = some instr → instr.type ≠ .DEAD := by
     intros pc instr h
     exact NoDead.no_dead_program_of_translator Env functionName cfg trans₀
       h_init_no_dead h_loopContracts_empty_post ans h_run h
-  -- Discharge h_brHyps via R7c's v2 bridge.
+  -- Discharge h_brHyps via the v2 bridge.
   have h_brHyps :=
     TranslatorBridgeHypsDischarge.wellFormedTranslation_to_translatorBridgeHyps_v2
       cfg pgm δ δ_goto δ_goto_bool wf nameMap h_inj eval
@@ -524,7 +520,7 @@ theorem coreCFGToGotoTransform_forward_simulation_concrete_v7
     (δ_goto : SemanticEvalGoto Core.Expression)
     (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
     (h_wf_bool : WellFormedSemanticEvalGotoBool δ_goto_bool)
-    -- R11: fresh-variable monotonicity of `δ_goto` across `InitState`.
+    -- Fresh-variable monotonicity of `δ_goto` across `InitState`.
     (h_init_extension :
       ∀ {σ σ' : Imperative.SemanticStore Core.Expression}
         {x : Core.Expression.Ident} {v_init : Core.Expression.Expr}
@@ -551,7 +547,7 @@ theorem coreCFGToGotoTransform_forward_simulation_concrete_v7
     (h_init_empty_decl_assign : ∀ {pc : Nat} {instr : Instruction},
       trans₀.instructions[pc]? = some instr →
       instr.type ≠ .DECL ∧ instr.type ≠ .ASSIGN)
-    -- R10a: trans₀ carries no LOCATION at any PC.
+    -- `trans₀` carries no LOCATION at any PC.
     (h_init_no_location :
       ∀ {pc : Nat} {instr : Instruction},
         trans₀.instructions[pc]? = some instr → instr.type ≠ .LOCATION)
@@ -573,7 +569,7 @@ theorem coreCFGToGotoTransform_forward_simulation_concrete_v7
       ∀ e : Core.Expression.Expr,
         ConcreteExprCorr.tx h_uniform (HasNot.not (P := Core.Expression) e)
           = (ConcreteExprCorr.tx h_uniform e).not)
-    -- Worker C parameters
+    -- Bisimulation parameters
     (callResult : CallResultRel)
     (eval : ExprEval)
     (fenv : FuncEnv)
@@ -584,13 +580,9 @@ theorem coreCFGToGotoTransform_forward_simulation_concrete_v7
     (h_inj :
       Function.Injective
         (Imperative.ToGoto.identToString (P := Core.Expression)))
-    -- R8b's strict ASSIGN-Nondet PC-inversion remains (caller-side).
-    -- R11: `h_assn_nondet_pc_inv` (R8b's strict
-    -- `AssignNondetPcInversion`) has been removed. The rhs-shape
-    -- witness now arrives via the tightened `step_assign_nondet`
-    -- constructor, eliminating the need for any per-PC nondet-cmd
-    -- inversion.
-    -- R7c's pinning hypotheses (caller-side; trace-level info).
+    -- The strict ASSIGN-Nondet rhs witness arrives via the tightened
+    -- `step_assign_nondet` constructor.
+    -- Trace-level pinning hypotheses (caller-side).
     (h_decl_x_pinned :
       ∀ {pc : Nat} {instr : Instruction}
         {x : Core.Expression.Ident}
@@ -633,7 +625,7 @@ theorem coreCFGToGotoTransform_forward_simulation_concrete_v7
             (Imperative.ToGoto.identToString (P := Core.Expression) v_src)
             gty) rhs_emitted →
           rhs_g = rhs_emitted)
-    -- R7c's value-side hypotheses (caller-side).
+    -- Value-side hypotheses (caller-side).
     (h_decl_empty_value :
       ∀ {pc : Nat} {instr : Instruction} {x : Core.Expression.Ident}
         {v : Core.Expression.Expr}
@@ -695,11 +687,11 @@ theorem coreCFGToGotoTransform_forward_simulation_concrete_v7
         { name := "", parameterIdentifiers := #[],
           instructions := ans.instructions }
         pc_entry σ_goto σ_goto' none := by
-  -- Internalize R8a's structural witnesses via `coreCFGToGotoTransform_decompose`.
+  -- Internalize structural witnesses via `coreCFGToGotoTransform_decompose`.
   obtain ⟨st_final, _resolved, _trans_post,
           h_blocks_run, _h_patches_run, _h_ans_eq⟩ :=
     coreCFGToGotoTransform_decompose Env functionName cfg trans₀ ans h_run
-  -- Delegate to v6 with the obtained witnesses. R10a internally
+  -- Delegate to v6 with the obtained witnesses. `_v6` internally
   -- discharges `h_labelMap_agree` so we don't pass it through.
   exact coreCFGToGotoTransform_forward_simulation_concrete_v6
     δ δ_goto δ_goto_bool h_wf_bool h_init_extension π φ

@@ -188,12 +188,11 @@ inductive StepGoto
   expression: arbitrary value `v` is assigned. Mirrors
   `EvalCmd.eval_set_nondet` on the source side.
 
-  R11: the constructor now carries the rhs-shape witness directly
-  (`instr.code = Code.assign lhs rhs ∧ rhs.id = .side_effect .Nondet`).
-  This makes the rule structurally distinguishable from the generic
-  `step_assign` and rules out using it as no-op padding for non-nondet
-  rhs (which previously led to R8b's strict
-  `AssignNondetPcInversion` being provably false in general). -/
+  The constructor carries the rhs-shape witness directly
+  (`instr.code = Code.assign lhs rhs ∧ rhs.id = .side_effect .Nondet`),
+  making the rule structurally distinguishable from the generic
+  `step_assign` and ruling out its use as no-op padding for non-nondet
+  rhs. -/
   | step_assign_nondet :
     pgm.instrAt pc = some instr →
     instr.type = .ASSIGN →

@@ -144,7 +144,7 @@ instance instBlocksFoldClosed_HasNoDead' :
 
 /-! ## Preservation through `patchGotoTargets`
 
-The patcher only mutates `target` — A4's `patchGotoTargets_preserves_type`
+The patcher only mutates `target` — `patchGotoTargets_preserves_type`
 says every instruction's type after patching is the type of some
 pre-existing instruction. Combined with the input being no-DEAD, the
 output is no-DEAD. -/

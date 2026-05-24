@@ -12,11 +12,10 @@ import all Strata.Backends.CBMC.GOTO.CoreCFGToGOTOPipeline
 
 public section
 
-/-! # Discharging R8b's three PC-inversion auxiliaries
+/-! # PC-inversion theorems for DECL/ASSIGN
 
-Round-9 deliverable. Closes the `DeclPcInversion` and
-`AssignPcInversion` hypotheses that R8b left as auxiliary
-preconditions on its provenance theorems
+Closes the `DeclPcInversion` and `AssignPcInversion` auxiliary
+preconditions on the provenance theorems
 (`decl_provenance_of_translator`, `assn_provenance_of_translator`).
 The strict `AssignNondetPcInversion` is provably false in general
 (see the trailing comment block) and is left as a hypothesis.
@@ -838,16 +837,17 @@ theorem patchGotoTargets_preserves_body_pc_covered
       exact cmdEmittedAt_preserved_target_only δ δ_goto δ_goto_bool pgm_pre pgm_post
         h_preserves_back pc_pred _ h_emit_pre
 
-/-! ## Top-level theorems closing R8b's PC inversions
+/-! ## Top-level theorems closing the PC inversions
 
-We now compose the above preservation lemmas into theorems closing
-R8b's `DeclPcInversion` and `AssignPcInversion` from the actual
-translator output, using `coreCFGToGotoTransform_decompose` to
-extract the blocks-fold + patches-fold structure.
+We compose the above preservation lemmas into theorems closing
+`DeclPcInversion` and `AssignPcInversion` from the actual translator
+output, using `coreCFGToGotoTransform_decompose` to extract the
+blocks-fold + patches-fold structure.
 
-The strict `AssignNondetPcInversion` is *provably false* in general,
-per R8b's discovery; we close it under an extra precondition that
-narrows the source CFG. -/
+The strict `AssignNondetPcInversion` is *provably false* in general
+(`init_det`'s second instruction is an ASSIGN whose rhs is the
+translated source rhs, not a nondet side-effect); it is closed only
+under an extra precondition that narrows the source CFG. -/
 
 section TopLevel
 variable

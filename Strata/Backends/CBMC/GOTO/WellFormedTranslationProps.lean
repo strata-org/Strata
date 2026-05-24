@@ -14,13 +14,13 @@ public section
 
 Bridge lemmas linking `WellFormedTranslation`'s structural fields to
 the per-step bridge obligations consumed by
-`SteppingBridgesDischarge` (Worker C's output).
+`SteppingBridgesDischarge`.
 
 Currently:
 
 * `findLocIdx_resolves` — under `locationNum_eq_index`, tautschnig's
   `findLocIdx` resolves a `locationNum` back to its index. Used by
-  `Bisim.stepGoto_goto_taken_to_stepInstr` and Worker C's
+  `Bisim.stepGoto_goto_taken_to_stepInstr` and the bridge's
   `goto_target_resolves` field. -/
 
 namespace CProverGOTO
