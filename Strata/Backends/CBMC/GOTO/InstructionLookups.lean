@@ -13,8 +13,8 @@ public section
 
 /-! # Bridge lemmas for `TranslatorBridgeHyps` lookup fields
 
-Round-7c deliverable: this file closes R6a's three lookup-field caller
-passthroughs in `TranslatorBridgeHypsDischarge.lean`:
+This file closes the three lookup-field caller passthroughs in
+`TranslatorBridgeHypsDischarge.lean`:
 
 * `decl_lookup` — at every DECL PC, the GOTO code's symbol matches
   `nameMap x` for the source-side `InitState`'s `x`,
@@ -26,12 +26,11 @@ passthroughs in `TranslatorBridgeHypsDischarge.lean`:
 
 ## Strategy
 
-Round-7's strengthening of `CmdEmittedAt`
-(`CoreCFGToGOTOInvariants.lean`) fixes the lhs operand to
-`Expr.symbol (identToString v) gty` (where `v` is the source-cmd's
-variable). Combined with `WellFormedTranslation.layout_block_body`,
-this gives us, *for every PC that corresponds to a CFG-level command*,
-an explicit `Code.decl`/`Code.assign` shape carrying the source-cmd's
+`CmdEmittedAt` (`CoreCFGToGOTOInvariants.lean`) fixes the lhs operand
+to `Expr.symbol (identToString v) gty`, where `v` is the source-cmd's
+variable. Combined with `WellFormedTranslation.layout_block_body`, this
+gives, *for every PC that corresponds to a CFG-level command*, an
+explicit `Code.decl`/`Code.assign` shape carrying the source-cmd's
 variable name.
 
 The remaining gap — and the reason these lemmas take an auxiliary
@@ -56,28 +55,17 @@ trace-level constraint that's true in the actual simulation but is
 Each bridge lemma below therefore:
 
 1. Decomposes the lookup field into the structural part (mechanical
-   from WF + strengthened `CmdEmittedAt`) and the trace-level part
-   (caller obligation).
+   from WF + `CmdEmittedAt`) and the trace-level part (caller
+   obligation).
 2. Takes the trace-level part as an explicit auxiliary hypothesis.
 3. Closes the field's body via a small calculation:
    `code's symbol = nameMap v_src` (from WF) + `x = v_src` (caller) +
    `nameMap` injectivity (caller passthrough).
 
-The auxiliary hypotheses are **strictly smaller** than the original
-lookup fields: they take a single PC (no explicit `x` universal)
-plus the InitState/UpdateState data, and produce only the
-"x equals the source-cmd's variable" claim. The lookup-field ∀-x and
-∀-σ remain encapsulated in the conclusion type.
-
-## Boundary
-
 These lemmas do **not** discharge the auxiliary hypothesis. That
 hypothesis is genuinely caller-side (it depends on how the source
 trace is reflected in the GOTO simulation, which is the consumer's
-job to prove via bisimulation invariants). The Tier-3 (Acceptable)
-contribution here is the *mechanical* bridge from WF + strengthened
-`CmdEmittedAt` to the lookup field, surfacing the irreducible
-trace-consistency obligation. -/
+job to prove via bisimulation invariants). -/
 
 namespace CProverGOTO.InstructionLookups
 
@@ -276,18 +264,17 @@ theorem assign_lookup_of_provenance_and_pinned
 
 /-! ## `assign_nondet_lookup` discharge
 
-R11: `step_assign_nondet`'s constructor now carries the rhs-shape
-witnesses directly (`instr.code = Code.assign lhs rhs ∧
+The `step_assign_nondet` constructor carries the rhs-shape witnesses
+directly (`instr.code = Code.assign lhs rhs ∧
 rhs.id = .side_effect .Nondet`). The bridge field receives them as
-preconditions; the discharge here just unifies them with the
-translator's emitted shape via R7c's `assn_provenance` and
-`assn_x_pinned` hypotheses (the same ones used by `assign_lookup`).
-
-In particular, no `AssignNondetPcInversion` is needed: the rhs-shape
-witness comes from the constructor, not from the structural lemma. -/
+preconditions; the discharge here unifies them with the translator's
+emitted shape via the same `assn_provenance` and `assn_x_pinned`
+hypotheses used by `assign_lookup`. No `AssignNondetPcInversion` is
+needed: the rhs-shape witness comes from the constructor, not from a
+structural lemma. -/
 
 /-- Bridge from per-PC structural witness + per-firing trace witnesses
-to the new `assign_nondet_lookup` field shape (R11). -/
+to the `assign_nondet_lookup` field. -/
 theorem assign_nondet_lookup_of_provenance_and_pinned
     (pgm : Program)
     (nameMap : Core.Expression.Ident → String)
