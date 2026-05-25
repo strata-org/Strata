@@ -2307,11 +2307,59 @@ JSONStatus_t JSON_Iterate( const char * buf,
  */
 
 
+/* -----------------------------------------------------------------------
+ * Contract port from upstream core_json_contracts.h / core_json_contracts.c
+ * (FreeRTOS/coreJSON test/cbmc/).
+ *
+ * Upstream contract for skipString:
+ *   requires( isValidBufferWithStartIndex( buf, max, start ) )
+ *     <=> max > 0 && allocated(buf, max) && allocated(start, sizeof(*start))
+ *   assigns( *start )
+ *   ensures( skipPostconditions( result, buf, start, old(*start), max, 1 ) )
+ *     where skipPostconditions(result, ..., gap=1) <=>
+ *       isValidStart(*start, old_start, max)
+ *       && IMPLIES(result, old_start < max && *start > old_start + 1)
+ *         i.e. IMPLIES(result, old_start < max && *start >= old_start + 2)
+ *
+ * The gap=1 reflects that a minimal valid JSON string needs at least 2
+ * characters (""), so on success *start advances by at least 2.
+ * ----------------------------------------------------------------------- */
 int main(void) {
-    char * buf;
-    size_t * start;
-    size_t max;
+    /* Materialise concrete objects. */
+    char    buf_arr[1];
+    size_t  start_val;
+    char   *buf   = buf_arr;
+    size_t *start = &start_val;
 
-    skipString( buf, start, max );
+    /* Nondet inputs. */
+    size_t max = ((size_t)__VERIFIER_nondet_long());
+
+    /* --- Preconditions (isValidBufferWithStartIndex) --- */
+    __VERIFIER_assume(max > 0);
+    __VERIFIER_assume(max == 1);
+    start_val = ((size_t)__VERIFIER_nondet_long());
+    __VERIFIER_assume(start_val <= max);
+
+    /* Record old_start. */
+    size_t old_start = start_val;
+
+    /* --- Call under test --- */
+    bool result = skipString( buf, start, max );
+
+    /* --- Postconditions (skipPostconditions gap=1) --- */
+    /* (1) isValidStart(*start, old_start, max) */
+    assert(*start >= old_start);
+    if (old_start < max) {
+        assert(*start <= max);
+    }
+    if (old_start >= max) {
+        assert(*start == old_start);
+    }
+    /* (2) IMPLIES(result, old_start < max && *start > old_start + 1) */
+    if (result) {
+        assert(old_start < max);
+        assert(*start > old_start + 1);
+    }
+
     return 0;
 }

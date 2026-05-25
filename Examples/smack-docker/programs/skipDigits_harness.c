@@ -2307,12 +2307,75 @@ JSONStatus_t JSON_Iterate( const char * buf,
  */
 
 
+/* -----------------------------------------------------------------------
+ * Contract port from upstream core_json_contracts.h / core_json_contracts.c
+ * (FreeRTOS/coreJSON test/cbmc/).
+ *
+ * Upstream contract for skipDigits:
+ *   requires( skipDigitsPreconditions( buf, start, max, outValue ) )
+ *     <=> isValidBufferWithStartIndex( buf, max, start )
+ *         && ( outValue == NULL || allocated(outValue, sizeof(*outValue)) )
+ *     where isValidBufferWithStartIndex <=>
+ *         max > 0 && allocated(buf, max) && allocated(start, sizeof(*start))
+ *   assigns( *start; outValue != NULL: *outValue )
+ *   ensures( skipDigitsPostconditions( result, buf, start, old(*start), max, 0 ) )
+ *     where skipDigitsPostconditions <=>
+ *       skipPostconditions(result, buf, start, old_start, max, 0)
+ *       && IMPLIES(result, buf[old_start] >= '0' && buf[old_start] <= '9')
+ *     and skipPostconditions(result, ..., gap=0) <=>
+ *       isValidStart(*start, old_start, max)
+ *       && IMPLIES(result, old_start < max && *start > old_start + 0)
+ *         i.e. IMPLIES(result, old_start < max && *start > old_start)
+ *
+ * Translation strategy: assumes for preconditions, asserts for postconditions.
+ * ----------------------------------------------------------------------- */
 int main(void) {
-    char * buf;
-    size_t * start;
-    size_t max;
-    int32_t * outValue;
+    /* Materialise concrete objects. */
+    char    buf_arr[1];
+    size_t  start_val;
+    int32_t outValue_val;
+    char   *buf      = buf_arr;
+    size_t *start    = &start_val;
+    int32_t *outValue = &outValue_val;   /* non-NULL variant (common case) */
 
-    skipDigits( buf, start, max, outValue );
+    /* Nondet inputs. */
+    size_t max = ((size_t)__VERIFIER_nondet_long());
+
+    /* --- Preconditions --- */
+    /* max > 0 */
+    __VERIFIER_assume(max > 0);
+    /* pin to buf_arr size */
+    __VERIFIER_assume(max == 1);
+    /* buf[0] is nondet (already set by SMACK nondet memory model) */
+    /* *start in range */
+    start_val = ((size_t)__VERIFIER_nondet_long());
+    __VERIFIER_assume(start_val <= max);
+    /* outValue is allocated (stack variable — satisfied by construction) */
+
+    /* Record old_start. */
+    size_t old_start = start_val;
+
+    /* --- Call under test --- */
+    bool result = skipDigits( buf, start, max, outValue );
+
+    /* --- Postconditions (skipDigitsPostconditions gap=0) --- */
+    /* (1) isValidStart(*start, old_start, max) */
+    assert(*start >= old_start);
+    if (old_start < max) {
+        assert(*start <= max);
+    }
+    if (old_start >= max) {
+        assert(*start == old_start);
+    }
+    /* (2) IMPLIES(result, old_start < max && *start > old_start) */
+    if (result) {
+        assert(old_start < max);
+        assert(*start > old_start);
+    }
+    /* (3) IMPLIES(result, buf[old_start] >= '0' && buf[old_start] <= '9') */
+    if (result) {
+        assert(buf[old_start] >= '0' && buf[old_start] <= '9');
+    }
+
     return 0;
 }
