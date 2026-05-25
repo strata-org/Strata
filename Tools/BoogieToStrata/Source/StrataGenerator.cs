@@ -1952,7 +1952,9 @@ public class StrataGenerator : ReadOnlyVisitor {
             // hand-written requires, both clauses appear in the merged spec
             // block, preserving the SMACK invariant unconditionally.
             Requires? syntheticReq = null;
-            if (_smack && node.Name.StartsWith("assert_.") && node.InParams.Count > 0) {
+            if (_smack && node.InParams.Count > 0 &&
+                (node.Name.StartsWith("assert_.") ||
+                 node.Name.Equals("__VERIFIER_assert"))) {
                 var param = node.InParams[0];
                 var paramExpr = new IdentifierExpr(param.tok, param);
                 var zero = new LiteralExpr(param.tok, Microsoft.BaseTypes.BigNum.FromInt(0));
