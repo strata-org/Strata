@@ -118,7 +118,7 @@ def exprToJson (expr : Expr) : Except String Json := do
       ])
     | .nullary (.nondet name) =>
       pure (Json.mkObj [
-        ("id", "nondet"),
+        ("id", "nondet_symbol"),
         ("namedSub", Json.mkObj [
           ("identifier", Json.mkObj [("id", name)]),
           ("type", tyToJson expr.type)
