@@ -566,3 +566,53 @@ private def countBackwardGotos (insts : Array CProverGOTO.Instruction) : Nat :=
   | .ok (ctx, _) =>
     let backwardEdgeCount := countBackwardGotos ctx.program.instructions
     assert! backwardEdgeCount == 0
+
+-------------------------------------------------------------------------------
+
+-- Regression: array-type canonicalization for Map-typed inout parameters.
+--
+-- Strata translates `Map ref i8` (SMACK memory-map globals promoted to
+-- `inout` parameters) to `CProverGOTO.Ty.Array CProverGOTO.Ty.Integer`.
+-- Previously, `tyToJson` emitted `{"id":"array","sub":[{"id":"integer"}]}`
+-- without a `namedSub.size` field.  When `symtab2gb` processes the GOTO
+-- binary, it adds a default empty size expression to the DECL-site local
+-- type but not to the parameter-site symtab entry, producing structurally
+-- non-equal CBMC `array_typet` objects.  CBMC's type checker then rejects
+-- the call with `parameter "main::_M_0" type mismatch` (rc=6) before any
+-- model-checking begins.
+--
+-- The fix: `tyToJson .Array` now includes `namedSub.size = infinity` so
+-- both DECL-site and parameter-site emit the same size-qualified JSON.
+-- Both `symtab2gb` deserialization paths produce structurally equal
+-- `array_typet` objects, and the function call type check passes.
+--
+-- This test verifies the canonical JSON shape for `Ty.Array Ty.Integer`
+-- and confirms that `buildEntryShim` emits the same array type for the
+-- DECL local as the function symbol emits for the parameter.
+
+#eval do
+  -- The canonical array type for Map ref i8 after toGotoType
+  let arrTy : CProverGOTO.Ty := CProverGOTO.Ty.Array CProverGOTO.Ty.Integer
+  let arrJson := CProverGOTO.tyToJson arrTy
+  let arrStr := arrJson.pretty
+  -- Must include a `size` field (infinity) in namedSub — not a flat array.
+  -- Before the fix this assertion would fail (no "infinity" in the output).
+  assert! (arrStr.splitOn "infinity").length > 1
+  -- Must still have the integer element subtype.
+  assert! (arrStr.splitOn "\"integer\"").length > 1
+
+-- Confirm that buildEntryShim with an Array-typed formal emits the same
+-- array JSON in the local symtab entry as in the function symbol parameter,
+-- so symtab2gb sees matching types on both sides of the FUNCTION_CALL.
+#eval do
+  let arrTy : CProverGOTO.Ty := CProverGOTO.Ty.Array CProverGOTO.Ty.Integer
+  let formals : Map String CProverGOTO.Ty := [("_M_0", arrTy)]
+  let (.ok (shimSyms, shimFn)) := buildEntryShim "__cprover_entry" "main" formals CProverGOTO.Ty.Empty
+    | IO.throwServerError "buildEntryShim with array formal failed"
+  let shimStr := shimSyms.pretty
+  -- The local symbol for the array param must include the infinity size.
+  assert! (shimStr.splitOn "infinity").length > 1
+  -- The GOTO function body must emit the array type in the DECL instruction.
+  let gotoStr := shimFn.pretty
+  assert! (gotoStr.splitOn "infinity").length > 1
+  assert! (gotoStr.splitOn "DECL").length > 1

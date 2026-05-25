@@ -67,6 +67,12 @@ def tyToJson (ty : Ty) : Json :=
     ]
   | .Array elemTy => Json.mkObj [
       ("id", "array"),
+      ("namedSub", Json.mkObj [
+        ("size", Json.mkObj [
+          ("id", "infinity"),
+          ("namedSub", Json.mkObj [("type", integerType)])
+        ])
+      ]),
       ("sub", Json.arr #[tyToJson elemTy])
     ]
   | { id := .code, subtypes := retTy :: paramTypes, .. } =>
