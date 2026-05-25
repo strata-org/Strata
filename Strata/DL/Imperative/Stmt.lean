@@ -396,6 +396,82 @@ mutual
       Block.defUseWellFormed (fun n => definedVars n || decide (n ∈ Stmt.definedVars s true)) rest
 end
 
+/-- `Stmt.defUseWellFormed` excludes funcDecl: it is currently defined to return
+    `false` on `.funcDecl _ _`, so well-formedness implies absence of funcDecl. -/
+theorem Stmt.defUseWellFormed_implies_noFuncDecl [HasVarsImp P C] [HasVarsPure P P.Expr]
+    [HasVarsPure P C] [DecidableEq P.Ident]
+    {definedVars : P.Ident → Bool} {s : Stmt P C}
+    (h : Stmt.defUseWellFormed definedVars s = Bool.true) :
+    Stmt.noFuncDecl s = Bool.true := by
+  suffices ∀ sz,
+      (∀ (definedVars : P.Ident → Bool) (s : Stmt P C),
+        Stmt.sizeOf s ≤ sz →
+        Stmt.defUseWellFormed definedVars s = Bool.true →
+        Stmt.noFuncDecl s = Bool.true) ∧
+      (∀ (definedVars : P.Ident → Bool) (bss : Block P C),
+        Block.sizeOf bss ≤ sz →
+        Block.defUseWellFormed definedVars bss = Bool.true →
+        Block.noFuncDecl bss = Bool.true) by
+    exact (this (Stmt.sizeOf s)).1 _ _ (Nat.le_refl _) h
+  intro sz
+  induction sz with
+  | zero =>
+    refine ⟨?_, ?_⟩
+    · intro _ s hsz; cases s <;> simp [Stmt.sizeOf] at hsz
+    · intro _ bss hsz hwf
+      match bss with
+      | [] => simp [Block.noFuncDecl]
+      | _ :: _ => simp [Block.sizeOf] at hsz
+  | succ k ih =>
+    obtain ⟨ih_stmt, ih_block⟩ := ih
+    refine ⟨?_, ?_⟩
+    · intro defs s hsz hwf
+      match s with
+      | .cmd _ => simp [Stmt.noFuncDecl]
+      | .block _ bss _ =>
+        unfold Stmt.defUseWellFormed at hwf
+        have hsz_bss : Block.sizeOf bss ≤ k := by simp [Stmt.sizeOf] at hsz; omega
+        simp [Stmt.noFuncDecl]; exact ih_block defs bss hsz_bss hwf
+      | .ite _ tss ess _ =>
+        unfold Stmt.defUseWellFormed at hwf
+        simp only [Bool.and_eq_true] at hwf
+        have hsz_t : Block.sizeOf tss ≤ k := by simp [Stmt.sizeOf] at hsz; omega
+        have hsz_e : Block.sizeOf ess ≤ k := by simp [Stmt.sizeOf] at hsz; omega
+        simp [Stmt.noFuncDecl]
+        exact ⟨ih_block defs tss hsz_t hwf.1.2, ih_block defs ess hsz_e hwf.2⟩
+      | .loop _ _ _ body _ =>
+        unfold Stmt.defUseWellFormed at hwf
+        simp only [Bool.and_eq_true] at hwf
+        have hsz_body : Block.sizeOf body ≤ k := by simp [Stmt.sizeOf] at hsz; omega
+        simp [Stmt.noFuncDecl]
+        exact ih_block defs body hsz_body hwf.2
+      | .exit _ _ => simp [Stmt.noFuncDecl]
+      | .funcDecl _ _ => unfold Stmt.defUseWellFormed at hwf; cases hwf
+      | .typeDecl _ _ => simp [Stmt.noFuncDecl]
+    · intro defs bss hsz hwf
+      match bss with
+      | [] => simp [Block.noFuncDecl]
+      | s :: rest =>
+        unfold Block.defUseWellFormed at hwf
+        simp only [Bool.and_eq_true] at hwf
+        have hsz_s : Stmt.sizeOf s ≤ k := by simp [Block.sizeOf] at hsz; omega
+        have hsz_rest : Block.sizeOf rest ≤ k := by simp [Block.sizeOf] at hsz; omega
+        simp [Block.noFuncDecl, Bool.and_eq_true]
+        exact ⟨ih_stmt defs s hsz_s hwf.1, ih_block _ rest hsz_rest hwf.2⟩
+
+theorem Block.defUseWellFormed_implies_noFuncDecl [HasVarsImp P C] [HasVarsPure P P.Expr]
+    [HasVarsPure P C] [DecidableEq P.Ident]
+    {definedVars : P.Ident → Bool} {bss : Block P C}
+    (h : Block.defUseWellFormed definedVars bss = Bool.true) :
+    Block.noFuncDecl bss = Bool.true := by
+  induction bss generalizing definedVars with
+  | nil => simp [Block.noFuncDecl]
+  | cons s rest ih =>
+    unfold Block.defUseWellFormed at h
+    simp only [Bool.and_eq_true] at h
+    simp [Block.noFuncDecl, Bool.and_eq_true]
+    exact ⟨Stmt.defUseWellFormed_implies_noFuncDecl h.1, ih h.2⟩
+
 instance (P : PureExpr) [HasVarsImp P C] : HasVarsImp P (Stmt P C) where
   definedVars := Stmt.definedVars
   modifiedVars := Stmt.modifiedVars

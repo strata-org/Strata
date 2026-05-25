@@ -11094,22 +11094,19 @@ theorem loopElim_overapproximatesAggressive
       (LangCore π φ)
       (LangCore π φ)
       (fun s =>
-        if Stmt.noFuncDecl s = Bool.true then
-          match (StateT.run (ExceptT.run (Stmt.removeLoopsM s)) σ).fst with
-          | .ok (_, s') => some s'
-          | .error _ => none
-        else none)
+        match (StateT.run (ExceptT.run (Stmt.removeLoopsM s)) σ).fst with
+        | .ok (_, s') => some s'
+        | .error _ => none)
       loopElimReservedPrefix := by
   intro reserved st st' ht h_loop_reserved h_pd ρ₀ hswf
   -- Re-derive `stmtOk σ st` and `stmtResult σ st = st'` from the
   -- removeLoopsM-form of `ht`.
   simp only at ht
-  have hnofd : Stmt.noFuncDecl st = Bool.true := by
-    cases h : Stmt.noFuncDecl st
-    · rw [h] at ht; simp at ht
-    · rfl
-  rw [hnofd] at ht
-  simp only [if_true] at ht
+  -- `noFuncDecl` is forced by the input's `defUseOk` (`defUseWellFormed`
+  -- returns `false` on `funcDecl`), so we don't need to filter on it
+  -- syntactically.
+  have hnofd : Stmt.noFuncDecl st = Bool.true :=
+    Stmt.defUseWellFormed_implies_noFuncDecl hswf.defUseOk
   -- Bridge to `stmtOk` / `stmtResult` form by case-splitting on the
   -- `removeLoopsM` result once.  The `error` branch contradicts `ht`,
   -- so we get both `stmtOk σ st` and `stmtResult σ st = st'` from the `ok` case.
