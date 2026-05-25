@@ -300,6 +300,72 @@ addition to the `assert_.<type>` stubs it already handles). Until
 that injection is in place, contract ports that use `assert()` in
 the harness body are silently invisible to the deductive backend.
 
+## Update 2: full-suite re-run after three more fixes
+
+Three more fixes landed in sequence after the post-fix landscape was
+documented above:
+
+- **`23926094f`** — `fix(cbmc): emit nondet array params as
+  nondet_symbol, not nondet`. One-line change in
+  `Strata/Backends/CBMC/GOTO/InstToJson.lean`: the JSON `id` for
+  `Expr.Identifier.Nullary.nondet` was incorrectly emitted as
+  `"nondet"`, which CBMC parses as `ID_nondet` (a side-effect node
+  not handled by `arrayst::collect_arrays`). The Lean variant was
+  always intended to model `nondet_symbol_exprt` (per its docstring
+  in `Expr.lean:32`); the JSON serialisation was lying about its
+  type. Fixed.
+
+- **`b3e606bb6`** — `feat(boogietostrata): inject requires on
+  __VERIFIER_assert under --smack`. Generalises the existing
+  `assert_.<type>` injection to also fire on `__VERIFIER_assert`
+  declarations, the symbol SMACK uses to lower C `assert(EXPR)`
+  failure arms.
+
+After these landed, the full 4-backend pipeline was re-run on the
+64-program suite (picohttpparser excluded due to known cbmc-native
+OOM). Comparison vs. the original run:
+
+|  | Before | After all 5 fixes |
+|---|---:|---:|
+| Strata deductive PASS | 47 | **33** |
+| Strata deductive PARTIAL/FAIL | 16 | **30** |
+| Strata-CBMC FAIL detail | type-mismatch (rc=6) | mostly `Property violations found` (real verdict) or rc=-6 |
+| CBMC-native PASS | 39 | **43** |
+
+**Why deductive PASS *dropped* (this is a positive change).** The
+`__VERIFIER_assert` requires injection turns the previously-vacuous
+PASSes into real verification obligations. The 14-row deductive PASS
+→ PARTIAL transitions are exactly the (S) → real-VC transitions the
+original writeup wanted. The Detail column for these rows now reads
+e.g. `90 pass, 1 fail` (`aws_add_size_checked_harness`) or
+`128 pass, 1 fail` (`aws_mul_size_checked_harness`) — the verifier
+is discharging most VCs and reporting one real failing obligation.
+
+**Why Strata-CBMC's failure mode is still FAIL.** The array-solver
+fix lets cbmc reach actual model checking, where it now reports the
+known callee-bodies blocker (`[.no-body.<callee>]`). Only the entry
+procedure `main` has its body emitted in the GOTO output;
+user-defined helpers and prelude stubs are bodyless declarations.
+This is the documented third blocker (see *Known blockers* in
+`README.md`), and the fix path requires lifting all reachable
+procedures into the GOTO output — a feature gap, not a bug.
+
+**Cumulative impact of the five fixes** (`520f3f573` RPO + `7bff2d48e`
+array-type + `23926094f` nondet-symbol + `b3e606bb6` __VERIFIER_assert
++ `495e09c87` contract port):
+
+- Strata-CBMC progresses from "type-mismatch error before model
+  checking begins" → "real cbmc verdicts on the callee-bodies
+  blocker" on most of the (T-lowering) cluster. The lowering chain
+  is no longer the dominant cbmc failure mode; the next layer
+  (callee bodies) is.
+- Strata deductive transitions from "vacuous PASSes from missing
+  contracts" → "real VC obligations the verifier is mostly
+  discharging" on the contract-ported and simplified-AWS programs.
+- The portfolio's headline is no longer "39 (T-lowering) rows
+  blocked on a single fix lever" but **"the matrix surfaces a
+  cascade of layered defects, each fix exposing the next"**.
+
 ## Reproducing
 
 ```bash
