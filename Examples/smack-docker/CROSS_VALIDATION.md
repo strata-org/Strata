@@ -159,13 +159,14 @@ array-type-mismatch and CBMC-native's harness-side issue both fire.
 
 ## Findings
 
-**Headline.** A single fix lever — canonicalizing array-type
-construction in `symtab2gb` — would unblock the Strata-CBMC backend
-on at least 38 of the 65 programs (all the (T-lowering) rows except
-`HTTPClient_strerror`, which needs the callee-bodies fix instead).
-The screening identifies a high-leverage backend defect by running
-the same tool against the same source program through two paths and
-comparing. No single backend could have produced this signal alone.
+**Headline.** The `symtab2gb` array-type canonicalization fix
+(`7bff2d48e`) unblocks the CBMC type-checker on the (T-lowering)
+cluster, but exposes a deeper downstream blocker in cbmc's array
+solver (see "Update: post-fix landscape" below). A second fix lever
+is now needed before the (T-lowering) rows convert to PASS.
+The screening identified the first fix lever by running the same
+tool through two paths; the same methodology revealed the second.
+No single backend could have produced this signal alone.
 
 **Where Strata adds clear value.** The deductive verifier PASSes 47
 of 65 programs, including ones where CBMC-native FAILs (the coreJSON
@@ -202,6 +203,102 @@ The screening confirms that pipeline-side issues currently dominate
 real-world program issues by a wide margin — fixing the pipeline
 first is the prerequisite for the screening to produce (P) findings
 in subsequent runs.
+
+## Update: post-fix landscape
+
+Two commits landed after the original 65-program run. Six
+representative (T-lowering) rows and the four contract-ported
+coreJSON harnesses were re-run to capture the deltas.
+
+### Fix A: `symtab2gb` array-type canonicalization (`7bff2d48e`)
+
+**What it accomplished.** The commit canonicalizes array-type
+emission in `symtab2gb`/`goto`, so the two structurally different
+CBMC array-type objects that previously described the same source
+type (`array integer` vs `array { size: integer } 0: integer`) now
+agree. CBMC's type-checker no longer aborts with `function call:
+parameter "main::_M_0" type mismatch` (rc=6).
+
+**New verdicts on six representative (T-lowering) programs:**
+
+| Program | Previous detail | New detail |
+|---|---|---|
+| `aws_add_size_checked` | `CBMC exit code 6` | `CBMC exit code -6` |
+| `aws_add_size_checked_harness` | `CBMC exit code 6` | `CBMC exit code -6` |
+| `aws_array_eq` | `CBMC exit code 6` | `CBMC exit code -6` |
+| `base64_decode_normal_harness` | `CBMC exit code 6` | `CBMC exit code -6` |
+| `MQTT_GetPacketId_harness` | `CBMC exit code 6` | `CBMC exit code -6` |
+| `array_sum` | `CBMC exit code 6` | `TIMEOUT` |
+
+All six remain `cbmc=FAIL`. The verdict did not flip to PASS — but
+the failure mode changed. rc=6 (type-checker exit) was replaced by
+rc=-6 (SIGABRT inside cbmc's array solver). `array_sum` instead
+hit a TIMEOUT, consistent with its pre-existing loop-unwinding
+sensitivity.
+
+**What surfaced next.** The `__cprover_entry` shim emitted by
+`StrataCoreToGoto` nondet-initializes array-typed `_M_*` parameters
+with a `nondet` expression. CBMC's array-constraint collector
+(`collect_arrays` in `solvers/flattening/arrays.cpp`) does not
+handle a raw `nondet` node as an array expression. It aborts with:
+
+```
+749-omj310/src/solvers/flattening/arrays.cpp:260 function: collect_arrays
+Condition: false
+Reason: unexpected array expression (collect_arrays): 'nondet'
+```
+
+This is a second, independent blocker in the `StrataCoreToGoto` →
+cbmc path: the entry shim must not pass a bare `nondet` as the
+concrete representation of an array-typed argument. The matrix
+showed exactly where the next blocker would surface once the
+dominant one was lifted — a screening result, not a regression.
+
+### Fix B: coreJSON contract port (`495e09c87`)
+
+**What it did.** Upstream `core_json_contracts.h` preconditions and
+postconditions were ported into the `main()` body of four coreJSON
+harnesses (`skipSpace_harness.c`, `skipDigits_harness.c`,
+`JSON_Validate_harness.c`, `skipString_harness.c`) as
+`__VERIFIER_assume`/`assert` calls, replacing the previous vacuous
+bodies.
+
+**Verdict deltas:**
+
+| Program | Pre-port | Post-port |
+|---|---|---|
+| `skipSpace_harness` | `deductive=PASS (18 VCs), bugFinding=PARTIAL` | unchanged |
+| `skipDigits_harness` | `deductive=PASS (585 VCs), bugFinding=PARTIAL` | unchanged |
+| `JSON_Validate_harness` | `deductive=PASS (288 VCs), bugFinding=PARTIAL` | unchanged |
+| `skipString_harness` | `deductive=PASS (57 VCs), bugFinding=PARTIAL` | unchanged |
+
+No (S)→(P) transition occurred. The deductive PASS and VC counts
+are identical before and after the port.
+
+**Why the postconditions are not yet reaching the verifier.**
+SMACK lowers `assert(expr)` to `call __VERIFIER_assert(0)` on the
+failing branch (passing the literal `0` when the condition does not
+hold). In the generated `.core.st`, `__VERIFIER_assert` is a
+bodyless declaration with no `requires` spec:
+
+```
+procedure __VERIFIER_assert(... _i0 : i32)
+;
+```
+
+Because there is no `requires (_i0 != 0)` precondition, the call
+site generates no deductive VC obligation. The 18/585/288/57 goals
+that are discharged come entirely from `__VERIFIER_assume` call
+sites, which carry `free ensures (_i0 != 0)` in their stub spec
+(a caller-side proof obligation that the argument is non-zero,
+trivially satisfied by the preceding branch guard).
+
+**Implication.** Making the postconditions reach the deductive
+verifier requires the `--smack` flag in `BoogieToStrata` to also
+inject `requires (p != 0)` on `__VERIFIER_assert` stubs (in
+addition to the `assert_.<type>` stubs it already handles). Until
+that injection is in place, contract ports that use `assert()` in
+the harness body are silently invisible to the deductive backend.
 
 ## Reproducing
 
