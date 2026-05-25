@@ -722,6 +722,185 @@ private theorem overapproximatesAggressively_stmts_canfail
               exact ⟨.seq cfg'' rest', by simp [Config.getEnv]; exact hf'',
                 .step _ _ _ .step_stmts_cons (seq_inner_star P evalCmd extendEval _ _ rest' hreach'')⟩
 
+/-! ## Block / ite execution helpers (generic over `CmdT`/`evalCmd`/`extendEval`) -/
+
+omit [HasFvar P] [HasVal P] in
+/-- A terminal execution of the block body lifts to a terminal execution of
+    the enclosing block statement (with parent-store projection applied). -/
+theorem block_wrap_terminal
+    (l : String) (bss : List (Stmt P CmdT)) (md : MetaData P)
+    (ρ₀ ρ' : Env P)
+    (h : StepStmtStar P evalCmd extendEval (.stmts bss ρ₀) (.terminal ρ')) :
+    StepStmtStar P evalCmd extendEval (.stmt (.block l bss md) ρ₀)
+      (.terminal { ρ' with store := projectStore ρ₀.store ρ'.store }) :=
+  ReflTrans_Transitive _ _ _ _
+    (step_block_enter P evalCmd extendEval l bss md ρ₀)
+    (ReflTrans_Transitive _ _ _ _
+      (block_inner_star P evalCmd extendEval _ _ (some l) ρ₀.store h)
+      (.step _ _ _ .step_block_done (.refl _)))
+
+omit [HasFvar P] [HasVal P] in
+/-- Taking the false/else branch of a det-ite with empty else-block terminates at the
+    same env (after scoped-ite projection, which is identity on self). -/
+theorem ite_det_false_empty_terminal
+    (g : P.Expr) (then_branch : List (Stmt P CmdT)) (md : MetaData P)
+    (ρ₀ : Env P)
+    (hg_ff : ρ₀.eval ρ₀.store g = some HasBool.ff)
+    (hwfb : WellFormedSemanticEvalBool ρ₀.eval) :
+    StepStmtStar P evalCmd extendEval
+      (.stmt (.ite (.det g) then_branch [] md) ρ₀) (.terminal ρ₀) := by
+  have h_inner : StepStmtStar P evalCmd extendEval
+      (.stmts ([] : List (Stmt P CmdT)) ρ₀) (.terminal ρ₀) :=
+    .step _ _ _ .step_stmts_nil (.refl _)
+  have h_block : StepStmtStar P evalCmd extendEval
+      (.block .none ρ₀.store (.stmts ([] : List (Stmt P CmdT)) ρ₀))
+      (.terminal { ρ₀ with store := projectStore ρ₀.store ρ₀.store }) :=
+    ReflTrans_Transitive _ _ _ _
+      (block_inner_star P evalCmd extendEval _ _ .none ρ₀.store h_inner)
+      (.step _ _ _ .step_block_done (.refl _))
+  rw [projectStore_self_env] at h_block
+  exact .step _ _ _ (.step_ite_false hg_ff hwfb) h_block
+
+omit [HasFvar P] [HasVal P] in
+/-- Taking the false/else branch of a nondet-ite with empty else-block terminates at the
+    same env (after scoped-ite projection, which is identity on self). -/
+theorem ite_nondet_false_empty_terminal
+    (then_branch : List (Stmt P CmdT)) (md : MetaData P)
+    (ρ₀ : Env P) :
+    StepStmtStar P evalCmd extendEval
+      (.stmt (.ite .nondet then_branch [] md) ρ₀) (.terminal ρ₀) := by
+  have h_inner : StepStmtStar P evalCmd extendEval
+      (.stmts ([] : List (Stmt P CmdT)) ρ₀) (.terminal ρ₀) :=
+    .step _ _ _ .step_stmts_nil (.refl _)
+  have h_block : StepStmtStar P evalCmd extendEval
+      (.block .none ρ₀.store (.stmts ([] : List (Stmt P CmdT)) ρ₀))
+      (.terminal { ρ₀ with store := projectStore ρ₀.store ρ₀.store }) :=
+    ReflTrans_Transitive _ _ _ _
+      (block_inner_star P evalCmd extendEval _ _ .none ρ₀.store h_inner)
+      (.step _ _ _ .step_block_done (.refl _))
+  rw [projectStore_self_env] at h_block
+  exact .step _ _ _ .step_ite_nondet_false h_block
+
+omit [HasFvar P] [HasVal P] in
+/-- An exiting execution of the block body whose label does NOT match the
+    block's label lifts to an exiting execution of the enclosing block. -/
+theorem block_wrap_exiting_mismatch
+    (l : String) (bss : List (Stmt P CmdT)) (md : MetaData P)
+    (lv : String) (ρ₀ ρ' : Env P)
+    (hne : lv ≠ l)
+    (h : StepStmtStar P evalCmd extendEval (.stmts bss ρ₀) (.exiting lv ρ')) :
+    StepStmtStar P evalCmd extendEval (.stmt (.block l bss md) ρ₀)
+      (.exiting lv { ρ' with store := projectStore ρ₀.store ρ'.store }) :=
+  ReflTrans_Transitive _ _ _ _
+    (step_block_enter P evalCmd extendEval l bss md ρ₀)
+    (ReflTrans_Transitive _ _ _ _
+      (block_inner_star P evalCmd extendEval _ _ (some l) ρ₀.store h)
+      (.step _ _ _ (.step_block_exit_mismatch (fun h => hne (Option.some.inj h).symm)) (.refl _)))
+
+omit [HasFvar P] [HasVal P] in
+/-- An exiting execution of the block body whose label matches the
+    block's label lifts to a TERMINAL execution of the enclosing block. -/
+theorem block_wrap_exiting_match
+    (l : String) (bss : List (Stmt P CmdT)) (md : MetaData P)
+    (ρ₀ ρ' : Env P)
+    (h : StepStmtStar P evalCmd extendEval (.stmts bss ρ₀) (.exiting l ρ')) :
+    StepStmtStar P evalCmd extendEval (.stmt (.block l bss md) ρ₀)
+      (.terminal { ρ' with store := projectStore ρ₀.store ρ'.store }) :=
+  ReflTrans_Transitive _ _ _ _
+    (step_block_enter P evalCmd extendEval l bss md ρ₀)
+    (ReflTrans_Transitive _ _ _ _
+      (block_inner_star P evalCmd extendEval _ _ (some l) ρ₀.store h)
+      (.step _ _ _ (.step_block_exit_match rfl) (.refl _)))
+
+omit [HasFvar P] [HasVal P] in
+/-- Refined inversion of `.block` reaching `.terminal`: the inner config either
+    terminates or exits with the matching label, and the final env is the parent
+    projection of that inner env. -/
+theorem block_reaches_terminal_refined
+    {inner : Config P CmdT} {l : String} {σ_parent : SemanticStore P} {ρ' : Env P}
+    (hstar : StepStmtStar P evalCmd extendEval
+      (.block (some l) σ_parent inner) (.terminal ρ')) :
+    ∃ ρ_inner, (StepStmtStar P evalCmd extendEval inner (.terminal ρ_inner) ∨
+      StepStmtStar P evalCmd extendEval inner (.exiting l ρ_inner)) ∧
+      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store } := by
+  suffices ∀ src tgt, StepStmtStar P evalCmd extendEval src tgt →
+      ∀ inner σ_parent ρ', src = .block (some l) σ_parent inner → tgt = .terminal ρ' →
+      ∃ ρ_inner, (StepStmtStar P evalCmd extendEval inner (.terminal ρ_inner) ∨
+        StepStmtStar P evalCmd extendEval inner (.exiting l ρ_inner)) ∧
+        ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store } from
+    this _ _ hstar _ _ _ rfl rfl
+  intro src tgt hstar_g
+  induction hstar_g with
+  | refl => intro _ _ _ hsrc htgt; subst hsrc; cases htgt
+  | step _ mid _ hstep hrest ih =>
+    intro inner σ_parent ρ' hsrc htgt; subst hsrc
+    cases hstep with
+    | step_block_body h =>
+      obtain ⟨ρ_inner, hinner, heq⟩ := ih _ _ _ rfl htgt
+      exact ⟨ρ_inner, hinner.elim
+        (fun hterm => .inl (.step _ _ _ h hterm))
+        (fun hexit_match => .inr (.step _ _ _ h hexit_match)), heq⟩
+    | step_block_done =>
+      subst htgt; cases hrest with
+      | refl => exact ⟨_, .inl (.refl _), rfl⟩
+      | step _ _ _ h _ => cases h
+    | step_block_exit_match heq =>
+      subst htgt; cases heq; cases hrest with
+      | refl => exact ⟨_, .inr (.refl _), rfl⟩
+      | step _ _ _ h _ => cases h
+    | step_block_exit_mismatch =>
+      subst htgt; cases hrest with | step _ _ _ h _ => cases h
+
+omit [HasFvar P] [HasVal P] in
+/-- Refined inversion of `.block` reaching `.exiting`: the inner config exits
+    with the SAME label (forced different from the block's label), and the
+    final env is the parent projection of that inner env. -/
+theorem block_reaches_exiting_refined
+    {inner : Config P CmdT} {l : String} {σ_parent : SemanticStore P}
+    {lbl : String} {ρ' : Env P}
+    (hstar : StepStmtStar P evalCmd extendEval
+      (.block (some l) σ_parent inner) (.exiting lbl ρ')) :
+    ∃ ρ_inner, lbl ≠ l ∧
+      StepStmtStar P evalCmd extendEval inner (.exiting lbl ρ_inner) ∧
+      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store } := by
+  suffices ∀ src tgt, StepStmtStar P evalCmd extendEval src tgt →
+      ∀ inner σ_parent lbl ρ', src = .block (some l) σ_parent inner → tgt = .exiting lbl ρ' →
+      ∃ ρ_inner, lbl ≠ l ∧
+        StepStmtStar P evalCmd extendEval inner (.exiting lbl ρ_inner) ∧
+        ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store } from
+    this _ _ hstar _ _ _ _ rfl rfl
+  intro src tgt hstar_g
+  induction hstar_g with
+  | refl => intro _ _ _ _ hsrc htgt; subst hsrc; cases htgt
+  | step _ mid _ hstep hrest ih =>
+    intro inner σ_parent lbl ρ' hsrc htgt; subst hsrc
+    cases hstep with
+    | step_block_body h =>
+      obtain ⟨ρ_inner, hne, hexit, hproj⟩ := ih _ _ _ _ rfl htgt
+      exact ⟨ρ_inner, hne, .step _ _ _ h hexit, hproj⟩
+    | step_block_done =>
+      subst htgt; cases hrest with | step _ _ _ h _ => cases h
+    | step_block_exit_match =>
+      subst htgt; cases hrest with | step _ _ _ h _ => cases h
+    | step_block_exit_mismatch hne =>
+      subst htgt
+      cases hrest with
+      | refl => exact ⟨_, fun heq => hne (congrArg Option.some heq.symm), .refl _, rfl⟩
+      | step _ _ _ h _ => cases h
+
+omit [HasFvar P] [HasVal P] in
+/-- A head statement that exits causes the cons list to exit with the same label. -/
+theorem stmts_cons_exiting
+    (s : Stmt P CmdT) (ss : List (Stmt P CmdT)) (lbl : String)
+    (ρ₀ ρ' : Env P)
+    (h : StepStmtStar P evalCmd extendEval (.stmt s ρ₀) (.exiting lbl ρ')) :
+    StepStmtStar P evalCmd extendEval (.stmts (s :: ss) ρ₀) (.exiting lbl ρ') :=
+  ReflTrans_Transitive _ _ _ _
+    (.step _ _ _ .step_stmts_cons (.refl _))
+    (ReflTrans_Transitive _ _ _ _
+      (seq_inner_star P evalCmd extendEval _ _ ss h)
+      (.step _ _ _ .step_seq_exit (.refl _)))
+
 omit [HasVal P] in
 /-- Lifting CanFail from a head statement to a block (cons of statement list). -/
 theorem canFail_head_to_block

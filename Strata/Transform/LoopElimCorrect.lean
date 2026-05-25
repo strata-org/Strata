@@ -41,7 +41,7 @@ public section
 
 namespace Core.LoopElim
 
-open Imperative Specification Core Imperative.LoopElim
+open Imperative Specification Specification.Transform Core Imperative.LoopElim
 
 variable (π : String → Option Procedure)
 variable (φ : CoreEval → PureFunc Expression → CoreEval)
@@ -88,12 +88,6 @@ noncomputable def blockResult (σ : LoopElimState) (ss : Statements) : Statement
   match (blockRun σ ss).fst with
   | .ok (_, ss') => ss'
   | .error _ => default
-
-/-! ## CanFail for statement lists (block bodies) -/
-
-private abbrev CanFailBlock (ss : Statements) (ρ₀ : Env Expression) : Prop :=
-  Imperative.Specification.Transform.CanFailBlock (P := Expression) (CmdT := Command)
-    (EvalCommand π φ) (EvalPureFunc φ) ss ρ₀
 
 /-! ## Identity lemmas -/
 
@@ -203,161 +197,6 @@ The general versions (over arbitrary `CmdT`/`evalCmd`/`extendEval`) live in
 `canFail_head_to_block`, `canFail_tail_to_block`,
 `canFailBlock_to_canFail_block`, `canFailBlock_append_left`,
 `canFailBlock_append_right`. -/
-
-private theorem block_wrap_terminal
-    (l : String) (bss : Statements) (md : MetaData Expression)
-    (ρ₀ ρ' : Env Expression)
-    (h : CoreStar π φ (.stmts bss ρ₀) (.terminal ρ')) :
-    CoreStar π φ (.stmt (.block l bss md) ρ₀)
-      (.terminal { ρ' with store := projectStore ρ₀.store ρ'.store }) :=
-  ReflTrans_Transitive _ _ _ _
-    (step_block_enter Expression (EvalCommand π φ) (EvalPureFunc φ) l bss md ρ₀)
-    (ReflTrans_Transitive _ _ _ _
-      (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ (some l) ρ₀.store h)
-      (.step _ _ _ .step_block_done (.refl _)))
-
-/-- Taking the false/else branch of a det-ite with empty else-block terminates at the
-    same env (after scoped-ite projection, which is identity on self). -/
-private theorem ite_det_false_empty_terminal
-    (g : Expression.Expr) (then_branch : Statements) (md : MetaData Expression)
-    (ρ₀ : Env Expression)
-    (hg_ff : ρ₀.eval ρ₀.store g = some HasBool.ff)
-    (hwfb : WellFormedSemanticEvalBool ρ₀.eval) :
-    CoreStar π φ (.stmt (.ite (.det g) then_branch [] md) ρ₀) (.terminal ρ₀) := by
-  have h_inner : CoreStar π φ (.stmts ([] : Statements) ρ₀) (.terminal ρ₀) :=
-    .step _ _ _ .step_stmts_nil (.refl _)
-  have h_block : CoreStar π φ
-      (.block .none ρ₀.store (.stmts ([] : Statements) ρ₀))
-      (.terminal { ρ₀ with store := projectStore ρ₀.store ρ₀.store }) :=
-    ReflTrans_Transitive _ _ _ _
-      (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ)
-        _ _ .none ρ₀.store h_inner)
-      (.step _ _ _ .step_block_done (.refl _))
-  rw [projectStore_self_env] at h_block
-  exact .step _ _ _ (.step_ite_false hg_ff hwfb) h_block
-
-/-- Taking the false/else branch of a nondet-ite with empty else-block terminates at the
-    same env (after scoped-ite projection, which is identity on self). -/
-private theorem ite_nondet_false_empty_terminal
-    (then_branch : Statements) (md : MetaData Expression)
-    (ρ₀ : Env Expression) :
-    CoreStar π φ (.stmt (.ite .nondet then_branch [] md) ρ₀) (.terminal ρ₀) := by
-  have h_inner : CoreStar π φ (.stmts ([] : Statements) ρ₀) (.terminal ρ₀) :=
-    .step _ _ _ .step_stmts_nil (.refl _)
-  have h_block : CoreStar π φ
-      (.block .none ρ₀.store (.stmts ([] : Statements) ρ₀))
-      (.terminal { ρ₀ with store := projectStore ρ₀.store ρ₀.store }) :=
-    ReflTrans_Transitive _ _ _ _
-      (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ)
-        _ _ .none ρ₀.store h_inner)
-      (.step _ _ _ .step_block_done (.refl _))
-  rw [projectStore_self_env] at h_block
-  exact .step _ _ _ .step_ite_nondet_false h_block
-
-private theorem block_wrap_exiting_mismatch
-    (l : String) (bss : Statements) (md : MetaData Expression)
-    (lv : String) (ρ₀ ρ' : Env Expression)
-    (hne : lv ≠ l)
-    (h : CoreStar π φ (.stmts bss ρ₀) (.exiting lv ρ')) :
-    CoreStar π φ (.stmt (.block l bss md) ρ₀)
-      (.exiting lv { ρ' with store := projectStore ρ₀.store ρ'.store }) :=
-  ReflTrans_Transitive _ _ _ _
-    (step_block_enter Expression (EvalCommand π φ) (EvalPureFunc φ) l bss md ρ₀)
-    (ReflTrans_Transitive _ _ _ _
-      (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ (some l) ρ₀.store h)
-      (.step _ _ _ (.step_block_exit_mismatch (fun h => hne (Option.some.inj h).symm)) (.refl _)))
-
--- block_wrap_exiting_none removed: .exiting none is no longer reachable since
--- Stmt.exit takes a mandatory String label.
-
-private theorem block_wrap_exiting_match
-    (l : String) (bss : Statements) (md : MetaData Expression)
-    (ρ₀ ρ' : Env Expression)
-    (h : CoreStar π φ (.stmts bss ρ₀) (.exiting l ρ')) :
-    CoreStar π φ (.stmt (.block l bss md) ρ₀)
-      (.terminal { ρ' with store := projectStore ρ₀.store ρ'.store }) :=
-  ReflTrans_Transitive _ _ _ _
-    (step_block_enter Expression (EvalCommand π φ) (EvalPureFunc φ) l bss md ρ₀)
-    (ReflTrans_Transitive _ _ _ _
-      (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ (some l) ρ₀.store h)
-      (.step _ _ _ (.step_block_exit_match rfl) (.refl _)))
-
-private theorem block_reaches_terminal_refined
-    {inner : CC} {l : String} {σ_parent : SemanticStore Expression} {ρ' : Env Expression}
-    (hstar : CoreStar π φ (.block (some l) σ_parent inner) (.terminal ρ')) :
-    ∃ ρ_inner, (CoreStar π φ inner (.terminal ρ_inner) ∨
-      CoreStar π φ inner (.exiting l ρ_inner)) ∧
-      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store } := by
-  suffices ∀ src tgt, CoreStar π φ src tgt →
-      ∀ inner σ_parent ρ', src = .block (some l) σ_parent inner → tgt = .terminal ρ' →
-      ∃ ρ_inner, (CoreStar π φ inner (.terminal ρ_inner) ∨
-        CoreStar π φ inner (.exiting l ρ_inner)) ∧
-        ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store } from
-    this _ _ hstar _ _ _ rfl rfl
-  intro src tgt hstar_g
-  induction hstar_g with
-  | refl => intro _ _ _ hsrc htgt; subst hsrc; cases htgt
-  | step _ mid _ hstep hrest ih =>
-    intro inner σ_parent ρ' hsrc htgt; subst hsrc
-    cases hstep with
-    | step_block_body h =>
-      obtain ⟨ρ_inner, hinner, heq⟩ := ih _ _ _ rfl htgt
-      exact ⟨ρ_inner, hinner.elim
-        (fun hterm => .inl (.step _ _ _ h hterm))
-        (fun hexit_match => .inr (.step _ _ _ h hexit_match)), heq⟩
-    | step_block_done =>
-      subst htgt; cases hrest with
-      | refl => exact ⟨_, .inl (.refl _), rfl⟩
-      | step _ _ _ h _ => cases h
-    | step_block_exit_match heq =>
-      subst htgt; cases heq; cases hrest with
-      | refl => exact ⟨_, .inr (.refl _), rfl⟩
-      | step _ _ _ h _ => cases h
-    | step_block_exit_mismatch =>
-      subst htgt; cases hrest with | step _ _ _ h _ => cases h
-
-private theorem block_reaches_exiting_refined
-    {inner : CC} {l : String} {σ_parent : SemanticStore Expression}
-    {lbl : String} {ρ' : Env Expression}
-    (hstar : CoreStar π φ (.block (some l) σ_parent inner) (.exiting lbl ρ')) :
-    ∃ ρ_inner, lbl ≠ l ∧
-      CoreStar π φ inner (.exiting lbl ρ_inner) ∧
-      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store } := by
-  suffices ∀ src tgt, CoreStar π φ src tgt →
-      ∀ inner σ_parent lbl ρ', src = .block (some l) σ_parent inner → tgt = .exiting lbl ρ' →
-      ∃ ρ_inner, lbl ≠ l ∧
-        CoreStar π φ inner (.exiting lbl ρ_inner) ∧
-        ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store } from
-    this _ _ hstar _ _ _ _ rfl rfl
-  intro src tgt hstar_g
-  induction hstar_g with
-  | refl => intro _ _ _ _ hsrc htgt; subst hsrc; cases htgt
-  | step _ mid _ hstep hrest ih =>
-    intro inner σ_parent lbl ρ' hsrc htgt; subst hsrc
-    cases hstep with
-    | step_block_body h =>
-      obtain ⟨ρ_inner, hne, hexit, hproj⟩ := ih _ _ _ _ rfl htgt
-      exact ⟨ρ_inner, hne, .step _ _ _ h hexit, hproj⟩
-    | step_block_done =>
-      subst htgt; cases hrest with | step _ _ _ h _ => cases h
-    | step_block_exit_match =>
-      subst htgt; cases hrest with | step _ _ _ h _ => cases h
-    | step_block_exit_mismatch hne =>
-      subst htgt
-      cases hrest with
-      | refl => exact ⟨_, fun heq => hne (congrArg Option.some heq.symm), .refl _, rfl⟩
-      | step _ _ _ h _ => cases h
-
-private theorem stmts_cons_exiting
-    (s : Statement) (ss : Statements) (lbl : String)
-    (ρ₀ ρ' : Env Expression)
-    (h : CoreStar π φ (.stmt s ρ₀) (.exiting lbl ρ')) :
-    CoreStar π φ (.stmts (s :: ss) ρ₀) (.exiting lbl ρ') :=
-  ReflTrans_Transitive _ _ _ _
-    (.step _ _ _ .step_stmts_cons (.refl _))
-    (ReflTrans_Transitive _ _ _ _
-      (seq_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ ss h)
-      (.step _ _ _ .step_seq_exit (.refl _)))
 
 /-! ## Loop-specific helpers -/
 
@@ -470,7 +309,7 @@ private theorem stmts_assert_list_canFail
       (ρ.eval ρ.store e = .some HasBool.tt ∨ ρ.eval ρ.store e = .some HasBool.ff))
     (hff : ∃ s ∈ ss, ∃ (l : String) (e : Expression.Expr) (md' : MetaData Expression),
       s = Stmt.cmd (HasPassiveCmds.assert l e md') ∧ ρ.eval ρ.store e = .some HasBool.ff) :
-    CanFailBlock π φ ss ρ := by
+    CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) ss ρ := by
   induction ss with
   | nil => obtain ⟨_, hm, _⟩ := hff; exact absurd hm (by simp)
   | cons hd tl ih =>
@@ -506,7 +345,7 @@ private theorem stmts_mapIdx_assert_canFail
     (hinv_bool : ∀ le ∈ inv, ρ.eval ρ.store le.2 = .some HasBool.tt ∨
                               ρ.eval ρ.store le.2 = .some HasBool.ff)
     (hsome_ff : ∃ le ∈ inv, ρ.eval ρ.store le.2 = .some HasBool.ff) :
-    CanFailBlock π φ (inv.mapIdx fun i le =>
+    CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) (inv.mapIdx fun i le =>
       Stmt.cmd (HasPassiveCmds.assert (mkLabel i le.1) le.2 md)) ρ := by
   apply stmts_assert_list_canFail π φ _ ρ hwfb
   · intro s hs; rw [List.mem_mapIdx] at hs
@@ -661,7 +500,7 @@ private theorem havoc_block_to_target
       · have := hdef_src x hx
         simp [hnone] at this
       · rw [← hnone, hagree x hx]
-  have := block_wrap_terminal π φ label _ ∅ ρ₀ { ρ₀ with store := σ_out } hstar
+  have := block_wrap_terminal (EvalCommand π φ) (EvalPureFunc φ) label _ ∅ ρ₀ { ρ₀ with store := σ_out } hstar
   show CoreStar π φ (.stmt (.block label (vars.map fun n => Stmt.cmd (HasHavoc.havoc n md)) ∅) ρ₀)
     (.terminal { ρ₀ with store := ρ_target.store })
   have heq : { { ρ₀ with store := σ_out } with store := projectStore ρ₀.store σ_out } =
@@ -1647,7 +1486,7 @@ private theorem stmts_prefix_exiting_append
           (EvalCmd := EvalCommand π φ) (extendEval := EvalPureFunc φ) hrest with
         | .inl hexit_s =>
           -- s exits: .stmts (s :: rest ++ ss₂) ρ₀ exits via stmts_cons_exiting
-          exact stmts_cons_exiting π φ s (rest ++ ss₂) lbl ρ₀ ρ' hexit_s
+          exact stmts_cons_exiting (EvalCommand π φ) (EvalPureFunc φ) s (rest ++ ss₂) lbl ρ₀ ρ' hexit_s
         | .inr ⟨ρ₁, hterm_s, hexit_rest⟩ =>
           -- s terminates at ρ₁, rest exits: by IH, rest ++ ss₂ exits
           exact ReflTrans_Transitive _ _ _ _
@@ -3320,12 +3159,12 @@ private abbrev SimBlockCorrProp (reserved : List String) (sz : Nat) : Prop :=
     ∀ (ρ₀ : Env Expression),
       BlockInitEnvWF reserved bss ρ₀ →
       (∀ ρ', CoreStar π φ (.stmts bss ρ₀) (.terminal ρ') →
-        CanFailBlock π φ (blockResult σ bss) ρ₀ ∨
+        CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) (blockResult σ bss) ρ₀ ∨
         (ρ'.hasFailure = Bool.false →
           CoreStar π φ (.stmts (blockResult σ bss) ρ₀) (.terminal ρ')))
       ∧
       (∀ lbl ρ', CoreStar π φ (.stmts bss ρ₀) (.exiting lbl ρ') →
-        CanFailBlock π φ (blockResult σ bss) ρ₀ ∨
+        CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) (blockResult σ bss) ρ₀ ∨
         (ρ'.hasFailure = Bool.false →
           CoreStar π φ (.stmts (blockResult σ bss) ρ₀) (.exiting lbl ρ')))
 
@@ -3348,8 +3187,8 @@ private abbrev SimBlockCFProp (reserved : List String) (sz : Nat) : Prop :=
     blockOk σ bss →
     ∀ (ρ₀ : Env Expression),
       BlockInitEnvWF reserved bss ρ₀ →
-      CanFailBlock π φ bss ρ₀ →
-      CanFailBlock π φ (blockResult σ bss) ρ₀
+      CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) bss ρ₀ →
+      CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) (blockResult σ bss) ρ₀
 
 /-- The full bundled IH used by the inductive case of `simulation`. -/
 private abbrev SimAllProp (reserved : List String) (sz : Nat) : Prop :=
@@ -3369,19 +3208,19 @@ shape. -/
 private abbrev BlockSimRes (σ : LoopElimState) (bss : Statements)
     (ρ₀ : Env Expression) : Prop :=
   (∀ ρ', CoreStar π φ (.stmts bss ρ₀) (.terminal ρ') →
-    CanFailBlock π φ (blockResult σ bss) ρ₀ ∨
+    CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) (blockResult σ bss) ρ₀ ∨
     (ρ'.hasFailure = Bool.false →
       CoreStar π φ (.stmts (blockResult σ bss) ρ₀) (.terminal ρ')))
   ∧
   (∀ lbl ρ', CoreStar π φ (.stmts bss ρ₀) (.exiting lbl ρ') →
-    CanFailBlock π φ (blockResult σ bss) ρ₀ ∨
+    CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) (blockResult σ bss) ρ₀ ∨
     (ρ'.hasFailure = Bool.false →
       CoreStar π φ (.stmts (blockResult σ bss) ρ₀) (.exiting lbl ρ')))
 
 /-- The CanFail-preservation property for a single block. -/
 private abbrev BlockCFRes (σ : LoopElimState) (bss : Statements)
     (ρ₀ : Env Expression) : Prop :=
-  CanFailBlock π φ bss ρ₀ → CanFailBlock π φ (blockResult σ bss) ρ₀
+  CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) bss ρ₀ → CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) (blockResult σ bss) ρ₀
 
 /-- Ite scoped-block term-branch helper: given the inner block trace
     `r1` reaching `.terminal ρ'` and the branch's sim result, lift to the
@@ -3402,7 +3241,7 @@ private theorem ite_term_branch_lift
         (.block .none ρ₀.store (.stmts bss ρ₀)) (.terminal ρ'))
     (hsim_bss_term :
       ∀ ρ_inner, CoreStar π φ (.stmts bss ρ₀) (.terminal ρ_inner) →
-        CanFailBlock π φ bss_tgt ρ₀ ∨
+        CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) bss_tgt ρ₀ ∨
         (ρ_inner.hasFailure = Bool.false →
           CoreStar π φ (.stmts bss_tgt ρ₀) (.terminal ρ_inner))) :
     Transform.CanFail (LangCore π φ)
@@ -3451,7 +3290,7 @@ private theorem ite_exit_branch_lift
         (.block .none ρ₀.store (.stmts bss ρ₀)) (.exiting lbl ρ'))
     (hsim_bss_exit :
       ∀ ρ_inner, CoreStar π φ (.stmts bss ρ₀) (.exiting lbl ρ_inner) →
-        CanFailBlock π φ bss_tgt ρ₀ ∨
+        CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) bss_tgt ρ₀ ∨
         (ρ_inner.hasFailure = Bool.false →
           CoreStar π φ (.stmts bss_tgt ρ₀) (.exiting lbl ρ_inner))) :
     Transform.CanFail (LangCore π φ)
@@ -3498,7 +3337,7 @@ private theorem ite_canfail_lift
         (.block .none ρ₀.store (.stmts bss_tgt ρ₀)))
     (r1 : ReflTrans (StepStmt Expression (EvalCommand π φ) (EvalPureFunc φ))
         (.block .none ρ₀.store (.stmts bss ρ₀)) cfg)
-    (hcf_branch : CanFailBlock π φ bss ρ₀ → CanFailBlock π φ bss_tgt ρ₀) :
+    (hcf_branch : CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) bss ρ₀ → CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) bss_tgt ρ₀) :
     Transform.CanFail (LangCore π φ)
       (.ite c_tgt tss_tgt ess_tgt md_tgt) ρ₀ := by
   have ⟨inner_cfg, hfail', hinner⟩ := block_canfail_to_inner r1 hfail
@@ -3523,7 +3362,7 @@ private theorem block_term_case
     Transform.CanFail (LangCore π φ) (.block l (blockResult σ_bss_tgt bss) md) ρ₀ ∨
     (ρ'.hasFailure = Bool.false →
       CoreStar π φ (.stmt (.block l (blockResult σ_bss_tgt bss) md) ρ₀) (.terminal ρ')) := by
-  obtain ⟨ρ_inner, hinner_or, hρ'eq⟩ := block_reaches_terminal_refined π φ r1
+  obtain ⟨ρ_inner, hinner_or, hρ'eq⟩ := block_reaches_terminal_refined (P := Expression) (CmdT := Command) (EvalCommand π φ) (EvalPureFunc φ) r1
   cases hinner_or with
   | inl hterm_inner =>
     match hsim_bss.1 ρ_inner hterm_inner with
@@ -3535,7 +3374,7 @@ private theorem block_term_case
         subst hρ'eq; simp at hnf; exact hnf
       have hreach_target := hok_bss hnf_inner
       rw [hρ'eq]
-      exact block_wrap_terminal π φ l _ md ρ₀ ρ_inner hreach_target
+      exact block_wrap_terminal (EvalCommand π φ) (EvalPureFunc φ) l _ md ρ₀ ρ_inner hreach_target
   | inr hexit_inner =>
     match hsim_bss.2 l ρ_inner hexit_inner with
     | .inl hcf =>
@@ -3546,7 +3385,7 @@ private theorem block_term_case
         subst hρ'eq; simp at hnf; exact hnf
       have hreach_target := hok_bss hnf_inner
       rw [hρ'eq]
-      exact block_wrap_exiting_match π φ l _ md ρ₀ ρ_inner hreach_target
+      exact block_wrap_exiting_match (EvalCommand π φ) (EvalPureFunc φ) l _ md ρ₀ ρ_inner hreach_target
 
 /-- Block exit-branch helper: trace through `.block l bss md` reaching
     `.exiting lbl ρ'` (with `lbl ≠ l`) lifts to a target exit trace. -/
@@ -3561,7 +3400,7 @@ private theorem block_exit_case
     (ρ'.hasFailure = Bool.false →
       CoreStar π φ (.stmt (.block l (blockResult σ_bss_tgt bss) md) ρ₀)
         (.exiting lbl ρ')) := by
-  obtain ⟨ρ_inner, hne, hexit_inner, hρ'eq⟩ := block_reaches_exiting_refined π φ r1
+  obtain ⟨ρ_inner, hne, hexit_inner, hρ'eq⟩ := block_reaches_exiting_refined (P := Expression) (CmdT := Command) (EvalCommand π φ) (EvalPureFunc φ) r1
   match hsim_bss.2 lbl ρ_inner hexit_inner with
   | .inl hcf =>
     exact .inl (Transform.canFailBlock_to_canFail_block (EvalCommand π φ) (EvalPureFunc φ) coreIsAtAssert l _ md ρ₀ hcf)
@@ -3571,7 +3410,7 @@ private theorem block_exit_case
       subst hρ'eq; simp at hnf; exact hnf
     have hreach_target := hok_bss hnf_inner
     rw [hρ'eq]
-    exact block_wrap_exiting_mismatch π φ l _ md lbl ρ₀ ρ_inner hne hreach_target
+    exact block_wrap_exiting_mismatch (EvalCommand π φ) (EvalPureFunc φ) l _ md lbl ρ₀ ρ_inner hne hreach_target
 
 /-- Block CanFail-preservation helper: trace through `.block l bss md`
     reaches a failing config; dispatch via the inner-block trace. -/
@@ -3582,7 +3421,7 @@ private theorem block_canfail_case
     (hfail : cfg.getEnv.hasFailure = Bool.true)
     (r1 : ReflTrans (StepStmt Expression (EvalCommand π φ) (EvalPureFunc φ))
         (.block (.some l) ρ₀.store (.stmts bss ρ₀)) cfg)
-    (hcf_inner : CanFailBlock π φ bss ρ₀ → CanFailBlock π φ (blockResult σ_bss_tgt bss) ρ₀) :
+    (hcf_inner : CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) bss ρ₀ → CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) (blockResult σ_bss_tgt bss) ρ₀) :
     Transform.CanFail (LangCore π φ) (.block l (blockResult σ_bss_tgt bss) md) ρ₀ := by
   have ⟨inner_cfg, hfail', hinner⟩ := block_canfail_to_inner r1 hfail
   have ⟨cfg', hfail'', hreach'⟩ := hcf_inner ⟨inner_cfg, hfail', hinner⟩
@@ -3605,10 +3444,10 @@ private theorem block_corr_cons_term_head_term
     (hsim_s_cf : Transform.CanFail (LangCore π φ) s ρ₀ →
       Transform.CanFail (LangCore π φ) (stmtResult σ_head_tgt s) ρ₀)
     (hsim_ss_term : ∀ ρ_e, CoreStar π φ (.stmts ss ρ₁) (.terminal ρ_e) →
-      CanFailBlock π φ (blockResult σ_tail_tgt ss) ρ₁ ∨
+      CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) (blockResult σ_tail_tgt ss) ρ₁ ∨
       (ρ_e.hasFailure = Bool.false →
         CoreStar π φ (.stmts (blockResult σ_tail_tgt ss) ρ₁) (.terminal ρ_e))) :
-    CanFailBlock π φ (stmtResult σ_head_tgt s ::
+    CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) (stmtResult σ_head_tgt s ::
         blockResult σ_tail_tgt ss) ρ₀ ∨
     (ρ'.hasFailure = Bool.false →
       CoreStar π φ (.stmts (stmtResult σ_head_tgt s ::
@@ -3658,10 +3497,10 @@ private theorem block_corr_cons_exit_head_term
     (hsim_s_cf : Transform.CanFail (LangCore π φ) s ρ₀ →
       Transform.CanFail (LangCore π φ) (stmtResult σ_head_tgt s) ρ₀)
     (hsim_ss_exit : ∀ ρ_e, CoreStar π φ (.stmts ss ρ₁) (.exiting lbl ρ_e) →
-      CanFailBlock π φ (blockResult σ_tail_tgt ss) ρ₁ ∨
+      CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) (blockResult σ_tail_tgt ss) ρ₁ ∨
       (ρ_e.hasFailure = Bool.false →
         CoreStar π φ (.stmts (blockResult σ_tail_tgt ss) ρ₁) (.exiting lbl ρ_e))) :
-    CanFailBlock π φ (stmtResult σ_head_tgt s ::
+    CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) (stmtResult σ_head_tgt s ::
         blockResult σ_tail_tgt ss) ρ₀ ∨
     (ρ'.hasFailure = Bool.false →
       CoreStar π φ (.stmts (stmtResult σ_head_tgt s ::
@@ -3704,16 +3543,16 @@ private theorem block_cf_cons_head_term
     {s : Statement} {ss : Statements}
     {ρ₀ ρ₁ : Env Expression}
     (hterm_s : CoreStar π φ (.stmt s ρ₀) (.terminal ρ₁))
-    (hcf_tail : CanFailBlock π φ ss ρ₁)
+    (hcf_tail : CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) ss ρ₁)
     (hsim_s_term : CoreStar π φ (.stmt s ρ₀) (.terminal ρ₁) →
       Transform.CanFail (LangCore π φ) (stmtResult σ_head_tgt s) ρ₀ ∨
       (ρ₁.hasFailure = Bool.false →
         CoreStar π φ (.stmt (stmtResult σ_head_tgt s) ρ₀) (.terminal ρ₁)))
     (hsim_s_cf : Transform.CanFail (LangCore π φ) s ρ₀ →
       Transform.CanFail (LangCore π φ) (stmtResult σ_head_tgt s) ρ₀)
-    (hsim_ss_cf : CanFailBlock π φ ss ρ₁ →
-      CanFailBlock π φ (blockResult σ_tail_tgt ss) ρ₁) :
-    CanFailBlock π φ (stmtResult σ_head_tgt s ::
+    (hsim_ss_cf : CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) ss ρ₁ →
+      CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) (blockResult σ_tail_tgt ss) ρ₁) :
+    CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) (stmtResult σ_head_tgt s ::
       blockResult σ_tail_tgt ss) ρ₀ := by
   match hsim_s_term hterm_s with
   | .inl hcf_s =>
@@ -3773,10 +3612,10 @@ private theorem loop_vc1_failure_canFail
   let assumes : Statements := inv.mapIdx fun i le =>
     Stmt.cmd (HasPassiveCmds.assume (P := Expression)
       (mkAssumeLabel i le.1) le.2 md)
-  have hcf_asserts : CanFailBlock π φ asserts ρ₀ :=
+  have hcf_asserts : CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) asserts ρ₀ :=
     stmts_mapIdx_assert_canFail π φ inv ρ₀ md mkAssertLabel hwfb
       hinv_bool hsome_ff
-  have hcf_fib : CanFailBlock π φ (asserts ++ assumes) ρ₀ :=
+  have hcf_fib : CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) (asserts ++ assumes) ρ₀ :=
     Transform.canFailBlock_append_left (EvalCommand π φ) (EvalPureFunc φ) asserts assumes ρ₀ hcf_asserts
   have hfib : first_iter_body = asserts ++ assumes := hfib_eq
   have hcf_first_block : Transform.CanFail (LangCore π φ)
@@ -3889,7 +3728,7 @@ private theorem loop_zero_iter_target_trace
   have h_fib_block : CoreStar π φ
       (.stmt (.block first_iter_label first_iter_body {}) ρ₀)
       (.terminal ρ₀) := by
-    have h := block_wrap_terminal π φ first_iter_label
+    have h := block_wrap_terminal (EvalCommand π φ) (EvalPureFunc φ) first_iter_label
       first_iter_body {} ρ₀ ρ₀ hfib_run
     rw [projectStore_self_env] at h; exact h
   have h_stmts : CoreStar π φ (.stmts [.block first_iter_label
@@ -3902,7 +3741,7 @@ private theorem loop_zero_iter_target_trace
         (stmts_cons_step Expression (EvalCommand π φ) (EvalPureFunc φ)
           _ _ ρ₀ ρ₀ h_ite)
         (.step _ _ _ .step_stmts_nil (.refl _)))
-  have h_outer := block_wrap_terminal π φ loop_label _ {} ρ₀ ρ₀ h_stmts
+  have h_outer := block_wrap_terminal (EvalCommand π φ) (EvalPureFunc φ) loop_label _ {} ρ₀ ρ₀ h_stmts
   rw [projectStore_self_env] at h_outer
   exact h_outer
 
@@ -4307,7 +4146,7 @@ private theorem simulation_loop_term_enter_case
               (mkAssumeLabel i le.1) le.2 md)))
             ∅) ρ₀)
           (.terminal ρ₀) := by
-        have h := block_wrap_terminal π φ
+        have h := block_wrap_terminal (EvalCommand π φ) (EvalPureFunc φ)
           s!"{loopElimBlockPrefix}first_iter_asserts_{loop_num}" _ ∅ ρ₀ ρ₀ h_fib_run
         rw [projectStore_self_env] at h; exact h
       -- Step 2: Build the ite nondet-true trace to terminal ρ'.
@@ -4394,7 +4233,7 @@ private theorem simulation_loop_term_enter_case
               (stmts_cons_step Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ ρ₀ ρ' h_ite)
               (.step _ _ _ .step_stmts_nil (.refl _)))
         -- Wrap in outer block
-        have h_outer := block_wrap_terminal π φ
+        have h_outer := block_wrap_terminal (EvalCommand π φ) (EvalPureFunc φ)
           s!"{loopElimBlockPrefix}loop_{loop_num}" _ ∅ ρ₀ ρ' h_stmts
         rw [hproj_id] at h_outer
         have henv_eq : ({ ρ' with store := ρ'.store } : Env Expression) = ρ' := by simp
@@ -4426,7 +4265,7 @@ private theorem simulation_loop_term_enter_case
           (.stmt (.block arb_facts_label arb_facts_body ∅) ρ₀) (.terminal ρ_mid) := by
         -- The block body runs from ρ₀ to ρ_inner, then projects to ρ_mid
         suffices h_body_run : CoreStar π φ (.stmts arb_facts_body ρ₀) (.terminal ρ_inner) by
-          have h := block_wrap_terminal π φ arb_facts_label arb_facts_body ∅ ρ₀ ρ_inner h_body_run
+          have h := block_wrap_terminal (EvalCommand π φ) (EvalPureFunc φ) arb_facts_label arb_facts_body ∅ ρ₀ ρ_inner h_body_run
           -- After projection: {ρ_inner with store := projectStore ρ₀.store ρ_inner.store}
           -- = {store := projectStore ρ₀.store ρ_inner.store, eval := ρ_inner.eval, ...} = ρ_mid
           have heq_proj : ({ ρ_inner with store := projectStore ρ₀.store ρ_inner.store } : Env Expression) = ρ_mid := by
@@ -4448,7 +4287,7 @@ private theorem simulation_loop_term_enter_case
           have h_assumes_run : CoreStar π φ (.stmts arb_assumes_body ρ₀) (.terminal ρ₀) := by
             simp only [arb_assumes_body, List.nil_append]
             exact stmts_mapIdx_assume_terminal π φ inv ρ₀ md mkArbAssumeLabel hwfb hall_tt
-          have h := block_wrap_terminal π φ arb_assumes_label arb_assumes_body md ρ₀ ρ₀ h_assumes_run
+          have h := block_wrap_terminal (EvalCommand π φ) (EvalPureFunc φ) arb_assumes_label arb_assumes_body md ρ₀ ρ₀ h_assumes_run
           rw [projectStore_self_env] at h; exact h
         -- Step 3: body at ρ₀ → terminal ρ_inner (from h_inner, with eta on env)
         have h_body_from_ρ₀ : CoreStar π φ (.stmts body ρ₀) (.terminal ρ_inner) := by
@@ -4705,7 +4544,7 @@ private theorem simulation_loop_term_enter_case
                     (mkAssumeLabel i le.1) le.2 md)))
                   ∅) ρ₀)
                 (.terminal ρ₀) := by
-              have h := block_wrap_terminal π φ
+              have h := block_wrap_terminal (EvalCommand π φ) (EvalPureFunc φ)
                 s!"{loopElimBlockPrefix}first_iter_asserts_{loop_num}" _ ∅ ρ₀ ρ₀ h_fib_run
               rw [projectStore_self_env] at h; exact h
             -- ITE false branch: step_ite_false gives .block .none ρ₀.store (.stmts [] ρ₀)
@@ -4724,11 +4563,11 @@ private theorem simulation_loop_term_enter_case
                   (ReflTrans_Transitive _ _ _ _
                     (stmts_cons_step Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ ρ₀ ρ₀ h_ite)
                     (.step _ _ _ .step_stmts_nil (.refl _)))
-              have h_outer := block_wrap_terminal π φ
+              have h_outer := block_wrap_terminal (EvalCommand π φ) (EvalPureFunc φ)
                 s!"{loopElimBlockPrefix}loop_{loop_num}" _ ∅ ρ₀ ρ₀ h_stmts
               rw [projectStore_self_env] at h_outer
               exact h_outer
-            exact ite_det_false_empty_terminal (π := π) (φ := φ) g _ ∅ ρ₀ hguard_ff hwfb
+            exact ite_det_false_empty_terminal (P := Expression) (CmdT := Command) (EvalCommand π φ) (EvalPureFunc φ) g _ ∅ ρ₀ hguard_ff hwfb
           | step _ _ _ h _ => exact nomatch h
         | step_loop_enter hguard_tt hinvb_enter hinviff_enter hwfbe_enter hmeas_enter =>
           -- Reconstruct hreach for use in lemmas
@@ -4783,7 +4622,7 @@ private theorem simulation_loop_term_enter_case
                   (mkAssumeLabel i le.1) le.2 md)))
                 ∅) ρ₀)
               (.terminal ρ₀) := by
-            have h := block_wrap_terminal π φ
+            have h := block_wrap_terminal (EvalCommand π φ) (EvalPureFunc φ)
               s!"{loopElimBlockPrefix}first_iter_asserts_{loop_num}" _ ∅ ρ₀ ρ₀ h_fib_run
             rw [projectStore_self_env] at h; exact h
           -- Step 2: Build the ite det-true trace to terminal ρ'.
@@ -4867,7 +4706,7 @@ private theorem simulation_loop_term_enter_case
                   (stmts_cons_step Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ ρ₀ ρ' h_ite)
                   (.step _ _ _ .step_stmts_nil (.refl _)))
             -- Wrap in outer block
-            have h_outer := block_wrap_terminal π φ
+            have h_outer := block_wrap_terminal (EvalCommand π φ) (EvalPureFunc φ)
               s!"{loopElimBlockPrefix}loop_{loop_num}" _ ∅ ρ₀ ρ' h_stmts
             rw [hproj_id] at h_outer
             have henv_eq : ({ ρ' with store := ρ'.store } : Env Expression) = ρ' := by simp
@@ -4891,7 +4730,7 @@ private theorem simulation_loop_term_enter_case
           have h_arb_block : CoreStar π φ
               (.stmt (.block arb_facts_label arb_facts_body ∅) ρ₀) (.terminal ρ_mid) := by
             suffices h_body_run : CoreStar π φ (.stmts arb_facts_body ρ₀) (.terminal ρ_inner) by
-              have h := block_wrap_terminal π φ arb_facts_label arb_facts_body ∅ ρ₀ ρ_inner h_body_run
+              have h := block_wrap_terminal (EvalCommand π φ) (EvalPureFunc φ) arb_facts_label arb_facts_body ∅ ρ₀ ρ_inner h_body_run
               have heq_proj : ({ ρ_inner with store := projectStore ρ₀.store ρ_inner.store } : Env Expression) = ρ_mid := by
                 rw [heq_mid]
               rw [heq_proj] at h; exact h
@@ -4918,7 +4757,7 @@ private theorem simulation_loop_term_enter_case
                 exact ReflTrans_Transitive _ _ _ _
                   (stmts_cons_step Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ ρ₀ ρ₀ h_guard_assume)
                   (stmts_mapIdx_assume_terminal π φ inv ρ₀ md mkArbAssumeLabel hwfb hall_tt)
-              have h := block_wrap_terminal π φ arb_assumes_label arb_assumes_body md ρ₀ ρ₀ h_assumes_run
+              have h := block_wrap_terminal (EvalCommand π φ) (EvalPureFunc φ) arb_assumes_label arb_assumes_body md ρ₀ ρ₀ h_assumes_run
               rw [projectStore_self_env] at h; exact h
             -- Step 3: body at ρ₀ → terminal ρ_inner
             have h_body_from_ρ₀ : CoreStar π φ (.stmts body ρ₀) (.terminal ρ_inner) := by
@@ -5178,7 +5017,7 @@ private theorem simulation_loop_term_enter_case
                     (mkAssumeLabel i le.1) le.2 md)))
                   ∅) ρ₀)
                 (.terminal ρ₀) := by
-              have h := block_wrap_terminal π φ
+              have h := block_wrap_terminal (EvalCommand π φ) (EvalPureFunc φ)
                 s!"{loopElimBlockPrefix}first_iter_asserts_{loop_num}" _ ∅ ρ₀ ρ₀ h_fib_run
               rw [projectStore_self_env] at h; exact h
             -- ITE false branch
@@ -5196,11 +5035,11 @@ private theorem simulation_loop_term_enter_case
                   (ReflTrans_Transitive _ _ _ _
                     (stmts_cons_step Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ ρ₀ ρ₀ h_ite)
                     (.step _ _ _ .step_stmts_nil (.refl _)))
-              have h_outer := block_wrap_terminal π φ
+              have h_outer := block_wrap_terminal (EvalCommand π φ) (EvalPureFunc φ)
                 s!"{loopElimBlockPrefix}loop_{loop_num}" _ ∅ ρ₀ ρ₀ h_stmts
               rw [projectStore_self_env] at h_outer
               exact h_outer
-            exact ite_det_false_empty_terminal (π := π) (φ := φ) g _ ∅ ρ₀ hguard_ff hwfb
+            exact ite_det_false_empty_terminal (P := Expression) (CmdT := Command) (EvalCommand π φ) (EvalPureFunc φ) g _ ∅ ρ₀ hguard_ff hwfb
           | step _ _ _ h _ => exact nomatch h
         | step_loop_enter hguard_tt hinvb_enter hinviff_enter hwfbe_enter hmeas_enter =>
           -- The guard-enter sub-case: build terminal trace through the
@@ -5277,7 +5116,7 @@ private theorem simulation_loop_term_enter_case
                   (mkAssumeLabel i le.1) le.2 md)))
                 ∅) ρ₀)
               (.terminal ρ₀) := by
-            have h := block_wrap_terminal π φ
+            have h := block_wrap_terminal (EvalCommand π φ) (EvalPureFunc φ)
               s!"{loopElimBlockPrefix}first_iter_asserts_{loop_num}" _ ∅ ρ₀ ρ₀ h_fib_run
             rw [projectStore_self_env] at h; exact h
           -- Step 2: Build the ite det-true trace to terminal ρ'.
@@ -6042,7 +5881,7 @@ private theorem simulation_loop_exit_enter_case
                 (mkAssumeLabel i le.1) le.2 md)))
               ∅) ρ₀)
             (.terminal ρ₀) := by
-          have h := block_wrap_terminal π φ
+          have h := block_wrap_terminal (EvalCommand π φ) (EvalPureFunc φ)
             s!"{loopElimBlockPrefix}first_iter_asserts_{loop_num}" _ ∅ ρ₀ ρ₀ h_fib_run
           rw [projectStore_self_env] at h; exact h
         -- Step 3b: Identity havoc at ρ₀
@@ -6067,7 +5906,7 @@ private theorem simulation_loop_exit_enter_case
             exact ReflTrans_Transitive _ _ _ _
               (stmts_cons_step Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ ρ₀ ρ₀ h_guard_assume)
               (stmts_mapIdx_assume_terminal π φ inv ρ₀ md mkArbAssumeLabel hwfb hall_tt)
-          have h := block_wrap_terminal π φ arb_assumes_label arb_assumes_body md ρ₀ ρ₀ h_assumes_run
+          have h := block_wrap_terminal (EvalCommand π φ) (EvalPureFunc φ) arb_assumes_label arb_assumes_body md ρ₀ ρ₀ h_assumes_run
           rw [projectStore_self_env] at h; exact h
         -- Step 3d: body exits from ρ₀ → arb_facts_body exits from ρ₀
         have h_body_exit_extended : CoreStar π φ
@@ -6096,7 +5935,7 @@ private theorem simulation_loop_exit_enter_case
         have h_arb_block_exit : CoreStar π φ
             (.stmt (.block arb_facts_label arb_facts_body ∅) ρ₀)
             (.exiting lbl { ρ_inner with store := projectStore ρ₀.store ρ_inner.store }) :=
-          block_wrap_exiting_mismatch π φ arb_facts_label arb_facts_body ∅ lbl ρ₀ ρ_inner
+          block_wrap_exiting_mismatch (EvalCommand π φ) (EvalPureFunc φ) arb_facts_label arb_facts_body ∅ lbl ρ₀ ρ_inner
             hne_arb h_arb_body_exit
         -- Step 3f: ite det-true → then-branch block .none exits
         have h_then_stmts_exit : CoreStar π φ
@@ -6106,7 +5945,7 @@ private theorem simulation_loop_exit_enter_case
                   s!"{loopElimAssumePrefix}{loop_num}_not_guard" (HasNot.not g) md)] ++
                 exit_inv_assumes)) ρ₀)
             (.exiting lbl { ρ_inner with store := projectStore ρ₀.store ρ_inner.store }) :=
-          stmts_cons_exiting π φ _ _ lbl ρ₀ _ h_arb_block_exit
+          stmts_cons_exiting (EvalCommand π φ) (EvalPureFunc φ) _ _ lbl ρ₀ _ h_arb_block_exit
         have hproj_idem : projectStore ρ₀.store (projectStore ρ₀.store ρ_inner.store) =
             projectStore ρ₀.store ρ_inner.store := by
           funext x; simp [projectStore]; intro h; simp [h] at *
@@ -6151,7 +5990,7 @@ private theorem simulation_loop_exit_enter_case
             (.exiting lbl { ρ_inner with store := projectStore ρ₀.store ρ_inner.store }) :=
           ReflTrans_Transitive _ _ _ _
             (stmts_cons_step Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ ρ₀ ρ₀ h_fib_block)
-            (stmts_cons_exiting π φ _ _ lbl ρ₀ _ h_ite_exit)
+            (stmts_cons_exiting (EvalCommand π φ) (EvalPureFunc φ) _ _ lbl ρ₀ _ h_ite_exit)
         -- Step 3h: Wrap in outer block (loop_label)
         have h_outer_exit : CoreStar π φ
             (.stmt (.block s!"{loopElimBlockPrefix}loop_{loop_num}"
@@ -6169,7 +6008,7 @@ private theorem simulation_loop_exit_enter_case
                   [] ∅] ∅) ρ₀)
             (.exiting lbl { { ρ_inner with store := projectStore ρ₀.store ρ_inner.store } with
               store := projectStore ρ₀.store (projectStore ρ₀.store ρ_inner.store) }) :=
-          block_wrap_exiting_mismatch π φ s!"{loopElimBlockPrefix}loop_{loop_num}" _ ∅
+          block_wrap_exiting_mismatch (EvalCommand π φ) (EvalPureFunc φ) s!"{loopElimBlockPrefix}loop_{loop_num}" _ ∅
             lbl ρ₀ _ hne_loop h_stmts_exit
         rw [hproj_idem] at h_outer_exit
         rw [← heq_ρ'] at h_outer_exit
@@ -6321,7 +6160,7 @@ private theorem simulation_loop_exit_enter_case
                 (mkAssumeLabel i le.1) le.2 md)))
               ∅) ρ₀)
             (.terminal ρ₀) := by
-          have h := block_wrap_terminal π φ
+          have h := block_wrap_terminal (EvalCommand π φ) (EvalPureFunc φ)
             s!"{loopElimBlockPrefix}first_iter_asserts_{loop_num}" _ ∅ ρ₀ ρ₀ h_fib_run
           rw [projectStore_self_env] at h; exact h
         -- Step 3b: havoc_block at ρ₀ → terminate at ρ_k
@@ -6417,7 +6256,7 @@ private theorem simulation_loop_exit_enter_case
             exact ReflTrans_Transitive _ _ _ _
               (stmts_cons_step Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ ρ_k ρ_k h_guard_assume)
               (stmts_mapIdx_assume_terminal π φ inv ρ_k md mkArbAssumeLabel hwfb_k hall_tt_k)
-          have h := block_wrap_terminal π φ arb_assumes_label arb_assumes_body md ρ_k ρ_k h_assumes_run
+          have h := block_wrap_terminal (EvalCommand π φ) (EvalPureFunc φ) arb_assumes_label arb_assumes_body md ρ_k ρ_k h_assumes_run
           rw [projectStore_self_env] at h; exact h
         -- Step 3d: body exits from ρ_k → arb_facts_body exits from ρ₀
         have h_body_exit_extended : CoreStar π φ
@@ -6446,7 +6285,7 @@ private theorem simulation_loop_exit_enter_case
         have h_arb_block_exit : CoreStar π φ
             (.stmt (.block arb_facts_label arb_facts_body ∅) ρ₀)
             (.exiting lbl { ρ_inner_k with store := projectStore ρ₀.store ρ_inner_k.store }) :=
-          block_wrap_exiting_mismatch π φ arb_facts_label arb_facts_body ∅ lbl ρ₀ ρ_inner_k
+          block_wrap_exiting_mismatch (EvalCommand π φ) (EvalPureFunc φ) arb_facts_label arb_facts_body ∅ lbl ρ₀ ρ_inner_k
             hne_arb h_arb_body_exit
         -- Step 3f: ite det-true → then-branch block .none exits
         have h_then_stmts_exit : CoreStar π φ
@@ -6456,7 +6295,7 @@ private theorem simulation_loop_exit_enter_case
                   s!"{loopElimAssumePrefix}{loop_num}_not_guard" (HasNot.not g) md)] ++
                 exit_inv_assumes)) ρ₀)
             (.exiting lbl { ρ_inner_k with store := projectStore ρ₀.store ρ_inner_k.store }) :=
-          stmts_cons_exiting π φ _ _ lbl ρ₀ _ h_arb_block_exit
+          stmts_cons_exiting (EvalCommand π φ) (EvalPureFunc φ) _ _ lbl ρ₀ _ h_arb_block_exit
         have hproj_idem : projectStore ρ₀.store (projectStore ρ₀.store ρ_inner_k.store) =
             projectStore ρ₀.store ρ_inner_k.store := by
           funext x; simp [projectStore]; intro h; simp [h] at *
@@ -6500,7 +6339,7 @@ private theorem simulation_loop_exit_enter_case
             (.exiting lbl { ρ_inner_k with store := projectStore ρ₀.store ρ_inner_k.store }) :=
           ReflTrans_Transitive _ _ _ _
             (stmts_cons_step Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ ρ₀ ρ₀ h_fib_block)
-            (stmts_cons_exiting π φ _ _ lbl ρ₀ _ h_ite_exit)
+            (stmts_cons_exiting (EvalCommand π φ) (EvalPureFunc φ) _ _ lbl ρ₀ _ h_ite_exit)
         -- Step 3h: Wrap in outer block (loop_label)
         have h_outer_exit : CoreStar π φ
             (.stmt (.block s!"{loopElimBlockPrefix}loop_{loop_num}"
@@ -6518,7 +6357,7 @@ private theorem simulation_loop_exit_enter_case
                   [] ∅] ∅) ρ₀)
             (.exiting lbl { { ρ_inner_k with store := projectStore ρ₀.store ρ_inner_k.store } with
               store := projectStore ρ₀.store (projectStore ρ₀.store ρ_inner_k.store) }) :=
-          block_wrap_exiting_mismatch π φ s!"{loopElimBlockPrefix}loop_{loop_num}" _ ∅
+          block_wrap_exiting_mismatch (EvalCommand π φ) (EvalPureFunc φ) s!"{loopElimBlockPrefix}loop_{loop_num}" _ ∅
             lbl ρ₀ _ hne_loop h_stmts_exit
         rw [hproj_idem] at h_outer_exit
         -- Now: target trace ends at { ρ_inner_k with store := projectStore ρ₀.store ρ_inner_k.store }.
@@ -6618,7 +6457,7 @@ private theorem simulation_loop_exit_enter_case
                 (mkAssumeLabel i le.1) le.2 md)))
               ∅) ρ₀)
             (.terminal ρ₀) := by
-          have h := block_wrap_terminal π φ
+          have h := block_wrap_terminal (EvalCommand π φ) (EvalPureFunc φ)
             s!"{loopElimBlockPrefix}first_iter_asserts_{loop_num}" _ ∅ ρ₀ ρ₀ h_fib_run
           rw [projectStore_self_env] at h; exact h
         -- Step 3b: Identity havoc at ρ₀
@@ -6636,7 +6475,7 @@ private theorem simulation_loop_exit_enter_case
           have h_assumes_run : CoreStar π φ (.stmts arb_assumes_body ρ₀) (.terminal ρ₀) := by
             simp only [arb_assumes_body, List.nil_append]
             exact stmts_mapIdx_assume_terminal π φ inv ρ₀ md mkArbAssumeLabel hwfb hall_tt
-          have h := block_wrap_terminal π φ arb_assumes_label arb_assumes_body md ρ₀ ρ₀ h_assumes_run
+          have h := block_wrap_terminal (EvalCommand π φ) (EvalPureFunc φ) arb_assumes_label arb_assumes_body md ρ₀ ρ₀ h_assumes_run
           rw [projectStore_self_env] at h; exact h
         -- Step 3d: body exits from ρ₀ → arb_facts_body exits from ρ₀
         -- arb_facts_body = [havoc_block, assumes_block] ++ [] ++ body ++ maintain ++ []
@@ -6668,7 +6507,7 @@ private theorem simulation_loop_exit_enter_case
         have h_arb_block_exit : CoreStar π φ
             (.stmt (.block arb_facts_label arb_facts_body ∅) ρ₀)
             (.exiting lbl { ρ_inner with store := projectStore ρ₀.store ρ_inner.store }) :=
-          block_wrap_exiting_mismatch π φ arb_facts_label arb_facts_body ∅ lbl ρ₀ ρ_inner
+          block_wrap_exiting_mismatch (EvalCommand π φ) (EvalPureFunc φ) arb_facts_label arb_facts_body ∅ lbl ρ₀ ρ_inner
             hne_arb h_arb_body_exit
         -- Step 3f: ite nondet-true → then-branch block .none exits
         -- The then-branch stmts are: arb_facts_block :: exit_stmts
@@ -6677,7 +6516,7 @@ private theorem simulation_loop_exit_enter_case
             (.stmts ((.block arb_facts_label arb_facts_body ∅) ::
               ([.block havoc_label havoc_stmts ∅] ++ [] ++ exit_inv_assumes)) ρ₀)
             (.exiting lbl { ρ_inner with store := projectStore ρ₀.store ρ_inner.store }) :=
-          stmts_cons_exiting π φ _ _ lbl ρ₀ _ h_arb_block_exit
+          stmts_cons_exiting (EvalCommand π φ) (EvalPureFunc φ) _ _ lbl ρ₀ _ h_arb_block_exit
         -- Block .none wraps the then-stmts:
         -- .block .none ρ₀.store (.stmts then_stmts ρ₀) →* .exiting lbl { ... with store := projectStore ... }
         have hproj_idem : projectStore ρ₀.store (projectStore ρ₀.store ρ_inner.store) =
@@ -6715,7 +6554,7 @@ private theorem simulation_loop_exit_enter_case
             (.exiting lbl { ρ_inner with store := projectStore ρ₀.store ρ_inner.store }) :=
           ReflTrans_Transitive _ _ _ _
             (stmts_cons_step Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ ρ₀ ρ₀ h_fib_block)
-            (stmts_cons_exiting π φ _ _ lbl ρ₀ _ h_ite_exit)
+            (stmts_cons_exiting (EvalCommand π φ) (EvalPureFunc φ) _ _ lbl ρ₀ _ h_ite_exit)
         -- Step 3h: Wrap in outer block (loop_label) — label mismatch
         have h_outer_exit : CoreStar π φ
             (.stmt (.block s!"{loopElimBlockPrefix}loop_{loop_num}"
@@ -6730,7 +6569,7 @@ private theorem simulation_loop_exit_enter_case
                   [] ∅] ∅) ρ₀)
             (.exiting lbl { { ρ_inner with store := projectStore ρ₀.store ρ_inner.store } with
               store := projectStore ρ₀.store (projectStore ρ₀.store ρ_inner.store) }) :=
-          block_wrap_exiting_mismatch π φ s!"{loopElimBlockPrefix}loop_{loop_num}" _ ∅
+          block_wrap_exiting_mismatch (EvalCommand π φ) (EvalPureFunc φ) s!"{loopElimBlockPrefix}loop_{loop_num}" _ ∅
             lbl ρ₀ _ hne_loop h_stmts_exit
         rw [hproj_idem] at h_outer_exit
         -- The result after two projections simplifies to ρ'
@@ -6867,7 +6706,7 @@ private theorem simulation_loop_exit_enter_case
                 (mkAssumeLabel i le.1) le.2 md)))
               ∅) ρ₀)
             (.terminal ρ₀) := by
-          have h := block_wrap_terminal π φ
+          have h := block_wrap_terminal (EvalCommand π φ) (EvalPureFunc φ)
             s!"{loopElimBlockPrefix}first_iter_asserts_{loop_num}" _ ∅ ρ₀ ρ₀ h_fib_run
           rw [projectStore_self_env] at h; exact h
         -- Step 3b: havoc to ρ_k.
@@ -6940,7 +6779,7 @@ private theorem simulation_loop_exit_enter_case
           have h_assumes_run : CoreStar π φ (.stmts arb_assumes_body ρ_k) (.terminal ρ_k) := by
             simp only [arb_assumes_body, List.nil_append]
             exact stmts_mapIdx_assume_terminal π φ inv ρ_k md mkArbAssumeLabel hwfb_k hall_tt_k
-          have h := block_wrap_terminal π φ arb_assumes_label arb_assumes_body md ρ_k ρ_k h_assumes_run
+          have h := block_wrap_terminal (EvalCommand π φ) (EvalPureFunc φ) arb_assumes_label arb_assumes_body md ρ_k ρ_k h_assumes_run
           rw [projectStore_self_env] at h; exact h
         -- Step 3d: body exits from ρ_k → arb_facts_body exits from ρ₀
         have h_body_exit_extended : CoreStar π φ
@@ -6969,14 +6808,14 @@ private theorem simulation_loop_exit_enter_case
         have h_arb_block_exit : CoreStar π φ
             (.stmt (.block arb_facts_label arb_facts_body ∅) ρ₀)
             (.exiting lbl { ρ_inner_k with store := projectStore ρ₀.store ρ_inner_k.store }) :=
-          block_wrap_exiting_mismatch π φ arb_facts_label arb_facts_body ∅ lbl ρ₀ ρ_inner_k
+          block_wrap_exiting_mismatch (EvalCommand π φ) (EvalPureFunc φ) arb_facts_label arb_facts_body ∅ lbl ρ₀ ρ_inner_k
             hne_arb h_arb_body_exit
         -- Step 3f: ite nondet-true → then-branch block .none exits
         have h_then_stmts_exit : CoreStar π φ
             (.stmts ((.block arb_facts_label arb_facts_body ∅) ::
               ([.block havoc_label havoc_stmts ∅] ++ [] ++ exit_inv_assumes)) ρ₀)
             (.exiting lbl { ρ_inner_k with store := projectStore ρ₀.store ρ_inner_k.store }) :=
-          stmts_cons_exiting π φ _ _ lbl ρ₀ _ h_arb_block_exit
+          stmts_cons_exiting (EvalCommand π φ) (EvalPureFunc φ) _ _ lbl ρ₀ _ h_arb_block_exit
         have hproj_idem : projectStore ρ₀.store (projectStore ρ₀.store ρ_inner_k.store) =
             projectStore ρ₀.store ρ_inner_k.store := by
           funext x; simp [projectStore]; intro h; simp [h] at *
@@ -7011,7 +6850,7 @@ private theorem simulation_loop_exit_enter_case
             (.exiting lbl { ρ_inner_k with store := projectStore ρ₀.store ρ_inner_k.store }) :=
           ReflTrans_Transitive _ _ _ _
             (stmts_cons_step Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ ρ₀ ρ₀ h_fib_block)
-            (stmts_cons_exiting π φ _ _ lbl ρ₀ _ h_ite_exit)
+            (stmts_cons_exiting (EvalCommand π φ) (EvalPureFunc φ) _ _ lbl ρ₀ _ h_ite_exit)
         -- Step 3h: Wrap in outer block (loop_label)
         have h_outer_exit : CoreStar π φ
             (.stmt (.block s!"{loopElimBlockPrefix}loop_{loop_num}"
@@ -7026,7 +6865,7 @@ private theorem simulation_loop_exit_enter_case
                   [] ∅] ∅) ρ₀)
             (.exiting lbl { { ρ_inner_k with store := projectStore ρ₀.store ρ_inner_k.store } with
               store := projectStore ρ₀.store (projectStore ρ₀.store ρ_inner_k.store) }) :=
-          block_wrap_exiting_mismatch π φ s!"{loopElimBlockPrefix}loop_{loop_num}" _ ∅
+          block_wrap_exiting_mismatch (EvalCommand π φ) (EvalPureFunc φ) s!"{loopElimBlockPrefix}loop_{loop_num}" _ ∅
             lbl ρ₀ _ hne_loop h_stmts_exit
         rw [hproj_idem] at h_outer_exit
         have hproj_eq : projectStore ρ₀.store ρ_inner_k.store = projectStore ρ_k.store ρ_inner_k.store := by
@@ -7589,7 +7428,7 @@ private theorem simulation_loop_cf_all_tt_det_nomeasure
     let exit_inv_assumes : Statements :=
       inv.mapIdx fun i le => Stmt.cmd (HasPassiveCmds.assume
         (mkExitAssumeLabel i le.1) le.2 md)
-    CanFailBlock π φ ((.block arb_facts_label arb_facts_body ∅) ::
+    CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) ((.block arb_facts_label arb_facts_body ∅) ::
       ([.block havoc_label havoc_stmts ∅] ++
         [Stmt.cmd (HasPassiveCmds.assume
           s!"{loopElimAssumePrefix}{loop_num}_not_guard" (HasNot.not g) md)] ++
@@ -7667,10 +7506,10 @@ private theorem simulation_loop_cf_all_tt_det_nomeasure
       exact ReflTrans_Transitive _ _ _ _
         (stmts_cons_step Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ ρ_k ρ_k h_guard_assume)
         (stmts_mapIdx_assume_terminal π φ inv ρ_k md mkArbAssumeLabel hwfb_k hall_tt_k)
-    have h := block_wrap_terminal π φ arb_assumes_label arb_assumes_body md ρ_k ρ_k h_assumes_run
+    have h := block_wrap_terminal (EvalCommand π φ) (EvalPureFunc φ) arb_assumes_label arb_assumes_body md ρ_k ρ_k h_assumes_run
     rw [projectStore_self_env] at h; exact h
   -- Body fails or maintains fires: build CanFailBlock for body ++ maintain_stmts
-  have h_body_maintain_cf : CanFailBlock π φ (body ++ maintain_stmts) ρ_k := by
+  have h_body_maintain_cf : CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) (body ++ maintain_stmts) ρ_k := by
     cases hbad_k with
     | inl hbody_fail =>
       -- Body fails directly from ρ_k
@@ -7686,7 +7525,7 @@ private theorem simulation_loop_cf_all_tt_det_nomeasure
           body ρ_k ρ_inner hnofd_body h_body_term
       have hwfb_inner : WellFormedSemanticEvalBool ρ_inner.eval := by
         rw [heval_inner]; exact hwfb_k
-      have h_maintain_cf : CanFailBlock π φ maintain_stmts ρ_inner :=
+      have h_maintain_cf : CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) maintain_stmts ρ_inner :=
         stmts_mapIdx_assert_canFail π φ inv ρ_inner md mkMaintainLabel
           hwfb_inner hinv_bool_inner hsome_ff
       exact Transform.canFailBlock_append_right (EvalCommand π φ) (EvalPureFunc φ) body maintain_stmts ρ_k ρ_inner h_body_term
@@ -7694,8 +7533,8 @@ private theorem simulation_loop_cf_all_tt_det_nomeasure
   -- Now: arb_facts_body = [havoc_block, assumes_block] ++ [] ++ body ++ maintain ++ []
   -- = havoc :: assumes :: (body ++ maintain)
   -- Build CanFailBlock for arb_facts_body via: havoc → assumes_block → (body++maintain) cf
-  have h_arb_body_cf : CanFailBlock π φ arb_facts_body ρ₀ := by
-    show CanFailBlock π φ ([.block havoc_label havoc_stmts ∅,
+  have h_arb_body_cf : CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) arb_facts_body ρ₀ := by
+    show CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) ([.block havoc_label havoc_stmts ∅,
       .block arb_assumes_label arb_assumes_body md] ++ [] ++ body ++ maintain_stmts ++ []) ρ₀
     simp only [List.append_nil, List.nil_append, List.append_assoc]
     -- = [havoc, assumes] ++ (body ++ maintain)
@@ -7761,7 +7600,7 @@ private theorem simulation_loop_cf_all_tt_nondet
     let exit_inv_assumes : Statements :=
       inv.mapIdx fun i le => Stmt.cmd (HasPassiveCmds.assume
         (mkExitAssumeLabel i le.1) le.2 md)
-    CanFailBlock π φ ((.block arb_facts_label arb_facts_body ∅) ::
+    CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) ((.block arb_facts_label arb_facts_body ∅) ::
       ([.block havoc_label havoc_stmts ∅] ++ [] ++ exit_inv_assumes)) ρ₀ := by
   intro loop_num havoc_vars havoc_stmts havoc_label arb_assumes_label invSuffix
     mkArbAssumeLabel arb_assumes_body mkMaintainLabel maintain_stmts arb_facts_label
@@ -7823,9 +7662,9 @@ private theorem simulation_loop_cf_all_tt_nondet
     have h_assumes_run : CoreStar π φ (.stmts arb_assumes_body ρ_k) (.terminal ρ_k) := by
       simp only [arb_assumes_body, List.nil_append]
       exact stmts_mapIdx_assume_terminal π φ inv ρ_k md mkArbAssumeLabel hwfb_k hall_tt_k
-    have h := block_wrap_terminal π φ arb_assumes_label arb_assumes_body md ρ_k ρ_k h_assumes_run
+    have h := block_wrap_terminal (EvalCommand π φ) (EvalPureFunc φ) arb_assumes_label arb_assumes_body md ρ_k ρ_k h_assumes_run
     rw [projectStore_self_env] at h; exact h
-  have h_body_maintain_cf : CanFailBlock π φ (body ++ maintain_stmts) ρ_k := by
+  have h_body_maintain_cf : CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) (body ++ maintain_stmts) ρ_k := by
     cases hbad_k with
     | inl hbody_fail =>
       obtain ⟨cfg_f, hf_f, hr_f⟩ := hbody_fail
@@ -7839,13 +7678,13 @@ private theorem simulation_loop_cf_all_tt_nondet
           body ρ_k ρ_inner hnofd_body h_body_term
       have hwfb_inner : WellFormedSemanticEvalBool ρ_inner.eval := by
         rw [heval_inner]; exact hwfb_k
-      have h_maintain_cf : CanFailBlock π φ maintain_stmts ρ_inner :=
+      have h_maintain_cf : CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) maintain_stmts ρ_inner :=
         stmts_mapIdx_assert_canFail π φ inv ρ_inner md mkMaintainLabel
           hwfb_inner hinv_bool_inner hsome_ff
       exact Transform.canFailBlock_append_right (EvalCommand π φ) (EvalPureFunc φ) body maintain_stmts ρ_k ρ_inner h_body_term
         h_maintain_cf
-  have h_arb_body_cf : CanFailBlock π φ arb_facts_body ρ₀ := by
-    show CanFailBlock π φ ([.block havoc_label havoc_stmts ∅,
+  have h_arb_body_cf : CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) arb_facts_body ρ₀ := by
+    show CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) ([.block havoc_label havoc_stmts ∅,
       .block arb_assumes_label arb_assumes_body md] ++ [] ++ body ++ maintain_stmts ++ []) ρ₀
     simp only [List.append_nil, List.nil_append, List.append_assoc]
     apply Transform.canFailBlock_append_right (EvalCommand π φ) (EvalPureFunc φ)
@@ -7907,10 +7746,10 @@ private theorem simulation_loop_cf_all_tt
       (stmts_mapIdx_assume_terminal π φ inv ρ₀ md mkAssumeLabel hwfb hall_tt)
   have h_fib_block : CoreStar π φ
       (.stmt (.block first_iter_label first_iter_body {}) ρ₀) (.terminal ρ₀) := by
-    have h := block_wrap_terminal π φ first_iter_label first_iter_body {} ρ₀ ρ₀ h_fib_run
+    have h := block_wrap_terminal (EvalCommand π φ) (EvalPureFunc φ) first_iter_label first_iter_body {} ρ₀ ρ₀ h_fib_run
     rw [projectStore_self_env] at h; exact h
   -- Reduce to: CanFailBlock for the ite singleton list at ρ₀
-  suffices hite_cf : CanFailBlock π φ [.ite guardE then_branch [] {}] ρ₀ from
+  suffices hite_cf : CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) [.ite guardE then_branch [] {}] ρ₀ from
     Transform.canFailBlock_to_canFail_block (EvalCommand π φ) (EvalPureFunc φ) coreIsAtAssert loop_label _ {} ρ₀
       (Transform.canFail_tail_to_block (EvalCommand π φ) (EvalPureFunc φ) (.block first_iter_label first_iter_body {}) _ ρ₀ ρ₀
         h_fib_block hite_cf)
@@ -7919,7 +7758,7 @@ private theorem simulation_loop_cf_all_tt
     Transform.canFail_head_to_block (EvalCommand π φ) (EvalPureFunc φ) coreIsAtAssert (.ite guardE then_branch [] {}) [] ρ₀ hite
   -- CanFail of ITE: enter then_branch (via nondet_true or det_true),
   -- then then_branch reaches failure.
-  suffices hthen_cf : CanFailBlock π φ then_branch ρ₀ by
+  suffices hthen_cf : CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) then_branch ρ₀ by
     obtain ⟨cfg_f, hf_f, hreach_f⟩ := hthen_cf
     refine ⟨.block .none ρ₀.store cfg_f, hf_f, ?_⟩
     cases guardE with
@@ -7956,7 +7795,7 @@ private theorem simulation_loop_cf_all_tt
       exact .step _ _ _ .step_ite_nondet_true
         (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ)
           _ _ .none ρ₀.store hreach_f)
-  -- Remaining goal: CanFailBlock π φ then_branch ρ₀
+  -- Remaining goal: CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) then_branch ρ₀
   -- Strategy: unfold stmtResult in htgt_eq to derive the concrete then_branch,
   -- then show CanFailBlock via arb_facts (havoc-identity + assumes-pass + body).
   simp only [stmtResult] at htgt_eq
@@ -8156,7 +7995,7 @@ private theorem stmt_corr_step
             | step_loop_exit hg_ff hib hff_iff hwfb' =>
               exact loop_zero_iter_term_branch π φ hswf.wfBool hnf₀ hnf''
                 hrest hall_tt hfib_eq
-                (ite_det_false_empty_terminal (π := π) (φ := φ)
+                (ite_det_false_empty_terminal (P := Expression) (CmdT := Command) (EvalCommand π φ) (EvalPureFunc φ)
                   _ then_branch {} ρ₀ hg_ff hwfb')
             | step_loop_enter hgt hinvb hinviff hwfbe hmease =>
               have hh := hasFailure_false_backwards (π := π) (φ := φ) hrest hnf''
@@ -8170,7 +8009,7 @@ private theorem stmt_corr_step
             | step_loop_nondet_exit hib hff_iff =>
               exact loop_zero_iter_term_branch π φ hswf.wfBool hnf₀ hnf''
                 hrest hall_tt hfib_eq
-                (ite_nondet_false_empty_terminal (π := π) (φ := φ)
+                (ite_nondet_false_empty_terminal (P := Expression) (CmdT := Command) (EvalCommand π φ) (EvalPureFunc φ)
                   then_branch {} ρ₀)
             | step_loop_nondet_enter hinvb_ne hinviff_ne =>
               have hh := hasFailure_false_backwards (π := π) (φ := φ) hrest hnf''
@@ -8337,7 +8176,7 @@ private theorem block_corr_step
               exact .inl (Transform.canFail_head_to_block (EvalCommand π φ) (EvalPureFunc φ) coreIsAtAssert _ _ ρ₀ hcf_s)
             | .inr hok_s =>
               refine .inr (fun hnf => ?_)
-              exact stmts_cons_exiting π φ _ _ lbl ρ₀ ρ' (hok_s hnf)
+              exact stmts_cons_exiting (EvalCommand π φ) (EvalPureFunc φ) _ _ lbl ρ₀ ρ' (hok_s hnf)
           | .inr ⟨ρ₁, hterm_s, hexit_ss⟩ =>
             have hswf_s := BlockInitEnvWF.toStmt_head hswf
             have hsim_s := ih.1 σ s hsz_s hnofd_s (blockOk_cons_left hok) ρ₀ hswf_s
@@ -8368,7 +8207,7 @@ private theorem stmt_cf_step
       simp [Stmt.noFuncDecl] at hnofd; exact hnofd
     have hsz_bss : Block.sizeOf bss ≤ n := by
       simp [Stmt.sizeOf] at hsz; omega
-    have hcf_inner : CanFailBlock π φ bss ρ₀ → CanFailBlock π φ (blockResult σ bss) ρ₀ :=
+    have hcf_inner : CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) bss ρ₀ → CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) (blockResult σ bss) ρ₀ :=
       fun h => ih.2.2.2 σ bss hsz_bss hnofd_bss (stmtOk_block_inner hok) ρ₀
         (InitEnvWF.toBlock_block hswf) h
     cases hreach with
@@ -8385,11 +8224,11 @@ private theorem stmt_cf_step
       simp [Stmt.noFuncDecl, Bool.and_eq_true] at hnofd; exact hnofd.1
     have hnofd_ess : Block.noFuncDecl ess = Bool.true := by
       simp [Stmt.noFuncDecl, Bool.and_eq_true] at hnofd; exact hnofd.2
-    have hcf_tss : CanFailBlock π φ tss ρ₀ → CanFailBlock π φ (blockResult σ tss) ρ₀ :=
+    have hcf_tss : CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) tss ρ₀ → CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) (blockResult σ tss) ρ₀ :=
       fun h => ih.2.2.2 σ tss hsz_tss hnofd_tss (stmtOk_ite_left hok) ρ₀
         (InitEnvWF.toBlock_ite_left hswf) h
-    have hcf_ess : CanFailBlock π φ ess ρ₀ →
-        CanFailBlock π φ (blockResult (blockPostState σ tss) ess) ρ₀ :=
+    have hcf_ess : CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) ess ρ₀ →
+        CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) (blockResult (blockPostState σ tss) ess) ρ₀ :=
       fun h => ih.2.2.2 (blockPostState σ tss) ess hsz_ess hnofd_ess
         (stmtOk_ite_right hok) ρ₀ (InitEnvWF.toBlock_ite_right hswf) h
     cases hreach with
@@ -8502,12 +8341,12 @@ private theorem simulation
       ∀ (ρ₀ : Env Expression),
         BlockInitEnvWF reserved bss ρ₀ →
         (∀ ρ', CoreStar π φ (.stmts bss ρ₀) (.terminal ρ') →
-          CanFailBlock π φ (blockResult σ bss) ρ₀ ∨
+          CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) (blockResult σ bss) ρ₀ ∨
           (ρ'.hasFailure = Bool.false →
             CoreStar π φ (.stmts (blockResult σ bss) ρ₀) (.terminal ρ')))
         ∧
         (∀ lbl ρ', CoreStar π φ (.stmts bss ρ₀) (.exiting lbl ρ') →
-          CanFailBlock π φ (blockResult σ bss) ρ₀ ∨
+          CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) (blockResult σ bss) ρ₀ ∨
           (ρ'.hasFailure = Bool.false →
             CoreStar π φ (.stmts (blockResult σ bss) ρ₀) (.exiting lbl ρ'))))
     ∧
@@ -8528,8 +8367,8 @@ private theorem simulation
       blockOk σ bss →
       ∀ (ρ₀ : Env Expression),
         BlockInitEnvWF reserved bss ρ₀ →
-        CanFailBlock π φ bss ρ₀ →
-        CanFailBlock π φ (blockResult σ bss) ρ₀) := by
+        CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) bss ρ₀ →
+        CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) (blockResult σ bss) ρ₀) := by
   induction sz with
   | zero =>
     refine ⟨fun σ st hsz _ _ => ?_, fun σ bss hsz _ _ => ?_,
@@ -8592,8 +8431,8 @@ private theorem canfail_simulation
       Block.noFuncDecl bss = Bool.true →
       ∀ (ρ₀ : Env Expression),
         BlockInitEnvWF reserved bss ρ₀ →
-        CanFailBlock π φ bss ρ₀ →
-        CanFailBlock π φ (blockResult σ bss) ρ₀) := by
+        CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) bss ρ₀ →
+        CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) (blockResult σ bss) ρ₀) := by
   have hsim := simulation π φ hwf_ext sz reserved h_loop_reserved
   exact ⟨fun σ st hsz hok hnofd ρ₀ hswf hcf =>
            hsim.2.2.1 σ st hsz hnofd hok ρ₀ hswf hcf,
