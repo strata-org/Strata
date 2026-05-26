@@ -96,7 +96,7 @@ def readLaurelIonProgram (bytes : ByteArray)
 Translate a program in the dialect-specific AST for Laurel into the generic Strata
 AST. Usually useful as a step before serialization.
 -/
-def laurelToGeneric (p : Laurel.Program) : Strata.Program :=
+def laurelToStrataProgram (p : Laurel.Program) : Strata.Program :=
   Laurel.programToStrata p
 
 /--
@@ -106,7 +106,7 @@ well-structured instance of the Laurel dialect.
 
 TODO: possibly add an input context argument
 -/
-def genericToLaurel (p : Strata.Program) : Except String Laurel.Program :=
+def strataProgramToLaurel (p : Strata.Program) : Except String Laurel.Program :=
   Laurel.TransM.run .none (Laurel.parseProgram p)
 
 /-! ### Transformation between dialects -/

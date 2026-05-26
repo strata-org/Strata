@@ -55,10 +55,13 @@ def coreToStrataProgram (p : Core.Program) : Strata.Program :=
 /--
 Translate a program in the generic AST for Strata into the dialect-specific AST
 for Core. This can fail with an error message if the input is not a
-well-structured instance of the Core dialect.
+well-structured instance of the Core dialect. The optional `ictx` is used to
+attach source-range metadata (file name) to the translated program.
 -/
-def strataProgramToCore (p : Strata.Program) : Except String Core.Program :=
-  let (program, errors) := Core.getProgram p
+def strataProgramToCore (p : Strata.Program)
+    (ictx : Lean.Parser.InputContext := Inhabited.default)
+    : Except String Core.Program :=
+  let (program, errors) := Core.getProgram p ictx
   if errors.isEmpty then
     .ok program
   else
@@ -238,7 +241,7 @@ def Core.verify
     (keepAllFilesPrefix : Option String := none)
     (mkDischarge : Core.MkDischargeFn := Core.mkDischargeFn)
     : IO Core.VCResults := do
-  let program ← match strataProgramToCore env with
+  let program ← match strataProgramToCore env ictx with
     | .ok p => pure p
     | .error msg => panic! msg
   Core.verifyProgram program options moreFns
