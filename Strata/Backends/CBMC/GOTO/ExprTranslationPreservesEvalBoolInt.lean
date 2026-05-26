@@ -6,7 +6,6 @@
 module
 
 public import Strata.Backends.CBMC.GOTO.CoreCFGToGOTOInvariants
-public import Strata.Backends.CBMC.GOTO.CoreCFGToGOTOCorrect
 public import Strata.Backends.CBMC.GOTO.LambdaToCProverGOTO
 public import Strata.Languages.Core.StatementSemantics
 

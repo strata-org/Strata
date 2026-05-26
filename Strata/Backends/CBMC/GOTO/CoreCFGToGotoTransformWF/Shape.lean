@@ -7,7 +7,6 @@ module
 
 public import Strata.Backends.CBMC.GOTO.CoreCFGToGOTOInvariants
 public import Strata.Backends.CBMC.GOTO.CoreCFGToGOTOPipeline
-public import Strata.Backends.CBMC.GOTO.CoreCFGToGOTOCorrect
 import all Strata.DL.Imperative.ToCProverGOTO
 import all Strata.Backends.CBMC.GOTO.CoreToCProverGOTO
 import all Strata.Backends.CBMC.GOTO.CoreCFGToGOTOPipeline

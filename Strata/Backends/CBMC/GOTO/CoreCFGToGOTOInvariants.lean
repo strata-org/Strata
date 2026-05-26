@@ -131,6 +131,46 @@ structure ExprTranslated
     δ σ e_core = some (HasBool.ff (P := Core.Expression)) ↔
     δ_goto_bool σ e_goto = some false
 
+/-! ## Hypothesis: expression-translation correctness (global form)
+
+Axiomatize the relationship between Core's expression evaluator (`δ`) and
+the GOTO expression evaluator (`δ_goto`) used by `StepGoto`. The translator
+`Lambda.LExpr.toGotoExprCtx` should preserve evaluation; this hypothesis
+states that explicitly without the proof. Discharging it is a separate
+project — its proof involves a mutual induction over the expression
+language tying GOTO operator semantics to Core's. -/
+
+/-- Expression-translation correctness as a global property: there is a
+*function* `tx` (the expression translator, e.g. `Lambda.LExpr.toGotoExprCtx`
+specialized to the success path) such that every Core expression and its
+GOTO translation are `ExprTranslated`-equivalent under the given evaluators.
+
+The simulation theorem takes a value of this type as a hypothesis. The
+function form (rather than per-expression existentials) lets us name the
+specific GOTO expression for any given Core source — needed when relating
+a `condGoto cond _ _` transfer in DetCFG to the emitted GOTO instruction
+whose guard is the translation of `cond`. -/
+structure ExprTranslationPreservesEval
+    (δ : Imperative.SemanticEval Core.Expression)
+    (δ_goto : SemanticEvalGoto Core.Expression)
+    (δ_goto_bool : SemanticEvalGotoBool Core.Expression) where
+  /-- The expression translator. -/
+  tx : Core.Expression.Expr → Expr
+  /-- For every Core expression, the translator produces an evaluation-
+  equivalent GOTO expression. -/
+  tx_correct : ∀ e_core,
+    ExprTranslated δ δ_goto δ_goto_bool e_core (tx e_core)
+  /-- The translator commutes with negation, up to translation: the GOTO
+  side's `Expr.not` of a translated expression is the translation of
+  Core's `HasNot.not` of the source. (The CFG-to-GOTO translator emits
+  `Expr.not (tx cond)` for `condGoto cond _ _`, while the DetCFG step
+  relation evaluates `δ σ cond`. Combined with `WellFormedSemanticEvalBool`
+  and `WellFormedSemanticEvalGotoBool`, this lets us bridge the two sides
+  on conditional transfers.) -/
+  tx_commutes_not :
+    ∀ e_core,
+      tx (HasNot.not (P := Core.Expression) e_core) = (tx e_core).not
+
 /-! ## Per-command layout predicate
 
 `CmdEmittedAt pgm pc c` witnesses that the GOTO program `pgm` contains, at
