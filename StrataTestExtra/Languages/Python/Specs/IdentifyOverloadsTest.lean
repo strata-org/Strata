@@ -69,7 +69,7 @@ private meta def buildOverloadTable
     let pyFile := testDir / "servicelib" / "__init__.py"
     match ← pySpecsDir testDir outDir dialectFile
         (modules := #["servicelib"])
-        (warningOutput := .none)
+        (warningVerbosity := 0)
         (pythonCmd := toString pythonCmd) |>.toBaseIO with
     | .ok () => pure ()
     | .error msg =>

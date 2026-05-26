@@ -68,7 +68,7 @@ meta def setupFixture (pythonCmd : System.FilePath)
     -- Compile all servicelib modules (dispatch + individual services)
     match ← pySpecsDir testDir outDir dialectFile
         (modules := #["servicelib", "servicelib.Storage", "servicelib.Messaging", "servicelib.Database"])
-        (warningOutput := .none)
+        (warningVerbosity := 0)
         (pythonCmd := toString pythonCmd) |>.toBaseIO with
     | .ok () => pure ()
     | .error msg => throw <| IO.userError s!"pySpecsDir failed: {msg}"
@@ -152,7 +152,7 @@ meta def runAnalyzeAndVerify
     { Core.VerifyOptions.default with
       stopOnFirstError := false, verbose := .quiet, solver := "z3",
       checkMode := .bugFinding, checkLevel := .full }
-  match ← Core.verifyProgramAdvanced coreProgram options
+  match ← Core.verifyProgram coreProgram options
       (moreFns := Strata.Python.ReFactory)
       (proceduresToVerify := some entryPoints)
       (externalPhases := [Strata.frontEndPhase])

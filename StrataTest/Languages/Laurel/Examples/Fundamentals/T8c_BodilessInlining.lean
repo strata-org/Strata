@@ -46,7 +46,7 @@ procedure caller()
     | .error e => throw (IO.userError s!"Inlining failed: {e}")
   let vcResults ←
     EIO.toIO (fun e => IO.Error.userError e)
-      (Strata.Core.verifyProgramAdvanced inlined
+      (Strata.Core.verifyProgram inlined
         { Core.VerifyOptions.default with verbose := .quiet }
         (proceduresToVerify := some ["caller"]))
   -- Collect only failing results

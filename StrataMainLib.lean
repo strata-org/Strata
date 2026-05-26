@@ -136,6 +136,8 @@ def buildDialectFileMap (pflags : ParsedFlags) : IO Strata.DialectFileMap := do
     |>.addDialect! Strata.Python.Python
     |>.addDialect! Strata.Python.Specs.DDM.PythonSpecs
     |>.addDialect! Strata.Core
+    |>.addDialect! C_Simp
+    |>.addDialect! B3CST
     |>.addDialect! Strata.Laurel.Laurel
     |>.addDialect! Strata.smtReservedKeywordsDialect
     |>.addDialect! Strata.SMTCore
@@ -306,21 +308,19 @@ def parseLaurelVerifyOptions (pflags : ParsedFlags)
       overflowChecks := verifyOptions.overflowChecks }
   return { translateOptions, verifyOptions }
 
-/-- Read and parse a Strata program file, loading the Core, C_Simp, and B3CST
-    dialects. Returns the parsed program and the input context (for source
-    location resolution), or an array of error messages on failure. -/
-private def readStrataProgram (file : String)
-    : IO (Except (Array Lean.Message) (Strata.Program × Lean.Parser.InputContext)) := do
+/-- Read and parse a Strata program file via the DDM API. Returns the parsed
+    program and the input context (for source location resolution). Throws an
+    `IO.userError` with formatted diagnostics on parse failure, and a separate
+    error if the file defines a dialect rather than a program. -/
+private def readStrataProgram (fm : Strata.DialectFileMap) (file : String)
+    : IO (Strata.Program × Lean.Parser.InputContext) := do
   let text ← Strata.Util.readInputSource file
-  let inputCtx := Lean.Parser.mkInputContext text (Strata.Util.displayName file)
-  let dctx := Elab.LoadedDialects.builtin
-  let dctx := dctx.addDialect! Core
-  let dctx := dctx.addDialect! C_Simp
-  let dctx := dctx.addDialect! B3CST
-  let leanEnv ← Lean.mkEmptyEnvironment 0
-  match Strata.Elab.elabProgram dctx leanEnv inputCtx with
-  | .ok pgm => pure (.ok (pgm, inputCtx))
-  | .error msgs => pure (.error msgs)
+  let displayPath := Strata.Util.displayName file
+  let inputCtx := Lean.Parser.mkInputContext text displayPath
+  match ← Strata.readStrataText fm displayPath text.toUTF8 with
+  | .program pgm => pure (pgm, inputCtx)
+  | .dialect _ =>
+    throw (IO.userError s!"Expected a program file, got a dialect: {file}")
 
 structure Command where
   name : String
@@ -1201,6 +1201,7 @@ def transformCommand : Command where
   name := "transform"
   args := [ "file" ]
   flags := [
+    includeFlag,
     { name := "pass",
       help := s!"Transform pass to apply (repeatable, applied left to right). \
                Valid passes: {validPasses}. \
@@ -1220,18 +1221,15 @@ def transformCommand : Command where
     let passConfigs ← buildPassConfigs pflags.entries
     if passConfigs.isEmpty then
       exitFailure s!"No --pass specified. Valid passes: {validPasses}."
+    let fm ← pflags.buildDialectFileMap
     -- Read and parse the Core program
-    let (pgm, _) ← match ← readStrataProgram file with
-      | .ok r => pure r
-      | .error msgs =>
-        for e in msgs do println! s!"Error: {← e.toString}"
-        exitFailure s!"{msgs.size} parse error(s)"
-    match Strata.genericToCore pgm with
+    let (pgm, _) ← readStrataProgram fm file
+    match Strata.strataProgramToCore pgm with
     | .error msg =>
       exitFailure msg
     | .ok initProgram =>
       -- Validate and convert pass configs to TransformPass values
-      let mut passes : List Strata.Core.TransformPass := []
+      let mut passes : List Core.PipelinePhase := []
       for pc in passConfigs do
         match pc.name with
         | "inlineProcedures" =>
@@ -1262,7 +1260,7 @@ def transformCommand : Command where
 def verifyCommand (mkDischarge : Core.MkDischargeFn := Core.mkDischargeFn) : Command where
   name := "verify"
   args := [ "file" ]
-  flags := verifyOptionsFlags ++ [
+  flags := includeFlag :: verifyOptionsFlags ++ [
     { name := "check", help := "Process up until SMT generation, but don't solve." },
     { name := "type-check", help := "Exit after semantic dialect's type inference/checking." },
     { name := "parse-only", help := "Exit after DDM parsing and type checking." },
@@ -1278,14 +1276,8 @@ def verifyCommand (mkDischarge : Core.MkDischargeFn := Core.mkDischargeFn) : Com
       typeCheckOnly := pflags.getBool "type-check",
       parseOnly := pflags.getBool "parse-only",
       outputSarif := opts.outputSarif || pflags.getString "output-format" == some "sarif" }
-    let (pgm, inputCtx) ← match ← readStrataProgram file with
-      | .ok r => pure r
-      | .error errors =>
-        for e in errors do
-          let msg ← e.toString
-          println! s!"Error: {msg}"
-        println! f!"Finished with {errors.size} errors."
-        IO.Process.exit ExitCode.userError
+    let fm ← pflags.buildDialectFileMap
+    let (pgm, inputCtx) ← readStrataProgram fm file
     println! s!"Successfully parsed."
       if opts.parseOnly then return
       if opts.typeCheckOnly then

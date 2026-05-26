@@ -5,7 +5,7 @@
 -/
 module
 
-public import Strata.StrataAPI
+public import Strata.Languages.Core.Core
 public import Strata.Languages.Python.PythonDialect
 public import Strata.Languages.Python.PythonIdent
 public import Strata.DDM.Util.SourceRange

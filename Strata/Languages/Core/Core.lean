@@ -5,219 +5,197 @@
 -/
 module
 
-public import Strata.Languages.Core.DDMTransform.ASTtoCST -- shake: keep
-public import Strata.Languages.Core.Env
-public import Strata.Languages.Core.Options
-public import Strata.Util.Statistics
-public import Strata.Languages.Core.ProgramEval
-import Strata.Languages.Core.ProgramType
-import Strata.Languages.Core.Statistics
+public import Strata.DDM
+public import Strata.Languages.Core.Verifier
+public import Strata.Languages.Core.PipelinePhase
+public import Strata.Transform.ProcedureInlining
+import Strata.Transform.CallElim
+import Strata.Transform.LoopElim
+import Strata.Transform.FilterProcedures
 
----------------------------------------------------------------------
+/-! ## Strata Core Transform & Verification API
 
-namespace Core
-open Strata
+Translation between the generic Strata AST and the Core dialect AST,
+Core program transformations, and Core program verification.
+-/
 
 public section
 
-/-!
-## Differences between Boogie and Strata.Core
+namespace Strata
 
-1. Strata.Core does not have global variables.
+/-! ### Transformation between generic and dialect-specific representation -/
 
-2. Unlike Boogie, Strata.Core is sensitive to global declaration order. E.g.,
-   a function must be declared before it can be used in a procedure.
-
-3. Strata.Core does not (yet) support polymorphism.
-
-4. Strata.Core supports `exit` statements that exit the nearest enclosing
-   block with a matching label (or the nearest block if no label is given).
-   Strata does not support arbitrary `goto` statements.
-
-5. Strata.Core does not support `where` clauses and `unique` constants,
-   requiring a tool like `BoogieToStrata` to desugar them.
+/--
+Translate a program in the dialect-specific AST for Core into the generic Strata
+AST. Usually useful as a step before serialization. Conversion goes through the
+Core CST built by `Strata.programToCST`, then projects each `Command` back to
+its underlying `Operation` via the DDM-generated `toAst`.
 -/
+def coreToStrataProgram (p : Core.Program) : Strata.Program :=
+  let (_finalCtx, cmds) := Strata.programToCST (M := SourceRange) p
+  let ops := cmds.map (·.toAst) |>.toArray
+  Strata.Program.create Strata.Core_map "Core" ops
 
-def typeCheck (options : VerifyOptions) (program : Program)
-    (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
-    Except DiagnosticModel Program := do
-  let T := Lambda.TEnv.default
-  let factory ← Core.Factory.addFactory moreFns
-  let C := { Lambda.LContext.default with
-                functions := factory,
-                knownTypes := Core.KnownTypes }
-  match Factory.typeCheck C T with
-  | .error k =>
-    -- TODO: DiagnosticModel for functions defined in Factory?
-    throw (DiagnosticModel.fromFormat k)
-  | .ok T =>
-    let (program, _T) ← Program.typeCheck C T program
-    -- dbg_trace f!"[Strata.Core] Annotated program:\n{program}"
-    if options.verbose >= .normal then dbg_trace f!"[Strata.Core] Type checking succeeded.\n"
-    return program
+/--
+Translate a program in the generic AST for Strata into the dialect-specific AST
+for Core. This can fail with an error message if the input is not a
+well-structured instance of the Core dialect.
+-/
+def strataProgramToCore (p : Strata.Program) : Except String Core.Program :=
+  let (program, errors) := Core.getProgram p
+  if errors.isEmpty then
+    .ok program
+  else
+    .error s!"Core DDM translation errors:\n{String.intercalate "\n" errors.toList}"
 
-def formatProofObligation (ob : Imperative.ProofObligation Expression) :
-    Std.Format :=
-  let flatEntries := ob.assumptions.flatten
-  let assumptionFmt := flatEntries.filterMap fun
-    | .assumption label expr => some f!"{label}: {Core.formatExprs [expr]}"
-    | _ => none
-  let assumptionLine := if assumptionFmt.isEmpty then f!""
-                        else f!"\nAssumptions:\n{Std.Format.joinSep assumptionFmt "\n"}"
-  f!"Label: {ob.label}\n\
-     Property: {ob.property}{assumptionLine}\n\
-     Obligation:\n{Core.formatExprs [ob.obligation]}\n"
+/-! ### Type checking and obligation building -/
 
-def formatProofObligations (obs : Array (Imperative.ProofObligation Expression)) :
-    Std.Format :=
-  Std.Format.joinSep (obs.toList.map formatProofObligation) "\n"
+/--
+Type-check a Core program. Returns the annotated program on success, or a
+`DiagnosticModel` describing the error on failure.
+-/
+def Core.typeCheck (options : Core.VerifyOptions) (program : Core.Program)
+    (moreFns : Lambda.Factory Core.CoreLParams := Lambda.Factory.default) :
+    Except DiagnosticModel Core.Program :=
+  _root_.Core.typeCheck options program moreFns
 
-/-- Build an evaluation environment from a program.
-    Loads the factory, datatypes, and processes all declarations.
-    When `registerCustomFunctions` is true, also loads function declarations,
-    distinct constraints, and local function declarations from procedure
-    bodies into the factory (needed for SMT encoding). -/
-def buildEnv (options : VerifyOptions) (program : Program)
-    (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default)
-    (registerCustomFunctions : Bool := false) :
-    Except DiagnosticModel (Env × Statistics) := do
-  let factory ← Core.Factory.addFactory moreFns
-  let σ ← (Lambda.LState.init).addFactory factory
-  let datatypes := program.decls.filterMap fun decl =>
-    match decl with | .type (.data d) _ => some d | _ => none
-  let mut E : Env := { Env.init with exprEnv := σ, program := program, pathCap := options.pathCap }
-  E ← E.addDatatypes datatypes
+/--
+Type-check a Core program, then run symbolic evaluation. Returns the list of
+post-evaluation environments and accumulated statistics.
+-/
+def Core.typeCheckAndEval (options : Core.VerifyOptions) (program : Core.Program)
+    (moreFns : Lambda.Factory Core.CoreLParams := Lambda.Factory.default) :
+    Except DiagnosticModel ((List Core.Env) × Statistics) :=
+  _root_.Core.typeCheckAndEval options program moreFns
 
-  if registerCustomFunctions then
-    for decl in program.decls do
-      match decl with
-      | .func func _ => E ← E.addFactoryFunc func
-      | .recFuncBlock funcs _ =>
-        validateCasesTypes funcs E.datatypes
-        for func in funcs do E ← E.addFactoryFunc func
-      | .distinct _ es _ => E := { E with distinct := es :: E.distinct }
-      | .proc proc _ =>
-        for stmt in proc.body.flatMap collectFuncDecls do
-          match E.exprEnv.addFactoryFunc stmt with
-          | .ok σ' => E := { E with exprEnv := σ' }
-          | .error _ => pure ()
-      | _ => pure ()
+/--
+Type-check a Core program, then build the proof-obligation program suitable for
+downstream phases (ANF encoding, SMT encoding).
+-/
+def Core.typeCheckAndBuildObligationProgram
+    (options : Core.VerifyOptions) (program : Core.Program)
+    (moreFns : Lambda.Factory Core.CoreLParams := Lambda.Factory.default) :
+    Except DiagnosticModel (Core.Program × Statistics) :=
+  _root_.Core.typeCheckAndBuildObligationProgram options program moreFns
 
-  -- Collect declaration statistics
-  let stats := program.decls.foldl (fun s d =>
-    match d with
-    | .type _ _          => s.increment s!"{Evaluator.Stats.typeDecls}"
-    | .ax _ _            => s.increment s!"{Evaluator.Stats.axioms}"
-    | .distinct _ _ _    => s.increment s!"{Evaluator.Stats.distincts}"
-    | .proc _ _          => s.increment s!"{Evaluator.Stats.procedures}"
-    | .func _ _          => s.increment s!"{Evaluator.Stats.functions}"
-    | .recFuncBlock fs _ => s.increment s!"{Evaluator.Stats.recursiveFunctions}" fs.length)
-    ({} : Statistics)
-  let stats := stats.increment s!"{Evaluator.Stats.factoryOps}" factory.toArray.size
-  return (E, stats)
-where
-  collectFuncDecls : Statement → List (@Lambda.LFunc CoreLParams)
-    | .funcDecl decl _ => [{
-        name := decl.name, typeArgs := decl.typeArgs, isConstr := decl.isConstr,
-        inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.toMonoTypeUnsafe ty)),
-        output := Lambda.LTy.toMonoTypeUnsafe decl.output,
-        body := decl.body, attr := decl.attr,
-        concreteEval := decl.concreteEval, axioms := decl.axioms }]
-    | .block _ ss _ => ss.flatMap collectFuncDecls
-    | .ite _ tss ess _ => tss.flatMap collectFuncDecls ++ ess.flatMap collectFuncDecls
-    | .loop _ _ _ body _ => body.flatMap collectFuncDecls
-    | _ => []
+/-! ### Transformation of Core programs
 
-/-- Proof obligation program construction: Program → Program.
-    Runs symbolic execution and converts obligations to a program
-    suitable for downstream phases (ANF encoding, SMT encoding). -/
-def toCoreProofObligationProgram (options : VerifyOptions) (program : Program)
-    (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
-    Except DiagnosticModel (Program × Statistics) := do
-  let (E, declStats) ← buildEnv options program moreFns
-  let (pEs, evalStats) ← Program.eval E
-  -- Note: all .program fields in pEs will have identical values, because
-  -- Program.eval does not modify the program. The Program field is
-  -- kept for convenience.
-  let stats := declStats.merge evalStats
-  let stats := stats.increment s!"{Evaluator.Stats.verificationEnvironments}" pEs.length
+Transform passes are values of `Core.PipelinePhase`. Build them with the
+smart constructors below (e.g., `Core.passLoopElim`, `Core.passInlineAll`),
+or with the per-pass entry points (`Core.inlineAllProcedures`,
+`Core.loopElimUsingContract`, …). Chain phases with `Core.runTransforms`. -/
 
-  -- Convert the evaluation Env's deferred obligations into a procedure body.
-  -- Program.eval accumulates all procedures into a single Env, so pEs
-  -- is always a single-element list. We extract the single Env and build
-  -- one obligation procedure containing all deferred obligations.
-  -- Type/datatype declarations come from the original program.
-  let typeDecls := program.decls.filter fun d =>
-    match d with | .type _ _ => true | _ => false
-  let postEvalEnv ← match pEs with
-    | [e] => pure e
-    | _ => throw (DiagnosticModel.fromMessage s!"toCoreProofObligationProgram: expected exactly 1 evaluation Env, got {pEs.length}")
-  -- The procedure name is only used for the obligation procedure header;
-  -- downstream phases (ObligationExtraction) walk the body and ignore it.
-  -- We pick the first procedure name as a representative label.
-  let procName := program.decls.findSome? fun
-    | .proc p _ => some p.header.name | _ => none
-  let blocks := postEvalEnv.deferred.toList.map fun ob =>
-    let assumes := ob.assumptions.reverse.flatten.filterMap fun
-      | .assumption label e =>
-        some (Imperative.Stmt.cmd (CmdExt.cmd (Imperative.Cmd.assume label e ob.metadata)))
-      | _ => none
-    let assertStmt := Imperative.Stmt.cmd (CmdExt.cmd (
-      if ob.property == .cover
-      then Imperative.Cmd.cover ob.label ob.obligation ob.metadata
-      else Imperative.Cmd.assert ob.label ob.obligation ob.metadata))
-    assumes ++ [assertStmt]
-  let body := match blocks with
-    | [] => []
-    | [b] => b
-    | b :: rest => rest.foldl (fun acc block =>
-        [Imperative.Stmt.ite .nondet acc block .empty]) b
-  let oblProcs := match procName with
-    | some name => [Decl.proc {
-        header := { name := name, typeArgs := [], inputs := [], outputs := [] },
-        spec := { preconditions := [], postconditions := [] },
-        body := body
-      } .empty]
-    | none => []
+/-- Run a chain of pipeline phases on a Core program. All phases share a
+    single `CoreTransformState`, so fresh variable counters accumulate across
+    phases and cached analyses (e.g., call graphs) can be reused. -/
+def Core.runTransforms (p : Core.Program) (phases : List Core.PipelinePhase)
+    : Except Core.Transform.Err Core.Program :=
+  Core.Transform.run p (fun prog => do
+    let mut program := prog
+    for phase in phases do
+      let (_, prog') ← phase.transform program
+      program := prog'
+    return program)
 
-  -- Include function declarations and distinct constraints from the
-  -- evaluation environment so the obligations program is self-contained
-  -- for downstream phases (ANF encoding, SMT encoding).
-  -- Get functions added during evaluation (not in the initial factory)
-  let initialFactorySize := E.exprEnv.config.factory.toArray.size
-  let evalFuncs := postEvalEnv.exprEnv.config.factory.toArray.toList.drop initialFactorySize
-  let funcDecls := evalFuncs.map fun func => Decl.func func .empty
-  let distinctDecls := postEvalEnv.distinct.mapIdx fun i es =>
-    Decl.distinct s!"distinct_{i}" es .empty
-  let oblProgram : Program := { decls := typeDecls ++ funcDecls ++ distinctDecls ++ oblProcs }
+/-- Inline procedure calls. By default inlines every non-recursive call. -/
+def Core.passInlineAll : Core.PipelinePhase :=
+  Core.procedureInliningPipelinePhase {}
 
-  if options.verbose >= .normal then do
-    dbg_trace f!"{Std.Format.line}VCs:"
-    dbg_trace f!"{formatProofObligations postEvalEnv.deferred}"
-  return (oblProgram, stats)
+/-- Inline only the named procedures' call sites. -/
+def Core.passInlineMatching (procs : List String) : Core.PipelinePhase :=
+  Core.procedureInliningPipelinePhase
+    { doInline := fun _caller callee _ => callee ∈ procs }
 
+/-- Inline every procedure call except calls to the named procedures. -/
+def Core.passInlineExcept (procs : List String) : Core.PipelinePhase :=
+  Core.procedureInliningPipelinePhase
+    { doInline := fun _caller callee _ => callee ∉ procs }
 
-/-- Convenience: type check then build obligation program. -/
-def typeCheckAndBuildObligationProgram (options : VerifyOptions) (program : Program)
-    (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
-    Except DiagnosticModel (Program × Statistics) := do
-  let program ← typeCheck options program moreFns
-  toCoreProofObligationProgram options program moreFns
+/-- Replace each loop with assertions/assumptions about its invariants. -/
+def Core.passLoopElim : Core.PipelinePhase :=
+  Core.loopElimPipelinePhase
 
-/-- Convenience: type check then symbolic eval. Returns the list of
-    evaluation environments and statistics. -/
-def typeCheckAndEval (options : VerifyOptions) (program : Program)
-    (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
-    Except DiagnosticModel ((List Env) × Statistics) := do
-  let program ← typeCheck options program moreFns
-  let (E, declStats) ← buildEnv options program moreFns
-  let (pEs, evalStats) ← Program.eval E
-  let stats := declStats.merge evalStats
-  let stats := stats.increment s!"{Evaluator.Stats.verificationEnvironments}" pEs.length
-  return (pEs, stats)
+/-- Replace each procedure call with assertions/assumptions about its contract. -/
+def Core.passCallElim : Core.PipelinePhase :=
+  Core.callElimPipelinePhase
+
+/-- Keep only the named procedures and their transitive callees. -/
+def Core.passFilterProcedures (procs : List String) : Core.PipelinePhase :=
+  Core.filterProceduresPipelinePhase procs
+
+/-- Remove axiom declarations that are irrelevant to the named functions
+    (based on call graph analysis). -/
+def Core.passRemoveIrrelevantAxioms (funcs : List String) : Core.PipelinePhase :=
+  Core.irrelevantAxiomsPipelinePhase funcs
+
+/-- Inline every non-recursive procedure call. -/
+def Core.inlineAllProcedures (p : Core.Program)
+    : Except Core.Transform.Err Core.Program :=
+  Core.runTransforms p [Core.passInlineAll]
+
+/-- Inline only the named procedures' call sites. -/
+def Core.inlineMatchingProcedures (p : Core.Program) (procs : List String)
+    : Except Core.Transform.Err Core.Program :=
+  Core.runTransforms p [Core.passInlineMatching procs]
+
+/-- Transform a Core program to replace each loop with assertions/assumptions
+    about its invariants. -/
+def Core.loopElimUsingContract (p : Core.Program) : Core.Program :=
+  (Core.loopElim p).fst
+
+/-- Transform a Core program to replace each procedure call with
+    assertions/assumptions about its contract. -/
+def Core.callElimUsingContract (p : Core.Program)
+    : Except Core.Transform.Err Core.Program :=
+  Core.runTransforms p [Core.passCallElim]
+
+/-- Transform a Core program to keep only the named procedures and their
+    transitive callees, removing everything else. -/
+def Core.filterProcedures (p : Core.Program) (targetProcs : List String)
+    : Except Core.Transform.Err Core.Program :=
+  Core.runTransforms p [Core.passFilterProcedures targetProcs]
+
+/-- Transform a Core program to remove axiom declarations that are irrelevant
+    to the named functions (based on call graph analysis). -/
+def Core.removeIrrelevantAxioms (p : Core.Program) (functions : List String)
+    : Except Core.Transform.Err Core.Program :=
+  Core.runTransforms p [Core.passRemoveIrrelevantAxioms functions]
+
+/-! ### Analysis of Core programs -/
+
+/--
+Verify a Core program, including any external solver invocation that is
+necessary.
+
+The basic call form passes just `program` and `options`. Power users may
+plug in additional Lambda factories, external/prefix pipeline phases, a
+custom solver, a custom discharge function, or a shared `PipelineContext`
+via the optional named arguments.
+-/
+def Core.verifyProgram
+    (program : Core.Program)
+    (options : Core.VerifyOptions := .default)
+    (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default)
+    (proceduresToVerify : Option (List String) := none)
+    (externalPhases : List Core.AbstractedPhase := [])
+    (prefixPhases : List Core.PipelinePhase := [])
+    (keepAllFilesPrefix : Option String := none)
+    (solver : Option Core.CoreSMTSolver := none)
+    (mkDischarge : Core.MkDischargeFn := Core.mkDischargeFn)
+    (pipelineCtx : Option Pipeline.PipelineContext := none)
+    : EIO String Core.VCResults := do
+  let runVerification (tempDir : System.FilePath) : IO Core.VCResults :=
+    EIO.toIO (IO.Error.userError ∘ toString)
+      (Core.verify program tempDir proceduresToVerify options moreFns externalPhases prefixPhases
+        (keepAllFilesPrefix := keepAllFilesPrefix)
+        (solver := solver)
+        (mkDischarge := mkDischarge)
+        (pipelineCtx := pipelineCtx))
+  let ioAction := match options.vcDirectory with
+    | .some vcDir => IO.FS.createDirAll vcDir *> runVerification vcDir
+    | .none => IO.FS.withTempDir runVerification
+  IO.toEIO (fun e => s!"{e}") ioAction
+
+end Strata
 
 end -- public section
-
-end Core
-
----------------------------------------------------------------------

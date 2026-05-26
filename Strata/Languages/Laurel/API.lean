@@ -5,7 +5,7 @@
 -/
 module
 
-public import Strata.StrataAPI
+public import Strata.Languages.Core.Core
 public import Strata.Languages.Laurel.Laurel
 public import Strata.Util.FileRange
 public import Strata.Languages.Laurel.LaurelCompilationPipeline

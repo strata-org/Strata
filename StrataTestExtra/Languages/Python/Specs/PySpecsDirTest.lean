@@ -39,7 +39,7 @@ private meta def testFullDirectory : IO Unit := withPython fun pythonCmd => do
       -- broken.py has a duplicate class, so pySpecsDir will report a failure.
       -- But continue-on-error means the good modules should still be translated.
       let _r ← pySpecsDir testDir outDir dialectFile
-        (warningOutput := .none)
+        (warningVerbosity := 0)
         (pythonCmd := toString pythonCmd) |>.toBaseIO
 
       -- Check expected output files exist (all except broken)
@@ -70,7 +70,7 @@ private meta def testModuleFilter : IO Unit := withPython fun pythonCmd => do
     IO.FS.withTempDir fun outDir => do
       let r ← pySpecsDir testDir outDir dialectFile
         (modules := #["standalone"])
-        (warningOutput := .none)
+        (warningVerbosity := 0)
         (pythonCmd := toString pythonCmd) |>.toBaseIO
       match r with
       | .error msg => throw <| IO.userError s!"pySpecsDir --module failed: {msg}"
@@ -93,7 +93,7 @@ private meta def testModulePackage : IO Unit := withPython fun pythonCmd => do
     IO.FS.withTempDir fun outDir => do
       let r ← pySpecsDir testDir outDir dialectFile
         (modules := #["testpkg"])
-        (warningOutput := .none)
+        (warningVerbosity := 0)
         (pythonCmd := toString pythonCmd) |>.toBaseIO
       match r with
       | .error msg => throw <| IO.userError s!"pySpecsDir --module testpkg failed: {msg}"
@@ -113,7 +113,7 @@ private meta def testSubdirRelativeImport : IO Unit := withPython fun pythonCmd 
     IO.FS.withTempDir fun outDir => do
       let r ← pySpecsDir testDir outDir dialectFile
         (modules := #["testpkg.consumer"])
-        (warningOutput := .none)
+        (warningVerbosity := 0)
         (pythonCmd := toString pythonCmd) |>.toBaseIO
       match r with
       | .error msg => throw <| IO.userError s!"pySpecsDir --module testpkg.consumer failed: {msg}"
@@ -133,7 +133,7 @@ private meta def testIncremental : IO Unit := withPython fun pythonCmd => do
       -- First run
       match ← pySpecsDir testDir outDir dialectFile
         (modules := #["standalone"])
-        (warningOutput := .none)
+        (warningVerbosity := 0)
         (pythonCmd := toString pythonCmd) |>.toBaseIO with
       | .error msg => throw <| IO.userError s!"First run failed: {msg}"
       | .ok () => pure ()
@@ -149,7 +149,7 @@ private meta def testIncremental : IO Unit := withPython fun pythonCmd => do
       -- Second run — should skip since output is newer
       match ← pySpecsDir testDir outDir dialectFile
         (modules := #["standalone"])
-        (warningOutput := .none)
+        (warningVerbosity := 0)
         (pythonCmd := toString pythonCmd) |>.toBaseIO with
       | .error msg => throw <| IO.userError s!"Second run failed: {msg}"
       | .ok () => pure ()
@@ -173,7 +173,7 @@ private meta def testContinueOnError : IO Unit := withPython fun pythonCmd => do
       -- Translate both standalone (good) and broken (has duplicate class)
       let r ← pySpecsDir testDir outDir dialectFile
         (modules := #["standalone", "testpkg.broken"])
-        (warningOutput := .none)
+        (warningVerbosity := 0)
         (pythonCmd := toString pythonCmd) |>.toBaseIO
       -- Should fail (because broken module has an error)
       match r with
