@@ -209,28 +209,34 @@ direction explicit.
 
 ### Index
 
-- *Subsumption* — \[⇐\] Sub
-- *Literals* — \[⇒\] Lit-Int, \[⇒\] Lit-Bool, \[⇒\] Lit-String, \[⇒\] Lit-Decimal
-- *Variables* — \[⇒\] Var-Local, \[⇒\] Var-Field, \[⇐\] Var-Declare
-- *Control flow* — \[⇐\] If, \[⇐\] If-NoElse;
-  \[⇐\] Block, \[⇐\] Block-Empty; \[⇐\] Exit;
-  \[⇐\] Return-None, \[⇐\] Return-Some, \[⇐\] Return-Void-Error,
+- {ref "rules-subsumption"}[*Subsumption*] — \[⇐\] Sub
+- {ref "rules-literals"}[*Literals*] — \[⇒\] Lit-Int, \[⇒\] Lit-Bool, \[⇒\] Lit-String, \[⇒\] Lit-Decimal
+- {ref "rules-variables"}[*Variables*] — \[⇒\] Var-Local, \[⇒\] Var-Field, \[⇐\] Var-Declare
+- {ref "rules-control-flow"}[*Control flow*] — \[⇐\] If, \[⇐\] If-NoElse;
+  \[⇐\] Block, \[⇒\] Skip, \[⇐\] Discard, \[⇐\] Discard-Call; \[⇐\] Exit;
+  \[⇐\] Return-None-Void, \[⇐\] Return-None-Single, \[⇐\] Return-None-Multi,
+  \[⇐\] Return-Some, \[⇐\] Return-Void-Error,
   \[⇐\] Return-Multi-Error; \[⇐\] While
-- *Verification statements* — \[⇐\] Assert, \[⇐\] Assume
-- *Assignment* — \[⇐\] Assign
-- *Calls* — \[⇒\] Static-Call, \[⇒\] Static-Call-Multi, \[⇒\] Instance-Call
-- *Primitive operations* — \[⇒\] Op-Bool, \[⇒\] Op-Cmp, \[⇒\] Op-Eq, \[⇒\] Op-Arith,
-  \[⇒\] Op-Concat; \[⇐\] Op-Arith, \[⇐\] Op-Bool
-- *Object forms* — \[⇒\] New-Ok, \[⇒\] New-Fallback; \[⇒\] AsType; \[⇒\] IsType;
+- {ref "rules-verification-statements"}[*Verification statements*] — \[⇐\] Assert, \[⇐\] Assume
+- {ref "rules-assignment"}[*Assignment*] — \[⇐\] Assign
+- {ref "rules-calls"}[*Calls*] — \[⇒\] Static-Call, \[⇒\] Static-Call-Multi,
+  \[⇒\] Instance-Call, \[⇒\] Instance-Call-Multi
+- {ref "rules-primitive-operations"}[*Primitive operations*] — \[⇒\] Op-Bool, \[⇒\] Op-Cmp, \[⇒\] Op-Eq,
+  \[⇒\] Op-Arith, \[⇒\] Op-Concat; \[⇐\] Op-Arith, \[⇐\] Op-Bool
+- {ref "rules-object-forms"}[*Object forms*] — \[⇒\] New-Ok, \[⇒\] New-Fallback; \[⇒\] AsType; \[⇒\] IsType;
   \[⇒\] RefEq; \[⇒\] PureFieldUpdate
-- *Verification expressions* — \[⇒\] Quantifier, \[⇒\] Assigned, \[⇐\] Old,
+- {ref "rules-verification-expressions"}[*Verification expressions*] — \[⇒\] Quantifier, \[⇒\] Assigned, \[⇐\] Old,
   \[⇒\] Fresh, \[⇐\] ProveBy
-- *Self reference* — \[⇒\] This-Inside, \[⇒\] This-Outside
-- *Untyped forms* — \[⇒\] Abstract / All
-- *ContractOf* — \[⇒\] ContractOf-Bool, \[⇒\] ContractOf-Set, \[⇒\] ContractOf-Error
-- *Holes* — \[⇐\] Hole-Some, \[⇐\] Hole-None
+- {ref "rules-self-reference"}[*Self reference*] — \[⇒\] This-Inside, \[⇒\] This-Outside
+- {ref "rules-untyped-forms"}[*Untyped forms*] — \[⇒\] Abstract / All
+- {ref "rules-contract-of"}[*ContractOf*] — \[⇒\] ContractOf-Bool, \[⇒\] ContractOf-Set, \[⇒\] ContractOf-Error
+- {ref "rules-holes"}[*Holes*] — \[⇐\] Hole-Some, \[⇐\] Hole-None
+- {ref "rules-procedure"}[*Procedure*] — Procedure
 
 ### Subsumption
+%%%
+tag := "rules-subsumption"
+%%%
 
 $$`\frac{\Gamma \vdash e \Rightarrow A \quad A <: B}{\Gamma \vdash e \Leftarrow B} \quad \text{([⇐] Sub)}`
 
@@ -238,6 +244,9 @@ Fallback in {name Strata.Laurel.Resolution.Check.resolveStmtExpr}`Check.resolveS
 rule applies.
 
 ### Literals
+%%%
+tag := "rules-literals"
+%%%
 
 $$`\frac{}{\Gamma \vdash \mathsf{LiteralInt}\;n \Rightarrow \mathsf{TInt}} \quad \text{([⇒] Lit-Int)}`
 
@@ -256,6 +265,9 @@ $$`\frac{}{\Gamma \vdash \mathsf{LiteralDecimal}\;d \Rightarrow \mathsf{TReal}} 
 {docstring Strata.Laurel.Resolution.Synth.litDecimal}
 
 ### Variables
+%%%
+tag := "rules-variables"
+%%%
 
 $$`\frac{\Gamma(x) = T}{\Gamma \vdash \mathsf{Var}\;(\mathsf{.Local}\;x) \Rightarrow T} \quad \text{([⇒] Var-Local)}`
 
@@ -270,6 +282,9 @@ $$`\frac{x \notin \mathrm{dom}(\Gamma) \quad \mathsf{TVoid} <: T}{\Gamma \vdash 
 {docstring Strata.Laurel.Resolution.Check.varDeclare}
 
 ### Control flow
+%%%
+tag := "rules-control-flow"
+%%%
 
 $$`\frac{\Gamma \vdash \mathit{cond} \Leftarrow \mathsf{TBool} \quad \Gamma \vdash \mathit{thenBr} \Leftarrow T \quad \Gamma \vdash \mathit{elseBr} \Leftarrow T}{\Gamma \vdash \mathsf{IfThenElse}\;\mathit{cond}\;\mathit{thenBr}\;(\mathsf{some}\;\mathit{elseBr}) \Leftarrow T} \quad \text{([⇐] If)}`
 
@@ -326,6 +341,9 @@ $$`\frac{\Gamma \vdash \mathit{cond} \Leftarrow \mathsf{TBool} \quad \Gamma \vda
 {docstring Strata.Laurel.Resolution.Check.while}
 
 ### Verification statements
+%%%
+tag := "rules-verification-statements"
+%%%
 
 $$`\frac{\Gamma \vdash \mathit{cond} \Leftarrow \mathsf{TBool} \quad \mathsf{TVoid} <: T}{\Gamma \vdash \mathsf{Assert}\;\mathit{cond} \Leftarrow T} \quad \text{([⇐] Assert)}`
 
@@ -336,6 +354,9 @@ $$`\frac{\Gamma \vdash \mathit{cond} \Leftarrow \mathsf{TBool} \quad \mathsf{TVo
 {docstring Strata.Laurel.Resolution.Check.assume}
 
 ### Assignment
+%%%
+tag := "rules-assignment"
+%%%
 
 $$`\frac{\Gamma \vdash \mathit{targets}_i \Rightarrow T_i \quad \Gamma \vdash e \Leftarrow \mathit{ExpectedTy}}{\Gamma \vdash \mathsf{Assign}\;\mathit{targets}\;e \Leftarrow \mathsf{TVoid}} \quad \text{([⇐] Assign)}`
 
@@ -354,6 +375,9 @@ where the target type happens to coincide with the surrounding expectation.
 {docstring Strata.Laurel.Resolution.Check.assign}
 
 ### Calls
+%%%
+tag := "rules-calls"
+%%%
 
 $$`\frac{\Gamma(\mathit{callee}) = \text{static-procedure with inputs } Ts \text{ and outputs } [T] \quad \Gamma \vdash \mathit{args} \Rightarrow Us \quad U_i <: T_i \text{ (pairwise)}}{\Gamma \vdash \mathsf{StaticCall}\;\mathit{callee}\;\mathit{args} \Rightarrow T} \quad \text{([⇒] Static-Call)}`
 
@@ -366,6 +390,9 @@ $$`\frac{\Gamma \vdash \mathit{target} \Rightarrow \_ \quad \Gamma(\mathit{calle
 {docstring Strata.Laurel.Resolution.Synth.instanceCall}
 
 ### Primitive operations
+%%%
+tag := "rules-primitive-operations"
+%%%
 
 `Numeric` abbreviates "consistent with one of {name Strata.Laurel.HighType.TInt}`TInt`,
 {name Strata.Laurel.HighType.TReal}`TReal`,
@@ -395,6 +422,9 @@ $$`\frac{\mathsf{TBool} <: T \quad \Gamma \vdash \mathit{args}_i \Leftarrow \mat
 {docstring Strata.Laurel.Resolution.Check.primitiveOp}
 
 ### Object forms
+%%%
+tag := "rules-object-forms"
+%%%
 
 $$`\frac{\Gamma(\mathit{ref}) \text{ is a composite or datatype } T}{\Gamma \vdash \mathsf{New}\;\mathit{ref} \Rightarrow \mathsf{UserDefined}\;T} \quad \text{([⇒] New-Ok)}`
 
@@ -424,6 +454,9 @@ $$`\frac{\Gamma \vdash \mathit{target} \Rightarrow T_t \quad \Gamma(f) = T_f \qu
 {docstring Strata.Laurel.Resolution.Synth.pureFieldUpdate}
 
 ### Verification expressions
+%%%
+tag := "rules-verification-expressions"
+%%%
 
 $$`\frac{\Gamma, x : T \vdash \mathit{body} \Leftarrow \mathsf{TBool}}{\Gamma \vdash \mathsf{Quantifier}\;\mathit{mode}\;\langle x, T\rangle\;\mathit{trig}\;\mathit{body} \Rightarrow \mathsf{TBool}} \quad \text{([⇒] Quantifier)}`
 
@@ -446,6 +479,9 @@ $$`\frac{\Gamma \vdash v \Leftarrow T \quad \Gamma \vdash \mathit{proof} \Righta
 {docstring Strata.Laurel.Resolution.Check.proveBy}
 
 ### Self reference
+%%%
+tag := "rules-self-reference"
+%%%
 
 $$`\frac{\Gamma.\mathit{instanceTypeName} = \mathsf{some}\;T}{\Gamma \vdash \mathsf{This} \Rightarrow \mathsf{UserDefined}\;T} \quad \text{([⇒] This-Inside)}`
 
@@ -454,6 +490,9 @@ $$`\frac{\Gamma.\mathit{instanceTypeName} = \mathsf{none}}{\Gamma \vdash \mathsf
 {docstring Strata.Laurel.Resolution.Synth.this}
 
 ### Untyped forms
+%%%
+tag := "rules-untyped-forms"
+%%%
 
 $$`\frac{}{\Gamma \vdash \mathsf{Abstract}\;/\;\mathsf{All}\;\ldots \Rightarrow \mathsf{Unknown}} \quad \text{([⇒] Abstract / All)}`
 
@@ -462,6 +501,9 @@ $$`\frac{}{\Gamma \vdash \mathsf{Abstract}\;/\;\mathsf{All}\;\ldots \Rightarrow 
 {docstring Strata.Laurel.Resolution.Synth.all}
 
 ### ContractOf
+%%%
+tag := "rules-contract-of"
+%%%
 
 $$`\frac{\mathit{fn} = \mathsf{Var}\;(\mathsf{.Local}\;\mathit{id}) \quad \Gamma(\mathit{id}) \in \{\mathit{staticProcedure}, \mathit{instanceProcedure}\}}{\Gamma \vdash \mathsf{ContractOf}\;\mathsf{Precondition}\;\mathit{fn} \Rightarrow \mathsf{TBool} \quad\quad \Gamma \vdash \mathsf{ContractOf}\;\mathsf{PostCondition}\;\mathit{fn} \Rightarrow \mathsf{TBool}} \quad \text{([⇒] ContractOf-Bool)}`
 
@@ -472,6 +514,9 @@ $$`\frac{\mathit{fn} \text{ is not a procedure reference}}{\Gamma \vdash \mathsf
 {docstring Strata.Laurel.Resolution.Synth.contractOf}
 
 ### Holes
+%%%
+tag := "rules-holes"
+%%%
 
 $$`\frac{T_h <: T}{\Gamma \vdash \mathsf{Hole}\;d\;(\mathsf{some}\;T_h) \Leftarrow T} \quad \text{([⇐] Hole-Some)}`
 
@@ -480,6 +525,31 @@ $$`\frac{T_h <: T}{\Gamma \vdash \mathsf{Hole}\;d\;(\mathsf{some}\;T_h) \Leftarr
 $$`\frac{}{\Gamma \vdash \mathsf{Hole}\;d\;\mathsf{none} \Leftarrow T \;\;\mapsto\;\; \mathsf{Hole}\;d\;(\mathsf{some}\;T)} \quad \text{([⇐] Hole-None)}`
 
 {docstring Strata.Laurel.Resolution.Check.holeNone}
+
+### Procedure
+%%%
+tag := "rules-procedure"
+%%%
+
+A procedure body is checked against an expected type $`A` and is
+resolved under a scope that includes the procedure's input and output
+parameters. The Return rules above refer to the same output list
+$`\overline{T_o}` that the procedure binds here.
+
+$$`\frac{\overline{T_o} = \mathit{proc}.\mathit{outputs}.\mathit{types} \quad A = \mathsf{bodyType}(\mathit{proc}) \quad \Gamma_\mathit{global},\,\mathit{params}(\mathit{proc}) \vdash \mathit{proc}.\mathit{body} \Leftarrow A}{\Gamma_\mathit{global} \vdash \mathsf{Procedure}\;\mathit{proc}} \quad \text{(Procedure)}`
+
+The body's value type $`A` is computed by `procedureBodyType`: a
+single-output functional procedure expects $`A = T` (its body's last
+statement is the result), while every other procedure expects
+$`A = \mathsf{Unknown}` (its body is statement-typed and the last
+statement's value is discarded; outputs are observed via `return e`,
+matched against $`\overline{T_o}` by
+{name Strata.Laurel.Resolution.Check.return}`Check.return`, or via
+named-output assignment).
+
+{docstring Strata.Laurel.resolveProcedure}
+
+{docstring Strata.Laurel.resolveInstanceProcedure}
 
 # Translation Pipeline
 
