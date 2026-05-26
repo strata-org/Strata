@@ -18,6 +18,15 @@ not a bitvector. Encoding it as `bv64` requires a `bv64_to_int_u` cast to
 use it as a `Sequence` index; as an uninterpreted function that cast causes
 unknown VCs for loop invariants that mix the counter with `Sequence.length`.
 `int` with range bounds is the faithful encoding and eliminates the cast.
+
+All 17 VCs in this seed pass. It remains in FeatureRequests because the
+original Rust source uses three features not yet supported in Boole:
+- Gap #23: iterator protocol (`for x in iter.iter()` style loops)
+- Gap #15: fixed-size array syntax (`[u8; 64]`)
+- Gap #16: slice types
+
+This seed works around all three (using `Sequence`, `int` counters, and
+`Sequence bv8` instead of slices). A fuller port would need those gaps closed.
 -/
 
 private def sha256_compact_indexed_program : Strata.Program :=
@@ -221,11 +230,11 @@ Obligation: Seq_lib_insert_body_calls_Sequence.drop_1
 Property: out-of-bounds access check
 Result: ✅ pass
 
-Obligation: assert_2_3107
+Obligation: assert_2_3538
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_3_3150
+Obligation: assert_3_3581
 Property: assert
 Result: ✅ pass
 
@@ -237,15 +246,15 @@ Obligation: entry_invariant_0_1
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_6_3830
+Obligation: assert_6_4261
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_7_3861
+Obligation: assert_7_4292
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_8_3892
+Obligation: assert_8_4323
 Property: assert
 Result: ✅ pass
 
@@ -277,7 +286,7 @@ Obligation: arbitrary_iter_maintain_invariant_0_1
 Property: assert
 Result: ✅ pass
 
-Obligation: to_u32s_ensures_5_3422
+Obligation: to_u32s_ensures_5_3853
 Property: assert
 Result: ✅ pass
 
@@ -333,15 +342,15 @@ Obligation: set_w15_calls_Sequence.select_0
 Property: out-of-bounds access check
 Result: ✅ pass
 
-Obligation: callElimAssert_rotate_right_requires_1_3056_39
+Obligation: callElimAssert_rotate_right_requires_1_3487_39
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_rotate_right_requires_1_3056_35
+Obligation: callElimAssert_rotate_right_requires_1_3487_35
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_12_5815
+Obligation: assert_12_6246
 Property: assert
 Result: ✅ pass
 
@@ -349,15 +358,15 @@ Obligation: set_w2_calls_Sequence.select_0
 Property: out-of-bounds access check
 Result: ✅ pass
 
-Obligation: callElimAssert_rotate_right_requires_1_3056_31
+Obligation: callElimAssert_rotate_right_requires_1_3487_31
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_rotate_right_requires_1_3056_27
+Obligation: callElimAssert_rotate_right_requires_1_3487_27
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_13_6054
+Obligation: assert_13_6485
 Property: assert
 Result: ✅ pass
 
@@ -373,15 +382,15 @@ Obligation: set_block_local_calls_Sequence.update_0
 Property: out-of-bounds access check
 Result: ✅ pass
 
-Obligation: callElimAssert_rotate_right_requires_1_3056_23
+Obligation: callElimAssert_rotate_right_requires_1_3487_23
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_rotate_right_requires_1_3056_19
+Obligation: callElimAssert_rotate_right_requires_1_3487_19
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_rotate_right_requires_1_3056_15
+Obligation: callElimAssert_rotate_right_requires_1_3487_15
 Property: assert
 Result: ✅ pass
 
@@ -389,15 +398,15 @@ Obligation: set_t1_calls_Sequence.select_0
 Property: out-of-bounds access check
 Result: ✅ pass
 
-Obligation: callElimAssert_rotate_right_requires_1_3056_11
+Obligation: callElimAssert_rotate_right_requires_1_3487_11
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_rotate_right_requires_1_3056_7
+Obligation: callElimAssert_rotate_right_requires_1_3487_7
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_rotate_right_requires_1_3056_3
+Obligation: callElimAssert_rotate_right_requires_1_3487_3
 Property: assert
 Result: ✅ pass
 
@@ -477,11 +486,11 @@ Obligation: set_state_out_calls_Sequence.update_1
 Property: out-of-bounds access check
 Result: ✅ pass
 
-Obligation: compress_u32_ensures_11_4416
+Obligation: compress_u32_ensures_11_4847
 Property: assert
 Result: ✅ pass
 
-Obligation: compress_pre_compress_requires_16_7819_calls_Sequence.select_0
+Obligation: compress_pre_compress_requires_16_8250_calls_Sequence.select_0
 Property: out-of-bounds access check
 Result: ✅ pass
 
@@ -497,11 +506,11 @@ Obligation: init_calls_Sequence.select_0
 Property: out-of-bounds access check
 Result: ✅ pass
 
-Obligation: callElimAssert_to_u32s_requires_4_3381_47
+Obligation: callElimAssert_to_u32s_requires_4_3812_47
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_compress_u32_requires_10_4344_43
+Obligation: callElimAssert_compress_u32_requires_10_4775_43
 Property: assert
 Result: ✅ pass
 

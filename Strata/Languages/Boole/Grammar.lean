@@ -134,6 +134,22 @@ fn seq_drop_first (A : Type, s : Sequence A) : Sequence A =>
 fn seq_subrange (A : Type, s : Sequence A, lo : int, hi : int) : Sequence A =>
   "Sequence.subrange" "(" s ", " lo ", " hi ")";
 
+// Unsigned widening cast: `e as_int` converts a bitvector to Int (unsigned).
+// Lowers to `Bv{n}.ToUInt` Core op → SMT-LIB 2.7 `ubv_to_int`.
+fn cast_to_int (T : Type, e : T) : int => @[prec(80)] e " as_int";
+
+// Signed widening cast: `e as_sint` converts a bitvector to Int (signed, two's complement).
+// Lowers to `Bv{n}.ToInt` Core op → SMT-LIB 2.7 `sbv_to_int`.
+fn cast_to_sint (T : Type, e : T) : int => @[prec(80)] e " as_sint";
+
+// Narrowing cast: `e as_bv{n}` converts an Int to a bitvector of width n (truncating mod 2^n).
+// Lowers to `Int.ToBv{n}` Core op → SMT-LIB 2.7 `(_ int_to_bv n)`.
+fn cast_to_bv1   (e : int) : bv1   => @[prec(80)] e " as_bv1";
+fn cast_to_bv8   (e : int) : bv8   => @[prec(80)] e " as_bv8";
+fn cast_to_bv16  (e : int) : bv16  => @[prec(80)] e " as_bv16";
+fn cast_to_bv32  (e : int) : bv32  => @[prec(80)] e " as_bv32";
+fn cast_to_bv64  (e : int) : bv64  => @[prec(80)] e " as_bv64";
+fn cast_to_bv128 (e : int) : bv128 => @[prec(80)] e " as_bv128";
 
 category Step;
 op step(e: Expr) : Step =>
