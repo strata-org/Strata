@@ -1485,6 +1485,10 @@ private instance : CachedToIon Dialect where
     for i in d.imports do
       a := a.push <| .struct #[(ionSymbol! "type", ionSymbol! "import"),
                                (ionSymbol! "name", .string i)]
+    if !d.typecheck then
+      a := a.push <| .struct #[(ionSymbol! "type", ionSymbol! "option"),
+                               (ionSymbol! "name", .string "typecheck"),
+                               (ionSymbol! "value", .string "off")]
     for decl in d.declarations do
       a := a.push <| (← ionRef! decl)
     return .list a
@@ -1492,9 +1496,17 @@ private instance : CachedToIon Dialect where
 def fromIonFragment (dialect : DialectName) (f : Ion.Fragment) : Except String Dialect := do
   let ctx : FromIonContext := ⟨f.symbols⟩
   let tbl := f.symbols
-  let typeId := tbl.symbolId! "type"
-  let nameId := tbl.symbolId! "name"
-  let (imports, decls) ← f.values.foldlM (init := (#[], #[])) (start := f.offset) fun (imports, decls) v => do
+  let typeId := tbl.symbolId "type"
+  let nameId := tbl.symbolId "name"
+  let valueId := tbl.symbolId "value"
+  if f.values.size > 0 then
+    if typeId = .zero then
+      throw s!"Missing type symbol"
+    if nameId = .zero then
+      throw s!"Missing name symbol"
+  let (imports, decls, typecheck) ← f.values.foldlM
+      (init := (#[], #[], true)) (start := f.offset)
+      fun (imports, decls, typecheck) v => do
     let fields ← FromIonM.asStruct0 v ⟨f.symbols⟩
     let some (_, val) := fields.find? (·.fst == typeId)
       | throw s!"Could not find type in {repr fields}"
@@ -1503,14 +1515,29 @@ def fromIonFragment (dialect : DialectName) (f : Ion.Fragment) : Except String D
       let some (_, val) := fields.find? (·.fst == nameId)
         | throw "Could not find import"
       let i ← FromIonM.asString "Import name" val ctx
-      pure (imports.push i, decls)
+      pure (imports.push i, decls, typecheck)
+    | "option" =>
+      if valueId = .zero then
+        throw "Could not find option value"
+      let some (_, nameVal) := fields.find? (·.fst == nameId)
+        | throw "Could not find option name"
+      let optName ← FromIonM.asString "Option name" nameVal ctx
+      let some (_, valueVal) := fields.find? (·.fst == valueId)
+        | throw "Could not find option value"
+      let optValue ← FromIonM.asString "Option value" valueVal ctx
+      match optName, optValue with
+      | "typecheck", "off" => pure (imports, decls, false)
+      | "typecheck", "on" => pure (imports, decls, true)
+      | "typecheck", v => throw s!"Expected 'on' or 'off' for option 'typecheck', got '{v}'"
+      | name, _ => throw s!"Unknown option '{name}'"
     | name =>
       let decl ← Decl.fromIonFields name fields ctx
-      pure (imports, decls.push decl)
+      pure (imports, decls.push decl, typecheck)
   return {
     name := dialect
     imports := imports
-    declarations :=  decls
+    declarations := decls
+    typecheck := typecheck
   }
 
 private instance : FromIon Dialect where
@@ -1553,12 +1580,9 @@ def fromIonFragmentCommands (f : Ion.Fragment) : Except String (Array Operation)
 
 def fromIonFragment (f : Ion.Fragment)
       (dialects : DialectMap)
-      (dialect : DialectName) : Except String Program :=
-  return {
-    dialects := dialects
-    dialect := dialect
-    commands := ← fromIonFragmentCommands f
-  }
+      (dialect : DialectName) : Except String Program := do
+  let commands ← fromIonFragmentCommands f
+  return .create dialects dialect commands
 
 /--
 Decodes bytes in the Ion format into a single Strata program.
@@ -1601,8 +1625,12 @@ def filesFromIon (dialects : DialectMap) (bytes : ByteArray) : Except String (Li
   let ⟨filesList, _⟩ ← FromIonM.asList ctx[1]! ionCtx
 
   let tbl := symbols
-  let filePathId := tbl.symbolId! "filePath"
-  let programId := tbl.symbolId! "program"
+  let filePathId := tbl.symbolId "filePath"
+  let programId := tbl.symbolId "program"
+  if filePathId = .zero then
+    throw "Missing filePath"
+  if programId = .zero then
+    throw "Missing program"
 
   filesList.toList.mapM fun fileEntry => do
     let fields ← FromIonM.asStruct0 fileEntry ionCtx

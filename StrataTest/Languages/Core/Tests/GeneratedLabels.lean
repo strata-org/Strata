@@ -40,10 +40,10 @@ type Ref;
 type Field;
 type Struct := Map Field int;
 type Heap := Map Ref Struct;
-axiom [axiom_0]: forall __q0 : Struct :: forall __q1 : Field :: forall __q2 : Field :: forall __q3 : int :: !(__q1 == __q2) ==> __q0[__q1] == (__q0[__q2:=__q3])[__q1];
-axiom [axiom_1]: forall __q0 : Struct :: forall __q1 : Field :: forall __q2 : int :: (__q0[__q1:=__q2])[__q1] == __q2;
-axiom [axiom_2]: forall __q0 : Heap :: forall __q1 : Ref :: forall __q2 : Ref :: forall __q3 : Struct :: !(__q1 == __q2) ==> __q0[__q1] == (__q0[__q2:=__q3])[__q1];
-axiom [axiom_3]: forall __q0 : Heap :: forall __q1 : Ref :: forall __q2 : Struct :: (__q0[__q1:=__q2])[__q1] == __q2;
+axiom [axiom_0]: forall m : Struct :: forall okk : Field :: forall kk : Field :: forall vv : int :: !(okk == kk) ==> m[okk] == (m[kk:=vv])[okk];
+axiom [axiom_1]: forall m : Struct :: forall kk : Field :: forall vv : int :: (m[kk:=vv])[kk] == vv;
+axiom [axiom_2]: forall m : Heap :: forall okk : Ref :: forall kk : Ref :: forall vv : Struct :: !(okk == kk) ==> m[okk] == (m[kk:=vv])[okk];
+axiom [axiom_3]: forall m : Heap :: forall kk : Ref :: forall vv : Struct :: (m[kk:=vv])[kk] == vv;
 procedure test (h : Heap, ref : Ref, field : Field)
 {
   var newH : Heap := h[ref:=(h[ref])[field:=(h[ref])[field] + 1]];
@@ -61,10 +61,10 @@ VCs:
 Label: assert_0
 Property: assert
 Assumptions:
-axiom_0: forall __q0 : (Map Field int) :: forall __q1 : Field :: forall __q2 : Field :: forall __q3 : int :: !(__q1 == __q2) ==> __q0[__q1] == (__q0[__q2:=__q3])[__q1]
-axiom_1: forall __q0 : (Map Field int) :: forall __q1 : Field :: forall __q2 : int :: (__q0[__q1:=__q2])[__q1] == __q2
-axiom_2: forall __q0 : (Map Ref (Map Field int)) :: forall __q1 : Ref :: forall __q2 : Ref :: forall __q3 : (Map Field int) :: !(__q1 == __q2) ==> __q0[__q1] == (__q0[__q2:=__q3])[__q1]
-axiom_3: forall __q0 : (Map Ref (Map Field int)) :: forall __q1 : Ref :: forall __q2 : (Map Field int) :: (__q0[__q1:=__q2])[__q1] == __q2
+axiom_0: forall m : (Map Field int) :: forall okk : Field :: forall kk : Field :: forall vv : int :: !(okk == kk) ==> m[okk] == (m[kk:=vv])[okk]
+axiom_1: forall m : (Map Field int) :: forall kk : Field :: forall vv : int :: (m[kk:=vv])[kk] == vv
+axiom_2: forall m : (Map Ref (Map Field int)) :: forall okk : Ref :: forall kk : Ref :: forall vv : (Map Field int) :: !(okk == kk) ==> m[okk] == (m[kk:=vv])[okk]
+axiom_3: forall m : (Map Ref (Map Field int)) :: forall kk : Ref :: forall vv : (Map Field int) :: (m[kk:=vv])[kk] == vv
 Obligation:
 ((h@1[ref@1:=(h@1[ref@1])[field@1:=(h@1[ref@1])[field@1] + 1]])[ref@1])[field@1] == (h@1[ref@1])[field@1] + 1
 

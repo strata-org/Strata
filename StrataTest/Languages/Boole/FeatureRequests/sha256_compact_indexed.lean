@@ -36,19 +36,21 @@ program Boole;
  type nat;
  function int_to_nat (i : int) : nat;
  type Set (T : Type);
- function Seq_len<T> (s : Sequence T) : nat {
+ function Seq_len (s : Sequence bv32) : nat {
   int_to_nat(Sequence.length(s))
 }
- function Seq_lib_insert<T> (s : Sequence T, i : int, val : T) : Sequence T {
+ function Seq_lib_insert (s : Sequence bv32, i : int, val : bv32) : Sequence bv32
+  requires 0 <= i && i <= Sequence.length(s);
+ {
   Sequence.append(Sequence.build(Sequence.take(s, i), val), Sequence.drop(s, i))
 }
- function Seq_new<T> (len : nat, f : int -> T) : Sequence T;
- function Seq_lib_map<T, U> (s : Sequence T, f : int -> T -> U) : Sequence U;
- function Seq_lib_map_values<T, U> (s : Sequence T, f : T -> U) : Sequence U;
- function Seq_lib_filter<T> (s : Sequence T, p : T -> bool) : Sequence T;
- function Seq_lib_sort_by<T> (s : Sequence T, less : T -> T -> bool) : Sequence T;
- function Seq_lib_to_set<T> (s : Sequence T) : Set T;
- function Set_finite<T> (s : Set T) : bool;
+ function Seq_new (len : nat, f : int -> bv32) : Sequence bv32;
+ function Seq_lib_map (s : Sequence bv32, f : int -> bv32 -> bv32) : Sequence bv32;
+ function Seq_lib_map_values (s : Sequence bv32, f : bv32 -> bv32) : Sequence bv32;
+ function Seq_lib_filter (s : Sequence bv32, p : bv32 -> bool) : Sequence bv32;
+ function Seq_lib_sort_by (s : Sequence bv32, less : bv32 -> bv32 -> bool) : Sequence bv32;
+ function Seq_lib_to_set (s : Sequence bv32) : Set bv32;
+ function Set_finite (s : Set bv32) : bool;
  function bv8_to_bv32_u (x : bv8) : bv32;
  function k32 () : Sequence bv32 {
   Sequence.of_bv32[bv{32}(1116352408), bv{32}(1899447441), bv{32}(3049323471), bv{32}(3921009573), bv{32}(961987163), bv{32}(1508970993), bv{32}(2453635748), bv{32}(2870763221), bv{32}(3624381080), bv{32}(310598401), bv{32}(607225278), bv{32}(1426881987), bv{32}(1925078388), bv{32}(2162078206), bv{32}(2614888103), bv{32}(3248222580), bv{32}(3835390401), bv{32}(4022224774), bv{32}(264347078), bv{32}(604807628), bv{32}(770255983), bv{32}(1249150122), bv{32}(1555081692), bv{32}(1996064986), bv{32}(2554220882), bv{32}(2821834349), bv{32}(2952996808), bv{32}(3210313671), bv{32}(3336571891), bv{32}(3584528711), bv{32}(113926993), bv{32}(338241895), bv{32}(666307205), bv{32}(773529912), bv{32}(1294757372), bv{32}(1396182291), bv{32}(1695183700), bv{32}(1986661051), bv{32}(2177026350), bv{32}(2456956037), bv{32}(2730485921), bv{32}(2820302411), bv{32}(3259730800), bv{32}(3345764771), bv{32}(3516065817), bv{32}(3600352804), bv{32}(4094571909), bv{32}(275423344), bv{32}(430227734), bv{32}(506948616), bv{32}(659060556), bv{32}(883997877), bv{32}(958139571), bv{32}(1322822218), bv{32}(1537002063), bv{32}(1747873779), bv{32}(1955562222), bv{32}(2024104815), bv{32}(2227730452), bv{32}(2361852424), bv{32}(2428436474), bv{32}(2756734187), bv{32}(3204031479), bv{32}(3329325298)]
@@ -64,11 +66,16 @@ spec {
 };
  procedure to_u32s (block : Sequence bv8) returns (_pct_return : (Sequence bv32))
 spec {
+  requires Sequence.length(block) >= 64;
+  ensures Sequence.length(_pct_return) == 16;
   } {
   var j : int;
   var res : (Sequence bv32);
   res := Sequence.of_bv32[bv{32}(0), bv{32}(0), bv{32}(0), bv{32}(0), bv{32}(0), bv{32}(0), bv{32}(0), bv{32}(0), bv{32}(0), bv{32}(0), bv{32}(0), bv{32}(0), bv{32}(0), bv{32}(0), bv{32}(0), bv{32}(0)];
-  for i : int := 0 to 16 - 1{
+  for i : int := 0 to 16 - 1
+  invariant 0 <= i
+  invariant Sequence.length(res) == 16
+  {
     j := i * 4;
     assert 0 <= 24 && 24 < 32;
     assert 0 <= 16 && 16 < 32;
@@ -80,6 +87,8 @@ spec {
 };
  procedure compress_u32 (state : Sequence bv32, block : Sequence bv32) returns (state_out : (Sequence bv32))
 spec {
+  requires Sequence.length(state) >= 8 && Sequence.length(block) >= 16;
+  ensures Sequence.length(state_out) == Sequence.length(state);
   } {
   var tmp15 : bv32;
   var tmp16 : bv32;
@@ -122,7 +131,11 @@ spec {
   f := Sequence.select(state_out, 5);
   g := Sequence.select(state_out, 6);
   h := Sequence.select(state_out, 7);
-  for i : int := 0 to 64 - 1{
+  for i : int := 0 to 64 - 1
+  invariant 0 <= i
+  invariant Sequence.length(block_local) >= 16
+  invariant Sequence.length(state_out) >= 8
+  {
     if (i < 16) {
       tmp36 := Sequence.select(block_local, i);
     } else {
@@ -185,10 +198,15 @@ spec {
 };
  procedure compress (state : Sequence bv32, blocks : Sequence (Sequence bv8)) returns (state_out : (Sequence bv32))
 spec {
+  requires Sequence.length(state) >= 8;
+  requires ∀ k:int . 0 <= k && k < Sequence.length(blocks) ==> Sequence.length(Sequence.select(blocks, k)) >= 64;
   } {
   var tmp6 : (Sequence bv32);
   state_out := state;
-  for k : int := 0 to Sequence.length(blocks) - 1{
+  for k : int := 0 to Sequence.length(blocks) - 1
+  invariant 0 <= k
+  invariant Sequence.length(state_out) >= 8
+  {
     call tmp6 := to_u32s(Sequence.select(blocks, k));
 
     call state_out := compress_u32(state_out, tmp6);
@@ -204,71 +222,303 @@ spec {
 #end
 
 /-- info:
-Obligation: assert_1_3452
+Obligation: Seq_lib_insert_body_calls_Sequence.take_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: Seq_lib_insert_body_calls_Sequence.drop_1
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: assert_2_3107
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_2_3495
+Obligation: assert_3_3150
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_3_4027
+Obligation: entry_invariant_0_0
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_4_4058
+Obligation: entry_invariant_0_1
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_5_4089
+Obligation: assert_6_3830
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_rotate_right_requires_0_3401_39
+Obligation: assert_7_3861
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_rotate_right_requires_0_3401_35
+Obligation: assert_8_3892
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_7_5763
+Obligation: set_res_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: set_res_calls_Sequence.select_1
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: set_res_calls_Sequence.select_2
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: set_res_calls_Sequence.select_3
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: set_res_calls_Sequence.update_4
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_0
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_rotate_right_requires_0_3401_31
+Obligation: arbitrary_iter_maintain_invariant_0_1
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_rotate_right_requires_0_3401_27
+Obligation: to_u32s_ensures_5_3422
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_8_6002
+Obligation: set_a_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: set_b_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: set_c_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: set_d_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: set_e_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: set_f_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: set_g_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: set_h_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: entry_invariant_0_0
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_rotate_right_requires_0_3401_23
+Obligation: entry_invariant_0_1
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_rotate_right_requires_0_3401_19
+Obligation: entry_invariant_0_2
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_rotate_right_requires_0_3401_15
+Obligation: set_tmp36_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: set_w15_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: callElimAssert_rotate_right_requires_1_3056_39
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_rotate_right_requires_0_3401_11
+Obligation: callElimAssert_rotate_right_requires_1_3056_35
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_rotate_right_requires_0_3401_7
+Obligation: assert_12_5815
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_rotate_right_requires_0_3401_3
+Obligation: set_w2_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: callElimAssert_rotate_right_requires_1_3056_31
+Property: assert
+Result: ✅ pass
+
+Obligation: callElimAssert_rotate_right_requires_1_3056_27
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_13_6054
+Property: assert
+Result: ✅ pass
+
+Obligation: set_new_w_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: set_new_w_calls_Sequence.select_1
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: set_block_local_calls_Sequence.update_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: callElimAssert_rotate_right_requires_1_3056_23
+Property: assert
+Result: ✅ pass
+
+Obligation: callElimAssert_rotate_right_requires_1_3056_19
+Property: assert
+Result: ✅ pass
+
+Obligation: callElimAssert_rotate_right_requires_1_3056_15
+Property: assert
+Result: ✅ pass
+
+Obligation: set_t1_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: callElimAssert_rotate_right_requires_1_3056_11
+Property: assert
+Result: ✅ pass
+
+Obligation: callElimAssert_rotate_right_requires_1_3056_7
+Property: assert
+Result: ✅ pass
+
+Obligation: callElimAssert_rotate_right_requires_1_3056_3
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_1
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_2
+Property: assert
+Result: ✅ pass
+
+Obligation: set_state_out_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: set_state_out_calls_Sequence.update_1
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: set_state_out_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: set_state_out_calls_Sequence.update_1
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: set_state_out_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: set_state_out_calls_Sequence.update_1
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: set_state_out_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: set_state_out_calls_Sequence.update_1
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: set_state_out_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: set_state_out_calls_Sequence.update_1
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: set_state_out_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: set_state_out_calls_Sequence.update_1
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: set_state_out_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: set_state_out_calls_Sequence.update_1
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: set_state_out_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: set_state_out_calls_Sequence.update_1
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: compress_u32_ensures_11_4416
+Property: assert
+Result: ✅ pass
+
+Obligation: compress_pre_compress_requires_16_7819_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: entry_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: entry_invariant_0_1
+Property: assert
+Result: ✅ pass
+
+Obligation: init_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: callElimAssert_to_u32s_requires_4_3381_47
+Property: assert
+Result: ✅ pass
+
+Obligation: callElimAssert_compress_u32_requires_10_4344_43
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_1
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in

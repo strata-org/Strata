@@ -472,9 +472,11 @@ partial def toCoreExpr (e : Boole.Expr) : TranslateM Core.Expression.Expr := do
       let intSub : Core.Expression.Expr := .op () ⟨"Int.Sub", ()⟩ none
       return mkCoreApp Core.seqTakeOp
         [mkCoreApp Core.seqDropOp [s', lo'], mkCoreApp intSub [hi', lo']]
-  -- Typed empty-sequence constant (Sequence.empty for bv32; other types can be added when needed).
-  | .seq_empty_bv8 _ | .seq_empty_bv16 _ | .seq_empty_bv32 _
-  | .seq_empty_bv64 _ | .seq_empty_int _ => return Core.seqEmptyOp
+  | .seq_empty_bv8 _  => return Core.seqEmptyOp (some (.bitvec 8))
+  | .seq_empty_bv16 _ => return Core.seqEmptyOp (some (.bitvec 16))
+  | .seq_empty_bv32 _ => return Core.seqEmptyOp (some (.bitvec 32))
+  | .seq_empty_bv64 _ => return Core.seqEmptyOp (some (.bitvec 64))
+  | .seq_empty_int _  => return Core.seqEmptyOp (some .int)
   -- Sequence literals: Sequence.of_bv32[v0, v1, ..., vn]
   -- Lowers to a left-fold of seq_build over seq_empty.
   | .seq_of_bv8  _ ⟨_, vs⟩ | .seq_of_bv16 _ ⟨_, vs⟩ | .seq_of_bv32 _ ⟨_, vs⟩
