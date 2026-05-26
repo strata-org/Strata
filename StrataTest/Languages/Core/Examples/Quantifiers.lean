@@ -5,6 +5,7 @@
 -/
 
 import Strata.Languages.Core.Verifier
+import Strata.MetaVerifier
 
 ---------------------------------------------------------------------
 namespace Strata
@@ -148,3 +149,7 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify triggerPgm
+
+theorem triggerPgm_correct : smtVCsCorrect triggerPgm := by
+  gen_smt_vcs
+  all_goals (try grind)

@@ -7,6 +7,7 @@
 import Strata.Languages.Core.Program
 import Strata.Languages.Core.Verifier
 import Strata.Transform.StructuredToUnstructured
+import Strata.MetaVerifier
 
 namespace Strata
 
@@ -332,6 +333,10 @@ Result: ✅ pass
 #guard_msgs in
 #eval verify gaussPgm
 
+theorem gaussPgm_correct : smtVCsCorrect gaussPgm := by
+  gen_smt_vcs
+  all_goals (try grind)
+
 ---------------------------------------------------------------------
 
 def nestedPgm :=
@@ -478,6 +483,10 @@ Result: ✅ pass
 #guard_msgs in
 #eval verify nestedPgm (options := .quiet)
 
+theorem nestedPgm_correct : smtVCsCorrect nestedPgm := by
+  gen_smt_vcs
+  all_goals (try grind)
+
 ---------------------------------------------------------------------
 
 -- A loop where the `decreases` clause uses integer division `i / d`.
@@ -543,6 +552,20 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify precondElimInMeasurePgm (options := .quiet)
+
+/-- This theorem requires a little bit of manual work, though most goals are
+solved partly or entirely by `grind`. I suspect a future version of `grind`
+might be able to do it unaided. -/
+theorem precondElimInMeasurePgm_correct : smtVCsCorrect precondElimInMeasurePgm := by
+  gen_smt_vcs
+  all_goals (try grind)
+  intros n d i meas _ dpos _ _ _ inonneg meas_def
+  subst meas_def
+  exact Int.not_lt.mpr (Int.ediv_nonneg inonneg (Int.le_of_lt dpos))
+  intros n d i meas _ dpos _ _ _ _ meas_def
+  subst meas_def
+  have key := Int.add_mul_ediv_left (i - d) 1 (Int.ne_of_gt dpos)
+  grind
 
 -- Now, we show the precondition (d > 0) is necessary for the measure-related
 -- checks.

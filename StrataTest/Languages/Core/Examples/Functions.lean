@@ -6,6 +6,7 @@
 
 import Strata.Languages.Core.Verifier
 import Strata.Languages.Core.CallGraph
+import Strata.MetaVerifier
 
 ---------------------------------------------------------------------
 namespace Strata
@@ -71,6 +72,10 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify funcPgm
+
+theorem testPgm_correct : smtVCsCorrect funcPgm := by
+  gen_smt_vcs
+  all_goals (try grind)
 
 ---------------------------------------------------------------------
 
@@ -150,5 +155,9 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify quantBodyFuncPgm
+
+theorem quantBodyFuncPgm_correct : smtVCsCorrect quantBodyFuncPgm := by
+  gen_smt_vcs
+  all_goals (try grind)
 
 ---------------------------------------------------------------------

@@ -162,7 +162,8 @@ def toSMTVCs (vcs : Core.coreVCs) : Option SMT.SMTVCs := do
 /--
 Generate SMT verification conditions for a `Strata.Program`.
 -/
-def genSMTVCs (program : Program) : Option SMT.SMTVCs := do
+@[expose]
+public def genSMTVCs (program : Program) : Option SMT.SMTVCs := do
   let coreVCs ← genCoreVCs program
   toSMTVCs coreVCs
 
@@ -170,7 +171,8 @@ def genSMTVCs (program : Program) : Option SMT.SMTVCs := do
 State semantic correctness of the SMT verification conditions generated for a
 program.
 -/
-def smtVCsCorrect (program : Program) : Prop :=
+@[expose]
+public def smtVCsCorrect (program : Program) : Prop :=
   match genSMTVCs program with
   | some vcs => (denoteQueries vcs).getD False
   | none     => False

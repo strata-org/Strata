@@ -5,6 +5,7 @@
 -/
 
 import Strata.Languages.Core.Verifier
+import Strata.MetaVerifier
 
 ---------------------------------------------------------------------
 namespace Strata
@@ -72,6 +73,10 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify procIfPgm
+
+theorem procIfPgm_correct : smtVCsCorrect procIfPgm := by
+  gen_smt_vcs
+  all_goals (try grind)
 
 /-
 <PCs>
