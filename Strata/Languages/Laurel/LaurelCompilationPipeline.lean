@@ -12,7 +12,6 @@ import Strata.Languages.Laurel.EliminateReturnsInExpression
 import Strata.Languages.Laurel.EliminateValueReturns
 import Strata.Languages.Laurel.ConstrainedTypeElim
 
-import Strata.Languages.Laurel.PackMultipleOutputs
 import Strata.Languages.Laurel.TypeAliasElim
 import Strata.Languages.Core.Verifier
 import Strata.Util.Statistics
@@ -248,8 +247,6 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
     let (program, model, passDiags, stats) ← runLaurelPasses options pctx program
     let unorderedCore := transparencyPass program
     emit "transparencyPass" "core.st" unorderedCore
-    let unorderedCore := packMultipleOutputsInFunctions unorderedCore
-    -- let unorderedCore := inlineLocalVariablesInExpressions unorderedCore
 
     -- Resolve so that identifiers introduced by earlier passes get uniqueIds.
     let (unorderedCore, model) := resolveUnorderedCore unorderedCore program (some model)
