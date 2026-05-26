@@ -192,46 +192,6 @@ private def runLaurelPasses (options : LaurelTranslateOptions)
   return (program, model, allDiags, allStats)
 
 /--
-Convert an `UnorderedCoreWithLaurelTypes` to a flat `Program` suitable for
-resolution and program-level passes. Composite types from the original Laurel
-program are included so that references to composite types resolve correctly.
--/
-private def toProgram (uc : UnorderedCoreWithLaurelTypes) (laurelProgram : Program)
-    : Program :=
-  { staticProcedures := uc.functions ++ uc.coreProcedures,
-    staticFields := [],
-    types := uc.datatypes.map TypeDefinition.Datatype ++
-      -- Hack to compensate for references to composite types not having been updated yet.
-      laurelProgram.types.filter (fun t => match t with | .Composite _ => true | _ => false),
-    constants := uc.constants }
-
-/--
-Reconstruct an `UnorderedCoreWithLaurelTypes` from a resolved `Program`,
-preserving the structure of the original `UnorderedCoreWithLaurelTypes`.
--/
-private def fromResolvedProgram (resolvedProgram : Program)
-    (_original : UnorderedCoreWithLaurelTypes) : UnorderedCoreWithLaurelTypes :=
-  let resolvedProcs := resolvedProgram.staticProcedures
-  let resolvedDatatypes := resolvedProgram.types.filterMap fun td =>
-    match td with | .Datatype dt => some dt | _ => none
-  { functions := resolvedProcs.filter (·.isFunctional)
-    coreProcedures := resolvedProcs.filter (!·.isFunctional)
-    datatypes := resolvedDatatypes
-    constants := resolvedProgram.constants }
-
-/--
-Resolve an `UnorderedCoreWithLaurelTypes` by converting to a flat `Program`,
-running the resolution pass, and reconstructing the result. Returns the
-resolved `UnorderedCoreWithLaurelTypes` and the `SemanticModel`.
--/
-def resolveUnorderedCore (uc : UnorderedCoreWithLaurelTypes)
-    (laurelProgram : Program) (existingModel : Option SemanticModel := none)
-    : UnorderedCoreWithLaurelTypes × SemanticModel :=
-  let fnProgram := toProgram uc laurelProgram
-  let fnResolveResult := resolve fnProgram existingModel
-  (fromResolvedProgram fnResolveResult.program uc, fnResolveResult.model)
-
-/--
 Translate Laurel Program to Core Program, also returning the lowered Laurel program.
 
 When `keepAllFilesPrefix` is provided, the program state after each named
@@ -249,11 +209,8 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
     emit "transparencyPass" "core.st" unorderedCore
 
     -- Resolve so that identifiers introduced by earlier passes get uniqueIds.
-    let (unorderedCore, model) := resolveUnorderedCore unorderedCore program (some model)
-
-    -- Re-resolve after lifting so that freshly introduced variables (e.g. $cndtn_N)
-    -- created by liftExpressionAssignments also get uniqueIds in the model.
-    let (unorderedCore, fnModel) := resolveUnorderedCore unorderedCore program (some model)
+    let compositeTypes := program.types.filter (fun t => match t with | .Composite _ => true | _ => false)
+    let (unorderedCore, model) := resolveUnorderedCore unorderedCore (existingModel := some model) (additionalTypes := compositeTypes)
 
     let coreWithLaurelTypes := orderFunctionsAndProcedures unorderedCore
 
@@ -265,7 +222,7 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
       return (none, passDiags, program, stats)
 
     emit "CoreWithLaurelTypes" "core.st" coreWithLaurelTypes
-    let initState : TranslateState := { model := fnModel, overflowChecks := options.overflowChecks }
+    let initState : TranslateState := { model := model, overflowChecks := options.overflowChecks }
     let (coreProgramOption, translateState) :=
       runTranslateM initState (translateLaurelToCore options program coreWithLaurelTypes)
     -- Because of the duplication between functions and procedures, this translation is liable to create duplicate diagnostics
