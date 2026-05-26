@@ -23,6 +23,7 @@ import Strata.Transform.ANFEncoder
 import Strata.Languages.Core.ObligationExtraction
 public import Strata.Transform.IrrelevantAxioms
 import Strata.Util.Profile
+import Strata.Languages.Core.Transform.EnsuresSynthesis
 
 ---------------------------------------------------------------------
 
@@ -870,7 +871,8 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
     `loopElimPipelinePhase` is placed last because loop elimination happens
     during evaluation (not as a program-to-program pass), making it the
     closest phase to SMT. -/
-def transformPipelinePhases (procs : Option (List String) := none) : List PipelinePhase :=
+def transformPipelinePhases (procs : Option (List String) := none)
+    (options : VerifyOptions := VerifyOptions.default) : List PipelinePhase :=
   let filterPhases := match procs with
     | some ps => [filterProceduresPipelinePhase ps]
     | none => []
@@ -879,9 +881,19 @@ def transformPipelinePhases (procs : Option (List String) := none) : List Pipeli
       let targets := ps ++ ps.map PrecondElim.wfProcName ++ ps.map TermCheck.termProcName
       [filterProceduresPipelinePhase targets (respectNoFilter := false)]
     | none => []
+  -- Optional ensures-synthesis pre-pass (opt-in via --synthesize-ensures).
+  -- Runs before callElim so that synthesised postconditions are available
+  -- when call-elimination rewrites call sites.
+  let ensuresSynthPhases : List PipelinePhase :=
+    if options.synthesizeEnsures then
+      [modelPreservingPipelinePhase "ensuresSynthesis" fun prog => do
+        let prog' := EnsuresSynthesis.synthesizeEnsures prog
+        return (true, prog')]
+    else
+      []
   -- precondElimPipelinePhase will immediately return if there is no Factory
   -- set up at CoreTransformState.
-  filterPhases ++ [callElimPipelinePhase] ++ [termCheckPipelinePhase] ++ [precondElimPipelinePhase] ++ postFilterPhases ++ [loopElimPipelinePhase]
+  filterPhases ++ ensuresSynthPhases ++ [callElimPipelinePhase] ++ [termCheckPipelinePhase] ++ [precondElimPipelinePhase] ++ postFilterPhases ++ [loopElimPipelinePhase]
 
 /-- The full pipeline phases for program-to-program transforms, including
     type checking, symbolic evaluation, and ANF encoding.
@@ -901,7 +913,7 @@ def corePipelinePhases (procs : Option (List String) := none)
         fun err => { err with message := s!"❌ Symbolic evaluation error.\n{err.message}" })
       modify fun σ => { σ with statistics := σ.statistics.merge stats }
       return (true, prog')
-  transformPipelinePhases procs ++ [typeCheckPhase, symbolicEvalPhase, anfEncoderPipelinePhase]
+  transformPipelinePhases procs options ++ [typeCheckPhase, symbolicEvalPhase, anfEncoderPipelinePhase]
 
 /-- The abstracted phases derived from the Core pipeline phases. -/
 def coreAbstractedPhases (procs : Option (List String) := none)

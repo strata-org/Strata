@@ -208,7 +208,9 @@ def verifyOptionsFlags : List Flag := [
     takesArg := .arg "checks" },
   { name := "path-cap",
     help := "Maximum continuing paths between statements. 'none' (default) disables; N merges paths when count exceeds N.",
-    takesArg := .arg "N|none" }
+    takesArg := .arg "N|none" },
+  { name := "synthesize-ensures",
+    help := "Synthesise 'free ensures' clauses for pure linear procedures before call elimination (opt-in; off by default)." }
 ]
 
 /-- Build a VerifyOptions from parsed CLI flags, starting from a base config.
@@ -269,7 +271,8 @@ def parseVerifyOptions (pflags : ParsedFlags)
     alwaysGenerateSMT := noSolve || base.alwaysGenerateSMT,
     overflowChecks,
     vcDirectory,
-    pathCap
+    pathCap,
+    synthesizeEnsures := pflags.getBool "synthesize-ensures" || base.synthesizeEnsures
   }
 
 /-- Additional CLI flags for `LaurelVerifyOptions` fields that are not already
