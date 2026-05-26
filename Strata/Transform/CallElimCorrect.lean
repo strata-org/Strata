@@ -3665,6 +3665,154 @@ private theorem notin_append4
    fun h => Hnin (List.mem_append.mpr (Or.inr (List.mem_append.mpr (Or.inl h)))),
    fun h => Hnin (List.mem_append.mpr (Or.inr (List.mem_append.mpr (Or.inr h))))⟩
 
+/-- Positional decomposition for `Map.find?` against the L6 canonical
+    `createOldVarsSubst` map.  Given a hit
+    `Map.find? (createOldVarsSubst (...zip-form...)) k = some w`, extract
+    the positional witness `i < oldVars.length` together with the shape
+    facts `k = mkOld oldVars[i].name` and `w = createFvar genOldIdents[i]`.
+
+    Absorbs the verbatim ~125-LoC `HCanonLen → Hni_lt → HtripGet → Htrip_shape →
+    HoldG_get → HgoEq → HkwEq → Hk_eq / Hw_eq` chain that recurs at three
+    `createOldVarsSubst`-flavoured sites in `callElimStatementCorrect`
+    (`HoldSubBridge`, `Hinv` class-(b1), `Hpred_disj` class-(b1)). -/
+private theorem createOldVarsSubst_pos_decomp
+    {genOldIdents : List Expression.Ident}
+    {oldTys : List Lambda.LTy}
+    {oldVars : List Expression.Ident}
+    (HgenOldLen : genOldIdents.length = oldVars.length)
+    (HoldTysLen : oldTys.length = oldVars.length)
+    {k : Expression.Ident} {w : Expression.Expr}
+    (Hf : Map.find?
+      (Core.Transform.createOldVarsSubst
+        ((((genOldIdents.zip oldTys).zip oldVars).zip
+          (oldVars.map (fun g => CoreIdent.mkOld g.name))).map
+            (fun (((fresh, ty), _orig), oldG) =>
+              ((fresh, ty), oldG)))) k = some w) :
+    ∃ (i : Nat) (Hi : i < oldVars.length),
+      k = CoreIdent.mkOld (oldVars[i]'Hi).name ∧
+      w = Core.Transform.createFvar
+            (genOldIdents[i]'(by rw [HgenOldLen]; exact Hi)) := by
+  -- Local abbreviations matching the call-site canonical names.
+  let oldGVars : List Expression.Ident :=
+    oldVars.map (fun g => CoreIdent.mkOld g.name)
+  let oldTripsCanonical :
+      List ((Expression.Ident × Expression.Ty) × Expression.Ident) :=
+    (((genOldIdents.zip oldTys).zip oldVars).zip oldGVars).map
+      (fun (((fresh, ty), _orig), oldG) => ((fresh, ty), oldG))
+  -- Bring `Hf` into the canonical-named form.
+  have Hf : Map.find?
+      (Core.Transform.createOldVarsSubst oldTripsCanonical) k = some w := Hf
+  -- (k, w) ∈ createOldVarsSubst oldTripsCanonical (as List).
+  have Hkw_mem_list :
+      List.Mem (k, w)
+        (Core.Transform.createOldVarsSubst oldTripsCanonical) :=
+    Map.find?_mem _ k w Hf
+  -- createOldVarsSubst trips = trips.map go (definitional).
+  have HsubstUnfold :
+      Core.Transform.createOldVarsSubst oldTripsCanonical =
+        oldTripsCanonical.map
+          (fun trip => Core.Transform.createOldVarsSubst.go trip) := rfl
+  rw [HsubstUnfold] at Hkw_mem_list
+  rcases List.mem_map.mp Hkw_mem_list with ⟨trip, Htrip_in, Htrip_eq⟩
+  rcases List.mem_iff_get.mp Htrip_in with ⟨ni, Hni⟩
+  -- Length facts.
+  have HoldGLen : oldGVars.length = oldVars.length := by
+    show (oldVars.map _).length = oldVars.length
+    simp [List.length_map]
+  have HCanonLen : oldTripsCanonical.length = oldVars.length := by
+    show ((((genOldIdents.zip oldTys).zip oldVars).zip oldGVars).map _).length
+        = oldVars.length
+    simp only [List.length_map, List.length_zip, HgenOldLen, HoldTysLen,
+               HoldGLen]
+    omega
+  have Hni_lt : ni.val < oldVars.length := by
+    have HiLt := ni.isLt
+    omega
+  -- Position-wise length facts.
+  have HziptyLen :
+      (genOldIdents.zip oldTys).length = oldVars.length := by
+    simp [List.length_zip, HgenOldLen, HoldTysLen]
+  have Hni_lt_zipty : ni.val < (genOldIdents.zip oldTys).length := by
+    rw [HziptyLen]; exact Hni_lt
+  have Hni_lt_oldGVars : ni.val < oldGVars.length := by
+    show ni.val < (oldVars.map _).length
+    simp [List.length_map]; exact Hni_lt
+  have Hni_lt_genOld : ni.val < genOldIdents.length := by
+    have := HgenOldLen; omega
+  have Hni_lt_oldTys : ni.val < oldTys.length := by
+    have := HoldTysLen; omega
+  have Hni_lt_canon : ni.val < oldTripsCanonical.length := ni.isLt
+  -- Project the canonical trip via two-step zip-getElem reduction.
+  have HtripGet :
+      oldTripsCanonical[ni.val]'Hni_lt_canon =
+        ((genOldIdents[ni.val]'Hni_lt_genOld,
+          oldTys[ni.val]'Hni_lt_oldTys),
+         oldGVars[ni.val]'Hni_lt_oldGVars) := by
+    show (((((genOldIdents.zip oldTys).zip oldVars).zip
+      oldGVars).map _)[ni.val]'Hni_lt_canon) = _
+    rw [List.getElem_map]
+    have HouterLt :
+        ni.val < (((genOldIdents.zip oldTys).zip oldVars).zip
+            oldGVars).length := by
+      simp only [List.length_zip]; omega
+    have Houter :
+        (((genOldIdents.zip oldTys).zip oldVars).zip
+            oldGVars)[ni.val]'HouterLt =
+          ((((genOldIdents.zip oldTys).zip oldVars))[ni.val]'(by
+            simp [List.length_zip, HziptyLen]; exact Hni_lt),
+           oldGVars[ni.val]'Hni_lt_oldGVars) :=
+      List.getElem_zip
+    rw [Houter]
+    have Hmid :
+        ((genOldIdents.zip oldTys).zip oldVars)[ni.val]'(by
+          simp [List.length_zip, HziptyLen]; exact Hni_lt) =
+          ((genOldIdents.zip oldTys)[ni.val]'Hni_lt_zipty,
+           oldVars[ni.val]'Hni_lt) :=
+      List.getElem_zip
+    rw [Hmid]
+    have Hinner :
+        (genOldIdents.zip oldTys)[ni.val]'Hni_lt_zipty =
+          (genOldIdents[ni.val]'Hni_lt_genOld,
+           oldTys[ni.val]'Hni_lt_oldTys) :=
+      List.getElem_zip
+    rw [Hinner]
+  have HtripEq_get :
+      oldTripsCanonical[ni.val]'Hni_lt_canon = trip := by
+    have HhE := Hni
+    have HgetEq : oldTripsCanonical.get ni =
+            oldTripsCanonical[ni.val]'Hni_lt_canon := rfl
+    rw [HgetEq] at HhE
+    exact HhE
+  have Htrip_shape :
+      trip = ((genOldIdents[ni.val]'Hni_lt_genOld,
+               oldTys[ni.val]'Hni_lt_oldTys),
+              oldGVars[ni.val]'Hni_lt_oldGVars) := by
+    rw [← HtripEq_get]; exact HtripGet
+  have HoldG_get :
+      oldGVars[ni.val]'Hni_lt_oldGVars =
+        CoreIdent.mkOld (oldVars[ni.val]'Hni_lt).name := by
+    show (oldVars.map (fun g => CoreIdent.mkOld g.name))[ni.val]'_ = _
+    rw [List.getElem_map]
+  have HgoEq :
+      Core.Transform.createOldVarsSubst.go trip =
+        (oldGVars[ni.val]'Hni_lt_oldGVars,
+         Core.Transform.createFvar
+           (genOldIdents[ni.val]'Hni_lt_genOld)) := by
+    rw [Htrip_shape]; rfl
+  have HkwEq :
+      (k, w) = (oldGVars[ni.val]'Hni_lt_oldGVars,
+                Core.Transform.createFvar
+                  (genOldIdents[ni.val]'Hni_lt_genOld)) := by
+    rw [← HgoEq]; exact Htrip_eq.symm
+  refine ⟨ni.val, Hni_lt, ?_, ?_⟩
+  · -- k = mkOld oldVars[ni.val].name.
+    have Hk_eq :
+        k = oldGVars[ni.val]'Hni_lt_oldGVars :=
+      ((Prod.mk.injEq _ _ _ _).mp HkwEq).1
+    rw [Hk_eq, HoldG_get]
+  · -- w = createFvar genOldIdents[ni.val].
+    exact ((Prod.mk.injEq _ _ _ _).mp HkwEq).2
+
 /-- For an entry of `conds.filter f`, its `.snd.expr` is contained in
     `getCheckExprs conds` (in `.contains` form).  Used at both the
     pre-filtered and post-filtered sites of `callElimStatementCorrect` to
@@ -7800,159 +7948,16 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         δ σ_R1 w =
                           δ σO (Lambda.LExpr.fvar () k none) := by
                     intro k w Hf
-                    -- (k, w) ∈ createOldVarsSubst oldTripsCanonical_L6 (as List).
-                    have Hkw_mem_list :
-                        List.Mem (k, w)
-                          (Core.Transform.createOldVarsSubst
-                            oldTripsCanonical_L6) :=
-                      Map.find?_mem _ k w Hf
-                    -- createOldVarsSubst trips = trips.map go (definitional).
-                    have HsubstUnfold :
-                        Core.Transform.createOldVarsSubst
-                          oldTripsCanonical_L6 =
-                        oldTripsCanonical_L6.map
-                          (fun trip =>
-                            Core.Transform.createOldVarsSubst.go trip) := rfl
-                    rw [HsubstUnfold] at Hkw_mem_list
-                    -- (k, w) ∈ trips.map go ⇒ ∃ trip, trip ∈ trips ∧ go trip = (k, w).
-                    rcases List.mem_map.mp Hkw_mem_list with ⟨trip, Htrip_in, Htrip_eq⟩
-                    -- trip ∈ oldTripsCanonical_L6; extract via mem_iff_get.
-                    rcases List.mem_iff_get.mp Htrip_in with ⟨ni, Hni⟩
-                    -- oldTripsCanonical_L6 length = oldVars_L6.length (after
-                    -- collapsing the multi-zip via Holdtriplen-style reasoning).
-                    -- oldVars_L6 = oldVars (definitionally; same filter expr).
-                    have HoldVars_L6_eq : oldVars_L6 = oldVars := rfl
-                    have HCanonLen :
-                        oldTripsCanonical_L6.length = oldVars.length := by
-                      show ((((genOldIdents.zip oldTys).zip oldVars_L6).zip
-                        oldGVars_L6).map _).length = oldVars.length
-                      have HoldGLen :
-                          oldGVars_L6.length = oldVars_L6.length := by
-                        show (oldVars_L6.map _).length = oldVars_L6.length
-                        simp [List.length_map]
-                      simp only [List.length_map, List.length_zip,
-                                 HgenOldLen, HoldTysLen, HoldGLen,
-                                 HoldVars_L6_eq]
-                      omega
-                    -- Bound the index against oldVars.
-                    have Hni_lt : ni.val < oldVars.length := by
-                      have HiLt := ni.isLt
-                      omega
-                    -- Extract trip's positional shape:
-                    --   trip = ((genOldIdents[i], oldTys[i]), oldGVars_L6[i]).
-                    -- Build via two-step zip-getElem reduction.
-                    have HziptyLen :
-                        (genOldIdents.zip oldTys).length = oldVars_L6.length := by
-                      have HoldVars_L6_eq2 : oldVars_L6 = oldVars := rfl
-                      rw [HoldVars_L6_eq2]
-                      simp [List.length_zip, HgenOldLen, HoldTysLen]
-                    have Hni_lt_zipty : ni.val < (genOldIdents.zip oldTys).length := by
-                      rw [HziptyLen]; exact Hni_lt
-                    have Hni_lt_oldGVars_L6 :
-                        ni.val < oldGVars_L6.length := by
-                      show ni.val < (oldVars_L6.map _).length
-                      simp [List.length_map]; exact Hni_lt
-                    have Hni_lt_oldVars_L6 :
-                        ni.val < oldVars_L6.length := Hni_lt
-                    have Hni_lt_genOld : ni.val < genOldIdents.length := by
+                    -- Positional decomposition of `(k, w)` from the
+                    -- L6 canonical `createOldVarsSubst` map: extracts
+                    -- `i < oldVars.length`, `k = mkOld oldVars[i].name`,
+                    -- and `w = createFvar genOldIdents[i]` via the
+                    -- `createOldVarsSubst_pos_decomp` helper.
+                    obtain ⟨ni_val, Hni_lt, Hk_eqMkOld, Hw_eq⟩ :=
+                      createOldVarsSubst_pos_decomp HgenOldLen HoldTysLen Hf
+                    have Hni_lt_genOld : ni_val < genOldIdents.length := by
                       have := HgenOldLen
                       omega
-                    have Hni_lt_oldTys : ni.val < oldTys.length := by
-                      have := HoldTysLen
-                      omega
-                    -- Bound ni.val against oldTripsCanonical_L6 directly.
-                    have Hni_lt_canon : ni.val < oldTripsCanonical_L6.length :=
-                      ni.isLt
-                    -- Project trip via zip getElem.
-                    have HtripGet :
-                        oldTripsCanonical_L6[ni.val]'Hni_lt_canon =
-                          ((genOldIdents[ni.val]'Hni_lt_genOld,
-                            oldTys[ni.val]'Hni_lt_oldTys),
-                           oldGVars_L6[ni.val]'Hni_lt_oldGVars_L6) := by
-                      show (((((genOldIdents.zip oldTys).zip oldVars_L6).zip
-                        oldGVars_L6).map _)[ni.val]'Hni_lt_canon) = _
-                      rw [List.getElem_map]
-                      have HouterLt :
-                          ni.val < (((genOldIdents.zip oldTys).zip oldVars_L6).zip
-                              oldGVars_L6).length := by
-                        simp only [List.length_zip]
-                        omega
-                      have Houter :
-                          (((genOldIdents.zip oldTys).zip oldVars_L6).zip
-                              oldGVars_L6)[ni.val]'HouterLt =
-                            ((((genOldIdents.zip oldTys).zip oldVars_L6))[ni.val]'(by
-                              simp [List.length_zip, HziptyLen]; exact Hni_lt_oldVars_L6),
-                             oldGVars_L6[ni.val]'Hni_lt_oldGVars_L6) :=
-                        List.getElem_zip
-                      rw [Houter]
-                      have Hmid :
-                          ((genOldIdents.zip oldTys).zip oldVars_L6)[ni.val]'(by
-                            simp [List.length_zip, HziptyLen]; exact Hni_lt_oldVars_L6) =
-                            ((genOldIdents.zip oldTys)[ni.val]'Hni_lt_zipty,
-                             oldVars_L6[ni.val]'Hni_lt_oldVars_L6) :=
-                        List.getElem_zip
-                      rw [Hmid]
-                      have Hinner :
-                          (genOldIdents.zip oldTys)[ni.val]'Hni_lt_zipty =
-                            (genOldIdents[ni.val]'Hni_lt_genOld,
-                             oldTys[ni.val]'Hni_lt_oldTys) :=
-                        List.getElem_zip
-                      rw [Hinner]
-                    -- Convert ni.get to ni-indexed getElem.
-                    have HtripEq_get :
-                        oldTripsCanonical_L6[ni.val]'Hni_lt_canon = trip := by
-                      have HhE := Hni
-                      have HgetEq : oldTripsCanonical_L6.get ni =
-                              oldTripsCanonical_L6[ni.val]'Hni_lt_canon :=
-                        rfl
-                      rw [HgetEq] at HhE
-                      exact HhE
-                    -- Combine: trip = ((gen, ty), oldG).
-                    have Htrip_shape :
-                        trip = ((genOldIdents[ni.val]'Hni_lt_genOld,
-                                 oldTys[ni.val]'Hni_lt_oldTys),
-                                oldGVars_L6[ni.val]'Hni_lt_oldGVars_L6) := by
-                      rw [← HtripEq_get]; exact HtripGet
-                    -- oldGVars_L6[i] = mkOld oldVars_L6[i].name.
-                    have HoldG_get :
-                        oldGVars_L6[ni.val]'Hni_lt_oldGVars_L6 =
-                          CoreIdent.mkOld
-                            (oldVars_L6[ni.val]'Hni_lt_oldVars_L6).name := by
-                      show (oldVars_L6.map (fun g => CoreIdent.mkOld g.name))[ni.val]'_ = _
-                      rw [List.getElem_map]
-                    -- Bridge oldVars_L6 = oldVars (definitionally; same filter expr).
-                    have HoldVarsBridgeGet :
-                        oldVars_L6[ni.val]'Hni_lt_oldVars_L6 =
-                          oldVars[ni.val]'Hni_lt := rfl
-                    -- Apply createOldVarsSubst.go to the trip.
-                    -- go ((v', _), v) = (v, createFvar v').
-                    -- For our trip = ((gen, ty), oldG):
-                    --   go trip = (oldG, createFvar gen).
-                    have HgoEq :
-                        Core.Transform.createOldVarsSubst.go trip =
-                          (oldGVars_L6[ni.val]'Hni_lt_oldGVars_L6,
-                           Core.Transform.createFvar
-                             (genOldIdents[ni.val]'Hni_lt_genOld)) := by
-                      rw [Htrip_shape]
-                      rfl
-                    -- Combined: (k, w) = (oldG, createFvar gen).
-                    have HkwEq :
-                        (k, w) = (oldGVars_L6[ni.val]'Hni_lt_oldGVars_L6,
-                                  Core.Transform.createFvar
-                                    (genOldIdents[ni.val]'Hni_lt_genOld)) := by
-                      rw [← HgoEq]; exact Htrip_eq.symm
-                    have Hk_eq :
-                        k = oldGVars_L6[ni.val]'Hni_lt_oldGVars_L6 :=
-                      ((Prod.mk.injEq _ _ _ _).mp HkwEq).1
-                    have Hw_eq :
-                        w = Core.Transform.createFvar
-                              (genOldIdents[ni.val]'Hni_lt_genOld) :=
-                      ((Prod.mk.injEq _ _ _ _).mp HkwEq).2
-                    -- k = mkOld oldVars[i].name, via HoldG_get + HoldVarsBridgeGet.
-                    have Hk_eqMkOld :
-                        k = CoreIdent.mkOld
-                              (oldVars[ni.val]'Hni_lt).name := by
-                      rw [Hk_eq, HoldG_get, HoldVarsBridgeGet]
                     -- LHS: δ σ_R1 w = σ_R1 genOldIdents[i] = some oldVals[i].
                     -- σ_R1 = updatedStates σO genOldIdents oldVals.
                     -- Use readValues_updatedStatesSame + readValues_get.
@@ -7961,7 +7966,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       have := HoldValsLen
                       have := HgenOldLen
                       omega
-                    have Hni_lt_oldVals : ni.val < oldVals.length := by
+                    have Hni_lt_oldVals : ni_val < oldVals.length := by
                       have := HoldValsLen
                       omega
                     have HrdR1_olds :
@@ -7972,31 +7977,31 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       exact readValues_updatedStatesSame
                               HoldValsLenE HoldNd
                     have HrdR1_get :
-                        σ_R1 (genOldIdents[ni.val]'Hni_lt_genOld) =
-                          some (oldVals[ni.val]'Hni_lt_oldVals) :=
+                        σ_R1 (genOldIdents[ni_val]'Hni_lt_genOld) =
+                          some (oldVals[ni_val]'Hni_lt_oldVals) :=
                       readValues_get HrdR1_olds
-                        (i:=ni.val) (hi:=Hni_lt_genOld) (hi':=Hni_lt_oldVals)
+                        (i:=ni_val) (hi:=Hni_lt_genOld) (hi':=Hni_lt_oldVals)
                     -- δ σ_R1 (createFvar gen) = σ_R1 gen.
                     have Hwfvr := Hwfvars
                     simp [Imperative.WellFormedSemanticEvalVar] at Hwfvr
                     have HwfL :
                         δ σ_R1 (Core.Transform.createFvar
-                                 (genOldIdents[ni.val]'Hni_lt_genOld)) =
-                          σ_R1 (genOldIdents[ni.val]'Hni_lt_genOld) := by
+                                 (genOldIdents[ni_val]'Hni_lt_genOld)) =
+                          σ_R1 (genOldIdents[ni_val]'Hni_lt_genOld) := by
                       show δ σ_R1 (Lambda.LExpr.fvar () _ none) = _
                       rw [Hwfvr (Lambda.LExpr.fvar ()
-                            (genOldIdents[ni.val]'Hni_lt_genOld) none)
-                          (genOldIdents[ni.val]'Hni_lt_genOld)]
+                            (genOldIdents[ni_val]'Hni_lt_genOld) none)
+                          (genOldIdents[ni_val]'Hni_lt_genOld)]
                       simp [Imperative.HasFvar.getFvar]
                     -- RHS: δ σO (fvar k) = δ σO (fvar (mkOld oldVars[i].name))
                     --                    = some oldVals[i] (HoldEval_bridge).
                     have HoldEv :
                         δ σO (Lambda.LExpr.fvar ()
                                 (CoreIdent.mkOld
-                                  (oldVars[ni.val]'Hni_lt).name)
+                                  (oldVars[ni_val]'Hni_lt).name)
                                 none) =
-                          some (oldVals[ni.val]'Hni_lt_oldVals) :=
-                      HoldEval_bridge ni.val Hni_lt
+                          some (oldVals[ni_val]'Hni_lt_oldVals) :=
+                      HoldEval_bridge ni_val Hni_lt
                     -- Conclude.
                     rw [Hw_eq, HwfL, HrdR1_get, Hk_eqMkOld, HoldEv]
                   -- ── (2b) HinputSubBridge: inputOnlyOldSubst codomain ──
@@ -8768,142 +8773,32 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           Hf
                         have Hw'w : w' = w :=
                           Option.some_inj.mp (HH.symm.trans Hf_unfold)
-                        -- Extract positional witness from createOldVarsSubst.
-                        have Hkw_mem_list :
-                            List.Mem (k, w')
-                              (Core.Transform.createOldVarsSubst
-                                oldTripsCanonical_L6) :=
-                          Map.find?_mem _ k w' hfind
-                        -- Same shape extraction as HoldSubBridge.
-                        have HsubstUnfold :
-                            Core.Transform.createOldVarsSubst
-                              oldTripsCanonical_L6 =
-                            oldTripsCanonical_L6.map
-                              (fun trip =>
-                                Core.Transform.createOldVarsSubst.go trip) := rfl
-                        rw [HsubstUnfold] at Hkw_mem_list
-                        rcases List.mem_map.mp Hkw_mem_list with
-                          ⟨trip', Htrip_in', Htrip_eq'⟩
-                        rcases List.mem_iff_get.mp Htrip_in' with ⟨ni, Hni⟩
-                        have HCanonLen :
-                            oldTripsCanonical_L6.length = oldVars.length := by
-                          show ((((genOldIdents.zip oldTys).zip oldVars_L6).zip
-                            oldGVars_L6).map _).length = oldVars.length
-                          have HoldGLen :
-                              oldGVars_L6.length = oldVars_L6.length := by
-                            show (oldVars_L6.map _).length = oldVars_L6.length
-                            simp [List.length_map]
-                          have HoldVars_L6_eq : oldVars_L6 = oldVars := rfl
-                          simp only [List.length_map, List.length_zip,
-                                     HgenOldLen, HoldTysLen, HoldGLen,
-                                     HoldVars_L6_eq]
-                          omega
-                        have Hni_lt : ni.val < oldVars.length := by
-                          have HiLt := ni.isLt
-                          omega
-                        have HoldVars_L6_eq : oldVars_L6 = oldVars := rfl
-                        have HziptyLen :
-                            (genOldIdents.zip oldTys).length = oldVars_L6.length := by
-                          rw [HoldVars_L6_eq]
-                          simp [List.length_zip, HgenOldLen, HoldTysLen]
-                        have Hni_lt_zipty :
-                            ni.val < (genOldIdents.zip oldTys).length := by
-                          rw [HziptyLen]; exact Hni_lt
-                        have Hni_lt_oldGVars_L6 :
-                            ni.val < oldGVars_L6.length := by
-                          show ni.val < (oldVars_L6.map _).length
-                          simp [List.length_map]; exact Hni_lt
-                        have Hni_lt_oldVars_L6 :
-                            ni.val < oldVars_L6.length := Hni_lt
-                        have Hni_lt_genOld : ni.val < genOldIdents.length := by
+                        -- Positional decomposition of `(k, w')` via the
+                        -- shared `createOldVarsSubst_pos_decomp` helper.
+                        obtain ⟨ni_val, Hni_lt, _Hk_eqMkOld, Hw'_eq⟩ :=
+                          createOldVarsSubst_pos_decomp HgenOldLen HoldTysLen hfind
+                        have Hni_lt_genOld : ni_val < genOldIdents.length := by
                           have := HgenOldLen; omega
-                        have Hni_lt_oldTys : ni.val < oldTys.length := by
-                          have := HoldTysLen; omega
-                        have Hni_lt_canon :
-                            ni.val < oldTripsCanonical_L6.length := ni.isLt
-                        have HtripGet :
-                            oldTripsCanonical_L6[ni.val]'Hni_lt_canon =
-                              ((genOldIdents[ni.val]'Hni_lt_genOld,
-                                oldTys[ni.val]'Hni_lt_oldTys),
-                               oldGVars_L6[ni.val]'Hni_lt_oldGVars_L6) := by
-                          show (((((genOldIdents.zip oldTys).zip oldVars_L6).zip
-                            oldGVars_L6).map _)[ni.val]'Hni_lt_canon) = _
-                          rw [List.getElem_map]
-                          have HouterLt :
-                              ni.val < (((genOldIdents.zip oldTys).zip oldVars_L6).zip
-                                  oldGVars_L6).length := by
-                            simp only [List.length_zip]
-                            omega
-                          have Houter :
-                              (((genOldIdents.zip oldTys).zip oldVars_L6).zip
-                                  oldGVars_L6)[ni.val]'HouterLt =
-                                ((((genOldIdents.zip oldTys).zip oldVars_L6))[ni.val]'(by
-                                  simp [List.length_zip, HziptyLen]; exact Hni_lt_oldVars_L6),
-                                 oldGVars_L6[ni.val]'Hni_lt_oldGVars_L6) :=
-                            List.getElem_zip
-                          rw [Houter]
-                          have Hmid :
-                              ((genOldIdents.zip oldTys).zip oldVars_L6)[ni.val]'(by
-                                simp [List.length_zip, HziptyLen]; exact Hni_lt_oldVars_L6) =
-                                ((genOldIdents.zip oldTys)[ni.val]'Hni_lt_zipty,
-                                 oldVars_L6[ni.val]'Hni_lt_oldVars_L6) :=
-                            List.getElem_zip
-                          rw [Hmid]
-                          have Hinner :
-                              (genOldIdents.zip oldTys)[ni.val]'Hni_lt_zipty =
-                                (genOldIdents[ni.val]'Hni_lt_genOld,
-                                 oldTys[ni.val]'Hni_lt_oldTys) :=
-                            List.getElem_zip
-                          rw [Hinner]
-                        have HtripEq_get :
-                            oldTripsCanonical_L6[ni.val]'Hni_lt_canon = trip' := by
-                          have HhE := Hni
-                          have HgetEq : oldTripsCanonical_L6.get ni =
-                                  oldTripsCanonical_L6[ni.val]'Hni_lt_canon :=
-                            rfl
-                          rw [HgetEq] at HhE
-                          exact HhE
-                        have Htrip_shape :
-                            trip' = ((genOldIdents[ni.val]'Hni_lt_genOld,
-                                     oldTys[ni.val]'Hni_lt_oldTys),
-                                    oldGVars_L6[ni.val]'Hni_lt_oldGVars_L6) := by
-                          rw [← HtripEq_get]; exact HtripGet
-                        have HgoEq :
-                            Core.Transform.createOldVarsSubst.go trip' =
-                              (oldGVars_L6[ni.val]'Hni_lt_oldGVars_L6,
-                               Core.Transform.createFvar
-                                 (genOldIdents[ni.val]'Hni_lt_genOld)) := by
-                          rw [Htrip_shape]
-                          rfl
-                        have HkwEq :
-                            (k, w') = (oldGVars_L6[ni.val]'Hni_lt_oldGVars_L6,
-                                       Core.Transform.createFvar
-                                         (genOldIdents[ni.val]'Hni_lt_genOld)) := by
-                          rw [← HgoEq]; exact Htrip_eq'.symm
-                        have Hw'_eq :
-                            w' = Core.Transform.createFvar
-                                  (genOldIdents[ni.val]'Hni_lt_genOld) :=
-                          ((Prod.mk.injEq _ _ _ _).mp HkwEq).2
                         have Hw_eq : w =
                             Core.Transform.createFvar
-                              (genOldIdents[ni.val]'Hni_lt_genOld) := by
+                              (genOldIdents[ni_val]'Hni_lt_genOld) := by
                           rw [← Hw'w]; exact Hw'_eq
                         -- v ∈ getVars w; w = createFvar genOldIdents[ni].
                         rw [Hw_eq] at Hv_in
                         have Hv_eq_gen :
-                            k1 = genOldIdents[ni.val]'Hni_lt_genOld := by
+                            k1 = genOldIdents[ni_val]'Hni_lt_genOld := by
                           have Hv_in' :
                               k1 ∈ Imperative.HasVarsPure.getVars (P:=Expression)
                                     (Core.Transform.createFvar
-                                      (genOldIdents[ni.val]'Hni_lt_genOld)) := Hv_in
+                                      (genOldIdents[ni_val]'Hni_lt_genOld)) := Hv_in
                           show k1 = _
                           simp [Core.Transform.createFvar,
                                 Imperative.HasVarsPure.getVars,
                                 Lambda.LExpr.LExpr.getVars] at Hv_in'
                           exact Hv_in'
-                        -- σ_R1 k1 = oldVals[ni.val]; σ_havoc k1 = oldVals[ni.val].
+                        -- σ_R1 k1 = oldVals[ni_val]; σ_havoc k1 = oldVals[ni_val].
                         have Hni_lt_oldVals :
-                            ni.val < oldVals.length := by
+                            ni_val < oldVals.length := by
                           have := HoldValsLen; omega
                         have HoldValsLenE' :
                             genOldIdents.length = oldVals.length := by
@@ -8918,14 +8813,14 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           exact readValues_updatedStatesSame
                                   HoldValsLenE' HoldNd
                         have Hσ_R1_v :
-                            σ_R1 (genOldIdents[ni.val]'Hni_lt_genOld) =
-                              some (oldVals[ni.val]'Hni_lt_oldVals) :=
+                            σ_R1 (genOldIdents[ni_val]'Hni_lt_genOld) =
+                              some (oldVals[ni_val]'Hni_lt_oldVals) :=
                           readValues_get HrdR1_olds
-                            (i:=ni.val) (hi:=Hni_lt_genOld) (hi':=Hni_lt_oldVals)
+                            (i:=ni_val) (hi:=Hni_lt_genOld) (hi':=Hni_lt_oldVals)
                         have Hσ_havoc_v :
-                            σ_havoc (genOldIdents[ni.val]'Hni_lt_genOld) =
-                              some (oldVals[ni.val]'Hni_lt_oldVals) :=
-                          HrdHavoc_olds_pos ni.val Hni_lt_genOld Hni_lt_oldVals
+                            σ_havoc (genOldIdents[ni_val]'Hni_lt_genOld) =
+                              some (oldVals[ni_val]'Hni_lt_oldVals) :=
+                          HrdHavoc_olds_pos ni_val Hni_lt_genOld Hni_lt_oldVals
                         rw [Hv_eq_gen, Hσ_R1_v, Hσ_havoc_v]
                       | none =>
                         -- (b2) inputOnlyOldSubst flavor.
@@ -9191,138 +9086,30 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           Hf
                         have Hw'w : w' = w :=
                           Option.some_inj.mp (HH.symm.trans Hf_unfold)
-                        -- Extract: w = createFvar genOldIdents[i].
-                        have Hkw_mem_list :
-                            List.Mem (k', w')
-                              (Core.Transform.createOldVarsSubst
-                                oldTripsCanonical_L6) :=
-                          Map.find?_mem _ k' w' hfind
-                        have HsubstUnfold :
-                            Core.Transform.createOldVarsSubst
-                              oldTripsCanonical_L6 =
-                            oldTripsCanonical_L6.map
-                              (fun trip =>
-                                Core.Transform.createOldVarsSubst.go trip) := rfl
-                        rw [HsubstUnfold] at Hkw_mem_list
-                        rcases List.mem_map.mp Hkw_mem_list with
-                          ⟨trip', Htrip_in', Htrip_eq'⟩
-                        rcases List.mem_iff_get.mp Htrip_in' with ⟨ni, Hni⟩
-                        have HCanonLen :
-                            oldTripsCanonical_L6.length = oldVars.length := by
-                          show ((((genOldIdents.zip oldTys).zip oldVars_L6).zip
-                            oldGVars_L6).map _).length = oldVars.length
-                          have HoldGLen :
-                              oldGVars_L6.length = oldVars_L6.length := by
-                            show (oldVars_L6.map _).length = oldVars_L6.length
-                            simp [List.length_map]
-                          have HoldVars_L6_eq : oldVars_L6 = oldVars := rfl
-                          simp only [List.length_map, List.length_zip,
-                                     HgenOldLen, HoldTysLen, HoldGLen,
-                                     HoldVars_L6_eq]
-                          omega
-                        have Hni_lt : ni.val < oldVars.length := by
-                          have HiLt := ni.isLt
-                          omega
-                        have Hni_lt_genOld : ni.val < genOldIdents.length := by
+                        -- Positional decomposition of `(k', w')` via the
+                        -- shared `createOldVarsSubst_pos_decomp` helper.
+                        obtain ⟨ni_val, Hni_lt, _Hk'_eqMkOld, Hw'_eq⟩ :=
+                          createOldVarsSubst_pos_decomp HgenOldLen HoldTysLen hfind
+                        have Hni_lt_genOld : ni_val < genOldIdents.length := by
                           have := HgenOldLen; omega
-                        have Hni_lt_oldTys : ni.val < oldTys.length := by
-                          have := HoldTysLen; omega
-                        have HoldVars_L6_eq : oldVars_L6 = oldVars := rfl
-                        have HziptyLen :
-                            (genOldIdents.zip oldTys).length = oldVars_L6.length := by
-                          rw [HoldVars_L6_eq]
-                          simp [List.length_zip, HgenOldLen, HoldTysLen]
-                        have Hni_lt_zipty :
-                            ni.val < (genOldIdents.zip oldTys).length := by
-                          rw [HziptyLen]; exact Hni_lt
-                        have Hni_lt_oldGVars_L6 :
-                            ni.val < oldGVars_L6.length := by
-                          show ni.val < (oldVars_L6.map _).length
-                          simp [List.length_map]; exact Hni_lt
-                        have Hni_lt_oldVars_L6 :
-                            ni.val < oldVars_L6.length := Hni_lt
-                        have Hni_lt_canon :
-                            ni.val < oldTripsCanonical_L6.length := ni.isLt
-                        have HtripGet :
-                            oldTripsCanonical_L6[ni.val]'Hni_lt_canon =
-                              ((genOldIdents[ni.val]'Hni_lt_genOld,
-                                oldTys[ni.val]'Hni_lt_oldTys),
-                               oldGVars_L6[ni.val]'Hni_lt_oldGVars_L6) := by
-                          show (((((genOldIdents.zip oldTys).zip oldVars_L6).zip
-                            oldGVars_L6).map _)[ni.val]'Hni_lt_canon) = _
-                          rw [List.getElem_map]
-                          have HouterLt :
-                              ni.val < (((genOldIdents.zip oldTys).zip oldVars_L6).zip
-                                  oldGVars_L6).length := by
-                            simp only [List.length_zip]; omega
-                          have Houter :
-                              (((genOldIdents.zip oldTys).zip oldVars_L6).zip
-                                  oldGVars_L6)[ni.val]'HouterLt =
-                                ((((genOldIdents.zip oldTys).zip oldVars_L6))[ni.val]'(by
-                                  simp [List.length_zip, HziptyLen]; exact Hni_lt_oldVars_L6),
-                                 oldGVars_L6[ni.val]'Hni_lt_oldGVars_L6) :=
-                            List.getElem_zip
-                          rw [Houter]
-                          have Hmid :
-                              ((genOldIdents.zip oldTys).zip oldVars_L6)[ni.val]'(by
-                                simp [List.length_zip, HziptyLen]; exact Hni_lt_oldVars_L6) =
-                                ((genOldIdents.zip oldTys)[ni.val]'Hni_lt_zipty,
-                                 oldVars_L6[ni.val]'Hni_lt_oldVars_L6) :=
-                            List.getElem_zip
-                          rw [Hmid]
-                          have Hinner :
-                              (genOldIdents.zip oldTys)[ni.val]'Hni_lt_zipty =
-                                (genOldIdents[ni.val]'Hni_lt_genOld,
-                                 oldTys[ni.val]'Hni_lt_oldTys) :=
-                            List.getElem_zip
-                          rw [Hinner]
-                        have HtripEq_get :
-                            oldTripsCanonical_L6[ni.val]'Hni_lt_canon = trip' := by
-                          have HhE := Hni
-                          have HgetEq : oldTripsCanonical_L6.get ni =
-                                  oldTripsCanonical_L6[ni.val]'Hni_lt_canon :=
-                            rfl
-                          rw [HgetEq] at HhE
-                          exact HhE
-                        have Htrip_shape :
-                            trip' = ((genOldIdents[ni.val]'Hni_lt_genOld,
-                                     oldTys[ni.val]'Hni_lt_oldTys),
-                                    oldGVars_L6[ni.val]'Hni_lt_oldGVars_L6) := by
-                          rw [← HtripEq_get]; exact HtripGet
-                        have HgoEq :
-                            Core.Transform.createOldVarsSubst.go trip' =
-                              (oldGVars_L6[ni.val]'Hni_lt_oldGVars_L6,
-                               Core.Transform.createFvar
-                                 (genOldIdents[ni.val]'Hni_lt_genOld)) := by
-                          rw [Htrip_shape]
-                          rfl
-                        have HkwEq :
-                            (k', w') = (oldGVars_L6[ni.val]'Hni_lt_oldGVars_L6,
-                                       Core.Transform.createFvar
-                                         (genOldIdents[ni.val]'Hni_lt_genOld)) := by
-                          rw [← HgoEq]; exact Htrip_eq'.symm
-                        have Hw'_eq :
-                            w' = Core.Transform.createFvar
-                                  (genOldIdents[ni.val]'Hni_lt_genOld) :=
-                          ((Prod.mk.injEq _ _ _ _).mp HkwEq).2
                         have Hw_eq : w =
                             Core.Transform.createFvar
-                              (genOldIdents[ni.val]'Hni_lt_genOld) := by
+                              (genOldIdents[ni_val]'Hni_lt_genOld) := by
                           rw [← Hw'w]; exact Hw'_eq
                         rw [Hw_eq] at Hv_in
                         have Hx_eq_gen :
-                            x = genOldIdents[ni.val]'Hni_lt_genOld := by
+                            x = genOldIdents[ni_val]'Hni_lt_genOld := by
                           have Hv_in' :
                               x ∈ Imperative.HasVarsPure.getVars (P:=Expression)
                                     (Core.Transform.createFvar
-                                      (genOldIdents[ni.val]'Hni_lt_genOld)) := Hv_in
+                                      (genOldIdents[ni_val]'Hni_lt_genOld)) := Hv_in
                           show x = _
                           simp [Core.Transform.createFvar,
                                 Imperative.HasVarsPure.getVars,
                                 Lambda.LExpr.LExpr.getVars] at Hv_in'
                           exact Hv_in'
                         rw [Hx_eq_gen] at Hin1
-                        -- genOldIdents[ni.val] ∈ filtered_ks' = lhs ++ filtered_argTemps.
+                        -- genOldIdents[ni_val] ∈ filtered_ks' = lhs ++ filtered_argTemps.
                         -- Each branch yields contradiction.
                         cases List.mem_append.mp Hin1 with
                         | inl Hx_lhs =>
@@ -9334,13 +9121,13 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           -- and isTempIdent and isOldTempIdent are disjoint
                           -- (via HoldIdentsTemp + HargTemp).
                           have Hx_argT :
-                              genOldIdents[ni.val]'Hni_lt_genOld ∈ argTemps :=
+                              genOldIdents[ni_val]'Hni_lt_genOld ∈ argTemps :=
                             HfiltArgT_sub_argT _ Hx_filtArgT
                           have Hx_isTemp : isTempIdent
-                              (genOldIdents[ni.val]'Hni_lt_genOld) :=
+                              (genOldIdents[ni_val]'Hni_lt_genOld) :=
                             (List.Forall_mem_iff.mp HargTemp) _ Hx_argT
                           have Hx_isOld : isOldTempIdent
-                              (genOldIdents[ni.val]'Hni_lt_genOld) :=
+                              (genOldIdents[ni_val]'Hni_lt_genOld) :=
                             (List.Forall_mem_iff.mp HoldIdentsTemp)
                               _ (List.getElem_mem _)
                           exact isTempIdent_isOldTempIdent_disjoint
