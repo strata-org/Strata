@@ -1,0 +1,10 @@
+name = "StrataDDM"
+version = "0.1.0"
+defaultTargets = ["StrataDDM"]
+
+[[lean_lib]]
+name = "StrataDDM"
+
+[[lean_lib]]
+name = "StrataDDMTest"
+globs = ["StrataDDMTest.+"]

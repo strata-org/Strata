@@ -10,8 +10,8 @@ Tests that the constrained type elimination pass correctly transforms
 Laurel programs by comparing the output against expected results.
 -/
 
-meta import Strata.DDM.Elab
-meta import Strata.DDM.BuiltinDialects.Init
+meta import StrataDDM.Elab
+meta import StrataDDM.BuiltinDialects.Init
 meta import Strata.Languages.Laurel.Grammar
 meta import Strata.Languages.Laurel.ConstrainedTypeElim
 meta import Strata.Languages.Laurel.Resolution

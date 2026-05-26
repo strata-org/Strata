@@ -5,7 +5,7 @@
 -/
 module
 
-import all Strata.DDM.Util.String
+import all StrataDDM.Util.String
 import Strata.Languages.Laurel.FilterPrelude
 import Strata.Languages.Laurel.LaurelCompilationPipeline
 public import Strata.Languages.Python.PythonToLaurel

@@ -5,8 +5,8 @@
 -/
 
 module
-public meta import Strata.DDM.Util.Fin
-import all Strata.DDM.Util.Fin
+public meta import StrataDDM.Util.Fin
+import all StrataDDM.Util.Fin
 
 /-
 This module provides `findPython3`, a utility that locates

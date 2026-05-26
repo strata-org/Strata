@@ -7,7 +7,7 @@ module
 
 meta import Strata.Transform.ProcBodyVerify
 meta import Strata.Languages.Core.Program
-import Strata.DDM.Integration.Lean
+import StrataDDM.Integration.Lean
 meta import Strata.Languages.Core.DDMTransform.Translate
 
 meta section

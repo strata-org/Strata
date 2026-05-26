@@ -6,7 +6,7 @@
 module
 
 meta import Strata.Languages.Core.Verifier
-import Strata.DDM.Integration.Lean.HashCommands
+import StrataDDM.Integration.Lean.HashCommands
 
 meta section
 
@@ -208,7 +208,7 @@ spec {
 #end
 
 /--
-info: error: (4693-4716) Impossible to unify (arrow int bool) with (arrow bool $__ty5).
+info: error: (4692-4715) Impossible to unify (arrow int bool) with (arrow bool $__ty5).
 First mismatch: int with bool.
 -/
 #guard_msgs in

@@ -6,10 +6,10 @@
 module
 
 public import Strata.Languages.Python.Specs.Decls
-public import Strata.DDM.AST
-import Strata.DDM.Format
-import Strata.DDM.Ion
-import Strata.DDM.Integration.Lean -- shake: keep
+public import StrataDDM.AST
+import StrataDDM.Format
+import StrataDDM.Ion
+import StrataDDM.Integration.Lean -- shake: keep
 
 namespace Strata.Python
 

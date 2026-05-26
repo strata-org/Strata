@@ -6,7 +6,7 @@
 module
 
 meta import Strata.Languages.Python.CorePrelude
-meta import Strata.DDM.Ion
+meta import StrataDDM.Ion
 
 meta section
 

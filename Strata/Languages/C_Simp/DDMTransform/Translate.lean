@@ -7,7 +7,7 @@ module
 
 public import Strata.Languages.C_Simp.C_Simp
 public import Strata.Languages.Core.CoreOp
-public import Strata.DDM.AST
+public import StrataDDM.AST
 
 public section
 

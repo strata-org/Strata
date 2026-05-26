@@ -4,7 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.DDM.Parser
+import StrataDDM.Parser
 import StrataTest.Languages.Python.TestExamples
 import StrataTest.Util.Python
 import StrataTest.Util.TestDiagnostics

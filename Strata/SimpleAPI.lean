@@ -21,10 +21,10 @@ import Strata.Languages.Python.Specs.DDM
 import Strata.Languages.Python.CorePrelude
 import Strata.Languages.Python.PythonToCore
 import Strata.Languages.Python.ReadPython
-public import Strata.DDM.Ion
+public import StrataDDM.Ion
 public import Strata.Languages.Laurel.Laurel
 public import Strata.Languages.Python.PythonDialect
-import Strata.DDM.Elab
+import StrataDDM.Elab
 import Strata.Languages.Laurel.Grammar.LaurelGrammar
 import Strata.Languages.Python.PySpecPipeline
 

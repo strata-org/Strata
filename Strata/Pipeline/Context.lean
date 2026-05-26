@@ -5,7 +5,7 @@
 -/
 module
 public import Strata.Pipeline.Messages
-import all Strata.DDM.Util.String
+import all StrataDDM.Util.String
 
 namespace Strata.Pipeline
 

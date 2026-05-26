@@ -6,7 +6,7 @@
 module
 
 meta import Strata.Languages.Core.Verifier
-import Strata.DDM.Integration.Lean.HashCommands
+import StrataDDM.Integration.Lean.HashCommands
 
 meta section
 
@@ -66,7 +66,7 @@ function BadFunc (o: Option(int)) : int {
 #end
 
 /--
-info: error: (1358-1431) Impossible to unify (arrow string int) with (arrow int $__ty4).
+info: error: (1357-1430) Impossible to unify (arrow string int) with (arrow int $__ty4).
 First mismatch: string with int.
 -/
 #guard_msgs in

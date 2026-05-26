@@ -6,8 +6,8 @@
 module
 
 public import Strata.Languages.Core.DDMTransform.Grammar -- shake: keep
-import Strata.DDM.Integration.Lean.HashCommands -- shake: keep
-import Strata.DDM.BuiltinDialects.Init
+import StrataDDM.Integration.Lean.HashCommands -- shake: keep
+import StrataDDM.BuiltinDialects.Init
 
 ---------------------------------------------------------------------
 

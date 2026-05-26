@@ -6,7 +6,7 @@
 
 module
 public import Strata.Languages.Laurel.Laurel
-import Strata.DDM.Util.Graph.Tarjan
+import StrataDDM.Util.Graph.Tarjan
 import Strata.Util.Tactics
 
 /-!

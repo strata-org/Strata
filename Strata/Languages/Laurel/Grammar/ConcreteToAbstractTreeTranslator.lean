@@ -5,7 +5,7 @@
 -/
 module
 
-public import Strata.DDM.AST
+public import StrataDDM.AST
 public import Strata.Languages.Laurel.Laurel
 
 namespace Strata
