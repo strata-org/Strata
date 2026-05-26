@@ -169,6 +169,114 @@ noncomputable def buildExprCorr
 
 end ConcreteExprCorr
 
+/-! ## Caller-side hypothesis bundles for `_v6` / `_v7`
+
+The `_v6` and `_v7` theorems take 6 caller-irreducible hypotheses
+relating source-side trace witnesses (`InitState`, `UpdateState`) to
+the GOTO instructions the translator emitted. Bundling them into two
+small structures (`TracePinning`, `ValueSideCorr`) compresses ~120 LoC
+of repeated theorem text. -/
+
+/-- The three caller-side trace-pinning hypotheses. Each pins a
+trace-side witness (`InitState` / `UpdateState`) to the source
+identifier the translator emitted at the corresponding PC. Cannot
+live at the `WellFormedTranslation` layer — these depend on the
+specific trace, not on translator structure. -/
+structure TracePinning
+    (δ_goto : SemanticEvalGoto Core.Expression)
+    (ans : Imperative.GotoTransform Core.Expression.TyEnv) : Prop where
+  decl_x_pinned :
+    ∀ {pc : Nat} {instr : Instruction}
+      {x : Core.Expression.Ident}
+      {σ σ' : Imperative.SemanticStore Core.Expression}
+      {v : Core.Expression.Expr},
+      ({ name := "", parameterIdentifiers := #[],
+         instructions := ans.instructions } : Program).instrAt pc
+        = some instr →
+      instr.type = .DECL →
+      Imperative.InitState Core.Expression σ x v σ' →
+      ∀ v_src gty, instr.code = Code.decl
+        (Expr.symbol
+          (Imperative.ToGoto.identToString (P := Core.Expression) v_src)
+          gty) → x = v_src
+  assn_x_pinned :
+    ∀ {pc : Nat} {instr : Instruction}
+      {x : Core.Expression.Ident}
+      {σ σ' : Imperative.SemanticStore Core.Expression}
+      {v_imp : Core.Expression.Expr},
+      ({ name := "", parameterIdentifiers := #[],
+         instructions := ans.instructions } : Program).instrAt pc
+        = some instr →
+      instr.type = .ASSIGN →
+      Imperative.UpdateState Core.Expression σ x v_imp σ' →
+      ∀ v_src gty rhs_emitted, instr.code = Code.assign
+        (Expr.symbol
+          (Imperative.ToGoto.identToString (P := Core.Expression) v_src)
+          gty) rhs_emitted → x = v_src
+  assn_rhs_pinned :
+    ∀ {pc : Nat} {instr : Instruction}
+      {σ : Imperative.SemanticStore Core.Expression}
+      {rhs_g : Expr} {v_imp : Core.Expression.Expr},
+      ({ name := "", parameterIdentifiers := #[],
+         instructions := ans.instructions } : Program).instrAt pc
+        = some instr →
+      instr.type = .ASSIGN →
+      δ_goto σ rhs_g = some v_imp →
+      ∀ v_src gty rhs_emitted, instr.code = Code.assign
+        (Expr.symbol
+          (Imperative.ToGoto.identToString (P := Core.Expression) v_src)
+          gty) rhs_emitted →
+        rhs_g = rhs_emitted
+
+/-- The three caller-side value-correspondence hypotheses. Each
+relates the source-side trace value to the target-side concrete
+`Value`. -/
+structure ValueSideCorr
+    (δ_goto : SemanticEvalGoto Core.Expression)
+    (eval : ExprEval)
+    (ans : Imperative.GotoTransform Core.Expression.TyEnv) : Prop where
+  decl_empty_value :
+    ∀ {pc : Nat} {instr : Instruction} {x : Core.Expression.Ident}
+      {v : Core.Expression.Expr}
+      {σ σ' : Imperative.SemanticStore Core.Expression},
+      ({ name := "", parameterIdentifiers := #[],
+         instructions := ans.instructions } : Program).instrAt pc
+        = some instr →
+      instr.type = .DECL →
+      Imperative.InitState Core.Expression σ x v σ' →
+      (SemanticsTautschnig.ValueCorr.toValue v
+        : Option SemanticsTautschnig.Value) = some .vEmpty
+  assign_value_corr :
+    ∀ {pc : Nat} {instr : Instruction} {x : Core.Expression.Ident}
+      {σ_imp σ_imp' : Imperative.SemanticStore Core.Expression}
+      {σ_goto : SemanticsTautschnig.Store}
+      {rhs_g : Expr} {v_imp : Core.Expression.Expr},
+      ({ name := "", parameterIdentifiers := #[],
+         instructions := ans.instructions } : Program).instrAt pc
+        = some instr →
+      instr.type = .ASSIGN →
+      δ_goto σ_imp rhs_g = some v_imp →
+      Imperative.UpdateState Core.Expression σ_imp x v_imp σ_imp' →
+      SemanticsTautschnig.StoreCorr
+        (Imperative.ToGoto.identToString (P := Core.Expression))
+        σ_imp σ_goto →
+      ∃ v_goto,
+        (SemanticsTautschnig.ValueCorr.toValue v_imp
+          : Option SemanticsTautschnig.Value) = some v_goto ∧
+        eval σ_goto rhs_g = some v_goto
+  assign_nondet_value_corr :
+    ∀ {pc : Nat} {instr : Instruction} {x : Core.Expression.Ident}
+      {σ σ' : Imperative.SemanticStore Core.Expression}
+      {v_imp : Core.Expression.Expr},
+      ({ name := "", parameterIdentifiers := #[],
+         instructions := ans.instructions } : Program).instrAt pc
+        = some instr →
+      instr.type = .ASSIGN →
+      Imperative.UpdateState Core.Expression σ x v_imp σ' →
+      ∃ v_goto,
+        (SemanticsTautschnig.ValueCorr.toValue v_imp
+          : Option SemanticsTautschnig.Value) = some v_goto
+
 /-! ## `_v6`: full-surface forward simulation
 
 First public theorem. Builds a `WellFormedTranslation` via the
@@ -262,94 +370,12 @@ theorem coreCFGToGotoTransform_forward_simulation_concrete_v6
       cfg.blocks.foldlM (Strata.coreCFGToGotoBlockStep functionName)
         (coreCFGToGotoInitState trans₀)
       = Except.ok st_final)
-    -- The strict ASSIGN-Nondet rhs witness is no longer required:
-    -- the tightened `step_assign_nondet` constructor carries the
+    -- Trace-level pinning + value-side correspondence (caller-side).
+    -- The strict ASSIGN-Nondet rhs witness is no longer required: the
+    -- tightened `step_assign_nondet` constructor carries the
     -- `rhs.id = .side_effect .Nondet` evidence directly.
-    -- Trace-level pinning hypotheses (caller-side).
-    (h_decl_x_pinned :
-      ∀ {pc : Nat} {instr : Instruction}
-        {x : Core.Expression.Ident}
-        {σ σ' : Imperative.SemanticStore Core.Expression}
-        {v : Core.Expression.Expr},
-        ({ name := "", parameterIdentifiers := #[],
-           instructions := ans.instructions } : Program).instrAt pc
-          = some instr →
-        instr.type = .DECL →
-        Imperative.InitState Core.Expression σ x v σ' →
-        ∀ v_src gty, instr.code = Code.decl
-          (Expr.symbol
-            (Imperative.ToGoto.identToString (P := Core.Expression) v_src)
-            gty) → x = v_src)
-    (h_assn_x_pinned :
-      ∀ {pc : Nat} {instr : Instruction}
-        {x : Core.Expression.Ident}
-        {σ σ' : Imperative.SemanticStore Core.Expression}
-        {v_imp : Core.Expression.Expr},
-        ({ name := "", parameterIdentifiers := #[],
-           instructions := ans.instructions } : Program).instrAt pc
-          = some instr →
-        instr.type = .ASSIGN →
-        Imperative.UpdateState Core.Expression σ x v_imp σ' →
-        ∀ v_src gty rhs_emitted, instr.code = Code.assign
-          (Expr.symbol
-            (Imperative.ToGoto.identToString (P := Core.Expression) v_src)
-            gty) rhs_emitted → x = v_src)
-    (h_assn_rhs_pinned :
-      ∀ {pc : Nat} {instr : Instruction}
-        {σ : Imperative.SemanticStore Core.Expression}
-        {rhs_g : Expr} {v_imp : Core.Expression.Expr},
-        ({ name := "", parameterIdentifiers := #[],
-           instructions := ans.instructions } : Program).instrAt pc
-          = some instr →
-        instr.type = .ASSIGN →
-        δ_goto σ rhs_g = some v_imp →
-        ∀ v_src gty rhs_emitted, instr.code = Code.assign
-          (Expr.symbol
-            (Imperative.ToGoto.identToString (P := Core.Expression) v_src)
-            gty) rhs_emitted →
-          rhs_g = rhs_emitted)
-    -- Value-side hypotheses (caller-side).
-    (h_decl_empty_value :
-      ∀ {pc : Nat} {instr : Instruction} {x : Core.Expression.Ident}
-        {v : Core.Expression.Expr}
-        {σ σ' : Imperative.SemanticStore Core.Expression},
-        ({ name := "", parameterIdentifiers := #[],
-           instructions := ans.instructions } : Program).instrAt pc
-          = some instr →
-        instr.type = .DECL →
-        Imperative.InitState Core.Expression σ x v σ' →
-        (SemanticsTautschnig.ValueCorr.toValue v
-          : Option SemanticsTautschnig.Value) = some .vEmpty)
-    (h_assign_value_corr :
-      ∀ {pc : Nat} {instr : Instruction} {x : Core.Expression.Ident}
-        {σ_imp σ_imp' : Imperative.SemanticStore Core.Expression}
-        {σ_goto : SemanticsTautschnig.Store}
-        {rhs_g : Expr} {v_imp : Core.Expression.Expr},
-        ({ name := "", parameterIdentifiers := #[],
-           instructions := ans.instructions } : Program).instrAt pc
-          = some instr →
-        instr.type = .ASSIGN →
-        δ_goto σ_imp rhs_g = some v_imp →
-        Imperative.UpdateState Core.Expression σ_imp x v_imp σ_imp' →
-        SemanticsTautschnig.StoreCorr
-          (Imperative.ToGoto.identToString (P := Core.Expression))
-          σ_imp σ_goto →
-        ∃ v_goto,
-          (SemanticsTautschnig.ValueCorr.toValue v_imp
-            : Option SemanticsTautschnig.Value) = some v_goto ∧
-          eval σ_goto rhs_g = some v_goto)
-    (h_assign_nondet_value_corr :
-      ∀ {pc : Nat} {instr : Instruction} {x : Core.Expression.Ident}
-        {σ σ' : Imperative.SemanticStore Core.Expression}
-        {v_imp : Core.Expression.Expr},
-        ({ name := "", parameterIdentifiers := #[],
-           instructions := ans.instructions } : Program).instrAt pc
-          = some instr →
-        instr.type = .ASSIGN →
-        Imperative.UpdateState Core.Expression σ x v_imp σ' →
-        ∃ v_goto,
-          (SemanticsTautschnig.ValueCorr.toValue v_imp
-            : Option SemanticsTautschnig.Value) = some v_goto)
+    (h_pin : TracePinning δ_goto ans)
+    (h_vcorr : ValueSideCorr δ_goto eval ans)
     -- Source-side terminating run + initial-store correspondence
     (σ σ' : Imperative.SemanticStore Core.Expression) (b : Bool)
     (σ_goto : Store)
@@ -370,6 +396,8 @@ theorem coreCFGToGotoTransform_forward_simulation_concrete_v6
         { name := "", parameterIdentifiers := #[],
           instructions := ans.instructions }
         pc_entry σ_goto σ_goto' none := by
+  obtain ⟨h_decl_x_pinned, h_assn_x_pinned, h_assn_rhs_pinned⟩ := h_pin
+  obtain ⟨h_decl_empty_value, h_assign_value_corr, h_assign_nondet_value_corr⟩ := h_vcorr
   let pgm : Program :=
     { name := "", parameterIdentifiers := #[],
       instructions := ans.instructions }
@@ -580,93 +608,9 @@ theorem coreCFGToGotoTransform_forward_simulation_concrete_v7
     (h_inj :
       Function.Injective
         (Imperative.ToGoto.identToString (P := Core.Expression)))
-    -- The strict ASSIGN-Nondet rhs witness arrives via the tightened
-    -- `step_assign_nondet` constructor.
-    -- Trace-level pinning hypotheses (caller-side).
-    (h_decl_x_pinned :
-      ∀ {pc : Nat} {instr : Instruction}
-        {x : Core.Expression.Ident}
-        {σ σ' : Imperative.SemanticStore Core.Expression}
-        {v : Core.Expression.Expr},
-        ({ name := "", parameterIdentifiers := #[],
-           instructions := ans.instructions } : Program).instrAt pc
-          = some instr →
-        instr.type = .DECL →
-        Imperative.InitState Core.Expression σ x v σ' →
-        ∀ v_src gty, instr.code = Code.decl
-          (Expr.symbol
-            (Imperative.ToGoto.identToString (P := Core.Expression) v_src)
-            gty) → x = v_src)
-    (h_assn_x_pinned :
-      ∀ {pc : Nat} {instr : Instruction}
-        {x : Core.Expression.Ident}
-        {σ σ' : Imperative.SemanticStore Core.Expression}
-        {v_imp : Core.Expression.Expr},
-        ({ name := "", parameterIdentifiers := #[],
-           instructions := ans.instructions } : Program).instrAt pc
-          = some instr →
-        instr.type = .ASSIGN →
-        Imperative.UpdateState Core.Expression σ x v_imp σ' →
-        ∀ v_src gty rhs_emitted, instr.code = Code.assign
-          (Expr.symbol
-            (Imperative.ToGoto.identToString (P := Core.Expression) v_src)
-            gty) rhs_emitted → x = v_src)
-    (h_assn_rhs_pinned :
-      ∀ {pc : Nat} {instr : Instruction}
-        {σ : Imperative.SemanticStore Core.Expression}
-        {rhs_g : Expr} {v_imp : Core.Expression.Expr},
-        ({ name := "", parameterIdentifiers := #[],
-           instructions := ans.instructions } : Program).instrAt pc
-          = some instr →
-        instr.type = .ASSIGN →
-        δ_goto σ rhs_g = some v_imp →
-        ∀ v_src gty rhs_emitted, instr.code = Code.assign
-          (Expr.symbol
-            (Imperative.ToGoto.identToString (P := Core.Expression) v_src)
-            gty) rhs_emitted →
-          rhs_g = rhs_emitted)
-    -- Value-side hypotheses (caller-side).
-    (h_decl_empty_value :
-      ∀ {pc : Nat} {instr : Instruction} {x : Core.Expression.Ident}
-        {v : Core.Expression.Expr}
-        {σ σ' : Imperative.SemanticStore Core.Expression},
-        ({ name := "", parameterIdentifiers := #[],
-           instructions := ans.instructions } : Program).instrAt pc
-          = some instr →
-        instr.type = .DECL →
-        Imperative.InitState Core.Expression σ x v σ' →
-        (SemanticsTautschnig.ValueCorr.toValue v
-          : Option SemanticsTautschnig.Value) = some .vEmpty)
-    (h_assign_value_corr :
-      ∀ {pc : Nat} {instr : Instruction} {x : Core.Expression.Ident}
-        {σ_imp σ_imp' : Imperative.SemanticStore Core.Expression}
-        {σ_goto : SemanticsTautschnig.Store}
-        {rhs_g : Expr} {v_imp : Core.Expression.Expr},
-        ({ name := "", parameterIdentifiers := #[],
-           instructions := ans.instructions } : Program).instrAt pc
-          = some instr →
-        instr.type = .ASSIGN →
-        δ_goto σ_imp rhs_g = some v_imp →
-        Imperative.UpdateState Core.Expression σ_imp x v_imp σ_imp' →
-        SemanticsTautschnig.StoreCorr
-          (Imperative.ToGoto.identToString (P := Core.Expression))
-          σ_imp σ_goto →
-        ∃ v_goto,
-          (SemanticsTautschnig.ValueCorr.toValue v_imp
-            : Option SemanticsTautschnig.Value) = some v_goto ∧
-          eval σ_goto rhs_g = some v_goto)
-    (h_assign_nondet_value_corr :
-      ∀ {pc : Nat} {instr : Instruction} {x : Core.Expression.Ident}
-        {σ σ' : Imperative.SemanticStore Core.Expression}
-        {v_imp : Core.Expression.Expr},
-        ({ name := "", parameterIdentifiers := #[],
-           instructions := ans.instructions } : Program).instrAt pc
-          = some instr →
-        instr.type = .ASSIGN →
-        Imperative.UpdateState Core.Expression σ x v_imp σ' →
-        ∃ v_goto,
-          (SemanticsTautschnig.ValueCorr.toValue v_imp
-            : Option SemanticsTautschnig.Value) = some v_goto)
+    -- Trace-level pinning + value-side correspondence (caller-side).
+    (h_pin : TracePinning δ_goto ans)
+    (h_vcorr : ValueSideCorr δ_goto eval ans)
     -- Source-side terminating run + initial-store correspondence
     (σ σ' : Imperative.SemanticStore Core.Expression) (b : Bool)
     (σ_goto : Store)
@@ -703,8 +647,7 @@ theorem coreCFGToGotoTransform_forward_simulation_concrete_v7
     h_red h_op h_uniform h_commutes_not
     callResult eval fenv h_eval_bool_corr h_inj
     st_final h_blocks_run
-    h_decl_x_pinned h_assn_x_pinned h_assn_rhs_pinned
-    h_decl_empty_value h_assign_value_corr h_assign_nondet_value_corr
+    h_pin h_vcorr
     σ σ' b σ_goto h_corr h_run_src
 
 end CProverGOTO
