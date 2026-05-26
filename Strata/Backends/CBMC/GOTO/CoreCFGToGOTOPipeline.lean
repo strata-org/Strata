@@ -519,9 +519,56 @@ def procedureToGotoCtxDispatch
   | _      => procedureToGotoCtx Env p sourceText axioms distincts
 
 /--
+Emit a single callee procedure (non-entry) into the running symtab/goto JSON pair.
+Skips bodyless procedures (`isAbstract`). Returns updated `(symtab, goto)`.
+-/
+private def emitCalleeProc
+    (Env : Core.Expression.TyEnv)
+    (callee : Core.Procedure)
+    (symtab goto : Lean.Json)
+    : IO (Lean.Json × Lean.Json) := do
+  let pname := Core.CoreIdent.toPretty callee.header.name
+  -- Skip abstract (bodyless) procedures — they remain as symbol-table
+  -- declarations only; CBMC will treat them as uninterpreted stubs.
+  if callee.body.isAbstract then
+    return (symtab, goto)
+  match procedureToGotoCtxDispatch Env callee with
+  | .error e =>
+    -- Emit a warning but don't abort the whole pipeline for one callee.
+    IO.eprintln s!"[coreToGotoFilesDispatch] Warning: skipping callee '{pname}': {e}"
+    return (symtab, goto)
+  | .ok (ctx, liftedFuncs) =>
+    -- Re-use emitProcWithLifted to get the callee's symtab + goto JSON.
+    -- We pass an empty extraSyms object since the default symbols were
+    -- already emitted as part of the entry procedure.
+    let (calleeSymtab, calleeGoto) ←
+      emitProcWithLifted Env pname ctx liftedFuncs (.obj {}) (moduleName := "")
+    -- Splice callee symtab entries into the running symbol table.
+    let newSymtabEntries : Lean.Json := match calleeSymtab with
+      | .obj outer =>
+        match outer.toList.find? (·.1 == "symbolTable") with
+        | some (_, inner) => inner
+        | none => .obj {}
+      | _ => .obj {}
+    let symtab := mergeSymtabEntries symtab newSymtabEntries
+    -- Splice callee goto functions into the running goto JSON.
+    let goto := match calleeGoto with
+      | .obj m =>
+        match m.toList.find? (·.1 == "functions") with
+        | some (_, .arr fns) =>
+          fns.foldl appendGotoFunction goto
+        | _ => goto
+      | _ => goto
+    return (symtab, goto)
+
+/--
 Mirrors `coreToGotoFiles` but dispatches on body type so CFG procedures
 go through `procedureToGotoCtxViaCFG` instead of erroring with
 "expected structured body, got CFG".
+
+All reachable callee procedures and functions are emitted into the GOTO
+output, not just the entry procedure. This eliminates CBMC's
+`[.no-body.<callee>] no body for callee` failures.
 -/
 public def coreToGotoFilesDispatch (tcPgm : Core.Program)
     (Env : Core.Expression.TyEnv)
@@ -539,6 +586,8 @@ public def coreToGotoFilesDispatch (tcPgm : Core.Program)
   let some p := mainDecl.getProc?
     | throw "entry point is not a procedure"
   let procName := "main"
+  -- The actual entry procedure name in the IR (may differ from "main" alias)
+  let entryIRName := Core.CoreIdent.toPretty p.header.name
   let axioms := tcPgm.decls.filterMap fun d => d.getAxiom?
   let distincts := tcPgm.decls.filterMap fun d => match d with
     | .distinct name es _ => some (name, es) | _ => none
@@ -554,6 +603,29 @@ public def coreToGotoFilesDispatch (tcPgm : Core.Program)
               (moduleName := baseName) |>.toBaseIO with
       | .ok r => pure r
       | .error e => throw s!"{e}"
+    -- Emit all other (callee) procedures.
+    -- This is the callee-bodies fix: previously only the entry procedure was
+    -- emitted, causing CBMC to report `[.no-body.<callee>]` for every callee.
+    --
+    -- Note: `Core.Function` (`.func` / `.recFuncBlock`) items are Boogie/SMACK
+    -- *mathematical* functions, not procedures. They appear in GOTO expressions
+    -- as `function_application` nodes and are registered as `mathematical_function`
+    -- symbols by the `fnAppSymbols` pass inside `Context.toJson`. Emitting a
+    -- GOTO body for them would cause CBMC's `to_code_type` assertion to fail
+    -- because their symbol-table type is `mathematical_function`, not `code`.
+    -- Top-level `Core.Function` declarations are therefore skipped here.
+    let mut symtab := symtab
+    let mut goto := goto
+    for decl in tcPgm.decls do
+      match decl with
+      | .proc callee _ =>
+        let calleeName := Core.CoreIdent.toPretty callee.header.name
+        -- Skip the entry procedure (already emitted above under alias "main").
+        if calleeName == entryIRName then continue
+        match ← (emitCalleeProc Env callee symtab goto).toBaseIO with
+        | .ok r => (symtab, goto) := r
+        | .error e => throw s!"emitCalleeProc '{calleeName}': {e}"
+      | _ => pure ()
     -- Splice in the synthetic CBMC entry-point shim. CBMC requires a
     -- standard-C entry signature; SMACK's `main` has memory-map + exception
     -- params that don't match. The shim has signature `void(void)` and calls
@@ -563,8 +635,8 @@ public def coreToGotoFilesDispatch (tcPgm : Core.Program)
       match buildEntryShim entryName procName ctx.formals ctx.ret with
       | .ok r => pure r
       | .error e => throw s!"buildEntryShim: {e}"
-    let symtab := mergeSymtabEntries symtab shimSyms
-    let goto := appendGotoFunction goto shimFn
+    symtab := mergeSymtabEntries symtab shimSyms
+    goto := appendGotoFunction goto shimFn
     let symTabFile := s!"{baseName}.symtab.json"
     let gotoFile := s!"{baseName}.goto.json"
     match ← writeJsonFile symTabFile symtab |>.toBaseIO with
