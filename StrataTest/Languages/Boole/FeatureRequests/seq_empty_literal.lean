@@ -27,7 +27,7 @@ open Lambda
 
 /-- Walk a Core expression and yield the `ty` annotation of every
     `Sequence.empty` op encountered. -/
-private partial def collectSeqEmptyTys
+private def collectSeqEmptyTys
     (e : Core.Expression.Expr) : List (Option LMonoTy) :=
   match e with
   | .op _ ⟨"Sequence.empty", _⟩ ty => [ty]
@@ -55,8 +55,9 @@ private def fmtSeqEmptyTy : Option LMonoTy → String
 /-- Walk a Core statement (recursing into nested blocks/loops/ites) and
     return every `Sequence.empty` element-type annotation found on the
     right-hand side of `set` commands. -/
-private partial def collectFromStmt (s : Core.Statement) : List (Option LMonoTy) :=
+private def collectFromStmt (s : Core.Statement) : List (Option LMonoTy) :=
   match s with
+  | .init _ _ (.det e) _ => collectSeqEmptyTys e
   | .set _ rhs _ => collectSeqEmptyTys rhs
   | .block _ ss _ => ss.flatMap collectFromStmt
   | .ite _ thenb elseb _ =>
