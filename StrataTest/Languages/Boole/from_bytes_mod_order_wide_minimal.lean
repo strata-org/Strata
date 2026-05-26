@@ -270,12 +270,36 @@ spec {
 #end
 
 /-- info:
+Obligation: bytes_seq_as_nat_body_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: bytes_seq_as_nat_body_calls_Sequence.drop_1
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: bytes_seq_as_nat_body_calls_Sequence.take_2
+Property: out-of-bounds access check
+Result: ✅ pass
+
 Obligation: bytes_seq_as_nat_terminates_0
 Property: assert
 Result: ✅ pass
 
 Obligation: bytes_seq_as_nat_terminates_1
 Property: assert
+Result: ✅ pass
+
+Obligation: seq_as_nat_52_body_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: seq_as_nat_52_body_calls_Sequence.drop_1
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: seq_as_nat_52_body_calls_Sequence.take_2
+Property: out-of-bounds access check
 Result: ✅ pass
 
 Obligation: seq_as_nat_52_terminates_0
@@ -294,6 +318,10 @@ Obligation: limbs_bounded_body_calls_scalar52..limbs_0
 Property: assert
 Result: ✅ pass
 
+Obligation: limbs_bounded_body_calls_Sequence.select_1
+Property: out-of-bounds access check
+Result: ❓ unknown
+
 Obligation: is_canonical_scalar_body_calls_scalar..bytes_0
 Property: assert
 Result: ✅ pass
@@ -301,6 +329,10 @@ Result: ✅ pass
 Obligation: is_canonical_scalar_body_calls_scalar..bytes_1
 Property: assert
 Result: ✅ pass
+
+Obligation: is_canonical_scalar_body_calls_Sequence.select_2
+Property: out-of-bounds access check
+Result: ❓ unknown
 
 Obligation: scalar_as_canonical_body_calls_scalar..bytes_0
 Property: assert

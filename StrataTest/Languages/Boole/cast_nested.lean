@@ -95,6 +95,14 @@ spec {
 #end
 
 /-- info:
+Obligation: cast_in_forall_post_cast_in_forall_ensures_1_829_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: assert_assert_2_915_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
 Obligation: assert_2_915
 Property: assert
 Result: ✅ pass
@@ -135,12 +143,28 @@ Obligation: cast_in_let_ensures_9_1397
 Property: assert
 Result: ✅ pass
 
+Obligation: cast_in_exists_post_cast_in_exists_ensures_12_1616_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ❓ unknown
+
+Obligation: assert_assert_13_1717_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ❓ unknown
+
 Obligation: assert_13_1717
 Property: assert
 Result: ✅ pass
 
 Obligation: cast_in_exists_ensures_12_1616
 Property: assert
+Result: ✅ pass
+
+Obligation: bytes_to_nat_body_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: bytes_to_nat_body_calls_Sequence.drop_1
+Property: out-of-bounds access check
 Result: ✅ pass
 
 Obligation: bytes_to_nat_terminates_0
