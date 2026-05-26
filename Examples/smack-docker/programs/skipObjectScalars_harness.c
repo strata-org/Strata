@@ -2307,11 +2307,57 @@ JSONStatus_t JSON_Iterate( const char * buf,
  */
 
 
+/* -----------------------------------------------------------------------
+ * Contract port from upstream core_json_contracts.h / core_json_contracts.c
+ * (FreeRTOS/coreJSON test/cbmc/).
+ *
+ * Upstream contract for skipObjectScalars:
+ *   requires( isValidBufferWithStartIndex( buf, max, start ) )
+ *     <=> max > 0 && allocated(buf, max) && allocated(start, sizeof(*start))
+ *   assigns( *start )
+ *   ensures( isValidStart( *start, old(*start), max ) )
+ *     <=> *start >= old_start
+ *         && ( old_start < max  =>  *start <= max )
+ *         && ( old_start >= max =>  *start == old_start )
+ *
+ * Additional: the function returns bool indicating whether the parse
+ * succeeded.  We assert the invariant on *start unconditionally.
+ * ----------------------------------------------------------------------- */
 int main(void) {
-    char * buf;
-    size_t * start;
-    size_t max;
+    /* Materialise concrete objects so pointers are non-NULL and allocated. */
+    char   buf_arr[1];
+    size_t start_val;
+    char   *buf   = buf_arr;
+    size_t *start = &start_val;
 
-    skipObjectScalars( buf, start, max );
+    /* Nondet inputs. */
+    size_t max = ((size_t)__VERIFIER_nondet_long());
+
+    /* --- Preconditions (isValidBufferWithStartIndex) --- */
+    __VERIFIER_assume(max > 0);
+    /* Pin max to buf_arr size to satisfy allocated(buf, max). */
+    __VERIFIER_assume(max == 1);
+    /* *start in valid range. */
+    start_val = ((size_t)__VERIFIER_nondet_long());
+    __VERIFIER_assume(start_val <= max);
+
+    /* Record old_start before the call. */
+    size_t old_start = start_val;
+
+    /* --- Call under test --- */
+    bool result = skipObjectScalars( buf, start, max );
+
+    /* --- Postconditions (isValidStart(*start, old_start, max)) --- */
+    /* (1) *start >= old_start  (index only advances or stays) */
+    assert(*start >= old_start);
+    /* (2a) if old_start < max then *start <= max */
+    if (old_start < max) {
+        assert(*start <= max);
+    }
+    /* (2b) if old_start >= max then *start == old_start */
+    if (old_start >= max) {
+        assert(*start == old_start);
+    }
+
     return 0;
 }

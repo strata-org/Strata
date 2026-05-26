@@ -2307,11 +2307,61 @@ JSONStatus_t JSON_Iterate( const char * buf,
  */
 
 
+/* -----------------------------------------------------------------------
+ * Contract port from upstream core_json_contracts.h / core_json_contracts.c
+ * (FreeRTOS/coreJSON test/cbmc/).
+ *
+ * Upstream contract for skipUTF8:
+ *   requires( isValidBufferWithStartIndex( buf, max, start ) )
+ *     <=> max > 0 && allocated(buf, max) && allocated(start, sizeof(*start))
+ *   assigns( *start )
+ *   ensures( skipPostconditions( result, buf, start, old(*start), max, 1 ) )
+ *     where skipPostconditions(result, ..., gap=1) <=>
+ *       isValidStart(*start, old_start, max)
+ *       && IMPLIES(result, old_start < max && *start > old_start + 1 - 1)
+ *         i.e. IMPLIES(result, old_start < max && *start > old_start)
+ *         (gap=1 means at least 1 byte consumed on success)
+ *
+ * skipUTF8 advances by at least 1 (ASCII) or more (multi-byte) on success.
+ * ----------------------------------------------------------------------- */
 int main(void) {
-    char * buf;
-    size_t * start;
-    size_t max;
+    /* Materialise concrete objects so pointers are non-NULL and allocated. */
+    char   buf_arr[1];
+    size_t start_val;
+    char   *buf   = buf_arr;
+    size_t *start = &start_val;
 
-    skipUTF8( buf, start, max );
+    /* Nondet inputs. */
+    size_t max = ((size_t)__VERIFIER_nondet_long());
+
+    /* --- Preconditions (isValidBufferWithStartIndex) --- */
+    __VERIFIER_assume(max > 0);
+    /* Pin max to buf_arr size to satisfy allocated(buf, max). */
+    __VERIFIER_assume(max == 1);
+    /* *start in valid range. */
+    start_val = ((size_t)__VERIFIER_nondet_long());
+    __VERIFIER_assume(start_val <= max);
+
+    /* Record old_start before the call. */
+    size_t old_start = start_val;
+
+    /* --- Call under test --- */
+    bool result = skipUTF8( buf, start, max );
+
+    /* --- Postconditions (skipPostconditions gap=1) --- */
+    /* (1) isValidStart(*start, old_start, max) */
+    assert(*start >= old_start);
+    if (old_start < max) {
+        assert(*start <= max);
+    }
+    if (old_start >= max) {
+        assert(*start == old_start);
+    }
+    /* (2) IMPLIES(result, old_start < max && *start > old_start) */
+    if (result) {
+        assert(old_start < max);
+        assert(*start > old_start);
+    }
+
     return 0;
 }

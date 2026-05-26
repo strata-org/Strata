@@ -2307,11 +2307,47 @@ JSONStatus_t JSON_Iterate( const char * buf,
  */
 
 
+/* -----------------------------------------------------------------------
+ * Contract port from upstream core_json_contracts.h / core_json_contracts.c
+ * (FreeRTOS/coreJSON test/cbmc/).
+ *
+ * Upstream contract for skipCollection:
+ *   requires( isValidBufferWithStartIndex( buf, max, start ) )
+ *     <=> max > 0 && allocated(buf, max) && allocated(start, sizeof(*start))
+ *   assigns( *start )
+ *   ensures( isSkipCollectionEnum( result ) )
+ *     <=> result in { JSONSuccess, JSONPartial,
+ *                     JSONIllegalDocument, JSONMaxDepthExceeded }
+ *
+ * On JSONSuccess, *start advances beyond the collection.
+ * On all error/partial statuses, *start is unchanged.
+ * ----------------------------------------------------------------------- */
 int main(void) {
-    char * buf;
-    size_t * start;
-    size_t max;
+    /* Materialise concrete objects so pointers are non-NULL and allocated. */
+    char   buf_arr[1];
+    size_t start_val;
+    char   *buf   = buf_arr;
+    size_t *start = &start_val;
 
-    skipCollection( buf, start, max );
+    /* Nondet inputs. */
+    size_t max = ((size_t)__VERIFIER_nondet_long());
+
+    /* --- Preconditions (isValidBufferWithStartIndex) --- */
+    __VERIFIER_assume(max > 0);
+    /* Pin max to buf_arr size to satisfy allocated(buf, max). */
+    __VERIFIER_assume(max == 1);
+    /* *start in valid range. */
+    start_val = ((size_t)__VERIFIER_nondet_long());
+    __VERIFIER_assume(start_val <= max);
+
+    /* --- Call under test --- */
+    JSONStatus_t result = skipCollection( buf, start, max );
+
+    /* --- Postconditions (isSkipCollectionEnum(result)) --- */
+    assert( result == JSONSuccess          ||
+            result == JSONPartial          ||
+            result == JSONIllegalDocument  ||
+            result == JSONMaxDepthExceeded );
+
     return 0;
 }
