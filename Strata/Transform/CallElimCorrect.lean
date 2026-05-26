@@ -1716,6 +1716,25 @@ private theorem updatedStates_get_notin
       rw [ih (σ := updatedState σ t w) (vs := ws) Hkts]
       simp [updatedState, Hkt]
 
+/-- 2-layer fall-through of `updatedStates_get_notin`. -/
+private theorem updatedStates_2layer_get_notin
+    {σ : CoreStore} {ks₁ ks₂ : List Expression.Ident}
+    {vs₁ vs₂ : List Expression.Expr} {k : Expression.Ident}
+    (Hk1 : ¬ k ∈ ks₁) (Hk2 : ¬ k ∈ ks₂) :
+    (updatedStates (updatedStates σ ks₁ vs₁) ks₂ vs₂) k = σ k := by
+  rw [updatedStates_get_notin Hk2, updatedStates_get_notin Hk1]
+
+/-- 3-layer fall-through of `updatedStates_get_notin`. -/
+private theorem updatedStates_3layer_get_notin
+    {σ : CoreStore} {ks₁ ks₂ ks₃ : List Expression.Ident}
+    {vs₁ vs₂ vs₃ : List Expression.Expr} {k : Expression.Ident}
+    (Hk1 : ¬ k ∈ ks₁) (Hk2 : ¬ k ∈ ks₂) (Hk3 : ¬ k ∈ ks₃) :
+    (updatedStates
+      (updatedStates
+        (updatedStates σ ks₁ vs₁) ks₂ vs₂) ks₃ vs₃) k = σ k := by
+  rw [updatedStates_get_notin Hk3, updatedStates_get_notin Hk2,
+      updatedStates_get_notin Hk1]
+
 /-- Positional projection of `ReadValues`: when `ReadValues σ ks vs`
     holds and `i < ks.length` (= `vs.length`), `σ ks[i] = some vs[i]`. -/
 private theorem readValues_get
@@ -5480,20 +5499,12 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         ¬ v ∈ outTemps := by
                       intro Hin
                       exact HoutOldDisj Hin Hv
-                    have Hfall_out := updatedStates_get_notin
-                      (σ:=updatedStates σ argTemps
-                            argVals)
-                      (ks:=outTemps) (vs:=oVals)
-                      Hv_notin_out
-                    rw [Hfall_out]
                     have Hv_notin_arg :
                         ¬ v ∈ argTemps := by
                       intro Hin
                       exact HargOldDisj Hin Hv
-                    have Hfall_arg := updatedStates_get_notin
-                      (σ:=σ) (ks:=argTemps)
-                      (vs:=argVals) Hv_notin_arg
-                    rw [Hfall_arg]
+                    rw [updatedStates_2layer_get_notin
+                          Hv_notin_arg Hv_notin_out]
                     exact HndefOld_σ v Hv
                   -- isNotDefined precondition for H_initVars on
                   -- oldTrips.unzip.fst.unzip.fst.
@@ -6026,9 +6037,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         have Hk1_notin_oldFst :
                             k1 ∉ oldTrips.unzip.fst.unzip.fst := by
                           rw [HoldTripsFst]; exact Hk1_notin_olds
-                        rw [updatedStates_get_notin Hk1_notin_oldFst,
-                            updatedStates_get_notin Hk1_notin_outT,
-                            updatedStates_get_notin Hk1_notin_argT]
+                        exact updatedStates_3layer_get_notin
+                          Hk1_notin_argT Hk1_notin_outT Hk1_notin_oldFst
                       -- σAO k1 = σ k1 by InitStates fall-through.
                       have HAO_eq_σ : σAO k1 = σ k1 := by
                         -- σAO comes from σA via Hinitout (over outputs).
@@ -7191,9 +7201,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         v ∉ argTemps := by
                       intro Hin
                       exact HlhsDisjArg Hv Hin
-                    rw [updatedStates_get_notin Hv_notin_old,
-                        updatedStates_get_notin Hv_notin_out,
-                        updatedStates_get_notin Hv_notin_arg]
+                    rw [updatedStates_3layer_get_notin
+                          Hv_notin_arg Hv_notin_out Hv_notin_old]
                     -- σ v defined since v ∈ lhs (HlhsDef).
                     have HlhsDef_σ : Imperative.isDefined σ lhs :=
                       ReadValuesIsDefined Hevalouts
