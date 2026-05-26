@@ -32,19 +32,17 @@ inductive CmdHasType (C : LContext CoreLParams) :
     TContext Unit → Cmd Expression → TContext Unit → Prop where
 
   /-- `var x : T := e` — `x` must be fresh, `e` must have a type unifiable with `T`. -/
-  | init_det : ∀ Γ x xty e mty md,
+  | init_det : ∀ Γ x (xty : LTy) e mty md,
       Γ.types.find? x = none →
       x ∉ HasVarsPure.getVars (P := Expression) e →
       HasType C Γ e (.forAll [] mty) →
-      AliasEquiv Γ.aliases xty mty →
-      CmdHasType C Γ (.init x (.forAll [] xty) (.det e) md)
+      CmdHasType C Γ (.init x xty (.det e) md)
         { Γ with types := Γ.types.insert x (.forAll [] mty) }
 
   /-- `var x : T := *` — `x` must be fresh. -/
-  | init_nondet : ∀ Γ x xty mty md,
+  | init_nondet : ∀ Γ x (xty : LTy) mty md,
       Γ.types.find? x = none →
-      AliasEquiv Γ.aliases xty mty →
-      CmdHasType C Γ (.init x (.forAll [] xty) .nondet md)
+      CmdHasType C Γ (.init x xty .nondet md)
         { Γ with types := Γ.types.insert x (.forAll [] mty) }
 
   /-- `x := e` — `x` must exist with type `T`, and `e` must have type `T`. -/

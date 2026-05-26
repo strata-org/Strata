@@ -21,7 +21,7 @@ Type checker for an Imperative Command.
 
 The `TypeError` parameter for the `TypeContext` instance `TC` is `DiagnosticModel`.
 -/
-def Cmd.typeCheck {P C T} [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
+@[expose] def Cmd.typeCheck {P C T} [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
     [DecidableEq P.Ident] [TC : TypeContext P C T DiagnosticModel]
     (ctx: C) (τ : T) (c : Cmd P) : Except DiagnosticModel (Cmd P × T) := do
 
