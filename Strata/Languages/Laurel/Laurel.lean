@@ -450,6 +450,41 @@ def HighType.isBool : HighType → Bool
   | TBool => true
   | _ => false
 
+/-- Return the constructor name of a `StmtExprMd` as a `String`. -/
+def StmtExpr.constructorName (e : StmtExpr) : String :=
+  match e with
+  | .IfThenElse .. => "IfThenElse"
+  | .Block .. => "Block"
+  | .While .. => "While"
+  | .Exit .. => "Exit"
+  | .Return .. => "Return"
+  | .LiteralInt .. => "LiteralInt"
+  | .LiteralBool .. => "LiteralBool"
+  | .LiteralString .. => "LiteralString"
+  | .LiteralDecimal .. => "LiteralDecimal"
+  | .Var .. => "Var"
+  | .Assign .. => "Assign"
+  | .PureFieldUpdate .. => "PureFieldUpdate"
+  | .StaticCall .. => "StaticCall"
+  | .PrimitiveOp .. => "PrimitiveOp"
+  | .New .. => "New"
+  | .This => "This"
+  | .ReferenceEquals .. => "ReferenceEquals"
+  | .AsType .. => "AsType"
+  | .IsType .. => "IsType"
+  | .InstanceCall .. => "InstanceCall"
+  | .Quantifier .. => "Quantifier"
+  | .Assigned .. => "Assigned"
+  | .Old .. => "Old"
+  | .Fresh .. => "Fresh"
+  | .Assert .. => "Assert"
+  | .Assume .. => "Assume"
+  | .ProveBy .. => "ProveBy"
+  | .ContractOf .. => "ContractOf"
+  | .Abstract => "Abstract"
+  | .All => "All"
+  | .Hole .. => "Hole"
+
 /-- Check whether a single modifies entry is the wildcard (`*`). -/
 def StmtExprMd.isWildcard (m : StmtExprMd) : Bool := match m.val with | .All => true | _ => false
 

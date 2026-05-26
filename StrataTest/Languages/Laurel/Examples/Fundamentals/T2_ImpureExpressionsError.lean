@@ -24,7 +24,7 @@ procedure hasMutatingAssignment(): int
 function functionWithMutatingAssignment(x: int): int
 {
   x := x + 1
-//^^^^^^^^^^ error: destructive assignments are not supported in functions or contracts
+//^^^^^^^^^^ error: destructive assignments are not supported in transparent bodies or contracts
 };
 
 function functionWithWhile(x: int): int
@@ -48,11 +48,11 @@ procedure impureContractIsNotLegal1(x: int)
 
 procedure impureContractIsNotLegal2(x: int)
   requires (x := 2) == 2
-//          ^^^^^^ error: destructive assignments are not supported in functions or contracts
+//          ^^^^^^ error: destructive assignments are not supported in transparent bodies or contracts
   opaque
 {
   assert (x := 2) == 2
-//        ^^^^^^ error: destructive assignments are not supported in functions or contracts
+//        ^^^^^^ error: destructive assignments are not supported in transparent bodies or contracts
 };
 "
 

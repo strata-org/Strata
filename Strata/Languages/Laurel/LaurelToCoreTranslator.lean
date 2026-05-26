@@ -293,7 +293,7 @@ def translateExpr (expr : StmtExprMd)
       let re2 ← translateExpr e2 boundVars isPureContext
       return .eq () re1 re2
   | .Assign _ _ =>
-      disallowed expr.source "destructive assignments are not supported in functions or contracts"
+      disallowed expr.source "destructive assignments are not supported in transparent bodies or contracts"
   | .While _ _ _ _ =>
       disallowed expr.source "loops are not supported in functions or contracts"
   | .Exit _ => disallowed expr.source "exit is not supported in expression position"
@@ -322,8 +322,12 @@ def translateExpr (expr : StmtExprMd)
       -- Field selects should have been eliminated by heap parameterization
       -- If we see one here, it's an error in the pipeline
       throwExprDiagnostic $ diagnosticFromSource expr.source s!"FieldSelect should have been eliminated by heap parameterization: {Std.ToFormat.format target}#{fieldId.text}" DiagnosticType.StrataBug
-  | .Block _ _ =>
-      throwExprDiagnostic $ diagnosticFromSource expr.source s!"block expression should have been lowered in a separate pass, expr: {repr expr}" DiagnosticType.StrataBug
+  | .Block (⟨ .Assign _ _, assignSource⟩ :: tail) _ =>
+      disallowed assignSource "destructive assignments are not supported in transparent bodies or contracts"
+  | .Block (head :: tail) _ =>
+      throwExprDiagnostic $ diagnosticFromSource expr.source s!"block expression starting with {head.val.constructorName} should have been lowered in a separate pass" DiagnosticType.StrataBug
+  | .Block [] _ =>
+      throwExprDiagnostic $ diagnosticFromSource expr.source "empty block expression should have been lowered in a separate pass" DiagnosticType.StrataBug
   | .Return _ => disallowed expr.source "return expression should be lowered in a separate pass"
 
   | .AsType target _ => throwExprDiagnostic $ diagnosticFromSource expr.source "AsType expression translation" DiagnosticType.NotYetImplemented
