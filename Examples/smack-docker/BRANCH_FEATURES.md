@@ -11,10 +11,11 @@ or refactors that are bookkeeping.
 | 1 | Pipeline infrastructure (`Examples/smack-docker/`) | [§1](#1-pipeline-infrastructure) |
 | 2 | Strata CBMC backend fixes (`Strata/Backends/CBMC/GOTO/`) | [§2](#2-strata-cbmc-backend-fixes) |
 | 3 | BoogieToStrata translator (`Tools/BoogieToStrata/`) | [§3](#3-boogietostrata-translator-features) |
-| 4 | Benchmark suite (`Examples/smack-docker/programs/`) | [§4](#4-benchmark-suite-65-programs) |
-| 5 | Cross-validation infrastructure (`tools/`, `CROSS_VALIDATION.md`) | [§5](#5-cross-validation-infrastructure) |
-| 6 | Documentation (`README.md`, `STATUS.md`) | [§6](#6-documentation) |
-| 7 | Regression coverage (`StrataTest/`) | [§7](#7-regression-coverage) |
+| 4 | Strata Core / Transform features (`Strata/Languages/Core/`, `Strata/Transform/`) | [§4](#4-strata-core--transform-features) |
+| 5 | Benchmark suite (`Examples/smack-docker/programs/`) | [§5](#5-benchmark-suite-65-programs) |
+| 6 | Cross-validation infrastructure (`tools/`, `CROSS_VALIDATION.md`) | [§6](#6-cross-validation-infrastructure) |
+| 7 | Documentation (`README.md`, `STATUS.md`) | [§7](#7-documentation) |
+| 8 | Regression coverage (`StrataTest/`) | [§8](#8-regression-coverage) |
 
 ---
 
@@ -71,7 +72,7 @@ loop_sum      |     OK |     OK |     OK |       PASS |    PARTIAL | TIMEOUT |  
 
 ## 2. Strata CBMC backend fixes
 
-Seven commits in `Strata/Backends/CBMC/GOTO/` that take SMACK-shaped
+Eight commits in `Strata/Backends/CBMC/GOTO/` that take SMACK-shaped
 Strata Core programs through to a runnable `cbmc` invocation.
 Listed in landing order:
 
@@ -219,9 +220,36 @@ blocker.
 
 **Files:** `Strata/Backends/CBMC/GOTO/InstToJson.lean`.
 
+### 2.8 Emit all callee procedure bodies (`ca95931be`)
+
+**Problem.** `coreToGotoFilesDispatch` emitted only the entry
+procedure (`main`) into the GOTO output. Every callee — user-defined
+helpers, SMACK prelude stubs, `__VERIFIER_assert`, `_initialize`,
+etc. — appeared as bodyless declarations in the symtab. Cbmc reached
+the call and reported `[.no-body.<callee>] no body for callee
+<callee>: FAILURE`, blocking every program with non-trivial calls.
+
+**Fix.** After emitting the entry procedure, iterate all
+`Core.Procedure` declarations in the program; for each non-abstract,
+non-entry procedure, call `procedureToGotoCtxDispatch` +
+`emitProcWithLifted` and splice its GOTO body into the output.
+Bodyless procedures (`isAbstract = true`) stay as symtab declarations
+only. `Core.Function` items (Boogie mathematical functions) are
+intentionally excluded — they're already registered as
+`mathematical_function`-typed symbols via `fnAppSymbols`, and adding
+GOTO bodies for them would crash CBMC's `to_code_type` assertion.
+
+**Result.** Cbmc's `[.no-body.X]` blocker is eliminated. Two new
+failure shapes surface behind it: an `_exnv` argument-typing bug
+(call to `__SMACK_static_init` passes `_exnv : int` where position 1
+expects `_exn : bool`), and the pre-existing array-bounds crash on
+memory-map programs.
+
+**Files:** `Strata/Backends/CBMC/GOTO/CoreCFGToGOTOPipeline.lean`.
+
 ### Cumulative impact of §2
 
-The seven fixes form a cascade: each one exposes the next layer.
+The eight fixes form a cascade: each one exposes the next layer.
 
 | Stage | Strata-CBMC verdict shape on the (T-lowering) cluster |
 |---|---|
@@ -229,6 +257,7 @@ The seven fixes form a cascade: each one exposes the next layer.
 | After 2.1–2.4 | Cbmc invocation succeeds; type-mismatch error (rc=6) |
 | After 2.6 | Type-checker passes; array-solver SIGABRT (rc=-6) |
 | After 2.7 | Model checking runs; `Property violations found` on callee-bodies blocker |
+| After 2.8 | All callees emitted; `[.no-body.X]` blocker eliminated. Surfaces the next layer (`_exnv` typing bug + array-bounds crash on memory-map programs). |
 
 ---
 
@@ -298,7 +327,106 @@ arm is unreachable — i.e. the assertion holds.
 
 ---
 
-## 4. Benchmark suite: 65 programs
+## 4. Strata Core / Transform features
+
+Two commits that strengthen the Strata-side verifier path itself,
+distinct from the CBMC backend (§2) and the BoogieToStrata translator
+(§3).
+
+### 4.1 Sound `ensures` synthesis pass (`390fadc37`)
+
+**What.** Adds a Strata-side analysis under the `--synthesize-ensures`
+flag (off by default) that infers `ensures` clauses for procedures
+whose bodies match a sound linear pattern. For each output-only
+parameter, the pass forward-substitutes through intermediate locals
+to a closed expression over input parameters and emits `free ensures
+(out == expr)`.
+
+**Soundness.** Three checks gate emission:
+
+1. `collectLinearCmds` rejects bodies with branches/loops.
+2. `buildSubstMap` rejects bodies with user-procedure calls or havoc
+   (`.set _ .nondet _`) that could break determinism mid-body.
+3. `onlyInputFvars` rejects synthesised expressions that mention any
+   variable not declared as a procedure input.
+
+Together these guarantee the synthesised ensures holds for any input
+satisfying the procedure's preconditions. The `Free` flag means
+callers benefit; the body itself isn't checked against the synthesised
+clause.
+
+**Concrete example.** `Examples/smack-docker/programs/simple_assert.c`:
+
+```c
+int add(int a, int b) { return a + b; }
+int main(void) {
+  int r = add(3, 4);
+  assert(r == 7);
+}
+```
+
+Without the flag: `deductive=PARTIAL` (1 pass, 1 fail; the call-elim
+pass havocs `r` because `add` has no `ensures`, and `r == 7` becomes
+unprovable).
+
+With `--synthesize-ensures`: the pass derives
+`ensures (_r == _add_i32(_i0, _i1))` for `add`. Call-elim substitutes
+through, and `r == 7` discharges. `deductive=PASS` (3 goals, all pass
+— including the synthesised ensures and the original assertion).
+
+**Files:** `Strata/Languages/Core/Transform/EnsuresSynthesis.lean`
+(new); `Strata/Languages/Core/Options.lean`,
+`Strata/Languages/Core/Verifier.lean`, `StrataMain.lean` (modified);
+`StrataTest/Languages/Core/Tests/EnsuresSynthesisTest.lean` (new).
+
+### 4.2 Apply CallElim to CFG-bodied procedures (`42ff8a4b8`)
+
+**Problem.** `runProgram` in `Strata/Transform/CoreTransform.lean`
+previously skipped CFG bodies with the comment `Skip CFG bodies;
+transforms are statement-level`. CallElim is the main consumer of
+`runProgram`. Skipping CFG bodies meant call sites inside any
+CFG-bodied procedure (which is most SMACK-translated procedures,
+since any procedure with a `goto` becomes one) had no `requires`-VCs
+generated for their callees. The deductive verifier then silently
+passed those call sites, producing **vacuous PASS verdicts** on
+programs whose only failing obligation lived behind such a call.
+
+**Fix.** Extend `runProgram`'s CFG branch to walk each block's
+command list, applying `f` to each command and replacing it with
+the result. A new helper `runCmdsRec` handles the Statement-to-Command
+shape mismatch (CFG blocks store `List Command`; `f` returns
+`List Statement`). Replacement Statements that are non-flat
+(`block`, `ite`, `loop`, etc.) bail out and leave the original
+command unchanged — these can't fit inside a basic block. In practice
+CallElim only emits flat Statement sequences, so this is exhaustive.
+
+**Verified on `Examples/smack-docker/programs/skipSpace_harness.bpl`
+under `--split-procs`:**
+
+Pre-fix: `deductive=PASS`, all 18 VCs are
+`__VERIFIER_assume_ensures_0` (the harness's preconditions). The 3
+post-call `assert(...)` calls produce no VCs.
+
+Post-fix: `deductive=PARTIAL`, 1 pass + 3 fail. The 3 failing VCs
+are `callElimAssert___VERIFIER_assert_requires_0_*` obligations at
+each post-call `assert(...)` site. They report `unknown` (the
+upstream `skipSpace` function has no `ensures`, so the verifier
+havocs all state and can't reason about post-call invariants). This
+is the correct, expected outcome — real obligations now reach the
+solver.
+
+**Severity.** This was a real soundness gap. All 9 contract-ported
+coreJSON harnesses (skipSpace, skipDigits, JSON_Validate, skipString,
+skipObjectScalars, skipScalars, skipUTF8, skipAnyScalar,
+skipCollection) were silently passing deductive on vacuous obligations
+until this fix. The cumulative impact on the matrix is the largest of
+any single fix in the project so far.
+
+**Files:** `Strata/Transform/CoreTransform.lean`.
+
+---
+
+## 5. Benchmark suite: 65 programs
 
 The `Examples/smack-docker/programs/` directory grew from 0 (none
 of this exists on `origin/main`) to 65 programs across four import
@@ -311,11 +439,31 @@ batches plus hand-written originals.
 | Original benchmark | 12 | Hand-written | `abs_func.c`, `loop_sum.c`, `simple_add.c`, `nondet_branch.c` |
 | Simplified AWS C Common | 13 | Hand-written, in style of `aws_array_eq.c` | `aws_byte_buf_append.c`, `aws_linked_list_push.c`, `aws_hash_string.c` |
 | aws-c-common verbatim | 6 | Imported from `verification/cbmc/proofs/`, function bodies inlined from upstream `math.inl` | `aws_add_size_checked_harness.c`, `aws_is_power_of_two_harness.c` |
-| FreeRTOS coreJSON verbatim | 12 | Imported from upstream `test/cbmc/proofs/`, full `core_json.c` vendored | `JSON_Validate_harness.c`, `skipSpace_harness.c`, `skipDigits_harness.c` |
+| FreeRTOS coreJSON verbatim | 12 | Imported from upstream `test/cbmc/proofs/`, full `core_json.c` vendored; 9 carry contract ports (see below) | `JSON_Validate_harness.c`, `skipSpace_harness.c`, `skipDigits_harness.c` |
 | FreeRTOS coreMQTT/coreHTTP/coreSNTP | 10 | Same pattern, vendored upstream sources | `MQTT_Init_harness.c`, `HTTPClient_strerror_harness.c` |
 | Standalone parsers | 4 | Hand-written harnesses | `jsmn_jsmn_parse_harness.c`, `cjson_cJSON_Parse_harness.c`, `picohttpparser_phr_parse_request_harness.c` |
 | RFC reference impls | 8 | Public-domain refs + edge-case harnesses | `utf8_validate_overlong_harness.c` (Bjoern Höhrmann's DFA), `base64_decode_padding_only_harness.c`, `percent_decode_nul_harness.c` |
 | **Total** | **65** | | |
+
+### Contract ports on coreJSON harnesses
+
+Nine of the 12 coreJSON harnesses carry **upstream-derived contracts**
+ported into their `main()` bodies — `__VERIFIER_assume` preconditions
+and `assert(...)` postconditions ported from FreeRTOS/coreJSON's
+`core_json_contracts.h`:
+
+- Commit `495e09c87`: `skipSpace`, `skipDigits`, `JSON_Validate`,
+  `skipString`.
+- Commit `5475c6710`: `skipObjectScalars`, `skipScalars`, `skipUTF8`,
+  `skipAnyScalar`, `skipCollection`.
+
+The remaining 3 (`skipEscape_harness` and the two SearchConst/Iterate
+ones) keep their original vacuous shape.
+
+Pre-port: vacuous PASS (no obligations). Post-port: real obligations
+land at the deductive verifier (after fix §4.2 above) — the contracts
+are the source of the postcondition assertions whose VCs the matrix
+now reports.
 
 ### Example: `aws_add_size_checked_harness.c`
 
@@ -378,9 +526,9 @@ inlined verbatim.
 
 ---
 
-## 5. Cross-validation infrastructure
+## 6. Cross-validation infrastructure
 
-### 5.1 `tools/disagreement_matrix.py`
+### 6.1 `tools/disagreement_matrix.py`
 
 Reads `run_pipeline.py` output and emits a markdown verdict matrix.
 Auto-tags rows where Strata-CBMC and `cbmc-native` disagree as
@@ -397,7 +545,7 @@ Example output:
 | HTTPClient_strerror_harness| PASS      | PARTIAL    | FAIL | PASS        | **(T-lowering)** |
 ```
 
-### 5.2 `Examples/smack-docker/CROSS_VALIDATION.md`
+### 6.2 `Examples/smack-docker/CROSS_VALIDATION.md`
 
 The cross-validation writeup (228 lines, two updates so far).
 Covers:
@@ -414,7 +562,7 @@ session, four of which are fixed in this branch.
 
 ---
 
-## 6. Documentation
+## 7. Documentation
 
 ### `Examples/smack-docker/README.md`
 
@@ -449,7 +597,7 @@ for opening upstream):
 
 ---
 
-## 7. Regression coverage
+## 8. Regression coverage
 
 New tests in `StrataTest/Backends/CBMC/GOTO/`:
 
@@ -478,8 +626,10 @@ case.
 | Metric | origin/main | htd/smack |
 |---|---:|---:|
 | Pipeline programs (`Examples/smack-docker/programs/*.c`) | 0 | 65 |
-| Strata CBMC backend bugs fixed | 0 | 7 |
+| Strata CBMC backend bugs fixed | 0 | 8 |
+| Strata Core / Transform fixes | 0 | 2 (sound ensures-synthesis pass, CFG-bodied CallElim) |
 | BoogieToStrata SMACK-specific features | 0 | 4 (`--smack` flag, `assert_.<type>` requires, `__VERIFIER_assume` ensures, `__VERIFIER_assert` requires) |
+| Contract-ported coreJSON harnesses | 0 | 9 |
 | Cross-validation backends | 0 | 4 (deductive, bugFinding, Strata-CBMC, cbmc-native) |
 | Strata defects identified by cross-validation | 0 | 5 (4 fixed; 1 stack-overflow filed) |
 | Cross-validation matrix | none | 64-program 4-backend |
@@ -498,3 +648,8 @@ The deductive PASS count *dropped* from 47 (pre-fix) to 33
 (S) → real-VC transition: previously vacuous PASSes (no functional
 contracts, no obligations) became real verification obligations
 the verifier mostly discharges (e.g. `90 pass, 1 fail`).
+
+> Note: these verdicts predate the CFG-CallElim fix (§4.2). After
+> that fix, several previously-vacuous-PASS programs flip to PARTIAL
+> with real failing VCs. A fresh full-suite run is in progress; the
+> matrix in `CROSS_VALIDATION.md` will be updated once it lands.
