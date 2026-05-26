@@ -5763,6 +5763,25 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           HargVarsNotInInKeys, HoutAlign⟩ :=
                     Hwfcallsite.specialize (procName := procName)
                       (args := args) (md := md) rfl lkup
+                  -- Lift HpostVarsFresh to take c ∈ proc'.spec.postconditions.values.
+                  -- Bridges proc' = proc and unfolds getCheckExprs.
+                  have HpostVarsFresh_via_c :
+                      ∀ c ∈ proc'.spec.postconditions.values,
+                      ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) c.expr,
+                        ¬ isTempIdent v ∧ ¬ isOldTempIdent v ∧
+                        v ∉ CallArg.getLhs args := by
+                    intro c Hc_in v Hv
+                    have Hin_full :
+                        c.expr ∈ Procedure.Spec.getCheckExprs
+                                    proc.spec.postconditions := by
+                      simp only [Procedure.Spec.getCheckExprs, List.mem_map]
+                      refine ⟨c, ?_, rfl⟩
+                      have Hc_in' := Hc_in
+                      rw [HprocEq] at Hc_in'
+                      rw [ListMap.values_eq_map_snd]
+                      rw [ListMap.values_eq_map_snd] at Hc_in'
+                      exact Hc_in'
+                    exact HpostVarsFresh c.expr Hin_full v Hv
                   -- ── C-aux: hoisted disjointness facts (used by L4 + L6) ──
                   -- HinoutFresh: ∀ v ∈ inputs ++ outputs, ¬isTemp ∧ ¬isOld.
                   -- Decompose into inputs-only and outputs-only forms.
@@ -8461,17 +8480,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                             δ σO (Lambda.LExpr.fvar () v none) := by
                       intro v Hv _Hnone
                       -- v ∈ getVars c.expr where c ∈ proc'.spec.postconditions.values.
-                      -- Bridge to proc.spec.postconditions and apply HpostVarsFresh.
-                      have Hin_full :
-                          c.expr ∈ Procedure.Spec.getCheckExprs
-                                      proc.spec.postconditions := by
-                        simp only [Procedure.Spec.getCheckExprs, List.mem_map]
-                        refine ⟨c, ?_, rfl⟩
-                        rw [HprocEq] at Hc_in
-                        rw [ListMap.values_eq_map_snd]
-                        rw [ListMap.values_eq_map_snd] at Hc_in
-                        exact Hc_in
-                      have HvFresh := HpostVarsFresh c.expr Hin_full v Hv
+                      have HvFresh := HpostVarsFresh_via_c c Hc_in v Hv
                       have HvNotOld : ¬ isOldTempIdent v := HvFresh.2.1
                       have HvNotGen : v ∉ genOldIdents := by
                         intro Hg
@@ -8647,19 +8656,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       Hclass_a | ⟨k, w, Hk_in, Hf, Hv_in⟩
                     · -- ── Class (a): k1 ∈ getVars c.expr ∧ find? oldSubst_L6 k1 = none ──
                       obtain ⟨Hk1_post, _Hf_none⟩ := Hclass_a
-                      -- HpostsVarsFresh_orig: ¬tmp_, ¬old_, k1 ∉ lhs
-                      -- (need to bridge proc' = proc).
-                      -- Find an entry corresponding to c via HpostVarsFresh.
-                      have Hin_full :
-                          c.expr ∈ Procedure.Spec.getCheckExprs
-                                      proc.spec.postconditions := by
-                        simp only [Procedure.Spec.getCheckExprs, List.mem_map]
-                        refine ⟨c, ?_, rfl⟩
-                        rw [HprocEq] at Hc_in
-                        rw [ListMap.values_eq_map_snd]
-                        rw [ListMap.values_eq_map_snd] at Hc_in
-                        exact Hc_in
-                      have HfreshK := HpostVarsFresh c.expr Hin_full k1 Hk1_post
+                      -- HpostsVarsFresh_orig: ¬tmp_, ¬old_, k1 ∉ lhs.
+                      have HfreshK := HpostVarsFresh_via_c c Hc_in k1 Hk1_post
                       have Hk1_notTemp : ¬ isTempIdent k1 := HfreshK.1
                       have Hk1_notOld : ¬ isOldTempIdent k1 := HfreshK.2.1
                       -- k1 ∉ argTemps (tmp_).
@@ -9151,16 +9149,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     · -- ── Class (a): x ∈ getVars c.expr ──
                       obtain ⟨Hx_post, _Hf_none⟩ := Hclass_a
                       -- HpostsVarsFresh_orig: ¬tmp_, ¬old_, x ∉ lhs.
-                      have Hin_full :
-                          c.expr ∈ Procedure.Spec.getCheckExprs
-                                      proc.spec.postconditions := by
-                        simp only [Procedure.Spec.getCheckExprs, List.mem_map]
-                        refine ⟨c, ?_, rfl⟩
-                        rw [HprocEq] at Hc_in
-                        rw [ListMap.values_eq_map_snd]
-                        rw [ListMap.values_eq_map_snd] at Hc_in
-                        exact Hc_in
-                      have HfreshK := HpostVarsFresh c.expr Hin_full x Hx_post
+                      have HfreshK := HpostVarsFresh_via_c c Hc_in x Hx_post
                       have Hx_notTemp : ¬ isTempIdent x := HfreshK.1
                       have Hx_notLhs : x ∉ CallArg.getLhs args := HfreshK.2.2
                       -- Show contradiction.
