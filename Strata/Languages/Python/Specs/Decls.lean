@@ -6,39 +6,39 @@
 module
 public import Std.Data.HashMap.Basic
 public import Strata.DDM.Util.SourceRange
-public import Strata.Languages.Python.OverloadTable
+public import Strata.Languages.Python.PythonIdent
 
 public section
 namespace Strata.Python
 
 namespace PythonIdent
 
-def builtinsBool := mk "builtins" "bool"
-def builtinsBytearray := mk "builtins" "bytearray"
-def builtinsBytes := mk "builtins" "bytes"
-def builtinsComplex := mk "builtins" "complex"
-def builtinsDict := mk "builtins" "dict"
-def builtinsException := mk "builtins" "Exception"
-def builtinsFloat := mk "builtins" "float"
-def builtinsInt := mk "builtins" "int"
-def builtinsStr := mk "builtins" "str"
-def noneType := mk "_types" "NoneType"
+def builtinsBool := ofComponent "builtins" "bool"
+def builtinsBytearray := ofComponent "builtins" "bytearray"
+def builtinsBytes := ofComponent "builtins" "bytes"
+def builtinsComplex := ofComponent "builtins" "complex"
+def builtinsDict := ofComponent "builtins" "dict"
+def builtinsException := ofComponent "builtins" "Exception"
+def builtinsFloat := ofComponent "builtins" "float"
+def builtinsInt := ofComponent "builtins" "int"
+def builtinsStr := ofComponent "builtins" "str"
+def noneType := ofComponent "_types" "NoneType"
 
-def typingAny := mk "typing" "Any"
-def typingBinaryIO := mk "typing" "BinaryIO"
-def typingDict := mk "typing" "Dict"
-def typingGenerator := mk "typing" "Generator"
-def typingList := mk "typing" "List"
-def typingLiteral := mk "typing" "Literal"
-def typingMapping := mk "typing" "Mapping"
-def typingOverload := mk "typing" "overload"
-def typingSequence := mk "typing" "Sequence"
-def typingTypedDict := mk "typing" "TypedDict"
-def typingUnion := mk "typing" "Union"
-def typingRequired := mk "typing" "Required"
-def typingNotRequired := mk "typing" "NotRequired"
-def typingUnpack := mk "typing" "Unpack"
-def reCompile := mk "re" "compile"
+def typingAny := ofComponent "typing" "Any"
+def typingBinaryIO := ofComponent "typing" "BinaryIO"
+def typingDict := ofComponent "typing" "Dict"
+def typingGenerator := ofComponent "typing" "Generator"
+def typingList := ofComponent "typing" "List"
+def typingLiteral := ofComponent "typing" "Literal"
+def typingMapping := ofComponent "typing" "Mapping"
+def typingOverload := ofComponent "typing" "overload"
+def typingSequence := ofComponent "typing" "Sequence"
+def typingTypedDict := ofComponent "typing" "TypedDict"
+def typingUnion := ofComponent "typing" "Union"
+def typingRequired := ofComponent "typing" "Required"
+def typingNotRequired := ofComponent "typing" "NotRequired"
+def typingUnpack := ofComponent "typing" "Unpack"
+def reCompile := ofComponent "re" "compile"
 
 end PythonIdent
 

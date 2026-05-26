@@ -1,0 +1,5 @@
+Successfully parsed.
+TypeSynonymChain.core.st(22, 4) [assert_0]: ✅ pass
+TypeSynonymChain.core.st(23, 4) [assert_1]: ✅ pass
+TypeSynonymChain.core.st(14, 2) [main_ensures_0]: ✅ pass
+All 3 goals passed.

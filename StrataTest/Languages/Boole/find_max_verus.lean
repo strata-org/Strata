@@ -110,6 +110,10 @@ Obligation: entry_invariant_0_2
 Property: assert
 Result: ✅ pass
 
+Obligation: measure_lb_0
+Property: assert
+Result: ✅ pass
+
 Obligation: arbitrary_iter_maintain_invariant_0_0
 Property: assert
 Result: ✅ pass
@@ -119,6 +123,10 @@ Property: assert
 Result: ✅ pass
 
 Obligation: arbitrary_iter_maintain_invariant_0_2
+Property: assert
+Result: ✅ pass
+
+Obligation: measure_decrease_0
 Property: assert
 Result: ✅ pass
 

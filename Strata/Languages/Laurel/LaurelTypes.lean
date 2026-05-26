@@ -24,6 +24,7 @@ namespace Strata.Laurel
 def getCallType (source : Option FileRange) (model : SemanticModel) (callee : Identifier): HighTypeMd :=
   match model.get callee with
     | .datatypeConstructor t _ => ⟨ .UserDefined t, source ⟩
+    | .datatypeDestructor _ fld => fld.type
     | .parameter p => p.type
     | .staticProcedure proc => match proc.outputs with
       | [singleOutput] => singleOutput.type

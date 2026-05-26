@@ -85,12 +85,16 @@ func update : ∀[k, v]. ((m : (Map k v)) (i : k) (x : v)) → (Map k v);
 func Sequence.length : ∀[a]. ((s : (Sequence a))) → int;
 func Sequence.empty : ∀[a]. () → (Sequence a);
 func Sequence.append : ∀[a]. ((s1 : (Sequence a)) (s2 : (Sequence a))) → (Sequence a);
-func Sequence.select : ∀[a]. ((s : (Sequence a)) (i : int)) → a;
+func Sequence.select : ∀[a]. ((s : (Sequence a)) (i : int)) → a
+  requires 0 <= i && i < Sequence.length(s);
 func Sequence.build : ∀[a]. ((s : (Sequence a)) (v : a)) → (Sequence a);
-func Sequence.update : ∀[a]. ((s : (Sequence a)) (i : int) (v : a)) → (Sequence a);
+func Sequence.update : ∀[a]. ((s : (Sequence a)) (i : int) (v : a)) → (Sequence a)
+  requires 0 <= i && i < Sequence.length(s);
 func Sequence.contains : ∀[a]. ((s : (Sequence a)) (v : a)) → bool;
-func Sequence.take : ∀[a]. ((s : (Sequence a)) (n : int)) → (Sequence a);
-func Sequence.drop : ∀[a]. ((s : (Sequence a)) (n : int)) → (Sequence a);
+func Sequence.take : ∀[a]. ((s : (Sequence a)) (n : int)) → (Sequence a)
+  requires 0 <= n && n <= Sequence.length(s);
+func Sequence.drop : ∀[a]. ((s : (Sequence a)) (n : int)) → (Sequence a)
+  requires 0 <= n && n <= Sequence.length(s);
 func Triggers.empty :  () → Triggers;
 func Triggers.addGroup :  ((g : TriggerGroup) (t : Triggers)) → Triggers;
 func TriggerGroup.empty :  () → TriggerGroup;

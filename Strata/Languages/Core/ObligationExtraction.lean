@@ -50,11 +50,7 @@ def extractFromCmd (pc : PathConditions Expression) (cmd : Command)
     : PathConditions Expression × Array (ProofObligation Expression) :=
   match cmd with
   | .cmd (.assert label e md) =>
-    let propType := match md.getPropertyType with
-      | some s => if s == MetaData.divisionByZero then .divisionByZero
-                  else if s == MetaData.arithmeticOverflow then .arithmeticOverflow
-                  else .assert
-      | none => .assert
+    let propType := convertMetaDataPropertyType md
     (pc, #[ProofObligation.mk label propType pc e md])
   | .cmd (.cover label e md) =>
     (pc, #[ProofObligation.mk label .cover pc e md])

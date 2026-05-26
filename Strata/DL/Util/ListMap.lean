@@ -66,6 +66,13 @@ def ListMap.find? [DecidableEq α] (m : ListMap α β) (a' : α) : Option β :=
   | [] => none
   | (a, b) :: m => if a = a' then some b else find? m a'
 
+def ListMap.findWithIdx? [DecidableEq α] (m : ListMap α β) (a' : α) : Option (Nat × β) :=
+  go m a' 0
+where
+  go : ListMap α β → α → Nat → Option (Nat × β)
+  | [], _, _ => none
+  | (a, b) :: m, a', i => if a = a' then some (i, b) else go m a' (i + 1)
+
 def ListMap.contains [DecidableEq α] (m : ListMap α β) (a : α) : Bool :=
   m.find? a |>.isSome
 

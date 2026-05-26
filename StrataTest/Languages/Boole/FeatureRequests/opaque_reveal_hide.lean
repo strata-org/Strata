@@ -29,7 +29,7 @@ private def opaqueRevealHideSeed : Strata.Program :=
 #strata
 program Boole;
 
-// Target shape once these proof-visibility controls exist directly in Boole:
+// Target shape once proof-visibility controls exist in Boole:
 //
 // opaque function square(x: int) : int { x * x }
 //
@@ -46,19 +46,16 @@ axiom (∀ x: int . square(x) == x * x);
 
 procedure opaque_reveal_hide_seed(x: int) returns ()
 {
-  // This proof-visibility family is lower priority than
-  // Rust-facing language support. If we revisit it, start with minimal
-  // `opaque` + local `reveal` semantics and defer `hide` / `closed`.
-  // TODO(feature:opaque-reveal): treat `square` as opaque by default if we
-  // decide to model Verus proof-visibility controls directly.
-  // TODO(feature:hide): let a proof step reveal and then re-hide the body.
-  // TODO(feature:closed): keep the body hidden across module boundaries.
   assert square(x) == x * x;
 };
 #end
 
-#guard_msgs (drop info) in
-#eval Strata.Boole.verify "cvc5" opaqueRevealHideSeed
+/-- info:
+Obligation: assert_1_1334
+Property: assert
+Result: ✅ pass-/
+#guard_msgs in
+#eval Strata.Boole.verify "cvc5" opaqueRevealHideSeed (options := .quiet)
 
 example : Strata.smtVCsCorrect opaqueRevealHideSeed := by
   gen_smt_vcs
