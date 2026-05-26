@@ -968,7 +968,7 @@ def verify
     | .ok cp =>
       let runner tempPath :=
         EIO.toIO (fun dm => IO.Error.userError (toString (dm.format (some ictx.fileMap))))
-          (Core.verify cp tempPath proceduresToVerify options)
+          (_root_.Core.verify cp tempPath proceduresToVerify options)
       match tempDir with
       | .none =>
         IO.FS.withTempDir runner

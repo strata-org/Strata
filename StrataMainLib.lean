@@ -422,14 +422,15 @@ def pySpecsCommand : Command where
       events := events.insert e
     let skipNames := pflags.getRepeated "skip"
     let modules := pflags.getRepeated "module"
-    let warningVerbosity : Nat := if quiet then 0 else 2
+    let warningOutput : Strata.WarningOutput :=
+      if quiet then .none else .detail
     -- Serialize embedded dialect for Python subprocess
     IO.FS.withTempFile fun _handle dialectFile => do
       IO.FS.writeBinFile dialectFile Strata.Python.Python.toIon
       let r ← Strata.pySpecsDir (events := events)
                 (skipNames := skipNames)
                 (modules := modules)
-                (warningVerbosity := warningVerbosity)
+                (warningOutput := warningOutput)
                 v[0] v[1] dialectFile |>.toBaseIO
       match r with
       | .ok () => pure ()

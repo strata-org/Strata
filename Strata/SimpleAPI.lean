@@ -7,8 +7,8 @@ module
 
 public import Strata.DDM
 public import Strata.Languages.Core.Core
-public import Strata.Languages.Laurel.API
-public import Strata.Languages.Python.API
+public import Strata.Languages.Laurel.Laurel
+public import Strata.Languages.Python.Python
 
 /-! ## Simple Strata API
 
@@ -19,8 +19,8 @@ API modules:
 
 * `Strata.DDM` – file I/O for the generic Strata representation.
 * `Strata.Languages.Core.Core` – Core dialect translation, transforms, and verification.
-* `Strata.Languages.Laurel.API` – Laurel parsing, translation, and verification.
-* `Strata.Languages.Python.API` – Python sources, PySpec generation, and Python pipelines.
+* `Strata.Languages.Laurel.Laurel` – Laurel parsing, translation, and verification.
+* `Strata.Languages.Python.Python` – Python sources, PySpec generation, and Python pipelines.
 
 It is intended for use cases that are essentially equivalent to more
 fine-grained or more structured equivalents of what the `strata` CLI can
