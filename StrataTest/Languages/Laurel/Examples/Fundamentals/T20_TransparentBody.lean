@@ -23,12 +23,6 @@ procedure transparentProcedureCaller() opaque {
   var x: int := transparentBody();
   assert x == 3
 };
-
-// No support for transparent void procedures yet
-// procedure transparentBody()
-// {
-//   assert true
-// };
 "
 
 #guard_msgs(drop info, error) in

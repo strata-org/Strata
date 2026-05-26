@@ -20,7 +20,6 @@ procedure transparentBodyMultipleOuts() returns (q: int, r: int)
   r := 2
 };
 
-// No support for transparent void procedures yet
 procedure transparentBody()
 {
   assert true
