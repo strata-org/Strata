@@ -589,24 +589,6 @@ open Strata
 
 public section
 
-/-!
-## Differences between Boogie and Strata.Core
-
-1. Strata.Core does not have global variables.
-
-2. Unlike Boogie, Strata.Core is sensitive to global declaration order. E.g.,
-   a function must be declared before it can be used in a procedure.
-
-3. Strata.Core does not (yet) support polymorphism.
-
-4. Strata.Core supports `exit` statements that exit the nearest enclosing
-   block with a matching label (or the nearest block if no label is given).
-   Strata does not support arbitrary `goto` statements.
-
-5. Strata.Core does not support `where` clauses and `unique` constants,
-   requiring a tool like `BoogieToStrata` to desugar them.
--/
-
 def typeCheck (options : VerifyOptions) (program : Program)
     (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
     Except DiagnosticModel Program := do

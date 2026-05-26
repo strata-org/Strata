@@ -41,7 +41,7 @@ procedure caller()
   let coreProg ← match ← Strata.laurelToCore laurelProg with
     | .ok p => pure p
     | .error e => throw (IO.userError s!"Translation failed: {e}")
-  let inlined ← match Strata.Core.inlineAllProcedures coreProg with
+  let inlined ← match Strata.Core.runTransforms coreProg [Strata.Core.passInlineAll] with
     | .ok p => pure p
     | .error e => throw (IO.userError s!"Inlining failed: {e}")
   let vcResults ←

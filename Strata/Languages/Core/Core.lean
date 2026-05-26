@@ -17,6 +17,22 @@ import Strata.Transform.FilterProcedures
 
 Translation between the generic Strata AST and the Core dialect AST,
 Core program transformations, and Core program verification.
+
+## Differences between Boogie and Strata.Core
+
+1. Strata.Core does not have global variables.
+
+2. Unlike Boogie, Strata.Core is sensitive to global declaration order. E.g.,
+   a function must be declared before it can be used in a procedure.
+
+3. Strata.Core does not (yet) support polymorphism.
+
+4. Strata.Core supports `exit` statements that exit the nearest enclosing
+   block with a matching label (or the nearest block if no label is given).
+   Strata does not support arbitrary `goto` statements.
+
+5. Strata.Core does not support `where` clauses and `unique` constants,
+   requiring a tool like `BoogieToStrata` to desugar them.
 -/
 
 public section
@@ -47,6 +63,17 @@ def strataProgramToCore (p : Strata.Program) : Except String Core.Program :=
     .ok program
   else
     .error s!"Core DDM translation errors:\n{String.intercalate "\n" errors.toList}"
+
+/-! ### Default Core factory
+
+`Core.defaultFactory` is the default `Lambda.Factory` for the Core dialect: it
+contains all built-in integer, boolean, real, string, regex, map, sequence,
+and bitvector functions. Pass it as the `moreFns` argument when extending the
+factory with additional functions (e.g., `Core.defaultFactory.append ...`).
+-/
+
+/-- The default `Lambda.Factory` for the Core dialect. -/
+def Core.defaultFactory : Lambda.Factory Core.CoreLParams := Core.Factory
 
 /-! ### Type checking and obligation building -/
 
@@ -82,8 +109,7 @@ def Core.typeCheckAndBuildObligationProgram
 
 Transform passes are values of `Core.PipelinePhase`. Build them with the
 smart constructors below (e.g., `Core.passLoopElim`, `Core.passInlineAll`),
-or with the per-pass entry points (`Core.inlineAllProcedures`,
-`Core.loopElimUsingContract`, …). Chain phases with `Core.runTransforms`. -/
+and chain them with `Core.runTransforms`. -/
 
 /-- Run a chain of pipeline phases on a Core program. All phases share a
     single `CoreTransformState`, so fresh variable counters accumulate across
@@ -128,39 +154,6 @@ def Core.passFilterProcedures (procs : List String) : Core.PipelinePhase :=
 def Core.passRemoveIrrelevantAxioms (funcs : List String) : Core.PipelinePhase :=
   Core.irrelevantAxiomsPipelinePhase funcs
 
-/-- Inline every non-recursive procedure call. -/
-def Core.inlineAllProcedures (p : Core.Program)
-    : Except Core.Transform.Err Core.Program :=
-  Core.runTransforms p [Core.passInlineAll]
-
-/-- Inline only the named procedures' call sites. -/
-def Core.inlineMatchingProcedures (p : Core.Program) (procs : List String)
-    : Except Core.Transform.Err Core.Program :=
-  Core.runTransforms p [Core.passInlineMatching procs]
-
-/-- Transform a Core program to replace each loop with assertions/assumptions
-    about its invariants. -/
-def Core.loopElimUsingContract (p : Core.Program) : Core.Program :=
-  (Core.loopElim p).fst
-
-/-- Transform a Core program to replace each procedure call with
-    assertions/assumptions about its contract. -/
-def Core.callElimUsingContract (p : Core.Program)
-    : Except Core.Transform.Err Core.Program :=
-  Core.runTransforms p [Core.passCallElim]
-
-/-- Transform a Core program to keep only the named procedures and their
-    transitive callees, removing everything else. -/
-def Core.filterProcedures (p : Core.Program) (targetProcs : List String)
-    : Except Core.Transform.Err Core.Program :=
-  Core.runTransforms p [Core.passFilterProcedures targetProcs]
-
-/-- Transform a Core program to remove axiom declarations that are irrelevant
-    to the named functions (based on call graph analysis). -/
-def Core.removeIrrelevantAxioms (p : Core.Program) (functions : List String)
-    : Except Core.Transform.Err Core.Program :=
-  Core.runTransforms p [Core.passRemoveIrrelevantAxioms functions]
-
 /-! ### Analysis of Core programs -/
 
 /--
@@ -180,7 +173,6 @@ def Core.verifyProgram
     (externalPhases : List Core.AbstractedPhase := [])
     (prefixPhases : List Core.PipelinePhase := [])
     (keepAllFilesPrefix : Option String := none)
-    (solver : Option Core.CoreSMTSolver := none)
     (mkDischarge : Core.MkDischargeFn := Core.mkDischargeFn)
     (pipelineCtx : Option Pipeline.PipelineContext := none)
     : EIO String Core.VCResults := do
@@ -188,7 +180,6 @@ def Core.verifyProgram
     EIO.toIO (IO.Error.userError ∘ toString)
       (Core.verify program tempDir proceduresToVerify options moreFns externalPhases prefixPhases
         (keepAllFilesPrefix := keepAllFilesPrefix)
-        (solver := solver)
         (mkDischarge := mkDischarge)
         (pipelineCtx := pipelineCtx))
   let ioAction := match options.vcDirectory with
