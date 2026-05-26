@@ -105,6 +105,27 @@ picohttpparser):
 | Strata-CBMC | 0 | 0 | 93 | 0 |
 | CBMC native | 70 | 0 | 23 | 0 |
 
+Example rows from the pipeline output (full per-row detail in
+`wt-test/pipeline-portfolio-v3.txt` and `wt-test/pipeline-svcomp.txt`):
+
+```
+Program           |  Strip |    B2S |    Fix |  deductive | bugFinding |    cbmc | cbmc-native
+-----------------------------------------------------------------------------------------------
+simple_add        |     OK |     OK |     OK |       PASS |    PARTIAL |    FAIL |        PASS
+loop_sum          |     OK |     OK |     OK |       PASS |    PARTIAL |    FAIL |        PASS
+abs_func          |     OK |     OK |     OK |    PARTIAL |    PARTIAL |    FAIL |        FAIL
+nondet_branch     |     OK |     OK |     OK |       PASS |    PARTIAL |    FAIL |        FAIL
+aws_array_eq      |     OK |     OK |     OK |    PARTIAL |    PARTIAL |    FAIL |        PASS
+skipSpace_harness |     OK |     OK |     OK |    PARTIAL |    PARTIAL |    FAIL |        PASS
+sv_locks_10       |     OK |     OK |     OK |       PASS |    PARTIAL |    FAIL |        PASS
+```
+
+`Strip` / `B2S` / `Fix` are pre-translation stage gates
+(`strip_smack_prelude.py` → BoogieToStrata → `fix_core_st.py`); the
+four backend columns are the verdict from each independent reasoning
+engine. `--split-procs` runs each procedure independently and rolls
+the verdicts up per-file.
+
 ### What the cbmc=FAIL count actually means now
 
 After fixes 2.1–2.7 in `Strata/Backends/CBMC/GOTO/` (see *What this
