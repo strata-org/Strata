@@ -7,6 +7,7 @@ module
 
 import Strata.DDM.Elab
 public import Strata.DDM.Elab.LoadedDialects
+public import Strata.DDM.Ion
 import Strata.DDM.Util.Ion
 
 open Lean (Message)

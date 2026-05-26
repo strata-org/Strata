@@ -94,7 +94,7 @@ private def runPipeline (config : PyAnalyzeConfig)
           coreProgram userProcNames config.entryPoint
         (p, [i])
       else (userProcNames, [])
-    Strata.Core.verifyProgram coreProgram config.verifyOptions
+    Strata.Core.verifyProgramAdvanced coreProgram config.verifyOptions
         (moreFns := Strata.Python.ReFactory)
         (proceduresToVerify := some proceduresToVerify)
         (externalPhases := [Strata.frontEndPhase])

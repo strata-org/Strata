@@ -7,6 +7,7 @@ module
 
 public import Strata.StrataAPI
 public import Strata.Languages.Laurel.Laurel
+public import Strata.Util.FileRange
 public import Strata.Languages.Laurel.LaurelCompilationPipeline
 import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator

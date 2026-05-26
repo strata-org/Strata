@@ -7,6 +7,8 @@ module
 
 public import Strata.StrataAPI
 public import Strata.Languages.Python.PythonDialect
+public import Strata.Languages.Python.PythonIdent
+public import Strata.DDM.Util.SourceRange
 import Strata.Languages.Python.Specs
 import Strata.Languages.Python.Specs.DDM
 import Strata.Languages.Python.CorePrelude
@@ -51,16 +53,6 @@ def pythonDirectToCore (pythonIonPath : String)
   let bpgm := Strata.pythonToCore
     Strata.Python.coreSignatures stmts preludePgm filePath
   pure { decls := preludePgm.decls ++ bpgm.decls }
-
-/-- Controls how translation warnings are reported. -/
-inductive WarningOutput where
-  /-- Suppress all warning output. -/
-  | none
-  /-- Print only a count summary (e.g., "3 warning(s)"). -/
-  | summary
-  /-- Print each warning followed by a count summary. -/
-  | detail
-deriving Inhabited, BEq
 
 /-- Recursively discover all Python modules under a directory.
     Returns `(moduleName, filePath)` pairs. -/
@@ -113,7 +105,7 @@ def pySpecsDir (sourceDir strataDir dialectFile : System.FilePath)
     (modules : Array String := #[])
     (events : Std.HashSet String := {})
     (skipNames : Array String := #[])
-    (warningOutput : WarningOutput := .detail)
+    (warningVerbosity : Nat := 2)
     (pythonCmd : String := "python")
     : EIO String Unit := do
   -- Create output dir
@@ -184,14 +176,13 @@ def pySpecsDir (sourceDir strataDir dialectFile : System.FilePath)
         failures := failures.push (toString mod, s!"Could not write {outPath}: {e}")
         continue
       -- Report warnings per module
+      -- warningVerbosity: 0 = none, 1 = summary count, 2 = detailed list
       if warnings.size > 0 then
-        match warningOutput with
-        | .none => pure ()
-        | .summary =>
-          let _ ← IO.eprintln s!"{toString mod}: {warnings.size} warning(s)" |>.toBaseIO
-        | .detail =>
+        if warningVerbosity ≥ 2 then
           for w in warnings do
             let _ ← IO.eprintln s!"{toString mod}: warning: {w}" |>.toBaseIO
+        else if warningVerbosity ≥ 1 then
+          let _ ← IO.eprintln s!"{toString mod}: {warnings.size} warning(s)" |>.toBaseIO
 
   -- Report failures
   if failures.size > 0 then

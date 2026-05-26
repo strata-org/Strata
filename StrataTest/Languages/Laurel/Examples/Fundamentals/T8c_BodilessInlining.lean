@@ -41,12 +41,12 @@ procedure caller()
   let coreProg ← match ← Strata.laurelToCore laurelProg with
     | .ok p => pure p
     | .error e => throw (IO.userError s!"Translation failed: {e}")
-  let inlined ← match Strata.Core.inlineProcedures coreProg {} with
+  let inlined ← match Strata.Core.inlineAllProcedures coreProg with
     | .ok p => pure p
     | .error e => throw (IO.userError s!"Inlining failed: {e}")
   let vcResults ←
     EIO.toIO (fun e => IO.Error.userError e)
-      (Strata.Core.verifyProgram inlined
+      (Strata.Core.verifyProgramAdvanced inlined
         { Core.VerifyOptions.default with verbose := .quiet }
         (proceduresToVerify := some ["caller"]))
   -- Collect only failing results

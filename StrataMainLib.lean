@@ -422,15 +422,14 @@ def pySpecsCommand : Command where
       events := events.insert e
     let skipNames := pflags.getRepeated "skip"
     let modules := pflags.getRepeated "module"
-    let warningOutput : Strata.WarningOutput :=
-      if quiet then .none else .detail
+    let warningVerbosity : Nat := if quiet then 0 else 2
     -- Serialize embedded dialect for Python subprocess
     IO.FS.withTempFile fun _handle dialectFile => do
       IO.FS.writeBinFile dialectFile Strata.Python.Python.toIon
       let r ← Strata.pySpecsDir (events := events)
                 (skipNames := skipNames)
                 (modules := modules)
-                (warningOutput := warningOutput)
+                (warningVerbosity := warningVerbosity)
                 v[0] v[1] dialectFile |>.toBaseIO
       match r with
       | .ok () => pure ()
@@ -783,7 +782,7 @@ def pyAnalyzeToGotoCommand : Command where
       | none => filePath
     let sourceText := pySourceOpt.map (·.2)
     let newPgm ← Strata.pythonDirectToCore filePath sourcePathForMetadata
-    match Core.inlineProcedures newPgm { doInline := (fun _caller callee _ => callee ≠ "main") } with
+    match Strata.Core.runTransforms newPgm [Strata.Core.passInlineExcept ["main"]] with
     | .error e => exitInternalError (toString e)
     | .ok newPgm =>
       -- Type-check the full program (registers Python types like ExceptOrNone)
@@ -1236,22 +1235,22 @@ def transformCommand : Command where
       for pc in passConfigs do
         match pc.name with
         | "inlineProcedures" =>
-          let opts : Core.InlineTransformOptions :=
-            if pc.procedures.isEmpty then {}
-            else { doInline := (fun _caller callee _ => callee ∈ pc.procedures) }
-          passes := passes ++ [.inlineProcedures opts]
+          if pc.procedures.isEmpty then
+            passes := passes ++ [Strata.Core.passInlineAll]
+          else
+            passes := passes ++ [Strata.Core.passInlineMatching pc.procedures]
         | "loopElim" =>
-          passes := passes ++ [.loopElim]
+          passes := passes ++ [Strata.Core.passLoopElim]
         | "callElim" =>
-          passes := passes ++ [.callElim]
+          passes := passes ++ [Strata.Core.passCallElim]
         | "filterProcedures" =>
           if pc.procedures.isEmpty then
             exitFailure "filterProcedures requires --procedures"
-          passes := passes ++ [.filterProcedures pc.procedures]
+          passes := passes ++ [Strata.Core.passFilterProcedures pc.procedures]
         | "removeIrrelevantAxioms" =>
           if pc.functions.isEmpty then
             exitFailure "removeIrrelevantAxioms requires --functions"
-          passes := passes ++ [.removeIrrelevantAxioms pc.functions]
+          passes := passes ++ [Strata.Core.passRemoveIrrelevantAxioms pc.functions]
         | other =>
           exitFailure s!"Unknown pass '{other}'. Valid passes: {validPasses}."
       -- Run all passes in a single CoreTransformM chain so fresh variable
