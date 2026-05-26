@@ -1320,7 +1320,7 @@ def verifyCommand (mkDischarge : Core.MkDischargeFn := Core.mkDischargeFn) : Com
           -- package that can depend on the StrataBoole package.
           throw <| IO.Error.userError "Boole dialect support requires the StrataBoole package"
         else
-          verify pgm inputCtx proceduresToVerify opts (mkDischarge := mkDischarge)
+          Core.verify pgm inputCtx proceduresToVerify opts (mkDischarge := mkDischarge)
       catch e =>
         println! f!"{e}"
         IO.Process.exit ExitCode.internalError

@@ -1925,43 +1925,6 @@ def Core.getProgram
   (ictx : InputContext := Inhabited.default) : Core.Program × Array String :=
   TransM.run ictx (translateProgram p)
 
-/-- Front-end phase: any translation from a source language to Core may
-    introduce over-approximations. Until front-ends can validate models or
-    determine that an assertion is unaffected, all sat results are converted
-    to unknown. -/
-def frontEndPhase : Core.AbstractedPhase where
-  name := "FrontEnd"
-  getValidation _ := .modelToValidate (fun _ => /- TODO -/ false)
-
-def verify
-    (env : Program)
-    (ictx : InputContext := Inhabited.default)
-    (proceduresToVerify : Option (List String) := none)
-    (options : Core.VerifyOptions := Core.VerifyOptions.default)
-    (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default)
-    (externalPhases : List Core.AbstractedPhase := [])
-    (keepAllFilesPrefix : Option String := none)
-    (solver : Option Core.CoreSMTSolver := none)
-    (mkDischarge : Core.MkDischargeFn := Core.mkDischargeFn)
-    : IO Core.VCResults := do
-  let (program, errors) := Core.getProgram env ictx
-  if errors.isEmpty then
-    let runner tempDir :=
-      EIO.toIO (fun dm => IO.Error.userError (toString (dm.format (some ictx.fileMap))))
-                  (Core.verify program tempDir proceduresToVerify options moreFns
-                    (externalPhases := externalPhases)
-                    (keepAllFilesPrefix := keepAllFilesPrefix)
-                    (solver := solver)
-                    (mkDischarge := mkDischarge))
-    match options.vcDirectory with
-    | .none =>
-      IO.FS.withTempDir runner
-    | .some p =>
-      IO.FS.createDirAll ⟨p.toString⟩
-      runner ⟨p.toString⟩
-  else
-    panic! s!"DDM Transform Error: {repr errors}"
-
 def toDiagnosticModel (vcr : Core.VCResult)
     (phases : List Core.AbstractedPhase := []) : Option DiagnosticModel :=
   let fileRange := (Imperative.getFileRange vcr.obligation.metadata).getD default

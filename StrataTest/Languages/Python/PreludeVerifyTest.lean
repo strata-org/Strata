@@ -7,7 +7,7 @@ module
 
 meta import all Strata.Languages.Python.PySpecPipeline
 meta import all Strata.Languages.Python.PyFactory
-meta import all Strata.Languages.Core.Verifier
+meta import all Strata.Languages.Core.Core
 
 meta section
 

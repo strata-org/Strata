@@ -154,16 +154,50 @@ def Core.passFilterProcedures (procs : List String) : Core.PipelinePhase :=
 def Core.passRemoveIrrelevantAxioms (funcs : List String) : Core.PipelinePhase :=
   Core.irrelevantAxiomsPipelinePhase funcs
 
+/-! ### Standard Core verification pipeline phases
+
+The verification pipeline performs a sequence of program-to-program transforms
+(`transformPipelinePhases`). `coreAbstractedPhases` exposes only the
+abstracted (model-validation) view used downstream.
+-/
+
+/-- The program-to-program transform phases applied before type checking.
+    Inlining/loop-elim/call-elim/filtering, in the order required by the
+    verification pipeline. See the underlying definition for ordering rationale. -/
+def Core.transformPipelinePhases (procs : Option (List String) := none)
+    : List Core.PipelinePhase :=
+  _root_.Core.transformPipelinePhases procs
+
+/-- The full pipeline phases for program-to-program transforms, including
+    type checking, symbolic evaluation, and ANF encoding. -/
+def Core.corePipelinePhases (procs : Option (List String) := none)
+    (options : Core.VerifyOptions := Core.VerifyOptions.default)
+    (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default)
+    : List Core.PipelinePhase :=
+  _root_.Core.corePipelinePhases procs options moreFns
+
+/-- The abstracted phases derived from the Core pipeline phases. -/
+def Core.coreAbstractedPhases (procs : Option (List String) := none)
+    (options : Core.VerifyOptions := Core.VerifyOptions.default)
+    (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default)
+    : List Core.AbstractedPhase :=
+  _root_.Core.coreAbstractedPhases procs options moreFns
+
+/-- Front-end phase: any translation from a source language to Core may
+    introduce over-approximations. Until front-ends can validate models or
+    determine that an assertion is unaffected, all sat results are converted
+    to unknown. -/
+def frontEndPhase : Core.AbstractedPhase where
+  name := "FrontEnd"
+  getValidation _ := .modelToValidate (fun _ => /- TODO -/ false)
+
 /-! ### Analysis of Core programs -/
 
 /--
 Verify a Core program, including any external solver invocation that is
 necessary.
 
-The basic call form passes just `program` and `options`. Power users may
-plug in additional Lambda factories, external/prefix pipeline phases, a
-custom solver, a custom discharge function, or a shared `PipelineContext`
-via the optional named arguments.
+The basic call form passes just `program` and `options`.
 -/
 def Core.verifyProgram
     (program : Core.Program)
@@ -175,9 +209,10 @@ def Core.verifyProgram
     (keepAllFilesPrefix : Option String := none)
     (mkDischarge : Core.MkDischargeFn := Core.mkDischargeFn)
     (pipelineCtx : Option Pipeline.PipelineContext := none)
+    (fileMap : Option Lean.FileMap := none)
     : EIO String Core.VCResults := do
   let runVerification (tempDir : System.FilePath) : IO Core.VCResults :=
-    EIO.toIO (IO.Error.userError ∘ toString)
+    EIO.toIO (fun dm => IO.Error.userError (toString (dm.format fileMap)))
       (Core.verify program tempDir proceduresToVerify options moreFns externalPhases prefixPhases
         (keepAllFilesPrefix := keepAllFilesPrefix)
         (mkDischarge := mkDischarge)
@@ -186,6 +221,33 @@ def Core.verifyProgram
     | .some vcDir => IO.FS.createDirAll vcDir *> runVerification vcDir
     | .none => IO.FS.withTempDir runVerification
   IO.toEIO (fun e => s!"{e}") ioAction
+
+/--
+Convenience wrapper that translates a generic `Strata.Program` to `Core.Program`
+and verifies it. Equivalent to `strataProgramToCore` followed by `verifyProgram`,
+with DDM translation errors panicking and verifier diagnostics formatted using
+`ictx.fileMap`.
+-/
+def Core.verify
+    (env : Strata.Program)
+    (ictx : Lean.Parser.InputContext := Inhabited.default)
+    (proceduresToVerify : Option (List String) := none)
+    (options : Core.VerifyOptions := .default)
+    (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default)
+    (externalPhases : List Core.AbstractedPhase := [])
+    (keepAllFilesPrefix : Option String := none)
+    (mkDischarge : Core.MkDischargeFn := Core.mkDischargeFn)
+    : IO Core.VCResults := do
+  let program ← match strataProgramToCore env with
+    | .ok p => pure p
+    | .error msg => panic! msg
+  Core.verifyProgram program options moreFns
+    (proceduresToVerify := proceduresToVerify)
+    (externalPhases := externalPhases)
+    (keepAllFilesPrefix := keepAllFilesPrefix)
+    (mkDischarge := mkDischarge)
+    (fileMap := some ictx.fileMap)
+    |>.toIO (fun e => IO.Error.userError e)
 
 end Strata
 
