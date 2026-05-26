@@ -66,7 +66,11 @@ translator. For ongoing work, the GitHub issue tracker is authoritative.
 
 ## Pipeline status
 
-End-to-end results for the 25-program SMACK benchmark (12 original +
-13 simplified AWS C Common functions, in
-`Examples/smack-docker/programs/*.c`) are summarized in
-`Examples/smack-docker/README.md`.
+End-to-end results for the 94-program SMACK benchmark (in
+`Examples/smack-docker/programs/*.c` — original hand-written +
+simplified AWS C Common + verbatim aws-c-common / FreeRTOS coreJSON /
+coreMQTT / coreHTTP / coreSNTP harnesses + standalone parsers + RFC
+reference impls + 29 SV-COMP ReachSafety programs with verdict oracle)
+are summarized in `Examples/smack-docker/README.md`. Deeper
+cross-validation triage and the (P)/(T)/(S) tagging scheme live in
+`Examples/smack-docker/CROSS_VALIDATION.md`.

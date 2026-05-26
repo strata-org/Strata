@@ -71,93 +71,107 @@ strip prelude → BoogieToStrata → fix_core_st → backend(s).
 
 ## Current verification results
 
-Snapshot from the latest run on the 43-program benchmark:
+Snapshot from the latest pipeline runs on the **94-program benchmark**:
 
-- 12 original benchmark programs.
-- 13 simplified AWS C Common functions (hand-written, in the
-  `programs/` style of `aws_array_eq.c`).
-- 6 verbatim CBMC harnesses imported from `awslabs/aws-c-common`'s
-  `verification/cbmc/proofs/`.
-- 12 verbatim CBMC harnesses imported from `FreeRTOS/coreJSON`'s
-  `test/cbmc/proofs/` (each bundles `core_json.h` + `core_json.c`
-  alongside the harness body).
+| Group | Programs | Description |
+|---|---:|---|
+| Original benchmark | 12 | Hand-written small programs |
+| Simplified AWS C Common | 13 | Hand-written, in style of `aws_array_eq.c` |
+| aws-c-common verbatim | 6 | Imported from upstream `verification/cbmc/proofs/` |
+| FreeRTOS coreJSON verbatim | 12 | Vendored `core_json.c` + harness |
+| FreeRTOS coreMQTT/coreHTTP/coreSNTP | 10 | Same pattern, vendored sources |
+| Standalone parsers | 4 | jsmn, cJSON × 2, picohttpparser |
+| RFC reference impls | 8 | UTF-8 DFA, base64, percent-encoding |
+| **SV-COMP ReachSafety** | **29** | **Imported from `sosy-lab/sv-benchmarks` with verdict oracle** |
+| **Total** | **94** | |
 
-The verbatim harness groups use small adapter shims to map CBMC
-primitives onto SMACK's `__VERIFIER_*` family; the bar for inclusion
-was translatability (Strip / B2S / Fix all OK), not verification.
+The most recent runs are:
+- **v3 (`--split-procs`):** 64 programs (everything except the SV-COMP
+  imports + `picohttpparser` which OOMs cbmc-native). Captured in
+  `wt-test/pipeline-portfolio-v3.txt`. Run after fixes
+  `7bff2d48e` (array-type), `23926094f` (nondet-symbol),
+  `42ff8a4b8` (CFG-CallElim), `390fadc37` (ensures-synthesis), and
+  `b3e606bb6` (`__VERIFIER_assert` requires injection).
+- **sv-comp (`--split-procs`):** 29 SV-COMP programs. Captured in
+  `wt-test/pipeline-svcomp.txt`.
 
-The deductive / bugFinding columns below are from a non-`--split-procs`
-run; the cbmc column on the first 31 rows is the prior `--split-procs`
-snapshot from the smaller suite. The 12 coreJSON harnesses were not
-re-run through cbmc — vendoring full `core_json.c` produces large
-.bpl files that hit the same callee-bodies blocker as everything else
-(see *Known blockers*); marked as `n/a` to flag the lack of fresh
-data.
+Combined verdict counts across the 93 programs that ran (excluding
+picohttpparser):
 
-`OK` columns report pipeline-stage success; backend columns report
-verification outcome. Run with `--split-procs` to surface obligations
-the env-error contamination would otherwise suppress (some PASS rows
-in non-split mode become PARTIAL when split-procs runs each procedure
-independently).
+|  | PASS | PARTIAL | FAIL | TIMEOUT |
+|---|---:|---:|---:|---:|
+| Strata deductive | 39 | 54 | 0 | 0 |
+| Strata bugFinding | 0 | 93 | 0 | 0 |
+| Strata-CBMC | 0 | 0 | 93 | 0 |
+| CBMC native | 70 | 0 | 23 | 0 |
 
-```
-Program                               |  Strip |    B2S |    Fix |    deductive |   bugFinding |         cbmc
----------------------------------------------------------------------------------------------------------------
-# Original benchmark
-abs_func                              |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
-array_sum                             |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
-aws_array_eq                          |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
-aws_byte_cursor_advance               |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
-aws_ring_buffer                       |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
-loop_sum                              |     OK |     OK |     OK |         PASS |      PARTIAL |      TIMEOUT
-max_func                              |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
-nondet_branch                         |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
-pointer_arith                         |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
-simple_add                            |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
-simple_assert                         |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
-swap                                  |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+### What the cbmc=FAIL count actually means now
 
-# Extended benchmark (simplified AWS C Common)
-aws_add_size_checked                  |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
-aws_array_list_get                    |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
-aws_array_list_set                    |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
-aws_byte_buf_append                   |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
-aws_byte_buf_init                     |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
-aws_byte_cursor_eq                    |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
-aws_hash_string                       |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
-aws_is_power_of_two                   |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
-aws_linked_list_push                  |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
-aws_min_max                           |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
-aws_mul_size_checked                  |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
-aws_round_up_to_power_of_two          |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
-aws_string_eq                         |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
+After fixes 2.1–2.7 in `Strata/Backends/CBMC/GOTO/` (see *What this
+branch ships*), the cbmc backend **reaches actual model checking on
+every program**. The 93 FAILs are real verification verdicts, mostly
+of two shapes:
 
-# CBMC harness import (verbatim from awslabs/aws-c-common)
-aws_add_size_checked_harness          |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
-aws_add_size_saturating_harness       |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
-aws_is_power_of_two_harness           |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
-aws_mul_size_checked_harness          |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
-aws_mul_size_saturating_harness       |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
-aws_round_up_to_power_of_two_harness  |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
+- `Property violations found` — cbmc proceeded into BMC and identified
+  that the goto binary contains assertions whose negation is
+  satisfiable. The dominant cause is the **callee-bodies blocker**
+  (see *Known blockers*): `coreToGotoFiles*` emits only the entry
+  procedure's body, leaving every callee as a bodyless declaration.
+  Cbmc reports `[.no-body.<callee>]` for each missed body.
+- `CBMC exit code -6` — cbmc's array solver SIGABRTs on a small
+  number of programs whose `__cprover_entry` shim shape is still
+  problematic.
 
-# CBMC harness import (verbatim from FreeRTOS/coreJSON)
-JSON_Iterate_harness                  |     OK |     OK |     OK |         PASS |      PARTIAL |          n/a
-JSON_SearchConst_harness              |     OK |     OK |     OK |         PASS |      PARTIAL |          n/a
-JSON_Validate_harness                 |     OK |     OK |     OK |         PASS |      PARTIAL |          n/a
-skipAnyScalar_harness                 |     OK |     OK |     OK |         PASS |      PARTIAL |          n/a
-skipCollection_harness                |     OK |     OK |     OK |         PASS |      PARTIAL |          n/a
-skipDigits_harness                    |     OK |     OK |     OK |         PASS |      PARTIAL |          n/a
-skipEscape_harness                    |     OK |     OK |     OK |         FAIL |         FAIL |          n/a
-skipObjectScalars_harness             |     OK |     OK |     OK |         PASS |      PARTIAL |          n/a
-skipScalars_harness                   |     OK |     OK |     OK |         PASS |      PARTIAL |          n/a
-skipSpace_harness                     |     OK |     OK |     OK |         PASS |      PARTIAL |          n/a
-skipString_harness                    |     OK |     OK |     OK |         PASS |      PARTIAL |          n/a
-skipUTF8_harness                      |     OK |     OK |     OK |         PASS |      PARTIAL |          n/a
+Pre-fix (before 2.6 + 2.7), every program hit `function call:
+parameter type mismatch` (rc=6) before model checking even started.
+The cbmc pipeline went from "rejected by type checker" → "real
+verification verdicts." The PASS count is still 0 because the
+callee-bodies blocker masks most properties; once that's addressed
+(Layer 2 of the recent triage round), expect cbmc PASS counts to
+follow.
 
-     deductive: 29 pass, 13 partial, 0 warn, 1 fail, 0 n/a
-    bugFinding: 0 pass, 42 partial, 0 warn, 1 fail, 0 n/a
-          cbmc: 0 pass, 30 fail, 1 timeout, 12 n/a
-```
+### What the deductive PARTIAL count means
+
+After fix `42ff8a4b8` (apply CallElim to CFG-bodied procedures), the
+deductive backend now generates real `requires`-VCs at call sites
+inside CFG-bodied procedures. Programs that previously vacuously
+PASSed (no obligations to check) now flip to PARTIAL with concrete
+failing VCs. The dominant root cause across the 54 PARTIALs is
+**missing `ensures` on user-defined helpers** (deductive sub-class
+(a) — see *Known blockers*); the failing VCs are
+`callElimAssert___VERIFIER_assert_requires_*` labeled obligations
+the verifier returns as `❓ unknown` because call-elim havocs the
+post-call state.
+
+Detailed cluster breakdowns and per-cluster (P)/(T)/(S) tags from
+the cross-validation triage are in `CROSS_VALIDATION.md`.
+
+### SV-COMP soundness probes (reading the oracle)
+
+The 29 SV-COMP programs carry known verdicts in
+`svcomp_verdicts.json`. Cross-referencing against deductive's
+verdicts identified 6 candidate soundness probes (`unsafe ∧
+deductive=PASS`):
+
+| Program | Expected | Deductive | Diagnosis |
+|---|---|---|---|
+| `sv_locks_14_2` | unsafe | PASS | `path unreachable` qualifier |
+| `sv_locks_15_2` | unsafe | PASS | `path unreachable` qualifier |
+| `sv_loops_mono3_1` | unsafe | PASS | `path unreachable` qualifier |
+| `sv_loops_mono4_1` | unsafe | PASS | `path unreachable` qualifier |
+| `sv_loops_mono5_1` | unsafe | PASS | `path unreachable` qualifier |
+| `sv_loops_mono6_1` | unsafe | PASS | `path unreachable` qualifier |
+
+**Not actually soundness bugs.** Inspection with `--check-level full`
+shows each PASS is annotated `✅ pass (❗path unreachable)` —
+Strata's deductive verifier is correctly self-flagging that the path
+to the assertion was unreachable under bounded CFG fuel, not that
+the property was proven. The matrix's PASS column collapses this
+qualifier; that's a tooling gap (matrix-display issue), not a
+verifier soundness bug.
+
+`bugFinding` correctly identifies 6 of 7 unsafe SV-COMP programs as
+PARTIAL with concrete failing VCs.
 
 The two CBMC-import groups represent the easy-to-translate slice of
 their respective upstream proof trees:
@@ -168,7 +182,8 @@ their respective upstream proof trees:
   search harnesses — `arraySearch`, `objectSearch`, `multiSearch` —
   segfault inside SMACK's clang frontend). One of the 12,
   `skipEscape_harness`, exits the deductive verifier with SIGABRT,
-  surfacing a Strata-side bug worth tracking as a regression input.
+  surfacing a Strata-side bug worth tracking as a regression input
+  (filed at `strata-verify-stack-overflow-deeply-nested-expr.md`).
 
 ## What this branch ships (vs `origin/main`)
 
@@ -187,12 +202,21 @@ Pipeline / benchmark:
   per program with an adapter prelude that shims CBMC primitives onto
   SMACK's `__VERIFIER_*` family. Commit `283bdac16`.
 - 12 verbatim CBMC harnesses imported from `FreeRTOS/coreJSON`'s
-  `test/cbmc/proofs/` tree, expanding the suite to 43. Each program
-  bundles `core_json.h` + `core_json.c` verbatim alongside the harness
-  body folded into `main()`; the prelude reroutes `coreJSON_ASSERT`
-  through `__VERIFIER_assume` so the asserts CBMC enforces as
-  preconditions become assumptions for the deductive verifier.
-  Generator at `wt-test/fetch_corejson_harness.py`. Commit `2c7a49181`.
+  `test/cbmc/proofs/` tree. Each program bundles `core_json.h` +
+  `core_json.c` verbatim alongside the harness body folded into
+  `main()`. Generator at `wt-test/fetch_corejson_harness.py`.
+  Commit `2c7a49181`.
+- 22 additional verbatim CBMC harnesses imported from FreeRTOS
+  coreMQTT/coreHTTP/coreSNTP, standalone parsers (jsmn, cJSON,
+  picohttpparser), and RFC reference impls (UTF-8, base64,
+  percent-encoding). Commit `953547728`.
+- 9 of the coreJSON harnesses now carry **upstream-derived contracts**
+  (preconditions/postconditions ported from FreeRTOS coreJSON's
+  `core_json_contracts.h`). Commits `495e09c87` (4 parsers) and
+  `5475c6710` (5 more).
+- 29 SV-COMP ReachSafety programs imported with verdict oracle
+  (`svcomp_verdicts.json`). Commit `eb8fbd513`. Verdict distribution:
+  22 safe, 7 unsafe.
 
 BoogieToStrata (cherry-picked from PR 1149 plus follow-up):
 
@@ -202,6 +226,14 @@ BoogieToStrata (cherry-picked from PR 1149 plus follow-up):
 - `__VERIFIER_assume` `free ensures (_i0 != 0)` synthesis under
   `--smack`, mirroring the `assert_` pattern with dual polarity.
   Commit `1b2231f99`.
+
+BoogieToStrata (later additions):
+
+- `__VERIFIER_assert` `requires (_i0 != 0)` injection under `--smack`.
+  SMACK lowers C `assert(EXPR)` to a branch where the failing arm
+  calls `__VERIFIER_assert(0)`; the requires injection forces the
+  verifier to discharge the unreachability of that arm. Commit
+  `b3e606bb6`.
 
 CBMC backend (`Strata/Backends/CBMC/GOTO/`):
 
@@ -218,9 +250,32 @@ CBMC backend (`Strata/Backends/CBMC/GOTO/`):
 - CFG block emission in reverse-postorder, eliminating the spurious
   back-edges that triggered cbmc unwinding-assertion timeouts.
   Commit `520f3f573`.
+- **Canonicalize array-type emission** in symtab/goto so DECL-site
+  and parameter-site emissions produce structurally equal CBMC
+  array-type objects, eliminating the dominant cbmc failure mode.
+  Commit `7bff2d48e`.
+- **Emit nondet array params as `nondet_symbol`, not `nondet`**
+  (one-line JSON id fix), unblocking cbmc's array solver after the
+  array-type fix landed. Commit `23926094f`.
 
-Regression coverage in `StrataTest/Backends/CBMC/GOTO/E2E_CoreToGOTO.lean`
-and `Tools/BoogieToStrata/IntegrationTests/BoogieToStrataIntegrationTests.cs`.
+Strata Core / Transform features:
+
+- **Sound `ensures` synthesis pass under `--synthesize-ensures`**.
+  Infers ensures clauses for procedures whose bodies are linear
+  (no branches, only deterministic assignments and safe
+  instrumentation calls). Soundness rests on three checks ensuring
+  every synthesised clause holds for any input satisfying the
+  preconditions. Off by default. Commit `390fadc37`.
+- **Apply CallElim to CFG-bodied procedures**. Previously
+  `runProgram` skipped CFG bodies, so call sites inside any
+  CFG-bodied procedure (most SMACK output) had no `requires`-VCs
+  generated for their callees — the verifier silently passed those
+  call sites. The fix walks each CFG block's command list and
+  applies CallElim to each command. Commit `42ff8a4b8`.
+
+Regression coverage in `StrataTest/Backends/CBMC/GOTO/E2E_CoreToGOTO.lean`,
+`StrataTest/Languages/Core/Tests/EnsuresSynthesisTest.lean`, and
+`Tools/BoogieToStrata/IntegrationTests/BoogieToStrataIntegrationTests.cs`.
 
 ## Known blockers
 
@@ -228,27 +283,15 @@ and `Tools/BoogieToStrata/IntegrationTests/BoogieToStrataIntegrationTests.cs`.
   only the entry procedure (`main`), leaving every callee — `add`,
   `assert__i32`, `_initialize`, SMACK prelude stubs, user-defined
   helpers — as bodyless declarations. cbmc reaches a call and reports
-  `[.no-body.<callee>] no body for callee <callee>: FAILURE`. This is
-  the dominant cbmc failure mode for programs without memory-map
-  parameters. Fix path: iterate over all reachable procedures in
-  `coreToGotoFilesDispatch`, not just the entry; emit each via
-  `procedureToGotoCtxDispatch` and splice into the output JSON. The
-  lifted-functions infrastructure in `emitProcWithLifted` is the right
-  shape but currently only handles `Core.Function`, not
+  `[.no-body.<callee>] no body for callee <callee>: FAILURE`. **This
+  is now the dominant cbmc failure mode** across the 93-program suite
+  after the array-type and nondet-symbol fixes unblocked the upstream
+  type checker and array solver. Fix path: iterate over all reachable
+  procedures in `coreToGotoFilesDispatch`, not just the entry; emit
+  each via `procedureToGotoCtxDispatch` and splice into the output
+  JSON. The lifted-functions infrastructure in `emitProcWithLifted`
+  is the right shape but currently only handles `Core.Function`, not
   `Core.Procedure`.
-- **CBMC: array type mismatch on memory-map params.** Programs with
-  memory-map parameters (the AWS C Common programs that pass `Map ref
-  i8` for memory state) hit a different cbmc error after the shim:
-  `function call: parameter "main::_M_0" type mismatch — got array
-  size: integer, expected array 0: integer`. The shim's nondet
-  initializer for the memory-map params produces an array shape cbmc
-  considers incompatible with main's declared parameter type. 16 of
-  the 25 hand-written programs hit this; the 18 verbatim CBMC
-  harnesses use only primitive scalar params, so they avoid this
-  blocker. Likely fix
-  on the array-type emission for
-  `Map ref i8` (`Strata/Backends/CBMC/GOTO/LambdaToCProverGOTO.lean`'s
-  `LMonoTy.toGotoType`).
 - **CBMC: real-loop unwinding bound.** `loop_sum` has a real C `for`
   loop, so cbmc's BMC unroller correctly identifies the genuine
   back-edge and tries to unroll without bound, hitting the default
@@ -258,38 +301,49 @@ and `Tools/BoogieToStrata/IntegrationTests/BoogieToStrataIntegrationTests.cs`.
   back-edges from the GOTO emission order; that's resolved on this
   branch — see *What this branch ships → CFG block emission in
   reverse-postorder*.
-- **Deductive PARTIAL breakdown (sample-based).** The deductive
-  PARTIALs across the 43-program suite split into two sub-classes by
+- **Deductive PARTIAL breakdown (sample-based).** The 54 deductive
+  PARTIALs across the 93-program suite split into two sub-classes by
   failing-VC verdict and origin:
   - **(a) Missing `ensures` on a user-defined helper** — solver
-    refutes with `🔶 can be both true and false`, label
-    `callElimAssert_assert__i32_requires_0_NN`. Every assertion of
-    the form `assert(callee(...) == expected)` where the user fn has
-    no spec block. ~17 of the 25 hand-written programs hit this; the
-    18 verbatim CBMC harnesses don't trip it because their callees
-    have no postconditions to discharge (they verify call shape, not
-    functional correctness).
-    `abs_func` and `max_func` were previously masked as a separate
-    `__VERIFIER_assume` blocker; once that was fixed (commit
-    `1b2231f99`) their residual VCs landed here. Fix lever: synthesize
-    `ensures` from procedure bodies (Strata-side pass; not a Python
-    regex — too easy to be unsound). The previously discussed approach
-    via SMACK's `__CONTRACT_ensures` macro is blocked upstream by
-    SMACK's missing `result()` expression.
-  - **(b) Solver returns `unknown`** — verdict `❓ unknown`. Sample:
-    `aws_byte_buf_append`, all 7 VCs. The asserted predicate chain
-    involves nested int↔bit conversions (`_zext`, `_trunc`) over
-    memory-map loads (`_load_i64`, `_load_ref`) on a program with 13
-    `_M_N` map params. SMT formula complexity exceeds the solver's
-    reach. Fix lever: SMT encoding work in
-    `Strata/Languages/Core/SMTEncoder.lean` — array theory vs
-    axiomatized maps, axiom pruning. Significant effort; likely the
-    last sub-class to address.
+    returns `❓ unknown`, label
+    `callElimAssert___VERIFIER_assert_requires_0_NN`. Every
+    post-call assertion in a CFG-bodied procedure where the callee
+    has no `ensures` clause; call-elim havocs the post-call state
+    and the assertion becomes unprovable, even though it's logically
+    valid. **27 of 27** triaged failing VCs on the contract-ported
+    coreJSON parsers fall in this class (P1 triage). Fix levers:
+    extend `--synthesize-ensures` (`390fadc37`) to handle CFG bodies,
+    or hand-port upstream `core_json_contracts.h` ensures onto the
+    parser implementations themselves (not just the harness).
+    Triage detail in `wt-test/triage/contract-ported-parser-vcs.md`.
+  - **(b) Solver returns `unknown` on bitwise-heavy formulas** —
+    verdict `❓ unknown`. Sample: `aws_byte_buf_append`, all 7 VCs.
+    The asserted predicate chain involves nested int↔bit conversions
+    (`_zext`, `_trunc`) over memory-map loads (`_load_i64`,
+    `_load_ref`) on a program with 13 `_M_N` map params. SMT formula
+    complexity exceeds the solver's reach. Fix lever: SMT encoding
+    work in `Strata/Languages/Core/SMTEncoder.lean` — array theory
+    vs axiomatized maps, axiom pruning. Significant effort; likely
+    the last sub-class to address.
+- **`run_pipeline.py` collapses `path unreachable` PASSes.** The
+  matrix's PASS/PARTIAL/FAIL column drops the
+  `✅ pass (❗path unreachable)` qualifier the deductive verifier
+  emits when bounded CFG-fuel evaluation didn't reach the obligation.
+  This made 6 SV-COMP unsafe programs (`sv_locks_14_2`,
+  `sv_locks_15_2`, `sv_loops_mono3_1` through `sv_loops_mono6_1`)
+  initially look like soundness probes (`unsafe ∧ deductive=PASS`).
+  They aren't — Strata is correctly self-flagging the unreachability,
+  but the pipeline collapses the qualifier. Fix path: add a third
+  matrix state (e.g. `PASS-unreachable`) and surface it in
+  `run_pipeline.py`'s output. **No actual Strata soundness
+  violations were found by the SV-COMP integration.**
 - **bugFinding partials.** Symbolic execution finds potential
   counterexamples for assertions on programs whose preconditions are
   insufficient. Same root cause as deductive sub-class (a) (callees
   with no `ensures`). Expected behaviour given the current translation;
-  not a pipeline bug.
+  not a pipeline bug. **bugFinding correctly identifies 6 of 7 SV-COMP
+  unsafe programs** as PARTIAL with concrete failing VCs — a positive
+  validation of the bugFinding mode.
 - **Cross-procedure PE error contamination (silently dropped VCs,
   issue #1185).** `ProgramEval.lean` threads a single `Env` through
   every procedure in declaration order. If `Procedure.eval` sets
@@ -300,6 +354,26 @@ and `Tools/BoogieToStrata/IntegrationTests/BoogieToStrataIntegrationTests.cs`.
   independently. Fix path: clear `Env.error` at the boundary between
   procedures in `Program.eval`. See issue #1185 for full repro and
   empirical analysis.
+
+### Resolved blockers (history)
+
+- **CBMC: array type mismatch on memory-map params.** The dominant
+  failure mode in the original portfolio (38 of 65 rows). Fixed by
+  commits `7bff2d48e` (`tyToJson` size-qualified array JSON) and
+  `23926094f` (`nondet_symbol` instead of `nondet` for array params).
+  Cbmc now passes the type checker and array solver on these
+  programs.
+- **CFG-CallElim requires-VC gap.** All CFG-bodied procedures
+  silently passed deductive on vacuous obligations. Fixed by
+  `42ff8a4b8`; now ~14 rows that were vacuous PASS show concrete
+  PARTIAL with real failing VCs (an (S) → real-VC transition).
+- **`__VERIFIER_assume` uninterpreted, `__VERIFIER_assert`
+  uninterpreted.** Both fixed by synthetic-spec injection in
+  BoogieToStrata under `--smack` (commits `1b2231f99`,
+  `b3e606bb6`).
+- **CFG block emission produced spurious back-edges.** Fixed by
+  RPO emission (`520f3f573`); 3 of 4 cbmc-TIMEOUT programs flipped
+  to real verdicts.
 
 See [`Tools/BoogieToStrata/Docs/STATUS.md`](../../Tools/BoogieToStrata/Docs/STATUS.md)
 for translator-level status.

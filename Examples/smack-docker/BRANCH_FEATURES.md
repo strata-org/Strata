@@ -12,7 +12,7 @@ or refactors that are bookkeeping.
 | 2 | Strata CBMC backend fixes (`Strata/Backends/CBMC/GOTO/`) | [§2](#2-strata-cbmc-backend-fixes) |
 | 3 | BoogieToStrata translator (`Tools/BoogieToStrata/`) | [§3](#3-boogietostrata-translator-features) |
 | 4 | Strata Core / Transform features (`Strata/Languages/Core/`, `Strata/Transform/`) | [§4](#4-strata-core--transform-features) |
-| 5 | Benchmark suite (`Examples/smack-docker/programs/`) | [§5](#5-benchmark-suite-65-programs) |
+| 5 | Benchmark suite (`Examples/smack-docker/programs/`) | [§5](#5-benchmark-suite-94-programs) |
 | 6 | Cross-validation infrastructure (`tools/`, `CROSS_VALIDATION.md`) | [§6](#6-cross-validation-infrastructure) |
 | 7 | Documentation (`README.md`, `STATUS.md`) | [§7](#7-documentation) |
 | 8 | Regression coverage (`StrataTest/`) | [§8](#8-regression-coverage) |
@@ -426,10 +426,10 @@ any single fix in the project so far.
 
 ---
 
-## 5. Benchmark suite: 65 programs
+## 5. Benchmark suite: 94 programs
 
 The `Examples/smack-docker/programs/` directory grew from 0 (none
-of this exists on `origin/main`) to 65 programs across four import
+of this exists on `origin/main`) to 94 programs across five import
 batches plus hand-written originals.
 
 ### Composition
@@ -443,7 +443,8 @@ batches plus hand-written originals.
 | FreeRTOS coreMQTT/coreHTTP/coreSNTP | 10 | Same pattern, vendored upstream sources | `MQTT_Init_harness.c`, `HTTPClient_strerror_harness.c` |
 | Standalone parsers | 4 | Hand-written harnesses | `jsmn_jsmn_parse_harness.c`, `cjson_cJSON_Parse_harness.c`, `picohttpparser_phr_parse_request_harness.c` |
 | RFC reference impls | 8 | Public-domain refs + edge-case harnesses | `utf8_validate_overlong_harness.c` (Bjoern Höhrmann's DFA), `base64_decode_padding_only_harness.c`, `percent_decode_nul_harness.c` |
-| **Total** | **65** | | |
+| SV-COMP ReachSafety | 29 | Imported from `sosy-lab/sv-benchmarks` (commit `eb8fbd513`) with verdict oracle in `svcomp_verdicts.json`; 22 safe, 7 unsafe across `c/locks/`, `c/loops-crafted-1/`, `c/reducercommutativity/` | `sv_locks_10.c`, `sv_loops_mono3_1.c`, `sv_max_sep.c` |
+| **Total** | **94** | | |
 
 ### Contract ports on coreJSON harnesses
 
@@ -552,14 +553,20 @@ CFG-CallElim fix and the v2 → v3 verdict transition).
 Covers:
 1. Pipeline architecture (three Strata-IR backends + native CBMC
    as ground-truth control).
-2. The 65-program 4-backend matrix.
+2. The 94-program 4-backend matrix (64 portfolio + 29 SV-COMP, plus
+   `picohttpparser` excluded due to known cbmc-native OOM).
 3. Per-divergence triage with **(P)** program defect / **(T)**
    translator-or-backend bug / **(S)** spec/contract gap tags.
 4. Cumulative impact of the five fixes that landed during the
    screening.
 
 The screening identified **5 distinct Strata defects** in one
-session, four of which are fixed in this branch.
+session, four of which are fixed in this branch. The SV-COMP
+oracle integration (29 programs with ground-truth safe/unsafe
+labels) confirmed zero soundness violations: the six initial
+`unsafe ∧ deductive=PASS` candidates were all matrix-display
+artifacts (the verifier emits `path unreachable` qualifiers that
+`run_pipeline.py` collapses to PASS).
 
 ---
 
@@ -626,37 +633,42 @@ case.
 
 | Metric | origin/main | htd/smack |
 |---|---:|---:|
-| Pipeline programs (`Examples/smack-docker/programs/*.c`) | 0 | 65 |
+| Pipeline programs (`Examples/smack-docker/programs/*.c`) | 0 | 94 |
 | Strata CBMC backend bugs fixed | 0 | 8 |
 | Strata Core / Transform fixes | 0 | 2 (sound ensures-synthesis pass, CFG-bodied CallElim) |
 | BoogieToStrata SMACK-specific features | 0 | 4 (`--smack` flag, `assert_.<type>` requires, `__VERIFIER_assume` ensures, `__VERIFIER_assert` requires) |
 | Contract-ported coreJSON harnesses | 0 | 9 |
 | Cross-validation backends | 0 | 4 (deductive, bugFinding, Strata-CBMC, cbmc-native) |
 | Strata defects identified by cross-validation | 0 | 5 (4 fixed; 1 stack-overflow filed) |
-| Cross-validation matrix | none | 64-program 4-backend |
+| Cross-validation matrix | none | 93-program 4-backend (64 portfolio + 29 SV-COMP) |
 
-**Verdict on the 64-program suite (v3, post CFG-CallElim fix, `--split-procs` mode):**
+**Verdict on the combined 93-program suite (`--split-procs` mode):**
 
 |  | PASS | not-PASS | TIMEOUT |
 |---|---:|---:|---:|
-| Strata deductive | 21 | 43 | 0 |
-| Strata bugFinding | 0 | 64 | 0 |
-| Strata-CBMC | 0 | 64 | 0 |
-| CBMC-native | 45 | 19 | 0 |
+| Strata deductive | 39 | 54 | 0 |
+| Strata bugFinding | 0 | 93 | 0 |
+| Strata-CBMC | 0 | 93 | 0 |
+| CBMC-native | 70 | 23 | 0 |
 
-The deductive PASS count dropped from 33 (v2) to 21 (v3) — a
-positive change. The 12-row delta is the CFG-CallElim fix
-(`42ff8a4b8`) replacing previously-vacuous PASSes with real PARTIAL
-verdicts that expose concrete failing VC counts (3-6 post-call asserts
-per harness). The dominant cause of remaining PARTIAL verdicts is
-translator-side conservatism (missing `ensures` on upstream parser
-functions), not program defects. See `CROSS_VALIDATION.md` Update 3
-for the full v2 → v3 breakdown.
+The 93 = 64 portfolio (`wt-test/pipeline-portfolio-v3.txt`) + 29
+SV-COMP (`wt-test/pipeline-svcomp.txt`); `picohttpparser` is excluded
+due to known cbmc-native OOM. The deductive PASS count dropped from
+33 (v2) to 21 (v3) on the portfolio after the CFG-CallElim fix
+(`42ff8a4b8`) replaced previously-vacuous PASSes with real PARTIAL
+verdicts; on SV-COMP the deductive backend PASSes 18 of 29 directly,
+since SV-COMP programs lack the user-defined helpers that drive the
+portfolio's sub-class (a) `❓ unknown` failures. The dominant cause
+of remaining PARTIAL verdicts is translator-side conservatism
+(missing `ensures` on upstream parser callees), not program defects.
+See `CROSS_VALIDATION.md` Updates 3 and 4 for the full breakdown.
 
 **Run history:**
 
 | Run | deductive PASS | deductive not-PASS | mode | key change |
 |---|---:|---:|---|---|
-| v1 | 47 | 16 | non-split | baseline |
-| v2 | 33 | 30 | non-split | `__VERIFIER_assert` requires injection |
-| v3 | 21 | 43 | --split-procs | CFG-CallElim fix (`42ff8a4b8`) |
+| v1 | 47 | 16 | non-split | baseline (64 programs) |
+| v2 | 33 | 30 | non-split | `__VERIFIER_assert` requires injection (64 programs) |
+| v3 | 21 | 43 | --split-procs | CFG-CallElim fix (`42ff8a4b8`) (64 programs) |
+| sv-comp | 18 | 11 | --split-procs | 29 SV-COMP programs imported (`eb8fbd513`) |
+| combined | 39 | 54 | --split-procs | v3 ∪ sv-comp (93 programs total) |

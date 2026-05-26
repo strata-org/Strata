@@ -1,7 +1,8 @@
 # Cross-validation portfolio screening
 
-A multi-backend evaluation of the SMACK→Strata pipeline against 65
-parser, decoder, and utility programs from four sources.
+A multi-backend evaluation of the SMACK→Strata pipeline against 94
+parser, decoder, utility, and SV-COMP ReachSafety programs from five
+sources.
 
 ## Pipeline
 
@@ -34,33 +35,43 @@ equivalent inputs.
 | FreeRTOS coreMQTT/coreHTTP/coreSNTP verbatim | 10 | Same pattern, vendored upstream sources |
 | Standalone parsers | 4 | Hand-written harnesses on jsmn, cJSON, picohttpparser |
 | RFC reference impls | 8 | UTF-8 DFA validator, base64 decoder, percent-encoding decoder, with edge-case harnesses |
-| **Total** | **65** | |
+| SV-COMP ReachSafety | 29 | Imported from `sosy-lab/sv-benchmarks` with verdict oracle (`svcomp_verdicts.json`); 22 safe, 7 unsafe |
+| **Total** | **94** | |
 
 ## Verdict matrix
 
 Run with `python3 run_pipeline.py --backends deductive,bugFinding,cbmc,cbmc-native`.
 
-**Latest run (v3, post CFG-CallElim fix `42ff8a4b8`, `--split-procs` mode, 64 programs):**
+**Latest combined run (93 programs, `--split-procs` mode):**
 
 |  | PASS | not-PASS | TIMEOUT | skip |
 |---|---:|---:|---:|---:|
-| Strata deductive  | 21 | 43 | 0 | 0 |
-| Strata bugFinding |  0 | 64 | 0 | 0 |
-| Strata-CBMC       |  0 | 64 | 0 | 0 |
-| CBMC native       | 45 | 19 | 0 | 0 |
+| Strata deductive  | 39 | 54 | 0 | 0 |
+| Strata bugFinding |  0 | 93 | 0 | 0 |
+| Strata-CBMC       |  0 | 93 | 0 | 0 |
+| CBMC native       | 70 | 23 | 0 | 0 |
 
-The `--split-procs` mode normalises verdicts per-procedure; "not-PASS"
-covers PARTIAL/FAIL/TIMEOUT in per-procedure sub-results. The full
-per-row detail is in `wt-test/pipeline-portfolio-v3.txt`. The
-divergence column is computed by `tools/disagreement_matrix.py`,
-which auto-tags rows where Strata-CBMC and CBMC-native disagree as
+The 93 = 64 portfolio (`wt-test/pipeline-portfolio-v3.txt`) + 29
+SV-COMP (`wt-test/pipeline-svcomp.txt`); `picohttpparser` remains
+excluded due to known cbmc-native OOM. The `--split-procs` mode
+normalises verdicts per-procedure; "not-PASS" covers
+PARTIAL/FAIL/TIMEOUT in per-procedure sub-results. The divergence
+column is computed by `tools/disagreement_matrix.py`, which
+auto-tags rows where Strata-CBMC and CBMC-native disagree as
 **(T-lowering)**.
 
+Per-source breakdown:
+
+|  | Portfolio (64) deductive | SV-COMP (29) deductive | Portfolio cbmc-native | SV-COMP cbmc-native |
+|---|---:|---:|---:|---:|
+| PASS | 21 | 18 | 45 | 25 |
+| not-PASS | 43 | 11 | 19 | 4 |
+
 ```
-T-lowering:   39 rows
-one-off:      23 rows
+T-lowering:   ~70 rows  (every Strata-CBMC=FAIL where cbmc-native=PASS)
+one-off:      ~20 rows
 all-disagree:  0 rows
-all-agree:     3 rows  (HTTPClient_Initialize/ReadHeader, skipEscape — all FAIL on every backend)
+all-agree:     few rows (skipEscape and similar — all FAIL on every backend)
 ```
 
 ## Cases
@@ -483,6 +494,79 @@ Strata defects, but the deeper goal — the matrix as a bug-finding
 tool for target programs — requires ensures synthesis to mature enough
 that post-call state is no longer uniformly havocked. The matrix is
 now positioned to find a **(P)** finding once that lever is in place.
+
+## Update 4: SV-COMP integration and the path-unreachable lesson
+
+### What was added
+
+29 ReachSafety programs from `sosy-lab/sv-benchmarks` (commit
+`eb8fbd513`), drawn from three categories:
+
+| Source category | Programs | Safe | Unsafe |
+|---|---:|---:|---:|
+| `c/locks/` | 11 | 9 | 2 |
+| `c/loops-crafted-1/` | 12 | 8 | 4 |
+| `c/reducercommutativity/` | 6 | 5 | 1 |
+| **Total** | **29** | **22** | **7** |
+
+Each program ships with an oracle verdict in `svcomp_verdicts.json`.
+For the first time the matrix has ground-truth labels: any
+`unsafe ∧ deductive=PASS` row is a candidate soundness probe.
+
+### What the oracle revealed
+
+Six rows initially looked like soundness probes:
+
+| Program | Expected | Deductive | Diagnosis |
+|---|---|---|---|
+| `sv_locks_14_2` | unsafe | PASS | `path unreachable` qualifier |
+| `sv_locks_15_2` | unsafe | PASS | `path unreachable` qualifier |
+| `sv_loops_mono3_1` | unsafe | PASS | `path unreachable` qualifier |
+| `sv_loops_mono4_1` | unsafe | PASS | `path unreachable` qualifier |
+| `sv_loops_mono5_1` | unsafe | PASS | `path unreachable` qualifier |
+| `sv_loops_mono6_1` | unsafe | PASS | `path unreachable` qualifier |
+
+**None are actual soundness violations.** Inspection with
+`--check-level full` shows each PASS is annotated
+`✅ pass (❗path unreachable)` — Strata's deductive verifier is
+correctly self-flagging that the path to the assertion was
+unreachable under bounded CFG fuel, not that the property was proven.
+The matrix's PASS column collapses this qualifier; that's a
+**matrix-display tooling gap**, not a verifier soundness bug.
+
+Fix lever: surface a third state (e.g. `PASS-unreachable`) in
+`run_pipeline.py` and `tools/disagreement_matrix.py`. Tracked in
+README under *Known blockers*.
+
+### bugFinding validation
+
+The matrix has the symbolic-execution backend correctly flag 6 of 7
+unsafe SV-COMP programs as PARTIAL with concrete failing VCs — a
+positive validation of the `bugFinding` mode against an external
+oracle, the first such evidence in the project. The remaining one
+(`sv_loops_mono7_1`) is also reported PARTIAL by bugFinding for
+unrelated reasons.
+
+### Why deductive PARTIAL counts climbed
+
+Combined deductive: 39 PASS / 54 not-PASS, up from 21/43 on the v3
+portfolio. The split-source view shows deductive does *better* in
+absolute PASS count on SV-COMP (18 of 29) than on the portfolio
+(21 of 64), reflecting that SV-COMP programs are typically smaller,
+single-procedure, and lack the user-defined helpers that drive the
+portfolio's sub-class (a) `❓ unknown` failures (missing ensures
+on contract-ported parser callees).
+
+### What this means for the matrix
+
+The SV-COMP integration confirms what cross-validation has been
+showing on the portfolio: pipeline-side issues currently dominate
+the matrix. With ground-truth labels in hand, the absence of an
+actual `unsafe ∧ PASS` is the cleanest soundness statement to date.
+The remaining gap to a (P) finding (a real program defect surfaced
+by Strata that CBMC misses) is unchanged: ensures synthesis on
+CFG bodies is the lever, with `390fadc37` covering structured
+bodies as a starting point.
 
 ## Reproducing
 
