@@ -263,4 +263,3 @@ info: procedure test(): int
 #eval do IO.println (← roundtrip r"procedure test(): int opaque { <??> };")
 
 end Strata.Laurel
-end
