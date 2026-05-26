@@ -303,6 +303,53 @@ private def runStmtsRec (f : Command → CoreTransformM (Option (List Statement)
         return (false, [s]))
     return ⟨changed0 || changed, (sres ++ ss'')⟩
 
+/-- Extract the underlying `Command` from a flat `Statement`.
+
+CFG blocks hold `List Command`, but `f : Command → ... List Statement`
+returns Statements (a strictly larger type). The only Statements that
+fit inside a CFG block are `Statement.cmd c` (where `c : Command`) —
+control-flow Statements (`block`, `ite`, `loop`, `exit`, `funcDecl`,
+`typeDecl`) cannot sit inside a basic block. We return `none` for those,
+which the caller treats as "skip this transform on the CFG path." -/
+private def stmtToCmd (s : Statement) : Option Command :=
+  match s with
+  | .cmd c => some c
+  | _ => none
+
+/--
+Run `f` on each command in a basic-block-style command list. CFG blocks
+hold `List Command`. For each command, `f` returns either `none` (keep
+unchanged) or `some new_stmts` (replace with the given list of statements);
+each replacement Statement must be a flat `Statement.cmd ...` so it can
+fit inside a basic block — control-flow Statements bail out the entire
+transform on this block.
+
+In practice, the only transform that calls into the CFG path is
+`CallElim`, which emits sequences of `Statement.cmd (.init/.assert/
+.havoc/.assume ...)` — all flat. -/
+private def runCmdsRec (f : Command → CoreTransformM (Option (List Statement)))
+    (cs : List Command)
+    : CoreTransformM (Bool × List Command) := do
+  let mut anyChanged := false
+  let mut acc : List Command := []
+  for c in cs do
+    let res ← f c
+    match res with
+    | .none => acc := acc ++ [c]
+    | .some ss =>
+      -- Convert each replacement Statement back to a Command. If any
+      -- Statement is non-flat (block/ite/loop/exit/funcDecl/typeDecl),
+      -- the transform is incompatible with CFG context — bail out and
+      -- leave the original command in place.
+      let cmds : Option (List Command) := ss.foldlM
+        (fun acc s => match stmtToCmd s with
+                      | some c' => some (acc ++ [c'])
+                      | none => none) []
+      match cmds with
+      | some cs' => acc := acc ++ cs'; anyChanged := true
+      | none => acc := acc ++ [c]
+  return (anyChanged, acc)
+
 /--
 Run f on each command of the program.
 Returns (has the program updated?, the updated program).
@@ -333,7 +380,30 @@ def runProgram
         })
 
         match proc.body with
-        | .cfg _ => pure ()  -- Skip CFG bodies; transforms are statement-level
+        | .cfg cfg =>
+          -- Walk each block's commands, applying `f` to each. Each block's
+          -- `cmds : List Command` is flattened by replacing `.cmd c` (or
+          -- `.call procName args md`) with whatever `f c` returns. Block
+          -- structure (entry, transfers, labels) is preserved.
+          let mut blockChanged := false
+          let mut newBlocks := cfg.blocks
+          for j in [:cfg.blocks.length] do
+            match cfg.blocks[j]? with
+            | some (lbl, blk) =>
+              let (cmdChanged, newCmds) ← runCmdsRec f blk.cmds
+              if cmdChanged then
+                let newBlk : Imperative.DetBlock String Command Expression :=
+                  { blk with cmds := newCmds }
+                newBlocks := newBlocks.set j (lbl, newBlk)
+                blockChanged := true
+            | none => pure ()
+          if blockChanged then
+            let newCfg : DetCFG := { cfg with blocks := newBlocks }
+            newDecls := newDecls.set i (Decl.proc { proc with body := .cfg newCfg } md)
+            anyChanged := true
+            modify (fun σ => { σ with
+              currentProgram := .some { decls := newDecls }
+            })
         | .structured bodyStmts =>
           let (changed, new_body) ← runStmtsRec f bodyStmts
 
