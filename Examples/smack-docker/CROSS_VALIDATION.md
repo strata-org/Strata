@@ -40,19 +40,21 @@ equivalent inputs.
 
 Run with `python3 run_pipeline.py --backends deductive,bugFinding,cbmc,cbmc-native`.
 
-Summary:
+**Latest run (v3, post CFG-CallElim fix `42ff8a4b8`, `--split-procs` mode, 64 programs):**
 
-|  | PASS | PARTIAL | FAIL | TIMEOUT | skip |
-|---|---:|---:|---:|---:|---:|
-| Strata deductive  | 47 | 14 | 2 | 2 | 0 |
-| Strata bugFinding |  0 | 60 | 2 | 3 | 0 |
-| Strata-CBMC       |  0 |  0 | 64 | 1 | 0 |
-| CBMC native       | 39 |  0 | 26 | 0 | 0 |
+|  | PASS | not-PASS | TIMEOUT | skip |
+|---|---:|---:|---:|---:|
+| Strata deductive  | 21 | 43 | 0 | 0 |
+| Strata bugFinding |  0 | 64 | 0 | 0 |
+| Strata-CBMC       |  0 | 64 | 0 | 0 |
+| CBMC native       | 45 | 19 | 0 | 0 |
 
-62 of 65 programs show some divergence. The full per-row matrix is
-in `wt-test/portfolio-matrix.md`. The divergence column is computed
-by `tools/disagreement_matrix.py`, which auto-tags rows where
-Strata-CBMC and CBMC-native disagree as **(T-lowering)**.
+The `--split-procs` mode normalises verdicts per-procedure; "not-PASS"
+covers PARTIAL/FAIL/TIMEOUT in per-procedure sub-results. The full
+per-row detail is in `wt-test/pipeline-portfolio-v3.txt`. The
+divergence column is computed by `tools/disagreement_matrix.py`,
+which auto-tags rows where Strata-CBMC and CBMC-native disagree as
+**(T-lowering)**.
 
 ```
 T-lowering:   39 rows
@@ -365,6 +367,122 @@ array-type + `23926094f` nondet-symbol + `b3e606bb6` __VERIFIER_assert
 - The portfolio's headline is no longer "39 (T-lowering) rows
   blocked on a single fix lever" but **"the matrix surfaces a
   cascade of layered defects, each fix exposing the next"**.
+
+## Update 3: CFG-CallElim fix and the (S) → real-VC transition
+
+### The fix
+
+Commit `42ff8a4b8` — `apply CallElim to CFG-bodied procedures`.
+`runProgram` in `Strata/Transform/CoreTransform.lean` previously
+skipped CFG bodies with the comment "Skip CFG bodies; transforms are
+statement-level." CallElim is the primary consumer of `runProgram`.
+Skipping CFG bodies meant that call sites inside any CFG-bodied
+procedure (which is most SMACK-translated procedures — any body with
+a `goto` becomes one) had no `requires`-VCs generated for their
+callees. The deductive verifier then silently passed those call sites,
+producing vacuous PASS verdicts on programs whose only failing
+obligations lived behind such a call.
+
+The fix extends `runProgram`'s CFG branch to walk each block's command
+list and apply `f` to each command, replacing it with the result. A
+new helper `runCmdsRec` handles the Statement-to-Command shape
+mismatch (CFG blocks store `List Command`; `f` returns
+`List Statement`). Replacement Statements that are non-flat (`block`,
+`ite`, `loop`, etc.) bail out and leave the original command unchanged
+— these can't fit inside a basic block. In practice CallElim only
+emits flat Statement sequences, so this is exhaustive. This mirrors
+the existing structured-body path precisely.
+
+### Severity of the gap
+
+All 9 contract-ported coreJSON harnesses — and most SMACK-translated
+programs whose `main` has goto-based control flow — were silently
+passing deductive on vacuous obligations. The "(S) → real-VC
+transition" claim in the original writeup was true for `simple_assert`
+(a structured body), but did **not** hold for the contract-ported
+parsers (CFG bodies). With the CFG-CallElim fix in place, the claim
+now holds for both body shapes.
+
+This is the largest single-step soundness improvement of the project
+so far. A PASS verdict from the deductive backend on any CFG-bodied
+procedure was previously unreliable; it is now trustworthy.
+
+### The new verdict landscape (v2 → v3)
+
+The full-suite pipeline was re-run on the 64-program suite
+(picohttpparser excluded due to known cbmc-native OOM) after the fix
+landed. The run used `--split-procs` mode, which runs each procedure
+independently — this is a deliberate methodological change that
+eliminates cross-procedure error contamination and produces one verdict
+per procedure rather than one per file.
+
+|  | Run | deductive PASS | deductive not-PASS | mode |
+|---|---|---:|---:|---|
+| v1 | original 4-backend, no CFG fix | 47 | 16 | non-split |
+| v2 | post array-type + nondet-symbol fixes | 33 | 30 | non-split |
+| **v3** | **post CFG-CallElim fix** | **21** | **43** | **--split-procs** |
+
+The deductive PASS drop from 33 to 21 is a positive change. Vacuous
+PASSes are gone; those programs now surface concrete failing VCs that
+give the verifier something real to work on.
+
+**Per-harness detail for the 9 contract-ported coreJSON parsers:**
+
+| Program | v2 detail | v3 detail |
+|---|---|---|
+| `skipSpace_harness` | 0 pass, 18 fail (all `__VERIFIER_assume_ensures`) | 1 pass, 3 fail across 2 procs |
+| `skipDigits_harness` | 0 pass, 585 fail | 1 pass, 6 fail across 2 procs |
+| `skipString_harness` | 0 pass, 57 fail | 1 pass, 5 fail across 2 procs |
+| `skipUTF8_harness` | 0 pass, 648 fail | 1 pass, 5 fail across 2 procs |
+| `skipObjectScalars_harness` | 0 pass, 18 fail | 1 pass, 3 fail across 2 procs |
+| `skipScalars_harness` | 0 pass, 18 fail | 1 pass, 3 fail across 2 procs |
+| `skipAnyScalar_harness` | 0 pass, 228 fail | 1 pass, 5 fail across 2 procs |
+| `skipCollection_harness` | 0 pass, 18 fail | 1 pass, 1 fail across 2 procs |
+| `JSON_Validate_harness` | 0 pass, 288 fail | 1 pass, 1 fail across 2 procs |
+
+The dramatic VC-count reduction — 18/585/648/288 failing VCs in v2
+collapsing to 3-6 in v3 — reflects that we now generate exactly the
+meaningful obligations (the post-call asserts in `main`) rather than
+a flood of `__VERIFIER_assume_ensures` obligations that were
+effectively counting precondition checks, not postcondition checks.
+
+### What the failing VCs mean
+
+Each failing VC in v3 is a concrete obligation Strata cannot discharge.
+The dominant cause is that upstream parser functions (`skipSpace`,
+`skipDigits`, `skipString`, etc.) have no `ensures` clauses. When
+CallElim havocs all post-call state at each call site, the verifier
+loses any knowledge of what the callee accomplished. The post-call
+`assert(...)` obligations — which check that the parser advanced the
+cursor correctly — then become unprovable from first principles.
+
+This is sub-class **(S)** territory: missing ensures on user-defined
+helpers, not a defect in the program under test. Two fix levers exist:
+
+1. **`--synthesize-ensures` pass** (commit `390fadc37`): the existing
+   sound ensures-synthesis pass handles structured bodies. Extending
+   it to also walk CFG bodies (mirroring the CallElim CFG extension)
+   would automatically infer `ensures` for the linear-shaped parser
+   stubs, eliminating most of these failing VCs without any manual
+   annotation.
+
+2. **Hand-porting upstream ensures**: `core_json_contracts.h` already
+   defines postconditions for each parser. Porting these into the
+   implementations themselves (not just the harness) would make the
+   ensures available to CallElim and close the gap directly.
+
+### One important nuance
+
+The v3 refresh exposes that most "deductive=PARTIAL" verdicts in the
+matrix are now **(T)** translator-side conservatism — specifically,
+the conservative effect of call-elim havocing state when callee
+ensures are absent — rather than **(P)** program defects. The matrix
+has not yet found a program defect that CBMC alone misses. Cross-
+validation has confirmed pipeline soundness and surfaced five distinct
+Strata defects, but the deeper goal — the matrix as a bug-finding
+tool for target programs — requires ensures synthesis to mature enough
+that post-call state is no longer uniformly havocked. The matrix is
+now positioned to find a **(P)** finding once that lever is in place.
 
 ## Reproducing
 

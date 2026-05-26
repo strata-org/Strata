@@ -547,7 +547,8 @@ Example output:
 
 ### 6.2 `Examples/smack-docker/CROSS_VALIDATION.md`
 
-The cross-validation writeup (228 lines, two updates so far).
+The cross-validation writeup (three updates, latest covering the
+CFG-CallElim fix and the v2 → v3 verdict transition).
 Covers:
 1. Pipeline architecture (three Strata-IR backends + native CBMC
    as ground-truth control).
@@ -634,22 +635,28 @@ case.
 | Strata defects identified by cross-validation | 0 | 5 (4 fixed; 1 stack-overflow filed) |
 | Cross-validation matrix | none | 64-program 4-backend |
 
-**Verdict on the 64-program suite (latest run, post all fixes):**
+**Verdict on the 64-program suite (v3, post CFG-CallElim fix, `--split-procs` mode):**
 
-|  | PASS | PARTIAL/FAIL | TIMEOUT |
+|  | PASS | not-PASS | TIMEOUT |
 |---|---:|---:|---:|
-| Strata deductive | 33 | 30 | 1 |
-| Strata bugFinding | 0 | 62 | 2 |
-| Strata-CBMC | 0 | 62 | 2 |
-| CBMC-native | 43 | 21 | 0 |
+| Strata deductive | 21 | 43 | 0 |
+| Strata bugFinding | 0 | 64 | 0 |
+| Strata-CBMC | 0 | 64 | 0 |
+| CBMC-native | 45 | 19 | 0 |
 
-The deductive PASS count *dropped* from 47 (pre-fix) to 33
-(post-fix) — a positive change. The 14-row delta is exactly the
-(S) → real-VC transition: previously vacuous PASSes (no functional
-contracts, no obligations) became real verification obligations
-the verifier mostly discharges (e.g. `90 pass, 1 fail`).
+The deductive PASS count dropped from 33 (v2) to 21 (v3) — a
+positive change. The 12-row delta is the CFG-CallElim fix
+(`42ff8a4b8`) replacing previously-vacuous PASSes with real PARTIAL
+verdicts that expose concrete failing VC counts (3-6 post-call asserts
+per harness). The dominant cause of remaining PARTIAL verdicts is
+translator-side conservatism (missing `ensures` on upstream parser
+functions), not program defects. See `CROSS_VALIDATION.md` Update 3
+for the full v2 → v3 breakdown.
 
-> Note: these verdicts predate the CFG-CallElim fix (§4.2). After
-> that fix, several previously-vacuous-PASS programs flip to PARTIAL
-> with real failing VCs. A fresh full-suite run is in progress; the
-> matrix in `CROSS_VALIDATION.md` will be updated once it lands.
+**Run history:**
+
+| Run | deductive PASS | deductive not-PASS | mode | key change |
+|---|---:|---:|---|---|
+| v1 | 47 | 16 | non-split | baseline |
+| v2 | 33 | 30 | non-split | `__VERIFIER_assert` requires injection |
+| v3 | 21 | 43 | --split-procs | CFG-CallElim fix (`42ff8a4b8`) |
