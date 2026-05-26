@@ -3,12 +3,9 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import Strata.Languages.Core.Verifier
-import Strata.DDM.Integration.Lean.HashCommands
+import Strata.Languages.Core.Verifier
 
-meta section
 /-!
 # Datatype with Type Alias Test
 
@@ -66,4 +63,3 @@ Result: ✅ pass
 #eval verify datatypeAliasPgm (options := .quiet)
 
 end Strata.DatatypeAliasTest
-end

@@ -3,11 +3,8 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import Strata.Languages.Core.CallGraph
-
-meta section
+import Strata.Languages.Core.CallGraph
 
 /-!
 # CallGraph.isRecursive Tests
@@ -136,5 +133,3 @@ private def preludePlusUserGraph : CallGraph :=
 #guard mutualGraph.computeRoots (preferredRoots := ["z"]) == ["a"]
 
 end Core.CallGraph.Tests
-
-end

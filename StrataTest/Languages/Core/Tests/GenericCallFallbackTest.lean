@@ -3,11 +3,8 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import Strata.Languages.Core.DDMTransform.ASTtoCST
-
-meta section
+import Strata.Languages.Core.DDMTransform.ASTtoCST
 
 /-! Tests for the generic call fallback in ASTtoCST.
 
@@ -138,5 +135,3 @@ info: "assert [known_not]: !x;"
   IO.println (repr (fmtStmt (mkAssert "known_not" e) #["x"]))
 
 end Strata.Test.GenericCallFallback
-
-end

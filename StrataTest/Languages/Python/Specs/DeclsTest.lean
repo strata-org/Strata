@@ -3,11 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
-
-meta import Strata.Languages.Python.Specs.Decls
-
-meta section
+import Strata.Languages.Python.Specs.Decls
 
 open Strata.Python.Specs
 
@@ -18,4 +14,3 @@ namespace DeclsTest
     #[SpecType.intLiteral ⟨0, 0⟩ 0, SpecType.intLiteral ⟨0, 0⟩ 0]).intLits.size == 1
 
 end DeclsTest
-end

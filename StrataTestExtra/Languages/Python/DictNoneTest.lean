@@ -16,7 +16,7 @@ is correctly detected as a bug, both for direct assignments and dict unpacking.
 
 namespace Strata.Python.DictNoneTest
 
-open Strata.Python (processPythonFile withPython)
+open Strata.Python (processPythonFile withPython containsSubstr)
 open Strata.Parser (stringInputContext)
 
 -- Test 1: Using a valid int should succeed (0 diagnostics).
@@ -32,7 +32,7 @@ open Strata.Parser (stringInputContext)
     throw <| .userError s!"Expected 0 diagnostics, got {diags.size}: {diags.map (·.message)}"
 
 private def isAssertionFailure (msg : String) : Bool :=
-  msg.contains "does not hold" || msg.contains "could not be proved"
+  containsSubstr msg "does not hold" || containsSubstr msg "could not be proved"
 
 -- Test 2: Assigning None to an int variable with a value-dependent assertion.
 #guard_msgs in
@@ -110,7 +110,7 @@ def main() -> None:
   match ← (processPythonFile pythonCmd (stringInputContext "test.py" program)).toBaseIO with
   | .ok _ => throw <| IO.userError "Expected error for len() on class without __len__"
   | .error err =>
-    unless (toString err).contains "len() is not supported" do
+    unless containsSubstr (toString err) "len() is not supported" do
       throw <| IO.userError s!"Unexpected error: {err}"
 
 end Strata.Python.DictNoneTest

@@ -3,12 +3,8 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import Strata.Languages.Core.Verifier
-import Strata.DDM.Integration.Lean.HashCommands
-
-meta section
+import Strata.Languages.Core.Verifier
 
 ---------------------------------------------------------------------
 namespace Strata
@@ -95,5 +91,3 @@ Result: ✅ pass
 end Strata
 
 ---------------------------------------------------------------------
-
-end

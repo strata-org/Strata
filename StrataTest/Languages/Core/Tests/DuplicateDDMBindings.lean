@@ -3,12 +3,8 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import Strata.Languages.Core.Verifier
-import Strata.DDM.Integration.Lean.HashCommands
-
-meta section
+import Strata.Languages.Core.Verifier
 
 ---------------------------------------------------------------------
 namespace Strata
@@ -28,7 +24,3 @@ function f1<T1, T2>(x : T1) : Map T1 T2;
 #end
 
 ---------------------------------------------------------------------
-
-end Strata
-
-end

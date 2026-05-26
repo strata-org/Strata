@@ -3,13 +3,11 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
-meta import Strata.DL.Lambda.IntBoolFactory
-meta import Strata.DL.Lambda.Preconditions
+import Strata.DL.Lambda.IntBoolFactory
+import Strata.DL.Lambda.Preconditions
 
 /-! # Preconditions Tests -/
 
-meta section
 namespace Lambda
 
 open Std (ToFormat Format format)
@@ -108,4 +106,3 @@ info: [WFObligation(safeDiv, (∀ (bvar:int) ((~Bool.Implies : (arrow bool (arro
   esM[((λ (int): %0) ((~safeDiv a) b))]
 
 end Lambda
-end

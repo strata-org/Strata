@@ -3,11 +3,8 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import Strata.Languages.Core.TypeDecl
-
-meta section
+import Strata.Languages.Core.TypeDecl
 
 /-! ## Tests for TypeDecl -/
 
@@ -20,5 +17,3 @@ open Lambda.LTy.Syntax
 #eval format $ TypeConstructor.toType { name := "Foo", params := ["a", "b", "c"] }
 
 end Core
-
-end

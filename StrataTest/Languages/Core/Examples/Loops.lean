@@ -3,22 +3,11 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
-import Strata.Languages.Core.Verifier
-meta import Strata.Languages.Core.Verifier
-import Strata.Transform.StructuredToUnstructured
-import Lean.Parser.Types
-meta import Strata.Languages.Core.DDMTransform.Grammar
-meta import Strata.Languages.Core.DDMTransform.Translate
-meta import Strata.Languages.Core.Options
-public import Strata.DDM.AST
-public import Strata.DL.Imperative.BasicBlock
-public import Strata.Languages.Core.Statement
-public import Strata.Languages.Core.Expressions
-import Strata.DDM.Integration.Lean.HashCommands
-import Strata.Languages.Core.StatementSemantics
 
-public section
+import Strata.Languages.Core.Program
+import Strata.Languages.Core.Verifier
+import Strata.Transform.StructuredToUnstructured
+
 namespace Strata
 
 def singleCFG (p : Program) (n : Nat) : Imperative.CFG String
@@ -395,7 +384,6 @@ loop_entry$_1:
 -- Errors encountered during conversion:
 Unsupported construct in lopToExpr: 0-ary op not found: top
 Context: Global scope:
-  freeVars: [n]
   var loop_measure$_2 : int;
   assume [assume_loop_measure$_2]: loop_measure$_2 == n - x;
   assert [measure_lb_loop_measure$_2]: !(loop_measure$_2 < 0);
@@ -680,6 +668,3 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify precondElimMeasureBodyMutatesPgm (options := .quiet)
-
-end Strata
-end

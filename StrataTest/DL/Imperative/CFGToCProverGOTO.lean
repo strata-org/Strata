@@ -3,14 +3,10 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import Strata.DL.Imperative.CFGToCProverGOTO
-meta import Strata.Transform.StructuredToUnstructured
-meta import all StrataTest.Backends.CBMC.GOTO.LambdaToCProverGOTO
-import Strata.DL.Lambda.LState
-
-meta section
+import Strata.DL.Imperative.CFGToCProverGOTO
+import Strata.Transform.StructuredToUnstructured
+import StrataTest.Backends.CBMC.GOTO.LambdaToCProverGOTO
 
 /-! ## Tests for CFG-to-CProverGOTO translation
 
@@ -313,5 +309,4 @@ info: ok: ()
 
 -------------------------------------------------------------------------------
 
-end
 end

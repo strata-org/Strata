@@ -3,11 +3,8 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-public import Strata.DL.Lambda.Reflect -- shake: keep
-import Lean.Elab.Term.TermElabM
-meta import Lean.Meta.Eval
+import Strata.DL.Lambda.Reflect
 
 /-! ## Tests for Reflect -/
 
@@ -22,7 +19,7 @@ info: Lean.Expr.app (Lean.Expr.app (Lean.Expr.const `Map []) (Lean.Expr.const `I
 #guard_msgs in
 #eval LMonoTy.toExpr mty[Map int bool]
 
-meta def test1 : MetaM Lean.Expr :=
+def test1 : MetaM Lean.Expr :=
   LExpr.toExpr
     (.quant () .all "" (some mty[int]) (LExpr.noTrigger ()) (.eq () (.fvar () "x" mty[int]) (.bvar () 0)))
 
@@ -63,7 +60,7 @@ open Lean Elab Tactic Expr Meta Term
 open Std (ToFormat Format format)
 open LTy.Syntax LExpr.Syntax
 
-meta def test1' : MetaM Lean.Expr :=
+def test1' : MetaM Lean.Expr :=
   LExpr.toExpr
     (.quant () .all "" (some mty[int]) (LExpr.noTrigger ()) (.eq () (.fvar () "x" mty[int]) (.bvar () 0)))
 
@@ -76,7 +73,7 @@ elab "test1" : term => do
 #check test1
 
 
-meta def test2 : MetaM Lean.Expr :=
+def test2 : MetaM Lean.Expr :=
   LExpr.toExpr
     (LExpr.app () (.abs () "" (some mty[bool]) (.bvar () 0)) (.eq () (.const () (.intConst 4)) (.const () (.intConst 4))))
 

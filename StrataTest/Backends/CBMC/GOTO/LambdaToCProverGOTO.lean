@@ -3,12 +3,8 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import Strata.Backends.CBMC.GOTO.LambdaToCProverGOTO
-import Lean.Server.Utils
-
-meta section
+import Strata.Backends.CBMC.GOTO.LambdaToCProverGOTO
 
 namespace Lambda
 
@@ -190,4 +186,3 @@ open LTy.Syntax in
   assert! idx.id == CProverGOTO.Expr.Identifier.nullary (.constant "0")
 
 end Lambda
-end

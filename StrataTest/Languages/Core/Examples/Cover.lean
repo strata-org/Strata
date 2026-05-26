@@ -3,13 +3,10 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import Strata.Languages.Core.Options
-meta import Strata.Languages.Core.Verifier
-import Strata.DDM.Integration.Lean.HashCommands
+import Strata.Languages.Core.Options
+import Strata.Languages.Core.Verifier
 
-meta section
 ---------------------------------------------------------------------
 namespace Strata
 
@@ -353,6 +350,3 @@ Result: ✖️ always false if reached
 -/
 #guard_msgs in
 #eval verify minimalVerbosePgm (options := {Core.VerifyOptions.quiet with checkLevel := .minimalVerbose, checkMode := .bugFinding})
-
-end Strata
-end

@@ -3,14 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import all Strata.DL.Lambda.Semantics
-meta import all Strata.DL.Lambda.LExprEval
+import Strata.DL.Lambda.Semantics
+import Strata.DL.Lambda.LExprEval
 
 ---------------------------------------------------------------------
 
-meta section
 namespace Lambda
 open Std (ToFormat Format format)
 
@@ -772,4 +770,3 @@ end EvalTest
 ---------------------------------------------------------------------
 end LExpr
 end Lambda
-end

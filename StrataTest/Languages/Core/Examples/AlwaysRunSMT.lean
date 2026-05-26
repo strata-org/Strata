@@ -3,12 +3,9 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import Strata.Languages.Core.Verifier
-import Strata.DDM.Integration.Lean.HashCommands
+import Strata.Languages.Core.Verifier
 
-meta section
 ---------------------------------------------------------------------
 namespace Strata
 
@@ -57,6 +54,4 @@ Number of `.smt2` files: 1
 #guard_msgs in
 #eval runAndCheckForSMTFiles
 
-end Strata
-end
 ---------------------------------------------------------------------

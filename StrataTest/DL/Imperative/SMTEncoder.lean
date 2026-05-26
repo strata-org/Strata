@@ -3,14 +3,11 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import all StrataTest.DL.Imperative.Arith
-meta import Strata.DL.Imperative.EvalContext
-meta import Strata.DL.SMT
+import StrataTest.DL.Imperative.Arith
+import Strata.DL.Imperative.EvalContext
+import Strata.DL.SMT.SMT
 import Init.Data.String.Extra
-
-meta section
 
 namespace Arith
 
@@ -88,4 +85,3 @@ def encodeArithToSMTTerms (ts : List Term) : SolverM (List String × EncoderStat
 ---------------------------------------------------------------------
 
   end Arith
-end

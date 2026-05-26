@@ -3,12 +3,9 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import all Strata.Languages.C_Simp.Verify
-import Strata.DDM.Integration.Lean.HashCommands
-
-meta section
+import Strata.Languages.C_Simp.C_Simp
+import Strata.Languages.C_Simp.Verify
 
 def CoprimePgm :=
 #strata
@@ -78,7 +75,7 @@ info: function coprime {
   while
     (~Int.Gt i #1)
     (some i)
-    [[coprime_invariant_428_445]: #true]
+    [[coprime_invariant_388_405]: #true]
   {
     if (~Bool.And ((~Int.Mod b i) == #0) ((~Int.Mod a i) == #0)) {
       return := #false
@@ -144,5 +141,3 @@ spec {
 -/
 #guard_msgs in
 #eval Strata.to_core (Strata.C_Simp.get_program CoprimePgm)
-
-end

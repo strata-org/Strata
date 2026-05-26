@@ -3,11 +3,8 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import Strata.Languages.Core.StatementType
-
-meta section
+import Strata.Languages.Core.StatementType
 
 namespace Core
 ---------------------------------------------------------------------
@@ -284,5 +281,3 @@ info: error: [call Foo(x == x, out x, out y);]: In-out arguments (parameters app
 end CallOutArgTests
 
 end Core
-
-end

@@ -11,21 +11,14 @@ import Plausible.Gen
 
 public meta import Strata.DL.Lambda.Factory
 public meta import Strata.DL.Lambda.Identifiers
-meta import Strata.DL.Lambda.IntBoolFactory
+import Strata.DL.Lambda.IntBoolFactory
 public meta import Strata.DL.Lambda.LExpr
-import all Strata.DL.Lambda.LExpr
-meta import Strata.DL.Lambda.LExprT
-import all Strata.DL.Lambda.IntBoolFactory
-import all Strata.DL.Lambda.LExprT
-import all Strata.DL.Lambda.LExprTypeEnv
-import all Strata.DL.Lambda.LTy
+import Strata.DL.Lambda.LExprT
 public meta import Strata.DL.Lambda.LExprTypeEnv
 public meta import Strata.DL.Lambda.LExprWF
 public meta import Strata.DL.Lambda.MetaData
-public import StrataTest.DL.Lambda.PlausibleHelpers
 
-import Strata.DL.Lambda.LState
-import Strata.DL.Lambda.LExprEval
+public import StrataTest.DL.Lambda.PlausibleHelpers
 
 -- -- Add these if depending on Chamelean for instance generation.
 -- import Plausible.Chamelean.ArbitrarySizedSuchThat

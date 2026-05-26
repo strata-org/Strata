@@ -3,12 +3,9 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import Strata.Languages.Core.Verifier
-import Strata.DDM.Integration.Lean.HashCommands
+import Strata.Languages.Core.Verifier
 
-meta section
 /-!
 # Datatype List Integration Test
 
@@ -572,4 +569,3 @@ Result: ✅ pass
 #eval verify listDifferentValuesPgm (options := .quiet)
 
 end Strata.DatatypeListTest
-end

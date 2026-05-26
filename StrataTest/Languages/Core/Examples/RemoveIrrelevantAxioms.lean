@@ -3,12 +3,9 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import Strata.Languages.Core.Verifier
-import Strata.DDM.Integration.Lean.HashCommands
+import Strata.Languages.Core.Verifier
 
-meta section
 ---------------------------------------------------------------------
 namespace Strata
 
@@ -237,6 +234,4 @@ Result: ❓ unknown
 #eval verify irrelevantAxiomsTestPgm
         (options := {Core.VerifyOptions.models with removeIrrelevantAxioms := .Off})
 
-end Strata
-end
 ---------------------------------------------------------------------

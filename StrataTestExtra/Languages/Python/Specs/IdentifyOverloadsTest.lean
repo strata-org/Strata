@@ -22,7 +22,6 @@ fewer.
 namespace Strata.Python.Specs.IdentifyOverloadsTest
 
 open Strata (readDispatchOverloads pySpecsDir pySpecOutputPath)
-open Strata.Python (ModuleName)
 open Strata.Python.Specs.IdentifyOverloads (resolveOverloads)
 open Strata.Python (OverloadTable)
 
@@ -76,11 +75,10 @@ private meta def buildOverloadTable
       throw <| .userError s!"pySpecsDir failed for {pyFile}: {msg}"
     let some ionPath := pySpecOutputPath testDir outDir pyFile
       | throw <| .userError s!"Cannot derive output path for {pyFile}"
-    let ctx ← Strata.Pipeline.PipelineContext.create
-    match ← (readDispatchOverloads ctx #[ionPath.toString]).toBaseIO with
-    | .ok tbl => return tbl
-    | .error () =>
-      throw <| .userError s!"readDispatchOverloads failed for {ionPath}"
+    match ← readDispatchOverloads #[ionPath.toString] |>.toBaseIO with
+    | .ok (tbl, _) => return tbl
+    | .error msg =>
+      throw <| .userError s!"readDispatchOverloads failed: {msg}"
 
 /-- Parse a user Python Ion file into statements. -/
 private meta def parseStmts (ionPath : System.FilePath)
@@ -96,32 +94,32 @@ private meta def resolveFile
     (pythonCmd : System.FilePath)
     (tbl : OverloadTable) (pyFile : System.FilePath)
     (outDir : System.FilePath)
-    : IO (Std.HashSet ModuleName) := do
+    : IO (Std.HashSet String) := do
   let ionPath ← compilePython pythonCmd pyFile outDir
   let stmts ← parseStmts ionPath
   return (resolveOverloads tbl stmts).modules
 
 /-- A test case: Python file and exact expected module set. -/
 private structure TestCase where
-  file : System.FilePath
-  expected : List ModuleName
+  file : String
+  expected : List String
 
 private meta def testCases : List TestCase := [
   -- Single service at top level
   { file := "test_single_service.py"
-    expected := [.ofString! "servicelib.Storage"] },
+    expected := ["servicelib.Storage"] },
   -- Multiple services
   { file := "test_multi_service.py"
-    expected := [.ofString! "servicelib.Storage", .ofString! "servicelib.Messaging"] },
+    expected := ["servicelib.Storage", "servicelib.Messaging"] },
   -- Dispatch inside a class method
   { file := "test_class_dispatch.py"
-    expected := [.ofString! "servicelib.Storage"] },
+    expected := ["servicelib.Storage"] },
   -- Dispatch in both branches of an if/else
   { file := "test_dispatch_in_conditional.py"
-    expected := [.ofString! "servicelib.Storage", .ofString! "servicelib.Messaging"] },
+    expected := ["servicelib.Storage", "servicelib.Messaging"] },
   -- Dispatch inside a try block
   { file := "test_dispatch_in_try.py"
-    expected := [.ofString! "servicelib.Storage"] },
+    expected := ["servicelib.Storage"] },
   -- No dispatch calls at all
   { file := "test_no_dispatch.py"
     expected := [] },
@@ -136,11 +134,11 @@ private meta def runTestCase
     (tbl : OverloadTable) (outDir : System.FilePath)
     (tc : TestCase) : IO (Option String) := do
   let modules ← resolveFile pythonCmd tbl (testDir / tc.file) outDir
-  let expected : Std.HashSet ModuleName :=
+  let expected : Std.HashSet String :=
     tc.expected.foldl (init := {}) fun s m => s.insert m
   if modules == expected then return none
-  let got := modules.toList.map toString
-  let exp := expected.toList.map toString
+  let got := modules.toList
+  let exp := expected.toList
   return some
     s!"{tc.file}: expected modules {exp}, got {got}"
 
@@ -148,8 +146,8 @@ private meta def runTestCase
   IO.FS.withTempDir fun tmpDir => do
     let tbl ← buildOverloadTable pythonCmd tmpDir
     -- Launch all tests concurrently
-    let mut seen : Std.HashSet System.FilePath := {}
-    let mut tasks : Array (System.FilePath × Task (Except IO.Error (Option String))) := #[]
+    let mut seen : Std.HashSet String := {}
+    let mut tasks : Array (String × Task (Except IO.Error (Option String))) := #[]
     for tc in testCases do
       if tc.file ∈ seen then
         throw <| IO.userError s!"Duplicate test filename: {tc.file}"

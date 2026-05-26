@@ -3,11 +3,8 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import Strata.Languages.Core.CoreOp
-
-meta section
+import Strata.Languages.Core.CoreOp
 
 /-! ## Tests for CoreOp structured operator types -/
 
@@ -123,5 +120,3 @@ end RoundTrip
   | .bvExtract 16 15 15 => true | _ => false
 
 end Core
-
-end

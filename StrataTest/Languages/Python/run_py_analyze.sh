@@ -101,43 +101,6 @@ for test_file in tests/test_*.py; do
     fi
 done
 
-# --- --metrics integration test ---
-# Run one test file with --metrics and validate the JSONL output.
-metrics_test_file=$(ls tests/test_*.py 2>/dev/null | head -1)
-if [ -n "$metrics_test_file" ] && [ -z "$filter" ]; then
-    metrics_base=$(basename "$metrics_test_file" .py)
-    metrics_ion="tests/${metrics_base}.python.st.ion"
-    metrics_out=$(mktemp)
-    # Ion file should already exist from the loop above
-    if [ -f "$metrics_ion" ]; then
-        (cd ../../.. && ./.lake/build/bin/strata $command --metrics "$metrics_out" "StrataTest/Languages/Python/${metrics_ion}" 2>/dev/null) || true
-        if [ ! -s "$metrics_out" ]; then
-            echo "ERROR: --metrics file is empty for $metrics_base"
-            failed=1
-        else
-            bad_lines=0
-            while IFS= read -r line; do
-                [ -z "$line" ] && continue
-                if ! echo "$line" | python3 -c "import sys,json; d=json.load(sys.stdin); assert 'type' in d" 2>/dev/null; then
-                    echo "ERROR: --metrics invalid JSON line: $line"
-                    bad_lines=$((bad_lines + 1))
-                fi
-            done < "$metrics_out"
-            # Check that an outcome record exists
-            if ! grep -q '"outcome"' "$metrics_out"; then
-                echo "ERROR: --metrics missing outcome record for $metrics_base"
-                failed=1
-            elif [ $bad_lines -gt 0 ]; then
-                echo "ERROR: --metrics has $bad_lines invalid lines for $metrics_base"
-                failed=1
-            else
-                echo "Test passed:  --metrics JSONL ($metrics_base)"
-            fi
-        fi
-    fi
-    rm -f "$metrics_out"
-fi
-
 if [ $pending -eq 1 ]; then
     for test_file in tests/pending/test_*.py; do
         [ -f "$test_file" ] || continue

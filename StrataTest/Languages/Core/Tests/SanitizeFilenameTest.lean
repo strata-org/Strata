@@ -3,11 +3,8 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import Strata.Languages.Core.Verifier
-
-meta section
+import Strata.Languages.Core.Verifier
 
 /-! # Tests: sanitizeFilename -/
 
@@ -17,5 +14,3 @@ meta section
 #guard Core.SMT.sanitizeFilename "" == ""
 #guard Core.SMT.sanitizeFilename "<dead_branch: foo>" == "_dead_branch__foo_"
 #guard Core.SMT.sanitizeFilename "a:b|c?d*e" == "a_b_c_d_e"
-
-end

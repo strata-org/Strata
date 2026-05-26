@@ -3,13 +3,11 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import Strata.DL.Lambda.LTyUnify
+import Strata.DL.Lambda.LTyUnify
 
 /-! ## Tests for LTyUnify -/
 
-meta section
 namespace Lambda
 open Std (ToFormat Format format)
 open LTy.Syntax
@@ -41,4 +39,3 @@ First mismatch: (Map bool int) with int.
   | .error e => format e
 
 end Lambda
-end

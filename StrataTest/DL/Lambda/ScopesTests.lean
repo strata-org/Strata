@@ -3,13 +3,11 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import Strata.DL.Lambda.Scopes
+import Strata.DL.Lambda.Scopes
 
 /-! ## Tests for Scopes -/
 
-meta section
 namespace Lambda
 open Std (ToFormat Format format)
 open LTy.Syntax LExpr.SyntaxMono
@@ -66,4 +64,3 @@ info: (a : int) → (if #true then #8 else (a : int))
                  ("z", (mty[int], (.intConst () 100)))]
 
 end Lambda
-end

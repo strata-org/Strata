@@ -3,13 +3,11 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import Strata.DL.Lambda.LTy
+import Strata.DL.Lambda.LTy
 
 /-! ## Tests for LTy -/
 
-meta section
 namespace Lambda
 
 open Std (format)
@@ -55,7 +53,7 @@ info: [Lambda.LMonoTy.tcons "arrow" [Lambda.LMonoTy.ftvar "_dummy0", Lambda.LMon
 #eval LMonoTy.inputTypes mty[pair int bool]
 
 end Lambda
-end
+
 
 /-! ## Syntax Tests for LTy -/
 

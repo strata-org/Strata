@@ -3,17 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import Strata.DL.Lambda.RecursiveAxioms
-meta import Strata.DL.Lambda.Lambda
-meta import Strata.DL.Lambda.IntBoolFactory
+import Strata.DL.Lambda.RecursiveAxioms
+import Strata.DL.Lambda.Lambda
+import Strata.DL.Lambda.IntBoolFactory
 
 /-!
 ## Tests for genRecursiveAxioms
 -/
 
-meta section
 namespace Lambda
 
 open Std (ToFormat Format format)
@@ -257,4 +255,3 @@ info: (∀ (bvar:int) (∀ (bvar:int) (∀ (bvar:int) (∀ (bvar:IntList) (((~re
   | .ok axs => return format axs[1]!
 
 end Lambda
-end

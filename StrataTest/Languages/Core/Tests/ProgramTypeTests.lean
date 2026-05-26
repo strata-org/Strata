@@ -3,11 +3,8 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import Strata.Languages.Core.Core
-
-meta section
+import Strata.Languages.Core.Core
 
 namespace Core
 
@@ -226,5 +223,3 @@ info: error: Decl.func does not allow recursive functions. Use recFuncBlock inst
 
 end Tests
 end Core
-
-end

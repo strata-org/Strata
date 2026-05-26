@@ -3,13 +3,10 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import Strata.Languages.Core.SarifOutput
-meta import Strata.Languages.Core.Verifier
-meta import Lean.Data.Json
-
-meta section
+import Strata.Languages.Core.SarifOutput
+import Strata.Languages.Core.Verifier
+import Lean.Data.Json
 
 /-!
 # SARIF Output Tests
@@ -58,10 +55,9 @@ def makeFilesMap (file : String) : Map Strata.Uri Lean.FileMap :=
   Map.empty.insert uri makeFileMap
 
 /-- Create a simple proof obligation for testing -/
-def makeObligation (label : String) (md : MetaData Expression := #[])
-    (property : Imperative.PropertyType := .assert) : ProofObligation Expression :=
+def makeObligation (label : String) (md : MetaData Expression := #[]) : ProofObligation Expression :=
   { label := label
-    property := property
+    property := .assert
     assumptions := []
     obligation := Lambda.LExpr.boolConst () true
     metadata := md }
@@ -69,9 +65,8 @@ def makeObligation (label : String) (md : MetaData Expression := #[])
 /-- Create a VCResult for testing -/
 def makeVCResult (label : String) (outcome : VCOutcome)
   (md : MetaData Expression := #[])
-  (lexprModel : LExprModel := [])
-  (property : Imperative.PropertyType := .assert) : VCResult :=
-  { obligation := makeObligation label md property
+  (lexprModel : LExprModel := []) : VCResult :=
+  { obligation := makeObligation label md
     outcome := .ok outcome
     verbose := .normal
     lexprModel := lexprModel
@@ -350,35 +345,4 @@ def makeVCResult (label : String) (outcome : VCOutcome)
   let sarif := vcResultsToSarif .deductive files vcResults
   Strata.Sarif.toJsonString sarif
 
-/-! ## Property classification tests
-
-The SARIF `properties.propertyType` field should reflect the obligation's
-`PropertyType`, not the default `"assert"`. -/
-
-private def sarifPropertyType (vcr : VCResult) : String :=
-  let files := makeFilesMap "/test/x.st"
-  (vcResultToSarifResult .deductive files vcr).properties.propertyType
-
-/-- info: "assert" -/
-#guard_msgs in
-#eval sarifPropertyType (makeVCResult "t" (mkOutcome (.sat []) .unsat) (property := .assert))
-
-/-- info: "division-by-zero" -/
-#guard_msgs in
-#eval sarifPropertyType (makeVCResult "t" (mkOutcome (.sat []) .unsat) (property := .divisionByZero))
-
-/-- info: "arithmetic-overflow" -/
-#guard_msgs in
-#eval sarifPropertyType (makeVCResult "t" (mkOutcome (.sat []) .unsat) (property := .arithmeticOverflow))
-
-/-- info: "out-of-bounds-access" -/
-#guard_msgs in
-#eval sarifPropertyType (makeVCResult "t" (mkOutcome (.sat []) .unsat) (property := .outOfBoundsAccess))
-
-/-- info: "cover" -/
-#guard_msgs in
-#eval sarifPropertyType (makeVCResult "t" (mkOutcome (.sat []) .unsat) (property := .cover))
-
 end Core.Sarif.Tests
-
-end

@@ -3,23 +3,20 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import Strata.DL.Lambda.Lambda
-meta import Strata.DL.Lambda.LExpr
-meta import Strata.DL.Lambda.LState
-meta import Strata.DL.Lambda.LTy
-meta import Strata.DL.Lambda.TypeFactory
-meta import Strata.DL.SMT.Term
-meta import Strata.DL.SMT.Encoder
-meta import Strata.Languages.Core.Env
-meta import Strata.Languages.Core.Factory
-meta import Strata.Languages.Core.Identifiers
-meta import Strata.Languages.Core.Options
-meta import Strata.Languages.Core.SMTEncoder
-meta import Strata.Languages.Core.Verifier
-
-meta section
+import Strata.DL.Lambda.Lambda
+import Strata.DL.Lambda.LExpr
+import Strata.DL.Lambda.LState
+import Strata.DL.Lambda.LTy
+import Strata.DL.Lambda.TypeFactory
+import Strata.DL.SMT.Term
+import Strata.DL.SMT.Encoder
+import Strata.Languages.Core.Env
+import Strata.Languages.Core.Factory
+import Strata.Languages.Core.Identifiers
+import Strata.Languages.Core.Options
+import Strata.Languages.Core.SMTEncoder
+import Strata.Languages.Core.Verifier
 
 /-!
 This file contains unit tests for SMT datatype encoding.
@@ -74,13 +71,13 @@ def treeDatatype : LDatatype Unit :=
 Convert an expression to full SMT string including datatype declarations.
 `blocks` is a list of mutual blocks (each block is a list of mutually recursive datatypes).
 -/
-def toSMTStringWithDatatypeBlocks (e : LExpr CoreLParams.mono) (blocks : List (List (LDatatype Unit))) (useArrayTheory : Bool := false): IO String := do
+def toSMTStringWithDatatypeBlocks (e : LExpr CoreLParams.mono) (blocks : List (List (LDatatype Unit))) : IO String := do
   match Env.init.addDatatypes blocks with
   | .error msg => return s!"Error creating environment: {msg}"
   | .ok env =>
     -- Set the TypeFactory for correct datatype emission ordering
     let ctx := SMT.Context.default.withTypeFactory env.datatypes
-    match toSMTTerm env [] e ctx useArrayTheory with
+    match toSMTTerm env [] e ctx with
     | .error err => return err.pretty
     | .ok (smt, ctx) =>
       -- Emit the full SMT output including datatype declarations
@@ -88,7 +85,7 @@ def toSMTStringWithDatatypeBlocks (e : LExpr CoreLParams.mono) (blocks : List (L
       let solver ← Strata.SMT.Solver.bufferWriter b
       match (← ((do
         -- First emit datatypes
-        ctx.emitDatatypes useArrayTheory
+        ctx.emitDatatypes
         -- Then encode the term
         let _ ← (Strata.SMT.Encoder.encodeTerm smt).run Strata.SMT.EncoderState.init
         pure ()
@@ -105,8 +102,8 @@ def toSMTStringWithDatatypeBlocks (e : LExpr CoreLParams.mono) (blocks : List (L
 Convert an expression to full SMT string including datatype declarations.
 Each datatype is treated as its own (non-mutual) block.
 -/
-def toSMTStringWithDatatypes (e : LExpr CoreLParams.mono) (datatypes : List (LDatatype Unit)) (useArrayTheory : Bool := false): IO String :=
-  toSMTStringWithDatatypeBlocks e (datatypes.map (fun d => [d])) useArrayTheory
+def toSMTStringWithDatatypes (e : LExpr CoreLParams.mono) (datatypes : List (LDatatype Unit)) : IO String :=
+  toSMTStringWithDatatypeBlocks e (datatypes.map (fun d => [d]))
 
 /-! ## Test Cases with Guard Messages -/
 
@@ -514,70 +511,6 @@ info: (declare-datatype IntList (
   [[intListDatatype]]
   listLenFunc
 
-/-- Container = MkContainer (data: Map int int) -/
-def containerWithMapDatatype : LDatatype Unit :=
-  { name := "Container"
-    typeArgs := []
-    constrs := [
-      { name := ⟨"MkContainer", ()⟩,
-        args := [(⟨"data", ()⟩, .tcons "Map" [.int, .int])],
-        testerName := "Container..isMkContainer" }
-    ]
-    constrs_ne := by decide }
-
--- Test: ADT constructor field with Map type should emit Array when useArrayTheory=true
-/--
-info: (declare-datatype Container (
-  (MkContainer (Container..data (Array Int Int)))))
-; c
-(declare-const c Container)
--/
-#guard_msgs in
-#eval format <$> toSMTStringWithDatatypes
-  (.fvar () (⟨"c", ()⟩) (.some (.tcons "Container" [])))
-  [containerWithMapDatatype] true
-
--- Test: Same datatype without useArrayTheory should keep Map
-/--
-info: (declare-datatype Container (
-  (MkContainer (Container..data (Map Int Int)))))
-; c
-(declare-const c Container)
--/
-#guard_msgs in
-#eval format <$> toSMTStringWithDatatypes
-  (.fvar () (⟨"c", ()⟩) (.some (.tcons "Container" [])))
-  [containerWithMapDatatype]
-
--- Test: ADT testers with Map type should emit Array when useArrayTheory=true
-/--
-info: (declare-datatype Container (
-  (MkContainer (Container..data (Array Int Int)))))
-; xs
-(declare-const xs Container)
--/
-#guard_msgs in
-#eval format <$> toSMTStringWithDatatypes
-  (.app () (.op () (⟨"Container..isMkContainer", ()⟩) (.some (.arrow (.tcons "Container" []) .bool)))
-    (.fvar () (⟨"xs", ()⟩) (.some (.tcons "Container" []))))
-  [containerWithMapDatatype] true
-
--- Test: ADT destructors with Map type should emit Array when useArrayTheory=true
-/--
-info: (declare-datatype Container (
-  (MkContainer (Container..data (Array Int Int)))))
-; xs
-(declare-const xs Container)
--/
-#guard_msgs in
-#eval format <$> toSMTStringWithDatatypes
-  (.app () (.op () (⟨"Container..data", ()⟩) (.some (.arrow (.tcons "Container" []) (.tcons "Map" [.int, .int]))))
-    (.fvar () (⟨"xs", ()⟩) (.some (.tcons "Container" []))))
-  [containerWithMapDatatype] true
-
-
 end DatatypeTests
 
 end Core
-
-end

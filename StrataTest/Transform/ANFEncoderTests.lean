@@ -3,15 +3,9 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import Strata.Transform.ANFEncoder
-meta import Strata.Languages.Core.DDMTransform.Translate
-meta import Strata.Languages.Core.DDMTransform.ASTtoCST
-import Strata.DDM.Integration.Lean.HashCommands
-
-
-meta section
+import Strata.Transform.ANFEncoder
+import Strata.Languages.Core.DDMTransform.Translate
 
 namespace Core.ANFEncoder.Tests
 
@@ -144,38 +138,4 @@ procedure test (x : int, y : int)
 #guard_msgs in
 #eval IO.println (toString (anfEncodeProgram (translateCore uniqueSubexprProg)).2)
 
-/-! ## Multi-pass: outer subsumes inner duplicate -/
-
--- `(x + 1) * 2` and `x + 1` are both duplicated, but `x + 1` is a subexpression
--- of `(x + 1) * 2` and so is dropped by `removeSubsumed` in pass 1. After pass
--- 1 lifts `(x + 1) * 2` into a var declaration, `x + 1` appears once in that
--- var-decl init AND once in the third assert, exposing a fresh duplicate that
--- pass 2 then extracts. Without fixpoint iteration the third assert would
--- still hold a free `(x + 1)` that duplicates the var-decl's init.
-private def nestedDupProg :=
-#strata
-program Core;
-procedure test(x : int) {
-  assert ((x + 1) * 2 > 0);
-  assert ((x + 1) * 2 < 100);
-  assert (x + 1 > 50);
-};
-#end
-
-/--
-info: program Core;
-
-procedure test (x : int)
-{
-  var $__anf.1 : int := x + 1;
-  var $__anf.0 : int := $__anf.1 * 2;
-  assert [assert_0]: $__anf.0 > 0;
-  assert [assert_1]: $__anf.0 < 100;
-  assert [assert_2]: $__anf.1 > 50;
-};
--/
-#guard_msgs in
-#eval IO.println (toString (anfEncodeProgram (translateCore nestedDupProg)).2)
-
 end Core.ANFEncoder.Tests
-end

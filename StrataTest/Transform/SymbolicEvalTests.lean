@@ -3,14 +3,10 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import Strata.Languages.Core.Core
-meta import Strata.Languages.Core.DDMTransform.Translate
-meta import Strata.SimpleAPI
-import Strata.DDM.Integration.Lean.HashCommands
-
-meta section
+import Strata.Languages.Core.Core
+import Strata.Languages.Core.DDMTransform.Translate
+import Strata.SimpleAPI
 
 /-! ## Symbolic evaluation phase tests -/
 
@@ -246,4 +242,3 @@ procedure blockTest ()
 #eval evalAndPrint blockExitIfProg
 
 end Core.SymbolicEval.Tests
-end

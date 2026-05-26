@@ -3,13 +3,9 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import all StrataTest.DL.Imperative.Arith
-meta import all StrataTest.DL.Imperative.DDMDefinition
-import Strata.DDM.Integration.Lean.HashCommands
-
-meta section
+import StrataTest.DL.Imperative.Arith
+import StrataTest.DL.Imperative.DDMDefinition
 
 namespace ArithPrograms
 open Std (ToFormat Format format)
@@ -57,21 +53,15 @@ instance : Inhabited (TransBindings × Arith.Command) where
   default := ({}, .set "default_var" .nondet .empty)
 
 /--
-info: private inductive ArithPrograms.ArithProgramsType : Type → Type
+info: inductive ArithPrograms.ArithProgramsType : Type → Type
 number of parameters: 1
 constructors:
-_private.StrataTest.DL.Imperative.DDMDefinition.0.ArithPrograms.ArithProgramsType.bvar : {α : Type} →
-  α → Nat → ArithPrograms.ArithProgramsType✝ α
-_private.StrataTest.DL.Imperative.DDMDefinition.0.ArithPrograms.ArithProgramsType.tvar : {α : Type} →
-  α → String → ArithPrograms.ArithProgramsType✝ α
-_private.StrataTest.DL.Imperative.DDMDefinition.0.ArithPrograms.ArithProgramsType.fvar : {α : Type} →
-  α → Nat → Array (ArithPrograms.ArithProgramsType✝ α) → ArithPrograms.ArithProgramsType✝¹ α
-_private.StrataTest.DL.Imperative.DDMDefinition.0.ArithPrograms.ArithProgramsType.arrow : {α : Type} →
-  α → ArithPrograms.ArithProgramsType✝ α → ArithPrograms.ArithProgramsType✝ α → ArithPrograms.ArithProgramsType✝¹ α
-_private.StrataTest.DL.Imperative.DDMDefinition.0.ArithPrograms.ArithProgramsType.bool : {α : Type} →
-  α → ArithPrograms.ArithProgramsType✝ α
-_private.StrataTest.DL.Imperative.DDMDefinition.0.ArithPrograms.ArithProgramsType.num : {α : Type} →
-  α → ArithPrograms.ArithProgramsType✝ α
+ArithPrograms.ArithProgramsType.bvar : {α : Type} → α → Nat → ArithProgramsType α
+ArithPrograms.ArithProgramsType.tvar : {α : Type} → α → String → ArithProgramsType α
+ArithPrograms.ArithProgramsType.fvar : {α : Type} → α → Nat → Array (ArithProgramsType α) → ArithProgramsType α
+ArithPrograms.ArithProgramsType.arrow : {α : Type} → α → ArithProgramsType α → ArithProgramsType α → ArithProgramsType α
+ArithPrograms.ArithProgramsType.bool : {α : Type} → α → ArithProgramsType α
+ArithPrograms.ArithProgramsType.num : {α : Type} → α → ArithProgramsType α
 -/
 #guard_msgs in
 #print ArithProgramsType
@@ -83,23 +73,18 @@ def translateType (tp : ArithProgramsType α) : Arith.Ty :=
   | .bvar _ _ | .tvar _ _ | .fvar _ _ _ | .arrow _ _ _ => .Num
 
 /--
-info: private inductive ArithPrograms.Expr : Type → Type
+info: inductive ArithPrograms.Expr : Type → Type
 number of parameters: 1
 constructors:
-_private.StrataTest.DL.Imperative.DDMDefinition.0.ArithPrograms.Expr.fvar : {α : Type} → α → Nat → ArithPrograms.Expr✝ α
-_private.StrataTest.DL.Imperative.DDMDefinition.0.ArithPrograms.Expr.bvar : {α : Type} → α → Nat → ArithPrograms.Expr✝ α
-_private.StrataTest.DL.Imperative.DDMDefinition.0.ArithPrograms.Expr.app : {α : Type} →
-  α → ArithPrograms.Expr✝ α → ArithPrograms.Expr✝ α → ArithPrograms.Expr✝¹ α
-_private.StrataTest.DL.Imperative.DDMDefinition.0.ArithPrograms.Expr.numLit : {α : Type} →
-  α → Strata.Ann Nat α → ArithPrograms.Expr✝ α
-_private.StrataTest.DL.Imperative.DDMDefinition.0.ArithPrograms.Expr.btrue : {α : Type} → α → ArithPrograms.Expr✝ α
-_private.StrataTest.DL.Imperative.DDMDefinition.0.ArithPrograms.Expr.bfalse : {α : Type} → α → ArithPrograms.Expr✝ α
-_private.StrataTest.DL.Imperative.DDMDefinition.0.ArithPrograms.Expr.add_expr : {α : Type} →
-  α → ArithPrograms.Expr✝ α → ArithPrograms.Expr✝ α → ArithPrograms.Expr✝¹ α
-_private.StrataTest.DL.Imperative.DDMDefinition.0.ArithPrograms.Expr.mul_expr : {α : Type} →
-  α → ArithPrograms.Expr✝ α → ArithPrograms.Expr✝ α → ArithPrograms.Expr✝¹ α
-_private.StrataTest.DL.Imperative.DDMDefinition.0.ArithPrograms.Expr.eq_expr : {α : Type} →
-  α → ArithPrograms.ArithProgramsType✝ α → ArithPrograms.Expr✝ α → ArithPrograms.Expr✝ α → ArithPrograms.Expr✝¹ α
+ArithPrograms.Expr.fvar : {α : Type} → α → Nat → Expr α
+ArithPrograms.Expr.bvar : {α : Type} → α → Nat → Expr α
+ArithPrograms.Expr.app : {α : Type} → α → Expr α → Expr α → Expr α
+ArithPrograms.Expr.numLit : {α : Type} → α → Strata.Ann Nat α → Expr α
+ArithPrograms.Expr.btrue : {α : Type} → α → Expr α
+ArithPrograms.Expr.bfalse : {α : Type} → α → Expr α
+ArithPrograms.Expr.add_expr : {α : Type} → α → Expr α → Expr α → Expr α
+ArithPrograms.Expr.mul_expr : {α : Type} → α → Expr α → Expr α → Expr α
+ArithPrograms.Expr.eq_expr : {α : Type} → α → ArithProgramsType α → Expr α → Expr α → Expr α
 -/
 #guard_msgs in
 #print Expr
@@ -128,11 +113,10 @@ def translateExpr (bindings : TransBindings) (e : ArithPrograms.Expr α) : Trans
   | .app .. => TransM.error "Unexpected app in ArithPrograms"
 
 /--
-info: private inductive ArithPrograms.Label : Type → Type
+info: inductive ArithPrograms.Label : Type → Type
 number of parameters: 1
 constructors:
-_private.StrataTest.DL.Imperative.DDMDefinition.0.ArithPrograms.Label.label : {α : Type} →
-  α → Strata.Ann String α → ArithPrograms.Label✝ α
+ArithPrograms.Label.label : {α : Type} → α → Strata.Ann String α → Label α
 -/
 #guard_msgs in
 #print Label
@@ -141,21 +125,15 @@ def translateLabel (_bindings : TransBindings) (e : ArithPrograms.Label α) : Tr
   match e with | .label _ s => return s.val
 
 /--
-info: private inductive ArithPrograms.Command : Type → Type
+info: inductive ArithPrograms.Command : Type → Type
 number of parameters: 1
 constructors:
-_private.StrataTest.DL.Imperative.DDMDefinition.0.ArithPrograms.Command.init : {α : Type} →
-  α → Strata.Ann String α → ArithPrograms.ArithProgramsType✝ α → ArithPrograms.Expr✝ α → ArithPrograms.Command✝ α
-_private.StrataTest.DL.Imperative.DDMDefinition.0.ArithPrograms.Command.var : {α : Type} →
-  α → Strata.Ann String α → ArithPrograms.ArithProgramsType✝ α → ArithPrograms.Command✝ α
-_private.StrataTest.DL.Imperative.DDMDefinition.0.ArithPrograms.Command.assign : {α : Type} →
-  α → Strata.Ann String α → ArithPrograms.Expr✝ α → ArithPrograms.Command✝ α
-_private.StrataTest.DL.Imperative.DDMDefinition.0.ArithPrograms.Command.assume : {α : Type} →
-  α → ArithPrograms.Label✝ α → ArithPrograms.Expr✝ α → ArithPrograms.Command✝ α
-_private.StrataTest.DL.Imperative.DDMDefinition.0.ArithPrograms.Command.assert : {α : Type} →
-  α → ArithPrograms.Label✝ α → ArithPrograms.Expr✝ α → ArithPrograms.Command✝ α
-_private.StrataTest.DL.Imperative.DDMDefinition.0.ArithPrograms.Command.havoc : {α : Type} →
-  α → Strata.Ann String α → ArithPrograms.Command✝ α
+ArithPrograms.Command.init : {α : Type} → α → Strata.Ann String α → ArithProgramsType α → Expr α → Command α
+ArithPrograms.Command.var : {α : Type} → α → Strata.Ann String α → ArithProgramsType α → Command α
+ArithPrograms.Command.assign : {α : Type} → α → Strata.Ann String α → Expr α → Command α
+ArithPrograms.Command.assume : {α : Type} → α → Label α → Expr α → Command α
+ArithPrograms.Command.assert : {α : Type} → α → Label α → Expr α → Command α
+ArithPrograms.Command.havoc : {α : Type} → α → Strata.Ann String α → Command α
 -/
 #guard_msgs in
 #print Command
@@ -223,7 +201,7 @@ assert [test]: (1 == 2);
 var y : num;
 #end
 
-/-- info: (translateProgram testEnv.commands).run : Arith.Commands✝ × Array Std.Format -/
+/-- info: (translateProgram testEnv.commands).run : Arith.Commands × Array Std.Format -/
 #guard_msgs in
 #check TransM.run (translateProgram (testEnv.commands))
 
@@ -242,4 +220,3 @@ init (y : Num) := (init_y_1 : Num)
 end section
 
 ---------------------------------------------------------------------
-end

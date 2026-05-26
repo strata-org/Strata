@@ -3,12 +3,8 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import Strata.Languages.Core.Verifier
-import Strata.DDM.Integration.Lean.HashCommands
-
-meta section
+import Strata.Languages.Core.Verifier
 
 /-!
 # Mutual Recursive Function Verification Tests
@@ -70,20 +66,20 @@ Obligation:
 Label: isEven_terminates_0
 Property: assert
 Assumptions:
-MyNat..adtRank_0: forall x : MyNat ::  { MyNat..adtRank(x) }
-  MyNat..adtRank(x) >= 0
-MyNat..adtRank_1: forall pred : MyNat ::  { MyNat..adtRank(Succ(pred)) }
-  MyNat..adtRank(pred) < MyNat..adtRank(Succ(pred))
+MyNat..adtRank_0: forall __q0 : MyNat ::  { MyNat..adtRank(__q0) }
+  MyNat..adtRank(__q0) >= 0
+MyNat..adtRank_1: forall __q0 : MyNat ::  { MyNat..adtRank(Succ(__q0)) }
+  MyNat..adtRank(__q0) < MyNat..adtRank(Succ(__q0))
 Obligation:
 !(MyNat..isZero(n@3)) ==> MyNat..adtRank(MyNat..pred(n@3)) < MyNat..adtRank(n@3)
 
 Label: isOdd_terminates_0
 Property: assert
 Assumptions:
-MyNat..adtRank_0: forall x : MyNat ::  { MyNat..adtRank(x) }
-  MyNat..adtRank(x) >= 0
-MyNat..adtRank_1: forall pred : MyNat ::  { MyNat..adtRank(Succ(pred)) }
-  MyNat..adtRank(pred) < MyNat..adtRank(Succ(pred))
+MyNat..adtRank_0: forall __q0 : MyNat ::  { MyNat..adtRank(__q0) }
+  MyNat..adtRank(__q0) >= 0
+MyNat..adtRank_1: forall __q0 : MyNat ::  { MyNat..adtRank(Succ(__q0)) }
+  MyNat..adtRank(__q0) < MyNat..adtRank(Succ(__q0))
 Obligation:
 !(MyNat..isZero(n@4)) ==> MyNat..adtRank(MyNat..pred(n@4)) < MyNat..adtRank(n@4)
 
@@ -429,5 +425,3 @@ Result: ✅ pass
 #eval verify mutualPrecondPgm (options := .quiet)
 
 end Strata.MutualRecursivePrecondTest
-
-end

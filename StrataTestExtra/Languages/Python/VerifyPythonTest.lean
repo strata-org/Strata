@@ -4,10 +4,9 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.DDM.Parser
 import StrataTest.Languages.Python.TestExamples
-import StrataTest.Util.Python
 import StrataTest.Util.TestDiagnostics
+import Strata.DDM.Parser
 
 /-! ## Test: Inline Python verification via processPythonFile
 
@@ -18,7 +17,7 @@ Python → Laurel → Core → SMT pipeline and produces diagnostics.
 namespace Strata.Python.VerifyPythonTest
 
 open StrataTest.Util
-open Strata.Python (processPythonFile processPythonToLaurel withPython manglePythonMethod)
+open Strata.Python (processPythonFile processPythonToLaurel withPython containsSubstr manglePythonMethod)
 open Strata.Parser (stringInputContext)
 
 /-- Run the Python → Laurel pipeline and return the Laurel program together
@@ -191,7 +190,7 @@ def main() -> None:
     throw <| IO.userError "Expected pipeline error for too many positional arguments"
   catch e =>
     let msg := toString e
-    unless msg.contains "too many positional arguments" do
+    unless containsSubstr msg "too many positional arguments" do
       throw <| IO.userError s!"Expected 'too many positional arguments' error, got: {msg}"
 
 -- Extra positional args with **kwargs expansion should also error.
@@ -210,7 +209,7 @@ def main() -> None:
     throw <| IO.userError "Expected pipeline error for too many positional arguments"
   catch e =>
     let msg := toString e
-    unless msg.contains "too many positional arguments" do
+    unless containsSubstr msg "too many positional arguments" do
       throw <| IO.userError s!"Expected 'too many positional arguments' error, got: {msg}"
 
 -- Returning a Composite-typed value from a function with Any return type
@@ -342,7 +341,7 @@ def main() -> None:
   let (laurel, output) ← toLaurel pythonCmd program
   let calcAdd := manglePythonMethod "Calculator" "add"
   assertOpaque laurel calcAdd
-  unless output.contains s!"{calcAdd}(" do
+  unless containsSubstr output s!"{calcAdd}(" do
     throw <| IO.userError s!"Expected '{calcAdd}(' in Laurel output but not found"
 
 -- self.field.method() resolution and composite field initialization:
@@ -373,10 +372,10 @@ def main() -> None:
   let (_, output) ← toLaurel pythonCmd program
   let innerValidate := manglePythonMethod "Inner" "validate"
   -- self.inner.validate() must resolve to Inner@validate StaticCall
-  unless output.contains s!"{innerValidate}(" do
+  unless containsSubstr output s!"{innerValidate}(" do
     throw <| IO.userError s!"Expected '{innerValidate}(' in Laurel output but not found"
   -- Composite field assignment (self.inner: Inner = ...) uses New initialization
-  unless output.contains "new Inner" do
+  unless containsSubstr output "new Inner" do
     throw <| IO.userError s!"Expected 'new Inner' in Laurel output but not found"
 
 -- Inheritance guard: when a class is part of an inheritance hierarchy,
@@ -413,7 +412,7 @@ def main() -> None:
   | none => throw <| .userError "main procedure not found"
   | some proc =>
     let mainOutput := toString (Laurel.formatProcedure proc)
-    if mainOutput.contains s!"{baseValue}(" then
+    if containsSubstr mainOutput s!"{baseValue}(" then
       throw <| IO.userError s!"main should NOT call {baseValue} (inheritance guard)"
 
 -- Inheritance with field type conflict: B inherits A and redeclares field x
@@ -479,7 +478,7 @@ def main() -> None:
   | none => throw <| .userError "main procedure not found"
   | some proc =>
     let mainOutput := toString (Laurel.formatProcedure proc)
-    if mainOutput.contains s!"{aF}(" then
+    if containsSubstr mainOutput s!"{aF}(" then
       throw <| IO.userError s!"main should NOT call {aF} (inheritance dispatch unsound)"
 
 -- Cross-class method dispatch: a method in one class calls a method on
@@ -509,10 +508,10 @@ def main() -> None:
   let engineGetHp := manglePythonMethod "Engine" "get_hp"
   let carHorsepower := manglePythonMethod "Car" "horsepower"
   -- self.engine.get_hp() should resolve to Engine@get_hp StaticCall
-  unless output.contains s!"{engineGetHp}(" do
+  unless containsSubstr output s!"{engineGetHp}(" do
     throw <| IO.userError s!"Expected '{engineGetHp}(' in Laurel output but not found"
   -- Car@horsepower should also be a StaticCall from main
-  unless output.contains s!"{carHorsepower}(" do
+  unless containsSubstr output s!"{carHorsepower}(" do
     throw <| IO.userError s!"Expected '{carHorsepower}(' in Laurel output but not found"
 
 -- Full pipeline: composite field assignment goes through the entire

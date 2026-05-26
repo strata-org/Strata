@@ -3,12 +3,8 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import Strata.Languages.Core.Verifier
-import Strata.DDM.Integration.Lean.HashCommands
-
-meta section
+import Strata.Languages.Core.Verifier
 
 /-!
 # If-Then-Else Precedence Regression Test (Issue #491)
@@ -56,5 +52,3 @@ Result: ✅ pass
 #eval verify ifElsePlusPgm (options := .quiet)
 
 end Strata.IfElsePrecedenceTest
-
-end

@@ -3,14 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import Strata.DL.Lambda.LExprEval
-meta import Strata.DL.Lambda.IntBoolFactory
+import Strata.DL.Lambda.LExprEval
+import Strata.DL.Lambda.IntBoolFactory
 
 /-! # Iterated substFvar bug in substFvarsFromState (LState) -/
 
-meta section
 namespace Lambda
 
 open LExpr LTy.Syntax LExpr.SyntaxMono
@@ -42,4 +40,3 @@ private def result := LExpr.substFvarsFromState testState expr
 #eval format result
 
 end Lambda
-end

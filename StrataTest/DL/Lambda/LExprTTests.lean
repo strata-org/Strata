@@ -3,11 +3,9 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import Strata.DL.Lambda.LExprT
+import Strata.DL.Lambda.LExprT
 
-meta section
 namespace Lambda
 ---------------------------------------------------------------------
 open Std (ToFormat Format format)
@@ -258,4 +256,3 @@ end Tests
 ---------------------------------------------------------------------
 
 end Lambda
-end

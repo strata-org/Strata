@@ -3,12 +3,8 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import Strata.Languages.Core.Verifier
-import Strata.DDM.Integration.Lean.HashCommands
-
-meta section
+import Strata.Languages.Core.Verifier
 
 /-!
 # Mutual Recursive Function Error Tests
@@ -81,5 +77,3 @@ error: recursive function 'isEven': structural recursion requires @[cases]
 #eval verify noCasesMutualPgm (options := .quiet)
 
 end Strata.MutualRecursiveFunctionErrorTest
-
-end

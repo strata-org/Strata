@@ -3,13 +3,9 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import all Strata.Languages.C_Simp.C_Simp
-meta import all Strata.Languages.C_Simp.Verify
-import Strata.DDM.Integration.Lean.HashCommands
-
-meta section
+import Strata.Languages.C_Simp.C_Simp
+import Strata.Languages.C_Simp.Verify
 
 def SimpleTestEnv :=
 #strata
@@ -115,5 +111,3 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval Strata.C_Simp.verify SimpleTestEnv
-
-end

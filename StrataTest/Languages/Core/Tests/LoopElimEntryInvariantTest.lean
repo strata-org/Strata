@@ -3,12 +3,8 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import Strata.Languages.Core.Verifier
-import Strata.DDM.Integration.Lean.HashCommands
-
-meta section
+import Strata.Languages.Core.Verifier
 
 
 -- Regression tests for LoopElim entry invariant soundness:
@@ -69,5 +65,3 @@ Result: ❌ always false and is reachable from declaration entry
         (options := { Core.VerifyOptions.default with checkLevel := .full })
 
 end Strata
-
-end

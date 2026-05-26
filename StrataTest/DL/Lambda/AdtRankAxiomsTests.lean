@@ -3,10 +3,9 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import Strata.DL.Lambda.AdtRankAxioms
-meta import Strata.DL.Lambda.TypeFactory
+import Strata.DL.Lambda.AdtRankAxioms
+import Strata.DL.Lambda.TypeFactory
 
 /-!
 ## Tests for adtRank axiom generation
@@ -15,7 +14,6 @@ Unit tests for `mkAdtRankFunc`, `mkAdtRankPerConstrAxioms`, and
 `mkAdtRankDeclsForBlock` from `AdtRankAxioms.lean`.
 -/
 
-meta section
 namespace Lambda
 
 open Std (ToFormat Format format)
@@ -226,4 +224,3 @@ info: (∀ (bvar:RoseTree) (∀ (bvar:RoseList) ((~Int.Lt : (arrow int (arrow in
 #eval (mkAdtRankDeclsForBlock (T := TP) roseBlock ()).1.map (·.name)
 
 end Lambda
-end

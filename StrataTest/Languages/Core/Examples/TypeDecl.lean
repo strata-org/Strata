@@ -3,13 +3,9 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import Strata.Languages.Core.Verifier
-import Strata.Languages.Core.DDMTransform.Translate
-import Strata.DDM.Integration.Lean.HashCommands
+import Strata.Languages.Core.Verifier
 
-meta section
 ---------------------------------------------------------------------
 namespace Strata
 
@@ -136,6 +132,4 @@ KnownTypes' names:
 #guard_msgs in
 #eval verify typeDeclPgm4
 
-end Strata
-end
 --------------------------------------------------------------------

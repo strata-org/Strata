@@ -3,11 +3,8 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import Strata.Backends.CBMC.GOTO.Expr
-
-meta section
+import Strata.Backends.CBMC.GOTO.Expr
 
 namespace CProverGOTO.Tests
 
@@ -39,4 +36,3 @@ private def add_expr : Expr :=
 #eval format add_expr
 
 end CProverGOTO.Tests
-end

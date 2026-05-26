@@ -3,12 +3,8 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import Strata.Languages.Core.Verifier
-import Strata.DDM.Integration.Lean.HashCommands
-
-meta section
+import Strata.Languages.Core.Verifier
 
 /-!
 # Model Lifting Tests (SMT → LExpr)
@@ -196,5 +192,3 @@ Model:
 #eval verify quantModelPgm (options := .models)
 
 end Strata.ModelLiftTest
-
-end

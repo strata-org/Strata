@@ -3,12 +3,9 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import Strata.Languages.Core.Verifier
-import Strata.DDM.Integration.Lean.HashCommands
+import Strata.Languages.Core.Verifier
 
-meta section
 open Strata
 
 ---------------------------------------------------------------------
@@ -77,5 +74,4 @@ Result: ❌ fail
 #guard_msgs in
 #eval verify mapPgm
 
-end
 ---------------------------------------------------------------------

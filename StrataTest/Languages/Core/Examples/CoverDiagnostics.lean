@@ -3,12 +3,9 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import Strata.Languages.Core.Verifier
-import Strata.DDM.Integration.Lean.HashCommands
+import Strata.Languages.Core.Verifier
 
-meta section
 ---------------------------------------------------------------------
 namespace Strata
 
@@ -85,6 +82,4 @@ info: #["assertion does not hold"]
   let diagnostics := results.filterMap toDiagnosticModel
   return diagnostics.map DiagnosticModel.message
 
-end Strata
-end
 ---------------------------------------------------------------------

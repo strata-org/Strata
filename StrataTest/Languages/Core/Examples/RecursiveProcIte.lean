@@ -3,12 +3,9 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import Strata.Languages.Core.Verifier
-import Strata.DDM.Integration.Lean.HashCommands
+import Strata.Languages.Core.Verifier
 
-meta section
 ---------------------------------------------------------------------
 namespace Strata
 
@@ -91,6 +88,3 @@ if (cond) {
 }
 <PCs ++ [cond => cond, cond => PCt, !cond => !cond, !cond => PCf]>
 -/
-
-end Strata
-end

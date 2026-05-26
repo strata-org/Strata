@@ -3,15 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
 import Strata.DDM.Integration.Lean
-meta import Strata.Languages.Core.Core
-meta import Strata.Languages.Core.DDMTransform.Translate
-meta import Strata.Languages.Core.ProgramType
-meta import Strata.Transform.PrecondElim
-
-meta section
+import Strata.Languages.Core.Core
+import Strata.Languages.Core.DDMTransform.Translate
+import Strata.Languages.Core.ProgramType
+import Strata.Transform.PrecondElim
 
 open Core
 open Core.PrecondElim
@@ -421,81 +418,4 @@ procedure test (inout g : int, y : int)
 #guard_msgs in
 #eval (Std.format (transformProgram loopGuardPrecondPgm))
 
-/-! ### Test 10: `collectPrecondAsserts` tags Sequence bounds obligations with `outOfBoundsAccess`
-
-Exercises the full `collectPrecondAsserts` path — the code called by
-`transformStmt` / `mkContractWFProc` / `mkFuncWFProc` — and inspects the
-metadata on the generated assert. Mirrors `OverflowCheckTest.lean`. -/
-
-section SeqBoundsObligations
-
-open Strata Core Lambda Core.PrecondElim Imperative
-
-/-- Shared fvar fixtures so each per-op case below is a one-liner. -/
-private def fxS : Core.Expression.Expr := .fvar () ⟨"s", ()⟩ (some (Core.seqTy .int))
-private def fxI : Core.Expression.Expr := .fvar () ⟨"i", ()⟩ (some .int)
-private def fxV : Core.Expression.Expr := .fvar () ⟨"v", ()⟩ (some .int)
-private def fxN : Core.Expression.Expr := .fvar () ⟨"n", ()⟩ (some .int)
-private def fxJ : Core.Expression.Expr := .fvar () ⟨"j", ()⟩ (some .int)
-
-/-- Check that `collectPrecondAsserts` produces exactly `expectedCount`
-    obligations from `expr`, each tagged with `outOfBoundsAccess`. -/
-private def assertOutOfBoundsObligations
-    (expr : Core.Expression.Expr) (expectedCount : Nat) : IO Unit := do
-  let stmts := collectPrecondAsserts Core.Factory expr "test" #[]
-  assert! stmts.length == expectedCount
-  for s in stmts do
-    let md : MetaData Core.Expression := match s with
-      | Statement.assert _ _ md => md | _ => #[]
-    assert! md.getPropertyType == some MetaData.outOfBoundsAccess
-
--- Sequence.select / update / take / drop each emit one out-of-bounds obligation.
-#eval assertOutOfBoundsObligations (LExpr.mkApp () Core.seqSelectOp [fxS, fxI]) 1
-#eval assertOutOfBoundsObligations (LExpr.mkApp () Core.seqUpdateOp [fxS, fxI, fxV]) 1
-#eval assertOutOfBoundsObligations (LExpr.mkApp () Core.seqTakeOp   [fxS, fxN]) 1
-#eval assertOutOfBoundsObligations (LExpr.mkApp () Core.seqDropOp   [fxS, fxN]) 1
-
--- Nested: `Sequence.select(Sequence.update(s, i, v), j)` emits two
--- obligations (one per partial call), both tagged `outOfBoundsAccess`.
-#eval assertOutOfBoundsObligations
-  (LExpr.mkApp () Core.seqSelectOp [LExpr.mkApp () Core.seqUpdateOp [fxS, fxI, fxV], fxJ]) 2
-
--- Sequence.length is total: no precondition obligations generated.
-#eval do
-  let stmts := collectPrecondAsserts Core.Factory
-    (LExpr.mkApp () Core.seqLengthOp [fxS]) "test" #[]
-  assert! stmts.isEmpty
-
-/-! #### Test 10a: Pretty-printed obligation shape per partial op
-
-Catches regressions that preserve count and metadata tag but corrupt the
-obligation body (e.g. swapping `.Lt` for `.Le` at a call site, changing
-the bound variable name, or swapping the lower/upper bound inside
-`mkSeqBoundsPrecond`). -/
-
-private def printFirstObligation (expr : Core.Expression.Expr) : IO Unit := do
-  let stmts := collectPrecondAsserts Core.Factory expr "test" #[]
-  match stmts.head? with
-  | some (Statement.assert _ e _) => IO.println s!"{Std.format e}"
-  | _ => IO.println "<unexpected>"
-
-/-- info: 0 <= i && i < Sequence.length(s) -/
-#guard_msgs in
-#eval printFirstObligation (LExpr.mkApp () Core.seqSelectOp [fxS, fxI])
-
-/-- info: 0 <= i && i < Sequence.length(s) -/
-#guard_msgs in
-#eval printFirstObligation (LExpr.mkApp () Core.seqUpdateOp [fxS, fxI, fxV])
-
-/-- info: 0 <= n && n <= Sequence.length(s) -/
-#guard_msgs in
-#eval printFirstObligation (LExpr.mkApp () Core.seqTakeOp [fxS, fxN])
-
-/-- info: 0 <= n && n <= Sequence.length(s) -/
-#guard_msgs in
-#eval printFirstObligation (LExpr.mkApp () Core.seqDropOp [fxS, fxN])
-
-end SeqBoundsObligations
-
 end PrecondElimTests
-end

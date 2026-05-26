@@ -3,10 +3,8 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-import Strata.DDM.Parser
-public import Strata.Languages.Core.Verifier
+import Strata.Languages.Core.Verifier
 import Lean.Elab.Command
 
 open Strata
@@ -15,7 +13,7 @@ open Lean Elab
 namespace StrataTest.Util
 
 /-- A diagnostic expectation parsed from source comments -/
-public structure DiagnosticExpectation where
+structure DiagnosticExpectation where
   line : Nat
   colStart : Nat
   colEnd : Nat
@@ -33,7 +31,7 @@ private def commentMarker (line : String) : Option String :=
 /-- Parse diagnostic expectations from source file comments.
     Format: `//  ^^^^^^ error: message` or `#  ^^^^^^ error: message`
     on the line after the problematic code -/
-public def parseDiagnosticExpectations (content : String) : List DiagnosticExpectation := Id.run do
+def parseDiagnosticExpectations (content : String) : List DiagnosticExpectation := Id.run do
   let lines := content.splitOn "\n"
   let mut expectations := []
 
@@ -82,7 +80,7 @@ def stringContains (haystack : String) (needle : String) : Bool :=
   needle.isEmpty || (haystack.splitOn needle).length > 1
 
 /-- Check if a Diagnostic matches a DiagnosticExpectation -/
-public def matchesDiagnostic (diag : Diagnostic) (exp : DiagnosticExpectation) : Bool :=
+def matchesDiagnostic (diag : Diagnostic) (exp : DiagnosticExpectation) : Bool :=
   diag.start.line == exp.line &&
   diag.start.column == exp.colStart &&
   diag.ending.line == exp.line &&

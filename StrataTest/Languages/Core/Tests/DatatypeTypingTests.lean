@@ -3,12 +3,8 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import Strata.Languages.Core.Verifier
-import Strata.DDM.Integration.Lean.HashCommands
-
-meta section
+import Strata.Languages.Core.Verifier
 
 /-!
 # Datatype Typing Tests
@@ -281,5 +277,3 @@ info: error: Error: datatype Cycle1 not inhabited
 #eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram threeWayCyclePgm) |>.fst).stripMetaData
 
 end Strata.DatatypeTypingTests
-
-end

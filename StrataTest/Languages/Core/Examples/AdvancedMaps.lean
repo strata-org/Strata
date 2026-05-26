@@ -3,12 +3,10 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import Strata.Languages.Core.Verifier
-import Strata.DDM.Integration.Lean.HashCommands
 
-meta section
+import Strata.Languages.Core.Verifier
+
 ---------------------------------------------------------------------
 open Strata
 
@@ -61,15 +59,15 @@ spec {
   requires [P_requires_1]: c[0] == a;
   } {
   assert [c_0_eq_a]: c[0] == a;
-  c[1] := a;
+  c := c[1:=a];
   assert [c_1_eq_a]: c[1] == a;
   assert [a0eq0]: a[0] == 0;
-  a[1] := 1;
+  a := a[1:=1];
   assert [a1eq1]: a[1] == 1;
-  a[0] := 1;
+  a := a[0:=1];
   assert [a0eq1]: a[0] == 1;
   assert [a0neq2]: !(a[0] == 2);
-  b[true] := -1;
+  b := b[true:=-1];
   assert [bTrueEqTrue]: b[true] == -1;
   assert [mix]: a[1] == -(b[true]);
 };
@@ -289,5 +287,4 @@ Result: ✅ pass
 #guard_msgs in
 #eval verify mapPgm (options := { Core.VerifyOptions.default with useArrayTheory := true })
 
-end
 ---------------------------------------------------------------------

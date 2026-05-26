@@ -3,12 +3,9 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import Strata.Languages.Python.Regex.ReToCore
-meta import Strata.Languages.Core.DDMTransform.ASTtoCST
-
-meta section
+import Strata.Languages.Python.Regex.ReToCore
+import Strata.Languages.Core.DDMTransform.ASTtoCST
 
 namespace Strata.Python.Tests
 
@@ -227,4 +224,3 @@ info: (re.union(re.concat(re.concat(str.to.re(""), str.to.re("a")), str.to.re(""
 #eval Std.format $ pythonRegexToCoreEraseTypes "^a" .fullmatch
 
 end Strata.Python.Tests
-end

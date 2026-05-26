@@ -3,12 +3,8 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import Strata.Languages.Core.Verifier
-import Strata.DDM.Integration.Lean.HashCommands
-
-meta section
+import Strata.Languages.Core.Verifier
 
 /-!
 # Recursive Function Error Tests
@@ -164,5 +160,3 @@ function countdown (n : int) : int
 #eval verify mixedMutualPgm (options := .quiet)
 
 end Strata.RecursiveFunctionErrorTest
-
-end

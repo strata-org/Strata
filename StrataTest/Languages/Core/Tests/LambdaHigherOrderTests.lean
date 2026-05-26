@@ -3,14 +3,10 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import Strata.Languages.Core.Core
-meta import Strata.Languages.Core.DDMTransform.Translate
-meta import Strata.Languages.Core.Verifier
-import Strata.DDM.Integration.Lean.HashCommands
-
-meta section
+import Strata.Languages.Core.Core
+import Strata.Languages.Core.DDMTransform.Translate
+import Strata.Languages.Core.Verifier
 
 /-! # Lambda, Higher-Order Function, and Function Type Tests
 
@@ -97,7 +93,7 @@ info: [Strata.Core] Type checking succeeded.
 ---
 info: ok: program Core;
 
-inline function apply (f : int -> int, x : int) : int {
+function apply (f : int -> int, x : int) : int {
   f(x)
 }
 procedure TestLambdaApply (out result : int)
@@ -710,5 +706,3 @@ Property: assert
 Result: ✅ pass-/
 #guard_msgs in
 #eval verify polyDatatypeFnInstPgm (options := .quiet)
-
-end

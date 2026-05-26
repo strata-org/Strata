@@ -3,12 +3,9 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import all Strata.Languages.Core.Verifier
-meta import all Strata.Languages.Core.SarifOutput
-
-meta section
+import Strata.Languages.Core.Verifier
+import Strata.Languages.Core.SarifOutput
 
 /-! ## Tests for VCOutcome
 
@@ -284,5 +281,3 @@ private def cleanObligation : Imperative.ProofObligation Core.Expression :=
 #guard (unsatResult.adjustForPhases [Strata.frontEndPhase] cleanObligation).1 == unsatResult
 
 end Core
-
-end

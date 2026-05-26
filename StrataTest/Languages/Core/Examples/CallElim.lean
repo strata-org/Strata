@@ -3,13 +3,10 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import Strata.Languages.Core.Verifier
-meta import Strata.Transform.CallElim
-import Strata.DDM.Integration.Lean.HashCommands
+import Strata.Languages.Core.Verifier
+import Strata.Transform.CallElim
 
-meta section
 ---------------------------------------------------------------------
 namespace Strata
 
@@ -99,4 +96,3 @@ Result: ✅ pass
 ---------------------------------------------------------------------
 
 end Strata
-end

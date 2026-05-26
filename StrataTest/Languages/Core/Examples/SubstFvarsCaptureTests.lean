@@ -3,14 +3,9 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import Strata.Languages.Core.Verifier
-meta import Strata.DL.Lambda.Preconditions
-import Strata.DDM.Integration.Lean.HashCommands
-import Strata.Languages.Core.StatementEval
+import Strata.Languages.Core.Verifier
 
-meta section
 /-! # Simultaneous substitution tests (Issue 653)
 
 Tests verifying that simultaneous substitution (`substFvars` /
@@ -119,11 +114,11 @@ private def actualsBvar : List (LExpr CoreLParams.mono) := [.bvar () 0]
 -- Correct (with lifting): `forall z :: bvar 1 > bvar 0` (bvar 1 = outer y).
 -- The "out of bounds" error is expected: bvar!1 is only in-bounds when the iterated version incorrectly captures it.
 /--
-info: forall z : int :: bvar!1 > z
+info: forall __q0 : int :: bvar!1 > __q0
 -- Errors: Unsupported construct in lexprToExpr: bvar index out of bounds: 1
 Context: Global scope:
 Scope 1:
-  boundVars: [z]
+  boundVars: [__q0]
 -/
 #guard_msgs in
 #eval Std.ToFormat.format (substitutePrecondition precondBvar formalsBvar actualsBvar)
@@ -155,4 +150,3 @@ private def testEnv : Env :=
 #eval Std.ToFormat.format (captureFreevars testEnv [] (mkAdd (mkFv "x") (mkFv "y")))
 
 end Core.Statement
-end

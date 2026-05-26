@@ -3,12 +3,10 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import Strata.Languages.Core.Verifier
-import Strata.DDM.Integration.Lean.HashCommands
 
-meta section
+import Strata.Languages.Core.Verifier
+
 
 ---------------------------------------------------------------------
 namespace Strata
@@ -77,7 +75,3 @@ Result: ❓ unknown
 -/
 #guard_msgs in
 #eval verify oldModifiesPgm (options := .quiet) (proceduresToVerify := ["h_correct", "h_incorrect"])
-
-end Strata
-
-end

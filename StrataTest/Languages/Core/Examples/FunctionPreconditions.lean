@@ -3,12 +3,9 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import Strata.Languages.Core.Verifier
-import Strata.DDM.Integration.Lean.HashCommands
+import Strata.Languages.Core.Verifier
 
-meta section
 /-! # Function Preconditions Tests -/
 
 namespace Strata
@@ -418,7 +415,7 @@ Property: assert
 Assumptions:
 precond_allPositiveDiv_0: y@2 >= 0
 Obligation:
-forall x : int :: x > 0 ==> !(x == 0)
+forall __q0 : int :: __q0 > 0 ==> !(__q0 == 0)
 
 ---
 info:
@@ -559,4 +556,3 @@ Result: ✅ pass
 #eval verify loopGuardPrecondPgm
 
 end Strata
-end

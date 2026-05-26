@@ -3,10 +3,9 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import Strata.DL.Lambda.Lambda
-meta import Strata.DL.Lambda.TypeFactory
+import Strata.DL.Lambda.Lambda
+import Strata.DL.Lambda.TypeFactory
 
 /-!
 ## Tests for FuncAttr with non-zero paramIdx
@@ -15,7 +14,6 @@ Tests that `inlineIfConstr 1` correctly inlines when the second argument
 is a constructor application, and does not inline when it is symbolic.
 -/
 
-meta section
 namespace Lambda
 
 open Std (ToFormat Format format)
@@ -93,4 +91,3 @@ info: ((~myIsNil : (arrow int (arrow MyList bool))) #42 (~xs_sym : MyList))
     esM[((~myIsNil #42) ~xs_sym)]
 
 end Lambda
-end

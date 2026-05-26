@@ -3,13 +3,9 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import Strata.Languages.Core.Verifier
-meta import Strata.SimpleAPI
-import Strata.DDM.Integration.Lean.HashCommands
-
-meta section
+import Strata.Languages.Core.Verifier
+import Strata.SimpleAPI
 
 /-!
 # Inline Assertion Metadata Test
@@ -59,5 +55,3 @@ procedure caller() {
   return output
 
 end Core.InlineAssertionMetadata.Tests
-
-end

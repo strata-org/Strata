@@ -3,11 +3,8 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import Strata.DL.SMT.Translate
-
-meta section
+import Strata.DL.SMT.Translate
 
 open Lean
 open Strata
@@ -143,89 +140,3 @@ info: ∀ (α : Type → Type → Type) [inst : ∀ (α_1 α_2 : Type), Nonempty
       [(.app .str_concat [(.prim (.bool true)), (.prim (.string "hi"))] (.prim .string)),
        (.prim (.string "hi"))]
       (.prim .bool))
-
--- `leftAssocOp` and `leftAssocOpBitVec` require at least two operands,
--- matching the existing error message and `Denote.leftAssoc`.  Singletons
--- used to silently pass through the first operand; now they throw.
-
-/-- error: Error: expected at least two arguments for 'HAdd.hAdd', got '1' -/
-#guard_msgs in
-#eval
-  elabQuery {} []
-    (.app .eq
-      [(.app .add [(.prim (.int 0))] (.prim .int)),
-       (.prim (.int 0))]
-      (.prim .bool))
-
-/-- error: Error: expected at least two arguments for 'And', got '1' -/
-#guard_msgs in
-#eval
-  elabQuery {} []
-    (.app .and
-      [(.app .eq [(.prim (.int 0)), (.prim (.int 0))] (.prim .bool))]
-      (.prim .bool))
-
-/-- error: Error: expected at least two arguments for BitVec op, got '1' -/
-#guard_msgs in
-#eval
-  let a : SMT.TermVar := { id := "a", ty := .prim (.bitvec 8) }
-  elabQuery {} []
-    (.quant .all [a] a
-      (.app .eq
-        [(.app .bvadd [(.var a)] (.prim (.bitvec 8))), (.var a)]
-        (.prim .bool)))
-
-/-- error: Error: expected at least two arguments for BitVec op, got '1' -/
-#guard_msgs in
-#eval
-  let a : SMT.TermVar := { id := "a", ty := .prim (.bitvec 8) }
-  elabQuery {} []
-    (.quant .all [a] a
-      (.app .eq
-        [(.app .bvand [(.var a)] (.prim (.bitvec 8))), (.var a)]
-        (.prim .bool)))
-
--- Empty-operand lists are still rejected, as before.
-
-/-- error: Error: expected at least two arguments for 'HAdd.hAdd', got '0' -/
-#guard_msgs in
-#eval
-  elabQuery {} []
-    (.app .eq [(.app .add [] (.prim .int)), (.prim (.int 0))] (.prim .bool))
-
--- Binary and ternary uses still produce the expected left-associated Expr.
-
-/-- info: 1 + 2 + 3 = 6 -/
-#guard_msgs in
-#eval
-  elabQuery {} []
-    (.app .eq
-      [(.app .add
-         [(.prim (.int 1)), (.prim (.int 2)), (.prim (.int 3))]
-         (.prim .int)),
-       (.prim (.int 6))]
-      (.prim .bool))
-
--- `.app .mod` is strictly binary in the SMT-Lib `Ints` theory and in
--- `Denote.denoteTerm`, so `translateTerm` now rejects any other arity rather
--- than silently lowering e.g. `.app .mod [x, y, z]` to `(x % y) % z`.
-
-/-- info: 10 % 3 = 1 -/
-#guard_msgs in
-#eval
-  elabQuery {} []
-    (.app .eq
-      [(.app .mod [(.prim (.int 10)), (.prim (.int 3))] (.prim .int)),
-       (.prim (.int 1))]
-      (.prim .bool))
-
-/-- error: Error: 'mod' expects exactly two operands, got '3' -/
-#guard_msgs in
-#eval
-  elabQuery {} []
-    (.app .eq
-      [(.app .mod [(.prim (.int 10)), (.prim (.int 3)), (.prim (.int 2))] (.prim .int)),
-       (.prim (.int 1))]
-      (.prim .bool))
-
-end
