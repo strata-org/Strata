@@ -4,13 +4,26 @@
     "--pointer-check",
     "--unwind",
     "10",
-    "--no-unwinding-assertions"
+    "--no-unwinding-assertions",
+    "--object-bits",
+    "12"
   ],
   "loop_sum": [
     "--bounds-check",
     "--pointer-check",
     "--unwind",
     "20",
-    "--no-unwinding-assertions"
+    "--no-unwinding-assertions",
+    "--object-bits",
+    "12"
+  ],
+  "skipCollection_harness": [
+    "--bounds-check",
+    "--pointer-check",
+    "--unwind",
+    "10",
+    "--no-unwinding-assertions",
+    "--object-bits",
+    "14"
   ]
 }
