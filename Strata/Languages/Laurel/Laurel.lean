@@ -219,6 +219,11 @@ structure Condition where
   condition : AstNode StmtExpr
   /-- Optional human-readable summary describing the property being checked. -/
   summary : Option String := none
+  /-- When `true`, this condition is *free*: assumed but not checked.
+      A free precondition is assumed by the implementation but not asserted at
+      call sites. A free postcondition is assumed upon return from calls but
+      not checked on exit from implementations. -/
+  free : Bool := false
 
 /--
 The body of a procedure. A body can be transparent (with a visible

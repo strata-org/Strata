@@ -13,11 +13,22 @@ namespace Strata
 namespace Laurel
 
 def transparentBodyProgram := r"
-procedure transparentBody()
-//        ^^^^^^^^^^^^^^^ error: transparent procedures are not yet supported. Add 'opaque' to make the procedure opaque
+procedure transparentBody(): int
 {
-  assert true
+  assert true;
+  3
 };
+
+procedure transparentProcedureCaller() opaque {
+  var x: int := transparentBody();
+  assert x == 3
+};
+
+// No support for transparent void procedures yet
+// procedure transparentBody()
+// {
+//   assert true
+// };
 "
 
 #guard_msgs(drop info, error) in

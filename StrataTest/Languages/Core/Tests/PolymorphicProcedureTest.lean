@@ -92,11 +92,6 @@ info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
-Label: MkCons_ensures_0
-Property: assert
-Obligation:
-true
-
 Label: assert_0
 Property: assert
 Assumptions:
@@ -113,10 +108,6 @@ true
 
 ---
 info:
-Obligation: MkCons_ensures_0
-Property: assert
-Result: ✅ pass
-
 Obligation: assert_0
 Property: assert
 Result: ✅ pass

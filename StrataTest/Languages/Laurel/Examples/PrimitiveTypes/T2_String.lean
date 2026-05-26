@@ -15,7 +15,7 @@ namespace Laurel
 
 def program := r#"
 procedure testStringKO()
-returns (result: string)
+  returns (result: string)
   opaque
 {
   var message: string := "Hello";

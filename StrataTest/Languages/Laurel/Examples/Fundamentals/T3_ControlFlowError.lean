@@ -29,6 +29,11 @@ function letsInFunction() returns (r: int) {
   z
 };
 
+procedure callLetsInFunction() opaque {
+  var x: int := letsInFunction();
+  assert x == 2
+};
+
 function localVariableWithoutInitializer(): int {
   var x: int;
 //^^^^^^^^^^ error: local variables in functions must have initializers
