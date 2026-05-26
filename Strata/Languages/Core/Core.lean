@@ -249,6 +249,14 @@ def Core.verify
     (fileMap := some ictx.fileMap)
     |>.toIO (fun e => IO.Error.userError e)
 
+/-- Convert a `Core.VCResult` to a `Diagnostic` if it should surface as a
+diagnostic, looking up the file map for the obligation's source range. Returns
+`none` for results that should not be surfaced (e.g. successful obligations). -/
+def Core.VCResult.toDiagnostic (files : Map Strata.Uri Lean.FileMap) (vcr : Core.VCResult)
+    (phases : List Core.AbstractedPhase := []) : Option Diagnostic := do
+  let modelOption := toDiagnosticModel vcr phases
+  modelOption.map (fun dm => dm.toDiagnostic files)
+
 end Strata
 
 end -- public section

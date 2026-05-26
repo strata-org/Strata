@@ -1972,11 +1972,6 @@ def DiagnosticModel.toDiagnostic (files: Map Strata.Uri Lean.FileMap) (dm: Diagn
     type := dm.type
   }
 
-def Core.VCResult.toDiagnostic (files: Map Strata.Uri Lean.FileMap) (vcr : Core.VCResult)
-    (phases : List Core.AbstractedPhase := []) : Option Diagnostic := do
-  let modelOption := toDiagnosticModel vcr phases
-  modelOption.map (fun dm => dm.toDiagnostic files)
-
 end -- public section
 end Strata
 
