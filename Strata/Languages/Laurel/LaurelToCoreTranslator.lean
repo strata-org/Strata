@@ -602,12 +602,6 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
       pure $ some r
     | _ =>
       pure none
-      -- Bodiless procedure: assume postconditions so that verification of the
-      -- procedure itself passes trivially, and inlining only introduces the
-      -- postconditions as assumptions (not the unsound `assume false`).
-      -- pure (postconditions.map fun (label, check) =>
-      --   Core.Statement.assume label check.expr mdWithUnknownLoc)
-  -- Wrap body in a labeled block so early returns (exit) work correctly.
 
   -- Translate postconditions for Opaque and Abstract bodies
   let postconditions : ListMap Core.CoreLabel Core.Procedure.Check ←
