@@ -121,25 +121,34 @@ private def polySelFunc : LFunc TestParams :=
     typeArgs := ["a"]
     inputs := [("s", mty[Sequence %a])]
     output := mty[%a]
-    -- precondition: ((~lenOf : (Sequence %a) → int) s)
-    -- The op carries a `%a` annotation that must be substituted at the call site.
-    preconditions := [⟨esM[((~lenOf : (Sequence %a) → int) s)], ()⟩]
+    -- precondition: 0 < lenOf(s), i.e.
+    -- (((~Int.Lt : int → int → bool) #0) ((~lenOf : (Sequence %a) → int) s))
+    -- The inner `lenOf` op carries a `%a` annotation that must be substituted
+    -- at the call site. The outer `Int.Lt` makes the precondition `bool`-typed.
+    preconditions :=
+      [⟨esM[(((~Int.Lt : int → int → bool) #0) ((~lenOf : (Sequence %a) → int) s))], ()⟩]
   }
 
 private def polyFactory : Factory TestParams := .ofArray #[polySelFunc]
 
 -- Call site annotates the operator with the instantiated arrow type
--- `Sequence int → int`. After value substitution alone, the op annotation
+-- `Sequence int → int`. After value substitution alone, the inner op annotation
 -- `(~lenOf : (Sequence %a) → int)` would still carry `%a`; the fix must also
 -- apply the call-site type substitution `[%a → int]`.
-/-- info: [WFObligation(polySel, ((~lenOf : (arrow (Sequence int) int)) myseq), ())] -/
+/--
+info: [WFObligation(polySel, ((~Int.Lt : (arrow int (arrow int bool))) #0 ((~lenOf : (arrow (Sequence int) int)) myseq)), ())]
+-/
 #guard_msgs in
 #eval collectWFObligations polyFactory
   esM[((~polySel : (Sequence int) → int) myseq)]
 
 -- Same expectation when the operator is unannotated: the argument-types
 -- fallback unifies `Sequence int` against `Sequence %a` to derive `[%a → int]`.
-/-- info: [WFObligation(polySel, ((~lenOf : (arrow (Sequence int) int)) (myseq : (Sequence int))), ())] -/
+/--
+info: [WFObligation(polySel, ((~Int.Lt : (arrow int (arrow int bool)))
+ #0
+ ((~lenOf : (arrow (Sequence int) int)) (myseq : (Sequence int)))), ())]
+-/
 #guard_msgs in
 #eval collectWFObligations polyFactory
   esM[(~polySel (myseq : (Sequence int)))]
