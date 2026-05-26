@@ -17,8 +17,6 @@ public section
 Closes the `DeclPcInversion` and `AssignPcInversion` auxiliary
 preconditions on the provenance theorems
 (`decl_provenance_of_translator`, `assn_provenance_of_translator`).
-The strict `AssignNondetPcInversion` is provably false in general
-(see the trailing comment block) and is left as a hypothesis.
 
 ## Strategy
 
@@ -842,12 +840,7 @@ theorem patchGotoTargets_preserves_body_pc_covered
 We compose the above preservation lemmas into theorems closing
 `DeclPcInversion` and `AssignPcInversion` from the actual translator
 output, using `coreCFGToGotoTransform_decompose` to extract the
-blocks-fold + patches-fold structure.
-
-The strict `AssignNondetPcInversion` is *provably false* in general
-(`init_det`'s second instruction is an ASSIGN whose rhs is the
-translated source rhs, not a nondet side-effect); it is closed only
-under an extra precondition that narrows the source CFG. -/
+blocks-fold + patches-fold structure. -/
 
 section TopLevel
 variable
@@ -983,17 +976,5 @@ theorem assignPcInversion_of_translator_abbrev :
       h_expr_corr h_tx_eq h_at).2 h_ty
 
 end TopLevel
-
-/-! ## Strict `AssignNondetPcInversion` is bridge-layer
-
-The strict form (every ASSIGN PC is exactly `.set _ .nondet _`) is
-provably false for any source CFG containing `init_det` or `set_det`
-cmds, and `BodyPcCovered`'s proof structure cannot recover the
-emitting constructor without enrichment. The right closure is at the
-bridge layer — refactor `assign_nondet_lookup_of_provenance_and_pinned`
-in `InstructionLookups.lean` to a per-PC partial provenance gated on
-a `step_assign_nondet`-firing trace precondition (see
-`docs/CoreToGOTO_ProofStatusRound8.md`, **[bridge-required]**). The
-hypothesis remains surfaced on `_v6`. -/
 
 end CProverGOTO.PcInversion
