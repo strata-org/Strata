@@ -5,7 +5,7 @@
 -/
 module
 
-meta import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core.Core
 import Strata.DDM.Integration.Lean.HashCommands
 
 meta section
@@ -46,7 +46,7 @@ Model:
 (x@1, 0)
 -/
 #guard_msgs in
-#eval verify intModelPgm (options := .models)
+#eval Core.verify intModelPgm (options := .models)
 
 -- The model value is an intConst
 /--
@@ -54,7 +54,7 @@ info: failures=1 all_int=true
 -/
 #guard_msgs in
 #eval do
-  let results ← verify intModelPgm (options := .models)
+  let results ← Core.verify intModelPgm (options := .models)
   let failures := results.filter fun r => Core.VCResult.isFailure r
   let model : Core.LExprModel := match failures[0]? with
     | some r => r.lexprModel
@@ -86,7 +86,7 @@ Model:
 (b@1, false)
 -/
 #guard_msgs in
-#eval verify boolModelPgm (options := .models)
+#eval Core.verify boolModelPgm (options := .models)
 
 ---------------------------------------------------------------------
 -- Datatype model (Nil constructor)
@@ -112,7 +112,7 @@ Model:
 (xs@1, Nil)
 -/
 #guard_msgs in
-#eval verify datatypeModelPgm (options := .models)
+#eval Core.verify datatypeModelPgm (options := .models)
 
 ---------------------------------------------------------------------
 -- Datatype model (Cons constructor)
@@ -138,7 +138,7 @@ Model:
 (xs@1, Cons(0, Nil))
 -/
 #guard_msgs in
-#eval verify datatypeModelPgm2 (options := .models)
+#eval Core.verify datatypeModelPgm2 (options := .models)
 
 ---------------------------------------------------------------------
 -- Either datatype — model with algebraic type
@@ -164,7 +164,7 @@ Model:
 (e@1, Right(true))
 -/
 #guard_msgs in
-#eval verify eitherModelPgm (options := .models)
+#eval Core.verify eitherModelPgm (options := .models)
 
 ---------------------------------------------------------------------
 -- Quantifier model
@@ -193,7 +193,7 @@ Model:
 (x@1, 0)
 -/
 #guard_msgs in
-#eval verify quantModelPgm (options := .models)
+#eval Core.verify quantModelPgm (options := .models)
 
 end Strata.ModelLiftTest
 

@@ -6,7 +6,7 @@
 module
 
 meta import Strata.Languages.Core.SMTEncoder
-meta import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core.Core
 import Strata.DDM.Integration.Lean.HashCommands
 
 meta section
@@ -513,7 +513,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval! verify simpleMapProgram (options := {Core.VerifyOptions.quiet with useArrayTheory := false})
+#eval! Core.verify simpleMapProgram (options := {Core.VerifyOptions.quiet with useArrayTheory := false})
 
 -- Test verification with Array theory
 /--
@@ -523,7 +523,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval! verify simpleMapProgram (options := {Core.VerifyOptions.quiet with useArrayTheory := true})
+#eval! Core.verify simpleMapProgram (options := {Core.VerifyOptions.quiet with useArrayTheory := true})
 
 -- Test that string literals with embedded double quotes are correctly encoded for SMT
 def quotedStringProgram :=
@@ -549,7 +549,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval! verify quotedStringProgram (options := Core.VerifyOptions.quiet)
+#eval! Core.verify quotedStringProgram (options := Core.VerifyOptions.quiet)
 
 end Strata
 

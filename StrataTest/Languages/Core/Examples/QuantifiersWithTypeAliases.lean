@@ -5,7 +5,7 @@
 -/
 module
 
-meta import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core.Core
 import Strata.DDM.Integration.Lean.HashCommands
 
 meta section
@@ -81,7 +81,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify QuantTypeAliases
+#eval Core.verify QuantTypeAliases
 
 end Strata
 end

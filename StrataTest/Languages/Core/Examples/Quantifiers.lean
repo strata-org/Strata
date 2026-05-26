@@ -5,7 +5,7 @@
 -/
 module
 
-meta import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core.Core
 import Strata.DDM.Integration.Lean.HashCommands
 
 meta section
@@ -86,7 +86,7 @@ Model:
 (x@1, 0)
 -/
 #guard_msgs in
-#eval verify quantPgm (options := .default)
+#eval Core.verify quantPgm (options := .default)
 
 /--
 info: [Strata.Core] Type checking succeeded.
@@ -150,7 +150,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify triggerPgm
+#eval Core.verify triggerPgm
 
 end Strata
 end

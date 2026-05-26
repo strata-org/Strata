@@ -5,7 +5,7 @@
 -/
 module
 
-meta import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core.Core
 import Strata.DDM.Integration.Lean.HashCommands
 
 meta section
@@ -53,7 +53,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify typeDeclStmt1
+#eval Core.verify typeDeclStmt1
 
 /-- Type scoping - same type name in different procedures -/
 def typeDeclStmt2 : Program :=
@@ -118,7 +118,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify typeDeclStmt3
+#eval Core.verify typeDeclStmt3
 
 /-- Parameterized type declaration -/
 def typeDeclStmt4 : Program :=
@@ -159,7 +159,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify typeDeclStmt4
+#eval Core.verify typeDeclStmt4
 
 -- A top-level type cannot be shadowed by a statement-level one
 def shadowTopLevelType : Program :=
@@ -177,7 +177,7 @@ error: ❌ Type checking error.
 Type 'T' is already declared
 -/
 #guard_msgs in
-#eval verify shadowTopLevelType
+#eval Core.verify shadowTopLevelType
 
 -- A statement-level type is not visible in another procedure
 /--

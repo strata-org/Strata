@@ -5,7 +5,7 @@
 -/
 module
 
-meta import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core.Core
 import Strata.DDM.Integration.Lean.HashCommands
 
 meta section
@@ -63,7 +63,7 @@ Property: assert
 Result: ❓ unknown
 -/
 #guard_msgs in
-#eval verify oldModifiesPgm (options := .quiet)
+#eval Core.verify oldModifiesPgm (options := .quiet)
 
 /--
 info:
@@ -76,7 +76,7 @@ Property: assert
 Result: ❓ unknown
 -/
 #guard_msgs in
-#eval verify oldModifiesPgm (options := .quiet) (proceduresToVerify := ["h_correct", "h_incorrect"])
+#eval Core.verify oldModifiesPgm (options := .quiet) (proceduresToVerify := ["h_correct", "h_incorrect"])
 
 end Strata
 

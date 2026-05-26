@@ -5,7 +5,7 @@
 -/
 module
 
-meta import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core.Core
 import Strata.DDM.Integration.Lean.HashCommands
 
 meta section
@@ -67,7 +67,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify polyProcPgm
+#eval Core.verify polyProcPgm
 
 end Strata.PolymorphicProcedureTest
 
@@ -130,7 +130,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify polyPostPgm
+#eval Core.verify polyPostPgm
 
 end Strata.PolymorphicPostconditionTest
 

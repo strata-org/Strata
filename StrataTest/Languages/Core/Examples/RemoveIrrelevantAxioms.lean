@@ -5,7 +5,7 @@
 -/
 module
 
-meta import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core.Core
 import Strata.DDM.Integration.Lean.HashCommands
 
 meta section
@@ -177,7 +177,7 @@ Model:
 -/
 #guard_msgs in
 #eval do
-  let results ← verify irrelevantAxiomsTestPgm
+  let results ← Core.verify irrelevantAxiomsTestPgm
         (options := {Core.VerifyOptions.models with removeIrrelevantAxioms := .Precise})
   IO.println (normalizeModelValues (toString results))
 
@@ -234,7 +234,7 @@ Property: assert
 Result: ❓ unknown
 -/
 #guard_msgs in
-#eval verify irrelevantAxiomsTestPgm
+#eval Core.verify irrelevantAxiomsTestPgm
         (options := {Core.VerifyOptions.models with removeIrrelevantAxioms := .Off})
 
 end Strata

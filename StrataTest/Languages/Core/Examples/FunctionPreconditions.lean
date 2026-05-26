@@ -5,7 +5,7 @@
 -/
 module
 
-meta import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core.Core
 import Strata.DDM.Integration.Lean.HashCommands
 
 meta section
@@ -43,7 +43,7 @@ Property: division by zero check
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify divPgm
+#eval Core.verify divPgm
 
 -- Function with multiple preconditions
 def multiPrecondPgm :=
@@ -68,7 +68,7 @@ VCs:
 info:
 -/
 #guard_msgs in
-#eval verify multiPrecondPgm
+#eval Core.verify multiPrecondPgm
 
 -- Datatype destructor with precondition
 def listHeadPgm :=
@@ -118,7 +118,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify listHeadPgm
+#eval Core.verify listHeadPgm
 
 -- Option type with precondition
 def optionGetPgm :=
@@ -143,7 +143,7 @@ VCs:
 info:
 -/
 #guard_msgs in
-#eval verify optionGetPgm
+#eval Core.verify optionGetPgm
 
 -- Multiple preconditions where second depends on first (WF check)
 def dependentPrecondPgm :=
@@ -188,7 +188,7 @@ Property: division by zero check
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify dependentPrecondPgm
+#eval Core.verify dependentPrecondPgm
 
 -- Function body calls another function with preconditions (Phase 3 test)
 -- Expression: safeDiv(safeDiv(x, y), z)
@@ -236,7 +236,7 @@ Property: division by zero check
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify funcCallsFuncPgm
+#eval Core.verify funcCallsFuncPgm
 
 -- Function body calls another function but precondition does NOT hold (should fail)
 -- Expression: safeDiv(x, 0) - calling with literal 0
@@ -266,7 +266,7 @@ Property: division by zero check
 Result: ❌ fail
 -/
 #guard_msgs in
-#eval verify funcCallsFuncFailPgm
+#eval Core.verify funcCallsFuncFailPgm
 
 -- Call to function with precondition - unconditionally true
 def callUnconditionalPgm :=
@@ -296,7 +296,7 @@ Property: division by zero check
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify callUnconditionalPgm
+#eval Core.verify callUnconditionalPgm
 
 -- Call to function with precondition - depends on path condition (if)
 def callWithIfPgm :=
@@ -333,7 +333,7 @@ Property: division by zero check
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify callWithIfPgm
+#eval Core.verify callWithIfPgm
 
 -- Call to function with precondition - depends on path condition (assume)
 def callWithAssumePgm :=
@@ -382,7 +382,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify callWithAssumePgm
+#eval Core.verify callWithAssumePgm
 
 -- Function call inside a quantifier with implication
 -- Expression: forall x : int :: x > 0 ==> safeDiv(y, x) > 0
@@ -431,7 +431,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify funcInQuantifierPgm
+#eval Core.verify funcInQuantifierPgm
 
 -- Inline function declaration (funcDecl) with precondition
 def funcDeclPgm :=
@@ -476,7 +476,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify funcDeclPgm
+#eval Core.verify funcDeclPgm
 
 -- Precondition in loop guard
 def loopGuardPrecondPgm :=
@@ -556,7 +556,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify loopGuardPrecondPgm
+#eval Core.verify loopGuardPrecondPgm
 
 end Strata
 end

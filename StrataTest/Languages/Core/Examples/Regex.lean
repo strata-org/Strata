@@ -5,7 +5,7 @@
 -/
 module
 
-meta import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core.Core
 import Strata.DDM.Integration.Lean.HashCommands
 
 meta section
@@ -139,7 +139,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify regexPgm1
+#eval Core.verify regexPgm1
 
 ---------------------------------------------------------------------
 
@@ -198,7 +198,7 @@ Original expression: re.loop(re.range("a", "z"), 1, bvar!0)
 Context: Global scope:
 -/
 #guard_msgs in
-#eval verify regexPgm2
+#eval Core.verify regexPgm2
 
 ---------------------------------------------------------------------
 
@@ -231,7 +231,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify regexPgm3
+#eval Core.verify regexPgm3
 
 end Strata
 end

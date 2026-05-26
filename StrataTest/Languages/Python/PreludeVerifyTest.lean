@@ -30,7 +30,7 @@ private def verifyPrelude : IO (Array DiagnosticModel) := do
   let prog ← preludeProgram
   IO.FS.withTempDir fun tempDir => do
     let r ← EIO.toIO (IO.Error.userError ∘ toString)
-      (Core.verify prog tempDir
+      (_root_.Core.verify prog tempDir
         (options := .quiet)
         (moreFns := Strata.Python.ReFactory)
         (externalPhases := [Strata.frontEndPhase]))

@@ -5,7 +5,7 @@
 -/
 module
 
-meta import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core.Core
 import Strata.DDM.Integration.Lean.HashCommands
 
 meta section
@@ -150,7 +150,7 @@ Obligation: TestMutual_ensures_0
 Property: assert
 Result: ✅ pass -/
 #guard_msgs in
-#eval verify mutualRecPgm (options := .default)
+#eval Core.verify mutualRecPgm (options := .default)
 
 end Strata.MutualRecursiveFunctionTest
 
@@ -271,7 +271,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify roseTreePgm (options := .quiet)
+#eval Core.verify roseTreePgm (options := .quiet)
 
 end Strata.MutualRecursiveRoseTreeTest
 
@@ -426,7 +426,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify mutualPrecondPgm (options := .quiet)
+#eval Core.verify mutualPrecondPgm (options := .quiet)
 
 end Strata.MutualRecursivePrecondTest
 

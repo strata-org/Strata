@@ -5,7 +5,7 @@
 -/
 module
 
-meta import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core.Core
 meta import Strata.Languages.Core.CallGraph
 import Strata.DDM.Integration.Lean.HashCommands
 
@@ -39,7 +39,7 @@ VCs:
 info:
 -/
 #guard_msgs in
-#eval verify program (options := .default)
+#eval Core.verify program (options := .default)
 
 ---------------------------------------------------------------------
 end Strata

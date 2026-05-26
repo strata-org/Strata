@@ -5,7 +5,7 @@
 -/
 module
 
-meta import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core.Core
 import Strata.DDM.Integration.Lean.HashCommands
 
 meta section
@@ -47,7 +47,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify testerEx
+#eval Core.verify testerEx
 
 
 def destrEx :=
@@ -98,7 +98,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify destrEx
+#eval Core.verify destrEx
 
 end Strata
 

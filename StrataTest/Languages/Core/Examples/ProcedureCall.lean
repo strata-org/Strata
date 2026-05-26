@@ -5,7 +5,7 @@
 -/
 module
 
-meta import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core.Core
 meta import Strata.Languages.Core.CallGraph
 import Strata.DDM.Integration.Lean.HashCommands
 
@@ -168,7 +168,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify globalCounterPgm
+#eval Core.verify globalCounterPgm
 
 ---------------------------------------------------------------------
 

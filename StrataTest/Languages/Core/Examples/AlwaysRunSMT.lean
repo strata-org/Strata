@@ -5,7 +5,7 @@
 -/
 module
 
-meta import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core.Core
 import Strata.DDM.Integration.Lean.HashCommands
 
 meta section
@@ -31,7 +31,7 @@ def runAndCheckForSMTFiles : IO Unit := do
   if ← vcDir.pathExists then
     IO.FS.removeDirAll vcDir
   IO.FS.createDirAll vcDir
-  let _ ← verify alwaysGenerateSMTPgm (options := { Core.VerifyOptions.default with
+  let _ ← Core.verify alwaysGenerateSMTPgm (options := { Core.VerifyOptions.default with
     alwaysGenerateSMT := true,
     vcDirectory := vcDir})
   -- Check that vcDir has exactly one `.smt2` file in it

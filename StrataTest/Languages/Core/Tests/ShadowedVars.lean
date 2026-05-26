@@ -5,7 +5,7 @@
 -/
 module
 
-meta import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core.Core
 import Strata.DDM.Integration.Lean.HashCommands
 
 meta section
@@ -29,7 +29,7 @@ error: ❌ Type checking error.
 Variable g of type int already in context.
 -/
 #guard_msgs in
-#eval verify noShadowPgm1 (options := .quiet)
+#eval Core.verify noShadowPgm1 (options := .quiet)
 
 def noShadowPgm2 :=
 #strata
@@ -46,7 +46,7 @@ error: ❌ Type checking error.
 Variable g of type bool already in context.
 -/
 #guard_msgs in
-#eval verify noShadowPgm2 (options := .quiet)
+#eval Core.verify noShadowPgm2 (options := .quiet)
 
 ---------------------------------------------------------------------
 
