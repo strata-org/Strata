@@ -87,12 +87,13 @@ procedure test_arrays () returns ()
 
 #end
 
-/-- info:
+/--
+info:
 Obligation: entry_invariant_0_0
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_0_518
+Obligation: assert_0_523
 Property: assert
 Result: ✅ pass
 
@@ -104,7 +105,7 @@ Obligation: entry_invariant_0_0
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_2_640
+Obligation: assert_2_645
 Property: assert
 Result: ✅ pass
 
@@ -120,11 +121,11 @@ Obligation: entry_invariant_0_1
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_4_799
+Obligation: assert_4_804
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_5_826
+Obligation: assert_5_831
 Property: assert
 Result: ✅ pass
 
@@ -148,7 +149,7 @@ Obligation: entry_invariant_0_2
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_7_982
+Obligation: assert_7_987
 Property: assert
 Result: ✅ pass
 
@@ -178,7 +179,8 @@ Result: ✅ pass
 
 Obligation: arbitrary_iter_maintain_invariant_0_1
 Property: assert
-Result: ✅ pass-/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Strata.Boole.verify "cvc5" grammarExtensions (options := .quiet)
 

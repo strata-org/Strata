@@ -51,14 +51,16 @@ spec {
 };
 #end
 
-/-- info:
-Obligation: assert_1_1141
+/--
+info:
+Obligation: assert_1_1146
 Property: assert
 Result: ✅ pass
 
-Obligation: reveal_with_fuel_seed_ensures_0_1121
+Obligation: reveal_with_fuel_seed_ensures_0_1126
 Property: assert
-Result: ✅ pass-/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Strata.Boole.verify "cvc5" revealWithFuelSeed (options := .quiet)
 

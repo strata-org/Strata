@@ -127,6 +127,10 @@ Obligation: arbitrary_iter_maintain_invariant_0_2
 Property: assert
 Result: ✅ pass
 
+Obligation: measure_decrease_0
+Property: assert
+Result: ✅ pass
+
 Obligation: assert_7_1955
 Property: assert
 Result: ✅ pass

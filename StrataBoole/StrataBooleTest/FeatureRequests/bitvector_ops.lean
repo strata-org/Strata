@@ -43,26 +43,28 @@ spec {
 };
 #end
 
-/-- info:
-Obligation: clamp_seed_ensures_0_1137
+/--
+info:
+Obligation: clamp_seed_ensures_0_1142
 Property: assert
 Result: ✅ pass
 
-Obligation: clamp_seed_ensures_1_1179
+Obligation: clamp_seed_ensures_1_1184
 Property: assert
 Result: ✅ pass
 
-Obligation: clamp_seed_ensures_2_1243
+Obligation: clamp_seed_ensures_2_1248
 Property: assert
 Result: ✅ pass
 
-Obligation: clamp_seed_ensures_3_1290
+Obligation: clamp_seed_ensures_3_1295
 Property: assert
 Result: ✅ pass
 
-Obligation: clamp_seed_ensures_4_1337
+Obligation: clamp_seed_ensures_4_1342
 Property: assert
-Result: ✅ pass-/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Strata.Boole.verify "cvc5" bitvectorOpsSeed (options := .quiet)
 
@@ -98,38 +100,40 @@ spec {
 };
 #end
 
-/-- info:
-Obligation: bv_shift_xor_ensures_0_2317
+/--
+info:
+Obligation: bv_shift_xor_ensures_0_2334
 Property: assert
 Result: ✅ pass
 
-Obligation: bv_shift_xor_ensures_1_2340
+Obligation: bv_shift_xor_ensures_1_2357
 Property: assert
 Result: ✅ pass
 
-Obligation: bv_shift_xor_ensures_2_2366
+Obligation: bv_shift_xor_ensures_2_2383
 Property: assert
 Result: ✅ pass
 
-Obligation: bv_shift_xor_ensures_3_2400
+Obligation: bv_shift_xor_ensures_3_2417
 Property: assert
 Result: ✅ pass
 
-Obligation: bv_shift_xor_ensures_4_2475
+Obligation: bv_shift_xor_ensures_4_2492
 Property: assert
 Result: ✅ pass
 
-Obligation: bv_shift_xor_ensures_5_2538
+Obligation: bv_shift_xor_ensures_5_2555
 Property: assert
 Result: ✅ pass
 
-Obligation: bv_shift_xor_ensures_6_2616
+Obligation: bv_shift_xor_ensures_6_2633
 Property: assert
 Result: ✅ pass
 
-Obligation: bv_shift_xor_ensures_7_2709
+Obligation: bv_shift_xor_ensures_7_2726
 Property: assert
-Result: ✅ pass-/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Strata.Boole.verify "cvc5" bitvectorShiftXorSeed (options := .quiet)
 
@@ -156,18 +160,20 @@ spec {
 };
 #end
 
-/-- info:
-Obligation: bv_sshr_ensures_0_3929
+/--
+info:
+Obligation: bv_sshr_ensures_0_3958
 Property: assert
 Result: ✅ pass
 
-Obligation: bv_sshr_ensures_1_4023
+Obligation: bv_sshr_ensures_1_4052
 Property: assert
 Result: ✅ pass
 
-Obligation: bv_sshr_ensures_2_4135
+Obligation: bv_sshr_ensures_2_4164
 Property: assert
-Result: ✅ pass-/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Strata.Boole.verify "cvc5" bitvectorSShrSeed (options := .quiet)
 
@@ -194,37 +200,39 @@ spec {
 { };
 #end
 
-/-- info:
-Obligation: bv_signed_cmp_ensures_0_4904
+/--
+info:
+Obligation: bv_signed_cmp_ensures_0_4945
 Property: assert
 Result: ✅ pass
 
-Obligation: bv_signed_cmp_ensures_1_4939
+Obligation: bv_signed_cmp_ensures_1_4980
 Property: assert
 Result: ✅ pass
 
-Obligation: bv_signed_cmp_ensures_2_4974
+Obligation: bv_signed_cmp_ensures_2_5015
 Property: assert
 Result: ✅ pass
 
-Obligation: bv_signed_cmp_ensures_3_5009
+Obligation: bv_signed_cmp_ensures_3_5050
 Property: assert
 Result: ✅ pass
 
-Obligation: bv_signed_cmp_ensures_4_5044
+Obligation: bv_signed_cmp_ensures_4_5085
 Property: assert
 Result: ✅ pass
 
-Obligation: bv_signed_cmp_ensures_5_5079
+Obligation: bv_signed_cmp_ensures_5_5120
 Property: assert
 Result: ✅ pass
 
-Obligation: bv_signed_cmp_ensures_6_5114
+Obligation: bv_signed_cmp_ensures_6_5155
 Property: assert
-Result: ✅ pass-/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Strata.Boole.verify "cvc5" bitvectorSignedCmpSeed (options := .quiet)
 
-example : Strata.smtVCsCorrect bitvectorSignedCmpSeed := by
-  gen_smt_vcs
+example : Strata.smtVCsCorrectBoole bitvectorSignedCmpSeed := by
+  gen_smt_vcs_boole
   all_goals (first | grind | decide)

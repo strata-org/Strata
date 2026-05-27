@@ -61,7 +61,8 @@ spec {
 };
 #end
 
-/-- info:
+/--
+info:
 Obligation: even_body_calls_MyNat..pred_0
 Property: assert
 Result: ✅ pass
@@ -78,37 +79,38 @@ Obligation: odd_terminates_0
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_4_1499
+Obligation: assert_4_1504
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_5_1530
+Obligation: assert_5_1535
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_6_1561
+Obligation: assert_6_1566
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_7_1599
+Obligation: assert_7_1604
 Property: assert
 Result: ✅ pass
 
-Obligation: test_parity_ensures_0_1355
+Obligation: test_parity_ensures_0_1360
 Property: assert
 Result: ✅ pass
 
-Obligation: test_parity_ensures_1_1387
+Obligation: test_parity_ensures_1_1392
 Property: assert
 Result: ✅ pass
 
-Obligation: test_parity_ensures_2_1419
+Obligation: test_parity_ensures_2_1424
 Property: assert
 Result: ✅ pass
 
-Obligation: test_parity_ensures_3_1458
+Obligation: test_parity_ensures_3_1463
 Property: assert
-Result: ✅ pass-/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Strata.Boole.verify "cvc5" mutualRecursionSeed (options := .quiet)
 

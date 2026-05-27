@@ -34,10 +34,12 @@ spec {
 
 #end
 
-/-- info:
-Obligation: assert_1_418
+/--
+info:
+Obligation: assert_1_423
 Property: assert
-Result: ✅ pass-/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Strata.Boole.verify "cvc5" bit_vectors (options := .quiet)
 

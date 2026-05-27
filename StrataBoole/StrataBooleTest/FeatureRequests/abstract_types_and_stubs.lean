@@ -42,10 +42,12 @@ spec {
 };
 #end
 
-/-- info:
-Obligation: assert_2_1035
+/--
+info:
+Obligation: assert_2_1040
 Property: assert
-Result: ✅ pass-/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Strata.Boole.verify "cvc5" abstractTypesAndStubsSeed (options := .quiet)
 

@@ -50,10 +50,12 @@ procedure opaque_reveal_hide_seed(x: int) returns ()
 };
 #end
 
-/-- info:
-Obligation: assert_1_1334
+/--
+info:
+Obligation: assert_1_1339
 Property: assert
-Result: ✅ pass-/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Strata.Boole.verify "cvc5" opaqueRevealHideSeed (options := .quiet)
 

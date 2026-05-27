@@ -60,18 +60,20 @@ spec {
 };
 #end
 
-/-- info:
-Obligation: assert_1_1330
+/--
+info:
+Obligation: assert_1_1335
 Property: assert
 Result: ✅ pass
 
-Obligation: use_lambda_ensures_0_1284
+Obligation: use_lambda_ensures_0_1289
 Property: assert
 Result: ✅ pass
 
-Obligation: higher_order_seed_ensures_3_1718
+Obligation: higher_order_seed_ensures_3_1723
 Property: assert
-Result: ✅ pass-/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Strata.Boole.verify "cvc5" lambdaClosureSeed (options := .quiet)
 

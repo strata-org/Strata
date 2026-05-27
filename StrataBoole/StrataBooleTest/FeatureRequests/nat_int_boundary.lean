@@ -48,14 +48,16 @@ spec {
 };
 #end
 
-/-- info:
-Obligation: assert_4_1350
+/--
+info:
+Obligation: assert_4_1355
 Property: assert
 Result: ✅ pass
 
-Obligation: nat_int_boundary_seed_ensures_2_1275
+Obligation: nat_int_boundary_seed_ensures_2_1280
 Property: assert
-Result: ✅ pass-/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Strata.Boole.verify "cvc5" natIntBoundarySeed (options := .quiet)
 

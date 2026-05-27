@@ -45,14 +45,16 @@ spec {
 };
 #end
 
-/-- info:
-Obligation: assert_3_1226
+/--
+info:
+Obligation: assert_3_1231
 Property: assert
 Result: ✅ pass
 
-Obligation: widening_cast_seed_ensures_2_1152
+Obligation: widening_cast_seed_ensures_2_1157
 Property: assert
-Result: ✅ pass-/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Strata.Boole.verify "cvc5" wideningCastsSeed (options := .quiet)
 

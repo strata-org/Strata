@@ -50,7 +50,8 @@ spec
 };
 #end
 
-/-- info:
+/--
+info:
 Obligation: entry_invariant_0_0
 Property: assert
 Result: ✅ pass
@@ -83,9 +84,10 @@ Obligation: arbitrary_iter_maintain_invariant_0_1
 Property: assert
 Result: ✅ pass
 
-Obligation: InsertionSort_ensures_2_337
+Obligation: InsertionSort_ensures_2_342
 Property: assert
-Result: ✅ pass-/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Strata.Boole.verify "cvc5" insertionSortPgm (options := .quiet)
 

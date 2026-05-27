@@ -38,14 +38,16 @@ spec {
 };
 #end
 
-/-- info:
-Obligation: assert_2_986
+/--
+info:
+Obligation: assert_2_980
 Property: assert
 Result: ✅ pass
 
-Obligation: map_extensionality_seed_ensures_1_963
+Obligation: map_extensionality_seed_ensures_1_957
 Property: assert
-Result: ✅ pass-/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Strata.Boole.verify "cvc5" mapExtensionalitySeed (options := .quiet)
 

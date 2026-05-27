@@ -75,23 +75,23 @@ rec function reconstruct(naf: Sequence int) : int
 
 /--
 info:
-Obligation: seq_slicing_seed_post_seq_slicing_seed_ensures_2_1470_calls_Sequence.select_0
+Obligation: seq_slicing_seed_post_seq_slicing_seed_ensures_2_1475_calls_Sequence.select_0
 Property: out-of-bounds access check
 Result: ✅ pass
 
-Obligation: seq_slicing_seed_post_seq_slicing_seed_ensures_5_1607_calls_Sequence.select_0
+Obligation: seq_slicing_seed_post_seq_slicing_seed_ensures_5_1612_calls_Sequence.select_0
 Property: out-of-bounds access check
 Result: ✅ pass
 
-Obligation: seq_slicing_seed_post_seq_slicing_seed_ensures_5_1607_calls_Sequence.select_1
+Obligation: seq_slicing_seed_post_seq_slicing_seed_ensures_5_1612_calls_Sequence.select_1
 Property: out-of-bounds access check
 Result: ✅ pass
 
-Obligation: seq_slicing_seed_post_seq_slicing_seed_ensures_6_1667_calls_Sequence.select_0
+Obligation: seq_slicing_seed_post_seq_slicing_seed_ensures_6_1672_calls_Sequence.select_0
 Property: out-of-bounds access check
 Result: ✅ pass
 
-Obligation: seq_slicing_seed_post_seq_slicing_seed_ensures_6_1667_calls_Sequence.select_1
+Obligation: seq_slicing_seed_post_seq_slicing_seed_ensures_6_1672_calls_Sequence.select_1
 Property: out-of-bounds access check
 Result: ✅ pass
 
@@ -111,35 +111,35 @@ Obligation: set_mid_calls_Sequence.take_1
 Property: out-of-bounds access check
 Result: ✅ pass
 
-Obligation: seq_slicing_seed_ensures_2_1470
+Obligation: seq_slicing_seed_ensures_2_1475
 Property: assert
 Result: ✅ pass
 
-Obligation: seq_slicing_seed_ensures_3_1511
+Obligation: seq_slicing_seed_ensures_3_1516
 Property: assert
 Result: ✅ pass
 
-Obligation: seq_slicing_seed_ensures_4_1570
+Obligation: seq_slicing_seed_ensures_4_1575
 Property: assert
 Result: ✅ pass
 
-Obligation: seq_slicing_seed_ensures_5_1607
+Obligation: seq_slicing_seed_ensures_5_1612
 Property: assert
 Result: ✅ pass
 
-Obligation: seq_slicing_seed_ensures_6_1667
+Obligation: seq_slicing_seed_ensures_6_1672
 Property: assert
 Result: ✅ pass
 
-Obligation: seq_empty_bv64_seed_post_seq_empty_bv64_seed_ensures_8_1938_calls_Sequence.select_0
+Obligation: seq_empty_bv64_seed_post_seq_empty_bv64_seed_ensures_8_1943_calls_Sequence.select_0
 Property: out-of-bounds access check
 Result: ✅ pass
 
-Obligation: seq_empty_bv64_seed_ensures_7_1903
+Obligation: seq_empty_bv64_seed_ensures_7_1908
 Property: assert
 Result: ✅ pass
 
-Obligation: seq_empty_bv64_seed_ensures_8_1938
+Obligation: seq_empty_bv64_seed_ensures_8_1943
 Property: assert
 Result: ✅ pass
 
@@ -162,8 +162,8 @@ Result: ✅ pass
 #guard_msgs in
 #eval Strata.Boole.verify "cvc5" seqSlicingSeed (options := .quiet)
 
-example : Strata.smtVCsCorrect seqSlicingSeed := by
-  gen_smt_vcs
+example : Strata.smtVCsCorrectBoole seqSlicingSeed := by
+  gen_smt_vcs_boole
   all_goals (try grind)
 
 -- Shape test: Sequence.select on an empty sequence currently produces no
@@ -182,13 +182,15 @@ spec {
 };
 #end
 
-/-- info:
+/--
+info:
 Obligation: set_v_calls_Sequence.select_0
 Property: out-of-bounds access check
 Result: ❓ unknown
 
-Obligation: seq_oob_seed_ensures_0_4964
+Obligation: seq_oob_seed_ensures_0_4980
 Property: assert
-Result: ❓ unknown-/
+Result: ❓ unknown
+-/
 #guard_msgs in
 #eval Strata.Boole.verify "cvc5" seqOutOfBoundsSeed (options := .quiet)

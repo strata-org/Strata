@@ -65,7 +65,11 @@ Obligation: arbitrary_iter_maintain_invariant_0_1
 Property: assert
 Result: ✅ pass
 
-Obligation: loop_measure_seed_ensures_1_1179
+Obligation: measure_decrease_0
+Property: assert
+Result: ✅ pass
+
+Obligation: loop_measure_seed_ensures_1_870
 Property: assert
 Result: ✅ pass
 -/
@@ -99,15 +103,17 @@ spec {
 };
 #end
 
-/-- info:
-Obligation: decreases_proc_seed_ensures_1_2143
+/--
+info:
+Obligation: decreases_proc_seed_ensures_1_2160
 Property: assert
-Result: ✅ pass-/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Strata.Boole.verify "cvc5" decreasesFunctionSeed (options := .quiet)
 
-example : Strata.smtVCsCorrect decreasesFunctionSeed := by
-  gen_smt_vcs
+example : Strata.smtVCsCorrectBoole decreasesFunctionSeed := by
+  gen_smt_vcs_boole
   all_goals (try grind)
 
 private def fibSeed : Strata.Program :=
@@ -163,7 +169,8 @@ spec {
 };
 #end
 
-/-- info:
+/--
+info:
 Obligation: entry_invariant_0_0
 Property: assert
 Result: ✅ pass
@@ -188,9 +195,10 @@ Obligation: measure_decrease_0
 Property: assert
 Result: ✅ pass
 
-Obligation: for_decreases_seed_ensures_1_3201
+Obligation: for_decreases_seed_ensures_1_3230
 Property: assert
-Result: ✅ pass-/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Strata.Boole.verify "cvc5" decreasesForLoopSeed (options := .quiet)
 

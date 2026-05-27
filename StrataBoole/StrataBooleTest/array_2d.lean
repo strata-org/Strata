@@ -21,10 +21,12 @@ procedure array_2d_write_read(i: int, j: int, v: int) returns ()
 
 #end
 
-/-- info:
-Obligation: assert_0_298
+/--
+info:
+Obligation: assert_0_303
 Property: assert
-Result: ✅ pass-/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Strata.Boole.verify "cvc5" array_2d (options := .quiet)
 
