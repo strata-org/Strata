@@ -69,7 +69,7 @@ structure WFifProp    (Cmd : Type) (p : Program) (cond : ExprOrNondet Expression
 
 structure WFloopProp    (Cmd : Type) (p : Program) (guard : ExprOrNondet Expression) (measure : Option Expression.Expr) (invariant : List (String × Expression.Expr)) (b : Block) : Prop where
 
-structure WFexitProp  (p : Program) (label : Option String) : Prop where
+structure WFexitProp  (p : Program) (label : String) : Prop where
 
 /-- Well-formedness for local function declarations.
     Checks that function parameter names are unique.
@@ -94,7 +94,7 @@ def WFStatementProp (p : Program) (stmt : Statement) : Prop := match stmt with
   | .loop  (guard : ExprOrNondet Expression) (measure : Option Expression.Expr)
            (invariant : List (String × Expression.Expr)) (body : Block) _ =>
      WFloopProp (CmdExt Expression) p guard measure invariant body
-  | .exit (label : Option String) _ => WFexitProp p label
+  | .exit (label : String) _ => WFexitProp p label
   | .funcDecl decl _ => WFfuncDeclProp p decl
   | .typeDecl _ _ => True  -- Type declarations are always well-formed
 

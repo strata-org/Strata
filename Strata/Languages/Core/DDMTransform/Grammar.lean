@@ -103,9 +103,9 @@ fn map_get (K : Type, V : Type, m : Map K V, k : K) : V => m "[" k "]";
 fn map_set (K : Type, V : Type, m : Map K V, k : K, v : V) : Map K V =>
   m "[" k ":=" v "]";
 
-// TODO: seq_empty is not yet supported in the grammar because the DDM parser
-// cannot currently handle 0-ary polymorphic functions (no arguments to infer
-// the type parameter from). The Factory definition exists for programmatic use.
+// seq_empty uses explicit type annotation syntax since there are no value
+// arguments to infer the type parameter from.
+fn seq_empty (A : Type) : Sequence A => "Sequence.empty" "<" A ">" "(" ")";
 fn seq_length (A : Type, s : Sequence A) : int => "Sequence.length" "(" s ")";
 fn seq_select (A : Type, s : Sequence A, i : int) : A => "Sequence.select" "(" s ", " i ")";
 fn seq_append (A : Type, s1 : Sequence A, s2 : Sequence A) : Sequence A =>
@@ -187,6 +187,16 @@ fn bvslt (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " <s " b
 fn bvsle (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " <=s " b;
 fn bvsgt (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " >s " b;
 fn bvsge (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " >=s " b;
+
+fn bv_neg_overflow (tp : Type, a : tp) : bool => "Bv.SNegOverflow" "(" a ")";
+fn bv_uneg_overflow (tp : Type, a : tp) : bool => "Bv.UNegOverflow" "(" a ")";
+fn bv_sadd_overflow (tp : Type, a : tp, b : tp) : bool => "Bv.SAddOverflow" "(" a ", " b ")";
+fn bv_ssub_overflow (tp : Type, a : tp, b : tp) : bool => "Bv.SSubOverflow" "(" a ", " b ")";
+fn bv_smul_overflow (tp : Type, a : tp, b : tp) : bool => "Bv.SMulOverflow" "(" a ", " b ")";
+fn bv_sdiv_overflow (tp : Type, a : tp, b : tp) : bool => "Bv.SDivOverflow" "(" a ", " b ")";
+fn bv_uadd_overflow (tp : Type, a : tp, b : tp) : bool => "Bv.UAddOverflow" "(" a ", " b ")";
+fn bv_usub_overflow (tp : Type, a : tp, b : tp) : bool => "Bv.USubOverflow" "(" a ", " b ")";
+fn bv_umul_overflow (tp : Type, a : tp, b : tp) : bool => "Bv.UMulOverflow" "(" a ", " b ")";
 
 fn bvconcat8 (a : bv8, b : bv8) : bv16 => "bvconcat{8}{8}" "(" a ", " b ")";
 fn bvconcat16 (a : bv16, b : bv16) : bv32 => "bvconcat{16}{16}" "(" a ", " b ")";
@@ -289,7 +299,6 @@ op call_statement (f : Ident, args : CommaSepBy CallArg) : Statement =>
 op block (c : NewlineSepBy Statement) : Block => "{\n  " indent(2, c) "\n}";
 op block_statement (label : Ident, b : Block) : Statement => label ": " b:0;
 op exit_statement (label : Ident) : Statement => "exit " label ";";
-op exit_unlabeled_statement : Statement => "exit;";
 
 category SpecElt;
 category Free;
@@ -355,7 +364,7 @@ op command_fndecl (name : Ident,
   "function " name typeArgs b " : " r ";\n";
 
 category Inline;
-op inline () : Inline => "inline";
+op inline () : Inline => "inline ";
 
 // Note: when editing command_fndef, consider whether recfn_decl needs
 // matching edits.
@@ -452,8 +461,11 @@ op datatype_decl (name : Ident,
 
 // Unified datatype command: one or more datatype declarations separated by
 // newlines, ending with a semicolon.
+//
+// `@[nonempty]` is load-bearing: see
+// https://github.com/strata-org/Strata/issues/1146.
 @[scope(datatypes), preRegisterTypes(datatypes)]
-op command_datatypes (datatypes : NewlineSepBy DatatypeDecl) : Command =>
+op command_datatypes (@[nonempty] datatypes : NewlineSepBy DatatypeDecl) : Command =>
   datatypes ";\n";
 
 #end

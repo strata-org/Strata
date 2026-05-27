@@ -384,6 +384,7 @@ loop_entry$_1:
 -- Errors encountered during conversion:
 Unsupported construct in lopToExpr: 0-ary op not found: top
 Context: Global scope:
+  freeVars: [n]
   var loop_measure$_2 : int;
   assume [assume_loop_measure$_2]: loop_measure$_2 == n - x;
   assert [measure_lb_loop_measure$_2]: !(loop_measure$_2 < 0);
