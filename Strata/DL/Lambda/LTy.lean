@@ -423,20 +423,20 @@ def LTy.freeVars (ty : LTy) : List TyIdentifier :=
 /--
 Get the bound type variables in a type scheme.
 -/
-def LTy.boundVars (sch : LTy) : List TyIdentifier :=
+@[expose] def LTy.boundVars (sch : LTy) : List TyIdentifier :=
   match sch with
   | .forAll xs _ => xs
 
 /--
 A type scheme `ty` is a mono-type if there are no bound variables.
 -/
-def LTy.isMonoType (ty : LTy) : Bool :=
+@[expose] def LTy.isMonoType (ty : LTy) : Bool :=
   ty.boundVars.isEmpty
 
 /--
 Obtain a mono-type from a type scheme `ty`.
 -/
-def LTy.toMonoType (ty : LTy) (h : LTy.isMonoType ty) : LMonoTy :=
+@[expose] def LTy.toMonoType (ty : LTy) (h : LTy.isMonoType ty) : LMonoTy :=
   match ty with
   | .forAll _ lty => lty
 

@@ -304,6 +304,20 @@ theorem TContext_types_subst_find_none [DecidableEq IDMeta]
       rw [TContext_types_subst_go_find_none scope S x h_scope]
       exact ih h
 
+theorem TContext.subst_find_none [DecidableEq IDMeta]
+    (ctx : TContext IDMeta) (S : Subst) (x : Identifier IDMeta)
+    (h : ctx.types.find? x = none) :
+    (TContext.subst ctx S).types.find? x = none := by
+  simp only [TContext.subst]
+  exact TContext_types_subst_find_none ctx.types S x h
+
+theorem TContext.subst_find_some [DecidableEq IDMeta]
+    (ctx : TContext IDMeta) (S : Subst) (x : Identifier IDMeta) (ty : LTy)
+    (h : ctx.types.find? x = some ty) :
+    (TContext.subst ctx S).types.find? x = some (LTy.subst S ty) := by
+  simp only [TContext.subst]
+  exact TContext_types_subst_find ctx.types S x ty h
+
 /-- `TContext.subst` commutes with `Maps.insert` when the key is fresh. -/
 theorem TContext_subst_insert_fresh [DecidableEq IDMeta]
     (ctx : TContext IDMeta) (S : Subst) (xv : Identifier IDMeta) (xty : LTy)
@@ -461,10 +475,10 @@ def LContext.empty {IDMeta} : LContext IDMeta :=
 instance : EmptyCollection (LContext IDMeta) where
   emptyCollection := LContext.empty
 
-def TEnv.context (T: TEnv IDMeta) : TContext IDMeta :=
+@[expose] def TEnv.context (T: TEnv IDMeta) : TContext IDMeta :=
   T.genEnv.context
 
-def TEnv.updateContext {IDMeta} (T: TEnv IDMeta) (C: TContext IDMeta) : TEnv IDMeta :=
+@[expose] def TEnv.updateContext {IDMeta} (T: TEnv IDMeta) (C: TContext IDMeta) : TEnv IDMeta :=
   let g := {T.genEnv with context := C}
   {T with genEnv := g}
 
@@ -560,7 +574,7 @@ def LContext.addTypeFactory [Inhabited T.IDMeta] [Inhabited T.Metadata] (C: LCon
 /--
 Replace the global substitution in `T.state.subst` with `S`.
 -/
-def TEnv.updateSubst (Env : TEnv IDMeta) (S : SubstInfo) : TEnv IDMeta :=
+@[expose] def TEnv.updateSubst (Env : TEnv IDMeta) (S : SubstInfo) : TEnv IDMeta :=
   { Env with stateSubstInfo := S }
 
 theorem TEnv.SubstWF_of_pushemptySubstScope (T : TEnv IDMeta) :
@@ -610,6 +624,26 @@ def TEnv.addInNewestContext (Env : TEnv T.IDMeta) (map : Map T.Identifier LTy) :
   let ctx' := { ctx with types := types }
   Env.updateContext ctx'
 
+omit [DecidableEq T.IDMeta] [ToFormat T.Metadata] [ToFormat T.IDMeta] in
+theorem TEnv.addInNewestContext_stateSubstInfo (Env : TEnv T.IDMeta) (map : Map T.Identifier LTy) :
+    (Env.addInNewestContext map).stateSubstInfo = Env.stateSubstInfo := by
+  simp [TEnv.addInNewestContext, TEnv.updateContext]
+
+omit [ToFormat T.Metadata] [ToFormat T.IDMeta] in
+/-- Substitution distributes over `addInNewestContext` for a fresh singleton binding. -/
+theorem TEnv.addInNewestContext_singleton_subst_context
+    (Env : TEnv T.IDMeta) (x : T.Identifier) (ty : LTy) (S : Subst)
+    (h_fresh : Maps.find? Env.context.types x = none) :
+    TContext.subst (Env.addInNewestContext [(x, ty)]).context S =
+      { TContext.subst Env.context S with
+        types := (TContext.subst Env.context S).types.insert x (LTy.subst S ty) } := by
+  simp only [TEnv.addInNewestContext, TEnv.updateContext, TEnv.context]
+  have h_eq : Maps.addInNewest Env.genEnv.context.types [(x, ty)] =
+      Maps.insert Env.genEnv.context.types x ty :=
+    (Maps.insert_eq_addInNewest_fresh _ _ _ h_fresh).symm
+  rw [h_eq]
+  exact TContext_subst_insert_fresh Env.context S x ty h_fresh
+
 /--
 Erase entry for `x` from `T.context`.
 -/
@@ -636,6 +670,28 @@ def TEnv.freeVarChecks [DecidableEq T.IDMeta] (Env : TEnv T.IDMeta) (es : List (
   | e :: erest => do
     let _ ← freeVarCheck Env e f!"[{e}]"
     freeVarChecks Env erest
+
+omit [DecidableEq T.IDMeta] [ToFormat T.Metadata] [ToFormat T.IDMeta] in
+theorem TEnv.freeVarCheck_implies_fvars_in_knownVars [DecidableEq T.IDMeta]
+    (Env : TEnv T.IDMeta) (e : LExpr T.mono) (msg : Format)
+    (h : Env.freeVarCheck e msg = .ok ()) :
+    ∀ x ∈ LExpr.freeVars e, x.1 ∈ TContext.knownVars Env.context := by
+  simp only [TEnv.freeVarCheck] at h
+  split at h
+  · rename_i h_filter_eq
+    intro x hx
+    have h_all_in : ∀ v ∈ (LExpr.freeVars e).map Prod.fst,
+        ¬(v ∉ Env.context.knownVars) := by
+      intro v hv h_not
+      have h_mem : v ∈ List.filter (fun v => decide (v ∉ Env.context.knownVars))
+          ((LExpr.freeVars e).map Prod.fst) := by
+        simp only [List.mem_filter, decide_eq_true_eq]
+        exact ⟨hv, h_not⟩
+      rw [h_filter_eq] at h_mem
+      exact absurd h_mem (by simp)
+    have h_x_in := h_all_in x.1 (List.mem_map_of_mem (f := Prod.fst) hx)
+    exact Decidable.not_not.mp h_x_in
+  · exact absurd h (by simp)
 
 instance : Inhabited (TyIdentifier × TEnv T.IDMeta) where
   default := ("$__ty0", TEnv.default)

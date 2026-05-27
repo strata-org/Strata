@@ -396,7 +396,7 @@ theorem relevantKeys_decrease (S : Subst) (a : TyIdentifier) (t : LMonoTy)
     rw [decide_eq_true_eq]; exact ha_not_in_subst
 
 /-- All keys in substitution `S` are fresh w.r.t. context `Γ`. -/
-def Subst.allKeysFresh {T : LExprParams} [DecidableEq T.IDMeta]
+@[expose] def Subst.allKeysFresh {T : LExprParams} [DecidableEq T.IDMeta]
     (S : Subst) (Γ : TContext T.IDMeta) : Prop :=
   ∀ a, a ∈ Maps.keys S → TContext.isFresh (T := T) a Γ
 
@@ -404,7 +404,7 @@ def Subst.allKeysFresh {T : LExprParams} [DecidableEq T.IDMeta]
     **polymorphic** entries in the context (those with non-empty bound variables).
     This condition is preserved through `typeBoundVar` (which adds monomorphic entries)
     and suffices for the polymorphic `fvar` case of `inferFVar_HasType`. -/
-def Subst.polyKeysFresh {T : LExprParams} [DecidableEq T.IDMeta]
+@[expose] def Subst.polyKeysFresh {T : LExprParams} [DecidableEq T.IDMeta]
     (S : Subst) (Γ : TContext T.IDMeta) : Prop :=
   ∀ a, a ∈ Maps.keys S → ∀ (x : T.Identifier) (ty : LTy),
     Γ.types.find? x = some ty → LTy.boundVars ty ≠ [] → a ∉ LTy.freeVars ty
@@ -1849,6 +1849,7 @@ private theorem LMonoTys_resolveAliases_genState_mono
       (LMonoTy_resolveAliases_genState_mono mty Env mty' Env1 h_hd)
       (LMonoTys_resolveAliases_genState_mono mrest Env1 mrest' Env2 h_tl)
 end
+
 
 omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 mutual
@@ -4648,6 +4649,68 @@ private theorem LMonoTys_resolveAliases_subst_eq
       (LMonoTy_resolveAliases_subst_eq mty Env mty' Env1 h_hd)
 end
 
+omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
+private theorem LTy_resolveAliases_subst_eq
+    (ty : LTy) (Env : TEnv T.IDMeta) (mty : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : LTy.resolveAliases ty Env = .ok (mty, Env')) :
+    Env'.stateSubstInfo = Env.stateSubstInfo := by
+  simp [LTy.resolveAliases, Bind.bind, Except.bind] at h
+  split at h
+  · simp at h
+  · rename_i v1 h_inst
+    obtain ⟨mty0, genEnv'⟩ := v1; simp at h h_inst
+    exact LMonoTy_resolveAliases_subst_eq mty0
+      {Env with genEnv := genEnv'} mty Env' h
+
+omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
+private theorem LTy_resolveAliases_genState_mono
+    (ty : LTy) (Env : TEnv T.IDMeta) (mty : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : LTy.resolveAliases ty Env = .ok (mty, Env')) :
+    Env'.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen := by
+  simp [LTy.resolveAliases, Bind.bind, Except.bind] at h
+  split at h
+  · simp at h
+  · rename_i v1 h_inst
+    obtain ⟨mty0, genEnv'⟩ := v1; simp at h h_inst
+    have h_ra_mono := LMonoTy_resolveAliases_genState_mono mty0
+      {Env with genEnv := genEnv'} mty Env' h
+    simp [LTy.instantiate, Bind.bind, Except.bind] at h_inst
+    split at h_inst
+    · simp at h_inst; obtain ⟨_, h2⟩ := h_inst; rw [← h2] at h_ra_mono; exact h_ra_mono
+    · split at h_inst
+      · simp at h_inst
+      · rename_i v2 h_gen
+        obtain ⟨tvs, Env1⟩ := v2; simp at h_inst h_gen
+        obtain ⟨_, h2⟩ := h_inst; rw [← h2] at h_ra_mono
+        exact Nat.le_trans (genTyVars_tyGen_mono _ Env.genEnv tvs Env1 h_gen) h_ra_mono
+
+omit [ToString T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
+theorem LTy_instantiateWithCheck_TEnvWF
+    (ty : LTy) (C : LContext T) (Env : TEnv T.IDMeta)
+    (mty : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : LTy.instantiateWithCheck ty C Env = .ok (mty, Env'))
+    (h_wf : TEnvWF Env) : TEnvWF Env' := by
+  have h_ctx := LTy_instantiateWithCheck_context' ty C Env mty Env' h
+  simp [LTy.instantiateWithCheck, Bind.bind, Except.bind] at h
+  split at h; · simp at h
+  rename_i v1 h_ra; obtain ⟨mty', Env1⟩ := v1
+  split at h; · simp at h
+  split at h
+  · simp at h
+    obtain ⟨_, h2⟩ := h; subst h2
+    have h_subst := LTy_resolveAliases_subst_eq ty Env mty' Env1 h_ra
+    have h_gen_mono := LTy_resolveAliases_genState_mono ty Env mty' Env1 h_ra
+    exact {
+      aliasesWF := h_ctx ▸ h_wf.aliasesWF
+      substFreshForGen := h_subst ▸ SubstFreshForGen.mono _ _ _ h_wf.substFreshForGen h_gen_mono
+      ctxFreshForGen := h_ctx ▸ ContextFreshForGen.mono _ _ _
+        h_wf.ctxFreshForGen h_gen_mono
+      boundVarsNodup := fun y xty hf => h_wf.boundVarsNodup y xty (h_ctx ▸ hf)
+      boundVarsFresh := fun y xty hf v hv n hn =>
+        h_wf.boundVarsFresh y xty (h_ctx ▸ hf) v hv n (Nat.le_trans h_gen_mono hn)
+    }
+  · simp at h
+
 /-- `subst S (ftvar v) = t` when `S` is non-empty and `find? S v = some t`. -/
 private theorem LMonoTy.subst_ftvar_eq (S : Subst) (v : TyIdentifier) (t : LMonoTy)
     (h_ne : Subst.hasEmptyScopes S = false) (h_find : Maps.find? S v = some t) :
@@ -5362,7 +5425,7 @@ private theorem resolveAux_output_type_no_future_vars :
     reference must be bound in the context.
     Propagates through `varOpen`: if `WellScoped e Γ`, then
     `WellScoped (varOpen 0 (xv, some xty) e) (extend Γ xv)`. -/
-def WellScoped (e : LExpr T.mono) (Γ : TContext T.IDMeta) : Prop :=
+@[expose] def WellScoped (e : LExpr T.mono) (Γ : TContext T.IDMeta) : Prop :=
   ∀ x ∈ LExpr.freeVars e, x.1 ∈ TContext.knownVars Γ
 
 omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
@@ -6756,6 +6819,227 @@ theorem Subst.allKeysFresh_of_ctx_closed
   simp [h_ctx_closed x ty hf]
 
 
+/-- Core resolve soundness: if `LExpr.resolve` succeeds, the result is well-typed
+    (universally over absorbing substitutions), idempotent, and preserves `TEnvWF`.
+    No `checkContextTypesClosed` or `allKeysFresh` preconditions needed. -/
+theorem resolve_HasType_core :
+    ∀ (e : LExpr T.mono) (e_typed : LExprT T.mono) (C : LContext T)
+      (Env : TEnv T.IDMeta) Env',
+      e.resolve C Env = .ok ⟨e_typed, Env'⟩ →
+      TEnvWF Env →
+      FactoryWF C.functions →
+      WellScoped e Env.context →
+      (∀ S, Subst.absorbs S Env'.stateSubstInfo.subst → SubstWF S →
+        Subst.polyKeysFresh (T := T) S Env.context →
+        HasType C (TContext.subst Env.context S) e (.forAll [] (LMonoTy.subst S e_typed.toLMonoTy))) ∧
+      LMonoTy.subst Env'.stateSubstInfo.subst e_typed.toLMonoTy = e_typed.toLMonoTy ∧
+      TEnvWF Env' := by
+  intro e e_typed C Env Env' h h_envwf h_fwf h_ws
+  unfold LExpr.resolve at h
+  simp only [Bind.bind, Except.bind] at h
+  cases h_types : Env.context.types with
+  | nil =>
+    simp [Maps.isEmpty, h_types] at h
+    split at h
+    · simp at h
+    · rename_i v h_aux
+      obtain ⟨et, Env'⟩ := v
+      simp at h
+      obtain ⟨h_typed, h_env'⟩ := h
+      let Env_upd := Env.updateContext { Env.context with types := [[]] }
+      have h_upd_ne : Env_upd.context.types ≠ [] := List.cons_ne_nil _ _
+      have h_envwf_upd : TEnvWF Env_upd := {
+        aliasesWF := by simp [Env_upd, TEnv.updateContext, TEnv.context]; exact h_envwf.aliasesWF
+        substFreshForGen := by simp [Env_upd, TEnv.updateContext]; exact h_envwf.substFreshForGen
+        ctxFreshForGen := by
+          simp only [Env_upd, TEnv.updateContext, TEnv.context, ContextFreshForGen, TContext.knownTypeVars]
+          intro v hv
+          simp [TContext.types.knownTypeVars, TContext.types.knownTypeVars.go] at hv
+        boundVarsNodup := by
+          intro y ty h_f; simp only [Env_upd, TEnv.updateContext, TEnv.context] at h_f
+          simp [Maps.find?, Map.find?] at h_f
+        boundVarsFresh := by
+          intro y ty h_f; simp only [Env_upd, TEnv.updateContext, TEnv.context] at h_f
+          simp [Maps.find?, Map.find?] at h_f
+      }
+      have h_ws_upd : WellScoped e Env_upd.context := by
+        have h_kv_eq : Env_upd.context.knownVars = Env.context.knownVars := by
+          simp only [Env_upd, TEnv.updateContext, TEnv.context, TContext.knownVars]
+          simp only [TEnv.context] at h_types
+          rw [h_types]
+          simp [TContext.knownVars.go, Map.keys]
+        unfold WellScoped at h_ws ⊢
+        rw [h_kv_eq]
+        exact h_ws
+      have h_aux' : resolveAux C Env_upd e = .ok (et, Env') := by
+        simp only [Env_upd, TEnv.updateContext] at h_aux ⊢
+        exact h_aux
+      subst h_env'
+      have ⟨h_ctx_upd, h_hastype⟩ := resolveAux_HasType e et C Env_upd Env' h_aux' h_envwf_upd h_upd_ne h_fwf h_ws_upd
+      have h_envwf' := TEnvWF.of_resolveAux e et C Env_upd Env' h_aux' h_envwf_upd h_upd_ne h_fwf h_ctx_upd
+      have h_idem : LMonoTy.subst Env'.stateSubstInfo.subst e_typed.toLMonoTy = e_typed.toLMonoTy := by
+        rw [← h_typed, applySubstT_toLMonoTy]
+        exact LMonoTy.subst_idempotent Env'.stateSubstInfo.subst Env'.stateSubstInfo.isWF (et.toLMonoTy)
+      refine ⟨fun S h_abs h_wf h_pkf => ?_, h_idem, h_envwf'⟩
+      rw [← h_typed, applySubstT_toLMonoTy, LMonoTy.subst_absorbs S Env'.stateSubstInfo.subst _ h_abs]
+      have h_upd_eq : Env_upd.context = { types := [[]], aliases := Env.context.aliases } := by
+        simp [Env_upd, TEnv.updateContext, TEnv.context]
+      have h_pkf_upd : Subst.polyKeysFresh (T := T) S Env_upd.context := by
+        intro a ha x ty hf _
+        simp [Env_upd, TEnv.updateContext, TEnv.context, Maps.find?, Map.find?] at hf
+      have h_ht := h_hastype S h_abs h_wf h_pkf_upd
+      have h_ctx_subst_id : TContext.subst Env.context S = Env.context := by
+        unfold TContext.subst
+        rw [h_types]
+        simp only [TContext.types.subst]
+        exact congrArg (TContext.mk · _) h_types.symm
+      have h_upd_subst_id : TContext.subst Env_upd.context S = Env_upd.context := by
+        simp [Env_upd, TEnv.updateContext, TEnv.context, TContext.subst, TContext.types.subst, TContext.types.subst.go]
+      rw [h_upd_subst_id, h_upd_eq] at h_ht
+      rw [h_ctx_subst_id]
+      have h_result := HasType_transfer_empty_scope C Env.context.aliases e _ h_ht
+      suffices Env.context = { types := [], aliases := Env.context.aliases } by
+        rw [this]; exact h_result
+      cases h_ctx : Env.context with
+      | mk t a => grind
+  | cons hd tl =>
+    simp [Maps.isEmpty, h_types] at h
+    split at h
+    · simp at h
+    · rename_i v h_aux
+      obtain ⟨et, Env'⟩ := v
+      simp at h
+      obtain ⟨h_typed, h_env'⟩ := h
+      subst h_env'
+      have h_ne : Env.context.types ≠ [] := by rw [h_types]; exact List.cons_ne_nil _ _
+      have ⟨h_ctx_pres, h_hastype⟩ := resolveAux_HasType e et C Env Env' h_aux h_envwf h_ne h_fwf h_ws
+      have h_envwf' := TEnvWF.of_resolveAux e et C Env Env' h_aux h_envwf h_ne h_fwf h_ctx_pres
+      have h_idem : LMonoTy.subst Env'.stateSubstInfo.subst e_typed.toLMonoTy = e_typed.toLMonoTy := by
+        rw [← h_typed, applySubstT_toLMonoTy]
+        exact LMonoTy.subst_idempotent Env'.stateSubstInfo.subst Env'.stateSubstInfo.isWF (et.toLMonoTy)
+      refine ⟨fun S h_abs h_wf h_pkf => ?_, h_idem, h_envwf'⟩
+      rw [← h_typed, applySubstT_toLMonoTy]
+      have h_ht := h_hastype S h_abs h_wf h_pkf
+      rw [LMonoTy.subst_absorbs S Env'.stateSubstInfo.subst _ h_abs]
+      exact h_ht
+
+omit [ToString T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
+theorem resolve_preserves_context
+    (e : LExpr T.mono) (e_typed : LExprT T.mono) (C : LContext T)
+    (Env Env' : TEnv T.IDMeta)
+    (h : e.resolve C Env = .ok ⟨e_typed, Env'⟩)
+    (h_envwf : TEnvWF Env)
+    (h_ne : Env.context.types ≠ [])
+    (h_fwf : FactoryWF C.functions) :
+    Env'.context = Env.context := by
+  unfold LExpr.resolve at h
+  simp only [Bind.bind, Except.bind] at h
+  cases h_types : Env.context.types with
+  | nil => exact absurd h_types h_ne
+  | cons hd tl =>
+    simp [Maps.isEmpty, h_types] at h
+    split at h
+    · simp at h
+    · rename_i v h_aux
+      obtain ⟨et, Env_r⟩ := v
+      simp at h
+      obtain ⟨_, h_env'⟩ := h
+      subst h_env'
+      have h_props := resolveAux_properties e et C Env Env_r h_aux
+        (by rw [h_types]; exact List.cons_ne_nil _ _)
+        h_envwf.aliasesWF h_fwf h_envwf.substFreshForGen h_envwf.ctxFreshForGen
+        h_envwf.boundVarsFresh
+      exact h_props.context
+
+/-- Extended resolve soundness with composability postconditions.
+    Adds `checkContextTypesClosed Env'` and `allKeysFresh Env'.subst Env'.context`
+    given extra preconditions. -/
+theorem resolve_HasType_strong :
+    ∀ (e : LExpr T.mono) (e_typed : LExprT T.mono) (C : LContext T)
+      (Env : TEnv T.IDMeta) Env',
+      e.resolve C Env = .ok ⟨e_typed, Env'⟩ →
+      TEnvWF Env →
+      FactoryWF C.functions →
+      WellScoped e Env.context →
+      Subst.allKeysFresh Env.stateSubstInfo.subst Env.context →
+      LExpr.checkContextTypesClosed Env →
+      (∀ S, Subst.absorbs S Env'.stateSubstInfo.subst → SubstWF S →
+        Subst.polyKeysFresh (T := T) S Env.context →
+        HasType C (TContext.subst Env.context S) e (.forAll [] (LMonoTy.subst S e_typed.toLMonoTy))) ∧
+      LMonoTy.subst Env'.stateSubstInfo.subst e_typed.toLMonoTy = e_typed.toLMonoTy ∧
+      TEnvWF Env' ∧
+      LExpr.checkContextTypesClosed Env' ∧
+      Subst.allKeysFresh (T := T) Env'.stateSubstInfo.subst Env'.context := by
+  intro e e_typed C Env Env' h h_envwf h_fwf h_ws h_all_fresh h_check
+  have ⟨h_ht, h_idem, h_envwf'⟩ := resolve_HasType_core e e_typed C Env Env' h h_envwf h_fwf h_ws
+  have h_ctx_closed : ∀ y ty, Env.context.types.find? y = some ty → LTy.freeVars ty = [] :=
+    ctx_closed_of_check Env h_check
+  -- For composability we need context preservation from resolve
+  -- Unfold resolve to get context relationship
+  unfold LExpr.resolve at h
+  simp only [Bind.bind, Except.bind] at h
+  cases h_types : Env.context.types with
+  | nil =>
+    simp [Maps.isEmpty, h_types] at h
+    split at h
+    · simp at h
+    · rename_i v h_aux
+      obtain ⟨et, Env'⟩ := v
+      simp at h
+      obtain ⟨h_typed, h_env'⟩ := h
+      subst h_env'
+      let Env_upd := Env.updateContext { Env.context with types := [[]] }
+      have h_aux' : resolveAux C Env_upd e = .ok (et, Env') := by
+        simp only [Env_upd, TEnv.updateContext] at h_aux ⊢; exact h_aux
+      have h_upd_ne : Env_upd.context.types ≠ [] := List.cons_ne_nil _ _
+      have h_envwf_upd : TEnvWF Env_upd := {
+        aliasesWF := by simp [Env_upd, TEnv.updateContext, TEnv.context]; exact h_envwf.aliasesWF
+        substFreshForGen := by simp [Env_upd, TEnv.updateContext]; exact h_envwf.substFreshForGen
+        ctxFreshForGen := by
+          simp only [Env_upd, TEnv.updateContext, TEnv.context, ContextFreshForGen, TContext.knownTypeVars]
+          intro v hv; simp [TContext.types.knownTypeVars, TContext.types.knownTypeVars.go] at hv
+        boundVarsNodup := by
+          intro y ty h_f; simp only [Env_upd, TEnv.updateContext, TEnv.context] at h_f
+          simp [Maps.find?, Map.find?] at h_f
+        boundVarsFresh := by
+          intro y ty h_f; simp only [Env_upd, TEnv.updateContext, TEnv.context] at h_f
+          simp [Maps.find?, Map.find?] at h_f
+      }
+      have h_ws_upd : WellScoped e Env_upd.context := by
+        have h_kv_eq : Env_upd.context.knownVars = Env.context.knownVars := by
+          simp only [Env_upd, TEnv.updateContext, TEnv.context, TContext.knownVars]
+          simp only [TEnv.context] at h_types; rw [h_types]
+          simp [TContext.knownVars.go, Map.keys]
+        unfold WellScoped at h_ws ⊢; rw [h_kv_eq]; exact h_ws
+      have ⟨h_ctx_upd, _⟩ := resolveAux_HasType e et C Env_upd Env' h_aux' h_envwf_upd h_upd_ne h_fwf h_ws_upd
+      have h_check_upd : LExpr.checkContextTypesClosed Env_upd := by
+        simp [LExpr.checkContextTypesClosed, Env_upd, TEnv.updateContext, TEnv.context]
+      have h_check' : LExpr.checkContextTypesClosed Env' :=
+        checkContextTypesClosed_of_ctx_eq h_check_upd h_ctx_upd
+      have h_all_fresh' : Subst.allKeysFresh (T := T) Env'.stateSubstInfo.subst Env'.context := by
+        rw [h_ctx_upd]
+        exact Subst.allKeysFresh_of_ctx_closed (by
+          intro y ty hf
+          simp only [Env_upd, TEnv.updateContext, TEnv.context, Maps.find?] at hf
+          exact absurd hf (by simp [Map.find?]))
+      exact ⟨h_ht, h_idem, h_envwf', h_check', h_all_fresh'⟩
+  | cons hd tl =>
+    simp [Maps.isEmpty, h_types] at h
+    split at h
+    · simp at h
+    · rename_i v h_aux
+      obtain ⟨et, Env'⟩ := v
+      simp at h
+      obtain ⟨h_typed, h_env'⟩ := h
+      subst h_env'
+      have h_ne : Env.context.types ≠ [] := by rw [h_types]; exact List.cons_ne_nil _ _
+      have ⟨h_ctx_pres, _⟩ := resolveAux_HasType e et C Env Env' h_aux h_envwf h_ne h_fwf h_ws
+      have h_all_fresh' : Subst.allKeysFresh (T := T) Env'.stateSubstInfo.subst Env'.context := by
+        rw [h_ctx_pres]; exact Subst.allKeysFresh_of_ctx_closed h_ctx_closed
+      have h_check' : LExpr.checkContextTypesClosed Env' :=
+        checkContextTypesClosed_of_ctx_eq h_check h_ctx_pres
+      exact ⟨h_ht, h_idem, h_envwf', h_check', h_all_fresh'⟩
+
 /-- Top-level soundness: if `LExpr.resolve` succeeds, the result is well-typed
     and the output environment is well-formed.
 
@@ -6785,127 +7069,17 @@ theorem resolve_HasType :
       LExpr.checkContextTypesClosed Env' ∧
       Subst.allKeysFresh Env'.stateSubstInfo.subst Env'.context := by
   intro e e_typed C Env Env' h h_envwf h_fwf h_ws h_all_fresh h_check
-  -- Derive the find?-based closedness from checkContextTypesClosed
-  have h_ctx_closed : ∀ y ty, Env.context.types.find? y = some ty → LTy.freeVars ty = [] :=
-    ctx_closed_of_check Env h_check
-  -- Decompose resolve: it ensures types ≠ [] then calls resolveAux
-  unfold LExpr.resolve at h
-  simp only [Bind.bind, Except.bind] at h
-  -- Case-split on whether Env.context.types is [] or nonempty
-  cases h_types : Env.context.types with
-  | nil =>
-    -- types was empty: resolve initialized to [[]]
-    simp [Maps.isEmpty, h_types] at h
-    split at h
-    · simp at h
-    · rename_i v h_aux
-      obtain ⟨et, Env'⟩ := v
-      simp at h
-      obtain ⟨h_typed, h_env'⟩ := h
-      -- resolveAux was called on Env with types replaced by [[]]
-      -- Build TEnvWF for the updated env
-      let Env_upd := Env.updateContext { Env.context with types := [[]] }
-      have h_upd_ne : Env_upd.context.types ≠ [] := List.cons_ne_nil _ _
-      have h_envwf_upd : TEnvWF Env_upd := {
-        aliasesWF := by simp [Env_upd, TEnv.updateContext, TEnv.context]; exact h_envwf.aliasesWF
-        substFreshForGen := by simp [Env_upd, TEnv.updateContext]; exact h_envwf.substFreshForGen
-        ctxFreshForGen := by
-          simp only [Env_upd, TEnv.updateContext, TEnv.context, ContextFreshForGen, TContext.knownTypeVars]
-          intro v hv
-          simp [TContext.types.knownTypeVars, TContext.types.knownTypeVars.go] at hv
-        boundVarsNodup := by
-          intro y ty h_f; simp only [Env_upd, TEnv.updateContext, TEnv.context] at h_f
-          simp [Maps.find?, Map.find?] at h_f
-        boundVarsFresh := by
-          intro y ty h_f; simp only [Env_upd, TEnv.updateContext, TEnv.context] at h_f
-          simp [Maps.find?, Map.find?] at h_f
-      }
-      -- WellScoped transfers: both [] and [[]] have knownVars = []
-      have h_ws_upd : WellScoped e Env_upd.context := by
-        -- h_ws : WellScoped e Env.context where Env.context.types = []
-        -- Goal: WellScoped e Env_upd.context where Env_upd.context.types = [[]]
-        -- WellScoped says all fvars ∈ knownVars. knownVars collects keys from types.
-        -- Both [] and [[]] have the same keys (none), so knownVars is the same.
-        have h_kv_eq : Env_upd.context.knownVars = Env.context.knownVars := by
-          simp only [Env_upd, TEnv.updateContext, TEnv.context, TContext.knownVars]
-          simp only [TEnv.context] at h_types
-          rw [h_types]
-          simp [TContext.knownVars.go, Map.keys]
-        unfold WellScoped at h_ws ⊢
-        rw [h_kv_eq]
-        exact h_ws
-      have h_aux' : resolveAux C Env_upd e = .ok (et, Env') := by
-        simp only [Env_upd, TEnv.updateContext] at h_aux ⊢
-        exact h_aux
-      subst h_env'
-      have ⟨h_ctx_upd, h_hastype⟩ := resolveAux_HasType e et C Env_upd Env' h_aux' h_envwf_upd h_upd_ne h_fwf h_ws_upd
-      have h_envwf' := TEnvWF.of_resolveAux e et C Env_upd Env' h_aux' h_envwf_upd h_upd_ne h_fwf h_ctx_upd
-      rw [← h_typed, applySubstT_toLMonoTy]
-      -- Env.context.subst S = Env.context since types = []
-      have h_ctx_subst_id : TContext.subst Env.context Env'.stateSubstInfo.subst = Env.context := by
-        unfold TContext.subst
-        rw [h_types]
-        simp only [TContext.types.subst]
-        exact congrArg (TContext.mk · _) h_types.symm
-      -- Env_upd.context.subst S = Env_upd.context since types = [[]]
-      have h_upd_subst_id : TContext.subst Env_upd.context Env'.stateSubstInfo.subst = Env_upd.context := by
-        simp [Env_upd, TEnv.updateContext, TEnv.context, TContext.subst, TContext.types.subst, TContext.types.subst.go]
-      exact ⟨by
-        rw [h_ctx_subst_id]
-        have h_upd_eq : Env_upd.context = { types := [[]], aliases := Env.context.aliases } := by
-          simp [Env_upd, TEnv.updateContext, TEnv.context]
-        have h_ht := h_hastype Env'.stateSubstInfo.subst
-          (Subst.absorbs_refl _ Env'.stateSubstInfo.isWF) Env'.stateSubstInfo.isWF
-          (by -- polyKeysFresh holds vacuously: Env_upd.context has types = [[]], so
-              -- find? always returns none (empty scope), making the condition vacuous.
-              intro a _ x ty hf _
-              simp [Env_upd, TEnv.updateContext, TEnv.context, Maps.find?, Map.find?] at hf)
-        rw [h_upd_subst_id, h_upd_eq] at h_ht
-        have h_result := HasType_transfer_empty_scope C Env.context.aliases e _ h_ht
-        suffices Env.context = { types := [], aliases := Env.context.aliases } by
-          rw [this]; exact h_result
-        have h_t : Env.context.types = [] := h_types
-        cases h_ctx : Env.context
-        simp [TEnv.context] at h_t
-        simp_all,
-      h_envwf',
-      -- checkContextTypesClosed for Env': Env'.context = Env_upd.context with types = [[]]
-      by have h_check_upd : LExpr.checkContextTypesClosed Env_upd := by
-           simp [LExpr.checkContextTypesClosed, Env_upd, TEnv.updateContext, TEnv.context]
-         exact checkContextTypesClosed_of_ctx_eq h_check_upd h_ctx_upd,
-      -- allKeysFresh for Env'.subst / Env'.context: from closed types
-      by have h_check_upd : LExpr.checkContextTypesClosed Env_upd := by
-           simp [LExpr.checkContextTypesClosed, Env_upd, TEnv.updateContext, TEnv.context]
-         have h_check' := checkContextTypesClosed_of_ctx_eq h_check_upd h_ctx_upd
-         exact Subst.allKeysFresh_of_ctx_closed (ctx_closed_of_check Env' h_check')⟩
-  | cons hd tl =>
-    -- types was non-empty: resolve passes Env unchanged to resolveAux
-    simp [Maps.isEmpty, h_types] at h
-    split at h
-    · simp at h
-    · rename_i v h_aux
-      obtain ⟨et, Env'⟩ := v
-      simp at h
-      obtain ⟨h_typed, h_env'⟩ := h
-      subst h_env'
-      have h_ne : Env.context.types ≠ [] := by rw [h_types]; exact List.cons_ne_nil _ _
-      have ⟨h_ctx_pres, h_hastype⟩ := resolveAux_HasType e et C Env Env' h_aux h_envwf h_ne h_fwf h_ws
-      have h_envwf' := TEnvWF.of_resolveAux e et C Env Env' h_aux h_envwf h_ne h_fwf h_ctx_pres
-      rw [← h_typed, applySubstT_toLMonoTy]
-      have h_all_fresh' : Subst.allKeysFresh Env'.stateSubstInfo.subst Env.context :=
-        Subst.allKeysFresh_of_ctx_closed h_ctx_closed
-      -- checkContextTypesClosed for Env': context preserved, so types remain closed
-      have h_check' : LExpr.checkContextTypesClosed Env' :=
-        checkContextTypesClosed_of_ctx_eq h_check h_ctx_pres
-      -- contextTypesClosed for Env' (find?-based, for allKeysFresh)
-      have h_ctx_closed' : ∀ y ty, Env'.context.types.find? y = some ty → LTy.freeVars ty = [] :=
-        ctx_closed_of_check Env' h_check'
-      -- allKeysFresh for Env'.subst / Env'.context: from closed types
-      have h_all_fresh_out : Subst.allKeysFresh Env'.stateSubstInfo.subst Env'.context :=
-        Subst.allKeysFresh_of_ctx_closed h_ctx_closed'
-      exact ⟨h_hastype Env'.stateSubstInfo.subst (Subst.absorbs_refl _ Env'.stateSubstInfo.isWF) Env'.stateSubstInfo.isWF
-        (Subst.allKeysFresh_implies_polyKeysFresh _ _ h_all_fresh'),
-        h_envwf', h_check', h_all_fresh_out⟩
+  have h_ctx_closed := ctx_closed_of_check Env h_check
+  have ⟨h_ht, h_idem, h_envwf', h_check', h_fresh'⟩ :=
+    resolve_HasType_strong e e_typed C Env Env' h h_envwf h_fwf h_ws h_all_fresh h_check
+  refine ⟨?_, h_envwf', h_check', h_fresh'⟩
+  have h_akf : Subst.allKeysFresh (T := T) Env'.stateSubstInfo.subst Env.context :=
+    Subst.allKeysFresh_of_ctx_closed h_ctx_closed
+  have h_hastype := h_ht Env'.stateSubstInfo.subst (Subst.absorbs_refl _ Env'.stateSubstInfo.isWF)
+    Env'.stateSubstInfo.isWF
+    (Subst.allKeysFresh_implies_polyKeysFresh _ _ h_akf)
+  rw [h_idem] at h_hastype
+  exact h_hastype
 
 end Proofs
 
