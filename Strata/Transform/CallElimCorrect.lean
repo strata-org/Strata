@@ -1294,31 +1294,13 @@ private theorem genIdentGeneratedWF
     s'.generated = l :: s.generated :=
   genCoreIdentGeneratedWF Hgen
 
-private theorem genArgExprIdentGeneratedWF
-    {s s' : CoreGenState} {l : Expression.Ident}
-    (Hgen : genArgExprIdent s = (l, s')) :
-    s'.generated = l :: s.generated :=
-  genCoreIdentGeneratedWF Hgen
-
-private theorem genOutExprIdentGeneratedWF
-    {e : Expression.Ident} {s s' : CoreGenState} {l : Expression.Ident}
-    (Hgen : genOutExprIdent e s = (l, s')) :
-    s'.generated = l :: s.generated :=
-  genCoreIdentGeneratedWF Hgen
-
-private theorem genOldExprIdentGeneratedWF
-    {e : Expression.Ident} {s s' : CoreGenState} {l : Expression.Ident}
-    (Hgen : genOldExprIdent e s = (l, s')) :
-    s'.generated = l :: s.generated :=
-  genCoreIdentGeneratedWF Hgen
-
 private theorem genArgExprIdents_GeneratedWF
     {n : Nat} {s s' : CoreGenState} {ls : List Expression.Ident}
     (Hgen : genArgExprIdents n s = (ls, s')) :
     s'.generated = ls.reverse ++ s.generated :=
   genIdentMapM_GeneratedWF
     (g := fun (_ : Unit) => genArgExprIdent)
-    (fun H => genArgExprIdentGeneratedWF H) Hgen
+    (fun H => genCoreIdentGeneratedWF H) Hgen
 
 private theorem genOutExprIdents_GeneratedWF
     {idents : List Expression.Ident} {s s' : CoreGenState}
@@ -1327,7 +1309,7 @@ private theorem genOutExprIdents_GeneratedWF
     s'.generated = ls.reverse ++ s.generated :=
   genIdentMapM_GeneratedWF
     (g := genOutExprIdent)
-    (fun H => genOutExprIdentGeneratedWF H) Hgen
+    (fun H => genCoreIdentGeneratedWF H) Hgen
 
 private theorem genOldExprIdents_GeneratedWF
     {idents : List Expression.Ident} {s s' : CoreGenState}
@@ -1336,7 +1318,7 @@ private theorem genOldExprIdents_GeneratedWF
     s'.generated = ls.reverse ++ s.generated :=
   genIdentMapM_GeneratedWF
     (g := genOldExprIdent)
-    (fun H => genOldExprIdentGeneratedWF H) Hgen
+    (fun H => genCoreIdentGeneratedWF H) Hgen
 
 /-- Trip-level GeneratedWF for arg trips: the generated list is extended
     with `argTrips.unzip.fst.unzip.fst.reverse`. -/
@@ -1384,34 +1366,15 @@ Each fresh identifier produced by `gen{Arg,Out}ExprIdent` (which calls
 list-mapM iterators (`gen*ExprIdents`) and the trip wrappers
 (`gen*ExprIdentsTrip`). -/
 
-private theorem genArgExprIdent_isTempIdent
-    {s s' : CoreGenState} {l : Expression.Ident}
-    (Hgen : genArgExprIdent s = (l, s')) :
-    isTempIdent l = true := by
-  simp only [genArgExprIdent, genIdent] at Hgen
-  exact genIdent_tmp_isTempIdent Hgen
-
-private theorem genOutExprIdent_isTempIdent
-    {ident : Expression.Ident} {s s' : CoreGenState} {l : Expression.Ident}
-    (Hgen : genOutExprIdent ident s = (l, s')) :
-    isTempIdent l = true := by
-  simp only [genOutExprIdent, genIdent] at Hgen
-  exact genIdent_tmp_isTempIdent Hgen
-
-private theorem genOldExprIdent_isOldTempIdent
-    {ident : Expression.Ident} {s s' : CoreGenState} {l : Expression.Ident}
-    (Hgen : genOldExprIdent ident s = (l, s')) :
-    isOldTempIdent l = true := by
-  simp only [genOldExprIdent, genIdent] at Hgen
-  exact genIdent_old_isOldTempIdent Hgen
-
 private theorem genArgExprIdents_isTempIdent
     {n : Nat} {s s' : CoreGenState} {ls : List Expression.Ident}
     (Hgen : genArgExprIdents n s = (ls, s')) :
     Forall (fun x => isTempIdent x) ls :=
   genIdentMapM_Forall
     (g := fun (_ : Unit) => genArgExprIdent)
-    (fun H => genArgExprIdent_isTempIdent H) Hgen
+    (fun H => by
+      simp only [genArgExprIdent, genIdent] at H
+      exact genIdent_tmp_isTempIdent H) Hgen
 
 private theorem genOutExprIdents_isTempIdent
     {idents : List Expression.Ident} {s s' : CoreGenState}
@@ -1420,7 +1383,9 @@ private theorem genOutExprIdents_isTempIdent
     Forall (fun x => isTempIdent x) ls :=
   genIdentMapM_Forall
     (g := genOutExprIdent)
-    (fun H => genOutExprIdent_isTempIdent H) Hgen
+    (fun H => by
+      simp only [genOutExprIdent, genIdent] at H
+      exact genIdent_tmp_isTempIdent H) Hgen
 
 private theorem genOldExprIdents_isOldTempIdent
     {idents : List Expression.Ident} {s s' : CoreGenState}
@@ -1429,7 +1394,9 @@ private theorem genOldExprIdents_isOldTempIdent
     Forall (fun x => isOldTempIdent x) ls :=
   genIdentMapM_Forall
     (g := genOldExprIdent)
-    (fun H => genOldExprIdent_isOldTempIdent H) Hgen
+    (fun H => by
+      simp only [genOldExprIdent, genIdent] at H
+      exact genIdent_old_isOldTempIdent H) Hgen
 
 /-- Trip-level isTempIdent for arg trips: every fresh ident produced by
     `genArgExprIdentsTrip` satisfies `isTempIdent`. -/
@@ -1484,31 +1451,13 @@ private theorem genOldExprIdentsTrip_isOldTempIdent
 These lift `CoreGenState.WFMono'` through the inductive structure of
 `gen*ExprIdents` and the `CoreTransformM` wrapping of `gen*ExprIdentsTrip`. -/
 
-private theorem genArgExprIdentWFMono
-    {s s' : CoreGenState} {l : Expression.Ident}
-    (Hwf : CoreGenState.WF s) (Hgen : genArgExprIdent s = (l, s')) :
-    CoreGenState.WF s' :=
-  CoreGenState.WFMono' Hwf Hgen
-
-private theorem genOutExprIdentWFMono
-    {e : Expression.Ident} {s s' : CoreGenState} {l : Expression.Ident}
-    (Hwf : CoreGenState.WF s) (Hgen : genOutExprIdent e s = (l, s')) :
-    CoreGenState.WF s' :=
-  CoreGenState.WFMono' Hwf Hgen
-
-private theorem genOldExprIdentWFMono
-    {e : Expression.Ident} {s s' : CoreGenState} {l : Expression.Ident}
-    (Hwf : CoreGenState.WF s) (Hgen : genOldExprIdent e s = (l, s')) :
-    CoreGenState.WF s' :=
-  CoreGenState.WFMono' Hwf Hgen
-
 private theorem genArgExprIdents_WFMono
     {n : Nat} {s s' : CoreGenState} {ls : List Expression.Ident}
     (Hwf : CoreGenState.WF s) (Hgen : genArgExprIdents n s = (ls, s')) :
     CoreGenState.WF s' :=
   genIdentMapM_WFMono
     (g := fun (_ : Unit) => genArgExprIdent)
-    (fun H1 H2 => genArgExprIdentWFMono H1 H2) Hwf Hgen
+    (fun H1 H2 => CoreGenState.WFMono' H1 H2) Hwf Hgen
 
 private theorem genOutExprIdents_WFMono
     {idents : List Expression.Ident} {s s' : CoreGenState}
@@ -1517,7 +1466,7 @@ private theorem genOutExprIdents_WFMono
     CoreGenState.WF s' :=
   genIdentMapM_WFMono
     (g := genOutExprIdent)
-    (fun H1 H2 => genOutExprIdentWFMono H1 H2) Hwf Hgen
+    (fun H1 H2 => CoreGenState.WFMono' H1 H2) Hwf Hgen
 
 private theorem genOldExprIdents_WFMono
     {idents : List Expression.Ident} {s s' : CoreGenState}
@@ -1526,7 +1475,7 @@ private theorem genOldExprIdents_WFMono
     CoreGenState.WF s' :=
   genIdentMapM_WFMono
     (g := genOldExprIdent)
-    (fun H1 H2 => genOldExprIdentWFMono H1 H2) Hwf Hgen
+    (fun H1 H2 => CoreGenState.WFMono' H1 H2) Hwf Hgen
 
 /-- Trip-level WFMono for arg trips. -/
 private theorem genArgExprIdentsTripWFMono
