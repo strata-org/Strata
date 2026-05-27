@@ -2257,6 +2257,14 @@ private theorem callElimCmd_call_eq
     ∃ proc argTrips outTrips genOldIdents oldTys asserts assumes
        s_arg s_out s_old,
       Program.Procedure.find? p ⟨procName, ()⟩ = some proc ∧
+      let oldVars : List Expression.Ident :=
+        List.filter
+          (fun g =>
+            (ListMap.keys proc.header.inputs).contains g &&
+                (ListMap.keys proc.header.outputs).contains g &&
+              (List.map Procedure.Check.expr proc.spec.postconditions.values).any fun e =>
+                List.any e.freeVars fun x => x.fst == CoreIdent.mkOld g.name)
+          (CallArg.getLhs args)
       genArgExprIdentsTrip
           (Lambda.LMonoTySignature.toTrivialLTy proc.header.inputs)
           (CallArg.getInputExprs args)
@@ -2268,36 +2276,13 @@ private theorem callElimCmd_call_eq
           (Lambda.LMonoTySignature.toTrivialLTy proc.header.outputs)
           (CallArg.getLhs args) s_arg
         = (Except.ok outTrips, s_out) ∧
-      genOldExprIdents
-        (List.filter
-          (fun g =>
-            (ListMap.keys proc.header.inputs).contains g &&
-                (ListMap.keys proc.header.outputs).contains g &&
-              (List.map Procedure.Check.expr proc.spec.postconditions.values).any fun e =>
-                List.any e.freeVars fun x => x.fst == CoreIdent.mkOld g.name)
-          (CallArg.getLhs args))
-        s_out.genState
-        = (genOldIdents, s_old) ∧
-      oldTys.length =
-        (List.filter
-          (fun g =>
-            (ListMap.keys proc.header.inputs).contains g &&
-                (ListMap.keys proc.header.outputs).contains g &&
-              (List.map Procedure.Check.expr proc.spec.postconditions.values).any fun e =>
-                List.any e.freeVars fun x => x.fst == CoreIdent.mkOld g.name)
-          (CallArg.getLhs args)).length ∧
+      genOldExprIdents oldVars s_out.genState = (genOldIdents, s_old) ∧
+      oldTys.length = oldVars.length ∧
       sts' =
         Core.Transform.createInits argTrips md ++
         Core.Transform.createInitVars outTrips md ++
         Core.Transform.createInitVars
-          ((genOldIdents.zip oldTys).zip
-            (List.filter
-              (fun g =>
-                (ListMap.keys proc.header.inputs).contains g &&
-                    (ListMap.keys proc.header.outputs).contains g &&
-                  (List.map Procedure.Check.expr proc.spec.postconditions.values).any fun e =>
-                    List.any e.freeVars fun x => x.fst == CoreIdent.mkOld g.name)
-              (CallArg.getLhs args)))
+          ((genOldIdents.zip oldTys).zip oldVars)
           md ++
         asserts ++
         Core.Transform.createHavocs (CallArg.getLhs args) md ++
@@ -2329,21 +2314,8 @@ private theorem callElimCmd_call_eq
                   then some (oldVar, argExpr)
                   else none
         let oldTripsCanonical :=
-              (((genOldIdents.zip oldTys).zip
-                (List.filter
-                  (fun g =>
-                    (ListMap.keys proc.header.inputs).contains g &&
-                        (ListMap.keys proc.header.outputs).contains g &&
-                      (List.map Procedure.Check.expr proc.spec.postconditions.values).any fun e =>
-                        List.any e.freeVars fun x => x.fst == CoreIdent.mkOld g.name)
-                  (CallArg.getLhs args))).zip
-              ((List.filter
-                (fun g =>
-                  (ListMap.keys proc.header.inputs).contains g &&
-                      (ListMap.keys proc.header.outputs).contains g &&
-                    (List.map Procedure.Check.expr proc.spec.postconditions.values).any fun e =>
-                      List.any e.freeVars fun x => x.fst == CoreIdent.mkOld g.name)
-                (CallArg.getLhs args)).map (fun g => CoreIdent.mkOld g.name))).map
+              (((genOldIdents.zip oldTys).zip oldVars).zip
+              (oldVars.map (fun g => CoreIdent.mkOld g.name))).map
               fun (((fresh, ty), _orig), oldG) => ((fresh, ty), oldG)
         let oldSubst : Map Expression.Ident Expression.Expr :=
               Core.Transform.createOldVarsSubst oldTripsCanonical ++ inputOnlyOldSubst
@@ -2415,27 +2387,22 @@ private theorem callElimCmd_call_eq
                              ExceptT.bind, ExceptT.bindCont, ExceptT.mk,
                              pure, ExceptT.pure, StateT.pure,
                              Functor.map, StateT.map] at Heq
+                  -- Hoist the old-vars filter once for the rest of the proof.
+                  let oldVars : List Expression.Ident :=
+                    List.filter
+                      (fun g =>
+                        (ListMap.keys proc.header.inputs).contains g &&
+                            (ListMap.keys proc.header.outputs).contains g &&
+                          (List.map Procedure.Check.expr proc.spec.postconditions.values).any fun e =>
+                            List.any e.freeVars fun x => x.fst == CoreIdent.mkOld g.name)
+                      (CallArg.getLhs args)
                   generalize Heqold :
-                    (genOldExprIdents
-                      (List.filter
-                        (fun g =>
-                          (ListMap.keys proc.header.inputs).contains g &&
-                              (ListMap.keys proc.header.outputs).contains g &&
-                            (List.map Procedure.Check.expr proc.spec.postconditions.values).any fun e =>
-                              List.any e.freeVars fun x => x.fst == CoreIdent.mkOld g.name)
-                        (CallArg.getLhs args))
-                      s_out.genState) = pair_old at Heq
+                    (genOldExprIdents oldVars s_out.genState) = pair_old at Heq
                   cases pair_old with
                   | mk genOldIdents s_old =>
                     -- B1: oldTys ← oldVars.mapM (oldVars ⊆ inputs.keys).
                     have Holdvars_in_inputs :
-                        ∀ g ∈ (List.filter
-                              (fun g =>
-                                (ListMap.keys proc.header.inputs).contains g &&
-                                    (ListMap.keys proc.header.outputs).contains g &&
-                                  (List.map Procedure.Check.expr proc.spec.postconditions.values).any fun e =>
-                                    List.any e.freeVars fun x => x.fst == CoreIdent.mkOld g.name)
-                              (CallArg.getLhs args)),
+                        ∀ g ∈ oldVars,
                           (ListMap.keys proc.header.inputs).contains g := by
                       intro g Hg
                       have Hfilt : _ ∧ _ := List.mem_filter.mp Hg
@@ -2483,21 +2450,8 @@ private theorem callElimCmd_call_eq
                           then some (oldVar, argExpr)
                           else none
                     let oldTrips :=
-                      (((genOldIdents.zip oldTys).zip
-                        (List.filter
-                          (fun g =>
-                            (ListMap.keys proc.header.inputs).contains g &&
-                                (ListMap.keys proc.header.outputs).contains g &&
-                              (List.map Procedure.Check.expr proc.spec.postconditions.values).any fun e =>
-                                List.any e.freeVars fun x => x.fst == CoreIdent.mkOld g.name)
-                          (CallArg.getLhs args))).zip
-                      ((List.filter
-                        (fun g =>
-                          (ListMap.keys proc.header.inputs).contains g &&
-                              (ListMap.keys proc.header.outputs).contains g &&
-                            (List.map Procedure.Check.expr proc.spec.postconditions.values).any fun e =>
-                              List.any e.freeVars fun x => x.fst == CoreIdent.mkOld g.name)
-                        (CallArg.getLhs args)).map (fun g => CoreIdent.mkOld g.name))).map
+                      (((genOldIdents.zip oldTys).zip oldVars).zip
+                      (oldVars.map (fun g => CoreIdent.mkOld g.name))).map
                       fun (((fresh, ty), _orig), oldG) => ((fresh, ty), oldG)
                     let oldSubst : Map Expression.Ident Expression.Expr :=
                       Core.Transform.createOldVarsSubst oldTrips ++ inputOnlyOldSubst
