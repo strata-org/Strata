@@ -442,8 +442,8 @@ partial def dealiasTypeExpr (p : Program) (te : TypeExpr) : TypeExpr :=
   match te with
   | (.fvar _ idx #[]) =>
     match p.globalContext.kindOf! idx with
-    | .expr te => te
-    | .type [] (.some te) => te
+    | .expr te => dealiasTypeExpr p te
+    | .type [] (.some te) => dealiasTypeExpr p te
     | _ => te
   | _ => te
 
@@ -1819,7 +1819,7 @@ partial def translateRecFnDecl (p : Program) (preBindings : TransBindings)
   let bodyBindings := { preBindings with boundVars := bbindings }
   let casesAttr := match casesIdx with
     | some i => #[Strata.DL.Util.FuncAttr.inlineIfConstr i]
-    | none => #[]
+    | none => #[Strata.DL.Util.FuncAttr.inlineIfAllCanonical]
   let preconds ← translateFnPreconds p fname bodyBindings fnOp.args[4]!
   let measure ← translateMeasure p bodyBindings fnOp.args[5]!
   let body ← translateExpr p bodyBindings fnOp.args[6]!
