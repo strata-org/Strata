@@ -62,13 +62,12 @@ spec {
   assert let n : int := (x as_int) in n >= 0 && n < 256;
 };
 
-procedure cast_in_exists(s: Sequence bv64) returns ()
+procedure cast_in_exists(x: bv64) returns ()
 spec {
-  requires Sequence.length(s) > 0;
-  ensures ∃ i: int . 0 <= i && i < Sequence.length(s) && (Sequence.select(s, i) as_int) >= 0;
+  ensures ∃ n: int . n == (x as_int) && n >= 0;
 }
 {
-  assert ∃ i: int . 0 <= i && i < Sequence.length(s) && (Sequence.select(s, i) as_int) >= 0;
+  assert ∃ n: int . n == (x as_int) && n >= 0;
 };
 
 rec function bytes_to_nat(s: Sequence bv8) : int
@@ -143,19 +142,11 @@ Obligation: cast_in_let_ensures_9_1397
 Property: assert
 Result: ✅ pass
 
-Obligation: cast_in_exists_post_cast_in_exists_ensures_12_1616_calls_Sequence.select_0
-Property: out-of-bounds access check
-Result: ❓ unknown
-
-Obligation: assert_assert_13_1717_calls_Sequence.select_0
-Property: out-of-bounds access check
-Result: ❓ unknown
-
-Obligation: assert_13_1717
+Obligation: assert_12_1627
 Property: assert
 Result: ✅ pass
 
-Obligation: cast_in_exists_ensures_12_1616
+Obligation: cast_in_exists_ensures_11_1572
 Property: assert
 Result: ✅ pass
 
@@ -175,11 +166,11 @@ Obligation: bytes_to_nat_terminates_1
 Property: assert
 Result: ✅ pass
 
-Obligation: test_rec_empty_ensures_16_2232
+Obligation: test_rec_empty_ensures_15_2096
 Property: assert
 Result: ✅ pass
 
-Obligation: test_rec_single_byte_ensures_17_2367
+Obligation: test_rec_single_byte_ensures_16_2231
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
