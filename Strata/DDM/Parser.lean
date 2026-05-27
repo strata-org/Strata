@@ -773,6 +773,7 @@ def checkLeftRec (thisCatName : QualifiedIdent) (argDecls : ArgDecls) (as : List
     let isListCategory := cat.name == q`Init.CommaSepBy ||
                           cat.name == q`Init.SpaceSepBy ||
                           cat.name == q`Init.SpacePrefixSepBy ||
+                          cat.name == q`Init.NewlineSepBy ||
                           cat.name == q`Init.Seq ||
                           cat.name == q`Init.SemicolonSepBy ||
                           cat.name == q`Init.Option
