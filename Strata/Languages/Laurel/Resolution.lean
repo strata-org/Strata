@@ -472,32 +472,24 @@ private def isNumeric (ctx : TypeContext) (ty : HighTypeMd) : Bool :=
   | .TInt | .TReal | .TFloat64 | .Unknown => true
   | _ => false
 
-/-- The set of concrete numeric types that arithmetic operands must
-    inhabit, in priority order. The `Unknown` accepted by `isNumeric` as
-    a gradual escape hatch is *not* in this list — `Unknown` is a
-    wildcard, not a result type one should synthesize.
+/-- Least upper bound of two types under the consistency relation
+    (Siek–Taha). On Laurel's flat lattice the LUB collapses to the
+    "more informative" side: `Unknown` and `T` yields `T`; equal
+    types (after unfolding) yield themselves; everything else is
+    inconsistent and yields `none`.
 
-    Used by [⇒] Op-Arith to discover the result type of an arithmetic
-    expression: the rule synthesizes operand types and picks the first
-    candidate that all operand types are consistent subtypes of. -/
-private def numericCandidates (source : Option FileRange) : List HighTypeMd :=
-  [ { val := .TInt,     source := source }
-  , { val := .TReal,    source := source }
-  , { val := .TFloat64, source := source } ]
-
-/-- Find the first candidate `T` from `cands` such that every operand
-    type in `argTypes` is a consistent subtype of `T`. Returns `none`
-    if no candidate works.
-
-    Used by [⇒] Op-Arith. The lookup is purely predicative — no state
-    is mutated during the search, so failed candidates don't leak any
-    diagnostic side-effects. The gradual `Unknown` operand type is
-    consistent with every candidate, so an `Unknown` operand never
-    blocks the iteration. -/
-private def findCommonNumericType (ctx : TypeContext)
-    (cands : List HighTypeMd) (argTypes : List HighTypeMd) : Option HighTypeMd :=
-  cands.find? fun cand =>
-    argTypes.all fun aTy => isConsistentSubtype ctx aTy cand
+    Used by [⇒] Op-Arith to fold operand types into a single result
+    type: a homogeneous arithmetic expression `1 + 2` yields `TInt`,
+    `1 + <?>` yields `TInt` (Unknown promotes), `<?> + <?>` yields
+    `Unknown`, and `1 + 2.0` is rejected. -/
+private def consistencyLub (ctx : TypeContext)
+    (a b : HighTypeMd) : Option HighTypeMd :=
+  let a' := ctx.unfold a
+  let b' := ctx.unfold b
+  match a'.val, b'.val with
+  | .Unknown, _ => some b
+  | _, .Unknown => some a
+  | _, _ => if highEq a' b' then some a else none
 
 /-- Test whether a type is a user-defined reference type. `Unknown` is accepted
     as a gradual escape hatch. Used by Fresh and ReferenceEquals, which only
@@ -1398,7 +1390,7 @@ def Synth.instanceCall (exprMd : StmtExprMd)
 
     `Γ ⊢ lhs ⇒ T_l,  Γ ⊢ rhs ⇒ T_r,  T_l ~ T_r,  op ∈ {Eq, Neq}  ∴  Γ ⊢ PrimitiveOp op [lhs; rhs] ⇒ TBool`
 
-    `Γ ⊢ args_i ⇒ U_i,  T ∈ {TInt, TReal, TFloat64},  U_i <:_∼ T (pairwise),  op ∈ {Neg, Add, Sub, Mul, Div, Mod, DivT, ModT}  ∴  Γ ⊢ PrimitiveOp op args ⇒ T`
+    `Γ ⊢ args_i ⇒ U_i,  Numeric U_i,  T = ⨆ U_i (consistency LUB),  op ∈ {Neg, Add, Sub, Mul, Div, Mod, DivT, ModT}  ∴  Γ ⊢ PrimitiveOp op args ⇒ T`
 
     `Γ ⊢ args_i ⇒ U_i,  U_i <: TString,  op = StrConcat  ∴  Γ ⊢ PrimitiveOp op args ⇒ TString`
 
@@ -1414,16 +1406,14 @@ def Synth.instanceCall (exprMd : StmtExprMd)
     (`checkSubtype` for boolean and concat, `isNumeric` for cmp,
     `isConsistent` for equality).
 
-    Arithmetic uses a different scheme: it synthesizes its operand
-    types once, then picks the first candidate from
-    `numericCandidates` (currently `[TInt, TReal, TFloat64]` —
-    `Unknown` is excluded since one should not synthesize a wildcard)
-    that every operand type is a consistent subtype of. The lookup
-    runs `findCommonNumericType`, a pure predicate, so failed
-    candidates do not leak any diagnostic side-effects. If no
-    candidate works, a single "no common numeric type" diagnostic
-    fires at the operator's source position, listing the operand
-    types so the user can see the mismatch.
+    Arithmetic follows the same shape as `Op-Eq` but for n operands:
+    synthesize each operand's type, require it to be `Numeric`, and
+    fold the operand types under `consistencyLub` (the LUB on the
+    flat consistency lattice — `Unknown ⊔ T = T`, `T ⊔ T = T`,
+    everything else inconsistent). The fold's result is the
+    synthesized type. If any pair is inconsistent the rule emits an
+    "operands have incompatible types" diagnostic listing the operand
+    types and falls back to `Unknown`.
 
     The boolean family additionally has a check-mode rule
     (`Check.primitiveOp`) preferred when an `expected` type is
@@ -1437,23 +1427,40 @@ def Synth.primitiveOp (exprMd : StmtExprMd) (expr : StmtExpr)
     ResolveM (StmtExpr × HighTypeMd) := do
   let _ := h_expr  -- carries the constructor identity for `expr` in diagnostics
   match op with
-  -- Arithmetic: synth operand types once, then pick the first numeric
-  -- candidate that every operand is a consistent subtype of.
+  -- Arithmetic: synth each operand's type, then take the LUB under
+  -- the consistency relation. This is the same discipline as
+  -- `Op-Eq`: operands must be pairwise consistent (with `Unknown`
+  -- promoting to whichever side is more informative). Each operand
+  -- is also required to be numeric.
   | .Neg | .Add | .Sub | .Mul | .Div | .Mod | .DivT | .ModT =>
     let results ← args.attach.mapM (fun a => have := a.property; do
       Synth.resolveStmtExpr a.val)
     let args' := results.map (·.1)
     let argTypes := results.map (·.2)
     let ctx := (← get).typeContext
-    match findCommonNumericType ctx (numericCandidates source) argTypes with
-    | some resultTy =>
-      pure (.PrimitiveOp op args', resultTy)
+    -- Per-operand numeric check: surface the bad operand directly.
+    for (a, aTy) in args'.zip argTypes do
+      unless isNumeric ctx aTy do
+        typeMismatch a.source (some expr) "expected a numeric type" aTy
+    -- Fold operands by consistencyLub, starting from `Unknown` so the
+    -- empty list (impossible for these ops, but kept for totality)
+    -- yields `Unknown` and a single-operand fold (`Neg`) yields the
+    -- operand's type.
+    let unknownTy : HighTypeMd := { val := .Unknown, source := source }
+    let resultTy := argTypes.foldl
+      (fun acc aTy =>
+        match acc with
+        | some lub => consistencyLub ctx lub aTy
+        | none => none)
+      (some unknownTy)
+    match resultTy with
+    | some ty => pure (.PrimitiveOp op args', ty)
     | none =>
       let formatted := ", ".intercalate (argTypes.map formatType)
       let diag := diagnosticFromSource source
-        s!"no common numeric type for operands of '{op}'; got [{formatted}]"
+        s!"Operands of '{op}' have incompatible types [{formatted}]"
       modify fun s => { s with errors := s.errors.push diag }
-      pure (.PrimitiveOp op args', { val := .Unknown, source := source })
+      pure (.PrimitiveOp op args', unknownTy)
   | _ =>
     let results ← args.attach.mapM (fun a => have := a.property; do
       Synth.resolveStmtExpr a.val)

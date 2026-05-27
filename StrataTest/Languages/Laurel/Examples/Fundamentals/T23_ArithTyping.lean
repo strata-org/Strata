@@ -23,13 +23,12 @@ namespace Laurel
       every operand. The error surfaces as "expected '<T>', got
       '<U>'" at the offending operand.
 
-    - [⇒] Op-Arith — the *synth* path. When no expected type is
-      available (e.g. the arithmetic expression appears as the operand
-      of a comparison, or its result is used in synth position), the
-      rule iterates over `numericCandidates` (= `[TInt, TReal,
-      TFloat64]`) and picks the first `T` for which every operand
-      bidirectionally checks at `T`. Failed trials are rolled back; if
-      every candidate fails, the *last* trial's diagnostics are kept.
+    - [⇒] Op-Arith — the *synth* path. Each operand is synthesized,
+      required to be `Numeric` (`TInt` / `TReal` / `TFloat64` /
+      `Unknown`), and the result type is the consistency LUB of the
+      operand types: `Unknown ⊔ T = T`, `T ⊔ T = T`, anything else
+      is rejected. Same shape as `Op-Eq` but extended to n operands
+      and returning the LUB rather than `TBool`.
 
     Homogeneous numeric operands type-check via either path.
     Heterogeneous numeric operands (e.g. `int + real`) are rejected
@@ -61,15 +60,15 @@ procedure heterogeneousCheckPath()
 
 // [⇒] Op-Arith path: '<' synthesizes its operands, so '1 + 2.0' is
 // resolved in synth position. The arithmetic synth rule synthesizes
-// the operands ('int' and 'real') and looks for a candidate from
-// [TInt, TReal, TFloat64] that both are consistent subtypes of. None
-// works -- a single error fires at the operator's source position
-// listing the operand types.
+// the operands ('int' and 'real') and folds them under
+// consistencyLub. 'int' and 'real' are mutually inconsistent, so
+// the fold fails: a single error fires at the operator's source
+// position listing the operand types.
 procedure heterogeneousSynthPath()
   opaque
 {
   assert (1 + 2.0) < 5
-//        ^^^^^^^ error: no common numeric type for operands of '+'
+//        ^^^^^^^ error: incompatible types
 };
 
 procedure unaryNegHomogeneous()
@@ -83,10 +82,9 @@ procedure unaryNegHomogeneous()
   assert d == 0.0 - 1.5
 };
 
-// Unknown (here from the unresolved name 'mystery') flows freely
-// through both candidate trials, so the synth iteration succeeds at
-// the first candidate (TInt). The 'mystery is not defined' diagnostic
-// is the *only* error.
+// Unknown (here from the unresolved name 'mystery') promotes to its
+// neighbour under consistencyLub: 'Unknown + TInt' folds to TInt.
+// The 'mystery is not defined' diagnostic is the *only* error.
 procedure unknownFlowsFreely()
   opaque
 {

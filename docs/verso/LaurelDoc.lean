@@ -493,27 +493,23 @@ $$`\frac{\Gamma \vdash \mathit{args}_i \Rightarrow U_i \quad \mathit{Numeric}\;U
 
 $$`\frac{\Gamma \vdash \mathit{lhs} \Rightarrow T_l \quad \Gamma \vdash \mathit{rhs} \Rightarrow T_r \quad T_l \sim T_r \quad \mathit{op} \in \{\mathsf{Eq}, \mathsf{Neq}\}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;[\mathit{lhs}; \mathit{rhs}] \Rightarrow \mathsf{TBool}} \quad \text{([⇒] Op-Eq)}`
 
-$$`\frac{\Gamma \vdash \mathit{args}_i \Rightarrow U_i \quad T \in \{\mathsf{TInt}, \mathsf{TReal}, \mathsf{TFloat64}\} \quad U_i \lesssim T \text{ (pairwise)} \quad \mathit{op} \in \{\mathsf{Neg}, \mathsf{Add}, \mathsf{Sub}, \mathsf{Mul}, \mathsf{Div}, \mathsf{Mod}, \mathsf{DivT}, \mathsf{ModT}\}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;\mathit{args} \Rightarrow T} \quad \text{([⇒] Op-Arith)}`
+$$`\frac{\Gamma \vdash \mathit{args}_i \Rightarrow U_i \quad \mathit{Numeric}\;U_i \quad T = \bigsqcup U_i \text{ (consistency LUB)} \quad \mathit{op} \in \{\mathsf{Neg}, \mathsf{Add}, \mathsf{Sub}, \mathsf{Mul}, \mathsf{Div}, \mathsf{Mod}, \mathsf{DivT}, \mathsf{ModT}\}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;\mathit{args} \Rightarrow T} \quad \text{([⇒] Op-Arith)}`
 
-The arithmetic synth rule synthesizes operand types once, then picks
-the first $`T` from the candidate list
-$`\{\mathsf{TInt}, \mathsf{TReal}, \mathsf{TFloat64}\}` that every
-operand type is a consistent subtype of (here written
-$`U_i \lesssim T` for {name Strata.Laurel.isConsistentSubtype}`isConsistentSubtype`).
-The lookup runs `findCommonNumericType`, a pure predicate, so failed
-candidates do not mutate the diagnostic state. If no candidate
-works, a single "no common numeric type" diagnostic fires at the
-operator's source position, listing the operand types so the
-mismatch is concrete.
-
-This is symmetric in operand position (no privileged "first
-argument") and rejects mixed-numeric expressions like
-$`\mathsf{int} + \mathsf{real}` — neither $`\mathsf{TInt}` nor
-$`\mathsf{TReal}` admits both operands. The gradual escape hatch
-$`\mathsf{Unknown}` is *not* in the candidate list (one should not
-synthesize a wildcard) but $`\mathsf{Unknown} \lesssim T` for every
-$`T`, so an operand of type $`\mathsf{Unknown}` never blocks the
-iteration.
+The arithmetic synth rule mirrors $`[⇒]\,\text{Op-Eq}` but generalised
+to $`n` operands. Each operand is synthesized and required to be
+$`\mathit{Numeric}` (i.e. $`\mathsf{TInt}`, $`\mathsf{TReal}`,
+$`\mathsf{TFloat64}`, or the gradual $`\mathsf{Unknown}`). The
+result type is the *consistency LUB* $`\bigsqcup U_i` — a fold of
+the operand types under
+{name Strata.Laurel.isConsistent}`isConsistent`'s flat lattice:
+$`\mathsf{Unknown} \sqcup T = T`, $`T \sqcup T = T`, and any other
+combination is rejected. So `1 + 2` synthesizes $`\mathsf{TInt}`,
+`1.5 + 2.5` synthesizes $`\mathsf{TReal}`, `<?> + 1` synthesizes
+$`\mathsf{TInt}` (the $`\mathsf{Unknown}` operand promotes to its
+neighbour), `<?> + <?>` synthesizes $`\mathsf{Unknown}`, and
+`1 + 2.0` is rejected with an "operands have incompatible types"
+diagnostic. The fold runs via `consistencyLub`, a pure predicate, so
+the search has no diagnostic side-effects.
 
 $$`\frac{\Gamma \vdash \mathit{args}_i \Rightarrow U_i \quad U_i <: \mathsf{TString} \quad \mathit{op} = \mathsf{StrConcat}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;\mathit{args} \Rightarrow \mathsf{TString}} \quad \text{([⇒] Op-Concat)}`
 
