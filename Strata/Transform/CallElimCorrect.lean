@@ -49,6 +49,11 @@ private theorem createFvarsLength :
 (createFvars ls).length = ls.length := by
 induction ls <;> simp [createFvars]
 
+/-- Contradiction: `σ k` cannot simultaneously be `isSome` and `none`. -/
+private theorem σ_some_contradiction {α β} {σ : β → Option α} {k : β}
+    (Hsome : (σ k).isSome) (Hnone : σ k = none) : False := by
+  rw [Hnone] at Hsome; simp at Hsome
+
 
 /-! ## Helper block-evaluator lemmas (small-step)
 
@@ -3099,10 +3104,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     (proc.header.inputs.keys).Disjoint
                       (proc.header.outputs.keys) := by
                   intro x Hin1 Hin2
-                  have h1 : (σA x).isSome = true := Hindef_io x Hin1
-                  have h2 : σA x = none := Houtndef_io x Hin2
-                  rw [h2] at h1
-                  simp at h1
+                  exact σ_some_contradiction
+                    (Hindef_io x Hin1) (Houtndef_io x Hin2)
                 have Hinoutnd :
                     (proc.header.inputs.keys ++
                       proc.header.outputs.keys).Nodup := by
@@ -3243,10 +3246,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     -- Rewrite Hin2 via Heqargs so we can use HdefVars.
                     rw [Heqargs] at Hin2
                     -- HndefArg_σ says σ x = none; HdefVars says (σ x).isSome.
-                    have Hnone : σ x = none := HndefArg_σ x Hin1
-                    have Hsome : (σ x).isSome = true := HdefVars x Hin2
-                    rw [Hnone] at Hsome
-                    simp at Hsome
+                    exact σ_some_contradiction
+                      (HdefVars x Hin2) (HndefArg_σ x Hin1)
                   -- ── L1: argInit ──
                   -- `H_inits` evaluates `createInits argTrips md` from
                   -- σ to `updatedStates σ argTemps argVals`.
@@ -3269,24 +3270,18 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                   have HlhsDisjArg :
                       lhs.Disjoint argTemps := by
                     intro x Hin1 Hin2
-                    have Hnone : σ x = none := HndefArg_σ x Hin2
-                    have Hsome : (σ x).isSome = true := Hlhs_isLocl x Hin1
-                    rw [Hnone] at Hsome
-                    simp at Hsome
+                    exact σ_some_contradiction
+                      (Hlhs_isLocl x Hin1) (HndefArg_σ x Hin2)
                   have HlhsDisjOut :
                       lhs.Disjoint outTemps := by
                     intro x Hin1 Hin2
-                    have Hnone : σ x = none := HndefOut_σ x Hin2
-                    have Hsome : (σ x).isSome = true := Hlhs_isLocl x Hin1
-                    rw [Hnone] at Hsome
-                    simp at Hsome
+                    exact σ_some_contradiction
+                      (Hlhs_isLocl x Hin1) (HndefOut_σ x Hin2)
                   have HlhsDisjOld :
                       lhs.Disjoint genOldIdents := by
                     intro x Hin1 Hin2
-                    have Hnone : σ x = none := HndefOld_σ x Hin2
-                    have Hsome : (σ x).isSome = true := Hlhs_isLocl x Hin1
-                    rw [Hnone] at Hsome
-                    simp at Hsome
+                    exact σ_some_contradiction
+                      (Hlhs_isLocl x Hin1) (HndefOld_σ x Hin2)
                   -- Out-temp Nodup append form for `H_initVars`.
                   have HoutSnd_eq_lhs : outTrips.unzip.snd = lhs := by
                     rw [Heqouts, hCallArgsLhs]
