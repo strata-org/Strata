@@ -30,7 +30,10 @@ set_option pp.rawOnError true
     Usage inside a `#doc` block: `{laurelPipelineDocs}` -/
 @[block_command]
 def laurelPipelineDocs : Verso.Doc.Elab.BlockCommandOf Unit := fun () => do
-  let md := laurelPipelineDocumentation
+  let entries := laurelPipeline.map fun pass =>
+    s!"- **{pass.name}**: {pass.documentation}"
+
+  let md := "\n".intercalate entries.toList
   let some ast := MD4Lean.parse md
     | Lean.throwError "Failed to parse laurelPipelineDocumentation as Markdown"
   let blocks ← ast.blocks.mapM (Markdown.blockFromMarkdown · (handleHeaders := Markdown.strongEmphHeaders))

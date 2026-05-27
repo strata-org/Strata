@@ -112,7 +112,7 @@ public section
 /--
 Transform a program by eliminating returns in all functional procedure bodies.
 -/
-def eliminateReturnsInExpressionTransform (program : Program) : Program :=
+def mergeAndLiftReturns (program : Program) : Program :=
   { program with staticProcedures := program.staticProcedures.map eliminateReturnsInExpression }
 
 end -- public section

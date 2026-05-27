@@ -7,8 +7,14 @@ module
 
 public import Strata.Languages.Laurel.LaurelToCoreTranslator
 import Strata.Languages.Laurel.DesugarShortCircuit
-import Strata.Languages.Laurel.EliminateReturnsInExpression
+import Strata.Languages.Laurel.MergeAndLiftReturns
 import Strata.Languages.Laurel.EliminateValueInReturns
+import Strata.Languages.Laurel.ModifiesClauses
+import Strata.Languages.Laurel.HeapParameterization
+import Strata.Languages.Laurel.TypeHierarchy
+import Strata.Languages.Laurel.InferHoleTypes
+import Strata.Languages.Laurel.EliminateDeterministicHoles
+import Strata.Languages.Laurel.CoreDefinitionsForLaurel
 import Strata.Languages.Laurel.ConstrainedTypeElim
 import Strata.Languages.Laurel.TypeAliasElim
 import Strata.Languages.Core.Verifier
@@ -135,11 +141,11 @@ def laurelPipeline : Array LaurelPass := #[
     documentation := "Lifts assignments that appear in expression contexts into preceding statements. This is necessary because Strata Core does not support assignments within expressions. The pass introduces fresh temporary variables where needed."
     run := fun p m =>
       (liftExpressionAssignments m p, [], {}) },
-  { name := "EliminateReturns"
-    documentation := "Eliminates explicit `return` statements in functional procedure bodies by converting the last statement in a block into the block's result expression. This bridges the gap between Laurel's imperative return style and Core's expression-based functions."
+  { name := "MergeAndLiftReturns"
+    documentation := "Attempts to merge and lift returns so that only a single outer return remains, enabling the procedure to be more easily converted to a functional form."
     needsResolves := true
     run := fun p _m =>
-      (eliminateReturnsInExpressionTransform p, [], {}) },
+      (mergeAndLiftReturns p, [], {}) },
   { name := "ConstrainedTypeElim"
     documentation := "Eliminates constrained types by replacing them with their base types and generating constraint-checking functions and witness procedures. Type tests against constrained types are rewritten to call the generated constraint function."
     needsResolves := true
@@ -147,12 +153,6 @@ def laurelPipeline : Array LaurelPass := #[
       let (p', diags) := constrainedTypeElim m p
       (p', diags, {}) }
 ]
-
-/-- Generate a documentation string describing all pipeline passes, with their names and descriptions. -/
-def laurelPipelineDocumentation : String :=
-  let entries := laurelPipeline.map fun pass =>
-    s!"- **{pass.name}**: {pass.documentation}"
-  "\n".intercalate entries.toList
 
 /--
 Run all Laurel-to-Laurel lowering passes on a program, returning the lowered
