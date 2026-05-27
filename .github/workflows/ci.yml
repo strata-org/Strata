@@ -47,8 +47,11 @@ jobs:
       - name: Download ion-java jar for Java codegen test
         run: wget -q -O StrataTestExtra/Languages/Java/testdata/ion-java-1.11.11.jar https://github.com/amazon-ion/ion-java/releases/download/v1.11.11/ion-java-1.11.11.jar
       - name: Build StrataDDM
-        run: lake build StrataDDM StrataDDMTest
-        working-directory: StrataDDM
+        uses: leanprover/lean-action@v1
+        with:
+          lake-package-directory: StrataDDM
+          build-args: StrataDDM StrataDDMTest
+          use-github-cache: false
       - name: Build and test Strata
         uses: leanprover/lean-action@v1
         with:
