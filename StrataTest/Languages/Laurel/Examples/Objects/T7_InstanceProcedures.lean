@@ -15,8 +15,8 @@ namespace Strata.Laurel
 def instanceProcedureProgram := r"
 composite Counter {
   var count: int
-  procedure increment(self: Counter)
-//          ^^^^^^^^^ error: Instance procedure 'increment' on composite type 'Counter' is not yet supported
+  procedure self_increment(self: Counter)
+//          ^^^^^^^^^^^^^^ error: Instance procedure 'self_increment' on composite type 'Counter' is not yet supported
     opaque
   {
     self#count := self#count + 1
