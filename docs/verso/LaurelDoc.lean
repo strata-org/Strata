@@ -210,10 +210,8 @@ A Laurel program consists of procedures, global variables, type definitions, and
 
 # Implementation
 
-Laurel references are resolved in Resolution.lean,
-which produces a `SemanticModel` that can be used to navigate between definitions and references.
-If new references or definitions are created during compilation,
-resolution must be run again to get a complete model.
+The static semantics of Laurel are defined by `Resolution.lean`. This is where Laurel references are resolved and where type checking, when implemented, will be done. Calling `resolve` will produce diagnostics and a `SemanticModel` that can be used to navigate between definitions and references.
+If new references or definitions are created during compilation, `resolve` must be called again to get a complete model.
 
 ## Translation Pipeline
 
