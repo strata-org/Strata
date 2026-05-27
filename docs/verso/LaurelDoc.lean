@@ -459,15 +459,15 @@ discarded.
 tag := "rules-calls"
 %%%
 
-$$`\frac{\Gamma(\mathit{callee}) = \text{static-procedure with input } T \text{ and output } T' \quad \Gamma \vdash \mathit{arg} \Rightarrow U \quad U <: T}{\Gamma \vdash \mathsf{StaticCall}\;\mathit{callee}\;\mathit{arg} \Rightarrow T'} \quad \text{([⇒] Static-Call)}`
+$$`\frac{\Gamma(\mathit{callee}) = \text{static-procedure with input } T \text{ and output } T' \quad \Gamma \vdash \mathit{arg} \Leftarrow T}{\Gamma \vdash \mathsf{StaticCall}\;\mathit{callee}\;\mathit{arg} \Rightarrow T'} \quad \text{([⇒] Static-Call)}`
 
-$$`\frac{\Gamma(\mathit{callee}) = \text{static-procedure with inputs } Ts \text{ and outputs } [T_1; \ldots; T_n],\; n \ne 1 \quad \Gamma \vdash \mathit{args} \Rightarrow Us \quad U_i <: T_i \text{ (pairwise)}}{\Gamma \vdash \mathsf{StaticCall}\;\mathit{callee}\;\mathit{args} \Rightarrow \mathsf{MultiValuedExpr}\;[T_1; \ldots; T_n]} \quad \text{([⇒] Static-Call-Multi)}`
+$$`\frac{\Gamma(\mathit{callee}) = \text{static-procedure with inputs } Ts \text{ and outputs } [T_1; \ldots; T_n],\; n \ne 1 \quad \Gamma \vdash \mathit{args}_i \Leftarrow Ts_i \text{ (pairwise)}}{\Gamma \vdash \mathsf{StaticCall}\;\mathit{callee}\;\mathit{args} \Rightarrow \mathsf{MultiValuedExpr}\;[T_1; \ldots; T_n]} \quad \text{([⇒] Static-Call-Multi)}`
 
 {docstring Strata.Laurel.Resolution.Synth.staticCall}
 
-$$`\frac{\Gamma \vdash \mathit{target} \Rightarrow \_ \quad \Gamma(\mathit{callee}) = \text{instance- or static-procedure with inputs } [\mathit{self}; T] \text{ and output } T' \quad \Gamma \vdash \mathit{arg} \Rightarrow U \quad U <: T}{\Gamma \vdash \mathsf{InstanceCall}\;\mathit{target}\;\mathit{callee}\;\mathit{arg} \Rightarrow T'} \quad \text{([⇒] Instance-Call)}`
+$$`\frac{\Gamma \vdash \mathit{target} \Rightarrow \_ \quad \Gamma(\mathit{callee}) = \text{instance- or static-procedure with inputs } [\mathit{self}; T] \text{ and output } T' \quad \Gamma \vdash \mathit{arg} \Leftarrow T}{\Gamma \vdash \mathsf{InstanceCall}\;\mathit{target}\;\mathit{callee}\;\mathit{arg} \Rightarrow T'} \quad \text{([⇒] Instance-Call)}`
 
-$$`\frac{\Gamma \vdash \mathit{target} \Rightarrow \_ \quad \Gamma(\mathit{callee}) = \text{instance- or static-procedure with inputs } [\mathit{self}; Ts] \text{ and outputs } [T_1; \ldots; T_n],\; n \ne 1 \quad \Gamma \vdash \mathit{args} \Rightarrow Us \quad U_i <: T_i \text{ (pairwise; self dropped)}}{\Gamma \vdash \mathsf{InstanceCall}\;\mathit{target}\;\mathit{callee}\;\mathit{args} \Rightarrow \mathsf{MultiValuedExpr}\;[T_1; \ldots; T_n]} \quad \text{([⇒] Instance-Call-Multi)}`
+$$`\frac{\Gamma \vdash \mathit{target} \Rightarrow \_ \quad \Gamma(\mathit{callee}) = \text{instance- or static-procedure with inputs } [\mathit{self}; Ts] \text{ and outputs } [T_1; \ldots; T_n],\; n \ne 1 \quad \Gamma \vdash \mathit{args}_i \Leftarrow Ts_i \text{ (pairwise; self dropped)}}{\Gamma \vdash \mathsf{InstanceCall}\;\mathit{target}\;\mathit{callee}\;\mathit{args} \Rightarrow \mathsf{MultiValuedExpr}\;[T_1; \ldots; T_n]} \quad \text{([⇒] Instance-Call-Multi)}`
 
 The callee is resolved against either an instance procedure or a
 static procedure (the latter handles uniformly-dispatched call syntax

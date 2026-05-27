@@ -1398,7 +1398,7 @@ def Synth.instanceCall (exprMd : StmtExprMd)
 
     `Γ ⊢ lhs ⇒ T_l,  Γ ⊢ rhs ⇒ T_r,  T_l ~ T_r,  op ∈ {Eq, Neq}  ∴  Γ ⊢ PrimitiveOp op [lhs; rhs] ⇒ TBool`
 
-    `T ∈ {TInt, TReal, TFloat64},  Γ ⊢ args_i ⇐ T,  op ∈ {Neg, Add, Sub, Mul, Div, Mod, DivT, ModT}  ∴  Γ ⊢ PrimitiveOp op args ⇒ T`
+    `Γ ⊢ args_i ⇒ U_i,  T ∈ {TInt, TReal, TFloat64},  U_i <:_∼ T (pairwise),  op ∈ {Neg, Add, Sub, Mul, Div, Mod, DivT, ModT}  ∴  Γ ⊢ PrimitiveOp op args ⇒ T`
 
     `Γ ⊢ args_i ⇒ U_i,  U_i <: TString,  op = StrConcat  ∴  Γ ⊢ PrimitiveOp op args ⇒ TString`
 
