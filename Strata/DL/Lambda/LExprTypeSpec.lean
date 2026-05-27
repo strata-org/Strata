@@ -1511,7 +1511,7 @@ private theorem typeBoundVar_absorbs
         rw [h_subst, h_gen_subst]
         exact Subst.absorbs_refl _ Env.stateSubstInfo.isWF
 
-/-- `subst (remove S k) mty = subst S mty` when `k ∉ freeVars mty`.
+/-- `subst (erase S k) mty = subst S mty` when `k ∉ freeVars mty`.
     Since `LMonoTy.subst` is single-pass, erasing a key that doesn't
     appear in the type doesn't change the result. -/
 private theorem LMonoTy.subst_erase_not_fv (S : Subst) (k : TyIdentifier) (mty : LMonoTy)
