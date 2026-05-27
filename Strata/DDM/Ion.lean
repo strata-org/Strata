@@ -724,7 +724,7 @@ private protected def ArgF.fromIon {α} [FromIon α] (v : Ion SymbolId) : FromIo
       | throw s!"Arg num given {repr sexp}."
     pure <| .num ann x
   | "decimal" =>
-    let ⟨p⟩ ← .checkArgCount "num" sexp 3
+    let ⟨p⟩ ← .checkArgCount "decimal" sexp 3
     let ann ← fromIon sexp[1]
     let some d := sexp[2].asDecimal?
       | throw "decimal arg expects a decimal number."
@@ -1663,3 +1663,19 @@ def filesFromIon (dialects : DialectMap) (bytes : ByteArray) : Except String (Li
     pure { filePath := filePath, program := program }
 
 end Strata.Program
+
+namespace Strata
+open _root_.Ion (SymbolTable Ion SymbolId)
+
+-- Verify that a malformed `decimal` sexp reports "decimal" in the error message.
+#guard
+  let tbl := SymbolTable.ofLocals #["decimal"]
+  let decimalSym : Ion SymbolId := .symbol (tbl.symbolId "decimal")
+  -- 4-element sexp: one too many arguments for `decimal`
+  let badSexp : Ion SymbolId := .sexp #[decimalSym, .null, .null, .null]
+  let ctx : FromIonContext := ⟨tbl⟩
+  match ArgF.fromIon (α := TypeRef) badSexp ctx with
+  | .error msg => msg.startsWith "decimal"
+  | .ok _ => false
+
+end Strata
