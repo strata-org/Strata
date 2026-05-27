@@ -176,12 +176,20 @@ module IR1ToIR2
 The functions are extensionally the same; the difference is in
 the import graph:
 
-* _Form A_ lives in the `IR1` module. Imports: `IR1 → IR2` (IR1
-  depends on IR2).
-* _Form B_ lives in the `IR2` module. Imports: `IR2 → IR1` (IR2
-  depends on IR1).
-* _Form C_ lives in a third module. Imports: `IR1ToIR2 → IR1`
-  and `IR1ToIR2 → IR2` (the module depends on both; neither IR
+: Form A
+
+  Lives in the `IR1` module. Imports: `IR1 → IR2` (IR1 depends
+  on IR2).
+
+: Form B
+
+  Lives in the `IR2` module. Imports: `IR2 → IR1` (IR2 depends
+  on IR1).
+
+: Form C
+
+  Lives in a third module. Imports: `IR1ToIR2 → IR1` and
+  `IR1ToIR2 → IR2` (the module depends on both; neither IR
   depends on the translation).
 
 That single arrow direction is what determines who can extend
@@ -473,15 +481,34 @@ The repository-split proposal in
 (see also `docs/RepositorySplitProposal.md`) makes a subset of
 these interfaces _physical_ package boundaries:
 
-* `Strata` (main): DL, Core, Laurel, SMT dialect, CBMC
-  translator, deductive verifier (kept together for now).
-* `StrataDDM`: Dialect Definition Mechanism (already
-  independent).
-* `StrataPython`: Python dialect + `Python → Laurel` translation.
-* `StrataBoole`: Boole dialect + translation to Core.
-* `StrataBoogie`: `Boogie → Strata` translator (separate repo).
-* `StrataCLI`: top-level executables (separate repo).
-* `StrataExperiments`: holding pen for experimental code.
+: `Strata` (main)
+
+  DL, Core, Laurel, SMT dialect, CBMC translator, deductive
+  verifier (kept together for now).
+
+: `StrataDDM`
+
+  Dialect Definition Mechanism (already independent).
+
+: `StrataPython`
+
+  Python dialect + `Python → Laurel` translation.
+
+: `StrataBoole`
+
+  Boole dialect + translation to Core.
+
+: `StrataBoogie`
+
+  `Boogie → Strata` translator (separate repo).
+
+: `StrataCLI`
+
+  Top-level executables (separate repo).
+
+: `StrataExperiments`
+
+  Holding pen for experimental code.
 
 Under this split, the philosophy becomes a build-system-enforced
 rule for the boundaries that _do_ cross packages:
