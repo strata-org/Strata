@@ -9,9 +9,6 @@ import StrataTest.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-/-- info: 45:2-38  error: assertion does not hold
-68:2-28  error: assertion does not hold -/
-#guard_msgs in
 #eval testLaurelExpect <|
 #strata_expect
 program Laurel;
@@ -59,6 +56,7 @@ procedure unsafeDestructor()
   var nil: IntList := Nil();
   var noError: int := IntList..head!(nil);
   var error: int := IntList..head(nil)
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 
 // Datatype in function
@@ -82,6 +80,7 @@ procedure testFailing()
 {
   var xs: IntList := Nil();
   assert IntList..isCons(xs)
+//^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 
 // Mutually recursive datatypes: even/odd-length lists

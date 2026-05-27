@@ -9,11 +9,6 @@ import StrataTest.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-/-- info: 34:2-28  error: assertion does not hold
-37:2-32  error: assertion does not hold
-54:2-14  error: assertion does not hold
-67:2-47  error: assertion does not hold -/
-#guard_msgs in
 #eval testLaurelExpect <|
 #strata_expect
 program Laurel;
@@ -50,9 +45,11 @@ procedure testFunctions()
 {
   assert returnAtEnd(1) == 1;
   assert returnAtEnd(1) == 2;
+//^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 
   assert guardInFunction(1) == 1;
   assert guardInFunction(1) == 2
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 
 procedure guards(a: int) returns (r: int)
@@ -70,6 +67,7 @@ procedure guards(a: int) returns (r: int)
   var e: int := b + 1;
   assert e <= 3;
   assert e < 3;
+//^^^^^^^^^^^^ error: assertion does not hold
   return e
 };
 
@@ -83,6 +81,7 @@ procedure dag(a: int) returns (r: int)
   };
   assert if a > 0 then { b == 1 } else { true };
   assert if a > 0 then { b == 2 } else { true };
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
   return b
 };
 #end

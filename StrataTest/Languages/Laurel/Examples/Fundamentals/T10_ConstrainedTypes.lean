@@ -9,14 +9,6 @@ import StrataTest.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-/-- info: 20:27-30  error: assertion does not hold
-47:2-18  error: assertion does not hold
-55:2-9  error: assertion does not hold
-73:2-28  error: precondition does not hold
-137:2-15  error: assertion does not hold
-174:2-14  error: assertion does not hold
-113:45-47  error: assertion does not hold -/
-#guard_msgs in
 #eval testLaurelExpect <|
 #strata_expect
 program Laurel;
@@ -39,6 +31,7 @@ procedure outputValid(): nat
 
 // Output constraint — invalid return fails
 procedure outputInvalid(): nat
+//                         ^^^ error: assertion does not hold
   opaque
 {
   return -1
@@ -66,6 +59,7 @@ procedure assignInvalid()
   opaque
 {
   var y: nat := -1
+//^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 
 // Reassignment to constrained-typed variable — invalid
@@ -74,6 +68,7 @@ procedure reassignInvalid()
 {
   var y: nat := 5;
   y := -1
+//^^^^^^^ error: assertion does not hold
 };
 
 // Argument to constrained-typed parameter — valid
@@ -92,6 +87,7 @@ procedure argInvalid() returns (r: int)
   opaque
 {
   var x: int := takesNat(-1);
+//^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
   return x
 };
 
@@ -132,6 +128,7 @@ procedure constrainedInExpr()
 
 // Invalid witness — witness -1 does not satisfy x > 0
 constrained bad = x: int where x > 0 witness -1
+//                                           ^^ error: assertion does not hold
 
 // Uninitialized constrained variable — havoc + assume constraint
 procedure uninitNat()
@@ -156,6 +153,7 @@ procedure uninitNotWitness()
 {
   var y: posnat;
   assert y == 1
+//^^^^^^^^^^^^^ error: assertion does not hold
 };
 
 // Quantifier constraint injection — forall
@@ -193,5 +191,6 @@ procedure captureTest(y: haslarger)
   opaque
 {
   assert false
+//^^^^^^^^^^^^ error: assertion does not hold
 };
 #end

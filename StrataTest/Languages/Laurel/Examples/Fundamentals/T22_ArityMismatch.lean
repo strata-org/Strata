@@ -30,8 +30,6 @@ procedure caller()
 
 /-! ## Multi-return procedure assigned to single target -/
 
-/-- info: 10:2-26  error: Assignment target count mismatch: 1 targets but right-hand side produces 2 values -/
-#guard_msgs in
 #eval testLaurelExpect <|
 #strata_expect
 program Laurel;
@@ -44,5 +42,6 @@ procedure mismatch()
 {
   var x: int;
   assign x := twoReturns()
+//^^^^^^^^^^^^^^^^^^^^^^^^ error: Assignment target count mismatch: 1 targets but right-hand side produces 2 values
 };
 #end

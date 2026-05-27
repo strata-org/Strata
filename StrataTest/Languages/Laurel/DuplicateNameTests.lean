@@ -15,84 +15,77 @@ open Strata
 
 /-! ## Duplicate static procedure names -/
 
-/-- info: 3:10-13  error: Duplicate definition 'foo' is already defined in this scope -/
-#guard_msgs in
 #eval testLaurelExpectResolution <|
 #strata_expect
 program Laurel;
 procedure foo() opaque { };
 procedure foo() opaque { };
+//        ^^^ error: Duplicate definition 'foo' is already defined in this scope
 #end
 
 /-! ## Duplicate type names -/
 
-/-- info: 3:10-13  error: Duplicate definition 'Foo' is already defined in this scope -/
-#guard_msgs in
 #eval testLaurelExpectResolution <|
 #strata_expect
 program Laurel;
 composite Foo { }
 composite Foo { }
+//        ^^^ error: Duplicate definition 'Foo' is already defined in this scope
 #end
 
 /-! ## Duplicate field names in a composite type -/
 
-/-- info: 4:6-7  error: Duplicate definition 'Foo.f' is already defined in this scope -/
-#guard_msgs in
 #eval testLaurelExpectResolution <|
 #strata_expect
 program Laurel;
 composite Foo {
   var f: int
   var f: bool
+//    ^ error: Duplicate definition 'Foo.f' is already defined in this scope
 }
 #end
 
 /-! ## Duplicate parameter names in a procedure -/
 
-/-- info: 2:22-23  error: Duplicate definition 'x' is already defined in this scope -/
-#guard_msgs in
 #eval testLaurelExpectResolution <|
 #strata_expect
 program Laurel;
 procedure foo(x: int, x: bool) opaque { };
+//                    ^ error: Duplicate definition 'x' is already defined in this scope
 #end
 
 /-! ## Duplicate instance procedure names in a composite type -/
 
-/-- info: 4:12-15  error: Duplicate definition 'bar' is already defined in this scope -/
-#guard_msgs in
 #eval testLaurelExpectResolution <|
 #strata_expect
 program Laurel;
 composite Foo {
   procedure bar() opaque { };
   procedure bar() opaque { };
+//          ^^^ error: Duplicate definition 'bar' is already defined in this scope
 }
 #end
 
 /-! ## Duplicate local variable names in the same block -/
 
-/-- info: 4:6-7  error: Duplicate definition 'x' is already defined in this scope -/
-#guard_msgs in
 #eval testLaurelExpectResolution <|
 #strata_expect
 program Laurel;
 procedure foo() opaque {
   var x: int := 1;
   var x: int := 2
+//    ^ error: Duplicate definition 'x' is already defined in this scope
 };
 #end
 
 /-! ## Procedure and type with the same name -/
 
-/-- info: 3:10-13  error: Duplicate definition 'Foo' is already defined in this scope -/
-#guard_msgs in
 #eval testLaurelExpectResolution <|
 #strata_expect
 program Laurel;
 composite Foo { }
 procedure Foo() opaque { };
+//        ^^^ error: Duplicate definition 'Foo' is already defined in this scope
 #end
 
 /-! ## Shadowing quantifier variables in nested scopes is OK (no error expected) -/
@@ -124,33 +117,30 @@ procedure foo() opaque {
 
 /-! ## Duplicate constrained type names -/
 
-/-- info: 3:12-15  error: Duplicate definition 'nat' is already defined in this scope -/
-#guard_msgs in
 #eval testLaurelExpectResolution <|
 #strata_expect
 program Laurel;
 constrained nat = x: int where x >= 0 witness 0
 constrained nat = x: int where x > 0 witness 1
+//          ^^^ error: Duplicate definition 'nat' is already defined in this scope
 #end
 
 /-! ## Duplicate datatype names -/
 
-/-- info: 3:9-12  error: Duplicate definition 'Foo' is already defined in this scope -/
-#guard_msgs in
 #eval testLaurelExpectResolution <|
 #strata_expect
 program Laurel;
 datatype Foo { A }
 datatype Foo { B }
+//       ^^^ error: Duplicate definition 'Foo' is already defined in this scope
 #end
 
 /-! ## Composite type and datatype with the same name -/
 
-/-- info: 3:9-12  error: Duplicate definition 'Foo' is already defined in this scope -/
-#guard_msgs in
 #eval testLaurelExpectResolution <|
 #strata_expect
 program Laurel;
 composite Foo { }
 datatype Foo { A }
+//       ^^^ error: Duplicate definition 'Foo' is already defined in this scope
 #end

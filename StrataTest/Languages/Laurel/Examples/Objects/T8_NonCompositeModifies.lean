@@ -16,9 +16,6 @@ import StrataTest.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-/-- info: 8:11-12  error: modifies clause entry has non-composite type 'int' and will be ignored
-16:11-12  error: modifies clause entry has non-composite type 'int' and will be ignored -/
-#guard_msgs in
 #eval testLaurelExpect <|
 #strata_expect
 program Laurel;
@@ -29,6 +26,7 @@ composite Container {
 procedure incWithPrimitiveModifies(x: int) returns (r: int)
   opaque
   modifies x
+//         ^ error: modifies clause entry has non-composite type 'int' and will be ignored
 {
   r := x + 1
 };
@@ -37,6 +35,7 @@ procedure modifyContainerAndPrimitive(c: Container, x: int)
   opaque
   modifies c
   modifies x
+//         ^ error: modifies clause entry has non-composite type 'int' and will be ignored
 {
   c#value := 1
 };

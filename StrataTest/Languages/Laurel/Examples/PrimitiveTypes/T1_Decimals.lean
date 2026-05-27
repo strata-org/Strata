@@ -9,8 +9,6 @@ import StrataTest.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-/-- info: 53:4-17  error: assertion does not hold -/
-#guard_msgs in
 #eval testLaurelExpect <|
 #strata_expect
 program Laurel;
@@ -66,5 +64,6 @@ procedure testDecimalAssertFails()
     var a: real := 1.5;
     var b: real := 2.5;
     assert a == b
+//  ^^^^^^^^^^^^^ error: assertion does not hold
 };
 #end

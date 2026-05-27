@@ -9,8 +9,6 @@ import StrataTest.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-/-- info: 5:2-5  error: could not infer type -/
-#guard_msgs in
 #eval testLaurelExpect <|
 #strata_expect
 program Laurel;
@@ -18,5 +16,6 @@ procedure foo()
   opaque
 {
   <?>
+//^^^ error: could not infer type
 };
 #end

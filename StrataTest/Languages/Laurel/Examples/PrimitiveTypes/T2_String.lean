@@ -10,10 +10,6 @@ import StrataTest.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-/-- info: 7:2-27  error: assertion does not hold
-33:2-24  error: assertion does not hold
-49:2-29  error: assertion does not hold -/
-#guard_msgs in
 #eval testLaurelExpect <|
 #strata_expect
 program Laurel;
@@ -23,6 +19,7 @@ returns (result: string)
 {
   var message: string := "Hello";
   assert(message == "Hell");
+//^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 
   return message
 };
@@ -49,6 +46,7 @@ procedure testStringLiteralConcatKO()
 {
   var result: string := "a" ++ "b";
   assert(result == "cd")
+//^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 
 procedure testStringVarConcatOK()
@@ -65,5 +63,6 @@ procedure testStringVarConcatKO()
   var x: string := "Hello";
   var result: string := x ++ " World";
   assert(result == "Goodbye")
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 #end

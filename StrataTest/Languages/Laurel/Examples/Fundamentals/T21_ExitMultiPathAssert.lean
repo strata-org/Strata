@@ -9,8 +9,6 @@ import StrataTest.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-/-- info: 10:2-14  error: assertion does not hold -/
-#guard_msgs in
 #eval testLaurelExpect <|
 #strata_expect
 program Laurel;
@@ -23,5 +21,6 @@ procedure foo(x: int)
     }
   } myBlock;
   assert false
+//^^^^^^^^^^^^ error: assertion does not hold
 };
 #end

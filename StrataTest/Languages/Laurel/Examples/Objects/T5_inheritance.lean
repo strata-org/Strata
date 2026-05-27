@@ -9,8 +9,6 @@ import StrataTest.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-/-- info: 40:21-34  error: assertion could not be proved -/
-#guard_msgs in
 #eval testLaurelExpect <|
 #strata_expect
 program Laurel;
@@ -53,6 +51,7 @@ procedure typeCheckingAndCasting()
   var c: Base := b;
   var d: Extender := c as Extender;
   var e: Extender := a as Extender
+//                   ^^^^^^^^^^^^^ error: assertion could not be proved
 };
 
 composite Top {

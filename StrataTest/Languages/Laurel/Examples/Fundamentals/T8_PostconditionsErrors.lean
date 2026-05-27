@@ -11,13 +11,12 @@ open Strata
 
 /-! ## Functions with postconditions are not yet supported -/
 
-/-- info: 3:9-23  error: functions with postconditions are not yet supported -/
-#guard_msgs in
 #eval testLaurelExpect <|
 #strata_expect
 program Laurel;
 
 function opaqueFunction(x: int) returns (r: int)
+//       ^^^^^^^^^^^^^^ error: functions with postconditions are not yet supported
   requires x > 0
   opaque
   ensures r > 0

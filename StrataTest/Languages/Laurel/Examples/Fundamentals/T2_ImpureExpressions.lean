@@ -9,10 +9,6 @@ import StrataTest.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-/-- info: 8:2-15  error: assertion does not hold
-39:2-10  error: assertion does not hold
-59:2-15  error: assertion does not hold -/
-#guard_msgs in
 #eval testLaurelExpect <|
 #strata_expect
 program Laurel;
@@ -23,6 +19,7 @@ procedure nestedImpureStatements()
   var x: int := y;
   var z: int := y := y + 1;
   assert x == y;
+//^^^^^^^^^^^^^ error: assertion does not hold
   assert z == y
 };
 
@@ -54,6 +51,7 @@ procedure anotherConditionAssignmentInExpression(c: bool)
   var b: bool := c;
   var z: bool := (if b then { b := false } else (b := true)) || b;
   assert z
+//^^^^^^^^ error: assertion does not hold
 };
 
 procedure blockWithTwoAssignmentsInExpression()
@@ -74,6 +72,7 @@ procedure nestedImpureStatementsAndOpaque()
   var x: int := y;
   var z: int := y := y + 1;
   assert x == y;
+//^^^^^^^^^^^^^ error: assertion does not hold
   assert z == y
 };
 

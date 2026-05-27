@@ -29,14 +29,13 @@ procedure earlyReturnCorrect(x: int) returns (r: int)
 
 /-! ## Buggy early return: postcondition fails -/
 
-/-- info: 4:10-16  error: assertion does not hold -/
-#guard_msgs in
 #eval testLaurelExpect <|
 #strata_expect
 program Laurel;
 procedure earlyReturnBuggy(x: int) returns (r: int)
   opaque
   ensures r >= 0
+//        ^^^^^^ error: assertion does not hold
 {
   if x < 0 then {
     return x

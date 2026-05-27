@@ -9,8 +9,6 @@ import StrataTest.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-/-- info: 26:2-23  error: assertion does not hold -/
-#guard_msgs in
 #eval testLaurelExpect <|
 #strata_expect
 program Laurel;
@@ -39,5 +37,6 @@ procedure stringConcatKO()
   var b: string := " World";
   var c: string := a ++ b;
   assert c == "Goodbye"
+//^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 #end

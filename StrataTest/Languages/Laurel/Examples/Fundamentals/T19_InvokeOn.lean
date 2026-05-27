@@ -9,9 +9,6 @@ import StrataTest.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-/-- info: 55:10-14  error: assertion could not be proved
-48:2-13  error: assertion could not be proved -/
-#guard_msgs in
 #eval testLaurelExpect <|
 #strata_expect
 program Laurel;
@@ -62,6 +59,7 @@ procedure invokeB(x: int, y :real)
   opaque
 {
   assert B(y)
+//^^^^^^^^^^^ error: assertion could not be proved
 };
 
 function R(x: int): bool;
@@ -69,6 +67,7 @@ procedure badPostcondition(x: int)
   invokeOn R(x)
   opaque
   ensures R(x)
+//        ^^^^ error: assertion could not be proved
 {
 };
 #end

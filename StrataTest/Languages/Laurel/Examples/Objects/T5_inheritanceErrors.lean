@@ -9,8 +9,6 @@ import StrataTest.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-/-- info: 14:4-10  error: fields that are inherited multiple times can not be accessed. -/
-#guard_msgs in
 #eval testLaurelExpect <|
 #strata_expect
 program Laurel;
@@ -27,5 +25,6 @@ procedure diamondField(b: Bottom)
   modifies b
 {
   b#xValue := 1
+//  ^^^^^^ error: fields that are inherited multiple times can not be accessed.
 };
 #end

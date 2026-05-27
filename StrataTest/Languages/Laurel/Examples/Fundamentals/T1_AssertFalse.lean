@@ -11,9 +11,6 @@ open Strata
 
 /-! ## Failing asserts -/
 
-/-- info: 6:4-16  error: assertion does not hold
-7:4-16  error: assertion does not hold -/
-#guard_msgs in
 #eval testLaurelExpect <|
 #strata_expect
 program Laurel;
@@ -22,7 +19,9 @@ procedure foo()
 {
     assert true;
     assert false;
+//  ^^^^^^^^^^^^ error: assertion does not hold
     assert false
+//  ^^^^^^^^^^^^ error: assertion does not hold
 };
 #end
 

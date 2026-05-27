@@ -49,8 +49,6 @@ procedure callPureDivSafe()
 /-! ### Unsafe division: divisor not constrained, fails verification -/
 
 -- Error ranges are too wide because Core does not use expression locations.
-/-- info: 5:2-22  error: assertion does not hold -/
-#guard_msgs in
 #eval testLaurelExpect <|
 #strata_expect
 program Laurel;
@@ -58,13 +56,12 @@ procedure unsafeDivision(x: int)
   opaque
 {
   var z: int := 10 / x
+//^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 #end
 
 /-! ### Unsafe call to function with `requires y != 0` -/
 
-/-- info: 11:2-30  error: assertion does not hold -/
-#guard_msgs in
 #eval testLaurelExpect <|
 #strata_expect
 program Laurel;
@@ -78,5 +75,6 @@ procedure callPureDivUnsafe(x: int)
   opaque
 {
   var z: int := pureDiv(10, x)
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 #end

@@ -19,12 +19,6 @@ import StrataTest.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-/-- info: 46:10-43  error: modifies clause does not hold
-52:10-43  error: modifies clause could not be proved
-59:10-43  error: modifies clause could not be proved
-102:2-21  error: assertion does not hold
-126:2-21  error: assertion does not hold -/
-#guard_msgs in
 #eval testLaurelExpect <|
 #strata_expect
 program Laurel;
@@ -73,12 +67,14 @@ procedure modifyContainerWildcard(c: Container) returns (i: int)
 };
 
 procedure modifyContainerWithoutPermission1(c: Container, d: Container)
+//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: modifies clause does not hold
   opaque
 {
     var i: int := modifyContainerWildcard(c)
 };
 
 procedure modifyContainerWithoutPermission2(c: Container, d: Container)
+//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: modifies clause could not be proved
   opaque
   modifies d
 {
@@ -86,6 +82,7 @@ procedure modifyContainerWithoutPermission2(c: Container, d: Container)
 };
 
 procedure modifyContainerWithoutPermission3(c: Container, d: Container)
+//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: modifies clause could not be proved
   opaque
   modifies d
 {
@@ -129,6 +126,7 @@ procedure modifiesWildcardBodilessCaller()
   var x: int := d#value;
   modifiesWildcardBodiless(c, d);
   assert x == d#value // this should fail because modifies * means anything can change
+//^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 
 procedure modifiesWildcardWithBody(c: Container, d: Container)
@@ -153,5 +151,6 @@ procedure modifiesWildcardAndSpecificCaller()
   var x: int := d#value;
   modifiesWildcardAndSpecific(c, d);
   assert x == d#value // fails because modifies * subsumes modifies c
+//^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 #end

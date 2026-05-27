@@ -32,8 +32,6 @@ procedure setAndReturn(c: Container, x: int) returns (r: int)
 
 /-! ## Buggy: postcondition r == x + 1 cannot hold when r := x -/
 
-/-- info: 8:10-20  error: assertion does not hold -/
-#guard_msgs in
 #eval testLaurelExpect <|
 #strata_expect
 program Laurel;
@@ -44,6 +42,7 @@ composite Container {
 procedure setAndReturnBuggy(c: Container, x: int) returns (r: int)
   opaque
   ensures r == x + 1
+//        ^^^^^^^^^^ error: assertion does not hold
   modifies c
 {
   c#value := x;
