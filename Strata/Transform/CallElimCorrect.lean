@@ -3535,27 +3535,6 @@ private theorem isOldTemp_disjoint_notOldTemp
   have Hold : isOldTempIdent x := (List.Forall_mem_iff.mp Holds) x Hin1
   exact (Hprog x Hin2) Hold
 
-/-- Pairwise disjointness between three concatenated lists, extracted
-    from `(a ++ b ++ c).Nodup`.  Convenience re-packaging used downstream
-    to peel `cs'.generated`'s Nodup into per-segment disjointness. -/
-private theorem disjoint_of_nodup_append_three
-    {a b c : List Expression.Ident}
-    (Hnd : (a ++ b ++ c).Nodup) :
-    a.Disjoint b ∧ a.Disjoint c ∧ b.Disjoint c := by
-  rw [List.append_assoc] at Hnd
-  have Hnd' := List.nodup_append.mp Hnd
-  -- Hnd'.1 : a.Nodup
-  -- Hnd'.2.1 : (b ++ c).Nodup
-  -- Hnd'.2.2 : ∀ x ∈ a, ∀ y ∈ b ++ c, x ≠ y
-  have Hbc := List.nodup_append.mp Hnd'.2.1
-  refine ⟨?_, ?_, ?_⟩
-  · intro x hxa hxb
-    exact Hnd'.2.2 x hxa x (List.mem_append_left c hxb) rfl
-  · intro x hxa hxc
-    exact Hnd'.2.2 x hxa x (List.mem_append_right b hxc) rfl
-  · intro x hxb hxc
-    exact Hbc.2.2 x hxb x hxc rfl
-
 /-- Bridge from the `tmp_` half of `Hwfgenst` to `isNotDefined` for a list
     of fresh temp names: if a name is `isTempIdent` and is *not* in
     `γ.generated`, then it must be undefined in σ (otherwise the iff in
@@ -3598,15 +3577,6 @@ private theorem fresh_olds_not_defined
   intro v Hin
   have Hold : isOldTempIdent v := (List.Forall_mem_iff.mp HoldPred) v Hin
   exact Option.isNone_iff_eq_none.mp (Hwfgenold v Hold)
-
-/-- Specialization of `disjoint_of_nodup_append_three` to extract the
-    three pairwise disjointness facts as a Forall-friendly tuple. -/
-private theorem nodup_append_three_disjoint
-    {a b c : List Expression.Ident}
-    (Hnd : (a ++ b ++ c).Nodup) :
-    a.Disjoint b ∧ b.Disjoint c ∧ a.Disjoint c :=
-  let ⟨h1, h2, h3⟩ := disjoint_of_nodup_append_three Hnd
-  ⟨h1, h3, h2⟩
 
 /-- Pointwise σ-definedness for the `flatMap getVars` of a list of
     expressions, derived from the `EvalExpressions.eval_some` per-cons
@@ -3661,28 +3631,6 @@ private theorem initStates_get_notin
     -- σ'' v = σ_step v (by IH on the tail)
     have Hih := ih Hnin_tail
     rw [Hih, Hstep_eq]
-
-/-- The length of `trips.unzip.snd` matches `trips.length`.  Convenient
-    one-liner used to bridge `genXxxExprIdentsTrip_snd` shape facts to a
-    `triplen` length equation, instead of inlining the `simp
-    [List.unzip_eq_map]` rewrite at every length proof. -/
-private theorem unzip_snd_length {α β : Type _} (trips : List (α × β)) :
-    trips.unzip.snd.length = trips.length := by
-  simp [List.unzip_eq_map]
-
-/-- Decompose a non-membership fact over a balanced 4-way append
-    `a ∉ (l₁ ++ l₂) ++ (l₃ ++ l₄)` into four leaf-level non-membership
-    facts.  Used at the L4 (preVars) and L6 (postVars) `Hinv` sites in
-    `callElimStatementCorrect` to flatten the per-`removeAll` decomposition
-    cascades. -/
-private theorem notin_append4
-    {α} {a : α} {l₁ l₂ l₃ l₄ : List α}
-    (Hnin : a ∉ (l₁ ++ l₂) ++ (l₃ ++ l₄)) :
-    a ∉ l₁ ∧ a ∉ l₂ ∧ a ∉ l₃ ∧ a ∉ l₄ :=
-  ⟨fun h => Hnin (List.mem_append.mpr (Or.inl (List.mem_append.mpr (Or.inl h)))),
-   fun h => Hnin (List.mem_append.mpr (Or.inl (List.mem_append.mpr (Or.inr h)))),
-   fun h => Hnin (List.mem_append.mpr (Or.inr (List.mem_append.mpr (Or.inl h)))),
-   fun h => Hnin (List.mem_append.mpr (Or.inr (List.mem_append.mpr (Or.inr h))))⟩
 
 /-- Positional decomposition for `Map.find?` against the L6 canonical
     `createOldVarsSubst` map.  Given a hit
@@ -5099,11 +5047,11 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                 -- ── Length facts ──
                 -- argTrips.length = argVals.length
                 have Hargtriplen : argTrips.length = argVals.length := by
-                  rw [← unzip_snd_length argTrips, Heqargs, hCallArgsIn]
+                  rw [← List.unzip_snd_length argTrips, Heqargs, hCallArgsIn]
                   exact EvalExpressionsLength Hevalargs
                 -- outTrips.length = oVals.length
                 have Houttriplen : outTrips.length = oVals.length := by
-                  rw [← unzip_snd_length outTrips, Heqouts, hCallArgsLhs]
+                  rw [← List.unzip_snd_length outTrips, Heqouts, hCallArgsLhs]
                   exact ReadValuesLength Hevalouts
                 -- ── C1: Derive `Hinoutnd` from the call_sem InitStates binders ──
                 -- `InitStates` enforces target = none pre-store; composing
@@ -6033,7 +5981,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       obtain ⟨Hk1_pre, Hk1_notin⟩ := Hk1_inPre
                       obtain ⟨Hk1_notin_inputs, Hk1_notin_outputs,
                               Hk1_notin_argT, _Hk1_notin_lhs⟩ :=
-                        notin_append4 Hk1_notin
+                        List.notin_append4 Hk1_notin
                       -- preVar k1 fresh facts (not tmp_, not old_, not in lhs).
                       have HfreshK := HfreshEnt k1 Hk1_pre
                       have Hk1_notTemp : ¬ isTempIdent k1 := HfreshK.1
@@ -8196,7 +8144,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     -- (lhs ++ filtered_argTemps)` into 4 leaf facts.
                     obtain ⟨Hk1_notin_outs, Hk1_notin_filtIn,
                             Hk1_notin_lhs, Hk1_notin_filtArgT⟩ :=
-                      notin_append4 Hk1_notin_combined
+                      List.notin_append4 Hk1_notin_combined
                     -- entry.snd.expr = substFvars c.expr oldSubst_L6.
                     rw [Hentry_eq] at Hk1_pre
                     -- Decompose k1 ∈ getVars (substFvars c.expr oldSubst_L6).
