@@ -1,68 +1,161 @@
 /-
-  Reproducer + verification: inline functions inside quantifier bodies.
+  Copyright Strata Contributors
 
-  - Confirms the original bug: `LExpr.eval` does not expand an `inline` call
-    inside a `forall` body.
-  - Confirms the fix: `LExpr.expandInlineCalls` correctly expands the call
-    under the binder, and then `LExpr.eval` produces the fully reduced form.
+  SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
 
-meta import all Strata.DL.Lambda.LExprEval
+public import Strata.Languages.Core.Env
 
-meta section
+public section
 
-namespace Lambda
-open LExpr LTy.Syntax LExpr.SyntaxMono
+namespace Core
+open Lambda Imperative
+open Std (ToFormat Format format)
 
-private abbrev TP : LExprParams := ⟨Unit, Unit⟩
-private instance : Coe String TP.Identifier where coe s := Identifier.mk s ()
+---------------------------------------------------------------------
+namespace CmdEval
 
--- inline polyEq<a>(x, y) := ∀ (z : a), z == z
-private def polyEqFns : Array (LFunc TP) :=
-  #[{ name := "polyEq",
-      typeArgs := ["a"],
-      attr := #[.inline],
-      inputs := [("x", mty[%a]), ("y", mty[%a])],
-      output := mty[bool],
-      body := some esM[∀ (%a): (%0 == %0)] }]
+def eval (E : Env) (e : Expression.Expr) : Expression.Expr :=
+  -- Pre-pass: expand inline factory calls under quantifier/lambda binders,
+  -- because `LExpr.eval` does not descend into closed binder bodies.
+  let e := LExpr.expandInlineCalls E.exprEnv.config.factory E.exprEnv.config.fuel e
+  LExpr.eval E.exprEnv.config.fuel E.exprEnv e
 
-private def polyState : LState TP :=
-  { (LState.init : LState TP) with
-    config := { (LState.init : LState TP).config with factory := .ofArray polyEqFns } }
+def updateError (E : Env) (e : EvalError Expression) : Env :=
+  { E with error := e }
 
--- Top-level call expands as expected.
-private def topCall    : LExpr TP.mono := esM[(((~polyEq : int → int → bool) #1) #2)]
-private def topExpect  : LExpr TP.mono := esM[∀ (int): (%0 == %0)]
-/-- info: true -/
-#guard_msgs in
-#eval (LExpr.eval 100 polyState topCall) == topExpect
+def lookupError (E : Env) : Option (EvalError Expression) :=
+  E.error
 
--- Same call wrapped inside a forall: original bug — eval leaves it untouched.
-private def quantCall   : LExpr TP.mono :=
-  esM[∀ (int): (((~polyEq : int → int → bool) %0) %0)]
-private def quantExpect : LExpr TP.mono :=
-  esM[∀ (int): (∀ (int): (%0 == %0))]
+def update (E : Env) (v : Expression.Ident) (ty : Expression.Ty) (e : Expression.Expr) : Env :=
+  -- We typically do PE after type inference is in place, which is why we
+  -- expect `ty` to be a monotype. However, if it is not, we assume -- for
+  -- now -- that we are working with untyped expressions.
+  -- (TODO): What are the pitfalls of this decision?
+  if h : ty.isMonoType then
+    E.insertInContext (v, ty.toMonoType h) e
+  else
+    E.insertInContext (v, none) e
 
-/-- info: true -/
-#guard_msgs in
-#eval (LExpr.eval 100 polyState quantCall) == quantCall
+def lookup (E : Env) (v : Expression.Ident) : Option Expression.TypedExpr :=
+  match E.exprEnv.state.find? v with
+  | some (ty, e) =>
+    match ty with
+    | some mty => some (e, .forAll [] mty)
+    | none => some (e, .forAll ["α"] (.ftvar "α"))
+  | none => none
 
-/-- info: false -/
-#guard_msgs in
-#eval (LExpr.eval 100 polyState quantCall) == quantExpect
+def preprocess (E : Env) (c : Cmd Expression) (e : Expression.Expr) : Expression.Expr × Env :=
+  -- Substitute "old g" variables with their pre-state values.
+  -- substMap contains only "old g" → pre-state value entries (set by ProcedureEval).
+  let e := if E.substMap.isEmpty then e else Lambda.LExpr.substFvars e E.substMap
+  match c with
+  | .init _ _ eOpt _ =>
+    -- The type checker only allows free variables to appear in `init`
+    -- statements, so we only need to compute them when we see an `init`
+    -- command.
+    -- See `CmdType.lean` for details.
+    match eOpt with
+    | .det _ =>
+      let freeVars := e.freeVars
+      let E' := E.insertFreeVarsInOldestScope freeVars
+      (e, E')
+    | .nondet => (e, E)
+  | _ => (e, E)
 
--- Fix: expandInlineCalls descends through the forall and rewrites the call.
-/-- info: true -/
-#guard_msgs in
-#eval (LExpr.expandInlineCalls polyState.config.factory 100 quantCall) == quantExpect
+def genFreeVar (E : Env) (x : Expression.Ident) (ty : Expression.Ty) : Expression.Expr × Env :=
+  if h : ty.isMonoType then
+    E.genFVar (x, ty.toMonoType h)
+  else
+    E.genFVar (x, none)
 
--- And piping the pre-pass before eval also yields the expected form.
-/-- info: true -/
-#guard_msgs in
-#eval
-  (LExpr.eval 100 polyState
-    (LExpr.expandInlineCalls polyState.config.factory 100 quantCall)) == quantExpect
+def denoteBool (e : Expression.Expr) : Option Bool :=
+  Lambda.LExpr.denoteBool e
 
-end Lambda
-end
+def addWarning (E : Env) (w : EvalWarning Expression) : Env :=
+  { E with warnings := w :: E.warnings }
+
+def getPathConditions (E : Env) : PathConditions Expression :=
+  E.pathConditions
+
+private def findUnique (xs : List String) (label : String) (counter : Nat) : String :=
+  let candidate := s!"{label}_{counter}"
+  if h : xs.contains candidate then
+    have : (xs.erase candidate).length < xs.length := by grind
+    findUnique (xs.erase candidate) label (counter + 1)
+  else
+    candidate
+  termination_by xs.length
+
+private def generateUniqueLabel (pathConditions : PathConditions Expression)
+    (baseLabel : String) : String :=
+  let labels := pathConditions.flatten.map (fun e => e.name)
+  if labels.contains baseLabel then
+    let newLabel := findUnique labels baseLabel 1
+    dbg_trace f!"⚠️ [addPathCondition] Label clash detected for \
+                {baseLabel}, using unique label {newLabel}."
+    newLabel
+  else
+    baseLabel
+
+def addPathCondition (E : Env) (p : PathCondition Expression) : Env :=
+  match p with
+  | [] => E
+  | entry :: prest =>
+    let uniqueLabel := generateUniqueLabel E.pathConditions entry.name
+    let entry' := match entry with
+      | .assumption _ e => .assumption uniqueLabel e
+      | other => other
+    let new_path_conditions := E.pathConditions.addEntry entry'
+    let E := { E with pathConditions := new_path_conditions }
+    addPathCondition E prest
+
+def deferObligation (E : Env) (ob : ProofObligation Expression) : Env :=
+  { E with deferred := E.deferred.push ob }
+
+/-
+theorem lookupEval (E1 E2 : Env) (h : ∀x, lookup E1 x = lookup E2 x) :
+  ∀ e, eval E1 e = eval E2 e := by
+  intro e; induction e <;> simp_all [eval]
+  case const c maybe_mty  =>
+    have hc := @h c; clear h
+    simp [lookup] at hc
+    try repeat (split at hc); all_goals try simp_all
+    repeat sorry
+  repeat sorry
+-/
+
+
+---------------------------------------------------------------------
+
+instance : EvalContext Expression Env where
+  eval              := CmdEval.eval
+  updateError       := CmdEval.updateError
+  lookupError       := CmdEval.lookupError
+  update            := CmdEval.update
+  lookup            := CmdEval.lookup
+  preprocess        := CmdEval.preprocess
+  genFreeVar        := CmdEval.genFreeVar
+  denoteBool        := CmdEval.denoteBool
+  addWarning        := CmdEval.addWarning
+  getPathConditions := CmdEval.getPathConditions
+  addPathCondition  := CmdEval.addPathCondition
+  deferObligation   := CmdEval.deferObligation
+
+instance : ToFormat (Cmds Expression × Env) where
+  format arg :=
+    let fcs := Imperative.formatCmds Expression arg.fst
+    let fσ := format arg.snd
+    format f!"Commands:{Format.line}{fcs}{Format.line}\
+              State:{Format.line}{fσ}{Format.line}"
+
+---------------------------------------------------------------------
+
+end CmdEval
+
+---------------------------------------------------------------------
+
+end Core
+
+end -- public section

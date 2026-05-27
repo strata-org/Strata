@@ -1,4 +1,10 @@
 /-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
+
+/-
   Reproducer + verification: inline functions inside quantifier bodies.
 
   - Confirms the original bug: `LExpr.eval` does not expand an `inline` call
