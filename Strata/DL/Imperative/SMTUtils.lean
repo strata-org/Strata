@@ -6,7 +6,7 @@
 module
 
 import Strata.DL.SMT.DDMTransform.Translate
-import Strata.DDM.Elab
+import StrataDDM.Elab
 public import Strata.Pipeline.Context
 public import Strata.DL.Imperative.EvalContext
 public import Strata.DL.SMT.Encoder

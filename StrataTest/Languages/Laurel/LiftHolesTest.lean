@@ -10,8 +10,8 @@ Tests that the eliminateHoles pass correctly replaces `.Hole` nodes with calls
 to freshly generated uninterpreted functions, with types inferred from context.
 -/
 
-meta import Strata.DDM.Elab
-meta import Strata.DDM.BuiltinDialects.Init
+meta import StrataDDM.Elab
+meta import StrataDDM.BuiltinDialects.Init
 meta import Strata.Languages.Laurel.Grammar.LaurelGrammar
 meta import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 meta import Strata.Languages.Laurel.InferHoleTypes

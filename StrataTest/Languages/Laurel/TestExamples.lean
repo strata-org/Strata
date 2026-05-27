@@ -6,8 +6,8 @@
 module
 
 meta import all StrataTest.Util.TestDiagnostics
-meta import Strata.DDM.Elab
-meta import Strata.DDM.BuiltinDialects.Init
+meta import StrataDDM.Elab
+meta import StrataDDM.BuiltinDialects.Init
 meta import Strata.Util.IO
 meta import Strata.Languages.Laurel.Grammar.LaurelGrammar
 meta import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator

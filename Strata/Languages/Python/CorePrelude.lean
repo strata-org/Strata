@@ -7,7 +7,7 @@ module
 
 public import Strata.Languages.Core.Program
 import Strata.Languages.Core.Verifier
-import Strata.DDM.Integration.Lean.HashCommands -- shake: keep
+import StrataDDM.Integration.Lean.HashCommands -- shake: keep
 
 namespace Strata
 namespace Python

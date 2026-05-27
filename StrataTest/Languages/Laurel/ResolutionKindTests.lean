@@ -11,8 +11,8 @@ where a type is expected, or calling a type as if it were a procedure.
 -/
 
 meta import all StrataTest.Util.TestDiagnostics
-meta import Strata.DDM.Elab
-meta import Strata.DDM.BuiltinDialects.Init
+meta import StrataDDM.Elab
+meta import StrataDDM.BuiltinDialects.Init
 meta import Strata.Languages.Laurel.Grammar.LaurelGrammar
 meta import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 meta import Strata.Languages.Laurel.Resolution

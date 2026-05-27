@@ -5,9 +5,9 @@
 -/
 module
 
-public import Strata.DDM.Integration.Lean.OfAstM
-import Strata.DDM.Integration.Lean.Gen
-import Strata.DDM.Integration.Lean.HashCommands -- shake: keep
+public import StrataDDM.Integration.Lean.OfAstM
+import StrataDDM.Integration.Lean.Gen
+import StrataDDM.Integration.Lean.HashCommands -- shake: keep
 
 public section
 

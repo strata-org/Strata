@@ -7,7 +7,7 @@ module
 
 meta import all StrataTest.Languages.B3.DDMFormatDeclarationsTests
 meta import Strata.Languages.B3.DDMTransform.Conversion
-import Strata.DDM.Integration.Lean.HashCommands
+import StrataDDM.Integration.Lean.HashCommands
 
 meta section
 

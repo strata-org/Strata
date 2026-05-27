@@ -5,7 +5,7 @@
 -/
 module
 
-import Strata.DDM.Parser
+import StrataDDM.Parser
 public import Strata.Languages.Core.Verifier
 import Lean.Elab.Command
 

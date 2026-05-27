@@ -5,9 +5,9 @@
 -/
 module
 
-public import Strata.DDM.HNF
-public import Strata.DDM.Integration.Lean.OfAstM
-import Strata.DDM.Integration.Lean
+public import StrataDDM.HNF
+public import StrataDDM.Integration.Lean.OfAstM
+import StrataDDM.Integration.Lean
 
 public section
 
