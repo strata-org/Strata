@@ -1,0 +1,101 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
+
+import StrataTest.Util.TestDiagnostics
+import StrataTest.Languages.Laurel.TestExamples
+
+open StrataTest.Util
+
+namespace Strata
+namespace Laurel
+
+/-! Documents the current behaviour of the arithmetic typing rules.
+
+    Two rules apply:
+
+    - [⇐] Op-Arith — the *check* path. When the surrounding context
+      provides an expected type (e.g. an annotated `var` declaration,
+      a procedure parameter, an assignment target), the arithmetic
+      expression is checked at that type, and the type is pushed into
+      every operand. The error surfaces as "expected '<T>', got
+      '<U>'" at the offending operand.
+
+    - [⇒] Op-Arith — the *synth* path. When no expected type is
+      available (e.g. the arithmetic expression appears as the operand
+      of a comparison, or its result is used in synth position), the
+      rule iterates over `numericCandidates` (= `[TInt, TReal,
+      TFloat64]`) and picks the first `T` for which every operand
+      bidirectionally checks at `T`. Failed trials are rolled back; if
+      every candidate fails, the *last* trial's diagnostics are kept.
+
+    Homogeneous numeric operands type-check via either path.
+    Heterogeneous numeric operands (e.g. `int + real`) are rejected
+    by both paths. The gradual `Unknown` wildcard flows freely. -/
+
+def arithTypingProgram := r"
+procedure homogeneousInt()
+  opaque
+{
+  var x: int := 1 + 2;
+  assert x == 3
+};
+
+procedure homogeneousReal()
+  opaque
+{
+  var x: real := 1.5 + 2.5;
+  assert x == 4.0
+};
+
+// [⇐] Op-Arith path: the outer 'real' expectation is pushed into both
+// operands. Operand '1' synthesizes 'int' and fails the check.
+procedure heterogeneousCheckPath()
+  opaque
+{
+  var x: real := 1 + 2.0
+//               ^ error: expected 'real', got 'int'
+};
+
+// [⇒] Op-Arith path: '<' synthesizes 'TBool', so its operands are in
+// synth position. The arithmetic operand '1 + 2.0' iterates over
+// `numericCandidates`. Every candidate fails (no T admits both 'int'
+// and 'real'); the diagnostics from the *last* trial (TFloat64) are
+// kept.
+procedure heterogeneousSynthPath()
+  opaque
+{
+  assert (1 + 2.0) < 5
+//        ^ error: expected 'float64', got 'int'
+//            ^^^ error: expected 'float64', got 'real'
+};
+
+procedure unaryNegHomogeneous()
+  opaque
+{
+  var a: int := 5;
+  var b: int := -a;
+  var c: real := 1.5;
+  var d: real := -c;
+  assert b == 0 - 5;
+  assert d == 0.0 - 1.5
+};
+
+// Unknown (here from the unresolved name 'mystery') flows freely
+// through both candidate trials, so the synth iteration succeeds at
+// the first candidate (TInt). The 'mystery is not defined' diagnostic
+// is the *only* error.
+procedure unknownFlowsFreely()
+  opaque
+{
+  assert (mystery + 1) == 1
+//        ^^^^^^^ error: 'mystery' is not defined
+};
+"
+
+#guard_msgs(drop info, error) in
+#eval testInputWithOffset "ArithTyping" arithTypingProgram 14 processLaurelFile
+
+end Laurel

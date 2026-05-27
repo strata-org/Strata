@@ -268,10 +268,15 @@ structure ResolveState where
   /-- When resolving inside an instance procedure, the owning composite type name.
       Used by `resolveFieldRef` to resolve `self.field` when `self` has type `Any`. -/
   instanceTypeName : Option String := none
-  /-- When resolving inside a procedure body, the declared output types (in
-      declaration order). `none` means no enclosing procedure. Used by `Return`
-      to type-check the optional return value and to flag arity/shape mismatches. -/
-  expectedReturnTypes : Option (List HighTypeMd) := none
+  /-- The declared output types of the enclosing procedure body, in
+      declaration order. `none` means we are not currently resolving
+      inside any procedure body (e.g. while resolving a constant
+      initializer); in that case `Return` cannot occur and is not
+      type-checked. Bound by `resolveProcedure` /
+      `resolveInstanceProcedure` on entry, restored on exit, and read
+      only by `Check.return` to type-check the optional payload of
+      `return e`. -/
+  answerType : Option (List HighTypeMd) := none
   /-- Type-relation tables (alias/constrained unfolding + composite extending
       chains) used by the subtyping/consistency checks. Built once from
       `program.types` at the start of `resolve`. -/
@@ -466,6 +471,49 @@ private def isNumeric (ctx : TypeContext) (ty : HighTypeMd) : Bool :=
   match (ctx.unfold ty).val with
   | .TInt | .TReal | .TFloat64 | .Unknown => true
   | _ => false
+
+/-- The set of concrete numeric types that arithmetic operands must
+    inhabit, in priority order. The `Unknown` accepted by `isNumeric` as
+    a gradual escape hatch is *not* in this list — `Unknown` is a
+    wildcard, not a result type one should synthesize.
+
+    Used by [⇒] Op-Arith via `firstWorking` to discover the result type
+    of an arithmetic expression. -/
+private def numericCandidates (source : Option FileRange) : List HighTypeMd :=
+  [ { val := .TInt,     source := source }
+  , { val := .TReal,    source := source }
+  , { val := .TFloat64, source := source } ]
+
+/-- Try `attempts` in order, returning the first one whose action runs
+    without emitting any new diagnostics. Each trial runs against a
+    fresh copy of the diagnostic state (snapshotted before the trial)
+    and is rolled back if the trial emits errors; the *successful*
+    trial commits its state changes — including any state mutations
+    other than `errors`. If every trial fails, the diagnostics from
+    the *last* attempt are kept (so the user sees a concrete error
+    message rather than a blank failure).
+
+    The trial-then-rollback pattern is what makes [⇒] Op-Arith feasible:
+    we can iterate over `numericCandidates` and bidirectionally check
+    every operand against each candidate, picking the first candidate
+    where every check succeeds — without the failed trials' diagnostics
+    leaking into the final error log. -/
+private def firstWorking {α : Type}
+    (attempts : List (ResolveM α)) : ResolveM (Option α) := do
+  let snapshotBefore ← get
+  let mut lastSnapshot := snapshotBefore
+  for attempt in attempts do
+    set snapshotBefore
+    let result ← attempt
+    let after ← get
+    if after.errors.size = snapshotBefore.errors.size then
+      return some result
+    lastSnapshot := after
+  -- Every trial emitted at least one diagnostic; restore the final
+  -- attempt's state so the user sees the *last* candidate's errors
+  -- rather than only the first.
+  set lastSnapshot
+  return none
 
 /-- Test whether a type is a user-defined reference type. `Unknown` is accepted
     as a gradual escape hatch. Used by Fresh and ReferenceEquals, which only
@@ -1348,9 +1396,7 @@ def Synth.instanceCall (exprMd : StmtExprMd)
 
 -- ### Primitive operations
 
-/-- Cases on the operator family. All operands are synthesized first;
-    then a per-family verification fires using `checkSubtype` (a
-    post-synth subtype test, not bidirectional check resolution).
+/-- Cases on the operator family.
 
     `Γ ⊢ args_i ⇒ U_i,  U_i <: TBool,  op ∈ {And, Or, AndThen, OrElse, Not, Implies}  ∴  Γ ⊢ PrimitiveOp op args ⇒ TBool`
 
@@ -1358,7 +1404,7 @@ def Synth.instanceCall (exprMd : StmtExprMd)
 
     `Γ ⊢ lhs ⇒ T_l,  Γ ⊢ rhs ⇒ T_r,  T_l ~ T_r,  op ∈ {Eq, Neq}  ∴  Γ ⊢ PrimitiveOp op [lhs; rhs] ⇒ TBool`
 
-    `Γ ⊢ args_i ⇒ U_i,  Numeric U_i,  Γ ⊢ args.head ⇒ T,  op ∈ {Neg, Add, Sub, Mul, Div, Mod, DivT, ModT}  ∴  Γ ⊢ PrimitiveOp op args ⇒ T`
+    `T ∈ {TInt, TReal, TFloat64},  Γ ⊢ args_i ⇐ T,  op ∈ {Neg, Add, Sub, Mul, Div, Mod, DivT, ModT}  ∴  Γ ⊢ PrimitiveOp op args ⇒ T`
 
     `Γ ⊢ args_i ⇒ U_i,  U_i <: TString,  op = StrConcat  ∴  Γ ⊢ PrimitiveOp op args ⇒ TString`
 
@@ -1368,67 +1414,87 @@ def Synth.instanceCall (exprMd : StmtExprMd)
     symmetric consistency under the gradual relation, so equality has no
     privileged operand direction.
 
-    The result type is `TBool` for booleans/comparisons/equality, the
-    head argument's type for arithmetic ("result is the type of the
-    first argument" handles `int + int → int`, `real + real → real`,
-    etc. without unification — known relaxation: `int + real` passes
-    since each operand individually passes `Numeric`; a proper fix needs
-    numeric promotion or unification), `TString` for concatenation.
+    The result type is `TBool` for booleans/comparisons/equality, and
+    `TString` for concatenation. Boolean / Cmp / Eq / Concat all
+    synthesize operands first, then run a per-family check
+    (`checkSubtype` for boolean and concat, `isNumeric` for cmp,
+    `isConsistent` for equality).
 
-    The arithmetic and boolean families also have a check-mode rule
-    (`Check.primitiveOp`) which is preferred when an `expected` type is
-    available: it pushes the operand type into each operand via
-    `Check.resolveStmtExpr`, surfacing operand-shaped errors at their
-    natural location instead of via the gradual subsumption fallthrough.
-    `Synth.primitiveOp` remains the entry point for synth-position
-    primitive ops (e.g. an unannotated `var x := a + b` or use as an
-    operand of a non-Check.primitiveOp construct). -/
+    Arithmetic uses a different scheme: `firstWorking` iterates over
+    `numericCandidates` (currently `[TInt, TReal, TFloat64]` — `Unknown`
+    is excluded since one should not synthesize a wildcard) and
+    bidirectionally checks every operand against each candidate. The
+    first `T` where every check succeeds is the synthesized result
+    type. Failed trials are rolled back so their diagnostics don't
+    leak; if every trial fails, the *last* trial's diagnostics are
+    kept so the user sees a concrete error.
+
+    The boolean family additionally has a check-mode rule
+    (`Check.primitiveOp`) preferred when an `expected` type is
+    available; it pushes `TBool` into operands via
+    `Check.resolveStmtExpr` instead of synth-then-`checkSubtype`,
+    surfacing operand-shaped errors at their natural location. -/
 def Synth.primitiveOp (exprMd : StmtExprMd) (expr : StmtExpr)
     (op : Operation) (args : List StmtExprMd) (source : Option FileRange)
     (h_expr : expr = .PrimitiveOp op args)
     (h : exprMd.val = .PrimitiveOp op args) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let _ := h_expr  -- carries the constructor identity for `expr` in diagnostics
-  let results ← args.mapM Synth.resolveStmtExpr
-  let args' := results.map (·.1)
-  let argTypes := results.map (·.2)
-  let resultTy := match op with
-    | .Eq | .Neq | .And | .Or | .AndThen | .OrElse | .Not | .Implies
-    | .Lt | .Leq | .Gt | .Geq => HighType.TBool
-    | .Neg | .Add | .Sub | .Mul | .Div | .Mod | .DivT | .ModT =>
-      match argTypes.head? with
-      | some headTy => headTy.val
-      | none => HighType.TInt
-    | .StrConcat => HighType.TString
   match op with
-  | .And | .Or | .AndThen | .OrElse | .Not | .Implies =>
-    for (a, aTy) in args'.zip argTypes do
-      checkSubtype a.source { val := .TBool, source := a.source } aTy
-  | .Neg | .Add | .Sub | .Mul | .Div | .Mod | .DivT | .ModT | .Lt | .Leq | .Gt | .Geq =>
-    let ctx := (← get).typeContext
-    for (a, aTy) in args'.zip argTypes do
-      unless isNumeric ctx aTy do
-        typeMismatch a.source (some expr) "expected a numeric type" aTy
-  | .Eq | .Neq =>
-    match argTypes with
-    | [lhsTy, rhsTy] =>
+  -- Arithmetic: iterate over candidate numeric types via `firstWorking`,
+  -- bidirectionally checking every operand against each candidate.
+  | .Neg | .Add | .Sub | .Mul | .Div | .Mod | .DivT | .ModT =>
+    let attempts : List (ResolveM (List StmtExprMd × HighTypeMd)) :=
+      (numericCandidates source).map fun candidate => do
+        let args' ← args.attach.mapM (fun a => have := a.property; do
+          Check.resolveStmtExpr a.val candidate)
+        pure (args', candidate)
+    match ← firstWorking attempts with
+    | some (args', resultTy) => pure (.PrimitiveOp op args', resultTy)
+    | none =>
+      pure (.PrimitiveOp op args, { val := .Unknown, source := source })
+  | _ =>
+    let results ← args.attach.mapM (fun a => have := a.property; do
+      Synth.resolveStmtExpr a.val)
+    let args' := results.map (·.1)
+    let argTypes := results.map (·.2)
+    let resultTy := match op with
+      | .Eq | .Neq | .And | .Or | .AndThen | .OrElse | .Not | .Implies
+      | .Lt | .Leq | .Gt | .Geq => HighType.TBool
+      | .StrConcat => HighType.TString
+      -- Unreachable: filtered above.
+      | _ => HighType.Unknown
+    match op with
+    | .And | .Or | .AndThen | .OrElse | .Not | .Implies =>
+      for (a, aTy) in args'.zip argTypes do
+        checkSubtype a.source { val := .TBool, source := a.source } aTy
+    | .Lt | .Leq | .Gt | .Geq =>
       let ctx := (← get).typeContext
-      unless isConsistent ctx lhsTy rhsTy do
-        let diag := diagnosticFromSource source
-          s!"Operands of '{op}' have incompatible types '{formatType lhsTy}' and '{formatType rhsTy}'"
-        modify fun s => { s with errors := s.errors.push diag }
-    | _ => pure ()
-  | .StrConcat =>
-    for (a, aTy) in args'.zip argTypes do
-      checkSubtype a.source { val := .TString, source := a.source } aTy
-  pure (.PrimitiveOp op args', { val := resultTy, source := source })
+      for (a, aTy) in args'.zip argTypes do
+        unless isNumeric ctx aTy do
+          typeMismatch a.source (some expr) "expected a numeric type" aTy
+    | .Eq | .Neq =>
+      match argTypes with
+      | [lhsTy, rhsTy] =>
+        let ctx := (← get).typeContext
+        unless isConsistent ctx lhsTy rhsTy do
+          let diag := diagnosticFromSource source
+            s!"Operands of '{op}' have incompatible types '{formatType lhsTy}' and '{formatType rhsTy}'"
+          modify fun s => { s with errors := s.errors.push diag }
+      | _ => pure ()
+    | .StrConcat =>
+      for (a, aTy) in args'.zip argTypes do
+        checkSubtype a.source { val := .TString, source := a.source } aTy
+    | _ => pure ()  -- unreachable
+    pure (.PrimitiveOp op args', { val := resultTy, source := source })
   termination_by (exprMd, 1)
   decreasing_by
-    apply Prod.Lex.left
-    have hsz := exprMd.sizeOf_val_lt
-    simp [h] at hsz
-    have := List.sizeOf_lt_of_mem ‹_ ∈ args›
-    omega
+    all_goals
+      apply Prod.Lex.left
+      have hsz := exprMd.sizeOf_val_lt
+      simp [h] at hsz
+      have := List.sizeOf_lt_of_mem ‹_ ∈ args›
+      omega
 
 /-- Cases on the operator family.
 

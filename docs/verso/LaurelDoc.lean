@@ -489,11 +489,11 @@ tag := "rules-primitive-operations"
 
 $$`\frac{\Gamma \vdash \mathit{args}_i \Rightarrow U_i \quad U_i <: \mathsf{TBool} \quad \mathit{op} \in \{\mathsf{And}, \mathsf{Or}, \mathsf{AndThen}, \mathsf{OrElse}, \mathsf{Not}, \mathsf{Implies}\}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;\mathit{args} \Rightarrow \mathsf{TBool}} \quad \text{([⇒] Op-Bool)}`
 
-$$`\frac{\Gamma \vdash \mathit{args}_i \Leftarrow \mathit{Numeric} \quad \mathit{op} \in \{\mathsf{Lt}, \mathsf{Leq}, \mathsf{Gt}, \mathsf{Geq}\}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;\mathit{args} \Rightarrow \mathsf{TBool}} \quad \text{([⇒] Op-Cmp)}`
+$$`\frac{\Gamma \vdash \mathit{args}_i \Rightarrow U_i \quad \mathit{Numeric}\;U_i \quad \mathit{op} \in \{\mathsf{Lt}, \mathsf{Leq}, \mathsf{Gt}, \mathsf{Geq}\}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;\mathit{args} \Rightarrow \mathsf{TBool}} \quad \text{([⇒] Op-Cmp)}`
 
 $$`\frac{\Gamma \vdash \mathit{lhs} \Rightarrow T_l \quad \Gamma \vdash \mathit{rhs} \Rightarrow T_r \quad T_l \sim T_r \quad \mathit{op} \in \{\mathsf{Eq}, \mathsf{Neq}\}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;[\mathit{lhs}; \mathit{rhs}] \Rightarrow \mathsf{TBool}} \quad \text{([⇒] Op-Eq)}`
 
-$$`\frac{\Gamma \vdash \mathit{args}_i \Leftarrow \mathit{Numeric} \quad \Gamma \vdash \mathit{args}.\mathsf{head} \Rightarrow T \quad \mathit{op} \in \{\mathsf{Neg}, \mathsf{Add}, \mathsf{Sub}, \mathsf{Mul}, \mathsf{Div}, \mathsf{Mod}, \mathsf{DivT}, \mathsf{ModT}\}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;\mathit{args} \Rightarrow T} \quad \text{([⇒] Op-Arith)}`
+$$`\frac{T \in \{\mathsf{TInt}, \mathsf{TReal}, \mathsf{TFloat64}\} \quad \Gamma \vdash \mathit{args}_i \Leftarrow T \quad \mathit{op} \in \{\mathsf{Neg}, \mathsf{Add}, \mathsf{Sub}, \mathsf{Mul}, \mathsf{Div}, \mathsf{Mod}, \mathsf{DivT}, \mathsf{ModT}\}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;\mathit{args} \Rightarrow T} \quad \text{([⇒] Op-Arith)}`
 
 The arithmetic synth rule iterates over the candidate numeric types
 $`\{\mathsf{TInt}, \mathsf{TReal}, \mathsf{TFloat64}\}` and picks the
@@ -515,9 +515,10 @@ $$`\frac{\Gamma \vdash \mathit{args}_i \Rightarrow U_i \quad U_i <: \mathsf{TStr
 
 {docstring Strata.Laurel.Resolution.Synth.primitiveOp}
 
-The arithmetic and boolean families also have a check-mode rule, used when the
-surrounding context provides an `expected` type. The rule pushes the operand type
-into each operand via `Check.resolveStmtExpr`, replacing the synth-then-`checkSubtype`
+The arithmetic and boolean families also have a check-mode rule, used
+when the surrounding context provides an `expected` type. The rule
+pushes the operand type into each operand via
+`Check.resolveStmtExpr`, replacing the synth-then-`checkSubtype`
 discipline with bidirectional check.
 
 $$`\frac{\mathit{Numeric}\;T \quad \Gamma \vdash \mathit{args}_i \Leftarrow T \quad \mathit{op} \in \{\mathsf{Neg}, \mathsf{Add}, \mathsf{Sub}, \mathsf{Mul}, \mathsf{Div}, \mathsf{Mod}, \mathsf{DivT}, \mathsf{ModT}\}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;\mathit{args} \Leftarrow T} \quad \text{([⇐] Op-Arith)}`
