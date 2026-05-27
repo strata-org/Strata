@@ -143,10 +143,10 @@ theorem TripleBlock.toTriple {ss : List (Stmt P CmdT)} {l : String} {md : MetaDa
       match block_reaches_terminal P evalCmd extendEval hrest with
       | .inl ⟨ρ_inner, hterm, heq⟩ =>
         have ⟨hpost, hf⟩ := h ρ₀ ρ_inner hpre hwfb hf₀ (.inl hterm)
-        subst heq; exact hpost_proj ρ_inner _ hpost hf
+        subst heq; exact hpost_proj ρ_inner _ _ hpost hf
       | .inr ⟨lbl, ρ_inner, hexit, heq⟩ =>
         have ⟨hpost, hf⟩ := h ρ₀ ρ_inner hpre hwfb hf₀ (.inr ⟨lbl, hexit⟩)
-        subst heq; exact hpost_proj ρ_inner _ hpost hf
+        subst heq; exact hpost_proj ρ_inner _ _ hpost hf
 
 omit [HasVal P] in
 /-- Lift a `Triple` to a `TripleBlock` for a singleton list. -/
@@ -203,18 +203,18 @@ theorem ite {c : P.Expr} {tss ess : List (Stmt P CmdT)} {md : MetaData P}
       match block_reaches_terminal P evalCmd extendEval r1 with
       | .inl ⟨ρ_inner, hterm, heq⟩ =>
         have ⟨hpost, hf⟩ := ht ρ₀ ρ_inner ⟨hpre, hc⟩ hwfb hf₀ (.inl hterm)
-        subst heq; exact hpost_proj ρ_inner _ hpost hf
+        subst heq; exact hpost_proj ρ_inner _ _ hpost hf
       | .inr ⟨lbl, ρ_inner, hexit, heq⟩ =>
         have ⟨hpost, hf⟩ := ht ρ₀ ρ_inner ⟨hpre, hc⟩ hwfb hf₀ (.inr ⟨lbl, hexit⟩)
-        subst heq; exact hpost_proj ρ_inner _ hpost hf
+        subst heq; exact hpost_proj ρ_inner _ _ hpost hf
     | step_ite_false hc _ =>
       match block_reaches_terminal P evalCmd extendEval r1 with
       | .inl ⟨ρ_inner, hterm, heq⟩ =>
         have ⟨hpost, hf⟩ := he ρ₀ ρ_inner ⟨hpre, hc⟩ hwfb hf₀ (.inl hterm)
-        subst heq; exact hpost_proj ρ_inner _ hpost hf
+        subst heq; exact hpost_proj ρ_inner _ _ hpost hf
       | .inr ⟨lbl, ρ_inner, hexit, heq⟩ =>
         have ⟨hpost, hf⟩ := he ρ₀ ρ_inner ⟨hpre, hc⟩ hwfb hf₀ (.inr ⟨lbl, hexit⟩)
-        subst heq; exact hpost_proj ρ_inner _ hpost hf
+        subst heq; exact hpost_proj ρ_inner _ _ hpost hf
 
 /- TODO: the WHILE rule -/
 
@@ -251,7 +251,7 @@ theorem hoareTriple_implies_assertValid
     cases hstep with
     | step_block =>
       have ⟨inner, heq_cfg, hinner_star, hat_inner⟩ :=
-        block_isAtAssert_inner P' extendEval _ _ _ _ _ hrest hat
+        block_isAtAssert_inner P' extendEval _ _ _ _ _ _ hrest hat
       subst heq_cfg
       cases hinner_star with
       | refl => exact absurd hat_inner (by simp [isAtAssert])
@@ -348,9 +348,10 @@ theorem allAssertsValid_implies_hoareTriple
       .step _ _ _ StepStmt.step_stmts_cons (.refl _)
     have h3 := seq_inner_star P' (EvalCmd P') extendEval _ _ [assert_stmt] hstar_st
     have h_inner := ReflTrans_Transitive _ _ _ _ (ReflTrans_Transitive _ _ _ _ h1 h2) h3
-    have h_block := block_inner_star P' (EvalCmd P') extendEval _ _ (.some block_label) ρ₀.store h_inner
+    have h_block := block_inner_star P' (EvalCmd P') extendEval _ _ (.some block_label) ρ₀.store ρ₀.eval h_inner
     have h_start : StepStmtStar P' (EvalCmd P') extendEval
-        (.stmt (.block block_label body block_md) ρ₀) (.block (.some block_label) ρ₀.store (.stmts body ρ₀)) :=
+        (.stmt (.block block_label body block_md) ρ₀)
+        (.block (.some block_label) ρ₀.store ρ₀.eval (.stmts body ρ₀)) :=
       .step _ _ _ StepStmt.step_block (.refl _)
     have h_full := ReflTrans_Transitive _ _ _ _ h_start h_block
     have h_result := hvalid a ρ₀ _ trivial h_full hat
@@ -368,12 +369,13 @@ theorem allAssertsValid_implies_hoareTriple
       (.stmts [assert_stmt] ρ') (.seq (.stmt assert_stmt ρ') []) :=
     .step _ _ _ StepStmt.step_stmts_cons (.refl _)
   have h_inner := ReflTrans_Transitive _ _ _ _ (ReflTrans_Transitive _ _ _ _ h1 h2) h3
-  have h_block := block_inner_star P' (EvalCmd P') extendEval _ _ (.some block_label) ρ₀.store h_inner
+  have h_block := block_inner_star P' (EvalCmd P') extendEval _ _ (.some block_label) ρ₀.store ρ₀.eval h_inner
   have h_start : StepStmtStar P' (EvalCmd P') extendEval
-      (.stmt (.block block_label body block_md) ρ₀) (.block (.some block_label) ρ₀.store (.stmts body ρ₀)) :=
+      (.stmt (.block block_label body block_md) ρ₀)
+      (.block (.some block_label) ρ₀.store ρ₀.eval (.stmts body ρ₀)) :=
     .step _ _ _ StepStmt.step_block (.refl _)
   have h_full := ReflTrans_Transitive _ _ _ _ h_start h_block
-  have h_at : isAtAssert P' (.block (.some block_label) ρ₀.store (.seq (.stmt assert_stmt ρ') [])) ⟨post_label, post_expr⟩ := by
+  have h_at : isAtAssert P' (.block (.some block_label) ρ₀.store ρ₀.eval (.seq (.stmt assert_stmt ρ') [])) ⟨post_label, post_expr⟩ := by
     simp [isAtAssert, assert_stmt]
   have h_result := hvalid ⟨post_label, post_expr⟩ ρ₀ _ trivial h_full h_at
   dsimp [Config.getEval, Config.getStore, Config.getEnv] at h_result
@@ -733,11 +735,11 @@ theorem block_wrap_terminal
     (ρ₀ ρ' : Env P)
     (h : StepStmtStar P evalCmd extendEval (.stmts bss ρ₀) (.terminal ρ')) :
     StepStmtStar P evalCmd extendEval (.stmt (.block l bss md) ρ₀)
-      (.terminal { ρ' with store := projectStore ρ₀.store ρ'.store }) :=
+      (.terminal { ρ' with store := projectStore ρ₀.store ρ'.store, eval := ρ₀.eval }) :=
   ReflTrans_Transitive _ _ _ _
     (step_block_enter P evalCmd extendEval l bss md ρ₀)
     (ReflTrans_Transitive _ _ _ _
-      (block_inner_star P evalCmd extendEval _ _ (some l) ρ₀.store h)
+      (block_inner_star P evalCmd extendEval _ _ (some l) ρ₀.store ρ₀.eval h)
       (.step _ _ _ .step_block_done (.refl _)))
 
 omit [HasFvar P] [HasVal P] in
@@ -754,12 +756,14 @@ theorem ite_det_false_empty_terminal
       (.stmts ([] : List (Stmt P CmdT)) ρ₀) (.terminal ρ₀) :=
     .step _ _ _ .step_stmts_nil (.refl _)
   have h_block : StepStmtStar P evalCmd extendEval
-      (.block .none ρ₀.store (.stmts ([] : List (Stmt P CmdT)) ρ₀))
-      (.terminal { ρ₀ with store := projectStore ρ₀.store ρ₀.store }) :=
+      (.block .none ρ₀.store ρ₀.eval (.stmts ([] : List (Stmt P CmdT)) ρ₀))
+      (.terminal { ρ₀ with store := projectStore ρ₀.store ρ₀.store, eval := ρ₀.eval }) :=
     ReflTrans_Transitive _ _ _ _
-      (block_inner_star P evalCmd extendEval _ _ .none ρ₀.store h_inner)
+      (block_inner_star P evalCmd extendEval _ _ .none ρ₀.store ρ₀.eval h_inner)
       (.step _ _ _ .step_block_done (.refl _))
   rw [projectStore_self_env] at h_block
+  have henv : ({ ρ₀ with store := ρ₀.store, eval := ρ₀.eval } : Env P) = ρ₀ := by cases ρ₀; rfl
+  rw [henv] at h_block
   exact .step _ _ _ (.step_ite_false hg_ff hwfb) h_block
 
 omit [HasFvar P] [HasVal P] in
@@ -774,12 +778,14 @@ theorem ite_nondet_false_empty_terminal
       (.stmts ([] : List (Stmt P CmdT)) ρ₀) (.terminal ρ₀) :=
     .step _ _ _ .step_stmts_nil (.refl _)
   have h_block : StepStmtStar P evalCmd extendEval
-      (.block .none ρ₀.store (.stmts ([] : List (Stmt P CmdT)) ρ₀))
-      (.terminal { ρ₀ with store := projectStore ρ₀.store ρ₀.store }) :=
+      (.block .none ρ₀.store ρ₀.eval (.stmts ([] : List (Stmt P CmdT)) ρ₀))
+      (.terminal { ρ₀ with store := projectStore ρ₀.store ρ₀.store, eval := ρ₀.eval }) :=
     ReflTrans_Transitive _ _ _ _
-      (block_inner_star P evalCmd extendEval _ _ .none ρ₀.store h_inner)
+      (block_inner_star P evalCmd extendEval _ _ .none ρ₀.store ρ₀.eval h_inner)
       (.step _ _ _ .step_block_done (.refl _))
   rw [projectStore_self_env] at h_block
+  have henv : ({ ρ₀ with store := ρ₀.store, eval := ρ₀.eval } : Env P) = ρ₀ := by cases ρ₀; rfl
+  rw [henv] at h_block
   exact .step _ _ _ .step_ite_nondet_false h_block
 
 omit [HasFvar P] [HasVal P] in
@@ -791,11 +797,11 @@ theorem block_wrap_exiting_mismatch
     (hne : lv ≠ l)
     (h : StepStmtStar P evalCmd extendEval (.stmts bss ρ₀) (.exiting lv ρ')) :
     StepStmtStar P evalCmd extendEval (.stmt (.block l bss md) ρ₀)
-      (.exiting lv { ρ' with store := projectStore ρ₀.store ρ'.store }) :=
+      (.exiting lv { ρ' with store := projectStore ρ₀.store ρ'.store, eval := ρ₀.eval }) :=
   ReflTrans_Transitive _ _ _ _
     (step_block_enter P evalCmd extendEval l bss md ρ₀)
     (ReflTrans_Transitive _ _ _ _
-      (block_inner_star P evalCmd extendEval _ _ (some l) ρ₀.store h)
+      (block_inner_star P evalCmd extendEval _ _ (some l) ρ₀.store ρ₀.eval h)
       (.step _ _ _ (.step_block_exit_mismatch (fun h => hne (Option.some.inj h).symm)) (.refl _)))
 
 omit [HasFvar P] [HasVal P] in
@@ -806,11 +812,11 @@ theorem block_wrap_exiting_match
     (ρ₀ ρ' : Env P)
     (h : StepStmtStar P evalCmd extendEval (.stmts bss ρ₀) (.exiting l ρ')) :
     StepStmtStar P evalCmd extendEval (.stmt (.block l bss md) ρ₀)
-      (.terminal { ρ' with store := projectStore ρ₀.store ρ'.store }) :=
+      (.terminal { ρ' with store := projectStore ρ₀.store ρ'.store, eval := ρ₀.eval }) :=
   ReflTrans_Transitive _ _ _ _
     (step_block_enter P evalCmd extendEval l bss md ρ₀)
     (ReflTrans_Transitive _ _ _ _
-      (block_inner_star P evalCmd extendEval _ _ (some l) ρ₀.store h)
+      (block_inner_star P evalCmd extendEval _ _ (some l) ρ₀.store ρ₀.eval h)
       (.step _ _ _ (.step_block_exit_match rfl) (.refl _)))
 
 omit [HasFvar P] [HasVal P] in
@@ -818,26 +824,28 @@ omit [HasFvar P] [HasVal P] in
     terminates or exits with the matching label, and the final env is the parent
     projection of that inner env. -/
 theorem block_reaches_terminal_refined
-    {inner : Config P CmdT} {l : String} {σ_parent : SemanticStore P} {ρ' : Env P}
+    {inner : Config P CmdT} {l : String} {σ_parent : SemanticStore P}
+    {e_parent : SemanticEval P} {ρ' : Env P}
     (hstar : StepStmtStar P evalCmd extendEval
-      (.block (some l) σ_parent inner) (.terminal ρ')) :
+      (.block (some l) σ_parent e_parent inner) (.terminal ρ')) :
     ∃ ρ_inner, (StepStmtStar P evalCmd extendEval inner (.terminal ρ_inner) ∨
       StepStmtStar P evalCmd extendEval inner (.exiting l ρ_inner)) ∧
-      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store } := by
+      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store, eval := e_parent } := by
   suffices ∀ src tgt, StepStmtStar P evalCmd extendEval src tgt →
-      ∀ inner σ_parent ρ', src = .block (some l) σ_parent inner → tgt = .terminal ρ' →
+      ∀ inner σ_parent e_parent ρ',
+        src = .block (some l) σ_parent e_parent inner → tgt = .terminal ρ' →
       ∃ ρ_inner, (StepStmtStar P evalCmd extendEval inner (.terminal ρ_inner) ∨
         StepStmtStar P evalCmd extendEval inner (.exiting l ρ_inner)) ∧
-        ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store } from
-    this _ _ hstar _ _ _ rfl rfl
+        ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store, eval := e_parent } from
+    this _ _ hstar _ _ _ _ rfl rfl
   intro src tgt hstar_g
   induction hstar_g with
-  | refl => intro _ _ _ hsrc htgt; subst hsrc; cases htgt
+  | refl => intro _ _ _ _ hsrc htgt; subst hsrc; cases htgt
   | step _ mid _ hstep hrest ih =>
-    intro inner σ_parent ρ' hsrc htgt; subst hsrc
+    intro inner σ_parent e_parent ρ' hsrc htgt; subst hsrc
     cases hstep with
     | step_block_body h =>
-      obtain ⟨ρ_inner, hinner, heq⟩ := ih _ _ _ rfl htgt
+      obtain ⟨ρ_inner, hinner, heq⟩ := ih _ _ _ _ rfl htgt
       exact ⟨ρ_inner, hinner.elim
         (fun hterm => .inl (.step _ _ _ h hterm))
         (fun hexit_match => .inr (.step _ _ _ h hexit_match)), heq⟩
@@ -858,26 +866,27 @@ omit [HasFvar P] [HasVal P] in
     final env is the parent projection of that inner env. -/
 theorem block_reaches_exiting_refined
     {inner : Config P CmdT} {l : String} {σ_parent : SemanticStore P}
-    {lbl : String} {ρ' : Env P}
+    {e_parent : SemanticEval P} {lbl : String} {ρ' : Env P}
     (hstar : StepStmtStar P evalCmd extendEval
-      (.block (some l) σ_parent inner) (.exiting lbl ρ')) :
+      (.block (some l) σ_parent e_parent inner) (.exiting lbl ρ')) :
     ∃ ρ_inner, lbl ≠ l ∧
       StepStmtStar P evalCmd extendEval inner (.exiting lbl ρ_inner) ∧
-      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store } := by
+      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store, eval := e_parent } := by
   suffices ∀ src tgt, StepStmtStar P evalCmd extendEval src tgt →
-      ∀ inner σ_parent lbl ρ', src = .block (some l) σ_parent inner → tgt = .exiting lbl ρ' →
+      ∀ inner σ_parent e_parent lbl ρ',
+        src = .block (some l) σ_parent e_parent inner → tgt = .exiting lbl ρ' →
       ∃ ρ_inner, lbl ≠ l ∧
         StepStmtStar P evalCmd extendEval inner (.exiting lbl ρ_inner) ∧
-        ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store } from
-    this _ _ hstar _ _ _ _ rfl rfl
+        ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store, eval := e_parent } from
+    this _ _ hstar _ _ _ _ _ rfl rfl
   intro src tgt hstar_g
   induction hstar_g with
-  | refl => intro _ _ _ _ hsrc htgt; subst hsrc; cases htgt
+  | refl => intro _ _ _ _ _ hsrc htgt; subst hsrc; cases htgt
   | step _ mid _ hstep hrest ih =>
-    intro inner σ_parent lbl ρ' hsrc htgt; subst hsrc
+    intro inner σ_parent e_parent lbl ρ' hsrc htgt; subst hsrc
     cases hstep with
     | step_block_body h =>
-      obtain ⟨ρ_inner, hne, hexit, hproj⟩ := ih _ _ _ _ rfl htgt
+      obtain ⟨ρ_inner, hne, hexit, hproj⟩ := ih _ _ _ _ _ rfl htgt
       exact ⟨ρ_inner, hne, .step _ _ _ h hexit, hproj⟩
     | step_block_done =>
       subst htgt; cases hrest with | step _ _ _ h _ => cases h
@@ -935,10 +944,11 @@ theorem canFailBlock_to_canFail_block
     (h : CanFailBlock evalCmd extendEval bss ρ₀) :
     CanFail (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) (.block l bss md) ρ₀ := by
   obtain ⟨cfg, hfail, hreach⟩ := h
-  exact ⟨.block (.some l) ρ₀.store cfg, by show cfg.getEnv.hasFailure = Bool.true; exact hfail,
+  exact ⟨.block (.some l) ρ₀.store ρ₀.eval cfg,
+    by show cfg.getEnv.hasFailure = Bool.true; exact hfail,
     ReflTrans_Transitive _ _ _ _
       (step_block_enter P evalCmd extendEval l bss md ρ₀)
-      (block_inner_star P evalCmd extendEval _ _ (.some l) ρ₀.store hreach)⟩
+      (block_inner_star P evalCmd extendEval _ _ (.some l) ρ₀.store ρ₀.eval hreach)⟩
 
 omit [HasFvar P] [HasVal P] in
 /-- CanFail in a prefix lifts to CanFail in `prefix ++ suffix`. -/

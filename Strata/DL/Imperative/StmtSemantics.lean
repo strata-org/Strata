@@ -1231,6 +1231,25 @@ theorem block_noFuncDecl_preserves_eval
     ρ'.eval = ρ.eval :=
   smallStep_noFuncDecl_preserves_eval_block P EvalCmd extendEval ss ρ ρ' hnofd hterm
 
+/-- `.exiting` variant: When a block has no function declarations, an exiting
+    execution preserves the evaluator. -/
+theorem block_noFuncDecl_preserves_eval_exiting
+    (ss : List (Stmt P CmdT)) (ρ ρ' : Env P) (lbl : String)
+    (hnofd : Block.noFuncDecl ss = true)
+    (hexit : StepStmtStar P EvalCmd extendEval (.stmts ss ρ) (.exiting lbl ρ')) :
+    ρ'.eval = ρ.eval := by
+  suffices ∀ c₁ c₂,
+      Config.noFuncDecl c₁ →
+      StepStmtStar P EvalCmd extendEval c₁ c₂ →
+      c₂.getEnv.eval = c₁.getEnv.eval by
+    exact this _ _ (show Config.noFuncDecl (.stmts ss ρ) from hnofd) hexit
+  intro c₁ c₂ hnofd_c hstar_c
+  induction hstar_c with
+  | refl => rfl
+  | step _ mid _ hstep _ ih =>
+    have ⟨heq, hnofd_mid⟩ := step_preserves_eval_noFuncDecl P EvalCmd extendEval _ _ hstep hnofd_c
+    rw [ih hnofd_mid, heq]
+
 /-! ## WF preservation under WFEvalExtension (no `noFuncDecl` requirement) -/
 
 variable [HasFvar P] [HasVal P] [HasVarsPure P P.Expr]
@@ -1495,6 +1514,246 @@ theorem star_preserves_wfVar_block
   have h := star_preserves_cfg_wfVar P EvalCmd extendEval hwf_ext hstar
     (show Config.wfVar (P := P) (CmdT := CmdT) (Config.stmts ss ρ) from hwfvar)
   exact Config.wfVar_implies_wfEval P c₂ h
+
+/-! ## Eval preservation on disjoint expressions (no `noFuncDecl` requirement)
+
+Generalizes `smallStep_noFuncDecl_preserves_eval` to programs that may contain
+`funcDecl`: rather than requiring the program have no `funcDecl`s at all, we
+allow them as long as the names they introduce are syntactically disjoint
+from the variables referenced by a target expression `e`.
+
+The key invariant `Config.evalSnapAgrees` states that every `e_parent` snapshot
+inside the config agrees with the inner config's current eval on `(σ', e)`.
+This is preserved by every step (given disjointness): on `step_funcDecl`,
+inner eval extends but stays equal on `e` (disjoint); on `step_block_done`,
+the snapshot is restored, and the snapshot already agreed with the inner eval.
+
+The invariant trivially holds at top-level (`.stmt`/`.stmts`/`.terminal`/
+`.exiting`), since there are no snapshots there. -/
+
+/-- All captured `e_parent` snapshots in the config agree with the inner
+    config's current eval on `(σ', e)`. -/
+def Config.evalSnapAgrees (σ' : SemanticStore P) (e : P.Expr) :
+    Config P CmdT → Prop
+  | .stmt _ _ => True
+  | .stmts _ _ => True
+  | .terminal _ => True
+  | .exiting _ _ => True
+  | .block _ _ e_p inner =>
+    e_p σ' e = inner.getEnv.eval σ' e ∧ Config.evalSnapAgrees σ' e inner
+  | .seq inner _ => Config.evalSnapAgrees σ' e inner
+
+/-- Single-step preservation of `eval` on expressions disjoint from
+    `Config.funcDeclNames`.  Maintains the snapshot-agreement invariant. -/
+private theorem step_preserves_eval_on_disjoint
+    (hwf_ext : WFEvalExtension P extendEval)
+    {c₁ c₂ : Config P CmdT}
+    (hstep : StepStmt P EvalCmd extendEval c₁ c₂)
+    (σ' : SemanticStore P) (e : P.Expr)
+    (hdisj : ∀ n ∈ Config.funcDeclNames c₁, n ∉ HasVarsPure.getVars (P := P) e)
+    (hsnap : Config.evalSnapAgrees (P := P) σ' e c₁) :
+    c₂.getEnv.eval σ' e = c₁.getEnv.eval σ' e ∧
+      (∀ n ∈ Config.funcDeclNames c₂, n ∉ HasVarsPure.getVars (P := P) e) ∧
+      Config.evalSnapAgrees (P := P) σ' e c₂ := by
+  induction hstep with
+  | step_cmd =>
+    refine ⟨rfl, hdisj, ?_⟩
+    simp [Config.evalSnapAgrees] at hsnap ⊢
+  | step_block =>
+    refine ⟨rfl, ?_, ?_⟩
+    · intro n hn
+      apply hdisj n
+      simpa [Config.funcDeclNames, Stmt.funcDeclNames] using hn
+    · simp [Config.evalSnapAgrees, Config.getEnv]
+  | step_ite_true =>
+    refine ⟨rfl, ?_, ?_⟩
+    · intro n hn
+      apply hdisj n
+      simp [Config.funcDeclNames, Stmt.funcDeclNames] at hn ⊢
+      exact .inl hn
+    · simp [Config.evalSnapAgrees, Config.getEnv]
+  | step_ite_false =>
+    refine ⟨rfl, ?_, ?_⟩
+    · intro n hn
+      apply hdisj n
+      simp [Config.funcDeclNames, Stmt.funcDeclNames] at hn ⊢
+      exact .inr hn
+    · simp [Config.evalSnapAgrees, Config.getEnv]
+  | step_ite_nondet_true =>
+    refine ⟨rfl, ?_, ?_⟩
+    · intro n hn
+      apply hdisj n
+      simp [Config.funcDeclNames, Stmt.funcDeclNames] at hn ⊢
+      exact .inl hn
+    · simp [Config.evalSnapAgrees, Config.getEnv]
+  | step_ite_nondet_false =>
+    refine ⟨rfl, ?_, ?_⟩
+    · intro n hn
+      apply hdisj n
+      simp [Config.funcDeclNames, Stmt.funcDeclNames] at hn ⊢
+      exact .inr hn
+    · simp [Config.evalSnapAgrees, Config.getEnv]
+  | step_loop_enter =>
+    refine ⟨rfl, ?_, ?_⟩
+    · intro n hn
+      apply hdisj n
+      simp [Config.funcDeclNames, Stmt.funcDeclNames, Block.funcDeclNames] at hn ⊢
+      exact hn
+    · simp [Config.evalSnapAgrees, Config.getEnv]
+  | step_loop_exit =>
+    exact ⟨rfl, by intro n hn; simp [Config.funcDeclNames] at hn,
+           by simp [Config.evalSnapAgrees]⟩
+  | step_loop_nondet_enter =>
+    refine ⟨rfl, ?_, ?_⟩
+    · intro n hn
+      apply hdisj n
+      simp [Config.funcDeclNames, Stmt.funcDeclNames, Block.funcDeclNames] at hn ⊢
+      exact hn
+    · simp [Config.evalSnapAgrees, Config.getEnv]
+  | step_loop_nondet_exit =>
+    exact ⟨rfl, by intro n hn; simp [Config.funcDeclNames] at hn,
+           by simp [Config.evalSnapAgrees]⟩
+  | step_exit =>
+    exact ⟨rfl, by intro n hn; simp [Config.funcDeclNames] at hn,
+           by simp [Config.evalSnapAgrees]⟩
+  | step_funcDecl =>
+    rename_i decl _ ρ_inst _
+    have hname : decl.name ∉ HasVarsPure.getVars (P := P) e := by
+      apply hdisj decl.name
+      simp [Config.funcDeclNames, Stmt.funcDeclNames]
+    refine ⟨?_, ?_, ?_⟩
+    · simp only [Config.getEnv]
+      exact hwf_ext.preserves_eval_on_disjoint ρ_inst.eval ρ_inst.store decl σ' e hname
+    · intro n hn; simp [Config.funcDeclNames] at hn
+    · simp [Config.evalSnapAgrees]
+  | step_typeDecl =>
+    exact ⟨rfl, by intro n hn; simp [Config.funcDeclNames] at hn,
+           by simp [Config.evalSnapAgrees]⟩
+  | step_stmts_nil =>
+    exact ⟨rfl, by intro n hn; simp [Config.funcDeclNames] at hn,
+           by simp [Config.evalSnapAgrees]⟩
+  | step_stmts_cons =>
+    refine ⟨rfl, ?_, ?_⟩
+    · intro n hn
+      apply hdisj n
+      simp [Config.funcDeclNames, Block.funcDeclNames] at hn ⊢
+      exact hn
+    · simp [Config.evalSnapAgrees]
+  | step_seq_inner hstep_inner ih =>
+    rename_i inner inner' ss
+    have hdisj_inner : ∀ n ∈ Config.funcDeclNames inner, n ∉ HasVarsPure.getVars (P := P) e := by
+      intro n hn
+      apply hdisj n
+      simp [Config.funcDeclNames]; exact .inl hn
+    have hsnap_inner : Config.evalSnapAgrees (P := P) σ' e inner := by
+      simpa [Config.evalSnapAgrees] using hsnap
+    have ⟨heq, hdisj', hsnap'⟩ := ih hdisj_inner hsnap_inner
+    refine ⟨heq, ?_, ?_⟩
+    · intro n hn
+      simp only [Config.funcDeclNames, List.mem_append] at hn
+      rcases hn with hn | hn
+      · exact hdisj' n hn
+      · apply hdisj n; simp [Config.funcDeclNames]; exact .inr hn
+    · simp [Config.evalSnapAgrees] at hsnap ⊢
+      exact hsnap'
+  | step_seq_done =>
+    refine ⟨rfl, ?_, ?_⟩
+    · intro n hn
+      apply hdisj n
+      simp [Config.funcDeclNames] at hn ⊢
+      exact hn
+    · simp [Config.evalSnapAgrees]
+  | step_seq_exit =>
+    exact ⟨rfl, by intro n hn; simp [Config.funcDeclNames] at hn,
+           by simp [Config.evalSnapAgrees]⟩
+  | step_block_body hstep_inner ih =>
+    rename_i inner inner' label σ_p e_p
+    have hdisj_inner : ∀ n ∈ Config.funcDeclNames inner, n ∉ HasVarsPure.getVars (P := P) e := by
+      intro n hn; apply hdisj n; simp [Config.funcDeclNames]; exact hn
+    have hsnap_inner : Config.evalSnapAgrees (P := P) σ' e inner := hsnap.2
+    have ⟨heq, hdisj', hsnap'⟩ := ih hdisj_inner hsnap_inner
+    refine ⟨heq, ?_, ?_⟩
+    · intro n hn; simp only [Config.funcDeclNames] at hn; exact hdisj' n hn
+    · refine ⟨?_, hsnap'⟩
+      -- Goal: e_p σ' e = inner'.getEnv.eval σ' e
+      -- hsnap.1: e_p σ' e = inner.getEnv.eval σ' e
+      -- heq: inner'.getEnv.eval σ' e = inner.getEnv.eval σ' e
+      rw [heq]; exact hsnap.1
+  | step_block_done =>
+    -- c₁ = .block label σ_p e_p (.terminal ρ')
+    -- c₂ = .terminal { ρ' with store := proj, eval := e_p }
+    -- hsnap : e_p σ' e = ρ'.eval σ' e ∧ True
+    -- Goal: c₂.eval σ' e = c₁.getEnv.eval σ' e
+    -- c₂.eval = e_p; c₁.getEnv.eval = ρ'.eval
+    refine ⟨?_, ?_, ?_⟩
+    · simp only [Config.getEnv]
+      exact hsnap.1
+    · intro n hn; simp [Config.funcDeclNames] at hn
+    · simp [Config.evalSnapAgrees]
+  | step_block_exit_match =>
+    refine ⟨?_, ?_, ?_⟩
+    · simp only [Config.getEnv]
+      exact hsnap.1
+    · intro n hn; simp [Config.funcDeclNames] at hn
+    · simp [Config.evalSnapAgrees]
+  | step_block_exit_mismatch =>
+    refine ⟨?_, ?_, ?_⟩
+    · simp only [Config.getEnv]
+      exact hsnap.1
+    · intro n hn; simp [Config.funcDeclNames] at hn
+    · simp [Config.evalSnapAgrees]
+
+/-- Star-step preservation of `eval` on expressions disjoint from
+    `Config.funcDeclNames`.  Generalizes `smallStep_noFuncDecl_preserves_eval`. -/
+theorem star_preserves_eval_on_disjoint
+    (hwf_ext : WFEvalExtension P extendEval)
+    {c₁ c₂ : Config P CmdT}
+    (hstar : StepStmtStar P EvalCmd extendEval c₁ c₂)
+    (σ' : SemanticStore P) (e : P.Expr)
+    (hdisj : ∀ n ∈ Config.funcDeclNames c₁, n ∉ HasVarsPure.getVars (P := P) e)
+    (hsnap : Config.evalSnapAgrees (P := P) σ' e c₁) :
+    c₂.getEnv.eval σ' e = c₁.getEnv.eval σ' e := by
+  suffices ∀ c₁ c₂,
+      StepStmtStar P EvalCmd extendEval c₁ c₂ →
+      (∀ n ∈ Config.funcDeclNames c₁, n ∉ HasVarsPure.getVars (P := P) e) →
+      Config.evalSnapAgrees (P := P) σ' e c₁ →
+      c₂.getEnv.eval σ' e = c₁.getEnv.eval σ' e by
+    exact this c₁ c₂ hstar hdisj hsnap
+  intro c₁ c₂ hstar
+  induction hstar with
+  | refl => intros; rfl
+  | step _ mid _ hstep _ ih =>
+    intro hdisj_c hsnap_c
+    have ⟨heq_step, hdisj_mid, hsnap_mid⟩ :=
+      step_preserves_eval_on_disjoint P EvalCmd extendEval hwf_ext hstep σ' e hdisj_c hsnap_c
+    rw [ih hdisj_mid hsnap_mid, heq_step]
+
+/-- Specialization of `star_preserves_eval_on_disjoint` to a top-level
+    `.stmts ss ρ → .terminal ρ'` trace, where the snapshot-agreement
+    invariant trivially holds. -/
+theorem block_preserves_eval_on_disjoint
+    (hwf_ext : WFEvalExtension P extendEval)
+    (ss : List (Stmt P CmdT)) (ρ ρ' : Env P) (σ' : SemanticStore P) (e : P.Expr)
+    (hdisj : ∀ n ∈ Block.funcDeclNames ss, n ∉ HasVarsPure.getVars (P := P) e)
+    (hterm : StepStmtStar P EvalCmd extendEval (.stmts ss ρ) (.terminal ρ')) :
+    ρ'.eval σ' e = ρ.eval σ' e := by
+  have h := star_preserves_eval_on_disjoint P EvalCmd extendEval hwf_ext hterm σ' e
+    (by intro n hn; exact hdisj n (by simpa [Config.funcDeclNames] using hn))
+    (by simp [Config.evalSnapAgrees])
+  simpa [Config.getEnv] using h
+
+/-- Exiting variant of `block_preserves_eval_on_disjoint`. -/
+theorem block_preserves_eval_on_disjoint_exiting
+    (hwf_ext : WFEvalExtension P extendEval)
+    (ss : List (Stmt P CmdT)) (ρ ρ' : Env P) (lbl : String)
+    (σ' : SemanticStore P) (e : P.Expr)
+    (hdisj : ∀ n ∈ Block.funcDeclNames ss, n ∉ HasVarsPure.getVars (P := P) e)
+    (hexit : StepStmtStar P EvalCmd extendEval (.stmts ss ρ) (.exiting lbl ρ')) :
+    ρ'.eval σ' e = ρ.eval σ' e := by
+  have h := star_preserves_eval_on_disjoint P EvalCmd extendEval hwf_ext hexit σ' e
+    (by intro n hn; exact hdisj n (by simpa [Config.funcDeclNames] using hn))
+    (by simp [Config.evalSnapAgrees])
+  simpa [Config.getEnv] using h
 
 end -- section
 

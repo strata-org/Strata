@@ -211,11 +211,12 @@ variable (isAtAssertFn : Config P CmdT → AssertId P → Prop)
     Post ρ' ∧ ρ'.hasFailure = false
 
 omit [HasVal P] in
-/-- A postcondition is well-formed if it is stable under `projectStore`. -/
+/-- A postcondition is well-formed if it is stable under `projectStore` and
+    `eval`-replacement (the parent's eval is restored on block exit). -/
 @[expose] def PostWF (Post : Env P → Prop) : Prop :=
-  ∀ ρ σ_parent, Post ρ → ρ.hasFailure = false →
-    Post { ρ with store := projectStore σ_parent ρ.store } ∧
-      ({ ρ with store := projectStore σ_parent ρ.store } : Env P).hasFailure = false
+  ∀ ρ σ_parent e_parent, Post ρ → ρ.hasFailure = false →
+    Post { ρ with store := projectStore σ_parent ρ.store, eval := e_parent } ∧
+      ({ ρ with store := projectStore σ_parent ρ.store, eval := e_parent } : Env P).hasFailure = false
 
 end StmtRules
 
