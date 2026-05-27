@@ -6,10 +6,10 @@
 module
 
 public import Strata.DDM.AST
-public import Strata.DDM.Util.Ion
 
-import Strata.DDM.Util.Array
 import Strata.DDM.Util.Ion.Lean
+import Strata.Util.DecideProp
+public import Strata.DDM.Util.Ion.SymbolTable
 
 open Lean
 open Lean.Elab
@@ -127,11 +127,21 @@ def fromIonName? : String → Option SepFormat
   | "spacePrefixedList" => some .spacePrefix
   | "newlineSepList" => some .newline
   | "semicolonSepList" => some .semicolon
-  | _ => none
+  | _ => .none
 
 theorem fromIonName_toIonName_roundtrip (sep : SepFormat) :
   fromIonName? (toIonName sep) = some sep := by
   cases sep <;> rfl
+
+/-- Invalid Ion separator names return `none`. -/
+theorem fromIonName_none_of_invalid (s : String) (h : ∀ sep, toIonName sep ≠ s) :
+  fromIonName? s = .none := by
+  simp [fromIonName?]
+  split <;> first
+    | rfl
+    | (exfalso; have := h .none; have := h .comma; have := h .space
+       have := h .spacePrefix; have := h .newline; have := h .semicolon
+       simp_all [toIonName])
 
 end SepFormat
 
@@ -359,10 +369,10 @@ private def deserializeValue {α} (bs : ByteArray) (act : Ion SymbolId → FromI
     | .error (off, msg) =>
       throw s!"Error reading Ion: {msg} (offset = {off})"
     | .ok a => pure a
-  let .isTrue p := inferInstanceAs (Decidable (a.size = 1))
+  let .isTrue p := decideProp (a.size = 1)
     | throw s!"Expected single Ion value, but got {a.size} values."
   let entries := a[0]
-  let .isTrue p := inferInstanceAs (Decidable (entries.size = 2))
+  let .isTrue p := decideProp (entries.size = 2)
     | throw s!"Expected symbol table and value in dialect."
   let symbols ←
         match SymbolTable.ofLocalSymbolTable entries[0] with
@@ -1196,7 +1206,7 @@ private protected def fromIon (v : Ion SymbolId) : FromIonM MetadataArgType := d
     | "functionTemplate" => pure .functionTemplate
     | _ => throw s!"Unknown type {s}"
   | .sexp args ap => do
-    let .isTrue p := inferInstanceAs (Decidable (args.size ≥ 2))
+    let .isTrue p := decideProp (args.size ≥ 2)
       | throw s!"Expected arguments to sexp"
     match ← .asSymbolString "MetadataArgType kind" args[0] with
     | "opt" =>
@@ -1446,7 +1456,7 @@ namespace Header
 
 private def fromIon (v : Ion SymbolId) : FromIonM Header := do
   let ⟨hdr, _⟩ ← .asSexp "Header" v
-  let .isTrue ne := inferInstanceAs (Decidable (hdr.size ≥ 2))
+  let .isTrue ne := decideProp (hdr.size ≥ 2)
     | throw s!"Expected header to have two elements."
   match ← .asSymbolString "Header kind" hdr[0] with
   | "dialect" => .dialect <$> .asString "Dialect name" hdr[1]
@@ -1457,7 +1467,7 @@ def parse (bytes : ByteArray) : Except String (Header × Fragment) := do
   FromIonM.deserializeValue bytes $ fun v => do
     let tbl := (← read).symbols
     let ⟨args, _⟩ ← .asList v
-    let .isTrue ne := inferInstanceAs (Decidable (args.size ≥ 1))
+    let .isTrue ne := decideProp (args.size ≥ 1)
       | throw s!"Expected header"
     return (← fromIon args[0], { symbols := tbl, values := args, offset := 1 })
 
@@ -1475,6 +1485,10 @@ private instance : CachedToIon Dialect where
     for i in d.imports do
       a := a.push <| .struct #[(ionSymbol! "type", ionSymbol! "import"),
                                (ionSymbol! "name", .string i)]
+    if !d.typecheck then
+      a := a.push <| .struct #[(ionSymbol! "type", ionSymbol! "option"),
+                               (ionSymbol! "name", .string "typecheck"),
+                               (ionSymbol! "value", .string "off")]
     for decl in d.declarations do
       a := a.push <| (← ionRef! decl)
     return .list a
@@ -1482,9 +1496,17 @@ private instance : CachedToIon Dialect where
 def fromIonFragment (dialect : DialectName) (f : Ion.Fragment) : Except String Dialect := do
   let ctx : FromIonContext := ⟨f.symbols⟩
   let tbl := f.symbols
-  let typeId := tbl.symbolId! "type"
-  let nameId := tbl.symbolId! "name"
-  let (imports, decls) ← f.values.foldlM (init := (#[], #[])) (start := f.offset) fun (imports, decls) v => do
+  let typeId := tbl.symbolId "type"
+  let nameId := tbl.symbolId "name"
+  let valueId := tbl.symbolId "value"
+  if f.values.size > 0 then
+    if typeId = .zero then
+      throw s!"Missing type symbol"
+    if nameId = .zero then
+      throw s!"Missing name symbol"
+  let (imports, decls, typecheck) ← f.values.foldlM
+      (init := (#[], #[], true)) (start := f.offset)
+      fun (imports, decls, typecheck) v => do
     let fields ← FromIonM.asStruct0 v ⟨f.symbols⟩
     let some (_, val) := fields.find? (·.fst == typeId)
       | throw s!"Could not find type in {repr fields}"
@@ -1493,20 +1515,35 @@ def fromIonFragment (dialect : DialectName) (f : Ion.Fragment) : Except String D
       let some (_, val) := fields.find? (·.fst == nameId)
         | throw "Could not find import"
       let i ← FromIonM.asString "Import name" val ctx
-      pure (imports.push i, decls)
+      pure (imports.push i, decls, typecheck)
+    | "option" =>
+      if valueId = .zero then
+        throw "Could not find option value"
+      let some (_, nameVal) := fields.find? (·.fst == nameId)
+        | throw "Could not find option name"
+      let optName ← FromIonM.asString "Option name" nameVal ctx
+      let some (_, valueVal) := fields.find? (·.fst == valueId)
+        | throw "Could not find option value"
+      let optValue ← FromIonM.asString "Option value" valueVal ctx
+      match optName, optValue with
+      | "typecheck", "off" => pure (imports, decls, false)
+      | "typecheck", "on" => pure (imports, decls, true)
+      | "typecheck", v => throw s!"Expected 'on' or 'off' for option 'typecheck', got '{v}'"
+      | name, _ => throw s!"Unknown option '{name}'"
     | name =>
       let decl ← Decl.fromIonFields name fields ctx
-      pure (imports, decls.push decl)
+      pure (imports, decls.push decl, typecheck)
   return {
     name := dialect
     imports := imports
-    declarations :=  decls
+    declarations := decls
+    typecheck := typecheck
   }
 
 private instance : FromIon Dialect where
   fromIon v := do
     let ⟨args, _⟩ ← .asList v
-    let .isTrue ne := inferInstanceAs (Decidable (args.size ≥ 1))
+    let .isTrue ne := decideProp (args.size ≥ 1)
       | throw s!"Expected header"
     match ← Ion.Header.fromIon args[0] with
     | .dialect dialect => fun ctx =>
@@ -1543,12 +1580,9 @@ def fromIonFragmentCommands (f : Ion.Fragment) : Except String (Array Operation)
 
 def fromIonFragment (f : Ion.Fragment)
       (dialects : DialectMap)
-      (dialect : DialectName) : Except String Program :=
-  return {
-    dialects := dialects
-    dialect := dialect
-    commands := ← fromIonFragmentCommands f
-  }
+      (dialect : DialectName) : Except String Program := do
+  let commands ← fromIonFragmentCommands f
+  return .create dialects dialect commands
 
 /--
 Decodes bytes in the Ion format into a single Strata program.
@@ -1578,7 +1612,7 @@ def filesFromIon (dialects : DialectMap) (bytes : ByteArray) : Except String (Li
       else
         throw s!"Expected single Ion value"
 
-  let .isTrue p := inferInstanceAs (Decidable (ctx.size = 2))
+  let .isTrue p := decideProp (ctx.size = 2)
     | throw "Expected symbol table and value"
 
   let symbols ←
@@ -1591,8 +1625,12 @@ def filesFromIon (dialects : DialectMap) (bytes : ByteArray) : Except String (Li
   let ⟨filesList, _⟩ ← FromIonM.asList ctx[1]! ionCtx
 
   let tbl := symbols
-  let filePathId := tbl.symbolId! "filePath"
-  let programId := tbl.symbolId! "program"
+  let filePathId := tbl.symbolId "filePath"
+  let programId := tbl.symbolId "program"
+  if filePathId = .zero then
+    throw "Missing filePath"
+  if programId = .zero then
+    throw "Missing program"
 
   filesList.toList.mapM fun fileEntry => do
     let fields ← FromIonM.asStruct0 fileEntry ionCtx
@@ -1606,7 +1644,7 @@ def filesFromIon (dialects : DialectMap) (bytes : ByteArray) : Except String (Li
     let filePath ← FromIonM.asString "filePath" filePathData ionCtx
 
     let ⟨programValues, _⟩ ← FromIonM.asList programData ionCtx
-    let .isTrue ne := inferInstanceAs (Decidable (programValues.size ≥ 1))
+    let .isTrue ne := decideProp (programValues.size ≥ 1)
       | throw "Expected program header"
 
     let hdr ← Ion.Header.fromIon programValues[0] ionCtx

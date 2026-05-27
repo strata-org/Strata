@@ -13,26 +13,38 @@ assert_opt_name_none_or_bar: ✅ pass (in prelude)
 
 ensures_maybe_except_none: ✅ pass (in prelude)
 
-test_helper_procedure_assert_name_is_foo_27: ✅ pass (in prelude)
+test_helper_procedure_assert_name_is_foo_27: ✅ pass (at line 8, col 4)
+  Related location: in prelude file
 
-test_helper_procedure_assert_opt_name_none_or_str_28: ✅ pass (in prelude)
+test_helper_procedure_assert_opt_name_none_or_str_28: ✅ pass (at line 8, col 4)
+  Related location: in prelude file
 
-test_helper_procedure_assert_opt_name_none_or_bar_29: ✅ pass (in prelude)
+test_helper_procedure_assert_opt_name_none_or_bar_29: ✅ pass (at line 8, col 4)
+  Related location: in prelude file
 
-test_helper_procedure_assert_name_is_foo_19: ✅ pass (in prelude)
+test_helper_procedure_assert_name_is_foo_19: ✅ pass (at line 11, col 4)
+  Related location: in prelude file
 
-test_helper_procedure_assert_opt_name_none_or_str_20: ✅ pass (in prelude)
+test_helper_procedure_assert_opt_name_none_or_str_20: ✅ pass (at line 11, col 4)
+  Related location: in prelude file
 
-test_helper_procedure_assert_opt_name_none_or_bar_21: ✅ pass (in prelude)
+test_helper_procedure_assert_opt_name_none_or_bar_21: ✅ pass (at line 11, col 4)
+  Related location: in prelude file
 
-Assertion failed for prelude: test_helper_procedure_assert_name_is_foo_11: ❌ fail
+Assertion failed at line 14, col 4: test_helper_procedure_assert_name_is_foo_11: ❌ fail
+  Related location: in prelude file
 
-test_helper_procedure_assert_opt_name_none_or_str_12: ✅ pass (in prelude)
+test_helper_procedure_assert_opt_name_none_or_str_12: ✅ pass (at line 14, col 4)
+  Related location: in prelude file
 
-test_helper_procedure_assert_opt_name_none_or_bar_13: ✅ pass (in prelude)
+test_helper_procedure_assert_opt_name_none_or_bar_13: ✅ pass (at line 14, col 4)
+  Related location: in prelude file
 
-test_helper_procedure_assert_name_is_foo_3: ✅ pass (in prelude)
+test_helper_procedure_assert_name_is_foo_3: ✅ pass (at line 17, col 4)
+  Related location: in prelude file
 
-test_helper_procedure_assert_opt_name_none_or_str_4: ✅ pass (in prelude)
+test_helper_procedure_assert_opt_name_none_or_str_4: ✅ pass (at line 17, col 4)
+  Related location: in prelude file
 
-Assertion failed for prelude: test_helper_procedure_assert_opt_name_none_or_bar_5: ❌ fail
+Assertion failed at line 17, col 4: test_helper_procedure_assert_opt_name_none_or_bar_5: ❌ fail
+  Related location: in prelude file

@@ -5,12 +5,13 @@
 -/
 module
 
-public import Strata.DDM.AST
+import Std.Data.HashMap.Lemmas
+
 public import Strata.DDM.Elab.Core
 
-import Std.Data.HashMap
 import all Strata.DDM.Util.Array
 import all Strata.DDM.Util.Fin
+import Strata.Util.DecideProp
 
 set_option autoImplicit false
 
@@ -132,7 +133,7 @@ def translatePreType {argc : Nat} (argDecls : ArgDeclsMap argc) (tree : Tree) : 
         | _ => panic! s!"translateBindingTypeExpr expected operator, type or cat {repr argInfo}"
   match opInfo.op.name with
   | q`Init.TypeIdent => do
-    let isTrue p := inferInstanceAs (Decidable (argChildren.size = 1))
+    let isTrue p := decideProp (argChildren.size = 1)
       | return panic! "Invalid arguments to Init.TypeIdent"
     let ident := argChildren[0]
     let tpId := translateQualifiedIdent ident
@@ -149,7 +150,7 @@ def translatePreType {argc : Nat} (argDecls : ArgDeclsMap argc) (tree : Tree) : 
     | _ =>
       logError ident.info.loc s!"Expected type"; pure default
   | q`Init.TypeArrow => do
-    let isTrue p := inferInstanceAs (Decidable (argChildren.size = 2))
+    let isTrue p := decideProp (argChildren.size = 2)
       | return panic! "Invalid arguments to Init.TypeArrow"
     let aTree := argChildren[0]
     let rTree := argChildren[1]
@@ -158,7 +159,7 @@ def translatePreType {argc : Nat} (argDecls : ArgDeclsMap argc) (tree : Tree) : 
     return .arrow opInfo.loc aType rType
 
   | q`StrataDDL.TypeFn =>
-    let isTrue p := inferInstanceAs (Decidable (argChildren.size = 2))
+    let isTrue p := decideProp (argChildren.size = 2)
       | return panic! "Invalid arguments to Init.TypeArrow"
     let bindingsTree := argChildren[0]
     let valTree := argChildren[1]
@@ -908,6 +909,19 @@ def elabMdCommand : DialectElab := fun tree => do
       metadataDeclMap := s.metadataDeclMap.add dialect decl
     }
 
+def elabSetOptionCommand : DialectElab := fun tree => do
+  let .isTrue _ := checkTreeSize tree 2
+    | logError tree.info.loc "setOptionCommand: unexpected tree size"; return
+  let nameInfo := tree[0].info.asIdent!
+  let valueInfo := tree[1].info.asIdent!
+  match nameInfo.val with
+  | "typecheck" =>
+    match valueInfo.val with
+    | "on" => modifyDialect fun d => { d with typecheck := true }
+    | "off" => modifyDialect fun d => { d with typecheck := false }
+    | _ => logError valueInfo.loc s!"Expected 'on' or 'off' for option 'typecheck'."
+  | _ => logError nameInfo.loc s!"Unknown option '{nameInfo.val}'."
+
 def dialectElabs : Std.HashMap QualifiedIdent DialectElab :=
   Std.HashMap.ofList <|
     [ (q`StrataDDL.importCommand, elabDialectImportCommand),
@@ -916,6 +930,7 @@ def dialectElabs : Std.HashMap QualifiedIdent DialectElab :=
       (q`StrataDDL.typeCommand, elabTypeCommand),
       (q`StrataDDL.fnCommand,   elabFnCommand),
       (q`StrataDDL.mdCommand,   elabMdCommand),
+      (q`StrataDDL.setOptionCommand, elabSetOptionCommand),
     ]
 
 partial def runDialectCommand (leanEnv : Lean.Environment) : DialectM Bool := do

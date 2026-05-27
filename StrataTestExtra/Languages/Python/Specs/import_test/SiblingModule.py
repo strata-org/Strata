@@ -1,0 +1,3 @@
+class SiblingClass:
+    def do_thing(self, x: int) -> str:
+        ...

@@ -1,0 +1,10 @@
+Successfully parsed.
+SafeBvOps.callElim.core.st(11, 2) [set_a_calls_Bv32.SafeAdd_0]: ❌ fail
+SafeBvOps.callElim.core.st(12, 2) [set_b_calls_Bv32.SafeSub_0]: ❌ fail
+SafeBvOps.callElim.core.st(13, 2) [set_c_calls_Bv32.SafeMul_0]: ❌ fail
+SafeBvOps.callElim.core.st(14, 2) [set_d_calls_Bv32.SafeNeg_0]: ❌ fail
+SafeBvOps.callElim.core.st(15, 2) [set_e_calls_Bv32.SafeSDiv_0]: ❌ fail
+SafeBvOps.callElim.core.st(15, 2) [set_e_calls_Bv32.SafeSDiv_1]: ❌ fail
+SafeBvOps.callElim.core.st(16, 2) [set_f_calls_Bv32.SafeSMod_0]: ❌ fail
+SafeBvOps.callElim.core.st(16, 2) [set_f_calls_Bv32.SafeSMod_1]: ❌ fail
+Finished with 0 goals passed, 8 failed.

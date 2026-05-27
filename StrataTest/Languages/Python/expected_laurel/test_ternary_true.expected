@@ -1,0 +1,6 @@
+test_ternary_true.py(2, 4): ✅ pass - assert(29)
+test_ternary_true.py(3, 19): ✅ pass - Check PGt exception
+test_ternary_true.py(3, 4): ✅ pass - assert(44)
+test_ternary_true.py(4, 4): ✅ pass - ternary true branch
+DETAIL: 4 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success

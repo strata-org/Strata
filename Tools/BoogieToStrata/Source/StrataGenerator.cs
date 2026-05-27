@@ -7,6 +7,13 @@ internal class StrataConversionException(IToken tok, string s) : Exception {
     public string Msg { get; } = $"{tok.filename}({tok.line},{tok.col}): {s}";
 }
 
+internal class LoopRegion(int start, int end, List<string> labels) {
+    public int start = start;
+    public int end = end;
+    public List<string> labels = labels;
+    public List<LoopRegion> children = [];
+}
+
 public class FieldTypeCollector : ReadOnlyVisitor {
     private readonly HashSet<Type> _usedTypes = [];
 
@@ -21,7 +28,17 @@ public class FieldTypeCollector : ReadOnlyVisitor {
 }
 
 public class StrataGenerator : ReadOnlyVisitor {
+    /// <summary>
+    /// Synthetic label representing procedure exit. Used as a goto target for
+    /// return statements and excluded from back-edge detection.
+    /// </summary>
+    private const string ExitLabel = "_exit";
     private readonly Stack<string> _breakLabels = new();
+    /// <summary>
+    /// Set of block labels that are valid exit targets at the current nesting level.
+    /// Updated by EmitWithExitWrappers as wrapper blocks are opened/closed.
+    /// </summary>
+    private readonly HashSet<string> _enclosingLabels = new();
     private readonly VCGenOptions _options;
     private readonly Program _program;
     private readonly Dictionary<Type, HashSet<string>> _uniqueConstants = new();
@@ -32,15 +49,36 @@ public class StrataGenerator : ReadOnlyVisitor {
     private TypeCtorDecl? _refTypeCtor;
     private TypeCtorDecl? _fieldTypeCtor;
     private TypeSynonymDecl? _heapTypeSyn;
+    // Global variables collected from the program, used to convert them
+    // into inout/input parameters on procedure headers and call sites.
+    private List<GlobalVariable> _globalVariables = [];
+    // Renames for declarations whose sanitized name collides with another
+    // declaration. Keyed by Boogie Declaration object to avoid ambiguity
+    // when two entities share the same original name (e.g., const main and
+    // procedure main). First-seen wins; later entities get prefixed.
+    //
+    // Registration order determines who wins a collision:
+    //   1. Procedures  — registered first, always keep their name.
+    //   2. Implementations — claimed defensively (they share names with
+    //      their procedures, but claiming guards against edge cases).
+    //   3. Constants, Functions, Globals — registered last; in a
+    //      proc-vs-const collision the constant is always renamed.
+    private readonly Dictionary<Declaration, string> _renames = new();
+    // True when the input is SMACK-generated Boogie. Gates SMACK-specific
+    // accommodations (synthetic `requires (p != 0)` on assert_.<type> procedures).
+    // The companion `InferModifies = true` knob is set on the Boogie options
+    // by the BoogieToStrata.Main entrypoint, also gated on this flag.
+    private readonly bool _smack;
 
-    private StrataGenerator(VCGenOptions options, TokenTextWriter writer, Program program) {
+    private StrataGenerator(VCGenOptions options, TokenTextWriter writer, Program program, bool smack) {
         _options = options;
         _writer = writer;
         _program = program;
+        _smack = smack;
     }
 
-    public static void EmitProgramAsStrata(VCGenOptions options, Program p, TokenTextWriter writer) {
-        var generator = new StrataGenerator(options, writer, p);
+    public static void EmitProgramAsStrata(VCGenOptions options, Program p, TokenTextWriter writer, bool smack) {
+        var generator = new StrataGenerator(options, writer, p, smack);
 
         var fieldTypeCollector = new FieldTypeCollector();
         fieldTypeCollector.Visit(p);
@@ -53,6 +91,31 @@ public class StrataGenerator : ReadOnlyVisitor {
                     : Pruner.GetLiveDeclarations(options, p, allBlocks.ToList()).LiveDeclarations.ToList();
 
             generator.FindSpecialTypes();
+
+            // Build rename map for declarations with colliding sanitized names.
+            // Two kinds of collision are handled:
+            //   1. Cross-namespace: constant vs procedure sharing the same name
+            //   2. Sanitization: distinct names that map to the same string
+            //      (e.g., $add.i32 and $add_i32 both become _add_i32)
+            // First-seen wins; colliding entities get a suffix (_2, _3, ...).
+            var claimed = new HashSet<string>();
+
+            foreach (var proc in p.Procedures)
+                ClaimOrRename(proc, proc.Name, "__proc_", claimed, generator._renames);
+            // Defensive: implementations share names with their corresponding
+            // procedures, so they would normally never collide. Claiming them
+            // here guards against edge cases (e.g., an implementation whose
+            // procedure was pruned or renamed upstream).
+            foreach (var impl in p.Implementations) {
+                var sanitized = SanitizeNameForStrata(impl.Name);
+                claimed.Add(sanitized);
+            }
+            foreach (var c in liveDeclarations.OfType<Constant>())
+                ClaimOrRename(c, c.TypedIdent.Name, "__const_", claimed, generator._renames);
+            foreach (var f in liveDeclarations.OfType<Function>())
+                ClaimOrRename(f, f.Name, "__func_", claimed, generator._renames);
+            foreach (var g in p.GlobalVariables)
+                ClaimOrRename(g, g.Name, "__var_", claimed, generator._renames);
 
             var typeConstructors = p.TopLevelDeclarations.OfType<TypeCtorDecl>().ToList();
             if (typeConstructors.Count != 0) {
@@ -101,12 +164,9 @@ public class StrataGenerator : ReadOnlyVisitor {
                 generator.WriteLine();
             }
 
-            var variables = liveDeclarations.OfType<GlobalVariable>().ToList();
-            if (variables.Count != 0) {
-                generator.WriteLine("// Variables");
-                variables.ForEach(gv => generator.VisitGlobalVariable(gv));
-                generator.WriteLine();
-            }
+            // Collect global variables (no longer emitted as `var` declarations;
+            // they become inout/input parameters on procedures).
+            generator._globalVariables = liveDeclarations.OfType<GlobalVariable>().ToList();
 
             if (p.Procedures.Count() != 0) {
                 generator.WriteLine("// Uninterpreted procedures");
@@ -186,6 +246,29 @@ public class StrataGenerator : ReadOnlyVisitor {
             .Replace('#', '_')
             .Replace('^', '_')
             .Replace("$", "_");
+    }
+
+    /// <summary>
+    /// Claim a sanitized name for <paramref name="decl"/>, or rename it if the
+    /// name is already taken. The first declaration to claim a name wins;
+    /// subsequent colliders get a prefixed (and possibly suffixed) name recorded
+    /// in <paramref name="renames"/>.
+    /// </summary>
+    private static void ClaimOrRename(
+        Declaration decl,
+        string originalName,
+        string prefix,
+        HashSet<string> claimed,
+        Dictionary<Declaration, string> renames) {
+        var sanitized = SanitizeNameForStrata(originalName);
+        if (claimed.Add(sanitized)) return;
+        var candidate = $"{prefix}{sanitized}";
+        if (!claimed.Add(candidate)) {
+            var i = 2;
+            while (!claimed.Add($"{candidate}_{i}")) i++;
+            candidate = $"{candidate}_{i}";
+        }
+        renames[decl] = candidate;
     }
 
     private void AddUniqueConst(Type t, string name) {
@@ -282,6 +365,12 @@ public class StrataGenerator : ReadOnlyVisitor {
         return SanitizeNameForStrata(name);
     }
 
+    private string NameOf(Declaration decl, string originalName) {
+        if (_renames.TryGetValue(decl, out var renamed))
+            return renamed;
+        return SanitizeNameForStrata(originalName);
+    }
+
     private void WriteLine(string text) {
         _writer.WriteLine(text);
     }
@@ -293,7 +382,10 @@ public class StrataGenerator : ReadOnlyVisitor {
         switch (expr) {
             case IdentifierExpr identExpr:
                 WriteText("old ");
-                WriteText(Name(identExpr.Name));
+                if (identExpr.Decl == null)
+                    throw new StrataConversionException(identExpr.tok,
+                        $"IdentifierExpr '{identExpr.Name}' has null Decl (expected non-null post-resolution)");
+                WriteText(NameOf(identExpr.Decl, identExpr.Name));
                 break;
             case NAryExpr { Fun: MapSelect } mapSelect:
                 WriteText("(");
@@ -529,7 +621,10 @@ public class StrataGenerator : ReadOnlyVisitor {
             case LiteralExpr literalExpr:
                 throw new StrataConversionException(node.tok, $"Unsupported literal type: {literalExpr}");
             case IdentifierExpr identifierExpr:
-                WriteText(Name(identifierExpr.Name));
+                if (identifierExpr.Decl == null)
+                    throw new StrataConversionException(identifierExpr.tok,
+                        $"IdentifierExpr '{identifierExpr.Name}' has null Decl (expected non-null post-resolution)");
+                WriteText(NameOf(identifierExpr.Decl, identifierExpr.Name));
                 break;
             case NAryExpr nAryExpr: {
                 var fun = nAryExpr.Fun;
@@ -617,7 +712,7 @@ public class StrataGenerator : ReadOnlyVisitor {
 
                         break;
                     case FunctionCall functionCall: {
-                        WriteText($"{Name(functionCall.FunctionName)}(");
+                        WriteText($"{NameOf(functionCall.Func, functionCall.FunctionName)}(");
                         EmitSeparated(args, e => VisitExpr(e), ", ");
                         WriteText(")");
                         break;
@@ -842,10 +937,39 @@ public class StrataGenerator : ReadOnlyVisitor {
                     targets.Add(target.Label);
                 }
             } else if (getTransferCmd(item) is ReturnCmd) {
-                targets.Add("_exit");
+                targets.Add(ExitLabel);
             }
         }
         return targets;
+    }
+
+    /// <summary>
+    /// Recursively collect goto target labels from BigBlocks, including
+    /// targets inside nested if/while bodies. This ensures wrapper blocks
+    /// are created at the right level for gotos that cross nesting boundaries.
+    /// </summary>
+    private static void CollectNestedGotoTargets(IList<BigBlock> bigBlocks, HashSet<string> targets) {
+        foreach (var bb in bigBlocks) {
+            if (bb.tc is GotoCmd gotoCmd) {
+                foreach (var target in gotoCmd.LabelTargets) {
+                    targets.Add(target.Label);
+                }
+            } else if (bb.tc is ReturnCmd) {
+                targets.Add(ExitLabel);
+            }
+            if (bb.ec is IfCmd ifCmd) {
+                CollectNestedGotoTargets(ifCmd.Thn.BigBlocks, targets);
+                if (ifCmd.ElseBlock != null) {
+                    CollectNestedGotoTargets(ifCmd.ElseBlock.BigBlocks, targets);
+                }
+                if (ifCmd.ElseIf != null) {
+                    var tmp = new BigBlock(ifCmd.ElseIf.tok, null, new List<Cmd>(), ifCmd.ElseIf, null);
+                    CollectNestedGotoTargets(new List<BigBlock> { tmp }, targets);
+                }
+            } else if (bb.ec is WhileCmd whileCmd) {
+                CollectNestedGotoTargets(whileCmd.Body.BigBlocks, targets);
+            }
+        }
     }
 
     public override GotoCmd VisitGotoCmd(GotoCmd node) {
@@ -872,7 +996,7 @@ public class StrataGenerator : ReadOnlyVisitor {
 
     private void EmitSimpleAssign(SimpleAssignLhs lhs, Expr rhs) {
         Indent();
-        WriteText($"{Name(lhs.AssignedVariable.Name)} := ");
+        WriteText($"{NameOf(lhs.AssignedVariable.Decl, lhs.AssignedVariable.Name)} := ");
         VisitExpr(rhs);
         WriteLine(";");
     }
@@ -898,28 +1022,46 @@ public class StrataGenerator : ReadOnlyVisitor {
     }
 
     public override ReturnCmd VisitReturnCmd(ReturnCmd node) {
-        IndentLine("exit _exit;");
+        IndentLine($"exit {ExitLabel};");
         return node;
     }
 
     public override Cmd VisitCallCmd(CallCmd node) {
-        var p = node.callee;
-        Indent("call ");
-        if (node.Outs.Count > 0) {
-            EmitSeparated(node.Outs, e => VisitExpr(e), ", ");
-            WriteText(" := ");
-        }
+        var callee = node.Proc;
+        var modifiesNames = new HashSet<string>(callee.Modifies.Select(m => m.Name));
 
-        WriteText($"{Name(p)}(");
-        EmitSeparated(node.Ins, e => VisitExpr(e), ", ");
+        Indent("call ");
+        WriteText($"{NameOf(callee, callee.Name)}(");
+        // Emit: inout globals, then read-only globals, then original args, then out outputs.
+        var needComma = false;
+        foreach (var g in _globalVariables.Where(g => modifiesNames.Contains(g.Name))) {
+            if (needComma) WriteText(", ");
+            WriteText($"inout {NameOf(g, g.Name)}");
+            needComma = true;
+        }
+        foreach (var g in _globalVariables.Where(g => !modifiesNames.Contains(g.Name))) {
+            if (needComma) WriteText(", ");
+            WriteText(NameOf(g, g.Name));
+            needComma = true;
+        }
+        foreach (var arg in node.Ins) {
+            if (needComma) WriteText(", ");
+            VisitExpr(arg);
+            needComma = true;
+        }
+        foreach (var outVar in node.Outs) {
+            if (needComma) WriteText(", ");
+            WriteText("out ");
+            VisitExpr(outVar);
+            needComma = true;
+        }
         WriteLine(");");
-        // TODO: assume where expressions on all modified variables, all output variables
         return node;
     }
 
     public override Cmd VisitHavocCmd(HavocCmd node) {
         foreach (var x in node.Vars) {
-            IndentLine($"havoc {Name(x.Name)};");
+            IndentLine($"havoc {NameOf(x.Decl, x.Name)};");
         }
 
         // All assumptions come after all havocs! This allows where clauses
@@ -1018,9 +1160,12 @@ public class StrataGenerator : ReadOnlyVisitor {
     }
 
     private void EmitBigBlock(BigBlock bigBlock) {
-        if (bigBlock.LabelName != null) {
-            IndentLine($"{Name(bigBlock.LabelName)}: {{");
+        // Skip emitting the label if there's already an enclosing wrapper with the same name
+        bool emitLabel = bigBlock.LabelName != null && !_enclosingLabels.Contains(bigBlock.LabelName);
+        if (emitLabel) {
+            IndentLine($"{Name(bigBlock.LabelName!)}: {{");
             IncIndent();
+            _enclosingLabels.Add(bigBlock.LabelName!);
         }
 
         foreach (var simpleCmd in bigBlock.simpleCmds) {
@@ -1033,7 +1178,8 @@ public class StrataGenerator : ReadOnlyVisitor {
             Visit(bigBlock.tc);
         }
 
-        if (bigBlock.LabelName != null) {
+        if (emitLabel) {
+            _enclosingLabels.Remove(bigBlock.LabelName!);
             DecIndent();
             IndentLine("}");
         }
@@ -1061,11 +1207,13 @@ public class StrataGenerator : ReadOnlyVisitor {
         foreach (var (label, _) in wrappers) {
             IndentLine($"{Name(label)}: {{");
             IncIndent();
+            _enclosingLabels.Add(label);
         }
 
         for (var i = 0; i < count; i++) {
             foreach (var (label, closeAt) in wrappers) {
                 if (closeAt == i) {
+                    _enclosingLabels.Remove(label);
                     DecIndent();
                     IndentLine("}");
                 }
@@ -1075,15 +1223,142 @@ public class StrataGenerator : ReadOnlyVisitor {
 
         foreach (var (label, closeAt) in wrappers) {
             if (closeAt == count) {
+                _enclosingLabels.Remove(label);
                 DecIndent();
                 IndentLine("}");
             }
         }
     }
 
+    /// <summary>
+    /// Compute the maximum source index for each goto target label.
+    /// For each BigBlock at index i, collect all goto targets (including from
+    /// nested if/while bodies) and record the latest source index.
+    /// </summary>
+    private static Dictionary<string, int> ComputeMaxSourceForTarget(IList<BigBlock> bigBlocks) {
+        var maxSourceForTarget = new Dictionary<string, int>();
+        for (var i = 0; i < bigBlocks.Count; i++) {
+            var bbTargets = new HashSet<string>();
+            CollectNestedGotoTargets(new List<BigBlock> { bigBlocks[i] }, bbTargets);
+            foreach (var t in bbTargets) {
+                if (!maxSourceForTarget.ContainsKey(t) || i > maxSourceForTarget[t]) {
+                    maxSourceForTarget[t] = i;
+                }
+            }
+        }
+        return maxSourceForTarget;
+    }
+
+    /// <summary>
+    /// Detect back-edge targets: labels where a goto source is at or after the target index.
+    /// The synthetic ExitLabel label (procedure exit) is excluded since it represents
+    /// procedure return, not a loop target.
+    /// Returns a dictionary mapping back-edge target label to the loop end index (inclusive).
+    /// </summary>
+    private static Dictionary<string, int> DetectBackEdges(
+        Dictionary<string, int> labelToIndex,
+        Dictionary<string, int> maxSourceForTarget) {
+        var backEdges = new Dictionary<string, int>();
+        foreach (var (label, maxSource) in maxSourceForTarget) {
+            if (label == ExitLabel) continue;
+            if (labelToIndex.TryGetValue(label, out var targetIdx) && maxSource >= targetIdx) {
+                backEdges[label] = maxSource;
+            }
+        }
+        return backEdges;
+    }
+
+    /// <summary>
+    /// Build a list of (possibly nested) loop regions from back-edge information.
+    /// Regions with the same start are merged. A region properly contained inside
+    /// another becomes a child. Truly overlapping regions (different starts, neither
+    /// containing the other) are rejected as irreducible control flow.
+    /// </summary>
+    private static List<LoopRegion> BuildLoopRegions(
+        Dictionary<string, int> backEdges,
+        Dictionary<string, int> labelToIndex,
+        IList<BigBlock> bigBlocks) {
+        // Sort by start index so we process outer loops before inner ones
+        var sorted = backEdges
+            .OrderBy(kv => labelToIndex[kv.Key])
+            .ThenByDescending(kv => kv.Value) // wider regions first for same start
+            .ToList();
+
+        var topLevel = new List<LoopRegion>();
+
+        foreach (var (label, loopEnd) in sorted) {
+            var loopStart = labelToIndex[label];
+            InsertRegion(topLevel, new LoopRegion(loopStart, loopEnd, [label]),
+                         bigBlocks);
+        }
+
+        return topLevel;
+    }
+
+    /// <summary>
+    /// Insert a new loop region into a list, handling merging, nesting, and
+    /// rejecting irreducible overlap.
+    /// </summary>
+    private static void InsertRegion(List<LoopRegion> siblings, LoopRegion newRegion,
+                                     IList<BigBlock> bigBlocks) {
+        for (var i = 0; i < siblings.Count; i++) {
+            var existing = siblings[i];
+            if (newRegion.start == existing.start) {
+                // Same start: merge
+                existing.labels.AddRange(newRegion.labels);
+                existing.end = Math.Max(existing.end, newRegion.end);
+                return;
+            }
+            if (newRegion.start > existing.start && newRegion.end <= existing.end) {
+                // Properly nested inside existing: recurse into children
+                InsertRegion(existing.children, newRegion, bigBlocks);
+                return;
+            }
+            if (newRegion.start < existing.start && newRegion.end >= existing.end) {
+                // newRegion fully contains existing: reparent existing as child
+                // Also absorb any subsequent siblings that fall inside newRegion
+                newRegion.children.Add(existing);
+                siblings[i] = newRegion;
+                while (i + 1 < siblings.Count && siblings[i + 1].start <= newRegion.end) {
+                    var next = siblings[i + 1];
+                    if (next.end <= newRegion.end) {
+                        newRegion.children.Add(next);
+                    } else {
+                        throw new StrataConversionException(bigBlocks[next.start].tok,
+                            $"Irreducible control-flow: overlapping loop regions " +
+                            $"between labels '{string.Join(", ", newRegion.labels)}' and " +
+                            $"'{string.Join(", ", next.labels)}'");
+                    }
+                    siblings.RemoveAt(i + 1);
+                }
+                return;
+            }
+            if (newRegion.start >= existing.start && newRegion.start <= existing.end) {
+                // Overlapping but not nested: irreducible
+                throw new StrataConversionException(bigBlocks[newRegion.start].tok,
+                    $"Irreducible control-flow: overlapping loop regions " +
+                    $"between labels '{string.Join(", ", existing.labels)}' and " +
+                    $"'{string.Join(", ", newRegion.labels)}'");
+            }
+        }
+        siblings.Add(newRegion);
+    }
+
+    /// <summary>
+    /// Recursively collect all back-edge labels from child (nested) loop regions.
+    /// </summary>
+    private static void CollectChildBackEdgeLabels(LoopRegion region, HashSet<string> result) {
+        foreach (var child in region.children) {
+            foreach (var l in child.labels) result.Add(l);
+            CollectChildBackEdgeLabels(child, result);
+        }
+    }
+
     private void EmitStmtList(StmtList stmtList) {
         var bigBlocks = stmtList.BigBlocks;
-        var gotoTargets = CollectGotoTargets(bigBlocks, bb => bb.tc);
+        // Collect goto targets from direct children AND nested structures
+        var gotoTargets = new HashSet<string>();
+        CollectNestedGotoTargets(bigBlocks, gotoTargets);
 
         if (gotoTargets.Count == 0) {
             EmitSeparated(bigBlocks, EmitBigBlock, "\n");
@@ -1096,14 +1371,198 @@ public class StrataGenerator : ReadOnlyVisitor {
                 labelToIndex[bigBlocks[i].LabelName] = i;
             }
         }
-        if (!labelToIndex.ContainsKey("_exit")) {
-            labelToIndex["_exit"] = bigBlocks.Count;
+        if (!labelToIndex.ContainsKey(ExitLabel)) {
+            labelToIndex[ExitLabel] = bigBlocks.Count;
         }
 
-        EmitWithExitWrappers(gotoTargets, labelToIndex, bigBlocks.Count, i => {
-            if (i > 0) { WriteLine(); }
-            EmitBigBlock(bigBlocks[i]);
+        var maxSourceForTarget = ComputeMaxSourceForTarget(bigBlocks);
+        var backEdges = DetectBackEdges(labelToIndex, maxSourceForTarget);
+
+        if (backEdges.Count == 0) {
+            // No backward gotos — use simple forward wrapper emission
+            EmitWithExitWrappers(gotoTargets, labelToIndex, bigBlocks.Count, i => {
+                if (i > 0) { WriteLine(); }
+                EmitBigBlock(bigBlocks[i]);
+            });
+            return;
+        }
+
+        // Compute loop regions: each back-edge target defines a loop from
+        // targetIdx to loopEnd (inclusive). Merge overlapping regions with
+        // the same start; nest properly contained regions; reject truly
+        // overlapping regions with different starts (irreducible control flow).
+        var loopRegions = BuildLoopRegions(backEdges, labelToIndex, bigBlocks);
+
+        // Build forward-only closeAt: back-edge targets close at their target index
+        // (for the outer wrapper that forward gotos use to reach the loop).
+        // Non-back-edge targets use their normal label index.
+        var forwardCloseAt = new Dictionary<string, int>();
+        foreach (var t in gotoTargets) {
+            if (labelToIndex.TryGetValue(t, out var idx)) {
+                forwardCloseAt[t] = idx;
+            }
+        }
+
+        // Determine which forward targets have closeAt within each top-level loop
+        // region. These need to be emitted inside the while body, not outside.
+        // Note: this only classifies targets against top-level regions. Targets
+        // that fall inside nested (child/grandchild) loop regions are assigned to
+        // the outermost containing region here, then delegated down through
+        // EmitLoopRegion's recursive calls — each level filters and passes
+        // targets to its children.
+        var innerTargets = new Dictionary<int, HashSet<string>>(); // regionIndex -> labels
+        // Collect all child (nested) back-edge labels — these must be handled
+        // inside their parent loop region, not as outer wrappers.
+        var childBackEdgeLabels = new HashSet<string>();
+        foreach (var region in loopRegions) {
+            CollectChildBackEdgeLabels(region, childBackEdgeLabels);
+        }
+        foreach (var t in gotoTargets) {
+            if (backEdges.ContainsKey(t) && !childBackEdgeLabels.Contains(t)) continue;
+            if (!forwardCloseAt.TryGetValue(t, out var closeAt)) continue;
+            for (var r = 0; r < loopRegions.Count; r++) {
+                if (closeAt > loopRegions[r].start && closeAt <= loopRegions[r].end) {
+                    if (!innerTargets.ContainsKey(r)) {
+                        innerTargets[r] = new HashSet<string>();
+                    }
+                    innerTargets[r].Add(t);
+                }
+            }
+        }
+
+        // Remove inner targets from the outer wrapper set.
+        // Back-edge targets stay in outer wrappers (closing at their target index)
+        // so that forward gotos from before the loop can reach the loop entry.
+        var outerTargets = new HashSet<string>(gotoTargets);
+        foreach (var (_, labels) in innerTargets) {
+            outerTargets.ExceptWith(labels);
+        }
+
+        // Build outer closeAt map (only for outer targets)
+        var outerCloseAt = new Dictionary<string, int>();
+        foreach (var t in outerTargets) {
+            if (forwardCloseAt.TryGetValue(t, out var idx)) {
+                outerCloseAt[t] = idx;
+            }
+        }
+
+        // Emit using outer wrappers, but replace loop regions with while(*) blocks
+        var emittedCount = 0;
+        EmitWithExitWrappers(outerTargets, outerCloseAt, bigBlocks.Count, i => {
+            // Skip indices inside a loop region (already emitted by EmitLoopRegion)
+            if (loopRegions.Any(r => i > r.start && i <= r.end)) return;
+
+            if (emittedCount > 0) { WriteLine(); }
+            emittedCount++;
+
+            // Check if this index starts a loop region
+            var regionIdx = loopRegions.FindIndex(r => r.start == i);
+            if (regionIdx >= 0) {
+                EmitLoopRegion(bigBlocks, loopRegions[regionIdx],
+                    labelToIndex, innerTargets.GetValueOrDefault(regionIdx));
+            } else {
+                EmitBigBlock(bigBlocks[i]);
+            }
         });
+    }
+
+    /// <summary>
+    /// Emit a loop region as a while(*) block. The back-edge target label wraps
+    /// the entire loop body so that `exit label` acts as "continue".
+    /// Forward targets within the loop body use inner wrappers.
+    /// Nested child loop regions are emitted recursively.
+    /// </summary>
+    private void EmitLoopRegion(
+        IList<BigBlock> bigBlocks,
+        LoopRegion region,
+        Dictionary<string, int> labelToIndex,
+        HashSet<string>? innerTargetLabels) {
+        var start = region.start;
+        var end = region.end;
+        var loopCount = end - start + 1;
+
+        IndentLine("while (true)");
+        IndentLine("{");
+        IncIndent();
+
+        // The back-edge target labels wrap the entire loop body.
+        // `exit <label>` from inside = exits wrapper = falls to end of while body = re-iterates.
+        foreach (var label in region.labels.OrderByDescending(l => labelToIndex[l])) {
+            IndentLine($"{Name(label)}: {{");
+            IncIndent();
+            _enclosingLabels.Add(label);
+        }
+
+        // Collect child back-edge labels: these need forward wrappers inside
+        // this loop body (closing at the child's start) so that forward gotos
+        // reach the child loop. The child's while(true) then re-opens the same
+        // label as its continue wrapper. Since the forward wrapper closes before
+        // the while opens, there is no shadowing.
+        var childBackEdgeLabels = new HashSet<string>();
+        foreach (var child in region.children) {
+            foreach (var cl in child.labels) childBackEdgeLabels.Add(cl);
+        }
+
+        var innerCloseAt = new Dictionary<string, int>();
+        // Add child back-edge labels as forward wrappers closing at child start
+        foreach (var child in region.children) {
+            foreach (var cl in child.labels) {
+                innerCloseAt[cl] = child.start - start;
+            }
+        }
+        if (innerTargetLabels != null) {
+            foreach (var t in innerTargetLabels) {
+                if (childBackEdgeLabels.Contains(t)) continue;
+                // Skip targets that fall inside a child region
+                if (region.children.Any(c => {
+                    var closeAt = labelToIndex[t];
+                    return closeAt > c.start && closeAt <= c.end;
+                })) continue;
+                // closeAt is relative to the loop body start
+                innerCloseAt[t] = labelToIndex[t] - start;
+            }
+        }
+        var innerTargets = new HashSet<string>(innerCloseAt.Keys);
+
+        var emittedCount = 0;
+        EmitWithExitWrappers(innerTargets, innerCloseAt, loopCount, i => {
+            var absIdx = start + i;
+            // Skip indices inside a child loop region (emitted by recursive call)
+            if (region.children.Any(c => absIdx > c.start && absIdx <= c.end)) return;
+
+            if (emittedCount > 0) { WriteLine(); }
+            emittedCount++;
+
+            // Check if this index starts a child loop region
+            var child = region.children.Find(c => c.start == absIdx);
+            if (child != null) {
+                // Collect forward targets that fall inside this child
+                HashSet<string>? childInnerTargets = null;
+                if (innerTargetLabels != null) {
+                    foreach (var t in innerTargetLabels) {
+                        var closeAt = labelToIndex[t];
+                        if (closeAt > child.start && closeAt <= child.end &&
+                            !child.labels.Contains(t)) {
+                            childInnerTargets ??= [];
+                            childInnerTargets.Add(t);
+                        }
+                    }
+                }
+                EmitLoopRegion(bigBlocks, child, labelToIndex, childInnerTargets);
+            } else {
+                EmitBigBlock(bigBlocks[absIdx]);
+            }
+        });
+
+        // Close back-edge target wrappers
+        foreach (var label in region.labels.OrderBy(l => labelToIndex[l])) {
+            _enclosingLabels.Remove(label);
+            DecIndent();
+            IndentLine("}");
+        }
+
+        DecIndent();
+        IndentLine("}");
     }
 
     public override Block VisitBlock(Block node) {
@@ -1129,7 +1588,7 @@ public class StrataGenerator : ReadOnlyVisitor {
 
     public override Constant VisitConstant(Constant node) {
         var ti = node.TypedIdent;
-        var name = Name(ti.Name);
+        var name = NameOf(node, ti.Name);
         WriteText($"const {name} : ");
         VisitType(ti.Type);
         if (node.Unique) {
@@ -1142,7 +1601,7 @@ public class StrataGenerator : ReadOnlyVisitor {
 
     public override GlobalVariable VisitGlobalVariable(GlobalVariable node) {
         var ti = node.TypedIdent;
-        WriteText($"var {Name(ti.Name)} : ");
+        WriteText($"var {NameOf(node, ti.Name)} : ");
         VisitType(ti.Type);
         WriteLine(";");
         return node;
@@ -1300,7 +1759,7 @@ public class StrataGenerator : ReadOnlyVisitor {
     }
 
     public override Function VisitFunction(Function node) {
-        WriteText($"function {Name(node.Name)}");
+        WriteText($"function {NameOf(node, node.Name)}");
         EmitTypeParameters(node.TypeParameters);
         WriteText("(");
         WriteFormals(node.InParams);
@@ -1337,21 +1796,26 @@ public class StrataGenerator : ReadOnlyVisitor {
     }
 
     private void WriteProcedureHeader(Procedure proc) {
-        WriteText($"procedure {Name(proc.Name)}");
+        // Modifies globals become inout params; read-only globals become input params.
+        var modifiesNames = new HashSet<string>(proc.Modifies.Select(m => m.Name));
+        var modifiesGlobals = _globalVariables.Where(g => modifiesNames.Contains(g.Name)).ToList();
+        var readOnlyGlobals = _globalVariables.Where(g => !modifiesNames.Contains(g.Name)).ToList();
+
+        WriteText($"procedure {NameOf(proc, proc.Name)}");
         EmitTypeParameters(proc.TypeParameters);
         WriteText("(");
-        WriteFormals(proc.InParams);
-        WriteText(")");
-        WriteText(" returns (");
-        WriteFormals(proc.OutParams);
+        // Emit: inout globals, then read-only globals, then original inputs, then out outputs.
+        var needComma = false;
+        WriteFormals(modifiesGlobals, ref needComma, "inout ");
+        WriteFormals(readOnlyGlobals, ref needComma);
+        WriteFormals(proc.InParams, ref needComma);
+        WriteFormals(proc.OutParams, ref needComma, "out ");
         WriteLine(")");
 
-        if (proc.Modifies.Count != 0 || proc.Requires.Count != 0 || proc.Ensures.Count != 0) {
+        // Spec: no modifies clause; only requires and ensures.
+        if (proc.Requires.Count != 0 || proc.Ensures.Count != 0) {
             WriteLine("spec {");
             IncIndent();
-            foreach (var mod in proc.Modifies) {
-                IndentLine($"modifies {Name(mod.Name)};");
-            }
 
             foreach (var req in proc.Requires) {
                 Indent();
@@ -1386,25 +1850,57 @@ public class StrataGenerator : ReadOnlyVisitor {
 
     public override Procedure VisitProcedure(Procedure node) {
         if (!_program.Implementations.Any(i => i.Name.Equals(node.Name))) {
-            WriteProcedureHeader(node);
-            WriteLine(";");
-            WriteLine();
+            // Under --smack, SMACK encodes C assert(expr) as a call to
+            // assert_.*(cond). Inject a synthetic requires precondition so the
+            // call-elimination pass generates a VC checking the condition is
+            // non-zero. We add it to node.Requires so WriteProcedureHeader
+            // emits it inside a single spec block alongside any existing
+            // specs. The injection always fires when the name pattern matches
+            // (no Requires.Count == 0 guard) — if the procedure already has a
+            // hand-written requires, both clauses appear in the merged spec
+            // block, preserving the SMACK invariant unconditionally.
+            Requires? syntheticReq = null;
+            if (_smack && node.Name.StartsWith("assert_.") && node.InParams.Count > 0) {
+                var param = node.InParams[0];
+                var paramExpr = new IdentifierExpr(param.tok, param);
+                var zero = new LiteralExpr(param.tok, Microsoft.BaseTypes.BigNum.FromInt(0));
+                var neqExpr = Expr.Neq(paramExpr, zero);
+                syntheticReq = new Requires(false, neqExpr);
+                node.Requires.Add(syntheticReq);
+            }
+
+            try {
+                WriteProcedureHeader(node);
+                WriteLine(";");
+                WriteLine();
+            } finally {
+                // Remove the synthetic requires to avoid mutating the shared
+                // AST, even if WriteProcedureHeader threw.
+                if (syntheticReq != null) {
+                    node.Requires.Remove(syntheticReq);
+                }
+            }
         }
 
         return node;
     }
 
-    private void WriteFormals(List<Variable> variables) {
+    private void WriteFormals(IEnumerable<Variable> variables, ref bool needComma,
+                              string prefix = "") {
         var n = 0;
-        EmitSeparated(variables, v => {
+        foreach (var v in variables) {
+            if (needComma) WriteText(", ");
             var name = v.TypedIdent.Name ?? "";
-            if (name == "") {
-                name = $"x{n++}";
-            }
-
-            WriteText($"{Name(name)} : ");
+            if (name == "") name = $"x{n++}";
+            WriteText($"{prefix}{NameOf(v, name)} : ");
             VisitType(v.TypedIdent.Type);
-        }, ", ");
+            needComma = true;
+        }
+    }
+
+    private void WriteFormals(List<Variable> variables) {
+        var needComma = false;
+        WriteFormals(variables, ref needComma);
     }
 
     private void WriteVariableTypes(List<Variable> variables) {
@@ -1452,7 +1948,7 @@ public class StrataGenerator : ReadOnlyVisitor {
             for (var i = 0; i < blocks.Count; i++) {
                 labelToIndex[blocks[i].Label] = i;
             }
-            labelToIndex["_exit"] = blocks.Count;
+            labelToIndex[ExitLabel] = blocks.Count;
 
             EmitWithExitWrappers(gotoTargets, labelToIndex, blocks.Count, i => {
                 VisitBlock(blocks[i]);

@@ -69,6 +69,18 @@ def miseWhere (runtime : String) (miseCmd : String := "mise") : IO (Option Syste
   pure <| some stdout.trimAscii.toString
 
 /--
+info: none
+-/
+#guard_msgs in
+#eval miseWhere "Python@1.0"
+
+/--
+info: none
+-/
+#guard_msgs in
+#eval miseWhere "Python@3.12" (miseCmd := "nonexisting-mise")
+
+/--
 This checks to see if a module is found.
 -/
 def pythonCheckModule (pythonCmd : System.FilePath) (moduleName : String) : IO Bool := do
@@ -96,18 +108,6 @@ def pythonCheckModule (pythonCmd : System.FilePath) (moduleName : String) : IO B
   | _ =>
     throw <| .userError
       s!"{pythonCmd} has unexpected exit code {exitCode}"
-
-/--
-info: none
--/
-#guard_msgs in
-#eval miseWhere "Python@1.0"
-
-/--
-info: none
--/
-#guard_msgs in
-#eval miseWhere "Python@3.12" (miseCmd := "nonexisting-mise")
 
 /--
 Utility to get Python 3 minor version.
@@ -200,21 +200,12 @@ def findPython3 (minVersion : Nat) (maxVersion : Nat) : IO System.FilePath := do
   throw <| IO.userError s!"Python 3.{minVersion} or later not found."
 
 /-- Run an action with a Python 3 command that has `strata.gen` installed.
-    Skips silently if Python is unavailable, unless `PYTHON_TEST` is set
-    in which case it throws. -/
+    Throws if Python is unavailable or `strata.gen` is not installed. -/
 def withPython (action : System.FilePath → IO Unit) : IO Unit := do
-  let required := (← IO.getEnv "PYTHON_TEST").isSome
-  let pythonCmd ←
-    match ← findPython3 (minVersion := 11) (maxVersion := 14) |>.toBaseIO with
-    | .ok cmd => pure cmd
-    | .error msg =>
-      if required then throw msg
-      return ()
+  let pythonCmd ← findPython3 (minVersion := 11) (maxVersion := 14)
   if not (← pythonCheckModule pythonCmd "strata.gen") then
-    if required then
-      throw <| .userError
-        s!"Python Strata libraries not installed in {pythonCmd}."
-    return ()
+    throw <| .userError
+      s!"Python Strata libraries not installed in {pythonCmd}."
   action pythonCmd
 
 end Strata.Python

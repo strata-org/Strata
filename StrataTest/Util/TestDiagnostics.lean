@@ -21,8 +21,16 @@ structure DiagnosticExpectation where
   message : String
   deriving Repr, BEq
 
+/-- Detect the comment marker (`"//"` or `"#"`) of a line, if any. -/
+private def commentMarker (line : String) : Option String :=
+  let trimmed := line.trimAsciiStart
+  if trimmed.startsWith "//" then some "//"
+  else if trimmed.startsWith "#" then some "#"
+  else none
+
 /-- Parse diagnostic expectations from source file comments.
-    Format: `--  ^^^^^^ error: message` on the line after the problematic code -/
+    Format: `//  ^^^^^^ error: message` or `#  ^^^^^^ error: message`
+    on the line after the problematic code -/
 def parseDiagnosticExpectations (content : String) : List DiagnosticExpectation := Id.run do
   let lines := content.splitOn "\n"
   let mut expectations := []
@@ -30,8 +38,8 @@ def parseDiagnosticExpectations (content : String) : List DiagnosticExpectation 
   for i in [0:lines.length] do
     let line := lines[i]!
     -- Check if this is a comment line with diagnostic expectation
-    if line.trimAsciiStart.startsWith "//" then
-      let trimmed := line.trimAsciiStart.drop 2 |>.toString -- Remove "//"
+    if let some marker := commentMarker line then
+      let trimmed := line.trimAsciiStart.drop marker.length |>.toString
       -- Find the caret sequence
       let caretStart := trimmed.find (· = '^')
       -- Find end of carets
@@ -47,14 +55,14 @@ def parseDiagnosticExpectations (content : String) : List DiagnosticExpectation 
           let message := (": ".intercalate messageParts).trimAscii.toString
 
           -- Calculate column positions (carets are relative to line start including comment spacing)
-          let commentPrefix := (line.takeWhile (fun c => c == ' ' || c == '\t')).toString.length + "//".length
-          let caretColStart := commentPrefix + caretStart.offset.byteIdx
-          let caretColEnd := commentPrefix + currentCaret.offset.byteIdx
+          let markerLen := (line.takeWhile (fun c => c == ' ' || c == '\t')).toString.length + marker.length
+          let caretColStart := markerLen + caretStart.offset.byteIdx
+          let caretColEnd := markerLen + currentCaret.offset.byteIdx
 
           -- The diagnostic is on the nearest previous non-comment line
           if i > 0 then
             let mut targetLine := i
-            while targetLine > 0 && lines[targetLine - 1]!.trimAsciiStart.startsWith "//" do
+            while targetLine > 0 && (commentMarker lines[targetLine - 1]!).isSome do
               targetLine := targetLine - 1
             expectations := expectations.append [{
               line := targetLine,

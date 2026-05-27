@@ -3,11 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.B3.Verifier.Expression
-import Strata.Languages.B3.DDMTransform.DefinitionAST
-import Strata.DL.SMT.Solver
+public import Strata.Languages.B3.Verifier.Expression
+public import Strata.Languages.B3.DDMTransform.DefinitionAST
+public import Strata.DL.SMT.Solver
 import Strata.DL.SMT.Factory
+
+public section
 
 /-!
 # B3 Verification State

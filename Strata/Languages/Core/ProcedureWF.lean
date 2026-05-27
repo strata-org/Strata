@@ -14,6 +14,65 @@ public import Strata.Languages.Core.StatementWF
 public section
 
 namespace Core
+
+/-! ## Helper lemmas about getInoutParams and getOutputOnlyParams -/
+
+/-- Keys of `getInoutParams` are a subset of keys of inputs. -/
+theorem getInoutParams_keys_subset_inputs (h : Procedure.Header) :
+    ∀ id ∈ ListMap.keys h.getInoutParams, id ∈ ListMap.keys h.inputs := by
+  intro id hid
+  unfold Procedure.Header.getInoutParams at hid
+  rw [ListMap.keys_eq_map_fst] at hid ⊢
+  obtain ⟨⟨id', ty'⟩, hmem, rfl⟩ := List.mem_map.mp hid
+  exact List.mem_map_of_mem (f := Prod.fst) (List.mem_filter.mp hmem).1
+
+/-- Keys of `getOutputOnlyParams` are disjoint from keys of inputs. -/
+theorem getOutputOnlyParams_keys_disjoint_inputs (h : Procedure.Header) :
+    ∀ id ∈ ListMap.keys h.getOutputOnlyParams, id ∉ ListMap.keys h.inputs := by
+  intro id hid
+  unfold Procedure.Header.getOutputOnlyParams at hid
+  rw [ListMap.keys_eq_map_fst] at hid
+  obtain ⟨⟨id', ty'⟩, hmem, rfl⟩ := List.mem_map.mp hid
+  have hfilt := (List.mem_filter.mp hmem).2
+  simp only [Bool.not_eq_true'] at hfilt
+  exact fun hmem' => by
+    have := List.elem_eq_true_of_mem hmem'
+    simp only [List.contains] at hfilt
+    exact absurd this (Bool.eq_false_iff.mp hfilt)
+
+/-- Keys of `getOutputOnlyParams` are a subset of keys of outputs. -/
+theorem getOutputOnlyParams_keys_subset_outputs (h : Procedure.Header) :
+    ∀ id ∈ ListMap.keys h.getOutputOnlyParams, id ∈ ListMap.keys h.outputs := by
+  intro id hid
+  unfold Procedure.Header.getOutputOnlyParams at hid
+  rw [ListMap.keys_eq_map_fst] at hid ⊢
+  obtain ⟨⟨id', ty'⟩, hmem, rfl⟩ := List.mem_map.mp hid
+  exact List.mem_map_of_mem (f := Prod.fst) (List.mem_filter.mp hmem).1
+
+/-- Nodup of `getInoutParams` keys follows from nodup of inputs keys. -/
+theorem getInoutParams_nodup (h : Procedure.Header)
+    (hnd : (ListMap.keys h.inputs).Nodup) :
+    (ListMap.keys h.getInoutParams).Nodup := by
+  unfold Procedure.Header.getInoutParams
+  rw [ListMap.keys_eq_map_fst] at hnd ⊢
+  exact (List.filter_sublist.map Prod.fst).nodup hnd
+
+/-- Nodup of `getOutputOnlyParams` keys follows from nodup of outputs keys. -/
+theorem getOutputOnlyParams_nodup (h : Procedure.Header)
+    (hnd : (ListMap.keys h.outputs).Nodup) :
+    (ListMap.keys h.getOutputOnlyParams).Nodup := by
+  unfold Procedure.Header.getOutputOnlyParams
+  rw [ListMap.keys_eq_map_fst] at hnd ⊢
+  exact (List.filter_sublist.map Prod.fst).nodup hnd
+
+/-- Keys of `getInoutParams` are in both inputs and outputs,
+    so they are in `inputs ++ outputs`. -/
+theorem getInoutParams_keys_in_io (h : Procedure.Header) :
+    ∀ id ∈ ListMap.keys h.getInoutParams,
+      id ∈ ListMap.keys h.inputs ++ ListMap.keys h.outputs := by
+  intro id hid
+  exact List.mem_append_left _ (getInoutParams_keys_subset_inputs h id hid)
+
 namespace WF
 
 open Lambda
@@ -30,7 +89,7 @@ theorem snd_values_mem {ps : ListMap CoreLabel Procedure.Check} :
     case inr mem => right ; exact (ih mem)
   case nil => cases Hin
 
-theorem Procedure.typeCheckWF : Procedure.typeCheck C T p pp md = Except.ok (pp', T') → WFProcedureProp p pp := by sorry
+-- theorem Procedure.typeCheckWF : Procedure.typeCheck C T p pp md = Except.ok (pp', T') → WFProcedureProp p pp := by sorry
 
 
 /-

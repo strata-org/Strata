@@ -1,0 +1,7 @@
+test_bitnot.py(2, 4): ✅ pass - assert(16)
+test_bitnot.py(3, 13): ✅ pass - Check PBitNot exception
+test_bitnot.py(3, 4): ✅ pass - assert(31)
+test_bitnot.py(4, 16): ✅ pass - Check PNeg exception
+test_bitnot.py(4, 4): ✅ pass - bitwise not
+DETAIL: 5 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success

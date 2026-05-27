@@ -58,7 +58,7 @@ proof foo_body {
 
 proof bar_body {
   var x: nat;
-  if (x != 0) {
+  if x != 0 then {
     assert decreases([x, 0], [x - 1, 1]);
   }
 }

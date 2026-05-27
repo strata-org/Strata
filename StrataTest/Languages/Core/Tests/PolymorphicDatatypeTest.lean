@@ -29,9 +29,11 @@ datatype Option (a : Type) { None(), Some(value: a) };
 #end
 
 /--
-info: ok: datatype Option (a : Type) {(
-  (None())),
-  (Some(value : a))
+info: ok: program Core;
+
+datatype Option (a : Type) {
+  None(),
+  Some(value : a)
 };
 -/
 #guard_msgs in
@@ -47,7 +49,7 @@ program Core;
 
 datatype Option (a : Type) { None(), Some(value: a) };
 
-procedure TestOptionInt() returns ()
+procedure TestOptionInt()
 spec {
   ensures true;
 }
@@ -64,11 +66,13 @@ spec {
 #end
 
 /--
-info: ok: datatype Option (a : Type) {(
-  (None())),
-  (Some(value : a))
+info: ok: program Core;
+
+datatype Option (a : Type) {
+  None(),
+  Some(value : a)
 };
-procedure TestOptionInt () returns ()
+procedure TestOptionInt ()
 spec {
   ensures [TestOptionInt_ensures_0]: true;
   } {
@@ -79,7 +83,7 @@ spec {
   y := Some(42);
   v := Option..value(y);
   assert [valIs42]: v == 42;
-  };
+};
 -/
 #guard_msgs in
 #eval Core.typeCheck .quiet (TransM.run Inhabited.default (translateProgram optionIntPgm)).fst
@@ -94,7 +98,7 @@ program Core;
 
 datatype List (a : Type) { Nil(), Cons(head: a, tail: List a) };
 
-procedure TestListInt() returns ()
+procedure TestListInt()
 spec {
   ensures true;
 }
@@ -109,11 +113,13 @@ spec {
 #end
 
 /--
-info: ok: datatype List (a : Type) {(
-  (Nil())),
-  (Cons(head : a, tail : (List a)))
+info: ok: program Core;
+
+datatype List (a : Type) {
+  Nil(),
+  Cons(head : a, tail : List a)
 };
-procedure TestListInt () returns ()
+procedure TestListInt ()
 spec {
   ensures [TestListInt_ensures_0]: true;
   } {
@@ -122,7 +128,7 @@ spec {
   xs := Cons(1, Cons(2, Nil));
   h := List..head(xs);
   assert [headIs1]: h == 1;
-  };
+};
 -/
 #guard_msgs in
 #eval Core.typeCheck .quiet (TransM.run Inhabited.default (translateProgram listIntPgm)).fst
@@ -137,7 +143,7 @@ program Core;
 
 datatype Either (a : Type, b : Type) { Left(l: a), Right(r: b) };
 
-procedure TestEither() returns ()
+procedure TestEither()
 spec {
   ensures true;
 }
@@ -155,11 +161,13 @@ spec {
 #end
 
 /--
-info: ok: datatype Either (a : Type, b : Type) {(
-  (Left(l : a))),
-  (Right(r : b))
+info: ok: program Core;
+
+datatype Either (a : Type, b : Type) {
+  Left(l : a),
+  Right(r : b)
 };
-procedure TestEither () returns ()
+procedure TestEither ()
 spec {
   ensures [TestEither_ensures_0]: true;
   } {
@@ -170,7 +178,7 @@ spec {
   assert [xIsLeft]: Either..isLeft(x);
   assert [yIsRight]: Either..isRight(y);
   assert [lValue]: Either..l(x) == 42;
-  };
+};
 -/
 #guard_msgs in
 #eval Core.typeCheck .quiet (TransM.run Inhabited.default (translateProgram eitherUsePgm)).fst
@@ -186,7 +194,7 @@ program Core;
 datatype Option (a : Type) { None(), Some(value: a) };
 datatype List (a : Type) { Nil(), Cons(head: a, tail: List a) };
 
-procedure TestNestedPoly() returns ()
+procedure TestNestedPoly()
 spec {
   ensures true;
 }
@@ -199,22 +207,24 @@ spec {
 #end
 
 /--
-info: ok: datatype Option (a : Type) {(
-  (None())),
-  (Some(value : a))
+info: ok: program Core;
+
+datatype Option (a : Type) {
+  None(),
+  Some(value : a)
 };
-datatype List (a : Type) {(
-  (Nil())),
-  (Cons(head : a, tail : (List a)))
+datatype List (a : Type) {
+  Nil(),
+  Cons(head : a, tail : List a)
 };
-procedure TestNestedPoly () returns ()
+procedure TestNestedPoly ()
 spec {
   ensures [TestNestedPoly_ensures_0]: true;
   } {
   var x : (Option (List int));
   x := Some(Cons(1, Nil));
   assert [isSome]: Option..isSome(x);
-  };
+};
 -/
 #guard_msgs in
 #eval Core.typeCheck .quiet (TransM.run Inhabited.default (translateProgram nestedPolyPgm)).fst
@@ -229,7 +239,7 @@ program Core;
 
 datatype List (a : Type) { Nil(), Cons(head: a, tail: List a) };
 
-procedure TestPolyListHavoc() returns ()
+procedure TestPolyListHavoc()
 spec {
   ensures true;
 }
@@ -248,7 +258,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram polyListHavocPgm) |>.snd |>.isEmpty
 
@@ -280,7 +292,7 @@ program Core;
 
 datatype List (a : Type) { Nil(), Cons(head: a, tail: List a) };
 
-procedure TestMultiInstSMT() returns ()
+procedure TestMultiInstSMT()
 spec {
   ensures true;
 }
@@ -300,7 +312,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram multiInstSMTPgm) |>.snd |>.isEmpty
 
@@ -328,7 +342,7 @@ program Core;
 
 datatype Either (a : Type, b : Type) { Left(l: a), Right(r: b) };
 
-procedure TestEitherHavoc() returns ()
+procedure TestEitherHavoc()
 spec {
   ensures true;
 }
@@ -346,7 +360,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram eitherHavocPgm) |>.snd |>.isEmpty
 
@@ -385,7 +401,7 @@ program Core;
 
 datatype Option (a : Type) { None(), Some(value: a) };
 
-procedure TestOptionHavoc() returns ()
+procedure TestOptionHavoc()
 spec {
   ensures true;
 }
@@ -399,7 +415,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram optionHavocPgm) |>.snd |>.isEmpty
 
@@ -438,7 +456,7 @@ datatype Outer () {
   )
 };
 
-procedure TestPolyUserDatatype() returns ()
+procedure TestPolyUserDatatype()
 spec { ensures true; }
 {
   var x : Outer;
@@ -448,7 +466,9 @@ spec { ensures true; }
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram polyWithUserDatatypePgm) |>.snd |>.isEmpty
 
@@ -482,7 +502,7 @@ def nonDatatypeWithDatatypeArgPgm : Program :=
 #strata
 program Core;
 
-type Seq (a: Type);
+type SeqTest (a: Type);
 
 datatype Option (a : Type) { None(), Some(val: a) };
 
@@ -491,7 +511,7 @@ datatype Inner () {
 };
 
 datatype Middle () {
-  MkMiddle(items: (Seq Inner))
+  MkMiddle(items: (SeqTest Inner))
 };
 
 datatype Outer () {
@@ -501,16 +521,17 @@ datatype Outer () {
   )
 };
 
-var v : Outer;
-
-procedure Test() returns ()
+procedure Test()
 spec { ensures true; }
 {
+  var v : Outer;
   assert [test]: Option..isSome(Outer..flag(v));
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram nonDatatypeWithDatatypeArgPgm) |>.snd |>.isEmpty
 
@@ -532,3 +553,61 @@ Result: ✅ pass
 #eval verify nonDatatypeWithDatatypeArgPgm (options := .quiet)
 
 end Strata.PolymorphicDatatypeTest
+
+---------------------------------------------------------------------
+-- Regression test for issue #650: inferType panic with nested
+-- polymorphic datatypes and Sequence
+---------------------------------------------------------------------
+
+namespace Strata.InferTypePanicTest
+
+-- Verify that the program does not panic during type inference (issue #650).
+-- The program has type errors that should be reported gracefully.
+/--
+error: Could not infer type parameter 2 for Core.seq_select
+---
+error: Encountered .|| expression when MethodSetting expected.
+-/
+#guard_msgs in
+def issue650Pgm : Program :=
+#strata
+program Core;
+
+datatype Option (a : Type) { None(), Some(val: a) };
+
+datatype MethodSetting () {
+  MethodSetting_Cons(LoggingLevel: Option string)
+};
+
+datatype Stage () {
+  Stage_Cons(MethodSettings: Option (Sequence MethodSetting))
+};
+
+function method_ok(ms: MethodSetting): bool {
+  (MethodSetting..LoggingLevel(ms) == Some("ERROR"))
+  || (MethodSetting..LoggingLevel(ms) == Some("INFO"))
+}
+
+function stage_ok(stage: Stage): bool {
+  forall i: int ::
+    (Stage..MethodSettings(stage) != None()
+     && 0 <= i
+     && i < Sequence.length(Option..val(Stage..MethodSettings(stage))))
+    ==>
+    method_ok(Sequence.select(Option..val(Stage..MethodSettings(stage)), i))
+}
+
+const s: Stage;
+const grouped: Sequence Stage;
+axiom Sequence.length(grouped) == 1;
+axiom Sequence.select(grouped, 0) == s;
+
+procedure Check()
+{
+  assert [check]:
+    forall i: int :: (0 <= i && i < Sequence.length(grouped)) ==>
+      stage_ok(Sequence.select(grouped, i));
+};
+#end
+
+end Strata.InferTypePanicTest

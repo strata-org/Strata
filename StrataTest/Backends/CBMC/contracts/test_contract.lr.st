@@ -1,5 +1,6 @@
 procedure add(x: int, y: int) returns (r: int)
   requires x >= 0
+  opaque
   ensures r >= x
 {
   r := x + y;

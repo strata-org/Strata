@@ -34,7 +34,12 @@ spec {
 
 #end
 
-#eval Strata.Boole.verify "cvc5" bit_vectors
+/-- info:
+Obligation: assert_1_418
+Property: assert
+Result: ✅ pass-/
+#guard_msgs in
+#eval Strata.Boole.verify "cvc5" bit_vectors (options := .quiet)
 
 example : Strata.smtVCsCorrect bit_vectors := by
   gen_smt_vcs

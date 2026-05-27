@@ -5,30 +5,30 @@
 -/
 module
 
-import Lean.Elab.Command
 public import Strata.DDM.Util.Ion.AST
-import all Strata.DDM.Util.Lean
 
 public section
 namespace Ion
 
 structure SymbolTable where
-  array : Array String
-  map : Std.HashMap String SymbolId
+  private mk ::
+  private array : Array String
+  private map : Std.HashMap String SymbolId
   locals : Array String
 deriving Inhabited
 
 namespace SymbolTable
 
-instance : GetElem? SymbolTable SymbolId String (fun tbl idx => idx.value < tbl.array.size) where
-  getElem tbl idx p := tbl.array[idx.value]
-  getElem! tbl idx := assert! idx.value < tbl.array.size; tbl.array[idx.value]!
-  getElem? tbl idx := tbl.array[idx.value]?
+def size (tbl : SymbolTable) : Nat := tbl.array.size
 
-def symbolId! (sym : String) (tbl : SymbolTable) : SymbolId :=
-  match tbl.map[sym]? with
-  | some i => i
-  | none => panic! s!"Unbound symbol {sym}"
+instance : GetElem? SymbolTable SymbolId String (fun tbl idx => idx.value < tbl.size) where
+  getElem tbl idx p := private tbl.array[idx.value]
+  getElem! tbl idx := private tbl.array[idx.value]!
+  getElem? tbl idx := private tbl.array[idx.value]?
+
+/-- Lookup symbol and return `SymbolId.zero` if not defined. -/
+def symbolId (sym : String) (tbl : SymbolTable) : SymbolId :=
+  tbl.map.getD sym .zero
 
 /--
 Intern a string into a symbol.
@@ -62,33 +62,9 @@ def system : SymbolTable where
 def ofLocals (locals : Array String) : SymbolTable :=
   locals.foldl (init := .system) (fun tbl sym => tbl.intern sym |>.snd)
 
-public instance : Lean.Quote SymbolTable where
+instance : Lean.Quote SymbolTable where
   quote st := Lean.Syntax.mkCApp ``SymbolTable.ofLocals #[Lean.quote st.locals]
 
 end SymbolTable
-
-namespace SymbolId
-
-def systemSymbolId! (sym : String) : SymbolId := SymbolTable.system |>.symbolId! sym
-
--- Use metaprogramming to declare `{sym}SymbolId : SymbolId` for each system symbol.
-section
-open Lean
-open Elab.Command
-
--- Declare all system symbol ids as constants
-run_cmd do
-  for sym in SymbolTable.ionSharedSymbolTableEntries do
-    -- To simplify name, strip out non-alphanumeric characters.
-    let simplifiedName : String := .ofList <| sym.toList.filter (·.isAlphanum)
-    let leanName := Lean.mkLocalDeclId simplifiedName
-    let cmd : TSyntax `command ← `(command|
-      public def $(leanName) : SymbolId := systemSymbolId! $(Lean.Syntax.mkStrLit sym)
-    )
-    elabCommand cmd
-
-end
-
-end SymbolId
 
 end Ion

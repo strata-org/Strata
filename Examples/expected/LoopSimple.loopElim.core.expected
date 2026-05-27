@@ -1,0 +1,10 @@
+Successfully parsed.
+LoopSimple.loopElim.core.st(13, 6) [entry_invariant_0_0]: ✅ pass
+LoopSimple.loopElim.core.st(14, 6) [entry_invariant_0_1]: ✅ pass
+LoopSimple.loopElim.core.st(31, 8) [measure_lb_0]: ✅ pass
+LoopSimple.loopElim.core.st(34, 8) [arbitrary_iter_maintain_invariant_0_0]: ✅ pass
+LoopSimple.loopElim.core.st(35, 8) [arbitrary_iter_maintain_invariant_0_1]: ✅ pass
+LoopSimple.loopElim.core.st(36, 8) [measure_decrease_0]: ✅ pass
+LoopSimple.loopElim.core.st(47, 2) [sum_assert]: ✅ pass
+LoopSimple.loopElim.core.st(48, 2) [neg_cond]: ✅ pass
+All 8 goals passed.

@@ -66,6 +66,13 @@ def ListMap.find? [DecidableEq α] (m : ListMap α β) (a' : α) : Option β :=
   | [] => none
   | (a, b) :: m => if a = a' then some b else find? m a'
 
+def ListMap.findWithIdx? [DecidableEq α] (m : ListMap α β) (a' : α) : Option (Nat × β) :=
+  go m a' 0
+where
+  go : ListMap α β → α → Nat → Option (Nat × β)
+  | [], _, _ => none
+  | (a, b) :: m, a', i => if a = a' then some (i, b) else go m a' (i + 1)
+
 def ListMap.contains [DecidableEq α] (m : ListMap α β) (a : α) : Bool :=
   m.find? a |>.isSome
 
@@ -103,11 +110,21 @@ def ListMap.keys (m : ListMap α β) : List α :=
   | [] => []
   | (a, _) :: m => a :: keys m
 
+theorem ListMap.keys_eq_map_fst (m : ListMap α β) : m.keys = m.map Prod.fst := by
+  induction m with
+  | nil => rfl
+  | cons p t ih => cases p; simp [ListMap.keys, ih]
+
 @[expose]
 def ListMap.values (m : ListMap α β) : List β :=
   match m with
   | [] => []
   | (_, a) :: m => a :: values m
+
+theorem ListMap.values_eq_map_snd (m : ListMap α β) : m.values = m.map Prod.snd := by
+  induction m with
+  | nil => rfl
+  | cons p t ih => cases p; simp [ListMap.values, ih]
 
 /-- Are the keys of `m1` and `m2` disjoint? -/
 def ListMap.disjointp [DecidableEq α] (m1 m2 : ListMap α β) : Prop :=
@@ -155,6 +172,7 @@ theorem ListMap.keys.length :
   (ListMap.keys ls).length = ls.length := by
   induction ls <;> simp [keys]
   case cons h t ih => assumption
+
 
 -------------------------------------------------------------------------------
 end

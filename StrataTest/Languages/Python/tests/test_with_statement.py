@@ -1,3 +1,4 @@
+# strata-args: --check-mode bugFinding --check-level full
 class Resource:
     def __init__(self, n: int):
         self.value : int = n

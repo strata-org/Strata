@@ -14,19 +14,21 @@ namespace Strata.Laurel
 
 def program := r"
 procedure earlyReturnCorrect(x: int) returns (r: int)
+  opaque
   ensures r >= 0
 {
-  if (x < 0) {
+  if x < 0 then {
     return -x
   };
   return x
 };
 
 procedure earlyReturnBuggy(x: int) returns (r: int)
+  opaque
   ensures r >= 0
 //        ^^^^^^ error: assertion does not hold
 {
-  if (x < 0) {
+  if x < 0 then {
     return x
   };
   return x

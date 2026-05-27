@@ -108,9 +108,15 @@ structure Instruction where
 
 instance : ToString Instruction where
   toString instr :=
-    let code_str := f!" {instr.code}"
+    let payload := match instr.type with
+      | .GOTO => match instr.target with
+        | some t => s!" {t}"
+        | none   => ""
+      | .LOCATION => s!" {instr.locationNum}"
+      | .ASSUME | .ASSERT => ""
+      | _ => s!" {Std.format instr.code}"
     let guard_str := if Expr.beq instr.guard Expr.true then "" else s!" [{Std.format instr.guard}]"
-    s!"{instr.type}{code_str}{guard_str}"
+    s!"{instr.type}{payload}{guard_str}"
 
 -------------------------------------------------------------------------------
 

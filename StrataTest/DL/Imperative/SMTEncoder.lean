@@ -17,7 +17,7 @@ The generated VCs are in terms of `ArithPrograms`' expressions. Given their
 simplicity, it is fairly straightforward to encode them to SMTLIB using Strata's
 SMT dialect. Strata's SMT dialect provides support for some core theories, like
 uninterpreted functions with equality, integers, quantifiers, etc., and some
-basic utilities, like a counterexample parser and file I/O function to write
+basic utilities, like a model parser and file I/O function to write
 SMTLIB files.
 -/
 
@@ -64,17 +64,18 @@ def toSMTTerms (E : Env) (es : List Arith.Expr) : Except Format (List Term) := d
 
 def ProofObligation.toSMTTerms (E : Env) (d : Imperative.ProofObligation Arith.PureExpr) :
   Except Format (List Term) := do
-  let assumptions := d.assumptions.flatten.map (fun a => a.snd)
+  let assumptions := d.assumptions.flatten.filterMap (fun
+    | .assumption _ e => some e
+    | _ => none)
   let assumptions_terms ← Arith.toSMTTerms E assumptions
   let obligation_pos_term ← Arith.toSMTTerm E d.obligation
   let obligation_term := Factory.not obligation_pos_term
   .ok (assumptions_terms ++ [obligation_term])
 
 def encodeArithToSMTTerms (ts : List Term) : SolverM (List String × EncoderState) := do
-  Solver.reset
   Solver.setLogic "ALL"
   let estate := EncoderState.init
-  let (termEncs, estate) ← ts.mapM (Strata.SMT.Encoder.encodeTerm False) |>.run estate
+  let (termEncs, estate) ← ts.mapM (Strata.SMT.Encoder.encodeTerm) |>.run estate
   for t in termEncs do
     Solver.assert t
   let ids := estate.ufs.values

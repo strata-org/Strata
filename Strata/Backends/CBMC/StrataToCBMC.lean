@@ -3,18 +3,22 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 import Lean.Data.Json
+import Lean.Parser.Types
 import Strata.DL.Util.Map
-import Strata.Languages.C_Simp.C_Simp
-import Strata.Languages.C_Simp.Verify
-import Strata.Backends.CBMC.Common
+public import Strata.Languages.C_Simp.C_Simp
+public import Strata.Languages.C_Simp.Verify
+public import Strata.Backends.CBMC.Common
 import Strata.Util.Tactics
 
 open Lean
 open Strata.CBMC
 
 namespace CSimp
+
+public section
 
 -- Our test program
 def SimpleTestEnv :=
@@ -224,7 +228,7 @@ def cmdToJson (e : Strata.C_Simp.Command) (loc: SourceLoc) : Except String Json 
       ]
     ])
   | .set ("return") _ _ => returnStmt loc.functionName
-  | .set name expr _ =>
+  | .set name (.det expr) _ =>
     let exprLoc : SourceLoc := { functionName := loc.functionName, lineNum := "6" }
     return (mkCodeBlock "expression" "6" loc.functionName (config := cfg) #[
       mkSideEffect "assign" "6" loc.functionName (mkIntType cfg) (config := cfg) #[
@@ -287,7 +291,7 @@ def cmdToJson (e : Strata.C_Simp.Command) (loc: SourceLoc) : Except String Json 
         ]
       ]
     ])
-  | .havoc _ _ | .cover _ _ _ => throw "cmdToJson: Unimplemented"
+  | .set _ .nondet _ | .cover _ _ _ => throw "cmdToJson: Unimplemented"
 
 mutual
 def blockToJson (b: Imperative.Block Strata.C_Simp.Expression Strata.C_Simp.Command) (loc: SourceLoc) : Except String Json := do
@@ -307,7 +311,7 @@ def blockToJson (b: Imperative.Block Strata.C_Simp.Expression Strata.C_Simp.Comm
  def stmtToJson (e : Strata.C_Simp.Statement) (loc: SourceLoc) : Except String Json :=
   match e with
   | .cmd cmd => cmdToJson cmd loc
-  | .ite cond thenb elseb _ => do
+  | .ite (.det cond) thenb elseb _ => do
     return Json.mkObj [
       ("id", "code"),
       ("namedSub", Json.mkObj [
@@ -399,5 +403,7 @@ def testSymbols (myFunc: Strata.C_Simp.Function) : Except String String := do
   m := m.insert s!"{myFunc.name}::1::z" zSymbol
 
   return toString (toJson m)
+
+end -- public section
 
 end CSimp

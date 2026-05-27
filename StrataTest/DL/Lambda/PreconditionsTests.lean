@@ -27,7 +27,7 @@ private def safeDivFunc : LFunc TestParams :=
     preconditions := [⟨.app () (.app () (.op () "!=" .none) (.fvar () "y" .none)) (.intConst () 0), ()⟩]
   }
 
-private def testFactory : Factory TestParams := #[safeDivFunc]
+private def testFactory : Factory TestParams := .ofArray #[safeDivFunc]
 
 -- Test: No obligations for call to function without preconditions
 private def noPrecondFunc : LFunc TestParams :=
@@ -36,7 +36,7 @@ private def noPrecondFunc : LFunc TestParams :=
 -- Expression: add(1, 2)
 /-- info: [] -/
 #guard_msgs in
-#eval collectWFObligations #[noPrecondFunc] esM[((~add #1) #2)]
+#eval collectWFObligations (.ofArray #[noPrecondFunc]) esM[((~add #1) #2)]
 
 -- safeDiv(a, y) produces y != 0
 /-- info: [WFObligation(safeDiv, (~!= y #0), ())] -/
@@ -52,7 +52,7 @@ private def noPrecondFunc : LFunc TestParams :=
 private def addFunc : LFunc TestParams :=
   { name := "add", inputs := [("x", .int), ("y", .int)], output := .int }
 
-private def factoryWithAdd : Factory TestParams := #[safeDivFunc, addFunc]
+private def factoryWithAdd : Factory TestParams := .ofArray #[safeDivFunc, addFunc]
 
 -- safeDiv(z, add(x, y)) produces add(x, y) != 0
 /-- info: [WFObligation(safeDiv, (~!= (~add x y) #0), ())] -/
@@ -73,7 +73,7 @@ private def factoryWithAdd : Factory TestParams := #[safeDivFunc, addFunc]
 -- The obligation should be: forall x :: x > 0 ==> x != 0
 
 private def factoryWithImplies : Factory TestParams :=
-  match (@IntBoolFactory TestParams _).addFactoryFunc safeDivFunc with
+  match (@IntBoolFactory TestParams _).tryPush safeDivFunc with
   | .ok f => f
   | _ => (@IntBoolFactory TestParams _ _)
 

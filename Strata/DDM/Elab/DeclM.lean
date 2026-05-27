@@ -5,11 +5,8 @@
 -/
 module
 
-public import Lean.Parser.Types
 
-public import Strata.DDM.AST
 public import Strata.DDM.Elab.LoadedDialects
-public import Strata.DDM.Parser
 import all Strata.DDM.Util.Lean
 import all Strata.DDM.Util.PrattParsingTables
 
@@ -173,6 +170,8 @@ structure DeclContext where
   loader : LoadedDialects
   /-- Flag indicating imports are missing (silences some errors). -/
   missingImport : Bool
+  /-- When false, type inference and unification are skipped during elaboration. -/
+  typecheck : Bool := true
 
 namespace DeclContext
 

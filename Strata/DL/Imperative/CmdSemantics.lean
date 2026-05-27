@@ -34,14 +34,17 @@ current state. This allows for two-state expressions and predicates.
 /--
 Evaluation relation of an Imperative command `Cmd`.
 Commands do not modify the evaluator - only `funcDecl` statements do.
+
+The Bool flag reports whether the command observed
+a failure (e.g., an assertion whose guard is false).  The `Bool` is `true`
+when the command signals a failure.
 -/
--- (FIXME) Change to a type class?
 @[expose] abbrev EvalCmdParam (P : PureExpr) (Cmd : Type) :=
-  SemanticEval P → SemanticStore P → Cmd → SemanticStore P → Prop
+  SemanticEval P → SemanticStore P → Cmd → SemanticStore P → Bool → Prop
 
 /-- ### Well-Formedness of `SemanticStore`s -/
 
-def isDefined {P : PureExpr} (σ : SemanticStore P) (vs : List P.Ident) : Prop :=
+@[expose] def isDefined {P : PureExpr} (σ : SemanticStore P) (vs : List P.Ident) : Prop :=
   ∀ v, v ∈ vs → (σ v).isSome = true
 
 def isNotDefined {P : PureExpr} (σ : SemanticStore P) (vs : List P.Ident) : Prop :=
@@ -233,10 +236,10 @@ def WellFormedSemanticEvalVal {P : PureExpr} [HasVal P]
   -- evaluator is identity on values
     (∀ v' σ, HasVal.value v' → δ σ v' = some v')
 
-def WellFormedSemanticEvalVar {P : PureExpr} [HasFvar P] (δ : SemanticEval P)
+@[expose] def WellFormedSemanticEvalVar {P : PureExpr} [HasFvar P] (δ : SemanticEval P)
     : Prop := (∀ e v σ, HasFvar.getFvar e = some v → δ σ e = σ v)
 
-def WellFormedSemanticEvalExprCongr {P : PureExpr} [HasVarsPure P P.Expr] (δ : SemanticEval P)
+@[expose] def WellFormedSemanticEvalExprCongr {P : PureExpr} [HasVarsPure P P.Expr] (δ : SemanticEval P)
     : Prop := ∀ e σ σ', (∀ x ∈ HasVarsPure.getVars e, σ x = σ' x) → δ σ e = δ σ' e
 
 /--
@@ -273,23 +276,30 @@ inductive InitState : SemanticStore P → P.Ident → P.Expr → SemanticStore P
 An inductively-defined operational semantics for `Cmd` that depends on variable
 lookup (`σ`) and expression evaluation (`δ`) functions.
 Commands do not modify the evaluator - only `funcDecl` statements do.
+
+The `Bool` output parameter is a *failure flag*: `true` when the command
+signals an assertion failure, `false` otherwise.  Only `eval_assert_fail`
+sets it to `true`; all other constructors report `false`.
+
+The failure flag is accumulated in `Env.hasFailure` by the statement
+semantics (`EvalStmt`).
 -/
 inductive EvalCmd [HasFvar P] [HasBool P] [HasNot P] :
-  SemanticEval P → SemanticStore P → Cmd P → SemanticStore P → Prop where
+  SemanticEval P → SemanticStore P → Cmd P → SemanticStore P → Bool → Prop where
   /-- If `e` evaluates to a value `v`, initialize `x` according to `InitState`. -/
   | eval_init :
     δ σ e = .some v →
     InitState P σ x v σ' →
     WellFormedSemanticEvalVar δ →
     ---
-    EvalCmd δ σ (.init x _ (some e) _) σ'
+    EvalCmd δ σ (.init x _ (.det e) _) σ' false
 
   /-- Initialize `x` with an unconstrained value (havoc semantics). -/
   | eval_init_unconstrained :
     InitState P σ x v σ' →
     WellFormedSemanticEvalVar δ →
     ---
-    EvalCmd δ σ (.init x _ none _) σ'
+    EvalCmd δ σ (.init x _ .nondet _) σ' false
 
   /-- If `e` evaluates to a value `v`, assign `x` according to `UpdateState`. -/
   | eval_set :
@@ -297,35 +307,43 @@ inductive EvalCmd [HasFvar P] [HasBool P] [HasNot P] :
     UpdateState P σ x v σ' →
     WellFormedSemanticEvalVar δ →
     ----
-    EvalCmd δ σ (.set x e _) σ'
+    EvalCmd δ σ (.set x (.det e) _) σ' false
 
   /-- Assign `x` an arbitrary value `v` according to `UpdateState`. -/
-  | eval_havoc :
+  | eval_set_nondet :
     UpdateState P σ x v σ' →
     WellFormedSemanticEvalVar δ →
     ----
-    EvalCmd δ σ (.havoc x _) σ'
+    EvalCmd δ σ (.set x .nondet _) σ' false
 
-  /-- If `e` evaluates to true in `σ`, evaluate to the same `σ`. This semantics
-  does not have a concept of an erroneous execution. -/
-  | eval_assert :
+  /-- Assert passes: `e` evaluates to true, no failure. The store is unchanged. -/
+  | eval_assert_pass :
     δ σ e = .some HasBool.tt →
     WellFormedSemanticEvalBool δ →
     ----
-    EvalCmd δ σ (.assert _ e _) σ
+    EvalCmd δ σ (.assert _ e _) σ false
+
+  /-- Assert fails: `e` does not evaluate to true, failure flag is set.
+      The store is unchanged — the command is an unconditional skip on the
+      store, but the failure flag records the violation. -/
+  | eval_assert_fail :
+    δ σ e = .some HasBool.ff →
+    WellFormedSemanticEvalBool δ →
+    ----
+    EvalCmd δ σ (.assert _ e _) σ true
 
   /-- If `e` evaluates to true in `σ`, evaluate to the same `σ`. -/
   | eval_assume :
     δ σ e = .some HasBool.tt →
     WellFormedSemanticEvalBool δ →
     ----
-    EvalCmd δ σ (.assume _ e _) σ
+    EvalCmd δ σ (.assume _ e _) σ false
 
   /-- A cover, when encountered, is essentially a skip. -/
   | eval_cover :
     WellFormedSemanticEvalBool δ →
     ----
-    EvalCmd δ σ (.cover _ e _) σ
+    EvalCmd δ σ (.cover _ e _) σ false
 
 end section
 

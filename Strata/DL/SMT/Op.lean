@@ -47,7 +47,7 @@ structure UF where
   id : String
   args : List TermVar
   out : TermType
-deriving Repr, DecidableEq, Inhabited
+deriving Repr, DecidableEq, Inhabited, Hashable
 
 def UF.lt (uf uf' : UF) : Bool :=
   uf.id < uf'.id ||
@@ -60,8 +60,6 @@ instance : LT UF where
 instance UF.decLt (x y : UF) : Decidable (x < y) :=
   if h : UF.lt x y then isTrue h else isFalse h
 
-instance : Hashable UF where
-  hash := λ a => hash s!"{repr a}"
 
 inductive Op.Core : Type where
   ---------- SMTLib core theory of equality with uninterpreted functions (`UF`) ----------

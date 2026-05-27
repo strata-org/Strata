@@ -27,67 +27,78 @@ composite Container {
   var value: int
 }
 
-procedure modifyContainerOpaque(c: Container)
-  ensures true // makes this procedure opaque. Maybe we should use explicit syntax
+procedure modifyContainerOpaque(c: Container) returns (b: bool)
+  opaque
   modifies c
 {
-  c#value := c#value + 1
+  c#value := c#value + 1;
+  true
 };
 
-procedure modifyContainerTransparant(c: Container)
+procedure caller()
+  opaque
 {
-  c#value := c#value + 1
-};
-
-procedure caller() {
   var c: Container := new Container;
   var d: Container := new Container;
   var x: int := d#value;
-  modifyContainerOpaque(c);
+  var b: bool := modifyContainerOpaque(c);
   assert x == d#value // pass
 };
 
-// This test-case does not work yet.
-// Because Core procedures never have transparent bodies
+// Commented out because
+// Transparent assignments are not supported yet
+// procedure modifyContainerTransparant(c: Container) returns (i: int)
+//{
+//  c#value := c#value + 1;
+//  7
+//};
 //procedure modifyContainerWithPermission1(c: Container, d: Container)
 //   ensures true
 //   modifies c
 //{
-//    modifyContainerTransparant(c);
+//    var i: int := modifyContainerTransparant(c);
 //}
 
-procedure modifyContainerWithoutPermission1(c: Container, d: Container)
-//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
-// the above error is because the body does not satisfy the empty modifies clause. error needs to be improved
-   ensures true
+procedure modifyContainerWildcard(c: Container) returns (i: int)
+  opaque
+  modifies *
 {
-    modifyContainerTransparant(c)
+  c#value := c#value + 1;
+  7
+};
+
+procedure modifyContainerWithoutPermission1(c: Container, d: Container)
+//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: modifies clause does not hold
+  opaque
+{
+    var i: int := modifyContainerWildcard(c)
 };
 
 procedure modifyContainerWithoutPermission2(c: Container, d: Container)
-//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
-// the above error is because the body does not satisfy the modifies clause. error needs to be improved
-  ensures true
+//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: modifies clause could not be proved
+  opaque
   modifies d
 {
     c#value := 2
 };
 
 procedure modifyContainerWithoutPermission3(c: Container, d: Container)
-//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
-// the above error is because the body does not satisfy the modifies clause. error needs to be improved
-  ensures true
+//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: modifies clause could not be proved
+  opaque
   modifies d
 {
-    modifyContainerTransparant(c)
+    var i: bool := modifyContainerOpaque(c)
 };
 
 procedure multipleModifiesClauses(c: Container, d: Container, e: Container)
+  opaque
   modifies c
   modifies d
 ;
 
-procedure multipleModifiesClausesCaller() {
+procedure multipleModifiesClausesCaller()
+  opaque
+{
   var c: Container := new Container;
   var d: Container := new Container;
   var e: Container := new Container;
@@ -97,10 +108,51 @@ procedure multipleModifiesClausesCaller() {
 };
 
 procedure newObjectDoNotCountForModifies()
-  ensures true
+  opaque
 {
   var c: Container := new Container;
   c#value := 1
+};
+
+procedure modifiesWildcardBodiless(c: Container, d: Container)
+  opaque
+  modifies *;
+
+procedure modifiesWildcardBodilessCaller()
+  opaque
+  modifies *
+{
+  var c: Container := new Container;
+  var d: Container := new Container;
+  var x: int := d#value;
+  modifiesWildcardBodiless(c, d);
+  assert x == d#value // this should fail because modifies * means anything can change
+//^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+};
+
+procedure modifiesWildcardWithBody(c: Container, d: Container)
+  opaque
+  modifies *
+{
+  c#value := 2;
+  d#value := 3
+};
+
+procedure modifiesWildcardAndSpecific(c: Container, d: Container)
+  opaque
+  modifies c
+  modifies *;
+
+procedure modifiesWildcardAndSpecificCaller()
+  opaque
+  modifies *
+{
+  var c: Container := new Container;
+  var d: Container := new Container;
+  var x: int := d#value;
+  modifiesWildcardAndSpecific(c, d);
+  assert x == d#value // fails because modifies * subsumes modifies c
+//^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 "
 

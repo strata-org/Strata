@@ -51,17 +51,17 @@ expression. Each `if-then` (no else) guard wraps as
 `if cond then lastStmtToExpr(body) else acc`; other statements produce
 `Block [stmt, acc]`.
 -/
-def stmtsToExpr (stmts : List StmtExprMd) (acc : StmtExprMd) (blockMd : MetaData)
+def stmtsToExpr (stmts : List StmtExprMd) (acc : StmtExprMd)
     : StmtExprMd :=
   match stmts with
   | [] => acc
   | s :: rest =>
-    let acc' := stmtsToExpr rest acc blockMd
+    let acc' := stmtsToExpr rest acc
     match s with
-    | ⟨.IfThenElse cond thenBr none, smd⟩ =>
-      ⟨.IfThenElse cond (lastStmtToExpr thenBr) (some acc'), smd⟩
+    | ⟨.IfThenElse cond thenBr none, ssrc⟩ =>
+      ⟨.IfThenElse cond (lastStmtToExpr thenBr) (some acc'), ssrc⟩
     | _ =>
-      ⟨.Block [s, acc'] none, blockMd⟩
+      { val := .Block [s, acc'] none, source := none }
   termination_by (sizeOf stmts, 1)
 
 /--
@@ -74,7 +74,7 @@ Convert the last statement of a block into an expression.
 def lastStmtToExpr (stmt : StmtExprMd) : StmtExprMd :=
   match stmt with
   | ⟨.Return (some val), _⟩ => val
-  | ⟨.Block stmts _, md⟩ =>
+  | ⟨.Block stmts _, _⟩ =>
     match h_last : stmts.getLast? with
     | some last =>
       have := List.mem_of_getLast? h_last
@@ -82,10 +82,10 @@ def lastStmtToExpr (stmt : StmtExprMd) : StmtExprMd :=
       let dropped := stmts.dropLast
       have h : sizeOf stmts.dropLast < sizeOf stmts :=
         List.sizeOf_dropLast_lt (by intro h; simp [h] at h_last)
-      stmtsToExpr dropped lastExpr md
+      stmtsToExpr dropped lastExpr
     | none => stmt
-  | ⟨.IfThenElse cond thenBr (some elseBr), md⟩ =>
-    ⟨.IfThenElse cond (lastStmtToExpr thenBr) (some (lastStmtToExpr elseBr)), md⟩
+  | ⟨.IfThenElse cond thenBr (some elseBr), source⟩ =>
+    ⟨.IfThenElse cond (lastStmtToExpr thenBr) (some (lastStmtToExpr elseBr)), source⟩
   | _ => stmt
   termination_by (sizeOf stmt, 0)
   decreasing_by

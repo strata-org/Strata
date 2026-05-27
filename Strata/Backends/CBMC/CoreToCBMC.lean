@@ -3,26 +3,33 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
+
+public import Strata.Backends.CBMC.Common
+public import Strata.Languages.Core.Procedure
 
 import Lean.Data.Json
+import Lean.Parser.Types
+import Strata.DDM.Integration.Lean.HashCommands
 import Strata.Languages.Core.Env
 import Strata.Languages.Core.DDMTransform.Grammar
 import Strata.Languages.Core.DDMTransform.Translate
 import Strata.DL.Util.Map
 import Strata.Languages.Core.Core
-import Strata.Backends.CBMC.Common
 import Strata.Util.Tactics
+
+public section
 
 open Lean
 open Strata.CBMC
 
 namespace Core
 -- Our test program
-def SimpleTestEnv :=
+private def SimpleTestEnv :=
 #strata
 program Core;
 
-procedure simpleTest(x : int, y : int) returns (ret : int)
+procedure simpleTest(x : int, y : int, out ret : int)
 spec {
   requires [x_positive]:    (x > 0);
 }
@@ -36,9 +43,9 @@ spec {
 #end
 
 open Core in
-def SimpleTestEnvAST := Strata.TransM.run Inhabited.default (Strata.translateProgram (SimpleTestEnv))
+private def SimpleTestEnvAST := Strata.TransM.run Inhabited.default (Strata.translateProgram (SimpleTestEnv))
 
-def myProc : Except String Core.Procedure := do
+private def myProc : Except String Core.Procedure := do
   match SimpleTestEnvAST.fst.decls.head!.getProc? with
   | .some p => return p
   | .none => throw "Expected procedure"
@@ -83,7 +90,7 @@ def exprToJson (I : Lambda.LExprParams) [IdentToStr (Lambda.Identifier I.IDMeta)
 
 def cmdToJson (e : Core.Command) (loc: SourceLoc) : Except String Json :=
   match e with
-  | .call _ _ _ _ => throw "cmdToJson: call not supported"
+  | .call _ _ _ => throw "cmdToJson: call not supported"
   | .cmd c =>
     match c with
     | .init name _ _ _ =>
@@ -99,7 +106,7 @@ def cmdToJson (e : Core.Command) (loc: SourceLoc) : Except String Json :=
       ])
     | .set ("ret") _ _ =>
       returnStmt loc.functionName
-    | .set name expr _ => do
+    | .set name (.det expr) _ => do
       let exprLoc : SourceLoc := { functionName := loc.functionName, lineNum := "6" }
       return (mkCodeBlock "expression" "6" loc.functionName #[
         mkSideEffect "assign" "6" loc.functionName mkIntType #[
@@ -165,7 +172,7 @@ def cmdToJson (e : Core.Command) (loc: SourceLoc) : Except String Json :=
     | .cover _ _ md =>
        throw s!"{Imperative.MetaData.formatFileRangeD md}\
                   cover unimplemented"
-    | .havoc _ md =>
+    | .set _ .nondet md =>
        throw s!"{Imperative.MetaData.formatFileRangeD md}\
                   havoc unimplemented"
 
@@ -188,7 +195,7 @@ def stmtToJson {P : Imperative.PureExpr} (I : Lambda.LExprParams) [IdentToStr (L
   (e : Imperative.Stmt P Command) (loc: SourceLoc) : Except String Json :=
   match e with
   | .cmd cmd => cmdToJson cmd loc
-  | .ite cond thenb elseb _ => do
+  | .ite (.det cond) thenb elseb _ => do
     let converted_cond : Lambda.LExpr I.mono := @HasLExpr.expr_eq P (I:=I) _ ▸ cond
     return Json.mkObj [
       ("id", "code"),

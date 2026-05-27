@@ -20,20 +20,7 @@ import all Strata.DL.Lambda.FactoryWF
 -/
 
 namespace Core
-open Lambda
 
-public section
+public theorem Factory_wf : Lambda.FactoryWF Factory := by simp [Factory]
 
-theorem Factory_wf :
-    FactoryWF Factory := by
-  constructor
-  · -- name_nodup: follows from WFFactory.name_nodup
-    simp only [Factory, WFLFactory.toFactory, Array.toList_map, List.map_map]
-    exact WFFactory.name_nodup
-  · intro lf hlf
-    simp only [Factory, WFLFactory.toFactory] at hlf
-    rw [Array.mem_map] at hlf
-    obtain ⟨wflf, _, rfl⟩ := hlf
-    exact wflf.wf
-end
 end Core

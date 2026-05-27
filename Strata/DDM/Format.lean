@@ -5,7 +5,6 @@
 -/
 module
 
-import Std.Data.HashSet
 public import Strata.DDM.AST
 import all Strata.DDM.Util.Format
 import all Strata.DDM.Util.Nat
@@ -30,9 +29,12 @@ Check if a character is valid for continuing a regular identifier.
 Includes @ and $ which are valid in SMT-LIB 2.6 simple symbols and
 used by the encoder for disambiguated names (e.g. x@1) and generated
 names (e.g. $__bv0).
+Note: `'` (apostrophe) is intentionally excluded. Although SMT-LIB 2.6 allows
+it in simple symbols, both cvc5 and Z3 reject it as an unquoted character.
+Names containing `'` (e.g. Lean's `v'`) will be pipe-quoted instead.
 -/
 private def isIdContinue (c : Char) : Bool :=
-  c.isAlphanum || c == '_' || c == '\'' || c == '.' || c == '?' || c == '!' || c == '@' || c == '$'
+  c.isAlphanum || c == '_' || c == '.' || c == '?' || c == '!' || c == '@' || c == '$'
 
 /--
 Check if a string needs pipe delimiters when formatted as an identifier.
@@ -371,7 +373,28 @@ private partial def ExprF.mformatM (e : ExprF α) (rargs : Array (ArgF α)  := #
         let args := rargs.reverse
         let bindings := op.argDecls
         let .isTrue bsize := decEq args.size bindings.size
-              | return panic! "Mismatch betweeen binding and arg size"
+              | do
+                -- When a function is applied to more arguments than it declares
+                -- (e.g. a function returning a function type via funMacro),
+                -- format it with its declared args, then apply the remaining
+                -- args with call syntax.
+                let declArgCount := bindings.size
+                if rargs.size > declArgCount then
+                  let fnArgs := args.take declArgCount
+                  let extraArgs := args.drop declArgCount
+                  let .isTrue bsize' := decEq fnArgs.size bindings.size
+                        | return panic! "Mismatch betweeen binding and arg size" -- nopanic:ok
+                  let argResults ← do
+                        match formatArguments (← read) (← get) bindings ⟨fnArgs, bsize'⟩ with
+                        | .ok r => pure r
+                        | .error e => return panic! e -- nopanic:ok
+                  let fnFmt := ppOp (← read).opts op.syntaxDef (Prod.fst <$> argResults)
+                  let extraFmts := (← extraArgs.mapM (·.mformatM)) |>.map (·.format)
+                  let extraFmts := Format.joinSep extraFmts.toList f!", "
+                  return .mk f!"({fnFmt.format})({extraFmts})" callPrec
+                else
+                  -- Fewer args than expected: format as name(args)
+                  ppArgs f.fullName
         let argResults ← do
               match formatArguments (← read) (← get) bindings ⟨args, bsize⟩ with
               | .ok r => pure r
@@ -456,21 +479,6 @@ private partial def formatArguments (c : FormatContext) (initState : FormatState
                 | some ⟨alvl, aisLt⟩  =>
                   have _ : alvl < a.size := by simp at aisLt; omega
                   pure a[alvl].snd
-          -- If @[scopeSelf] is present, insert the function name before the param bindings.
-          -- scopeSelf subsumes @[scope]: we get params from argsLevel directly.
-          let s ← do
-                match ← argDecls.argScopeSelfLevel ⟨lvl, h⟩ with
-                | none => pure s
-                | some (⟨nameLvl, nameIsLt⟩, ⟨argsLvl, argsIsLt⟩, _) =>
-                  have _ : nameLvl < a.size := by simp at nameIsLt; omega
-                  have _ : argsLvl < a.size := by simp at argsIsLt; omega
-                  match args[nameLvl] with
-                  | .ident _ name =>
-                    let paramBindings := a[argsLvl].snd.bindings
-                    let scopeStart := initState.bindings.size
-                    let paramOnly := paramBindings.extract scopeStart paramBindings.size
-                    pure { s with bindings := s.bindings ++ #[name] ++ paramOnly }
-                  | _ => pure s
           aux (a.push (args[lvl].mformatM c s))
         else
           .ok a

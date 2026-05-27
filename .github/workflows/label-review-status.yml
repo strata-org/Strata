@@ -1,0 +1,57 @@
+name: Label review status
+
+on:
+  pull_request_target:
+    types: [opened, ready_for_review, synchronize, converted_to_draft]
+  pull_request_review:
+    types: [submitted]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  update-review-labels:
+    runs-on: ubuntu-slim
+    steps:
+      - name: Update review status labels
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          PR_JSON=$(gh pr view "$PR_NUMBER" --json isDraft,reviews)
+          IS_DRAFT=$(echo "$PR_JSON" | jq -r '.isDraft')
+
+          APPROVALS=$(echo "$PR_JSON" | jq '
+            [.reviews
+             | map(select(.author.login != null))
+             | group_by(.author.login)
+             | .[]
+             | sort_by(.submittedAt)
+             | last
+             | select(.state == "APPROVED")]
+            | length')
+
+          echo "is_draft=$IS_DRAFT approvals=$APPROVALS"
+
+          add_label() {
+            gh pr edit "$PR_NUMBER" --add-label "$1" 2>/dev/null || true
+          }
+          remove_label() {
+            gh pr edit "$PR_NUMBER" --remove-label "$1" 2>/dev/null || true
+          }
+
+          if [ "$IS_DRAFT" = "true" ]; then
+            remove_label "Waiting-For-Review"
+            remove_label "Has 1 approval"
+          elif [ "$APPROVALS" -eq 0 ]; then
+            add_label "Waiting-For-Review"
+            remove_label "Has 1 approval"
+          elif [ "$APPROVALS" -eq 1 ]; then
+            remove_label "Waiting-For-Review"
+            add_label "Has 1 approval"
+          else
+            remove_label "Waiting-For-Review"
+            remove_label "Has 1 approval"
+          fi

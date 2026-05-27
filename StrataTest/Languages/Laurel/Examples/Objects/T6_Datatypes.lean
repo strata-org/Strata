@@ -19,13 +19,17 @@ datatype IntList {
 }
 
 // Construction and destructor access
-procedure testConstruction() {
+procedure testConstruction()
+  opaque
+{
   var xs: IntList := Cons(42, Nil());
   assert IntList..head(xs) == 42
 };
 
 // Constructor testing
-procedure testConstructorTest() {
+procedure testConstructorTest()
+  opaque
+{
   var xs: IntList := Cons(1, Nil());
   assert IntList..isCons(xs);
   assert !IntList..isNil(xs);
@@ -36,7 +40,9 @@ procedure testConstructorTest() {
 };
 
 // Nested construction and deconstruction
-procedure testNested() {
+procedure testNested()
+  opaque
+{
   var xs: IntList := Cons(1, Cons(2, Nil()));
   assert IntList..isCons(xs);
   assert IntList..head(xs) == 1;
@@ -45,7 +51,9 @@ procedure testNested() {
   assert IntList..isNil(IntList..tail(IntList..tail(xs)))
 };
 
-procedure unsafeDestructor() {
+procedure unsafeDestructor()
+  opaque
+{
   var nil: IntList := Nil();
   var noError: int := IntList..head!(nil);
   var error: int := IntList..head(nil)
@@ -59,14 +67,18 @@ function listHead(xs: IntList): int
   IntList..head(xs)
 };
 
-procedure testFunction() {
+procedure testFunction()
+  opaque
+{
   var xs: IntList := Cons(10, Nil());
   var h: int := listHead(xs);
   assert h == 10
 };
 
 // Failing assertion
-procedure testFailing() {
+procedure testFailing()
+  opaque
+{
   var xs: IntList := Nil();
   assert IntList..isCons(xs)
 //^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
@@ -82,7 +94,9 @@ datatype OddList {
   OCons(head: int, tail: EvenList)
 }
 
-procedure testMutualConstruction() {
+procedure testMutualConstruction()
+  opaque
+{
   var even: EvenList := ENil();
   assert EvenList..isENil(even);
   var odd: OddList := OCons(1, ENil());
@@ -93,8 +107,8 @@ procedure testMutualConstruction() {
   assert EvenList..head(even2) == 2
 };
 
-datatype RootBeforeLeaf { RootBeforeLeaf(leaf: LeafAfterRoot) }
-datatype LeafAfterRoot { LeafAfterRoot }
+datatype RootBeforeLeaf { RootBeforeLeafC(leaf: LeafAfterRoot) }
+datatype LeafAfterRoot { LeafAfterRootC }
 "
 
 #guard_msgs (error, drop all) in

@@ -4,7 +4,6 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
-public import Std.Data.HashMap.Basic
 public import Strata.DDM.Parser
 public import Strata.DDM.Elab.SyntaxElab
 
@@ -41,6 +40,7 @@ structure LoadedDialects where
   syntaxElabMap : SyntaxElabMap
 deriving Inhabited
 
+@[reducible]
 def initParsers : Parser.ParsingContext where
   fixedParsers := .ofList [
     (q`Init.Ident, Parser.identifier),

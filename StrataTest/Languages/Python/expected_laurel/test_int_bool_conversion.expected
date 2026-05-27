@@ -1,0 +1,6 @@
+test_int_bool_conversion.py(4, 8): ✅ pass - assert(65)
+test_int_bool_conversion.py(2, 4): ✅ pass - assert(36)
+test_int_bool_conversion.py(6, 8): ✅ pass - assert(94)
+test_int_bool_conversion.py(7, 4): ✅ pass - zero is falsy
+DETAIL: 4 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success

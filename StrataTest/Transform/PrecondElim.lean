@@ -28,7 +28,7 @@ def translate (t : Strata.Program) : Core.Program :=
 
 def transformProgram (t : Strata.Program) : Core.Program :=
   let program := translate t
-  match Core.Transform.run program (PrecondElim.precondElim · Core.Factory) with
+  match Core.Transform.run program PrecondElim.precondElim { Core.Transform.CoreTransformState.emp with factory := some Core.Factory } with
   | .error e => panic! s!"PrecondElim failed: {e}"
   | .ok (_changed, program) =>
     match Core.typeCheck Core.VerifyOptions.default program with
@@ -41,7 +41,7 @@ def divInBodyPgm :=
 #strata
 program Core;
 
-procedure test(a : int) returns ()
+procedure test(a : int)
 {
   var z : int := 10 / a;
 };
@@ -52,11 +52,13 @@ procedure test(a : int) returns ()
 info: [Strata.Core] Type checking succeeded.
 
 ---
-info: procedure test (a : int) returns ()
+info: program Core;
+
+procedure test (a : int)
 {
   assert [init_calls_Int.SafeDiv_0]: !(a == 0);
   var z : int := 10 / a;
-  };
+};
 -/
 #guard_msgs in
 #eval (Std.format (transformProgram divInBodyPgm))
@@ -81,19 +83,21 @@ function foo(x : int, y : int) : int
 info: [Strata.Core] Type checking succeeded.
 
 ---
-info: procedure safeMod$$wf (x : int, y : int) returns ()
+info: program Core;
+
+procedure safeMod$$wf (x : int, y : int)
 {
   assume [precond_safeMod_0]: !(y == 0);
   assert [safeMod_body_calls_Int.SafeMod_0]: !(y == 0);
-  };
+};
 function safeMod (x : int, y : int) : int {
   x % y
 }
-procedure foo$$wf (x : int, y : int) returns ()
+procedure foo$$wf (x : int, y : int)
 {
   assert [foo_precond_calls_safeMod_0]: !(y == 0);
   assume [precond_foo_0]: safeMod(x, y) > 0;
-  };
+};
 function foo (x : int, y : int) : int {
   x + y
 }
@@ -109,7 +113,7 @@ program Core;
 
 datatype List { Nil(), Cons(head : int, tail : List) };
 
-procedure test(xs : List) returns ()
+procedure test(xs : List)
 spec {
   requires List..isCons(xs);
   requires List..head(xs) > 0;
@@ -123,22 +127,25 @@ spec {
 info: [Strata.Core] Type checking succeeded.
 
 ---
-info: datatype List {(
-  (Nil())),
-  (Cons(head : int, tail : List))
+info: program Core;
+
+datatype List {
+  Nil(),
+  Cons(head : int, tail : List)
 };
-procedure test$$wf (xs : List) returns ()
+procedure test$$wf (xs : List)
 {
   assume [test_requires_0]: List..isCons(xs);
   assert [test_pre_test_requires_1_calls_List..head_0]: List..isCons(xs);
   assume [test_requires_1]: List..head(xs) > 0;
-  };
-procedure test (xs : List) returns ()
+};
+procedure test (xs : List)
 spec {
   requires [test_requires_0]: List..isCons(xs);
   requires [test_requires_1]: List..head(xs) > 0;
   } {
-  };
+  ⏎
+};
 -/
 #guard_msgs in
 #eval (Std.format (transformProgram procContractADTPgm))
@@ -151,7 +158,7 @@ program Core;
 
 datatype List { Nil(), Cons(head : int, tail : List) };
 
-procedure test(xs : List) returns ()
+procedure test(xs : List)
 spec {
   requires List..isCons(xs);
   ensures List..head(xs) > 0;
@@ -166,11 +173,13 @@ spec {
 info: [Strata.Core] Type checking succeeded.
 
 ---
-info: datatype List {(
-  (Nil())),
-  (Cons(head : int, tail : List))
+info: program Core;
+
+datatype List {
+  Nil(),
+  Cons(head : int, tail : List)
 };
-procedure test$$wf (xs : List) returns ()
+procedure test$$wf (xs : List)
 {
   assume [test_requires_0]: List..isCons(xs);
   assert [test_post_test_ensures_1_calls_List..head_0]: List..isCons(xs);
@@ -178,14 +187,15 @@ procedure test$$wf (xs : List) returns ()
   assert [test_post_test_ensures_2_calls_List..tail_0]: List..isCons(xs);
   assert [test_post_test_ensures_2_calls_List..head_1]: List..isCons(List..tail(xs));
   assume [test_ensures_2]: List..head(List..tail(xs)) > 0;
-  };
-procedure test (xs : List) returns ()
+};
+procedure test (xs : List)
 spec {
   requires [test_requires_0]: List..isCons(xs);
   ensures [test_ensures_1]: List..head(xs) > 0;
   ensures [test_ensures_2]: List..head(List..tail(xs)) > 0;
   } {
-  };
+  ⏎
+};
 -/
 #guard_msgs in
 #eval (Std.format (transformProgram dependentRequiresPgm))
@@ -196,7 +206,7 @@ def funcDeclPrecondPgm :=
 #strata
 program Core;
 
-procedure test() returns ()
+procedure test()
 {
   var x : int := 1;
   function safeDiv(y : int) : int
@@ -211,7 +221,9 @@ procedure test() returns ()
 info: [Strata.Core] Type checking succeeded.
 
 ---
-info: procedure test () returns ()
+info: program Core;
+
+procedure test ()
 {
   var x : int := 1;
   safeDiv$$wf: {
@@ -219,11 +231,11 @@ info: procedure test () returns ()
     assert [safeDiv_precond_calls_Int.SafeDiv_0]: !(x == 0);
     assume [precond_safeDiv_0]: y / x > 0;
     assert [safeDiv_body_calls_Int.SafeDiv_0]: !(x == 0);
-    }
+  }
   function safeDiv (y : int) : int { y / x }
   assert [init_calls_safeDiv_0]: 5 / x > 0;
   var z : int := safeDiv(5);
-  };
+};
 -/
 #guard_msgs in
 #eval (Std.format (transformProgram funcDeclPrecondPgm))
@@ -234,7 +246,7 @@ def inlineFuncInIteSimplePgm :=
 #strata
 program Core;
 
-procedure test(cond : bool, x : int, y : int) returns ()
+procedure test(cond : bool, x : int, y : int)
 {
   if (cond) {
     function f(a : int) : int
@@ -255,28 +267,30 @@ procedure test(cond : bool, x : int, y : int) returns ()
 info: [Strata.Core] Type checking succeeded.
 
 ---
-info: procedure test (cond : bool, x : int, y : int) returns ()
+info: program Core;
+
+procedure test (cond : bool, x : int, y : int)
 {
   if (cond) {
     f$$wf: {
       var a : int;
       assume [precond_f_0]: !(x == 0);
       assert [f_body_calls_Int.SafeDiv_0]: !(x == 0);
-      }
+    }
     function f (a : int) : int { a / x }
     assert [init_calls_f_0]: !(x == 0);
     var r1 : int := f(10);
-    } else {
+  } else {
     f$$wf: {
       var a : int;
       assume [precond_f_0]: !(y == 0);
       assert [f_body_calls_Int.SafeDiv_0]: !(y == 0);
-      }
+    }
     function f (a : int) : int { a / y }
     assert [init_calls_f_0]: !(y == 0);
     var r2 : int := f(20);
-    }
-  };
+  }
+};
 -/
 #guard_msgs in
 #eval (Std.format (transformProgram inlineFuncInIteSimplePgm))
@@ -287,7 +301,7 @@ def funcInMultipleProcsPgm :=
 #strata
 program Core;
 
-procedure proc1(x : int) returns ()
+procedure proc1(x : int)
 {
   function f(a : int) : int
     requires x != 0;
@@ -295,7 +309,7 @@ procedure proc1(x : int) returns ()
   var r : int := f(10);
 };
 
-procedure proc2(y : int) returns ()
+procedure proc2(y : int)
 {
   function f(a : int) : int
     requires y != 0;
@@ -309,28 +323,30 @@ procedure proc2(y : int) returns ()
 info: [Strata.Core] Type checking succeeded.
 
 ---
-info: procedure proc1 (x : int) returns ()
+info: program Core;
+
+procedure proc1 (x : int)
 {
   f$$wf: {
     var a : int;
     assume [precond_f_0]: !(x == 0);
     assert [f_body_calls_Int.SafeDiv_0]: !(x == 0);
-    }
+  }
   function f (a : int) : int { a / x }
   assert [init_calls_f_0]: !(x == 0);
   var r : int := f(10);
-  };
-procedure proc2 (y : int) returns ()
+};
+procedure proc2 (y : int)
 {
   f$$wf: {
     var a : int;
     assume [precond_f_0]: !(y == 0);
     assert [f_body_calls_Int.SafeDiv_0]: !(y == 0);
-    }
+  }
   function f (a : int) : int { a / y }
   assert [init_calls_f_0]: !(y == 0);
   var r : int := f(20);
-  };
+};
 -/
 #guard_msgs in
 #eval (Std.format (transformProgram funcInMultipleProcsPgm))
@@ -341,7 +357,7 @@ def iteCondPrecondPgm :=
 #strata
 program Core;
 
-procedure test(x : int, y : int) returns ()
+procedure test(x : int, y : int)
 {
   if (x / y > 0) {
     var z : int := 1;
@@ -355,15 +371,17 @@ procedure test(x : int, y : int) returns ()
 info: [Strata.Core] Type checking succeeded.
 
 ---
-info: procedure test (x : int, y : int) returns ()
+info: program Core;
+
+procedure test (x : int, y : int)
 {
   assert [ite_cond_calls_Int.SafeDiv_0]: !(y == 0);
   if (x / y > 0) {
     var z : int := 1;
-    } else {
+  } else {
     var z : int := 2;
-    }
-  };
+  }
+};
 -/
 #guard_msgs in
 #eval (Std.format (transformProgram iteCondPrecondPgm))
@@ -373,9 +391,7 @@ info: procedure test (x : int, y : int) returns ()
 def loopGuardPrecondPgm :=
 #strata
 program Core;
-var g : int;
-procedure test(y : int) returns ()
-spec { modifies g; }
+procedure test(inout g : int, y : int)
 {
   while (y / (y / g) > 0) { g := g - 1; }
 };
@@ -385,11 +401,10 @@ spec { modifies g; }
 info: [Strata.Core] Type checking succeeded.
 
 ---
-info: var g : int;
-procedure test (y : int) returns ()
-spec {
-  modifies g;
-  } {
+info: program Core;
+
+procedure test (inout g : int, y : int)
+{
   assert [loop_guard_calls_Int.SafeDiv_0]: !(g == 0);
   assert [loop_guard_calls_Int.SafeDiv_1]: !(y / g == 0);
   while (y / (y / g) > 0)
@@ -397,10 +412,86 @@ spec {
     g := g - 1;
     assert [loop_guard_end_calls_Int.SafeDiv_0]: !(g == 0);
     assert [loop_guard_end_calls_Int.SafeDiv_1]: !(y / g == 0);
-    }
-  };
+  }
+};
 -/
 #guard_msgs in
 #eval (Std.format (transformProgram loopGuardPrecondPgm))
+
+/-! ### Test 10: `collectPrecondAsserts` tags Sequence bounds obligations with `outOfBoundsAccess`
+
+Exercises the full `collectPrecondAsserts` path — the code called by
+`transformStmt` / `mkContractWFProc` / `mkFuncWFProc` — and inspects the
+metadata on the generated assert. Mirrors `OverflowCheckTest.lean`. -/
+
+section SeqBoundsObligations
+
+open Strata Core Lambda Core.PrecondElim Imperative
+
+/-- Shared fvar fixtures so each per-op case below is a one-liner. -/
+private def fxS : Core.Expression.Expr := .fvar () ⟨"s", ()⟩ (some (Core.seqTy .int))
+private def fxI : Core.Expression.Expr := .fvar () ⟨"i", ()⟩ (some .int)
+private def fxV : Core.Expression.Expr := .fvar () ⟨"v", ()⟩ (some .int)
+private def fxN : Core.Expression.Expr := .fvar () ⟨"n", ()⟩ (some .int)
+private def fxJ : Core.Expression.Expr := .fvar () ⟨"j", ()⟩ (some .int)
+
+/-- Check that `collectPrecondAsserts` produces exactly `expectedCount`
+    obligations from `expr`, each tagged with `outOfBoundsAccess`. -/
+private def assertOutOfBoundsObligations
+    (expr : Core.Expression.Expr) (expectedCount : Nat) : IO Unit := do
+  let stmts := collectPrecondAsserts Core.Factory expr "test" #[]
+  assert! stmts.length == expectedCount
+  for s in stmts do
+    let md : MetaData Core.Expression := match s with
+      | Statement.assert _ _ md => md | _ => #[]
+    assert! md.getPropertyType == some MetaData.outOfBoundsAccess
+
+-- Sequence.select / update / take / drop each emit one out-of-bounds obligation.
+#eval assertOutOfBoundsObligations (LExpr.mkApp () Core.seqSelectOp [fxS, fxI]) 1
+#eval assertOutOfBoundsObligations (LExpr.mkApp () Core.seqUpdateOp [fxS, fxI, fxV]) 1
+#eval assertOutOfBoundsObligations (LExpr.mkApp () Core.seqTakeOp   [fxS, fxN]) 1
+#eval assertOutOfBoundsObligations (LExpr.mkApp () Core.seqDropOp   [fxS, fxN]) 1
+
+-- Nested: `Sequence.select(Sequence.update(s, i, v), j)` emits two
+-- obligations (one per partial call), both tagged `outOfBoundsAccess`.
+#eval assertOutOfBoundsObligations
+  (LExpr.mkApp () Core.seqSelectOp [LExpr.mkApp () Core.seqUpdateOp [fxS, fxI, fxV], fxJ]) 2
+
+-- Sequence.length is total: no precondition obligations generated.
+#eval do
+  let stmts := collectPrecondAsserts Core.Factory
+    (LExpr.mkApp () Core.seqLengthOp [fxS]) "test" #[]
+  assert! stmts.isEmpty
+
+/-! #### Test 10a: Pretty-printed obligation shape per partial op
+
+Catches regressions that preserve count and metadata tag but corrupt the
+obligation body (e.g. swapping `.Lt` for `.Le` at a call site, changing
+the bound variable name, or swapping the lower/upper bound inside
+`mkSeqBoundsPrecond`). -/
+
+private def printFirstObligation (expr : Core.Expression.Expr) : IO Unit := do
+  let stmts := collectPrecondAsserts Core.Factory expr "test" #[]
+  match stmts.head? with
+  | some (Statement.assert _ e _) => IO.println s!"{Std.format e}"
+  | _ => IO.println "<unexpected>"
+
+/-- info: 0 <= i && i < Sequence.length(s) -/
+#guard_msgs in
+#eval printFirstObligation (LExpr.mkApp () Core.seqSelectOp [fxS, fxI])
+
+/-- info: 0 <= i && i < Sequence.length(s) -/
+#guard_msgs in
+#eval printFirstObligation (LExpr.mkApp () Core.seqUpdateOp [fxS, fxI, fxV])
+
+/-- info: 0 <= n && n <= Sequence.length(s) -/
+#guard_msgs in
+#eval printFirstObligation (LExpr.mkApp () Core.seqTakeOp [fxS, fxN])
+
+/-- info: 0 <= n && n <= Sequence.length(s) -/
+#guard_msgs in
+#eval printFirstObligation (LExpr.mkApp () Core.seqDropOp [fxS, fxN])
+
+end SeqBoundsObligations
 
 end PrecondElimTests

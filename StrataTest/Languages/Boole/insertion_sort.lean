@@ -21,6 +21,7 @@ procedure InsertionSort() returns ()
 spec
 {
   modifies A;
+  requires 0 <= n;
   requires n <= 1;
   ensures ∀ i:int, j:int . 0 <= i && i <= j && j < n ==> A[i] <= A[j];
 }
@@ -30,7 +31,7 @@ spec
 
   // for-loop syntax + array assignment syntax + quantifier syntax
   for i : int := 1 to (n - 1) by 1
-    invariant 1 <= i && i <= n
+    invariant 1 <= i && i <= n + 1
     invariant ∀ p:int, q:int . 0 <= p && p <= q && q < i ==> A[p] <= A[q]
   {
     key := A[i];
@@ -49,7 +50,44 @@ spec
 };
 #end
 
-#eval Strata.Boole.verify "cvc5" insertionSortPgm
+/-- info:
+Obligation: entry_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: entry_invariant_0_1
+Property: assert
+Result: ✅ pass
+
+Obligation: entry_invariant_1_0
+Property: assert
+Result: ✅ pass
+
+Obligation: entry_invariant_1_1
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_1_0
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_1_1
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_1
+Property: assert
+Result: ✅ pass
+
+Obligation: InsertionSort_ensures_2_337
+Property: assert
+Result: ✅ pass-/
+#guard_msgs in
+#eval Strata.Boole.verify "cvc5" insertionSortPgm (options := .quiet)
 
 example : Strata.smtVCsCorrect insertionSortPgm := by
   gen_smt_vcs

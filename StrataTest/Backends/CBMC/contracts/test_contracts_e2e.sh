@@ -40,7 +40,7 @@ run_test() {
 }
 
 # build_goto <basename> <lr.st content>
-#   Runs the full pipeline: strata → process_json → symtab2gb → goto-cc
+#   Runs the full pipeline: strata → symtab2gb → goto-cc
 #   Produces $WORK_DIR/<basename>.gb and $WORK_DIR/<basename>_cc.gb
 build_goto() {
   local bn="$1" src="$2"
@@ -49,13 +49,8 @@ build_goto() {
   run_test "$bn: strata laurelAnalyzeToGoto" \
     bash -c "ulimit -t 30; cd '$WORK_DIR' && '$STRATA' laurelAnalyzeToGoto '$WORK_DIR/$bn.lr.st'"
 
-  run_test "$bn: process_json.py combine" \
-    bash -c "ulimit -t 10; python3 '$PROJECT_ROOT/Strata/Backends/CBMC/resources/process_json.py' combine \
-      '$PROJECT_ROOT/Strata/Backends/CBMC/resources/defaults.json' \
-      '$WORK_DIR/$bn.lr.symtab.json' > '$WORK_DIR/$bn.full-symtab.json'"
-
   run_test "$bn: symtab2gb" \
-    bash -c "ulimit -t 10; symtab2gb '$WORK_DIR/$bn.full-symtab.json' \
+    bash -c "ulimit -t 10; symtab2gb '$WORK_DIR/$bn.lr.symtab.json' \
       --goto-functions '$WORK_DIR/$bn.lr.goto.json' \
       --out '$WORK_DIR/$bn.gb'"
 
@@ -69,7 +64,7 @@ echo ""
 # ---- Test 1: Full DFCC pipeline with requires/ensures ----
 echo "--- Test 1: Procedure with requires/ensures (full DFCC + CBMC) ---"
 
-build_goto "contract" 'procedure add(x: int, y: int) returns (r: int)
+build_goto "contract" 'procedure add(x: int, y: int, out r: int)
   requires x >= 0
   ensures r >= x
 {
@@ -125,7 +120,7 @@ echo ""
 # ---- Test 3: Procedure with ensures (contract in symbol table) ----
 echo "--- Test 3: Procedure with ensures (full DFCC + CBMC) ---"
 
-build_goto "ensures" 'procedure inc(x: int) returns (r: int)
+build_goto "ensures" 'procedure inc(x: int, out r: int)
   requires x >= 0
   ensures r > x
 {
@@ -149,7 +144,7 @@ echo ""
 # ---- Test 4: Loop with invariant (full DFCC + CBMC) ----
 echo "--- Test 4: Loop with invariant (full DFCC + CBMC) ---"
 
-build_goto "loop" 'procedure sum_to_n(n: int) returns (s: int)
+build_goto "loop" 'procedure sum_to_n(n: int, out s: int)
   requires n >= 0
   ensures s >= 0
 {
@@ -182,7 +177,7 @@ echo ""
 # ---- Test 5: Procedure call through DFCC + CBMC ----
 echo "--- Test 5: Procedure call (full DFCC + CBMC) ---"
 
-build_goto "call" 'procedure double(x: int) returns (r: int)
+build_goto "call" 'procedure double(x: int, out r: int)
   requires x >= 0
   ensures r == x + x
 {
@@ -220,14 +215,14 @@ echo ""
 # ---- Test 6: Multiple procedures with contracts ----
 echo "--- Test 6: Multiple procedures with contracts ---"
 
-build_goto "multi" 'procedure inc(x: int) returns (r: int)
+build_goto "multi" 'procedure inc(x: int, out r: int)
   requires x >= 0
   ensures r == x + 1
 {
   r := x + 1;
 }
 
-procedure dec(x: int) returns (r: int)
+procedure dec(x: int, out r: int)
   requires x > 0
   ensures r == x - 1
 {
@@ -266,7 +261,7 @@ echo ""
 # ---- Test 7: Procedure call inside if-then-else ----
 echo "--- Test 7: Call inside if-then-else (GOTO output) ---"
 
-build_goto "nested_call" 'procedure inc(x: int) returns (r: int)
+build_goto "nested_call" 'procedure inc(x: int, out r: int)
   requires x >= 0
   ensures r == x + 1
 {
@@ -302,7 +297,7 @@ echo ""
 # ---- Test 8: Procedure call inside loop ----
 echo "--- Test 8: Call inside loop (GOTO output) ---"
 
-build_goto "loop_call" 'procedure inc(x: int) returns (r: int)
+build_goto "loop_call" 'procedure inc(x: int, out r: int)
   requires x >= 0
   ensures r == x + 1
 {
