@@ -6937,19 +6937,13 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                   -- ── L4 substNodup: ((inputs ++ outputs) ++ (argTemps ++ lhs)).Nodup ──
                   -- Disjointness facts (HinKeys/HoutKeys vs argTemps/lhs)
                   -- hoisted to C-aux phase; consumed below by name.
-                  have HargT_disj_lhs_L4 :
-                      argTemps.Disjoint lhs :=
-                    fun v Hv1 Hv2 => HlhsDisjArg Hv2 Hv1
                   have HargT_lhs_nd :
                       (argTemps ++ lhs).Nodup := by
-                    have HargNd' : argTemps.Nodup :=
-                      (List.nodup_append.mp
-                        (List.nodup_append.mp Hgennd).1).1
                     rw [List.nodup_append]
-                    refine ⟨HargNd', HlhsNd, ?_⟩
+                    refine ⟨HargNd, HlhsNd, ?_⟩
                     intro a Ha b Hb Heq
                     subst Heq
-                    exact HargT_disj_lhs_L4 Ha Hb
+                    exact HlhsDisjArg Hb Ha
                   have Hbignd_L4 :
                       (ks_L4 ++ ks'_L4).Nodup := by
                     show ((proc.header.inputs.keys ++
@@ -7024,36 +7018,9 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     apply updatedStatesDefined
                     · exact HargFstLen
                     · exact Hv
-                  -- σ_old definedness on lhs (3-layer fall-through to σ).
+                  -- σ_old definedness on lhs (reuses C-aux HlhsDef_old).
                   have Hσ_old_def_lhs :
-                      Imperative.isDefined σ_old lhs := by
-                    intro v Hv
-                    show ((updatedStates
-                            (updatedStates
-                              (updatedStates σ
-                                argTemps argVals)
-                              outTemps oVals)
-                            oldTrips.unzip.fst.unzip.fst oldVals) v).isSome =
-                          true
-                    have Hv_notin_old :
-                        v ∉ oldTrips.unzip.fst.unzip.fst := by
-                      rw [HoldTripsFst]
-                      intro Hin
-                      exact HlhsDisjOld Hv Hin
-                    have Hv_notin_out :
-                        v ∉ outTemps := by
-                      intro Hin
-                      exact HlhsDisjOut Hv Hin
-                    have Hv_notin_arg :
-                        v ∉ argTemps := by
-                      intro Hin
-                      exact HlhsDisjArg Hv Hin
-                    rw [updatedStates_3layer_get_notin
-                          Hv_notin_arg Hv_notin_out Hv_notin_old]
-                    -- σ v defined since v ∈ lhs (HlhsDef).
-                    have HlhsDef_σ : Imperative.isDefined σ lhs :=
-                      ReadValuesIsDefined Hevalouts
-                    exact HlhsDef_σ v Hv
+                      Imperative.isDefined σ_old lhs := HlhsDef_old
                   have Hdef_L4 : Imperative.substDefined σAO σ_old
                       (ks_L4.zip ks'_L4) := by
                     intro k1 k2 Hkin
