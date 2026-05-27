@@ -107,7 +107,7 @@ def spawn (path : String) (args : Array String) : IO SMTLibSolver := do
     let proc ← IO.Process.spawn {
       stdin  := .piped
       stdout := .piped
-      stderr := .piped
+      stderr := .inherit
       cmd    := path
       args   := args
     }
