@@ -553,11 +553,8 @@ private def lowerVarStatement (m : SourceRange) (ds : BooleDDM.DeclList SourceRa
   let mut newBVarsRev : List Core.Expression.Expr := []
   for d in declListToList ds do
     let (id, ty) ← toCoreBind d
-    let n := (← get).globalVarCounter
-    modify fun st => { st with globalVarCounter := n + 1 }
-    let initName := mkIdent s!"init_{id.name}_{n}"
     newBVarsRev := (.fvar () id none : Core.Expression.Expr) :: newBVarsRev
-    outRev := Core.Statement.init id ty (.det (.fvar () initName none)) (← toCoreMetaData m) :: outRev
+    outRev := Core.Statement.init id ty .nondet (← toCoreMetaData m) :: outRev
   modify fun st => { st with bvars := st.bvars ++ newBVarsRev.reverse.toArray }
   return outRev.reverse
 
