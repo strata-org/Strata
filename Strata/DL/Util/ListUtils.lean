@@ -507,3 +507,52 @@ theorem List.Forall_flatMap :
     intros Hfa
     have Hfa := List.Forall_append.mp Hfa
     exact ⟨Hfa.1, ih Hfa.2⟩
+
+/-- Decompose a non-membership fact over a balanced 4-way append
+    `a ∉ (l₁ ++ l₂) ++ (l₃ ++ l₄)` into four leaf-level non-membership
+    facts.  Used at the L4 (preVars) and L6 (postVars) `Hinv` sites in
+    `callElimStatementCorrect` to flatten the per-`removeAll` decomposition
+    cascades. -/
+public theorem List.notin_append4
+    {α} {a : α} {l₁ l₂ l₃ l₄ : List α}
+    (Hnin : a ∉ (l₁ ++ l₂) ++ (l₃ ++ l₄)) :
+    a ∉ l₁ ∧ a ∉ l₂ ∧ a ∉ l₃ ∧ a ∉ l₄ :=
+  ⟨fun h => Hnin (List.mem_append.mpr (Or.inl (List.mem_append.mpr (Or.inl h)))),
+   fun h => Hnin (List.mem_append.mpr (Or.inl (List.mem_append.mpr (Or.inr h)))),
+   fun h => Hnin (List.mem_append.mpr (Or.inr (List.mem_append.mpr (Or.inl h)))),
+   fun h => Hnin (List.mem_append.mpr (Or.inr (List.mem_append.mpr (Or.inr h))))⟩
+
+/-- The length of `trips.unzip.snd` matches `trips.length`.  Convenient
+    one-liner used to bridge `genXxxExprIdentsTrip_snd` shape facts to a
+    `triplen` length equation, instead of inlining the `simp
+    [List.unzip_eq_map]` rewrite at every length proof. -/
+public theorem List.unzip_snd_length {α β : Type _} (trips : List (α × β)) :
+    trips.unzip.snd.length = trips.length := by
+  simp [List.unzip_eq_map]
+
+/-- Pairwise disjointness between three concatenated lists, extracted
+    from `(a ++ b ++ c).Nodup`.  Convenience re-packaging used downstream
+    to peel `cs'.generated`'s Nodup into per-segment disjointness. -/
+public theorem List.disjoint_of_nodup_append_three
+    {α} {a b c : List α}
+    (Hnd : (a ++ b ++ c).Nodup) :
+    a.Disjoint b ∧ a.Disjoint c ∧ b.Disjoint c := by
+  rw [List.append_assoc] at Hnd
+  have Hnd' := List.nodup_append.mp Hnd
+  have Hbc := List.nodup_append.mp Hnd'.2.1
+  refine ⟨?_, ?_, ?_⟩
+  · intro x hxa hxb
+    exact Hnd'.2.2 x hxa x (List.mem_append_left c hxb) rfl
+  · intro x hxa hxc
+    exact Hnd'.2.2 x hxa x (List.mem_append_right b hxc) rfl
+  · intro x hxb hxc
+    exact Hbc.2.2 x hxb x hxc rfl
+
+/-- Specialization of `disjoint_of_nodup_append_three` to extract the
+    three pairwise disjointness facts as a Forall-friendly tuple. -/
+public theorem List.nodup_append_three_disjoint
+    {α} {a b c : List α}
+    (Hnd : (a ++ b ++ c).Nodup) :
+    a.Disjoint b ∧ b.Disjoint c ∧ a.Disjoint c :=
+  let ⟨h1, h2, h3⟩ := List.disjoint_of_nodup_append_three Hnd
+  ⟨h1, h3, h2⟩
