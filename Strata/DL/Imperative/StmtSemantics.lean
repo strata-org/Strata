@@ -1795,6 +1795,48 @@ theorem block_preserves_eval_via_defUseOk_exiting
   rw [h_def] at h_undef
   cases h_undef
 
+/-- Statement-level analog of `block_preserves_eval_via_defUseOk` (terminal). -/
+theorem stmt_preserves_eval_via_defUseOk
+    [DecidableEq P.Ident] [HasVarsImp P CmdT] [HasVarsPure P CmdT]
+    (hwf_ext : WFEvalExtension P extendEval)
+    (s : Stmt P CmdT) (ρ ρ' : Env P) (defined : P.Ident → Bool)
+    (hdef : Stmt.defUseWellFormed defined s = true)
+    (σ' : SemanticStore P) (e : P.Expr)
+    (he : ∀ n ∈ HasVarsPure.getVars (P := P) e, defined n)
+    (hterm : StepStmtStar P EvalCmd extendEval (.stmt s ρ) (.terminal ρ')) :
+    ρ'.eval σ' e = ρ.eval σ' e := by
+  have h := star_preserves_eval_on_disjoint P EvalCmd extendEval hwf_ext hterm σ' e
+    (by
+      intro n hn hgv
+      have h_undef := Stmt.funcDeclNames_disjoint_of_defUseOk defined s hdef n
+        (by simpa [Config.funcDeclNames] using hn)
+      have h_def := he n hgv
+      rw [h_def] at h_undef
+      cases h_undef)
+    (by simp [Config.evalSnapAgrees])
+  simpa [Config.getEnv] using h
+
+/-- Statement-level analog of `block_preserves_eval_via_defUseOk_exiting`. -/
+theorem stmt_preserves_eval_via_defUseOk_exiting
+    [DecidableEq P.Ident] [HasVarsImp P CmdT] [HasVarsPure P CmdT]
+    (hwf_ext : WFEvalExtension P extendEval)
+    (s : Stmt P CmdT) (ρ ρ' : Env P) (lbl : String) (defined : P.Ident → Bool)
+    (hdef : Stmt.defUseWellFormed defined s = true)
+    (σ' : SemanticStore P) (e : P.Expr)
+    (he : ∀ n ∈ HasVarsPure.getVars (P := P) e, defined n)
+    (hexit : StepStmtStar P EvalCmd extendEval (.stmt s ρ) (.exiting lbl ρ')) :
+    ρ'.eval σ' e = ρ.eval σ' e := by
+  have h := star_preserves_eval_on_disjoint P EvalCmd extendEval hwf_ext hexit σ' e
+    (by
+      intro n hn hgv
+      have h_undef := Stmt.funcDeclNames_disjoint_of_defUseOk defined s hdef n
+        (by simpa [Config.funcDeclNames] using hn)
+      have h_def := he n hgv
+      rw [h_def] at h_undef
+      cases h_undef)
+    (by simp [Config.evalSnapAgrees])
+  simpa [Config.getEnv] using h
+
 end -- section
 
 section
