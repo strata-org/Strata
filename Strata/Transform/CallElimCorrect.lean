@@ -66,6 +66,26 @@ private theorem nodup_3_decompose {α} {a b c : List α}
   let ⟨Hd_ab, Hd_ac, Hd_bc⟩ := List.disjoint_of_nodup_append_three Hnd
   ⟨Hab.1, Hab.2.1, Hsplit.2.1, Hd_ab, Hd_ac, Hd_bc⟩
 
+/-- `Map.find?_append` "some" branch packaged: if a key resolves to `some v`
+    in `l₁` and to `some w` in `l₁ ++ l₂`, then `v = w`. -/
+private theorem find?_append_some_eq {α β} [DecidableEq α]
+    {l₁ l₂ : List (α × β)} {k : α} {v w : β}
+    (hfind : Map.find? l₁ k = some v)
+    (Hf : Map.find? (l₁ ++ l₂) k = some w) : v = w := by
+  have HH := Map.find?_append l₁ l₂ k
+  rw [hfind] at HH
+  exact Option.some_inj.mp (HH.symm.trans Hf)
+
+/-- `Map.find?_append` "none" branch packaged: if a key misses in `l₁` but
+    `Map.find? (l₁ ++ l₂) k = some w`, then `Map.find? l₂ k = some w`. -/
+private theorem find?_append_none_elim {α β} [DecidableEq α]
+    {l₁ l₂ : List (α × β)} {k : α} {w : β}
+    (hfind : Map.find? l₁ k = none)
+    (Hf : Map.find? (l₁ ++ l₂) k = some w) : Map.find? l₂ k = some w := by
+  have HH := Map.find?_append l₁ l₂ k
+  rw [hfind] at HH
+  exact HH.symm.trans Hf
+
 
 /-! ## Helper block-evaluator lemmas (small-step)
 
@@ -5320,51 +5340,17 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           δ σ_R1 w =
                             δ σO (Lambda.LExpr.fvar () k none) := by
                       intro k w _Hk Hf
-                      -- oldSubst_L6 = createOldVarsSubst ... ++ inputOnlyOldSubst_L6.
-                      -- Map.find? on append: split via Map.find?_append.
-                      have HfApp := Hf
-                      show δ σ_R1 w =
-                          δ σO (Lambda.LExpr.fvar () k none)
-                      -- Case split on `Map.find? createOldVarsSubst k`.
+                      -- oldSubst_L6 = createOldVarsSubst ... ++ inputOnlyOldSubst_L6;
+                      -- split via `find?_append_{some_eq, none_elim}`.
                       cases hfind : Map.find?
                                       (Core.Transform.createOldVarsSubst
                                         oldTripsCanonical_L6) k with
                       | some v =>
-                        -- find? oldSubst_L6 k = some v (via Map.find?_append
-                        -- + this branch).  HfApp tells us it's `some w`,
-                        -- so v = w.
-                        have HH := Map.find?_append
-                          (Core.Transform.createOldVarsSubst
-                            oldTripsCanonical_L6) inputOnlyOldSubst_L6 k
-                        rw [hfind] at HH
-                        -- HH : (createOldVarsSubst ... ++ inputOnlyOldSubst_L6).find? k = some v
-                        have Hvw : v = w := by
-                          have HfApp_unfold :
-                            Map.find?
-                              (Core.Transform.createOldVarsSubst
-                                oldTripsCanonical_L6 ++
-                                  inputOnlyOldSubst_L6) k = some w := HfApp
-                          have Hcombined := HH.symm.trans HfApp_unfold
-                          exact Option.some_inj.mp Hcombined
+                        have Hvw : v = w := find?_append_some_eq hfind Hf
                         rw [← Hvw]
                         exact HoldSubBridge k v hfind
                       | none =>
-                        -- find? oldSubst_L6 k = find? inputOnlyOldSubst_L6 k.
-                        have HH := Map.find?_append
-                          (Core.Transform.createOldVarsSubst
-                            oldTripsCanonical_L6) inputOnlyOldSubst_L6 k
-                        rw [hfind] at HH
-                        -- HH : (createOldVarsSubst ... ++ inputOnlyOldSubst_L6).find? k =
-                        --       inputOnlyOldSubst_L6.find? k
-                        have HfApp_unfold :
-                            Map.find?
-                              (Core.Transform.createOldVarsSubst
-                                oldTripsCanonical_L6 ++
-                                  inputOnlyOldSubst_L6) k = some w := HfApp
-                        have Hin_some :
-                            Map.find? inputOnlyOldSubst_L6 k = some w :=
-                          HH.symm.trans HfApp_unfold
-                        exact HinputSubBridge k w Hin_some
+                        exact HinputSubBridge k w (find?_append_none_elim hfind Hf)
                     -- Build HsurvBridge specialized to c.
                     have Hc_filtered : c ∈ postsFiltered.map (·.snd) ∨
                                         c ∈ proc'.spec.postconditions.values := by
@@ -5509,17 +5495,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                               (genOldIdents[ni]'Hni) ∧
                         var = genOldIdents[ni]'Hni := by
                     intro var k w w' hfind Hf Hv_in
-                    have HH := Map.find?_append
-                      (Core.Transform.createOldVarsSubst
-                        oldTripsCanonical_L6) inputOnlyOldSubst_L6 k
-                    rw [hfind] at HH
-                    have Hf_unfold :
-                        Map.find?
-                          (Core.Transform.createOldVarsSubst
-                            oldTripsCanonical_L6 ++
-                              inputOnlyOldSubst_L6) k = some w := Hf
-                    have Hw'w : w' = w :=
-                      Option.some_inj.mp (HH.symm.trans Hf_unfold)
+                    have Hw'w : w' = w := find?_append_some_eq hfind Hf
                     obtain ⟨ni_val, Hni_lt, _Hk_eqMkOld, Hw'_eq⟩ :=
                       createOldVarsSubst_pos_decomp HgenOldLen HoldTysLen hfind
                     have Hni_lt_genOld : ni_val < genOldIdents.length := by
@@ -5562,18 +5538,9 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                                 (Imperative.HasVarsPure.getVars (P:=Expression))
                                 inArgs := by
                     intro var k w hfind_none Hf Hv_in
-                    have HH := Map.find?_append
-                      (Core.Transform.createOldVarsSubst
-                        oldTripsCanonical_L6) inputOnlyOldSubst_L6 k
-                    rw [hfind_none] at HH
-                    have Hf_unfold :
-                        Map.find?
-                          (Core.Transform.createOldVarsSubst
-                            oldTripsCanonical_L6 ++
-                              inputOnlyOldSubst_L6) k = some w := Hf
                     have Hin_some :
                         Map.find? inputOnlyOldSubst_L6 k = some w :=
-                      HH.symm.trans Hf_unfold
+                      find?_append_none_elim hfind_none Hf
                     obtain ⟨ni2_val, Hni2_lt_inKeys, Hni2_lt_inArgs,
                             _Hk_eq_proc', Hw_eq_proc', Hin_notin_outs⟩ :=
                       inputOnlyOldSubst_pos_decomp Hin_some
