@@ -493,23 +493,27 @@ $$`\frac{\Gamma \vdash \mathit{args}_i \Rightarrow U_i \quad \mathit{Numeric}\;U
 
 $$`\frac{\Gamma \vdash \mathit{lhs} \Rightarrow T_l \quad \Gamma \vdash \mathit{rhs} \Rightarrow T_r \quad T_l \sim T_r \quad \mathit{op} \in \{\mathsf{Eq}, \mathsf{Neq}\}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;[\mathit{lhs}; \mathit{rhs}] \Rightarrow \mathsf{TBool}} \quad \text{([⇒] Op-Eq)}`
 
-$$`\frac{T \in \{\mathsf{TInt}, \mathsf{TReal}, \mathsf{TFloat64}\} \quad \Gamma \vdash \mathit{args}_i \Leftarrow T \quad \mathit{op} \in \{\mathsf{Neg}, \mathsf{Add}, \mathsf{Sub}, \mathsf{Mul}, \mathsf{Div}, \mathsf{Mod}, \mathsf{DivT}, \mathsf{ModT}\}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;\mathit{args} \Rightarrow T} \quad \text{([⇒] Op-Arith)}`
+$$`\frac{\Gamma \vdash \mathit{args}_i \Rightarrow U_i \quad T \in \{\mathsf{TInt}, \mathsf{TReal}, \mathsf{TFloat64}\} \quad U_i \lesssim T \text{ (pairwise)} \quad \mathit{op} \in \{\mathsf{Neg}, \mathsf{Add}, \mathsf{Sub}, \mathsf{Mul}, \mathsf{Div}, \mathsf{Mod}, \mathsf{DivT}, \mathsf{ModT}\}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;\mathit{args} \Rightarrow T} \quad \text{([⇒] Op-Arith)}`
 
-The arithmetic synth rule iterates over the candidate numeric types
-$`\{\mathsf{TInt}, \mathsf{TReal}, \mathsf{TFloat64}\}` and picks the
-first $`T` for which every operand bidirectionally checks at $`T`.
-Diagnostics emitted by failed trials are rolled back so they don't
-leak into the final error log; if every candidate fails, the *last*
-trial's diagnostics are kept so the user sees a concrete error
-message. The iteration is implemented via the `firstWorking` helper.
+The arithmetic synth rule synthesizes operand types once, then picks
+the first $`T` from the candidate list
+$`\{\mathsf{TInt}, \mathsf{TReal}, \mathsf{TFloat64}\}` that every
+operand type is a consistent subtype of (here written
+$`U_i \lesssim T` for {name Strata.Laurel.isConsistentSubtype}`isConsistentSubtype`).
+The lookup runs `findCommonNumericType`, a pure predicate, so failed
+candidates do not mutate the diagnostic state. If no candidate
+works, a single "no common numeric type" diagnostic fires at the
+operator's source position, listing the operand types so the
+mismatch is concrete.
 
 This is symmetric in operand position (no privileged "first
-argument"), and rejects mixed-numeric expressions like
+argument") and rejects mixed-numeric expressions like
 $`\mathsf{int} + \mathsf{real}` — neither $`\mathsf{TInt}` nor
 $`\mathsf{TReal}` admits both operands. The gradual escape hatch
 $`\mathsf{Unknown}` is *not* in the candidate list (one should not
-synthesize a wildcard) but operands of type $`\mathsf{Unknown}` are
-accepted by every check via the standard consistency rule.
+synthesize a wildcard) but $`\mathsf{Unknown} \lesssim T` for every
+$`T`, so an operand of type $`\mathsf{Unknown}` never blocks the
+iteration.
 
 $$`\frac{\Gamma \vdash \mathit{args}_i \Rightarrow U_i \quad U_i <: \mathsf{TString} \quad \mathit{op} = \mathsf{StrConcat}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;\mathit{args} \Rightarrow \mathsf{TString}} \quad \text{([⇒] Op-Concat)}`
 

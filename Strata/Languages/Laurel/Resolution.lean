@@ -477,43 +477,27 @@ private def isNumeric (ctx : TypeContext) (ty : HighTypeMd) : Bool :=
     a gradual escape hatch is *not* in this list — `Unknown` is a
     wildcard, not a result type one should synthesize.
 
-    Used by [⇒] Op-Arith via `firstWorking` to discover the result type
-    of an arithmetic expression. -/
+    Used by [⇒] Op-Arith to discover the result type of an arithmetic
+    expression: the rule synthesizes operand types and picks the first
+    candidate that all operand types are consistent subtypes of. -/
 private def numericCandidates (source : Option FileRange) : List HighTypeMd :=
   [ { val := .TInt,     source := source }
   , { val := .TReal,    source := source }
   , { val := .TFloat64, source := source } ]
 
-/-- Try `attempts` in order, returning the first one whose action runs
-    without emitting any new diagnostics. Each trial runs against a
-    fresh copy of the diagnostic state (snapshotted before the trial)
-    and is rolled back if the trial emits errors; the *successful*
-    trial commits its state changes — including any state mutations
-    other than `errors`. If every trial fails, the diagnostics from
-    the *last* attempt are kept (so the user sees a concrete error
-    message rather than a blank failure).
+/-- Find the first candidate `T` from `cands` such that every operand
+    type in `argTypes` is a consistent subtype of `T`. Returns `none`
+    if no candidate works.
 
-    The trial-then-rollback pattern is what makes [⇒] Op-Arith feasible:
-    we can iterate over `numericCandidates` and bidirectionally check
-    every operand against each candidate, picking the first candidate
-    where every check succeeds — without the failed trials' diagnostics
-    leaking into the final error log. -/
-private def firstWorking {α : Type}
-    (attempts : List (ResolveM α)) : ResolveM (Option α) := do
-  let snapshotBefore ← get
-  let mut lastSnapshot := snapshotBefore
-  for attempt in attempts do
-    set snapshotBefore
-    let result ← attempt
-    let after ← get
-    if after.errors.size = snapshotBefore.errors.size then
-      return some result
-    lastSnapshot := after
-  -- Every trial emitted at least one diagnostic; restore the final
-  -- attempt's state so the user sees the *last* candidate's errors
-  -- rather than only the first.
-  set lastSnapshot
-  return none
+    Used by [⇒] Op-Arith. The lookup is purely predicative — no state
+    is mutated during the search, so failed candidates don't leak any
+    diagnostic side-effects. The gradual `Unknown` operand type is
+    consistent with every candidate, so an `Unknown` operand never
+    blocks the iteration. -/
+private def findCommonNumericType (ctx : TypeContext)
+    (cands : List HighTypeMd) (argTypes : List HighTypeMd) : Option HighTypeMd :=
+  cands.find? fun cand =>
+    argTypes.all fun aTy => isConsistentSubtype ctx aTy cand
 
 /-- Test whether a type is a user-defined reference type. `Unknown` is accepted
     as a gradual escape hatch. Used by Fresh and ReferenceEquals, which only
@@ -1333,27 +1317,34 @@ def Check.assign (exprMd : StmtExprMd)
 
 /-- Cases on the arity of the callee's declared outputs.
 
-    `Γ(callee) = static-procedure with input T and output T',  Γ ⊢ arg ⇒ U,  U <: T  ∴  Γ ⊢ StaticCall callee arg ⇒ T'`
+    `Γ(callee) = static-procedure with input T and output T',  Γ ⊢ arg ⇐ T  ∴  Γ ⊢ StaticCall callee arg ⇒ T'`
 
-    `Γ(callee) = static-procedure with inputs Ts and outputs [T_1; …; T_n] (n ≠ 1),  Γ ⊢ args ⇒ Us,  U_i <: T_i (pairwise)  ∴  Γ ⊢ StaticCall callee args ⇒ MultiValuedExpr [T_1; …; T_n]`
+    `Γ(callee) = static-procedure with inputs Ts and outputs [T_1; …; T_n] (n ≠ 1),  Γ ⊢ args_i ⇐ Ts_i (pairwise)  ∴  Γ ⊢ StaticCall callee args ⇒ MultiValuedExpr [T_1; …; T_n]`
 
     Callee is resolved against the expected kinds (parameter, static
     procedure, datatype constructor, constant); each argument is
-    synthesized and checked against the corresponding parameter type. The
-    result type is the (possibly multi-valued) declared output type from
-    `getCallInfo`. -/
+    *checked* against the corresponding parameter type. The bidirectional
+    push lets impure-expression arguments (`{x := 1; x}`, `if c then …`,
+    holes) flow through their own check rules instead of bottoming out at
+    the synth wildcard. Arguments past the declared parameter list (or
+    when the callee is unresolved and `paramTypes = []`) are checked
+    against `Unknown`, the gradual escape hatch — this preserves the old
+    behavior of resolving args without flagging arity mismatches here.
+    The result type is the (possibly multi-valued) declared output type
+    from `getCallInfo`. -/
 def Synth.staticCall (exprMd : StmtExprMd)
     (callee : Identifier) (args : List StmtExprMd) (source : Option FileRange)
     (h : exprMd.val = .StaticCall callee args) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let callee' ← resolveRef callee source
     (expected := #[.parameter, .staticProcedure, .datatypeConstructor, .constant])
-  let results ← args.mapM Synth.resolveStmtExpr
-  let args' := results.map (·.1)
-  let argTypes := results.map (·.2)
   let (retTy, paramTypes) ← getCallInfo callee
-  for ((a, aTy), paramTy) in (args'.zip argTypes).zip paramTypes do
-    checkSubtype a.source paramTy aTy
+  let unknownTy : HighTypeMd := { val := .Unknown, source := none }
+  let expectedTys : List HighTypeMd :=
+    paramTypes ++ List.replicate (args.length - paramTypes.length) unknownTy
+  let args' ← (args.attach.zip expectedTys).mapM (fun (⟨a, hMem⟩, paramTy) => do
+    have := hMem
+    Check.resolveStmtExpr a paramTy)
   pure (.StaticCall callee' args', retTy)
   termination_by (exprMd, 1)
   decreasing_by
@@ -1363,11 +1354,13 @@ def Synth.staticCall (exprMd : StmtExprMd)
     have := List.sizeOf_lt_of_mem ‹_ ∈ args›
     omega
 
-/-- `Γ ⊢ target ⇒ _,  Γ(callee) = instance- or static-procedure with inputs [self; T] and output T',  Γ ⊢ arg ⇒ U,  U <: T  ∴  Γ ⊢ InstanceCall target callee arg ⇒ T'`
+/-- `Γ ⊢ target ⇒ _,  Γ(callee) = instance- or static-procedure with inputs [self; T] and output T',  Γ ⊢ arg ⇐ T  ∴  Γ ⊢ InstanceCall target callee arg ⇒ T'`
 
     Target is synthesized; callee resolves to an instance or static
     procedure; arguments are checked pairwise against the callee's
-    parameter types after dropping `self`. -/
+    parameter types after dropping `self`. Like `Synth.staticCall`, the
+    push is bidirectional so block- and conditional-shaped arguments
+    route through their own check rules. -/
 def Synth.instanceCall (exprMd : StmtExprMd)
     (target : StmtExprMd) (callee : Identifier) (args : List StmtExprMd)
     (source : Option FileRange)
@@ -1376,13 +1369,14 @@ def Synth.instanceCall (exprMd : StmtExprMd)
   let (target', _) ← Synth.resolveStmtExpr target
   let callee' ← resolveRef callee source
     (expected := #[.instanceProcedure, .staticProcedure])
-  let results ← args.mapM Synth.resolveStmtExpr
-  let args' := results.map (·.1)
-  let argTypes := results.map (·.2)
   let (retTy, paramTypes) ← getCallInfo callee
   let callParamTypes := match paramTypes with | _ :: rest => rest | [] => []
-  for ((a, aTy), paramTy) in (args'.zip argTypes).zip callParamTypes do
-    checkSubtype a.source paramTy aTy
+  let unknownTy : HighTypeMd := { val := .Unknown, source := none }
+  let expectedTys : List HighTypeMd :=
+    callParamTypes ++ List.replicate (args.length - callParamTypes.length) unknownTy
+  let args' ← (args.attach.zip expectedTys).mapM (fun (⟨a, hMem⟩, paramTy) => do
+    have := hMem
+    Check.resolveStmtExpr a paramTy)
   pure (.InstanceCall target' callee' args', retTy)
   termination_by (exprMd, 1)
   decreasing_by
@@ -1420,14 +1414,16 @@ def Synth.instanceCall (exprMd : StmtExprMd)
     (`checkSubtype` for boolean and concat, `isNumeric` for cmp,
     `isConsistent` for equality).
 
-    Arithmetic uses a different scheme: `firstWorking` iterates over
-    `numericCandidates` (currently `[TInt, TReal, TFloat64]` — `Unknown`
-    is excluded since one should not synthesize a wildcard) and
-    bidirectionally checks every operand against each candidate. The
-    first `T` where every check succeeds is the synthesized result
-    type. Failed trials are rolled back so their diagnostics don't
-    leak; if every trial fails, the *last* trial's diagnostics are
-    kept so the user sees a concrete error.
+    Arithmetic uses a different scheme: it synthesizes its operand
+    types once, then picks the first candidate from
+    `numericCandidates` (currently `[TInt, TReal, TFloat64]` —
+    `Unknown` is excluded since one should not synthesize a wildcard)
+    that every operand type is a consistent subtype of. The lookup
+    runs `findCommonNumericType`, a pure predicate, so failed
+    candidates do not leak any diagnostic side-effects. If no
+    candidate works, a single "no common numeric type" diagnostic
+    fires at the operator's source position, listing the operand
+    types so the user can see the mismatch.
 
     The boolean family additionally has a check-mode rule
     (`Check.primitiveOp`) preferred when an `expected` type is
@@ -1441,18 +1437,23 @@ def Synth.primitiveOp (exprMd : StmtExprMd) (expr : StmtExpr)
     ResolveM (StmtExpr × HighTypeMd) := do
   let _ := h_expr  -- carries the constructor identity for `expr` in diagnostics
   match op with
-  -- Arithmetic: iterate over candidate numeric types via `firstWorking`,
-  -- bidirectionally checking every operand against each candidate.
+  -- Arithmetic: synth operand types once, then pick the first numeric
+  -- candidate that every operand is a consistent subtype of.
   | .Neg | .Add | .Sub | .Mul | .Div | .Mod | .DivT | .ModT =>
-    let attempts : List (ResolveM (List StmtExprMd × HighTypeMd)) :=
-      (numericCandidates source).map fun candidate => do
-        let args' ← args.attach.mapM (fun a => have := a.property; do
-          Check.resolveStmtExpr a.val candidate)
-        pure (args', candidate)
-    match ← firstWorking attempts with
-    | some (args', resultTy) => pure (.PrimitiveOp op args', resultTy)
+    let results ← args.attach.mapM (fun a => have := a.property; do
+      Synth.resolveStmtExpr a.val)
+    let args' := results.map (·.1)
+    let argTypes := results.map (·.2)
+    let ctx := (← get).typeContext
+    match findCommonNumericType ctx (numericCandidates source) argTypes with
+    | some resultTy =>
+      pure (.PrimitiveOp op args', resultTy)
     | none =>
-      pure (.PrimitiveOp op args, { val := .Unknown, source := source })
+      let formatted := ", ".intercalate (argTypes.map formatType)
+      let diag := diagnosticFromSource source
+        s!"no common numeric type for operands of '{op}'; got [{formatted}]"
+      modify fun s => { s with errors := s.errors.push diag }
+      pure (.PrimitiveOp op args', { val := .Unknown, source := source })
   | _ =>
     let results ← args.attach.mapM (fun a => have := a.property; do
       Synth.resolveStmtExpr a.val)

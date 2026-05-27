@@ -59,17 +59,17 @@ procedure heterogeneousCheckPath()
 //               ^ error: expected 'real', got 'int'
 };
 
-// [⇒] Op-Arith path: '<' synthesizes 'TBool', so its operands are in
-// synth position. The arithmetic operand '1 + 2.0' iterates over
-// `numericCandidates`. Every candidate fails (no T admits both 'int'
-// and 'real'); the diagnostics from the *last* trial (TFloat64) are
-// kept.
+// [⇒] Op-Arith path: '<' synthesizes its operands, so '1 + 2.0' is
+// resolved in synth position. The arithmetic synth rule synthesizes
+// the operands ('int' and 'real') and looks for a candidate from
+// [TInt, TReal, TFloat64] that both are consistent subtypes of. None
+// works -- a single error fires at the operator's source position
+// listing the operand types.
 procedure heterogeneousSynthPath()
   opaque
 {
   assert (1 + 2.0) < 5
-//        ^ error: expected 'float64', got 'int'
-//            ^^^ error: expected 'float64', got 'real'
+//        ^^^^^^^ error: no common numeric type for operands of '+'
 };
 
 procedure unaryNegHomogeneous()
