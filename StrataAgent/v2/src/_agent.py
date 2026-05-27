@@ -295,8 +295,8 @@ class SwarmAgent(Generic[T]):
                 result.status = AgentStatus.RUNNING
                 await self._emit("status_change", AgentStatus.RUNNING.value)
                 ts = datetime.now().strftime("%H:%M:%S")
-                # Push sender to pending_replies for reply_only agents
-                if self.spec.reply_only and self._mcp_servers_override:
+                # Push sender to pending_replies for reply_only agents (never TipAgent)
+                if self.spec.reply_only and self._mcp_servers_override and msg.sender != "TipAgent":
                     ms = self._mcp_servers_override.get("agent_messaging")
                     if ms and isinstance(ms, dict) and "_pending_replies" in ms:
                         ms["_pending_replies"].append(msg.sender)
@@ -434,8 +434,8 @@ class SwarmAgent(Generic[T]):
                     messages_ch = self.channel_bus.get_or_create(f"{self.spec.name}:messages")
                     msg = await messages_ch.receive(timeout=0.1)
                     if msg:
-                        # Push sender to pending_replies for reply_only agents
-                        if self.spec.reply_only and self._mcp_servers_override:
+                        # Push sender to pending_replies for reply_only agents (never TipAgent)
+                        if self.spec.reply_only and self._mcp_servers_override and msg.sender != "TipAgent":
                             ms = self._mcp_servers_override.get("agent_messaging")
                             if ms and isinstance(ms, dict) and "_pending_replies" in ms:
                                 ms["_pending_replies"].append(msg.sender)

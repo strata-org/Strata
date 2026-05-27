@@ -122,8 +122,9 @@ def create_messaging_server(
         if msg is None:
             return {"content": [{"type": "text", "text": "No messages in your inbox."}]}
 
-        # Track sender for reply() — add to queue
-        pending_replies.append(msg.sender)
+        # Track sender for reply() — add to queue (never TipAgent)
+        if msg.sender != "TipAgent":
+            pending_replies.append(msg.sender)
 
         # Record message_received in telemetry
         if on_tool_call:
