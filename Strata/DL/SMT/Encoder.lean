@@ -123,6 +123,10 @@ def smtReservedKeywords : List String :=
    -- Array theory symbols
    "select", "store"]
 
+/-- Pre-computed set of SMT reserved keywords for O(1) lookup. -/
+def smtReservedKeywordsSet : Std.HashSet String :=
+  Std.HashSet.ofList smtReservedKeywords
+
 /-- Sanitize a name for use in SMT-LIB. Symbols starting with `@` or `.` are
     reserved in SMT-LIB and rejected by z3 even when pipe-quoted. Prefix such
     names with `$` to make them valid simple symbols. -/
@@ -144,14 +148,16 @@ def ufNum   : EncoderM Nat := do return (← get).ufs.size
     registry (and SMT reserved keywords) for collisions, disambiguates via
     `@N` suffixes, registers the result, and returns it. -/
 def uniquify (baseName : String) : EncoderM String := do
-  let usedNames := (← get).usedNames.union (Std.HashSet.ofList smtReservedKeywords)
+  let usedNames := (← get).usedNames.union smtReservedKeywordsSet
   let id := Strata.Name.findUnique baseName 1 usedNames
   modify fun s => { s with usedNames := s.usedNames.insert id }
   return id
 
 def declareType (id : String) (mks : List String) : EncoderM String := do
   let uniqueId ← uniquify id
-  let constrs := mks.map fun name => SMTConstructor.mk name []
+  let constrs ← mks.mapM fun name => do
+    let uniqueName ← uniquify name
+    return SMTConstructor.mk uniqueName []
   declareDatatype uniqueId [] constrs
   return uniqueId
 

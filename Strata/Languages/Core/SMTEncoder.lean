@@ -78,6 +78,15 @@ def SMT.Context.restoreSubst (ctx : SMT.Context) (savedSubst: Map String TermTyp
 def SMT.Context.hasDatatype (ctx : SMT.Context) (name : String) : Bool :=
   ctx.seenDatatypes.contains name
 
+/-- Collect all sort and datatype names that have been pre-declared to the solver.
+    Used to pre-populate the encoder's `usedNames` registry. -/
+def SMT.Context.preDeclaredNames (ctx : SMT.Context) : Std.HashSet String :=
+  let sortNames := ctx.sorts.foldl (init := ({} : Std.HashSet String)) fun acc s => acc.insert s.name
+  let dtNames := ctx.typeFactory.toList.foldl (init := sortNames) fun acc block =>
+    block.foldl (init := acc) fun acc d =>
+      if ctx.seenDatatypes.contains d.name then acc.insert d.name else acc
+  dtNames.insert "Option"
+
 def SMT.Context.addDatatype (ctx : SMT.Context) (d : LDatatype CoreLParams.IDMeta) : SMT.Context :=
   if ctx.hasDatatype d.name then ctx
   else

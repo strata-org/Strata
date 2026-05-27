@@ -93,7 +93,7 @@ decreasing_by
 private def encodeUF (solver : AbstractSolver τ σ m) (uf : UF) : AbstractEncoderM τ m String := do
   if let .some enc := (← get).base.ufs.get? uf then return enc
   let baseName := sanitizeSmtName uf.id
-  let usedNames := (← get).base.usedNames.union (Std.HashSet.ofList smtReservedKeywords)
+  let usedNames := (← get).base.usedNames.union smtReservedKeywordsSet
   let id := Strata.Name.findUnique baseName 1 usedNames
   liftM (solver.comment uf.id)
   let argSorts ← uf.args.mapM (fun vt => liftM (termTypeToSort solver vt.ty))
@@ -231,7 +231,7 @@ decreasing_by
 private def encodeFunction (solver : AbstractSolver τ σ m) (uf : UF) (body : Term) : AbstractEncoderM τ m String := do
   if let .some enc := (← get).base.ufs.get? uf then return enc
   let baseName := ufId (← get).base.ufs.size
-  let usedNames := (← get).base.usedNames.union (Std.HashSet.ofList smtReservedKeywords)
+  let usedNames := (← get).base.usedNames.union smtReservedKeywordsSet
   let id := Strata.Name.findUnique baseName 1 usedNames
   liftM (solver.comment uf.id)
   let argPairs ← uf.args.mapM fun vt => do
@@ -309,12 +309,7 @@ def encodeDeclarationsAbstract [Monad m] [MonadExceptOf IO.Error m]
       let _ ← solver.declareSort s.name s.arity
   emitDatatypesAbstract solver ctx
   -- Pre-populate usedNames with sort/datatype names already emitted to the solver
-  let preDeclaredNames : Std.HashSet String :=
-    let sortNames := ctx.sorts.foldl (init := ({} : Std.HashSet String)) fun acc s => acc.insert s.name
-    let dtNames := ctx.typeFactory.toList.foldl (init := sortNames) fun acc block =>
-      block.foldl (init := acc) fun acc d =>
-        if ctx.seenDatatypes.contains d.name then acc.insert d.name else acc
-    dtNames.insert "Option"
+  let preDeclaredNames := ctx.preDeclaredNames
   let initState : AbstractEncoderState τ := { base := EncoderState.initWithNames preDeclaredNames }
   let varDefNames := varDefinitions.map (·.name)
   let varDeclNames := varDeclarations.map (·.name)
@@ -379,13 +374,7 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
   let managedNames := varDefNames ++ varDeclNames
 
   -- Pre-populate usedNames with sort/datatype names already emitted to the solver
-  let preDeclaredNames : Std.HashSet String :=
-    let sortNames := ctx.sorts.foldl (init := ({} : Std.HashSet String)) fun acc s => acc.insert s.name
-    let dtNames := ctx.typeFactory.toList.foldl (init := sortNames) fun acc block =>
-      block.foldl (init := acc) fun acc d =>
-        if ctx.seenDatatypes.contains d.name then acc.insert d.name else acc
-    -- Include "Option" which is always declared
-    dtNames.insert "Option"
+  let preDeclaredNames := ctx.preDeclaredNames
 
   let estate ← phase "encodeUFs" do
     let ufsToDecl := if managedNames.isEmpty then ctx.ufs
