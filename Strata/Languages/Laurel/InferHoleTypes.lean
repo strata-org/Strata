@@ -9,6 +9,7 @@ public import Strata.Languages.Laurel.Laurel
 public import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 public import Strata.Languages.Laurel.LaurelTypes
 public import Strata.Util.Statistics
+public import Strata.Languages.Laurel.LaurelPass
 
 /-!
 # Hole Type Inference
@@ -187,4 +188,13 @@ def inferHoleTypes (model : SemanticModel) (program : Program) : Program × List
   ({ program with staticProcedures := procs }, finalState.diagnostics, finalState.statistics)
 
 end -- public section
+
+/-- Pipeline pass: infer hole types. -/
+public def inferHoleTypesPass : LaurelPass where
+  name := "InferHoleTypes"
+  documentation := "Annotates every verification hole (`.Hole`) in the program with a type inferred from context. This type information is needed by subsequent passes that replace holes with uninterpreted functions or nondeterministic values."
+  run := fun p m =>
+    let (p', diags, stats) := inferHoleTypes m p
+    (p', diags, stats)
+
 end Laurel

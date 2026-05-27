@@ -8,6 +8,7 @@ module
 public import Strata.Languages.Laurel.MapStmtExpr
 public import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 public import Strata.Util.Statistics
+public import Strata.Languages.Laurel.LaurelPass
 
 /-!
 # Deterministic Hole Elimination
@@ -87,4 +88,13 @@ def eliminateDeterministicHoles (program : Program) : Program × Statistics :=
   ({ program with staticProcedures := finalState.generatedFunctions ++ procs }, stats)
 
 end -- public section
+
+/-- Pipeline pass: eliminate deterministic holes. -/
+public def eliminateDeterministicHolesPass : LaurelPass where
+  name := "EliminateDeterministicHoles"
+  documentation := "Replaces every deterministic hole with a call to a freshly generated uninterpreted function. After this pass the program contains only non-deterministic holes. Assumes `InferHoleTypes` has already annotated holes with types."
+  run := fun p _m =>
+    let (p', stats) := eliminateDeterministicHoles p
+    (p', [], stats)
+
 end Laurel

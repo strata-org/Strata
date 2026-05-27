@@ -6,6 +6,7 @@
 module
 
 public import Strata.Languages.Laurel.MapStmtExpr
+public import Strata.Languages.Laurel.LaurelPass
 
 /-!
 # Eliminate Value Returns
@@ -88,5 +89,13 @@ def eliminateValueInReturnsTransform (program : Program) : Program × Array Diag
   ({ program with staticProcedures := procs.reverse }, diags)
 
 end -- public section
+
+/-- Pipeline pass: eliminate value returns. -/
+public def eliminateValueInReturnsPass : LaurelPass where
+  name := "EliminateValueInReturns"
+  documentation := "Rewrites `return expr` into `outParam := expr; return` for imperative procedures that have an output parameter. This decouples the return-value assignment from the final Core translation, which no longer needs to know about output parameters when translating returns."
+  run := fun p _m =>
+    let (p', diags) := eliminateValueInReturnsTransform p
+    (p', diags.toList, {})
 
 end Laurel
