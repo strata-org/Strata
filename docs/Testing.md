@@ -20,21 +20,16 @@ test wiring, see [`StrataTest/Languages/Python/README.md`](../StrataTest/Languag
   `Strata.ExpectedBlock` that bundles whatever was parsed plus any
   parse-time diagnostics, so the test helper can run the rest of the pipeline
   and assert against the result.
-- `#guard_msgs` is Lean's built-in golden-test command. Wrap an `#eval` in
-  `#guard_msgs in` and pin the expected output via a `/-- info: … -/`
-  docstring directly above it.
+- `#guard_msgs` is Lean's built-in golden-test command. Used here for **positive
+  tests** only — wrap an `#eval` in `#guard_msgs in` and pin the expected
+  output via a `/-- info: … -/` docstring directly above. Negative tests use
+  inline annotations instead (see recipe 2).
 
-The Laurel test helpers all print diagnostics in this stable, snippet-local
-format:
-
-```
-<line>:<colStart>-<colEnd>  <kind>: <message>
-```
-
-Lines are 1-indexed within the `#strata` / `#strata_expect` block, columns are
-0-indexed, and `<kind>` is one of `error`, `warning`, `not-yet-implemented`,
-`strata-bug`. Because positions are snippet-local, golden output is stable
-even when the surrounding `.lean` file is edited.
+Diagnostic positions are snippet-local: lines are 1-indexed within the
+`#strata` / `#strata_expect` block, columns are 0-indexed. The annotation
+syntax `// ^^^ kind: message` mirrors that — carets sit at the column range
+on the line *below* the offending source line. Because positions are
+snippet-local, tests don't drift when the surrounding `.lean` file is edited.
 
 ## Recipes
 
@@ -58,12 +53,11 @@ procedure foo() opaque { assert true };
 
 ### 2. Negative test — assert that specific errors fire
 
-Use `testLaurelExpect`. The helper prints every diagnostic, in order. Pin them
-with `#guard_msgs`.
+Use `testLaurelExpect`. Annotate each expected diagnostic *inline*, on the
+line directly below the offending source line, with carets pointing at the
+column range and the kind + (substring of the) message after the carets:
 
 ```lean
-/-- info: 5:2-22  error: assertion does not hold -/
-#guard_msgs in
 #eval testLaurelExpect <|
 #strata_expect
 program Laurel;
@@ -71,14 +65,23 @@ procedure unsafeDivision(x: int)
   opaque
 {
   var z: int := 10 / x
+//^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 #end
 ```
 
-`testLaurelExpect` *throws* if the block produced no diagnostics. That's the
-contract: a `#strata_expect` block must always trigger at least one error.
-If you find yourself wanting to express "expected no errors", you want
-`testLaurel` (or `testLaurelResolution`) on a `#strata` block instead.
+The helper:
+- parses every `// ^^^ kind: message` annotation from the snippet,
+- runs the pipeline,
+- requires an **exact match**: every diagnostic must be annotated, every
+  annotation must fire, line/column ranges must agree, kind must match, and
+  the actual message must contain the annotation text as a substring.
+
+A mismatch throws with a precise summary of which annotations went unmatched
+and which actual diagnostics had no annotation. No `#guard_msgs` wrapper is
+needed for negative tests — the throw is the assertion.
+
+`kind` is one of `error`, `warning`, `not-yet-implemented`, `strata-bug`.
 
 ### 3. Resolution-only tests — skip the verifier
 
@@ -91,14 +94,13 @@ variants:
 - `testLaurelExpectResolution` — negative (expected resolution diagnostic).
 
 ```lean
-/-- info: 4:9-10  error: 'x' resolves to variable, but expected composite type, ... -/
-#guard_msgs in
 #eval testLaurelExpectResolution <|
 #strata_expect
 program Laurel;
 procedure foo() opaque {
   var x: int := 1;
   var y: x := 2
+//       ^ error: 'x' resolves to variable, but expected composite type, ...
 };
 #end
 ```
@@ -183,12 +185,11 @@ procedure safeDivision() opaque {
 #end
 
 /-! ### Unsafe division: divisor not constrained, fails verification -/
-/-- info: 4:2-22  error: assertion does not hold -/
-#guard_msgs in
 #eval testLaurelExpect <| #strata_expect
 program Laurel;
 procedure unsafeDivision(x: int) opaque {
   var z: int := 10 / x
+//^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 #end
 ```
@@ -198,15 +199,18 @@ them in one `#strata_expect` and list the union of expected diagnostics.
 
 ## Practical workflow
 
-1. Write your `#strata` / `#strata_expect` block first, with a placeholder
-   docstring (`/-- info: TODO -/`).
-2. Build the file: `lake build StrataTest.Languages.Laurel.<your_file>`.
-3. Run it: `lake env lean StrataTest/Languages/Laurel/<your_file>.lean`.
-4. The `#guard_msgs` failure message will print the actual generated output.
-   Copy it into your docstring, save, re-run. Empty output means tests pass.
+1. Write the `#strata` / `#strata_expect` block first.
+2. For positive tests, add a `/-- info: ok -/` docstring above
+   `#guard_msgs in #eval testLaurel …`.
+3. For negative tests, sketch placeholder annotations like `// ^ error:`
+   below the offending lines — column positions don't have to be right yet.
+4. Run it: `lake env lean StrataTest/Languages/Laurel/<your_file>.lean`.
+5. On failure: the helper prints exactly which annotations went unmatched
+   and which diagnostics had no annotation, including the line/column range
+   actually produced. Copy those into your annotations, save, re-run.
 
-When `lake env lean` exits silently with no output, every `#guard_msgs` in
-the file held.
+When `lake env lean` exits silently with no output, every assertion in the
+file held.
 
 ## Other dialects
 
