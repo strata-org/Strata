@@ -186,11 +186,34 @@ meta def strataProgramImpl : TermElab := fun stx tp => do
 
 syntax (name := loadDialectCommand) "#load_dialect" str : command
 
+/-- Derive the package source root from a module's file path and name by
+stripping one directory component per name part. For example, given
+`/repo/Strata/Languages/Foo.lean` and module name `Strata.Languages.Foo`,
+returns `/repo`. -/
+def getModuleRoot (path : FilePath) (modName : Name) : Except String FilePath := do
+  let depth := modName.getNumParts
+  let some dir := path.parent
+    | throw s!"cannot get parent of file path '{path}'"
+  let mut dir := dir
+  for _ in List.range (depth - 1) do
+    let some parent := dir.parent
+      | throw s!"cannot resolve package root from '{path}' \
+          with module '{modName}' (ran out of parent directories)"
+    dir := parent
+  pure dir
+
+/-- Resolve a relative path against the current package's source root.
+Absolute paths are returned unchanged. -/
 private def resolveLeanRelPath (path : FilePath) : CommandElabM FilePath := do
   if path.isAbsolute then
-    pure path
-  else
-    pure <| (← IO.currentDir) / path
+    return path
+  let mut currentFileName : FilePath := (← read).fileName
+  if currentFileName.isRelative then
+    currentFileName := (← IO.currentDir) / currentFileName
+  let modName := (← getEnv).mainModule
+  match getModuleRoot currentFileName modName with
+  | .ok dir => pure <| dir / path
+  | .error msg => throwError msg
 
 @[command_elab loadDialectCommand]
 def loadDialectImpl : CommandElab := fun (stx : Syntax) => do
