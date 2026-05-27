@@ -3,18 +3,21 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 /-
 Tests that the resolution pass detects duplicate names in the same scope.
 Uses inline error annotations like the other Laurel tests (e.g. T1_AssertFalse).
 -/
 
-import StrataTest.Util.TestDiagnostics
-import Strata.DDM.Elab
-import Strata.DDM.BuiltinDialects.Init
-import Strata.Languages.Laurel.Grammar.LaurelGrammar
-import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
-import Strata.Languages.Laurel.Resolution
+meta import all StrataTest.Util.TestDiagnostics
+meta import StrataDDM.Elab
+meta import StrataDDM.BuiltinDialects.Init
+meta import Strata.Languages.Laurel.Grammar.LaurelGrammar
+meta import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
+meta import Strata.Languages.Laurel.Resolution
+
+meta section
 
 open StrataTest.Util
 open Strata
@@ -175,3 +178,5 @@ datatype Foo { A }
 #eval testInputWithOffset "DupCompositeDatatype" dupCompositeDatatype 135 processResolution
 
 end Laurel
+end Strata
+end

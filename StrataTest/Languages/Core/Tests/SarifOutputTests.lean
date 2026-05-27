@@ -3,10 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.SarifOutput
-import Strata.Languages.Core.Verifier
-import Lean.Data.Json
+meta import Strata.Languages.Core.SarifOutput
+meta import Strata.Languages.Core.Verifier
+meta import Lean.Data.Json
+
+meta section
 
 /-!
 # SARIF Output Tests
@@ -377,3 +380,5 @@ private def sarifPropertyType (vcr : VCResult) : String :=
 #eval sarifPropertyType (makeVCResult "t" (mkOutcome (.sat []) .unsat) (property := .cover))
 
 end Core.Sarif.Tests
+
+end

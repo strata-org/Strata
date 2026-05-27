@@ -10,6 +10,13 @@
    "manifestFile": "lake-manifest.json",
    "inputRev": "bump_to_v4.29.0-rc8",
    "inherited": false,
+   "configFile": "lakefile.toml"},
+  {"type": "path",
+   "scope": "",
+   "name": "StrataDDM",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "StrataDDM",
    "configFile": "lakefile.toml"}],
  "name": "Strata",
  "lakeDir": ".lake"}

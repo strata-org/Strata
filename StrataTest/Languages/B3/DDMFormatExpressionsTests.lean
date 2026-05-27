@@ -3,9 +3,10 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import StrataTest.Languages.B3.DDMFormatTests
-import Strata.Languages.B3.DDMTransform.Conversion
+meta import all StrataTest.Languages.B3.DDMFormatTests
+meta import Strata.Languages.B3.DDMTransform.Conversion
 
 /-!
 # B3 Expression Formatting Tests
@@ -22,6 +23,7 @@ Expressions are wrapped in `check` statements (e.g., `check 5 + 3`) because:
 - The `check` wrapper itself is not part of the tested AST - only the expression `5 + 3` is tested
 -/
 
+meta section
 namespace B3
 
 open Std (Format)
@@ -826,3 +828,4 @@ info: 1 + (if true 2 else 3)
 end AssociativityAndPrecedenceTests
 
 end B3
+end

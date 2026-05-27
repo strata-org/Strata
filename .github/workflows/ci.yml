@@ -45,7 +45,13 @@ jobs:
         if: github.event_name == 'pull_request'
         uses: ./.github/actions/restore-lake-cache
       - name: Download ion-java jar for Java codegen test
-        run: wget -q -O StrataTestExtra/DDM/Integration/Java/testdata/ion-java-1.11.11.jar https://github.com/amazon-ion/ion-java/releases/download/v1.11.11/ion-java-1.11.11.jar
+        run: wget -q -O StrataTestExtra/Languages/Java/testdata/ion-java-1.11.11.jar https://github.com/amazon-ion/ion-java/releases/download/v1.11.11/ion-java-1.11.11.jar
+      - name: Build StrataDDM
+        uses: leanprover/lean-action@v1
+        with:
+          lake-package-directory: StrataDDM
+          build-args: StrataDDM StrataDDMTest
+          use-github-cache: false
       - name: Build and test Strata
         uses: leanprover/lean-action@v1
         with:
@@ -57,14 +63,17 @@ jobs:
         uses: ./.github/actions/save-lake-cache
       - name: Verify Java testdata is up to date
         run: |
-          StrataTestExtra/DDM/Integration/Java/regenerate-testdata.sh
-          git diff --exit-code StrataTestExtra/DDM/Integration/Java/testdata/
+          StrataTestExtra/Languages/Java/regenerate-testdata.sh
+          git diff --exit-code StrataTestExtra/Languages/Java/testdata/
       - name: Verify generated editor syntax files are up to date
         run: |
           lake env lean --run editors/GenSyntax.lean all
           git diff --exit-code editors/vscode/syntaxes/ editors/emacs/
       - name: Build and run strata verify
         run: lake exe strata verify Examples/SimpleProc.core.st
+      - name: Build StrataBoole
+        run: lake build StrataBoole StrataBooleTest
+        working-directory: StrataBoole
       - name: Build BoogieToStrata
         run: dotnet build -warnaserror ${SOLUTION}
       - name: Test BoogieToStrata

@@ -3,10 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Python.PySpecPipeline
-import Strata.Languages.Python.PyFactory
-import Strata.Languages.Core.Verifier
+meta import all Strata.Languages.Python.PySpecPipeline
+meta import all Strata.Languages.Python.PyFactory
+meta import all Strata.Languages.Core.Verifier
+
+meta section
 
 /-! # Prelude Verification Test
 
@@ -38,3 +41,4 @@ private def verifyPrelude : IO (Array DiagnosticModel) := do
 #eval verifyPrelude
 
 end Strata.Python.PreludeVerifyTest
+end

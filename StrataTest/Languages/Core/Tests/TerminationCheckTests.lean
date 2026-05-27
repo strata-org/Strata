@@ -3,8 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core.Verifier
+import StrataDDM.Integration.Lean.HashCommands
+
+meta section
 
 /-!
 # Termination Checking Tests
@@ -1191,3 +1195,5 @@ recursive function 'bad': non-variable decreases expression must have type int, 
 #eval verify decreasesNonVarPgm (options := .quiet)
 
 end Strata.TerminationCheckTest
+
+end
