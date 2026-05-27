@@ -79,7 +79,7 @@ composite Foo extends nat { }
 
 /-! ## Multi-output procedure used in expression position -/
 
-/-- info: 4:9-17  error: Multi-output procedure 'multi' used in expression position -/
+/-- info: 4:9-17  error: Multi-output procedure 'multi' used in expression position; it returns 2 values but only one can be used here. Use a multi-target assignment instead. -/
 #guard_msgs in
 #eval testLaurelExpectResolution <|
 #strata_expect
