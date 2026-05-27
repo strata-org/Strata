@@ -320,11 +320,7 @@ private def createUnreachableAssertObligations
     Imperative.ProofObligations Expression :=
   asserts.toArray.map
     (fun (label, md) =>
-      let propType := match md.getPropertyType with
-        | some s => if s == Imperative.MetaData.divisionByZero then .divisionByZero
-                    else if s == Imperative.MetaData.arithmeticOverflow then .arithmeticOverflow
-                    else .assert
-        | _ => .assert
+      let propType := Imperative.convertMetaDataPropertyType md
       (Imperative.ProofObligation.mk label propType pathConditions (LExpr.true ()) md))
 
 /--
@@ -585,8 +581,8 @@ private def evalOneStmt (old_var_subst : SubstMap)
     | .nondet =>
       let freshName : CoreIdent := ⟨s!"$__nondet_cond_{Ewn.env.pathConditions.length}", ()⟩
       let freshVar : Expression.Expr := .fvar () freshName none
-      let initStmt := Statement.init freshName (.forAll [] (.tcons "bool" [])) .nondet Imperative.MetaData.empty
-      let iteStmt := Imperative.Stmt.ite (.det freshVar) then_ss else_ss Imperative.MetaData.empty
+      let initStmt := Statement.init freshName (.forAll [] (.tcons "bool" [])) .nondet (Imperative.MetaData.ofProvenance (.synthesized .nondetIte))
+      let iteStmt := Imperative.Stmt.ite (.det freshVar) then_ss else_ss (Imperative.MetaData.ofProvenance (.synthesized .nondetIte))
       evalSub Ewn [initStmt, iteStmt] nextSplitId
     | .det c =>
       let cond' := Ewn.env.exprEval c

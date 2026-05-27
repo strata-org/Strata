@@ -6,6 +6,7 @@
 module
 
 public import Strata.Transform.CoreTransform
+public import Strata.Transform.TerminationCheck
 public import Strata.DL.Lambda.Preconditions
 public import Strata.DL.Lambda.TypeFactory
 public import Strata.Languages.Core.PipelinePhase
@@ -75,6 +76,8 @@ private def classifyPrecondition (funcName : String) (precondIdx : Nat := 0) : O
   | .bv ⟨_, .SafeAdd⟩ | .bv ⟨_, .SafeSub⟩ | .bv ⟨_, .SafeMul⟩ | .bv ⟨_, .SafeNeg⟩
   | .bv ⟨_, .SafeUAdd⟩ | .bv ⟨_, .SafeUSub⟩ | .bv ⟨_, .SafeUMul⟩ | .bv ⟨_, .SafeUNeg⟩ =>
     some Imperative.MetaData.arithmeticOverflow
+  | .seq .Select | .seq .Update | .seq .Take | .seq .Drop =>
+    some Imperative.MetaData.outOfBoundsAccess
   | _ => none
 
 /--
@@ -376,6 +379,10 @@ where
     | d :: rest =>
       match d with
       | .proc proc md => do
+        if TermCheck.isTermProc proc.header.name.name then
+          let (changed, rest') ← transformDecls rest
+          return (changed, d :: rest')
+        else
         let F ← getFactory
         let (changed, body') ← transformStmts proc.body
         setFactory F

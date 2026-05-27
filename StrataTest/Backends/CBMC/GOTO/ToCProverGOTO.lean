@@ -245,7 +245,7 @@ info: ok: #[LOCATION 0,
 /-- Test exit statement transformation -/
 def ExampleStmt5 : List (Imperative.Stmt LExprTP (Imperative.Cmd LExprTP)) :=
   [.cmd (.init (Lambda.Identifier.mk "x" ()) mty[bv32] (.det (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 0))) {}),
-   .exit (some "target_label") {},
+   .exit "target_label" {},
    .cmd (.set (Lambda.Identifier.mk "x" ()) (.det (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 10))) {}),
    .block "target_label"
      [.cmd (.set (Lambda.Identifier.mk "x" ()) (.det (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 20))) {})]

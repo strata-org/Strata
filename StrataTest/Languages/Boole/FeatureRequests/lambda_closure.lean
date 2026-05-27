@@ -9,50 +9,71 @@ import Strata.MetaVerifier
 open Strata
 
 /-
-Local reduced Rust/Verus-style lambda example:
+Near-upstream anchors from `differential_status.md`:
+- `verus-examples:fun_ext`
+- `verus-examples:trait_for_fn`
+- Verus links:
+  `fun_ext`: https://github.com/verus-lang/verus/blob/main/examples/fun_ext.rs
+  `trait_for_fn`: https://github.com/verus-lang/verus/blob/main/examples/trait_for_fn.rs
 
-proof fn use_lambda() {
-    let f: spec_fn(int) -> int = |x: int| x + 1;
-    assert(f(2) == 3);
-}
+Implemented:
+- `fun x : T => body` parses as Core's `lambda` op and lowers to a Core
+  `.abs` node via `toCoreExpr`.
+- `(f)(x)` parses as Core's `apply_expr` op and lowers to `.app`.
+- Arrow type `T -> U` lowers to Core `.arrow`.
 
-- Gap: direct lambda / closure support
-- Current status: the seed verifies by naming the closure value explicitly and
-  axiomatizing its behavior
-- Remaining gap: parse and lower inline `fun x: int => x + 1` closures
-  directly in Boole
+Remaining gap:
+- Higher-order function *values* stored in variables (e.g.
+  `var f : int -> int`) and passed as procedure arguments still require
+  the abstract-type encoding for the SMT path — the lambda syntax works
+  in spec expression positions but the full higher-order value story
+  (assignment, procedure parameters of function type) needs more work.
 -/
 
 private def lambdaClosureSeed : Strata.Program :=
 #strata
 program Boole;
 
-// Target shape:
-//
-// procedure use_lambda() returns ()
-// {
-//   var f : int -> int;
-//   f := fun x: int => x + 1;
-//   assert f(2) == 3;
-// };
+// Lambda in a spec (ensures) position: `(fun x : int => x + 1)(2) == 3`
+// uses Core's `lambda` for abstraction and `apply_expr` for application.
+procedure use_lambda() returns ()
+spec {
+  ensures (fun x : int => x + 1)(2) == 3;
+}
+{
+  assert (fun x : int => x + 1)(2) == 3;
+};
 
+// Higher-order spec function: takes a function value as an abstract type
+// (still needed for passing functions as arguments — open gap).
 type FnIntInt;
-
 function apply(f: FnIntInt, x: int) : int;
 const add1 : FnIntInt;
-
 axiom (∀ x: int . apply(add1, x) == x + 1);
 
-procedure use_lambda() returns ()
+procedure higher_order_seed(f: FnIntInt, x: int) returns (y: int)
+spec {
+  ensures y == apply(f, x);
+}
 {
-  var f : FnIntInt;
-  f := add1;
-  assert apply(f, 2) == 3;
+  y := apply(f, x);
 };
 #end
 
-#guard_msgs (drop info) in
-#eval Strata.Boole.verify "cvc5" lambdaClosureSeed
+/-- info:
+Obligation: assert_1_1330
+Property: assert
+Result: ✅ pass
+
+Obligation: use_lambda_ensures_0_1284
+Property: assert
+Result: ✅ pass
+
+Obligation: higher_order_seed_ensures_3_1718
+Property: assert
+Result: ✅ pass-/
+#guard_msgs in
+#eval Strata.Boole.verify "cvc5" lambdaClosureSeed (options := .quiet)
 
 example : Strata.smtVCsCorrect lambdaClosureSeed := by
   gen_smt_vcs

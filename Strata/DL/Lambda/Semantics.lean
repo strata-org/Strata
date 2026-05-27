@@ -2531,7 +2531,8 @@ private theorem eval_factory_post_eraseMetadata_invariant
        | some i => (args'[i]? |>.map (LExpr.isCanonicalValue σ.config.factory)).getD false
        | none => false
      if _h: f₁.body.isSome && (f₁.attr.contains Strata.DL.Util.FuncAttr.inline ||
-         cA (Strata.DL.Util.FuncAttr.findInlineIfConstr f₁.attr)) then
+         cA (Strata.DL.Util.FuncAttr.findInlineIfConstr f₁.attr) ||
+         (Strata.DL.Util.FuncAttr.hasInlineIfAllCanonical f₁.attr && args'.all (LExpr.isCanonicalValue σ.config.factory))) then
        match LFunc.computeTypeSubst f₁ op₁ args' with
        | some tySubst =>
          LExpr.eval n' σ (LExpr.substFvarsLifting ((f₁.body.get (by
@@ -2557,7 +2558,8 @@ private theorem eval_factory_post_eraseMetadata_invariant
        | some i => (args'[i]? |>.map (LExpr.isCanonicalValue σ.config.factory)).getD false
        | none => false
      if _h: f₁.body.isSome && (f₁.attr.contains Strata.DL.Util.FuncAttr.inline ||
-         cA (Strata.DL.Util.FuncAttr.findInlineIfConstr f₁.attr)) then
+         cA (Strata.DL.Util.FuncAttr.findInlineIfConstr f₁.attr) ||
+         (Strata.DL.Util.FuncAttr.hasInlineIfAllCanonical f₁.attr && args'.all (LExpr.isCanonicalValue σ.config.factory))) then
        match LFunc.computeTypeSubst f₁ op₂ args' with
        | some tySubst =>
          LExpr.eval n' σ (LExpr.substFvarsLifting ((f₁.body.get (by
@@ -2577,17 +2579,21 @@ private theorem eval_factory_post_eraseMetadata_invariant
        else new_e).eraseMetadata := by
   -- Step 1: show inline condition is the same for both sides
   have h_inline_cond_eq :
-      (f₁.body.isSome && (f₁.attr.contains Strata.DL.Util.FuncAttr.inline ||
+      (f₁.body.isSome && ((f₁.attr.contains Strata.DL.Util.FuncAttr.inline ||
         (match Strata.DL.Util.FuncAttr.findInlineIfConstr f₁.attr with
         | some i => ((args₁.map (fun a => LExpr.eval n' σ a))[i]? |>.map
             (LExpr.isConstrApp σ.config.factory)).getD false
-        | none => false))) =
-      (f₁.body.isSome && (f₁.attr.contains Strata.DL.Util.FuncAttr.inline ||
+        | none => false)) ||
+        (Strata.DL.Util.FuncAttr.hasInlineIfAllCanonical f₁.attr &&
+          (args₁.map (fun a => LExpr.eval n' σ a)).all (LExpr.isCanonicalValue σ.config.factory)))) =
+      (f₁.body.isSome && ((f₁.attr.contains Strata.DL.Util.FuncAttr.inline ||
         (match Strata.DL.Util.FuncAttr.findInlineIfConstr f₁.attr with
         | some i => ((args₂.map (fun a => LExpr.eval n' σ a))[i]? |>.map
             (LExpr.isConstrApp σ.config.factory)).getD false
-        | none => false))) := by
-    congr 1; congr 1
+        | none => false)) ||
+        (Strata.DL.Util.FuncAttr.hasInlineIfAllCanonical f₁.attr &&
+          (args₂.map (fun a => LExpr.eval n' σ a)).all (LExpr.isCanonicalValue σ.config.factory)))) := by
+    congr 1; congr 1 <;> congr 1
     exact h_constrArgAt_eq _
   -- Step 2: show canonical/evalIfConstr/evalIfCanonical condition is the same
   have h_can_cond_eq :
