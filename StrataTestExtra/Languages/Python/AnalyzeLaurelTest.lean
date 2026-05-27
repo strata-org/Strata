@@ -68,7 +68,7 @@ meta def setupFixture (pythonCmd : System.FilePath)
     -- Compile all servicelib modules (dispatch + individual services)
     match ← pySpecsDir testDir outDir dialectFile
         (modules := #["servicelib", "servicelib.Storage", "servicelib.Messaging", "servicelib.Database"])
-        (warningVerbosity := 0)
+        (warningOutput := .none)
         (pythonCmd := toString pythonCmd) |>.toBaseIO with
     | .ok () => pure ()
     | .error msg => throw <| IO.userError s!"pySpecsDir failed: {msg}"

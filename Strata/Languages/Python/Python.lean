@@ -81,7 +81,7 @@ private partial def discoverModules (sourceDir : System.FilePath)
 
 /-- Derive the output path for a Python file by mirroring the source directory
     structure and replacing `.py` with `.pyspec.st.ion`. -/
-private def pySpecOutputPath (sourceDir strataDir pythonFile : System.FilePath)
+def pySpecOutputPath (sourceDir strataDir pythonFile : System.FilePath)
     : Option System.FilePath := Id.run do
   let sourceDirStr := sourceDir.toString
   let fileStr := pythonFile.toString
