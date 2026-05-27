@@ -1050,7 +1050,10 @@ def mapConstOp : Expression.Expr := mapConstFunc.opExpr
 def mapSelectOp : Expression.Expr := mapSelectFunc.opExpr
 def mapUpdateOp : Expression.Expr := mapUpdateFunc.opExpr
 def seqLengthOp : Expression.Expr := seqLengthFunc.opExpr
-def seqEmptyOp : Expression.Expr := seqEmptyFunc.opExpr
+def seqEmptyOp (elemTy : Option LMonoTy := none) : Expression.Expr :=
+  match elemTy with
+  | none => seqEmptyFunc.opExpr
+  | some ty => .op default "Sequence.empty" (some (seqTy ty))
 def seqAppendOp : Expression.Expr := seqAppendFunc.opExpr
 def seqSelectOp : Expression.Expr := seqSelectFunc.opExpr
 def seqBuildOp : Expression.Expr := seqBuildFunc.opExpr

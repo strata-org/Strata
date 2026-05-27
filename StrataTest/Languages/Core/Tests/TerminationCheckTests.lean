@@ -735,26 +735,6 @@ rec function bad (xs : IntList) : int
 #guard_msgs in
 #eval verify noCasesNoDecreasesPgm (options := .quiet)
 
----------------------------------------------------------------------
--- Test 13: error — decreases on non-ADT parameter (temporary)
----------------------------------------------------------------------
-
-def decreasesNonADTPgm : Program :=
-#strata
-program Core;
-
-datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
-
-rec function bad (@[cases] xs : IntList, n : int) : int
-  decreases n
-{
-  if IntList..isNil(xs) then 0 else bad(IntList..tl(xs), n - 1)
-};
-#end
-
-/-- error: recursive function 'bad': decreasing parameter type 'int' is not a known datatype -/
-#guard_msgs in
-#eval verify decreasesNonADTPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 14: mutual recursion over different mutual datatypes
@@ -995,7 +975,7 @@ rec function bad (@[cases] xs : IntList) : bool
 };
 #end
 
-/-- error: termination checking: decreasing argument contains a bound variable -/
+/-- error: termination checking 'bad': decreasing argument contains a bound variable-/
 #guard_msgs in
 #eval verify boundVarDecrArgPgm (options := .quiet)
 
@@ -1015,7 +995,7 @@ rec function bad (@[cases] xs : IntList) : IntList
 };
 #end
 
-/-- error: termination checking: decreasing argument contains a recursive call -/
+/-- error: termination checking 'bad': decreasing argument contains a recursive call -/
 #guard_msgs in
 #eval verify recCallInDecrArgPgm (options := .quiet)
 
@@ -1205,7 +1185,8 @@ rec function bad (@[cases] xs : IntList) : int
 };
 #end
 
-/-- error: recursive function 'bad': decreases clause must be a parameter name. Non-structural recursion is not yet supported -/
+/-- error: ❌ Type checking error.
+recursive function 'bad': non-variable decreases expression must have type int, got 'IntList'. For structural recursion, use a parameter name -/
 #guard_msgs in
 #eval verify decreasesNonVarPgm (options := .quiet)
 

@@ -93,7 +93,7 @@ def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
   | .TSet elementType => return Core.mapTy (← translateType elementType) LMonoTy.bool
   | .TMap keyType valueType => return Core.mapTy (← translateType keyType) (← translateType valueType)
   | .UserDefined name =>
-    match name.uniqueId.bind model.refToDef.get? with
+    match model.get? name with
     | some (.compositeType _) => return .tcons "Composite" []
     | some (.datatypeDefinition dt) => return .tcons dt.name.text []
     | some (.datatypeConstructor typeName _) => return .tcons typeName.text []
