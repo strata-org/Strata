@@ -86,19 +86,6 @@ private theorem find?_append_none_elim {α β} [DecidableEq α]
   rw [hfind] at HH
   exact HH.symm.trans Hf
 
-
-/-! ## Helper block-evaluator lemmas (small-step)
-
-  The block-evaluator family (`singleCmdToStmts`, `H_havocs`, `H_init`,
-  `H_initVars`, `H_inits`, `evalExpression_updatedState`,
-  `evalExpressions_updatedState`, `readValues_updatedState`) has been
-  migrated to `Strata.Languages.Core.CoreTransformSemantics`.  They are
-  re-exported under the `Core` namespace via the import above. -/
-
--- The bridge `WellFormedCoreEvalTwoState_old_havoc` is inlined at the
--- L6 spike (line ~5326); see git history for the blocked-helper rationale.
-
-
 /-! ### Pure list-shape analogues of `createAsserts` / `createAssumes`.
 
     The monadic `Core.Transform.createAsserts` / `createAssumes` use a fresh
