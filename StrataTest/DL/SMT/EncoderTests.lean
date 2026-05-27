@@ -215,6 +215,13 @@ private def runEncoder (act : EncoderM Unit) : IO EncoderState := do
   let (((), estate), _) ← (act.run EncoderState.init).run solver
   return estate
 
+/-- Helper: run an `EncoderM` action with a pre-populated state. -/
+private def runEncoderWith (initState : EncoderState) (act : EncoderM Unit) : IO EncoderState := do
+  let b ← IO.mkRef { : IO.FS.Stream.Buffer }
+  let solver ← Solver.bufferWriter b
+  let (((), estate), _) ← (act.run initState).run solver
+  return estate
+
 -- A user UF named `$__f.0` should not collide with the first `encodeFunction`
 -- output. The encoder must rename one of them.
 #eval do
@@ -252,5 +259,29 @@ private def runEncoder (act : EncoderM Unit) : IO EncoderState := do
   assert! nameColliding != nameFn0
   assert! nameColliding != nameFn1
   assert! nameFn0 != nameFn1
+
+-- A UF named the same as a pre-declared datatype/sort should be disambiguated
+-- when the encoder state is initialized with those names.
+#eval do
+  let preDeclaredNames := Std.HashSet.ofList ["MyDatatype", "Option"]
+  let uf : UF := { id := "MyDatatype", args := [], out := .int }
+  let estate ← runEncoderWith (EncoderState.initWithNames preDeclaredNames) do
+    let _ ← Encoder.encodeUF uf
+  let name := estate.ufs[uf]!
+  -- The UF must get a disambiguated name since "MyDatatype" is already taken
+  assert! name != "MyDatatype"
+
+-- A function whose generated name collides with a pre-declared sort should
+-- also be disambiguated.
+#eval do
+  -- Pre-declare "$__f.0" as if it were a sort name
+  let preDeclaredNames := Std.HashSet.ofList ["$__f.0"]
+  let fn : UF := { id := "userFn", args := [⟨"x", .int⟩], out := .int }
+  let body : Term := .var ⟨"x", .int⟩
+  let estate ← runEncoderWith (EncoderState.initWithNames preDeclaredNames) do
+    let _ ← Encoder.encodeFunction fn body
+  let name := estate.ufs[fn]!
+  -- The function must not get "$__f.0" since it's pre-declared
+  assert! name != "$__f.0"
 
 end Strata.SMT.Encoder.UsedNamesTests

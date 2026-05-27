@@ -93,15 +93,16 @@ decreasing_by
 private def encodeUF (solver : AbstractSolver τ σ m) (uf : UF) : AbstractEncoderM τ m String := do
   if let .some enc := (← get).base.ufs.get? uf then return enc
   let baseName := sanitizeSmtName uf.id
-  let existingNames := (← get).base.ufs.toList.map (·.2)
-  let usedNames := Std.HashSet.ofList (existingNames ++ smtReservedKeywords)
+  let usedNames := (← get).base.usedNames.union (Std.HashSet.ofList smtReservedKeywords)
   let id := Strata.Name.findUnique baseName 1 usedNames
   liftM (solver.comment uf.id)
   let argSorts ← uf.args.mapM (fun vt => liftM (termTypeToSort solver vt.ty))
   let outSort ← liftM (termTypeToSort solver uf.out)
   let handle ← liftM (solver.declareFun id argSorts outSort)
   modify fun st => { st with varHandles := st.varHandles.insert id handle }
-  modifyGet fun state => (id, { state with base := { state.base with ufs := state.base.ufs.insert uf id } })
+  modifyGet fun state => (id, { state with base := { state.base with
+    ufs := state.base.ufs.insert uf id
+    usedNames := state.base.usedNames.insert id } })
 
 private def defineApp (solver : AbstractSolver τ σ m) (retSort : σ) (op : Op) (tEncs : List τ) : AbstractEncoderM τ m τ := do
   -- Pattern: `liftM` lifts solver calls from `m` into `StateT`.
@@ -229,7 +230,9 @@ decreasing_by
 
 private def encodeFunction (solver : AbstractSolver τ σ m) (uf : UF) (body : Term) : AbstractEncoderM τ m String := do
   if let .some enc := (← get).base.ufs.get? uf then return enc
-  let id := ufId (← get).base.ufs.size
+  let baseName := ufId (← get).base.ufs.size
+  let usedNames := (← get).base.usedNames.union (Std.HashSet.ofList smtReservedKeywords)
+  let id := Strata.Name.findUnique baseName 1 usedNames
   liftM (solver.comment uf.id)
   let argPairs ← uf.args.mapM fun vt => do
     let s ← liftM (termTypeToSort solver vt.ty)
@@ -237,7 +240,9 @@ private def encodeFunction (solver : AbstractSolver τ σ m) (uf : UF) (body : T
   let outSort ← liftM (termTypeToSort solver uf.out)
   let bodyEnc ← encodeTerm solver body
   liftM (solver.defineFun id argPairs outSort bodyEnc)
-  modifyGet fun state => (id, { state with base := { state.base with ufs := state.base.ufs.insert uf id } })
+  modifyGet fun state => (id, { state with base := { state.base with
+    ufs := state.base.ufs.insert uf id
+    usedNames := state.base.usedNames.insert id } })
 
 end AbstractEncoder
 
@@ -303,7 +308,14 @@ def encodeDeclarationsAbstract [Monad m] [MonadExceptOf IO.Error m]
     if !ctx.seenDatatypes.contains s.name then
       let _ ← solver.declareSort s.name s.arity
   emitDatatypesAbstract solver ctx
-  let initState : AbstractEncoderState τ := { base := EncoderState.init }
+  -- Pre-populate usedNames with sort/datatype names already emitted to the solver
+  let preDeclaredNames : Std.HashSet String :=
+    let sortNames := ctx.sorts.foldl (init := ({} : Std.HashSet String)) fun acc s => acc.insert s.name
+    let dtNames := ctx.typeFactory.toList.foldl (init := sortNames) fun acc block =>
+      block.foldl (init := acc) fun acc d =>
+        if ctx.seenDatatypes.contains d.name then acc.insert d.name else acc
+    dtNames.insert "Option"
+  let initState : AbstractEncoderState τ := { base := EncoderState.initWithNames preDeclaredNames }
   let varDefNames := varDefinitions.map (·.name)
   let varDeclNames := varDeclarations.map (·.name)
   let managedNames := varDefNames ++ varDeclNames
@@ -366,10 +378,19 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
   let varDeclNames := varDeclarations.map (·.name)
   let managedNames := varDefNames ++ varDeclNames
 
+  -- Pre-populate usedNames with sort/datatype names already emitted to the solver
+  let preDeclaredNames : Std.HashSet String :=
+    let sortNames := ctx.sorts.foldl (init := ({} : Std.HashSet String)) fun acc s => acc.insert s.name
+    let dtNames := ctx.typeFactory.toList.foldl (init := sortNames) fun acc block =>
+      block.foldl (init := acc) fun acc d =>
+        if ctx.seenDatatypes.contains d.name then acc.insert d.name else acc
+    -- Include "Option" which is always declared
+    dtNames.insert "Option"
+
   let estate ← phase "encodeUFs" do
     let ufsToDecl := if managedNames.isEmpty then ctx.ufs
       else ctx.ufs.filter fun uf => !managedNames.contains uf.id
-    let (_ufs, estate) ← ufsToDecl.mapM (fun uf => encodeUF uf) |>.run EncoderState.init
+    let (_ufs, estate) ← ufsToDecl.mapM (fun uf => encodeUF uf) |>.run (EncoderState.initWithNames preDeclaredNames)
     pure estate
 
   let estate ← phase "encodeFunctions" do

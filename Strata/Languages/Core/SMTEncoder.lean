@@ -309,8 +309,9 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (
         let (b, s) := Strata.Name.breakDisambiguated name
         (Encoder.sanitizeSmtName b, s)
     let ctx := { ctx with bvCounter := ctx.bvCounter + 1 }
-    -- Check for clashes with existing bvars, fvars in ctx, and fvars in body
-    let usedNames := Std.HashSet.ofList (bvs.map (·.1) ++ ctx.ufs.toList.map (·.id) ++ fvarNames.toList)
+    -- Check for clashes with existing bvars, fvars, sorts, datatypes, and fvars in body
+    let usedNames := Std.HashSet.ofList (bvs.map (·.1) ++ ctx.ufs.toList.map (·.id) ++ fvarNames.toList
+      ++ ctx.sorts.toList.map (·.name) ++ ctx.seenDatatypes.toList)
     let x := Strata.Name.findUnique baseName startSuffix usedNames
     let (ety, ctx) ← LMonoTy.toSMTType E ty ctx useArrayTheory
     let (trt, ctx) ← appToSMTTerm E ((x, ety) :: bvs) tr [] ctx useArrayTheory
