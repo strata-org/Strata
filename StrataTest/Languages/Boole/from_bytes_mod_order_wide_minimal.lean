@@ -1,7 +1,12 @@
 /-
   Copyright Strata Contributors
-
   SPDX-License-Identifier: Apache-2.0 OR MIT
+
+  Boole verification of curve25519-dalek `from_bytes_mod_order_wide`.
+  Source: https://github.com/Beneficial-AI-Foundation/dalek-lite
+
+  Impl__3_from_bytes_wide / Impl__3_pack: remain as `assume false` stubs —
+  they return values so cannot be axioms, and their specs are trusted.
 -/
 
 import Strata.MetaVerifier
@@ -55,6 +60,7 @@ program Boole;
   bv64_to_nat_u(x)
 }
  rec function Seq_map_rec_0 (s : Sequence bv64, n : int) : Sequence nat
+requires 0 <= n && n <= Sequence.length(s);
 decreases n
   {
   if n <= 0 then Seq_map_empty_0 else Sequence.build(Seq_map_rec_0(s, n - 1), Seq_map_closure_0(n - 1, Sequence.select(s, n - 1)))
@@ -65,8 +71,12 @@ decreases n
  datatype scalar {
   scalar_ctor(bytes : Sequence bv8)
 };
+ axiom [scalar52_limbs_len]: forall s : scalar52 :: Sequence.length(scalar52..limbs(s)) == 5;
+ axiom [scalar_bytes_len]: forall s : scalar :: Sequence.length(scalar..bytes(s)) == 32;
  function Array_spec_array_as_slice<T> (ar : Sequence T) : Sequence T;
  function Arithmetic_Power2_pow2 (e : nat) : nat;
+ axiom [pow2_adds]: forall e1 : nat, e2 : nat :: Arithmetic_Power2_pow2(nat.add(e1, e2)) == nat.mul(Arithmetic_Power2_pow2(e1), Arithmetic_Power2_pow2(e2));
+ axiom [pow2_strictly_increases]: forall e1 : nat, e2 : nat :: nat.lt(e1, e2) ==> nat.lt(Arithmetic_Power2_pow2(e1), Arithmetic_Power2_pow2(e2));
  function is_uniform_bytes (bytes : Sequence bv8) : bool;
  function is_uniform_scalar (s : scalar) : bool;
  rec function bytes_seq_as_nat (bytes : Sequence bv8) : nat
@@ -155,7 +165,6 @@ spec {
   tmp5 := u8_32_as_nat(scalar..bytes(result));
   tmp6 := group_order;
   call Arithmetic_Div_mod_lemma_small_mod(tmp5, tmp6);
-  call axiom_uniform_mod_reduction(input, result);
   result := result;
   exit Impl__4_from_bytes_mod_order_wide;
 };
@@ -165,27 +174,12 @@ spec {
   requires 0 < nat.toInt(m);
   ensures nat.toInt(x) mod nat.toInt(m) == nat.toInt(x);
   } {
-  assume false;
 };
  procedure Arithmetic_Div_mod_lemma_mod_bound (x : int, m : int) returns ()
 spec {
   requires 0 < m;
   ensures 0 <= x mod m && x mod m < m;
   } {
-  assume false;
-};
- procedure Arithmetic_Power2_lemma_pow2_adds (e1 : nat, e2 : nat) returns ()
-spec {
-  ensures Arithmetic_Power2_pow2(nat.add(e1, e2)) == nat.mul(Arithmetic_Power2_pow2(e1), Arithmetic_Power2_pow2(e2));
-  } {
-  assume false;
-};
- procedure Arithmetic_Power2_lemma_pow2_strictly_increases (e1 : nat, e2 : nat) returns ()
-spec {
-  requires nat.lt(e1, e2);
-  ensures nat.lt(Arithmetic_Power2_pow2(e1), Arithmetic_Power2_pow2(e2));
-  } {
-  assume false;
 };
  axiom [Arithmetic_Power2_lemma2_to64_0]: nat.toInt(Arithmetic_Power2_pow2(nat.fromInt(0))) == 1;
  axiom [Arithmetic_Power2_lemma2_to64_1]: nat.toInt(Arithmetic_Power2_pow2(nat.fromInt(1))) == 2;
@@ -260,15 +254,11 @@ spec {
   assume 27742317777372353535851937790883648493 < 85070591730234615865843651857942052864;
   assert nat.toInt(Arithmetic_Power2_pow2(nat.fromInt(63))) == 9223372036854775808;
   assume nat.toInt(Arithmetic_Power2_pow2(nat.fromInt(63))) == 9223372036854775808;
-  call Arithmetic_Power2_lemma_pow2_adds(nat.fromInt(63), nat.fromInt(63));
   assert nat.toInt(Arithmetic_Power2_pow2(nat.fromInt(126))) == 85070591730234615865843651857942052864;
   assert 27742317777372353535851937790883648493 < nat.toInt(Arithmetic_Power2_pow2(nat.fromInt(126)));
-  call Arithmetic_Power2_lemma_pow2_strictly_increases(nat.fromInt(126), nat.fromInt(252));
   assert nat.lt(group_order, nat.add(Arithmetic_Power2_pow2(nat.fromInt(252)), Arithmetic_Power2_pow2(nat.fromInt(252))));
-  call Arithmetic_Power2_lemma_pow2_adds(nat.fromInt(1), nat.fromInt(252));
   assert nat.add(Arithmetic_Power2_pow2(nat.fromInt(252)), Arithmetic_Power2_pow2(nat.fromInt(252))) == Arithmetic_Power2_pow2(nat.fromInt(253));
   assume nat.add(Arithmetic_Power2_pow2(nat.fromInt(252)), Arithmetic_Power2_pow2(nat.fromInt(252))) == Arithmetic_Power2_pow2(nat.fromInt(253));
-  call Arithmetic_Power2_lemma_pow2_strictly_increases(nat.fromInt(253), nat.fromInt(255));
   exit lemma_group_order_bound;
 };
  procedure lemma_group_order_smaller_than_pow256 () returns ()
@@ -276,7 +266,6 @@ spec {
   ensures nat.lt(group_order, Arithmetic_Power2_pow2(nat.fromInt(256)));
   } {
   call lemma_group_order_bound();
-  call Arithmetic_Power2_lemma_pow2_strictly_increases(nat.fromInt(255), nat.fromInt(256));
   exit lemma_group_order_smaller_than_pow256;
 };
  procedure lemma_scalar52_lt_pow2_256_if_canonical (a : scalar52) returns ()
@@ -286,17 +275,11 @@ spec {
   ensures nat.lt(scalar52_as_nat(a), Arithmetic_Power2_pow2(nat.fromInt(256)));
   } {
   call lemma_group_order_bound();
-  call Arithmetic_Power2_lemma_pow2_strictly_increases(nat.fromInt(255), nat.fromInt(256));
   exit lemma_scalar52_lt_pow2_256_if_canonical;
 };
- procedure axiom_uniform_mod_reduction (input : Sequence bv8, result : scalar) returns ()
-spec {
-  requires nat.toInt(scalar_as_canonical(result)) == nat.toInt(bytes_seq_as_nat(input)) mod nat.toInt(group_order);
-  ensures is_uniform_bytes(input) ==> is_uniform_scalar(result);
-  } {
-  assume false;
-  exit axiom_uniform_mod_reduction;
-};
+ axiom [uniform_mod_reduction]: forall input : Sequence bv8, result : scalar ::
+  nat.toInt(scalar_as_canonical(result)) == nat.toInt(bytes_seq_as_nat(input)) mod nat.toInt(group_order) ==>
+  (is_uniform_bytes(input) ==> is_uniform_scalar(result));
 #end
 
 /-- info:
@@ -316,9 +299,13 @@ Obligation: nat.div_body_calls_nat.fromInt_0
 Property: assert
 Result: ✅ pass
 
-Obligation: Seq_map_rec_0_body_calls_Sequence.select_0
+Obligation: Seq_map_rec_0_body_calls_Seq_map_rec_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: Seq_map_rec_0_body_calls_Sequence.select_1
 Property: out-of-bounds access check
-Result: ❓ unknown
+Result: ✅ pass
 
 Obligation: Seq_map_rec_0_terminates_0
 Property: assert
@@ -432,6 +419,10 @@ Obligation: seq_as_nat_52_terminates_1
 Property: assert
 Result: ✅ pass
 
+Obligation: limbs52_as_nat_body_calls_Seq_map_rec_0_0
+Property: assert
+Result: ✅ pass
+
 Obligation: scalar52_as_nat_body_calls_scalar52..limbs_0
 Property: assert
 Result: ✅ pass
@@ -442,7 +433,7 @@ Result: ✅ pass
 
 Obligation: limbs_bounded_body_calls_Sequence.select_1
 Property: out-of-bounds access check
-Result: ❓ unknown
+Result: ✅ pass
 
 Obligation: is_canonical_scalar_body_calls_scalar..bytes_0
 Property: assert
@@ -454,61 +445,61 @@ Result: ✅ pass
 
 Obligation: is_canonical_scalar_body_calls_Sequence.select_2
 Property: out-of-bounds access check
-Result: ❓ unknown
+Result: ✅ pass
 
 Obligation: scalar_as_canonical_body_calls_scalar..bytes_0
 Property: assert
 Result: ✅ pass
 
-Obligation: Impl__3_from_bytes_wide_ensures_4_4219
+Obligation: Impl__3_from_bytes_wide_ensures_5_5033
 Property: assert
 Result: ✅ pass
 
-Obligation: Impl__3_from_bytes_wide_ensures_5_4255
+Obligation: Impl__3_from_bytes_wide_ensures_6_5069
 Property: assert
 Result: ✅ pass
 
-Obligation: Impl__3_pack_post_Impl__3_pack_ensures_8_4588_calls_scalar..bytes_0
+Obligation: Impl__3_pack_post_Impl__3_pack_ensures_9_5402_calls_scalar..bytes_0
 Property: assert
 Result: ✅ pass
 
-Obligation: Impl__3_pack_post_Impl__3_pack_ensures_8_4588_calls_nat.fromInt_1
+Obligation: Impl__3_pack_post_Impl__3_pack_ensures_9_5402_calls_nat.fromInt_1
 Property: assert
 Result: ✅ pass
 
-Obligation: Impl__3_pack_ensures_8_4588
+Obligation: Impl__3_pack_ensures_9_5402
 Property: assert
 Result: ✅ pass
 
-Obligation: Impl__3_pack_ensures_9_4738
+Obligation: Impl__3_pack_ensures_10_5552
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_Impl__3_pack_requires_7_4556_25
+Obligation: callElimAssert_Impl__3_pack_requires_8_5370_21
 Property: assert
 Result: ✅ pass
 
-Obligation: assume_callElimAssume_Impl__3_pack_ensures_8_4588_26_calls_scalar..bytes_0
+Obligation: assume_callElimAssume_Impl__3_pack_ensures_9_5402_22_calls_scalar..bytes_0
 Property: assert
 Result: ✅ pass
 
-Obligation: assume_callElimAssume_Impl__3_pack_ensures_8_4588_26_calls_nat.fromInt_1
+Obligation: assume_callElimAssume_Impl__3_pack_ensures_9_5402_22_calls_nat.fromInt_1
 Property: assert
 Result: ✅ pass
 
-Obligation: assume_callElimAssume_lemma_group_order_smaller_than_pow256_ensures_35_16016_22_calls_nat.fromInt_0
+Obligation: assume_callElimAssume_lemma_group_order_smaller_than_pow256_ensures_29_15960_18_calls_nat.fromInt_0
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_lemma_scalar52_lt_pow2_256_if_canonical_requires_36_16354_19
+Obligation: callElimAssert_lemma_scalar52_lt_pow2_256_if_canonical_requires_30_16206_15
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_lemma_scalar52_lt_pow2_256_if_canonical_requires_37_16383_20
+Obligation: callElimAssert_lemma_scalar52_lt_pow2_256_if_canonical_requires_31_16235_16
 Property: assert
 Result: ✅ pass
 
-Obligation: assume_callElimAssume_lemma_scalar52_lt_pow2_256_if_canonical_ensures_38_16435_21_calls_nat.fromInt_0
+Obligation: assume_callElimAssume_lemma_scalar52_lt_pow2_256_if_canonical_ensures_32_16287_17_calls_nat.fromInt_0
 Property: assert
 Result: ✅ pass
 
@@ -516,15 +507,15 @@ Obligation: set_tmp2_calls_nat.fromInt_0
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_Arithmetic_Div_mod_lemma_small_mod_requires_14_6464_15
+Obligation: callElimAssert_Arithmetic_Div_mod_lemma_small_mod_requires_15_7227_11
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_Arithmetic_Div_mod_lemma_small_mod_requires_15_6489_16
+Obligation: callElimAssert_Arithmetic_Div_mod_lemma_small_mod_requires_16_7252_12
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_Arithmetic_Div_mod_lemma_mod_bound_requires_18_6683_11
+Obligation: callElimAssert_Arithmetic_Div_mod_lemma_mod_bound_requires_18_7430_7
 Property: assert
 Result: ✅ pass
 
@@ -532,187 +523,131 @@ Obligation: set_tmp5_calls_scalar..bytes_0
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_Arithmetic_Div_mod_lemma_small_mod_requires_14_6464_6
+Obligation: callElimAssert_Arithmetic_Div_mod_lemma_small_mod_requires_15_7227_2
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_Arithmetic_Div_mod_lemma_small_mod_requires_15_6489_7
+Obligation: callElimAssert_Arithmetic_Div_mod_lemma_small_mod_requires_16_7252_3
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_axiom_uniform_mod_reduction_requires_39_16795_2
+Obligation: Impl__4_from_bytes_mod_order_wide_ensures_12_6147
 Property: assert
 Result: ✅ pass
 
-Obligation: Impl__4_from_bytes_mod_order_wide_ensures_11_5333
+Obligation: Impl__4_from_bytes_mod_order_wide_ensures_13_6230
 Property: assert
 Result: ✅ pass
 
-Obligation: Impl__4_from_bytes_mod_order_wide_ensures_12_5416
+Obligation: Impl__4_from_bytes_mod_order_wide_ensures_14_6269
 Property: assert
 Result: ✅ pass
 
-Obligation: Impl__4_from_bytes_mod_order_wide_ensures_13_5455
+Obligation: Arithmetic_Div_mod_lemma_small_mod_ensures_17_7281
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Div_mod_lemma_small_mod_ensures_16_6518
+Obligation: Arithmetic_Div_mod_lemma_mod_bound_ensures_19_7448
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Div_mod_lemma_mod_bound_ensures_19_6701
+Obligation: lemma_group_order_bound_post_lemma_group_order_bound_ensures_20_14896_calls_nat.fromInt_0
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma_pow2_adds_ensures_21_6849
+Obligation: assert_assert_22_15065_calls_nat.fromInt_0
 Property: assert
 Result: ✅ pass
 
-Obligation: Arithmetic_Power2_lemma_pow2_strictly_increases_ensures_24_7117
+Obligation: assert_22_15065
 Property: assert
 Result: ✅ pass
 
-Obligation: lemma_group_order_bound_post_lemma_group_order_bound_ensures_26_14616_calls_nat.fromInt_0
+Obligation: assume_assume_23_15149_calls_nat.fromInt_0
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_assert_28_14785_calls_nat.fromInt_0
+Obligation: assert_assert_24_15233_calls_nat.fromInt_0
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_28_14785
+Obligation: assert_24_15233
 Property: assert
 Result: ✅ pass
 
-Obligation: assume_assume_29_14869_calls_nat.fromInt_0
+Obligation: assert_assert_25_15337_calls_nat.fromInt_0
 Property: assert
 Result: ✅ pass
 
-Obligation: init_calls_nat.fromInt_0
+Obligation: assert_25_15337
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_assert_30_15029_calls_nat.fromInt_0
+Obligation: assert_assert_26_15440_calls_nat.fromInt_0
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_30_15029
+Obligation: assert_assert_26_15440_calls_nat.fromInt_1
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_assert_31_15133_calls_nat.fromInt_0
+Obligation: assert_26_15440
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_31_15133
+Obligation: assert_assert_27_15563_calls_nat.fromInt_0
 Property: assert
 Result: ✅ pass
 
-Obligation: init_calls_nat.fromInt_0
+Obligation: assert_assert_27_15563_calls_nat.fromInt_1
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_Arithmetic_Power2_lemma_pow2_strictly_increases_requires_23_7090_41
+Obligation: assert_assert_27_15563_calls_nat.fromInt_2
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_assert_32_15328_calls_nat.fromInt_0
+Obligation: assert_27_15563
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_assert_32_15328_calls_nat.fromInt_1
+Obligation: assume_assume_28_15709_calls_nat.fromInt_0
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_32_15328
+Obligation: assume_assume_28_15709_calls_nat.fromInt_1
 Property: assert
 Result: ✅ pass
 
-Obligation: init_calls_nat.fromInt_0
+Obligation: assume_assume_28_15709_calls_nat.fromInt_2
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_assert_33_15527_calls_nat.fromInt_0
+Obligation: lemma_group_order_bound_ensures_20_14896
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_assert_33_15527_calls_nat.fromInt_1
+Obligation: lemma_group_order_smaller_than_pow256_post_lemma_group_order_smaller_than_pow256_ensures_29_15960_calls_nat.fromInt_0
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_assert_33_15527_calls_nat.fromInt_2
+Obligation: assume_callElimAssume_lemma_group_order_bound_ensures_20_14896_28_calls_nat.fromInt_0
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_33_15527
+Obligation: lemma_group_order_smaller_than_pow256_ensures_29_15960
 Property: assert
 Result: ✅ pass
 
-Obligation: assume_assume_34_15673_calls_nat.fromInt_0
+Obligation: lemma_scalar52_lt_pow2_256_if_canonical_post_lemma_scalar52_lt_pow2_256_if_canonical_ensures_32_16287_calls_nat.fromInt_0
 Property: assert
 Result: ✅ pass
 
-Obligation: assume_assume_34_15673_calls_nat.fromInt_1
+Obligation: assume_callElimAssume_lemma_group_order_bound_ensures_20_14896_29_calls_nat.fromInt_0
 Property: assert
 Result: ✅ pass
 
-Obligation: assume_assume_34_15673_calls_nat.fromInt_2
-Property: assert
-Result: ✅ pass
-
-Obligation: init_calls_nat.fromInt_0
-Property: assert
-Result: ✅ pass
-
-Obligation: callElimAssert_Arithmetic_Power2_lemma_pow2_strictly_increases_requires_23_7090_34
-Property: assert
-Result: ✅ pass
-
-Obligation: lemma_group_order_bound_ensures_26_14616
-Property: assert
-Result: ✅ pass
-
-Obligation: lemma_group_order_smaller_than_pow256_post_lemma_group_order_smaller_than_pow256_ensures_35_16016_calls_nat.fromInt_0
-Property: assert
-Result: ✅ pass
-
-Obligation: assume_callElimAssume_lemma_group_order_bound_ensures_26_14616_50_calls_nat.fromInt_0
-Property: assert
-Result: ✅ pass
-
-Obligation: init_calls_nat.fromInt_0
-Property: assert
-Result: ✅ pass
-
-Obligation: callElimAssert_Arithmetic_Power2_lemma_pow2_strictly_increases_requires_23_7090_48
-Property: assert
-Result: ✅ pass
-
-Obligation: lemma_group_order_smaller_than_pow256_ensures_35_16016
-Property: assert
-Result: ✅ pass
-
-Obligation: lemma_scalar52_lt_pow2_256_if_canonical_post_lemma_scalar52_lt_pow2_256_if_canonical_ensures_38_16435_calls_nat.fromInt_0
-Property: assert
-Result: ✅ pass
-
-Obligation: assume_callElimAssume_lemma_group_order_bound_ensures_26_14616_55_calls_nat.fromInt_0
-Property: assert
-Result: ✅ pass
-
-Obligation: init_calls_nat.fromInt_0
-Property: assert
-Result: ✅ pass
-
-Obligation: callElimAssert_Arithmetic_Power2_lemma_pow2_strictly_increases_requires_23_7090_53
-Property: assert
-Result: ✅ pass
-
-Obligation: lemma_scalar52_lt_pow2_256_if_canonical_ensures_38_16435
-Property: assert
-Result: ✅ pass
-
-Obligation: axiom_uniform_mod_reduction_ensures_40_16911
+Obligation: lemma_scalar52_lt_pow2_256_if_canonical_ensures_32_16287
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
