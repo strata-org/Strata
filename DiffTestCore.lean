@@ -27,7 +27,7 @@
 --
 -- Restriction: <regex> and <string> fields must not contain tab characters.
 
-import Strata.Languages.Core.Verifier
+import Strata.Languages.Core.Core
 import Strata.Languages.Python.Regex.ReToCore
 
 open Strata Strata.Python
@@ -101,7 +101,7 @@ def checkMatch (pyRegex testStr : String) (mode : MatchMode)
       let errStr := String.intercalate "; " msgs
       return .smtError s!"elab: {errStr}"
     | .ok pgm =>
-      let vcResults ← verify pgm inputCtx none .quiet
+      let vcResults ← Strata.Core.verify pgm inputCtx none .quiet
       match vcResults[0]? with
       | none    => return .smtError "no VCs generated"
       | some vc =>

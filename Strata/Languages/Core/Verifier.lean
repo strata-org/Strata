@@ -1852,32 +1852,11 @@ def verify (program : Program)
   let pipelinePhases := prefixPhases ++ corePipelinePhases (procs := proceduresToVerify) (options := options) (moreFns := moreFns)
   let phases := pipelinePhases.map (·.phase)
   let (oblProgram, pipelineStats) ← pctx.withPhase "programTransformations" do
-    if let some pfx := keepAllFilesPrefix then
-      if let some parent := (System.FilePath.mk pfx).parent then
-        IO.toEIO (fun e => DiagnosticModel.fromFormat f!"{e}")
-          (IO.FS.createDirAll parent)
-    let mut current := program
-    let mut state : Transform.CoreTransformState := { Transform.CoreTransformState.emp with factory := some factory }
-    let mut step := 0
-    have : Inhabited (Except Transform.Err Program × Transform.CoreTransformState) :=
-      ⟨(.error default, Transform.CoreTransformState.emp)⟩
-    for pp in pipelinePhases do
-      let (result, newState) ← pctx.withRepeatedPhasePure pp.phase.name fun () =>
-        Transform.runWith current (fun prog => do
-          let (_, next) ← pp.transform prog
-          return next) state
-      match result with
-      | .ok next =>
-        current := next
-        state := newState
-        step := step + 1
-        if let some pfx := keepAllFilesPrefix then
-          let path := s!"{pfx}.{step}.{pp.phase.name}.core.st"
-          IO.toEIO (fun e => DiagnosticModel.fromFormat f!"{e}")
-            (IO.FS.writeFile path (toString current ++ "\n"))
-      | .error e =>
-        throw e
-    .ok (current, state.statistics)
+    let (prog, state) ← runTransforms program pipelinePhases
+      (initState := { Transform.CoreTransformState.emp with factory := some factory })
+      (pipelineCtx := some pctx)
+      (keepAllFilesPrefix := keepAllFilesPrefix)
+    pure (prog, state.statistics)
   let allStats := pipelineStats
   let axiomNames := program.decls.filterMap fun decl =>
     match decl with | .ax a _ => some a.name | _ => none

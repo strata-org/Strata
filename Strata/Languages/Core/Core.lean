@@ -116,15 +116,24 @@ and chain them with `Core.runTransforms`. -/
 
 /-- Run a chain of pipeline phases on a Core program. All phases share a
     single `CoreTransformState`, so fresh variable counters accumulate across
-    phases and cached analyses (e.g., call graphs) can be reused. -/
+    phases and cached analyses (e.g., call graphs) can be reused. Returns the
+    transformed program together with the final transform state (statistics,
+    cached analyses, etc.).
+
+    Optional knobs:
+    * `initState` — initial transform state. Use this to inject a pre-built
+      `Lambda.Factory`.
+    * `pipelineCtx` — when provided, each phase is wrapped in
+      `withRepeatedPhasePure` for telemetry.
+    * `keepAllFilesPrefix` — when provided, the program after each phase is
+      written to `{prefix}.{n}.{phaseName}.core.st` (1-indexed). Creates the
+      parent directory if needed. -/
 def Core.runTransforms (p : Core.Program) (phases : List Core.PipelinePhase)
-    : Except Core.Transform.Err Core.Program :=
-  Core.Transform.run p (fun prog => do
-    let mut program := prog
-    for phase in phases do
-      let (_, prog') ← phase.transform program
-      program := prog'
-    return program)
+    (initState : Core.Transform.CoreTransformState := .emp)
+    (pipelineCtx : Option Strata.Pipeline.PipelineContext := none)
+    (keepAllFilesPrefix : Option String := none)
+    : EIO Core.Transform.Err (Core.Program × Core.Transform.CoreTransformState) :=
+  _root_.Core.runTransforms p phases initState pipelineCtx keepAllFilesPrefix
 
 /-- Inline procedure calls. By default inlines every non-recursive call. -/
 def Core.passInlineAll : Core.PipelinePhase :=

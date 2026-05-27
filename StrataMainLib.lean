@@ -783,9 +783,9 @@ def pyAnalyzeToGotoCommand : Command where
       | none => filePath
     let sourceText := pySourceOpt.map (·.2)
     let newPgm ← Strata.pythonDirectToCore filePath sourcePathForMetadata
-    match Strata.Core.runTransforms newPgm [Strata.Core.passInlineExcept ["main"]] with
+    match ← (Strata.Core.runTransforms newPgm [Strata.Core.passInlineExcept ["main"]]).toBaseIO with
     | .error e => exitInternalError (toString e)
-    | .ok newPgm =>
+    | .ok (newPgm, _) =>
       -- Type-check the full program (registers Python types like ExceptOrNone)
       let Ctx := { Lambda.LContext.default with functions := Strata.Python.PythonFactory, knownTypes := Core.KnownTypes }
       let Env := Lambda.TEnv.default
@@ -1254,8 +1254,8 @@ def transformCommand : Command where
           exitFailure s!"Unknown pass '{other}'. Valid passes: {validPasses}."
       -- Run all passes in a single CoreTransformM chain so fresh variable
       -- counters accumulate and cached analyses are reused across passes.
-      match Strata.Core.runTransforms initProgram passes with
-      | .ok program => IO.print (Core.formatProgram program)
+      match ← (Strata.Core.runTransforms initProgram passes).toBaseIO with
+      | .ok (program, _) => IO.print (Core.formatProgram program)
       | .error e => exitFailure s!"Transform failed: {e}"
 
 def verifyCommand (mkDischarge : Core.MkDischargeFn := Core.mkDischargeFn) : Command where

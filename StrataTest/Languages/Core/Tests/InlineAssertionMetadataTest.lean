@@ -38,8 +38,8 @@ procedure caller() {
 #guard_msgs in
 #eval show IO String from do
   let (coreProg, _) := Strata.Core.getProgram inlineAssertPgm
-  let inlined ← match Strata.Core.runTransforms coreProg [Strata.Core.passInlineAll] with
-    | .ok p => pure p
+  let inlined ← match ← (Strata.Core.runTransforms coreProg [Strata.Core.passInlineAll]).toBaseIO with
+    | .ok (p, _) => pure p
     | .error e => throw (IO.userError s!"Inlining failed: {e}")
   let vcResults ←
     EIO.toIO (fun e => IO.Error.userError e)
