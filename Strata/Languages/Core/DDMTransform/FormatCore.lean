@@ -7,9 +7,9 @@ module
 
 public import Strata.Languages.Core.DDMTransform.Grammar
 public import Strata.Languages.Core.Procedure
-public import Strata.DDM.Util.DecimalRat
-public import Strata.DDM.Format
-public import Strata.Languages.Core.CoreOp
+public import StrataDDM.Util.DecimalRat
+public import StrataDDM.Format
+import Strata.Languages.Core.Factory
 
 public section
 

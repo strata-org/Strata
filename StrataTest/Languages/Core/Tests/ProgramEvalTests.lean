@@ -3,9 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
-import Strata.Languages.Core.StatementEval
+meta import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core.ProcedureEval
+meta import Strata.Languages.Core.StatementEval
+import StrataDDM.Integration.Lean.HashCommands
+
+meta section
 
 namespace Core
 
@@ -400,7 +405,7 @@ Proof Obligation:
 -/
 #guard_msgs in
 #eval do let E := Env.init
-         let (E, _stats) := eval E
+         let (E, _stats) := Core.Procedure.eval E
               { header := {name := "P",
                            typeArgs := [],
                            inputs := [("x", mty[int])],
@@ -618,3 +623,5 @@ end ConcreteInterpretation
 ---------------------------------------------------------------------
 
 end Core
+
+end

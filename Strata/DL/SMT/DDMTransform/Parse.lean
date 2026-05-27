@@ -5,9 +5,9 @@
 -/
 module
 
-public import Strata.DDM.Integration.Lean
-public meta import Strata.DDM.Integration.Lean
-import Strata.DDM.BuiltinDialects.BuiltinM
+import StrataDDM.BuiltinDialects.BuiltinM
+public import StrataDDM.Integration.Lean.OfAstM
+import StrataDDM.Integration.Lean --shake: keep
 
 public section
 

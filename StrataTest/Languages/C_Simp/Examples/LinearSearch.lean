@@ -3,9 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.C_Simp.C_Simp
-import Strata.Languages.C_Simp.Verify
+meta import all Strata.Languages.C_Simp.C_Simp
+meta import all Strata.Languages.C_Simp.Verify
+import StrataDDM.Integration.Lean.HashCommands
+
+meta section
 
 def LinearSearchEnv :=
 #strata
@@ -66,7 +70,7 @@ info: function linearSearch {
   while
     (~Int.Lt idx (~Array.Len arr))
     (some (~Int.Sub (~Array.Len arr) idx))
-    [[linearSearch_invariant_381_398]: #true]
+    [[linearSearch_invariant_467_484]: #true]
   {
     if (e == (~Array.Get arr idx)) {
       return := #true
@@ -131,3 +135,5 @@ spec {
 #eval Strata.Core.formatProgram
         (Strata.to_core (Strata.C_Simp.get_program LinearSearchEnv))
         (extraFreeVars := #["intArr", "boolArr", "Array.Len", "Array.Get"])
+
+end

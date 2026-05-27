@@ -6,9 +6,6 @@
 module
 
 public import Strata.Languages.Core.Factory
-public import Strata.DL.Lambda.Factory
-import Strata.DL.Util.Func
-public import Strata.DL.Lambda.IntBoolFactory
 import all Strata.DL.Lambda.IntBoolFactory
 import all Strata.DL.Lambda.LTy
 import all Strata.DL.Lambda.Factory

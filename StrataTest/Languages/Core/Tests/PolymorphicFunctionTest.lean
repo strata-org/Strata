@@ -3,8 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core.Verifier
+import StrataDDM.Integration.Lean.HashCommands
+
+meta section
 
 /-!
 # Polymorphic Function Integration Tests
@@ -204,10 +208,12 @@ spec {
 #end
 
 /--
-info: error: (4619-4642) Impossible to unify (arrow int bool) with (arrow bool $__ty5).
+info: error: (4692-4715) Impossible to unify (arrow int bool) with (arrow bool $__ty5).
 First mismatch: int with bool.
 -/
 #guard_msgs in
 #eval (Core.typeCheck .quiet (TransM.run Inhabited.default (translateProgram eqTypeMismatchPgm)).fst)
 
 end Strata.PolymorphicFunctionTest
+
+end

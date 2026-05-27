@@ -3,11 +3,22 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-
-import Strata.Languages.Core.Program
+module
 import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core.Verifier
 import Strata.Transform.StructuredToUnstructured
+import Lean.Parser.Types
+meta import Strata.Languages.Core.DDMTransform.Grammar
+meta import Strata.Languages.Core.DDMTransform.Translate
+meta import Strata.Languages.Core.Options
+public import StrataDDM.AST
+public import Strata.DL.Imperative.BasicBlock
+public import Strata.Languages.Core.Statement
+public import Strata.Languages.Core.Expressions
+import StrataDDM.Integration.Lean.HashCommands
+import Strata.Languages.Core.StatementSemantics
 
+public section
 namespace Strata
 
 def singleCFG (p : Program) (n : Nat) : Imperative.CFG String
@@ -669,3 +680,6 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify precondElimMeasureBodyMutatesPgm (options := .quiet)
+
+end Strata
+end

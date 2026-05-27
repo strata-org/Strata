@@ -7,7 +7,6 @@ module
 
 public import Strata.Transform.CoreTransform
 public import Strata.DL.Imperative.SMTUtils
-public import Strata.DL.Imperative.EvalContext
 
 /-! # Pipeline Phase Definitions for Model Validation
 

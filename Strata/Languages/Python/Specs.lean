@@ -5,13 +5,11 @@
 -/
 module
 
-import        Strata.DDM.Format
-import all    Strata.DDM.Util.Fin
+import all    StrataDDM.Util.Fin
 import        Strata.Languages.Python.ReadPython
 import        Strata.Languages.Python.Specs.DDM
 public import Strata.Languages.Python.Specs.Decls
 import Strata.Languages.Python.Specs.MessageKind
-import        Strata.Pipeline.Messages
 import        Strata.Util.DecideProp
 
 namespace Strata.Python.ModuleName

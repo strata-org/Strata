@@ -12,6 +12,7 @@ import all Strata.DL.Util.List
 public import Strata.DL.Util.Maps
 import all Strata.DL.Util.Maps
 import all Strata.DL.Util.Map
+import Std.Tactic.BVDecide.Normalize.BitVec
 
 /-!
 ## Type Substitution and Unification

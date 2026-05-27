@@ -3,10 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Core
-import Strata.Languages.Core.DDMTransform.Translate
-import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core.Core
+meta import Strata.Languages.Core.DDMTransform.Translate
+meta import Strata.Languages.Core.Verifier
+import StrataDDM.Integration.Lean.HashCommands
+
+meta section
 
 /-! # Lambda, Higher-Order Function, and Function Type Tests
 
@@ -706,3 +710,5 @@ Property: assert
 Result: ✅ pass-/
 #guard_msgs in
 #eval verify polyDatatypeFnInstPgm (options := .quiet)
+
+end

@@ -5,7 +5,8 @@
 -/
 
 module
-import all Strata.DDM.Util.Fin
+public meta import StrataDDM.Util.Fin
+import all StrataDDM.Util.Fin
 
 /-
 This module provides `findPython3`, a utility that locates
@@ -16,7 +17,7 @@ It also provides a few functions for checking Python versions and
 running `mise`.
 -/
 
-public section
+public meta section
 namespace Strata.Python
 
 /--

@@ -5,8 +5,3 @@
 -/
 module
 
-import Strata.Languages.Python.PythonToCore
-import Strata.Languages.Python.PythonDialect
-import Strata.Languages.Python.CorePrelude
-import Strata.Languages.Python.FunctionSignatures
-import Strata.Languages.Python.PythonToLaurel

@@ -3,8 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core.Verifier
+import StrataDDM.Integration.Lean.HashCommands
+
+meta section
 
 /-!
 # Recursive Function Integration Tests
@@ -575,3 +579,5 @@ Result: ✅ pass
 #eval verify recPrecondPgm (options := .quiet)
 
 end Strata.RecursiveFunctionTest
+
+end
