@@ -2244,6 +2244,22 @@ private theorem createAssumes_ok
     state names `s_arg/s_out/s_old/s_postold/s_assert/s_assume` are
     threaded through; only state-shape relevant downstream are retained.
 -/
+
+-- Q19-I bind-shell simp golf: shared simp sets used inside
+-- `callElimCmd_call_eq`. The hypothesis name is captured as an
+-- `ident` and spliced into the `simp ... at` location list.
+local macro "bind_shell" "at" h:ident : tactic => `(tactic|
+  simp only [bind, StateT.bind, ExceptT.bind, ExceptT.bindCont, ExceptT.mk,
+             pure, ExceptT.pure, StateT.pure] at $h:ident)
+
+local macro "bind_shell_state" "at" h:ident : tactic => `(tactic|
+  simp only [bind, StateT.bind, ExceptT.bind, ExceptT.bindCont, ExceptT.mk,
+             pure, ExceptT.pure, StateT.pure,
+             get, getThe, MonadStateOf.get, MonadState.get, StateT.get,
+             set, MonadStateOf.set, StateT.set,
+             monadLift, MonadLift.monadLift, liftM, ExceptT.lift,
+             Functor.map, StateT.map, Except.mapError] at $h:ident)
+
 private theorem callElimCmd_call_eq
     {procName : String} {args : List (CallArg Expression)}
     {md : Imperative.MetaData Expression}
@@ -2380,8 +2396,7 @@ private theorem callElimCmd_call_eq
       exact absurd Heq (by intro h; cases h)
   | some proc =>
       rw [hfind] at Heq
-      simp only [bind, StateT.bind, ExceptT.bind, ExceptT.bindCont,
-                 ExceptT.mk, pure, StateT.pure] at Heq
+      bind_shell at Heq
       generalize Heqarg :
         (genArgExprIdentsTrip
           (Lambda.LMonoTySignature.toTrivialLTy proc.header.inputs)
@@ -2396,8 +2411,7 @@ private theorem callElimCmd_call_eq
         | error e =>
             exact absurd Heq (by intro h; cases h)
         | ok argTrips =>
-            simp only [bind, StateT.bind, ExceptT.bind, ExceptT.bindCont,
-                       ExceptT.mk, pure, StateT.pure] at Heq
+            bind_shell at Heq
             generalize Heqout :
               (genOutExprIdentsTrip
                 (Lambda.LMonoTySignature.toTrivialLTy proc.header.outputs)
@@ -2452,9 +2466,7 @@ private theorem callElimCmd_call_eq
                     simp only [pure, ExceptT.pure, StateT.pure,
                                ExceptT.mk] at HeqtyR
                     rw [HeqtyR] at Heq
-                    simp only [bind, StateT.bind, ExceptT.bind,
-                               ExceptT.bindCont, ExceptT.mk,
-                               pure, ExceptT.pure, StateT.pure] at Heq
+                    bind_shell at Heq
                     -- ── B2 layer: asserts ← createAsserts ... ──
                     obtain ⟨asserts, s_assert, Heqas, _Hlenas,
                             assertLabels, HassertLabelsLen, HassertShape⟩ :=
@@ -2468,9 +2480,7 @@ private theorem callElimCmd_call_eq
                         callElimAssertPrefix
                         s_postold
                     rw [Heqas] at Heq
-                    simp only [bind, StateT.bind, ExceptT.bind,
-                               ExceptT.bindCont, ExceptT.mk,
-                               pure, ExceptT.pure, StateT.pure] at Heq
+                    bind_shell at Heq
                     -- B2: assumes ← createAssumes (oldSubst helper).
                     let inputOnlyOldSubst : Map Expression.Ident Expression.Expr :=
                       (proc.header.inputs.keys.zip (CallArg.getInputExprs args)).filterMap
@@ -2517,15 +2527,7 @@ private theorem callElimCmd_call_eq
                         callElimAssumePrefix
                         s_assert
                     rw [Heqasm] at Heq
-                    simp only [bind, StateT.bind, ExceptT.bind,
-                               ExceptT.bindCont, ExceptT.mk,
-                               pure, ExceptT.pure, StateT.pure,
-                               get, getThe, MonadStateOf.get,
-                               MonadState.get, StateT.get,
-                               set, MonadStateOf.set, StateT.set,
-                               monadLift, MonadLift.monadLift, liftM,
-                               ExceptT.lift, Functor.map,
-                               StateT.map] at Heq
+                    bind_shell_state at Heq
                     -- ── Callgraph update ──
                     -- `match σ.cachedAnalyses.callGraph, σ.currentProcedureName`.
                     -- We split on both branches.  The first branch may
@@ -2546,22 +2548,14 @@ private theorem callElimCmd_call_eq
                         cases hcpn : s_assume.currentProcedureName with
                         | none =>
                           rw [hcg, hcpn] at Heq
-                          simp only [pure, ExceptT.pure, StateT.pure,
-                                     bind, StateT.bind, ExceptT.bind,
-                                     ExceptT.bindCont, ExceptT.mk,
-                                     set, MonadStateOf.set, StateT.set,
-                                     Functor.map, StateT.map] at Heq
+                          bind_shell_state at Heq
                           have Hpair := Prod.mk.injEq _ _ _ _ |>.mp Heq
                           have Hexc := Except.ok.injEq _ _ |>.mp Hpair.1
                           have Hopt := Option.some.injEq _ _ |>.mp Hexc
                           exact Hopt.symm
                         | some _ =>
                           rw [hcg, hcpn] at Heq
-                          simp only [pure, ExceptT.pure, StateT.pure,
-                                     bind, StateT.bind, ExceptT.bind,
-                                     ExceptT.bindCont, ExceptT.mk,
-                                     set, MonadStateOf.set, StateT.set,
-                                     Functor.map, StateT.map] at Heq
+                          bind_shell_state at Heq
                           have Hpair := Prod.mk.injEq _ _ _ _ |>.mp Heq
                           have Hexc := Except.ok.injEq _ _ |>.mp Hpair.1
                           have Hopt := Option.some.injEq _ _ |>.mp Hexc
@@ -2570,11 +2564,7 @@ private theorem callElimCmd_call_eq
                         cases hcpn : s_assume.currentProcedureName with
                         | none =>
                           rw [hcg, hcpn] at Heq
-                          simp only [pure, ExceptT.pure, StateT.pure,
-                                     bind, StateT.bind, ExceptT.bind,
-                                     ExceptT.bindCont, ExceptT.mk,
-                                     set, MonadStateOf.set, StateT.set,
-                                     Functor.map, StateT.map] at Heq
+                          bind_shell_state at Heq
                           have Hpair := Prod.mk.injEq _ _ _ _ |>.mp Heq
                           have Hexc := Except.ok.injEq _ _ |>.mp Hpair.1
                           have Hopt := Option.some.injEq _ _ |>.mp Hexc
@@ -2582,29 +2572,19 @@ private theorem callElimCmd_call_eq
                         | some callerName =>
                           rw [hcg, hcpn] at Heq
                           -- decrementEdge result inspected.
-                          simp only [bind, StateT.bind, ExceptT.bind,
-                                     ExceptT.bindCont, ExceptT.mk,
-                                     pure, ExceptT.pure, StateT.pure,
-                                     Functor.map, StateT.map,
-                                     Except.mapError] at Heq
+                          bind_shell_state at Heq
                           cases hde :
                             (cg.decrementEdge callerName procName) with
                           | error e =>
                             rw [hde] at Heq
-                            simp only [Except.mapError, pure, ExceptT.pure,
-                                       StateT.pure] at Heq
+                            bind_shell_state at Heq
                             -- Heq is `(Except.error _, s_assume)
                             --        = (Except.ok (some sts'), γ_out)`
                             -- which is contradictory.
                             exact absurd Heq (by intro h; cases h)
                           | ok cg' =>
                             rw [hde] at Heq
-                            simp only [Except.mapError, pure, ExceptT.pure,
-                                       StateT.pure, bind, StateT.bind,
-                                       ExceptT.bind, ExceptT.bindCont,
-                                       ExceptT.mk, set, MonadStateOf.set,
-                                       StateT.set,
-                                       Functor.map, StateT.map] at Heq
+                            bind_shell_state at Heq
                             have Hpair := Prod.mk.injEq _ _ _ _ |>.mp Heq
                             have Hexc := Except.ok.injEq _ _ |>.mp Hpair.1
                             have Hopt := Option.some.injEq _ _ |>.mp Hexc
