@@ -179,6 +179,9 @@ private def runLaurelPasses (options : LaurelTranslateOptions)
     -- Run resolve after the pass if needed
     if pass.needsResolves then
       let result := resolve program (some model)
+      let newErrors := result.errors.filter fun e => !resolutionErrors.contains e
+      if !newErrors.isEmpty then
+        emit pass.name "laurel.st" program
       program := result.program
       model := result.model
     emit pass.name "laurel.st" program

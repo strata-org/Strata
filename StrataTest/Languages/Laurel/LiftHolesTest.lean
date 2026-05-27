@@ -332,4 +332,52 @@ procedure test() { var x: int := <?>; assert <??> };
 -- Nondet hole in function → should be rejected (not tested here since
 -- the error occurs at Core translation time, which requires the full pipeline).
 
+/-! ## Holes inside datatype destructor / tester arguments -/
+
+-- Hole as argument to a (safe) datatype destructor → typed as the parent
+-- datatype, then lifted to a generated `$hole_0` returning that datatype.
+-- Regression test for PR #1134: the destructor's `ResolvedNode` carries the
+-- parent datatype's resolved Identifier (with `uniqueId`), so this works
+-- without textual decoding of the override name.
+/--
+info: function $hole_0()
+  returns ($result: IntList)
+  opaque;
+procedure test()
+{ var x: int := IntList..head($hole_0()) };
+-/
+#guard_msgs in
+#eval! parseElimAndPrint r"
+datatype IntList { Nil(), Cons(head: int, tail: IntList) }
+procedure test() { var x: int := IntList..head(<?>) };
+"
+
+-- Hole as argument to an unsafe `!` destructor → same datatype recovery.
+/--
+info: function $hole_0()
+  returns ($result: IntList)
+  opaque;
+procedure test()
+{ var x: int := IntList..head!($hole_0()) };
+-/
+#guard_msgs in
+#eval! parseElimAndPrint r"
+datatype IntList { Nil(), Cons(head: int, tail: IntList) }
+procedure test() { var x: int := IntList..head!(<?>) };
+"
+
+-- Hole as argument to a tester → typed as the parent datatype.
+/--
+info: function $hole_0()
+  returns ($result: IntList)
+  opaque;
+procedure test()
+{ assert IntList..isCons($hole_0()) };
+-/
+#guard_msgs in
+#eval! parseElimAndPrint r"
+datatype IntList { Nil(), Cons(head: int, tail: IntList) }
+procedure test() { assert IntList..isCons(<?>) };
+"
+
 end Laurel

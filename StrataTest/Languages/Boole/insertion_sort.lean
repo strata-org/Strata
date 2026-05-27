@@ -50,8 +50,44 @@ spec
 };
 #end
 
-#guard_msgs (drop info) in
-#eval Strata.Boole.verify "cvc5" insertionSortPgm
+/-- info:
+Obligation: entry_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: entry_invariant_0_1
+Property: assert
+Result: ✅ pass
+
+Obligation: entry_invariant_1_0
+Property: assert
+Result: ✅ pass
+
+Obligation: entry_invariant_1_1
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_1_0
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_1_1
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_1
+Property: assert
+Result: ✅ pass
+
+Obligation: InsertionSort_ensures_2_337
+Property: assert
+Result: ✅ pass-/
+#guard_msgs in
+#eval Strata.Boole.verify "cvc5" insertionSortPgm (options := .quiet)
 
 example : Strata.smtVCsCorrect insertionSortPgm := by
   gen_smt_vcs
