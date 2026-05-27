@@ -7058,19 +7058,6 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     · -- argTemps.Nodup
                       exact (List.nodup_append.mp
                         (List.nodup_append.mp Hgennd).1).1
-                  have HargT_disj_outT :
-                      argTemps.Disjoint
-                        outTemps := by
-                    have Hnd' := (List.nodup_append.mp Hgennd).1
-                    intro v Hv1 Hv2
-                    have Hpw := (List.nodup_append.mp Hnd').2.2
-                    exact Hpw v Hv1 v Hv2 rfl
-                  have HargT_disj_old :
-                      argTemps.Disjoint genOldIdents := by
-                    intro v Hv1 Hv2
-                    have Hpw := (List.nodup_append.mp Hgennd).2.2
-                    exact Hpw v
-                      (List.mem_append.mpr (Or.inl Hv1)) v Hv2 rfl
                   have HrdLayer2_argT :
                       ReadValues
                         (updatedStates
@@ -7079,19 +7066,16 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           outTemps oVals)
                         argTemps argVals := by
                     apply readValues_updatedStates HoutFstLen
-                            HargT_disj_outT HrdLayer1_argT
-                  have HoldFstLen_L4 :
-                      oldTrips.unzip.fst.unzip.fst.length = oldVals.length := by
-                    rw [HoldTripsFst, HgenOldLen, HoldValsLen]
+                            HargOutDisj HrdLayer1_argT
                   have HargT_disj_oldFst :
                       argTemps.Disjoint
                         oldTrips.unzip.fst.unzip.fst := by
                     rw [HoldTripsFst]
-                    exact HargT_disj_old
+                    exact HargOldDisj
                   have HrdLayer3_argT :
                       ReadValues σ_old
                         argTemps argVals :=
-                    readValues_updatedStates HoldFstLen_L4 HargT_disj_oldFst
+                    readValues_updatedStates HoldFstLen HargT_disj_oldFst
                       HrdLayer2_argT
                   -- σ_old reads lhs ↦ oVals.  Path: σ_old(lhs) lifts σ(lhs)
                   -- via readValues_updatedStates × 3 (lhs disjoint from
@@ -7116,7 +7100,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     exact HlhsDisjOld
                   have HrdLayer3_lhs :
                       ReadValues σ_old lhs oVals :=
-                    readValues_updatedStates HoldFstLen_L4 Hlhs_disj_oldFst
+                    readValues_updatedStates HoldFstLen Hlhs_disj_oldFst
                       HrdLayer2_lhs
                   have HrdOld_inout_L4 :
                       ReadValues σ_old
