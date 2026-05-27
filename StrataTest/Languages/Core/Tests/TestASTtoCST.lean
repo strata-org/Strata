@@ -119,17 +119,17 @@ info: program Core;
 function fooConst () : int;
 axiom [fooConst_value]: fooConst == 5;
 function f1 (x : int) : int;
-axiom [f1_ax1]: forall __q0 : int ::  { f1(__q0) }
-  f1(__q0) > __q0;
-axiom [f1_ax2_no_trigger]: forall __q0 : int :: f1(__q0) > __q0;
+axiom [f1_ax1]: forall x : int ::  { f1(x) }
+  f1(x) > x;
+axiom [f1_ax2_no_trigger]: forall x : int :: f1(x) > x;
 function f2 (x : int, y : bool) : bool;
-axiom [f2_ax]: forall __q0 : int :: forall __q1 : bool ::  { f2(__q0, true), f2(__q0, false) }
-  f2(__q0, true) == true;
+axiom [f2_ax]: forall x : int :: forall y : bool ::  { f2(x, true), f2(x, false) }
+  f2(x, true) == true;
 function f3 (x : int, y : bool, z : regex) : bool;
-axiom [f3_ax]: forall __q0 : int :: forall __q1 : bool :: forall __q2 : regex ::  { f3(__q0, __q1, __q2), f2(__q0, __q1) }
-  f3(__q0, __q1, __q2) == f2(__q0, __q1);
+axiom [f3_ax]: forall x : int :: forall y : bool :: forall z : regex ::  { f3(x, y, z), f2(x, y) }
+  f3(x, y, z) == f2(x, y);
 function f4<T1, T2> (x : T1) : Map T1 T2;
-axiom [foo_ax]: forall __q0 : int :: (f4(__q0))[1] == true;
+axiom [foo_ax]: forall x : int :: (f4(x))[1] == true;
 function f5<T1, T2> (x : T1, y : T2) : T1 {
   x
 }
@@ -425,8 +425,8 @@ info: program Core;
 procedure find_max (nums : Map bv64 bv32, nums_len : bv64, out ret : bv32)
 spec {
   requires [find_max_requires_0]: nums_len > bv{64}(0);
-  ensures [find_max_ensures_1]: forall __q0 : bv64 :: bv{64}(0) <= __q0 && __q0 < nums_len ==> ret >=s nums[__q0];
-  ensures [find_max_ensures_2]: exists __q0 : bv64 :: bv{64}(0) <= __q0 && __q0 < nums_len && ret == nums[__q0];
+  ensures [find_max_ensures_1]: forall x0 : bv64 :: bv{64}(0) <= x0 && x0 < nums_len ==> ret >=s nums[x0];
+  ensures [find_max_ensures_2]: exists x0 : bv64 :: bv{64}(0) <= x0 && x0 < nums_len && ret == nums[x0];
   } {
   var max : bv32;
   var i : bv64;
@@ -436,8 +436,8 @@ spec {
   invariant nums_len > bv{64}(0)
   invariant bv{64}(0) <= i
   invariant i <= nums_len
-  invariant forall __q0 : bv64 :: bv{64}(0) <= __q0 && __q0 < i ==> max >=s nums[__q0]
-  invariant exists __q0 : bv64 :: bv{64}(0) <= __q0 && __q0 < i && max == nums[__q0]
+  invariant forall x0 : bv64 :: bv{64}(0) <= x0 && x0 < i ==> max >=s nums[x0]
+  invariant exists x0 : bv64 :: bv{64}(0) <= x0 && x0 < i && max == nums[x0]
   {
     if (nums[i] >s max) {
       max := nums[i];

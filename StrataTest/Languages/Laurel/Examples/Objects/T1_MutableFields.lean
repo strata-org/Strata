@@ -199,5 +199,5 @@ procedure fieldTargetInMultiAssign()
 };
 "#
 
-#guard_msgs(drop info, error) in
+#guard_msgs (drop info, error) in
 #eval testInputWithOffset "MutableFields" program 14 processLaurelFile

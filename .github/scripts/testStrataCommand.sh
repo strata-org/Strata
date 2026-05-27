@@ -81,6 +81,15 @@ $strata print --include Examples/dialects Examples/dialects/Arith.dialect.st > "
 # Print Ion file and compare with previous run
 $strata print --include Examples/dialects "$temp_dir/Arith.dialect.st.ion" | cmp - "$temp_dir/Arith.dialect.st"
 
+# --- pyResolveOverloads error handling ---
+set +e
+
+expect_error "pyResolveOverloads missing dispatch file" \
+  "nonexistent_dispatch.ion" \
+  $strata pyResolveOverloads Examples/SimpleProc.core.st nonexistent_dispatch.ion
+
+set -e
+
 if [ $failed -ne 0 ]; then
   echo "Some tests failed."
   exit 1
