@@ -157,17 +157,19 @@ mismatches against the surrounding context become diagnostics. The implementatio
 
 ### Bidirectional type checking
 
-There are two operations on expressions, written here in standard bidirectional notation:
+There are two operations on expressions, written here in standard
+bidirectional notation:
 
 ```
-Γ ⊢ e ⇒ T            -- "e synthesizes T"     (Synth.resolveStmtExpr)
-Γ ⊢ e ⇐ T            -- "e checks against T"  (Check.resolveStmtExpr)
+Γ ⊢ e ⇒ A            -- "e synthesizes A"     (Synth.resolveStmtExpr)
+Γ ⊢ e ⇐ A            -- "e checks against A"  (Check.resolveStmtExpr)
 ```
 
-Synthesis returns a type inferred from the expression itself; checking verifies that the
-expression has a given expected type. Each construct picks a mode based on whether its
-type is determined locally (synth) or by context (check). The two judgments are connected
-by a single change-of-direction rule, *subsumption*:
+Synthesis returns a type inferred from the expression itself; checking
+verifies that the expression has a given expected type. Each construct
+picks a mode based on whether its type is determined locally (synth) or
+by context (check). The two judgments are connected by a single
+change-of-direction rule, *subsumption*:
 
 $$`\frac{\Gamma \vdash e \Rightarrow A \quad A <: B}{\Gamma \vdash e \Leftarrow B} \quad \text{([⇐] Sub)}`
 
@@ -191,12 +193,22 @@ and {name Strata.Laurel.isConsistentSubtype}`isConsistentSubtype`:
 
 {docstring Strata.Laurel.isConsistentSubtype}
 
-Side-effecting constructs synthesize {name Strata.Laurel.HighType.TVoid}`TVoid`. This
-includes {name Strata.Laurel.StmtExpr.Return}`Return`,
-{name Strata.Laurel.StmtExpr.Exit}`Exit`, {name Strata.Laurel.StmtExpr.While}`While`,
-{name Strata.Laurel.StmtExpr.Assert}`Assert`, {name Strata.Laurel.StmtExpr.Assume}`Assume`,
-{name Strata.Laurel.Variable.Declare}`Var Declare`, and the opaque/abstract/external bodies
-— recorded in the rules below.
+Statement-shaped constructs check at any value type. Their
+conclusions are polymorphic in $`T`: the form contributes nothing to
+the surrounding value flow, so its rule does not constrain $`T`
+beyond what its own premises do. The block rule
+({ref "rules-control-flow"}[Block]) is what supplies the value type
+for a block: it routes the surrounding $`T` to the last statement
+and ignores the value of every non-last statement. Every statement
+form ({name Strata.Laurel.StmtExpr.Return}`Return`,
+{name Strata.Laurel.StmtExpr.Exit}`Exit`,
+{name Strata.Laurel.StmtExpr.While}`While`,
+{name Strata.Laurel.StmtExpr.Assert}`Assert`,
+{name Strata.Laurel.StmtExpr.Assume}`Assume`,
+{name Strata.Laurel.StmtExpr.Assign}`Assign`,
+{name Strata.Laurel.Variable.Declare}`Var Declare`) thus has a
+conclusion of the form $`\Gamma \vdash s \Leftarrow A`, with $`A`
+unconstrained.
 
 ## Typing rules
 
@@ -213,12 +225,12 @@ direction explicit.
 - {ref "rules-literals"}[*Literals*] — \[⇒\] Lit-Int, \[⇒\] Lit-Bool, \[⇒\] Lit-String, \[⇒\] Lit-Decimal
 - {ref "rules-variables"}[*Variables*] — \[⇒\] Var-Local, \[⇒\] Var-Field, \[⇐\] Var-Declare
 - {ref "rules-control-flow"}[*Control flow*] — \[⇐\] If, \[⇐\] If-NoElse;
-  \[⇐\] Block, \[⇒\] Skip, \[⇐\] Discard, \[⇐\] Discard-Call; \[⇐\] Exit;
+  \[⇐\] Block, \[⇒\] Skip, \[⇐\] Discard-Call; \[⇐\] Exit;
   \[⇐\] Return-None-Void, \[⇐\] Return-None-Single, \[⇐\] Return-None-Multi,
   \[⇐\] Return-Some, \[⇐\] Return-Void-Error,
   \[⇐\] Return-Multi-Error; \[⇐\] While
 - {ref "rules-verification-statements"}[*Verification statements*] — \[⇐\] Assert, \[⇐\] Assume
-- {ref "rules-assignment"}[*Assignment*] — \[⇐\] Assign
+- {ref "rules-assignment"}[*Assignment*] — \[⇒\] Assign, \[⇐\] Assign
 - {ref "rules-calls"}[*Calls*] — \[⇒\] Static-Call, \[⇒\] Static-Call-Multi,
   \[⇒\] Instance-Call, \[⇒\] Instance-Call-Multi
 - {ref "rules-primitive-operations"}[*Primitive operations*] — \[⇒\] Op-Bool, \[⇒\] Op-Cmp, \[⇒\] Op-Eq,
@@ -277,7 +289,7 @@ $$`\frac{\Gamma \vdash e \Rightarrow \_ \quad \Gamma(f) = T_f}{\Gamma \vdash \ma
 
 {docstring Strata.Laurel.Resolution.Synth.varField}
 
-$$`\frac{x \notin \mathrm{dom}(\Gamma) \quad \mathsf{TVoid} <: T}{\Gamma \vdash \mathsf{Var}\;(\mathsf{.Declare}\;\langle x, T_x\rangle) \Leftarrow T \dashv \Gamma, x : T_x} \quad \text{([⇐] Var-Declare)}`
+$$`\frac{x \notin \mathrm{dom}(\Gamma)}{\Gamma \vdash \mathsf{Var}\;(\mathsf{.Declare}\;\langle x, T_x\rangle) \Leftarrow A \;\;\dashv\;\; \Gamma, x : T_x} \quad \text{([⇐] Var-Declare)}`
 
 {docstring Strata.Laurel.Resolution.Check.varDeclare}
 
@@ -292,51 +304,110 @@ $$`\frac{\Gamma \vdash \mathit{cond} \Leftarrow \mathsf{TBool} \quad \Gamma \vda
 
 {docstring Strata.Laurel.Resolution.Check.ifThenElse}
 
-$$`\frac{\Gamma_0 = \Gamma \quad \Gamma_{i-1} \vdash s_i \Rightarrow \_ \dashv \Gamma_i \;(1 \le i < n) \quad \Gamma_{n-1} \vdash s_n \Leftarrow T}{\Gamma \vdash \mathsf{Block}\;[s_1; \ldots; s_n]\;\mathit{label} \Leftarrow T} \quad \text{([⇐] Block)}`
+A non-empty block routes the surrounding expected type to its last
+statement; each non-last statement is checked at $`\mathsf{TVoid}`,
+*except* calls — which are synthesized and have their result type
+dropped. That carve-out is the only block-level rule that isn't
+already a consequence of the rules for individual statements.
 
-Reading the premise: $`\Gamma_{i-1} \vdash s_i \Rightarrow \_ \dashv \Gamma_i` means $`s_i`
-is resolved under the scope $`\Gamma_{i-1}` produced by its predecessor, synthesizes some
-type (the `_` discards it — non-last statements are sequenced for effect, not value), and
-produces a possibly extended scope $`\Gamma_i` that the next statement sees. In practice
-only `Var (.Declare …)` actually extends the scope; every other construct leaves it
-unchanged so $`\Gamma_i = \Gamma_{i-1}`. The *last* statement $`s_n` is checked against
-the block's expected type $`T` rather than synthesizing freely. The block opens a fresh
-nested scope, so declarations made inside don't leak out — once the block ends, the
-surrounding $`\Gamma` is restored.
+$$`\frac{\Gamma_0 = \Gamma \quad \Gamma_{i-1} \vdash s_i \Leftarrow \mathsf{TVoid} \;\;\dashv\;\; \Gamma_i \;(1 \le i < n) \quad \Gamma_{n-1} \vdash s_n \Leftarrow T}{\Gamma \vdash \mathsf{Block}\;[s_1; \ldots; s_n]\;\mathit{label} \Leftarrow T} \quad \text{([⇐] Block)}`
 
-Discarding the types of non-last statements matches Java/Python/JavaScript, where
-`f(x);` is a normal statement even when `f` returns a value. The trade-off is that a
-stray expression like `5;` is silently accepted; flagging that belongs to a lint, not
-the type checker.
+$$`\frac{\mathit{head} = \mathsf{StaticCall}\;\ldots \;\lor\; \mathit{head} = \mathsf{InstanceCall}\;\ldots \quad \Gamma \vdash \mathit{head} \Rightarrow \_}{\Gamma \vdash \mathit{head} \Leftarrow \mathsf{TVoid}} \quad \text{([⇐] Discard-Call)}`
 
-Pushing $`T` into the tail (rather than synthesizing the whole block and applying
-\[⇐\] Sub at the boundary) means a type mismatch is reported at the offending
-subexpression's source location, and the expectation continues to propagate through
-nested `Block` / `IfThenElse` / `Hole` / `Quantifier` constructs that have their own
-check rules.
+Each $`s_i` is resolved under the scope $`\Gamma_{i-1}` produced by
+its predecessor and produces a possibly extended scope $`\Gamma_i`
+that the next statement sees. In practice only `Var (.Declare …)`
+actually extends the scope; every other construct leaves it
+unchanged so $`\Gamma_i = \Gamma_{i-1}`. The block opens a fresh
+nested scope, so declarations made inside don't leak out — once the
+block ends, the surrounding $`\Gamma` is restored.
 
-$$`\frac{\mathsf{TVoid} <: T}{\Gamma \vdash \mathsf{Block}\;[]\;\mathit{label} \Leftarrow T} \quad \text{([⇐] Block-Empty)}`
+Statement-typed forms (`Var-Declare`, `Assign`, `Assert`, `Assume`,
+`While`, `Exit`, `Return`, `IfThenElse`) trivially satisfy
+$`\Gamma \vdash s_i \Leftarrow \mathsf{TVoid}` — their rule
+conclusions are polymorphic in `A`, so they check at *any* type,
+including $`\mathsf{TVoid}`. Bare expressions like `5;` fail via
+\[⇐\] Sub: the synthesized type is not consistent with
+$`\mathsf{TVoid}`. The Discard-Call carve-out is what allows the
+standard `f(x);` idiom for a non-void-returning `f` — without it,
+$`\mathit{head} \Leftarrow \mathsf{TVoid}` would force every call to
+have a $`\mathsf{TVoid}`-compatible result type.
 
-With no last statement to push the expectation into, the empty-block check falls back to
-a single subsumption test: an empty block is acceptable wherever `TVoid` is.
+Pushing $`T` into the last statement (rather than synthesizing the
+whole block and applying \[⇐\] Sub at the boundary) means a type
+mismatch is reported at the offending subexpression's source
+location, and the expectation continues to propagate through nested
+`Block` / `IfThenElse` / `Hole` / `Quantifier` constructs that have
+their own check rules.
+
+$$`\frac{}{\Gamma \vdash \mathsf{Block}\;[]\;\mathit{label} \Rightarrow \mathsf{TVoid}} \quad \text{([⇒] Skip)}`
+
+The empty block has a fixed type and is the only block-level rule that
+synthesizes — written $`\mathsf{skip} : \mathsf{TVoid}` in the
+source-language presentation. When an empty block appears in check
+position with `expected ≠ TVoid`, the standard \[⇐\] Sub rule fires at
+the boundary (requiring $`\mathsf{TVoid} <: \mathit{expected}`).
+
+{docstring Strata.Laurel.Resolution.Synth.emptyBlock}
 
 {docstring Strata.Laurel.Resolution.Check.block}
 
-$$`\frac{\mathsf{TVoid} <: T}{\Gamma \vdash \mathsf{Exit}\;\mathit{target} \Leftarrow T} \quad \text{([⇐] Exit)}`
+$$`\frac{l \in \Gamma}{\Gamma \vdash \mathsf{Exit}\;l \Leftarrow A} \quad \text{([⇐] Exit)}`
+
+`exit` is non-returning — it transfers control out of the enclosing
+labeled block, so it checks at *any* value type $`A` (no
+$`\mathsf{TVoid}` side condition).
 
 {docstring Strata.Laurel.Resolution.Check.exit}
 
-$$`\frac{\mathsf{TVoid} <: T}{\Gamma \vdash \mathsf{Return}\;\mathsf{none} \Leftarrow T} \quad \text{([⇐] Return-None)}`
+In the Return rules below, $`\overline{T_o}` denotes the declared
+output-parameter type list of the enclosing procedure (an implicit
+parameter of the rules — the procedure binds it once on entry).
 
-$$`\frac{\Gamma_{\mathit{proc}}.\mathit{outputs} = [T_o] \quad \Gamma \vdash e \Leftarrow T_o \quad \mathsf{TVoid} <: T}{\Gamma \vdash \mathsf{Return}\;(\mathsf{some}\;e) \Leftarrow T} \quad \text{([⇐] Return-Some)}`
+$$`\frac{\overline{T_o} = []}{\Gamma \vdash \mathsf{Return}\;\mathsf{none} \Leftarrow A} \quad \text{([⇐] Return-None-Void)}`
 
-$$`\frac{\Gamma_{\mathit{proc}}.\mathit{outputs} = []}{\Gamma \vdash \mathsf{Return}\;(\mathsf{some}\;e) \rightsquigarrow \text{error: “void procedure cannot return a value”}} \quad \text{([⇐] Return-Void-Error)}`
+$$`\frac{\overline{T_o} = [T] \quad \mathsf{TVoid} <:_\sim T}{\Gamma \vdash \mathsf{Return}\;\mathsf{none} \Leftarrow A} \quad \text{([⇐] Return-None-Single)}`
 
-$$`\frac{\Gamma_{\mathit{proc}}.\mathit{outputs} = [T_1; \ldots; T_n] \quad (n \ge 2)}{\Gamma \vdash \mathsf{Return}\;(\mathsf{some}\;e) \rightsquigarrow \text{error: “multi-output procedure cannot use ‘return e’; assign to named outputs instead”}} \quad \text{([⇐] Return-Multi-Error)}`
+$$`\frac{\overline{T_o} = [T_1; \ldots; T_n] \quad (n \ge 2)}{\Gamma \vdash \mathsf{Return}\;\mathsf{none} \Leftarrow A} \quad \text{([⇐] Return-None-Multi)}`
+
+$$`\frac{\overline{T_o} = [T] \quad \Gamma \vdash e \Leftarrow T}{\Gamma \vdash \mathsf{Return}\;(\mathsf{some}\;e) \Leftarrow A} \quad \text{([⇐] Return-Some)}`
+
+$$`\frac{\overline{T_o} = []}{\Gamma \vdash \mathsf{Return}\;(\mathsf{some}\;e) \rightsquigarrow \text{error: “void procedure cannot return a value”}} \quad \text{([⇐] Return-Void-Error)}`
+
+$$`\frac{\overline{T_o} = [T_1; \ldots; T_n] \quad (n \ge 2)}{\Gamma \vdash \mathsf{Return}\;(\mathsf{some}\;e) \rightsquigarrow \text{error: “multi-output procedure cannot use ‘return e’; assign to named outputs instead”}} \quad \text{([⇐] Return-Multi-Error)}`
+
+`return` is the only rule whose premises depend on the enclosing
+procedure's declared outputs. The conclusion's value type $`A` is
+unconstrained, since `return` never falls through — it is a
+control-flow terminator. The error arms fire when $`\overline{T_o}`'s
+arity does not match the syntactic shape of `return e`.
+
+The three Return-None rules treat the missing payload as having type
+$`\mathsf{TVoid}`. Void-output procedures accept it unconditionally
+(Return-None-Void); single-output procedures require
+$`\mathsf{TVoid} <:_\sim T` (Return-None-Single), accepting void
+returns and rejecting `return;` in an `int`/`bool`/etc. procedure;
+multi-output procedures accept it as an early-exit shorthand that
+leaves the named outputs at whatever they were last assigned to
+(Return-None-Multi).
 
 {docstring Strata.Laurel.Resolution.Check.return}
 
-$$`\frac{\Gamma \vdash \mathit{cond} \Leftarrow \mathsf{TBool} \quad \Gamma \vdash \mathit{invs}_i \Leftarrow \mathsf{TBool} \quad \Gamma \vdash \mathit{dec} \Leftarrow {?} \quad \Gamma \vdash \mathit{body} \Leftarrow T \quad \mathsf{TVoid} <: T}{\Gamma \vdash \mathsf{While}\;\mathit{cond}\;\mathit{invs}\;\mathit{dec}\;\mathit{body} \Leftarrow T} \quad \text{([⇐] While)}`
+$$`\frac{\Gamma \vdash \mathit{cond} \Leftarrow \mathsf{TBool} \quad \Gamma \vdash \mathit{invs}_i \Leftarrow \mathsf{TBool} \quad \Gamma \vdash \mathit{decreases} \Rightarrow U \quad \mathit{Numeric}\;U \quad \Gamma \vdash \mathit{body} \Leftarrow \mathsf{Unknown}}{\Gamma \vdash \mathsf{While}\;\mathit{cond}\;\mathit{invs}\;\mathit{decreases}\;\mathit{body} \Leftarrow A} \quad \text{([⇐] While)}`
+
+The body is checked at $`\mathsf{Unknown}`: control either re-enters
+the loop or falls through, so the body's value type is never observed
+by the surrounding context. The loop itself contributes nothing to
+the surrounding $`A`, so its conclusion is polymorphic in $`A` like
+every other statement-typed form.
+
+The optional $`\mathit{decreases}` clause is synthesized and required
+to have a numeric type via the same $`\mathit{Numeric}` predicate
+used by the arithmetic primitive operations. $`\mathit{Numeric}` is
+a predicate (it admits $`\mathsf{TInt}`, $`\mathsf{TReal}`,
+$`\mathsf{TFloat64}`, and $`\mathsf{Unknown}` as the gradual escape
+hatch), not a single type, so the clause runs in synth mode rather
+than check mode.
 
 {docstring Strata.Laurel.Resolution.Check.while}
 
@@ -345,11 +416,11 @@ $$`\frac{\Gamma \vdash \mathit{cond} \Leftarrow \mathsf{TBool} \quad \Gamma \vda
 tag := "rules-verification-statements"
 %%%
 
-$$`\frac{\Gamma \vdash \mathit{cond} \Leftarrow \mathsf{TBool} \quad \mathsf{TVoid} <: T}{\Gamma \vdash \mathsf{Assert}\;\mathit{cond} \Leftarrow T} \quad \text{([⇐] Assert)}`
+$$`\frac{\Gamma \vdash \mathit{cond} \Leftarrow \mathsf{TBool}}{\Gamma \vdash \mathsf{Assert}\;\mathit{cond} \Leftarrow A} \quad \text{([⇐] Assert)}`
 
 {docstring Strata.Laurel.Resolution.Check.assert}
 
-$$`\frac{\Gamma \vdash \mathit{cond} \Leftarrow \mathsf{TBool} \quad \mathsf{TVoid} <: T}{\Gamma \vdash \mathsf{Assume}\;\mathit{cond} \Leftarrow T} \quad \text{([⇐] Assume)}`
+$$`\frac{\Gamma \vdash \mathit{cond} \Leftarrow \mathsf{TBool}}{\Gamma \vdash \mathsf{Assume}\;\mathit{cond} \Leftarrow A} \quad \text{([⇐] Assume)}`
 
 {docstring Strata.Laurel.Resolution.Check.assume}
 
@@ -358,19 +429,28 @@ $$`\frac{\Gamma \vdash \mathit{cond} \Leftarrow \mathsf{TBool} \quad \mathsf{TVo
 tag := "rules-assignment"
 %%%
 
-$$`\frac{\Gamma \vdash \mathit{targets}_i \Rightarrow T_i \quad \Gamma \vdash e \Leftarrow \mathit{ExpectedTy}}{\Gamma \vdash \mathsf{Assign}\;\mathit{targets}\;e \Leftarrow \mathsf{TVoid}} \quad \text{([⇐] Assign)}`
+$$`\frac{\Gamma \vdash \mathit{targets}_i \Rightarrow T_i \quad \Gamma \vdash e \Leftarrow \mathit{ExpectedTy}}{\Gamma \vdash \mathsf{Assign}\;\mathit{targets}\;e \Rightarrow \mathit{ExpectedTy}} \quad \text{([⇒] Assign)}`
 
 where `ExpectedTy = T_1` if `|targets| = 1` and `MultiValuedExpr [T_1; …; T_n]` otherwise.
 The target's declared type `T_i` comes from the variable's scope entry (for
 {name Strata.Laurel.Variable.Local}`Local` and {name Strata.Laurel.Variable.Field}`Field`)
 or from the {name Strata.Laurel.Variable.Declare}`Declare`-bound parameter type. The
 RHS receives `ExpectedTy` via `Check.resolveStmtExpr`, so bidirectional rules in the
-RHS propagate the assignment's type into nested constructs.
+RHS propagate the assignment's type into nested constructs. The
+assignment synthesizes `ExpectedTy` — populating the surrounding
+context with the target's type while the RHS is checked against it.
 
-Assignment is strictly statement-position: `expected` must be `TVoid`. Expression-position
-uses (e.g. `x ++ (y := s)`) are rejected — accepting an assignment as an expression with
-its target's type as "value" silently masks impure-side-effect-inside-expression bugs
-where the target type happens to coincide with the surrounding expectation.
+{docstring Strata.Laurel.Resolution.Synth.assign}
+
+$$`\frac{\Gamma \vdash \mathsf{Assign}\;\mathit{targets}\;e \Rightarrow \mathit{ExpectedTy} \quad T = \mathsf{TVoid} \;\lor\; \mathit{ExpectedTy} <: T}{\Gamma \vdash \mathsf{Assign}\;\mathit{targets}\;e \Leftarrow T} \quad \text{([⇐] Assign)}`
+
+The check rule synthesizes the assignment's type via \[⇒\] Assign
+and then runs the standard \[⇐\] Sub boundary check `ExpectedTy <: T`
+— *unless* `T = TVoid`, the marker for statement position. Pushing
+`TVoid` through subsumption would only succeed when the LHS is itself
+void, which would reject every non-void assignment used as a
+statement, so the subsumption is skipped and the synthesized value is
+discarded.
 
 {docstring Strata.Laurel.Resolution.Check.assign}
 
@@ -379,13 +459,22 @@ where the target type happens to coincide with the surrounding expectation.
 tag := "rules-calls"
 %%%
 
-$$`\frac{\Gamma(\mathit{callee}) = \text{static-procedure with inputs } Ts \text{ and outputs } [T] \quad \Gamma \vdash \mathit{args} \Rightarrow Us \quad U_i <: T_i \text{ (pairwise)}}{\Gamma \vdash \mathsf{StaticCall}\;\mathit{callee}\;\mathit{args} \Rightarrow T} \quad \text{([⇒] Static-Call)}`
+$$`\frac{\Gamma(\mathit{callee}) = \text{static-procedure with input } T \text{ and output } T' \quad \Gamma \vdash \mathit{arg} \Rightarrow U \quad U <: T}{\Gamma \vdash \mathsf{StaticCall}\;\mathit{callee}\;\mathit{arg} \Rightarrow T'} \quad \text{([⇒] Static-Call)}`
 
 $$`\frac{\Gamma(\mathit{callee}) = \text{static-procedure with inputs } Ts \text{ and outputs } [T_1; \ldots; T_n],\; n \ne 1 \quad \Gamma \vdash \mathit{args} \Rightarrow Us \quad U_i <: T_i \text{ (pairwise)}}{\Gamma \vdash \mathsf{StaticCall}\;\mathit{callee}\;\mathit{args} \Rightarrow \mathsf{MultiValuedExpr}\;[T_1; \ldots; T_n]} \quad \text{([⇒] Static-Call-Multi)}`
 
 {docstring Strata.Laurel.Resolution.Synth.staticCall}
 
-$$`\frac{\Gamma \vdash \mathit{target} \Rightarrow \_ \quad \Gamma(\mathit{callee}) = \text{instance-procedure with inputs } [\mathit{self}; Ts] \text{ and outputs } [T] \quad \Gamma \vdash \mathit{args} \Rightarrow Us \quad U_i <: T_i \text{ (pairwise; self dropped)}}{\Gamma \vdash \mathsf{InstanceCall}\;\mathit{target}\;\mathit{callee}\;\mathit{args} \Rightarrow T} \quad \text{([⇒] Instance-Call)}`
+$$`\frac{\Gamma \vdash \mathit{target} \Rightarrow \_ \quad \Gamma(\mathit{callee}) = \text{instance- or static-procedure with inputs } [\mathit{self}; T] \text{ and output } T' \quad \Gamma \vdash \mathit{arg} \Rightarrow U \quad U <: T}{\Gamma \vdash \mathsf{InstanceCall}\;\mathit{target}\;\mathit{callee}\;\mathit{arg} \Rightarrow T'} \quad \text{([⇒] Instance-Call)}`
+
+$$`\frac{\Gamma \vdash \mathit{target} \Rightarrow \_ \quad \Gamma(\mathit{callee}) = \text{instance- or static-procedure with inputs } [\mathit{self}; Ts] \text{ and outputs } [T_1; \ldots; T_n],\; n \ne 1 \quad \Gamma \vdash \mathit{args} \Rightarrow Us \quad U_i <: T_i \text{ (pairwise; self dropped)}}{\Gamma \vdash \mathsf{InstanceCall}\;\mathit{target}\;\mathit{callee}\;\mathit{args} \Rightarrow \mathsf{MultiValuedExpr}\;[T_1; \ldots; T_n]} \quad \text{([⇒] Instance-Call-Multi)}`
+
+The callee is resolved against either an instance procedure or a
+static procedure (the latter handles uniformly-dispatched call syntax
+where the receiver is forwarded as `self`). Output arity is forwarded
+identically to
+{name Strata.Laurel.Resolution.Synth.staticCall}`Synth.staticCall`'s
+single-vs-multi split.
 
 {docstring Strata.Laurel.Resolution.Synth.instanceCall}
 
@@ -398,7 +487,7 @@ tag := "rules-primitive-operations"
 {name Strata.Laurel.HighType.TReal}`TReal`,
 {name Strata.Laurel.HighType.TFloat64}`TFloat64`".
 
-$$`\frac{\Gamma \vdash \mathit{args}_i \Leftarrow \mathsf{TBool} \quad \mathit{op} \in \{\mathsf{And}, \mathsf{Or}, \mathsf{AndThen}, \mathsf{OrElse}, \mathsf{Not}, \mathsf{Implies}\}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;\mathit{args} \Rightarrow \mathsf{TBool}} \quad \text{([⇒] Op-Bool)}`
+$$`\frac{\Gamma \vdash \mathit{args}_i \Rightarrow U_i \quad U_i <: \mathsf{TBool} \quad \mathit{op} \in \{\mathsf{And}, \mathsf{Or}, \mathsf{AndThen}, \mathsf{OrElse}, \mathsf{Not}, \mathsf{Implies}\}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;\mathit{args} \Rightarrow \mathsf{TBool}} \quad \text{([⇒] Op-Bool)}`
 
 $$`\frac{\Gamma \vdash \mathit{args}_i \Leftarrow \mathit{Numeric} \quad \mathit{op} \in \{\mathsf{Lt}, \mathsf{Leq}, \mathsf{Gt}, \mathsf{Geq}\}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;\mathit{args} \Rightarrow \mathsf{TBool}} \quad \text{([⇒] Op-Cmp)}`
 
@@ -406,7 +495,23 @@ $$`\frac{\Gamma \vdash \mathit{lhs} \Rightarrow T_l \quad \Gamma \vdash \mathit{
 
 $$`\frac{\Gamma \vdash \mathit{args}_i \Leftarrow \mathit{Numeric} \quad \Gamma \vdash \mathit{args}.\mathsf{head} \Rightarrow T \quad \mathit{op} \in \{\mathsf{Neg}, \mathsf{Add}, \mathsf{Sub}, \mathsf{Mul}, \mathsf{Div}, \mathsf{Mod}, \mathsf{DivT}, \mathsf{ModT}\}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;\mathit{args} \Rightarrow T} \quad \text{([⇒] Op-Arith)}`
 
-$$`\frac{\Gamma \vdash \mathit{args}_i \Leftarrow \mathsf{TString} \quad \mathit{op} = \mathsf{StrConcat}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;\mathit{args} \Rightarrow \mathsf{TString}} \quad \text{([⇒] Op-Concat)}`
+The arithmetic synth rule iterates over the candidate numeric types
+$`\{\mathsf{TInt}, \mathsf{TReal}, \mathsf{TFloat64}\}` and picks the
+first $`T` for which every operand bidirectionally checks at $`T`.
+Diagnostics emitted by failed trials are rolled back so they don't
+leak into the final error log; if every candidate fails, the *last*
+trial's diagnostics are kept so the user sees a concrete error
+message. The iteration is implemented via the `firstWorking` helper.
+
+This is symmetric in operand position (no privileged "first
+argument"), and rejects mixed-numeric expressions like
+$`\mathsf{int} + \mathsf{real}` — neither $`\mathsf{TInt}` nor
+$`\mathsf{TReal}` admits both operands. The gradual escape hatch
+$`\mathsf{Unknown}` is *not* in the candidate list (one should not
+synthesize a wildcard) but operands of type $`\mathsf{Unknown}` are
+accepted by every check via the standard consistency rule.
+
+$$`\frac{\Gamma \vdash \mathit{args}_i \Rightarrow U_i \quad U_i <: \mathsf{TString} \quad \mathit{op} = \mathsf{StrConcat}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;\mathit{args} \Rightarrow \mathsf{TString}} \quad \text{([⇒] Op-Concat)}`
 
 {docstring Strata.Laurel.Resolution.Synth.primitiveOp}
 
@@ -432,11 +537,11 @@ $$`\frac{\Gamma(\mathit{ref}) \text{ is not a composite or datatype}}{\Gamma \vd
 
 {docstring Strata.Laurel.Resolution.Synth.new}
 
-$$`\frac{\Gamma \vdash \mathit{target} \Rightarrow \_}{\Gamma \vdash \mathsf{AsType}\;\mathit{target}\;T \Rightarrow T} \quad \text{([⇒] AsType)}`
+$$`\frac{\Gamma \vdash \mathit{target} \Rightarrow U \quad U \sim T \;\vee\; U <: T \;\vee\; T <: U}{\Gamma \vdash \mathsf{AsType}\;\mathit{target}\;T \Rightarrow T} \quad \text{([⇒] AsType)}`
 
 {docstring Strata.Laurel.Resolution.Synth.asType}
 
-$$`\frac{\Gamma \vdash \mathit{target} \Rightarrow \_}{\Gamma \vdash \mathsf{IsType}\;\mathit{target}\;T \Rightarrow \mathsf{TBool}} \quad \text{([⇒] IsType)}`
+$$`\frac{\Gamma \vdash \mathit{target} \Rightarrow U \quad U \sim T \;\vee\; U <: T \;\vee\; T <: U}{\Gamma \vdash \mathsf{IsType}\;\mathit{target}\;T \Rightarrow \mathsf{TBool}} \quad \text{([⇒] IsType)}`
 
 {docstring Strata.Laurel.Resolution.Synth.isType}
 

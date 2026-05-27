@@ -514,16 +514,41 @@ private def getCallInfo (callee : Identifier) : ResolveM (HighTypeMd × List Hig
 
 /-! ## Typing rules
 
-Each typing rule from the Laurel manual is implemented as its own helper
-inside the mutual block below. Helpers are grouped by section to mirror the
-*Typing rules* index in `LaurelDoc.lean`:
+The judgment is bidirectional:
+
+```
+Γ ⊢ e ⇒ A          (Synth.resolveStmtExpr)
+Γ ⊢ e ⇐ A          (Check.resolveStmtExpr)
+```
+
+- `Γ` — lexical scope (variables, fields, labels).
+- `A` — *value type* of the term.
+
+The `Return` rules additionally depend on the enclosing procedure's
+declared output-type list, written `T_o-bar` in the rule statements.
+That list is bound on entry to a procedure body (by
+`resolveProcedure` / `resolveInstanceProcedure`, stored on
+`ResolveState.answerType`) and consulted only by `Check.return`;
+every other rule is independent of it. Statement-typed forms
+(`Var-Declare`, `Assert`, `Assume`, `While`, `Exit`, `Return`)
+check at any `A`: their conclusions are polymorphic in `A` because
+they contribute nothing to the surrounding value flow. `Assign`
+synthesizes its target tuple type but its check rule skips the
+\[⇐\] Sub boundary check when expected is `TVoid`, so it also
+behaves statement-shaped in discard position. `Block` routes the
+surrounding expected type to the last statement, not to non-last
+statements.
+
+Each typing rule is implemented as its own helper inside the mutual
+block below. Helpers are grouped by section to mirror the *Typing
+rules* index in `LaurelDoc.lean`:
 
 - Literals — `Synth.litInt`, `Synth.litBool`, `Synth.litString`, `Synth.litDecimal`
 - Variables — `Synth.varLocal`, `Synth.varField`, `Check.varDeclare`
 - Control flow — `Check.while`, `Check.exit`, `Check.return`,
   `Check.block`, `Check.ifThenElse`
 - Verification statements — `Check.assert`, `Check.assume`
-- Assignment — `Check.assign`
+- Assignment — `Synth.assign`, `Check.assign`
 - Calls — `Synth.staticCall`, `Synth.instanceCall`
 - Primitive operations — `Synth.primitiveOp`, `Check.primitiveOp`
 - Object forms — `Synth.new`, `Synth.asType`, `Synth.isType`, `Synth.refEq`,
@@ -553,8 +578,8 @@ mutual
 /-- Synth-mode resolution: resolve `e` and synthesize its `HighType`,
     written `Γ ⊢ e ⇒ T`. Each constructor with a synthesis rule delegates
     to its rule's helper; constructors without one (statement-shaped
-    constructs like `IfThenElse`, `Block`, `While`, `Return`, `Assign`,
-    …) hit a wildcard arm that emits a `typeMismatch` diagnostic and
+    constructs like `IfThenElse`, `Block`, `While`, `Return`, …) hit
+    a wildcard arm that emits a `typeMismatch` diagnostic and
     returns `Unknown` to suppress cascading errors.
 
     Synthesis returns a type inferred from the expression itself;
@@ -575,6 +600,8 @@ def Synth.resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTy
   | .Var (.Local ref) => Synth.varLocal ref source
   | .Var (.Field target fieldName) =>
     Synth.varField exprMd target fieldName source (by rw [h_node])
+  | .Assign targets value =>
+    Synth.assign exprMd targets value source (by rw [h_node])
   | .PureFieldUpdate target fieldName newVal =>
     Synth.pureFieldUpdate exprMd target fieldName newVal (by rw [h_node])
   | .StaticCall callee args =>
@@ -601,6 +628,7 @@ def Synth.resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTy
     Synth.contractOf exprMd ty fn source (by rw [h_node])
   | .Abstract => pure (Synth.abstract source)
   | .All => pure (Synth.all source)
+  | .Block [] label => pure (.Block [] label, Synth.emptyBlock source)
   | _ =>
     let unknown : HighTypeMd := { val := .Unknown, source := source }
     typeMismatch source (some expr)
@@ -644,24 +672,27 @@ def Check.resolveStmtExpr (exprMd : StmtExprMd) (expected : HighTypeMd) : Resolv
   match h_node: exprMd with
   | AstNode.mk expr source =>
   match h_expr: expr with
-  | .Block stmts label =>
-    Check.block exprMd stmts label expected source (by rw [h_node])
+  -- Empty block has a fixed type `TVoid` (Synth.emptyBlock); the wildcard
+  -- arm below routes it through synth-then-Sub. Non-empty blocks have no
+  -- synth rule and are typed structurally by Check.block.
+  | .Block (head :: tail) label =>
+    Check.block exprMd (head :: tail) label expected source (by rw [h_node])
   | .IfThenElse cond thenBr elseBr =>
     Check.ifThenElse exprMd cond thenBr elseBr expected source (by rw [h_node])
   | .Assign targets value =>
     Check.assign exprMd targets value expected source (by rw [h_node])
   | .Hole det none => pure (Check.holeNone det expected source)
   | .Hole det (some ty) => Check.holeSome det ty expected source
-  | .Var (.Declare param) => Check.varDeclare param expected source
+  | .Var (.Declare param) => Check.varDeclare param source
   | .While cond invs dec body =>
-    Check.while exprMd cond invs dec body expected source (by rw [h_node])
-  | .Exit target => Check.exit target expected source
+    Check.while exprMd cond invs dec body source (by rw [h_node])
+  | .Exit target => Check.exit target source
   | .Return val =>
-    Check.return exprMd val expected source (by rw [h_node])
+    Check.return exprMd val source (by rw [h_node])
   | .Assert ⟨condExpr, summary⟩ =>
-    Check.assert exprMd condExpr summary expected source (by rw [h_node])
+    Check.assert exprMd condExpr summary source (by rw [h_node])
   | .Assume cond =>
-    Check.assume exprMd cond expected source (by rw [h_node])
+    Check.assume exprMd cond source (by rw [h_node])
   | .Old val =>
     Check.old exprMd val expected source (by rw [h_node])
   | .ProveBy val proof =>
@@ -755,41 +786,64 @@ def Synth.varField (exprMd : StmtExprMd)
     try simp_all
     omega
 
-/-- `x ∉ dom(Γ),  TVoid <: T  ∴  Γ ⊢ Var (.Declare ⟨x, T_x⟩) ⇐ T ⊣ Γ, x : T_x`
-
-    `⊣ Γ, x : T_x` records that the surrounding scope is extended with the
-    new binding for the remainder of the enclosing scope. The declaration
-    itself produces no value, so `expected` must admit `TVoid`. -/
-def Check.varDeclare (param : Parameter)
-    (expected : HighTypeMd) (source : Option FileRange) :
+/-- (Var-Declare)
+    ```
+    x ∉ dom(Γ)
+    ─────────────────────────────────────────  ⊣ Γ, x : T_x
+    Γ ⊢ Var (.Declare ⟨x, T_x⟩) ⇐ A
+    ```
+    `⊣ Γ, x : T_x` records that the surrounding scope is extended with
+    the new binding for the remainder of the enclosing block. The
+    declaration itself does no work other than registering `x : T_x`,
+    so its conclusion is polymorphic in `A` — declarations are
+    statement-shaped and never deliver a value to the surrounding
+    context. -/
+def Check.varDeclare (param : Parameter) (source : Option FileRange) :
     ResolveM StmtExprMd := do
   let ty' ← resolveHighType param.type
   let name' ← defineNameCheckDup param.name (.var param.name ty')
-  checkSubtype source expected { val := .TVoid, source := source }
   pure { val := .Var (.Declare ⟨name', ty'⟩), source := source }
 
 -- ### Control flow
 
-/-- `Γ ⊢ cond ⇐ TBool,  Γ ⊢ invs_i ⇐ TBool,  Γ ⊢ dec ⇐ ?,  Γ ⊢ body ⇐ T,  TVoid <: T  ∴  Γ ⊢ While cond invs dec body ⇐ T`
+/-- (While)
+    ```
+    Γ ⊢ cond ⇐ TBool      Γ ⊢ invs_i ⇐ TBool
+    Γ ⊢ decreases ⇒ U     Numeric U
+    Γ ⊢ body ⇐ Unknown
+    ─────────────────────────────────────────────────
+    Γ ⊢ While cond invs decreases body ⇐ A
+    ```
+    `cond` is checked against `TBool`, and each invariant against
+    `TBool`. The body's *value type* is discarded — control either
+    re-enters the loop or falls through, so the body is checked at
+    `Unknown` (the gradual wildcard) and any value the body's tail
+    might produce is ignored. The loop itself contributes no value
+    to its surrounding context, so its conclusion is polymorphic in
+    `A`.
 
-    `cond` is checked against `TBool`, each invariant against `TBool`,
-    optional `decreases` is currently resolved without a type check (the
-    intended target is a numeric type), and the body is checked against
-    the surrounding `expected` type. The construct itself produces no
-    value, so `expected` must admit `TVoid`. -/
+    The optional `decreases` clause is synthesized and required to
+    have a numeric type (`TInt`, `TReal`, `TFloat64`, or `Unknown` as
+    the gradual escape hatch), via the same `Numeric U` predicate
+    used by the arithmetic primitive ops. `Numeric` is a predicate,
+    not a single type, so the clause runs in synth mode rather than
+    check mode. -/
 def Check.while (exprMd : StmtExprMd)
     (cond : StmtExprMd) (invs : List StmtExprMd)
     (dec : Option StmtExprMd) (body : StmtExprMd)
-    (expected : HighTypeMd) (source : Option FileRange)
+    (source : Option FileRange)
     (h : exprMd.val = .While cond invs dec body) :
     ResolveM StmtExprMd := do
   let cond' ← Check.resolveStmtExpr cond { val := .TBool, source := cond.source }
   let invs' ← invs.attach.mapM (fun a => have := a.property; do
     Check.resolveStmtExpr a.val { val := .TBool, source := a.val.source })
   let dec' ← dec.attach.mapM (fun a => have := a.property; do
-    let (e', _) ← Synth.resolveStmtExpr a.val; pure e')
-  let body' ← Check.resolveStmtExpr body expected
-  checkSubtype source expected { val := .TVoid, source := source }
+    let (e', decTy) ← Synth.resolveStmtExpr a.val
+    let ctx := (← get).typeContext
+    unless isNumeric ctx decTy do
+      typeMismatch a.val.source none "expected a numeric type" decTy
+    pure e')
+  let body' ← Check.resolveStmtExpr body { val := .Unknown, source := body.source }
   pure { val := .While cond' invs' dec' body', source := source }
   termination_by (exprMd, 0)
   decreasing_by
@@ -801,58 +855,95 @@ def Check.while (exprMd : StmtExprMd)
       try simp_all
       omega
 
-/-- `Γ ⊢ Exit target ⇐ T`
-
-    `exit` is a control-flow jump out of a labeled block; it doesn't
-    deliver a value to the enclosing block, so no subsumption against
-    `expected` is required. -/
-def Check.exit (target : String) (_expected : HighTypeMd)
-    (source : Option FileRange) : ResolveM StmtExprMd := do
+/-- (Exit)
+    ```
+    l ∈ Γ
+    ───────────────────
+    Γ ⊢ Exit l ⇐ A
+    ```
+    `exit` is a control-flow terminator: it transfers control out of
+    the enclosing labeled block and does not deliver a value to the
+    surrounding context. Anything after `exit l` in the same block is
+    dead code, flagged by `Resolution.Check.block`. The construct
+    checks at any `A`. -/
+def Check.exit (target : String) (source : Option FileRange) :
+    ResolveM StmtExprMd := do
   pure { val := .Exit target, source := source }
 
-/-- Cases on whether the return value is `none` or `some e`, and on the
-    arity of the enclosing procedure's declared outputs.
+/-- (Return)
 
-    `Γ ⊢ Return none ⇐ T`
+    Below, `T_o-bar` denotes the enclosing procedure's declared
+    output-type list (bound on entry to a procedure body, stored on
+    `ResolveState.answerType`).
 
-    `Γ_proc.outputs = [T_o],  Γ ⊢ e ⇐ T_o  ∴  Γ ⊢ Return (some e) ⇐ T`
+    ```
+    T_o-bar = []                                           (Return-None-Void)
+    ─────────────────────────
+    Γ ⊢ Return none ⇐ A
 
-    `Γ_proc.outputs = []  ∴  Γ ⊢ Return (some e) ↝ error: "void procedure cannot return a value"`
+    T_o-bar = [T]    TVoid <: T                            (Return-None-Single)
+    ──────────────────────────────────
+    Γ ⊢ Return none ⇐ A
 
-    `Γ_proc.outputs = [T_1; …; T_n] (n ≥ 2)  ∴  Γ ⊢ Return (some e) ↝ error: "multi-output procedure cannot use 'return e'; assign to named outputs instead"`
+    T_o-bar = [T_1;…;T_n]  n ≥ 2                           (Return-None-Multi)
+    ──────────────────────────────────
+    Γ ⊢ Return none ⇐ A
 
-    `return` is a control-flow jump out of the procedure; it doesn't
-    deliver a value to the enclosing block, so no subsumption against the
-    surrounding `expected` is required. The optional payload is matched
-    against the enclosing procedure's declared outputs (threaded through
-    `ResolveState.expectedReturnTypes`, set from `proc.outputs` by
-    `resolveProcedure` / `resolveInstanceProcedure` for the duration of
-    the body; `none` means "no enclosing procedure" — e.g. resolving a
-    constant initializer — and skips all `Return` checks).
+    T_o-bar = [T]    Γ ⊢ e ⇐ T                             (Return-Some)
+    ──────────────────────────────────
+    Γ ⊢ Return (some e) ⇐ A
 
-    A bare `return;` is allowed in any context. In a single-output procedure
-    it acts as a Dafny-style early exit — the output parameter retains
-    whatever was last assigned to it. In a single-output procedure, `return e`
-    is checked against the declared output type (closing the prior soundness
-    gap where `return 0` in a `bool`-returning procedure went uncaught).
+    T_o-bar = []                                           (Return-Void-Error)
+    ───────────────────────────────────────────────────────────
+    Γ ⊢ Return (some e) ↝ "void procedure cannot return a value"
 
-    Multi-output procedures use named-output assignment (`r := …` on the
-    declared output parameters); `return e` syntactically takes a single
-    `Option StmtExpr` and cannot carry multiple values, so it is flagged
-    with a diagnostic pointing users at the named-output convention. -/
+    T_o-bar = [T_1;…;T_n]  n ≥ 2                           (Return-Multi-Error)
+    ───────────────────────────────────────────────────────────
+    Γ ⊢ Return (some e) ↝ "multi-output procedure cannot use ‘return e’"
+    ```
+    `return` is the *only* rule whose premises depend on the enclosing
+    procedure's declared outputs. It is also a control-flow terminator:
+    it transfers control out of the enclosing procedure and does not
+    deliver a value to the surrounding block, so the conclusion is
+    polymorphic in `A` (anything after `return` in the same block is
+    dead code, flagged by `Resolution.Check.block`).
+
+    When `answerType = none` we are not inside any procedure body (e.g.
+    resolving a constant initializer), so all `Return` checks are
+    skipped — `Return` should not occur there in well-formed input.
+
+    `return;` synthesizes the missing payload as `TVoid`. In a
+    single-output procedure it is then required to subtype the declared
+    output (Return-None-Single's `TVoid <: T` premise) — accepted in
+    void-returning procedures, rejected in `int`/`bool`/etc. ones,
+    closing the soundness gap that the Dafny-style early-exit shorthand
+    used to leave open. In a void-output procedure it is unconditionally
+    accepted (Return-None-Void); in a multi-output procedure it is also
+    accepted (Return-None-Multi) and acts as an early-exit shorthand —
+    each declared output retains whatever was last assigned to it via
+    named-output assignment.
+
+    `return e` is checked against the declared output type in the
+    single-output case. Multi-output procedures use named-output
+    assignment (`r := …` on the declared output parameters); `return e`
+    syntactically takes a single `Option StmtExpr` and cannot carry
+    multiple values, so it is flagged with a diagnostic pointing users
+    at the named-output convention. -/
 def Check.return (exprMd : StmtExprMd)
-    (val : Option StmtExprMd) (expected : HighTypeMd)
-    (source : Option FileRange)
+    (val : Option StmtExprMd) (source : Option FileRange)
     (h : exprMd.val = .Return val) :
     ResolveM StmtExprMd := do
-  let expectedReturn := (← get).expectedReturnTypes
+  let expectedReturn := (← get).answerType
   let val' ← val.attach.mapM (fun a => have := a.property; do
     match expectedReturn with
     | some [singleOutput] => Check.resolveStmtExpr a.val singleOutput
     | _ => let (e', _) ← Synth.resolveStmtExpr a.val; pure e')
   match val, expectedReturn with
   | none,   some []          => pure ()
-  | none,   some [_]         => pure ()
+  | none,   some [singleOutput] =>
+    -- `return;` synthesizes the missing payload as `TVoid`; require it to
+    -- be a consistent subtype of the declared output.
+    checkSubtype source singleOutput { val := .TVoid, source := source }
   | none,   some _           => pure ()
   | some _, some []          =>
     let diag := diagnosticFromSource source
@@ -867,7 +958,7 @@ def Check.return (exprMd : StmtExprMd)
   -- `return` is a control-flow jump; it doesn't deliver a value to the
   -- enclosing block, so no TVoid-vs-expected subsumption is required.
   -- The return value (if any) was already checked against the declared
-  -- output above via `expectedReturnTypes`.
+  -- output above via `answerType`.
   pure { val := .Return val', source := source }
   termination_by (exprMd, 0)
   decreasing_by
@@ -878,38 +969,109 @@ def Check.return (exprMd : StmtExprMd)
       simp_all
       omega
 
-/-- Cases on whether the statement list is empty.
+/-- (Skip)
+    ```
+    ─────────────────────────────────
+    Γ ⊢ Block [] label ⇒ TVoid
+    ```
+    The empty block has a fixed type `TVoid` — written `skip : TVoid`
+    in the source-language presentation. This is the only block-level
+    rule that synthesizes; every non-empty block reduces (via the
+    iteration in
+    `Resolution.Check.block`) to a
+    `head; rest` pattern whose tail eventually bottoms out here, and
+    `Check.block` applies subsumption at the boundary when an
+    `expected` type is supplied. -/
+def Synth.emptyBlock (source : Option FileRange) : HighTypeMd :=
+  { val := .TVoid, source := source }
 
-    `TVoid <: T  ∴  Γ ⊢ Block [] label ⇐ T`
+/-- (Block) Non-empty block.
+    ```
+    head = StaticCall .. | InstanceCall ..
+    Γ ⊢ s_i ⇒ _                  (Discard-Call, 1 ≤ i < n)
+    ──────────────────────────
+    Γ ⊢ s_i checks-non-last
 
-    `Γ_0 = Γ,  Γ_{i-1} ⊢ s_i ⇐ Unknown ⊣ Γ_i (1 ≤ i < n),  Γ_{n-1} ⊢ s_n ⇐ T  ∴  Γ ⊢ Block [s_1; …; s_n] label ⇐ T`
+    head ≠ StaticCall .., InstanceCall ..
+    Γ ⊢ s_i ⇐ TVoid              (1 ≤ i < n)
+    ──────────────────────────
+    Γ ⊢ s_i checks-non-last
 
+    Γ ⊢ s_i checks-non-last (1 ≤ i < n)    Γ ⊢ s_n ⇐ T
+    ───────────────────────────────────────────────────
+    Γ ⊢ Block [s_1; …; s_n] label ⇐ T
+    ```
     The last statement carries the block's value, so it is checked
-    against the surrounding `expected`. Non-last statements are checked
-    against `Unknown`, which accepts any type via gradual subsumption —
-    matching the Java/Python/JavaScript discipline where `f(x);` is a
-    valid statement even when `f` returns a value (the value is
-    discarded). Routing through check mode (rather than synth) means
-    that constructs without a synth rule are still resolved correctly,
-    with their bidirectional rules pushing `Unknown` into their
-    subexpressions.
+    against the surrounding `T`. Non-last positions check at `TVoid`,
+    which by \[⇐\] Sub admits any statement-typed form (Var-Declare,
+    Assign, Assert, Assume, While, Exit, Return, IfThenElse — their
+    rule conclusions are polymorphic in `A`, so they trivially check
+    at `TVoid`) and rejects bare expressions like `5;` whose type is
+    not consistent with `TVoid`.
 
-    Empty blocks reduce to a subsumption check of `TVoid` against
-    `expected` — the same check `[⇐] Block-Empty` performs when `T`
-    admits `TVoid`. -/
+    The one carve-out is **Discard-Call**: a procedure or method call
+    in non-last position is synthesized and its result type dropped,
+    *not* checked at `TVoid`. Without that carve-out, `f(x);` for a
+    non-void-returning `f` would be rejected even though discarding the
+    returned value is the standard imperative idiom (Java / Python /
+    JavaScript: `list.add(x);`).
+
+    The empty block has its own rule (`Resolution.Synth.emptyBlock`,
+    a synthesis rule producing `TVoid`) and is handled directly in the
+    `Resolution.Check.resolveStmtExpr` dispatcher's wildcard arm via
+    the standard \[⇐\] Sub fallback.
+
+    The block opens a fresh nested scope (so declarations made inside
+    don't leak), and emits a "dead code after `exit`/`return`"
+    diagnostic when a terminator is followed by additional statements
+    in the same block. -/
 def Check.block (exprMd : StmtExprMd)
     (stmts : List StmtExprMd) (label : Option String)
     (expected : HighTypeMd) (source : Option FileRange)
     (h : exprMd.val = .Block stmts label) : ResolveM StmtExprMd := do
   let voidTy : HighTypeMd := { val := .TVoid, source := source }
-  let unknownTy : HighTypeMd := { val := .Unknown, source := source }
   withScope do
     let init' ← stmts.dropLast.attach.mapM (fun ⟨s, hMem⟩ => do
       have : s ∈ stmts := List.dropLast_subset stmts hMem
-      Check.resolveStmtExpr s unknownTy)
+      -- Discard-Call carve-out: a non-void-returning call in non-last
+      -- position is synth-and-drop instead of `⇐ TVoid`, which would
+      -- otherwise reject the standard `list.add(x);` idiom.
+      match s.val with
+      | .StaticCall .. | .InstanceCall .. =>
+        let (s', _) ← Synth.resolveStmtExpr s; pure s'
+      | _ => Check.resolveStmtExpr s voidTy)
+    -- Dead-code diagnostic: any terminator (`Exit`/`Return`) in init'
+    -- is followed by at least one more statement (the last, or another
+    -- non-last). Flag it once at the position of the next statement.
+    let isTerminator (s : StmtExprMd) : Bool :=
+      match s.val with
+      | .Exit _ | .Return _ => true
+      | _ => false
+    match init'.findIdx? isTerminator with
+    | some i =>
+      let nextSource : Option FileRange :=
+        match init'[i + 1]? with
+        | some next => next.source
+        | none      => -- terminator is the last of init', so the dead one
+                       -- is the block's actual last statement
+          (stmts.getLast?.bind (·.source))
+      let termName : String :=
+        match init'[i]? with
+        | some s => s.val.constrName
+        | none   => "exit"
+      let diag := diagnosticFromSource nextSource
+        s!"dead code after '{termName}'"
+      modify fun st => { st with errors := st.errors.push diag }
+    | none => pure ()
+    -- Non-empty block (the dispatcher in Check.resolveStmtExpr already
+    -- routes empty blocks through the synth-then-Sub fallback). The
+    -- last statement carries the block's value, so it is checked
+    -- against the surrounding `expected`.
     match _lastResult: stmts.getLast? with
     | none =>
-      checkSubtype source expected voidTy
+      -- Unreachable: dispatcher narrowed `.Block (head :: tail) label`.
+      -- Keep this arm to remain total; falls back to the empty-block synth.
+      checkSubtype source expected (Synth.emptyBlock source)
       pure { val := .Block init' label, source := source }
     | some last =>
       have := List.mem_of_getLast? _lastResult
@@ -925,19 +1087,26 @@ def Check.block (exprMd : StmtExprMd)
       try simp_all
       omega
 
-/-- When there is an else branch:
+/-- (If / If-NoElse)
+    ```
+    Γ ⊢ cond ⇐ TBool   Γ ⊢ thenBr ⇐ T   Γ ⊢ elseBr ⇐ T            (If)
+    ──────────────────────────────────────────────────────────────────
+    Γ ⊢ IfThenElse cond thenBr (some elseBr) ⇐ T
 
-    `Γ ⊢ cond ⇐ TBool,  Γ ⊢ thenBr ⇐ T,  Γ ⊢ elseBr ⇐ T  ∴  Γ ⊢ IfThenElse cond thenBr (some elseBr) ⇐ T`
+    Γ ⊢ cond ⇐ TBool   Γ ⊢ thenBr ⇐ T   TVoid <: T                (If-NoElse)
+    ──────────────────────────────────────────────────────────────────
+    Γ ⊢ IfThenElse cond thenBr none ⇐ T
+    ```
+    Pushes the surrounding `T` into both branches (rather than going
+    through If-Synth + Sub at the boundary): errors fire at the
+    offending branch instead of at the `if`, and the expectation
+    propagates through nested `Block` / `IfThenElse` / `Hole` /
+    `Quantifier` constructs that have their own check rules.
 
-    Otherwise:
-
-    `Γ ⊢ cond ⇐ TBool,  Γ ⊢ thenBr ⇐ T,  TVoid <: T  ∴  Γ ⊢ IfThenElse cond thenBr none ⇐ T`
-
-    Pushes `expected` into both branches (rather than going through
-    If-Synth + Sub at the boundary). Errors fire at the offending branch
-    instead of the surrounding `if`. Without an else branch, the construct
-    can only succeed when `expected` admits `TVoid` — the same subsumption
-    check `[⇐] Block-Empty` performs for an empty block. -/
+    Without an `else`, the implicit branch is `skip : TVoid`, so the
+    rule degenerates to require `TVoid <: T` — the standard \[⇐\] Sub
+    boundary check that `Resolution.Synth.emptyBlock` composes with
+    for an empty block. -/
 def Check.ifThenElse (exprMd : StmtExprMd)
     (cond thenBr : StmtExprMd) (elseBr : Option StmtExprMd)
     (expected : HighTypeMd) (source : Option FileRange)
@@ -959,17 +1128,21 @@ def Check.ifThenElse (exprMd : StmtExprMd)
 
 -- ### Verification statements
 
-/-- `Γ ⊢ cond ⇐ TBool,  TVoid <: T  ∴  Γ ⊢ Assert cond ⇐ T`
-
-    `cond` is checked against `TBool`; the construct produces no value,
-    so `expected` must admit `TVoid`. -/
+/-- (Assert)
+    ```
+    Γ ⊢ cond ⇐ TBool
+    ──────────────────────────────────
+    Γ ⊢ Assert cond ⇐ A
+    ```
+    `cond` is checked against `TBool`. The assertion form is
+    statement-typed and contributes nothing to the surrounding value
+    flow, so its conclusion is polymorphic in `A`. -/
 def Check.assert (exprMd : StmtExprMd)
     (condExpr : StmtExprMd) (summary : Option String)
-    (expected : HighTypeMd) (source : Option FileRange)
+    (source : Option FileRange)
     (h : exprMd.val = .Assert ⟨condExpr, summary⟩) :
     ResolveM StmtExprMd := do
   let cond' ← Check.resolveStmtExpr condExpr { val := .TBool, source := condExpr.source }
-  checkSubtype source expected { val := .TVoid, source := source }
   pure { val := .Assert { condition := cond', summary }, source := source }
   termination_by (exprMd, 0)
   decreasing_by
@@ -979,16 +1152,20 @@ def Check.assert (exprMd : StmtExprMd)
     try simp_all
     omega
 
-/-- `Γ ⊢ cond ⇐ TBool,  TVoid <: T  ∴  Γ ⊢ Assume cond ⇐ T`
-
-    `cond` is checked against `TBool`; the construct produces no value,
-    so `expected` must admit `TVoid`. -/
+/-- (Assume)
+    ```
+    Γ ⊢ cond ⇐ TBool
+    ──────────────────────────────────
+    Γ ⊢ Assume cond ⇐ A
+    ```
+    `cond` is checked against `TBool`. The assumption form is
+    statement-typed and contributes nothing to the surrounding value
+    flow, so its conclusion is polymorphic in `A`. -/
 def Check.assume (exprMd : StmtExprMd)
-    (cond : StmtExprMd) (expected : HighTypeMd) (source : Option FileRange)
+    (cond : StmtExprMd) (source : Option FileRange)
     (h : exprMd.val = .Assume cond) :
     ResolveM StmtExprMd := do
   let cond' ← Check.resolveStmtExpr cond { val := .TBool, source := cond.source }
-  checkSubtype source expected { val := .TVoid, source := source }
   pure { val := .Assume cond', source := source }
   termination_by (exprMd, 0)
   decreasing_by
@@ -1000,20 +1177,69 @@ def Check.assume (exprMd : StmtExprMd)
 
 -- ### Assignment
 
-/-- `Γ ⊢ targets_i ⇒ T_i,  Γ ⊢ e ⇐ ExpectedTy  ∴  Γ ⊢ Assign targets e ⇐ TVoid`
+/-- (Assign)
+    ```
+    Γ ⊢ targets_i ⇒ T_i    Γ ⊢ e ⇐ ExpectedTy
+    ─────────────────────────────────────────────────────────
+    Γ ⊢ Assign targets e ⇒ ExpectedTy
+    ```
+    where `ExpectedTy = T_1` if `|targets| = 1` and otherwise
+    `MultiValuedExpr [T_1; …; T_n]`. The target tuple type is pushed
+    into the RHS via `Check.resolveStmtExpr`, so bidirectional rules
+    in the RHS receive the assignment's type. The assignment
+    synthesizes `ExpectedTy` — the LHS-derived target tuple type —
+    so the surrounding context sees the type the RHS was checked
+    against. -/
+def Synth.assign (exprMd : StmtExprMd)
+    (targets : List VariableMd) (value : StmtExprMd) (source : Option FileRange)
+    (h : exprMd.val = .Assign targets value) :
+    ResolveM (StmtExpr × HighTypeMd) := do
+  let targets' ← targets.attach.mapM fun ⟨v, _⟩ => do
+    let ⟨vv, vs⟩ := v
+    match vv with
+    | .Local ref =>
+      let ref' ← resolveRef ref source
+      pure (⟨.Local ref', vs⟩ : VariableMd)
+    | .Field target fieldName =>
+      let (target', _) ← Synth.resolveStmtExpr target
+      let fieldName' ← resolveFieldRef target' fieldName source
+      pure (⟨.Field target' fieldName', vs⟩ : VariableMd)
+    | .Declare param =>
+      let ty' ← resolveHighType param.type
+      let name' ← defineNameCheckDup param.name (.var param.name ty')
+      pure (⟨.Declare ⟨name', ty'⟩, vs⟩ : VariableMd)
+  let targetType (t : VariableMd) : ResolveM HighTypeMd := do
+    match t.val with
+    | .Local ref => getVarType ref
+    | .Declare param => pure param.type
+    | .Field _ fieldName => getVarType fieldName
+  let targetTys ← targets'.mapM targetType
+  let expectedTy : HighTypeMd := match targetTys with
+    | [single] => single
+    | _        => { val := .MultiValuedExpr targetTys, source := source }
+  let value' ← Check.resolveStmtExpr value expectedTy
+  pure (.Assign targets' value', expectedTy)
+  termination_by (exprMd, 1)
+  decreasing_by
+    all_goals
+      apply Prod.Lex.left
+      have hsz := exprMd.sizeOf_val_lt
+      simp [h] at hsz
+      try simp_all
+      try (have := List.sizeOf_lt_of_mem ‹_ ∈ targets›; simp_all)
+      omega
 
-    where `ExpectedTy = T_1` if `|targets| = 1`, else
-    `MultiValuedExpr [T_1; …; T_n]`.
-
-    Assignment is strictly statement-position: `expected` must be
-    `TVoid`. The target tuple type is pushed into the RHS via
-    `Check.resolveStmtExpr`, so bidirectional rules in the RHS receive
-    the assignment's type. Expression-position uses (e.g.
-    `x ++ (y := s)`) are rejected — the assignment's "value" is its
-    target type only by convention, and accepting it as an expression
-    invites bugs like the impure-side-effect-inside-expression case
-    where `(if c then { b := false } else (b := true)) || b`
-    typechecked because `bool <: bool` trivially holds. -/
+/-- Check-mode rule for assignment. Synthesizes the assignment's type
+    by inlining the same work as `Synth.assign` (resolving targets,
+    pushing the LHS-derived `ExpectedTy` into the RHS via
+    `Check.resolveStmtExpr`), then runs the standard \[⇐\] Sub
+    boundary check `ExpectedTy <: T` against the surrounding `expected`
+    — *unless* `T = TVoid`, the marker for statement position
+    (e.g. last statement of a block whose value is being discarded).
+    `Sub` against `TVoid` would only succeed when `ExpectedTy = TVoid`,
+    which would reject every non-void assignment used as a statement,
+    so the subsumption is skipped there. The synthesized value is
+    discarded in statement position, exactly as for calls. -/
 def Check.assign (exprMd : StmtExprMd)
     (targets : List VariableMd) (value : StmtExprMd)
     (expected : HighTypeMd) (source : Option FileRange)
@@ -1042,7 +1268,8 @@ def Check.assign (exprMd : StmtExprMd)
     | [single] => single
     | _        => { val := .MultiValuedExpr targetTys, source := source }
   let value' ← Check.resolveStmtExpr value expectedTy
-  checkSubtype source expected { val := .TVoid, source := source }
+  unless expected.val matches .TVoid do
+    checkSubtype source expected expectedTy
   pure { val := .Assign targets' value', source := source }
   termination_by (exprMd, 0)
   decreasing_by
@@ -1058,7 +1285,7 @@ def Check.assign (exprMd : StmtExprMd)
 
 /-- Cases on the arity of the callee's declared outputs.
 
-    `Γ(callee) = static-procedure with inputs Ts and outputs [T],  Γ ⊢ args ⇒ Us,  U_i <: T_i (pairwise)  ∴  Γ ⊢ StaticCall callee args ⇒ T`
+    `Γ(callee) = static-procedure with input T and output T',  Γ ⊢ arg ⇒ U,  U <: T  ∴  Γ ⊢ StaticCall callee arg ⇒ T'`
 
     `Γ(callee) = static-procedure with inputs Ts and outputs [T_1; …; T_n] (n ≠ 1),  Γ ⊢ args ⇒ Us,  U_i <: T_i (pairwise)  ∴  Γ ⊢ StaticCall callee args ⇒ MultiValuedExpr [T_1; …; T_n]`
 
@@ -1088,7 +1315,7 @@ def Synth.staticCall (exprMd : StmtExprMd)
     have := List.sizeOf_lt_of_mem ‹_ ∈ args›
     omega
 
-/-- `Γ ⊢ target ⇒ _,  Γ(callee) = instance-procedure with inputs [self; Ts] and outputs [T],  Γ ⊢ args ⇒ Us,  U_i <: T_i (pairwise; self dropped)  ∴  Γ ⊢ InstanceCall target callee args ⇒ T`
+/-- `Γ ⊢ target ⇒ _,  Γ(callee) = instance- or static-procedure with inputs [self; T] and output T',  Γ ⊢ arg ⇒ U,  U <: T  ∴  Γ ⊢ InstanceCall target callee arg ⇒ T'`
 
     Target is synthesized; callee resolves to an instance or static
     procedure; arguments are checked pairwise against the callee's
@@ -1282,18 +1509,28 @@ def Synth.new (ref : Identifier) (source : Option FileRange) :
             else { val := HighType.Unknown, source := source }
   pure (.New ref', ty)
 
-/-- `Γ ⊢ target ⇒ _  ∴  Γ ⊢ AsType target T ⇒ T`
+/-- `Γ ⊢ target ⇒ U,  U ~ T  ∨  U <: T  ∨  T <: U  ∴  Γ ⊢ AsType target T ⇒ T`
 
-    `target` is resolved but not checked against `T` — the cast is the
-    user's claim. The synthesized type is `T`.
-
-    `IsType` is the runtime test counterpart and synthesizes `TBool`. -/
+    `target` synthesizes some type `U`; the cast is allowed when `U` and
+    `T` sit in the same lineage modulo gradual `Unknown` — either
+    consistent after unfolding aliases/constrained types (e.g. `5 as Int`
+    where `Int` is a wrapper over `int`), or a subtype in either
+    direction (downcast `animal as Cat` when `Cat extends Animal`,
+    upcast `cat as Animal`). Sibling casts (`Dog as Cat`) and casts
+    between unrelated primitives (`"hi" as int`) are rejected. The
+    synthesized type is `T` — the user's claim is honored once the
+    relation check passes. -/
 def Synth.asType (exprMd : StmtExprMd)
     (target : StmtExprMd) (ty : HighTypeMd)
     (h : exprMd.val = .AsType target ty) :
     ResolveM (StmtExpr × HighTypeMd) := do
-  let (target', _) ← Synth.resolveStmtExpr target
+  let (target', targetTy) ← Synth.resolveStmtExpr target
   let ty' ← resolveHighType ty
+  let ctx := (← get).typeContext
+  unless isConsistentSubtype ctx targetTy ty' || isConsistentSubtype ctx ty' targetTy do
+    let diag := diagnosticFromSource target.source
+      s!"cannot cast unrelated type '{formatType targetTy}' to '{formatType ty'}'"
+    modify fun s => { s with errors := s.errors.push diag }
   pure (.AsType target' ty', ty')
   termination_by (exprMd, 1)
   decreasing_by
@@ -1302,15 +1539,22 @@ def Synth.asType (exprMd : StmtExprMd)
     simp [h] at hsz
     omega
 
-/-- `Γ ⊢ target ⇒ _  ∴  Γ ⊢ IsType target T ⇒ TBool`
+/-- `Γ ⊢ target ⇒ U,  U ~ T  ∨  U <: T  ∨  T <: U  ∴  Γ ⊢ IsType target T ⇒ TBool`
 
-    `target` is resolved; the synthesized type is `TBool`. -/
+    Same lineage check as `AsType` — `is` only makes sense between types
+    that share a lineage modulo gradual `Unknown`; testing `5 is Cat`
+    is statically nonsense. The synthesized type is `TBool`. -/
 def Synth.isType (exprMd : StmtExprMd)
     (target : StmtExprMd) (ty : HighTypeMd) (source : Option FileRange)
     (h : exprMd.val = .IsType target ty) :
     ResolveM (StmtExpr × HighTypeMd) := do
-  let (target', _) ← Synth.resolveStmtExpr target
+  let (target', targetTy) ← Synth.resolveStmtExpr target
   let ty' ← resolveHighType ty
+  let ctx := (← get).typeContext
+  unless isConsistentSubtype ctx targetTy ty' || isConsistentSubtype ctx ty' targetTy do
+    let diag := diagnosticFromSource target.source
+      s!"cannot test unrelated type '{formatType targetTy}' against '{formatType ty'}'"
+    modify fun s => { s with errors := s.errors.push diag }
   pure (.IsType target' ty', { val := .TBool, source := source })
   termination_by (exprMd, 1)
   decreasing_by
@@ -1645,20 +1889,38 @@ def resolveBody (body : Body) (expected : HighTypeMd) : ResolveM Body := do
     return .Abstract posts'
   | .External => return .External
 
-/-- Compute the expected body type for a procedure. Functional
-    procedures with a single output `T` expect `T` — the body's last
-    statement is the result and must produce a `T`. Non-functional
-    procedures expect `Unknown`: their body is statement-typed and the
-    last statement (if any) is discarded — outputs are observed via
-    `return e` or named-output assignment, validated independently
-    inside `Check.return` via `expectedReturnTypes`. -/
+/-- Compute the expected *value type* `A` for a procedure body, i.e.
+    the `A` in `Γ ⊢ body ⇐ A`. Functional procedures with a single
+    output `T` expect `A = T`: the body's last statement is the result
+    and must produce a `T`. Non-functional procedures expect
+    `A = Unknown`: their body is statement-typed and the last
+    statement (if any) is discarded — outputs are observed via
+    `return e` (whose payload is matched against the procedure's
+    declared outputs by `Resolution.Check.return`) or via named-output
+    assignment.
+
+    This computes only the body's value type. The procedure's declared
+    output list is bound separately by the procedure rule
+    (`resolveProcedure` / `resolveInstanceProcedure`) into
+    `ResolveState.answerType`. -/
 private def procedureBodyType (isFunctional : Bool) (outputs : List Parameter)
     (source : Option FileRange) : HighTypeMd :=
   match isFunctional, outputs with
   | true, [singleOutput] => singleOutput.type
   | _, _ => { val := .Unknown, source := source }
 
-/-- Resolve a procedure: resolve its name, then resolve params, contracts, and body in a new scope. -/
+/-- (Procedure)
+    ```
+    T_o-bar = proc.outputs.types    A = procedureBodyType proc
+    Γ_global, params(proc) ⊢ proc.body ⇐ A
+    ──────────────────────────────────────────────────────────
+    Γ_global ⊢ Procedure proc
+    ```
+    The body is resolved under a scope that includes the procedure's
+    input and output parameters, and is checked against the value type
+    `A` computed by `procedureBodyType`. The Return rules consult the
+    procedure's declared output list `T_o-bar` (stored on
+    `ResolveState.answerType`, set on entry and restored on exit). -/
 def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
   let procName' ← resolveRef proc.name
   withScope do
@@ -1666,11 +1928,11 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
     let outputs' ← proc.outputs.mapM resolveParameter
     let pres' ← proc.preconditions.mapM (·.mapM resolveStmtExpr)
     let dec' ← proc.decreases.mapM resolveStmtExpr
-    let savedReturns := (← get).expectedReturnTypes
-    modify fun s => { s with expectedReturnTypes := some (outputs'.map (·.type)) }
+    let savedAnswer := (← get).answerType
+    modify fun s => { s with answerType := some (outputs'.map (·.type)) }
     let bodyExpected := procedureBodyType proc.isFunctional outputs' proc.name.source
     let body' ← resolveBody proc.body bodyExpected
-    modify fun s => { s with expectedReturnTypes := savedReturns }
+    modify fun s => { s with answerType := savedAnswer }
     if !proc.isFunctional && body'.isTransparent then
       let diag := diagnosticFromSource proc.name.source
         s!"transparent procedures are not yet supported. Add 'opaque' to make the procedure opaque"
@@ -1703,11 +1965,11 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
     let outputs' ← proc.outputs.mapM resolveParameter
     let pres' ← proc.preconditions.mapM (·.mapM resolveStmtExpr)
     let dec' ← proc.decreases.mapM resolveStmtExpr
-    let savedReturns := (← get).expectedReturnTypes
-    modify fun s => { s with expectedReturnTypes := some (outputs'.map (·.type)) }
+    let savedAnswer := (← get).answerType
+    modify fun s => { s with answerType := some (outputs'.map (·.type)) }
     let bodyExpected := procedureBodyType proc.isFunctional outputs' proc.name.source
     let body' ← resolveBody proc.body bodyExpected
-    modify fun s => { s with expectedReturnTypes := savedReturns }
+    modify fun s => { s with answerType := savedAnswer }
     if !proc.isFunctional && body'.isTransparent then
       let diag := diagnosticFromSource proc.name.source
         s!"transparent procedures are not yet supported. Add 'opaque' to make the procedure opaque"
