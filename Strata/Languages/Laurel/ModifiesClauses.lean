@@ -9,6 +9,7 @@ public import Strata.Languages.Laurel.Laurel
 public import Strata.Languages.Laurel.LaurelTypes
 public import Strata.Languages.Core.Verifier
 public import Strata.Languages.Laurel.Resolution
+import Strata.Languages.Laurel.HeapParameterizationConstants
 
 /-
 Modifies clause transformation (Laurel → Laurel).
@@ -103,10 +104,10 @@ def buildModifiesEnsures (proc: Procedure) (model: SemanticModel) (modifiesExprs
   let entries := extractModifiesEntries model modifiesExprs
   let objName : Identifier := "$modifies_obj"
   let fldName : Identifier := "$modifies_fld"
-  let obj := mkMd <| .Identifier objName
-  let fld := mkMd <| .Identifier fldName
-  let heapIn := mkMd <| .Identifier heapInName
-  let heapOut := mkMd <| .Identifier heapOutName
+  let obj := mkMd <| .Var (.Local objName)
+  let fld := mkMd <| .Var (.Local fldName)
+  let heapIn := mkMd <| .Var (.Local heapInName)
+  let heapOut := mkMd <| .Var (.Local heapOutName)
       -- Build the "obj is allocated" condition: Composite..ref($obj) < $heap_in.nextReference
   let heapCounter := mkMd <| .StaticCall "Heap..nextReference!" [heapIn]
   let objRef := mkMd <| .StaticCall "Composite..ref!" [obj]
@@ -159,8 +160,8 @@ def transformModifiesClauses (model: SemanticModel)
         -- modifies * means the procedure can modify anything; no frame condition
         .ok { proc with body := .Opaque postconds impl [] }
       else if hasHeapOut proc then
-        let heapInName : Identifier := "$heap_in"
-        let heapName : Identifier := "$heap"
+        let heapInName := heapInVarName
+        let heapName := heapVarName
         let frameCondition := buildModifiesEnsures proc model modifiesExprs heapInName heapName
         let postconds' := match frameCondition with
           | some frame => postconds ++ [{ condition := frame, summary := "modifies clause" }]

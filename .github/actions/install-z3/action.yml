@@ -1,0 +1,55 @@
+# Copyright Strata Contributors
+# SPDX-License-Identifier: Apache-2.0 OR MIT
+name: Install z3
+description: >
+  Download a z3 release and put it on the PATH. Supports x86_64 and
+  aarch64 Linux runners. Consolidates the z3 install logic previously
+  duplicated across ci.yml and cbmc.yml.
+
+inputs:
+  version:
+    description: z3 release tag (e.g. "4.15.2").
+    required: false
+    default: "4.15.2"
+  install-to:
+    description: >
+      Where to make the z3 binary available. One of:
+        "path"    (default) — prepend the unpacked bin/ directory to $GITHUB_PATH.
+        "system"  — sudo cp the z3 binary into /usr/local/bin/.
+    required: false
+    default: "path"
+
+runs:
+  using: composite
+  steps:
+    - name: Download z3
+      shell: bash
+      run: |
+        set -eu
+        ARCH=$(uname -m)
+        case "$ARCH" in
+          x86_64)
+            URL="https://github.com/Z3Prover/z3/releases/download/z3-${{ inputs.version }}/z3-${{ inputs.version }}-x64-glibc-2.39.zip"
+            ARCHIVE_NAME="z3-${{ inputs.version }}-x64-glibc-2.39"
+            ;;
+          aarch64|arm64)
+            URL="https://github.com/Z3Prover/z3/releases/download/z3-${{ inputs.version }}/z3-${{ inputs.version }}-arm64-glibc-2.34.zip"
+            ARCHIVE_NAME="z3-${{ inputs.version }}-arm64-glibc-2.34"
+            ;;
+          *) echo "Unsupported architecture: $ARCH" >&2; exit 1 ;;
+        esac
+        wget -q "$URL"
+        unzip -q "${ARCHIVE_NAME}.zip"
+        chmod +x "${ARCHIVE_NAME}/bin/z3"
+        case "${{ inputs.install-to }}" in
+          path)
+            echo "$GITHUB_WORKSPACE/${ARCHIVE_NAME}/bin/" >> "$GITHUB_PATH"
+            ;;
+          system)
+            sudo cp "${ARCHIVE_NAME}/bin/z3" /usr/local/bin/
+            ;;
+          *)
+            echo "Unknown install-to value: ${{ inputs.install-to }}" >&2
+            exit 2
+            ;;
+        esac

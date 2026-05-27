@@ -56,6 +56,7 @@ import Strata.Backends.CBMC
 import Strata.DL.Imperative.CFGToCProverGOTO
 import Strata.DL.Imperative.ToCProverGOTO
 import Strata.DL.SMT.Denote
+import Strata.DL.SMT.FactoryCorrect
 import Strata.DL.SMT.Translate
 
 /- Code Transforms — additional -/
@@ -66,5 +67,8 @@ import Strata.MetaVerifier
 
 /- Simple API -/
 import Strata.SimpleAPI
+
+/- Pipeline -/
+import Strata.Pipeline.PyAnalyzeLaurel
 
 -- noimport: Strata.Util.Random -- deletion candidate: nothing imports this module

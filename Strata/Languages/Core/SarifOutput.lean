@@ -29,7 +29,8 @@ def outcomeToLevel (mode : VerificationMode) (property : Imperative.PropertyType
   match mode, property, outcome.satisfiabilityProperty, outcome.validityProperty with
   -- Cover satisfied (sat on P∧Q): always pass
   | _, .cover, .sat _, _ => .none
-  -- Unreachable (both unsat): deductive=warning for assert/divisionByZero/arithmeticOverflow, error for cover and bugFinding modes
+  -- Unreachable (both unsat): deductive=warning for assert-like properties
+  -- (those that pass vacuously), error for cover and bugFinding modes.
   | .deductive, p, .unsat, .unsat => if p.passWhenUnreachable then .warning else .error
   | _, _, .unsat, .unsat => .error
   -- Pass: validity proven (unsat on P∧¬Q)
@@ -77,20 +78,18 @@ def outcomeToMessage (outcome : VCOutcome) : String :=
 
 /-- Extract location information from metadata -/
 def extractLocation (files : Map Strata.Uri Lean.FileMap) (md : Imperative.MetaData Expression) : Option Location := do
-  let fileRangeElem ← md.findElem Imperative.MetaData.fileRange
-  match fileRangeElem.value with
-  | .fileRange fr =>
-    let fileMap ← files.find? fr.file
-    let startPos := fileMap.toPosition fr.range.start
-    let uri := match fr.file with
-               | .file path => path
-    pure { uri, startLine := startPos.line, startColumn := startPos.column }
-  | _ => none
+  let fr ← Imperative.getFileRange md
+  let fileMap ← files.find? fr.file
+  let startPos := fileMap.toPosition fr.range.start
+  let uri := match fr.file with
+             | .file path => path
+  pure { uri, startLine := startPos.line, startColumn := startPos.column }
 
 /-- Convert PropertyType to a property classification string for SARIF output -/
 def propertyTypeToClassification : Imperative.PropertyType → String
   | .divisionByZero => "division-by-zero"
   | .arithmeticOverflow => "arithmetic-overflow"
+  | .outOfBoundsAccess => "out-of-bounds-access"
   | .cover => "cover"
   | .assert => "assert"
 
@@ -114,15 +113,17 @@ def extractRelatedLocations (files : Map Strata.Uri Lean.FileMap) (md : Imperati
 def vcResultToSarifResult (mode : VerificationMode) (files : Map Strata.Uri Lean.FileMap) (vcr : VCResult) : Strata.Sarif.Result :=
   let ruleId := vcr.obligation.label
   let relatedLocations := extractRelatedLocations files vcr.obligation.metadata
+  let properties : Strata.Sarif.PropertyBag :=
+    { propertyType := propertyTypeToClassification vcr.obligation.property }
   match vcr.outcome with
-  | .error msg =>
+  | .error err =>
     let level := .error
-    let messageText := s!"Verification error: {msg}"
+    let messageText := s!"Verification error: {err}"
     let message : Strata.Sarif.Message := { text := messageText }
     let locations := match extractLocation files vcr.obligation.metadata with
       | some loc => #[locationToSarif loc]
       | none => #[]
-    { ruleId, level, message, locations, relatedLocations }
+    { ruleId, level, message, locations, relatedLocations, properties }
   | .ok outcome =>
     let level := outcomeToLevel mode vcr.obligation.property outcome
     let messageText := outcomeToMessage outcome
@@ -130,7 +131,7 @@ def vcResultToSarifResult (mode : VerificationMode) (files : Map Strata.Uri Lean
     let locations := match extractLocation files vcr.obligation.metadata with
       | some loc => #[locationToSarif loc]
       | none => #[]
-    { ruleId, level, message, locations, relatedLocations }
+    { ruleId, level, message, locations, relatedLocations, properties }
 
 /-- Convert VCResults to a SARIF document -/
 def vcResultsToSarif (mode : VerificationMode) (files : Map Strata.Uri Lean.FileMap) (vcResults : VCResults) : Strata.Sarif.SarifDocument :=

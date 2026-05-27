@@ -35,10 +35,20 @@ private def inferComparisonArgType (model : SemanticModel) (args : List StmtExpr
   args.findSome? (fun a => match a.val with | .Hole _ _ => none | _ => some (computeExprType model a))
     |>.getD ⟨ .TInt, source ⟩ -- use Int as a default type for comparisons where both operands are holes
 
-/-- Get the expected type for each argument of a call from the callee's parameter list. -/
+/-- Get the expected type for each argument of a call from the callee's parameter list.
+
+    Auto-generated datatype destructors (`TypeName..fieldName[!]`) and testers
+    (`TypeName..isCtor`) are unary, taking the datatype itself as their single
+    input. Their `ResolvedNode` (`.datatypeDestructor` / `.datatypeConstructor`)
+    carries the resolved type Identifier (with its `uniqueId`), so we can
+    construct the input `HighType` directly without falling back to textual
+    decoding of the override name. -/
 private def calleeParamTypes (model : SemanticModel) (callee : Identifier) : Option (List HighTypeMd) :=
   match model.get callee with
   | .staticProcedure proc => some (proc.inputs.map (·.type))
+  | .datatypeConstructor typeName _
+  | .datatypeDestructor typeName _ =>
+      some [⟨.UserDefined typeName, callee.source⟩]
   | _ => none
 
 inductive InferHoleTypesStats where
@@ -128,13 +138,12 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd) : InferHol
       return ⟨.Block (← inferBlockStmts stmts expectedType) label, source⟩
   | .Assign targets value =>
       let targetType := match targets with
-        | target :: _ => computeExprType model target
+        | target :: _ => match target.val with
+          | .Local name => computeExprType model ⟨.Var (.Local name), target.source⟩
+          | .Field _ fieldName => computeExprType model ⟨.Var (.Field ⟨.Hole, none⟩ fieldName), target.source⟩
+          | .Declare param => param.type
         | _ => ⟨ .Unknown, source ⟩
       return ⟨.Assign targets (← inferExpr value targetType), source⟩
-  | .LocalVariable name ty init =>
-      match init with
-      | some initExpr => return ⟨.LocalVariable name ty (some (← inferExpr initExpr ty)), source⟩
-      | none => return expr
   | .While cond invs dec body =>
       let dec' ← match dec with
         | some d => pure (some (← inferExpr d (⟨ .TInt, source ⟩)))

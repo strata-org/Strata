@@ -88,7 +88,7 @@ instance : Inhabited DiagnosticModel where
 /-- Create a DiagnosticModel from just a message (using default location).
 This should not be called, it only exists temporarily to enable incrementally
 migrating code without error locations -/
-def DiagnosticModel.fromMessage (msg : String) (type : DiagnosticType := DiagnosticType.UserError): DiagnosticModel :=
+def DiagnosticModel.fromMessage (msg : String) (type : DiagnosticType := DiagnosticType.UserError) : DiagnosticModel :=
   { fileRange := FileRange.unknown, message := msg, type := type }
 
 /-- Create a DiagnosticModel from a Format (using default location).
@@ -104,7 +104,7 @@ def DiagnosticModel.withRange (fr : FileRange) (msg : Format) (type : Diagnostic
 /-- Format a DiagnosticModel using a FileMap to convert byte offsets to line/column positions. -/
 def DiagnosticModel.format (dm : DiagnosticModel) (fileMap : Option Lean.FileMap) (includeEnd? : Bool := true) : Std.Format :=
   let rangeStr := dm.fileRange.format fileMap includeEnd?
-  if dm.fileRange.range.isNone then
+  if rangeStr.isEmpty then
     f!"{dm.message}"
   else
     f!"{rangeStr} {dm.message}"

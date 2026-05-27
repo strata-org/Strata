@@ -9,6 +9,7 @@ public import Strata.Languages.Laurel.Laurel
 public import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 public import Strata.Languages.Laurel.LaurelTypes
 public import Strata.Languages.Laurel.HeapParameterizationConstants
+public import Strata.Languages.Laurel.MapStmtExpr
 public import Strata.Util.Tactics
 
 /-
@@ -57,23 +58,22 @@ def collectExprMd (expr : StmtExprMd) : StateM AnalysisResult Unit := collectExp
 
 def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
   match _: expr with
-  | .FieldSelect target _ =>
+  | .Var (.Field target _) =>
       modify fun s => { s with readsHeapDirectly := true }; collectExprMd target
   | .InstanceCall target _ args => collectExprMd target; for a in args do collectExprMd a
   | .StaticCall callee args => modify fun s => { s with callees := callee :: s.callees }; for a in args do collectExprMd a
   | .IfThenElse c t e => collectExprMd c; collectExprMd t; if let some x := e then collectExprMd x
   | .Block stmts _ => for s in stmts do collectExprMd s
-  | .LocalVariable _ _ i => if let some x := i then collectExprMd x
   | .While c invs d b => collectExprMd c; collectExprMd b; for inv in invs do collectExprMd inv; if let some x := d then collectExprMd x
   | .Return v => if let some x := v then collectExprMd x
   | .Assign assignTargets v =>
       -- Check if any target is a field assignment (heap write)
       for ⟨assignTarget, _⟩ in assignTargets.attach do
-        match assignTarget.val with
-        | .FieldSelect _ _ =>
+        match _hav: assignTarget.val with
+        | .Field target _fieldName =>
             modify fun s => { s with writesHeapDirectly := true }
-        | _ => pure ()
-        collectExprMd assignTarget
+            collectExprMd target
+        | .Local _ | .Declare _ => pure ()
       collectExprMd v
   | .PureFieldUpdate t _ v => collectExprMd t; collectExprMd v
   | .PrimitiveOp _ args => for a in args do collectExprMd a
@@ -91,7 +91,14 @@ def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
   | .ContractOf _ f => collectExprMd f
   | _ => pure ()
   termination_by sizeOf expr
-  decreasing_by all_goals (simp_wf; try term_by_mem)
+  decreasing_by
+    all_goals simp_wf
+    all_goals (try term_by_mem)
+    -- For target inside Field in assign target list (attach-based loop):
+    all_goals (
+      have := List.sizeOf_lt_of_mem ‹_›
+      have := Variable.sizeOf_field_target_lt_of_eq _hav
+      omega)
 end
 
 def analyzeProc (proc : Procedure) : AnalysisResult :=
@@ -235,6 +242,7 @@ def freshVarName : TransformM Identifier := do
 
 /-- Helper to wrap a StmtExpr into StmtExprMd with empty metadata -/
 private def mkMd (e : StmtExpr) : StmtExprMd := { val := e, source := none }
+private def mkVarMd (v : Variable) : VariableMd := { val := v, source := none }
 
 /--
 Resolve the owning composite type name for a field access by computing the target expression's type.
@@ -246,6 +254,10 @@ def resolveQualifiedFieldName (model: SemanticModel) (fieldName : Identifier) : 
     | .unresolved _ => none
     | _ => dbg_trace s!"BUG: resolveQualifiedFieldName {fieldName} did resolved to something other than a field"; none
 
+private def wrapList (source : Option FileRange) : List StmtExprMd → StmtExprMd
+  | [single] => single
+  | many => ⟨.Block many none, source⟩
+
 /--
 Transform an expression, adding heap parameters where needed.
 - `heapVar`: the name of the heap variable to use
@@ -253,45 +265,55 @@ Transform an expression, adding heap parameters where needed.
 - `valueUsed`: whether the result value of this expression is used (affects optimization of heap-writing calls)
 -/
 def heapTransformExpr (heapVar : Identifier) (model: SemanticModel) (expr : StmtExprMd) (valueUsed : Bool := true) : TransformM StmtExprMd :=
-  recurse expr valueUsed
+  recurseOne expr valueUsed
 where
-  recurse (exprMd : StmtExprMd) (valueUsed : Bool := true) : TransformM StmtExprMd := do
+  recurseOne (exprMd : StmtExprMd) (valueUsed : Bool := true) : TransformM StmtExprMd :=
+    wrapList exprMd.source <$> recurse exprMd valueUsed
+  termination_by (sizeOf exprMd, 1)
+  recurse (exprMd : StmtExprMd) (valueUsed : Bool := true) : TransformM (List StmtExprMd) := do
     let ⟨expr, source⟩ := exprMd
     match _h : expr with
-    | .FieldSelect selectTarget fieldName => do
+    | .Var (.Field selectTarget fieldName) => do
         let some qualifiedName := resolveQualifiedFieldName model fieldName
-          | return ⟨ .Hole, source ⟩
+          | return [⟨ .Hole, source ⟩]
 
         let valTy := (model.get fieldName).getType
-        let readExpr := ⟨ .StaticCall "readField" [mkMd (.Identifier heapVar), selectTarget, mkMd (.StaticCall qualifiedName [])], source ⟩
+        let readExpr := ⟨ .StaticCall "readField" [mkMd (.Var (.Local heapVar)), selectTarget, mkMd (.StaticCall qualifiedName [])], source ⟩
         -- Unwrap Box: apply the appropriate destructor
         recordBoxConstructor model valTy.val
-        return mkMd <| .StaticCall (boxDestructorName model valTy.val) [readExpr]
+        return [mkMd <| .StaticCall (boxDestructorName model valTy.val) [readExpr]]
     | .StaticCall callee args =>
-        let args' ← args.mapM (recurse ·)
+        let args' ← args.mapM (recurseOne ·)
         let calleeReadsHeap ← readsHeap callee
         let calleeWritesHeap ← writesHeap callee
         if calleeWritesHeap then
           if valueUsed then
             let freshVar ← freshVarName
-            let varDecl := mkMd (.LocalVariable freshVar (computeExprType model exprMd) none)
             let callWithHeap := ⟨ .Assign
-              [mkMd (.Identifier heapVar), mkMd (.Identifier freshVar)]
-              (⟨ .StaticCall callee (mkMd (.Identifier heapVar) :: args'), source ⟩), source ⟩
-            return ⟨ .Block [varDecl, callWithHeap, mkMd (.Identifier freshVar)] none, source ⟩
+              [mkVarMd (.Local heapVar), mkVarMd (.Declare ⟨freshVar, computeExprType model exprMd⟩)]
+              (⟨ .StaticCall callee (mkMd (.Var (.Local heapVar)) :: args'), source ⟩), source ⟩
+            return [callWithHeap, mkMd (.Var (.Local freshVar))]
           else
-            return ⟨ .Assign [mkMd (.Identifier heapVar)] (⟨ .StaticCall callee (mkMd (.Identifier heapVar) :: args'), source ⟩), source ⟩
+            -- Generate throwaway Declare targets for any non-heap outputs
+            let procOutputs := match model.get callee with
+              | .staticProcedure proc => proc.outputs
+              | .instanceProcedure _ proc => proc.outputs
+              | _ => []
+            let extraTargets ← procOutputs.mapM fun out => do
+              pure (mkVarMd (.Declare ⟨← freshVarName, out.type⟩))
+            let allTargets := mkVarMd (.Local heapVar) :: extraTargets
+            return [⟨ .Assign allTargets (⟨ .StaticCall callee (mkMd (.Var (.Local heapVar)) :: args'), source ⟩), source ⟩]
         else if calleeReadsHeap then
-          return ⟨ .StaticCall callee (mkMd (.Identifier heapVar) :: args'), source ⟩
+          return [⟨ .StaticCall callee (mkMd (.Var (.Local heapVar)) :: args'), source ⟩]
         else
-          return ⟨ .StaticCall callee args', source ⟩
+          return [⟨ .StaticCall callee args', source ⟩]
     | .InstanceCall callTarget callee args =>
-        let t ← recurse callTarget
-        let args' ← args.mapM (recurse ·)
-        return ⟨ .InstanceCall t callee args', source ⟩
+        let t ← recurseOne callTarget
+        let args' ← args.mapM (recurseOne ·)
+        return [⟨ .InstanceCall t callee args', source ⟩]
     | .IfThenElse c t e =>
-        let e' ← match e with | some x => some <$> recurse x valueUsed | none => pure none
-        return ⟨ .IfThenElse (← recurse c) (← recurse t valueUsed) e', source ⟩
+        let e' ← match e with | some x => some <$> recurseOne x valueUsed | none => pure none
+        return [⟨ .IfThenElse (← recurseOne c) (← recurseOne t valueUsed) e', source ⟩]
     | .Block stmts label =>
         let n := stmts.length
         let rec processStmts (idx : Nat) (remaining : List StmtExprMd) : TransformM (List StmtExprMd) := do
@@ -301,48 +323,84 @@ where
               let isLast := idx == n - 1
               let s' ← recurse s (isLast && valueUsed)
               let rest' ← processStmts (idx + 1) rest
-              pure (s' :: rest')
-          termination_by sizeOf remaining
+              pure (s' ++ rest')
+          termination_by (sizeOf remaining, 0)
         let stmts' ← processStmts 0 stmts
-        return ⟨ .Block stmts' label, source ⟩
-    | .LocalVariable n ty i =>
-        let i' ← match i with | some x => some <$> recurse x | none => pure none
-        return ⟨ .LocalVariable n ty i', source ⟩
+        return [⟨ .Block stmts' label, source ⟩]
     | .While c invs d b =>
-        let invs' ← invs.mapM (recurse ·)
-        return ⟨ .While (← recurse c) invs' d (← recurse b false), source ⟩
+        let invs' ← invs.mapM (recurseOne ·)
+        return [⟨ .While (← recurseOne c) invs' d (← recurseOne b false), source ⟩]
     | .Return v =>
-        let v' ← match v with | some x => some <$> recurse x | none => pure none
-        return ⟨ .Return v', source ⟩
+        let v' ← match v with | some x => some <$> recurseOne x | none => pure none
+        return [⟨ .Return v', source ⟩]
     | .Assign targets v =>
-        match targets with
-        | [⟨.FieldSelect target fieldName, _⟩] =>
-            let some qualifiedName := resolveQualifiedFieldName model fieldName
-              | return ⟨ .Hole, source ⟩
-            let valTy := (model.get fieldName).getType
-            let target' ← recurse target
-            let v' ← recurse v
-            -- Wrap value in Box constructor
-            recordBoxConstructor model valTy.val
-            let boxedVal := mkMd <| .StaticCall (boxConstructorName model valTy.val) [v']
-            let heapAssign := ⟨ .Assign [mkMd (.Identifier heapVar)]
-              (mkMd (.StaticCall "updateField" [mkMd (.Identifier heapVar), target', mkMd (.StaticCall qualifiedName []), boxedVal])), source ⟩
-            if valueUsed then
-              return ⟨ .Block [heapAssign, v'] none, source ⟩
+
+      -- Process field targets
+      let (processedTargets, updateStatements) <-
+        targets.attach.foldlM (init := ([], [])) fun (accTargets, accStmts) ⟨t, _⟩ =>
+          match _htv : t.val with
+          | .Field target fieldName => do
+              let some qualifiedName := resolveQualifiedFieldName model fieldName
+                -- Field name did not resolve; a diagnostic will have been emitted by the resolution pass.
+                | return (accTargets ++ [t], accStmts)
+              let valTy := (model.get fieldName).getType
+              recordBoxConstructor model valTy.val
+              let freshVar ← freshVarName
+              let target' ← recurseOne target
+              let boxedVal := mkMd <| .StaticCall (boxConstructorName model valTy.val) [mkMd (.Var (.Local freshVar))]
+              let updateStmt : StmtExprMd := ⟨ .Assign [mkVarMd (.Local heapVar)]
+                (mkMd (.StaticCall "updateField" [mkMd (.Var (.Local heapVar)), target', mkMd (.StaticCall qualifiedName []), boxedVal])), source ⟩
+              return (accTargets ++ [mkVarMd (.Declare ⟨freshVar, valTy⟩)], accStmts ++ [updateStmt])
+          | _ => return (accTargets ++ [t], accStmts)
+
+      -- Process calls to heap mutating procedures
+      let (newAssign, suffixes) ← do
+        -- Detect calls and add a heap argument if needed
+        let (v', addedHeap) <- match _hv : v.val with
+          | .StaticCall callee args => do
+            let args' <- args.mapM recurseOne
+            let calleeWritesHeap ← writesHeap callee
+            let calleeReadsHeap ← readsHeap callee
+            if calleeWritesHeap then
+              pure (⟨ .StaticCall callee (mkMd (.Var (.Local heapVar)) :: args'), v.source ⟩, true)
+            else if calleeReadsHeap then
+              pure (⟨ .StaticCall callee (mkMd (.Var (.Local heapVar)) :: args'), v.source ⟩, false)
             else
-              return heapAssign
-        | [fieldSelectMd] =>
-          let tgt' ← recurse fieldSelectMd
-          return ⟨ .Assign [tgt'] (← recurse v), source ⟩
-        | [] =>
-            return ⟨ .Assign [] (← recurse v), source ⟩
-        | tgt :: rest =>
-            let tgt' ← recurse tgt
-            let targets' ← rest.mapM (recurse ·)
-            return ⟨ .Assign (tgt' :: targets') (← recurse v), source ⟩
-    | .PureFieldUpdate t f v => return ⟨ .PureFieldUpdate (← recurse t) f (← recurse v), source ⟩
+              pure (⟨ .StaticCall callee args', v.source ⟩, false)
+          | .InstanceCall callTarget _callee args => do
+            let _callTarget' ← recurseOne callTarget
+            let _args' <- args.mapM recurseOne
+            pure (⟨ .InstanceCall _callTarget' _callee _args', v.source ⟩, false)
+          | _ =>
+            pure (<- recurseOne v, false)
+        let allTargets := if addedHeap
+          then ⟨ Variable.Local heapVar, v.source ⟩ :: processedTargets
+          else processedTargets
+        let newAssign: AstNode StmtExpr := ⟨ StmtExpr.Assign allTargets v', source ⟩
+
+        -- Convert a Declare variable to a Local reference (stripping the type).
+        -- Non-Declare variables pass through unchanged.
+        let variableAsRef(var: Variable): Variable := match var with
+          | .Declare param => Variable.Local param.name
+          | x => x
+
+        -- Make sure the result of the StmtExpr is still the same
+        let suffixes: List (AstNode StmtExpr) := if valueUsed && targets.length == 1
+          then
+            let targetVar := match processedTargets with
+              | t :: _ => variableAsRef t.val
+              -- unreachable: targets.length == 1 guarantees processedTargets is non-empty
+              | [] => Variable.Local "$bug_empty_targets"
+            updateStatements ++ [⟨ StmtExpr.Var targetVar, source⟩]
+          else updateStatements
+        pure (newAssign, suffixes)
+
+      -- Return the list of statements directly (flattened into enclosing block)
+      return newAssign :: suffixes
+
+    | .PureFieldUpdate t f v => return [⟨ .PureFieldUpdate (← recurseOne t) f (← recurseOne v), source ⟩]
     | .PrimitiveOp op args =>
-      let args' ← args.mapM (recurse ·)
+      let args' ← args.mapM (recurseOne ·)
       -- For == and != on Composite types, compare refs instead
       match op, args with
       | .Eq, [e1, _e2] =>
@@ -351,42 +409,58 @@ where
         | .UserDefined _ =>
           let ref1 := mkMd (.StaticCall "Composite..ref!" [args'[0]!])
           let ref2 := mkMd (.StaticCall "Composite..ref!" [args'[1]!])
-          return ⟨ .PrimitiveOp .Eq [ref1, ref2], source ⟩
-        | _ => return ⟨ .PrimitiveOp op args', source ⟩
+          return [⟨ .PrimitiveOp .Eq [ref1, ref2], source ⟩]
+        | _ => return [⟨ .PrimitiveOp op args', source ⟩]
       | .Neq, [e1, _e2] =>
         let ty := (computeExprType model e1).val
         match ty with
         | .UserDefined _ =>
           let ref1 := mkMd (.StaticCall "Composite..ref!" [args'[0]!])
           let ref2 := mkMd (.StaticCall "Composite..ref!" [args'[1]!])
-          return ⟨ .PrimitiveOp .Neq [ref1, ref2], source ⟩
-        | _ => return ⟨ .PrimitiveOp op args', source ⟩
-      | _, _ => return ⟨ .PrimitiveOp op args', source ⟩
-    | .New _ => return exprMd
-    | .ReferenceEquals l r => return ⟨ .ReferenceEquals (← recurse l) (← recurse r), source ⟩
+          return [⟨ .PrimitiveOp .Neq [ref1, ref2], source ⟩]
+        | _ => return [⟨ .PrimitiveOp op args', source ⟩]
+      | _, _ => return [⟨ .PrimitiveOp op args', source ⟩]
+    | .New _ => return [exprMd]
+    | .ReferenceEquals l r => return [⟨ .ReferenceEquals (← recurseOne l) (← recurseOne r), source ⟩]
     | .AsType t ty =>
-        let t' ← recurse t valueUsed
+        let t' ← recurseOne t valueUsed
         let isCheck := ⟨ .IsType t' ty, source ⟩
         let assertStmt := ⟨ .Assert { condition := isCheck }, source ⟩
-        return ⟨ .Block [assertStmt, t'] none, source ⟩
-    | .IsType t ty => return ⟨ .IsType (← recurse t) ty, source ⟩
+        return [⟨ .Block [assertStmt, t'] none, source ⟩]
+    | .IsType t ty => return [⟨ .IsType (← recurseOne t) ty, source ⟩]
     | .Quantifier mode p trigger b =>
-      let trigger' ← trigger.attach.mapM fun ⟨t, _⟩ => recurse t
-      return ⟨.Quantifier mode p trigger' (← recurse b), source⟩
-    | .Assigned n => return ⟨ .Assigned (← recurse n), source ⟩
-    | .Old v => return ⟨ .Old (← recurse v), source ⟩
-    | .Fresh v => return ⟨ .Fresh (← recurse v), source ⟩
+      let trigger' ← trigger.attach.mapM fun ⟨t, _⟩ => recurseOne t
+      return [⟨.Quantifier mode p trigger' (← recurseOne b), source⟩]
+    | .Assigned n => return [⟨ .Assigned (← recurseOne n), source ⟩]
+    | .Old v => return [⟨ .Old (← recurseOne v), source ⟩]
+    | .Fresh v => return [⟨ .Fresh (← recurseOne v), source ⟩]
     | .Assert ⟨condExpr, summary⟩ =>
-        return ⟨ .Assert { condition := ← recurse condExpr, summary }, source ⟩
-    | .Assume c => return ⟨ .Assume (← recurse c), source ⟩
-    | .ProveBy v p => return ⟨ .ProveBy (← recurse v) (← recurse p), source ⟩
-    | .ContractOf ty f => return ⟨ .ContractOf ty (← recurse f), source ⟩
-    | _ => return exprMd
-    termination_by sizeOf exprMd
+        return [⟨ .Assert { condition := ← recurseOne condExpr, summary }, source ⟩]
+    | .Assume c => return [⟨ .Assume (← recurseOne c), source ⟩]
+    | .ProveBy v p => return [⟨ .ProveBy (← recurseOne v) (← recurseOne p), source ⟩]
+    | .ContractOf ty f => return [⟨ .ContractOf ty (← recurseOne f), source ⟩]
+    | _ => return [exprMd]
+  termination_by (sizeOf exprMd, 0)
+  decreasing_by
+    all_goals simp_wf
+    all_goals (try have := AstNode.sizeOf_val_lt exprMd)
+    all_goals (try have := AstNode.sizeOf_val_lt v)
+    all_goals (try term_by_mem)
+    all_goals (try (cases exprMd; simp_all; omega))
+    -- For field inner expressions in attach-based:
+    all_goals (try (
+      have := List.sizeOf_lt_of_mem ‹_›
+      have := Variable.sizeOf_field_target_lt_of_eq _htv
+      omega))
+    -- Remaining goals
+    all_goals (
+      cases exprMd with | mk val src =>
+      simp_all
+      omega)
 
 def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : TransformM Procedure := do
-  let heapName : Identifier := "$heap"
-  let heapInName : Identifier := "$heap_in"
+  let heapName := heapVarName
+  let heapInName := heapInVarName
   let readsHeap := (← get).heapReaders.contains proc.name
   let writesHeap := (← get).heapWriters.contains proc.name
 
@@ -406,7 +480,7 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
     let body' ← match proc.body with
       | .Transparent bodyExpr =>
           -- First assign $heap_in to $heap, then transform body using $heap
-          let assignHeap := mkMd (.Assign [mkMd (.Identifier heapName)] (mkMd (.Identifier heapInName)))
+          let assignHeap := mkMd (.Assign [mkVarMd (.Local heapName)] (mkMd (.Var (.Local heapInName))))
           let bodyExpr' ← heapTransformExpr heapName model bodyExpr bodyValueIsUsed
           pure (.Transparent (mkMd (.Block [assignHeap, bodyExpr'] none)))
       | .Opaque postconds impl modif =>
@@ -414,7 +488,7 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
           let postconds' ← postconds.mapM (·.mapM (heapTransformExpr heapName model))
           let impl' ← match impl with
             | some implExpr =>
-                let assignHeap := mkMd (.Assign [mkMd (.Identifier heapName)] (mkMd (.Identifier heapInName)))
+                let assignHeap := mkMd (.Assign [mkVarMd (.Local heapName)] (mkMd (.Var (.Local heapInName))))
                 let implExpr' ← heapTransformExpr heapName model implExpr bodyValueIsUsed
                 pure (some (mkMd (.Block [assignHeap, implExpr'] none)))
             | none => pure none

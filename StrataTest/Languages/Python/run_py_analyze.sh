@@ -8,6 +8,11 @@
 # With --vc-directory <dir>, store VCs in SMT-Lib format in <dir>
 # With --pending, also run tests without expected files and report their status
 # With --check-pending, run pending tests and FAIL if any now pass (for CI)
+#
+# Tests in pending/ may contain a '# strata-pending: soundness' marker to
+# indicate known soundness bugs (assertions that are FALSE in Python but that
+# Strata incorrectly verifies as valid).  These are expected to "pass" and
+# are reported separately; they do NOT trigger a --check-pending failure.
 
 failed=0
 update=0
@@ -38,6 +43,7 @@ pending_total=0
 pending_error=0
 pending_imprecise=0
 pending_pass=0
+pending_soundness=0
 
 for test_file in tests/test_*.py; do
     if [ -f "$test_file" ]; then
@@ -95,6 +101,43 @@ for test_file in tests/test_*.py; do
     fi
 done
 
+# --- --metrics integration test ---
+# Run one test file with --metrics and validate the JSONL output.
+metrics_test_file=$(ls tests/test_*.py 2>/dev/null | head -1)
+if [ -n "$metrics_test_file" ] && [ -z "$filter" ]; then
+    metrics_base=$(basename "$metrics_test_file" .py)
+    metrics_ion="tests/${metrics_base}.python.st.ion"
+    metrics_out=$(mktemp)
+    # Ion file should already exist from the loop above
+    if [ -f "$metrics_ion" ]; then
+        (cd ../../.. && ./.lake/build/bin/strata $command --metrics "$metrics_out" "StrataTest/Languages/Python/${metrics_ion}" 2>/dev/null) || true
+        if [ ! -s "$metrics_out" ]; then
+            echo "ERROR: --metrics file is empty for $metrics_base"
+            failed=1
+        else
+            bad_lines=0
+            while IFS= read -r line; do
+                [ -z "$line" ] && continue
+                if ! echo "$line" | python3 -c "import sys,json; d=json.load(sys.stdin); assert 'type' in d" 2>/dev/null; then
+                    echo "ERROR: --metrics invalid JSON line: $line"
+                    bad_lines=$((bad_lines + 1))
+                fi
+            done < "$metrics_out"
+            # Check that an outcome record exists
+            if ! grep -q '"outcome"' "$metrics_out"; then
+                echo "ERROR: --metrics missing outcome record for $metrics_base"
+                failed=1
+            elif [ $bad_lines -gt 0 ]; then
+                echo "ERROR: --metrics has $bad_lines invalid lines for $metrics_base"
+                failed=1
+            else
+                echo "Test passed:  --metrics JSONL ($metrics_base)"
+            fi
+        fi
+    fi
+    rm -f "$metrics_out"
+fi
+
 if [ $pending -eq 1 ]; then
     for test_file in tests/pending/test_*.py; do
         [ -f "$test_file" ] || continue
@@ -129,6 +172,9 @@ if [ $pending -eq 1 ]; then
         elif echo "$output" | grep -qE '[1-9][0-9]* (failed|inconclusive)'; then
             echo "Pending (imprecise):      $base_name"
             pending_imprecise=$((pending_imprecise + 1))
+        elif grep -q '^# strata-pending: soundness' "$test_file"; then
+            echo "Pending (soundness):      $base_name"
+            pending_soundness=$((pending_soundness + 1))
         else
             echo "Pending (pass):           $base_name"
             pending_pass=$((pending_pass + 1))
@@ -138,7 +184,7 @@ if [ $pending -eq 1 ]; then
 
     if [ $pending_total -gt 0 ]; then
         echo ""
-        echo "Pending: $pending_total ($pending_error error, $pending_imprecise imprecise, $pending_pass pass)"
+        echo "Pending: $pending_total ($pending_error error, $pending_imprecise imprecise, $pending_soundness soundness, $pending_pass pass)"
     fi
     if [ $check_pending -eq 1 ] && [ $pending_pass -gt 0 ]; then
         echo ""

@@ -33,7 +33,7 @@ happens after Phase 1, the `ResolvedNode` values in the map contain the fully
 resolved sub-trees (e.g. a procedure's parameters already have their IDs).
 
 ### Definition nodes (introduce a name into scope)
-- `StmtExpr.LocalVariable` — local variable declaration
+- `Variable.Declare` — local variable declaration (in `Assign` targets or `Var`)
 - `StmtExpr.Quantifier` — quantifier-bound variable
 - `Parameter` — procedure parameter
 - `Procedure` — procedure definition
@@ -43,10 +43,10 @@ resolved sub-trees (e.g. a procedure's parameters already have their IDs).
 - `Constant` — named constant
 
 ### Reference nodes (use a name)
-- `StmtExpr.Identifier` — variable reference
+- `StmtExpr.Var (.Local ...)` — variable reference
 - `StmtExpr.StaticCall` — static procedure call
 - `StmtExpr.InstanceCall` — instance method call
-- `StmtExpr.FieldSelect` — field access
+- `StmtExpr.Var (.Field ...)` — field access
 - `StmtExpr.New` — object creation (references a type)
 - `StmtExpr.Exit` — exit a labelled block
 - `HighType.UserDefined` — type reference
@@ -75,6 +75,7 @@ inductive ResolvedNodeKind where
   | constrainedType
   | datatypeDefinition
   | datatypeConstructor
+  | datatypeDestructor
   | typeAlias
   | constant
   | quantifierVar
@@ -91,6 +92,7 @@ def ResolvedNodeKind.name : ResolvedNodeKind → String
   | .constrainedType   => "constrained type"
   | .datatypeDefinition => "datatype definition"
   | .datatypeConstructor => "datatype constructor"
+  | .datatypeDestructor => "datatype destructor"
   | .typeAlias         => "type alias"
   | .constant          => "constant"
   | .quantifierVar     => "quantifier variable"
@@ -116,6 +118,10 @@ inductive ResolvedNode where
   | datatypeDefinition (ty : DatatypeDefinition)
   /-- A datatype constructor. -/
   | datatypeConstructor (typeName : Identifier) (ctor : DatatypeConstructor)
+  /-- An auto-generated destructor (or unsafe `!`-destructor) for a datatype field.
+      `typeName` is the resolved Identifier of the parent datatype (with its
+      `uniqueId`), and `field` is the underlying constructor parameter. -/
+  | datatypeDestructor (typeName : Identifier) (field : Parameter)
   /-- A type alias. -/
   | typeAlias (ty : TypeAlias)
   /-- A constant. -/
@@ -139,6 +145,7 @@ def ResolvedNode.kind : ResolvedNode → ResolvedNodeKind
   | .constrainedType ..   => .constrainedType
   | .datatypeDefinition .. => .datatypeDefinition
   | .datatypeConstructor .. => .datatypeConstructor
+  | .datatypeDestructor .. => .datatypeDestructor
   | .typeAlias ..         => .typeAlias
   | .constant ..          => .constant
   | .quantifierVar ..     => .quantifierVar
@@ -149,29 +156,35 @@ def ResolvedNode.getType (node: ResolvedNode): HighTypeMd := match node with
  | .parameter p => p.type
  | .field _ f => f.type
  | .datatypeConstructor type _ => ⟨ .UserDefined type, none ⟩
+ | .datatypeDestructor _ fld => fld.type
  | .constant c => c.type
  | .quantifierVar _ type => type
  | .unresolved source => ⟨ .Unknown, source ⟩
- | _ => dbg_trace s!"SOUND BUG: getType called on {repr node}"; default
+ | .staticProcedure _ | .instanceProcedure _ _ | .compositeType _
+ | .constrainedType _ | .datatypeDefinition _ | .typeAlias _ => ⟨ .Unknown, none ⟩
 
 /-! ## Resolution result -/
 
 structure SemanticModel where
   nextId: Nat
   compositeCount: Nat
-  refToDef: Std.HashMap Nat ResolvedNode
+  private refToDef: Std.HashMap Nat ResolvedNode
   deriving Repr
 
+/-- Look up the resolved node for an identifier, returning `none` if the identifier
+    has no `uniqueId` or is not in the model. -/
+def SemanticModel.get? (model: SemanticModel) (iden: Identifier): Option ResolvedNode :=
+  iden.uniqueId.bind model.refToDef.get?
+
 def SemanticModel.get (model: SemanticModel) (iden: Identifier): ResolvedNode :=
-  match iden.uniqueId with
-  | some key => (model.refToDef.get? key).getD default
-  | none => default
+  (model.get? iden).getD default
 
 def SemanticModel.isFunction (model: SemanticModel) (id: Identifier): Bool :=
   match model.get id with
       | .staticProcedure proc => proc.isFunctional
       | .parameter _ => true
       | .datatypeConstructor _ _ => true
+      | .datatypeDestructor _ _ => true
       | .constant _ => true
       | .unresolved _ => true -- functions calls are more permissive, so true avoids possibly incorrect errors
       | node =>
@@ -213,6 +226,10 @@ structure ResolveState where
   /-- When resolving inside an instance procedure, the owning composite type name.
       Used by `resolveFieldRef` to resolve `self.field` when `self` has type `Any`. -/
   instanceTypeName : Option String := none
+  /-- True when resolving inside an expression where the value is used (e.g., as an
+      argument to another call or operator). Multi-output calls are only diagnosed
+      in value context, not in statement position or direct assignment RHS. -/
+  inValueContext : Bool := false
 
 @[expose] abbrev ResolveM := StateM ResolveState
 
@@ -272,7 +289,7 @@ def resolveRef (name : Identifier) (source : Option FileRange := none)
 private def targetTypeName (target : StmtExprMd) : ResolveM (Option String) := do
   let s ← get
   match target.val with
-  | .Identifier ref =>
+  | .Var (.Local ref) =>
     match s.scope.get? ref.text with
     | some (_, node) =>
       match node.getType.val with
@@ -347,6 +364,9 @@ def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
   | .Intersection tys =>
     let tys' ← tys.mapM resolveHighType
     pure (.Intersection tys')
+  | .MultiValuedExpr tys =>
+    let tys' ← tys.mapM resolveHighType
+    pure (.MultiValuedExpr tys')
   | other => pure other
   return { val := val', source := ty.source }
 
@@ -355,7 +375,10 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
   | AstNode.mk expr source =>
   let val' ← match _: expr with
   | .IfThenElse cond thenBr elseBr =>
+    let saved := (← get).inValueContext
+    modify fun s => { s with inValueContext := true }
     let cond' ← resolveStmtExpr cond
+    modify fun s => { s with inValueContext := saved }
     let thenBr' ← resolveStmtExpr thenBr
     let elseBr' ← elseBr.attach.mapM (fun a => have := a.property; resolveStmtExpr a.val)
     pure (.IfThenElse cond' thenBr' elseBr')
@@ -363,13 +386,11 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
     withScope do
       let stmts' ← stmts.mapM resolveStmtExpr
       pure (.Block stmts' label)
-  | .LocalVariable name ty init =>
-    let ty' ← resolveHighType ty
-    let init' ← init.attach.mapM (fun a => have := a.property; resolveStmtExpr a.val)
-    let name' ← defineNameCheckDup name (.var name ty')
-    pure (.LocalVariable name' ty' init')
   | .While cond invs dec body =>
+    let saved := (← get).inValueContext
+    modify fun s => { s with inValueContext := true }
     let cond' ← resolveStmtExpr cond
+    modify fun s => { s with inValueContext := saved }
     let invs' ← invs.attach.mapM (fun a => have := a.property; resolveStmtExpr a.val)
     let dec' ← dec.attach.mapM (fun a => have := a.property; resolveStmtExpr a.val)
     let body' ← resolveStmtExpr body
@@ -382,17 +403,55 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
   | .LiteralBool v => pure (.LiteralBool v)
   | .LiteralString v => pure (.LiteralString v)
   | .LiteralDecimal v => pure (.LiteralDecimal v)
-  | .Identifier ref =>
+  | .Var (.Local ref) =>
     let ref' ← resolveRef ref source
-    pure (.Identifier ref')
+    pure (.Var (.Local ref'))
+  | .Var (.Declare param) =>
+    let ty' ← resolveHighType param.type
+    let name' ← defineNameCheckDup param.name (.var param.name ty')
+    pure (.Var (.Declare ⟨name', ty'⟩))
   | .Assign targets value =>
-    let targets' ← targets.mapM resolveStmtExpr
+    let targets' ← targets.attach.mapM fun ⟨v, _⟩ => do
+      let ⟨vv, vs⟩ := v
+      match vv with
+      | .Local ref =>
+        let ref' ← resolveRef ref source
+        pure (⟨.Local ref', vs⟩ : VariableMd)
+      | .Field target fieldName =>
+        let target' ← resolveStmtExpr target
+        let fieldName' ← resolveFieldRef target' fieldName source
+        pure (⟨.Field target' fieldName', vs⟩ : VariableMd)
+      | .Declare param =>
+        let ty' ← resolveHighType param.type
+        let name' ← defineNameCheckDup param.name (.var param.name ty')
+        pure (⟨.Declare ⟨name', ty'⟩, vs⟩ : VariableMd)
     let value' ← resolveStmtExpr value
+    -- Check that LHS target count matches the number of outputs from the RHS.
+    -- This fires for procedure calls (which can have multiple outputs).
+    -- Functions always have exactly 1 output in the model, so single-target function calls pass trivially.
+    let expectedOutputCount ← match value'.val with
+      | .StaticCall callee _ => do
+        let s ← get
+        match s.scope.get? callee.text with
+        | some (_, .staticProcedure proc) => pure proc.outputs.length
+        | some (_, .instanceProcedure _ proc) => pure proc.outputs.length
+        | _ => pure 1
+      | .InstanceCall _ callee _ => do
+        let s ← get
+        match s.scope.get? callee.text with
+        | some (_, .instanceProcedure _ proc) => pure proc.outputs.length
+        | some (_, .staticProcedure proc) => pure proc.outputs.length
+        | _ => pure 1
+      | _ => pure 1
+    if targets'.length != expectedOutputCount then
+      let diag := diagnosticFromSource source
+        s!"Assignment target count mismatch: {targets'.length} targets but right-hand side produces {expectedOutputCount} values"
+      modify fun s => { s with errors := s.errors.push diag }
     pure (.Assign targets' value')
-  | .FieldSelect target fieldName =>
+  | .Var (.Field target fieldName) =>
     let target' ← resolveStmtExpr target
     let fieldName' ← resolveFieldRef target' fieldName source
-    pure (.FieldSelect target' fieldName')
+    pure (.Var (.Field target' fieldName'))
   | .PureFieldUpdate target fieldName newVal =>
     let target' ← resolveStmtExpr target
     let fieldName' ← resolveFieldRef target' fieldName source
@@ -400,11 +459,31 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
     pure (.PureFieldUpdate target' fieldName' newVal')
   | .StaticCall callee args =>
     let callee' ← resolveRef callee source
-      (expected := #[.parameter, .staticProcedure, .datatypeConstructor, .constant])
+      (expected := #[.parameter, .staticProcedure, .datatypeConstructor, .datatypeDestructor, .constant])
+    -- Resolve arguments in value context (their results are used as values)
+    let saved := (← get).inValueContext
+    modify fun s => { s with inValueContext := true }
     let args' ← args.mapM resolveStmtExpr
+    modify fun s => { s with inValueContext := saved }
+    -- Multi-output procedures must not appear in value context: the extra
+    -- outputs (e.g. error channels) would be silently discarded.
+    let s ← get
+    if s.inValueContext then
+      let outputCount := match s.scope.get? callee'.text with
+        | some (_, .staticProcedure proc) => proc.outputs.length
+        | some (_, .instanceProcedure _ proc) => proc.outputs.length
+        | _ => 0
+      if outputCount > 1 then
+        let diag := diagnosticFromSource source
+          s!"Multi-output procedure '{callee'.text}' used in expression position; it returns {outputCount} values but only one can be used here. Use a multi-target assignment instead."
+        modify fun s => { s with errors := s.errors.push diag }
     pure (.StaticCall callee' args')
   | .PrimitiveOp op args =>
+    -- Resolve arguments in value context
+    let saved := (← get).inValueContext
+    modify fun s => { s with inValueContext := true }
     let args' ← args.mapM resolveStmtExpr
+    modify fun s => { s with inValueContext := saved }
     pure (.PrimitiveOp op args')
   | .New ref =>
     let ref' ← resolveRef ref source
@@ -446,10 +525,16 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
     let val' ← resolveStmtExpr val
     pure (.Fresh val')
   | .Assert ⟨condExpr, summary⟩ =>
+    let saved := (← get).inValueContext
+    modify fun s => { s with inValueContext := true }
     let cond' ← resolveStmtExpr condExpr
+    modify fun s => { s with inValueContext := saved }
     pure (.Assert { condition := cond', summary })
   | .Assume cond =>
+    let saved := (← get).inValueContext
+    modify fun s => { s with inValueContext := true }
     let cond' ← resolveStmtExpr cond
+    modify fun s => { s with inValueContext := saved }
     pure (.Assume cond')
   | .ProveBy val proof =>
     let val' ← resolveStmtExpr val
@@ -634,6 +719,7 @@ private def collectHighType (map : Std.HashMap Nat ResolvedNode) (ty : HighTypeM
     args.foldl collectHighType map
   | .Pure base => collectHighType map base
   | .Intersection tys => tys.foldl collectHighType map
+  | .MultiValuedExpr tys => tys.foldl collectHighType map
   | _ => map
 
 private def collectStmtExpr (map : Std.HashMap Nat ResolvedNode) (expr : StmtExprMd)
@@ -648,23 +734,25 @@ private def collectStmtExpr (map : Std.HashMap Nat ResolvedNode) (expr : StmtExp
     | some e => collectStmtExpr map e
     | none => map
   | .Block stmts _ => stmts.foldl collectStmtExpr map
-  | .LocalVariable name ty init =>
-    let map := register map name (.var name ty)
-    let map := collectHighType map ty
-    match init with
-    | some i => collectStmtExpr map i
-    | none => map
   | .While cond invs dec body =>
     let map := collectStmtExpr map cond
     let map := invs.foldl collectStmtExpr map
     let map := match dec with | some d => collectStmtExpr map d | none => map
     collectStmtExpr map body
   | .Return val => match val with | some v => collectStmtExpr map v | none => map
-  | .Identifier _ => map
+  | .Var (.Local _) => map
+  | .Var (.Declare param) =>
+    let map := register map param.name (.var param.name param.type)
+    collectHighType map param.type
   | .Assign targets value =>
-    let map := targets.foldl collectStmtExpr map
+    let map := targets.foldl (fun map t =>
+      match t.val with
+      | .Declare param =>
+        let map := register map param.name (.var param.name param.type)
+        collectHighType map param.type
+      | _ => map) map
     collectStmtExpr map value
-  | .FieldSelect target _ => collectStmtExpr map target
+  | .Var (.Field target _) => collectStmtExpr map target
   | .PureFieldUpdate target _ newVal =>
     let map := collectStmtExpr map target
     collectStmtExpr map newVal
@@ -746,7 +834,11 @@ private def collectTypeDefinition (map : Std.HashMap Nat ResolvedNode) (td : Typ
     dt.constructors.foldl (fun map ctor =>
       let map := register map ctor.name (.datatypeConstructor dt.name ctor)
       ctor.args.foldl (fun map p =>
-        let map := register map p.name (.parameter p)
+        -- The constructor parameter's `uniqueId` (set by `resolveTypeDefinition`)
+        -- is the shared uniqueId of the safe/unsafe destructor scope entries,
+        -- so registering it here as `.datatypeDestructor` covers calls of the
+        -- form `TypeName..fieldName` and `TypeName..fieldName!`.
+        let map := register map p.name (.datatypeDestructor dt.name p)
         collectHighType map p.type
       ) map
     ) map
@@ -772,6 +864,11 @@ def buildRefToDef (program : Program) : Std.HashMap Nat ResolvedNode :=
 
 /-! ## Pre-registration: populate scope with all top-level names before resolving bodies -/
 
+
+/-- A default ResolvedNode used as a placeholder during pre-registration.
+    It will be overwritten with the real node when the definition is fully resolved. -/
+private def placeholderNode : ResolvedNode := .var "$placeholder" { val := .TVoid, source := none }
+
 /-- Pre-register all top-level names into scope so that declaration order doesn't matter.
     This assigns fresh IDs and adds placeholder scope entries for:
     - Type names (composite, constrained, datatype) and their constructors/destructors/fields
@@ -793,12 +890,19 @@ private def preRegisterTopLevel (program : Program) : ResolveM Unit := do
     | .Datatype dt =>
       let _ ← defineNameCheckDup dt.name (.datatypeDefinition dt)
       for ctor in dt.constructors do
-        _ ← defineNameCheckDup ctor.name (.datatypeConstructor dt.name ctor) (some (dt.testerName ctor))
-        let _ ← defineNameCheckDup ctor.name (.datatypeConstructor dt.name ctor)
+        -- Register the tester override first; the second call reuses the
+        -- returned Identifier (now carrying a uniqueId) so the unprefixed
+        -- constructor name and the `TypeName..isCtor` tester name resolve to
+        -- the same uniqueId, which `buildRefToDef` in turn maps to
+        -- `.datatypeConstructor`.
+        let ctorName ← defineNameCheckDup ctor.name (.datatypeConstructor dt.name ctor) (some (dt.testerName ctor))
+        let _ ← defineNameCheckDup ctorName (.datatypeConstructor dt.name ctor)
         for p in ctor.args do
-          let _ ← defineNameCheckDup p.name (.parameter p) (some (dt.destructorName p))
-          -- unsafeDestructorId
-          let _ ← defineNameCheckDup p.name (.parameter p) (some (dt.unsafeDestructorName p))
+          -- Same chaining trick for the safe and unsafe destructor names: both
+          -- point to the same uniqueId so `IntList..head` and `IntList..head!`
+          -- resolve to the same `.datatypeDestructor` model entry.
+          let pName ← defineNameCheckDup p.name (.datatypeDestructor dt.name p) (some (dt.destructorName p))
+          let _ ← defineNameCheckDup pName (.datatypeDestructor dt.name p) (some (dt.unsafeDestructorName p))
     | .Alias ta =>
       let _ ← defineNameCheckDup ta.name (.typeAlias ta)
   -- Pre-register constants
