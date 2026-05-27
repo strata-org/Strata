@@ -2543,29 +2543,16 @@ private theorem callElimCmd_call_eq
                       -- raw `(Except.ok (List ...), state)` pair.
                       cases hcg : s_assume.cachedAnalyses.callGraph with
                       | none =>
-                        cases hcpn : s_assume.currentProcedureName with
-                        | none =>
-                          rw [hcg, hcpn] at Heq
-                          simp only [pure, ExceptT.pure, StateT.pure,
-                                     bind, StateT.bind, ExceptT.bind,
-                                     ExceptT.bindCont, ExceptT.mk,
-                                     set, MonadStateOf.set, StateT.set,
-                                     Functor.map, StateT.map] at Heq
-                          have Hpair := Prod.mk.injEq _ _ _ _ |>.mp Heq
-                          have Hexc := Except.ok.injEq _ _ |>.mp Hpair.1
-                          have Hopt := Option.some.injEq _ _ |>.mp Hexc
-                          exact Hopt.symm
-                        | some _ =>
-                          rw [hcg, hcpn] at Heq
-                          simp only [pure, ExceptT.pure, StateT.pure,
-                                     bind, StateT.bind, ExceptT.bind,
-                                     ExceptT.bindCont, ExceptT.mk,
-                                     set, MonadStateOf.set, StateT.set,
-                                     Functor.map, StateT.map] at Heq
-                          have Hpair := Prod.mk.injEq _ _ _ _ |>.mp Heq
-                          have Hexc := Except.ok.injEq _ _ |>.mp Hpair.1
-                          have Hopt := Option.some.injEq _ _ |>.mp Hexc
-                          exact Hopt.symm
+                        cases hcpn : s_assume.currentProcedureName <;>
+                          (rw [hcg, hcpn] at Heq
+                           simp only [pure, ExceptT.pure, StateT.pure,
+                                      bind, StateT.bind, ExceptT.bind,
+                                      ExceptT.bindCont, ExceptT.mk,
+                                      set, MonadStateOf.set, StateT.set,
+                                      Functor.map, StateT.map] at Heq
+                           have Hpair := Prod.mk.injEq _ _ _ _ |>.mp Heq
+                           have Hexc := Except.ok.injEq _ _ |>.mp Hpair.1
+                           exact (Option.some.injEq _ _ |>.mp Hexc).symm)
                       | some cg =>
                         cases hcpn : s_assume.currentProcedureName with
                         | none =>
@@ -2577,38 +2564,28 @@ private theorem callElimCmd_call_eq
                                      Functor.map, StateT.map] at Heq
                           have Hpair := Prod.mk.injEq _ _ _ _ |>.mp Heq
                           have Hexc := Except.ok.injEq _ _ |>.mp Hpair.1
-                          have Hopt := Option.some.injEq _ _ |>.mp Hexc
-                          exact Hopt.symm
+                          exact (Option.some.injEq _ _ |>.mp Hexc).symm
                         | some callerName =>
                           rw [hcg, hcpn] at Heq
-                          -- decrementEdge result inspected.
-                          simp only [bind, StateT.bind, ExceptT.bind,
-                                     ExceptT.bindCont, ExceptT.mk,
-                                     pure, ExceptT.pure, StateT.pure,
-                                     Functor.map, StateT.map,
-                                     Except.mapError] at Heq
                           cases hde :
                             (cg.decrementEdge callerName procName) with
                           | error e =>
-                            rw [hde] at Heq
-                            simp only [Except.mapError, pure, ExceptT.pure,
-                                       StateT.pure] at Heq
-                            -- Heq is `(Except.error _, s_assume)
-                            --        = (Except.ok (some sts'), γ_out)`
-                            -- which is contradictory.
+                            simp only [hde, Except.mapError, pure,
+                                       ExceptT.pure, StateT.pure, bind,
+                                       StateT.bind, ExceptT.bind,
+                                       ExceptT.bindCont, ExceptT.mk,
+                                       Functor.map, StateT.map] at Heq
                             exact absurd Heq (by intro h; cases h)
                           | ok cg' =>
-                            rw [hde] at Heq
-                            simp only [Except.mapError, pure, ExceptT.pure,
-                                       StateT.pure, bind, StateT.bind,
-                                       ExceptT.bind, ExceptT.bindCont,
-                                       ExceptT.mk, set, MonadStateOf.set,
-                                       StateT.set,
+                            simp only [hde, Except.mapError, pure,
+                                       ExceptT.pure, StateT.pure, bind,
+                                       StateT.bind, ExceptT.bind,
+                                       ExceptT.bindCont, ExceptT.mk,
+                                       set, MonadStateOf.set, StateT.set,
                                        Functor.map, StateT.map] at Heq
                             have Hpair := Prod.mk.injEq _ _ _ _ |>.mp Heq
                             have Hexc := Except.ok.injEq _ _ |>.mp Hpair.1
-                            have Hopt := Option.some.injEq _ _ |>.mp Hexc
-                            exact Hopt.symm
+                            exact (Option.some.injEq _ _ |>.mp Hexc).symm
 
 /-- For every non-call statement `s`, the call-elimination transformer
     `callElimStmt s p` returns `[s]` unchanged.  This collapses what was
