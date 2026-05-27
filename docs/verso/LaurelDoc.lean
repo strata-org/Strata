@@ -208,7 +208,14 @@ A Laurel program consists of procedures, global variables, type definitions, and
 
 {docstring Strata.Laurel.Program}
 
-# Translation Pipeline
+# Implementation
+
+Laurel references are resolved in Resolution.lean,
+which produces a `SemanticModel` that can be used to navigate between definitions and references.
+If new references or definitions are created during compilation,
+resolution must be run again to get a complete model.
+
+## Translation Pipeline
 
 Laurel programs are verified by translating them to Strata Core and then invoking the Core
 verification pipeline. The Laurel compilation pipelines consists of three parts:

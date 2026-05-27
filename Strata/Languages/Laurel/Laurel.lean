@@ -189,7 +189,6 @@ structure Procedure : Type where
   outputs : List Parameter
   /-- The preconditions that callers must satisfy. -/
   preconditions : List Condition
-  -- TODO: add back determinism together with an implementation
   /-- Optional termination measure for recursive procedures. -/
   decreases : Option (AstNode StmtExpr) -- optionally prove termination
   /-- If true, the body may only have functional constructs, so no destructive assignments or loops. -/
@@ -233,6 +232,8 @@ inductive Body where
       (postconditions : List Condition)
       (implementation : Option (AstNode StmtExpr))
       (modifies : List (AstNode StmtExpr))
+      -- TODO: add back non-determinism together with an implementation
+      -- deterministic : Bool
   /-- An abstract body that must be overridden in extending types. A type containing any members with abstract bodies cannot be instantiated. -/
   | Abstract (postconditions : List Condition)
   /-- An external body for procedures that are not translated to Core (e.g., built-in primitives). -/
@@ -333,7 +334,7 @@ inductive StmtExpr : Type where
         not allowed in functions.
       - `type`: this property is used internally by Laurel and can be left to its default value.
         Internal usage: inferred by the hole type inference pass; `none` means not yet inferred. -/
-  | Hole (deterministic : Bool := false) (type : Option (AstNode HighType) := none)
+  | Hole (deterministic : Bool := true) (type : Option (AstNode HighType) := none)
 
 inductive ContractType where
   | Reads | Modifies | Precondition | PostCondition
