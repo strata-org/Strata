@@ -6921,12 +6921,6 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                   let ks'_L4 : List Expression.Ident :=
                     argTemps ++ lhs
                   -- ── L4 length facts ──
-                  have HinKeys_argVals_len_L4 :
-                      proc.header.inputs.keys.length = argVals.length :=
-                    InitStatesLength Hinitin
-                  have HoutKeys_oVals_len_L4 :
-                      proc.header.outputs.keys.length = oVals.length :=
-                    InitStatesLength Hinitout
                   have Hks_len_L4 :
                       ks_L4.length = ks'_L4.length := by
                     show (proc.header.inputs.keys ++
