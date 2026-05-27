@@ -99,8 +99,11 @@ inductive Config (P : PureExpr) (CmdT : Type) : Type where
       The label is `Option String` — `none` denotes an unnamed block that only
       catches unlabeled exits.  The `SemanticStore P` is the parent store at
       block entry; on exit, the result is projected through it so that
-      variables initialized inside the block are not visible outside. -/
-  | block : Option String → SemanticStore P → Config P CmdT → Config P CmdT
+      variables initialized inside the block are not visible outside.
+      The `SemanticEval P` is the parent evaluator at block entry; on exit,
+      the result evaluator is restored to it so that any function declarations
+      introduced inside the block are not visible outside. -/
+  | block : Option String → SemanticStore P → SemanticEval P → Config P CmdT → Config P CmdT
   /-- A sequence context: execute the first statement (as a sub-config), then
       continue with the remaining statements. -/
   | seq : Config P CmdT → List (Stmt P CmdT) → Config P CmdT
@@ -115,7 +118,7 @@ variable {P : PureExpr} {CmdT : Type}
   | .stmts _ ρ => ρ
   | .terminal ρ => ρ
   | .exiting _ ρ => ρ
-  | .block _ _ inner => inner.getEnv
+  | .block _ _ _ inner => inner.getEnv
   | .seq inner _ => inner.getEnv
 
 /-- Extract the store from a configuration. -/
@@ -159,17 +162,23 @@ where
   | .stmts ss _, label => Stmt.noMatchingAssert.Stmts.noMatchingAssert ss label
   | .terminal _, _ => True
   | .exiting _ _, _ => True
-  | .block _ _ inner, label => inner.noMatchingAssert label
+  | .block _ _ _ inner, label => inner.noMatchingAssert label
   | .seq inner ss, label =>
     inner.noMatchingAssert label ∧ Stmt.noMatchingAssert.Stmts.noMatchingAssert ss label
 
-/-- Config-level noFuncDecl predicate. -/
+/-- Config-level noFuncDecl predicate.
+
+    For `.block` we additionally require that the snapshotted parent eval
+    `e_parent` matches the inner config's current eval.  Together with
+    no-funcDecl-inside, this ensures that on `step_block_done` the eval
+    restoration is a no-op (it puts back the same eval that was already
+    there), so eval is preserved throughout. -/
 def Config.noFuncDecl : Config P CmdT → Prop
   | .stmt s _ => Stmt.noFuncDecl s = true
   | .stmts ss _ => Block.noFuncDecl ss = true
   | .terminal _ => True
   | .exiting _ _ => True
-  | .block _ _ inner => Config.noFuncDecl inner
+  | .block _ _ e_parent inner => Config.noFuncDecl inner ∧ e_parent = inner.getEnv.eval
   | .seq inner ss => Config.noFuncDecl inner ∧ Block.noFuncDecl ss = true
 
 /-- Config-level `funcDeclNames`: collects all `decl.name`s from `funcDecl`
@@ -179,7 +188,7 @@ def Config.noFuncDecl : Config P CmdT → Prop
   | .stmts ss _ => Block.funcDeclNames ss
   | .terminal _ => []
   | .exiting _ _ => []
-  | .block _ _ inner => Config.funcDeclNames inner
+  | .block _ _ _ inner => Config.funcDeclNames inner
   | .seq inner ss => Config.funcDeclNames inner ++ Block.funcDeclNames ss
 
 /-- Extend `exitsCoveredByBlocks` to configurations.
@@ -193,8 +202,8 @@ def Config.noFuncDecl : Config P CmdT → Prop
   | labels, .stmts ss _ => Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks labels ss
   | _, .terminal _ => True
   | labels, .exiting l _ => l ∈ labels
-  | labels, .block none _ inner => Config.exitsCoveredByBlocks labels inner
-  | labels, .block (some l) _ inner => Config.exitsCoveredByBlocks (l :: labels) inner
+  | labels, .block none _ _ inner => Config.exitsCoveredByBlocks labels inner
+  | labels, .block (some l) _ _ inner => Config.exitsCoveredByBlocks (l :: labels) inner
   | labels, .seq inner ss =>
     Config.exitsCoveredByBlocks labels inner ∧ Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks labels ss
 
@@ -265,12 +274,12 @@ inductive StepStmt
   /-- A labeled block steps to a block context that wraps its body as `.stmts`.
       The AST label `label : String` is lifted into `.some label` for the
       `Config.block` wrapper (whose label is `Option String`).
-      The parent store `ρ.store` is saved so that block-local variables
-      can be popped on exit. -/
+      The parent store `ρ.store` and parent eval `ρ.eval` are saved so that
+      block-local variables and function declarations can be popped on exit. -/
   | step_block :
     StepStmt EvalCmd extendEval
       (.stmt (.block label ss _) ρ)
-      (.block (.some label) ρ.store (.stmts ss ρ))
+      (.block (.some label) ρ.store ρ.eval (.stmts ss ρ))
 
   /-- If the condition of an `ite` statement evaluates to true, step to the
       then branch.  The branch is wrapped in a block so that variables
@@ -282,7 +291,7 @@ inductive StepStmt
     ----
     StepStmt EvalCmd extendEval
       (.stmt (.ite (.det c) tss ess _) ρ)
-      (.block .none ρ.store (.stmts tss ρ))
+      (.block .none ρ.store ρ.eval (.stmts tss ρ))
 
   /-- If the condition of an `ite` statement evaluates to false, step to the
       else branch (scoped via block wrapper). -/
@@ -292,19 +301,19 @@ inductive StepStmt
     ----
     StepStmt EvalCmd extendEval
       (.stmt (.ite (.det c) tss ess _) ρ)
-      (.block .none ρ.store (.stmts ess ρ))
+      (.block .none ρ.store ρ.eval (.stmts ess ρ))
 
   /-- Non-deterministic ite: step to the then branch (scoped). -/
   | step_ite_nondet_true :
     StepStmt EvalCmd extendEval
       (.stmt (.ite .nondet tss ess _) ρ)
-      (.block .none ρ.store (.stmts tss ρ))
+      (.block .none ρ.store ρ.eval (.stmts tss ρ))
 
   /-- Non-deterministic ite: step to the else branch (scoped). -/
   | step_ite_nondet_false :
     StepStmt EvalCmd extendEval
       (.stmt (.ite .nondet tss ess _) ρ)
-      (.block .none ρ.store (.stmts ess ρ))
+      (.block .none ρ.store ρ.eval (.stmts ess ρ))
 
   /-- If a loop guard is true, execute the body (followed by the loop again).
       Each invariant expression must evaluate to a boolean (`tt` or `ff`);
@@ -333,7 +342,7 @@ inductive StepStmt
     StepStmt EvalCmd extendEval
       (.stmt (.loop (.det g) m inv body md) ρ)
       (.seq
-        (.block .none ρ.store (.stmts body
+        (.block .none ρ.store ρ.eval (.stmts body
           { ρ with hasFailure := ρ.hasFailure || hasInvFailure }))
         [.loop (.det g) m inv body md])
 
@@ -361,7 +370,7 @@ inductive StepStmt
     StepStmt EvalCmd extendEval
       (.stmt (.loop .nondet m inv body md) ρ)
       (.seq
-        (.block .none ρ.store (.stmts body
+        (.block .none ρ.store ρ.eval (.stmts body
           { ρ with hasFailure := ρ.hasFailure || hasInvFailure }))
         [.loop .nondet m inv body md])
 
@@ -433,37 +442,40 @@ inductive StepStmt
     StepStmt EvalCmd extendEval inner inner' →
     ----
     StepStmt EvalCmd extendEval
-      (.block label σ_parent inner)
-      (.block label σ_parent inner')
+      (.block label σ_parent e_parent inner)
+      (.block label σ_parent e_parent inner')
 
   /-- When a block's inner body reaches terminal, the block terminates.
       The resulting store is projected through the parent store: only variables
       that existed before the block keep their (possibly updated) values;
-      variables initialized inside the block are discarded. -/
+      variables initialized inside the block are discarded.  The evaluator is
+      restored to the parent's: function declarations introduced inside the
+      block are not visible outside. -/
   | step_block_done :
     StepStmt EvalCmd extendEval
-      (.block label σ_parent (.terminal ρ'))
-      (.terminal { ρ' with store := projectStore σ_parent ρ'.store })
+      (.block label σ_parent e_parent (.terminal ρ'))
+      (.terminal { ρ' with store := projectStore σ_parent ρ'.store, eval := e_parent })
 
   /-- When a block's inner body exits with a matching label, the block consumes it.
-      Store is projected. -/
+      Store and eval are projected/restored. -/
   | step_block_exit_match :
     label = .some l →
     ----
     StepStmt EvalCmd extendEval
-      (.block label σ_parent (.exiting l ρ'))
-      (.terminal { ρ' with store := projectStore σ_parent ρ'.store })
+      (.block label σ_parent e_parent (.exiting l ρ'))
+      (.terminal { ρ' with store := projectStore σ_parent ρ'.store, eval := e_parent })
 
   /-- When a block's inner body exits with a non-matching label, the exit propagates.
       Includes the case where the block's own label is `.none` (anonymous loop/ite
       wrapper, which never matches a labeled exit) as well as any other mismatched
-      `.some` label.  Store is projected since we're leaving this block. -/
+      `.some` label.  Store and eval are projected/restored since we're leaving
+      this block. -/
   | step_block_exit_mismatch :
     label ≠ .some l →
     ----
     StepStmt EvalCmd extendEval
-      (.block label σ_parent (.exiting l ρ'))
-      (.exiting l { ρ' with store := projectStore σ_parent ρ'.store })
+      (.block label σ_parent e_parent (.exiting l ρ'))
+      (.exiting l { ρ' with store := projectStore σ_parent ρ'.store, eval := e_parent })
 
 end
 
@@ -554,8 +566,10 @@ theorem block_inner_star
     (inner inner' : Config P CmdT)
     (label : Option String)
     (σ_parent : SemanticStore P)
+    (e_parent : SemanticEval P)
     (h : StepStmtStar P EvalCmd extendEval inner inner') :
-    StepStmtStar P EvalCmd extendEval (.block label σ_parent inner) (.block label σ_parent inner') := by
+    StepStmtStar P EvalCmd extendEval
+      (.block label σ_parent e_parent inner) (.block label σ_parent e_parent inner') := by
   induction h with
   | refl => exact .refl _
   | step _ mid _ hstep _ ih => exact .step _ _ _ (.step_block_body hstep) ih
@@ -645,18 +659,19 @@ theorem seq_reaches_exiting
     terminated or exited (caught by the block).  In both cases the inner
     reaches a config whose env projects to `ρ'` via the parent store. -/
 theorem block_reaches_terminal
-    {inner : Config P CmdT} {l : Option String} {σ_parent : SemanticStore P} {ρ' : Env P}
-    (hstar : StepStmtStar P EvalCmd extendEval (.block l σ_parent inner) (.terminal ρ')) :
+    {inner : Config P CmdT} {l : Option String}
+    {σ_parent : SemanticStore P} {e_parent : SemanticEval P} {ρ' : Env P}
+    (hstar : StepStmtStar P EvalCmd extendEval (.block l σ_parent e_parent inner) (.terminal ρ')) :
     (∃ ρ_inner, StepStmtStar P EvalCmd extendEval inner (.terminal ρ_inner) ∧
-      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store }) ∨
+      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store, eval := e_parent }) ∨
     (∃ lbl ρ_inner, StepStmtStar P EvalCmd extendEval inner (.exiting lbl ρ_inner) ∧
-      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store }) := by
+      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store, eval := e_parent }) := by
   suffices ∀ src tgt, StepStmtStar P EvalCmd extendEval src tgt →
-      ∀ inner ρ', src = .block l σ_parent inner → tgt = .terminal ρ' →
+      ∀ inner ρ', src = .block l σ_parent e_parent inner → tgt = .terminal ρ' →
       (∃ ρ_inner, StepStmtStar P EvalCmd extendEval inner (.terminal ρ_inner) ∧
-        ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store }) ∨
+        ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store, eval := e_parent }) ∨
       (∃ lbl ρ_inner, StepStmtStar P EvalCmd extendEval inner (.exiting lbl ρ_inner) ∧
-        ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store }) from
+        ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store, eval := e_parent }) from
     this _ _ hstar _ _ rfl rfl
   intro src tgt hstar_g
   induction hstar_g with
@@ -682,14 +697,15 @@ theorem block_reaches_terminal
 /-- Invert a block execution reaching exiting: the inner must have
     exited with a label that didn't match the block.  The env is projected. -/
 theorem block_reaches_exiting
-    {inner : Config P CmdT} {l : Option String} {σ_parent : SemanticStore P} {lbl : String} {ρ' : Env P}
-    (hstar : StepStmtStar P EvalCmd extendEval (.block l σ_parent inner) (.exiting lbl ρ')) :
+    {inner : Config P CmdT} {l : Option String}
+    {σ_parent : SemanticStore P} {e_parent : SemanticEval P} {lbl : String} {ρ' : Env P}
+    (hstar : StepStmtStar P EvalCmd extendEval (.block l σ_parent e_parent inner) (.exiting lbl ρ')) :
     ∃ lbl_inner ρ_inner, StepStmtStar P EvalCmd extendEval inner (.exiting lbl_inner ρ_inner) ∧
-      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store } := by
+      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store, eval := e_parent } := by
   suffices ∀ src tgt, StepStmtStar P EvalCmd extendEval src tgt →
-      ∀ inner lbl ρ', src = .block l σ_parent inner → tgt = .exiting lbl ρ' →
+      ∀ inner lbl ρ', src = .block l σ_parent e_parent inner → tgt = .exiting lbl ρ' →
       ∃ lbl_inner ρ_inner, StepStmtStar P EvalCmd extendEval inner (.exiting lbl_inner ρ_inner) ∧
-        ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store } from
+        ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store, eval := e_parent } from
     this _ _ hstar _ _ _ rfl rfl
   intro src tgt hstar_g
   induction hstar_g with
@@ -714,7 +730,7 @@ theorem block_reaches_exiting
 theorem step_block_enter (l : String) (body : List (Stmt P CmdT))
     (md : MetaData P) (ρ : Env P) :
     StepStmtStar P EvalCmd extendEval
-      (.stmt (.block l body md) ρ) (.block (.some l) ρ.store (.stmts body ρ)) :=
+      (.stmt (.block l body md) ρ) (.block (.some l) ρ.store ρ.eval (.stmts body ρ)) :=
   .step _ _ _ .step_block (.refl _)
 
 /-- If a prefix of a statement list terminates, the full list steps
@@ -779,7 +795,7 @@ private def ConfigSE : Config P CmdT → Config P CmdT → Prop
   | .stmts ss₁ ρ₁, .stmts ss₂ ρ₂ => ss₁ = ss₂ ∧ ρ₁.store = ρ₂.store ∧ ρ₁.eval = ρ₂.eval
   | .terminal ρ₁, .terminal ρ₂ => ρ₁.store = ρ₂.store ∧ ρ₁.eval = ρ₂.eval
   | .exiting l₁ ρ₁, .exiting l₂ ρ₂ => l₁ = l₂ ∧ ρ₁.store = ρ₂.store ∧ ρ₁.eval = ρ₂.eval
-  | .block l₁ σ₁ i₁, .block l₂ σ₂ i₂ => l₁ = l₂ ∧ σ₁ = σ₂ ∧ ConfigSE i₁ i₂
+  | .block l₁ σ₁ e₁ i₁, .block l₂ σ₂ e₂ i₂ => l₁ = l₂ ∧ σ₁ = σ₂ ∧ e₁ = e₂ ∧ ConfigSE i₁ i₂
   | .seq i₁ ss₁, .seq i₂ ss₂ => ss₁ = ss₂ ∧ ConfigSE i₁ i₂
   | _, _ => False
 
@@ -839,46 +855,50 @@ private def step_simulation
     | _ => exact nomatch heq
   | step_block_body h =>
     cases c₂ with
-    | block _ _ i₂ =>
+    | block _ _ _ i₂ =>
       have hrs := heq.1; subst hrs
       have hσ := heq.2.1; subst hσ
-      have ⟨c₂', h₂, heq₂⟩ := step_simulation _ _ _ h heq.2.2
-      exact ⟨_, .step_block_body h₂, ⟨rfl, rfl, heq₂⟩⟩
+      have he := heq.2.2.1; subst he
+      have ⟨c₂', h₂, heq₂⟩ := step_simulation _ _ _ h heq.2.2.2
+      exact ⟨_, .step_block_body h₂, ⟨rfl, rfl, rfl, heq₂⟩⟩
     | _ => exact nomatch heq
   | step_block_done =>
     cases c₂ with
-    | block _ _ i₂ =>
+    | block _ _ _ i₂ =>
       have hrs := heq.1; subst hrs
       have hσ := heq.2.1; subst hσ
+      have he := heq.2.2.1; subst he
       cases i₂ with
       | terminal ρ₂ =>
-        have hse := heq.2.2
-        exact ⟨_, .step_block_done, ⟨congrArg (projectStore _) hse.1, hse.2⟩⟩
-      | _ => exact nomatch heq.2.2
+        have hse := heq.2.2.2
+        exact ⟨_, .step_block_done, ⟨congrArg (projectStore _) hse.1, rfl⟩⟩
+      | _ => exact nomatch heq.2.2.2
     | _ => exact nomatch heq
   | step_block_exit_match hl =>
     cases c₂ with
-    | block _ _ i₂ =>
+    | block _ _ _ i₂ =>
       have hlb := heq.1; subst hlb
       have hσ := heq.2.1; subst hσ
+      have he := heq.2.2.1; subst he
       cases i₂ with
       | exiting l₂ ρ₂ =>
-        have hl₂ := heq.2.2.1; subst hl₂
-        have hse := heq.2.2.2
-        exact ⟨_, .step_block_exit_match hl, ⟨congrArg (projectStore _) hse.1, hse.2⟩⟩
-      | _ => exact nomatch heq.2.2
+        have hl₂ := heq.2.2.2.1; subst hl₂
+        have hse := heq.2.2.2.2
+        exact ⟨_, .step_block_exit_match hl, ⟨congrArg (projectStore _) hse.1, rfl⟩⟩
+      | _ => exact nomatch heq.2.2.2
     | _ => exact nomatch heq
   | step_block_exit_mismatch hl =>
     cases c₂ with
-    | block _ _ i₂ =>
+    | block _ _ _ i₂ =>
       have hlb := heq.1; subst hlb
       have hσ := heq.2.1; subst hσ
+      have he := heq.2.2.1; subst he
       cases i₂ with
       | exiting l₂ ρ₂ =>
-        have hl₂ := heq.2.2.1; subst hl₂
-        have hse := heq.2.2.2
-        exact ⟨_, .step_block_exit_mismatch hl, ⟨rfl, congrArg (projectStore _) hse.1, hse.2⟩⟩
-      | _ => exact nomatch heq.2.2
+        have hl₂ := heq.2.2.2.1; subst hl₂
+        have hse := heq.2.2.2.2
+        exact ⟨_, .step_block_exit_mismatch hl, ⟨rfl, congrArg (projectStore _) hse.1, rfl⟩⟩
+      | _ => exact nomatch heq.2.2.2
     | _ => exact nomatch heq
 
 /-- The terminal state's store and eval are independent of the starting
@@ -914,9 +934,10 @@ theorem smallStep_hasFailure_irrel
     labels list.  The conclusion is `l ∈ labels`, which is exactly the
     `Config.exitsCoveredByBlocks` of `.exiting l ρ''` for any ρ''. -/
 private theorem block_exit_mismatch_unfold {labels : List String}
-    {label : Option String} {σ_parent : SemanticStore P} {l : String} {ρ' ρ'' : Env P}
+    {label : Option String} {σ_parent : SemanticStore P} {e_parent : SemanticEval P}
+    {l : String} {ρ' ρ'' : Env P}
     (h : Config.exitsCoveredByBlocks labels
-          (.block label σ_parent (.exiting l ρ' : Config P CmdT)))
+          (.block label σ_parent e_parent (.exiting l ρ' : Config P CmdT)))
     (hne : label ≠ .some l) :
     Config.exitsCoveredByBlocks labels (.exiting l ρ'' : Config P CmdT) := by
   show l ∈ labels
@@ -975,7 +996,7 @@ theorem step_preserves_exitsCoveredByBlocks
   | step_seq_exit => intro _ hwp; exact hwp.1
   | step_block_body _ ih =>
     intro labels hwp
-    rename_i inner inner' label σ_parent _
+    rename_i inner inner' label σ_parent e_parent _
     cases label with
     | none => exact ih labels hwp
     | some l => exact ih (l :: labels) hwp
@@ -1033,20 +1054,21 @@ theorem block_exitsCoveredByBlocks_noEscape
     and `cfg` is neither terminal nor exiting, then `cfg = .block l inner'`
     for some `inner'` with `inner →* inner'`. -/
 theorem block_star_extract_inner
-    {l : Option String} {σ_parent : SemanticStore P} {inner cfg : Config P CmdT}
-    (h_star : StepStmtStar P EvalCmd extendEval (.block l σ_parent inner) cfg)
+    {l : Option String} {σ_parent : SemanticStore P} {e_parent : SemanticEval P}
+    {inner cfg : Config P CmdT}
+    (h_star : StepStmtStar P EvalCmd extendEval (.block l σ_parent e_parent inner) cfg)
     (h_no_exit : ∀ lbl ρ', ¬ StepStmtStar P EvalCmd extendEval
         inner (.exiting lbl ρ'))
     (h_not_terminal : ∀ ρ', cfg ≠ .terminal ρ')
     (h_not_exiting : ∀ lbl ρ', cfg ≠ .exiting lbl ρ') :
-    ∃ inner', cfg = .block l σ_parent inner' ∧
+    ∃ inner', cfg = .block l σ_parent e_parent inner' ∧
       StepStmtStar P EvalCmd extendEval inner inner' := by
   suffices ∀ c₁ c₂,
       StepStmtStar P EvalCmd extendEval c₁ c₂ →
-      ∀ inner₀, c₁ = .block l σ_parent inner₀ →
+      ∀ inner₀, c₁ = .block l σ_parent e_parent inner₀ →
       (∀ lbl ρ', ¬ StepStmtStar P EvalCmd extendEval inner₀ (.exiting lbl ρ')) →
       (∀ ρ', c₂ ≠ .terminal ρ') → (∀ lbl ρ', c₂ ≠ .exiting lbl ρ') →
-      ∃ inner', c₂ = .block l σ_parent inner' ∧
+      ∃ inner', c₂ = .block l σ_parent e_parent inner' ∧
         StepStmtStar P EvalCmd extendEval inner₀ inner' from
     this _ _ h_star _ rfl h_no_exit h_not_terminal h_not_exiting
   intro c₁ c₂ h_star
@@ -1086,39 +1108,41 @@ private theorem step_preserves_eval_noFuncDecl
   | step_block =>
     intro hnofd
     simp only [Config.noFuncDecl, Stmt.noFuncDecl] at hnofd ⊢
-    exact ⟨rfl, hnofd⟩
+    exact ⟨rfl, hnofd, rfl⟩
   | step_ite_true =>
     intro hnofd
     simp only [Config.noFuncDecl, Stmt.noFuncDecl, Bool.and_eq_true] at hnofd
-    exact ⟨rfl, hnofd.1⟩
+    exact ⟨rfl, hnofd.1, rfl⟩
   | step_ite_false =>
     intro hnofd
     simp only [Config.noFuncDecl, Stmt.noFuncDecl, Bool.and_eq_true] at hnofd
-    exact ⟨rfl, hnofd.2⟩
+    exact ⟨rfl, hnofd.2, rfl⟩
   | step_ite_nondet_true =>
     intro hnofd
     simp only [Config.noFuncDecl, Stmt.noFuncDecl, Bool.and_eq_true] at hnofd
-    exact ⟨rfl, hnofd.1⟩
+    exact ⟨rfl, hnofd.1, rfl⟩
   | step_ite_nondet_false =>
     intro hnofd
     simp only [Config.noFuncDecl, Stmt.noFuncDecl, Bool.and_eq_true] at hnofd
-    exact ⟨rfl, hnofd.2⟩
+    exact ⟨rfl, hnofd.2, rfl⟩
   | step_loop_enter =>
     intro hnofd
-    refine ⟨rfl, ?_, ?_⟩
-    · -- Goal: inner Config has noFuncDecl
-      simp only [Config.noFuncDecl, Stmt.noFuncDecl] at hnofd ⊢
+    simp only [Config.noFuncDecl, Stmt.noFuncDecl] at hnofd
+    refine ⟨rfl, ⟨⟨?_, ?_⟩, ?_⟩⟩
+    · -- Goal: Block.noFuncDecl body = true
       exact hnofd
+    · -- Goal: ρ.eval = (.stmts body ρ').getEnv.eval where ρ' is hasFailure-modified ρ
+      rfl
     · -- Goal: rest = [loop ...] has Block.noFuncDecl
-      simp only [Config.noFuncDecl, Stmt.noFuncDecl] at hnofd ⊢
       simp [Block.noFuncDecl, Stmt.noFuncDecl, hnofd]
   | step_loop_exit => intro _; exact ⟨rfl, trivial⟩
   | step_loop_nondet_enter =>
     intro hnofd
-    refine ⟨rfl, ?_, ?_⟩
-    · simp only [Config.noFuncDecl, Stmt.noFuncDecl] at hnofd ⊢; exact hnofd
-    · simp only [Config.noFuncDecl, Stmt.noFuncDecl] at hnofd ⊢
-      simp [Block.noFuncDecl, Stmt.noFuncDecl, hnofd]
+    simp only [Config.noFuncDecl, Stmt.noFuncDecl] at hnofd
+    refine ⟨rfl, ⟨⟨?_, ?_⟩, ?_⟩⟩
+    · exact hnofd
+    · rfl
+    · simp [Block.noFuncDecl, Stmt.noFuncDecl, hnofd]
   | step_loop_nondet_exit => intro _; exact ⟨rfl, trivial⟩
   | step_exit => intro _; exact ⟨rfl, trivial⟩
   | step_funcDecl =>
@@ -1136,10 +1160,29 @@ private theorem step_preserves_eval_noFuncDecl
     exact ⟨heq, hnofd', hnofd.2⟩
   | step_seq_done => intro hnofd; exact ⟨rfl, hnofd.2⟩
   | step_seq_exit => intro _; exact ⟨rfl, trivial⟩
-  | step_block_body _ ih => intro hnofd; exact ih hnofd
-  | step_block_done => intro _; exact ⟨rfl, trivial⟩
-  | step_block_exit_match => intro _; exact ⟨rfl, trivial⟩
-  | step_block_exit_mismatch => intro _; exact ⟨rfl, trivial⟩
+  | step_block_body _ ih =>
+    intro hnofd
+    -- hnofd : inner.noFuncDecl ∧ e_parent = inner.getEnv.eval
+    have ⟨heq_inner, hnofd_inner⟩ := ih hnofd.1
+    -- heq_inner : inner'.getEnv.eval = inner.getEnv.eval
+    refine ⟨heq_inner, hnofd_inner, ?_⟩
+    -- Goal: e_parent = inner'.getEnv.eval
+    rw [heq_inner]; exact hnofd.2
+  | step_block_done =>
+    intro hnofd
+    refine ⟨?_, trivial⟩
+    simp only [Config.getEnv]
+    exact hnofd.2
+  | step_block_exit_match =>
+    intro hnofd
+    refine ⟨?_, trivial⟩
+    simp only [Config.getEnv]
+    exact hnofd.2
+  | step_block_exit_mismatch =>
+    intro hnofd
+    refine ⟨?_, trivial⟩
+    simp only [Config.getEnv]
+    exact hnofd.2
 
 /-- When a statement has no function declarations, small-step execution
     preserves the evaluator. -/
@@ -1192,323 +1235,266 @@ theorem block_noFuncDecl_preserves_eval
 
 variable [HasFvar P] [HasVal P] [HasVarsPure P P.Expr]
 
-/-- Single step preserves `WellFormedSemanticEvalBool` when the evaluator
-    extension is well-formed (no `noFuncDecl` requirement). -/
+/-- Config-level `WellFormedSemanticEvalBool` invariant.  Requires WF on
+    the current eval AND on every captured `e_parent` snapshot stored
+    inside enclosing blocks (recursively).  This is necessary because
+    `step_block_done` restores eval to `e_parent`, so we need to know
+    `e_parent` itself was WF. -/
+def Config.wfBool : Config P CmdT → Prop
+  | .stmt _ ρ => WellFormedSemanticEvalBool ρ.eval
+  | .stmts _ ρ => WellFormedSemanticEvalBool ρ.eval
+  | .terminal ρ => WellFormedSemanticEvalBool ρ.eval
+  | .exiting _ ρ => WellFormedSemanticEvalBool ρ.eval
+  | .block _ _ e_parent inner =>
+    WellFormedSemanticEvalBool e_parent ∧ Config.wfBool inner
+  | .seq inner _ => Config.wfBool inner
+
+def Config.wfVal : Config P CmdT → Prop
+  | .stmt _ ρ => WellFormedSemanticEvalVal ρ.eval
+  | .stmts _ ρ => WellFormedSemanticEvalVal ρ.eval
+  | .terminal ρ => WellFormedSemanticEvalVal ρ.eval
+  | .exiting _ ρ => WellFormedSemanticEvalVal ρ.eval
+  | .block _ _ e_parent inner =>
+    WellFormedSemanticEvalVal e_parent ∧ Config.wfVal inner
+  | .seq inner _ => Config.wfVal inner
+
+def Config.wfVar : Config P CmdT → Prop
+  | .stmt _ ρ => WellFormedSemanticEvalVar ρ.eval
+  | .stmts _ ρ => WellFormedSemanticEvalVar ρ.eval
+  | .terminal ρ => WellFormedSemanticEvalVar ρ.eval
+  | .exiting _ ρ => WellFormedSemanticEvalVar ρ.eval
+  | .block _ _ e_parent inner =>
+    WellFormedSemanticEvalVar e_parent ∧ Config.wfVar inner
+  | .seq inner _ => Config.wfVar inner
+
+/-- Single step preserves `Config.wfBool` when the evaluator extension is
+    well-formed (no `noFuncDecl` requirement). -/
 private theorem step_preserves_wfBool_wfExtend
     (hwf_ext : WFEvalExtension P extendEval)
     (c₁ c₂ : Config P CmdT)
     (hstep : StepStmt P EvalCmd extendEval c₁ c₂)
-    (hwfb : WellFormedSemanticEvalBool c₁.getEnv.eval) :
-    WellFormedSemanticEvalBool c₂.getEnv.eval := by
-  suffices ∀ a b, StepStmt P EvalCmd extendEval a b →
-      WellFormedSemanticEvalBool a.getEnv.eval →
-      WellFormedSemanticEvalBool b.getEnv.eval from this c₁ c₂ hstep hwfb
-  intro a b hstep
+    (hwfb : c₁.wfBool) :
+    c₂.wfBool := by
   induction hstep with
-  | step_cmd => intro h; simp [Config.getEnv]; exact h
-  | step_block | step_ite_true | step_ite_false | step_ite_nondet_true
-  | step_ite_nondet_false | step_loop_enter | step_loop_exit
-  | step_loop_nondet_enter | step_loop_nondet_exit | step_exit
-  | step_typeDecl | step_stmts_nil | step_stmts_cons
-  | step_seq_done | step_seq_exit
-  | step_block_done | step_block_exit_match | step_block_exit_mismatch =>
-    intro h; exact h
+  | step_cmd => exact hwfb
+  | step_block =>
+    -- c₁ = .stmt (.block ...), c₂ = .block (.some _) ρ.store ρ.eval (.stmts ss ρ)
+    exact ⟨hwfb, hwfb⟩
+  | step_ite_true | step_ite_false | step_ite_nondet_true | step_ite_nondet_false =>
+    exact ⟨hwfb, hwfb⟩
+  | step_loop_enter =>
+    -- c₂ = .seq (.block .none ρ.store ρ.eval (.stmts body {ρ with hasFailure := ...})) [...]
+    -- ρ.eval = wfBool, hasFailure-modified ρ has same eval, so still wfBool.
+    exact ⟨hwfb, hwfb⟩
+  | step_loop_exit => exact hwfb
+  | step_loop_nondet_enter =>
+    exact ⟨hwfb, hwfb⟩
+  | step_loop_nondet_exit => exact hwfb
+  | step_exit => exact hwfb
   | step_funcDecl =>
-    intro h; simp [Config.getEnv]; exact hwf_ext.preserves_wfBool _ _ _ h
-  | step_seq_inner _ ih => intro h; exact ih h
-  | step_block_body _ ih => intro h; exact ih h
+    -- c₂ = .terminal { ρ with eval := extendEval ρ.eval ρ.store decl }
+    exact hwf_ext.preserves_wfBool _ _ _ hwfb
+  | step_typeDecl => exact hwfb
+  | step_stmts_nil => exact hwfb
+  | step_stmts_cons => exact hwfb
+  | step_seq_inner _ ih => exact ih hwfb
+  | step_seq_done => exact hwfb
+  | step_seq_exit => exact hwfb
+  | step_block_body _ ih =>
+    -- hwfb : ⟨wfBool e_parent, c₁_inner.wfBool⟩
+    exact ⟨hwfb.1, ih hwfb.2⟩
+  | step_block_done =>
+    -- c₁ = .block label σ_parent e_parent (.terminal ρ'); c₂ = .terminal {... eval := e_parent}
+    exact hwfb.1
+  | step_block_exit_match => exact hwfb.1
+  | step_block_exit_mismatch => exact hwfb.1
 
+/-- Single step preserves `Config.wfVal`. -/
 private theorem step_preserves_wfVal_wfExtend
     (hwf_ext : WFEvalExtension P extendEval)
     (c₁ c₂ : Config P CmdT)
     (hstep : StepStmt P EvalCmd extendEval c₁ c₂)
-    (hwfv : WellFormedSemanticEvalVal c₁.getEnv.eval) :
-    WellFormedSemanticEvalVal c₂.getEnv.eval := by
-  suffices ∀ a b, StepStmt P EvalCmd extendEval a b →
-      WellFormedSemanticEvalVal a.getEnv.eval →
-      WellFormedSemanticEvalVal b.getEnv.eval from this c₁ c₂ hstep hwfv
-  intro a b hstep
+    (hwfv : c₁.wfVal) :
+    c₂.wfVal := by
   induction hstep with
-  | step_cmd => intro h; simp [Config.getEnv]; exact h
-  | step_block | step_ite_true | step_ite_false | step_ite_nondet_true
-  | step_ite_nondet_false | step_loop_enter | step_loop_exit
-  | step_loop_nondet_enter | step_loop_nondet_exit | step_exit
-  | step_typeDecl | step_stmts_nil | step_stmts_cons
-  | step_seq_done | step_seq_exit
-  | step_block_done | step_block_exit_match | step_block_exit_mismatch =>
-    intro h; exact h
-  | step_funcDecl =>
-    intro h; simp [Config.getEnv]; exact hwf_ext.preserves_wfVal _ _ _ h
-  | step_seq_inner _ ih => intro h; exact ih h
-  | step_block_body _ ih => intro h; exact ih h
+  | step_cmd => exact hwfv
+  | step_block => exact ⟨hwfv, hwfv⟩
+  | step_ite_true | step_ite_false | step_ite_nondet_true | step_ite_nondet_false =>
+    exact ⟨hwfv, hwfv⟩
+  | step_loop_enter => exact ⟨hwfv, hwfv⟩
+  | step_loop_exit => exact hwfv
+  | step_loop_nondet_enter => exact ⟨hwfv, hwfv⟩
+  | step_loop_nondet_exit => exact hwfv
+  | step_exit => exact hwfv
+  | step_funcDecl => exact hwf_ext.preserves_wfVal _ _ _ hwfv
+  | step_typeDecl => exact hwfv
+  | step_stmts_nil => exact hwfv
+  | step_stmts_cons => exact hwfv
+  | step_seq_inner _ ih => exact ih hwfv
+  | step_seq_done => exact hwfv
+  | step_seq_exit => exact hwfv
+  | step_block_body _ ih => exact ⟨hwfv.1, ih hwfv.2⟩
+  | step_block_done => exact hwfv.1
+  | step_block_exit_match => exact hwfv.1
+  | step_block_exit_mismatch => exact hwfv.1
 
+/-- Single step preserves `Config.wfVar`. -/
 private theorem step_preserves_wfVar_wfExtend
     (hwf_ext : WFEvalExtension P extendEval)
     (c₁ c₂ : Config P CmdT)
     (hstep : StepStmt P EvalCmd extendEval c₁ c₂)
-    (hwfvar : WellFormedSemanticEvalVar c₁.getEnv.eval) :
-    WellFormedSemanticEvalVar c₂.getEnv.eval := by
-  suffices ∀ a b, StepStmt P EvalCmd extendEval a b →
-      WellFormedSemanticEvalVar a.getEnv.eval →
-      WellFormedSemanticEvalVar b.getEnv.eval from this c₁ c₂ hstep hwfvar
-  intro a b hstep
+    (hwfvar : c₁.wfVar) :
+    c₂.wfVar := by
   induction hstep with
-  | step_cmd => intro h; simp [Config.getEnv]; exact h
-  | step_block | step_ite_true | step_ite_false | step_ite_nondet_true
-  | step_ite_nondet_false | step_loop_enter | step_loop_exit
-  | step_loop_nondet_enter | step_loop_nondet_exit | step_exit
-  | step_typeDecl | step_stmts_nil | step_stmts_cons
-  | step_seq_done | step_seq_exit
-  | step_block_done | step_block_exit_match | step_block_exit_mismatch =>
-    intro h; exact h
-  | step_funcDecl =>
-    intro h; simp [Config.getEnv]; exact hwf_ext.preserves_wfVar _ _ _ h
-  | step_seq_inner _ ih => intro h; exact ih h
-  | step_block_body _ ih => intro h; exact ih h
+  | step_cmd => exact hwfvar
+  | step_block => exact ⟨hwfvar, hwfvar⟩
+  | step_ite_true | step_ite_false | step_ite_nondet_true | step_ite_nondet_false =>
+    exact ⟨hwfvar, hwfvar⟩
+  | step_loop_enter => exact ⟨hwfvar, hwfvar⟩
+  | step_loop_exit => exact hwfvar
+  | step_loop_nondet_enter => exact ⟨hwfvar, hwfvar⟩
+  | step_loop_nondet_exit => exact hwfvar
+  | step_exit => exact hwfvar
+  | step_funcDecl => exact hwf_ext.preserves_wfVar _ _ _ hwfvar
+  | step_typeDecl => exact hwfvar
+  | step_stmts_nil => exact hwfvar
+  | step_stmts_cons => exact hwfvar
+  | step_seq_inner _ ih => exact ih hwfvar
+  | step_seq_done => exact hwfvar
+  | step_seq_exit => exact hwfvar
+  | step_block_body _ ih => exact ⟨hwfvar.1, ih hwfvar.2⟩
+  | step_block_done => exact hwfvar.1
+  | step_block_exit_match => exact hwfvar.1
+  | step_block_exit_mismatch => exact hwfvar.1
 
-/-- `WellFormedSemanticEvalBool` is preserved under `StepStmtStar` when the
-    evaluator extension is well-formed.  Generalises
-    `smallStep_noFuncDecl_preserves_eval` to programs with funcDecl. -/
-theorem star_preserves_wfBool
+/-- `Config.wfBool` is preserved under `StepStmtStar`. -/
+theorem star_preserves_cfg_wfBool
     (hwf_ext : WFEvalExtension P extendEval)
     {c₁ c₂ : Config P CmdT}
     (hstar : StepStmtStar P EvalCmd extendEval c₁ c₂)
-    (hwfb : WellFormedSemanticEvalBool c₁.getEnv.eval) :
-    WellFormedSemanticEvalBool c₂.getEnv.eval := by
+    (hwfb : c₁.wfBool) :
+    c₂.wfBool := by
   induction hstar with
   | refl => exact hwfb
   | step _ _ _ hstep _ ih =>
     exact ih (step_preserves_wfBool_wfExtend P EvalCmd extendEval hwf_ext _ _ hstep hwfb)
 
-theorem star_preserves_wfVal
+theorem star_preserves_cfg_wfVal
     (hwf_ext : WFEvalExtension P extendEval)
     {c₁ c₂ : Config P CmdT}
     (hstar : StepStmtStar P EvalCmd extendEval c₁ c₂)
-    (hwfv : WellFormedSemanticEvalVal c₁.getEnv.eval) :
-    WellFormedSemanticEvalVal c₂.getEnv.eval := by
+    (hwfv : c₁.wfVal) :
+    c₂.wfVal := by
   induction hstar with
   | refl => exact hwfv
   | step _ _ _ hstep _ ih =>
     exact ih (step_preserves_wfVal_wfExtend P EvalCmd extendEval hwf_ext _ _ hstep hwfv)
 
-theorem star_preserves_wfVar
+theorem star_preserves_cfg_wfVar
     (hwf_ext : WFEvalExtension P extendEval)
     {c₁ c₂ : Config P CmdT}
     (hstar : StepStmtStar P EvalCmd extendEval c₁ c₂)
-    (hwfvar : WellFormedSemanticEvalVar c₁.getEnv.eval) :
-    WellFormedSemanticEvalVar c₂.getEnv.eval := by
+    (hwfvar : c₁.wfVar) :
+    c₂.wfVar := by
   induction hstar with
   | refl => exact hwfvar
   | step _ _ _ hstep _ ih =>
     exact ih (step_preserves_wfVar_wfExtend P EvalCmd extendEval hwf_ext _ _ hstep hwfvar)
 
-/-! ## Eval-preservation on expressions disjoint from `funcDeclNames`
+set_option linter.unusedSectionVars false in
+/-- `Config.wfBool` implies `WellFormedSemanticEvalBool` on the current
+    config's eval (the inner eval after walking through any blocks). -/
+theorem Config.wfBool_implies_wfEval (cfg : Config P CmdT) :
+    cfg.wfBool → WellFormedSemanticEvalBool cfg.getEnv.eval := by
+  induction cfg with
+  | stmt | stmts | terminal | exiting => intro h; exact h
+  | block _ _ _ inner ih => intro h; exact ih h.2
+  | seq inner _ ih => intro h; exact ih h
 
-A single step preserves the value of `eval` on any expression `e` whose
-variables are disjoint from `Config.funcDeclNames` (the names that
-`step_funcDecl` may extend the evaluator with). -/
+set_option linter.unusedSectionVars false in
+theorem Config.wfVal_implies_wfEval (cfg : Config P CmdT) :
+    cfg.wfVal → WellFormedSemanticEvalVal cfg.getEnv.eval := by
+  induction cfg with
+  | stmt | stmts | terminal | exiting => intro h; exact h
+  | block _ _ _ inner ih => intro h; exact ih h.2
+  | seq inner _ ih => intro h; exact ih h
 
-/-- For a single step, the post-state's `funcDeclNames` is a subset of the
-    pre-state's: each step either leaves them alone, drops some (consuming
-    a funcDecl, branch, or scope), or duplicates loop-body names (which
-    are still in the pre-state list).  This is the key invariant that
-    bounds which names a `step_funcDecl` along a trace can introduce. -/
-private theorem step_funcDeclNames_subset
-    (c₁ c₂ : Config P CmdT)
-    (hstep : StepStmt P EvalCmd extendEval c₁ c₂) :
-    ∀ n, n ∈ Config.funcDeclNames c₂ → n ∈ Config.funcDeclNames c₁ := by
-  induction hstep with
-  | step_cmd => intro n hn; simp [Config.funcDeclNames] at hn
-  | step_block =>
-    intro n hn
-    simp only [Config.funcDeclNames, Stmt.funcDeclNames] at hn ⊢
-    exact hn
-  | step_ite_true =>
-    intro n hn
-    simp only [Config.funcDeclNames, Stmt.funcDeclNames, List.mem_append] at hn ⊢
-    left; exact hn
-  | step_ite_false =>
-    intro n hn
-    simp only [Config.funcDeclNames, Stmt.funcDeclNames, List.mem_append] at hn ⊢
-    right; exact hn
-  | step_ite_nondet_true =>
-    intro n hn
-    simp only [Config.funcDeclNames, Stmt.funcDeclNames, List.mem_append] at hn ⊢
-    left; exact hn
-  | step_ite_nondet_false =>
-    intro n hn
-    simp only [Config.funcDeclNames, Stmt.funcDeclNames, List.mem_append] at hn ⊢
-    right; exact hn
-  | step_loop_enter =>
-    intro n hn
-    simp only [Config.funcDeclNames, Stmt.funcDeclNames, Block.funcDeclNames,
-               List.mem_append, List.append_nil, List.not_mem_nil, or_false] at hn ⊢
-    rcases hn with hn | hn
-    · exact hn
-    · exact hn
-  | step_loop_exit =>
-    intro n hn; simp [Config.funcDeclNames] at hn
-  | step_loop_nondet_enter =>
-    intro n hn
-    simp only [Config.funcDeclNames, Stmt.funcDeclNames, Block.funcDeclNames,
-               List.mem_append, List.append_nil, List.not_mem_nil, or_false] at hn ⊢
-    rcases hn with hn | hn
-    · exact hn
-    · exact hn
-  | step_loop_nondet_exit =>
-    intro n hn; simp [Config.funcDeclNames] at hn
-  | step_exit => intro n hn; simp [Config.funcDeclNames] at hn
-  | step_funcDecl => intro n hn; simp [Config.funcDeclNames] at hn
-  | step_typeDecl => intro n hn; simp [Config.funcDeclNames] at hn
-  | step_stmts_nil => intro n hn; simp [Config.funcDeclNames] at hn
-  | step_stmts_cons =>
-    intro n hn
-    simp only [Config.funcDeclNames, Block.funcDeclNames, List.mem_append] at hn ⊢
-    exact hn
-  | step_seq_inner _ ih =>
-    intro n hn
-    simp only [Config.funcDeclNames, List.mem_append] at hn ⊢
-    rcases hn with hn | hn
-    · left; exact ih n hn
-    · right; exact hn
-  | step_seq_done =>
-    intro n hn
-    simp only [Config.funcDeclNames, List.mem_append] at hn ⊢
-    right; exact hn
-  | step_seq_exit => intro n hn; simp [Config.funcDeclNames] at hn
-  | step_block_body _ ih =>
-    intro n hn
-    simp only [Config.funcDeclNames] at hn ⊢
-    exact ih n hn
-  | step_block_done => intro n hn; simp [Config.funcDeclNames] at hn
-  | step_block_exit_match => intro n hn; simp [Config.funcDeclNames] at hn
-  | step_block_exit_mismatch _ =>
-    intro n hn; simp [Config.funcDeclNames] at hn
+set_option linter.unusedSectionVars false in
+theorem Config.wfVar_implies_wfEval (cfg : Config P CmdT) :
+    cfg.wfVar → WellFormedSemanticEvalVar cfg.getEnv.eval := by
+  induction cfg with
+  | stmt | stmts | terminal | exiting => intro h; exact h
+  | block _ _ _ inner ih => intro h; exact ih h.2
+  | seq inner _ ih => intro h; exact ih h
 
-/-- Single step preserves `eval` on expressions whose variables are all
-    outside `Config.funcDeclNames`.  -/
-private theorem step_preserves_eval_disjoint
+/-- `WellFormedSemanticEvalBool` is preserved under `StepStmtStar` when the
+    starting config is a top-level `.stmt`/`.stmts`/`.terminal`/`.exiting`
+    (i.e., not inside a `.block`).  Generalises
+    `smallStep_noFuncDecl_preserves_eval` to programs with funcDecl.
+
+    For starts at `.block` configurations, use `star_preserves_cfg_wfBool`
+    with the appropriate `Config.wfBool` precondition. -/
+theorem star_preserves_wfBool
     (hwf_ext : WFEvalExtension P extendEval)
-    (c₁ c₂ : Config P CmdT)
-    (hstep : StepStmt P EvalCmd extendEval c₁ c₂)
-    (e : P.Expr)
-    (hdisj : ∀ x ∈ HasVarsPure.getVars (P := P) e, x ∉ Config.funcDeclNames c₁) :
-    ∀ σ, c₂.getEnv.eval σ e = c₁.getEnv.eval σ e := by
-  intro σ
-  suffices ∀ a b, StepStmt P EvalCmd extendEval a b →
-      (∀ x ∈ HasVarsPure.getVars (P := P) e, x ∉ Config.funcDeclNames a) →
-      b.getEnv.eval σ e = a.getEnv.eval σ e from this _ _ hstep hdisj
-  intro a b hstep
-  induction hstep with
-  | step_cmd => intro _; simp [Config.getEnv]
-  | step_block => intro _; simp [Config.getEnv]
-  | step_ite_true => intro _; simp [Config.getEnv]
-  | step_ite_false => intro _; simp [Config.getEnv]
-  | step_ite_nondet_true => intro _; simp [Config.getEnv]
-  | step_ite_nondet_false => intro _; simp [Config.getEnv]
-  | step_loop_enter => intro _; simp [Config.getEnv]
-  | step_loop_exit => intro _; simp [Config.getEnv]
-  | step_loop_nondet_enter => intro _; simp [Config.getEnv]
-  | step_loop_nondet_exit => intro _; simp [Config.getEnv]
-  | step_exit => intro _; simp [Config.getEnv]
-  | step_funcDecl =>
-    rename_i decl' _ ρ' _
-    intro hd
-    simp only [Config.getEnv]
-    have hname : decl'.name ∉ HasVarsPure.getVars (P := P) e := by
-      intro hin
-      apply hd decl'.name hin
-      simp [Config.funcDeclNames, Stmt.funcDeclNames]
-    exact hwf_ext.preserves_eval_on_disjoint _ _ _ _ _ hname
-  | step_typeDecl => intro _; simp [Config.getEnv]
-  | step_stmts_nil => intro _; simp [Config.getEnv]
-  | step_stmts_cons => intro _; simp [Config.getEnv]
-  | step_seq_inner _ ih =>
-    intro hd
-    simp only [Config.getEnv]
-    apply ih
-    intro x hx hxin
-    apply hd x hx
-    simp only [Config.funcDeclNames, List.mem_append]; left; exact hxin
-  | step_seq_done => intro _; simp [Config.getEnv]
-  | step_seq_exit => intro _; simp [Config.getEnv]
-  | step_block_body _ ih =>
-    intro hd
-    simp only [Config.getEnv]
-    apply ih
-    intro x hx hxin
-    apply hd x hx
-    simp only [Config.funcDeclNames]; exact hxin
-  | step_block_done => intro _; simp [Config.getEnv]
-  | step_block_exit_match => intro _; simp [Config.getEnv]
-  | step_block_exit_mismatch _ => intro _; simp [Config.getEnv]
+    {s : Stmt P CmdT} {ρ : Env P} {c₂ : Config P CmdT}
+    (hstar : StepStmtStar P EvalCmd extendEval (.stmt s ρ) c₂)
+    (hwfb : WellFormedSemanticEvalBool ρ.eval) :
+    WellFormedSemanticEvalBool c₂.getEnv.eval := by
+  have h := star_preserves_cfg_wfBool P EvalCmd extendEval hwf_ext hstar
+    (show Config.wfBool (P := P) (CmdT := CmdT) (Config.stmt s ρ) from hwfb)
+  exact Config.wfBool_implies_wfEval P c₂ h
 
-/-- Trace preserves `eval` on expressions whose variables are all outside
-    `Config.funcDeclNames` of the *initial* config.  Each step's
-    pre-condition is satisfied because `funcDeclNames` is set-wise
-    monotonically decreasing along steps. -/
-theorem star_preserves_eval_disjoint
+theorem star_preserves_wfVal
     (hwf_ext : WFEvalExtension P extendEval)
-    {c₁ c₂ : Config P CmdT}
-    (hstar : StepStmtStar P EvalCmd extendEval c₁ c₂)
-    (e : P.Expr)
-    (hdisj : ∀ x ∈ HasVarsPure.getVars (P := P) e, x ∉ Config.funcDeclNames c₁) :
-    ∀ σ, c₂.getEnv.eval σ e = c₁.getEnv.eval σ e := by
-  intro σ
-  induction hstar with
-  | refl => rfl
-  | step _ mid _ hstep _ ih =>
-    have hsub := step_funcDeclNames_subset P EvalCmd extendEval _ _ hstep
-    have hdisj_mid : ∀ x ∈ HasVarsPure.getVars (P := P) e, x ∉ Config.funcDeclNames mid :=
-      fun x hx hxin => hdisj x hx (hsub x hxin)
-    have hstep_eq := step_preserves_eval_disjoint P EvalCmd extendEval hwf_ext _ _ hstep e hdisj σ
-    rw [ih hdisj_mid, hstep_eq]
+    {s : Stmt P CmdT} {ρ : Env P} {c₂ : Config P CmdT}
+    (hstar : StepStmtStar P EvalCmd extendEval (.stmt s ρ) c₂)
+    (hwfv : WellFormedSemanticEvalVal ρ.eval) :
+    WellFormedSemanticEvalVal c₂.getEnv.eval := by
+  have h := star_preserves_cfg_wfVal P EvalCmd extendEval hwf_ext hstar
+    (show Config.wfVal (P := P) (CmdT := CmdT) (Config.stmt s ρ) from hwfv)
+  exact Config.wfVal_implies_wfEval P c₂ h
 
-/-- Statement-level wrapper: For an expression `e` whose variables are disjoint
-    from `Stmt.funcDeclNames s`, the trace `(.stmt s ρ₀) →* (.terminal ρ')`
-    preserves `eval` on `e`. -/
-theorem stmt_terminal_preserves_eval_disjoint
+theorem star_preserves_wfVar
     (hwf_ext : WFEvalExtension P extendEval)
-    (s : Stmt P CmdT) (ρ₀ ρ' : Env P)
-    (hstar : StepStmtStar P EvalCmd extendEval (.stmt s ρ₀) (.terminal ρ'))
-    (e : P.Expr)
-    (hdisj : ∀ x ∈ HasVarsPure.getVars (P := P) e, x ∉ Stmt.funcDeclNames s) :
-    ∀ σ, ρ'.eval σ e = ρ₀.eval σ e := by
-  intro σ
-  have h := star_preserves_eval_disjoint P EvalCmd extendEval hwf_ext (c₁ := .stmt s ρ₀)
-    (c₂ := .terminal ρ') hstar e
-    (by intro x hx; exact hdisj x hx) σ
-  simpa [Config.getEnv] using h
+    {s : Stmt P CmdT} {ρ : Env P} {c₂ : Config P CmdT}
+    (hstar : StepStmtStar P EvalCmd extendEval (.stmt s ρ) c₂)
+    (hwfvar : WellFormedSemanticEvalVar ρ.eval) :
+    WellFormedSemanticEvalVar c₂.getEnv.eval := by
+  have h := star_preserves_cfg_wfVar P EvalCmd extendEval hwf_ext hstar
+    (show Config.wfVar (P := P) (CmdT := CmdT) (Config.stmt s ρ) from hwfvar)
+  exact Config.wfVar_implies_wfEval P c₂ h
 
-/-- Statement-level wrapper for exiting traces. -/
-theorem stmt_exiting_preserves_eval_disjoint
+/-- Block-list variants for `Config.wfBool/Val/Var`: starting at
+    `.stmts ss ρ`. -/
+theorem star_preserves_wfBool_block
     (hwf_ext : WFEvalExtension P extendEval)
-    (s : Stmt P CmdT) (ρ₀ ρ' : Env P) (lbl : String)
-    (hstar : StepStmtStar P EvalCmd extendEval (.stmt s ρ₀) (.exiting lbl ρ'))
-    (e : P.Expr)
-    (hdisj : ∀ x ∈ HasVarsPure.getVars (P := P) e, x ∉ Stmt.funcDeclNames s) :
-    ∀ σ, ρ'.eval σ e = ρ₀.eval σ e := by
-  intro σ
-  have h := star_preserves_eval_disjoint P EvalCmd extendEval hwf_ext (c₁ := .stmt s ρ₀)
-    (c₂ := .exiting lbl ρ') hstar e
-    (by intro x hx; exact hdisj x hx) σ
-  simpa [Config.getEnv] using h
+    {ss : List (Stmt P CmdT)} {ρ : Env P} {c₂ : Config P CmdT}
+    (hstar : StepStmtStar P EvalCmd extendEval (.stmts ss ρ) c₂)
+    (hwfb : WellFormedSemanticEvalBool ρ.eval) :
+    WellFormedSemanticEvalBool c₂.getEnv.eval := by
+  have h := star_preserves_cfg_wfBool P EvalCmd extendEval hwf_ext hstar
+    (show Config.wfBool (P := P) (CmdT := CmdT) (Config.stmts ss ρ) from hwfb)
+  exact Config.wfBool_implies_wfEval P c₂ h
 
-/-- Block-level wrapper: For an expression `e` whose variables are disjoint
-    from `Block.funcDeclNames bss`, the trace `(.stmts bss ρ₀) →* (.terminal ρ')`
-    preserves `eval` on `e`. -/
-theorem block_terminal_preserves_eval_disjoint
+theorem star_preserves_wfVal_block
     (hwf_ext : WFEvalExtension P extendEval)
-    (bss : List (Stmt P CmdT)) (ρ₀ ρ' : Env P)
-    (hstar : StepStmtStar P EvalCmd extendEval (.stmts bss ρ₀) (.terminal ρ'))
-    (e : P.Expr)
-    (hdisj : ∀ x ∈ HasVarsPure.getVars (P := P) e, x ∉ Block.funcDeclNames bss) :
-    ∀ σ, ρ'.eval σ e = ρ₀.eval σ e := by
-  intro σ
-  have h := star_preserves_eval_disjoint P EvalCmd extendEval hwf_ext (c₁ := .stmts bss ρ₀)
-    (c₂ := .terminal ρ') hstar e
-    (by intro x hx; exact hdisj x hx) σ
-  simpa [Config.getEnv] using h
+    {ss : List (Stmt P CmdT)} {ρ : Env P} {c₂ : Config P CmdT}
+    (hstar : StepStmtStar P EvalCmd extendEval (.stmts ss ρ) c₂)
+    (hwfv : WellFormedSemanticEvalVal ρ.eval) :
+    WellFormedSemanticEvalVal c₂.getEnv.eval := by
+  have h := star_preserves_cfg_wfVal P EvalCmd extendEval hwf_ext hstar
+    (show Config.wfVal (P := P) (CmdT := CmdT) (Config.stmts ss ρ) from hwfv)
+  exact Config.wfVal_implies_wfEval P c₂ h
+
+theorem star_preserves_wfVar_block
+    (hwf_ext : WFEvalExtension P extendEval)
+    {ss : List (Stmt P CmdT)} {ρ : Env P} {c₂ : Config P CmdT}
+    (hstar : StepStmtStar P EvalCmd extendEval (.stmts ss ρ) c₂)
+    (hwfvar : WellFormedSemanticEvalVar ρ.eval) :
+    WellFormedSemanticEvalVar c₂.getEnv.eval := by
+  have h := star_preserves_cfg_wfVar P EvalCmd extendEval hwf_ext hstar
+    (show Config.wfVar (P := P) (CmdT := CmdT) (Config.stmts ss ρ) from hwfvar)
+  exact Config.wfVar_implies_wfEval P c₂ h
 
 end -- section
 
@@ -1539,7 +1525,7 @@ structure AssertId where
     aid.label = label ∧ aid.expr = expr
   | .stmt (.loop _ _ inv _ _) _, aid => (aid.label, aid.expr) ∈ inv
   | .stmts ((.loop _ _ inv _ _) :: _) _, aid => (aid.label, aid.expr) ∈ inv
-  | .block _ _ inner, aid => isAtAssert inner aid
+  | .block _ _ _ inner, aid => isAtAssert inner aid
   | .seq inner _, aid => isAtAssert inner aid
   | _, _ => False
 
@@ -1580,7 +1566,7 @@ private theorem noMatchingAssert_not_isAtAssert
     intro hat
     exact hno.1.1 label expr hat rfl
   | .terminal _ | .exiting _ _ => simp [isAtAssert]
-  | .block _ _ inner => exact noMatchingAssert_not_isAtAssert inner label expr hno
+  | .block _ _ _ inner => exact noMatchingAssert_not_isAtAssert inner label expr hno
   | .seq inner _ => exact noMatchingAssert_not_isAtAssert inner label expr hno.1
 
 omit [HasFvar P] [HasBool P] [HasNot P] [HasIntOrder P] in
@@ -1663,13 +1649,14 @@ theorem noMatchingAssert_implies_no_reachable_assert
     then the config must be `.block label inner` where `inner` is reachable
     from the block's body and satisfies `isAtAssert`. -/
 theorem block_isAtAssert_inner
-    (label : String) (σ_parent : SemanticStore P) (inner₀ cfg : Config P (Cmd P)) (a : AssertId P)
-    (hstar : StepStmtStar P (EvalCmd P) extendEval (.block label σ_parent inner₀) cfg)
+    (label : Option String) (σ_parent : SemanticStore P) (e_parent : SemanticEval P)
+    (inner₀ cfg : Config P (Cmd P)) (a : AssertId P)
+    (hstar : StepStmtStar P (EvalCmd P) extendEval (.block label σ_parent e_parent inner₀) cfg)
     (hat : isAtAssert P cfg a) :
-    ∃ inner, cfg = .block label σ_parent inner ∧
+    ∃ inner, cfg = .block label σ_parent e_parent inner ∧
       StepStmtStar P (EvalCmd P) extendEval inner₀ inner ∧
       isAtAssert P inner a := by
-  generalize hsrc : Config.block label σ_parent inner₀ = src at hstar
+  generalize hsrc : Config.block label σ_parent e_parent inner₀ = src at hstar
   induction hstar generalizing inner₀ with
   | refl => subst hsrc; exact ⟨inner₀, rfl, .refl _, hat⟩
   | step _ mid _ hstep hrest ih =>
@@ -1811,8 +1798,8 @@ theorem step_preserves_noFailure
       IsAtAssert (.stmt (.loop g m inv body md) ρ) ⟨lbl, e⟩)
     (h_IsAtAssert_seq : ∀ {inner ss a},
       IsAtAssert inner a → IsAtAssert (.seq inner ss) a)
-    (h_IsAtAssert_block : ∀ {label σ_parent inner a},
-      IsAtAssert inner a → IsAtAssert (.block label σ_parent inner) a)
+    (h_IsAtAssert_block : ∀ {label σ_parent e_parent inner a},
+      IsAtAssert inner a → IsAtAssert (.block label σ_parent e_parent inner) a)
     (c₁ c₂ : Config P CmdT)
     (hv : ∀ a cfg, StepStmtStar P EvalCmd extendEval c₁ cfg →
       IsAtAssert cfg a → cfg.getEval cfg.getStore a.expr = some HasBool.tt)
@@ -1847,7 +1834,7 @@ theorem step_preserves_noFailure
   | step_block_body h ih =>
     exact ih
       (fun a cfg hr hat =>
-        hv a (.block _ _ cfg) (block_inner_star P EvalCmd extendEval _ _ _ _ hr) (h_IsAtAssert_block hat)) hnf
+        hv a (.block _ _ _ cfg) (block_inner_star P EvalCmd extendEval _ _ _ _ _ hr) (h_IsAtAssert_block hat)) hnf
   | _ => intros; exact hnf
 
 theorem allAssertsValid_preserves_noFailure

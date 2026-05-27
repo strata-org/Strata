@@ -534,15 +534,16 @@ theorem stmtsT_cons_terminal
 /-- Invert a block execution reaching terminal when the inner config cannot
     exit: the inner reaches terminal with a strictly shorter derivation. -/
 theorem blockT_reaches_terminal_noExit
-    {inner : Config P CmdT} {l : Option String} {σ_parent : SemanticStore P} {ρ' : Env P}
-    (hstar : ReflTransT (StepStmt P EvalCmd extendEval) (.block l σ_parent inner) (.terminal ρ'))
+    {inner : Config P CmdT} {l : Option String} {σ_parent : SemanticStore P}
+    {e_parent : SemanticEval P} {ρ' : Env P}
+    (hstar : ReflTransT (StepStmt P EvalCmd extendEval) (.block l σ_parent e_parent inner) (.terminal ρ'))
     (h_no_exit : ∀ lbl ρ_x,
       ¬ StepStmtStar P EvalCmd extendEval inner (.exiting lbl ρ_x)) :
     ∃ (ρ_inner : Env P) (h : ReflTransT (StepStmt P EvalCmd extendEval) inner (.terminal ρ_inner)),
-      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store } ∧
+      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store, eval := e_parent } ∧
       h.len < hstar.len := by
   match hstar with
-  | .step _ (.block _ _ inner₁) _ (.step_block_body h) hrest =>
+  | .step _ (.block _ _ _ inner₁) _ (.step_block_body h) hrest =>
     have h_no_exit' : ∀ lbl ρ_x,
         ¬ StepStmtStar P EvalCmd extendEval inner₁ (.exiting lbl ρ_x) := by
       intro lbl ρ_x hinner₁
@@ -713,15 +714,16 @@ theorem stmtsT_append_canfail
           exact .inr ⟨ρ₂, ReflTrans_Transitive _ _ _ _ hpre hterm_rest,
             cfg₂, hs, hf₂, by simp [ReflTransT.len]; omega⟩
 
-/-- Unwrap a failing `.block l σ_parent inner` execution to a failing run on `inner`. -/
+/-- Unwrap a failing `.block l σ_parent e_parent inner` execution to a failing run on `inner`. -/
 theorem block_canfail_to_inner
-    {inner : Config P CmdT} {l : Option String} {σ_parent : SemanticStore P} {cfg : Config P CmdT}
-    (hstar : StepStmtStar P EvalCmd extendEval (.block l σ_parent inner) cfg)
+    {inner : Config P CmdT} {l : Option String} {σ_parent : SemanticStore P}
+    {e_parent : SemanticEval P} {cfg : Config P CmdT}
+    (hstar : StepStmtStar P EvalCmd extendEval (.block l σ_parent e_parent inner) cfg)
     (hf : cfg.getEnv.hasFailure = true) :
     ∃ inner', inner'.getEnv.hasFailure = true ∧
       StepStmtStar P EvalCmd extendEval inner inner' := by
   suffices ∀ src tgt, StepStmtStar P EvalCmd extendEval src tgt →
-      ∀ (inner : Config P CmdT), src = .block l σ_parent inner →
+      ∀ (inner : Config P CmdT), src = .block l σ_parent e_parent inner →
       tgt.getEnv.hasFailure = true →
       ∃ inner', inner'.getEnv.hasFailure = true ∧
         StepStmtStar P EvalCmd extendEval inner inner' from
@@ -746,8 +748,9 @@ theorem block_canfail_to_inner
     on the inner derivation.  Required when the inner derivation must
     decrease for a recursive call. -/
 theorem blockT_canfail_to_inner
-    {inner : Config P CmdT} {l : Option String} {σ_parent : SemanticStore P} {cfg : Config P CmdT}
-    (hstar : ReflTransT (StepStmt P EvalCmd extendEval) (.block l σ_parent inner) cfg)
+    {inner : Config P CmdT} {l : Option String} {σ_parent : SemanticStore P}
+    {e_parent : SemanticEval P} {cfg : Config P CmdT}
+    (hstar : ReflTransT (StepStmt P EvalCmd extendEval) (.block l σ_parent e_parent inner) cfg)
     (hf : cfg.getEnv.hasFailure = true) :
     ∃ (inner' : Config P CmdT),
       ∃ (h : ReflTransT (StepStmt P EvalCmd extendEval) inner inner'),

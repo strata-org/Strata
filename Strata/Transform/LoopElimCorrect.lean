@@ -3082,12 +3082,12 @@ private theorem BlockInitEnvWF.toBlock_tail_via_defUseOk {reserved : List String
       hwf_ext.toWFEvalExtension hstar (c₁ := .stmt s ρ₀) (show WellFormedSemanticEvalVar _ from h.wfVar)
     simpa [Config.getEnv] using h'
   evalCong := by
-    have h' := core_wfCong_preserved π φ hwf_ext (.stmt s ρ₀) (.terminal ρ₁)
+    have h' := core_wfCong_preserved_stmt π φ hwf_ext
       (show WellFormedCoreEvalCong _ from h.evalCong)
       (StepStmtStar_to_CoreStepStar hstar)
     simpa [Config.getEnv] using h'
   exprCongr := by
-    have h' := core_wfExprCongr_preserved π φ hwf_ext (.stmt s ρ₀) (.terminal ρ₁)
+    have h' := core_wfExprCongr_preserved_stmt π φ hwf_ext
       (show @Imperative.WellFormedSemanticEvalExprCongr Expression _ _ from h.exprCongr)
       (StepStmtStar_to_CoreStepStar hstar)
     simpa [Config.getEnv] using h'

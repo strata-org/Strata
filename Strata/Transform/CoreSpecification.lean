@@ -216,7 +216,13 @@ structure ProcedureCorrect (proc : Procedure)
     (p : Program) : Prop where
   /-- (1) The asserts in the body of proc are valid. -/
   assertsValid : ∀ a, AssertValidInProcedure π φ proc a
-  /-- (2) The postconditions hold on termination. -/
+  /-- (2) The postconditions hold on termination.
+
+      Postconditions are evaluated against the parent's evaluator `ρ₀.eval`
+      (function declarations introduced inside the procedure body are local
+      to the body and are not visible to the postcondition).  The store is
+      projected: only variables defined in `ρ₀.store` carry their final
+      `ρ'.store` values; variables initialized within the body are dropped. -/
   postconditionsValid :
     WF.WFProcedureProp p proc →
     ∀ (ρ₀ ρ' : Env Expression),
@@ -225,7 +231,7 @@ structure ProcedureCorrect (proc : Procedure)
       (∀ (label : CoreLabel) (check : Procedure.Check),
         (label, check) ∈ proc.spec.postconditions.toList →
         check.attr = Procedure.CheckAttr.Default →
-        ρ'.eval ρ'.store check.expr = some HasBool.tt) ∧
+        ρ₀.eval (projectStore ρ₀.store ρ'.store) check.expr = some HasBool.tt) ∧
       ρ'.hasFailure = Bool.false
 
 end Core.Specification
