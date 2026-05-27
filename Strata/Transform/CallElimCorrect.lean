@@ -13,13 +13,13 @@ public import Strata.Languages.Core.Program
 public import Strata.Languages.Core.ProgramType
 public import Strata.Languages.Core.WF
 public import Strata.DL.Lambda.Lambda
-public import Strata.DL.Lambda.LExprSubstSemantics
 public import Strata.Transform.CoreTransform
 public import Strata.Transform.CallElim
 public import Strata.DL.Imperative.CmdSemantics
 public import Strata.Languages.Core.StatementSemantics
 import Strata.Languages.Core.StatementSemanticsProps
-import Strata.Languages.Core.CoreTransformSemantics
+public import Strata.Transform.SubstSemantics
+import Strata.Transform.CoreTransformSemantics
 import Strata.DL.Util.ListUtils
 public import Strata.DL.Util.String
 

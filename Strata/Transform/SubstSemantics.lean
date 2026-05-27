@@ -16,22 +16,14 @@ import Strata.DL.Util.ListUtils
 
 /-! # Substitution-Correctness Stack
 
-  Pure expression-level substitution-correctness lemmas extracted from
-  `Strata.Transform.CallElimCorrect`. These re-derive the legacy
-  `Lambda.LExpr.substFvarCorrect` and `Lambda.LExpr.substFvarsCorrect`
-  proofs using only currently-live infrastructure
-  (`WellFormedSemanticEvalCong`, `WellFormedSemanticEvalVar`,
-  `WellFormedSemanticEvalVal`, `substStores`, `substDefined`,
-  `substNodup`, `invStores`).
-
-  The lemmas live in the `CallElimCorrect` namespace so that downstream
-  call sites in `Strata/Transform/CallElimCorrect.lean` continue to
-  resolve unqualified references such as `subst_fvar_correct` and
-  `subst_fvars_eval_bridge`.
+  Reusable substitution-correctness lemmas for `LExpr.substFvar` /
+  `substFvars` against `substStores` / `invStores`. Used by `CallElimCorrect`;
+  applicable to any transform that introduces fresh variables and
+  substitutes them (procedure-inlining, loop-elimination, etc.).
 -/
 
-namespace CallElimCorrect
-open Core Core.Transform
+namespace Core.Transform
+open Imperative
 
 public section
 
@@ -1128,4 +1120,4 @@ theorem subst_fvars_eval_bridge
 
 end
 
-end CallElimCorrect
+end Core.Transform
