@@ -1627,6 +1627,14 @@ private theorem isOldTemp_disjoint_notOldTemp
   have Hold : isOldTempIdent x := (List.Forall_mem_iff.mp Holds) x Hin1
   exact (Hprog x Hin2) Hold
 
+/-- Negation form of `List.Forall_mem_iff.mp`: if every element of `l`
+    satisfies `p` and `x` does *not* satisfy `p`, then `x ∉ l`.  Used
+    repeatedly for `notTemp ⇒ k1 ∉ argTemps/outTemps/genOldIdents`. -/
+private theorem notMem_of_Forall_neg
+    {α : Type _} {l : List α} {p : α → Prop} {x : α}
+    (Hforall : Forall p l) (Hnotp : ¬ p x) : x ∉ l := fun h =>
+  Hnotp ((List.Forall_mem_iff.mp Hforall) x h)
+
 /-- Bridge from the `tmp_` half of `Hwfgenst` to `isNotDefined` for a list
     of fresh temp names: if a name is `isTempIdent` and is *not* in
     `γ.generated`, then it must be undefined in σ (otherwise the iff in
@@ -3698,49 +3706,23 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     exact HinoutFresh v (List.mem_append.mpr (Or.inr Hv))
                   -- inputs.keys ∩ argTemps = ∅ (inputs not tmp_).
                   have HinKeys_disj_argTemps :
-                      proc.header.inputs.keys.Disjoint argTemps := by
-                    intro v Hv1 Hv2
-                    have HvNotTemp : ¬ isTempIdent v := (HinputsFresh v Hv1).1
-                    have HvTemp : isTempIdent v :=
-                      (List.Forall_mem_iff.mp HargTemp) v Hv2
-                    exact HvNotTemp HvTemp
+                      proc.header.inputs.keys.Disjoint argTemps := fun v Hv1 Hv2 =>
+                    notMem_of_Forall_neg HargTemp (HinputsFresh v Hv1).1 Hv2
                   have HinKeys_disj_outTemps :
-                      proc.header.inputs.keys.Disjoint outTemps := by
-                    intro v Hv1 Hv2
-                    have HvNotTemp : ¬ isTempIdent v := (HinputsFresh v Hv1).1
-                    have HvTemp : isTempIdent v :=
-                      (List.Forall_mem_iff.mp HoutTemp) v Hv2
-                    exact HvNotTemp HvTemp
+                      proc.header.inputs.keys.Disjoint outTemps := fun v Hv1 Hv2 =>
+                    notMem_of_Forall_neg HoutTemp (HinputsFresh v Hv1).1 Hv2
                   have HinKeys_disj_olds :
-                      proc.header.inputs.keys.Disjoint genOldIdents := by
-                    intro v Hv1 Hv2
-                    have HvNotOld : ¬ isOldTempIdent v :=
-                      (HinputsFresh v Hv1).2
-                    have HvOld : isOldTempIdent v :=
-                      (List.Forall_mem_iff.mp HoldIdentsTemp) v Hv2
-                    exact HvNotOld HvOld
+                      proc.header.inputs.keys.Disjoint genOldIdents := fun v Hv1 Hv2 =>
+                    notMem_of_Forall_neg HoldIdentsTemp (HinputsFresh v Hv1).2 Hv2
                   have HoutKeys_disj_argTemps :
-                      proc.header.outputs.keys.Disjoint argTemps := by
-                    intro v Hv1 Hv2
-                    have HvNotTemp : ¬ isTempIdent v := (HoutputsFresh v Hv1).1
-                    have HvTemp : isTempIdent v :=
-                      (List.Forall_mem_iff.mp HargTemp) v Hv2
-                    exact HvNotTemp HvTemp
+                      proc.header.outputs.keys.Disjoint argTemps := fun v Hv1 Hv2 =>
+                    notMem_of_Forall_neg HargTemp (HoutputsFresh v Hv1).1 Hv2
                   have HoutKeys_disj_outTemps :
-                      proc.header.outputs.keys.Disjoint outTemps := by
-                    intro v Hv1 Hv2
-                    have HvNotTemp : ¬ isTempIdent v := (HoutputsFresh v Hv1).1
-                    have HvTemp : isTempIdent v :=
-                      (List.Forall_mem_iff.mp HoutTemp) v Hv2
-                    exact HvNotTemp HvTemp
+                      proc.header.outputs.keys.Disjoint outTemps := fun v Hv1 Hv2 =>
+                    notMem_of_Forall_neg HoutTemp (HoutputsFresh v Hv1).1 Hv2
                   have HoutKeys_disj_olds :
-                      proc.header.outputs.keys.Disjoint genOldIdents := by
-                    intro v Hv1 Hv2
-                    have HvNotOld : ¬ isOldTempIdent v :=
-                      (HoutputsFresh v Hv1).2
-                    have HvOld : isOldTempIdent v :=
-                      (List.Forall_mem_iff.mp HoldIdentsTemp) v Hv2
-                    exact HvNotOld HvOld
+                      proc.header.outputs.keys.Disjoint genOldIdents := fun v Hv1 Hv2 =>
+                    notMem_of_Forall_neg HoldIdentsTemp (HoutputsFresh v Hv1).2 Hv2
                   -- inputs.keys ∩ lhs = ∅: σ-undefined inputs vs σ-defined lhs.
                   have HinKeys_disj_lhs :
                       proc.header.inputs.keys.Disjoint lhs := by
@@ -3884,14 +3866,11 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       have Hk1_notTemp : ¬ isTempIdent k1 := HfreshK.1
                       have Hk1_notOld : ¬ isOldTempIdent k1 := HfreshK.2.1
                       -- k1 ∉ outT (since outT are tmp_).
-                      have Hk1_notin_outT :
-                          k1 ∉ outTemps := fun h =>
-                        Hk1_notTemp ((List.Forall_mem_iff.mp HoutTemp) k1 h)
+                      have Hk1_notin_outT : k1 ∉ outTemps :=
+                        notMem_of_Forall_neg HoutTemp Hk1_notTemp
                       -- k1 ∉ genOldIdents (since olds are old_).
-                      have Hk1_notin_olds :
-                          k1 ∉ genOldIdents := fun h =>
-                        Hk1_notOld
-                          ((List.Forall_mem_iff.mp HoldIdentsTemp) k1 h)
+                      have Hk1_notin_olds : k1 ∉ genOldIdents :=
+                        notMem_of_Forall_neg HoldIdentsTemp Hk1_notOld
                       -- σ_old k1 = σ k1 by 3-layer fall-through.
                       have Hold_eq_σ :
                           (updatedStates
@@ -5424,10 +5403,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           exact Hσv_some
                         exact HSome HNone
                       -- v ∉ genOldIdents.
-                      have HvNotGen : v ∉ genOldIdents := by
-                        intro Hg
-                        exact HvNotOldTemp
-                          ((List.Forall_mem_iff.mp HoldIdentsTemp) v Hg)
+                      have HvNotGen : v ∉ genOldIdents :=
+                        notMem_of_Forall_neg HoldIdentsTemp HvNotOldTemp
                       -- v ∉ outputs.keys (clause 5).
                       have HvNotOuts : v ∉ proc.header.outputs.keys :=
                         HargVarsNotInOutKeys argExpr HargExpr_in_callList v Hv
@@ -5579,10 +5556,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       -- v ∈ getVars c.expr where c ∈ proc'.spec.postconditions.values.
                       have HvFresh := HpostVarsFresh_via_c c Hc_in v Hv
                       have HvNotOld : ¬ isOldTempIdent v := HvFresh.2.1
-                      have HvNotGen : v ∉ genOldIdents := by
-                        intro Hg
-                        exact HvNotOld
-                          ((List.Forall_mem_iff.mp HoldIdentsTemp) v Hg)
+                      have HvNotGen : v ∉ genOldIdents :=
+                        notMem_of_Forall_neg HoldIdentsTemp HvNotOld
                       have Hσ_R1_v_eq_σO :
                           σ_R1 v = σO v := by
                         show (updatedStates σO genOldIdents oldVals) v = σO v
@@ -5850,16 +5825,12 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       have Hk1_notTemp : ¬ isTempIdent k1 := HfreshK.1
                       have Hk1_notOld : ¬ isOldTempIdent k1 := HfreshK.2.1
                       -- k1 ∉ argTemps (tmp_).
-                      have Hk1_notin_argT :
-                          k1 ∉ argTemps := fun h =>
-                        Hk1_notTemp ((List.Forall_mem_iff.mp HargTemp) k1 h)
-                      have Hk1_notin_outT :
-                          k1 ∉ outTemps := fun h =>
-                        Hk1_notTemp ((List.Forall_mem_iff.mp HoutTemp) k1 h)
-                      have Hk1_notin_genOld :
-                          k1 ∉ genOldIdents := fun h =>
-                        Hk1_notOld
-                          ((List.Forall_mem_iff.mp HoldIdentsTemp) k1 h)
+                      have Hk1_notin_argT : k1 ∉ argTemps :=
+                        notMem_of_Forall_neg HargTemp Hk1_notTemp
+                      have Hk1_notin_outT : k1 ∉ outTemps :=
+                        notMem_of_Forall_neg HoutTemp Hk1_notTemp
+                      have Hk1_notin_genOld : k1 ∉ genOldIdents :=
+                        notMem_of_Forall_neg HoldIdentsTemp Hk1_notOld
                       -- k1 ∉ inputs.keys (since k1 ∉ outputs and k1 ∉ filtered_inputs).
                       have Hk1_notin_ins :
                           k1 ∉ proc.header.inputs.keys := by
