@@ -4,37 +4,40 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import StrataTest.Util.TestDiagnostics
+/-
+Debug-only helpers for running the Laurel compilation pipeline manually
+(e.g. via `#eval`) when diagnosing pass-internal issues.
+
+Not used by any test in this repo. The regular test framework lives in
+`StrataTest.Util.TestLaurel`; see `docs/Testing.md`.
+-/
+
 import Strata.DDM.Elab
 import Strata.DDM.BuiltinDialects.Init
-import Strata.Util.IO
 import Strata.Languages.Laurel.Grammar.LaurelGrammar
 import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 import Strata.Languages.Laurel.LaurelCompilationPipeline
 
-open StrataTest.Util
 open Strata
 open Strata.Elab (parseStrataProgramFromDialect)
 open Lean.Parser (InputContext)
 
 namespace Strata.Laurel
 
-def processLaurelFileWithOptions (options : LaurelVerifyOptions) (input : InputContext) : IO (Array Diagnostic) := do
+/-- Parse + translate + run the configurable Laurel pipeline on raw source,
+    returning the diagnostics. Useful for ad-hoc invocations from `#eval`
+    where you want to control `LaurelVerifyOptions` (solver, timeout,
+    intermediate-file capture, etc.). -/
+def processLaurelFileWithOptions (options : LaurelVerifyOptions) (input : InputContext) :
+    IO (Array Diagnostic) := do
   let dialects := Strata.Elab.LoadedDialects.ofDialects! #[initDialect, Laurel]
   let strataProgram ← parseStrataProgramFromDialect dialects Laurel.name input
-
   let uri := Strata.Uri.file input.fileName
-  let transResult := Laurel.TransM.run uri (Laurel.parseProgram strataProgram)
-  match transResult with
+  match Laurel.TransM.run uri (Laurel.parseProgram strataProgram) with
   | .error transErrors => throw (IO.userError s!"Translation errors: {transErrors}")
   | .ok laurelProgram =>
     let files := Map.insert Map.empty uri input.fileMap
-    let diagnostics ← Laurel.verifyToDiagnostics files laurelProgram options
-
-    pure diagnostics
-
-def processLaurelFile (input : InputContext) : IO (Array Diagnostic) :=
-  processLaurelFileWithOptions default input
+    Laurel.verifyToDiagnostics files laurelProgram options
 
 /-- Path to the directory for intermediate files, inside the build directory.
     Resolved from the current working directory so it works on any machine. -/
@@ -42,11 +45,12 @@ def buildDir : IO String := do
   let cwd ← IO.currentDir
   return s!"{cwd}/.lake/build/intermediatePrograms/"
 
-/-- Debug helper: run the Laurel pipeline keeping intermediate pass outputs in `.lake/build/intermediatePrograms/`.
-    Not used by any test in this repo; invoke manually via `#eval processLaurelFileKeepIntermediates (stringInputContext …)`
+/-- Debug helper: run the Laurel pipeline keeping intermediate pass outputs
+    in `.lake/build/intermediatePrograms/`. Invoke manually via
+    `#eval processLaurelFileKeepIntermediates (Strata.Parser.stringInputContext "name" source)`
     when diagnosing pass-internal issues. -/
 def processLaurelFileKeepIntermediates (input : InputContext) : IO (Array Diagnostic) := do
   let dir ← buildDir
-  processLaurelFileWithOptions { translateOptions := { keepAllFilesPrefix := dir}} input
+  processLaurelFileWithOptions { translateOptions := { keepAllFilesPrefix := dir } } input
 
 end Laurel

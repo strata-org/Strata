@@ -1818,7 +1818,7 @@ structure Diagnostic where
   ending : Lean.Position
   message : String
   type : DiagnosticType
-  deriving Repr, BEq
+  deriving Repr, BEq, Lean.ToExpr
 
 def DiagnosticModel.toDiagnostic (files: Map Strata.Uri Lean.FileMap) (dm: DiagnosticModel): Diagnostic :=
   let fileMap := (files.find? dm.fileRange.file).getD

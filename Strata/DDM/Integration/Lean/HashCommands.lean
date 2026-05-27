@@ -25,14 +25,14 @@ open Strata.Lean (arrayToExpr listToExpr)
 
 namespace Strata
 
-class HasInputContext (m : Type → Type _) [Functor m] where
+public class HasInputContext (m : Type → Type _) [Functor m] where
   getInputContext : m InputContext
   getFileName : m FilePath :=
     (fun ctx => FilePath.mk ctx.fileName) <$> getInputContext
 
 meta section
 
-instance : HasInputContext CommandElabM where
+public instance : HasInputContext CommandElabM where
   getInputContext := do
     let ctx ← read
     pure {
@@ -42,7 +42,7 @@ instance : HasInputContext CommandElabM where
     }
   getFileName := return (← read).fileName
 
-instance : HasInputContext CoreM where
+public instance : HasInputContext CoreM where
   getInputContext := do
     let ctx ← read
     pure {
@@ -78,7 +78,7 @@ def offsetMessage
 /--
 Add a definition to environment and compile it.
 -/
-def addDefn (name : Lean.Name)
+public def addDefn (name : Lean.Name)
             (type : Lean.Expr)
             (value : Lean.Expr)
             (levelParams : List Name := [])
