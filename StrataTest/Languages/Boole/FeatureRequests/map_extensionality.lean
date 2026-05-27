@@ -25,20 +25,8 @@ private def mapExtensionalitySeed : Strata.Program :=
 #strata
 program Boole;
 
-// Implemented shape for direct `Map` types: `a =~= b` lowers to
-// `∀ i: int . a[i] == b[i]`.
-//
-// spec {
-//   requires ∀ i: int . a[i] == b[i];
-//   ensures a =~= b;
-// }
-
-// TODO(feature:extensional-equality): normalize type synonyms so
-// `type IntMap := Map int int` also works with `=~=`.
-// TODO(feature:extensional-equality): extend the same idea to other collection
-// types such as sequences once we settle the intended semantics.
-// TODO(feature:extensional-equality): review quantified triggers/solver
-// behavior as more extensional cases are added.
+// `a =~= b` lowers to `∀ i: int . a[i] == b[i]`.
+// Remaining gap: named map type synonyms do not yet work with `=~=`.
 
 procedure map_extensionality_seed(a: Map int int, b: Map int int) returns ()
 spec {
@@ -50,8 +38,16 @@ spec {
 };
 #end
 
-#guard_msgs (drop info) in
-#eval Strata.Boole.verify "cvc5" mapExtensionalitySeed
+/-- info:
+Obligation: assert_2_986
+Property: assert
+Result: ✅ pass
+
+Obligation: map_extensionality_seed_ensures_1_963
+Property: assert
+Result: ✅ pass-/
+#guard_msgs in
+#eval Strata.Boole.verify "cvc5" mapExtensionalitySeed (options := .quiet)
 
 example : Strata.smtVCsCorrect mapExtensionalitySeed := by
   gen_smt_vcs

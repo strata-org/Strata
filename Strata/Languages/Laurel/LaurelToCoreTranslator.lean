@@ -25,6 +25,7 @@ public import Strata.Languages.Laurel.CoreDefinitionsForLaurel
 public import Strata.Languages.Laurel.CoreGroupingAndOrdering
 import Strata.DDM.Util.DecimalRat
 import Strata.DL.Imperative.Stmt
+import Strata.Pipeline.Messages
 import Strata.DL.Imperative.MetaData
 import Strata.DL.Lambda.LExpr
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
@@ -92,7 +93,7 @@ def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
   | .TSet elementType => return Core.mapTy (← translateType elementType) LMonoTy.bool
   | .TMap keyType valueType => return Core.mapTy (← translateType keyType) (← translateType valueType)
   | .UserDefined name =>
-    match name.uniqueId.bind model.refToDef.get? with
+    match model.get? name with
     | some (.compositeType _) => return .tcons "Composite" []
     | some (.datatypeDefinition dt) => return .tcons dt.name.text []
     | some (.datatypeConstructor typeName _) => return .tcons typeName.text []
@@ -624,7 +625,6 @@ structure LaurelTranslateOptions where
   inlineFunctionsWhenPossible : Bool := false
   overflowChecks : Core.OverflowChecks := {}
   keepAllFilesPrefix : Option String := none
-  profile : Bool := false
 
 instance : Inhabited LaurelTranslateOptions where
   default := {}

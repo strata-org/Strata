@@ -15,6 +15,12 @@ namespace Strata.Laurel
 
 public section
 
+/-- The name of the heap variable used by the heap parameterization pass. -/
+def heapVarName : Identifier := "$heap"
+
+/-- The name of the input heap parameter used by the heap parameterization pass. -/
+def heapInVarName : Identifier := "$heap_in"
+
 /--
 The Laurel Core prelude defines the heap model types and operations
 used by the Laurel-to-Core translator. These declarations are expressed
