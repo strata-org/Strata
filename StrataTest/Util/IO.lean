@@ -3,8 +3,11 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Util.IO
+meta import Strata.Util.IO
+
+meta section
 
 -- Test that readInputSource can read from a regular file
 def testReadFile : IO Unit := do
@@ -48,3 +51,5 @@ info: Binary file read test passed
 #eval do
   testReadBinFile
   IO.println "Binary file read test passed"
+
+end

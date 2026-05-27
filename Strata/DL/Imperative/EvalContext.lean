@@ -7,9 +7,6 @@ module
 
 public import Strata.DL.Imperative.Cmd
 public import Strata.DL.Imperative.EvalError
-public import Strata.DL.Imperative.MetaData
-public import Strata.DL.Util.ListMap
-public import Strata.DL.Util.Maps
 
 namespace Imperative
 open Std (ToFormat Format format)
@@ -102,12 +99,13 @@ inductive PropertyType where
   | assert
   | divisionByZero
   | arithmeticOverflow
+  | outOfBoundsAccess
   deriving Repr, DecidableEq
 
 /-- Whether an unreachable path counts as pass for this property type.
     Assertions pass vacuously when unreachable; covers fail. -/
 def PropertyType.passWhenUnreachable : PropertyType → Bool
-  | .assert | .divisionByZero | .arithmeticOverflow => true
+  | .assert | .divisionByZero | .arithmeticOverflow | .outOfBoundsAccess => true
   | .cover => false
 
 instance : ToFormat PropertyType where
@@ -116,6 +114,21 @@ instance : ToFormat PropertyType where
     | .assert => "assert"
     | .divisionByZero => "division by zero check"
     | .arithmeticOverflow => "arithmetic overflow check"
+    | .outOfBoundsAccess => "out-of-bounds access check"
+
+/-- Convert a `MetaData` entry's property-type classification string to the
+    `PropertyType` enum. Falls back to `.assert` when the metadata carries
+    no classification or an unrecognized string; callers that emit
+    propertyType classifications should add a matching arm here. -/
+def convertMetaDataPropertyType {P : PureExpr} [BEq P.Ident]
+    (md : MetaData P) : PropertyType :=
+  match md.getPropertyType with
+  | some s =>
+    if s == MetaData.divisionByZero then .divisionByZero
+    else if s == MetaData.arithmeticOverflow then .arithmeticOverflow
+    else if s == MetaData.outOfBoundsAccess then .outOfBoundsAccess
+    else .assert
+  | none => .assert
 
 /--
 A proof obligation can be discharged by some backend solver or a dedicated

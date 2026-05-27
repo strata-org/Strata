@@ -5,14 +5,12 @@
 -/
 module
 
-public import Strata.DL.SMT.DDMTransform.Translate
-public import Strata.DL.SMT.Factory
-public import Strata.DL.SMT.Op
-public import Strata.Util.Name
 public import Strata.DL.SMT.Solver
-public import Strata.DL.SMT.Term
-public import Strata.DL.SMT.TermType
-import Std.Data.HashMap
+import Std.Tactic.BVDecide.Normalize.Prop
+import Strata.DL.SMT.DDMTransform.Parse
+import Strata.DL.SMT.Factory
+import Strata.Util.Name
+import Strata.Util.Tactics
 
 /-!
 Based on Cedar's Term language.
@@ -177,7 +175,7 @@ private theorem extractTriggerGroup_sizeOf (t ti : Term) (h : ti ∈ extractTrig
   · simp_all
 
 /-- Every term nested in `extractTriggers t` has `sizeOf ≤ sizeOf t`. -/
-private theorem extractTriggers_sizeOf (t : Term) (ts : List Term) (ti : Term)
+theorem extractTriggers_sizeOf (t : Term) (ts : List Term) (ti : Term)
     (hts : ts ∈ extractTriggers t) (hti : ti ∈ ts) :
     sizeOf ti ≤ sizeOf t := by
   unfold extractTriggers at hts

@@ -191,6 +191,37 @@ declared.  This includes transitive imports of the dialect being imported.
 Imports the dialect _ident_.
 :::
 
+## Dialect Options
+
+Dialect options configure elaboration behavior for programs using the dialect.
+
+:::paragraph
+`dialect_option` _name_ _value_`;`
+
+Sets the dialect option _name_ to _value_.
+:::
+
+The following options are supported:
+
+- `typecheck` (`on` | `off`, default `on`): When set to `off`, the elaborator
+  skips type inference and unification for expression arguments. Implicit type
+  parameter slots are filled with anonymous type placeholders. Variable name
+  resolution and global context population still operate normally.
+
+  The flag is a property of the program's primary dialect; imported dialects'
+  flags are not consulted during elaboration.
+
+  This is intended for cases where the type checker cannot infer implicit type
+  arguments — notably when template-generated accessors with unresolved type
+  variable return types are composed with polymorphic functions that require
+  concrete type arguments for unification.
+
+  With `typecheck off`, type errors in a program are not detected at
+  elaboration time. They will surface at later pipeline stages (VC generation,
+  symbolic evaluation, SMT encoding) with less-helpful diagnostics. Only use
+  this option when the elaboration error is a known type-checker limitation
+  rather than a real type mismatch.
+
 ## Syntactic Categories
 
 Syntactic categories are introduced by the `category` declaration:
@@ -812,14 +843,14 @@ for serialization, pretty-printing, and cross-dialect interoperability.
 ### Basic Syntax
 
 ```
-import Strata.DDM.Integration.Lean
+import StrataDDM.Integration.Lean
 
 namespace MyDialect
 #strata_gen MyDialect
 end MyDialect
 ```
 
-`#strata_gen` requires `import Strata.DDM.Integration.Lean` and takes a single
+`#strata_gen` requires `import StrataDDM.Integration.Lean` and takes a single
 argument: the name of a dialect that has already been defined (via
 `#dialect ... #end` or `#load_dialect`).  The command should typically be placed
 inside a `namespace` block so that the generated types and functions are scoped

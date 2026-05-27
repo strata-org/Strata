@@ -3,12 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Transform.DetToKleene
-import Strata.Languages.Core.StatementSemantics
-import Strata.Languages.Core.ProgramType
-import Strata.Languages.Core.ProgramWF
-import Strata.DL.Lambda.IntBoolFactory
+meta import Strata.Transform.DetToKleene
+meta import Strata.Languages.Core.StatementSemantics
+meta import Strata.Languages.Core.ProgramType
+meta import Strata.Languages.Core.ProgramWF
+meta import Strata.DL.Lambda.IntBoolFactory
+
+meta section
 
 open Core
 
@@ -33,3 +36,4 @@ def KleeneTest1Ans : Option (KleeneStmt Expression (Cmd Expression)) :=
 #eval (toString $ Std.format (StmtToKleeneStmt KleeneTest1)) == (toString $ Std.format KleeneTest1Ans)
 
 end KleeneExamples
+end

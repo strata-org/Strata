@@ -5,8 +5,8 @@
 -/
 module
 meta import Strata.Languages.Python.Specs
-meta import Strata.Languages.Python.Specs.DDM
-import Strata.DDM.Ion
+meta import all Strata.Languages.Python.Specs.DDM
+import StrataDDM.Ion
 import Strata.Languages.Python.PythonDialect
 meta import StrataTest.Util.Python
 
@@ -226,6 +226,7 @@ meta def testCase : IO Unit := withPython fun pythonCmd => do
           (strataDir := strataDir)
           (pythonFile := testDir / "main.py")
           (searchPath := testDir)
+          (.ofComponent (.ofString "main"))
           |>.toBaseIO
       match r with
       | .ok (sigs, warnings) =>
@@ -264,6 +265,7 @@ meta def warningTestCase : IO Unit := withPython fun pythonCmd => do
           (strataDir := strataDir)
           (pythonFile := testDir / "warnings.py")
           (searchPath := testDir)
+          (.ofComponent (.ofString "warnings"))
           |>.toBaseIO
       match r with
       | .ok (sigs, warnings) =>
@@ -282,7 +284,7 @@ meta def warningTestCase : IO Unit := withPython fun pythonCmd => do
           "skipped Expr in function body"      -- kw["a"] (bare expression)
         ]
         for expected in expectedWarnings do
-          if !warnings.any (containsSubstr · expected) then
+          if !warnings.any (·.contains expected) then
             let warnStr := warnings.foldl (init := "") fun acc w => s!"{acc}\n  {w}"
             throw <| IO.userError
               s!"Missing expected warning containing \"{expected}\". Actual warnings:{warnStr}"
@@ -294,7 +296,7 @@ meta def warningTestCase : IO Unit := withPython fun pythonCmd => do
 
 
 meta def testNegRoundTrip (v : Nat) : Bool :=
-  DDM.Int.ofDDM (.negInt SourceRange.none ⟨.none, v⟩) = .negOfNat v
+  DDM.Int.ofDDM (.negInt SourceRange.none ⟨.none, v⟩) = Int.negOfNat v
 
 #guard testNegRoundTrip 0
 #guard testNegRoundTrip 1

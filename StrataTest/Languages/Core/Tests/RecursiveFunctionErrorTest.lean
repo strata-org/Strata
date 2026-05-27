@@ -3,8 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core.Verifier
+import StrataDDM.Integration.Lean.HashCommands
+
+meta section
 
 /-!
 # Recursive Function Error Tests
@@ -71,3 +75,5 @@ Recursive function 'listLen' requires a @[cases] parameter
 #eval verify noCasesPgm (options := .quiet)
 
 end Strata.RecursiveFunctionErrorTest
+
+end

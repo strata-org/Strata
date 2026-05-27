@@ -5,7 +5,6 @@
 -/
 module
 
-import Lean.Meta.Basic
 
 public import Strata.Languages.Core.SMTEncoder
 
@@ -369,8 +368,12 @@ def translateTerm (t : SMT.Term) : TranslateM (Expr × Expr) := do
     leftAssocOp mkIntMul as
   | .app .div as _ =>
     leftAssocOp mkIntDiv as
+  | .app .mod [x, y] _ =>
+    let (α, x) ← translateTerm x
+    let (_, y) ← translateTerm y
+    return (α, mkApp2 mkIntMod x y)
   | .app .mod as _ =>
-    leftAssocOp mkIntMod as
+    throw m!"Error: 'mod' expects exactly two operands, got '{as.length}'"
   | .app .abs [a] _ =>
     let (_, a) ← translateTerm a
     let c := mkApp2 mkIntLT a (toExpr (0 : Int))
@@ -545,16 +548,20 @@ def translateTerm (t : SMT.Term) : TranslateM (Expr × Expr) := do
   | t => throw m!"Error: unsupported term '{repr t}'"
 where
   leftAssocOp (op : Expr) (as : List SMT.Term) : TranslateM (Expr × Expr) := do
-    let a :: as := as | throw m!"Error: expected at least two arguments for '{op}', got '{as.length}'"
+    let a :: b :: as := as
+      | throw m!"Error: expected at least two arguments for '{op}', got '{as.length}'"
     let (α, a) ← translateTerm a
+    let (_, b) ← translateTerm b
     let as ← as.mapM (translateTerm · >>= pure ∘ Prod.snd)
-    return (α, as.foldl (mkApp2 op) a)
+    return (α, as.foldl (mkApp2 op) (mkApp2 op a b))
   leftAssocOpBitVec (op : Nat → Expr) (as : List SMT.Term) : TranslateM (Expr × Expr) := do
-    let a :: as := as | throw m!"Error: expected at least two arguments for BitVec op, got '{as.length}'"
+    let a :: b :: as := as
+      | throw m!"Error: expected at least two arguments for BitVec op, got '{as.length}'"
     let (α, a) ← translateTerm a
+    let (_, b) ← translateTerm b
     let op := op (← getBitVecWidth α)
     let as ← as.mapM (translateTerm · >>= pure ∘ Prod.snd)
-    return (α, as.foldl (mkApp2 op) a)
+    return (α, as.foldl (mkApp2 op) (mkApp2 op a b))
 
 /--
 Translate assumptions and a conclusion into a right-associated implication

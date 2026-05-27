@@ -7,7 +7,6 @@ module
 
 public import Strata.DL.Imperative.PureExpr
 public import Strata.DL.Util.DecidableEq
-public import Strata.Util.FileRange
 public import Strata.Util.Provenance
 
 namespace Imperative
@@ -319,6 +318,9 @@ def MetaData.divisionByZero : String := "divisionByZero"
 
 /-- Metadata value for arithmetic-overflow property type classification. -/
 def MetaData.arithmeticOverflow : String := "arithmeticOverflow"
+
+/-- Metadata value for out-of-bounds-access property type classification. -/
+def MetaData.outOfBoundsAccess : String := "outOfBoundsAccess"
 
 /-- Read the property type classification from metadata, if present. -/
 def MetaData.getPropertyType {P : PureExpr} [BEq P.Ident] (md : MetaData P) : Option String :=

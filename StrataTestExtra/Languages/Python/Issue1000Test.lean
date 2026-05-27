@@ -6,6 +6,7 @@
 
 import StrataTest.Languages.Python.TestExamples
 import StrataTest.Util.TestDiagnostics
+import StrataTest.Util.Python
 
 open StrataTest.Util
 open Strata.Python (processPythonFile withPython)

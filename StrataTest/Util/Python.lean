@@ -5,7 +5,8 @@
 -/
 
 module
-import all Strata.DDM.Util.Fin
+public meta import StrataDDM.Util.Fin
+import all StrataDDM.Util.Fin
 
 /-
 This module provides `findPython3`, a utility that locates
@@ -16,7 +17,7 @@ It also provides a few functions for checking Python versions and
 running `mise`.
 -/
 
-public section
+public meta section
 namespace Strata.Python
 
 /--
@@ -69,6 +70,18 @@ def miseWhere (runtime : String) (miseCmd : String := "mise") : IO (Option Syste
   pure <| some stdout.trimAscii.toString
 
 /--
+info: none
+-/
+#guard_msgs in
+#eval miseWhere "Python@1.0"
+
+/--
+info: none
+-/
+#guard_msgs in
+#eval miseWhere "Python@3.12" (miseCmd := "nonexisting-mise")
+
+/--
 This checks to see if a module is found.
 -/
 def pythonCheckModule (pythonCmd : System.FilePath) (moduleName : String) : IO Bool := do
@@ -96,18 +109,6 @@ def pythonCheckModule (pythonCmd : System.FilePath) (moduleName : String) : IO B
   | _ =>
     throw <| .userError
       s!"{pythonCmd} has unexpected exit code {exitCode}"
-
-/--
-info: none
--/
-#guard_msgs in
-#eval miseWhere "Python@1.0"
-
-/--
-info: none
--/
-#guard_msgs in
-#eval miseWhere "Python@3.12" (miseCmd := "nonexisting-mise")
 
 /--
 Utility to get Python 3 minor version.
@@ -207,10 +208,6 @@ def withPython (action : System.FilePath → IO Unit) : IO Unit := do
     throw <| .userError
       s!"Python Strata libraries not installed in {pythonCmd}."
   action pythonCmd
-
-/-- Check if `needle` is a substring of `haystack`. -/
-def containsSubstr (haystack needle : String) : Bool :=
-  (haystack.splitOn needle).length != 1
 
 end Strata.Python
 end

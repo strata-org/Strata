@@ -5,8 +5,10 @@
 -/
 module
 
-public import Strata.Languages.Core.Verifier
-public import Strata.Languages.Python.Regex.ReToCore
+public import Strata.DL.Lambda.Factory
+public import Strata.Languages.Core.Identifiers
+import Strata.Languages.Core.Factory
+import Strata.Languages.Python.Regex.ReToCore
 
 namespace Strata
 namespace Python

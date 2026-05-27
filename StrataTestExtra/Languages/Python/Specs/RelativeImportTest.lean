@@ -7,7 +7,7 @@ module
 
 meta import Strata.Languages.Python.Specs
 meta import Strata.Languages.Python.Specs.DDM
-import Strata.DDM.Ion
+import StrataDDM.Ion
 import Strata.Languages.Python.PythonDialect
 meta import StrataTest.Util.Python
 
@@ -20,8 +20,8 @@ actionable error messages.
 
 namespace Strata.Python.Specs.RelativeImportTest
 
-open Strata.Python.Specs (translateFile ModuleName)
-open Strata.Python (containsSubstr)
+open Strata.Python.Specs (translateFile)
+open Strata.Python (ModuleName)
 
 private meta def testDir : System.FilePath :=
   "StrataTestExtra/Languages/Python/Specs/import_test"
@@ -38,26 +38,16 @@ private meta def runTest (pythonCmd : System.FilePath) (dialectFile : System.Fil
     let pythonFile := testDir / file
     let searchPath := if searchFromTestDir then testDir
       else pythonFile.parent.getD pythonFile
-    -- When searching from testDir, derive a multi-component module name
-    -- from the relative path so that currentModulePrefix is non-empty
-    -- (e.g. "service/rel_import_basic.py" → "service.rel_import_basic").
-    let moduleName ← if searchFromTestDir then
-      let stem := if (file : String).endsWith "/__init__.py" then
-        ((file : String).dropEnd "/__init__.py".length).toString
-      else
-        ((file : String).dropEnd ".py".length).toString
-      let dotted := stem.replace "/" "."
-      match ModuleName.ofString dotted with
-      | .ok m => pure (some m)
-      | .error e => return some s!"{file}: bad module name: {e}"
-    else pure none
+    let moduleName ← match ModuleName.ofRelativePath file with
+      | .ok info => pure info.moduleName
+      | .error msg => return some s!"{file}: {msg}"
     let r ← translateFile
       (pythonCmd := toString pythonCmd)
       (dialectFile := dialectFile)
       (strataDir := strataDir)
       (pythonFile := pythonFile)
       (searchPath := searchPath)
-      (moduleName := moduleName)
+      moduleName
       |>.toBaseIO
     if expectedErrors.isEmpty then
       match r with
@@ -68,7 +58,7 @@ private meta def runTest (pythonCmd : System.FilePath) (dialectFile : System.Fil
       | .ok _ => return some s!"{file}: expected error but translation succeeded"
       | .error msg =>
         for expected in expectedErrors do
-          if !containsSubstr msg expected then
+          if !msg.contains expected then
             return some s!"{file}: error missing expected substring \"{expected}\"\nActual error:\n{msg}"
         return none
 

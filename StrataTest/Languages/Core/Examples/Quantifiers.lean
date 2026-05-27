@@ -3,9 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core.Verifier
+import StrataDDM.Integration.Lean.HashCommands
 
+meta section
 ---------------------------------------------------------------------
 namespace Strata
 
@@ -54,17 +57,17 @@ VCs:
 Label: good_assert
 Property: assert
 Obligation:
-forall __q0 : int :: !(__q0 == __q0 + 1)
+forall l : int :: !(l == l + 1)
 
 Label: good
 Property: assert
 Obligation:
-forall __q0 : int :: exists __q1 : int :: x@1 + 1 + (__q1 + __q0) == __q0 + (__q1 + (x@1 + 1))
+forall y : int :: exists z : int :: x@1 + 1 + (z + y) == y + (z + (x@1 + 1))
 
 Label: bad
 Property: assert
 Obligation:
-forall __q0 : int :: __q0 < x@1
+forall q : int :: q < x@1
 
 ---
 info:
@@ -93,42 +96,42 @@ VCs:
 Label: trigger_assert
 Property: assert
 Assumptions:
-f_pos: forall __q0 : int ::  { f(__q0) }
-  f(__q0) > 0
-g_neg: forall __q0 : int :: forall __q1 : int ::  { g(__q0, __q1) }
-  __q0 > 0 ==> g(__q0, __q1) < 0
-f_and_g: forall __q0 : int :: forall __q1 : int ::  { g(__q0, __q1), f(__q0) }
-  g(__q0, __q1) < f(__q0)
-f_and_g2: forall __q0 : int :: forall __q1 : int ::  { g(__q0, __q1), f(__q0) }
-  g(__q0, __q1) < f(__q0)
+f_pos: forall x : int ::  { f(x) }
+  f(x) > 0
+g_neg: forall x : int :: forall y : int ::  { g(x, y) }
+  x > 0 ==> g(x, y) < 0
+f_and_g: forall x : int :: forall y : int ::  { g(x, y), f(x) }
+  g(x, y) < f(x)
+f_and_g2: forall x : int :: forall y : int ::  { g(x, y), f(x) }
+  g(x, y) < f(x)
 Obligation:
 f(x@1) > 0
 
 Label: multi_trigger_assert
 Property: assert
 Assumptions:
-f_pos: forall __q0 : int ::  { f(__q0) }
-  f(__q0) > 0
-g_neg: forall __q0 : int :: forall __q1 : int ::  { g(__q0, __q1) }
-  __q0 > 0 ==> g(__q0, __q1) < 0
-f_and_g: forall __q0 : int :: forall __q1 : int ::  { g(__q0, __q1), f(__q0) }
-  g(__q0, __q1) < f(__q0)
-f_and_g2: forall __q0 : int :: forall __q1 : int ::  { g(__q0, __q1), f(__q0) }
-  g(__q0, __q1) < f(__q0)
+f_pos: forall x : int ::  { f(x) }
+  f(x) > 0
+g_neg: forall x : int :: forall y : int ::  { g(x, y) }
+  x > 0 ==> g(x, y) < 0
+f_and_g: forall x : int :: forall y : int ::  { g(x, y), f(x) }
+  g(x, y) < f(x)
+f_and_g2: forall x : int :: forall y : int ::  { g(x, y), f(x) }
+  g(x, y) < f(x)
 Obligation:
-forall __q0 : int :: g(x@1, __q0) < f(x@1)
+forall y : int :: g(x@1, y) < f(x@1)
 
 Label: f_and_g
 Property: assert
 Assumptions:
-f_pos: forall __q0 : int ::  { f(__q0) }
-  f(__q0) > 0
-g_neg: forall __q0 : int :: forall __q1 : int ::  { g(__q0, __q1) }
-  __q0 > 0 ==> g(__q0, __q1) < 0
-f_and_g: forall __q0 : int :: forall __q1 : int ::  { g(__q0, __q1), f(__q0) }
-  g(__q0, __q1) < f(__q0)
-f_and_g2: forall __q0 : int :: forall __q1 : int ::  { g(__q0, __q1), f(__q0) }
-  g(__q0, __q1) < f(__q0)
+f_pos: forall x : int ::  { f(x) }
+  f(x) > 0
+g_neg: forall x : int :: forall y : int ::  { g(x, y) }
+  x > 0 ==> g(x, y) < 0
+f_and_g: forall x : int :: forall y : int ::  { g(x, y), f(x) }
+  g(x, y) < f(x)
+f_and_g2: forall x : int :: forall y : int ::  { g(x, y), f(x) }
+  g(x, y) < f(x)
 Obligation:
 g(f(x@1), x@1) < 0
 
@@ -148,3 +151,6 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify triggerPgm
+
+end Strata
+end

@@ -3,8 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core.Verifier
+import StrataDDM.Integration.Lean.HashCommands
+
+meta section
 
 /-!
 # Mutual Recursive Function Error Tests
@@ -78,3 +82,5 @@ Recursive function 'isEven' requires a @[cases] parameter
 #eval verify noCasesMutualPgm (options := .quiet)
 
 end Strata.MutualRecursiveFunctionErrorTest
+
+end

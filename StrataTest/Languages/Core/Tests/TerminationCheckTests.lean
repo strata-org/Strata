@@ -3,8 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core.Verifier
+import StrataDDM.Integration.Lean.HashCommands
+
+meta section
 
 /-!
 # Termination Checking Tests
@@ -54,10 +58,10 @@ Obligation:
 Label: listLen_terminates_0
 Property: assert
 Assumptions:
-IntList..adtRank_0: forall __q0 : IntList ::  { IntList..adtRank(__q0) }
-  IntList..adtRank(__q0) >= 0
-IntList..adtRank_1: forall __q0 : int :: forall __q1 : IntList ::  { IntList..adtRank(Cons(__q0, __q1)) }
-  IntList..adtRank(__q1) < IntList..adtRank(Cons(__q0, __q1))
+IntList..adtRank_0: forall x : IntList ::  { IntList..adtRank(x) }
+  IntList..adtRank(x) >= 0
+IntList..adtRank_1: forall hd : int :: forall tl : IntList ::  { IntList..adtRank(Cons(hd, tl)) }
+  IntList..adtRank(tl) < IntList..adtRank(Cons(hd, tl))
 Obligation:
 !(IntList..isNil(xs@2)) ==> IntList..adtRank(IntList..tl(xs@2)) < IntList..adtRank(xs@2)
 
@@ -320,10 +324,10 @@ Obligation:
 Label: listLen_terminates_0
 Property: assert
 Assumptions:
-IntList..adtRank_0: forall __q0 : IntList ::  { IntList..adtRank(__q0) }
-  IntList..adtRank(__q0) >= 0
-IntList..adtRank_1: forall __q0 : int :: forall __q1 : IntList ::  { IntList..adtRank(Cons(__q0, __q1)) }
-  IntList..adtRank(__q1) < IntList..adtRank(Cons(__q0, __q1))
+IntList..adtRank_0: forall x : IntList ::  { IntList..adtRank(x) }
+  IntList..adtRank(x) >= 0
+IntList..adtRank_1: forall hd : int :: forall tl : IntList ::  { IntList..adtRank(Cons(hd, tl)) }
+  IntList..adtRank(tl) < IntList..adtRank(Cons(hd, tl))
 Obligation:
 !(IntList..isNil(xs@2)) ==> IntList..adtRank(IntList..tl(xs@2)) < IntList..adtRank(xs@2)
 
@@ -340,10 +344,10 @@ Obligation:
 Label: listSum_terminates_0
 Property: assert
 Assumptions:
-IntList..adtRank_0: forall __q0 : IntList ::  { IntList..adtRank(__q0) }
-  IntList..adtRank(__q0) >= 0
-IntList..adtRank_1: forall __q0 : int :: forall __q1 : IntList ::  { IntList..adtRank(Cons(__q0, __q1)) }
-  IntList..adtRank(__q1) < IntList..adtRank(Cons(__q0, __q1))
+IntList..adtRank_0: forall x : IntList ::  { IntList..adtRank(x) }
+  IntList..adtRank(x) >= 0
+IntList..adtRank_1: forall hd : int :: forall tl : IntList ::  { IntList..adtRank(Cons(hd, tl)) }
+  IntList..adtRank(tl) < IntList..adtRank(Cons(hd, tl))
 Obligation:
 !(IntList..isNil(xs@4)) ==> IntList..adtRank(IntList..tl(xs@4)) < IntList..adtRank(xs@4)
 
@@ -449,42 +453,42 @@ Obligation:
 Label: treeSize_terminates_0
 Property: assert
 Assumptions:
-Tree..adtRank_0: forall __q0 : Tree ::  { Tree..adtRank(__q0) }
-  Tree..adtRank(__q0) >= 0
-Tree..adtRank_1: forall __q0 : Tree :: forall __q1 : Tree ::  { Tree..adtRank(Branch(__q0, __q1)) }
-  Tree..adtRank(__q0) < Tree..adtRank(Branch(__q0, __q1))
-Tree..adtRank_2: forall __q0 : Tree :: forall __q1 : Tree ::  { Tree..adtRank(Branch(__q0, __q1)) }
-  Tree..adtRank(__q1) < Tree..adtRank(Branch(__q0, __q1))
-Tree..adtRank_3: forall __q0 : int :: forall __q1 : Tree ::  { Tree..adtRank(Chain(__q0, __q1)) }
-  Tree..adtRank(__q1) < Tree..adtRank(Chain(__q0, __q1))
+Tree..adtRank_0: forall x : Tree ::  { Tree..adtRank(x) }
+  Tree..adtRank(x) >= 0
+Tree..adtRank_1: forall left : Tree :: forall right : Tree ::  { Tree..adtRank(Branch(left, right)) }
+  Tree..adtRank(left) < Tree..adtRank(Branch(left, right))
+Tree..adtRank_2: forall left : Tree :: forall right : Tree ::  { Tree..adtRank(Branch(left, right)) }
+  Tree..adtRank(right) < Tree..adtRank(Branch(left, right))
+Tree..adtRank_3: forall head : int :: forall tail : Tree ::  { Tree..adtRank(Chain(head, tail)) }
+  Tree..adtRank(tail) < Tree..adtRank(Chain(head, tail))
 Obligation:
 Tree..isBranch(t@2) ==> !(Tree..isLeaf(t@2)) ==> Tree..adtRank(Tree..left(t@2)) < Tree..adtRank(t@2)
 
 Label: treeSize_terminates_1
 Property: assert
 Assumptions:
-Tree..adtRank_0: forall __q0 : Tree ::  { Tree..adtRank(__q0) }
-  Tree..adtRank(__q0) >= 0
-Tree..adtRank_1: forall __q0 : Tree :: forall __q1 : Tree ::  { Tree..adtRank(Branch(__q0, __q1)) }
-  Tree..adtRank(__q0) < Tree..adtRank(Branch(__q0, __q1))
-Tree..adtRank_2: forall __q0 : Tree :: forall __q1 : Tree ::  { Tree..adtRank(Branch(__q0, __q1)) }
-  Tree..adtRank(__q1) < Tree..adtRank(Branch(__q0, __q1))
-Tree..adtRank_3: forall __q0 : int :: forall __q1 : Tree ::  { Tree..adtRank(Chain(__q0, __q1)) }
-  Tree..adtRank(__q1) < Tree..adtRank(Chain(__q0, __q1))
+Tree..adtRank_0: forall x : Tree ::  { Tree..adtRank(x) }
+  Tree..adtRank(x) >= 0
+Tree..adtRank_1: forall left : Tree :: forall right : Tree ::  { Tree..adtRank(Branch(left, right)) }
+  Tree..adtRank(left) < Tree..adtRank(Branch(left, right))
+Tree..adtRank_2: forall left : Tree :: forall right : Tree ::  { Tree..adtRank(Branch(left, right)) }
+  Tree..adtRank(right) < Tree..adtRank(Branch(left, right))
+Tree..adtRank_3: forall head : int :: forall tail : Tree ::  { Tree..adtRank(Chain(head, tail)) }
+  Tree..adtRank(tail) < Tree..adtRank(Chain(head, tail))
 Obligation:
 Tree..isBranch(t@2) ==> !(Tree..isLeaf(t@2)) ==> Tree..adtRank(Tree..right(t@2)) < Tree..adtRank(t@2)
 
 Label: treeSize_terminates_2
 Property: assert
 Assumptions:
-Tree..adtRank_0: forall __q0 : Tree ::  { Tree..adtRank(__q0) }
-  Tree..adtRank(__q0) >= 0
-Tree..adtRank_1: forall __q0 : Tree :: forall __q1 : Tree ::  { Tree..adtRank(Branch(__q0, __q1)) }
-  Tree..adtRank(__q0) < Tree..adtRank(Branch(__q0, __q1))
-Tree..adtRank_2: forall __q0 : Tree :: forall __q1 : Tree ::  { Tree..adtRank(Branch(__q0, __q1)) }
-  Tree..adtRank(__q1) < Tree..adtRank(Branch(__q0, __q1))
-Tree..adtRank_3: forall __q0 : int :: forall __q1 : Tree ::  { Tree..adtRank(Chain(__q0, __q1)) }
-  Tree..adtRank(__q1) < Tree..adtRank(Chain(__q0, __q1))
+Tree..adtRank_0: forall x : Tree ::  { Tree..adtRank(x) }
+  Tree..adtRank(x) >= 0
+Tree..adtRank_1: forall left : Tree :: forall right : Tree ::  { Tree..adtRank(Branch(left, right)) }
+  Tree..adtRank(left) < Tree..adtRank(Branch(left, right))
+Tree..adtRank_2: forall left : Tree :: forall right : Tree ::  { Tree..adtRank(Branch(left, right)) }
+  Tree..adtRank(right) < Tree..adtRank(Branch(left, right))
+Tree..adtRank_3: forall head : int :: forall tail : Tree ::  { Tree..adtRank(Chain(head, tail)) }
+  Tree..adtRank(tail) < Tree..adtRank(Chain(head, tail))
 Obligation:
 !(Tree..isBranch(t@2)) ==> !(Tree..isLeaf(t@2)) ==> Tree..adtRank(Tree..tail(t@2)) < Tree..adtRank(t@2)
 
@@ -581,10 +585,10 @@ Obligation:
 Label: intListLen_terminates_0
 Property: assert
 Assumptions:
-MyList..adtRank_0: forall __q0 : (MyList int) ::  { MyList..adtRank(__q0) }
-  MyList..adtRank(__q0) >= 0
-MyList..adtRank_1: forall __q0 : int :: forall __q1 : (MyList int) ::  { MyList..adtRank(Cons(__q0, __q1)) }
-  MyList..adtRank(__q1) < MyList..adtRank(Cons(__q0, __q1))
+MyList..adtRank_0: forall x : (MyList int) ::  { MyList..adtRank(x) }
+  MyList..adtRank(x) >= 0
+MyList..adtRank_1: forall hd : int :: forall tl : (MyList int) ::  { MyList..adtRank(Cons(hd, tl)) }
+  MyList..adtRank(tl) < MyList..adtRank(Cons(hd, tl))
 Obligation:
 !(MyList..isNil(xs@2)) ==> MyList..adtRank(MyList..tl(xs@2)) < MyList..adtRank(xs@2)
 
@@ -674,10 +678,10 @@ Obligation:
 Label: zipLen_terminates_0
 Property: assert
 Assumptions:
-IntList..adtRank_0: forall __q0 : IntList ::  { IntList..adtRank(__q0) }
-  IntList..adtRank(__q0) >= 0
-IntList..adtRank_1: forall __q0 : int :: forall __q1 : IntList ::  { IntList..adtRank(Cons(__q0, __q1)) }
-  IntList..adtRank(__q1) < IntList..adtRank(Cons(__q0, __q1))
+IntList..adtRank_0: forall x : IntList ::  { IntList..adtRank(x) }
+  IntList..adtRank(x) >= 0
+IntList..adtRank_1: forall hd : int :: forall tl : IntList ::  { IntList..adtRank(Cons(hd, tl)) }
+  IntList..adtRank(tl) < IntList..adtRank(Cons(hd, tl))
 Obligation:
 !(IntList..isNil(ys@2)) ==> !(IntList..isNil(xs@2)) ==> IntList..adtRank(IntList..tl(ys@2)) < IntList..adtRank(ys@2)
 
@@ -1151,20 +1155,20 @@ Obligation:
 Label: listLen_terminates_0
 Property: assert
 Assumptions:
-IntList..adtRank_0: forall __q0 : IntList ::  { IntList..adtRank(__q0) }
-  IntList..adtRank(__q0) >= 0
-IntList..adtRank_1: forall __q0 : int :: forall __q1 : IntList ::  { IntList..adtRank(Cons(__q0, __q1)) }
-  IntList..adtRank(__q1) < IntList..adtRank(Cons(__q0, __q1))
+IntList..adtRank_0: forall x : IntList ::  { IntList..adtRank(x) }
+  IntList..adtRank(x) >= 0
+IntList..adtRank_1: forall hd : int :: forall tl : IntList ::  { IntList..adtRank(Cons(hd, tl)) }
+  IntList..adtRank(tl) < IntList..adtRank(Cons(hd, tl))
 Obligation:
 !(IntList..isNil(xs@2)) ==> IntList..adtRank(IntList..tl(xs@2)) < IntList..adtRank(xs@2)
 
 Label: natToInt_terminates_0
 Property: assert
 Assumptions:
-MyNat..adtRank_0: forall __q0 : MyNat ::  { MyNat..adtRank(__q0) }
-  MyNat..adtRank(__q0) >= 0
-MyNat..adtRank_1: forall __q0 : MyNat ::  { MyNat..adtRank(Succ(__q0)) }
-  MyNat..adtRank(__q0) < MyNat..adtRank(Succ(__q0))
+MyNat..adtRank_0: forall x : MyNat ::  { MyNat..adtRank(x) }
+  MyNat..adtRank(x) >= 0
+MyNat..adtRank_1: forall pred : MyNat ::  { MyNat..adtRank(Succ(pred)) }
+  MyNat..adtRank(pred) < MyNat..adtRank(Succ(pred))
 Obligation:
 !(MyNat..isZero(n@2)) ==> MyNat..adtRank(MyNat..pred(n@2)) < MyNat..adtRank(n@2)
 
@@ -1210,3 +1214,5 @@ rec function bad (@[cases] xs : IntList) : int
 #eval verify decreasesNonVarPgm (options := .quiet)
 
 end Strata.TerminationCheckTest
+
+end

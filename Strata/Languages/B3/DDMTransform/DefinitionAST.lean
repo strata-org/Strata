@@ -5,9 +5,9 @@
 -/
 module
 
-public import Strata.DDM.Integration.Lean
-public import Strata.DDM.Util.Format
 import Strata.Util.Tactics
+public import StrataDDM.Integration.Lean.OfAstM
+import StrataDDM.Integration.Lean -- shake: keep
 
 public section
 

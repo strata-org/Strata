@@ -3,6 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 /-
 Tests that the Laurel compilation pipeline produces the expected statistics
@@ -10,12 +11,14 @@ counters. Uses `translateWithLaurel` which returns `Statistics` as the fourth
 tuple element.
 -/
 
-import Strata.DDM.Elab
-import Strata.DDM.BuiltinDialects.Init
-import Strata.Languages.Laurel.Grammar.LaurelGrammar
-import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
-import Strata.Languages.Laurel.LaurelCompilationPipeline
-import Strata.Util.Statistics
+meta import StrataDDM.Elab
+meta import StrataDDM.BuiltinDialects.Init
+meta import Strata.Languages.Laurel.Grammar.LaurelGrammar
+meta import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
+meta import Strata.Languages.Laurel.LaurelCompilationPipeline
+meta import Strata.Util.Statistics
+
+meta section
 
 open Strata
 open Strata.Elab (parseStrataProgramFromDialect)
@@ -73,3 +76,5 @@ procedure p2(x: int) returns (y: int)
   IO.print stats.format
 
 end Laurel
+end Strata
+end

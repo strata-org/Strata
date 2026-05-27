@@ -5,12 +5,14 @@
 -/
 module
 
-public import Strata.Backends.CBMC.GOTO.InstToJson
-public import Strata.Backends.CBMC.GOTO.DefaultSymbols
 public import Strata.Backends.CBMC.GOTO.LambdaToCProverGOTO
 public import Strata.DL.Imperative.ToCProverGOTO
-public import Strata.Languages.Core.Verifier
-import Lean.Parser.Types
+public import Strata.Backends.CBMC.GOTO.Program
+public import Strata.Languages.Core.Program
+import Strata.Backends.CBMC.GOTO.DefaultSymbols
+import Strata.Languages.Core.DDMTransform.Translate
+import Strata.Languages.Core.ProgramType
+import Strata.Util.Json
 
 public section
 

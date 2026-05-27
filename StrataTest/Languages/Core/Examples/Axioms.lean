@@ -3,11 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
+meta import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core.CallGraph
+import StrataDDM.Integration.Lean.HashCommands
 
-import Strata.Languages.Core.Verifier
-import Strata.Languages.Core.CallGraph
-
+meta section
 ---------------------------------------------------------------------
 namespace Strata
 
@@ -51,7 +53,7 @@ Property: assert
 Assumptions:
 a1: x == 5
 a2: y == 2
-f1: forall __q0 : int :: f(__q0) > __q0
+f1: forall y : int :: f(y) > y
 Obligation:
 x > y
 
@@ -60,7 +62,7 @@ Property: assert
 Assumptions:
 a1: x == 5
 a2: y == 2
-f1: forall __q0 : int :: f(__q0) > __q0
+f1: forall y : int :: f(y) > y
 Obligation:
 f(x + y) > 7
 
@@ -69,7 +71,7 @@ Property: assert
 Assumptions:
 a1: x == 5
 a2: y == 2
-f1: forall __q0 : int :: f(__q0) > __q0
+f1: forall y : int :: f(y) > y
 Obligation:
 y == 2
 
@@ -78,7 +80,7 @@ Property: assert
 Assumptions:
 a1: x == 5
 a2: y == 2
-f1: forall __q0 : int :: f(__q0) > __q0
+f1: forall y : int :: f(y) > y
 Obligation:
 f(y) > y
 
@@ -139,10 +141,10 @@ VCs:
 Label: axiomPgm2_main_assert
 Property: assert
 Assumptions:
-f_g_ax: forall __q0 : int ::  { f(__q0) }
-  f(__q0) == g(__q0) + 1
-g_ax: forall __q0 : int ::  { g(__q0), f(__q0) }
-  g(__q0) == __q0 * 2
+f_g_ax: forall x : int ::  { f(x) }
+  f(x) == g(x) + 1
+g_ax: forall x : int ::  { g(x), f(x) }
+  g(x) == x * 2
 Obligation:
 x@1 >= 0 ==> f(x@1) > x@1
 
@@ -155,4 +157,6 @@ Result: ✅ pass
 #guard_msgs in
 #eval verify axiomPgm2
 
+end Strata
+end
 ---------------------------------------------------------------------

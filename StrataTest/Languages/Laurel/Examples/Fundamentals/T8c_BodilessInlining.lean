@@ -3,8 +3,11 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.SimpleAPI
+meta import Strata.SimpleAPI
+
+meta section
 
 /-! # Bodiless Procedure Inlining Test
 
@@ -57,3 +60,4 @@ procedure caller()
   return output
 
 end Strata.Laurel.BodilessInliningTest
+end

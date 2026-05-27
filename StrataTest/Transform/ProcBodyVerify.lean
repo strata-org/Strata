@@ -3,11 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Transform.ProcBodyVerify
-import Strata.Languages.Core.Program
-import Strata.DDM.Integration.Lean
-import Strata.Languages.Core.DDMTransform.Translate
+meta import Strata.Transform.ProcBodyVerify
+meta import Strata.Languages.Core.Program
+import StrataDDM.Integration.Lean
+meta import Strata.Languages.Core.DDMTransform.Translate
+
+meta section
 
 /-! # Procedure Body Verification Tests
 
@@ -171,3 +174,4 @@ info: ok: verify_MultipleModifies: {
   "MultipleModifies"
 
 end ProcBodyVerifyTest
+end

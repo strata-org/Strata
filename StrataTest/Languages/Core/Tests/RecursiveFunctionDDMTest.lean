@@ -3,8 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core.Verifier
+import StrataDDM.Integration.Lean.HashCommands
+
+meta section
 
 /-! ## DDM parsing tests for recursive functions
 
@@ -116,3 +120,5 @@ function isOdd (@[cases] n : MyNat) : bool
 #eval IO.println mutualRecFuncPgm
 
 end Strata.MutualRecFuncTest
+
+end

@@ -4,8 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
-public import Strata.DDM.Util.SourceRange
-public import Lean.Data.Position
+public import StrataDDM.Util.SourceRange
 
 open Std (Format)
 
@@ -88,7 +87,7 @@ instance : Inhabited DiagnosticModel where
 /-- Create a DiagnosticModel from just a message (using default location).
 This should not be called, it only exists temporarily to enable incrementally
 migrating code without error locations -/
-def DiagnosticModel.fromMessage (msg : String) (type : DiagnosticType := DiagnosticType.UserError): DiagnosticModel :=
+def DiagnosticModel.fromMessage (msg : String) (type : DiagnosticType := DiagnosticType.UserError) : DiagnosticModel :=
   { fileRange := FileRange.unknown, message := msg, type := type }
 
 /-- Create a DiagnosticModel from a Format (using default location).

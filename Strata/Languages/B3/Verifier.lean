@@ -5,14 +5,14 @@
 -/
 module
 
+import StrataDDM.Integration.Lean.HashCommands -- shake: keep
 public import Strata.Languages.B3.Verifier.Expression
 public import Strata.Languages.B3.Verifier.Formatter
 public import Strata.Languages.B3.Verifier.State
 public import Strata.Languages.B3.Verifier.Program
 public import Strata.Languages.B3.Verifier.Diagnosis
-meta import Strata.Languages.B3.DDMTransform.ParseCST
-meta import Strata.Languages.B3.Verifier.Statements
-meta import Strata.Languages.B3.Verifier.Program
+public meta import Strata.Languages.B3.Verifier.Program
+public meta import Strata.Languages.B3.Verifier.Statements
 
 open Strata
 open Strata.B3.Verifier

@@ -5,18 +5,15 @@
 -/
 module
 
-public import Strata.Languages.Core.Statement
 import all Strata.Languages.Core.Statement
-public import Strata.Languages.Core.Program
-public import Strata.Languages.Core.Env
 public import Strata.Languages.Core.CmdEval
 public import Strata.Languages.Core.Statistics
-public import Strata.DL.Lambda.LTyUnify
-public import Strata.DL.Lambda.LExprT
 public import Strata.DL.Imperative.StmtEval
 public import Strata.Languages.Core.StatementSemantics
 import all Strata.DL.Imperative.Stmt
 import all Strata.DL.Imperative.CmdEval
+public import Strata.DL.Imperative.CmdEval
+public import Strata.Util.Statistics
 
 ---------------------------------------------------------------------
 
@@ -320,11 +317,7 @@ private def createUnreachableAssertObligations
     Imperative.ProofObligations Expression :=
   asserts.toArray.map
     (fun (label, md) =>
-      let propType := match md.getPropertyType with
-        | some s => if s == Imperative.MetaData.divisionByZero then .divisionByZero
-                    else if s == Imperative.MetaData.arithmeticOverflow then .arithmeticOverflow
-                    else .assert
-        | _ => .assert
+      let propType := Imperative.convertMetaDataPropertyType md
       (Imperative.ProofObligation.mk label propType pathConditions (LExpr.true ()) md))
 
 /--

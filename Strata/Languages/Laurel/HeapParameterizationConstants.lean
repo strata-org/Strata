@@ -5,15 +5,21 @@
 -/
 module
 
-public import Strata.DDM.Elab
-public import Strata.DDM.AST
-public import Strata.Languages.Laurel.Grammar.LaurelGrammar
-public meta import Strata.Languages.Laurel.Grammar.LaurelGrammar
-public import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
+public import StrataDDM.AST
+public import Strata.Languages.Laurel.Laurel
+import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
+import Strata.Languages.Laurel.Grammar.LaurelGrammar
+import StrataDDM.Integration.Lean.HashCommands -- shake: keep
 
 namespace Strata.Laurel
 
 public section
+
+/-- The name of the heap variable used by the heap parameterization pass. -/
+def heapVarName : Identifier := "$heap"
+
+/-- The name of the input heap parameter used by the heap parameterization pass. -/
+def heapInVarName : Identifier := "$heap_in"
 
 /--
 The Laurel Core prelude defines the heap model types and operations

@@ -197,6 +197,14 @@ structure VerifyOptions where
   outputSarif : Bool
   /-- Print elapsed time for each verification sub-step. -/
   profile : Bool
+  /-- Use the incremental solver backend (stdin/stdout) instead of the
+      batch pipeline (write file, run solver). Opt-in via `--incremental`;
+      disabled automatically with `--no-solve`. -/
+  incremental : Bool
+  /-- Number of parallel solver workers. When > 1, obligations are dispatched
+      to concurrent solver processes using `IO.asTask`. Each task spawns its
+      own solver instance. Default 1 (sequential). -/
+  parallelWorkers : Nat
 
 def VerifyOptions.default : VerifyOptions := {
   verbose := .normal,
@@ -216,7 +224,9 @@ def VerifyOptions.default : VerifyOptions := {
   uniqueBoundNames := false
   skipSolver := false
   profile := false
+  incremental := false
   pathCap := .none
+  parallelWorkers := 1
 }
 
 instance : Inhabited VerifyOptions where
