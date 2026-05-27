@@ -266,3 +266,10 @@ datatype Box(a: Type) { MkBox(val: a) };
 
 #guard testDialectRoundTrip TestIonDatatypes
 #guard testProgramRoundTrip testIonDatatypesPgm
+
+-- Test that SourceRange.fromIon error message says "Source range" (not "Source rang")
+#guard
+  let bs := Ion.serialize #[Ion.SymbolTable.system.localSymbolTableValue, Ion.string (Sym := Ion.SymbolId) "bad"]
+  match FromIon.deserialize (α := SourceRange) bs with
+  | .error msg => "Error decoding Source range".isPrefixOf msg
+  | .ok _ => false

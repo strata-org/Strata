@@ -857,7 +857,7 @@ private instance : FromIon SourceRange where
     | .null _ =>
       return .none
     | _ =>
-      let ⟨exp, _⟩ ← .asSexp "Source rang" v
+      let ⟨exp, _⟩ ← .asSexp "Source range" v
       let ⟨p⟩ ← .checkArgCount "Source range" exp 2
       return {
           start := ⟨← .asNat "Source range start" exp[0]⟩
