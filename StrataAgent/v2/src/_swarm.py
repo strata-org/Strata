@@ -107,9 +107,9 @@ class Swarm:
                 self._nudge_monitor.pending.resolve_pending(agent_name, recipient)
         elif tool_name == "message_received":
             event_type = "message_received"
-            # Track pending reply: agent owes a response to sender
+            # Track pending reply: agent owes a response to sender (never TipAgent)
             sender = args.get("from")
-            if sender:
+            if sender and sender != "TipAgent":
                 self._nudge_monitor.pending.add_pending(agent_name, sender)
         else:
             event_type = "tool_call"

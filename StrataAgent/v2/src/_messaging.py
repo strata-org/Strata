@@ -8,6 +8,7 @@ letting them communicate with other agents and track time.
 from __future__ import annotations
 
 import asyncio
+import random
 from collections.abc import Callable
 from datetime import datetime
 from typing import Any
@@ -92,6 +93,9 @@ def create_messaging_server(
         physical_recipient = route_message(recipient, message) if route_message else recipient
         messages_channel = f"{physical_recipient}:messages"
         await channel_bus.send_to(messages_channel, sender=sender_display, payload=message)
+
+        # Yield to event loop — gives recipient agent a chance to wake and process
+        await asyncio.sleep(random.uniform(0.1, 0.7))
 
         # Only pop pending reply AFTER successful delivery
         if reply_only_mode and pending_replies and pending_replies[0] == recipient:
