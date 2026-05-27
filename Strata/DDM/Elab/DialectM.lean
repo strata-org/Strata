@@ -705,7 +705,6 @@ def elabDialectImportCommand : DialectElab := fun tree => do
   if name ∈ (←getDeclState).openDialectSet then
     logError identTree.loc <| s!"Dialect {name} already open."
     return
-  modifyDialect fun d => { d with imports := d.imports.push name }
   let d ←
     match (← getLoadedDialects).dialects[name]? with
     | some d =>
@@ -719,6 +718,7 @@ def elabDialectImportCommand : DialectElab := fun tree => do
         logError identTree.loc msg
         modify fun s => { s with missingImport := true }
         return
+  modifyDialect fun d => { d with imports := d.imports.push name }
   let loaded ← getLoadedDialects
   modify fun s => { s with declState := s.declState.openLoadedDialect! loaded d }
 
