@@ -84,7 +84,7 @@ def spawn (path : String) (args : Array String) : IO Solver := do
     let proc ← IO.Process.spawn {
       stdin  := .piped
       stdout := .piped
-      stderr := .piped
+      stderr := .inherit
       cmd    := path
       args   := args
     }
