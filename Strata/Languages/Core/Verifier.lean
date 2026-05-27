@@ -73,7 +73,9 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
     else
       let managedUfs := ctx.ufs.filter fun uf => managedNames.contains uf.id
       managedUfs.foldl (init := estate) fun estate uf =>
-        { estate with ufs := estate.ufs.insert uf uf.id }
+        { estate with
+          ufs := estate.ufs.insert uf uf.id
+          usedNames := estate.usedNames.insert uf.id }
   let (_ifs, estate) ← ctx.ifs.mapM (fun fn => encodeFunction fn.uf fn.body) |>.run estate
   let (_axms, estate) ← ctx.axms.mapM (fun ax => encodeTerm ax) |>.run estate
   for id in _axms do

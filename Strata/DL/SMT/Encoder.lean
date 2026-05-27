@@ -33,6 +33,9 @@ The encoding pipeline has two layers:
    `Term` values to SMT-LIB commands:
    - **UF → abbreviated name cache** (`ufs`): Maps uninterpreted functions to
      their abbreviated identifiers (e.g., `$__f.0`, `$__f.1`).
+   - **Unified name registry** (`usedNames`): Every emitted SMT-LIB identifier
+     is routed through `Strata.Name.findUnique` against this set, guaranteeing
+     global uniqueness without relying on naming conventions.
 
 The Encoder works purely with `Term` values. The `SolverM` layer handles all
 string conversion and caching when emitting commands.
@@ -71,9 +74,14 @@ public section
 structure EncoderState where
   /-- Maps a `UF` to its abbreviated SMT identifier (e.g., `$__f.0`, `$__f.1`). -/
   ufs   : Std.HashMap UF String
+  /-- Every SMT-LIB identifier emitted so far. All emit sites route through
+      `Strata.Name.findUnique` against this set, guaranteeing global uniqueness
+      without relying on naming conventions. -/
+  usedNames : Std.HashSet String
 
 def EncoderState.init : EncoderState where
   ufs := {}
+  usedNames := {}
 
 @[expose] abbrev EncoderM (α) := StateT EncoderState SolverM α
 
@@ -118,9 +126,9 @@ def sanitizeSmtName (name : String) : String :=
     let first := name.front
     if first == '@' || first == '.' then "$" ++ name else name
 
-/-- The `$__` prefix is reserved for internal use and cannot appear in user
-    identifiers. The `.` after `t`/`f` prevents collision with
-    evaluation-generated names (which use `@N` suffixes). -/
+/-- Base names for internally generated identifiers. The `$__` prefix is a
+    cosmetic convention; correctness is enforced by the `usedNames` registry
+    which disambiguates via `@N` suffixes on collision. -/
 def termId (n : Nat)                    : String := s!"$__t.{n}"
 def ufId (n : Nat)                      : String := s!"$__f.{n}"
 
@@ -141,15 +149,15 @@ def defineRecord (ty : TermType) (tEncs : List Term) : EncoderM Term := do
 
 def encodeUF (uf : UF) : EncoderM String := do
   if let (.some enc) := (← get).ufs.get? uf then return enc
-  -- Check for name clashes with already-encoded UFs and reserved keywords, disambiguate
   let baseName := sanitizeSmtName uf.id
-  let existingNames := (← get).ufs.toList.map (·.2)
-  let usedNames := Std.HashSet.ofList (existingNames ++ smtReservedKeywords)
+  let usedNames := (← get).usedNames.union (Std.HashSet.ofList smtReservedKeywords)
   let id := Strata.Name.findUnique baseName 1 usedNames
   comment uf.id
   let argTys := uf.args.map (fun vt => vt.ty)
   Solver.declareFun id argTys uf.out
-  modifyGet λ state => (id, {state with ufs := state.ufs.insert uf id})
+  modifyGet λ state => (id, {state with
+    ufs := state.ufs.insert uf id
+    usedNames := state.usedNames.insert id})
 
 def defineApp (ty : TermType) (op : Op) (tEncs : List Term) : EncoderM Term := do
   match op with
@@ -266,12 +274,16 @@ decreasing_by
 
 def encodeFunction (uf : UF) (body : Term) : EncoderM String := do
   if let (.some enc) := (← get).ufs.get? uf then return enc
-  let id := ufId (← ufNum)
+  let baseName := ufId (← ufNum)
+  let usedNames := (← get).usedNames.union (Std.HashSet.ofList smtReservedKeywords)
+  let id := Strata.Name.findUnique baseName 1 usedNames
   comment uf.id
   let argPairs := uf.args.map (fun vt => (vt.id, vt.ty))
   let bodyEnc ← encodeTerm body
   Solver.defineFunTerm id argPairs uf.out bodyEnc
-  modifyGet λ state => (id, {state with ufs := state.ufs.insert uf id})
+  modifyGet λ state => (id, {state with
+    ufs := state.ufs.insert uf id
+    usedNames := state.usedNames.insert id})
 
 /-- A utility for debugging. -/
 def termToString (e : Term) : IO String := do

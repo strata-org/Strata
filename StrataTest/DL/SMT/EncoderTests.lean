@@ -197,3 +197,60 @@ theorem breakDisambiguated_disambiguate (baseName : String) (n : Nat)
       String.mk_eq_ofList, String.ofList_toList]
 
 end Strata.SMT.Encoder
+
+/-! ## Tests for unified `usedNames` registry (issue #1230)
+
+Verifies that the encoder disambiguates when a user-defined UF name collides
+with the internal `$__f.N` naming scheme used by `encodeFunction`. -/
+
+namespace Strata.SMT.Encoder.UsedNamesTests
+
+open Strata.SMT
+
+/-- Helper: run an `EncoderM` action against a buffer solver and return the
+    final encoder state. -/
+private def runEncoder (act : EncoderM Unit) : IO EncoderState := do
+  let b ← IO.mkRef { : IO.FS.Stream.Buffer }
+  let solver ← Solver.bufferWriter b
+  let (((), estate), _) ← (act.run EncoderState.init).run solver
+  return estate
+
+-- A user UF named `$__f.0` should not collide with the first `encodeFunction`
+-- output. The encoder must rename one of them.
+#eval do
+  let collidingUF : UF := { id := "$__f.0", args := [], out := .int }
+  let functionUF : UF := { id := "userFn", args := [⟨"x", .int⟩], out := .int }
+  let body : Term := .var ⟨"x", .int⟩
+  let estate ← runEncoder do
+    let _ ← Encoder.encodeUF collidingUF
+    let _ ← Encoder.encodeFunction functionUF body
+  let name1 := estate.ufs[collidingUF]!
+  let name2 := estate.ufs[functionUF]!
+  -- Both names must be present and distinct
+  assert! name1 != name2
+  -- The colliding UF keeps its original name since it was encoded first
+  assert! name1 == "$__f.0"
+  -- The function gets a disambiguated name
+  assert! name2 != "$__f.0"
+
+-- Similarly, a user UF named `$__f.1` should not collide when two functions
+-- are encoded.
+#eval do
+  let collidingUF : UF := { id := "$__f.1", args := [], out := .bool }
+  let fn0 : UF := { id := "fn0", args := [], out := .int }
+  let fn1 : UF := { id := "fn1", args := [⟨"y", .int⟩], out := .int }
+  let body0 : Term := .prim (.int 42)
+  let body1 : Term := .var ⟨"y", .int⟩
+  let estate ← runEncoder do
+    let _ ← Encoder.encodeUF collidingUF
+    let _ ← Encoder.encodeFunction fn0 body0
+    let _ ← Encoder.encodeFunction fn1 body1
+  let nameColliding := estate.ufs[collidingUF]!
+  let nameFn0 := estate.ufs[fn0]!
+  let nameFn1 := estate.ufs[fn1]!
+  -- All three names must be distinct
+  assert! nameColliding != nameFn0
+  assert! nameColliding != nameFn1
+  assert! nameFn0 != nameFn1
+
+end Strata.SMT.Encoder.UsedNamesTests
