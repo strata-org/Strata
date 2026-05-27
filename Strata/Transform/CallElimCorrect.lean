@@ -1632,7 +1632,6 @@ private theorem fresh_olds_not_defined
   have Hold : isOldTempIdent v := (List.Forall_mem_iff.mp HoldPred) v Hin
   exact Option.isNone_iff_eq_none.mp (Hwfgenold v Hold)
 
-
 /-- Positional decomposition for `Map.find?` against the L6 canonical
     `createOldVarsSubst` map.  Given a hit
     `Map.find? (createOldVarsSubst (...zip-form...)) k = some w`, extract
@@ -2659,6 +2658,46 @@ structure CoreGenStateRel (σ : CoreStore) (γ : CoreTransformState) : Prop wher
       call-elim proof. -/
   wfgen : CoreGenState.WF γ.genState
 
+/-- Bundle the σ-freshness chain: from a Nodup of the combined
+    `(γ.generated.reverse ++ argTemps ++ outTemps ++ genOldIdents)` plus
+    the temp/old predicates and a downstream `UpdateStates`, derive the
+    Nodup of the 3-segment list, the three per-segment σ-freshness facts,
+    and the lifted σ'-freshness fact. -/
+private theorem fresh_triple_σ_facts
+    {σ σ' : CoreStore} {γ : CoreTransformState}
+    {argTemps outTemps genOldIdents : List Expression.Ident}
+    {vs' : List Expression.Ident} {es' : List Expression.Expr}
+    (Hgenrel : CoreGenStateRel σ γ)
+    (Hgennd' : (γ.genState.generated.reverse ++
+                  argTemps ++ outTemps ++ genOldIdents).Nodup)
+    (HargTemp : Forall (fun x => isTempIdent x) argTemps)
+    (HoutTemp : Forall (fun x => isTempIdent x) outTemps)
+    (HoldIdentsTemp : Forall (fun x => isOldTempIdent x) genOldIdents)
+    (Hupdate : UpdateStates σ vs' es' σ') :
+    (argTemps ++ outTemps ++ genOldIdents).Nodup ∧
+    Imperative.isNotDefined σ argTemps ∧
+    Imperative.isNotDefined σ outTemps ∧
+    Imperative.isNotDefined σ genOldIdents ∧
+    Imperative.isNotDefined σ' (argTemps ++ outTemps ++ genOldIdents) := by
+  simp only [List.append_assoc] at Hgennd'
+  have Hsplit := List.nodup_append.mp Hgennd'
+  have Hnd3 : (argTemps ++ outTemps ++ genOldIdents).Nodup := by
+    simp only [List.append_assoc]; exact Hsplit.2.1
+  have Hnot : ∀ x ∈ argTemps ++ (outTemps ++ genOldIdents),
+      x ∉ γ.genState.generated := fun x Hi Hg =>
+    Hsplit.2.2 x (List.mem_reverse.mpr Hg) x Hi rfl
+  have HArg := fresh_temps_not_defined Hgenrel.tmpAlign
+    (fun _ h => Hnot _ (List.mem_append_left _ h)) HargTemp
+  have HOut := fresh_temps_not_defined Hgenrel.tmpAlign
+    (fun _ h => Hnot _ (List.mem_append_right _ (List.mem_append_left _ h))) HoutTemp
+  have HOld := fresh_olds_not_defined Hgenrel.oldFresh HoldIdentsTemp
+  refine ⟨Hnd3, HArg, HOut, HOld, UpdateStatesNotDefMonotone (fun v Hv => ?_) Hupdate⟩
+  simp only [List.append_assoc, List.mem_append] at Hv
+  rcases Hv with h | h | h
+  · exact HArg v h
+  · exact HOut v h
+  · exact HOld v h
+
 /-- Call-elimination correctness for a single statement.
 
     Given a small-step `EvalStatementsContract` derivation of `[st]`
@@ -2889,65 +2928,10 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                   simp only [List.reverse_append, List.reverse_reverse,
                              ← List.append_assoc] at Hnd
                   exact Hnd
-                -- Nodup of just (argT ++ outT ++ genOldIdents).
-                have Hgennd :
-                    (argTemps ++
-                      outTemps ++
-                        genOldIdents).Nodup := by
-                  simp only [List.append_assoc] at Hgennd' ⊢
-                  exact (List.nodup_append.mp Hgennd').2.1
-                -- Hgennd' nodup → arg/out/old segments σ-fresh.
-                have Hnotgen_combined :
-                    ∀ x ∈ argTemps ++ outTemps ++ genOldIdents,
-                      x ∉ γ.genState.generated := by
-                  have Hnd1 : List.Nodup (γ.genState.generated.reverse ++
-                      (argTemps ++
-                        outTemps ++ genOldIdents)) := by
-                    simp only [List.append_assoc] at Hgennd' ⊢
-                    exact Hgennd'
-                  have Hdisj := (List.nodup_append.mp Hnd1).2.2
-                  intro x Hxin Hxgen
-                  exact Hdisj x (List.mem_reverse.mpr Hxgen) x Hxin rfl
-                have Hnotgen_arg :
-                    ∀ x ∈ argTemps,
-                      x ∉ γ.genState.generated := fun x Hxin =>
-                  Hnotgen_combined x (by
-                    simp only [List.mem_append]; exact Or.inl (Or.inl Hxin))
-                have Hnotgen_out :
-                    ∀ x ∈ outTemps,
-                      x ∉ γ.genState.generated := fun x Hxin =>
-                  Hnotgen_combined x (by
-                    simp only [List.mem_append]; exact Or.inl (Or.inr Hxin))
-                -- σ-level freshness facts.
-                have HndefArg_σ :
-                    Imperative.isNotDefined σ argTemps :=
-                  fresh_temps_not_defined Hgenrel.tmpAlign Hnotgen_arg HargTemp
-                have HndefOut_σ :
-                    Imperative.isNotDefined σ outTemps :=
-                  fresh_temps_not_defined Hgenrel.tmpAlign Hnotgen_out HoutTemp
-                have HndefOld_σ :
-                    Imperative.isNotDefined σ genOldIdents :=
-                  fresh_olds_not_defined Hgenrel.oldFresh HoldIdentsTemp
-                -- Combined freshness against σ.
-                have Hndefσ :
-                    Imperative.isNotDefined σ
-                      (argTemps ++
-                        outTemps ++
-                          genOldIdents) := by
-                  intro v Hin
-                  simp only [List.mem_append] at Hin
-                  rcases Hin with (Hin | Hin)
-                  · rcases Hin with (Hin | Hin)
-                    · exact HndefArg_σ v Hin
-                    · exact HndefOut_σ v Hin
-                  · exact HndefOld_σ v Hin
-                -- Lift to σ' via Hupdate.
-                have Hndefgen :
-                    Imperative.isNotDefined σ'
-                      (argTemps ++
-                        outTemps ++
-                          genOldIdents) :=
-                  UpdateStatesNotDefMonotone Hndefσ Hupdate
+                -- Hgennd' nodup → 3-segment Nodup + arg/out/old σ-fresh + lifted to σ'.
+                obtain ⟨Hgennd, HndefArg_σ, HndefOut_σ, HndefOld_σ, Hndefgen⟩ :=
+                  fresh_triple_σ_facts Hgenrel Hgennd' HargTemp HoutTemp
+                    HoldIdentsTemp Hupdate
                 -- ── Length facts ──
                 -- argTrips.length = argVals.length
                 have Hargtriplen : argTrips.length = argVals.length := by
