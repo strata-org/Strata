@@ -4059,6 +4059,7 @@ private theorem havoc_vars_defined_of_init
     invariants branch).  Works directly on `stmtResult` so that the target
     encoding is concrete (not opaque existential). -/
 private theorem simulation_loop_term_enter_case
+    (hwf_ext : WFEvalExtension φ)
     (reserved : List String)
     (σ : LoopElimState)
     (guardE : ExprOrNondet Expression)
@@ -4371,7 +4372,10 @@ private theorem simulation_loop_term_enter_case
             rw [hcongr] at htt_mid
             rw [heval_inner]; exact htt_mid
           have hwfb_inner : WellFormedSemanticEvalBool ρ_inner.eval := by
-            rw [heval_inner]; exact hwfb
+            have h := star_preserves_wfBool Expression (EvalCommand π φ) (EvalPureFunc φ)
+              hwf_ext.toWFEvalExtension h_body_from_ρ₀
+              (c₁ := .stmts body ρ₀) (show WellFormedSemanticEvalBool _ from hwfb)
+            simpa [Config.getEnv] using h
           exact stmts_mapIdx_assert_terminal π φ inv ρ_inner md mkMaintainLabel
             hwfb_inner hall_tt_inner
         -- Chain: havoc → assumes → body ++ maintain
@@ -4414,7 +4418,12 @@ private theorem simulation_loop_term_enter_case
             (.stmt (.block havoc_label havoc_stmts ∅) ρ_mid)
             (.terminal { ρ_mid with store := ρ'.store }) := by
           have hwfvar_mid : WellFormedSemanticEvalVar ρ_mid.eval := by
-            rw [heval_mid]; exact hswf.wfVar
+            have h := star_preserves_wfVar Expression (EvalCommand π φ) (EvalPureFunc φ)
+              hwf_ext.toWFEvalExtension h_block_mid
+              (c₁ := .block .none ρ₀.store
+                  (.stmts body { store := ρ₀.store, eval := ρ₀.eval, hasFailure := ρ₀.hasFailure }))
+              (show WellFormedSemanticEvalVar _ from hswf.wfVar)
+            simpa [Config.getEnv] using h
           have h_inner_isSome : ∀ n, (ρ₀.store n).isSome → (ρ_inner.store n).isSome := by
             have h_oi := star_preserves_outerInv π φ h_inner
               (show outerInv ρ₀.store (.stmts body { store := ρ₀.store, eval := ρ₀.eval, hasFailure := ρ₀.hasFailure }) from
@@ -4502,7 +4511,12 @@ private theorem simulation_loop_term_enter_case
         rw [hρ'_eq_mid_store] at h_exit_havoc
         -- exit_inv_assumes at ρ' → terminal ρ'
         have h_exit_assumes : CoreStar π φ (.stmts exit_inv_assumes ρ') (.terminal ρ') := by
-          have hwfb' : WellFormedSemanticEvalBool ρ'.eval := by rw [heval_eq]; exact hwfb
+          have hwfb' : WellFormedSemanticEvalBool ρ'.eval := by
+            have h := star_preserves_wfBool Expression (EvalCommand π φ) (EvalPureFunc φ)
+              hwf_ext.toWFEvalExtension hreach
+              (c₁ := .stmt (.loop .nondet measure inv body md) ρ₀)
+              (show WellFormedSemanticEvalBool _ from hwfb)
+            simpa [Config.getEnv] using h
           have hall_tt'_at_ρ' : ∀ le ∈ inv, ρ'.eval ρ'.store le.2 = some HasBool.tt := hall_tt'
           exact stmts_mapIdx_assume_terminal π φ inv ρ' md mkExitAssumeLabel hwfb' hall_tt'_at_ρ'
         -- Chain: [exit_havoc_block] ++ [] ++ exit_inv_assumes
@@ -4838,7 +4852,10 @@ private theorem simulation_loop_term_enter_case
                 rw [hcongr] at htt_mid
                 rw [heval_inner]; exact htt_mid
               have hwfb_inner : WellFormedSemanticEvalBool ρ_inner.eval := by
-                rw [heval_inner]; exact hwfb
+                have h := star_preserves_wfBool Expression (EvalCommand π φ) (EvalPureFunc φ)
+                  hwf_ext.toWFEvalExtension h_body_from_ρ₀
+                  (c₁ := .stmts body ρ₀) (show WellFormedSemanticEvalBool _ from hwfb)
+                simpa [Config.getEnv] using h
               exact stmts_mapIdx_assert_terminal π φ inv ρ_inner md mkMaintainLabel
                 hwfb_inner hall_tt_inner
             -- Chain: havoc → assumes → body ++ maintain
@@ -4881,7 +4898,12 @@ private theorem simulation_loop_term_enter_case
                 (.stmt (.block havoc_label havoc_stmts ∅) ρ_mid)
                 (.terminal { ρ_mid with store := ρ'.store }) := by
               have hwfvar_mid : WellFormedSemanticEvalVar ρ_mid.eval := by
-                rw [heval_mid]; exact hswf.wfVar
+                have h := star_preserves_wfVar Expression (EvalCommand π φ) (EvalPureFunc φ)
+                  hwf_ext.toWFEvalExtension h_block_mid
+                  (c₁ := .block .none ρ₀.store
+                      (.stmts body { store := ρ₀.store, eval := ρ₀.eval, hasFailure := ρ₀.hasFailure }))
+                  (show WellFormedSemanticEvalVar _ from hswf.wfVar)
+                simpa [Config.getEnv] using h
               have h_inner_isSome : ∀ n, (ρ₀.store n).isSome → (ρ_inner.store n).isSome := by
                 have h_oi := star_preserves_outerInv π φ h_inner
                   (show outerInv ρ₀.store (.stmts body { store := ρ₀.store, eval := ρ₀.eval, hasFailure := ρ₀.hasFailure }) from
@@ -4965,17 +4987,21 @@ private theorem simulation_loop_term_enter_case
                     rw [hnone', hnone_mid])
             rw [hρ'_eq_mid_store] at h_exit_havoc
             -- not-guard assume at ρ' → terminal ρ'
+            have hwfb_ρ' : WellFormedSemanticEvalBool ρ'.eval := by
+              have h := star_preserves_wfBool Expression (EvalCommand π φ) (EvalPureFunc φ)
+                hwf_ext.toWFEvalExtension hreach
+                (c₁ := .stmt (.loop (.det g) none inv body md) ρ₀)
+                (show WellFormedSemanticEvalBool _ from hwfb)
+              simpa [Config.getEnv] using h
             have h_not_guard_assume : CoreStar π φ
                 (.stmt (.cmd (HasPassiveCmds.assume
                   s!"{loopElimAssumePrefix}{loop_num}_not_guard" (HasNot.not g) md)) ρ')
-                (.terminal ρ') := by
-              have hwfb' : WellFormedSemanticEvalBool ρ'.eval := by rw [heval_eq]; exact hwfb
-              exact assume_pass_step π φ _ (HasNot.not g) md ρ' hnot_guard_tt hwfb'
+                (.terminal ρ') :=
+              assume_pass_step π φ _ (HasNot.not g) md ρ' hnot_guard_tt hwfb_ρ'
             -- exit_inv_assumes at ρ' → terminal ρ'
             have h_exit_assumes : CoreStar π φ (.stmts exit_inv_assumes ρ') (.terminal ρ') := by
-              have hwfb' : WellFormedSemanticEvalBool ρ'.eval := by rw [heval_eq]; exact hwfb
               have hall_tt'_at_ρ' : ∀ le ∈ inv, ρ'.eval ρ'.store le.2 = some HasBool.tt := hall_tt'
-              exact stmts_mapIdx_assume_terminal π φ inv ρ' md mkExitAssumeLabel hwfb' hall_tt'_at_ρ'
+              exact stmts_mapIdx_assume_terminal π φ inv ρ' md mkExitAssumeLabel hwfb_ρ' hall_tt'_at_ρ'
             -- Chain: [exit_havoc_block] ++ [assume_not_guard] ++ exit_inv_assumes
             exact stmts_concat_terminal π φ [.block havoc_label havoc_stmts ∅]
               ([Stmt.cmd (HasPassiveCmds.assume
@@ -7404,6 +7430,7 @@ private theorem loop_cf_iteration_extract
 /-- Sub-helper for the det+no-measure CanFail case.  Builds the target trace
     from a known failing source iteration. -/
 private theorem simulation_loop_cf_all_tt_det_nomeasure
+    (hwf_ext : WFEvalExtension φ)
     (reserved : List String)
     (σ : LoopElimState)
     (g : Expression.Expr)
@@ -7536,13 +7563,11 @@ private theorem simulation_loop_cf_all_tt_det_nomeasure
     | inr hbody_term =>
       -- Body terminates at ρ_inner with some inv ff → maintain fires
       obtain ⟨ρ_inner, h_body_term, _hnf_inner, hinv_bool_inner, hsome_ff⟩ := hbody_term
-      have hnofd_body : Block.noFuncDecl body = Bool.true := by
-        simp [Stmt.noFuncDecl] at hnofd; exact hnofd
-      have heval_inner : ρ_inner.eval = ρ_k.eval :=
-        block_noFuncDecl_preserves_eval Expression (EvalCommand π φ) (EvalPureFunc φ)
-          body ρ_k ρ_inner hnofd_body h_body_term
       have hwfb_inner : WellFormedSemanticEvalBool ρ_inner.eval := by
-        rw [heval_inner]; exact hwfb_k
+        have h := star_preserves_wfBool Expression (EvalCommand π φ) (EvalPureFunc φ)
+          hwf_ext.toWFEvalExtension h_body_term
+          (c₁ := .stmts body ρ_k) (show WellFormedSemanticEvalBool _ from hwfb_k)
+        simpa [Config.getEnv] using h
       have h_maintain_cf : CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) maintain_stmts ρ_inner :=
         stmts_mapIdx_assert_canFail π φ inv ρ_inner md mkMaintainLabel
           hwfb_inner hinv_bool_inner hsome_ff
@@ -7579,6 +7604,7 @@ private theorem simulation_loop_cf_all_tt_det_nomeasure
 /-- Sub-helper for the nondet CanFail case.  Builds the target trace
     from a known failing source iteration. -/
 private theorem simulation_loop_cf_all_tt_nondet
+    (hwf_ext : WFEvalExtension φ)
     (reserved : List String)
     (σ : LoopElimState)
     (measure : Option Expression.Expr)
@@ -7689,13 +7715,11 @@ private theorem simulation_loop_cf_all_tt_nondet
       exact Transform.canFailBlock_append_left (EvalCommand π φ) (EvalPureFunc φ) body maintain_stmts ρ_k ⟨cfg_f, hf_f, hr_f⟩
     | inr hbody_term =>
       obtain ⟨ρ_inner, h_body_term, _hnf_inner, hinv_bool_inner, hsome_ff⟩ := hbody_term
-      have hnofd_body : Block.noFuncDecl body = Bool.true := by
-        simp [Stmt.noFuncDecl] at hnofd; exact hnofd
-      have heval_inner : ρ_inner.eval = ρ_k.eval :=
-        block_noFuncDecl_preserves_eval Expression (EvalCommand π φ) (EvalPureFunc φ)
-          body ρ_k ρ_inner hnofd_body h_body_term
       have hwfb_inner : WellFormedSemanticEvalBool ρ_inner.eval := by
-        rw [heval_inner]; exact hwfb_k
+        have h := star_preserves_wfBool Expression (EvalCommand π φ) (EvalPureFunc φ)
+          hwf_ext.toWFEvalExtension h_body_term
+          (c₁ := .stmts body ρ_k) (show WellFormedSemanticEvalBool _ from hwfb_k)
+        simpa [Config.getEnv] using h
       have h_maintain_cf : CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) maintain_stmts ρ_inner :=
         stmts_mapIdx_assert_canFail π φ inv ρ_inner md mkMaintainLabel
           hwfb_inner hinv_bool_inner hsome_ff
@@ -7726,6 +7750,7 @@ private theorem simulation_loop_cf_all_tt_nondet
     body's iteration, since the loop-exit step does not produce failure
     when all invariants evaluate to `tt`. -/
 private theorem simulation_loop_cf_all_tt
+    (hwf_ext : WFEvalExtension φ)
     (reserved : List String)
     (σ : LoopElimState)
     (guardE : ExprOrNondet Expression)
@@ -7889,7 +7914,7 @@ private theorem simulation_loop_cf_all_tt
       simp only [Stmt.block.injEq, Stmt.ite.injEq, List.cons.injEq, and_true, true_and] at htb
       obtain ⟨_, _, htb_eq⟩ := htb
       subst htb_eq
-      exact simulation_loop_cf_all_tt_det_nomeasure π φ reserved σ g inv body md
+      exact simulation_loop_cf_all_tt_det_nomeasure π φ hwf_ext reserved σ g inv body md
         ρ₀ hnofd hswf cfg hfail hnf₀' hall_tt hreach
     case h_2 =>
       -- Nondet guard: real case.
@@ -7897,7 +7922,7 @@ private theorem simulation_loop_cf_all_tt
       simp only [Stmt.block.injEq, Stmt.ite.injEq, List.cons.injEq, and_true, true_and] at htb
       obtain ⟨_, _, htb_eq⟩ := htb
       subst htb_eq
-      exact simulation_loop_cf_all_tt_nondet π φ reserved σ measure inv body md
+      exact simulation_loop_cf_all_tt_nondet π φ hwf_ext reserved σ measure inv body md
         ρ₀ hnofd hswf cfg hfail hnf₀' hall_tt hreach
 
 /-! ### Per-conjunct step lemmas
@@ -8020,7 +8045,7 @@ private theorem stmt_corr_step
               have hnif := loop_step_hasInvFailure_false_of_or
                 (by simpa [Config.getEnv] using hh)
               rw [← htgt_eq]
-              exact simulation_loop_term_enter_case π φ reserved
+              exact simulation_loop_term_enter_case π φ hwf_ext reserved
                 σ _ measure inv body md hnofd hok ρ₀ ρ'
                 hswf (.step _ _ _ (.step_loop_enter hgt hinvb hinviff hwfbe hmease) hrest)
                 hnf'' hnf₀ hall_tt hnif hrest
@@ -8034,7 +8059,7 @@ private theorem stmt_corr_step
               have hnif := loop_step_hasInvFailure_false_of_or
                 (by simpa [Config.getEnv] using hh)
               rw [← htgt_eq]
-              exact simulation_loop_term_enter_case π φ reserved
+              exact simulation_loop_term_enter_case π φ hwf_ext reserved
                 σ .nondet measure inv body md hnofd hok ρ₀ ρ'
                 hswf (.step _ _ _ (.step_loop_nondet_enter hinvb_ne hinviff_ne) hrest)
                 hnf'' hnf₀ hall_tt hnif hrest
@@ -8284,7 +8309,7 @@ private theorem stmt_cf_step
       rw [htgt_eq]
       by_cases hall_tt : ∀ le ∈ inv, ρ₀.eval ρ₀.store le.2 = some HasBool.tt
       · rw [← htgt_eq]
-        exact simulation_loop_cf_all_tt π φ reserved σ
+        exact simulation_loop_cf_all_tt π φ hwf_ext reserved σ
           guardE measure inv body md hnofd hok ρ₀ hswf cfg hfail hreach hnf₀'
           hall_tt
       · exact loop_vc1_failure_canFail π φ hswf.wfBool hinv_bool
