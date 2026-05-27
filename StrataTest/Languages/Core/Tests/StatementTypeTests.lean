@@ -51,7 +51,7 @@ info: ok: context:
 types:   [(zinit, bool) (x, int) (y, int)]
 aliases: []
 state:
-tyGen: 1
+tyGen: 0
 tyPrefix: $__ty
 exprGen: 0
 exprPrefix: $__var
@@ -107,7 +107,7 @@ info: ok: context:
 types:   [(x, int)]
 aliases: []
 state:
-tyGen: 2
+tyGen: 1
 tyPrefix: $__ty
 exprGen: 0
 exprPrefix: $__var
@@ -146,11 +146,11 @@ info: ok: context:
 types:   [(fn, ∀[a]. (arrow a a)) (m1, (arrow int int)) (m2, (arrow (arrow bool int) int))]
 aliases: []
 state:
-tyGen: 10
+tyGen: 8
 tyPrefix: $__ty
 exprGen: 1
 exprPrefix: $__var
-subst: [($__ty0, int) ($__ty2, int) ($__ty6, (arrow bool int)) ($__ty7, bool) ($__ty5, (arrow bool int)) ($__ty3, (arrow bool int)) ($__ty9, int)]
+subst: [($__ty0, int) ($__ty1, int) ($__ty4, (arrow bool int)) ($__ty5, bool) ($__ty3, (arrow bool int)) ($__ty2, (arrow bool int)) ($__ty7, int)]
 -/
 #guard_msgs in
 #eval do let ans ← typeCheck LContext.default (TEnv.default.updateContext { types := [[("fn", t[∀a. %a → %a])]] })
