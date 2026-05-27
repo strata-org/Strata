@@ -120,7 +120,11 @@ def compile_before_submit(view: TelemetryView) -> str | None:
 
 
 def received_but_not_replied(view: TelemetryView) -> str | None:
-    """Agent has pending replies overdue by 5+ min."""
+    """Agent has pending replies overdue by 5+ min. Only for reply_only agents."""
+    # Only reply_only agents (SearchAgent, ProofValidator) owe replies.
+    # Other agents (TaskManager, Prover) don't owe replies to service agents.
+    if not view._is_reply_only:
+        return None
     overdue = view.overdue_replies(timeout_seconds=300)
     if not overdue:
         return None

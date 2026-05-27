@@ -86,6 +86,7 @@ class NudgeMonitor:
         self._rules: list[tuple[Callable[[TelemetryView], str | None], float, float]] = []
         self._cooldowns: dict[tuple[str, int], float] = {}  # (agent, rule_idx) -> next_fire_time
         self._super_agents: set[str] = set()
+        self._reply_only_agents: set[str] = set()
         self._agents: set[str] = set()
         self.pending = PendingRepliesTracker()
         self._task: asyncio.Task | None = None
@@ -138,6 +139,8 @@ class NudgeMonitor:
             tip = self._evaluate_agent(agent_name, now)
             if tip:
                 await self._send_tip(agent_name, tip)
+                # Clear pending list for this agent after nudging — avoids stale nudges
+                self.pending._pending.pop(agent_name, None)
 
     def _evaluate_agent(self, agent_name: str, now: float) -> str | None:
         """Evaluate all rules for one agent. Returns tip or None."""
@@ -145,6 +148,7 @@ class NudgeMonitor:
             agent=agent_name,
             stream=self._telemetry,
             is_super=agent_name in self._super_agents,
+            is_reply_only=agent_name in self._reply_only_agents,
             pending_tracker=self.pending,
         )
 

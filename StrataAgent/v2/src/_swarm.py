@@ -579,6 +579,8 @@ class Swarm:
             self._nudge_monitor._agents.add(name)
             if node.spec.is_super_agent:
                 self._nudge_monitor._super_agents.add(name)
+            if node.spec.reply_only:
+                self._nudge_monitor._reply_only_agents.add(name)
         self._nudge_monitor.start()
         logger.info(f"[SWARM] Visibility graph built. Starting agents...")
 

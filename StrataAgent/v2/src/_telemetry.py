@@ -54,10 +54,12 @@ class TelemetryView:
     No more confusing 'within_turns' — just seconds.
     """
 
-    def __init__(self, agent: str, stream: TelemetryStream, is_super: bool = False, pending_tracker: Any = None):
+    def __init__(self, agent: str, stream: TelemetryStream, is_super: bool = False,
+                 is_reply_only: bool = False, pending_tracker: Any = None):
         self._agent = agent
         self._stream = stream
         self._is_super = is_super
+        self._is_reply_only = is_reply_only
         self._pending_tracker = pending_tracker
 
     def agent_is_super(self) -> bool:
