@@ -6,6 +6,7 @@
 module
 
 public import Strata.Languages.Core.Env
+public import Strata.DL.Imperative.CmdEval
 
 public section
 
