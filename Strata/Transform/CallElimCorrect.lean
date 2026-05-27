@@ -96,6 +96,234 @@ private def createAssumes_list
 
 /-! ### Small-step block helpers for assert/assume sequences -/
 
+/-- Generic block-evaluator helper for assert/assume statement lists with
+    substituted predicates. Parameterized by `mkStmt` (the `Statement.assert`
+    or `Statement.assume` constructor) and `mkSingletonEval` (a function that
+    builds a singleton `EvalStatementsContract` from the eval-true witness).
+    Used to derive both `H_asserts` and `H_assumes`. -/
+private theorem H_check_block
+    {π : String → Option Procedure}
+    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
+    {δ : CoreEval} {σA σ' : CoreStore}
+    {ks ks' : List Expression.Ident}
+    {entries : List (CoreLabel × Procedure.Check)}
+    {md : Imperative.MetaData Expression}
+    {labelPrefix : String}
+    (mkStmt : String → Expression.Expr → Imperative.MetaData Expression → Statement)
+    (mkSingletonEval :
+      ∀ (lbl : String) (e : Expression.Expr) (m : Imperative.MetaData Expression),
+        δ σ' e = some Imperative.HasBool.tt →
+        EvalStatementsContract π φ ⟨σ', δ, false⟩ [mkStmt lbl e m] ⟨σ', δ, false⟩)
+    (Hwfvr : Imperative.WellFormedSemanticEvalVar (P:=Expression) δ)
+    (Hwfvl : Imperative.WellFormedSemanticEvalVal (P:=Expression) δ)
+    (Hwfc  : Core.WellFormedCoreEvalCong δ)
+    (Hlen  : ks.length = ks'.length)
+    (Hnd   : Imperative.substNodup (ks.zip ks'))
+    (Hdef  : Imperative.substDefined σA σ' (ks.zip ks'))
+    (Hsubst : Imperative.substStores σA σ' (ks.zip ks'))
+    (Hentries : ∀ entry, entry ∈ entries →
+       Imperative.invStores σA σ'
+         ((Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr).removeAll
+            (ks ++ ks')) ∧
+       ks'.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr) ∧
+       δ σA entry.snd.expr = some Imperative.HasBool.tt) :
+    EvalStatementsContract π φ ⟨σ', δ, false⟩
+      (entries.mapIdx (fun i (lbl, check) =>
+        mkStmt s!"{labelPrefix}{i}_{lbl}"
+          (Lambda.LExpr.substFvars check.expr
+            (ks.zip (Core.Transform.createFvars ks')))
+          (check.md.setCallSiteFileRange md)))
+      ⟨σ', δ, false⟩ := by
+  -- Generalize over the starting index of mapIdx so we can induct on the list.
+  suffices Hgen :
+      ∀ (i : Nat) (l : List (CoreLabel × Procedure.Check)),
+        (∀ entry, entry ∈ l →
+           Imperative.invStores σA σ'
+             ((Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr).removeAll
+                (ks ++ ks')) ∧
+           ks'.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr) ∧
+           δ σA entry.snd.expr = some Imperative.HasBool.tt) →
+        EvalStatementsContract π φ ⟨σ', δ, false⟩
+          (l.mapIdx (fun j (lbl, check) =>
+            mkStmt s!"{labelPrefix}{i + j}_{lbl}"
+              (Lambda.LExpr.substFvars check.expr
+                (ks.zip (Core.Transform.createFvars ks')))
+              (check.md.setCallSiteFileRange md)))
+          ⟨σ', δ, false⟩ by
+    have := Hgen 0 entries Hentries
+    simpa using this
+  intros i l Hl
+  induction l generalizing i with
+  | nil =>
+    simp [List.mapIdx]
+    exact ReflTrans.step _ _ _ Imperative.StepStmt.step_stmts_nil (.refl _)
+  | cons head tail ih =>
+    obtain ⟨lbl, check⟩ := head
+    have HtailHyp :
+        ∀ entry, entry ∈ tail →
+          Imperative.invStores σA σ'
+            ((Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr).removeAll
+              (ks ++ ks')) ∧
+          ks'.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr) ∧
+          δ σA entry.snd.expr = some Imperative.HasBool.tt := by
+      intros entry hin; exact Hl entry (List.mem_cons_of_mem _ hin)
+    have Htail := ih (i + 1) HtailHyp
+    have HlHead := Hl (lbl, check) List.mem_cons_self
+    obtain ⟨HinvHead, HnininHead, HevHead⟩ := HlHead
+    have Heq : δ σA check.expr =
+                δ σ' (Lambda.LExpr.substFvars check.expr
+                        (ks.zip (Core.Transform.createFvars ks'))) :=
+      subst_fvars_correct Hwfc Hwfvr Hwfvl Hlen Hdef Hnd Hsubst HnininHead HinvHead
+    have HevSubst : δ σ' (Lambda.LExpr.substFvars check.expr
+                          (ks.zip (Core.Transform.createFvars ks'))) =
+                    some Imperative.HasBool.tt := by
+      rw [← Heq]; exact HevHead
+    have HheadStmts := mkSingletonEval s!"{labelPrefix}{i}_{lbl}"
+      (Lambda.LExpr.substFvars check.expr (ks.zip (Core.Transform.createFvars ks')))
+      (check.md.setCallSiteFileRange md) HevSubst
+    have Hcombined :
+        EvalStatementsContract π φ ⟨σ', δ, false⟩
+          ([mkStmt s!"{labelPrefix}{i}_{lbl}"
+              (Lambda.LExpr.substFvars check.expr
+                (ks.zip (Core.Transform.createFvars ks')))
+              (check.md.setCallSiteFileRange md)] ++
+           tail.mapIdx (fun j p =>
+              mkStmt s!"{labelPrefix}{i + 1 + j}_{p.fst}"
+                (Lambda.LExpr.substFvars p.snd.expr
+                  (ks.zip (Core.Transform.createFvars ks')))
+                (p.snd.md.setCallSiteFileRange md)))
+          ⟨σ', δ, false⟩ := EvalStatementsContractApp HheadStmts Htail
+    have Hgoal_eq :
+        ((lbl, check) :: tail).mapIdx (fun j p =>
+            mkStmt s!"{labelPrefix}{i + j}_{p.fst}"
+              (Lambda.LExpr.substFvars p.snd.expr
+                (ks.zip (Core.Transform.createFvars ks')))
+              (p.snd.md.setCallSiteFileRange md)) =
+        [mkStmt s!"{labelPrefix}{i}_{lbl}"
+            (Lambda.LExpr.substFvars check.expr
+              (ks.zip (Core.Transform.createFvars ks')))
+            (check.md.setCallSiteFileRange md)] ++
+        tail.mapIdx (fun j p =>
+            mkStmt s!"{labelPrefix}{i + 1 + j}_{p.fst}"
+              (Lambda.LExpr.substFvars p.snd.expr
+                (ks.zip (Core.Transform.createFvars ks')))
+              (p.snd.md.setCallSiteFileRange md)) := by
+      rw [List.mapIdx_cons]
+      simp only [List.singleton_append, List.cons.injEq, Nat.add_zero, true_and]
+      apply List.mapIdx_eq_iff.mpr
+      intros k
+      simp [List.getElem?_mapIdx]
+      cases hh : tail[k]? with
+      | none => rfl
+      | some p =>
+        have : i + 1 + k = i + (k + 1) := by omega
+        rw [this]
+    show EvalStatementsContract π φ ⟨σ', δ, false⟩
+      (((lbl, check) :: tail).mapIdx (fun j p =>
+        mkStmt s!"{labelPrefix}{i + j}_{p.fst}"
+          (Lambda.LExpr.substFvars p.snd.expr
+            (ks.zip (Core.Transform.createFvars ks')))
+          (p.snd.md.setCallSiteFileRange md))) ⟨σ', δ, false⟩
+    rw [Hgoal_eq]
+    exact Hcombined
+
+/-- Generic block-evaluator helper for the labels-aware (`zip`) variant of
+    assert/assume statement lists.  Used to derive both `H_asserts_zip` and
+    `H_assumes_zip`. -/
+private theorem H_check_block_zip
+    {π : String → Option Procedure}
+    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
+    {δ : CoreEval} {σA σ' : CoreStore}
+    {ks ks' : List Expression.Ident}
+    {entries : List (CoreLabel × Procedure.Check)}
+    {labels : List String}
+    {md : Imperative.MetaData Expression}
+    (mkStmt : String → Expression.Expr → Imperative.MetaData Expression → Statement)
+    (mkSingletonEval :
+      ∀ (lbl : String) (e : Expression.Expr) (m : Imperative.MetaData Expression),
+        δ σ' e = some Imperative.HasBool.tt →
+        EvalStatementsContract π φ ⟨σ', δ, false⟩ [mkStmt lbl e m] ⟨σ', δ, false⟩)
+    (Hwfvr : Imperative.WellFormedSemanticEvalVar (P:=Expression) δ)
+    (Hwfvl : Imperative.WellFormedSemanticEvalVal (P:=Expression) δ)
+    (Hwfc  : Core.WellFormedCoreEvalCong δ)
+    (Hlen  : ks.length = ks'.length)
+    (Hnd   : Imperative.substNodup (ks.zip ks'))
+    (Hdef  : Imperative.substDefined σA σ' (ks.zip ks'))
+    (Hsubst : Imperative.substStores σA σ' (ks.zip ks'))
+    (Hentries : ∀ entry, entry ∈ entries →
+       Imperative.invStores σA σ'
+         ((Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr).removeAll
+            (ks ++ ks')) ∧
+       ks'.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr) ∧
+       δ σA entry.snd.expr = some Imperative.HasBool.tt) :
+    EvalStatementsContract π φ ⟨σ', δ, false⟩
+      ((entries.zip labels).map (fun (entry, lbl) =>
+        mkStmt lbl
+          (Lambda.LExpr.substFvars entry.snd.expr
+            (ks.zip (Core.Transform.createFvars ks')))
+          (entry.snd.md.setCallSiteFileRange md)))
+      ⟨σ', δ, false⟩ := by
+  induction entries generalizing labels with
+  | nil =>
+    simp [List.zip_nil_left, List.map_nil]
+    exact ReflTrans.step _ _ _ Imperative.StepStmt.step_stmts_nil (.refl _)
+  | cons head tail ih =>
+    cases labels with
+    | nil =>
+      simp [List.zip_nil_right, List.map_nil]
+      exact ReflTrans.step _ _ _ Imperative.StepStmt.step_stmts_nil (.refl _)
+    | cons lbl labels' =>
+      obtain ⟨_, check⟩ := head
+      have HtailHyp :
+          ∀ entry, entry ∈ tail →
+            Imperative.invStores σA σ'
+              ((Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr).removeAll
+                (ks ++ ks')) ∧
+            ks'.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr) ∧
+            δ σA entry.snd.expr = some Imperative.HasBool.tt := by
+        intros entry hin; exact Hentries entry (List.mem_cons_of_mem _ hin)
+      have Htail := ih (labels := labels') HtailHyp
+      have HlHead := Hentries _ List.mem_cons_self
+      obtain ⟨HinvHead, HnininHead, HevHead⟩ := HlHead
+      have Heq : δ σA check.expr =
+                  δ σ' (Lambda.LExpr.substFvars check.expr
+                          (ks.zip (Core.Transform.createFvars ks'))) :=
+        subst_fvars_correct Hwfc Hwfvr Hwfvl Hlen Hdef Hnd Hsubst HnininHead HinvHead
+      have HevSubst : δ σ' (Lambda.LExpr.substFvars check.expr
+                            (ks.zip (Core.Transform.createFvars ks'))) =
+                      some Imperative.HasBool.tt := by
+        rw [← Heq]; exact HevHead
+      have HheadStmts := mkSingletonEval lbl
+        (Lambda.LExpr.substFvars check.expr (ks.zip (Core.Transform.createFvars ks')))
+        (check.md.setCallSiteFileRange md) HevSubst
+      simp only [List.zip_cons_cons, List.map_cons, List.singleton_append]
+      exact EvalStatementsContractApp HheadStmts Htail
+
+/-- Singleton-eval helper for `Statement.assert`: lifts the assert evaluation
+    rule into a single-statement `EvalStatementsContract`. -/
+private theorem singletonAssertEval
+    {π : String → Option Procedure}
+    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
+    {δ : CoreEval} {σ : CoreStore}
+    (Hwfb : Imperative.WellFormedSemanticEvalBool δ)
+    (lbl : String) (e : Expression.Expr) (m : Imperative.MetaData Expression)
+    (Hev : δ σ e = some Imperative.HasBool.tt) :
+    EvalStatementsContract π φ ⟨σ, δ, false⟩ [Statement.assert lbl e m] ⟨σ, δ, false⟩ :=
+  singleCmdToStmts (π := π) (φ := φ)
+    (Core.EvalCommandContract.cmd_sem (Imperative.EvalCmd.eval_assert_pass Hev Hwfb))
+
+/-- Singleton-eval helper for `Statement.assume`. -/
+private theorem singletonAssumeEval
+    {π : String → Option Procedure}
+    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
+    {δ : CoreEval} {σ : CoreStore}
+    (Hwfb : Imperative.WellFormedSemanticEvalBool δ)
+    (lbl : String) (e : Expression.Expr) (m : Imperative.MetaData Expression)
+    (Hev : δ σ e = some Imperative.HasBool.tt) :
+    EvalStatementsContract π φ ⟨σ, δ, false⟩ [Statement.assume lbl e m] ⟨σ, δ, false⟩ :=
+  singleCmdToStmts (π := π) (φ := φ)
+    (Core.EvalCommandContract.cmd_sem (Imperative.EvalCmd.eval_assume Hev Hwfb))
+
 /-- A list of `Statement.assert` with substituted predicates evaluates from
     σ' to σ' (store unchanged) under contract semantics, given that each
     substituted predicate evaluates to `tt` in σ' and the substitution
@@ -125,118 +353,15 @@ private theorem H_asserts
     EvalStatementsContract π φ ⟨σ', δ, false⟩
       (createAsserts_list pres (ks.zip (Core.Transform.createFvars ks')) md labelPrefix)
       ⟨σ', δ, false⟩ := by
-  -- Generalize over the starting index of mapIdx so we can induct on the list.
-  suffices Hgen :
-      ∀ (i : Nat) (l : List (CoreLabel × Procedure.Check)),
-        (∀ entry, entry ∈ l →
-           Imperative.invStores σA σ'
-             ((Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr).removeAll
-                (ks ++ ks')) ∧
-           ks'.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr) ∧
-           δ σA entry.snd.expr = some Imperative.HasBool.tt) →
-        EvalStatementsContract π φ ⟨σ', δ, false⟩
-          (l.mapIdx (fun j (lbl, check) =>
-            Statement.assert s!"{labelPrefix}{i + j}_{lbl}"
-              (Lambda.LExpr.substFvars check.expr
-                (ks.zip (Core.Transform.createFvars ks')))
-              (check.md.setCallSiteFileRange md)))
-          ⟨σ', δ, false⟩ by
-    have := Hgen 0 pres Hpres
-    simp [createAsserts_list] at this ⊢
-    exact this
-  intros i l Hl
-  induction l generalizing i with
-  | nil =>
-    simp [List.mapIdx]
-    exact ReflTrans.step _ _ _ Imperative.StepStmt.step_stmts_nil (.refl _)
-  | cons head tail ih =>
-    obtain ⟨lbl, check⟩ := head
-    -- Apply IH at index i+1.
-    have HtailHyp :
-        ∀ entry, entry ∈ tail →
-          Imperative.invStores σA σ'
-            ((Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr).removeAll
-              (ks ++ ks')) ∧
-          ks'.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr) ∧
-          δ σA entry.snd.expr = some Imperative.HasBool.tt := by
-      intros entry hin; exact Hl entry (List.mem_cons_of_mem _ hin)
-    have Htail := ih (i + 1) HtailHyp
-    -- Use Hl on the head entry to evaluate the substituted predicate.
-    have HlHead := Hl (lbl, check) List.mem_cons_self
-    obtain ⟨HinvHead, HnininHead, HevHead⟩ := HlHead
-    -- Apply subst_fvars_correct to relate δ σA expr to δ σ' (substFvars expr ...)
-    have Hsubst' : Imperative.substStores σA σ' (ks.zip ks') := by
-      apply Imperative.substStoresFlip'
-      simp [Imperative.substSwap, zip_swap]
-      exact Hsubst
-    have Heq : δ σA check.expr =
-                δ σ' (Lambda.LExpr.substFvars check.expr
-                        (ks.zip (Core.Transform.createFvars ks'))) :=
-      subst_fvars_correct Hwfc Hwfvr Hwfvl Hlen Hdef Hnd Hsubst' HnininHead HinvHead
-    have HevSubst : δ σ' (Lambda.LExpr.substFvars check.expr
-                          (ks.zip (Core.Transform.createFvars ks'))) =
-                    some Imperative.HasBool.tt := by
-      rw [← Heq]; exact HevHead
-    -- Build the assert command derivation
-    have Hassert :
-        Core.EvalCommandContract π δ σ'
-          (Core.CmdExt.cmd
-            (Imperative.Cmd.assert
-              s!"{labelPrefix}{i}_{lbl}"
-              (Lambda.LExpr.substFvars check.expr
-                (ks.zip (Core.Transform.createFvars ks')))
-              (check.md.setCallSiteFileRange md)))
-          σ' false :=
-      Core.EvalCommandContract.cmd_sem (Imperative.EvalCmd.eval_assert_pass HevSubst Hwfb)
-    have HheadStmts := singleCmdToStmts (π := π) (φ := φ) Hassert
-    -- Combined head ++ tail trace.
-    have Hcombined :
-        EvalStatementsContract π φ ⟨σ', δ, false⟩
-          ([Statement.assert s!"{labelPrefix}{i}_{lbl}"
-              (Lambda.LExpr.substFvars check.expr
-                (ks.zip (Core.Transform.createFvars ks')))
-              (check.md.setCallSiteFileRange md)] ++
-           tail.mapIdx (fun j p =>
-              Statement.assert s!"{labelPrefix}{i + 1 + j}_{p.fst}"
-                (Lambda.LExpr.substFvars p.snd.expr
-                  (ks.zip (Core.Transform.createFvars ks')))
-                (p.snd.md.setCallSiteFileRange md)))
-          ⟨σ', δ, false⟩ := EvalStatementsContractApp HheadStmts Htail
-    -- Massage to match the goal shape produced by mapIdx on cons.
-    have Hgoal_eq :
-        ((lbl, check) :: tail).mapIdx (fun j p =>
-            Statement.assert s!"{labelPrefix}{i + j}_{p.fst}"
-              (Lambda.LExpr.substFvars p.snd.expr
-                (ks.zip (Core.Transform.createFvars ks')))
-              (p.snd.md.setCallSiteFileRange md)) =
-        [Statement.assert s!"{labelPrefix}{i}_{lbl}"
-            (Lambda.LExpr.substFvars check.expr
-              (ks.zip (Core.Transform.createFvars ks')))
-            (check.md.setCallSiteFileRange md)] ++
-        tail.mapIdx (fun j p =>
-            Statement.assert s!"{labelPrefix}{i + 1 + j}_{p.fst}"
-              (Lambda.LExpr.substFvars p.snd.expr
-                (ks.zip (Core.Transform.createFvars ks')))
-              (p.snd.md.setCallSiteFileRange md)) := by
-      rw [List.mapIdx_cons]
-      simp only [List.singleton_append, List.cons.injEq, Nat.add_zero, true_and]
-      -- Goal: tail.mapIdx (fun j ... i + (j+1) ...) = tail.mapIdx (fun j ... i + 1 + j ...)
-      apply List.mapIdx_eq_iff.mpr
-      intros k
-      simp [List.getElem?_mapIdx]
-      cases hh : tail[k]? with
-      | none => rfl
-      | some p =>
-        have : i + 1 + k = i + (k + 1) := by omega
-        rw [this]
-    show EvalStatementsContract π φ ⟨σ', δ, false⟩
-      (((lbl, check) :: tail).mapIdx (fun j p =>
-        Statement.assert s!"{labelPrefix}{i + j}_{p.fst}"
-          (Lambda.LExpr.substFvars p.snd.expr
-            (ks.zip (Core.Transform.createFvars ks')))
-          (p.snd.md.setCallSiteFileRange md))) ⟨σ', δ, false⟩
-    rw [Hgoal_eq]
-    exact Hcombined
+  have Hsubst' : Imperative.substStores σA σ' (ks.zip ks') := by
+    apply Imperative.substStoresFlip'
+    simp [Imperative.substSwap, zip_swap]
+    exact Hsubst
+  have := H_check_block (π := π) (φ := φ) (md := md) (labelPrefix := labelPrefix)
+    (entries := pres) Statement.assert
+    (mkSingletonEval := singletonAssertEval Hwfb)
+    Hwfvr Hwfvl Hwfc Hlen Hnd Hdef Hsubst' Hpres
+  simpa [createAsserts_list] using this
 
 /-- Symmetric to `H_asserts`: a list of `Statement.assume` with substituted
     predicates evaluates from σ' to σ'. -/
@@ -265,108 +390,11 @@ private theorem H_assumes
     EvalStatementsContract π φ ⟨σ', δ, false⟩
       (createAssumes_list posts (ks.zip (Core.Transform.createFvars ks')) md labelPrefix)
       ⟨σ', δ, false⟩ := by
-  suffices Hgen :
-      ∀ (i : Nat) (l : List (CoreLabel × Procedure.Check)),
-        (∀ entry, entry ∈ l →
-           Imperative.invStores σA σ'
-             ((Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr).removeAll
-                (ks ++ ks')) ∧
-           ks'.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr) ∧
-           δ σA entry.snd.expr = some Imperative.HasBool.tt) →
-        EvalStatementsContract π φ ⟨σ', δ, false⟩
-          (l.mapIdx (fun j (lbl, check) =>
-            Statement.assume s!"{labelPrefix}{i + j}_{lbl}"
-              (Lambda.LExpr.substFvars check.expr
-                (ks.zip (Core.Transform.createFvars ks')))
-              (check.md.setCallSiteFileRange md)))
-          ⟨σ', δ, false⟩ by
-    have := Hgen 0 posts Hposts
-    simp [createAssumes_list] at this ⊢
-    exact this
-  intros i l Hl
-  induction l generalizing i with
-  | nil =>
-    simp [List.mapIdx]
-    exact ReflTrans.step _ _ _ Imperative.StepStmt.step_stmts_nil (.refl _)
-  | cons head tail ih =>
-    obtain ⟨lbl, check⟩ := head
-    have HtailHyp :
-        ∀ entry, entry ∈ tail →
-          Imperative.invStores σA σ'
-            ((Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr).removeAll
-              (ks ++ ks')) ∧
-          ks'.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr) ∧
-          δ σA entry.snd.expr = some Imperative.HasBool.tt := by
-      intros entry hin; exact Hl entry (List.mem_cons_of_mem _ hin)
-    have Htail := ih (i + 1) HtailHyp
-    have HlHead := Hl (lbl, check) List.mem_cons_self
-    obtain ⟨HinvHead, HnininHead, HevHead⟩ := HlHead
-    have Heq : δ σA check.expr =
-                δ σ' (Lambda.LExpr.substFvars check.expr
-                        (ks.zip (Core.Transform.createFvars ks'))) :=
-      subst_fvars_correct Hwfc Hwfvr Hwfvl Hlen Hdef Hnd Hsubst HnininHead HinvHead
-    have HevSubst : δ σ' (Lambda.LExpr.substFvars check.expr
-                          (ks.zip (Core.Transform.createFvars ks'))) =
-                    some Imperative.HasBool.tt := by
-      rw [← Heq]; exact HevHead
-    have Hassume :
-        Core.EvalCommandContract π δ σ'
-          (Core.CmdExt.cmd
-            (Imperative.Cmd.assume
-              s!"{labelPrefix}{i}_{lbl}"
-              (Lambda.LExpr.substFvars check.expr
-                (ks.zip (Core.Transform.createFvars ks')))
-              (check.md.setCallSiteFileRange md)))
-          σ' false :=
-      Core.EvalCommandContract.cmd_sem (Imperative.EvalCmd.eval_assume HevSubst Hwfb)
-    have HheadStmts := singleCmdToStmts (π := π) (φ := φ) Hassume
-    -- Combined chain. mapIdx_cons unfolds head with index 0, then tail with j+1
-    have Hcombined :
-        EvalStatementsContract π φ ⟨σ', δ, false⟩
-          ([Statement.assume s!"{labelPrefix}{i}_{lbl}"
-              (Lambda.LExpr.substFvars check.expr
-                (ks.zip (Core.Transform.createFvars ks')))
-              (check.md.setCallSiteFileRange md)] ++
-           tail.mapIdx (fun j p =>
-              Statement.assume s!"{labelPrefix}{i + 1 + j}_{p.fst}"
-                (Lambda.LExpr.substFvars p.snd.expr
-                  (ks.zip (Core.Transform.createFvars ks')))
-                (p.snd.md.setCallSiteFileRange md)))
-          ⟨σ', δ, false⟩ := EvalStatementsContractApp HheadStmts Htail
-    -- Massage to match the goal shape produced by mapIdx on cons.
-    have Hgoal_eq :
-        ((lbl, check) :: tail).mapIdx (fun j p =>
-            Statement.assume s!"{labelPrefix}{i + j}_{p.fst}"
-              (Lambda.LExpr.substFvars p.snd.expr
-                (ks.zip (Core.Transform.createFvars ks')))
-              (p.snd.md.setCallSiteFileRange md)) =
-        [Statement.assume s!"{labelPrefix}{i}_{lbl}"
-            (Lambda.LExpr.substFvars check.expr
-              (ks.zip (Core.Transform.createFvars ks')))
-            (check.md.setCallSiteFileRange md)] ++
-        tail.mapIdx (fun j p =>
-            Statement.assume s!"{labelPrefix}{i + 1 + j}_{p.fst}"
-              (Lambda.LExpr.substFvars p.snd.expr
-                (ks.zip (Core.Transform.createFvars ks')))
-              (p.snd.md.setCallSiteFileRange md)) := by
-      rw [List.mapIdx_cons]
-      simp only [List.singleton_append, List.cons.injEq, Nat.add_zero, true_and]
-      apply List.mapIdx_eq_iff.mpr
-      intros k
-      simp [List.getElem?_mapIdx]
-      cases hh : tail[k]? with
-      | none => rfl
-      | some p =>
-        have : i + 1 + k = i + (k + 1) := by omega
-        rw [this]
-    show EvalStatementsContract π φ ⟨σ', δ, false⟩
-      (((lbl, check) :: tail).mapIdx (fun j p =>
-        Statement.assume s!"{labelPrefix}{i + j}_{p.fst}"
-          (Lambda.LExpr.substFvars p.snd.expr
-            (ks.zip (Core.Transform.createFvars ks')))
-          (p.snd.md.setCallSiteFileRange md))) ⟨σ', δ, false⟩
-    rw [Hgoal_eq]
-    exact Hcombined
+  have := H_check_block (π := π) (φ := φ) (md := md) (labelPrefix := labelPrefix)
+    (entries := posts) Statement.assume
+    (mkSingletonEval := singletonAssumeEval Hwfb)
+    Hwfvr Hwfvl Hwfc Hlen Hnd Hdef Hsubst Hposts
+  simpa [createAssumes_list] using this
 
 /-- Labels-aware variant of `H_asserts`: takes a separate `labels`
     list (paired positionally with `pres` via `zip`) rather than a
@@ -402,53 +430,13 @@ private theorem H_asserts_zip
             (ks.zip (Core.Transform.createFvars ks')))
           (entry.snd.md.setCallSiteFileRange md)))
       ⟨σ', δ, false⟩ := by
-  induction pres generalizing labels with
-  | nil =>
-    simp [List.zip_nil_left, List.map_nil]
-    exact ReflTrans.step _ _ _ Imperative.StepStmt.step_stmts_nil (.refl _)
-  | cons head tail ih =>
-    cases labels with
-    | nil =>
-      simp [List.zip_nil_right, List.map_nil]
-      exact ReflTrans.step _ _ _ Imperative.StepStmt.step_stmts_nil (.refl _)
-    | cons lbl labels' =>
-      obtain ⟨_, check⟩ := head
-      have HtailHyp :
-          ∀ entry, entry ∈ tail →
-            Imperative.invStores σA σ'
-              ((Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr).removeAll
-                (ks ++ ks')) ∧
-            ks'.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr) ∧
-            δ σA entry.snd.expr = some Imperative.HasBool.tt := by
-        intros entry hin; exact Hpres entry (List.mem_cons_of_mem _ hin)
-      have Htail := ih (labels := labels') HtailHyp
-      have HlHead := Hpres _ List.mem_cons_self
-      obtain ⟨HinvHead, HnininHead, HevHead⟩ := HlHead
-      have Hsubst' : Imperative.substStores σA σ' (ks.zip ks') := by
-        apply Imperative.substStoresFlip'
-        simp [Imperative.substSwap, zip_swap]
-        exact Hsubst
-      have Heq : δ σA check.expr =
-                  δ σ' (Lambda.LExpr.substFvars check.expr
-                          (ks.zip (Core.Transform.createFvars ks'))) :=
-        subst_fvars_correct Hwfc Hwfvr Hwfvl Hlen Hdef Hnd Hsubst' HnininHead HinvHead
-      have HevSubst : δ σ' (Lambda.LExpr.substFvars check.expr
-                            (ks.zip (Core.Transform.createFvars ks'))) =
-                      some Imperative.HasBool.tt := by
-        rw [← Heq]; exact HevHead
-      have Hassert :
-          Core.EvalCommandContract π δ σ'
-            (Core.CmdExt.cmd
-              (Imperative.Cmd.assert
-                lbl
-                (Lambda.LExpr.substFvars check.expr
-                  (ks.zip (Core.Transform.createFvars ks')))
-                (check.md.setCallSiteFileRange md)))
-            σ' false :=
-        Core.EvalCommandContract.cmd_sem (Imperative.EvalCmd.eval_assert_pass HevSubst Hwfb)
-      have HheadStmts := singleCmdToStmts (π := π) (φ := φ) Hassert
-      simp only [List.zip_cons_cons, List.map_cons, List.singleton_append]
-      exact EvalStatementsContractApp HheadStmts Htail
+  have Hsubst' : Imperative.substStores σA σ' (ks.zip ks') := by
+    apply Imperative.substStoresFlip'
+    simp [Imperative.substSwap, zip_swap]
+    exact Hsubst
+  exact H_check_block_zip (entries := pres) (labels := labels) Statement.assert
+    (mkSingletonEval := singletonAssertEval Hwfb)
+    Hwfvr Hwfvl Hwfc Hlen Hnd Hdef Hsubst' Hpres
 
 /-- Labels-aware variant of `H_assumes`: takes a separate `labels`
     list (paired positionally with `posts` via `zip`) rather than a
@@ -483,50 +471,10 @@ private theorem H_assumes_zip
           (Lambda.LExpr.substFvars entry.snd.expr
             (ks.zip (Core.Transform.createFvars ks')))
           (entry.snd.md.setCallSiteFileRange md)))
-      ⟨σ', δ, false⟩ := by
-  induction posts generalizing labels with
-  | nil =>
-    simp [List.zip_nil_left, List.map_nil]
-    exact ReflTrans.step _ _ _ Imperative.StepStmt.step_stmts_nil (.refl _)
-  | cons head tail ih =>
-    cases labels with
-    | nil =>
-      simp [List.zip_nil_right, List.map_nil]
-      exact ReflTrans.step _ _ _ Imperative.StepStmt.step_stmts_nil (.refl _)
-    | cons lbl labels' =>
-      obtain ⟨_, check⟩ := head
-      have HtailHyp :
-          ∀ entry, entry ∈ tail →
-            Imperative.invStores σA σ'
-              ((Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr).removeAll
-                (ks ++ ks')) ∧
-            ks'.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr) ∧
-            δ σA entry.snd.expr = some Imperative.HasBool.tt := by
-        intros entry hin; exact Hposts entry (List.mem_cons_of_mem _ hin)
-      have Htail := ih (labels := labels') HtailHyp
-      have HlHead := Hposts _ List.mem_cons_self
-      obtain ⟨HinvHead, HnininHead, HevHead⟩ := HlHead
-      have Heq : δ σA check.expr =
-                  δ σ' (Lambda.LExpr.substFvars check.expr
-                          (ks.zip (Core.Transform.createFvars ks'))) :=
-        subst_fvars_correct Hwfc Hwfvr Hwfvl Hlen Hdef Hnd Hsubst HnininHead HinvHead
-      have HevSubst : δ σ' (Lambda.LExpr.substFvars check.expr
-                            (ks.zip (Core.Transform.createFvars ks'))) =
-                      some Imperative.HasBool.tt := by
-        rw [← Heq]; exact HevHead
-      have Hassume :
-          Core.EvalCommandContract π δ σ'
-            (Core.CmdExt.cmd
-              (Imperative.Cmd.assume
-                lbl
-                (Lambda.LExpr.substFvars check.expr
-                  (ks.zip (Core.Transform.createFvars ks')))
-                (check.md.setCallSiteFileRange md)))
-            σ' false :=
-        Core.EvalCommandContract.cmd_sem (Imperative.EvalCmd.eval_assume HevSubst Hwfb)
-      have HheadStmts := singleCmdToStmts (π := π) (φ := φ) Hassume
-      simp only [List.zip_cons_cons, List.map_cons, List.singleton_append]
-      exact EvalStatementsContractApp HheadStmts Htail
+      ⟨σ', δ, false⟩ :=
+  H_check_block_zip (entries := posts) (labels := labels) Statement.assume
+    (mkSingletonEval := singletonAssumeEval Hwfb)
+    Hwfvr Hwfvl Hwfc Hlen Hnd Hdef Hsubst Hposts
 
 /-- Helper: lifting `ReadValues σ ks vs` across an `updatedStates` extension
     by names disjoint from `ks`. Live-code analogue of the legacy
