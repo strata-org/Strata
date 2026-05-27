@@ -865,12 +865,15 @@ check whether the de-aliased types are registered/known.
 def LMonoTy.tconsAlias [ToFormat IDMeta] (name : String) (args : LMonoTys)
     (Env : TEnv IDMeta) : Except Format (LMonoTy × TEnv IDMeta) := do
   let inputMty := .tcons name args
-  -- Look for a matching alias with same name and arity.
-  let matchingAlias := Env.context.aliases.find?
-                        (fun a => a.name == name && a.typeArgs.length == args.length)
-  match matchingAlias with
+  -- Look for a matching alias by name.
+  let nameMatch := Env.context.aliases.find? (fun a => a.name == name)
+  match nameMatch with
   | none => return (inputMty, Env)
   | some alias =>
+    if alias.typeArgs.length != args.length then
+      .error f!"Arity mismatch for alias '{name}': \
+               expected {alias.typeArgs.length} type argument(s), got {args.length}"
+    else
     -- Create instantiation pair: [alias pattern, alias definition].
     -- The alias pattern and definition share the same type variables here.
     let aliasPattern := .tcons name (alias.typeArgs.map .ftvar)
@@ -901,12 +904,16 @@ def LMonoTy.tconsAlias [ToFormat IDMeta] (name : String) (args : LMonoTys)
     `tconsAlias_eq_simple` which proves the two produce the same result under
     the final substitution for well-formed aliases. -/
 def LMonoTy.tconsAliasSimple (name : String) (args : LMonoTys)
-    (aliases : List TypeAlias) : LMonoTy :=
-  let matchingAlias := aliases.find?
-    (fun a => a.name == name && a.typeArgs.length == args.length)
-  match matchingAlias with
-  | none => .tcons name args
-  | some alias => alias.expand args
+    (aliases : List TypeAlias) : Except Format LMonoTy :=
+  let nameMatch := aliases.find? (fun a => a.name == name)
+  match nameMatch with
+  | none => .ok (.tcons name args)
+  | some alias =>
+    if alias.typeArgs.length == args.length then
+      .ok (alias.expand args)
+    else
+      .error f!"Arity mismatch for alias '{name}': \
+               expected {alias.typeArgs.length} type argument(s), got {args.length}"
 
 /--
 Return the instantiated definition of `mty` if it is a registered
@@ -918,7 +925,9 @@ check whether the de-aliased types are registered/known.
 def LMonoTy.aliasDef? [ToFormat IDMeta] (mty : LMonoTy) (Env : TEnv IDMeta)
     : Except Format (LMonoTy × TEnv IDMeta) := do
   match mty with
-  | .tcons name args => return (LMonoTy.tconsAliasSimple name args Env.context.aliases, Env)
+  | .tcons name args =>
+    let mty' ← LMonoTy.tconsAliasSimple name args Env.context.aliases
+    return (mty', Env)
   | .bitvec _ | .ftvar _ => return (mty, Env)
 
 mutual
@@ -936,7 +945,7 @@ def LMonoTy.resolveAliases [ToFormat IDMeta] (mty : LMonoTy) (Env : TEnv IDMeta)
     return (mty, Env)
   | .tcons name args =>
     let (args', Env) ← LMonoTys.resolveAliases args Env
-    let mty' := LMonoTy.tconsAliasSimple name args' Env.context.aliases
+    let mty' ← LMonoTy.tconsAliasSimple name args' Env.context.aliases
     return (mty', Env)
 
 /--
@@ -1641,22 +1650,25 @@ theorem tconsAlias_tyGen_mono
     (h : LMonoTy.tconsAlias name args Env = .ok (mty, Env')) :
     Env'.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen := by
   simp only [LMonoTy.tconsAlias] at h
-  -- Case split on whether a matching alias is found
+  -- Case split on whether a matching alias is found by name
   split at h
   case h_1 =>
     -- No matching alias: Env' = Env
     simp [Pure.pure, Except.pure] at h; obtain ⟨_, h2⟩ := h; subst h2; omega
   case h_2 alias_val =>
-    -- Matching alias found: calls instantiateEnv then unify + updateSubst
+    -- Matching alias found: check arity
     split at h
-    · simp at h
-    · rename_i instTypes Env1 h_inst
-      -- unify + updateSubst only change stateSubstInfo, not genEnv
+    · simp at h  -- arity mismatch → error, contradicts h
+    · -- Arity matches: calls instantiateEnv then unify + updateSubst
       split at h
       · simp at h
-      · simp [Pure.pure, Except.pure] at h; obtain ⟨_, h2⟩ := h; subst h2
-        simp [TEnv.updateSubst]
-        exact LMonoTys.instantiateEnv_tyGen_mono _ _ Env instTypes Env1 h_inst
+      · rename_i instTypes Env1 h_inst
+        -- unify + updateSubst only change stateSubstInfo, not genEnv
+        split at h
+        · simp at h
+        · simp [Pure.pure, Except.pure] at h; obtain ⟨_, h2⟩ := h; subst h2
+          simp [TEnv.updateSubst]
+          exact LMonoTys.instantiateEnv_tyGen_mono _ _ Env instTypes Env1 h_inst
 
 /-- `LMonoTy.aliasDef?` never decreases `tyGen`. -/
 theorem aliasDef_tyGen_mono
@@ -1664,12 +1676,13 @@ theorem aliasDef_tyGen_mono
     (mty' : LMonoTy) (Env' : TEnv T.IDMeta)
     (h : LMonoTy.aliasDef? mty Env = .ok (mty', Env')) :
     Env'.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen := by
-  simp only [LMonoTy.aliasDef?] at h
+  simp only [LMonoTy.aliasDef?, Bind.bind, Except.bind] at h
   split at h
-  · -- tconsAliasSimple doesn't change Env
-    simp [Pure.pure, Except.pure] at h; obtain ⟨_, h2⟩ := h; subst h2; omega
-  · simp [Pure.pure, Except.pure] at h; obtain ⟨_, h2⟩ := h; subst h2; omega
-  · simp [Pure.pure, Except.pure] at h; obtain ⟨_, h2⟩ := h; subst h2; omega
+  · -- .tcons case: split on tconsAliasSimple result
+    split at h
+    · simp at h
+    · simp [Pure.pure, Except.pure] at h; obtain ⟨_, h2⟩ := h; subst h2; omega
+  all_goals (simp [Pure.pure, Except.pure] at h; obtain ⟨_, h2⟩ := h; subst h2; omega)
 
 mutual
 /-- `LMonoTy.resolveAliases` never decreases `tyGen`. -/
@@ -1691,10 +1704,11 @@ theorem LMonoTy_resolveAliases_tyGen_mono
     · simp at h
     · rename_i v1 h_args
       obtain ⟨args', Env1⟩ := v1; simp at h h_args
-      -- tconsAliasSimple doesn't change Env, so Env' = Env1
-      simp only [LMonoTy.tconsAliasSimple, Pure.pure, Except.pure] at h
-      split at h <;> simp at h <;> obtain ⟨_, h_env⟩ := h <;> subst h_env
-      all_goals exact LMonoTys_resolveAliases_tyGen_mono args Env args' Env1 h_args
+      -- split on tconsAliasSimple result (Except)
+      split at h
+      · simp at h
+      · simp [Pure.pure, Except.pure] at h; obtain ⟨_, h_env⟩ := h; subst h_env
+        exact LMonoTys_resolveAliases_tyGen_mono args Env args' Env1 h_args
 
 theorem LMonoTys_resolveAliases_tyGen_mono
     (mtys : LMonoTys) (Env : TEnv T.IDMeta)
