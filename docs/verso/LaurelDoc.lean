@@ -102,6 +102,9 @@ procedure increment(counter: Counter)
 };
 ```
 
+## Internal constructors and properties
+Some constructors and properties in the Laurel AST are marked for internal usage and should not be needed by Laurel users.
+Having these internal properties and constructors allows us to define an incremental translation to Core which improves maintainability.
 
 # Types
 
@@ -168,18 +171,15 @@ A Laurel program consists of procedures, global variables, type definitions, and
 # Translation Pipeline
 
 Laurel programs are verified by translating them to Strata Core and then invoking the Core
-verification pipeline. The translation involves several passes, each transforming the Laurel
-program before the final conversion to Core.
+verification pipeline. The Laurel compilation pipelines consists of three parts:
+Lowering, consisting of many phases. Maps Laurel to Laurel
+Ordering, consisting of a single pass. Maps Laurel to OrderedLaurel
+Translation, consisting of a single pass. Maps OrderedLaurel to Core.
+
+Ideally the translation pass only translates between types but does not change the structure of the program.
 
 ## Lowering Passes
 
-The following Laurel-to-Laurel lowering passes are applied in order:
+The following passes are part of the lowering group:
 
 {laurelPipelineDocs}
-
-## Translation to Core
-
-The final translation converts Laurel types, expressions, statements, and procedures into
-their Strata Core equivalents. Procedures with bodies that only have constructs supported by
-Core expressions are translated to a Core function, while other procedures become Core
-procedures.
