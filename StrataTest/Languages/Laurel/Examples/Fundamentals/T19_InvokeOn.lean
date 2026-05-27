@@ -4,15 +4,17 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import StrataTest.Util.TestDiagnostics
-import StrataTest.Languages.Laurel.TestExamples
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
 open Strata
 
-namespace Strata.Laurel
-
-def program := r#"
+/-- info: 55:10-14  error: assertion could not be proved
+48:2-13  error: assertion could not be proved -/
+#guard_msgs in
+#eval testLaurelExpect <|
+#strata_expect
+program Laurel;
 function P(x: int): bool;
 function Q(x: int): bool;
 
@@ -41,7 +43,6 @@ procedure axiomDoesNotFireBecauseOfPattern(x: int)
   opaque
 {
   assert Q(x)
-//^^^^^^^^^^^ error: assertion could not be proved
 };
 
 function A(x: int, y: real): bool;
@@ -61,7 +62,6 @@ procedure invokeB(x: int, y :real)
   opaque
 {
   assert B(y)
-//^^^^^^^^^^^ error: assertion could not be proved
 };
 
 function R(x: int): bool;
@@ -69,14 +69,6 @@ procedure badPostcondition(x: int)
   invokeOn R(x)
   opaque
   ensures R(x)
-//        ^^^^ error: assertion could not be proved
 {
 };
-
-"#
-
-#guard_msgs (drop info, error) in
-#eval testInputWithOffset "InvokeOn" program 14
-  (Strata.Laurel.processLaurelFileWithOptions { verifyOptions := { Core.VerifyOptions.default with solver := "z3" } })
-
-end Strata.Laurel
+#end

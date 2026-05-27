@@ -4,15 +4,16 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import StrataTest.Util.TestDiagnostics
-import StrataTest.Languages.Laurel.TestExamples
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
+open Strata
 
-namespace Strata
-namespace Laurel
-
-def program := r"
+/-- info: 40:21-34  error: assertion could not be proved -/
+#guard_msgs in
+#eval testLaurelExpect <|
+#strata_expect
+program Laurel;
 composite Base {
   var xValue: int
 }
@@ -52,7 +53,6 @@ procedure typeCheckingAndCasting()
   var c: Base := b;
   var d: Extender := c as Extender;
   var e: Extender := a as Extender
-//                   ^^^^^^^^^^^^^ error: assertion could not be proved
 };
 
 composite Top {
@@ -96,7 +96,4 @@ procedure diamondInheritance()
 //  assert b is Top;
 //  assert b is Bottom;
 //}
-"
-
-#guard_msgs (drop info) in
-#eval testInputWithOffset "Inheritance" program 14 processLaurelFile
+#end

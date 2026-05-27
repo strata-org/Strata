@@ -4,15 +4,16 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import StrataTest.Util.TestDiagnostics
-import StrataTest.Languages.Laurel.TestExamples
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
+open Strata
 
-namespace Strata
-namespace Laurel
-
-def forLoopProgram := r"
+/-- info: ok -/
+#guard_msgs in
+#eval testLaurel
+#strata
+program Laurel;
 procedure sumToThree()
   opaque
 {
@@ -28,10 +29,4 @@ procedure sumToThree()
   };
   assert sum == 3
 };
-"
-
-#guard_msgs(drop info, error) in
-#eval testInputWithOffset "ForLoop" forLoopProgram 15 processLaurelFile
-
-end Laurel
-end Strata
+#end

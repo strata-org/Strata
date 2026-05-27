@@ -4,15 +4,18 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import StrataTest.Util.TestDiagnostics
-import StrataTest.Languages.Laurel.TestExamples
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
 open Strata
 
-namespace Strata.Laurel
+/-! ## Correct heap mutating value return -/
 
-def heapMutatingValueReturnProgram := r"
+/-- info: ok -/
+#guard_msgs in
+#eval testLaurel
+#strata
+program Laurel;
 composite Container {
   var value: int
 }
@@ -25,19 +28,25 @@ procedure setAndReturn(c: Container, x: int) returns (r: int)
   c#value := x;
   return x
 };
+#end
+
+/-! ## Buggy: postcondition r == x + 1 cannot hold when r := x -/
+
+/-- info: 8:10-20  error: assertion does not hold -/
+#guard_msgs in
+#eval testLaurelExpect <|
+#strata_expect
+program Laurel;
+composite Container {
+  var value: int
+}
 
 procedure setAndReturnBuggy(c: Container, x: int) returns (r: int)
   opaque
   ensures r == x + 1
-//        ^^^^^^^^^^ error: assertion does not hold
   modifies c
 {
   c#value := x;
   return x
 };
-"
-
-#guard_msgs (drop info, error) in
-#eval testInputWithOffset "HeapMutatingValueReturn" heapMutatingValueReturnProgram 15 processLaurelFile
-
-end Strata.Laurel
+#end

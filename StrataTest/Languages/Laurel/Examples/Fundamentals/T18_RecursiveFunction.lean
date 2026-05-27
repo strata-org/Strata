@@ -4,19 +4,21 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import StrataTest.Util.TestDiagnostics
-import StrataTest.Languages.Laurel.TestExamples
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
 open Strata
-
-namespace Strata.Laurel
 
 /-
 A recursive function over a recursive datatype.
 The `isRecursive` flag should be inferred automatically from the self-call.
 -/
-def program := r"
+
+/-- info: ok -/
+#guard_msgs in
+#eval testLaurel
+#strata
+program Laurel;
 datatype IntList {
   Nil(),
   Cons(head: int, tail: IntList)
@@ -51,9 +53,4 @@ procedure testMutualRecursion()
   var xs: IntList := Cons(1, Cons(2, Nil()));
   assert listLenEven(xs) == true
 };
-"
-
-#guard_msgs (drop info, error) in
-#eval testInputWithOffset "RecursiveFunction" program 14 processLaurelFile
-
-end Strata.Laurel
+#end

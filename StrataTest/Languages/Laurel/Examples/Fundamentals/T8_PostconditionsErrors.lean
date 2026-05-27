@@ -4,19 +4,20 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import StrataTest.Util.TestDiagnostics
-import StrataTest.Languages.Laurel.TestExamples
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
 open Strata
 
-namespace Strata.Laurel
+/-! ## Functions with postconditions are not yet supported -/
 
-def program := r"
+/-- info: 3:9-23  error: functions with postconditions are not yet supported -/
+#guard_msgs in
+#eval testLaurelExpect <|
+#strata_expect
+program Laurel;
 
 function opaqueFunction(x: int) returns (r: int)
-//       ^^^^^^^^^^^^^^ error: functions with postconditions are not yet supported
-// The above limitation is because Core does not yet support functions with postconditions
   requires x > 0
   opaque
   ensures r > 0
@@ -33,7 +34,4 @@ procedure callerOfOpaqueFunction()
 // The following assertion should fail but does not
   assert x == 3
 };
-"
-
-#guard_msgs (drop info, error) in
-#eval testInputWithOffset "Postconditions" program 14 processLaurelFile
+#end

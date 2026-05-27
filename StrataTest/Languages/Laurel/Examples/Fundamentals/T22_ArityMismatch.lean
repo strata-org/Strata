@@ -4,15 +4,21 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import StrataTest.Util.TestDiagnostics
-import StrataTest.Languages.Laurel.TestExamples
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
+open Strata
 
-namespace Strata
-namespace Laurel
+/-! ## Function called with too many arguments -/
 
-def arityMismatchProgram := r"
+/--
+error: <#strata>(80-101) ❌ Type checking error.
+Impossible to unify int with (arrow int $__ty35).
+-/
+#guard_msgs in
+#eval testLaurelExpect <|
+#strata_expect
+program Laurel;
 function f(x: int): int { x };
 
 procedure caller()
@@ -20,16 +26,15 @@ procedure caller()
 {
   var y: int := f(1, 2)
 };
-"
+#end
 
-/--
-error: ArityMismatch(79-100) ❌ Type checking error.
-Impossible to unify int with (arrow int $__ty35).
--/
-#guard_msgs(drop info, error) in
-#eval testInputWithOffset "ArityMismatch" arityMismatchProgram 14 processLaurelFile
+/-! ## Multi-return procedure assigned to single target -/
 
-def outputArityMismatchProgram := r"
+/-- info: 10:2-26  error: Assignment target count mismatch: 1 targets but right-hand side produces 2 values -/
+#guard_msgs in
+#eval testLaurelExpect <|
+#strata_expect
+program Laurel;
 procedure twoReturns() returns (a: int, b: int)
   opaque
   ensures a == 1 && b == 2;
@@ -39,9 +44,5 @@ procedure mismatch()
 {
   var x: int;
   assign x := twoReturns()
-//^^^^^^^^^^^^^^^^^^^^^^^^ error: Assignment target count mismatch
 };
-"
-
-#guard_msgs(drop info, error) in
-#eval testInputWithOffset "OutputArityMismatch" outputArityMismatchProgram 30 processLaurelFile
+#end

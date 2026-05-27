@@ -4,15 +4,16 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import StrataTest.Util.TestDiagnostics
-import StrataTest.Languages.Laurel.TestExamples
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
+open Strata
 
-namespace Strata
-namespace Laurel
-
-def program := r#"
+/-- info: ok -/
+#guard_msgs in
+#eval testLaurel
+#strata
+program Laurel;
 composite Container {
   var intValue: int // var indicates mutable field
   var realValue: real
@@ -197,7 +198,4 @@ procedure fieldTargetInMultiAssign()
   assert y == 2;
   assert z == 3
 };
-"#
-
-#guard_msgs (drop info, error) in
-#eval testInputWithOffset "MutableFields" program 14 processLaurelFile
+#end

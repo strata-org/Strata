@@ -4,15 +4,17 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import StrataTest.Util.TestDiagnostics
-import StrataTest.Languages.Laurel.TestExamples
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
 open Strata
 
-namespace Strata.Laurel
-
-def datatypeProgram := r"
+/-- info: 45:2-38  error: assertion does not hold
+68:2-28  error: assertion does not hold -/
+#guard_msgs in
+#eval testLaurelExpect <|
+#strata_expect
+program Laurel;
 datatype IntList {
   Nil(),
   Cons(head: int, tail: IntList)
@@ -57,7 +59,6 @@ procedure unsafeDestructor()
   var nil: IntList := Nil();
   var noError: int := IntList..head!(nil);
   var error: int := IntList..head(nil)
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 
 // Datatype in function
@@ -81,7 +82,6 @@ procedure testFailing()
 {
   var xs: IntList := Nil();
   assert IntList..isCons(xs)
-//^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 
 // Mutually recursive datatypes: even/odd-length lists
@@ -109,9 +109,4 @@ procedure testMutualConstruction()
 
 datatype RootBeforeLeaf { RootBeforeLeafC(leaf: LeafAfterRoot) }
 datatype LeafAfterRoot { LeafAfterRootC }
-"
-
-#guard_msgs (error, drop all) in
-#eval! testInputWithOffset "Datatypes" datatypeProgram 14 processLaurelFile
-
-end Laurel
+#end

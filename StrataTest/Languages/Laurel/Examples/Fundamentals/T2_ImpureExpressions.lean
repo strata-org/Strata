@@ -4,15 +4,18 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import StrataTest.Util.TestDiagnostics
-import StrataTest.Languages.Laurel.TestExamples
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
 open Strata
 
-namespace Strata.Laurel
-
-def program: String := r"
+/-- info: 8:2-15  error: assertion does not hold
+39:2-10  error: assertion does not hold
+59:2-15  error: assertion does not hold -/
+#guard_msgs in
+#eval testLaurelExpect <|
+#strata_expect
+program Laurel;
 procedure nestedImpureStatements()
   opaque
 {
@@ -20,7 +23,6 @@ procedure nestedImpureStatements()
   var x: int := y;
   var z: int := y := y + 1;
   assert x == y;
-//^^^^^^^^^^^^^ error: assertion does not hold
   assert z == y
 };
 
@@ -52,7 +54,6 @@ procedure anotherConditionAssignmentInExpression(c: bool)
   var b: bool := c;
   var z: bool := (if b then { b := false } else (b := true)) || b;
   assert z
-//^^^^^^^^ error: assertion does not hold
 };
 
 procedure blockWithTwoAssignmentsInExpression()
@@ -73,7 +74,6 @@ procedure nestedImpureStatementsAndOpaque()
   var x: int := y;
   var z: int := y := y + 1;
   assert x == y;
-//^^^^^^^^^^^^^ error: assertion does not hold
   assert z == y
 };
 
@@ -147,10 +147,4 @@ procedure addProcCaller(): int
   // var z: int := addProc({x := 1; x}, {x := x + 10; x}) + (x := 3);
   // assert z == 14
 };
-"
-
-#guard_msgs (error, drop all) in
-#eval! testInputWithOffset "NestedImpureStatements" program 14 processLaurelFile
-
-
-end Laurel
+#end

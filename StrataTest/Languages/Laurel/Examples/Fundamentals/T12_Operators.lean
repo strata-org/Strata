@@ -4,15 +4,16 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import StrataTest.Util.TestDiagnostics
-import StrataTest.Languages.Laurel.TestExamples
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
+open Strata
 
-namespace Strata
-namespace Laurel
-
-def operatorsProgram := r"
+/-- info: ok -/
+#guard_msgs in
+#eval testLaurel
+#strata
+program Laurel;
 procedure testArithmetic()
   opaque
 {
@@ -59,9 +60,4 @@ procedure testTruncatingDiv()
     assert (0 - 7) /t 3 == 0 - 2;
     assert (0 - 7) %t 3 == 0 - 1
 };
-"
-
-#guard_msgs(drop info, error) in
-#eval testInputWithOffset "Operators" operatorsProgram 14 processLaurelFile
-
-end Laurel
+#end

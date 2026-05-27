@@ -5,22 +5,24 @@
 -/
 
 
-import StrataTest.Util.TestDiagnostics
-import StrataTest.Languages.Laurel.TestExamples
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
+open Strata
 
-namespace Strata
-namespace Laurel
-
-def program := r#"
+/-- info: 7:2-27  error: assertion does not hold
+33:2-24  error: assertion does not hold
+49:2-29  error: assertion does not hold -/
+#guard_msgs in
+#eval testLaurelExpect <|
+#strata_expect
+program Laurel;
 procedure testStringKO()
 returns (result: string)
   opaque
 {
   var message: string := "Hello";
   assert(message == "Hell");
-//^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 
   return message
 };
@@ -47,7 +49,6 @@ procedure testStringLiteralConcatKO()
 {
   var result: string := "a" ++ "b";
   assert(result == "cd")
-//^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 
 procedure testStringVarConcatOK()
@@ -64,9 +65,5 @@ procedure testStringVarConcatKO()
   var x: string := "Hello";
   var result: string := x ++ " World";
   assert(result == "Goodbye")
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
-"#
-
-#guard_msgs(drop info, error) in
-#eval testInputWithOffset "String" program 14 processLaurelFile
+#end

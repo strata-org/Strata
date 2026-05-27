@@ -4,15 +4,16 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import StrataTest.Util.TestDiagnostics
-import StrataTest.Languages.Laurel.TestExamples
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
+open Strata
 
-namespace Strata
-namespace Laurel
-
-def program := r"
+/-- info: 14:4-10  error: fields that are inherited multiple times can not be accessed. -/
+#guard_msgs in
+#eval testLaurelExpect <|
+#strata_expect
+program Laurel;
 composite Top {
   var xValue: int
 }
@@ -26,9 +27,5 @@ procedure diamondField(b: Bottom)
   modifies b
 {
   b#xValue := 1
-//  ^^^^^^ error: fields that are inherited multiple times can not be accessed.
 };
-"
-
-#guard_msgs (drop info) in
-#eval testInputWithOffset "InheritanceError" program 14 processLaurelFile
+#end
