@@ -36,7 +36,6 @@ structure TranslateState where
   tyBVars : Array String := #[]
   bvars : Array Core.Expression.Expr := #[]
   labelCounter : Nat := 0
-  globalVarCounter : Nat := 0
   /-- Maps procedure names to their modifies variables with types,
       collected in a pre-pass so call sites can add extra args/lhs. -/
   modifiesMap : Std.HashMap String (List (Core.Expression.Ident × Lambda.LMonoTy)) := {}
@@ -552,11 +551,8 @@ private def lowerVarStatement (m : SourceRange) (ds : BooleDDM.DeclList SourceRa
   let mut newBVarsRev : List Core.Expression.Expr := []
   for d in declListToList ds do
     let (id, ty) ← toCoreBind d
-    let n := (← get).globalVarCounter
-    modify fun st => { st with globalVarCounter := n + 1 }
-    let initName := mkIdent s!"init_{id.name}_{n}"
     newBVarsRev := (.fvar m id none : Core.Expression.Expr) :: newBVarsRev
-    outRev := Core.Statement.init id ty (.det (.fvar m initName none)) (← toCoreMetaData m) :: outRev
+    outRev := Core.Statement.init id ty .nondet (← toCoreMetaData m) :: outRev
   modify fun st => { st with bvars := st.bvars ++ newBVarsRev.reverse.toArray }
   return outRev.reverse
 
