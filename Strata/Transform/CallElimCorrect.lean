@@ -54,6 +54,18 @@ private theorem σ_some_contradiction {α β} {σ : β → Option α} {k : β}
     (Hsome : (σ k).isSome) (Hnone : σ k = none) : False := by
   rw [Hnone] at Hsome; simp at Hsome
 
+/-- Decompose `(a ++ b ++ c).Nodup` into its three component-Nodups and three
+    pairwise disjointnesses (in the local `List.Disjoint` form: `a → b → False`).
+    Repackages `List.nodup_append` and `List.disjoint_of_nodup_append_three`. -/
+private theorem nodup_3_decompose {α} {a b c : List α}
+    (Hnd : (a ++ b ++ c).Nodup) :
+    a.Nodup ∧ b.Nodup ∧ c.Nodup ∧
+      a.Disjoint b ∧ a.Disjoint c ∧ b.Disjoint c :=
+  let Hsplit := List.nodup_append.mp Hnd
+  let Hab := List.nodup_append.mp Hsplit.1
+  let ⟨Hd_ab, Hd_ac, Hd_bc⟩ := List.disjoint_of_nodup_append_three Hnd
+  ⟨Hab.1, Hab.2.1, Hsplit.2.1, Hd_ab, Hd_ac, Hd_bc⟩
+
 
 /-! ## Helper block-evaluator lemmas (small-step)
 
@@ -3048,45 +3060,9 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                 · -- First conjunct: Inits σ' σ''.
                   exact InitStatesInits Hinit
                 · -- L1-L6 chain via EvalCallElim_glue.
-                  have HargNd : argTemps.Nodup := by
-                    have Hsplit := List.nodup_append.mp Hgennd
-                    -- Hgennd : (argT ++ outT ++ olds).Nodup;
-                    -- Hsplit.1 : (argT ++ outT).Nodup
-                    exact (List.nodup_append.mp Hsplit.1).1
-                  have HoutNd : outTemps.Nodup := by
-                    have Hsplit := List.nodup_append.mp Hgennd
-                    exact (List.nodup_append.mp Hsplit.1).2.1
-                  have HoldNd : genOldIdents.Nodup := by
-                    have Hsplit := List.nodup_append.mp Hgennd
-                    exact Hsplit.2.1
-                  have HargOutDisj :
-                      argTemps.Disjoint
-                        outTemps := by
-                    have Hsplit := List.nodup_append.mp Hgennd
-                    have Hsplit2 := List.nodup_append.mp Hsplit.1
-                    intro x Hin1 Hin2
-                    exact Hsplit2.2.2 x Hin1 x Hin2 rfl
-                  have HargOldDisj :
-                      argTemps.Disjoint genOldIdents := by
-                    have Hnd' : (argTemps ++
-                                  (outTemps ++
-                                    genOldIdents)).Nodup := by
-                      simp only [List.append_assoc] at Hgennd
-                      exact Hgennd
-                    have Hsplit := List.nodup_append.mp Hnd'
-                    intro x Hin1 Hin2
-                    exact Hsplit.2.2 x Hin1 x
-                      (List.mem_append.mpr (Or.inr Hin2)) rfl
-                  have HoutOldDisj :
-                      outTemps.Disjoint genOldIdents := by
-                    have Hsplit := List.nodup_append.mp Hgennd
-                    have Hsplit2 := List.nodup_append.mp Hsplit.1
-                    -- Hsplit.2.1 : (outT ++ olds).Nodup is wrong shape;
-                    -- Hgennd is ((argT ++ outT) ++ olds).Nodup.
-                    -- Use Hsplit.2.2 : (argT ++ outT) Disjoint olds.
-                    intro x Hin1 Hin2
-                    exact Hsplit.2.2 x
-                      (List.mem_append.mpr (Or.inr Hin1)) x Hin2 rfl
+                  obtain ⟨HargNd, HoutNd, HoldNd,
+                          HargOutDisj, HargOldDisj, HoutOldDisj⟩ :=
+                    nodup_3_decompose Hgennd
                   -- Disjointness of σ-defined argument expression vars
                   -- from the freshly generated argTemps: HdefOver puts
                   -- them in σ, HndefArg_σ keeps temps out of σ, so they
