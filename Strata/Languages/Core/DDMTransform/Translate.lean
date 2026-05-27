@@ -1368,7 +1368,7 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     return ([.assert l c md], bindings)
   | q`Core.cover, #[rca, la, ca] =>
     let c ← translateExpr p bindings ca
-    let default_name := s!"cover_{bindings.gen.assert_def}"
+    let default_name := s!"cover_{bindings.gen.cover_def}"
     let bindings := incrNum .cover_def bindings
     let l ← translateOptionLabel default_name la
     let hasRC ← translateOptionReachCheck rca
