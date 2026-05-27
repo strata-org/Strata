@@ -68,7 +68,7 @@ procedure heterogeneousSynthPath()
   opaque
 {
   assert (1 + 2.0) < 5
-//        ^^^^^^^ error: incompatible types
+//        ^^^^^^^ error: cannot apply '+' to operands of types 'int', 'real'
 };
 
 procedure unaryNegHomogeneous()
@@ -82,14 +82,20 @@ procedure unaryNegHomogeneous()
   assert d == 0.0 - 1.5
 };
 
-// Unknown (here from the unresolved name 'mystery') promotes to its
-// neighbour under consistencyLub: 'Unknown + TInt' folds to TInt.
-// The 'mystery is not defined' diagnostic is the *only* error.
-procedure unknownFlowsFreely()
+// Unknown promotes to its neighbour under consistencyLub:
+// 'Unknown + TInt' folds to TInt. The hole '<?>' carries type
+// 'Unknown' (it has no synthesis rule, so the synth dispatcher
+// emits a 'no synthesis rule' diagnostic and falls back to
+// 'Unknown'). The fold then yields TInt, and comparing to '2.0'
+// (real) produces a 'cannot compare' diagnostic — proving the
+// LUB returned TInt rather than Unknown (which would have passed
+// the consistency check silently).
+procedure unknownPromotesToNeighbour()
   opaque
 {
-  assert (mystery + 1) == 1
-//        ^^^^^^^ error: 'mystery' is not defined
+  assert (<?> + 1) == 2.0
+//        ^^^ error: this expression's type cannot be synthesized
+//       ^^^^^^^^^^^^^^^^ error: cannot compare 'int' with 'real' using '=='
 };
 "
 

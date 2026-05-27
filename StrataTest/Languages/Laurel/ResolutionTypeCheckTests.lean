@@ -145,7 +145,7 @@ function foo(): int {
 def equalityTypeMismatch := r"
 function cmp(x: int, y: string): bool {
   x == y
-//^^^^^^ error: Operands of '==' have incompatible types 'int' and 'string'
+//^^^^^^ error: cannot compare 'int' with 'string' using '=='
 };
 "
 
@@ -158,7 +158,7 @@ def multiOutputInExpr := r"
 procedure multi(x: int) returns (a: int, b: int) opaque;
 procedure test() opaque {
   assert multi(1) == 1
-//       ^^^^^^^^^^^^^ error: Operands of '==' have incompatible types '(int, int)' and 'int'
+//       ^^^^^^^^^^^^^ error: cannot compare '(int, int)' with 'int' using '=='
 };
 "
 

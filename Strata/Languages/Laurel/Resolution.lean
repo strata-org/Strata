@@ -669,7 +669,7 @@ def Synth.resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTy
   | _ =>
     let unknown : HighTypeMd := { val := .Unknown, source := source }
     typeMismatch source (some expr)
-      "has no synthesis rule; use it in a position with a known expected type"
+      "this expression's type cannot be synthesized; try to annotate it or use it in a context where there is an expected type"
       unknown
     pure (expr, unknown)
   return ({ val := val', source := source }, ty)
@@ -1424,9 +1424,9 @@ def Synth.instanceCall (exprMd : StmtExprMd)
     fold the operand types under `consistencyLub` (the LUB on the
     flat consistency lattice — `Unknown ⊔ T = T`, `T ⊔ T = T`,
     everything else inconsistent). The fold's result is the
-    synthesized type. If any pair is inconsistent the rule emits an
-    "operands have incompatible types" diagnostic listing the operand
-    types and falls back to `Unknown`.
+    synthesized type. If any pair is inconsistent the rule emits a
+    "cannot apply '<op>' to operands of types …" diagnostic and
+    falls back to `Unknown`.
 
     The boolean family additionally has a check-mode rule
     (`Check.primitiveOp`) preferred when an `expected` type is
@@ -1469,9 +1469,9 @@ def Synth.primitiveOp (exprMd : StmtExprMd) (expr : StmtExpr)
     match resultTy with
     | some ty => pure (.PrimitiveOp op args', ty)
     | none =>
-      let formatted := ", ".intercalate (argTypes.map formatType)
+      let formatted := ", ".intercalate (argTypes.map (fun t => s!"'{formatType t}'"))
       let diag := diagnosticFromSource source
-        s!"Operands of '{op}' have incompatible types [{formatted}]"
+        s!"cannot apply '{op}' to operands of types {formatted}"
       modify fun s => { s with errors := s.errors.push diag }
       pure (.PrimitiveOp op args', unknownTy)
   | _ =>
@@ -1500,7 +1500,7 @@ def Synth.primitiveOp (exprMd : StmtExprMd) (expr : StmtExpr)
         let ctx := (← get).typeContext
         unless isConsistent ctx lhsTy rhsTy do
           let diag := diagnosticFromSource source
-            s!"Operands of '{op}' have incompatible types '{formatType lhsTy}' and '{formatType rhsTy}'"
+            s!"cannot compare '{formatType lhsTy}' with '{formatType rhsTy}' using '{op}'"
           modify fun s => { s with errors := s.errors.push diag }
       | _ => pure ()
     | .StrConcat =>

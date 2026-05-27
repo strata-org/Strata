@@ -507,9 +507,9 @@ combination is rejected. So `1 + 2` synthesizes $`\mathsf{TInt}`,
 `1.5 + 2.5` synthesizes $`\mathsf{TReal}`, `<?> + 1` synthesizes
 $`\mathsf{TInt}` (the $`\mathsf{Unknown}` operand promotes to its
 neighbour), `<?> + <?>` synthesizes $`\mathsf{Unknown}`, and
-`1 + 2.0` is rejected with an "operands have incompatible types"
-diagnostic. The fold runs via `consistencyLub`, a pure predicate, so
-the search has no diagnostic side-effects.
+`1 + 2.0` is rejected with a "cannot apply '+' to operands of types
+'int', 'real'" diagnostic. The fold runs via `consistencyLub`, a
+pure predicate, so the search has no diagnostic side-effects.
 
 $$`\frac{\Gamma \vdash \mathit{args}_i \Rightarrow U_i \quad U_i <: \mathsf{TString} \quad \mathit{op} = \mathsf{StrConcat}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;\mathit{args} \Rightarrow \mathsf{TString}} \quad \text{([⇒] Op-Concat)}`
 
