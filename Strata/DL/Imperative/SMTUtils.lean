@@ -104,7 +104,9 @@ def getSMTId {Ident Ty} [ToFormat Ident]
   | (var, some ty) => do
     let (var', ty') ← typedVarToSMTFn var ty
     let key : Strata.SMT.UF := { id := var', args := [], out := ty' }
-    .ok (E.ufs[key]!)
+    match E.ufs[key]? with
+    | some id => .ok id
+    | none => .error f!"Variable {var} (SMT name: {var'}) not found in encoder state"
 
 def runSolver (solver : String) (args : Array String) : IO IO.Process.Output := do
   let output ← IO.Process.output {
