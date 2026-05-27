@@ -8,7 +8,7 @@ module
 public import Strata.Languages.Laurel.LaurelToCoreTranslator
 import Strata.Languages.Laurel.DesugarShortCircuit
 import Strata.Languages.Laurel.EliminateReturnsInExpression
-import Strata.Languages.Laurel.EliminateValueReturns
+import Strata.Languages.Laurel.EliminateValueInReturns
 import Strata.Languages.Laurel.ConstrainedTypeElim
 import Strata.Languages.Laurel.TypeAliasElim
 import Strata.Languages.Core.Verifier
@@ -86,54 +86,73 @@ structure LaurelPass where
   needsResolves : Bool := false
   /-- The pass action. -/
   run : Program → SemanticModel → Program × List DiagnosticModel × Statistics
+  /-- A description of what this pass does, used for documentation generation. -/
+  documentation : String
 
 /-- The ordered sequence of Laurel-to-Laurel lowering passes. -/
-private def laurelPipeline : Array LaurelPass := #[
+def laurelPipeline : Array LaurelPass := #[
   { name := "FilterNonCompositeModifies"
+    documentation := "Filters modifies clauses that refer to non-composite types (e.g. primitives), which cannot be heap-parameterized. Emits a warning for each removed clause. Should run before heap parameterization so that phase remains agnostic to modifies clauses."
     run := fun p m =>
       let (p', diags) := filterNonCompositeModifies m p
       (p', diags, {}) },
-  { name := "EliminateValueReturns"
+  { name := "EliminateValueInReturns"
+    documentation := "Rewrites `return expr` into `outParam := expr; return` for imperative procedures that have an output parameter. This decouples the return-value assignment from the final Core translation, which no longer needs to know about output parameters when translating returns."
     run := fun p _m =>
-      let (p', diags) := eliminateValueReturnsTransform p
+      let (p', diags) := eliminateValueInReturnsTransform p
       (p', diags.toList, {}) },
   { name := "HeapParameterization"
+    documentation := "Transforms procedures that interact with the heap by adding explicit heap parameters. The heap is modeled as `Map Composite (Map Field Box)`. Procedures that write the heap receive both an input and output heap parameter; procedures that only read the heap receive an input heap parameter. Field reads and writes are rewritten to use `readField` and `updateField` functions."
     needsResolves := true
     run := fun p m =>
       (heapParameterization m p, [], {}) },
   { name := "TypeHierarchyTransform"
+    documentation := "Encodes the object-oriented type hierarchy (inheritance, dynamic dispatch, type tests, and casts) into explicit operations on a flat representation. Composite types with parents are flattened, and dynamic dispatch is resolved through type-test chains."
     needsResolves := true
     run := fun p m =>
       (typeHierarchyTransform m p, [], {}) },
   { name := "ModifiesClausesTransform"
+    documentation := "Translates modifies clauses into additional ensures clauses. The modifies clause of a procedure is translated into a quantified assertion that states objects not mentioned in the modifies clause have their field values preserved between the input and output heap."
     needsResolves := true
     run := fun p m =>
       let (p', diags) := modifiesClausesTransform m p
       (p', diags, {}) },
   { name := "InferHoleTypes"
+    documentation := "Annotates every verification hole (`.Hole`) in the program with a type inferred from context. This type information is needed by subsequent passes that replace holes with uninterpreted functions or nondeterministic values."
     run := fun p m =>
       let (p', diags, stats) := inferHoleTypes m p
       (p', diags, stats) },
-  { name := "EliminateHoles"
+  { name := "EliminateDeterministicHoles"
+    documentation := "Replaces every deterministic hole with a call to a freshly generated uninterpreted function. After this pass the program contains only non-deterministic holes. Assumes `InferHoleTypes` has already annotated holes with types."
     run := fun p _m =>
-      let (p', stats) := eliminateHoles p
+      let (p', stats) := eliminateDeterministicHoles p
       (p', [], stats) },
   { name := "DesugarShortCircuit"
+    documentation := "Rewrites short-circuit boolean operators (`&&` and `||`) into equivalent conditional expressions. This simplifies subsequent passes and the final translation to Core, which does not have short-circuit semantics built in."
     run := fun p m =>
       (desugarShortCircuit m p, [], {}) },
   { name := "LiftExpressionAssignments"
+    documentation := "Lifts assignments that appear in expression contexts into preceding statements. This is necessary because Strata Core does not support assignments within expressions. The pass introduces fresh temporary variables where needed."
     run := fun p m =>
       (liftExpressionAssignments m p, [], {}) },
   { name := "EliminateReturns"
+    documentation := "Eliminates explicit `return` statements in functional procedure bodies by converting the last statement in a block into the block's result expression. This bridges the gap between Laurel's imperative return style and Core's expression-based functions."
     needsResolves := true
     run := fun p _m =>
       (eliminateReturnsInExpressionTransform p, [], {}) },
   { name := "ConstrainedTypeElim"
+    documentation := "Eliminates constrained types by replacing them with their base types and generating constraint-checking functions and witness procedures. Type tests against constrained types are rewritten to call the generated constraint function."
     needsResolves := true
     run := fun p m =>
       let (p', diags) := constrainedTypeElim m p
       (p', diags, {}) }
 ]
+
+/-- Generate a documentation string describing all pipeline passes, with their names and descriptions. -/
+def laurelPipelineDocumentation : String :=
+  let entries := laurelPipeline.map fun pass =>
+    s!"- **{pass.name}**: {pass.documentation}"
+  "\n".intercalate entries.toList
 
 /--
 Run all Laurel-to-Laurel lowering passes on a program, returning the lowered

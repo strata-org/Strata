@@ -80,7 +80,7 @@ def eliminateValueReturnsInProc (proc : Procedure) : Procedure × Array Diagnost
 public section
 
 /-- Transform a program by eliminating value returns in all imperative procedures. -/
-def eliminateValueReturnsTransform (program : Program) : Program × Array DiagnosticModel :=
+def eliminateValueInReturnsTransform (program : Program) : Program × Array DiagnosticModel :=
   let (procs, diags) := program.staticProcedures.foldl (fun (ps, ds) proc =>
     let (proc', procDiags) := eliminateValueReturnsInProc proc
     (proc' :: ps, ds ++ procDiags)

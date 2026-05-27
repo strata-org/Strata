@@ -26,8 +26,6 @@ namespace Laurel
 
 public section
 
-private def bare (v : StmtExpr) : StmtExprMd := { val := v, source := none }
-
 structure ElimHoleState where
   counter : Nat := 0
   currentInputs : List Parameter := []
@@ -36,7 +34,7 @@ structure ElimHoleState where
 private abbrev ElimHoleM := StateM ElimHoleState
 
 /-- Generate a fresh uninterpreted function for a typed hole and return a call to it. -/
-private def mkHoleCall (holeType : HighTypeMd) : ElimHoleM StmtExprMd := do
+private def mkHoleCall (source : Option FileRange) (holeType : HighTypeMd) : ElimHoleM StmtExprMd := do
   let s ← get
   let n := s.counter
   modify fun s => { s with counter := n + 1 }
@@ -52,14 +50,14 @@ private def mkHoleCall (holeType : HighTypeMd) : ElimHoleM StmtExprMd := do
     body := .Opaque [] none []
   }
   modify fun s => { s with generatedFunctions := s.generatedFunctions ++ [holeProc] }
-  return bare (.StaticCall holeName (inputs.map (fun p => bare (.Var (.Local p.name)))))
+  return ⟨ .StaticCall holeName (inputs.map (fun p => ⟨ .Var (.Local p.name), source⟩)), source⟩
 
 /-- Replace a deterministic `.Hole` with a call to a fresh uninterpreted function.
     Non-hole nodes pass through unchanged; recursion is handled by `mapStmtExprM`. -/
 private def elimHoleNode (expr : StmtExprMd) : ElimHoleM StmtExprMd := do
   match expr.val with
-  | .Hole true (some ty) => mkHoleCall ty
-  | .Hole true none => mkHoleCall { val := .Unknown, source := expr.source }
+  | .Hole true (some ty) => mkHoleCall expr.source ty
+  | .Hole true none => mkHoleCall expr.source  { val := .Unknown, source := expr.source }
   | .Hole false _ => return expr -- Non-deterministic holes are preserved
   | _ => return expr
 
@@ -81,7 +79,7 @@ After this pass the program contains only non-deterministic `Hole` nodes.
 
 Assumes `inferHoleTypes` has already annotated holes with types.
 -/
-def eliminateHoles (program : Program) : Program × Statistics :=
+def eliminateDeterministicHoles (program : Program) : Program × Statistics :=
   let initState : ElimHoleState := {}
   let (procs, finalState) := (program.staticProcedures.mapM elimProcedure).run initState
   let stats := ({} : Statistics)

@@ -8,7 +8,7 @@ import VersoManual
 
 import Strata.Languages.Laurel.Laurel
 import Strata.Languages.Laurel.LaurelTypes
-import Strata.Languages.Laurel.LaurelToCoreTranslator
+import Strata.Languages.Laurel.LaurelCompilationPipeline
 import Strata.Languages.Laurel.HeapParameterization
 import Strata.Languages.Laurel.LiftImperativeExpressions
 import Strata.Languages.Laurel.ModifiesClauses
@@ -22,7 +22,19 @@ open Verso.Genre Manual
 -- environment as Verso
 open Verso.Genre.Manual.InlineLean
 
+open Verso.Doc.Elab (DocElabM)
+
 set_option pp.rawOnError true
+
+/-- Block command that generates documentation for all Laurel pipeline passes.
+    Usage inside a `#doc` block: `{laurelPipelineDocs}` -/
+@[block_command]
+def laurelPipelineDocs : Verso.Doc.Elab.BlockCommandOf Unit := fun () => do
+  let md := laurelPipelineDocumentation
+  let some ast := MD4Lean.parse md
+    | Lean.throwError "Failed to parse laurelPipelineDocumentation as Markdown"
+  let blocks ← ast.blocks.mapM (Markdown.blockFromMarkdown · (handleHeaders := Markdown.strongEmphHeaders))
+  `(Verso.Doc.Block.concat #[$blocks,*])
 
 #doc (Manual) "The Laurel Language" =>
 %%%
@@ -33,13 +45,17 @@ shortTitle := "Laurel"
 
 Laurel is an intermediate verification language designed to serve as a target for popular
 garbage-collected languages that include imperative features, such as Java, Python, and
-JavaScript. Laurel tries to include any features that are common to those three languages.
+JavaScript, where those languages have been extended to include verification specific constructs.
+Laurel tries to include any features that are common to those three languages.
 
 Laurel enables doing various forms of verification:
-- Deductive verification
-- (WIP) Model checking
-- (WIP) Property based testing
+- Testing
+- (WIP) Property-based testing
+- (WIP) Bounded symbolic execution
+- Unbounded symbolic execution
 - (WIP) Data-flow analysis
+
+## Shared language features
 
 Here are some Laurel language features that are shared between the source languages:
 - Statements such as loops and return statements
@@ -48,9 +64,14 @@ Here are some Laurel language features that are shared between the source langua
 - Object oriented concepts such as inheritance, type checking, up and down casting and
   dynamic dispatch
 - (WIP) Error handling via exceptions
-- (WIP) Higher-order procedures and procedure types
+- (WIP) Procedures types and procedures as values
 - (WIP) Parametric polymorphism
 
+Laurel does not distinguish between statements and expressions.
+Expression-like or statement-like constructs can occur in the same positions.
+Each statement-expression has a type, which for statement-like constructs might be void.
+
+## Verification features
 On top of the above features, Laurel adds features that are useful specifically for verification:
 - Assert and assume statements
 - Loop invariants
@@ -65,6 +86,7 @@ On top of the above features, Laurel adds features that are useful specifically 
 - Unbounded integer and real types
 - To be designed constructs for supporting proof writing
 
+## Verification design choices
 A peculiar choice of Laurel is that it does not require imperative code to be encapsulated
 using a functional specification. A reason for this is that sometimes the imperative code is
 as readable as the functional specification. For example:
@@ -77,12 +99,6 @@ procedure increment(counter: Counter)
 };
 ```
 
-## Implementation Choices
-
-A design choice that impacts the implementation of Laurel is that statements and expressions
-share a single implementation type, the StmtExpr. This reduces duplication for constructs
-like conditionals and variable declarations. Each StmtExpr has a user facing type, which for
-statement-like constructs could be void.
 
 # Types
 
@@ -152,28 +168,11 @@ Laurel programs are verified by translating them to Strata Core and then invokin
 verification pipeline. The translation involves several passes, each transforming the Laurel
 program before the final conversion to Core.
 
-## Heap Parameterization
+## Lowering Passes
 
-The heap parameterization pass transforms procedures that interact with the heap by adding
-explicit heap parameters. The heap is modeled as `Map Composite (Map Field Box)`, where
-`Box` is a tagged union with constructors for each primitive type.
+The following Laurel-to-Laurel lowering passes are applied in order:
 
-Procedures that write the heap receive both an input and output heap parameter. Procedures
-that only read the heap receive an input heap parameter. Field reads and writes are rewritten
-to use `readField` and `updateField` functions.
-
-## Modifies Clauses
-
-The modifies clause transformation translates modifies clauses into additional ensures
-clauses. The modifies clause of a procedure is translated into a quantified assertion that
-states that objects not mentioned in the modifies clause have their field values preserved
-between the input and output heap.
-
-## Lifting Expression Assignments
-
-The expression assignment lifting pass transforms assignments that appear in expression
-contexts into preceding statements. This is necessary because Strata Core does not support
-assignments within expressions.
+{laurelPipelineDocs}
 
 ## Translation to Core
 

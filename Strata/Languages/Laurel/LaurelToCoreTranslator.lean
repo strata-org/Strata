@@ -14,9 +14,8 @@ public import Strata.Languages.Laurel.Laurel
 public import Strata.Languages.Laurel.LiftImperativeExpressions
 import Strata.Languages.Laurel.DesugarShortCircuit
 public import Strata.Languages.Laurel.InferHoleTypes
-public import Strata.Languages.Laurel.EliminateHoles
+public import Strata.Languages.Laurel.EliminateDeterministicHoles
 import Strata.Languages.Laurel.EliminateReturnsInExpression
-import Strata.Languages.Laurel.EliminateValueReturns
 public import Strata.Languages.Laurel.HeapParameterization
 public import Strata.Languages.Laurel.TypeHierarchy
 public import Strata.Languages.Laurel.LaurelTypes
