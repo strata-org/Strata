@@ -17,14 +17,14 @@ open Strata.DDM.Integration (primitiveCategories forbiddenCategories abstractCat
 /-! # Java Code Generator for DDM Dialects
 
 Generates Java source files from DDM dialect definitions:
-- Sealed interfaces for categories with operators
+- Sealed interfaces for categories, with operator records as nested types
 - Non-sealed stub interfaces for abstract categories (e.g., Init.Expr)
-- Record classes for operators
+- Generated `toIon` methods on each record for serialization
 - Static factory methods for ergonomic AST construction
-- Ion serializer for Lean interop
+- Slim Ion serializer with helper methods (no reflection)
 
 All names are disambiguated to avoid collisions with Java reserved words,
-base classes (Node, SourceRange), and each other.
+base classes (Node, SourceRange, IonSerializer), and each other.
 -/
 
 /-! ## Name Utilities -/
@@ -39,7 +39,7 @@ def javaReservedWords : Std.HashSet String := Std.HashSet.ofList [
   "strictfp", "super", "switch", "synchronized", "this", "throw", "throws",
   "transient", "try", "void", "volatile", "while",
   -- Contextual keywords (restricted in some contexts)
-  "exports", "module", "non-sealed", "open", "opens", "permits", "provides",
+  "exports", "module", "open", "opens", "permits", "provides",
   "record", "sealed", "to", "transitive", "uses", "var", "when", "with", "yield",
   -- Literals (cannot be used as identifiers)
   "true", "false", "null",
@@ -136,10 +136,6 @@ def argDeclKindToJavaType : ArgDeclKind → JavaType
   | .type _ => .simple "Expr"
   | .cat c => syntaxCatToJavaType c
 
-/-- Get Ion separator name for a list category, or none if not a list. -/
-def getSeparator (c : SyntaxCat) : Option String :=
-  SepFormat.fromCategoryName? c.name |>.map SepFormat.toIonName
-
 /-- Extract the QualifiedIdent for categories that need Java interfaces, or none for primitives. -/
 partial def syntaxCatToQualifiedName (cat : SyntaxCat) : Option QualifiedIdent :=
   if primitiveCategories.contains cat.name then none
@@ -151,35 +147,72 @@ partial def syntaxCatToQualifiedName (cat : SyntaxCat) : Option QualifiedIdent :
   | ⟨"Init", _⟩ => none
   | qid => some qid
 
+/-! ## Serialization Code Generation -/
+
+/-- Maps a primitive Init category to its serializer method name, or none for non-primitives. -/
+def primitiveSerializerMethod (qid : QualifiedIdent) : Option String :=
+  match qid with
+  | q`Init.Ident => some "serializeIdent"
+  | q`Init.Str => some "serializeStrlit"
+  | q`Init.Num => some "serializeNum"
+  | q`Init.Decimal => some "serializeDecimal"
+  | q`Init.Bool => some "serializeBool"
+  | q`Init.ByteArray => some "serializeBytes"
+  | _ => .none
+
+/-- Get the serializer method reference for a SyntaxCat's inner type (used in Option/List). -/
+def serializerFnRef (c : SyntaxCat) : String :=
+  match primitiveSerializerMethod c.name with
+  | some method => s!"$s::{method}"
+  | none => "$s::serialize"
+
+/-- Generate the serialization expression for a single field. -/
+def serializeFieldExpr (kind : ArgDeclKind) (fieldName : String) : String :=
+  match kind with
+  | .type _ => s!"$s.serialize({fieldName})"
+  | .cat c =>
+    match primitiveSerializerMethod c.name with
+    | some method => s!"$s.{method}({fieldName})"
+    | none =>
+      if abstractCategories.contains c.name then s!"$s.serialize({fieldName})"
+      else match c.name with
+      | q`Init.Option =>
+        let inner := c.args[0]!
+        s!"$s.serializeOption({fieldName}, {serializerFnRef inner})"
+      | q`Init.Seq | q`Init.CommaSepBy | q`Init.NewlineSepBy | q`Init.SpaceSepBy
+      | q`Init.SpacePrefixSepBy | q`Init.SemicolonSepBy =>
+        let inner := c.args[0]!
+        let sep := (SepFormat.fromCategoryName? c.name).get!.toIonName
+        s!"$s.serializeSeq({fieldName}, \"{sep}\", {serializerFnRef inner})"
+      | _ => s!"$s.serialize({fieldName})"
+
 /-! ## Java Structures -/
 
 structure JavaField where
   name : String
   type : JavaType
 
-structure JavaRecord where
+/-- A nested record within a category interface. -/
+structure JavaCategoryRecord where
   name : String
   operationName : QualifiedIdent
-  implements : String
   fields : Array JavaField
-
-structure JavaInterface where
-  name : String
-  permits : Array String
+  argDecls : Array ArgDecl  -- original DDM arg declarations for toIon generation
 
 /-- All generated Java source files for a dialect. -/
 public structure GeneratedFiles where
   sourceRange : String
   node : String
-  interfaces : Array (String × String)  -- (filename, content)
-  records : Array (String × String)
-  builders : String × String  -- (filename, content)
+  categories : Array (String × String)  -- (filename, content)
+  stubs : Array (String × String)       -- (filename, content) for stub interfaces
+  builders : String × String            -- (filename, content)
   serializer : String
   deriving Inhabited
 
 /-- Mapping from DDM names to disambiguated Java identifiers. -/
 structure NameAssignments where
   categories : Std.HashMap QualifiedIdent String
+  /-- Maps (category, opName) to the nested record name within that category -/
   operators : Std.HashMap (QualifiedIdent × String) String
   stubs : Std.HashMap QualifiedIdent String
   builders : String
@@ -192,26 +225,12 @@ def argDeclToJavaField (decl : ArgDecl) : JavaField :=
 def JavaField.toParam (f : JavaField) : String :=
   s!"{f.type.toJava} {f.name}"
 
-def JavaRecord.toJava (package : String) (r : JavaRecord) : String :=
-  let params := String.intercalate ", " (r.fields.toList.map JavaField.toParam)
-  let opName := s!"{r.operationName.dialect}.{r.operationName.name}"
-s!"package {package};
-
-public record {r.name}(
-    SourceRange sourceRange{if r.fields.isEmpty then "" else ",\n    " ++ params}
-) implements {r.implements} \{
-    @Override
-    public java.lang.String operationName() \{ return \"{opName}\"; }
-}
-"
-
-def JavaInterface.toJava (package : String) (i : JavaInterface) : String :=
-  let permits := if i.permits.isEmpty then ""
-    else " permits " ++ String.intercalate ", " i.permits.toList
-s!"package {package};
-
-public sealed interface {i.name} extends Node{permits} \{}
-"
+/-- Group operators by their target category, preserving declaration order. -/
+def groupOpsByCategory (d : Dialect) : Std.HashMap QualifiedIdent (Array OpDecl) :=
+  d.declarations.foldl (init := {}) fun acc decl =>
+    match decl with
+    | .op op => acc.alter op.category (fun ops? => some ((ops?.getD #[]).push op))
+    | _ => acc
 
 def templatePackage := "com.strata.template"
 
@@ -233,11 +252,45 @@ def generateNodeInterface (package : String) (categories : List String) : String
 def generateStubInterface (package : String) (name : String) : String × String :=
   (s!"{name}.java", s!"package {package};\n\npublic non-sealed interface {name} extends Node \{}\n")
 
-def generateSerializer (package : String) (separatorMap : String) : String :=
+def generateSerializer (package : String) : String :=
   serializerTemplate.replace templatePackage package
-    |>.replace "/*SEPARATOR_MAP*/" separatorMap
 
-/-- Assign unique Java names to all generated types -/
+/-- Generate a nested record definition within a category interface. -/
+def generateRecord (catName : String) (r : JavaCategoryRecord) : String :=
+  let params := ", ".intercalate (r.fields.toList.map JavaField.toParam)
+  let opName := s!"{r.operationName.dialect}.{r.operationName.name}"
+  let fieldSerializations := r.argDecls.toList.map fun arg =>
+    let fieldName := escapeJavaName arg.ident
+    s!"            sexp.add({serializeFieldExpr arg.kind (fieldName ++ "()")});"
+  let toIonBody := "\n".intercalate
+    (s!"            var sexp = $s.newOp(\"{opName}\", sourceRange());"
+     :: fieldSerializations ++ ["            return sexp;"])
+  s!"    public record {r.name}(
+        SourceRange sourceRange{if r.fields.isEmpty then "" else ",\n        " ++ params}
+    ) implements {catName} \{
+        @Override
+        public java.lang.String operationName() \{ return \"{opName}\"; }
+
+        @Override
+        public com.amazon.ion.IonSexp toIon(IonSerializer $s) \{
+{toIonBody}
+        }
+    }"
+
+/-- Generate a category file with sealed interface and nested records. -/
+def generateCategoryFile (package : String) (catName : String) (records : Array JavaCategoryRecord) : String :=
+  let permits := if records.isEmpty then ""
+    else " permits " ++ ", ".intercalate (records.toList.map fun r => s!"{catName}.{r.name}")
+  let body := "\n\n".intercalate (records.toList.map (generateRecord catName))
+  s!"package {package};
+
+public sealed interface {catName} extends Node{permits} \{
+{body}
+}
+"
+
+/-- Assign unique Java names to all generated types.
+    Operator names are scoped within their category (nested records). -/
 def assignAllNames (d : Dialect) : NameAssignments :=
   let baseNames : Std.HashSet String := Std.HashSet.ofList ["node", "sourcerange", "ionserializer"]
 
@@ -259,7 +312,7 @@ def assignAllNames (d : Dialect) : NameAssignments :=
   -- All QualifiedIdents that need Java names (categories + refs)
   let allQids := cats ++ refs.toArray.filter (!cats.contains ·)
 
-  -- Count name occurrences to detect collisions
+  -- Count name occurrences to detect collisions across categories
   let nameCounts : Std.HashMap String Nat := allQids.foldl (init := {}) fun m qid =>
     m.alter qid.name (fun v => some (v.getD 0 + 1))
 
@@ -270,21 +323,26 @@ def assignAllNames (d : Dialect) : NameAssignments :=
                 else escapeJavaName (toPascalCase qid.name)
     disambiguate base used
 
-  -- Assign category names
+  -- Assign category names (top-level, must be globally unique)
   let catInit : Std.HashMap QualifiedIdent String × Std.HashSet String := ({}, baseNames)
   let (categoryNames, used) := cats.foldl (init := catInit) fun (map, used) cat =>
     let (name, newUsed) := assignName used cat
     (map.insert cat name, newUsed)
 
-  -- Assign operator names
-  let opInit : Std.HashMap (QualifiedIdent × String) String × Std.HashSet String := ({}, used)
-  let (operatorNames, used) := d.declarations.foldl (init := opInit) fun (map, used) decl =>
-    match decl with
-    | .op op =>
+  -- Assign operator names (nested within category, must be unique within category + not collide with category name)
+  let opsByCategory := groupOpsByCategory d
+
+  let operatorNames := opsByCategory.toList.foldl (init := ({})) fun opNames (cat, ops) =>
+    let catName := categoryNames[cat]!
+    -- Within each category, operator names must be unique and not collide with the category name
+    let localUsed : Std.HashSet String := Std.HashSet.ofList [catName.toLower]
+    let (opNames, _) := ops.foldl (init := (opNames, localUsed)) fun (opNames, localUsed) op =>
       let base := escapeJavaName (toPascalCase op.name)
-      let (name, newUsed) := disambiguate base used
-      (map.insert (op.category, op.name) name, newUsed)
-    | _ => (map, used)
+      -- For single-op categories where the op name matches the category, use "Of"
+      let base := if ops.size == 1 && base.toLower == catName.toLower then "Of" else base
+      let (name, newLocalUsed) := disambiguate base localUsed
+      (opNames.insert (op.category, op.name) name, newLocalUsed)
+    opNames
 
   -- Assign stub names (referenced types not in this dialect's categories)
   let stubInit : Std.HashMap QualifiedIdent String × Std.HashSet String := ({}, used)
@@ -294,26 +352,9 @@ def assignAllNames (d : Dialect) : NameAssignments :=
       let (name, newUsed) := assignName used ref
       (map.insert ref name, newUsed)
 
-  let (buildersName, _) := disambiguate d.name used
+  let (buildersName, _) := disambiguate (escapeJavaName (toPascalCase d.name)) used
 
   { categories := categoryNames, operators := operatorNames, stubs := stubNames, builders := buildersName }
-
-/-- Group operators by their target category -/
-def groupOpsByCategory (d : Dialect) (names : NameAssignments)
-    : Std.HashMap QualifiedIdent (Array String) :=
-  d.declarations.foldl (init := {}) fun acc decl =>
-    match decl with
-    | .op op =>
-      let javaName := names.operators[(op.category, op.name)]!
-      acc.alter op.category (fun ops? => some ((ops?.getD #[]).push javaName))
-    | _ => acc
-
-def opDeclToJavaRecord (dialectName : String) (names : NameAssignments) (op : OpDecl)
-    : JavaRecord :=
-  { name := names.operators[(op.category, op.name)]!
-    operationName := ⟨dialectName, op.name⟩
-    implements := names.categories[op.category]!
-    fields := op.argDecls.toArray.map argDeclToJavaField }
 
 def generateBuilders (package : String) (dialectName : String) (d : Dialect) (names : NameAssignments) : String :=
   let methods (op : OpDecl) :=
@@ -322,7 +363,6 @@ def generateBuilders (package : String) (dialectName : String) (d : Dialect) (na
       let name := escapeJavaName decl.ident
       let cat := decl.kind.categoryOf.name
       if cat == q`Init.Num then
-        -- Long parameter must be non-negative.
         (ps.push s!"long {name}",
          as.push s!"java.math.BigInteger.valueOf({name})",
          checks.push s!"if ({name} < 0) throw new IllegalArgumentException(\"{name} must be non-negative\");")
@@ -335,14 +375,12 @@ def generateBuilders (package : String) (dialectName : String) (d : Dialect) (na
         (ps.push s!"{t} {name}", as.push name, checks)
     let methodName := escapeJavaName op.name
     let returnType := names.categories[op.category]!
-    let recordName := names.operators[(op.category, op.name)]!
+    let recordName := s!"{returnType}.{names.operators[(op.category, op.name)]!}"
     let checksStr := if checks.isEmpty then "" else " ".intercalate checks.toList ++ " "
     let argsStr := if as.isEmpty then "" else ", " ++ ", ".intercalate as.toList
     let paramsStr := ", ".intercalate ps.toList
-    -- Overload with SourceRange parameter
     let srParams := if ps.isEmpty then "SourceRange sourceRange" else s!"SourceRange sourceRange, {paramsStr}"
     let withSR := s!"    public static {returnType} {methodName}({srParams}) \{ {checksStr}return new {recordName}(sourceRange{argsStr}); }"
-    -- Convenience overload without SourceRange
     let withoutSR := s!"    public static {returnType} {methodName}({paramsStr}) \{ {checksStr}return new {recordName}(SourceRange.NONE{argsStr}); }"
     s!"{withSR}\n{withoutSR}"
   let allMethods := d.declarations.filterMap fun | .op op => some (methods op) | _ => none
@@ -350,7 +388,6 @@ def generateBuilders (package : String) (dialectName : String) (d : Dialect) (na
 
 public def generateDialect (d : Dialect) (package : String) : Except String GeneratedFiles := do
   let names := assignAllNames d
-  let opsByCategory := groupOpsByCategory d names
 
   -- Check for unsupported declarations
   for decl in d.declarations do
@@ -359,55 +396,35 @@ public def generateDialect (d : Dialect) (package : String) : Except String Gene
     | .function f => throw s!"function declaration '{f.name}' is not supported in Java generation"
     | _ => pure ()
 
-  -- Categories with operators get sealed interfaces with permits clauses
-  let sealedInterfaces := opsByCategory.toList.map fun (cat, ops) =>
-    let name := names.categories[cat]!
-    let iface : JavaInterface := { name, permits := ops }
-    (s!"{name}.java", iface.toJava package)
+  -- Group operators by category (preserving declaration order)
+  let opsByCategory := groupOpsByCategory d
+
+  -- Generate category files (sealed interface + nested records)
+  let categoryFiles := opsByCategory.toList.map fun (cat, ops) =>
+    let catName := names.categories[cat]!
+    let records := ops.map fun op =>
+      let recName := names.operators[(op.category, op.name)]!
+      { name := recName
+        operationName := ⟨d.name, op.name⟩
+        fields := op.argDecls.toArray.map argDeclToJavaField
+        argDecls := op.argDecls.toArray : JavaCategoryRecord }
+    (s!"{catName}.java", generateCategoryFile package catName records)
 
   -- Stub interfaces for referenced types without operators
-  let stubInterfaces := names.stubs.toList.map fun (_, name) =>
+  let stubFiles := names.stubs.toList.map fun (_, name) =>
     generateStubInterface package name
 
-  -- Generate records for operators
-  let records := d.declarations.toList.filterMap fun decl =>
-    match decl with
-    | .op op =>
-      let name := names.operators[(op.category, op.name)]!
-      some (s!"{name}.java", (opDeclToJavaRecord d.name names op).toJava package)
-    | _ => none
-
-  -- All interface names for Node permits clause
-  let allInterfaceNames :=
-        sealedInterfaces ++ stubInterfaces
-        |>.map (·.1.dropEnd 5 |>.toString)
-
-  -- Generate separator map for list fields
-  let separatorEntries := d.declarations.toList.filterMap fun decl =>
-    match decl with
-    | .op op =>
-      let opName := s!"{d.name}.{op.name}"
-      let fieldEntries := op.argDecls.toArray.toList.filterMap fun arg =>
-        match arg.kind with
-        | .cat c => match getSeparator c with
-          | some sep => some s!"\"{escapeJavaName arg.ident}\", \"{sep}\""
-          | none => none
-        | _ => none
-      if fieldEntries.isEmpty then none
-      else
-        let inner := fieldEntries.map fun e => s!"java.util.Map.entry({e})"
-        some s!"        java.util.Map.entry(\"{opName}\", java.util.Map.ofEntries({", ".intercalate inner}))"
-    | _ => none
-  let separatorMap := if separatorEntries.isEmpty then "java.util.Map.of()"
-    else s!"java.util.Map.ofEntries(\n{",\n".intercalate separatorEntries})"
+  -- All type names for Node permits clause
+  let allTypeNames := categoryFiles.map (·.1.dropEnd 5 |>.toString)
+    ++ stubFiles.map (·.1.dropEnd 5 |>.toString)
 
   return {
     sourceRange := generateSourceRange package
-    node := generateNodeInterface package allInterfaceNames
-    interfaces := sealedInterfaces.toArray ++ stubInterfaces.toArray
-    records := records.toArray
+    node := generateNodeInterface package allTypeNames
+    categories := categoryFiles.toArray
+    stubs := stubFiles.toArray
     builders := (s!"{names.builders}.java", generateBuilders package names.builders d names)
-    serializer := generateSerializer package separatorMap
+    serializer := generateSerializer package
   }
 
 /-! ## File Output -/
@@ -425,10 +442,10 @@ public def writeJavaFiles (baseDir : System.FilePath) (package : String) (files 
   IO.FS.writeFile (dir / "IonSerializer.java") files.serializer
   IO.FS.writeFile (dir / files.builders.1) files.builders.2
 
-  for (filename, content) in files.interfaces do
+  for (filename, content) in files.categories do
     IO.FS.writeFile (dir / filename) content
 
-  for (filename, content) in files.records do
+  for (filename, content) in files.stubs do
     IO.FS.writeFile (dir / filename) content
 
 end Strata.Java

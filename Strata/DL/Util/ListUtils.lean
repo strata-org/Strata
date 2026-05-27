@@ -101,7 +101,7 @@ def List.replaceAll [BEq α] : List α → α → α → List α
 /-- `Disjoint l₁ l₂` means that `l₁` and `l₂` have no elements in common.
 Taken from https://github.com/leanprover-community/batteries/blob/3613427d66262c4e25e19b40a6a49242e94ba072/Batteries/Data/List/Basic.lean#L512-L514
 -/
-def List.Disjoint (l₁ l₂ : List α) : Prop :=
+@[expose] def List.Disjoint (l₁ l₂ : List α) : Prop :=
   ∀ ⦃a⦄, a ∈ l₁ → a ∈ l₂ → False
 
 end -- public section
@@ -441,6 +441,21 @@ case cons h t ih =>
   cases ih with
   | intro b Hin =>
   refine ⟨b, Or.inr Hin⟩
+
+/-- Decompose `List.mapM` on a cons list into head and tail results. -/
+theorem List.mapM_cons_some {f : α → Option β} {a : α} {as : List α} {bs : List β}
+    (h : (a :: as).mapM f = some bs) :
+    ∃ b bs', f a = some b ∧ as.mapM f = some bs' ∧ bs = b :: bs' := by
+  simp only [List.mapM_cons, bind, Option.bind] at h
+  cases hfa : f a with
+  | none => simp [hfa] at h
+  | some b =>
+    simp [hfa] at h
+    cases hrest : as.mapM f with
+    | none => simp [hrest] at h
+    | some bs' =>
+      simp [hrest] at h
+      exact ⟨b, bs', rfl, rfl, h.symm⟩
 
 theorem List.PredDisjoint_comm :
   PredDisjoint P Q → PredDisjoint Q P := fun H x Hq Hp => H x Hp Hq

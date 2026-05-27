@@ -1,0 +1,28 @@
+{
+  "name": "strata-st",
+  "displayName": "Strata",
+  "publisher": "strata-org",
+  "description": "Syntax highlighting for Strata dialect files",
+  "version": "0.1.0",
+  "engines": {
+    "vscode": "^1.60.0"
+  },
+  "categories": ["Programming Languages"],
+  "contributes": {
+    "languages": [
+      {
+        "id": "core-st",
+        "aliases": ["Strata Core", "core-st"],
+        "extensions": [".core.st"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "core-st",
+        "scopeName": "source.core-st",
+        "path": "./syntaxes/core-st.tmLanguage.json"
+      }
+    ]
+  }
+}

@@ -1,0 +1,4 @@
+Successfully parsed.
+DoubleTwice.inlineProcedures.core.st(5, 2) [double_correct]: ✅ pass
+DoubleTwice.inlineProcedures.core.st(11, 2) [testProc_result]: ✅ pass
+All 2 goals passed.

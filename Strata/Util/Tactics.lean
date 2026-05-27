@@ -106,4 +106,17 @@ syntax "term_by_mem" "[" (ident "," ident),* "]" : tactic
 macro_rules
   | `(tactic| term_by_mem [ $[$types , $lemmas],* ]) =>
     `(tactic| solve | (add_mem_size_lemmas [$[$types, $lemmas],*]; (try simp_all); (try omega)))
+
+open Lean Meta Elab Tactic in
+/-- Generalize the last argument of the LHS of an equality goal. -/
+elab "generalize_lhs_last_arg" : tactic => do
+  let goal ← getMainGoal
+  let goalType ← instantiateMVars (← goal.getType)
+  let some (_, lhs, _) := goalType.eq? | throwError "Goal is not an equality"
+  match lhs with
+  | Expr.app _fn lastArg =>
+    let (_, newGoal) ← goal.generalize #[{ expr := lastArg }]
+    replaceMainGoal [newGoal]
+  | _ => throwError "LHS is not a function application"
+
 end

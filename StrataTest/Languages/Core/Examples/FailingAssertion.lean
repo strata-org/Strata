@@ -16,11 +16,8 @@ program Core;
 
 type MapII := Map int int;
 
-var a : MapII;
-
-procedure P() returns ()
+procedure P(inout a : MapII)
 spec {
-  modifies a;
   requires a[0] == 0;
 }
 {
@@ -29,64 +26,35 @@ spec {
 #end
 
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 -- No errors in translation.
 #eval TransM.run Inhabited.default (translateProgram failing) |>.snd |>.isEmpty
 
 /--
-info: type MapII := Map int int;
-var a : MapII;
-procedure P () returns ()
+info: program Core;
+
+type MapII := Map int int;
+procedure P (inout a : MapII)
 spec {
-  modifies a;
-  requires [P_requires_1]: a[0] == 0;
+  requires [P_requires_0]: a[0] == 0;
   } {
   assert [assert_0]: a[0] == 1;
-  };
+};
 -/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram failing) |>.fst
 
 /--
-info: [Strata.Core] Type checking succeeded.
-
-
-VCs:
-Label: assert_0
-Property: assert
-Assumptions:
-P_requires_1: $__a1[0] == 0
-Obligation:
-$__a1[0] == 1
-
-
-
-Result: Obligation: assert_0
-Property: assert
-Result: ❌ fail
-
-
-[DEBUG] Evaluated program:
-type MapII := Map int int;
-var a : (Map int int);
-procedure P () returns ()
-spec {
-  modifies a;
-  requires [P_requires_1]: a[0] == 0;
-  } {
-  assume [P_requires_1]: $__a1[0] == 0;
-  assert [assert_0]: $__a1[0] == 1;
-  };
-
----
 info:
 Obligation: assert_0
 Property: assert
 Result: ❌ fail
 -/
 #guard_msgs in
-#eval verify failing
+#eval verify failing (options := .quiet)
 
 ---------------------------------------------------------------------
 
@@ -94,7 +62,7 @@ private def failingThrice :=
 #strata
 program Core;
 
-procedure P(x : int) returns ()
+procedure P(x : int)
 spec {
   requires x != 0;
 }

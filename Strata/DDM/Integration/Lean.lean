@@ -5,9 +5,9 @@
 -/
 module
 
-public import Strata.DDM.Format  -- FormatOptions used by test files
 public import Strata.DDM.Integration.Lean.Gen
 public import Strata.DDM.Integration.Lean.HashCommands
+public import Strata.DDM.Integration.Lean.GenTrace
 
 /-!
 Umbrella module that re-exports all imports needed to work with

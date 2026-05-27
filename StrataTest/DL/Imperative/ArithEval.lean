@@ -11,10 +11,10 @@ import Strata.DL.Imperative.CmdEval
 
 namespace Arith
 
-/-! ## Instantiate `Imperative`'s Partial Evaluator
+/-! ## Instantiate `Imperative`'s Symbolic Evaluator
 
 We instantiate Imperative's `EvalContext` typeclass with `ArithPrograms`'
-specific implementations to obtain a partial evaluator that generates
+specific implementations to obtain an evaluator that generates
 verification conditions on the fly (i.e., a Strongest-Postconditions
 Verification Condition Generator).
 -/
@@ -125,7 +125,9 @@ def deferObligation (s : State) (ob : ProofObligation PureExpr) : State :=
 
 def ProofObligation.freeVars (ob : ProofObligation PureExpr) : List String :=
   let assum_typedvars :=
-      ob.assumptions.flatMap (fun e => e.values.flatMap (fun i => i.freeVars))
+      ob.assumptions.flatMap (fun e => e.filterMap (fun
+        | .assumption _ expr => some expr
+        | _ => none) |>.flatMap (fun i => i.freeVars))
   (assum_typedvars.map (fun (v, _) => v)) ++
   (ob.obligation.freeVars.map (fun (v, _) => v))
 
@@ -170,8 +172,8 @@ instance : ToFormat (Cmds PureExpr × State) where
 /- Tests -/
 
 private def testProgram1 : Cmds PureExpr :=
-  [.init "x" .Num (some (.Num 0)) .empty,
-   .set "x" (.Plus (.Var "x" .none) (.Num 100)) .empty,
+  [.init "x" .Num (.det (.Num 0)) .empty,
+   .set "x" (.det (.Plus (.Var "x" .none) (.Num 100))) .empty,
    .assert "x_value_eq" (.Eq (.Var "x" .none) (.Num 100)) .empty]
 
 /--
@@ -198,8 +200,8 @@ genNum: 0
 
 
 private def testProgram2 : Cmds PureExpr :=
-  [.init "x" .Num (some (.Var "y" .none)) .empty,
-   .havoc "x" .empty,
+  [.init "x" .Num (.det (.Var "y" .none)) .empty,
+   .set "x" .nondet .empty,
    .assert "x_value_eq" (.Eq (.Var "x" .none) (.Num 100)) .empty]
 
 /--

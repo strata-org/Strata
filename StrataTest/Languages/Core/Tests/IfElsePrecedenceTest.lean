@@ -23,7 +23,7 @@ function myFunc (b : bool, x : int) : int {
   if b then 10 else 1 + x
 }
 
-procedure Test() returns ()
+procedure Test()
 spec {
   ensures true;
 }
@@ -32,7 +32,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram ifElsePlusPgm) |>.snd |>.isEmpty
 

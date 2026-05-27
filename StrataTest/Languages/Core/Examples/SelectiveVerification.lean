@@ -14,9 +14,7 @@ def selectiveVerificationPgm : Program :=
 #strata
 program Core;
 
-var x : int;
-
-procedure Helper(n : int) returns (result : int)
+procedure Helper(n : int, out result : int)
 spec {
   // NOTE: This precondition is not satisfied in MainProc.
   requires [n_positive]: (n > 0);
@@ -26,18 +24,17 @@ spec {
   result := n + n;
 };
 
-procedure MainProc() returns (output : int)
+procedure MainProc(x : int, out output : int)
 spec {
-  modifies x;
   requires [x_nonneg]: (x >= 0);
-  ensures [output_property]: (output == old x * 4);
+  ensures [output_property]: (output == x * 4);
 }
 {
-  call output := Helper(x);
-  call output := Helper(output);
+  call Helper(x, out output);
+  call Helper(output, out output);
 };
 
-procedure IndependentProc() returns (y : int)
+procedure IndependentProc(out y : int)
 spec {
   ensures [y_value]: (y == 42);
 }
@@ -45,7 +42,7 @@ spec {
   y := 42;
 };
 
-procedure UnusedProc() returns (z : int)
+procedure UnusedProc(out z : int)
 spec {
   ensures [z_value]: (z == 100);
 }
@@ -64,7 +61,7 @@ Result: ❌ fail
 
 Obligation: callElimAssert_n_positive_2
 Property: assert
-Result: ❌ fail
+Result: ❓ unknown
 
 Obligation: output_property
 Property: assert
@@ -83,13 +80,13 @@ Obligation: result_correct
 Property: assert
 Result: ✅ pass
 
-Obligation: (Origin_Helper_Requires)n_positive
+Obligation: callElimAssert_n_positive_6
 Property: assert
 Result: ❌ fail
 
-Obligation: (Origin_Helper_Requires)n_positive
+Obligation: callElimAssert_n_positive_2
 Property: assert
-Result: ❌ fail
+Result: ❓ unknown
 
 Obligation: output_property
 Property: assert

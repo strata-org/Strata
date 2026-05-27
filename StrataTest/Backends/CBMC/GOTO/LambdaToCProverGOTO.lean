@@ -148,6 +148,26 @@ open LTy.Syntax in
   assert! parseBvExtractLo "Bv32.Extract_31_31" == some 31
   assert! parseBvExtractLo "Bv16.Extract_15_15" == some 15
   assert! parseBvExtractLo "Bv16.Extract_7_0" == some 0
+
+-- Test overflow predicate and safe op GOTO translation
+#eval do
+  -- Overflow predicates → CBMC overflow expressions
+  let .ok r := fnToGotoID "Bv32.SAddOverflow" | IO.throwServerError "SAddOverflow"
+  assert! r == CProverGOTO.Expr.Identifier.binary .PlusOverflow
+  let .ok r := fnToGotoID "Bv32.SSubOverflow" | IO.throwServerError "SSubOverflow"
+  assert! r == CProverGOTO.Expr.Identifier.binary .MinusOverflow
+  let .ok r := fnToGotoID "Bv32.SMulOverflow" | IO.throwServerError "SMulOverflow"
+  assert! r == CProverGOTO.Expr.Identifier.binary .MultOverflow
+  let .ok r := fnToGotoID "Bv32.SNegOverflow" | IO.throwServerError "SNegOverflow"
+  assert! r == CProverGOTO.Expr.Identifier.unary .UnaryMinusOverflow
+  -- Unsigned overflow predicates
+  let .ok r := fnToGotoID "Bv32.UAddOverflow" | IO.throwServerError "UAddOverflow"
+  assert! r == CProverGOTO.Expr.Identifier.binary .PlusOverflow
+  -- Safe ops → same as unsafe
+  let .ok r := fnToGotoID "Bv32.SafeAdd" | IO.throwServerError "SafeAdd"
+  assert! r == CProverGOTO.Expr.Identifier.multiary .Plus
+  let .ok r := fnToGotoID "Bv32.SafeSDiv" | IO.throwServerError "SafeSDiv"
+  assert! r == CProverGOTO.Expr.Identifier.binary .Div
   assert! parseBvExtractLo "Bv32.Add" == none
   assert! parseBvExtractLo "Int.Add" == none
 

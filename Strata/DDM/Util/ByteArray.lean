@@ -8,7 +8,6 @@ module
 /-
 Functions for ByteArray that could potentially be upstreamed to Lean.
 -/
-import Std.Data.HashMap
 public import Lean.ToExpr
 
 namespace ByteArray

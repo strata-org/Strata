@@ -3,13 +3,17 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 import Strata.DL.Imperative.PureExpr
-import Strata.DL.Imperative.BasicBlock
+public import Strata.DL.Imperative.BasicBlock
+public import Strata.DL.Imperative.CFGSemantics
 import Strata.DL.Imperative.Cmd
-import Strata.DL.Imperative.Stmt
+public import Strata.DL.Imperative.Stmt
 import Strata.DL.Lambda.LExpr
-import Strata.DL.Util.LabelGen
+public import Strata.DL.Util.LabelGen
+
+public section
 
 namespace Imperative
 
@@ -39,13 +43,16 @@ def flushCmds
     let b := (l, { cmds := accum.reverse, transfer := tr?.getD (.goto k) })
     pure (l, [b])
 
+private abbrev synthesizedMd {P : PureExpr} : MetaData P :=
+  MetaData.ofProvenance (.synthesized .structuredToUnstructured)
+
 /-- Translate a list of statements to basic blocks, accumulating commands -/
 def stmtsToBlocks
   [HasBool P] [HasPassiveCmds P CmdT] [HasInit P CmdT]
   [HasIdent P] [HasFvar P] [HasIntOrder P] [HasNot P]
   (k : String)
   (ss : List (Stmt P CmdT))
-  (exitConts : List (String × String))
+  (exitConts : List (Option String × String))
   (accum : List CmdT) :
   StringGenM (String × DetBlocks String CmdT P) :=
 match ss with
@@ -65,7 +72,7 @@ match ss with
   -- Process rest first
   let (kNext, bsNext) ← stmtsToBlocks k rest exitConts []
   -- Process block body, extending the list of exit continuations.
-  let (bl, bbs) ← stmtsToBlocks kNext bss ((l, kNext) :: exitConts) []
+  let (bl, bbs) ← stmtsToBlocks kNext bss ((.some l, kNext) :: exitConts) []
   -- Flush accumulated commands
   let (accumEntry, accumBlocks) ← flushCmds "blk$" accum .none bl
   -- Create labeled block if needed
@@ -82,8 +89,16 @@ match ss with
   let l ← StringGenState.gen "ite"
   let (tl, tbs) ← stmtsToBlocks kNext tss exitConts []
   let (fl, fbs) ← stmtsToBlocks kNext fss exitConts []
-  -- Flush accumulated commands
-  let (accumEntry, accumBlocks) ← flushCmds "ite$" accum (.some (.condGoto c tl fl)) l
+  -- For nondet conditions, introduce a fresh boolean variable
+  let (condExpr, extraCmds) ← match c with
+    | .det e => pure (e, [])
+    | .nondet => do
+      let freshName ← StringGenState.gen "$__nondet_ite$"
+      let ident := HasIdent.ident (P := P) freshName
+      let initCmd := HasInit.init ident HasBool.boolTy .nondet synthesizedMd
+      pure (HasFvar.mkFvar ident, [initCmd])
+  let (accumEntry, accumBlocks) ← flushCmds "ite$" (accum ++ extraCmds)
+    (.some (.condGoto condExpr tl fl)) l
   pure (accumEntry, accumBlocks ++ tbs ++ fbs ++ bsNext)
 | .loop c m is bss _md :: rest => do
   -- Process rest first
@@ -99,47 +114,52 @@ match ss with
       let mLabel ← StringGenState.gen "loop_measure$"
       let mIdent := HasIdent.ident mLabel
       let mOldExpr := HasFvar.mkFvar mIdent
-      let initCmd  := HasInit.init mIdent HasIntOrder.intTy none MetaData.empty
+      let initCmd  := HasInit.init mIdent HasIntOrder.intTy .nondet synthesizedMd
       let assumeCmd := HasPassiveCmds.assume s!"assume_{mLabel}"
-                         (HasIntOrder.eq mOldExpr mExpr) MetaData.empty
+                         (HasIntOrder.eq mOldExpr mExpr) synthesizedMd
       let lbCmd    := HasPassiveCmds.assert s!"measure_lb_{mLabel}"
-                         (HasNot.not (HasIntOrder.lt mOldExpr HasIntOrder.zero)) MetaData.empty
+                         (HasNot.not (HasIntOrder.lt mOldExpr HasIntOrder.zero)) synthesizedMd
       let decCmd   := HasPassiveCmds.assert s!"measure_decrease_{mLabel}"
-                         (HasIntOrder.lt mExpr mOldExpr) MetaData.empty
+                         (HasIntOrder.lt mExpr mOldExpr) synthesizedMd
       let ldec ← StringGenState.gen "measure_decrease$"
       let decBlock := (ldec, { cmds := [decCmd], transfer := .goto lentry })
       pure ([initCmd, assumeCmd, lbCmd], ldec, [decBlock])
-  -- Body jumps to bodyK (either directly to lentry, or through the decrease block)
-  let (bl, bbs) ← stmtsToBlocks bodyK bss exitConts []
+  -- Body jumps to bodyK (either directly to lentry, or through the decrease block).
+  let (bl, bbs) ← stmtsToBlocks bodyK bss ((.none, kNext) :: exitConts) []
+  -- For each invariant, emit an `assert` whose label preserves the source
+  -- label when present.  When the source label is empty (frontend did not
+  -- supply one), generate a fresh `inv$` label for uniqueness.
   let invCmds : List CmdT ←
-    is.mapM (fun i => do
-      let invLabel ← StringGenState.gen "inv$"
-      pure (HasPassiveCmds.assert invLabel i MetaData.empty))
-  let b := (lentry, { cmds := invCmds ++ measureCmds, transfer := .condGoto c bl kNext })
-  -- Flush accumulated commands
-  let (accumEntry, accumBlocks) ← flushCmds "before_loop$" accum .none lentry
-  pure (accumEntry, accumBlocks ++ [b] ++ bbs ++ decreaseBlocks ++ bsNext)
-| .exit l? _md :: _ => do
-  -- Find the continuation of the block labeled `l`, or the most recently-added
-  -- block if `l` is `.none`.
+    is.mapM (fun (srcLabel, i) => do
+      let assertLabel ←
+        if srcLabel.isEmpty then StringGenState.gen "inv$"
+        else pure srcLabel
+      pure (HasPassiveCmds.assert assertLabel i synthesizedMd))
+  -- For nondet guards, introduce a fresh boolean variable
+  match c with
+  | .det e =>
+    let b := (lentry, { cmds := invCmds ++ measureCmds, transfer := .condGoto e bl kNext })
+    let (accumEntry, accumBlocks) ← flushCmds "before_loop$" accum .none lentry
+    pure (accumEntry, accumBlocks ++ [b] ++ bbs ++ decreaseBlocks ++ bsNext)
+  | .nondet => do
+    let freshName ← StringGenState.gen "$__nondet_loop$"
+    let ident := HasIdent.ident (P := P) freshName
+    let initCmd := HasInit.init ident HasBool.boolTy .nondet synthesizedMd
+    let b := (lentry, { cmds := [initCmd] ++ invCmds ++ measureCmds,
+                        transfer := .condGoto (HasFvar.mkFvar ident) bl kNext })
+    let (accumEntry, accumBlocks) ← flushCmds "before_loop$" accum .none lentry
+    pure (accumEntry, accumBlocks ++ [b] ++ bbs ++ decreaseBlocks ++ bsNext)
+| .exit l _md :: _ => do
+  -- Find the continuation of the block labeled `l`.
   let bk :=
-    match (l?, exitConts) with
+    match exitConts.lookup (.some l) with
+    | .some k => k
     -- Just keep going if this is an invalid exit. We assume a prior
     -- check to avoid this.
-    | (.none, []) => k
-    | (.none, (_, k) :: _) => k
-    | (.some l, _) =>
-      match exitConts.lookup l with
-      | .some k => k
-      -- Just keep going if this is an invalid exit. We assume a prior
-      -- check to avoid this.
-      | .none => k
+    | .none => k
   -- Flush the accumulated commands, going to the continuation calculated above.
   -- Any statements after the `.exit` are skipped.
-  let exitName :=
-    match l? with
-    | .some l => s!"block${l}$"
-    | .none => "block$"
+  let exitName := s!"block${l}$"
   flushCmds exitName accum .none bk
 
 def stmtsToCFGM

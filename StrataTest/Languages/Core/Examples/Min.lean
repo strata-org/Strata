@@ -13,7 +13,7 @@ private def testPgm : Program :=
 #strata
 program Core;
 
-procedure min(n : int, m : int) returns (k : int)
+procedure min(n : int, m : int, out k : int)
 spec {
   ensures ((k <= n) && (k <= m));
 }
@@ -32,7 +32,7 @@ VCs:
 Label: min_ensures_0
 Property: assert
 Obligation:
-if $__n0 < $__m1 then $__n0 else $__m1 <= $__n0 && if $__n0 < $__m1 then $__n0 else $__m1 <= $__m1
+if n@1 < m@1 then n@1 else m@1 <= n@1 && if n@1 < m@1 then n@1 else m@1 <= m@1
 
 ---
 info:

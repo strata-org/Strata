@@ -11,354 +11,216 @@ namespace Strata.Python.Tests
 
 open Strata.Python
 
+private def pythonRegexToCoreEraseTypes (r : String) (mode : MatchMode := MatchMode.fullmatch) :=
+  let (exp, err) := pythonRegexToCore r mode
+  (exp.eraseTypes, err)
+
 /--
-info: ((~Re.Concat
-  (~Re.Concat (~Str.ToRegEx #a) (~Str.ToRegEx #b))
-  (~Re.Union
-   (~Re.Union (~Str.ToRegEx #) ~Re.AllChar)
-   (~Re.Concat (~Re.Concat ~Re.AllChar (~Re.Star ~Re.AllChar)) ~Re.AllChar))),
+info: (re.concat(re.concat(str.to.re("a"), str.to.re("b")), re.union(re.union(str.to.re(""), re.allchar()), re.concat(re.concat(re.allchar(), re.*(re.allchar())), re.allchar()))),
  none)
 -/
 #guard_msgs in
-#eval Std.format$ pythonRegexToCore "ab.*" -- Encoded as `ab(|.|..*.)`
+#eval Std.format$ pythonRegexToCoreEraseTypes "ab.*" -- Encoded as `ab(|.|..*.)`
 
 /--
-info: ((~Re.Concat
-  (~Re.Concat (~Str.ToRegEx #a) (~Str.ToRegEx #b))
-  (~Re.Union
-   (~Re.Union (~Str.ToRegEx #) (~Re.Concat (~Str.ToRegEx #c) (~Str.ToRegEx #)))
-   (~Re.Concat
-    (~Re.Concat (~Re.Concat (~Str.ToRegEx #c) ~Re.None) (~Re.Star (~Re.Concat (~Str.ToRegEx #c) ~Re.None)))
-    (~Re.Concat (~Str.ToRegEx #c) (~Str.ToRegEx #))))),
+info: (re.concat(re.concat(str.to.re("a"), str.to.re("b")), re.union(re.union(str.to.re(""), re.concat(str.to.re("c"), str.to.re(""))), re.concat(re.concat(re.concat(str.to.re("c"), re.none()), re.*(re.concat(str.to.re("c"), re.none()))), re.concat(str.to.re("c"), str.to.re(""))))),
  none)
 -/
 #guard_msgs in
-#eval Std.format$ pythonRegexToCore "ab(c$)*"
+#eval Std.format$ pythonRegexToCoreEraseTypes "ab(c$)*"
 
 /--
-info: ((~Re.Concat
-  (~Re.Concat (~Str.ToRegEx #a) (~Str.ToRegEx #b))
-  (~Re.Union
-   (~Re.Union (~Str.ToRegEx #) (~Re.Concat (~Re.Concat ~Re.None (~Str.ToRegEx #c)) (~Str.ToRegEx #)))
-   (~Re.Concat
-    (~Re.Concat
-     (~Re.Concat (~Re.Concat ~Re.None (~Str.ToRegEx #c)) ~Re.None)
-     (~Re.Star (~Re.Concat (~Re.Concat ~Re.None (~Str.ToRegEx #c)) ~Re.None)))
-    (~Re.Concat (~Re.Concat ~Re.None (~Str.ToRegEx #c)) (~Str.ToRegEx #))))),
+info: (re.concat(re.concat(str.to.re("a"), str.to.re("b")), re.union(re.union(str.to.re(""), re.concat(re.concat(re.none(), str.to.re("c")), str.to.re(""))), re.concat(re.concat(re.concat(re.concat(re.none(), str.to.re("c")), re.none()), re.*(re.concat(re.concat(re.none(), str.to.re("c")), re.none()))), re.concat(re.concat(re.none(), str.to.re("c")), str.to.re(""))))),
  none)
 -/
 #guard_msgs in
-#eval Std.format$ pythonRegexToCore "ab(^c$)*"
+#eval Std.format$ pythonRegexToCoreEraseTypes "ab(^c$)*"
+
+/-- info: (re.concat(str.to.re("a"), str.to.re("b")), none) -/
+#guard_msgs in
+#eval Std.format$ pythonRegexToCoreEraseTypes "ab"
+
+/-- info: (re.union(str.to.re("a"), str.to.re("b")), none) -/
+#guard_msgs in
+#eval Std.format$ pythonRegexToCoreEraseTypes "a|b"
+
+/-- info: (re.concat(re.concat(str.to.re(""), str.to.re("a")), str.to.re("b")), none) -/
+#guard_msgs in
+#eval Std.format$ pythonRegexToCoreEraseTypes "^ab"
 
 /--
-info: ((~Re.Concat (~Str.ToRegEx #a) (~Str.ToRegEx #b)), none)
+info: (re.concat(re.concat(re.concat(str.to.re(""), str.to.re("a")), str.to.re("b")), str.to.re("")), none)
 -/
 #guard_msgs in
-#eval Std.format$ pythonRegexToCore "ab"
+#eval Std.format$ pythonRegexToCoreEraseTypes "^ab$"
 
-/--
-info: ((~Re.Union (~Str.ToRegEx #a) (~Str.ToRegEx #b)), none)
--/
+/-- info: (re.concat(re.concat(str.to.re("a"), re.none()), str.to.re("b")), none) -/
 #guard_msgs in
-#eval Std.format$ pythonRegexToCore "a|b"
+#eval Std.format$ pythonRegexToCoreEraseTypes "(a$)b"
 
 /--
-info: ((~Re.Concat (~Re.Concat (~Str.ToRegEx #) (~Str.ToRegEx #a)) (~Str.ToRegEx #b)), none)
--/
-#guard_msgs in
-#eval Std.format$ pythonRegexToCore "^ab"
-
-/--
-info: ((~Re.Concat (~Re.Concat (~Re.Concat (~Str.ToRegEx #) (~Str.ToRegEx #a)) (~Str.ToRegEx #b)) (~Str.ToRegEx #)), none)
--/
-#guard_msgs in
-#eval Std.format$ pythonRegexToCore "^ab$"
-
-/--
-info: ((~Re.Concat (~Re.Concat (~Str.ToRegEx #a) ~Re.None) (~Str.ToRegEx #b)), none)
--/
-#guard_msgs in
-#eval Std.format$ pythonRegexToCore "(a$)b"
-
-/--
-info: ((~Re.Concat
-  (~Re.Concat
-   (~Re.Concat (~Re.Concat (~Re.Concat (~Str.ToRegEx #) (~Str.ToRegEx #)) (~Str.ToRegEx #)) (~Str.ToRegEx #a))
-   (~Str.ToRegEx #))
-  (~Str.ToRegEx #)),
+info: (re.concat(re.concat(re.concat(re.concat(re.concat(str.to.re(""), str.to.re("")), str.to.re("")), str.to.re("a")), str.to.re("")), str.to.re("")),
  none)
 -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToCore "^^^a$$"
+#eval Std.format $ pythonRegexToCoreEraseTypes "^^^a$$"
 
 /--
-info: ((~Re.Concat
-  (~Str.ToRegEx #)
-  (~Re.Concat
-   (~Re.Concat (~Re.Concat (~Re.Concat (~Str.ToRegEx #) (~Str.ToRegEx #)) (~Str.ToRegEx #a)) (~Str.ToRegEx #))
-   (~Str.ToRegEx #))),
+info: (re.concat(str.to.re(""), re.concat(re.concat(re.concat(re.concat(str.to.re(""), str.to.re("")), str.to.re("a")), str.to.re("")), str.to.re(""))),
  none)
 -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToCore "^(^^a$$)"
+#eval Std.format $ pythonRegexToCoreEraseTypes "^(^^a$$)"
 
 /--
-info: ((~Re.Union
-  (~Re.Concat (~Re.Concat (~Str.ToRegEx #) (~Str.ToRegEx #a)) (~Str.ToRegEx #))
-  (~Re.Concat (~Re.Concat (~Str.ToRegEx #) (~Str.ToRegEx #b)) (~Str.ToRegEx #))),
+info: (re.union(re.concat(re.concat(str.to.re(""), str.to.re("a")), str.to.re("")), re.concat(re.concat(str.to.re(""), str.to.re("b")), str.to.re(""))),
  none)
 -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToCore "(^a$)|(^b$)"
+#eval Std.format $ pythonRegexToCoreEraseTypes "(^a$)|(^b$)"
+
+/-- info: (re.concat(str.to.re("c"), re.union(re.concat(re.none(), str.to.re("a")), re.concat(re.none(), str.to.re("b")))), none) -/
+#guard_msgs in
+#eval Std.format $ pythonRegexToCoreEraseTypes "c((^a)|(^b))"
+
+/-- info: (re.concat(re.union(re.concat(str.to.re("a"), re.none()), re.concat(str.to.re("b"), re.none())), str.to.re("c")), none) -/
+#guard_msgs in
+#eval Std.format $ pythonRegexToCoreEraseTypes "((a$)|(b$))c"
+
+/-- info: (re.concat(re.union(re.concat(str.to.re("a"), re.none()), str.to.re("b")), str.to.re("c")), none) -/
+#guard_msgs in
+#eval Std.format $ pythonRegexToCoreEraseTypes "((a$)|(b))c"
 
 /--
-info: ((~Re.Concat
-  (~Str.ToRegEx #c)
-  (~Re.Union (~Re.Concat ~Re.None (~Str.ToRegEx #a)) (~Re.Concat ~Re.None (~Str.ToRegEx #b)))),
+info: (re.concat(str.to.re("c"), re.union(re.concat(str.to.re("a"), str.to.re("")), re.concat(re.concat(re.none(), str.to.re("b")), str.to.re("")))),
  none)
 -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToCore "c((^a)|(^b))"
+#eval Std.format $ pythonRegexToCoreEraseTypes "c((a$)|(^b$))"
+
+/-- info: (re.concat(re.union(re.concat(str.to.re("a"), re.none()), str.to.re("b")), str.to.re("c")), none) -/
+#guard_msgs in
+#eval Std.format $ pythonRegexToCoreEraseTypes "((a$)|(b))c"
+
+/-- info: (re.concat(re.concat(str.to.re(""), re.none()), str.to.re("b")), none) -/
+#guard_msgs in
+#eval Std.format $ pythonRegexToCoreEraseTypes "^$b"
 
 /--
-info: ((~Re.Concat
-  (~Re.Union (~Re.Concat (~Str.ToRegEx #a) ~Re.None) (~Re.Concat (~Str.ToRegEx #b) ~Re.None))
-  (~Str.ToRegEx #c)),
+info: (re.union(re.concat(re.concat(str.to.re(""), str.to.re("a")), str.to.re("")), re.concat(re.concat(str.to.re(""), re.none()), str.to.re("b"))),
  none)
 -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToCore "((a$)|(b$))c"
+#eval Std.format $ pythonRegexToCoreEraseTypes "^a$|^$b"
 
 /--
-info: ((~Re.Concat (~Re.Union (~Re.Concat (~Str.ToRegEx #a) ~Re.None) (~Str.ToRegEx #b)) (~Str.ToRegEx #c)), none)
--/
-#guard_msgs in
-#eval Std.format $ pythonRegexToCore "((a$)|(b))c"
-
-/--
-info: ((~Re.Concat
-  (~Str.ToRegEx #c)
-  (~Re.Union
-   (~Re.Concat (~Str.ToRegEx #a) (~Str.ToRegEx #))
-   (~Re.Concat (~Re.Concat ~Re.None (~Str.ToRegEx #b)) (~Str.ToRegEx #)))),
+info: (re.concat(re.concat(str.to.re("c"), re.union(re.concat(re.none(), str.to.re("a")), re.concat(str.to.re("b"), re.none()))), str.to.re("d")),
  none)
 -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToCore "c((a$)|(^b$))"
+#eval Std.format $ pythonRegexToCoreEraseTypes "c(^a|b$)d"
 
 /--
-info: ((~Re.Concat (~Re.Union (~Re.Concat (~Str.ToRegEx #a) ~Re.None) (~Str.ToRegEx #b)) (~Str.ToRegEx #c)), none)
--/
-#guard_msgs in
-#eval Std.format $ pythonRegexToCore "((a$)|(b))c"
-
-/--
-info: ((~Re.Concat (~Re.Concat (~Str.ToRegEx #) ~Re.None) (~Str.ToRegEx #b)), none)
--/
-#guard_msgs in
-#eval Std.format $ pythonRegexToCore "^$b"
-
-/--
-info: ((~Re.Union
-  (~Re.Concat (~Re.Concat (~Str.ToRegEx #) (~Str.ToRegEx #a)) (~Str.ToRegEx #))
-  (~Re.Concat (~Re.Concat (~Str.ToRegEx #) ~Re.None) (~Str.ToRegEx #b))),
+info: (re.concat(re.concat(str.to.re("c"), re.union(re.concat(re.none(), str.to.re("a")), re.concat(str.to.re("b"), re.none()))), str.to.re("d")),
  none)
 -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToCore "^a$|^$b"
+#eval Std.format $ pythonRegexToCoreEraseTypes "(c(^a|b$))d"
 
 /--
-info: ((~Re.Concat
-  (~Re.Concat
-   (~Str.ToRegEx #c)
-   (~Re.Union (~Re.Concat ~Re.None (~Str.ToRegEx #a)) (~Re.Concat (~Str.ToRegEx #b) ~Re.None)))
-  (~Str.ToRegEx #d)),
+info: (re.concat(re.union(re.concat(str.to.re(""), str.to.re("a")), re.concat(str.to.re("b"), re.none())), re.union(re.concat(re.none(), str.to.re("c")), re.concat(str.to.re("d"), str.to.re("")))),
  none)
 -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToCore "c(^a|b$)d"
+#eval Std.format $ pythonRegexToCoreEraseTypes "(^a|b$)(^c|d$)"
 
 /--
-info: ((~Re.Concat
-  (~Re.Concat
-   (~Str.ToRegEx #c)
-   (~Re.Union (~Re.Concat ~Re.None (~Str.ToRegEx #a)) (~Re.Concat (~Str.ToRegEx #b) ~Re.None)))
-  (~Str.ToRegEx #d)),
+info: (re.concat(re.concat(re.union(re.concat(str.to.re(""), str.to.re("a")), re.concat(str.to.re("b"), re.none())), re.none()), str.to.re("c")),
  none)
 -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToCore "(c(^a|b$))d"
+#eval Std.format $ pythonRegexToCoreEraseTypes "((^a|b$)^)c"
 
-/--
-info: ((~Re.Concat
-  (~Re.Union (~Re.Concat (~Str.ToRegEx #) (~Str.ToRegEx #a)) (~Re.Concat (~Str.ToRegEx #b) ~Re.None))
-  (~Re.Union (~Re.Concat ~Re.None (~Str.ToRegEx #c)) (~Re.Concat (~Str.ToRegEx #d) (~Str.ToRegEx #)))),
- none)
--/
+/-- info: (re.concat(re.union(str.to.re(""), re.none()), str.to.re("c")), none) -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToCore "(^a|b$)(^c|d$)"
+#eval Std.format $ pythonRegexToCoreEraseTypes "(^|$)c"
 
-/--
-info: ((~Re.Concat
-  (~Re.Concat
-   (~Re.Union (~Re.Concat (~Str.ToRegEx #) (~Str.ToRegEx #a)) (~Re.Concat (~Str.ToRegEx #b) ~Re.None))
-   ~Re.None)
-  (~Str.ToRegEx #c)),
- none)
--/
+/-- info: (re.concat(str.to.re(""), str.to.re("")), none) -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToCore "((^a|b$)^)c"
+#eval Std.format $ pythonRegexToCoreEraseTypes "^^"
 
-/--
-info: ((~Re.Concat (~Re.Union (~Str.ToRegEx #) ~Re.None) (~Str.ToRegEx #c)), none)
--/
+/-- info: (re.concat(re.concat(re.concat(str.to.re(""), str.to.re("")), str.to.re("")), str.to.re("")), none) -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToCore "(^|$)c"
+#eval Std.format $ pythonRegexToCoreEraseTypes "^$$^"
 
-/--
-info: ((~Re.Concat (~Str.ToRegEx #) (~Str.ToRegEx #)), none)
--/
+/-- info: (re.concat(re.union(str.to.re(""), str.to.re("")), str.to.re("")), none) -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToCore "^^"
+#eval Std.format $ pythonRegexToCoreEraseTypes "(^|$)^"
 
-/--
-info: ((~Re.Concat (~Re.Concat (~Re.Concat (~Str.ToRegEx #) (~Str.ToRegEx #)) (~Str.ToRegEx #)) (~Str.ToRegEx #)), none)
--/
+/-- info: (re.concat(re.concat(str.to.re(""), str.to.re("a")), str.to.re("")), none) -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToCore "^$$^"
+#eval Std.format $ pythonRegexToCoreEraseTypes "^a$" .fullmatch
 
 /--
-info: ((~Re.Concat (~Re.Union (~Str.ToRegEx #) (~Str.ToRegEx #)) (~Str.ToRegEx #)), none)
--/
-#guard_msgs in
-#eval Std.format $ pythonRegexToCore "(^|$)^"
-
-/--
-info: ((~Re.Concat (~Re.Concat (~Str.ToRegEx #) (~Str.ToRegEx #a)) (~Str.ToRegEx #)), none)
--/
-#guard_msgs in
-#eval Std.format $ pythonRegexToCore "^a$" .fullmatch
-
-/--
-info: (~Re.All,
+info: (re.all(),
  some Pattern error at position 1: Invalid repeat bounds {100,2}: maximum 2 is less than minimum 100 in pattern 'x{100,2}')
 -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToCore "x{100,2}" .fullmatch
+#eval Std.format $ pythonRegexToCoreEraseTypes "x{100,2}" .fullmatch
 
 -- (unmatchable)
-/--
-info: ((~Re.Concat (~Re.Concat (~Str.ToRegEx #a) ~Re.None) (~Str.ToRegEx #b)), none)
--/
+/-- info: (re.concat(re.concat(str.to.re("a"), re.none()), str.to.re("b")), none) -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToCore "a^b" .fullmatch
+#eval Std.format $ pythonRegexToCoreEraseTypes "a^b" .fullmatch
+
+/-- info: (re.concat(re.concat(re.concat(str.to.re(""), str.to.re("a")), re.none()), str.to.re("b")), none) -/
+#guard_msgs in
+#eval Std.format $ pythonRegexToCoreEraseTypes "^a^b" .fullmatch
+
+/-- info: (re.concat(re.concat(str.to.re("a"), re.none()), str.to.re("b")), none) -/
+#guard_msgs in
+#eval Std.format $ pythonRegexToCoreEraseTypes "a$b" .fullmatch
+
+/-- info: (re.inter(re.allchar(), re.comp(str.to.re("b"))), none) -/
+#guard_msgs in
+#eval Std.format $ pythonRegexToCoreEraseTypes "[^b]" .fullmatch
+
+/-- info: (re.inter(re.allchar(), re.comp(re.range("A", "Z"))), none) -/
+#guard_msgs in
+#eval Std.format $ pythonRegexToCoreEraseTypes "[^A-Z]" .fullmatch
+
+/-- info: (re.inter(re.allchar(), re.comp(str.to.re("^"))), none) -/
+#guard_msgs in
+#eval Std.format $ pythonRegexToCoreEraseTypes "[^^]" .fullmatch
+
+/-- info: (str.to.re("a"), none) -/
+#guard_msgs in
+#eval Std.format $ pythonRegexToCoreEraseTypes "a" .fullmatch
 
 /--
-info: ((~Re.Concat (~Re.Concat (~Re.Concat (~Str.ToRegEx #) (~Str.ToRegEx #a)) ~Re.None) (~Str.ToRegEx #b)), none)
--/
-#guard_msgs in
-#eval Std.format $ pythonRegexToCore "^a^b" .fullmatch
-
-/--
-info: ((~Re.Concat (~Re.Concat (~Str.ToRegEx #a) ~Re.None) (~Str.ToRegEx #b)), none)
--/
-#guard_msgs in
-#eval Std.format $ pythonRegexToCore "a$b" .fullmatch
-
-/-- info: ((~Re.Inter ~Re.AllChar (~Re.Comp (~Str.ToRegEx #b))), none) -/
-#guard_msgs in
-#eval Std.format $ pythonRegexToCore "[^b]" .fullmatch
-
-/--
-info: ((~Re.Inter ~Re.AllChar (~Re.Comp (~Re.Range #A #Z))), none)
--/
-#guard_msgs in
-#eval Std.format $ pythonRegexToCore "[^A-Z]" .fullmatch
-
-/-- info: ((~Re.Inter ~Re.AllChar (~Re.Comp (~Str.ToRegEx #^))), none) -/
-#guard_msgs in
-#eval Std.format $ pythonRegexToCore "[^^]" .fullmatch
-
-/-- info: ((~Str.ToRegEx #a), none) -/
-#guard_msgs in
-#eval Std.format $ pythonRegexToCore "a" .fullmatch
-
-/--
-info: ((~Re.Union
-  (~Str.ToRegEx #a)
-  (~Re.Concat
-   (~Str.ToRegEx #a)
-   (~Re.Union
-    (~Re.Union (~Str.ToRegEx #) ~Re.AllChar)
-    (~Re.Concat (~Re.Concat ~Re.AllChar (~Re.Star ~Re.AllChar)) ~Re.AllChar)))),
+info: (re.union(str.to.re("a"), re.concat(str.to.re("a"), re.union(re.union(str.to.re(""), re.allchar()), re.concat(re.concat(re.allchar(), re.*(re.allchar())), re.allchar())))),
  none)
 -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToCore "a" .match
+#eval Std.format $ pythonRegexToCoreEraseTypes "a" .match
 
 -- search mode tests
 /--
-info: ((~Re.Union
-  (~Str.ToRegEx #a)
-  (~Re.Union
-   (~Re.Concat
-    (~Str.ToRegEx #a)
-    (~Re.Union
-     (~Re.Union (~Str.ToRegEx #) ~Re.AllChar)
-     (~Re.Concat (~Re.Concat ~Re.AllChar (~Re.Star ~Re.AllChar)) ~Re.AllChar)))
-   (~Re.Union
-    (~Re.Concat
-     (~Re.Union
-      (~Re.Union (~Str.ToRegEx #) ~Re.AllChar)
-      (~Re.Concat (~Re.Concat ~Re.AllChar (~Re.Star ~Re.AllChar)) ~Re.AllChar))
-     (~Str.ToRegEx #a))
-    (~Re.Concat
-     (~Re.Union
-      (~Re.Union (~Str.ToRegEx #) ~Re.AllChar)
-      (~Re.Concat (~Re.Concat ~Re.AllChar (~Re.Star ~Re.AllChar)) ~Re.AllChar))
-     (~Re.Concat
-      (~Str.ToRegEx #a)
-      (~Re.Union
-       (~Re.Union (~Str.ToRegEx #) ~Re.AllChar)
-       (~Re.Concat (~Re.Concat ~Re.AllChar (~Re.Star ~Re.AllChar)) ~Re.AllChar))))))),
+info: (re.union(str.to.re("a"), re.union(re.concat(str.to.re("a"), re.union(re.union(str.to.re(""), re.allchar()), re.concat(re.concat(re.allchar(), re.*(re.allchar())), re.allchar()))), re.union(re.concat(re.union(re.union(str.to.re(""), re.allchar()), re.concat(re.concat(re.allchar(), re.*(re.allchar())), re.allchar())), str.to.re("a")), re.concat(re.union(re.union(str.to.re(""), re.allchar()), re.concat(re.concat(re.allchar(), re.*(re.allchar())), re.allchar())), re.concat(str.to.re("a"), re.union(re.union(str.to.re(""), re.allchar()), re.concat(re.concat(re.allchar(), re.*(re.allchar())), re.allchar()))))))),
  none)
 -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToCore "a" .search
+#eval Std.format $ pythonRegexToCoreEraseTypes "a" .search
 
 /--
-info: ((~Re.Union
-  (~Re.Concat (~Re.Concat (~Str.ToRegEx #) (~Str.ToRegEx #a)) (~Str.ToRegEx #))
-  (~Re.Union
-   (~Re.Concat
-    (~Re.Concat (~Re.Concat (~Str.ToRegEx #) (~Str.ToRegEx #a)) ~Re.None)
-    (~Re.Union
-     (~Re.Union (~Str.ToRegEx #) ~Re.AllChar)
-     (~Re.Concat (~Re.Concat ~Re.AllChar (~Re.Star ~Re.AllChar)) ~Re.AllChar)))
-   (~Re.Union
-    (~Re.Concat
-     (~Re.Union
-      (~Re.Union (~Str.ToRegEx #) ~Re.AllChar)
-      (~Re.Concat (~Re.Concat ~Re.AllChar (~Re.Star ~Re.AllChar)) ~Re.AllChar))
-     (~Re.Concat (~Re.Concat ~Re.None (~Str.ToRegEx #a)) (~Str.ToRegEx #)))
-    (~Re.Concat
-     (~Re.Union
-      (~Re.Union (~Str.ToRegEx #) ~Re.AllChar)
-      (~Re.Concat (~Re.Concat ~Re.AllChar (~Re.Star ~Re.AllChar)) ~Re.AllChar))
-     (~Re.Concat
-      (~Re.Concat (~Re.Concat ~Re.None (~Str.ToRegEx #a)) ~Re.None)
-      (~Re.Union
-       (~Re.Union (~Str.ToRegEx #) ~Re.AllChar)
-       (~Re.Concat (~Re.Concat ~Re.AllChar (~Re.Star ~Re.AllChar)) ~Re.AllChar))))))),
+info: (re.union(re.concat(re.concat(str.to.re(""), str.to.re("a")), str.to.re("")), re.union(re.concat(re.concat(re.concat(str.to.re(""), str.to.re("a")), re.none()), re.union(re.union(str.to.re(""), re.allchar()), re.concat(re.concat(re.allchar(), re.*(re.allchar())), re.allchar()))), re.union(re.concat(re.union(re.union(str.to.re(""), re.allchar()), re.concat(re.concat(re.allchar(), re.*(re.allchar())), re.allchar())), re.concat(re.concat(re.none(), str.to.re("a")), str.to.re(""))), re.concat(re.union(re.union(str.to.re(""), re.allchar()), re.concat(re.concat(re.allchar(), re.*(re.allchar())), re.allchar())), re.concat(re.concat(re.concat(re.none(), str.to.re("a")), re.none()), re.union(re.union(str.to.re(""), re.allchar()), re.concat(re.concat(re.allchar(), re.*(re.allchar())), re.allchar()))))))),
  none)
 -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToCore "^a$" .search
+#eval Std.format $ pythonRegexToCoreEraseTypes "^a$" .search
 
-/--
-info: ((~Re.Concat (~Str.ToRegEx #) (~Str.ToRegEx #a)), none)
--/
+/-- info: (re.concat(str.to.re(""), str.to.re("a")), none) -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToCore "^a" .fullmatch
+#eval Std.format $ pythonRegexToCoreEraseTypes "^a" .fullmatch
 
 end Strata.Python.Tests

@@ -5,11 +5,11 @@
 -/
 module
 
-import Lean.PrettyPrinter.Formatter
-import Lean.PrettyPrinter.Parenthesizer
 import all Strata.DDM.Util.String
 
-public meta import Lean.Elab.Syntax
+public import Lean.PrettyPrinter.Formatter
+public import Lean.PrettyPrinter.Parenthesizer
+public meta import Lean.Elab.Syntax -- shake: keep (needed for public meta command)
 
 open Lean (SourceInfo Syntax SyntaxNodeKind Name format)
 open Lean.Elab.Command (CommandElab CommandElabM liftTermElabM elabCommand)

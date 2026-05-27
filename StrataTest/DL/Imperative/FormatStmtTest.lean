@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 import Strata.Languages.Core.Statement
+import Strata.Languages.Core.DDMTransform.FormatCore
 
 namespace FormatStmtTest
 open Core
@@ -28,32 +29,32 @@ private def xEq5 : E := .eq () x (.intConst () 5)
 private def xEq1 : E := .eq () x int1
 
 -- 1. cmd: init
-/-- info: init (x : int) := #0 -/
-#guard_msgs in #eval! format (Statement.init "x" intTy int0 .empty : S)
+/-- info: var x : int := 0; -/
+#guard_msgs in #eval! format (Statement.init "x" intTy (.det int0) .empty : S)
 
 -- 2. cmd: set
-/-- info: x := #42 -/
+/-- info: x := 42; -/
 #guard_msgs in #eval! format (Statement.set "x" int42 .empty : S)
 
 -- 3. cmd: havoc
-/-- info: havoc x -/
+/-- info: havoc x; -/
 #guard_msgs in #eval! format (Statement.havoc "x" .empty : S)
 
 -- 4. cmd: assert
-/-- info: assert [lbl] #true -/
+/-- info: assert [lbl]: true; -/
 #guard_msgs in #eval! format (Statement.assert "lbl" tt .empty : S)
 
 -- 5. cmd: assume
-/-- info: assume [lbl] ((x : int) == #5) -/
+/-- info: assume [lbl]: x == 5; -/
 #guard_msgs in #eval! format (Statement.assume "lbl" xEq5 .empty : S)
 
 -- 6. cmd: call (no lhs)
-/-- info: call foo(#1, #2) -/
-#guard_msgs in #eval! format (Statement.call [] "foo" [int1, int2] .empty : S)
+/-- info: call foo(1, 2); -/
+#guard_msgs in #eval! format (Statement.call "foo" [.inArg int1, .inArg int2] .empty : S)
 
 -- 7. cmd: call (with lhs)
-/-- info: call [y] := bar(#1) -/
-#guard_msgs in #eval! format (Statement.call ["y"] "bar" [int1] .empty : S)
+/-- info: call bar(1, out y); -/
+#guard_msgs in #eval! format (Statement.call "bar" [.inArg int1, .outArg "y"] .empty : S)
 
 -- 8. block: empty
 /-- info: myBlock :
@@ -64,32 +65,32 @@ private def xEq1 : E := .eq () x int1
 /--
 info: myBlock :
 {
-  x := #1
-  assert [check] ((x : int) == #1)
+  x := 1;
+  assert [check]: x == 1;
 }
 -/
 #guard_msgs in
 #eval! format (Stmt.block "myBlock" ([Statement.set "x" int1 .empty,
                                       Statement.assert "check" xEq1 .empty] : Ss) .empty : S)
 
-def p := (Stmt.ite xEq0
+def p := (Stmt.ite (.det xEq0)
                 ([Statement.set "y" int1 .empty] : Ss)
                 ([Statement.set "y" int2 .empty] : Ss)
                 .empty : S)
 -- 10. ite: with body
 /--
 info: {
-  if ((x : int) == #0) {
-    y := #1
+  if x == 0 {
+    y := 1;
   }
   else {
-    y := #2
+    y := 2;
   }
-  if ((x : int) == #0) {
-    y := #1
+  if x == 0 {
+    y := 1;
   }
   else {
-    y := #2
+    y := 2;
   }
 }
 -/
@@ -98,11 +99,11 @@ info: {
 
 
 /--
-info: if ((x : int) == #0) {
-  y := #1
+info: if x == 0 {
+  y := 1;
 }
 else {
-  y := #2
+  y := 2;
 }
 -/
 #guard_msgs in
@@ -111,46 +112,42 @@ else {
 
 -- 11. ite: empty branches
 /--
-info: if #true {}
+info: if true {}
 else {}
 -/
-#guard_msgs in #eval! format (Stmt.ite tt ([] : Ss) ([] : Ss) .empty : S)
+#guard_msgs in #eval! format (Stmt.ite (.det tt) ([] : Ss) ([] : Ss) .empty : S)
 
 -- 12. loop: no measure, no invariant
 /--
 info: while
-  ((x : int) == #0)
+  x == 0
   (none)
   []
 {
-  x := #1
+  x := 1;
 }
 -/
 #guard_msgs in
-#eval! format (Stmt.loop xEq0 none []
+#eval! format (Stmt.loop (.det xEq0) none []
                 ([Statement.set "x" int1 .empty] : Ss) .empty : S)
 
 -- 13. loop: with measure and invariant
 /--
 info: while
-  ((x : int) == #0)
-  (some (x : int))
-  [#true]
+  x == 0
+  (some x)
+  [[inv1]: true]
 {
-  x := #1
+  x := 1;
 }
 -/
 #guard_msgs in
-#eval! format (Stmt.loop xEq0 (some x) [tt]
+#eval! format (Stmt.loop (.det xEq0) (some x) [("inv1", tt)]
                 ([Statement.set "x" int1 .empty] : Ss) .empty : S)
 
 -- 14. exit with label
 /-- info: exit target -/
-#guard_msgs in #eval! format (Stmt.exit (some "target") .empty : S)
-
--- 14b. exit without label
-/-- info: exit -/
-#guard_msgs in #eval! format (Stmt.exit none .empty : S)
+#guard_msgs in #eval! format (Stmt.exit "target" .empty : S)
 
 -- 15. funcDecl
 /-- info: funcDecl <function> -/
@@ -168,8 +165,8 @@ info: while
 -- 17. formatBlock: multiple statements
 /--
 info: {
-  x := #1
-  assert [check] ((x : int) == #1)
+  x := 1;
+  assert [check]: x == 1;
 }
 -/
 #guard_msgs in

@@ -5,7 +5,6 @@
 -/
 module
 public import Strata.DDM.Util.Decimal
-meta import Strata.DDM.Util.Decimal
 
 public section
 namespace Strata.Decimal

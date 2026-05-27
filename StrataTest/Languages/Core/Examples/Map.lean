@@ -15,7 +15,7 @@ program Core;
 
 const a : Map int bool;
 
-procedure P() returns ()
+procedure P()
 {
   assume [a_zero_true_assumption]: (a[0] == true);
   assert [a_zero_true]: a[0];
@@ -29,13 +29,15 @@ procedure P() returns ()
 #eval TransM.run Inhabited.default (translateProgram mapPgm) |>.snd |>.isEmpty
 
 /--
-info: function a () : Map int bool;
-procedure P () returns ()
+info: program Core;
+
+function a () : Map int bool;
+procedure P ()
 {
   assume [a_zero_true_assumption]: a[0] == true;
   assert [a_zero_true]: a[0];
   assert [a_one_true]: a[1];
-  };
+};
 -/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram mapPgm) |>.fst
@@ -58,22 +60,6 @@ Assumptions:
 a_zero_true_assumption: a[0] == true
 Obligation:
 a[1]
-
-
-
-Result: Obligation: a_one_true
-Property: assert
-Result: ❌ fail
-
-
-[DEBUG] Evaluated program:
-function a () : Map int bool;
-procedure P () returns ()
-{
-  assume [a_zero_true_assumption]: a[0] == true;
-  assert [a_zero_true]: a[0];
-  assert [a_one_true]: a[1];
-  };
 
 ---
 info:

@@ -12,14 +12,19 @@ open Strata
 Near-upstream anchors from `differential_status.md`:
 - `verus-examples:test_expand_errors`
 - `verus-examples:recursion`
+- Verus links:
+  `test_expand_errors`: https://github.com/verus-lang/verus/blob/main/examples/test_expand_errors.rs
+  `recursion`: https://github.com/verus-lang/verus/blob/main/examples/recursion.rs
 - Gap: `reveal_with_fuel` loses fuel amount
+- Current status: the seed verifies only with an uninterpreted placeholder
+- Remaining gap: bounded recursive unfolding tied to `reveal_with_fuel`
 -/
 
 private def revealWithFuelSeed : Strata.Program :=
 #strata
 program Boole;
 
-// Target shape once recursive reveal support works end-to-end:
+// Target shape once bounded recursive unfolding is supported:
 //
 // rec function pow2(n: int) : int
 // {
@@ -32,7 +37,6 @@ program Boole;
 //   ensures pow2(n) >= 1;
 // }
 // {
-//   // TODO(feature:reveal_with_fuel): distinguish bounded unfolding from full reveal.
 //   assert pow2(n) >= 1;
 // };
 
@@ -43,14 +47,20 @@ spec {
   ensures true;
 }
 {
-  // TODO(feature:reveal_with_fuel): switch `pow2` back to a recursive definition and
-  // model bounded unfolding once recursive reveal support is available end-to-end.
-  // TODO(feature:reveal_with_fuel): distinguish bounded unfolding from full reveal.
   assert pow2(n) == pow2(n);
 };
 #end
 
-#eval Strata.Boole.verify "cvc5" revealWithFuelSeed
+/-- info:
+Obligation: assert_1_1141
+Property: assert
+Result: ✅ pass
+
+Obligation: reveal_with_fuel_seed_ensures_0_1121
+Property: assert
+Result: ✅ pass-/
+#guard_msgs in
+#eval Strata.Boole.verify "cvc5" revealWithFuelSeed (options := .quiet)
 
 example : Strata.smtVCsCorrect revealWithFuelSeed := by
   gen_smt_vcs

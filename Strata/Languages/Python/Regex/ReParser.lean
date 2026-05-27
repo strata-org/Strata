@@ -85,6 +85,32 @@ inductive RegexAST where
 
 -------------------------------------------------------------------------------
 
+/-- Parse a single backslash escape sequence. `pos` must point to the `\`.
+Returns `(RegexAST.char c, posAfterEscape)` for supported literal escapes, or
+throws a `ParseError`/`unimplemented` error otherwise.
+
+`context` is inserted into error messages to identify the call site
+(e.g. `" in character class"`). -/
+private def parseEscape (s : String) (pos : String.Pos.Raw)
+    (context : String := "") : Except ParseError (RegexAST × String.Pos.Raw) := do
+  let escPos := pos.next s
+  if escPos.atEnd s then
+    throw (.patternError s!"Incomplete escape sequence{context}" s pos)
+  let some c := escPos.get? s |
+    throw (.patternError s!"Invalid escape position{context}" s escPos)
+  match c with
+  | 'A' | 'b' | 'B' | 'd' | 'D' | 's' | 'S' | 'w' | 'W' | 'z' | 'Z' =>
+    throw (.unimplemented s!"Special sequence \\{c}{context} is not supported" s pos)
+  | 'a' | 'f' | 'n' | 'N' | 'r' | 't' | 'u' | 'U' | 'v' | 'x' =>
+    throw (.unimplemented s!"Escape sequence \\{c}{context} is not supported" s pos)
+  | c =>
+    if c.isDigit then
+      throw (.unimplemented s!"Backreference \\{c}{context} is not supported" s pos)
+    else
+      pure (RegexAST.char c, escPos.next s)
+
+-------------------------------------------------------------------------------
+
 /-- Parse character class like [a-z], [0-9], etc. into union of ranges and
   chars. Note that this parses `|` as a character. -/
 def parseCharClass (s : String) (pos : String.Pos.Raw) : Except ParseError (RegexAST × String.Pos.Raw) := do
@@ -101,6 +127,25 @@ def parseCharClass (s : String) (pos : String.Pos.Raw) : Except ParseError (Rege
   -- Process each element in the character class.
   while !i.atEnd s && i.get? s != some ']' do
     let some c1 := i.get? s | throw (.patternError "Invalid character in class" s i)
+    -- Handle backslash escape sequences inside the character class.
+    if c1 == '\\' then
+      let (r, iNext) ← parseEscape s i " in character class"
+      -- Check for range pattern: \x-c2 (escape result as range start).
+      -- parseEscape only succeeds with a .char node.
+      if let .char escapedChar := r then
+        if !iNext.atEnd s && iNext.get? s == some '-' then
+          let iAfterDash := iNext.next s
+          if !iAfterDash.atEnd s && iAfterDash.get? s != some ']' then
+            let some c2 := iAfterDash.get? s | throw (.patternError "Invalid character in range" s iAfterDash)
+            if escapedChar > c2 then
+              throw (.patternError s!"Invalid character range [{escapedChar}-{c2}]: \
+                                      start character '{escapedChar}' is greater than end character '{c2}'" s i)
+            result := some (match result with | none => .range escapedChar c2 | some prev => .union prev (.range escapedChar c2))
+            i := iAfterDash.next s
+            continue
+      result := some (match result with | none => r | some prev => RegexAST.union prev r)
+      i := iNext
+      continue
     let i1 := i.next s
     -- Check for range pattern: c1-c2.
     if !i1.atEnd s && i1.get? s == some '-' then
@@ -186,24 +231,10 @@ partial def parseAtom (s : String) (pos : String.Pos.Raw) : Except ParseError (R
     | '(' => parseExplicitGroup s pos
     | '.' => pure (RegexAST.anychar, pos.next s)
     | '\\' =>
-      -- Handle escape sequence.
       -- Note: Python uses a single backslash as an escape character, but Lean
       -- strings need to escape that. After DDMification, we will see two
       -- backslashes in Strata for every Python backslash.
-      let nextPos := pos.next s
-      if nextPos.atEnd s then throw (.patternError "Incomplete escape sequence at end of regex" s pos)
-      let some escapedChar := nextPos.get? s | throw (.patternError "Invalid escape position" s nextPos)
-      -- Check for special sequences (unsupported right now).
-      match escapedChar with
-      | 'A' | 'b' | 'B' | 'd' | 'D' | 's' | 'S' | 'w' | 'W' | 'z' | 'Z' =>
-        throw (.unimplemented s!"Special sequence \\{escapedChar} is not supported" s pos)
-      | 'a' | 'f' | 'n' | 'N' | 'r' | 't' | 'u' | 'U' | 'v' | 'x' =>
-        throw (.unimplemented s!"Escape sequence \\{escapedChar} is not supported" s pos)
-      | c =>
-        if c.isDigit then
-          throw (.unimplemented s!"Backreference \\{c} is not supported" s pos)
-        else
-          pure (RegexAST.char escapedChar, nextPos.next s)
+      parseEscape s pos
     | _ => pure (RegexAST.char c, pos.next s)
 
   -- Check for numeric repeat suffix on base element (but not on anchors)

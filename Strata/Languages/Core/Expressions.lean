@@ -8,6 +8,7 @@ module
 public import Strata.DL.Lambda.Lambda
 public import Strata.DL.Imperative.PureExpr
 public import Strata.Languages.Core.Identifiers
+public import Strata.Languages.Core.CoreOp
 public import Strata.DL.Imperative.HasVars
 
 namespace Core
@@ -34,6 +35,10 @@ instance : Imperative.HasVarsPure Expression Expression.Expr where
 
 instance : Inhabited Expression.Expr where
   default := .intConst () 0
+
+/-- Build an `LExpr.op` node from a structured `CoreOp`. -/
+def coreOpExpr (op : CoreOp) (ty : Option Lambda.LMonoTy := none) : Expression.Expr :=
+  .op () op.toString ty
 
 ---------------------------------------------------------------------
 

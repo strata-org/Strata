@@ -50,9 +50,10 @@ private def listLenFunc : LFunc TP :=
 
 private def tf : @TypeFactory Unit := #[[intListTy]]
 
-private def peFactory : @Factory TP := (@IntBoolFactory TP _ _) |>.push listLenFunc
+private def peFactory : @Factory TP :=
+  (@IntBoolFactory TP _ _) |>.pushIfNew listLenFunc
 private def peState : LState TP :=
-  let C := LContext.default.addFactoryFunctions peFactory
+  let C := LContext.default (functions := peFactory)
   match C.addTypeFactory tf with
   | .error _ => panic "failed to add type factory"
   | .ok C =>
@@ -122,9 +123,9 @@ private def lookupFunc : LFunc TP :=
     body := some lookupBody,
     attr := #[.inlineIfConstr 1] }
 
-private def peFactory2 : @Factory TP := (@IntBoolFactory TP _ _) |>.push listLenFunc |>.push lookupFunc
+private def peFactory2 : @Factory TP := IntBoolFactory (T := TP) |>.pushIfNew listLenFunc |>.pushIfNew lookupFunc
 private def peState2 : LState TP :=
-  let C := LContext.default.addFactoryFunctions peFactory2
+  let C := LContext.default (functions := peFactory2)
   match C.addTypeFactory tf with
   | .error _ => panic "failed to add type factory"
   | .ok C =>
@@ -210,9 +211,9 @@ private def replaceFunc : LFunc TP :=
     body := some replaceBody,
     attr := #[.inlineIfConstr 1] }
 
-private def peFactory3 : @Factory TP := peFactory2 |>.push replaceFunc
+private def peFactory3 : @Factory TP := peFactory2 |>.pushIfNew replaceFunc
 private def peState3 : LState TP :=
-  let C := LContext.default.addFactoryFunctions peFactory3
+  let C := LContext.default (functions := peFactory3)
   match C.addTypeFactory tf with
   | .error _ => panic "failed to add type factory"
   | .ok C =>

@@ -7,6 +7,7 @@
 import StrataTest.DL.Imperative.DDMTranslate
 import StrataTest.DL.Imperative.SMTEncoder
 import Strata.DL.Imperative.SMTUtils
+import Strata.Pipeline.Messages
 
 ---------------------------------------------------------------------
 namespace Arith
@@ -15,7 +16,7 @@ open Std (ToFormat Format format)
 /-! ## Verifier for `ArithPrograms`
 
 Here, we build an end-to-end verifier for `ArithPrograms`. We hook up the DDM
-translator with the type checker + partial evaluator, followed by the SMT
+translator with the type checker + symbolic simulator, followed by the SMT
 encoder. We then write some basic functions to invoke an SMT solver on every
 verification condition.
 -/
@@ -27,6 +28,7 @@ def typedVarToSMT (v : String) (ty : Ty) : Except Format (String × Strata.SMT.T
 
 def verify (cmds : Commands) (verbose : Bool) :
   EIO Format (Imperative.VCResults Arith.PureExpr) := do
+  let pctx ← Strata.Pipeline.PipelineContext.create (outputMode := .quiet) (profilePipeline := false)
   match typeCheckAndPartialEval cmds with
   | .error err =>
     .error s!"[Strata.Arith.verify] Error during evaluation!\n\
@@ -56,7 +58,7 @@ def verify (cmds : Commands) (verbose : Bool) :
                -- (FIXME)
                ((Arith.Eval.ProofObligation.freeVars obligation).map (fun v => (v, Arith.Ty.Num)))
                 "cvc5" filename.toString
-                #["--produce-models"] false false true)
+                #["--produce-models"] false false true false pctx)
         match ans with
         | Except.ok (_, result, estate) =>
            let vcres := { obligation, result, estate }

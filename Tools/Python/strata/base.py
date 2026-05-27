@@ -1048,6 +1048,7 @@ class Dialect:
         self.name = name
         self.imports = []
         self.decls = []
+        self.typecheck = True
 
     def add_import(self, name: str):
         self.imports.append(name)
@@ -1111,6 +1112,12 @@ class Dialect:
             d.add_item("type", _importSym)
             d.add_item("name", i)
             r.append(d)
+        if not self.typecheck:
+            d = ion.IonPyDict()
+            d.add_item("type", ion_symbol("option"))
+            d.add_item("name", "typecheck")
+            d.add_item("value", "off")
+            r.append(d)
         for d in self.decls:
             r.append(d.to_ion())
         return r
@@ -1158,6 +1165,14 @@ class Dialect:
                     assert field == "name", f"Unexpected field {field}"
                     read_struct_end(reader)
                     dialect.add_import(value)
+                case "option":
+                    (field, opt_name) = read_field_string(reader)
+                    assert field == "name", f"Unexpected field {field}"
+                    (field, opt_value) = read_field_string(reader)
+                    assert field == "value", f"Unexpected field {field}"
+                    read_struct_end(reader)
+                    if opt_name == "typecheck":
+                        dialect.typecheck = (opt_value == "on")
                 case "syncat":
                     read_syncatdecl(reader, dialect)
                 case "op":
@@ -1253,6 +1268,6 @@ Init.add_syncat('Ident')
 Init.add_syncat('Num')
 Init.add_syncat('Str')
 Init.add_syncat('Type')
-Init.add_syncat('CommaSepBy', ['x'])
-Init.add_syncat('Option', ['x'])
-Init.add_syncat('Seq', ['x'])
+Init.add_syncat('CommaSepBy', ('x',))
+Init.add_syncat('Option', ('x',))
+Init.add_syncat('Seq', ('x',))

@@ -31,7 +31,11 @@ spec {
 
 #end
 
-#eval Strata.Boole.verify "cvc5" function_definitions
+/-- info: Obligation: test_ensures_0_318
+Property: assert
+Result: ✅ pass-/
+#guard_msgs in
+#eval Strata.Boole.verify "cvc5" function_definitions (options := .quiet)
 
 example : Strata.smtVCsCorrect function_definitions := by
   gen_smt_vcs

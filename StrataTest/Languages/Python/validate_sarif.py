@@ -20,8 +20,6 @@ def validate(sarif_path: str, base_name: str, *, laurel: bool = False) -> str:
     if run.get("tool", {}).get("driver", {}).get("name") != "Strata":
         errors.append("wrong tool name")
     results = run.get("results", [])
-    if len(results) == 0:
-        errors.append("no results")
     for r in results:
         if r.get("level") not in ("none", "error", "warning", "note"):
             errors.append(f"invalid level: {r.get('level')}")

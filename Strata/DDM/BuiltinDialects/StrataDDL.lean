@@ -67,6 +67,15 @@ def StrataDDL : Dialect := BuiltinM.create! "StrataDDL" #[initDialect] do
     syntaxDef := .ofList [.str "import", .ident 0 0, .str ";"]
   }
   declareOp {
+    name := "setOptionCommand",
+    argDecls := .ofArray #[
+      { ident := "name", kind := Ident },
+      { ident := "value", kind := Ident }
+    ],
+    category := Command,
+    syntaxDef := .ofList [.str "dialect_option", .ident 0 0, .ident 1 0, .str ";"]
+  }
+  declareOp {
     name := "categoryCommand",
     argDecls := .ofArray #[
       { ident := "name", kind := Ident }
@@ -178,7 +187,7 @@ def StrataDDL : Dialect := BuiltinM.create! "StrataDDL" #[initDialect] do
      Used on constructor args in datatype declarations so that type parameters are available
      as type variables inside constructor field types. -/
   declareMetadata { name := "scopeTVar", args := #[.mk "typeParams" .ident] }
-  declareMetadata { name := "scopeSelf", args := #[.mk "name" .ident, .mk "args" .ident, .mk "type" .ident] }
+  declareMetadata { name := "preRegisterFunctions", args := #[.mk "scope" .ident] }
 
 end Strata
 end

@@ -3,6 +3,8 @@ name: Build
 on:
   pull_request:
   merge_group:
+  push:
+    branches: [main]
 
 env:
   SOLUTION: Tools/BoogieToStrata/BoogieToStrata.sln
@@ -28,64 +30,41 @@ jobs:
           - stable
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Install cvc5
-        shell: bash
-        run: |
-              ARCH=$(uname -m)
-              if [ "$ARCH" = "x86_64" ]; then
-                ARCH_NAME="x86_64"
-              elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
-                ARCH_NAME="arm64"
-              else
-                echo "Unsupported architecture: $ARCH"
-                exit 1
-              fi
-              wget https://github.com/cvc5/cvc5/releases/download/cvc5-1.2.1/cvc5-Linux-${ARCH_NAME}-static.zip
-              unzip cvc5-Linux-${ARCH_NAME}-static.zip
-              chmod +x cvc5-Linux-${ARCH_NAME}-static/bin/cvc5
-              echo "$GITHUB_WORKSPACE/cvc5-Linux-${ARCH_NAME}-static/bin/" >> $GITHUB_PATH
+        uses: ./.github/actions/install-cvc5
       - name: Install z3
-        shell: bash
-        run: |
-              ARCH=$(uname -m)
-              if [ "$ARCH" = "x86_64" ]; then
-                ARCH_NAME="x86_64"
-                wget https://github.com/Z3Prover/z3/releases/download/z3-4.15.2/z3-4.15.2-x64-glibc-2.39.zip
-                ARCHIVE_NAME="z3-4.15.2-x64-glibc-2.39"
-              elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
-                ARCH_NAME="arm64"
-                wget https://github.com/Z3Prover/z3/releases/download/z3-4.15.2/z3-4.15.2-arm64-glibc-2.34.zip
-                ARCHIVE_NAME="z3-4.15.2-arm64-win"
-              else
-                echo "Unsupported architecture: $ARCH"
-                exit 1
-              fi
-              unzip "${ARCHIVE_NAME}.zip"
-              chmod +x "${ARCHIVE_NAME}/bin/z3"
-              echo "$GITHUB_WORKSPACE/${ARCHIVE_NAME}/bin/" >> $GITHUB_PATH
+        uses: ./.github/actions/install-z3
       - name: Install .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '8.0.x'
       - name: Restore lake cache
-        uses: actions/cache/restore@v4
-        with:
-          path: .lake
-          key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
-          restore-keys: |
-            lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}
+        # Only use the caches on PRs because there is a risk of stale results:
+        # https://github.com/strata-org/Strata/issues/952
+        if: github.event_name == 'pull_request'
+        uses: ./.github/actions/restore-lake-cache
+      - name: Download ion-java jar for Java codegen test
+        run: wget -q -O StrataTestExtra/DDM/Integration/Java/testdata/ion-java-1.11.11.jar https://github.com/amazon-ion/ion-java/releases/download/v1.11.11/ion-java-1.11.11.jar
       - name: Build and test Strata
         uses: leanprover/lean-action@v1
         with:
           use-github-cache: false
+          test: false
+      - name: Run tests (excluding Python)
+        run: lake test -- --exclude Languages.Python
       - name: Save lake cache
-        uses: actions/cache/save@v4
-        with:
-          path: .lake
-          key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
-      - name: Build and run StrataVerify
-        run: lake exe StrataVerify Examples/SimpleProc.core.st
+        uses: ./.github/actions/save-lake-cache
+      - name: Verify Java testdata is up to date
+        run: |
+          StrataTestExtra/DDM/Integration/Java/regenerate-testdata.sh
+          git diff --exit-code StrataTestExtra/DDM/Integration/Java/testdata/
+      - name: Verify generated editor syntax files are up to date
+        run: |
+          lake env lean --run editors/GenSyntax.lean all
+          git diff --exit-code editors/vscode/syntaxes/ editors/emacs/
+      - name: Build and run strata verify
+        run: lake exe strata verify Examples/SimpleProc.core.st
       - name: Build BoogieToStrata
         run: dotnet build -warnaserror ${SOLUTION}
       - name: Test BoogieToStrata
@@ -96,23 +75,63 @@ jobs:
         working-directory: Examples
         shell: bash
         run: ./run_examples.sh
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.14'
       - name: Build using pip
         run: pip install .
         working-directory: Tools/Python
-      - name: Run pyAnalyze tests
+      - name: Run pyInterpret golden-file tests
         working-directory: StrataTest/Languages/Python
         shell: bash
-        run: |
-          ./run_py_analyze.sh
-          ./run_py_analyze.sh laurel
-          python run_py_analyze_sarif.py
-          python run_py_analyze_sarif.py --laurel
+        run: ./run_py_interpret.sh
+      - name: Run pyAnalyze SARIF tests
+        working-directory: StrataTest/Languages/Python
+        shell: bash
+        run: python run_py_analyze_sarif.py --laurel
+      - name: Run pyAnalyze golden-file tests
+        working-directory: StrataTest/Languages/Python
+        shell: bash
+        run: ./run_py_analyze.sh
       - name: Run regex differential tests
         working-directory: StrataTest/Languages/Python/Regex
         run: python diff_test.py
+
+  check_pending_python:
+    needs: build_and_test_lean
+    name: Check pending Python tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+    - uses: actions/checkout@v6
+    - uses: actions/setup-python@v6
+      with:
+        python-version: '3.14'
+    - name: Build using pip
+      run: pip install .
+      working-directory: Tools/Python
+    - name: Restore Lean build cache
+      # The cache is safe to use here because we just saved it for this exact SHA
+      # in the build_and_test_lean job
+      # https://github.com/strata-org/Strata/issues/952
+      uses: ./.github/actions/restore-lake-cache
+      with:
+        fail-on-cache-miss: "true"
+        use-restore-keys: "false"
+    - name: Install Lean
+      uses: leanprover/lean-action@v1
+      with:
+        auto-config: false
+        build: false
+    - name: Install cvc5
+      uses: ./.github/actions/install-cvc5
+      with:
+        install-to: system
+    - name: Check pending tests for newly passing
+      working-directory: StrataTest/Languages/Python
+      shell: bash
+      run: ./run_py_analyze.sh --check-pending
 
   lint_checks:
     name: Run lint checks
@@ -125,7 +144,7 @@ jobs:
           - stable
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - name: Check copyright headers
@@ -145,20 +164,38 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      actions: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Build API documentation package
         uses: leanprover/lean-action@v1
         with:
           lake-package-directory: 'docs/api'
+      - name: Restore lake cache
+        uses: actions/cache/restore@v5
+        with:
+          path: |
+            .lake
+            docs/verso/.lake
+          key: docs-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain', 'docs/verso/lean-toolchain') }}-${{ hashFiles('lake-manifest.json', 'docs/verso/lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
+          restore-keys: |
+            docs-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain', 'docs/verso/lean-toolchain') }}-${{ hashFiles('lake-manifest.json', 'docs/verso/lake-manifest.json') }}-${{ hashFiles('**/*.st') }}
       - name: Build documentation package
         uses: leanprover/lean-action@v1
         with:
           build-args: '--wfail'
           lake-package-directory: 'docs/verso'
+          use-github-cache: false
       - name: Build documentation
         run: ./generate.sh
         working-directory: docs/verso
+      - name: Save lake cache
+        uses: actions/cache/save@v5
+        with:
+          path: |
+            .lake
+            docs/verso/.lake
+          key: docs-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain', 'docs/verso/lean-toolchain') }}-${{ hashFiles('lake-manifest.json', 'docs/verso/lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
       - name: Check for broken links
         uses: lycheeverse/lychee-action@v2
         with:
@@ -166,6 +203,7 @@ jobs:
           fail: true
 
   build_python:
+    needs: build_and_test_lean
     name: Build and test Python
     runs-on: ubuntu-latest
     permissions:
@@ -174,21 +212,45 @@ jobs:
       matrix:
         python_version: [3.11, 3.12, 3.13, 3.14]
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-python@v5
+    - uses: actions/checkout@v6
+    - uses: actions/setup-python@v6
       with:
         python-version: ${{ matrix.python_version }}
     - name: Build using pip
       run: pip install .
       working-directory: Tools/Python
-    - name: Build Lean strata executable for testing purposes.
+    - name: Restore Lean build cache
+      # The cache is safe to use here because we just saved it for this exact SHA
+      # in the build_and_test_lean job from ci.yml
+      # https://github.com/strata-org/Strata/issues/952
+      uses: ./.github/actions/restore-lake-cache
+      with:
+        fail-on-cache-miss: "true"
+        use-restore-keys: "false"
+    - name: Install Lean (for lake env)
       uses: leanprover/lean-action@v1
       with:
         auto-config: false
-        build: true
-        build-args: "strata:exe"
+        build: false
+        use-github-cache: false
+    - name: Install cvc5
+      uses: ./.github/actions/install-cvc5
+      with:
+        install-to: system
+    - name: Install z3
+      shell: bash
+      run: |
+            pip install z3-solver
+            Z3_PATH=$(python -c "import z3; import os; print(os.path.join(os.path.dirname(z3.__file__), 'lib', 'z3'))")
+            sudo cp "$Z3_PATH" /usr/local/bin/z3 || true
+            # Fallback: install from GitHub release
+            if ! command -v z3 &> /dev/null; then
+              wget https://github.com/Z3Prover/z3/releases/download/z3-4.13.4/z3-4.13.4-x64-glibc-2.35.zip
+              unzip z3-4.13.4-x64-glibc-2.35.zip
+              sudo cp z3-4.13.4-x64-glibc-2.35/bin/z3 /usr/local/bin/
+            fi
     - name: Run PySpec and dispatch tests
-      run: PYTHON=python PYTHON_TEST=1 lake build StrataTest.Languages.Python.SpecsTest StrataTest.Languages.Python.AnalyzeLaurelTest StrataTest.Languages.Python.Specs.IdentifyOverloadsTest
+      run: PYTHON=python lake test -- Languages.Python
     - name: Run test script
       run: FAIL_FAST=1 ./scripts/run_cpython_tests.sh ${{ matrix.python_version }}
       working-directory: Tools/Python
