@@ -377,10 +377,12 @@ procedure test()
 { var x: int := IntList..head($hole_0()) };
 -/
 #guard_msgs in
-#eval! parseElimAndPrint r"
+#eval! parseElimAndPrint
+#strata
+program Laurel;
 datatype IntList { Nil(), Cons(head: int, tail: IntList) }
 procedure test() { var x: int := IntList..head(<?>) };
-"
+#end
 
 -- Hole as argument to an unsafe `!` destructor → same datatype recovery.
 /--
@@ -391,10 +393,12 @@ procedure test()
 { var x: int := IntList..head!($hole_0()) };
 -/
 #guard_msgs in
-#eval! parseElimAndPrint r"
+#eval! parseElimAndPrint
+#strata
+program Laurel;
 datatype IntList { Nil(), Cons(head: int, tail: IntList) }
 procedure test() { var x: int := IntList..head!(<?>) };
-"
+#end
 
 -- Hole as argument to a tester → typed as the parent datatype.
 /--
@@ -405,9 +409,11 @@ procedure test()
 { assert IntList..isCons($hole_0()) };
 -/
 #guard_msgs in
-#eval! parseElimAndPrint r"
+#eval! parseElimAndPrint
+#strata
+program Laurel;
 datatype IntList { Nil(), Cons(head: int, tail: IntList) }
 procedure test() { assert IntList..isCons(<?>) };
-"
+#end
 
 end Laurel
