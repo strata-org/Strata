@@ -15,6 +15,7 @@ import Strata.Languages.Laurel.TypeHierarchy
 import Strata.Languages.Laurel.InferHoleTypes
 import Strata.Languages.Laurel.EliminateDeterministicHoles
 import Strata.Languages.Laurel.CoreDefinitionsForLaurel
+import Strata.Languages.Laurel.LiftImperativeExpressions
 import Strata.Languages.Laurel.ConstrainedTypeElim
 import Strata.Languages.Laurel.TypeAliasElim
 public import Strata.Languages.Laurel.LaurelPass

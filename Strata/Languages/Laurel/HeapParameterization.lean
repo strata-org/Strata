@@ -12,6 +12,9 @@ public import Strata.Languages.Laurel.HeapParameterizationConstants
 public import Strata.Languages.Laurel.MapStmtExpr
 public import Strata.Util.Tactics
 public import Strata.Languages.Laurel.LaurelPass
+import Strata.Languages.Laurel.TypeHierarchy
+import Strata.Languages.Laurel.ModifiesClauses
+import Strata.Languages.Laurel.LiftImperativeExpressions
 
 /-
 Heap Parameterization Pass
@@ -579,6 +582,10 @@ public def heapParameterizationPass : LaurelPass where
   needsResolves := true
   run := fun p m =>
     (heapParameterization m p, [], {})
+  comesBefore := [
+      ⟨ typeHierarchyTransformPass, "The type hierarchy pass modifies the 'Composite' datatype that is introduced by this pass." ⟩,
+      ⟨ modifiesClausesTransformPass, "The modifies pass refers to several types and variables introduced by heap parameterization: Composite, Field, $heap_in, $heap." ⟩,
+      ⟨ liftExpressionAssignmentsPass, "The heap paramterization pass introduces assignments - to the heap variables - that need to be lifted."⟩]
 
 end Strata.Laurel
 

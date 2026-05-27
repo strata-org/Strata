@@ -12,6 +12,11 @@ namespace Strata.Laurel
 
 public section
 
+mutual
+structure ComesBefore where
+  name : LaurelPass
+  reason: String
+
 /-- A single Laurel-to-Laurel pass. Each pass receives the current program and
     semantic model and returns the (possibly modified) program, accumulated
     diagnostics, and statistics. -/
@@ -24,6 +29,8 @@ structure LaurelPass where
   run : Program → SemanticModel → Program × List DiagnosticModel × Statistics
   /-- A description of what this pass does, used for documentation generation. -/
   documentation : String
+  comesBefore : List ComesBefore := []
+end
 
 end -- public section
 

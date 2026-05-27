@@ -10,6 +10,7 @@ public import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 public import Strata.Languages.Laurel.LaurelTypes
 public import Strata.Util.Statistics
 public import Strata.Languages.Laurel.LaurelPass
+import Strata.Languages.Laurel.EliminateDeterministicHoles
 
 /-!
 # Hole Type Inference
@@ -196,5 +197,7 @@ public def inferHoleTypesPass : LaurelPass where
   run := fun p m =>
     let (p', diags, stats) := inferHoleTypes m p
     (p', diags, stats)
+  comesBefore := [
+      ⟨ eliminateDeterministicHolesPass, "Eliminating deterministic holes relies on knowing the type of holes"⟩]
 
 end Laurel
