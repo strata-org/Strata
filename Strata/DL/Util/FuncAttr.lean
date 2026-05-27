@@ -25,7 +25,9 @@ inductive FuncAttr where
   | evalIfConstr (paramIdx : Nat)
   /-- Use concrete evaluation when argument at `paramIdx` is a canonical value. -/
   | evalIfCanonical (paramIdx : Nat)
-  /-- Inline the function body when all arguments are canonical values. -/
+  /-- Inline the function body when all arguments are canonical values.
+      Used for int-recursive functions (without `@[cases]`) so that concrete
+      evaluation can unfold calls like `factorial(5)` at partial-evaluation time. -/
   | inlineIfAllCanonical
   deriving DecidableEq, Repr, Inhabited, BEq
 
@@ -54,7 +56,10 @@ def FuncAttr.findEvalIfConstr (attrs : Array FuncAttr) : Option Nat :=
 def FuncAttr.findEvalIfCanonical (attrs : Array FuncAttr) : Option Nat :=
   attrs.findSome? fun | .evalIfCanonical i => some i | _ => none
 
-/-- Return `true` if the attributes contain `inlineIfAllCanonical`. -/
+/-- Return `true` if the attributes contain `inlineIfAllCanonical`.
+    When true and all call arguments are canonical, the partial evaluator
+    inlines the function body to enable concrete evaluation of int-recursive
+    functions. -/
 def FuncAttr.hasInlineIfAllCanonical (attrs : Array FuncAttr) : Bool :=
   attrs.any (· == .inlineIfAllCanonical)
 
