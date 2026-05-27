@@ -3,8 +3,11 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.SMT.Translate
+meta import Strata.DL.SMT.Translate
+
+meta section
 
 open Lean
 open Strata
@@ -224,3 +227,5 @@ info: ∀ (α : Type → Type → Type) [inst : ∀ (α_1 α_2 : Type), Nonempty
       [(.app .mod [(.prim (.int 10)), (.prim (.int 3)), (.prim (.int 2))] (.prim .int)),
        (.prim (.int 1))]
       (.prim .bool))
+
+end

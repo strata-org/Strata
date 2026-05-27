@@ -3,8 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-import Strata.Backends.CBMC.CollectSymbols
-import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
+module
+meta import Strata.Backends.CBMC.CollectSymbols
+meta import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
+import StrataDDM.Integration.Lean.HashCommands
+import Strata.Languages.Core.DDMTransform.Translate
+import Lean.Server.Utils
 
 /-! ## End-to-end tests: Core program → GOTO JSON
 
@@ -15,6 +19,8 @@ Core-to-GOTO gap-filling work:
 - Cover command
 - Bitvector operations
 -/
+
+meta section
 
 open Strata
 
@@ -372,3 +378,5 @@ procedure test(x : int) {
   assert! (gotoStr.splitOn "x must be positive").length > 1
   -- It should NOT contain the default label as the comment
   assert! (gotoStr.splitOn "assert_0").length == 1
+
+end

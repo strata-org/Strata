@@ -3,11 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Lambda.LExprTypeEnv
+meta import Strata.DL.Lambda.LExprTypeEnv
 
 /-! ## Tests for LExprTypeEnv -/
 
+meta section
 namespace Lambda
 open Std (ToFormat Format format)
 open LTy.Syntax
@@ -175,3 +177,4 @@ info: ok: (x : $__ty0) (y : int) (z : $__ty0)
          return Signature.format ans.fst
 
 end Lambda
+end

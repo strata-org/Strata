@@ -3,9 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core.Verifier
+import StrataDDM.Integration.Lean.HashCommands
 
+meta section
 namespace Strata
 
 /-- Basic uninterpreted type declaration with equality reasoning -/
@@ -211,3 +214,4 @@ procedure P () {
 #end
 
 end Strata
+end

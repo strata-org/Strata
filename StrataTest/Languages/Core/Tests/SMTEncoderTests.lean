@@ -3,9 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.SMTEncoder
-import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core.SMTEncoder
+meta import Strata.Languages.Core.Verifier
+import StrataDDM.Integration.Lean.HashCommands
+
+meta section
 
 /-! ## Tests for SMTEncoder -/
 
@@ -548,3 +552,5 @@ Result: ✅ pass
 #eval! verify quotedStringProgram (options := Core.VerifyOptions.quiet)
 
 end Strata
+
+end

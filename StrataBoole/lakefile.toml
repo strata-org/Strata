@@ -1,0 +1,13 @@
+name = "StrataBoole"
+version = "0.1.0"
+defaultTargets = ["StrataBoole"]
+
+[[require]]
+name = "Strata"
+path = ".."
+
+[[lean_lib]]
+name = "StrataBoole"
+
+[[lean_lib]]
+name = "StrataBooleTest"

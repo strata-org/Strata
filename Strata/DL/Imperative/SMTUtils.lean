@@ -5,14 +5,15 @@
 -/
 module
 
-public import Strata.DL.SMT.SMT
-import Strata.DL.SMT.DDMTransform.Parse
 import Strata.DL.SMT.DDMTransform.Translate
-import Strata.DDM.Elab
-import Strata.DDM.Format
+import StrataDDM.Elab
 public import Strata.Pipeline.Context
 public import Strata.DL.Imperative.PureExpr
 public import Strata.DL.Imperative.EvalContext
+public import Strata.DL.SMT.Encoder
+public import Strata.DL.SMT.IncrementalSolver
+public import Strata.DL.Util.Map
+public import Strata.Languages.Core.Options
 
 namespace Imperative
 open Std (ToFormat Format format)

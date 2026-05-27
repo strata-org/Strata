@@ -3,18 +3,20 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 /-
 Tests that the constrained type elimination pass correctly transforms
 Laurel programs by comparing the output against expected results.
 -/
 
-import Strata.DDM.Elab
-import Strata.DDM.BuiltinDialects.Init
-import Strata.Languages.Laurel.Grammar.LaurelGrammar
-import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
-import Strata.Languages.Laurel.ConstrainedTypeElim
-import Strata.Languages.Laurel.Resolution
+meta import StrataDDM.Elab
+meta import StrataDDM.BuiltinDialects.Init
+meta import Strata.Languages.Laurel.Grammar
+meta import Strata.Languages.Laurel.ConstrainedTypeElim
+meta import Strata.Languages.Laurel.Resolution
+
+meta section
 
 open Strata
 open Strata.Elab (parseStrataProgramFromDialect)
@@ -116,3 +118,5 @@ procedure $witness_posint()
     IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
 
 end Laurel
+end Strata
+end
