@@ -99,12 +99,6 @@ def laurelPipeline : Array LaurelPass := #[
   constrainedTypeElimPass
 ]
 
-/-- Generate a documentation string describing all pipeline passes, with their names and descriptions. -/
-def laurelPipelineDocumentation : String :=
-  let entries := laurelPipeline.map fun pass =>
-    s!"- **{pass.name}**: {pass.documentation}"
-  "\n".intercalate entries.toList
-
 /--
 Run all Laurel-to-Laurel lowering passes on a program, returning the lowered
 program, the semantic model, accumulated diagnostics, and merged statistics.

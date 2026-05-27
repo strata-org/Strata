@@ -98,6 +98,6 @@ public def eliminateValueInReturnsPass : LaurelPass where
   run := fun p _m =>
     let (p', diags) := eliminateValueInReturnsTransform p
     (p', diags.toList, {})
-  comesBefore := [⟨ heapParameterizationPass, "Eliminate value in returns need to come before any passes that change the amount of output parameters of procedures." ⟩]
+  comesBefore := [⟨ heapParameterizationPass, "eliminate value in returns need to come before any passes that change the amount of output parameters of procedures." ⟩]
 
 end Laurel

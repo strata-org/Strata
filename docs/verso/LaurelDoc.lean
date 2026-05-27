@@ -31,11 +31,51 @@ set_option pp.rawOnError true
 @[block_command]
 def laurelPipelineDocs : Verso.Doc.Elab.BlockCommandOf Unit := fun () => do
   let entries := laurelPipeline.map fun pass =>
-    s!"- **{pass.name}**: {pass.documentation}"
+    let base := s!"- **{pass.name}**: {pass.documentation}"
+    if pass.comesBefore.isEmpty then base
+    else
+      let deps := pass.comesBefore.map fun cb =>
+        s!"  - Comes before **{cb.name.name}** because: {cb.reason}"
+      base ++ "\n" ++ "\n".intercalate deps
 
   let md := "\n".intercalate entries.toList
   let some ast := MD4Lean.parse md
     | Lean.throwError "Failed to parse laurelPipelineDocumentation as Markdown"
+  let blocks ← ast.blocks.mapM (Markdown.blockFromMarkdown · (handleHeaders := Markdown.strongEmphHeaders))
+  `(Verso.Doc.Block.concat #[$blocks,*])
+
+/-- Block command that generates a dependency graph for the Laurel pipeline passes
+    based on the `comesBefore` property.
+    Usage inside a `#doc` block: `{laurelPipelineDependencyGraph}` -/
+@[block_command]
+def laurelPipelineDependencyGraph : Verso.Doc.Elab.BlockCommandOf Unit := fun () => do
+  -- Collect all edges: (source, target, reason) where source comesBefore target
+  let mut edges : List (String × String × String) := []
+  for pass in laurelPipeline do
+    for cb in pass.comesBefore do
+      edges := edges ++ [(pass.name, cb.name.name, cb.reason)]
+
+  -- Build the graph as a markdown list showing dependencies
+  let mut md := "**Dependency edges** (A → B means A must run before B):\n\n"
+  if edges.isEmpty then
+    md := md ++ "*No ordering constraints declared.*\n"
+  else
+    for (src, tgt, reason) in edges do
+      md := md ++ s!"- **{src}** → **{tgt}**\n  - *{reason}*\n"
+
+  -- Add a textual rendering of the pipeline order with dependency annotations
+  md := md ++ "\n**Pipeline execution order:**\n\n"
+  md := md ++ "```\n"
+  let mut idx := 1
+  for pass in laurelPipeline do
+    let deps := pass.comesBefore.map (s!" → {·.name.name}")
+    let depStr := if deps.isEmpty then "" else String.join deps
+    md := md ++ s!"{idx}. {pass.name}{depStr}\n"
+    idx := idx + 1
+  md := md ++ "```\n"
+
+  let some ast := MD4Lean.parse md
+    | Lean.throwError "Failed to parse laurelPipelineDependencyGraph as Markdown"
   let blocks ← ast.blocks.mapM (Markdown.blockFromMarkdown · (handleHeaders := Markdown.strongEmphHeaders))
   `(Verso.Doc.Block.concat #[$blocks,*])
 
@@ -183,3 +223,9 @@ Ideally the translation pass only translates between types but does not change t
 The following passes are part of the lowering group:
 
 {laurelPipelineDocs}
+
+## Pass Dependency Graph
+
+The following graph shows the ordering constraints between passes.
+
+{laurelPipelineDependencyGraph}
