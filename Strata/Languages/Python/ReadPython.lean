@@ -5,8 +5,8 @@
 -/
 module
 
-import Strata.DDM.Ion
-import Strata.DDM.Util.Ion
+import StrataDDM.Ion
+import StrataDDM.Util.Ion
 public import Strata.Languages.Python.PythonDialect
 
 public section

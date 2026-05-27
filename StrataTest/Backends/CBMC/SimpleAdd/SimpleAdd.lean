@@ -6,7 +6,7 @@
 module
 
 import Strata.Backends.CBMC.GOTO.CoreToCProverGOTO
-import Strata.DDM.Integration.Lean
+import StrataDDM.Integration.Lean
 
 open Std (ToFormat Format format)
 -------------------------------------------------------------------------------

@@ -11,8 +11,8 @@ Tests that the expression lifter correctly handles statement constructs
 by comparing the lifted Laurel against expected output.
 -/
 
-meta import Strata.DDM.Elab
-meta import Strata.DDM.BuiltinDialects.Init
+meta import StrataDDM.Elab
+meta import StrataDDM.BuiltinDialects.Init
 meta import Strata.Languages.Laurel.Grammar
 meta import Strata.Languages.Laurel.LaurelToCoreTranslator
 meta import Strata.Languages.Laurel.LiftImperativeExpressions

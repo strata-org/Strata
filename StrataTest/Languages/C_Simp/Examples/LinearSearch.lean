@@ -7,7 +7,7 @@ module
 
 meta import all Strata.Languages.C_Simp.C_Simp
 meta import all Strata.Languages.C_Simp.Verify
-import Strata.DDM.Integration.Lean.HashCommands
+import StrataDDM.Integration.Lean.HashCommands
 
 meta section
 
@@ -70,7 +70,7 @@ info: function linearSearch {
   while
     (~Int.Lt idx (~Array.Len arr))
     (some (~Int.Sub (~Array.Len arr) idx))
-    [[linearSearch_invariant_468_485]: #true]
+    [[linearSearch_invariant_467_484]: #true]
   {
     if (e == (~Array.Get arr idx)) {
       return := #true

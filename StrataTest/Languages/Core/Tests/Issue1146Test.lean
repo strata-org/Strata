@@ -6,7 +6,7 @@
 module
 
 meta import Strata.Languages.Core.DDMTransform.Translate
-import Strata.DDM.Integration.Lean.HashCommands
+import StrataDDM.Integration.Lean.HashCommands
 
 meta section
 

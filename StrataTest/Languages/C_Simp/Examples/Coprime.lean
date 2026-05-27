@@ -6,7 +6,7 @@
 module
 
 meta import all Strata.Languages.C_Simp.Verify
-import Strata.DDM.Integration.Lean.HashCommands
+import StrataDDM.Integration.Lean.HashCommands
 
 meta section
 
@@ -78,7 +78,7 @@ info: function coprime {
   while
     (~Int.Gt i #1)
     (some i)
-    [[coprime_invariant_428_445]: #true]
+    [[coprime_invariant_427_444]: #true]
   {
     if (~Bool.And ((~Int.Mod b i) == #0) ((~Int.Mod a i) == #0)) {
       return := #false

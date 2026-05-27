@@ -843,14 +843,14 @@ for serialization, pretty-printing, and cross-dialect interoperability.
 ### Basic Syntax
 
 ```
-import Strata.DDM.Integration.Lean
+import StrataDDM.Integration.Lean
 
 namespace MyDialect
 #strata_gen MyDialect
 end MyDialect
 ```
 
-`#strata_gen` requires `import Strata.DDM.Integration.Lean` and takes a single
+`#strata_gen` requires `import StrataDDM.Integration.Lean` and takes a single
 argument: the name of a dialect that has already been defined (via
 `#dialect ... #end` or `#load_dialect`).  The command should typically be placed
 inside a `namespace` block so that the generated types and functions are scoped

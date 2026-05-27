@@ -5,8 +5,8 @@
 -/
 module
 
-import Strata.DDM.Integration.Lean
-meta import Strata.DDM.Util.Format
+import StrataDDM.Integration.Lean
+meta import StrataDDM.Util.Format
 meta import Strata.Languages.Core.Core
 meta import Strata.Languages.Core.DDMTransform.Translate
 meta import Strata.Languages.Core.ProgramType

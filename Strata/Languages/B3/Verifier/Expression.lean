@@ -6,7 +6,7 @@
 module
 
 public import Strata.Languages.B3.DDMTransform.Conversion
-import Strata.DDM.Format
+import StrataDDM.Format
 import Strata.Util.Tactics
 public import Strata.DL.SMT.Term
 import Strata.DL.SMT.Factory

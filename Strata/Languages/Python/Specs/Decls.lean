@@ -4,7 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
-public import Strata.DDM.Util.SourceRange
+public import StrataDDM.Util.SourceRange
 public import Strata.Languages.Python.PythonIdent
 
 public section

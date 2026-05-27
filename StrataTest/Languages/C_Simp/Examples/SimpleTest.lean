@@ -7,7 +7,7 @@ module
 
 meta import all Strata.Languages.C_Simp.C_Simp
 meta import all Strata.Languages.C_Simp.Verify
-import Strata.DDM.Integration.Lean.HashCommands
+import StrataDDM.Integration.Lean.HashCommands
 
 meta section
 

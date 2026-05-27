@@ -6,14 +6,14 @@
 module
 
 
-public import Strata.DDM.Integration.Lean.OfAstM
-public import Strata.DDM.Format
-import Strata.DDM.Integration.Lean.Gen
-import Strata.DDM.Integration.Lean.HashCommands
+public import StrataDDM.Integration.Lean.OfAstM
+public import StrataDDM.Format
+import StrataDDM.Integration.Lean.Gen
+import StrataDDM.Integration.Lean.HashCommands
 
 public section
 namespace Strata.Python
-#load_dialect "../../../Tools/Python/dialects/Python.dialect.st.ion"
+#load_dialect "Tools/Python/dialects/Python.dialect.st.ion"
 
 #strata_gen Python
 

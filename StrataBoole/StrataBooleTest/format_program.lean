@@ -5,7 +5,7 @@
 -/
 
 import StrataBoole.Verify
-import Strata.DDM.Elab
+import StrataDDM.Elab
 
 /-!
 Regression test for `Boole.formatProgram`.

@@ -7,7 +7,7 @@ module
 
 meta import all StrataTest.DL.Imperative.Arith
 meta import all StrataTest.DL.Imperative.DDMDefinition
-import Strata.DDM.Integration.Lean.HashCommands
+import StrataDDM.Integration.Lean.HashCommands
 
 meta section
 
