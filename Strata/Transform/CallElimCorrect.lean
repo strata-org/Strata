@@ -7974,6 +7974,127 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       exact readValues_updatedStatesSame HoldValsLenE HoldNd
                     intro i Hi Hi'
                     exact readValues_get HrdHavoc (i:=i) (hi:=Hi) (hi':=Hi')
+                  -- ── Shared class-(b) sub-decompositions for Hinv/Hpred_disj ──
+                  --
+                  -- Both Hinv and Hpred_disj decompose `Hf : Map.find?
+                  -- oldSubst_L6 k = some w` into the two flavors of
+                  -- `oldSubst_L6 = createOldVarsSubst ++ inputOnlyOldSubst`,
+                  -- then run identical positional-decomposition pipelines.
+                  -- Hoist the (b1) and (b2) scaffolding here so each consumer
+                  -- only carries its per-class conclusion logic.
+                  -- (b1): hit on createOldVarsSubst flavor.  Yields the
+                  -- positional witness `var = genOldIdents[ni]` and
+                  -- `w = createFvar genOldIdents[ni]`.
+                  have b1_var_witness :
+                      ∀ {var : Expression.Ident}
+                        {k : Expression.Ident} {w w' : Expression.Expr}
+                        (_hfind : Map.find?
+                          (Core.Transform.createOldVarsSubst
+                            oldTripsCanonical_L6) k = some w')
+                        (_Hf : Map.find? oldSubst_L6 k = some w)
+                        (_Hv_in : var ∈ Imperative.HasVarsPure.getVars
+                                          (P:=Expression) w),
+                      ∃ (ni : Nat) (Hni : ni < genOldIdents.length),
+                        w = Core.Transform.createFvar
+                              (genOldIdents[ni]'Hni) ∧
+                        var = genOldIdents[ni]'Hni := by
+                    intro var k w w' hfind Hf Hv_in
+                    have HH := Map.find?_append
+                      (Core.Transform.createOldVarsSubst
+                        oldTripsCanonical_L6) inputOnlyOldSubst_L6 k
+                    rw [hfind] at HH
+                    have Hf_unfold :
+                        Map.find?
+                          (Core.Transform.createOldVarsSubst
+                            oldTripsCanonical_L6 ++
+                              inputOnlyOldSubst_L6) k = some w := Hf
+                    have Hw'w : w' = w :=
+                      Option.some_inj.mp (HH.symm.trans Hf_unfold)
+                    obtain ⟨ni_val, Hni_lt, _Hk_eqMkOld, Hw'_eq⟩ :=
+                      createOldVarsSubst_pos_decomp HgenOldLen HoldTysLen hfind
+                    have Hni_lt_genOld : ni_val < genOldIdents.length := by
+                      have := HgenOldLen; omega
+                    have Hw_eq : w =
+                        Core.Transform.createFvar
+                          (genOldIdents[ni_val]'Hni_lt_genOld) := by
+                      rw [← Hw'w]; exact Hw'_eq
+                    refine ⟨ni_val, Hni_lt_genOld, Hw_eq, ?_⟩
+                    rw [Hw_eq] at Hv_in
+                    have Hv_in' :
+                        var ∈ Imperative.HasVarsPure.getVars (P:=Expression)
+                                (Core.Transform.createFvar
+                                  (genOldIdents[ni_val]'Hni_lt_genOld)) := Hv_in
+                    show var = _
+                    simp [Core.Transform.createFvar,
+                          Imperative.HasVarsPure.getVars,
+                          Lambda.LExpr.LExpr.getVars] at Hv_in'
+                    exact Hv_in'
+                  -- (b2): miss on createOldVarsSubst, hit on inputOnlyOldSubst.
+                  -- Yields `w = inArgs[ni2]`, `w ∈ inArgs`, the input-key
+                  -- positional fact, and `var ∈ flatMap getVars inArgs`.
+                  have b2_var_witness :
+                      ∀ {var : Expression.Ident}
+                        {k : Expression.Ident} {w : Expression.Expr}
+                        (_hfind_none : Map.find?
+                          (Core.Transform.createOldVarsSubst
+                            oldTripsCanonical_L6) k = none)
+                        (_Hf : Map.find? oldSubst_L6 k = some w)
+                        (_Hv_in : var ∈ Imperative.HasVarsPure.getVars
+                                          (P:=Expression) w),
+                      ∃ (ni2 : Nat) (Hni2 : ni2 < proc'.header.inputs.keys.length)
+                          (Hni2' : ni2 < inArgs.length),
+                        w = inArgs[ni2]'Hni2' ∧
+                        w ∈ inArgs ∧
+                        w ∈ CallArg.getInputExprs args ∧
+                        (proc'.header.inputs.keys[ni2]'Hni2)
+                          ∉ proc'.header.outputs.keys ∧
+                        var ∈ List.flatMap
+                                (Imperative.HasVarsPure.getVars (P:=Expression))
+                                inArgs := by
+                    intro var k w hfind_none Hf Hv_in
+                    have HH := Map.find?_append
+                      (Core.Transform.createOldVarsSubst
+                        oldTripsCanonical_L6) inputOnlyOldSubst_L6 k
+                    rw [hfind_none] at HH
+                    have Hf_unfold :
+                        Map.find?
+                          (Core.Transform.createOldVarsSubst
+                            oldTripsCanonical_L6 ++
+                              inputOnlyOldSubst_L6) k = some w := Hf
+                    have Hin_some :
+                        Map.find? inputOnlyOldSubst_L6 k = some w :=
+                      HH.symm.trans Hf_unfold
+                    obtain ⟨ni2_val, Hni2_lt_inKeys, Hni2_lt_inArgs,
+                            _Hk_eq_proc', Hw_eq_proc', Hin_notin_outs⟩ :=
+                      inputOnlyOldSubst_pos_decomp Hin_some
+                    have HargExpr_def :
+                        w = (CallArg.getInputExprs args)[ni2_val]'Hni2_lt_inArgs :=
+                      Hw_eq_proc'
+                    have Hni2_lt_inArgsCall :
+                        ni2_val < inArgs.length := by
+                      have : (CallArg.getInputExprs args).length =
+                          inArgs.length := by rw [hCallArgsIn]
+                      rw [← this]
+                      exact Hni2_lt_inArgs
+                    have HargExpr_eq_inArgs :
+                        w = inArgs[ni2_val]'Hni2_lt_inArgsCall := by
+                      rw [HargExpr_def]
+                      show (CallArg.getInputExprs args)[ni2_val]'Hni2_lt_inArgs =
+                            inArgs[ni2_val]'Hni2_lt_inArgsCall
+                      congr 1 <;> exact hCallArgsIn
+                    have Hk1_in_inArgs : w ∈ inArgs := by
+                      rw [HargExpr_eq_inArgs]; exact List.getElem_mem _
+                    have HargExpr_in : w ∈ CallArg.getInputExprs args := by
+                      rw [HargExpr_def]; exact List.getElem_mem _
+                    have Hk1_flat :
+                        var ∈ List.flatMap
+                              (Imperative.HasVarsPure.getVars (P:=Expression))
+                              inArgs := by
+                      rw [List.mem_flatMap]
+                      exact ⟨w, Hk1_in_inArgs, Hv_in⟩
+                    refine ⟨ni2_val, Hni2_lt_inKeys, Hni2_lt_inArgsCall,
+                            HargExpr_eq_inArgs, Hk1_in_inArgs, HargExpr_in,
+                            Hin_notin_outs, Hk1_flat⟩
                   have Hinv :
                       ∀ entry : CoreLabel × Procedure.Check,
                         entry ∈ posts_filtered_L6.toList →
@@ -8113,42 +8234,9 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                                       (Core.Transform.createOldVarsSubst
                                         oldTripsCanonical_L6) k with
                       | some w' =>
-                        -- (b1) createOldVarsSubst flavor.
-                        have HH := Map.find?_append
-                          (Core.Transform.createOldVarsSubst
-                            oldTripsCanonical_L6) inputOnlyOldSubst_L6 k
-                        rw [hfind] at HH
-                        have Hf_unfold :
-                            Map.find?
-                              (Core.Transform.createOldVarsSubst
-                                oldTripsCanonical_L6 ++
-                                  inputOnlyOldSubst_L6) k = some w :=
-                          Hf
-                        have Hw'w : w' = w :=
-                          Option.some_inj.mp (HH.symm.trans Hf_unfold)
-                        -- Positional decomposition of `(k, w')` via the
-                        -- shared `createOldVarsSubst_pos_decomp` helper.
-                        obtain ⟨ni_val, Hni_lt, _Hk_eqMkOld, Hw'_eq⟩ :=
-                          createOldVarsSubst_pos_decomp HgenOldLen HoldTysLen hfind
-                        have Hni_lt_genOld : ni_val < genOldIdents.length := by
-                          have := HgenOldLen; omega
-                        have Hw_eq : w =
-                            Core.Transform.createFvar
-                              (genOldIdents[ni_val]'Hni_lt_genOld) := by
-                          rw [← Hw'w]; exact Hw'_eq
-                        -- v ∈ getVars w; w = createFvar genOldIdents[ni].
-                        rw [Hw_eq] at Hv_in
-                        have Hv_eq_gen :
-                            k1 = genOldIdents[ni_val]'Hni_lt_genOld := by
-                          have Hv_in' :
-                              k1 ∈ Imperative.HasVarsPure.getVars (P:=Expression)
-                                    (Core.Transform.createFvar
-                                      (genOldIdents[ni_val]'Hni_lt_genOld)) := Hv_in
-                          show k1 = _
-                          simp [Core.Transform.createFvar,
-                                Imperative.HasVarsPure.getVars,
-                                Lambda.LExpr.LExpr.getVars] at Hv_in'
-                          exact Hv_in'
+                        -- (b1) createOldVarsSubst flavor — via shared helper.
+                        obtain ⟨ni_val, Hni_lt_genOld, _Hw_eq, Hv_eq_gen⟩ :=
+                          b1_var_witness hfind Hf Hv_in
                         -- σ_R1 k1 = oldVals[ni_val]; σ_havoc k1 = oldVals[ni_val].
                         have Hni_lt_oldVals :
                             ni_val < oldVals.length := by
@@ -8176,67 +8264,25 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           HrdHavoc_olds_pos ni_val Hni_lt_genOld Hni_lt_oldVals
                         rw [Hv_eq_gen, Hσ_R1_v, Hσ_havoc_v]
                       | none =>
-                        -- (b2) inputOnlyOldSubst flavor.
-                        have HH := Map.find?_append
-                          (Core.Transform.createOldVarsSubst
-                            oldTripsCanonical_L6) inputOnlyOldSubst_L6 k
-                        rw [hfind] at HH
-                        have Hf_unfold :
-                            Map.find?
-                              (Core.Transform.createOldVarsSubst
-                                oldTripsCanonical_L6 ++
-                                  inputOnlyOldSubst_L6) k = some w := Hf
-                        have Hin_some :
-                            Map.find? inputOnlyOldSubst_L6 k = some w :=
-                          HH.symm.trans Hf_unfold
-                        -- Positional decomposition via the shared helper:
-                        -- yields w = inputArgs[ni2.val] for some
-                        -- ni2.val < inputs.keys.length.
-                        obtain ⟨ni2_val, Hni2_lt_inKeys, Hni2_lt_inArgs,
-                                _Hk_eq_proc', Hw_eq_proc', _Hin_notin_outs⟩ :=
-                          inputOnlyOldSubst_pos_decomp Hin_some
-                        have HargExpr_def :
-                            w = (CallArg.getInputExprs args)[ni2_val]'Hni2_lt_inArgs :=
-                          Hw_eq_proc'
-                        have HargExpr_in :
-                            w ∈ CallArg.getInputExprs args := by
-                          rw [HargExpr_def]; exact List.getElem_mem _
-                        -- k1 ∈ getVars w (= argExpr).  By clauses 5/6:
+                        -- (b2) inputOnlyOldSubst flavor — via shared helper.
+                        obtain ⟨_ni2_val, _Hni2_lt_inKeys, _Hni2_lt_inArgs,
+                                _HargExpr_eq_inArgs, _Hk1_in_inArgs, HargExpr_in,
+                                _Hin_notin_outs, Hk1_flat⟩ :=
+                          b2_var_witness hfind Hf Hv_in
+                        -- k1 ∈ getVars w.  By HargVarsNotIn{Out,In}Keys:
                         have Hk1_notin_outs' :
                             k1 ∉ proc.header.outputs.keys :=
                           HargVarsNotInOutKeys w HargExpr_in k1 Hv_in
                         have Hk1_notin_ins' :
                             k1 ∉ proc.header.inputs.keys :=
                           HargVarsNotInInKeys w HargExpr_in k1 Hv_in
-                        -- k1 ∈ σ-defined.
+                        -- k1 ∈ σ-defined via Hevalargs.
                         have HargIsDef :
                             Imperative.isDefined σ
                               (List.flatMap
                                 (Imperative.HasVarsPure.getVars (P:=Expression))
                                 inArgs) :=
                           evalExpressions_isDefined_flatMap Hevalargs
-                        have Hk1_in_inArgs : w ∈ inArgs := by
-                          -- w = (CallArg.getInputExprs args)[ni2_val].
-                          -- Bridge to inArgs via hCallArgsIn.
-                          have Hni2_lt_inArgsCall : ni2_val < inArgs.length := by
-                            have : (CallArg.getInputExprs args).length =
-                                inArgs.length := by rw [hCallArgsIn]
-                            rw [← this]
-                            exact Hni2_lt_inArgs
-                          have HargExpr_eq_inArgs :
-                              w = inArgs[ni2_val]'Hni2_lt_inArgsCall := by
-                            rw [HargExpr_def]
-                            show (CallArg.getInputExprs args)[ni2_val]'Hni2_lt_inArgs =
-                                  inArgs[ni2_val]'Hni2_lt_inArgsCall
-                            congr 1 <;> exact hCallArgsIn
-                          rw [HargExpr_eq_inArgs]
-                          exact List.getElem_mem _
-                        have Hk1_flat :
-                            k1 ∈ List.flatMap
-                                  (Imperative.HasVarsPure.getVars (P:=Expression))
-                                  inArgs := by
-                          rw [List.mem_flatMap]
-                          exact ⟨w, Hk1_in_inArgs, Hv_in⟩
                         have Hk1_σ_some : (σ k1).isSome := HargIsDef k1 Hk1_flat
                         -- k1 not isOldTempIdent.
                         have Hk1_notOld' : ¬ isOldTempIdent k1 := by
@@ -8350,41 +8396,9 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                                       (Core.Transform.createOldVarsSubst
                                         oldTripsCanonical_L6) k' with
                       | some w' =>
-                        -- (b1) createOldVarsSubst: x = genOldIdents[i].
-                        have HH := Map.find?_append
-                          (Core.Transform.createOldVarsSubst
-                            oldTripsCanonical_L6) inputOnlyOldSubst_L6 k'
-                        rw [hfind] at HH
-                        have Hf_unfold :
-                            Map.find?
-                              (Core.Transform.createOldVarsSubst
-                                oldTripsCanonical_L6 ++
-                                  inputOnlyOldSubst_L6) k' = some w :=
-                          Hf
-                        have Hw'w : w' = w :=
-                          Option.some_inj.mp (HH.symm.trans Hf_unfold)
-                        -- Positional decomposition of `(k', w')` via the
-                        -- shared `createOldVarsSubst_pos_decomp` helper.
-                        obtain ⟨ni_val, Hni_lt, _Hk'_eqMkOld, Hw'_eq⟩ :=
-                          createOldVarsSubst_pos_decomp HgenOldLen HoldTysLen hfind
-                        have Hni_lt_genOld : ni_val < genOldIdents.length := by
-                          have := HgenOldLen; omega
-                        have Hw_eq : w =
-                            Core.Transform.createFvar
-                              (genOldIdents[ni_val]'Hni_lt_genOld) := by
-                          rw [← Hw'w]; exact Hw'_eq
-                        rw [Hw_eq] at Hv_in
-                        have Hx_eq_gen :
-                            x = genOldIdents[ni_val]'Hni_lt_genOld := by
-                          have Hv_in' :
-                              x ∈ Imperative.HasVarsPure.getVars (P:=Expression)
-                                    (Core.Transform.createFvar
-                                      (genOldIdents[ni_val]'Hni_lt_genOld)) := Hv_in
-                          show x = _
-                          simp [Core.Transform.createFvar,
-                                Imperative.HasVarsPure.getVars,
-                                Lambda.LExpr.LExpr.getVars] at Hv_in'
-                          exact Hv_in'
+                        -- (b1) createOldVarsSubst flavor — via shared helper.
+                        obtain ⟨ni_val, Hni_lt_genOld, _Hw_eq, Hx_eq_gen⟩ :=
+                          b1_var_witness hfind Hf Hv_in
                         rw [Hx_eq_gen] at Hin1
                         -- genOldIdents[ni_val] ∈ filtered_ks' = lhs ++ filtered_argTemps.
                         -- Each branch yields contradiction.
@@ -8410,61 +8424,18 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           exact isTempIdent_isOldTempIdent_disjoint
                             Hx_isTemp Hx_isOld
                       | none =>
-                        -- (b2) inputOnlyOldSubst flavor.
-                        have HH := Map.find?_append
-                          (Core.Transform.createOldVarsSubst
-                            oldTripsCanonical_L6) inputOnlyOldSubst_L6 k'
-                        rw [hfind] at HH
-                        have Hf_unfold :
-                            Map.find?
-                              (Core.Transform.createOldVarsSubst
-                                oldTripsCanonical_L6 ++
-                                  inputOnlyOldSubst_L6) k' = some w := Hf
-                        have Hin_some :
-                            Map.find? inputOnlyOldSubst_L6 k' = some w :=
-                          HH.symm.trans Hf_unfold
-                        -- Positional decomposition via the shared helper:
-                        -- yields w = inputArgs[ni2.val] for some
-                        -- ni2.val < inputs.keys.length.
-                        obtain ⟨ni2_val, Hni2_lt_inKeys, Hni2_lt_inArgs,
-                                _Hk_eq_proc', Hw_eq_proc', _Hin_notin_outs⟩ :=
-                          inputOnlyOldSubst_pos_decomp Hin_some
-                        have HargExpr_def :
-                            w = (CallArg.getInputExprs args)[ni2_val]'Hni2_lt_inArgs :=
-                          Hw_eq_proc'
-                        have HargExpr_in :
-                            w ∈ CallArg.getInputExprs args := by
-                          rw [HargExpr_def]; exact List.getElem_mem _
-                        -- x ∈ getVars w with w ∈ getInputExprs args.
-                        -- By clauses 3 (HargVarsNotInLhs), x ∉ lhs.
-                        -- By clauses 5/6, x ∉ outputs/inputs.
-                        -- By Hevalargs definedness, x ∈ σ-defined.
+                        -- (b2) inputOnlyOldSubst flavor — via shared helper.
+                        obtain ⟨_ni2_val, _Hni2_lt_inKeys, _Hni2_lt_inArgs,
+                                _HargExpr_eq_inArgs, _Hk1_in_inArgs, HargExpr_in,
+                                _Hin_notin_outs, Hx_flat⟩ :=
+                          b2_var_witness hfind Hf Hv_in
+                        -- x ∈ σ-defined via Hevalargs.
                         have HargIsDef :
                             Imperative.isDefined σ
                               (List.flatMap
                                 (Imperative.HasVarsPure.getVars (P:=Expression))
                                 inArgs) :=
                           evalExpressions_isDefined_flatMap Hevalargs
-                        have Hni2_lt_inArgsCall :
-                            ni2_val < inArgs.length := by
-                          have : (CallArg.getInputExprs args).length =
-                              inArgs.length := by rw [hCallArgsIn]
-                          rw [← this]
-                          exact Hni2_lt_inArgs
-                        have HargExpr_eq_inArgs :
-                            w = inArgs[ni2_val]'Hni2_lt_inArgsCall := by
-                          rw [HargExpr_def]
-                          show (CallArg.getInputExprs args)[ni2_val]'Hni2_lt_inArgs =
-                                inArgs[ni2_val]'Hni2_lt_inArgsCall
-                          congr 1 <;> exact hCallArgsIn
-                        have Hk1_in_inArgs : w ∈ inArgs := by
-                          rw [HargExpr_eq_inArgs]; exact List.getElem_mem _
-                        have Hx_flat :
-                            x ∈ List.flatMap
-                                  (Imperative.HasVarsPure.getVars (P:=Expression))
-                                  inArgs := by
-                          rw [List.mem_flatMap]
-                          exact ⟨w, Hk1_in_inArgs, Hv_in⟩
                         have Hx_σ_some : (σ x).isSome := HargIsDef x Hx_flat
                         -- Now case-split on x ∈ filtered_ks'.
                         cases List.mem_append.mp Hin1 with
