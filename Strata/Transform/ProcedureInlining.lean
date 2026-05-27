@@ -227,7 +227,7 @@ def inlineCallCmd
 
         -- Create a copy of the procedure that has all input/output/local vars
         -- replaced with fresh ones
-        let (proc,var_map) <- renameAllLocalNames proc
+        let (proc, _var_map) <- renameAllLocalNames proc
 
         let sigOutputs := LMonoTySignature.toTrivialLTy proc.header.outputs
         let sigInputs := LMonoTySignature.toTrivialLTy proc.header.inputs
@@ -260,9 +260,6 @@ def inlineCallCmd
         -- variables used in the callee.
         let outputSetStmts :=
           let out_vars := sigOutputs.unzip.fst
-          let out_vars := out_vars.map
-              (fun id => match var_map.find? id with
-                  | .none => id | .some x => x)
           let outs_lhs_and_sig := List.zip lhs out_vars
           List.map
             (fun (lhs_var,out_var) =>
