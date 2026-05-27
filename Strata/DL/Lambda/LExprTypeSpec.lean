@@ -1512,31 +1512,31 @@ private theorem typeBoundVar_absorbs
         exact Subst.absorbs_refl _ Env.stateSubstInfo.isWF
 
 /-- `subst (remove S k) mty = subst S mty` when `k ∉ freeVars mty`.
-    Since `LMonoTy.subst` is single-pass, removing a key that doesn't
+    Since `LMonoTy.subst` is single-pass, erasing a key that doesn't
     appear in the type doesn't change the result. -/
-private theorem LMonoTy.subst_remove_not_fv (S : Subst) (k : TyIdentifier) (mty : LMonoTy)
+private theorem LMonoTy.subst_erase_not_fv (S : Subst) (k : TyIdentifier) (mty : LMonoTy)
     (h_nfv : k ∉ LMonoTy.freeVars mty) :
-    LMonoTy.subst (Maps.remove S k) mty = LMonoTy.subst S mty := by
+    LMonoTy.subst (Maps.erase S k) mty = LMonoTy.subst S mty := by
   apply LMonoTy.subst_ext
   intro x hx
-  exact Maps.find?_remove_ne S k x (fun h_eq => h_nfv (h_eq ▸ hx))
+  exact Maps.find?_erase_ne S k x (fun h_eq => h_nfv (h_eq ▸ hx))
 
-/-- Removing a fresh key from the outer substitution preserves absorption.
+/-- Erasing a fresh key from the outer substitution preserves absorption.
     This requires that the key is not in the inner substitution (neither as
     a key nor in any value). -/
-private theorem Subst.absorbs_of_remove (S_outer S_inner : Subst) (k : TyIdentifier)
+private theorem Subst.absorbs_of_erase (S_outer S_inner : Subst) (k : TyIdentifier)
     (h_abs : Subst.absorbs S_outer S_inner)
     (h_not_key : Maps.find? S_inner k = none)
     (h_not_fv : ∀ a t, Maps.find? S_inner a = some t → k ∉ LMonoTy.freeVars t) :
-    Subst.absorbs (Maps.remove S_outer k) S_inner := by
+    Subst.absorbs (Maps.erase S_outer k) S_inner := by
   intro a t h_find
   have h_ne : a ≠ k := by
     intro heq; subst heq; rw [h_find] at h_not_key; simp at h_not_key
   have h_nfv_t : k ∉ LMonoTy.freeVars t := h_not_fv a t h_find
   have h_nfv_a : k ∉ LMonoTy.freeVars (.ftvar a) := by
     simp [LMonoTy.freeVars]; exact Ne.symm h_ne
-  rw [LMonoTy.subst_remove_not_fv S_outer k t h_nfv_t,
-      LMonoTy.subst_remove_not_fv S_outer k (.ftvar a) h_nfv_a]
+  rw [LMonoTy.subst_erase_not_fv S_outer k t h_nfv_t,
+      LMonoTy.subst_erase_not_fv S_outer k (.ftvar a) h_nfv_a]
   exact h_abs a t h_find
 
 /-- All type variables in the substitution (keys and value free vars) are
@@ -3233,20 +3233,20 @@ private theorem resolveAux_properties_aux :
     have ⟨h_not_key, h_not_fv⟩ :=
       genTyVar_fresh_wrt_input_subst Env Env2 Env3 fresh_name h_gen h_sf (Nat.le_trans h_mono1 h_mono2)
     refine ⟨by omega, ?_, ⟨?_, ?_⟩,
-            Subst.absorbs_of_remove v4.subst Env.stateSubstInfo.subst fresh_name h_abs_chain h_not_key h_not_fv⟩
+            Subst.absorbs_of_erase v4.subst Env.stateSubstInfo.subst fresh_name h_abs_chain h_not_key h_not_fv⟩
     · -- context
       change Env3.context = Env.context
       rw [h_gen_ctx, h_ctx2_eq, h_ctx1_eq]
-    · -- SubstFreshForGen (Maps.remove preserves freshness)
+    · -- SubstFreshForGen (Maps.erase preserves freshness)
       intro v hv n_ hn
       exact h_sf4 v (by
         cases hv with
-        | inl h_key => exact Or.inl (Maps.mem_keys_of_mem_keys_remove _ _ _ h_key)
+        | inl h_key => exact Or.inl (Maps.keys_erase_subset _ _ _ h_key)
         | inr h_fv =>
           exact Or.inr (by
             simp only [Subst.freeVars, List.mem_flatMap] at h_fv ⊢
             obtain ⟨ty, h_ty_mem, h_v_fv⟩ := h_fv
-            exact ⟨ty, Maps.mem_values_of_mem_keys_remove _ _ _ h_ty_mem, h_v_fv⟩)) n_ hn
+            exact ⟨ty, Maps.values_erase_subset _ _ _ h_ty_mem, h_v_fv⟩)) n_ hn
     · -- Output type freshness
       intro v hv k hk; simp [toLMonoTy] at hv
       have hv_in := LMonoTy.freeVars_of_subst_subset v4.subst (.ftvar fresh_name) hv
@@ -5950,9 +5950,9 @@ theorem resolveAux_HasType :
               rw [← h_et]; simp [toLMonoTy]
               -- Goal: HasType C Γ (.app m e1 e2) (.forAll [] (subst S (subst v4 (ftvar fresh))))
               -- We need: S absorbs Env1.subst and S absorbs Env2.subst
-              -- Chain: S absorbs remove(v4, fresh) and v4 absorbs Env2 absorbs Env1
-              -- Derive absorbs S (remove v4.subst fresh_name) from h_abs_S
-              have h_abs_S_rem : Subst.absorbs S (Maps.remove v4.subst fresh_name) := by
+              -- Chain: S absorbs erase(v4, fresh) and v4 absorbs Env2 absorbs Env1
+              -- Derive absorbs S (erase v4.subst fresh_name) from h_abs_S
+              have h_abs_S_rem : Subst.absorbs S (Maps.erase v4.subst fresh_name) := by
                 rw [← h_env'] at h_abs_S
                 simp [TEnv.updateSubst] at h_abs_S
                 exact h_abs_S
@@ -5966,21 +5966,21 @@ theorem resolveAux_HasType :
                 Env2 Env2 Env3 fresh_name h_genTyVar
                 props2.preserves.1
                 (Nat.le_refl _)
-              -- absorbs (remove v4 fresh) Env1.subst and Env2.subst
-              have h_abs_rem_Env1 := Subst.absorbs_of_remove
+              -- absorbs (erase v4 fresh) Env1.subst and Env2.subst
+              have h_abs_rem_Env1 := Subst.absorbs_of_erase
                 v4.subst Env1.stateSubstInfo.subst fresh_name
                 h_abs_v4_Env1 h_fresh_Env1.1 h_fresh_Env1.2
-              have h_abs_rem_Env2 := Subst.absorbs_of_remove
+              have h_abs_rem_Env2 := Subst.absorbs_of_erase
                 v4.subst Env2.stateSubstInfo.subst fresh_name
                 h_abs_v4_Env3 h_fresh_Env2.1 h_fresh_Env2.2
-              -- Chain: S absorbs (remove v4 fresh) absorbs Env1/Env2
+              -- Chain: S absorbs (erase v4 fresh) absorbs Env1/Env2
               have h_abs_S_Env1 : Subst.absorbs S Env1.stateSubstInfo.subst :=
                 Subst.absorbs_trans
-                  Env1.stateSubstInfo.subst (Maps.remove v4.subst fresh_name) S
+                  Env1.stateSubstInfo.subst (Maps.erase v4.subst fresh_name) S
                   h_abs_rem_Env1 h_abs_S_rem
               have h_abs_S_Env2 : Subst.absorbs S Env2.stateSubstInfo.subst :=
                 Subst.absorbs_trans
-                  Env2.stateSubstInfo.subst (Maps.remove v4.subst fresh_name) S
+                  Env2.stateSubstInfo.subst (Maps.erase v4.subst fresh_name) S
                   h_abs_rem_Env2 h_abs_S_rem
               have h_ty1_S := h_ty1 S h_abs_S_Env1 h_wf_S h_poly_fresh
               rw [h_ctx1] at h_ty2
@@ -5999,15 +5999,15 @@ theorem resolveAux_HasType :
               have h_e2t_no_fresh : fresh_name ∉ LMonoTy.freeVars e2t.toLMonoTy := by
                 intro h_mem
                 exact absurd h_gen_name (props2.preserves.2 fresh_name h_mem Env2.genEnv.genState.tyGen (Nat.le_refl _))
-              -- subst v4 x = subst (remove v4 fresh) x when fresh ∉ freeVars x
+              -- subst v4 x = subst (erase v4 fresh) x when fresh ∉ freeVars x
               have h_subst_e1t : LMonoTy.subst S (LMonoTy.subst v4.subst e1t.toLMonoTy) =
                   LMonoTy.subst S e1t.toLMonoTy := by
-                rw [← LMonoTy.subst_remove_not_fv v4.subst fresh_name e1t.toLMonoTy h_e1t_no_fresh]
-                exact LMonoTy.subst_absorbs S (Maps.remove v4.subst fresh_name) e1t.toLMonoTy h_abs_S_rem
+                rw [← LMonoTy.subst_erase_not_fv v4.subst fresh_name e1t.toLMonoTy h_e1t_no_fresh]
+                exact LMonoTy.subst_absorbs S (Maps.erase v4.subst fresh_name) e1t.toLMonoTy h_abs_S_rem
               have h_subst_e2t : LMonoTy.subst S (LMonoTy.subst v4.subst e2t.toLMonoTy) =
                   LMonoTy.subst S e2t.toLMonoTy := by
-                rw [← LMonoTy.subst_remove_not_fv v4.subst fresh_name e2t.toLMonoTy h_e2t_no_fresh]
-                exact LMonoTy.subst_absorbs S (Maps.remove v4.subst fresh_name) e2t.toLMonoTy h_abs_S_rem
+                rw [← LMonoTy.subst_erase_not_fv v4.subst fresh_name e2t.toLMonoTy h_e2t_no_fresh]
+                exact LMonoTy.subst_absorbs S (Maps.erase v4.subst fresh_name) e2t.toLMonoTy h_abs_S_rem
               -- Apply subst S to h_eq and simplify using absorption
               -- Result: subst S e1t.toLMonoTy = tcons "arrow" [subst S e2t.toLMonoTy, subst S (subst v4 (ftvar fresh))]
               have h_eq_S : LMonoTy.subst S e1t.toLMonoTy =
