@@ -50,13 +50,6 @@ private theorem createFvarsLength :
 induction ls <;> simp [createFvars]
 
 
--- ============================================================
--- Small-step call-elimination correctness.
--- ============================================================
--- The sorry-free proof of `callElimStatementCorrect` lives below and uses
--- only currently-live infrastructure from
--- `Strata.Languages.Core.StatementSemanticsProps`.
-
 /-! ## Helper block-evaluator lemmas (small-step)
 
   The block-evaluator family (`singleCmdToStmts`, `H_havocs`, `H_init`,
@@ -65,47 +58,8 @@ induction ls <;> simp [createFvars]
   migrated to `Strata.Languages.Core.CoreTransformSemantics`.  They are
   re-exported under the `Core` namespace via the import above. -/
 
--- A top-level helper to project the universal-modified-old clause
--- from `WellFormedCoreEvalTwoState` was attempted here but is BLOCKED
--- by the new Lean module system.
---
--- Intended signature (commented out below for reference):
---
--- private theorem WellFormedCoreEvalTwoState_old_havoc
---     {δ : CoreEval} {σ_pre σ_caller σ_post σ_arg : CoreStore}
---     {vs vs' : List Expression.Ident} {v : Expression.Ident}
---     (Hwf2 : Core.WellFormedCoreEvalTwoState δ σ_pre σ_caller)
---     (Hhav : HavocVars σ_pre vs σ_post)
---     (HInit : InitVars σ_post vs' σ_arg)
---     (Hv : v ∈ vs) :
---     δ σ_arg (Lambda.LExpr.fvar () (CoreIdent.mkOld v.name) none) =
---       σ_pre v
---
--- The proof would project Hwf2's universal `.2` clause and apply it
--- with (vs, vs', σ_pre, σ_post, σ_arg) plus `⟨Hhav, HInit⟩`, picking
--- `.1 Hv` from the resulting per-variable conjunction.
---
--- WHY BLOCKED:
--- `WellFormedCoreEvalTwoState` is a `def` over `∧` whose body is not
--- `@[expose]`'d in `Strata.Languages.Core.StatementSemantics`.  Under
--- the new module system, the following all fail outside the def's
--- own module:
---   - `simp [WellFormedCoreEvalTwoState]`: "Expected a definition
---     with an exposed body".
---   - `unfold WellFormedCoreEvalTwoState`: same reason.
---   - `show ⟨...⟩ := Hwf2` (definitional coercion): elaborator does
---     not reduce non-exposed defs across modules.
---   - `WellFormedCoreEvalTwoState.eq_def` (auto-generated equation
---     lemma): not synthesized when the body is non-exposed
---     ("Unknown constant Core.WellFormedCoreEvalTwoState.eq_def").
---   - `match Hwf2 with | ⟨_, _⟩ => ...`: anonymous-constructor
---     notation requires the EXPECTED type to be a known inductive
---     with a single constructor, which non-exposed `def` does not
---     reduce to in this scope.
---
--- RECOMMENDED UNBLOCK (out of this task's scope, production code):
--- add `@[expose]` to the def in `StatementSemantics.lean` (line 199).
--- Once exposed, the bridge becomes a 2-line `simp` + `.2.1` projection.
+-- The bridge `WellFormedCoreEvalTwoState_old_havoc` is inlined at the
+-- L6 spike (line ~5326); see git history for the blocked-helper rationale.
 
 
 /-! ### Pure list-shape analogues of `createAsserts` / `createAssumes`.
@@ -235,12 +189,7 @@ private theorem H_asserts
           σ' false :=
       Core.EvalCommandContract.cmd_sem (Imperative.EvalCmd.eval_assert_pass HevSubst Hwfb)
     have HheadStmts := singleCmdToStmts (π := π) (φ := φ) Hassert
-    -- Adjust the tail's index: tail with i+1 should equal head's continuation.
-    -- Goal shape: mapIdx (...) ((lbl, check) :: tail) at index i.
-    -- = head_stmt :: mapIdx (...) tail at index i+1.
-    -- We need: head_stmt :: tail_stmts = [head_stmt] ++ tail_stmts.
-    -- And the tail_stmts should match Htail.
-    -- Combined chain. mapIdx_cons unfolds head with index 0, then tail with j+1
+    -- Combined head ++ tail trace.
     have Hcombined :
         EvalStatementsContract π φ ⟨σ', δ, false⟩
           ([Statement.assert s!"{labelPrefix}{i}_{lbl}"
@@ -2517,12 +2466,7 @@ private theorem callElimCmd_call_eq
                       s_out.genState) = pair_old at Heq
                   cases pair_old with
                   | mk genOldIdents s_old =>
-                    -- ── B1 layer: oldTys ← oldVars.mapM ... ──
-                    -- The mapM body uses `proc.header.inputs.find?`; we
-                    -- need to show every g ∈ oldVars satisfies
-                    -- `inputs.keys.contains g`.  By construction of
-                    -- oldVars (filter of lhs by inputNames.contains g
-                    -- && outputNames.contains g && ...), this holds.
+                    -- B1: oldTys ← oldVars.mapM (oldVars ⊆ inputs.keys).
                     have Holdvars_in_inputs :
                         ∀ g ∈ (List.filter
                               (fun g =>
@@ -2540,19 +2484,9 @@ private theorem callElimCmd_call_eq
                     obtain ⟨oldTys, s_postold, Heqty, _Hlenty⟩ :=
                       oldVars_oldTys_mapM_ok (γ := { s_out with genState := s_old })
                         Holdvars_in_inputs
-                    -- Reduce the `bind` shell in `Heq` so the inner
-                    -- `mapM` is no longer wrapped by ExceptT.bindCont.
+                    -- Reduce `pure`/`throw` to match Heq.
                     simp only [bind, StateT.bind, ExceptT.bind,
                                ExceptT.bindCont, ExceptT.mk] at Heq
-                    -- Reduce `pure`/`throw` under the lambda in `Heqty`
-                    -- to match the reduced form in `Heq`.  Without this,
-                    -- `Heqty` has `| some ty => pure (...)` while `Heq`
-                    -- has `| some ty => StateT.pure (Except.ok (...))`.
-                    -- Additionally, the `match` inside the lambda is
-                    -- compiled to a private auxiliary `match_N` whose
-                    -- name differs between `oldVars_oldTys_mapM_ok` and
-                    -- `callElimCmd`; reduce both via match-eliminator
-                    -- congruence to share the same form.
                     have HeqtyR : _ := Heqty
                     simp only [pure, ExceptT.pure, StateT.pure,
                                ExceptT.mk] at HeqtyR
@@ -2576,11 +2510,7 @@ private theorem callElimCmd_call_eq
                     simp only [bind, StateT.bind, ExceptT.bind,
                                ExceptT.bindCont, ExceptT.mk,
                                pure, ExceptT.pure, StateT.pure] at Heq
-                    -- ── B2 layer: assumes ← createAssumes ... ──
-                    -- Bind the post-substitution `oldSubst` and the
-                    -- post-substitution postcondition list as helper
-                    -- variables so we don't restate the giant filterMap
-                    -- expression in the `createAssumes` argument.
+                    -- B2: assumes ← createAssumes (oldSubst helper).
                     let inputOnlyOldSubst : Map Expression.Ident Expression.Expr :=
                       (proc.header.inputs.keys.zip (CallArg.getInputExprs args)).filterMap
                         fun (paramId, argExpr) =>
@@ -2940,69 +2870,9 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
     (Hwfc : WellFormedCoreEvalCong δ)
     (Hwf : WF.WFStatementsProp p [st])
     (Hgenrel : CoreGenStateRel σ γ)
-    -- For each call statement, the free variables of the procedure's
-    -- preconditions and postconditions are not `tmp_*`/`old_*`-prefixed
-    -- (so they cannot collide with call-elim's freshly generated temp/
-    -- old-temp identifiers) and are disjoint from the call's `lhs`
-    -- (so they cannot collide with the call's output bindings).
-    --
-    -- The current `WFPreProp` / `WFPostProp` infrastructure (Strata/
-    -- Languages/Core/WF.lean:113-120) is empty modulo `oldOnlyInout`
-    -- for posts; it does not directly expose pre-/post-var scope
-    -- claims.  This hypothesis is therefore a call-site obligation
-    -- rather than derived from the WF
-    -- infrastructure.  Future work can replace it with a derivation
-    -- once `WFPreProp` is strengthened to include a `freeVarsScope`
-    -- field.
-    -- Six call-site disjointness clauses:
-    -- (1) pre-vars are not tmp_/old_ and not in lhs.
-    -- (2) post-vars are not tmp_/old_ and not in lhs.
-    -- (3) [D2b extension] argument-expression vars are not in lhs.
-    -- (4) [D2c extension] input/output parameter names are not
-    --     tmp_/old_-prefixed.
-    -- (5) [D2d-payload extension] argument-expression free vars are
-    --     not in `proc.header.outputs.keys` (the global modset).
-    -- (6) [D2d-payload extension] argument-expression free vars are
-    --     not in `proc.header.inputs.keys`.
-    --
-    -- Clause (3) is needed by the L6 (assumes) site: post-conditions
-    -- with `oldSubst`-substituted `mkOld` references for input-only
-    -- inout params expand into the original argument expression; for
-    -- the spike's `Hpred_disj : ks'_L6.Disjoint subPostVars` to hold
-    -- (where ks'_L6 = lhs ++ argTemps_filtered), we must ensure no
-    -- argument-expression free variable coincides with an lhs name.
-    -- This is a call-site WF invariant — typical surface-language
-    -- type checkers reject `proc(x); x := ...` aliasing — but it is
-    -- not currently exposed via `WFcallProp`.  Like clauses (1)/(2),
-    -- it is therefore introduced as a direct hypothesis here pending
-    -- a future strengthening of `WFcallProp`.
-    --
-    -- Clause (4) is needed by the L6 (assumes) σ_R1 substStores
-    -- derivation: the substitution σ_R1 ↔ σ_havoc must agree on
-    -- input-half keys (input_i ↦ argTemp_i for filtered inputs),
-    -- and σ_R1 looks up input_i via fall-through over genOldIdents
-    -- (an `isOldTempIdent`-only layer).  The fall-through is correct
-    -- only if input_i ∉ genOldIdents.  Symmetrically for outputs and
-    -- argTemps/outTemps fall-through.  Procedure parameters are
-    -- normal source-language identifiers; the surface-language type
-    -- checker reserves `tmp_*`/`old_*` prefixes for transform-
-    -- generated names.  This hypothesis therefore reflects that
-    -- pipeline invariant pending a future strengthening of
-    -- `WFProcedureProp`.
-    --
-    -- Clauses (5) and (6) are needed by the L6 `HinputSubBridge` (the
-    -- `inputOnlyOldSubst_L6` codomain bridge of `HpostEval_bridge`).
-    -- For each `argExpr` in `getInputExprs args` and each `v ∈ getVars
-    -- argExpr`, the chain `δ σ_R1 argExpr = δ σ argExpr` requires that
-    -- `σ_R1[v] = σO[v] = σAO[v] = σA[v] = σ[v]`.  This chain breaks at
-    -- `σAO ↔ σ` if `v ∈ proc.header.outputs.keys` (Hinitout writes `v`)
-    -- or `σA ↔ σ` if `v ∈ proc.header.inputs.keys` (Hinitin sets `σA[v]`
-    -- to the argument's eval, which differs from `σ[v]` in general).
-    -- Real surface-language type checkers enforce this — a call's
-    -- argument expressions cannot reference globals the called
-    -- procedure modifies, nor procedure parameter names — so this is
-    -- a genuine call-WF invariant pending future exposure via
-    -- `WFcallProp`.
+    -- Call-site WF: pre/post vars are non-temp/non-old and disjoint
+    -- from `lhs`/inputs.keys/outputs.keys (six clauses; see WFCallSiteProp
+    -- in Strata/Languages/Core/WF.lean).
     (Hwfcallsite : WFCallSiteProp p π st)
     (Helim : (Except.ok sts, γ') = (runWith st (callElimStmt · p) γ)) :
     ∃ σ'',
@@ -3030,16 +2900,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
       cases c with
       | cmd c' => exact nc_close hst (by intro _ _ _ h; cases h)
       | call procName args md =>
-          -- B1: Destructure `Helim` to expose `argTrips`, `outTrips`,
-          -- `oldTrips` and intermediate gen states.
-          --
-          -- Specialise `Heval` to the call form so it survives the
-          -- `simp` reduction of `Helim` below.
+          -- B1: Destructure Helim to expose triplet plumbing.
           subst hst
-          -- Reduce `runWith st (callElimStmt · p) γ` past the
-          -- `match`/`callElimCmd` discriminators so that the underlying
-          -- `genArgExprIdentsTrip / genOutExprIdentsTrip /
-          -- genOldExprIdentsTrip` triplet plumbing is exposed.
           simp only [runWith, StateT.run, callElimStmt,
                      bind, pure,
                      StateT.bind, ExceptT.bind, ExceptT.bindCont,
@@ -3071,17 +2933,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
               rename_i s' heq_some
               simp only [pure, StateT.pure, Prod.mk.injEq, Except.ok.injEq] at Helim
               obtain ⟨Hsts, Hγ⟩ := Helim
-              -- B1: unfold `callElimCmd` (via callElimCmd_call_eq) to expose
-              -- argTrips/outTrips/oldTrips and the structural shape
-              -- `s' = argInit ++ outInit ++ oldInit ++ asserts ++ havocs ++ assumes`.
+              -- B1/B2: callElimCmd_call_eq + Heval inversion to call_sem.
               rw [Hsts]
-              -- B1 (continued): destructure `heq_ce` via `callElimCmd_call_eq`
-              -- (the helper that folds `callElimCmd`'s bind chain into a
-              -- single existential).
-              -- B2: peel `Heval` via `EvalStmtsSmall` → `step_stmts_cons` →
-              -- `seq_reaches_terminal` → `step_cmd` → `call_sem`, exposing
-              -- the call_sem binders (argVals/oVals/modvals/σA/σAO/σO and
-              -- the eval/init/havoc/Hrd/Hupdate hypotheses).
               have ⟨ρ_inner, hstep_call, htail⟩ : ∃ ρ_inner,
                   Imperative.StepStmtStar Expression (EvalCommandContract π)
                       (EvalPureFunc φ)
@@ -3093,18 +2946,12 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       (EvalPureFunc φ)
                       (.stmts [] ρ_inner)
                       (.terminal ⟨σ', δ, false⟩) := by
-                -- Heval : EvalStatementsContract π φ ⟨σ,δ,false⟩
-                --   [Stmt.cmd (CmdExt.call procName args md)]
-                --   ⟨σ',δ,false⟩
-                -- = StepStmtStar P EvalCC EPF (.stmts [stmt] ⟨σ,δ,false⟩)
-                --                              (.terminal ⟨σ',δ,false⟩)
                 unfold EvalStatementsContract Imperative.EvalStmtsSmall at Heval
                 match Heval with
                 | .step _ _ _ .step_stmts_cons hrest =>
                   exact Imperative.seq_reaches_terminal Expression
                     (EvalCommandContract π) (EvalPureFunc φ) hrest
-              -- `htail` is `StepStmtStar (.stmts [] ρ_inner) (.terminal ⟨σ',δ,false⟩)`,
-              -- which forces `ρ_inner = ⟨σ',δ,false⟩`.
+              -- htail forces ρ_inner = ⟨σ',δ,false⟩.
               have hρ_inner_eq : ρ_inner = ⟨σ', δ, false⟩ := by
                 match htail with
                 | .step _ _ _ .step_stmts_nil hrest' =>
@@ -3121,29 +2968,16 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                 | .step _ _ _ (.step_cmd hcc) hrest =>
                   cases hrest with
                   | refl =>
-                    -- `step_cmd` produces `.terminal { ρ with store := σ',
-                    -- hasFailure := ρ.hasFailure || hf }`; with the
-                    -- target `.terminal ⟨σ',δ,false⟩` this forces `hf = false`.
-                    -- The only `EvalCommandContract` constructor for a
-                    -- `.call …` command is `call_sem`, whose `f` field
-                    -- is hard-wired to `false`, so `hcc` is the desired
-                    -- `EvalCommandContract` at flag `false`.
+                    -- call_sem hardwires the failure flag to false.
                     exact hcc
                   | step _ _ _ h _ => exact absurd h (by intro h; cases h)
-              -- Now invert `Hcc` to bind the `call_sem` constructor's
-              -- destructured fields.
               cases Hcc with
               | call_sem lkup hCallArgsIn hCallArgsLhs Hevalargs Hevalouts
                           Hwfval Hwfvars Hwfb Hwf2 HdefOver
                           Hinitin Hinitout Hpre Hhav1 Hpost Hrd Hupdate =>
-                -- Bind the 10 implicit vars exposed by `call_sem`,
-                -- positionally per the constructor signature:
-                --   `lhs σ₀ inArgs oVals argVals σA σAO σO proc modvals`.
+                -- call_sem implicits: lhs σ₀ inArgs oVals argVals σA σAO σO proc modvals.
                 rename_i lhs σ₀ inArgs oVals argVals σA σAO σO proc modvals
-                -- Phase B done; Phase C (σ'' + L1–L6 via `EvalCallElim_glue`)
-                -- lives below.  B1-tail: destructure `heq_ce` via
-                -- `callElimCmd_call_eq` to bind `proc', argTrips, outTrips,
-                -- genOldIdents, s_arg, s_out, s_old` and the lookup result.
+                -- B1-tail: destructure heq_ce via callElimCmd_call_eq.
                 obtain ⟨proc', argTrips, outTrips, genOldIdents, oldTys,
                         asserts, assumes,
                         s_arg, s_out, s_old,
@@ -3157,14 +2991,11 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     CallArg.getLhs args :=
                   genOutExprIdentsTrip_snd Heqout
                 -- Hoisted abbreviations for argument/output temp idents.
-                -- These appear pervasively in the call branch; binding
-                -- them here keeps downstream sites readable.
                 let argTemps : List Expression.Ident :=
                   argTrips.unzip.fst.unzip.fst
                 let outTemps : List Expression.Ident :=
                   outTrips.unzip.fst.unzip.fst
                 -- C1: aux facts derived from the destructured binders.
-                -- These mirror the legacy proof's `have` blocks.
                 have Hwfgenargs : CoreGenState.WF s_arg.genState := by
                   apply genArgExprIdentsTripWFMono ?_ Heqarg
                   exact Hgenrel.wfgen
@@ -3233,12 +3064,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         genOldIdents).Nodup := by
                   simp only [List.append_assoc] at Hgennd' ⊢
                   exact (List.nodup_append.mp Hgennd').2.1
-                -- ── Hndefgen: combined-list freshness against σ' ──
-                -- Derive `Hnotgen_arg / Hnotgen_out`: arg/out names not yet
-                -- in γ.genState.generated.  The Nodup `Hgennd'` forces the
-                -- four segments mutually disjoint; in particular any x in
-                -- argT (or outT) is not in γ.gen (membership preserved
-                -- through reverse).
+                -- Hgennd' nodup → arg/out/old segments σ-fresh.
                 have Hnotgen_arg :
                     ∀ x ∈ argTemps,
                       x ∉ γ.genState.generated := by
@@ -3320,10 +3146,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                 have Houttriplen : outTrips.length = oVals.length := by
                   rw [← List.unzip_snd_length outTrips, Heqouts, hCallArgsLhs]
                   exact ReadValuesLength Hevalouts
-                -- ── C1: Derive `Hinoutnd` from the call_sem InitStates binders ──
-                -- `InitStates` enforces target = none pre-store; composing
-                -- with `InitStatesDefined` / `InitStatesNotDefined` gives
-                -- pointwise input/output disjointness on σA.
+                -- C1: Derive Hinoutnd from the call_sem InitStates binders.
                 have Hinnd_io : (proc.header.inputs.keys).Nodup :=
                   InitStatesNodup Hinitin
                 have Houtnd_io : (proc.header.outputs.keys).Nodup :=
@@ -3350,15 +3173,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                   intro a Ha b Hb Heq
                   subst Heq
                   exact Hiodisj Ha Hb
-                -- ── C2: Derive `HoldVals` and `Holdtriplen` ──
-                --
-                -- The `Hsts_struct` filter expression names the old-vars
-                -- list; introduce a local `let oldVars` abbreviation so
-                -- the rest of this section can refer to it without
-                -- restating the giant filter body.  All references go
-                -- through `proc'` (the destructure of
-                -- `callElimCmd_call_eq`), the procedure looked up via
-                -- `Program.Procedure.find?`.
+                -- C2: bind `oldVars` (filter from Hsts_struct) for HoldVals/Holdtriplen.
                 let oldVars : List Expression.Ident :=
                   List.filter
                     (fun g =>
@@ -3388,31 +3203,16 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                 have HoldValsLen : oldVals.length = oldVars.length := by
                   have := ReadValuesLength HoldVals
                   exact this.symm
-                -- Length of the trip-shape needed by the `updatedStatesInit`
-                -- step in C3: `oldVals.length = genOldIdents.length`.
-                -- `genOldExprIdents_length Heqold` gives
-                -- `genOldIdents.length = oldVars.length`.
+                -- genOld = oldTys = oldVars length facts for trip-shape.
                 have HgenOldLen : genOldIdents.length = oldVars.length :=
                   genOldExprIdents_length Heqold
-                -- `Holdtylen` says `oldTys.length = oldVars.length`
-                -- (after unfolding the `let oldVars` definition, the RHS
-                -- of `Holdtylen` is literally the filter that defines
-                -- `oldVars`).  Restate it for ergonomics.
                 have HoldTysLen : oldTys.length = oldVars.length := Holdtylen
-                -- The trip-shape expected by `Hsts_struct`'s
-                -- `createInitVars` argument.  Both inner zips truncate to
-                -- the shorter operand, so once the per-list lengths
-                -- agree (genOld = oldTys = oldVars), the outer collapses
-                -- to `oldVars.length`.
                 have Holdtriplen :
                     oldVals.length =
                       ((genOldIdents.zip oldTys).zip oldVars).length := by
                   rw [HoldValsLen]
                   simp [List.length_zip, HgenOldLen, HoldTysLen]
-                -- ── C3: Construct σ'' witness and prove Inits σ' σ'' ──
-                -- σ'' = σ' overlaid with `argTemps ++ outTemps ++ genOldIdents`
-                -- mapped to `argVals ++ oVals ++ oldVals`.  Use
-                -- `updatedStatesInit` then `InitStatesInits` for `Inits σ' σ''`.
+                -- C3: σ'' = updatedStates σ' (argTemps++outTemps++genOldIdents) (...).
                 have Hinit :=
                   updatedStatesInit (P := Expression) ?_ ?_ ?_ (σ := σ')
                     (hs := argTemps
@@ -3430,13 +3230,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         Hargtriplen, Houttriplen, HgenOldValsLen]
                 · exact Hndefgen
                 · exact Hgennd
-                -- Now `Hinit : InitStates σ' (argT.fst.fst ++ outT.fst.fst ++
-                -- genOldIdents) (argVals ++ oVals ++ oldVals) (updatedStates σ' …)`.
-                -- The σ'' we hand to the existential is the
-                -- `updatedStates σ' …` form.  D2 will additionally invoke
-                -- `InitsUpdatesComm Hupdate Hinit` to commute the init/update
-                -- chain over σ rather than σ', as needed for the L4-L6
-                -- substitution arguments.
+                -- σ'' is the updatedStates σ' … form; D2 may use InitsUpdatesComm.
                 refine ⟨updatedStates σ'
                           (argTemps
                             ++ outTemps
@@ -3444,11 +3238,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           (argVals ++ oVals ++ oldVals), ?_, ?_⟩
                 · -- First conjunct: Inits σ' σ''.
                   exact InitStatesInits Hinit
-                · -- Second conjunct: EvalStatementsContract … s' …
-                  -- D2 obligation (L1-L6, chained via `EvalCallElim_glue`).
-                  -- D1: L1/L2/L3 via `H_inits` (args) + `H_initVars` (outs/olds).
-                  -- Common: arg/out/old temps pairwise Nodup/Disjoint
-                  -- (peeled from Hgennd) and σ-undefined.
+                · -- L1-L6 chain via EvalCallElim_glue.
                   have HargNd : argTemps.Nodup := by
                     have Hsplit := List.nodup_append.mp Hgennd
                     -- Hgennd : (argT ++ outT ++ olds).Nodup;
@@ -3496,13 +3286,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       (List.flatMap
                         (Imperative.HasVarsPure.getVars (P:=Expression))
                         (CallArg.getInputExprs args)) := by
-                    -- Use `Hevalargs : EvalExpressions δ σ inArgs argVals`
-                    -- directly: each `eval_some` cons step carries a
-                    -- pointwise `isDefined σ (getVars e)`, which we glue
-                    -- into the flatMap-level `isDefined`.  Bypasses the
-                    -- `HdefOver`/`isDefinedOver`/`allVarsTrans` route, none
-                    -- of whose defs are `@[expose]` in current module
-                    -- system mode.
+                    -- Use Hevalargs directly via evalExpressions_isDefined_flatMap.
                     have Heval' :
                         Imperative.isDefined σ
                           (List.flatMap
@@ -3540,14 +3324,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           argVals, δ, false⟩ :=
                     H_inits Hwfvars Hwfval Hwfc HargExprDisj HargNd
                       HevalArgs' HndefArg_σ
-                  -- ── L2: outInit ──
-                  -- `H_initVars` reads outTrips.snd (= lhs) on the
-                  -- σ_arg = updatedStates σ argTemps argVals store and
-                  -- writes oVals into outTemps.
-                  --
-                  -- Lift `Hevalouts : ReadValues σ lhs oVals` to σ_arg
-                  -- using `readValues_updatedStates` with disjointness
-                  -- `lhs.Disjoint argTemps` (program-level vs temps).
+                  -- L2: outInit (lift Hevalouts to σ_arg via readValues_updatedStates).
                   have Hlhs_isLocl :
                       Imperative.isDefined σ lhs :=
                     ReadValuesIsDefined Hevalouts
@@ -3610,9 +3387,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       exact Hargtriplen
                     · exact HlhsDisjArg
                     · exact Hevalouts
-                  -- isNotDefined of outTemps in σ_arg: argTemps disjoint
-                  -- from outTemps, so outTemps stay undefined after
-                  -- argTemp updates.
+                  -- outTemps undefined in σ_arg (argTemps disjoint from outTemps).
                   have HndefOut_argLayer :
                       Imperative.isNotDefined
                         (updatedStates σ argTemps
@@ -3639,12 +3414,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           outTemps oVals, δ, false⟩ :=
                     H_initVars Hwfvars Hout_nd_app HrdOuts_argLayer
                       HndefOut_argLayer
-                  -- ── L3: oldInit ──
-                  -- `oldInit` is `createInitVars` over the trip-shape
-                  -- `(genOldIdents.zip oldTys).zip oldVars`.  Its
-                  -- `.unzip.fst.unzip.fst` reduces to `genOldIdents`
-                  -- (modulo the inner zip-truncation), and `.unzip.snd`
-                  -- reduces to `oldVars`.
+                  -- L3: oldInit; oldTrips := (genOldIdents.zip oldTys).zip oldVars.
                   let oldTrips :
                       List ((Expression.Ident × Expression.Ty) ×
                              Expression.Ident) :=
@@ -3805,14 +3575,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           oldTrips.unzip.fst.unzip.fst oldVals, δ, false⟩ :=
                     H_initVars Hwfvars HoldTrips_nd_app HrdOldTrips
                       HndefOldTrips
-                  -- ── D2: L4 (asserts), L5 (havocs), L6 (assumes) chain ──
-                  -- After Hsts_struct rewrite, the goal is segmented as
-                  --   createInits argTrips md ++
-                  --   createInitVars outTrips md ++
-                  --   createInitVars (genOldIdents.zip oldTys).zip oldVars md ++
-                  --   asserts ++
-                  --   createHavocs (CallArg.getLhs args) md ++
-                  --   assumes
+                  -- D2: L4 (asserts), L5 (havocs), L6 (assumes) chain.
                   rw [Hsts_struct]
                   -- L5: build post-havoc store σ_havoc by applying HavocVars
                   -- segment-by-segment to σ' = σ.update lhs modvals.  Derive
@@ -3984,14 +3747,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           (argVals ++ oVals ++ oldVals), δ, false⟩ := by
                     rw [Hflatten_eq, hCallArgsLhs]
                     exact HL5_pre
-                  -- ── D2a: per-precondition payload for L4 (asserts) ──
-                  -- Each filtered pre entry needs three facts for the L4 spike:
-                  --   Hinv       : invStores σAO σ_old (preVars.removeAll …)
-                  --   Hpred_disj : (argTemps ++ lhs).Disjoint preVars
-                  --   Hpre'      : δ σAO entry.snd.expr = some HasBool.tt
-                  -- Derived from filtered Hpre, InitStates (σ↔σAO), the 3-layer
-                  -- updatedStates (σ↔σ_old), and `Hpre_post_lhs_disj`.
-                  -- Bind `proc' = proc` via Hp.
+                  -- D2a: per-precondition payload for L4 (asserts).
                   have HprocEq : proc' = proc := by
                     have Hπ := Hp procName
                     -- Hπ : π procName = Program.Procedure.find? p ⟨procName, ()⟩
@@ -4029,9 +3785,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       rw [ListMap.values_eq_map_snd] at Hc_in'
                       exact Hc_in'
                     exact HpostVarsFresh c.expr Hin_full v Hv
-                  -- ── C-aux: hoisted disjointness facts (used by L4 + L6) ──
-                  -- HinoutFresh: ∀ v ∈ inputs ++ outputs, ¬isTemp ∧ ¬isOld.
-                  -- Decompose into inputs-only and outputs-only forms.
+                  -- C-aux: hoisted disjointness facts (used by L4 + L6).
                   have HinputsFresh :
                       ∀ v ∈ proc.header.inputs.keys,
                         ¬ isTempIdent v ∧ ¬ isOldTempIdent v := by
@@ -4112,18 +3866,11 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       HlhsDef v Hv2
                     rw [Hvσ_none] at Hvσ_some
                     simp at Hvσ_some
-                  -- Restrict to the filtered preconditions: each entry's
-                  -- expr is in `getCheckExprs proc.spec.preconditions`.
+                  -- Restrict to the filtered preconditions.
                   let presFiltered : List (CoreLabel × Procedure.Check) :=
                     proc.spec.preconditions.filter
                       (fun (_, c) => c.attr ≠ .Free)
-                  -- The filtered list's exprs are a subset of the full
-                  -- preconditions' exprs.
-                  -- Bridge: `entry.snd.expr` for each filtered entry is
-                  -- contained in `getCheckExprs proc.spec.preconditions`.
-                  -- `simp [Procedure.Spec.getCheckExprs]` reduces the body
-                  -- to `values.map (·.expr)`, after which membership
-                  -- follows via `List.mem_map_of_mem`.
+                  -- Filtered entry's expr ∈ getCheckExprs proc.spec.preconditions.
                   have HfilteredContains :
                       ∀ entry ∈ presFiltered,
                         (Procedure.Spec.getCheckExprs
@@ -4138,13 +3885,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         δ σAO entry.snd.expr = some Imperative.HasBool.tt := by
                     intro entry Hentry
                     exact Hpre entry.snd.expr (HfilteredContains entry Hentry)
-                  -- ── pre-var "freshness" lemma against σ_old / σAO ──
-                  --
-                  -- For each filtered entry, derive that pre-vars are
-                  -- not in argT/outT/olds (they're not tmp_/old_), and
-                  -- not in lhs (by `Hpre_post_lhs_disj`).  Combined
-                  -- with `(σAO v).isSome` for v ∈ getVars pre, we get
-                  -- the disjointness facts needed by H_asserts_anylist.
+                  -- Pre-var freshness lemma against σ_old / σAO.
                   have HpresVarsFresh' :
                       ∀ entry ∈ presFiltered,
                         ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr,
@@ -4152,13 +3893,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           v ∉ CallArg.getLhs args := fun entry Hentry v Hv =>
                     HpreVarsFresh entry.snd.expr
                       (filterCheck_mem_getCheckExprs Hentry) v Hv
-                  -- ── HpresPayload (D2a output) ──
-                  --
-                  -- For each filtered entry:
-                  --   (1) invStores σAO σ_old (preVars.removeAll
-                  --         ((inputs ++ outputs) ++ (argT ++ lhs)))
-                  --   (2) (argT ++ lhs).Disjoint preVars
-                  --   (3) δ σAO entry.snd.expr = some HasBool.tt
+                  -- HpresPayload (D2a output).
                   have HpresPayload :
                       ∀ entry ∈ presFiltered,
                         Imperative.invStores σAO
@@ -4205,11 +3940,6 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         rw [hCallArgsLhs] at HxNotInLhs
                         exact HxNotInLhs HxLhs
                     -- (2) Hinv: invStores σAO σ_old (preVars.removeAll ...).
-                    -- For each v in the removeAll list:
-                    --   v ∈ preVars
-                    --   v ∉ inputs, v ∉ outputs, v ∉ argT, v ∉ lhs.
-                    -- We additionally need v ∉ outT (not tmp_) and
-                    -- v ∉ olds (not old_), via HfreshEnt.
                     have Hinv :
                         Imperative.invStores σAO
                           (updatedStates
@@ -4285,16 +4015,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       rw [HAO_eq_σ, Hold_eq_σ]
                     refine ⟨Hinv, Hpred_disj, ?_⟩
                     exact HpreEnt.2
-                  -- ── D2b: per-postcondition payload structure for L6 ──
-                  -- L6 (assumes) evaluates each post after applying
-                  -- `oldSubst = createOldVarsSubst ... ++ inputOnlyOldSubst`.
-                  -- Bind two D2b deliverables:
-                  --   `HpostFiltered` — σO eval-tt for original posts.
-                  --   `HpostSubFresh` — vars in the substituted post split
-                  --                     into surviving / old-temp / arg-expr.
-                  -- Bind σO eval-tt for each filtered postcondition entry.
-                  -- Hpost from call_sem gives `δ σO post = tt` for every
-                  -- post in `getCheckExprs proc.spec.postconditions`.
+                  -- D2b: per-postcondition payload (HpostFiltered, HpostSubFresh).
                   let postsFiltered : List (CoreLabel × Procedure.Check) :=
                     proc.spec.postconditions.filter
                       (fun (_, c) => c.attr ≠ .Free)
@@ -4317,13 +4038,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         δ σO entry.snd.expr = some Imperative.HasBool.tt := by
                     intro entry Hentry
                     exact Hpost entry.snd.expr (HpostFilteredContains entry Hentry)
-                  -- ── post-var "freshness" lemma against the ORIGINAL
-                  -- post (pre-oldSubst). ──
-                  --
-                  -- For each filtered original entry, derive that
-                  -- post-vars are not tmp_/old_ and not in lhs.  This is
-                  -- the post-half of `Hpre_post_lhs_disj`, restricted to
-                  -- the filtered list.
+                  -- Post-var freshness lemma against ORIGINAL post (pre-oldSubst).
                   have HpostsVarsFresh_orig :
                       ∀ entry ∈ postsFiltered,
                         ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr,
@@ -4331,15 +4046,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           v ∉ CallArg.getLhs args := fun entry Hentry v Hv =>
                     HpostVarsFresh entry.snd.expr
                       (filterCheck_mem_getCheckExprs Hentry) v Hv
-                  -- ── D2c: σ_R1 + L6 substStores/substDefined facts ──
-                  --
-                  -- σ_R1 plays the role of `σA` in `H_assumes_anylist`
-                  -- (line 6083+).  Its shape: σO with `genOldIdents ↦
-                  -- oldVals` overlaid.  No outTemps overlay (the
-                  -- substStores derivation pairs outputs ↔ lhs, not
-                  -- outputs ↔ outTemps).  σO already has outputs
-                  -- defined (post-Hhav1) and inputs defined (via Hinitin
-                  -- through the Hinitout/Hhav1 chain).
+                  -- D2c: σ_R1 + L6 substStores/substDefined facts.
                   let σ_R1 : CoreStore :=
                     updatedStates σO genOldIdents oldVals
                   -- σ_havoc abbreviation (matches HL5's RHS).
@@ -4458,11 +4165,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     have HnotIn := (Hfilter_in pr Hpr_in).2
                     rw [Hpr_eq] at HnotIn
                     exact HnotIn Hv2
-                  -- ── Hnd: substNodup of filtered_ks.zip filtered_ks' ──
-                  -- substNodup unfolds to
-                  --   (zip.unzip.fst ++ zip.unzip.snd).Nodup.
-                  -- When filtered_ks.length = filtered_ks'.length, the zip
-                  -- doesn't truncate either side, so unzip recovers them.
+                  -- Hnd: substNodup of filtered_ks.zip filtered_ks'.
                   have Hnd : Imperative.substNodup
                       (filtered_ks.zip filtered_ks') := by
                     -- Unfold substNodup; rewrite via unzip_zip.
@@ -4476,10 +4179,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     -- Now goal: (filtered_ks ++ filtered_ks').Nodup.
                     show ((proc.header.outputs.keys ++ filtered_inputs) ++
                           (lhs ++ filtered_argTemps)).Nodup
-                    -- substNodup unfolds to
-                    -- `((outs ++ filt_in) ++ (lhs ++ filt_argT)).Nodup`.
-                    -- Need: each list Nodup, plus all pairwise disjoints.
-                    -- (HoutKeys_disj_lhs / HinKeys_disj_lhs hoisted to C-aux.)
+                    -- ((outs ++ filt_in) ++ (lhs ++ filt_argT)).Nodup: each
+                    -- Nodup + pairwise disjoints (C-aux supplies most).
                     have Hfilt_in_disj_lhs :
                         filtered_inputs.Disjoint lhs := by
                       intro v Hv1 Hv2
@@ -4523,11 +4224,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                               Expression.Ident × Expression.Ident) =>
                             p.1 ≠ q.1)
                           (proc.header.inputs.keys.zip argTemps) := by
-                      -- pairwise_map: Pairwise (· ≠ ·) (xs.map fst) ↔
-                      --   Pairwise (fun p q => f p ≠ f q) xs.
-                      -- The zip's fst-projection equals inputs.keys
-                      -- (when lengths match).  Lift via List.Pairwise.imp
-                      -- on the underlying inputs.keys Pairwise.
+                      -- Lift via pairwise_map + map_fst_zip from inputs.keys Pairwise.
                       rw [show (fun (p q : Expression.Ident × Expression.Ident) =>
                                   p.1 ≠ q.1) =
                             (fun p q => Prod.fst p ≠ Prod.fst q) from rfl]
@@ -4608,16 +4305,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           exact Hfilt_in_disj_lhs HaIn HbLhs
                         | inr HbArgT =>
                           exact Hfilt_in_disj_filt_argT HaIn HbArgT
-                  -- ── Hdef: substDefined σ_R1 σ_havoc ──
-                  -- For each (k, v) ∈ filtered_ks.zip filtered_ks':
-                  --   • k ∈ outputs ∨ k ∈ filtered_inputs.
-                  --   • v ∈ lhs ∨ v ∈ filtered_argTemps.
-                  -- σ_R1[k]: outputs/inputs are defined in σO (via Hinitin
-                  --   /Hinitout/Hhav1 chain); σ_R1 layers add olds (which
-                  --   are disjoint from outputs/inputs).
-                  -- σ_havoc[v]: lhs is defined in σ' (via Hupdate); argTemps
-                  --   are written by σ_havoc's first layer.
-                  -- σ_R1 definedness on outputs.keys.
+                  -- Hdef: substDefined σ_R1 σ_havoc.
                   have HσO_def_outs :
                       Imperative.isDefined σO proc.header.outputs.keys := by
                     apply HavocVarsDefMonotone ?_ Hhav1
@@ -4709,14 +4397,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       cases List.mem_append.mp Hpair_in_snd with
                       | inl Hk2_lhs => exact Hσ_havoc_def_lhs k2 Hk2_lhs
                       | inr Hk2_aT => exact Hσ_havoc_def_filt_argT k2 Hk2_aT
-                  -- ── Hsubst: substStores σ_R1 σ_havoc ──
-                  -- Per-pair: σ_R1[k] = σ_havoc[v], for pairs (output_i, lhs_i)
-                  -- or (filt_input, filt_argTemp).
-                  -- Output-half: σ_R1[out] → σO → modvals[i] (Hrd) →
-                  --   σ'[lhs_i] (Hupdate) → σ_havoc[lhs_i] (fall argT/outT/olds).
-                  -- Input-half: σ_R1[in] → σO → σAO → σA → argVals[idx]
-                  --   (Hinitout/Hinitin) = σ_havoc[argTemp_i] (layer-1 lookup).
-                  -- σ' equation: σ' = updatedStates σ lhs modvals.
+                  -- Hsubst: substStores σ_R1 σ_havoc.
                   have Hσ'_eq : σ' = updatedStates σ lhs modvals :=
                     UpdateStatesUpdated Hupdate
                   -- modvals length = lhs length.
@@ -4791,13 +4472,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         argVals.length := by
                     rw [List.length_zip, HinKeys_argTemps_len, Nat.min_self]
                     omega
-                  -- ── Build Hsubst via parallel ReadValues ──
-                  -- Build ReadValues σ_R1 over (outputs.keys, modvals) +
-                  -- (inputs.keys, argVals), and σ_havoc over (lhs, modvals)
-                  -- + (argTemps, argVals); apply `readValues_filter` over
-                  -- the triple `((inputs.keys, argTemps), argVals).zip` to
-                  -- preserve positional alignment, then ReadValuesApp +
-                  -- ReadValuesSubstStores.
+                  -- Build Hsubst via parallel ReadValues.
                   have HinKVlen :
                       proc.header.inputs.keys.length = argVals.length :=
                     InitStatesLength Hinitin
@@ -4888,12 +4563,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       | inr ho => exact HlhsDisjOld Hv1 ho
                     · rw [Hσ'_eq]
                       exact readValues_updatedStatesSame HmodvalsLen' HlhsNd
-                  -- ── Filtered halves via the triple zip ──
-                  -- Per-pair (k1, k2) ∈ filtered_argSubst gives membership
-                  -- (k1, k2) ∈ inputs.keys.zip argTemps via Hfilter_in.1.
-                  -- Both ReadValues are positional, so for index m,
-                  -- σ_R1[inputs.keys[m]] = argVals[m] = σ_havoc[argTemps[m]].
-                  -- Extract m via List.mem_iff_get + readValues_get.
+                  -- Filtered halves via the triple zip.
                   have Hsubst : Imperative.substStores σ_R1 σ_havoc
                       (filtered_ks.zip filtered_ks') := by
                     intro k1 k2 Hkin
@@ -5350,11 +5020,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     rw [List.zip_append]
                     rw [createFvarsLength]
                     exact HinKeys_argTemps_len
-                  -- Apply H_asserts_zip with the L4 facts and HpresPayload.
-                  -- Note: presFiltered is a `let`-binding for
-                  -- `proc.spec.preconditions.filter (… ≠ .Free)`,
-                  -- which using `(_, c) => c.attr != .Free)` is the same as
-                  -- the corresponding inequality form via `bne_iff_ne`.
+                  -- Apply H_asserts_zip; bne_iff_ne bridges the != / ≠ filter forms.
                   have HL4_pre :
                       EvalStatementsContract π φ ⟨σ_old, δ, false⟩
                         (((proc.spec.preconditions.filter
@@ -5409,20 +5075,10 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     -- Rewrite the inner substitution map via HassertSubst_eq.
                     rw [HassertSubst_eq]
                     exact HL4_pre
-                  -- ── D2d-bridge: σO ↔ σAO old-binding bridge ──
-                  -- Manufacture per-output δ-eval bridge via Hwf2's universal
-                  -- clause (instantiated at outputs.keys / [] / σAO / σO / σO,
-                  -- using Hhav1 + trivial empty InitVars).  Building blocks:
-                  -- `InitStatesReadValues Hinitout`, `Hevalouts`, `HoldVals`,
-                  -- and the call-site `outAlignment` field.
-                  -- ── (a) Trivial empty-init witness ──
+                  -- D2d-bridge: σO ↔ σAO old-binding bridge.
+                  -- (a) Trivial empty-init witness.
                   have HInitVars_empty : InitVars σO [] σO := InitVars.init_none
-                  -- ── (b) Per-output bridge via Hwf2's universal clause ──
-                  --
-                  -- For each v ∈ outputs.keys, `δ σO (mkOld v.name) = σAO v`.
-                  -- Project Hwf2's universal clause; with `@[expose]` we can
-                  -- destructure the conjunction directly via `simp` followed
-                  -- by `.2.1` or manual `cases`/`obtain`.
+                  -- (b) Per-output bridge via Hwf2's universal clause.
                   have Hwf2_univ :
                       ∀ v ∈ proc.header.outputs.keys,
                         δ σO (Lambda.LExpr.fvar () (CoreIdent.mkOld v.name)
@@ -5439,11 +5095,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     -- HH : (v ∈ outputs.keys → δ σO (mkOld v.name) = σAO v) ∧
                     --      (¬ v ∈ outputs.keys → δ σO (mkOld v.name) = σO v)
                     exact HH.1 Hv
-                  -- ── (c) σAO[v] = σ[v] for v ∉ outputs ∪ inputs (fall-through) ──
-                  -- Hinitout: InitStates σA outputs.keys oVals σAO
-                  -- Hinitin:  InitStates σ inputs.keys argVals σA
-                  -- For v ∉ outputs.keys, σAO v = σA v (initStates_get_notin).
-                  -- For v ∉ inputs.keys,  σA v = σ v   (initStates_get_notin).
+                  -- (c) σAO[v] = σ[v] for v ∉ outputs ∪ inputs.
                   have HσAO_notin_eq_σ :
                       ∀ v, v ∉ proc.header.outputs.keys →
                            v ∉ proc.header.inputs.keys →
@@ -5451,30 +5103,12 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     intro v Hv_notout Hv_notin
                     rw [initStates_get_notin Hinitout Hv_notout,
                         initStates_get_notin Hinitin Hv_notin]
-                  -- ── (d) σAO reads outputs ↦ oVals (positional) ──
-                  -- Hinitout : InitStates σA outputs.keys oVals σAO gives
-                  -- ReadValues σAO outputs.keys oVals via InitStatesReadValues.
-                  -- Concretely: for each i, σAO[outputs.keys[i]] = oVals[i].
+                  -- (d) σAO reads outputs ↦ oVals (positional).
                   have HσAO_reads_outs :
                       ReadValues σAO proc.header.outputs.keys oVals :=
                     InitStatesReadValues Hinitout
-                  -- ── (e) Positional alignment for the call ──
-                  -- `HoutAlign` is the `outAlignment` field of the
-                  -- specialized `WFCallSiteSpec`, already bound at the
-                  -- top of the call branch via `Hwfcallsite.specialize`.
-                  -- ── (f) Per-index δ-eval bridge ──
-                  --
-                  -- For each i < oldVars.length, derive
-                  --   δ σO (mkOld oldVars[i].name) = some oldVals[i]
-                  -- via the chain:
-                  --   oldVars[i] ∈ outputs.keys (oldVars filter)
-                  --   → δ σO (mkOld oldVars[i].name) = σAO oldVars[i]   (Hwf2_univ)
-                  --   = oVals[outputs.keys.idxOf oldVars[i]]            (HσAO_reads_outs positional)
-                  --   = oVals[lhs.idxOf oldVars[i]]                     (HoutAlign reverse)
-                  --   = σ oldVars[i]                                    (Hevalouts positional)
-                  --   = some oldVals[i]                                 (HoldVals positional).
-                  --
-                  -- Length facts.
+                  -- (e) Positional alignment via HoutAlign (Hwfcallsite.specialize).
+                  -- (f) Per-index δ-eval bridge: δ σO (mkOld oldVars[i].name) = some oldVals[i].
                   have HoldVals_len : oldVals.length = oldVars.length :=
                     HoldValsLen
                   -- For v ∈ oldVars, v is in CallArg.getLhs args (filter).
@@ -5608,11 +5242,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       -- Hget : σ oldVars[i] = some oldVals[i].
                       -- v = oldVars[i] by Hv_def.
                       exact Hget
-                    -- Combine: δ σO (mkOld v.name) = σAO v
-                    --                              = some oVals[j_out]
-                    --                              = some oVals[j_lhs]    (HAlign_lhs)
-                    --                              = σ v
-                    --                              = some oldVals[i].
+                    -- Combine: δ σO (mkOld v.name) = some oldVals[i].
                     show δ σO (Lambda.LExpr.fvar () (CoreIdent.mkOld v.name) none)
                           = some (oldVals[i]'Hi_oldVals)
                     rw [HStep1, HStep2]
@@ -5624,18 +5254,9 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     rw [Hj_eq]
                     -- Goal: some oVals[j_lhs] = some oldVals[i].
                     rw [← HStep4, HStep5]
-                  -- ── D2d: Structural pieces of HpostPayload ──
-                  -- L6 H_assumes_anylist consumer expects per entry:
-                  --   (1) Hinv : invStores σ_R1 σ_havoc (postVars.removeAll …)
-                  --   (2) Hpred_disj : filtered_ks'.Disjoint postVars
-                  --   (3) Heval_bridge : δ σ_R1 entry.snd.expr = some tt
-                  -- Each `v ∈ postVars = getVars (substFvars … oldSubst)` falls
-                  -- via `getVars_substFvars_mem` into:
-                  --   (a) v survives from original (find? oldSubst v = none),
-                  --   (b) ∃ k w, k ∈ getVars original, find? oldSubst k = some w,
-                  --       v ∈ getVars w.
-                  -- ── Local copy of `oldSubst` and `posts_filtered` ──
-                  -- Mirror the let-bindings inside `HassumesShape`.
+                  -- D2d: Structural pieces of HpostPayload (Hinv,
+                  -- Hpred_disj, Heval_bridge per entry; survive/codom
+                  -- split via getVars_substFvars_mem).
                   let oldVars_L6 : List Expression.Ident :=
                     List.filter
                       (fun g =>
@@ -5677,15 +5298,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         (fun c =>
                           Lambda.LExpr.substFvars c.expr oldSubst_L6))
                       proc'.spec.postconditions
-                  -- ── Per-entry `posts_filtered_L6 ↔ original` correspondence ──
-                  --
-                  -- For each `entry ∈ posts_filtered_L6`, there exists a
-                  -- corresponding `c ∈ proc'.spec.postconditions.values`
-                  -- such that `entry.snd.expr = substFvars c.expr
-                  -- oldSubst_L6`.  Provable via the
-                  -- `updateCheckExprs_substFvars_mem` helper, which
-                  -- consumes the `keys.zip (walk ...)` form (= the
-                  -- definitional unfolding of `updateCheckExprs`).
+                  -- Per-entry posts_filtered_L6 ↔ original correspondence
+                  -- via updateCheckExprs_substFvars_mem.
                   have HpostFiltered_corresp :
                       ∀ entry : CoreLabel × Procedure.Check,
                         entry ∈
@@ -5700,13 +5314,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                             Lambda.LExpr.substFvars c.expr oldSubst_L6 := by
                     intro entry Hentry
                     exact updateCheckExprs_substFvars_mem Hentry
-                  -- ── Per-entry decomposition helper ──
-                  --
-                  -- Bundles the bridge `entry ∈ posts_filtered_L6.toList →
-                  -- entry ∈ keys.zip (walk ...)` with
-                  -- `HpostFiltered_corresp` so each downstream consumer
-                  -- (`HpostEval_bridge`, `Hinv`, `Hpred_disj`) destructures
-                  -- in one line instead of repeating the 12-line preamble.
+                  -- Per-entry decomposition helper.
                   have forall_post_filtered_decompose :
                       ∀ entry : CoreLabel × Procedure.Check,
                         entry ∈ posts_filtered_L6.toList →
@@ -5728,20 +5336,9 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                             (Procedure.Spec.updateCheckExprs.go _ _))
                       exact Hentry
                     exact HpostFiltered_corresp entry Hentry_zip
-                  -- ── D2d-eval: per-fvar bridges for substFvars eval ──
-                  -- `subst_fvars_eval_bridge` consumes two pointwise facts:
-                  --   (1) Hsurv: surviving fvars (find? oldSubst = none) evaluate
-                  --       identically at σ_R1 vs σO.  Built per-entry as
-                  --       `HsurvBridgeC` inside `HpostEval_bridge` below.
-                  --   (2) Hsub: codomain expressions (find? = some w) evaluate at
-                  --       σ_R1 to the same value as the keyed fvar at σO.  Splits
-                  --       on which side of `oldSubst_L6 = createOldVarsSubst ++
-                  --       inputOnlyOldSubst` contributed `(k, w)`.
-                  -- ── (2a) HoldSubBridge: createOldVarsSubst codomain ──
-                  -- Members have shape k = mkOld oldVars[i].name,
-                  -- w = fvar () genOldIdents[i] none.  Positional index extracted
-                  -- via `List.mem_iff_get` on the structural shape
-                  -- `oldTripsCanonical_L6 = (((genOldIdents.zip oldTys)...).map ...)`.
+                  -- D2d-eval: per-fvar bridges for substFvars eval
+                  -- (Hsurv/Hsub for subst_fvars_eval_bridge, split on
+                  -- oldSubst_L6 = createOldVarsSubst ++ inputOnlyOldSubst).
                   have HoldSubBridge :
                       ∀ k w,
                         Map.find?
@@ -5750,11 +5347,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         δ σ_R1 w =
                           δ σO (Lambda.LExpr.fvar () k none) := by
                     intro k w Hf
-                    -- Positional decomposition of `(k, w)` from the
-                    -- L6 canonical `createOldVarsSubst` map: extracts
-                    -- `i < oldVars.length`, `k = mkOld oldVars[i].name`,
-                    -- and `w = createFvar genOldIdents[i]` via the
-                    -- `createOldVarsSubst_pos_decomp` helper.
+                    -- Positional decomposition via createOldVarsSubst_pos_decomp.
                     obtain ⟨ni_val, Hni_lt, Hk_eqMkOld, Hw_eq⟩ :=
                       createOldVarsSubst_pos_decomp HgenOldLen HoldTysLen Hf
                     have Hni_lt_genOld : ni_val < genOldIdents.length := by
@@ -5806,15 +5399,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       HoldEval_bridge ni_val Hni_lt
                     -- Conclude.
                     rw [Hw_eq, HwfL, HrdR1_get, Hk_eqMkOld, HoldEv]
-                  -- ── (2b) HinputSubBridge: inputOnlyOldSubst codomain ──
-                  -- For (k, w) with k = mkOld input_id.name and w = argExpr
-                  -- (positional in inputs ∖ outputs), prove
-                  -- `δ σ_R1 w = δ σO (fvar () k none)`.
-                  -- RHS chain: δ σO (mkOld id) = σO id = σAO id = σA id =
-                  --   some argVals[i] = δ σ argExpr
-                  --   (Hwf2 / havoc / Hinitout / Hinitin / evalExpressions_get).
-                  -- LHS chain: σ_R1 v = σO v on v ∈ getVars argExpr (v ∉ outputs,
-                  --   inputs, genOldIdents); lift via Hwfc.fvarcongr.
+                  -- (2b) HinputSubBridge: inputOnlyOldSubst codomain.
                   have HinputSubBridge :
                       ∀ k w,
                         Map.find? inputOnlyOldSubst_L6 k = some w →
@@ -5860,11 +5445,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       rw [Hk_eq_proc', HpinKeys]
                     -- w = argExpr.
                     have Hw_argExpr : w = argExpr := Hw_eq_proc'
-                    -- Bridge inArgs ↔ getInputExprs args.
-                    -- Manufacture a `Fin` packaging so the remainder of this
-                    -- site (which was written against `ni : Fin (...)` from
-                    -- the inline positional decomposition) keeps working
-                    -- against `ni.val = ni_val`.
+                    -- Fin-packaging so existing `ni : Fin …` users still apply.
                     let ni : Fin (CallArg.getInputExprs args).length :=
                       ⟨ni_val, Hni_lt_inArgs⟩
                     have Hni_lt_inArgsCall : ni.val < inArgs.length := by
@@ -5940,14 +5521,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       rw [HargList, HvalList] at Hev
                       rw [HargExpr_eq_inArgs]
                       exact Hev
-                    -- ── LHS Step F: δ σ_R1 argExpr = δ σ argExpr ──
-                    --
-                    -- For each v ∈ getVars argExpr:
-                    --   • v ∈ σ-defined (evalExpressions_isDefined_flatMap).
-                    --   • v ∉ outputs.keys (clause 5 of Hpre_post_lhs_disj).
-                    --   • v ∉ inputs.keys (clause 6).
-                    --   • v ∉ genOldIdents (¬ isOldTempIdent v ⇒ v ∉ genOldIdents).
-                    -- Hence σ_R1 v = σO v = σAO v = σA v = σ v.
+                    -- LHS Step F: δ σ_R1 argExpr = δ σ argExpr.
                     have HargIsDef : Imperative.isDefined σ
                           (List.flatMap
                             (Imperative.HasVarsPure.getVars (P:=Expression))
@@ -6006,13 +5580,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     simp [Imperative.WellFormedSemanticEvalVar] at Hwfvr
                     have Hδ_R1_eq_δ_σ :
                         δ σ_R1 argExpr = δ σ argExpr := by
-                      -- Argue by induction on the structure of argExpr,
-                      -- using Hwfc.fvarcongr at each fvar leaf.
-                      -- Use the existing helper `subst_fvars_eval_bridge`
-                      -- specialized to the empty substitution map.
-                      --
-                      -- Empty-substitution form: δ σ_R1 e = δ σ e when
-                      -- σ_R1 ↔ σ agree on every free var of e.
+                      -- Apply subst_fvars_eval_bridge with empty subst map.
                       have Hsurv :
                           ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression)
                                   argExpr,
@@ -6073,30 +5641,11 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                                 ih1, ih2, ih3]
                       rw [HsubstEmpty] at Hbridge
                       exact Hbridge
-                    -- ── Conclude. ──
-                    -- δ σ_R1 w = δ σ_R1 argExpr (Hw_argExpr)
-                    --          = δ σ argExpr      (Hδ_R1_eq_δ_σ)
-                    --          = some argVals[i] (HRHS_StepE)
-                    --          = σA inputId       (HRHS_StepD.symm)
-                    --          = σAO inputId      (HRHS_StepC.symm)
-                    --          = σO inputId       (HRHS_StepB.symm)
-                    --          = δ σO (mkOld inputId.name)  (HRHS_StepA.symm)
-                    --          = δ σO (fvar k none) (Hk_mkOld.symm).
                     rw [Hw_argExpr, Hδ_R1_eq_δ_σ, HRHS_StepE,
                         ← HRHS_StepD, ← HRHS_StepC, ← HRHS_StepB,
                         ← HRHS_StepA, ← Hk_mkOld]
-                  -- ── HpostEval_bridge: per-entry σ_R1 eval bridge ──
-                  --
-                  -- For each `entry ∈ posts_filtered_L6`, we have
-                  -- `entry.snd.expr = substFvars c.expr oldSubst_L6` for
-                  -- some `c ∈ proc'.spec.postconditions.values` (via
-                  -- `HpostFiltered_corresp` after a positional bridge).
-                  -- Then by `subst_fvars_eval_bridge` (with HsurvBridge,
-                  -- HoldSubBridge ⊕ HinputSubBridge),
-                  --   δ σ_R1 entry.snd.expr = δ σO c.expr
-                  -- and `Hpost` gives `δ σO c.expr = some HasBool.tt`.
-                  -- The combined `Hsub` for the bridge case-splits via
-                  -- `Map.find?_append`.
+                  -- HpostEval_bridge: per-entry σ_R1 eval bridge via
+                  -- subst_fvars_eval_bridge + HpostFiltered_corresp.
                   have HpostEval_bridge :
                       ∀ entry : CoreLabel × Procedure.Check,
                         entry ∈ posts_filtered_L6.toList →
@@ -6221,11 +5770,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                             proc.spec.postconditions).contains c.expr = true :=
                       List.contains_iff_mem.mpr Hin_full
                     exact (Hpost c.expr Hin_contains).2
-                  -- ── Hinv: residual invStores σ_R1 σ_havoc ──
-                  -- For entry ∈ posts_filtered_L6, decompose via
-                  -- `getVars_substFvars_mem` (class (a)/(b)); sub-split (b)
-                  -- via `Map.find?_append` into createOldVarsSubst /
-                  -- inputOnlyOldSubst flavors.
+                  -- Hinv: residual invStores σ_R1 σ_havoc.
                   have HrdHavoc_olds_pos :
                       ∀ (i : Nat) (Hi : i < genOldIdents.length)
                         (Hi' : i < oldVals.length),
@@ -6302,17 +5847,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       exact readValues_updatedStatesSame HoldValsLenE HoldNd
                     intro i Hi Hi'
                     exact readValues_get HrdHavoc (i:=i) (hi:=Hi) (hi':=Hi')
-                  -- ── Shared class-(b) sub-decompositions for Hinv/Hpred_disj ──
-                  --
-                  -- Both Hinv and Hpred_disj decompose `Hf : Map.find?
-                  -- oldSubst_L6 k = some w` into the two flavors of
-                  -- `oldSubst_L6 = createOldVarsSubst ++ inputOnlyOldSubst`,
-                  -- then run identical positional-decomposition pipelines.
-                  -- Hoist the (b1) and (b2) scaffolding here so each consumer
-                  -- only carries its per-class conclusion logic.
-                  -- (b1): hit on createOldVarsSubst flavor.  Yields the
-                  -- positional witness `var = genOldIdents[ni]` and
-                  -- `w = createFvar genOldIdents[ni]`.
+                  -- Shared class-(b) decompositions for Hinv/Hpred_disj
+                  -- via oldSubst_L6 = createOldVarsSubst ++ inputOnlyOldSubst.
                   have b1_var_witness :
                       ∀ {var : Expression.Ident}
                         {k : Expression.Ident} {w w' : Expression.Expr}
@@ -6666,14 +6202,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           rw [updatedStates_get_notin Hk1_notin_layered]
                         show updatedStates σO genOldIdents oldVals k1 = σ_havoc k1
                         rw [HσR1_σ, H5, H6]
-                  -- ── Hpred_disj: filtered_ks' disjoint from entry's vars ──
-                  --
-                  -- For each entry, show
-                  --   filtered_ks'.Disjoint (getVars entry.snd.expr)
-                  -- where filtered_ks' = lhs ++ filtered_argTemps.
-                  --
-                  -- Decompose the entry's free vars via getVars_substFvars_mem
-                  -- and case-split as in Hinv.
+                  -- Hpred_disj: filtered_ks' disjoint from entry's vars.
                   have HfiltArgT_sub_argT :
                       ∀ x ∈ filtered_argTemps, x ∈ argTemps := by
                     intro x Hx
@@ -6782,13 +6311,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           have Hx_σ_none : σ x = none := HndefArg_σ x Hx_argT
                           rw [Hx_σ_none] at Hx_σ_some
                           simp at Hx_σ_some
-                  -- ── HpostPayload: combined per-entry payload for L6 ──
-                  --
-                  -- For each `entry ∈ posts_filtered_L6`, the L6 consumer
-                  -- (H_assumes_anylist) needs:
-                  --   (1) Hinv          : invStores σ_R1 σ_havoc residual
-                  --   (2) Hpred_disj    : filtered_ks'.Disjoint entryVars
-                  --   (3) HpostEval     : δ σ_R1 entry.snd.expr = some HasBool.tt
+                  -- HpostPayload: combined per-entry payload for L6.
                   have HpostPayload :
                       ∀ entry : CoreLabel × Procedure.Check,
                         entry ∈ posts_filtered_L6.toList →
@@ -6805,22 +6328,10 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     refine ⟨Hinv entry Hentry,
                             Hpred_disj entry Hentry,
                             HpostEval_bridge entry Hentry⟩
-                  -- ── D2f: Apply H_assumes_zip to derive HL6 ──
-                  -- HL6 is the L6 segment of EvalCallElim_glue.
-                  -- Apply `H_assumes_zip` with σA := σ_R1, σ' := σ_havoc,
-                  -- ks := filtered_ks, ks' := filtered_ks' (D2c bound the
-                  -- subst preconditions) + HpostPayload (D2d-payload-2).
-                  -- Bridge to actual `assumes` via HassumesShape +
-                  -- assumeSubst-equation bridge.
+                  -- D2f: Apply H_assumes_zip to derive HL6 (L6 segment of glue).
                   obtain ⟨assumeLabels, _HassumeLabelsLen, HassumeShape⟩ :=
                     HassumesShape
                   -- Bridge: `assumeSubst = filtered_ks.zip (createFvars filtered_ks')`.
-                  -- LHS = outs.zip (createFvars lhs) ++
-                  --       (inputs.zip (createFvars argTemps)).filter (! outs.contains)
-                  -- RHS = (outs ++ filt_in).zip (createFvars (lhs ++ filt_argT)).
-                  -- Heads agree via hCallArgsLhs + createFvarsApp / zip_append;
-                  -- tails via zip_map_right + List.filter_map + zip_unzip.
-                  -- Stated in `proc'`-form to match HassumeShape post-destructure.
                   have HassumeSubst_eq :
                       ((proc'.header.outputs.keys.zip
                           (Core.Transform.createFvars (CallArg.getLhs args))) ++
@@ -6839,34 +6350,17 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                                 (Core.Transform.createFvars lhs).length by
                             rw [createFvarsLength,
                                 HoutKeys_lhs_len])]
-                    -- LHS = outputs.zip (createFvars (CallArg.getLhs args)) ++
-                    --       (inputs.zip (createFvars argTemps)).filter (...)
-                    -- RHS = outputs.zip (createFvars lhs) ++
-                    --       filtered_inputs.zip (createFvars filtered_argTemps)
                     -- Head: bridge via hCallArgsLhs.
                     rw [hCallArgsLhs]
-                    -- Now bridge the tail.
                     congr 1
-                    -- Goal: (inputs.zip (createFvars argTemps)).filter (...) =
-                    --       filtered_inputs.zip (createFvars filtered_argTemps)
                     show (proc.header.inputs.keys.zip
                           (argTemps.map Core.Transform.createFvar)).filter _ =
                       filtered_argSubst.unzip.fst.zip
                         (filtered_argSubst.unzip.snd.map
                           Core.Transform.createFvar)
                     rw [List.zip_map_right]
-                    -- Goal: ((inputs.zip argTemps).map (Prod.map id createFvar)).filter (...) =
-                    --       filtered_argSubst.unzip.fst.zip
-                    --         (filtered_argSubst.unzip.snd.map createFvar)
                     rw [List.filter_map]
-                    -- Goal: ((inputs.zip argTemps).filter (P ∘ Prod.map id createFvar)).map
-                    --         (Prod.map id createFvar) =
-                    --       filtered_argSubst.unzip.fst.zip ...
-                    -- The composed predicate on `Prod.map id createFvar pr` reduces
-                    -- to applying the predicate to `pr.fst` (since `Prod.map id f`
-                    -- preserves the first component).  Bridge the filter form to
-                    -- `filtered_argSubst`'s underlying filter expression
-                    -- (`fun pr => ¬ outputs.contains pr.1`, decided as `!`).
+                    -- Bridge composed `!`/`Prod.map` filter to filtered_argSubst.
                     have HfiltEq :
                         (proc.header.inputs.keys.zip argTemps).filter
                           ((fun (x : Expression.Ident × Expression.Expr) =>
@@ -6885,9 +6379,6 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         · simp [h, Function.comp, Prod.map]
                         · simp [h, Function.comp, Prod.map]
                     rw [HfiltEq]
-                    -- Goal: filtered_argSubst.map (Prod.map id createFvar) =
-                    --       filtered_argSubst.unzip.fst.zip
-                    --         (filtered_argSubst.unzip.snd.map createFvar)
                     -- Massage the RHS: zip_map_right reverse + zip_unzip.
                     rw [show filtered_argSubst.unzip.fst.zip
                             (filtered_argSubst.unzip.snd.map
@@ -6924,12 +6415,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                   have HL6 :
                       EvalStatementsContract π φ ⟨σ_havoc, δ, false⟩
                         assumes ⟨σ_havoc, δ, false⟩ := by
-                    -- HassumeShape uses `proc'`-keys (definitionally `proc`
-                    -- via HprocEq) for assumeSubst and posts.  After the
-                    -- HassumeShape rewrite, the goal carries `proc'`-keys
-                    -- both in the `posts` and `assumeSubst` shape.  Our
-                    -- HassumeSubst_eq is stated in `proc'`-form, so we can
-                    -- bridge directly without an extra HprocEq rewrite.
+                    -- HassumeShape proc'-keys agree with proc via HprocEq.
                     rw [HassumeShape]
                     rw [HassumeSubst_eq]
                     exact HL6_pre
