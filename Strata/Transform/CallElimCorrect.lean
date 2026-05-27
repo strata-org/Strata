@@ -3722,12 +3722,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                   have HinKeys_disj_lhs :
                       proc.header.inputs.keys.Disjoint lhs := by
                     intro v Hv1 Hv2
-                    have Hvσ_none : σ v = none :=
-                      InitStatesNotDefined Hinitin v Hv1
-                    have Hvσ_some : (σ v).isSome = true :=
-                      HlhsDef v Hv2
-                    rw [Hvσ_none] at Hvσ_some
-                    simp at Hvσ_some
+                    exact σ_some_contradiction
+                      (HlhsDef v Hv2) (InitStatesNotDefined Hinitin v Hv1)
                   -- outputs.keys ∩ lhs = ∅: σA-undefined outputs vs σ-defined lhs.
                   have HoutKeys_disj_lhs :
                       proc.header.outputs.keys.Disjoint lhs := by
@@ -3739,10 +3735,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       initStates_get_notin Hinitin HvNotInInputs
                     have Hvσ_none : σ v = none := by
                       rw [← HvσA_eq_σ]; exact HvσA_none
-                    have Hvσ_some : (σ v).isSome = true :=
-                      HlhsDef v Hv2
-                    rw [Hvσ_none] at Hvσ_some
-                    simp at Hvσ_some
+                    exact σ_some_contradiction (HlhsDef v Hv2) Hvσ_none
                   -- Restrict to the filtered preconditions.
                   let presFiltered : List (CoreLabel × Procedure.Check) :=
                     proc.spec.preconditions.filter
@@ -5389,14 +5382,9 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       -- σ v is some.
                       have Hσv_some : (σ v).isSome := HargIsDef v Hv_flat
                       -- v not isOldTempIdent (via Hgenrel.oldFresh contrapositive).
-                      have HvNotOldTemp : ¬ isOldTempIdent v := by
-                        intro Hold
-                        have HNone := Hgenrel.oldFresh v Hold
-                        have HSome : ¬ (σ v).isNone := by
-                          simp only [Option.isNone_iff_eq_none,
-                                     ← Option.isSome_iff_ne_none]
-                          exact Hσv_some
-                        exact HSome HNone
+                      have HvNotOldTemp : ¬ isOldTempIdent v := fun Hold =>
+                        σ_some_contradiction Hσv_some
+                          (Option.isNone_iff_eq_none.mp (Hgenrel.oldFresh v Hold))
                       -- v ∉ genOldIdents.
                       have HvNotGen : v ∉ genOldIdents :=
                         notMem_of_Forall_neg HoldIdentsTemp HvNotOldTemp
@@ -5955,33 +5943,19 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           evalExpressions_isDefined_flatMap Hevalargs
                         have Hk1_σ_some : (σ k1).isSome := HargIsDef k1 Hk1_flat
                         -- k1 not isOldTempIdent.
-                        have Hk1_notOld' : ¬ isOldTempIdent k1 := by
-                          intro Hold
-                          have HNone := Hgenrel.oldFresh k1 Hold
-                          have HSome : ¬ (σ k1).isNone := by
-                            simp only [Option.isNone_iff_eq_none,
-                                       ← Option.isSome_iff_ne_none]
-                            exact Hk1_σ_some
-                          exact HSome HNone
+                        have Hk1_notOld' : ¬ isOldTempIdent k1 := fun Hold =>
+                          σ_some_contradiction Hk1_σ_some
+                            (Option.isNone_iff_eq_none.mp (Hgenrel.oldFresh k1 Hold))
                         -- k1 not isTempIdent.  Via isNotDefined of argTemps/outTemps.
                         have Hk1_notin_argT' :
-                            k1 ∉ argTemps := by
-                          intro h
-                          have := HndefArg_σ k1 h
-                          rw [this] at Hk1_σ_some
-                          simp at Hk1_σ_some
+                            k1 ∉ argTemps := fun h =>
+                          σ_some_contradiction Hk1_σ_some (HndefArg_σ k1 h)
                         have Hk1_notin_outT' :
-                            k1 ∉ outTemps := by
-                          intro h
-                          have := HndefOut_σ k1 h
-                          rw [this] at Hk1_σ_some
-                          simp at Hk1_σ_some
+                            k1 ∉ outTemps := fun h =>
+                          σ_some_contradiction Hk1_σ_some (HndefOut_σ k1 h)
                         have Hk1_notin_genOld' :
-                            k1 ∉ genOldIdents := by
-                          intro h
-                          have := HndefOld_σ k1 h
-                          rw [this] at Hk1_σ_some
-                          simp at Hk1_σ_some
+                            k1 ∉ genOldIdents := fun h =>
+                          σ_some_contradiction Hk1_σ_some (HndefOld_σ k1 h)
                         -- σ_R1 k1 = σ_havoc k1 via the layered store-
                         -- agreement helper, plus the σ → σ' → σ_havoc tail.
                         have HσR1_σ :
@@ -6110,9 +6084,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           have Hx_argT :
                               x ∈ argTemps :=
                             HfiltArgT_sub_argT x Hx_filtArgT
-                          have Hx_σ_none : σ x = none := HndefArg_σ x Hx_argT
-                          rw [Hx_σ_none] at Hx_σ_some
-                          simp at Hx_σ_some
+                          exact σ_some_contradiction Hx_σ_some
+                            (HndefArg_σ x Hx_argT)
                   -- HpostPayload: combined per-entry payload for L6.
                   have HpostPayload :
                       ∀ entry : CoreLabel × Procedure.Check,
