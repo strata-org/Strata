@@ -1755,6 +1755,46 @@ theorem block_preserves_eval_on_disjoint_exiting
     (by simp [Config.evalSnapAgrees])
   simpa [Config.getEnv] using h
 
+/-- Bundles `block_preserves_eval_on_disjoint` with `funcDeclNames_disjoint_of_defUseOk`:
+    when the block's `defUseWellFormed` holds against `defined`, every expression `e`
+    whose free variables are all in `defined` evaluates the same way before and after.
+
+    This is the form most useful at simulation call sites, where the surrounding
+    `defUseOk` invariant from `BlockInitEnvWF` automatically discharges the
+    funcDecl-disjointness via the strengthened `defUseWellFormed.funcDecl` case. -/
+theorem block_preserves_eval_via_defUseOk
+    [DecidableEq P.Ident] [HasVarsImp P CmdT] [HasVarsPure P CmdT]
+    (hwf_ext : WFEvalExtension P extendEval)
+    (ss : List (Stmt P CmdT)) (ρ ρ' : Env P) (defined : P.Ident → Bool)
+    (hdef : Block.defUseWellFormed defined ss = true)
+    (σ' : SemanticStore P) (e : P.Expr)
+    (he : ∀ n ∈ HasVarsPure.getVars (P := P) e, defined n)
+    (hterm : StepStmtStar P EvalCmd extendEval (.stmts ss ρ) (.terminal ρ')) :
+    ρ'.eval σ' e = ρ.eval σ' e := by
+  apply block_preserves_eval_on_disjoint P EvalCmd extendEval hwf_ext ss ρ ρ' σ' e _ hterm
+  intro n hn hgv
+  have h_undef := Block.funcDeclNames_disjoint_of_defUseOk defined ss hdef n hn
+  have h_def := he n hgv
+  rw [h_def] at h_undef
+  cases h_undef
+
+theorem block_preserves_eval_via_defUseOk_exiting
+    [DecidableEq P.Ident] [HasVarsImp P CmdT] [HasVarsPure P CmdT]
+    (hwf_ext : WFEvalExtension P extendEval)
+    (ss : List (Stmt P CmdT)) (ρ ρ' : Env P) (lbl : String) (defined : P.Ident → Bool)
+    (hdef : Block.defUseWellFormed defined ss = true)
+    (σ' : SemanticStore P) (e : P.Expr)
+    (he : ∀ n ∈ HasVarsPure.getVars (P := P) e, defined n)
+    (hexit : StepStmtStar P EvalCmd extendEval (.stmts ss ρ) (.exiting lbl ρ')) :
+    ρ'.eval σ' e = ρ.eval σ' e := by
+  apply block_preserves_eval_on_disjoint_exiting P EvalCmd extendEval hwf_ext ss ρ ρ' lbl
+    σ' e _ hexit
+  intro n hn hgv
+  have h_undef := Block.funcDeclNames_disjoint_of_defUseOk defined ss hdef n hn
+  have h_def := he n hgv
+  rw [h_def] at h_undef
+  cases h_undef
+
 end -- section
 
 section
