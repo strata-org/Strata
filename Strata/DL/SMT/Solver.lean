@@ -97,6 +97,10 @@ namespace Solver
   Returns an SMTLibSolver for the given path and arguments. This function
   expects `path` to point to an SMT solver executable, and `args` to specify
   valid arguments to that solver.
+
+  Uses `stderr := .inherit` so that solver diagnostic output (fatal errors, OOM,
+  unsupported logic) goes directly to the verifier's stderr rather than into an
+  unread pipe that could fill up and SIGPIPE the solver process.
 -/
 def spawn (path : String) (args : Array String) : IO SMTLibSolver := do
   try
