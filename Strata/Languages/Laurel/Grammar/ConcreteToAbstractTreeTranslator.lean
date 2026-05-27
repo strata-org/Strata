@@ -5,11 +5,8 @@
 -/
 module
 
-public import Strata.DDM.AST
-public import Strata.Languages.Laurel.Grammar.LaurelGrammar
+public import StrataDDM.AST
 public import Strata.Languages.Laurel.Laurel
-public import Strata.DL.Imperative.MetaData
-public import Strata.Languages.Core.Expressions
 
 namespace Strata
 namespace Laurel

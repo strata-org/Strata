@@ -3,14 +3,17 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import StrataTest.Util.TestDiagnostics
-import Strata.DDM.Elab
-import Strata.DDM.BuiltinDialects.Init
-import Strata.Util.IO
-import Strata.Languages.Laurel.Grammar.LaurelGrammar
-import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
-import Strata.Languages.Laurel.LaurelCompilationPipeline
+meta import all StrataTest.Util.TestDiagnostics
+meta import StrataDDM.Elab
+meta import StrataDDM.BuiltinDialects.Init
+meta import Strata.Util.IO
+meta import Strata.Languages.Laurel.Grammar.LaurelGrammar
+meta import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
+meta import Strata.Languages.Laurel.LaurelCompilationPipeline
+
+meta section
 
 open StrataTest.Util
 open Strata
@@ -50,3 +53,5 @@ def processLaurelFileKeepIntermediates (input : InputContext) : IO (Array Diagno
   processLaurelFileWithOptions { translateOptions := { keepAllFilesPrefix := dir}} input
 
 end Laurel
+end Strata
+end

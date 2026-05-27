@@ -5,7 +5,7 @@
 -/
 module
 
-import all Strata.DDM.Util.String
+import all StrataDDM.Util.String
 import Strata.Languages.Laurel.FilterPrelude
 import Strata.Languages.Laurel.LaurelCompilationPipeline
 public import Strata.Languages.Python.PythonToLaurel
@@ -18,7 +18,6 @@ import Strata.Languages.Python.Specs.IdentifyOverloads
 import Strata.Languages.Python.Specs.MessageKind
 import Strata.Languages.Python.Specs.ToLaurel
 public import Strata.Pipeline.Context
-import Strata.Util.DecideProp
 public import Strata.Util.Statistics
 
 /-! ## PySpec Pipeline

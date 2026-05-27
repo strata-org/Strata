@@ -3,9 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core.Verifier
+meta import Strata.DL.Lambda.Preconditions
+import StrataDDM.Integration.Lean.HashCommands
+import Strata.Languages.Core.StatementEval
 
+meta section
 /-! # Simultaneous substitution tests (Issue 653)
 
 Tests verifying that simultaneous substitution (`substFvars` /
@@ -150,3 +155,4 @@ private def testEnv : Env :=
 #eval Std.ToFormat.format (captureFreevars testEnv [] (mkAdd (mkFv "x") (mkFv "y")))
 
 end Core.Statement
+end

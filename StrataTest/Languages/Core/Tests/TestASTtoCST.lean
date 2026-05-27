@@ -3,9 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.DDMTransform.ASTtoCST
-import Strata.Languages.Core.DDMTransform.Translate
+meta import Strata.Languages.Core.DDMTransform.ASTtoCST
+meta import Strata.Languages.Core.DDMTransform.Translate
+import StrataDDM.Integration.Lean.HashCommands
+
+meta section
 
 -- Tests for Core.Program → CST Conversion
 -- This file tests one-direction conversion: AST → CST using the old
@@ -777,3 +781,5 @@ spec {
 #eval ASTtoCST strPrefixSuffixPgm
 
 end Strata.Test
+
+end

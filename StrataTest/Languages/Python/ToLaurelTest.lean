@@ -3,9 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Python.Specs.ToLaurel
-import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
+meta import all Strata.Languages.Python.Specs.ToLaurel
+meta import all Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
+
+meta section
 
 /-! # PySpec → Laurel Translation Tests
 
@@ -1088,3 +1091,4 @@ private def translateFunc (args : Array Arg := #[])
   assert! body.contains "assume Any..isfrom_str(result)"
 
 end Strata.Python.Specs.ToLaurel.Tests
+end

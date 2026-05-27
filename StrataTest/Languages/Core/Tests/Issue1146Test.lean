@@ -3,8 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.DDMTransform.Translate
+meta import Strata.Languages.Core.DDMTransform.Translate
+import StrataDDM.Integration.Lean.HashCommands
+
+meta section
 
 /-!
 # Regression test for https://github.com/strata-org/Strata/issues/1146
@@ -54,3 +58,5 @@ function Len (xs : List) : int
 #end
 
 end Strata.Issue1146Test
+
+end

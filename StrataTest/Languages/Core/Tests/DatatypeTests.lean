@@ -3,8 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core.Verifier
+import StrataDDM.Integration.Lean.HashCommands
+
+meta section
 
 /-!
 # Datatype Verification Tests
@@ -136,3 +140,5 @@ Result: ✅ pass
 #eval verify hiddenTypeRecursionPgm (options := .quiet)
 
 end Strata.DatatypeTests
+
+end

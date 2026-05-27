@@ -5,14 +5,14 @@
 -/
 module
 
-public import Strata.Pipeline.Diagnostic
-public import Strata.Util.Statistics
 public import Strata.Languages.Core.EntryPoint
 public import Strata.Languages.Core.Verifier
 import Strata.Languages.Python.PySpecPipeline
 import Strata.Languages.Python.PyFactory
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 import Strata.SimpleAPI
+import Strata.Languages.Core.DDMTransform.ASTtoCST
+import Strata.Pipeline.Diagnostic
 
 namespace Strata.Pipeline
 
@@ -39,6 +39,7 @@ public structure PyAnalyzeConfig where
   skipVerification : Bool := false
   profilePipeline : Bool := true
   metricsHandle : Option IO.FS.Handle := none
+  mkDischarge : Core.MkDischargeFn := Core.mkDischargeFn
 
 private def runPipeline (config : PyAnalyzeConfig)
     : PipelineM (PyAnalyzeOutcome × Statistics) := do
@@ -99,6 +100,7 @@ private def runPipeline (config : PyAnalyzeConfig)
         (externalPhases := [Strata.frontEndPhase])
         (prefixPhases := inlinePhases)
         (keepAllFilesPrefix := config.keepAllFilesPrefix)
+        (mkDischarge := config.mkDischarge)
         (pipelineCtx := some ctx)
         |>.toBaseIO
 

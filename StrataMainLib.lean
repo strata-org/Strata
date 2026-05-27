@@ -8,7 +8,7 @@
 import Lean.Parser.Extension
 import Strata.Backends.CBMC.CollectSymbols
 import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
-import Strata.DDM.Integration.Java.Gen
+import StrataDDM.Integration.Java.Gen
 import Strata.Languages.Core.Verifier
 import Strata.Languages.Core.SarifOutput
 import Strata.Languages.Core.ProgramEval
@@ -18,8 +18,7 @@ import Strata.Languages.B3.Verifier.Program
 import Strata.Languages.Laurel.LaurelCompilationPipeline
 import Strata.Pipeline.Diagnostic
 import Strata.Pipeline.PyAnalyzeLaurel
-import Strata.Languages.Boole.Boole
-import Strata.Languages.Boole.Verify
+import Strata.Languages.C_Simp.DDMTransform.Parse
 import Strata.Languages.Python.Python
 import Strata.Languages.Python.Specs.IdentifyOverloads
 import Strata.Languages.Python.Specs.ToLaurel
@@ -31,8 +30,8 @@ import Strata.Util.IO
 
 import Strata.SimpleAPI
 import Strata.Util.Json
-import Strata.DDM.BuiltinDialects
-import Strata.DDM.Util.String
+import StrataDDM.BuiltinDialects
+import StrataDDM.Util.String
 import Strata.Languages.Python.PyFactory
 import Strata.Languages.Python.Specs
 import Strata.Languages.Python.Specs.DDM
@@ -137,7 +136,6 @@ def buildDialectFileMap (pflags : ParsedFlags) : IO Strata.DialectFileMap := do
     |>.addDialect! Strata.Python.Python
     |>.addDialect! Strata.Python.Specs.DDM.PythonSpecs
     |>.addDialect! Strata.Core
-    |>.addDialect! Strata.Boole
     |>.addDialect! Strata.Laurel.Laurel
     |>.addDialect! Strata.smtReservedKeywordsDialect
     |>.addDialect! Strata.SMTCore
@@ -317,7 +315,6 @@ private def readStrataProgram (file : String)
   let inputCtx := Lean.Parser.mkInputContext text (Strata.Util.displayName file)
   let dctx := Elab.LoadedDialects.builtin
   let dctx := dctx.addDialect! Core
-  let dctx := dctx.addDialect! Boole
   let dctx := dctx.addDialect! C_Simp
   let dctx := dctx.addDialect! B3CST
   let leanEnv ← Lean.mkEmptyEnvironment 0
@@ -599,7 +596,7 @@ private def reportUserCodeError (range : SourceRange) (msg : String)
       h.putStrLn line
   return location
 
-def pyAnalyzeLaurelCommand : Command where
+def pyAnalyzeLaurelCommand (mkDischarge : Core.MkDischargeFn := Core.mkDischargeFn) : Command where
   name := "pyAnalyzeLaurel"
   args := [ "file" ]
   flags := verifyOptionsFlags ++ [
@@ -694,7 +691,7 @@ def pyAnalyzeLaurelCommand : Command where
       verifyOptions := options
       entryPoint, isBugFinding
       outputMode, skipVerification
-      metricsHandle
+      metricsHandle, mkDischarge
     }
 
     -- Always print pipeline warnings
@@ -1263,7 +1260,7 @@ def transformCommand : Command where
       | .ok program => IO.print (Core.formatProgram program)
       | .error e => exitFailure s!"Transform failed: {e}"
 
-def verifyCommand : Command where
+def verifyCommand (mkDischarge : Core.MkDischargeFn := Core.mkDischargeFn) : Command where
   name := "verify"
   args := [ "file" ]
   flags := verifyOptionsFlags ++ [
@@ -1295,8 +1292,6 @@ def verifyCommand : Command where
       if opts.typeCheckOnly then
         let ans := if file.endsWith ".csimp.st" then
                      C_Simp.typeCheck pgm opts
-                   else if pgm.dialect == "Boole" then
-                     Boole.typeCheck pgm opts
                    else
                      typeCheck inputCtx pgm opts
         match ans with
@@ -1330,9 +1325,11 @@ def verifyCommand : Command where
               IO.println s!"  {marker} {desc}"
           pure #[]
         else if pgm.dialect == "Boole" then
-          Boole.verify opts.solver pgm inputCtx proceduresToVerify opts
+          -- TODO: this will be restored once StrataMainLib is in a separate
+          -- package that can depend on the StrataBoole package.
+          throw <| IO.Error.userError "Boole dialect support requires the StrataBoole package"
         else
-          verify pgm inputCtx proceduresToVerify opts
+          verify pgm inputCtx proceduresToVerify opts (mkDischarge := mkDischarge)
       catch e =>
         println! f!"{e}"
         IO.Process.exit ExitCode.internalError
