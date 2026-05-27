@@ -18,3 +18,5 @@ StrataAgent/temp
 StrataTest/Transform/Sandbox
 
 nohup.out
+plan_*.md
+StrataAgentTest*.lean
