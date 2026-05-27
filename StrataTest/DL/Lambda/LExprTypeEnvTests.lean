@@ -69,15 +69,27 @@ Subst:
                                           type := mty[bool]}]} )
          return format ans
 
-/-- info: ok: myInt -/
+/-- info: ok: int -/
 #guard_msgs in
-#eval do let (ans, _) ← LMonoTy.aliasDef? mty[myInt]
+#eval do let (ans, _) ← LMonoTy.aliasDef? mty[myInt nat]
                         ( (@TEnv.default String).updateContext
                           { aliases := [{
                              typeArgs := ["a"],
                              name := "myInt",
                              type := mty[int]}] })
          return format ans
+
+/-- info: error: Arity mismatch for alias 'myInt': expected 1 type argument(s), got 0 -/
+#guard_msgs in
+#eval do let result := LMonoTy.aliasDef? mty[myInt]
+                        ( (@TEnv.default String).updateContext
+                          { aliases := [{
+                             typeArgs := ["a"],
+                             name := "myInt",
+                             type := mty[int]}] })
+         match result with
+         | .ok (ans, _) => return format s!"ok: {ans}"
+         | .error e => return format s!"error: {e}"
 
 /-- info: ok: (myDef int) -/
 #guard_msgs in
