@@ -411,12 +411,17 @@ mutual
   | .funcDecl decl _ =>
     -- The function body is treated as a new scope: its free variables
     -- (with formals excluded by `Stmt.getVars`) must be in `definedVars`.
-    -- Formals shadow any outer names *inside* the body.  Note that the
-    -- function name itself is intentionally NOT checked against `definedVars`:
-    -- `step_funcDecl` updates only `eval`, not `store`, so a funcDecl name
-    -- collision is not a store-level issue (cf. `Stmt.funcDeclNames`).
+    -- Formals shadow any outer names *inside* the body.
+    --
+    -- The function name itself must NOT be in `definedVars`: this is
+    -- not a store-level conflict (`step_funcDecl` only updates `eval`),
+    -- but the freshness invariant lets us derive that funcDecl-introduced
+    -- names are disjoint from variables referenced by surrounding code.
+    -- This makes simulation proofs robust to programs containing
+    -- `funcDecl` (cf. `Stmt.funcDeclNames`).
     (Stmt.getVars (P := P) (C := C) (.funcDecl decl .empty)).all
-      (fun n => definedVars n)
+      (fun n => definedVars n) &&
+    !definedVars decl.name
   | .typeDecl _ _ => true
 
 @[expose] def Block.defUseWellFormed [HasVarsImp P C] [HasVarsPure P P.Expr]
@@ -436,6 +441,73 @@ instance (P : PureExpr) [HasVarsImp P C] : HasVarsImp P (Stmt P C) where
 instance (P : PureExpr) [HasVarsImp P C] : HasVarsImp P (Block P C) where
   definedVars := Block.definedVars
   modifiedVars := Block.modifiedVars
+
+/-! ### Disjointness of funcDeclNames from definedVars
+
+The strengthened `defUseWellFormed.funcDecl` case requires that each
+`funcDecl decl _` AST node satisfies `!definedVars decl.name` at its
+position.  This lets us derive: every name in `funcDeclNames s` is NOT
+in the initial `definedVars` predicate.  Used by simulation proofs
+when combined with `block_preserves_eval_on_disjoint`.
+-/
+
+mutual
+
+theorem Stmt.funcDeclNames_disjoint_of_defUseOk [HasVarsImp P C]
+    [HasVarsPure P P.Expr] [HasVarsPure P C] [DecidableEq P.Ident]
+    (defined : P.Ident → Bool) (s : Stmt P C)
+    (hwf : Stmt.defUseWellFormed defined s = true) :
+    ∀ n ∈ Stmt.funcDeclNames s, defined n = false := by
+  match s with
+  | .cmd _ => intro n hn; simp [Stmt.funcDeclNames] at hn
+  | .exit _ _ => intro n hn; simp [Stmt.funcDeclNames] at hn
+  | .typeDecl _ _ => intro n hn; simp [Stmt.funcDeclNames] at hn
+  | .funcDecl decl _ =>
+    intro n hn
+    simp [Stmt.funcDeclNames] at hn
+    subst hn
+    simp [Stmt.defUseWellFormed, Bool.and_eq_true] at hwf
+    exact Bool.not_eq_true _ |>.mp (by simpa using hwf.2)
+  | .block _ bss _ =>
+    intro n hn
+    simp [Stmt.funcDeclNames] at hn
+    simp [Stmt.defUseWellFormed] at hwf
+    exact Block.funcDeclNames_disjoint_of_defUseOk defined bss hwf n hn
+  | .ite _ tss ess _ =>
+    intro n hn
+    simp [Stmt.funcDeclNames, List.mem_append] at hn
+    simp [Stmt.defUseWellFormed, Bool.and_eq_true] at hwf
+    rcases hn with hn | hn
+    · exact Block.funcDeclNames_disjoint_of_defUseOk defined tss hwf.1.2 n hn
+    · exact Block.funcDeclNames_disjoint_of_defUseOk defined ess hwf.2 n hn
+  | .loop _ _ _ body _ =>
+    intro n hn
+    simp [Stmt.funcDeclNames] at hn
+    simp [Stmt.defUseWellFormed, Bool.and_eq_true] at hwf
+    exact Block.funcDeclNames_disjoint_of_defUseOk defined body hwf.2 n hn
+
+theorem Block.funcDeclNames_disjoint_of_defUseOk [HasVarsImp P C]
+    [HasVarsPure P P.Expr] [HasVarsPure P C] [DecidableEq P.Ident]
+    (defined : P.Ident → Bool) (bss : Block P C)
+    (hwf : Block.defUseWellFormed defined bss = true) :
+    ∀ n ∈ Block.funcDeclNames bss, defined n = false := by
+  match bss with
+  | [] => intro n hn; simp [Block.funcDeclNames] at hn
+  | s :: rest =>
+    intro n hn
+    simp [Block.funcDeclNames, List.mem_append] at hn
+    simp [Block.defUseWellFormed, Bool.and_eq_true] at hwf
+    rcases hn with hn | hn
+    · exact Stmt.funcDeclNames_disjoint_of_defUseOk defined s hwf.1 n hn
+    · -- The tail's predicate is `definedVars ∪ definedVars(s)`; if `n` is in
+      -- `funcDeclNames rest`, then it's not in the larger predicate, hence
+      -- not in `definedVars` either.
+      have ih := Block.funcDeclNames_disjoint_of_defUseOk
+        (fun m => defined m || decide (m ∈ Stmt.definedVars s true)) rest hwf.2 n hn
+      simp [Bool.or_eq_false_iff] at ih
+      exact ih.1
+
+end
 
 ---------------------------------------------------------------------
 
