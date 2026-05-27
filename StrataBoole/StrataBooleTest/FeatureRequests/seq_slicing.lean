@@ -16,7 +16,6 @@ Near-upstream anchors:
     if naf.len() == 0 { 0 }
     else { (naf[0] as int) + 2 * reconstruct(naf.skip(1)) }
   `product_of_scalars` uses `scalars.subrange(0, last)`.
-
 Implemented:
 - `Sequence T` type translates to Core's `Sequence` type constructor.
 - Core Grammar ops (inherited): `Sequence.length(s)`, `Sequence.select(s,i)`,
@@ -75,23 +74,23 @@ rec function reconstruct(naf: Sequence int) : int
 
 /--
 info:
-Obligation: seq_slicing_seed_post_seq_slicing_seed_ensures_2_1475_calls_Sequence.select_0
+Obligation: seq_slicing_seed_post_seq_slicing_seed_ensures_2_1474_calls_Sequence.select_0
 Property: out-of-bounds access check
 Result: ✅ pass
 
-Obligation: seq_slicing_seed_post_seq_slicing_seed_ensures_5_1612_calls_Sequence.select_0
+Obligation: seq_slicing_seed_post_seq_slicing_seed_ensures_5_1611_calls_Sequence.select_0
 Property: out-of-bounds access check
 Result: ✅ pass
 
-Obligation: seq_slicing_seed_post_seq_slicing_seed_ensures_5_1612_calls_Sequence.select_1
+Obligation: seq_slicing_seed_post_seq_slicing_seed_ensures_5_1611_calls_Sequence.select_1
 Property: out-of-bounds access check
 Result: ✅ pass
 
-Obligation: seq_slicing_seed_post_seq_slicing_seed_ensures_6_1672_calls_Sequence.select_0
+Obligation: seq_slicing_seed_post_seq_slicing_seed_ensures_6_1671_calls_Sequence.select_0
 Property: out-of-bounds access check
 Result: ✅ pass
 
-Obligation: seq_slicing_seed_post_seq_slicing_seed_ensures_6_1672_calls_Sequence.select_1
+Obligation: seq_slicing_seed_post_seq_slicing_seed_ensures_6_1671_calls_Sequence.select_1
 Property: out-of-bounds access check
 Result: ✅ pass
 
@@ -111,35 +110,35 @@ Obligation: set_mid_calls_Sequence.take_1
 Property: out-of-bounds access check
 Result: ✅ pass
 
-Obligation: seq_slicing_seed_ensures_2_1475
+Obligation: seq_slicing_seed_ensures_2_1474
 Property: assert
 Result: ✅ pass
 
-Obligation: seq_slicing_seed_ensures_3_1516
+Obligation: seq_slicing_seed_ensures_3_1515
 Property: assert
 Result: ✅ pass
 
-Obligation: seq_slicing_seed_ensures_4_1575
+Obligation: seq_slicing_seed_ensures_4_1574
 Property: assert
 Result: ✅ pass
 
-Obligation: seq_slicing_seed_ensures_5_1612
+Obligation: seq_slicing_seed_ensures_5_1611
 Property: assert
 Result: ✅ pass
 
-Obligation: seq_slicing_seed_ensures_6_1672
+Obligation: seq_slicing_seed_ensures_6_1671
 Property: assert
 Result: ✅ pass
 
-Obligation: seq_empty_bv64_seed_post_seq_empty_bv64_seed_ensures_8_1943_calls_Sequence.select_0
+Obligation: seq_empty_bv64_seed_post_seq_empty_bv64_seed_ensures_8_1942_calls_Sequence.select_0
 Property: out-of-bounds access check
 Result: ✅ pass
 
-Obligation: seq_empty_bv64_seed_ensures_7_1908
+Obligation: seq_empty_bv64_seed_ensures_7_1907
 Property: assert
 Result: ✅ pass
 
-Obligation: seq_empty_bv64_seed_ensures_8_1943
+Obligation: seq_empty_bv64_seed_ensures_8_1942
 Property: assert
 Result: ✅ pass
 
@@ -187,7 +186,7 @@ Obligation: set_v_calls_Sequence.select_0
 Property: out-of-bounds access check
 Result: ❓ unknown
 
-Obligation: seq_oob_seed_ensures_0_4980
+Obligation: seq_oob_seed_ensures_0_4979
 Property: assert
 Result: ❓ unknown-/
 #guard_msgs in
