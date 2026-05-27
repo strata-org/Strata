@@ -134,7 +134,8 @@ private def mergeOverloads (old new : OverloadTable) : OverloadTable :=
     to namespace all generated Laurel names (e.g., `"servicelib_Storage"` for
     module `servicelib.Storage`). -/
 public def buildPySpecLaurel (pyspecEntries : Array (String × String))
-    (overloads : OverloadTable) : EIO String PySpecLaurelResult := do
+    (overloads : OverloadTable) (rejectApproximations : Bool := false)
+    : EIO String PySpecLaurelResult := do
   let mut combinedProcedures : Array (Laurel.Procedure × String) := #[]
   let mut combinedTypes : Array (Laurel.TypeDefinition × String) := #[]
   let mut allOverloads := overloads
@@ -150,6 +151,11 @@ public def buildPySpecLaurel (pyspecEntries : Array (String × String))
       | .error msg => throw s!"Could not read {ionFile}: {msg}"
     let { program, errors, overloads, typeAliases, exhaustiveClasses } :=
       Python.Specs.ToLaurel.signaturesToLaurel ionPath sigs modulePrefix
+        (rejectApproximations := rejectApproximations)
+    if rejectApproximations && !errors.isEmpty then
+      let lines := errors.toList.map fun e =>
+        s!"  {e.file}:{e.loc.start}: [approximation] [{e.kind.category}] {e.message}"
+      throw s!"Rejected approximations in pyspec '{ionPath}':\n{String.intercalate "\n" lines}"
     allWarnings := allWarnings ++ errors
     allOverloads := mergeOverloads allOverloads overloads
     allTypeAliases := typeAliases.fold (init := allTypeAliases) fun m k v => m.insert k v
@@ -244,6 +250,7 @@ public def resolveAndBuildLaurelPrelude
     (stmts : Array (Python.stmt SourceRange))
     (specDir : System.FilePath := ".")
     (quiet : Bool := false)
+    (rejectApproximations : Bool := false)
     : EIO String PySpecLaurelResult := do
   -- Resolve dispatch module names to Ion paths
   let mut dispatchPaths : Array String := #[]
@@ -276,6 +283,7 @@ public def resolveAndBuildLaurelPrelude
     | none => throw s!"PySpec module '{modName}' not found in {specDir}"
   let allSpecEntries := autoSpecEntries ++ explicitEntries
   let result ← buildPySpecLaurel allSpecEntries dispatchOverloads
+                  (rejectApproximations := rejectApproximations)
   return { result with pyspecWarnings := dispatchWarnings ++ result.pyspecWarnings }
 
 /-! ### Pipeline Steps -/
@@ -429,6 +437,7 @@ public def pythonAndSpecToLaurel
     (profile : Bool := false)
     (quiet : Bool := false)
     (warningSummaryFile : Option String := none)
+    (rejectApproximations : Bool := false)
     : EIO PipelineError Laurel.Program := do
   let stmts ← profileStep profile "Read Python Ion" do
     match ← Python.readPythonStrata pythonIonPath |>.toBaseIO with
@@ -436,9 +445,17 @@ public def pythonAndSpecToLaurel
     | .error msg => throw (.internal msg)
 
   let result ← profileStep profile "Resolve and build Laurel prelude" do
-    match ← resolveAndBuildLaurelPrelude dispatchModules pyspecModules stmts specDir (quiet := quiet) |>.toBaseIO with
+    match ← resolveAndBuildLaurelPrelude dispatchModules pyspecModules stmts specDir
+              (quiet := quiet)
+              (rejectApproximations := rejectApproximations) |>.toBaseIO with
     | .ok r => pure r
-    | .error msg => throw (.internal msg)
+    | .error msg =>
+      -- Strict-mode rejections are user-actionable (the spec uses a pattern
+      -- pyspec can't translate yet), not tool bugs.
+      if msg.startsWith "Rejected approximations" then
+        throw (.knownLimitation msg)
+      else
+        throw (.internal msg)
 
   -- Print and write PySpec warnings before later stages can fail
   let pyspecWarnings := result.pyspecWarnings
@@ -470,7 +487,8 @@ public def pythonAndSpecToLaurel
 
   let metadataPath := sourcePath.getD pythonIonPath
   let (laurelProgram, _ctx) ← profileStep profile "Translate Python to Laurel" do
-    match Python.pythonToLaurel preludeInfo stmts metadataPath result.overloads with
+    match Python.pythonToLaurel preludeInfo stmts metadataPath result.overloads
+            (rejectApproximations := rejectApproximations) with
     | .error (.userPythonError range msg) => throw (.userCode range msg)
     | .error (.unsupportedConstruct msg ast) =>
         throw (.knownLimitation s!"Unsupported construct: {msg}\nAST: {ast}")

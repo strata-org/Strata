@@ -401,7 +401,9 @@ def pySpecsCommand : Command where
       takesArg := .repeat "name" },
     { name := "module",
       help := "Translate only the named module (dot-separated). May be repeated.",
-      takesArg := .repeat "module" }
+      takesArg := .repeat "module" },
+    { name := "reject-approximations",
+      help := "Reject every spec construct silently lowered to a placeholder or warning. Off by default." }
   ]
   help := "Translate Python specification files in a directory into Strata DDM Ion format. If --module is given, translates only those modules; otherwise translates all .py files. Creates subdirectories as needed. (Experimental)"
   callback := fun v pflags => do
@@ -415,6 +417,7 @@ def pySpecsCommand : Command where
     let modules := pflags.getRepeated "module"
     let warningOutput : Strata.WarningOutput :=
       if quiet then .none else .detail
+    let rejectApproximations := pflags.getBool "reject-approximations"
     -- Serialize embedded dialect for Python subprocess
     IO.FS.withTempFile fun _handle dialectFile => do
       IO.FS.writeBinFile dialectFile Strata.Python.Python.toIon
@@ -422,6 +425,7 @@ def pySpecsCommand : Command where
                 (skipNames := skipNames)
                 (modules := modules)
                 (warningOutput := warningOutput)
+                (rejectApproximations := rejectApproximations)
                 v[0] v[1] dialectFile |>.toBaseIO
       match r with
       | .ok () => pure ()
@@ -587,6 +591,9 @@ def pyAnalyzeLaurelCommand : Command where
               takesArg := .arg "file" },
             { name := "skip-verification",
               help := "Run Python-to-Laurel and Laurel-to-Core translation only (skip SMT verification).",
+              takesArg := .none },
+            { name := "reject-approximations",
+              help := "Reject every Python construct currently approximated as a havoc'd Hole or silently dropped. First error stops translation. Off by default.",
               takesArg := .none }]
   help := "Verify a Python Ion program via the Laurel pipeline. Translates Python to Laurel to Core, then runs SMT verification."
   callback := fun v pflags => do
@@ -612,11 +619,13 @@ def pyAnalyzeLaurelCommand : Command where
       | some (pyPath, srcText) => some (pyPath, .ofString srcText)
       | none => none
     let warningSummaryFile := pflags.getString "warning-summary"
+    let rejectApproximations := pflags.getBool "reject-approximations"
     let combinedLaurel ←
       match ← Strata.pythonAndSpecToLaurel filePath dispatchModules pyspecModules sourcePath
                 (specDir := specDir) (profile := profile)
                 (quiet := quiet)
-                (warningSummaryFile := warningSummaryFile) |>.toBaseIO with
+                (warningSummaryFile := warningSummaryFile)
+                (rejectApproximations := rejectApproximations) |>.toBaseIO with
       | .ok r => pure r
       | .error (.userCode range msg) =>
         let location := if range.isNone then "" else

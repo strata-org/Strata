@@ -291,6 +291,11 @@ structure PySpecContext where
   /-- Python module name for the current file (e.g., "boto3.dynamodb").
       Used as `pythonModule` for locally-defined classes. -/
   currentModule : ModuleName
+  /-- When `true`, any `specWarning` or `specError` reported during
+      icontract decorator parsing (which today silently falls back to
+      `.placeholder` for unrecognized patterns) is treated as a fatal
+      error by the downstream pipeline. Off by default. -/
+  rejectApproximations : Bool := false
 
 /-- Resolve a module name to a file path, registering the file's FileMap
     for source-location error reporting.  Returns `(filePath, modulePrefix)`
@@ -362,9 +367,16 @@ instance : PySpecMClass PySpecM where
   specError loc message := do
     specErrorAt (←read).pythonFile loc message
   specWarning loc message := do
-    let file := (←read).pythonFile
-    let w : SpecError := { file, loc, kind := .pySpecParsingWarning, message }
-    modify fun s => { s with warnings := s.warnings.push w }
+    let ctx ← read
+    -- Under strict mode (`--reject-approximations`), every warning is an
+    -- error: the parser only emits warnings on patterns it falls back to
+    -- `.placeholder` for, which silently drops the user's spec.
+    if ctx.rejectApproximations then
+      specErrorAt ctx.pythonFile loc s!"[approximation] {message}"
+    else
+      let w : SpecError := { file := ctx.pythonFile, loc,
+                             kind := .pySpecParsingWarning, message }
+      modify fun s => { s with warnings := s.warnings.push w }
   runChecked act := do
     let cnt := (←get).errors.size
     let r ← act
@@ -1675,7 +1687,8 @@ def translateModule
     (pythonCmd : String := "python")
     (events : Std.HashSet EventType := {})
     (skipNames : Std.HashSet PythonIdent := {})
-    (currentModulePrefix : Array String := #[]) :
+    (currentModulePrefix : Array String := #[])
+    (rejectApproximations : Bool := false) :
     BaseIO (FileMaps × Array Signature × Array SpecError × Array SpecError) := do
   let fmm : FileMaps := {}
   let fmm := fmm.insert pythonFile fileMap
@@ -1691,6 +1704,7 @@ def translateModule
     strataDir := strataDir
     pythonFile := pythonFile
     currentModule := currentModule
+    rejectApproximations := rejectApproximations
   }
   let (res, s) ← translateModuleAux body |>.run ctx |>.run { warnings := #[], errors := #[] }
   let fmm ← fileMapsRef.get
@@ -1703,6 +1717,7 @@ public def translateFile
     (events : Std.HashSet EventType := {})
     (skipNames : Std.HashSet PythonIdent := {})
     (moduleName : Option ModuleName := none)
+    (rejectApproximations : Bool := false)
     : EIO String (Array Signature × Array String) := do
   let currentModule ← match moduleName with
     | some m => pure m
@@ -1741,6 +1756,7 @@ public def translateFile
         (currentModulePrefix := modulePrefix)
         (strataDir := strataDir)
         (pythonFile := pythonFile)
+        (rejectApproximations := rejectApproximations)
         (.ofString contents)
         body
         currentModule
