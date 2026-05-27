@@ -30,9 +30,13 @@ fi
 if command -v rg &> /dev/null; then
     echo "[OK] ripgrep found: $(rg --version | head -1)"
 else
-    echo "[WARN] ripgrep (rg) not found. lean_local_search and some"
-    echo "       lean_verify features will be degraded."
-    echo "       Install with: sudo yum install ripgrep  (or brew install ripgrep)"
+    echo "[WARN] ripgrep (rg) not found. Attempting to install..."
+    SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+    if [ -x "$SCRIPT_DIR/install_ripgrep.sh" ]; then
+        "$SCRIPT_DIR/install_ripgrep.sh"
+    else
+        echo "       Run: ./StrataAgent/install_ripgrep.sh"
+    fi
 fi
 
 # 3. Pre-fetch lean-lsp-mcp so first run is fast
