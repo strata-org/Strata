@@ -39,9 +39,18 @@ structure Env (P : PureExpr) where
     predicates through funcDecl steps.  This is the only step that modifies the
     evaluator (`step_funcDecl`); all other small-step rules leave it unchanged.
 
+    `preserves_eval_on_disjoint` says: extending the evaluator with `decl`
+    leaves evaluation of any expression whose free variables do NOT mention
+    `decl.name` unchanged.  This lets simulation proofs reason about
+    expressions whose free variables are syntactically disjoint from
+    freshly-introduced function names (e.g., loop invariants whose `getVars`
+    are confined to pre-body scope, while a `funcDecl` inside the body
+    introduces a fresh name not in that scope).
+
     Concrete instantiations of `extendEval` (e.g., lookup-table extensions in
     Core) should prove this once at the instantiation site. -/
 structure WFEvalExtension (P : PureExpr) [HasBool P] [HasNot P] [HasFvar P] [HasVal P]
+    [HasVarsPure P P.Expr]
     (extendEval : ExtendEval P) : Prop where
   preserves_wfBool : ∀ δ σ decl, WellFormedSemanticEvalBool δ →
     WellFormedSemanticEvalBool (extendEval δ σ decl)
@@ -49,6 +58,9 @@ structure WFEvalExtension (P : PureExpr) [HasBool P] [HasNot P] [HasFvar P] [Has
     WellFormedSemanticEvalVal (extendEval δ σ decl)
   preserves_wfVar : ∀ δ σ decl, WellFormedSemanticEvalVar δ →
     WellFormedSemanticEvalVar (extendEval δ σ decl)
+  preserves_eval_on_disjoint : ∀ δ σ decl σ' e,
+    decl.name ∉ HasVarsPure.getVars (P := P) e →
+    (extendEval δ σ decl) σ' e = δ σ' e
 
 /-! ## Small-Step Operational Semantics for Statements
 
@@ -159,6 +171,16 @@ def Config.noFuncDecl : Config P CmdT → Prop
   | .exiting _ _ => True
   | .block _ _ inner => Config.noFuncDecl inner
   | .seq inner ss => Config.noFuncDecl inner ∧ Block.noFuncDecl ss = true
+
+/-- Config-level `funcDeclNames`: collects all `decl.name`s from `funcDecl`
+    AST nodes syntactically present anywhere in the config. -/
+@[expose] def Config.funcDeclNames : Config P CmdT → List P.Ident
+  | .stmt s _ => Stmt.funcDeclNames s
+  | .stmts ss _ => Block.funcDeclNames ss
+  | .terminal _ => []
+  | .exiting _ _ => []
+  | .block _ _ inner => Config.funcDeclNames inner
+  | .seq inner ss => Config.funcDeclNames inner ++ Block.funcDeclNames ss
 
 /-- Extend `exitsCoveredByBlocks` to configurations.
 
@@ -359,7 +381,7 @@ inductive StepStmt
       (.exiting label ρ)
 
   /-- A function declaration extends the evaluator with the new function. -/
-  | step_funcDecl [HasSubstFvar P] [HasVarsPure P P.Expr] :
+  | step_funcDecl [HasSubstFvar P] :
     StepStmt EvalCmd extendEval
       (.stmt (.funcDecl decl md) ρ)
       (.terminal { ρ with eval := extendEval ρ.eval ρ.store decl })
@@ -1168,7 +1190,7 @@ theorem block_noFuncDecl_preserves_eval
 
 /-! ## WF preservation under WFEvalExtension (no `noFuncDecl` requirement) -/
 
-variable [HasFvar P] [HasVal P]
+variable [HasFvar P] [HasVal P] [HasVarsPure P P.Expr]
 
 /-- Single step preserves `WellFormedSemanticEvalBool` when the evaluator
     extension is well-formed (no `noFuncDecl` requirement). -/
@@ -1279,6 +1301,214 @@ theorem star_preserves_wfVar
   | refl => exact hwfvar
   | step _ _ _ hstep _ ih =>
     exact ih (step_preserves_wfVar_wfExtend P EvalCmd extendEval hwf_ext _ _ hstep hwfvar)
+
+/-! ## Eval-preservation on expressions disjoint from `funcDeclNames`
+
+A single step preserves the value of `eval` on any expression `e` whose
+variables are disjoint from `Config.funcDeclNames` (the names that
+`step_funcDecl` may extend the evaluator with). -/
+
+/-- For a single step, the post-state's `funcDeclNames` is a subset of the
+    pre-state's: each step either leaves them alone, drops some (consuming
+    a funcDecl, branch, or scope), or duplicates loop-body names (which
+    are still in the pre-state list).  This is the key invariant that
+    bounds which names a `step_funcDecl` along a trace can introduce. -/
+private theorem step_funcDeclNames_subset
+    (c₁ c₂ : Config P CmdT)
+    (hstep : StepStmt P EvalCmd extendEval c₁ c₂) :
+    ∀ n, n ∈ Config.funcDeclNames c₂ → n ∈ Config.funcDeclNames c₁ := by
+  induction hstep with
+  | step_cmd => intro n hn; simp [Config.funcDeclNames] at hn
+  | step_block =>
+    intro n hn
+    simp only [Config.funcDeclNames, Stmt.funcDeclNames] at hn ⊢
+    exact hn
+  | step_ite_true =>
+    intro n hn
+    simp only [Config.funcDeclNames, Stmt.funcDeclNames, List.mem_append] at hn ⊢
+    left; exact hn
+  | step_ite_false =>
+    intro n hn
+    simp only [Config.funcDeclNames, Stmt.funcDeclNames, List.mem_append] at hn ⊢
+    right; exact hn
+  | step_ite_nondet_true =>
+    intro n hn
+    simp only [Config.funcDeclNames, Stmt.funcDeclNames, List.mem_append] at hn ⊢
+    left; exact hn
+  | step_ite_nondet_false =>
+    intro n hn
+    simp only [Config.funcDeclNames, Stmt.funcDeclNames, List.mem_append] at hn ⊢
+    right; exact hn
+  | step_loop_enter =>
+    intro n hn
+    simp only [Config.funcDeclNames, Stmt.funcDeclNames, Block.funcDeclNames,
+               List.mem_append, List.append_nil, List.not_mem_nil, or_false] at hn ⊢
+    rcases hn with hn | hn
+    · exact hn
+    · exact hn
+  | step_loop_exit =>
+    intro n hn; simp [Config.funcDeclNames] at hn
+  | step_loop_nondet_enter =>
+    intro n hn
+    simp only [Config.funcDeclNames, Stmt.funcDeclNames, Block.funcDeclNames,
+               List.mem_append, List.append_nil, List.not_mem_nil, or_false] at hn ⊢
+    rcases hn with hn | hn
+    · exact hn
+    · exact hn
+  | step_loop_nondet_exit =>
+    intro n hn; simp [Config.funcDeclNames] at hn
+  | step_exit => intro n hn; simp [Config.funcDeclNames] at hn
+  | step_funcDecl => intro n hn; simp [Config.funcDeclNames] at hn
+  | step_typeDecl => intro n hn; simp [Config.funcDeclNames] at hn
+  | step_stmts_nil => intro n hn; simp [Config.funcDeclNames] at hn
+  | step_stmts_cons =>
+    intro n hn
+    simp only [Config.funcDeclNames, Block.funcDeclNames, List.mem_append] at hn ⊢
+    exact hn
+  | step_seq_inner _ ih =>
+    intro n hn
+    simp only [Config.funcDeclNames, List.mem_append] at hn ⊢
+    rcases hn with hn | hn
+    · left; exact ih n hn
+    · right; exact hn
+  | step_seq_done =>
+    intro n hn
+    simp only [Config.funcDeclNames, List.mem_append] at hn ⊢
+    right; exact hn
+  | step_seq_exit => intro n hn; simp [Config.funcDeclNames] at hn
+  | step_block_body _ ih =>
+    intro n hn
+    simp only [Config.funcDeclNames] at hn ⊢
+    exact ih n hn
+  | step_block_done => intro n hn; simp [Config.funcDeclNames] at hn
+  | step_block_exit_match => intro n hn; simp [Config.funcDeclNames] at hn
+  | step_block_exit_mismatch _ =>
+    intro n hn; simp [Config.funcDeclNames] at hn
+
+/-- Single step preserves `eval` on expressions whose variables are all
+    outside `Config.funcDeclNames`.  -/
+private theorem step_preserves_eval_disjoint
+    (hwf_ext : WFEvalExtension P extendEval)
+    (c₁ c₂ : Config P CmdT)
+    (hstep : StepStmt P EvalCmd extendEval c₁ c₂)
+    (e : P.Expr)
+    (hdisj : ∀ x ∈ HasVarsPure.getVars (P := P) e, x ∉ Config.funcDeclNames c₁) :
+    ∀ σ, c₂.getEnv.eval σ e = c₁.getEnv.eval σ e := by
+  intro σ
+  suffices ∀ a b, StepStmt P EvalCmd extendEval a b →
+      (∀ x ∈ HasVarsPure.getVars (P := P) e, x ∉ Config.funcDeclNames a) →
+      b.getEnv.eval σ e = a.getEnv.eval σ e from this _ _ hstep hdisj
+  intro a b hstep
+  induction hstep with
+  | step_cmd => intro _; simp [Config.getEnv]
+  | step_block => intro _; simp [Config.getEnv]
+  | step_ite_true => intro _; simp [Config.getEnv]
+  | step_ite_false => intro _; simp [Config.getEnv]
+  | step_ite_nondet_true => intro _; simp [Config.getEnv]
+  | step_ite_nondet_false => intro _; simp [Config.getEnv]
+  | step_loop_enter => intro _; simp [Config.getEnv]
+  | step_loop_exit => intro _; simp [Config.getEnv]
+  | step_loop_nondet_enter => intro _; simp [Config.getEnv]
+  | step_loop_nondet_exit => intro _; simp [Config.getEnv]
+  | step_exit => intro _; simp [Config.getEnv]
+  | step_funcDecl =>
+    rename_i decl' _ ρ' _
+    intro hd
+    simp only [Config.getEnv]
+    have hname : decl'.name ∉ HasVarsPure.getVars (P := P) e := by
+      intro hin
+      apply hd decl'.name hin
+      simp [Config.funcDeclNames, Stmt.funcDeclNames]
+    exact hwf_ext.preserves_eval_on_disjoint _ _ _ _ _ hname
+  | step_typeDecl => intro _; simp [Config.getEnv]
+  | step_stmts_nil => intro _; simp [Config.getEnv]
+  | step_stmts_cons => intro _; simp [Config.getEnv]
+  | step_seq_inner _ ih =>
+    intro hd
+    simp only [Config.getEnv]
+    apply ih
+    intro x hx hxin
+    apply hd x hx
+    simp only [Config.funcDeclNames, List.mem_append]; left; exact hxin
+  | step_seq_done => intro _; simp [Config.getEnv]
+  | step_seq_exit => intro _; simp [Config.getEnv]
+  | step_block_body _ ih =>
+    intro hd
+    simp only [Config.getEnv]
+    apply ih
+    intro x hx hxin
+    apply hd x hx
+    simp only [Config.funcDeclNames]; exact hxin
+  | step_block_done => intro _; simp [Config.getEnv]
+  | step_block_exit_match => intro _; simp [Config.getEnv]
+  | step_block_exit_mismatch _ => intro _; simp [Config.getEnv]
+
+/-- Trace preserves `eval` on expressions whose variables are all outside
+    `Config.funcDeclNames` of the *initial* config.  Each step's
+    pre-condition is satisfied because `funcDeclNames` is set-wise
+    monotonically decreasing along steps. -/
+theorem star_preserves_eval_disjoint
+    (hwf_ext : WFEvalExtension P extendEval)
+    {c₁ c₂ : Config P CmdT}
+    (hstar : StepStmtStar P EvalCmd extendEval c₁ c₂)
+    (e : P.Expr)
+    (hdisj : ∀ x ∈ HasVarsPure.getVars (P := P) e, x ∉ Config.funcDeclNames c₁) :
+    ∀ σ, c₂.getEnv.eval σ e = c₁.getEnv.eval σ e := by
+  intro σ
+  induction hstar with
+  | refl => rfl
+  | step _ mid _ hstep _ ih =>
+    have hsub := step_funcDeclNames_subset P EvalCmd extendEval _ _ hstep
+    have hdisj_mid : ∀ x ∈ HasVarsPure.getVars (P := P) e, x ∉ Config.funcDeclNames mid :=
+      fun x hx hxin => hdisj x hx (hsub x hxin)
+    have hstep_eq := step_preserves_eval_disjoint P EvalCmd extendEval hwf_ext _ _ hstep e hdisj σ
+    rw [ih hdisj_mid, hstep_eq]
+
+/-- Statement-level wrapper: For an expression `e` whose variables are disjoint
+    from `Stmt.funcDeclNames s`, the trace `(.stmt s ρ₀) →* (.terminal ρ')`
+    preserves `eval` on `e`. -/
+theorem stmt_terminal_preserves_eval_disjoint
+    (hwf_ext : WFEvalExtension P extendEval)
+    (s : Stmt P CmdT) (ρ₀ ρ' : Env P)
+    (hstar : StepStmtStar P EvalCmd extendEval (.stmt s ρ₀) (.terminal ρ'))
+    (e : P.Expr)
+    (hdisj : ∀ x ∈ HasVarsPure.getVars (P := P) e, x ∉ Stmt.funcDeclNames s) :
+    ∀ σ, ρ'.eval σ e = ρ₀.eval σ e := by
+  intro σ
+  have h := star_preserves_eval_disjoint P EvalCmd extendEval hwf_ext (c₁ := .stmt s ρ₀)
+    (c₂ := .terminal ρ') hstar e
+    (by intro x hx; exact hdisj x hx) σ
+  simpa [Config.getEnv] using h
+
+/-- Statement-level wrapper for exiting traces. -/
+theorem stmt_exiting_preserves_eval_disjoint
+    (hwf_ext : WFEvalExtension P extendEval)
+    (s : Stmt P CmdT) (ρ₀ ρ' : Env P) (lbl : String)
+    (hstar : StepStmtStar P EvalCmd extendEval (.stmt s ρ₀) (.exiting lbl ρ'))
+    (e : P.Expr)
+    (hdisj : ∀ x ∈ HasVarsPure.getVars (P := P) e, x ∉ Stmt.funcDeclNames s) :
+    ∀ σ, ρ'.eval σ e = ρ₀.eval σ e := by
+  intro σ
+  have h := star_preserves_eval_disjoint P EvalCmd extendEval hwf_ext (c₁ := .stmt s ρ₀)
+    (c₂ := .exiting lbl ρ') hstar e
+    (by intro x hx; exact hdisj x hx) σ
+  simpa [Config.getEnv] using h
+
+/-- Block-level wrapper: For an expression `e` whose variables are disjoint
+    from `Block.funcDeclNames bss`, the trace `(.stmts bss ρ₀) →* (.terminal ρ')`
+    preserves `eval` on `e`. -/
+theorem block_terminal_preserves_eval_disjoint
+    (hwf_ext : WFEvalExtension P extendEval)
+    (bss : List (Stmt P CmdT)) (ρ₀ ρ' : Env P)
+    (hstar : StepStmtStar P EvalCmd extendEval (.stmts bss ρ₀) (.terminal ρ'))
+    (e : P.Expr)
+    (hdisj : ∀ x ∈ HasVarsPure.getVars (P := P) e, x ∉ Block.funcDeclNames bss) :
+    ∀ σ, ρ'.eval σ e = ρ₀.eval σ e := by
+  intro σ
+  have h := star_preserves_eval_disjoint P EvalCmd extendEval hwf_ext (c₁ := .stmts bss ρ₀)
+    (c₂ := .terminal ρ') hstar e
+    (by intro x hx; exact hdisj x hx) σ
+  simpa [Config.getEnv] using h
 
 end -- section
 

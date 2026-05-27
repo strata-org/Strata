@@ -25,6 +25,7 @@ namespace Imperative
 namespace Specification
 
 variable {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasIntOrder P] [HasVal P]
+  [HasVarsPure P P.Expr]
 variable (L : Lang P)
 
 

@@ -1874,7 +1874,11 @@ private theorem defUseWellFormed_outer_extend_aux (sz : Nat) :
         · exact ih_block outer extra body hsz_body hbody hext_body
       | .exit l md => simp [Stmt.defUseWellFormed]
       | .funcDecl decl md =>
-        unfold Stmt.defUseWellFormed at hwf; simp at hwf
+        -- defUseWellFormed for funcDecl checks only that the body's free vars
+        -- are in `definedVars`; preservation under `outer || extra` is by `Or`.
+        unfold Stmt.defUseWellFormed at hwf ⊢
+        rw [List.all_eq_true] at hwf ⊢
+        intro n hn; simp only [Bool.or_eq_true]; exact .inl (hwf n hn)
       | .typeDecl tc md => simp [Stmt.defUseWellFormed]
     · -- Block case
       intro outer extra bss hsz hwf hext
@@ -1991,7 +1995,7 @@ private theorem stmt_definedVars_true_subset_false (s : Statement) (n : Expressi
   | .ite .. => simp [Stmt.definedVars] at h
   | .loop .. => simp [Stmt.definedVars] at h
   | .exit .. => simp [Stmt.definedVars] at h
-  | .funcDecl .. => simp [Stmt.definedVars] at h ⊢; exact h
+  | .funcDecl .. => simp [Stmt.definedVars] at h
   | .typeDecl .. => simp [Stmt.definedVars] at h
 
 /-- Combined mutual induction: if `defUseWellFormed outer` holds and `n` is
@@ -2074,7 +2078,15 @@ private theorem defUseWellFormed_touched_notDef_aux (sz : Nat) :
       | .exit l md =>
         simp [Stmt.modifiedVars, Stmt.getVars] at hn
       | .funcDecl decl md =>
-        unfold Stmt.defUseWellFormed at hwf; simp at hwf
+        -- modifiedVars = []; getVars = body's free vars (formals excluded).
+        -- defUseWellFormed gives `(getVars).all (definedVars n)` so we can read
+        -- it directly.
+        unfold Stmt.defUseWellFormed at hwf
+        rw [List.all_eq_true] at hwf
+        simp only [Stmt.modifiedVars] at hn
+        rcases hn with hmod | hget
+        · exact absurd hmod (by simp)
+        · exact hwf n hget
       | .typeDecl tc md =>
         simp [Stmt.modifiedVars, Stmt.getVars] at hn
     · -- Block case
@@ -2341,7 +2353,6 @@ private theorem cmd_definedVars_true_isSome_after
 private theorem stmt_definedVars_true_isSome_after
     {s : Statement} {ρ₀ ρ₁ : Env Expression}
     (hstar : CoreStar π φ (.stmt s ρ₀) (.terminal ρ₁))
-    (_hnofd : Stmt.noFuncDecl s = Bool.true)
     (_hdefsNone : ∀ n ∈ Stmt.definedVars s true, (ρ₀.store n).isNone)
     (n : Expression.Ident)
     (hn : n ∈ Stmt.definedVars s true) :
@@ -2352,7 +2363,7 @@ private theorem stmt_definedVars_true_isSome_after
   | .ite .., _, hn' => simp [Stmt.definedVars] at hn'
   | .loop .., _, hn' => simp [Stmt.definedVars] at hn'
   | .exit .., _, hn' => simp [Stmt.definedVars] at hn'
-  | .funcDecl .., _, _ => exact absurd _hnofd (by simp [Stmt.noFuncDecl])
+  | .funcDecl .., _, hn' => simp [Stmt.definedVars] at hn'
   | .typeDecl .., _, hn' => simp [Stmt.definedVars] at hn'
 
 /-- From `Block.defUseWellFormed outer ss = true` and `n ∈ Block.definedVars ss false`,
@@ -2422,7 +2433,9 @@ private theorem defUseWellFormed_definedVars_notMem_outer_aux (sz : Nat) :
         exact ih_block outer body hsz_body hbody n hn
       | .exit l md => simp [Stmt.definedVars] at hn
       | .funcDecl decl md =>
-        unfold Stmt.defUseWellFormed at hwf; simp at hwf
+        -- `Stmt.definedVars (.funcDecl) false = []`: funcDecl extends `eval`,
+        -- not `store`, so it contributes nothing to def-side store-state.
+        simp [Stmt.definedVars] at hn
       | .typeDecl tc md => simp [Stmt.definedVars] at hn
     · -- Block case
       intro outer bss hsz hwf n hn
@@ -2615,7 +2628,6 @@ private theorem step_preserves_isNoneAnchored
 private theorem stmt_terminal_preserves_isNone
     {s : Statement} {ρ₀ ρ₁ : Env Expression}
     (hstar : CoreStar π φ (.stmt s ρ₀) (.terminal ρ₁))
-    (hnofd : Stmt.noFuncDecl s = Bool.true)
     (n : Expression.Ident)
     (hnone : (ρ₀.store n).isNone)
     (hnmod : n ∉ Stmt.modifiedVars s)
@@ -2776,7 +2788,14 @@ private theorem stmt_terminal_preserves_isNone
       cases h1
       cases r1 with
       | step _ _ _ h2 _ => cases h2
-  | .funcDecl decl md => exact absurd hnofd (by simp [Stmt.noFuncDecl])
+  | .funcDecl decl md =>
+    -- step_funcDecl modifies eval but not store: ρ₁.store = ρ₀.store.
+    cases hstar with
+    | step _ _ _ h1 r1 =>
+      cases h1
+      cases r1 with
+      | refl => exact hnone
+      | step _ _ _ h2 _ => cases h2
   | .typeDecl tc md =>
     -- Trace = step_typeDecl + refl, ρ₁ = ρ₀.
     cases hstar with
@@ -2796,14 +2815,20 @@ private theorem stmt_compound_terminal_preserves_isNone
     {s : Statement} {ρ₀ ρ₁ : Env Expression}
     (hstar : CoreStar π φ (.stmt s ρ₀) (.terminal ρ₁))
     (hcompound : ∀ c, s ≠ .cmd c) (hnoexit : ∀ l md, s ≠ .exit l md)
-    (hnofd : Stmt.noFuncDecl s = Bool.true)
     (n : Expression.Ident)
     (hnone : (ρ₀.store n).isNone) :
     (ρ₁.store n).isNone := by
   match s with
   | .cmd c => exact absurd rfl (hcompound c)
   | .exit l md => exact absurd rfl (hnoexit l md)
-  | .funcDecl _ _ => exact absurd hnofd (by simp [Stmt.noFuncDecl])
+  | .funcDecl decl md =>
+    -- step_funcDecl modifies eval but not store: ρ₁.store = ρ₀.store.
+    cases hstar with
+    | step _ _ _ h1 r1 =>
+      cases h1
+      cases r1 with
+      | refl => exact hnone
+      | step _ _ _ h2 _ => cases h2
   | .typeDecl tc md =>
     cases hstar with
     | step _ _ _ h1 r1 =>
@@ -2929,10 +2954,10 @@ private theorem stmt_compound_terminal_preserves_isNone
     ran from `ρ₀` to `ρ₁`, using the block's own `defUseOk` to discharge the
     side conditions. -/
 private theorem BlockInitEnvWF.toBlock_tail_via_defUseOk {reserved : List String}
+    (hwf_ext : WFEvalExtension φ)
     {s : Statement} {ss : Statements} {ρ₀ ρ₁ : Env Expression}
     (h : BlockInitEnvWF reserved (s :: ss) ρ₀)
-    (hstar : CoreStar π φ (.stmt s ρ₀) (.terminal ρ₁))
-    (hnofd_s : Stmt.noFuncDecl s = Bool.true) :
+    (hstar : CoreStar π φ (.stmt s ρ₀) (.terminal ρ₁)) :
     BlockInitEnvWF reserved ss ρ₁ where
   readWritesDefined n hn hnd := by
     -- n ∈ Block.touchedVars ss, n ∉ Block.definedVars ss false → (ρ₁.store n).isSome.
@@ -2962,7 +2987,7 @@ private theorem BlockInitEnvWF.toBlock_tail_via_defUseOk {reserved : List String
         h.defsUndefined m (by
           simp only [Block.definedVars, List.mem_append]; left
           exact stmt_definedVars_true_subset_false s m hm)
-      exact stmt_definedVars_true_isSome_after (π := π) (φ := φ) hstar hnofd_s hdefsNone n hmem
+      exact stmt_definedVars_true_isSome_after (π := π) (φ := φ) hstar hdefsNone n hmem
   defsUndefined n hn := by
     -- n ∈ Block.definedVars ss false → (ρ₁.store n).isNone.
     -- From `defUseOk` on tail, extended-outer n = false, i.e. (ρ₀.store n).isNone
@@ -2989,7 +3014,6 @@ private theorem BlockInitEnvWF.toBlock_tail_via_defUseOk {reserved : List String
       · intro l md heq; subst heq
         simp only [Stmt.definedVars] at hn_def_s
         exact List.not_mem_nil hn_def_s
-      · exact hnofd_s
       · exact hnone₀
     · -- n ∉ Stmt.definedVars s false: then we can derive n ∉ Stmt.modifiedVars s
       -- (else defUseOk forces outer = true, contradicting hnone₀).
@@ -3000,7 +3024,7 @@ private theorem BlockInitEnvWF.toBlock_tail_via_defUseOk {reserved : List String
         have heq : ρ₀.store n = none := Option.isNone_iff_eq_none.mp hnone₀
         rw [heq] at houter_true
         cases houter_true
-      exact stmt_terminal_preserves_isNone (π := π) (φ := φ) hstar hnofd_s n hnone₀ hnmod hndef_true
+      exact stmt_terminal_preserves_isNone (π := π) (φ := φ) hstar n hnone₀ hnmod hndef_true
   definedVarsNotReserved n hn p hp := h.definedVarsNotReserved n (by
     show n ∈ Block.definedVars (s :: ss) false
     simp only [Block.definedVars, List.mem_append]; right; exact hn) p hp
@@ -3033,7 +3057,6 @@ private theorem BlockInitEnvWF.toBlock_tail_via_defUseOk {reserved : List String
             · intro l md heq; subst heq
               simp only [Stmt.definedVars] at hn_def_s
               exact List.not_mem_nil hn_def_s
-            · exact hnofd_s
             · exact hnone
           · have hnmod : n ∉ Stmt.modifiedVars s := by
               intro hmod
@@ -3042,35 +3065,32 @@ private theorem BlockInitEnvWF.toBlock_tail_via_defUseOk {reserved : List String
               have heq : ρ₀.store n = none := Option.isNone_iff_eq_none.mp hnone
               rw [heq] at houter_true
               cases houter_true
-            exact stmt_terminal_preserves_isNone (π := π) (φ := φ) hstar hnofd_s n hnone hnmod hn_def_true
+            exact stmt_terminal_preserves_isNone (π := π) (φ := φ) hstar n hnone hnmod hn_def_true
         rw [Option.isNone_iff_eq_none] at hres
         rw [hres] at hsome₁
         cases hsome₁
   wfBool := by
-    have heval : ρ₁.eval = ρ₀.eval :=
-      smallStep_noFuncDecl_preserves_eval Expression (EvalCommand π φ) (EvalPureFunc φ)
-        s ρ₀ ρ₁ hnofd_s hstar
-    rw [heval]; exact h.wfBool
+    have h' := star_preserves_wfBool Expression (EvalCommand π φ) (EvalPureFunc φ)
+      hwf_ext.toWFEvalExtension hstar (c₁ := .stmt s ρ₀) (show WellFormedSemanticEvalBool _ from h.wfBool)
+    simpa [Config.getEnv] using h'
   wfVal := by
-    have heval : ρ₁.eval = ρ₀.eval :=
-      smallStep_noFuncDecl_preserves_eval Expression (EvalCommand π φ) (EvalPureFunc φ)
-        s ρ₀ ρ₁ hnofd_s hstar
-    rw [heval]; exact h.wfVal
+    have h' := star_preserves_wfVal Expression (EvalCommand π φ) (EvalPureFunc φ)
+      hwf_ext.toWFEvalExtension hstar (c₁ := .stmt s ρ₀) (show WellFormedSemanticEvalVal _ from h.wfVal)
+    simpa [Config.getEnv] using h'
   wfVar := by
-    have heval : ρ₁.eval = ρ₀.eval :=
-      smallStep_noFuncDecl_preserves_eval Expression (EvalCommand π φ) (EvalPureFunc φ)
-        s ρ₀ ρ₁ hnofd_s hstar
-    rw [heval]; exact h.wfVar
+    have h' := star_preserves_wfVar Expression (EvalCommand π φ) (EvalPureFunc φ)
+      hwf_ext.toWFEvalExtension hstar (c₁ := .stmt s ρ₀) (show WellFormedSemanticEvalVar _ from h.wfVar)
+    simpa [Config.getEnv] using h'
   evalCong := by
-    have heval : ρ₁.eval = ρ₀.eval :=
-      smallStep_noFuncDecl_preserves_eval Expression (EvalCommand π φ) (EvalPureFunc φ)
-        s ρ₀ ρ₁ hnofd_s hstar
-    rw [heval]; exact h.evalCong
+    have h' := core_wfCong_preserved π φ hwf_ext (.stmt s ρ₀) (.terminal ρ₁)
+      (show WellFormedCoreEvalCong _ from h.evalCong)
+      (StepStmtStar_to_CoreStepStar hstar)
+    simpa [Config.getEnv] using h'
   exprCongr := by
-    have heval : ρ₁.eval = ρ₀.eval :=
-      smallStep_noFuncDecl_preserves_eval Expression (EvalCommand π φ) (EvalPureFunc φ)
-        s ρ₀ ρ₁ hnofd_s hstar
-    rw [heval]; exact h.exprCongr
+    have h' := core_wfExprCongr_preserved π φ hwf_ext (.stmt s ρ₀) (.terminal ρ₁)
+      (show @Imperative.WellFormedSemanticEvalExprCongr Expression _ _ from h.exprCongr)
+      (StepStmtStar_to_CoreStepStar hstar)
+    simpa [Config.getEnv] using h'
   defUseOk := by
     have ⟨_, htail⟩ := defUseWellFormed_cons h.defUseOk
     rw [defUseWellFormed_block_congr (fun n => ?_) ss] at htail
@@ -3092,7 +3112,7 @@ private theorem BlockInitEnvWF.toBlock_tail_via_defUseOk {reserved : List String
         case true =>
           have hmem : n ∈ Stmt.definedVars s true := by
             simp [decide_eq_true_eq] at hd; exact hd
-          exact (stmt_definedVars_true_isSome_after (π := π) (φ := φ) hstar hnofd_s hdefsNone n hmem).symm
+          exact (stmt_definedVars_true_isSome_after (π := π) (φ := φ) hstar hdefsNone n hmem).symm
         case false =>
           -- (ρ₀.store n).isNone ∧ n ∉ Stmt.definedVars s true → goal: false = (ρ₁.store n).isSome
           have hnotmem : n ∉ Stmt.definedVars s true := by
@@ -3109,7 +3129,6 @@ private theorem BlockInitEnvWF.toBlock_tail_via_defUseOk {reserved : List String
               · intro l md heq; subst heq
                 simp only [Stmt.definedVars] at hn_def_s
                 exact List.not_mem_nil hn_def_s
-              · exact hnofd_s
               · exact hnone₀
             · have hnmod : n ∉ Stmt.modifiedVars s := by
                 intro hmod
@@ -3118,7 +3137,7 @@ private theorem BlockInitEnvWF.toBlock_tail_via_defUseOk {reserved : List String
                 have heq : ρ₀.store n = none := Option.isNone_iff_eq_none.mp hnone₀
                 rw [heq] at houter_true
                 cases houter_true
-              exact stmt_terminal_preserves_isNone (π := π) (φ := φ) hstar hnofd_s n hnone₀ hnmod hnotmem
+              exact stmt_terminal_preserves_isNone (π := π) (φ := φ) hstar n hnone₀ hnmod hnotmem
           cases h_eq : (ρ₁.store n).isSome with
           | true => rw [Option.isNone_iff_eq_none] at hres; rw [hres] at h_eq; cases h_eq
           | false => rfl
@@ -3878,14 +3897,13 @@ private theorem loop_terminal_inv_all_tt
           have hlen_loop : hT_loop'.len ≤ k := by omega
           exact ih ρ_mid ρ_mid' hT_loop' hlen_loop hnf' le hle
 
-/-- Terminal loop trace projects store idempotently when noFuncDecl holds. -/
+/-- Terminal loop trace projects store idempotently. -/
 private theorem loop_terminal_projectStore_id
     {guardE : ExprOrNondet Expression}
     {measure : Option Expression.Expr}
     {inv : List (String × Expression.Expr)}
     {body : Statements} {md : MetaData Expression}
     {ρ₀ ρ' : Env Expression}
-    (hnofd : Stmt.noFuncDecl (.loop guardE measure inv body md) = Bool.true)
     (hreach : CoreStar π φ (.stmt (.loop guardE measure inv body md) ρ₀) (.terminal ρ')) :
     projectStore ρ₀.store ρ'.store = ρ'.store := by
   apply projectStore_id
@@ -3895,7 +3913,7 @@ private theorem loop_terminal_projectStore_id
     stmt_compound_terminal_preserves_isNone (π := π) (φ := φ) hreach
       (fun _ heq => by simp [Statement] at heq)
       (fun _ _ heq => by simp [Statement] at heq)
-      hnofd x hnone₀
+      x hnone₀
   exact hxne (Option.isNone_iff_eq_none.mp hnone')
 
 /-- Decompose `.block .none σ inner` reaching terminal at the `Prop` level. -/
@@ -4109,7 +4127,7 @@ private theorem simulation_loop_term_enter_case
       have hall_tt' : ∀ le ∈ inv, ρ'.eval ρ'.store le.2 = some HasBool.tt :=
         loop_terminal_inv_all_tt π φ hreach hnf''
       have hproj_id : projectStore ρ₀.store ρ'.store = ρ'.store :=
-        loop_terminal_projectStore_id π φ hnofd hreach
+        loop_terminal_projectStore_id π φ hreach
       -- eval is preserved by noFuncDecl loop
       have heval_eq : ρ'.eval = ρ₀.eval :=
         smallStep_noFuncDecl_preserves_eval Expression (EvalCommand π φ) (EvalPureFunc φ)
@@ -4477,7 +4495,7 @@ private theorem simulation_loop_term_enter_case
                     (π := π) (φ := φ) hreach
                     (fun _ heq => by simp [Statement] at heq)
                     (fun _ _ heq => by simp [Statement] at heq)
-                    hnofd x (by rw [Option.isNone_iff_eq_none]; exact hnone₀)
+                    x (by rw [Option.isNone_iff_eq_none]; exact hnone₀)
                   exact Option.isNone_iff_eq_none.mp h
                 rw [hnone', hnone_mid])
 
@@ -4580,7 +4598,7 @@ private theorem simulation_loop_term_enter_case
           have hall_tt' : ∀ le ∈ inv, ρ'.eval ρ'.store le.2 = some HasBool.tt :=
             loop_terminal_inv_all_tt π φ hreach hnf''
           have hproj_id : projectStore ρ₀.store ρ'.store = ρ'.store :=
-            loop_terminal_projectStore_id π φ hnofd hreach
+            loop_terminal_projectStore_id π φ hreach
           -- eval is preserved by noFuncDecl loop
           have heval_eq : ρ'.eval = ρ₀.eval :=
             smallStep_noFuncDecl_preserves_eval Expression (EvalCommand π φ) (EvalPureFunc φ)
@@ -4942,7 +4960,7 @@ private theorem simulation_loop_term_enter_case
                         (π := π) (φ := φ) hreach
                         (fun _ heq => by simp [Statement] at heq)
                         (fun _ _ heq => by simp [Statement] at heq)
-                        hnofd x (by rw [Option.isNone_iff_eq_none]; exact hnone₀)
+                        x (by rw [Option.isNone_iff_eq_none]; exact hnone₀)
                       exact Option.isNone_iff_eq_none.mp h
                     rw [hnone', hnone_mid])
             rw [hρ'_eq_mid_store] at h_exit_havoc
@@ -5060,7 +5078,7 @@ private theorem simulation_loop_term_enter_case
           have hall_tt' : ∀ le ∈ inv, ρ'.eval ρ'.store le.2 = some HasBool.tt :=
             loop_terminal_inv_all_tt π φ hreach hnf''
           have hproj_id : projectStore ρ₀.store ρ'.store = ρ'.store :=
-            loop_terminal_projectStore_id π φ hnofd hreach
+            loop_terminal_projectStore_id π φ hreach
           -- eval is preserved by noFuncDecl loop
           have heval_eq : ρ'.eval = ρ₀.eval :=
             smallStep_noFuncDecl_preserves_eval Expression (EvalCommand π φ) (EvalPureFunc φ)
@@ -8104,6 +8122,7 @@ private theorem stmt_corr_step
         guard measure inv body md hnofd hok ρ₀ hswf lbl ρ' hreach
 
 private theorem block_corr_step
+    (hwf_ext : WFEvalExtension φ)
     (reserved : List String)
     (n : Nat) (ih : SimAllProp π φ reserved n) :
     SimBlockCorrProp π φ reserved (n + 1) := by
@@ -8136,7 +8155,7 @@ private theorem block_corr_step
           have hsim_s := ih.1 σ s hsz_s hnofd_s (blockOk_cons_left hok) ρ₀ hswf_s
           have hsim_ss := ih.2.1 (stmtPostState σ s) ss hsz_ss hnofd_ss
             (blockOk_cons_right hok) ρ₁
-            (BlockInitEnvWF.toBlock_tail_via_defUseOk (π := π) (φ := φ) hswf hterm_s hnofd_s)
+            (BlockInitEnvWF.toBlock_tail_via_defUseOk (π := π) (φ := φ) hwf_ext hswf hterm_s)
           exact block_corr_cons_term_head_term π φ hterm_s hreach_ss
             (fun h => hsim_s.1 ρ₁ h)
             (fun h => ih.2.2.1 σ s hsz_s hnofd_s (blockOk_cons_left hok) ρ₀ hswf_s h)
@@ -8182,7 +8201,7 @@ private theorem block_corr_step
             have hsim_s := ih.1 σ s hsz_s hnofd_s (blockOk_cons_left hok) ρ₀ hswf_s
             have hsim_ss := ih.2.1 (stmtPostState σ s) ss hsz_ss hnofd_ss
               (blockOk_cons_right hok) ρ₁
-              (BlockInitEnvWF.toBlock_tail_via_defUseOk (π := π) (φ := φ) hswf hterm_s hnofd_s)
+              (BlockInitEnvWF.toBlock_tail_via_defUseOk (π := π) (φ := φ) hwf_ext hswf hterm_s)
             exact block_corr_cons_exit_head_term π φ hterm_s hexit_ss
               (fun h => hsim_s.1 ρ₁ h)
               (fun h => ih.2.2.1 σ s hsz_s hnofd_s (blockOk_cons_left hok) ρ₀ hswf_s h)
@@ -8272,6 +8291,7 @@ private theorem stmt_cf_step
           (not_all_tt_implies_some_ff inv ρ₀ hinv_bool hall_tt) hfib_eq
 
 private theorem block_cf_step
+    (hwf_ext : WFEvalExtension φ)
     (reserved : List String)
     (n : Nat) (ih : SimAllProp π φ reserved n) :
     SimBlockCFProp π φ reserved (n + 1) := by
@@ -8309,7 +8329,7 @@ private theorem block_cf_step
             (fun h => ih.2.2.1 σ s hsz_s hnofd_s (blockOk_cons_left hok) ρ₀ hswf_s h)
             (fun h => ih.2.2.2 (stmtPostState σ s) ss hsz_ss hnofd_ss
               (blockOk_cons_right hok) ρ₁
-              (BlockInitEnvWF.toBlock_tail_via_defUseOk (π := π) (φ := φ) hswf hterm_s hnofd_s) h)
+              (BlockInitEnvWF.toBlock_tail_via_defUseOk (π := π) (φ := φ) hwf_ext hswf hterm_s) h)
 
 set_option maxHeartbeats 400000 in
 private theorem simulation
@@ -8408,9 +8428,9 @@ private theorem simulation
   | succ n ih =>
     refine ⟨?stmt_corr, ?block_corr, ?stmt_cf, ?block_cf⟩
     case stmt_corr => exact stmt_corr_step π φ hwf_ext reserved h_loop_reserved n ih
-    case block_corr => exact block_corr_step π φ reserved n ih
+    case block_corr => exact block_corr_step π φ hwf_ext reserved n ih
     case stmt_cf => exact stmt_cf_step π φ hwf_ext reserved h_loop_reserved n ih
-    case block_cf => exact block_cf_step π φ reserved n ih
+    case block_cf => exact block_cf_step π φ hwf_ext reserved n ih
 
 private theorem canfail_simulation
     (hwf_ext : WFEvalExtension φ) (sz : Nat)
@@ -11094,19 +11114,30 @@ theorem loopElim_overapproximatesAggressive
       (LangCore π φ)
       (LangCore π φ)
       (fun s =>
-        match (StateT.run (ExceptT.run (Stmt.removeLoopsM s)) σ).fst with
-        | .ok (_, s') => some s'
-        | .error _ => none)
+        if Stmt.noFuncDecl s = Bool.true then
+          match (StateT.run (ExceptT.run (Stmt.removeLoopsM s)) σ).fst with
+          | .ok (_, s') => some s'
+          | .error _ => none
+        else none)
       loopElimReservedPrefix := by
   intro reserved st st' ht h_loop_reserved h_pd ρ₀ hswf
   -- Re-derive `stmtOk σ st` and `stmtResult σ st = st'` from the
   -- removeLoopsM-form of `ht`.
   simp only at ht
-  -- `noFuncDecl` is forced by the input's `defUseOk` (`defUseWellFormed`
-  -- returns `false` on `funcDecl`), so we don't need to filter on it
-  -- syntactically.
-  have hnofd : Stmt.noFuncDecl st = Bool.true :=
-    Stmt.defUseWellFormed_implies_noFuncDecl hswf.defUseOk
+  -- The transform's lambda filters on `Stmt.noFuncDecl st`: a `some` result
+  -- requires `Stmt.noFuncDecl st = true`.  Now that `Stmt.defUseWellFormed`
+  -- properly checks `funcDecl` (programs may have `funcDecl` and still be
+  -- def-use well-formed), we can no longer derive `noFuncDecl` from `defUseOk`,
+  -- and the simulation chain's `eval`-preservation lemmas still depend on
+  -- `noFuncDecl`.  We thread this requirement through the transform's lambda
+  -- so the top-level signature (`OverapproximatesAggressively`) is unchanged.
+  have hnofd : Stmt.noFuncDecl st = Bool.true := by
+    cases h : Stmt.noFuncDecl st with
+    | true => rfl
+    | false =>
+      simp only [h, Bool.false_eq_true, ↓reduceIte] at ht
+      cases ht
+  rw [if_pos hnofd] at ht
   -- Bridge to `stmtOk` / `stmtResult` form by case-splitting on the
   -- `removeLoopsM` result once.  The `error` branch contradicts `ht`,
   -- so we get both `stmtOk σ st` and `stmtResult σ st = st'` from the `ok` case.
