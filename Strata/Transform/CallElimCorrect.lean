@@ -3625,12 +3625,10 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                                 (Imperative.HasVarsPure.getVars (P:=Expression))
                                 inArgs := by
                     intro var k w hfind_none Hf Hv_in
-                    have Hin_some :
-                        Map.find? inputOnlyOldSubst_L6 k = some w :=
-                      find?_append_none_elim hfind_none Hf
                     obtain ⟨ni2_val, _Hni2_lt_inKeys, Hni2_lt_inArgs,
                             _Hk_eq_proc', Hw_eq_proc', _Hin_notin_outs⟩ :=
-                      inputOnlyOldSubst_pos_decomp Hin_some
+                      inputOnlyOldSubst_pos_decomp
+                        (find?_append_none_elim hfind_none Hf)
                     have HargExpr_def :
                         w = (CallArg.getInputExprs args)[ni2_val]'Hni2_lt_inArgs :=
                       Hw_eq_proc'
