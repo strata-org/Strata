@@ -336,19 +336,12 @@ private theorem updateCheckExprs_substFvars_mem
 
 /-! ## Call-case helper lemmas
 
-These helpers bridge the post-`Visibility`-removal WF infrastructure to the
-disjointness/Nodup obligations the L1–L6 wrappers need.  See
-`docs/superpowers/research/2026-05-21-wf-infrastructure-survey.md` and
-`docs/superpowers/research/2026-05-21-legacy-call-case-recipe.md` for
-context.
-
-Most helpers here *consume* a `Forall isTempIdent` (resp.
-`Forall isOldTempIdent`) hypothesis on a list of newly-generated names
-rather than producing one from `genIdent` semantics directly: producing
-`isTempIdent` requires reasoning about `String.startsWith`, which goes
-through opaque `Slice`/`Pattern` infrastructure (cf.
-`Strata.DL.Util.String` for context).  The producing-side derivation is
-deferred to Task 6e along with the open `sorry`. -/
+These helpers bridge the WF infrastructure to the disjointness/Nodup
+obligations the L1–L6 wrappers need.  Most consume a
+`Forall isTempIdent`/`Forall isOldTempIdent` hypothesis rather than
+producing one from `genIdent` semantics directly, since the producing
+side requires reasoning through opaque `String.startsWith` /
+`Slice`/`Pattern` infrastructure. -/
 
 /-- Negation form of `List.Forall_mem_iff.mp`: if every element of `l`
     satisfies `p` and `x` does *not* satisfy `p`, then `x ∉ l`.  Used
@@ -678,17 +671,10 @@ local macro "bind_shell_state" "at" h:ident : tactic => `(tactic|
              Functor.map, StateT.map, Except.mapError] at $h:ident)
 
 /-- No-throw fact for the `oldTys ← oldVars.mapM ...` step inside
-    `callElimCmd`.  When every `g ∈ oldVars` already appears as a key in
-    `proc.header.inputs`, the `find?`-driven lookup never hits the
-    `throw` branch, so the whole `mapM` reduces to an `Except.ok` with a
-    `oldTys` list whose length matches `oldVars`.
-
-    This is one of the no-throw lemmas needed by
-    `callElimCmd_call_eq` (B3) to refute the `Except.error` branches in
-    the post-`outTrips` layers.  By construction the `oldVars` produced
-    inside `callElimCmd` is `lhs.filter (fun g => inputNames.contains g
-    && ...)`, so the `Holdvars_in_inputs` precondition is immediate at
-    the call site. -/
+    `callElimCmd`.  When every `g ∈ oldVars` is a key of
+    `proc.header.inputs`, the `find?` lookup never throws, so the
+    `mapM` reduces to `Except.ok oldTys` with `oldTys.length =
+    oldVars.length`. -/
 private theorem oldVars_oldTys_mapM_ok
     {proc : Procedure}
     {oldVars : List Expression.Ident}
@@ -742,28 +728,12 @@ private theorem oldVars_oldTys_mapM_ok
       rfl
     · simp [Hlen]
 
-/-- No-throw fact for `Core.Transform.createAsserts`.  The body of its
-    inner `mapM` only invokes `genIdent` (a pure state mutation that
-    cannot throw) followed by a `return`, so the entire computation
-    always reduces to `Except.ok asserts` for some asserts list whose
-    length matches `conds`.
-
-    This is the second of three "no-throw" lemmas needed by
-    `callElimCmd_call_eq` (B3) to refute the `Except.error` branches
-    in the post-`outTrips` layers.
-
-    The lemma deliberately does NOT bridge to `createAsserts_list`
-    (the pure-list pure analogue used in earlier lemmas).  The
-    monadic version produces counter-based labels (e.g. `assert_pre0_5`)
-    while `createAsserts_list` produces index-based labels
-    (e.g. `assert_0_pre0`); the two strings differ.  Fortunately,
-    `EvalCmd.eval_assert_pass` ignores the label entirely, so the
-    label discrepancy is irrelevant to the contract derivation.  The
-    length fact below is sufficient for the call-site reasoning.
-
-    The `asserts_shape` conjunct exposes the list as a `conds.map`-shape
-    over an existential `labelOf`, which is what the label-agnostic
-    `H_asserts_anylist` consumes downstream. -/
+/-- No-throw fact for `Core.Transform.createAsserts`.  Its inner
+    `mapM` only invokes `genIdent` (a pure non-throwing state mutation),
+    so the computation always reduces to `Except.ok asserts` with
+    `asserts.length = conds.length`.  The `asserts_shape` conjunct
+    exposes the list as a `conds.zip labels`-shape that the
+    label-agnostic downstream consumer needs. -/
 private theorem createAsserts_ok
     (conds : ListMap CoreLabel Procedure.Check)
     (subst : Map Expression.Ident Expression.Expr)
@@ -1359,29 +1329,11 @@ private theorem fresh_triple_σ_facts
 /-- Call-elimination correctness for a single statement.
 
     Given a small-step `EvalStatementsContract` derivation of `[st]`
-    from σ to σ', the transformed statement list `sts` produced by
-    `callElimStmt` admits an `EvalStatementsContract` derivation from
-    σ to some σ'' that extends σ' on the freshly-introduced temp
-    variables.
-
-    For non-call statements `callElimStmt` returns `[st]` unchanged
-    and the conclusion is immediate.  For a call statement the proof
-    chains L1–L6 via `EvalCallElim_glue`; that integration is the
-    open obligation, recorded as a single `sorry` below.
-
-    The WF/disjointness hypotheses (`Hp`, `Hwfc`, `Hwf`, `Hwfp`,
-    `Hgenrel`) are needed by the call-case proof
-    (when the open `sorry` is discharged); for non-call cases they
-    are not used. They are reinstated here so the next implementer
-    has them available.
-
-    The legacy big-step signature also carried `Hgv`
-    (`∀ gk, (p.find? .var gk).isSome → (σ gk).isSome`); this is
-    omitted because the current `Core.DeclKind` has no `.var` kind
-    and there is no live notion of "global variable declaration"
-    in `Program` to relate to a store.
-
-    -/
+    from σ to σ', the transformed list `sts` produced by `callElimStmt`
+    admits an `EvalStatementsContract` derivation from σ to some σ''
+    that extends σ' on the freshly-introduced temp variables.  The
+    call case chains L1–L6 via `EvalCallElim_glue`; non-call cases
+    are immediate. -/
 theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
     {π : String → Option Procedure}
     {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
