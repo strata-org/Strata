@@ -1,9 +1,15 @@
-test_class_with_methods.py(32, 4): ✔️ always true if reached - main_assert(484)_12
+test_class_with_methods.py(32, 4): ✔️ always true if reached - (DataStore@__init__ requires) Type constraint of name
+test_class_with_methods.py(32, 4): ✔️ always true if reached - (DataStore@add requires) Type constraint of amount
+test_class_with_methods.py(32, 4): ✔️ always true if reached - (DataStore@add requires) Type constraint of amount
+test_class_with_methods.py(32, 4): ✔️ always true if reached - main_assert(484)_39
 test_class_with_methods.py(32, 4): ✔️ always true if reached - get_count should return 30
-test_class_with_methods.py(32, 4): ✔️ always true if reached - main_assert(569)_14
+test_class_with_methods.py(32, 4): ✔️ always true if reached - main_assert(569)_42
 test_class_with_methods.py(32, 4): ✔️ always true if reached - get_name should return mystore
+test_class_with_methods.py(32, 4): ✔️ always true if reached - (Origin_test_helper_procedure_Requires)req_name_is_foo
+test_class_with_methods.py(32, 4): ✔️ always true if reached - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_str
+test_class_with_methods.py(32, 4): ✔️ always true if reached - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar
 test_class_with_methods.py(29, 4): ✔️ always true if reached - assert_name_is_foo
 test_class_with_methods.py(29, 4): ✔️ always true if reached - assert_opt_name_none_or_str
 test_class_with_methods.py(29, 4): ✔️ always true if reached - assert_opt_name_none_or_bar
-DETAIL: 7 passed, 0 failed, 0 inconclusive
+DETAIL: 13 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

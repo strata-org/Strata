@@ -528,12 +528,13 @@ Translate a list of checks (preconditions or postconditions) to Core checks.
 Each check gets a label like `"requires"` or `"requires_0"`, `"requires_1"`, etc.
 -/
 private def translateChecks (checks : List Condition) (labelBase : String) (overrideFree: Bool)
+    (defaultSummary : Option String := none)
     : TranslateM (ListMap Core.CoreLabel Core.Procedure.Check) :=
   checks.mapIdxM (fun i check => do
     let label := if checks.length == 1 then labelBase else s!"{labelBase}_{i}"
     let checkExpr ← translateExpr check.condition [] (isPureContext := true)
     let baseMd := astNodeToCoreMd check.condition
-    let md := match check.summary with
+    let md := match check.summary.orElse (fun _ => defaultSummary) with
       | some msg => baseMd.pushElem Imperative.MetaData.propertySummary (.msg msg)
       | none => baseMd
     let attr := if check.free || overrideFree then Core.Procedure.CheckAttr.Free else .Default
@@ -582,6 +583,7 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
     match proc.body with
     | .Opaque postconds _ _ | .Abstract postconds =>
         translateChecks postconds s!"postcondition{(bodyStmts.getD []).length}" bodyStmts.isNone
+          (defaultSummary := "postcondition")
     | _ => pure []
 
   let body : List Core.Statement := [.block "$body" (bodyStmts.getD []) mdWithUnknownLoc]

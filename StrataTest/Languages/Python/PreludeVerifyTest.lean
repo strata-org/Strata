@@ -33,15 +33,7 @@ private def verifyPrelude : IO (Array DiagnosticModel) := do
         (externalPhases := [Strata.frontEndPhase]))
     return r.flatMap (fun vcr => (toDiagnosticModel vcr []).toArray)
 
-/--
-info: ⚠️ [addPathCondition] Label clash detected for assume(0), using unique label assume(0)_1.
-⚠️ [addPathCondition] Label clash detected for assume(0), using unique label assume(0)_2.
-⚠️ [addPathCondition] Label clash detected for assume(0), using unique label assume(0)_3.
-⚠️ [addPathCondition] Label clash detected for assume(0), using unique label assume(0)_1.
-⚠️ [addPathCondition] Label clash detected for assume(0), using unique label assume(0)_2.
----
-info: #[]
--/
+/-- info: #[] -/
 #guard_msgs in
 #eval verifyPrelude
 

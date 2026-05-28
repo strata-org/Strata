@@ -114,21 +114,21 @@ private def transformProcBody (proc : Procedure) (info : ContractInfo) : Body :=
   let inputArgs := paramsToArgs proc.inputs
   let postconds := getPostconditions proc.body
   let preAssumes : List StmtExprMd :=
-    info.preNames.map fun (name, _) =>
-      ⟨.Assume (mkCall name inputArgs), none⟩
-  let postAsserts : List StmtExprMd :=
-    postconds.zip info.postNames |>.map fun (pc, _name, _summary) =>
-      let summary := pc.summary.getD "postcondition"
-      ⟨.Assert { condition := pc.condition, summary := some summary }, pc.condition.source⟩
+    proc.preconditions.zip info.preNames |>.map fun (pc, name, _) =>
+      ⟨.Assume (mkCall name inputArgs), pc.condition.source⟩
   match proc.body with
   | .Transparent body =>
+    let postAsserts : List StmtExprMd :=
+      postconds.zip info.postNames |>.map fun (pc, _name, _summary) =>
+        let summary := pc.summary.getD "postcondition"
+        ⟨.Assert { condition := pc.condition, summary := some summary }, pc.condition.source⟩
     .Transparent ⟨.Block (preAssumes ++ [body] ++ postAsserts) none, body.source⟩
   | .Opaque _ (some impl) _ =>
-    .Opaque [] (some ⟨.Block (preAssumes ++ [impl] ++ postAsserts) none, impl.source⟩) []
+    .Opaque postconds (some ⟨.Block (preAssumes ++ [impl]) none, impl.source⟩) []
   | .Opaque _ none mods =>
-    .Opaque [] none mods
+    .Opaque postconds none mods
   | .Abstract _ =>
-    .Abstract []
+    .Abstract postconds
   | b => b
 
 /-- Generate temporary variable assignments for input arguments at a call site.
