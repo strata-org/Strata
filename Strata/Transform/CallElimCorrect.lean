@@ -3131,8 +3131,6 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     InitStatesReadValues Hinitout
                   -- (e) Positional alignment via HoutAlign (Hwfcallsite.specialize).
                   -- (f) Per-index δ-eval bridge: δ σO (mkOld oldVars[i].name) = some oldVals[i].
-                  have HoldVals_len : oldVals.length = oldVars.length :=
-                    HoldValsLen
                   -- For v ∈ oldVars, v is in CallArg.getLhs args (filter).
                   have HoldVars_sub_callLhs : ∀ v ∈ oldVars, v ∈ CallArg.getLhs args := by
                     intro v Hv
@@ -3160,7 +3158,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         δ σO
                             (Lambda.LExpr.fvar ()
                               (CoreIdent.mkOld (oldVars[i]'Hi).name) none) =
-                          some (oldVals[i]'(HoldVals_len.symm ▸ Hi)) := by
+                          some (oldVals[i]'(HoldValsLen.symm ▸ Hi)) := by
                     intro i Hi
                     let v : Expression.Ident := oldVars[i]'Hi
                     have Hv_mem : v ∈ oldVars := List.getElem_mem _
@@ -3213,7 +3211,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     have HStep4 : σ v = some (oVals[j_lhs]'Hj_lhs_lt_oVals) :=
                       read_at Hevalouts Hv_lhs Hj_lhs_lt_oVals
                     -- Step 5: σ v = some oldVals[i]'_ (HoldVals positional).
-                    have Hi_oldVals : i < oldVals.length := HoldVals_len.symm ▸ Hi
+                    have Hi_oldVals : i < oldVals.length := HoldValsLen.symm ▸ Hi
                     have HStep5 : σ v = some (oldVals[i]'Hi_oldVals) :=
                       readValues_get (σ:=σ) (ks:=oldVars) (vs:=oldVals) HoldVals
                         (i:=i) (hi:=Hi) (hi':=Hi_oldVals)
