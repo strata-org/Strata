@@ -2985,30 +2985,17 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           proc.header.outputs.keys)
                         (argVals ++ oVals) :=
                     ReadValuesApp HrdAO_in_L4 HrdAO_out_L4
-                  -- σ_old reads argTemps ↦ argVals.
-                  -- argTemps were initialized at layer 1 (positional).
-                  -- Lift through layers 2/3 via readValues_updatedStates
+                  -- σ_old reads argTemps ↦ argVals: positional init at layer 1
+                  -- lifted through layers 2/3 via readValues_updatedStates
                   -- (using disjointness from outTemps/olds).
-                  have HrdLayer1_argT :
-                      ReadValues
-                        (updatedStates σ
-                          argTemps argVals)
-                        argTemps argVals :=
-                    readValues_updatedStatesSame HargTempsLen
-                      (List.nodup_append.mp (List.nodup_append.mp Hgennd).1).1
-                  have HrdLayer2_argT :
-                      ReadValues
-                        (updatedStates
-                          (updatedStates σ
-                            argTemps argVals)
-                          outTemps oVals)
-                        argTemps argVals :=
-                    readValues_updatedStates HoutTempsLen HargOutDisj HrdLayer1_argT
                   have HrdLayer3_argT :
                       ReadValues σ_old
                         argTemps argVals :=
                     readValues_updatedStates HoldFstLen
-                      (HoldTripsFst ▸ HargOldDisj) HrdLayer2_argT
+                      (HoldTripsFst ▸ HargOldDisj)
+                      (readValues_updatedStates HoutTempsLen HargOutDisj
+                        (readValues_updatedStatesSame HargTempsLen
+                          (List.nodup_append.mp (List.nodup_append.mp Hgennd).1).1))
                   -- σ_old reads lhs ↦ oVals.  Path: σ(lhs) = oVals via
                   -- Hevalouts, lifted across the 3-layer extension.
                   have HrdLayer3_lhs :
