@@ -3993,11 +3993,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       simp only [List.mem_append, not_or]
                       exact ⟨⟨HlhsDisjArg Hv, HlhsDisjOut Hv⟩, HlhsDisjOld Hv⟩
                     rw [updatedStates_get_notin Hv_notin]
-                    -- σ' v isSome via UpdateStates' definedness on lhs.
-                    have Hσ'def : Imperative.isDefined σ' lhs := by
-                      have Hh := UpdateStatesHavocVars Hupdate
-                      exact HavocVarsDefined Hh
-                    exact Hσ'def v Hv
+                    exact HavocVarsDefined (UpdateStatesHavocVars Hupdate) v Hv
                   -- σ_havoc definedness on filtered_argTemps.
                   have Hσ_havoc_def_filt_argT :
                       Imperative.isDefined σ_havoc filtered_argTemps := by
