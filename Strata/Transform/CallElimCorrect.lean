@@ -62,6 +62,18 @@ private theorem substDefined_of_app
   exact ⟨(List.mem_append.mp Hmem.1).elim (Hσ_a _) (Hσ_b _),
          (List.mem_append.mp Hmem.2).elim (Hσ'_a _) (Hσ'_b _)⟩
 
+/-- Decompose `(ks.zip ks').get n = (k1, k2)` into per-component equalities,
+    given explicit bounds for each list. -/
+private theorem zip_pair_split {α β} {ks : List α} {ks' : List β}
+    {n : Fin (ks.zip ks').length} {k1 : α} {k2 : β}
+    (hn : n.val < ks.length) (hn' : n.val < ks'.length)
+    (heq : (ks.zip ks').get n = (k1, k2)) :
+    k1 = ks[n.val]'hn ∧ k2 = ks'[n.val]'hn' := by
+  rw [show (ks.zip ks').get n = (ks.zip ks')[n.val]'n.isLt from rfl,
+      List.getElem_zip] at heq
+  exact ⟨((Prod.mk.injEq _ _ _ _).mp heq.symm).1,
+         ((Prod.mk.injEq _ _ _ _).mp heq.symm).2⟩
+
 /-- Decompose `(a ++ b ++ c).Nodup` into its three component-Nodups and three
     pairwise disjointnesses (in the local `List.Disjoint` form: `a → b → False`).
     Repackages `List.nodup_append` and `List.disjoint_of_nodup_append_three`. -/
@@ -2708,32 +2720,16 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     -- Get the underlying pair shape: either output-pair
                     -- or filtered-input-pair.
                     rcases List.mem_iff_get.mp Hkin with ⟨n, Hn⟩
-                    have Hn_lt_zip : n.val < (filtered_ks.zip filtered_ks').length :=
-                      n.isLt
                     have Hzip_len :
                         (filtered_ks.zip filtered_ks').length =
                           filtered_ks.length := by
                       simp [List.length_zip, Hkslen]
-                    have Hn_lt_ks : n.val < filtered_ks.length := by omega
+                    have Hn_lt_ks : n.val < filtered_ks.length := by
+                      have := n.isLt; omega
                     have Hn_lt_ks' : n.val < filtered_ks'.length := by
                       rw [← Hkslen]; exact Hn_lt_ks
-                    -- Project (k1, k2) via getElem_zip.
-                    have Hzip_get :
-                        (filtered_ks.zip filtered_ks')[n.val]'Hn_lt_zip =
-                          (filtered_ks[n.val]'Hn_lt_ks,
-                           filtered_ks'[n.val]'Hn_lt_ks') :=
-                      List.getElem_zip
-                    have HnGE :
-                        (filtered_ks.zip filtered_ks')[n.val]'Hn_lt_zip =
-                          (k1, k2) := Hn
-                    have Hk1_eq : k1 = filtered_ks[n.val]'Hn_lt_ks := by
-                      have := HnGE
-                      rw [Hzip_get] at this
-                      exact ((Prod.mk.injEq _ _ _ _).mp this.symm).1
-                    have Hk2_eq : k2 = filtered_ks'[n.val]'Hn_lt_ks' := by
-                      have := HnGE
-                      rw [Hzip_get] at this
-                      exact ((Prod.mk.injEq _ _ _ _).mp this.symm).2
+                    have ⟨Hk1_eq, Hk2_eq⟩ :=
+                      zip_pair_split Hn_lt_ks Hn_lt_ks' Hn
                     by_cases Hsplit : n.val < proc.header.outputs.keys.length
                     · -- Output-half.
                       have Hks_app_lt :
