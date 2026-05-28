@@ -454,6 +454,114 @@ theorem H_inits
     rw [Hunfold]
     exact Hcombined
 
+/-! ### Generic `mapM`-over-`CoreGenM` helpers
+
+The Arg/Out/Old gen-ident families share the structural shape
+`List.mapM (g : α → CoreGenM Ident) l`, where the only difference is
+`α` (Unit for Arg, Ident for Out/Old) and the per-element generator `g`.
+The four facts below — length preservation, generated-stack accounting,
+WF preservation, and `Forall`-lifting — depend only on (i) `mapM`'s
+recursion shape and (ii) a pointwise hypothesis on the per-element
+generator.  We prove each generically once and derive the 12
+single-iterator specializations (3 each for Arg/Out/Old × length /
+GeneratedWF / WFMono / Forall) as one-line corollaries. -/
+
+/-- Length preservation for any `List.mapM` against `CoreGenM`. -/
+theorem genIdentMapM_length' {α : Type}
+    {g : α → CoreGenM Expression.Ident}
+    {l : List α} {s : CoreGenState} :
+    (List.mapM g l s).fst.length = l.length := by
+  induction l generalizing s <;> simp_all
+  case nil =>
+    simp [pure, StateT.pure]
+  case cons h t ih =>
+    simp [bind, StateT.bind, Functor.map]
+    split
+    simp [StateT.map, Functor.map]
+    apply ih
+
+/-- Generated-stack accounting for `List.mapM` once the per-element
+    generator is known to push exactly one element onto `generated`. -/
+theorem genIdentMapM_GeneratedWF {α : Type}
+    {g : α → CoreGenM Expression.Ident}
+    (Hone : ∀ {a : α} {s s' : CoreGenState} {l : Expression.Ident},
+              g a s = (l, s') → s'.generated = l :: s.generated)
+    {l : List α} {s s' : CoreGenState} {ls : List Expression.Ident}
+    (Hgen : List.mapM g l s = (ls, s')) :
+    s'.generated = ls.reverse ++ s.generated := by
+  induction l generalizing s s' ls with
+  | nil =>
+      simp only [List.mapM_nil, pure, StateT.pure] at Hgen
+      cases Hgen
+      simp
+  | cons h t ih =>
+      simp only [List.mapM_cons, bind, StateT.bind, pure, StateT.pure] at Hgen
+      cases hg1 : g h s with
+      | mk a₁ s₁ =>
+        rw [hg1] at Hgen
+        simp only at Hgen
+        cases hg2 : List.mapM g t s₁ with
+        | mk a₂ s₂ =>
+          rw [hg2] at Hgen
+          cases Hgen
+          have HH₁ := Hone hg1
+          have HH₂ := ih hg2
+          rw [HH₂, HH₁]
+          simp
+
+/-- WF preservation for `List.mapM` once the per-element generator
+    preserves WF. -/
+theorem genIdentMapM_WFMono {α : Type}
+    {g : α → CoreGenM Expression.Ident}
+    (Hone : ∀ {a : α} {s s' : CoreGenState} {l : Expression.Ident},
+              CoreGenState.WF s → g a s = (l, s') → CoreGenState.WF s')
+    {l : List α} {s s' : CoreGenState} {ls : List Expression.Ident}
+    (Hwf : CoreGenState.WF s) (Hgen : List.mapM g l s = (ls, s')) :
+    CoreGenState.WF s' := by
+  induction l generalizing s s' ls with
+  | nil =>
+      simp only [List.mapM_nil, pure, StateT.pure] at Hgen
+      cases Hgen
+      exact Hwf
+  | cons h t ih =>
+      simp only [List.mapM_cons, bind, StateT.bind, pure, StateT.pure] at Hgen
+      cases hg1 : g h s with
+      | mk a₁ s₁ =>
+        rw [hg1] at Hgen
+        simp only at Hgen
+        cases hg2 : List.mapM g t s₁ with
+        | mk a₂ s₂ =>
+          rw [hg2] at Hgen
+          cases Hgen
+          exact ih (Hone Hwf hg1) hg2
+
+/-- `Forall`-lifting for `List.mapM` once the per-element generator
+    produces values satisfying the predicate. -/
+theorem genIdentMapM_Forall {α : Type} {P : Expression.Ident → Prop}
+    {g : α → CoreGenM Expression.Ident}
+    (Hone : ∀ {a : α} {s s' : CoreGenState} {l : Expression.Ident},
+              g a s = (l, s') → P l)
+    {l : List α} {s s' : CoreGenState} {ls : List Expression.Ident}
+    (Hgen : List.mapM g l s = (ls, s')) :
+    Forall P ls := by
+  induction l generalizing s s' ls with
+  | nil =>
+      simp only [List.mapM_nil, pure, StateT.pure] at Hgen
+      cases Hgen
+      simp [Forall]
+  | cons h t ih =>
+      simp only [List.mapM_cons, bind, StateT.bind, pure, StateT.pure] at Hgen
+      cases hg1 : g h s with
+      | mk a₁ s₁ =>
+        rw [hg1] at Hgen
+        simp only at Hgen
+        cases hg2 : List.mapM g t s₁ with
+        | mk a₂ s₂ =>
+          rw [hg2] at Hgen
+          cases Hgen
+          simp [Forall]
+          exact ⟨Hone hg1, ih hg2⟩
+
 end Core
 
 end -- public section
