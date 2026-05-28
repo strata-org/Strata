@@ -1,12 +1,7 @@
 /-
   Copyright Strata Contributors
+
   SPDX-License-Identifier: Apache-2.0 OR MIT
-
-  Boole verification of curve25519-dalek `from_bytes_mod_order_wide`.
-  Source: https://github.com/Beneficial-AI-Foundation/dalek-lite
-
-  Impl__3_from_bytes_wide / Impl__3_pack: remain as `assume false` stubs —
-  they return values so cannot be axioms, and their specs are trusted.
 -/
 
 import Strata.MetaVerifier
