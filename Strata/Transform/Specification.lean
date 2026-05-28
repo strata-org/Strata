@@ -750,6 +750,79 @@ theorem overapproximates_stmts
 end ImperativeStmts
 
 end Transform
+
+/-! ## Analysis -/
+
+/-- An `Analysis` over programs `ℙ` producing diagnostics `D`.
+    `ℙ` is written double-struck (\bbP) to avoid clashing with the
+    pure-expression parameter `P` used elsewhere in this file. -/
+structure Analysis (ℙ D : Type) where
+  /-- The property we want every program to satisfy. -/
+  desirableProperty : ℙ → Prop
+  /-- The analysis function: produce a diagnostic from a program. -/
+  analyze : ℙ → D
+  /-- Whether a diagnostic is considered passing. -/
+  pass : D → Prop
+
+namespace Analysis
+
+variable {ℙ D : Type}
+
+/-- An analysis is *sound* when a passing diagnostic implies the desirable
+    property holds of the analyzed program. -/
+def Sound (a : Analysis ℙ D) : Prop :=
+  ∀ (p : ℙ) (d : D), a.analyze p = d ∧ a.pass d → a.desirableProperty p
+
+/-- An analysis is *complete* when every program with the desirable property
+    yields a passing diagnostic. -/
+def Complete (a : Analysis ℙ D) : Prop :=
+  ∀ (p : ℙ) (d : D), a.analyze p = d ∧ a.desirableProperty p → a.pass d
+
+/-- An analysis whose desirable property is `AssertValid L s a` for a fixed
+    language `L` and assertion `a`. -/
+def SingleAssertValidityChecker
+    {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVal P]
+    {D : Type} (L : Lang P) (a : AssertId P)
+    (analyze : L.StmtT → D) (pass : D → Prop) :
+    Analysis L.StmtT D :=
+  { desirableProperty := fun s => AssertValid L s a
+    analyze := analyze
+    pass := pass }
+
+/-- A `Transform.Sound` transformation lifts a sound checker into another sound
+    checker: run `T` first. -/
+theorem SingleAssertValidityChecker.transform_sound
+    {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVal P]
+    {D : Type} (L₁ L₂ : Lang P)
+    -- A transformation from L1 to L2.
+    (T : L₁.StmtT → Option L₂.StmtT)
+    (hT : Transform.Sound L₁ L₂ T)
+    -- A single assert of interest.
+    (a : AssertId P)
+    -- The analyzer, and diagnostics checker.
+    (analyze : L₂.StmtT → D) (pass : D → Prop)
+
+    (hc₂ : (SingleAssertValidityChecker L₂ a analyze pass).Sound) :
+    (SingleAssertValidityChecker L₁ a
+        (fun s => (T s).map analyze)
+        (fun od => ∃ d, od = some d ∧ pass d)).Sound := by
+  intro s od ⟨hrun, hpass⟩
+  simp [SingleAssertValidityChecker] at hrun hpass ⊢
+  obtain ⟨d, hod_eq, hpass_d⟩ := hpass
+  rw [hod_eq] at hrun
+  match hT_eq : T s with
+  | some s' =>
+    rw [hT_eq, Option.map_some] at hrun
+    have hd_eq : analyze s' = d := Option.some.inj hrun
+    have hvalid₂ : AssertValid L₂ s' a :=
+      hc₂ s' d ⟨hd_eq, by simpa [SingleAssertValidityChecker] using hpass_d⟩
+    exact hT s s' a hT_eq hvalid₂
+  | none =>
+    rw [hT_eq, Option.map_none] at hrun
+    exact absurd hrun (by nofun)
+
+end Analysis
+
 end Specification
 end Imperative
 
