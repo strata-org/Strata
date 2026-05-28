@@ -1899,9 +1899,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                             ++ genOldIdents)
                     (vs := argVals ++ oVals ++ oldVals)
                 rotate_left
-                · -- length of `hs` = length of `vs`
-                  -- Reduce both sides via List.length_append, then close
-                  -- segment-wise via Hargtriplen / Houttriplen / HgenOldOldValsLen.
+                · -- length of `hs` = length of `vs` (segment-wise close)
                   simp [argTemps, outTemps, List.length_append, List.unzip_eq_map,
                         Hargtriplen, Houttriplen, HgenOldOldValsLen]
                 · exact Hndefgen
@@ -1918,10 +1916,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                   obtain ⟨HargNd, HoutNd, HoldNd,
                           HargOutDisj, HargOldDisj, HoutOldDisj⟩ :=
                     nodup_3_decompose Hgennd
-                  -- Disjointness of σ-defined argument expression vars
-                  -- from the freshly generated argTemps: HdefOver puts
-                  -- them in σ, HndefArg_σ keeps temps out of σ, so they
-                  -- can't intersect.
+                  -- argTemps fresh from σ; arg-expr vars defined in σ ⇒ disjoint.
                   have HdefVars : Imperative.isDefined σ
                       (List.flatMap
                         (Imperative.HasVarsPure.getVars (P:=Expression))
@@ -1948,8 +1943,6 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     exact σ_some_contradiction
                       (HdefVars x Hin2) (HndefArg_σ x Hin1)
                   -- ── L1: argInit ──
-                  -- `H_inits` evaluates `createInits argTrips md` from
-                  -- σ to `updatedStates σ argTemps argVals`.
                   have HevalArgs' :
                       EvalExpressions (P:=Core.Expression) δ σ
                         argTrips.unzip.snd argVals := by
@@ -2039,9 +2032,6 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     (genOldIdents.zip oldTys).zip oldVars
                   have HoldTripsFst :
                       oldTrips.unzip.fst.unzip.fst = genOldIdents := by
-                    -- (genOldIdents.zip oldTys).zip oldVars
-                    -- unzip.fst = genOldIdents.zip oldTys (when lengths match)
-                    -- unzip.fst.unzip.fst = genOldIdents (when lengths match)
                     have HzipLen :
                         (genOldIdents.zip oldTys).length = oldVars.length := by
                       simp [List.length_zip, HgenOldLen, HoldTysLen]
@@ -2071,17 +2061,12 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                   have HoldVarsDisjOut : oldVars.Disjoint outTemps := oldVars_disj_via_lhs HlhsDisjOut
                   have HoldVarsDisjOldT : oldVars.Disjoint genOldIdents := oldVars_disj_via_lhs HlhsDisjOld
                   have HoldVarsNd : oldVars.Nodup := by
-                    -- oldVars = filter ... (CallArg.getLhs args), and
-                    -- (CallArg.getLhs args) = lhs (via hCallArgsLhs) so
-                    -- has the same Nodup as `lhs`.
+                    -- oldVars ⊆ (CallArg.getLhs args) = lhs via filter sublist.
                     have HlhsArgs_nd : (CallArg.getLhs args).Nodup := by
                       rw [hCallArgsLhs]
                       exact HlhsNd
                     exact List.Sublist.nodup List.filter_sublist HlhsArgs_nd
-                  -- σ_out := updatedStates (updatedStates σ argT argVals)
-                  --                       outT oVals.
-                  -- ReadValues σ oldVars oldVals (from C2's HoldVals).
-                  -- Lift to σ_out via two readValues_updatedStates layers.
+                  -- Lift HoldVals through 2 layers via readValues_updatedStates.
                   have HrdOlds_outLayer :
                       ReadValues
                         (updatedStates
@@ -2091,8 +2076,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         oldVars oldVals :=
                     readValues_updatedStates HoutTempsLen HoldVarsDisjOut
                       (readValues_updatedStates HargTempsLen HoldVarsDisjArg HoldVals)
-                  -- ReadValues precondition for H_initVars uses
-                  -- oldTrips.unzip.snd; rewrite via HoldTripsSnd.
+                  -- Rewrite oldVars to oldTrips.unzip.snd for H_initVars.
                   have HrdOldTrips :
                       ReadValues
                         (updatedStates
@@ -2102,8 +2086,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         oldTrips.unzip.snd oldVals := by
                     rw [HoldTripsSnd]
                     exact HrdOlds_outLayer
-                  -- isNotDefined of genOldIdents in σ_out: genOldIdents
-                  -- disjoint from argTemps and outTemps.
+                  -- genOldIdents disjoint from argTemps/outTemps ⇒ undef in σ_out.
                   have HndefOld_outLayer :
                       Imperative.isNotDefined
                         (updatedStates
@@ -2123,8 +2106,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     rw [updatedStates_2layer_get_notin
                           Hv_notin_arg Hv_notin_out]
                     exact HndefOld_σ v Hv
-                  -- isNotDefined precondition for H_initVars on
-                  -- oldTrips.unzip.fst.unzip.fst.
+                  -- Rewrite genOldIdents to oldTrips.unzip.fst.unzip.fst for H_initVars.
                   have HndefOldTrips :
                       Imperative.isNotDefined
                         (updatedStates
