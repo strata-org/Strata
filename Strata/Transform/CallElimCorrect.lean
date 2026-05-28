@@ -4186,13 +4186,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         (_Hf : Map.find? oldSubst_L6 k = some w)
                         (_Hv_in : var ∈ Imperative.HasVarsPure.getVars
                                           (P:=Expression) w),
-                      ∃ (ni2 : Nat) (Hni2 : ni2 < proc'.header.inputs.keys.length)
-                          (Hni2' : ni2 < inArgs.length),
-                        w = inArgs[ni2]'Hni2' ∧
-                        w ∈ inArgs ∧
                         w ∈ CallArg.getInputExprs args ∧
-                        (proc'.header.inputs.keys[ni2]'Hni2)
-                          ∉ proc'.header.outputs.keys ∧
                         var ∈ List.flatMap
                                 (Imperative.HasVarsPure.getVars (P:=Expression))
                                 inArgs := by
@@ -4200,8 +4194,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     have Hin_some :
                         Map.find? inputOnlyOldSubst_L6 k = some w :=
                       find?_append_none_elim hfind_none Hf
-                    obtain ⟨ni2_val, Hni2_lt_inKeys, Hni2_lt_inArgs,
-                            _Hk_eq_proc', Hw_eq_proc', Hin_notin_outs⟩ :=
+                    obtain ⟨ni2_val, _Hni2_lt_inKeys, Hni2_lt_inArgs,
+                            _Hk_eq_proc', Hw_eq_proc', _Hin_notin_outs⟩ :=
                       inputOnlyOldSubst_pos_decomp Hin_some
                     have HargExpr_def :
                         w = (CallArg.getInputExprs args)[ni2_val]'Hni2_lt_inArgs :=
@@ -4228,9 +4222,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                               inArgs := by
                       rw [List.mem_flatMap]
                       exact ⟨w, Hk1_in_inArgs, Hv_in⟩
-                    refine ⟨ni2_val, Hni2_lt_inKeys, Hni2_lt_inArgsCall,
-                            HargExpr_eq_inArgs, Hk1_in_inArgs, HargExpr_in,
-                            Hin_notin_outs, Hk1_flat⟩
+                    exact ⟨HargExpr_in, Hk1_flat⟩
                   have Hinv :
                       ∀ entry : CoreLabel × Procedure.Check,
                         entry ∈ posts_filtered_L6.toList →
@@ -4354,9 +4346,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         rw [Hv_eq_gen, Hσ_R1_v, Hσ_havoc_v]
                       | none =>
                         -- (b2) inputOnlyOldSubst flavor — via shared helper.
-                        obtain ⟨_ni2_val, _Hni2_lt_inKeys, _Hni2_lt_inArgs,
-                                _HargExpr_eq_inArgs, _Hk1_in_inArgs, HargExpr_in,
-                                _Hin_notin_outs, Hk1_flat⟩ :=
+                        obtain ⟨HargExpr_in, Hk1_flat⟩ :=
                           b2_var_witness hfind Hf Hv_in
                         -- k1 ∈ getVars w.  By HargVarsNotIn{Out,In}Keys:
                         have Hk1_notin_outs' :
@@ -4467,9 +4457,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                             Hx_isTemp Hx_isOld
                       | none =>
                         -- (b2) inputOnlyOldSubst flavor — via shared helper.
-                        obtain ⟨_ni2_val, _Hni2_lt_inKeys, _Hni2_lt_inArgs,
-                                _HargExpr_eq_inArgs, _Hk1_in_inArgs, HargExpr_in,
-                                _Hin_notin_outs, Hx_flat⟩ :=
+                        obtain ⟨HargExpr_in, Hx_flat⟩ :=
                           b2_var_witness hfind Hf Hv_in
                         -- x ∈ σ-defined via Hevalargs.
                         have HargIsDef :
