@@ -186,7 +186,14 @@ partial def translateFromTerm (t:SMT.Term): Except String (SMTDDM.Term Provenanc
   | .var v =>
     return .qual_identifier smtProv (.qi_ident smtProv (.iden_simple smtProv
       (.symbol smtProv (mkSimpleSymbol v.id))))
-  | .none _ | .some _ => throw "don't know how to translate none and some"
+  | .none ty =>
+    let retSort ← translateFromTermType (.option ty)
+    let qi := QualIdentifier.qi_isort smtProv (mkIdentifier "none") retSort
+    return .qual_identifier smtProv qi
+  | .some inner =>
+    let innerTerm ← translateFromTerm inner
+    let qi := QualIdentifier.qi_ident smtProv (mkIdentifier "some")
+    return .qual_identifier_args smtProv qi (smtAnn #[innerTerm])
   | .app op args retTy =>
     let args' <- args.mapM translateFromTerm
     let args_array := args'.toArray
@@ -325,12 +332,13 @@ partial def translateFromDDMTermToUntyped (t : Strata.SMTResponseDDM.Term Strata
     : Except String Strata.SMT.Term := do
   match t with
   | .spec_constant_term _ sc =>
+    -- Exhaustive match over all SpecConstant variants; Lean will flag any missing case.
     match sc with
     | .sc_numeral _ n     => return .prim (.int n)
     | .sc_numeral_neg _ n => return .prim (.int (-(n : Int)))
     | .sc_decimal _ d     => return .prim (.real d)
+    | .sc_decimal_neg _ d => return .prim (.real { d with mantissa := -d.mantissa })
     | .sc_str _ s         => return .prim (.string s)
-    | _  => throw s!"translateFromDDMTermToUntyped: don't know how to convert {repr t}"
   | .qual_identifier _ qi =>
     match resolveQI qi with
     | some ("true", _, _)  => return .prim (.bool true)
