@@ -86,6 +86,34 @@ private theorem find?_append_none_elim {α β} [DecidableEq α]
   rw [hfind] at HH
   exact HH.symm.trans Hf
 
+/-- Shared `oldVars` filter used at multiple sites in `callElimCmd_call_eq`
+    and `callElimStatementCorrect`: those `CallArg.getLhs args` parameters
+    that (i) appear in both `proc.header.inputs` and `proc.header.outputs`,
+    and (ii) are referenced as `old _` in `proc.spec.postconditions`.
+    Marked `@[reducible]` so generalize/simp can match the inline form. -/
+@[reducible] private def callElim_oldVars (proc : Procedure)
+    (args : List (CallArg Expression)) : List Expression.Ident :=
+  List.filter
+    (fun g =>
+      (ListMap.keys proc.header.inputs).contains g &&
+          (ListMap.keys proc.header.outputs).contains g &&
+        (List.map Procedure.Check.expr proc.spec.postconditions.values).any fun e =>
+          List.any e.freeVars fun x => x.fst == CoreIdent.mkOld g.name)
+    (CallArg.getLhs args)
+
+/-- Shared `inputOnlyOldSubst` map: input-only parameters referenced as `old _`
+    in postconditions, mapped to the corresponding caller-side argument. -/
+@[reducible] private def callElim_inputOnlyOldSubst (proc : Procedure)
+    (args : List (CallArg Expression)) :
+    Map Expression.Ident Expression.Expr :=
+  (proc.header.inputs.keys.zip (CallArg.getInputExprs args)).filterMap fun (paramId, argExpr) =>
+    let oldVar := CoreIdent.mkOld paramId.name
+    if !(ListMap.keys proc.header.outputs).contains paramId &&
+       (proc.spec.postconditions.values.map Procedure.Check.expr).any
+         (fun e => Lambda.LExpr.freeVars e |>.any (fun (id, _) => id == oldVar))
+    then some (oldVar, argExpr)
+    else none
+
 /-! ### Top-level call-elimination correctness theorem -/
 
 /-- Returns the call-elim transformation result of a single command:
@@ -1155,14 +1183,7 @@ private theorem callElimCmd_call_eq
     ∃ proc argTrips outTrips genOldIdents oldTys asserts assumes
        s_arg s_out s_old,
       Program.Procedure.find? p ⟨procName, ()⟩ = some proc ∧
-      let oldVars : List Expression.Ident :=
-        List.filter
-          (fun g =>
-            (ListMap.keys proc.header.inputs).contains g &&
-                (ListMap.keys proc.header.outputs).contains g &&
-              (List.map Procedure.Check.expr proc.spec.postconditions.values).any fun e =>
-                List.any e.freeVars fun x => x.fst == CoreIdent.mkOld g.name)
-          (CallArg.getLhs args)
+      let oldVars : List Expression.Ident := callElim_oldVars proc args
       genArgExprIdentsTrip
           (Lambda.LMonoTySignature.toTrivialLTy proc.header.inputs)
           (CallArg.getInputExprs args)
@@ -1202,15 +1223,7 @@ private theorem callElimCmd_call_eq
       -- Structural shape of `assumes`:  abstract `posts.zip labels` map.
       (∃ (assumeLabels : List String),
         let inputOnlyOldSubst : Map Expression.Ident Expression.Expr :=
-              (proc.header.inputs.keys.zip (CallArg.getInputExprs args)).filterMap
-                fun (paramId, argExpr) =>
-                  let oldVar := CoreIdent.mkOld paramId.name
-                  if !(ListMap.keys proc.header.outputs).contains paramId &&
-                     (proc.spec.postconditions.values.map Procedure.Check.expr).any
-                       (fun e => Lambda.LExpr.freeVars e |>.any
-                         (fun (id, _) => id == oldVar))
-                  then some (oldVar, argExpr)
-                  else none
+              callElim_inputOnlyOldSubst proc args
         let oldTripsCanonical :=
               (((genOldIdents.zip oldTys).zip oldVars).zip
               (oldVars.map (fun g => CoreIdent.mkOld g.name))).map
@@ -1284,14 +1297,7 @@ private theorem callElimCmd_call_eq
                              pure, ExceptT.pure, StateT.pure,
                              Functor.map, StateT.map] at Heq
                   -- Hoist the old-vars filter once for the rest of the proof.
-                  let oldVars : List Expression.Ident :=
-                    List.filter
-                      (fun g =>
-                        (ListMap.keys proc.header.inputs).contains g &&
-                            (ListMap.keys proc.header.outputs).contains g &&
-                          (List.map Procedure.Check.expr proc.spec.postconditions.values).any fun e =>
-                            List.any e.freeVars fun x => x.fst == CoreIdent.mkOld g.name)
-                      (CallArg.getLhs args)
+                  let oldVars : List Expression.Ident := callElim_oldVars proc args
                   generalize Heqold :
                     (genOldExprIdents oldVars s_out.genState) = pair_old at Heq
                   cases pair_old with
@@ -1332,15 +1338,7 @@ private theorem callElimCmd_call_eq
                     bind_shell at Heq
                     -- B2: assumes ← createAssumes (oldSubst helper).
                     let inputOnlyOldSubst : Map Expression.Ident Expression.Expr :=
-                      (proc.header.inputs.keys.zip (CallArg.getInputExprs args)).filterMap
-                        fun (paramId, argExpr) =>
-                          let oldVar := CoreIdent.mkOld paramId.name
-                          if !(ListMap.keys proc.header.outputs).contains paramId &&
-                             (proc.spec.postconditions.values.map Procedure.Check.expr).any
-                               (fun e => Lambda.LExpr.freeVars e |>.any
-                                 (fun (id, _) => id == oldVar))
-                          then some (oldVar, argExpr)
-                          else none
+                      callElim_inputOnlyOldSubst proc args
                     let oldTrips :=
                       (((genOldIdents.zip oldTys).zip oldVars).zip
                       (oldVars.map (fun g => CoreIdent.mkOld g.name))).map
@@ -1901,16 +1899,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                   subst Heq
                   exact Hiodisj Ha Hb
                 -- C2: bind `oldVars` (filter from Hsts_struct) for HoldVals/Holdtriplen.
-                let oldVars : List Expression.Ident :=
-                  List.filter
-                    (fun g =>
-                      (ListMap.keys proc'.header.inputs).contains g &&
-                          (ListMap.keys proc'.header.outputs).contains g &&
-                        (List.map Procedure.Check.expr
-                            proc'.spec.postconditions.values).any fun e =>
-                          List.any e.freeVars
-                            fun x => x.fst == CoreIdent.mkOld g.name)
-                    (CallArg.getLhs args)
+                let oldVars : List Expression.Ident := callElim_oldVars proc' args
                 -- `oldVars ⊆ lhs` because the filter narrows `lhs` ↪ `oldVars`.
                 -- `Hevalouts : ReadValues σ lhs oVals` then forces every
                 -- element of `lhs` (and hence `oldVars`) defined in σ.
@@ -3850,15 +3839,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                   -- Hpred_disj, Heval_bridge per entry; survive/codom
                   -- split via getVars_substFvars_mem).
                   let oldVars_L6 : List Expression.Ident :=
-                    List.filter
-                      (fun g =>
-                        (ListMap.keys proc'.header.inputs).contains g &&
-                            (ListMap.keys proc'.header.outputs).contains g &&
-                          (List.map Procedure.Check.expr
-                              proc'.spec.postconditions.values).any fun e =>
-                            List.any e.freeVars
-                              fun x => x.fst == CoreIdent.mkOld g.name)
-                      (CallArg.getLhs args)
+                    callElim_oldVars proc' args
                   let oldGVars_L6 : List Expression.Ident :=
                     oldVars_L6.map (fun g => CoreIdent.mkOld g.name)
                   let oldTripsCanonical_L6 :
@@ -3869,17 +3850,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       fun (((fresh, ty), _orig), oldG) => ((fresh, ty), oldG)
                   let inputOnlyOldSubst_L6 :
                       Map Expression.Ident Expression.Expr :=
-                    (proc'.header.inputs.keys.zip
-                        (CallArg.getInputExprs args)).filterMap
-                      fun (paramId, argExpr) =>
-                        let oldVar := CoreIdent.mkOld paramId.name
-                        if !(ListMap.keys proc'.header.outputs).contains paramId &&
-                           (proc'.spec.postconditions.values.map
-                             Procedure.Check.expr).any
-                             (fun e => Lambda.LExpr.freeVars e |>.any
-                               (fun (id, _) => id == oldVar))
-                        then some (oldVar, argExpr)
-                        else none
+                    callElim_inputOnlyOldSubst proc' args
                   let oldSubst_L6 : Map Expression.Ident Expression.Expr :=
                     Core.Transform.createOldVarsSubst oldTripsCanonical_L6 ++
                       inputOnlyOldSubst_L6
