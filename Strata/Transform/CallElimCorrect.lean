@@ -2194,8 +2194,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                               (argTemps ++ lhs))) := by
                       simp only [Imperative.invStores, Imperative.substStores]
                       intros k1 k2 Hkin
-                      have Hk_eq := zip_self_eq Hkin
-                      subst Hk_eq
+                      obtain rfl := zip_self_eq Hkin
                       have Hk1_in : k1 ∈
                           (Imperative.HasVarsPure.getVars (P:=Expression)
                             entry.snd.expr).removeAll
@@ -3666,8 +3665,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     -- Open invStores.
                     simp only [Imperative.invStores, Imperative.substStores]
                     intros k1 k2 Hkin
-                    have Hk_eq := zip_self_eq Hkin
-                    subst Hk_eq
+                    obtain rfl := zip_self_eq Hkin
                     have Hk1_in : k1 ∈
                         (Imperative.HasVarsPure.getVars (P:=Expression)
                           entry.snd.expr).removeAll
