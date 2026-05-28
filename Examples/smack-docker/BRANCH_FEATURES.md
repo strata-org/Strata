@@ -760,12 +760,6 @@ of remaining PARTIAL verdicts is translator-side conservatism
 (missing `ensures` on upstream parser callees), not program defects.
 See `CROSS_VALIDATION.md` Updates 3 and 4 for the full breakdown.
 
-**Run history:**
-
-| Run | deductive PASS | deductive not-PASS | mode | key change |
-|---|---:|---:|---|---|
-| v1 | 47 | 16 | non-split | baseline (64 programs) |
-| v2 | 33 | 30 | non-split | `__VERIFIER_assert` requires injection (64 programs) |
-| v3 | 21 | 43 | --split-procs | CFG-CallElim fix (`42ff8a4b8`) (64 programs) |
-| sv-comp | 18 | 11 | --split-procs | 29 SV-COMP programs imported (`eb8fbd513`) |
-| combined | 39 | 54 | --split-procs | v3 ∪ sv-comp (93 programs total) |
+Run history of the verdict matrix lives in
+`Examples/smack-docker/README.md` (this is a feature ledger, not a
+results log).

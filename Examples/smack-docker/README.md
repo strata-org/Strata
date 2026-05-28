@@ -119,6 +119,28 @@ proposed fix).
 Captured in `wt-test/pipeline-portfolio-bodyOrContract-v4.txt` and
 `wt-test/pipeline-svcomp-bodyOrContract-v4.txt`.
 
+### Run history
+
+Sequence of full-suite pipeline runs as the branch evolved. Each row
+is a deductive verdict snapshot; the `key change` column names the
+fix that landed between runs. Earlier runs were captured pre-SV-COMP
+on the 64-program portfolio only; the v3 split-procs run is the
+baseline used by the *Default-policy results* below.
+
+| Run | deductive PASS | deductive not-PASS | mode | key change |
+|---|---:|---:|---|---|
+| v1 | 47 | 16 | non-split | baseline (64 programs) |
+| v2 | 33 | 30 | non-split | `__VERIFIER_assert` requires injection (64 programs) |
+| v3 | 21 | 43 | `--split-procs` | CFG-CallElim fix (`42ff8a4b8`) (64 programs) |
+| sv-comp | 18 | 11 | `--split-procs` | 29 SV-COMP programs imported (`eb8fbd513`) |
+| v3 + sv-comp combined | 39 | 54 | `--split-procs` | v3 ∪ sv-comp (93 programs total) |
+| v4 (bodyOrContract) | **82** | **11** | `--split-procs --call-policy bodyOrContract` | body-eval at call sites (`dd0c0d7cd`) on the combined 93-program suite |
+
+The deductive PASS climb from 21 → 39 → 82 is the project arc: each
+bend was driven by a specific fix landing on `htd/smack`. v3 → v3+sv-comp
+shows the SV-COMP programs adding 18 new PASSes; combined → v4 shows
+body-eval flipping 43 PARTIALs to PASS in a single change.
+
 ### Default-policy results (contract; today's behaviour)
 
 The most recent runs under `--call-policy contract` (the default;
