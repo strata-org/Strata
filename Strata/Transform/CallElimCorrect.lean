@@ -3221,9 +3221,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         exact HG
                       rw [Hk1_inGet, HrdR1_get, Hk2_argTGet, HrdHavoc_get]
                   -- ── D2e: Apply H_asserts_zip to derive HL4 ──
-                  -- HL4 is L4 of EvalCallElim_glue.  σ_old = post-L3 store
-                  -- (3-layer over argTemps/outTemps/oldTrips.fst.fst);
-                  -- `asserts` has the `pres.zip labels` shape from HassertsShape.
+                  -- σ_old = post-L3 store (3-layer over argT/outT/oldTrips.fst.fst).
                   let σ_old : CoreStore :=
                     updatedStates
                       (updatedStates
@@ -3246,8 +3244,6 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     rw [List.length_append, List.length_append,
                         HinKeys_argTemps_len, HoutKeys_lhs_len]
                   -- ── L4 substNodup: ((inputs ++ outputs) ++ (argTemps ++ lhs)).Nodup ──
-                  -- Disjointness facts (HinKeys/HoutKeys vs argTemps/lhs)
-                  -- hoisted to C-aux phase; consumed below by name.
                   have HargT_lhs_nd :
                       (argTemps ++ lhs).Nodup := by
                     rw [List.nodup_append]
@@ -3394,12 +3390,9 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       (ks'_L4.zip ks_L4) :=
                     ReadValuesSubstStores HrdOld_inout_L4 HrdAO_inout_L4
                   -- ── Apply H_asserts_zip ──
-                  -- Destructure HassertsShape to bind the labels list.
                   obtain ⟨assertLabels, HassertLabelsLen, HassertShape⟩ :=
                     HassertsShape
-                  -- Bridge: the assertSubst from HassertsShape equals
-                  -- ks_L4.zip (createFvars ks'_L4),
-                  -- via List.zip_append and createFvarsApp.
+                  -- HassertsShape's subst = ks_L4.zip (createFvars ks'_L4).
                   have HassertSubst_eq :
                       ((proc.header.inputs.keys.zip
                           (Core.Transform.createFvars
@@ -3439,11 +3432,9 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       (labels := assertLabels)
                       Hwfb Hwfvars Hwfval Hwfc
                       Hks_len_L4 Hnd_L4 Hdef_L4 Hsubst_L4
-                    -- HpresPayload over presFiltered.  The two filter forms
-                    -- (`c.attr != .Free` boolean and `c.attr ≠ .Free` Prop)
-                    -- agree definitionally via decide reduction.
+                    -- HpresPayload over presFiltered.  Two filter forms
+                    -- (`!=` boolean ↔ `≠` Prop) agree via decide reduction.
                     intros entry Hentry
-                    -- Bridge: filter-form `c.attr != .Free` ↔ `c.attr ≠ .Free`.
                     have Hentry' : entry ∈ presFiltered := by
                       show entry ∈ proc.spec.preconditions.filter
                                     (fun (_, c) => c.attr ≠ .Free)
@@ -3490,8 +3481,6 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     --  σ_arg := σO) using `Hhav1 ∧ HInitVars_empty`.
                     have HH := Hwf2.2 proc.header.outputs.keys [] σAO σO σO
                                 ⟨Hhav1, HInitVars_empty⟩ v
-                    -- HH : (v ∈ outputs.keys → δ σO (mkOld v.name) = σAO v) ∧
-                    --      (¬ v ∈ outputs.keys → δ σO (mkOld v.name) = σO v)
                     exact HH.1 Hv
                   -- (c) σAO[v] = σ[v] for v ∉ outputs ∪ inputs.
                   have HσAO_notin_eq_σ :
@@ -3520,8 +3509,6 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     intro v Hv
                     have Hv_filt := List.mem_filter.mp Hv
                     have Hbool := Hv_filt.2
-                    -- Hbool : (proc'.inputs.contains v && proc'.outputs.contains v &&
-                    --         ...) = true
                     -- Project the outputs.contains conjunct.
                     simp only [Bool.and_eq_true] at Hbool
                     have HinOuts' : (ListMap.keys proc'.header.outputs).contains v := by
@@ -3532,8 +3519,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                   have HoldVars_sub_lhs_L6 : ∀ v ∈ oldVars, v ∈ lhs := by
                     intro v Hv
                     exact hCallArgsLhs ▸ HoldVars_sub_callLhs v Hv
-                  -- The per-index bridge.  We name it `HoldEval_bridge`
-                  -- and frame it positionally for downstream consumers.
+                  -- Per-index positional bridge for downstream consumers.
                   have HoldEval_bridge :
                       ∀ (i : Nat) (Hi : i < oldVars.length),
                         δ σO
@@ -3541,16 +3527,11 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                               (CoreIdent.mkOld (oldVars[i]'Hi).name) none) =
                           some (oldVals[i]'(HoldVals_len.symm ▸ Hi)) := by
                     intro i Hi
-                    -- Name the i-th oldVars element via let-binding.
                     let v : Expression.Ident := oldVars[i]'Hi
-                    -- v ∈ oldVars (List.getElem_mem).
                     have Hv_mem : v ∈ oldVars := List.getElem_mem _
-                    -- v ∈ outputs.keys.
                     have Hv_out : v ∈ ListMap.keys proc.header.outputs :=
                       HoldVars_sub_outs v Hv_mem
-                    -- v ∈ lhs.
                     have Hv_lhs : v ∈ lhs := HoldVars_sub_lhs_L6 v Hv_mem
-                    -- v ∈ CallArg.getLhs args.
                     have Hv_callLhs : v ∈ CallArg.getLhs args :=
                       HoldVars_sub_callLhs v Hv_mem
                     -- Step 1: δ σO (mkOld v.name) = σAO v.
@@ -3559,9 +3540,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                                                          none) =
                           σAO v :=
                       Hwf2_univ v Hv_out
-                    -- Step 2: σAO v = oVals[outputs.keys.idxOf v].
-                    -- HσAO_reads_outs : ReadValues σAO outputs.keys oVals.
-                    -- Use idxOf to index into outputs.keys.
+                    -- Step 2: σAO v = oVals[outputs.keys.idxOf v] via HσAO_reads_outs.
                     let j_out := (ListMap.keys proc.header.outputs).idxOf v
                     have Hj_out_lt :
                         j_out < (ListMap.keys proc.header.outputs).length :=
@@ -3590,8 +3569,6 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         (vs:=oVals)
                         HσAO_reads_outs
                         (i:=j_out) (hi:=Hj_out_lt) (hi':=Hj_out_lt_oVals)
-                      -- Hget : σAO outputs.keys[j_out] = some oVals[j_out].
-                      -- Houts_get_v : outputs.keys[j_out] = v.
                       rw [Houts_get_v] at Hget
                       exact Hget
                     -- Step 3: lhs.idxOf v = outputs.keys.idxOf v (alignment).
