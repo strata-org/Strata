@@ -1563,43 +1563,6 @@ through opaque `Slice`/`Pattern` infrastructure (cf.
 `Strata.DL.Util.String` for context).  The producing-side derivation is
 deferred to Task 6e along with the open `sorry`. -/
 
-/-- Identifiers in a procedure header's input keys are also names of `p`
-    (via `Decl.names`) when `proc` is found by `Program.Procedure.find?`.
-    Useful for combining `WFProgramProp.namesNodup` with per-procedure
-    `inputsNodup` to derive disjointness facts. -/
-private theorem program_def_not_temp
-    {x : Expression.Ident}
-    (Hpfresh : ¬ isTempIdent x ∧ ¬ isOldTempIdent x) :
-    ¬ isTempIdent x := Hpfresh.1
-
-/-- Mirror of `program_def_not_temp` for the `old_` prefix. -/
-private theorem program_def_not_oldTemp
-    {x : Expression.Ident}
-    (Hpfresh : ¬ isTempIdent x ∧ ¬ isOldTempIdent x) :
-    ¬ isOldTempIdent x := Hpfresh.2
-
-/-- A `Forall isTempIdent` list is disjoint from any list of identifiers
-    none of which is `isTempIdent`.  This is the canonical disjointness
-    bridge between freshly-generated temps and program-defined names. -/
-private theorem isTemp_disjoint_notTemp
-    {temps progNames : List Expression.Ident}
-    (Htemps : Forall (fun x => isTempIdent x) temps)
-    (Hprog : ∀ x ∈ progNames, ¬ isTempIdent x) :
-    temps.Disjoint progNames := by
-  intro x Hin1 Hin2
-  have Htemp : isTempIdent x := (List.Forall_mem_iff.mp Htemps) x Hin1
-  exact (Hprog x Hin2) Htemp
-
-/-- Mirror of `isTemp_disjoint_notTemp` for the `old_` prefix. -/
-private theorem isOldTemp_disjoint_notOldTemp
-    {olds progNames : List Expression.Ident}
-    (Holds : Forall (fun x => isOldTempIdent x) olds)
-    (Hprog : ∀ x ∈ progNames, ¬ isOldTempIdent x) :
-    olds.Disjoint progNames := by
-  intro x Hin1 Hin2
-  have Hold : isOldTempIdent x := (List.Forall_mem_iff.mp Holds) x Hin1
-  exact (Hprog x Hin2) Hold
-
 /-- Negation form of `List.Forall_mem_iff.mp`: if every element of `l`
     satisfies `p` and `x` does *not* satisfy `p`, then `x ∉ l`.  Used
     repeatedly for `notTemp ⇒ k1 ∉ argTemps/outTemps/genOldIdents`. -/
