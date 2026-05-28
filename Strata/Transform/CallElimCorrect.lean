@@ -1856,11 +1856,7 @@ private theorem inputOnlyOldSubst_pos_decomp
            inputArgs[ni.val]'Hni_lt_inputArgs) :=
       List.getElem_zip
     have HpairEq_get :
-        (inputs.zip inputArgs)[ni.val]'Hni_lt_zip = pair := by
-      have Hge : (inputs.zip inputArgs).get ni =
-            (inputs.zip inputArgs)[ni.val]'Hni_lt_zip := rfl
-      rw [Hge] at Hni
-      exact Hni
+        (inputs.zip inputArgs)[ni.val]'Hni_lt_zip = pair := Hni
     have Hpair_shape :
         pair = (inputs[ni.val]'Hni_lt_inputs,
                 inputArgs[ni.val]'Hni_lt_inputArgs) := by
@@ -4189,13 +4185,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       List.getElem_zip
                     have HnGE :
                         (filtered_ks.zip filtered_ks')[n.val]'Hn_lt_zip =
-                          (k1, k2) := by
-                      have HhE := Hn
-                      have : (filtered_ks.zip filtered_ks').get n =
-                              (filtered_ks.zip filtered_ks')[n.val]'Hn_lt_zip :=
-                        rfl
-                      rw [this] at HhE
-                      exact HhE
+                          (k1, k2) := Hn
                     have Hk1_eq : k1 = filtered_ks[n.val]'Hn_lt_ks := by
                       have := HnGE
                       rw [Hzip_get] at this
