@@ -14,7 +14,7 @@ import Strata.DL.Lambda.Denote.LExprAnnotated
 import Strata.DL.SMT.Denote
 import Strata.Languages.C_Simp.DDMTransform.Translate
 import Strata.Languages.C_Simp.Verify
-import Strata.Languages.Core.Core
+import Strata.Languages.Core
 import Strata.Languages.Core.DDMTransform.Translate
 import Strata.Languages.Core.ProgramEval
 

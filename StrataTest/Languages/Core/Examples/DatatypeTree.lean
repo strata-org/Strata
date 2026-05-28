@@ -5,7 +5,7 @@
 -/
 module
 
-meta import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core
 import StrataDDM.Integration.Lean.HashCommands
 
 meta section
@@ -91,7 +91,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify treeTesterPgm (options := .quiet)
+#eval Core.verify treeTesterPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 2: Tree with Havoc (requires SMT reasoning)
@@ -139,7 +139,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify treeHavocPgm (options := .quiet)
+#eval Core.verify treeHavocPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 3: Tree Exhaustiveness (exactly one tester is true)
@@ -184,7 +184,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify treeExhaustivePgm (options := .quiet)
+#eval Core.verify treeExhaustivePgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 4: Tree Mutual Exclusion (testers are mutually exclusive)
@@ -232,7 +232,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify treeMutualExclusionPgm (options := .quiet)
+#eval Core.verify treeMutualExclusionPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 5: Tree Constructor Equality
@@ -289,7 +289,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify treeEqualityPgm (options := .quiet)
+#eval Core.verify treeEqualityPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 6: Tree Constructor Inequality
@@ -335,7 +335,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify treeInequalityPgm (options := .quiet)
+#eval Core.verify treeInequalityPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 7: Tree Destructor Functions (val, left, right)
@@ -438,7 +438,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify treeDestructorPgm (options := .quiet)
+#eval Core.verify treeDestructorPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 8: Nested Tree Operations (deeper tree structure)
@@ -514,7 +514,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify treeNestedPgm (options := .quiet)
+#eval Core.verify treeNestedPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 9: Tree Destructor with Havoc (requires SMT reasoning)
@@ -570,7 +570,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify treeDestructorHavocPgm (options := .quiet)
+#eval Core.verify treeDestructorHavocPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 10: Tree with Different Values (inequality of different vals)
@@ -627,7 +627,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify treeDifferentValuesPgm (options := .quiet)
+#eval Core.verify treeDifferentValuesPgm (options := .quiet)
 
 end Strata.DatatypeTreeTest
 end

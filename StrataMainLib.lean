@@ -19,14 +19,14 @@ import Strata.Languages.Laurel.LaurelCompilationPipeline
 import Strata.Pipeline.Diagnostic
 import Strata.Pipeline.PyAnalyzeLaurel
 import Strata.Languages.C_Simp.DDMTransform.Parse
-import Strata.Languages.Python.Python
+import Strata.Languages.Python
 import Strata.Languages.Python.Specs.IdentifyOverloads
 import Strata.Languages.Python.Specs.ToLaurel
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
-import Strata.Languages.Laurel.Laurel
+import Strata.Languages.Laurel
 import Strata.Languages.Core.EntryPoint
 import Strata.Transform.ProcedureInlining
-import Strata.Util.IO
+import StrataDDM.Util.IO
 
 import Strata.SimpleAPI
 import Strata.Util.Json
@@ -137,6 +137,8 @@ def buildDialectFileMap (pflags : ParsedFlags) : IO StrataDDM.DialectFileMap := 
     |>.addDialect! Strata.Python.Python
     |>.addDialect! Strata.Python.Specs.DDM.PythonSpecs
     |>.addDialect! Strata.Core
+    |>.addDialect! C_Simp
+    |>.addDialect! B3CST
     |>.addDialect! Strata.Laurel.Laurel
     |>.addDialect! Strata.smtReservedKeywordsDialect
     |>.addDialect! Strata.SMTCore
@@ -307,21 +309,19 @@ def parseLaurelVerifyOptions (pflags : ParsedFlags)
       overflowChecks := verifyOptions.overflowChecks }
   return { translateOptions, verifyOptions }
 
-/-- Read and parse a Strata program file, loading the Core, C_Simp, and B3CST
-    dialects. Returns the parsed program and the input context (for source
-    location resolution), or an array of error messages on failure. -/
-private def readStrataProgram (file : String)
-    : IO (Except (Array Lean.Message) (StrataDDM.Program × Lean.Parser.InputContext)) := do
-  let text ← Strata.Util.readInputSource file
-  let inputCtx := Lean.Parser.mkInputContext text (Strata.Util.displayName file)
-  let dctx := LoadedDialects.builtin
-  let dctx := dctx.addDialect! Core
-  let dctx := dctx.addDialect! C_Simp
-  let dctx := dctx.addDialect! B3CST
-  let leanEnv ← Lean.mkEmptyEnvironment 0
-  match elabProgram dctx leanEnv inputCtx with
-  | .ok pgm => pure (.ok (pgm, inputCtx))
-  | .error msgs => pure (.error msgs)
+/-- Read and parse a Strata program file via the DDM API. Returns the parsed
+    program and the input context (for source location resolution). Throws an
+    `IO.userError` with formatted diagnostics on parse failure, and a separate
+    error if the file defines a dialect rather than a program. -/
+private def readStrataProgram (fm : StrataDDM.DialectFileMap) (file : String)
+    : IO (StrataDDM.Program × Lean.Parser.InputContext) := do
+  let text ← StrataDDM.Util.readInputSource file
+  let displayPath := StrataDDM.Util.displayName file
+  let inputCtx := Lean.Parser.mkInputContext text displayPath
+  match ← StrataDDM.readStrataText fm displayPath text.toUTF8 with
+  | .program pgm => pure (pgm, inputCtx)
+  | .dialect _ =>
+    throw (IO.userError s!"Expected a program file, got a dialect: {file}")
 
 structure Command where
   name : String
@@ -340,7 +340,7 @@ def checkCommand : Command where
   help := "Parse and validate a Strata file (text or Ion). Reports errors and exits."
   callback := fun v pflags => do
     let fm ← pflags.buildDialectFileMap
-    let _ ← Strata.readStrataFile fm v[0]
+    let _ ← StrataDDM.readStrataFile fm v[0]
 
 def toIonCommand : Command where
   name := "toIon"
@@ -349,7 +349,7 @@ def toIonCommand : Command where
   help := "Convert a Strata text file to Ion binary format."
   callback := fun v pflags => do
     let searchPath ← pflags.buildDialectFileMap
-    let pd ← Strata.readStrataFile searchPath v[0]
+    let pd ← StrataDDM.readStrataFile searchPath v[0]
     match pd with
     | .dialect d =>
       IO.FS.writeBinFile v[1] d.toIon
@@ -368,7 +368,7 @@ def printCommand : Command where
     if mem : v[0] ∈ ld.dialects then
       IO.print <| ld.dialects.format v[0] mem
       return
-    let pd ← Strata.readStrataFile searchPath v[0]
+    let pd ← StrataDDM.readStrataFile searchPath v[0]
     match pd with
     | .dialect d =>
       let ld ← searchPath.getLoaded
@@ -385,8 +385,8 @@ def diffCommand : Command where
   help := "Compare two program files for syntactic equality. Reports the first difference found."
   callback := fun v pflags => do
     let fm ← pflags.buildDialectFileMap
-    let p1 ← Strata.readStrataFile fm v[0]
-    let p2 ← Strata.readStrataFile fm v[1]
+    let p1 ← StrataDDM.readStrataFile fm v[0]
+    let p2 ← StrataDDM.readStrataFile fm v[1]
     match p1, p2 with
     | .program p1, .program p2 =>
       if p1.dialect != p2.dialect then
@@ -784,9 +784,9 @@ def pyAnalyzeToGotoCommand : Command where
       | none => filePath
     let sourceText := pySourceOpt.map (·.2)
     let newPgm ← Strata.pythonDirectToCore filePath sourcePathForMetadata
-    match Core.inlineProcedures newPgm { doInline := (fun _caller callee _ => callee ≠ "main") } with
+    match ← (Strata.Core.runTransforms newPgm [Strata.Core.passInlineExcept ["main"]]).toBaseIO with
     | .error e => exitInternalError (toString e)
-    | .ok newPgm =>
+    | .ok (newPgm, _) =>
       -- Type-check the full program (registers Python types like ExceptOrNone)
       let Ctx := { Lambda.LContext.default with functions := Strata.Python.PythonFactory, knownTypes := Core.KnownTypes }
       let Env := Lambda.TEnv.default
@@ -889,7 +889,7 @@ def javaGenCommand : Command where
     let d ← if mem : v[0] ∈ ld.dialects then
       pure ld.dialects[v[0]]
     else
-      match ← Strata.readStrataFile fm v[0] with
+      match ← StrataDDM.readStrataFile fm v[0] with
       | .dialect d => pure d
       | .program _ => exitFailure "Expected a dialect file, not a program file."
     match StrataDDM.Java.generateDialect d v[1] with
@@ -1203,6 +1203,7 @@ def transformCommand : Command where
   name := "transform"
   args := [ "file" ]
   flags := [
+    includeFlag,
     { name := "pass",
       help := s!"Transform pass to apply (repeatable, applied left to right). \
                Valid passes: {validPasses}. \
@@ -1222,49 +1223,46 @@ def transformCommand : Command where
     let passConfigs ← buildPassConfigs pflags.entries
     if passConfigs.isEmpty then
       exitFailure s!"No --pass specified. Valid passes: {validPasses}."
+    let fm ← pflags.buildDialectFileMap
     -- Read and parse the Core program
-    let (pgm, _) ← match ← readStrataProgram file with
-      | .ok r => pure r
-      | .error msgs =>
-        for e in msgs do println! s!"Error: {← e.toString}"
-        exitFailure s!"{msgs.size} parse error(s)"
-    match Strata.genericToCore pgm with
+    let (pgm, _) ← readStrataProgram fm file
+    match Strata.strataProgramToCore pgm with
     | .error msg =>
       exitFailure msg
     | .ok initProgram =>
       -- Validate and convert pass configs to TransformPass values
-      let mut passes : List Strata.Core.TransformPass := []
+      let mut passes : List Core.PipelinePhase := []
       for pc in passConfigs do
         match pc.name with
         | "inlineProcedures" =>
-          let opts : Core.InlineTransformOptions :=
-            if pc.procedures.isEmpty then {}
-            else { doInline := (fun _caller callee _ => callee ∈ pc.procedures) }
-          passes := passes ++ [.inlineProcedures opts]
+          if pc.procedures.isEmpty then
+            passes := passes ++ [Strata.Core.passInlineAll]
+          else
+            passes := passes ++ [Strata.Core.passInlineMatching pc.procedures]
         | "loopElim" =>
-          passes := passes ++ [.loopElim]
+          passes := passes ++ [Strata.Core.passLoopElim]
         | "callElim" =>
-          passes := passes ++ [.callElim]
+          passes := passes ++ [Strata.Core.passCallElim]
         | "filterProcedures" =>
           if pc.procedures.isEmpty then
             exitFailure "filterProcedures requires --procedures"
-          passes := passes ++ [.filterProcedures pc.procedures]
+          passes := passes ++ [Strata.Core.passFilterProcedures pc.procedures]
         | "removeIrrelevantAxioms" =>
           if pc.functions.isEmpty then
             exitFailure "removeIrrelevantAxioms requires --functions"
-          passes := passes ++ [.removeIrrelevantAxioms pc.functions]
+          passes := passes ++ [Strata.Core.passRemoveIrrelevantAxioms pc.functions]
         | other =>
           exitFailure s!"Unknown pass '{other}'. Valid passes: {validPasses}."
       -- Run all passes in a single CoreTransformM chain so fresh variable
       -- counters accumulate and cached analyses are reused across passes.
-      match Strata.Core.runTransforms initProgram passes with
-      | .ok program => IO.print (Core.formatProgram program)
+      match ← (Strata.Core.runTransforms initProgram passes).toBaseIO with
+      | .ok (program, _) => IO.print (Core.formatProgram program)
       | .error e => exitFailure s!"Transform failed: {e}"
 
 def verifyCommand (mkDischarge : Core.MkDischargeFn := Core.mkDischargeFn) : Command where
   name := "verify"
   args := [ "file" ]
-  flags := verifyOptionsFlags ++ [
+  flags := includeFlag :: verifyOptionsFlags ++ [
     { name := "check", help := "Process up until SMT generation, but don't solve." },
     { name := "type-check", help := "Exit after semantic dialect's type inference/checking." },
     { name := "parse-only", help := "Exit after DDM parsing and type checking." },
@@ -1280,14 +1278,8 @@ def verifyCommand (mkDischarge : Core.MkDischargeFn := Core.mkDischargeFn) : Com
       typeCheckOnly := pflags.getBool "type-check",
       parseOnly := pflags.getBool "parse-only",
       outputSarif := opts.outputSarif || pflags.getString "output-format" == some "sarif" }
-    let (pgm, inputCtx) ← match ← readStrataProgram file with
-      | .ok r => pure r
-      | .error errors =>
-        for e in errors do
-          let msg ← e.toString
-          println! s!"Error: {msg}"
-        println! f!"Finished with {errors.size} errors."
-        IO.Process.exit ExitCode.userError
+    let fm ← pflags.buildDialectFileMap
+    let (pgm, inputCtx) ← readStrataProgram fm file
     println! s!"Successfully parsed."
       if opts.parseOnly then return
       if opts.typeCheckOnly then
@@ -1330,7 +1322,7 @@ def verifyCommand (mkDischarge : Core.MkDischargeFn := Core.mkDischargeFn) : Com
           -- package that can depend on the StrataBoole package.
           throw <| IO.Error.userError "Boole dialect support requires the StrataBoole package"
         else
-          verify pgm inputCtx proceduresToVerify opts (mkDischarge := mkDischarge)
+          Strata.Core.verify pgm inputCtx proceduresToVerify opts (mkDischarge := mkDischarge)
       catch e =>
         println! f!"{e}"
         IO.Process.exit ExitCode.internalError

@@ -7,7 +7,7 @@ module
 
 import StrataDDM.Integration.Lean
 meta import StrataDDM.Util.Format
-meta import Strata.Languages.Core.Core
+meta import Strata.Languages.Core
 meta import Strata.Languages.Core.DDMTransform.Translate
 meta import Strata.Languages.Core.StatementSemantics
 meta import Strata.Languages.Core.ProgramType

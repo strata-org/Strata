@@ -5,7 +5,7 @@
 -/
 module
 
-meta import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core
 import StrataDDM.Integration.Lean.HashCommands
 
 meta section
@@ -52,7 +52,7 @@ Model:
 (g@2, -(1)) (g@3, 0)
 -/
 #guard_msgs in
-#eval verify atSignDisambiguation
+#eval Core.verify atSignDisambiguation
 
 ---------------------------------------------------------------------
 

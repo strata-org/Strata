@@ -8,7 +8,7 @@ module
 public import Strata.Languages.C_Simp.C_Simp
 public import Strata.Languages.Core.Verifier
 import Strata.Languages.C_Simp.DDMTransform.Translate
-import Strata.Languages.Core.Core
+import Strata.Languages.Core
 
 public section
 
@@ -193,7 +193,7 @@ def C_Simp.verify (p : StrataDDM.Program)
   IO Core.VCResults := do
   let program := C_Simp.get_program p
   let runner tempDir := EIO.toIO (fun f => IO.Error.userError (toString f))
-    (Core.verify (to_core program) tempDir .none options)
+    (_root_.Core.verify (to_core program) tempDir .none options)
   match tempDir with
   | .none =>
     IO.FS.withTempDir runner
