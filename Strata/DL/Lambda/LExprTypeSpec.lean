@@ -2105,9 +2105,7 @@ private theorem LMonoTy_instantiateWithCheck_preserves_SubstFreshForGen
 private theorem tyPrefix_ne_of_ne (a b : Nat) (h : a ≠ b) :
     TState.tyPrefix ++ toString a ≠ TState.tyPrefix ++ toString b := by
   intro h_eq; apply h
-  rw [String.ext_iff] at h_eq
-  simp [String.toList_append] at h_eq
-  exact Nat.toString_injective (String.toList_injective h_eq)
+  exact absurd (Nat.toString_injective (by simpa [TState.tyPrefix] using h_eq)) h
 
 /-- A generated name `tyPrefix ++ toString k` with `k < state.tyGen` satisfies
     the freshness condition for `state`. -/
@@ -2411,7 +2409,10 @@ private theorem go_append_superset
     obtain ⟨k, ty⟩ := e
     simp only [TContext.types.knownTypeVars.go, List.mem_append] at h
     show v ∈ ty.freeVars ++ TContext.types.knownTypeVars.go (rest ++ extra)
-    grind
+    simp only [List.mem_append]
+    rcases h with h_left | h_right
+    · exact Or.inl h_left
+    · exact Or.inr (ih h_right)
 
 
 omit [ToString T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
