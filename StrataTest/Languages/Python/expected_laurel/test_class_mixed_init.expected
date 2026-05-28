@@ -1,6 +1,4 @@
-test_class_mixed_init.py(19, 0): ✔️ always true if reached - (WithInit@__init__ requires) Type constraint of x
 test_class_mixed_init.py(19, 0): ✔️ always true if reached - class with init
-test_class_mixed_init.py(19, 0): ✔️ always true if reached - precondition
 test_class_mixed_init.py(19, 0): ❓ unknown - class with init
-DETAIL: 3 passed, 0 failed, 1 inconclusive
+DETAIL: 1 passed, 0 failed, 1 inconclusive
 RESULT: Inconclusive
