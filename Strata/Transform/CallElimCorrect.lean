@@ -2720,12 +2720,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     -- Get the underlying pair shape: either output-pair
                     -- or filtered-input-pair.
                     rcases List.mem_iff_get.mp Hkin with ⟨n, Hn⟩
-                    have Hzip_len :
-                        (filtered_ks.zip filtered_ks').length =
-                          filtered_ks.length := by
-                      simp [List.length_zip, Hkslen]
                     have Hn_lt_ks : n.val < filtered_ks.length := by
-                      have := n.isLt; omega
+                      have := n.isLt; simp [List.length_zip, Hkslen] at this; omega
                     have Hn_lt_ks' : n.val < filtered_ks'.length := by
                       rw [← Hkslen]; exact Hn_lt_ks
                     have ⟨Hk1_eq, Hk2_eq⟩ :=
