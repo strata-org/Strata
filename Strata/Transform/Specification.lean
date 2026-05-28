@@ -114,7 +114,7 @@ variable {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVal P]
 variable (L : Lang P)
 
 
-/-! ## Style A — Reachability-based assertion validity
+/-! ## Style A — Reachability-based assertion validity and satisfiability.
 
 The primary predicate is `AssertValidWhen`, parameterized by a precondition
 on the initial environment.  `AssertValid` is `AssertValidWhen (fun _ => True)`.
@@ -141,6 +141,25 @@ def AllAssertsValidWhen (Pre : Env P → Prop) (s : L.StmtT) : Prop :=
 /-- All asserts are valid in statement `s`. -/
 @[expose] def AllAssertsValid (s : L.StmtT) : Prop :=
   ∀ (a : AssertId P), AssertValid L s a
+
+/-- Assert `a` is *satisfiable* in statement `s` under `Pre`: there exists some
+    initial environment satisfying `Pre` and some reachable configuration where
+    the assert is about to execute and evaluates to `true`.
+
+    This is the existential dual of `AssertValidWhen` and is the natural
+    target for bug-finding modes: the analyzer is trying to demonstrate that
+    *some* execution actually reaches the assert with a passing expression
+    (i.e., the assert is not vacuously unreachable). -/
+@[expose] def AssertSatisfiableWhen (Pre : Env P → Prop) (s : L.StmtT) (a : AssertId P) : Prop :=
+  ∃ (ρ₀ : Env P) (cfg : L.CfgT),
+    Pre ρ₀ ∧
+    L.star (L.stmtCfg s ρ₀) cfg ∧
+    L.isAtAssert cfg a ∧
+    (L.getEnv cfg).eval (L.getEnv cfg).store a.expr = some HasBool.tt
+
+/-- Assert `a` is *satisfiable* in statement `s` (for some initial environment). -/
+@[expose] def AssertSatisfiable (s : L.StmtT) (a : AssertId P) : Prop :=
+  AssertSatisfiableWhen L (fun _ => True) s a
 
 
 /-! ## Style B — Hoare-triple assertion validity
@@ -751,6 +770,8 @@ end ImperativeStmts
 
 end Transform
 
+
+
 /-! ## Analysis -/
 
 /-- An `Analysis` over programs `ℙ` producing diagnostics `D`.
@@ -778,9 +799,10 @@ def Sound (a : Analysis ℙ D) : Prop :=
 def Complete (a : Analysis ℙ D) : Prop :=
   ∀ (p : ℙ) (d : D), a.analyze p = d ∧ a.desirableProperty p → a.pass d
 
+
 /-- An analysis whose desirable property is `AssertValid L s a` for a fixed
     language `L` and assertion `a`. -/
-def SingleAssertValidityChecker
+def AssertValidityChecker
     {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVal P]
     {D : Type} (L : Lang P) (a : AssertId P)
     (analyze : L.StmtT → D) (pass : D → Prop) :
@@ -789,37 +811,18 @@ def SingleAssertValidityChecker
     analyze := analyze
     pass := pass }
 
-/-- A `Transform.Sound` transformation lifts a sound checker into another sound
-    checker: run `T` first. -/
-theorem SingleAssertValidityChecker.transform_sound
+/-- An analysis whose desirable property is `AssertSatisfiable L s a` for a
+    fixed language `L` and assertion `a`. The dual of `AssertValidityChecker`:
+    a passing diagnostic witnesses that *some* execution reaches the assert
+    with a passing expression (the natural target for bug-finding analyses). -/
+def AssertSatisfiabilityChecker
     {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVal P]
-    {D : Type} (L₁ L₂ : Lang P)
-    -- A transformation from L1 to L2.
-    (T : L₁.StmtT → Option L₂.StmtT)
-    (hT : Transform.Sound L₁ L₂ T)
-    -- A single assert of interest.
-    (a : AssertId P)
-    -- The analyzer, and diagnostics checker.
-    (analyze : L₂.StmtT → D) (pass : D → Prop)
-
-    (hc₂ : (SingleAssertValidityChecker L₂ a analyze pass).Sound) :
-    (SingleAssertValidityChecker L₁ a
-        (fun s => (T s).map analyze)
-        (fun od => ∃ d, od = some d ∧ pass d)).Sound := by
-  intro s od ⟨hrun, hpass⟩
-  simp [SingleAssertValidityChecker] at hrun hpass ⊢
-  obtain ⟨d, hod_eq, hpass_d⟩ := hpass
-  rw [hod_eq] at hrun
-  match hT_eq : T s with
-  | some s' =>
-    rw [hT_eq, Option.map_some] at hrun
-    have hd_eq : analyze s' = d := Option.some.inj hrun
-    have hvalid₂ : AssertValid L₂ s' a :=
-      hc₂ s' d ⟨hd_eq, by simpa [SingleAssertValidityChecker] using hpass_d⟩
-    exact hT s s' a hT_eq hvalid₂
-  | none =>
-    rw [hT_eq, Option.map_none] at hrun
-    exact absurd hrun (by nofun)
+    {D : Type} (L : Lang P) (a : AssertId P)
+    (analyze : L.StmtT → D) (pass : D → Prop) :
+    Analysis L.StmtT D :=
+  { desirableProperty := fun s => AssertSatisfiable L s a
+    analyze := analyze
+    pass := pass }
 
 end Analysis
 

@@ -626,11 +626,13 @@ private theorem ensuresToAsserts_mem_is_assert
 
 /-- If all asserts are valid in the verification statement produced by
     `procToVerifyStmt` (for initial environments satisfying `ProcEnvWF`),
-    then `ProcedureCorrect` holds for the procedure. -/
+    then `ProcedureAssertsValid` holds for the procedure. -/
 theorem procBodyVerify_procedureCorrect
     (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
-    (proc : Procedure) (p : Program) (st : CoreTransformState)
+    (procName : String) (proc : Procedure) (p : Program) (st : CoreTransformState)
     (verifyStmt : Statement) (st' : CoreTransformState)
+    -- `h_lookup`: the procedure name resolves via π
+    (h_lookup : π procName = some proc)
     -- `h_transform`: procToVerifyStmt returned successfully.
     (h_transform : (procToVerifyStmt proc).run st = (Except.ok verifyStmt, st'))
     -- `h_correct`: all asserts in `verifyStmt` are valid for all initial states
@@ -640,8 +642,8 @@ theorem procBodyVerify_procedureCorrect
     (h_wf_ext : Core.WFEvalExtension φ)
     -- `h_wf_proc`: the procedure is well-formed
     (h_wf_proc : WF.WFProcedureProp p proc) :
-    -- Conclusion: ProcedureCorrect holds.
-    Core.Specification.ProcedureCorrect π φ proc p := by
+    -- Conclusion: ProcedureAssertsValid holds.
+    Core.Specification.ProcedureAssertsValid π φ procName p := by
 
   obtain ⟨prefixStmts, h_eq, h_prefix_cmd, h_prefix_trace⟩ :=
     procToVerifyStmt_structure proc p st st' verifyStmt h_transform π φ h_wf_proc
@@ -722,7 +724,13 @@ theorem procBodyVerify_procedureCorrect
     rw [h_wrapped_eval, h_wrapped_store] at h_v
     exact h_v
 
-  refine ⟨?_, ?_⟩
+  refine
+    { procedureExists := ⟨proc, h_lookup⟩
+      assertsValid := fun proc' h_lookup' => ?_
+      postconditionsValid := fun proc' h_lookup' => ?_ }
+  all_goals
+    have h_eq_proc : proc = proc' := Option.some.inj (h_lookup.symm.trans h_lookup')
+    subst h_eq_proc
 
   · ----- Part 1: All asserts in proc.body are valid -----
     intro a

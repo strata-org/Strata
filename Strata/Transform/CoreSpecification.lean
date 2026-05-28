@@ -8,6 +8,8 @@ module
 public import Strata.Languages.Core.StatementSemantics
 public import Strata.Transform.Specification
 public import Strata.Languages.Core.WF
+public import Strata.Languages.Core.Options
+public import Strata.Languages.Core.Verifier
 
 public section
 
@@ -21,7 +23,11 @@ Bridges Core procedures to the generic Imperative specification framework
 - **`Lang.core`** — the `Lang Expression` bundle for Core small-step semantics
 - **`ProcEnvWF`** — well-formedness condition on the initial verification env
 - **`AssertValidInProcedure`** — `AssertValidWhen` on the verification statement
-- **`ProcedureCorrect`** — assert validity + postconditions + hasFailure on termination
+- **`AssertSatisfiableInProcedure`** — `AssertSatisfiableWhen` on the verification statement
+- **`ProcedureAssertsValid`** — assert validity + postconditions + hasFailure on termination
+- **`ProcedureAssertsSatisfiable`** — existential dual: some run reaches each
+  assert with a passing expression and some terminating run satisfies the
+  postconditions (the natural target for bug-finding modes)
 -/
 
 namespace Core.Specification
@@ -56,7 +62,7 @@ open Core Imperative
     This captures the state after inputs, outputs, modified globals have been
     initialized and preconditions assumed.
     The well-formed environment also includes old snapshots in store -/
-structure ProcEnvWF (proc : Procedure) (ρ : Env Expression) : Prop where
+structure ProcEnvWF (proc : Procedure) (ρ : Imperative.Env Expression) : Prop where
   wfVar  : WellFormedSemanticEvalVar ρ.eval
   wfBool : WellFormedSemanticEvalBool ρ.eval
   wfCong : WellFormedCoreEvalCong ρ.eval
@@ -85,7 +91,19 @@ variable (φ : CoreEval → PureFunc Expression → CoreEval)
   Imperative.Specification.AssertValidWhen (Specification.Lang.core π φ)
     (ProcEnvWF proc) (Stmt.block "" proc.body #[]) a
 
-/-- A procedure is correct with respect to its specification.
+/-- A specific assertion `a` in procedure `proc` is satisfiable: some
+    initial program state satisfying the preconditions (`ProcEnvWF`) reaches
+    a configuration at the assert with the expression evaluating to `tt`. -/
+@[expose] def AssertSatisfiableInProcedure
+    (proc : Procedure)
+    (a : Imperative.AssertId Expression) : Prop :=
+  Imperative.Specification.AssertSatisfiableWhen (Specification.Lang.core π φ)
+    (ProcEnvWF proc) (Stmt.block "" proc.body #[]) a
+
+/-- The procedure named `procName` (looked up via `π`) has every assert
+    valid and its postconditions valid on termination.
+
+    0. The procedure exists in the lookup `π` (`procedureExists`);
 
     1. Every reachable assert in the procedure body evaluates to `true`
        (`AssertValidInProcedure`);
@@ -99,11 +117,12 @@ variable (φ : CoreEval → PureFunc Expression → CoreEval)
     a conjunction of partial correctness and termination, having partial
     correctness-only definition here is useful.
 
-    A possibly more succinct style of ProcedureCorrect is using Hoare triple
-    (`Hoare.Triple` in Specification.lean). Since `Hoare.Triple` also uses
-    partial correctness, this seems natural. However, there is a very subtle
-    issue due to the fact that programs can also have `assert`s in the middle
-    of procedures, which leads `Hoare.Triple` to too weak notion to use for us.
+    A possibly more succinct style of ProcedureAssertsValid is using Hoare
+    triple (`Hoare.Triple` in Specification.lean). Since `Hoare.Triple` also
+    uses partial correctness, this seems natural. However, there is a very
+    subtle issue due to the fact that programs can also have `assert`s in the
+    middle of procedures, which leads `Hoare.Triple` to too weak notion to use
+    for us.
 
     For example, let's consider this program:
 
@@ -132,17 +151,48 @@ variable (φ : CoreEval → PureFunc Expression → CoreEval)
     inspects asserts and postconditions *only if the code terminates*,
     we end up accepting this procedure P as 'correct'.
 
-    Therefore, we define ProcedureCorrect as a structure with two fields:
+    Therefore, we define ProcedureAssertsValid as a structure with three fields:
+    (0) the procedure exists in `π`,
     (1) assert validity in the body, and
     (2) postcondition validity on termination.
 -/
-structure ProcedureCorrect (proc : Procedure) (p : Program) : Prop where
-  /-- (1) The asserts in the body of proc are valid. -/
-  assertsValid : ∀ a, AssertValidInProcedure π φ proc a
+
+/- TODO:
+--- program p ---
+procedure procName (..., x:out int) spec {
+  requires
+  ensures (x == 3) <-- this is staisfiable even if not valid
+} {
+  // call procName2()
+  x := nondet
+}
+
+procedure procName2 (...) spec {
+  requires
+  ensures <- .postconditionsValid
+} {
+}
+-------
+
+to check validity: we need to check both
+  ProcedureAssertsValid "procName" p /\
+  ProcedureAssertsValid "procName2" p
+<- we will need to eventually prove this
+
+to check satisfiability
+  entryPoint = "procName"
+
+-/
+structure ProcedureAssertsValid (procName : String) (p : Program) : Prop where
+  /-- (0) The procedure name resolves in the lookup `π`. -/
+  procedureExists : ∃ proc, π procName = some proc
+  /-- (1) The asserts in the body of the procedure are valid. -/
+  assertsValid : ∀ proc, π procName = some proc →
+    ∀ a, AssertValidInProcedure π φ proc a
   /-- (2) The postconditions hold on termination. -/
-  postconditionsValid :
+  postconditionsValid : ∀ proc, π procName = some proc →
     WF.WFProcedureProp p proc →
-    ∀ (ρ₀ ρ' : Env Expression),
+    ∀ (ρ₀ ρ' : Imperative.Env Expression),
       ProcEnvWF proc ρ₀ →
       CoreStepStar π φ (.stmts proc.body ρ₀) (.terminal ρ') →
       (∀ (label : CoreLabel) (check : Procedure.Check),
@@ -150,5 +200,87 @@ structure ProcedureCorrect (proc : Procedure) (p : Program) : Prop where
         check.attr = Procedure.CheckAttr.Default →
         ρ'.eval ρ'.store check.expr = some HasBool.tt) ∧
       ρ'.hasFailure = Bool.false
+
+/-- The existential dual of `ProcedureAssertsValid`, intended as the target
+    for bug-finding–style analyses.
+
+    0. The procedure exists in the lookup `π`;
+    1. Every assert in the body is *satisfiable*: some `ProcEnvWF` initial
+       environment reaches a configuration at the assert with the expression
+       evaluating to `tt`;
+    2. The postconditions are *satisfiable*: some terminating run from a
+       `ProcEnvWF` initial environment makes every non-free postcondition
+       evaluate to `tt` and leaves `hasFailure = false`. -/
+structure ProcedureAssertsSatisfiable (entryPoint : String) (procName : String) (p : Program) : Prop where
+  /-- (0) The procedure name resolves in the lookup `π`. -/
+  procedureExists : ∃ proc, π procName = some proc
+  /-- (1) The asserts in the body of the procedure are satisfiable. -/
+  <-- assertsSatisfiable must use entryPoint somehow.
+  assertsSatisfiable : ∀ proc, π procName = some proc →
+    ∀ a, AssertSatisfiableInProcedure π φ proc a
+  /-- (2) Some terminating run satisfies all postconditions and leaves
+      `hasFailure` false. -/
+  postconditionsSatisfiable : ∀ proc, π procName = some proc →
+    WF.WFProcedureProp p proc →
+    ∃ (ρ₀ ρ' : Imperative.Env Expression),
+      ProcEnvWF proc ρ₀ ∧
+      TODO: terminal with "the boundary at the end of procedure"; the interesting recursive proceudre
+      CoreStepStar π φ (.stmts proc.body ρ₀) (.terminal ρ') ∧
+      (∀ (label : CoreLabel) (check : Procedure.Check),
+        (label, check) ∈ proc.spec.postconditions.toList →
+        check.attr = Procedure.CheckAttr.Default →
+        ρ'.eval ρ'.store check.expr = some HasBool.tt) ∧
+      ρ'.hasFailure = Bool.false
+
+/-! ## Analysis -/
+
+namespace Analysis
+
+/-- A program input to a contract checker: the procedure name to analyze
+    paired with the enclosing program (needed by `ProcedureCorrect`
+    for the `WFProcedureProp` precondition). The procedure itself is looked
+    up via `π`. -/
+structure CoreVerifierInput where
+<- entryPoints: String → Prop, and maybe drop procName.
+  -- procName : String
+  prog : Program
+
+/-- An analysis whose desirable property under each `VerificationMode` is:
+
+    * `.deductive` — `ProcedureAssertsValid` (universal: every assert valid
+      and every terminating run satisfies the postconditions);
+    * `.bugFinding` — `ProcedureAssertsSatisfiable` (existential dual: some
+      run reaches each assert and some terminating run satisfies the
+      postconditions);
+    * `.bugFindingAssumingCompleteSpec` — `False` (not yet specified).
+
+    The diagnostic is a `VCResults` array; the `analyze` function
+    additionally receives the `VerificationMode` so it can shape the
+    obligations it produces, and `pass` reports success on every `VCResult`
+    under the given mode. -/
+def CoreVerifierModel
+    (π : String → Option Procedure)
+    (φ : CoreEval → PureFunc Expression → CoreEval)
+    (mode : VerificationMode)
+    (analyze : VerificationMode → CoreVerifierInput → VCResults) :
+    Imperative.Specification.Analysis CoreVerifierInput VCResults :=
+  { desirableProperty := fun input =>
+      match mode with
+      | .deductive =>
+        forall p ∈ input.prog, .... ProcedureAssertsValid π φ input.procName input.prog
+      | .bugFinding =>
+        ProcedureAssertsSatisfiable π φ <input.entryPoint> input.prog
+      | .bugFindingAssumingCompleteSpec =>
+        -- bugFinding, but postcondition being checked with validity
+        --
+        False
+    analyze := analyze mode
+    pass := fun results =>
+      match mode with
+      | .deductive => ∀ r ∈ results, VCResult.isSuccess r = Bool.true
+      | .bugFinding => ∀ r ∈ results, VCResult.isBugFindingSuccess r = Bool.true
+      | .bugFindingAssumingCompleteSpec => False }
+
+end Analysis
 
 end Core.Specification
