@@ -186,7 +186,14 @@ partial def translateFromTerm (t:SMT.Term): Except String (SMTDDM.Term Provenanc
   | .var v =>
     return .qual_identifier smtProv (.qi_ident smtProv (.iden_simple smtProv
       (.symbol smtProv (mkSimpleSymbol v.id))))
-  | .none _ | .some _ => throw "don't know how to translate none and some"
+  | .none ty =>
+    let retSort ← translateFromTermType (.option ty)
+    let qi := QualIdentifier.qi_isort smtProv (mkIdentifier "none") retSort
+    return .qual_identifier smtProv qi
+  | .some inner =>
+    let innerTerm ← translateFromTerm inner
+    let qi := QualIdentifier.qi_ident smtProv (mkIdentifier "some")
+    return .qual_identifier_args smtProv qi (smtAnn #[innerTerm])
   | .app op args retTy =>
     let args' <- args.mapM translateFromTerm
     let args_array := args'.toArray
