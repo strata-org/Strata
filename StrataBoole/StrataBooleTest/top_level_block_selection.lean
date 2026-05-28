@@ -8,7 +8,7 @@ import StrataBoole.MetaVerifier
 
 open Strata
 
-def topLevelBlockSelection : Strata.Program :=
+def topLevelBlockSelection : StrataDDM.Program :=
 #strata
 program Boole;
 

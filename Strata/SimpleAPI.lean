@@ -39,12 +39,12 @@ currently do.
 
 It involves several key types:
 
-* `Strata.Dialect`: The formal description of a Strata dialect. Used only to
+* `StrataDDM.Dialect`: The formal description of a Strata dialect. Used only to
   describe which dialects are available when reading or writing files.
 
-* `Strata.Program`: The generic AST for a Strata program in any dialect.
+* `StrataDDM.Program`: The generic AST for a Strata program in any dialect.
    Generally used just as an interim representation before serializing or after
-   deserializing a program. Before using a `Strata.Program`, it will usually
+   deserializing a program. Before using a `StrataDDM.Program`, it will usually
    make sense to translate it into the custom AST for a specific dialect.
 
 * `Laurel.Program`: A dialect-specific AST for a program in the Laurel dialect.
@@ -64,6 +64,7 @@ public section
 
 namespace Strata
 
+open StrataDDM
 open Strata.Python (ModuleName)
 
 /-! ### File I/O -/
@@ -76,7 +77,7 @@ to be parsed. And the `ByteArray` includes the contents of that file. TODO:
 should it take just a file name and read it directly?
 -/
 def readStrataText :
-  Strata.DialectFileMap →
+  StrataDDM.DialectFileMap →
   System.FilePath →
   ByteArray →
   IO Strata.Util.DialectOrProgram :=
@@ -90,7 +91,7 @@ to be parsed. And the `ByteArray` includes the contents of that file. TODO:
 should it take just a file name and read it directly?
 -/
 def readStrataIon :
-  Strata.DialectFileMap →
+  StrataDDM.DialectFileMap →
   System.FilePath →
   ByteArray →
   IO Strata.Util.DialectOrProgram :=
@@ -103,7 +104,7 @@ where to find the definitions of other dialects. The `FilePath` indicates the
 name of the file to be loaded.
 -/
 def readStrataFile :
-  Strata.DialectFileMap →
+  StrataDDM.DialectFileMap →
   System.FilePath →
   IO Strata.Util.DialectOrProgram :=
   Strata.Util.readFile
@@ -112,14 +113,14 @@ def readStrataFile :
 Serialize a Strata program in textual format. Returns a byte array rather than
 writing directly to a file.
 -/
-def writeStrataText : Strata.Program → ByteArray
+def writeStrataText : StrataDDM.Program → ByteArray
 | pgm => String.toByteArray pgm.toString
 
 /--
 Serialize a Strata program in Ion format. Returns a byte array rather than
 writing directly to a file.
 -/
-def writeStrataIon : Strata.Program → ByteArray
+def writeStrataIon : StrataDDM.Program → ByteArray
 | pgm => pgm.toIon
 
 /--
@@ -129,12 +130,12 @@ AST translation in one step.
 -/
 def parseLaurelText (path : System.FilePath) (content : String)
     : IO Laurel.Program := do
-  let input := Strata.Parser.stringInputContext path content
+  let input := StrataDDM.Parser.stringInputContext path content
   let dialects :=
-    Strata.Elab.LoadedDialects.ofDialects!
-      #[Strata.initDialect, Strata.Laurel.Laurel]
+    StrataDDM.Elab.LoadedDialects.ofDialects!
+      #[initDialect, Strata.Laurel.Laurel]
   let strataProgram ←
-    Strata.Elab.parseStrataProgramFromDialect
+    StrataDDM.Elab.parseStrataProgramFromDialect
       dialects Strata.Laurel.Laurel.name input
   let uri := Strata.Uri.file path.toString
   match Strata.Laurel.TransM.run uri
@@ -154,8 +155,8 @@ into a list of `StrataFile`s. Useful for per-file operations like
 printing.
 -/
 def readLaurelIonFiles (bytes : ByteArray)
-    : IO (List Strata.StrataFile) := do
-  match Strata.Program.filesFromIon Strata.Laurel.Laurel_map bytes with
+    : IO (List StrataFile) := do
+  match StrataDDM.Program.filesFromIon Strata.Laurel.Laurel_map bytes with
   | .ok files => pure files
   | .error msg => throw (IO.userError msg)
 
@@ -196,14 +197,14 @@ AST. Usually useful as a step before serialization. TODO: we can't yet implement
 this, but will be able to once we use DDM-generated translation between the
 generic and Strata-specific ASTs.
 -/
-noncomputable opaque coreToGeneric : Core.Program → Strata.Program
+noncomputable opaque coreToGeneric : Core.Program → StrataDDM.Program
 
 /--
 Translate a program in the generic AST for Strata into the dialect-specific AST
 for Core. This can fail with an error message if the input is not a
 well-structured instance of the Core dialect.
 -/
-def genericToCore (p : Strata.Program) : Except String Core.Program :=
+def genericToCore (p : StrataDDM.Program) : Except String Core.Program :=
   let (program, errors) := Core.getProgram p
   if errors.isEmpty then
     .ok program
@@ -214,7 +215,7 @@ def genericToCore (p : Strata.Program) : Except String Core.Program :=
 Translate a program in the dialect-specific AST for Laurel into the generic Strata
 AST. Usually useful as a step before serialization.
 -/
-def laurelToGeneric (p : Laurel.Program) : Strata.Program :=
+def laurelToGeneric (p : Laurel.Program) : StrataDDM.Program :=
   Laurel.programToStrata p
 
 /--
@@ -224,7 +225,7 @@ well-structured instance of the Laurel dialect.
 
 TODO: possibly add an input context argument
 -/
-def genericToLaurel (p : Strata.Program) : Except String Laurel.Program :=
+def genericToLaurel (p : StrataDDM.Program) : Except String Laurel.Program :=
   Laurel.TransM.run .none (Laurel.parseProgram p)
 
 /-! ### Transformation between dialects -/

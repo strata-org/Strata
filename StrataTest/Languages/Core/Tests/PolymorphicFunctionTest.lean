@@ -9,6 +9,7 @@ meta import Strata.Languages.Core.Verifier
 import StrataDDM.Integration.Lean.HashCommands
 
 meta section
+open StrataDDM (Program)
 
 /-!
 # Polymorphic Function Integration Tests
@@ -208,7 +209,7 @@ spec {
 #end
 
 /--
-info: error: (4692-4715) Impossible to unify (arrow int bool) with (arrow bool $__ty5).
+info: error: (4717-4740) Impossible to unify (arrow int bool) with (arrow bool $__ty5).
 First mismatch: int with bool.
 -/
 #guard_msgs in

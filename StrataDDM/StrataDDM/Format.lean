@@ -13,7 +13,7 @@ import all StrataDDM.Util.String
 open Std (Format format)
 
 public section
-namespace Strata
+namespace StrataDDM
 
 /--
 Check if a character is valid for starting a regular identifier.
@@ -618,7 +618,7 @@ instance : ToStrataFormat ArgDecls where
 
 /- Format `fmt` in a context with additional bindings `b`. -/
 private protected def formatIn [ToStrataFormat α] (b : ArgDecls) (fmt : α) : StrataFormat := fun c s =>
-  Strata.mformat fmt c (b.toArray.foldl (init := s) (·.pushBinding ·.ident))
+  StrataDDM.mformat fmt c (b.toArray.foldl (init := s) (·.pushBinding ·.ident))
 
 end ArgDecls
 
@@ -757,5 +757,5 @@ protected def ppDialect! (p : Program) (name : DialectName := p.dialect) (opts :
 
 end Program
 
-end Strata
+end StrataDDM
 end

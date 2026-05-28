@@ -27,6 +27,7 @@ meta section
 namespace B3
 
 open Std (Format)
+open StrataDDM
 open Strata
 open Strata.B3CST
 

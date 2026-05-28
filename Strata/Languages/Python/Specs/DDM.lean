@@ -10,6 +10,7 @@ public import StrataDDM.AST
 import StrataDDM.Format
 import StrataDDM.Ion
 import StrataDDM.Integration.Lean -- shake: keep
+open StrataDDM
 
 namespace Strata.Python
 
@@ -532,7 +533,7 @@ public def readDDM (path : System.FilePath) : EIO String (Array Signature) := do
   | .error msg => throw msg
 
 /-- Converts Python spec signatures to a DDM program for serialization. -/
-def toDDMProgram (sigs : Array Signature) : Strata.Program :=
+def toDDMProgram (sigs : Array Signature) : StrataDDM.Program :=
   .create DDM.PythonSpecs_map DDM.PythonSpecs.name (sigs.map fun s => s.toDDM.toAst)
 
 /-- Writes Python spec signatures to a DDM Ion file. -/

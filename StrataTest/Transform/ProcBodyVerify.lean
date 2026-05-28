@@ -23,11 +23,11 @@ namespace ProcBodyVerifyTest
 open Core Core.ProcBodyVerify Lambda Transform Imperative
 open Strata
 
-def translate (t : Strata.Program) : Core.Program :=
+def translate (t : StrataDDM.Program) : Core.Program :=
   (TransM.run Inhabited.default (translateProgram t)).fst
 
 /-- Helper to show transformed output for a procedure -/
-def showTransformed (prog : Strata.Program) (procName : String) : Except String Std.Format := do
+def showTransformed (prog : StrataDDM.Program) (procName : String) : Except String Std.Format := do
   let p := translate prog
   let some proc := Program.Procedure.find? p procName
     | throw s!"Procedure {procName} not found"

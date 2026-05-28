@@ -7,8 +7,8 @@ module
 
 meta import StrataDDM.AST
 
-namespace Strata.AST.Tests
+namespace StrataDDMTest.AST
 
 #guard q`A.C = { dialect := "A", name := "C" }
 
-end Strata.AST.Tests
+end StrataDDMTest.AST

@@ -21,7 +21,7 @@ Near-upstream anchors from `differential_status.md`:
   modeled directly
 -/
 
-private def overflowGuardSeed : Strata.Program :=
+private def overflowGuardSeed : StrataDDM.Program :=
 #strata
 program Boole;
 
@@ -48,15 +48,15 @@ spec {
 
 /--
 info:
-Obligation: assert_6_1180
+Obligation: assert_6_1183
 Property: assert
 Result: ✅ pass
 
-Obligation: overflow_guard_seed_ensures_4_1117
+Obligation: overflow_guard_seed_ensures_4_1120
 Property: assert
 Result: ✅ pass
 
-Obligation: overflow_guard_seed_ensures_5_1139
+Obligation: overflow_guard_seed_ensures_5_1142
 Property: assert
 Result: ✅ pass
 -/

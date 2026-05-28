@@ -21,7 +21,7 @@ strings, labels, attributes, identifiers, numbers) are hardcoded since
 they come from the DDM parser, not the dialect grammar.
 -/
 
-open Strata CoreDDM Strata.Elab
+open Strata CoreDDM StrataDDM.Elab
 
 /-! ## Extract syntax tokens from the Dialect object -/
 

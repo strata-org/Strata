@@ -12,8 +12,8 @@ public section
 
 namespace Ion
 
-export Strata (Decimal)
-open Strata.ByteArray
+export StrataDDM (Decimal)
+open StrataDDM.ByteArray
 
 inductive CoreType
 | null

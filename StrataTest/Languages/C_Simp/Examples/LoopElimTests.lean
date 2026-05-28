@@ -86,6 +86,7 @@ through `to_core` to test the nondet loop elimination path.
 -/
 
 open Strata in
+open StrataDDM in
 open Strata.C_Simp in
 private def nondetLoopProgram : C_Simp.Program :=
   let md : Imperative.MetaData Expression := .empty

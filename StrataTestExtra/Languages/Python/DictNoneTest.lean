@@ -17,7 +17,7 @@ is correctly detected as a bug, both for direct assignments and dict unpacking.
 namespace Strata.Python.DictNoneTest
 
 open Strata.Python (processPythonFile withPython)
-open Strata.Parser (stringInputContext)
+open StrataDDM.Parser (stringInputContext)
 
 -- Test 1: Using a valid int should succeed (0 diagnostics).
 #guard_msgs in

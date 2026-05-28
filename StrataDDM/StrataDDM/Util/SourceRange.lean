@@ -8,7 +8,7 @@ module
 public import Lean.Data.Position
 
 public section
-namespace Strata
+namespace StrataDDM
 
 /--
 Source location information in the DDM is defined
@@ -50,5 +50,5 @@ def format (loc : SourceRange) (path : System.FilePath) (fm : Lean.FileMap) : St
     else
       s!"{path}:{spos.line}:{spos.column+1}"
 
-end Strata.SourceRange
+end StrataDDM.SourceRange
 end

@@ -74,6 +74,7 @@ def mkIdent (mod : ModuleName) (name : String) : PythonIdent :=
 end Strata.Python.ModuleName
 
 open Strata.Pipeline
+open StrataDDM (SourceRange eformat Ann)
 
 namespace Strata.Python.Specs
 
@@ -274,7 +275,7 @@ def logEvent (event : EventType) (message : String) : PySpecM Unit := do
 
 /-- Check whether a decorator list contains `@overload`. -/
 private def hasOverloadDecorator
-    (decorators : Array (Strata.Python.expr Strata.SourceRange)) : Bool :=
+    (decorators : Array (Strata.Python.expr StrataDDM.SourceRange)) : Bool :=
   decorators.any fun d =>
     match d with
     | .Name _ ⟨_, "overload"⟩ _ => true
@@ -625,7 +626,7 @@ def pyDefaultValue (val : expr SourceRange) (_tp : SpecType) : PySpecM Unit := d
 
 def pySpecArg (usedNames : Std.HashSet String)
               (selfType : Option String)
-              (arg : Strata.Python.arg Strata.SourceRange)
+              (arg : Strata.Python.arg StrataDDM.SourceRange)
               (de : Option (expr SourceRange)) : PySpecM Arg := do
   let .mk_arg loc ⟨_, name⟩ ⟨_typeLoc, type⟩ ⟨_, comment⟩ := arg
   if name ∈ usedNames then
@@ -1182,7 +1183,7 @@ private def resolveBaseClasses (bases : Array (expr SourceRange))
 
 partial def pySpecClassBody (loc : SourceRange) (className : String)
     (bases : Array PythonIdent)
-    (body : Array (Strata.Python.stmt Strata.SourceRange)) : PySpecM ClassDef := do
+    (body : Array (Strata.Python.stmt StrataDDM.SourceRange)) : PySpecM ClassDef := do
   let mut usedNames : Std.HashSet String := {}
   let mut fields : Array ClassField := #[]
   let mut classVars : Array ClassVariable := #[]
@@ -1483,7 +1484,7 @@ partial def translateImportFromStmt (loc : SourceRange)
       let mod ← resolveRelativeModuleName loc relMod lvl
       resolveAndRegisterModule loc mod asname
 
-partial def translate (body : Array (stmt Strata.SourceRange)) : PySpecM Unit := do
+partial def translate (body : Array (stmt StrataDDM.SourceRange)) : PySpecM Unit := do
   for stmt in body do
     match stmt with
     | .Assign loc ⟨_, targets⟩ value _typeAnn =>
@@ -1557,7 +1558,7 @@ partial def translate (body : Array (stmt Strata.SourceRange)) : PySpecM Unit :=
         pushSignature (.classDef d)
     | _ => specError stmt.ann s!"Unknown statement {stmt}"
 
-partial def translateModuleAux (body : Array (Strata.Python.stmt Strata.SourceRange))
+partial def translateModuleAux (body : Array (Strata.Python.stmt StrataDDM.SourceRange))
   : PySpecM (Array Signature) := do
   let ctx ← read
   let start ← IO.monoNanosNow
@@ -1577,7 +1578,7 @@ end
 def translateModule
     (dialectFile searchPath strataDir pythonFile : System.FilePath)
     (fileMap : Lean.FileMap)
-    (body : Array (Strata.Python.stmt Strata.SourceRange))
+    (body : Array (Strata.Python.stmt StrataDDM.SourceRange))
     (currentModule : ModuleName)
     (pythonCmd : String := "python")
     (events : Std.HashSet EventType := {})

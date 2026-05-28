@@ -98,8 +98,10 @@ end C_Simp
 
 namespace Strata
 
+open StrataDDM
+
 /--
-Generate verification conditions for a `Strata.Program` by translating it to the
+Generate verification conditions for a `StrataDDM.Program` by translating it to the
 appropriate frontend verifier and collecting its deferred proof obligations.
 
 Note that this can be extended to new dialects by using
@@ -163,7 +165,7 @@ def toSMTVCs (vcs : Core.coreVCs) : Option SMT.SMTVCs := do
     return (label, ctx, ts, t) :: vcs
 
 /--
-Generate SMT verification conditions for a `Strata.Program`.
+Generate SMT verification conditions for a `StrataDDM.Program`.
 -/
 def genSMTVCs (program : Program) : Option SMT.SMTVCs := do
   let coreVCs ← genCoreVCs program

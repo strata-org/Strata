@@ -20,6 +20,7 @@ Appendix B. Concrete Syntax.
 
 namespace Strata
 
+open StrataDDM
 open Elab
 
 -- TODO: reservedKeywords should be in the SMTDDM namespace, not Strata

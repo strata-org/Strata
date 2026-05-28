@@ -9,10 +9,10 @@ public import StrataDDM.AST
 
 import StrataDDM.BuiltinDialects.BuiltinM
 
-open Strata.Elab
+open StrataDDM.Elab
 
 public section
-namespace Strata
+namespace StrataDDM
 
 
 def SyntaxCat.mkOpt (c:SyntaxCat) : SyntaxCat := { ann := .none, name := q`Init.Option, args := #[c] }

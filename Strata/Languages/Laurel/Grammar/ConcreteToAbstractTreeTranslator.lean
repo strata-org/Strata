@@ -14,7 +14,8 @@ namespace Laurel
 public section
 
 open Std (ToFormat Format format)
-open Strata (QualifiedIdent Arg SourceRange Uri FileRange)
+open Strata (Uri FileRange SourceRange)
+open StrataDDM (QualifiedIdent Arg Decimal)
 open Lean.Parser (InputContext)
 open Imperative (MetaData)
 
@@ -45,7 +46,7 @@ def getArgMetaData (arg : Arg) : TransM (Imperative.MetaData Core.Expression) :=
   | some uri => Imperative.MetaData.ofSourceRange uri arg.ann
   | none => Imperative.MetaData.ofProvenance (.synthesized .laurelParse)
 
-def checkOp (op : Strata.Operation) (name : QualifiedIdent) (argc : Nat) :
+def checkOp (op : StrataDDM.Operation) (name : QualifiedIdent) (argc : Nat) :
   TransM Unit := do
   if op.name != name then
     TransM.error s!"Op name mismatch! \n\
@@ -672,7 +673,7 @@ def parseTopLevel (arg : Arg) : TransM (Option Procedure × Option TypeDefinitio
 /--
 Translate concrete Laurel syntax into abstract Laurel syntax
 -/
-def parseProgram (prog : Strata.Program) : TransM Laurel.Program := do
+def parseProgram (prog : StrataDDM.Program) : TransM Laurel.Program := do
   let mut procedures : List Procedure := []
   let mut types : List TypeDefinition := []
   for op in prog.commands do

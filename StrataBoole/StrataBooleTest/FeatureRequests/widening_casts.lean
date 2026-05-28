@@ -22,7 +22,7 @@ Near-upstream anchors from `differential_status.md`:
 - Remaining gap: centralized insertion/preservation of widening casts
 -/
 
-private def wideningCastsSeed : Strata.Program :=
+private def wideningCastsSeed : StrataDDM.Program :=
 #strata
 program Boole;
 

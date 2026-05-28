@@ -1727,6 +1727,7 @@ namespace Strata
 
 open Lean.Parser
 open Strata (DiagnosticModel FileRange)
+open StrataDDM (Program)
 
 public section
 
@@ -1740,7 +1741,7 @@ def typeCheck (ictx : InputContext) (env : Program) (options : Core.VerifyOption
     .error <| DiagnosticModel.fromFormat s!"DDM Transform Error: {repr errors}"
 
 def Core.getProgram
-  (p : Strata.Program)
+  (p : StrataDDM.Program)
   (ictx : InputContext := Inhabited.default) : Core.Program × Array String :=
   TransM.run ictx (translateProgram p)
 

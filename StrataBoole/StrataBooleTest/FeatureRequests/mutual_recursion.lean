@@ -32,7 +32,7 @@ Remaining gap:
 -- Working: mutual recursion over a Peano-style datatype.
 -- `even` calls `odd` and vice versa; both terminate by structural recursion
 -- on the `@[cases]` MyNat parameter.
-private def mutualRecursionSeed : Strata.Program :=
+private def mutualRecursionSeed : StrataDDM.Program :=
 #strata
 program Boole;
 

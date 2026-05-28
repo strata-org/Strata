@@ -6,6 +6,7 @@
 module
 public import Strata.Pipeline.Messages
 import all StrataDDM.Util.String
+open StrataDDM
 
 namespace Strata.Pipeline
 

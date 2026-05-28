@@ -20,13 +20,14 @@ meta import Strata.Languages.Laurel.LiftImperativeExpressions
 meta section
 
 open Strata
-open Strata.Elab (parseStrataProgramFromDialect)
+open StrataDDM (initDialect)
+open StrataDDM.Elab (parseStrataProgramFromDialect)
 
 namespace Strata.Laurel
 
 private def parseLaurelAndLift (input : String) : IO Program := do
-  let inputCtx := Strata.Parser.stringInputContext "test" input
-  let dialects := Strata.Elab.LoadedDialects.ofDialects! #[initDialect, Laurel]
+  let inputCtx := StrataDDM.Parser.stringInputContext "test" input
+  let dialects := StrataDDM.Elab.LoadedDialects.ofDialects! #[initDialect, Laurel]
   let strataProgram ← parseStrataProgramFromDialect dialects Laurel.name inputCtx
   let uri := Strata.Uri.file "test"
   match Laurel.TransM.run uri (Laurel.parseProgram strataProgram) with

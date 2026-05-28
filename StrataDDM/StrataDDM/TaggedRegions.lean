@@ -20,7 +20,7 @@ open Lean.Syntax.MonadTraverser (getCur goLeft)
 open Lean.PrettyPrinter.Formatter (pushToken withMaybeTag throwBacktrack)
 
 public section
-namespace Strata.ExternParser
+namespace StrataDDM.ExternParser
 
 private def parserFn (endToken : String) : ParserFn := fun c s => Id.run do
   if s.hasError then
@@ -93,7 +93,7 @@ meta def declareTaggedRegionImpl: CommandElab := fun stx => do -- declare and re
   declareParser stx cat cmdStx.getId decl
 
 initialize
-  Lean.registerTraceClass `Strata.DDM.syntax
+  Lean.registerTraceClass `StrataDDM.syntax
 
-end Strata.ExternParser
+end StrataDDM.ExternParser
 end

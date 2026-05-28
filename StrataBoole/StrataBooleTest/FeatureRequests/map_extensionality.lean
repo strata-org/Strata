@@ -21,7 +21,7 @@ Near-upstream anchors from `differential_status.md`:
 - Remaining gap: named map synonyms and non-map extensional equality
 -/
 
-private def mapExtensionalitySeed : Strata.Program :=
+private def mapExtensionalitySeed : StrataDDM.Program :=
 #strata
 program Boole;
 
@@ -68,7 +68,7 @@ lift their de Bruijn indices so they keep referring to the outer map binders
 instead of the new index binder.
 -/
 
-private def quantifiedMapExtensionalityCaptureSeed : Strata.Program :=
+private def quantifiedMapExtensionalityCaptureSeed : StrataDDM.Program :=
 #strata
 program Boole;
 

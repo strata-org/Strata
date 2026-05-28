@@ -6,6 +6,7 @@
 module
 
 public import Strata.Languages.Core.Program
+open StrataDDM
 
 public section
 

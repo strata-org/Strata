@@ -14,6 +14,7 @@ import Strata.Util.IO
 import Std.Internal.Parsec
 
 open Strata
+open StrataDDM.Elab (LoadedDialects)
 
 /-- Parse a flat symbol-table JSON string, add CBMC defaults, and wrap for symtab2gb. -/
 private def wrapOutput (s : String) (moduleName : String) : IO String := do
@@ -26,11 +27,11 @@ def main (args : List String) : IO Unit := do
   | [file] => do
     let text ← Strata.Util.readInputSource file
     let inputCtx := Lean.Parser.mkInputContext text (Strata.Util.displayName file)
-    let dctx := Elab.LoadedDialects.builtin
+    let dctx := LoadedDialects.builtin
     let dctx := dctx.addDialect! Core
     let dctx := dctx.addDialect! C_Simp
     let leanEnv ← Lean.mkEmptyEnvironment 0
-    match Strata.Elab.elabProgram dctx leanEnv inputCtx with
+    match StrataDDM.Elab.elabProgram dctx leanEnv inputCtx with
     | .ok pgm =>
       if pgm.commands.size != 1 then
         IO.println "Error: expected exactly 1 function"

@@ -7,9 +7,9 @@ module
 
 meta import StrataDDM.Util.DecimalRat
 
-namespace Strata.Decimal.Tests
+namespace StrataDDM.Decimal.Tests
 
-open Strata.Decimal
+open StrataDDM.Decimal
 
 #guard Decimal.fromRat (5 : Rat) = some (Decimal.mk 5 0)
 #guard Decimal.fromRat (0 : Rat) = some Decimal.zero
@@ -33,4 +33,4 @@ open Strata.Decimal
 #guard (Decimal.fromRat (1/2 : Rat)).get!.toRat = (1/2 : Rat)
 #guard (Decimal.fromRat (22/5 : Rat)).get!.toRat = (22/5 : Rat)
 
-end Strata.Decimal.Tests
+end StrataDDM.Decimal.Tests

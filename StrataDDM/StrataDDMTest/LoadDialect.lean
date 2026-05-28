@@ -11,7 +11,9 @@ Test the #load_dialect command and also validate example dialects parse.
 
 import StrataDDM.Integration.Lean
 
-namespace Strata.Test
+open StrataDDM (Ann)
+
+namespace StrataDDMTest
 
 /--
 error: Could not find file INVALID!
@@ -35,7 +37,7 @@ namespace Bool
 
 -- Test that boolLit has the expected signature
 /--
-info: Strata.Test.Bool.Expr.boolLit {α : Type} : α → (b : Ann _root_.Bool α) → Expr α
+info: StrataDDMTest.Bool.Expr.boolLit {α : Type} : α → (b : Ann _root_.Bool α) → Expr α
 -/
 #guard_msgs in
 #check Expr.boolLit

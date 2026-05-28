@@ -32,6 +32,7 @@ import Strata.Languages.Python.Regex.ReToCore
 
 open Strata Strata.Python
 open Core (VerifyOptions)
+open StrataDDM.Elab (elabProgram)
 
 /-- Escape a string for embedding as a double-quoted Core string literal. -/
 def escapeForCore (s : String) : String :=
@@ -95,7 +96,7 @@ def checkMatch (pyRegex testStr : String) (mode : MatchMode)
     let dctx := Elab.LoadedDialects.builtin
     let dctx := dctx.addDialect! Core
     let leanEnv ← Lean.mkEmptyEnvironment 0
-    match Strata.Elab.elabProgram dctx leanEnv inputCtx with
+    match elabProgram dctx leanEnv inputCtx with
     | .error errors =>
       let msgs ← errors.toList.mapM (·.toString)
       let errStr := String.intercalate "; " msgs

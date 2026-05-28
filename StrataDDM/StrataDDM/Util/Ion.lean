@@ -142,7 +142,7 @@ def intern (values : List (Ion String)) (symbols : SymbolTable := .system) : Arr
 Write values
 -/
 def internAndSerialize (values : List (Ion String)) (symbols : SymbolTable := .system) : ByteArray :=
-  _root_.Ion.serialize <| intern (symbols := symbols) values
+  serialize <| intern (symbols := symbols) values
 
 /--
 Write a list of Ion values to file.

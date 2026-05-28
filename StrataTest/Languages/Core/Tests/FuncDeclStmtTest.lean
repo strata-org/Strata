@@ -13,7 +13,7 @@ meta section
 open Core
 open Strata
 
-def translate (t : Strata.Program) : Core.Program :=
+def translate (t : StrataDDM.Program) : Core.Program :=
   (TransM.run Inhabited.default (translateProgram t)).fst
 
 def simpleFuncDeclPgm :=

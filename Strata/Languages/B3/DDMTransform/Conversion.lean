@@ -9,6 +9,7 @@ public import Strata.Languages.B3.DDMTransform.ParseCST
 public import Strata.Languages.B3.DDMTransform.DefinitionAST
 import Strata.Util.Tactics
 import Std.Tactic.BVDecide.Normalize.Prop
+open StrataDDM
 
 public section
 
