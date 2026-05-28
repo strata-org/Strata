@@ -16,6 +16,7 @@ or refactors that are bookkeeping.
 | 6 | Cross-validation infrastructure (`tools/`, `CROSS_VALIDATION.md`) | [§6](#6-cross-validation-infrastructure) |
 | 7 | Documentation (`README.md`, `STATUS.md`) | [§7](#7-documentation) |
 | 8 | Regression coverage (`StrataTest/`) | [§8](#8-regression-coverage) |
+| 9 | Bugs surfaced (with filing & merge status) | [§9](#9-bugs) |
 
 ---
 
@@ -626,6 +627,102 @@ SMACK-specific accommodations under test. A regression test pins
 the off-by-default behavior of `--smack`, and an extended
 `SmackAssertDuplicateSpec` test covers the requires-already-present
 case.
+
+---
+
+## 9. Bugs
+
+Bugs surfaced (or confirmed) by this branch's cross-validation work,
+with filing and merge status. **Keep this section up to date** as
+issues land upstream; the headline is that *every* CBMC backend,
+BoogieToStrata, and Core-transform fix is currently `htd/smack`-only —
+none has reached `main` yet.
+
+Legend:
+- **Filed?** issue # if filed on the upstream tracker; "—" if not
+- **htd/smack** "✓" if a fix commit is on this branch; "—" if not
+- **main / main2?** which upstream branch the fix has merged into; "—" if not yet
+
+### 9.1 Strata-CBMC GOTO backend (8)
+
+All surfaced via the cross-validation matrix (`Strata/Backends/CBMC/GOTO/`).
+
+| # | Bug | Filed? | htd/smack | main/main2? |
+|---|---|---|---|---|
+| 1 | Inout-param rename collision in `procedureToGotoCtx` — inouts re-bound to nonexistent local symbol; blocked every CBMC translation with inout call sites | [#1198](https://github.com/strata-org/Strata/issues/1198) (open) | ✓ `f265cda63` | — |
+| 2 | Missing `__cprover_entry` shim — SMACK-translated `main` has memory-map params; CBMC rejected with "no entry point" rc=6 | — | ✓ `7e2b1fc25` | — |
+| 3 | `guard` JSON field elided when condition is `true` — `symtab2gb` rejected; ASSUME/ASSERT couldn't round-trip | — | ✓ `66e659656` | — |
+| 4 | CFG blocks emitted in non-RPO order → spurious back-edges — CBMC's loop detector flagged 8 fake loops in `nondet_branch`, triggering unwinding-assertion timeouts | — | ✓ `520f3f573` | — |
+| 5 | Array-type-emission asymmetry in `tyToJson` — DECL-site vs parameter-site produced structurally unequal CBMC array types; rc=6 type-mismatch on every program with `_M_*` memory-map params (38 of 65 rows in original portfolio) | — | ✓ `7bff2d48e` | — |
+| 6 | Nondet array params emitted as `nondet` instead of `nondet_symbol` — CBMC's array-constraint collector aborted: `unexpected array expression (collect_arrays): 'nondet'` | — | ✓ `23926094f` | — |
+| 7 | CFG-bodied procedures errored "expected structured body" in `procedureToGotoCtx` — CFG-bodied `main` couldn't be translated at all | — | ✓ `74f0cc23a` | — |
+| 8 | Callee bodies not emitted — only the entry procedure body was translated; CBMC reported `[.no-body.<callee>]` on every call. **Partial fix landed (`ca95931be`); residual blocker remains: `__VERIFIER_assume` / `assert_.i32` still bodyless after the partial fix, so all 93 programs still report cbmc=FAIL.** | [#1184](https://github.com/strata-org/Strata/issues/1184) (open; related: missing multi-return support) | ✓ partial `ca95931be` | — |
+
+Sibling open issue [#1186](https://github.com/strata-org/Strata/issues/1186) (Asymmetric translator handling of nondet `init` produces a precision mismatch with CBMC) — surfaced during this investigation but not patched on this branch.
+
+### 9.2 BoogieToStrata translator (3)
+
+| # | Bug | Filed? | htd/smack | main/main2? |
+|---|---|---|---|---|
+| 9 | `__VERIFIER_assume` had no spec under `--smack` — call-elim eliminated the assumption; `assume(p)` from C source vanished | [#1148](https://github.com/strata-org/Strata/issues/1148) (closed; tracking) | ✓ `1b2231f99` (cherry-picked from PR 1149) | — (PR 1149 not merged into main) |
+| 10 | `__VERIFIER_assert` had no `requires` spec — `assert(EXPR)` from C source compiled into a vacuous call; no obligation reached the verifier | — | ✓ `b3e606bb6` | — |
+| 11 | `assert_.<type>` requires-injection unconditional — old PR 1149 injected `requires` regardless of source language. Gated on `--smack` | [#1148](https://github.com/strata-org/Strata/issues/1148) (closed; tracking) | ✓ `0e54ff2bd`, `ac814e582` | — (PR 1149) |
+
+Sibling open issue [#1184](https://github.com/strata-org/Strata/issues/1184) (CBMC backend missing multi-return support, error silently swallowed) — surfaced during the same investigation but not patched on this branch.
+
+### 9.3 Strata Core / Transform (3)
+
+| # | Bug | Filed? | htd/smack | main/main2? |
+|---|---|---|---|---|
+| 12 | `runProgram` skipped CFG bodies — call sites inside any CFG-bodied procedure had no `requires`-VCs generated; the verifier silently passed those call sites with vacuous PASS verdicts. **Largest single soundness improvement of the project so far.** | — (commit message documents) | ✓ `42ff8a4b8` | — |
+| 13 | Contract-only call evaluation — every `.call` was replaced by `havoc(lhs); assume(ensures)`, losing all body-derived information. Caused the dominant deductive sub-class (a) PARTIALs (54 of 93). Resolved by the body-eval feature. | — (motivation captured in spec) | ✓ `dd0c0d7cd` (body-eval feature) | — |
+| 14 | Cross-procedure `Env.error` contamination — when one procedure errors (CFG fuel exhaustion, etc.), `fixupError` doesn't clear `Env.error`; subsequent procedures short-circuit and emit zero obligations. **Confirmed today on `htd/smack`**: `aws_array_eq` reports `All 4 goals passed` end-to-end but `--procedures main` shows `0 goals passed, 3 failed`. The `--split-procs` workaround masks this, not fixes it. | [#1185](https://github.com/strata-org/Strata/issues/1185) (open) | — | — (fix lives on `htd/fix-eval` as `d55ac1c33` + `eeb0dfa3d` + `ecf402211`, not yet on either main or htd/smack) |
+
+### 9.4 Strata DDM / parser / type-checker (2)
+
+| # | Bug | Filed? | htd/smack | main/main2? |
+|---|---|---|---|---|
+| 15 | Transitive type-synonym chain not resolved for comparison/arithmetic operators — `<=`, `<`, `>=`, `>`, `+`, `-`, `*`, `div`, `mod` panicked when operands had a synonym-of-`int` type (e.g. `ref := i64 := int`) | [#1148](https://github.com/strata-org/Strata/issues/1148) (closed; tracking) | ✓ `e94635f8a` | — |
+| 16 | Type checker fails on nondet goto with undeclared `$__nondet_N` | [#1162](https://github.com/strata-org/Strata/issues/1162) (open; resolved on `htd/smack` per BoogieToStrata STATUS.md) | ✓ (referenced by translator change in `Tools/BoogieToStrata/`) | — |
+
+### 9.5 Strata `verify` runtime (1, filed but not patched)
+
+| # | Bug | Filed? | htd/smack | main/main2? |
+|---|---|---|---|---|
+| 17 | Stack overflow / SIGABRT on deeply-nested expressions — `Translate.translateExpr` is `partial def` with no fuel; reproduces at depth ≈ 4100 on `origin/main` HEAD. Manifested as `skipEscape_harness` SIGABRT in the deductive verifier. | drafted as `strata-verify-stack-overflow-deeply-nested-expr.md` (uncommitted, intended for upstream filing) | — | — |
+
+### 9.6 Pipeline-driver / matrix-display gaps (3 — not Strata bugs)
+
+| # | Issue | Filed? | htd/smack | main/main2? |
+|---|---|---|---|---|
+| 18 | `run_pipeline.py` collapses `path unreachable` PASSes — six SV-COMP unsafe programs initially looked like soundness probes (`unsafe ∧ deductive=PASS`); each is actually `pass (path unreachable)`. Matrix-display gap, not soundness bug. | — | — | — |
+| 19 | bugFinding partials dominated by `__VERIFIER_assume`-only failures — bugFinding under `bodyOrContract` produces zero verdict improvements (verified on full portfolio: 0/65 contract, 0/64 bodyOrContract). bugFinding's PARTIALs are about unconstrained inputs, not missing ensures. | — | — | — |
+| 20 | Multi-branch body-eval refused as soundness guard — `Command.inlineCallBody` errors when a callee body produces multiple result envs. The single residual portfolio PARTIAL (`nondet_branch`) is this case. Design proposal exists for fork-and-continue (return `List Env`). | — | partial guard in `dd0c0d7cd`; design doc `Examples/smack-docker/MULTIPATH_COMMAND_EVAL.md` | — |
+
+### Summary stats
+
+- **20 distinct bugs/issues** surfaced (or confirmed) on this branch.
+- **15 fixed** with commits on `htd/smack`.
+- **2 fixed elsewhere** (#1185 fix lives on `htd/fix-eval`; not on `htd/smack` or `main`).
+- **3 not yet patched** (#1184, #1186, draft `strata-verify-stack-overflow`).
+- **0 fixes have landed on `main` or `main2`** — every CBMC-backend, BoogieToStrata, and Core-transform fix is still `htd/smack`-only.
+
+### Filed-issue index
+
+- **Open and unresolved on main:** #1184, #1185, #1186, #1198, #1162.
+- **Closed (tracking-issue):** #1148 (BoogieToStrata blockers — its sub-issues are addressed by branch fixes).
+- **Drafted but unfiled:** `strata-verify-stack-overflow-deeply-nested-expr.md`, `cbmc-inout-rename-collision.md` (predates the actual #1198 filing), `cbmc-timeouts-and-stale-expects-report.md`, `verifier-assume-synthesis-report.md`.
+
+### Path to upstream
+
+Every fix on this branch is currently `htd/smack`-unique. None has reached `main` yet. Upstream-landing dependencies:
+
+1. The **8 CBMC GOTO backend fixes** depend on `htd/unstructured-procedure`'s CFG-Procedure work (in flight).
+2. The **BoogieToStrata fixes** are tied to PR #1149.
+3. The **Core-transform fixes** (`42ff8a4b8`, `dd0c0d7cd`) depend on CFG-eval which is in `htd/unstructured-procedure`.
+4. The **#1185 fix** (cross-procedure `Env.error`) lives on `htd/fix-eval` — most independent of all; could land directly on `main` and be back-merged.
+
+The branch is a substantial body of fix work. Most of it is upstream-able once the underlying PRs (`htd/unstructured-procedure`, #1149) merge.
 
 ---
 
