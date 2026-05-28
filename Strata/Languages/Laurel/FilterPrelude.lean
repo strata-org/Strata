@@ -107,7 +107,7 @@ private partial def collectExprNames (expr : StmtExprMd) : CollectM Unit := do
   | .Var (.Declare param) => collectHighTypeNames param.type
   | .PureFieldUpdate target _ newVal =>
     collectExprNames target; collectExprNames newVal
-  | .PrimitiveOp _ args => args.forM collectExprNames
+  | .PrimitiveOp _ args _ => args.forM collectExprNames
   | .AsType target ty => collectExprNames target; collectHighTypeNames ty
   | .IsType target ty => collectExprNames target; collectHighTypeNames ty
   | .Quantifier _ param trigger body =>

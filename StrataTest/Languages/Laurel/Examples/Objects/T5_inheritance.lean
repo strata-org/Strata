@@ -89,7 +89,7 @@ procedure diamondInheritance()
 };
 
 // Currently does not pass. Implementation needs b type invariant mechanism that we have yet to add.
-//procedure typedParameter(b: Bottom) {
+//procedure typedParameter(b: Bottom) opaque {
 //  var b: Bottom := b;
 //  assert b is Left;
 //  assert b is Right;

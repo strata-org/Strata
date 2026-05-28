@@ -8,8 +8,10 @@ module
 public import Strata.Languages.Laurel.LaurelToCoreTranslator
 import Strata.Languages.Laurel.DesugarShortCircuit
 import Strata.Languages.Laurel.EliminateReturnsInExpression
+
 import Strata.Languages.Laurel.EliminateValueReturns
 import Strata.Languages.Laurel.ConstrainedTypeElim
+
 import Strata.Languages.Laurel.TypeAliasElim
 import Strata.Languages.Core.Verifier
 import Strata.Util.Statistics
@@ -24,8 +26,9 @@ to Strata Core. The pipeline is:
 2. Run a sequence of Laurel-to-Laurel lowering passes (resolution, heap
    parameterization, type hierarchy, modifies clauses, hole inference,
    desugaring, lifting, constrained type elimination).
-3. Group and order declarations into an `OrderedLaurel`.
-4. Translate the `OrderedLaurel` to a `Core.Program`.
+3. Run the transparency pass to produce an `UnorderedCoreWithLaurelTypes`.
+4. Group and order declarations into a `CoreWithLaurelTypes`.
+5. Translate the `CoreWithLaurelTypes` to a `Core.Program`.
 -/
 
 open Core (VCResult VCResults VerifyOptions)
@@ -202,7 +205,14 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
     | none => Strata.Pipeline.PipelineContext.create (outputMode := .quiet)
   runPipelineM options.keepAllFilesPrefix do
     let (program, model, passDiags, stats) ← runLaurelPasses options pctx program
-    let ordered := orderProgram program
+    let unorderedCore := transparencyPass program
+    emit "transparencyPass" "core.st" unorderedCore
+
+    -- Resolve so that identifiers introduced by earlier passes get uniqueIds.
+    let compositeTypes := program.types.filter (fun t => match t with | .Composite _ => true | _ => false)
+    let (unorderedCore, model) := resolveUnorderedCore unorderedCore (existingModel := some model) (additionalTypes := compositeTypes)
+
+    let coreWithLaurelTypes := orderFunctionsAndProcedures unorderedCore
 
     -- This early return is a simple way to protect against duplicative errors. Without this return,
     -- resolution errors reported by Laurel would also be reported by Core.
@@ -211,18 +221,21 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
     if passDiags.any (·.type != .Warning) then
       return (none, passDiags, program, stats)
 
+    emit "CoreWithLaurelTypes" "core.st" coreWithLaurelTypes
     let initState : TranslateState := { model := model, overflowChecks := options.overflowChecks }
     let (coreProgramOption, translateState) :=
-      runTranslateM initState (translateLaurelToCore options program ordered)
-    if let some coreProgram := coreProgramOption then
-      emit "CoreProgram" "core.st" coreProgram
-    let mut allDiagnostics := passDiags ++ translateState.diagnostics
+      runTranslateM initState (translateLaurelToCore options program coreWithLaurelTypes)
+    -- Because of the duplication between functions and procedures, this translation is liable to create duplicate diagnostics
+    -- User errors should be checked in an earlier phase, and all dumb translation errors are Strata bugs
+    let mut allDiagnostics: List DiagnosticModel := passDiags ++ translateState.diagnostics.eraseDups;
 
     if translateState.coreDiagnostics.length > 0 && allDiagnostics.isEmpty then
       allDiagnostics := allDiagnostics ++ translateState.coreDiagnostics
 
+    if coreProgramOption.isSome then
+      emit "Core" "core.st" coreProgramOption.get!
     let coreProgramOption :=
-      if !translateState.coreDiagnostics.isEmpty then none else coreProgramOption
+      if translateState.coreDiagnostics.isEmpty then coreProgramOption else none
     return (coreProgramOption, allDiagnostics, program, stats)
 
 /--

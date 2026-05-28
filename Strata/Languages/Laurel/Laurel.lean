@@ -219,6 +219,11 @@ structure Condition where
   condition : AstNode StmtExpr
   /-- Optional human-readable summary describing the property being checked. -/
   summary : Option String := none
+  /-- When `true`, this condition is *free*: assumed but not checked.
+      A free precondition is assumed by the implementation but not asserted at
+      call sites. A free postcondition is assumed upon return from calls but
+      not checked on exit from implementations. -/
+  free : Bool := false
 
 /--
 The body of a procedure. A body can be transparent (with a visible
@@ -288,8 +293,11 @@ inductive StmtExpr : Type where
   | PureFieldUpdate (target : AstNode StmtExpr) (fieldName : Identifier) (newValue : AstNode StmtExpr)
   /-- Call a static procedure by name with the given arguments. -/
   | StaticCall (callee : Identifier) (arguments : List (AstNode StmtExpr))
-  /-- Apply a primitive operation to the given arguments. -/
+  /-- Apply a primitive operation to the given arguments.
+      The skipProof property is used internally.
+      It means that any precondition of the operator, such as division has, should be ignored. -/
   | PrimitiveOp (operator : Operation) (arguments : List (AstNode StmtExpr))
+    (skipProof: Bool := false)
   /-- Create new object (`new`). -/
   | New (ref : Identifier)
   /-- Reference to the current object (`this`/`self`). -/
@@ -444,6 +452,41 @@ deriving instance BEq for HighType
 def HighType.isBool : HighType → Bool
   | TBool => true
   | _ => false
+
+/-- Return the constructor name of a `StmtExprMd` as a `String`. -/
+def StmtExpr.constructorName (e : StmtExpr) : String :=
+  match e with
+  | .IfThenElse .. => "IfThenElse"
+  | .Block .. => "Block"
+  | .While .. => "While"
+  | .Exit .. => "Exit"
+  | .Return .. => "Return"
+  | .LiteralInt .. => "LiteralInt"
+  | .LiteralBool .. => "LiteralBool"
+  | .LiteralString .. => "LiteralString"
+  | .LiteralDecimal .. => "LiteralDecimal"
+  | .Var .. => "Var"
+  | .Assign .. => "Assign"
+  | .PureFieldUpdate .. => "PureFieldUpdate"
+  | .StaticCall .. => "StaticCall"
+  | .PrimitiveOp .. => "PrimitiveOp"
+  | .New .. => "New"
+  | .This => "This"
+  | .ReferenceEquals .. => "ReferenceEquals"
+  | .AsType .. => "AsType"
+  | .IsType .. => "IsType"
+  | .InstanceCall .. => "InstanceCall"
+  | .Quantifier .. => "Quantifier"
+  | .Assigned .. => "Assigned"
+  | .Old .. => "Old"
+  | .Fresh .. => "Fresh"
+  | .Assert .. => "Assert"
+  | .Assume .. => "Assume"
+  | .ProveBy .. => "ProveBy"
+  | .ContractOf .. => "ContractOf"
+  | .Abstract => "Abstract"
+  | .All => "All"
+  | .Hole .. => "Hole"
 
 /-- Check whether a single modifies entry is the wildcard (`*`). -/
 def StmtExprMd.isWildcard (m : StmtExprMd) : Bool := match m.val with | .All => true | _ => false

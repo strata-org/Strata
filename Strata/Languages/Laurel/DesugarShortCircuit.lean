@@ -5,8 +5,9 @@
 -/
 module
 
-public import Strata.Languages.Laurel.MapStmtExpr
-public import Strata.Languages.Laurel.LiftImperativeExpressions
+public import Strata.Languages.Laurel.Resolution
+import Strata.Languages.Laurel.LiftImperativeExpressions
+import Strata.Languages.Laurel.MapStmtExpr
 
 /-!
 # Desugar Short-Circuit Operators
@@ -29,7 +30,7 @@ private def bare (v : StmtExpr) : StmtExprMd := ⟨v, none⟩
 private def desugarShortCircuitNode (model : SemanticModel) (expr : StmtExprMd) : StmtExprMd :=
   let source := expr.source
   match expr.val with
-  | .PrimitiveOp op args =>
+  | .PrimitiveOp op args _ =>
     match op, args with
     -- With bottom-up traversal, `a` and `b` are already desugared (nested
     -- short-circuits converted to IfThenElse). The check still works because

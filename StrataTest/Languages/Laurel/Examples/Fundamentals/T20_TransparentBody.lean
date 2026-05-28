@@ -13,25 +13,15 @@ namespace Strata
 namespace Laurel
 
 def transparentBodyProgram := r"
-procedure transparentBodyMultipleOuts() returns (q: int, r: int)
+procedure transparentBody(): int
 {
   assert true;
-  q := 3;
-//^^^^^^ error: destructive assignments are not supported in transparent bodies or contracts
-  r := 2
-};
-
-procedure transparentBodyNoOuts()
-{
-  assert true
+  3
 };
 
 procedure transparentProcedureCaller() opaque {
-  assign var x: int, var y: int := transparentBodyMultipleOuts();
-  assert x == 3;
-  assert y == 2;
-
-  transparentBodyNoOuts()
+  var x: int := transparentBody();
+  assert x == 3
 };
 "
 

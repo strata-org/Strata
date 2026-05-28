@@ -14,7 +14,7 @@ namespace Strata.Laurel
 
 def program := r"
 procedure fooReassign(): int
-  opaque
+  opaque // required because we don't yet support destructive assignment in transparent bodies
 {
   var x: int := 0;
   x := x + 1;
@@ -24,7 +24,6 @@ procedure fooReassign(): int
 };
 
 procedure fooSingleAssign(): int
-  opaque
 {
   var x: int := 0;
   var x2: int := x + 1;
@@ -38,7 +37,7 @@ procedure fooProof()
   var x: int := fooReassign();
   var y: int := fooSingleAssign()
 // The following assertions fails while it should succeed,
-// because Core does not yet support transparent procedures
+// because we don't yet support making fooReassign transparent
 //  assert x == y;
 };
 
