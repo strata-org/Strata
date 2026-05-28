@@ -582,54 +582,29 @@ private theorem inputOnlyOldSubst_pos_decomp
       ((Prod.mk.injEq _ _ _ _).mp Hpair_eq').2.symm
     -- pair ∈ inputs.zip inputArgs.
     rcases List.mem_iff_get.mp Hpair_in with ⟨ni, Hni⟩
-    have Hni_lt_zip :
-        ni.val < (inputs.zip inputArgs).length := ni.isLt
-    have HzipLen : (inputs.zip inputArgs).length =
-          min inputs.length inputArgs.length :=
-      List.length_zip
-    have Hni_lt_min :
-        ni.val < min inputs.length inputArgs.length := by
-      rw [← HzipLen]; exact Hni_lt_zip
-    have Hni_lt_inputs : ni.val < inputs.length := by
-      have := Hni_lt_min; omega
-    have Hni_lt_inputArgs : ni.val < inputArgs.length := by
-      have := Hni_lt_min; omega
+    have Hni_lt_zip : ni.val < (inputs.zip inputArgs).length := ni.isLt
+    have Hni_lt_min : ni.val < min inputs.length inputArgs.length :=
+      List.length_zip ▸ Hni_lt_zip
+    have Hni_lt_inputs : ni.val < inputs.length := by omega
+    have Hni_lt_inputArgs : ni.val < inputArgs.length := by omega
     -- Project pair to its components positionally.
-    have HpairGet :
-        (inputs.zip inputArgs)[ni.val]'Hni_lt_zip =
-          (inputs[ni.val]'Hni_lt_inputs,
-           inputArgs[ni.val]'Hni_lt_inputArgs) :=
-      List.getElem_zip
-    have HpairEq_get :
-        (inputs.zip inputArgs)[ni.val]'Hni_lt_zip = pair := Hni
     have Hpair_shape :
         pair = (inputs[ni.val]'Hni_lt_inputs,
                 inputArgs[ni.val]'Hni_lt_inputArgs) := by
-      rw [← HpairEq_get]; exact HpairGet
-    have Hpair_fst : pair.fst = inputs[ni.val]'Hni_lt_inputs := by
-      rw [Hpair_shape]
-    have Hpair_snd : pair.snd = inputArgs[ni.val]'Hni_lt_inputArgs := by
-      rw [Hpair_shape]
-    -- Extract `inputs[ni.val] ∉ outputs` from the guard.
-    have Hin_notin_outs : (inputs[ni.val]'Hni_lt_inputs) ∉ outputs := by
+      have HpairGet :
+          (inputs.zip inputArgs)[ni.val]'Hni_lt_zip =
+            (inputs[ni.val]'Hni_lt_inputs,
+             inputArgs[ni.val]'Hni_lt_inputArgs) := List.getElem_zip
+      rw [← Hni]; exact HpairGet
+    refine ⟨ni.val, Hni_lt_inputs, Hni_lt_inputArgs, ?_, ?_, ?_⟩
+    · rw [Hk_eq, Hpair_shape]
+    · rw [Hw_eq, Hpair_shape]
+    · -- inputs[ni.val] ∉ outputs from guard.
       have HgL : (!outputs.contains pair.fst) = true :=
         (Bool.and_eq_true _ _).mp Hg |>.1
-      have HgL2 : outputs.contains pair.fst = false := by
-        have := HgL
-        simp only [Bool.not_eq_true'] at this
-        exact this
-      have HgL3 : pair.fst ∉ outputs := by
-        intro Hin
-        have := List.contains_iff_mem.mpr Hin
-        rw [HgL2] at this
-        exact Bool.false_ne_true this
-      rw [← Hpair_fst]
-      exact HgL3
-    refine ⟨ni.val, Hni_lt_inputs, Hni_lt_inputArgs, ?_, ?_, Hin_notin_outs⟩
-    · -- k = mkOld inputs[ni.val].name.
-      rw [Hk_eq, Hpair_fst]
-    · -- w = inputArgs[ni.val].
-      rw [Hw_eq, Hpair_snd]
+      simp at HgL
+      rw [Hpair_shape] at HgL
+      exact HgL
   · -- guard = false: contradiction.
     have HH := Hpair_eq
     simp only [Hg] at HH
