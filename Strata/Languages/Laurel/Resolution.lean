@@ -666,6 +666,16 @@ def Synth.resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTy
   | .Abstract => pure (Synth.abstract source)
   | .All => pure (Synth.all source)
   | .Block [] label => pure (.Block [] label, Synth.emptyBlock source)
+  -- Holes in synth position are gradual: an annotated hole synthesizes its
+  -- declared type; an unannotated one is `Unknown`. Without this carve-out,
+  -- a hole appearing as the target of e.g. a field access (`<?>.f`) would
+  -- emit "type cannot be synthesized" and abort, which over-reports against
+  -- code where the hole's type is genuinely unknown to begin with.
+  | .Hole det none =>
+    pure (.Hole det none, { val := .Unknown, source := source })
+  | .Hole det (some ty) =>
+    let ty' ← resolveHighType ty
+    pure (.Hole det (some ty'), ty')
   | _ =>
     let unknown : HighTypeMd := { val := .Unknown, source := source }
     typeMismatch source (some expr)
