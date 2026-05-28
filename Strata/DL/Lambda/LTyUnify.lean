@@ -127,21 +127,21 @@ theorem SubstWF.single_subst (id : TyIdentifier) (h : ¬id ∈ ty.freeVars) :
   done
 
 
-theorem Subst.mem_freeVars_of_mem_freeVars_erase (S : Subst) (id : TyIdentifier)
-  (h : xty ∈ Subst.freeVars (Maps.erase S id)) :
+theorem Subst.mem_freeVars_of_mem_freeVars_remove (S : Subst) (id : TyIdentifier)
+  (h : xty ∈ Subst.freeVars (Maps.remove S id)) :
   xty ∈ Subst.freeVars S := by
   simp_all [Subst.freeVars]
   obtain ⟨aty, h1, h2⟩ := h
   apply Exists.intro aty; simp_all
-  simp [Maps.values_erase_subset S id aty h1]
+  simp [Maps.values_remove_subset S id aty h1]
 
-theorem SubstWF_of_erase (id : TyIdentifier) (h : SubstWF S) :
-  SubstWF (Maps.erase S id) := by
+theorem SubstWF_of_remove (id : TyIdentifier) (h : SubstWF S) :
+  SubstWF (Maps.remove S id) := by
   simp_all [SubstWF]
   intro xty h_xty_in_keys h_xty_in_fvs
-  have h_xty_in_s_keys := Maps.keys_erase_subset S id xty h_xty_in_keys
+  have h_xty_in_s_keys := Maps.keys_remove_subset S id xty h_xty_in_keys
   have h_xty_not_in_fvs := @h xty h_xty_in_s_keys
-  have := @Subst.mem_freeVars_of_mem_freeVars_erase xty S id h_xty_in_fvs
+  have := @Subst.mem_freeVars_of_mem_freeVars_remove xty S id h_xty_in_fvs
   contradiction
 
 /--
@@ -728,7 +728,7 @@ def LTy.subst (S : Subst) (ty : LTy) : LTy :=
     .forAll xs (LMonoTy.subst S' ty)
   where go xs S :=
   match xs with
-  | [] => S | x :: rest => go rest (S.erase x)
+  | [] => S | x :: rest => go rest (S.remove x)
 
 /--
 Open `ty` by instantiating the bound type variable `x` with `xty`.

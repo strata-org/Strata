@@ -227,9 +227,9 @@ def resolveAux (C: LContext T) (Env : TEnv T.IDMeta) (e : LExpr T.mono) :
     let S ← Constraints.unify constraints Env.stateSubstInfo |>.mapError format
     let mty := LMonoTy.subst S.subst freshty
     -- `freshty` can now be safely removed from the substitution list.
-    have hWF : SubstWF (Maps.erase S.subst fresh_name) := by
-      apply @SubstWF_of_erase S.subst fresh_name S.isWF
-    let S := { S with subst := S.subst.erase fresh_name, isWF := hWF }
+    have hWF : SubstWF (Maps.remove S.subst fresh_name) := by
+      apply @SubstWF_of_remove S.subst fresh_name S.isWF
+    let S := { S with subst := S.subst.remove fresh_name, isWF := hWF }
     .ok (.app ⟨m, mty⟩ e1t e2t, TEnv.updateSubst Env S)
 
   | .abs m name bty e    =>
