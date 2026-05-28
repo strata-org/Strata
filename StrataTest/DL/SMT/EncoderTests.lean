@@ -201,7 +201,8 @@ end Strata.SMT.Encoder
 /-! ## Tests for unified `usedNames` registry (issue #1230)
 
 Verifies that the encoder disambiguates when a user-defined UF name collides
-with the internal `$__f.N` naming scheme used by `encodeFunction`. -/
+with the internal `$__f.N` naming scheme used by `encodeFunction`, and when
+UF names collide with pre-declared sort/datatype names. -/
 
 namespace Strata.SMT.Encoder.UsedNamesTests
 
@@ -224,6 +225,8 @@ private def runEncoderWith (initState : EncoderState) (act : EncoderM Unit) : IO
 
 -- A user UF named `$__f.0` should not collide with the first `encodeFunction`
 -- output. The encoder must rename one of them.
+/-- info: ("$__f.0", "$__f.1") -/
+#guard_msgs in
 #eval do
   let collidingUF : UF := { id := "$__f.0", args := [], out := .int }
   let functionUF : UF := { id := "userFn", args := [⟨"x", .int⟩], out := .int }
@@ -231,17 +234,11 @@ private def runEncoderWith (initState : EncoderState) (act : EncoderM Unit) : IO
   let estate ← runEncoder do
     let _ ← Encoder.encodeUF collidingUF
     let _ ← Encoder.encodeFunction functionUF body
-  let name1 := estate.ufs[collidingUF]!
-  let name2 := estate.ufs[functionUF]!
-  -- Both names must be present and distinct
-  assert! name1 != name2
-  -- The colliding UF keeps its original name since it was encoded first
-  assert! name1 == "$__f.0"
-  -- The function gets a disambiguated name
-  assert! name2 != "$__f.0"
+  return (estate.ufs[collidingUF]!, estate.ufs[functionUF]!)
 
--- Similarly, a user UF named `$__f.1` should not collide when two functions
--- are encoded.
+-- A user UF named `$__f.1` should not collide when two functions are encoded.
+/-- info: ("$__f.1", "$__f.1@1", "$__f.2") -/
+#guard_msgs in
 #eval do
   let collidingUF : UF := { id := "$__f.1", args := [], out := .bool }
   let fn0 : UF := { id := "fn0", args := [], out := .int }
@@ -252,36 +249,29 @@ private def runEncoderWith (initState : EncoderState) (act : EncoderM Unit) : IO
     let _ ← Encoder.encodeUF collidingUF
     let _ ← Encoder.encodeFunction fn0 body0
     let _ ← Encoder.encodeFunction fn1 body1
-  let nameColliding := estate.ufs[collidingUF]!
-  let nameFn0 := estate.ufs[fn0]!
-  let nameFn1 := estate.ufs[fn1]!
-  -- All three names must be distinct
-  assert! nameColliding != nameFn0
-  assert! nameColliding != nameFn1
-  assert! nameFn0 != nameFn1
+  return (estate.ufs[collidingUF]!, estate.ufs[fn0]!, estate.ufs[fn1]!)
 
 -- A UF named the same as a pre-declared datatype/sort should be disambiguated
 -- when the encoder state is initialized with those names.
+/-- info: "MyDatatype@1" -/
+#guard_msgs in
 #eval do
   let preDeclaredNames := Std.HashSet.ofList ["MyDatatype", "Option"]
   let uf : UF := { id := "MyDatatype", args := [], out := .int }
   let estate ← runEncoderWith (EncoderState.initWithNames preDeclaredNames) do
     let _ ← Encoder.encodeUF uf
-  let name := estate.ufs[uf]!
-  -- The UF must get a disambiguated name since "MyDatatype" is already taken
-  assert! name != "MyDatatype"
+  return estate.ufs[uf]!
 
 -- A function whose generated name collides with a pre-declared sort should
 -- also be disambiguated.
+/-- info: "$__f.0@1" -/
+#guard_msgs in
 #eval do
-  -- Pre-declare "$__f.0" as if it were a sort name
   let preDeclaredNames := Std.HashSet.ofList ["$__f.0"]
   let fn : UF := { id := "userFn", args := [⟨"x", .int⟩], out := .int }
   let body : Term := .var ⟨"x", .int⟩
   let estate ← runEncoderWith (EncoderState.initWithNames preDeclaredNames) do
     let _ ← Encoder.encodeFunction fn body
-  let name := estate.ufs[fn]!
-  -- The function must not get "$__f.0" since it's pre-declared
-  assert! name != "$__f.0"
+  return estate.ufs[fn]!
 
 end Strata.SMT.Encoder.UsedNamesTests
