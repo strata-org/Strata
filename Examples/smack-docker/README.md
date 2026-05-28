@@ -85,10 +85,48 @@ Snapshot from the latest pipeline runs on the **94-program benchmark**:
 | **SV-COMP ReachSafety** | **29** | **Imported from `sosy-lab/sv-benchmarks` with verdict oracle** |
 | **Total** | **94** | |
 
-The most recent runs are:
-- **v3 (`--split-procs`):** 64 programs (everything except the SV-COMP
-  imports + `picohttpparser` which OOMs cbmc-native). Captured in
-  `wt-test/pipeline-portfolio-v3.txt`. Run after fixes
+### Headline result: body-eval at call sites
+
+The biggest verdict change in the project to date is from the
+`--call-policy bodyOrContract` feature (commit `dd0c0d7cd`). It lets
+the evaluator analyse callee bodies at the call site (instead of
+relying only on contracts), with fuel-bounded fallback to contract
+semantics on `OutOfFuel`. Run with:
+
+```bash
+python3 run_pipeline.py --backends deductive --split-procs \
+  --call-policy bodyOrContract programs/*.bpl
+```
+
+Deductive results across the 93-program suite:
+
+|  | Contract (default) | bodyOrContract | Δ |
+|---|---:|---:|---:|
+| Portfolio (64) | 21 PASS / 43 PARTIAL | **63 PASS / 1 PARTIAL** | **+42 PASS** |
+| SV-COMP (29) | 18 PASS / 11 PARTIAL | **19 PASS / 10 PARTIAL** | **+1 PASS** |
+| Combined (93) | **39 PASS / 54 PARTIAL** | **82 PASS / 11 PARTIAL** | **+43 PASS** |
+
+The portfolio gains are driven by the contract-ported coreJSON
+parsers and the simplified-AWS programs whose deductive PARTIALs
+under the default policy were entirely sub-class (a) (missing
+`ensures` on user-defined helpers; see *Known blockers*). With
+body-eval, the verifier sees the actual body and discharges the
+post-call assertions directly. The single remaining PARTIAL on the
+portfolio (`nondet_branch`) is the canonical multi-branch case the
+feature explicitly refuses (see `MULTIPATH_COMMAND_EVAL.md` for the
+proposed fix).
+
+Captured in `wt-test/pipeline-portfolio-bodyOrContract-v4.txt` and
+`wt-test/pipeline-svcomp-bodyOrContract-v4.txt`.
+
+### Default-policy results (contract; today's behaviour)
+
+The most recent runs under `--call-policy contract` (the default;
+matches today's verifier behaviour):
+
+- **portfolio (`--split-procs`):** 64 programs (everything except the
+  SV-COMP imports + `picohttpparser` which OOMs cbmc-native). Captured
+  in `wt-test/pipeline-portfolio-v3.txt`. Run after fixes
   `7bff2d48e` (array-type), `23926094f` (nondet-symbol),
   `42ff8a4b8` (CFG-CallElim), `390fadc37` (ensures-synthesis), and
   `b3e606bb6` (`__VERIFIER_assert` requires injection).
@@ -401,6 +439,17 @@ Strata Core / Transform features:
   generated for their callees — the verifier silently passed those
   call sites. The fix walks each CFG block's command list and
   applies CallElim to each command. Commit `42ff8a4b8`.
+- **Body evaluation at call sites under `--call-policy {body|bodyOrContract}`**.
+  The evaluator analyses callee bodies symbolically at the call site
+  with a fuel-bounded budget (`--inline-fuel N`, default `100000`).
+  `bodyOrContract` falls back to the contract path on `OutOfFuel`.
+  This is the single largest verdict-improvement on the matrix to
+  date: 42 portfolio rows flip from PARTIAL to PASS deductive,
+  resolving the dominant sub-class (a) blocker described under
+  *Known blockers*. Commit `dd0c0d7cd`. The pipeline driver gained
+  `--call-policy` and `--inline-fuel` axes (commit `998d64635`).
+  See `MULTIPATH_COMMAND_EVAL.md` for the proposed multi-branch
+  follow-up.
 
 Regression coverage in `StrataTest/Backends/CBMC/GOTO/E2E_CoreToGOTO.lean`,
 `StrataTest/Languages/Core/Tests/EnsuresSynthesisTest.lean`, and
@@ -440,10 +489,16 @@ Regression coverage in `StrataTest/Backends/CBMC/GOTO/E2E_CoreToGOTO.lean`,
     has no `ensures` clause; call-elim havocs the post-call state
     and the assertion becomes unprovable, even though it's logically
     valid. **27 of 27** triaged failing VCs on the contract-ported
-    coreJSON parsers fall in this class (P1 triage). Fix levers:
-    extend `--synthesize-ensures` (`390fadc37`) to handle CFG bodies,
-    or hand-port upstream `core_json_contracts.h` ensures onto the
-    parser implementations themselves (not just the harness).
+    coreJSON parsers fell in this class (P1 triage).
+    **Largely resolved as of `dd0c0d7cd` (body-eval at call sites)**:
+    under `--call-policy bodyOrContract` the evaluator analyses the
+    callee body symbolically and discharges the post-call assertions
+    directly. The 42 portfolio rows that were sub-class (a) PARTIALs
+    under contract policy now PASS under bodyOrContract. The original
+    contract-policy fix levers (extend `--synthesize-ensures`
+    (`390fadc37`) to handle CFG bodies, or hand-port upstream
+    `core_json_contracts.h` ensures onto the parser implementations)
+    remain valid for the contract-only path.
     Triage detail in `wt-test/triage/contract-ported-parser-vcs.md`.
   - **(b) Solver returns `unknown` on bitwise-heavy formulas** —
     verdict `❓ unknown`. Sample: `aws_byte_buf_append`, all 7 VCs.
