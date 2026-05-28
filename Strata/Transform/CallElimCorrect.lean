@@ -4160,34 +4160,16 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     have HargF_σ' :
                         ReadValues
                           (updatedStates σ' argTemps argVals)
-                          argTemps argVals := by
-                      apply readValues_updatedStatesSame
-                      · exact HargTempsLen
-                      · exact HargNd
+                          argTemps argVals :=
+                      readValues_updatedStatesSame HargTempsLen HargNd
                     have HargF_step1 :
                         ReadValues
                           (updatedStates
                             (updatedStates σ' argTemps argVals)
-                            outTemps oVals) argTemps argVals := by
-                      apply readValues_updatedStates
-                      · exact HoutTempsLen
-                      · exact HargOutDisj
-                      · exact HargF_σ'
-                    have HargF_step2 :
-                        ReadValues
-                          (updatedStates
-                            (updatedStates
-                              (updatedStates σ' argTemps argVals)
-                              outTemps oVals)
-                            oldTrips.unzip.fst.unzip.fst oldVals)
-                          argTemps argVals := by
-                      rw [HoldTripsFst]
-                      apply readValues_updatedStates
-                      · -- length: genOldIdents.length = oldVals.length.
-                        rw [HgenOldLen, ← HoldValsLen]
-                      · exact HargOldDisj
-                      · exact HargF_step1
-                    exact HargF_step2
+                            outTemps oVals) argTemps argVals :=
+                      readValues_updatedStates HoutTempsLen HargOutDisj HargF_σ'
+                    rw [HoldTripsFst]
+                    exact readValues_updatedStates HgenOldOldValsLen HargOldDisj HargF_step1
                   -- σ_havoc reads lhs → modvals (fall-through to σ').
                   have HmodvalsLen' : lhs.length = modvals.length := by
                     have := UpdateStatesLength Hupdate; omega
