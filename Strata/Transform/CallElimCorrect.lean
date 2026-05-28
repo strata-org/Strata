@@ -2253,23 +2253,6 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         (Procedure.Spec.getCheckExprs
                           proc.spec.postconditions).contains entry.snd.expr :=
                     fun entry Hentry => filterCheck_in_getCheckExprs Hentry
-                  -- σO eval-tt per filtered post entry (via Hpost over getCheckExprs).
-                  have HpostFiltered :
-                      ∀ entry ∈ postsFiltered,
-                        Imperative.isDefinedOver
-                          (Imperative.HasVarsPure.getVars (P:=Expression))
-                          σAO entry.snd.expr ∧
-                        δ σO entry.snd.expr = some Imperative.HasBool.tt := by
-                    intro entry Hentry
-                    exact Hpost entry.snd.expr (HpostFilteredContains entry Hentry)
-                  -- Post-var freshness lemma against ORIGINAL post (pre-oldSubst).
-                  have HpostsVarsFresh_orig :
-                      ∀ entry ∈ postsFiltered,
-                        ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr,
-                          ¬ isTempIdent v ∧ ¬ isOldTempIdent v ∧
-                          v ∉ CallArg.getLhs args := fun entry Hentry v Hv =>
-                    HpostVarsFresh entry.snd.expr
-                      (filterCheck_mem_getCheckExprs Hentry) v Hv
                   -- D2c: σ_R1 + L6 substStores/substDefined facts.
                   let σ_R1 : CoreStore :=
                     updatedStates σO genOldIdents oldVals
