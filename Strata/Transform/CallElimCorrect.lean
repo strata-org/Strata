@@ -3404,33 +3404,20 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     have Hni_lt_argVals : ni.val < argVals.length := by
                       rw [← HinKeys_argVals_len]
                       exact Hni_lt_inKeys'
-                    -- ── RHS Step A: δ σO (mkOld inputId.name) = σO inputId
-                    --   via Hwf2 not-in-outputs branch. ──
-                    have HRHS_StepA :
+                    -- ── RHS chain (StepA→StepD fused): δ σO (mkOld inputId.name)
+                    --   = some argVals[ni.val] via Hwf2 → σO_eq_σAO_off_outs →
+                    --   initStates_get_notin → readValues_get. ──
+                    have HRHS_oldEqArgVal :
                         δ σO (Lambda.LExpr.fvar ()
                                 (CoreIdent.mkOld inputId.name) none) =
-                          σO inputId := by
+                          some (argVals[ni.val]'Hni_lt_argVals) := by
                       simp only [WellFormedCoreEvalTwoState] at Hwf2
-                      have HH := Hwf2.2 proc.header.outputs.keys [] σAO σO σO
-                                  ⟨Hhav1, HInitVars_empty⟩ inputId
-                      exact HH.2 HinputId_notin_outs
-                    -- ── RHS Step B: σO inputId = σAO inputId
-                    --   via havoc preserves on non-outputs. ──
-                    have HRHS_StepB : σO inputId = σAO inputId :=
-                      σO_eq_σAO_off_outs HinputId_notin_outs
-                    -- ── RHS Step C: σAO inputId = σA inputId
-                    --   via Hinitout fall-through. ──
-                    have HRHS_StepC : σAO inputId = σA inputId :=
-                      initStates_get_notin Hinitout HinputId_notin_outs
-                    -- ── RHS Step D: σA inputId = some argVals[ni.val]
-                    --   via positional Hinitin. ──
-                    have HRHS_StepD : σA inputId =
-                        some (argVals[ni.val]'Hni_lt_argVals) :=
-                      readValues_get
-                        (σ:=σA) (ks:=proc.header.inputs.keys)
-                        (vs:=argVals) (InitStatesReadValues Hinitin)
-                        (i:=ni.val) (hi:=Hni_lt_inKeys')
-                        (hi':=Hni_lt_argVals)
+                      rw [(Hwf2.2 proc.header.outputs.keys [] σAO σO σO
+                            ⟨Hhav1, HInitVars_empty⟩ inputId).2 HinputId_notin_outs,
+                          σO_eq_σAO_off_outs HinputId_notin_outs,
+                          initStates_get_notin Hinitout HinputId_notin_outs]
+                      exact readValues_get (InitStatesReadValues Hinitin)
+                        (i:=ni.val) (hi:=Hni_lt_inKeys') (hi':=Hni_lt_argVals)
                     -- ── RHS Step E: argVals[ni.val] = δ σ argExpr
                     --   via evalExpressions_get + hCallArgsIn. ──
                     have HRHS_StepE :
@@ -3525,8 +3512,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       rw [HsubstEmpty] at Hbridge
                       exact Hbridge
                     rw [Hw_argExpr, Hδ_R1_eq_δ_σ, HRHS_StepE,
-                        ← HRHS_StepD, ← HRHS_StepC, ← HRHS_StepB,
-                        ← HRHS_StepA, ← Hk_mkOld]
+                        ← HRHS_oldEqArgVal, ← Hk_mkOld]
                   -- HpostEval_bridge: per-entry σ_R1 eval bridge via
                   -- subst_fvars_eval_bridge + HpostFiltered_corresp.
                   have HpostEval_bridge :
