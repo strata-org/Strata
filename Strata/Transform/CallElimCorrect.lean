@@ -50,6 +50,12 @@ private theorem σ_some_contradiction {α β} {σ : β → Option α} {k : β}
     (Hsome : (σ k).isSome) (Hnone : σ k = none) : False := by
   rw [Hnone] at Hsome; simp at Hsome
 
+/-- A defined key cannot lie in an `isNotDefined` list. -/
+private theorem notin_of_isSome_isNotDefined {P : Imperative.PureExpr}
+    {σ : Imperative.SemanticStore P} {k : P.Ident} {ks : List P.Ident}
+    (Hsome : (σ k).isSome) (Hndef : Imperative.isNotDefined σ ks) : k ∉ ks :=
+  fun h => σ_some_contradiction Hsome (Hndef k h)
+
 /-- Build `substDefined σ σ' ((a₁ ++ b₁).zip (a₂ ++ b₂))` from per-half
     `isDefined` facts. -/
 private theorem substDefined_of_app
@@ -1664,8 +1670,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     -- Rewrite Hin2 via Heqargs so we can use HdefVars.
                     rw [Heqargs] at Hin2
                     -- HndefArg_σ says σ x = none; HdefVars says (σ x).isSome.
-                    exact σ_some_contradiction
-                      (HdefVars x Hin2) (HndefArg_σ x Hin1)
+                    exact notin_of_isSome_isNotDefined (HdefVars x Hin2) HndefArg_σ Hin1
                   -- ── L1: argInit ──
                   have HevalArgs' :
                       EvalExpressions (P:=Core.Expression) δ σ
@@ -1683,14 +1688,12 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                   have Hlhs_isLocl :
                       Imperative.isDefined σ lhs :=
                     ReadValuesIsDefined Hevalouts
-                  have lhs_disj_via_σ :
-                      ∀ {ks : List Expression.Ident},
-                        Imperative.isNotDefined σ ks → lhs.Disjoint ks :=
-                    fun Hndef x Hin1 Hin2 =>
-                      σ_some_contradiction (Hlhs_isLocl x Hin1) (Hndef x Hin2)
-                  have HlhsDisjArg : lhs.Disjoint argTemps := lhs_disj_via_σ HndefArg_σ
-                  have HlhsDisjOut : lhs.Disjoint outTemps := lhs_disj_via_σ HndefOut_σ
-                  have HlhsDisjOld : lhs.Disjoint genOldIdents := lhs_disj_via_σ HndefOld_σ
+                  have HlhsDisjArg : lhs.Disjoint argTemps := fun x Hin1 Hin2 =>
+                    notin_of_isSome_isNotDefined (Hlhs_isLocl x Hin1) HndefArg_σ Hin2
+                  have HlhsDisjOut : lhs.Disjoint outTemps := fun x Hin1 Hin2 =>
+                    notin_of_isSome_isNotDefined (Hlhs_isLocl x Hin1) HndefOut_σ Hin2
+                  have HlhsDisjOld : lhs.Disjoint genOldIdents := fun x Hin1 Hin2 =>
+                    notin_of_isSome_isNotDefined (Hlhs_isLocl x Hin1) HndefOld_σ Hin2
                   -- Out-temp Nodup append form for `H_initVars`.
                   have HoutSnd_eq_lhs : outTrips.unzip.snd = lhs := by
                     rw [Heqouts, hCallArgsLhs]
@@ -2056,10 +2059,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     notMem_of_Forall_neg HoldIdentsTemp (HoutputsFresh v Hv1).2 Hv2
                   -- inputs.keys ∩ lhs = ∅: σ-undefined inputs vs σ-defined lhs.
                   have HinKeys_disj_lhs :
-                      proc.header.inputs.keys.Disjoint lhs := by
-                    intro v Hv1 Hv2
-                    exact σ_some_contradiction
-                      (HlhsDef v Hv2) (InitStatesNotDefined Hinitin v Hv1)
+                      proc.header.inputs.keys.Disjoint lhs := fun v Hv1 Hv2 =>
+                    notin_of_isSome_isNotDefined (HlhsDef v Hv2) (InitStatesNotDefined Hinitin) Hv1
                   -- outputs.keys ∩ lhs = ∅: σA-undefined outputs vs σ-defined lhs.
                   have HoutKeys_disj_lhs :
                       proc.header.outputs.keys.Disjoint lhs := by
@@ -3942,12 +3943,9 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           σ_some_contradiction Hk1_σ_some
                             (Option.isNone_iff_eq_none.mp (Hgenrel.oldFresh k1 Hold))
                         -- k1 not isTempIdent.  Via isNotDefined of argTemps/outTemps.
-                        have notin_via_σ_some : ∀ {ks},
-                            Imperative.isNotDefined σ ks → k1 ∉ ks :=
-                          fun Hndef h => σ_some_contradiction Hk1_σ_some (Hndef k1 h)
-                        have Hk1_notin_argT' : k1 ∉ argTemps := notin_via_σ_some HndefArg_σ
-                        have Hk1_notin_outT' : k1 ∉ outTemps := notin_via_σ_some HndefOut_σ
-                        have Hk1_notin_genOld' : k1 ∉ genOldIdents := notin_via_σ_some HndefOld_σ
+                        have Hk1_notin_argT' : k1 ∉ argTemps := notin_of_isSome_isNotDefined Hk1_σ_some HndefArg_σ
+                        have Hk1_notin_outT' : k1 ∉ outTemps := notin_of_isSome_isNotDefined Hk1_σ_some HndefOut_σ
+                        have Hk1_notin_genOld' : k1 ∉ genOldIdents := notin_of_isSome_isNotDefined Hk1_σ_some HndefOld_σ
                         exact σR1_eq_σhavoc Hk1_notin_ins' Hk1_notin_outs'
                           Hk1_notin_argT' Hk1_notin_outT' Hk1_notin_genOld'
                           Hk1_notin_lhs
