@@ -5574,15 +5574,12 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           σ_some_contradiction Hk1_σ_some
                             (Option.isNone_iff_eq_none.mp (Hgenrel.oldFresh k1 Hold))
                         -- k1 not isTempIdent.  Via isNotDefined of argTemps/outTemps.
-                        have Hk1_notin_argT' :
-                            k1 ∉ argTemps := fun h =>
-                          σ_some_contradiction Hk1_σ_some (HndefArg_σ k1 h)
-                        have Hk1_notin_outT' :
-                            k1 ∉ outTemps := fun h =>
-                          σ_some_contradiction Hk1_σ_some (HndefOut_σ k1 h)
-                        have Hk1_notin_genOld' :
-                            k1 ∉ genOldIdents := fun h =>
-                          σ_some_contradiction Hk1_σ_some (HndefOld_σ k1 h)
+                        have notin_via_σ_some : ∀ {ks},
+                            Imperative.isNotDefined σ ks → k1 ∉ ks :=
+                          fun Hndef h => σ_some_contradiction Hk1_σ_some (Hndef k1 h)
+                        have Hk1_notin_argT' : k1 ∉ argTemps := notin_via_σ_some HndefArg_σ
+                        have Hk1_notin_outT' : k1 ∉ outTemps := notin_via_σ_some HndefOut_σ
+                        have Hk1_notin_genOld' : k1 ∉ genOldIdents := notin_via_σ_some HndefOld_σ
                         exact σR1_eq_σhavoc Hk1_notin_ins' Hk1_notin_outs'
                           Hk1_notin_argT' Hk1_notin_outT' Hk1_notin_genOld'
                           Hk1_notin_lhs
