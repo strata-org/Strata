@@ -6,7 +6,7 @@
 module
 
 public import Strata.DL.SMT.Term
-import Strata.DDM.Util.String
+import StrataDDM.Util.String
 import Strata.DL.SMT.DDMTransform.Translate
 import Strata.Languages.Core.Options
 

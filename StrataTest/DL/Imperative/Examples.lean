@@ -6,7 +6,7 @@
 module
 
 meta import all StrataTest.DL.Imperative.Verify
-import Strata.DDM.Integration.Lean.HashCommands
+import StrataDDM.Integration.Lean.HashCommands
 
 meta section
 

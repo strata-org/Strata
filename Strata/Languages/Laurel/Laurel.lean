@@ -11,7 +11,7 @@ public import Strata.Languages.Laurel.LaurelCompilationPipeline
 import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 import Strata.Languages.Laurel.Grammar.LaurelGrammar
-import Strata.DDM.Elab
+import StrataDDM.Elab
 
 /-! ## Strata Laurel API
 

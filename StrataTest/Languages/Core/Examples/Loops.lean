@@ -11,11 +11,11 @@ import Lean.Parser.Types
 meta import Strata.Languages.Core.DDMTransform.Grammar
 meta import Strata.Languages.Core.DDMTransform.Translate
 meta import Strata.Languages.Core.Options
-public import Strata.DDM.AST
+public import StrataDDM.AST
 public import Strata.DL.Imperative.BasicBlock
 public import Strata.Languages.Core.Statement
 public import Strata.Languages.Core.Expressions
-import Strata.DDM.Integration.Lean.HashCommands
+import StrataDDM.Integration.Lean.HashCommands
 import Strata.Languages.Core.StatementSemantics
 
 public section

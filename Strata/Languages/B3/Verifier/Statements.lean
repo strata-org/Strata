@@ -6,7 +6,7 @@
 module
 
 public import Strata.Languages.B3.Verifier.State
-import Strata.DDM.Format
+import StrataDDM.Format
 import Strata.Util.Tactics
 
 /-!

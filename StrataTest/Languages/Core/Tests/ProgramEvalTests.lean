@@ -8,7 +8,7 @@ module
 meta import Strata.Languages.Core.Verifier
 meta import Strata.Languages.Core.ProcedureEval
 meta import Strata.Languages.Core.StatementEval
-import Strata.DDM.Integration.Lean.HashCommands
+import StrataDDM.Integration.Lean.HashCommands
 
 meta section
 

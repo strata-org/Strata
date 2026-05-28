@@ -7,9 +7,9 @@ module
 
 meta import Strata.Languages.Core.DDMTransform.ASTtoCST
 meta import Strata.Languages.Core.DDMTransform.Translate
-meta import Strata.DDM.Elab
-meta import Strata.DDM.BuiltinDialects.Init
-import Strata.DDM.Integration.Lean.HashCommands
+meta import StrataDDM.Elab
+meta import StrataDDM.BuiltinDialects.Init
+import StrataDDM.Integration.Lean.HashCommands
 
 meta section
 

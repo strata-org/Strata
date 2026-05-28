@@ -5,7 +5,7 @@
 -/
 module
 
-import Strata.DDM.Integration.Lean
+import StrataDDM.Integration.Lean
 ---------------------------------------------------------------------
 
 /-! # Getting Started with `ArithPrograms`

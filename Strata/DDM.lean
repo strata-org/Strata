@@ -6,13 +6,13 @@
 module
 
 public import Strata.Util.IO
-public import Strata.DDM.Elab.LoadedDialects
-public import Strata.DDM.Ion
-import Strata.DDM.Elab
-import Strata.DDM.Util.Ion
-import Strata.DDM.BuiltinDialects
-import Strata.DDM.AST.Lemmas -- shake: keep
-import Strata.DDM.Integration.Java -- shake: keep
+public import StrataDDM.Elab.LoadedDialects
+public import StrataDDM.Ion
+import StrataDDM.Elab
+import StrataDDM.Util.Ion
+import StrataDDM.BuiltinDialects
+import StrataDDM.AST.Lemmas -- shake: keep
+import StrataDDM.Integration.Java -- shake: keep
 
 /-! ## Strata DDM API
 

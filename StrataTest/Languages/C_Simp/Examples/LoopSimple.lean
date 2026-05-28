@@ -7,7 +7,7 @@ module
 
 meta import all Strata.Languages.C_Simp.C_Simp
 meta import all Strata.Languages.C_Simp.Verify
-import Strata.DDM.Integration.Lean.HashCommands
+import StrataDDM.Integration.Lean.HashCommands
 
 meta section
 
@@ -72,7 +72,7 @@ info: function loopSimple {
   while
     (~Int.Lt i n)
     (some (~Int.Sub n i))
-    [[loopSimple_invariant_457_504]: (~Bool.And (~Int.Le i n) ((~Int.Div (~Int.Mul i (~Int.Sub i #1)) #2) == sum))]
+    [[loopSimple_invariant_456_503]: (~Bool.And (~Int.Le i n) ((~Int.Div (~Int.Mul i (~Int.Sub i #1)) #2) == sum))]
   {
     sum := (~Int.Add sum i)
     i := (~Int.Add i #1)

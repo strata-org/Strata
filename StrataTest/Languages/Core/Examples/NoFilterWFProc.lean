@@ -6,7 +6,7 @@
 module
 
 meta import Strata.Languages.Core.Core
-import Strata.DDM.Integration.Lean.HashCommands
+import StrataDDM.Integration.Lean.HashCommands
 
 meta section
 /-! # Test: WF procedures survive FilterProcedures under selective verification

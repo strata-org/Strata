@@ -14,7 +14,7 @@ returns `Statistics` directly.
 meta import Strata.Languages.Core.Core
 meta import Strata.Languages.Core.Verifier
 meta import Strata.Util.Statistics
-import Strata.DDM.Integration.Lean.HashCommands
+import StrataDDM.Integration.Lean.HashCommands
 
 meta section
 

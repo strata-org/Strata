@@ -8,7 +8,7 @@ module
 public import Strata.DL.Imperative.MetaData
 public import Strata.Languages.Core.Expressions
 import Strata.Util.Tactics
-public import Strata.DDM.Util.Decimal
+public import StrataDDM.Util.Decimal
 public import Strata.Util.FileRange
 
 /-

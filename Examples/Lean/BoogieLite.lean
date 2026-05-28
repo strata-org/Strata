@@ -5,8 +5,8 @@
 -/
 
 -- Very rough dialect with some Boogie-like code for example purposes.
-import Strata.DDM.Integration.Lean
-import Strata.DDM.Util.Format
+import StrataDDM.Integration.Lean
+import StrataDDM.Util.Format
 
 namespace Strata
 

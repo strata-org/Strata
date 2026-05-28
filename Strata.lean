@@ -8,8 +8,8 @@
 -- In each category, imports are sorted by alphabetical order.
 module
 /- DDM -/
-import Strata.DDM.Integration.Lean
-import Strata.DDM.Ion
+import StrataDDM.Integration.Lean
+import StrataDDM.Ion
 
 /- Dialect Library -/
 import Strata.DL.SMT
@@ -47,7 +47,7 @@ import Strata.Languages.Dyn.Verify
 import Strata.Languages.Python.Python
 
 /- DDM -/
-import Strata.DDM
+import StrataDDM
 
 /- Backends -/
 import Strata.Backends.CBMC

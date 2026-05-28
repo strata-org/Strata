@@ -7,7 +7,7 @@ module
 
 meta import all Strata.Languages.C_Simp.C_Simp
 meta import all Strata.Languages.C_Simp.Verify
-import Strata.DDM.Integration.Lean.HashCommands
+import StrataDDM.Integration.Lean.HashCommands
 
 meta section
 
@@ -66,7 +66,7 @@ info: function loopTrivial {
   while
     (~Int.Lt i n)
     (some (~Int.Sub n i))
-    [[loopTrivial_invariant_434_455]: (~Int.Le i n)]
+    [[loopTrivial_invariant_433_454]: (~Int.Le i n)]
   {
     i := (~Int.Add i #1)
   }

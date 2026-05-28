@@ -8,8 +8,8 @@ module
 public import Strata.Backends.CBMC.Common
 public import Strata.Languages.Core.Procedure
 
-public import Strata.DDM.AST
-import Strata.DDM.Integration.Lean.HashCommands -- shake: keep
+public import StrataDDM.AST
+import StrataDDM.Integration.Lean.HashCommands -- shake: keep
 import Strata.Languages.Core.DDMTransform.Translate
 
 public section

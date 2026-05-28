@@ -8,7 +8,7 @@ module
 public import Strata.Languages.Core.Core
 public import Strata.Languages.Python.PythonDialect
 public import Strata.Languages.Python.PythonIdent
-public import Strata.DDM.Util.SourceRange
+public import StrataDDM.Util.SourceRange
 import Strata.Languages.Python.Specs
 import Strata.Languages.Python.Specs.DDM
 import Strata.Languages.Python.CorePrelude

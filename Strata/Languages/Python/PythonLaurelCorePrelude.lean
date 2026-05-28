@@ -5,7 +5,7 @@
 -/
 module
 
-import Strata.DDM.Integration.Lean.HashCommands -- shake: keep
+import StrataDDM.Integration.Lean.HashCommands -- shake: keep
 public import Strata.Languages.Core.Program
 import Strata.Languages.Core.Verifier
 

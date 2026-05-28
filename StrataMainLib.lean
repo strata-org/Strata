@@ -8,7 +8,7 @@
 import Lean.Parser.Extension
 import Strata.Backends.CBMC.CollectSymbols
 import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
-import Strata.DDM.Integration.Java.Gen
+import StrataDDM.Integration.Java.Gen
 import Strata.Languages.Core.Verifier
 import Strata.Languages.Core.SarifOutput
 import Strata.Languages.Core.ProgramEval
@@ -30,8 +30,8 @@ import Strata.Util.IO
 
 import Strata.SimpleAPI
 import Strata.Util.Json
-import Strata.DDM.BuiltinDialects
-import Strata.DDM.Util.String
+import StrataDDM.BuiltinDialects
+import StrataDDM.Util.String
 import Strata.Languages.Python.PyFactory
 import Strata.Languages.Python.Specs
 import Strata.Languages.Python.Specs.DDM

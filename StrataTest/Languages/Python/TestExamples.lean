@@ -9,7 +9,7 @@ public import Strata.Languages.Core.Core
 public import Strata.Languages.Laurel.Laurel
 import Strata.Languages.Python.PySpecPipeline
 import Strata.Languages.Python.PyFactory
-import Strata.DDM.Ion
+import StrataDDM.Ion
 
 import StrataTest.Util.TestDiagnostics
 
