@@ -642,7 +642,8 @@ theorem Maps.find?_none_toSingleMap [DecidableEq α]
       have hr_not_mem := Map.findNone_eq_notmem_mapfst.mpr ih_rest
       apply Map.findNone_eq_notmem_mapfst.mp
       show ¬ x ∈ List.map Prod.fst ((m :: rest : Maps α β).flatten)
-      grind
+      simp only [Maps.toSingleMap] at hr_not_mem
+      simp_all [List.flatten, List.map_append, List.mem_append]
 
 theorem Maps.find?_toSingleMap [DecidableEq α] (ms : Maps α β) (x : α) :
     Map.find? ms.toSingleMap x = Maps.find? ms x := by
