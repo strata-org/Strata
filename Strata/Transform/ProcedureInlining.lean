@@ -227,7 +227,7 @@ def inlineCallCmd
 
         -- Create a copy of the procedure that has all input/output/local vars
         -- replaced with fresh ones
-        let (proc, _var_map) <- renameAllLocalNames proc
+        let (proc, _) <- renameAllLocalNames proc
 
         let sigOutputs := LMonoTySignature.toTrivialLTy proc.header.outputs
         let sigInputs := LMonoTySignature.toTrivialLTy proc.header.inputs
