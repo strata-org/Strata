@@ -574,6 +574,13 @@ private theorem block_definedVars_append (ss₁ ss₂ : Statements) (ex : Bool) 
   | nil => simp [Block.definedVars]
   | cons s rest ih => simp [Block.definedVars, ih, List.append_assoc]
 
+private theorem block_funcDeclNames_append (ss₁ ss₂ : Statements) :
+    Block.funcDeclNames (P := Expression) (C := Command) (ss₁ ++ ss₂) =
+      Block.funcDeclNames ss₁ ++ Block.funcDeclNames ss₂ := by
+  induction ss₁ with
+  | nil => simp [Block.funcDeclNames]
+  | cons s rest ih => simp [Block.funcDeclNames, ih, List.append_assoc]
+
 /-! ### Helper: UpdateStates frame property -/
 
 private theorem updateState_store_frame
@@ -1754,14 +1761,14 @@ private theorem defUseWellFormed_outer_extend_aux (sz : Nat) :
       Stmt.defUseWellFormed outer s = Bool.true →
       (∀ n, extra n = Bool.true →
         n ∉ Stmt.modifiedVars s ∧ n ∉ Stmt.getVars s ∧
-        n ∉ Stmt.definedVars s false) →
+        n ∉ Stmt.definedVars s false ∧ n ∉ Stmt.funcDeclNames s) →
       Stmt.defUseWellFormed (fun n => outer n || extra n) s = Bool.true) ∧
     (∀ (outer extra : Expression.Ident → Bool) (bss : Statements),
       Block.sizeOf bss ≤ sz →
       Block.defUseWellFormed outer bss = Bool.true →
       (∀ n, extra n = Bool.true →
         n ∉ Block.modifiedVars bss ∧ n ∉ Block.getVars bss ∧
-        n ∉ Block.definedVars bss false) →
+        n ∉ Block.definedVars bss false ∧ n ∉ Block.funcDeclNames bss) →
       Block.defUseWellFormed (fun n => outer n || extra n) bss = Bool.true) := by
   induction sz with
   | zero =>
@@ -1798,7 +1805,7 @@ private theorem defUseWellFormed_outer_extend_aux (sz : Nat) :
           rw [Bool.or_eq_true] at hcontra
           rcases hcontra with h | h
           · exact hd h
-          · exact (hext n h).2.2 (by
+          · exact (hext n h).2.2.1 (by
               simp only [Stmt.definedVars, HasVarsImp.definedVars] at hn
               simp only [Stmt.definedVars, HasVarsImp.definedVars]; exact hn)
       | .block l bss md =>
@@ -1806,13 +1813,14 @@ private theorem defUseWellFormed_outer_extend_aux (sz : Nat) :
         have hsz_bss : Block.sizeOf bss ≤ k := by simp [Stmt.sizeOf] at hsz; omega
         have hext_bss : ∀ n, extra n = Bool.true →
             n ∉ Block.modifiedVars bss ∧ n ∉ Block.getVars bss ∧
-            n ∉ Block.definedVars bss false := by
+            n ∉ Block.definedVars bss false ∧ n ∉ Block.funcDeclNames bss := by
           intro n hn
-          have ⟨hm, hg, hd⟩ := hext n hn
-          refine ⟨?_, ?_, ?_⟩
+          have ⟨hm, hg, hd, hfd⟩ := hext n hn
+          refine ⟨?_, ?_, ?_, ?_⟩
           · simpa [Stmt.modifiedVars] using hm
           · simpa [Stmt.getVars] using hg
           · simpa [Stmt.definedVars] using hd
+          · simpa [Stmt.funcDeclNames] using hfd
         exact ih_block outer extra bss hsz_bss hwf hext_bss
       | .ite cond tbss ebss md =>
         unfold Stmt.defUseWellFormed at hwf ⊢
@@ -1823,10 +1831,10 @@ private theorem defUseWellFormed_outer_extend_aux (sz : Nat) :
         have hsz_e : Block.sizeOf ebss ≤ k := by simp [Stmt.sizeOf] at hsz; omega
         have hext_t : ∀ n, extra n = Bool.true →
             n ∉ Block.modifiedVars tbss ∧ n ∉ Block.getVars tbss ∧
-            n ∉ Block.definedVars tbss false := by
+            n ∉ Block.definedVars tbss false ∧ n ∉ Block.funcDeclNames tbss := by
           intro n hn
-          have ⟨hm, hg, hd⟩ := hext n hn
-          refine ⟨?_, ?_, ?_⟩
+          have ⟨hm, hg, hd, hfd⟩ := hext n hn
+          refine ⟨?_, ?_, ?_, ?_⟩
           · intro hh; exact hm (by
               simp only [Stmt.modifiedVars, List.mem_append]; exact .inl hh)
           · intro hh; exact hg (by
@@ -1834,12 +1842,14 @@ private theorem defUseWellFormed_outer_extend_aux (sz : Nat) :
           · intro hh; exact hd (by
               simp only [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte, List.mem_append]
               exact .inl hh)
+          · intro hh; exact hfd (by
+              simp only [Stmt.funcDeclNames, List.mem_append]; exact .inl hh)
         have hext_e : ∀ n, extra n = Bool.true →
             n ∉ Block.modifiedVars ebss ∧ n ∉ Block.getVars ebss ∧
-            n ∉ Block.definedVars ebss false := by
+            n ∉ Block.definedVars ebss false ∧ n ∉ Block.funcDeclNames ebss := by
           intro n hn
-          have ⟨hm, hg, hd⟩ := hext n hn
-          refine ⟨?_, ?_, ?_⟩
+          have ⟨hm, hg, hd, hfd⟩ := hext n hn
+          refine ⟨?_, ?_, ?_, ?_⟩
           · intro hh; exact hm (by
               simp only [Stmt.modifiedVars, List.mem_append]; exact .inr hh)
           · intro hh; exact hg (by
@@ -1847,6 +1857,8 @@ private theorem defUseWellFormed_outer_extend_aux (sz : Nat) :
           · intro hh; exact hd (by
               simp only [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte, List.mem_append]
               exact .inr hh)
+          · intro hh; exact hfd (by
+              simp only [Stmt.funcDeclNames, List.mem_append]; exact .inr hh)
         refine ⟨⟨?_, ?_⟩, ?_⟩
         · rw [List.all_eq_true]
           intro n hn; simp only [Bool.or_eq_true]; exact .inl (hcond_all n hn)
@@ -1860,14 +1872,15 @@ private theorem defUseWellFormed_outer_extend_aux (sz : Nat) :
         have hsz_body : Block.sizeOf body ≤ k := by simp [Stmt.sizeOf] at hsz; omega
         have hext_body : ∀ n, extra n = Bool.true →
             n ∉ Block.modifiedVars body ∧ n ∉ Block.getVars body ∧
-            n ∉ Block.definedVars body false := by
+            n ∉ Block.definedVars body false ∧ n ∉ Block.funcDeclNames body := by
           intro n hn
-          have ⟨hm, hg, hd⟩ := hext n hn
-          refine ⟨?_, ?_, ?_⟩
+          have ⟨hm, hg, hd, hfd⟩ := hext n hn
+          refine ⟨?_, ?_, ?_, ?_⟩
           · simpa [Stmt.modifiedVars] using hm
           · intro hh; exact hg (by
               simp only [Stmt.getVars, List.mem_append]; exact .inr hh)
           · simpa [Stmt.definedVars] using hd
+          · simpa [Stmt.funcDeclNames] using hfd
         refine ⟨⟨⟨?_, ?_⟩, ?_⟩, ?_⟩
         · rw [List.all_eq_true]
           intro n hn; simp only [Bool.or_eq_true]; exact .inl (hguard_all n hn)
@@ -1878,11 +1891,27 @@ private theorem defUseWellFormed_outer_extend_aux (sz : Nat) :
         · exact ih_block outer extra body hsz_body hbody hext_body
       | .exit l md => simp [Stmt.defUseWellFormed]
       | .funcDecl decl md =>
-        -- defUseWellFormed for funcDecl checks only that the body's free vars
-        -- are in `definedVars`; preservation under `outer || extra` is by `Or`.
+        -- The funcDecl case checks (a) the body's free vars are in `definedVars`
+        -- (preserved under `outer || extra` by `Or`), and (b) `decl.name` is not
+        -- in `definedVars`.  For (b), we know `decl.name` is in `funcDeclNames`,
+        -- so `extra decl.name = false` by the strengthened `hext`.
         unfold Stmt.defUseWellFormed at hwf ⊢
-        rw [List.all_eq_true] at hwf ⊢
-        intro n hn; simp only [Bool.or_eq_true]; exact .inl (hwf n hn)
+        simp only [Bool.and_eq_true] at hwf ⊢
+        obtain ⟨hgv, hname⟩ := hwf
+        refine ⟨?_, ?_⟩
+        · rw [List.all_eq_true] at hgv ⊢
+          intro n hn; simp only [Bool.or_eq_true]; exact .inl (hgv n hn)
+        · have h_ext_false : extra decl.name = Bool.false := by
+            cases hh : extra decl.name with
+            | false => rfl
+            | true =>
+              exfalso
+              have hfd : decl.name ∈ Stmt.funcDeclNames (Stmt.funcDecl decl md : Statement) := by
+                simp [Stmt.funcDeclNames]
+              exact (hext decl.name hh).2.2.2 hfd
+          have h_outer_false : outer decl.name = Bool.false := by
+            simpa [Bool.not_eq_true'] using hname
+          simp [h_ext_false, h_outer_false]
       | .typeDecl tc md => simp [Stmt.defUseWellFormed]
     · -- Block case
       intro outer extra bss hsz hwf hext
@@ -1896,28 +1925,32 @@ private theorem defUseWellFormed_outer_extend_aux (sz : Nat) :
         have hsz_rest : Block.sizeOf rest ≤ k := by simp [Block.sizeOf] at hsz; omega
         have hext_s : ∀ n, extra n = Bool.true →
             n ∉ Stmt.modifiedVars s ∧ n ∉ Stmt.getVars s ∧
-            n ∉ Stmt.definedVars s false := by
+            n ∉ Stmt.definedVars s false ∧ n ∉ Stmt.funcDeclNames s := by
           intro n hn
-          have ⟨hm, hg, hd⟩ := hext n hn
-          refine ⟨?_, ?_, ?_⟩
+          have ⟨hm, hg, hd, hfd⟩ := hext n hn
+          refine ⟨?_, ?_, ?_, ?_⟩
           · intro hh; exact hm (by
               simp only [Block.modifiedVars, List.mem_append]; exact .inl hh)
           · intro hh; exact hg (by
               simp only [Block.getVars, List.mem_append]; exact .inl hh)
           · intro hh; exact hd (by
               simp only [Block.definedVars, List.mem_append]; exact .inl hh)
+          · intro hh; exact hfd (by
+              simp only [Block.funcDeclNames, List.mem_append]; exact .inl hh)
         have hext_rest : ∀ n, extra n = Bool.true →
             n ∉ Block.modifiedVars rest ∧ n ∉ Block.getVars rest ∧
-            n ∉ Block.definedVars rest false := by
+            n ∉ Block.definedVars rest false ∧ n ∉ Block.funcDeclNames rest := by
           intro n hn
-          have ⟨hm, hg, hd⟩ := hext n hn
-          refine ⟨?_, ?_, ?_⟩
+          have ⟨hm, hg, hd, hfd⟩ := hext n hn
+          refine ⟨?_, ?_, ?_, ?_⟩
           · intro hh; exact hm (by
               simp only [Block.modifiedVars, List.mem_append]; exact .inr hh)
           · intro hh; exact hg (by
               simp only [Block.getVars, List.mem_append]; exact .inr hh)
           · intro hh; exact hd (by
               simp only [Block.definedVars, List.mem_append]; exact .inr hh)
+          · intro hh; exact hfd (by
+              simp only [Block.funcDeclNames, List.mem_append]; exact .inr hh)
         refine ⟨ih_stmt outer extra s hsz_s hwf_s hext_s, ?_⟩
         -- For tail, the inner outer extends by `decide (n ∈ Stmt.definedVars s true)`.
         -- Want: Block.defUseWellFormed
@@ -1943,7 +1976,7 @@ private theorem defUseWellFormed_outer_extend_stmt
     (hwf : Stmt.defUseWellFormed outer s = Bool.true)
     (hext : ∀ n, extra n = Bool.true →
         n ∉ Stmt.modifiedVars s ∧ n ∉ Stmt.getVars s ∧
-        n ∉ Stmt.definedVars s false) :
+        n ∉ Stmt.definedVars s false ∧ n ∉ Stmt.funcDeclNames s) :
     Stmt.defUseWellFormed (fun n => outer n || extra n) s = Bool.true :=
   (defUseWellFormed_outer_extend_aux (Stmt.sizeOf s)).1 outer extra s
     (Nat.le_refl _) hwf hext
@@ -1953,7 +1986,7 @@ private theorem defUseWellFormed_outer_extend_block
     (hwf : Block.defUseWellFormed outer bss = Bool.true)
     (hext : ∀ n, extra n = Bool.true →
         n ∉ Block.modifiedVars bss ∧ n ∉ Block.getVars bss ∧
-        n ∉ Block.definedVars bss false) :
+        n ∉ Block.definedVars bss false ∧ n ∉ Block.funcDeclNames bss) :
     Block.defUseWellFormed (fun n => outer n || extra n) bss = Bool.true :=
   (defUseWellFormed_outer_extend_aux (Block.sizeOf bss)).2 outer extra bss
     (Nat.le_refl _) hwf hext
@@ -2083,14 +2116,16 @@ private theorem defUseWellFormed_touched_notDef_aux (sz : Nat) :
         simp [Stmt.modifiedVars, Stmt.getVars] at hn
       | .funcDecl decl md =>
         -- modifiedVars = []; getVars = body's free vars (formals excluded).
-        -- defUseWellFormed gives `(getVars).all (definedVars n)` so we can read
-        -- it directly.
+        -- defUseWellFormed gives `(getVars).all (definedVars n) && !definedVars decl.name`,
+        -- we read off the first conjunct.
         unfold Stmt.defUseWellFormed at hwf
-        rw [List.all_eq_true] at hwf
+        simp only [Bool.and_eq_true] at hwf
+        obtain ⟨hgv, _⟩ := hwf
+        rw [List.all_eq_true] at hgv
         simp only [Stmt.modifiedVars] at hn
         rcases hn with hmod | hget
         · exact absurd hmod (by simp)
-        · exact hwf n hget
+        · exact hgv n hget
       | .typeDecl tc md =>
         simp [Stmt.modifiedVars, Stmt.getVars] at hn
     · -- Block case
@@ -2210,6 +2245,9 @@ private theorem InitEnvWF.toBlock_block {reserved : List String} {l : String}
     have heq : Stmt.definedVars (.block l bss md : Statement) false =
                Block.definedVars bss false := by simp [Stmt.definedVars]
     rw [heq]; exact hn)
+  funcDeclNamesNotReserved n hn := h.funcDeclNamesNotReserved n (by
+    show n ∈ Stmt.funcDeclNames (.block l bss md)
+    simpa [Stmt.funcDeclNames] using hn)
   reservedFresh := h.reservedFresh
   wfBool := h.wfBool
   wfVal  := h.wfVal
@@ -2245,6 +2283,9 @@ private theorem InitEnvWF.toBlock_ite_left {reserved : List String}
   definedVarsNotReserved n hn p hp := h.definedVarsNotReserved n (by
     show n ∈ Stmt.definedVars (.ite c tss ess md) false
     simp only [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte, List.mem_append]; left; exact hn) p hp
+  funcDeclNamesNotReserved n hn p hp := h.funcDeclNamesNotReserved n (by
+    show n ∈ Stmt.funcDeclNames (.ite c tss ess md)
+    simp [Stmt.funcDeclNames]; exact .inl hn) p hp
   reservedFresh := h.reservedFresh
   wfBool := h.wfBool
   wfVal  := h.wfVal
@@ -2275,6 +2316,9 @@ private theorem InitEnvWF.toBlock_ite_right {reserved : List String}
   definedVarsNotReserved n hn p hp := h.definedVarsNotReserved n (by
     show n ∈ Stmt.definedVars (.ite c tss ess md) false
     simp only [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte, List.mem_append]; right; exact hn) p hp
+  funcDeclNamesNotReserved n hn p hp := h.funcDeclNamesNotReserved n (by
+    show n ∈ Stmt.funcDeclNames (.ite c tss ess md)
+    simp [Stmt.funcDeclNames]; exact .inr hn) p hp
   reservedFresh := h.reservedFresh
   wfBool := h.wfBool
   wfVal  := h.wfVal
@@ -2306,6 +2350,9 @@ private theorem BlockInitEnvWF.toStmt_head {reserved : List String} {s : Stateme
   definedVarsNotReserved n hn p hp := h.definedVarsNotReserved n (by
     show n ∈ Block.definedVars (s :: ss) false
     simp only [Block.definedVars, List.mem_append]; left; exact hn) p hp
+  funcDeclNamesNotReserved n hn p hp := h.funcDeclNamesNotReserved n (by
+    show n ∈ Block.funcDeclNames (s :: ss)
+    simp [Block.funcDeclNames]; exact .inl hn) p hp
   reservedFresh := h.reservedFresh
   wfBool := h.wfBool
   wfVal  := h.wfVal
@@ -3032,6 +3079,9 @@ private theorem BlockInitEnvWF.toBlock_tail_via_defUseOk {reserved : List String
   definedVarsNotReserved n hn p hp := h.definedVarsNotReserved n (by
     show n ∈ Block.definedVars (s :: ss) false
     simp only [Block.definedVars, List.mem_append]; right; exact hn) p hp
+  funcDeclNamesNotReserved n hn p hp := h.funcDeclNamesNotReserved n (by
+    show n ∈ Block.funcDeclNames (s :: ss)
+    simp [Block.funcDeclNames]; exact .inr hn) p hp
   reservedFresh n hsome₁ p hp := by
     by_cases hsome₀ : (ρ₀.store n).isSome
     · exact h.reservedFresh n hsome₀ p hp
@@ -3159,7 +3209,6 @@ the lengthy quantifier/clause structure. -/
 private abbrev SimStmtCorrProp (reserved : List String) (sz : Nat) : Prop :=
   ∀ (σ : LoopElimState) (st : Statement),
     Stmt.sizeOf st ≤ sz →
-    Stmt.noFuncDecl st = Bool.true →
     stmtOk σ st →
     ∀ (ρ₀ : Env Expression),
       InitEnvWF reserved st ρ₀ →
@@ -3177,7 +3226,6 @@ private abbrev SimStmtCorrProp (reserved : List String) (sz : Nat) : Prop :=
 private abbrev SimBlockCorrProp (reserved : List String) (sz : Nat) : Prop :=
   ∀ (σ : LoopElimState) (bss : Statements),
     Block.sizeOf bss ≤ sz →
-    Block.noFuncDecl bss = Bool.true →
     blockOk σ bss →
     ∀ (ρ₀ : Env Expression),
       BlockInitEnvWF reserved bss ρ₀ →
@@ -3195,7 +3243,6 @@ private abbrev SimBlockCorrProp (reserved : List String) (sz : Nat) : Prop :=
 private abbrev SimStmtCFProp (reserved : List String) (sz : Nat) : Prop :=
   ∀ (σ : LoopElimState) (st : Statement),
     Stmt.sizeOf st ≤ sz →
-    Stmt.noFuncDecl st = Bool.true →
     stmtOk σ st →
     ∀ (ρ₀ : Env Expression),
       InitEnvWF reserved st ρ₀ →
@@ -3206,7 +3253,6 @@ private abbrev SimStmtCFProp (reserved : List String) (sz : Nat) : Prop :=
 private abbrev SimBlockCFProp (reserved : List String) (sz : Nat) : Prop :=
   ∀ (σ : LoopElimState) (bss : Statements),
     Block.sizeOf bss ≤ sz →
-    Block.noFuncDecl bss = Bool.true →
     blockOk σ bss →
     ∀ (ρ₀ : Env Expression),
       BlockInitEnvWF reserved bss ρ₀ →
@@ -4003,6 +4049,84 @@ private theorem loop_det_terminal_guard_ff
           have hlen_loop : hT_loop'.len ≤ k := by omega
           exact ih ρ_mid ρ_mid' hT_loop' hlen_loop hnf'
 
+/-- A loop terminal trace preserves the evaluator unconditionally.
+
+    The loop body is wrapped in `.block .none ρ.store ρ.eval (.stmts body ...)`,
+    and `step_block_done` restores the evaluator to the parent's snapshot.  So
+    each iteration's body (no matter what it does, including funcDecls) cannot
+    affect the eval seen at the loop's outer config. -/
+private theorem loop_terminal_eval_preserved
+    {guardE : ExprOrNondet Expression}
+    {measure : Option Expression.Expr}
+    {inv : List (String × Expression.Expr)}
+    {body : Statements} {md : MetaData Expression}
+    {ρ₀ ρ' : Env Expression}
+    (hreach : CoreStar π φ
+        (.stmt (.loop guardE measure inv body md) ρ₀) (.terminal ρ')) :
+    ρ'.eval = ρ₀.eval := by
+  have hstarT := reflTrans_to_T hreach
+  suffices ∀ (n_steps : Nat) (ρ₀ ρ' : Env Expression),
+      ∀ (h : ReflTransT (StepStmt Expression (EvalCommand π φ) (EvalPureFunc φ))
+          (.stmt (.loop guardE measure inv body md) ρ₀) (.terminal ρ')),
+        h.len ≤ n_steps → ρ'.eval = ρ₀.eval by
+    exact this hstarT.len ρ₀ ρ' hstarT (Nat.le_refl _)
+  clear hreach hstarT ρ₀ ρ'
+  intro n_steps
+  induction n_steps with
+  | zero =>
+    intro ρ₀ ρ' hT hlen
+    match hT, hlen with
+    | .step _ _ _ _ _, hlen => simp [ReflTransT.len] at hlen
+  | succ k ih =>
+    intro ρ₀ ρ' hT hlen
+    match hT with
+    | .step _ _ _ hstep1 hrest =>
+      cases hstep1 with
+      | step_loop_exit _ _ _ _ =>
+        match hrest with
+        | .refl _ => rfl
+        | .step _ _ _ h _ => exact nomatch h
+      | step_loop_nondet_exit _ _ =>
+        match hrest with
+        | .refl _ => rfl
+        | .step _ _ _ h _ => exact nomatch h
+      | step_loop_enter _ _ _ _ _ =>
+        have ⟨ρ_mid, hT_block, hT_tail, hlen_split⟩ := seqT_reaches_terminal hrest
+        match hT_tail, hlen_split with
+        | .step _ _ _ .step_stmts_cons hrest', hlen_split =>
+          have ⟨ρ_mid', hT_loop', hT_nil, hlen_split'⟩ := seqT_reaches_terminal hrest'
+          have hρ_eq : ρ_mid' = ρ' := by
+            match hT_nil with
+            | .step _ _ _ .step_stmts_nil hrr =>
+              match hrr with
+              | .refl _ => rfl
+              | .step _ _ _ h _ => exact nomatch h
+          subst hρ_eq
+          have hlen_loop : hT_loop'.len ≤ k := by
+            simp only [ReflTransT.len] at hlen hlen_split hlen_split' ⊢; omega
+          have hev_loop : ρ_mid'.eval = ρ_mid.eval := ih ρ_mid ρ_mid' hT_loop' hlen_loop
+          have ⟨_, _, heq_mid⟩ := blockT_none_reaches_terminal π φ hT_block
+          have hev_mid : ρ_mid.eval = ρ₀.eval := by rw [heq_mid]
+          rw [hev_loop, hev_mid]
+      | step_loop_nondet_enter _ _ =>
+        have ⟨ρ_mid, hT_block, hT_tail, hlen_split⟩ := seqT_reaches_terminal hrest
+        match hT_tail, hlen_split with
+        | .step _ _ _ .step_stmts_cons hrest', hlen_split =>
+          have ⟨ρ_mid', hT_loop', hT_nil, hlen_split'⟩ := seqT_reaches_terminal hrest'
+          have hρ_eq : ρ_mid' = ρ' := by
+            match hT_nil with
+            | .step _ _ _ .step_stmts_nil hrr =>
+              match hrr with
+              | .refl _ => rfl
+              | .step _ _ _ h _ => exact nomatch h
+          subst hρ_eq
+          have hlen_loop : hT_loop'.len ≤ k := by
+            simp only [ReflTransT.len] at hlen hlen_split hlen_split' ⊢; omega
+          have hev_loop : ρ_mid'.eval = ρ_mid.eval := ih ρ_mid ρ_mid' hT_loop' hlen_loop
+          have ⟨_, _, heq_mid⟩ := blockT_none_reaches_terminal π φ hT_block
+          have hev_mid : ρ_mid.eval = ρ₀.eval := by rw [heq_mid]
+          rw [hev_loop, hev_mid]
+
 /-- Common bundle used throughout the loop-iteration extraction proofs:
     given a loop's `InitEnvWF` (so its invariants' free variables are known
     defined in `ρ₀`), and an env `ρ` whose store has the same `isSome`-domain
@@ -4035,6 +4159,172 @@ private theorem inv_eval_agree_under_projectStore
     rw [if_pos ((hsame_ρ x).mpr hdef_x)]
   exact hswf.exprCongr le.2
     (projectStore ρ.store ρ_inner.store) ρ_inner.store hagree_vars
+
+/-- Without `noFuncDecl`, `ρ_inner.eval` may differ from `ρ₀.eval` (the body
+    can introduce funcDecls that extend the eval).  However, if `e`'s free
+    variables are all defined in `ρ₀.store`, the body's `defUseWellFormed`
+    invariant guarantees they are disjoint from any funcDecl introduced in
+    the body, hence `ρ_inner.eval σ' e = ρ₀.eval σ' e` for any store `σ'`.
+
+    This is the per-expression replacement for the old `heval_inner :
+    ρ_inner.eval = ρ₀.eval` (which only held under `noFuncDecl`). -/
+private theorem body_eval_eq_init_on_expr
+    (φ : CoreEval → PureFunc Expression → CoreEval)
+    (hwf_ext : WFEvalExtension φ)
+    {reserved : List String} {guardE : ExprOrNondet Expression}
+    {measure : Option Expression.Expr}
+    {inv : List (String × Expression.Expr)}
+    {body : Statements} {md : MetaData Expression}
+    {ρ₀ ρ_inner : Env Expression}
+    (hswf : InitEnvWF reserved (.loop guardE measure inv body md) ρ₀)
+    (h_inner : CoreStar π φ
+      (.stmts body { ρ₀ with hasFailure := ρ₀.hasFailure }) (.terminal ρ_inner))
+    (σ' : SemanticStore Expression) (e : Expression.Expr)
+    (he : ∀ n ∈ HasVarsPure.getVars (P := Expression) e, (ρ₀.store n).isSome) :
+    ρ_inner.eval σ' e = ρ₀.eval σ' e := by
+  have hdu := hswf.defUseOk
+  simp only [Stmt.defUseWellFormed, Bool.and_eq_true] at hdu
+  have hdu_body : Block.defUseWellFormed (fun n => (ρ₀.store n).isSome) body = Bool.true :=
+    hdu.2
+  have heta : ({ ρ₀ with hasFailure := ρ₀.hasFailure } : Env Expression) = ρ₀ := by
+    cases ρ₀; rfl
+  rw [heta] at h_inner
+  exact block_preserves_eval_via_defUseOk Expression (EvalCommand π φ) (EvalPureFunc φ)
+    hwf_ext.toWFEvalExtension body ρ₀ ρ_inner _ hdu_body σ' e
+    (fun n hn => he n hn) h_inner
+
+/-- Variant of `body_eval_eq_init_on_expr` for an inv expression: the inv vars
+    are already bounded by `defUseWellFormed`'s loop invariant clause. -/
+private theorem body_eval_inv_preserved
+    (φ : CoreEval → PureFunc Expression → CoreEval)
+    (hwf_ext : WFEvalExtension φ)
+    {reserved : List String} {guardE : ExprOrNondet Expression}
+    {measure : Option Expression.Expr}
+    {inv : List (String × Expression.Expr)}
+    {body : Statements} {md : MetaData Expression}
+    {ρ₀ ρ_inner : Env Expression}
+    (hswf : InitEnvWF reserved (.loop guardE measure inv body md) ρ₀)
+    (h_inner : CoreStar π φ
+      (.stmts body { ρ₀ with hasFailure := ρ₀.hasFailure }) (.terminal ρ_inner))
+    {le : String × Expression.Expr} (hle : le ∈ inv)
+    (σ' : SemanticStore Expression) :
+    ρ_inner.eval σ' le.2 = ρ₀.eval σ' le.2 := by
+  have hdu := hswf.defUseOk
+  simp only [Stmt.defUseWellFormed, Bool.and_eq_true] at hdu
+  obtain ⟨⟨⟨_, _⟩, hinv_all⟩, _⟩ := hdu
+  apply body_eval_eq_init_on_expr π φ hwf_ext hswf h_inner σ' le.2
+  intro n hn
+  have hx_mem : n ∈ (inv.flatMap fun lp => HasVarsPure.getVars lp.2) :=
+    List.mem_flatMap.mpr ⟨le, hle, hn⟩
+  have h := (List.all_eq_true.mp hinv_all) n hx_mem
+  exact h
+
+/-- More general variant: body runs from any `ρ_start` (not necessarily `ρ₀`),
+    with the same `isSome`-domain.  This is the form needed when the body
+    runs from an inner-iteration env. -/
+private theorem body_eval_inv_preserved_from
+    (φ : CoreEval → PureFunc Expression → CoreEval)
+    (hwf_ext : WFEvalExtension φ)
+    {reserved : List String} {guardE : ExprOrNondet Expression}
+    {measure : Option Expression.Expr}
+    {inv : List (String × Expression.Expr)}
+    {body : Statements} {md : MetaData Expression}
+    {ρ₀ ρ_start ρ_inner : Env Expression}
+    (hswf : InitEnvWF reserved (.loop guardE measure inv body md) ρ₀)
+    (hsame : ∀ x, (ρ_start.store x).isSome ↔ (ρ₀.store x).isSome)
+    (h_inner : CoreStar π φ (.stmts body ρ_start) (.terminal ρ_inner))
+    {le : String × Expression.Expr} (hle : le ∈ inv)
+    (σ' : SemanticStore Expression) :
+    ρ_inner.eval σ' le.2 = ρ_start.eval σ' le.2 := by
+  have hdu := hswf.defUseOk
+  simp only [Stmt.defUseWellFormed, Bool.and_eq_true] at hdu
+  obtain ⟨⟨⟨_, _⟩, hinv_all⟩, hbody_du⟩ := hdu
+  -- Reproject body's defUseOk to use `(ρ_start.store n).isSome` predicate.
+  have hbody_du_start : Block.defUseWellFormed (fun n => (ρ_start.store n).isSome) body
+      = Bool.true := by
+    have hext : (fun n => (ρ_start.store n).isSome) = (fun n => (ρ₀.store n).isSome) := by
+      funext n; exact (Bool.eq_iff_iff).mpr (hsame n)
+    rw [hext]; exact hbody_du
+  exact block_preserves_eval_via_defUseOk Expression (EvalCommand π φ) (EvalPureFunc φ)
+    hwf_ext.toWFEvalExtension body ρ_start ρ_inner _ hbody_du_start σ' le.2
+    (fun n hn => by
+      have hx_mem : n ∈ (inv.flatMap fun lp => HasVarsPure.getVars lp.2) :=
+        List.mem_flatMap.mpr ⟨le, hle, hn⟩
+      have h := (List.all_eq_true.mp hinv_all) n hx_mem
+      have := (hsame n).mpr h
+      simpa using this)
+    h_inner
+
+/-- Variant of `body_eval_inv_preserved_from` where the body runs from
+    `ρ_start` whose `eval` is `ρ₀.eval`.  Resulting equality on `ρ₀.eval`. -/
+private theorem body_eval_inv_preserved_init
+    (φ : CoreEval → PureFunc Expression → CoreEval)
+    (hwf_ext : WFEvalExtension φ)
+    {reserved : List String} {guardE : ExprOrNondet Expression}
+    {measure : Option Expression.Expr}
+    {inv : List (String × Expression.Expr)}
+    {body : Statements} {md : MetaData Expression}
+    {ρ₀ ρ_start ρ_inner : Env Expression}
+    (hswf : InitEnvWF reserved (.loop guardE measure inv body md) ρ₀)
+    (hsame : ∀ x, (ρ_start.store x).isSome ↔ (ρ₀.store x).isSome)
+    (hstart_eval : ρ_start.eval = ρ₀.eval)
+    (h_inner : CoreStar π φ (.stmts body ρ_start) (.terminal ρ_inner))
+    {le : String × Expression.Expr} (hle : le ∈ inv)
+    (σ' : SemanticStore Expression) :
+    ρ_inner.eval σ' le.2 = ρ₀.eval σ' le.2 := by
+  rw [body_eval_inv_preserved_from π φ hwf_ext hswf hsame h_inner hle σ', hstart_eval]
+
+/-- Exiting variant of `body_eval_inv_preserved_from`. -/
+private theorem body_eval_inv_preserved_exiting
+    (φ : CoreEval → PureFunc Expression → CoreEval)
+    (hwf_ext : WFEvalExtension φ)
+    {reserved : List String} {guardE : ExprOrNondet Expression}
+    {measure : Option Expression.Expr}
+    {inv : List (String × Expression.Expr)}
+    {body : Statements} {md : MetaData Expression}
+    {ρ₀ ρ_start ρ_inner : Env Expression} {lbl : String}
+    (hswf : InitEnvWF reserved (.loop guardE measure inv body md) ρ₀)
+    (hsame : ∀ x, (ρ_start.store x).isSome ↔ (ρ₀.store x).isSome)
+    (h_inner : CoreStar π φ (.stmts body ρ_start) (.exiting lbl ρ_inner))
+    {le : String × Expression.Expr} (hle : le ∈ inv)
+    (σ' : SemanticStore Expression) :
+    ρ_inner.eval σ' le.2 = ρ_start.eval σ' le.2 := by
+  have hdu := hswf.defUseOk
+  simp only [Stmt.defUseWellFormed, Bool.and_eq_true] at hdu
+  obtain ⟨⟨⟨_, _⟩, hinv_all⟩, hbody_du⟩ := hdu
+  have hbody_du_start : Block.defUseWellFormed (fun n => (ρ_start.store n).isSome) body
+      = Bool.true := by
+    have hext : (fun n => (ρ_start.store n).isSome) = (fun n => (ρ₀.store n).isSome) := by
+      funext n; exact (Bool.eq_iff_iff).mpr (hsame n)
+    rw [hext]; exact hbody_du
+  exact block_preserves_eval_via_defUseOk_exiting Expression (EvalCommand π φ) (EvalPureFunc φ)
+    hwf_ext.toWFEvalExtension body ρ_start ρ_inner lbl _ hbody_du_start σ' le.2
+    (fun n hn => by
+      have hx_mem : n ∈ (inv.flatMap fun lp => HasVarsPure.getVars lp.2) :=
+        List.mem_flatMap.mpr ⟨le, hle, hn⟩
+      have h := (List.all_eq_true.mp hinv_all) n hx_mem
+      have := (hsame n).mpr h
+      simpa using this)
+    h_inner
+
+/-- Variant of `body_eval_inv_preserved_exiting` where the body runs from
+    `ρ_start` whose `eval` is `ρ₀.eval`. -/
+private theorem body_eval_inv_preserved_exiting_init
+    (φ : CoreEval → PureFunc Expression → CoreEval)
+    (hwf_ext : WFEvalExtension φ)
+    {reserved : List String} {guardE : ExprOrNondet Expression}
+    {measure : Option Expression.Expr}
+    {inv : List (String × Expression.Expr)}
+    {body : Statements} {md : MetaData Expression}
+    {ρ₀ ρ_start ρ_inner : Env Expression} {lbl : String}
+    (hswf : InitEnvWF reserved (.loop guardE measure inv body md) ρ₀)
+    (hsame : ∀ x, (ρ_start.store x).isSome ↔ (ρ₀.store x).isSome)
+    (hstart_eval : ρ_start.eval = ρ₀.eval)
+    (h_inner : CoreStar π φ (.stmts body ρ_start) (.exiting lbl ρ_inner))
+    {le : String × Expression.Expr} (hle : le ∈ inv)
+    (σ' : SemanticStore Expression) :
+    ρ_inner.eval σ' le.2 = ρ₀.eval σ' le.2 := by
+  rw [body_eval_inv_preserved_exiting π φ hwf_ext hswf hsame h_inner hle σ', hstart_eval]
 
 /-- Common pattern in loop-iteration extraction proofs: every variable in the
     `havoc_vars` list (those modified by the loop body but not defined within
@@ -4076,7 +4366,6 @@ private theorem simulation_loop_term_enter_case
     (measure : Option Expression.Expr)
     (inv : List (String × Expression.Expr))
     (body : Statements) (md : MetaData Expression)
-    (hnofd : Stmt.noFuncDecl (.loop guardE measure inv body md) = Bool.true)
     (hok : stmtOk σ (.loop guardE measure inv body md))
     (ρ₀ ρ' : Env Expression)
     (hswf : InitEnvWF reserved (.loop guardE measure inv body md) ρ₀)
@@ -4139,10 +4428,9 @@ private theorem simulation_loop_term_enter_case
         loop_terminal_inv_all_tt π φ hreach hnf''
       have hproj_id : projectStore ρ₀.store ρ'.store = ρ'.store :=
         loop_terminal_projectStore_id π φ hreach
-      -- eval is preserved by noFuncDecl loop
+      -- eval is preserved by the loop terminal trace (block scoping)
       have heval_eq : ρ'.eval = ρ₀.eval :=
-        smallStep_noFuncDecl_preserves_eval Expression (EvalCommand π φ) (EvalPureFunc φ)
-          _ ρ₀ ρ' hnofd hreach
+        loop_terminal_eval_preserved π φ hreach
       have hwfb : WellFormedSemanticEvalBool ρ₀.eval := hswf.wfBool
       -- Rewrite hall_tt' in terms of ρ₀.eval
       have hall_tt'_eval₀ : ∀ le ∈ inv, ρ₀.eval ρ'.store le.2 = some HasBool.tt := by
@@ -4274,13 +4562,6 @@ private theorem simulation_loop_term_enter_case
       -- Step 2b: exit_havoc targets ρ'.store
       -- Step 2c: exit assumes pass via hall_tt'_eval₀
       -- First, derive eval preservation facts
-      have hnofd_body : Block.noFuncDecl body = Bool.true := by
-        simp [Stmt.noFuncDecl] at hnofd; exact hnofd
-      have heval_inner : ρ_inner.eval = ρ₀.eval := by
-        have h := block_noFuncDecl_preserves_eval Expression (EvalCommand π φ) (EvalPureFunc φ)
-          body { store := ρ₀.store, eval := ρ₀.eval, hasFailure := ρ₀.hasFailure } ρ_inner
-          hnofd_body h_inner
-        simpa using h
       have heval_mid : ρ_mid.eval = ρ₀.eval := by
         rw [heq_mid]
       -- The arb_facts_block is a named block. Running its body to terminal ρ_inner
@@ -4380,7 +4661,8 @@ private theorem simulation_loop_term_enter_case
             have hcongr := inv_eval_agree_under_projectStore
               (ρ := ρ₀) (ρ_inner := ρ_inner) hswf (fun _ => Iff.rfl) hle
             rw [hcongr] at htt_mid
-            rw [heval_inner]; exact htt_mid
+            have hpres := body_eval_inv_preserved π φ hwf_ext hswf h_inner hle ρ_inner.store
+            rw [hpres]; exact htt_mid
           have hwfb_inner : WellFormedSemanticEvalBool ρ_inner.eval := by
             have h := star_preserves_wfBool_block Expression (EvalCommand π φ) (EvalPureFunc φ)
               hwf_ext.toWFEvalExtension (ss := body) (ρ := ρ₀) h_body_from_ρ₀
@@ -4623,10 +4905,9 @@ private theorem simulation_loop_term_enter_case
             loop_terminal_inv_all_tt π φ hreach hnf''
           have hproj_id : projectStore ρ₀.store ρ'.store = ρ'.store :=
             loop_terminal_projectStore_id π φ hreach
-          -- eval is preserved by noFuncDecl loop
+          -- eval is preserved by the loop terminal trace (block scoping)
           have heval_eq : ρ'.eval = ρ₀.eval :=
-            smallStep_noFuncDecl_preserves_eval Expression (EvalCommand π φ) (EvalPureFunc φ)
-              _ ρ₀ ρ' hnofd hreach
+            loop_terminal_eval_preserved π φ hreach
           -- Rewrite hall_tt' in terms of ρ₀.eval
           have hall_tt'_eval₀ : ∀ le ∈ inv, ρ₀.eval ρ'.store le.2 = some HasBool.tt := by
             intro le hle; rw [← heval_eq]; exact hall_tt' le hle
@@ -4757,13 +5038,6 @@ private theorem simulation_loop_term_enter_case
             exact h_outer
           -- Now prove h_then: trace through then-stmts to ρ'
           -- First, derive eval preservation facts
-          have hnofd_body : Block.noFuncDecl body = Bool.true := by
-            simp [Stmt.noFuncDecl] at hnofd; exact hnofd
-          have heval_inner : ρ_inner.eval = ρ₀.eval := by
-            have h := block_noFuncDecl_preserves_eval Expression (EvalCommand π φ) (EvalPureFunc φ)
-              body { store := ρ₀.store, eval := ρ₀.eval, hasFailure := ρ₀.hasFailure } ρ_inner
-              hnofd_body h_inner
-            simpa using h
           have heval_mid : ρ_mid.eval = ρ₀.eval := by
             rw [heq_mid]
           -- Havoc vars are all defined at ρ₀
@@ -4861,7 +5135,8 @@ private theorem simulation_loop_term_enter_case
                 have hcongr := inv_eval_agree_under_projectStore
                   (ρ := ρ₀) (ρ_inner := ρ_inner) hswf (fun _ => Iff.rfl) hle
                 rw [hcongr] at htt_mid
-                rw [heval_inner]; exact htt_mid
+                have hpres := body_eval_inv_preserved π φ hwf_ext hswf h_inner hle ρ_inner.store
+                rw [hpres]; exact htt_mid
               have hwfb_inner : WellFormedSemanticEvalBool ρ_inner.eval := by
                 have h := star_preserves_wfBool_block Expression (EvalCommand π φ) (EvalPureFunc φ)
                   hwf_ext.toWFEvalExtension (ss := body) (ρ := ρ₀) h_body_from_ρ₀
@@ -5116,10 +5391,9 @@ private theorem simulation_loop_term_enter_case
             loop_terminal_inv_all_tt π φ hreach hnf''
           have hproj_id : projectStore ρ₀.store ρ'.store = ρ'.store :=
             loop_terminal_projectStore_id π φ hreach
-          -- eval is preserved by noFuncDecl loop
+          -- eval is preserved by the loop terminal trace (block scoping)
           have heval_eq : ρ'.eval = ρ₀.eval :=
-            smallStep_noFuncDecl_preserves_eval Expression (EvalCommand π φ) (EvalPureFunc φ)
-              _ ρ₀ ρ' hnofd hreach
+            loop_terminal_eval_preserved π φ hreach
           -- Rewrite hall_tt' in terms of ρ₀.eval
           have hall_tt'_eval₀ : ∀ le ∈ inv, ρ₀.eval ρ'.store le.2 = some HasBool.tt := by
             intro le hle; rw [← heval_eq]; exact hall_tt' le hle
@@ -5135,14 +5409,6 @@ private theorem simulation_loop_term_enter_case
           -- hmeas_enter : ∀ me v, some m = some me → eval me = some v ∧ lt v 0 = ff
           -- Extract using WellFormedSemanticEvalBool to get a definite value
           have hmeas_m := fun v => hmeas_enter m v rfl
-          -- eval preservation through body
-          have hnofd_body : Block.noFuncDecl body = Bool.true := by
-            simp [Stmt.noFuncDecl] at hnofd; exact hnofd
-          have heval_inner : ρ_inner.eval = ρ₀.eval := by
-            have h := block_noFuncDecl_preserves_eval Expression (EvalCommand π φ) (EvalPureFunc φ)
-              body { store := ρ₀.store, eval := ρ₀.eval, hasFailure := ρ₀.hasFailure } ρ_inner
-              hnofd_body h_inner
-            simpa using h
           have heval_mid : ρ_mid.eval = ρ₀.eval := by
             rw [heq_mid]
           -- Step 1: Build first_iter_asserts trace (identical to det+none)
@@ -5409,13 +5675,13 @@ private theorem stmtsT_singleton_exiting
 
     Mirrors `loop_cf_iteration_extract` but for the `.exiting` case. -/
 private theorem loop_iteration_extract_exit
+    (hwf_ext : WFEvalExtension φ)
     (reserved : List String)
     {guardE : ExprOrNondet Expression}
     {measure : Option Expression.Expr}
     {inv : List (String × Expression.Expr)}
     {body : Statements} {md : MetaData Expression}
     {ρ₀ ρ_start ρ' : Env Expression} {lbl : String}
-    (hnofd : Stmt.noFuncDecl (.loop guardE measure inv body md) = Bool.true)
     (hswf : InitEnvWF reserved (.loop guardE measure inv body md) ρ₀)
     (hstart_eval : ρ_start.eval = ρ₀.eval)
     (hstart_nf : ρ_start.hasFailure = Bool.false)
@@ -5429,7 +5695,7 @@ private theorem loop_iteration_extract_exit
       ρ_k.hasFailure = Bool.false ∧
       (∀ le ∈ inv, ρ_k.eval ρ_k.store le.2 = some HasBool.tt) ∧
       CoreStar π φ (.stmts body ρ_k) (.exiting lbl ρ_inner) ∧
-      ρ' = { ρ_inner with store := projectStore ρ_k.store ρ_inner.store } ∧
+      ρ' = { ρ_inner with store := projectStore ρ_k.store ρ_inner.store, eval := ρ_k.eval } ∧
       (∀ x, (ρ_k.store x).isSome ↔ (ρ₀.store x).isSome) ∧
       (∀ g, guardE = .det g → ρ_k.eval ρ_k.store g = some HasBool.tt) ∧
       (∀ x, x ∉ Block.modifiedVars body → x ∉ Block.definedVars body false →
@@ -5451,7 +5717,7 @@ private theorem loop_iteration_extract_exit
           ρ_k.hasFailure = Bool.false ∧
           (∀ le ∈ inv, ρ_k.eval ρ_k.store le.2 = some HasBool.tt) ∧
           CoreStar π φ (.stmts body ρ_k) (.exiting lbl ρ_inner) ∧
-          ρ' = { ρ_inner with store := projectStore ρ_k.store ρ_inner.store } ∧
+          ρ' = { ρ_inner with store := projectStore ρ_k.store ρ_inner.store, eval := ρ_k.eval } ∧
           (∀ x, (ρ_k.store x).isSome ↔ (ρ₀.store x).isSome) ∧
           (∀ g, guardE = .det g → ρ_k.eval ρ_k.store g = some HasBool.tt) ∧
           (∀ x, x ∉ Block.modifiedVars body → x ∉ Block.definedVars body false →
@@ -5494,14 +5760,9 @@ private theorem loop_iteration_extract_exit
           have h_body_exit_ρ : ReflTransT (StepStmt Expression
               (EvalCommand π φ) (EvalPureFunc φ))
               (.stmts body ρ) (.exiting lbl ρ_inner) := hρ_eq ▸ h_body_exit
-          have hnofd_body : Block.noFuncDecl body = Bool.true := by
-            simp [Stmt.noFuncDecl] at hnofd; exact hnofd
-          have heval_inner : ρ_inner.eval = ρ.eval :=
-            block_noFuncDecl_preserves_eval_exiting Expression (EvalCommand π φ)
-              (EvalPureFunc φ) body ρ ρ_inner lbl hnofd_body
-              (reflTransT_to_prop h_body_exit_ρ)
-          have heq' : ρ' = { ρ_inner with store := projectStore ρ.store ρ_inner.store } := by
-            rw [heq]; congr 1; exact heval_inner.symm
+          have heq' :
+              ρ' = { ρ_inner with store := projectStore ρ.store ρ_inner.store, eval := ρ.eval } :=
+            heq
           refine ⟨ρ, ρ_inner, heval_ρ, hnf_ρ, hall_tt_ρ,
             reflTransT_to_prop h_body_exit_ρ, heq', hsame_ρ, ?_, ?_⟩
           · intro g' heq_g
@@ -5522,13 +5783,8 @@ private theorem loop_iteration_extract_exit
             rw [heq_mid] at hnf_mid; simpa using hnf_mid
           -- All-tt at ρ_inner: if some inv is ff, the next loop step yields
           -- hasFailure=true, but the trace continues to ρ' with hasFailure=false.
-          have hnofd_body : Block.noFuncDecl body = Bool.true := by
-            simp [Stmt.noFuncDecl] at hnofd; exact hnofd
-          have heval_inner : ρ_inner.eval = ρ₀.eval := by
-            have := block_noFuncDecl_preserves_eval Expression (EvalCommand π φ)
-              (EvalPureFunc φ) body ρ ρ_inner hnofd_body
-              (reflTransT_to_prop h_body_term_ρ)
-            rw [this, heval_ρ]
+          have h_body_term_ρ_p : CoreStar π φ (.stmts body ρ) (.terminal ρ_inner) :=
+            reflTransT_to_prop h_body_term_ρ
           have heval_mid : ρ_mid.eval = ρ₀.eval := by
             rw [heq_mid]; exact heval_ρ
           -- sameDom for ρ_mid
@@ -5566,7 +5822,9 @@ private theorem loop_iteration_extract_exit
               rw [heq_mid]; simp only [Env.store, Env.eval]
               have hcongr := inv_eval_agree_under_projectStore
                 (ρ_inner := ρ_inner) hswf hsame_ρ hle
-              rw [hcongr, ← heval_inner]
+              rw [hcongr,
+                ← body_eval_inv_preserved_init π φ hwf_ext hswf hsame_ρ heval_ρ
+                  h_body_term_ρ_p hle ρ_inner.store]
               exact hff
             -- Now the next loop step from ρ_mid sets hasInvFailure=true.
             cases h_loop_T with
@@ -5606,7 +5864,9 @@ private theorem loop_iteration_extract_exit
                 rw [heq_mid]; simp only [Env.store, Env.eval]
                 have hcongr := inv_eval_agree_under_projectStore
                   (ρ_inner := ρ_inner) hswf hsame_ρ hle
-                rw [hcongr, ← heval_inner]
+                rw [hcongr,
+                  ← body_eval_inv_preserved_init π φ hwf_ext hswf hsame_ρ heval_ρ
+                    h_body_term_ρ_p hle ρ_inner.store]
               rw [← heval_mid_le]
               rcases hbool_le with htt | hff
               · exact htt
@@ -5618,7 +5878,9 @@ private theorem loop_iteration_extract_exit
             rw [heq_mid]; simp only [Env.store, Env.eval]
             have hcongr := inv_eval_agree_under_projectStore
               (ρ_inner := ρ_inner) hswf hsame_ρ hle
-            rw [hcongr, ← heval_inner]
+            rw [hcongr,
+              ← body_eval_inv_preserved_init π φ hwf_ext hswf hsame_ρ heval_ρ
+                h_body_term_ρ_p hle ρ_inner.store]
             exact hall_tt_inner le hle
           obtain ⟨ρ_k, ρ_inner_k, h1, h2, h3, h4, h5, h6, h7, h_pres_mid⟩ :=
             ih ρ_mid heval_mid hnf_mid hall_tt_mid hsame_mid ρ' hnf' h_loop_T hlen_loop
@@ -5657,14 +5919,9 @@ private theorem loop_iteration_extract_exit
           have h_body_exit_ρ : ReflTransT (StepStmt Expression
               (EvalCommand π φ) (EvalPureFunc φ))
               (.stmts body ρ) (.exiting lbl ρ_inner) := hρ_eq ▸ h_body_exit
-          have hnofd_body : Block.noFuncDecl body = Bool.true := by
-            simp [Stmt.noFuncDecl] at hnofd; exact hnofd
-          have heval_inner : ρ_inner.eval = ρ.eval :=
-            block_noFuncDecl_preserves_eval_exiting Expression (EvalCommand π φ)
-              (EvalPureFunc φ) body ρ ρ_inner lbl hnofd_body
-              (reflTransT_to_prop h_body_exit_ρ)
-          have heq' : ρ' = { ρ_inner with store := projectStore ρ.store ρ_inner.store } := by
-            rw [heq]; congr 1; exact heval_inner.symm
+          have heq' :
+              ρ' = { ρ_inner with store := projectStore ρ.store ρ_inner.store, eval := ρ.eval } :=
+            heq
           refine ⟨ρ, ρ_inner, heval_ρ, hnf_ρ, hall_tt_ρ,
             reflTransT_to_prop h_body_exit_ρ, heq', hsame_ρ, ?_, ?_⟩
           · intro g' heq_g; cases heq_g
@@ -5680,13 +5937,8 @@ private theorem loop_iteration_extract_exit
               (reflTransT_to_prop h_tail_exit) hnf'
           have hnf_inner' : ρ_inner.hasFailure = Bool.false := by
             rw [heq_mid] at hnf_mid; simpa using hnf_mid
-          have hnofd_body : Block.noFuncDecl body = Bool.true := by
-            simp [Stmt.noFuncDecl] at hnofd; exact hnofd
-          have heval_inner : ρ_inner.eval = ρ₀.eval := by
-            have := block_noFuncDecl_preserves_eval Expression (EvalCommand π φ)
-              (EvalPureFunc φ) body ρ ρ_inner hnofd_body
-              (reflTransT_to_prop h_body_term_ρ)
-            rw [this, heval_ρ]
+          have h_body_term_ρ_p : CoreStar π φ (.stmts body ρ) (.terminal ρ_inner) :=
+            reflTransT_to_prop h_body_term_ρ
           have heval_mid : ρ_mid.eval = ρ₀.eval := by
             rw [heq_mid]; exact heval_ρ
           have hsame_mid : ∀ x, (ρ_mid.store x).isSome ↔ (ρ₀.store x).isSome := by
@@ -5720,7 +5972,9 @@ private theorem loop_iteration_extract_exit
               rw [heq_mid]; simp only [Env.store, Env.eval]
               have hcongr := inv_eval_agree_under_projectStore
                 (ρ_inner := ρ_inner) hswf hsame_ρ hle
-              rw [hcongr, ← heval_inner]
+              rw [hcongr,
+                ← body_eval_inv_preserved_init π φ hwf_ext hswf hsame_ρ heval_ρ
+                  h_body_term_ρ_p hle ρ_inner.store]
               exact hff
             cases h_loop_T with
             | step _ _ _ hstep_next hrest_next =>
@@ -5758,7 +6012,9 @@ private theorem loop_iteration_extract_exit
                 rw [heq_mid]; simp only [Env.store, Env.eval]
                 have hcongr := inv_eval_agree_under_projectStore
                   (ρ_inner := ρ_inner) hswf hsame_ρ hle
-                rw [hcongr, ← heval_inner]
+                rw [hcongr,
+                  ← body_eval_inv_preserved_init π φ hwf_ext hswf hsame_ρ heval_ρ
+                    h_body_term_ρ_p hle ρ_inner.store]
               rw [← heval_mid_le]
               rcases hbool_le with htt | hff
               · exact htt
@@ -5769,7 +6025,9 @@ private theorem loop_iteration_extract_exit
             rw [heq_mid]; simp only [Env.store, Env.eval]
             have hcongr := inv_eval_agree_under_projectStore
               (ρ_inner := ρ_inner) hswf hsame_ρ hle
-            rw [hcongr, ← heval_inner]
+            rw [hcongr,
+              ← body_eval_inv_preserved_init π φ hwf_ext hswf hsame_ρ heval_ρ
+                h_body_term_ρ_p hle ρ_inner.store]
             exact hall_tt_inner le hle
           obtain ⟨ρ_k, ρ_inner_k, h1, h2, h3, h4, h5, h6, h7, h_pres_mid⟩ :=
             ih ρ_mid heval_mid hnf_mid hall_tt_mid hsame_mid ρ' hnf' h_loop_T hlen_loop
@@ -5797,13 +6055,13 @@ private theorem loop_iteration_extract_exit
     enters (det or nondet) and the resulting seq reaches `.exiting`, show
     that the transformed target can also reach `.exiting` (or CanFail). -/
 private theorem simulation_loop_exit_enter_case
+    (hwf_ext : WFEvalExtension φ)
     (reserved : List String)
     (σ : LoopElimState)
     (guardE : ExprOrNondet Expression)
     (measure : Option Expression.Expr)
     (inv : List (String × Expression.Expr))
     (body : Statements) (md : MetaData Expression)
-    (hnofd : Stmt.noFuncDecl (.loop guardE measure inv body md) = Bool.true)
     (hok : stmtOk σ (.loop guardE measure inv body md))
     (ρ₀ ρ' : Env Expression)
     (hswf : InitEnvWF reserved (.loop guardE measure inv body md) ρ₀)
@@ -6083,14 +6341,7 @@ private theorem simulation_loop_exit_enter_case
           block_wrap_exiting_mismatch (EvalCommand π φ) (EvalPureFunc φ) s!"{loopElimBlockPrefix}loop_{loop_num}" _ ∅
             lbl ρ₀ _ hne_loop h_stmts_exit
         rw [hproj_idem] at h_outer_exit
-        have hnofd_body : Block.noFuncDecl body = Bool.true := by
-          simp [Stmt.noFuncDecl] at hnofd; exact hnofd
-        have heval_inner : ρ_inner.eval = ρ₀.eval :=
-          block_noFuncDecl_preserves_eval_exiting Expression (EvalCommand π φ)
-            (EvalPureFunc φ) body ρ₀ ρ_inner lbl hnofd_body h_body_exit
-        have heq_ρ'' : ρ' = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store, eval := ρ₀.eval } := by
-          rw [heq_ρ']
-        rw [← heq_ρ''] at h_outer_exit
+        rw [← heq_ρ'] at h_outer_exit
         exact h_outer_exit
       | .inr ⟨ρ_mid, h_block_term, h_tail_exit⟩ =>
         -- Case (b): block terminates at ρ_mid, tail (loop) exits later.
@@ -6108,12 +6359,6 @@ private theorem simulation_loop_exit_enter_case
           hasFailure_false_backwards (π := π) (φ := φ) h_tail_exit hnf''
         have hnf_inner_first : ρ_inner_first.hasFailure = Bool.false := by
           rw [heq_mid] at hnf_mid; simpa using hnf_mid
-        have hnofd_body : Block.noFuncDecl body = Bool.true := by
-          simp [Stmt.noFuncDecl] at hnofd; exact hnofd
-        have heval_inner_first : ρ_inner_first.eval = ρ₀.eval := by
-          have := block_noFuncDecl_preserves_eval Expression (EvalCommand π φ)
-            (EvalPureFunc φ) body ρ₀ ρ_inner_first hnofd_body h_body_first
-          rw [this]
         have heval_mid : ρ_mid.eval = ρ₀.eval := by
           rw [heq_mid]
         -- Domain preservation for ρ_mid
@@ -6181,7 +6426,7 @@ private theorem simulation_loop_exit_enter_case
         -- Apply helper: extract ρ_k.
         obtain ⟨ρ_k, ρ_inner_k, heval_k, hnf_k, hall_tt_k, h_body_k_exit, heq_ρ',
                 hsame_k, h_guard_k, h_pres_k⟩ :=
-          loop_iteration_extract_exit (π := π) (φ := φ) reserved hnofd hswf
+          loop_iteration_extract_exit (π := π) (φ := φ) hwf_ext reserved hswf
             (heval_mid : ρ_mid.eval = ρ₀.eval) hnf_mid hsame_mid hall_tt_mid h_loop hnf''
         -- ρ_k has the same domain as ρ₀; values agree outside body.modifiedVars/definedVars
         -- (relative to ρ_mid). Combined with ρ_mid value preservation outside body's vars
@@ -6456,17 +6701,8 @@ private theorem simulation_loop_exit_enter_case
             simp [hh, hnone_k]
           · have hsome_k : (ρ_k.store x).isSome := (hsame_k x).mpr (by simp [hh])
             simp [hh, hsome_k]
-        have hnofd_body : Block.noFuncDecl body = Bool.true := by
-          simp [Stmt.noFuncDecl] at hnofd; exact hnofd
-        have heval_inner_k : ρ_inner_k.eval = ρ_k.eval :=
-          block_noFuncDecl_preserves_eval_exiting Expression (EvalCommand π φ)
-            (EvalPureFunc φ) body ρ_k ρ_inner_k lbl hnofd_body h_body_k_exit
-        have heval_inner_k_ρ₀ : ρ_inner_k.eval = ρ₀.eval := by
-          rw [heval_inner_k, heval_k]
         have hρ'_eq : ρ' = { ρ_inner_k with store := projectStore ρ₀.store ρ_inner_k.store, eval := ρ₀.eval } := by
-          rw [heq_ρ']
-          congr 1
-          · exact hproj_eq.symm
+          rw [heq_ρ', heval_k, hproj_eq]
         rw [← hρ'_eq] at h_outer_exit
         exact h_outer_exit
     case h_2.isFalse.isTrue =>
@@ -6660,14 +6896,7 @@ private theorem simulation_loop_exit_enter_case
           block_wrap_exiting_mismatch (EvalCommand π φ) (EvalPureFunc φ) s!"{loopElimBlockPrefix}loop_{loop_num}" _ ∅
             lbl ρ₀ _ hne_loop h_stmts_exit
         rw [hproj_idem] at h_outer_exit
-        have hnofd_body : Block.noFuncDecl body = Bool.true := by
-          simp [Stmt.noFuncDecl] at hnofd; exact hnofd
-        have heval_inner : ρ_inner.eval = ρ₀.eval :=
-          block_noFuncDecl_preserves_eval_exiting Expression (EvalCommand π φ)
-            (EvalPureFunc φ) body ρ₀ ρ_inner lbl hnofd_body h_body_exit
-        have heq_ρ'' : ρ' = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store, eval := ρ₀.eval } := by
-          rw [heq_ρ']
-        rw [← heq_ρ''] at h_outer_exit
+        rw [← heq_ρ'] at h_outer_exit
         exact h_outer_exit
       | .inr ⟨ρ_mid, h_block_term, h_tail_exit⟩ =>
         -- Case (b): block terminates at ρ_mid, tail (loop) exits later.
@@ -6683,12 +6912,6 @@ private theorem simulation_loop_exit_enter_case
           hasFailure_false_backwards (π := π) (φ := φ) h_tail_exit hnf''
         have hnf_inner_first : ρ_inner_first.hasFailure = Bool.false := by
           rw [heq_mid] at hnf_mid; simpa using hnf_mid
-        have hnofd_body : Block.noFuncDecl body = Bool.true := by
-          simp [Stmt.noFuncDecl] at hnofd; exact hnofd
-        have heval_inner_first : ρ_inner_first.eval = ρ₀.eval := by
-          have := block_noFuncDecl_preserves_eval Expression (EvalCommand π φ)
-            (EvalPureFunc φ) body ρ₀ ρ_inner_first hnofd_body h_body_first
-          rw [this]
         have heval_mid : ρ_mid.eval = ρ₀.eval := by
           rw [heq_mid]
         have hsame_mid : ∀ x, (ρ_mid.store x).isSome ↔ (ρ₀.store x).isSome := by
@@ -6747,7 +6970,7 @@ private theorem simulation_loop_exit_enter_case
         -- Apply helper
         obtain ⟨ρ_k, ρ_inner_k, heval_k, hnf_k, hall_tt_k, h_body_k_exit, heq_ρ',
                 hsame_k, _h_guard_k, h_pres_k⟩ :=
-          loop_iteration_extract_exit (π := π) (φ := φ) reserved hnofd hswf
+          loop_iteration_extract_exit (π := π) (φ := φ) hwf_ext reserved hswf
             (heval_mid : ρ_mid.eval = ρ₀.eval) hnf_mid hsame_mid hall_tt_mid h_loop hnf''
         have hwfvar : WellFormedSemanticEvalVar ρ₀.eval := hswf.wfVar
         -- Build target trace
@@ -6973,30 +7196,21 @@ private theorem simulation_loop_exit_enter_case
             simp [hh, hnone_k]
           · have hsome_k : (ρ_k.store x).isSome := (hsame_k x).mpr (by simp [hh])
             simp [hh, hsome_k]
-        have hnofd_body : Block.noFuncDecl body = Bool.true := by
-          simp [Stmt.noFuncDecl] at hnofd; exact hnofd
-        have heval_inner_k : ρ_inner_k.eval = ρ_k.eval :=
-          block_noFuncDecl_preserves_eval_exiting Expression (EvalCommand π φ)
-            (EvalPureFunc φ) body ρ_k ρ_inner_k lbl hnofd_body h_body_k_exit
-        have heval_inner_k_ρ₀ : ρ_inner_k.eval = ρ₀.eval := by
-          rw [heval_inner_k, heval_k]
         have hρ'_eq : ρ' = { ρ_inner_k with store := projectStore ρ₀.store ρ_inner_k.store, eval := ρ₀.eval } := by
-          rw [heq_ρ']
-          congr 1
-          · exact hproj_eq.symm
+          rw [heq_ρ', heval_k, hproj_eq]
         rw [← hρ'_eq] at h_outer_exit
         exact h_outer_exit
 
 /-- Helper for `simulation`'s loop exit-branch case.  Discharges the
     statement-correctness obligation for `.loop` reaching `.exiting`. -/
 private theorem simulation_loop_exit_case
+    (hwf_ext : WFEvalExtension φ)
     (reserved : List String)
     (σ : LoopElimState)
     (guard : ExprOrNondet Expression)
     (measure : Option Expression.Expr)
     (inv : List (String × Expression.Expr))
     (body : Statements) (md : MetaData Expression)
-    (hnofd : Stmt.noFuncDecl (.loop guard measure inv body md) = Bool.true)
     (hok : stmtOk σ (.loop guard measure inv body md))
     (ρ₀ : Env Expression)
     (hswf : InitEnvWF reserved (.loop guard measure inv body md) ρ₀)
@@ -7049,8 +7263,8 @@ private theorem simulation_loop_exit_case
           have hnif := loop_step_hasInvFailure_false_of_or
             (by simpa [Config.getEnv] using hh)
           rw [← htgt_eq]
-          exact simulation_loop_exit_enter_case π φ reserved
-            σ (.det _) measure inv body md hnofd hok ρ₀ ρ'
+          exact simulation_loop_exit_enter_case π φ hwf_ext reserved
+            σ (.det _) measure inv body md hok ρ₀ ρ'
             hswf lbl hnf'' hnf₀ hall_tt hnif hrest
             (fun g heq => by cases heq; exact hgt)
             (fun g heq => by cases heq; exact hmease)
@@ -7060,8 +7274,8 @@ private theorem simulation_loop_exit_case
           have hnif := loop_step_hasInvFailure_false_of_or
             (by simpa [Config.getEnv] using hh)
           rw [← htgt_eq]
-          exact simulation_loop_exit_enter_case π φ reserved
-            σ .nondet measure inv body md hnofd hok ρ₀ ρ'
+          exact simulation_loop_exit_enter_case π φ hwf_ext reserved
+            σ .nondet measure inv body md hok ρ₀ ρ'
             hswf lbl hnf'' hnf₀ hall_tt hnif hrest
             (fun _ heq => nomatch heq) (fun _ heq => nomatch heq)
     · -- VC1 failure path: some invariant is ff at ρ₀
@@ -7078,13 +7292,13 @@ private theorem simulation_loop_exit_case
     - body from `ρ_k` either reaches failure OR terminates at `ρ_inner` without
       failure where not all invariants are tt (so some is ff → maintain fires). -/
 private theorem loop_cf_iteration_extract
+    (hwf_ext : WFEvalExtension φ)
     (reserved : List String)
     {guardE : ExprOrNondet Expression}
     {measure : Option Expression.Expr}
     {inv : List (String × Expression.Expr)}
     {body : Statements} {md : MetaData Expression}
     {ρ₀ : Env Expression} {cfg : CC}
-    (hnofd : Stmt.noFuncDecl (.loop guardE measure inv body md) = Bool.true)
     (hswf : InitEnvWF reserved (.loop guardE measure inv body md) ρ₀)
     (hreach : CoreStar π φ (.stmt (.loop guardE measure inv body md) ρ₀) cfg)
     (hfail : cfg.getEnv.hasFailure = Bool.true)
@@ -7217,13 +7431,8 @@ private theorem loop_cf_iteration_extract
             by_cases hall_inner : ∀ le ∈ inv, ρ_inner.eval ρ_inner.store le.2 = some HasBool.tt
             · -- All invariants still tt → recurse on the tail trace
               -- Derive properties of ρ_mid for recursion
-              have hnofd_body : Block.noFuncDecl body = Bool.true := by
-                simp [Stmt.noFuncDecl] at hnofd; exact hnofd
-              have heval_inner : ρ_inner.eval = ρ₀.eval := by
-                have := block_noFuncDecl_preserves_eval Expression (EvalCommand π φ)
-                  (EvalPureFunc φ) body ρ ρ_inner hnofd_body
-                  (reflTransT_to_prop h_body_term)
-                rw [this, heval_ρ]
+              have h_body_term_p : CoreStar π φ (.stmts body ρ) (.terminal ρ_inner) :=
+                reflTransT_to_prop h_body_term
               have heq_mid_val := heq_mid
               -- ρ_mid = { ρ_inner with store := projectStore ρ.store ρ_inner.store, eval := ρ.eval }
               have heval_mid : ρ_mid.eval = ρ₀.eval := by
@@ -7249,7 +7458,9 @@ private theorem loop_cf_iteration_extract
                 rw [heq_mid_val]; simp only [Env.store, Env.eval]
                 have hcongr := inv_eval_agree_under_projectStore
                   (ρ_inner := ρ_inner) hswf hsame_ρ hle
-                rw [hcongr, ← heval_inner]
+                rw [hcongr,
+                  ← body_eval_inv_preserved_init π φ hwf_ext hswf hsame_ρ heval_ρ
+                    h_body_term_p hle ρ_inner.store]
                 exact hall_inner le hle
               -- Extract loop trace from h_tail_fail
               have ⟨cfg_loop, h_loop_mid, hfail_loop, hlen_loop⟩ :=
@@ -7279,13 +7490,8 @@ private theorem loop_cf_iteration_extract
               rw [h_k_mid, h_mid_eq]
             · -- Some invariant is ff at ρ_inner → ρ is witness
               -- Get bool-valuedness at ρ_inner via the next loop step from ρ_mid.
-              have hnofd_body : Block.noFuncDecl body = Bool.true := by
-                simp [Stmt.noFuncDecl] at hnofd; exact hnofd
-              have heval_inner : ρ_inner.eval = ρ₀.eval := by
-                have := block_noFuncDecl_preserves_eval Expression (EvalCommand π φ)
-                  (EvalPureFunc φ) body ρ ρ_inner hnofd_body
-                  (reflTransT_to_prop h_body_term)
-                rw [this, heval_ρ]
+              have h_body_term_p : CoreStar π φ (.stmts body ρ) (.terminal ρ_inner) :=
+                reflTransT_to_prop h_body_term
               have heq_mid_val := heq_mid
               have heval_mid : ρ_mid.eval = ρ₀.eval := by
                 rw [heq_mid_val, heval_ρ]
@@ -7317,7 +7523,9 @@ private theorem loop_cf_iteration_extract
                 rw [heq_mid_val] at hb_mid
                 simp only [Env.store, Env.eval] at hb_mid
                 rw [heval_ρ] at hb_mid
-                rw [hcongr, ← heval_inner] at hb_mid
+                rw [hcongr,
+                  ← body_eval_inv_preserved_init π φ hwf_ext hswf hsame_ρ heval_ρ
+                    h_body_term_p hle ρ_inner.store] at hb_mid
                 exact hb_mid
               have hsome_ff : ∃ le ∈ inv,
                   ρ_inner.eval ρ_inner.store le.2 = some HasBool.ff := by
@@ -7373,13 +7581,8 @@ private theorem loop_cf_iteration_extract
               | true => exact absurd hh hnf_inner
             by_cases hall_inner : ∀ le ∈ inv, ρ_inner.eval ρ_inner.store le.2 = some HasBool.tt
             · -- Recurse (same as det case)
-              have hnofd_body : Block.noFuncDecl body = Bool.true := by
-                simp [Stmt.noFuncDecl] at hnofd; exact hnofd
-              have heval_inner : ρ_inner.eval = ρ₀.eval := by
-                have := block_noFuncDecl_preserves_eval Expression (EvalCommand π φ)
-                  (EvalPureFunc φ) body ρ ρ_inner hnofd_body
-                  (reflTransT_to_prop h_body_term)
-                rw [this, heval_ρ]
+              have h_body_term_p : CoreStar π φ (.stmts body ρ) (.terminal ρ_inner) :=
+                reflTransT_to_prop h_body_term
               have heq_mid_val := heq_mid
               have heval_mid : ρ_mid.eval = ρ₀.eval := by
                 rw [heq_mid_val, heval_ρ]
@@ -7403,7 +7606,9 @@ private theorem loop_cf_iteration_extract
                 rw [heq_mid_val]; simp only [Env.store, Env.eval]
                 have hcongr := inv_eval_agree_under_projectStore
                   (ρ_inner := ρ_inner) hswf hsame_ρ hle
-                rw [hcongr, ← heval_inner]
+                rw [hcongr,
+                  ← body_eval_inv_preserved_init π φ hwf_ext hswf hsame_ρ heval_ρ
+                    h_body_term_p hle ρ_inner.store]
                 exact hall_inner le hle
               have ⟨cfg_loop, h_loop_mid, hfail_loop, hlen_loop⟩ :=
                 stmtsT_singleton_canfail h_tail_fail hfail
@@ -7431,13 +7636,8 @@ private theorem loop_cf_iteration_extract
                 hk_pres_mid x hx_mod hx_def h_mid_some
               rw [h_k_mid, h_mid_eq]
             · -- Some invariant is ff at ρ_inner → ρ is witness (nondet branch)
-              have hnofd_body : Block.noFuncDecl body = Bool.true := by
-                simp [Stmt.noFuncDecl] at hnofd; exact hnofd
-              have heval_inner : ρ_inner.eval = ρ₀.eval := by
-                have := block_noFuncDecl_preserves_eval Expression (EvalCommand π φ)
-                  (EvalPureFunc φ) body ρ ρ_inner hnofd_body
-                  (reflTransT_to_prop h_body_term)
-                rw [this, heval_ρ]
+              have h_body_term_p : CoreStar π φ (.stmts body ρ) (.terminal ρ_inner) :=
+                reflTransT_to_prop h_body_term
               have heq_mid_val := heq_mid
               have heval_mid : ρ_mid.eval = ρ₀.eval := by
                 rw [heq_mid_val, heval_ρ]
@@ -7467,7 +7667,9 @@ private theorem loop_cf_iteration_extract
                 rw [heq_mid_val] at hb_mid
                 simp only [Env.store, Env.eval] at hb_mid
                 rw [heval_ρ] at hb_mid
-                rw [hcongr, ← heval_inner] at hb_mid
+                rw [hcongr,
+                  ← body_eval_inv_preserved_init π φ hwf_ext hswf hsame_ρ heval_ρ
+                    h_body_term_p hle ρ_inner.store] at hb_mid
                 exact hb_mid
               have hsome_ff : ∃ le ∈ inv,
                   ρ_inner.eval ρ_inner.store le.2 = some HasBool.ff := by
@@ -7495,7 +7697,6 @@ private theorem simulation_loop_cf_all_tt_det_nomeasure
     (inv : List (String × Expression.Expr))
     (body : Statements) (md : MetaData Expression)
     (ρ₀ : Env Expression)
-    (hnofd : Stmt.noFuncDecl (.loop (.det g) none inv body md) = Bool.true)
     (hswf : InitEnvWF reserved (.loop (.det g) none inv body md) ρ₀)
     (cfg : CC) (hfail : cfg.getEnv.hasFailure = Bool.true)
     (hnf₀' : ρ₀.hasFailure = Bool.false)
@@ -7541,7 +7742,7 @@ private theorem simulation_loop_cf_all_tt_det_nomeasure
     arb_facts_body mkExitAssumeLabel exit_inv_assumes
   -- Extract the bad iteration
   obtain ⟨ρ_k, heval_k, hnf_k, hall_tt_k, hbad_k, hsame_k, hguard_k, hpres_k⟩ :=
-    loop_cf_iteration_extract π φ reserved hnofd hswf hreach hfail hnf₀' hall_tt
+    loop_cf_iteration_extract π φ hwf_ext reserved hswf hreach hfail hnf₀' hall_tt
   have hguard_k_tt : ρ_k.eval ρ_k.store g = some HasBool.tt := hguard_k g rfl
   have hwfb : WellFormedSemanticEvalBool ρ₀.eval := hswf.wfBool
   have hwfb_k : WellFormedSemanticEvalBool ρ_k.eval := by rw [heval_k]; exact hwfb
@@ -7669,7 +7870,6 @@ private theorem simulation_loop_cf_all_tt_nondet
     (inv : List (String × Expression.Expr))
     (body : Statements) (md : MetaData Expression)
     (ρ₀ : Env Expression)
-    (hnofd : Stmt.noFuncDecl (.loop .nondet measure inv body md) = Bool.true)
     (hswf : InitEnvWF reserved (.loop .nondet measure inv body md) ρ₀)
     (cfg : CC) (hfail : cfg.getEnv.hasFailure = Bool.true)
     (hnf₀' : ρ₀.hasFailure = Bool.false)
@@ -7709,7 +7909,7 @@ private theorem simulation_loop_cf_all_tt_nondet
     arb_facts_body mkExitAssumeLabel exit_inv_assumes
   -- Extract the bad iteration
   obtain ⟨ρ_k, heval_k, hnf_k, hall_tt_k, hbad_k, hsame_k, _hguard_k, hpres_k⟩ :=
-    loop_cf_iteration_extract π φ reserved hnofd hswf hreach hfail hnf₀' hall_tt
+    loop_cf_iteration_extract π φ hwf_ext reserved hswf hreach hfail hnf₀' hall_tt
   have hwfb : WellFormedSemanticEvalBool ρ₀.eval := hswf.wfBool
   have hwfb_k : WellFormedSemanticEvalBool ρ_k.eval := by rw [heval_k]; exact hwfb
   have hwfvar : WellFormedSemanticEvalVar ρ₀.eval := hswf.wfVar
@@ -7815,7 +8015,6 @@ private theorem simulation_loop_cf_all_tt
     (measure : Option Expression.Expr)
     (inv : List (String × Expression.Expr))
     (body : Statements) (md : MetaData Expression)
-    (hnofd : Stmt.noFuncDecl (.loop guardE measure inv body md) = Bool.true)
     (hok : stmtOk σ (.loop guardE measure inv body md))
     (ρ₀ : Env Expression)
     (hswf : InitEnvWF reserved (.loop guardE measure inv body md) ρ₀)
@@ -7973,7 +8172,7 @@ private theorem simulation_loop_cf_all_tt
       obtain ⟨_, _, htb_eq⟩ := htb
       subst htb_eq
       exact simulation_loop_cf_all_tt_det_nomeasure π φ hwf_ext reserved σ g inv body md
-        ρ₀ hnofd hswf cfg hfail hnf₀' hall_tt hreach
+        ρ₀ hswf cfg hfail hnf₀' hall_tt hreach
     case h_2 =>
       -- Nondet guard: real case.
       have htb := htgt_eq
@@ -7981,7 +8180,7 @@ private theorem simulation_loop_cf_all_tt
       obtain ⟨_, _, htb_eq⟩ := htb
       subst htb_eq
       exact simulation_loop_cf_all_tt_nondet π φ hwf_ext reserved σ measure inv body md
-        ρ₀ hnofd hswf cfg hfail hnf₀' hall_tt hreach
+        ρ₀ hswf cfg hfail hnf₀' hall_tt hreach
 
 /-! ### Per-conjunct step lemmas
 
@@ -7997,7 +8196,7 @@ private theorem stmt_corr_step
     (h_loop_reserved : loopElimReservedPrefix ∈ reserved)
     (n : Nat) (ih : SimAllProp π φ reserved n) :
     SimStmtCorrProp π φ reserved (n + 1) := by
-  intro σ st hsz hnofd hok ρ₀ hswf
+  intro σ st hsz hok ρ₀ hswf
   refine ⟨?term_branch, ?exit_branch⟩
   case term_branch =>
     intro ρ' hreach
@@ -8019,11 +8218,9 @@ private theorem stmt_corr_step
       rw [stmtResult_typeDecl]; exact .inr (fun _ => hreach)
     | .block l bss md =>
       rw [stmtResult_block (hok := hok)]
-      have hnofd_bss : Block.noFuncDecl bss = Bool.true := by
-        simp [Stmt.noFuncDecl] at hnofd; exact hnofd
       have hsz_bss : Block.sizeOf bss ≤ n := by
         simp [Stmt.sizeOf] at hsz; omega
-      have hsim_bss := ih.2.1 σ bss hsz_bss hnofd_bss (stmtOk_block_inner hok) ρ₀
+      have hsim_bss := ih.2.1 σ bss hsz_bss (stmtOk_block_inner hok) ρ₀
         (InitEnvWF.toBlock_block hswf)
       cases hreach with
       | step _ _ _ h1 r1 =>
@@ -8035,14 +8232,10 @@ private theorem stmt_corr_step
         simp [Stmt.sizeOf] at hsz; omega
       have hsz_ess : Block.sizeOf ess ≤ n := by
         simp [Stmt.sizeOf] at hsz; omega
-      have hnofd_tss : Block.noFuncDecl tss = Bool.true := by
-        simp [Stmt.noFuncDecl, Bool.and_eq_true] at hnofd; exact hnofd.1
-      have hnofd_ess : Block.noFuncDecl ess = Bool.true := by
-        simp [Stmt.noFuncDecl, Bool.and_eq_true] at hnofd; exact hnofd.2
       -- Ite simulation: branches now scoped via .block .none; needs unwrapping.
-      have hsim_tss := ih.2.1 σ tss hsz_tss hnofd_tss (stmtOk_ite_left hok) ρ₀
+      have hsim_tss := ih.2.1 σ tss hsz_tss (stmtOk_ite_left hok) ρ₀
         (InitEnvWF.toBlock_ite_left hswf)
-      have hsim_ess := ih.2.1 (blockPostState σ tss) ess hsz_ess hnofd_ess
+      have hsim_ess := ih.2.1 (blockPostState σ tss) ess hsz_ess
         (stmtOk_ite_right hok) ρ₀ (InitEnvWF.toBlock_ite_right hswf)
       cases hreach with
       | step _ _ _ h1 r1 =>
@@ -8070,9 +8263,6 @@ private theorem stmt_corr_step
         -- Derive ρ₀.hasFailure = false (backwards from ρ').
         have hnf₀ : ρ₀.hasFailure = Bool.false :=
           hasFailure_false_backwards (π := π) (φ := φ) hreach hnf''
-        -- noFuncDecl on body
-        have hnofd_body : Block.noFuncDecl body = Bool.true := by
-          simp [Stmt.noFuncDecl] at hnofd; exact hnofd
         -- Obtain the target's structural decomposition.
         obtain ⟨loop_label, first_iter_label, first_iter_body, then_branch,
                 htgt_eq, hfib_eq⟩ := stmtResult_loop_struct σ guardE measure inv body md hok
@@ -8104,7 +8294,7 @@ private theorem stmt_corr_step
                 (by simpa [Config.getEnv] using hh)
               rw [← htgt_eq]
               exact simulation_loop_term_enter_case π φ hwf_ext reserved
-                σ _ measure inv body md hnofd hok ρ₀ ρ'
+                σ _ measure inv body md hok ρ₀ ρ'
                 hswf (.step _ _ _ (.step_loop_enter hgt hinvb hinviff hwfbe hmease) hrest)
                 hnf'' hnf₀ hall_tt hnif hrest
             | step_loop_nondet_exit hib hff_iff =>
@@ -8118,7 +8308,7 @@ private theorem stmt_corr_step
                 (by simpa [Config.getEnv] using hh)
               rw [← htgt_eq]
               exact simulation_loop_term_enter_case π φ hwf_ext reserved
-                σ .nondet measure inv body md hnofd hok ρ₀ ρ'
+                σ .nondet measure inv body md hok ρ₀ ρ'
                 hswf (.step _ _ _ (.step_loop_nondet_enter hinvb_ne hinviff_ne) hrest)
                 hnf'' hnf₀ hall_tt hnif hrest
         · -- VC1 failure path: some invariant evaluates to ff at ρ₀.
@@ -8165,11 +8355,9 @@ private theorem stmt_corr_step
           | step _ _ _ h2 _ => cases h2
     | .block l bss md =>
       rw [stmtResult_block (hok := hok)]
-      have hnofd_bss : Block.noFuncDecl bss = Bool.true := by
-        simp [Stmt.noFuncDecl] at hnofd; exact hnofd
       have hsz_bss : Block.sizeOf bss ≤ n := by
         simp [Stmt.sizeOf] at hsz; omega
-      have hsim_bss := ih.2.1 σ bss hsz_bss hnofd_bss (stmtOk_block_inner hok) ρ₀
+      have hsim_bss := ih.2.1 σ bss hsz_bss (stmtOk_block_inner hok) ρ₀
         (InitEnvWF.toBlock_block hswf)
       cases hreach with
       | step _ _ _ h1 r1 =>
@@ -8181,13 +8369,9 @@ private theorem stmt_corr_step
         simp [Stmt.sizeOf] at hsz; omega
       have hsz_ess : Block.sizeOf ess ≤ n := by
         simp [Stmt.sizeOf] at hsz; omega
-      have hnofd_tss : Block.noFuncDecl tss = Bool.true := by
-        simp [Stmt.noFuncDecl, Bool.and_eq_true] at hnofd; exact hnofd.1
-      have hnofd_ess : Block.noFuncDecl ess = Bool.true := by
-        simp [Stmt.noFuncDecl, Bool.and_eq_true] at hnofd; exact hnofd.2
-      have hsim_tss := ih.2.1 σ tss hsz_tss hnofd_tss (stmtOk_ite_left hok) ρ₀
+      have hsim_tss := ih.2.1 σ tss hsz_tss (stmtOk_ite_left hok) ρ₀
         (InitEnvWF.toBlock_ite_left hswf)
-      have hsim_ess := ih.2.1 (blockPostState σ tss) ess hsz_ess hnofd_ess
+      have hsim_ess := ih.2.1 (blockPostState σ tss) ess hsz_ess
         (stmtOk_ite_right hok) ρ₀ (InitEnvWF.toBlock_ite_right hswf)
       cases hreach with
       | step _ _ _ h1 r1 =>
@@ -8201,15 +8385,15 @@ private theorem stmt_corr_step
         | step_ite_nondet_false =>
           exact ite_exit_branch_lift π φ .step_ite_nondet_false r1 (hsim_ess.2 lbl)
     | .loop guard measure inv body md =>
-      exact simulation_loop_exit_case π φ reserved σ
-        guard measure inv body md hnofd hok ρ₀ hswf lbl ρ' hreach
+      exact simulation_loop_exit_case π φ hwf_ext reserved σ
+        guard measure inv body md hok ρ₀ hswf lbl ρ' hreach
 
 private theorem block_corr_step
     (hwf_ext : WFEvalExtension φ)
     (reserved : List String)
     (n : Nat) (ih : SimAllProp π φ reserved n) :
     SimBlockCorrProp π φ reserved (n + 1) := by
-  intro σ bss hsz hnofd hok ρ₀ hswf
+  intro σ bss hsz hok ρ₀ hswf
   refine ⟨?bterm, ?bexit⟩
   case bterm =>
     intro ρ' hreach
@@ -8223,10 +8407,6 @@ private theorem block_corr_step
         simp [Block.sizeOf] at hsz; omega
       have hsz_ss : Block.sizeOf ss ≤ n := by
         simp [Block.sizeOf] at hsz; omega
-      have hnofd_s : Stmt.noFuncDecl s = Bool.true := by
-        simp [Block.noFuncDecl, Bool.and_eq_true] at hnofd; exact hnofd.1
-      have hnofd_ss : Block.noFuncDecl ss = Bool.true := by
-        simp [Block.noFuncDecl, Bool.and_eq_true] at hnofd; exact hnofd.2
       cases hreach with
       | step _ _ _ h1 r1 =>
         cases h1 with
@@ -8235,13 +8415,13 @@ private theorem block_corr_step
             (EvalCmd := EvalCommand π φ) (extendEval := EvalPureFunc φ) r1
           have hswf_s : InitEnvWF reserved s ρ₀ :=
             BlockInitEnvWF.toStmt_head hswf
-          have hsim_s := ih.1 σ s hsz_s hnofd_s (blockOk_cons_left hok) ρ₀ hswf_s
-          have hsim_ss := ih.2.1 (stmtPostState σ s) ss hsz_ss hnofd_ss
+          have hsim_s := ih.1 σ s hsz_s (blockOk_cons_left hok) ρ₀ hswf_s
+          have hsim_ss := ih.2.1 (stmtPostState σ s) ss hsz_ss
             (blockOk_cons_right hok) ρ₁
             (BlockInitEnvWF.toBlock_tail_via_defUseOk (π := π) (φ := φ) hwf_ext hswf hterm_s)
           exact block_corr_cons_term_head_term π φ hterm_s hreach_ss
             (fun h => hsim_s.1 ρ₁ h)
-            (fun h => ih.2.2.1 σ s hsz_s hnofd_s (blockOk_cons_left hok) ρ₀ hswf_s h)
+            (fun h => ih.2.2.1 σ s hsz_s (blockOk_cons_left hok) ρ₀ hswf_s h)
             hsim_ss.1
   case bexit =>
     intro lbl ρ' hreach
@@ -8260,10 +8440,6 @@ private theorem block_corr_step
         simp [Block.sizeOf] at hsz; omega
       have hsz_ss : Block.sizeOf ss ≤ n := by
         simp [Block.sizeOf] at hsz; omega
-      have hnofd_s : Stmt.noFuncDecl s = Bool.true := by
-        simp [Block.noFuncDecl, Bool.and_eq_true] at hnofd; exact hnofd.1
-      have hnofd_ss : Block.noFuncDecl ss = Bool.true := by
-        simp [Block.noFuncDecl, Bool.and_eq_true] at hnofd; exact hnofd.2
       cases hreach with
       | step _ _ _ h1 r1 =>
         cases h1 with
@@ -8271,7 +8447,7 @@ private theorem block_corr_step
           match seq_reaches_exiting (P := Expression)
             (EvalCmd := EvalCommand π φ) (extendEval := EvalPureFunc φ) r1 with
           | .inl hexit_s =>
-            have hsim_s := ih.1 σ s hsz_s hnofd_s (blockOk_cons_left hok) ρ₀
+            have hsim_s := ih.1 σ s hsz_s (blockOk_cons_left hok) ρ₀
               (BlockInitEnvWF.toStmt_head hswf)
             match hsim_s.2 lbl ρ' hexit_s with
             | .inl hcf_s =>
@@ -8281,13 +8457,13 @@ private theorem block_corr_step
               exact stmts_cons_exiting (EvalCommand π φ) (EvalPureFunc φ) _ _ lbl ρ₀ ρ' (hok_s hnf)
           | .inr ⟨ρ₁, hterm_s, hexit_ss⟩ =>
             have hswf_s := BlockInitEnvWF.toStmt_head hswf
-            have hsim_s := ih.1 σ s hsz_s hnofd_s (blockOk_cons_left hok) ρ₀ hswf_s
-            have hsim_ss := ih.2.1 (stmtPostState σ s) ss hsz_ss hnofd_ss
+            have hsim_s := ih.1 σ s hsz_s (blockOk_cons_left hok) ρ₀ hswf_s
+            have hsim_ss := ih.2.1 (stmtPostState σ s) ss hsz_ss
               (blockOk_cons_right hok) ρ₁
               (BlockInitEnvWF.toBlock_tail_via_defUseOk (π := π) (φ := φ) hwf_ext hswf hterm_s)
             exact block_corr_cons_exit_head_term π φ hterm_s hexit_ss
               (fun h => hsim_s.1 ρ₁ h)
-              (fun h => ih.2.2.1 σ s hsz_s hnofd_s (blockOk_cons_left hok) ρ₀ hswf_s h)
+              (fun h => ih.2.2.1 σ s hsz_s (blockOk_cons_left hok) ρ₀ hswf_s h)
               (hsim_ss.2 lbl)
 
 private theorem stmt_cf_step
@@ -8296,7 +8472,7 @@ private theorem stmt_cf_step
     (h_loop_reserved : loopElimReservedPrefix ∈ reserved)
     (n : Nat) (ih : SimAllProp π φ reserved n) :
     SimStmtCFProp π φ reserved (n + 1) := by
-  intro σ st hsz hnofd hok ρ₀ hswf hcf
+  intro σ st hsz hok ρ₀ hswf hcf
   obtain ⟨cfg, hfail, hreach⟩ := hcf
   match st with
   | .cmd c => rw [stmtResult_cmd]; exact ⟨cfg, hfail, hreach⟩
@@ -8305,12 +8481,10 @@ private theorem stmt_cf_step
   | .typeDecl tc md => rw [stmtResult_typeDecl]; exact ⟨cfg, hfail, hreach⟩
   | .block l bss md =>
     rw [stmtResult_block (hok := hok)]
-    have hnofd_bss : Block.noFuncDecl bss = Bool.true := by
-      simp [Stmt.noFuncDecl] at hnofd; exact hnofd
     have hsz_bss : Block.sizeOf bss ≤ n := by
       simp [Stmt.sizeOf] at hsz; omega
     have hcf_inner : CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) bss ρ₀ → CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) (blockResult σ bss) ρ₀ :=
-      fun h => ih.2.2.2 σ bss hsz_bss hnofd_bss (stmtOk_block_inner hok) ρ₀
+      fun h => ih.2.2.2 σ bss hsz_bss (stmtOk_block_inner hok) ρ₀
         (InitEnvWF.toBlock_block hswf) h
     cases hreach with
     | refl => exact ⟨.stmt (.block l (blockResult σ bss) md) ρ₀, hfail, .refl _⟩
@@ -8322,16 +8496,12 @@ private theorem stmt_cf_step
       simp [Stmt.sizeOf] at hsz; omega
     have hsz_ess : Block.sizeOf ess ≤ n := by
       simp [Stmt.sizeOf] at hsz; omega
-    have hnofd_tss : Block.noFuncDecl tss = Bool.true := by
-      simp [Stmt.noFuncDecl, Bool.and_eq_true] at hnofd; exact hnofd.1
-    have hnofd_ess : Block.noFuncDecl ess = Bool.true := by
-      simp [Stmt.noFuncDecl, Bool.and_eq_true] at hnofd; exact hnofd.2
     have hcf_tss : CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) tss ρ₀ → CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) (blockResult σ tss) ρ₀ :=
-      fun h => ih.2.2.2 σ tss hsz_tss hnofd_tss (stmtOk_ite_left hok) ρ₀
+      fun h => ih.2.2.2 σ tss hsz_tss (stmtOk_ite_left hok) ρ₀
         (InitEnvWF.toBlock_ite_left hswf) h
     have hcf_ess : CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) ess ρ₀ →
         CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) (blockResult (blockPostState σ tss) ess) ρ₀ :=
-      fun h => ih.2.2.2 (blockPostState σ tss) ess hsz_ess hnofd_ess
+      fun h => ih.2.2.2 (blockPostState σ tss) ess hsz_ess
         (stmtOk_ite_right hok) ρ₀ (InitEnvWF.toBlock_ite_right hswf) h
     cases hreach with
     | refl => exact ⟨.stmt (.ite c (blockResult σ tss) (blockResult (blockPostState σ tss) ess) md) ρ₀, hfail, .refl _⟩
@@ -8368,7 +8538,7 @@ private theorem stmt_cf_step
       by_cases hall_tt : ∀ le ∈ inv, ρ₀.eval ρ₀.store le.2 = some HasBool.tt
       · rw [← htgt_eq]
         exact simulation_loop_cf_all_tt π φ hwf_ext reserved σ
-          guardE measure inv body md hnofd hok ρ₀ hswf cfg hfail hreach hnf₀'
+          guardE measure inv body md hok ρ₀ hswf cfg hfail hreach hnf₀'
           hall_tt
       · exact loop_vc1_failure_canFail π φ hswf.wfBool hinv_bool
           (not_all_tt_implies_some_ff inv ρ₀ hinv_bool hall_tt) hfib_eq
@@ -8378,7 +8548,7 @@ private theorem block_cf_step
     (reserved : List String)
     (n : Nat) (ih : SimAllProp π φ reserved n) :
     SimBlockCFProp π φ reserved (n + 1) := by
-  intro σ bss hsz hnofd hok ρ₀ hswf hcf
+  intro σ bss hsz hok ρ₀ hswf hcf
   obtain ⟨cfg, hfail, hreach⟩ := hcf
   match bss with
   | [] => rw [blockResult_nil]; exact ⟨cfg, hfail, hreach⟩
@@ -8388,10 +8558,6 @@ private theorem block_cf_step
       simp [Block.sizeOf] at hsz; omega
     have hsz_ss : Block.sizeOf ss ≤ n := by
       simp [Block.sizeOf] at hsz; omega
-    have hnofd_s : Stmt.noFuncDecl s = Bool.true := by
-      simp [Block.noFuncDecl, Bool.and_eq_true] at hnofd; exact hnofd.1
-    have hnofd_ss : Block.noFuncDecl ss = Bool.true := by
-      simp [Block.noFuncDecl, Bool.and_eq_true] at hnofd; exact hnofd.2
     cases hreach with
     | refl =>
       exact ⟨.stmts (stmtResult σ s :: blockResult (stmtPostState σ s) ss) ρ₀, hfail, .refl _⟩
@@ -8399,18 +8565,18 @@ private theorem block_cf_step
       | step_stmts_cons =>
         match seq_canfail_prop r1 hfail with
         | .inl ⟨cfg', hf', hstar'⟩ =>
-          have ⟨kcfg, hkf, hkstar⟩ := ih.2.2.1 σ s hsz_s hnofd_s
+          have ⟨kcfg, hkf, hkstar⟩ := ih.2.2.1 σ s hsz_s
             (blockOk_cons_left hok) ρ₀ (BlockInitEnvWF.toStmt_head hswf)
             ⟨cfg', hf', hstar'⟩
           exact Transform.canFail_head_to_block (EvalCommand π φ) (EvalPureFunc φ) coreIsAtAssert (stmtResult σ s)
             (blockResult (stmtPostState σ s) ss) ρ₀ ⟨kcfg, hkf, hkstar⟩
         | .inr ⟨ρ₁, hterm_s, cfg', hf', hstar_rest⟩ =>
           have hswf_s := BlockInitEnvWF.toStmt_head hswf
-          have hsim_s := ih.1 σ s hsz_s hnofd_s (blockOk_cons_left hok) ρ₀ hswf_s
+          have hsim_s := ih.1 σ s hsz_s (blockOk_cons_left hok) ρ₀ hswf_s
           exact block_cf_cons_head_term π φ hterm_s ⟨cfg', hf', hstar_rest⟩
             (fun h => hsim_s.1 ρ₁ h)
-            (fun h => ih.2.2.1 σ s hsz_s hnofd_s (blockOk_cons_left hok) ρ₀ hswf_s h)
-            (fun h => ih.2.2.2 (stmtPostState σ s) ss hsz_ss hnofd_ss
+            (fun h => ih.2.2.1 σ s hsz_s (blockOk_cons_left hok) ρ₀ hswf_s h)
+            (fun h => ih.2.2.2 (stmtPostState σ s) ss hsz_ss
               (blockOk_cons_right hok) ρ₁
               (BlockInitEnvWF.toBlock_tail_via_defUseOk (π := π) (φ := φ) hwf_ext hswf hterm_s) h)
 
@@ -8422,7 +8588,6 @@ private theorem simulation
     -- Statement level
     (∀ (σ : LoopElimState) (st : Statement),
       Stmt.sizeOf st ≤ sz →
-      Stmt.noFuncDecl st = Bool.true →
       stmtOk σ st →
       ∀ (ρ₀ : Env Expression),
         InitEnvWF reserved st ρ₀ →
@@ -8439,7 +8604,6 @@ private theorem simulation
     -- Block level
     (∀ (σ : LoopElimState) (bss : Statements),
       Block.sizeOf bss ≤ sz →
-      Block.noFuncDecl bss = Bool.true →
       blockOk σ bss →
       ∀ (ρ₀ : Env Expression),
         BlockInitEnvWF reserved bss ρ₀ →
@@ -8456,7 +8620,6 @@ private theorem simulation
     -- Statement CanFail preservation
     (∀ (σ : LoopElimState) (st : Statement),
       Stmt.sizeOf st ≤ sz →
-      Stmt.noFuncDecl st = Bool.true →
       stmtOk σ st →
       ∀ (ρ₀ : Env Expression),
         InitEnvWF reserved st ρ₀ →
@@ -8466,7 +8629,6 @@ private theorem simulation
     -- Block CanFail preservation
     (∀ (σ : LoopElimState) (bss : Statements),
       Block.sizeOf bss ≤ sz →
-      Block.noFuncDecl bss = Bool.true →
       blockOk σ bss →
       ∀ (ρ₀ : Env Expression),
         BlockInitEnvWF reserved bss ρ₀ →
@@ -8474,8 +8636,8 @@ private theorem simulation
         CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) (blockResult σ bss) ρ₀) := by
   induction sz with
   | zero =>
-    refine ⟨fun σ st hsz _ _ => ?_, fun σ bss hsz _ _ => ?_,
-            fun σ st hsz _ _ => ?_, fun σ bss hsz _ _ => ?_⟩
+    refine ⟨fun σ st hsz _ => ?_, fun σ bss hsz _ => ?_,
+            fun σ st hsz _ => ?_, fun σ bss hsz _ => ?_⟩
     · -- Statement-level correctness at sz = 0: no statement has sizeOf 0
       match st with
       | .cmd _ => exact absurd hsz (by simp [Stmt.sizeOf])
@@ -8522,7 +8684,6 @@ private theorem canfail_simulation
     (∀ (σ : LoopElimState) (st : Statement),
       Stmt.sizeOf st ≤ sz →
       stmtOk σ st →
-      Stmt.noFuncDecl st = Bool.true →
       ∀ (ρ₀ : Env Expression),
         InitEnvWF reserved st ρ₀ →
         Transform.CanFail (LangCore π φ) st ρ₀ →
@@ -8531,16 +8692,15 @@ private theorem canfail_simulation
     (∀ (σ : LoopElimState) (bss : Statements),
       Block.sizeOf bss ≤ sz →
       blockOk σ bss →
-      Block.noFuncDecl bss = Bool.true →
       ∀ (ρ₀ : Env Expression),
         BlockInitEnvWF reserved bss ρ₀ →
         CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) bss ρ₀ →
         CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) (blockResult σ bss) ρ₀) := by
   have hsim := simulation π φ hwf_ext sz reserved h_loop_reserved
-  exact ⟨fun σ st hsz hok hnofd ρ₀ hswf hcf =>
-           hsim.2.2.1 σ st hsz hnofd hok ρ₀ hswf hcf,
-         fun σ bss hsz hok hnofd ρ₀ hswf hcf =>
-           hsim.2.2.2 σ bss hsz hnofd hok ρ₀ hswf hcf⟩
+  exact ⟨fun σ st hsz hok ρ₀ hswf hcf =>
+           hsim.2.2.1 σ st hsz hok ρ₀ hswf hcf,
+         fun σ bss hsz hok ρ₀ hswf hcf =>
+           hsim.2.2.2 σ bss hsz hok ρ₀ hswf hcf⟩
 
 /-! ## Top-level theorem -/
 
@@ -8967,6 +9127,187 @@ private theorem mem_definedVars_blockResult
               (blockOk_cons_right hok) n h with h | h
       · exact .inl (by simpa [Block.definedVars] using List.mem_append_right _ h)
       · exact .inr h
+end
+
+/-! ## funcDeclNames preservation: output's funcDeclNames ⊆ source's funcDeclNames
+
+The transform replaces loops with `block`/`ite` wrappers around the original
+body — it never inserts new `funcDecl` AST nodes.  Hence
+`funcDeclNames (stmtResult σ s) ⊆ funcDeclNames s` strictly. -/
+
+/-- If every element of a list of statements is a `Stmt.cmd`, the list's
+    `funcDeclNames` is empty. -/
+private theorem funcDeclNames_eq_nil_of_all_cmd
+    (l : Statements)
+    (hall : ∀ s ∈ l, ∃ c, s = Stmt.cmd c) :
+    Block.funcDeclNames (P := Expression) (C := Command) l = [] := by
+  induction l with
+  | nil => simp [Block.funcDeclNames]
+  | cons hd tl ih =>
+    simp only [Block.funcDeclNames]
+    obtain ⟨c, hc⟩ := hall hd (List.Mem.head _)
+    rw [hc]
+    simp only [Stmt.funcDeclNames, List.nil_append]
+    exact ih (fun s hs => hall s (List.Mem.tail _ hs))
+
+private theorem funcDeclNames_mapIdx_assert
+    (loop_num : String) (lbl_mid : String)
+    (inv : List (String × Expression.Expr)) (md : MetaData Expression) :
+    Block.funcDeclNames (P := Expression) (C := Command)
+      (inv.mapIdx (fun i lp =>
+        Stmt.cmd (HasPassiveCmds.assert
+          (toString loopElimAssertPrefix ++ loop_num ++ lbl_mid ++
+            toString (if lp.fst.isEmpty = Bool.true then toString i
+                      else toString i ++ toString "_" ++ toString lp.fst))
+          lp.snd md))) = [] := by
+  apply funcDeclNames_eq_nil_of_all_cmd
+  intro s hs
+  rw [List.mem_mapIdx] at hs
+  obtain ⟨i, _, heq⟩ := hs
+  exact ⟨_, heq.symm⟩
+
+private theorem funcDeclNames_mapIdx_assume
+    (loop_num : String) (lbl_mid : String)
+    (inv : List (String × Expression.Expr)) (md : MetaData Expression) :
+    Block.funcDeclNames (P := Expression) (C := Command)
+      (inv.mapIdx (fun i lp =>
+        Stmt.cmd (HasPassiveCmds.assume
+          (toString loopElimAssumePrefix ++ loop_num ++ lbl_mid ++
+            toString (if lp.fst.isEmpty = Bool.true then toString i
+                      else toString i ++ toString "_" ++ toString lp.fst))
+          lp.snd md))) = [] := by
+  apply funcDeclNames_eq_nil_of_all_cmd
+  intro s hs
+  rw [List.mem_mapIdx] at hs
+  obtain ⟨i, _, heq⟩ := hs
+  exact ⟨_, heq.symm⟩
+
+private theorem funcDeclNames_havoc_block
+    (body : Statements) (md : MetaData Expression) :
+    Block.funcDeclNames (P := Expression) (C := Command)
+      (List.map (fun n => Stmt.cmd (HasHavoc.havoc n md))
+        (List.filter (fun v => decide ¬v ∈ Block.definedVars body Bool.false)
+          (Block.modifiedVars body))) = [] := by
+  apply funcDeclNames_eq_nil_of_all_cmd
+  intro s hs
+  rcases List.mem_map.mp hs with ⟨n, _, heq⟩
+  exact ⟨_, heq.symm⟩
+
+/-- The transform's loop output's funcDeclNames is exactly the body's
+    funcDeclNames: the wrapping `block`/`ite`/`havoc`/`mapIdx-assert/assume`
+    structures introduce no funcDecls. -/
+private theorem funcDeclNames_stmtResult_loop_subset
+    (σ : LoopElimState)
+    (guard : ExprOrNondet Expression)
+    (measure : Option Expression.Expr)
+    (inv : List (String × Expression.Expr))
+    (body : Statements) (md : MetaData Expression)
+    (hok : stmtOk σ (.loop guard measure inv body md))
+    (n : Expression.Ident)
+    (hn : n ∈ Stmt.funcDeclNames (stmtResult σ (.loop guard measure inv body md))) :
+    n ∈ Block.funcDeclNames body := by
+  -- Use stmtResult_loop_struct to get a structured form, then enumerate.
+  -- Simpler: directly unfold via the same pattern as
+  -- `mem_definedVars_stmtResult_loop`, but with `funcDeclNames` instead.
+  change n ∈ Stmt.funcDeclNames
+    (match (stmtRun σ (.loop guard measure inv body md)).fst with
+     | .ok (_, s'') => s'' | .error _ => default) at hn
+  have hok' := hok
+  unfold stmtOk at hok'
+  match h : (stmtRun σ (.loop guard measure inv body md)).fst with
+  | .error e => simp [h, Except.isOk, Except.toBool] at hok'
+  | .ok (b, s') =>
+    simp only [h] at hn
+    dsimp only [stmtRun, StateT.run, ExceptT.run, Stmt.removeLoopsM, removeLoopsLoopCase,
+      buildLoopOutput, buildLoopPassive, buildArbitraryIterFacts, buildArbitraryIterAssumes,
+      buildExitStateAssumes, buildHavocBlock, buildFirstIterFacts, buildEntryInvariants,
+      buildEntryInvariantAssumes, buildInvAssumes, buildMaintainInvariants,
+      buildExitInvariantAssumes, buildGuardParts, buildTerminationStmtsSome,
+      hasLabelConflict, numAssertAssumesForLoop, invSuffix, measureOldIdent,
+      bind, pure, ExceptT.bind, ExceptT.pure, ExceptT.mk, ExceptT.bindCont,
+      ExceptT.lift, StateT.bind, StateT.pure,
+      Functor.map, liftM, monadLift, MonadLift.monadLift,
+      modify, MonadState.modifyGet, StateT.modifyGet, StateT.map,
+      genLoopNum, bumpStat] at h
+    -- All branches unify h; in each unified branch, hn is `n ∈ funcDeclNames result`.
+    -- We need to show n is in body's funcDeclNames.  Unfold and simp.
+    repeat (first | contradiction | (split at h; skip))
+    all_goals (first | contradiction | (
+      try (unfold StateT.pure at h
+           dsimp only [StateT.bind, StateT.map, ExceptT.bindCont, ExceptT.bind,
+             ExceptT.pure, ExceptT.mk, ExceptT.lift, bind, pure,
+             Functor.map, MonadState.modifyGet, StateT.modifyGet,
+             MonadStateOf.modifyGet, bumpStat, modify, genLoopNum] at h
+           repeat (first | contradiction | (split at h; skip)))
+      all_goals (first
+        | contradiction
+        | (obtain ⟨_, rfl⟩ := h
+           simp only [Stmt.funcDeclNames, Block.funcDeclNames,
+             block_funcDeclNames_append] at hn
+           -- hn breaks into pieces; only `body` and concrete `.cmd` lists.
+           -- Reduce: mapIdx assert/assume → []; havoc map → []; .cmd → [].
+           repeat rw [funcDeclNames_mapIdx_assert] at hn
+           repeat rw [funcDeclNames_mapIdx_assume] at hn
+           repeat rw [funcDeclNames_havoc_block] at hn
+           simp only [List.append_nil, List.nil_append, List.mem_append,
+             Stmt.funcDeclNames, Block.funcDeclNames, List.not_mem_nil,
+             false_or, or_false] at hn
+           first
+             | exact hn
+             | (rcases hn with h1 | h1 <;> exact h1)
+             | (rcases hn with h1 | h1 | h1 <;> exact h1)))))
+
+-- The transform's `stmtResult` doesn't introduce new funcDecls: every
+-- `funcDeclName` in the output was already a `funcDeclName` of the source.
+mutual
+private theorem funcDeclNames_stmtResult_subset
+    (σ : LoopElimState) (s : Statement) (hok : stmtOk σ s) (n : Expression.Ident)
+    (hn : n ∈ Stmt.funcDeclNames (stmtResult σ s)) :
+    n ∈ Stmt.funcDeclNames s := by
+  match s with
+  | .cmd c => rw [stmtResult_cmd] at hn; exact hn
+  | .exit l md => rw [stmtResult_exit] at hn; exact hn
+  | .funcDecl d md => rw [stmtResult_funcDecl] at hn; exact hn
+  | .typeDecl tc md => rw [stmtResult_typeDecl] at hn; exact hn
+  | .block l bss md =>
+    rw [stmtResult_block (hok := hok)] at hn
+    have hn' : n ∈ Block.funcDeclNames (blockResult σ bss) := by
+      simpa [Stmt.funcDeclNames] using hn
+    have := funcDeclNames_blockResult_subset σ bss (stmtOk_block_inner hok) n hn'
+    simpa [Stmt.funcDeclNames] using this
+  | .ite c tss ess md =>
+    rw [stmtResult_ite (hok := hok)] at hn
+    have hn' : n ∈ Block.funcDeclNames (blockResult σ tss) ++
+                  Block.funcDeclNames (blockResult (blockPostState σ tss) ess) := by
+      simpa [Stmt.funcDeclNames] using hn
+    rcases List.mem_append.mp hn' with h | h
+    · have := funcDeclNames_blockResult_subset σ tss (stmtOk_ite_left hok) n h
+      simpa [Stmt.funcDeclNames] using List.mem_append_left _ this
+    · have := funcDeclNames_blockResult_subset (blockPostState σ tss) ess
+                (stmtOk_ite_right hok) n h
+      simpa [Stmt.funcDeclNames] using List.mem_append_right _ this
+  | .loop guard measure inv body md =>
+    have h := funcDeclNames_stmtResult_loop_subset σ guard measure inv body md hok n hn
+    simpa [Stmt.funcDeclNames] using h
+
+private theorem funcDeclNames_blockResult_subset
+    (σ : LoopElimState) (bss : Statements) (hok : blockOk σ bss)
+    (n : Expression.Ident)
+    (hn : n ∈ Block.funcDeclNames (blockResult σ bss)) :
+    n ∈ Block.funcDeclNames bss := by
+  match bss with
+  | [] => rw [blockResult_nil] at hn; simp [Block.funcDeclNames] at hn
+  | s :: rest =>
+    rw [blockResult_cons (hok := hok)] at hn
+    have hn' : n ∈ Stmt.funcDeclNames (stmtResult σ s) ++
+                   Block.funcDeclNames (blockResult (stmtPostState σ s) rest) := by
+      simpa [Block.funcDeclNames] using hn
+    rcases List.mem_append.mp hn' with h | h
+    · have := funcDeclNames_stmtResult_subset σ s (blockOk_cons_left hok) n h
+      simpa [Block.funcDeclNames] using List.mem_append_left _ this
+    · have := funcDeclNames_blockResult_subset (stmtPostState σ s) rest
+                (blockOk_cons_right hok) n h
+      simpa [Block.funcDeclNames] using List.mem_append_right _ this
 end
 
 /-! ## Helpers for `mem_touchedVars_stmtResult` -/
@@ -10319,7 +10660,7 @@ private theorem defUseWellFormed_buildLoopOutput_form
     (h_pre_def_disjoint_body :
         ∀ n ∈ pre_def_true,
           n ∉ Block.modifiedVars body ∧ n ∉ Block.getVars body ∧
-          n ∉ Block.definedVars body false)
+          n ∉ Block.definedVars body false ∧ n ∉ Block.funcDeclNames body)
     -- `post` is well-formed against `outer ⊕ pre_def_true ⊕ body.definedVars true`.
     (h_post_wf : Block.defUseWellFormed
         (fun n => outer n || decide (n ∈ pre_def_true) ||
@@ -10741,7 +11082,9 @@ private theorem defUseWellFormed_loop_output_detSome
     (h_m_old_not_outer : outer (HasIdent.ident (toString "$__loop_measure_" ++ loop_num)
         : Expression.Ident) = Bool.false)
     (h_m_old_notin_body_def : (HasIdent.ident (toString "$__loop_measure_" ++ loop_num)
-        : Expression.Ident) ∉ Block.definedVars body Bool.false) :
+        : Expression.Ident) ∉ Block.definedVars body Bool.false)
+    (h_m_old_notin_body_funcDecl : (HasIdent.ident (toString "$__loop_measure_" ++ loop_num)
+        : Expression.Ident) ∉ Block.funcDeclNames body) :
     Stmt.defUseWellFormed (P := Expression) (C := Command) outer
       (Stmt.block (toString loopElimBlockPrefix ++ toString "loop_" ++ loop_num)
         [Stmt.block
@@ -10878,14 +11221,15 @@ private theorem defUseWellFormed_loop_output_detSome
         · simpa [Lambda.LExpr.LExpr.getVars, HasFvar.mkFvar] using hl
         · simp [Lambda.LExpr.LExpr.getVars] at hr
       · simp [Block.defUseWellFormed]
-  · -- pre_def disjoint from body (m_old ∉ body's touched vars)
+  · -- pre_def disjoint from body (m_old ∉ body's touched vars or funcDecls)
     intro n hn
     simp at hn; subst hn
     simp [Block.touchedVars, Block.modifiedOrDefinedVars, List.mem_append] at h_m_old_notin_body
-    refine ⟨?_, ?_, ?_⟩
+    refine ⟨?_, ?_, ?_, ?_⟩
     · exact h_m_old_notin_body.1
     · exact h_m_old_notin_body.2.2
     · exact h_m_old_notin_body_def
+    · exact h_m_old_notin_body_funcDecl
   · -- post WF (against outer + [m_old] + body.definedVars true)
     apply defUseWellFormed_cons_intro
     · simp only [Stmt.defUseWellFormed, HasVarsPure.getVars, HasVarsImp.modifiedVars,
@@ -10932,6 +11276,8 @@ private theorem defUseWellFormed_stmtResult_loop
       ¬ loopElimReservedPrefix.toList.isPrefixOf n.name.toList)
     (h_def_not_reserved : ∀ n ∈ Block.definedVars body false,
       ¬ loopElimReservedPrefix.toList.isPrefixOf n.name.toList)
+    (h_funcDeclNames_not_reserved : ∀ n ∈ Block.funcDeclNames body,
+      ¬ loopElimReservedPrefix.toList.isPrefixOf n.name.toList)
     (hwf : Stmt.defUseWellFormed outer
             (.loop guard measure inv body md) = Bool.true) :
     Stmt.defUseWellFormed outer
@@ -10977,6 +11323,9 @@ private theorem defUseWellFormed_stmtResult_loop
   have h_m_old_notin_body_def : ∀ ln,
       (⟨"$__loop_measure_" ++ ln, ()⟩ : Expression.Ident) ∉ Block.definedVars body false :=
     fun ln h => h_def_not_reserved _ h (h_m_old_pref ln)
+  have h_m_old_notin_body_funcDecl : ∀ ln,
+      (⟨"$__loop_measure_" ++ ln, ()⟩ : Expression.Ident) ∉ Block.funcDeclNames body :=
+    fun ln h => h_funcDeclNames_not_reserved _ h (h_m_old_pref ln)
   match h : (stmtRun σ (.loop guard measure inv body md)).fst with
   | .error _ => simp [h, Except.isOk, Except.toBool] at hok'
   | .ok (b, s') =>
@@ -11035,6 +11384,7 @@ private theorem defUseWellFormed_stmtResult_loop
       · exact h_freshness
       · exact h_m_old_not_outer _
       · exact h_m_old_notin_body_def _
+      · exact h_m_old_notin_body_funcDecl _
     case h_2 =>
       -- nondet
       exact defUseWellFormed_loop_output_nondet _ inv body md outer
@@ -11063,6 +11413,8 @@ private theorem defUseWellFormed_stmtResultAux
       ¬ loopElimReservedPrefix.toList.isPrefixOf n.name.toList)
     (h_def_not_reserved : ∀ n ∈ Stmt.definedVars s false,
       ¬ loopElimReservedPrefix.toList.isPrefixOf n.name.toList)
+    (h_funcDecl_not_reserved : ∀ n ∈ Stmt.funcDeclNames s,
+      ¬ loopElimReservedPrefix.toList.isPrefixOf n.name.toList)
     (hwf : Stmt.defUseWellFormed outer s = Bool.true) :
     Stmt.defUseWellFormed outer (stmtResult σ s) = Bool.true := by
   match s with
@@ -11080,8 +11432,13 @@ private theorem defUseWellFormed_stmtResultAux
       apply h_def_not_reserved n
       show n ∈ Stmt.definedVars (s := Stmt.block l bss md) false
       simpa [Stmt.definedVars] using hn
+    have hfd_block : ∀ n ∈ Block.funcDeclNames bss,
+        ¬ loopElimReservedPrefix.toList.isPrefixOf n.name.toList := by
+      intro n hn
+      apply h_funcDecl_not_reserved n
+      simpa [Stmt.funcDeclNames] using hn
     have ih := defUseWellFormed_blockResultAux σ bss (stmtOk_block_inner hok) outer
-                h_outer_fresh hdef_block hwf'
+                h_outer_fresh hdef_block hfd_block hwf'
     simpa [defUseWellFormed_block] using ih
   | .ite c tss ess md =>
     rw [stmtResult_ite (hok := hok)]
@@ -11106,10 +11463,20 @@ private theorem defUseWellFormed_stmtResultAux
       apply h_def_not_reserved n
       show n ∈ Stmt.definedVars (s := Stmt.ite c tss ess md) false
       simp [Stmt.definedVars]; exact .inr hn
+    have hfd_t : ∀ n ∈ Block.funcDeclNames tss,
+        ¬ loopElimReservedPrefix.toList.isPrefixOf n.name.toList := by
+      intro n hn
+      apply h_funcDecl_not_reserved n
+      simp [Stmt.funcDeclNames]; exact .inl hn
+    have hfd_e : ∀ n ∈ Block.funcDeclNames ess,
+        ¬ loopElimReservedPrefix.toList.isPrefixOf n.name.toList := by
+      intro n hn
+      apply h_funcDecl_not_reserved n
+      simp [Stmt.funcDeclNames]; exact .inr hn
     have ih_t := defUseWellFormed_blockResultAux σ tss (stmtOk_ite_left hok) outer
-                  h_outer_fresh hdef_t hwf_t
+                  h_outer_fresh hdef_t hfd_t hwf_t
     have ih_e := defUseWellFormed_blockResultAux (blockPostState σ tss) ess
-                  (stmtOk_ite_right hok) outer h_outer_fresh hdef_e hwf_e
+                  (stmtOk_ite_right hok) outer h_outer_fresh hdef_e hfd_e hwf_e
     unfold Stmt.defUseWellFormed
     simp only [Bool.and_eq_true]
     refine ⟨⟨?_, ih_t⟩, ih_e⟩
@@ -11122,8 +11489,13 @@ private theorem defUseWellFormed_stmtResultAux
       apply h_def_not_reserved n
       show n ∈ Stmt.definedVars (s := Stmt.loop guard measure inv body md) false
       simpa [Stmt.definedVars] using hn
+    have hfd_body : ∀ n ∈ Block.funcDeclNames body,
+        ¬ loopElimReservedPrefix.toList.isPrefixOf n.name.toList := by
+      intro n hn
+      apply h_funcDecl_not_reserved n
+      simpa [Stmt.funcDeclNames] using hn
     exact defUseWellFormed_stmtResult_loop σ guard measure inv body md hok outer
-      h_outer_fresh hdef_body hwf
+      h_outer_fresh hdef_body hfd_body hwf
 
 private theorem defUseWellFormed_blockResultAux
     (σ : LoopElimState) (bss : Statements) (hok : blockOk σ bss)
@@ -11131,6 +11503,8 @@ private theorem defUseWellFormed_blockResultAux
     (h_outer_fresh : ∀ n, outer n = Bool.true →
       ¬ loopElimReservedPrefix.toList.isPrefixOf n.name.toList)
     (h_def_not_reserved : ∀ n ∈ Block.definedVars bss false,
+      ¬ loopElimReservedPrefix.toList.isPrefixOf n.name.toList)
+    (h_funcDecl_not_reserved : ∀ n ∈ Block.funcDeclNames bss,
       ¬ loopElimReservedPrefix.toList.isPrefixOf n.name.toList)
     (hwf : Block.defUseWellFormed outer bss = Bool.true) :
     Block.defUseWellFormed outer (blockResult σ bss) = Bool.true := by
@@ -11149,8 +11523,18 @@ private theorem defUseWellFormed_blockResultAux
       intro n hn
       apply h_def_not_reserved n
       simp [Block.definedVars]; exact .inr hn
+    have hfd_s : ∀ n ∈ Stmt.funcDeclNames s,
+        ¬ loopElimReservedPrefix.toList.isPrefixOf n.name.toList := by
+      intro n hn
+      apply h_funcDecl_not_reserved n
+      simp [Block.funcDeclNames]; exact .inl hn
+    have hfd_rest : ∀ n ∈ Block.funcDeclNames rest,
+        ¬ loopElimReservedPrefix.toList.isPrefixOf n.name.toList := by
+      intro n hn
+      apply h_funcDecl_not_reserved n
+      simp [Block.funcDeclNames]; exact .inr hn
     have ih_s := defUseWellFormed_stmtResultAux σ s (blockOk_cons_left hok) outer
-                  h_outer_fresh hdef_s hwf_s
+                  h_outer_fresh hdef_s hfd_s hwf_s
     apply defUseWellFormed_cons_intro ih_s
     -- Tail's outer is extended by `Stmt.definedVars (stmtResult σ s) true`.
     -- Use `stmtResult_definedVars_true_eq` to align that with `Stmt.definedVars s true`.
@@ -11166,7 +11550,7 @@ private theorem defUseWellFormed_blockResultAux
         exact hdef_s n (stmt_definedVars_true_subset_false s n h)
     have ih_rest := defUseWellFormed_blockResultAux (stmtPostState σ s) rest
       (blockOk_cons_right hok) (fun n => outer n || decide (n ∈ Stmt.definedVars s true))
-      h_new_outer_fresh hdef_rest hwf_rest
+      h_new_outer_fresh hdef_rest hfd_rest hwf_rest
     have hcongr : ∀ n,
         (outer n || decide (n ∈ Stmt.definedVars (stmtResult σ s) true)) =
         (outer n || decide (n ∈ Stmt.definedVars s true)) := by
@@ -11189,6 +11573,8 @@ private theorem defUseWellFormed_stmtResult
     exact hswf.reservedFresh n hsome loopElimReservedPrefix h_loop_reserved hpref
   · intro n hn hpref
     exact hswf.definedVarsNotReserved n hn loopElimReservedPrefix h_loop_reserved hpref
+  · intro n hn hpref
+    exact hswf.funcDeclNamesNotReserved n hn loopElimReservedPrefix h_loop_reserved hpref
   · exact hswf.defUseOk
 
 theorem loopElim_overapproximatesAggressive
@@ -11197,30 +11583,14 @@ theorem loopElim_overapproximatesAggressive
       (LangCore π φ)
       (LangCore π φ)
       (fun s =>
-        if Stmt.noFuncDecl s = Bool.true then
-          match (StateT.run (ExceptT.run (Stmt.removeLoopsM s)) σ).fst with
-          | .ok (_, s') => some s'
-          | .error _ => none
-        else none)
+        match (StateT.run (ExceptT.run (Stmt.removeLoopsM s)) σ).fst with
+        | .ok (_, s') => some s'
+        | .error _ => none)
       loopElimReservedPrefix := by
   intro reserved st st' ht h_loop_reserved h_pd ρ₀ hswf
   -- Re-derive `stmtOk σ st` and `stmtResult σ st = st'` from the
   -- removeLoopsM-form of `ht`.
   simp only at ht
-  -- The transform's lambda filters on `Stmt.noFuncDecl st`: a `some` result
-  -- requires `Stmt.noFuncDecl st = true`.  Now that `Stmt.defUseWellFormed`
-  -- properly checks `funcDecl` (programs may have `funcDecl` and still be
-  -- def-use well-formed), we can no longer derive `noFuncDecl` from `defUseOk`,
-  -- and the simulation chain's `eval`-preservation lemmas still depend on
-  -- `noFuncDecl`.  We thread this requirement through the transform's lambda
-  -- so the top-level signature (`OverapproximatesAggressively`) is unchanged.
-  have hnofd : Stmt.noFuncDecl st = Bool.true := by
-    cases h : Stmt.noFuncDecl st with
-    | true => rfl
-    | false =>
-      simp only [h, Bool.false_eq_true, ↓reduceIte] at ht
-      cases ht
-  rw [if_pos hnofd] at ht
   -- Bridge to `stmtOk` / `stmtResult` form by case-splitting on the
   -- `removeLoopsM` result once.  The `error` branch contradicts `ht`,
   -- so we get both `stmtOk σ st` and `stmtResult σ st = st'` from the `ok` case.
@@ -11252,7 +11622,7 @@ theorem loopElim_overapproximatesAggressive
       ∀ p ∈ reserved, ¬ p.toList.isPrefixOf n.name.toList :=
     fun n hsome p hp => hswf.reservedFresh n hsome p hp
   have hsim := (simulation π φ hwf_ext (Stmt.sizeOf st) reserved h_loop_reserved).1
-    σ st (Nat.le_refl _) hnofd hok ρ₀ hswf'
+    σ st (Nat.le_refl _) hok ρ₀ hswf'
   refine ⟨?_, ?_, ?_, ?_⟩
   · intro ρ' hstar; exact hsim.1 ρ' hstar
   · intro lbl ρ' hstar; exact hsim.2 lbl ρ' hstar
@@ -11260,7 +11630,7 @@ theorem loopElim_overapproximatesAggressive
     by_cases hnf₀ : ρ₀.hasFailure = Bool.true
     · exact ⟨.stmt (stmtResult σ st) ρ₀, by show ρ₀.hasFailure = Bool.true; exact hnf₀, .refl _⟩
     · exact (canfail_simulation π φ hwf_ext (Stmt.sizeOf st) reserved h_loop_reserved).1
-        σ st (Nat.le_refl _) hok hnofd ρ₀ hswf' ⟨cfg, hfail, hreach⟩
+        σ st (Nat.le_refl _) hok ρ₀ hswf' ⟨cfg, hfail, hreach⟩
   · -- Show `InitEnvWF reserved (stmtResult σ st) ρ₀` from `InitEnvWF reserved st ρ₀`.
     -- The transform's fresh `$__loop_measure_N` names start with the reserved
     -- prefix `$__loop`; `hswf.reservedFresh` rules them out of `ρ₀.store`.
@@ -11270,6 +11640,7 @@ theorem loopElim_overapproximatesAggressive
       { readWritesDefined := ?readWritesDefined,
         defsUndefined := ?defsUndefined,
         definedVarsNotReserved := ?definedVarsNotReserved,
+        funcDeclNamesNotReserved := ?funcDeclNamesNotReserved,
         reservedFresh := ?reservedFresh,
         wfBool := hswf.wfBool,
         wfVal := hswf.wfVal,
@@ -11326,6 +11697,12 @@ theorem loopElim_overapproximatesAggressive
         rcases h_pp_or with h | h
         · exact h_pd_left h
         · exact h_pd_right h
+    case funcDeclNamesNotReserved =>
+      -- The transform doesn't introduce new funcDecls (they live in source's body
+      -- already), so any funcDeclName in the output was a funcDeclName in the source.
+      intro n hn p hp_mem
+      have h_in_src := funcDeclNames_stmtResult_subset σ st hok n hn
+      exact hswf.funcDeclNamesNotReserved n h_in_src p (List.mem_of_mem_erase hp_mem)
     case defUseOk =>
       exact defUseWellFormed_stmtResult σ st hok reserved
         h_loop_reserved hswf'

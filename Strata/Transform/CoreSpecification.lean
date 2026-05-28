@@ -67,6 +67,13 @@ structure InitEnvWF (reserved : List String) (s : Statement) (ρ : Env Expressio
       Source defs not having any of those prefixes carries through. -/
   definedVarsNotReserved : ∀ n ∈ Stmt.definedVars s false, ∀ p ∈ reserved,
     ¬ p.toList.isPrefixOf n.name.toList
+  /-- Source's `funcDeclNames` don't use any of the reserved prefixes.
+      `funcDecl` names live in the evaluator (not the store), so they aren't
+      covered by `definedVarsNotReserved` (which only ranges over `definedVars`).
+      Transforms that introduce fresh names with reserved prefixes need this
+      to argue disjointness with source-level `funcDecl`-introduced names. -/
+  funcDeclNamesNotReserved : ∀ n ∈ Stmt.funcDeclNames s, ∀ p ∈ reserved,
+    ¬ p.toList.isPrefixOf n.name.toList
   reservedFresh : ∀ n, (ρ.store n).isSome →
     ∀ p ∈ reserved, ¬ p.toList.isPrefixOf n.name.toList
   wfBool : WellFormedSemanticEvalBool ρ.eval
@@ -85,6 +92,8 @@ structure BlockInitEnvWF (reserved : List String) (bss : Statements)
     (ρ.store n).isSome
   defsUndefined : ∀ n ∈ Block.definedVars bss false, (ρ.store n).isNone
   definedVarsNotReserved : ∀ n ∈ Block.definedVars bss false, ∀ p ∈ reserved,
+    ¬ p.toList.isPrefixOf n.name.toList
+  funcDeclNamesNotReserved : ∀ n ∈ Block.funcDeclNames bss, ∀ p ∈ reserved,
     ¬ p.toList.isPrefixOf n.name.toList
   reservedFresh : ∀ n, (ρ.store n).isSome →
     ∀ p ∈ reserved, ¬ p.toList.isPrefixOf n.name.toList
