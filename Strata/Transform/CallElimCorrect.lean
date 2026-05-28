@@ -4031,6 +4031,31 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                   -- Hsubst: substStores σ_R1 σ_havoc.
                   have Hσ'_eq : σ' = updatedStates σ lhs modvals :=
                     UpdateStatesUpdated Hupdate
+                  -- σ_R1 k = σ_havoc k for k off all touched layers.
+                  have σR1_eq_σhavoc :
+                      ∀ {k : Expression.Ident},
+                        k ∉ proc.header.inputs.keys →
+                        k ∉ proc.header.outputs.keys →
+                        k ∉ argTemps → k ∉ outTemps →
+                        k ∉ genOldIdents → k ∉ lhs →
+                        σ_R1 k = σ_havoc k := by
+                    intro k Hk_ins Hk_outs Hk_argT Hk_outT Hk_genOld Hk_lhs
+                    have HσR1_σ : updatedStates σO genOldIdents oldVals k = σ k :=
+                      σR1_eq_σ_for_notTouched Hinitin Hinitout Hhav1
+                        Hk_ins Hk_outs Hk_genOld
+                    have H5 : σ k = σ' k := by
+                      rw [Hσ'_eq, updatedStates_get_notin Hk_lhs]
+                    have Hk_notin_layered :
+                        k ∉ argTemps ++ outTemps ++ genOldIdents := by
+                      simp only [List.mem_append, not_or]
+                      exact ⟨⟨Hk_argT, Hk_outT⟩, Hk_genOld⟩
+                    have H6 : σ' k = σ_havoc k := by
+                      show σ' k = updatedStates σ'
+                        (argTemps ++ outTemps ++ genOldIdents)
+                        (argVals ++ oVals ++ oldVals) k
+                      rw [updatedStates_get_notin Hk_notin_layered]
+                    show updatedStates σO genOldIdents oldVals k = σ_havoc k
+                    rw [HσR1_σ, H5, H6]
                   -- modvals length = lhs length.
                   have HmodvalsLen : modvals.length = lhs.length := by
                     have := UpdateStatesLength Hupdate
@@ -5515,30 +5540,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           simp only [List.unzip_eq_map, List.mem_map]
                           refine ⟨(k1, argTemps[n.val]'Hn_lt_argT), Hpair_in_filtAS, rfl⟩
                         exact Hk1_notin_filtIn Hk1_in_unzip
-                      -- σ_R1 k1 = σ k1 via the layered store-agreement
-                      -- helper, then chain through σ' and σ_havoc.
-                      have HσR1_σ :
-                          updatedStates σO genOldIdents oldVals k1 = σ k1 :=
-                        σR1_eq_σ_for_notTouched Hinitin Hinitout Hhav1
-                          Hk1_notin_ins Hk1_notin_outs Hk1_notin_genOld
-                      -- σ k1 = σ' k1 (k1 ∉ lhs; Hupdate).
-                      have H5 : σ k1 = σ' k1 := by
-                        rw [Hσ'_eq, updatedStates_get_notin Hk1_notin_lhs]
-                      -- σ' k1 = σ_havoc k1 (k1 ∉ argT/outT/genOld).
-                      have Hk1_notin_layered :
-                          k1 ∉ argTemps ++
-                                outTemps ++ genOldIdents := by
-                        simp only [List.mem_append, not_or]
-                        exact ⟨⟨Hk1_notin_argT, Hk1_notin_outT⟩, Hk1_notin_genOld⟩
-                      have H6 : σ' k1 = σ_havoc k1 := by
-                        show σ' k1 =
-                          updatedStates σ'
-                            (argTemps ++
-                              outTemps ++ genOldIdents)
-                            (argVals ++ oVals ++ oldVals) k1
-                        rw [updatedStates_get_notin Hk1_notin_layered]
-                      show updatedStates σO genOldIdents oldVals k1 = σ_havoc k1
-                      rw [HσR1_σ, H5, H6]
+                      exact σR1_eq_σhavoc Hk1_notin_ins Hk1_notin_outs
+                        Hk1_notin_argT Hk1_notin_outT Hk1_notin_genOld Hk1_notin_lhs
                     · -- ── Class (b): k1 ∈ getVars w for some (k, w) ∈ oldSubst_L6 ──
                       -- Split via Map.find?_append.
                       cases hfind : Map.find?
@@ -5596,28 +5599,9 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         have Hk1_notin_genOld' :
                             k1 ∉ genOldIdents := fun h =>
                           σ_some_contradiction Hk1_σ_some (HndefOld_σ k1 h)
-                        -- σ_R1 k1 = σ_havoc k1 via the layered store-
-                        -- agreement helper, plus the σ → σ' → σ_havoc tail.
-                        have HσR1_σ :
-                            updatedStates σO genOldIdents oldVals k1 = σ k1 :=
-                          σR1_eq_σ_for_notTouched Hinitin Hinitout Hhav1
-                            Hk1_notin_ins' Hk1_notin_outs' Hk1_notin_genOld'
-                        have H5 : σ k1 = σ' k1 := by
-                          rw [Hσ'_eq, updatedStates_get_notin Hk1_notin_lhs]
-                        have Hk1_notin_layered :
-                            k1 ∉ argTemps ++
-                                  outTemps ++ genOldIdents := by
-                          simp only [List.mem_append, not_or]
-                          exact ⟨⟨Hk1_notin_argT', Hk1_notin_outT'⟩, Hk1_notin_genOld'⟩
-                        have H6 : σ' k1 = σ_havoc k1 := by
-                          show σ' k1 =
-                            updatedStates σ'
-                              (argTemps ++
-                                outTemps ++ genOldIdents)
-                              (argVals ++ oVals ++ oldVals) k1
-                          rw [updatedStates_get_notin Hk1_notin_layered]
-                        show updatedStates σO genOldIdents oldVals k1 = σ_havoc k1
-                        rw [HσR1_σ, H5, H6]
+                        exact σR1_eq_σhavoc Hk1_notin_ins' Hk1_notin_outs'
+                          Hk1_notin_argT' Hk1_notin_outT' Hk1_notin_genOld'
+                          Hk1_notin_lhs
                   -- Hpred_disj: filtered_ks' disjoint from entry's vars.
                   have HfiltArgT_sub_argT :
                       ∀ x ∈ filtered_argTemps, x ∈ argTemps := by
