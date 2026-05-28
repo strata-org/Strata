@@ -307,12 +307,24 @@ $$`\frac{\Gamma \vdash \mathit{cond} \Leftarrow \mathsf{TBool} \quad \Gamma \vda
 A non-empty block routes the surrounding expected type to its last
 statement; each non-last statement is checked at $`\mathsf{TVoid}`,
 *except* calls — which are synthesized and have their result type
-dropped. That carve-out is the only block-level rule that isn't
-already a consequence of the rules for individual statements.
+dropped. The same Discard-Call carve-out also fires for the *last*
+statement of a block when the block itself is in statement position
+(i.e. $`T = \mathsf{TVoid}`), so $`\{\ldots;\;\mathit{foo}()\}` is
+accepted as a statement even when `foo` returns a non-void type.
+That carve-out is the only block-level rule that isn't already a
+consequence of the rules for individual statements.
 
 $$`\frac{\Gamma_0 = \Gamma \quad \Gamma_{i-1} \vdash s_i \Leftarrow \mathsf{TVoid} \;\;\dashv\;\; \Gamma_i \;(1 \le i < n) \quad \Gamma_{n-1} \vdash s_n \Leftarrow T}{\Gamma \vdash \mathsf{Block}\;[s_1; \ldots; s_n]\;\mathit{label} \Leftarrow T} \quad \text{([⇐] Block)}`
 
 $$`\frac{\mathit{head} = \mathsf{StaticCall}\;\ldots \;\lor\; \mathit{head} = \mathsf{InstanceCall}\;\ldots \quad \Gamma \vdash \mathit{head} \Rightarrow \_}{\Gamma \vdash \mathit{head} \Leftarrow \mathsf{TVoid}} \quad \text{([⇐] Discard-Call)}`
+
+The Discard-Call rule fires in two positions inside a block: (i)
+for every non-last statement $`s_i` whose head is a call (this is
+the carve-out implicit in the $`s_i \Leftarrow \mathsf{TVoid}`
+premise of \[⇐\] Block above), and (ii) for the last statement
+$`s_n` exactly when the surrounding expected type is
+$`T = \mathsf{TVoid}` — i.e. when the block itself appears in
+statement position.
 
 Each $`s_i` is resolved under the scope $`\Gamma_{i-1}` produced by
 its predecessor and produces a possibly extended scope $`\Gamma_i`
@@ -320,7 +332,10 @@ that the next statement sees. In practice only `Var (.Declare …)`
 actually extends the scope; every other construct leaves it
 unchanged so $`\Gamma_i = \Gamma_{i-1}`. The block opens a fresh
 nested scope, so declarations made inside don't leak out — once the
-block ends, the surrounding $`\Gamma` is restored.
+block ends, the surrounding $`\Gamma` is restored. The block also
+emits a `"dead code after '<terminator>'"` diagnostic when an
+`Exit` or `Return` is followed by additional statements in the
+same block.
 
 Statement-typed forms (`Var-Declare`, `Assign`, `Assert`, `Assume`,
 `While`, `Exit`, `Return`, `IfThenElse`) trivially satisfy
@@ -346,7 +361,8 @@ The empty block has a fixed type and is the only block-level rule that
 synthesizes — written $`\mathsf{skip} : \mathsf{TVoid}` in the
 source-language presentation. When an empty block appears in check
 position with `expected ≠ TVoid`, the standard \[⇐\] Sub rule fires at
-the boundary (requiring $`\mathsf{TVoid} <: \mathit{expected}`).
+the boundary (`Check.resolveStmtExpr`'s subsumption-fallback wildcard
+arm, requiring $`\mathsf{TVoid} <: \mathit{expected}`).
 
 {docstring Strata.Laurel.Resolution.Synth.emptyBlock}
 
@@ -374,13 +390,18 @@ $$`\frac{\overline{T_o} = [T] \quad \Gamma \vdash e \Leftarrow T}{\Gamma \vdash 
 
 $$`\frac{\overline{T_o} = []}{\Gamma \vdash \mathsf{Return}\;(\mathsf{some}\;e) \rightsquigarrow \text{error: “void procedure cannot return a value”}} \quad \text{([⇐] Return-Void-Error)}`
 
-$$`\frac{\overline{T_o} = [T_1; \ldots; T_n] \quad (n \ge 2)}{\Gamma \vdash \mathsf{Return}\;(\mathsf{some}\;e) \rightsquigarrow \text{error: “multi-output procedure cannot use ‘return e’; assign to named outputs instead”}} \quad \text{([⇐] Return-Multi-Error)}`
+$$`\frac{\overline{T_o} = [T_1; \ldots; T_n] \quad (n \ge 2)}{\Gamma \vdash \mathsf{Return}\;(\mathsf{some}\;e) \rightsquigarrow \text{error: “multi-output procedure cannot use 'return e'; assign to named outputs instead”}} \quad \text{([⇐] Return-Multi-Error)}`
 
 `return` is the only rule whose premises depend on the enclosing
 procedure's declared outputs. The conclusion's value type $`A` is
 unconstrained, since `return` never falls through — it is a
 control-flow terminator. The error arms fire when $`\overline{T_o}`'s
 arity does not match the syntactic shape of `return e`.
+
+Regardless of which arm fires, $`e` is always elaborated — it is
+checked against the declared output in the single-output case,
+otherwise synthesized — so any errors inside $`e` are reported in
+addition to the arity diagnostic.
 
 The three Return-None rules treat the missing payload as having type
 $`\mathsf{TVoid}`. Void-output procedures accept it unconditionally
@@ -390,6 +411,10 @@ returns and rejecting `return;` in an `int`/`bool`/etc. procedure;
 multi-output procedures accept it as an early-exit shorthand that
 leaves the named outputs at whatever they were last assigned to
 (Return-None-Multi).
+
+When the surrounding context has no enclosing procedure body (e.g.
+inside a constant initializer), `answerType = none` and all Return
+checks are skipped; well-formed input never produces this case.
 
 {docstring Strata.Laurel.Resolution.Check.return}
 

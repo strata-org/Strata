@@ -928,7 +928,7 @@ def Check.exit (target : String) (source : Option FileRange) :
     ─────────────────────────
     Γ ⊢ Return none ⇐ A
 
-    T_o-bar = [T]    TVoid <: T                            (Return-None-Single)
+    T_o-bar = [T]    TVoid <:~ T                           (Return-None-Single)
     ──────────────────────────────────
     Γ ⊢ Return none ⇐ A
 
@@ -946,7 +946,7 @@ def Check.exit (target : String) (source : Option FileRange) :
 
     T_o-bar = [T_1;…;T_n]  n ≥ 2                           (Return-Multi-Error)
     ───────────────────────────────────────────────────────────
-    Γ ⊢ Return (some e) ↝ "multi-output procedure cannot use ‘return e’"
+    Γ ⊢ Return (some e) ↝ "multi-output procedure cannot use 'return e'; assign to named outputs instead"
     ```
     `return` is the *only* rule whose premises depend on the enclosing
     procedure's declared outputs. It is also a control-flow terminator:
@@ -961,7 +961,7 @@ def Check.exit (target : String) (source : Option FileRange) :
 
     `return;` synthesizes the missing payload as `TVoid`. In a
     single-output procedure it is then required to subtype the declared
-    output (Return-None-Single's `TVoid <: T` premise) — accepted in
+    output (Return-None-Single's `TVoid <:~ T` premise) — accepted in
     void-returning procedures, rejected in `int`/`bool`/etc. ones,
     closing the soundness gap that the Dafny-style early-exit shorthand
     used to leave open. In a void-output procedure it is unconditionally
@@ -975,7 +975,12 @@ def Check.exit (target : String) (source : Option FileRange) :
     assignment (`r := …` on the declared output parameters); `return e`
     syntactically takes a single `Option StmtExpr` and cannot carry
     multiple values, so it is flagged with a diagnostic pointing users
-    at the named-output convention. -/
+    at the named-output convention.
+
+    Regardless of which arm fires, `e` is always elaborated — it is
+    checked against the declared output in the single-output case,
+    otherwise synthesized — so any errors inside `e` are reported in
+    addition to the arity diagnostic. -/
 def Check.return (exprMd : StmtExprMd)
     (val : Option StmtExprMd) (source : Option FileRange)
     (h : exprMd.val = .Return val) :
@@ -1023,12 +1028,12 @@ def Check.return (exprMd : StmtExprMd)
     ```
     The empty block has a fixed type `TVoid` — written `skip : TVoid`
     in the source-language presentation. This is the only block-level
-    rule that synthesizes; every non-empty block reduces (via the
-    iteration in
-    `Resolution.Check.block`) to a
-    `head; rest` pattern whose tail eventually bottoms out here, and
-    `Check.block` applies subsumption at the boundary when an
-    `expected` type is supplied. -/
+    rule that synthesizes: non-empty blocks are typed structurally by
+    `Resolution.Check.block` (last statement `⇐ T`, non-last positions
+    `⇐ TVoid` or Discard-Call) and never recurse into an empty tail,
+    so they never bottom out here. When an empty block appears in
+    check position, `Resolution.Check.resolveStmtExpr`'s wildcard arm
+    synth-then-subsumes via the standard \[⇐\] Sub fallback. -/
 def Synth.emptyBlock (source : Option FileRange) : HighTypeMd :=
   { val := .TVoid, source := source }
 
@@ -1047,6 +1052,10 @@ def Synth.emptyBlock (source : Option FileRange) : HighTypeMd :=
     Γ ⊢ s_i checks-non-last (1 ≤ i < n)    Γ ⊢ s_n ⇐ T
     ───────────────────────────────────────────────────
     Γ ⊢ Block [s_1; …; s_n] label ⇐ T
+
+    head_n = StaticCall .. | InstanceCall ..   Γ ⊢ s_n ⇒ _
+    ──────────────────────────────────────────────────────  (Discard-Call, last, T = TVoid)
+    Γ ⊢ s_n ⇐ TVoid
     ```
     The last statement carries the block's value, so it is checked
     against the surrounding `T`. Non-last positions check at `TVoid`,
@@ -1061,7 +1070,11 @@ def Synth.emptyBlock (source : Option FileRange) : HighTypeMd :=
     *not* checked at `TVoid`. Without that carve-out, `f(x);` for a
     non-void-returning `f` would be rejected even though discarding the
     returned value is the standard imperative idiom (Java / Python /
-    JavaScript: `list.add(x);`).
+    JavaScript: `list.add(x);`). The same carve-out also applies to
+    the *last* statement when the surrounding `expected = TVoid` —
+    i.e. when the block itself is in statement position — so
+    `{ …; foo() }` is accepted as a statement even when `foo` returns
+    a non-void type (mirroring the inline-comment rationale below).
 
     The empty block has its own rule (`Resolution.Synth.emptyBlock`,
     a synthesis rule producing `TVoid`) and is handled directly in the
