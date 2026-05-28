@@ -2145,8 +2145,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                               (argTemps ++ lhs))) := by
                       simp only [Imperative.invStores, Imperative.substStores]
                       intros k1 k2 Hkin
-                      have Hk_eq := zip_self_eq Hkin
-                      subst Hk_eq
+                      obtain rfl := zip_self_eq Hkin
                       have Hk1_in : k1 ∈
                           (Imperative.HasVarsPure.getVars (P:=Expression)
                             entry.snd.expr).removeAll
@@ -3067,8 +3066,6 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     InitStatesReadValues Hinitout
                   -- (e) Positional alignment via HoutAlign (Hwfcallsite.specialize).
                   -- (f) Per-index δ-eval bridge: δ σO (mkOld oldVars[i].name) = some oldVals[i].
-                  have HoldVals_len : oldVals.length = oldVars.length :=
-                    HoldValsLen
                   -- For v ∈ oldVars, v is in CallArg.getLhs args (filter).
                   have HoldVars_sub_callLhs : ∀ v ∈ oldVars, v ∈ CallArg.getLhs args := by
                     intro v Hv
@@ -3096,7 +3093,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         δ σO
                             (Lambda.LExpr.fvar ()
                               (CoreIdent.mkOld (oldVars[i]'Hi).name) none) =
-                          some (oldVals[i]'(HoldVals_len.symm ▸ Hi)) := by
+                          some (oldVals[i]'(HoldValsLen.symm ▸ Hi)) := by
                     intro i Hi
                     let v : Expression.Ident := oldVars[i]'Hi
                     have Hv_mem : v ∈ oldVars := List.getElem_mem _
@@ -3149,7 +3146,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     have HStep4 : σ v = some (oVals[j_lhs]'Hj_lhs_lt_oVals) :=
                       read_at Hevalouts Hv_lhs Hj_lhs_lt_oVals
                     -- Step 5: σ v = some oldVals[i]'_ (HoldVals positional).
-                    have Hi_oldVals : i < oldVals.length := HoldVals_len.symm ▸ Hi
+                    have Hi_oldVals : i < oldVals.length := HoldValsLen.symm ▸ Hi
                     have HStep5 : σ v = some (oldVals[i]'Hi_oldVals) :=
                       readValues_get (σ:=σ) (ks:=oldVars) (vs:=oldVals) HoldVals
                         (i:=i) (hi:=Hi) (hi':=Hi_oldVals)
@@ -3162,15 +3159,11 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       congr 1; exact HAlign_lhs.symm
                     rw [Hj_eq, ← HStep4, HStep5]
                   -- D2d: Structural pieces of HpostPayload (per-entry).
-                  let oldVars_L6 : List Expression.Ident :=
-                    callElim_oldVars proc' args
-                  let oldGVars_L6 : List Expression.Ident :=
-                    oldVars_L6.map (fun g => CoreIdent.mkOld g.name)
                   let oldTripsCanonical_L6 :
                       List ((Expression.Ident × Expression.Ty) ×
                             Expression.Ident) :=
-                    (((genOldIdents.zip oldTys).zip oldVars_L6).zip
-                      oldGVars_L6).map
+                    (((genOldIdents.zip oldTys).zip oldVars).zip
+                      (oldVars.map (fun g => CoreIdent.mkOld g.name))).map
                       fun (((fresh, ty), _orig), oldG) => ((fresh, ty), oldG)
                   let inputOnlyOldSubst_L6 :
                       Map Expression.Ident Expression.Expr :=
@@ -3213,12 +3206,9 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     -- Positional decomposition via createOldVarsSubst_pos_decomp.
                     obtain ⟨ni_val, Hni_lt, Hk_eqMkOld, Hw_eq⟩ :=
                       createOldVarsSubst_pos_decomp HgenOldLen HoldTysLen Hf
-                    have Hni_lt_genOld : ni_val < genOldIdents.length := by
-                      have := HgenOldLen
-                      omega
+                    have Hni_lt_genOld : ni_val < genOldIdents.length := HgenOldLen.symm ▸ Hni_lt
                     -- LHS: δ σ_R1 w = σ_R1 genOldIdents[i] = some oldVals[i].
-                    have Hni_lt_oldVals : ni_val < oldVals.length := by
-                      have := HoldValsLen; omega
+                    have Hni_lt_oldVals : ni_val < oldVals.length := HoldValsLen.symm ▸ Hni_lt
                     have HrdR1_get :
                         σ_R1 (genOldIdents[ni_val]'Hni_lt_genOld) =
                           some (oldVals[ni_val]'Hni_lt_oldVals) :=
@@ -3531,8 +3521,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     have Hw'w : w' = w := find?_append_some_eq hfind Hf
                     obtain ⟨ni_val, Hni_lt, _Hk_eqMkOld, Hw'_eq⟩ :=
                       createOldVarsSubst_pos_decomp HgenOldLen HoldTysLen hfind
-                    have Hni_lt_genOld : ni_val < genOldIdents.length := by
-                      have := HgenOldLen; omega
+                    have Hni_lt_genOld : ni_val < genOldIdents.length := HgenOldLen.symm ▸ Hni_lt
                     have Hw_eq : w =
                         Core.Transform.createFvar
                           (genOldIdents[ni_val]'Hni_lt_genOld) := by
@@ -3565,12 +3554,10 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                                 (Imperative.HasVarsPure.getVars (P:=Expression))
                                 inArgs := by
                     intro var k w hfind_none Hf Hv_in
-                    have Hin_some :
-                        Map.find? inputOnlyOldSubst_L6 k = some w :=
-                      find?_append_none_elim hfind_none Hf
                     obtain ⟨ni2_val, _Hni2_lt_inKeys, Hni2_lt_inArgs,
                             _Hk_eq_proc', Hw_eq_proc', _Hin_notin_outs⟩ :=
-                      inputOnlyOldSubst_pos_decomp Hin_some
+                      inputOnlyOldSubst_pos_decomp
+                        (find?_append_none_elim hfind_none Hf)
                     have HargExpr_def :
                         w = (CallArg.getInputExprs args)[ni2_val]'Hni2_lt_inArgs :=
                       Hw_eq_proc'
@@ -3610,8 +3597,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     -- Open invStores.
                     simp only [Imperative.invStores, Imperative.substStores]
                     intros k1 k2 Hkin
-                    have Hk_eq := zip_self_eq Hkin
-                    subst Hk_eq
+                    obtain rfl := zip_self_eq Hkin
                     have Hk1_in : k1 ∈
                         (Imperative.HasVarsPure.getVars (P:=Expression)
                           entry.snd.expr).removeAll
@@ -3688,9 +3674,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         obtain ⟨ni_val, Hni_lt_genOld, _Hw_eq, Hv_eq_gen⟩ :=
                           b1_var_witness hfind Hf Hv_in
                         -- σ_R1 k1 = oldVals[ni_val]; σ_havoc k1 = oldVals[ni_val].
-                        have Hni_lt_oldVals :
-                            ni_val < oldVals.length := by
-                          have := HoldValsLen; omega
+                        have Hni_lt_oldVals : ni_val < oldVals.length :=
+                          HoldValsLen.symm ▸ HgenOldLen ▸ Hni_lt_genOld
                         have Hσ_R1_v :
                             σ_R1 (genOldIdents[ni_val]'Hni_lt_genOld) =
                               some (oldVals[ni_val]'Hni_lt_oldVals) :=
