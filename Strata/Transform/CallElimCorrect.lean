@@ -3299,26 +3299,15 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     exact HlhsDisjArg Hb Ha
                   have Hbignd_L4 :
                       (ks_L4 ++ ks'_L4).Nodup := by
-                    show ((proc.header.inputs.keys ++
-                            proc.header.outputs.keys) ++
-                          (argTemps ++ lhs)).Nodup
                     rw [List.nodup_append]
-                    refine ⟨Hinoutnd, HargT_lhs_nd, ?_⟩
-                    intro a Ha b Hb Heq
+                    refine ⟨Hinoutnd, HargT_lhs_nd, fun a Ha b Hb Heq => ?_⟩
                     subst Heq
-                    cases List.mem_append.mp Ha with
-                    | inl HaIn =>
-                      cases List.mem_append.mp Hb with
-                      | inl HbArg =>
-                        exact HinKeys_disj_argTemps HaIn HbArg
-                      | inr HbLhs =>
-                        exact HinKeys_disj_lhs HaIn HbLhs
-                    | inr HaOut =>
-                      cases List.mem_append.mp Hb with
-                      | inl HbArg =>
-                        exact HoutKeys_disj_argTemps HaOut HbArg
-                      | inr HbLhs =>
-                        exact HoutKeys_disj_lhs HaOut HbLhs
+                    rcases List.mem_append.mp Ha with HaIn | HaOut <;>
+                      rcases List.mem_append.mp Hb with HbArg | HbLhs
+                    · exact HinKeys_disj_argTemps HaIn HbArg
+                    · exact HinKeys_disj_lhs HaIn HbLhs
+                    · exact HoutKeys_disj_argTemps HaOut HbArg
+                    · exact HoutKeys_disj_lhs HaOut HbLhs
                   have Hnd_L4 : Imperative.substNodup
                       (ks_L4.zip ks'_L4) := by
                     unfold Imperative.substNodup
