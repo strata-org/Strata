@@ -8,7 +8,7 @@ module
 public import Strata.Languages.C_Simp.C_Simp
 public import Strata.Languages.Core.Verifier
 import Strata.Languages.C_Simp.DDMTransform.Translate
-import Strata.Languages.Core.Core
+import Strata.Languages.Core
 
 public section
 

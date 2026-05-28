@@ -5,7 +5,7 @@
 -/
 module
 
-public import Strata.Languages.Core.Core
+public import Strata.Languages.Core
 public import Strata.Languages.Laurel.LaurelAST
 public import Strata.Languages.Laurel.LaurelCompilationPipeline
 import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator

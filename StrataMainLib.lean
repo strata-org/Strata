@@ -19,14 +19,14 @@ import Strata.Languages.Laurel.LaurelCompilationPipeline
 import Strata.Pipeline.Diagnostic
 import Strata.Pipeline.PyAnalyzeLaurel
 import Strata.Languages.C_Simp.DDMTransform.Parse
-import Strata.Languages.Python.Python
+import Strata.Languages.Python
 import Strata.Languages.Python.Specs.IdentifyOverloads
 import Strata.Languages.Python.Specs.ToLaurel
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
-import Strata.Languages.Laurel.Laurel
+import Strata.Languages.Laurel
 import Strata.Languages.Core.EntryPoint
 import Strata.Transform.ProcedureInlining
-import Strata.Util.IO
+import StrataDDM.Util.IO
 
 import Strata.SimpleAPI
 import Strata.Util.Json
@@ -315,10 +315,10 @@ def parseLaurelVerifyOptions (pflags : ParsedFlags)
     error if the file defines a dialect rather than a program. -/
 private def readStrataProgram (fm : StrataDDM.DialectFileMap) (file : String)
     : IO (StrataDDM.Program × Lean.Parser.InputContext) := do
-  let text ← Strata.Util.readInputSource file
-  let displayPath := Strata.Util.displayName file
+  let text ← StrataDDM.Util.readInputSource file
+  let displayPath := StrataDDM.Util.displayName file
   let inputCtx := Lean.Parser.mkInputContext text displayPath
-  match ← Strata.readStrataText fm displayPath text.toUTF8 with
+  match ← StrataDDM.readStrataText fm displayPath text.toUTF8 with
   | .program pgm => pure (pgm, inputCtx)
   | .dialect _ =>
     throw (IO.userError s!"Expected a program file, got a dialect: {file}")
@@ -340,7 +340,7 @@ def checkCommand : Command where
   help := "Parse and validate a Strata file (text or Ion). Reports errors and exits."
   callback := fun v pflags => do
     let fm ← pflags.buildDialectFileMap
-    let _ ← Strata.readStrataFile fm v[0]
+    let _ ← StrataDDM.readStrataFile fm v[0]
 
 def toIonCommand : Command where
   name := "toIon"
@@ -349,7 +349,7 @@ def toIonCommand : Command where
   help := "Convert a Strata text file to Ion binary format."
   callback := fun v pflags => do
     let searchPath ← pflags.buildDialectFileMap
-    let pd ← Strata.readStrataFile searchPath v[0]
+    let pd ← StrataDDM.readStrataFile searchPath v[0]
     match pd with
     | .dialect d =>
       IO.FS.writeBinFile v[1] d.toIon
@@ -368,7 +368,7 @@ def printCommand : Command where
     if mem : v[0] ∈ ld.dialects then
       IO.print <| ld.dialects.format v[0] mem
       return
-    let pd ← Strata.readStrataFile searchPath v[0]
+    let pd ← StrataDDM.readStrataFile searchPath v[0]
     match pd with
     | .dialect d =>
       let ld ← searchPath.getLoaded
@@ -385,8 +385,8 @@ def diffCommand : Command where
   help := "Compare two program files for syntactic equality. Reports the first difference found."
   callback := fun v pflags => do
     let fm ← pflags.buildDialectFileMap
-    let p1 ← Strata.readStrataFile fm v[0]
-    let p2 ← Strata.readStrataFile fm v[1]
+    let p1 ← StrataDDM.readStrataFile fm v[0]
+    let p2 ← StrataDDM.readStrataFile fm v[1]
     match p1, p2 with
     | .program p1, .program p2 =>
       if p1.dialect != p2.dialect then
@@ -889,7 +889,7 @@ def javaGenCommand : Command where
     let d ← if mem : v[0] ∈ ld.dialects then
       pure ld.dialects[v[0]]
     else
-      match ← Strata.readStrataFile fm v[0] with
+      match ← StrataDDM.readStrataFile fm v[0] with
       | .dialect d => pure d
       | .program _ => exitFailure "Expected a dialect file, not a program file."
     match StrataDDM.Java.generateDialect d v[1] with

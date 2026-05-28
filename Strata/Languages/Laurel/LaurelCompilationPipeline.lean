@@ -11,7 +11,7 @@ import Strata.Languages.Laurel.EliminateReturnsInExpression
 import Strata.Languages.Laurel.EliminateValueReturns
 import Strata.Languages.Laurel.ConstrainedTypeElim
 import Strata.Languages.Laurel.TypeAliasElim
-public import Strata.Languages.Core.Core
+public import Strata.Languages.Core
 import Strata.Languages.Core.DDMTransform.ASTtoCST
 import Strata.Languages.Laurel.CoreDefinitionsForLaurel
 import Strata.Languages.Laurel.EliminateHoles

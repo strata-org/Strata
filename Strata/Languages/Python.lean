@@ -5,7 +5,7 @@
 -/
 module
 
-public import Strata.Languages.Core.Core
+public import Strata.Languages.Core
 public import Strata.Languages.Python.PythonDialect
 public import Strata.Languages.Python.PythonIdent
 public import StrataDDM.Util.SourceRange
@@ -15,6 +15,7 @@ import Strata.Languages.Python.CorePrelude
 import Strata.Languages.Python.PythonToCore
 import Strata.Languages.Python.ReadPython
 public import Strata.Languages.Python.PySpecPipeline
+public import StrataDDM.Util.IO
 
 /-! ## Strata Python API
 
@@ -35,7 +36,7 @@ Read Python statements from a Strata Ion file.
 -/
 def readPythonIon (path : String)
     : IO (Array (Strata.Python.stmt SourceRange)) := do
-  let bytes ← Strata.Util.readBinInputSource path
+  let bytes ← StrataDDM.Util.readBinInputSource path
   match Strata.Python.readPythonStrataBytes path bytes with
   | .ok stmts => pure stmts
   | .error msg => throw (IO.userError msg)

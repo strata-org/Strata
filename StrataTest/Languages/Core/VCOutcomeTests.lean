@@ -5,7 +5,7 @@
 -/
 module
 
-meta import all Strata.Languages.Core.Core
+meta import all Strata.Languages.Core
 meta import all Strata.Languages.Core.SarifOutput
 
 meta section

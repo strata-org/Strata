@@ -10,7 +10,7 @@ import Strata.Backends.CBMC.CoreToCBMC
 import Strata.Backends.CBMC.GOTO.DefaultSymbols
 import Strata.Languages.Core.Verifier
 import Strata.Languages.C_Simp.Verify
-import Strata.Util.IO
+import StrataDDM.Util.IO
 import Std.Internal.Parsec
 
 open Strata
@@ -25,8 +25,8 @@ private def wrapOutput (s : String) (moduleName : String) : IO String := do
 def main (args : List String) : IO Unit := do
   match args with
   | [file] => do
-    let text ← Strata.Util.readInputSource file
-    let inputCtx := Lean.Parser.mkInputContext text (Strata.Util.displayName file)
+    let text ← StrataDDM.Util.readInputSource file
+    let inputCtx := Lean.Parser.mkInputContext text (StrataDDM.Util.displayName file)
     let dctx := LoadedDialects.builtin
     let dctx := dctx.addDialect! Core
     let dctx := dctx.addDialect! C_Simp

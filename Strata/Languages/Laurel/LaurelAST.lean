@@ -16,7 +16,7 @@ open StrataDDM
 Documentation for Laurel can be found in docs/verso/LaurelDoc.lean
 
 This module contains the Laurel AST. The high-level Laurel API is in
-`Strata.Languages.Laurel.Laurel`.
+`Strata.Languages.Laurel`.
 -/
 namespace Strata
 namespace Laurel

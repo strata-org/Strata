@@ -5,7 +5,7 @@
 -/
 module
 import Strata.Languages.Core.Verifier
-meta import Strata.Languages.Core.Core
+meta import Strata.Languages.Core
 import Strata.Transform.StructuredToUnstructured
 import Lean.Parser.Types
 meta import Strata.Languages.Core.DDMTransform.Grammar

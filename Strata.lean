@@ -44,7 +44,7 @@ import Strata.Languages.Core.EntryPoint
 import Strata.Languages.Core.VerifierProofs
 import Strata.Languages.Dyn.Dyn
 import Strata.Languages.Dyn.Verify
-import Strata.Languages.Python.Python
+import Strata.Languages.Python
 
 /- DDM -/
 import StrataDDM

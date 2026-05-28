@@ -5,8 +5,8 @@
 -/
 module
 
-meta import Strata.Languages.Core.Core
-meta import Strata.Languages.Core.Core
+meta import Strata.Languages.Core
+meta import Strata.Languages.Core
 meta import StrataTest.Languages.Core.Examples.Loops
 import StrataDDM.Integration.Lean.HashCommands
 

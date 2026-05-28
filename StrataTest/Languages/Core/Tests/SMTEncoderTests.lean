@@ -6,7 +6,7 @@
 module
 
 meta import Strata.Languages.Core.SMTEncoder
-meta import Strata.Languages.Core.Core
+meta import Strata.Languages.Core
 import StrataDDM.Integration.Lean.HashCommands
 
 meta section

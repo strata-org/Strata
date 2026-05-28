@@ -27,7 +27,7 @@
 --
 -- Restriction: <regex> and <string> fields must not contain tab characters.
 
-import Strata.Languages.Core.Core
+import Strata.Languages.Core
 import Strata.Languages.Python.Regex.ReToCore
 
 open Strata Strata.Python

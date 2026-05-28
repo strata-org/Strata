@@ -7,7 +7,7 @@ module
 
 public import StrataBoole.Boole
 public import Strata.Languages.Core.Verifier
-import Strata.Languages.Core.Core
+import Strata.Languages.Core
 import Strata.Util.Tactics
 
 public section

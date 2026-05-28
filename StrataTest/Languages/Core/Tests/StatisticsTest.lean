@@ -11,7 +11,7 @@ counters for a simple program. Uses `Core.typeCheckAndEval` which
 returns `Statistics` directly.
 -/
 
-meta import Strata.Languages.Core.Core
+meta import Strata.Languages.Core
 meta import Strata.Languages.Core.Verifier
 meta import Strata.Util.Statistics
 import StrataDDM.Integration.Lean.HashCommands

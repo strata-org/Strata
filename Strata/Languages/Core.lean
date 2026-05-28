@@ -5,7 +5,7 @@
 -/
 module
 
-public import Strata.DDM
+public import StrataDDM
 public import Strata.Languages.Core.Verifier
 public import Strata.Languages.Core.PipelinePhase
 public import Strata.Transform.ProcedureInlining

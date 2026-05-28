@@ -5,7 +5,7 @@
 -/
 module
 
-meta import Strata.Languages.Core.Core
+meta import Strata.Languages.Core
 meta import Strata.DL.Lambda.Preconditions
 import StrataDDM.Integration.Lean.HashCommands
 import Strata.Languages.Core.StatementEval
