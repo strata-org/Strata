@@ -20,7 +20,7 @@ open StrataTest.Util
 open Strata
 
 #eval testLaurelExpect <|
-#strata_expect
+#strata
 program Laurel;
 composite Container {
   var value: int

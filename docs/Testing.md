@@ -12,24 +12,24 @@ test wiring, see [`StrataTest/Languages/Python/README.md`](../StrataTest/Languag
 ## Background
 
 - `#strata <dialect>; … #end` is a **term-elaboration block** that parses the
-  inner Strata program at Lean compile time and elaborates to a `Strata.Program`
-  value. Parse errors surface as Lean errors, so the LSP highlights them
-  inside the block while you edit.
-- `#strata_expect <dialect>; … #end` is a sibling form for **negative tests**.
-  Instead of failing when the inner program has errors, it produces a
-  `Strata.ExpectedBlock` that bundles whatever was parsed plus any
-  parse-time diagnostics, so the test helper can run the rest of the pipeline
-  and assert against the result.
-- `#guard_msgs` is Lean's built-in golden-test command. Used here for **positive
-  tests** only — wrap an `#eval` in `#guard_msgs in` and pin the expected
-  output via a `/-- info: … -/` docstring directly above. Negative tests use
-  inline annotations instead (see recipe 2).
+  inner Strata program at Lean compile time and elaborates to a
+  `Strata.SourcedProgram` (the parsed `Program` plus the snippet text and the
+  byte/line offset of the snippet inside the surrounding `.lean` file). Parse
+  errors surface as Lean errors, so the LSP highlights them inside the block
+  while you edit.
+- A `Coe SourcedProgram Program` instance lets the result of `#strata` flow
+  into APIs that expect a plain `Program` (e.g. `Strata.Boole.verify`); when
+  consumers need `Program` directly, just write `.program`.
+- `#guard_msgs` is Lean's built-in golden-test command. Used here for
+  **positive tests** — wrap an `#eval` in `#guard_msgs in` and pin the
+  expected output via a `/-- info: … -/` docstring directly above. Negative
+  tests use inline annotations instead (see recipe 2).
 
-Diagnostic positions are snippet-local: lines are 1-indexed within the
-`#strata` / `#strata_expect` block, columns are 0-indexed. The annotation
-syntax `// ^^^ kind: message` mirrors that — carets sit at the column range
-on the line *below* the offending source line. Because positions are
-snippet-local, tests don't drift when the surrounding `.lean` file is edited.
+Diagnostic positions in inline annotations are snippet-local: lines are
+1-indexed within the `#strata` block, columns are 0-indexed. The helper
+converts file-global pipeline diagnostics back to snippet-local positions
+before matching, so annotations don't drift when the surrounding `.lean` file
+is edited.
 
 ## Recipes
 
@@ -59,7 +59,7 @@ column range and the kind + (substring of the) message after the carets:
 
 ```lean
 #eval testLaurelExpect <|
-#strata_expect
+#strata
 program Laurel;
 procedure unsafeDivision(x: int)
   opaque
@@ -95,7 +95,7 @@ variants:
 
 ```lean
 #eval testLaurelExpectResolution <|
-#strata_expect
+#strata
 program Laurel;
 procedure foo() opaque {
   var x: int := 1;
@@ -168,9 +168,9 @@ common entry point; everything after is dialect/test-specific.
 ### 5. Mixed positive / negative inside one feature
 
 When a feature has both happy and sad paths, prefer **separate** `#strata`
-and `#strata_expect` blocks. Each one is independently checked, the output
-docstrings stay focused, and a regression in one doesn't mask a regression
-in the other.
+blocks (one driven by `testLaurel`, the other by `testLaurelExpect`). Each
+one is independently checked, and a regression in one doesn't mask a
+regression in the other.
 
 ```lean
 /-! ### Safe paths verify cleanly -/
@@ -185,7 +185,7 @@ procedure safeDivision() opaque {
 #end
 
 /-! ### Unsafe division: divisor not constrained, fails verification -/
-#eval testLaurelExpect <| #strata_expect
+#eval testLaurelExpect <| #strata
 program Laurel;
 procedure unsafeDivision(x: int) opaque {
   var z: int := 10 / x
@@ -195,11 +195,11 @@ procedure unsafeDivision(x: int) opaque {
 ```
 
 If the procedures genuinely depend on each other (one calls the other), keep
-them in one `#strata_expect` and list the union of expected diagnostics.
+them in one `#strata` block and list the union of expected diagnostics.
 
 ## Practical workflow
 
-1. Write the `#strata` / `#strata_expect` block first.
+1. Write the `#strata` block first.
 2. For positive tests, add a `/-- info: ok -/` docstring above
    `#guard_msgs in #eval testLaurel …`.
 3. For negative tests, sketch placeholder annotations like `// ^ error:`
@@ -217,8 +217,9 @@ file held.
 - **Boole** uses `#strata program Boole; … #end` directly with hand-written
   helpers (e.g. `Strata.Boole.verify`); see
   [`StrataTest/Languages/Boole/find_max.lean`](../StrataTest/Languages/Boole/find_max.lean)
-  for the canonical pattern. The `#strata_expect` form is dialect-agnostic
-  and would also work for Boole if you need to capture parse errors there.
+  for the canonical pattern. `#strata` is dialect-agnostic — Boole could use
+  inline annotations the same way once a Boole-side helper analogous to
+  `testLaurelExpect` is written.
 - **Python** has its own pipeline-driven harness; see
   [`StrataTest/Languages/Python/README.md`](../StrataTest/Languages/Python/README.md).
 
@@ -226,8 +227,7 @@ file held.
 
 | Concept | File |
 | --- | --- |
-| `#strata` / `#strata_expect` elaborators | `Strata/DDM/Integration/Lean/HashCommands.lean`, `…/HashCommandsExpect.lean` |
-| `ExpectedBlock` data type | `Strata/DDM/Integration/Lean/HashCommandsExpect.lean` |
+| `#strata` elaborator + `SourcedProgram` | `Strata/DDM/Integration/Lean/HashCommands.lean` |
 | `Diagnostic` data type | `Strata/Languages/Core/Verifier.lean` |
 | Laurel test helpers | `StrataTest/Util/TestLaurel.lean` |
 | Migrated examples | `StrataTest/Languages/Laurel/Examples/**/*.lean` |

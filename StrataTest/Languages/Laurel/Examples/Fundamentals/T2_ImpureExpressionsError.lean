@@ -16,7 +16,7 @@ open Strata
 -- errors.
 
 #eval testLaurelExpect <|
-#strata_expect
+#strata
 program Laurel;
 procedure impure(): int
   opaque

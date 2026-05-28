@@ -12,7 +12,7 @@ open Strata
 /-! ## Failing asserts -/
 
 #eval testLaurelExpect <|
-#strata_expect
+#strata
 program Laurel;
 procedure foo()
   opaque

@@ -30,7 +30,7 @@ procedure earlyReturnCorrect(x: int) returns (r: int)
 /-! ## Buggy early return: postcondition fails -/
 
 #eval testLaurelExpect <|
-#strata_expect
+#strata
 program Laurel;
 procedure earlyReturnBuggy(x: int) returns (r: int)
   opaque

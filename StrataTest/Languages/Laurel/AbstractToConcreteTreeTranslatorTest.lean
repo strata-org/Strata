@@ -11,7 +11,7 @@ Tests that the Laurel AST to DDM concrete syntax tree conversion
 
 import Strata.DDM.Elab
 import Strata.DDM.BuiltinDialects.Init
-import Strata.DDM.Integration.Lean.HashCommandsExpect
+import Strata.DDM.Integration.Lean.HashCommands
 import Strata.Languages.Laurel.Grammar.LaurelGrammar
 import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator

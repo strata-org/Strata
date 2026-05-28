@@ -5,9 +5,8 @@
 -/
 
 /-
-Smoke test for the `#strata` / `#strata_expect` test ergonomics.
-See `StrataTest.Util.TestLaurel` for the helpers and
-`Strata.DDM.Integration.Lean.HashCommandsExpect` for the elaborator.
+Smoke test for the `#strata` test ergonomics. See `StrataTest.Util.TestLaurel`
+for the helpers.
 -/
 
 import StrataTest.Util.TestLaurel
@@ -29,7 +28,7 @@ procedure foo() opaque { assert true };
     the expected diagnostic to the line above it. -/
 
 #eval testLaurelExpectResolution <|
-#strata_expect
+#strata
 program Laurel;
 procedure foo() opaque {
   var x: int := 1;
@@ -41,7 +40,7 @@ procedure foo() opaque {
 /-! ## Negative smoke test: a verifier-level diagnostic. -/
 
 #eval testLaurelExpect <|
-#strata_expect
+#strata
 program Laurel;
 procedure unsafeDivision(x: int)
   opaque

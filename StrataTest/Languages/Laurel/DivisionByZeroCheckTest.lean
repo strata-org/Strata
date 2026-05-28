@@ -50,7 +50,7 @@ procedure callPureDivSafe()
 
 -- Error ranges are too wide because Core does not use expression locations.
 #eval testLaurelExpect <|
-#strata_expect
+#strata
 program Laurel;
 procedure unsafeDivision(x: int)
   opaque
@@ -63,7 +63,7 @@ procedure unsafeDivision(x: int)
 /-! ### Unsafe call to function with `requires y != 0` -/
 
 #eval testLaurelExpect <|
-#strata_expect
+#strata
 program Laurel;
 function pureDiv(x: int, y: int): int
   requires y != 0

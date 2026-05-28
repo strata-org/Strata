@@ -11,7 +11,7 @@ open StrataTest.Util
 open Strata
 
 #eval testLaurelExpect <|
-#strata_expect
+#strata
 program Laurel;
 procedure testStringKO()
 returns (result: string)

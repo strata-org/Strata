@@ -10,7 +10,7 @@ open StrataTest.Util
 open Strata
 
 #eval testLaurelExpect <|
-#strata_expect
+#strata
 program Laurel;
 procedure hasRequires(x: int) returns (r: int)
   requires x > 2

@@ -43,7 +43,7 @@ spec {
 #end
 
 open Core in
-private def SimpleTestEnvAST := Strata.TransM.run Inhabited.default (Strata.translateProgram (SimpleTestEnv))
+private def SimpleTestEnvAST := Strata.TransM.run Inhabited.default (Strata.translateProgram (SimpleTestEnv.program))
 
 private def myProc : Except String Core.Procedure := do
   match SimpleTestEnvAST.fst.decls.head!.getProc? with

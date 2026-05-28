@@ -10,7 +10,7 @@ open StrataTest.Util
 open Strata
 
 #eval testLaurelExpect <|
-#strata_expect
+#strata
 program Laurel;
 procedure transparentBody()
 //        ^^^^^^^^^^^^^^^ error: transparent procedures are not yet supported. Add 'opaque' to make the procedure opaque

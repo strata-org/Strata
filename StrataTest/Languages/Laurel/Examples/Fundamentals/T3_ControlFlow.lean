@@ -10,7 +10,7 @@ open StrataTest.Util
 open Strata
 
 #eval testLaurelExpect <|
-#strata_expect
+#strata
 program Laurel;
 function returnAtEnd(x: int) returns (r: int) {
   if x > 0 then {

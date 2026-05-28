@@ -16,7 +16,7 @@ open Strata
 /-! ## Duplicate static procedure names -/
 
 #eval testLaurelExpectResolution <|
-#strata_expect
+#strata
 program Laurel;
 procedure foo() opaque { };
 procedure foo() opaque { };
@@ -26,7 +26,7 @@ procedure foo() opaque { };
 /-! ## Duplicate type names -/
 
 #eval testLaurelExpectResolution <|
-#strata_expect
+#strata
 program Laurel;
 composite Foo { }
 composite Foo { }
@@ -36,7 +36,7 @@ composite Foo { }
 /-! ## Duplicate field names in a composite type -/
 
 #eval testLaurelExpectResolution <|
-#strata_expect
+#strata
 program Laurel;
 composite Foo {
   var f: int
@@ -48,7 +48,7 @@ composite Foo {
 /-! ## Duplicate parameter names in a procedure -/
 
 #eval testLaurelExpectResolution <|
-#strata_expect
+#strata
 program Laurel;
 procedure foo(x: int, x: bool) opaque { };
 //                    ^ error: Duplicate definition 'x' is already defined in this scope
@@ -57,7 +57,7 @@ procedure foo(x: int, x: bool) opaque { };
 /-! ## Duplicate instance procedure names in a composite type -/
 
 #eval testLaurelExpectResolution <|
-#strata_expect
+#strata
 program Laurel;
 composite Foo {
   procedure bar() opaque { };
@@ -69,7 +69,7 @@ composite Foo {
 /-! ## Duplicate local variable names in the same block -/
 
 #eval testLaurelExpectResolution <|
-#strata_expect
+#strata
 program Laurel;
 procedure foo() opaque {
   var x: int := 1;
@@ -81,7 +81,7 @@ procedure foo() opaque {
 /-! ## Procedure and type with the same name -/
 
 #eval testLaurelExpectResolution <|
-#strata_expect
+#strata
 program Laurel;
 composite Foo { }
 procedure Foo() opaque { };
@@ -118,7 +118,7 @@ procedure foo() opaque {
 /-! ## Duplicate constrained type names -/
 
 #eval testLaurelExpectResolution <|
-#strata_expect
+#strata
 program Laurel;
 constrained nat = x: int where x >= 0 witness 0
 constrained nat = x: int where x > 0 witness 1
@@ -128,7 +128,7 @@ constrained nat = x: int where x > 0 witness 1
 /-! ## Duplicate datatype names -/
 
 #eval testLaurelExpectResolution <|
-#strata_expect
+#strata
 program Laurel;
 datatype Foo { A }
 datatype Foo { B }
@@ -138,7 +138,7 @@ datatype Foo { B }
 /-! ## Composite type and datatype with the same name -/
 
 #eval testLaurelExpectResolution <|
-#strata_expect
+#strata
 program Laurel;
 composite Foo { }
 datatype Foo { A }

@@ -12,7 +12,7 @@ open Strata
 /-! ## Functions with postconditions are not yet supported -/
 
 #eval testLaurelExpect <|
-#strata_expect
+#strata
 program Laurel;
 
 function opaqueFunction(x: int) returns (r: int)

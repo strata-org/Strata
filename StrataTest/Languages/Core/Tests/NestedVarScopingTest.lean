@@ -11,8 +11,8 @@ namespace Strata
 
 open Core
 
-def translatePgm (p : Strata.Program) : Core.Program :=
-  (TransM.run Inhabited.default (translateProgram p)).fst
+def translatePgm (p : Strata.SourcedProgram) : Core.Program :=
+  (TransM.run Inhabited.default (translateProgram p.program)).fst
 
 ---------------------------------------------------------------------
 -- Regression test for issue #436: function declared in if-branches
@@ -20,7 +20,7 @@ def translatePgm (p : Strata.Program) : Core.Program :=
 -- body captured variables from the then-branch instead of the else-branch.
 ---------------------------------------------------------------------
 
-def issue436Pgm : Strata.Program :=
+def issue436Pgm : Strata.SourcedProgram :=
 #strata
 program Core;
 

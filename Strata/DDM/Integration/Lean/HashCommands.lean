@@ -30,7 +30,60 @@ public class HasInputContext (m : Type → Type _) [Functor m] where
   getFileName : m FilePath :=
     (fun ctx => FilePath.mk ctx.fileName) <$> getInputContext
 
+/--
+Bundle returned by the `#strata` term region. Carries:
+
+- `program`: the parsed `Strata.Program` with **file-global** AST byte offsets,
+  so Boole-style consumers (and any code that uses byte offsets in obligation
+  labels or diagnostic ranges) keep their existing behavior.
+- `source`: the raw snippet text between `#strata` and `#end`. Test helpers
+  use this to build a snippet-local `FileMap`.
+- `basePos`: byte offset in the Lean file where the snippet starts, so
+  helpers can convert file-global pipeline diagnostics back to snippet-local
+  positions when matching against inline annotations.
+- `baseLine` / `fileName`: enough info for helpers to render
+  `<lean_file>:<line>:<col>` in error messages so editors / quickfix lists
+  can jump straight to the offending source.
+-/
+public structure SourcedProgram where
+  program  : Program
+  source   : String
+  basePos  : Nat
+  baseLine : Nat
+  fileName : String
+  deriving Inhabited
+
+/-- Forward `ToString` to the underlying `Program` so `#eval` printing keeps
+    working at existing call sites. -/
+public instance : ToString SourcedProgram where
+  toString s := toString s.program
+
+/-- Allow `SourcedProgram` to be used wherever a `Program` is expected; the
+    source/positions are dropped. Removes ~200 explicit `.program` accessors
+    at consumer call sites. -/
+public instance : Coe SourcedProgram Program where
+  coe s := s.program
+
+-- Forwarders so existing call sites can keep using `.commands`, `.dialect`,
+-- etc. on the result of `#strata` as if it were a `Program`.
+namespace SourcedProgram
+
+public abbrev commands (s : SourcedProgram) : Array Operation :=
+  s.program.commands
+public abbrev dialect (s : SourcedProgram) : DialectName :=
+  s.program.dialect
+public abbrev dialects (s : SourcedProgram) : DialectMap :=
+  s.program.dialects
+public abbrev globalContext (s : SourcedProgram) : GlobalContext :=
+  s.program.globalContext
+public abbrev format (s : SourcedProgram) (opts : FormatOptions := {}) : Std.Format :=
+  s.program.format opts
+
+end SourcedProgram
+
 meta section
+
+deriving instance Lean.ToExpr for SourcedProgram
 
 public instance : HasInputContext CommandElabM where
   getInputContext := do
@@ -148,8 +201,8 @@ def strataDialectImpl: CommandElab := fun (stx : Syntax) => do
 declare_tagged_region term strataProgram "#strata" "#end"
 
 @[term_elab strataProgram]
-meta def strataProgramImpl : TermElab := fun stx tp => do
-  let .atom i v := stx[1]
+meta def strataProgramImpl : TermElab := fun stx _ => do
+  let .atom i _ := stx[1]
         | throwError s!"Bad {stx[1]}"
   let .original _ p _ e := i
         | throwError s!"Expected input context"
@@ -162,6 +215,7 @@ meta def strataProgramImpl : TermElab := fun stx tp => do
   }
   let s := (dialectExt.getState (←Lean.getEnv))
   let leanEnv ← Lean.mkEmptyEnvironment 0
+  let baseLine : Nat := (fullInputCtx.fileMap.toPosition p).line
   match Elab.elabProgram s.loaded leanEnv inputCtx 0 inputCtx.endPos with
   | .ok pgm =>
     let commands := pgm.commands.map (fun cmd => cmd.mapAnn (offsetSourceRange p))
@@ -175,14 +229,21 @@ meta def strataProgramImpl : TermElab := fun stx tp => do
           addDefn n commandType (toExpr cmd)
           pure <| mkConst n
     let commandExprs ← monadLift <| pgm.commands.mapM cmdToExpr
-    return astExpr! Program.create
+    let pgmExpr : Lean.Expr :=
+      astExpr! Program.create
         (mkConst (name |>.str s!"{root}_map"))
         (toExpr pgm.dialect)
         (arrayToExpr .zero commandType commandExprs)
+    return mkApp5 (mkConst ``SourcedProgram.mk)
+      pgmExpr
+      (toExpr snippet)
+      (toExpr (p.byteIdx : Nat))
+      (toExpr baseLine)
+      (toExpr fullInputCtx.fileName)
   | .error errors =>
     for e in errors do
       logMessage (offsetMessage fullInputCtx inputCtx p e)
-    return mkApp2 (mkConst ``sorryAx [1]) (toTypeExpr Program) (toExpr true)
+    return mkApp2 (mkConst ``sorryAx [1]) (toTypeExpr SourcedProgram) (toExpr true)
 
 syntax (name := loadDialectCommand) "#load_dialect" str : command
 

@@ -10,8 +10,8 @@ import Strata.Languages.Core.DDMTransform.Translate
 open Core
 open Strata
 
-def translate (t : Strata.Program) : Core.Program :=
-  (TransM.run Inhabited.default (translateProgram t)).fst
+def translate (t : Strata.SourcedProgram) : Core.Program :=
+  (TransM.run Inhabited.default (translateProgram t.program)).fst
 
 /-! ## Regression test for #1038 (https://github.com/strata-org/Strata/issues/1038)
 

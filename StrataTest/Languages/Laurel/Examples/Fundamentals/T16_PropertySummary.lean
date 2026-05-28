@@ -10,7 +10,7 @@ open StrataTest.Util
 open Strata
 
 #eval testLaurelExpect <|
-#strata_expect
+#strata
 program Laurel;
 procedure divide(x: int, y: int) returns (result: int)
   requires y != 0 summary "divisor is non-zero"

@@ -63,7 +63,7 @@ Use `programToSMTWithoutDiagnosis` for faster verification without diagnosis - r
 -- This is not a test, it only demonstrates the end-to-end API
 public meta def exampleVerification : IO Unit := do
   -- Parse B3 program using DDM syntax
-  let ddmProgram : Strata.Program := #strata program B3CST;
+  let ddmProgram : Strata.SourcedProgram := #strata program B3CST;
     function f(x : int) : int { x + 1 }
     procedure test() {
       check 8 == 8 && f(5) == 7
@@ -72,7 +72,7 @@ public meta def exampleVerification : IO Unit := do
 
   -- For parsing from files, use: parseStrataProgramFromDialect dialects "B3CST" "file.b3cst.st"
 
-  let b3AST : B3AST.Program SourceRange ← match programToB3AST ddmProgram with
+  let b3AST : B3AST.Program SourceRange ← match programToB3AST ddmProgram.program with
     | .ok ast => pure ast
     | .error msg => throw (IO.userError s!"Failed to parse: {msg}")
 
@@ -111,9 +111,9 @@ public meta def exampleVerification : IO Unit := do
     if !pathCondition.isEmpty then
       IO.println "  Path condition:"
       for expr in pathCondition do
-        IO.println s!"    {B3.Verifier.formatExpression ddmProgram expr B3.ToCSTContext.empty}"
+        IO.println s!"    {B3.Verifier.formatExpression ddmProgram.program expr B3.ToCSTContext.empty}"
 
-  IO.println s!"Statement: {B3.Verifier.formatStatement ddmProgram verificationReport.context.stmt B3.ToCSTContext.empty}"
+  IO.println s!"Statement: {B3.Verifier.formatStatement ddmProgram.program verificationReport.context.stmt B3.ToCSTContext.empty}"
   analyseVerificationReport verificationReport
 
   let (.some diagnosis) ← pure diagnosisOpt | throw (IO.userError "Expected a diagnosis")
@@ -124,7 +124,7 @@ public meta def exampleVerification : IO Unit := do
 
   for failure in diagnosedFailures do
     let expression : B3AST.Expression SourceRange := failure.expression
-    IO.println s!"Failing expression: {B3.Verifier.formatExpression ddmProgram expression B3.ToCSTContext.empty}"
+    IO.println s!"Failing expression: {B3.Verifier.formatExpression ddmProgram.program expression B3.ToCSTContext.empty}"
     analyseVerificationReport failure.report
 
   pure ()

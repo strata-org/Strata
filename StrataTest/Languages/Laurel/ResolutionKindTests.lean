@@ -17,7 +17,7 @@ open Strata
 /-! ## Using a variable name where a type is expected -/
 
 #eval testLaurelExpectResolution <|
-#strata_expect
+#strata
 program Laurel;
 procedure foo() opaque {
   var x: int := 1;
@@ -29,7 +29,7 @@ procedure foo() opaque {
 /-! ## Using a procedure name where a type is expected -/
 
 #eval testLaurelExpectResolution <|
-#strata_expect
+#strata
 program Laurel;
 procedure bar() opaque { };
 procedure foo() opaque {
@@ -41,7 +41,7 @@ procedure foo() opaque {
 /-! ## Calling a composite type as a static call -/
 
 #eval testLaurelExpectResolution <|
-#strata_expect
+#strata
 program Laurel;
 composite Foo { }
 procedure bar() opaque {
@@ -53,7 +53,7 @@ procedure bar() opaque {
 /-! ## Using a procedure name with `new` -/
 
 #eval testLaurelExpectResolution <|
-#strata_expect
+#strata
 program Laurel;
 procedure bar() opaque { };
 procedure foo() opaque {
@@ -65,7 +65,7 @@ procedure foo() opaque {
 /-! ## Extending a non-composite type (e.g. a constrained type) -/
 
 #eval testLaurelExpectResolution <|
-#strata_expect
+#strata
 program Laurel;
 constrained nat = x: int where x >= 0 witness 0
 composite Foo extends nat { }
@@ -75,7 +75,7 @@ composite Foo extends nat { }
 /-! ## Multi-output procedure used in expression position -/
 
 #eval testLaurelExpectResolution <|
-#strata_expect
+#strata
 program Laurel;
 procedure multi(x: int) returns (a: int, b: int) opaque;
 procedure test() opaque {

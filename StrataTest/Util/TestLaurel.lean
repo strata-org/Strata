@@ -4,7 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.DDM.Integration.Lean.HashCommandsExpect
+import Strata.DDM.Integration.Lean.HashCommands
 import Strata.DDM.Elab
 import Strata.DDM.BuiltinDialects.Init
 import Strata.Languages.Laurel.Grammar.LaurelGrammar
@@ -36,62 +36,80 @@ def formatDiagnostic (d : Strata.Diagnostic) : String :=
     | .StrataBug => "strata-bug"
   s!"{d.start.line}:{d.start.column}-{d.ending.column}  {kind}: {d.message}"
 
+/-- Convert pipeline `DiagnosticModel`s (carrying file-global byte offsets in
+    their `FileRange`) into `Diagnostic`s with snippet-local line/col, by
+    subtracting `basePos` and looking up in a snippet `FileMap`. -/
+private def renderSnippetLocal (basePos : Nat) (snippet : String)
+    (dms : Array Strata.DiagnosticModel) : Array Strata.Diagnostic :=
+  let fileMap := Lean.FileMap.ofString snippet
+  dms.map fun dm =>
+    let startB := dm.fileRange.range.start.byteIdx
+    let stopB  := dm.fileRange.range.stop.byteIdx
+    let startB' : Nat := if startB ≥ basePos then startB - basePos else 0
+    let stopB'  : Nat := if stopB  ≥ basePos then stopB  - basePos else 0
+    let startPos := fileMap.toPosition ⟨startB'⟩
+    let endPos   := fileMap.toPosition ⟨stopB'⟩
+    { start := { line := startPos.line, column := startPos.column }
+      ending := { line := endPos.line, column := endPos.column }
+      message := dm.message
+      type := dm.type }
+
 /-- Run translate + resolve only on a parsed program. Skips SMT verification.
-    Useful for resolution-only negative tests where running the verifier would
-    surface unrelated noise. -/
-private def runLaurelResolution (program : Strata.Program) (source : String) :
-    IO (Array Strata.Diagnostic) := do
+    Returns diagnostics as `DiagnosticModel`s so the caller can choose how to
+    render them (snippet-local for inline annotations, file-global for editor
+    navigation). -/
+private def runLaurelResolutionRaw (program : Strata.Program) :
+    IO (Array Strata.DiagnosticModel) := do
   let uri := Strata.Uri.file "<#strata>"
   match Laurel.TransM.run uri (Laurel.parseProgram program) with
   | .error e =>
-    return #[{ start := ⟨0, 0⟩, ending := ⟨0, 0⟩,
-               message := s!"Translation error: {e}", type := .UserError }]
+    return #[Strata.DiagnosticModel.fromMessage s!"Translation error: {e}"]
   | .ok laurelProgram =>
     let result := Laurel.resolve laurelProgram
-    let files := Map.insert Map.empty uri (Lean.FileMap.ofString source)
-    return result.errors.map (fun dm => dm.toDiagnostic files)
+    return result.errors
 
-/-- Run the full Laurel pipeline (translate + resolve + verify). -/
-private def runLaurelPipeline (program : Strata.Program) (source : String) :
-    IO (Array Strata.Diagnostic) := do
+/-- Run the full Laurel pipeline (translate + resolve + verify).
+    Returns diagnostics as `DiagnosticModel`s. -/
+private def runLaurelPipelineRaw (program : Strata.Program) :
+    IO (Array Strata.DiagnosticModel) := do
   let uri := Strata.Uri.file "<#strata>"
   match Laurel.TransM.run uri (Laurel.parseProgram program) with
   | .error e =>
-    return #[{ start := ⟨0, 0⟩, ending := ⟨0, 0⟩,
-               message := s!"Translation error: {e}", type := .UserError }]
+    return #[Strata.DiagnosticModel.fromMessage s!"Translation error: {e}"]
   | .ok laurelProgram =>
-    let files := Map.insert Map.empty uri (Lean.FileMap.ofString source)
     let options : LaurelVerifyOptions := { verifyOptions := .quiet }
-    Laurel.verifyToDiagnostics files laurelProgram options
+    Laurel.verifyToDiagnosticModels laurelProgram options
 
 /-- Positive-test helper: run the full Laurel pipeline on a `#strata`-parsed
     program and print diagnostics. Empty output means the program checks
     cleanly. -/
-def testLaurel (program : Strata.Program) : IO Unit := do
-  let pipelineDiags ← runLaurelPipeline program ""
-  if pipelineDiags.isEmpty then
+def testLaurel (block : SourcedProgram) : IO Unit := do
+  let dms ← runLaurelPipelineRaw block.program
+  let diags := renderSnippetLocal block.basePos block.source dms
+  if diags.isEmpty then
     IO.println "ok"
   else
-    for d in pipelineDiags do IO.println (formatDiagnostic d)
+    for d in diags do IO.println (formatDiagnostic d)
 
 /-- Positive resolution-only helper: run translate + resolve and print
     diagnostics. Use when the test only cares about resolution, not the
     verifier (e.g. "shadowing in nested blocks is OK"). -/
-def testLaurelResolution (program : Strata.Program) : IO Unit := do
-  let resolutionDiags ← runLaurelResolution program ""
-  if resolutionDiags.isEmpty then
+def testLaurelResolution (block : SourcedProgram) : IO Unit := do
+  let dms ← runLaurelResolutionRaw block.program
+  let diags := renderSnippetLocal block.basePos block.source dms
+  if diags.isEmpty then
     IO.println "ok"
   else
-    for d in resolutionDiags do IO.println (formatDiagnostic d)
+    for d in diags do IO.println (formatDiagnostic d)
 
 /-! ## Inline-annotation negative-test machinery
 
 Negative tests embed `// ^^^^^^ <kind>: <message>` annotations directly in the
-source of a `#strata_expect` block. Each annotation pins one expected
-diagnostic to the line above it. Example:
+source of a `#strata` block. Each annotation pins one expected diagnostic to
+the line above it. Example:
 
 ```
-#strata_expect
+#strata
 program Laurel;
 procedure foo() opaque {
   var x: int := 1;
@@ -102,7 +120,7 @@ procedure foo() opaque {
 ```
 
 The `testLaurelExpect` / `testLaurelExpectResolution` helpers parse these
-annotations from `block.source`, run the pipeline, and assert exact match
+annotations from the snippet, run the pipeline, and assert exact match
 between actual diagnostics and annotations: every diagnostic must have an
 annotation, every annotation must fire, positions must match exactly,
 and the actual message must contain the annotation text as a substring.
@@ -195,13 +213,13 @@ private def matchesAnnotation (d : Strata.Diagnostic) (a : DiagnosticAnnotation)
 private def formatAnnotation (a : DiagnosticAnnotation) : String :=
   s!"{a.line}:{a.colStart}-{a.colEnd}  {a.kind}: {a.message}"
 
-/-- Drive an `ExpectedBlock` against its inline annotations. Throws on any
+/-- Drive a `SourcedProgram` against its inline annotations. Throws on any
     mismatch. -/
-private def runWithAnnotations (block : Strata.ExpectedBlock)
-    (run : Strata.Program → String → IO (Array Strata.Diagnostic)) : IO Unit := do
+private def runWithAnnotations (block : SourcedProgram)
+    (run : Strata.Program → IO (Array Strata.DiagnosticModel)) : IO Unit := do
   let annotations := parseAnnotations block.source
-  let pipelineDiags ← run block.program block.source
-  let actual := block.parseDiagnostics ++ pipelineDiags
+  let dms ← run block.program
+  let actual := renderSnippetLocal block.basePos block.source dms
   -- Pair up: every actual diagnostic must match exactly one annotation.
   let mut unmatchedDiags : Array Strata.Diagnostic := #[]
   let mut matchedAnnotationIdxs : Array Nat := #[]
@@ -234,14 +252,14 @@ private def runWithAnnotations (block : Strata.ExpectedBlock)
 /-- Negative-test helper: run the full Laurel pipeline and assert that the
     diagnostics match the inline `// ^^^ kind: message` annotations in the
     block exactly. Throws on any mismatch. -/
-def testLaurelExpect (block : Strata.ExpectedBlock) : IO Unit :=
-  runWithAnnotations block runLaurelPipeline
+def testLaurelExpect (block : SourcedProgram) : IO Unit :=
+  runWithAnnotations block runLaurelPipelineRaw
 
 /-- Resolution-only negative-test helper. Runs translate + resolve only and
     asserts inline annotations match. Use when the test asserts a
     resolution-pass diagnostic and running the verifier would surface
     unrelated noise. -/
-def testLaurelExpectResolution (block : Strata.ExpectedBlock) : IO Unit :=
-  runWithAnnotations block runLaurelResolution
+def testLaurelExpectResolution (block : SourcedProgram) : IO Unit :=
+  runWithAnnotations block runLaurelResolutionRaw
 
 end StrataTest.Util
