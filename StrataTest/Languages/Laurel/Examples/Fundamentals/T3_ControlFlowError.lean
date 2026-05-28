@@ -41,7 +41,7 @@ function localVariableWithoutInitializer(): int {
 
 procedure deadCodeAfterIfElse(x: int) returns (r: int) {
   if x > 0 then { return 1 } else { return 2 };
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: if-then-else only supported as the last statement in a block
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: in a transparent body, if-then-else is only supported as the last statement in a block
   return 3
 };
 "

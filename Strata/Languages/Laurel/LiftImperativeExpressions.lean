@@ -306,11 +306,15 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
   | .StaticCall callee args =>
     let model := (← get).model
     let imperativeCallees := (← get).imperativeCallees
-    let seqArgs ← args.reverse.mapM transformExpr
-    let seqCall := ⟨.StaticCall callee seqArgs.reverse, source⟩
     if !imperativeCallees.contains callee.text then
+      let seqArgs ← args.reverse.mapM transformExpr
+      let seqCall := ⟨.StaticCall callee seqArgs.reverse, source⟩
       return seqCall
     else
+      let startingPrepend ← takePrepends
+      let seqArgs ← args.reverse.mapM transformExpr
+      let argsPepends ← takePrepends
+      let seqCall := ⟨.StaticCall callee seqArgs.reverse, source⟩
       -- Imperative call in expression position: lift to an assignment.
       -- Only valid for single-output procedures (or unresolved ones where we
       -- fall back to a single target). Multi-output procedures in expression
@@ -328,7 +332,7 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
         ⟨ (.Var (.Declare ⟨callResultVar, callResultType⟩)), source ⟩,
         ⟨.Assign [⟨ .Local callResultVar, source⟩] seqCall, source⟩
       ]
-      modify fun s => { s with prependedStmts := s.prependedStmts ++ liftedCall}
+      modify fun s => { s with prependedStmts := argsPepends ++ liftedCall ++ startingPrepend}
       return ⟨.Var (.Local callResultVar), source⟩
 
   | .IfThenElse cond thenBranch elseBranch =>
@@ -560,7 +564,7 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
             modify fun s => { s with subst := [] }
             return prepends ++ [⟨.Assign targets seqValue, source⟩]
           else
-            let seqArgs ← args.mapM transformExpr
+            let seqArgs ← args.reverse.mapM transformExpr
             let argPrepends ← takePrepends
             modify fun s => { s with subst := [] }
             return argPrepends ++ [⟨.Assign targets ⟨.StaticCall callee seqArgs, source⟩, source⟩]

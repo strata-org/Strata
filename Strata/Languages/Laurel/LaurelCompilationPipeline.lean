@@ -102,7 +102,8 @@ private def laurelPipeline : Array LaurelPass := #[
   { name := "EliminateReturnsInExpressions"
     needsResolves := true
     run := fun p _m =>
-      (eliminateReturnsInExpressionTransform p, [], {}) },
+      let (p', diags) := eliminateReturnsInExpressionTransform p
+      (p', diags.toList, {}) },
   { name := "EliminateValuesInReturns"
     run := fun p _m =>
       let (p', diags) := eliminateValuesInReturnsTransform p
