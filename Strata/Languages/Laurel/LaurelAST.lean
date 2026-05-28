@@ -9,10 +9,14 @@ public import Strata.DL.Imperative.MetaData
 public import Strata.Languages.Core.Expressions
 import Strata.Util.Tactics
 public import StrataDDM.Util.Decimal
+public import Strata.Util.FileRange
 open StrataDDM
 
 /-
 Documentation for Laurel can be found in docs/verso/LaurelDoc.lean
+
+This module contains the Laurel AST. The high-level Laurel API is in
+`Strata.Languages.Laurel`.
 -/
 namespace Strata
 namespace Laurel
@@ -598,4 +602,7 @@ structure Program where
   constants : List Constant := []
   deriving Inhabited
 
-end
+end -- public section
+
+end Laurel
+end Strata

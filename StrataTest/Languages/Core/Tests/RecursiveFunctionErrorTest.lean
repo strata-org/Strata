@@ -5,7 +5,7 @@
 -/
 module
 
-meta import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core
 import StrataDDM.Integration.Lean.HashCommands
 
 meta section
@@ -48,7 +48,7 @@ error: ❌ Symbolic evaluation error.
 Polymorphic recursive functions are not yet supported for SMT verification: 'len'. SMT solvers require monomorphic axioms.
 -/
 #guard_msgs in
-#eval verify polyRecPgm (options := .quiet)
+#eval Core.verify polyRecPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 2: recursive function without @[cases] parameter is rejected
@@ -73,7 +73,7 @@ error: ❌ Symbolic evaluation error.
 Recursive function 'listLen' requires a @[cases] parameter
 -/
 #guard_msgs in
-#eval verify noCasesPgm (options := .quiet)
+#eval Core.verify noCasesPgm (options := .quiet)
 
 end Strata.RecursiveFunctionErrorTest
 

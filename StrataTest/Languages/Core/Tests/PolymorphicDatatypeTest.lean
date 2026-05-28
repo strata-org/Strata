@@ -5,7 +5,7 @@
 -/
 module
 
-meta import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core
 import StrataDDM.Integration.Lean.HashCommands
 
 meta section
@@ -284,7 +284,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify polyListHavocPgm (options := .quiet)
+#eval Core.verify polyListHavocPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 7: Multiple Instantiations with SMT Verification
@@ -334,7 +334,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify multiInstSMTPgm (options := .quiet)
+#eval Core.verify multiInstSMTPgm (options := .quiet)
 
 
 ---------------------------------------------------------------------
@@ -394,7 +394,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify eitherHavocPgm (options := .quiet)
+#eval Core.verify eitherHavocPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 9: Polymorphic Precondition with Havoc
@@ -437,7 +437,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify optionHavocPgm (options := .quiet)
+#eval Core.verify optionHavocPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 10: Polymorphic datatype instantiated with user-defined datatype
@@ -496,7 +496,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify polyWithUserDatatypePgm (options := .quiet)
+#eval Core.verify polyWithUserDatatypePgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 11: Non-datatype parameterized by a datatype
@@ -555,7 +555,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify nonDatatypeWithDatatypeArgPgm (options := .quiet)
+#eval Core.verify nonDatatypeWithDatatypeArgPgm (options := .quiet)
 
 end Strata.PolymorphicDatatypeTest
 

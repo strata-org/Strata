@@ -11,7 +11,7 @@ import Strata.Languages.Laurel.EliminateReturnsInExpression
 import Strata.Languages.Laurel.EliminateValueReturns
 import Strata.Languages.Laurel.ConstrainedTypeElim
 import Strata.Languages.Laurel.TypeAliasElim
-public import Strata.Languages.Core.Verifier
+public import Strata.Languages.Core
 import Strata.Languages.Core.DDMTransform.ASTtoCST
 import Strata.Languages.Laurel.CoreDefinitionsForLaurel
 import Strata.Languages.Laurel.EliminateHoles
@@ -249,7 +249,7 @@ def verifyToVcResults (program : Program)
     let options := { options.verifyOptions with removeIrrelevantAxioms := .Precise }
     let runner tempDir :=
       EIO.toIO (fun f => IO.Error.userError (toString f))
-          (Core.verify coreProgram tempDir .none options)
+          (_root_.Core.verify coreProgram tempDir .none options)
     let ioResult ← match options.vcDirectory with
       | .none => IO.FS.withTempDir runner
       | .some p => IO.FS.createDirAll ⟨p.toString⟩; runner ⟨p.toString⟩

@@ -6,7 +6,7 @@
 module
 
 public import StrataDDM.AST
-public import Strata.Languages.Laurel.Laurel
+public import Strata.Languages.Laurel.LaurelAST
 import StrataDDM.Format
 import Strata.Languages.Laurel.Grammar.LaurelGrammar
 

@@ -5,7 +5,7 @@
 -/
 module
 
-meta import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core
 import StrataDDM.Integration.Lean.HashCommands
 
 meta section
@@ -64,7 +64,7 @@ Model:
 (x@1, 0)
 -/
 #guard_msgs in
-#eval verify havocPgm
+#eval Core.verify havocPgm
 
 end Strata
 end

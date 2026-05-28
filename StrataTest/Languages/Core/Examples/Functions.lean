@@ -5,7 +5,7 @@
 -/
 module
 
-meta import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core
 meta import Strata.Languages.Core.CallGraph
 import StrataDDM.Integration.Lean.HashCommands
 
@@ -74,7 +74,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify funcPgm
+#eval Core.verify funcPgm
 
 ---------------------------------------------------------------------
 
@@ -113,7 +113,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify multiArgFuncPgm
+#eval Core.verify multiArgFuncPgm
 
 ---------------------------------------------------------------------
 
@@ -153,7 +153,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify quantBodyFuncPgm
+#eval Core.verify quantBodyFuncPgm
 
 end Strata
 end
