@@ -1508,6 +1508,39 @@ theorem H_assumes_zip
     (mkSingletonEval := singletonAssumeEval Hwfb)
     Hwfvr Hwfvl Hwfc Hlen Hnd Hdef Hsubst Hposts
 
+/-- Helper: lifting `ReadValues σ ks vs` across an `updatedStates` extension
+    by names disjoint from `ks`. Live-code analogue of the legacy
+    `ReadValuesUpdatedStates`. -/
+theorem readValues_updatedStates
+    {σ : CoreStore} {ks ks' : List Expression.Ident}
+    {vs : List Expression.Expr} {vs' : List Expression.Expr}
+    (Hlen : ks'.length = vs'.length)
+    (Hdisj : ks.Disjoint ks')
+    (Hrd : ReadValues σ ks vs) :
+    ReadValues (updatedStates σ ks' vs') ks vs := by
+  induction ks' generalizing σ vs' with
+  | nil =>
+    cases vs' <;> simp_all [updatedStates, updatedStates']
+  | cons k' ks'' ih =>
+    cases vs' with
+    | nil => simp at Hlen
+    | cons v' vs'' =>
+      simp only [updatedStates, List.zip_cons_cons, updatedStates']
+      have Hdisj' : ks.Disjoint ks'' := by
+        intro x Hin1 Hin2
+        exact Hdisj Hin1 (List.mem_cons_of_mem _ Hin2)
+      -- Prove ReadValues (updatedState σ k' v') ks vs using readValues_updatedState.
+      have Hk'_notin : ¬ k' ∈ ks := by
+        intro Hin
+        exact Hdisj Hin List.mem_cons_self
+      have Hrd_step : ReadValues (updatedState σ k' v') ks vs :=
+        readValues_updatedState (k:=k') (v:=v') Hk'_notin Hrd
+      have Hlen' : ks''.length = vs''.length := by
+        simp at Hlen
+        exact Hlen
+      -- Apply ih on the remaining list.
+      exact ih (σ:=updatedState σ k' v') Hlen' Hdisj' Hrd_step
+
 end
 
 end Core.Transform
