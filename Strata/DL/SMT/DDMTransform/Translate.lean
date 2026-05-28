@@ -328,12 +328,13 @@ partial def translateFromDDMTermToUntyped (t : Strata.SMTResponseDDM.Term Strata
     : Except String Strata.SMT.Term := do
   match t with
   | .spec_constant_term _ sc =>
+    -- Exhaustive match over all SpecConstant variants; Lean will flag any missing case.
     match sc with
     | .sc_numeral _ n     => return .prim (.int n)
     | .sc_numeral_neg _ n => return .prim (.int (-(n : Int)))
     | .sc_decimal _ d     => return .prim (.real d)
+    | .sc_decimal_neg _ d => return .prim (.real { d with mantissa := -d.mantissa })
     | .sc_str _ s         => return .prim (.string s)
-    | _  => throw s!"translateFromDDMTermToUntyped: don't know how to convert {repr t}"
   | .qual_identifier _ qi =>
     match resolveQI qi with
     | some ("true", _)  => return .prim (.bool true)
