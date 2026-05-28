@@ -1665,11 +1665,6 @@ private theorem createOldVarsSubst_pos_decomp
         (Core.Transform.createOldVarsSubst oldTripsCanonical) :=
     Map.find?_mem _ k w Hf
   -- createOldVarsSubst trips = trips.map go (definitional).
-  have HsubstUnfold :
-      Core.Transform.createOldVarsSubst oldTripsCanonical =
-        oldTripsCanonical.map
-          (fun trip => Core.Transform.createOldVarsSubst.go trip) := rfl
-  rw [HsubstUnfold] at Hkw_mem_list
   rcases List.mem_map.mp Hkw_mem_list with ⟨trip, Htrip_in, Htrip_eq⟩
   rcases List.mem_iff_get.mp Htrip_in with ⟨ni, Hni⟩
   -- Length facts.
