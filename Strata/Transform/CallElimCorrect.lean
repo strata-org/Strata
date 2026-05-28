@@ -4119,27 +4119,20 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                   -- σ_R1 reads inputs.keys → argVals (full).
                   have Hrd_R1_in_full :
                       ReadValues σ_R1 proc.header.inputs.keys argVals := by
-                    apply readValues_updatedStates
-                    · rw [HgenOldLen, HoldValsLen]
-                    · exact HinKeys_disj_olds
-                    · -- ReadValues σO inputs.keys argVals.
-                      have HrdAO :
-                          ReadValues σAO proc.header.inputs.keys argVals := by
-                        apply InitStatesReadValuesMonotone (σ:=σA) ?_ Hinitout
-                        exact InitStatesReadValues Hinitin
-                      have Hh1 := HavocVarsUpdateStates Hhav1
-                      rcases Hh1 with ⟨ovh, Hup_havoc⟩
-                      apply UpdateStatesReadValuesMonotone (σ:=σAO) _
-                              ?_ Hup_havoc
-                      · exact Hinoutnd
-                      · exact HrdAO
+                    apply readValues_updatedStates HgenOldOldValsLen HinKeys_disj_olds
+                    -- ReadValues σO inputs.keys argVals.
+                    have HrdAO : ReadValues σAO proc.header.inputs.keys argVals := by
+                      apply InitStatesReadValuesMonotone (σ:=σA) ?_ Hinitout
+                      exact InitStatesReadValues Hinitin
+                    have Hh1 := HavocVarsUpdateStates Hhav1
+                    rcases Hh1 with ⟨ovh, Hup_havoc⟩
+                    apply UpdateStatesReadValuesMonotone (σ:=σAO) _ ?_ Hup_havoc
+                    · exact Hinoutnd
+                    · exact HrdAO
                   -- σ_R1 reads outputs.keys → modvals (full).
                   have Hrd_R1_outs :
-                      ReadValues σ_R1 proc.header.outputs.keys modvals := by
-                    apply readValues_updatedStates
-                    · rw [HgenOldLen, HoldValsLen]
-                    · exact HoutKeys_disj_olds
-                    · exact Hrd
+                      ReadValues σ_R1 proc.header.outputs.keys modvals :=
+                    readValues_updatedStates HgenOldOldValsLen HoutKeys_disj_olds Hrd
                   -- σ_havoc reads argTemps → argVals (layer-1).
                   have Hrd_havoc_argT :
                       ReadValues σ_havoc argTemps argVals := by
