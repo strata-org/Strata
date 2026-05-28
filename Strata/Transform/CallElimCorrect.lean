@@ -611,6 +611,22 @@ private theorem σR1_eq_σ_for_notTouched
       initStates_get_notin Hinitout HvNotOuts,
       initStates_get_notin Hinitin HvNotIns]
 
+-- Q19-I bind-shell simp golf: shared simp sets used inside the
+-- `callElim*_ok` no-throw lemmas and `callElimCmd_call_eq`. The
+-- hypothesis name is captured as an `ident` and spliced into the
+-- `simp ... at` location list.
+local macro "bind_shell" "at" h:ident : tactic => `(tactic|
+  simp only [bind, StateT.bind, ExceptT.bind, ExceptT.bindCont, ExceptT.mk,
+             pure, ExceptT.pure, StateT.pure] at $h:ident)
+
+local macro "bind_shell_state" "at" h:ident : tactic => `(tactic|
+  simp only [bind, StateT.bind, ExceptT.bind, ExceptT.bindCont, ExceptT.mk,
+             pure, ExceptT.pure, StateT.pure,
+             get, getThe, MonadStateOf.get, MonadState.get, StateT.get,
+             set, MonadStateOf.set, StateT.set,
+             monadLift, MonadLift.monadLift, liftM, ExceptT.lift,
+             Functor.map, StateT.map, Except.mapError] at $h:ident)
+
 /-- No-throw fact for the `oldTys ← oldVars.mapM ...` step inside
     `callElimCmd`.  When every `g ∈ oldVars` already appears as a key in
     `proc.header.inputs`, the `find?`-driven lookup never hits the
@@ -746,11 +762,7 @@ private theorem createAsserts_ok
                    StateT.bind, StateT.pure, pure,
                    monadLift, MonadLift.monadLift, liftM,
                    Functor.map, StateT.map, liftCoreGenM, hgi]
-        simp only [bind, ExceptT.bind,
-                   ExceptT.mk, ExceptT.lift, ExceptT.pure,
-                   pure,
-                   monadLift, MonadLift.monadLift, liftM,
-                   Functor.map] at Heqtail
+        bind_shell_state at Heqtail
         rw [Heqtail]
         rfl
       · simp [Hlen]
@@ -804,11 +816,7 @@ private theorem createAssumes_ok
                    StateT.bind, StateT.pure, pure,
                    monadLift, MonadLift.monadLift, liftM,
                    Functor.map, StateT.map, liftCoreGenM, hgi]
-        simp only [bind, ExceptT.bind,
-                   ExceptT.mk, ExceptT.lift, ExceptT.pure,
-                   pure,
-                   monadLift, MonadLift.monadLift, liftM,
-                   Functor.map] at Heqtail
+        bind_shell_state at Heqtail
         rw [Heqtail]
         rfl
       · simp [Hlen]
@@ -838,21 +846,6 @@ private theorem createAssumes_ok
     state names `s_arg/s_out/s_old/s_postold/s_assert/s_assume` are
     threaded through; only state-shape relevant downstream are retained.
 -/
-
--- Q19-I bind-shell simp golf: shared simp sets used inside
--- `callElimCmd_call_eq`. The hypothesis name is captured as an
--- `ident` and spliced into the `simp ... at` location list.
-local macro "bind_shell" "at" h:ident : tactic => `(tactic|
-  simp only [bind, StateT.bind, ExceptT.bind, ExceptT.bindCont, ExceptT.mk,
-             pure, ExceptT.pure, StateT.pure] at $h:ident)
-
-local macro "bind_shell_state" "at" h:ident : tactic => `(tactic|
-  simp only [bind, StateT.bind, ExceptT.bind, ExceptT.bindCont, ExceptT.mk,
-             pure, ExceptT.pure, StateT.pure,
-             get, getThe, MonadStateOf.get, MonadState.get, StateT.get,
-             set, MonadStateOf.set, StateT.set,
-             monadLift, MonadLift.monadLift, liftM, ExceptT.lift,
-             Functor.map, StateT.map, Except.mapError] at $h:ident)
 
 private theorem callElimCmd_call_eq
     {procName : String} {args : List (CallArg Expression)}
@@ -999,8 +992,7 @@ private theorem callElimCmd_call_eq
                       oldVars_oldTys_mapM_ok (γ := { s_out with genState := s_old })
                         Holdvars_in_inputs
                     -- Reduce `pure`/`throw` to match Heq.
-                    simp only [bind, StateT.bind, ExceptT.bind,
-                               ExceptT.bindCont, ExceptT.mk] at Heq
+                    bind_shell at Heq
                     have HeqtyR : _ := Heqty
                     simp only [pure, ExceptT.pure, StateT.pure,
                                ExceptT.mk] at HeqtyR
@@ -2140,8 +2132,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       cases List.mem_append.mp Hin1 with
                       | inl HxArg =>
                         -- x ∈ argT (tmp_), x ∈ preVars (not tmp_).
-                        have HxTemp : isTempIdent x :=
-                          (List.Forall_mem_iff.mp HargTemp) x HxArg
+                        have HxTemp : isTempIdent x := (List.Forall_mem_iff.mp HargTemp) x HxArg
                         have HxNotTemp : ¬ isTempIdent x :=
                           (HfreshEnt x Hin2).1
                         exact HxNotTemp HxTemp
@@ -2177,17 +2168,10 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                               (argTemps ++ lhs)) :=
                         (List.of_mem_zip Hkin).1
                       -- Decompose the removeAll membership.
-                      have Hk1_inPre :
-                          k1 ∈ Imperative.HasVarsPure.getVars
-                                  (P:=Expression) entry.snd.expr ∧
-                          k1 ∉ (proc.header.inputs.keys ++
-                                  proc.header.outputs.keys) ++
-                                (argTemps ++ lhs) := by
-                        simp only [List.removeAll, List.mem_filter,
-                                   List.elem_eq_mem, Bool.not_eq_true',
-                                   decide_eq_false_iff_not] at Hk1_in
-                        exact Hk1_in
-                      obtain ⟨Hk1_pre, Hk1_notin⟩ := Hk1_inPre
+                      simp only [List.removeAll, List.mem_filter,
+                                 List.elem_eq_mem, Bool.not_eq_true',
+                                 decide_eq_false_iff_not] at Hk1_in
+                      obtain ⟨Hk1_pre, Hk1_notin⟩ := Hk1_in
                       obtain ⟨Hk1_notin_inputs, Hk1_notin_outputs,
                               Hk1_notin_argT, _Hk1_notin_lhs⟩ :=
                         List.notin_append4 Hk1_notin
@@ -3839,15 +3823,10 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           (filtered_ks ++ filtered_ks') :=
                       (List.of_mem_zip Hkin).1
                     -- Decompose removeAll.
-                    have Hk1_inDecomp :
-                        k1 ∈ Imperative.HasVarsPure.getVars
-                                (P:=Expression) entry.snd.expr ∧
-                        k1 ∉ filtered_ks ++ filtered_ks' := by
-                      simp only [List.removeAll, List.mem_filter,
-                                 List.elem_eq_mem, Bool.not_eq_true',
-                                 decide_eq_false_iff_not] at Hk1_in
-                      exact Hk1_in
-                    obtain ⟨Hk1_pre, Hk1_notin_combined⟩ := Hk1_inDecomp
+                    simp only [List.removeAll, List.mem_filter,
+                               List.elem_eq_mem, Bool.not_eq_true',
+                               decide_eq_false_iff_not] at Hk1_in
+                    obtain ⟨Hk1_pre, Hk1_notin_combined⟩ := Hk1_in
                     -- Decompose `k1 ∉ (outputs ++ filtered_inputs) ++
                     -- (lhs ++ filtered_argTemps)` into 4 leaf facts.
                     obtain ⟨Hk1_notin_outs, Hk1_notin_filtIn,
@@ -4016,8 +3995,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       | inr Hx_filtArgT =>
                         have Hx_argT : x ∈ argTemps :=
                           HfiltArgT_sub_argT x Hx_filtArgT
-                        exact Hx_notTemp
-                          ((List.Forall_mem_iff.mp HargTemp) x Hx_argT)
+                        exact Hx_notTemp ((List.Forall_mem_iff.mp HargTemp) x Hx_argT)
                     · -- ── Class (b): x ∈ getVars w for some (k', w) ∈ oldSubst_L6 ──
                       cases hfind : Map.find?
                                       (Core.Transform.createOldVarsSubst
@@ -4039,13 +4017,10 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           have Hx_argT :
                               genOldIdents[ni_val]'Hni_lt_genOld ∈ argTemps :=
                             HfiltArgT_sub_argT _ Hx_filtArgT
-                          have Hx_isTemp : isTempIdent
-                              (genOldIdents[ni_val]'Hni_lt_genOld) :=
+                          have Hx_isTemp : isTempIdent (genOldIdents[ni_val]'Hni_lt_genOld) :=
                             (List.Forall_mem_iff.mp HargTemp) _ Hx_argT
-                          have Hx_isOld : isOldTempIdent
-                              (genOldIdents[ni_val]'Hni_lt_genOld) :=
-                            (List.Forall_mem_iff.mp HoldIdentsTemp)
-                              _ (List.getElem_mem _)
+                          have Hx_isOld : isOldTempIdent (genOldIdents[ni_val]'Hni_lt_genOld) :=
+                            (List.Forall_mem_iff.mp HoldIdentsTemp) _ (List.getElem_mem _)
                           exact isTempIdent_isOldTempIdent_disjoint
                             Hx_isTemp Hx_isOld
                       | none =>
