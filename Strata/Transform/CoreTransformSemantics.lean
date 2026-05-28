@@ -479,6 +479,502 @@ theorem H_inits
     rw [Hunfold]
     exact Hcombined
 
+/-! ### Generic `mapM`-over-`CoreGenM` helpers
+
+The Arg/Out/Old gen-ident families share the structural shape
+`List.mapM (g : α → CoreGenM Ident) l`, where the only difference is
+`α` (Unit for Arg, Ident for Out/Old) and the per-element generator `g`.
+The four facts below — length preservation, generated-stack accounting,
+WF preservation, and `Forall`-lifting — depend only on (i) `mapM`'s
+recursion shape and (ii) a pointwise hypothesis on the per-element
+generator.  We prove each generically once and derive the 12
+single-iterator specializations (3 each for Arg/Out/Old × length /
+GeneratedWF / WFMono / Forall) as one-line corollaries. -/
+
+/-- Length preservation for any `List.mapM` against `CoreGenM`. -/
+theorem genIdentMapM_length' {α : Type}
+    {g : α → CoreGenM Expression.Ident}
+    {l : List α} {s : CoreGenState} :
+    (List.mapM g l s).fst.length = l.length := by
+  induction l generalizing s <;> simp_all
+  case nil =>
+    simp [pure, StateT.pure]
+  case cons h t ih =>
+    simp [bind, StateT.bind, Functor.map]
+    split
+    simp [StateT.map, Functor.map]
+    apply ih
+
+/-- Generated-stack accounting for `List.mapM` once the per-element
+    generator is known to push exactly one element onto `generated`. -/
+theorem genIdentMapM_GeneratedWF {α : Type}
+    {g : α → CoreGenM Expression.Ident}
+    (Hone : ∀ {a : α} {s s' : CoreGenState} {l : Expression.Ident},
+              g a s = (l, s') → s'.generated = l :: s.generated)
+    {l : List α} {s s' : CoreGenState} {ls : List Expression.Ident}
+    (Hgen : List.mapM g l s = (ls, s')) :
+    s'.generated = ls.reverse ++ s.generated := by
+  induction l generalizing s s' ls with
+  | nil =>
+      simp only [List.mapM_nil, pure, StateT.pure] at Hgen
+      cases Hgen
+      simp
+  | cons h t ih =>
+      simp only [List.mapM_cons, bind, StateT.bind, pure, StateT.pure] at Hgen
+      cases hg1 : g h s with
+      | mk a₁ s₁ =>
+        rw [hg1] at Hgen
+        simp only at Hgen
+        cases hg2 : List.mapM g t s₁ with
+        | mk a₂ s₂ =>
+          rw [hg2] at Hgen
+          cases Hgen
+          have HH₁ := Hone hg1
+          have HH₂ := ih hg2
+          rw [HH₂, HH₁]
+          simp
+
+/-- WF preservation for `List.mapM` once the per-element generator
+    preserves WF. -/
+theorem genIdentMapM_WFMono {α : Type}
+    {g : α → CoreGenM Expression.Ident}
+    (Hone : ∀ {a : α} {s s' : CoreGenState} {l : Expression.Ident},
+              CoreGenState.WF s → g a s = (l, s') → CoreGenState.WF s')
+    {l : List α} {s s' : CoreGenState} {ls : List Expression.Ident}
+    (Hwf : CoreGenState.WF s) (Hgen : List.mapM g l s = (ls, s')) :
+    CoreGenState.WF s' := by
+  induction l generalizing s s' ls with
+  | nil =>
+      simp only [List.mapM_nil, pure, StateT.pure] at Hgen
+      cases Hgen
+      exact Hwf
+  | cons h t ih =>
+      simp only [List.mapM_cons, bind, StateT.bind, pure, StateT.pure] at Hgen
+      cases hg1 : g h s with
+      | mk a₁ s₁ =>
+        rw [hg1] at Hgen
+        simp only at Hgen
+        cases hg2 : List.mapM g t s₁ with
+        | mk a₂ s₂ =>
+          rw [hg2] at Hgen
+          cases Hgen
+          exact ih (Hone Hwf hg1) hg2
+
+/-- `Forall`-lifting for `List.mapM` once the per-element generator
+    produces values satisfying the predicate. -/
+theorem genIdentMapM_Forall {α : Type} {P : Expression.Ident → Prop}
+    {g : α → CoreGenM Expression.Ident}
+    (Hone : ∀ {a : α} {s s' : CoreGenState} {l : Expression.Ident},
+              g a s = (l, s') → P l)
+    {l : List α} {s s' : CoreGenState} {ls : List Expression.Ident}
+    (Hgen : List.mapM g l s = (ls, s')) :
+    Forall P ls := by
+  induction l generalizing s s' ls with
+  | nil =>
+      simp only [List.mapM_nil, pure, StateT.pure] at Hgen
+      cases Hgen
+      simp [Forall]
+  | cons h t ih =>
+      simp only [List.mapM_cons, bind, StateT.bind, pure, StateT.pure] at Hgen
+      cases hg1 : g h s with
+      | mk a₁ s₁ =>
+        rw [hg1] at Hgen
+        simp only at Hgen
+        cases hg2 : List.mapM g t s₁ with
+        | mk a₂ s₂ =>
+          rw [hg2] at Hgen
+          cases Hgen
+          simp [Forall]
+          exact ⟨Hone hg1, ih hg2⟩
+
+/-! ### Length lemmas for the `gen*ExprIdents{,Trip}` family
+
+The `_snd` and `*GeneratedWF` helpers below need to know that
+`genArgExprIdents n` produces a list of length exactly `n`, etc.  These
+follow inductively from `genIdent`'s contract.  Proved here so that the
+trip-level helpers can quote them directly. -/
+
+/-- The fst-projection of running `genArgExprIdent` `t.length`-many times
+    (with `t : List Unit`) is a list of length `t.length`.  This is the
+    raw form; `genArgExprIdents_length'` specializes to `n = t.length`. -/
+theorem genArgExprIdent_len'
+    {t : List Unit} {s : CoreGenState} :
+    (List.mapM (fun _ => Core.Transform.genArgExprIdent) t s).fst.length = t.length :=
+  genIdentMapM_length'
+
+theorem genArgExprIdents_length'
+    (n : Nat) (s : CoreGenState) :
+    (Core.Transform.genArgExprIdents n s).fst.length = n := by
+  simp only [Core.Transform.genArgExprIdents]
+  rw [genArgExprIdent_len']
+  simp
+
+theorem genArgExprIdents_length
+    {n : Nat} {s s' : CoreGenState} {ls : List Expression.Ident}
+    (Hgen : Core.Transform.genArgExprIdents n s = (ls, s')) :
+    ls.length = n := by
+  have := genArgExprIdents_length' n s
+  rw [Hgen] at this
+  exact this
+
+theorem genOutExprIdent_len'
+    {t : List Expression.Ident} {s : CoreGenState} :
+    (List.mapM Core.Transform.genOutExprIdent t s).fst.length = t.length :=
+  genIdentMapM_length'
+
+theorem genOutExprIdents_length'
+    (idents : List Expression.Ident) (s : CoreGenState) :
+    (Core.Transform.genOutExprIdents idents s).fst.length = idents.length := by
+  simp only [Core.Transform.genOutExprIdents]
+  exact genOutExprIdent_len'
+
+theorem genOutExprIdents_length
+    {idents : List Expression.Ident} {s s' : CoreGenState}
+    {ls : List Expression.Ident}
+    (Hgen : Core.Transform.genOutExprIdents idents s = (ls, s')) :
+    ls.length = idents.length := by
+  have := genOutExprIdents_length' idents s
+  rw [Hgen] at this
+  exact this
+
+theorem genOldExprIdent_len'
+    {t : List Expression.Ident} {s : CoreGenState} :
+    (List.mapM Core.Transform.genOldExprIdent t s).fst.length = t.length :=
+  genIdentMapM_length'
+
+theorem genOldExprIdents_length'
+    (idents : List Expression.Ident) (s : CoreGenState) :
+    (Core.Transform.genOldExprIdents idents s).fst.length = idents.length := by
+  simp only [Core.Transform.genOldExprIdents]
+  exact genOldExprIdent_len'
+
+theorem genOldExprIdents_length
+    {idents : List Expression.Ident} {s s' : CoreGenState}
+    {ls : List Expression.Ident}
+    (Hgen : Core.Transform.genOldExprIdents idents s = (ls, s')) :
+    ls.length = idents.length := by
+  have := genOldExprIdents_length' idents s
+  rw [Hgen] at this
+  exact this
+
+/-! ### Trip-level success extractors
+
+The Arg and Out trip wrappers share a uniform success-branch shape: they
+length-check, run a `genXxxExprIdents` call, and `return
+(gen_idents.zip ys).zip xs`.  Extracting the post-condition once removes
+~80 LoC of repeated monad-layer simping. -/
+
+theorem genArgExprIdentsTrip_extract
+    {inputs : @Lambda.LTySignature Visibility} {args : List Expression.Expr}
+    {s s' : Core.Transform.CoreTransformState}
+    {argTrips : List ((Expression.Ident × Lambda.LTy) × Expression.Expr)}
+    (Hgen : Core.Transform.genArgExprIdentsTrip inputs args s = (Except.ok argTrips, s')) :
+    let gen_idents := (Core.Transform.genArgExprIdents args.length s.genState).fst
+    let s_gen     := (Core.Transform.genArgExprIdents args.length s.genState).snd
+    (gen_idents.zip (List.map Prod.snd inputs)).zip args = argTrips ∧
+    s' = { s with genState := s_gen } ∧
+    inputs.length = args.length := by
+  simp only [Core.Transform.genArgExprIdentsTrip] at Hgen
+  split at Hgen
+  case isTrue Hne =>
+    simp [throw, throwThe, MonadExceptOf.throw, ExceptT.mk, pure, StateT.pure] at Hgen
+    cases Hgen
+  case isFalse Hlen =>
+    simp [bind, ExceptT.bind, ExceptT.bindCont, ExceptT.mk, ExceptT.lift,
+          ExceptT.pure, StateT.bind, StateT.pure, pure, monadLift,
+          MonadLift.monadLift, liftM, Functor.map, StateT.map,
+          Core.Transform.liftCoreGenM] at Hgen
+    refine ⟨?_, ?_, ?_⟩
+    · have := congrArg Prod.fst Hgen
+      simp at this
+      exact this
+    · have := congrArg Prod.snd Hgen
+      simp at this
+      exact this.symm
+    · simp at Hlen; exact Hlen
+
+theorem genOutExprIdentsTrip_extract
+    {outputs : @Lambda.LTySignature Visibility} {lhs : List Expression.Ident}
+    {s s' : Core.Transform.CoreTransformState}
+    {outTrips : List ((Expression.Ident × Expression.Ty) × Expression.Ident)}
+    (Hgen : Core.Transform.genOutExprIdentsTrip outputs lhs s = (Except.ok outTrips, s')) :
+    let gen_idents := (Core.Transform.genOutExprIdents lhs s.genState).fst
+    let s_gen     := (Core.Transform.genOutExprIdents lhs s.genState).snd
+    (gen_idents.zip (List.map Prod.snd outputs)).zip lhs = outTrips ∧
+    s' = { s with genState := s_gen } ∧
+    outputs.length = lhs.length := by
+  simp only [Core.Transform.genOutExprIdentsTrip] at Hgen
+  split at Hgen
+  case isTrue Hne =>
+    simp [throw, throwThe, MonadExceptOf.throw, ExceptT.mk, pure, StateT.pure] at Hgen
+    cases Hgen
+  case isFalse Hlen =>
+    simp [bind, ExceptT.bind, ExceptT.bindCont, ExceptT.mk, ExceptT.lift,
+          ExceptT.pure, StateT.bind, StateT.pure, pure, monadLift,
+          MonadLift.monadLift, liftM, Functor.map, StateT.map,
+          Core.Transform.liftCoreGenM] at Hgen
+    refine ⟨?_, ?_, ?_⟩
+    · have := congrArg Prod.fst Hgen
+      simp at this
+      exact this
+    · have := congrArg Prod.snd Hgen
+      simp at this
+      exact this.symm
+    · simp at Hlen; exact Hlen
+
+/-! ### Trip-shape geometry helpers
+
+The Arg/Out/Old trip lemmas all share a `((g.zip ys).zip xs)` outer
+shape and project either the `.unzip.snd` (= `xs`, given length
+agreement) or `.unzip.fst.unzip.fst` (= `g`, ditto).  These pure list
+facts are extracted once so that the trip-level lemmas can short-cut
+their unzip/zip ceremony. -/
+
+theorem zip_zip_unzip_snd_of_lengths {α β γ}
+    {g : List α} {ys : List β} {xs : List γ}
+    (Hgx : g.length = xs.length) (Hyx : ys.length = xs.length) :
+    ((g.zip ys).zip xs).unzip.snd = xs := by
+  rw [List.unzip_zip_right]
+  rw [List.length_zip]
+  omega
+
+theorem zip_zip_unzip_fst_unzip_fst_of_lengths {α β γ}
+    {g : List α} {ys : List β} {xs : List γ}
+    (Hgx : g.length = xs.length) (Hyx : ys.length = xs.length) :
+    ((g.zip ys).zip xs).unzip.fst.unzip.fst = g := by
+  rw [List.unzip_zip_left (l₁ := (g.zip ys)) (l₂ := xs)]
+  · rw [List.unzip_zip_left (l₁ := g) (l₂ := ys)]
+    omega
+  · rw [List.length_zip]
+    omega
+
+/-! ### `_snd` projection lemmas for the `gen*ExprIdentsTrip` family
+
+These say: the `Prod.snd` projection of the trip list is exactly the
+input arguments/lhs/old-vars list.  The legacy proofs went through
+intricate splittings; the live forms are short reductions through the
+monad layers because we have the structural form
+`(gen_idents.zip inputs.unzip.2).zip args` directly visible. -/
+
+theorem genArgExprIdentsTrip_snd
+    {inputs : @Lambda.LTySignature Visibility} {args : List Expression.Expr}
+    {s s' : Core.Transform.CoreTransformState}
+    {argTrips : List ((Expression.Ident × Lambda.LTy) × Expression.Expr)}
+    (Hgen : Core.Transform.genArgExprIdentsTrip inputs args s = (Except.ok argTrips, s')) :
+    argTrips.unzip.snd = args := by
+  obtain ⟨Hat, _, Hilen⟩ := genArgExprIdentsTrip_extract Hgen
+  rw [← Hat]
+  exact zip_zip_unzip_snd_of_lengths
+          (genArgExprIdents_length' args.length s.genState)
+          (by simp [List.length_map]; omega)
+
+theorem genOutExprIdentsTrip_snd
+    {outputs : @Lambda.LTySignature Visibility} {lhs : List Expression.Ident}
+    {s s' : Core.Transform.CoreTransformState}
+    {outTrips : List ((Expression.Ident × Expression.Ty) × Expression.Ident)}
+    (Hgen : Core.Transform.genOutExprIdentsTrip outputs lhs s = (Except.ok outTrips, s')) :
+    outTrips.unzip.snd = lhs := by
+  obtain ⟨Hot, _, Hilen⟩ := genOutExprIdentsTrip_extract Hgen
+  rw [← Hot]
+  exact zip_zip_unzip_snd_of_lengths
+          (genOutExprIdents_length' lhs s.genState)
+          (by simp [List.length_map]; omega)
+
+/-- The "snd" projection lemma for the `oldTripsRaw` shape used in the
+    live `callElimCmd`: `oldTripsRaw = (genOldIdents.zip oldTys).zip oldVars`,
+    so its `snd` projection is `oldVars` provided
+    `genOldIdents.length = oldVars.length` and `oldTys.length = oldVars.length`.
+
+    Unlike the arg/out cases, the live `callElimCmd` does not call a
+    dedicated `genOldExprIdentsTrip` wrapper; instead it constructs
+    `oldTripsRaw` inline.  This helper provides the equivalent
+    structural fact. -/
+theorem genOldExprIdentsTrip_snd
+    {oldVars : List Expression.Ident}
+    {oldTys : List Lambda.LTy}
+    {s s' : CoreGenState}
+    {genOldIdents : List Expression.Ident}
+    (Hgen : Core.Transform.genOldExprIdents oldVars s = (genOldIdents, s'))
+    (Htylen : oldTys.length = oldVars.length) :
+    ((genOldIdents.zip oldTys).zip oldVars).unzip.snd = oldVars :=
+  zip_zip_unzip_snd_of_lengths (genOldExprIdents_length Hgen) Htylen
+
+/-! ### `*GeneratedWF` lemmas: each generator pushes its results to `generated`
+
+`CoreGenState.gen` extends `generated` by one cons; running `mapM` of a
+generator over a list extends `generated` by the produced list reversed.
+The trip-wrapper variants quote these and additionally lift the
+`generated` accounting through `CoreTransformState`. -/
+
+theorem genCoreIdentGeneratedWF
+    {pf : Expression.Ident} {s s' : CoreGenState} {l : Expression.Ident}
+    (Hgen : CoreGenState.gen pf s = (l, s')) :
+    s'.generated = l :: s.generated := by
+  unfold CoreGenState.gen at Hgen
+  have Hl : l = ⟨(StringGenState.gen pf.name s.cs).fst, ()⟩ := by
+    have := congrArg Prod.fst Hgen
+    simp at this
+    exact this.symm
+  have Hs : s' = { cs := (StringGenState.gen pf.name s.cs).snd,
+                   generated := ⟨(StringGenState.gen pf.name s.cs).fst, ()⟩ :: s.generated } := by
+    have := congrArg Prod.snd Hgen
+    simp at this
+    exact this.symm
+  rw [Hl, Hs]
+
+theorem genIdentGeneratedWF
+    {ident : Expression.Ident} {pf : String → String}
+    {s s' : CoreGenState} {l : Expression.Ident}
+    (Hgen : Core.Transform.genIdent ident pf s = (l, s')) :
+    s'.generated = l :: s.generated :=
+  genCoreIdentGeneratedWF Hgen
+
+theorem genArgExprIdents_GeneratedWF
+    {n : Nat} {s s' : CoreGenState} {ls : List Expression.Ident}
+    (Hgen : Core.Transform.genArgExprIdents n s = (ls, s')) :
+    s'.generated = ls.reverse ++ s.generated :=
+  genIdentMapM_GeneratedWF
+    (g := fun (_ : Unit) => Core.Transform.genArgExprIdent)
+    (fun H => genCoreIdentGeneratedWF H) Hgen
+
+theorem genOutExprIdents_GeneratedWF
+    {idents : List Expression.Ident} {s s' : CoreGenState}
+    {ls : List Expression.Ident}
+    (Hgen : Core.Transform.genOutExprIdents idents s = (ls, s')) :
+    s'.generated = ls.reverse ++ s.generated :=
+  genIdentMapM_GeneratedWF
+    (g := Core.Transform.genOutExprIdent)
+    (fun H => genCoreIdentGeneratedWF H) Hgen
+
+theorem genOldExprIdents_GeneratedWF
+    {idents : List Expression.Ident} {s s' : CoreGenState}
+    {ls : List Expression.Ident}
+    (Hgen : Core.Transform.genOldExprIdents idents s = (ls, s')) :
+    s'.generated = ls.reverse ++ s.generated :=
+  genIdentMapM_GeneratedWF
+    (g := Core.Transform.genOldExprIdent)
+    (fun H => genCoreIdentGeneratedWF H) Hgen
+
+/-- Trip-level GeneratedWF for arg trips: the generated list is extended
+    with `argTrips.unzip.fst.unzip.fst.reverse`. -/
+theorem genArgExprIdentsTripGeneratedWF
+    {inputs : @Lambda.LTySignature Visibility} {args : List Expression.Expr}
+    {s s' : Core.Transform.CoreTransformState}
+    {argTrips : List ((Expression.Ident × Lambda.LTy) × Expression.Expr)}
+    (Hgen : Core.Transform.genArgExprIdentsTrip inputs args s = (Except.ok argTrips, s')) :
+    s'.genState.generated =
+        argTrips.unzip.fst.unzip.fst.reverse ++ s.genState.generated := by
+  obtain ⟨Hat, Hs', Hilen⟩ := genArgExprIdentsTrip_extract Hgen
+  rw [Hs']; simp only
+  rw [genArgExprIdents_GeneratedWF (s := s.genState)
+        (s' := (Core.Transform.genArgExprIdents args.length s.genState).snd)
+        (ls := (Core.Transform.genArgExprIdents args.length s.genState).fst) rfl]
+  congr 1
+  rw [← Hat]
+  rw [zip_zip_unzip_fst_unzip_fst_of_lengths
+        (genArgExprIdents_length' args.length s.genState)
+        (by simp [List.length_map]; omega)]
+
+theorem genOutExprIdentsTripGeneratedWF
+    {outputs : @Lambda.LTySignature Visibility} {lhs : List Expression.Ident}
+    {s s' : Core.Transform.CoreTransformState}
+    {outTrips : List ((Expression.Ident × Expression.Ty) × Expression.Ident)}
+    (Hgen : Core.Transform.genOutExprIdentsTrip outputs lhs s = (Except.ok outTrips, s')) :
+    s'.genState.generated =
+        outTrips.unzip.fst.unzip.fst.reverse ++ s.genState.generated := by
+  obtain ⟨Hot, Hs', Hilen⟩ := genOutExprIdentsTrip_extract Hgen
+  rw [Hs']; simp only
+  rw [genOutExprIdents_GeneratedWF (s := s.genState)
+        (s' := (Core.Transform.genOutExprIdents lhs s.genState).snd)
+        (ls := (Core.Transform.genOutExprIdents lhs s.genState).fst) rfl]
+  congr 1
+  rw [← Hot]
+  rw [zip_zip_unzip_fst_unzip_fst_of_lengths
+        (genOutExprIdents_length' lhs s.genState)
+        (by simp [List.length_map]; omega)]
+
+/-! ### `*WFMono` lemmas: each generator preserves `CoreGenState.WF`
+
+These lift `CoreGenState.WFMono'` through the inductive structure of
+`gen*ExprIdents` and the `CoreTransformM` wrapping of `gen*ExprIdentsTrip`. -/
+
+theorem genArgExprIdents_WFMono
+    {n : Nat} {s s' : CoreGenState} {ls : List Expression.Ident}
+    (Hwf : CoreGenState.WF s) (Hgen : Core.Transform.genArgExprIdents n s = (ls, s')) :
+    CoreGenState.WF s' :=
+  genIdentMapM_WFMono
+    (g := fun (_ : Unit) => Core.Transform.genArgExprIdent)
+    (fun H1 H2 => CoreGenState.WFMono' H1 H2) Hwf Hgen
+
+theorem genOutExprIdents_WFMono
+    {idents : List Expression.Ident} {s s' : CoreGenState}
+    {ls : List Expression.Ident}
+    (Hwf : CoreGenState.WF s) (Hgen : Core.Transform.genOutExprIdents idents s = (ls, s')) :
+    CoreGenState.WF s' :=
+  genIdentMapM_WFMono
+    (g := Core.Transform.genOutExprIdent)
+    (fun H1 H2 => CoreGenState.WFMono' H1 H2) Hwf Hgen
+
+theorem genOldExprIdents_WFMono
+    {idents : List Expression.Ident} {s s' : CoreGenState}
+    {ls : List Expression.Ident}
+    (Hwf : CoreGenState.WF s) (Hgen : Core.Transform.genOldExprIdents idents s = (ls, s')) :
+    CoreGenState.WF s' :=
+  genIdentMapM_WFMono
+    (g := Core.Transform.genOldExprIdent)
+    (fun H1 H2 => CoreGenState.WFMono' H1 H2) Hwf Hgen
+
+/-- Trip-level WFMono for arg trips. -/
+theorem genArgExprIdentsTripWFMono
+    {inputs : @Lambda.LTySignature Visibility} {args : List Expression.Expr}
+    {s s' : Core.Transform.CoreTransformState}
+    {argTrips : List ((Expression.Ident × Lambda.LTy) × Expression.Expr)}
+    (Hwf : CoreGenState.WF s.genState)
+    (Hgen : Core.Transform.genArgExprIdentsTrip inputs args s = (Except.ok argTrips, s')) :
+    CoreGenState.WF s'.genState := by
+  obtain ⟨_, Hs', _⟩ := genArgExprIdentsTrip_extract Hgen
+  rw [Hs']; simp only
+  exact genArgExprIdents_WFMono (s := s.genState)
+          (s' := (Core.Transform.genArgExprIdents args.length s.genState).snd)
+          (ls := (Core.Transform.genArgExprIdents args.length s.genState).fst) Hwf rfl
+
+/-- Trip-level WFMono for out trips. -/
+theorem genOutExprIdentsTripWFMono
+    {outputs : @Lambda.LTySignature Visibility} {lhs : List Expression.Ident}
+    {s s' : Core.Transform.CoreTransformState}
+    {outTrips : List ((Expression.Ident × Expression.Ty) × Expression.Ident)}
+    (Hwf : CoreGenState.WF s.genState)
+    (Hgen : Core.Transform.genOutExprIdentsTrip outputs lhs s = (Except.ok outTrips, s')) :
+    CoreGenState.WF s'.genState := by
+  obtain ⟨_, Hs', _⟩ := genOutExprIdentsTrip_extract Hgen
+  rw [Hs']; simp only
+  exact genOutExprIdents_WFMono (s := s.genState)
+          (s' := (Core.Transform.genOutExprIdents lhs s.genState).snd)
+          (ls := (Core.Transform.genOutExprIdents lhs s.genState).fst) Hwf rfl
+
+/-- Bare WFMono for old vars (live `callElimCmd` builds `oldTripsRaw` inline). -/
+theorem genOldExprIdentsTripWFMono
+    {oldVars : List Expression.Ident}
+    {s s' : CoreGenState} {genOldIdents : List Expression.Ident}
+    (Hwf : CoreGenState.WF s)
+    (Hgen : Core.Transform.genOldExprIdents oldVars s = (genOldIdents, s')) :
+    CoreGenState.WF s' :=
+  genOldExprIdents_WFMono Hwf Hgen
+
+/-- Trip-level GeneratedWF for old trips, parameterized over the bare
+    `genOldExprIdents` (since the live `callElimCmd` constructs its
+    `oldTripsRaw` inline rather than through a wrapper). -/
+theorem genOldExprIdentsTripGeneratedWF
+    {oldVars : List Expression.Ident} {oldTys : List Lambda.LTy}
+    {s s' : CoreGenState} {genOldIdents : List Expression.Ident}
+    (Hgen : Core.Transform.genOldExprIdents oldVars s = (genOldIdents, s'))
+    (Htylen : oldTys.length = oldVars.length) :
+    s'.generated =
+        ((genOldIdents.zip oldTys).zip oldVars).unzip.fst.unzip.fst.reverse ++ s.generated := by
+  rw [genOldExprIdents_GeneratedWF Hgen]
+  rw [zip_zip_unzip_fst_unzip_fst_of_lengths
+        (genOldExprIdents_length Hgen) Htylen]
+
 end Core
 
 end -- public section
