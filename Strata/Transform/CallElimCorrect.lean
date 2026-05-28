@@ -2559,10 +2559,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     proc.header.outputs.keys ++ filtered_inputs
                   let filtered_ks' : List Expression.Ident :=
                     lhs ++ filtered_argTemps
-                  -- Pre-filter zip lengths agree (inputs.keys.length =
-                  -- argTemps.length).  Hinitin → InitStatesLength gives
-                  -- inputs.keys.length = argVals.length, and Hargtriplen
-                  -- gives argTemps.length = argVals.length.
+                  -- inputs.keys.length = argTemps.length (both = argVals.length).
                   have HinKeys_argTemps_len :
                       proc.header.inputs.keys.length = argTemps.length := by
                     have H1 : proc.header.inputs.keys.length =
@@ -2592,8 +2589,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     show filtered_argSubst.unzip.fst.length =
                           filtered_argSubst.unzip.snd.length
                     simp [List.unzip_eq_map]
-                  -- Outputs ↔ lhs length: from Hinitout (outputs.length =
-                  -- oVals.length) plus Hevalouts (lhs.length = oVals.length).
+                  -- outputs.keys.length = lhs.length (both = oVals.length).
                   have HoutKeys_lhs_len :
                       proc.header.outputs.keys.length = lhs.length := by
                     have H1 : proc.header.outputs.keys.length = oVals.length :=
@@ -4007,9 +4003,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         (Hi' : i < oldVals.length),
                         σ_havoc (genOldIdents[i]'Hi) =
                           some (oldVals[i]'Hi') := by
-                    -- σ_havoc reads genOldIdents → oldVals (overlay positional,
-                    -- via the appended-list semantics of updatedStates).
-                    -- Decompose σ_havoc as nested updatedStates via List.zip_append.
+                    -- σ_havoc on genOldIdents: split via List.zip_append.
                     have HzipAppend2 :
                         ((argTemps ++
                             outTemps) ++ genOldIdents).zip
@@ -4351,10 +4345,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           -- HlhsDisjOld: lhs.Disjoint genOldIdents.
                           exact HlhsDisjOld Hx_lhs (List.getElem_mem _)
                         | inr Hx_filtArgT =>
-                          -- genOldIdents[i] is isOldTempIdent, but
-                          -- filtered_argTemps ⊆ argTemps which are isTempIdent;
-                          -- and isTempIdent and isOldTempIdent are disjoint
-                          -- (via HoldIdentsTemp + HargTemp).
+                          -- genOldIdents[i] is isOldTempIdent; filt_argT ⊆ argT
+                          -- (isTempIdent); the two predicates are disjoint.
                           have Hx_argT :
                               genOldIdents[ni_val]'Hni_lt_genOld ∈ argTemps :=
                             HfiltArgT_sub_argT _ Hx_filtArgT
