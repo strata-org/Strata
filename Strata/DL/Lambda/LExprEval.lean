@@ -5,6 +5,7 @@
 -/
 module
 
+public import Strata.DL.Lambda.LExprWF
 public import Strata.DL.Lambda.LState
 
 /-! ## Partial evaluator for Lambda expressions
