@@ -1541,6 +1541,123 @@ theorem readValues_updatedStates
       -- Apply ih on the remaining list.
       exact ih (σ:=updatedState σ k' v') Hlen' Hdisj' Hrd_step
 
+/-! ### Temp-extension lift helpers
+
+`updateState_updatedStates_lift` / `havocVars_updatedStates_lift` lift a
+single `UpdateState` / `HavocVars` derivation across an `updatedStates` temp
+extension, given suitable disjointness. -/
+
+/-- A single `UpdateState` lifts across an `updatedStates` temp extension as
+    long as the updated variable `x` is disjoint from the temp variables. -/
+theorem updateState_updatedStates_lift
+    {σ σ' : CoreStore} {x : Expression.Ident} {v : Expression.Expr}
+    {tempVars : List Expression.Ident} {tempVals : List Expression.Expr}
+    (Hnotin : ¬ x ∈ tempVars)
+    (Hup : Imperative.UpdateState (P:=Expression) σ x v σ') :
+    Imperative.UpdateState (P:=Expression)
+      (updatedStates σ tempVars tempVals) x v
+      (updatedStates σ' tempVars tempVals) := by
+  cases Hup with
+  | update Hsome Hsome' Hother =>
+    rename_i v'
+    -- Lookup x in extended σ.
+    have HlookupL :
+        (updatedStates σ tempVars tempVals) x = some v' := by
+      simp [updatedStates]
+      have : ∀ (ts : List Expression.Ident) (vs : List Expression.Expr) (s : CoreStore),
+          ¬ x ∈ ts → s x = some v' →
+          (updatedStates' s (ts.zip vs)) x = some v' := by
+        intro ts
+        induction ts with
+        | nil => intros vs s _ Hs; simp [updatedStates']; exact Hs
+        | cons t ts ih =>
+          intro vs s Hxn Hs
+          cases vs with
+          | nil => simp [updatedStates', List.zip]; exact Hs
+          | cons w ws =>
+            simp [updatedStates', List.zip, List.zipWith]
+            have Hxt : x ≠ t := fun h => Hxn (h ▸ List.mem_cons_self)
+            have Hxts : ¬ x ∈ ts := fun h => Hxn (List.mem_cons_of_mem _ h)
+            have HsTail : (updatedState s t w) x = some v' := by
+              simp [updatedState, Hxt]; exact Hs
+            exact ih ws (updatedState s t w) Hxts HsTail
+      exact this tempVars tempVals σ Hnotin Hsome
+    have HlookupR :
+        (updatedStates σ' tempVars tempVals) x = some v := by
+      simp [updatedStates]
+      have : ∀ (ts : List Expression.Ident) (vs : List Expression.Expr) (s : CoreStore),
+          ¬ x ∈ ts → s x = some v →
+          (updatedStates' s (ts.zip vs)) x = some v := by
+        intro ts
+        induction ts with
+        | nil => intros vs s _ Hs; simp [updatedStates']; exact Hs
+        | cons t ts ih =>
+          intro vs s Hxn Hs
+          cases vs with
+          | nil => simp [updatedStates', List.zip]; exact Hs
+          | cons w ws =>
+            simp [updatedStates', List.zip, List.zipWith]
+            have Hxt : x ≠ t := fun h => Hxn (h ▸ List.mem_cons_self)
+            have Hxts : ¬ x ∈ ts := fun h => Hxn (List.mem_cons_of_mem _ h)
+            have HsTail : (updatedState s t w) x = some v := by
+              simp [updatedState, Hxt]; exact Hs
+            exact ih ws (updatedState s t w) Hxts HsTail
+      exact this tempVars tempVals σ' Hnotin Hsome'
+    have Hframe : ∀ y, x ≠ y →
+        (updatedStates σ' tempVars tempVals) y =
+        (updatedStates σ tempVars tempVals) y := by
+      intro y Hne
+      simp [updatedStates]
+      -- Induct over tempVars, tempVals together.
+      have : ∀ (ts : List Expression.Ident) (vs : List Expression.Expr)
+              (s s2 : CoreStore),
+          (∀ z, x ≠ z → s2 z = s z) →
+          (updatedStates' s2 (ts.zip vs)) y =
+          (updatedStates' s (ts.zip vs)) y := by
+        intro ts
+        induction ts with
+        | nil => intros vs s s2 Hs2; simp [updatedStates']; exact Hs2 y Hne
+        | cons t ts ih =>
+          intro vs s s2 Hs2
+          cases vs with
+          | nil => simp [updatedStates', List.zip]; exact Hs2 y Hne
+          | cons w ws =>
+            simp [updatedStates', List.zip, List.zipWith]
+            apply ih ws (updatedState s t w) (updatedState s2 t w)
+            intro z Hxz
+            simp [updatedState]
+            split
+            · rfl
+            · exact Hs2 z Hxz
+      exact this tempVars tempVals σ σ' Hother
+    exact Imperative.UpdateState.update HlookupL HlookupR Hframe
+
+/-- Lift a `HavocVars` derivation across a temp-extension, given the havoc'd
+    variables are disjoint from the temp variables. -/
+theorem havocVars_updatedStates_lift
+    {σ σ' : CoreStore} {ks tempVars : List Expression.Ident}
+    {tempVals : List Expression.Expr}
+    (Hdisj : ks.Disjoint tempVars)
+    (Hhav : HavocVars σ ks σ') :
+    HavocVars (updatedStates σ tempVars tempVals) ks
+              (updatedStates σ' tempVars tempVals) := by
+  induction Hhav with
+  | update_none => exact HavocVars.update_none
+  | @update_some σ_a x v σ_b ks_t σ_c hUp hTail ih =>
+    have Hxnotin : ¬ x ∈ tempVars :=
+      fun hin => Hdisj (List.mem_cons_self) hin
+    have Hdisj_t : ks_t.Disjoint tempVars := by
+      intro y Hy_in_t Hy_in_temp
+      exact Hdisj (List.mem_cons_of_mem _ Hy_in_t) Hy_in_temp
+    have hUp' : Imperative.UpdateState (P:=Expression)
+                  (updatedStates σ_a tempVars tempVals) x v
+                  (updatedStates σ_b tempVars tempVals) :=
+      updateState_updatedStates_lift Hxnotin hUp
+    have hTail' : HavocVars (updatedStates σ_b tempVars tempVals) ks_t
+                            (updatedStates σ_c tempVars tempVals) :=
+      ih Hdisj_t
+    exact HavocVars.update_some hUp' hTail'
+
 end
 
 end Core.Transform
