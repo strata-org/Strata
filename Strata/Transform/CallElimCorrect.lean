@@ -3610,8 +3610,6 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       have Hget := readValues_get
                         (σ:=σ) (ks:=oldVars) (vs:=oldVals) HoldVals
                         (i:=i) (hi:=Hi) (hi':=Hi_oldVals)
-                      -- Hget : σ oldVars[i] = some oldVals[i].
-                      -- v = oldVars[i] by Hv_def.
                       exact Hget
                     -- Combine: δ σO (mkOld v.name) = some oldVals[i].
                     show δ σO (Lambda.LExpr.fvar () (CoreIdent.mkOld v.name) none)
@@ -3625,9 +3623,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     rw [Hj_eq]
                     -- Goal: some oVals[j_lhs] = some oldVals[i].
                     rw [← HStep4, HStep5]
-                  -- D2d: Structural pieces of HpostPayload (Hinv,
-                  -- Hpred_disj, Heval_bridge per entry; survive/codom
-                  -- split via getVars_substFvars_mem).
+                  -- D2d: Structural pieces of HpostPayload (per-entry).
                   let oldVars_L6 : List Expression.Ident :=
                     callElim_oldVars proc' args
                   let oldGVars_L6 : List Expression.Ident :=
@@ -3689,8 +3685,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                             (Procedure.Spec.updateCheckExprs.go _ _))
                       exact Hentry
                     exact HpostFiltered_corresp entry Hentry_zip
-                  -- D2d-eval: per-fvar bridges for substFvars eval
-                  -- (Hsurv/Hsub for subst_fvars_eval_bridge, split on
+                  -- D2d-eval: per-fvar bridges for substFvars eval (split via
                   -- oldSubst_L6 = createOldVarsSubst ++ inputOnlyOldSubst).
                   have HoldSubBridge :
                       ∀ k w,
@@ -3720,8 +3715,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           σ_R1 (genOldIdents[ni_val]'Hni_lt_genOld) := by
                       show δ σ_R1 (Lambda.LExpr.fvar () _ none) = _
                       exact δ_fvar_eq σ_R1 _
-                    -- RHS: δ σO (fvar k) = δ σO (fvar (mkOld oldVars[i].name))
-                    --                    = some oldVals[i] (HoldEval_bridge).
+                    -- RHS via HoldEval_bridge.
                     have HoldEv :
                         δ σO (Lambda.LExpr.fvar ()
                                 (CoreIdent.mkOld
@@ -3738,10 +3732,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         δ σ_R1 w =
                           δ σO (Lambda.LExpr.fvar () k none) := by
                     intro k w Hf
-                    -- Positional decomposition via the shared helper:
-                    -- extracts ni < inputs.length, ni < inputArgs.length,
-                    -- k = mkOld inputs[ni].name, w = inputArgs[ni], and
-                    -- inputs[ni] ∉ outputs.keys.
+                    -- Positional decomposition via the shared helper.
                     obtain ⟨ni_val, Hni_lt_inKeys, Hni_lt_inArgs,
                             Hk_eq_proc', Hw_eq_proc', Hin_notin_outs_proc'⟩ :=
                       inputOnlyOldSubst_pos_decomp Hf
@@ -3823,7 +3814,6 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         (vs:=argVals) HrdA
                         (i:=ni.val) (hi:=Hni_lt_inKeys')
                         (hi':=Hni_lt_argVals)
-                      -- Hget : σA inputs.keys[ni.val] = some argVals[ni.val].
                       exact Hget
                     -- ── RHS Step E: argVals[ni.val] = δ σ argExpr
                     --   via evalExpressions_get + hCallArgsIn. ──
@@ -3832,8 +3822,6 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           some (argVals[ni.val]'Hni_lt_argVals) := by
                       have Hev := evalExpressions_get Hevalargs
                                     Hni_lt_inArgsCall Hni_lt_argVals
-                      -- Hev : δ σ (List.get inArgs ⟨ni.val, _⟩) =
-                      --   some (List.get argVals ⟨ni.val, _⟩).
                       -- Bridge δ σ argExpr = δ σ inArgs[ni.val].
                       have HargList :
                           List.get inArgs ⟨ni.val, Hni_lt_inArgsCall⟩ =
@@ -3863,7 +3851,6 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                                 argExpr,
                           σ_R1 v = σ v := by
                       intro v Hv
-                      -- v ∈ flatMap getVars inArgs.
                       have Hv_flat : v ∈
                           List.flatMap
                             (Imperative.HasVarsPure.getVars (P:=Expression))
@@ -3871,23 +3858,17 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         rw [List.mem_flatMap]
                         refine ⟨argExpr, ?_, Hv⟩
                         exact HargExpr_in_argList
-                      -- σ v is some.
                       have Hσv_some : (σ v).isSome := HargIsDef v Hv_flat
-                      -- v not isOldTempIdent (via Hgenrel.oldFresh contrapositive).
+                      -- v not isOldTempIdent via Hgenrel.oldFresh contrapositive.
                       have HvNotOldTemp : ¬ isOldTempIdent v := fun Hold =>
                         σ_some_contradiction Hσv_some
                           (Option.isNone_iff_eq_none.mp (Hgenrel.oldFresh v Hold))
-                      -- v ∉ genOldIdents.
                       have HvNotGen : v ∉ genOldIdents :=
                         notMem_of_Forall_neg HoldIdentsTemp HvNotOldTemp
-                      -- v ∉ outputs.keys (clause 5).
                       have HvNotOuts : v ∉ proc.header.outputs.keys :=
                         HargVarsNotInOutKeys argExpr HargExpr_in_callList v Hv
-                      -- v ∉ inputs.keys (clause 6).
                       have HvNotIns : v ∉ proc.header.inputs.keys :=
                         HargVarsNotInInKeys argExpr HargExpr_in_callList v Hv
-                      -- σ_R1 v = σ v via the layered store-agreement
-                      -- helper.
                       show updatedStates σO genOldIdents oldVals v = σ v
                       exact σR1_eq_σ_for_notTouched
                         Hinitin Hinitout Hhav1 HvNotIns HvNotOuts HvNotGen
