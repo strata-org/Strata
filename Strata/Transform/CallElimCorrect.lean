@@ -2326,9 +2326,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     intro pr Hpr
                     have := List.mem_filter.mp Hpr
                     refine ⟨this.1, ?_⟩
-                    have Hbool := this.2
-                    simp [List.contains_iff_mem] at Hbool
-                    exact Hbool
+                    simpa using this.2
                   -- Length symmetry of filtered halves.
                   have Hfilt_len_sym :
                       filtered_inputs.length = filtered_argTemps.length := by
@@ -3946,11 +3944,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       apply List.filter_congr
                       intro pr _
                       cases pr with
-                      | mk a b =>
-                        by_cases h :
-                            (ListMap.keys proc.header.outputs).contains a
-                        · simp [h, Function.comp, Prod.map]
-                        · simp [h, Function.comp, Prod.map]
+                      | mk a b => simp [Function.comp, Prod.map]
                     rw [HfiltEq]
                     -- Massage the RHS: zip_map_right reverse + zip_unzip.
                     rw [show filtered_argSubst.unzip.fst.zip
