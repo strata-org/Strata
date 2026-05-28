@@ -147,123 +147,152 @@ Per-program detail (full pipeline output in
 `wt-test/pipeline-portfolio-v3.txt` and `wt-test/pipeline-svcomp.txt`):
 
 ```
-Program                                      |  Strip |    B2S |    Fix |    deductive |   bugFinding |         cbmc |  cbmc-native | Detail
--------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Program                                      | Str | B2S | Fix |  Ded |  Bug |  CBM |  CBN | Detail
+---------------------------------------------------------------------------------------------------
 # Original benchmark
-abs_func                                     |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         FAIL | 1 pass, 1 fail across 2 procs (main)
-array_sum                                    |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL |         PASS | 0 pass, 2 fail across 2 procs (__VERIFIER_assume,main)
-aws_array_eq                                 |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         PASS | 1 pass, 3 fail across 2 procs (main)
-aws_byte_cursor_advance                      |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         PASS | 1 pass, 4 fail across 2 procs (main)
-aws_ring_buffer                              |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         PASS | 1 pass, 8 fail across 2 procs (main)
-loop_sum                                     |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL |         PASS | 0 pass, 2 fail across 2 procs (__VERIFIER_assume,main)
-max_func                                     |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         PASS | 1 pass, 3 fail across 2 procs (main)
-nondet_branch                                |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL |         FAIL | 0 pass, 2 fail across 2 procs (__VERIFIER_assume,main)
-pointer_arith                                |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL |         FAIL | 0 pass, 2 fail across 2 procs (__VERIFIER_assume,main)
-simple_add                                   |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL |         PASS | 0 pass, 2 fail across 2 procs (__VERIFIER_assume,main)
-simple_assert                                |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         PASS | 1 pass, 1 fail across 2 procs (main)
-swap                                         |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         PASS | 1 pass, 2 fail across 2 procs (main)
+abs_func                                     |  OK |  OK |  OK | PART | PART | FAIL | FAIL | 1p,1f / 2 (main)
+array_sum                                    |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,2f / 2 (assume,main)
+aws_array_eq                                 |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,3f / 2 (main)
+aws_byte_cursor_advance                      |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,4f / 2 (main)
+aws_ring_buffer                              |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,8f / 2 (main)
+loop_sum                                     |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,2f / 2 (assume,main)
+max_func                                     |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,3f / 2 (main)
+nondet_branch                                |  OK |  OK |  OK | PASS | PART | FAIL | FAIL | 0p,2f / 2 (assume,main)
+pointer_arith                                |  OK |  OK |  OK | PASS | PART | FAIL | FAIL | 0p,2f / 2 (assume,main)
+simple_add                                   |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,2f / 2 (assume,main)
+simple_assert                                |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,1f / 2 (main)
+swap                                         |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,2f / 2 (main)
 
 # Simplified AWS C Common
-aws_add_size_checked                         |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         PASS | 1 pass, 8 fail across 2 procs (main)
-aws_array_list_get                           |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         PASS | 1 pass, 6 fail across 2 procs (main)
-aws_array_list_set                           |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         PASS | 1 pass, 6 fail across 2 procs (main)
-aws_byte_buf_append                          |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         PASS | 1 pass, 7 fail across 2 procs (main)
-aws_byte_buf_init                            |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         PASS | 1 pass, 5 fail across 2 procs (main)
-aws_byte_cursor_eq                           |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         PASS | 1 pass, 4 fail across 2 procs (main)
-aws_hash_string                              |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         PASS | 1 pass, 4 fail across 2 procs (main)
-aws_is_power_of_two                          |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         PASS | 1 pass, 9 fail across 2 procs (main)
-aws_linked_list_push                         |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         PASS | 1 pass, 11 fail across 2 procs (main)
-aws_min_max                                  |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         PASS | 1 pass, 6 fail across 2 procs (main)
-aws_mul_size_checked                         |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         PASS | 1 pass, 7 fail across 2 procs (main)
-aws_round_up_to_power_of_two                 |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         PASS | 1 pass, 8 fail across 2 procs (main)
-aws_string_eq                                |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         PASS | 1 pass, 4 fail across 2 procs (main)
+aws_add_size_checked                         |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,8f / 2 (main)
+aws_array_list_get                           |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,6f / 2 (main)
+aws_array_list_set                           |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,6f / 2 (main)
+aws_byte_buf_append                          |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,7f / 2 (main)
+aws_byte_buf_init                            |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,5f / 2 (main)
+aws_byte_cursor_eq                           |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,4f / 2 (main)
+aws_hash_string                              |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,4f / 2 (main)
+aws_is_power_of_two                          |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,9f / 2 (main)
+aws_linked_list_push                         |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,11f / 2 (main)
+aws_min_max                                  |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,6f / 2 (main)
+aws_mul_size_checked                         |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,7f / 2 (main)
+aws_round_up_to_power_of_two                 |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,8f / 2 (main)
+aws_string_eq                                |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,4f / 2 (main)
 
 # aws-c-common verbatim
-aws_add_size_checked_harness                 |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         PASS | 1 pass, 4 fail across 2 procs (main)
-aws_add_size_saturating_harness              |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         PASS | 1 pass, 4 fail across 2 procs (main)
-aws_is_power_of_two_harness                  |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         PASS | 1 pass, 1 fail across 2 procs (main)
-aws_mul_size_checked_harness                 |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         PASS | 1 pass, 4 fail across 2 procs (main)
-aws_mul_size_saturating_harness              |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         PASS | 1 pass, 4 fail across 2 procs (main)
-aws_round_up_to_power_of_two_harness         |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         PASS | 1 pass, 4 fail across 2 procs (main)
+aws_add_size_checked_harness                 |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,4f / 2 (main)
+aws_add_size_saturating_harness              |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,4f / 2 (main)
+aws_is_power_of_two_harness                  |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,1f / 2 (main)
+aws_mul_size_checked_harness                 |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,4f / 2 (main)
+aws_mul_size_saturating_harness              |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,4f / 2 (main)
+aws_round_up_to_power_of_two_harness         |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,4f / 2 (main)
 
 # FreeRTOS coreJSON verbatim
-JSON_Iterate_harness                         |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL |         FAIL | 0 pass, 1 fail across 1 procs (__VERIFIER_assume)
-JSON_SearchConst_harness                     |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL |         FAIL | 0 pass, 1 fail across 1 procs (__VERIFIER_assume)
-JSON_Validate_harness                        |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         PASS | 1 pass, 1 fail across 2 procs (main)
-skipAnyScalar_harness                        |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         PASS | 1 pass, 5 fail across 2 procs (main)
-skipCollection_harness                       |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         FAIL | 1 pass, 1 fail across 2 procs (main)
-skipDigits_harness                           |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         PASS | 1 pass, 6 fail across 2 procs (main)
-skipEscape_harness                           |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL |         FAIL | 0 pass, 1 fail across 1 procs (__VERIFIER_assume)
-skipObjectScalars_harness                    |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         FAIL | 1 pass, 3 fail across 2 procs (main)
-skipScalars_harness                          |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         FAIL | 1 pass, 3 fail across 2 procs (main)
-skipSpace_harness                            |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         PASS | 1 pass, 3 fail across 2 procs (main)
-skipString_harness                           |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         PASS | 1 pass, 5 fail across 2 procs (main)
-skipUTF8_harness                             |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         PASS | 1 pass, 5 fail across 2 procs (main)
+JSON_Iterate_harness                         |  OK |  OK |  OK | PASS | PART | FAIL | FAIL | 0p,1f / 1 (assume)
+JSON_SearchConst_harness                     |  OK |  OK |  OK | PASS | PART | FAIL | FAIL | 0p,1f / 1 (assume)
+JSON_Validate_harness                        |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,1f / 2 (main)
+skipAnyScalar_harness                        |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,5f / 2 (main)
+skipCollection_harness                       |  OK |  OK |  OK | PART | PART | FAIL | FAIL | 1p,1f / 2 (main)
+skipDigits_harness                           |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,6f / 2 (main)
+skipEscape_harness                           |  OK |  OK |  OK | PASS | PART | FAIL | FAIL | 0p,1f / 1 (assume)
+skipObjectScalars_harness                    |  OK |  OK |  OK | PART | PART | FAIL | FAIL | 1p,3f / 2 (main)
+skipScalars_harness                          |  OK |  OK |  OK | PART | PART | FAIL | FAIL | 1p,3f / 2 (main)
+skipSpace_harness                            |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,3f / 2 (main)
+skipString_harness                           |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,5f / 2 (main)
+skipUTF8_harness                             |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,5f / 2 (main)
 
 # FreeRTOS coreMQTT/coreHTTP/coreSNTP verbatim
-HTTPClient_AddHeader_harness                 |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL |         FAIL | 0 pass, 1 fail across 1 procs (__VERIFIER_assume)
-HTTPClient_AddRangeHeader_harness            |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL |         FAIL | 0 pass, 1 fail across 1 procs (__VERIFIER_assume)
-HTTPClient_InitializeRequestHeaders_harness  |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL |         FAIL | 0 pass, 1 fail across 1 procs (__VERIFIER_assume)
-HTTPClient_ReadHeader_harness                |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL |         FAIL | 0 pass, 1 fail across 1 procs (__VERIFIER_assume)
-HTTPClient_strerror_harness                  |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL |         PASS | 0 pass, 1 fail across 1 procs (__VERIFIER_assume)
-MQTT_GetPacketId_harness                     |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL |         PASS | 0 pass, 1 fail across 1 procs (__VERIFIER_assume)
-MQTT_Init_harness                            |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL |         PASS | 0 pass, 1 fail across 1 procs (__VERIFIER_assume)
-MQTT_Ping_harness                            |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL |         FAIL | 0 pass, 1 fail across 1 procs (__VERIFIER_assume)
-Sntp_DeserializeResponse_harness             |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL |         PASS | 0 pass, 1 fail across 1 procs (__VERIFIER_assume)
-Sntp_SerializeRequest_harness                |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL |         PASS | 0 pass, 1 fail across 1 procs (__VERIFIER_assume)
+HTTPClient_AddHeader_harness                 |  OK |  OK |  OK | PASS | PART | FAIL | FAIL | 0p,1f / 1 (assume)
+HTTPClient_AddRangeHeader_harness            |  OK |  OK |  OK | PASS | PART | FAIL | FAIL | 0p,1f / 1 (assume)
+HTTPClient_InitializeRequestHeaders_harness  |  OK |  OK |  OK | PASS | PART | FAIL | FAIL | 0p,1f / 1 (assume)
+HTTPClient_ReadHeader_harness                |  OK |  OK |  OK | PASS | PART | FAIL | FAIL | 0p,1f / 1 (assume)
+HTTPClient_strerror_harness                  |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
+MQTT_GetPacketId_harness                     |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
+MQTT_Init_harness                            |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
+MQTT_Ping_harness                            |  OK |  OK |  OK | PASS | PART | FAIL | FAIL | 0p,1f / 1 (assume)
+Sntp_DeserializeResponse_harness             |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
+Sntp_SerializeRequest_harness                |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
 
 # Standalone parsers
-cjson_cJSON_IsArray_harness                  |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL |         PASS | 0 pass, 1 fail across 1 procs (__VERIFIER_assume)
-cjson_cJSON_Parse_harness                    |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL |         FAIL | 0 pass, 1 fail across 1 procs (__VERIFIER_assume)
-jsmn_jsmn_parse_harness                      |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL |         FAIL | 0 pass, 1 fail across 1 procs (__VERIFIER_assume)
+cjson_cJSON_IsArray_harness                  |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
+cjson_cJSON_Parse_harness                    |  OK |  OK |  OK | PASS | PART | FAIL | FAIL | 0p,1f / 1 (assume)
+jsmn_jsmn_parse_harness                      |  OK |  OK |  OK | PASS | PART | FAIL | FAIL | 0p,1f / 1 (assume)
 # picohttpparser_phr_parse_request_harness  excluded — cbmc-native OOMs (>32 GB) on the SAT instance.
 
 # RFC reference impls
-base64_decode_normal_harness                 |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         PASS | 1 pass, 1 fail across 2 procs (main)
-base64_decode_padding_only_harness           |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         PASS | 1 pass, 1 fail across 2 procs (main)
-base64_decode_short_input_harness            |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         PASS | 1 pass, 1 fail across 2 procs (main)
-percent_decode_nul_harness                   |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         PASS | 1 pass, 2 fail across 2 procs (main)
-percent_decode_truncated_harness             |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         PASS | 1 pass, 1 fail across 2 procs (main)
-utf8_validate_ascii_harness                  |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         FAIL | 1 pass, 1 fail across 2 procs (main)
-utf8_validate_overlong_harness               |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         FAIL | 1 pass, 1 fail across 2 procs (main)
-utf8_validate_surrogate_harness              |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         FAIL | 1 pass, 1 fail across 2 procs (main)
+base64_decode_normal_harness                 |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,1f / 2 (main)
+base64_decode_padding_only_harness           |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,1f / 2 (main)
+base64_decode_short_input_harness            |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,1f / 2 (main)
+percent_decode_nul_harness                   |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,2f / 2 (main)
+percent_decode_truncated_harness             |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,1f / 2 (main)
+utf8_validate_ascii_harness                  |  OK |  OK |  OK | PART | PART | FAIL | FAIL | 1p,1f / 2 (main)
+utf8_validate_overlong_harness               |  OK |  OK |  OK | PART | PART | FAIL | FAIL | 1p,1f / 2 (main)
+utf8_validate_surrogate_harness              |  OK |  OK |  OK | PART | PART | FAIL | FAIL | 1p,1f / 2 (main)
 
 # SV-COMP ReachSafety
-sv_locks_10                                  |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL |         PASS | 0 pass, 1 fail across 1 procs (__VERIFIER_assume)
-sv_locks_11                                  |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL |         PASS | 0 pass, 1 fail across 1 procs (__VERIFIER_assume)
-sv_locks_12                                  |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL |         PASS | 0 pass, 1 fail across 1 procs (__VERIFIER_assume)
-sv_locks_13                                  |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL |         PASS | 0 pass, 1 fail across 1 procs (__VERIFIER_assume)
-sv_locks_14_2                                |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL |         FAIL | 0 pass, 1 fail across 1 procs (__VERIFIER_assume)
-sv_locks_15_2                                |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL |         PASS | 0 pass, 1 fail across 1 procs (__VERIFIER_assume)
-sv_locks_5                                   |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL |         PASS | 0 pass, 1 fail across 1 procs (__VERIFIER_assume)
-sv_locks_6                                   |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL |         PASS | 0 pass, 1 fail across 1 procs (__VERIFIER_assume)
-sv_locks_7                                   |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL |         PASS | 0 pass, 1 fail across 1 procs (__VERIFIER_assume)
-sv_locks_8                                   |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL |         PASS | 0 pass, 1 fail across 1 procs (__VERIFIER_assume)
-sv_locks_9                                   |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL |         PASS | 0 pass, 1 fail across 1 procs (__VERIFIER_assume)
-sv_loops_iftelse                             |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         PASS | 1 pass, 1 fail across 2 procs (main)
-sv_loops_in_de20                             |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL |         PASS | 0 pass, 2 fail across 2 procs (__VERIFIER_assume,main)
-sv_loops_in_de31                             |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         PASS | 1 pass, 1 fail across 2 procs (main)
-sv_loops_loopv1                              |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         PASS | 1 pass, 1 fail across 2 procs (main)
-sv_loops_loopv2                              |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         PASS | 1 pass, 1 fail across 2 procs (main)
-sv_loops_loopv3                              |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         PASS | 1 pass, 1 fail across 2 procs (main)
-sv_loops_mono1_1_2                           |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL |         PASS | 0 pass, 2 fail across 2 procs (__VERIFIER_assume,main)
-sv_loops_mono3_1                             |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL |         PASS | 0 pass, 2 fail across 2 procs (__VERIFIER_assume,main)
-sv_loops_mono4_1                             |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL |         PASS | 0 pass, 2 fail across 2 procs (__VERIFIER_assume,main)
-sv_loops_mono5_1                             |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL |         PASS | 0 pass, 2 fail across 2 procs (__VERIFIER_assume,main)
-sv_loops_mono6_1                             |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL |         PASS | 0 pass, 2 fail across 2 procs (__VERIFIER_assume,main)
-sv_loops_nested3_1                           |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL |         PASS | 0 pass, 4 fail across 2 procs (__VERIFIER_assume,main)
-sv_rc_avg05_1                                |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         FAIL | 1 pass, 1 fail across 2 procs (reach_error)
-sv_rc_max05_1                                |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         PASS | 1 pass, 1 fail across 2 procs (reach_error)
-sv_rc_max05_2                                |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         PASS | 1 pass, 1 fail across 2 procs (reach_error)
-sv_rc_rangesum05                             |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         FAIL | 1 pass, 1 fail across 2 procs (reach_error)
-sv_rc_sep05_1                                |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         PASS | 1 pass, 1 fail across 2 procs (reach_error)
-sv_rc_sum                                    |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL |         FAIL | 1 pass, 1 fail across 2 procs (reach_error)
+sv_locks_10                                  |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
+sv_locks_11                                  |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
+sv_locks_12                                  |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
+sv_locks_13                                  |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
+sv_locks_14_2                                |  OK |  OK |  OK | PASS | PART | FAIL | FAIL | 0p,1f / 1 (assume)
+sv_locks_15_2                                |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
+sv_locks_5                                   |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
+sv_locks_6                                   |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
+sv_locks_7                                   |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
+sv_locks_8                                   |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
+sv_locks_9                                   |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
+sv_loops_iftelse                             |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,1f / 2 (main)
+sv_loops_in_de20                             |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,2f / 2 (assume,main)
+sv_loops_in_de31                             |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,1f / 2 (main)
+sv_loops_loopv1                              |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,1f / 2 (main)
+sv_loops_loopv2                              |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,1f / 2 (main)
+sv_loops_loopv3                              |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,1f / 2 (main)
+sv_loops_mono1_1_2                           |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,2f / 2 (assume,main)
+sv_loops_mono3_1                             |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,2f / 2 (assume,main)
+sv_loops_mono4_1                             |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,2f / 2 (assume,main)
+sv_loops_mono5_1                             |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,2f / 2 (assume,main)
+sv_loops_mono6_1                             |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,2f / 2 (assume,main)
+sv_loops_nested3_1                           |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,4f / 2 (assume,main)
+sv_rc_avg05_1                                |  OK |  OK |  OK | PART | PART | FAIL | FAIL | 1p,1f / 2 (reach_error)
+sv_rc_max05_1                                |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,1f / 2 (reach_error)
+sv_rc_max05_2                                |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,1f / 2 (reach_error)
+sv_rc_rangesum05                             |  OK |  OK |  OK | PART | PART | FAIL | FAIL | 1p,1f / 2 (reach_error)
+sv_rc_sep05_1                                |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,1f / 2 (reach_error)
+sv_rc_sum                                    |  OK |  OK |  OK | PART | PART | FAIL | FAIL | 1p,1f / 2 (reach_error)
 
-     deductive: 39 pass, 54 partial, 0 warn, 0 fail, 0 timeout
-    bugFinding:  0 pass, 93 partial, 0 warn, 0 fail, 0 timeout
-          cbmc:  0 pass,  0 partial, 0 warn, 93 fail, 0 timeout
-   cbmc-native: 70 pass,  0 partial, 0 warn, 23 fail, 0 timeout
+  Ded: 39 pass, 54 partial, 0 warn, 0 fail, 0 timeout
+  Bug:  0 pass, 93 partial, 0 warn, 0 fail, 0 timeout
+  CBM:  0 pass,  0 partial, 0 warn, 93 fail, 0 timeout
+  CBN: 70 pass,  0 partial, 0 warn, 23 fail, 0 timeout
 ```
+
+**Column legend:**
+
+| Header | Meaning |
+|---|---|
+| `Str` | `strip_smack_prelude.py` stage |
+| `B2S` | BoogieToStrata translation stage |
+| `Fix` | `fix_core_st.py` post-processing stage |
+| `Ded` | Strata `verify --check-mode deductive` |
+| `Bug` | Strata `verify --check-mode bugFinding` |
+| `CBM` | Strata-CBMC (`StrataCoreToGoto + symtab2gb + cbmc`) |
+| `CBN` | CBMC-native (`cbmc` directly on the source `.c`) |
+
+**Verdict legend:**
+
+| Token | Meaning |
+|---|---|
+| `OK` | stage succeeded (no errors) |
+| `PASS` | all VCs / properties discharged |
+| `PART` | PARTIAL — some VCs discharged, others failed or `unknown` |
+| `FAIL` | verification failed (real verdict, not a stage error) |
+
+**Detail format (`Detail` column):**
+
+`<P>p,<F>f / <K> (<proc1>[,<proc2>...])` reads as:
+- `<P>` VCs passed, `<F>` VCs failed,
+- across `<K>` procedures (under `--split-procs`),
+- non-PASS procedures listed in parentheses (`assume` is shorthand for
+  the synthetic `__VERIFIER_assume` procedure that SMACK emits).
 
 `Strip` / `B2S` / `Fix` are pre-translation stage gates
 (`strip_smack_prelude.py` → BoogieToStrata → `fix_core_st.py`); the
