@@ -294,7 +294,8 @@ inductive StmtExpr : Type where
   /-- Call a static procedure by name with the given arguments. -/
   | StaticCall (callee : Identifier) (arguments : List (AstNode StmtExpr))
   /-- Apply a primitive operation to the given arguments.
-      The skipProof property is used internally. -/
+      The skipProof property is used internally.
+      It means that any precondition of the operator, such as division has, should be ignored. -/
   | PrimitiveOp (operator : Operation) (arguments : List (AstNode StmtExpr))
     (skipProof: Bool := false)
   /-- Create new object (`new`). -/
