@@ -49,6 +49,33 @@ instance : ToString VerificationMode := ⟨VerificationMode.toString⟩
 def VerificationMode.options : String :=
   "'deductive' (prove correctness), 'bugFinding' (find bugs), or 'bugFindingAssumingCompleteSpec' (find bugs assuming complete preconditions)"
 
+/-- How `.call` commands are handled during evaluation. -/
+inductive CallPolicy where
+  | Contract        -- callElimPipelinePhase rewrites every call before eval; today's behaviour.
+  | Body            -- evaluator analyses the callee body at the call site; OutOfFuel is an error.
+  | BodyOrContract  -- evaluator tries body-eval; on OutOfFuel falls back to inlineCallContract.
+  deriving Repr, DecidableEq
+
+instance : Inhabited CallPolicy where
+  default := .Contract
+
+def CallPolicy.ofString? (s : String) : Option CallPolicy :=
+  match s with
+  | "contract"       => some .Contract
+  | "body"           => some .Body
+  | "bodyOrContract" => some .BodyOrContract
+  | _ => none
+
+def CallPolicy.toString : CallPolicy → String
+  | .Contract       => "contract"
+  | .Body           => "body"
+  | .BodyOrContract => "bodyOrContract"
+
+instance : ToString CallPolicy := ⟨CallPolicy.toString⟩
+
+def CallPolicy.options : String :=
+  "'contract' (today's call-elim transform), 'body' (evaluator analyses callee body), or 'bodyOrContract' (try body, fall back to contract on OutOfFuel)"
+
 def VerboseMode.ofBool (b : Bool) : VerboseMode :=
   match b with
   | false => .quiet
@@ -205,6 +232,11 @@ structure VerifyOptions where
       to concurrent solver processes using `IO.asTask`. Each task spawns its
       own solver instance. Default 1 (sequential). -/
   parallelWorkers : Nat
+  /-- How `.call` commands are handled. See `CallPolicy`. -/
+  callPolicy : CallPolicy := .Contract
+  /-- Fuel budget passed to `Procedure.eval` for body-eval call handling.
+      Only consulted when `callPolicy ≠ .Contract`. -/
+  inlineFuel : Nat := 100000
 
 def VerifyOptions.default : VerifyOptions := {
   verbose := .normal,
@@ -227,6 +259,8 @@ def VerifyOptions.default : VerifyOptions := {
   incremental := false
   pathCap := .none
   parallelWorkers := 1
+  callPolicy := .Contract
+  inlineFuel := 100000
 }
 
 instance : Inhabited VerifyOptions where

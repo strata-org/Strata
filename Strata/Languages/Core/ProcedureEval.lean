@@ -104,35 +104,34 @@ private def evalCFGStep (cfg : DetCFG) (old_var_subst : SubstMap)
               ((lt, env_t) :: (lf, env_f) :: newActive, finished, stats))
     ([], [], {})
 
-private def evalCFGBlocks (cfg : DetCFG) (old_var_subst : SubstMap)
-    (fuel : Nat) (active : List (String × Env)) (finished : List Env)
+private partial def evalCFGBlocks (cfg : DetCFG) (old_var_subst : SubstMap)
+    (active : List (String × Env)) (finished : List Env)
     (stats : Statistics) : List Env × Statistics :=
   match active with
   | [] => (finished, stats)
-  | _ =>
-    match fuel with
-    | 0 =>
+  | (_, env) :: _ =>
+    if env.fuel == 0 then
       let errorEnvs := active.map fun (_, e) =>
         { e with error := some .OutOfFuel }
       (errorEnvs ++ finished,
        stats.increment s!"{Evaluator.Stats.simulatingStmtHitOutOfFuel}" active.length)
-    | fuel' + 1 =>
+    else
+      let active := active.map fun (l, e) => (l, { e with fuel := e.fuel - 1 })
       let (newActive, newFinished, stepStats) :=
         evalCFGStep cfg old_var_subst active
-      evalCFGBlocks cfg old_var_subst fuel' newActive
+      evalCFGBlocks cfg old_var_subst newActive
         (newFinished ++ finished) (stats.merge stepStats)
-  termination_by fuel
 
 private def evalCFGBody (E : Env) (old_var_subst : SubstMap)
     (precond_assumes postcond_asserts : Statements)
-    (cfg : DetCFG) (fuel : Nat) : List Env × Statistics :=
+    (cfg : DetCFG) : List Env × Statistics :=
   let (preEnvs, preStats) := Statement.eval E old_var_subst precond_assumes
   let emptyAcc : List Env × Statistics := ([], {})
   let (cfgResultsRev, cfgStats) :=
     preEnvs.foldl (fun acc preEnv =>
       let (accEnvs, accStats) := acc
       let (envs, stats) :=
-        evalCFGBlocks cfg old_var_subst fuel [(cfg.entry, preEnv)] [] {}
+        evalCFGBlocks cfg old_var_subst [(cfg.entry, preEnv)] [] {}
       (envs.reverse ++ accEnvs, accStats.merge stats)) emptyAcc
   let cfgResults := cfgResultsRev.reverse
   let (postResultsRev, postStats) :=
@@ -148,9 +147,16 @@ private def evalCFGBody (E : Env) (old_var_subst : SubstMap)
 /--
 Evaluate a single procedure: generate fresh variables for parameters,
 execute the body, check postconditions, and collect proof obligations.
+
+`fuel` is the evaluator work budget seeded into `E.fuel` before evaluation.
+For CFG bodies, fuel is decremented once per active symbolic path per block
+visit in `evalCFGBlocks` — so a program with `K` concurrent paths and `N`
+block visits consumes `K × N` fuel. The default `100000` is generous enough
+for typical SMACK-translated programs (shallow branching, <100 blocks);
+tighter or looser budgets are exposed via a CLI flag in a later task.
 -/
 
-def eval (E : Env) (p : Procedure) : Env × Statistics :=
+def eval (E : Env) (p : Procedure) (fuel : Nat := 100000) : Env × Statistics :=
   -- Create a new scope with the formals and return variables. We will pop this
   -- scope at the end of this procedure.
   -- Parameters go through genFVars for globally unique names.
@@ -200,14 +206,11 @@ def eval (E : Env) (p : Procedure) : Env × Statistics :=
       /- the assumptions from preconditions are set to have empty metadata  -/
       (.assume label check.expr check.md))
       p.spec.preconditions
+  let E := { E with fuel := fuel }
   match p.body with
   | .cfg cfgBody =>
-    -- 100 iterations per block: enough to unroll moderate loops while keeping
-    -- symbolic execution bounded.  Fuel is consumed per block visit, so a
-    -- single-block loop unrolls ~100 times and a 4-block diamond uses ~400.
-    let fuel := cfgBody.blocks.length * 100
     let (ssEs, evalStats) :=
-      evalCFGBody E old_g_subst precond_assumes postcond_asserts cfgBody fuel
+      evalCFGBody E old_g_subst precond_assumes postcond_asserts cfgBody
     (mergeResults E (ssEs.map (fun sE => fixupError sE)), evalStats)
   | .structured bodyStmts =>
     let (ssEs, evalStats) := Statement.eval E old_g_subst (precond_assumes ++ bodyStmts ++ postcond_asserts)

@@ -213,6 +213,12 @@ def verifyOptionsFlags : List Flag := [
     takesArg := .arg "N|none" },
   { name := "parallel",
     help := "Number of parallel solver workers (default: 1, sequential).",
+    takesArg := .arg "N" },
+  { name := "call-policy",
+    help := s!"Call-handling policy: {Core.CallPolicy.options}. Default: 'contract'.",
+    takesArg := .arg "policy" },
+  { name := "inline-fuel",
+    help := "Fuel budget for body-eval (default: 100000). Only used when --call-policy is not 'contract'.",
     takesArg := .arg "N" }
 ]
 
@@ -259,6 +265,17 @@ def parseVerifyOptions (pflags : ParsedFlags)
       | .some n => if n == 0 then exitFailure "--parallel must be at least 1."
                    else pure n
       | .none => exitFailure s!"Invalid parallel workers: '{s}'. Must be a positive number."
+  let callPolicy ← match pflags.getString "call-policy" with
+    | .none => pure base.callPolicy
+    | .some s => match Core.CallPolicy.ofString? s with
+      | some p => pure p
+      | none => exitFailure s!"Invalid --call-policy: '{s}'. Must be 'contract', 'body', or 'bodyOrContract'."
+  let inlineFuel ← match pflags.getString "inline-fuel" with
+    | .none => pure base.inlineFuel
+    | .some s => match s.toNat? with
+      | .some n => if n == 0 then exitFailure "--inline-fuel must be at least 1."
+                   else pure n
+      | .none => exitFailure s!"Invalid --inline-fuel: '{s}'. Must be a positive number."
   let vcDirectory := (pflags.getString "vc-directory" |>.map (⟨·⟩ : String → System.FilePath)).orElse (fun _ => base.vcDirectory)
   let skipSolver := noSolve || base.skipSolver
   if skipSolver && vcDirectory.isNone then
@@ -282,7 +299,9 @@ def parseVerifyOptions (pflags : ParsedFlags)
     overflowChecks,
     vcDirectory,
     pathCap,
-    parallelWorkers
+    parallelWorkers,
+    callPolicy,
+    inlineFuel
   }
 
 /-- Additional CLI flags for `LaurelVerifyOptions` fields that are not already

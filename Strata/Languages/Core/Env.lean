@@ -6,6 +6,7 @@
 module
 
 public import Strata.Languages.Core.Program
+public import Strata.Languages.Core.Options
 public import Strata.DL.Imperative.EvalContext
 public import Strata.Util.Name
 
@@ -154,6 +155,12 @@ structure Env where
   warnings : List (Imperative.EvalWarning Expression)
   deferred : Imperative.ProofObligations Expression
   pathCap : Option Nat := .none
+  /-- Evaluator work budget. Decremented per CFG block visit and per call-site
+      body evaluation; reaching zero produces `EvalError.OutOfFuel`. -/
+  fuel : Nat := 100000
+  /-- How `.call` commands are handled. Default `.Contract` matches today's
+      pre-eval `callElimPipelinePhase` behaviour. -/
+  callPolicy : CallPolicy := .Contract
 
 def Env.init (empty_factory:=false): Env :=
   let σ := Lambda.LState.init
@@ -177,7 +184,7 @@ instance : Inhabited Env where
 
 instance : ToFormat Env where
   format s :=
-    let { error, program := _, substMap, exprEnv, datatypes, distinct := _, pathConditions, warnings, deferred, pathCap := _ }  := s
+    let { error, program := _, substMap, exprEnv, datatypes, distinct := _, pathConditions, warnings, deferred, pathCap := _, fuel := _, callPolicy := _ }  := s
     format f!"Error:{Format.line}{error}{Format.line}\
               Subst Map:{Format.line}{substMap}{Format.line}\
               Expression Env:{Format.line}{exprEnv}{Format.line}\
