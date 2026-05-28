@@ -86,6 +86,8 @@ def excessive_reads(view: TelemetryView) -> str | None:
 
 def stuck_same_error(view: TelemetryView) -> str | None:
     """Agent got 3+ error messages in last 5 min."""
+    if view._agent.startswith("ProofValidator") or view._agent.startswith("SearchAgent"):
+        return None
     errors = view.messages_containing("error", since_seconds=300)
     if len(errors) < 3:
         return None

@@ -85,6 +85,7 @@ class NudgeMonitor:
         self._check_interval = check_interval
         self._rules: list[tuple[Callable[[TelemetryView], str | None], float, float]] = []
         self._cooldowns: dict[tuple[str, int], float] = {}  # (agent, rule_idx) -> next_fire_time
+        self._last_nudge_time: dict[str, float] = {}  # agent -> timestamp of last nudge sent
         self._super_agents: set[str] = set()
         self._reply_only_agents: set[str] = set()
         self._agents: set[str] = set()
@@ -139,6 +140,8 @@ class NudgeMonitor:
             tip = self._evaluate_agent(agent_name, now)
             if tip:
                 await self._send_tip(agent_name, tip)
+                # Record nudge time — resets the window for time-based queries
+                self._last_nudge_time[agent_name] = now
                 # Clear pending list for this agent after nudging — avoids stale nudges
                 self.pending._pending.pop(agent_name, None)
 
@@ -150,6 +153,7 @@ class NudgeMonitor:
             is_super=agent_name in self._super_agents,
             is_reply_only=agent_name in self._reply_only_agents,
             pending_tracker=self.pending,
+            window_start=self._last_nudge_time.get(agent_name, 0),
         )
 
         for i, (rule_fn, prob, cooldown_seconds) in enumerate(self._rules):

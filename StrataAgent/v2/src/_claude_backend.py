@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -160,8 +161,10 @@ class ClaudeBackend(AgentBackend):
         await self._client.query(prompt)
 
     async def receive_messages(self) -> AsyncIterator[BackendMessage]:
+        import random
         async for msg in self._receive_messages_inner():
             self._messages.append(msg)
+            await asyncio.sleep(random.uniform(0.02, 0.15))
             yield msg
 
     async def _receive_messages_inner(self) -> AsyncIterator[BackendMessage]:

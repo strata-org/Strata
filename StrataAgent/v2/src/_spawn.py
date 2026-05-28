@@ -180,8 +180,16 @@ def create_spawn_server(
             )
             asyncio.ensure_future(swarm._event_callback(event))
 
-        # Start the sub-agent as a new task
+        # Start the sub-agent as a new task (with stagger delay to avoid resource contention)
+        num_existing_children = sum(
+            1 for n in swarm._nodes
+            if getattr(swarm._nodes[n].spec, "_spawned_by", None) == parent_name
+        )
+        stagger_delay = num_existing_children * 5.0  # 5s between each child startup
+
         async def run_child():
+            if stagger_delay > 0:
+                await asyncio.sleep(stagger_delay)
             return await swarm._run_node(name)
 
         task = asyncio.create_task(run_child(), name=f"swarm:{name}")
@@ -399,6 +407,72 @@ def create_spawn_server(
         return {"content": [{"type": "text", "text": f"Broadcast sent to {len(children)} agents: {children}"}]}
 
     @tool(
+        name="interrupt_agent",
+        description=(
+            "Interrupt a sub-agent and redirect it with a new message. "
+            "Stops the agent's current work and sends it your message immediately. "
+            "Use this when a sub-agent is taking too long or going in the wrong direction."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Name of the sub-agent to interrupt.",
+                },
+                "message": {
+                    "type": "string",
+                    "description": "New instructions for the agent after interruption.",
+                },
+            },
+            "required": ["name", "message"],
+        },
+    )
+    async def interrupt_agent(input: dict[str, Any]) -> dict[str, Any]:
+        target = input["name"]
+        message = input["message"]
+
+        # Verify ownership
+        if target not in swarm._nodes:
+            return {"content": [{"type": "text", "text": f"ERROR: Agent '{target}' does not exist."}]}
+        target_node = swarm._nodes[target]
+        spawned_by = getattr(target_node.spec, "_spawned_by", None)
+        if spawned_by != parent_name:
+            return {"content": [{"type": "text", "text": (
+                f"ERROR: You do not own '{target}'. You can only interrupt agents you spawned."
+            )}]}
+
+        # Interrupt the backend (kills current response stream)
+        if target in swarm._tasks:
+            task = swarm._tasks[target]
+            if not task.done():
+                # Cancel the current task — the agent will be restarted
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+
+        # Send the redirect message to the agent's channel
+        await channel_bus.send_to(
+            f"{target}:messages",
+            sender=parent_name,
+            payload=f"[INTERRUPT — CHANGE DIRECTION]: {message}",
+        )
+
+        # Restart the agent task (it will wake up, see the message, and follow new instructions)
+        async def run_child():
+            return await swarm._run_node(target)
+
+        new_task = asyncio.create_task(run_child(), name=f"swarm:{target}")
+        swarm._tasks[target] = new_task
+
+        logger.info(f"[INTERRUPT] {parent_name} interrupted '{target}' with new direction")
+        return {"content": [{"type": "text", "text": (
+            f"Agent '{target}' interrupted and redirected. It will restart and see your message."
+        )}]}
+
+    @tool(
         name="kill_agent",
         description=(
             "Kill a sub-agent you spawned. The agent will be cancelled and removed. "
@@ -456,5 +530,5 @@ def create_spawn_server(
     return create_sdk_mcp_server(
         name="agent_spawn",
         version="1.0.0",
-        tools=[spawn_agent, check_sub_agents, sleep_tool, broadcast, designate_successor, kill_agent],
+        tools=[spawn_agent, check_sub_agents, sleep_tool, broadcast, interrupt_agent, designate_successor, kill_agent],
     )

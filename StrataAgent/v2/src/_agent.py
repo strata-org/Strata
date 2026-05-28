@@ -20,7 +20,7 @@ logger = logging.getLogger("strataswarm.agent")
 
 EventCallback = Callable[[AgentEvent], Awaitable[None]]
 
-STALL_TIMEOUT = 1800  # 30 minutes with no message = stalled
+STALL_TIMEOUT = 600  # 10 minutes with no message = stalled
 
 
 class SwarmAgent(Generic[T]):
@@ -107,6 +107,7 @@ class SwarmAgent(Generic[T]):
                 "mcp__agent_spawn__sleep",
                 "mcp__agent_spawn__broadcast",
                 "mcp__agent_spawn__designate_successor",
+                "mcp__agent_spawn__interrupt_agent",
                 "mcp__agent_spawn__kill_agent",
             ]
         if mcp_servers and "agent_directory" in mcp_servers:

@@ -24,15 +24,26 @@ class TelemetryEvent:
 
 
 class TelemetryStream:
-    def __init__(self, max_events_per_agent: int = 500):
+    def __init__(self, max_events_per_agent: int = 500, max_window_seconds: float = 1800):
         self._events: dict[str, deque[TelemetryEvent]] = {}
         self._max = max_events_per_agent
+        self._max_window = max_window_seconds  # 30 min default
 
     def record(self, event: TelemetryEvent):
         agent = event.agent
         if agent not in self._events:
             self._events[agent] = deque(maxlen=self._max)
         self._events[agent].append(event)
+        # Evict events older than the time window
+        self._evict_old(agent)
+
+    def _evict_old(self, agent: str) -> None:
+        """Remove events older than max_window_seconds."""
+        cutoff = time.time() - self._max_window
+        events = self._events.get(agent)
+        if events:
+            while events and events[0].timestamp < cutoff:
+                events.popleft()
 
     def get_recent(self, agent: str, n: int = 50) -> list[TelemetryEvent]:
         events = self._events.get(agent, deque())
@@ -55,12 +66,14 @@ class TelemetryView:
     """
 
     def __init__(self, agent: str, stream: TelemetryStream, is_super: bool = False,
-                 is_reply_only: bool = False, pending_tracker: Any = None):
+                 is_reply_only: bool = False, pending_tracker: Any = None,
+                 window_start: float = 0):
         self._agent = agent
         self._stream = stream
         self._is_super = is_super
         self._is_reply_only = is_reply_only
         self._pending_tracker = pending_tracker
+        self._window_start = window_start  # only consider events after this timestamp
 
     def agent_is_super(self) -> bool:
         return self._is_super
@@ -95,9 +108,14 @@ class TelemetryView:
         t = self.last_event_time()
         return time.time() - t if t else float("inf")
 
+    def _cutoff(self, since_seconds: float) -> float:
+        """Effective cutoff: max of (now - since_seconds) and window_start.
+        This ensures we never look at events before the last nudge."""
+        return max(time.time() - since_seconds, self._window_start)
+
     def event_count(self, event_type: str | None = None, since_seconds: float = 300) -> int:
-        """Count events of a given type in the last N seconds."""
-        cutoff = time.time() - since_seconds
+        """Count events of a given type in the last N seconds (since last nudge)."""
+        cutoff = self._cutoff(since_seconds)
         events = [e for e in self._events if e.timestamp >= cutoff]
         if event_type:
             events = [e for e in events if e.event_type == event_type]
@@ -105,7 +123,7 @@ class TelemetryView:
 
     def tool_used(self, name: str, since_seconds: float = 120) -> bool:
         """Was tool `name` used in the last N seconds?"""
-        cutoff = time.time() - since_seconds
+        cutoff = self._cutoff(since_seconds)
         return any(
             e.event_type == "tool_call" and (name == "*" or e.tool_name == name)
             and e.timestamp >= cutoff
@@ -114,7 +132,7 @@ class TelemetryView:
 
     def tool_used_count(self, name: str, since_seconds: float = 300) -> int:
         """How many times was tool `name` used in the last N seconds?"""
-        cutoff = time.time() - since_seconds
+        cutoff = self._cutoff(since_seconds)
         return sum(
             1 for e in self._events
             if e.event_type == "tool_call" and (name == "*" or e.tool_name == name)
@@ -123,7 +141,7 @@ class TelemetryView:
 
     def message_sent_to(self, agent: str, since_seconds: float = 120) -> bool:
         """Was a message sent to `agent` in the last N seconds?"""
-        cutoff = time.time() - since_seconds
+        cutoff = self._cutoff(since_seconds)
         return any(
             e.event_type == "message_sent"
             and (agent == "*" or e.target == agent)
@@ -141,7 +159,7 @@ class TelemetryView:
     def message_received_from(self, pattern: str, since_seconds: float = 300) -> list[TelemetryEvent]:
         """Messages received from agents matching pattern in last N seconds."""
         import fnmatch
-        cutoff = time.time() - since_seconds
+        cutoff = self._cutoff(since_seconds)
         return [
             e for e in self._events
             if e.event_type == "message_received"
@@ -151,7 +169,7 @@ class TelemetryView:
 
     def messages_containing(self, text: str, since_seconds: float = 300) -> list[TelemetryEvent]:
         """Messages containing text in last N seconds."""
-        cutoff = time.time() - since_seconds
+        cutoff = self._cutoff(since_seconds)
         return [
             e for e in self._events
             if e.timestamp >= cutoff
