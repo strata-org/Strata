@@ -2848,6 +2848,13 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                 -- Pre-simped Hwfvars for repeated δ-fvar lookups.
                 have Hwfvr := Hwfvars
                 simp [Imperative.WellFormedSemanticEvalVar] at Hwfvr
+                -- Generic δ-fvar lookup: `δ σ (fvar v) = σ v` for any σ.
+                have δ_fvar_eq :
+                    ∀ (σ' : CoreStore) (v : Expression.Ident),
+                    δ σ' (Lambda.LExpr.fvar () v none) = σ' v := by
+                  intro σ' v
+                  rw [Hwfvr (Lambda.LExpr.fvar () v none) v]
+                  simp [Imperative.HasFvar.getFvar]
                 -- C1: aux facts derived from the destructured binders.
                 have Hwfgenargs : CoreGenState.WF s_arg.genState := by
                   apply genArgExprIdentsTripWFMono ?_ Heqarg
@@ -5022,10 +5029,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                                  (genOldIdents[ni_val]'Hni_lt_genOld)) =
                           σ_R1 (genOldIdents[ni_val]'Hni_lt_genOld) := by
                       show δ σ_R1 (Lambda.LExpr.fvar () _ none) = _
-                      rw [Hwfvr (Lambda.LExpr.fvar ()
-                            (genOldIdents[ni_val]'Hni_lt_genOld) none)
-                          (genOldIdents[ni_val]'Hni_lt_genOld)]
-                      simp [Imperative.HasFvar.getFvar]
+                      exact δ_fvar_eq σ_R1 _
                     -- RHS: δ σO (fvar k) = δ σO (fvar (mkOld oldVars[i].name))
                     --                    = some oldVals[i] (HoldEval_bridge).
                     have HoldEv :
@@ -5209,15 +5213,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                             δ σ_R1 (Lambda.LExpr.fvar () v none) =
                               δ σ (Lambda.LExpr.fvar () v none) := by
                         intro v Hv _
-                        have HwfL :
-                            δ σ_R1 (Lambda.LExpr.fvar () v none) = σ_R1 v := by
-                          rw [Hwfvr (Lambda.LExpr.fvar () v none) v]
-                          simp [Imperative.HasFvar.getFvar]
-                        have HwfR :
-                            δ σ (Lambda.LExpr.fvar () v none) = σ v := by
-                          rw [Hwfvr (Lambda.LExpr.fvar () v none) v]
-                          simp [Imperative.HasFvar.getFvar]
-                        rw [HwfL, HwfR]
+                        rw [δ_fvar_eq σ_R1 v, δ_fvar_eq σ v]
                         exact Hσ_R1_eq_σ_argVars v Hv
                       have Hsub :
                           ∀ k' w', k' ∈ Imperative.HasVarsPure.getVars
@@ -5309,15 +5305,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           σ_R1 v = σO v := by
                         show (updatedStates σO genOldIdents oldVals) v = σO v
                         exact updatedStates_get_notin HvNotGen
-                      have HwfL :
-                          δ σ_R1 (Lambda.LExpr.fvar () v none) = σ_R1 v := by
-                        rw [Hwfvr (Lambda.LExpr.fvar () v none) v]
-                        simp [Imperative.HasFvar.getFvar]
-                      have HwfR :
-                          δ σO (Lambda.LExpr.fvar () v none) = σO v := by
-                        rw [Hwfvr (Lambda.LExpr.fvar () v none) v]
-                        simp [Imperative.HasFvar.getFvar]
-                      rw [HwfL, HwfR]
+                      rw [δ_fvar_eq σ_R1 v, δ_fvar_eq σO v]
                       exact Hσ_R1_v_eq_σO
                     -- Apply subst_fvars_eval_bridge.
                     have Hbridge :
