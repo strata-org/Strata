@@ -3107,10 +3107,6 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       exact Hbool.1.2
                     rw [HprocEq] at HinOuts'
                     exact List.contains_iff_mem.mp HinOuts'
-                  -- For v ∈ oldVars, v ∈ lhs (oldVars ⊆ getLhs args = lhs).
-                  have HoldVars_sub_lhs_L6 : ∀ v ∈ oldVars, v ∈ lhs := by
-                    intro v Hv
-                    exact hCallArgsLhs ▸ HoldVars_sub_callLhs v Hv
                   -- Per-index positional bridge for downstream consumers.
                   have HoldEval_bridge :
                       ∀ (i : Nat) (Hi : i < oldVars.length),
@@ -3123,7 +3119,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     have Hv_mem : v ∈ oldVars := List.getElem_mem _
                     have Hv_out : v ∈ ListMap.keys proc.header.outputs :=
                       HoldVars_sub_outs v Hv_mem
-                    have Hv_lhs : v ∈ lhs := HoldVars_sub_lhs_L6 v Hv_mem
+                    have Hv_lhs : v ∈ lhs := HoldVars_sub_lhs v Hv_mem
                     have Hv_callLhs : v ∈ CallArg.getLhs args :=
                       HoldVars_sub_callLhs v Hv_mem
                     -- Local helper: ReadValues σ' ks vs ∧ v ∈ ks ⇒
