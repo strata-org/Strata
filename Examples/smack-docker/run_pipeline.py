@@ -189,7 +189,9 @@ def parse_strata_output(output: str, mode: str, label: str) -> tuple[str, str]:
     return ("FAIL", "Unknown output")
 
 
-def run_strata_split_procs(core_st: Path, mode: str, result: PipelineResult):
+def run_strata_split_procs(core_st: Path, mode: str, result: PipelineResult,
+                           extra_args: list[str] = None):
+    extra_args = extra_args or []
     """Run `strata verify` once per procedure and aggregate.
 
     Sidesteps the cross-procedure Env.error contamination bug: when one
@@ -215,6 +217,7 @@ def run_strata_split_procs(core_st: Path, mode: str, result: PipelineResult):
     for proc in procs:
         rc, stdout, stderr = run_cmd(
             [str(STRATA_BIN), "verify", "--check-mode", mode,
+             *extra_args,
              "--procedures", proc, str(core_st)],
             timeout=120,
         )
@@ -253,13 +256,15 @@ def run_strata_split_procs(core_st: Path, mode: str, result: PipelineResult):
         result.add_backend(mode, "WARN", f"0 VCs across {len(procs)} procs")
 
 
-def run_strata_backend(core_st: Path, mode: str, result: PipelineResult):
+def run_strata_backend(core_st: Path, mode: str, result: PipelineResult,
+                       extra_args: list[str] = None):
+    extra_args = extra_args or []
     if not STRATA_BIN.exists():
         result.add_backend(mode, "FAIL", f"Binary not found: {STRATA_BIN}")
         return
 
     rc, stdout, stderr = run_cmd(
-        [str(STRATA_BIN), "verify", "--check-mode", mode, str(core_st)], timeout=120
+        [str(STRATA_BIN), "verify", "--check-mode", mode, *extra_args, str(core_st)], timeout=120
     )
     output = stdout + stderr
     if "All 0 goals passed" in output:
@@ -404,7 +409,9 @@ def run_cbmc_native_backend(bpl_path: Path, result: PipelineResult):
                            first_err.strip()[:60] or f"exit {rc}")
 
 
-def run_pipeline(bpl_path: Path, backends: list[str], split_procs: bool = False) -> PipelineResult:
+def run_pipeline(bpl_path: Path, backends: list[str], split_procs: bool = False,
+                 strata_extra_args: list[str] = None) -> PipelineResult:
+    strata_extra_args = strata_extra_args or []
     name = bpl_path.stem
     result = PipelineResult(name)
 
@@ -419,14 +426,14 @@ def run_pipeline(bpl_path: Path, backends: list[str], split_procs: bool = False)
         for backend in backends:
             if backend == "deductive":
                 if split_procs:
-                    run_strata_split_procs(fixed_st, "deductive", result)
+                    run_strata_split_procs(fixed_st, "deductive", result, strata_extra_args)
                 else:
-                    run_strata_backend(fixed_st, "deductive", result)
+                    run_strata_backend(fixed_st, "deductive", result, strata_extra_args)
             elif backend == "bugFinding":
                 if split_procs:
-                    run_strata_split_procs(fixed_st, "bugFinding", result)
+                    run_strata_split_procs(fixed_st, "bugFinding", result, strata_extra_args)
                 else:
-                    run_strata_backend(fixed_st, "bugFinding", result)
+                    run_strata_backend(fixed_st, "bugFinding", result, strata_extra_args)
             elif backend == "cbmc":
                 run_cbmc_backend(fixed_st, tmpdir, result)
             elif backend == "cbmc-native":
@@ -501,6 +508,11 @@ def main():
     parser.add_argument("--split-procs", action="store_true",
                         help="For deductive/bugFinding, run `strata verify --procedures <p>` once per procedure "
                              "and aggregate. Sidesteps cross-procedure Env.error contamination.")
+    parser.add_argument("--call-policy", default="contract",
+                        choices=["contract", "body", "bodyOrContract"],
+                        help="Pass --call-policy to `strata verify`. Default: 'contract' (today's behavior).")
+    parser.add_argument("--inline-fuel", default=None, type=int,
+                        help="Pass --inline-fuel N to `strata verify`. Only meaningful with --call-policy != contract.")
     args = parser.parse_args()
 
     valid_backends = {"deductive", "bugFinding", "cbmc", "cbmc-native"}
@@ -530,14 +542,22 @@ def main():
         if CBMC_BIN is None:
             print("Note: cbmc not found; CBMC backend will generate GOTO JSON only.", file=sys.stderr)
 
+    strata_extra_args: list[str] = []
+    if args.call_policy != "contract":
+        strata_extra_args += ["--call-policy", args.call_policy]
+        if args.inline_fuel is not None:
+            strata_extra_args += ["--inline-fuel", str(args.inline_fuel)]
+
     mode_note = " [split-procs]" if args.split_procs else ""
-    print(f"Running pipeline on {len(bpl_files)} programs, backends: {', '.join(backends)}{mode_note}")
+    policy_note = f" [call-policy={args.call_policy}]" if args.call_policy != "contract" else ""
+    print(f"Running pipeline on {len(bpl_files)} programs, backends: {', '.join(backends)}{mode_note}{policy_note}")
     print()
 
     results = []
     for bpl in bpl_files:
         print(f"  {bpl.name}...", end="", flush=True)
-        r = run_pipeline(bpl, backends, split_procs=args.split_procs)
+        r = run_pipeline(bpl, backends, split_procs=args.split_procs,
+                         strata_extra_args=strata_extra_args)
         results.append(r)
         statuses = []
         for b in backends:
