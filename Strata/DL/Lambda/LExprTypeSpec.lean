@@ -477,7 +477,7 @@ theorem LMonoTy.resolveAliases_context {IDMeta : Type} [ToFormat IDMeta]
       -- tconsAliasSimple returns Except; split on its result
       split at h
       · simp at h
-      · simp [Pure.pure, Except.pure] at h; obtain ⟨_, h2⟩ := h; rw [← h2]
+      · simp at h; obtain ⟨_, h2⟩ := h; rw [← h2]
         exact LMonoTys.resolveAliases_context args Env args' Env1 h_args
 theorem LMonoTys.resolveAliases_context {IDMeta : Type} [ToFormat IDMeta]
     (mtys : LMonoTys) (Env : TEnv IDMeta) (mtys' : LMonoTys) (Env' : TEnv IDMeta)
@@ -1042,7 +1042,7 @@ theorem LMonoTy.resolveAliases_allKeysFresh
       -- tconsAliasSimple returns Except; split on its result
       split at h
       · simp at h
-      · simp [Pure.pure, Except.pure] at h; obtain ⟨_, h2⟩ := h; subst h2
+      · simp at h; obtain ⟨_, h2⟩ := h; subst h2
         exact LMonoTys.resolveAliases_allKeysFresh args Env args' Env1 h_args
           h_fresh h_vals_fresh h_alias_wf
           (fun tv htv => h_fvs tv (by simp [LMonoTy.freeVars]; exact htv))
@@ -1071,7 +1071,7 @@ theorem LMonoTy.resolveAliases_vals_fresh
       -- tconsAliasSimple returns Except; split on its result
       split at h
       · simp at h
-      · simp [Pure.pure, Except.pure] at h; obtain ⟨_, h2⟩ := h; subst h2
+      · simp at h; obtain ⟨_, h2⟩ := h; subst h2
         exact LMonoTys.resolveAliases_vals_fresh args Env args' Env1 h_args
           h_vals_fresh h_alias_wf
           (fun tv htv => h_fvs tv (by simp [LMonoTy.freeVars]; exact htv))
@@ -1184,7 +1184,7 @@ theorem LMonoTy.resolveAliases_fvs_fresh
     · rename_i v1 h_args_ra
       obtain ⟨args', Env1⟩ := v1; simp at h h_args_ra
       -- tconsAliasSimple returns Except; unfold and split on result
-      simp only [LMonoTy.tconsAliasSimple, Bind.bind, Except.bind] at h
+      simp only [LMonoTy.tconsAliasSimple] at h
       have h_args_fvs : ∀ tv, tv ∈ LMonoTys.freeVars args →
           TContext.isFresh (T := T) tv Env.context := by
         intro tv htv; exact h_fvs tv (by simp [LMonoTy.freeVars]; exact htv)
@@ -1197,7 +1197,7 @@ theorem LMonoTy.resolveAliases_fvs_fresh
         simp at h
       · -- tconsAliasSimple returned ok: split on internal find?
         rename_i mty_val heq_val
-        simp [Pure.pure, Except.pure] at h; obtain ⟨h1, _⟩ := h; subst h1
+        simp at h; obtain ⟨h1, _⟩ := h; subst h1
         -- Now need to determine what mty_val is by splitting heq_val
         split at heq_val
         · -- No alias: mty_val = tcons name args'
@@ -1215,7 +1215,7 @@ theorem LMonoTy.resolveAliases_fvs_fresh
               List.mem_of_find?_eq_some h_find
             have h_alias_wf := (h_alias_wf alias (by rw [← h_ctx_eq]; exact h_alias_mem))
             have h_len : alias.typeArgs.length = args'.length := by
-              simp [BEq.beq, Nat.beq_eq, decide_eq_true_eq] at h_arity_eq; exact h_arity_eq
+              simp [BEq.beq, decide_eq_true_eq] at h_arity_eq; exact h_arity_eq
             simp only [TypeAlias.expand] at htv
             exact h_args'_fresh tv (openVars_freeVars_subset alias.typeArgs args' alias.type
               h_alias_wf.fvs_closed h_len tv htv)
@@ -1305,7 +1305,7 @@ private theorem LMonoTy.resolveAliases_absorbs
       -- tconsAliasSimple returns Except; split on its result
       split at h
       · simp at h
-      · simp [Pure.pure, Except.pure] at h; obtain ⟨_, h2⟩ := h; subst h2
+      · simp at h; obtain ⟨_, h2⟩ := h; subst h2
         exact LMonoTys.resolveAliases_absorbs args Env args' Env1 h_args
 
 /-- `LMonoTys.resolveAliases` produces a substitution that absorbs the input. -/
@@ -1832,7 +1832,7 @@ private theorem LMonoTy_resolveAliases_genState_mono
     -- tconsAliasSimple returns Except; split on its result
     split at h
     · simp at h
-    · simp [Pure.pure, Except.pure] at h; obtain ⟨_, h2⟩ := h; subst h2
+    · simp at h; obtain ⟨_, h2⟩ := h; subst h2
       exact LMonoTys_resolveAliases_genState_mono args Env args' Env1 h_args
 
 private theorem LMonoTys_resolveAliases_genState_mono
@@ -1878,13 +1878,13 @@ private theorem LMonoTy_resolveAliases_preserves_SubstFreshForGen
     have h_args_result := LMonoTys_resolveAliases_preserves_SubstFreshForGen args Env args' Env1 h_args
           h_fresh h_aw (fun v hv => h_input v (by simp [LMonoTy.freeVars]; exact hv))
     -- tconsAliasSimple returns Except; unfold and split on result
-    simp only [LMonoTy.tconsAliasSimple, Bind.bind, Except.bind] at h
+    simp only [LMonoTy.tconsAliasSimple] at h
     split at h
     · -- tconsAliasSimple returned error: contradicts h
       simp at h
     · -- tconsAliasSimple returned ok
       rename_i mty_val heq_val
-      simp [Pure.pure, Except.pure] at h; obtain ⟨h1, h2⟩ := h; subst h1; subst h2
+      simp at h; obtain ⟨h1, h2⟩ := h; subst h1; subst h2
       split at heq_val
       · -- No alias: mty_val = tcons name args'
         simp at heq_val; subst heq_val
@@ -1898,7 +1898,7 @@ private theorem LMonoTy_resolveAliases_preserves_SubstFreshForGen
           have h_ctx_eq := LMonoTys.resolveAliases_context args Env args' Env1 h_args
           have h_alias_wf := h_aw alias (by rw [← h_ctx_eq]; exact List.mem_of_find?_eq_some h_find)
           have h_len : alias.typeArgs.length = args'.length := by
-            simp [BEq.beq, Nat.beq_eq, decide_eq_true_eq] at h_arity_eq; exact h_arity_eq
+            simp [BEq.beq, decide_eq_true_eq] at h_arity_eq; exact h_arity_eq
           exact ⟨h_args_result.1, fun v hv n hn =>
             h_args_result.2 v (openVars_freeVars_subset alias.typeArgs args' alias.type
               h_alias_wf.fvs_closed h_len v hv) n hn⟩
@@ -2966,13 +2966,13 @@ private theorem LMonoTy_resolveAliases_freeVars_subset
     simp [LMonoTy.resolveAliases, Bind.bind, Except.bind] at h
     split at h; · simp at h
     rename_i v1 h_args; obtain ⟨args', Env1⟩ := v1; simp at h h_args
-    simp only [LMonoTy.tconsAliasSimple, Bind.bind, Except.bind] at h
+    simp only [LMonoTy.tconsAliasSimple] at h
     split at h
     · -- tconsAliasSimple returned error: contradicts h
       simp at h
     · -- tconsAliasSimple returned ok
       rename_i mty_val heq_val
-      simp [Pure.pure, Except.pure] at h; obtain ⟨h1, _⟩ := h; subst h1
+      simp at h; obtain ⟨h1, _⟩ := h; subst h1
       -- Split heq_val on find?
       split at heq_val
       · -- No alias found: mty_val = tcons name args'
@@ -2989,7 +2989,7 @@ private theorem LMonoTy_resolveAliases_freeVars_subset
           have h_aw1 : TContext.AliasesWF Env1.context := h_ctx_eq ▸ h_aw
           have h_alias_wf := h_aw1 alias (List.mem_of_find?_eq_some h_alias_find)
           have h_len : alias.typeArgs.length = args'.length := by
-            simp [BEq.beq, Nat.beq_eq, decide_eq_true_eq] at h_arity_eq; exact h_arity_eq
+            simp [BEq.beq, decide_eq_true_eq] at h_arity_eq; exact h_arity_eq
           intro v hv; simp [LMonoTy.freeVars]
           exact LMonoTys_resolveAliases_freeVars_subset args Env args' Env1 h_args h_aw v
             (openVars_freeVars_subset alias.typeArgs args' alias.type
@@ -4352,7 +4352,7 @@ private theorem tconsAlias_expand_eq
   -- Now h_tcons is in the `some alias` branch; arity check passes
   dsimp only at h_tcons
   have h_ne_false : (alias.typeArgs.length != args.length) = false := by
-    simp [bne, BEq.beq, Nat.beq_eq, decide_eq_true_eq] at h_arity ⊢; exact h_arity
+    simp [bne, BEq.beq, decide_eq_true_eq] at h_arity ⊢; exact h_arity
   simp [h_ne_false] at h_tcons
   -- Decompose: instantiateEnv, then unify
   split at h_tcons
@@ -4515,11 +4515,11 @@ theorem tconsAlias_eq_simple
       split at h_tcons
       · simp at h_tcons
       · rename_i h_ne
-        simp [bne, BEq.beq, Nat.beq_eq, decide_eq_true_eq] at h_ne ⊢
+        simp [bne, BEq.beq, decide_eq_true_eq] at h_ne ⊢
         omega
     simp [h_arity]
     have h_len : alias.typeArgs.length = args.length := by
-      simp [BEq.beq, Nat.beq_eq, decide_eq_true_eq] at h_arity; exact h_arity
+      simp [BEq.beq, decide_eq_true_eq] at h_arity; exact h_arity
     have h_bridge := tconsAlias_expand_eq name args Env mty' Env' alias
       h_tcons h_find h_arity h_alias_wf h_alias_wf.typeArgs_nodup
     rw [h_bridge]; simp only [TypeAlias.expand]
@@ -4616,7 +4616,7 @@ private theorem resolveAliases_aliasEquiv
     split at h; · simp at h
     rename_i v1 h_args; obtain ⟨args', Env1⟩ := v1; simp at h h_args
     -- tconsAliasSimple returns Except; unfold and split on result
-    simp only [LMonoTy.tconsAliasSimple, Bind.bind, Except.bind] at h
+    simp only [LMonoTy.tconsAliasSimple] at h
     have h_ctx_pres := LMonoTys.resolveAliases_context args Env args' Env1 h_args
     have h_args_equiv := resolveAliasList_aliasEquiv args Env args' Env1 h_args h_aliases h_aliases_wf
     split at h
@@ -4624,7 +4624,7 @@ private theorem resolveAliases_aliasEquiv
       simp at h
     · -- tconsAliasSimple returned ok
       rename_i mty_val heq_val
-      simp [Pure.pure, Except.pure] at h; obtain ⟨rfl, _⟩ := h
+      simp at h; obtain ⟨rfl, _⟩ := h
       split at heq_val
       · -- No alias: mty_val = tcons name args'
         simp at heq_val; subst heq_val
@@ -4641,7 +4641,7 @@ private theorem resolveAliases_aliasEquiv
             have h_pred := List.find?_some h_find
             simp [BEq.beq, decide_eq_true_eq] at h_pred; exact h_pred
           have h_len : alias.typeArgs.length = args'.length := by
-            simp [BEq.beq, Nat.beq_eq, decide_eq_true_eq] at h_arity_eq; exact h_arity_eq
+            simp [BEq.beq, decide_eq_true_eq] at h_arity_eq; exact h_arity_eq
           exact .trans (.cong_tcons h_args_equiv)
             (.expand ⟨alias, h_alias_in, h_name, h_len, rfl⟩)
         · -- Arity mismatch: error, contradicts heq_val
@@ -4690,7 +4690,7 @@ private theorem LMonoTy_resolveAliases_subst_eq
     -- tconsAliasSimple returns Except; split on its result
     split at h
     · simp at h
-    · simp [Pure.pure, Except.pure] at h; obtain ⟨_, h2⟩ := h; rw [← h2]
+    · simp at h; obtain ⟨_, h2⟩ := h; rw [← h2]
       exact LMonoTys_resolveAliases_subst_eq args Env args' Env1 h_args
 
 private theorem LMonoTys_resolveAliases_subst_eq
