@@ -266,3 +266,27 @@ datatype Box(a: Type) { MkBox(val: a) };
 
 #guard testDialectRoundTrip TestIonDatatypes
 #guard testProgramRoundTrip testIonDatatypesPgm
+
+-- Issue #1238: SyntaxDefAtom.fromIon should report a clean error on a
+-- malformed (indent) sexp (only the tag, no value), not crash.
+private def malformedIndentDialect : Ion String :=
+  .list #[
+    .sexp #[.symbol "dialect", .string "TestIndentBounds"],
+    .struct #[
+      ("type",   .symbol "op"),
+      ("name",   .string "testOp"),
+      ("result", .symbol "TestIndentBounds.Command"),
+      ("syntax", .struct #[
+        ("atoms", .list #[.sexp #[.symbol "indent"]]),
+        ("prec", .int 0)
+      ])
+    ]
+  ]
+
+/-- info: error: Error decoding indent expects at least 2 arguments -/
+#guard_msgs in
+#eval do
+  let bs := Ion.internAndSerialize [malformedIndentDialect]
+  match FromIon.deserialize (α := Dialect) bs with
+  | .error msg => IO.println s!"error: {msg}"
+  | .ok _      => IO.println "unexpected ok"
