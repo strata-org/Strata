@@ -389,7 +389,7 @@ private partial def loadDialectRec
   let ld ← fm.getLoaded
   if p : name ∈ ld.dialects then
     pure (.ok ld.dialects[name])
-  else if stk.contains name then
+  else if name ∈ stk then
     return .error s!"Circular import detected: {name} (stack: {stk})"
   else
     let path ←
