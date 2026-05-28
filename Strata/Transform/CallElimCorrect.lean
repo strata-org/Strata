@@ -3334,23 +3334,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         (fun c =>
                           Lambda.LExpr.substFvars c.expr oldSubst_L6))
                       proc'.spec.postconditions
-                  -- Per-entry posts_filtered_L6 ↔ original correspondence
-                  -- via updateCheckExprs_substFvars_mem.
-                  have HpostFiltered_corresp :
-                      ∀ entry : CoreLabel × Procedure.Check,
-                        entry ∈
-                          (proc'.spec.postconditions.keys.zip
-                            (updateCheckExprs_walk
-                              (proc'.spec.postconditions.values.map
-                                (fun c =>
-                                  Lambda.LExpr.substFvars c.expr oldSubst_L6))
-                              proc'.spec.postconditions.values)) →
-                        ∃ c ∈ proc'.spec.postconditions.values,
-                          entry.snd.expr =
-                            Lambda.LExpr.substFvars c.expr oldSubst_L6 := by
-                    intro entry Hentry
-                    exact updateCheckExprs_substFvars_mem Hentry
-                  -- Per-entry decomposition helper.
+                  -- Per-entry decomposition helper: posts_filtered_L6 entries
+                  -- correspond to original posts via updateCheckExprs_substFvars_mem.
                   have forall_post_filtered_decompose :
                       ∀ entry : CoreLabel × Procedure.Check,
                         entry ∈ posts_filtered_L6.toList →
@@ -3358,20 +3343,12 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           entry.snd.expr =
                             Lambda.LExpr.substFvars c.expr oldSubst_L6 := by
                     intro entry Hentry
-                    have Hentry_zip :
-                        entry ∈
-                          (proc'.spec.postconditions.keys.zip
-                            (updateCheckExprs_walk
-                              (proc'.spec.postconditions.values.map
-                                (fun c =>
-                                  Lambda.LExpr.substFvars c.expr oldSubst_L6))
-                              proc'.spec.postconditions.values)) := by
-                      rw [updateCheckExprs_walk_eq_go]
-                      show entry ∈
-                          (proc'.spec.postconditions.keys.zip
-                            (Procedure.Spec.updateCheckExprs.go _ _))
-                      exact Hentry
-                    exact HpostFiltered_corresp entry Hentry_zip
+                    apply updateCheckExprs_substFvars_mem
+                    rw [updateCheckExprs_walk_eq_go]
+                    show entry ∈
+                        (proc'.spec.postconditions.keys.zip
+                          (Procedure.Spec.updateCheckExprs.go _ _))
+                    exact Hentry
                   -- D2d-eval: per-fvar bridges for substFvars eval (split via
                   -- oldSubst_L6 = createOldVarsSubst ++ inputOnlyOldSubst).
                   have HoldSubBridge :
