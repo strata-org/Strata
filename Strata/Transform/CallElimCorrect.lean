@@ -3177,6 +3177,25 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     have Hv_lhs : v ∈ lhs := HoldVars_sub_lhs_L6 v Hv_mem
                     have Hv_callLhs : v ∈ CallArg.getLhs args :=
                       HoldVars_sub_callLhs v Hv_mem
+                    -- Local helper: ReadValues σ' ks vs ∧ v ∈ ks ⇒
+                    --   σ' v = some vs[ks.idxOf v]. Folds the
+                    --   `unfold idxOf; findIdx_getElem; simpa` boilerplate
+                    --   that otherwise appears at each callsite.
+                    have read_at : ∀ {σ' : Expression.Ident → Option _}
+                        {ks : List Expression.Ident} {vs : List _}
+                        (_ : ReadValues σ' ks vs) (Hmem : v ∈ ks)
+                        (Hidx_lt : ks.idxOf v < vs.length),
+                        σ' v = some (vs[ks.idxOf v]'Hidx_lt) := by
+                      intro σ' ks vs Hrv Hmem Hidx_lt
+                      have Hg := readValues_get (σ:=σ') (ks:=ks) (vs:=vs) Hrv
+                        (i:=ks.idxOf v)
+                        (hi:=List.idxOf_lt_length_of_mem Hmem) (hi':=Hidx_lt)
+                      have Hk : ks[ks.idxOf v]'(List.idxOf_lt_length_of_mem Hmem)
+                                  = v := by
+                        unfold List.idxOf
+                        simpa using @List.findIdx_getElem _ (· == v) ks
+                          (List.idxOf_lt_length_of_mem Hmem)
+                      rwa [Hk] at Hg
                     -- Step 1: δ σO (mkOld v.name) = σAO v.
                     have HStep1 :
                         δ σO (Lambda.LExpr.fvar () (CoreIdent.mkOld v.name)
@@ -3185,84 +3204,35 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       Hwf2_univ v Hv_out
                     -- Step 2: σAO v = oVals[outputs.keys.idxOf v] via HσAO_reads_outs.
                     let j_out := (ListMap.keys proc.header.outputs).idxOf v
-                    have Hj_out_lt :
-                        j_out < (ListMap.keys proc.header.outputs).length :=
-                      List.idxOf_lt_length_of_mem Hv_out
-                    have HouterKeys_oVals_len :
-                        (ListMap.keys proc.header.outputs).length =
-                          oVals.length :=
-                      InitStatesLength Hinitout
                     have Hj_out_lt_oVals : j_out < oVals.length := by
-                      rw [← HouterKeys_oVals_len]
-                      exact Hj_out_lt
-                    have Houts_get_v :
-                        (ListMap.keys proc.header.outputs)[j_out]'Hj_out_lt = v := by
-                      show (ListMap.keys proc.header.outputs)[
-                              (ListMap.keys proc.header.outputs).idxOf v]'_ = v
-                      unfold List.idxOf
-                      have HH := @List.findIdx_getElem _ (· == v)
-                                  (ListMap.keys proc.header.outputs)
-                                  (List.idxOf_lt_length_of_mem Hv_out)
-                      simpa using HH
-                    have HStep2 :
-                        σAO v = some (oVals[j_out]'Hj_out_lt_oVals) := by
-                      have Hget := readValues_get
-                        (σ:=σAO)
-                        (ks:=ListMap.keys proc.header.outputs)
-                        (vs:=oVals)
-                        HσAO_reads_outs
-                        (i:=j_out) (hi:=Hj_out_lt) (hi':=Hj_out_lt_oVals)
-                      rwa [Houts_get_v] at Hget
+                      rw [← InitStatesLength Hinitout]
+                      exact List.idxOf_lt_length_of_mem Hv_out
+                    have HStep2 : σAO v = some (oVals[j_out]'Hj_out_lt_oVals) :=
+                      read_at HσAO_reads_outs Hv_out Hj_out_lt_oVals
                     -- Step 3: lhs.idxOf v = outputs.keys.idxOf v (alignment).
-                    have HAlign :
-                        (CallArg.getLhs args).idxOf v =
-                          (ListMap.keys proc.header.outputs).idxOf v :=
-                      HoutAlign v Hv_out Hv_callLhs
-                    -- Translate to lhs (since hCallArgsLhs : getLhs args = lhs).
                     have HAlign_lhs : lhs.idxOf v = j_out := by
                       show lhs.idxOf v = (ListMap.keys proc.header.outputs).idxOf v
-                      rw [← HAlign, hCallArgsLhs]
+                      rw [← HoutAlign v Hv_out Hv_callLhs, hCallArgsLhs]
                     -- Step 4: σ v = oVals[lhs.idxOf v]'_.
-                    -- Use Hevalouts : ReadValues σ lhs oVals positional.
                     let j_lhs := lhs.idxOf v
-                    have Hj_lhs_eq_j_out : j_lhs = j_out := HAlign_lhs
-                    have Hj_lhs_lt : j_lhs < lhs.length :=
-                      List.idxOf_lt_length_of_mem Hv_lhs
-                    have Hlhs_oVals_len : lhs.length = oVals.length :=
-                      ReadValuesLength Hevalouts
                     have Hj_lhs_lt_oVals : j_lhs < oVals.length := by
-                      rw [Hlhs_oVals_len] at Hj_lhs_lt
-                      exact Hj_lhs_lt
-                    have Hlhs_get_v : lhs[j_lhs]'Hj_lhs_lt = v := by
-                      show lhs[lhs.idxOf v]'_ = v
-                      unfold List.idxOf
-                      have HH := @List.findIdx_getElem _ (· == v) lhs
-                                  (List.idxOf_lt_length_of_mem Hv_lhs)
-                      simpa using HH
-                    have HStep4 :
-                        σ v = some (oVals[j_lhs]'Hj_lhs_lt_oVals) := by
-                      have Hget := readValues_get
-                        (σ:=σ) (ks:=lhs) (vs:=oVals) Hevalouts
-                        (i:=j_lhs) (hi:=Hj_lhs_lt) (hi':=Hj_lhs_lt_oVals)
-                      rwa [Hlhs_get_v] at Hget
+                      rw [← ReadValuesLength Hevalouts]
+                      exact List.idxOf_lt_length_of_mem Hv_lhs
+                    have HStep4 : σ v = some (oVals[j_lhs]'Hj_lhs_lt_oVals) :=
+                      read_at Hevalouts Hv_lhs Hj_lhs_lt_oVals
                     -- Step 5: σ v = some oldVals[i]'_ (HoldVals positional).
                     have Hi_oldVals : i < oldVals.length := HoldVals_len.symm ▸ Hi
                     have HStep5 : σ v = some (oldVals[i]'Hi_oldVals) :=
-                      readValues_get
-                        (σ:=σ) (ks:=oldVars) (vs:=oldVals) HoldVals
+                      readValues_get (σ:=σ) (ks:=oldVars) (vs:=oldVals) HoldVals
                         (i:=i) (hi:=Hi) (hi':=Hi_oldVals)
                     -- Combine: δ σO (mkOld v.name) = some oldVals[i].
                     show δ σO (Lambda.LExpr.fvar () (CoreIdent.mkOld v.name) none)
                           = some (oldVals[i]'Hi_oldVals)
                     rw [HStep1, HStep2]
-                    -- Goal: some oVals[j_out] = some oldVals[i].
                     have Hj_eq : oVals[j_out]'Hj_out_lt_oVals =
                                  oVals[j_lhs]'Hj_lhs_lt_oVals := by
-                      congr 1
-                      exact Hj_lhs_eq_j_out.symm
-                    rw [Hj_eq]
-                    -- Goal: some oVals[j_lhs] = some oldVals[i].
-                    rw [← HStep4, HStep5]
+                      congr 1; exact HAlign_lhs.symm
+                    rw [Hj_eq, ← HStep4, HStep5]
                   -- D2d: Structural pieces of HpostPayload (per-entry).
                   let oldVars_L6 : List Expression.Ident :=
                     callElim_oldVars proc' args
