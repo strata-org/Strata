@@ -1458,9 +1458,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
             · -- `a_opt = some s'`: this is the genuine call-elim case.
               rename_i s' heq_some
               simp only [pure, StateT.pure, Prod.mk.injEq, Except.ok.injEq] at Helim
-              obtain ⟨Hsts, Hγ⟩ := Helim
               -- B1/B2: callElimCmd_call_eq + Heval inversion to call_sem.
-              rw [Hsts]
+              rw [Helim.1]
               have ⟨ρ_inner, hstep_call, htail⟩ : ∃ ρ_inner,
                   Imperative.StepStmtStar Expression (EvalCommandContract π)
                       (EvalPureFunc φ)
