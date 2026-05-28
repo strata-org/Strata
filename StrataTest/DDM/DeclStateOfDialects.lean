@@ -39,9 +39,9 @@ type ChildType;
 -- Parse a program using the child dialect.
 -- The `LoadedDialects` passed to `DeclState.ofDialects` contains Init,
 -- OfDialectsParent, and OfDialectsChild (where child imports parent).
--- Before the fix, if HashMap iteration yielded the child before the parent,
--- `openLoadedDialect!` would panic because the parent was already opened
--- transitively. With `ensureLoaded!`, both orders succeed.
+-- `ensureLoaded!` guarantees idempotency: if HashMap iteration yields the child
+-- before the parent, the parent is opened transitively first, and the subsequent
+-- direct visit is a no-op.
 def testProgram := #strata
 program OfDialectsChild;
 #end
