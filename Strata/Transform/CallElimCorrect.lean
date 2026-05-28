@@ -74,6 +74,11 @@ private theorem nodup_3_decompose {α} {a b c : List α}
   let ⟨Hd_ab, Hd_ac, Hd_bc⟩ := List.disjoint_of_nodup_append_three Hnd
   ⟨Hab.1, Hab.2.1, Hsplit.2.1, Hd_ab, Hd_ac, Hd_bc⟩
 
+/-- Build `x ∉ a ++ b ++ c` from per-list non-membership. -/
+private theorem notin_3_append_of {α} [DecidableEq α] {a b c : List α} {x : α}
+    (h₁ : x ∉ a) (h₂ : x ∉ b) (h₃ : x ∉ c) : x ∉ a ++ b ++ c := by
+  simp only [List.mem_append, not_or]; exact ⟨⟨h₁, h₂⟩, h₃⟩
+
 /-- `Map.find?_append` "some" branch packaged: if a key resolves to `some v`
     in `l₁` and to `some w` in `l₁ ++ l₂`, then `v = w`. -/
 private theorem find?_append_some_eq {α β} [DecidableEq α]
@@ -2865,11 +2870,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       (argTemps ++
                         outTemps ++ genOldIdents)
                       (argVals ++ oVals ++ oldVals) v).isSome = true
-                    have Hv_notin :
-                        v ∉ argTemps ++
-                              outTemps ++ genOldIdents := by
-                      simp only [List.mem_append, not_or]
-                      exact ⟨⟨HlhsDisjArg Hv, HlhsDisjOut Hv⟩, HlhsDisjOld Hv⟩
+                    have Hv_notin : v ∉ argTemps ++ outTemps ++ genOldIdents :=
+                      notin_3_append_of (HlhsDisjArg Hv) (HlhsDisjOut Hv) (HlhsDisjOld Hv)
                     rw [updatedStates_get_notin Hv_notin]
                     exact HavocVarsDefined (UpdateStatesHavocVars Hupdate) v Hv
                   -- σ_havoc definedness on filtered_argTemps.
@@ -2912,10 +2914,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         Hk_ins Hk_outs Hk_genOld
                     have H5 : σ k = σ' k := by
                       rw [Hσ'_eq, updatedStates_get_notin Hk_lhs]
-                    have Hk_notin_layered :
-                        k ∉ argTemps ++ outTemps ++ genOldIdents := by
-                      simp only [List.mem_append, not_or]
-                      exact ⟨⟨Hk_argT, Hk_outT⟩, Hk_genOld⟩
+                    have Hk_notin_layered : k ∉ argTemps ++ outTemps ++ genOldIdents :=
+                      notin_3_append_of Hk_argT Hk_outT Hk_genOld
                     have H6 : σ' k = σ_havoc k := by
                       show σ' k = updatedStates σ'
                         (argTemps ++ outTemps ++ genOldIdents)
@@ -2933,11 +2933,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                   have Hσ_havoc_lhs_eq :
                       ∀ v ∈ lhs, σ_havoc v = σ' v := by
                     intro v Hv
-                    have Hv_notin :
-                        v ∉ argTemps ++
-                              outTemps ++ genOldIdents := by
-                      simp only [List.mem_append, not_or]
-                      exact ⟨⟨HlhsDisjArg Hv, HlhsDisjOut Hv⟩, HlhsDisjOld Hv⟩
+                    have Hv_notin : v ∉ argTemps ++ outTemps ++ genOldIdents :=
+                      notin_3_append_of (HlhsDisjArg Hv) (HlhsDisjOut Hv) (HlhsDisjOld Hv)
                     show updatedStates σ'
                       (argTemps ++
                         outTemps ++ genOldIdents)
