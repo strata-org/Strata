@@ -54,6 +54,18 @@ private theorem σ_some_contradiction {α β} {σ : β → Option α} {k : β}
     (Hsome : (σ k).isSome) (Hnone : σ k = none) : False := by
   rw [Hnone] at Hsome; simp at Hsome
 
+/-- Build `substDefined σ σ' ((a₁ ++ b₁).zip (a₂ ++ b₂))` from per-half
+    `isDefined` facts. -/
+private theorem substDefined_of_app
+    {σ σ' : CoreStore} {a₁ b₁ a₂ b₂ : List Expression.Ident}
+    (Hσ_a : Imperative.isDefined σ a₁) (Hσ_b : Imperative.isDefined σ b₁)
+    (Hσ'_a : Imperative.isDefined σ' a₂) (Hσ'_b : Imperative.isDefined σ' b₂) :
+    Imperative.substDefined σ σ' ((a₁ ++ b₁).zip (a₂ ++ b₂)) := by
+  intro k1 k2 Hkin
+  have Hmem := List.of_mem_zip Hkin
+  exact ⟨(List.mem_append.mp Hmem.1).elim (Hσ_a _) (Hσ_b _),
+         (List.mem_append.mp Hmem.2).elim (Hσ'_a _) (Hσ'_b _)⟩
+
 /-- Decompose `(a ++ b ++ c).Nodup` into its three component-Nodups and three
     pairwise disjointnesses (in the local `List.Disjoint` form: `a → b → False`).
     Repackages `List.nodup_append` and `List.disjoint_of_nodup_append_three`. -/
@@ -4013,21 +4025,9 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       exact Or.inl (Or.inl Hv_argT)
                   -- Now assemble Hdef.
                   have Hdef : Imperative.substDefined σ_R1 σ_havoc
-                      (filtered_ks.zip filtered_ks') := by
-                    intro k1 k2 Hkin
-                    have Hpair_in_fst : k1 ∈ filtered_ks :=
-                      (List.of_mem_zip Hkin).1
-                    have Hpair_in_snd : k2 ∈ filtered_ks' :=
-                      (List.of_mem_zip Hkin).2
-                    refine ⟨?_, ?_⟩
-                    · -- (σ_R1 k1).isSome.
-                      cases List.mem_append.mp Hpair_in_fst with
-                      | inl Hk1_outs => exact Hσ_R1_def_outs k1 Hk1_outs
-                      | inr Hk1_in => exact Hσ_R1_def_filt_in k1 Hk1_in
-                    · -- (σ_havoc k2).isSome.
-                      cases List.mem_append.mp Hpair_in_snd with
-                      | inl Hk2_lhs => exact Hσ_havoc_def_lhs k2 Hk2_lhs
-                      | inr Hk2_aT => exact Hσ_havoc_def_filt_argT k2 Hk2_aT
+                      (filtered_ks.zip filtered_ks') :=
+                    substDefined_of_app Hσ_R1_def_outs Hσ_R1_def_filt_in
+                      Hσ_havoc_def_lhs Hσ_havoc_def_filt_argT
                   -- Hsubst: substStores σ_R1 σ_havoc.
                   have Hσ'_eq : σ' = updatedStates σ lhs modvals :=
                     UpdateStatesUpdated Hupdate
@@ -4545,16 +4545,9 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                   have Hσ_old_def_lhs :
                       Imperative.isDefined σ_old lhs := HlhsDef_old
                   have Hdef_L4 : Imperative.substDefined σAO σ_old
-                      (ks_L4.zip ks'_L4) := by
-                    intro k1 k2 Hkin
-                    have Hmem := List.of_mem_zip Hkin
-                    refine ⟨?_, ?_⟩
-                    · cases List.mem_append.mp Hmem.1 with
-                      | inl Hin1 => exact HσAO_def_in_L4 k1 Hin1
-                      | inr Hin1 => exact HσAO_def_out_L4 k1 Hin1
-                    · cases List.mem_append.mp Hmem.2 with
-                      | inl Hin2 => exact Hσ_old_def_argT k2 Hin2
-                      | inr Hin2 => exact Hσ_old_def_lhs k2 Hin2
+                      (ks_L4.zip ks'_L4) :=
+                    substDefined_of_app HσAO_def_in_L4 HσAO_def_out_L4
+                      Hσ_old_def_argT Hσ_old_def_lhs
                   -- ── L4 substStores: substStores σ_old σAO ((argTemps ++ lhs).zip (inputs ++ outputs)) ──
                   -- Strategy: build matching ReadValues on both σ_old and σAO,
                   -- then close via ReadValuesSubstStores.
