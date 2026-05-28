@@ -2875,27 +2875,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         rw [← HinKeys_argTemps_len]; exact Hm_lt_in
                       have Hm_lt_argV : m.val < argVals.length := by
                         rw [← HinKVlen]; exact Hm_lt_in
-                      have HmGet :
-                          (proc.header.inputs.keys.zip argTemps)[m.val]'(by
-                              have := m.isLt; exact this) =
-                          (proc.header.inputs.keys[m.val]'Hm_lt_in,
-                           argTemps[m.val]'Hm_lt_argT) :=
-                        List.getElem_zip
-                      have HmEq :
-                          (k1, k2) = (proc.header.inputs.keys[m.val]'Hm_lt_in,
-                                       argTemps[m.val]'Hm_lt_argT) := by
-                        have := Hm.symm
-                        rw [show (proc.header.inputs.keys.zip argTemps).get m =
-                              (proc.header.inputs.keys.zip argTemps)[m.val]'_
-                            from rfl] at this
-                        rw [HmGet] at this
-                        exact this
-                      have Hk1_inGet :
-                          k1 = proc.header.inputs.keys[m.val]'Hm_lt_in :=
-                        ((Prod.mk.injEq _ _ _ _).mp HmEq).1
-                      have Hk2_argTGet :
-                          k2 = argTemps[m.val]'Hm_lt_argT :=
-                        ((Prod.mk.injEq _ _ _ _).mp HmEq).2
+                      have ⟨Hk1_inGet, Hk2_argTGet⟩ :=
+                        zip_pair_split Hm_lt_in Hm_lt_argT Hm
                       -- σ_R1 k1 = some argVals[m.val] (via Hrd_R1_in_full).
                       have HrdR1_get :
                           σ_R1 (proc.header.inputs.keys[m.val]'Hm_lt_in) =
