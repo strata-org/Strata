@@ -16,7 +16,7 @@ import all StrataDDM.Util.Fin
 set_option autoImplicit false
 
 public section
-namespace Strata
+namespace StrataDDM
 
 namespace PreType
 

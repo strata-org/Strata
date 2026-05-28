@@ -31,7 +31,7 @@ Near-upstream anchors:
   (`T { f1: v1, f2: v2 }`), and quantification over fixed-size field arrays.
 -/
 
-private def structFieldAccessSeed : Strata.Program :=
+private def structFieldAccessSeed : StrataDDM.Program :=
 #strata
 program Boole;
 

@@ -84,7 +84,7 @@ info: [""]
 end String
 
 public section
-namespace Strata
+namespace StrataDDM
 
 /--
 Return true if this is a non-printable 8-bit character
@@ -135,5 +135,5 @@ private def escapeSMTStringLitAux (acc : String) (c : Char) : String :=
 def escapeSMTStringLit (s : String) : String :=
   s.foldl escapeSMTStringLitAux "\"" ++ "\""
 
-end Strata
+end StrataDDM
 end

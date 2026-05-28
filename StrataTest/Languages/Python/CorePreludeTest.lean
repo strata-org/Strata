@@ -9,6 +9,7 @@ meta import Strata.Languages.Python.CorePrelude
 meta import StrataDDM.Ion
 
 meta section
+open StrataDDM (Program)
 
 namespace Strata.Python
 

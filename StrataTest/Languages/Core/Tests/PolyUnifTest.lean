@@ -9,6 +9,7 @@ meta import Strata.Languages.Core.Verifier
 import StrataDDM.Integration.Lean.HashCommands
 
 meta section
+open StrataDDM (Program)
 
 /-!
 # Polymorphic Unification Test
@@ -66,7 +67,7 @@ function BadFunc (o: Option(int)) : int {
 #end
 
 /--
-info: error: (1357-1430) Impossible to unify (arrow string int) with (arrow int $__ty4).
+info: error: (1382-1455) Impossible to unify (arrow string int) with (arrow int $__ty4).
 First mismatch: string with int.
 -/
 #guard_msgs in

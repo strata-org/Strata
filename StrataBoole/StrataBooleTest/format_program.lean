@@ -11,18 +11,18 @@ import StrataDDM.Elab
 Regression test for `Boole.formatProgram`.
 
 `Boole.Program` stores type references as fvar indices into a `GlobalContext`.
-When a `Boole.Program` is converted back to a `Strata.Program` via `prog.toAst`,
+When a `Boole.Program` is converted back to a `StrataDDM.Program` via `prog.toAst`,
 the resulting program wraps everything in a single `Boole.prog` container op.
 That container has no binding specs, so its `globalContext` is empty, which causes
 fvar indices to be printed as `fvar!N` instead of their real names.
 
 `Boole.formatProgram` fixes this by accepting the `GlobalContext` and `DialectMap`
-from the *original* `Strata.Program` and passing them directly into the `FormatContext`.
+from the *original* `StrataDDM.Program` and passing them directly into the `FormatContext`.
 -/
 
 open Strata
 
-private def vec_program : Strata.Program :=
+private def vec_program : StrataDDM.Program :=
 #strata
 program Boole;
 

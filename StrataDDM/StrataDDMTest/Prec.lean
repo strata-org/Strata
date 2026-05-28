@@ -8,6 +8,8 @@ module
 import StrataDDM.Integration.Lean
 import StrataDDM.Format
 
+open StrataDDM
+
 #dialect
 dialect TestPrec;
 
@@ -22,7 +24,7 @@ fn xor (a : bool, b : bool) : bool => @[prec(12)] a " ^^ " b;
 op assert (b : bool) : Command => "assert " b ";\n";
 #end
 
-def ppParen (pgm : Strata.Program) :=
+def ppParen (pgm : Program) :=
   IO.println <| toString <| pgm |>.format {alwaysParen := true }
 
 /--

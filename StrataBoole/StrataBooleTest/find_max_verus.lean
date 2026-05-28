@@ -50,7 +50,7 @@ fn find_max(nums: Vec<i32>) -> (ret:i32)
 
 -/
 
-def findMax : Strata.Program :=
+def findMax : StrataDDM.Program :=
 #strata
 program Boole;
 
@@ -95,7 +95,7 @@ spec {
 
 /--
 info:
-Obligation: witnessOccurs_ensures_2_1234
+Obligation: witnessOccurs_ensures_2_1237
 Property: assert
 Result: ✅ pass
 
@@ -123,23 +123,23 @@ Obligation: arbitrary_iter_maintain_invariant_0_2
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_7_1955
+Obligation: assert_7_1958
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_witnessOccurs_requires_0_1171_4
+Obligation: callElimAssert_witnessOccurs_requires_0_1174_4
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_witnessOccurs_requires_1_1203_5
+Obligation: callElimAssert_witnessOccurs_requires_1_1206_5
 Property: assert
 Result: ✅ pass
 
-Obligation: findMax_ensures_5_1453
+Obligation: findMax_ensures_5_1456
 Property: assert
 Result: ✅ pass
 
-Obligation: findMax_ensures_6_1513
+Obligation: findMax_ensures_6_1516
 Property: assert
 Result: ✅ pass
 -/

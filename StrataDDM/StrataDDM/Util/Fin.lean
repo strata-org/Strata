@@ -41,8 +41,8 @@ def range (n : Nat) : Range n := .mk
 end Fin
 
 public section
-namespace Strata.Fin
+namespace StrataDDM.Fin
 export _root_.Fin(Range range)
-end Strata.Fin
+end StrataDDM.Fin
 
 end

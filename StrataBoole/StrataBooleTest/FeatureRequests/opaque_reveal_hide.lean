@@ -25,7 +25,7 @@ Near-upstream anchors from `differential_status.md`:
 - Remaining gap: direct proof-visibility controls in Boole
 -/
 
-private def opaqueRevealHideSeed : Strata.Program :=
+private def opaqueRevealHideSeed : StrataDDM.Program :=
 #strata
 program Boole;
 

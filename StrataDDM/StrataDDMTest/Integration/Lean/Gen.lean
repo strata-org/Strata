@@ -12,13 +12,13 @@ Tests for `#strata_gen`: exercises empty dialects, a dialect with types,
 expressions, and mutual recursion, and verifies round-trip correctness.
 -/
 
-namespace Strata
+namespace StrataDDM
 
 class IsAST (β : Type → Type) (M : outParam (Type → Type)) where
   toAst {α} [Inhabited α] : β α → M α
   ofAst {α} [Inhabited α] [Repr α] : M α → OfAstM (β α)
 
-end Strata
+end StrataDDM
 
 -- Make sure empty dialect works
 namespace EmptyD
@@ -29,7 +29,7 @@ dialect EmptyDialect;
 
 
 #guard_msgs in
-set_option trace.Strata.generator true in
+set_option trace.StrataDDM.generator true in
 #strata_gen EmptyDialect
 
 end EmptyD
@@ -47,30 +47,30 @@ op cmd (tp : Type, a : tp) : Command => "cmd " a;
 
 
 /--
-trace: [Strata.generator] Generating Expr
+trace: [StrataDDM.generator] Generating Expr
 ---
-trace: [Strata.generator] Generating Expr.toAst
+trace: [StrataDDM.generator] Generating Expr.toAst
 ---
-trace: [Strata.generator] Generating Expr.ofAst
+trace: [StrataDDM.generator] Generating Expr.ofAst
 ---
-trace: [Strata.generator] Generating EmptyExprDialectType
+trace: [StrataDDM.generator] Generating EmptyExprDialectType
 ---
-trace: [Strata.generator] Generating EmptyExprDialectType.toAst
+trace: [StrataDDM.generator] Generating EmptyExprDialectType.toAst
 ---
-trace: [Strata.generator] Generating EmptyExprDialectType.ofAst
+trace: [StrataDDM.generator] Generating EmptyExprDialectType.ofAst
 ---
-trace: [Strata.generator] Generating Command
+trace: [StrataDDM.generator] Generating Command
 ---
-trace: [Strata.generator] Generating Command.toAst
+trace: [StrataDDM.generator] Generating Command.toAst
 ---
-trace: [Strata.generator] Generating Command.ofAst
+trace: [StrataDDM.generator] Generating Command.ofAst
 ---
-trace: [Strata.generator] ✅️ Declarations group: [Init.Expr]
-[Strata.generator] ✅️ Declarations group: [Init.Type]
-[Strata.generator] ✅️ Declarations group: [Init.Command]
+trace: [StrataDDM.generator] ✅️ Declarations group: [Init.Expr]
+[StrataDDM.generator] ✅️ Declarations group: [Init.Type]
+[StrataDDM.generator] ✅️ Declarations group: [Init.Command]
 -/
 #guard_msgs in
-set_option trace.Strata.generator true in
+set_option trace.StrataDDM.generator true in
 #strata_gen EmptyExprDialect
 
 end EmptyExprD
@@ -116,6 +116,7 @@ op mkMutACommaSep (a : CommaSepBy MutA) : MutACommaSep => a;
 #end
 
 namespace TestDialect
+open StrataDDM (Ann ArgF IsAST ExprF SepFormat TypeExprF)
 
 #strata_gen TestDialect
 
@@ -124,9 +125,9 @@ info: private inductive TestDialect.test : Type → Type
 number of parameters: 1
 constructors:
 _private.StrataDDMTest.Integration.Lean.Gen.0.TestDialect.test.foo : {α : Type} → α → Expr α → test α
-_private.StrataDDMTest.Integration.Lean.Gen.0.TestDialect.test.identTest : {α : Type} → α → Strata.Ann String α → test α
-_private.StrataDDMTest.Integration.Lean.Gen.0.TestDialect.test.numTest : {α : Type} → α → Strata.Ann Nat α → test α
-_private.StrataDDMTest.Integration.Lean.Gen.0.TestDialect.test.strTest : {α : Type} → α → Strata.Ann String α → test α
+_private.StrataDDMTest.Integration.Lean.Gen.0.TestDialect.test.identTest : {α : Type} → α → Ann String α → test α
+_private.StrataDDMTest.Integration.Lean.Gen.0.TestDialect.test.numTest : {α : Type} → α → Ann Nat α → test α
+_private.StrataDDMTest.Integration.Lean.Gen.0.TestDialect.test.strTest : {α : Type} → α → Ann String α → test α
 
 -/
 #guard_msgs in
@@ -161,13 +162,13 @@ _private.StrataDDMTest.Integration.Lean.Gen.0.TestDialect.TypeP.type : {α : Typ
 #print TypeP
 
 /--
-info: Strata.ExprF.fvar () 1
+info: ExprF.fvar () 1
 -/
 #guard_msgs in
 #eval Expr.fvar () 1 |>.toAst
 
 /--
-info: private opaque TestDialect.Expr.toAst : {α : Type} → [Inhabited α] → Expr α → Strata.ExprF α
+info: private opaque TestDialect.Expr.toAst : {α : Type} → [Inhabited α] → Expr α → ExprF α
 -/
 #guard_msgs in
 #print Expr.toAst
@@ -212,16 +213,16 @@ deriving instance BEq for Binding
 deriving instance BEq for Bindings
 deriving instance BEq for Expr
 
-instance : Strata.IsAST Expr Strata.ExprF where
+instance : IsAST Expr ExprF where
   toAst := Expr.toAst
   ofAst := Expr.ofAst
 
-instance : Strata.IsAST TestDialectType Strata.TypeExprF where
+instance : IsAST TestDialectType TypeExprF where
   toAst := TestDialectType.toAst
   ofAst := TestDialectType.ofAst
 
-def testRoundTrip {β M} [h : Strata.IsAST β M] [BEq (β Unit)] (e : β Unit) : Bool :=
-  match e |> Strata.IsAST.toAst |> Strata.IsAST.ofAst with
+def testRoundTrip {β M} [h : IsAST β M] [BEq (β Unit)] (e : β Unit) : Bool :=
+  match e |> IsAST.toAst |> IsAST.ofAst with
   | .error _ => false
   | .ok g => e == g
 
@@ -235,17 +236,17 @@ def testRoundTrip {β M} [h : Strata.IsAST β M] [BEq (β Unit)] (e : β Unit) :
 #guard testRoundTrip <| Expr.app () (.fvar () 0) (.trueExpr ())
 #guard testRoundTrip <| Expr.app () (.app () (.fvar () 0) (.trueExpr ())) (.fvar () 1)
 
-open Strata (OfAstM)
+open StrataDDM (OfAstM)
 
 /--
-info: Strata.ExprF.app ()
-  (Strata.ExprF.app ()
-    (Strata.ExprF.app () (Strata.ExprF.fn () { dialect := "TestDialect", name := "lambda" })
-      (Strata.ArgF.type (Strata.TypeExprF.ident () { dialect := "TestDialect", name := "bool" } (Array.mkEmpty 0))))
-    (Strata.ArgF.op
+info: ExprF.app ()
+  (ExprF.app ()
+    (ExprF.app () (ExprF.fn () { dialect := "TestDialect", name := "lambda" })
+      (ArgF.type (TypeExprF.ident () { dialect := "TestDialect", name := "bool" } (Array.mkEmpty 0))))
+    (ArgF.op
       { ann := (), name := { dialect := "TestDialect", name := "mkBindings" },
-        args := (Array.mkEmpty 1).push (Strata.ArgF.seq () Strata.SepFormat.comma (Array.mkEmpty 0)) }))
-  (Strata.ArgF.expr (Strata.ExprF.fn () { dialect := "TestDialect", name := "trueExpr" }))
+        args := (Array.mkEmpty 1).push (ArgF.seq () SepFormat.comma (Array.mkEmpty 0)) }))
+  (ArgF.expr (ExprF.fn () { dialect := "TestDialect", name := "trueExpr" }))
 -/
 #guard_msgs in
 #eval Expr.lambda () (.bool ()) (.mkBindings () ⟨(), #[]⟩) (.trueExpr ()) |>.toAst

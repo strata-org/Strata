@@ -22,7 +22,7 @@ Near-upstream anchors from `differential_status.md`:
 - Remaining gap: function/procedure/spec-function `decreases`
 -/
 
-private def decreasesMetadataSeed : Strata.Program :=
+private def decreasesMetadataSeed : StrataDDM.Program :=
 #strata
 program Boole;
 
@@ -75,7 +75,7 @@ Obligation: arbitrary_iter_maintain_invariant_0_1
 Property: assert
 Result: ✅ pass
 
-Obligation: loop_measure_seed_ensures_1_1179
+Obligation: loop_measure_seed_ensures_1_1182
 Property: assert
 Result: ✅ pass
 -/

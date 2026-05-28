@@ -19,7 +19,7 @@ Near-upstream anchors from `differential_status.md`:
 - Remaining gap: direct `choose` surface syntax and faithful lowering
 -/
 
-private def chooseOperatorSeed : Strata.Program :=
+private def chooseOperatorSeed : StrataDDM.Program :=
 #strata
 program Boole;
 
@@ -50,7 +50,7 @@ spec {
 
 /--
 info:
-Obligation: choose_seed_ensures_1_1082
+Obligation: choose_seed_ensures_1_1085
 Property: assert
 Result: ✅ pass
 -/

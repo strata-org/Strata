@@ -87,6 +87,7 @@ end Arith
 
 namespace Strata
 namespace ArithPrograms
+open StrataDDM (Program)
 
 def verify (pgm : Program)
     (verbose : Bool := false) : IO (Imperative.VCResults Arith.PureExpr) := do

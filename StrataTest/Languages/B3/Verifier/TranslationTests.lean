@@ -21,6 +21,7 @@ These tests verify the generated SMT-LIB output without running solvers.
 
 namespace B3.Verifier.TranslationTests
 
+open StrataDDM
 open Strata
 open Strata.B3.Verifier
 

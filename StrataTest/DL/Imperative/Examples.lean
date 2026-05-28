@@ -9,6 +9,7 @@ meta import all StrataTest.DL.Imperative.Verify
 import StrataDDM.Integration.Lean.HashCommands
 
 meta section
+open StrataDDM (Program)
 
 ---------------------------------------------------------------------
 namespace Strata

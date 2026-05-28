@@ -12,10 +12,10 @@ public import Strata.Languages.Python.PythonDialect
 public section
 namespace Strata.Python
 
-def readPythonStrataBytes (strataPath : String) (bytes : ByteArray) : Except String (Array (Strata.Python.stmt Strata.SourceRange)) := do
+def readPythonStrataBytes (strataPath : String) (bytes : ByteArray) : Except String (Array (Strata.Python.stmt StrataDDM.SourceRange)) := do
   if ! Ion.isIonFile bytes then
     throw <| s!"{strataPath} is not an Ion file."
-  match Strata.Program.fromIon Strata.Python.Python_map Strata.Python.Python.name bytes with
+  match StrataDDM.Program.fromIon Strata.Python.Python_map Strata.Python.Python.name bytes with
   | .ok pgm =>
     let pyCmds ← pgm.commands.mapM fun cmd =>
       match Strata.Python.Command.ofAst cmd with
@@ -107,7 +107,7 @@ private def runPyToStrata (pythonCmd : String) (extraPythonArgs : Array String)
     throw <| msg
 
 /-- Reads a pre-compiled Strata file (Ion format) containing Python AST statements. -/
-def readPythonStrata (strataPath : String) : EIO String (Array (Strata.Python.stmt Strata.SourceRange)) := do
+def readPythonStrata (strataPath : String) : EIO String (Array (Strata.Python.stmt StrataDDM.SourceRange)) := do
   let bytes ←
     match ← IO.FS.readBinFile strataPath |>.toBaseIO with
     | .ok b =>
@@ -129,7 +129,7 @@ or the Python file cannot be parsed.
 def pythonToStrata (dialectFile pythonFile : System.FilePath)
     (pythonCmd : String := "python")
     (options : PythonToStrataOptions := {})
-    : EIO String (Array (Strata.Python.stmt Strata.SourceRange)) := do
+    : EIO String (Array (Strata.Python.stmt StrataDDM.SourceRange)) := do
   let (_handle, strataFile) ←
     match ← IO.FS.createTempFile |>.toBaseIO with
     | .ok p => pure p

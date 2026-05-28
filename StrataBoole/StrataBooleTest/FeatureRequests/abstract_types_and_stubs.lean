@@ -24,7 +24,7 @@ Near-upstream anchors from `differential_status.md`:
   pruning
 -/
 
-private def abstractTypesAndStubsSeed : Strata.Program :=
+private def abstractTypesAndStubsSeed : StrataDDM.Program :=
 #strata
 program Boole;
 

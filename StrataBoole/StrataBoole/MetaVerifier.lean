@@ -26,7 +26,9 @@ public section
 
 namespace Strata.Boole
 
-def genVCs (program : Strata.Boole.Program) (gctx : Strata.GlobalContext) (options : Core.VerifyOptions := .default) : Option Core.coreVCs := do
+open StrataDDM (GlobalContext Program)
+
+def genVCs (program : Strata.Boole.Program) (gctx : GlobalContext) (options : Core.VerifyOptions := .default) : Option Core.coreVCs := do
   let program ← (Strata.Boole.toCoreProgram program gctx).toOption
   Core.genVCs program options
 
@@ -34,8 +36,10 @@ end Strata.Boole
 
 namespace Strata
 
+open StrataDDM (Program)
+
 /--
-Generate verification conditions for a `Strata.Program`, with Boole support.
+Generate verification conditions for a `StrataDDM.Program`, with Boole support.
 Extends `Strata.genCoreVCs` to handle the Boole dialect.
 -/
 def genCoreVCsBoole (program : Program) : Option Core.coreVCs := do
@@ -48,7 +52,7 @@ def genCoreVCsBoole (program : Program) : Option Core.coreVCs := do
     genCoreVCs program
 
 /--
-Generate SMT verification conditions for a `Strata.Program`, with Boole support.
+Generate SMT verification conditions for a `StrataDDM.Program`, with Boole support.
 -/
 def genSMTVCsBoole (program : Program) : Option SMT.SMTVCs := do
   let coreVCs ← genCoreVCsBoole program

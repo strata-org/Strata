@@ -10,7 +10,7 @@ meta import StrataDDM.Util.Ion
 import StrataDDM.Util.Ion
 
 open Ion
-open Strata
+open StrataDDM
 
 def example2 : Ion String := .struct #[
   ("foo", .null .null),
@@ -52,7 +52,7 @@ def testRoundtrip (v : List (Ion SymbolId)) : Bool :=
 #guard testRoundtrip [.string "", .string "⟨"]
 #guard testRoundtrip [.string "this_is_a_long_name"]
 
-#guard testRoundtrip [.blob <| Strata.ByteArray.zeros 20000]
+#guard testRoundtrip [.blob <| ByteArray.zeros 20000]
 #guard testRoundtrip [.list #[], .list #[.int 1]]
 #guard testRoundtrip [.list (Array.ofFn (n := 8000) fun i => .int i.val)]
 #guard testRoundtrip [.sexp #[], .sexp #[.int 1]]

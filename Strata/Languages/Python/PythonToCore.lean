@@ -11,6 +11,7 @@ public import Strata.Languages.Python.PythonDialect
 public import Strata.Languages.Python.FunctionSignatures
 public import Strata.Languages.Core.Program
 import Strata.Languages.Core.Env
+open StrataDDM
 
 namespace Strata
 open Lambda.LTy.Syntax

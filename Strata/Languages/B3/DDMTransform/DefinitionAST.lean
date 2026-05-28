@@ -8,6 +8,7 @@ module
 import Strata.Util.Tactics
 public import StrataDDM.Integration.Lean.OfAstM
 import StrataDDM.Integration.Lean -- shake: keep
+open StrataDDM
 
 public section
 

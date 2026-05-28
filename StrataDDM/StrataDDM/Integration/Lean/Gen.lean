@@ -39,7 +39,7 @@ open Lean.Parser.Termination (terminationBy suffix)
 open Lean.Syntax (mkApp mkCApp mkStrLit)
 
 meta section
-namespace Strata
+namespace StrataDDM
 
 namespace Lean
 
@@ -193,7 +193,7 @@ def resolveDialects (lookup : String → Option Dialect)
 abbrev CategoryName := QualifiedIdent
 
 def forbiddenCategories : Std.HashSet CategoryName :=
-  DDM.Integration.forbiddenCategories
+  Integration.forbiddenCategories
 
 def forbiddenWellDefined : Bool :=
   forbiddenCategories.all fun nm =>
@@ -209,7 +209,7 @@ def forbiddenWellDefined : Bool :=
 /-- Abstract categories (`Init.Expr`, `Init.Type`, `Init.TypeP`)
 extended via `fn`/`type` rather than `op`. -/
 def abstractCategories : Std.HashSet CategoryName :=
-  DDM.Integration.abstractCategories
+  Integration.abstractCategories
 
 /--
 Argument declaration for code generation.
@@ -320,7 +320,7 @@ def declaredCategories : Std.HashMap CategoryName Name := .ofList [
   (q`Init.Bool, ``Bool)
 ]
 #guard declaredCategories.keys.all
-  (DDM.Integration.primitiveCategories.contains ·)
+  (Integration.primitiveCategories.contains ·)
 
 namespace CatOpMap
 
@@ -800,7 +800,7 @@ def genInductiveDef (cat : QualifiedIdent) (ctors : Array DefaultCtor)
     : GenM Command := do
   assert! cat ∉ declaredCategories
   let ident ← mkScopedIdent (← getCategoryScopedName cat)
-  trace[Strata.generator] "Generating {ident}"
+  trace[StrataDDM.generator] "Generating {ident}"
   let annType := localIdent "α"
   let builtinCtors : Array (TSyntax ``ctor) ←
         match cat with
@@ -824,10 +824,10 @@ OperationF) for use in type signatures.
 def categoryToAstTypeIdent (cat : QualifiedIdent) (annType : Term) : Term :=
   let ident :=
     match cat with
-    | q`Init.Expr => ``Strata.ExprF
-    | q`Init.Type => ``Strata.TypeExprF
-    | q`Init.TypeP => ``Strata.ArgF
-    | _ => ``Strata.OperationF
+    | q`Init.Expr => ``ExprF
+    | q`Init.Type => ``TypeExprF
+    | q`Init.TypeP => ``ArgF
+    | _ => ``OperationF
   Lean.Syntax.mkApp (mkRootIdent ident) #[annType]
 
 /-- Returns the identifier for a category's toAst function. -/
@@ -884,7 +884,7 @@ partial def toAstApplyArg (vn : Name) (cat : SyntaxCat)
       ``(ArgF.op $opExpr)
     else
       -- When wrapped, v is already Ann Bool α
-      let boolToAst := mkCApp ``Strata.OfAstM.toAstBool #[v]
+      let boolToAst := mkCApp ``OfAstM.toAstBool #[v]
       return mkCApp ``ArgF.op #[boolToAst]
   | q`Init.Ident =>
     if !addAnn then
@@ -1120,7 +1120,7 @@ def generateToAstFunction (cat : QualifiedIdent)
   let cases ← toAstBuiltinMatches cat
   let cases : Array MatchAlt := cases ++ (← ops.mapM (toAstMatch cat))
   let toAst ← toAstIdentM cat
-  trace[Strata.generator] "Generating {toAst}"
+  trace[StrataDDM.generator] "Generating {toAst}"
   let src := (←read).src
   let v ← genFreshLeanName "v"
   `(partial def $toAst {$annType : Type} [Inhabited $annType]
@@ -1335,7 +1335,7 @@ def createNameIndexMap (cat : QualifiedIdent) (ops : Array DefaultCtor)
     | some name => map.insert name map.size  -- Assign the next available index
   let ofAstNameMap ←
     getCategoryOpIdent cat `ofAst.nameIndexMap
-  let cmd ← `(def $ofAstNameMap : Std.HashMap Strata.QualifiedIdent Nat :=
+  let cmd ← `(def $ofAstNameMap : Std.HashMap QualifiedIdent Nat :=
     Std.HashMap.ofList $(quote nameIndexMap.toList))
   pure (nameIndexMap, ofAstNameMap, cmd)
 
@@ -1362,7 +1362,7 @@ def generateOfAstFunction (cat : QualifiedIdent) (ops : Array DefaultCtor)
     : GenM (Array Command × Command) := do
   let src := (←read).src
   let ofAst ← ofAstIdentM cat
-  trace[Strata.generator] "Generating {ofAst}"
+  trace[StrataDDM.generator] "Generating {ofAst}"
   match cat with
   | q`Init.Expr =>
     let v ← genFreshLeanName "v"
@@ -1399,11 +1399,11 @@ def generateOfAstFunction (cat : QualifiedIdent) (ops : Array DefaultCtor)
         let $(mkCanIdent src argsVar) := vnf.args.val
         let foldArgs := $foldArgs
         match (vnf.fn) with
-        | Strata.ExprF.bvar ann idx => do
+        | ExprF.bvar ann idx => do
           foldArgs ($bvarCtor ann idx)
-        | Strata.ExprF.fvar ann i => do
+        | ExprF.fvar ann i => do
           foldArgs ($fvarCtor ann i)
-        | Strata.ExprF.fn $annC fnId =>
+        | ExprF.fn $annC fnId =>
           (match ($ofAstNameMap[fnId]?) with
           $cases:matchAlt*
           | _ => OfAstM.throwUnknownIdentifier $(quote cat) fnId)
@@ -1583,7 +1583,7 @@ def generateCategoryCode
       declaredCategories.keysArray
   for allCtors in orderedSyncatGroups categories do
     let s ←
-      withTraceNode `Strata.generator (fun _ =>
+      withTraceNode `StrataDDM.generator (fun _ =>
         return m!"Declarations group: {allCtors.map (·.fst)}") do
         -- TODO: Currently all toAst/ofAst functions are declared `partial`.
         -- The commented-out code below detects whether a group is actually
@@ -1678,5 +1678,5 @@ public def genAstImpl : CommandElab := fun stx =>
   | _ =>
     throwUnsupportedSyntax
 
-end Strata
+end StrataDDM
 end

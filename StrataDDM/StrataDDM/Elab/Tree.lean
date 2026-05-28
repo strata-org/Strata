@@ -11,7 +11,7 @@ set_option autoImplicit false
 open Lean (Syntax)
 
 public section
-namespace Strata.Elab
+namespace StrataDDM.Elab
 
 /--
 Information about the type or category of a bound variable.

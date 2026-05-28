@@ -23,7 +23,7 @@ namespace Strata.Issue1146Test
 
 /-! ## Canonical form: datatype + function translates without error -/
 
-private def datatypeAndFunction : Strata.Program :=
+private def datatypeAndFunction : StrataDDM.Program :=
 #strata
 program Core;
 
@@ -45,7 +45,7 @@ function Len (xs : List) : int
 error: unexpected token ';'; expected 'function', Core.Block or expected at least one element
 -/
 #guard_msgs in
-def strayTrailingSemi : Strata.Program :=
+def strayTrailingSemi : StrataDDM.Program :=
 #strata
 program Core;
 

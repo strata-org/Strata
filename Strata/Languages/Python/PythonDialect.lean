@@ -10,6 +10,7 @@ public import StrataDDM.Integration.Lean.OfAstM
 public import StrataDDM.Format
 import StrataDDM.Integration.Lean.Gen
 import StrataDDM.Integration.Lean.HashCommands
+open StrataDDM
 
 public section
 namespace Strata.Python

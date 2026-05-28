@@ -8,7 +8,7 @@ module
 public import StrataDDM.AST
 public import Lean.Parser.Basic
 
-namespace Strata
+namespace StrataDDM
 
 open Lean
 
@@ -17,4 +17,4 @@ public abbrev PrattParsingTableMap := Std.HashMap QualifiedIdent Parser.PrattPar
 public initialize parserExt : EnvExtension PrattParsingTableMap ←
   registerEnvExtension (pure {})
 
-end Strata
+end StrataDDM

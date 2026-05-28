@@ -10,7 +10,7 @@ import StrataTest.Util.Python
 
 open StrataTest.Util
 open Strata.Python (processPythonFile withPython)
-open Strata.Parser (stringInputContext)
+open StrataDDM.Parser (stringInputContext)
 open Strata
 
 namespace Strata.Python.Issue1000

@@ -8,7 +8,7 @@ import all StrataDDM.Util.Fin
 import all StrataDDM.Util.Vector
 
 public section
-namespace Strata
+namespace StrataDDM
 
 structure OutGraph (nodeCount : Nat) where
   edges : Vector (Array (Fin nodeCount)) nodeCount
@@ -101,5 +101,5 @@ def tarjan {n} (g : OutGraph n) : Array (Array (Node n)) :=
       s
   s.components
 
-end Strata.OutGraph
+end StrataDDM.OutGraph
 end

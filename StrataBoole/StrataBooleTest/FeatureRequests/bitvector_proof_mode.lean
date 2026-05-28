@@ -26,7 +26,7 @@ Near-upstream anchors:
   a bitvector decision procedure without explicit axioms.
 -/
 
-private def bitvectorProofModeSeed : Strata.Program :=
+private def bitvectorProofModeSeed : StrataDDM.Program :=
 #strata
 program Boole;
 

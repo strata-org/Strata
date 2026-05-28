@@ -10,6 +10,8 @@ import StrataDDM.Util.Format
 
 namespace Strata
 
+open StrataDDM hiding Bool
+
 namespace OfAstM
 
 def argAsExpr (arg : Arg) : OfAstM Expr :=

@@ -17,7 +17,7 @@ namespace Core.ANFEncoder.Tests
 
 open Strata Lambda Imperative Core.ANFEncoder
 
-private def translateCore (p : Strata.Program) : Core.Program :=
+private def translateCore (p : StrataDDM.Program) : Core.Program :=
   (TransM.run Inhabited.default (translateProgram p)).fst
 
 /-! ## ANFEncoder across ITE branches and condition -/
