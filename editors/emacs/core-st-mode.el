@@ -13,7 +13,7 @@
 
 (defvar core-st-types
   '(    "bool" "int" "string" "regex" "real" "bv1" "bv8" "bv16" "bv32"
-    "bv64" "Map" "Sequence"))
+    "bv64" "bv128" "Map" "Sequence"))
 
 (defvar core-st-constants
   '(    "true" "false" "null"))
