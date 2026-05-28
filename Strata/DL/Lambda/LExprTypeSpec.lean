@@ -22,6 +22,7 @@ import all Strata.DL.Util.List
 public import Strata.DL.Lambda.LExprT
 import all Strata.DL.Lambda.LExprT
 public import Strata.DL.Lambda.FactoryWF
+public meta import Init.Grind.Cases
 
 /-! ## Typing Relation for Lambda Expressions
 
