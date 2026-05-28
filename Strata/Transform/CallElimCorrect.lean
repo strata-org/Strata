@@ -818,27 +818,7 @@ private theorem inputOnlyOldSubst_pos_decomp
     simp only [Hg] at HH
     exact absurd HH (by simp)
 
-/-- For an entry of `conds.filter f`, its `.snd.expr` is contained in
-    `getCheckExprs conds` (in `.contains` form).  Used at both the
-    pre-filtered and post-filtered sites of `callElimStatementCorrect` to
-    bridge filter membership to the `.contains` argument expected by the
-    `Hpre`/`Hpost` hypotheses from `call_sem`. -/
-private theorem filterCheck_in_getCheckExprs [LawfulBEq Expression.Expr]
-    {conds : ListMap CoreLabel Procedure.Check}
-    {f : CoreLabel × Procedure.Check → Bool}
-    {entry : CoreLabel × Procedure.Check}
-    (Hentry : entry ∈ conds.filter f) :
-    (Procedure.Spec.getCheckExprs conds).contains entry.snd.expr := by
-  have Hin_full := (List.mem_filter.mp Hentry).1
-  apply List.contains_iff_mem.mpr
-  simp only [Procedure.Spec.getCheckExprs, List.mem_map]
-  refine ⟨entry.snd, ?_, rfl⟩
-  rw [ListMap.values_eq_map_snd]
-  exact List.mem_map_of_mem Hin_full
-
-/-- Membership form of `filterCheck_in_getCheckExprs`: the entry's
-    `.snd.expr` lies in `getCheckExprs conds` (as a `List` membership
-    predicate, not the `.contains` boolean form). -/
+/-- Membership form: the entry's `.snd.expr` lies in `getCheckExprs conds`. -/
 private theorem filterCheck_mem_getCheckExprs
     {conds : ListMap CoreLabel Procedure.Check}
     {f : CoreLabel × Procedure.Check → Bool}
@@ -850,6 +830,18 @@ private theorem filterCheck_mem_getCheckExprs
   refine ⟨entry.snd, ?_, rfl⟩
   rw [ListMap.values_eq_map_snd]
   exact List.mem_map_of_mem Hin_full
+
+/-- `.contains` form of `filterCheck_mem_getCheckExprs`. Used at the
+    pre-filtered and post-filtered sites of `callElimStatementCorrect` to
+    bridge filter membership to the `.contains` argument expected by the
+    `Hpre`/`Hpost` hypotheses from `call_sem`. -/
+private theorem filterCheck_in_getCheckExprs [LawfulBEq Expression.Expr]
+    {conds : ListMap CoreLabel Procedure.Check}
+    {f : CoreLabel × Procedure.Check → Bool}
+    {entry : CoreLabel × Procedure.Check}
+    (Hentry : entry ∈ conds.filter f) :
+    (Procedure.Spec.getCheckExprs conds).contains entry.snd.expr :=
+  List.contains_iff_mem.mpr (filterCheck_mem_getCheckExprs Hentry)
 
 /-- Store-agreement helper for `σ_R1`-style stacks (the σ_R1 layer
     overlaying `genOldIdents ↦ oldVals` on σO, plus the σO ← σAO ←
