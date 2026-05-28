@@ -365,6 +365,19 @@ private theorem pair_in_zip_pos_decomp
   exact ⟨n.val, Hn_lt, Hn_lt',
     ((Prod.mk.injEq _ _ _ _).mp HEq).1, ((Prod.mk.injEq _ _ _ _).mp HEq).2⟩
 
+/-- Reverse of `pair_in_zip_pos_decomp`: under length equality, the pair
+    `(ks[n], ks'[n])` lies in `ks.zip ks'`.  Used by the `Hk1 ∉ inputs.keys`
+    chase in `Hinv` class-(a). -/
+private theorem pair_in_zip_of_pos
+    {α β} {ks : List α} {ks' : List β}
+    (Hlen : ks.length = ks'.length)
+    {n : Nat} (Hn_lt : n < ks.length) (Hn_lt' : n < ks'.length) :
+    (ks[n]'Hn_lt, ks'[n]'Hn_lt') ∈ ks.zip ks' := by
+  apply List.mem_iff_get.mpr
+  have Hn_lt_zip : n < (ks.zip ks').length := by
+    rw [List.length_zip]; omega
+  exact ⟨⟨n, Hn_lt_zip⟩, List.getElem_zip⟩
+
 /-- Bridge from the `tmp_` half of `Hwfgenst` to `isNotDefined` for a list
     of fresh temp names: if a name is `isTempIdent` and is *not* in
     `γ.generated`, then it must be undefined in σ (otherwise the iff in
@@ -3842,28 +3855,15 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         -- k1 ∈ inputs.keys, k1 ∉ outputs.keys ⇒ k1 ∈ filtered_inputs.
                         rcases List.mem_iff_get.mp h with ⟨n, Hn⟩
                         have Hn_lt_in : n.val < proc.header.inputs.keys.length := n.isLt
-                        have Hn_lt_argT : n.val < argTemps.length := by
-                          rw [← HinKeys_argTemps_len]; exact Hn_lt_in
+                        have Hn_lt_argT : n.val < argTemps.length :=
+                          HinKeys_argTemps_len ▸ Hn_lt_in
                         have HkE :
-                            proc.header.inputs.keys[n.val]'Hn_lt_in = k1 := by
-                          show proc.header.inputs.keys.get ⟨n.val, Hn_lt_in⟩ = k1
-                          exact Hn
+                            proc.header.inputs.keys[n.val]'Hn_lt_in = k1 := Hn
                         have Hpair_in_zip :
                             (k1, argTemps[n.val]'Hn_lt_argT) ∈
                               proc.header.inputs.keys.zip argTemps := by
                           rw [← HkE]
-                          apply List.mem_iff_get.mpr
-                          have HzL : (proc.header.inputs.keys.zip argTemps).length =
-                              min proc.header.inputs.keys.length argTemps.length :=
-                            List.length_zip
-                          have Hn_lt_zip :
-                              n.val < (proc.header.inputs.keys.zip argTemps).length := by
-                            rw [HzL]
-                            have := HinKeys_argTemps_len
-                            omega
-                          refine ⟨⟨n.val, Hn_lt_zip⟩, ?_⟩
-                          show (proc.header.inputs.keys.zip argTemps)[n.val]'_ = _
-                          exact List.getElem_zip
+                          exact pair_in_zip_of_pos HinKeys_argTemps_len Hn_lt_in Hn_lt_argT
                         have Hpair_in_filtAS :
                             (k1, argTemps[n.val]'Hn_lt_argT) ∈
                               filtered_argSubst := by
