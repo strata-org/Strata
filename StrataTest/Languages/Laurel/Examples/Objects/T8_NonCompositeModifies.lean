@@ -26,7 +26,7 @@ composite Container {
 procedure incWithPrimitiveModifies(x: int) returns (r: int)
   opaque
   modifies x
-//         ^ error: modifies clause entry has non-composite type 'int' and will be ignored
+//         ^ error: non-composite type
 {
   r := x + 1
 };
@@ -35,7 +35,7 @@ procedure modifyContainerAndPrimitive(c: Container, x: int)
   opaque
   modifies c
   modifies x
-//         ^ error: modifies clause entry has non-composite type 'int' and will be ignored
+//         ^ error: non-composite type
 {
   c#value := 1
 };
