@@ -229,6 +229,7 @@ private def typeRange : Boole.Type → SourceRange
   | .bv16 m => m
   | .bv32 m => m
   | .bv64 m => m
+  | .bv128 m => m
   | .Map m _ _ => m
   | .Sequence m _ => m
 
@@ -246,6 +247,7 @@ def toCoreMonoType (t : Boole.Type) : TranslateM Lambda.LMonoTy := do
   | .bv16 _ => return .bitvec 16
   | .bv32 _ => return .bitvec 32
   | .bv64 _ => return .bitvec 64
+  | .bv128 _ => return .bitvec 128
   | .Map _ v k => return .tcons "Map" [← toCoreMonoType k, ← toCoreMonoType v]
   | .Sequence _ elem => return .tcons "Sequence" [← toCoreMonoType elem]
   | _ => throwAt (typeRange t) s!"Unsupported Boole type: {repr t}"
@@ -287,7 +289,8 @@ private def bvWidth (m : SourceRange) (ty : Boole.Type) : TranslateM Nat :=
   | .bv8 _  => return 8
   | .bv16 _ => return 16
   | .bv32 _ => return 32
-  | .bv64 _ => return 64
+  | .bv64 _  => return 64
+  | .bv128 _ => return 128
   | _ => throwAt m s!"Expected bitvector type, got: {repr ty}"
 
 private def toCoreBvUn (m : SourceRange) (ty : Boole.Type) (op : String) (a : Core.Expression.Expr) : TranslateM Core.Expression.Expr := do
