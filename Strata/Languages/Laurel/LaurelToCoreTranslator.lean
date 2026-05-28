@@ -193,7 +193,6 @@ def translateExpr (expr : StmtExprMd)
     | _ =>
       throwExprDiagnostic $ diagnosticFromSource expr.source s!"translateExpr: Invalid unary op: {repr op}" DiagnosticType.StrataBug
   | .PrimitiveOp op [e1, e2] skipProof =>
-    let proof := !skipProof
     let re1 ← translateExpr e1 boundVars isPureContext
     let re2 ← translateExpr e2 boundVars isPureContext
     let binOp (bop : Core.Expression.Expr) : Core.Expression.Expr :=
@@ -212,10 +211,10 @@ def translateExpr (expr : StmtExprMd)
     | .Add => return binOp (if isReal then realAddOp else intAddOp)
     | .Sub => return binOp (if isReal then realSubOp else intSubOp)
     | .Mul => return binOp (if isReal then realMulOp else intMulOp)
-    | .Div => return binOp (if isReal then realDivOp else if proof then intSafeDivOp else intDivOp)
-    | .Mod => return binOp (if proof then intSafeModOp else intModOp)
-    | .DivT => return binOp (if proof then intSafeDivTOp else intDivTOp)
-    | .ModT => return binOp (if proof then intSafeModTOp else intModTOp)
+    | .Div => return binOp (if isReal then realDivOp else if skipProof then intDivOp else intSafeDivOp )
+    | .Mod => return binOp (if skipProof then intModOp else intSafeModOp)
+    | .DivT => return binOp (if skipProof then intDivTOp else intSafeDivTOp)
+    | .ModT => return binOp (if skipProof then intModTOp else intSafeModTOp)
     | .Lt => return binOp (if isReal then realLtOp else intLtOp)
     | .Leq => return binOp (if isReal then realLeOp else intLeOp)
     | .Gt => return binOp (if isReal then realGtOp else intGtOp)
