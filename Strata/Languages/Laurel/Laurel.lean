@@ -293,8 +293,10 @@ inductive StmtExpr : Type where
   | PureFieldUpdate (target : AstNode StmtExpr) (fieldName : Identifier) (newValue : AstNode StmtExpr)
   /-- Call a static procedure by name with the given arguments. -/
   | StaticCall (callee : Identifier) (arguments : List (AstNode StmtExpr))
-  /-- Apply a primitive operation to the given arguments. -/
+  /-- Apply a primitive operation to the given arguments.
+      The skipProof property is used internally. -/
   | PrimitiveOp (operator : Operation) (arguments : List (AstNode StmtExpr))
+    (skipProof: Bool := false)
   /-- Create new object (`new`). -/
   | New (ref : Identifier)
   /-- Reference to the current object (`this`/`self`). -/

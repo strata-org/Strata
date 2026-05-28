@@ -476,13 +476,13 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
           s!"Multi-output procedure '{callee'.text}' used in expression position; it returns {outputCount} values but only one can be used here. Use a multi-target assignment instead."
         modify fun s => { s with errors := s.errors.push diag }
     pure (.StaticCall callee' args')
-  | .PrimitiveOp op args =>
+  | .PrimitiveOp op args skipProof =>
     -- Resolve arguments in value context
     let saved := (← get).inValueContext
     modify fun s => { s with inValueContext := true }
     let args' ← args.mapM resolveStmtExpr
     modify fun s => { s with inValueContext := saved }
-    pure (.PrimitiveOp op args')
+    pure (.PrimitiveOp op args' skipProof)
   | .New ref =>
     let ref' ← resolveRef ref source
       (expected := #[.compositeType, .datatypeDefinition])
@@ -751,7 +751,7 @@ private def collectStmtExpr (map : Std.HashMap Nat ResolvedNode) (expr : StmtExp
     let map := collectStmtExpr map target
     collectStmtExpr map newVal
   | .StaticCall _ args => args.foldl collectStmtExpr map
-  | .PrimitiveOp _ args => args.foldl collectStmtExpr map
+  | .PrimitiveOp _ args _ => args.foldl collectStmtExpr map
   | .ReferenceEquals lhs rhs =>
     let map := collectStmtExpr map lhs
     collectStmtExpr map rhs

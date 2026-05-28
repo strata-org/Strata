@@ -68,11 +68,6 @@ structure TranslateState where
       why the program was deemed invalid so that if no other diagnostics explain
       the suppression, these can be surfaced to the user. -/
   coreDiagnostics : List DiagnosticModel := []
-  /-- When `true`, use safe division (`intSafeDivOp`) and safe datatype selectors
-      (with preconditions). When `false`, use unsafe division (`intDivOp`) and
-      unsafe datatype selectors (without preconditions).
-      Set to `true` for proof procedures and `false` for functions. -/
-  proof : Bool := false
 
 /-- The translation monad: state over Except, allowing both accumulated diagnostics and hard failures -/
 @[expose] abbrev TranslateM := OptionT (StateM TranslateState)
@@ -80,25 +75,6 @@ structure TranslateState where
 /-- Emit a diagnostic into the translation state (soft warning, does not abort) -/
 def emitDiagnostic (d : DiagnosticModel) : TranslateM Unit :=
   modify fun s => { s with diagnostics := s.diagnostics ++ [d] }
-
-/-- Adjust a datatype selector (destructor) name based on the `proof` flag.
-    Destructor names contain `..` (e.g. `IntList..head`, `IntList..head!`).
-    Tester names also contain `..` but start with `is` after the separator.
-    - `proof = true` → use safe selectors (strip `!` suffix)
-    - `proof = false` → use unsafe selectors (add `!` suffix) -/
-private def adjustSelectorName (name : String) (proof : Bool) : String :=
-  -- Only adjust destructor names (contain ".." but are not testers)
-  match name.splitOn ".." with
-  | [_, suffix] =>
-    if suffix.startsWith "is" then name  -- tester, leave unchanged
-    else if proof then
-      name
-      -- Safe: strip trailing "!"
-      -- if name.endsWith "!" then (name.dropEnd 1).toString else name
-    else
-      -- Unsafe: add trailing "!" if not already present
-      if name.endsWith "!" then name else name ++ "!"
-  | _ => name  -- not a destructor name, leave unchanged
 
 private def invalidCoreType (source : Option FileRange) (reason : String) : TranslateM LMonoTy := do
   modify fun s => { s with coreDiagnostics := s.coreDiagnostics ++
@@ -179,7 +155,6 @@ def translateExpr (expr : StmtExprMd)
   let s ← get
   let model := s.model
   let md := astNodeToCoreMd expr
-  let proof := (← get).proof
   let disallowed (source : Option FileRange) (msg : String) : TranslateM Core.Expression.Expr := do
     if isPureContext then
       throwExprDiagnostic $ diagnosticFromSource source msg
@@ -217,7 +192,8 @@ def translateExpr (expr : StmtExprMd)
       return .app () (if isReal then realNegOp else intNegOp) re
     | _ =>
       throwExprDiagnostic $ diagnosticFromSource expr.source s!"translateExpr: Invalid unary op: {repr op}" DiagnosticType.StrataBug
-  | .PrimitiveOp op [e1, e2] =>
+  | .PrimitiveOp op [e1, e2] skipProof =>
+    let proof := !skipProof
     let re1 ← translateExpr e1 boundVars isPureContext
     let re2 ← translateExpr e2 boundVars isPureContext
     let binOp (bop : Core.Expression.Expr) : Core.Expression.Expr :=
@@ -237,9 +213,9 @@ def translateExpr (expr : StmtExprMd)
     | .Sub => return binOp (if isReal then realSubOp else intSubOp)
     | .Mul => return binOp (if isReal then realMulOp else intMulOp)
     | .Div => return binOp (if isReal then realDivOp else if proof then intSafeDivOp else intDivOp)
-    | .Mod => return binOp (if (← get).proof then intSafeModOp else intModOp)
-    | .DivT => return binOp (if (← get).proof then intSafeDivTOp else intDivTOp)
-    | .ModT => return binOp (if (← get).proof then intSafeModTOp else intModTOp)
+    | .Mod => return binOp (if proof then intSafeModOp else intModOp)
+    | .DivT => return binOp (if proof then intSafeDivTOp else intDivTOp)
+    | .ModT => return binOp (if proof then intSafeModTOp else intModTOp)
     | .Lt => return binOp (if isReal then realLtOp else intLtOp)
     | .Leq => return binOp (if isReal then realLeOp else intLeOp)
     | .Gt => return binOp (if isReal then realGtOp else intGtOp)
@@ -247,7 +223,7 @@ def translateExpr (expr : StmtExprMd)
     | .StrConcat => return binOp strConcatOp
     | _ =>
         throwExprDiagnostic $ diagnosticFromSource expr.source s!"Invalid binary op: {repr op}" DiagnosticType.NotYetImplemented
-  | .PrimitiveOp op args =>
+  | .PrimitiveOp op args _ =>
       throwExprDiagnostic $ diagnosticFromSource expr.source s!"PrimitiveOp {repr op} with {args.length} args is not supported" DiagnosticType.UserError
   | .IfThenElse cond thenBranch elseBranch =>
       let bcond ← translateExpr cond boundVars isPureContext
@@ -266,8 +242,7 @@ def translateExpr (expr : StmtExprMd)
       if isPureContext && !model.isFunction callee then
         disallowed expr.source s!"calls to procedures are not supported in functions or contracts"
       else
-        let calleeName := adjustSelectorName callee.text (← get).proof
-        let fnOp : Core.Expression.Expr := .op () ⟨calleeName, ()⟩ none
+        let fnOp : Core.Expression.Expr := .op () ⟨callee.text, ()⟩ none
         args.attach.foldlM (fun acc ⟨arg, _⟩ => do
           let re ← translateExpr arg boundVars isPureContext
           return .app () acc re) fnOp
@@ -756,7 +731,6 @@ def translateLaurelToCore (options: LaurelTranslateOptions) (program : Program) 
 
   let coreDecls ← ordered.decls.flatMapM fun
     | .funcs funcs isRecursive => do
-      modify fun s => { s with proof := false }
       let nonExternal := funcs.filter (fun p => !p.body.isExternal)
       let coreFuncs ← nonExternal.mapM (translateProcedureToFunction options isRecursive)
       if isRecursive then
@@ -767,7 +741,6 @@ def translateLaurelToCore (options: LaurelTranslateOptions) (program : Program) 
       else
         return coreFuncs
     | .procedure proc => do
-      modify fun s => { s with proof := true }
       let procDecl ← translateProcedure proc
       -- Translate axioms from invokeOn
       let invokeOnDecls ← match proc.invokeOn with

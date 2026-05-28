@@ -55,6 +55,21 @@ def stripAssertAssume (expr : StmtExprMd) : StmtExprMd :=
       | _ => ⟨.Block stmts' label, e.source⟩
     | _ => e) expr
 
+/-- Adjust a datatype selector (destructor) name based on the `proof` flag.
+    Destructor names contain `..` (e.g. `IntList..head`, `IntList..head!`).
+    Tester names also contain `..` but start with `is` after the separator.
+    - `proof = true` → use safe selectors (strip `!` suffix)
+    - `proof = false` → use unsafe selectors (add `!` suffix) -/
+private def adjustSelectorName (name : String) : String :=
+  -- Only adjust destructor names (contain ".." but are not testers)
+  match name.splitOn ".." with
+  | [_, suffix] =>
+    if suffix.startsWith "is" then name  -- tester, leave unchanged
+    else
+      -- Unsafe: add trailing "!" if not already present
+      if name.endsWith "!" then name else name ++ "!"
+  | _ => name  -- not a destructor name, leave unchanged
+
 /-- Rewrite StaticCall callees to their `$asFunction` versions,
     but only for procedures whose names appear in `nonExternalNames`. -/
 private def rewriteCallsToFunctional (asFunctionNames : List String) (expr : StmtExprMd) : StmtExprMd :=
@@ -64,7 +79,10 @@ private def rewriteCallsToFunctional (asFunctionNames : List String) (expr : Stm
       if asFunctionNames.contains callee.text then
         let funcCallee := { callee with text := callee.text ++ "$asFunction", uniqueId := none }
         ⟨.StaticCall funcCallee args, e.source⟩
-      else e
+      else
+        let newName := adjustSelectorName callee.text
+        ⟨ .StaticCall newName args, e.source⟩
+    | .PrimitiveOp operator arguments _ => ⟨ .PrimitiveOp operator arguments true, e.source⟩
     | _ => e) expr
 
 /-- Build a free postcondition equating the procedure's output to its functional version.
