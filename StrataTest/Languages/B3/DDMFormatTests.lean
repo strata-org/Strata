@@ -128,7 +128,7 @@ mutual
 end
 
 -- Create a minimal B3 program to get the dialect context
-def b3Program : SourcedProgram := #strata program B3CST; #end
+def b3Program : Program := #strata program B3CST; #end
 
 -- Helper to convert OperationF Unit to OperationF SourceRange
 def operationFUnitToSourceRange (op : OperationF Unit) : OperationF SourceRange :=

@@ -28,7 +28,7 @@ def testTrue := #strata program TestBool; print true; #end
 info: "program TestBool;\nprint true;"
 -/
 #guard_msgs in
-#eval toString testTrue.program.format
+#eval toString testTrue.format
 
 -- Test parsing with false
 def testFalse := #strata program TestBool; print false; #end
@@ -37,7 +37,7 @@ def testFalse := #strata program TestBool; print false; #end
 info: "program TestBool;\nprint false;"
 -/
 #guard_msgs in
-#eval toString testFalse.program.format
+#eval toString testFalse.format
 
 -- Test parsing with if-then-else using booleans
 def testIfThenElse := #strata
@@ -49,7 +49,7 @@ print if true then false else true;
 info: "program TestBool;\nprint if true then false else (true);"
 -/
 #guard_msgs in
-#eval toString testIfThenElse.program.format
+#eval toString testIfThenElse.format
 
 -- Test that we can use booleans in nested expressions
 def testNested := #strata
@@ -61,4 +61,4 @@ print if true then if false then true else false else true;
 info: "program TestBool;\nprint if true then if false then true else (false) else (true);"
 -/
 #guard_msgs in
-#eval toString testNested.program.format
+#eval toString testNested.format

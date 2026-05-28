@@ -140,7 +140,7 @@ The returned program includes forward declarations of types from the
 Laurel prelude; callers should filter out duplicates when merging.
 -/
 def PythonLaurelCorePrelude : Core.Program :=
-  Core.getProgram PythonLaurelCorePreludeDDM.program |>.fst
+  Core.getProgram PythonLaurelCorePreludeDDM |>.fst
 
 /--
 Get only the Core-only declarations, dropping the forward declarations

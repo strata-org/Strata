@@ -22,8 +22,8 @@ fn xor (a : bool, b : bool) : bool => @[prec(12)] a " ^^ " b;
 op assert (b : bool) : Command => "assert " b ";\n";
 #end
 
-def ppParen (pgm : Strata.SourcedProgram) :=
-  IO.println <| toString <| pgm.program |>.format {alwaysParen := true }
+def ppParen (pgm : Strata.Program) :=
+  IO.println <| toString <| pgm |>.format {alwaysParen := true }
 
 /--
 info: program TestPrec;

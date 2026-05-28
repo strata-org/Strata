@@ -341,7 +341,7 @@ datatype PyAnyType () {
 #end
 
 def Core.prelude : Core.Program :=
-   Core.getProgram corePrelude.program |>.fst
+   Core.getProgram corePrelude |>.fst
 
 end -- public section
 end Python

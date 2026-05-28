@@ -40,7 +40,7 @@ result := |special-name| + |name with spaces| + |name@with#special$chars| + |123
 #eval (#strata
 program PipeIdent;
 result := |special-name| + |name with spaces| + |name@with#special$chars| + |123numeric| + |name-with-émojis-🎉| + |name«with»guillemets| + regularName;
-#end).program.format
+#end).format
 
 -- || operator is not confused with pipe-delimited identifiers
 /--
@@ -51,7 +51,7 @@ result := |special-name| || regularName;
 #eval (#strata
 program PipeIdent;
 result := |special-name| || regularName;
-#end).program.format
+#end).format
 
 -- Operator-like identifiers
 /--
@@ -63,7 +63,7 @@ result := |++| + |--| + |**|;
 program PipeIdent;
 result := |++| + |--|
   + |**|;
-#end).program.format
+#end).format
 
 -- Escape sequences (SMT-LIB 2.6 spec)
 /--
@@ -75,7 +75,7 @@ result := |name\|with\|pipes| + |path\\to\\file|;
 program PipeIdent;
 result := |name\|with\|pipes| +
   |path\\to\\file|;
-#end).program.format
+#end).format
 
 -- Single | operator coexists with |identifier|
 /--
@@ -86,7 +86,7 @@ result := |x-value| | |y-value| | regularVar;
 #eval (#strata
 program PipeIdent;
 result := |x-value| | |y-value| | regularVar;
-#end).program.format
+#end).format
 
 -- Identifiers with dots don't require pipe delimiters
 /--
@@ -97,7 +97,7 @@ result := qualified.name + another.dotted.identifier + x.y;
 #eval (#strata
 program PipeIdent;
 result := qualified.name + another.dotted.identifier + x.y;
-#end).program.format
+#end).format
 
 -- Identifiers with consecutive dots
 /--
@@ -108,7 +108,7 @@ result := a..b + x...y + trailing..end;
 #eval (#strata
 program PipeIdent;
 result := a..b + x...y + trailing..end;
-#end).program.format
+#end).format
 
 -- Verify escape sequences are unescaped in AST (not just round-trip)
 def testEscapeAST := #strata
@@ -170,4 +170,4 @@ error: unterminated pipe-delimited identifier
 #eval (#strata
 program PipeIdentNoSpace;
 normalId|pipe;
-#end).program.format
+#end).format

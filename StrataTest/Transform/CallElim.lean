@@ -186,16 +186,16 @@ procedure h(inout j : bool, k : bool) {
 };
 #end
 
-def translate (t : Strata.SourcedProgram) : Core.Program := (TransM.run Inhabited.default (translateProgram t.program)).fst
+def translate (t : Strata.Program) : Core.Program := (TransM.run Inhabited.default (translateProgram t)).fst
 
 def env : Lambda.LContext CoreLParams := .default (functions := Core.Factory)
 
-def tests : List (Core.Program × Core.Program) := ([
-  (CallElimTest1, CallElimTest1Ans),
-  (CallElimTest2, CallElimTest2Ans),
-  (CallElimTest3, CallElimTest3Ans),
-  (CallElimTestFreeRequires, CallElimTestFreeRequiresAns),
-] : List (SourcedProgram × SourcedProgram)).map (Prod.map translate translate)
+def tests : List (Core.Program × Core.Program) := [
+  (translate CallElimTest1,            translate CallElimTest1Ans),
+  (translate CallElimTest2,            translate CallElimTest2Ans),
+  (translate CallElimTest3,            translate CallElimTest3Ans),
+  (translate CallElimTestFreeRequires, translate CallElimTestFreeRequiresAns),
+]
 
 def callElim (p : Core.Program)
   : Core.Program :=
