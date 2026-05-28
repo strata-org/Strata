@@ -567,7 +567,7 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
             let seqArgs ← args.reverse.mapM transformExpr
             let argPrepends ← takePrepends
             modify fun s => { s with subst := [] }
-            return argPrepends ++ [⟨.Assign targets ⟨.StaticCall callee seqArgs, source⟩, source⟩]
+            return argPrepends ++ [⟨.Assign targets ⟨.StaticCall callee seqArgs.reverse, source⟩, source⟩]
       | _ =>
           let seqValue ← transformExpr valueMd
           let prepends ← takePrepends
