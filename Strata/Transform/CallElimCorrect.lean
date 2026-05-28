@@ -37,10 +37,6 @@ public section
 
 -- inidividual lemmas
 
-private theorem createHavocsApp :
-createHavocs (a ++ b) md = createHavocs a md ++ createHavocs b md := by
-simp [createHavocs]
-
 private theorem createFvarsApp :
 createFvars (a ++ b) = createFvars a ++ createFvars b := by
 simp [createFvars]
@@ -77,6 +73,11 @@ private theorem nodup_3_decompose {α} {a b c : List α}
   let Hab := List.nodup_append.mp Hsplit.1
   let ⟨Hd_ab, Hd_ac, Hd_bc⟩ := List.disjoint_of_nodup_append_three Hnd
   ⟨Hab.1, Hab.2.1, Hsplit.2.1, Hd_ab, Hd_ac, Hd_bc⟩
+
+/-- Build `x ∉ a ++ b ++ c` from per-list non-membership. -/
+private theorem notin_3_append_of {α} [DecidableEq α] {a b c : List α} {x : α}
+    (h₁ : x ∉ a) (h₂ : x ∉ b) (h₃ : x ∉ c) : x ∉ a ++ b ++ c := by
+  simp only [List.mem_append, not_or]; exact ⟨⟨h₁, h₂⟩, h₃⟩
 
 /-- `Map.find?_append` "some" branch packaged: if a key resolves to `some v`
     in `l₁` and to `some w` in `l₁ ++ l₂`, then `v = w`. -/
@@ -634,27 +635,7 @@ private theorem inputOnlyOldSubst_pos_decomp
     simp only [Hg] at HH
     exact absurd HH (by simp)
 
-/-- For an entry of `conds.filter f`, its `.snd.expr` is contained in
-    `getCheckExprs conds` (in `.contains` form).  Used at both the
-    pre-filtered and post-filtered sites of `callElimStatementCorrect` to
-    bridge filter membership to the `.contains` argument expected by the
-    `Hpre`/`Hpost` hypotheses from `call_sem`. -/
-private theorem filterCheck_in_getCheckExprs [LawfulBEq Expression.Expr]
-    {conds : ListMap CoreLabel Procedure.Check}
-    {f : CoreLabel × Procedure.Check → Bool}
-    {entry : CoreLabel × Procedure.Check}
-    (Hentry : entry ∈ conds.filter f) :
-    (Procedure.Spec.getCheckExprs conds).contains entry.snd.expr := by
-  have Hin_full := (List.mem_filter.mp Hentry).1
-  apply List.contains_iff_mem.mpr
-  simp only [Procedure.Spec.getCheckExprs, List.mem_map]
-  refine ⟨entry.snd, ?_, rfl⟩
-  rw [ListMap.values_eq_map_snd]
-  exact List.mem_map_of_mem Hin_full
-
-/-- Membership form of `filterCheck_in_getCheckExprs`: the entry's
-    `.snd.expr` lies in `getCheckExprs conds` (as a `List` membership
-    predicate, not the `.contains` boolean form). -/
+/-- Membership form: the entry's `.snd.expr` lies in `getCheckExprs conds`. -/
 private theorem filterCheck_mem_getCheckExprs
     {conds : ListMap CoreLabel Procedure.Check}
     {f : CoreLabel × Procedure.Check → Bool}
@@ -666,6 +647,18 @@ private theorem filterCheck_mem_getCheckExprs
   refine ⟨entry.snd, ?_, rfl⟩
   rw [ListMap.values_eq_map_snd]
   exact List.mem_map_of_mem Hin_full
+
+/-- `.contains` form of `filterCheck_mem_getCheckExprs`. Used at the
+    pre-filtered and post-filtered sites of `callElimStatementCorrect` to
+    bridge filter membership to the `.contains` argument expected by the
+    `Hpre`/`Hpost` hypotheses from `call_sem`. -/
+private theorem filterCheck_in_getCheckExprs [LawfulBEq Expression.Expr]
+    {conds : ListMap CoreLabel Procedure.Check}
+    {f : CoreLabel × Procedure.Check → Bool}
+    {entry : CoreLabel × Procedure.Check}
+    (Hentry : entry ∈ conds.filter f) :
+    (Procedure.Spec.getCheckExprs conds).contains entry.snd.expr :=
+  List.contains_iff_mem.mpr (filterCheck_mem_getCheckExprs Hentry)
 
 /-- Store-agreement helper for `σ_R1`-style stacks (the σ_R1 layer
     overlaying `genOldIdents ↦ oldVals` on σO, plus the σO ← σAO ←
@@ -2087,6 +2080,19 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     rw [Hπ] at lkup
                     rw [Hfind] at lkup
                     exact (Option.some_inj.mp lkup.symm).symm
+                  -- Bridge `c ∈ proc'.spec.postconditions.values` to
+                  -- `c.expr ∈ getCheckExprs proc.spec.postconditions` via HprocEq.
+                  have c_in_postExprs_of_proc' :
+                      ∀ c, c ∈ proc'.spec.postconditions.values →
+                        c.expr ∈ Procedure.Spec.getCheckExprs
+                                    proc.spec.postconditions := by
+                    intro c Hc_in
+                    simp only [Procedure.Spec.getCheckExprs, List.mem_map]
+                    refine ⟨c, ?_, rfl⟩
+                    rw [HprocEq] at Hc_in
+                    rw [ListMap.values_eq_map_snd]
+                    rw [ListMap.values_eq_map_snd] at Hc_in
+                    exact Hc_in
                   -- Specialize Hwfcallsite (over `proc`) to the call form;
                   -- spike uses `proc'` which HprocEq bridges.
                   obtain ⟨HpreVarsFresh, HpostVarsFresh, HargVarsNotInLhs,
@@ -2101,17 +2107,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         ¬ isTempIdent v ∧ ¬ isOldTempIdent v ∧
                         v ∉ CallArg.getLhs args := by
                     intro c Hc_in v Hv
-                    have Hin_full :
-                        c.expr ∈ Procedure.Spec.getCheckExprs
-                                    proc.spec.postconditions := by
-                      simp only [Procedure.Spec.getCheckExprs, List.mem_map]
-                      refine ⟨c, ?_, rfl⟩
-                      have Hc_in' := Hc_in
-                      rw [HprocEq] at Hc_in'
-                      rw [ListMap.values_eq_map_snd]
-                      rw [ListMap.values_eq_map_snd] at Hc_in'
-                      exact Hc_in'
-                    exact HpostVarsFresh c.expr Hin_full v Hv
+                    exact HpostVarsFresh c.expr (c_in_postExprs_of_proc' c Hc_in) v Hv
                   -- C-aux: hoisted disjointness facts (used by L4 + L6).
                   have HinputsFresh :
                       ∀ v ∈ proc.header.inputs.keys,
@@ -2625,11 +2621,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       (argTemps ++
                         outTemps ++ genOldIdents)
                       (argVals ++ oVals ++ oldVals) v).isSome = true
-                    have Hv_notin :
-                        v ∉ argTemps ++
-                              outTemps ++ genOldIdents := by
-                      simp only [List.mem_append, not_or]
-                      exact ⟨⟨HlhsDisjArg Hv, HlhsDisjOut Hv⟩, HlhsDisjOld Hv⟩
+                    have Hv_notin : v ∉ argTemps ++ outTemps ++ genOldIdents :=
+                      notin_3_append_of (HlhsDisjArg Hv) (HlhsDisjOut Hv) (HlhsDisjOld Hv)
                     rw [updatedStates_get_notin Hv_notin]
                     exact HavocVarsDefined (UpdateStatesHavocVars Hupdate) v Hv
                   -- σ_havoc definedness on filtered_argTemps.
@@ -2672,10 +2665,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         Hk_ins Hk_outs Hk_genOld
                     have H5 : σ k = σ' k := by
                       rw [Hσ'_eq, updatedStates_get_notin Hk_lhs]
-                    have Hk_notin_layered :
-                        k ∉ argTemps ++ outTemps ++ genOldIdents := by
-                      simp only [List.mem_append, not_or]
-                      exact ⟨⟨Hk_argT, Hk_outT⟩, Hk_genOld⟩
+                    have Hk_notin_layered : k ∉ argTemps ++ outTemps ++ genOldIdents :=
+                      notin_3_append_of Hk_argT Hk_outT Hk_genOld
                     have H6 : σ' k = σ_havoc k := by
                       show σ' k = updatedStates σ'
                         (argTemps ++ outTemps ++ genOldIdents)
@@ -2693,11 +2684,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                   have Hσ_havoc_lhs_eq :
                       ∀ v ∈ lhs, σ_havoc v = σ' v := by
                     intro v Hv
-                    have Hv_notin :
-                        v ∉ argTemps ++
-                              outTemps ++ genOldIdents := by
-                      simp only [List.mem_append, not_or]
-                      exact ⟨⟨HlhsDisjArg Hv, HlhsDisjOut Hv⟩, HlhsDisjOld Hv⟩
+                    have Hv_notin : v ∉ argTemps ++ outTemps ++ genOldIdents :=
+                      notin_3_append_of (HlhsDisjArg Hv) (HlhsDisjOut Hv) (HlhsDisjOld Hv)
                     show updatedStates σ'
                       (argTemps ++
                         outTemps ++ genOldIdents)
@@ -3055,26 +3043,15 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     exact HlhsDisjArg Hb Ha
                   have Hbignd_L4 :
                       (ks_L4 ++ ks'_L4).Nodup := by
-                    show ((proc.header.inputs.keys ++
-                            proc.header.outputs.keys) ++
-                          (argTemps ++ lhs)).Nodup
                     rw [List.nodup_append]
-                    refine ⟨Hinoutnd, HargT_lhs_nd, ?_⟩
-                    intro a Ha b Hb Heq
+                    refine ⟨Hinoutnd, HargT_lhs_nd, fun a Ha b Hb Heq => ?_⟩
                     subst Heq
-                    cases List.mem_append.mp Ha with
-                    | inl HaIn =>
-                      cases List.mem_append.mp Hb with
-                      | inl HbArg =>
-                        exact HinKeys_disj_argTemps HaIn HbArg
-                      | inr HbLhs =>
-                        exact HinKeys_disj_lhs HaIn HbLhs
-                    | inr HaOut =>
-                      cases List.mem_append.mp Hb with
-                      | inl HbArg =>
-                        exact HoutKeys_disj_argTemps HaOut HbArg
-                      | inr HbLhs =>
-                        exact HoutKeys_disj_lhs HaOut HbLhs
+                    rcases List.mem_append.mp Ha with HaIn | HaOut <;>
+                      rcases List.mem_append.mp Hb with HbArg | HbLhs
+                    · exact HinKeys_disj_argTemps HaIn HbArg
+                    · exact HinKeys_disj_lhs HaIn HbLhs
+                    · exact HoutKeys_disj_argTemps HaOut HbArg
+                    · exact HoutKeys_disj_lhs HaOut HbLhs
                   have Hnd_L4 : Imperative.substNodup
                       (ks_L4.zip ks'_L4) := by
                     unfold Imperative.substNodup
@@ -3789,15 +3766,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     rw [Hbridge]
                     -- Now `δ σO c.expr = some HasBool.tt`.
                     -- Bridge proc'.spec.postconditions ↔ proc.spec.postconditions.
-                    have Hin_full :
-                        c.expr ∈ Procedure.Spec.getCheckExprs
-                                    proc.spec.postconditions := by
-                      simp only [Procedure.Spec.getCheckExprs, List.mem_map]
-                      refine ⟨c, ?_, rfl⟩
-                      rw [HprocEq] at Hc_in
-                      rw [ListMap.values_eq_map_snd]
-                      rw [ListMap.values_eq_map_snd] at Hc_in
-                      exact Hc_in
+                    have Hin_full := c_in_postExprs_of_proc' c Hc_in
                     have Hin_contains :
                         (Procedure.Spec.getCheckExprs
                             proc.spec.postconditions).contains c.expr = true :=
@@ -3888,13 +3857,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         (_Hf : Map.find? oldSubst_L6 k = some w)
                         (_Hv_in : var ∈ Imperative.HasVarsPure.getVars
                                           (P:=Expression) w),
-                      ∃ (ni2 : Nat) (Hni2 : ni2 < proc'.header.inputs.keys.length)
-                          (Hni2' : ni2 < inArgs.length),
-                        w = inArgs[ni2]'Hni2' ∧
-                        w ∈ inArgs ∧
                         w ∈ CallArg.getInputExprs args ∧
-                        (proc'.header.inputs.keys[ni2]'Hni2)
-                          ∉ proc'.header.outputs.keys ∧
                         var ∈ List.flatMap
                                 (Imperative.HasVarsPure.getVars (P:=Expression))
                                 inArgs := by
@@ -3902,8 +3865,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     have Hin_some :
                         Map.find? inputOnlyOldSubst_L6 k = some w :=
                       find?_append_none_elim hfind_none Hf
-                    obtain ⟨ni2_val, Hni2_lt_inKeys, Hni2_lt_inArgs,
-                            _Hk_eq_proc', Hw_eq_proc', Hin_notin_outs⟩ :=
+                    obtain ⟨ni2_val, _Hni2_lt_inKeys, Hni2_lt_inArgs,
+                            _Hk_eq_proc', Hw_eq_proc', _Hin_notin_outs⟩ :=
                       inputOnlyOldSubst_pos_decomp Hin_some
                     have HargExpr_def :
                         w = (CallArg.getInputExprs args)[ni2_val]'Hni2_lt_inArgs :=
@@ -3930,9 +3893,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                               inArgs := by
                       rw [List.mem_flatMap]
                       exact ⟨w, Hk1_in_inArgs, Hv_in⟩
-                    refine ⟨ni2_val, Hni2_lt_inKeys, Hni2_lt_inArgsCall,
-                            HargExpr_eq_inArgs, Hk1_in_inArgs, HargExpr_in,
-                            Hin_notin_outs, Hk1_flat⟩
+                    exact ⟨HargExpr_in, Hk1_flat⟩
                   have Hinv :
                       ∀ entry : CoreLabel × Procedure.Check,
                         entry ∈ posts_filtered_L6.toList →
@@ -4056,9 +4017,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         rw [Hv_eq_gen, Hσ_R1_v, Hσ_havoc_v]
                       | none =>
                         -- (b2) inputOnlyOldSubst flavor — via shared helper.
-                        obtain ⟨_ni2_val, _Hni2_lt_inKeys, _Hni2_lt_inArgs,
-                                _HargExpr_eq_inArgs, _Hk1_in_inArgs, HargExpr_in,
-                                _Hin_notin_outs, Hk1_flat⟩ :=
+                        obtain ⟨HargExpr_in, Hk1_flat⟩ :=
                           b2_var_witness hfind Hf Hv_in
                         -- k1 ∈ getVars w.  By HargVarsNotIn{Out,In}Keys:
                         have Hk1_notin_outs' :
@@ -4167,9 +4126,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                             Hx_isTemp Hx_isOld
                       | none =>
                         -- (b2) inputOnlyOldSubst flavor — via shared helper.
-                        obtain ⟨_ni2_val, _Hni2_lt_inKeys, _Hni2_lt_inArgs,
-                                _HargExpr_eq_inArgs, _Hk1_in_inArgs, HargExpr_in,
-                                _Hin_notin_outs, Hx_flat⟩ :=
+                        obtain ⟨HargExpr_in, Hx_flat⟩ :=
                           b2_var_witness hfind Hf Hv_in
                         -- x ∈ σ-defined via Hevalargs.
                         have HargIsDef :
