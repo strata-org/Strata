@@ -1680,8 +1680,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     (vs := argVals ++ oVals ++ oldVals)
                 rotate_left
                 · -- length of `hs` = length of `vs` (segment-wise close)
-                  simp [argTemps, outTemps, List.length_append, List.unzip_eq_map,
-                        Hargtriplen, Houttriplen, HgenOldOldValsLen]
+                  simp [argTemps, outTemps, List.length_append, List.unzip_eq_map, Hargtriplen, Houttriplen, HgenOldOldValsLen]
                 · exact Hndefgen
                 · exact Hgennd
                 -- σ'' is the updatedStates σ' … form; D2 may use InitsUpdatesComm.
@@ -2581,8 +2580,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         outTemps ++ genOldIdents)
                       (argVals ++ oVals ++ oldVals) v).isSome = true
                     apply updatedStatesDefined
-                    · simp [argTemps, outTemps, List.length_append, List.unzip_eq_map,
-                            Hargtriplen, Houttriplen, HgenOldOldValsLen]
+                    · simp [argTemps, outTemps, List.length_append, List.unzip_eq_map, Hargtriplen, Houttriplen, HgenOldOldValsLen]
                     · simp only [List.mem_append]
                       exact Or.inl (Or.inl Hv_argT)
                   -- Now assemble Hdef.
@@ -2723,8 +2721,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                   have Hrd_havoc_lhs :
                       ReadValues σ_havoc lhs modvals := by
                     apply readValues_updatedStates
-                    · simp [argTemps, outTemps, List.length_append, List.unzip_eq_map,
-                            Hargtriplen, Houttriplen, HgenOldOldValsLen]
+                    · simp [argTemps, outTemps, List.length_append, List.unzip_eq_map, Hargtriplen, Houttriplen, HgenOldOldValsLen]
                     · intro v Hv1 Hv2
                       cases List.mem_append.mp Hv2 with
                       | inl h => cases List.mem_append.mp h with
