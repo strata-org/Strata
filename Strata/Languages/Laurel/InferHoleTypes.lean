@@ -107,7 +107,7 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd) : InferHol
       else
         modify fun s => { s with statistics := s.statistics.increment s!"{InferHoleTypesStats.holesAnnotated}" }
         return ⟨.Hole det (some expectedType), source⟩
-  | .PrimitiveOp op args =>
+  | .PrimitiveOp op args _ =>
       let argType := match op with
         | .Eq | .Neq | .Lt | .Leq | .Gt | .Geq => inferComparisonArgType model args source
         | _ =>

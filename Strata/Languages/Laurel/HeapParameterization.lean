@@ -76,7 +76,7 @@ def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
         | .Local _ | .Declare _ => pure ()
       collectExprMd v
   | .PureFieldUpdate t _ v => collectExprMd t; collectExprMd v
-  | .PrimitiveOp _ args => for a in args do collectExprMd a
+  | .PrimitiveOp _ args _ => for a in args do collectExprMd a
   | .New _ => modify fun s => { s with writesHeapDirectly := true }
   | .ReferenceEquals l r => collectExprMd l; collectExprMd r
   | .AsType t _ => collectExprMd t
@@ -399,7 +399,7 @@ where
       return newAssign :: suffixes
 
     | .PureFieldUpdate t f v => return [⟨ .PureFieldUpdate (← recurseOne t) f (← recurseOne v), source ⟩]
-    | .PrimitiveOp op args =>
+    | .PrimitiveOp op args _ =>
       let args' ← args.mapM (recurseOne ·)
       -- For == and != on Composite types, compare refs instead
       match op, args with

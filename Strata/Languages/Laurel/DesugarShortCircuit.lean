@@ -30,7 +30,7 @@ private def desugarShortCircuitNode (imperativeCallees : List String) (expr : St
   let source := expr.source
   let wrap (v : StmtExpr) : StmtExprMd := ⟨v, source⟩
   match expr.val with
-  | .PrimitiveOp op args =>
+  | .PrimitiveOp op args _ =>
     match op, args with
     -- With bottom-up traversal, `a` and `b` are already desugared (nested
     -- short-circuits converted to IfThenElse). The check still works because

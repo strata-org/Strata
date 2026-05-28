@@ -168,7 +168,7 @@ def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
     invs.attach.foldl (fun acc ⟨inv, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr model inv) errs
   | .Assert cond => validateDiamondFieldAccessesForStmtExpr model cond.condition
   | .Assume cond => validateDiamondFieldAccessesForStmtExpr model cond
-  | .PrimitiveOp _ args =>
+  | .PrimitiveOp _ args _ =>
     args.attach.foldl (fun acc ⟨a, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr model a) []
   | .StaticCall _ args =>
     args.attach.foldl (fun acc ⟨a, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr model a) []
