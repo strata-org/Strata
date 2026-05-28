@@ -10,6 +10,7 @@ public import Strata.Languages.Core.Expressions
 import Strata.Util.Tactics
 public import StrataDDM.Util.Decimal
 public import Strata.Util.FileRange
+open StrataDDM
 
 /-
 Documentation for Laurel can be found in docs/verso/LaurelDoc.lean

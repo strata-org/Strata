@@ -9,6 +9,7 @@ meta import Strata.Languages.Core.Core
 import StrataDDM.Integration.Lean.HashCommands
 
 meta section
+open StrataDDM (Program)
 
 /-!
 # Mutual Recursive Function Error Tests

@@ -418,7 +418,7 @@ private def summaryMd (summary : String) : Imperative.MetaData Core.Expression :
 /-- Metadata carrying only a file range (no property summary); used to
     exercise `addLocationInfo`. -/
 private def fileRangeMd (file : String) : Imperative.MetaData Core.Expression :=
-  Imperative.MetaData.ofProvenance (Strata.Provenance.ofSourceRange (.file file) Strata.SourceRange.none)
+  Imperative.MetaData.ofProvenance (Strata.Provenance.ofSourceRange (.file file) StrataDDM.SourceRange.none)
 
 /-! Embedded double quotes in the property summary must be doubled (`""`). -/
 /--

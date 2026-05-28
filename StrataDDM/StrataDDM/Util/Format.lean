@@ -7,6 +7,8 @@ module
 
 import all StrataDDM.Util.String
 
+open StrataDDM (escapeStringLit)
+
 namespace Std.Format
 
 def appendSpaces (s : String) (n : Nat) : String :=
@@ -20,7 +22,7 @@ def repr (fmt : Std.Format) (indent : Nat) : String :=
   | .nil => sline "nil" indent
   | .line => sline "line" indent
   | .align n => sline s!"align {n}" indent
-  | .text msg => sline s!"text {Strata.escapeStringLit msg}" indent
+  | .text msg => sline s!"text {escapeStringLit msg}" indent
   | .nest n fmt => sline s!"nest {n}" indent ++ repr fmt (indent + 2)
   | .append x y => repr x indent ++ repr y indent
   | .group f _ => sline "group" indent ++ repr f (indent + 2)

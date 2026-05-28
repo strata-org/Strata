@@ -8,7 +8,7 @@ import StrataBoole.MetaVerifier
 
 open Strata
 
-def loop_simple_program : Strata.Program :=
+def loop_simple_program : StrataDDM.Program :=
 #strata
 program Boole;
 

@@ -14,10 +14,10 @@ set_option autoImplicit false
 
 open Lean (Syntax Message)
 
-open Strata.Parser (DeclParser InputContext Parser ParsingContext)
+open StrataDDM.Parser (DeclParser InputContext Parser ParsingContext)
 
 public section
-namespace Strata
+namespace StrataDDM
 
 def infoSourceRange (info : Lean.SourceInfo) : Option SourceRange :=
   match info with
@@ -382,5 +382,5 @@ def addTypeOrCatDecl (dialect : DialectName) (tpcd : TypeOrCatDecl) : DeclM Unit
     s with typeOrCatDeclMap := s.typeOrCatDeclMap.add dialect tpcd
   }
 
-end Strata.Elab
+end StrataDDM.Elab
 end

@@ -20,7 +20,7 @@ Near-upstream anchors from `differential_status.md`:
 - Remaining gap: bounded recursive unfolding tied to `reveal_with_fuel`
 -/
 
-private def revealWithFuelSeed : Strata.Program :=
+private def revealWithFuelSeed : StrataDDM.Program :=
 #strata
 program Boole;
 

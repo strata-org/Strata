@@ -9,7 +9,7 @@ public import StrataDDM.AST
 import all StrataDDM.Util.Array
 
 public section
-namespace Strata
+namespace StrataDDM
 
 /--
 Array ofelements whose sizes are bounded by a value.
@@ -36,5 +36,5 @@ protected def hnf {α} (e0 : ExprF α) : HNF e0 :=
   aux e0 #[] (by simp)
 
 end ExprF
-end Strata
+end StrataDDM
 end

@@ -14,12 +14,13 @@ public section
 
 namespace Strata.Boole
 
+open StrataDDM
 open Lambda
 
 /--
 Boole verification pipeline:
 
-`Strata.Program` -> `BooleDDM.Program.ofAst` -> `BooleDDM.Program`
+`StrataDDM.Program` -> `BooleDDM.Program.ofAst` -> `BooleDDM.Program`
 -> `toCoreProgram` -> `Core.Program` -> `Core.verify`
 -/
 
@@ -881,7 +882,7 @@ def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Dec
     return [.type (.data (← decls.toList.mapM toCoreDatatypeDecl)) .empty]
 
 /-- Render a `Boole.Program` to a format object using the provided `GlobalContext` and
-`DialectMap`. These should come from the originating `Strata.Program` (i.e. `env.globalContext`
+`DialectMap`. These should come from the originating `StrataDDM.Program` (i.e. `env.globalContext`
 and `env.dialects`), since fvar indices in `prog` are relative to that context.
 
 This mirrors `Core.formatProgram`: both functions accept an external context rather than
@@ -932,7 +933,7 @@ def toCoreProgram (p : Boole.Program) (gctx : GlobalContext := {}) (fileName : S
 open Lean.Parser in
 
 /-- Parse Boole syntax using generated `BooleDDM.Program.ofAst`. -/
-def getProgram (p : Strata.Program) : Except DiagnosticModel Boole.Program := do
+def getProgram (p : StrataDDM.Program) : Except DiagnosticModel Boole.Program := do
   let cmds : Array Arg := p.commands.map ArgF.op
   let progOp : Operation :=
     { ann := default
@@ -942,14 +943,14 @@ def getProgram (p : Strata.Program) : Except DiagnosticModel Boole.Program := do
   | .ok prog => return prog
   | .error e => throw (.fromMessage e)
 
-def typeCheck (p : Strata.Program) (options : Core.VerifyOptions := .default) : Except DiagnosticModel Core.Program := do
+def typeCheck (p : StrataDDM.Program) (options : Core.VerifyOptions := .default) : Except DiagnosticModel Core.Program := do
   let prog ← getProgram p
   let coreProg ← toCoreProgram prog p.globalContext
   Core.typeCheck options coreProg
 
 open Lean.Parser in
 def verify
-    (smtsolver : String) (env : Strata.Program)
+    (smtsolver : String) (env : StrataDDM.Program)
     (ictx : InputContext := Inhabited.default)
     (proceduresToVerify : Option (List String) := none)
     (options : Core.VerifyOptions := .default)

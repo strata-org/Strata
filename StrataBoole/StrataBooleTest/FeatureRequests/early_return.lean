@@ -22,7 +22,7 @@ Early return is implemented via `exit functionName;`:
      return style.
 -/
 
-private def earlyReturnSeed : Strata.Program :=
+private def earlyReturnSeed : StrataDDM.Program :=
 #strata
 program Boole;
 
@@ -41,7 +41,7 @@ spec {
 
 /--
 info:
-Obligation: abs_seed_ensures_0_802
+Obligation: abs_seed_ensures_0_805
 Property: assert
 Result: ✅ pass
 -/

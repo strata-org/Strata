@@ -28,12 +28,12 @@ currently do.
 
 It involves several key types:
 
-* `Strata.Dialect`: The formal description of a Strata dialect. Used only to
+* `StrataDDM.Dialect`: The formal description of a Strata dialect. Used only to
   describe which dialects are available when reading or writing files.
 
-* `Strata.Program`: The generic AST for a Strata program in any dialect.
+* `StrataDDM.Program`: The generic AST for a Strata program in any dialect.
    Generally used just as an interim representation before serializing or after
-   deserializing a program. Before using a `Strata.Program`, it will usually
+   deserializing a program. Before using a `StrataDDM.Program`, it will usually
    make sense to translate it into the custom AST for a specific dialect.
 
 * `Laurel.Program`: A dialect-specific AST for a program in the Laurel dialect.

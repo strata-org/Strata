@@ -18,10 +18,10 @@ public import StrataDDM.BuiltinDialects.StrataDDL
 public import StrataDDM.Util.Lean
 
 open Lean (Message)
-open Strata.Parser (InputContext)
+open StrataDDM.Parser (InputContext)
 
 public section
-namespace Strata.Elab
+namespace StrataDDM.Elab
 
 namespace DeclState
 
@@ -75,7 +75,7 @@ private def normalizeUnicodeQuantifierSeparators (src : String) : String :=
 
 private def normalizeInputContext (inputContext : InputContext) : InputContext :=
   let inputString := normalizeUnicodeQuantifierSeparators inputContext.inputString
-  Strata.Parser.stringInputContext (System.FilePath.mk inputContext.fileName) inputString
+  Parser.stringInputContext (System.FilePath.mk inputContext.fileName) inputString
 
 private def normalizedQuantifierSepStep (state : QuantifierSepState) (ch : Char) : Nat × QuantifierSepState :=
   match state with
@@ -268,7 +268,7 @@ private def readDialectTextfileHeader
     : BaseIO (Except (Array Message)
         (Parser.InputContext × SourceRange × DialectName
           × String.Pos.Raw)) := do
-  let inputContext := Strata.Parser.stringInputContext input contents
+  let inputContext := Parser.stringInputContext input contents
   let leanEnv ←
     match ← (Lean.mkEmptyEnvironment 0) |>.toBaseIO with
     | .ok e => pure e
@@ -332,7 +332,7 @@ private partial def loadDialectFromPath
   (path : System.FilePath)
   (actualPath : System.FilePath := path)
   (expected : Option DialectName := none) :
-  BaseIO (Except (Array Message) Strata.Dialect) := do
+  BaseIO (Except (Array Message) Dialect) := do
   let bytes ←
     match ← IO.FS.readBinFile actualPath |>.toBaseIO with
     | .error _ =>
@@ -471,8 +471,8 @@ more structure (such as error location information).
 -/
 partial def loadDialect
   (fm : DialectFileMap)
-  (dialect : Strata.DialectName) :
-  BaseIO (Except String Strata.Dialect) := do
+  (dialect : DialectName) :
+  BaseIO (Except String Dialect) := do
   loadDialectRec fm #[] dialect
 
 /--
@@ -484,7 +484,7 @@ partial def loadDialectFromFile
   (fm : DialectFileMap)
   (path : System.FilePath)
   (actualPath : System.FilePath := path) :
-  BaseIO (Except (Array Message) Strata.Dialect) :=
+  BaseIO (Except (Array Message) Dialect) :=
   loadDialectFromPath fm #[] path (actualPath := actualPath)
 
 /- Elaborate a Strata dialect definition. -/
@@ -510,7 +510,7 @@ def elabDialect
   | .dialect loc dialect =>
     elabDialectRest fm inputContext loc dialect (startPos := startPos) (stopPos := stopPos)
 
-def parseStrataProgramFromDialect (dialects : LoadedDialects) (dialect : DialectName) (input : InputContext) : IO Strata.Program := do
+def parseStrataProgramFromDialect (dialects : LoadedDialects) (dialect : DialectName) (input : InputContext) : IO Program := do
   let leanEnv ← Lean.mkEmptyEnvironment 0
   let originalInput := input
   let input := normalizeInputContext input
@@ -541,7 +541,7 @@ def parseCategoryFromDialect
     (dialects : LoadedDialects) (cat : QualifiedIdent) (input : InputContext)
     (startPos : String.Pos.Raw := 0)
     (stopPos : String.Pos.Raw := input.endPos)
-    : IO Strata.Operation := do
+    : IO Operation := do
   let leanEnv ← Lean.mkEmptyEnvironment 0
   let originalInput := input
   let input := normalizeInputContext input
@@ -583,5 +583,5 @@ def parseCategoryFromDialect
   let op := tree.info.asOp!.op
   return op
 
-end Strata.Elab
+end StrataDDM.Elab
 end

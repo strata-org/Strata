@@ -13,7 +13,7 @@ the `ofAst` functions that `#strata_gen` emits.
 -/
 
 public section
-namespace Strata
+namespace StrataDDM
 
 class HasEta (α : Type u) (β : outParam (Type v)) where
   bvar : Nat → α
@@ -255,5 +255,5 @@ def matchTypeParamOrType {Ann α} [Repr Ann] (a : ArgF Ann)
   | .type tp => onType tp
   | _ => .throwExpected "Type parameter or type expression" a
 
-end Strata.OfAstM
+end StrataDDM.OfAstM
 end

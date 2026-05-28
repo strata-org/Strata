@@ -14,7 +14,7 @@ meta section
 namespace Strata
 
 /-- Extract evaluator statistics from a program without running the solver. -/
-private def getEvalStats (program : Strata.Program)
+private def getEvalStats (program : StrataDDM.Program)
     (options : Core.VerifyOptions := .quiet) : IO (Statistics × Nat) := do
   let (coreProgram, _) := Core.getProgram program
   let coreProgram ← IO.ofExcept (Core.typeCheck options coreProgram)

@@ -22,7 +22,7 @@ Near-upstream anchors from `differential_status.md`:
 - Remaining gap: native `nat` support and less burdensome coercion handling
 -/
 
-private def natIntBoundarySeed : Strata.Program :=
+private def natIntBoundarySeed : StrataDDM.Program :=
 #strata
 program Boole;
 

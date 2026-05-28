@@ -25,7 +25,7 @@ Near-upstream anchors:
 -/
 
 -- Exercises & and | (X25519 scalar clamping).
-private def bitvectorOpsSeed : Strata.Program :=
+private def bitvectorOpsSeed : StrataDDM.Program :=
 #strata
 program Boole;
 
@@ -51,7 +51,7 @@ example : Strata.smtVCsCorrectBoole bitvectorOpsSeed := by
   all_goals (first | grind | decide)
 
 -- Exercises ~, ^, >>, << (bit extraction, conditional swap, nibble ops).
-private def bitvectorShiftXorSeed : Strata.Program :=
+private def bitvectorShiftXorSeed : StrataDDM.Program :=
 #strata
 program Boole;
 
@@ -87,7 +87,7 @@ example : Strata.smtVCsCorrectBoole bitvectorShiftXorSeed := by
 
 -- Exercises >>s (arithmetic/signed right shift): vacated bits are filled with
 -- the sign bit, unlike >> which fills with 0.
-private def bitvectorSShrSeed : Strata.Program :=
+private def bitvectorSShrSeed : StrataDDM.Program :=
 #strata
 program Boole;
 

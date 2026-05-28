@@ -7,10 +7,10 @@ module
 public import StrataDDM.Parser
 public import StrataDDM.Elab.SyntaxElab
 
-open Strata.Parser (DeclParser ParsingContext)
+open StrataDDM.Parser (DeclParser ParsingContext)
 
 public section
-namespace Strata.Elab
+namespace StrataDDM.Elab
 
 /--
 Map from dialect names to all the declaration parsers brought into
@@ -191,5 +191,5 @@ def findPath (m : DialectFileMap) (name : DialectName) : Option System.FilePath 
   | some (_, _, path) => pure path
 
 end DialectFileMap
-end Strata
+end StrataDDM
 end

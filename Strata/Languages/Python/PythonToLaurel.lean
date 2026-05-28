@@ -34,6 +34,7 @@ This module translates Python AST to Laurel intermediate representation.
 
 namespace Strata.Python
 
+open StrataDDM
 open Laurel
 
 public section

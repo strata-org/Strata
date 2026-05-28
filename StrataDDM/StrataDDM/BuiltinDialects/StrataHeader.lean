@@ -10,10 +10,10 @@ public import StrataDDM.AST
 import StrataDDM.BuiltinDialects.BuiltinM
 import StrataDDM.BuiltinDialects.Init
 
-open Strata.Elab
+open StrataDDM.Elab
 
 public section
-namespace Strata
+namespace StrataDDM
 
 
 def headerDialect : Dialect := Elab.BuiltinM.create! "StrataHeader" #[initDialect] do
@@ -36,5 +36,5 @@ def headerDialect : Dialect := Elab.BuiltinM.create! "StrataHeader" #[initDialec
      category := Command,
      syntaxDef := .ofList [.str "program", .ident 0 0, .str ";"],
   }
-end Strata
+end StrataDDM
 end

@@ -22,7 +22,7 @@ open Strata
 
 /-! ## Core Statistics: simple procedure -/
 
-def statsPgm : Strata.Program :=
+def statsPgm : StrataDDM.Program :=
 #strata
 program Core;
 
@@ -53,7 +53,7 @@ info: [statistics] Evaluator.factoryOps: 286
 
 /-! ## Core Statistics: two procedures with a function -/
 
-def statsPgm2 : Strata.Program :=
+def statsPgm2 : StrataDDM.Program :=
 #strata
 program Core;
 

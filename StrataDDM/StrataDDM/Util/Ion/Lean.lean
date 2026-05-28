@@ -194,7 +194,7 @@ meta def declareIonSymbolImpl : Elab.Term.TermElab := fun stx _ =>
 
 private def typeOf {α : Type u} (_ : α) : Type u := α
 
-initialize Lean.registerTraceClass `Strata.ionTypeOf
+initialize Lean.registerTraceClass `StrataDDM.ionTypeOf
 
 syntax (name := declareIonTypeOf) "ionTypeOf!" term : term -- declare the syntax
 
@@ -211,7 +211,7 @@ meta def declareIonTypeOfImpl : Elab.Term.TermElab := fun stx _ =>
           | .app (.const ``List [_]) (.const fldName []) => pure fldName
           | _ =>
             throw <| .error fld m!"Expected a named type instead of {repr fldType}"
-    trace[Strata.ionTypeOf] "Type is {fldName}"
+    trace[StrataDDM.ionTypeOf] "Type is {fldName}"
     return toExpr fldName
   | _ =>
     throwUnsupportedSyntax
@@ -301,7 +301,7 @@ public meta def declareIonSymbolTableImpl : Command.CommandElab := fun stx =>
     Command.elabCommand =<< `(
       def $toIon (x : $tp) : ByteArray :=
         let (tbl, v) := $toIonPair x
-        _root_.Ion.serialize #[tbl.localSymbolTableValue, v]
+        serialize #[tbl.localSymbolTableValue, v]
     )
   | _ =>
     throwUnsupportedSyntax

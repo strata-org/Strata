@@ -10,6 +10,7 @@ meta import Strata.Transform.CallElim
 import StrataDDM.Integration.Lean.HashCommands
 
 meta section
+open StrataDDM (Program)
 
 ---------------------------------------------------------------------
 namespace Strata

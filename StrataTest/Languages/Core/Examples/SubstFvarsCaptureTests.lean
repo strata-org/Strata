@@ -11,6 +11,7 @@ import StrataDDM.Integration.Lean.HashCommands
 import Strata.Languages.Core.StatementEval
 
 meta section
+open StrataDDM (Program)
 /-! # Simultaneous substitution tests (Issue 653)
 
 Tests verifying that simultaneous substitution (`substFvars` /

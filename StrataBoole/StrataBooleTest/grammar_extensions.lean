@@ -20,7 +20,7 @@ This covers:
 - quantifiers inside invariants
 -/
 
-private def grammarExtensions : Strata.Program :=
+private def grammarExtensions : StrataDDM.Program :=
 #strata
 program Boole;
 

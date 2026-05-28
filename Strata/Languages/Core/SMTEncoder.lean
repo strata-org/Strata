@@ -263,7 +263,7 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (
   | .boolConst _ b => .ok (Term.bool b, ctx)
   | .intConst _ i => .ok (Term.int i, ctx)
   | .realConst _ r =>
-    match Strata.Decimal.fromRat r with
+    match StrataDDM.Decimal.fromRat r with
     | some d => .ok (Term.real d, ctx)
     | none => .error f!"Non-decimal real value {e}"
   | .bitvecConst _ n b => .ok (Term.bitvec b, ctx)

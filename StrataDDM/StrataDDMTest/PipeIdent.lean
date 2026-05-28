@@ -7,7 +7,7 @@ module
 
 import StrataDDM.Integration.Lean
 
-open Strata
+open StrataDDM
 
 -- Test dialect for pipe-delimited identifiers (SMT-LIB 2.6 syntax)
 #dialect

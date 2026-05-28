@@ -19,6 +19,7 @@ import StrataDDM.Integration.Lean.HashCommands
 import Strata.Languages.Core.StatementSemantics
 
 public section
+open StrataDDM (Program)
 namespace Strata
 
 def singleCFG (p : Program) (n : Nat) : Imperative.CFG String

@@ -10,6 +10,7 @@ public import Strata.Languages.Core.Verifier
 import Lean.Elab.Command
 
 open Strata
+open StrataDDM
 open String
 open Lean Elab
 namespace StrataTest.Util

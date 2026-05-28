@@ -30,7 +30,7 @@ Near-upstream anchors:
   destructuring in `ensures` and `exists` clauses.
 -/
 
-private def optionMatchesSeed : Strata.Program :=
+private def optionMatchesSeed : StrataDDM.Program :=
 #strata
 program Boole;
 

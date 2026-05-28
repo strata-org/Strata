@@ -7,6 +7,7 @@ module
 
 public import StrataDDM.Util.SourceRange
 import all StrataDDM.Util.String
+open StrataDDM
 
 public section
 namespace Strata.Pipeline

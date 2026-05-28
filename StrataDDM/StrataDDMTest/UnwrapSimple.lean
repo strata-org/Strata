@@ -7,7 +7,7 @@ module
 
 import StrataDDM.Integration.Lean
 
-open Strata
+open StrataDDM
 
 #dialect
 dialect TestUnwrap;

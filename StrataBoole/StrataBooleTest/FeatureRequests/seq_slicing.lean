@@ -23,7 +23,7 @@ Near-upstream anchors:
   matching the Verus `vstd::prelude::Seq` interface.
 -/
 
-private def seqSlicingSeed : Strata.Program :=
+private def seqSlicingSeed : StrataDDM.Program :=
 #strata
 program Boole;
 

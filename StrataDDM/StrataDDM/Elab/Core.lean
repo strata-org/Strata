@@ -20,10 +20,10 @@ open Lean (
     Syntax
     nullKind
   )
-open Strata.Parser (DeclParser InputContext)
+open StrataDDM.Parser (DeclParser InputContext)
 
 public section
-namespace Strata
+namespace StrataDDM
 
 namespace TypeExprF
 
@@ -1851,5 +1851,5 @@ partial def elabCommand (leanEnv : Lean.Environment) : DeclM (Option Tree) := do
   let glbl := (←get).globalContext
   runElab <| some <$> elabOperation (.empty glbl) stx
 
-end Strata.Elab
+end StrataDDM.Elab
 end

@@ -9,6 +9,7 @@ import Strata.Backends.CBMC.GOTO.CoreToCProverGOTO
 import StrataDDM.Integration.Lean
 
 open Std (ToFormat Format format)
+open StrataDDM (Program)
 -------------------------------------------------------------------------------
 
 namespace Strata

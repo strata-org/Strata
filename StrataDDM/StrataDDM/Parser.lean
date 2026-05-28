@@ -63,7 +63,7 @@ private instance : Repr SyntaxStack where
 end Lean.Parser.SyntaxStack
 
 
-namespace Strata.Parser
+namespace StrataDDM.Parser
 
 export Lean.Parser (
     InputContext
@@ -1057,4 +1057,4 @@ def runCatParser (tokenTable : TokenTable)
   let f := andthenFn whitespace p.fn
   f.run inputContext pmc tokenTable leanParserState
 
-end Strata.Parser
+end StrataDDM.Parser

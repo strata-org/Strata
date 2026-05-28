@@ -31,12 +31,12 @@ AST translation in one step.
 -/
 def parseLaurelText (path : System.FilePath) (content : String)
     : IO Laurel.Program := do
-  let input := Strata.Parser.stringInputContext path content
+  let input := StrataDDM.Parser.stringInputContext path content
   let dialects :=
-    Strata.Elab.LoadedDialects.ofDialects!
-      #[Strata.initDialect, Strata.Laurel.Laurel]
+    StrataDDM.Elab.LoadedDialects.ofDialects!
+      #[StrataDDM.initDialect, Strata.Laurel.Laurel]
   let strataProgram ←
-    Strata.Elab.parseStrataProgramFromDialect
+    StrataDDM.Elab.parseStrataProgramFromDialect
       dialects Strata.Laurel.Laurel.name input
   let uri := Strata.Uri.file path.toString
   match Strata.Laurel.TransM.run uri
@@ -56,8 +56,8 @@ into a list of `StrataFile`s. Useful for per-file operations like
 printing.
 -/
 def readLaurelIonFiles (bytes : ByteArray)
-    : IO (List Strata.StrataFile) := do
-  match Strata.Program.filesFromIon Strata.Laurel.Laurel_map bytes with
+    : IO (List StrataDDM.StrataFile) := do
+  match StrataDDM.Program.filesFromIon Strata.Laurel.Laurel_map bytes with
   | .ok files => pure files
   | .error msg => throw (IO.userError msg)
 
@@ -96,7 +96,7 @@ def readLaurelIonProgram (bytes : ByteArray)
 Translate a program in the dialect-specific AST for Laurel into the generic Strata
 AST. Usually useful as a step before serialization.
 -/
-def laurelToStrataProgram (p : Laurel.Program) : Strata.Program :=
+def laurelToStrataProgram (p : Laurel.Program) : StrataDDM.Program :=
   Laurel.programToStrata p
 
 /--
@@ -106,7 +106,7 @@ well-structured instance of the Laurel dialect.
 
 TODO: possibly add an input context argument
 -/
-def strataProgramToLaurel (p : Strata.Program) : Except String Laurel.Program :=
+def strataProgramToLaurel (p : StrataDDM.Program) : Except String Laurel.Program :=
   Laurel.TransM.run .none (Laurel.parseProgram p)
 
 /-! ### Transformation between dialects -/

@@ -20,6 +20,8 @@ end Strata.BooleDDM
 
 namespace Strata
 
+open StrataDDM (SourceRange)
+
 abbrev Boole.Type := BooleDDM.BooleType SourceRange
 abbrev Boole.Expr := BooleDDM.Expr SourceRange
 abbrev Boole.Program := BooleDDM.Program SourceRange

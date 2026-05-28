@@ -15,7 +15,7 @@ namespace Strata
 
 open Core
 
-def translatePgm (p : Strata.Program) : Core.Program :=
+def translatePgm (p : StrataDDM.Program) : Core.Program :=
   (TransM.run Inhabited.default (translateProgram p)).fst
 
 ---------------------------------------------------------------------
@@ -24,7 +24,7 @@ def translatePgm (p : Strata.Program) : Core.Program :=
 -- body captured variables from the then-branch instead of the else-branch.
 ---------------------------------------------------------------------
 
-def issue436Pgm : Strata.Program :=
+def issue436Pgm : StrataDDM.Program :=
 #strata
 program Core;
 

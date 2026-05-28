@@ -91,7 +91,7 @@ _private.StrataTest.DL.Imperative.DDMDefinition.0.ArithPrograms.Expr.bvar : {α 
 _private.StrataTest.DL.Imperative.DDMDefinition.0.ArithPrograms.Expr.app : {α : Type} →
   α → ArithPrograms.Expr✝ α → ArithPrograms.Expr✝ α → ArithPrograms.Expr✝¹ α
 _private.StrataTest.DL.Imperative.DDMDefinition.0.ArithPrograms.Expr.numLit : {α : Type} →
-  α → Strata.Ann Nat α → ArithPrograms.Expr✝ α
+  α → StrataDDM.Ann Nat α → ArithPrograms.Expr✝ α
 _private.StrataTest.DL.Imperative.DDMDefinition.0.ArithPrograms.Expr.btrue : {α : Type} → α → ArithPrograms.Expr✝ α
 _private.StrataTest.DL.Imperative.DDMDefinition.0.ArithPrograms.Expr.bfalse : {α : Type} → α → ArithPrograms.Expr✝ α
 _private.StrataTest.DL.Imperative.DDMDefinition.0.ArithPrograms.Expr.add_expr : {α : Type} →
@@ -132,7 +132,7 @@ info: private inductive ArithPrograms.Label : Type → Type
 number of parameters: 1
 constructors:
 _private.StrataTest.DL.Imperative.DDMDefinition.0.ArithPrograms.Label.label : {α : Type} →
-  α → Strata.Ann String α → ArithPrograms.Label✝ α
+  α → StrataDDM.Ann String α → ArithPrograms.Label✝ α
 -/
 #guard_msgs in
 #print Label
@@ -145,17 +145,17 @@ info: private inductive ArithPrograms.Command : Type → Type
 number of parameters: 1
 constructors:
 _private.StrataTest.DL.Imperative.DDMDefinition.0.ArithPrograms.Command.init : {α : Type} →
-  α → Strata.Ann String α → ArithPrograms.ArithProgramsType✝ α → ArithPrograms.Expr✝ α → ArithPrograms.Command✝ α
+  α → StrataDDM.Ann String α → ArithPrograms.ArithProgramsType✝ α → ArithPrograms.Expr✝ α → ArithPrograms.Command✝ α
 _private.StrataTest.DL.Imperative.DDMDefinition.0.ArithPrograms.Command.var : {α : Type} →
-  α → Strata.Ann String α → ArithPrograms.ArithProgramsType✝ α → ArithPrograms.Command✝ α
+  α → StrataDDM.Ann String α → ArithPrograms.ArithProgramsType✝ α → ArithPrograms.Command✝ α
 _private.StrataTest.DL.Imperative.DDMDefinition.0.ArithPrograms.Command.assign : {α : Type} →
-  α → Strata.Ann String α → ArithPrograms.Expr✝ α → ArithPrograms.Command✝ α
+  α → StrataDDM.Ann String α → ArithPrograms.Expr✝ α → ArithPrograms.Command✝ α
 _private.StrataTest.DL.Imperative.DDMDefinition.0.ArithPrograms.Command.assume : {α : Type} →
   α → ArithPrograms.Label✝ α → ArithPrograms.Expr✝ α → ArithPrograms.Command✝ α
 _private.StrataTest.DL.Imperative.DDMDefinition.0.ArithPrograms.Command.assert : {α : Type} →
   α → ArithPrograms.Label✝ α → ArithPrograms.Expr✝ α → ArithPrograms.Command✝ α
 _private.StrataTest.DL.Imperative.DDMDefinition.0.ArithPrograms.Command.havoc : {α : Type} →
-  α → Strata.Ann String α → ArithPrograms.Command✝ α
+  α → StrataDDM.Ann String α → ArithPrograms.Command✝ α
 -/
 #guard_msgs in
 #print Command
@@ -193,10 +193,10 @@ def translateCommand (bindings : TransBindings) (c : ArithPrograms.Command α) :
   | .havoc _ name =>
     return ((.set name.val .nondet .empty), bindings)
 
-partial def translateProgram (ops : Array Strata.Operation) : TransM Arith.Commands := do
+partial def translateProgram (ops : Array StrataDDM.Operation) : TransM Arith.Commands := do
   let (cmds, _) ← go 0 ops.size {} ops
   return cmds
-  where go (count max : Nat) (bindings : TransBindings) (ops : Array Strata.Operation)
+  where go (count max : Nat) (bindings : TransBindings) (ops : Array StrataDDM.Operation)
       : TransM (Arith.Commands × TransBindings) := do
   match (max - count) with
   | 0 => return ([], bindings)

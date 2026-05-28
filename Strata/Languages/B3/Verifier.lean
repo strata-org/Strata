@@ -15,6 +15,7 @@ public meta import Strata.Languages.B3.Verifier.Program
 public meta import Strata.Languages.B3.Verifier.Statements
 
 open Strata
+open StrataDDM (SourceRange)
 open Strata.B3.Verifier
 open Strata.SMT
 
@@ -63,7 +64,7 @@ Use `programToSMTWithoutDiagnosis` for faster verification without diagnosis - r
 -- This is not a test, it only demonstrates the end-to-end API
 public meta def exampleVerification : IO Unit := do
   -- Parse B3 program using DDM syntax
-  let ddmProgram : Strata.Program := #strata program B3CST;
+  let ddmProgram : StrataDDM.Program := #strata program B3CST;
     function f(x : int) : int { x + 1 }
     procedure test() {
       check 8 == 8 && f(5) == 7

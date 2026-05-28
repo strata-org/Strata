@@ -146,9 +146,9 @@ dialect. Returns `some .sat`, `some .unsat`, `some .unknown`, or `none`
 on parse/conversion failure.
 -/
 private def parseVerdict (line : String) : IO (Option (Result PUnit)) := do
-  let inputCtx := Strata.Parser.stringInputContext "solver" (line ++ "\n")
+  let inputCtx := StrataDDM.Parser.stringInputContext "solver" (line ++ "\n")
   let prg ←
-    try Strata.Elab.parseStrataProgramFromDialect
+    try StrataDDM.Elab.parseStrataProgramFromDialect
           Strata.SMTResponseDDM.smtResponseDialects "SMTResponse" inputCtx
     catch _ => return none
   if prg.commands.isEmpty then return none
@@ -168,9 +168,9 @@ directly, which avoids the ambiguity that arises when parsing at the
 Returns a list of (key-string, value-Term) pairs on success.
 -/
 def parseModelDDM (modelStr : String) : IO (List (String × Strata.SMT.Term)) := do
-  let inputCtx := Strata.Parser.stringInputContext "solver-model" modelStr
+  let inputCtx := StrataDDM.Parser.stringInputContext "solver-model" modelStr
   let op ←
-    try Strata.Elab.parseCategoryFromDialect
+    try StrataDDM.Elab.parseCategoryFromDialect
           Strata.SMTResponseDDM.smtResponseDialects q`SMTResponse.GetValueResponse inputCtx
     catch _ => return []
   match Strata.SMTResponseDDM.GetValueResponse.ofAst op with

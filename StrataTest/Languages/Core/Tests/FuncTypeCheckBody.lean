@@ -10,6 +10,7 @@ meta import Strata.Languages.Core.CallGraph
 import StrataDDM.Integration.Lean.HashCommands
 
 meta section
+open StrataDDM (Program)
 
 ---------------------------------------------------------------------
 namespace Strata

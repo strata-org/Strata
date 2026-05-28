@@ -32,19 +32,19 @@ Build a `DialectFileMap` preloaded with the given dialects (plus the built-in
 DDM dialects: `init`, `header`, and `StrataDDL`). Use this to construct a
 `DialectFileMap` opaquely without touching DDM internals.
 -/
-def mkDialectFileMap (dialects : Array Strata.Dialect := #[])
-    : IO Strata.DialectFileMap := do
-  let mut loaded := Strata.Elab.LoadedDialects.builtin
+def mkDialectFileMap (dialects : Array StrataDDM.Dialect := #[])
+    : IO StrataDDM.DialectFileMap := do
+  let mut loaded := StrataDDM.Elab.LoadedDialects.builtin
   for d in dialects do
     loaded := loaded.addDialect! d
-  Strata.DialectFileMap.new loaded
+  StrataDDM.DialectFileMap.new loaded
 
 /--
 Register a directory to search for dialect definition files
 (`.dialect.st` / `.dialect.st.ion`). Returns an updated `DialectFileMap`.
 -/
-def DialectFileMap.addSearchPath (fm : Strata.DialectFileMap)
-    (dir : System.FilePath) : EIO String Strata.DialectFileMap :=
+def DialectFileMap.addSearchPath (fm : StrataDDM.DialectFileMap)
+    (dir : System.FilePath) : EIO String StrataDDM.DialectFileMap :=
   fm.add dir
 
 /-! ### File I/O -/
@@ -70,8 +70,8 @@ private def mkErrorReport (path : System.FilePath) (errors : Array Lean.Message)
 Strata text or Ion file. Such a file can define either a dialect or a program.
 -/
 inductive DialectOrProgram
-| dialect (d : Dialect)
-| program (pgm : Program)
+| dialect (d : StrataDDM.Dialect)
+| program (pgm : StrataDDM.Program)
 
 /--
 Parse a Strata dialect or program in textual format, possibly loading other
@@ -80,32 +80,32 @@ the definitions of other dialects. The `FilePath` indicates the name of the file
 to be parsed. And the `ByteArray` includes the contents of that file. TODO:
 should it take just a file name and read it directly?
 -/
-def readStrataText (fm : Strata.DialectFileMap) (path : System.FilePath) (bytes : ByteArray)
+def readStrataText (fm : StrataDDM.DialectFileMap) (path : System.FilePath) (bytes : ByteArray)
     : IO DialectOrProgram := do
   let leanEnv ← Lean.mkEmptyEnvironment 0
   let contents ← match bytesToText path bytes with
     | Except.ok c => pure c
     | Except.error msg => throw (IO.userError (fileReadErrorMsg path msg))
-  let inputContext := Strata.Parser.stringInputContext path contents
-  let (header, errors, startPos) := Strata.Elab.elabHeader leanEnv inputContext
+  let inputContext := StrataDDM.Parser.stringInputContext path contents
+  let (header, errors, startPos) := StrataDDM.Elab.elabHeader leanEnv inputContext
   if errors.size > 0 then
     throw (IO.userError (← mkErrorReport path errors))
   match header with
   | .program _ dialect =>
-    match ← Strata.Elab.loadDialect fm dialect with
+    match ← StrataDDM.Elab.loadDialect fm dialect with
     | .ok _ => pure ()
     | .error msg => throw (IO.userError msg)
     let dialects ← fm.getLoaded
     let .isTrue mem := (inferInstance : Decidable (dialect ∈ dialects.dialects))
       | panic! "internal: loadDialect failed"
-    match Strata.Elab.elabProgramRest dialects leanEnv inputContext dialect mem startPos with
+    match StrataDDM.Elab.elabProgramRest dialects leanEnv inputContext dialect mem startPos with
     | .ok program => pure (.program program)
     | .error errors => throw (IO.userError (← mkErrorReport path errors))
   | .dialect stx dialect =>
     if dialect ∈ (←fm.loaded.get).dialects then
       throw <| IO.userError s!"{dialect} already loaded"
     let (d, s) ←
-      Strata.Elab.elabDialectRest fm inputContext stx dialect (startPos := startPos)
+      StrataDDM.Elab.elabDialectRest fm inputContext stx dialect (startPos := startPos)
     if s.errors.size > 0 then
       throw (IO.userError (← mkErrorReport path s.errors))
     fm.modifyLoaded (·.addDialect! d)
@@ -118,11 +118,11 @@ the definitions of other dialects. The `FilePath` indicates the name of the file
 to be parsed. And the `ByteArray` includes the contents of that file. TODO:
 should it take just a file name and read it directly?
 -/
-def readStrataIon (fm : Strata.DialectFileMap)
+def readStrataIon (fm : StrataDDM.DialectFileMap)
     (path : System.FilePath) (bytes : ByteArray)
     : IO DialectOrProgram := do
   let (hdr, frag) ←
-    match Strata.Ion.Header.parse bytes with
+    match StrataDDM.Ion.Header.parse bytes with
     | .error msg =>
       throw (IO.userError (fileReadErrorMsg path msg))
     | .ok p =>
@@ -131,20 +131,20 @@ def readStrataIon (fm : Strata.DialectFileMap)
   | .dialect dialect =>
     if dialect ∈ (←fm.loaded.get).dialects then
       throw <| IO.userError s!"{dialect} already loaded"
-    match ← Strata.Elab.loadDialectFromIonFragment fm #[] dialect frag with
+    match ← StrataDDM.Elab.loadDialectFromIonFragment fm #[] dialect frag with
     | .error msg =>
       throw (IO.userError (fileReadErrorMsg path msg))
     | .ok d =>
       pure (.dialect d)
   | .program dialect => do
-    match ← Strata.Elab.loadDialect fm dialect with
+    match ← StrataDDM.Elab.loadDialect fm dialect with
     | .ok _ => pure ()
     | .error msg => throw (IO.userError (fileReadErrorMsg path msg))
     let dialects ← fm.getLoaded
     let .isTrue mem := (inferInstance : Decidable (dialect ∈ dialects.dialects))
       | panic! "loadDialect failed"
     let dm := dialects.dialects.importedDialects dialect mem
-    match Strata.Program.fromIonFragment frag dm dialect with
+    match StrataDDM.Program.fromIonFragment frag dm dialect with
     | .ok pgm =>
       pure (.program pgm)
     | .error msg =>
@@ -156,7 +156,7 @@ loading other dialects as needed along the way. The `DialectFileMap` indicates
 where to find the definitions of other dialects. The `FilePath` indicates the name
 of the file to be loaded.
 -/
-def readStrataFile (fm : Strata.DialectFileMap) (path : System.FilePath)
+def readStrataFile (fm : StrataDDM.DialectFileMap) (path : System.FilePath)
     : IO DialectOrProgram := do
   let bytes ← Strata.Util.readBinInputSource path.toString
   let displayPath : System.FilePath := Strata.Util.displayName path.toString
@@ -169,8 +169,8 @@ def readStrataFile (fm : Strata.DialectFileMap) (path : System.FilePath)
 Read a Strata file (text or Ion) and require it to be a program. Fails if the
 file defines a dialect.
 -/
-def readStrataProgramFile (fm : Strata.DialectFileMap) (path : System.FilePath)
-    : IO Strata.Program := do
+def readStrataProgramFile (fm : StrataDDM.DialectFileMap) (path : System.FilePath)
+    : IO StrataDDM.Program := do
   match ← readStrataFile fm path with
   | .program pgm => pure pgm
   | .dialect _ => throw (IO.userError s!"Expected a program file, got a dialect: {path}")
@@ -179,8 +179,8 @@ def readStrataProgramFile (fm : Strata.DialectFileMap) (path : System.FilePath)
 Read a Strata file (text or Ion) and require it to be a dialect. Fails if the
 file defines a program.
 -/
-def readStrataDialectFile (fm : Strata.DialectFileMap) (path : System.FilePath)
-    : IO Strata.Dialect := do
+def readStrataDialectFile (fm : StrataDDM.DialectFileMap) (path : System.FilePath)
+    : IO StrataDDM.Dialect := do
   match ← readStrataFile fm path with
   | .dialect d => pure d
   | .program _ => throw (IO.userError s!"Expected a dialect file, got a program: {path}")
@@ -189,14 +189,14 @@ def readStrataDialectFile (fm : Strata.DialectFileMap) (path : System.FilePath)
 Serialize a Strata program in textual format. Returns a byte array rather than
 writing directly to a file.
 -/
-def writeStrataText : Strata.Program → ByteArray
+def writeStrataText : StrataDDM.Program → ByteArray
 | pgm => String.toByteArray pgm.toString
 
 /--
 Serialize a Strata program in Ion format. Returns a byte array rather than
 writing directly to a file.
 -/
-def writeStrataIon : Strata.Program → ByteArray
+def writeStrataIon : StrataDDM.Program → ByteArray
 | pgm => pgm.toIon
 
 end Strata

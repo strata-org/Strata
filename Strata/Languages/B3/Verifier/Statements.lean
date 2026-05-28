@@ -31,6 +31,7 @@ namespace Strata.B3.Verifier
 public section
 
 open Strata
+open StrataDDM
 open Strata.SMT
 
 inductive StatementResult where

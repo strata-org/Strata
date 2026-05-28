@@ -9,10 +9,10 @@ public import StrataDDM.AST
 import StrataDDM.Ion
 import StrataDDM.Integration.Categories
 
-namespace Strata.Java
+namespace StrataDDM.Java
 
-open Strata (Dialect OpDecl ArgDecl ArgDeclKind QualifiedIdent SyntaxCat)
-open Strata.DDM.Integration (primitiveCategories forbiddenCategories abstractCategories)
+open StrataDDM (Dialect OpDecl ArgDecl ArgDeclKind QualifiedIdent SyntaxCat)
+open StrataDDM.Integration (primitiveCategories forbiddenCategories abstractCategories)
 
 /-! # Java Code Generator for DDM Dialects
 
@@ -448,4 +448,4 @@ public def writeJavaFiles (baseDir : System.FilePath) (package : String) (files 
   for (filename, content) in files.stubs do
     IO.FS.writeFile (dir / filename) content
 
-end Strata.Java
+end StrataDDM.Java

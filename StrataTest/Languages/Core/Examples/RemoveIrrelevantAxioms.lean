@@ -12,7 +12,7 @@ meta section
 ---------------------------------------------------------------------
 namespace Strata
 
-def irrelevantAxiomsTestPgm : Strata.Program :=
+def irrelevantAxiomsTestPgm : StrataDDM.Program :=
 #strata
 program Core;
 type StrataHeap;

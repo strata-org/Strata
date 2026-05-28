@@ -39,6 +39,8 @@ public section
 
 namespace Strata
 
+open Strata.CoreDDM
+
 /-! ### Transformation between generic and dialect-specific representation -/
 
 /--
@@ -47,10 +49,10 @@ AST. Usually useful as a step before serialization. Conversion goes through the
 Core CST built by `Strata.programToCST`, then projects each `Command` back to
 its underlying `Operation` via the DDM-generated `toAst`.
 -/
-def coreToStrataProgram (p : Core.Program) : Strata.Program :=
+def coreToStrataProgram (p : Core.Program) : StrataDDM.Program :=
   let (_finalCtx, cmds) := Strata.programToCST (M := SourceRange) p
   let ops := cmds.map (·.toAst) |>.toArray
-  Strata.Program.create Strata.Core_map "Core" ops
+  StrataDDM.Program.create Core_map "Core" ops
 
 /--
 Translate a program in the generic AST for Strata into the dialect-specific AST
@@ -58,7 +60,7 @@ for Core. This can fail with an error message if the input is not a
 well-structured instance of the Core dialect. The optional `ictx` is used to
 attach source-range metadata (file name) to the translated program.
 -/
-def strataProgramToCore (p : Strata.Program)
+def strataProgramToCore (p : StrataDDM.Program)
     (ictx : Lean.Parser.InputContext := Inhabited.default)
     : Except String Core.Program :=
   let (program, errors) := Core.getProgram p ictx
@@ -241,7 +243,7 @@ with DDM translation errors panicking and verifier diagnostics formatted using
 `ictx.fileMap`.
 -/
 def Core.verify
-    (env : Strata.Program)
+    (env : StrataDDM.Program)
     (ictx : Lean.Parser.InputContext := Inhabited.default)
     (proceduresToVerify : Option (List String) := none)
     (options : Core.VerifyOptions := .default)

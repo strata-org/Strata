@@ -108,7 +108,7 @@ private protected def asDecimal? (v : Ion SymbolId) : Option Decimal :=
 
 end Ion.Ion
 
-namespace Strata
+namespace StrataDDM
 
 namespace SepFormat
 
@@ -652,7 +652,7 @@ private protected def OperationF.fromIon {α} [FromIon α] (v : Ion SymbolId) : 
   let name ← QualifiedIdent.fromIon "Operation name" sexp[0]
   let ann ← fromIon (α := α) sexp[1]
   let args ← sexp.attach.mapM_off (start := 2) fun ⟨a, a_in⟩ =>
-    Strata.ArgF.fromIon a
+    StrataDDM.ArgF.fromIon a
   return { ann := ann, name := name, args := args }
 termination_by v
 decreasing_by
@@ -678,8 +678,8 @@ private protected def ExprF.fromIon {α} [FromIon α] (v : Ion SymbolId) : FromI
   | "app" =>
     let ⟨p⟩ ← .checkArgCount "app" sexp 4
     let ann ← fromIon (α := α) sexp[1]
-    let f ← Strata.ExprF.fromIon sexp[2]
-    let x ← Strata.ArgF.fromIon sexp[3]
+    let f ← StrataDDM.ExprF.fromIon sexp[2]
+    let x ← StrataDDM.ArgF.fromIon sexp[3]
     return .app ann f x
   | str =>
     throw s!"Unexpected identifier {str}"
@@ -703,10 +703,10 @@ private protected def ArgF.fromIon {α} [FromIon α] (v : Ion SymbolId) : FromIo
   match argKind with
   | "op" =>
     let ⟨p⟩ ← .checkArgCount "op" sexp 2
-    .op <$> Strata.OperationF.fromIon sexp[1]
+    .op <$> StrataDDM.OperationF.fromIon sexp[1]
   | "expr" =>
     let ⟨p⟩ ← .checkArgCount "expr" sexp 2
-    .expr <$> Strata.ExprF.fromIon sexp[1]
+    .expr <$> StrataDDM.ExprF.fromIon sexp[1]
   | "cat" =>
     let ⟨p⟩ ← .checkArgCount "cat" sexp 2
     .cat <$> fromIon sexp[1]
@@ -743,7 +743,7 @@ private protected def ArgF.fromIon {α} [FromIon α] (v : Ion SymbolId) : FromIo
     let v ←
       match p : sexp.size with
       | 2 => pure none
-      | 3 => some <$> Strata.ArgF.fromIon sexp[2]
+      | 3 => some <$> StrataDDM.ArgF.fromIon sexp[2]
       | _ => throw "Option expects at most one value."
     return .option ann v
   | str =>
@@ -752,7 +752,7 @@ private protected def ArgF.fromIon {α} [FromIon α] (v : Ion SymbolId) : FromIo
       let ⟨p⟩ ← .checkArgMin str sexp 2
       let ann ← fromIon sexp[1]
       let args ← sexp.attach.mapM_off (start := 2) fun ⟨u, _⟩ =>
-        Strata.ArgF.fromIon u
+        StrataDDM.ArgF.fromIon u
       return .seq ann sep args
     | none =>
       throw s!"Unexpected identifier {str}"
@@ -1587,9 +1587,9 @@ def fromIonFragment (f : Ion.Fragment)
 /--
 Decodes bytes in the Ion format into a single Strata program.
 -/
-def fromIon (dialects : DialectMap) (dialect : DialectName) (bytes : ByteArray) : Except String Strata.Program := do
+def fromIon (dialects : DialectMap) (dialect : DialectName) (bytes : ByteArray) : Except String Program := do
   let (hdr, frag) ←
-    match Strata.Ion.Header.parse bytes with
+    match Ion.Header.parse bytes with
     | .error msg =>
       throw msg
     | .ok p =>
@@ -1662,4 +1662,4 @@ def filesFromIon (dialects : DialectMap) (bytes : ByteArray) : Except String (Li
 
     pure { filePath := filePath, program := program }
 
-end Strata.Program
+end StrataDDM.Program

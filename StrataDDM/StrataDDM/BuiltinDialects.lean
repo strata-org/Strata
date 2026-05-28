@@ -10,9 +10,9 @@ public import StrataDDM.BuiltinDialects.StrataDDL
 public import StrataDDM.BuiltinDialects.StrataHeader
 
 public section
-namespace Strata.Elab.LoadedDialects
+namespace StrataDDM.Elab.LoadedDialects
 
 def builtin : LoadedDialects := .ofDialects! #[initDialect, headerDialect, StrataDDL]
 
-end Strata.Elab.LoadedDialects
+end StrataDDM.Elab.LoadedDialects
 end

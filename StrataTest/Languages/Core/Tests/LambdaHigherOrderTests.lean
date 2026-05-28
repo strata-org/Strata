@@ -22,7 +22,7 @@ and interactions with polymorphism, recursive functions, and datatypes.
 open Core
 open Strata
 
-def translate (t : Strata.Program) : Core.Program :=
+def translate (t : StrataDDM.Program) : Core.Program :=
   (TransM.run Inhabited.default (translateProgram t)).fst
 
 /-! ## Lambda expression parsing and formatting -/
