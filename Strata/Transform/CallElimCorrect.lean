@@ -2762,20 +2762,18 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         have := ReadValuesLength Hrd_R1_outs; omega
                       have HrdR1_get :
                           σ_R1 (proc.header.outputs.keys[n.val]'Hsplit) =
-                            some (modvals[n.val]'HmodLen_outs) := by
-                        have HG := readValues_get
+                            some (modvals[n.val]'HmodLen_outs) :=
+                        readValues_get
                           (σ:=σ_R1) (ks:=proc.header.outputs.keys)
                           (vs:=modvals) Hrd_R1_outs
                           (i:=n.val) (hi:=Hsplit) (hi':=HmodLen_outs)
-                        exact HG
                       have HrdHavoc_get :
                           σ_havoc (lhs[n.val]'HoutLhsLen) =
-                            some (modvals[n.val]'HmodLen_outs) := by
-                        have HG := readValues_get
+                            some (modvals[n.val]'HmodLen_outs) :=
+                        readValues_get
                           (σ:=σ_havoc) (ks:=lhs) (vs:=modvals)
                           Hrd_havoc_lhs
                           (i:=n.val) (hi:=HoutLhsLen) (hi':=HmodLen_outs)
-                        exact HG
                       rw [Hk1_app, HrdR1_get, Hk2_app, HrdHavoc_get]
                     · -- Input-half.
                       have Hsplit_le : proc.header.outputs.keys.length ≤ n.val :=
@@ -2904,20 +2902,18 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       -- σ_R1 k1 = some argVals[m.val] (via Hrd_R1_in_full).
                       have HrdR1_get :
                           σ_R1 (proc.header.inputs.keys[m.val]'Hm_lt_in) =
-                            some (argVals[m.val]'Hm_lt_argV) := by
-                        have HG := readValues_get
+                            some (argVals[m.val]'Hm_lt_argV) :=
+                        readValues_get
                           (σ:=σ_R1) (ks:=proc.header.inputs.keys)
                           (vs:=argVals) Hrd_R1_in_full
                           (i:=m.val) (hi:=Hm_lt_in) (hi':=Hm_lt_argV)
-                        exact HG
                       have HrdHavoc_get :
                           σ_havoc (argTemps[m.val]'Hm_lt_argT) =
-                            some (argVals[m.val]'Hm_lt_argV) := by
-                        have HG := readValues_get
+                            some (argVals[m.val]'Hm_lt_argV) :=
+                        readValues_get
                           (σ:=σ_havoc) (ks:=argTemps) (vs:=argVals)
                           Hrd_havoc_argT
                           (i:=m.val) (hi:=Hm_lt_argT) (hi':=Hm_lt_argV)
-                        exact HG
                       rw [Hk1_inGet, HrdR1_get, Hk2_argTGet, HrdHavoc_get]
                   -- ── D2e: Apply H_asserts_zip to derive HL4 ──
                   -- σ_old = post-L3 store (3-layer over argT/outT/oldTrips.fst.fst).
@@ -3257,8 +3253,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         (vs:=oVals)
                         HσAO_reads_outs
                         (i:=j_out) (hi:=Hj_out_lt) (hi':=Hj_out_lt_oVals)
-                      rw [Houts_get_v] at Hget
-                      exact Hget
+                      rwa [Houts_get_v] at Hget
                     -- Step 3: lhs.idxOf v = outputs.keys.idxOf v (alignment).
                     have HAlign :
                         (CallArg.getLhs args).idxOf v =
@@ -3290,15 +3285,13 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       have Hget := readValues_get
                         (σ:=σ) (ks:=lhs) (vs:=oVals) Hevalouts
                         (i:=j_lhs) (hi:=Hj_lhs_lt) (hi':=Hj_lhs_lt_oVals)
-                      rw [Hlhs_get_v] at Hget
-                      exact Hget
+                      rwa [Hlhs_get_v] at Hget
                     -- Step 5: σ v = some oldVals[i]'_ (HoldVals positional).
                     have Hi_oldVals : i < oldVals.length := HoldVals_len.symm ▸ Hi
-                    have HStep5 : σ v = some (oldVals[i]'Hi_oldVals) := by
-                      have Hget := readValues_get
+                    have HStep5 : σ v = some (oldVals[i]'Hi_oldVals) :=
+                      readValues_get
                         (σ:=σ) (ks:=oldVars) (vs:=oldVals) HoldVals
                         (i:=i) (hi:=Hi) (hi':=Hi_oldVals)
-                      exact Hget
                     -- Combine: δ σO (mkOld v.name) = some oldVals[i].
                     show δ σO (Lambda.LExpr.fvar () (CoreIdent.mkOld v.name) none)
                           = some (oldVals[i]'Hi_oldVals)
@@ -3493,16 +3486,12 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     -- ── RHS Step D: σA inputId = some argVals[ni.val]
                     --   via positional Hinitin. ──
                     have HRHS_StepD : σA inputId =
-                        some (argVals[ni.val]'Hni_lt_argVals) := by
-                      have HrdA :
-                          ReadValues σA proc.header.inputs.keys argVals :=
-                        InitStatesReadValues Hinitin
-                      have Hget := readValues_get
+                        some (argVals[ni.val]'Hni_lt_argVals) :=
+                      readValues_get
                         (σ:=σA) (ks:=proc.header.inputs.keys)
-                        (vs:=argVals) HrdA
+                        (vs:=argVals) (InitStatesReadValues Hinitin)
                         (i:=ni.val) (hi:=Hni_lt_inKeys')
                         (hi':=Hni_lt_argVals)
-                      exact Hget
                     -- ── RHS Step E: argVals[ni.val] = δ σ argExpr
                     --   via evalExpressions_get + hCallArgsIn. ──
                     have HRHS_StepE :
