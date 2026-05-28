@@ -234,3 +234,36 @@ The following passes are part of the lowering group:
 The following graph shows the ordering constraints between passes.
 
 {laurelPipelineDependencyGraph}
+
+# Differences between Laurel and Core
+
+## Language design
+
+### Parameter lists
+Parameter lists. In Laurel, input and output parameters are defined in a separate list. Inout parameters are defined by repeated the parameter name in both lists. In Core, there is a single parameter list where each parameter defines its kind (in/out/inout).
+
+At the call-site, Laurel requires calls with multiple out parameters to occur inside an assignment, like this:
+`assign x, y := multiOutCall(a, b)`
+Core uses the argument list to assign the output parameters, like this:
+`multiOutCall(a, b, out x, out y)`
+
+In Laurel, an inout parameter only influences the callee's code, since it means there is a single variable that is used as input and output. On the calling side however, there is no concept of inout parameters. This is different from Core, where inout variables affect the calling side. Example of an inout being called in Core, `hasInout(inout x)`.
+
+### Assignments to fresh and existing declarations
+In Laurel, assignments can have multiple targets. Each target can be either an existing variable or a local declaration. Example:
+```
+var x: int;
+var z: int;
+assign x, var y: int, z := hasThreeOutputs()
+```
+In Core, when calling a procedure with multiple outputs, each output parameter must be assigned to an existing local variable. Example:
+```
+var x: int;
+var y: int;
+var z: int;
+hasThreeOutputs(out x, out y, out z);
+```
+
+## Implementation
+
+In Laurel, all verification concepts, such as assume statements, pre and postconditions, and transparency of procedures, are part of the language. In Core however, there is the concept of metadata. Concepts that relate to only one or a few analyses might not be considered concepts of the Core language, and will then be represented using metadata instead of being given a typed representation in the AST.
