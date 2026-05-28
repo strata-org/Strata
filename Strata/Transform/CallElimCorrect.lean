@@ -4574,21 +4574,17 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       ReadValues
                         (updatedStates σ
                           argTemps argVals)
-                        argTemps argVals := by
-                    apply readValues_updatedStatesSame
-                    · exact HargTempsLen
-                    · -- argTemps.Nodup
-                      exact (List.nodup_append.mp
-                        (List.nodup_append.mp Hgennd).1).1
+                        argTemps argVals :=
+                    readValues_updatedStatesSame HargTempsLen
+                      (List.nodup_append.mp (List.nodup_append.mp Hgennd).1).1
                   have HrdLayer2_argT :
                       ReadValues
                         (updatedStates
                           (updatedStates σ
                             argTemps argVals)
                           outTemps oVals)
-                        argTemps argVals := by
-                    apply readValues_updatedStates HoutTempsLen
-                            HargOutDisj HrdLayer1_argT
+                        argTemps argVals :=
+                    readValues_updatedStates HoutTempsLen HargOutDisj HrdLayer1_argT
                   have HrdLayer3_argT :
                       ReadValues σ_old
                         argTemps argVals :=
