@@ -55,7 +55,11 @@ inductive DecreasesKind where
   | structural (paramIdx : Nat) (dtName : String)
   | intValued (measure : Expression.Expr)
 
-/-- Validate that a parameter index refers to a known ADT type, returning `.structural`. -/
+/-- Validate that a parameter index refers to a known ADT type, returning `.structural`.
+    The `@[cases]` check is defensive: it is always satisfied when called from the
+    `none` branch of `getDecreasesKind` (which already found `@[cases]`), but guards
+    against the `fvar` branch where the user wrote a `decreases` clause pointing to
+    an ADT parameter without marking it `@[cases]`. -/
 private def validateStructuralParam (func : Function) (tf : @TypeFactory Unit)
     (idx : Nat)
     : Except String DecreasesKind := do
@@ -79,6 +83,7 @@ private def getDecreasesKind (func : Function) (tf : @TypeFactory Unit)
   match func.measure with
   | some (.fvar _ id _) =>
     match func.inputs.findWithIdx? id with
+    -- Int-valued measures use the expression directly; the parameter index is not needed.
     | some (_, .int) => .ok (.intValued (.fvar () id (.some .int)))
     | some (idx, _) => validateStructuralParam func tf idx
     | none =>
