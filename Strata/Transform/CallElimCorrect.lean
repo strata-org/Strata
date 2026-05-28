@@ -2310,6 +2310,19 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     rw [Hfind] at lkup
                     -- lkup : some proc' = some proc
                     exact (Option.some_inj.mp lkup.symm).symm
+                  -- Bridge `c ∈ proc'.spec.postconditions.values` to
+                  -- `c.expr ∈ getCheckExprs proc.spec.postconditions` via HprocEq.
+                  have c_in_postExprs_of_proc' :
+                      ∀ c, c ∈ proc'.spec.postconditions.values →
+                        c.expr ∈ Procedure.Spec.getCheckExprs
+                                    proc.spec.postconditions := by
+                    intro c Hc_in
+                    simp only [Procedure.Spec.getCheckExprs, List.mem_map]
+                    refine ⟨c, ?_, rfl⟩
+                    rw [HprocEq] at Hc_in
+                    rw [ListMap.values_eq_map_snd]
+                    rw [ListMap.values_eq_map_snd] at Hc_in
+                    exact Hc_in
                   -- Specialize the call-site hypothesis to the call form.
                   -- `Hwfcallsite` is over the call_sem `proc`;
                   -- the spike interface uses `proc'`, but `HprocEq`
@@ -2327,17 +2340,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         ¬ isTempIdent v ∧ ¬ isOldTempIdent v ∧
                         v ∉ CallArg.getLhs args := by
                     intro c Hc_in v Hv
-                    have Hin_full :
-                        c.expr ∈ Procedure.Spec.getCheckExprs
-                                    proc.spec.postconditions := by
-                      simp only [Procedure.Spec.getCheckExprs, List.mem_map]
-                      refine ⟨c, ?_, rfl⟩
-                      have Hc_in' := Hc_in
-                      rw [HprocEq] at Hc_in'
-                      rw [ListMap.values_eq_map_snd]
-                      rw [ListMap.values_eq_map_snd] at Hc_in'
-                      exact Hc_in'
-                    exact HpostVarsFresh c.expr Hin_full v Hv
+                    exact HpostVarsFresh c.expr (c_in_postExprs_of_proc' c Hc_in) v Hv
                   -- C-aux: hoisted disjointness facts (used by L4 + L6).
                   have HinputsFresh :
                       ∀ v ∈ proc.header.inputs.keys,
@@ -4085,15 +4088,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     rw [Hbridge]
                     -- Now `δ σO c.expr = some HasBool.tt`.
                     -- Bridge proc'.spec.postconditions ↔ proc.spec.postconditions.
-                    have Hin_full :
-                        c.expr ∈ Procedure.Spec.getCheckExprs
-                                    proc.spec.postconditions := by
-                      simp only [Procedure.Spec.getCheckExprs, List.mem_map]
-                      refine ⟨c, ?_, rfl⟩
-                      rw [HprocEq] at Hc_in
-                      rw [ListMap.values_eq_map_snd]
-                      rw [ListMap.values_eq_map_snd] at Hc_in
-                      exact Hc_in
+                    have Hin_full := c_in_postExprs_of_proc' c Hc_in
                     have Hin_contains :
                         (Procedure.Spec.getCheckExprs
                             proc.spec.postconditions).contains c.expr = true :=
