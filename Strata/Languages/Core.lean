@@ -254,7 +254,7 @@ def Core.verify
     : IO Core.VCResults := do
   let program ← match strataProgramToCore env ictx with
     | .ok p => pure p
-    | .error msg => panic! msg
+    | .error msg => throw (IO.userError msg)
   Core.verifyProgram program options moreFns
     (proceduresToVerify := proceduresToVerify)
     (externalPhases := externalPhases)

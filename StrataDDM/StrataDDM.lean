@@ -97,7 +97,7 @@ def readStrataText (fm : StrataDDM.DialectFileMap) (path : System.FilePath) (byt
     | .error msg => throw (IO.userError msg)
     let dialects ← fm.getLoaded
     let .isTrue mem := (inferInstance : Decidable (dialect ∈ dialects.dialects))
-      | panic! "internal: loadDialect failed"
+      | throw (IO.userError "internal: loadDialect failed")
     match StrataDDM.Elab.elabProgramRest dialects leanEnv inputContext dialect mem startPos with
     | .ok program => pure (.program program)
     | .error errors => throw (IO.userError (← mkErrorReport path errors))
@@ -142,7 +142,7 @@ def readStrataIon (fm : StrataDDM.DialectFileMap)
     | .error msg => throw (IO.userError (fileReadErrorMsg path msg))
     let dialects ← fm.getLoaded
     let .isTrue mem := (inferInstance : Decidable (dialect ∈ dialects.dialects))
-      | panic! "loadDialect failed"
+      | throw (IO.userError "loadDialect failed")
     let dm := dialects.dialects.importedDialects dialect mem
     match StrataDDM.Program.fromIonFragment frag dm dialect with
     | .ok pgm =>
