@@ -553,6 +553,11 @@ def isSubtype (ctx : TypeContext) (sub sup : HighTypeMd) : Bool :=
     is the dynamic type and is consistent with everything; otherwise
     structural equality after unfolding aliases / constrained types.
 
+    `TCore s` and `UserDefined s` are also treated as consistent when their
+    names match: the Python front-end emits `TCore "Any"` for type
+    annotations referring to the `Any` datatype declared in the runtime
+    prelude, so the two representations name the same type.
+
     Used directly by `[⇒] Op-Eq`, where the operand types must be mutually
     consistent (no subtype direction is privileged), and as one half of
     `isConsistentSubtype`. -/
@@ -561,6 +566,7 @@ def isConsistent (ctx : TypeContext) (a b : HighTypeMd) : Bool :=
   let b' := ctx.unfold b
   match a'.val, b'.val with
   | .Unknown, _ | _, .Unknown => true
+  | .TCore s, .UserDefined name | .UserDefined name, .TCore s => s == name.text
   | _, _ => highEq a' b'
 
 /-- Consistent subtyping: `∃ R. sub ~ R ∧ R <: sup`. For our flat lattice
