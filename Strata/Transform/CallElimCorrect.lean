@@ -906,11 +906,7 @@ private theorem updateCheckExprs_substFvars_mem
               (fun c => Lambda.LExpr.substFvars c.expr sm))
             conds.values)[n.val]'Hn_lt_walk) :=
     List.getElem_zip
-  have HhE : (conds.keys.zip _).get n = entry := Hn
-  have HhE_get : (conds.keys.zip _)[n.val]'Hn_lt_zip = entry := by
-    have : (conds.keys.zip _).get n =
-           (conds.keys.zip _)[n.val]'Hn_lt_zip := rfl
-    rw [← this]; exact HhE
+  have HhE_get : (conds.keys.zip _)[n.val]'Hn_lt_zip = entry := Hn
   rw [HzipGet] at HhE_get
   have Hsnd_eq :
       entry.snd =
