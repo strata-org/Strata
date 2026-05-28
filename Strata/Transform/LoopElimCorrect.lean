@@ -120,11 +120,11 @@ private theorem stmtResult_block (σ : LoopElimState) (l : String)
     stmtResult σ (.block l bss md) = .block l (blockResult σ bss) md := by
   simp only [stmtResult, stmtRun, blockResult, blockRun, Stmt.removeLoopsM,
     StateT.run, ExceptT.run, bind, ExceptT.bind, ExceptT.mk, ExceptT.bindCont,
-    StateT.bind, pure, StateT.pure, ExceptT.pure]
+    StateT.bind, pure, ExceptT.pure]
   have hok' := hok
   simp only [stmtOk, stmtRun, Stmt.removeLoopsM, StateT.run, ExceptT.run,
     bind, ExceptT.bind, ExceptT.mk, ExceptT.bindCont, StateT.bind,
-    pure, StateT.pure, ExceptT.pure, Except.isOk, Except.toBool] at hok'
+    pure, ExceptT.pure, Except.isOk, Except.toBool] at hok'
   generalize hq : Block.removeLoopsM bss σ = r at hok' ⊢
   obtain ⟨fst_res, snd_st⟩ := r
   cases fst_res with
@@ -139,15 +139,15 @@ private theorem stmtResult_ite (σ : LoopElimState) (c : ExprOrNondet Expression
   have hok' := hok
   simp only [stmtOk, stmtRun, stmtResult, blockResult, blockRun, blockPostState,
     Stmt.removeLoopsM, StateT.run, ExceptT.run, bind, ExceptT.bind, ExceptT.mk,
-    ExceptT.bindCont, StateT.bind, pure, StateT.pure, ExceptT.pure,
+    ExceptT.bindCont, StateT.bind, pure, ExceptT.pure,
     Except.isOk, Except.toBool] at hok' ⊢
   generalize hq : Block.removeLoopsM tss σ = r at hok' ⊢
   obtain ⟨fst_res, snd_st⟩ := r
   cases fst_res with
   | error e => exact Bool.noConfusion hok'
   | ok v =>
-    simp only [StateT.bind, ExceptT.bindCont, pure, StateT.pure, ExceptT.pure,
-      ExceptT.mk] at hok' ⊢
+    simp only [StateT.bind, ExceptT.bindCont, pure, 
+      ] at hok' ⊢
     generalize hq2 : Block.removeLoopsM ess snd_st = r2 at hok' ⊢
     obtain ⟨fst_res2, snd_st2⟩ := r2
     cases fst_res2 with
@@ -166,15 +166,15 @@ private theorem blockResult_cons (σ : LoopElimState) (s : Statement)
   have hok' := hok
   simp only [blockOk, blockRun, blockResult, stmtResult, stmtRun, stmtPostState,
     Block.removeLoopsM, StateT.run, ExceptT.run, bind, ExceptT.bind, ExceptT.mk,
-    ExceptT.bindCont, StateT.bind, pure, StateT.pure, ExceptT.pure,
+    ExceptT.bindCont, StateT.bind, pure, ExceptT.pure,
     Except.isOk, Except.toBool] at hok' ⊢
   generalize hq : Stmt.removeLoopsM s σ = r at hok' ⊢
   obtain ⟨fst_res, snd_st⟩ := r
   cases fst_res with
   | error e => exact Bool.noConfusion hok'
   | ok v =>
-    simp only [StateT.bind, ExceptT.bindCont, pure, StateT.pure, ExceptT.pure,
-      ExceptT.mk] at hok' ⊢
+    simp only [StateT.bind, ExceptT.bindCont, pure, 
+      ] at hok' ⊢
     generalize hq2 : Block.removeLoopsM ss snd_st = r2 at hok' ⊢
     obtain ⟨fst_res2, snd_st2⟩ := r2
     cases fst_res2 with
@@ -545,12 +545,12 @@ private theorem stmtResult_loop_struct (σ : LoopElimState)
   match h : (stmtRun σ (.loop guard measure inv body md)).fst with
   | .error e => simp [h, Except.isOk, Except.toBool] at hok'
   | .ok (b, s') =>
-    simp only [h]
-    simp only [stmtRun, StateT.run, ExceptT.run, Stmt.removeLoopsM, removeLoopsLoopCase, buildLoopOutput, buildLoopPassive, buildArbitraryIterFacts, buildArbitraryIterAssumes, buildExitStateAssumes, buildHavocBlock, buildFirstIterFacts, buildEntryInvariants, buildEntryInvariantAssumes, buildInvAssumes, buildMaintainInvariants, buildExitInvariantAssumes, buildGuardParts, buildTerminationStmtsSome, hasLabelConflict, numAssertAssumesForLoop, invSuffix, measureOldIdent,
+    simp only []
+    simp only [stmtRun, StateT.run, ExceptT.run, Stmt.removeLoopsM, removeLoopsLoopCase, buildLoopOutput, buildLoopPassive, buildArbitraryIterFacts, buildArbitraryIterAssumes, buildExitStateAssumes, buildHavocBlock, buildFirstIterFacts, buildEntryInvariants, buildEntryInvariantAssumes, buildInvAssumes, buildMaintainInvariants, buildExitInvariantAssumes, buildTerminationStmtsSome, hasLabelConflict, numAssertAssumesForLoop, invSuffix, measureOldIdent,
       bind, pure, ExceptT.bind, ExceptT.pure, ExceptT.mk, ExceptT.bindCont,
       ExceptT.lift, StateT.bind,
       Functor.map, liftM, monadLift, MonadLift.monadLift,
-      modify, MonadState.modifyGet, StateT.modifyGet, StateT.map,
+      modify, MonadState.modifyGet, StateT.map,
       genLoopNum, bumpStat] at h
     repeat (first
       | (cases h; exact ⟨_, _, _, _, rfl, rfl⟩)
@@ -1638,22 +1638,22 @@ private theorem blockOk_cons_right {σ : LoopElimState} {s : Statement} {ss : St
   obtain ⟨fst_res, snd_st⟩ := r
   cases fst_res with
   | ok v =>
-    simp only [StateT.bind, ExceptT.bindCont, pure, StateT.pure, ExceptT.pure, ExceptT.mk] at h
+    simp only [StateT.bind, ExceptT.bindCont, pure, ExceptT.pure, ExceptT.mk] at h
     generalize hq2 : Block.removeLoopsM ss snd_st = r2 at h ⊢
     obtain ⟨fst_res2, snd_st2⟩ := r2
     cases fst_res2 with
     | ok v2 => simp
     | error e2 => exact Bool.noConfusion h
   | error e =>
-    simp only [pure, StateT.pure, Prod.fst] at h
+    simp only [pure, StateT.pure] at h
     exact Bool.noConfusion h
 
 private theorem stmtOk_block_inner {σ : LoopElimState} {l : String}
     {bss : Statements} {md : MetaData Expression}
     (h : stmtOk σ (.block l bss md)) : blockOk σ bss := by
-  simp only [stmtOk, stmtRun, blockOk, blockRun, Stmt.removeLoopsM, removeLoopsLoopCase, buildLoopOutput, buildLoopPassive, buildArbitraryIterFacts, buildArbitraryIterAssumes, buildExitStateAssumes, buildHavocBlock, buildFirstIterFacts, buildEntryInvariants, buildEntryInvariantAssumes, buildInvAssumes, buildMaintainInvariants, buildExitInvariantAssumes, buildGuardParts, buildTerminationStmtsSome, hasLabelConflict, numAssertAssumesForLoop, invSuffix, measureOldIdent, StateT.run, ExceptT.run,
+  simp only [stmtOk, stmtRun, blockOk, blockRun, Stmt.removeLoopsM, StateT.run, ExceptT.run,
     bind, ExceptT.bind, ExceptT.mk, ExceptT.bindCont, StateT.bind,
-    Functor.map, liftM, monadLift, MonadLift.monadLift,
+    
     Except.isOk, Except.toBool] at h ⊢
   generalize hq : Block.removeLoopsM bss σ = r at h ⊢
   obtain ⟨fst_res, snd_st⟩ := r
@@ -1664,9 +1664,9 @@ private theorem stmtOk_block_inner {σ : LoopElimState} {l : String}
 private theorem stmtOk_ite_left {σ : LoopElimState} {c : ExprOrNondet Expression}
     {tss ess : Statements} {md : MetaData Expression}
     (h : stmtOk σ (.ite c tss ess md)) : blockOk σ tss := by
-  simp only [stmtOk, stmtRun, blockOk, blockRun, Stmt.removeLoopsM, removeLoopsLoopCase, buildLoopOutput, buildLoopPassive, buildArbitraryIterFacts, buildArbitraryIterAssumes, buildExitStateAssumes, buildHavocBlock, buildFirstIterFacts, buildEntryInvariants, buildEntryInvariantAssumes, buildInvAssumes, buildMaintainInvariants, buildExitInvariantAssumes, buildGuardParts, buildTerminationStmtsSome, hasLabelConflict, numAssertAssumesForLoop, invSuffix, measureOldIdent, StateT.run, ExceptT.run,
+  simp only [stmtOk, stmtRun, blockOk, blockRun, Stmt.removeLoopsM, StateT.run, ExceptT.run,
     bind, ExceptT.bind, ExceptT.mk, ExceptT.bindCont, StateT.bind,
-    Functor.map, liftM, monadLift, MonadLift.monadLift,
+    
     Except.isOk, Except.toBool] at h ⊢
   generalize hq : Block.removeLoopsM tss σ = r at h ⊢
   obtain ⟨fst_res, snd_st⟩ := r
@@ -1677,15 +1677,15 @@ private theorem stmtOk_ite_left {σ : LoopElimState} {c : ExprOrNondet Expressio
 private theorem stmtOk_ite_right {σ : LoopElimState} {c : ExprOrNondet Expression}
     {tss ess : Statements} {md : MetaData Expression}
     (h : stmtOk σ (.ite c tss ess md)) : blockOk (blockPostState σ tss) ess := by
-  simp only [stmtOk, stmtRun, blockOk, blockRun, blockPostState, Stmt.removeLoopsM, removeLoopsLoopCase, buildLoopOutput, buildLoopPassive, buildArbitraryIterFacts, buildArbitraryIterAssumes, buildExitStateAssumes, buildHavocBlock, buildFirstIterFacts, buildEntryInvariants, buildEntryInvariantAssumes, buildInvAssumes, buildMaintainInvariants, buildExitInvariantAssumes, buildGuardParts, buildTerminationStmtsSome, hasLabelConflict, numAssertAssumesForLoop, invSuffix, measureOldIdent, StateT.run,
+  simp only [stmtOk, stmtRun, blockOk, blockRun, blockPostState, Stmt.removeLoopsM, StateT.run,
     ExceptT.run, bind, ExceptT.bind, ExceptT.mk, ExceptT.bindCont, StateT.bind,
-    Functor.map, liftM, monadLift, MonadLift.monadLift,
+    
     Except.isOk, Except.toBool] at h ⊢
   generalize hq : Block.removeLoopsM tss σ = r at h ⊢
   obtain ⟨fst_res, snd_st⟩ := r
   cases fst_res with
   | ok v =>
-    simp only [StateT.bind, ExceptT.bindCont, pure, StateT.pure, ExceptT.pure, ExceptT.mk] at h
+    simp only [StateT.bind, ExceptT.bindCont, pure, ExceptT.pure, ExceptT.mk] at h
     generalize hq2 : Block.removeLoopsM ess snd_st = r2 at h ⊢
     obtain ⟨fst_res2, snd_st2⟩ := r2
     cases fst_res2 with
@@ -1806,7 +1806,7 @@ private theorem defUseWellFormed_outer_extend_aux (sz : Nat) :
           rcases hcontra with h | h
           · exact hd h
           · exact (hext n h).2.2.1 (by
-              simp only [Stmt.definedVars, HasVarsImp.definedVars] at hn
+              simp only [HasVarsImp.definedVars] at hn
               simp only [Stmt.definedVars, HasVarsImp.definedVars]; exact hn)
       | .block l bss md =>
         unfold Stmt.defUseWellFormed at hwf ⊢
@@ -2376,7 +2376,7 @@ private theorem cmd_definedVars_true_isSome_after
   | .step _ _ _ (.step_cmd heval) hrest =>
     cases hrest with
     | refl =>
-      simp only [Config.getEnv]
+      simp only []
       cases heval with
       | cmd_sem hcmd =>
         simp [Stmt.definedVars, HasVarsImp.definedVars, Command.definedVars] at hn
@@ -2384,12 +2384,12 @@ private theorem cmd_definedVars_true_isSome_after
         | eval_init _ hinit _ =>
           cases hinit with
           | init _ hsome _ =>
-            simp [Cmd.definedVars, List.mem_singleton] at hn
+            simp [Cmd.definedVars] at hn
             subst hn; simp [hsome]
         | eval_init_unconstrained hinit _ =>
           cases hinit with
           | init _ hsome _ =>
-            simp [Cmd.definedVars, List.mem_singleton] at hn
+            simp [Cmd.definedVars] at hn
             subst hn; simp [hsome]
         | eval_set _ _ _ => simp [Cmd.definedVars] at hn
         | eval_set_nondet _ _ => simp [Cmd.definedVars] at hn
@@ -2576,7 +2576,7 @@ private theorem step_preserves_isNoneAnchored
     -- a = .stmt (.cmd c) ρ, b = .terminal ρ' with ρ'.store = σ'
     -- hnoWrite: n ∉ Stmt.modifiedVars (.cmd c) ++ Stmt.definedVars (.cmd c) false
     -- Use evalCommand_store_frame_stmt: σ' n = ρ.store n.
-    simp only [isNoneAnchored, Config.getEnv] at hinv ⊢
+    simp only [isNoneAnchored] at hinv ⊢
     have hmod : n ∉ Stmt.modifiedVars (.cmd ‹Command›) :=
       fun hmem => hnoWrite (by
         simp only [Config.touchedVarsSet, List.mem_append]; exact .inl hmem)
@@ -2625,7 +2625,7 @@ private theorem step_preserves_isNoneAnchored
     simp only [isNoneAnchored] at hinv ⊢
     exact hinv
   | step_funcDecl =>
-    simp only [isNoneAnchored, Config.getEnv] at hinv ⊢
+    simp only [isNoneAnchored] at hinv ⊢
     exact hinv
   | step_typeDecl =>
     simp only [isNoneAnchored] at hinv ⊢
@@ -2657,19 +2657,19 @@ private theorem step_preserves_isNoneAnchored
     -- a = .block l σ_parent (.terminal ρ'), hinv = ⟨(σ_parent n).isNone, (ρ'.store n).isNone⟩
     -- b = .terminal { ρ' with store := projectStore σ_parent ρ'.store }
     -- goal: ((projectStore σ_parent ρ'.store) n).isNone
-    simp only [isNoneAnchored, Config.getEnv] at hinv ⊢
+    simp only [isNoneAnchored] at hinv ⊢
     obtain ⟨hpar, _⟩ := hinv
     simp only [projectStore]
     rw [if_neg (by rw [Option.not_isSome_iff_eq_none]; exact Option.isNone_iff_eq_none.mp hpar)]
     rfl
   | step_block_exit_match _ =>
-    simp only [isNoneAnchored, Config.getEnv] at hinv ⊢
+    simp only [isNoneAnchored] at hinv ⊢
     obtain ⟨hpar, _⟩ := hinv
     simp only [projectStore]
     rw [if_neg (by rw [Option.not_isSome_iff_eq_none]; exact Option.isNone_iff_eq_none.mp hpar)]
     rfl
   | step_block_exit_mismatch _ =>
-    simp only [isNoneAnchored, Config.getEnv] at hinv ⊢
+    simp only [isNoneAnchored] at hinv ⊢
     obtain ⟨hpar, _⟩ := hinv
     simp only [projectStore]
     rw [if_neg (by rw [Option.not_isSome_iff_eq_none]; exact Option.isNone_iff_eq_none.mp hpar)]
@@ -3170,7 +3170,7 @@ private theorem BlockInitEnvWF.toBlock_tail_via_defUseOk {reserved : List String
         case false =>
           -- (ρ₀.store n).isNone ∧ n ∉ Stmt.definedVars s true → goal: false = (ρ₁.store n).isSome
           have hnotmem : n ∉ Stmt.definedVars s true := by
-            simp [decide_eq_true_eq] at hd; exact hd
+            simp [] at hd; exact hd
           apply Eq.symm
           have ⟨hhead_def, _⟩ := defUseWellFormed_cons h.defUseOk
           have hres : (ρ₁.store n).isNone := by
@@ -4160,14 +4160,11 @@ private theorem inv_eval_agree_under_projectStore
   exact hswf.exprCongr le.2
     (projectStore ρ.store ρ_inner.store) ρ_inner.store hagree_vars
 
-/-- Without `noFuncDecl`, `ρ_inner.eval` may differ from `ρ₀.eval` (the body
-    can introduce funcDecls that extend the eval).  However, if `e`'s free
-    variables are all defined in `ρ₀.store`, the body's `defUseWellFormed`
-    invariant guarantees they are disjoint from any funcDecl introduced in
-    the body, hence `ρ_inner.eval σ' e = ρ₀.eval σ' e` for any store `σ'`.
-
-    This is the per-expression replacement for the old `heval_inner :
-    ρ_inner.eval = ρ₀.eval` (which only held under `noFuncDecl`). -/
+/-- The body may introduce `funcDecl`s that extend `ρ_inner.eval` beyond
+    `ρ₀.eval`.  However, if `e`'s free variables are all defined in
+    `ρ₀.store`, the body's `defUseWellFormed` invariant guarantees they
+    are disjoint from any funcDecl introduced in the body, so
+    `ρ_inner.eval σ' e = ρ₀.eval σ' e` for any store `σ'`. -/
 private theorem body_eval_eq_init_on_expr
     (φ : CoreEval → PureFunc Expression → CoreEval)
     (hwf_ext : WFEvalExtension φ)
@@ -4395,7 +4392,7 @@ private theorem simulation_loop_term_enter_case
   match h : (stmtRun σ (.loop guardE measure inv body md)).fst with
   | .error e => simp [h, Except.isOk, Except.toBool] at hok'
   | .ok (b, s') =>
-    simp only [h]
+    simp only []
     dsimp only [stmtRun, StateT.run, ExceptT.run, Stmt.removeLoopsM, removeLoopsLoopCase,
       buildLoopOutput, buildLoopPassive, buildArbitraryIterFacts, buildArbitraryIterAssumes,
       buildExitStateAssumes, buildHavocBlock, buildFirstIterFacts, buildEntryInvariants,
@@ -4741,7 +4738,7 @@ private theorem simulation_loop_term_enter_case
                   have h_not_filter :
                       ¬(decide (¬x ∈ Block.definedVars body Bool.false) = Bool.true) :=
                     fun h_filt => hx_not_havoc (List.mem_filter.mpr ⟨hmod, h_filt⟩)
-                  simp [decide_eq_true_eq] at h_not_filter
+                  simp [] at h_not_filter
                   have hisNone := hswf.defsUndefined x (by
                     show x ∈ Stmt.definedVars
                       (.loop ExprOrNondet.nondet measure inv body md) Bool.false
@@ -5214,7 +5211,7 @@ private theorem simulation_loop_term_enter_case
                       have h_not_filter :
                           ¬(decide (¬x ∈ Block.definedVars body Bool.false) = Bool.true) :=
                         fun h_filt => hx_not_havoc (List.mem_filter.mpr ⟨hmod, h_filt⟩)
-                      simp [decide_eq_true_eq] at h_not_filter
+                      simp [] at h_not_filter
                       have hisNone := hswf.defsUndefined x (by
                         show x ∈ Stmt.definedVars
                           (.loop (ExprOrNondet.det g) none inv body md) Bool.false
@@ -5819,7 +5816,7 @@ private theorem loop_iteration_extract_exit
             obtain ⟨le, hle, hff⟩ := hff_ex
             have hff_mid : ρ_mid.eval ρ_mid.store le.2 = some HasBool.ff := by
               rw [heval_mid]
-              rw [heq_mid]; simp only [Env.store, Env.eval]
+              rw [heq_mid]; simp only []
               have hcongr := inv_eval_agree_under_projectStore
                 (ρ_inner := ρ_inner) hswf hsame_ρ hle
               rw [hcongr,
@@ -5861,7 +5858,7 @@ private theorem loop_iteration_extract_exit
               have heval_mid_le : ρ_mid.eval ρ_mid.store le.2 =
                   ρ_inner.eval ρ_inner.store le.2 := by
                 rw [heval_mid]
-                rw [heq_mid]; simp only [Env.store, Env.eval]
+                rw [heq_mid]; simp only []
                 have hcongr := inv_eval_agree_under_projectStore
                   (ρ_inner := ρ_inner) hswf hsame_ρ hle
                 rw [hcongr,
@@ -5875,7 +5872,7 @@ private theorem loop_iteration_extract_exit
           have hall_tt_mid : ∀ le ∈ inv, ρ_mid.eval ρ_mid.store le.2 = some HasBool.tt := by
             intro le hle
             rw [heval_mid]
-            rw [heq_mid]; simp only [Env.store, Env.eval]
+            rw [heq_mid]; simp only []
             have hcongr := inv_eval_agree_under_projectStore
               (ρ_inner := ρ_inner) hswf hsame_ρ hle
             rw [hcongr,
@@ -5969,7 +5966,7 @@ private theorem loop_iteration_extract_exit
             obtain ⟨le, hle, hff⟩ := hff_ex
             have hff_mid : ρ_mid.eval ρ_mid.store le.2 = some HasBool.ff := by
               rw [heval_mid]
-              rw [heq_mid]; simp only [Env.store, Env.eval]
+              rw [heq_mid]; simp only []
               have hcongr := inv_eval_agree_under_projectStore
                 (ρ_inner := ρ_inner) hswf hsame_ρ hle
               rw [hcongr,
@@ -6009,7 +6006,7 @@ private theorem loop_iteration_extract_exit
               have heval_mid_le : ρ_mid.eval ρ_mid.store le.2 =
                   ρ_inner.eval ρ_inner.store le.2 := by
                 rw [heval_mid]
-                rw [heq_mid]; simp only [Env.store, Env.eval]
+                rw [heq_mid]; simp only []
                 have hcongr := inv_eval_agree_under_projectStore
                   (ρ_inner := ρ_inner) hswf hsame_ρ hle
                 rw [hcongr,
@@ -6022,7 +6019,7 @@ private theorem loop_iteration_extract_exit
           have hall_tt_mid : ∀ le ∈ inv, ρ_mid.eval ρ_mid.store le.2 = some HasBool.tt := by
             intro le hle
             rw [heval_mid]
-            rw [heq_mid]; simp only [Env.store, Env.eval]
+            rw [heq_mid]; simp only []
             have hcongr := inv_eval_agree_under_projectStore
               (ρ_inner := ρ_inner) hswf hsame_ρ hle
             rw [hcongr,
@@ -6095,7 +6092,7 @@ private theorem simulation_loop_exit_enter_case
   match h : (stmtRun σ (.loop guardE measure inv body md)).fst with
   | .error e => simp [h, Except.isOk, Except.toBool] at hok'
   | .ok (b, s') =>
-    simp only [h]
+    simp only []
     dsimp only [stmtRun, StateT.run, ExceptT.run, Stmt.removeLoopsM, removeLoopsLoopCase,
       buildLoopOutput, buildLoopPassive, buildArbitraryIterFacts, buildArbitraryIterAssumes,
       buildExitStateAssumes, buildHavocBlock, buildFirstIterFacts, buildEntryInvariants,
@@ -6698,9 +6695,9 @@ private theorem simulation_loop_exit_enter_case
               | some _ =>
                 exfalso; have := (hsame_k x).mp (by simp [h])
                 rw [hh] at this; cases this
-            simp [hh, hnone_k]
+            simp [hnone_k]
           · have hsome_k : (ρ_k.store x).isSome := (hsame_k x).mpr (by simp [hh])
-            simp [hh, hsome_k]
+            simp [hsome_k]
         have hρ'_eq : ρ' = { ρ_inner_k with store := projectStore ρ₀.store ρ_inner_k.store, eval := ρ₀.eval } := by
           rw [heq_ρ', heval_k, hproj_eq]
         rw [← hρ'_eq] at h_outer_exit
@@ -7193,9 +7190,9 @@ private theorem simulation_loop_exit_enter_case
               | some _ =>
                 exfalso; have := (hsame_k x).mp (by simp [h])
                 rw [hh] at this; cases this
-            simp [hh, hnone_k]
+            simp [hnone_k]
           · have hsome_k : (ρ_k.store x).isSome := (hsame_k x).mpr (by simp [hh])
-            simp [hh, hsome_k]
+            simp [hsome_k]
         have hρ'_eq : ρ' = { ρ_inner_k with store := projectStore ρ₀.store ρ_inner_k.store, eval := ρ₀.eval } := by
           rw [heq_ρ', heval_k, hproj_eq]
         rw [← hρ'_eq] at h_outer_exit
@@ -7455,7 +7452,7 @@ private theorem loop_cf_iteration_extract
               have hall_tt_mid : ∀ le ∈ inv, ρ_mid.eval ρ_mid.store le.2 = some HasBool.tt := by
                 intro le hle
                 rw [heval_mid]
-                rw [heq_mid_val]; simp only [Env.store, Env.eval]
+                rw [heq_mid_val]; simp only []
                 have hcongr := inv_eval_agree_under_projectStore
                   (ρ_inner := ρ_inner) hswf hsame_ρ hle
                 rw [hcongr,
@@ -7521,7 +7518,7 @@ private theorem loop_cf_iteration_extract
                 have hcongr := inv_eval_agree_under_projectStore
                   (ρ_inner := ρ_inner) hswf hsame_ρ hle
                 rw [heq_mid_val] at hb_mid
-                simp only [Env.store, Env.eval] at hb_mid
+                simp only [] at hb_mid
                 rw [heval_ρ] at hb_mid
                 rw [hcongr,
                   ← body_eval_inv_preserved_init π φ hwf_ext hswf hsame_ρ heval_ρ
@@ -7603,7 +7600,7 @@ private theorem loop_cf_iteration_extract
               have hall_tt_mid : ∀ le ∈ inv, ρ_mid.eval ρ_mid.store le.2 = some HasBool.tt := by
                 intro le hle
                 rw [heval_mid]
-                rw [heq_mid_val]; simp only [Env.store, Env.eval]
+                rw [heq_mid_val]; simp only []
                 have hcongr := inv_eval_agree_under_projectStore
                   (ρ_inner := ρ_inner) hswf hsame_ρ hle
                 rw [hcongr,
@@ -7665,7 +7662,7 @@ private theorem loop_cf_iteration_extract
                 have hcongr := inv_eval_agree_under_projectStore
                   (ρ_inner := ρ_inner) hswf hsame_ρ hle
                 rw [heq_mid_val] at hb_mid
-                simp only [Env.store, Env.eval] at hb_mid
+                simp only [] at hb_mid
                 rw [heval_ρ] at hb_mid
                 rw [hcongr,
                   ← body_eval_inv_preserved_init π φ hwf_ext hswf hsame_ρ heval_ρ
@@ -7838,7 +7835,7 @@ private theorem simulation_loop_cf_all_tt_det_nomeasure
   have h_arb_body_cf : CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) arb_facts_body ρ₀ := by
     show CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) ([.block havoc_label havoc_stmts ∅,
       .block arb_assumes_label arb_assumes_body md] ++ [] ++ body ++ maintain_stmts ++ []) ρ₀
-    simp only [List.append_nil, List.nil_append, List.append_assoc]
+    simp only [List.append_nil, List.append_assoc]
     -- = [havoc, assumes] ++ (body ++ maintain)
     apply Transform.canFailBlock_append_right (EvalCommand π φ) (EvalPureFunc φ)
       [.block havoc_label havoc_stmts ∅, .block arb_assumes_label arb_assumes_body md]
@@ -7986,7 +7983,7 @@ private theorem simulation_loop_cf_all_tt_nondet
   have h_arb_body_cf : CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) arb_facts_body ρ₀ := by
     show CanFailBlock (EvalCommand π φ) (EvalPureFunc φ) ([.block havoc_label havoc_stmts ∅,
       .block arb_assumes_label arb_assumes_body md] ++ [] ++ body ++ maintain_stmts ++ []) ρ₀
-    simp only [List.append_nil, List.nil_append, List.append_assoc]
+    simp only [List.append_nil, List.append_assoc]
     apply Transform.canFailBlock_append_right (EvalCommand π φ) (EvalPureFunc φ)
       [.block havoc_label havoc_stmts ∅, .block arb_assumes_label arb_assumes_body md]
       (body ++ maintain_stmts) ρ₀ ρ_k
@@ -8793,7 +8790,7 @@ private theorem getVars_havoc_map (xs : List Expression.Ident)
            (rest.map (fun n => Stmt.cmd (HasHavoc.havoc n md))) = []
     rw [ih]
     show @HasVarsPure.getVars Expression Command _ (HasHavoc.havoc x md) ++ [] = []
-    simp [HasVarsPure.getVars, HasHavoc.havoc, Command.getVars, Cmd.getVars,
+    simp [HasVarsPure.getVars, Command.getVars, Cmd.getVars,
       ExprOrNondet.getVars]
 
 /-- Havoc-only command lists have `Block.modifiedOrDefinedVars` equal to the
@@ -8808,7 +8805,7 @@ private theorem modifiedVars_havoc_map (xs : List Expression.Ident)
     simp only [List.map_cons, Block.modifiedVars]
     rw [ih]
     show @Stmt.modifiedVars Expression Command _ (Stmt.cmd (HasHavoc.havoc x md : Command)) ++ rest = x :: rest
-    simp [Stmt.modifiedVars, HasVarsImp.modifiedVars, HasHavoc.havoc, Command.modifiedVars, Cmd.modifiedVars]
+    simp [Stmt.modifiedVars, HasVarsImp.modifiedVars, Command.modifiedVars, Cmd.modifiedVars]
 
 private theorem modifiedOrDefinedVars_havoc_map (xs : List Expression.Ident)
     (md : MetaData Expression) :
@@ -8831,7 +8828,7 @@ private theorem modifiedVars_mapIdx_assert
     simp only [Block.modifiedVars]
     rw [ih]
     show @Stmt.modifiedVars Expression Command _ (Stmt.cmd (HasPassiveCmds.assert (label 0 x) x.2 md : Command)) ++ [] = []
-    simp [Stmt.modifiedVars, HasVarsImp.modifiedVars, HasPassiveCmds.assert,
+    simp [Stmt.modifiedVars, HasVarsImp.modifiedVars, 
       Command.modifiedVars, Cmd.modifiedVars]
 
 private theorem modifiedOrDefinedVars_mapIdx_assert
@@ -8858,7 +8855,7 @@ private theorem modifiedVars_mapIdx_assume
     simp only [Block.modifiedVars]
     rw [ih]
     show @Stmt.modifiedVars Expression Command _ (Stmt.cmd (HasPassiveCmds.assume (label 0 x) x.2 md : Command)) ++ [] = []
-    simp [Stmt.modifiedVars, HasVarsImp.modifiedVars, HasPassiveCmds.assume,
+    simp [Stmt.modifiedVars, HasVarsImp.modifiedVars, 
       Command.modifiedVars, Cmd.modifiedVars]
 
 private theorem modifiedOrDefinedVars_mapIdx_assume
@@ -8897,7 +8894,7 @@ private theorem getVars_mapIdx_assert
          rest.flatMap (fun lp => HasVarsPure.getVars lp.2) =
          HasVarsPure.getVars x.2 ++
          rest.flatMap (fun lp => HasVarsPure.getVars lp.2)
-    simp [HasVarsPure.getVars, HasPassiveCmds.assert, Command.getVars, Cmd.getVars]
+    simp [HasVarsPure.getVars, Command.getVars, Cmd.getVars]
 
 /-- The `getVars` of a `mapIdx` of assumes equals the `flatMap` of `getVars`. -/
 private theorem getVars_mapIdx_assume
@@ -8924,7 +8921,7 @@ private theorem getVars_mapIdx_assume
          rest.flatMap (fun lp => HasVarsPure.getVars lp.2) =
          HasVarsPure.getVars x.2 ++
          rest.flatMap (fun lp => HasVarsPure.getVars lp.2)
-    simp [HasVarsPure.getVars, HasPassiveCmds.assume, Command.getVars, Cmd.getVars]
+    simp [HasVarsPure.getVars, Command.getVars, Cmd.getVars]
 
 /-! ### Unfolded variants of mapIdx lemmas
 
@@ -8972,7 +8969,7 @@ private theorem mem_definedVars_stmtResult_loop
   match h : (stmtRun σ (.loop guard measure inv body md)).fst with
   | .error e => simp [h, Except.isOk, Except.toBool] at hok'
   | .ok (b, s') =>
-    simp only [h]
+    simp only []
     -- Reduce the monadic computation to expose case splits on guard/measure.
     dsimp only [stmtRun, StateT.run, ExceptT.run, Stmt.removeLoopsM, removeLoopsLoopCase, buildLoopOutput, buildLoopPassive, buildArbitraryIterFacts, buildArbitraryIterAssumes, buildExitStateAssumes, buildHavocBlock, buildFirstIterFacts, buildEntryInvariants, buildEntryInvariantAssumes, buildInvAssumes, buildMaintainInvariants, buildExitInvariantAssumes, buildGuardParts, buildTerminationStmtsSome, hasLabelConflict, numAssertAssumesForLoop, invSuffix, measureOldIdent,
       bind, pure, ExceptT.bind, ExceptT.pure, ExceptT.mk, ExceptT.bindCont,
@@ -8991,11 +8988,11 @@ private theorem mem_definedVars_stmtResult_loop
             repeat rw [definedVars_havoc_map] at hm
             repeat rw [definedVars_mapIdx_assert] at hm
             repeat rw [definedVars_mapIdx_assume] at hm
-            simp only [HasVarsImp.definedVars, HasPassiveCmds.assert,
-              HasPassiveCmds.assume, HasInit.init, HasIdent.ident,
-              Command.definedVars, Cmd.definedVars,
-              List.append_nil, List.nil_append, List.mem_append,
-              List.not_mem_nil, false_or, or_false, List.mem_singleton] at hm
+            simp only [HasPassiveCmds.assert,
+              HasPassiveCmds.assume, 
+              
+              List.mem_append,
+              ] at hm
             first
               | exact .inl hm
               | exact .inr hm
@@ -9022,11 +9019,11 @@ private theorem mem_definedVars_stmtResult_loop
               repeat rw [definedVars_havoc_map] at hm
               repeat rw [definedVars_mapIdx_assert] at hm
               repeat rw [definedVars_mapIdx_assume] at hm
-              simp only [HasVarsImp.definedVars, HasPassiveCmds.assert,
+              simp only [HasPassiveCmds.assert,
                 HasPassiveCmds.assume, HasInit.init, HasIdent.ident,
-                Command.definedVars, Cmd.definedVars,
-                List.append_nil, List.nil_append, List.mem_append,
-                List.not_mem_nil, false_or, or_false, List.mem_singleton] at hm
+                
+                List.nil_append, List.mem_append,
+                ] at hm
               first
                 | exact .inl hm
                 | exact .inr hm
@@ -9044,11 +9041,11 @@ private theorem mem_definedVars_stmtResult_loop
           repeat rw [definedVars_havoc_map] at hm
           repeat rw [definedVars_mapIdx_assert] at hm
           repeat rw [definedVars_mapIdx_assume] at hm
-          simp only [HasVarsImp.definedVars, HasPassiveCmds.assert,
-            HasPassiveCmds.assume, HasInit.init, HasIdent.ident,
+          simp only [HasVarsImp.definedVars, 
+            HasIdent.ident,
             Command.definedVars, Cmd.definedVars,
             List.append_nil, List.nil_append, List.mem_append,
-            List.not_mem_nil, false_or, or_false, List.mem_singleton] at hm
+            List.mem_singleton] at hm
           first
             | exact .inl hm
             | exact .inr hm
@@ -9249,9 +9246,9 @@ private theorem funcDeclNames_stmtResult_loop_subset
            repeat rw [funcDeclNames_mapIdx_assert] at hn
            repeat rw [funcDeclNames_mapIdx_assume] at hn
            repeat rw [funcDeclNames_havoc_block] at hn
-           simp only [List.append_nil, List.nil_append, List.mem_append,
-             Stmt.funcDeclNames, Block.funcDeclNames, List.not_mem_nil,
-             false_or, or_false] at hn
+           simp only [List.append_nil, List.nil_append, 
+             
+             ] at hn
            first
              | exact hn
              | (rcases hn with h1 | h1 <;> exact h1)
@@ -9341,7 +9338,7 @@ private theorem definedVars_subset_stmtResult_loop
   match h : (stmtRun σ (.loop guard measure inv body md)).fst with
   | .error e => simp [h, Except.isOk, Except.toBool] at hok'
   | .ok (b, s') =>
-    simp only [h]
+    simp only []
     dsimp only [stmtRun, StateT.run, ExceptT.run, Stmt.removeLoopsM, removeLoopsLoopCase, buildLoopOutput, buildLoopPassive, buildArbitraryIterFacts, buildArbitraryIterAssumes, buildExitStateAssumes, buildHavocBlock, buildFirstIterFacts, buildEntryInvariants, buildEntryInvariantAssumes, buildInvAssumes, buildMaintainInvariants, buildExitInvariantAssumes, buildGuardParts, buildTerminationStmtsSome, hasLabelConflict, numAssertAssumesForLoop, invSuffix, measureOldIdent,
       bind, pure, ExceptT.bind, ExceptT.pure, ExceptT.mk, ExceptT.bindCont,
       ExceptT.lift, StateT.bind, StateT.pure,
@@ -9356,12 +9353,12 @@ private theorem definedVars_subset_stmtResult_loop
             repeat rw [definedVars_havoc_map]
             repeat rw [definedVars_mapIdx_assert]
             repeat rw [definedVars_mapIdx_assume]
-            simp only [HasVarsImp.definedVars,
+            simp only [
               HasPassiveCmds.assert, HasPassiveCmds.assume,
-              HasInit.init, HasIdent.ident,
-              Command.definedVars, Cmd.definedVars,
-              List.append_nil, List.nil_append, List.mem_append,
-              List.not_mem_nil, List.mem_singleton, false_or, or_false]
+              
+              
+              List.mem_append,
+              ]
             first
               | exact hm
               | exact .inl hm
@@ -9396,12 +9393,12 @@ private theorem definedVars_subset_stmtResult_loop
               repeat rw [definedVars_havoc_map]
               repeat rw [definedVars_mapIdx_assert]
               repeat rw [definedVars_mapIdx_assume]
-              simp only [HasVarsImp.definedVars,
+              simp only [
                 HasPassiveCmds.assert, HasPassiveCmds.assume,
                 HasInit.init, HasIdent.ident,
-                Command.definedVars, Cmd.definedVars,
-                List.append_nil, List.nil_append, List.mem_append,
-                List.not_mem_nil, List.mem_singleton, false_or, or_false]
+                
+                List.nil_append, List.mem_append,
+                ]
               first
                 | exact hm
                 | exact .inl hm
@@ -9429,11 +9426,11 @@ private theorem definedVars_subset_stmtResult_loop
           repeat rw [definedVars_mapIdx_assert]
           repeat rw [definedVars_mapIdx_assume]
           simp only [HasVarsImp.definedVars,
-            HasPassiveCmds.assert, HasPassiveCmds.assume,
-            HasInit.init, HasIdent.ident,
+            
+            HasIdent.ident,
             Command.definedVars, Cmd.definedVars,
             List.append_nil, List.nil_append, List.mem_append,
-            List.not_mem_nil, List.mem_singleton, false_or, or_false]
+            List.mem_singleton]
           first
             | exact hm
             | exact .inl hm
@@ -9647,14 +9644,14 @@ private theorem mem_touchedVars_stmtResult_loop_aux
     genLoopNum, bumpStat] at h
   repeat (first
     | (cases h
-       simp only [Stmt.touchedVars, Block.touchedVars,
+       simp only [Stmt.touchedVars, 
          Stmt.modifiedOrDefinedVars, Stmt.modifiedVars, Stmt.getVars, Stmt.definedVars,
-         Block.modifiedOrDefinedVars, Block.modifiedVars, Block.getVars, Block.definedVars,
-         block_modifiedOrDefinedVars_append, block_modifiedVars_append, block_getVars_append, block_definedVars_append,
-         Bool.false_eq_true, ↓reduceIte, ite_true, ite_false,
-         List.append_nil, List.nil_append,
-         List.mem_append, List.not_mem_nil, List.mem_singleton,
-         false_or, or_false] at hm ⊢
+         Block.modifiedVars, Block.getVars, Block.definedVars,
+         block_modifiedVars_append, block_getVars_append, block_definedVars_append,
+         Bool.false_eq_true, ↓reduceIte, 
+         List.append_nil, 
+         List.mem_append, 
+         ] at hm ⊢
        repeat rw [modifiedOrDefinedVars_havoc_map'] at hm
        repeat rw [modifiedVars_havoc_map'] at hm
        repeat rw [getVars_havoc_map'] at hm
@@ -9682,12 +9679,12 @@ private theorem mem_touchedVars_stmtResult_loop_aux
        simp only [HasVarsImp.definedVars, HasVarsImp.modifiedVars,
          HasVarsPure.getVars,
          HasPassiveCmds.assert, HasPassiveCmds.assume,
-         HasInit.init, HasIdent.ident, HasHavoc.havoc,
+         HasHavoc.havoc,
          Command.definedVars, Command.modifiedVars, Command.getVars,
          Cmd.definedVars, Cmd.modifiedVars, Cmd.getVars,
          ExprOrNondet.getVars,
-         List.append_nil, List.nil_append,
-         List.mem_append, List.not_mem_nil, List.mem_singleton,
+         
+         List.not_mem_nil, 
          false_or, or_false] at hm ⊢
        try simp only [List.mem_filter, decide_eq_true_eq] at hm
        repeat first
@@ -9722,14 +9719,14 @@ private theorem mem_touchedVars_stmtResult_loop_aux
       MonadStateOf.modifyGet, bumpStat, modify, genLoopNum] at h
     repeat (first
       | (cases h
-         simp only [Stmt.touchedVars, Block.touchedVars,
+         simp only [Stmt.touchedVars, 
            Stmt.modifiedOrDefinedVars, Stmt.modifiedVars, Stmt.getVars, Stmt.definedVars,
-           Block.modifiedOrDefinedVars, Block.modifiedVars, Block.getVars, Block.definedVars,
-           block_modifiedOrDefinedVars_append, block_modifiedVars_append, block_getVars_append, block_definedVars_append,
-           Bool.false_eq_true, ↓reduceIte, ite_true, ite_false,
+           Block.modifiedVars, Block.getVars, Block.definedVars,
+           block_modifiedVars_append, block_getVars_append, block_definedVars_append,
+           Bool.false_eq_true, ↓reduceIte, 
            List.append_nil, List.nil_append,
-           List.mem_append, List.not_mem_nil, List.mem_singleton,
-           false_or, or_false] at hm ⊢
+           List.mem_append, 
+           ] at hm ⊢
          repeat rw [modifiedOrDefinedVars_havoc_map'] at hm
          repeat rw [modifiedVars_havoc_map'] at hm
          repeat rw [getVars_havoc_map'] at hm
@@ -9756,11 +9753,11 @@ private theorem mem_touchedVars_stmtResult_loop_aux
          repeat rw [definedVars_mapIdx_assume']
          simp only [HasVarsImp.definedVars, HasVarsImp.modifiedVars, HasVarsPure.getVars,
            HasPassiveCmds.assert, HasPassiveCmds.assume,
-           HasInit.init, HasIdent.ident, HasHavoc.havoc,
+           HasIdent.ident, HasHavoc.havoc,
            Command.definedVars, Command.modifiedVars, Command.getVars,
            Cmd.definedVars, Cmd.modifiedVars, Cmd.getVars,
            ExprOrNondet.getVars,
-           List.append_nil, List.nil_append, List.mem_append, List.not_mem_nil,
+           List.not_mem_nil,
            List.mem_singleton, false_or, or_false] at hm ⊢
          try simp only [List.mem_filter, decide_eq_true_eq] at hm
          repeat first
@@ -9789,13 +9786,13 @@ private theorem mem_touchedVars_stmtResult_loop_aux
   -- Third level: handle cases via obtain ⟨_, rfl⟩ := h
   all_goals (first | contradiction | (
     obtain ⟨_, rfl⟩ := h
-    simp only [Stmt.touchedVars, Block.touchedVars,
+    simp only [Stmt.touchedVars, 
       Stmt.modifiedOrDefinedVars, Stmt.modifiedVars, Stmt.getVars, Stmt.definedVars,
-      Block.modifiedOrDefinedVars, Block.modifiedVars, Block.getVars, Block.definedVars,
-      block_modifiedOrDefinedVars_append, block_modifiedVars_append, block_getVars_append, block_definedVars_append,
-      Bool.false_eq_true, ↓reduceIte, ite_true, ite_false,
-      List.append_nil, List.nil_append, List.mem_append, List.not_mem_nil,
-      List.mem_singleton, false_or, or_false] at hm ⊢
+      Block.modifiedVars, Block.getVars, Block.definedVars,
+      block_modifiedVars_append, block_getVars_append, block_definedVars_append,
+      Bool.false_eq_true, ↓reduceIte, 
+      List.append_nil, List.nil_append, List.mem_append, 
+      ] at hm ⊢
     -- Use unprimed lemmas here (HasPassiveCmds.assert form preserved)
     repeat rw [modifiedOrDefinedVars_havoc_map] at hm
     repeat rw [modifiedVars_havoc_map] at hm
@@ -9822,12 +9819,12 @@ private theorem mem_touchedVars_stmtResult_loop_aux
     repeat rw [getVars_mapIdx_assume]
     repeat rw [definedVars_mapIdx_assume]
     simp only [HasVarsImp.definedVars, HasVarsImp.modifiedVars, HasVarsPure.getVars,
-      HasPassiveCmds.assert, HasPassiveCmds.assume,
-      HasInit.init, HasIdent.ident, HasHavoc.havoc,
+      
+      HasIdent.ident, 
       Command.definedVars, Command.modifiedVars, Command.getVars,
       Cmd.definedVars, Cmd.modifiedVars, Cmd.getVars,
       ExprOrNondet.getVars,
-      List.append_nil, List.nil_append, List.mem_append, List.not_mem_nil,
+      List.not_mem_nil,
       List.mem_singleton, false_or, or_false] at hm ⊢
     try simp only [List.mem_filter, decide_eq_true_eq] at hm
     repeat first
@@ -9944,7 +9941,7 @@ private theorem mem_touchedVars_stmtResult_loop
   match h : (stmtRun σ (.loop guard measure inv body md)).fst with
   | .error e => simp [h, Except.isOk, Except.toBool] at hok'
   | .ok (b, s') =>
-    simp only [h]
+    simp only []
     -- Save the un-dsimp'd `h` so the aux lemma can use it without the
     -- `StringGenState.gen` opacity issue that prevents Lean from coercing
     -- the dsimp'd LHS back to `(stmtRun σ ...).fst`.
@@ -10033,28 +10030,28 @@ private theorem mem_touchedVars_stmtResult_loop
       | (cases h; exact
           ⟨(StringGenState.gen "loop" σ.gen).fst, _, rfl, fun m hm => by
             have hm_orig := hm
-            simp only [Stmt.touchedVars, Block.touchedVars,
-              Stmt.modifiedOrDefinedVars, Stmt.modifiedVars, Stmt.getVars, Stmt.definedVars,
-              Block.modifiedOrDefinedVars, Block.modifiedVars, Block.getVars, Block.definedVars,
-              block_modifiedOrDefinedVars_append, block_getVars_append,
-              block_definedVars_append,
-              modifiedOrDefinedVars_havoc_map, getVars_havoc_map,
-              definedVars_havoc_map,
-              modifiedOrDefinedVars_mapIdx_assert, getVars_mapIdx_assert,
-              definedVars_mapIdx_assert,
-              modifiedOrDefinedVars_mapIdx_assume, getVars_mapIdx_assume,
-              definedVars_mapIdx_assume,
-              HasVarsImp.definedVars, HasVarsImp.modifiedVars,
-              HasVarsPure.getVars,
-              HasPassiveCmds.assert, HasPassiveCmds.assume,
-              HasInit.init, HasIdent.ident, HasHavoc.havoc,
-              Command.definedVars, Command.modifiedVars, Command.getVars,
-              Cmd.definedVars, Cmd.modifiedVars, Cmd.getVars,
-              ExprOrNondet.getVars,
-              Bool.false_eq_true, ↓reduceIte, ite_true, ite_false,
-              List.append_nil, List.nil_append,
-              List.mem_append, List.not_mem_nil, List.mem_singleton,
-              false_or, or_false] at hm
+            simp only [Stmt.touchedVars, 
+              Stmt.modifiedOrDefinedVars, 
+              
+              
+              
+              
+              
+              
+              
+              
+              
+              
+              
+              
+              
+              
+              
+              
+              
+              
+              List.mem_append, 
+              ] at hm
             try simp only [List.mem_filter, decide_eq_true_eq] at hm
             -- Dispatch each disjunct of `hm` to the appropriate side.
             (repeat first
@@ -10429,7 +10426,7 @@ private theorem defUseWellFormed_havoc_map (outer : Expression.Ident → Bool)
       show Stmt.defUseWellFormed (P := Expression) (C := Command)
         outer (Stmt.cmd (HasHavoc.havoc x md)) = Bool.true
       simp only [Stmt.defUseWellFormed, HasVarsPure.getVars, HasVarsImp.modifiedVars,
-        HasVarsImp.definedVars, HasHavoc.havoc, Command.getVars, Command.modifiedVars,
+        HasVarsImp.definedVars, Command.getVars, Command.modifiedVars,
         Command.definedVars, Cmd.getVars, Cmd.modifiedVars, Cmd.definedVars,
         ExprOrNondet.getVars, List.all_nil, Bool.and_true, Bool.true_and]
       simp [List.all_cons, hxs x (.head _)]
@@ -10460,9 +10457,9 @@ private theorem defUseWellFormed_mapIdx_assert (outer : Expression.Ident → Boo
     · show Stmt.defUseWellFormed (P := Expression) (C := Command) outer
             (Stmt.cmd (HasPassiveCmds.assert (label 0 x) x.2 md)) = Bool.true
       simp only [Stmt.defUseWellFormed, HasVarsPure.getVars, HasVarsImp.modifiedVars,
-        HasVarsImp.definedVars, HasPassiveCmds.assert, Command.getVars, Command.modifiedVars,
+        HasVarsImp.definedVars, Command.getVars, Command.modifiedVars,
         Command.definedVars, Cmd.getVars, Cmd.modifiedVars, Cmd.definedVars,
-        List.all_nil, Bool.and_true, Bool.true_and]
+        List.all_nil, Bool.and_true]
       rw [List.all_eq_true]
       intro n hn
       apply hgv n
@@ -10493,9 +10490,9 @@ private theorem defUseWellFormed_mapIdx_assume (outer : Expression.Ident → Boo
     · show Stmt.defUseWellFormed (P := Expression) (C := Command) outer
             (Stmt.cmd (HasPassiveCmds.assume (label 0 x) x.2 md)) = Bool.true
       simp only [Stmt.defUseWellFormed, HasVarsPure.getVars, HasVarsImp.modifiedVars,
-        HasVarsImp.definedVars, HasPassiveCmds.assume, Command.getVars, Command.modifiedVars,
+        HasVarsImp.definedVars, Command.getVars, Command.modifiedVars,
         Command.definedVars, Cmd.getVars, Cmd.modifiedVars, Cmd.definedVars,
-        List.all_nil, Bool.and_true, Bool.true_and]
+        List.all_nil, Bool.and_true]
       rw [List.all_eq_true]
       intro n hn
       apply hgv n
@@ -10773,28 +10770,28 @@ private theorem defUseWellFormed_buildLoopOutput_form
                   · exact defUseWellFormed_havoc_block outer body md loop_num h_body_wf
                   · -- After havoc, outer extension by [] = outer.
                     rw [defUseWellFormed_block_congr (outer₂ := outer) (fun n => by
-                      simp [definedVars_true_havoc_block])]
+                      simp [])]
                     apply defUseWellFormed_cons_intro
                     · exact defUseWellFormed_arb_iter_assumes_block outer loop_num
                         assumeGuard inv md h_assumeGuard_wf h_assumeGuard_def_true_empty
                         h_inv_getVars
                     · -- Trailing nil after the assumes block.
                       rw [defUseWellFormed_block_congr (outer₂ := outer) (fun n => by
-                        simp [definedVars_true_arb_iter_assumes_block])]
+                        simp [])]
                       simp [Block.defUseWellFormed]
                 · -- After `[havoc; arb_iter_assumes]`, the running outer extension is
                   -- `outer + ([] ++ [])` (both are blocks → definedVars true = []).
                   -- So pre is WF against (outer + ∅) = outer.
                   rw [defUseWellFormed_block_congr (outer₂ := outer) (fun n => by
-                    simp [Block.definedVars, definedVars_true_havoc_block,
-                          definedVars_true_arb_iter_assumes_block, Stmt.definedVars])]
+                    simp [Block.definedVars, 
+                          Stmt.definedVars])]
                   exact h_pre_wf
               · -- After `[havoc; arb_iter_assumes] ++ pre`, the running outer is
                 -- `outer + (... + pre.definedVars true) = outer + pre_def_true`.
                 rw [defUseWellFormed_block_congr
                       (outer₂ := fun n => outer n || decide (n ∈ pre_def_true)) (fun n => by
-                  simp [Block.definedVars, definedVars_true_havoc_block,
-                        definedVars_true_arb_iter_assumes_block, Stmt.definedVars,
+                  simp [Block.definedVars, 
+                        Stmt.definedVars,
                         h_pre_def_true_eq])]
                 -- Body is WF against outer.  Extend by pre_def_true (disjoint from body).
                 exact defUseWellFormed_outer_extend_block h_body_wf (fun n hn => by
@@ -10807,8 +10804,8 @@ private theorem defUseWellFormed_buildLoopOutput_form
                                 || decide (n ∈ Block.definedVars body Bool.true))
                     (fun n => by
                 rw [block_definedVars_append]
-                simp [Block.definedVars, definedVars_true_havoc_block,
-                      definedVars_true_arb_iter_assumes_block, Stmt.definedVars,
+                simp [Block.definedVars, 
+                      Stmt.definedVars,
                       h_pre_def_true_eq, Bool.or_assoc])]
               -- maintain_invariants asserts; need invs' getVars in extended outer.
               apply defUseWellFormed_mapIdx_assert
@@ -10823,8 +10820,8 @@ private theorem defUseWellFormed_buildLoopOutput_form
                   (fun n => by
               rw [block_definedVars_append, block_definedVars_append,
                   block_definedVars_append, definedVars_true_mapIdx_assert]
-              simp [Block.definedVars, definedVars_true_havoc_block,
-                    definedVars_true_arb_iter_assumes_block, Stmt.definedVars,
+              simp [Block.definedVars, 
+                    Stmt.definedVars,
                     h_pre_def_true_eq, Bool.or_assoc])]
             exact h_post_wf
         · -- exit_state tail: `[loop_havoc; ...] ++ exit ++ exit_inv_assumes`,
@@ -10838,21 +10835,21 @@ private theorem defUseWellFormed_buildLoopOutput_form
               apply defUseWellFormed_cons_intro
               · exact defUseWellFormed_havoc_block outer body md loop_num h_body_wf
               · rw [defUseWellFormed_block_congr (outer₂ := outer) (fun n => by
-                  simp [definedVars_true_havoc_block])]
+                  simp [])]
                 simp [Block.defUseWellFormed]
             · -- exit, against `outer + havoc_block.definedVars true = outer`.
               rw [defUseWellFormed_block_congr (outer₂ := outer) (fun n => by
-                simp [Block.definedVars, definedVars_true_havoc_block, Stmt.definedVars])]
+                simp [Block.definedVars, Stmt.definedVars])]
               exact h_exit_wf
           · -- exit_inv_assumes mapIdx.
             rw [defUseWellFormed_block_congr (outer₂ := outer) (fun n => by
-              simp [Block.definedVars, definedVars_true_havoc_block, Stmt.definedVars,
+              simp [Block.definedVars, Stmt.definedVars,
                     h_exit_def_true_empty])]
             exact defUseWellFormed_mapIdx_assume outer inv md _ h_inv_getVars
       · -- ELSE-branch: empty.
         simp [Block.defUseWellFormed]
     · -- TAIL 2: outer extension by ite.definedVars true = [] = outer.
-      simp [Block.defUseWellFormed, Stmt.definedVars]
+      simp [Block.defUseWellFormed]
 
 /-! ### Case-specific instantiations of `defUseWellFormed_buildLoopOutput_form` -/
 
@@ -10866,9 +10863,9 @@ private theorem defUseWellFormed_singleton_assume
       [Stmt.cmd (HasPassiveCmds.assume label e md)] = Bool.true := by
   apply defUseWellFormed_cons_intro
   · simp only [Stmt.defUseWellFormed, HasVarsPure.getVars, HasVarsImp.modifiedVars,
-      HasVarsImp.definedVars, HasPassiveCmds.assume, Command.getVars,
+      HasVarsImp.definedVars, Command.getVars,
       Command.modifiedVars, Command.definedVars, Cmd.getVars, Cmd.modifiedVars,
-      Cmd.definedVars, List.all_nil, Bool.and_true, Bool.true_and]
+      Cmd.definedVars, List.all_nil, Bool.and_true]
     rw [List.all_eq_true]; exact hgv
   · simp [Block.defUseWellFormed]
 
@@ -11192,9 +11189,9 @@ private theorem defUseWellFormed_loop_output_detSome
     apply defUseWellFormed_cons_intro
     · -- init m_old: m_old ∉ outer (so the "fresh" check passes)
       simp only [Stmt.defUseWellFormed, HasVarsPure.getVars, HasVarsImp.modifiedVars,
-        HasVarsImp.definedVars, HasInit.init, Command.getVars, Command.modifiedVars,
+        HasVarsImp.definedVars, Command.getVars, Command.modifiedVars,
         Command.definedVars, Cmd.getVars, Cmd.modifiedVars, Cmd.definedVars,
-        ExprOrNondet.getVars, List.all_nil, Bool.and_true, Bool.true_and]
+        ExprOrNondet.getVars, List.all_nil, Bool.and_true]
       rw [Bool.and_eq_true]
       refine ⟨?_, ?_⟩
       · rw [List.all_eq_true]; exact h_m_getVars
@@ -11204,9 +11201,9 @@ private theorem defUseWellFormed_loop_output_detSome
       apply defUseWellFormed_cons_intro
       · -- assert measure_lb: getVars = [m_old]; m_old now in extended outer.
         simp only [Stmt.defUseWellFormed, HasVarsPure.getVars, HasVarsImp.modifiedVars,
-          HasVarsImp.definedVars, HasPassiveCmds.assert, Command.getVars,
+          HasVarsImp.definedVars, Command.getVars,
           Command.modifiedVars, Command.definedVars, Cmd.getVars, Cmd.modifiedVars,
-          Cmd.definedVars, List.all_nil, Bool.and_true, Bool.true_and]
+          Cmd.definedVars, List.all_nil, Bool.and_true]
         rw [List.all_eq_true]
         intro n hn
         -- n ∈ HasNot.not (m_old < 0) → n is m_old (or in 0's getVars, which is []).
@@ -11233,9 +11230,9 @@ private theorem defUseWellFormed_loop_output_detSome
   · -- post WF (against outer + [m_old] + body.definedVars true)
     apply defUseWellFormed_cons_intro
     · simp only [Stmt.defUseWellFormed, HasVarsPure.getVars, HasVarsImp.modifiedVars,
-        HasVarsImp.definedVars, HasPassiveCmds.assert, Command.getVars,
+        HasVarsImp.definedVars, Command.getVars,
         Command.modifiedVars, Command.definedVars, Cmd.getVars, Cmd.modifiedVars,
-        Cmd.definedVars, List.all_nil, Bool.and_true, Bool.true_and]
+        Cmd.definedVars, List.all_nil, Bool.and_true]
       rw [List.all_eq_true]
       intro n hn
       -- n ∈ getVars (m < m_old) → n in m's getVars or n = m_old.
@@ -11329,7 +11326,7 @@ private theorem defUseWellFormed_stmtResult_loop
   match h : (stmtRun σ (.loop guard measure inv body md)).fst with
   | .error _ => simp [h, Except.isOk, Except.toBool] at hok'
   | .ok (b, s') =>
-    simp only [h]
+    simp only []
     dsimp only [stmtRun, StateT.run, ExceptT.run, Stmt.removeLoopsM, removeLoopsLoopCase,
       buildLoopOutput, buildLoopPassive, buildArbitraryIterFacts, buildArbitraryIterAssumes,
       buildExitStateAssumes, buildHavocBlock, buildFirstIterFacts, buildEntryInvariants,
@@ -11380,7 +11377,7 @@ private theorem defUseWellFormed_stmtResult_loop
               simp [ExprOrNondet.getVars]; exact hn))
         m0
         (fun n hn => h_meas_all n
-          (by simp [ExprOrNondet.getVars]; exact hn))
+          (by simp []; exact hn))
       · exact h_freshness
       · exact h_m_old_not_outer _
       · exact h_m_old_notin_body_def _
