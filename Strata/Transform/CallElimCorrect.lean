@@ -2937,6 +2937,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       Imperative.isDefined σAO proc.header.outputs.keys :=
                     InitStatesDefined Hinitout
                   -- σ_old definedness on argTemps (layer 1 fall-through).
+                  -- v ∈ argTemps ⇒ v ∉ genOldIdents (HargOldDisj) and v ∉ outTemps
+                  -- (HargOutDisj), so layers 2-3 fall through to layer 1.
                   have Hσ_old_def_argT :
                       Imperative.isDefined σ_old
                         argTemps := by
@@ -2948,33 +2950,9 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                               outTemps oVals)
                             oldTrips.unzip.fst.unzip.fst oldVals) v).isSome =
                           true
-                    -- v not in oldTrips.fst.fst (= genOldIdents), since v ∈ argT
-                    -- and argT ∩ olds = ∅ (Hgennd).
-                    have Hv_notin_old :
-                        v ∉ oldTrips.unzip.fst.unzip.fst := by
-                      rw [HoldTripsFst]
-                      intro Hin
-                      have Hnd' :=
-                        (List.nodup_append.mp Hgennd).2.2
-                      exact Hnd' v
-                        (List.mem_append.mpr (Or.inl Hv))
-                        v Hin rfl
-                    -- v not in outTrips.fst.fst, by Nodup of (argT ++ outT).
-                    have Hv_notin_outT :
-                        v ∉ outTemps := by
-                      have Hnd_argT_outT :=
-                        (List.nodup_append.mp Hgennd).1
-                      have Hnd' :=
-                        (List.nodup_append.mp Hnd_argT_outT).2.2
-                      intro Hin
-                      exact Hnd' v Hv v Hin rfl
-                    rw [updatedStates_get_notin Hv_notin_old,
-                        updatedStates_get_notin Hv_notin_outT]
-                    -- updatedStates σ argTemps argVals v: v ∈ argTemps, so layer
-                    -- 1 maps it to argVals[idx].
-                    apply updatedStatesDefined
-                    · exact HargTempsLen
-                    · exact Hv
+                    rw [updatedStates_get_notin (HoldTripsFst.symm ▸ HargOldDisj Hv),
+                        updatedStates_get_notin (HargOutDisj Hv)]
+                    exact updatedStatesDefined HargTempsLen v Hv
                   -- σ_old definedness on lhs (reuses C-aux HlhsDef_old).
                   have Hσ_old_def_lhs :
                       Imperative.isDefined σ_old lhs := HlhsDef_old
@@ -3297,23 +3275,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         (fun c =>
                           Lambda.LExpr.substFvars c.expr oldSubst_L6))
                       proc'.spec.postconditions
-                  -- Per-entry posts_filtered_L6 ↔ original correspondence
-                  -- via updateCheckExprs_substFvars_mem.
-                  have HpostFiltered_corresp :
-                      ∀ entry : CoreLabel × Procedure.Check,
-                        entry ∈
-                          (proc'.spec.postconditions.keys.zip
-                            (updateCheckExprs_walk
-                              (proc'.spec.postconditions.values.map
-                                (fun c =>
-                                  Lambda.LExpr.substFvars c.expr oldSubst_L6))
-                              proc'.spec.postconditions.values)) →
-                        ∃ c ∈ proc'.spec.postconditions.values,
-                          entry.snd.expr =
-                            Lambda.LExpr.substFvars c.expr oldSubst_L6 := by
-                    intro entry Hentry
-                    exact updateCheckExprs_substFvars_mem Hentry
-                  -- Per-entry decomposition helper.
+                  -- Per-entry decomposition helper: posts_filtered_L6 entries
+                  -- correspond to original posts via updateCheckExprs_substFvars_mem.
                   have forall_post_filtered_decompose :
                       ∀ entry : CoreLabel × Procedure.Check,
                         entry ∈ posts_filtered_L6.toList →
@@ -3321,20 +3284,12 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           entry.snd.expr =
                             Lambda.LExpr.substFvars c.expr oldSubst_L6 := by
                     intro entry Hentry
-                    have Hentry_zip :
-                        entry ∈
-                          (proc'.spec.postconditions.keys.zip
-                            (updateCheckExprs_walk
-                              (proc'.spec.postconditions.values.map
-                                (fun c =>
-                                  Lambda.LExpr.substFvars c.expr oldSubst_L6))
-                              proc'.spec.postconditions.values)) := by
-                      rw [updateCheckExprs_walk_eq_go]
-                      show entry ∈
-                          (proc'.spec.postconditions.keys.zip
-                            (Procedure.Spec.updateCheckExprs.go _ _))
-                      exact Hentry
-                    exact HpostFiltered_corresp entry Hentry_zip
+                    apply updateCheckExprs_substFvars_mem
+                    rw [updateCheckExprs_walk_eq_go]
+                    show entry ∈
+                        (proc'.spec.postconditions.keys.zip
+                          (Procedure.Spec.updateCheckExprs.go _ _))
+                    exact Hentry
                   -- D2d-eval: per-fvar bridges for substFvars eval (split via
                   -- oldSubst_L6 = createOldVarsSubst ++ inputOnlyOldSubst).
                   have HoldSubBridge :
@@ -3501,27 +3456,17 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                                 argExpr,
                           σ_R1 v = σ v := by
                       intro v Hv
-                      have Hv_flat : v ∈
-                          List.flatMap
-                            (Imperative.HasVarsPure.getVars (P:=Expression))
-                            inArgs := by
-                        rw [List.mem_flatMap]
-                        refine ⟨argExpr, ?_, Hv⟩
-                        exact HargExpr_in_argList
-                      have Hσv_some : (σ v).isSome := HargIsDef v Hv_flat
-                      -- v not isOldTempIdent via Hgenrel.oldFresh contrapositive.
-                      have HvNotOldTemp : ¬ isOldTempIdent v := fun Hold =>
-                        σ_some_contradiction Hσv_some
-                          (Option.isNone_iff_eq_none.mp (Hgenrel.oldFresh v Hold))
+                      have Hσv_some : (σ v).isSome := HargIsDef v <|
+                        List.mem_flatMap.mpr ⟨argExpr, HargExpr_in_argList, Hv⟩
                       have HvNotGen : v ∉ genOldIdents :=
-                        notMem_of_Forall_neg HoldIdentsTemp HvNotOldTemp
-                      have HvNotOuts : v ∉ proc.header.outputs.keys :=
-                        HargVarsNotInOutKeys argExpr HargExpr_in_callList v Hv
-                      have HvNotIns : v ∉ proc.header.inputs.keys :=
-                        HargVarsNotInInKeys argExpr HargExpr_in_callList v Hv
+                        notMem_of_Forall_neg HoldIdentsTemp fun Hold =>
+                          σ_some_contradiction Hσv_some
+                            (Option.isNone_iff_eq_none.mp (Hgenrel.oldFresh v Hold))
                       show updatedStates σO genOldIdents oldVals v = σ v
-                      exact σR1_eq_σ_for_notTouched
-                        Hinitin Hinitout Hhav1 HvNotIns HvNotOuts HvNotGen
+                      exact σR1_eq_σ_for_notTouched Hinitin Hinitout Hhav1
+                        (HargVarsNotInInKeys argExpr HargExpr_in_callList v Hv)
+                        (HargVarsNotInOutKeys argExpr HargExpr_in_callList v Hv)
+                        HvNotGen
                     -- Lift to δ-eval via Hwfvars (fvarcongr-like).
                     have Hδ_R1_eq_δ_σ :
                         δ σ_R1 argExpr = δ σ argExpr := by
