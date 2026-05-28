@@ -37,10 +37,6 @@ public section
 
 -- inidividual lemmas
 
-private theorem createHavocsApp :
-createHavocs (a ++ b) md = createHavocs a md ++ createHavocs b md := by
-simp [createHavocs]
-
 private theorem createFvarsApp :
 createFvars (a ++ b) = createFvars a ++ createFvars b := by
 simp [createFvars]
