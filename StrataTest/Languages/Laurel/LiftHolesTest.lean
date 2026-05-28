@@ -400,7 +400,6 @@ info: function $hole_0(x: int)
   returns ($result: int)
   opaque;
 function test(x: int): int
-  opaque
 {
   $hole_0(x)
 };
@@ -408,7 +407,6 @@ function test(x: int): int
 #guard_msgs in
 #eval! parseElimAndPrint r"
 function test(x: int): int
-  opaque
 { <?> };
 "
 
