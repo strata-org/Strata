@@ -1112,7 +1112,15 @@ def Check.block (exprMd : StmtExprMd)
       pure { val := .Block init' label, source := source }
     | some last =>
       have := List.mem_of_getLast? _lastResult
-      let last' ← Check.resolveStmtExpr last expected
+      -- Discard-Call carve-out also applies to the last statement when the
+      -- block itself is in statement position (`expected = TVoid`): a call's
+      -- result is dropped, so it should not need to subtype `TVoid`. Without
+      -- this, `{ ...; foo() }` is rejected when `foo` returns a non-void
+      -- type, even though the block as a whole produces nothing.
+      let last' ← match last.val, expected.val with
+        | .StaticCall .., .TVoid | .InstanceCall .., .TVoid =>
+          let (s', _) ← Synth.resolveStmtExpr last; pure s'
+        | _, _ => Check.resolveStmtExpr last expected
       pure { val := .Block (init' ++ [last']) label, source := source }
   termination_by (exprMd, 0)
   decreasing_by
