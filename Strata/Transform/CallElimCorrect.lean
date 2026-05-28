@@ -3493,27 +3493,17 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                                 argExpr,
                           σ_R1 v = σ v := by
                       intro v Hv
-                      have Hv_flat : v ∈
-                          List.flatMap
-                            (Imperative.HasVarsPure.getVars (P:=Expression))
-                            inArgs := by
-                        rw [List.mem_flatMap]
-                        refine ⟨argExpr, ?_, Hv⟩
-                        exact HargExpr_in_argList
-                      have Hσv_some : (σ v).isSome := HargIsDef v Hv_flat
-                      -- v not isOldTempIdent via Hgenrel.oldFresh contrapositive.
-                      have HvNotOldTemp : ¬ isOldTempIdent v := fun Hold =>
-                        σ_some_contradiction Hσv_some
-                          (Option.isNone_iff_eq_none.mp (Hgenrel.oldFresh v Hold))
+                      have Hσv_some : (σ v).isSome := HargIsDef v <|
+                        List.mem_flatMap.mpr ⟨argExpr, HargExpr_in_argList, Hv⟩
                       have HvNotGen : v ∉ genOldIdents :=
-                        notMem_of_Forall_neg HoldIdentsTemp HvNotOldTemp
-                      have HvNotOuts : v ∉ proc.header.outputs.keys :=
-                        HargVarsNotInOutKeys argExpr HargExpr_in_callList v Hv
-                      have HvNotIns : v ∉ proc.header.inputs.keys :=
-                        HargVarsNotInInKeys argExpr HargExpr_in_callList v Hv
+                        notMem_of_Forall_neg HoldIdentsTemp fun Hold =>
+                          σ_some_contradiction Hσv_some
+                            (Option.isNone_iff_eq_none.mp (Hgenrel.oldFresh v Hold))
                       show updatedStates σO genOldIdents oldVals v = σ v
-                      exact σR1_eq_σ_for_notTouched
-                        Hinitin Hinitout Hhav1 HvNotIns HvNotOuts HvNotGen
+                      exact σR1_eq_σ_for_notTouched Hinitin Hinitout Hhav1
+                        (HargVarsNotInInKeys argExpr HargExpr_in_callList v Hv)
+                        (HargVarsNotInOutKeys argExpr HargExpr_in_callList v Hv)
+                        HvNotGen
                     -- Lift to δ-eval via Hwfvars (fvarcongr-like).
                     have Hδ_R1_eq_δ_σ :
                         δ σ_R1 argExpr = δ σ argExpr := by
