@@ -3005,6 +3005,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                 have HgenOldLen : genOldIdents.length = oldVars.length :=
                   genOldExprIdents_length Heqold
                 have HoldTysLen : oldTys.length = oldVars.length := Holdtylen
+                have HgenOldOldValsLen : genOldIdents.length = oldVals.length := by
+                  rw [HgenOldLen, ← HoldValsLen]
                 have Holdtriplen :
                     oldVals.length =
                       ((genOldIdents.zip oldTys).zip oldVars).length := by
@@ -3020,12 +3022,9 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                 rotate_left
                 · -- length of `hs` = length of `vs`
                   -- Reduce both sides via List.length_append, then close
-                  -- segment-wise via Hargtriplen / Houttriplen / (HgenOldLen ; HoldValsLen).
-                  have HgenOldValsLen :
-                      genOldIdents.length = oldVals.length := by
-                    rw [HgenOldLen, ← HoldValsLen]
+                  -- segment-wise via Hargtriplen / Houttriplen / HgenOldOldValsLen.
                   simp [argTemps, outTemps, List.length_append, List.unzip_eq_map,
-                        Hargtriplen, Houttriplen, HgenOldValsLen]
+                        Hargtriplen, Houttriplen, HgenOldOldValsLen]
                 · exact Hndefgen
                 · exact Hgennd
                 -- σ'' is the updatedStates σ' … form; D2 may use InitsUpdatesComm.
@@ -3699,8 +3698,6 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         outTemps ++ genOldIdents)
                       (argVals ++ oVals ++ oldVals)
                   -- Positional read of σ_R1 on genOldIdents.
-                  have HgenOldOldValsLen : genOldIdents.length = oldVals.length := by
-                    have := HoldValsLen; have := HgenOldLen; omega
                   have HrdR1_olds : ReadValues σ_R1 genOldIdents oldVals := by
                     show ReadValues (updatedStates σO genOldIdents oldVals) _ _
                     exact readValues_updatedStatesSame HgenOldOldValsLen HoldNd
