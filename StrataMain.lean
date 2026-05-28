@@ -210,7 +210,13 @@ def verifyOptionsFlags : List Flag := [
     help := "Maximum continuing paths between statements. 'none' (default) disables; N merges paths when count exceeds N.",
     takesArg := .arg "N|none" },
   { name := "synthesize-ensures",
-    help := "Synthesise 'free ensures' clauses for pure linear procedures before call elimination (opt-in; off by default)." }
+    help := "Synthesise 'free ensures' clauses for pure linear procedures before call elimination (opt-in; off by default)." },
+  { name := "call-policy",
+    help := s!"Call-handling policy: {Core.CallPolicy.options}. Default: 'contract'.",
+    takesArg := .arg "policy" },
+  { name := "inline-fuel",
+    help := "Fuel budget for body-eval (default: 100000). Only used when --call-policy is not 'contract'.",
+    takesArg := .arg "N" }
 ]
 
 /-- Build a VerifyOptions from parsed CLI flags, starting from a base config.
@@ -250,6 +256,17 @@ def parseVerifyOptions (pflags : ParsedFlags)
       | .some n => if n == 0 then exitFailure "--path-cap must be at least 1 or 'none'."
                    else pure (.some n)
       | .none => exitFailure s!"Invalid path-cap: '{s}'. Must be a positive number or 'none'."
+  let callPolicy ← match pflags.getString "call-policy" with
+    | .none => pure base.callPolicy
+    | .some s => match Core.CallPolicy.ofString? s with
+      | some p => pure p
+      | none => exitFailure s!"Invalid --call-policy: '{s}'. Must be 'contract', 'body', or 'bodyOrContract'."
+  let inlineFuel ← match pflags.getString "inline-fuel" with
+    | .none => pure base.inlineFuel
+    | .some s => match s.toNat? with
+      | .some n => if n == 0 then exitFailure "--inline-fuel must be at least 1."
+                   else pure n
+      | .none => exitFailure s!"Invalid --inline-fuel: '{s}'. Must be a positive number."
   let vcDirectory := (pflags.getString "vc-directory" |>.map (⟨·⟩ : String → System.FilePath)).orElse (fun _ => base.vcDirectory)
   let skipSolver := noSolve || base.skipSolver
   if skipSolver && vcDirectory.isNone then
@@ -272,7 +289,9 @@ def parseVerifyOptions (pflags : ParsedFlags)
     overflowChecks,
     vcDirectory,
     pathCap,
-    synthesizeEnsures := pflags.getBool "synthesize-ensures" || base.synthesizeEnsures
+    synthesizeEnsures := pflags.getBool "synthesize-ensures" || base.synthesizeEnsures,
+    callPolicy,
+    inlineFuel
   }
 
 /-- Additional CLI flags for `LaurelVerifyOptions` fields that are not already

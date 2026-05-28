@@ -40,13 +40,13 @@ instance : ToString CondType where
   | .Requires => "Requires"
   | .Ensures => "Ensures"
 
-private abbrev VarSubst := List ((Expression.Ident × Option Lambda.LMonoTy) × Expression.Expr)
+abbrev VarSubst := List ((Expression.Ident × Option Lambda.LMonoTy) × Expression.Expr)
 
 /--
 Create proof obligations and path conditions originating from
 a `.call` statement.
 -/
-private def callConditions (proc : Procedure)
+def callConditions (proc : Procedure)
     (condType : CondType) (conditions : ListMap String Procedure.Check)
     (subst :  VarSubst) :
     ListMap String Procedure.Check :=
@@ -64,7 +64,7 @@ private def callConditions (proc : Procedure)
 /--
 Create substitution mapping from formal parameters to actual arguments.
 -/
-private def mkFormalArgSubst (proc : Procedure) (args : List Expression.Expr) (E : Env) : VarSubst :=
+def mkFormalArgSubst (proc : Procedure) (args : List Expression.Expr) (E : Env) : VarSubst :=
   let args' := args.map (fun a => E.exprEval a)
   let formal_tys := proc.header.inputs.keys.map
                       (fun k => ((k, none) : (Lambda.IdentT Lambda.LMonoTy Unit)))
@@ -83,7 +83,7 @@ For example, if we have `call x := Inc(8)` where `Inc` returns a variable named 
 Return mapping: `[("ret", fresh_var)]`
 LHS mapping: `[("x", fresh_var)]`
 -/
-private def mkReturnSubst (proc : Procedure) (lhs : List Expression.Ident) (E : Env) :
+def mkReturnSubst (proc : Procedure) (lhs : List Expression.Ident) (E : Env) :
     VarSubst × VarSubst × Env :=
   let lhs_tys := lhs.map (fun l => (E.exprEnv.state.findD l (none, .fvar () l none)).fst)
   let lhs_typed := lhs.zip lhs_tys
@@ -94,6 +94,20 @@ private def mkReturnSubst (proc : Procedure) (lhs : List Expression.Ident) (E : 
   let lhs_post_subst := List.zip lhs_typed lhs_fvars
   (return_lhs_subst, lhs_post_subst, E')
 
+/--
+Emit precondition proof obligations for a procedure call into `E.deferred`.
+Shared by `inlineCallContract` and `inlineCallBody` (Task 7) so both
+handlers discharge preconditions identically.
+-/
+def emitPreconditionAsserts (proc : Procedure)
+    (formal_arg_subst : VarSubst) (tySubst : Subst) (E : Env) : Env :=
+  let preconditions_typed := proc.spec.preconditions.map
+      (fun (l, c) => (l, { c with expr := c.expr.applySubst tySubst }))
+  let preconditions := callConditions proc .Requires preconditions_typed formal_arg_subst
+  let preconditions := preconditions.map
+      (fun (l, e) => (l, Procedure.Check.mk (E.exprEval e.expr) e.attr e.md))
+  let deferred_pre := ProofObligations.createAssertions E.pathConditions preconditions
+  { E with deferred := E.deferred ++ deferred_pre }
 
 /--
 Extract the type from an expression that has already been typechecked (so e.g.
@@ -124,7 +138,7 @@ private def getExprType (e : Expression.Expr) : Option LMonoTy :=
 Compute type substitution by unifying actual argument types with input types
 and LHS types with output types.
 -/
-private def computeTypeSubst (input_tys output_tys: List LMonoTy)
+def computeTypeSubst (input_tys output_tys: List LMonoTy)
   (args : List Expression.Expr) (lhs : List Expression.Ident) (E : Env) :
   Subst :=
   let actual_tys := args.filterMap getExprType
@@ -155,15 +169,8 @@ def Command.inlineCallContract (E : Env)
     -- positional: return_lhs_subst zips header.outputs.keys with lhs
     let (return_lhs_subst, lhs_post_subst, E) := mkReturnSubst proc lhs E
 
-    -- Apply type substitution to preconditions to instantiate type variables.
-    let preconditions_typed := proc.spec.preconditions.map
-        (fun (l, c) => (l, { c with expr := c.expr.applySubst tySubst }))
-    -- Generate precondition proof obligations.
-    let preconditions := callConditions proc .Requires preconditions_typed formal_arg_subst
-    let preconditions := preconditions.map
-        (fun (l, e) => (l, Procedure.Check.mk (E.exprEval e.expr) e.attr e.md))
-    let deferred_pre := ProofObligations.createAssertions E.pathConditions preconditions
-    let E := { E with deferred := E.deferred ++ deferred_pre }
+    -- Emit precondition asserts (shared with inlineCallBody, Task 7).
+    let E := emitPreconditionAsserts proc formal_arg_subst tySubst E
 
     -- Apply type substitution to postconditions to instantiate type variables.
     let postconditions_typed := proc.spec.postconditions.map
@@ -196,15 +203,9 @@ def Command.inlineCallContract (E : Env)
     let E := { E with error := some (.Misc f!"Procedure {pname} not found!") }
     (c', E)
 
-def Command.eval (E : Env) (old_var_subst : SubstMap) (c : Command) : Command × Env :=
-  match c with
-  | .cmd c =>
-    let (c, E) := Imperative.Cmd.eval { E with substMap := old_var_subst } c
-    (.cmd c, E)
-  | .call pname callArgs md =>
-    let lhs := CallArg.getLhs callArgs
-    let inArgs := CallArg.getInputExprs callArgs
-    Command.inlineCallContract E lhs pname inArgs md
+-- Command.handleCall, Command.inlineCallBody, and Command.eval are defined
+-- inside the mutual block below (after Statement.eval) so that
+-- inlineCallBody can call Statement.eval without a forward-reference issue.
 
 ---------------------------------------------------------------------
 
@@ -537,10 +538,15 @@ private def enforcePathCap (ewns : List EnvWithNext) (stats : Statistics) :
       else (ewns, stats)
     | .none => (ewns, stats)
 
+-- `Command` (`CmdExt Expression`) has no global `Inhabited` instance; provide one
+-- locally so that `partial def` in the mutual block below can be compiled.
+private instance : Inhabited Command := ⟨.cmd default⟩
+
+mutual
 /-- Evaluate a single statement. `evalSub` and `processBranches` are
     the recursive calls from `evalAuxGo` and `processIteBranches`,
     threaded as parameters to break the mutual recursion. -/
-private def evalOneStmt (old_var_subst : SubstMap)
+private partial def evalOneStmt (old_var_subst : SubstMap)
     (Ewn : EnvWithNext) (s : Statement) (nextSplitId : Nat)
     (evalSub : EnvWithNext → Statements → Nat → List EnvWithNext × Statistics × Nat)
     (processBranches : EnvWithNext → Expression.Expr → Expression.Expr →
@@ -608,11 +614,10 @@ private def evalOneStmt (old_var_subst : SubstMap)
   | .typeDecl _ _ => ([Ewn], noStats, nextSplitId)
   | .exit l _ => ([{ Ewn with exitLabel := .some l}], noStats, nextSplitId)
 
-mutual
 /-- Batch symbolic evaluator: evaluates a statement list for all input
     paths simultaneously. Between each statement, enforces the path cap
     by merging continuing (.none exit) paths. -/
-def evalAuxGo (steps : Nat) (old_var_subst : SubstMap)
+partial def evalAuxGo (steps : Nat) (old_var_subst : SubstMap)
     (Ewns : List EnvWithNext) (ss : Statements) (nextSplitId : Nat) :
     List EnvWithNext × Statistics × Nat :=
   let (errors, good) := Ewns.partition (fun (ewn : EnvWithNext) => ewn.env.error.isSome)
@@ -625,7 +630,6 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap)
       noStats.increment s!"{Evaluator.Stats.simulatingStmtHitOutOfFuel}" good.length,
       nextSplitId)
   | steps' + 1 =>
-    have _htermination_lemma : wfParam steps' < steps' + 1 := by simp [wfParam]
     match ss with
     | [] => (Ewns, noStats, nextSplitId)
     | s :: rest =>
@@ -649,9 +653,8 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap)
       let (finalResults, restStats, nextSplitId) :=
         evalAuxGo steps' old_var_subst allPaths rest nextSplitId
       (finalResults, stmtStats.merge restStats, nextSplitId)
-  termination_by (steps, Imperative.Block.sizeOf ss)
 
-def processIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext)
+partial def processIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext)
     (cond cond' : Expression.Expr) (then_ss else_ss : Statements)
     (nextSplitId : Nat) : List EnvWithNext × Statistics × Nat :=
   let splitId := nextSplitId
@@ -662,16 +665,6 @@ def processIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNe
   let path_conds_true := Ewn.env.pathConditions.push [.assumption label_true cond']
   let path_conds_false := Ewn.env.pathConditions.push
                             [.assumption label_false (Lambda.LExpr.ite () cond' (LExpr.false ()) (LExpr.true ()))]
-  have : 1 <= Imperative.Block.sizeOf then_ss := by
-   unfold Imperative.Block.sizeOf; split <;> omega
-  have : 1 <= Imperative.Block.sizeOf else_ss := by
-   unfold Imperative.Block.sizeOf; split <;> omega
-  have : Imperative.Block.sizeOf then_ss < Imperative.Block.sizeOf then_ss +
-                                          Imperative.Block.sizeOf else_ss := by
-    omega
-  have : Imperative.Block.sizeOf else_ss < Imperative.Block.sizeOf then_ss +
-                                          Imperative.Block.sizeOf else_ss := by
-   omega
   let (Ewns_t, stats_t, nextSplitId) := evalAuxGo steps old_var_subst
                   [{Ewn with env := {Ewn.env with pathConditions := path_conds_true}}]
                   then_ss nextSplitId
@@ -702,17 +695,14 @@ def processIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNe
       (popAll (Ewns_t ++ Ewns_f),
        branchStats.increment s!"{Evaluator.Stats.processIteBranches_diverged}",
        nextSplitId)
-  termination_by (steps, Imperative.Block.sizeOf then_ss + Imperative.Block.sizeOf else_ss)
 
-end
-
-def evalAux (E : Env) (old_var_subst : SubstMap) (ss : Statements) (optExit : Option (Option String)) :
+partial def evalAux (E : Env) (old_var_subst : SubstMap) (ss : Statements) (optExit : Option (Option String)) :
   List EnvWithNext × Statistics :=
   let ewn : EnvWithNext := { env := E, exitLabel := optExit }
   let (result, stats, _) := evalAuxGo (Imperative.Block.sizeOf ss) old_var_subst [ewn] ss 0
   (result, stats)
 
-def exitToError : EnvWithNext → Env
+partial def exitToError : EnvWithNext → Env
   | { env, exitLabel := .none, .. } => env
   | { env, exitLabel := .some (.some l), .. } => ({ env with error := some (.LabelNotExists l) })
   | { env, exitLabel := .some .none, .. } => ({ env with error := some (.Misc "exit outside of any block") })
@@ -723,17 +713,254 @@ A symbolic simulator for statements yielding a list of resulting environments.
 The argument `old_var_subst` below is a substitution map from global variables
 to their pre-state value in the enclosing procedure of `ss`.
 -/
-def eval (E : Env) (old_var_subst : SubstMap) (ss : Statements) : List Env × Statistics :=
+partial def eval (E : Env) (old_var_subst : SubstMap) (ss : Statements) : List Env × Statistics :=
   let (ewns, stats) := evalAux E old_var_subst ss .none
   (ewns.map exitToError, stats)
 
 /--
 A symbolic simulator for statements yielding one environment.
 -/
-def evalOne (E : Env) (old_var_subst : SubstMap) (ss : Statements) : Env :=
+partial def evalOne (E : Env) (old_var_subst : SubstMap) (ss : Statements) : Env :=
   match (eval E old_var_subst ss).fst with
   | [E'] => E'
   | _ => ({ E with error := some (.Misc "More than one result environment") })
+
+/--
+Follow a single deterministic CFG transfer, given an already-evaluated
+block environment.  Returns `(newActive, newFinished)` pairs contributed
+by this one result env.
+-/
+private partial def evalCalleeCFGTransfer
+    (blk : Imperative.DetBlock String Command Expression)
+    (env' : Env) : List (String × Env) × List Env :=
+  if env'.error.isSome then
+    ([], [env'])
+  else
+    match blk.transfer with
+    | .finish _ => ([], [env'])
+    | .condGoto cond lt lf _ =>
+      let cond' := env'.exprEval cond
+      match cond' with
+      | .true _  => ([(lt, env')], [])
+      | .false _ => ([(lf, env')], [])
+      | _ =>
+        let condErased := cond.eraseTypes
+        let lblT := s!"<cfgBranch_true: {condErased}>"
+        let lblF := s!"<cfgBranch_false: !({condErased})>"
+        let envT := { env' with pathConditions :=
+          (env'.pathConditions.addInNewest
+            [.assumption lblT cond']) }
+        let envF := { env' with pathConditions :=
+          (env'.pathConditions.addInNewest
+            [.assumption lblF
+              (Lambda.LExpr.ite () cond' (LExpr.false ()) (LExpr.true ()))]) }
+        ([(lt, envT), (lf, envF)], [])
+
+/--
+Walk a CFG body symbolically for `inlineCallBody`.
+
+Maintains a worklist of `(label, env)` active paths and a `finished` accumulator.
+Each block visit decrements `env.fuel` by 1; when fuel hits 0 all active paths
+are converted to `OutOfFuel` errors.  Mimics `evalCFGBlocks` / `evalCFGStep` in
+`ProcedureEval.lean` but lives here to avoid an import cycle
+(`ProcedureEval` imports `StatementEval`).
+
+The fuel check on the head active path is sound when paths fork from a single
+ancestor (each child inherits the parent's remaining fuel and is decremented
+uniformly per round), which is the case for callee bodies entered with fresh
+fuel. If a path internally calls another procedure whose body-eval consumes
+extra fuel, the head-of-list check may miss exhaustion on a later path; this
+parity with `evalCFGBlocks` is intentional. Tighter per-path fuel accounting
+is a future-work item.
+-/
+private partial def evalCalleeCFG (cfg : DetCFG)
+    (active : List (String × Env)) (finished : List Env) : List Env :=
+  match active with
+  | [] => finished
+  | (_, env) :: _ =>
+    if env.fuel == 0 then
+      -- All active paths hit the fuel limit.
+      let errorEnvs := active.map fun (_, e) => { e with error := some .OutOfFuel }
+      errorEnvs ++ finished
+    else
+      -- Decrement fuel for every active path.
+      let active := active.map fun (l, e) => (l, { e with fuel := e.fuel - 1 })
+      -- Process each active path (one step), collecting new active and finished sets.
+      let (newActive, newFinished) :=
+        active.foldl (fun (accActive, accFinished) (label, env) =>
+          if env.error.isSome then
+            (accActive, env :: accFinished)
+          else
+            match cfg.blocks.lookup label with
+            | none =>
+              let env' := { env with error := some (.Misc
+                  s!"evalCalleeCFG: block '{label}' not found in CFG") }
+              (accActive, env' :: accFinished)
+            | some blk =>
+              -- Evaluate the block's commands as a flat statement list.
+              let stmts : Statements := blk.cmds.map (fun c => (Imperative.Stmt.cmd c : Statement))
+              let (envs, _) := eval env [] stmts
+              -- For each result env, follow the transfer.
+              let (nextActive, nextFinished) :=
+                envs.foldl (fun (na, nf) env' =>
+                  let (a, f) := evalCalleeCFGTransfer blk env'
+                  (na ++ a, nf ++ f))
+                ([], [])
+              (accActive ++ nextActive, accFinished ++ nextFinished))
+          ([], [])
+      evalCalleeCFG cfg newActive (newFinished ++ finished)
+
+/--
+Evaluate a procedure call by executing its body (structured or CFG).
+
+The callee's formal parameters are bound to the caller's argument expressions
+in a fresh scope. The body is then evaluated symbolically in that scope.
+Afterwards, the callee's output variable values are read from the scope and
+bound to the caller's lhs variables, and the callee scope is popped.
+
+Preconditions are emitted as deferred obligations (the caller's responsibility).
+Postconditions from the callee's spec are NOT emitted here — the caller only
+sees the body-derived values, not a havoc'd post-state.
+-/
+partial def Command.inlineCallBody (E : Env)
+    (lhs : List Expression.Ident) (pname : String) (args : List Expression.Expr)
+    (md : Imperative.MetaData Expression) : Command × Env :=
+  let retCmd : Command :=
+    CmdExt.call pname (args.map .inArg ++ lhs.map .outArg) md
+  match Program.Procedure.find? E.program pname with
+  | none =>
+    let E := { E with error := some (.Misc f!"Procedure {pname} not found!") }
+    (retCmd, E)
+  | some proc =>
+    if E.fuel == 0 then
+      let E := { E with error := some .OutOfFuel }
+      (retCmd, E)
+    else
+      -- ── Shared call setup (structured and CFG bodies) ──────────────────────
+      -- 1. Compute type substitution.
+      let tySubst := computeTypeSubst proc.header.inputs.values
+        proc.header.outputs.values args lhs E
+      let formal_arg_subst := mkFormalArgSubst proc args E
+      -- 2. Caller-side precondition obligations.
+      let E := emitPreconditionAsserts proc formal_arg_subst tySubst E
+      -- 3. Pay one fuel unit for this call.
+      let E := { E with fuel := E.fuel - 1 }
+      -- 4. Mark formal and output names as used so genFVars for outputs
+      --    always produces fresh names that differ from the scope keys.
+      let allVarNames := proc.header.inputs.keys ++ proc.header.outputs.keys
+      let E := allVarNames.foldl (fun env (v : CoreIdent) =>
+        { env with exprEnv.config.usedNames :=
+            env.exprEnv.config.usedNames.insert v.name }) E
+      -- 5. Generate fresh fvars for outputs (body writes to these).
+      let outputTyped := proc.header.outputs.keys.zip
+        (proc.header.outputs.values.map some)
+      let (outputFvars, E) := E.genFVars outputTyped
+      -- 6. Build the callee scope: formals → evaluated arg exprs,
+      --    outputs → fresh fvars. The arg expressions live in the caller's
+      --    state at this point; `mkFormalArgSubst` already symbolically
+      --    evaluated them when building `formal_arg_subst`, so we reuse those
+      --    values here rather than re-evaluating.
+      let evaledArgs := formal_arg_subst.map (·.snd)
+      let formalBindings : List (CoreIdent × (Option Lambda.LMonoTy × Expression.Expr)) :=
+        proc.header.inputs.keys.zip
+          (proc.header.inputs.values.zip evaledArgs |>.map fun (ty, e) => (some ty, e))
+      let outputBindings : List (CoreIdent × (Option Lambda.LMonoTy × Expression.Expr)) :=
+        proc.header.outputs.keys.zip
+          (proc.header.outputs.values.zip outputFvars |>.map fun (ty, e) => (some ty, e))
+      let calleeScope := formalBindings ++ outputBindings
+      let E := E.pushScope calleeScope
+      let E := { E with pathConditions := E.pathConditions.push [] }
+      -- ── Body-shape-specific evaluation ─────────────────────────────────────
+      -- 7. Evaluate the body using the appropriate strategy.
+      let resultEnvs : List Env :=
+        match proc.body with
+        | .structured bodyStmts => (eval E [] bodyStmts).fst
+        | .cfg cfgBody => evalCalleeCFG cfgBody [(cfgBody.entry, E)] []
+      -- ── Shared result processing ────────────────────────────────────────────
+      -- 8. Process each result: read output values, pop callee scope.
+      --    Both success and error branches MUST pop the callee scope so the
+      --    caller never sees the callee's locals leak into its own state.
+      let processResult (E' : Env) : Env :=
+        if E'.error.isSome then
+          -- On error: pop the callee scope so it doesn't leak. Caller's
+          -- subsequent eval (or the .BodyOrContract fallback path) operates
+          -- on a clean outer scope.
+          { E' with
+            exprEnv.state := E'.exprEnv.state.pop,
+            pathConditions := E'.pathConditions.pop }
+        else
+          -- Read output values from the callee scope.
+          let outVals := proc.header.outputs.keys.map fun oname =>
+            (E'.exprEnv.state.findD oname (none, .fvar () oname none)).snd
+          -- Pop callee's body scope and pathConditions scope.
+          let E' := { E' with
+            exprEnv.state := E'.exprEnv.state.pop,
+            pathConditions := E'.pathConditions.pop }
+          -- Bind caller's lhs to the callee's output values.
+          lhs.zip outVals |>.foldl (fun env (l, v) =>
+            env.insertInContext (l, none) v) E'
+      let processedEnvs := resultEnvs.map processResult
+      -- 9. Reduce result environments down to a single env for the caller.
+      --    Single-branch bodies are the common case for SMACK output (CFG
+      --    bodies use `evalCalleeCFG`, which threads branch-splits through
+      --    path conditions inside a single env). Structured bodies that
+      --    contain a symbolic `if`, however, can produce multiple result
+      --    envs with divergent variable bindings — and our merge cannot
+      --    soundly combine them: while `deferred` and `usedNames` are
+      --    unioned, `exprEnv.state` would have to be path-conditionally
+      --    merged (mirroring `processIteBranches`), and the path conditions
+      --    need to be threaded up from `eval`'s result list. Until that
+      --    proper merge lands, a multi-result body produces an explicit
+      --    error so the unsoundness can't propagate silently. The
+      --    `.BodyOrContract` policy catches this via the same OutOfFuel
+      --    fall-back mechanism (handleCall), which discards the partial
+      --    state and re-runs as contract.
+      let mergedE :=
+        match processedEnvs with
+        | [] => { E with error := some (.Misc s!"inlineCallBody: no result from body eval of {pname}") }
+        | [e] => e
+        | _ :: _ :: _ =>
+          { E with error := some (.Misc s!"inlineCallBody: callee {pname} produced multiple result envs (symbolic branch in body); multi-branch merge is not yet sound. Use --call-policy bodyOrContract to fall back to contract.") }
+      (retCmd, mergedE)
+
+/--
+Dispatch a `.call` command according to the active `CallPolicy`.
+
+- `.Contract`        → `inlineCallContract` (contract-only behaviour)
+- `.Body`            → `inlineCallBody`; errors propagate on OutOfFuel
+- `.BodyOrContract`  → `inlineCallBody`; on OutOfFuel falls back to
+                       `inlineCallContract`
+-/
+partial def Command.handleCall (policy : CallPolicy) (E : Env)
+    (lhs : List Expression.Ident) (pname : String)
+    (args : List Expression.Expr) (md : Imperative.MetaData Expression)
+    : Command × Env :=
+  match policy with
+  | .Contract => Command.inlineCallContract E lhs pname args md
+  | .Body =>
+    Command.inlineCallBody E lhs pname args md
+  | .BodyOrContract =>
+    let (c, E') := Command.inlineCallBody E lhs pname args md
+    match E'.error with
+    -- Fuel exhaustion → fall back to contract on the ORIGINAL `E` (discard
+    -- partial state). Same for the multi-branch merge guard: an unsound
+    -- merge surfaces as a `.Misc` error, and contract semantics is the
+    -- safe alternative.
+    | some .OutOfFuel => Command.inlineCallContract E lhs pname args md
+    | some (.Misc _) => Command.inlineCallContract E lhs pname args md
+    | _ => (c, E')
+
+partial def Command.eval (E : Env) (old_var_subst : SubstMap) (c : Command) : Command × Env :=
+  match c with
+  | .cmd c =>
+    let (c, E) := Imperative.Cmd.eval { E with substMap := old_var_subst } c
+    (.cmd c, E)
+  | .call pname callArgs md =>
+    let lhs := CallArg.getLhs callArgs
+    let inArgs := CallArg.getInputExprs callArgs
+    Command.handleCall E.callPolicy E lhs pname inArgs md
+
+end
 
 ---------------------------------------------------------------------
 

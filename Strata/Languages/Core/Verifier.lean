@@ -891,9 +891,14 @@ def transformPipelinePhases (procs : Option (List String) := none)
         return (true, prog')]
     else
       []
+  -- callElimPipelinePhase rewrites .call → asserts(pre)/havocs/assumes(post). When
+  -- the policy is Body or BodyOrContract, .call commands must survive into the
+  -- evaluator so handleCall can dispatch per-call.
+  let callElimPhases : List PipelinePhase :=
+    if options.callPolicy = .Contract then [callElimPipelinePhase] else []
   -- precondElimPipelinePhase will immediately return if there is no Factory
   -- set up at CoreTransformState.
-  filterPhases ++ ensuresSynthPhases ++ [callElimPipelinePhase] ++ [termCheckPipelinePhase] ++ [precondElimPipelinePhase] ++ postFilterPhases ++ [loopElimPipelinePhase]
+  filterPhases ++ ensuresSynthPhases ++ callElimPhases ++ [termCheckPipelinePhase] ++ [precondElimPipelinePhase] ++ postFilterPhases ++ [loopElimPipelinePhase]
 
 /-- The full pipeline phases for program-to-program transforms, including
     type checking, symbolic evaluation, and ANF encoding.

@@ -83,7 +83,12 @@ def buildEnv (options : VerifyOptions) (program : Program)
   let σ ← (Lambda.LState.init).addFactory factory
   let datatypes := program.decls.filterMap fun decl =>
     match decl with | .type (.data d) _ => some d | _ => none
-  let mut E : Env := { Env.init with exprEnv := σ, program := program, pathCap := options.pathCap }
+  let mut E : Env := { Env.init with
+    exprEnv := σ,
+    program := program,
+    pathCap := options.pathCap,
+    callPolicy := options.callPolicy,
+    fuel := options.inlineFuel }
   E ← E.addDatatypes datatypes
 
   if registerCustomFunctions then
