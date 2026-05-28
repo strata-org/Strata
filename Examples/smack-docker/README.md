@@ -326,41 +326,30 @@ the verdicts up per-file.
 
 ### What the cbmc=FAIL count actually means now
 
-After fixes 2.1–2.7 in `Strata/Backends/CBMC/GOTO/` (see *What this
-branch ships*), the cbmc backend **reaches actual model checking on
-every program**. The 93 FAILs are real verification verdicts, mostly
-of two shapes:
-
-- `Property violations found` — cbmc proceeded into BMC and identified
-  that the goto binary contains assertions whose negation is
-  satisfiable. The dominant cause is the **callee-bodies blocker**
-  (see *Known blockers*): `coreToGotoFiles*` emits only the entry
-  procedure's body, leaving every callee as a bodyless declaration.
-  Cbmc reports `[.no-body.<callee>]` for each missed body.
-- `CBMC exit code -6` — cbmc's array solver SIGABRTs on a small
-  number of programs whose `__cprover_entry` shim shape is still
-  problematic.
-
-Pre-fix (before 2.6 + 2.7), every program hit `function call:
-parameter type mismatch` (rc=6) before model checking even started.
-The cbmc pipeline went from "rejected by type checker" → "real
-verification verdicts." The PASS count is still 0 because the
-callee-bodies blocker masks most properties; once that's addressed
-(Layer 2 of the recent triage round), expect cbmc PASS counts to
-follow.
+After the seven CBMC backend fixes on this branch (see
+`BRANCH_FEATURES.md` §2), the cbmc backend **reaches actual model
+checking on every program** rather than failing at the type-checker
+or array-solver stage. The 93 FAILs are real verification verdicts,
+dominated by the residual **callee-bodies blocker**: `coreToGotoFiles*`
+emits the entry procedure plus user-defined callees (commit
+`ca95931be`), but `__VERIFIER_assume` / `assert_.i32` and other
+prelude stubs remain bodyless. Cbmc reports `[.no-body.<callee>]` and
+fails. Until those are emitted too, expect cbmc PASS counts to stay
+at 0; once that's addressed, expect them to follow the deductive
+column. Pre-fix-history detail in *Resolved blockers (history)*
+below.
 
 ### What the deductive PARTIAL count means
 
-After fix `42ff8a4b8` (apply CallElim to CFG-bodied procedures), the
-deductive backend now generates real `requires`-VCs at call sites
-inside CFG-bodied procedures. Programs that previously vacuously
-PASSed (no obligations to check) now flip to PARTIAL with concrete
-failing VCs. The dominant root cause across the 54 PARTIALs is
-**missing `ensures` on user-defined helpers** (deductive sub-class
-(a) — see *Known blockers*); the failing VCs are
-`callElimAssert___VERIFIER_assert_requires_*` labeled obligations
-the verifier returns as `❓ unknown` because call-elim havocs the
-post-call state.
+The 54 default-policy PARTIALs are the contract-only baseline. The
+dominant cause is **missing `ensures` on user-defined helpers**
+(deductive sub-class (a) — see *Known blockers*): post-call assertions
+in CFG-bodied procedures whose callees lack `ensures` clauses become
+`❓ unknown` after call-elim havocs the post-call state. Body-eval
+(`--call-policy bodyOrContract`, see headline-result table above) is
+the resolution lever: it traverses the callee body symbolically and
+discharges the post-call assertions directly, flipping 42 of 43
+portfolio rows from PARTIAL to PASS.
 
 Detailed cluster breakdowns and per-cluster (P)/(T)/(S) tags from
 the cross-validation triage are in `CROSS_VALIDATION.md`.
@@ -509,19 +498,18 @@ Regression coverage in `StrataTest/Backends/CBMC/GOTO/E2E_CoreToGOTO.lean`,
 
 ## Known blockers
 
-- **CBMC: callee bodies not emitted.** `coreToGotoFiles*` translates
-  only the entry procedure (`main`), leaving every callee — `add`,
-  `assert__i32`, `_initialize`, SMACK prelude stubs, user-defined
-  helpers — as bodyless declarations. cbmc reaches a call and reports
-  `[.no-body.<callee>] no body for callee <callee>: FAILURE`. **This
-  is now the dominant cbmc failure mode** across the 93-program suite
-  after the array-type and nondet-symbol fixes unblocked the upstream
-  type checker and array solver. Fix path: iterate over all reachable
-  procedures in `coreToGotoFilesDispatch`, not just the entry; emit
-  each via `procedureToGotoCtxDispatch` and splice into the output
-  JSON. The lifted-functions infrastructure in `emitProcWithLifted`
-  is the right shape but currently only handles `Core.Function`, not
-  `Core.Procedure`.
+- **CBMC: callee bodies (partial fix landed; residual stubs remain).**
+  Commit `ca95931be` extended `coreToGotoFilesDispatch` to emit all
+  reachable user-defined callees, not just the entry procedure. The
+  residual blocker is the SMACK prelude stubs (`__VERIFIER_assume`,
+  `assert_.i32`, etc.): they have no Strata body, so they appear in
+  the symbol table as `function_typet` declarations only, and cbmc
+  still reports `[.no-body.<callee>]` and fails. **This is the
+  dominant cbmc failure mode today** across all 93 programs. Fix
+  path: emit synthetic CBMC bodies for the prelude stubs (e.g. an
+  `assume(p != 0)` body for `__VERIFIER_assume`), or hand-link a
+  CBMC-side stub library at the `symtab2gb` step. Tracked under
+  [#1184](https://github.com/strata-org/Strata/issues/1184).
 - **CBMC: real-loop unwinding bound.** `loop_sum` has a real C `for`
   loop, so cbmc's BMC unroller correctly identifies the genuine
   back-edge and tries to unroll without bound, hitting the default
@@ -574,12 +562,16 @@ Regression coverage in `StrataTest/Backends/CBMC/GOTO/E2E_CoreToGOTO.lean`,
   `run_pipeline.py`'s output. **No actual Strata soundness
   violations were found by the SV-COMP integration.**
 - **bugFinding partials.** Symbolic execution finds potential
-  counterexamples for assertions on programs whose preconditions are
-  insufficient. Same root cause as deductive sub-class (a) (callees
-  with no `ensures`). Expected behaviour given the current translation;
-  not a pipeline bug. **bugFinding correctly identifies 6 of 7 SV-COMP
-  unsafe programs** as PARTIAL with concrete failing VCs — a positive
-  validation of the bugFinding mode.
+  counterexamples for assertions whose synthetic preconditions
+  (`__VERIFIER_assume`'s `requires (_i0 != 0)`, etc.) are
+  unconstrained at call sites. Verified empirically: bugFinding under
+  `--call-policy bodyOrContract` produces zero verdict improvements
+  (0/65 contract → 0/64 bodyOrContract on portfolio; same on
+  SV-COMP). bugFinding's PARTIALs are about unconstrained inputs, not
+  missing ensures, so body-eval doesn't help. Expected behaviour
+  given the current translation; not a pipeline bug. bugFinding
+  *correctly* flags 6 of 7 unsafe SV-COMP programs as PARTIAL with
+  concrete failing VCs — a positive oracle validation.
 - **Cross-procedure PE error contamination (silently dropped VCs,
   issue #1185).** `ProgramEval.lean` threads a single `Env` through
   every procedure in declaration order. If `Procedure.eval` sets
@@ -643,14 +635,29 @@ per source repo, and curate the union into `programs/`.
 
 Other levers (orthogonal to benchmark expansion):
 
-- Address the deductive sub-class (a) blocker (synthesize `ensures`
-  from procedure bodies in a Strata-side pass). Would flip ~17 of the
-  25 hand-written programs from PARTIAL → PASS deductive. See *Known
-  blockers*.
-- Address the cbmc callee-bodies blocker (iterate over all reachable
-  procedures in `coreToGotoFilesDispatch`, not just `main`). Would
-  unblock the cbmc column for the ~9 programs that currently hit
-  `[.no-body.<callee>]`. See *Known blockers*.
+- **Land multi-path body-eval.** Today's implementation refuses
+  callees whose body has a symbolic `if` that produces multiple
+  result envs (the `nondet_branch` case — the single residual
+  portfolio PARTIAL). Design proposal: `MULTIPATH_COMMAND_EVAL.md`.
+  Mechanical change to widen `Command.eval`'s return type to
+  `List Env`, mirroring how `processIteBranches` already participates
+  in multi-path eval at the statement level.
+- **Surface `path unreachable` in the matrix.** The pipeline driver
+  collapses `✅ pass (❗path unreachable)` to plain `PASS`, which
+  produced the 6 false soundness probes on SV-COMP. Adding a
+  `PASS-unreachable` (or `WARN`) third state in `parse_strata_output`
+  would make the matrix report what the verifier actually said. See
+  *Known blockers*.
+- **Address the cbmc callee-bodies blocker** (iterate over all
+  reachable procedures in `coreToGotoFilesDispatch`, not just
+  `main`). Would unblock the cbmc column on most of the 93-program
+  suite. See *Known blockers*.
+- **Land #1185 fix on htd/smack.** Cross-procedure `Env.error`
+  contamination silently drops obligations from later procedures; the
+  `--split-procs` workaround masks it. The fix lives on
+  `htd/fix-eval` (commits `d55ac1c33` + `eeb0dfa3d`); cherry-picking
+  it to htd/smack would let us drop `--split-procs` from the pipeline
+  driver. See *Known blockers* and `BRANCH_FEATURES.md` §9.
 
 ## Scripts in this directory
 

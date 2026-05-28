@@ -240,11 +240,18 @@ intentionally excluded — they're already registered as
 `mathematical_function`-typed symbols via `fnAppSymbols`, and adding
 GOTO bodies for them would crash CBMC's `to_code_type` assertion.
 
-**Result.** Cbmc's `[.no-body.X]` blocker is eliminated. Two new
-failure shapes surface behind it: an `_exnv` argument-typing bug
-(call to `__SMACK_static_init` passes `_exnv : int` where position 1
-expects `_exn : bool`), and the pre-existing array-bounds crash on
-memory-map programs.
+**Result.** User-defined callees (and lifted Boogie functions) now
+have GOTO bodies in the output. The residual `[.no-body.<callee>]`
+blocker is now narrowed to the SMACK prelude stubs
+(`__VERIFIER_assume`, `assert_.i32`, etc.) which have no Strata
+body to translate — so they appear as bodyless symtab declarations
+and CBMC still reports them as missing. Two additional failure
+shapes also surface: an `_exnv` argument-typing bug (call to
+`__SMACK_static_init` passes `_exnv : int` where position 1 expects
+`_exn : bool`), and the pre-existing array-bounds crash on
+memory-map programs. As a consequence, all 93 portfolio programs
+still report cbmc=FAIL today; tracked under
+[#1184](https://github.com/strata-org/Strata/issues/1184).
 
 **Files:** `Strata/Backends/CBMC/GOTO/CoreCFGToGOTOPipeline.lean`.
 
@@ -258,7 +265,7 @@ The eight fixes form a cascade: each one exposes the next layer.
 | After 2.1–2.4 | Cbmc invocation succeeds; type-mismatch error (rc=6) |
 | After 2.6 | Type-checker passes; array-solver SIGABRT (rc=-6) |
 | After 2.7 | Model checking runs; `Property violations found` on callee-bodies blocker |
-| After 2.8 | All callees emitted; `[.no-body.X]` blocker eliminated. Surfaces the next layer (`_exnv` typing bug + array-bounds crash on memory-map programs). |
+| After 2.8 | User-defined callees emitted; `[.no-body.X]` narrowed to SMACK prelude stubs (`__VERIFIER_assume`, `assert_.i32`, ...). Two additional surface failures: `_exnv` argument-typing bug, array-bounds crash on memory-map programs. All 93 portfolio rows still cbmc=FAIL today. |
 
 ---
 
@@ -425,6 +432,71 @@ any single fix in the project so far.
 
 **Files:** `Strata/Transform/CoreTransform.lean`.
 
+### 4.3 Body evaluation at call sites (`dd0c0d7cd`)
+
+Adds a `--call-policy {contract|body|bodyOrContract}` option that
+lets the deductive evaluator analyse the callee's body at the call
+site, bounded by `--inline-fuel N` (default `100000`). On
+`OutOfFuel`, `bodyOrContract` falls back to the existing contract
+path so verdicts are never worse than today's `contract` policy
+(which remains the default).
+
+**Why.** With contract-only reasoning, every call is replaced by
+`asserts(pre); havoc(lhs); assume(ensures)`. When the callee's
+`ensures` is missing or weak — the dominant case for SMACK-translated
+user-defined helpers — the post-call lhs becomes a fresh symbolic
+variable with no useful constraints, and any subsequent assertion
+involving it can't be discharged. This was the dominant deductive
+sub-class (a) PARTIAL cause across the matrix.
+
+**How.** `Command.inlineCallBody` (the new evaluator-time handler)
+pushes a fresh scope binding callee formals to caller arg expressions
+and outputs to fresh fvars, runs the body via `Statement.eval`
+(structured) or `evalCalleeCFG` (CFG), reads output values back from
+the scope, pops the scope, and binds the caller's lhs to the
+body-derived expressions. Shared call-setup helpers (`computeTypeSubst`,
+`mkFormalArgSubst`, `mkReturnSubst`, `emitPreconditionAsserts`) were
+extracted from `inlineCallContract` so both handlers discharge
+preconditions identically.
+
+`callElimPipelinePhase` is conditional on `callPolicy = .Contract`;
+under `Body` / `BodyOrContract` it's skipped so `.call` commands
+survive into the evaluator, where `Command.handleCall` dispatches per
+call.
+
+**Impact.** Single largest verdict-improvement on the matrix to date:
+**42 of 43 portfolio rows flip from PARTIAL to PASS deductive** under
+`bodyOrContract`. The combined 93-program suite goes from 39 PASS / 54
+PARTIAL (contract baseline) to 82 PASS / 11 PARTIAL.
+
+**Multi-branch limitation.** When a callee body contains a symbolic
+`if` that produces multiple result envs with divergent variable
+bindings, the current implementation refuses with an explicit error
+rather than perform an unsound merge. `bodyOrContract` falls back to
+contract in that case. The single residual portfolio PARTIAL
+(`nondet_branch`) is exactly this case. A design proposal lives at
+`Examples/smack-docker/MULTIPATH_COMMAND_EVAL.md` — making
+`Command.eval` and friends return `List Env` so multi-path body-eval
+flows through `evalAuxGo`'s active-path machinery.
+
+**CLI / pipeline.** `strata verify --call-policy bodyOrContract
+--inline-fuel N`. The smack-docker driver gained matching axes
+(commit `998d64635`): `python3 run_pipeline.py --call-policy
+bodyOrContract`.
+
+**Files:** `Strata/Languages/Core/StatementEval.lean` (new
+`Command.inlineCallBody`, `Command.handleCall`, `evalCalleeCFG`,
+shared helpers), `Strata/Languages/Core/ProcedureEval.lean`
+(`Procedure.eval` gains a `fuel` parameter; threads via `Env.fuel`),
+`Strata/Languages/Core/Env.lean` (`Env.fuel`, `Env.callPolicy`),
+`Strata/Languages/Core/Options.lean` (`CallPolicy` enum,
+`VerifyOptions.callPolicy`, `VerifyOptions.inlineFuel`),
+`Strata/Languages/Core/Verifier.lean` (conditional
+`callElimPipelinePhase`), `StrataMain.lean` (CLI flags),
+`Strata/Languages/Core/Core.lean` (verifier env seeding),
+`StrataTest/Languages/Core/Tests/InlineCallBodyTests.lean` (regression
+tests).
+
 ---
 
 ## 5. Benchmark suite: 94 programs
@@ -549,25 +621,26 @@ Example output:
 
 ### 6.2 `Examples/smack-docker/CROSS_VALIDATION.md`
 
-The cross-validation writeup (three updates, latest covering the
-CFG-CallElim fix and the v2 → v3 verdict transition).
-Covers:
+The cross-validation writeup. Covers:
 1. Pipeline architecture (three Strata-IR backends + native CBMC
    as ground-truth control).
 2. The 94-program 4-backend matrix (64 portfolio + 29 SV-COMP, plus
    `picohttpparser` excluded due to known cbmc-native OOM).
 3. Per-divergence triage with **(P)** program defect / **(T)**
    translator-or-backend bug / **(S)** spec/contract gap tags.
-4. Cumulative impact of the five fixes that landed during the
-   screening.
+4. Iterative-update narrative as fixes landed and the verdict
+   landscape evolved.
 
-The screening identified **5 distinct Strata defects** in one
-session, four of which are fixed in this branch. The SV-COMP
-oracle integration (29 programs with ground-truth safe/unsafe
-labels) confirmed zero soundness violations: the six initial
-`unsafe ∧ deductive=PASS` candidates were all matrix-display
-artifacts (the verifier emits `path unreachable` qualifiers that
-`run_pipeline.py` collapses to PASS).
+The cross-validation screening surfaced (or confirmed) **20 distinct
+defects/issues** across the Strata-CBMC GOTO backend, BoogieToStrata,
+Strata Core / Transform, the DDM type-checker, the verifier runtime,
+and pipeline-driver display gaps. 15 are fixed on this branch; the
+full ledger with filing & merge status lives in §9 below. The SV-COMP
+oracle integration (29 programs with ground-truth safe/unsafe labels)
+confirmed zero soundness violations: the six initial `unsafe ∧
+deductive=PASS` candidates were all matrix-display artifacts (the
+verifier emits `path unreachable` qualifiers that `run_pipeline.py`
+collapses to PASS).
 
 ---
 
@@ -589,7 +662,7 @@ fixtures, known issues with cross-references to upstream issues.
 
 ### Filed but not committed
 
-Three GitHub issue drafts in the repo root (uncommitted, intended
+Four GitHub issue drafts in the repo root (uncommitted, intended
 for opening upstream):
 
 - `strata-verify-stack-overflow-deeply-nested-expr.md` — `strata
@@ -619,6 +692,18 @@ New tests in `StrataTest/Backends/CBMC/GOTO/`:
   none. Asserts the count of backward GOTOs is 0.
 - `LambdaToCProverGOTO.lean` — type-emission tests covering
   `Map ref i8 → array` with the size-qualified shape from fix 2.6.
+
+New tests in `StrataTest/Languages/Core/Tests/`:
+
+- `InlineCallBodyTests.lean` — six tests for the body-eval feature
+  (§4.3): structured callee under `.Body` (assertion reduces to
+  `true`), structured callee under `.Contract` (assertion deferred
+  against havoc'd fresh fvar), CFG callee under each policy, looping
+  CFG under `.Body` low-fuel (surfaces `OutOfFuel`), looping CFG
+  under `.BodyOrContract` low-fuel (falls back to contract).
+- `EnsuresSynthesisTest.lean` — covers the `--synthesize-ensures`
+  pre-pass (§4.1): three soundness checks (linear-body shape,
+  postcondition implication, no user calls).
 
 `Tools/BoogieToStrata/IntegrationTests/BoogieToStrataIntegrationTests.cs`
 — `--smack` marker support: each `.bpl` test fixture may carry a

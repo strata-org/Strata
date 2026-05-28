@@ -37,6 +37,11 @@ translator. For ongoing work, the GitHub issue tracker is authoritative.
   declarations so callers of `assume(...)` carry the assumption through
   procedure-call elimination. Mirrors the `assert_` pattern with dual
   polarity.
+- **`__VERIFIER_assert` `requires` injection.** Under `--smack`, a
+  `requires (_i0 != 0)` is injected on `__VERIFIER_assert` declarations
+  so SMACK's lowering of C `assert(EXPR)` (which compiles into a branch
+  ending in `__VERIFIER_assert(0)`) actually generates a verification
+  obligation at the call site. Commit `b3e606bb6`.
 
 ## Test fixtures
 
