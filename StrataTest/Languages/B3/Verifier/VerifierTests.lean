@@ -75,6 +75,7 @@ These tests run the actual solver and test check, assert, reach statements with 
 
 namespace B3.Verifier.Tests
 
+open StrataDDM
 open Strata
 open Strata.B3.Verifier
 open Strata.SMT

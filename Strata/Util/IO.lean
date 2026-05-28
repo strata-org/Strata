@@ -8,8 +8,10 @@ module
 import StrataDDM.Elab
 public import StrataDDM.Elab.LoadedDialects
 import StrataDDM.Util.Ion
+open StrataDDM
 
 open Lean (Message)
+open StrataDDM.Elab (elabProgramRest)
 
 public section
 namespace Strata.Util
@@ -63,32 +65,32 @@ inductive DialectOrProgram
 needed, when used by the artifact being parsed. The `path` argument specifies
 the location of the file that `bytes` came from, but is used only for error
 messages and metadata. -/
-def readStrataText (fm : Strata.DialectFileMap) (path : System.FilePath) (bytes : ByteArray)
+def readStrataText (fm : StrataDDM.DialectFileMap) (path : System.FilePath) (bytes : ByteArray)
     : IO DialectOrProgram := do
   let leanEnv ← Lean.mkEmptyEnvironment 0
   let contents ← match bytesToText path bytes with
     | Except.ok c => pure c
     | Except.error msg => throw (IO.userError (fileReadErrorMsg path msg))
-  let inputContext := Strata.Parser.stringInputContext path contents
-  let (header, errors, startPos) := Strata.Elab.elabHeader leanEnv inputContext
+  let inputContext := StrataDDM.Parser.stringInputContext path contents
+  let (header, errors, startPos) := StrataDDM.Elab.elabHeader leanEnv inputContext
   if errors.size > 0 then
     throw (IO.userError (← mkErrorReport path errors))
   match header with
   | .program _ dialect =>
-    match ← Strata.Elab.loadDialect fm dialect with
+    match ← StrataDDM.Elab.loadDialect fm dialect with
     | .ok _ => pure ()
     | .error msg => throw (IO.userError msg)
     let dialects ← fm.getLoaded
     let .isTrue mem := (inferInstance : Decidable (dialect ∈ dialects.dialects))
       | panic! "internal: loadDialect failed"
-    match Strata.Elab.elabProgramRest dialects leanEnv inputContext dialect mem startPos with
+    match elabProgramRest dialects leanEnv inputContext dialect mem startPos with
     | .ok program => pure (.program program)
     | .error errors => throw (IO.userError (← mkErrorReport path errors))
   | .dialect stx dialect =>
     if dialect ∈ (←fm.loaded.get).dialects then
       throw <| IO.userError s!"{dialect} already loaded"
     let (d, s) ←
-      Strata.Elab.elabDialectRest fm inputContext stx dialect (startPos := startPos)
+      StrataDDM.Elab.elabDialectRest fm inputContext stx dialect (startPos := startPos)
     if s.errors.size > 0 then
       throw (IO.userError (← mkErrorReport path s.errors))
     fm.modifyLoaded (·.addDialect! d)
@@ -99,11 +101,11 @@ The `DialectFileMap` is used to lazily load dialect definitions as needed, when
 used by the artifact being parsed. The `path` argument specifies the location of
 the file that `bytes` came from, but is used only for error messages and
 metadata. -/
-def readStrataIon (fm : Strata.DialectFileMap)
+def readStrataIon (fm : StrataDDM.DialectFileMap)
     (path : System.FilePath) (bytes : ByteArray)
     : IO DialectOrProgram := do
   let (hdr, frag) ←
-    match Strata.Ion.Header.parse bytes with
+    match StrataDDM.Ion.Header.parse bytes with
     | .error msg =>
       throw (IO.userError (fileReadErrorMsg path msg))
     | .ok p =>
@@ -112,20 +114,20 @@ def readStrataIon (fm : Strata.DialectFileMap)
   | .dialect dialect =>
     if dialect ∈ (←fm.loaded.get).dialects then
       throw <| IO.userError s!"{dialect} already loaded"
-    match ← Strata.Elab.loadDialectFromIonFragment fm #[] dialect frag with
+    match ← StrataDDM.Elab.loadDialectFromIonFragment fm #[] dialect frag with
     | .error msg =>
       throw (IO.userError (fileReadErrorMsg path msg))
     | .ok d =>
       pure (.dialect d)
   | .program dialect => do
-    match ← Strata.Elab.loadDialect fm dialect with
+    match ← StrataDDM.Elab.loadDialect fm dialect with
     | .ok _ => pure ()
     | .error msg => throw (IO.userError (fileReadErrorMsg path msg))
     let dialects ← fm.getLoaded
     let .isTrue mem := (inferInstance : Decidable (dialect ∈ dialects.dialects))
       | panic! "loadDialect failed"
     let dm := dialects.dialects.importedDialects dialect mem
-    match Strata.Program.fromIonFragment frag dm dialect with
+    match StrataDDM.Program.fromIonFragment frag dm dialect with
     | .ok pgm =>
       pure (.program pgm)
     | .error msg =>
@@ -134,7 +136,7 @@ def readStrataIon (fm : Strata.DialectFileMap)
 /-- Parse a Strata artifact from the file at the given `path`.  The
 `DialectFileMap` is used to lazily load dialect definitions as needed, when used
 by the artifact being parsed. -/
-def readFile (fm : Strata.DialectFileMap) (path : System.FilePath) : IO DialectOrProgram := do
+def readFile (fm : StrataDDM.DialectFileMap) (path : System.FilePath) : IO DialectOrProgram := do
   let bytes ← readBinInputSource path.toString
   let displayPath : System.FilePath := displayName path.toString
   if Ion.isIonFile bytes then

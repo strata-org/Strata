@@ -10,7 +10,7 @@ public import StrataDDM.AST
 import all StrataDDM.AST
 
 public section
-namespace Strata.Program
+namespace StrataDDM.Program
 
 @[simp]
 theorem create_dialects (d : DialectMap) (dn : DialectName) (cmds : Array Operation) :
@@ -24,5 +24,5 @@ theorem create_dialect (d : DialectMap) (dn : DialectName) (cmds : Array Operati
 theorem create_commands (d : DialectMap) (dn : DialectName) (cmds : Array Operation) :
     (create d dn cmds).commands = cmds := by dsimp [create]
 
-end Strata.Program
+end StrataDDM.Program
 end

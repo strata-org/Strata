@@ -15,7 +15,7 @@ namespace Strata
 
 /-! ## Header shape: read-only globals appear as inputs -/
 
-private def headerHelper (p : Strata.Program) : Except String (List String) := do
+private def headerHelper (p : StrataDDM.Program) : Except String (List String) := do
   let prog ← (Boole.getProgram p).mapError toString
   let cp ← (Boole.toCoreProgram prog p.globalContext).mapError
     fun e => toString (e.format none)
@@ -59,7 +59,7 @@ private def fmtCallArg : Core.CallArg Core.Expression → String
   | .inoutArg id => s!"inout({id.name})"
   | .outArg id => s!"out({id.name})"
 
-private def callHelper (p : Strata.Program) : Except String (List String) := do
+private def callHelper (p : StrataDDM.Program) : Except String (List String) := do
   let prog ← (Boole.getProgram p).mapError toString
   let cp ← (Boole.toCoreProgram prog p.globalContext).mapError
     fun e => toString (e.format none)
@@ -141,41 +141,41 @@ spec {
 
 
 VCs:
-Label: inc_ensures_1_2423
+Label: inc_ensures_1_2429
 Property: assert
 Assumptions:
-inc_requires_0_2405: z@1 > 0
+inc_requires_0_2411: z@1 > 0
 Obligation:
 true
 
-Label: callElimAssert_inc_requires_0_2405_6
+Label: callElimAssert_inc_requires_0_2411_6
 Property: assert
 Assumptions:
-main_caller_requires_2_2539: z@3 == 10
-main_caller_requires_3_2559: g@3 == 0
+main_caller_requires_2_2545: z@3 == 10
+main_caller_requires_3_2565: g@3 == 0
 Obligation:
 z@3 > 0
 
-Label: main_caller_ensures_4_2578
+Label: main_caller_ensures_4_2584
 Property: assert
 Assumptions:
-main_caller_requires_2_2539: z@3 == 10
-main_caller_requires_3_2559: g@3 == 0
-callElimAssume_inc_ensures_1_2423_7: g@5 == g@3 + 5 + z@5
+main_caller_requires_2_2545: z@3 == 10
+main_caller_requires_3_2565: g@3 == 0
+callElimAssume_inc_ensures_1_2429_7: g@5 == g@3 + 5 + z@5
 Obligation:
 g@5 == 15
 
 ---
 info:
-Obligation: inc_ensures_1_2423
+Obligation: inc_ensures_1_2429
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_inc_requires_0_2405_6
+Obligation: callElimAssert_inc_requires_0_2411_6
 Property: assert
 Result: ✅ pass
 
-Obligation: main_caller_ensures_4_2578
+Obligation: main_caller_ensures_4_2584
 Property: assert
 Result: ❓ unknown
 Model:

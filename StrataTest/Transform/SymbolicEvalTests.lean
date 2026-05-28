@@ -18,10 +18,10 @@ namespace Core.SymbolicEval.Tests
 
 open Strata
 
-private def translateCore (p : Strata.Program) : Core.Program :=
+private def translateCore (p : StrataDDM.Program) : Core.Program :=
   (TransM.run Inhabited.default (translateProgram p)).fst
 
-private def evalAndPrint (p : Strata.Program) : IO Unit := do
+private def evalAndPrint (p : StrataDDM.Program) : IO Unit := do
   match typeCheckAndBuildObligationProgram .quiet (translateCore p) with
   | .ok (oblProg, _) =>
     let s := (Core.formatProgram oblProg).pretty

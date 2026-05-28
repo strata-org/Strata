@@ -11,6 +11,8 @@ meta section
 
 /-! ## Tests for SMT DDM Translate -/
 
+open StrataDDM (Decimal)
+
 namespace Strata.SMTDDM
 
 /-- info: Except.ok "(+ 10 20)" -/

@@ -13,15 +13,15 @@ meta import StrataDDM.Integration.Lean.HashCommands  -- For #load_dialect
 public meta import StrataDDM.Ion
 import Strata.Languages.Core.DDMTransform.Grammar  -- Loads Strata Core dialect into env
 
-namespace Strata.Java.Test
+namespace StrataDDM.Java.Test
 
-open Strata.Java
+open StrataDDM.Java
 
 meta def check (s sub : String) : Bool := (s.splitOn sub).length > 1
 
 -- Test 1: Basic dialect with 2 operators — nested records in category file
 #eval do
-  let testDialect : Strata.Dialect := {
+  let testDialect : StrataDDM.Dialect := {
     name := "Test"
     imports := #[]
     declarations := #[
@@ -57,7 +57,7 @@ meta def check (s sub : String) : Bool := (s.splitOn sub).length > 1
 
 -- Test 2: Reserved word escaping for fields
 #eval do
-  let testDialect : Strata.Dialect := {
+  let testDialect : StrataDDM.Dialect := {
     name := "Reserved"
     imports := #[]
     declarations := #[
@@ -80,7 +80,7 @@ meta def check (s sub : String) : Bool := (s.splitOn sub).length > 1
 
 -- Test 3: Name collision (single-op, operator name matches category name) → uses "Of"
 #eval do
-  let testDialect : Strata.Dialect := {
+  let testDialect : StrataDDM.Dialect := {
     name := "Collision"
     imports := #[]
     declarations := #[
@@ -101,7 +101,7 @@ meta def check (s sub : String) : Bool := (s.splitOn sub).length > 1
 
 -- Test 4: Duplicate operator names across categories — nested so no global collision
 #eval do
-  let testDialect : Strata.Dialect := {
+  let testDialect : StrataDDM.Dialect := {
     name := "Dup"
     imports := #[]
     declarations := #[
@@ -123,7 +123,7 @@ meta def check (s sub : String) : Bool := (s.splitOn sub).length > 1
 
 -- Test 5: Category name collides with base class
 #eval do
-  let testDialect : Strata.Dialect := {
+  let testDialect : StrataDDM.Dialect := {
     name := "Base"
     imports := #[]
     declarations := #[
@@ -139,7 +139,7 @@ meta def check (s sub : String) : Bool := (s.splitOn sub).length > 1
 
 -- Test 6: Snake_case to PascalCase conversion
 #eval do
-  let testDialect : Strata.Dialect := {
+  let testDialect : StrataDDM.Dialect := {
     name := "Snake"
     imports := #[]
     declarations := #[
@@ -159,7 +159,7 @@ meta def check (s sub : String) : Bool := (s.splitOn sub).length > 1
 
 -- Test 7: All DDM types map correctly
 #eval! do
-  let testDialect : Strata.Dialect := {
+  let testDialect : StrataDDM.Dialect := {
     name := "Types"
     imports := #[]
     declarations := #[
@@ -200,7 +200,7 @@ meta def check (s sub : String) : Bool := (s.splitOn sub).length > 1
 
 -- Test 8: FQN usage (no imports that could conflict)
 #eval! do
-  let testDialect : Strata.Dialect := {
+  let testDialect : StrataDDM.Dialect := {
     name := "FQN"
     imports := #[]
     declarations := #[
@@ -220,7 +220,7 @@ meta def check (s sub : String) : Bool := (s.splitOn sub).length > 1
 
 -- Test 9: Stub interfaces for referenced-but-empty categories
 #eval do
-  let testDialect : Strata.Dialect := {
+  let testDialect : StrataDDM.Dialect := {
     name := "Stub"
     imports := #[]
     declarations := #[
@@ -243,7 +243,7 @@ meta def check (s sub : String) : Bool := (s.splitOn sub).length > 1
 -- Test 10: Core dialect returns error (has type/function declarations not yet supported)
 elab "#testCoreError" : command => do
   let env ← Lean.getEnv
-  let state := Strata.dialectExt.getState env
+  let state := StrataDDM.dialectExt.getState env
   let some core := state.loaded.dialects["Core"]?
     | Lean.logError "Core dialect not found"; return
   match generateDialect core "com.strata.core" with
@@ -256,7 +256,7 @@ elab "#testCoreError" : command => do
 
 -- Test 11: Cross-dialect name collision (A.Num vs B.Num)
 #eval do
-  let testDialect : Strata.Dialect := {
+  let testDialect : StrataDDM.Dialect := {
     name := "A"
     imports := #[]
     declarations := #[
@@ -291,7 +291,7 @@ elab "#testCompile" : command => do
     return
 
   let env ← Lean.getEnv
-  let state := Strata.dialectExt.getState env
+  let state := StrataDDM.dialectExt.getState env
   let some simple := state.loaded.dialects["Simple"]?
     | Lean.logError "Simple dialect not found"; return
   let files := (generateDialect simple "com.test").toOption.get!
@@ -324,17 +324,17 @@ elab "#testCompile" : command => do
 -- Depends on testdata/comprehensive.ion
 elab "#testRoundtrip" : command => do
   let env ← Lean.getEnv
-  let state := Strata.dialectExt.getState env
+  let state := StrataDDM.dialectExt.getState env
   let some simple := state.loaded.dialects["Simple"]?
     | Lean.logError "Simple dialect not found"; return
-  let dm := Strata.DialectMap.ofList! [Strata.initDialect, simple]
+  let dm := StrataDDM.DialectMap.ofList! [StrataDDM.initDialect, simple]
   let ionBytes ← IO.FS.readBinFile "StrataTestExtra/Languages/Java/testdata/comprehensive.ion"
-  match Strata.Program.fromIon dm "Simple" ionBytes with
+  match StrataDDM.Program.fromIon dm "Simple" ionBytes with
   | .error e => Lean.logError s!"Roundtrip test failed: {e}"
   | .ok prog =>
     if prog.commands.size != 1 then Lean.logError "Expected 1 command"; return
     let cmd := prog.commands[0]!
-    if cmd.name != (⟨"Simple", "block"⟩ : Strata.QualifiedIdent) then Lean.logError "Expected block command"; return
+    if cmd.name != (⟨"Simple", "block"⟩ : StrataDDM.QualifiedIdent) then Lean.logError "Expected block command"; return
     if let .seq _ _ stmts := cmd.args[0]! then
       if stmts.size != 4 then Lean.logError s!"Expected 4 statements, got {stmts.size}"
       -- Verify print's msg arg is strlit (not ident) — catches Init.Str serialization bug
@@ -355,12 +355,12 @@ elab "#testRoundtrip" : command => do
 -- Depends on testdata/comprehensive-files.ion
 elab "#testRoundtripFiles" : command => do
   let env ← Lean.getEnv
-  let state := Strata.dialectExt.getState env
+  let state := StrataDDM.dialectExt.getState env
   let some simple := state.loaded.dialects["Simple"]?
     | Lean.logError "Simple dialect not found"; return
-  let dm := Strata.DialectMap.ofList! [Strata.initDialect, simple]
+  let dm := StrataDDM.DialectMap.ofList! [StrataDDM.initDialect, simple]
   let ionBytes ← IO.FS.readBinFile "StrataTestExtra/Languages/Java/testdata/comprehensive-files.ion"
-  match Strata.Program.filesFromIon dm ionBytes with
+  match StrataDDM.Program.filesFromIon dm ionBytes with
   | .error e => Lean.logError s!"Roundtrip files test failed: {e}"
   | .ok files =>
     if files.length != 2 then
@@ -375,7 +375,7 @@ elab "#testRoundtripFiles" : command => do
       Lean.logError s!"File 1: Expected 1 command, got {file1.program.commands.size}"
       return
     let cmd1 := file1.program.commands[0]!
-    if cmd1.name != (⟨"Simple", "block"⟩ : Strata.QualifiedIdent) then
+    if cmd1.name != (⟨"Simple", "block"⟩ : StrataDDM.QualifiedIdent) then
       Lean.logError "File 1: Expected block command"; return
     if let .seq _ _ stmts := cmd1.args[0]! then
       if stmts.size != 2 then
@@ -392,7 +392,7 @@ elab "#testRoundtripFiles" : command => do
       Lean.logError s!"File 2: Expected 1 command, got {file2.program.commands.size}"
       return
     let cmd2 := file2.program.commands[0]!
-    if cmd2.name != (⟨"Simple", "block"⟩ : Strata.QualifiedIdent) then
+    if cmd2.name != (⟨"Simple", "block"⟩ : StrataDDM.QualifiedIdent) then
       Lean.logError "File 2: Expected block command"; return
     if let .seq _ _ stmts := cmd2.args[0]! then
       if stmts.size != 3 then
@@ -421,4 +421,4 @@ elab "#testJavaGenPreloaded" : command => do
 
 #testJavaGenPreloaded
 
-end Strata.Java.Test
+end StrataDDM.Java.Test

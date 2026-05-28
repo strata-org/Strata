@@ -21,9 +21,9 @@ open Lean.Elab.Command (CommandElab CommandElabM liftCoreM)
 open Lean.Elab.Term (TermElab)
 open Lean.Parser (InputContext)
 open System (FilePath)
-open Strata.Lean (arrayToExpr listToExpr)
+open StrataDDM.Lean (arrayToExpr listToExpr)
 
-namespace Strata
+namespace StrataDDM
 
 class HasInputContext (m : Type → Type _) [Functor m] where
   getInputContext : m InputContext
@@ -136,8 +136,8 @@ def strataDialectImpl: CommandElab := fun (stx : Syntax) => do
         | throwError s!"Expected input context"
   let inputCtx ← HasInputContext.getInputContext
   let loaded := (dialectExt.getState (←Lean.getEnv)).loaded
-  let fm ← Strata.DialectFileMap.new loaded
-  let (d, s) ← Strata.Elab.elabDialect fm inputCtx p e
+  let fm ← DialectFileMap.new loaded
+  let (d, s) ← Elab.elabDialect fm inputCtx p e
   if !s.errors.isEmpty then
     for e in s.errors do
       logMessage e
@@ -170,7 +170,7 @@ meta def strataProgramImpl : TermElab := fun stx tp => do
     let some (.str name root) := s.nameMap[pgm.dialect]?
       | throwError s!"Unknown dialect {pgm.dialect}"
     let commandType := mkConst ``Operation
-    let cmdToExpr (cmd : Strata.Operation) : CoreM Lean.Expr := do
+    let cmdToExpr (cmd : Operation) : CoreM Lean.Expr := do
           let n ← mkFreshUserName `command
           addDefn n commandType (toExpr cmd)
           pure <| mkConst n
@@ -224,7 +224,7 @@ def loadDialectImpl : CommandElab := fun (stx : Syntax) => do
     if ! (← absPath.pathExists) then
       throwErrorAt pathStx "Could not find file {dialectPath}"
     let loaded := (dialectExt.getState (←Lean.getEnv)).loaded
-    let fm ← Strata.DialectFileMap.new loaded
+    let fm ← DialectFileMap.new loaded
     let r ← Elab.loadDialectFromFile fm (path := dialectPath) (actualPath := absPath)
     -- Add dialect to command environment
     match r with
@@ -239,4 +239,4 @@ def loadDialectImpl : CommandElab := fun (stx : Syntax) => do
 end
 end
 
-end Strata
+end StrataDDM

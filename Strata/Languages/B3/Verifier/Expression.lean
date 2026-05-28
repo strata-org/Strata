@@ -22,6 +22,7 @@ Converts B3 abstract syntax trees to SMT terms for verification.
 namespace Strata.B3.Verifier
 
 open Strata
+open StrataDDM
 open Strata.B3AST
 open Strata.SMT
 open Strata.SMT.Factory

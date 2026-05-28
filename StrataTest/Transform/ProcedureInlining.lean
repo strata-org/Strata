@@ -230,7 +230,7 @@ private def alphaEquiv (p1 p2:Core.Procedure):Except Format Bool := do
 
 
 
-def translate (t : Strata.Program) : Core.Program :=
+def translate (t : StrataDDM.Program) : Core.Program :=
   (TransM.run Inhabited.default (translateProgram t)).fst
 
 def runInlineCall (p : Core.Program) : Core.Program :=

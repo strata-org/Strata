@@ -6,6 +6,7 @@
 module
 
 public import Strata.Languages.B3.DDMTransform.DefinitionAST
+open StrataDDM
 
 public section
 

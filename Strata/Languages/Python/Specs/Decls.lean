@@ -6,6 +6,7 @@
 module
 public import StrataDDM.Util.SourceRange
 public import Strata.Languages.Python.PythonIdent
+open StrataDDM
 
 public section
 namespace Strata.Python

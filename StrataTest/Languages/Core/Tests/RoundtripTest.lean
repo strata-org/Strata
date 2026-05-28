@@ -12,6 +12,7 @@ meta import StrataDDM.BuiltinDialects.Init
 import StrataDDM.Integration.Lean.HashCommands
 
 meta section
+open StrataDDM (Program initDialect)
 
 /-!
 # Core Roundtrip Tests
@@ -30,13 +31,13 @@ open Lean.Parser (InputContext)
 
 /-- Parse a string as a Core program and translate to AST. -/
 private def parseAndTranslate (input : String) : IO Core.Program := do
-  let dialects := Strata.Elab.LoadedDialects.ofDialects! #[initDialect, Core]
+  let dialects := StrataDDM.Elab.LoadedDialects.ofDialects! #[initDialect, Core]
   -- Strip "program Core;\n\n" header if present
   let body := if input.startsWith "program Core;\n\n" then
     (input.drop "program Core;\n\n".length).toString
   else input
-  let inputCtx := Strata.Parser.stringInputContext ⟨"roundtrip-test"⟩ body
-  let strataProgram ← Strata.Elab.parseStrataProgramFromDialect dialects "Core" inputCtx
+  let inputCtx := StrataDDM.Parser.stringInputContext ⟨"roundtrip-test"⟩ body
+  let strataProgram ← StrataDDM.Elab.parseStrataProgramFromDialect dialects "Core" inputCtx
   let (ast, errs) := TransM.run Inhabited.default (translateProgram strataProgram)
   if !errs.isEmpty then
     throw (IO.userError s!"Translation errors: {errs}")
@@ -44,7 +45,7 @@ private def parseAndTranslate (input : String) : IO Core.Program := do
 
 /-- Perform a roundtrip test: parse → format → re-parse → compare.
     Prints OK or FAIL with details. -/
-def roundtrip (program : Strata.Program) : IO Unit := do
+def roundtrip (program : StrataDDM.Program) : IO Unit := do
   -- First pass: translate to AST
   let (ast1, errs1) := TransM.run Inhabited.default (translateProgram program)
   if !errs1.isEmpty then

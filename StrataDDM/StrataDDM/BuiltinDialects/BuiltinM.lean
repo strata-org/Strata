@@ -9,7 +9,7 @@ public import StrataDDM.Elab.DeclM
 
 
 public section
-namespace Strata.Elab
+namespace StrataDDM.Elab
 
 abbrev BuiltinM := StateT Dialect DeclM
 

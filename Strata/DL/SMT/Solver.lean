@@ -25,6 +25,8 @@ works purely with `Term` values and delegates string rendering to the Solver via
 
 namespace Strata.SMT
 
+open StrataDDM (escapeSMTStringLit quoteIdent)
+
 public section
 
 inductive Decision where
@@ -181,7 +183,7 @@ def setInfo (name value : String) : SolverM Unit :=
     NOT pre-quote or pre-escape the argument — use `setInfo` for already-
     formatted attribute values (integers, s-expressions, etc.). -/
 def setInfoString (name value : String) : SolverM Unit :=
-  emitln s!"(set-info :{name} {Strata.escapeSMTStringLit value})"
+  emitln s!"(set-info :{name} {escapeSMTStringLit value})"
 
 def comment (comment : String) : SolverM Unit :=
   let inline := comment.replace "\n" " "

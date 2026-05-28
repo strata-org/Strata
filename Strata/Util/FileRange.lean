@@ -10,6 +10,9 @@ open Std (Format)
 
 public section
 namespace Strata
+export StrataDDM (SourceRange)
+
+abbrev SourceRange.none := StrataDDM.SourceRange.none
 
 inductive Uri where
   | file (path: String)

@@ -161,6 +161,7 @@ structure CProverGOTO.Json where
   goto   : Lean.Json := .null
 
 open Strata in
+open StrataDDM in
 def CProverGOTO.Context.toJson (programName : String) (ctx : CProverGOTO.Context) :
   Except String CProverGOTO.Json := do
   let fn_symbol : Map String CProverGOTO.CBMCSymbol :=
@@ -249,6 +250,7 @@ def transformToGoto (cprog : Core.Program) : Except Format CProverGOTO.Context :
               GOTO at a time!"
 
 open Strata in
+open StrataDDM in
 def getGotoJson (programName : String) (env : Program) : IO CProverGOTO.Json := do
   let (program, errors) := TransM.run Inhabited.default (translateProgram env)
   if errors.isEmpty then
@@ -262,6 +264,7 @@ def getGotoJson (programName : String) (env : Program) : IO CProverGOTO.Json := 
     throw (IO.userError s!"DDM Transform Error: {repr errors}")
 
 open Strata in
+open StrataDDM in
 def writeToGotoJson (programName symTabFileName gotoFileName : String) (env : Program) : IO Unit := do
   let json ← getGotoJson programName env
   let symtabObj := match json.symtab with | .obj m => m | _ => .empty

@@ -8,7 +8,7 @@ import StrataBoole.MetaVerifier
 
 open Strata
 
-def matrix_transpose_example : Strata.Program :=
+def matrix_transpose_example : StrataDDM.Program :=
 #strata
 program Boole;
 

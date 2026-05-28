@@ -14,6 +14,8 @@ import Strata.Util.Tactics
 
 namespace Strata
 
+open StrataDDM
+
 public section
 
 namespace SMTDDM
@@ -270,7 +272,7 @@ partial def translateFromTerm (t:SMT.Term): Except String (SMTDDM.Term Provenanc
 
 private def dummy_prg_for_toString :=
   let dialect_map := DialectMap.ofList!
-    [Strata.initDialect, Strata.smtReservedKeywordsDialect, Strata.SMTCore,
+    [initDialect, Strata.smtReservedKeywordsDialect, Strata.SMTCore,
      Strata.SMT]
   Program.create dialect_map "SMT" #[]
 
@@ -293,21 +295,21 @@ end SMTDDM
 namespace SMTResponseDDM
 
 /-- The loaded dialects needed to parse SMTResponse commands. -/
-def smtResponseDialects : Strata.Elab.LoadedDialects :=
-  .ofDialects! #[Strata.initDialect, Strata.smtReservedKeywordsDialect,
+def smtResponseDialects : StrataDDM.Elab.LoadedDialects :=
+  .ofDialects! #[initDialect, Strata.smtReservedKeywordsDialect,
                  Strata.SMTCore, Strata.SMTResponse]
 
 /-- Format context for rendering SMTResponse `Arg` values back to strings. -/
-private def smtFormatContext : Strata.FormatContext :=
+private def smtFormatContext : FormatContext :=
   .ofDialects smtResponseDialects.dialects
 
 /-- Format state for rendering SMTResponse `Arg` values back to strings. -/
-private def smtFormatState : Strata.FormatState where
+private def smtFormatState : FormatState where
   openDialects := smtResponseDialects.dialects.toList.foldl (init := {}) fun s d => s.insert d.name
 
 /-- Render a DDM `Arg` to a string using the SMTResponse dialect formatting. -/
-def formatArg (arg : Strata.Arg) : String :=
-  (Strata.mformat arg smtFormatContext smtFormatState).format.pretty
+def formatArg (arg : Arg) : String :=
+  (StrataDDM.mformat arg smtFormatContext smtFormatState).format.pretty
 
 /--
 Convert an `SMTResponseDDM.Term` (parsed from solver output) into a
@@ -322,7 +324,7 @@ the type information does not exist in the Term itself. It is the caller's
 responsibility to correctly fill in the types in .app/.uf, or faithfully
 ignore these.
 -/
-partial def translateFromDDMTermToUntyped (t : Strata.SMTResponseDDM.Term Strata.SourceRange)
+partial def translateFromDDMTermToUntyped (t : Strata.SMTResponseDDM.Term StrataDDM.SourceRange)
     : Except String Strata.SMT.Term := do
   match t with
   | .spec_constant_term _ sc =>
@@ -348,8 +350,8 @@ partial def translateFromDDMTermToUntyped (t : Strata.SMTResponseDDM.Term Strata
 
 where
   /-- Extract the name string from a QualIdentifier. -/
-  resolveQI (qi : Strata.SMTResponseDDM.QualIdentifier Strata.SourceRange)
-      : Option (String × Option (Strata.SMTResponseDDM.SMTSort Strata.SourceRange)) :=
+  resolveQI (qi : Strata.SMTResponseDDM.QualIdentifier StrataDDM.SourceRange)
+      : Option (String × Option (Strata.SMTResponseDDM.SMTSort StrataDDM.SourceRange)) :=
     match qi with
     | .qi_ident _ iden =>
       match iden with
@@ -360,7 +362,7 @@ where
       | .iden_simple _ sym | .iden_indexed _ sym _
       => some (symbolToString sym, some sort)
   /-- Extract the raw string from a Symbol. -/
-  symbolToString (sym : Strata.SMTResponseDDM.Symbol Strata.SourceRange) : String :=
+  symbolToString (sym : Strata.SMTResponseDDM.Symbol StrataDDM.SourceRange) : String :=
     formatArg (.op (Strata.SMTResponseDDM.Symbol.toAst sym))
   /-- Build a `Term.app` with a UF op for a named function/constructor.
       Since the SMTDDM's term does not have any type annotation, the return

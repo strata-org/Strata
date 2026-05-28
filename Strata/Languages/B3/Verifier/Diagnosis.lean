@@ -22,6 +22,7 @@ When a verification fails, these strategies help identify the root cause by:
 
 namespace Strata.B3.Verifier
 
+open StrataDDM (SourceRange)
 open Strata.SMT
 
 ---------------------------------------------------------------------

@@ -17,13 +17,14 @@ meta section
 
 open StrataTest.Util
 open Strata
-open Strata.Elab (parseStrataProgramFromDialect)
+open StrataDDM (initDialect)
+open StrataDDM.Elab (parseStrataProgramFromDialect)
 open Lean.Parser (InputContext)
 
 namespace Strata.Laurel
 
 def processLaurelFileWithOptions (options : LaurelVerifyOptions) (input : InputContext) : IO (Array Diagnostic) := do
-  let dialects := Strata.Elab.LoadedDialects.ofDialects! #[initDialect, Laurel]
+  let dialects := StrataDDM.Elab.LoadedDialects.ofDialects! #[initDialect, Laurel]
   let strataProgram ← parseStrataProgramFromDialect dialects Laurel.name input
 
   let uri := Strata.Uri.file input.fileName

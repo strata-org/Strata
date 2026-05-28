@@ -6,6 +6,7 @@
 module
 
 public import Strata.Languages.Core.Env
+open StrataDDM
 
 
 ---------------------------------------------------------------------
@@ -49,10 +50,10 @@ def SourceRange.toMetaData (ictx : InputContext) (sr : SourceRange) : Imperative
   Imperative.MetaData.ofSourceRange (.file ictx.fileName) sr
 
 def getOpMetaData (op : Operation) : TransM (Imperative.MetaData Core.Expression) :=
-  return op.ann.toMetaData (← StateT.get).inputCtx
+  return SourceRange.toMetaData (← StateT.get).inputCtx op.ann
 
 def getArgMetaData (arg : Arg) : TransM (Imperative.MetaData Core.Expression) :=
-  return arg.ann.toMetaData (← StateT.get).inputCtx
+  return SourceRange.toMetaData (← StateT.get).inputCtx arg.ann
 
 ---------------------------------------------------------------------
 
@@ -82,13 +83,13 @@ def checkOpArg (arg : Arg) (name : QualifiedIdent) (argc : Nat) : TransM (Array 
 
 ---------------------------------------------------------------------
 
-def translateCommaSep [Inhabited α] (f : Strata.Arg → TransM α) (arg : Strata.Arg) :
+def translateCommaSep [Inhabited α] (f : Arg → TransM α) (arg : Arg) :
   TransM (Array α) := do
   let .seq _ .comma args := arg
     | TransM.error s!"Expected commaSepList: {repr arg}"
   args.mapM f
 
-def translateOption [Inhabited α] (f : Option Strata.Arg → TransM α) (arg : Arg) :
+def translateOption [Inhabited α] (f : Option Arg → TransM α) (arg : Arg) :
   TransM α := do
   let .option _ maybe_arg := arg
     | TransM.error s!"Expected Option: {repr arg}"
@@ -97,7 +98,7 @@ def translateOption [Inhabited α] (f : Option Strata.Arg → TransM α) (arg : 
 ---------------------------------------------------------------------
 
 def translateIdent (Identifier : Type) [Coe String Identifier] [Inhabited Identifier]
-  (arg : Strata.Arg) : TransM Identifier := do
+  (arg : Arg) : TransM Identifier := do
   let .ident _ name := arg
     | TransM.error s!"Expected ident: {repr arg}"
   pure name
@@ -288,11 +289,11 @@ partial def translateLMonoTys (bindings : TransBindings) (args : Array Arg) :
   args.mapM (fun a => translateLMonoTy bindings a)
 end
 
-def translateTypeVar (op : Strata.Arg) : TransM TyIdentifier := do
+def translateTypeVar (op : Arg) : TransM TyIdentifier := do
   let args ← checkOpArg op q`Core.type_var 1
   translateIdent TyIdentifier args[0]!
 
-def translateTypeArgs (op : Strata.Arg) : TransM (Array TyIdentifier) := do
+def translateTypeArgs (op : Arg) : TransM (Array TyIdentifier) := do
   translateOption (fun x => do match x with
                   | none => return Array.empty
                   | some a =>
@@ -844,7 +845,7 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
     return .strConst () x
   | .fn _ q`Core.realLit, [xa] =>
     let x ← translateReal xa
-    return .realConst () (Strata.Decimal.toRat x)
+    return .realConst () (StrataDDM.Decimal.toRat x)
   -- Equality
   | .fn _ q`Core.equal, [_tpa, xa, ya] =>
     let x ← translateExpr p bindings xa
@@ -1196,7 +1197,7 @@ def translateInvariant (p : Program) (bindings : TransBindings) (arg : Arg) :
     pure [(label, e)]
   | _ => pure []
 
-partial def translateInvariants (p : Strata.Program) (bindings : TransBindings) (arg : Arg) :
+partial def translateInvariants (p : StrataDDM.Program) (bindings : TransBindings) (arg : Arg) :
   TransM (List (String × Core.Expression.Expr)) := do
   let .op op := arg
     | TransM.error s!"translateInvariants expects an op {repr arg}"

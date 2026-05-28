@@ -21,7 +21,7 @@ Near-upstream anchors from `differential_status.md`:
   when Strata emits the expected VC shape
 -/
 
-private def datatypeSelectorsSeed : Strata.Program :=
+private def datatypeSelectorsSeed : StrataDDM.Program :=
 #strata
 program Boole;
 
@@ -50,15 +50,15 @@ spec {
 
 /--
 info:
-Obligation: assert_1_1164
+Obligation: assert_1_1167
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_assert_2_1195_calls_OptionInt..val_0
+Obligation: assert_assert_2_1198_calls_OptionInt..val_0
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_2_1195
+Obligation: assert_2_1198
 Property: assert
 Result: ✅ pass
 
@@ -66,7 +66,7 @@ Obligation: set_ok_calls_OptionInt..val_0
 Property: assert
 Result: ✅ pass
 
-Obligation: datatype_selector_seed_ensures_0_1108
+Obligation: datatype_selector_seed_ensures_0_1111
 Property: assert
 Result: ✅ pass
 -/

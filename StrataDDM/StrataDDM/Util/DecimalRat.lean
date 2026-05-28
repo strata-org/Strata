@@ -7,7 +7,7 @@ module
 public import StrataDDM.Util.Decimal
 
 public section
-namespace Strata.Decimal
+namespace StrataDDM.Decimal
 
 def toRat (d: Decimal) : Rat :=
   if d.exponent < 0 then mkRat d.mantissa (10 ^ (d.exponent).natAbs) else
@@ -74,5 +74,5 @@ def fromRat (r : Rat) : Option Decimal :=
       let exponent := -(k : Int)
       some (normalize mantissa exponent)
 
-end Strata.Decimal
+end StrataDDM.Decimal
 end
