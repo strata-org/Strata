@@ -19,42 +19,6 @@ namespace Function
 open Lambda Imperative
 open Std (ToFormat Format format)
 
-/--
-Check if two monotypes are alpha-equivalent (equal up to consistent renaming of
-free type variables). Returns the backward mapping (ty2 vars → ty1 vars) on
-success, used to rename body annotations back to the declared type parameter names.
--/
-def LMonoTy.alphaEquiv (ty1 ty2 : LMonoTy) :
-    Option (Std.HashMap TyIdentifier TyIdentifier) :=
-  (go ty1 ty2 {} {}).map (·.2)
-where
-  go (t1 t2 : LMonoTy) (fwd : Std.HashMap TyIdentifier TyIdentifier)
-     (bwd : Std.HashMap TyIdentifier TyIdentifier) :
-     Option (Std.HashMap TyIdentifier TyIdentifier × Std.HashMap TyIdentifier TyIdentifier) :=
-    match t1, t2 with
-    | .ftvar x, .ftvar y =>
-      match fwd[x]? with
-      | some y' => if y' == y then some (fwd, bwd) else none
-      | none =>
-        match bwd[y]? with
-        | some x' => if x' == x then some (fwd, bwd) else none
-        | none => some (fwd.insert x y, bwd.insert y x)
-    | .bitvec n, .bitvec m => if n == m then some (fwd, bwd) else none
-    | .tcons n1 args1, .tcons n2 args2 =>
-      if n1 != n2 then none
-      else goList args1 args2 fwd bwd
-    | _, _ => none
-  goList (ts1 ts2 : List LMonoTy) (fwd : Std.HashMap TyIdentifier TyIdentifier)
-     (bwd : Std.HashMap TyIdentifier TyIdentifier) :
-     Option (Std.HashMap TyIdentifier TyIdentifier × Std.HashMap TyIdentifier TyIdentifier) :=
-    match ts1, ts2 with
-    | [], [] => some (fwd, bwd)
-    | t1 :: rest1, t2 :: rest2 =>
-      match go t1 t2 fwd bwd with
-      | some (fwd', bwd') => goList rest1 rest2 fwd' bwd'
-      | none => none
-    | _, _ => none
-
 def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func : Function) :
     Except Format (Function × Core.Expression.TyEnv) := do
   -- (FIXME) Very similar to `Lambda.inferOp`, except that the body is annotated
@@ -62,6 +26,7 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
   --
   -- `LFunc.type` below will also catch any ill-formed functions (e.g.,
   -- where there are duplicates in the formals, etc.).
+  let origTypeArgs := func.typeArgs
   let type ← func.type
   let undeclaredVars := LTy.freeVars type
   if undeclaredVars != [] then
@@ -88,6 +53,12 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
   match func.body with
   | none => .ok (func, Env)
   | some body =>
+    -- Reject body annotations referencing type variables not in typeArgs.
+    let bodyVars := body.annotationTyVars
+    let strayVars := bodyVars.filter (· ∉ origTypeArgs)
+    if !strayVars.isEmpty then
+      .error f!"Function '{func.name}': body contains undeclared type variables \
+                {strayVars.toList} (not in typeArgs {origTypeArgs})"
     -- Add formals with monomorphic types (type parameters are fixed in the body).
     let Env := Env.pushEmptyContext
     let monoInputs : @LTySignature Unit :=

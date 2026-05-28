@@ -6,6 +6,7 @@
 module
 
 public import Strata.DL.Util.Map
+import Std.Data.HashMap.Basic
 import Strata.Util.Tactics
 public meta import Lean.Elab.Term
 
@@ -372,6 +373,42 @@ theorem LMonoTys.freeVars_exists
     cases hv with
     | inl h => exact ⟨ty, .head _, h⟩
     | inr h => obtain ⟨t, ht, htv⟩ := ih h; exact ⟨t, .tail _ ht, htv⟩
+
+/--
+Check if two monotypes are alpha-equivalent (equal up to consistent renaming of
+free type variables). Returns the backward mapping (ty2 vars → ty1 vars) on
+success, used to rename body annotations back to the declared type parameter names.
+-/
+def LMonoTy.alphaEquiv (ty1 ty2 : LMonoTy) :
+    Option (Std.HashMap TyIdentifier TyIdentifier) :=
+  (go ty1 ty2 {} {}).map (·.2)
+where
+  go (t1 t2 : LMonoTy) (fwd : Std.HashMap TyIdentifier TyIdentifier)
+     (bwd : Std.HashMap TyIdentifier TyIdentifier) :
+     Option (Std.HashMap TyIdentifier TyIdentifier × Std.HashMap TyIdentifier TyIdentifier) :=
+    match t1, t2 with
+    | .ftvar x, .ftvar y =>
+      match fwd[x]? with
+      | some y' => if y' == y then some (fwd, bwd) else none
+      | none =>
+        match bwd[y]? with
+        | some x' => if x' == x then some (fwd, bwd) else none
+        | none => some (fwd.insert x y, bwd.insert y x)
+    | .bitvec n, .bitvec m => if n == m then some (fwd, bwd) else none
+    | .tcons n1 args1, .tcons n2 args2 =>
+      if n1 != n2 then none
+      else goList args1 args2 fwd bwd
+    | _, _ => none
+  goList (ts1 ts2 : List LMonoTy) (fwd : Std.HashMap TyIdentifier TyIdentifier)
+     (bwd : Std.HashMap TyIdentifier TyIdentifier) :
+     Option (Std.HashMap TyIdentifier TyIdentifier × Std.HashMap TyIdentifier TyIdentifier) :=
+    match ts1, ts2 with
+    | [], [] => some (fwd, bwd)
+    | t1 :: rest1, t2 :: rest2 =>
+      match go t1 t2 fwd bwd with
+      | some (fwd', bwd') => goList rest1 rest2 fwd' bwd'
+      | none => none
+    | _, _ => none
 
 /--
 Get all type constructors in monotype `mty`.

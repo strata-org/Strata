@@ -124,6 +124,23 @@ info: error: Function 'bad': body constrains the type to '(arrow int int)', inco
   let (func', _) ← Function.typeCheck C Env wrongAnnotFunc
   return format f!"typeArgs: {func'.typeArgs}\ninputs: {func'.inputs}\noutput: {func'.output}\nbody: {func'.body}"
 
+-- Body introduces a type variable not in typeArgs via a lambda annotation.
+-- id<T>(x:T):T { (\(y:U).y)(x) } — U is not in typeArgs.
+private def strayBodyVarFunc : Core.Function :=
+  { name := ⟨"id", ()⟩,
+    typeArgs := ["T"],
+    inputs := [(⟨"x", ()⟩, .ftvar "T")],
+    output := .ftvar "T",
+    body := some (.app () (.abs () "y" (some (.ftvar "U")) (.bvar () 0)) (.fvar () ⟨"x", ()⟩ none)) }
+
+/--
+info: error: Function 'id': body contains undeclared type variables [U] (not in typeArgs [T])
+-/
+#guard_msgs in
+#eval do
+  let (func', _) ← Function.typeCheck C Env strayBodyVarFunc
+  return format f!"typeArgs: {func'.typeArgs}\ninputs: {func'.inputs}\noutput: {func'.output}\nbody: {func'.body}"
+
 ---------------------------------------------------------------------
 -- Regression tests
 ---------------------------------------------------------------------
