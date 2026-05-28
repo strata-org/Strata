@@ -382,6 +382,13 @@ private partial def toCoreQuantExpr? (e : Boole.Expr) : Option (TranslateM Core.
       some (toCoreQuant false ds body)
   | _ => none
 
+/-- Lower a sequence literal to a left-fold of seq_build over a typed seq_empty. -/
+private partial def seqOfToCore (elemTy : LMonoTy) (vs : Array Boole.Expr) :
+    TranslateM Core.Expression.Expr := do
+  let vals ← vs.toList.mapM toCoreExpr
+  return vals.foldl (fun acc v => mkCoreApp Core.seqBuildOp [acc, v])
+    (Core.seqEmptyOp (some elemTy))
+
 partial def toCoreExpr (e : Boole.Expr) : TranslateM Core.Expression.Expr := do
   if let some q := toCoreQuantExpr? e then
     return ← q
@@ -472,11 +479,12 @@ partial def toCoreExpr (e : Boole.Expr) : TranslateM Core.Expression.Expr := do
   | .seq_empty_bv64 _ => return Core.seqEmptyOp (some (.bitvec 64))
   | .seq_empty_int _  => return Core.seqEmptyOp (some .int)
   -- Sequence literals: Sequence.of_bv32[v0, v1, ..., vn]
-  -- Lowers to a left-fold of seq_build over seq_empty.
-  | .seq_of_bv8  _ ⟨_, vs⟩ | .seq_of_bv16 _ ⟨_, vs⟩ | .seq_of_bv32 _ ⟨_, vs⟩
-  | .seq_of_bv64 _ ⟨_, vs⟩ | .seq_of_int  _ ⟨_, vs⟩ => do
-    let vals ← vs.toList.mapM toCoreExpr
-    return vals.foldl (fun acc v => mkCoreApp Core.seqBuildOp [acc, v]) Core.seqEmptyOp
+  -- Lowers to a left-fold of seq_build over a typed seq_empty.
+  | .seq_of_bv8  _ ⟨_, vs⟩ => seqOfToCore (.bitvec 8)  vs
+  | .seq_of_bv16 _ ⟨_, vs⟩ => seqOfToCore (.bitvec 16) vs
+  | .seq_of_bv32 _ ⟨_, vs⟩ => seqOfToCore (.bitvec 32) vs
+  | .seq_of_bv64 _ ⟨_, vs⟩ => seqOfToCore (.bitvec 64) vs
+  | .seq_of_int  _ ⟨_, vs⟩ => seqOfToCore .int         vs
   -- Lambda abstraction: `fun x : T => body`  →  Core .abs
   | .lambda _ _ decls body => do
       let declsList := declListToList decls
@@ -643,6 +651,9 @@ def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement 
     -- obligation verify as a false positive.
     let .mono_bind_mk _ _ vTy := v
     let vMonoTy ← toCoreMonoType vTy
+    -- Re-translate pred with a de Bruijn bvar as the bound variable so that
+    -- the quantifier body refers to the freshly quantified variable (index 0),
+    -- not the fvar used for the assume statement above.
     let existsBody ← withBVarExprs #[.bvar () 0] (toCoreExpr pred)
     let existsExpr : Core.Expression.Expr :=
       .quant () .exist "" (some vMonoTy) (.bvar () 0) existsBody
