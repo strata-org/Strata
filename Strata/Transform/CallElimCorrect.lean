@@ -3686,6 +3686,18 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       (argTemps ++
                         outTemps ++ genOldIdents)
                       (argVals ++ oVals ++ oldVals)
+                  -- Positional read of σ_R1 on genOldIdents.
+                  have HgenOldOldValsLen : genOldIdents.length = oldVals.length := by
+                    have := HoldValsLen; have := HgenOldLen; omega
+                  have HrdR1_olds : ReadValues σ_R1 genOldIdents oldVals := by
+                    show ReadValues (updatedStates σO genOldIdents oldVals) _ _
+                    exact readValues_updatedStatesSame HgenOldOldValsLen HoldNd
+                  have σ_R1_read_olds :
+                      ∀ (i : Nat) (Hi : i < genOldIdents.length)
+                        (Hi' : i < oldVals.length),
+                        σ_R1 (genOldIdents[i]'Hi) =
+                          some (oldVals[i]'Hi') := fun i Hi Hi' =>
+                    readValues_get HrdR1_olds (i:=i) (hi:=Hi) (hi':=Hi')
                   -- Filtered argument substitution shape.  Matches
                   -- `arg_subst_filtered` in `callElimCmd` (CallElim.lean:133).
                   let filtered_argSubst :
@@ -4957,28 +4969,12 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       have := HgenOldLen
                       omega
                     -- LHS: δ σ_R1 w = σ_R1 genOldIdents[i] = some oldVals[i].
-                    -- σ_R1 = updatedStates σO genOldIdents oldVals.
-                    -- Use readValues_updatedStatesSame + readValues_get.
-                    have HoldValsLenE :
-                        genOldIdents.length = oldVals.length := by
-                      have := HoldValsLen
-                      have := HgenOldLen
-                      omega
                     have Hni_lt_oldVals : ni_val < oldVals.length := by
-                      have := HoldValsLen
-                      omega
-                    have HrdR1_olds :
-                        ReadValues σ_R1 genOldIdents oldVals := by
-                      show ReadValues
-                        (updatedStates σO genOldIdents oldVals)
-                        genOldIdents oldVals
-                      exact readValues_updatedStatesSame
-                              HoldValsLenE HoldNd
+                      have := HoldValsLen; omega
                     have HrdR1_get :
                         σ_R1 (genOldIdents[ni_val]'Hni_lt_genOld) =
                           some (oldVals[ni_val]'Hni_lt_oldVals) :=
-                      readValues_get HrdR1_olds
-                        (i:=ni_val) (hi:=Hni_lt_genOld) (hi':=Hni_lt_oldVals)
+                      σ_R1_read_olds ni_val Hni_lt_genOld Hni_lt_oldVals
                     -- δ σ_R1 (createFvar gen) = σ_R1 gen.
                     have HwfL :
                         δ σ_R1 (Core.Transform.createFvar
@@ -5561,23 +5557,10 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         have Hni_lt_oldVals :
                             ni_val < oldVals.length := by
                           have := HoldValsLen; omega
-                        have HoldValsLenE' :
-                            genOldIdents.length = oldVals.length := by
-                          have := HoldValsLen
-                          have := HgenOldLen
-                          omega
-                        have HrdR1_olds :
-                            ReadValues σ_R1 genOldIdents oldVals := by
-                          show ReadValues
-                            (updatedStates σO genOldIdents oldVals)
-                            genOldIdents oldVals
-                          exact readValues_updatedStatesSame
-                                  HoldValsLenE' HoldNd
                         have Hσ_R1_v :
                             σ_R1 (genOldIdents[ni_val]'Hni_lt_genOld) =
                               some (oldVals[ni_val]'Hni_lt_oldVals) :=
-                          readValues_get HrdR1_olds
-                            (i:=ni_val) (hi:=Hni_lt_genOld) (hi':=Hni_lt_oldVals)
+                          σ_R1_read_olds ni_val Hni_lt_genOld Hni_lt_oldVals
                         have Hσ_havoc_v :
                             σ_havoc (genOldIdents[ni_val]'Hni_lt_genOld) =
                               some (oldVals[ni_val]'Hni_lt_oldVals) :=
