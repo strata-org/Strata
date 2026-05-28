@@ -356,12 +356,9 @@ private theorem pair_in_zip_pos_decomp
     rw [List.length_zip, Hlen, Nat.min_self]
   have Hn_lt : n.val < ks.length := HzipLen ▸ n.isLt
   have Hn_lt' : n.val < ks'.length := Hlen ▸ Hn_lt
-  have HEq : (k1, k2) = (ks[n.val]'Hn_lt, ks'[n.val]'Hn_lt') := by
-    have HG := Hn.symm
-    rw [show (ks.zip ks').get n = (ks.zip ks')[n.val]'n.isLt from rfl,
-        show (ks.zip ks')[n.val]'n.isLt = (ks[n.val]'Hn_lt, ks'[n.val]'Hn_lt')
-          from List.getElem_zip] at HG
-    exact HG
+  have Hget : (ks.zip ks')[n.val]'n.isLt = (ks[n.val]'Hn_lt, ks'[n.val]'Hn_lt') :=
+    List.getElem_zip
+  have HEq : (k1, k2) = (ks[n.val]'Hn_lt, ks'[n.val]'Hn_lt') := Hget ▸ Hn.symm
   exact ⟨n.val, Hn_lt, Hn_lt',
     ((Prod.mk.injEq _ _ _ _).mp HEq).1, ((Prod.mk.injEq _ _ _ _).mp HEq).2⟩
 
