@@ -6,7 +6,6 @@
 module
 
 public import Strata.Languages.Laurel.MapStmtExpr
-public import Strata.Languages.Laurel.TransparencyPass
 
 /-!
 # Eliminate Value Returns
@@ -87,16 +86,6 @@ def eliminateValueReturnsTransform (program : Program) : Program × Array Diagno
     (proc' :: ps, ds ++ procDiags)
   ) ([], #[])
   ({ program with staticProcedures := procs.reverse }, diags)
-
-/-- Transform an `UnorderedCoreWithLaurelTypes` by eliminating value returns
-    in all core (non-functional) procedures. -/
-def eliminateValueReturnsTransformUnordered (uc : UnorderedCoreWithLaurelTypes)
-    : UnorderedCoreWithLaurelTypes × Array DiagnosticModel :=
-  let (procs, diags) := uc.coreProcedures.foldl (fun (ps, ds) proc =>
-    let (proc', procDiags) := eliminateValueReturnsInProc proc
-    (proc' :: ps, ds ++ procDiags)
-  ) ([], #[])
-  ({ uc with coreProcedures := procs.reverse }, diags)
 
 end -- public section
 
