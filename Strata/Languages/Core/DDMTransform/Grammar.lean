@@ -50,6 +50,7 @@ type bv8;
 type bv16;
 type bv32;
 type bv64;
+type bv128;
 type Map (dom : Type, range : Type);
 type Sequence (elem : Type);
 
@@ -92,6 +93,7 @@ fn bv8Lit (n : Num) : bv8 => "bv{8}" "(" n ")";
 fn bv16Lit (n : Num) : bv16 => "bv{16}" "(" n ")";
 fn bv32Lit (n : Num) : bv32 => "bv{32}" "(" n ")";
 fn bv64Lit (n : Num) : bv64 => "bv{64}" "(" n ")";
+fn bv128Lit (n : Num) : bv128 => "bv{128}" "(" n ")";
 fn strLit (s : Str) : string => s;
 fn realLit (d : Decimal) : real => d;
 
