@@ -1541,6 +1541,42 @@ theorem readValues_updatedStates
       -- Apply ih on the remaining list.
       exact ih (σ:=updatedState σ k' v') Hlen' Hdisj' Hrd_step
 
+/-- Lift `ReadValues σ ks vs` across three nested `updatedStates` extensions
+    given `ks` is disjoint from each layer.  Used to bridge a base read in
+    `σ` to the σ_old / σ_havoc 3-layer initialization in CallElim. -/
+theorem readValues_3layer_lift
+    {σ : CoreStore} {ks : List Expression.Ident} {vs : List Expression.Expr}
+    {ts1 ts2 ts3 : List Expression.Ident}
+    {vs1 vs2 vs3 : List Expression.Expr}
+    (Hlen1 : ts1.length = vs1.length) (Hdisj1 : ks.Disjoint ts1)
+    (Hlen2 : ts2.length = vs2.length) (Hdisj2 : ks.Disjoint ts2)
+    (Hlen3 : ts3.length = vs3.length) (Hdisj3 : ks.Disjoint ts3)
+    (Hrd : ReadValues σ ks vs) :
+    ReadValues
+      (updatedStates
+        (updatedStates (updatedStates σ ts1 vs1) ts2 vs2) ts3 vs3) ks vs :=
+  readValues_updatedStates Hlen3 Hdisj3
+    (readValues_updatedStates Hlen2 Hdisj2
+      (readValues_updatedStates Hlen1 Hdisj1 Hrd))
+
+/-- Lift `Imperative.isDefined σ lhs` across three nested `updatedStates`
+    extensions given `lhs` is disjoint from each layer. -/
+theorem isDefined_3layer_lift
+    {σ : CoreStore} {lhs : List Expression.Ident}
+    {ts1 ts2 ts3 : List Expression.Ident}
+    {vs1 vs2 vs3 : List Expression.Expr}
+    (Hdisj1 : lhs.Disjoint ts1) (Hdisj2 : lhs.Disjoint ts2)
+    (Hdisj3 : lhs.Disjoint ts3)
+    (Hdef : Imperative.isDefined σ lhs) :
+    Imperative.isDefined
+      (updatedStates
+        (updatedStates (updatedStates σ ts1 vs1) ts2 vs2) ts3 vs3) lhs :=
+  fun v Hv => by
+    rw [updatedStates_get_notin (fun Hin => Hdisj3 Hv Hin),
+        updatedStates_get_notin (fun Hin => Hdisj2 Hv Hin),
+        updatedStates_get_notin (fun Hin => Hdisj1 Hv Hin)]
+    exact Hdef v Hv
+
 /-! ### Temp-extension lift helpers
 
 `updateState_updatedStates_lift` / `havocVars_updatedStates_lift` lift a
