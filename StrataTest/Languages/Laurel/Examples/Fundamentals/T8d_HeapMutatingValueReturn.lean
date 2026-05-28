@@ -11,8 +11,6 @@ open Strata
 
 /-! ## Correct heap mutating value return -/
 
-/-- info: ok -/
-#guard_msgs in
 #eval testLaurel
 #strata
 program Laurel;

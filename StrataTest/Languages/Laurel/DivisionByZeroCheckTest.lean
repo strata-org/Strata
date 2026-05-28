@@ -18,8 +18,6 @@ generates verification conditions for these preconditions.
 
 /-! ### Safe paths verify cleanly -/
 
-/-- info: ok -/
-#guard_msgs in
 #eval testLaurel
 #strata
 program Laurel;

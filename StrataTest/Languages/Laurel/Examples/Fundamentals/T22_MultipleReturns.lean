@@ -9,8 +9,6 @@ import StrataTest.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-/-- info: ok -/
-#guard_msgs in
 #eval testLaurel
 #strata
 program Laurel;

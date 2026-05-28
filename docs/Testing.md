@@ -37,15 +37,14 @@ is edited.
 
 ### 1. Positive test — program checks cleanly through the full pipeline
 
-Use `testLaurel`. Empty diagnostics print as `ok`.
+Use `testLaurel`. The helper throws if any diagnostics fire, so no
+`#guard_msgs` / docstring is needed:
 
 ```lean
 import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
 
-/-- info: ok -/
-#guard_msgs in
 #eval testLaurel
 #strata
 program Laurel;
@@ -103,8 +102,6 @@ procedure foo() opaque {
 
 ```lean
 /-! Shadowing in nested blocks is OK -/
-/-- info: ok -/
-#guard_msgs in
 #eval testLaurelResolution
 #strata
 program Laurel;
@@ -169,8 +166,6 @@ mask a regression in the other.
 
 ```lean
 /-! ### Safe paths verify cleanly -/
-/-- info: ok -/
-#guard_msgs in
 #eval testLaurel #strata
 program Laurel;
 procedure safeDivision() opaque {
@@ -194,13 +189,11 @@ them in one `#strata` block and list the union of expected diagnostics.
 
 ## Practical workflow
 
-1. Write the `#strata` block first.
-2. For positive tests, add a `/-- info: ok -/` docstring above
-   `#guard_msgs in #eval testLaurel …`.
-3. For negative tests, sketch placeholder annotations like `// ^ error:`
+1. Write the `#strata` block first, prefaced with `#eval testLaurel`.
+2. For negative tests, sketch placeholder annotations like `// ^ error:`
    below the offending lines — column positions don't have to be right yet.
-4. Run it: `lake env lean StrataTest/Languages/Laurel/<your_file>.lean`.
-5. On failure: the helper prints exactly which annotations went unmatched
+3. Run it: `lake env lean StrataTest/Languages/Laurel/<your_file>.lean`.
+4. On failure: the helper prints exactly which annotations went unmatched
    and which diagnostics had no annotation, including the line/column range
    actually produced. Copy those into your annotations, save, re-run.
 

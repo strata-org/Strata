@@ -27,8 +27,6 @@ procedure foo()
 
 /-! ## Assume false makes assert false trivially provable -/
 
-/-- info: ok -/
-#guard_msgs in
 #eval testLaurel
 #strata
 program Laurel;

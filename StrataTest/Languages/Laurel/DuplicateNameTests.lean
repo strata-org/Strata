@@ -90,8 +90,6 @@ procedure Foo() opaque { };
 
 /-! ## Shadowing quantifier variables in nested scopes is OK (no error expected) -/
 
-/-- info: ok -/
-#guard_msgs in
 #eval testLaurelResolution
 #strata
 program Laurel;
@@ -102,8 +100,6 @@ procedure test() opaque {
 
 /-! ## Shadowing in nested blocks is OK (no error expected) -/
 
-/-- info: ok -/
-#guard_msgs in
 #eval testLaurelResolution
 #strata
 program Laurel;

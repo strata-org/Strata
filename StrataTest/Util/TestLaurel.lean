@@ -203,9 +203,7 @@ private def runAndCheck (block : SourcedProgram)
   let dms ← run block.program
   let actual := renderSnippetLocal block.basePos block.source dms
   if annotations.isEmpty then
-    if actual.isEmpty then
-      IO.println "ok"
-    else
+    unless actual.isEmpty do
       let mut report := s!"expected no diagnostics, got {actual.size}:\n"
       for d in actual do
         report := report ++ s!"  {formatDiagnostic d}\n"

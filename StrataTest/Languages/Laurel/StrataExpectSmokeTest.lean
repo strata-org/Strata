@@ -16,8 +16,6 @@ open Strata
 
 /-! ## Positive smoke test -/
 
-/-- info: ok -/
-#guard_msgs in
 #eval testLaurel
 #strata
 program Laurel;
