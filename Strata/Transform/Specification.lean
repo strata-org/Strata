@@ -132,7 +132,7 @@ variable {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P] [HasVal P]
 variable (L : Lang P)
 
 
-/-! ## Style A — Reachability-based assertion validity
+/-! ## Style A — Reachability-based assertion validity and satisfiability.
 
 The primary predicate is `AssertValidWhen`, parameterized by a precondition
 on the initial environment.  `AssertValid` is `AssertValidWhen (fun _ => True)`.
@@ -159,6 +159,25 @@ def AllAssertsValidWhen (Pre : Env P → Prop) (s : L.StmtT) : Prop :=
 /-- All asserts are valid in statement `s`. -/
 @[expose] def AllAssertsValid (s : L.StmtT) : Prop :=
   ∀ (a : AssertId P), AssertValid L s a
+
+/-- Assert `a` is *satisfiable* in statement `s` under `Pre`: there exists some
+    initial environment satisfying `Pre` and some reachable configuration where
+    the assert is about to execute and evaluates to `true`.
+
+    This is the existential dual of `AssertValidWhen` and is the natural
+    target for bug-finding modes: the analyzer is trying to demonstrate that
+    *some* execution actually reaches the assert with a passing expression
+    (i.e., the assert is not vacuously unreachable). -/
+@[expose] def AssertSatisfiableWhen (Pre : Env P → Prop) (s : L.StmtT) (a : AssertId P) : Prop :=
+  ∃ (ρ₀ : Env P) (cfg : L.CfgT),
+    Pre ρ₀ ∧
+    L.star (L.stmtCfg s ρ₀) cfg ∧
+    L.isAtAssert cfg a ∧
+    (L.getEnv cfg).eval (L.getEnv cfg).store a.expr = some HasBool.tt
+
+/-- Assert `a` is *satisfiable* in statement `s` (for some initial environment). -/
+@[expose] def AssertSatisfiable (s : L.StmtT) (a : AssertId P) : Prop :=
+  AssertSatisfiableWhen L (fun _ => True) s a
 
 
 /-! ## Style B — Hoare-triple assertion validity
@@ -407,6 +426,63 @@ abbrev Lang.imperativeBlock : Lang P where
 end ImperativeStmts
 
 end Transform
+
+
+
+/-! ## Analysis -/
+
+/-- An `Analysis` over programs `ℙ` producing diagnostics `D`.
+    `ℙ` is written double-struck (\bbP) to avoid clashing with the
+    pure-expression parameter `P` used elsewhere in this file. -/
+structure Analysis (ℙ D : Type) where
+  /-- The property we want every program to satisfy. -/
+  desirableProperty : ℙ → Prop
+  /-- The analysis function: produce a diagnostic from a program. -/
+  analyze : ℙ → D
+  /-- Whether a diagnostic is considered passing. -/
+  pass : D → Prop
+
+namespace Analysis
+
+variable {ℙ D : Type}
+
+/-- An analysis is *sound* when a passing diagnostic implies the desirable
+    property holds of the analyzed program. -/
+def Sound (a : Analysis ℙ D) : Prop :=
+  ∀ (p : ℙ) (d : D), a.analyze p = d ∧ a.pass d → a.desirableProperty p
+
+/-- An analysis is *complete* when every program with the desirable property
+    yields a passing diagnostic. -/
+def Complete (a : Analysis ℙ D) : Prop :=
+  ∀ (p : ℙ) (d : D), a.analyze p = d ∧ a.desirableProperty p → a.pass d
+
+
+/-- An analysis whose desirable property is `AssertValid L s a` for a fixed
+    language `L` and assertion `a`. -/
+def AssertValidityChecker
+    {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasVal P]
+    {D : Type} (L : Lang P) (a : AssertId P)
+    (analyze : L.StmtT → D) (pass : D → Prop) :
+    Analysis L.StmtT D :=
+  { desirableProperty := fun s => AssertValid L s a
+    analyze := analyze
+    pass := pass }
+
+/-- An analysis whose desirable property is `AssertSatisfiable L s a` for a
+    fixed language `L` and assertion `a`. The dual of `AssertValidityChecker`:
+    a passing diagnostic witnesses that *some* execution reaches the assert
+    with a passing expression (the natural target for bug-finding analyses). -/
+def AssertSatisfiabilityChecker
+    {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasVal P]
+    {D : Type} (L : Lang P) (a : AssertId P)
+    (analyze : L.StmtT → D) (pass : D → Prop) :
+    Analysis L.StmtT D :=
+  { desirableProperty := fun s => AssertSatisfiable L s a
+    analyze := analyze
+    pass := pass }
+
+end Analysis
+
 end Specification
 end Imperative
 
