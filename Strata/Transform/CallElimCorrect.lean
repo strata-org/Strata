@@ -2644,21 +2644,10 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                   -- (k1, k2) ∈ filtered_ks.zip filtered_ks' is either an
                   -- output-pair (outputs.keys[i], lhs[i]) or input-pair
                   -- (filtered_inputs[j], filtered_argTemps[j]).
-                  have HinKeys_argVals_len :
-                      proc.header.inputs.keys.length = argVals.length :=
-                    InitStatesLength Hinitin
-                  have Hzip_argV_len :
-                      (proc.header.inputs.keys.zip argTemps).length =
-                        argVals.length := by
-                    rw [List.length_zip, HinKeys_argTemps_len, Nat.min_self]
-                    omega
                   -- Build Hsubst via parallel ReadValues.
                   have HinKVlen :
                       proc.header.inputs.keys.length = argVals.length :=
                     InitStatesLength Hinitin
-                  have HargT_len_argV :
-                      argTemps.length = argVals.length := by
-                    rw [← HinKeys_argTemps_len]; exact HinKVlen
                   -- σ_R1 reads inputs.keys → argVals (full).
                   have Hrd_R1_in_full :
                       ReadValues σ_R1 proc.header.inputs.keys argVals := by
