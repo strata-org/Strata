@@ -47,6 +47,31 @@ theorem singleCmdToStmts
   apply ReflTrans.step _ _ _ Imperative.StepStmt.step_seq_done
   exact ReflTrans.step _ _ _ Imperative.StepStmt.step_stmts_nil (.refl _)
 
+/-- Singleton-eval helper for `Statement.assert`: lifts the assert evaluation
+    rule into a single-statement `EvalStatementsContract`. -/
+theorem singletonAssertEval
+    {π : String → Option Procedure}
+    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
+    {δ : CoreEval} {σ : CoreStore}
+    (Hwfb : Imperative.WellFormedSemanticEvalBool δ)
+    (lbl : String) (e : Expression.Expr) (m : Imperative.MetaData Expression)
+    (Hev : δ σ e = some Imperative.HasBool.tt) :
+    EvalStatementsContract π φ ⟨σ, δ, false⟩ [Statement.assert lbl e m] ⟨σ, δ, false⟩ :=
+  singleCmdToStmts (π := π) (φ := φ)
+    (Core.EvalCommandContract.cmd_sem (Imperative.EvalCmd.eval_assert_pass Hev Hwfb))
+
+/-- Singleton-eval helper for `Statement.assume`. -/
+theorem singletonAssumeEval
+    {π : String → Option Procedure}
+    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
+    {δ : CoreEval} {σ : CoreStore}
+    (Hwfb : Imperative.WellFormedSemanticEvalBool δ)
+    (lbl : String) (e : Expression.Expr) (m : Imperative.MetaData Expression)
+    (Hev : δ σ e = some Imperative.HasBool.tt) :
+    EvalStatementsContract π φ ⟨σ, δ, false⟩ [Statement.assume lbl e m] ⟨σ, δ, false⟩ :=
+  singleCmdToStmts (π := π) (φ := φ)
+    (Core.EvalCommandContract.cmd_sem (Imperative.EvalCmd.eval_assume Hev Hwfb))
+
 /-- Evaluating `createHavocs vs md` under contract semantics steps from σ
     through `HavocVars vs` to σ'. -/
 theorem H_havocs

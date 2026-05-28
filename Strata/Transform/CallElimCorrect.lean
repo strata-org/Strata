@@ -323,31 +323,6 @@ private theorem H_check_block_zip
       simp only [List.zip_cons_cons, List.map_cons, List.singleton_append]
       exact EvalStatementsContractApp HheadStmts Htail
 
-/-- Singleton-eval helper for `Statement.assert`: lifts the assert evaluation
-    rule into a single-statement `EvalStatementsContract`. -/
-private theorem singletonAssertEval
-    {π : String → Option Procedure}
-    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
-    {δ : CoreEval} {σ : CoreStore}
-    (Hwfb : Imperative.WellFormedSemanticEvalBool δ)
-    (lbl : String) (e : Expression.Expr) (m : Imperative.MetaData Expression)
-    (Hev : δ σ e = some Imperative.HasBool.tt) :
-    EvalStatementsContract π φ ⟨σ, δ, false⟩ [Statement.assert lbl e m] ⟨σ, δ, false⟩ :=
-  singleCmdToStmts (π := π) (φ := φ)
-    (Core.EvalCommandContract.cmd_sem (Imperative.EvalCmd.eval_assert_pass Hev Hwfb))
-
-/-- Singleton-eval helper for `Statement.assume`. -/
-private theorem singletonAssumeEval
-    {π : String → Option Procedure}
-    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
-    {δ : CoreEval} {σ : CoreStore}
-    (Hwfb : Imperative.WellFormedSemanticEvalBool δ)
-    (lbl : String) (e : Expression.Expr) (m : Imperative.MetaData Expression)
-    (Hev : δ σ e = some Imperative.HasBool.tt) :
-    EvalStatementsContract π φ ⟨σ, δ, false⟩ [Statement.assume lbl e m] ⟨σ, δ, false⟩ :=
-  singleCmdToStmts (π := π) (φ := φ)
-    (Core.EvalCommandContract.cmd_sem (Imperative.EvalCmd.eval_assume Hev Hwfb))
-
 /-- A list of `Statement.assert` with substituted predicates evaluates from
     σ' to σ' (store unchanged) under contract semantics, given that each
     substituted predicate evaluates to `tt` in σ' and the substitution
