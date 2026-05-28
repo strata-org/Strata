@@ -2253,17 +2253,10 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                               (argTemps ++ lhs)) :=
                         (List.of_mem_zip Hkin).1
                       -- Decompose the removeAll membership.
-                      have Hk1_inPre :
-                          k1 ∈ Imperative.HasVarsPure.getVars
-                                  (P:=Expression) entry.snd.expr ∧
-                          k1 ∉ (proc.header.inputs.keys ++
-                                  proc.header.outputs.keys) ++
-                                (argTemps ++ lhs) := by
-                        simp only [List.removeAll, List.mem_filter,
-                                   List.elem_eq_mem, Bool.not_eq_true',
-                                   decide_eq_false_iff_not] at Hk1_in
-                        exact Hk1_in
-                      obtain ⟨Hk1_pre, Hk1_notin⟩ := Hk1_inPre
+                      simp only [List.removeAll, List.mem_filter,
+                                 List.elem_eq_mem, Bool.not_eq_true',
+                                 decide_eq_false_iff_not] at Hk1_in
+                      obtain ⟨Hk1_pre, Hk1_notin⟩ := Hk1_in
                       obtain ⟨Hk1_notin_inputs, Hk1_notin_outputs,
                               Hk1_notin_argT, _Hk1_notin_lhs⟩ :=
                         List.notin_append4 Hk1_notin
@@ -3915,15 +3908,10 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           (filtered_ks ++ filtered_ks') :=
                       (List.of_mem_zip Hkin).1
                     -- Decompose removeAll.
-                    have Hk1_inDecomp :
-                        k1 ∈ Imperative.HasVarsPure.getVars
-                                (P:=Expression) entry.snd.expr ∧
-                        k1 ∉ filtered_ks ++ filtered_ks' := by
-                      simp only [List.removeAll, List.mem_filter,
-                                 List.elem_eq_mem, Bool.not_eq_true',
-                                 decide_eq_false_iff_not] at Hk1_in
-                      exact Hk1_in
-                    obtain ⟨Hk1_pre, Hk1_notin_combined⟩ := Hk1_inDecomp
+                    simp only [List.removeAll, List.mem_filter,
+                               List.elem_eq_mem, Bool.not_eq_true',
+                               decide_eq_false_iff_not] at Hk1_in
+                    obtain ⟨Hk1_pre, Hk1_notin_combined⟩ := Hk1_in
                     -- Decompose `k1 ∉ (outputs ++ filtered_inputs) ++
                     -- (lhs ++ filtered_argTemps)` into 4 leaf facts.
                     obtain ⟨Hk1_notin_outs, Hk1_notin_filtIn,
