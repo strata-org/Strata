@@ -1425,7 +1425,7 @@ def Synth.instanceCall (exprMd : StmtExprMd)
     flat consistency lattice — `Unknown ⊔ T = T`, `T ⊔ T = T`,
     everything else inconsistent). The fold's result is the
     synthesized type. If any pair is inconsistent the rule emits a
-    "cannot apply '<op>' to operands of types …" diagnostic and
+    `cannot apply '<op>' to operands of types …` diagnostic and
     falls back to `Unknown`.
 
     The boolean family additionally has a check-mode rule
