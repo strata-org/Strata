@@ -22,12 +22,7 @@ open Std (ToFormat Format format)
 /--
 Check if two monotypes are alpha-equivalent (equal up to consistent renaming of
 free type variables). Returns the backward mapping (ty2 vars → ty1 vars) on
-success, which can be used to rename annotations in the body back to the
-declared type parameter names.
-
-This check is equivalent to treating declared type parameters as rigid/skolem
-constants during body checking: both formulations reject programs where the body
-constrains a type parameter to a concrete type or identifies distinct parameters.
+success, used to rename body annotations back to the declared type parameter names.
 -/
 def LMonoTy.alphaEquiv (ty1 ty2 : LMonoTy) :
     Option (Std.HashMap TyIdentifier TyIdentifier) :=
@@ -93,21 +88,17 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
   match func.body with
   | none => .ok (func, Env)
   | some body =>
-    -- Temporarily add formals in the context with monomorphic types.
-    -- Type parameters are fixed within the body (Boogie/Java style).
+    -- Add formals with monomorphic types (type parameters are fixed in the body).
     let Env := Env.pushEmptyContext
     let monoInputs : @LTySignature Unit :=
       func.inputs.map (fun (id, mty) => (id, .forAll [] mty))
     let Env := Env.addInNewestContext monoInputs
-    -- Type check and annotate the body, and ensure that it unifies with the
-    -- return type (used directly as a monotype, not re-instantiated).
+    -- Type check the body and unify with the return type.
     let (bodya, Env) ← LExpr.resolve C Env body
     let bodyty := bodya.toLMonoTy
     let retty := func.output
     let S ← Constraints.unify [(retty, bodyty)] (TEnv.stateSubstInfo Env) |>.mapError format
-    -- Verify that the inferred type is alpha-equivalent to the declared signature.
-    -- This rejects bodies that constrain a declared type parameter to a concrete
-    -- type (e.g., `foo<a>(x:a):a { x+1 }` infers `int→int` ≠α `a→a`).
+    -- The inferred type must be alpha-equivalent to the declared signature.
     let inferredTy := LMonoTy.subst S.subst monoty
     let bwdMap ← match LMonoTy.alphaEquiv monoty inferredTy with
       | some m => pure m
@@ -115,10 +106,8 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
         .error f!"Function '{func.name}': body constrains the type to '{inferredTy}', \
                   incompatible with declared polymorphic signature '{monoty}'"
     let Env := TEnv.updateSubst Env S
-    -- Apply the unification substitution to the body, then rename any type
-    -- variables back to the declared type parameter names using the backward
-    -- mapping from alpha-equivalence. This ensures annotations are consistent
-    -- with the function's typeArgs (required by denotational semantics).
+    -- Apply S to the body, then rename type variables to match the
+    -- instantiated typeArgs so that body annotations are consistent.
     let bodya := LExpr.applySubstT bodya S.subst
     let renameSubst : Subst := [bwdMap.toList.map (fun (k, v) => (k, .ftvar v))]
     let bodya := LExpr.applySubstT bodya renameSubst
