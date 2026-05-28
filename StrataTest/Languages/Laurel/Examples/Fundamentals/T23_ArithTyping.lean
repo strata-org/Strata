@@ -83,18 +83,16 @@ procedure unaryNegHomogeneous()
 };
 
 // Unknown promotes to its neighbour under consistencyLub:
-// 'Unknown + TInt' folds to TInt. The hole '<?>' carries type
-// 'Unknown' (it has no synthesis rule, so the synth dispatcher
-// emits a 'no synthesis rule' diagnostic and falls back to
-// 'Unknown'). The fold then yields TInt, and comparing to '2.0'
-// (real) produces a 'cannot compare' diagnostic — proving the
-// LUB returned TInt rather than Unknown (which would have passed
-// the consistency check silently).
+// 'Unknown + TInt' folds to TInt. The hole '<?>' synthesizes to
+// 'Unknown' (the gradual escape hatch — holes are first-class in
+// synth mode and don't error). The fold then yields TInt, and
+// comparing to '2.0' (real) produces a 'cannot compare' diagnostic —
+// proving the LUB returned TInt rather than Unknown (which would
+// have passed the consistency check silently).
 procedure unknownPromotesToNeighbour()
   opaque
 {
   assert (<?> + 1) == 2.0
-//        ^^^ error: this expression's type cannot be synthesized
 //       ^^^^^^^^^^^^^^^^ error: cannot compare 'int' with 'real' using '=='
 };
 "
