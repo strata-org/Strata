@@ -1632,8 +1632,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     (vs := argVals ++ oVals ++ oldVals)
                 rotate_left
                 · -- length of `hs` = length of `vs` (segment-wise close)
-                  simp [argTemps, outTemps, List.length_append, List.unzip_eq_map,
-                        Hargtriplen, Houttriplen, HgenOldOldValsLen]
+                  simp [argTemps, outTemps, List.length_append, List.unzip_eq_map, Hargtriplen, Houttriplen, HgenOldOldValsLen]
                 · exact Hndefgen
                 · exact Hgennd
                 -- σ'' is the updatedStates σ' … form; D2 may use InitsUpdatesComm.
@@ -2533,8 +2532,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         outTemps ++ genOldIdents)
                       (argVals ++ oVals ++ oldVals) v).isSome = true
                     apply updatedStatesDefined
-                    · simp [argTemps, outTemps, List.length_append, List.unzip_eq_map,
-                            Hargtriplen, Houttriplen, HgenOldOldValsLen]
+                    · simp [argTemps, outTemps, List.length_append, List.unzip_eq_map, Hargtriplen, Houttriplen, HgenOldOldValsLen]
                     · simp only [List.mem_append]
                       exact Or.inl (Or.inl Hv_argT)
                   -- Now assemble Hdef.
@@ -2675,8 +2673,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                   have Hrd_havoc_lhs :
                       ReadValues σ_havoc lhs modvals := by
                     apply readValues_updatedStates
-                    · simp [argTemps, outTemps, List.length_append, List.unzip_eq_map,
-                            Hargtriplen, Houttriplen, HgenOldOldValsLen]
+                    · simp [argTemps, outTemps, List.length_append, List.unzip_eq_map, Hargtriplen, Houttriplen, HgenOldOldValsLen]
                     · intro v Hv1 Hv2
                       cases List.mem_append.mp Hv2 with
                       | inl h => cases List.mem_append.mp h with
@@ -2937,30 +2934,17 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           proc.header.outputs.keys)
                         (argVals ++ oVals) :=
                     ReadValuesApp HrdAO_in_L4 HrdAO_out_L4
-                  -- σ_old reads argTemps ↦ argVals.
-                  -- argTemps were initialized at layer 1 (positional).
-                  -- Lift through layers 2/3 via readValues_updatedStates
+                  -- σ_old reads argTemps ↦ argVals: positional init at layer 1
+                  -- lifted through layers 2/3 via readValues_updatedStates
                   -- (using disjointness from outTemps/olds).
-                  have HrdLayer1_argT :
-                      ReadValues
-                        (updatedStates σ
-                          argTemps argVals)
-                        argTemps argVals :=
-                    readValues_updatedStatesSame HargTempsLen
-                      (List.nodup_append.mp (List.nodup_append.mp Hgennd).1).1
-                  have HrdLayer2_argT :
-                      ReadValues
-                        (updatedStates
-                          (updatedStates σ
-                            argTemps argVals)
-                          outTemps oVals)
-                        argTemps argVals :=
-                    readValues_updatedStates HoutTempsLen HargOutDisj HrdLayer1_argT
                   have HrdLayer3_argT :
                       ReadValues σ_old
                         argTemps argVals :=
                     readValues_updatedStates HoldFstLen
-                      (HoldTripsFst ▸ HargOldDisj) HrdLayer2_argT
+                      (HoldTripsFst ▸ HargOldDisj)
+                      (readValues_updatedStates HoutTempsLen HargOutDisj
+                        (readValues_updatedStatesSame HargTempsLen
+                          (List.nodup_append.mp (List.nodup_append.mp Hgennd).1).1))
                   -- σ_old reads lhs ↦ oVals.  Path: σ(lhs) = oVals via
                   -- Hevalouts, lifted across the 3-layer extension.
                   have HrdLayer3_lhs :
