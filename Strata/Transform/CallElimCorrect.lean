@@ -2416,11 +2416,9 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           (HfreshEnt x Hin2).1
                         exact HxNotTemp HxTemp
                       | inr HxLhs =>
-                        -- x ∈ lhs, x ∉ lhs (via Hpre_post_lhs_disj).
-                        -- hCallArgsLhs : CallArg.getLhs args = lhs
+                        -- x ∈ lhs, x ∉ lhs via HfreshEnt + hCallArgsLhs.
                         have HxNotInLhs : x ∉ CallArg.getLhs args :=
                           (HfreshEnt x Hin2).2.2
-                        -- HxLhs : x ∈ lhs, want: x ∈ CallArg.getLhs args.
                         rw [hCallArgsLhs] at HxNotInLhs
                         exact HxNotInLhs HxLhs
                     -- (2) Hinv: invStores σAO σ_old (preVars.removeAll ...).
@@ -2486,10 +2484,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           rw [HoldTripsFst]; exact Hk1_notin_olds
                         exact updatedStates_3layer_get_notin
                           Hk1_notin_argT Hk1_notin_outT Hk1_notin_oldFst
-                      -- σAO k1 = σ k1 by InitStates fall-through.
+                      -- σAO k1 = σ k1 via Hinitout/Hinitin fall-through.
                       have HAO_eq_σ : σAO k1 = σ k1 := by
-                        -- σAO comes from σA via Hinitout (over outputs).
-                        -- σA comes from σ via Hinitin (over inputs).
                         rw [initStates_get_notin Hinitout Hk1_notin_outputs,
                             initStates_get_notin Hinitin Hk1_notin_inputs]
                       -- Conclude: σAO k1 = σ_old k1.
