@@ -48,4 +48,10 @@ namespace Strata.SMTDDM
      let trigger : SMT.Term := .app .triggers [.app .triggers [abv0] .trigger] .trigger
      .quant .all [⟨"a", bv32⟩] trigger body))
 
+/-- info: Except.ok "(as none (Option Bool))" -/
+#guard_msgs in #eval (termToString (.none (.prim .bool)))
+
+/-- info: Except.ok "(some true)" -/
+#guard_msgs in #eval (termToString (.some (.prim (.bool true))))
+
 end Strata.SMTDDM
