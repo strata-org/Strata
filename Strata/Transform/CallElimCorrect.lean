@@ -54,6 +54,18 @@ private theorem σ_some_contradiction {α β} {σ : β → Option α} {k : β}
     (Hsome : (σ k).isSome) (Hnone : σ k = none) : False := by
   rw [Hnone] at Hsome; simp at Hsome
 
+/-- Build `substDefined σ σ' ((a₁ ++ b₁).zip (a₂ ++ b₂))` from per-half
+    `isDefined` facts. -/
+private theorem substDefined_of_app
+    {σ σ' : CoreStore} {a₁ b₁ a₂ b₂ : List Expression.Ident}
+    (Hσ_a : Imperative.isDefined σ a₁) (Hσ_b : Imperative.isDefined σ b₁)
+    (Hσ'_a : Imperative.isDefined σ' a₂) (Hσ'_b : Imperative.isDefined σ' b₂) :
+    Imperative.substDefined σ σ' ((a₁ ++ b₁).zip (a₂ ++ b₂)) := by
+  intro k1 k2 Hkin
+  have Hmem := List.of_mem_zip Hkin
+  exact ⟨(List.mem_append.mp Hmem.1).elim (Hσ_a _) (Hσ_b _),
+         (List.mem_append.mp Hmem.2).elim (Hσ'_a _) (Hσ'_b _)⟩
+
 /-- Decompose `(a ++ b ++ c).Nodup` into its three component-Nodups and three
     pairwise disjointnesses (in the local `List.Disjoint` form: `a → b → False`).
     Repackages `List.nodup_append` and `List.disjoint_of_nodup_append_three`. -/
@@ -333,11 +345,7 @@ private theorem updateCheckExprs_substFvars_mem
               (fun c => Lambda.LExpr.substFvars c.expr sm))
             conds.values)[n.val]'Hn_lt_walk) :=
     List.getElem_zip
-  have HhE : (conds.keys.zip _).get n = entry := Hn
-  have HhE_get : (conds.keys.zip _)[n.val]'Hn_lt_zip = entry := by
-    have : (conds.keys.zip _).get n =
-           (conds.keys.zip _)[n.val]'Hn_lt_zip := rfl
-    rw [← this]; exact HhE
+  have HhE_get : (conds.keys.zip _)[n.val]'Hn_lt_zip = entry := Hn
   rw [HzipGet] at HhE_get
   have Hsnd_eq :
       entry.snd =
@@ -506,43 +514,6 @@ through opaque `Slice`/`Pattern` infrastructure (cf.
 `Strata.DL.Util.String` for context).  The producing-side derivation is
 deferred to Task 6e along with the open `sorry`. -/
 
-/-- Identifiers in a procedure header's input keys are also names of `p`
-    (via `Decl.names`) when `proc` is found by `Program.Procedure.find?`.
-    Useful for combining `WFProgramProp.namesNodup` with per-procedure
-    `inputsNodup` to derive disjointness facts. -/
-private theorem program_def_not_temp
-    {x : Expression.Ident}
-    (Hpfresh : ¬ isTempIdent x ∧ ¬ isOldTempIdent x) :
-    ¬ isTempIdent x := Hpfresh.1
-
-/-- Mirror of `program_def_not_temp` for the `old_` prefix. -/
-private theorem program_def_not_oldTemp
-    {x : Expression.Ident}
-    (Hpfresh : ¬ isTempIdent x ∧ ¬ isOldTempIdent x) :
-    ¬ isOldTempIdent x := Hpfresh.2
-
-/-- A `Forall isTempIdent` list is disjoint from any list of identifiers
-    none of which is `isTempIdent`.  This is the canonical disjointness
-    bridge between freshly-generated temps and program-defined names. -/
-private theorem isTemp_disjoint_notTemp
-    {temps progNames : List Expression.Ident}
-    (Htemps : Forall (fun x => isTempIdent x) temps)
-    (Hprog : ∀ x ∈ progNames, ¬ isTempIdent x) :
-    temps.Disjoint progNames := by
-  intro x Hin1 Hin2
-  have Htemp : isTempIdent x := (List.Forall_mem_iff.mp Htemps) x Hin1
-  exact (Hprog x Hin2) Htemp
-
-/-- Mirror of `isTemp_disjoint_notTemp` for the `old_` prefix. -/
-private theorem isOldTemp_disjoint_notOldTemp
-    {olds progNames : List Expression.Ident}
-    (Holds : Forall (fun x => isOldTempIdent x) olds)
-    (Hprog : ∀ x ∈ progNames, ¬ isOldTempIdent x) :
-    olds.Disjoint progNames := by
-  intro x Hin1 Hin2
-  have Hold : isOldTempIdent x := (List.Forall_mem_iff.mp Holds) x Hin1
-  exact (Hprog x Hin2) Hold
-
 /-- Negation form of `List.Forall_mem_iff.mp`: if every element of `l`
     satisfies `p` and `x` does *not* satisfy `p`, then `x ∉ l`.  Used
     repeatedly for `notTemp ⇒ k1 ∉ argTemps/outTemps/genOldIdents`. -/
@@ -628,32 +599,20 @@ private theorem createOldVarsSubst_pos_decomp
       List ((Expression.Ident × Expression.Ty) × Expression.Ident) :=
     (((genOldIdents.zip oldTys).zip oldVars).zip oldGVars).map
       (fun (((fresh, ty), _orig), oldG) => ((fresh, ty), oldG))
-  -- Bring `Hf` into the canonical-named form.
-  have Hf : Map.find?
-      (Core.Transform.createOldVarsSubst oldTripsCanonical) k = some w := Hf
   -- (k, w) ∈ createOldVarsSubst oldTripsCanonical (as List).
   have Hkw_mem_list :
       List.Mem (k, w)
         (Core.Transform.createOldVarsSubst oldTripsCanonical) :=
     Map.find?_mem _ k w Hf
   -- createOldVarsSubst trips = trips.map go (definitional).
-  have HsubstUnfold :
-      Core.Transform.createOldVarsSubst oldTripsCanonical =
-        oldTripsCanonical.map
-          (fun trip => Core.Transform.createOldVarsSubst.go trip) := rfl
-  rw [HsubstUnfold] at Hkw_mem_list
   rcases List.mem_map.mp Hkw_mem_list with ⟨trip, Htrip_in, Htrip_eq⟩
   rcases List.mem_iff_get.mp Htrip_in with ⟨ni, Hni⟩
   -- Length facts.
   have HoldGLen : oldGVars.length = oldVars.length := by
-    show (oldVars.map _).length = oldVars.length
-    simp [List.length_map]
+    simp [oldGVars, List.length_map]
   have HCanonLen : oldTripsCanonical.length = oldVars.length := by
-    show ((((genOldIdents.zip oldTys).zip oldVars).zip oldGVars).map _).length
-        = oldVars.length
-    simp only [List.length_map, List.length_zip, HgenOldLen, HoldTysLen,
-               HoldGLen]
-    omega
+    simp [oldTripsCanonical, List.length_map, List.length_zip, HgenOldLen,
+          HoldTysLen, HoldGLen]
   have Hni_lt : ni.val < oldVars.length := by
     have HiLt := ni.isLt
     omega
@@ -706,12 +665,7 @@ private theorem createOldVarsSubst_pos_decomp
       List.getElem_zip
     rw [Hinner]
   have HtripEq_get :
-      oldTripsCanonical[ni.val]'Hni_lt_canon = trip := by
-    have HhE := Hni
-    have HgetEq : oldTripsCanonical.get ni =
-            oldTripsCanonical[ni.val]'Hni_lt_canon := rfl
-    rw [HgetEq] at HhE
-    exact HhE
+      oldTripsCanonical[ni.val]'Hni_lt_canon = trip := Hni
   have Htrip_shape :
       trip = ((genOldIdents[ni.val]'Hni_lt_genOld,
                oldTys[ni.val]'Hni_lt_oldTys),
@@ -829,11 +783,7 @@ private theorem inputOnlyOldSubst_pos_decomp
            inputArgs[ni.val]'Hni_lt_inputArgs) :=
       List.getElem_zip
     have HpairEq_get :
-        (inputs.zip inputArgs)[ni.val]'Hni_lt_zip = pair := by
-      have Hge : (inputs.zip inputArgs).get ni =
-            (inputs.zip inputArgs)[ni.val]'Hni_lt_zip := rfl
-      rw [Hge] at Hni
-      exact Hni
+        (inputs.zip inputArgs)[ni.val]'Hni_lt_zip = pair := Hni
     have Hpair_shape :
         pair = (inputs[ni.val]'Hni_lt_inputs,
                 inputArgs[ni.val]'Hni_lt_inputArgs) := by
@@ -1798,6 +1748,13 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                 -- Pre-simped Hwfvars for repeated δ-fvar lookups.
                 have Hwfvr := Hwfvars
                 simp [Imperative.WellFormedSemanticEvalVar] at Hwfvr
+                -- Generic δ-fvar lookup: `δ σ (fvar v) = σ v` for any σ.
+                have δ_fvar_eq :
+                    ∀ (σ' : CoreStore) (v : Expression.Ident),
+                    δ σ' (Lambda.LExpr.fvar () v none) = σ' v := by
+                  intro σ' v
+                  rw [Hwfvr (Lambda.LExpr.fvar () v none) v]
+                  simp [Imperative.HasFvar.getFvar]
                 -- C1: aux facts derived from the destructured binders.
                 have Hwfgenargs : CoreGenState.WF s_arg.genState := by
                   apply genArgExprIdentsTripWFMono ?_ Heqarg
@@ -1873,6 +1830,10 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                 have Houttriplen : outTrips.length = oVals.length := by
                   rw [← List.unzip_snd_length outTrips, Heqouts, hCallArgsLhs]
                   exact ReadValuesLength Hevalouts
+                have HargTempsLen : argTemps.length = argVals.length := by
+                  simp [argTemps, List.unzip_eq_map, Hargtriplen]
+                have HoutTempsLen : outTemps.length = oVals.length := by
+                  simp [outTemps, List.unzip_eq_map, Houttriplen]
                 -- C1: Derive Hinoutnd from the call_sem InitStates binders.
                 have Hinnd_io : (proc.header.inputs.keys).Nodup :=
                   InitStatesNodup Hinitin
@@ -1923,6 +1884,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                 have HgenOldLen : genOldIdents.length = oldVars.length :=
                   genOldExprIdents_length Heqold
                 have HoldTysLen : oldTys.length = oldVars.length := Holdtylen
+                have HgenOldOldValsLen : genOldIdents.length = oldVals.length := by
+                  rw [HgenOldLen, ← HoldValsLen]
                 have Holdtriplen :
                     oldVals.length =
                       ((genOldIdents.zip oldTys).zip oldVars).length := by
@@ -1938,12 +1901,9 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                 rotate_left
                 · -- length of `hs` = length of `vs`
                   -- Reduce both sides via List.length_append, then close
-                  -- segment-wise via Hargtriplen / Houttriplen / (HgenOldLen ; HoldValsLen).
-                  have HgenOldValsLen :
-                      genOldIdents.length = oldVals.length := by
-                    rw [HgenOldLen, ← HoldValsLen]
+                  -- segment-wise via Hargtriplen / Houttriplen / HgenOldOldValsLen.
                   simp [argTemps, outTemps, List.length_append, List.unzip_eq_map,
-                        Hargtriplen, Houttriplen, HgenOldValsLen]
+                        Hargtriplen, Houttriplen, HgenOldOldValsLen]
                 · exact Hndefgen
                 · exact Hgennd
                 -- σ'' is the updatedStates σ' … form; D2 may use InitsUpdatesComm.
@@ -2006,21 +1966,14 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                   have Hlhs_isLocl :
                       Imperative.isDefined σ lhs :=
                     ReadValuesIsDefined Hevalouts
-                  have HlhsDisjArg :
-                      lhs.Disjoint argTemps := by
-                    intro x Hin1 Hin2
-                    exact σ_some_contradiction
-                      (Hlhs_isLocl x Hin1) (HndefArg_σ x Hin2)
-                  have HlhsDisjOut :
-                      lhs.Disjoint outTemps := by
-                    intro x Hin1 Hin2
-                    exact σ_some_contradiction
-                      (Hlhs_isLocl x Hin1) (HndefOut_σ x Hin2)
-                  have HlhsDisjOld :
-                      lhs.Disjoint genOldIdents := by
-                    intro x Hin1 Hin2
-                    exact σ_some_contradiction
-                      (Hlhs_isLocl x Hin1) (HndefOld_σ x Hin2)
+                  have lhs_disj_via_σ :
+                      ∀ {ks : List Expression.Ident},
+                        Imperative.isNotDefined σ ks → lhs.Disjoint ks :=
+                    fun Hndef x Hin1 Hin2 =>
+                      σ_some_contradiction (Hlhs_isLocl x Hin1) (Hndef x Hin2)
+                  have HlhsDisjArg : lhs.Disjoint argTemps := lhs_disj_via_σ HndefArg_σ
+                  have HlhsDisjOut : lhs.Disjoint outTemps := lhs_disj_via_σ HndefOut_σ
+                  have HlhsDisjOld : lhs.Disjoint genOldIdents := lhs_disj_via_σ HndefOld_σ
                   -- Out-temp Nodup append form for `H_initVars`.
                   have HoutSnd_eq_lhs : outTrips.unzip.snd = lhs := by
                     rw [Heqouts, hCallArgsLhs]
@@ -2051,14 +2004,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           argVals)
                         outTrips.unzip.snd oVals := by
                     rw [HoutSnd_eq_lhs]
-                    apply readValues_updatedStates
-                    · -- length: argTemps.length = argVals.length via Hargtriplen
-                      rw [show argTemps.length =
-                            argTrips.length from by
-                            simp [argTemps, List.unzip_eq_map]]
-                      exact Hargtriplen
-                    · exact HlhsDisjArg
-                    · exact Hevalouts
+                    exact readValues_updatedStates HargTempsLen HlhsDisjArg Hevalouts
                   -- outTemps undefined in σ_arg (argTemps disjoint from outTemps).
                   have HndefOut_argLayer :
                       Imperative.isNotDefined
@@ -2118,18 +2064,12 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     have Hg_in_getLhs : g ∈ CallArg.getLhs args :=
                       (List.mem_filter.mp Hg).1
                     exact hCallArgsLhs ▸ Hg_in_getLhs
-                  have HoldVarsDisjArg :
-                      oldVars.Disjoint argTemps := by
-                    intro x Hin1 Hin2
-                    exact HlhsDisjArg (HoldVars_sub_lhs x Hin1) Hin2
-                  have HoldVarsDisjOut :
-                      oldVars.Disjoint outTemps := by
-                    intro x Hin1 Hin2
-                    exact HlhsDisjOut (HoldVars_sub_lhs x Hin1) Hin2
-                  have HoldVarsDisjOldT :
-                      oldVars.Disjoint genOldIdents := by
-                    intro x Hin1 Hin2
-                    exact HlhsDisjOld (HoldVars_sub_lhs x Hin1) Hin2
+                  have oldVars_disj_via_lhs :
+                      ∀ {ks : List Expression.Ident}, lhs.Disjoint ks → oldVars.Disjoint ks :=
+                    fun H x Hin1 Hin2 => H (HoldVars_sub_lhs x Hin1) Hin2
+                  have HoldVarsDisjArg : oldVars.Disjoint argTemps := oldVars_disj_via_lhs HlhsDisjArg
+                  have HoldVarsDisjOut : oldVars.Disjoint outTemps := oldVars_disj_via_lhs HlhsDisjOut
+                  have HoldVarsDisjOldT : oldVars.Disjoint genOldIdents := oldVars_disj_via_lhs HlhsDisjOld
                   have HoldVarsNd : oldVars.Nodup := by
                     -- oldVars = filter ... (CallArg.getLhs args), and
                     -- (CallArg.getLhs args) = lhs (via hCallArgsLhs) so
@@ -2148,28 +2088,9 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           (updatedStates σ
                             argTemps argVals)
                           outTemps oVals)
-                        oldVars oldVals := by
-                    -- First lift through argTemp layer.
-                    have Hstep1 :
-                        ReadValues
-                          (updatedStates σ
-                            argTemps argVals)
-                          oldVars oldVals := by
-                      apply readValues_updatedStates
-                      · rw [show argTemps.length =
-                              argTrips.length from by
-                              simp [argTemps, List.unzip_eq_map]]
-                        exact Hargtriplen
-                      · exact HoldVarsDisjArg
-                      · exact HoldVals
-                    -- Then lift through outTemp layer.
-                    apply readValues_updatedStates
-                    · rw [show outTemps.length =
-                            outTrips.length from by
-                            simp [outTemps, List.unzip_eq_map]]
-                      exact Houttriplen
-                    · exact HoldVarsDisjOut
-                    · exact Hstep1
+                        oldVars oldVals :=
+                    readValues_updatedStates HoutTempsLen HoldVarsDisjOut
+                      (readValues_updatedStates HargTempsLen HoldVarsDisjArg HoldVals)
                   -- ReadValues precondition for H_initVars uses
                   -- oldTrips.unzip.snd; rewrite via HoldTripsSnd.
                   have HrdOldTrips :
@@ -2334,12 +2255,6 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                   have HoldFstLen :
                       oldTrips.unzip.fst.unzip.fst.length = oldVals.length := by
                     rw [HoldTripsFst, HgenOldLen, HoldValsLen]
-                  have HoutFstLen :
-                      outTemps.length = oVals.length := by
-                    simp [outTemps, List.unzip_eq_map, Houttriplen]
-                  have HargFstLen :
-                      argTemps.length = argVals.length := by
-                    simp [argTemps, List.unzip_eq_map, Hargtriplen]
                   have Hflatten_eq :
                       updatedStates σ'
                         (argTemps ++
@@ -2364,14 +2279,14 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           genOldIdents.zip oldVals :=
                       List.zip_append (by
                         rw [List.length_append, List.length_append,
-                            HargFstLen, HoutFstLen])
+                            HargTempsLen, HoutTempsLen])
                     have Hzip2 :
                         (argTemps ++
                           outTemps).zip
                           (argVals ++ oVals) =
                         argTemps.zip argVals ++
                           outTemps.zip oVals :=
-                      List.zip_append HargFstLen
+                      List.zip_append HargTempsLen
                     rw [Hzip1, Hzip2]
                     rw [updatedStates'App, updatedStates'App]
                   have HL5 :
@@ -2661,6 +2576,16 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       (argTemps ++
                         outTemps ++ genOldIdents)
                       (argVals ++ oVals ++ oldVals)
+                  -- Positional read of σ_R1 on genOldIdents.
+                  have HrdR1_olds : ReadValues σ_R1 genOldIdents oldVals := by
+                    show ReadValues (updatedStates σO genOldIdents oldVals) _ _
+                    exact readValues_updatedStatesSame HgenOldOldValsLen HoldNd
+                  have σ_R1_read_olds :
+                      ∀ (i : Nat) (Hi : i < genOldIdents.length)
+                        (Hi' : i < oldVals.length),
+                        σ_R1 (genOldIdents[i]'Hi) =
+                          some (oldVals[i]'Hi') := fun i Hi Hi' =>
+                    readValues_get HrdR1_olds (i:=i) (hi:=Hi) (hi':=Hi')
                   -- Filtered argument substitution shape.  Matches
                   -- `arg_subst_filtered` in `callElimCmd` (CallElim.lean:133).
                   let filtered_argSubst :
@@ -2684,9 +2609,6 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       proc.header.inputs.keys.length = argTemps.length := by
                     have H1 : proc.header.inputs.keys.length =
                                 argVals.length := InitStatesLength Hinitin
-                    have H2 : argTemps.length = argVals.length := by
-                      show argTemps.length = argVals.length
-                      simp [argTemps, List.unzip_eq_map, Hargtriplen]
                     omega
                   -- The pre-filter zip's unzip is exactly (inputs.keys,
                   -- argTemps); the filter doesn't break the length-match.
@@ -2950,11 +2872,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       simp only [List.mem_append, not_or]
                       exact ⟨⟨HlhsDisjArg Hv, HlhsDisjOut Hv⟩, HlhsDisjOld Hv⟩
                     rw [updatedStates_get_notin Hv_notin]
-                    -- σ' v isSome via UpdateStates' definedness on lhs.
-                    have Hσ'def : Imperative.isDefined σ' lhs := by
-                      have Hh := UpdateStatesHavocVars Hupdate
-                      exact HavocVarsDefined Hh
-                    exact Hσ'def v Hv
+                    exact HavocVarsDefined (UpdateStatesHavocVars Hupdate) v Hv
                   -- σ_havoc definedness on filtered_argTemps.
                   have Hσ_havoc_def_filt_argT :
                       Imperative.isDefined σ_havoc filtered_argTemps := by
@@ -2969,34 +2887,43 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         outTemps ++ genOldIdents)
                       (argVals ++ oVals ++ oldVals) v).isSome = true
                     apply updatedStatesDefined
-                    · -- length of (argT++outT++olds) = length of vals.
-                      have HgenOldValsLen :
-                          genOldIdents.length = oldVals.length := by
-                        rw [HgenOldLen, ← HoldValsLen]
-                      simp [argTemps, outTemps, List.length_append, List.unzip_eq_map,
-                            Hargtriplen, Houttriplen, HgenOldValsLen]
+                    · simp [argTemps, outTemps, List.length_append, List.unzip_eq_map,
+                            Hargtriplen, Houttriplen, HgenOldOldValsLen]
                     · simp only [List.mem_append]
                       exact Or.inl (Or.inl Hv_argT)
                   -- Now assemble Hdef.
                   have Hdef : Imperative.substDefined σ_R1 σ_havoc
-                      (filtered_ks.zip filtered_ks') := by
-                    intro k1 k2 Hkin
-                    have Hpair_in_fst : k1 ∈ filtered_ks :=
-                      (List.of_mem_zip Hkin).1
-                    have Hpair_in_snd : k2 ∈ filtered_ks' :=
-                      (List.of_mem_zip Hkin).2
-                    refine ⟨?_, ?_⟩
-                    · -- (σ_R1 k1).isSome.
-                      cases List.mem_append.mp Hpair_in_fst with
-                      | inl Hk1_outs => exact Hσ_R1_def_outs k1 Hk1_outs
-                      | inr Hk1_in => exact Hσ_R1_def_filt_in k1 Hk1_in
-                    · -- (σ_havoc k2).isSome.
-                      cases List.mem_append.mp Hpair_in_snd with
-                      | inl Hk2_lhs => exact Hσ_havoc_def_lhs k2 Hk2_lhs
-                      | inr Hk2_aT => exact Hσ_havoc_def_filt_argT k2 Hk2_aT
+                      (filtered_ks.zip filtered_ks') :=
+                    substDefined_of_app Hσ_R1_def_outs Hσ_R1_def_filt_in
+                      Hσ_havoc_def_lhs Hσ_havoc_def_filt_argT
                   -- Hsubst: substStores σ_R1 σ_havoc.
                   have Hσ'_eq : σ' = updatedStates σ lhs modvals :=
                     UpdateStatesUpdated Hupdate
+                  -- σ_R1 k = σ_havoc k for k off all touched layers.
+                  have σR1_eq_σhavoc :
+                      ∀ {k : Expression.Ident},
+                        k ∉ proc.header.inputs.keys →
+                        k ∉ proc.header.outputs.keys →
+                        k ∉ argTemps → k ∉ outTemps →
+                        k ∉ genOldIdents → k ∉ lhs →
+                        σ_R1 k = σ_havoc k := by
+                    intro k Hk_ins Hk_outs Hk_argT Hk_outT Hk_genOld Hk_lhs
+                    have HσR1_σ : updatedStates σO genOldIdents oldVals k = σ k :=
+                      σR1_eq_σ_for_notTouched Hinitin Hinitout Hhav1
+                        Hk_ins Hk_outs Hk_genOld
+                    have H5 : σ k = σ' k := by
+                      rw [Hσ'_eq, updatedStates_get_notin Hk_lhs]
+                    have Hk_notin_layered :
+                        k ∉ argTemps ++ outTemps ++ genOldIdents := by
+                      simp only [List.mem_append, not_or]
+                      exact ⟨⟨Hk_argT, Hk_outT⟩, Hk_genOld⟩
+                    have H6 : σ' k = σ_havoc k := by
+                      show σ' k = updatedStates σ'
+                        (argTemps ++ outTemps ++ genOldIdents)
+                        (argVals ++ oVals ++ oldVals) k
+                      rw [updatedStates_get_notin Hk_notin_layered]
+                    show updatedStates σO genOldIdents oldVals k = σ_havoc k
+                    rw [HσR1_σ, H5, H6]
                   -- modvals length = lhs length.
                   have HmodvalsLen : modvals.length = lhs.length := by
                     have := UpdateStatesLength Hupdate
@@ -3067,27 +2994,20 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                   -- σ_R1 reads inputs.keys → argVals (full).
                   have Hrd_R1_in_full :
                       ReadValues σ_R1 proc.header.inputs.keys argVals := by
-                    apply readValues_updatedStates
-                    · rw [HgenOldLen, HoldValsLen]
-                    · exact HinKeys_disj_olds
-                    · -- ReadValues σO inputs.keys argVals.
-                      have HrdAO :
-                          ReadValues σAO proc.header.inputs.keys argVals := by
-                        apply InitStatesReadValuesMonotone (σ:=σA) ?_ Hinitout
-                        exact InitStatesReadValues Hinitin
-                      have Hh1 := HavocVarsUpdateStates Hhav1
-                      rcases Hh1 with ⟨ovh, Hup_havoc⟩
-                      apply UpdateStatesReadValuesMonotone (σ:=σAO) _
-                              ?_ Hup_havoc
-                      · exact Hinoutnd
-                      · exact HrdAO
+                    apply readValues_updatedStates HgenOldOldValsLen HinKeys_disj_olds
+                    -- ReadValues σO inputs.keys argVals.
+                    have HrdAO : ReadValues σAO proc.header.inputs.keys argVals := by
+                      apply InitStatesReadValuesMonotone (σ:=σA) ?_ Hinitout
+                      exact InitStatesReadValues Hinitin
+                    have Hh1 := HavocVarsUpdateStates Hhav1
+                    rcases Hh1 with ⟨ovh, Hup_havoc⟩
+                    apply UpdateStatesReadValuesMonotone (σ:=σAO) _ ?_ Hup_havoc
+                    · exact Hinoutnd
+                    · exact HrdAO
                   -- σ_R1 reads outputs.keys → modvals (full).
                   have Hrd_R1_outs :
-                      ReadValues σ_R1 proc.header.outputs.keys modvals := by
-                    apply readValues_updatedStates
-                    · rw [HgenOldLen, HoldValsLen]
-                    · exact HoutKeys_disj_olds
-                    · exact Hrd
+                      ReadValues σ_R1 proc.header.outputs.keys modvals :=
+                    readValues_updatedStates HgenOldOldValsLen HoutKeys_disj_olds Hrd
                   -- σ_havoc reads argTemps → argVals (layer-1).
                   have Hrd_havoc_argT :
                       ReadValues σ_havoc argTemps argVals := by
@@ -3101,45 +3021,24 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     have HargF_σ' :
                         ReadValues
                           (updatedStates σ' argTemps argVals)
-                          argTemps argVals := by
-                      apply readValues_updatedStatesSame
-                      · exact HargFstLen
-                      · exact HargNd
+                          argTemps argVals :=
+                      readValues_updatedStatesSame HargTempsLen HargNd
                     have HargF_step1 :
                         ReadValues
                           (updatedStates
                             (updatedStates σ' argTemps argVals)
-                            outTemps oVals) argTemps argVals := by
-                      apply readValues_updatedStates
-                      · exact HoutFstLen
-                      · exact HargOutDisj
-                      · exact HargF_σ'
-                    have HargF_step2 :
-                        ReadValues
-                          (updatedStates
-                            (updatedStates
-                              (updatedStates σ' argTemps argVals)
-                              outTemps oVals)
-                            oldTrips.unzip.fst.unzip.fst oldVals)
-                          argTemps argVals := by
-                      rw [HoldTripsFst]
-                      apply readValues_updatedStates
-                      · -- length: genOldIdents.length = oldVals.length.
-                        rw [HgenOldLen, ← HoldValsLen]
-                      · exact HargOldDisj
-                      · exact HargF_step1
-                    exact HargF_step2
+                            outTemps oVals) argTemps argVals :=
+                      readValues_updatedStates HoutTempsLen HargOutDisj HargF_σ'
+                    rw [HoldTripsFst]
+                    exact readValues_updatedStates HgenOldOldValsLen HargOldDisj HargF_step1
                   -- σ_havoc reads lhs → modvals (fall-through to σ').
                   have HmodvalsLen' : lhs.length = modvals.length := by
                     have := UpdateStatesLength Hupdate; omega
                   have Hrd_havoc_lhs :
                       ReadValues σ_havoc lhs modvals := by
                     apply readValues_updatedStates
-                    · have HgenOldValsLen :
-                          genOldIdents.length = oldVals.length := by
-                        rw [HgenOldLen, ← HoldValsLen]
-                      simp [argTemps, outTemps, List.length_append, List.unzip_eq_map,
-                            Hargtriplen, Houttriplen, HgenOldValsLen]
+                    · simp [argTemps, outTemps, List.length_append, List.unzip_eq_map,
+                            Hargtriplen, Houttriplen, HgenOldOldValsLen]
                     · intro v Hv1 Hv2
                       cases List.mem_append.mp Hv2 with
                       | inl h => cases List.mem_append.mp h with
@@ -3174,13 +3073,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       List.getElem_zip
                     have HnGE :
                         (filtered_ks.zip filtered_ks')[n.val]'Hn_lt_zip =
-                          (k1, k2) := by
-                      have HhE := Hn
-                      have : (filtered_ks.zip filtered_ks').get n =
-                              (filtered_ks.zip filtered_ks')[n.val]'Hn_lt_zip :=
-                        rfl
-                      rw [this] at HhE
-                      exact HhE
+                          (k1, k2) := Hn
                     have Hk1_eq : k1 = filtered_ks[n.val]'Hn_lt_ks := by
                       have := HnGE
                       rw [Hzip_get] at this
@@ -3480,22 +3373,15 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     -- updatedStates σ argTemps argVals v: v ∈ argTemps, so layer
                     -- 1 maps it to argVals[idx].
                     apply updatedStatesDefined
-                    · exact HargFstLen
+                    · exact HargTempsLen
                     · exact Hv
                   -- σ_old definedness on lhs (reuses C-aux HlhsDef_old).
                   have Hσ_old_def_lhs :
                       Imperative.isDefined σ_old lhs := HlhsDef_old
                   have Hdef_L4 : Imperative.substDefined σAO σ_old
-                      (ks_L4.zip ks'_L4) := by
-                    intro k1 k2 Hkin
-                    have Hmem := List.of_mem_zip Hkin
-                    refine ⟨?_, ?_⟩
-                    · cases List.mem_append.mp Hmem.1 with
-                      | inl Hin1 => exact HσAO_def_in_L4 k1 Hin1
-                      | inr Hin1 => exact HσAO_def_out_L4 k1 Hin1
-                    · cases List.mem_append.mp Hmem.2 with
-                      | inl Hin2 => exact Hσ_old_def_argT k2 Hin2
-                      | inr Hin2 => exact Hσ_old_def_lhs k2 Hin2
+                      (ks_L4.zip ks'_L4) :=
+                    substDefined_of_app HσAO_def_in_L4 HσAO_def_out_L4
+                      Hσ_old_def_argT Hσ_old_def_lhs
                   -- ── L4 substStores: substStores σ_old σAO ((argTemps ++ lhs).zip (inputs ++ outputs)) ──
                   -- Strategy: build matching ReadValues on both σ_old and σAO,
                   -- then close via ReadValuesSubstStores.
@@ -3522,31 +3408,22 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       ReadValues
                         (updatedStates σ
                           argTemps argVals)
-                        argTemps argVals := by
-                    apply readValues_updatedStatesSame
-                    · exact HargFstLen
-                    · -- argTemps.Nodup
-                      exact (List.nodup_append.mp
-                        (List.nodup_append.mp Hgennd).1).1
+                        argTemps argVals :=
+                    readValues_updatedStatesSame HargTempsLen
+                      (List.nodup_append.mp (List.nodup_append.mp Hgennd).1).1
                   have HrdLayer2_argT :
                       ReadValues
                         (updatedStates
                           (updatedStates σ
                             argTemps argVals)
                           outTemps oVals)
-                        argTemps argVals := by
-                    apply readValues_updatedStates HoutFstLen
-                            HargOutDisj HrdLayer1_argT
-                  have HargT_disj_oldFst :
-                      argTemps.Disjoint
-                        oldTrips.unzip.fst.unzip.fst := by
-                    rw [HoldTripsFst]
-                    exact HargOldDisj
+                        argTemps argVals :=
+                    readValues_updatedStates HoutTempsLen HargOutDisj HrdLayer1_argT
                   have HrdLayer3_argT :
                       ReadValues σ_old
                         argTemps argVals :=
-                    readValues_updatedStates HoldFstLen HargT_disj_oldFst
-                      HrdLayer2_argT
+                    readValues_updatedStates HoldFstLen
+                      (HoldTripsFst ▸ HargOldDisj) HrdLayer2_argT
                   -- σ_old reads lhs ↦ oVals.  Path: σ_old(lhs) lifts σ(lhs)
                   -- via readValues_updatedStates × 3 (lhs disjoint from
                   -- argT/outT/old).  σ(lhs) = oVals via Hevalouts.
@@ -3555,7 +3432,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         (updatedStates σ
                           argTemps argVals)
                         lhs oVals :=
-                    readValues_updatedStates HargFstLen HlhsDisjArg Hevalouts
+                    readValues_updatedStates HargTempsLen HlhsDisjArg Hevalouts
                   have HrdLayer2_lhs :
                       ReadValues
                         (updatedStates
@@ -3563,15 +3440,11 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                             argTemps argVals)
                           outTemps oVals)
                         lhs oVals :=
-                    readValues_updatedStates HoutFstLen HlhsDisjOut HrdLayer1_lhs
-                  have Hlhs_disj_oldFst :
-                      lhs.Disjoint oldTrips.unzip.fst.unzip.fst := by
-                    rw [HoldTripsFst]
-                    exact HlhsDisjOld
+                    readValues_updatedStates HoutTempsLen HlhsDisjOut HrdLayer1_lhs
                   have HrdLayer3_lhs :
                       ReadValues σ_old lhs oVals :=
-                    readValues_updatedStates HoldFstLen Hlhs_disj_oldFst
-                      HrdLayer2_lhs
+                    readValues_updatedStates HoldFstLen
+                      (HoldTripsFst ▸ HlhsDisjOld) HrdLayer2_lhs
                   have HrdOld_inout_L4 :
                       ReadValues σ_old
                         (argTemps ++ lhs)
@@ -3917,38 +3790,19 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       have := HgenOldLen
                       omega
                     -- LHS: δ σ_R1 w = σ_R1 genOldIdents[i] = some oldVals[i].
-                    -- σ_R1 = updatedStates σO genOldIdents oldVals.
-                    -- Use readValues_updatedStatesSame + readValues_get.
-                    have HoldValsLenE :
-                        genOldIdents.length = oldVals.length := by
-                      have := HoldValsLen
-                      have := HgenOldLen
-                      omega
                     have Hni_lt_oldVals : ni_val < oldVals.length := by
-                      have := HoldValsLen
-                      omega
-                    have HrdR1_olds :
-                        ReadValues σ_R1 genOldIdents oldVals := by
-                      show ReadValues
-                        (updatedStates σO genOldIdents oldVals)
-                        genOldIdents oldVals
-                      exact readValues_updatedStatesSame
-                              HoldValsLenE HoldNd
+                      have := HoldValsLen; omega
                     have HrdR1_get :
                         σ_R1 (genOldIdents[ni_val]'Hni_lt_genOld) =
                           some (oldVals[ni_val]'Hni_lt_oldVals) :=
-                      readValues_get HrdR1_olds
-                        (i:=ni_val) (hi:=Hni_lt_genOld) (hi':=Hni_lt_oldVals)
+                      σ_R1_read_olds ni_val Hni_lt_genOld Hni_lt_oldVals
                     -- δ σ_R1 (createFvar gen) = σ_R1 gen.
                     have HwfL :
                         δ σ_R1 (Core.Transform.createFvar
                                  (genOldIdents[ni_val]'Hni_lt_genOld)) =
                           σ_R1 (genOldIdents[ni_val]'Hni_lt_genOld) := by
                       show δ σ_R1 (Lambda.LExpr.fvar () _ none) = _
-                      rw [Hwfvr (Lambda.LExpr.fvar ()
-                            (genOldIdents[ni_val]'Hni_lt_genOld) none)
-                          (genOldIdents[ni_val]'Hni_lt_genOld)]
-                      simp [Imperative.HasFvar.getFvar]
+                      exact δ_fvar_eq σ_R1 _
                     -- RHS: δ σO (fvar k) = δ σO (fvar (mkOld oldVars[i].name))
                     --                    = some oldVals[i] (HoldEval_bridge).
                     have HoldEv :
@@ -4132,15 +3986,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                             δ σ_R1 (Lambda.LExpr.fvar () v none) =
                               δ σ (Lambda.LExpr.fvar () v none) := by
                         intro v Hv _
-                        have HwfL :
-                            δ σ_R1 (Lambda.LExpr.fvar () v none) = σ_R1 v := by
-                          rw [Hwfvr (Lambda.LExpr.fvar () v none) v]
-                          simp [Imperative.HasFvar.getFvar]
-                        have HwfR :
-                            δ σ (Lambda.LExpr.fvar () v none) = σ v := by
-                          rw [Hwfvr (Lambda.LExpr.fvar () v none) v]
-                          simp [Imperative.HasFvar.getFvar]
-                        rw [HwfL, HwfR]
+                        rw [δ_fvar_eq σ_R1 v, δ_fvar_eq σ v]
                         exact Hσ_R1_eq_σ_argVars v Hv
                       have Hsub :
                           ∀ k' w', k' ∈ Imperative.HasVarsPure.getVars
@@ -4232,15 +4078,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           σ_R1 v = σO v := by
                         show (updatedStates σO genOldIdents oldVals) v = σO v
                         exact updatedStates_get_notin HvNotGen
-                      have HwfL :
-                          δ σ_R1 (Lambda.LExpr.fvar () v none) = σ_R1 v := by
-                        rw [Hwfvr (Lambda.LExpr.fvar () v none) v]
-                        simp [Imperative.HasFvar.getFvar]
-                      have HwfR :
-                          δ σO (Lambda.LExpr.fvar () v none) = σO v := by
-                        rw [Hwfvr (Lambda.LExpr.fvar () v none) v]
-                        simp [Imperative.HasFvar.getFvar]
-                      rw [HwfL, HwfR]
+                      rw [δ_fvar_eq σ_R1 v, δ_fvar_eq σO v]
                       exact Hσ_R1_v_eq_σO
                     -- Apply subst_fvars_eval_bridge.
                     have Hbridge :
@@ -4273,38 +4111,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           some (oldVals[i]'Hi') := by
                     -- σ_havoc reads genOldIdents → oldVals (overlay positional,
                     -- via the appended-list semantics of updatedStates).
-                    -- Use readValues_updatedStatesSame after a splitting bridge
-                    -- (turn ++-unfold of updatedStates into a 2-layer form).
-                    have HoldValsLenE :
-                        genOldIdents.length = oldVals.length := by
-                      have := HoldValsLen; have := HgenOldLen; omega
-                    have HargLen : argTemps.length =
-                        argVals.length := by
-                      simp [argTemps, List.unzip_eq_map, Hargtriplen]
-                    have HoutLen : outTemps.length =
-                        oVals.length := by
-                      have H1 : outTemps.length =
-                          outTrips.length := by
-                        simp [outTemps, List.unzip_eq_map]
-                      have H2 : lhs.length = oVals.length :=
-                        ReadValuesLength Hevalouts
-                      have HE : outTrips.unzip.snd = lhs := by
-                        rw [Heqouts, hCallArgsLhs]
-                      have HE2 : outTrips.unzip.snd.length = outTrips.length := by
-                        simp [List.unzip_eq_map]
-                      have HEL := congrArg List.length HE
-                      omega
-                    -- Decompose σ_havoc as nested updatedStates.
-                    -- updatedStates σ (a ++ b) (va ++ vb) =
-                    --   updatedStates (updatedStates σ a va) b vb
-                    -- via List.zip_append (when |a|=|va|).
-                    have HzipAppend1 :
-                        (argTemps ++
-                            outTemps).zip
-                          (argVals ++ oVals) =
-                          (argTemps.zip argVals) ++
-                          (outTemps.zip oVals) :=
-                      List.zip_append HargLen
+                    -- Decompose σ_havoc as nested updatedStates via List.zip_append.
                     have HzipAppend2 :
                         ((argTemps ++
                             outTemps) ++ genOldIdents).zip
@@ -4314,8 +4121,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                             (argVals ++ oVals)) ++
                           (genOldIdents.zip oldVals) := by
                       apply List.zip_append
-                      simp [List.length_append]
-                      omega
+                      simp [List.length_append, HargTempsLen, HoutTempsLen]
                     have HsplitOverlay :
                         σ_havoc =
                         updatedStates
@@ -4333,7 +4139,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     have HrdHavoc :
                         ReadValues σ_havoc genOldIdents oldVals := by
                       rw [HsplitOverlay]
-                      exact readValues_updatedStatesSame HoldValsLenE HoldNd
+                      exact readValues_updatedStatesSame HgenOldOldValsLen HoldNd
                     intro i Hi Hi'
                     exact readValues_get HrdHavoc (i:=i) (hi:=Hi) (hi':=Hi')
                   -- Shared class-(b) decompositions for Hinv/Hpred_disj
@@ -4493,12 +4299,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           rw [← HinKeys_argTemps_len]; exact Hn_lt_in
                         have HkE :
                             proc.header.inputs.keys[n.val]'Hn_lt_in = k1 := by
-                          have HEget := Hn
-                          have :
-                              proc.header.inputs.keys[n.val]'Hn_lt_in =
-                                proc.header.inputs.keys.get
-                                  ⟨n.val, Hn_lt_in⟩ := rfl
-                          rw [this]; exact HEget
+                          show proc.header.inputs.keys.get ⟨n.val, Hn_lt_in⟩ = k1
+                          exact Hn
                         have Hpair_in_zip :
                             (k1, argTemps[n.val]'Hn_lt_argT) ∈
                               proc.header.inputs.keys.zip argTemps := by
@@ -4530,30 +4332,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           simp only [List.unzip_eq_map, List.mem_map]
                           refine ⟨(k1, argTemps[n.val]'Hn_lt_argT), Hpair_in_filtAS, rfl⟩
                         exact Hk1_notin_filtIn Hk1_in_unzip
-                      -- σ_R1 k1 = σ k1 via the layered store-agreement
-                      -- helper, then chain through σ' and σ_havoc.
-                      have HσR1_σ :
-                          updatedStates σO genOldIdents oldVals k1 = σ k1 :=
-                        σR1_eq_σ_for_notTouched Hinitin Hinitout Hhav1
-                          Hk1_notin_ins Hk1_notin_outs Hk1_notin_genOld
-                      -- σ k1 = σ' k1 (k1 ∉ lhs; Hupdate).
-                      have H5 : σ k1 = σ' k1 := by
-                        rw [Hσ'_eq, updatedStates_get_notin Hk1_notin_lhs]
-                      -- σ' k1 = σ_havoc k1 (k1 ∉ argT/outT/genOld).
-                      have Hk1_notin_layered :
-                          k1 ∉ argTemps ++
-                                outTemps ++ genOldIdents := by
-                        simp only [List.mem_append, not_or]
-                        exact ⟨⟨Hk1_notin_argT, Hk1_notin_outT⟩, Hk1_notin_genOld⟩
-                      have H6 : σ' k1 = σ_havoc k1 := by
-                        show σ' k1 =
-                          updatedStates σ'
-                            (argTemps ++
-                              outTemps ++ genOldIdents)
-                            (argVals ++ oVals ++ oldVals) k1
-                        rw [updatedStates_get_notin Hk1_notin_layered]
-                      show updatedStates σO genOldIdents oldVals k1 = σ_havoc k1
-                      rw [HσR1_σ, H5, H6]
+                      exact σR1_eq_σhavoc Hk1_notin_ins Hk1_notin_outs
+                        Hk1_notin_argT Hk1_notin_outT Hk1_notin_genOld Hk1_notin_lhs
                     · -- ── Class (b): k1 ∈ getVars w for some (k, w) ∈ oldSubst_L6 ──
                       -- Split via Map.find?_append.
                       cases hfind : Map.find?
@@ -4567,23 +4347,10 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         have Hni_lt_oldVals :
                             ni_val < oldVals.length := by
                           have := HoldValsLen; omega
-                        have HoldValsLenE' :
-                            genOldIdents.length = oldVals.length := by
-                          have := HoldValsLen
-                          have := HgenOldLen
-                          omega
-                        have HrdR1_olds :
-                            ReadValues σ_R1 genOldIdents oldVals := by
-                          show ReadValues
-                            (updatedStates σO genOldIdents oldVals)
-                            genOldIdents oldVals
-                          exact readValues_updatedStatesSame
-                                  HoldValsLenE' HoldNd
                         have Hσ_R1_v :
                             σ_R1 (genOldIdents[ni_val]'Hni_lt_genOld) =
                               some (oldVals[ni_val]'Hni_lt_oldVals) :=
-                          readValues_get HrdR1_olds
-                            (i:=ni_val) (hi:=Hni_lt_genOld) (hi':=Hni_lt_oldVals)
+                          σ_R1_read_olds ni_val Hni_lt_genOld Hni_lt_oldVals
                         have Hσ_havoc_v :
                             σ_havoc (genOldIdents[ni_val]'Hni_lt_genOld) =
                               some (oldVals[ni_val]'Hni_lt_oldVals) :=
@@ -4615,37 +4382,15 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           σ_some_contradiction Hk1_σ_some
                             (Option.isNone_iff_eq_none.mp (Hgenrel.oldFresh k1 Hold))
                         -- k1 not isTempIdent.  Via isNotDefined of argTemps/outTemps.
-                        have Hk1_notin_argT' :
-                            k1 ∉ argTemps := fun h =>
-                          σ_some_contradiction Hk1_σ_some (HndefArg_σ k1 h)
-                        have Hk1_notin_outT' :
-                            k1 ∉ outTemps := fun h =>
-                          σ_some_contradiction Hk1_σ_some (HndefOut_σ k1 h)
-                        have Hk1_notin_genOld' :
-                            k1 ∉ genOldIdents := fun h =>
-                          σ_some_contradiction Hk1_σ_some (HndefOld_σ k1 h)
-                        -- σ_R1 k1 = σ_havoc k1 via the layered store-
-                        -- agreement helper, plus the σ → σ' → σ_havoc tail.
-                        have HσR1_σ :
-                            updatedStates σO genOldIdents oldVals k1 = σ k1 :=
-                          σR1_eq_σ_for_notTouched Hinitin Hinitout Hhav1
-                            Hk1_notin_ins' Hk1_notin_outs' Hk1_notin_genOld'
-                        have H5 : σ k1 = σ' k1 := by
-                          rw [Hσ'_eq, updatedStates_get_notin Hk1_notin_lhs]
-                        have Hk1_notin_layered :
-                            k1 ∉ argTemps ++
-                                  outTemps ++ genOldIdents := by
-                          simp only [List.mem_append, not_or]
-                          exact ⟨⟨Hk1_notin_argT', Hk1_notin_outT'⟩, Hk1_notin_genOld'⟩
-                        have H6 : σ' k1 = σ_havoc k1 := by
-                          show σ' k1 =
-                            updatedStates σ'
-                              (argTemps ++
-                                outTemps ++ genOldIdents)
-                              (argVals ++ oVals ++ oldVals) k1
-                          rw [updatedStates_get_notin Hk1_notin_layered]
-                        show updatedStates σO genOldIdents oldVals k1 = σ_havoc k1
-                        rw [HσR1_σ, H5, H6]
+                        have notin_via_σ_some : ∀ {ks},
+                            Imperative.isNotDefined σ ks → k1 ∉ ks :=
+                          fun Hndef h => σ_some_contradiction Hk1_σ_some (Hndef k1 h)
+                        have Hk1_notin_argT' : k1 ∉ argTemps := notin_via_σ_some HndefArg_σ
+                        have Hk1_notin_outT' : k1 ∉ outTemps := notin_via_σ_some HndefOut_σ
+                        have Hk1_notin_genOld' : k1 ∉ genOldIdents := notin_via_σ_some HndefOld_σ
+                        exact σR1_eq_σhavoc Hk1_notin_ins' Hk1_notin_outs'
+                          Hk1_notin_argT' Hk1_notin_outT' Hk1_notin_genOld'
+                          Hk1_notin_lhs
                   -- Hpred_disj: filtered_ks' disjoint from entry's vars.
                   have HfiltArgT_sub_argT :
                       ∀ x ∈ filtered_argTemps, x ∈ argTemps := by
