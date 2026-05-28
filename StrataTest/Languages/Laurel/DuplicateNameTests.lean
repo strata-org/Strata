@@ -15,7 +15,7 @@ open Strata
 
 /-! ## Duplicate static procedure names -/
 
-#eval testLaurelExpectResolution <|
+#eval testLaurelResolution <|
 #strata
 program Laurel;
 procedure foo() opaque { };
@@ -25,7 +25,7 @@ procedure foo() opaque { };
 
 /-! ## Duplicate type names -/
 
-#eval testLaurelExpectResolution <|
+#eval testLaurelResolution <|
 #strata
 program Laurel;
 composite Foo { }
@@ -35,7 +35,7 @@ composite Foo { }
 
 /-! ## Duplicate field names in a composite type -/
 
-#eval testLaurelExpectResolution <|
+#eval testLaurelResolution <|
 #strata
 program Laurel;
 composite Foo {
@@ -47,7 +47,7 @@ composite Foo {
 
 /-! ## Duplicate parameter names in a procedure -/
 
-#eval testLaurelExpectResolution <|
+#eval testLaurelResolution <|
 #strata
 program Laurel;
 procedure foo(x: int, x: bool) opaque { };
@@ -56,7 +56,7 @@ procedure foo(x: int, x: bool) opaque { };
 
 /-! ## Duplicate instance procedure names in a composite type -/
 
-#eval testLaurelExpectResolution <|
+#eval testLaurelResolution <|
 #strata
 program Laurel;
 composite Foo {
@@ -68,7 +68,7 @@ composite Foo {
 
 /-! ## Duplicate local variable names in the same block -/
 
-#eval testLaurelExpectResolution <|
+#eval testLaurelResolution <|
 #strata
 program Laurel;
 procedure foo() opaque {
@@ -80,7 +80,7 @@ procedure foo() opaque {
 
 /-! ## Procedure and type with the same name -/
 
-#eval testLaurelExpectResolution <|
+#eval testLaurelResolution <|
 #strata
 program Laurel;
 composite Foo { }
@@ -117,7 +117,7 @@ procedure foo() opaque {
 
 /-! ## Duplicate constrained type names -/
 
-#eval testLaurelExpectResolution <|
+#eval testLaurelResolution <|
 #strata
 program Laurel;
 constrained nat = x: int where x >= 0 witness 0
@@ -127,7 +127,7 @@ constrained nat = x: int where x > 0 witness 1
 
 /-! ## Duplicate datatype names -/
 
-#eval testLaurelExpectResolution <|
+#eval testLaurelResolution <|
 #strata
 program Laurel;
 datatype Foo { A }
@@ -137,7 +137,7 @@ datatype Foo { B }
 
 /-! ## Composite type and datatype with the same name -/
 
-#eval testLaurelExpectResolution <|
+#eval testLaurelResolution <|
 #strata
 program Laurel;
 composite Foo { }

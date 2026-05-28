@@ -32,7 +32,7 @@ procedure setAndReturn(c: Container, x: int) returns (r: int)
 
 /-! ## Buggy: postcondition r == x + 1 cannot hold when r := x -/
 
-#eval testLaurelExpect <|
+#eval testLaurel <|
 #strata
 program Laurel;
 composite Container {

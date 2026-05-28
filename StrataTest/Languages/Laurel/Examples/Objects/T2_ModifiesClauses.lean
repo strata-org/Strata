@@ -19,7 +19,7 @@ import StrataTest.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-#eval testLaurelExpect <|
+#eval testLaurel <|
 #strata
 program Laurel;
 composite Container {

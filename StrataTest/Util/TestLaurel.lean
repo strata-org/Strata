@@ -80,29 +80,7 @@ private def runLaurelPipelineRaw (program : Strata.Program) :
     let options : LaurelVerifyOptions := { verifyOptions := .quiet }
     Laurel.verifyToDiagnosticModels laurelProgram options
 
-/-- Positive-test helper: run the full Laurel pipeline on a `#strata`-parsed
-    program and print diagnostics. Empty output means the program checks
-    cleanly. -/
-def testLaurel (block : SourcedProgram) : IO Unit := do
-  let dms ← runLaurelPipelineRaw block.program
-  let diags := renderSnippetLocal block.basePos block.source dms
-  if diags.isEmpty then
-    IO.println "ok"
-  else
-    for d in diags do IO.println (formatDiagnostic d)
-
-/-- Positive resolution-only helper: run translate + resolve and print
-    diagnostics. Use when the test only cares about resolution, not the
-    verifier (e.g. "shadowing in nested blocks is OK"). -/
-def testLaurelResolution (block : SourcedProgram) : IO Unit := do
-  let dms ← runLaurelResolutionRaw block.program
-  let diags := renderSnippetLocal block.basePos block.source dms
-  if diags.isEmpty then
-    IO.println "ok"
-  else
-    for d in diags do IO.println (formatDiagnostic d)
-
-/-! ## Inline-annotation negative-test machinery
+/-! ## Inline-annotation matcher
 
 Negative tests embed `// ^^^^^^ <kind>: <message>` annotations directly in the
 source of a `#strata` block. Each annotation pins one expected diagnostic to
@@ -119,7 +97,7 @@ procedure foo() opaque {
 #end
 ```
 
-The `testLaurelExpect` / `testLaurelExpectResolution` helpers parse these
+The `testLaurel` / `testLaurelResolution` helpers parse these
 annotations from the snippet, run the pipeline, and assert exact match
 between actual diagnostics and annotations: every diagnostic must have an
 annotation, every annotation must fire, positions must match exactly,
@@ -213,13 +191,26 @@ private def matchesAnnotation (d : Strata.Diagnostic) (a : DiagnosticAnnotation)
 private def formatAnnotation (a : DiagnosticAnnotation) : String :=
   s!"{a.line}:{a.colStart}-{a.colEnd}  {a.kind}: {a.message}"
 
-/-- Drive a `SourcedProgram` against its inline annotations. Throws on any
-    mismatch. -/
-private def runWithAnnotations (block : SourcedProgram)
+/-- Drive a `SourcedProgram` against its inline annotations.
+
+    - If the snippet contains no annotations, succeeds iff the pipeline
+      produces no diagnostics and prints `ok`.
+    - Otherwise asserts an exact match: every diagnostic must be annotated,
+      every annotation must fire. Throws on mismatch. -/
+private def runAndCheck (block : SourcedProgram)
     (run : Strata.Program → IO (Array Strata.DiagnosticModel)) : IO Unit := do
   let annotations := parseAnnotations block.source
   let dms ← run block.program
   let actual := renderSnippetLocal block.basePos block.source dms
+  if annotations.isEmpty then
+    if actual.isEmpty then
+      IO.println "ok"
+    else
+      let mut report := s!"expected no diagnostics, got {actual.size}:\n"
+      for d in actual do
+        report := report ++ s!"  {formatDiagnostic d}\n"
+      throw <| IO.userError report
+    return
   -- Pair up: every actual diagnostic must match exactly one annotation.
   let mut unmatchedDiags : Array Strata.Diagnostic := #[]
   let mut matchedAnnotationIdxs : Array Nat := #[]
@@ -249,17 +240,18 @@ private def runWithAnnotations (block : SourcedProgram)
       report := report ++ s!"  {formatDiagnostic d}\n"
   throw <| IO.userError report
 
-/-- Negative-test helper: run the full Laurel pipeline and assert that the
-    diagnostics match the inline `// ^^^ kind: message` annotations in the
-    block exactly. Throws on any mismatch. -/
-def testLaurelExpect (block : SourcedProgram) : IO Unit :=
-  runWithAnnotations block runLaurelPipelineRaw
+/-- Run the full Laurel pipeline (translate + resolve + verify) on a
+    `#strata`-parsed program. If the snippet has inline `// ^^^ kind: message`
+    annotations, asserts an exact match; otherwise expects no diagnostics
+    and prints `ok`. -/
+def testLaurel (block : SourcedProgram) : IO Unit :=
+  runAndCheck block runLaurelPipelineRaw
 
-/-- Resolution-only negative-test helper. Runs translate + resolve only and
-    asserts inline annotations match. Use when the test asserts a
-    resolution-pass diagnostic and running the verifier would surface
-    unrelated noise. -/
-def testLaurelExpectResolution (block : SourcedProgram) : IO Unit :=
-  runWithAnnotations block runLaurelResolutionRaw
+/-- Like `testLaurel` but skips SMT verification (translate + resolve only).
+    Use when the test only cares about resolution, not the verifier — e.g.
+    "shadowing in nested blocks is OK", or asserting a specific resolution
+    error without the verifier surfacing unrelated noise. -/
+def testLaurelResolution (block : SourcedProgram) : IO Unit :=
+  runAndCheck block runLaurelResolutionRaw
 
 end StrataTest.Util

@@ -12,11 +12,11 @@ open Strata
 /-! ## Function called with too many arguments -/
 
 /--
-error: <#strata>(442-463) ❌ Type checking error.
+error: <#strata>(436-457) ❌ Type checking error.
 Impossible to unify int with (arrow int $__ty35).
 -/
 #guard_msgs in
-#eval testLaurelExpect <|
+#eval testLaurel <|
 #strata
 program Laurel;
 function f(x: int): int { x };
@@ -30,7 +30,7 @@ procedure caller()
 
 /-! ## Multi-return procedure assigned to single target -/
 
-#eval testLaurelExpect <|
+#eval testLaurel <|
 #strata
 program Laurel;
 procedure twoReturns() returns (a: int, b: int)

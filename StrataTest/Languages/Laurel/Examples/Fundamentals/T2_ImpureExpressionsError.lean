@@ -15,7 +15,7 @@ open Strata
 -- pipeline helper because the expected diagnostics are not pure resolution
 -- errors.
 
-#eval testLaurelExpect <|
+#eval testLaurel <|
 #strata
 program Laurel;
 procedure impure(): int

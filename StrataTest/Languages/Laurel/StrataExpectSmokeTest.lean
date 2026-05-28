@@ -27,7 +27,7 @@ procedure foo() opaque { assert true };
 /-! ## Negative smoke test: variable used as type. The inline annotation pins
     the expected diagnostic to the line above it. -/
 
-#eval testLaurelExpectResolution <|
+#eval testLaurelResolution <|
 #strata
 program Laurel;
 procedure foo() opaque {
@@ -39,7 +39,7 @@ procedure foo() opaque {
 
 /-! ## Negative smoke test: a verifier-level diagnostic. -/
 
-#eval testLaurelExpect <|
+#eval testLaurel <|
 #strata
 program Laurel;
 procedure unsafeDivision(x: int)

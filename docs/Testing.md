@@ -5,9 +5,11 @@ directory. It focuses on **Laurel** (the path that received the most recent
 ergonomic work) and notes where **Boole** uses the same primitives. For Python
 test wiring, see [`StrataTest/Languages/Python/README.md`](../StrataTest/Languages/Python/README.md).
 
-> **Quick rule of thumb:** put the dialect program inside a `#strata` (positive)
-> or `#strata_expect` (negative) block, then call one of the `testLaurel…`
-> helpers in `StrataTest.Util.TestLaurel`. Use `#guard_msgs` to pin the output.
+> **Quick rule of thumb:** put the dialect program inside a `#strata` block
+> and call `testLaurel` (or `testLaurelResolution`) on it. If the program is
+> expected to fail, annotate the expected diagnostics inline with
+> `// ^^^ kind: message`. The helper auto-detects whether to expect a clean
+> run or to match annotations.
 
 ## Background
 
@@ -53,12 +55,12 @@ procedure foo() opaque { assert true };
 
 ### 2. Negative test — assert that specific errors fire
 
-Use `testLaurelExpect`. Annotate each expected diagnostic *inline*, on the
+Same helper, `testLaurel`. Annotate each expected diagnostic *inline*, on the
 line directly below the offending source line, with carets pointing at the
 column range and the kind + (substring of the) message after the carets:
 
 ```lean
-#eval testLaurelExpect <|
+#eval testLaurel <|
 #strata
 program Laurel;
 procedure unsafeDivision(x: int)
@@ -70,16 +72,12 @@ procedure unsafeDivision(x: int)
 #end
 ```
 
-The helper:
-- parses every `// ^^^ kind: message` annotation from the snippet,
-- runs the pipeline,
-- requires an **exact match**: every diagnostic must be annotated, every
-  annotation must fire, line/column ranges must agree, kind must match, and
-  the actual message must contain the annotation text as a substring.
-
-A mismatch throws with a precise summary of which annotations went unmatched
-and which actual diagnostics had no annotation. No `#guard_msgs` wrapper is
-needed for negative tests — the throw is the assertion.
+`testLaurel` auto-detects: when annotations are present, it requires an
+**exact match** (every diagnostic annotated, every annotation fires,
+positions agree, kind matches, message is a substring); when absent, it
+expects no diagnostics. A mismatch throws with a precise summary of which
+annotations went unmatched and which actual diagnostics had no annotation,
+so `#guard_msgs` isn't needed for negative tests.
 
 `kind` is one of `error`, `warning`, `not-yet-implemented`, `strata-bug`.
 
@@ -87,14 +85,12 @@ needed for negative tests — the throw is the assertion.
 
 When the test is about resolution (kind mismatches, duplicate names, scope
 errors), running the verifier on a deliberately-broken program adds
-unrelated noise (`dbg_trace` warnings, vacuous VCs). Use the resolution-only
-variants:
-
-- `testLaurelResolution` — positive (program resolves cleanly).
-- `testLaurelExpectResolution` — negative (expected resolution diagnostic).
+unrelated noise (`dbg_trace` warnings, vacuous VCs). Use
+`testLaurelResolution` — same auto-detect behavior as `testLaurel`, but
+stops after `resolve`.
 
 ```lean
-#eval testLaurelExpectResolution <|
+#eval testLaurelResolution <|
 #strata
 program Laurel;
 procedure foo() opaque {
@@ -168,9 +164,8 @@ common entry point; everything after is dialect/test-specific.
 ### 5. Mixed positive / negative inside one feature
 
 When a feature has both happy and sad paths, prefer **separate** `#strata`
-blocks (one driven by `testLaurel`, the other by `testLaurelExpect`). Each
-one is independently checked, and a regression in one doesn't mask a
-regression in the other.
+blocks. Each one is independently checked, and a regression in one doesn't
+mask a regression in the other.
 
 ```lean
 /-! ### Safe paths verify cleanly -/
@@ -185,7 +180,7 @@ procedure safeDivision() opaque {
 #end
 
 /-! ### Unsafe division: divisor not constrained, fails verification -/
-#eval testLaurelExpect <| #strata
+#eval testLaurel <| #strata
 program Laurel;
 procedure unsafeDivision(x: int) opaque {
   var z: int := 10 / x

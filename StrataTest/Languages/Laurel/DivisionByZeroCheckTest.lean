@@ -49,7 +49,7 @@ procedure callPureDivSafe()
 /-! ### Unsafe division: divisor not constrained, fails verification -/
 
 -- Error ranges are too wide because Core does not use expression locations.
-#eval testLaurelExpect <|
+#eval testLaurel <|
 #strata
 program Laurel;
 procedure unsafeDivision(x: int)
@@ -62,7 +62,7 @@ procedure unsafeDivision(x: int)
 
 /-! ### Unsafe call to function with `requires y != 0` -/
 
-#eval testLaurelExpect <|
+#eval testLaurel <|
 #strata
 program Laurel;
 function pureDiv(x: int, y: int): int

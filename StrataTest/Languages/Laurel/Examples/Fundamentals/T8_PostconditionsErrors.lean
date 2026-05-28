@@ -11,7 +11,7 @@ open Strata
 
 /-! ## Functions with postconditions are not yet supported -/
 
-#eval testLaurelExpect <|
+#eval testLaurel <|
 #strata
 program Laurel;
 

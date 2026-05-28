@@ -11,7 +11,7 @@ open Strata
 
 /-! ## Failing asserts -/
 
-#eval testLaurelExpect <|
+#eval testLaurel <|
 #strata
 program Laurel;
 procedure foo()
