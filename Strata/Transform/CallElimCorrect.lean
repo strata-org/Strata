@@ -2274,24 +2274,17 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                   -- D2a: per-precondition payload for L4 (asserts).
                   have HprocEq : proc' = proc := by
                     have Hπ := Hp procName
-                    -- Hπ : π procName = Program.Procedure.find? p ⟨procName, ()⟩
-                    -- lkup : π procName = some proc
-                    -- Hfind : Program.Procedure.find? p ⟨procName, ()⟩ = some proc'
                     rw [Hπ] at lkup
                     rw [Hfind] at lkup
-                    -- lkup : some proc' = some proc
                     exact (Option.some_inj.mp lkup.symm).symm
-                  -- Specialize the call-site hypothesis to the call form.
-                  -- `Hwfcallsite` is over the call_sem `proc`;
-                  -- the spike interface uses `proc'`, but `HprocEq`
-                  -- bridges them where needed.
+                  -- Specialize Hwfcallsite (over `proc`) to the call form;
+                  -- spike uses `proc'` which HprocEq bridges.
                   obtain ⟨HpreVarsFresh, HpostVarsFresh, HargVarsNotInLhs,
                           HinoutFresh, HargVarsNotInOutKeys,
                           HargVarsNotInInKeys, HoutAlign⟩ :=
                     Hwfcallsite.specialize (procName := procName)
                       (args := args) (md := md) rfl lkup
                   -- Lift HpostVarsFresh to take c ∈ proc'.spec.postconditions.values.
-                  -- Bridges proc' = proc and unfolds getCheckExprs.
                   have HpostVarsFresh_via_c :
                       ∀ c ∈ proc'.spec.postconditions.values,
                       ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) c.expr,
@@ -2515,9 +2508,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         (Procedure.Spec.getCheckExprs
                           proc.spec.postconditions).contains entry.snd.expr :=
                     fun entry Hentry => filterCheck_in_getCheckExprs Hentry
-                  -- Bind σO eval-tt for each filtered post entry.  Hpost
-                  -- gives `isDefinedOver σAO post ∧ δ σO post = tt` over
-                  -- the full getCheckExprs list.
+                  -- σO eval-tt per filtered post entry (via Hpost over getCheckExprs).
                   have HpostFiltered :
                       ∀ entry ∈ postsFiltered,
                         Imperative.isDefinedOver
@@ -2577,8 +2568,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     have H1 : proc.header.inputs.keys.length =
                                 argVals.length := InitStatesLength Hinitin
                     omega
-                  -- The pre-filter zip's unzip is exactly (inputs.keys,
-                  -- argTemps); the filter doesn't break the length-match.
+                  -- Pre-filter zip's unzip = (inputs.keys, argTemps).
                   have Hzip_unzip :
                       (proc.header.inputs.keys.zip argTemps).unzip =
                       (proc.header.inputs.keys, argTemps) := by
@@ -2934,8 +2924,6 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     rw [σO_eq_σAO_off_outs Hv_notin]
                     exact initStates_get_notin Hinitout Hv_notin
                   -- σA on inputs = positional argVals (via Hinitin).
-                  -- Use ReadValues σA inputs.keys argVals from
-                  -- InitStatesReadValues Hinitin.
                   have HrdA : ReadValues σA proc.header.inputs.keys argVals :=
                     InitStatesReadValues Hinitin
                   -- ── Build Hsubst via per-pair direct argument ──
@@ -2945,7 +2933,6 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                   have HinKeys_argVals_len :
                       proc.header.inputs.keys.length = argVals.length :=
                     InitStatesLength Hinitin
-                  -- Length: zip (inputs ↔ argTemps) ↔ argVals lengths align.
                   have Hzip_argV_len :
                       (proc.header.inputs.keys.zip argTemps).length =
                         argVals.length := by
