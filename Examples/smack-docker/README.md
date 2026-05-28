@@ -147,117 +147,117 @@ Per-program detail (full pipeline output in
 `wt-test/pipeline-portfolio-v3.txt` and `wt-test/pipeline-svcomp.txt`):
 
 ```
-Program                                      | Str | B2S | Fix |  Ded |  Bug |  CBM |  CBN | Detail
----------------------------------------------------------------------------------------------------
+Program                                      |  Ded |  Bug |  CBM |  CBN | Detail
+-----------------------------------------------------------------------------------
 # Original benchmark
-abs_func                                     |  OK |  OK |  OK | PART | PART | FAIL | FAIL | 1p,1f / 2 (main)
-array_sum                                    |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,2f / 2 (assume,main)
-aws_array_eq                                 |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,3f / 2 (main)
-aws_byte_cursor_advance                      |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,4f / 2 (main)
-aws_ring_buffer                              |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,8f / 2 (main)
-loop_sum                                     |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,2f / 2 (assume,main)
-max_func                                     |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,3f / 2 (main)
-nondet_branch                                |  OK |  OK |  OK | PASS | PART | FAIL | FAIL | 0p,2f / 2 (assume,main)
-pointer_arith                                |  OK |  OK |  OK | PASS | PART | FAIL | FAIL | 0p,2f / 2 (assume,main)
-simple_add                                   |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,2f / 2 (assume,main)
-simple_assert                                |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,1f / 2 (main)
-swap                                         |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,2f / 2 (main)
+abs_func                                     | PART | PART | FAIL | FAIL | 1p,1f / 2 (main)
+array_sum                                    | PASS | PART | FAIL | PASS | 0p,2f / 2 (assume,main)
+aws_array_eq                                 | PART | PART | FAIL | PASS | 1p,3f / 2 (main)
+aws_byte_cursor_advance                      | PART | PART | FAIL | PASS | 1p,4f / 2 (main)
+aws_ring_buffer                              | PART | PART | FAIL | PASS | 1p,8f / 2 (main)
+loop_sum                                     | PASS | PART | FAIL | PASS | 0p,2f / 2 (assume,main)
+max_func                                     | PART | PART | FAIL | PASS | 1p,3f / 2 (main)
+nondet_branch                                | PASS | PART | FAIL | FAIL | 0p,2f / 2 (assume,main)
+pointer_arith                                | PASS | PART | FAIL | FAIL | 0p,2f / 2 (assume,main)
+simple_add                                   | PASS | PART | FAIL | PASS | 0p,2f / 2 (assume,main)
+simple_assert                                | PART | PART | FAIL | PASS | 1p,1f / 2 (main)
+swap                                         | PART | PART | FAIL | PASS | 1p,2f / 2 (main)
 
 # Simplified AWS C Common
-aws_add_size_checked                         |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,8f / 2 (main)
-aws_array_list_get                           |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,6f / 2 (main)
-aws_array_list_set                           |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,6f / 2 (main)
-aws_byte_buf_append                          |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,7f / 2 (main)
-aws_byte_buf_init                            |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,5f / 2 (main)
-aws_byte_cursor_eq                           |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,4f / 2 (main)
-aws_hash_string                              |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,4f / 2 (main)
-aws_is_power_of_two                          |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,9f / 2 (main)
-aws_linked_list_push                         |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,11f / 2 (main)
-aws_min_max                                  |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,6f / 2 (main)
-aws_mul_size_checked                         |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,7f / 2 (main)
-aws_round_up_to_power_of_two                 |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,8f / 2 (main)
-aws_string_eq                                |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,4f / 2 (main)
+aws_add_size_checked                         | PART | PART | FAIL | PASS | 1p,8f / 2 (main)
+aws_array_list_get                           | PART | PART | FAIL | PASS | 1p,6f / 2 (main)
+aws_array_list_set                           | PART | PART | FAIL | PASS | 1p,6f / 2 (main)
+aws_byte_buf_append                          | PART | PART | FAIL | PASS | 1p,7f / 2 (main)
+aws_byte_buf_init                            | PART | PART | FAIL | PASS | 1p,5f / 2 (main)
+aws_byte_cursor_eq                           | PART | PART | FAIL | PASS | 1p,4f / 2 (main)
+aws_hash_string                              | PART | PART | FAIL | PASS | 1p,4f / 2 (main)
+aws_is_power_of_two                          | PART | PART | FAIL | PASS | 1p,9f / 2 (main)
+aws_linked_list_push                         | PART | PART | FAIL | PASS | 1p,11f / 2 (main)
+aws_min_max                                  | PART | PART | FAIL | PASS | 1p,6f / 2 (main)
+aws_mul_size_checked                         | PART | PART | FAIL | PASS | 1p,7f / 2 (main)
+aws_round_up_to_power_of_two                 | PART | PART | FAIL | PASS | 1p,8f / 2 (main)
+aws_string_eq                                | PART | PART | FAIL | PASS | 1p,4f / 2 (main)
 
 # aws-c-common verbatim
-aws_add_size_checked_harness                 |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,4f / 2 (main)
-aws_add_size_saturating_harness              |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,4f / 2 (main)
-aws_is_power_of_two_harness                  |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,1f / 2 (main)
-aws_mul_size_checked_harness                 |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,4f / 2 (main)
-aws_mul_size_saturating_harness              |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,4f / 2 (main)
-aws_round_up_to_power_of_two_harness         |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,4f / 2 (main)
+aws_add_size_checked_harness                 | PART | PART | FAIL | PASS | 1p,4f / 2 (main)
+aws_add_size_saturating_harness              | PART | PART | FAIL | PASS | 1p,4f / 2 (main)
+aws_is_power_of_two_harness                  | PART | PART | FAIL | PASS | 1p,1f / 2 (main)
+aws_mul_size_checked_harness                 | PART | PART | FAIL | PASS | 1p,4f / 2 (main)
+aws_mul_size_saturating_harness              | PART | PART | FAIL | PASS | 1p,4f / 2 (main)
+aws_round_up_to_power_of_two_harness         | PART | PART | FAIL | PASS | 1p,4f / 2 (main)
 
 # FreeRTOS coreJSON verbatim
-JSON_Iterate_harness                         |  OK |  OK |  OK | PASS | PART | FAIL | FAIL | 0p,1f / 1 (assume)
-JSON_SearchConst_harness                     |  OK |  OK |  OK | PASS | PART | FAIL | FAIL | 0p,1f / 1 (assume)
-JSON_Validate_harness                        |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,1f / 2 (main)
-skipAnyScalar_harness                        |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,5f / 2 (main)
-skipCollection_harness                       |  OK |  OK |  OK | PART | PART | FAIL | FAIL | 1p,1f / 2 (main)
-skipDigits_harness                           |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,6f / 2 (main)
-skipEscape_harness                           |  OK |  OK |  OK | PASS | PART | FAIL | FAIL | 0p,1f / 1 (assume)
-skipObjectScalars_harness                    |  OK |  OK |  OK | PART | PART | FAIL | FAIL | 1p,3f / 2 (main)
-skipScalars_harness                          |  OK |  OK |  OK | PART | PART | FAIL | FAIL | 1p,3f / 2 (main)
-skipSpace_harness                            |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,3f / 2 (main)
-skipString_harness                           |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,5f / 2 (main)
-skipUTF8_harness                             |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,5f / 2 (main)
+JSON_Iterate_harness                         | PASS | PART | FAIL | FAIL | 0p,1f / 1 (assume)
+JSON_SearchConst_harness                     | PASS | PART | FAIL | FAIL | 0p,1f / 1 (assume)
+JSON_Validate_harness                        | PART | PART | FAIL | PASS | 1p,1f / 2 (main)
+skipAnyScalar_harness                        | PART | PART | FAIL | PASS | 1p,5f / 2 (main)
+skipCollection_harness                       | PART | PART | FAIL | FAIL | 1p,1f / 2 (main)
+skipDigits_harness                           | PART | PART | FAIL | PASS | 1p,6f / 2 (main)
+skipEscape_harness                           | PASS | PART | FAIL | FAIL | 0p,1f / 1 (assume)
+skipObjectScalars_harness                    | PART | PART | FAIL | FAIL | 1p,3f / 2 (main)
+skipScalars_harness                          | PART | PART | FAIL | FAIL | 1p,3f / 2 (main)
+skipSpace_harness                            | PART | PART | FAIL | PASS | 1p,3f / 2 (main)
+skipString_harness                           | PART | PART | FAIL | PASS | 1p,5f / 2 (main)
+skipUTF8_harness                             | PART | PART | FAIL | PASS | 1p,5f / 2 (main)
 
 # FreeRTOS coreMQTT/coreHTTP/coreSNTP verbatim
-HTTPClient_AddHeader_harness                 |  OK |  OK |  OK | PASS | PART | FAIL | FAIL | 0p,1f / 1 (assume)
-HTTPClient_AddRangeHeader_harness            |  OK |  OK |  OK | PASS | PART | FAIL | FAIL | 0p,1f / 1 (assume)
-HTTPClient_InitializeRequestHeaders_harness  |  OK |  OK |  OK | PASS | PART | FAIL | FAIL | 0p,1f / 1 (assume)
-HTTPClient_ReadHeader_harness                |  OK |  OK |  OK | PASS | PART | FAIL | FAIL | 0p,1f / 1 (assume)
-HTTPClient_strerror_harness                  |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
-MQTT_GetPacketId_harness                     |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
-MQTT_Init_harness                            |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
-MQTT_Ping_harness                            |  OK |  OK |  OK | PASS | PART | FAIL | FAIL | 0p,1f / 1 (assume)
-Sntp_DeserializeResponse_harness             |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
-Sntp_SerializeRequest_harness                |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
+HTTPClient_AddHeader_harness                 | PASS | PART | FAIL | FAIL | 0p,1f / 1 (assume)
+HTTPClient_AddRangeHeader_harness            | PASS | PART | FAIL | FAIL | 0p,1f / 1 (assume)
+HTTPClient_InitializeRequestHeaders_harness  | PASS | PART | FAIL | FAIL | 0p,1f / 1 (assume)
+HTTPClient_ReadHeader_harness                | PASS | PART | FAIL | FAIL | 0p,1f / 1 (assume)
+HTTPClient_strerror_harness                  | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
+MQTT_GetPacketId_harness                     | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
+MQTT_Init_harness                            | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
+MQTT_Ping_harness                            | PASS | PART | FAIL | FAIL | 0p,1f / 1 (assume)
+Sntp_DeserializeResponse_harness             | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
+Sntp_SerializeRequest_harness                | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
 
 # Standalone parsers
-cjson_cJSON_IsArray_harness                  |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
-cjson_cJSON_Parse_harness                    |  OK |  OK |  OK | PASS | PART | FAIL | FAIL | 0p,1f / 1 (assume)
-jsmn_jsmn_parse_harness                      |  OK |  OK |  OK | PASS | PART | FAIL | FAIL | 0p,1f / 1 (assume)
+cjson_cJSON_IsArray_harness                  | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
+cjson_cJSON_Parse_harness                    | PASS | PART | FAIL | FAIL | 0p,1f / 1 (assume)
+jsmn_jsmn_parse_harness                      | PASS | PART | FAIL | FAIL | 0p,1f / 1 (assume)
 # picohttpparser_phr_parse_request_harness  excluded — cbmc-native OOMs (>32 GB) on the SAT instance.
 
 # RFC reference impls
-base64_decode_normal_harness                 |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,1f / 2 (main)
-base64_decode_padding_only_harness           |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,1f / 2 (main)
-base64_decode_short_input_harness            |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,1f / 2 (main)
-percent_decode_nul_harness                   |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,2f / 2 (main)
-percent_decode_truncated_harness             |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,1f / 2 (main)
-utf8_validate_ascii_harness                  |  OK |  OK |  OK | PART | PART | FAIL | FAIL | 1p,1f / 2 (main)
-utf8_validate_overlong_harness               |  OK |  OK |  OK | PART | PART | FAIL | FAIL | 1p,1f / 2 (main)
-utf8_validate_surrogate_harness              |  OK |  OK |  OK | PART | PART | FAIL | FAIL | 1p,1f / 2 (main)
+base64_decode_normal_harness                 | PART | PART | FAIL | PASS | 1p,1f / 2 (main)
+base64_decode_padding_only_harness           | PART | PART | FAIL | PASS | 1p,1f / 2 (main)
+base64_decode_short_input_harness            | PART | PART | FAIL | PASS | 1p,1f / 2 (main)
+percent_decode_nul_harness                   | PART | PART | FAIL | PASS | 1p,2f / 2 (main)
+percent_decode_truncated_harness             | PART | PART | FAIL | PASS | 1p,1f / 2 (main)
+utf8_validate_ascii_harness                  | PART | PART | FAIL | FAIL | 1p,1f / 2 (main)
+utf8_validate_overlong_harness               | PART | PART | FAIL | FAIL | 1p,1f / 2 (main)
+utf8_validate_surrogate_harness              | PART | PART | FAIL | FAIL | 1p,1f / 2 (main)
 
 # SV-COMP ReachSafety
-sv_locks_10                                  |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
-sv_locks_11                                  |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
-sv_locks_12                                  |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
-sv_locks_13                                  |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
-sv_locks_14_2                                |  OK |  OK |  OK | PASS | PART | FAIL | FAIL | 0p,1f / 1 (assume)
-sv_locks_15_2                                |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
-sv_locks_5                                   |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
-sv_locks_6                                   |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
-sv_locks_7                                   |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
-sv_locks_8                                   |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
-sv_locks_9                                   |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
-sv_loops_iftelse                             |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,1f / 2 (main)
-sv_loops_in_de20                             |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,2f / 2 (assume,main)
-sv_loops_in_de31                             |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,1f / 2 (main)
-sv_loops_loopv1                              |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,1f / 2 (main)
-sv_loops_loopv2                              |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,1f / 2 (main)
-sv_loops_loopv3                              |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,1f / 2 (main)
-sv_loops_mono1_1_2                           |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,2f / 2 (assume,main)
-sv_loops_mono3_1                             |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,2f / 2 (assume,main)
-sv_loops_mono4_1                             |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,2f / 2 (assume,main)
-sv_loops_mono5_1                             |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,2f / 2 (assume,main)
-sv_loops_mono6_1                             |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,2f / 2 (assume,main)
-sv_loops_nested3_1                           |  OK |  OK |  OK | PASS | PART | FAIL | PASS | 0p,4f / 2 (assume,main)
-sv_rc_avg05_1                                |  OK |  OK |  OK | PART | PART | FAIL | FAIL | 1p,1f / 2 (reach_error)
-sv_rc_max05_1                                |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,1f / 2 (reach_error)
-sv_rc_max05_2                                |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,1f / 2 (reach_error)
-sv_rc_rangesum05                             |  OK |  OK |  OK | PART | PART | FAIL | FAIL | 1p,1f / 2 (reach_error)
-sv_rc_sep05_1                                |  OK |  OK |  OK | PART | PART | FAIL | PASS | 1p,1f / 2 (reach_error)
-sv_rc_sum                                    |  OK |  OK |  OK | PART | PART | FAIL | FAIL | 1p,1f / 2 (reach_error)
+sv_locks_10                                  | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
+sv_locks_11                                  | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
+sv_locks_12                                  | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
+sv_locks_13                                  | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
+sv_locks_14_2                                | PASS | PART | FAIL | FAIL | 0p,1f / 1 (assume)
+sv_locks_15_2                                | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
+sv_locks_5                                   | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
+sv_locks_6                                   | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
+sv_locks_7                                   | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
+sv_locks_8                                   | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
+sv_locks_9                                   | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
+sv_loops_iftelse                             | PART | PART | FAIL | PASS | 1p,1f / 2 (main)
+sv_loops_in_de20                             | PASS | PART | FAIL | PASS | 0p,2f / 2 (assume,main)
+sv_loops_in_de31                             | PART | PART | FAIL | PASS | 1p,1f / 2 (main)
+sv_loops_loopv1                              | PART | PART | FAIL | PASS | 1p,1f / 2 (main)
+sv_loops_loopv2                              | PART | PART | FAIL | PASS | 1p,1f / 2 (main)
+sv_loops_loopv3                              | PART | PART | FAIL | PASS | 1p,1f / 2 (main)
+sv_loops_mono1_1_2                           | PASS | PART | FAIL | PASS | 0p,2f / 2 (assume,main)
+sv_loops_mono3_1                             | PASS | PART | FAIL | PASS | 0p,2f / 2 (assume,main)
+sv_loops_mono4_1                             | PASS | PART | FAIL | PASS | 0p,2f / 2 (assume,main)
+sv_loops_mono5_1                             | PASS | PART | FAIL | PASS | 0p,2f / 2 (assume,main)
+sv_loops_mono6_1                             | PASS | PART | FAIL | PASS | 0p,2f / 2 (assume,main)
+sv_loops_nested3_1                           | PASS | PART | FAIL | PASS | 0p,4f / 2 (assume,main)
+sv_rc_avg05_1                                | PART | PART | FAIL | FAIL | 1p,1f / 2 (reach_error)
+sv_rc_max05_1                                | PART | PART | FAIL | PASS | 1p,1f / 2 (reach_error)
+sv_rc_max05_2                                | PART | PART | FAIL | PASS | 1p,1f / 2 (reach_error)
+sv_rc_rangesum05                             | PART | PART | FAIL | FAIL | 1p,1f / 2 (reach_error)
+sv_rc_sep05_1                                | PART | PART | FAIL | PASS | 1p,1f / 2 (reach_error)
+sv_rc_sum                                    | PART | PART | FAIL | FAIL | 1p,1f / 2 (reach_error)
 
   Ded: 39 pass, 54 partial, 0 warn, 0 fail, 0 timeout
   Bug:  0 pass, 93 partial, 0 warn, 0 fail, 0 timeout
@@ -269,13 +269,17 @@ sv_rc_sum                                    |  OK |  OK |  OK | PART | PART | F
 
 | Header | Meaning |
 |---|---|
-| `Str` | `strip_smack_prelude.py` stage |
-| `B2S` | BoogieToStrata translation stage |
-| `Fix` | `fix_core_st.py` post-processing stage |
 | `Ded` | Strata `verify --check-mode deductive` |
 | `Bug` | Strata `verify --check-mode bugFinding` |
 | `CBM` | Strata-CBMC (`StrataCoreToGoto + symtab2gb + cbmc`) |
 | `CBN` | CBMC-native (`cbmc` directly on the source `.c`) |
+
+The pre-translation stage gates (`strip_smack_prelude.py` →
+BoogieToStrata → `fix_core_st.py`) all return `OK` for every program
+in the current suite, so they are omitted from the table. A failure
+in any of those stages would surface in the pipeline driver's
+output as `FAIL` in place of `OK`; the row would also lack any
+backend verdicts.
 
 **Verdict legend:**
 
@@ -294,10 +298,7 @@ sv_rc_sum                                    |  OK |  OK |  OK | PART | PART | F
 - non-PASS procedures listed in parentheses (`assume` is shorthand for
   the synthetic `__VERIFIER_assume` procedure that SMACK emits).
 
-`Strip` / `B2S` / `Fix` are pre-translation stage gates
-(`strip_smack_prelude.py` → BoogieToStrata → `fix_core_st.py`); the
-four backend columns are the verdict from each independent reasoning
-engine. The `Detail` column reports per-procedure VC counts under
+The `Detail` column reports per-procedure VC counts under
 `--split-procs`, which runs each procedure independently and rolls
 the verdicts up per-file.
 
