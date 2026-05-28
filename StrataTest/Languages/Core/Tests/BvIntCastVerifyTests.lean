@@ -25,16 +25,18 @@ namespace Core.BvIntCastVerify
 
 open Lambda Core
 
-private def xBv8   : Expression.Expr := .fvar () ⟨"x", ()⟩ (.some (.bitvec 8))
-private def bv8255 : Expression.Expr := .bitvecConst () 8 (255 : BitVec 8)
+private abbrev m := ExprSourceLoc.synthesized "test"
 
-private def zero   : Expression.Expr := .intConst () 0
-private def i255   : Expression.Expr := .intConst () 255
-private def i256   : Expression.Expr := .intConst () 256
-private def negOne : Expression.Expr := .intConst () (-1)
+private def xBv8   : Expression.Expr := .fvar m ⟨"x", ()⟩ (.some (.bitvec 8))
+private def bv8255 : Expression.Expr := .bitvecConst m 8 (255 : BitVec 8)
+
+private def zero   : Expression.Expr := .intConst m 0
+private def i255   : Expression.Expr := .intConst m 255
+private def i256   : Expression.Expr := .intConst m 256
+private def negOne : Expression.Expr := .intConst m (-1)
 
 private def applyGe (l r : Expression.Expr) : Expression.Expr :=
-  .app () (.app () intGeOp l) r
+  .app m (.app m intGeOp l) r
 
 private def mkProc (name : String) (postcond : Expression.Expr) : Decl :=
   .proc {
@@ -48,26 +50,26 @@ private def mkProc (name : String) (postcond : Expression.Expr) : Decl :=
       preconditions  := []
       postconditions := [(s!"{name}_ensures_0", { expr := postcond })]
     }
-    body := [.assume "body" (.true ()) #[]]
+    body := [.assume "body" (.true m) #[]]
   } #[]
 
 private def castVerifyProg : Core.Program :=
   { decls := [
       -- Provable: Bv8.ToUInt is always nonneg
       mkProc "test_ubv_nonneg"
-        (applyGe (.app () bv8ToUIntFunc.opExpr xBv8) zero),
+        (applyGe (.app m bv8ToUIntFunc.opExpr xBv8) zero),
       -- Provable: concrete value bv{8}(255) as unsigned == 255
       mkProc "test_ubv_concrete"
-        (.eq () (.app () bv8ToUIntFunc.opExpr bv8255) i255),
+        (.eq m (.app m bv8ToUIntFunc.opExpr bv8255) i255),
       -- Provable: unsigned round-trip Int.ToBv8(Bv8.ToUInt(x)) == x
       mkProc "test_ubv_roundtrip"
-        (.eq () (.app () int8ToBvFunc.opExpr (.app () bv8ToUIntFunc.opExpr xBv8)) xBv8),
+        (.eq m (.app m int8ToBvFunc.opExpr (.app m bv8ToUIntFunc.opExpr xBv8)) xBv8),
       -- Provable: signed semantics bv{8}(255) as signed == -1
       mkProc "test_sbv_concrete"
-        (.eq () (.app () bv8ToIntFunc.opExpr bv8255) negOne),
+        (.eq m (.app m bv8ToIntFunc.opExpr bv8255) negOne),
       -- Failing: Bv8.ToUInt(x) >= 256 is impossible for 8-bit
       mkProc "test_ubv_impossible"
-        (applyGe (.app () bv8ToUIntFunc.opExpr xBv8) i256),
+        (applyGe (.app m bv8ToUIntFunc.opExpr xBv8) i256),
     ] }
 
 /--
