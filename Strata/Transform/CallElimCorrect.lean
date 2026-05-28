@@ -1808,9 +1808,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       argTemps ++
                         outTemps ++
                           genOldIdents).Nodup := by
-                  -- `Hwfgenolds : CoreGenState.WF s_old`, which is a 3-conj
-                  -- `StringGenState.WF s_old.cs ∧ ... ∧ s_old.generated.Nodup`.
-                  -- Project the third component via `.right.right`.
+                  -- Project Nodup conjunct from Hwfgenolds (3-conj WF predicate).
                   have HndOld : s_old.generated.Nodup := Hwfgenolds.right.right
                   rw [HgenApp] at HndOld
                   have Hnd := nodup_reverse HndOld
@@ -1971,11 +1969,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                   have HoutSnd_eq_lhs : outTrips.unzip.snd = lhs := by
                     rw [Heqouts, hCallArgsLhs]
                   have HlhsNd : lhs.Nodup := by
-                    -- WFcallProp.lhsWF says (CallArg.getLhs args).Nodup.
-                    -- Hwf is now Forall (WFStatementProp p)
-                    --   [Stmt.cmd (CmdExt.call procName args md)].
+                    -- Project WFcallProp.lhsWF via Hwf's Forall_cons head.
                     have Hwfst_head := (List.Forall_cons _ _ _).mp Hwf
-                    -- Hwfst_head.1 : WFStatementProp p (Statement.call ...)
                     have Hwfcall : WF.WFcallProp p procName args := Hwfst_head.1
                     have Hlhs_args_nd :
                         (CallArg.getLhs args).Nodup := Hwfcall.lhsWF
@@ -2216,9 +2211,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                             outTemps oVals)
                           oldTrips.unzip.fst.unzip.fst oldVals, δ, false⟩ :=
                     H_havocs Hwfvars HlhsDef_old Hhav_old
-                  -- Equality: σ_havoc (3-layer applied to σ') = σ'' (flat).
-                  -- Both yield the same store via updatedStates'App and
-                  -- list-zip-append commutation.
+                  -- Equality: σ_havoc (3-layer over σ') = σ'' (flat) via zip-append.
                   have HoldFstLen :
                       oldTrips.unzip.fst.unzip.fst.length = oldVals.length := by
                     rw [HoldTripsFst, HgenOldLen, HoldValsLen]
