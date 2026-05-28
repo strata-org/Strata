@@ -1410,9 +1410,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
             · -- `a_opt = some s'`: this is the genuine call-elim case.
               rename_i s' heq_some
               simp only [pure, StateT.pure, Prod.mk.injEq, Except.ok.injEq] at Helim
-              obtain ⟨Hsts, Hγ⟩ := Helim
               -- B1/B2: callElimCmd_call_eq + Heval inversion to call_sem.
-              rw [Hsts]
+              rw [Helim.1]
               have ⟨ρ_inner, hstep_call, htail⟩ : ∃ ρ_inner,
                   Imperative.StepStmtStar Expression (EvalCommandContract π)
                       (EvalPureFunc φ)
@@ -1862,8 +1861,6 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                   -- L5: build post-havoc store σ_havoc by applying HavocVars
                   -- segment-by-segment to σ' = σ.update lhs modvals.  Derive
                   -- HL5 directly:
-                  have HlhsDef : Imperative.isDefined σ lhs :=
-                    ReadValuesIsDefined Hevalouts
                   have Hhav_σ : HavocVars σ lhs σ' :=
                     UpdateStatesHavocVars Hupdate
                   have Hhav_arg :
@@ -1912,7 +1909,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                             outTemps oVals)
                           oldTrips.unzip.fst.unzip.fst oldVals) lhs :=
                     isDefined_3layer_lift HlhsDisjArg HlhsDisjOut
-                      (HoldTripsFst ▸ HlhsDisjOld) HlhsDef
+                      (HoldTripsFst ▸ HlhsDisjOld) Hlhs_isLocl
                   -- HL5: havocs over `lhs` from σ_old to σ_havoc (same
                   -- 3-layer init applied to σ' instead of σ).  Use
                   -- `hCallArgsLhs.symm` to align with `CallArg.getLhs args`.
@@ -2046,7 +2043,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                   -- inputs.keys ∩ lhs = ∅: σ-undefined inputs vs σ-defined lhs.
                   have HinKeys_disj_lhs :
                       proc.header.inputs.keys.Disjoint lhs := fun v Hv1 Hv2 =>
-                    notin_of_isSome_isNotDefined (HlhsDef v Hv2) (InitStatesNotDefined Hinitin) Hv1
+                    notin_of_isSome_isNotDefined (Hlhs_isLocl v Hv2) (InitStatesNotDefined Hinitin) Hv1
                   -- outputs.keys ∩ lhs = ∅: σA-undefined outputs vs σ-defined lhs.
                   have HoutKeys_disj_lhs :
                       proc.header.outputs.keys.Disjoint lhs := by
@@ -2058,17 +2055,11 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       initStates_get_notin Hinitin HvNotInInputs
                     have Hvσ_none : σ v = none := by
                       rw [← HvσA_eq_σ]; exact HvσA_none
-                    exact σ_some_contradiction (HlhsDef v Hv2) Hvσ_none
+                    exact σ_some_contradiction (Hlhs_isLocl v Hv2) Hvσ_none
                   -- Restrict to the filtered preconditions.
                   let presFiltered : List (CoreLabel × Procedure.Check) :=
                     proc.spec.preconditions.filter
                       (fun (_, c) => c.attr ≠ .Free)
-                  -- Filtered entry's expr ∈ getCheckExprs proc.spec.preconditions.
-                  have HfilteredContains :
-                      ∀ entry ∈ presFiltered,
-                        (Procedure.Spec.getCheckExprs
-                          proc.spec.preconditions).contains entry.snd.expr :=
-                    fun entry Hentry => filterCheck_in_getCheckExprs Hentry
                   -- Bind σAO definedness/eval-tt for each filtered entry.
                   have HpreFiltered :
                       ∀ entry ∈ presFiltered,
@@ -2077,7 +2068,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           σAO entry.snd.expr ∧
                         δ σAO entry.snd.expr = some Imperative.HasBool.tt := by
                     intro entry Hentry
-                    exact Hpre entry.snd.expr (HfilteredContains entry Hentry)
+                    exact Hpre entry.snd.expr (filterCheck_in_getCheckExprs Hentry)
                   -- Pre-var freshness lemma against σ_old / σAO.
                   have HpresVarsFresh' :
                       ∀ entry ∈ presFiltered,
@@ -2196,31 +2187,6 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                   let postsFiltered : List (CoreLabel × Procedure.Check) :=
                     proc.spec.postconditions.filter
                       (fun (_, c) => c.attr ≠ .Free)
-                  -- Bridge: each filtered entry's expr is contained in
-                  -- `getCheckExprs proc.spec.postconditions` (`.contains`
-                  -- form, matching `Hpost`'s expected argument).
-                  have HpostFilteredContains :
-                      ∀ entry ∈ postsFiltered,
-                        (Procedure.Spec.getCheckExprs
-                          proc.spec.postconditions).contains entry.snd.expr :=
-                    fun entry Hentry => filterCheck_in_getCheckExprs Hentry
-                  -- σO eval-tt per filtered post entry (via Hpost over getCheckExprs).
-                  have HpostFiltered :
-                      ∀ entry ∈ postsFiltered,
-                        Imperative.isDefinedOver
-                          (Imperative.HasVarsPure.getVars (P:=Expression))
-                          σAO entry.snd.expr ∧
-                        δ σO entry.snd.expr = some Imperative.HasBool.tt := by
-                    intro entry Hentry
-                    exact Hpost entry.snd.expr (HpostFilteredContains entry Hentry)
-                  -- Post-var freshness lemma against ORIGINAL post (pre-oldSubst).
-                  have HpostsVarsFresh_orig :
-                      ∀ entry ∈ postsFiltered,
-                        ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr,
-                          ¬ isTempIdent v ∧ ¬ isOldTempIdent v ∧
-                          v ∉ CallArg.getLhs args := fun entry Hentry v Hv =>
-                    HpostVarsFresh entry.snd.expr
-                      (filterCheck_mem_getCheckExprs Hentry) v Hv
                   -- D2c: σ_R1 + L6 substStores/substDefined facts.
                   let σ_R1 : CoreStore :=
                     updatedStates σO genOldIdents oldVals
@@ -2611,21 +2577,10 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                   -- (k1, k2) ∈ filtered_ks.zip filtered_ks' is either an
                   -- output-pair (outputs.keys[i], lhs[i]) or input-pair
                   -- (filtered_inputs[j], filtered_argTemps[j]).
-                  have HinKeys_argVals_len :
-                      proc.header.inputs.keys.length = argVals.length :=
-                    InitStatesLength Hinitin
-                  have Hzip_argV_len :
-                      (proc.header.inputs.keys.zip argTemps).length =
-                        argVals.length := by
-                    rw [List.length_zip, HinKeys_argTemps_len, Nat.min_self]
-                    omega
                   -- Build Hsubst via parallel ReadValues.
                   have HinKVlen :
                       proc.header.inputs.keys.length = argVals.length :=
                     InitStatesLength Hinitin
-                  have HargT_len_argV :
-                      argTemps.length = argVals.length := by
-                    rw [← HinKeys_argTemps_len]; exact HinKVlen
                   -- σ_R1 reads inputs.keys → argVals (full).
                   have Hrd_R1_in_full :
                       ReadValues σ_R1 proc.header.inputs.keys argVals := by
@@ -3083,10 +3038,6 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       exact Hbool.1.2
                     rw [HprocEq] at HinOuts'
                     exact List.contains_iff_mem.mp HinOuts'
-                  -- For v ∈ oldVars, v ∈ lhs (oldVars ⊆ getLhs args = lhs).
-                  have HoldVars_sub_lhs_L6 : ∀ v ∈ oldVars, v ∈ lhs := by
-                    intro v Hv
-                    exact hCallArgsLhs ▸ HoldVars_sub_callLhs v Hv
                   -- Per-index positional bridge for downstream consumers.
                   have HoldEval_bridge :
                       ∀ (i : Nat) (Hi : i < oldVars.length),
@@ -3099,7 +3050,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     have Hv_mem : v ∈ oldVars := List.getElem_mem _
                     have Hv_out : v ∈ ListMap.keys proc.header.outputs :=
                       HoldVars_sub_outs v Hv_mem
-                    have Hv_lhs : v ∈ lhs := HoldVars_sub_lhs_L6 v Hv_mem
+                    have Hv_lhs : v ∈ lhs := HoldVars_sub_lhs v Hv_mem
                     have Hv_callLhs : v ∈ CallArg.getLhs args :=
                       HoldVars_sub_callLhs v Hv_mem
                     -- Local helper: ReadValues σ' ks vs ∧ v ∈ ks ⇒
