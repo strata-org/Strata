@@ -1738,12 +1738,7 @@ private theorem createOldVarsSubst_pos_decomp
       List.getElem_zip
     rw [Hinner]
   have HtripEq_get :
-      oldTripsCanonical[ni.val]'Hni_lt_canon = trip := by
-    have HhE := Hni
-    have HgetEq : oldTripsCanonical.get ni =
-            oldTripsCanonical[ni.val]'Hni_lt_canon := rfl
-    rw [HgetEq] at HhE
-    exact HhE
+      oldTripsCanonical[ni.val]'Hni_lt_canon = trip := Hni
   have Htrip_shape :
       trip = ((genOldIdents[ni.val]'Hni_lt_genOld,
                oldTys[ni.val]'Hni_lt_oldTys),
