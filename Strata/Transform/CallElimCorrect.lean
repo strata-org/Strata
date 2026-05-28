@@ -2111,12 +2111,6 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                   let presFiltered : List (CoreLabel × Procedure.Check) :=
                     proc.spec.preconditions.filter
                       (fun (_, c) => c.attr ≠ .Free)
-                  -- Filtered entry's expr ∈ getCheckExprs proc.spec.preconditions.
-                  have HfilteredContains :
-                      ∀ entry ∈ presFiltered,
-                        (Procedure.Spec.getCheckExprs
-                          proc.spec.preconditions).contains entry.snd.expr :=
-                    fun entry Hentry => filterCheck_in_getCheckExprs Hentry
                   -- Bind σAO definedness/eval-tt for each filtered entry.
                   have HpreFiltered :
                       ∀ entry ∈ presFiltered,
@@ -2125,7 +2119,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           σAO entry.snd.expr ∧
                         δ σAO entry.snd.expr = some Imperative.HasBool.tt := by
                     intro entry Hentry
-                    exact Hpre entry.snd.expr (HfilteredContains entry Hentry)
+                    exact Hpre entry.snd.expr (filterCheck_in_getCheckExprs Hentry)
                   -- Pre-var freshness lemma against σ_old / σAO.
                   have HpresVarsFresh' :
                       ∀ entry ∈ presFiltered,
@@ -2245,14 +2239,6 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                   let postsFiltered : List (CoreLabel × Procedure.Check) :=
                     proc.spec.postconditions.filter
                       (fun (_, c) => c.attr ≠ .Free)
-                  -- Bridge: each filtered entry's expr is contained in
-                  -- `getCheckExprs proc.spec.postconditions` (`.contains`
-                  -- form, matching `Hpost`'s expected argument).
-                  have HpostFilteredContains :
-                      ∀ entry ∈ postsFiltered,
-                        (Procedure.Spec.getCheckExprs
-                          proc.spec.postconditions).contains entry.snd.expr :=
-                    fun entry Hentry => filterCheck_in_getCheckExprs Hentry
                   -- D2c: σ_R1 + L6 substStores/substDefined facts.
                   let σ_R1 : CoreStore :=
                     updatedStates σO genOldIdents oldVals
