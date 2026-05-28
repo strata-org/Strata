@@ -557,17 +557,31 @@ def isSubtype (ctx : TypeContext) (sub sup : HighTypeMd) : Bool :=
     names match: the Python front-end emits `TCore "Any"` for type
     annotations referring to the `Any` datatype declared in the runtime
     prelude, so the two representations name the same type.
+    `MultiValuedExpr` is checked element-wise so the same equivalence
+    propagates through procedure-output tuples.
 
     Used directly by `[⇒] Op-Eq`, where the operand types must be mutually
     consistent (no subtype direction is privileged), and as one half of
     `isConsistentSubtype`. -/
 def isConsistent (ctx : TypeContext) (a b : HighTypeMd) : Bool :=
-  let a' := ctx.unfold a
-  let b' := ctx.unfold b
-  match a'.val, b'.val with
-  | .Unknown, _ | _, .Unknown => true
-  | .TCore s, .UserDefined name | .UserDefined name, .TCore s => s == name.text
-  | _, _ => highEq a' b'
+  -- `MultiValuedExpr` is checked element-wise *before* unfolding so elements
+  -- remain demonstrable subterms of `a`/`b`. `unfold` is `partial`, and is in
+  -- any case the identity on `MultiValuedExpr`, so this loses no precision.
+  match _a: a.val, _b: b.val with
+  | .MultiValuedExpr ts1, .MultiValuedExpr ts2 =>
+    ts1.length == ts2.length &&
+      (ts1.attach.zip ts2).all (fun (t1, t2) => isConsistent ctx t1.1 t2)
+  | _, _ =>
+    let a' := ctx.unfold a
+    let b' := ctx.unfold b
+    match a'.val, b'.val with
+    | .Unknown, _ | _, .Unknown => true
+    | .TCore s, .UserDefined name | .UserDefined name, .TCore s => s == name.text
+    | _, _ => highEq a' b'
+  termination_by (SizeOf.sizeOf a)
+  decreasing_by
+    all_goals (cases a; cases b; try term_by_mem)
+    cases t1; term_by_mem
 
 /-- Consistent subtyping: `∃ R. sub ~ R ∧ R <: sup`. For our flat lattice
     this collapses to `sub ~ sup ∨ sub <: sup` — the standard collapse.
