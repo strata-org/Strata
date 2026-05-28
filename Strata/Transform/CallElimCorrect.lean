@@ -2885,63 +2885,23 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         exact List.getElem_mem _
                       -- (k1, k2) ∈ inputs.keys.zip argTemps via Hfilter_in.
                       have HpairZip := (Hfilter_in (k1, k2) HpairIn).1
-                      -- Get index m in inputs.keys.zip argTemps.
-                      rcases List.mem_iff_get.mp HpairZip with ⟨m, Hm⟩
-                      have Hzip_inkA_len :
-                          (proc.header.inputs.keys.zip argTemps).length =
-                            argVals.length := by
-                        rw [List.length_zip, HinKeys_argTemps_len, Nat.min_self]
-                        omega
-                      have Hm_lt_in : m.val < proc.header.inputs.keys.length := by
-                        have Hmlt := m.isLt
-                        have Hl1 : (proc.header.inputs.keys.zip argTemps).length =
-                                    argVals.length := Hzip_inkA_len
-                        have Hl2 : argVals.length =
-                                    proc.header.inputs.keys.length :=
-                          HinKVlen.symm
-                        omega
-                      have Hm_lt_argT : m.val < argTemps.length := by
-                        rw [← HinKeys_argTemps_len]; exact Hm_lt_in
-                      have Hm_lt_argV : m.val < argVals.length := by
-                        rw [← HinKVlen]; exact Hm_lt_in
-                      have HmGet :
-                          (proc.header.inputs.keys.zip argTemps)[m.val]'(by
-                              have := m.isLt; exact this) =
-                          (proc.header.inputs.keys[m.val]'Hm_lt_in,
-                           argTemps[m.val]'Hm_lt_argT) :=
-                        List.getElem_zip
-                      have HmEq :
-                          (k1, k2) = (proc.header.inputs.keys[m.val]'Hm_lt_in,
-                                       argTemps[m.val]'Hm_lt_argT) := by
-                        have := Hm.symm
-                        rw [show (proc.header.inputs.keys.zip argTemps).get m =
-                              (proc.header.inputs.keys.zip argTemps)[m.val]'_
-                            from rfl] at this
-                        rw [HmGet] at this
-                        exact this
-                      have Hk1_inGet :
-                          k1 = proc.header.inputs.keys[m.val]'Hm_lt_in :=
-                        ((Prod.mk.injEq _ _ _ _).mp HmEq).1
-                      have Hk2_argTGet :
-                          k2 = argTemps[m.val]'Hm_lt_argT :=
-                        ((Prod.mk.injEq _ _ _ _).mp HmEq).2
-                      -- σ_R1 k1 = some argVals[m.val] (via Hrd_R1_in_full).
+                      -- Decompose pair-in-zip via shared helper.
+                      obtain ⟨m, Hm_lt_in, Hm_lt_argT, Hk1_inGet, Hk2_argTGet⟩ :=
+                        pair_in_zip_pos_decomp HinKeys_argTemps_len HpairZip
+                      have Hm_lt_argV : m < argVals.length := HinKVlen ▸ Hm_lt_in
+                      -- σ_R1 k1 = some argVals[m] (via Hrd_R1_in_full).
                       have HrdR1_get :
-                          σ_R1 (proc.header.inputs.keys[m.val]'Hm_lt_in) =
-                            some (argVals[m.val]'Hm_lt_argV) := by
-                        have HG := readValues_get
-                          (σ:=σ_R1) (ks:=proc.header.inputs.keys)
+                          σ_R1 (proc.header.inputs.keys[m]'Hm_lt_in) =
+                            some (argVals[m]'Hm_lt_argV) :=
+                        readValues_get (σ:=σ_R1) (ks:=proc.header.inputs.keys)
                           (vs:=argVals) Hrd_R1_in_full
-                          (i:=m.val) (hi:=Hm_lt_in) (hi':=Hm_lt_argV)
-                        exact HG
+                          (i:=m) (hi:=Hm_lt_in) (hi':=Hm_lt_argV)
                       have HrdHavoc_get :
-                          σ_havoc (argTemps[m.val]'Hm_lt_argT) =
-                            some (argVals[m.val]'Hm_lt_argV) := by
-                        have HG := readValues_get
-                          (σ:=σ_havoc) (ks:=argTemps) (vs:=argVals)
+                          σ_havoc (argTemps[m]'Hm_lt_argT) =
+                            some (argVals[m]'Hm_lt_argV) :=
+                        readValues_get (σ:=σ_havoc) (ks:=argTemps) (vs:=argVals)
                           Hrd_havoc_argT
-                          (i:=m.val) (hi:=Hm_lt_argT) (hi':=Hm_lt_argV)
-                        exact HG
+                          (i:=m) (hi:=Hm_lt_argT) (hi':=Hm_lt_argV)
                       rw [Hk1_inGet, HrdR1_get, Hk2_argTGet, HrdHavoc_get]
                   -- ── D2e: Apply H_asserts_zip to derive HL4 ──
                   -- σ_old = post-L3 store (3-layer over argT/outT/oldTrips.fst.fst).
