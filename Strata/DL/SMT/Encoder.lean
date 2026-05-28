@@ -32,7 +32,7 @@ The encoding pipeline has two layers:
 2. **Encoder layer** (`EncoderM`): Sits on top of `SolverM` and translates
    `Term` values to SMT-LIB commands:
    - **UF → abbreviated name cache** (`ufs`): Maps uninterpreted functions to
-     their abbreviated identifiers (e.g., `$__f.0`, `$__f.1`).
+     their abbreviated identifiers (e.g., `f.0`, `f.1`).
    - **Unified name registry** (`usedNames`): Every emitted SMT-LIB identifier
      is routed through `Strata.Name.findUnique` against this set, guaranteeing
      global uniqueness without relying on naming conventions.
@@ -72,7 +72,7 @@ open Solver
 public section
 
 structure EncoderState where
-  /-- Maps a `UF` to its abbreviated SMT identifier (e.g., `$__f.0`, `$__f.1`). -/
+  /-- Maps a `UF` to its abbreviated SMT identifier (e.g., `f.0`, `f.1`). -/
   ufs   : Std.HashMap UF String
   /-- Every SMT-LIB identifier emitted so far. All emit sites route through
       `Strata.Name.findUnique` against this set, guaranteeing global uniqueness
@@ -136,11 +136,11 @@ def sanitizeSmtName (name : String) : String :=
     let first := name.front
     if first == '@' || first == '.' then "$" ++ name else name
 
-/-- Base names for internally generated identifiers. The `$__` prefix is a
-    cosmetic convention; correctness is enforced by the `usedNames` registry
-    which disambiguates via `@N` suffixes on collision. -/
-def termId (n : Nat)                    : String := s!"$__t.{n}"
-def ufId (n : Nat)                      : String := s!"$__f.{n}"
+/-- Base names for internally generated identifiers. Correctness is enforced
+    by the `usedNames` registry which disambiguates via `@N` suffixes on
+    collision. -/
+def termId (n : Nat)                    : String := s!"t.{n}"
+def ufId (n : Nat)                      : String := s!"f.{n}"
 
 def ufNum   : EncoderM Nat := do return (← get).ufs.size
 

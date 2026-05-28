@@ -201,7 +201,7 @@ end Strata.SMT.Encoder
 /-! ## Tests for unified `usedNames` registry (issue #1230)
 
 Verifies that the encoder disambiguates when a user-defined UF name collides
-with the internal `$__f.N` naming scheme used by `encodeFunction`, and when
+with the internal `f.N` naming scheme used by `encodeFunction`, and when
 UF names collide with pre-declared sort/datatype names. -/
 
 namespace Strata.SMT.Encoder.UsedNamesTests
@@ -223,12 +223,12 @@ private def runEncoderWith (initState : EncoderState) (act : EncoderM Unit) : IO
   let (((), estate), _) ← (act.run initState).run solver
   return estate
 
--- A user UF named `$__f.0` should not collide with the first `encodeFunction`
+-- A user UF named `f.0` should not collide with the first `encodeFunction`
 -- output. The encoder must rename one of them.
-/-- info: ("$__f.0", "$__f.1") -/
+/-- info: ("f.0", "f.1") -/
 #guard_msgs in
 #eval do
-  let collidingUF : UF := { id := "$__f.0", args := [], out := .int }
+  let collidingUF : UF := { id := "f.0", args := [], out := .int }
   let functionUF : UF := { id := "userFn", args := [⟨"x", .int⟩], out := .int }
   let body : Term := .var ⟨"x", .int⟩
   let estate ← runEncoder do
@@ -236,11 +236,11 @@ private def runEncoderWith (initState : EncoderState) (act : EncoderM Unit) : IO
     let _ ← Encoder.encodeFunction functionUF body
   return (estate.ufs[collidingUF]!, estate.ufs[functionUF]!)
 
--- A user UF named `$__f.1` should not collide when two functions are encoded.
-/-- info: ("$__f.1", "$__f.1@1", "$__f.2") -/
+-- A user UF named `f.1` should not collide when two functions are encoded.
+/-- info: ("f.1", "f.1@1", "f.2") -/
 #guard_msgs in
 #eval do
-  let collidingUF : UF := { id := "$__f.1", args := [], out := .bool }
+  let collidingUF : UF := { id := "f.1", args := [], out := .bool }
   let fn0 : UF := { id := "fn0", args := [], out := .int }
   let fn1 : UF := { id := "fn1", args := [⟨"y", .int⟩], out := .int }
   let body0 : Term := .prim (.int 42)
@@ -264,10 +264,10 @@ private def runEncoderWith (initState : EncoderState) (act : EncoderM Unit) : IO
 
 -- A function whose generated name collides with a pre-declared sort should
 -- also be disambiguated.
-/-- info: "$__f.0@1" -/
+/-- info: "f.0@1" -/
 #guard_msgs in
 #eval do
-  let preDeclaredNames := Std.HashSet.ofList ["$__f.0"]
+  let preDeclaredNames := Std.HashSet.ofList ["f.0"]
   let fn : UF := { id := "userFn", args := [⟨"x", .int⟩], out := .int }
   let body : Term := .var ⟨"x", .int⟩
   let estate ← runEncoderWith (EncoderState.initWithNames preDeclaredNames) do
