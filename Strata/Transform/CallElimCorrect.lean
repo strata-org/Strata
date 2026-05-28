@@ -3072,21 +3072,14 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                   have Hlhs_isLocl :
                       Imperative.isDefined σ lhs :=
                     ReadValuesIsDefined Hevalouts
-                  have HlhsDisjArg :
-                      lhs.Disjoint argTemps := by
-                    intro x Hin1 Hin2
-                    exact σ_some_contradiction
-                      (Hlhs_isLocl x Hin1) (HndefArg_σ x Hin2)
-                  have HlhsDisjOut :
-                      lhs.Disjoint outTemps := by
-                    intro x Hin1 Hin2
-                    exact σ_some_contradiction
-                      (Hlhs_isLocl x Hin1) (HndefOut_σ x Hin2)
-                  have HlhsDisjOld :
-                      lhs.Disjoint genOldIdents := by
-                    intro x Hin1 Hin2
-                    exact σ_some_contradiction
-                      (Hlhs_isLocl x Hin1) (HndefOld_σ x Hin2)
+                  have lhs_disj_via_σ :
+                      ∀ {ks : List Expression.Ident},
+                        Imperative.isNotDefined σ ks → lhs.Disjoint ks :=
+                    fun Hndef x Hin1 Hin2 =>
+                      σ_some_contradiction (Hlhs_isLocl x Hin1) (Hndef x Hin2)
+                  have HlhsDisjArg : lhs.Disjoint argTemps := lhs_disj_via_σ HndefArg_σ
+                  have HlhsDisjOut : lhs.Disjoint outTemps := lhs_disj_via_σ HndefOut_σ
+                  have HlhsDisjOld : lhs.Disjoint genOldIdents := lhs_disj_via_σ HndefOld_σ
                   -- Out-temp Nodup append form for `H_initVars`.
                   have HoutSnd_eq_lhs : outTrips.unzip.snd = lhs := by
                     rw [Heqouts, hCallArgsLhs]
