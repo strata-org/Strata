@@ -6,20 +6,6 @@
   Regression test for `smtVCsCorrect` support for programs with user-defined
   datatypes whose selectors appear in verification conditions.
 
-  Three bugs fixed in `pr/smt-vcs-datatypes`:
-
-  1. `SanitizedContext.ofCore` (MetaVerifier.lean) stripped all datatype
-     UFs/sorts, so neither the translate nor the denote path could see
-     constructor/selector/tester functions.
-
-  2. `translateTerm` (Translate.lean) had no `datatype_op` case, so
-     `gen_smt_vcs` threw "datatype function not found in context" for any VC
-     containing a selector or constructor.
-
-  3. `denoteTerm` (Denote.lean) had no `datatype_op` case, so `denoteQuery`
-     returned `none` for any VC containing a datatype operation, causing
-     `smtVCsCorrect` to reduce to `False`.
-
   This file tests all three fixes using a minimal program with a single-field
   datatype `Box` whose selector `Box..val` appears both in preconditions and
   in the postcondition.
@@ -52,11 +38,11 @@ spec {
 -- `Boole.verify` via cvc5 must succeed, and `gen_smt_vcs` must not throw
 -- "datatype function not found in context".
 /-- info:
-Obligation: inc_val_pre_inc_val_requires_0_1235_calls_Box..val_0
+Obligation: inc_val_pre_inc_val_requires_0_617_calls_Box..val_0
 Property: assert
 Result: ✅ pass
 
-Obligation: inc_val_post_inc_val_ensures_1_1264_calls_Box..val_0
+Obligation: inc_val_post_inc_val_ensures_1_646_calls_Box..val_0
 Property: assert
 Result: ✅ pass
 
@@ -64,7 +50,7 @@ Obligation: set_result_calls_Box..val_0
 Property: assert
 Result: ✅ pass
 
-Obligation: inc_val_ensures_1_1264
+Obligation: inc_val_ensures_1_646
 Property: assert
 Result: ✅ pass
 -/
