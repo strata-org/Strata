@@ -5299,33 +5299,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     have HoldValsLenE :
                         genOldIdents.length = oldVals.length := by
                       have := HoldValsLen; have := HgenOldLen; omega
-                    have HargLen : argTemps.length =
-                        argVals.length := by
-                      simp [argTemps, List.unzip_eq_map, Hargtriplen]
-                    have HoutLen : outTemps.length =
-                        oVals.length := by
-                      have H1 : outTemps.length =
-                          outTrips.length := by
-                        simp [outTemps, List.unzip_eq_map]
-                      have H2 : lhs.length = oVals.length :=
-                        ReadValuesLength Hevalouts
-                      have HE : outTrips.unzip.snd = lhs := by
-                        rw [Heqouts, hCallArgsLhs]
-                      have HE2 : outTrips.unzip.snd.length = outTrips.length := by
-                        simp [List.unzip_eq_map]
-                      have HEL := congrArg List.length HE
-                      omega
-                    -- Decompose σ_havoc as nested updatedStates.
-                    -- updatedStates σ (a ++ b) (va ++ vb) =
-                    --   updatedStates (updatedStates σ a va) b vb
-                    -- via List.zip_append (when |a|=|va|).
-                    have HzipAppend1 :
-                        (argTemps ++
-                            outTemps).zip
-                          (argVals ++ oVals) =
-                          (argTemps.zip argVals) ++
-                          (outTemps.zip oVals) :=
-                      List.zip_append HargLen
+                    -- Decompose σ_havoc as nested updatedStates via List.zip_append.
                     have HzipAppend2 :
                         ((argTemps ++
                             outTemps) ++ genOldIdents).zip
@@ -5335,8 +5309,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                             (argVals ++ oVals)) ++
                           (genOldIdents.zip oldVals) := by
                       apply List.zip_append
-                      simp [List.length_append]
-                      omega
+                      simp [List.length_append, HargTempsLen, HoutTempsLen]
                     have HsplitOverlay :
                         σ_havoc =
                         updatedStates
