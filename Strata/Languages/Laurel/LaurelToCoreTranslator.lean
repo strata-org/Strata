@@ -180,7 +180,7 @@ def translateExpr (expr : StmtExprMd)
             return .fvar () ⟨name.text, ()⟩ (some (← translateType astNode.getType))
   | .Var (.Declare _) =>
       throwExprDiagnostic $ md.toDiagnostic "variable declaration in expression context should have been lowered" DiagnosticType.StrataBug
-  | .PrimitiveOp op [e] =>
+  | .PrimitiveOp op [e] _ =>
     match op with
     | .Not =>
       let re ← translateExpr e boundVars isPureContext

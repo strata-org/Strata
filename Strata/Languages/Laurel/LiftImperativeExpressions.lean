@@ -158,7 +158,7 @@ def containsAssignment (expr : StmtExprMd) : Bool :=
   match val with
   | .Assign .. => true
   | .StaticCall _ args => args.attach.any (fun x => containsAssignment x.val)
-  | .PrimitiveOp _ args => args.attach.any (fun x => containsAssignment x.val)
+  | .PrimitiveOp _ args _ => args.attach.any (fun x => containsAssignment x.val)
   | .Block stmts _ => stmts.attach.any (fun x => containsAssignment x.val)
   | .IfThenElse cond th el =>
       containsAssignment cond || containsAssignment th ||
@@ -176,7 +176,7 @@ def containsBareAssignment (expr : StmtExprMd) : Bool :=
   match val with
   | .Assign .. => true
   | .StaticCall _ args => args.attach.any (fun x => containsBareAssignment x.val)
-  | .PrimitiveOp _ args => args.attach.any (fun x => containsBareAssignment x.val)
+  | .PrimitiveOp _ args _ => args.attach.any (fun x => containsBareAssignment x.val)
   | .Block _ _ => false
   | .IfThenElse cond th el =>
       containsBareAssignment cond || containsBareAssignment th ||
@@ -196,7 +196,7 @@ def containsImperativeCall (model : SemanticModel) (expr : StmtExprMd) : Bool :=
     | .staticProcedure proc => !proc.isFunctional
     | _ => false) ||
       args.attach.any (fun x => containsImperativeCall model x.val)
-  | .PrimitiveOp _ args => args.attach.any (fun x => containsImperativeCall model x.val)
+  | .PrimitiveOp _ args _ => args.attach.any (fun x => containsImperativeCall model x.val)
   | .Block stmts _ => stmts.attach.any (fun x => containsImperativeCall model x.val)
   | .IfThenElse cond th el =>
       containsImperativeCall model cond ||
@@ -277,7 +277,7 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
 
       return resultExpr
 
-  | .PrimitiveOp op args =>
+  | .PrimitiveOp op args _ =>
       -- Process arguments right to left
       let seqArgs ← args.reverse.mapM transformExpr
       return ⟨.PrimitiveOp op seqArgs.reverse, source⟩
