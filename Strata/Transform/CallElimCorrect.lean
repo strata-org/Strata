@@ -1656,9 +1656,6 @@ private theorem createOldVarsSubst_pos_decomp
       List ((Expression.Ident × Expression.Ty) × Expression.Ident) :=
     (((genOldIdents.zip oldTys).zip oldVars).zip oldGVars).map
       (fun (((fresh, ty), _orig), oldG) => ((fresh, ty), oldG))
-  -- Bring `Hf` into the canonical-named form.
-  have Hf : Map.find?
-      (Core.Transform.createOldVarsSubst oldTripsCanonical) k = some w := Hf
   -- (k, w) ∈ createOldVarsSubst oldTripsCanonical (as List).
   have Hkw_mem_list :
       List.Mem (k, w)
