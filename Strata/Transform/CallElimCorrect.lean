@@ -2187,20 +2187,6 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     rw [HoldTripsFst]
                     apply havocVars_updatedStates_lift HlhsDisjOld Hhav_out
                   -- isDefined σ_old lhs (via 3-layer extension monotone).
-                  have HlhsDef_arg :
-                      Imperative.isDefined
-                        (updatedStates σ
-                          argTemps argVals) lhs := fun v Hv => by
-                    rw [updatedStates_get_notin (fun Hin => HlhsDisjArg Hv Hin)]
-                    exact HlhsDef v Hv
-                  have HlhsDef_out :
-                      Imperative.isDefined
-                        (updatedStates
-                          (updatedStates σ
-                            argTemps argVals)
-                          outTemps oVals) lhs := fun v Hv => by
-                    rw [updatedStates_get_notin (fun Hin => HlhsDisjOut Hv Hin)]
-                    exact HlhsDef_arg v Hv
                   have HlhsDef_old :
                       Imperative.isDefined
                         (updatedStates
@@ -2208,10 +2194,9 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                             (updatedStates σ
                               argTemps argVals)
                             outTemps oVals)
-                          oldTrips.unzip.fst.unzip.fst oldVals) lhs := fun v Hv => by
-                    rw [HoldTripsFst,
-                        updatedStates_get_notin (fun Hin => HlhsDisjOld Hv Hin)]
-                    exact HlhsDef_out v Hv
+                          oldTrips.unzip.fst.unzip.fst oldVals) lhs :=
+                    isDefined_3layer_lift HlhsDisjArg HlhsDisjOut
+                      (HoldTripsFst ▸ HlhsDisjOld) HlhsDef
                   -- HL5: havocs over `lhs` from σ_old to σ_havoc (same
                   -- 3-layer init applied to σ' instead of σ).  Use
                   -- `hCallArgsLhs.symm` to align with `CallArg.getLhs args`.
@@ -3406,27 +3391,13 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         argTemps argVals :=
                     readValues_updatedStates HoldFstLen
                       (HoldTripsFst ▸ HargOldDisj) HrdLayer2_argT
-                  -- σ_old reads lhs ↦ oVals.  Path: σ_old(lhs) lifts σ(lhs)
-                  -- via readValues_updatedStates × 3 (lhs disjoint from
-                  -- argT/outT/old).  σ(lhs) = oVals via Hevalouts.
-                  have HrdLayer1_lhs :
-                      ReadValues
-                        (updatedStates σ
-                          argTemps argVals)
-                        lhs oVals :=
-                    readValues_updatedStates HargTempsLen HlhsDisjArg Hevalouts
-                  have HrdLayer2_lhs :
-                      ReadValues
-                        (updatedStates
-                          (updatedStates σ
-                            argTemps argVals)
-                          outTemps oVals)
-                        lhs oVals :=
-                    readValues_updatedStates HoutTempsLen HlhsDisjOut HrdLayer1_lhs
+                  -- σ_old reads lhs ↦ oVals.  Path: σ(lhs) = oVals via
+                  -- Hevalouts, lifted across the 3-layer extension.
                   have HrdLayer3_lhs :
                       ReadValues σ_old lhs oVals :=
-                    readValues_updatedStates HoldFstLen
-                      (HoldTripsFst ▸ HlhsDisjOld) HrdLayer2_lhs
+                    readValues_3layer_lift HargTempsLen HlhsDisjArg
+                      HoutTempsLen HlhsDisjOut
+                      HoldFstLen (HoldTripsFst ▸ HlhsDisjOld) Hevalouts
                   have HrdOld_inout_L4 :
                       ReadValues σ_old
                         (argTemps ++ lhs)
