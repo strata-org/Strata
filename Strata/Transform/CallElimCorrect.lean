@@ -5444,12 +5444,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           rw [← HinKeys_argTemps_len]; exact Hn_lt_in
                         have HkE :
                             proc.header.inputs.keys[n.val]'Hn_lt_in = k1 := by
-                          have HEget := Hn
-                          have :
-                              proc.header.inputs.keys[n.val]'Hn_lt_in =
-                                proc.header.inputs.keys.get
-                                  ⟨n.val, Hn_lt_in⟩ := rfl
-                          rw [this]; exact HEget
+                          show proc.header.inputs.keys.get ⟨n.val, Hn_lt_in⟩ = k1
+                          exact Hn
                         have Hpair_in_zip :
                             (k1, argTemps[n.val]'Hn_lt_argT) ∈
                               proc.header.inputs.keys.zip argTemps := by
