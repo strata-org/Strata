@@ -44,13 +44,13 @@ partial def removeReturns (stmt : StmtExprMd) : Except DiagnosticModel StmtExprM
     | .Block _ _ => .ok passThrough
     | .IfThenElse _ _ (some _) => .error (diagnosticFromSource head.source "in a transparent body, if-then-else is only supported as the last statement in a block")
     | _ => .error (diagnosticFromSource head.source
-        s!"removeReturns: unsupported statement {head.val.constructorName} in block head")
+        s!"unsupported statement {head.val.constructorName} in block head")
   | .IfThenElse cond thenBr (some elseBr) => do
       let thenExpr ← removeReturns thenBr
       let elseExpr ← removeReturns elseBr
       .ok ⟨ .IfThenElse cond thenExpr (some elseExpr), stmt.source⟩
   | _ => .error (diagnosticFromSource stmt.source
-      s!"removeReturns: statement {Std.format stmt}, {stmt.val.constructorName} is not supported in transparent bodies")
+      s!"ending a transparent body with a {stmt.val.constructorName} statement is not supported")
 
 end
 

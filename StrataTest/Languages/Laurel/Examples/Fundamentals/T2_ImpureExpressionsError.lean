@@ -35,12 +35,10 @@ function functionWithWhile(x: int): int
 function functionCallingHasMutationAssignment(x: int): int
 {
   hasMutatingAssignment()
-//^^^^^^^^^^^^^^^^^^^^^^^ error: calls to procedures are not supported in functions or contracts
 };
 
-procedure impureContractIsNotLegal1(x: int)
+procedure impureContractIsLegal1(x: int)
   requires x == hasMutatingAssignment()
-//              ^^^^^^^^^^^^^^^^^^^^^^^ error: calls to procedures are not supported in functions or contracts
   opaque
 {
   assert hasMutatingAssignment() == 1

@@ -21,10 +21,7 @@ nondet procedure nonDeterministic(x: int): (r: int)
 };
 
 procedure caller()
-<<<<<<< HEAD
-=======
   opaque
->>>>>>> 5e61ec87a (Add contract pass)
 {
   var x = nonDeterministic(1)
   assert x > 0;
