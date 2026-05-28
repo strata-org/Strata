@@ -428,27 +428,15 @@ private theorem createOldVarsSubst_pos_decomp
   -- Length facts.
   have HoldGLen : oldGVars.length = oldVars.length := by
     simp [oldGVars, List.length_map]
-  have HCanonLen : oldTripsCanonical.length = oldVars.length := by
-    simp [oldTripsCanonical, List.length_map, List.length_zip, HgenOldLen,
-          HoldTysLen, HoldGLen]
-  have Hni_lt : ni.val < oldVars.length := by
-    have HiLt := ni.isLt
-    omega
-  -- Position-wise length facts.
-  have HziptyLen :
-      (genOldIdents.zip oldTys).length = oldVars.length := by
-    simp [List.length_zip, HgenOldLen, HoldTysLen]
-  have Hni_lt_zipty : ni.val < (genOldIdents.zip oldTys).length := by
-    rw [HziptyLen]; exact Hni_lt
-  have Hni_lt_oldGVars : ni.val < oldGVars.length := by
-    show ni.val < (oldVars.map _).length
-    simp [List.length_map]; exact Hni_lt
-  have Hni_lt_genOld : ni.val < genOldIdents.length := by
-    have := HgenOldLen; omega
-  have Hni_lt_oldTys : ni.val < oldTys.length := by
-    have := HoldTysLen; omega
   have Hni_lt_canon : ni.val < oldTripsCanonical.length := ni.isLt
-  -- Project the canonical trip via two-step zip-getElem reduction.
+  have Hni_lt : ni.val < oldVars.length := by
+    have := ni.isLt
+    simp [oldTripsCanonical, List.length_map, List.length_zip, HgenOldLen,
+          HoldTysLen, HoldGLen] at this; exact this
+  have Hni_lt_genOld : ni.val < genOldIdents.length := by omega
+  have Hni_lt_oldTys : ni.val < oldTys.length := by omega
+  have Hni_lt_oldGVars : ni.val < oldGVars.length := HoldGLen ▸ Hni_lt
+  -- Project the canonical trip via zip-getElem reductions.
   have HtripGet :
       oldTripsCanonical[ni.val]'Hni_lt_canon =
         ((genOldIdents[ni.val]'Hni_lt_genOld,
@@ -456,63 +444,24 @@ private theorem createOldVarsSubst_pos_decomp
          oldGVars[ni.val]'Hni_lt_oldGVars) := by
     show (((((genOldIdents.zip oldTys).zip oldVars).zip
       oldGVars).map _)[ni.val]'Hni_lt_canon) = _
-    rw [List.getElem_map]
-    have HouterLt :
-        ni.val < (((genOldIdents.zip oldTys).zip oldVars).zip
-            oldGVars).length := by
-      simp only [List.length_zip]; omega
-    have Houter :
-        (((genOldIdents.zip oldTys).zip oldVars).zip
-            oldGVars)[ni.val]'HouterLt =
-          ((((genOldIdents.zip oldTys).zip oldVars))[ni.val]'(by
-            simp [List.length_zip, HziptyLen]; exact Hni_lt),
-           oldGVars[ni.val]'Hni_lt_oldGVars) :=
-      List.getElem_zip
-    rw [Houter]
-    have Hmid :
-        ((genOldIdents.zip oldTys).zip oldVars)[ni.val]'(by
-          simp [List.length_zip, HziptyLen]; exact Hni_lt) =
-          ((genOldIdents.zip oldTys)[ni.val]'Hni_lt_zipty,
-           oldVars[ni.val]'Hni_lt) :=
-      List.getElem_zip
-    rw [Hmid]
-    have Hinner :
-        (genOldIdents.zip oldTys)[ni.val]'Hni_lt_zipty =
-          (genOldIdents[ni.val]'Hni_lt_genOld,
-           oldTys[ni.val]'Hni_lt_oldTys) :=
-      List.getElem_zip
-    rw [Hinner]
-  have HtripEq_get :
-      oldTripsCanonical[ni.val]'Hni_lt_canon = trip := Hni
+    simp only [List.getElem_map, List.getElem_zip]
   have Htrip_shape :
       trip = ((genOldIdents[ni.val]'Hni_lt_genOld,
                oldTys[ni.val]'Hni_lt_oldTys),
               oldGVars[ni.val]'Hni_lt_oldGVars) := by
-    rw [← HtripEq_get]; exact HtripGet
+    rw [← Hni]; exact HtripGet
   have HoldG_get :
       oldGVars[ni.val]'Hni_lt_oldGVars =
         CoreIdent.mkOld (oldVars[ni.val]'Hni_lt).name := by
     show (oldVars.map (fun g => CoreIdent.mkOld g.name))[ni.val]'_ = _
     rw [List.getElem_map]
-  have HgoEq :
-      Core.Transform.createOldVarsSubst.go trip =
-        (oldGVars[ni.val]'Hni_lt_oldGVars,
-         Core.Transform.createFvar
-           (genOldIdents[ni.val]'Hni_lt_genOld)) := by
-    rw [Htrip_shape]; rfl
   have HkwEq :
       (k, w) = (oldGVars[ni.val]'Hni_lt_oldGVars,
                 Core.Transform.createFvar
                   (genOldIdents[ni.val]'Hni_lt_genOld)) := by
-    rw [← HgoEq]; exact Htrip_eq.symm
-  refine ⟨ni.val, Hni_lt, ?_, ?_⟩
-  · -- k = mkOld oldVars[ni.val].name.
-    have Hk_eq :
-        k = oldGVars[ni.val]'Hni_lt_oldGVars :=
-      ((Prod.mk.injEq _ _ _ _).mp HkwEq).1
-    rw [Hk_eq, HoldG_get]
-  · -- w = createFvar genOldIdents[ni.val].
-    exact ((Prod.mk.injEq _ _ _ _).mp HkwEq).2
+    rw [← Htrip_eq, Htrip_shape]; rfl
+  refine ⟨ni.val, Hni_lt, ?_, ((Prod.mk.injEq _ _ _ _).mp HkwEq).2⟩
+  rw [((Prod.mk.injEq _ _ _ _).mp HkwEq).1, HoldG_get]
 
 /-- Positional decomposition for `Map.find?` against the L6
     `inputOnlyOldSubst` map.  Given a hit
@@ -582,54 +531,29 @@ private theorem inputOnlyOldSubst_pos_decomp
       ((Prod.mk.injEq _ _ _ _).mp Hpair_eq').2.symm
     -- pair ∈ inputs.zip inputArgs.
     rcases List.mem_iff_get.mp Hpair_in with ⟨ni, Hni⟩
-    have Hni_lt_zip :
-        ni.val < (inputs.zip inputArgs).length := ni.isLt
-    have HzipLen : (inputs.zip inputArgs).length =
-          min inputs.length inputArgs.length :=
-      List.length_zip
-    have Hni_lt_min :
-        ni.val < min inputs.length inputArgs.length := by
-      rw [← HzipLen]; exact Hni_lt_zip
-    have Hni_lt_inputs : ni.val < inputs.length := by
-      have := Hni_lt_min; omega
-    have Hni_lt_inputArgs : ni.val < inputArgs.length := by
-      have := Hni_lt_min; omega
+    have Hni_lt_zip : ni.val < (inputs.zip inputArgs).length := ni.isLt
+    have Hni_lt_min : ni.val < min inputs.length inputArgs.length :=
+      List.length_zip ▸ Hni_lt_zip
+    have Hni_lt_inputs : ni.val < inputs.length := by omega
+    have Hni_lt_inputArgs : ni.val < inputArgs.length := by omega
     -- Project pair to its components positionally.
-    have HpairGet :
-        (inputs.zip inputArgs)[ni.val]'Hni_lt_zip =
-          (inputs[ni.val]'Hni_lt_inputs,
-           inputArgs[ni.val]'Hni_lt_inputArgs) :=
-      List.getElem_zip
-    have HpairEq_get :
-        (inputs.zip inputArgs)[ni.val]'Hni_lt_zip = pair := Hni
     have Hpair_shape :
         pair = (inputs[ni.val]'Hni_lt_inputs,
                 inputArgs[ni.val]'Hni_lt_inputArgs) := by
-      rw [← HpairEq_get]; exact HpairGet
-    have Hpair_fst : pair.fst = inputs[ni.val]'Hni_lt_inputs := by
-      rw [Hpair_shape]
-    have Hpair_snd : pair.snd = inputArgs[ni.val]'Hni_lt_inputArgs := by
-      rw [Hpair_shape]
-    -- Extract `inputs[ni.val] ∉ outputs` from the guard.
-    have Hin_notin_outs : (inputs[ni.val]'Hni_lt_inputs) ∉ outputs := by
+      have HpairGet :
+          (inputs.zip inputArgs)[ni.val]'Hni_lt_zip =
+            (inputs[ni.val]'Hni_lt_inputs,
+             inputArgs[ni.val]'Hni_lt_inputArgs) := List.getElem_zip
+      rw [← Hni]; exact HpairGet
+    refine ⟨ni.val, Hni_lt_inputs, Hni_lt_inputArgs, ?_, ?_, ?_⟩
+    · rw [Hk_eq, Hpair_shape]
+    · rw [Hw_eq, Hpair_shape]
+    · -- inputs[ni.val] ∉ outputs from guard.
       have HgL : (!outputs.contains pair.fst) = true :=
         (Bool.and_eq_true _ _).mp Hg |>.1
-      have HgL2 : outputs.contains pair.fst = false := by
-        have := HgL
-        simp only [Bool.not_eq_true'] at this
-        exact this
-      have HgL3 : pair.fst ∉ outputs := by
-        intro Hin
-        have := List.contains_iff_mem.mpr Hin
-        rw [HgL2] at this
-        exact Bool.false_ne_true this
-      rw [← Hpair_fst]
-      exact HgL3
-    refine ⟨ni.val, Hni_lt_inputs, Hni_lt_inputArgs, ?_, ?_, Hin_notin_outs⟩
-    · -- k = mkOld inputs[ni.val].name.
-      rw [Hk_eq, Hpair_fst]
-    · -- w = inputArgs[ni.val].
-      rw [Hw_eq, Hpair_snd]
+      simp at HgL
+      rw [Hpair_shape] at HgL
+      exact HgL
   · -- guard = false: contradiction.
     have HH := Hpair_eq
     simp only [Hg] at HH
