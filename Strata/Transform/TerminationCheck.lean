@@ -77,9 +77,9 @@ private def validateStructuralParam (func : Function) (tf : @TypeFactory Unit)
 private def getDecreasesKind (func : Function) (tf : @TypeFactory Unit)
     : Except String DecreasesKind := do
   match func.measure with
-  | some (.fvar _ id _) =>
+  | some (measure@(.fvar _ id _)) =>
     match func.inputs.findWithIdx? id with
-    | some (_, .int) => .ok (.intValued (.fvar () id (.some .int)))
+    | some (_, .int) => .ok (.intValued measure)
     | some (idx, _) => validateStructuralParam func tf idx
     | none =>
       .error s!"recursive function '{func.name.name}': decreases variable '{id}' is not a parameter"
