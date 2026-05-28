@@ -7,7 +7,7 @@ module
 
 public import StrataDDM.AST
 import StrataDDM.Integration.Lean.HashCommands -- shake: keep
-public import Strata.Languages.Laurel.Laurel
+public import Strata.Languages.Laurel.LaurelAST
 import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 import Strata.Languages.Laurel.Grammar.LaurelGrammar
 

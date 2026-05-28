@@ -5,7 +5,7 @@
 -/
 module
 
-meta import Strata.Languages.Core.Core
+meta import Strata.Languages.Core
 meta import Strata.Languages.Core.DDMTransform.Translate
 meta import Strata.SimpleAPI
 import StrataDDM.Integration.Lean.HashCommands

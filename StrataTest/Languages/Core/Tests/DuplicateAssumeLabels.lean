@@ -5,7 +5,7 @@
 -/
 module
 
-meta import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core
 meta import Strata.Transform.CallElim
 import StrataDDM.Integration.Lean.HashCommands
 
@@ -67,7 +67,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify duplicateAssumes (options := .default)
+#eval Core.verify duplicateAssumes (options := .default)
 
 ---------------------------------------------------------------------
 

@@ -5,8 +5,8 @@
 -/
 module
 
-meta import Strata.Languages.Core.Core
-meta import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core
+meta import Strata.Languages.Core
 meta import StrataTest.Languages.Core.Examples.Loops
 import StrataDDM.Integration.Lean.HashCommands
 
@@ -113,7 +113,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify exitPgm
+#eval Core.verify exitPgm
 
 
 /--

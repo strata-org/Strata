@@ -5,7 +5,7 @@
 -/
 module
 
-meta import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core
 import StrataDDM.Integration.Lean.HashCommands
 
 meta section
@@ -181,7 +181,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify mapPgm
+#eval Strata.Core.verify mapPgm
 
 /--
 info: [Strata.Core] Type checking succeeded.
@@ -287,7 +287,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify mapPgm (options := { Core.VerifyOptions.default with useArrayTheory := true })
+#eval Strata.Core.verify mapPgm (options := { Core.VerifyOptions.default with useArrayTheory := true })
 
 end
 ---------------------------------------------------------------------

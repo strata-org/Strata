@@ -5,7 +5,7 @@
 -/
 module
 
-meta import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core
 import StrataDDM.Integration.Lean.HashCommands
 
 meta section
@@ -93,7 +93,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify issue419TestPgm
+#eval Core.verify issue419TestPgm
 
 /--
 info: merged=0 diverged=1 stmtMerged=0 obligations=3
@@ -133,7 +133,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify issue419TestPgm
+#eval Core.verify issue419TestPgm
   (options := { Core.VerifyOptions.default with pathCap := some 1 })
 
 /--
@@ -186,7 +186,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify sequentialExitItePgm (options := .quiet)
+#eval Core.verify sequentialExitItePgm (options := .quiet)
 /--
 info: merged=0 diverged=4 stmtMerged=0 obligations=5
 -/
@@ -203,7 +203,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify sequentialExitItePgm
+#eval Core.verify sequentialExitItePgm
   (options := { Core.VerifyOptions.quiet with pathCap := some 1 })
 
 /--
@@ -334,7 +334,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify sameExitCapPgm (options := .quiet)
+#eval Core.verify sameExitCapPgm (options := .quiet)
 
 /--
 info: merged=0 diverged=1 stmtMerged=0 obligations=2
@@ -380,7 +380,7 @@ Property: assert
 Result: ❌ fail
 -/
 #guard_msgs in
-#eval verify buggyPgm (options := .quiet)
+#eval Core.verify buggyPgm (options := .quiet)
 
 /-- info: merged=0 diverged=1 stmtMerged=0 obligations=2 -/
 #guard_msgs in
@@ -395,7 +395,7 @@ Property: assert
 Result: ❌ fail
 -/
 #guard_msgs in
-#eval verify buggyPgm
+#eval Core.verify buggyPgm
   (options := { Core.VerifyOptions.quiet with pathCap := some 1 })
 
 /-- info: merged=0 diverged=1 stmtMerged=1 obligations=1 -/
@@ -412,7 +412,7 @@ Property: assert
 Result: ❌ fail
 -/
 #guard_msgs in
-#eval verify buggyPgm
+#eval Core.verify buggyPgm
   (options := { Core.VerifyOptions.quiet with pathCap := some 5 })
 
 /-- info: merged=0 diverged=1 stmtMerged=0 obligations=2 -/
@@ -454,7 +454,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify concreteTrueDeadElse (options := .quiet)
+#eval Core.verify concreteTrueDeadElse (options := .quiet)
 
 def concreteFalseDeadThen :=
 #strata
@@ -479,7 +479,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify concreteFalseDeadThen (options := .quiet)
+#eval Core.verify concreteFalseDeadThen (options := .quiet)
 
 def concreteFalseDeadThenCover :=
 #strata
@@ -504,7 +504,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify concreteFalseDeadThenCover (options := .quiet)
+#eval Core.verify concreteFalseDeadThenCover (options := .quiet)
 
 def programOrderConcreteFalse :=
 #strata
@@ -539,7 +539,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify programOrderConcreteFalse (options := .quiet)
+#eval Core.verify programOrderConcreteFalse (options := .quiet)
 
 -- Unreachable annotation test: with full check level, dead-branch asserts carry
 -- `(❗path unreachable)` and dead-branch covers fail with the same annotation.
@@ -568,7 +568,7 @@ Property: assert
 Result: ✅ pass (❗path unreachable)
 -/
 #guard_msgs in
-#eval verify deadBranchAnnotations
+#eval Core.verify deadBranchAnnotations
         (options := { Core.VerifyOptions.default with verbose := .quiet, checkLevel := .full })
 
 ---------------------------------------------------------------------
@@ -624,7 +624,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify noDupConcreteTrue (options := .quiet)
+#eval Core.verify noDupConcreteTrue (options := .quiet)
 
 def noDupConcreteFalse :=
 #strata
@@ -670,7 +670,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify noDupConcreteFalse (options := .quiet)
+#eval Core.verify noDupConcreteFalse (options := .quiet)
 
 ---------------------------------------------------------------------
 

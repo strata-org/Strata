@@ -5,7 +5,7 @@
 -/
 module
 
-meta import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core
 meta import Strata.Languages.Core.CallGraph
 import StrataDDM.Integration.Lean.HashCommands
 
@@ -72,7 +72,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify selectiveVerificationPgm
+#eval Core.verify selectiveVerificationPgm
         (options := .quiet)
         (proceduresToVerify := (some ["MainProc"]))
 
@@ -105,7 +105,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify selectiveVerificationPgm (options := .quiet)
+#eval Core.verify selectiveVerificationPgm (options := .quiet)
 
 ---------- Verify only IndependentProc
 
@@ -116,7 +116,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify selectiveVerificationPgm
+#eval Core.verify selectiveVerificationPgm
         (options := .quiet)
         (proceduresToVerify := ["IndependentProc"])
 
@@ -133,7 +133,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify selectiveVerificationPgm
+#eval Core.verify selectiveVerificationPgm
           (options := .quiet)
           (proceduresToVerify := (some ["IndependentProc", "UnusedProc"]))
 
