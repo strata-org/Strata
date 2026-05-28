@@ -365,18 +365,15 @@ private theorem pair_in_zip_pos_decomp
   exact ⟨n.val, Hn_lt, Hn_lt',
     ((Prod.mk.injEq _ _ _ _).mp HEq).1, ((Prod.mk.injEq _ _ _ _).mp HEq).2⟩
 
-/-- Reverse of `pair_in_zip_pos_decomp`: under length equality, the pair
-    `(ks[n], ks'[n])` lies in `ks.zip ks'`.  Used by the `Hk1 ∉ inputs.keys`
-    chase in `Hinv` class-(a). -/
+/-- Reverse of `pair_in_zip_pos_decomp`: under matching position bounds,
+    the pair `(ks[n], ks'[n])` lies in `ks.zip ks'`.  Used by the
+    `Hk1 ∉ inputs.keys` chase in `Hinv` class-(a). -/
 private theorem pair_in_zip_of_pos
     {α β} {ks : List α} {ks' : List β}
-    (Hlen : ks.length = ks'.length)
     {n : Nat} (Hn_lt : n < ks.length) (Hn_lt' : n < ks'.length) :
-    (ks[n]'Hn_lt, ks'[n]'Hn_lt') ∈ ks.zip ks' := by
-  apply List.mem_iff_get.mpr
-  have Hn_lt_zip : n < (ks.zip ks').length := by
-    rw [List.length_zip]; omega
-  exact ⟨⟨n, Hn_lt_zip⟩, List.getElem_zip⟩
+    (ks[n]'Hn_lt, ks'[n]'Hn_lt') ∈ ks.zip ks' :=
+  List.mem_iff_get.mpr
+    ⟨⟨n, by rw [List.length_zip]; omega⟩, List.getElem_zip⟩
 
 /-- Bridge from the `tmp_` half of `Hwfgenst` to `isNotDefined` for a list
     of fresh temp names: if a name is `isTempIdent` and is *not* in
@@ -3863,7 +3860,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                             (k1, argTemps[n.val]'Hn_lt_argT) ∈
                               proc.header.inputs.keys.zip argTemps := by
                           rw [← HkE]
-                          exact pair_in_zip_of_pos HinKeys_argTemps_len Hn_lt_in Hn_lt_argT
+                          exact pair_in_zip_of_pos Hn_lt_in Hn_lt_argT
                         have Hpair_in_filtAS :
                             (k1, argTemps[n.val]'Hn_lt_argT) ∈
                               filtered_argSubst := by
