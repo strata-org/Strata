@@ -1516,6 +1516,12 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                 have Heqouts : outTrips.unzip.snd =
                     CallArg.getLhs args :=
                   genOutExprIdentsTrip_snd Heqout
+                -- Hoisted: arg-expr vars defined in σ (via Hevalargs).
+                have HargIsDef : Imperative.isDefined σ
+                    (List.flatMap
+                      (Imperative.HasVarsPure.getVars (P:=Expression))
+                      inArgs) :=
+                  evalExpressions_isDefined_flatMap Hevalargs
                 -- Hoisted abbreviations for argument/output temp idents.
                 let argTemps : List Expression.Ident :=
                   argTrips.unzip.fst.unzip.fst
@@ -1694,17 +1700,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                   have HdefVars : Imperative.isDefined σ
                       (List.flatMap
                         (Imperative.HasVarsPure.getVars (P:=Expression))
-                        (CallArg.getInputExprs args)) := by
-                    -- Use Hevalargs directly via evalExpressions_isDefined_flatMap.
-                    have Heval' :
-                        Imperative.isDefined σ
-                          (List.flatMap
-                            (Imperative.HasVarsPure.getVars (P:=Expression))
-                            inArgs) :=
-                      evalExpressions_isDefined_flatMap Hevalargs
-                    -- hCallArgsIn : CallArg.getInputExprs args = inArgs.
-                    rw [← hCallArgsIn] at Heval'
-                    exact Heval'
+                        (CallArg.getInputExprs args)) :=
+                    hCallArgsIn ▸ HargIsDef
                   have HargExprDisj :
                       argTemps.Disjoint
                         (List.flatMap
@@ -3449,11 +3446,6 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       rw [HargExpr_eq_inArgs]
                       exact Hev
                     -- LHS Step F: δ σ_R1 argExpr = δ σ argExpr.
-                    have HargIsDef : Imperative.isDefined σ
-                          (List.flatMap
-                            (Imperative.HasVarsPure.getVars (P:=Expression))
-                            inArgs) :=
-                      evalExpressions_isDefined_flatMap Hevalargs
                     -- For v ∈ getVars argExpr, σ v is some (definedness lift).
                     have HargExpr_in_argList :
                         argExpr ∈ inArgs := by
@@ -3836,12 +3828,6 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                             k1 ∉ proc.header.inputs.keys :=
                           HargVarsNotInInKeys w HargExpr_in k1 Hv_in
                         -- k1 ∈ σ-defined via Hevalargs.
-                        have HargIsDef :
-                            Imperative.isDefined σ
-                              (List.flatMap
-                                (Imperative.HasVarsPure.getVars (P:=Expression))
-                                inArgs) :=
-                          evalExpressions_isDefined_flatMap Hevalargs
                         have Hk1_σ_some : (σ k1).isSome := HargIsDef k1 Hk1_flat
                         -- k1 not isOldTempIdent.
                         have Hk1_notOld' : ¬ isOldTempIdent k1 := fun Hold =>
@@ -3931,12 +3917,6 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         obtain ⟨HargExpr_in, Hx_flat⟩ :=
                           b2_var_witness hfind Hf Hv_in
                         -- x ∈ σ-defined via Hevalargs.
-                        have HargIsDef :
-                            Imperative.isDefined σ
-                              (List.flatMap
-                                (Imperative.HasVarsPure.getVars (P:=Expression))
-                                inArgs) :=
-                          evalExpressions_isDefined_flatMap Hevalargs
                         have Hx_σ_some : (σ x).isSome := HargIsDef x Hx_flat
                         -- Now case-split on x ∈ filtered_ks'.
                         cases List.mem_append.mp Hin1 with
