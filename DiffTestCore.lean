@@ -32,7 +32,7 @@ import Strata.Languages.Python.Regex.ReToCore
 
 open Strata Strata.Python
 open Core (VerifyOptions)
-open StrataDDM.Elab (elabProgram)
+open StrataDDM.Elab (LoadedDialects elabProgram)
 
 /-- Escape a string for embedding as a double-quoted Core string literal. -/
 def escapeForCore (s : String) : String :=
@@ -93,7 +93,7 @@ def checkMatch (pyRegex testStr : String) (mode : MatchMode)
       catch e =>
         IO.eprintln s!"[log] Failed to write {path}: {e}"
     let inputCtx := Lean.Parser.mkInputContext progText "<diff_test>"
-    let dctx := Elab.LoadedDialects.builtin
+    let dctx := LoadedDialects.builtin
     let dctx := dctx.addDialect! Core
     let leanEnv ← Lean.mkEmptyEnvironment 0
     match elabProgram dctx leanEnv inputCtx with
