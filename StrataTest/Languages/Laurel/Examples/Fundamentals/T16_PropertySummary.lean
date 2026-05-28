@@ -19,7 +19,7 @@ procedure divide(x: int, y: int) returns (result: int)
   opaque
 {
   assert y == 0 summary "divisor is zero";
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: divisor is zero does not hold
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: divisor is zero could not be proved
   return x
 };
 
@@ -27,7 +27,7 @@ procedure checkPositive(n: int) returns (ok: bool)
   opaque
 {
   var x: int := divide(3, 0)
-//^^^^^^^^^^^^^^^^^^^^^^^^^^ error: divisor is non-zero does not hold
+//^^^^^^^^^^^^^^^^^^^^^^^^^^ error: divisor is non-zero could not be proved
 };
 "#
 

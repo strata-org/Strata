@@ -16,7 +16,7 @@ import Strata.Languages.Laurel.DesugarShortCircuit
 public import Strata.Languages.Laurel.InferHoleTypes
 public import Strata.Languages.Laurel.EliminateHoles
 import Strata.Languages.Laurel.EliminateReturnsInExpression
-import Strata.Languages.Laurel.EliminateValueReturns
+import Strata.Languages.Laurel.EliminateValuesInReturns
 public import Strata.Languages.Laurel.HeapParameterization
 public import Strata.Languages.Laurel.TypeHierarchy
 public import Strata.Languages.Laurel.LaurelTypes
@@ -68,6 +68,11 @@ structure TranslateState where
       why the program was deemed invalid so that if no other diagnostics explain
       the suppression, these can be surfaced to the user. -/
   coreDiagnostics : List DiagnosticModel := []
+  /-- When `true`, use safe division (`intSafeDivOp`) and safe datatype selectors
+      (with preconditions). When `false`, use unsafe division (`intDivOp`) and
+      unsafe datatype selectors (without preconditions).
+      Set to `true` for proof procedures and `false` for functions. -/
+  proof : Bool := false
 
 /-- The translation monad: state over Except, allowing both accumulated diagnostics and hard failures -/
 @[expose] abbrev TranslateM := OptionT (StateM TranslateState)
@@ -75,6 +80,25 @@ structure TranslateState where
 /-- Emit a diagnostic into the translation state (soft warning, does not abort) -/
 def emitDiagnostic (d : DiagnosticModel) : TranslateM Unit :=
   modify fun s => { s with diagnostics := s.diagnostics ++ [d] }
+
+/-- Adjust a datatype selector (destructor) name based on the `proof` flag.
+    Destructor names contain `..` (e.g. `IntList..head`, `IntList..head!`).
+    Tester names also contain `..` but start with `is` after the separator.
+    - `proof = true` → use safe selectors (strip `!` suffix)
+    - `proof = false` → use unsafe selectors (add `!` suffix) -/
+private def adjustSelectorName (name : String) (proof : Bool) : String :=
+  -- Only adjust destructor names (contain ".." but are not testers)
+  match name.splitOn ".." with
+  | [_, suffix] =>
+    if suffix.startsWith "is" then name  -- tester, leave unchanged
+    else if proof then
+      name
+      -- Safe: strip trailing "!"
+      -- if name.endsWith "!" then (name.dropEnd 1).toString else name
+    else
+      -- Unsafe: add trailing "!" if not already present
+      if name.endsWith "!" then name else name ++ "!"
+  | _ => name  -- not a destructor name, leave unchanged
 
 private def invalidCoreType (source : Option FileRange) (reason : String) : TranslateM LMonoTy := do
   modify fun s => { s with coreDiagnostics := s.coreDiagnostics ++
@@ -155,11 +179,9 @@ def translateExpr (expr : StmtExprMd)
   let s ← get
   let model := s.model
   let md := astNodeToCoreMd expr
+  let proof := (← get).proof
   let disallowed (source : Option FileRange) (msg : String) : TranslateM Core.Expression.Expr := do
-    if isPureContext then
       throwExprDiagnostic $ diagnosticFromSource source msg
-    else
-      throwExprDiagnostic $ diagnosticFromSource source s!"{msg} (should have been lifted)" DiagnosticType.StrataBug
 
   match h: expr.val with
   | .LiteralBool b => return .const () (.boolConst b)
@@ -241,7 +263,8 @@ def translateExpr (expr : StmtExprMd)
       if isPureContext && !model.isFunction callee then
         disallowed expr.source s!"calls to procedures are not supported in functions or contracts"
       else
-        let fnOp : Core.Expression.Expr := .op () ⟨callee.text, ()⟩ none
+        let calleeName := adjustSelectorName callee.text (← get).proof
+        let fnOp : Core.Expression.Expr := .op () ⟨calleeName, ()⟩ none
         args.attach.foldlM (fun acc ⟨arg, _⟩ => do
           let re ← translateExpr arg boundVars isPureContext
           return .app () acc re) fnOp
@@ -289,9 +312,6 @@ def translateExpr (expr : StmtExprMd)
   | .Block (⟨ .IfThenElse cond thenBranch (some elseBranch), innerSrc⟩ :: rest) label =>
     disallowed innerSrc "if-then-else only supported as the last statement in a block"
 
-  | .IsType _ _ =>
-      throwExprDiagnostic $ diagnosticFromSource expr.source "IsType should have been lowered" DiagnosticType.StrataBug
-  | .New _ => throwExprDiagnostic $ diagnosticFromSource expr.source s!"New should have been eliminated by typeHierarchyTransform" DiagnosticType.StrataBug
   | .Var (.Field target fieldId) =>
       -- Field selects should have been eliminated by heap parameterization
       -- If we see one here, it's an error in the pipeline
@@ -303,7 +323,9 @@ def translateExpr (expr : StmtExprMd)
   | .Block [] _ =>
       throwExprDiagnostic $ diagnosticFromSource expr.source "empty block expression should have been lowered in a separate pass" DiagnosticType.StrataBug
   | .Return _ => disallowed expr.source "return expression should be lowered in a separate pass"
-
+  | .IsType _ _ =>
+      throwExprDiagnostic $ diagnosticFromSource expr.source "IsType should have been lowered" DiagnosticType.StrataBug
+  | .New _ => throwExprDiagnostic $ diagnosticFromSource expr.source s!"New should have been eliminated by typeHierarchyTransform" DiagnosticType.StrataBug
   | .AsType target _ => throwExprDiagnostic $ diagnosticFromSource expr.source "AsType expression translation" DiagnosticType.NotYetImplemented
   | .Assigned _ => throwExprDiagnostic $ diagnosticFromSource expr.source "assigned expression translation" DiagnosticType.NotYetImplemented
   | .Old value => throwExprDiagnostic $ diagnosticFromSource expr.source "old expression translation" DiagnosticType.NotYetImplemented
@@ -503,7 +525,7 @@ def translateStmt (stmt : StmtExprMd)
       | none =>
           return [.exit "$body" md]
       | some _ =>
-          let d := md.toDiagnostic "Return statement with value should have been eliminated by EliminateValueReturns pass" DiagnosticType.StrataBug
+          let d := md.toDiagnostic "Return statement with value should have been eliminated by EliminateValuesInReturns pass" DiagnosticType.StrataBug
           modify fun s => { s with coreDiagnostics := s.coreDiagnostics ++ [d] }
           return [.exit "$body" md]
   | .While cond invariants decreasesExpr body =>
@@ -679,10 +701,19 @@ def translateProcedureToFunction (options: LaurelTranslateOptions) (isRecursive:
     | none => if options.inlineFunctionsWhenPossible then #[.inline] else #[]
 
   let body ← match proc.body with
-    | .Transparent bodyExpr => some <$> translateExpr bodyExpr [] (isPureContext := true)
+    | .Transparent bodyExpr =>
+      -- Unwrap the pattern produced by EliminateValuesInReturns + EliminateReturnStatements:
+      -- { result := <expr>; exit "$return" } $return  →  <expr>
+      let unwrapped := match bodyExpr.val with
+        | .Block [⟨.Assign [⟨.Local _, _⟩] value, _⟩, ⟨.Exit "$return", _⟩] (some "$return") => value
+        | _ => bodyExpr
+      some <$> translateExpr unwrapped [] (isPureContext := true)
     | .Opaque _ (some bodyExpr) _ =>
       emitDiagnostic (diagnosticFromSource proc.name.source "functions with postconditions are not yet supported")
-      some <$> translateExpr bodyExpr [] (isPureContext := true)
+      let unwrapped := match bodyExpr.val with
+        | .Block [⟨.Assign [⟨.Local _, _⟩] value, _⟩, ⟨.Exit "$return", _⟩] (some "$return") => value
+        | _ => bodyExpr
+      some <$> translateExpr unwrapped [] (isPureContext := true)
     | _ => pure none
   let f : Core.Function := {
     name := ⟨proc.name.text, ()⟩
@@ -741,13 +772,11 @@ def translateLaurelToCore (options: LaurelTranslateOptions) (program : Program) 
         return coreFuncs
     | .procedure proc => do
       let procDecl ← translateProcedure proc
-      -- Translate axioms from invokeOn
-      let invokeOnDecls ← match proc.invokeOn with
-        | some trigger => do
-          let axDecl? ← translateInvokeOnAxiom proc trigger
-          pure axDecl?.toList
-        | none => pure []
-      return [Core.Decl.proc procDecl (identifierToCoreMd proc.name)] ++ invokeOnDecls
+      -- Translate axioms (populated by the contract pass from invokeOn + ensures)
+      let axiomDecls ← proc.axioms.mapM fun ax => do
+        let coreExpr ← translateExpr ax [] (isPureContext := true)
+        return Core.Decl.ax { name := s!"invokeOn_{proc.name.text}", e := coreExpr } (identifierToCoreMd proc.name)
+      return [Core.Decl.proc procDecl (identifierToCoreMd proc.name)] ++ axiomDecls
     | .datatypes dts => do
       let ldatatypes ← dts.mapM translateDatatypeDefinition
       return [Core.Decl.type (.data ldatatypes) mdWithUnknownLoc]

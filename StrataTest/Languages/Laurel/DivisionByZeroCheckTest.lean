@@ -54,7 +54,7 @@ procedure callPureDivUnsafe(x: int)
   opaque
 {
   var z: int := pureDiv(10, x)
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
 // Error ranges are too wide because Core does not use expression locations
 };
 "

@@ -11,101 +11,158 @@ import Strata.Util.Tactics
 /-!
 # Eliminate Returns in Expression Position
 
-Rewrites functional procedure bodies so that `return` statements are removed
-and early-return guard patterns become if-then-else expressions. This makes
-the body a pure expression tree suitable for translation to a Core function.
+Rewrites functional procedure bodies if possible, so they only get a single return on the outside of the body.
+This depends on three transformations
 
-The algorithm walks a block backwards (from last statement to first),
-accumulating a result expression:
+1)
+```
+if <cond> then
+  <returningExpr1>
 
-- The last statement is converted via `lastStmtToExpr` which strips `return`,
-  recurses into blocks, and handles if-then-else.
-- Each preceding statement wraps around the accumulated result via `stmtsToExpr`:
-  - `if (cond) { body }` (no else) becomes `if cond then lastStmtToExpr(body) else acc`
-  - Other statements are kept in a two-element block with the accumulator.
+<returningExpr2>
+```
+
+is converted into
+```
+return if <cond> then <stripped_returningExpr1> else <stripped_returningExpr2>
+```
+
+Where stripped_<expr> indicates the return has been stripped from <expr>
+
+2)
+```
+if <cond> then <returningExpr1> else <returningExpr2>
+```
+
+is turned into
+```
+return if <cond> then <stripped_returningExpr1> else <stripped_returningExpr2>
+```
+
+3)
+```
+var x := <expr1>
+<returningExpr>
+```
+
+is turned into
+
+```
+return
+  var x := <expr1>
+  <stripped_returningExpr>
+```
 
 -/
 
 namespace Strata.Laurel
 
-/-- Appending a singleton strictly increases `sizeOf`. -/
-private theorem List.sizeOf_lt_append_singleton [SizeOf α] (xs : List α) (y : α) :
-    sizeOf xs < sizeOf (xs ++ [y]) := by
-  induction xs with
-  | nil => simp_all; omega
-  | cons hd tl ih => simp_all [List.cons_append]
+/-- Check whether a statement is "returning": all control-flow paths end with a `Return`. -/
+partial def isReturning (stmt : StmtExprMd) : Bool :=
+  match stmt.val with
+  | .Return _ => true
+  | .Block stmts _ =>
+    match stmts.getLast? with
+    | some last => isReturning last
+    | none => false
+  | .IfThenElse _ thenBr (some elseBr) => isReturning thenBr && isReturning elseBr
+  | .IfThenElse _ thenBr none => isReturning thenBr
+  | _ => false
 
-/-- `dropLast` of a non-empty list has strictly smaller `sizeOf`. -/
-private theorem List.sizeOf_dropLast_lt [SizeOf α] {l : List α} (h_ne : l ≠ []) :
-    sizeOf l.dropLast < sizeOf l := by
-  have h_concat := List.dropLast_concat_getLast h_ne
-  have : sizeOf l = sizeOf (l.dropLast ++ [l.getLast h_ne]) := by rw [h_concat]
-  rw [this]
-  exact List.sizeOf_lt_append_singleton l.dropLast (l.getLast h_ne)
+/-- Strip the outermost `Return` wrapper from a returning statement, yielding the expression.
+    Recurses into blocks (transforming the last statement) and if-then-else (transforming branches). -/
+partial def stripReturn (stmt : StmtExprMd) : StmtExprMd :=
+  match stmt.val with
+  | .Return (some val) => val
+  | .Return none => ⟨.LiteralBool true, stmt.source⟩
+  | .Block stmts label =>
+    match stmts.dropLast, stmts.getLast? with
+    | init, some last =>
+      let last' := stripReturn last
+      if init.isEmpty then last'
+      else ⟨.Block (init ++ [last']) label, stmt.source⟩
+    | _, none => stmt
+  | .IfThenElse cond thenBr (some elseBr) =>
+    ⟨.IfThenElse cond (stripReturn thenBr) (some (stripReturn elseBr)), stmt.source⟩
+  | .IfThenElse cond thenBr none =>
+    ⟨.IfThenElse cond (stripReturn thenBr) none, stmt.source⟩
+  | _ => stmt
 
 mutual
 
-/--
-Fold a list of preceding statements (right-to-left) around an accumulator
-expression. Each `if-then` (no else) guard wraps as
-`if cond then lastStmtToExpr(body) else acc`; other statements produce
-`Block [stmt, acc]`.
--/
-def stmtsToExpr (stmts : List StmtExprMd) (acc : StmtExprMd)
-    : StmtExprMd :=
+/-- Transform a block's statement list by folding guard-return patterns into if-then-else.
+    Scans left-to-right for `if cond then <returning>` (no else) where the remaining
+    statements are also returning, and rewrites into `return if cond then ... else ...`. -/
+partial def transformStmtList (stmts : List StmtExprMd) : List StmtExprMd :=
   match stmts with
-  | [] => acc
-  | s :: rest =>
-    let acc' := stmtsToExpr rest acc
-    match s with
-    | ⟨.IfThenElse cond thenBr none, ssrc⟩ =>
-      ⟨.IfThenElse cond (lastStmtToExpr thenBr) (some acc'), ssrc⟩
+  | [] => []
+  | [single] => [transformStmt single]
+  | stmt :: rest =>
+    match stmt.val with
+    | .IfThenElse cond thenBr none =>
+      if isReturning thenBr then
+        let rest' := transformStmtList rest
+        let restExpr : StmtExprMd := match rest' with
+          | [single] => single
+          | many => ⟨.Block many none, stmt.source⟩
+        if isReturning restExpr then
+          let thenExpr := stripReturn (transformStmt thenBr)
+          let elseExpr := stripReturn restExpr
+          [⟨.Return (some ⟨.IfThenElse cond thenExpr (some elseExpr), stmt.source⟩), stmt.source⟩]
+        else
+          transformStmt stmt :: transformStmtList rest
+      else
+        transformStmt stmt :: transformStmtList rest
+    | .IfThenElse cond thenBr (some elseBr) =>
+      if isReturning thenBr && isReturning elseBr then
+        let thenExpr := stripReturn (transformStmt thenBr)
+        let elseExpr := stripReturn (transformStmt elseBr)
+        let ite := ⟨.Return (some ⟨.IfThenElse cond thenExpr (some elseExpr), stmt.source⟩), stmt.source⟩
+        ite :: transformStmtList rest
+      else
+        transformStmt stmt :: transformStmtList rest
+    | .Assign [⟨.Declare _, _⟩] _ =>
+      -- Case 3: var x := expr; <returningExpr> → return { var x := expr; <stripped> }
+      let rest' := transformStmtList rest
+      let restExpr : StmtExprMd := match rest' with
+        | [single] => single
+        | many => ⟨.Block many none, stmt.source⟩
+      if isReturning restExpr then
+        let stripped := stripReturn restExpr
+        [⟨.Return (some ⟨.Block [stmt, stripped] none, stmt.source⟩), stmt.source⟩]
+      else
+        stmt :: transformStmtList rest
     | _ =>
-      { val := .Block [s, acc'] none, source := none }
-  termination_by (sizeOf stmts, 1)
+      transformStmt stmt :: transformStmtList rest
 
-/--
-Convert the last statement of a block into an expression.
-- `return expr` → `expr`
-- A non-empty block → process last element, fold preceding statements
-- `if cond then A else B` → recurse into both branches
-- Anything else → kept as-is
--/
-def lastStmtToExpr (stmt : StmtExprMd) : StmtExprMd :=
-  match stmt with
-  | ⟨.Return (some val), _⟩ => val
-  | ⟨.Block stmts _, _⟩ =>
-    match h_last : stmts.getLast? with
-    | some last =>
-      have := List.mem_of_getLast? h_last
-      let lastExpr := lastStmtToExpr last
-      let dropped := stmts.dropLast
-      have h : sizeOf stmts.dropLast < sizeOf stmts :=
-        List.sizeOf_dropLast_lt (by intro h; simp [h] at h_last)
-      stmtsToExpr dropped lastExpr
-    | none => stmt
-  | ⟨.IfThenElse cond thenBr (some elseBr), source⟩ =>
-    ⟨.IfThenElse cond (lastStmtToExpr thenBr) (some (lastStmtToExpr elseBr)), source⟩
+/-- Recurse into a statement, applying the guard-return rewrite inside blocks and branches. -/
+partial def transformStmt (stmt : StmtExprMd) : StmtExprMd :=
+  match stmt.val with
+  | .Block stmts label =>
+    ⟨.Block (transformStmtList stmts) label, stmt.source⟩
+  | .IfThenElse cond thenBr (some elseBr) =>
+    if isReturning thenBr && isReturning elseBr then
+      let thenExpr := stripReturn (transformStmt thenBr)
+      let elseExpr := stripReturn (transformStmt elseBr)
+      ⟨.Return (some ⟨.IfThenElse cond thenExpr (some elseExpr), stmt.source⟩), stmt.source⟩
+    else
+      ⟨.IfThenElse cond (transformStmt thenBr) (some (transformStmt elseBr)), stmt.source⟩
+  | .IfThenElse cond thenBr none =>
+    ⟨.IfThenElse cond (transformStmt thenBr) none, stmt.source⟩
+  | .While cond invs dec body =>
+    ⟨.While cond invs dec (transformStmt body), stmt.source⟩
   | _ => stmt
-  termination_by (sizeOf stmt, 0)
-  decreasing_by
-    all_goals (simp_all; term_by_mem)
 
 end
 
-/--
-Apply return elimination to a functional procedure's body.
-The entire body is treated as an expression to be converted.
--/
-def eliminateReturnsInExpression (proc : Procedure) : Procedure :=
-  if !proc.isFunctional then proc
-  else
-    match proc.body with
-    | .Transparent bodyExpr =>
-      { proc with body := .Transparent (lastStmtToExpr bodyExpr) }
-    | .Opaque postconds (some impl) modif =>
-      { proc with body := .Opaque postconds (some (lastStmtToExpr impl)) modif }
-    | _ => proc
+/-- Transform a single procedure by applying the guard-return elimination to its body. -/
+private def eliminateReturnsInExpression (proc : Procedure) : Procedure :=
+  match proc.body with
+  | .Transparent body =>
+    { proc with body := .Transparent (transformStmt body) }
+  | .Opaque postconds (some impl) mods =>
+    { proc with body := .Opaque postconds (some (transformStmt impl)) mods }
+  | _ => proc
 
 public section
 

@@ -8,7 +8,7 @@ module
 public import Strata.Languages.Laurel.MapStmtExpr
 
 /-!
-# Eliminate Value Returns
+# Eliminate Values In Returns
 
 Rewrites `return expr` into `outParam := expr; return` for imperative
 (non-functional) procedures that have an output parameter. This decouples
@@ -20,18 +20,19 @@ The pass is a Laurel-to-Laurel rewrite that runs before Core translation.
 
 namespace Strata.Laurel
 
-/-- Rewrite a single `Return (some value)` node into
-    `Block [Assign [Identifier outParam] value, Return none]`.
-    Recursion into children is handled by `mapStmtExpr`. -/
-private def eliminateValueReturnNode (outParam : Identifier) (stmt : StmtExprMd) : StmtExprMd :=
+/-- Rewrite a single `Return (some value)` node into the list
+    `[Assign outParam value, Return none]`.
+    When used with `mapStmtExprFlattenM`, these statements are flattened
+    into the enclosing block rather than wrapped in a nested block. -/
+private def eliminateValueReturnNode (outParam : Identifier) (stmt : StmtExprMd) : Id (List StmtExprMd) :=
   match stmt.val with
   | .Return (some value) =>
     -- Synthesized nodes use default metadata since no diagnostics should be reported on them
-    let target : VariableMd := { val := .Local outParam, source := none }
-    let assign : StmtExprMd := { val := .Assign [target] value, source := none }
+    let target : VariableMd := { val := .Local outParam, source := stmt.source }
+    let assign : StmtExprMd := { val := .Assign [target] value, source := stmt.source }
     let ret : StmtExprMd := { val := .Return none, source := stmt.source }
-    { val := .Block [assign, ret] none, source := none }
-  | _ => stmt
+    [assign, ret]
+  | _ => [stmt]
 
 /-- Check whether a statement tree contains any `Return (some _)`. -/
 def hasValuedReturn (stmt : StmtExprMd) : Bool :=
@@ -53,11 +54,19 @@ def hasValuedReturn (stmt : StmtExprMd) : Bool :=
 /-- Apply value-return elimination to a single procedure. Only applies to
     non-functional procedures with exactly one output parameter.
     Emits an error if a valued return is used with multiple output parameters. -/
-def eliminateValueReturnsInProc (proc : Procedure) : Procedure × Array DiagnosticModel :=
-  if proc.isFunctional then (proc, #[])
-  else match proc.outputs with
+def eliminateValuesInReturnsInProc (proc : Procedure) : Procedure × Array DiagnosticModel :=
+  match proc.outputs with
   | [outParam] =>
-    let rewrite := mapStmtExpr (eliminateValueReturnNode outParam.name)
+    let pre (stmt : StmtExprMd) : Id (Option (List StmtExprMd)) :=
+      match stmt.val with
+      | .Return (some value) =>
+        let target : VariableMd := { val := .Local outParam.name, source := stmt.source }
+        let assign : StmtExprMd := { val := .Assign [target] value, source := stmt.source }
+        let ret : StmtExprMd := { val := .Return none, source := stmt.source }
+        some [assign, ret]
+      | _ => none
+    let post (stmt : StmtExprMd) : Id (List StmtExprMd) := pure [stmt]
+    let rewrite := mapStmtExprFlattenM (m := Id) pre post
     match proc.body with
     | .Transparent body =>
       ({ proc with body := .Transparent (rewrite body) }, #[])
@@ -80,9 +89,9 @@ def eliminateValueReturnsInProc (proc : Procedure) : Procedure × Array Diagnost
 public section
 
 /-- Transform a program by eliminating value returns in all imperative procedures. -/
-def eliminateValueReturnsTransform (program : Program) : Program × Array DiagnosticModel :=
+def eliminateValuesInReturnsTransform (program : Program) : Program × Array DiagnosticModel :=
   let (procs, diags) := program.staticProcedures.foldl (fun (ps, ds) proc =>
-    let (proc', procDiags) := eliminateValueReturnsInProc proc
+    let (proc', procDiags) := eliminateValuesInReturnsInProc proc
     (proc' :: ps, ds ++ procDiags)
   ) ([], #[])
   ({ program with staticProcedures := procs.reverse }, diags)

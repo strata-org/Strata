@@ -112,18 +112,18 @@ Build the procedure call graph, run Tarjan's SCC algorithm, and return each SCC
 as a list of procedures paired with a flag indicating whether the SCC is recursive.
 Results are in reverse topological order: dependencies before dependents.
 
-Procedures with `invokeOn` are placed as early as possible — before
+Procedures with axioms are placed as early as possible — before
 unrelated procedures without them — by stably partitioning them first before building
 the graph. Tarjan then naturally assigns them lower indices, causing them to appear
 earlier in the output.
 -/
 public def computeSccDecls (program : UnorderedCoreWithLaurelTypes) : List (List Procedure × Bool) :=
-  -- Stable partition: procedures with invokeOn come first, preserving relative
+  -- Stable partition: procedures with axioms come first, preserving relative
   -- order within each group. Tarjan then places them earlier in the topological output.
   let allProcs := program.functions ++ program.coreProcedures
-  let (withInvokeOn, withoutInvokeOn) :=
-    allProcs.partition (fun p => p.invokeOn.isSome)
-  let orderedProcs : List Procedure := withInvokeOn ++ withoutInvokeOn
+  let (withAxioms, withoutAxioms) :=
+    allProcs.partition (fun p => !p.axioms.isEmpty)
+  let orderedProcs : List Procedure := withAxioms ++ withoutAxioms
 
   -- Build a call-graph over all procedures.
   -- An edge proc → callee means proc's body/contracts contain a StaticCall to callee.
@@ -141,7 +141,8 @@ public def computeSccDecls (program : UnorderedCoreWithLaurelTypes) : List (List
       | _ => []
     let contractExprs : List StmtExprMd :=
       proc.preconditions.map (·.condition) ++
-      proc.invokeOn.toList
+      proc.invokeOn.toList ++
+      proc.axioms
     (bodyExprs ++ contractExprs).flatMap collectStaticCallNames
 
   -- Build the OutGraph for Tarjan.

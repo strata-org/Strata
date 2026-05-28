@@ -566,10 +566,17 @@ def heapParameterization (model: SemanticModel) (program : Program) : Program :=
     ([], state1)
   -- Generate Box datatype from all constructors used during transformation
   let boxDatatype : TypeDefinition :=
-    .Datatype { name := "Box", typeArgs := [], constructors := state2.usedBoxConstructors }
+    .Datatype {
+      name := "Box", typeArgs := [], constructors := state2.usedBoxConstructors }
+
+  let types := fieldDatatype :: boxDatatype :: heapConstants.types ++
+    -- The filter is a hack to deal with another hack,
+    -- the box that was added in CoreDefinitionsForLaurel.lean
+    -- because Laurel does not support polymorphism yet
+    types'.filter (fun td => td.name.text != "Box")
   { program with
     staticProcedures := heapConstants.staticProcedures ++ procs',
-    types := fieldDatatype :: boxDatatype :: heapConstants.types ++ types' }
+    types }
 
 end Strata.Laurel
 

@@ -49,7 +49,7 @@ procedure triggers()
 
 "
 
-#guard_msgs(drop info, error) in
+#guard_msgs (drop info, error) in
 #eval testInputWithOffset "Quantifiers" quantifiersProgram 14 processLaurelFile
 
 end Laurel

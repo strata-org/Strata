@@ -13,7 +13,27 @@ open Strata
 namespace Strata.Laurel
 
 def program := r"
-function returnAtEnd(x: int) returns (r: int)
+function letsInFunction() returns (r: int) {
+  var x: int := 0;
+  var y: int := x + 1;
+  var z: int := y + 1;
+  z
+};
+
+procedure callLetsInFunction() opaque {
+  var x: int := letsInFunction();
+  assert x == 2
+};
+
+function assertAndAssumeInFunctions(a: int) returns (r: int)
+{
+  assert 2 == 3;
+//^^^^^^^^^^^^^ error: assertion does not hold
+  assume true;
+  a
+};
+
+procedure returnAtEnd(x: int) returns (r: int)
 {
   if x > 0 then {
     if x == 1 then {
@@ -26,11 +46,13 @@ function returnAtEnd(x: int) returns (r: int)
   }
 };
 
-function elseWithCall(): int {
+function elseWithCall(): int
+{
   if true then 3 else returnAtEnd(3)
 };
 
-function guardInFunction(x: int) returns (r: int) {
+procedure guardInFunction(x: int) returns (r: int)
+{
   if x > 0 then {
     if x == 1 then {
       return 1
@@ -47,15 +69,14 @@ procedure testFunctions()
 {
   assert returnAtEnd(1) == 1;
   assert returnAtEnd(1) == 2;
-//^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+//^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
 
   assert guardInFunction(1) == 1;
   assert guardInFunction(1) == 2
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
 };
 
 procedure guards(a: int) returns (r: int)
-  opaque
 {
   var b: int := a + 2;
   if b > 2 then {

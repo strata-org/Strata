@@ -42,6 +42,7 @@ def KnownLTys : LTys :=
    t[real],
    t[Triggers],
    t[TriggerGroup],
+   t[errorVoid],
    -- Note: t[bv<n>] elaborates to (.forAll [] .tcons "bitvec" <n>).
    -- We can simply add the following here.
    t[∀n. bitvec n],

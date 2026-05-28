@@ -138,7 +138,8 @@ info: function $hole_0()
 procedure test()
   opaque
 {
-  if $hole_0() then {
+  if $hole_0()
+  then {
     assert true
   }
 };
@@ -158,7 +159,9 @@ info: function $hole_0()
 procedure test()
   opaque
 {
-  var x: int := if true then $hole_0() else 0
+  var x: int := if true
+  then $hole_0()
+  else 0
 };
 -/
 #guard_msgs in
@@ -316,7 +319,8 @@ info: function $hole_0()
 procedure test()
   opaque
 {
-  if 1 + $hole_0() > 0 then {
+  if 1 + $hole_0() > 0
+  then {
     assert true
   }
 };
@@ -492,13 +496,13 @@ info: function $hole_0()
   opaque;
 procedure test()
 {
-  assert IntList..isCons($hole_0())
+  assert IntList..head($hole_0())
 };
 -/
 #guard_msgs in
 #eval! parseElimAndPrint r"
 datatype IntList { Nil(), Cons(head: int, tail: IntList) }
-procedure test() { assert IntList..isCons(<?>) };
+procedure test() { assert IntList..head(<?>) };
 "
 
 end Laurel

@@ -52,7 +52,6 @@ procedure impureContractIsNotLegal2(x: int)
   opaque
 {
   assert (x := 2) == 2
-//        ^^^^^^ error: destructive assignments are not supported in transparent bodies or contracts
 };
 "
 

@@ -178,7 +178,16 @@ def SemanticModel.get? (model: SemanticModel) (iden: Identifier): Option Resolve
   iden.uniqueId.bind model.refToDef.get?
 
 def SemanticModel.get (model: SemanticModel) (iden: Identifier): ResolvedNode :=
-  (model.get? iden).getD default
+  match iden.uniqueId with
+  | some key =>
+    match model.refToDef.get? key with
+    | some node => node
+    | none =>
+      -- An ID was assigned during Phase 1 but the reference was never registered in
+      -- Phase 2 (buildRefToDef). This is a bug in the resolution pass itself.
+      dbg_trace s!"SOUND BUG: identifier '{iden.text}' (id={key}) has a uniqueId but is missing from refToDef"
+      .unresolved iden.source
+  | none => .unresolved iden.source
 
 def SemanticModel.isFunction (model: SemanticModel) (id: Identifier): Bool :=
   match model.get id with
@@ -584,10 +593,12 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
     let dec' ← proc.decreases.mapM resolveStmtExpr
     let body' ← resolveBody proc.body
     let invokeOn' ← proc.invokeOn.mapM resolveStmtExpr
+    let axioms' ← proc.axioms.mapM resolveStmtExpr
     return { name := procName', inputs := inputs', outputs := outputs',
              isFunctional := proc.isFunctional,
              preconditions := pres', decreases := dec',
              invokeOn := invokeOn',
+             axioms := axioms',
              body := body' }
 
 /-- Resolve a field: define its name under the qualified key (OwnerType.fieldName) and resolve its type. -/
@@ -612,16 +623,14 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
     let pres' ← proc.preconditions.mapM (·.mapM resolveStmtExpr)
     let dec' ← proc.decreases.mapM resolveStmtExpr
     let body' ← resolveBody proc.body
-    if !proc.isFunctional && body'.isTransparent && !proc.name.text.any (· == '$') then
-      let diag := diagnosticFromSource proc.name.source
-        s!"transparent statement bodies are not supported. Add 'opaque' to make the procedure opaque"
-      modify fun s => { s with errors := s.errors.push diag }
     let invokeOn' ← proc.invokeOn.mapM resolveStmtExpr
     modify fun s => { s with instanceTypeName := savedInstType }
+    let axioms' ← proc.axioms.mapM resolveStmtExpr
     return { name := procName', inputs := inputs', outputs := outputs',
              isFunctional := proc.isFunctional,
              preconditions := pres', decreases := dec',
              invokeOn := invokeOn',
+             axioms := axioms',
              body := body' }
 
 /-- Resolve a type definition. -/
@@ -884,13 +893,7 @@ private def preRegisterTopLevel (program : Program) : ResolveM Unit := do
     | .Datatype dt =>
       let _ ← defineNameCheckDup dt.name (.datatypeDefinition dt)
       for ctor in dt.constructors do
-        -- Register the tester override first; the second call reuses the
-        -- returned Identifier (now carrying a uniqueId) so the unprefixed
-        -- constructor name and the `TypeName..isCtor` tester name resolve to
-        -- the same uniqueId, which `buildRefToDef` in turn maps to
-        -- `.datatypeConstructor`.
-        let ctorName ← defineNameCheckDup ctor.name (.datatypeConstructor dt.name ctor) (some (dt.testerName ctor))
-        let _ ← defineNameCheckDup ctorName (.datatypeConstructor dt.name ctor)
+        let _ ← defineNameCheckDup ctor.name (.datatypeConstructor dt.name ctor)
         for p in ctor.args do
           -- Same chaining trick for the safe and unsafe destructor names: both
           -- point to the same uniqueId so `IntList..head` and `IntList..head!`
@@ -983,9 +986,9 @@ but they are because certain type references have incorrectly not been updated.
 def resolveUnorderedCore (uc : UnorderedCoreWithLaurelTypes)
     (existingModel : Option SemanticModel := none)
     (additionalTypes : List TypeDefinition := [])
-    : UnorderedCoreWithLaurelTypes × SemanticModel :=
+    : UnorderedCoreWithLaurelTypes × SemanticModel × Array DiagnosticModel :=
   let fnProgram := unorderedCoreToProgram uc additionalTypes
   let fnResolveResult := resolve fnProgram existingModel
-  (fromResolvedProgram fnResolveResult.program, fnResolveResult.model)
+  (fromResolvedProgram fnResolveResult.program, fnResolveResult.model, fnResolveResult.errors)
 
 end

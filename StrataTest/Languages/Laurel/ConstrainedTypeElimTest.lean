@@ -97,7 +97,8 @@ info: function pos$constraint(v: int): bool
 procedure test(b: bool)
   opaque
 {
-  if b then {
+  if b
+  then {
     var x: int := 1;
     assert pos$constraint(x)
   };

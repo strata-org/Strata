@@ -85,6 +85,34 @@ private def rewriteCallsToFunctional (asFunctionNames : List String) (expr : Stm
     | .PrimitiveOp operator arguments _ => ⟨ .PrimitiveOp operator arguments true, e.source⟩
     | _ => e) expr
 
+/-- Rewrite quantifier bodies like function bodies: strip assert/assume and
+    rewrite calls to their `$asFunction` variants. This ensures that calls
+    inside quantifiers (e.g. in modifies frame conditions) reference the
+    pure functional version and are not treated as imperative by later passes. -/
+private def rewriteQuantifierBodies (nonExternalNames : List String) (expr : StmtExprMd) : StmtExprMd :=
+  mapStmtExpr (fun e =>
+    match e.val with
+    | .Quantifier mode param trigger body =>
+      let body' := rewriteCallsToFunctional nonExternalNames (stripAssertAssume body)
+      let trigger' := trigger.map (rewriteCallsToFunctional nonExternalNames)
+      ⟨.Quantifier mode param trigger' body', e.source⟩
+    | _ => e) expr
+
+/-- Apply quantifier body rewriting to all postconditions and the implementation
+    of a procedure. -/
+private def rewriteQuantifierBodiesInProc (nonExternalNames : List String) (proc : Procedure) : Procedure :=
+  let rewrite := rewriteQuantifierBodies nonExternalNames
+  match proc.body with
+  | .Opaque postconds impl modif =>
+    let postconds' := postconds.map fun c => { c with condition := rewrite c.condition }
+    let impl' := impl.map rewrite
+    { proc with body := .Opaque postconds' impl' modif }
+  | .Transparent body =>
+    { proc with body := .Transparent (rewrite body) }
+  | .Abstract postconds =>
+    let postconds' := postconds.map fun c => { c with condition := rewrite c.condition }
+    { proc with body := .Abstract postconds' }
+  | .External => proc
 /-- Build a free postcondition equating the procedure's output to its functional version.
     For a procedure `foo(a, b) returns (r)`, produces:
       `r == foo$asFunction(a, b)` -/
@@ -141,25 +169,23 @@ For each procedure:
 - If the function has a body, add a free postcondition equating the procedure output to the function
 -/
 def transparencyPass (program : Program) : UnorderedCoreWithLaurelTypes :=
-  let (skipped, notSkipped) := program.staticProcedures.partition (fun p => p.body.isExternal ||
-    -- Skip functions until we introduce a contract pass,
-    -- which enables lifting procedure calls from contracts
-    p.isFunctional)
-  let asFunctionNames := notSkipped.map (fun p => p.name.text)
-  let asFunctions := notSkipped.map (mkFunctionCopy asFunctionNames)
-
+  let nonExternal := program.staticProcedures.filter (fun p => !p.body.isExternal)
+  let nonExternalNames := nonExternal.map (fun p => p.name.text)
+  -- $asFunction copies for non-external procedures
+  let asFunctions := nonExternal.map (mkFunctionCopy nonExternalNames)
   -- External procedures get a plain function copy (they have no $asFunction version)
-  let (skippedFunctions, skippedProcedures) := skipped.partition (fun p => p.isFunctional)
-  let functions := skippedFunctions ++ asFunctions
-  let coreProcedures := notSkipped.map fun p =>
-    let freePostcondition := mkFreePostcondition p
-    let p := addFreePostcondition p freePostcondition
-    { p with isFunctional := false }
+  let externalFunctions := program.staticProcedures.filter (fun p => p.body.isExternal)
+    |>.map fun proc => { proc with isFunctional := true }
+  let functions := externalFunctions ++ asFunctions
+  let coreProcedures := nonExternal.map fun proc =>
+    let freePostcondition := mkFreePostcondition proc
+    let proc := { proc with isFunctional := false, axioms := proc.axioms.map (rewriteCallsToFunctional nonExternalNames) }
+    let proc := rewriteQuantifierBodiesInProc nonExternalNames proc
+    addFreePostcondition proc freePostcondition
   let datatypes := program.types.filterMap fun td => match td with
     | .Datatype dt => some dt
     | _ => none
-  let procs: List Procedure := skippedProcedures ++ coreProcedures
-  { functions, coreProcedures := procs, datatypes, constants := program.constants }
+  { functions, coreProcedures, datatypes, constants := program.constants }
 
 open Std (Format ToFormat)
 

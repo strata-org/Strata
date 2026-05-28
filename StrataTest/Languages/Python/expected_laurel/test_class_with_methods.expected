@@ -5,5 +5,5 @@ test_class_with_methods.py(32, 4): ✔️ always true if reached - get_name shou
 test_class_with_methods.py(29, 4): ✔️ always true if reached - assert_name_is_foo
 test_class_with_methods.py(29, 4): ✔️ always true if reached - assert_opt_name_none_or_str
 test_class_with_methods.py(29, 4): ✔️ always true if reached - assert_opt_name_none_or_bar
-DETAIL: 7 passed, 0 failed, 0 inconclusive
+DETAIL: 10 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

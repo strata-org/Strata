@@ -23,23 +23,29 @@ procedure noDecreases(x: int): boolean;
 procedure caller(x: int)
   requires noDecreases(x)
 //                    ^ error: noDecreases can not be called from a pure context, because it is not proven to terminate
+  opaque
 ;
 
 procedure noCyclicCalls()
+  opaque
   decreases []
 {
   leaf();
 };
 
-procedure leaf() decreases [1] { };
+procedure leaf() decreases [1]
+  opaque
+{ };
 
 procedure mutualRecursionA(x: nat)
+  opaque
   decreases [x, 1]
 {
   mutualRecursionB(x);
 };
 
 procedure mutualRecursionB(x: nat)
+  opaque
   decreases [x, 0]
 {
   if x != 0 { mutualRecursionA(x-1); }

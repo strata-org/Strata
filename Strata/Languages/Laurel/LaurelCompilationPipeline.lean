@@ -6,12 +6,15 @@
 module
 
 public import Strata.Languages.Laurel.LaurelToCoreTranslator
+import Strata.Languages.Laurel.DatatypeTesters
 import Strata.Languages.Laurel.DesugarShortCircuit
 import Strata.Languages.Laurel.EliminateReturnsInExpression
-
-import Strata.Languages.Laurel.EliminateValueReturns
+import Strata.Languages.Laurel.EliminateReturnStatements
+import Strata.Languages.Laurel.EliminateValuesInReturns
+import Strata.Languages.Laurel.InlineLocalVariablesInExpressions
 import Strata.Languages.Laurel.ConstrainedTypeElim
-
+import Strata.Languages.Laurel.ContractPass
+import Strata.Languages.Laurel.EliminateMultipleOutputs
 import Strata.Languages.Laurel.TypeAliasElim
 import Strata.Languages.Core.Verifier
 import Strata.Util.Statistics
@@ -25,7 +28,7 @@ to Strata Core. The pipeline is:
 1. Prepend core definitions for Laurel.
 2. Run a sequence of Laurel-to-Laurel lowering passes (resolution, heap
    parameterization, type hierarchy, modifies clauses, hole inference,
-   desugaring, lifting, constrained type elimination).
+   desugaring, lifting, constrained type elimination, contract pass).
 3. Run the transparency pass to produce an `UnorderedCoreWithLaurelTypes`.
 4. Group and order declarations into a `CoreWithLaurelTypes`.
 5. Translate the `CoreWithLaurelTypes` to a `Core.Program`.
@@ -96,9 +99,13 @@ private def laurelPipeline : Array LaurelPass := #[
     run := fun p m =>
       let (p', diags) := filterNonCompositeModifies m p
       (p', diags, {}) },
-  { name := "EliminateValueReturns"
+  { name := "EliminateReturnsInExpressions"
+    needsResolves := true
     run := fun p _m =>
-      let (p', diags) := eliminateValueReturnsTransform p
+      (eliminateReturnsInExpressionTransform p, [], {}) },
+  { name := "EliminateValuesInReturns"
+    run := fun p _m =>
+      let (p', diags) := eliminateValuesInReturnsTransform p
       (p', diags.toList, {}) },
   { name := "HeapParameterization"
     needsResolves := true
@@ -122,20 +129,26 @@ private def laurelPipeline : Array LaurelPass := #[
       let (p', stats) := eliminateHoles p
       (p', [], stats) },
   { name := "DesugarShortCircuit"
-    run := fun p m =>
-      (desugarShortCircuit m p, [], {}) },
-  { name := "LiftExpressionAssignments"
-    run := fun p m =>
-      (liftExpressionAssignments m p, [], {}) },
-  { name := "EliminateReturns"
-    needsResolves := true
-    run := fun p _m =>
-      (eliminateReturnsInExpressionTransform p, [], {}) },
+    run := fun p _ =>
+      (desugarShortCircuit p, [], {}) },
+  -- { name := "LiftExpressionAssignments"
+  --   run := fun p m =>
+  --     (liftExpressionAssignments p m [], [], {}) },
   { name := "ConstrainedTypeElim"
     needsResolves := true
     run := fun p m =>
       let (p', diags) := constrainedTypeElim m p
-      (p', diags, {}) }
+      (p', diags, {}) },
+  { name := "EliminateReturnStatements"
+    needsResolves := false
+    run := fun p _ =>
+      let (p') := eliminateReturnStatements p
+      (p', [], {}) },
+  { name := "ContractPass"
+    needsResolves := true
+    run := fun p _ =>
+      let (p') := contractPass p
+      (p', [], {}) }
 ]
 
 /--
@@ -153,6 +166,9 @@ private def runLaurelPasses (options : LaurelTranslateOptions)
     staticProcedures := coreDefinitionsForLaurel.staticProcedures ++ program.staticProcedures,
     types := coreDefinitionsForLaurel.types ++ program.types
   }
+
+  -- Generate external tester functions for datatype constructors
+  let program := generateDatatypeTesters program
 
   -- Step 0: the input program before any passes
   emit "Initial" "laurel.st" program
@@ -184,12 +200,60 @@ private def runLaurelPasses (options : LaurelTranslateOptions)
       let result := resolve program (some model)
       let newErrors := result.errors.filter fun e => !resolutionErrors.contains e
       if !newErrors.isEmpty then
+        let newDiags := newErrors.toList.map fun d =>
+          { d with
+              message :=
+                s!"Internal error: resolution after '{pass.name}' introduced this diagnostic: {d.message}"
+              type := .StrataBug }
         emit pass.name "laurel.st" program
+        return (program, model, allDiags ++ newDiags, allStats)
       program := result.program
       model := result.model
     emit pass.name "laurel.st" program
 
   return (program, model, allDiags, allStats)
+
+/--
+Apply `liftExpressionAssignments` to the core (non-functional) procedures in an
+`UnorderedCoreWithLaurelTypes`. Only procedures whose names appear in the core
+procedure list are transformed; functions are left unchanged.
+-/
+def liftImperativeExpressionsInCore (uc : UnorderedCoreWithLaurelTypes)
+    (model : SemanticModel) : UnorderedCoreWithLaurelTypes :=
+  let imperativeCallees := uc.coreProcedures.map (·.name.text)
+  if imperativeCallees.isEmpty then uc
+  else
+    let liftedProgram := liftExpressionAssignments
+      { staticProcedures := uc.coreProcedures, staticFields := [], types := [], constants := [] }
+      model imperativeCallees
+    let liftedProcs := liftedProgram.staticProcedures
+    { uc with
+      functions := uc.functions
+      coreProcedures := liftedProcs
+    }
+
+/-- A single pass on the unordered Core representation. Each pass receives the
+    current `UnorderedCoreWithLaurelTypes` and the semantic model and returns
+    the (possibly modified) program. -/
+structure CorePass where
+  /-- Human-readable name, used for profiling and file emission. -/
+  name : String
+  /-- Whether `resolveUnorderedCore` should be run after the pass. -/
+  needsResolves : Bool := false
+  /-- The pass action. -/
+  run : UnorderedCoreWithLaurelTypes → SemanticModel → UnorderedCoreWithLaurelTypes
+
+/-- The ordered sequence of passes on the unordered Core representation. -/
+private def corePipeline : Array CorePass := #[
+  { name := "EliminateMultipleOutputs"
+    run := fun uc _m => eliminateMultipleOutputs uc },
+  { name := "InlineLocalVariablesInExpressions"
+    needsResolves := true
+    run := fun uc _m => inlineLocalVariablesInExpressions uc },
+  { name := "LiftImperativeExpressionsInCore"
+    needsResolves := true
+    run := fun uc m => liftImperativeExpressionsInCore uc m }
+]
 
 /--
 Translate Laurel Program to Core Program, also returning the lowered Laurel program.
@@ -204,32 +268,48 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
     | some ctx => pure ctx
     | none => Strata.Pipeline.PipelineContext.create (outputMode := .quiet)
   runPipelineM options.keepAllFilesPrefix do
-    let (program, model, passDiags, stats) ← runLaurelPasses options pctx program
-    let unorderedCore := transparencyPass program
-    emit "transparencyPass" "core.st" unorderedCore
+  let (program, model, passDiags, stats) ← runLaurelPasses options pctx program
+  if ! passDiags.isEmpty then
+    return (none, passDiags, program, stats)
 
-    -- Resolve so that identifiers introduced by earlier passes get uniqueIds.
-    let compositeTypes := program.types.filter (fun t => match t with | .Composite _ => true | _ => false)
-    let (unorderedCore, model) := resolveUnorderedCore unorderedCore (existingModel := some model) (additionalTypes := compositeTypes)
+  let unorderedCore := transparencyPass program
+  emit "transparencyPass" "core.st" unorderedCore
+  let mut unorderedCore := unorderedCore
+  let mut fnModel := model
 
-    let coreWithLaurelTypes := orderFunctionsAndProcedures unorderedCore
+  for pass in corePipeline do
+    unorderedCore := pass.run unorderedCore fnModel
+    if pass.needsResolves then
+      let compositeTypes := program.types.filter (fun t => match t with | .Composite _ => true | _ => false)
+      let (uc', m', errors) := resolveUnorderedCore unorderedCore (some fnModel) compositeTypes
+      if !errors.isEmpty then
+        let newDiags := errors.toList.map fun d =>
+          { d with message :=
+              s!"Internal error: resolution after '{pass.name}' introduced this diagnostic: {d.message}" }
+        emit pass.name "core.st" unorderedCore
+        return (none, passDiags ++ newDiags, program, stats)
+      unorderedCore := uc'
+      fnModel := m'
+    emit pass.name "unorderedCoreWithLaurelTypes.st" unorderedCore
 
-    -- This early return is a simple way to protect against duplicative errors. Without this return,
-    -- resolution errors reported by Laurel would also be reported by Core.
-    -- There might be better solution that allows getting some resolution errors from Laurel and some verification errors from Core,
-    -- but that would need more consideration.
-    if passDiags.any (·.type != .Warning) then
-      return (none, passDiags, program, stats)
-
-    emit "CoreWithLaurelTypes" "core.st" coreWithLaurelTypes
-    let initState : TranslateState := { model := model, overflowChecks := options.overflowChecks }
+  let coreWithLaurelTypes := orderFunctionsAndProcedures unorderedCore
+  -- This early return is a simple way to protect against duplicative errors. Without this return,
+  -- resolution errors reported by Laurel would also be reported by Core.
+  -- There might be better solution that allows getting some resolution errors from Laurel and some verification errors from Core,
+  -- but that would need more consideration.
+  if ! passDiags.isEmpty then
+    return (none, passDiags, program, stats)
+  else
+      emit "CoreWithLaurelTypes" "core.st" coreWithLaurelTypes
+    let initState : TranslateState := { model := fnModel, overflowChecks := options.overflowChecks }
     let (coreProgramOption, translateState) :=
       runTranslateM initState (translateLaurelToCore options program coreWithLaurelTypes)
-    -- Because of the duplication between functions and procedures, this translation is liable to create duplicate diagnostics
+    -- Because of the duplication between functions and proofs, this translation is liable to create duplicate diagnostics
     -- User errors should be checked in an earlier phase, and all dumb translation errors are Strata bugs
-    let mut allDiagnostics: List DiagnosticModel := passDiags ++ translateState.diagnostics.eraseDups;
-
+    let mut allDiagnostics := translateState.diagnostics.eraseDups
     if translateState.coreDiagnostics.length > 0 && allDiagnostics.isEmpty then
+      -- The program was suppressed but no diagnostics explain why — report the core diagnostics
+      -- that have a known source location (those without one are not actionable for the user).
       allDiagnostics := allDiagnostics ++ translateState.coreDiagnostics
 
     if coreProgramOption.isSome then

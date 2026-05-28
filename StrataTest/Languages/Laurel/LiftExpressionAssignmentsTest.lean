@@ -41,14 +41,16 @@ def parseLaurelAndLift (input : String) : IO Program := do
   | .ok program =>
     let result := resolve program
     let (program, model) := (result.program, result.model)
-    pure (liftExpressionAssignments model program)
+    let imperativeCallees := program.staticProcedures.filter (fun p => !p.isFunctional)
+      |>.map (fun p => p.name.text)
+    pure (liftExpressionAssignments program model imperativeCallees)
 
 /--
 info: procedure assertInBlockExpr()
   opaque
 {
   var x: int := 0;
-  assert x == 0;
+  assert $x_0 == 0;
   var $x_0: int := x;
   x := 1;
   var y: int := {

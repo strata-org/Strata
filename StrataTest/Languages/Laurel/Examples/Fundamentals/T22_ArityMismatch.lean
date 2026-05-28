@@ -22,10 +22,7 @@ procedure caller()
 };
 "
 
-/--
-error: ArityMismatch(79-100) ❌ Type checking error.
-Impossible to unify int with (arrow int $__ty35).
--/
+/-- error: input length and args length mismatch -/
 #guard_msgs(drop info, error) in
 #eval testInputWithOffset "ArityMismatch" arityMismatchProgram 14 processLaurelFile
 

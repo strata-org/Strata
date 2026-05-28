@@ -673,7 +673,7 @@ info: errors: 1
 -- Regression test for issue #800: nested dict access `kwargs["Outer"]["Inner"]`
 -- should generate `Any_get` (dict lookup), not `FieldSelect`.
 /--
-info: body contains Any_get: true
+info: preconditions contain Any_get: true
 body contains FieldSelect: false
 -/
 #guard_msgs in
@@ -694,11 +694,13 @@ body contains FieldSelect: false
   assert! result.errors.size = 0
   match result.program.staticProcedures with
   | proc :: _ =>
+    let precondStr := proc.preconditions.map (fun (p : Strata.Laurel.Condition) => toString (Strata.Laurel.formatStmtExpr p.condition))
+      |> String.intercalate ", "
     let bodyStr := match proc.body with
       | .Transparent body => toString (Strata.Laurel.formatStmtExpr body)
       | .Opaque _ (some body) _ => toString (Strata.Laurel.formatStmtExpr body)
       | _ => ""
-    IO.println s!"body contains Any_get: {bodyStr.contains "Any_get"}"
+    IO.println s!"preconditions contain Any_get: {precondStr.contains "Any_get"}"
     IO.println s!"body contains FieldSelect: {bodyStr.contains "#"}"
   | [] => IO.println "no procedures"
 
@@ -929,7 +931,13 @@ private def translatePrecondResult (preconditions : Array Assertion)
 private def translatePrecond (preconditions : Array Assertion)
     (args : Array Arg := #[]) : String × Nat :=
   let result := translatePrecondResult preconditions args
-  (getBody result |>.getD "", result.errors.size)
+  let precondStr := match result.program.staticProcedures with
+    | proc :: _ =>
+      let formatted := proc.preconditions.map (fun (p : Strata.Laurel.Condition) => toString (Strata.Laurel.formatStmtExpr p.condition))
+      if formatted.isEmpty then getBody result |>.getD ""
+      else "{ " ++ (String.intercalate "; " formatted) ++ " }"
+    | [] => ""
+  (precondStr, result.errors.size)
 
 -- enumMember: or and eq via `|` and `==` infix syntax
 #eval do
@@ -971,10 +979,12 @@ private def translatePrecond (preconditions : Array Assertion)
       postconditions := #[] }] testModule
   let body := getBody result |>.getD ""
   assertEq result.errors.size 0
-  assert! body.contains "result := <??>"
-  assert! body.contains "Any..isfrom_None(key) | Any..isfrom_str(key)"
-  assert! body.contains "assert !Any..isfrom_None(key) summary \"precondition 0\""
-  assert! body.contains "assume Any..isfrom_str(result)"
+  match result.program.staticProcedures with
+  | proc :: _ =>
+    let precondStr := proc.preconditions.map (fun (p : Strata.Laurel.Condition) => toString (Strata.Laurel.formatStmtExpr p.condition))
+      |> String.intercalate ", "
+    assert! precondStr.contains "!Any..isfrom_None(key)"
+  | [] => assert! false
 
 -- containsKey on a non-kwargs dict: DictStrAny_contains in an assert
 -- (would have been silently dropped before fix #2)

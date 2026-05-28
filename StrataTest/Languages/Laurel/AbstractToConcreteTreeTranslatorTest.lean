@@ -106,7 +106,9 @@ composite Point {
 info: procedure test(x: int): int
   opaque
 {
-  if x > 0 then x else 0 - x
+  if x > 0
+  then x
+  else 0 - x
 };
 -/
 #guard_msgs in
