@@ -687,6 +687,22 @@ private theorem σR1_eq_σ_for_notTouched
       initStates_get_notin Hinitout HvNotOuts,
       initStates_get_notin Hinitin HvNotIns]
 
+-- Q19-I bind-shell simp golf: shared simp sets used inside the
+-- `callElim*_ok` no-throw lemmas and `callElimCmd_call_eq`. The
+-- hypothesis name is captured as an `ident` and spliced into the
+-- `simp ... at` location list.
+local macro "bind_shell" "at" h:ident : tactic => `(tactic|
+  simp only [bind, StateT.bind, ExceptT.bind, ExceptT.bindCont, ExceptT.mk,
+             pure, ExceptT.pure, StateT.pure] at $h:ident)
+
+local macro "bind_shell_state" "at" h:ident : tactic => `(tactic|
+  simp only [bind, StateT.bind, ExceptT.bind, ExceptT.bindCont, ExceptT.mk,
+             pure, ExceptT.pure, StateT.pure,
+             get, getThe, MonadStateOf.get, MonadState.get, StateT.get,
+             set, MonadStateOf.set, StateT.set,
+             monadLift, MonadLift.monadLift, liftM, ExceptT.lift,
+             Functor.map, StateT.map, Except.mapError] at $h:ident)
+
 /-- No-throw fact for the `oldTys ← oldVars.mapM ...` step inside
     `callElimCmd`.  When every `g ∈ oldVars` already appears as a key in
     `proc.header.inputs`, the `find?`-driven lookup never hits the
@@ -822,11 +838,7 @@ private theorem createAsserts_ok
                    StateT.bind, StateT.pure, pure,
                    monadLift, MonadLift.monadLift, liftM,
                    Functor.map, StateT.map, liftCoreGenM, hgi]
-        simp only [bind, ExceptT.bind,
-                   ExceptT.mk, ExceptT.lift, ExceptT.pure,
-                   pure,
-                   monadLift, MonadLift.monadLift, liftM,
-                   Functor.map] at Heqtail
+        bind_shell_state at Heqtail
         rw [Heqtail]
         rfl
       · simp [Hlen]
@@ -880,11 +892,7 @@ private theorem createAssumes_ok
                    StateT.bind, StateT.pure, pure,
                    monadLift, MonadLift.monadLift, liftM,
                    Functor.map, StateT.map, liftCoreGenM, hgi]
-        simp only [bind, ExceptT.bind,
-                   ExceptT.mk, ExceptT.lift, ExceptT.pure,
-                   pure,
-                   monadLift, MonadLift.monadLift, liftM,
-                   Functor.map] at Heqtail
+        bind_shell_state at Heqtail
         rw [Heqtail]
         rfl
       · simp [Hlen]
@@ -914,21 +922,6 @@ private theorem createAssumes_ok
     state names `s_arg/s_out/s_old/s_postold/s_assert/s_assume` are
     threaded through; only state-shape relevant downstream are retained.
 -/
-
--- Q19-I bind-shell simp golf: shared simp sets used inside
--- `callElimCmd_call_eq`. The hypothesis name is captured as an
--- `ident` and spliced into the `simp ... at` location list.
-local macro "bind_shell" "at" h:ident : tactic => `(tactic|
-  simp only [bind, StateT.bind, ExceptT.bind, ExceptT.bindCont, ExceptT.mk,
-             pure, ExceptT.pure, StateT.pure] at $h:ident)
-
-local macro "bind_shell_state" "at" h:ident : tactic => `(tactic|
-  simp only [bind, StateT.bind, ExceptT.bind, ExceptT.bindCont, ExceptT.mk,
-             pure, ExceptT.pure, StateT.pure,
-             get, getThe, MonadStateOf.get, MonadState.get, StateT.get,
-             set, MonadStateOf.set, StateT.set,
-             monadLift, MonadLift.monadLift, liftM, ExceptT.lift,
-             Functor.map, StateT.map, Except.mapError] at $h:ident)
 
 private theorem callElimCmd_call_eq
     {procName : String} {args : List (CallArg Expression)}
@@ -1075,8 +1068,7 @@ private theorem callElimCmd_call_eq
                       oldVars_oldTys_mapM_ok (γ := { s_out with genState := s_old })
                         Holdvars_in_inputs
                     -- Reduce `pure`/`throw` to match Heq.
-                    simp only [bind, StateT.bind, ExceptT.bind,
-                               ExceptT.bindCont, ExceptT.mk] at Heq
+                    bind_shell at Heq
                     have HeqtyR : _ := Heqty
                     simp only [pure, ExceptT.pure, StateT.pure,
                                ExceptT.mk] at HeqtyR
