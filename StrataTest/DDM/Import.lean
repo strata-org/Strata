@@ -26,6 +26,10 @@ assert;
 #end
 
 -- Test that a failed import does not remain in dialect.imports (#1243)
+/--
+info: failed import 'NonExistent' was correctly excluded from dialect.imports
+-/
+#guard_msgs in
 #eval do
   let src := "dialect TestBugB;\nimport NonExistent;\n"
   let inputCtx : Lean.Parser.InputContext := {
@@ -37,4 +41,6 @@ assert;
   let fm ← (Strata.DialectFileMap.new loaded).toIO
   let (d, _) ← (Strata.Elab.elabDialect fm inputCtx).toIO
   if d.imports.contains "NonExistent" then
-    throw <| IO.userError "Failed import 'NonExistent' should not be in dialect.imports"
+    IO.println "BUG: failed import 'NonExistent' is still in dialect.imports"
+  else
+    IO.println "failed import 'NonExistent' was correctly excluded from dialect.imports"
