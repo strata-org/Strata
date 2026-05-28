@@ -1674,14 +1674,10 @@ private theorem createOldVarsSubst_pos_decomp
   rcases List.mem_iff_get.mp Htrip_in with ⟨ni, Hni⟩
   -- Length facts.
   have HoldGLen : oldGVars.length = oldVars.length := by
-    show (oldVars.map _).length = oldVars.length
-    simp [List.length_map]
+    simp [oldGVars, List.length_map]
   have HCanonLen : oldTripsCanonical.length = oldVars.length := by
-    show ((((genOldIdents.zip oldTys).zip oldVars).zip oldGVars).map _).length
-        = oldVars.length
-    simp only [List.length_map, List.length_zip, HgenOldLen, HoldTysLen,
-               HoldGLen]
-    omega
+    simp [oldTripsCanonical, List.length_map, List.length_zip, HgenOldLen,
+          HoldTysLen, HoldGLen]
   have Hni_lt : ni.val < oldVars.length := by
     have HiLt := ni.isLt
     omega
