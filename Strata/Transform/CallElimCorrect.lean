@@ -2854,19 +2854,9 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       have HpairZip := (Hfilter_in (k1, k2) HpairIn).1
                       -- Get index m in inputs.keys.zip argTemps.
                       rcases List.mem_iff_get.mp HpairZip with ⟨m, Hm⟩
-                      have Hzip_inkA_len :
-                          (proc.header.inputs.keys.zip argTemps).length =
-                            argVals.length := by
-                        rw [List.length_zip, HinKeys_argTemps_len, Nat.min_self]
-                        omega
                       have Hm_lt_in : m.val < proc.header.inputs.keys.length := by
-                        have Hmlt := m.isLt
-                        have Hl1 : (proc.header.inputs.keys.zip argTemps).length =
-                                    argVals.length := Hzip_inkA_len
-                        have Hl2 : argVals.length =
-                                    proc.header.inputs.keys.length :=
-                          HinKVlen.symm
-                        omega
+                        have := m.isLt
+                        simp [List.length_zip, HinKeys_argTemps_len] at this; omega
                       have Hm_lt_argT : m.val < argTemps.length := by
                         rw [← HinKeys_argTemps_len]; exact Hm_lt_in
                       have Hm_lt_argV : m.val < argVals.length := by
