@@ -5290,11 +5290,6 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           some (oldVals[i]'Hi') := by
                     -- σ_havoc reads genOldIdents → oldVals (overlay positional,
                     -- via the appended-list semantics of updatedStates).
-                    -- Use readValues_updatedStatesSame after a splitting bridge
-                    -- (turn ++-unfold of updatedStates into a 2-layer form).
-                    have HoldValsLenE :
-                        genOldIdents.length = oldVals.length := by
-                      have := HoldValsLen; have := HgenOldLen; omega
                     -- Decompose σ_havoc as nested updatedStates via List.zip_append.
                     have HzipAppend2 :
                         ((argTemps ++
@@ -5323,7 +5318,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     have HrdHavoc :
                         ReadValues σ_havoc genOldIdents oldVals := by
                       rw [HsplitOverlay]
-                      exact readValues_updatedStatesSame HoldValsLenE HoldNd
+                      exact readValues_updatedStatesSame HgenOldOldValsLen HoldNd
                     intro i Hi Hi'
                     exact readValues_get HrdHavoc (i:=i) (hi:=Hi) (hi':=Hi')
                   -- Shared class-(b) decompositions for Hinv/Hpred_disj
