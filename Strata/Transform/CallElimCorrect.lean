@@ -3270,12 +3270,9 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     -- Positional decomposition via createOldVarsSubst_pos_decomp.
                     obtain ⟨ni_val, Hni_lt, Hk_eqMkOld, Hw_eq⟩ :=
                       createOldVarsSubst_pos_decomp HgenOldLen HoldTysLen Hf
-                    have Hni_lt_genOld : ni_val < genOldIdents.length := by
-                      have := HgenOldLen
-                      omega
+                    have Hni_lt_genOld : ni_val < genOldIdents.length := HgenOldLen.symm ▸ Hni_lt
                     -- LHS: δ σ_R1 w = σ_R1 genOldIdents[i] = some oldVals[i].
-                    have Hni_lt_oldVals : ni_val < oldVals.length := by
-                      have := HoldValsLen; omega
+                    have Hni_lt_oldVals : ni_val < oldVals.length := HoldValsLen.symm ▸ Hni_lt
                     have HrdR1_get :
                         σ_R1 (genOldIdents[ni_val]'Hni_lt_genOld) =
                           some (oldVals[ni_val]'Hni_lt_oldVals) :=
@@ -3588,8 +3585,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     have Hw'w : w' = w := find?_append_some_eq hfind Hf
                     obtain ⟨ni_val, Hni_lt, _Hk_eqMkOld, Hw'_eq⟩ :=
                       createOldVarsSubst_pos_decomp HgenOldLen HoldTysLen hfind
-                    have Hni_lt_genOld : ni_val < genOldIdents.length := by
-                      have := HgenOldLen; omega
+                    have Hni_lt_genOld : ni_val < genOldIdents.length := HgenOldLen.symm ▸ Hni_lt
                     have Hw_eq : w =
                         Core.Transform.createFvar
                           (genOldIdents[ni_val]'Hni_lt_genOld) := by
@@ -3742,9 +3738,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         obtain ⟨ni_val, Hni_lt_genOld, _Hw_eq, Hv_eq_gen⟩ :=
                           b1_var_witness hfind Hf Hv_in
                         -- σ_R1 k1 = oldVals[ni_val]; σ_havoc k1 = oldVals[ni_val].
-                        have Hni_lt_oldVals :
-                            ni_val < oldVals.length := by
-                          have := HoldValsLen; omega
+                        have Hni_lt_oldVals : ni_val < oldVals.length :=
+                          HoldValsLen.symm ▸ HgenOldLen ▸ Hni_lt_genOld
                         have Hσ_R1_v :
                             σ_R1 (genOldIdents[ni_val]'Hni_lt_genOld) =
                               some (oldVals[ni_val]'Hni_lt_oldVals) :=
