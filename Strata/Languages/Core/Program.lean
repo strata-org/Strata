@@ -67,7 +67,7 @@ def Decl.metadata (d : Decl) : MetaData Expression :=
   | .func _ md       => md
   | .recFuncBlock _ md => md
 
-def Decl.kind (d : Decl) : DeclKind :=
+@[expose] def Decl.kind (d : Decl) : DeclKind :=
   match d with
   | .type _ _   => .type
   | .ax _ _     => .ax
@@ -76,7 +76,7 @@ def Decl.kind (d : Decl) : DeclKind :=
   | .func _ _   => .func
   | .recFuncBlock _ _ => .recFuncBlock
 
-def Decl.name (d : Decl) : Expression.Ident :=
+@[expose] def Decl.name (d : Decl) : Expression.Ident :=
   match d with
   | .type t _       => t.name
   | .ax a _         => a.name
@@ -107,7 +107,7 @@ def Decl.getAxiom? (d : Decl) : Option Axiom :=
 def Decl.getTypeDecl (d : Decl) (H: d.kind = .type): TypeDecl :=
   match d with | .type t _ => t
 
-def Decl.getProc? (d : Decl) : Option Procedure :=
+@[expose] def Decl.getProc? (d : Decl) : Option Procedure :=
   match d with
   | .proc p _ => some p
   | _ => none

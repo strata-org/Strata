@@ -641,22 +641,43 @@ private theorem ensuresToAsserts_mem_is_assert
 
 /-- If all asserts are valid in the verification statement produced by
     `procToVerifyStmt` (for initial environments satisfying `ProcEnvWF`),
-    then `ProcedureCorrect` holds for the procedure. -/
+    then `ProcedureAssertsValid` holds for the procedure.
+
+    Assumes the input program contains exactly one procedure declaration,
+    namely `proc` (`h_p_singleton`). This keeps `Program.findProcByString?`
+    and `AxiomsBeforeProcedureDecl` trivial: there are no axioms or
+    `distinct` declarations to consider, and lookup resolves to `proc`. -/
 theorem procBodyVerify_procedureCorrect
-    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
-    (proc : Procedure) (p : Program) (st : CoreTransformState)
+    (φ : CoreEval → PureFunc Expression → CoreEval)
+    (procName : String) (proc : Procedure) (p : Program)
+    (md : Imperative.MetaData Core.Expression)
+    (st : CoreTransformState)
     (verifyStmt : Statement) (st' : CoreTransformState)
+    -- `h_p_singleton`: the program is just `proc`.
+    (h_p_singleton : p.decls = [.proc proc md])
+    -- `h_name`: the procedure's header name matches `procName`.
+    (h_name : proc.header.name.name = procName)
     -- `h_transform`: procToVerifyStmt returned successfully.
     (h_transform : (procToVerifyStmt proc).run st = (Except.ok verifyStmt, st'))
     -- `h_correct`: all asserts in `verifyStmt` are valid for all initial states
     (h_correct : Specification.AllAssertsValid
-      (Core.Specification.Lang.core π φ) verifyStmt)
+      (Core.Specification.Lang.core p.findProcByString? φ) verifyStmt)
     -- `h_wf_ext`: the evaluator extension `φ` is well-formed
     (h_wf_ext : Core.WFEvalExtension φ)
     -- `h_wf_proc`: the procedure is well-formed
     (h_wf_proc : WF.WFProcedureProp p proc) :
-    -- Conclusion: ProcedureCorrect holds.
-    Core.Specification.ProcedureCorrect π φ proc p := by
+    -- Conclusion: ProcedureAssertsValid holds.
+    Core.Specification.ProcedureAssertsValid φ procName p := by
+  -- Bind `π` to the program-derived lookup. Because `p` is a singleton
+  -- containing only `proc`, `π procName = some proc`.
+  let π : String → Option Procedure := p.findProcByString?
+  have h_pname : proc.header.name = ⟨procName, ()⟩ := by
+    cases h : proc.header.name; simp_all
+  have h_lookup : π procName = some proc := by
+    show p.findProcByString? procName = some proc
+    simp [Core.Program.findProcByString?, Core.Program.find?, h_p_singleton,
+      Core.Program.find?.go, Core.Decl.kind, Core.Decl.name, Core.Decl.getProc?,
+      h_pname]
   obtain ⟨ss, h_body_eq⟩ := procToVerifyStmt_is_structured h_transform
   obtain ⟨prefixStmts, ss', h_body, h_eq, h_prefix_cmd, h_prefix_trace⟩ :=
     procToVerifyStmt_structure proc p st st' verifyStmt h_transform π φ h_wf_proc
@@ -741,7 +762,13 @@ theorem procBodyVerify_procedureCorrect
     rw [h_wrapped_eval, h_wrapped_store] at h_v
     exact h_v
 
-  refine ⟨?_, ?_⟩
+  refine
+    { procedureExists := ⟨proc, h_lookup⟩
+      assertsValid := fun proc' h_lookup' => ?_
+      postconditionsValid := fun proc' h_lookup' => ?_ }
+  all_goals
+    have h_eq_proc : proc = proc' := Option.some.inj (h_lookup.symm.trans h_lookup')
+    subst h_eq_proc
 
   · ----- Part 1: All asserts in proc.body are valid -----
     intro a
@@ -749,7 +776,7 @@ theorem procBodyVerify_procedureCorrect
     rw [h_body_eq]
     unfold Specification.AssertValidWhen
     simp only [Specification.Lang.core, Specification.Lang.imperative]
-    intro ρ₀ cfg (h_wf : Specification.ProcEnvWF proc ρ₀)
+    intro ρ₀ cfg ⟨(h_wf : Specification.ProcEnvWF proc ρ₀), _h_axioms⟩
       (h_body : StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
         (.stmt (Stmt.block "" ss #[]) ρ₀) cfg)
       (h_assert : coreIsAtAssert cfg a)
@@ -785,7 +812,7 @@ theorem procBodyVerify_procedureCorrect
     -- `Stmt.block "" ss #[]`.  Since procToVerifyStmt only succeeds for
     -- structured bodies, we invert the CoreBodyExec to get a CoreStepStar
     -- witness through that wrapping.
-    intro h_wf_proc ρ₀ h_wf σ' δ' failed h_body_exec
+    intro h_wf_proc ρ₀ h_wf _h_axioms σ' δ' failed h_body_exec
     rw [h_body_eq] at h_body_exec
     -- ProcEnvWF gives us ρ₀.hasFailure = false, so
     -- ⟨ρ₀.store, ρ₀.eval, false⟩ = ρ₀.
