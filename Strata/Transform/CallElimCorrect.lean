@@ -86,33 +86,6 @@ private theorem find?_append_none_elim {α β} [DecidableEq α]
   rw [hfind] at HH
   exact HH.symm.trans Hf
 
-/-! ### `EvalCallElim_glue` combinator
-
-`EvalCallElim_glue` chains the six call-elim segments (argument init, output
-init, old init, asserts, havocs, assumes) through `EvalStatementsContractApp`. -/
-
-/-- Glue lemma: chain L1–L6 via `EvalStatementsContractApp` to produce the
-    full call-elim block evaluation from σ to σ_havoc. -/
-private theorem EvalCallElim_glue
-    {π : String → Option Procedure}
-    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
-    {δ : CoreEval} {σ σ_arg σ_out σ_old σ_havoc : CoreStore}
-    {argInit outInit oldInit asserts havocs assumes : List Statement}
-    (HL1 : EvalStatementsContract π φ ⟨σ, δ, false⟩ argInit ⟨σ_arg, δ, false⟩)
-    (HL2 : EvalStatementsContract π φ ⟨σ_arg, δ, false⟩ outInit ⟨σ_out, δ, false⟩)
-    (HL3 : EvalStatementsContract π φ ⟨σ_out, δ, false⟩ oldInit ⟨σ_old, δ, false⟩)
-    (HL4 : EvalStatementsContract π φ ⟨σ_old, δ, false⟩ asserts ⟨σ_old, δ, false⟩)
-    (HL5 : EvalStatementsContract π φ ⟨σ_old, δ, false⟩ havocs ⟨σ_havoc, δ, false⟩)
-    (HL6 : EvalStatementsContract π φ ⟨σ_havoc, δ, false⟩ assumes ⟨σ_havoc, δ, false⟩) :
-    EvalStatementsContract π φ ⟨σ, δ, false⟩
-      (argInit ++ outInit ++ oldInit ++ asserts ++ havocs ++ assumes)
-      ⟨σ_havoc, δ, false⟩ := by
-  have H12 := EvalStatementsContractApp HL1 HL2
-  have H123 := EvalStatementsContractApp H12 HL3
-  have H1234 := EvalStatementsContractApp H123 HL4
-  have H12345 := EvalStatementsContractApp H1234 HL5
-  exact EvalStatementsContractApp H12345 HL6
-
 /-! ### Top-level call-elimination correctness theorem -/
 
 /-- Returns the call-elim transformation result of a single command:
