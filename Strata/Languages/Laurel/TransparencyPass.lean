@@ -60,14 +60,14 @@ def stripAssertAssume (expr : StmtExprMd) : StmtExprMd :=
     Tester names also contain `..` but start with `is` after the separator.
     - `proof = true` → use safe selectors (strip `!` suffix)
     - `proof = false` → use unsafe selectors (add `!` suffix) -/
-private def adjustSelectorName (name : String) : String :=
+private def adjustSelectorName (name : Identifier) : Identifier :=
   -- Only adjust destructor names (contain ".." but are not testers)
-  match name.splitOn ".." with
+  match name.text.splitOn ".." with
   | [_, suffix] =>
     if suffix.startsWith "is" then name  -- tester, leave unchanged
     else
       -- Unsafe: add trailing "!" if not already present
-      if name.endsWith "!" then name else name ++ "!"
+      if name.text.endsWith "!" then name else name.text ++ "!"
   | _ => name  -- not a destructor name, leave unchanged
 
 /-- Rewrite StaticCall callees to their `$asFunction` versions,
