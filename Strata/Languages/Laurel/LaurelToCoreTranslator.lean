@@ -68,11 +68,6 @@ structure TranslateState where
       why the program was deemed invalid so that if no other diagnostics explain
       the suppression, these can be surfaced to the user. -/
   coreDiagnostics : List DiagnosticModel := []
-  /-- When `true`, use safe division (`intSafeDivOp`) and safe datatype selectors
-      (with preconditions). When `false`, use unsafe division (`intDivOp`) and
-      unsafe datatype selectors (without preconditions).
-      Set to `true` for proof procedures and `false` for functions. -/
-  proof : Bool := false
 
 /-- The translation monad: state over Except, allowing both accumulated diagnostics and hard failures -/
 @[expose] abbrev TranslateM := OptionT (StateM TranslateState)
@@ -80,25 +75,6 @@ structure TranslateState where
 /-- Emit a diagnostic into the translation state (soft warning, does not abort) -/
 def emitDiagnostic (d : DiagnosticModel) : TranslateM Unit :=
   modify fun s => { s with diagnostics := s.diagnostics ++ [d] }
-
-/-- Adjust a datatype selector (destructor) name based on the `proof` flag.
-    Destructor names contain `..` (e.g. `IntList..head`, `IntList..head!`).
-    Tester names also contain `..` but start with `is` after the separator.
-    - `proof = true` → use safe selectors (strip `!` suffix)
-    - `proof = false` → use unsafe selectors (add `!` suffix) -/
-private def adjustSelectorName (name : String) (proof : Bool) : String :=
-  -- Only adjust destructor names (contain ".." but are not testers)
-  match name.splitOn ".." with
-  | [_, suffix] =>
-    if suffix.startsWith "is" then name  -- tester, leave unchanged
-    else if proof then
-      name
-      -- Safe: strip trailing "!"
-      -- if name.endsWith "!" then (name.dropEnd 1).toString else name
-    else
-      -- Unsafe: add trailing "!" if not already present
-      if name.endsWith "!" then name else name ++ "!"
-  | _ => name  -- not a destructor name, leave unchanged
 
 private def invalidCoreType (source : Option FileRange) (reason : String) : TranslateM LMonoTy := do
   modify fun s => { s with coreDiagnostics := s.coreDiagnostics ++
@@ -179,7 +155,6 @@ def translateExpr (expr : StmtExprMd)
   let s ← get
   let model := s.model
   let md := astNodeToCoreMd expr
-  let proof := (← get).proof
   let disallowed (source : Option FileRange) (msg : String) : TranslateM Core.Expression.Expr := do
       throwExprDiagnostic $ diagnosticFromSource source msg
 
@@ -263,8 +238,7 @@ def translateExpr (expr : StmtExprMd)
       if isPureContext && !model.isFunction callee then
         disallowed expr.source s!"calls to procedures are not supported in functions or contracts"
       else
-        let calleeName := adjustSelectorName callee.text (← get).proof
-        let fnOp : Core.Expression.Expr := .op () ⟨calleeName, ()⟩ none
+        let fnOp : Core.Expression.Expr := .op () ⟨callee.text, ()⟩ none
         args.attach.foldlM (fun acc ⟨arg, _⟩ => do
           let re ← translateExpr arg boundVars isPureContext
           return .app () acc re) fnOp
