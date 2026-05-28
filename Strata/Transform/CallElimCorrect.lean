@@ -2080,24 +2080,18 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     intro v Hv
                     exact HinoutFresh v (List.mem_append.mpr (Or.inr Hv))
                   -- inputs.keys ∩ argTemps = ∅ (inputs not tmp_).
-                  have HinKeys_disj_argTemps :
-                      proc.header.inputs.keys.Disjoint argTemps := fun v Hv1 Hv2 =>
-                    notMem_of_Forall_neg HargTemp (HinputsFresh v Hv1).1 Hv2
-                  have HinKeys_disj_outTemps :
-                      proc.header.inputs.keys.Disjoint outTemps := fun v Hv1 Hv2 =>
-                    notMem_of_Forall_neg HoutTemp (HinputsFresh v Hv1).1 Hv2
-                  have HinKeys_disj_olds :
-                      proc.header.inputs.keys.Disjoint genOldIdents := fun v Hv1 Hv2 =>
-                    notMem_of_Forall_neg HoldIdentsTemp (HinputsFresh v Hv1).2 Hv2
-                  have HoutKeys_disj_argTemps :
-                      proc.header.outputs.keys.Disjoint argTemps := fun v Hv1 Hv2 =>
-                    notMem_of_Forall_neg HargTemp (HoutputsFresh v Hv1).1 Hv2
-                  have HoutKeys_disj_outTemps :
-                      proc.header.outputs.keys.Disjoint outTemps := fun v Hv1 Hv2 =>
-                    notMem_of_Forall_neg HoutTemp (HoutputsFresh v Hv1).1 Hv2
-                  have HoutKeys_disj_olds :
-                      proc.header.outputs.keys.Disjoint genOldIdents := fun v Hv1 Hv2 =>
-                    notMem_of_Forall_neg HoldIdentsTemp (HoutputsFresh v Hv1).2 Hv2
+                  have HinKeys_disj_argTemps : proc.header.inputs.keys.Disjoint argTemps :=
+                    fun v Hv1 Hv2 => notMem_of_Forall_neg HargTemp (HinputsFresh v Hv1).1 Hv2
+                  have HinKeys_disj_outTemps : proc.header.inputs.keys.Disjoint outTemps :=
+                    fun v Hv1 Hv2 => notMem_of_Forall_neg HoutTemp (HinputsFresh v Hv1).1 Hv2
+                  have HinKeys_disj_olds : proc.header.inputs.keys.Disjoint genOldIdents :=
+                    fun v Hv1 Hv2 => notMem_of_Forall_neg HoldIdentsTemp (HinputsFresh v Hv1).2 Hv2
+                  have HoutKeys_disj_argTemps : proc.header.outputs.keys.Disjoint argTemps :=
+                    fun v Hv1 Hv2 => notMem_of_Forall_neg HargTemp (HoutputsFresh v Hv1).1 Hv2
+                  have HoutKeys_disj_outTemps : proc.header.outputs.keys.Disjoint outTemps :=
+                    fun v Hv1 Hv2 => notMem_of_Forall_neg HoutTemp (HoutputsFresh v Hv1).1 Hv2
+                  have HoutKeys_disj_olds : proc.header.outputs.keys.Disjoint genOldIdents :=
+                    fun v Hv1 Hv2 => notMem_of_Forall_neg HoldIdentsTemp (HoutputsFresh v Hv1).2 Hv2
                   -- inputs.keys ∩ lhs = ∅: σ-undefined inputs vs σ-defined lhs.
                   have HinKeys_disj_lhs :
                       proc.header.inputs.keys.Disjoint lhs := fun v Hv1 Hv2 =>
