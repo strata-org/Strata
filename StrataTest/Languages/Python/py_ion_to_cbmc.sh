@@ -5,7 +5,7 @@
 #
 # Environment variables:
 #   CBMC     - path to cbmc binary (default: cbmc)
-#   STRATA   - path to strata binary (default: uses lake exe strata)
+#   STRATA   - path to strata binary (default: uses StrataCLI/.lake/build/bin/strata)
 
 if [ -z "$1" ]; then
   echo "Usage: $0 <file.py.ion>" >&2
@@ -47,7 +47,7 @@ run() {
 if [ -n "$STRATA" ]; then
   run "strata pyAnalyzeLaurelToGoto" "$STRATA" pyAnalyzeLaurelToGoto "$ION"
 else
-  (cd "$PROJECT_ROOT" && run "lake exe strata pyAnalyzeLaurelToGoto" lake exe strata pyAnalyzeLaurelToGoto "$ION") || exit $?
+  (cd "$PROJECT_ROOT" && run "lake exe strata pyAnalyzeLaurelToGoto" ./StrataCLI/.lake/build/bin/strata pyAnalyzeLaurelToGoto "$ION") || exit $?
 fi
 
 # Intermediate files are created in cwd with basename
