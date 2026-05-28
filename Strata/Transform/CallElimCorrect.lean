@@ -1910,8 +1910,6 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                   -- L5: build post-havoc store σ_havoc by applying HavocVars
                   -- segment-by-segment to σ' = σ.update lhs modvals.  Derive
                   -- HL5 directly:
-                  have HlhsDef : Imperative.isDefined σ lhs :=
-                    ReadValuesIsDefined Hevalouts
                   have Hhav_σ : HavocVars σ lhs σ' :=
                     UpdateStatesHavocVars Hupdate
                   have Hhav_arg :
@@ -1960,7 +1958,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                             outTemps oVals)
                           oldTrips.unzip.fst.unzip.fst oldVals) lhs :=
                     isDefined_3layer_lift HlhsDisjArg HlhsDisjOut
-                      (HoldTripsFst ▸ HlhsDisjOld) HlhsDef
+                      (HoldTripsFst ▸ HlhsDisjOld) Hlhs_isLocl
                   -- HL5: havocs over `lhs` from σ_old to σ_havoc (same
                   -- 3-layer init applied to σ' instead of σ).  Use
                   -- `hCallArgsLhs.symm` to align with `CallArg.getLhs args`.
@@ -2094,7 +2092,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                   -- inputs.keys ∩ lhs = ∅: σ-undefined inputs vs σ-defined lhs.
                   have HinKeys_disj_lhs :
                       proc.header.inputs.keys.Disjoint lhs := fun v Hv1 Hv2 =>
-                    notin_of_isSome_isNotDefined (HlhsDef v Hv2) (InitStatesNotDefined Hinitin) Hv1
+                    notin_of_isSome_isNotDefined (Hlhs_isLocl v Hv2) (InitStatesNotDefined Hinitin) Hv1
                   -- outputs.keys ∩ lhs = ∅: σA-undefined outputs vs σ-defined lhs.
                   have HoutKeys_disj_lhs :
                       proc.header.outputs.keys.Disjoint lhs := by
@@ -2106,7 +2104,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       initStates_get_notin Hinitin HvNotInInputs
                     have Hvσ_none : σ v = none := by
                       rw [← HvσA_eq_σ]; exact HvσA_none
-                    exact σ_some_contradiction (HlhsDef v Hv2) Hvσ_none
+                    exact σ_some_contradiction (Hlhs_isLocl v Hv2) Hvσ_none
                   -- Restrict to the filtered preconditions.
                   let presFiltered : List (CoreLabel × Procedure.Check) :=
                     proc.spec.preconditions.filter
