@@ -4015,12 +4015,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                         outTemps ++ genOldIdents)
                       (argVals ++ oVals ++ oldVals) v).isSome = true
                     apply updatedStatesDefined
-                    · -- length of (argT++outT++olds) = length of vals.
-                      have HgenOldValsLen :
-                          genOldIdents.length = oldVals.length := by
-                        rw [HgenOldLen, ← HoldValsLen]
-                      simp [argTemps, outTemps, List.length_append, List.unzip_eq_map,
-                            Hargtriplen, Houttriplen, HgenOldValsLen]
+                    · simp [argTemps, outTemps, List.length_append, List.unzip_eq_map,
+                            Hargtriplen, Houttriplen, HgenOldOldValsLen]
                     · simp only [List.mem_append]
                       exact Or.inl (Or.inl Hv_argT)
                   -- Now assemble Hdef.
