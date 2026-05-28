@@ -340,6 +340,31 @@ private theorem notMem_of_Forall_neg
     (Hforall : Forall p l) (Hnotp : ¬ p x) : x ∉ l := fun h =>
   Hnotp ((List.Forall_mem_iff.mp Hforall) x h)
 
+/-- Positional decomposition for `(k1, k2) ∈ ks.zip ks'` under length
+    equality: produce a position `n` together with the bounds and the
+    pair-projection equalities `k1 = ks[n]` and `k2 = ks'[n]`.  Absorbs the
+    `mem_iff_get` → `getElem_zip` → `Prod.mk.injEq` dance that recurs in
+    the `Hsubst` input-half and `Hinv` class-(a) chases. -/
+private theorem pair_in_zip_pos_decomp
+    {α β} {ks : List α} {ks' : List β}
+    (Hlen : ks.length = ks'.length)
+    {k1 : α} {k2 : β} (Hkin : (k1, k2) ∈ ks.zip ks') :
+    ∃ (n : Nat) (Hn_lt : n < ks.length) (Hn_lt' : n < ks'.length),
+      k1 = ks[n]'Hn_lt ∧ k2 = ks'[n]'Hn_lt' := by
+  rcases List.mem_iff_get.mp Hkin with ⟨n, Hn⟩
+  have HzipLen : (ks.zip ks').length = ks.length := by
+    rw [List.length_zip, Hlen, Nat.min_self]
+  have Hn_lt : n.val < ks.length := HzipLen ▸ n.isLt
+  have Hn_lt' : n.val < ks'.length := Hlen ▸ Hn_lt
+  have HEq : (k1, k2) = (ks[n.val]'Hn_lt, ks'[n.val]'Hn_lt') := by
+    have HG := Hn.symm
+    rw [show (ks.zip ks').get n = (ks.zip ks')[n.val]'n.isLt from rfl,
+        show (ks.zip ks')[n.val]'n.isLt = (ks[n.val]'Hn_lt, ks'[n.val]'Hn_lt')
+          from List.getElem_zip] at HG
+    exact HG
+  exact ⟨n.val, Hn_lt, Hn_lt',
+    ((Prod.mk.injEq _ _ _ _).mp HEq).1, ((Prod.mk.injEq _ _ _ _).mp HEq).2⟩
+
 /-- Bridge from the `tmp_` half of `Hwfgenst` to `isNotDefined` for a list
     of fresh temp names: if a name is `isTempIdent` and is *not* in
     `γ.generated`, then it must be undefined in σ (otherwise the iff in
