@@ -428,19 +428,14 @@ private theorem createOldVarsSubst_pos_decomp
   -- Length facts.
   have HoldGLen : oldGVars.length = oldVars.length := by
     simp [oldGVars, List.length_map]
-  have HCanonLen : oldTripsCanonical.length = oldVars.length := by
-    simp [oldTripsCanonical, List.length_map, List.length_zip, HgenOldLen,
-          HoldTysLen, HoldGLen]
-  have HziptyLen : (genOldIdents.zip oldTys).length = oldVars.length := by
-    simp [List.length_zip, HgenOldLen, HoldTysLen]
   have Hni_lt_canon : ni.val < oldTripsCanonical.length := ni.isLt
   have Hni_lt : ni.val < oldVars.length := by
-    have := ni.isLt; omega
+    have := ni.isLt
+    simp [oldTripsCanonical, List.length_map, List.length_zip, HgenOldLen,
+          HoldTysLen, HoldGLen] at this; exact this
   have Hni_lt_genOld : ni.val < genOldIdents.length := by omega
   have Hni_lt_oldTys : ni.val < oldTys.length := by omega
   have Hni_lt_oldGVars : ni.val < oldGVars.length := HoldGLen ▸ Hni_lt
-  have Hni_lt_zipty : ni.val < (genOldIdents.zip oldTys).length :=
-    HziptyLen ▸ Hni_lt
   -- Project the canonical trip via zip-getElem reductions.
   have HtripGet :
       oldTripsCanonical[ni.val]'Hni_lt_canon =
