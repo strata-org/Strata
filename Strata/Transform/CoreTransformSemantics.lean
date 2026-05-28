@@ -7,6 +7,7 @@ module
 
 public import Strata.Languages.Core.StatementSemanticsProps
 public import Strata.Transform.CoreTransform
+public import Strata.DL.Util.String
 import all Strata.Languages.Core.StatementSemantics
 import all Strata.Languages.Core.StatementSemanticsProps
 
@@ -974,6 +975,176 @@ theorem genOldExprIdentsTripGeneratedWF
   rw [genOldExprIdents_GeneratedWF Hgen]
   rw [zip_zip_unzip_fst_unzip_fst_of_lengths
         (genOldExprIdents_length Hgen) Htylen]
+
+/-! ### `isTempIdent` / `isOldTempIdent` predicates and producing-side lemmas
+
+A `CoreIdent` is a call-elim temp if its name has the `tmp_` prefix
+used by `Core.Transform.tmpVarPrefix`. The check is implemented via
+`List.isPrefixOf` on the `toList` representation rather than
+`String.startsWith` so that we can discharge it via the elementary
+`isPrefixOf_append_self` lemma without going through the opaque
+`String.Slice`/`Pattern` machinery.
+
+These predicates and their producing-side `genIdent → isTempIdent`
+lemmas are housed here alongside the rest of the `gen*` helper family. -/
+
+def isTempIdent (v : Expression.Ident) : Bool :=
+  "tmp_".toList.isPrefixOf v.name.toList
+
+/-- Mirror of `isTempIdent` for `old`-prefixed identifiers (those generated
+    by `oldVarPrefix` via `genOldExprIdent`).  See
+    `Core.Transform.oldVarPrefix`. -/
+def isOldTempIdent (v : Expression.Ident) : Bool :=
+  "old_".toList.isPrefixOf v.name.toList
+
+/-- `tmp_*` and `old_*` prefixed identifiers are pairwise disjoint:
+    no identifier can be both `isTempIdent` and `isOldTempIdent`. -/
+theorem isTempIdent_isOldTempIdent_disjoint
+    {x : Expression.Ident}
+    (Htmp : isTempIdent x = true) (Hold : isOldTempIdent x = true) : False := by
+  unfold isTempIdent at Htmp
+  unfold isOldTempIdent at Hold
+  match hL : x.name.toList with
+  | [] =>
+    rw [hL] at Htmp
+    simp at Htmp
+  | c :: cs =>
+    rw [hL] at Htmp Hold
+    simp [List.isPrefixOf] at Htmp Hold
+    have h1 : 't' = c := Htmp.1
+    have h2 : 'o' = c := Hold.1
+    rw [← h1] at h2
+    exact absurd h2 (by decide)
+
+/-! ### Producing-side `genIdent → isTempIdent` lemmas
+
+The `CoreGenState.gen pf s` operation produces an identifier whose name is
+`pf.name ++ "_" ++ toString counter` (cf. `StringGenState.gen`).  When
+`pf.name` itself begins with the literal `"tmp_"` (resp. `"old_"`)
+prefix — as it does for `genIdent _ tmpVarPrefix` (resp.
+`genIdent _ oldVarPrefix`) — the resulting identifier satisfies
+`isTempIdent` (resp. `isOldTempIdent`). -/
+
+/-- A single application of `CoreGenState.gen` against the `tmpVarPrefix`
+    family of prefixes produces an identifier satisfying `isTempIdent`. -/
+theorem genIdent_tmp_isTempIdent
+    {ident : String} {s s' : CoreGenState} {l : Expression.Ident}
+    (Hgen : (CoreGenState.gen ⟨Core.Transform.tmpVarPrefix ident, ()⟩ s) = (l, s')) :
+    isTempIdent l = true := by
+  unfold CoreGenState.gen StringGenState.gen Core.Transform.tmpVarPrefix at Hgen
+  have Hl : l = ⟨"tmp_" ++ ident ++ "_" ++ toString (Counter.genCounter s.cs.cs).fst, ()⟩ := by
+    have := congrArg Prod.fst Hgen
+    simp at this
+    rw [show (s!"tmp_{ident}" : String) = "tmp_" ++ ident from rfl] at this
+    exact this.symm
+  rw [Hl]
+  simp only [isTempIdent]
+  simp only [String.toList_append, List.append_assoc]
+  exact isPrefixOf_append_self _ _
+
+/-- Mirror of `genIdent_tmp_isTempIdent` for the `oldVarPrefix` family. -/
+theorem genIdent_old_isOldTempIdent
+    {ident : String} {s s' : CoreGenState} {l : Expression.Ident}
+    (Hgen : (CoreGenState.gen ⟨Core.Transform.oldVarPrefix ident, ()⟩ s) = (l, s')) :
+    isOldTempIdent l = true := by
+  unfold CoreGenState.gen StringGenState.gen Core.Transform.oldVarPrefix at Hgen
+  have Hl : l = ⟨"old_" ++ ident ++ "_" ++ toString (Counter.genCounter s.cs.cs).fst, ()⟩ := by
+    have := congrArg Prod.fst Hgen
+    simp at this
+    rw [show (s!"old_{ident}" : String) = "old_" ++ ident from rfl] at this
+    exact this.symm
+  rw [Hl]
+  simp only [isOldTempIdent]
+  simp only [String.toList_append, List.append_assoc]
+  exact isPrefixOf_append_self _ _
+
+/-! ### `gen*ExprIdents{,Trip}_isTempIdent` lemmas
+
+Each fresh identifier produced by `gen{Arg,Out}ExprIdent` (which calls
+`genIdent _ tmpVarPrefix`) satisfies `isTempIdent`; each produced by
+`genOldExprIdent` satisfies `isOldTempIdent`.  These lift through the
+list-mapM iterators (`gen*ExprIdents`) and the trip wrappers
+(`gen*ExprIdentsTrip`). -/
+
+theorem genArgExprIdents_isTempIdent
+    {n : Nat} {s s' : CoreGenState} {ls : List Expression.Ident}
+    (Hgen : Core.Transform.genArgExprIdents n s = (ls, s')) :
+    Forall (fun x => isTempIdent x) ls :=
+  genIdentMapM_Forall
+    (g := fun (_ : Unit) => Core.Transform.genArgExprIdent)
+    (fun H => by
+      simp only [Core.Transform.genArgExprIdent, Core.Transform.genIdent] at H
+      exact genIdent_tmp_isTempIdent H) Hgen
+
+theorem genOutExprIdents_isTempIdent
+    {idents : List Expression.Ident} {s s' : CoreGenState}
+    {ls : List Expression.Ident}
+    (Hgen : Core.Transform.genOutExprIdents idents s = (ls, s')) :
+    Forall (fun x => isTempIdent x) ls :=
+  genIdentMapM_Forall
+    (g := Core.Transform.genOutExprIdent)
+    (fun H => by
+      simp only [Core.Transform.genOutExprIdent, Core.Transform.genIdent] at H
+      exact genIdent_tmp_isTempIdent H) Hgen
+
+theorem genOldExprIdents_isOldTempIdent
+    {idents : List Expression.Ident} {s s' : CoreGenState}
+    {ls : List Expression.Ident}
+    (Hgen : Core.Transform.genOldExprIdents idents s = (ls, s')) :
+    Forall (fun x => isOldTempIdent x) ls :=
+  genIdentMapM_Forall
+    (g := Core.Transform.genOldExprIdent)
+    (fun H => by
+      simp only [Core.Transform.genOldExprIdent, Core.Transform.genIdent] at H
+      exact genIdent_old_isOldTempIdent H) Hgen
+
+/-- Trip-level isTempIdent for arg trips: every fresh ident produced by
+    `genArgExprIdentsTrip` satisfies `isTempIdent`. -/
+theorem genArgExprIdentsTrip_isTempIdent
+    {inputs : @Lambda.LTySignature Visibility} {args : List Expression.Expr}
+    {s s' : Core.Transform.CoreTransformState}
+    {argTrips : List ((Expression.Ident × Lambda.LTy) × Expression.Expr)}
+    (Hgen : Core.Transform.genArgExprIdentsTrip inputs args s = (Except.ok argTrips, s')) :
+    Forall (fun x => isTempIdent x) argTrips.unzip.fst.unzip.fst := by
+  obtain ⟨Hat, _, Hilen⟩ := genArgExprIdentsTrip_extract Hgen
+  rw [← Hat]
+  rw [zip_zip_unzip_fst_unzip_fst_of_lengths
+        (genArgExprIdents_length' args.length s.genState)
+        (by simp [List.length_map]; omega)]
+  exact genArgExprIdents_isTempIdent (s := s.genState)
+          (s' := (Core.Transform.genArgExprIdents args.length s.genState).snd)
+          (ls := (Core.Transform.genArgExprIdents args.length s.genState).fst) rfl
+
+theorem genOutExprIdentsTrip_isTempIdent
+    {outputs : @Lambda.LTySignature Visibility} {lhs : List Expression.Ident}
+    {s s' : Core.Transform.CoreTransformState}
+    {outTrips : List ((Expression.Ident × Expression.Ty) × Expression.Ident)}
+    (Hgen : Core.Transform.genOutExprIdentsTrip outputs lhs s = (Except.ok outTrips, s')) :
+    Forall (fun x => isTempIdent x) outTrips.unzip.fst.unzip.fst := by
+  obtain ⟨Hot, _, Hilen⟩ := genOutExprIdentsTrip_extract Hgen
+  rw [← Hot]
+  rw [zip_zip_unzip_fst_unzip_fst_of_lengths
+        (genOutExprIdents_length' lhs s.genState)
+        (by simp [List.length_map]; omega)]
+  exact genOutExprIdents_isTempIdent (s := s.genState)
+          (s' := (Core.Transform.genOutExprIdents lhs s.genState).snd)
+          (ls := (Core.Transform.genOutExprIdents lhs s.genState).fst) rfl
+
+/-- For the live `callElimCmd`, `oldTrips`'s `fst.fst` projection is exactly
+    the fresh `genOldIdents` produced by `genOldExprIdents`, since the trip
+    structure is `((freshIdent, ty), origVar)`. -/
+theorem genOldExprIdentsTrip_isOldTempIdent
+    {oldVars : List Expression.Ident}
+    {oldTys : List Lambda.LTy}
+    {s s' : CoreGenState}
+    {genOldIdents : List Expression.Ident}
+    (Hgen : Core.Transform.genOldExprIdents oldVars s = (genOldIdents, s'))
+    (Htylen : oldTys.length = oldVars.length) :
+    Forall (fun x => isOldTempIdent x)
+      ((genOldIdents.zip oldTys).zip oldVars).unzip.fst.unzip.fst := by
+  rw [zip_zip_unzip_fst_unzip_fst_of_lengths
+        (genOldExprIdents_length Hgen) Htylen]
+  exact genOldExprIdents_isOldTempIdent Hgen
 
 end Core
 
