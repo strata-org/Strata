@@ -4176,11 +4176,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                   have Hrd_havoc_lhs :
                       ReadValues σ_havoc lhs modvals := by
                     apply readValues_updatedStates
-                    · have HgenOldValsLen :
-                          genOldIdents.length = oldVals.length := by
-                        rw [HgenOldLen, ← HoldValsLen]
-                      simp [argTemps, outTemps, List.length_append, List.unzip_eq_map,
-                            Hargtriplen, Houttriplen, HgenOldValsLen]
+                    · simp [argTemps, outTemps, List.length_append, List.unzip_eq_map,
+                            Hargtriplen, Houttriplen, HgenOldOldValsLen]
                     · intro v Hv1 Hv2
                       cases List.mem_append.mp Hv2 with
                       | inl h => cases List.mem_append.mp h with
