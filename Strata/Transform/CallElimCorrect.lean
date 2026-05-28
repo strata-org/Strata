@@ -2208,8 +2208,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       cases List.mem_append.mp Hin1 with
                       | inl HxArg =>
                         -- x ∈ argT (tmp_), x ∈ preVars (not tmp_).
-                        have HxTemp : isTempIdent x :=
-                          (List.Forall_mem_iff.mp HargTemp) x HxArg
+                        have HxTemp : isTempIdent x := (List.Forall_mem_iff.mp HargTemp) x HxArg
                         have HxNotTemp : ¬ isTempIdent x :=
                           (HfreshEnt x Hin2).1
                         exact HxNotTemp HxTemp
@@ -4072,8 +4071,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       | inr Hx_filtArgT =>
                         have Hx_argT : x ∈ argTemps :=
                           HfiltArgT_sub_argT x Hx_filtArgT
-                        exact Hx_notTemp
-                          ((List.Forall_mem_iff.mp HargTemp) x Hx_argT)
+                        exact Hx_notTemp ((List.Forall_mem_iff.mp HargTemp) x Hx_argT)
                     · -- ── Class (b): x ∈ getVars w for some (k', w) ∈ oldSubst_L6 ──
                       cases hfind : Map.find?
                                       (Core.Transform.createOldVarsSubst
@@ -4095,13 +4093,10 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           have Hx_argT :
                               genOldIdents[ni_val]'Hni_lt_genOld ∈ argTemps :=
                             HfiltArgT_sub_argT _ Hx_filtArgT
-                          have Hx_isTemp : isTempIdent
-                              (genOldIdents[ni_val]'Hni_lt_genOld) :=
+                          have Hx_isTemp : isTempIdent (genOldIdents[ni_val]'Hni_lt_genOld) :=
                             (List.Forall_mem_iff.mp HargTemp) _ Hx_argT
-                          have Hx_isOld : isOldTempIdent
-                              (genOldIdents[ni_val]'Hni_lt_genOld) :=
-                            (List.Forall_mem_iff.mp HoldIdentsTemp)
-                              _ (List.getElem_mem _)
+                          have Hx_isOld : isOldTempIdent (genOldIdents[ni_val]'Hni_lt_genOld) :=
+                            (List.Forall_mem_iff.mp HoldIdentsTemp) _ (List.getElem_mem _)
                           exact isTempIdent_isOldTempIdent_disjoint
                             Hx_isTemp Hx_isOld
                       | none =>
