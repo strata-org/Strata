@@ -325,6 +325,7 @@ partial def translateFromDDMTermToUntyped (t : Strata.SMTResponseDDM.Term Strata
     : Except String Strata.SMT.Term := do
   match t with
   | .spec_constant_term _ sc =>
+    -- Exhaustive match over all SpecConstant variants; Lean will flag any missing case.
     match sc with
     | .sc_numeral _ n     => return .prim (.int n)
     | .sc_numeral_neg _ n => return .prim (.int (-(n : Int)))
