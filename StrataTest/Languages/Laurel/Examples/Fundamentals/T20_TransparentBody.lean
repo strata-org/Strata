@@ -16,7 +16,7 @@ def transparentBodyProgram := r"
 procedure transparentBody(): int
 {
   assert true;
-  3
+  return 3
 };
 
 procedure transparentProcedureCaller() opaque {

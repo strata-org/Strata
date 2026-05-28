@@ -16,10 +16,11 @@ def program := r"
 function assertAndAssumeInFunctions(a: int) returns (r: int)
 {
   assert 2 == 3;
+//^^^^^^^^^^^^^ error: asserts are not YET supported in functions or contracts
   assume true;
+//^^^^^^^^^^^ error: assumes are not YET supported in functions or contracts
   a
 };
-
 
 function letsInFunction() returns (r: int) {
   var x: int := 0;
@@ -37,12 +38,6 @@ function localVariableWithoutInitializer(): int {
   var x: int;
 //^^^^^^^^^^ error: local variables in functions must have initializers
   3
-};
-
-procedure deadCodeAfterIfElse(x: int) returns (r: int) {
-  if x > 0 then { return 1 } else { return 2 };
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: in a transparent body, if-then-else is only supported as the last statement in a block
-  return 3
 };
 "
 

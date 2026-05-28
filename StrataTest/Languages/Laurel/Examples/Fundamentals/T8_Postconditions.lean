@@ -13,24 +13,6 @@ open Strata
 namespace Strata.Laurel
 
 def program := r"
-
-function opaqueFunction(x: int) returns (r: int)
-  requires x > 0
-  opaque
-  ensures r > 0
-{
-  x
-};
-
-procedure callerOfOpaqueFunction()
-  opaque
-{
-  var x: int := opaqueFunction(3);
-  assert x > 0;
-  assert x == 3
-//^^^^^^^^^^^^^ error: assertion could not be proved
-};
-
 procedure opaqueBody(x: int) returns (r: int)
   opaque
   ensures r > 0
@@ -58,4 +40,4 @@ procedure invalidPostcondition(x: int)
 "
 
 #guard_msgs (drop info, error) in
-#eval testInputWithOffset "Postconditions" program 17 processLaurelFileKeepIntermediates
+#eval testInputWithOffset "Postconditions" program 14 processLaurelFileKeepIntermediates

@@ -113,6 +113,7 @@ private def rewriteQuantifierBodiesInProc (nonExternalNames : List String) (proc
     let postconds' := postconds.map fun c => { c with condition := rewrite c.condition }
     { proc with body := .Abstract postconds' }
   | .External => proc
+
 /-- Build a free postcondition equating the procedure's output to its functional version.
     For a procedure `foo(a, b) returns (r)`, produces:
       `r == foo$asFunction(a, b)` -/
@@ -129,12 +130,15 @@ private def mkFreePostcondition (proc : Procedure) : StmtExprMd :=
     If the procedure is transparent, include a functional body.
     Otherwise the function is opaque. -/
 private def mkFunctionCopy (asFunctionNames : List String) (proc : Procedure) : Procedure :=
-  let funcName := { proc.name with text := proc.name.text ++ "$asFunction", uniqueId := none }
+  let hasProcedureTwin := asFunctionNames.contains proc.name.text
+  let funcName := if hasProcedureTwin then
+    { proc.name with text := proc.name.text ++ "$asFunction", uniqueId := none }
+    else proc.name
   let body := match proc.body with
-    | .Transparent b => .Transparent (rewriteCallsToFunctional asFunctionNames (stripAssertAssume b))
-    | .Opaque _ _ _ => .Opaque [] none []
+    | .Transparent b => .Transparent (rewriteCallsToFunctional asFunctionNames (if hasProcedureTwin then stripAssertAssume b else b))
+    | .Opaque _ _ _ => if hasProcedureTwin then .Opaque [] none [] else proc.body
     | x => x
-  { proc with name := funcName, isFunctional := true, body := body, preconditions := [] }
+  { proc with name := funcName, isFunctional := true, body := body }
 
 /-- Check whether a function copy has a body (i.e. the procedure was transparent). -/
 private def functionHasBody (proc : Procedure) : Bool :=
@@ -169,18 +173,14 @@ For each procedure:
 - If the function has a body, add a free postcondition equating the procedure output to the function
 -/
 def transparencyPass (program : Program) : UnorderedCoreWithLaurelTypes :=
-  let nonExternal := program.staticProcedures.filter (fun p => !p.body.isExternal)
-  let nonExternalNames := nonExternal.map (fun p => p.name.text)
+  let (toUpdate, _) := program.staticProcedures.partition (fun p => !p.body.isExternal && !p.isFunctional)
+  let toUpdateNames := toUpdate.map (fun p => p.name.text)
   -- $asFunction copies for non-external procedures
-  let asFunctions := nonExternal.map (mkFunctionCopy nonExternalNames)
-  -- External procedures get a plain function copy (they have no $asFunction version)
-  let externalFunctions := program.staticProcedures.filter (fun p => p.body.isExternal)
-    |>.map fun proc => { proc with isFunctional := true }
-  let functions := externalFunctions ++ asFunctions
-  let coreProcedures := nonExternal.map fun proc =>
+  let functions := program.staticProcedures.map (mkFunctionCopy toUpdateNames)
+  let coreProcedures := toUpdate.map fun proc =>
     let freePostcondition := mkFreePostcondition proc
-    let proc := { proc with isFunctional := false, axioms := proc.axioms.map (rewriteCallsToFunctional nonExternalNames) }
-    let proc := rewriteQuantifierBodiesInProc nonExternalNames proc
+    let proc := { proc with isFunctional := false, axioms := proc.axioms.map (rewriteCallsToFunctional toUpdateNames) }
+    let proc := rewriteQuantifierBodiesInProc toUpdateNames proc
     addFreePostcondition proc freePostcondition
   let datatypes := program.types.filterMap fun td => match td with
     | .Datatype dt => some dt

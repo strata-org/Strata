@@ -222,16 +222,14 @@ procedure list are transformed; functions are left unchanged.
 def liftImperativeExpressionsInCore (uc : UnorderedCoreWithLaurelTypes)
     (model : SemanticModel) : UnorderedCoreWithLaurelTypes :=
   let imperativeCallees := uc.coreProcedures.map (·.name.text)
-  if imperativeCallees.isEmpty then uc
-  else
-    let liftedProgram := liftExpressionAssignments
-      { staticProcedures := uc.coreProcedures, staticFields := [], types := [], constants := [] }
-      model imperativeCallees
-    let liftedProcs := liftedProgram.staticProcedures
-    { uc with
-      functions := uc.functions
-      coreProcedures := liftedProcs
-    }
+  let liftedProgram := liftExpressionAssignments
+    { staticProcedures := uc.coreProcedures, staticFields := [], types := [], constants := [] }
+    model imperativeCallees
+  let liftedProcs := liftedProgram.staticProcedures
+  { uc with
+    functions := uc.functions
+    coreProcedures := liftedProcs
+  }
 
 /-- A single pass on the unordered Core representation. Each pass receives the
     current `UnorderedCoreWithLaurelTypes` and the semantic model and returns
@@ -246,11 +244,11 @@ structure CorePass where
 
 /-- The ordered sequence of passes on the unordered Core representation. -/
 private def corePipeline : Array CorePass := #[
-  { name := "EliminateMultipleOutputs"
-    run := fun uc _m => eliminateMultipleOutputs uc },
-  { name := "InlineLocalVariablesInExpressions"
-    needsResolves := true
-    run := fun uc _m => inlineLocalVariablesInExpressions uc },
+  -- { name := "EliminateMultipleOutputs"
+  --   run := fun uc _m => eliminateMultipleOutputs uc },
+  -- { name := "InlineLocalVariablesInExpressions"
+  --   needsResolves := true
+  --   run := fun uc _m => inlineLocalVariablesInExpressions uc },
   { name := "LiftImperativeExpressionsInCore"
     needsResolves := true
     run := fun uc m => liftImperativeExpressionsInCore uc m }
@@ -287,7 +285,7 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
         let newDiags := errors.toList.map fun d =>
           { d with message :=
               s!"Internal error: resolution after '{pass.name}' introduced this diagnostic: {d.message}" }
-        emit pass.name "core.st" unorderedCore
+        emit pass.name "unorderedCoreWithLaurelTypes.st" unorderedCore
         return (none, passDiags ++ newDiags, program, stats)
       unorderedCore := uc'
       fnModel := m'

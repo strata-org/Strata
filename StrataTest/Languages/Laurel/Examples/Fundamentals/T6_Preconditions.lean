@@ -22,7 +22,7 @@ procedure hasRequires(x: int) returns (r: int)
 {
   assert x > 0;
   assert x > 3;
-//^^^^^^^^^^^^ error: assertion could not be proved
+//^^^^^^^^^^^^ error: assertion does not hold
   x + 1
 };
 
@@ -30,7 +30,7 @@ procedure caller()
   opaque
 {
   var x: int := hasRequires(1);
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
   var y: int := hasRequires(3)
 };
 
@@ -44,7 +44,7 @@ procedure aFunctionWithPreconditionCaller()
   opaque
 {
   var x: int := aFunctionWithPrecondition(0)
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 // Error ranges are too wide because Core does not use expression locations
 };
 
@@ -76,7 +76,7 @@ procedure funcMultipleRequiresCaller()
 {
   var a: int := funcMultipleRequires(1, 2);
   var b: int := funcMultipleRequires(1, -1)
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 "
 

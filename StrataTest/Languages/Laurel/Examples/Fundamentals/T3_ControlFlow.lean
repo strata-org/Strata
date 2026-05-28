@@ -13,25 +13,6 @@ open Strata
 namespace Strata.Laurel
 
 def program := r"
-function letsInFunction() returns (r: int) {
-  var x: int := 0;
-  var y: int := x + 1;
-  var z: int := y + 1;
-  z
-};
-
-procedure callLetsInFunction() opaque {
-  var x: int := letsInFunction();
-  assert x == 2
-};
-
-function assertAndAssumeInFunctions(a: int) returns (r: int)
-{
-  assert 2 == 3;
-//^^^^^^^^^^^^^ error: assertion does not hold
-  assume true;
-  a
-};
 
 procedure returnAtEnd(x: int) returns (r: int)
 {

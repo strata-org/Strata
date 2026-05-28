@@ -124,7 +124,7 @@ private def collectContractInfo (procs : List Procedure) : Std.HashMap String Co
     let postconds := getPostconditions proc.body
     let hasPre := !proc.preconditions.isEmpty
     let hasPost := !postconds.isEmpty
-    if hasPre || hasPost then
+    if !proc.isFunctional && (hasPre || hasPost) then
       m.insert proc.name.text {
         hasPreCondition := hasPre
         hasPostCondition := hasPost
@@ -385,7 +385,7 @@ def contractPass (program : Program) : Program :=
   let contractInfoMap := collectContractInfo program.staticProcedures
 
   -- Generate helper procedures for all procedures with contracts
-  let helperProcs := program.staticProcedures.flatMap fun proc =>
+  let helperProcs := (program.staticProcedures.filter (fun proc => !proc.isFunctional)).flatMap fun proc =>
     let postconds := getPostconditions proc.body
     let preProc :=
       if proc.preconditions.isEmpty then []
@@ -398,22 +398,25 @@ def contractPass (program : Program) : Program :=
 
   -- Transform procedures: strip contracts, add assume/assert, rewrite call sites
   let transformedProcs := program.staticProcedures.map fun proc =>
-    let proc := match proc.invokeOn with
-      | some trigger =>
-        let postconds := getPostconditions proc.body
-        if postconds.isEmpty then { proc with invokeOn := none }
-        else { proc with
-          axioms := [mkInvokeOnAxiom proc.inputs trigger postconds]
-          invokeOn := none }
-      | none => proc
-    let proc := match contractInfoMap.get? proc.name.text with
-      | some info =>
-        { proc with
-          preconditions := []
-          body := transformProcBody proc info }
-      | none => proc
-    -- Rewrite call sites in the procedure body
-    rewriteCallSitesInProc contractInfoMap proc
+    if proc.isFunctional then
+      proc
+    else
+      let proc := match proc.invokeOn with
+        | some trigger =>
+          let postconds := getPostconditions proc.body
+          if postconds.isEmpty then { proc with invokeOn := none }
+          else { proc with
+            axioms := [mkInvokeOnAxiom proc.inputs trigger postconds]
+            invokeOn := none }
+        | none => proc
+      let proc := match contractInfoMap.get? proc.name.text with
+        | some info =>
+          { proc with
+            preconditions := []
+            body := transformProcBody proc info }
+        | none => proc
+      -- Rewrite call sites in the procedure body
+      rewriteCallSitesInProc contractInfoMap proc
 
   { program with staticProcedures := helperProcs ++ transformedProcs }
 
