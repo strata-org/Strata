@@ -3226,15 +3226,11 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       congr 1; exact HAlign_lhs.symm
                     rw [Hj_eq, ← HStep4, HStep5]
                   -- D2d: Structural pieces of HpostPayload (per-entry).
-                  let oldVars_L6 : List Expression.Ident :=
-                    callElim_oldVars proc' args
-                  let oldGVars_L6 : List Expression.Ident :=
-                    oldVars_L6.map (fun g => CoreIdent.mkOld g.name)
                   let oldTripsCanonical_L6 :
                       List ((Expression.Ident × Expression.Ty) ×
                             Expression.Ident) :=
-                    (((genOldIdents.zip oldTys).zip oldVars_L6).zip
-                      oldGVars_L6).map
+                    (((genOldIdents.zip oldTys).zip oldVars).zip
+                      (oldVars.map (fun g => CoreIdent.mkOld g.name))).map
                       fun (((fresh, ty), _orig), oldG) => ((fresh, ty), oldG)
                   let inputOnlyOldSubst_L6 :
                       Map Expression.Ident Expression.Expr :=
