@@ -77,7 +77,7 @@ private def mkPostConditionProc (name : String)
     outputs := [⟨mkId "$result", { val := .TBool, source := none }⟩]
     preconditions := []
     decreases := none
-    isFunctional := false
+    isFunctional := true
     body := .Transparent condition.condition }
 
 /-- Information about a procedure's contracts. -/
