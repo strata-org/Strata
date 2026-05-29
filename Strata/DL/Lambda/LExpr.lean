@@ -342,6 +342,12 @@ def collectFvarNames {T : LExprParamsT} : LExpr T → List (Identifier T.base.ID
 
 def annotationTyVars (e : LExpr ⟨⟨M, IDMeta⟩, LMonoTy⟩) : Std.HashSet TyIdentifier :=
   match e with
+  | .fvar _ _ (some ty) => LMonoTy.freeVars ty |>.foldl .insert {}
+  | .fvar _ _ none => {}
+  | .op _ _ (some ty) => LMonoTy.freeVars ty |>.foldl .insert {}
+  | .op _ _ none => {}
+  | .const _ _ => {}
+  | .bvar _ _ => {}
   | .abs _ _ (some ty) body => LMonoTy.freeVars ty |>.foldl .insert (annotationTyVars body)
   | .abs _ _ none body => annotationTyVars body
   | .quant _ _ _ (some ty) tr body =>
@@ -350,7 +356,6 @@ def annotationTyVars (e : LExpr ⟨⟨M, IDMeta⟩, LMonoTy⟩) : Std.HashSet Ty
   | .app _ e1 e2 => (annotationTyVars e1).union (annotationTyVars e2)
   | .ite _ c t f => (annotationTyVars c).union ((annotationTyVars t).union (annotationTyVars f))
   | .eq _ e1 e2 => (annotationTyVars e1).union (annotationTyVars e2)
-  | _ => {}
 
 /-- Checks if the expression contains a lambda abstraction anywhere. -/
 def hasAbs {T : LExprParamsT} : LExpr T → Bool

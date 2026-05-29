@@ -21,9 +21,6 @@ open Std (ToFormat Format format)
 
 def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func : Function) :
     Except Format (Function × Core.Expression.TyEnv) := do
-  -- (FIXME) Very similar to `Lambda.inferOp`, except that the body is annotated
-  -- using `LExprT.resolve`. Can we share code here?
-  --
   -- `LFunc.type` below will also catch any ill-formed functions (e.g.,
   -- where there are duplicates in the formals, etc.).
   let origTypeArgs := func.typeArgs
@@ -61,9 +58,7 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
                 {strayVars.toList} (not in typeArgs {origTypeArgs})"
     -- Add formals with monomorphic types (type parameters are fixed in the body).
     let Env := Env.pushEmptyContext
-    let monoInputs : @LTySignature Unit :=
-      func.inputs.map (fun (id, mty) => (id, .forAll [] mty))
-    let Env := Env.addInNewestContext monoInputs
+    let Env := Env.addInNewestContext (LFunc.inputMonoSignature func)
     -- Type check the body and unify with the return type.
     let (bodya, Env) ← LExpr.resolve C Env body
     let bodyty := bodya.toLMonoTy
@@ -71,16 +66,22 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
     let S ← Constraints.unify [(retty, bodyty)] (TEnv.stateSubstInfo Env) |>.mapError format
     -- The inferred type must be alpha-equivalent to the declared signature.
     let inferredTy := LMonoTy.subst S.subst monoty
-    let bwdMap ← match LMonoTy.alphaEquiv monoty inferredTy with
+    let bwdMap ← match LMonoTy.alphaEquivMap monoty inferredTy with
       | some m => pure m
       | none =>
-        .error f!"Function '{func.name}': body constrains the type to '{inferredTy}', \
-                  incompatible with declared polymorphic signature '{monoty}'"
+        let displaySubst : Subst :=
+          [func.typeArgs.zip origTypeArgs |>.map (fun (fresh, orig) => (fresh, .ftvar orig))]
+        let displayInferred := LMonoTy.subst displaySubst inferredTy
+        let displayMono := LMonoTy.subst displaySubst monoty
+        .error f!"Function '{func.name}': body constrains the type to '{displayInferred}', \
+                  incompatible with declared polymorphic signature '{displayMono}'"
     let Env := TEnv.updateSubst Env S
     -- Apply S to the body, then rename type variables to match the
     -- instantiated typeArgs so that body annotations are consistent.
     let bodya := LExpr.applySubstT bodya S.subst
-    let renameSubst : Subst := [bwdMap.toList.map (fun (k, v) => (k, .ftvar v))]
+    -- Identity entries are no-ops: bijectivity of bwdMap ensures no other key maps to k.
+    let renameSubst : Subst :=
+      [bwdMap.toList.filterMap (fun (k, v) => if k == v then none else some (k, .ftvar v))]
     let bodya := LExpr.applySubstT bodya renameSubst
     -- Validate the measure expression type for int-recursive functions.
     -- Only validates non-fvar measures (fvar measures are validated in TermCheck

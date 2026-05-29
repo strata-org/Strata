@@ -379,7 +379,7 @@ Check if two monotypes are alpha-equivalent (equal up to consistent renaming of
 free type variables). Returns the backward mapping (ty2 vars → ty1 vars) on
 success, used to rename body annotations back to the declared type parameter names.
 -/
-def LMonoTy.alphaEquiv (ty1 ty2 : LMonoTy) :
+def LMonoTy.alphaEquivMap (ty1 ty2 : LMonoTy) :
     Option (Std.HashMap TyIdentifier TyIdentifier) :=
   (go ty1 ty2 {} {}).map (·.2)
 where

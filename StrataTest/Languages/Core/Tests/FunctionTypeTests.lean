@@ -48,43 +48,59 @@ body: some (fun y : ($__ty0) => y)(x)
 
 -- Multiple type parameters, all used consistently.
 -- fst<a,b>(x:a, y:b):a { x }
-private def fstFunc : Core.Function :=
-  { name := ⟨"fst", ()⟩,
-    typeArgs := ["a", "b"],
-    inputs := [(⟨"x", ()⟩, .ftvar "a"), (⟨"y", ()⟩, .ftvar "b")],
-    output := .ftvar "a",
-    body := some (LExpr.fvar () ⟨"x", ()⟩ none) }
+open Strata in
+private def fstPgm :=
+#strata
+program Core;
+
+function fst<a, b>(x : a, y : b) : a {
+  x
+}
+#end
 
 /--
-info: ok: typeArgs: [$__ty0, $__ty1]
-inputs: (x, $__ty0) (y, $__ty1)
-output: $__ty0
-body: some x
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: ok: program Core;
+
+function fst<$__ty0, $__ty1> (x : $__ty0, y : $__ty1) : $__ty0 {
+  x
+}
 -/
 #guard_msgs in
-#eval do
-  let (func', _) ← Function.typeCheck C Env fstFunc
-  return format f!"typeArgs: {func'.typeArgs}\ninputs: {func'.inputs}\noutput: {func'.output}\nbody: {func'.body}"
+open Strata in
+#eval
+  let pgm := (TransM.run Inhabited.default (translateProgram fstPgm)).fst
+  Std.format (Core.typeCheck .default pgm.stripMetaData)
 
 -- Annotated binder renamed to match instantiated typeArgs.
--- id<T>(x:T):T { (\(y:T).y)(x) }
-private def annotatedBinderFunc : Core.Function :=
-  { name := ⟨"id", ()⟩,
-    typeArgs := ["T"],
-    inputs := [(⟨"x", ()⟩, .ftvar "T")],
-    output := .ftvar "T",
-    body := some (.app () (.abs () "y" (some (.ftvar "T")) (.bvar () 0)) (.fvar () ⟨"x", ()⟩ none)) }
+-- id<T>(x:T):T { (fun y:T => y)(x) }
+open Strata in
+private def annotatedBinderPgm :=
+#strata
+program Core;
+
+function id<T>(x : T) : T {
+  (fun y : T => y)(x)
+}
+#end
 
 /--
-info: ok: typeArgs: [$__ty0]
-inputs: (x, $__ty0)
-output: $__ty0
-body: some (fun y : ($__ty0) => y)(x)
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: ok: program Core;
+
+function id<$__ty0> (x : $__ty0) : $__ty0 {
+  (fun y : ($__ty0) => y)(x)
+}
 -/
 #guard_msgs in
-#eval do
-  let (func', _) ← Function.typeCheck C Env annotatedBinderFunc
-  return format f!"typeArgs: {func'.typeArgs}\ninputs: {func'.inputs}\noutput: {func'.output}\nbody: {func'.body}"
+open Strata in
+#eval
+  let pgm := (TransM.run Inhabited.default (translateProgram annotatedBinderPgm)).fst
+  Std.format (Core.typeCheck .default pgm.stripMetaData)
 
 ---------------------------------------------------------------------
 -- Should FAIL
@@ -100,7 +116,7 @@ private def identifyParamsFunc : Core.Function :=
     body := some (LExpr.fvar () ⟨"y", ()⟩ none) }
 
 /--
-info: error: Function 'swap': body constrains the type to '(arrow $__ty1 (arrow $__ty1 $__ty1))', incompatible with declared polymorphic signature '(arrow $__ty0 (arrow $__ty1 $__ty0))'
+info: error: Function 'swap': body constrains the type to '(arrow b (arrow b b))', incompatible with declared polymorphic signature '(arrow a (arrow b a))'
 -/
 #guard_msgs in
 #eval do
@@ -108,21 +124,25 @@ info: error: Function 'swap': body constrains the type to '(arrow $__ty1 (arrow 
   return format f!"typeArgs: {func'.typeArgs}\ninputs: {func'.inputs}\noutput: {func'.output}\nbody: {func'.body}"
 
 -- Binder with incorrect concrete annotation in a polymorphic function.
--- bad<T>(x:T):T { (\(y:int).y)(x) } forces T = int.
-private def wrongAnnotFunc : Core.Function :=
-  { name := ⟨"bad", ()⟩,
-    typeArgs := ["T"],
-    inputs := [(⟨"x", ()⟩, .ftvar "T")],
-    output := .ftvar "T",
-    body := some (.app () (.abs () "y" (some .int) (.bvar () 0)) (.fvar () ⟨"x", ()⟩ none)) }
+-- bad<T>(x:T):T { (fun y:int => y)(x) } forces T = int.
+open Strata in
+private def wrongAnnotPgm :=
+#strata
+program Core;
+
+function bad<T>(x : T) : T {
+  (fun y : int => y)(x)
+}
+#end
 
 /--
-info: error: Function 'bad': body constrains the type to '(arrow int int)', incompatible with declared polymorphic signature '(arrow $__ty0 $__ty0)'
+info: error: Function 'bad': body constrains the type to '(arrow int int)', incompatible with declared polymorphic signature '(arrow T T)'
 -/
 #guard_msgs in
-#eval do
-  let (func', _) ← Function.typeCheck C Env wrongAnnotFunc
-  return format f!"typeArgs: {func'.typeArgs}\ninputs: {func'.inputs}\noutput: {func'.output}\nbody: {func'.body}"
+open Strata in
+#eval
+  let pgm := (TransM.run Inhabited.default (translateProgram wrongAnnotPgm)).fst
+  Std.format (Core.typeCheck .default pgm.stripMetaData)
 
 -- Body introduces a type variable not in typeArgs via a lambda annotation.
 -- id<T>(x:T):T { (\(y:U).y)(x) } — U is not in typeArgs.
@@ -185,9 +205,128 @@ def issue586_pgm : Program := { decls := [
 ]}
 
 /--
-info: error: Function 'foo': body constrains the type to '(arrow int int)', incompatible with declared polymorphic signature '(arrow $__ty0 $__ty0)'
+info: error: Function 'foo': body constrains the type to '(arrow int int)', incompatible with declared polymorphic signature '(arrow a a)'
 -/
 #guard_msgs in
 #eval (typeCheck .default issue586_pgm)
+
+-- Quantifier annotation referencing an undeclared type var.
+-- f<T>(x:T):T { (forall y:U. y)(x) } — U is not in typeArgs.
+private def strayQuantVarFunc : Core.Function :=
+  { name := ⟨"f", ()⟩,
+    typeArgs := ["T"],
+    inputs := [(⟨"x", ()⟩, .ftvar "T")],
+    output := .ftvar "T",
+    body := some (.app ()
+      (.quant () .all "y" (some (.ftvar "U")) (.bvar () 0) (.bvar () 0))
+      (.fvar () ⟨"x", ()⟩ none)) }
+
+/--
+info: error: Function 'f': body contains undeclared type variables [U] (not in typeArgs [T])
+-/
+#guard_msgs in
+#eval do
+  let (func', _) ← Function.typeCheck C Env strayQuantVarFunc
+  return format f!"typeArgs: {func'.typeArgs}\ninputs: {func'.inputs}\noutput: {func'.output}\nbody: {func'.body}"
+
+-- fvar annotation referencing an undeclared type var.
+-- g<T>(x:T):T { x } where x carries annotation (ftvar "V").
+private def strayFvarAnnotFunc : Core.Function :=
+  { name := ⟨"g", ()⟩,
+    typeArgs := ["T"],
+    inputs := [(⟨"x", ()⟩, .ftvar "T")],
+    output := .ftvar "T",
+    body := some (.fvar () ⟨"x", ()⟩ (some (.ftvar "V"))) }
+
+/--
+info: error: Function 'g': body contains undeclared type variables [V] (not in typeArgs [T])
+-/
+#guard_msgs in
+#eval do
+  let (func', _) ← Function.typeCheck C Env strayFvarAnnotFunc
+  return format f!"typeArgs: {func'.typeArgs}\ninputs: {func'.inputs}\noutput: {func'.output}\nbody: {func'.body}"
+
+-- Non-trivial bwdMap: unannotated binder creates fresh type variables that
+-- get renamed back via the alpha-equivalence witness map.
+-- wrap<a,b>(f: a->b, x: a): b { (\y.f(y))(x) }
+private def nonTrivialBwdFunc : Core.Function :=
+  { name := ⟨"wrap", ()⟩,
+    typeArgs := ["a", "b"],
+    inputs := [(⟨"f", ()⟩, .arrow (.ftvar "a") (.ftvar "b")), (⟨"x", ()⟩, .ftvar "a")],
+    output := .ftvar "b",
+    body := some (.app ()
+      (.abs () "y" none (.app () (.fvar () ⟨"f", ()⟩ none) (.bvar () 0)))
+      (.fvar () ⟨"x", ()⟩ none)) }
+
+/--
+info: ok: typeArgs: [$__ty0, $__ty1]
+inputs: (f, (arrow $__ty0 $__ty1)) (x, $__ty0)
+output: $__ty1
+body: some (fun y : ($__ty0) => f(y))(x)
+-/
+#guard_msgs in
+#eval do
+  let (func', _) ← Function.typeCheck C Env nonTrivialBwdFunc
+  return format f!"typeArgs: {func'.typeArgs}\ninputs: {func'.inputs}\noutput: {func'.output}\nbody: {func'.body}"
+
+-- Higher-order function with multiple type args.
+-- apply<a,b>(f: a -> b, x: a): b { f(x) }
+open Strata in
+def higherOrderPgm :=
+#strata
+program Core;
+
+inline function apply<a, b>(f : a -> b, x : a) : b {
+  f(x)
+}
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: ok: program Core;
+
+inline function apply<$__ty0, $__ty1> (f : $__ty0 -> $__ty1, x : $__ty0) : $__ty1 {
+  f(x)
+}
+-/
+#guard_msgs in
+open Strata in
+#eval
+  let pgm := (TransM.run Inhabited.default (translateProgram higherOrderPgm)).fst
+  Std.format (Core.typeCheck .default pgm.stripMetaData)
+
+---------------------------------------------------------------------
+-- alphaEquivMap unit tests
+---------------------------------------------------------------------
+
+-- Reflexive: a type is alpha-equivalent to itself.
+#guard (LMonoTy.alphaEquivMap (.ftvar "a") (.ftvar "a")).isSome
+
+-- Consistent renaming: (a → a) ≈ (b → b).
+#guard (LMonoTy.alphaEquivMap
+  (.tcons "arrow" [.ftvar "a", .ftvar "a"])
+  (.tcons "arrow" [.ftvar "b", .ftvar "b"])).isSome
+
+-- Non-injective (capture): (a → b) ≉ (c → c) — two vars mapped to one.
+#guard (LMonoTy.alphaEquivMap
+  (.tcons "arrow" [.ftvar "a", .ftvar "b"])
+  (.tcons "arrow" [.ftvar "c", .ftvar "c"])).isNone
+
+-- Distinct ftvars with crossing: (a → b) ≈ (b → a).
+#guard (LMonoTy.alphaEquivMap
+  (.tcons "arrow" [.ftvar "a", .ftvar "b"])
+  (.tcons "arrow" [.ftvar "b", .ftvar "a"])).isSome
+
+-- Mismatched constructors: arrow ≉ pair.
+#guard (LMonoTy.alphaEquivMap
+  (.tcons "arrow" [.ftvar "a", .ftvar "b"])
+  (.tcons "pair" [.ftvar "a", .ftvar "b"])).isNone
+
+-- Mismatched arity: (a → b) ≉ (a).
+#guard (LMonoTy.alphaEquivMap
+  (.tcons "arrow" [.ftvar "a", .ftvar "b"])
+  (.tcons "arrow" [.ftvar "a"])).isNone
 
 end Core.FunctionTypeTests
