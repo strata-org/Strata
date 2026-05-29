@@ -14,6 +14,7 @@ open Elab Command
 def elabQuery (ctx : Core.SMT.Context) (assums : List SMT.Term) (conc : SMT.Term) : CommandElabM Unit := do
   runTermElabM fun _ => do
     let e ← translateQueryMeta ctx assums conc
+    Meta.check e
     logInfo e
 
 /-- info: ∀ (a : Int), 42 > a -/
@@ -41,3 +42,185 @@ info: ∀ (α : Type → Type → Type) [inst : ∀ (α_1 α_2 : Type), Nonempty
 #guard_msgs in
 #eval
   elabQuery {} [] (.app .eq [(.app .abs [(.prim (.int (-5)))] (.prim .int)), (.prim (.int 5))] (.prim .bool))
+
+/-- info: (if 0 = 0 then 0 else 1) = 0 -/
+#guard_msgs in
+#eval
+  let c := .app .eq [(.prim (.int 0)), (.prim (.int 0))] (.prim .bool)
+  let t := .app .ite [c, (.prim (.int 0)), (.prim (.int 1))] (.prim .int)
+  elabQuery {} [] (.app .eq [t, (.prim (.int 0))] (.prim .bool))
+
+-- Int literal as the first operand of `.app .eq`: previously built
+-- `@Eq Prop 5 ...` because `.prim (.int 5)` returned `(mkProp, _)`.
+/-- info: 5 = -5 -/
+#guard_msgs in
+#eval
+  elabQuery {} [] (.app .eq [(.prim (.int 5)), (.app .neg [(.prim (.int 5))] (.prim .int))] (.prim .bool))
+
+-- Int literal as the first operand of arithmetic: `leftAssocOp` propagates the
+-- first operand's type as the whole expression's type, so before the fix the
+-- entire `add` was typed `Prop`.
+/-- info: 1 + 2 = 3 -/
+#guard_msgs in
+#eval
+  elabQuery {} [] (.app .eq [(.app .add [(.prim (.int 1)), (.prim (.int 2))] (.prim .int)), (.prim (.int 3))] (.prim .bool))
+
+-- Int literal as a branch of a nested ITE: exercises type propagation across
+-- nested conditionals.
+/-- info: (if 0 = 0 then if 0 = 0 then 1 else 2 else 3) = 1 -/
+#guard_msgs in
+#eval
+  let c := .app .eq [(.prim (.int 0)), (.prim (.int 0))] (.prim .bool)
+  let inner := .app .ite [c, (.prim (.int 1)), (.prim (.int 2))] (.prim .int)
+  let outer := .app .ite [c, inner, (.prim (.int 3))] (.prim .int)
+  elabQuery {} [] (.app .eq [outer, (.prim (.int 1))] (.prim .bool))
+
+-- SMT-Lib theory of strings: literals and the operations supported by
+-- `Denote.lean` (`str_length`, `str_concat`).
+
+/-- info: "hi" = "hi" -/
+#guard_msgs in
+#eval
+  elabQuery {} [] (.app .eq [(.prim (.string "hi")), (.prim (.string "hi"))] (.prim .bool))
+
+/-- info: Int.ofNat "hello".length = 5 -/
+#guard_msgs in
+#eval
+  elabQuery {} []
+    (.app .eq [(.app .str_length [(.prim (.string "hello"))] (.prim .int)), (.prim (.int 5))]
+      (.prim .bool))
+
+/-- info: "hi" ++ " there" = "hi there" -/
+#guard_msgs in
+#eval
+  elabQuery {} []
+    (.app .eq [(.app .str_concat [(.prim (.string "hi")), (.prim (.string " there"))] (.prim .string)),
+               (.prim (.string "hi there"))]
+      (.prim .bool))
+
+/-- info: "a" ++ "b" ++ "c" = "abc" -/
+#guard_msgs in
+#eval
+  elabQuery {} []
+    (.app .eq
+      [(.app .str_concat
+         [(.prim (.string "a")), (.prim (.string "b")), (.prim (.string "c"))]
+         (.prim .string)),
+       (.prim (.string "abc"))]
+      (.prim .bool))
+
+-- Malformed string terms are rejected up front, matching `Denote.denoteTerm`.
+-- Using `.prim (.bool _)` (which translates to type `Prop`) for the
+-- non-string operand keeps the expected error message stable independent of
+-- how `.prim (.int _)` happens to be typed by the translator.
+
+/-- error: Error: expected String type, got 'Prop' -/
+#guard_msgs in
+#eval
+  elabQuery {} []
+    (.app .eq
+      [(.app .str_length [(.prim (.bool true))] (.prim .int)),
+       (.prim (.int 0))]
+      (.prim .bool))
+
+/-- error: Error: str_concat expects at least two operands, got '1' -/
+#guard_msgs in
+#eval
+  elabQuery {} []
+    (.app .eq
+      [(.app .str_concat [(.prim (.string "hi"))] (.prim .string)),
+       (.prim (.string "hi"))]
+      (.prim .bool))
+
+/-- error: Error: expected String type, got 'Prop' -/
+#guard_msgs in
+#eval
+  elabQuery {} []
+    (.app .eq
+      [(.app .str_concat [(.prim (.bool true)), (.prim (.string "hi"))] (.prim .string)),
+       (.prim (.string "hi"))]
+      (.prim .bool))
+
+-- `leftAssocOp` and `leftAssocOpBitVec` require at least two operands,
+-- matching the existing error message and `Denote.leftAssoc`.  Singletons
+-- used to silently pass through the first operand; now they throw.
+
+/-- error: Error: expected at least two arguments for 'HAdd.hAdd', got '1' -/
+#guard_msgs in
+#eval
+  elabQuery {} []
+    (.app .eq
+      [(.app .add [(.prim (.int 0))] (.prim .int)),
+       (.prim (.int 0))]
+      (.prim .bool))
+
+/-- error: Error: expected at least two arguments for 'And', got '1' -/
+#guard_msgs in
+#eval
+  elabQuery {} []
+    (.app .and
+      [(.app .eq [(.prim (.int 0)), (.prim (.int 0))] (.prim .bool))]
+      (.prim .bool))
+
+/-- error: Error: expected at least two arguments for BitVec op, got '1' -/
+#guard_msgs in
+#eval
+  let a : SMT.TermVar := { id := "a", ty := .prim (.bitvec 8) }
+  elabQuery {} []
+    (.quant .all [a] a
+      (.app .eq
+        [(.app .bvadd [(.var a)] (.prim (.bitvec 8))), (.var a)]
+        (.prim .bool)))
+
+/-- error: Error: expected at least two arguments for BitVec op, got '1' -/
+#guard_msgs in
+#eval
+  let a : SMT.TermVar := { id := "a", ty := .prim (.bitvec 8) }
+  elabQuery {} []
+    (.quant .all [a] a
+      (.app .eq
+        [(.app .bvand [(.var a)] (.prim (.bitvec 8))), (.var a)]
+        (.prim .bool)))
+
+-- Empty-operand lists are still rejected, as before.
+
+/-- error: Error: expected at least two arguments for 'HAdd.hAdd', got '0' -/
+#guard_msgs in
+#eval
+  elabQuery {} []
+    (.app .eq [(.app .add [] (.prim .int)), (.prim (.int 0))] (.prim .bool))
+
+-- Binary and ternary uses still produce the expected left-associated Expr.
+
+/-- info: 1 + 2 + 3 = 6 -/
+#guard_msgs in
+#eval
+  elabQuery {} []
+    (.app .eq
+      [(.app .add
+         [(.prim (.int 1)), (.prim (.int 2)), (.prim (.int 3))]
+         (.prim .int)),
+       (.prim (.int 6))]
+      (.prim .bool))
+
+-- `.app .mod` is strictly binary in the SMT-Lib `Ints` theory and in
+-- `Denote.denoteTerm`, so `translateTerm` now rejects any other arity rather
+-- than silently lowering e.g. `.app .mod [x, y, z]` to `(x % y) % z`.
+
+/-- info: 10 % 3 = 1 -/
+#guard_msgs in
+#eval
+  elabQuery {} []
+    (.app .eq
+      [(.app .mod [(.prim (.int 10)), (.prim (.int 3))] (.prim .int)),
+       (.prim (.int 1))]
+      (.prim .bool))
+
+/-- error: Error: 'mod' expects exactly two operands, got '3' -/
+#guard_msgs in
+#eval
+  elabQuery {} []
+    (.app .eq
+      [(.app .mod [(.prim (.int 10)), (.prim (.int 3)), (.prim (.int 2))] (.prim .int)),
+       (.prim (.int 1))]
+      (.prim .bool))

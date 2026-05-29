@@ -7,6 +7,7 @@ module
 
 public import Strata.DL.SMT.DDMTransform.Parse
 public import Strata.DL.SMT.Term
+public import Strata.Util.Provenance
 public import Strata.Util.Tactics
 import Strata.DDM.Elab.LoadedDialects
 
@@ -16,87 +17,91 @@ public section
 
 namespace SMTDDM
 
-private def mkQualifiedIdent (s:String):QualifiedIdent SourceRange :=
-  .qualifiedIdentImplicit SourceRange.none (Ann.mk SourceRange.none s)
+/-- Annotation used for all synthesized SMT DDM nodes. -/
+private abbrev smtProv : Provenance := .synthesized .smtEncode
 
-private def mkSimpleSymbol (s:String):SimpleSymbol SourceRange :=
+/-- Wrap a value with the SMT provenance annotation. -/
+private abbrev smtAnn (v : α) : Ann α Provenance := Ann.mk smtProv v
+
+private def mkQualifiedIdent (s:String):QualifiedIdent Provenance :=
+  .qualifiedIdentImplicit smtProv (smtAnn s)
+
+private def mkSimpleSymbol (s:String):SimpleSymbol Provenance :=
   match List.find? (fun (_,sym) => sym = s) specialCharsInSimpleSymbol with
   | .some (name,_) =>
     -- This needs hard-coded for now.
     (match name with
-    | "plus" => .simple_symbol_plus SourceRange.none
-    | "minus" => .simple_symbol_minus SourceRange.none
-    | "star" => .simple_symbol_star SourceRange.none
-    | "eq" => .simple_symbol_eq SourceRange.none
-    | "percent" => .simple_symbol_percent SourceRange.none
-    | "questionmark" => .simple_symbol_questionmark SourceRange.none
-    | "period" => .simple_symbol_period SourceRange.none
-    | "tilde" => .simple_symbol_tilde SourceRange.none
-    | "amp" => .simple_symbol_amp SourceRange.none
-    | "caret" => .simple_symbol_caret SourceRange.none
-    | "lt" => .simple_symbol_lt SourceRange.none
-    | "gt" => .simple_symbol_gt SourceRange.none
-    | "at" => .simple_symbol_at SourceRange.none
-    | "le" => .simple_symbol_le SourceRange.none
-    | "ge" => .simple_symbol_ge SourceRange.none
-    | "implies" => .simple_symbol_implies SourceRange.none
+    | "plus" => .simple_symbol_plus smtProv
+    | "minus" => .simple_symbol_minus smtProv
+    | "star" => .simple_symbol_star smtProv
+    | "eq" => .simple_symbol_eq smtProv
+    | "percent" => .simple_symbol_percent smtProv
+    | "questionmark" => .simple_symbol_questionmark smtProv
+    | "period" => .simple_symbol_period smtProv
+    | "tilde" => .simple_symbol_tilde smtProv
+    | "amp" => .simple_symbol_amp smtProv
+    | "caret" => .simple_symbol_caret smtProv
+    | "lt" => .simple_symbol_lt smtProv
+    | "gt" => .simple_symbol_gt smtProv
+    | "at" => .simple_symbol_at smtProv
+    | "le" => .simple_symbol_le smtProv
+    | "ge" => .simple_symbol_ge smtProv
+    | "implies" => .simple_symbol_implies smtProv
     | _ => panic! s!"Unknown simple symbol: {name}")
   | .none =>
-    .simple_symbol_qid SourceRange.none (mkQualifiedIdent s)
+    .simple_symbol_qid smtProv (mkQualifiedIdent s)
 
-private def mkSymbol (s:String):Symbol SourceRange :=
-  .symbol SourceRange.none (mkSimpleSymbol s)
+private def mkSymbol (s:String):Symbol Provenance :=
+  .symbol smtProv (mkSimpleSymbol s)
 
-private def mkIdentifier (s:String):SMTIdentifier SourceRange :=
-  .iden_simple SourceRange.none (mkSymbol s)
+private def mkIdentifier (s:String):SMTIdentifier Provenance :=
+  .iden_simple smtProv (mkSymbol s)
 
 private def translateFromTermPrim (t:SMT.TermPrim):
-    Except String (SMTDDM.Term SourceRange) := do
-  let srnone := SourceRange.none
+    Except String (SMTDDM.Term Provenance) := do
   match t with
   | .bool b =>
-    let ss:SimpleSymbol SourceRange :=
-      if b then .simple_symbol_tt srnone else .simple_symbol_ff srnone
-    return (.qual_identifier srnone
-      (.qi_ident srnone (.iden_simple srnone (.symbol srnone ss))))
+    let ss:SimpleSymbol Provenance :=
+      if b then .simple_symbol_tt smtProv else .simple_symbol_ff smtProv
+    return (.qual_identifier smtProv
+      (.qi_ident smtProv (.iden_simple smtProv (.symbol smtProv ss))))
   | .int i =>
     let abs_i := if i < 0 then -i else i
     if i >= 0 then
-      return .spec_constant_term srnone (.sc_numeral srnone abs_i.toNat)
+      return .spec_constant_term smtProv (.sc_numeral smtProv abs_i.toNat)
     else
       -- SMT-LIB represents negative integers as (- N), i.e. unary minus
       -- applied to the absolute value.
-      let posTerm := Term.spec_constant_term srnone (.sc_numeral srnone abs_i.toNat)
-      return .qual_identifier_args srnone
-        (.qi_ident srnone (mkIdentifier "-"))
-        (Ann.mk srnone #[posTerm])
+      let posTerm := Term.spec_constant_term smtProv (.sc_numeral smtProv abs_i.toNat)
+      return .qual_identifier_args smtProv
+        (.qi_ident smtProv (mkIdentifier "-"))
+        (smtAnn #[posTerm])
   | .real dec =>
-    return .spec_constant_term srnone (.sc_decimal srnone dec)
+    return .spec_constant_term smtProv (.sc_decimal smtProv dec)
   | .bitvec (n := n) bv =>
     let bvty := mkSymbol (s!"bv{bv.toNat}")
-    let val:Index SourceRange := .ind_numeral srnone n
-    return (.qual_identifier srnone
-      (.qi_ident srnone (.iden_indexed srnone bvty (Ann.mk srnone #[val]))))
+    let val:Index Provenance := .ind_numeral smtProv n
+    return (.qual_identifier smtProv
+      (.qi_ident smtProv (.iden_indexed smtProv bvty (smtAnn #[val]))))
   | .string s =>
-    return .spec_constant_term srnone (.sc_str srnone s)
+    return .spec_constant_term smtProv (.sc_str smtProv s)
 
 -- List of SMTSort to Array.
-private def translateFromSMTSortList (l: List (SMTSort SourceRange)):
-    Array (SMTSort SourceRange) :=
+private def translateFromSMTSortList (l: List (SMTSort Provenance)):
+    Array (SMTSort Provenance) :=
   l.toArray
 
 private def translateFromTermType (t:SMT.TermType):
-    Except String (SMTDDM.SMTSort SourceRange) := do
-  let srnone := SourceRange.none
+    Except String (SMTDDM.SMTSort Provenance) := do
   match t with
   | .prim tp =>
     match tp with
     | .bitvec n =>
-      let idx : Index SourceRange := .ind_numeral srnone n
-      return (.smtsort_ident srnone
-        (.iden_indexed srnone
+      let idx : Index Provenance := .ind_numeral smtProv n
+      return (.smtsort_ident smtProv
+        (.iden_indexed smtProv
           (mkSymbol "BitVec")
-          (Ann.mk srnone #[idx])))
+          (smtAnn #[idx])))
     | .trigger =>
       throw "don't know how to translate a trigger type"
     | _ =>
@@ -107,122 +112,127 @@ private def translateFromTermType (t:SMT.TermType):
           | .string => .ok "String"
           | .regex => .ok "RegLan"
           | _ => throw "unreachable"
-      return .smtsort_ident srnone (mkIdentifier res)
+      return .smtsort_ident smtProv (mkIdentifier res)
   | .option ty =>
     let argty ← translateFromTermType ty
-    return .smtsort_param srnone (mkIdentifier "Option") (Ann.mk srnone #[argty])
+    return .smtsort_param smtProv (mkIdentifier "Option") (smtAnn #[argty])
   | .constr id args =>
     let argtys <- args.mapM translateFromTermType
     let argtys_array := translateFromSMTSortList argtys
     if argtys_array.isEmpty then
-      return .smtsort_ident srnone (mkIdentifier id)
+      return .smtsort_ident smtProv (mkIdentifier id)
     else
-      return .smtsort_param srnone (mkIdentifier id) (Ann.mk srnone argtys_array)
+      return .smtsort_param smtProv (mkIdentifier id) (smtAnn argtys_array)
 
 -- Helper: convert an Index to an SExpr
-private def indexToSExpr (idx : SMTDDM.Index SourceRange)
-    : SMTDDM.SExpr SourceRange :=
-  let srnone := SourceRange.none
+private def indexToSExpr (idx : SMTDDM.Index Provenance)
+    : SMTDDM.SExpr Provenance :=
   match idx with
-  | .ind_numeral _ n => .se_spec_const srnone (.sc_numeral srnone n)
-  | .ind_symbol _ sym => .se_symbol srnone sym
+  | .ind_numeral _ n => .se_spec_const smtProv (.sc_numeral smtProv n)
+  | .ind_symbol _ sym => .se_symbol smtProv sym
 
 -- Helper: convert an indexed identifier to an SExpr: (_ sym idx1 idx2 ...)
-private def indexedIdentToSExpr (sym : SMTDDM.Symbol SourceRange)
-    (indices : Ann (Array (SMTDDM.Index SourceRange)) SourceRange)
-    : SMTDDM.SExpr SourceRange :=
-  let srnone := SourceRange.none
-  let underscoreSym := SMTDDM.SExpr.se_symbol srnone (mkSymbol "_")
+private def indexedIdentToSExpr (sym : SMTDDM.Symbol Provenance)
+    (indices : Ann (Array (SMTDDM.Index Provenance)) Provenance)
+    : SMTDDM.SExpr Provenance :=
+  let underscoreSym := SMTDDM.SExpr.se_symbol smtProv (mkSymbol "_")
   let idxSExprs := indices.val.toList.map indexToSExpr
-  .se_ls srnone (Ann.mk srnone ((underscoreSym :: .se_symbol srnone sym :: idxSExprs).toArray))
+  .se_ls smtProv (smtAnn ((underscoreSym :: .se_symbol smtProv sym :: idxSExprs).toArray))
 
 -- Helper: convert an SMTSort to an SExpr for use in pattern attributes
-private def sortToSExpr (s : SMTDDM.SMTSort SourceRange)
-    : Except String (SMTDDM.SExpr SourceRange) := do
-  let srnone := SourceRange.none
+private def sortToSExpr (s : SMTDDM.SMTSort Provenance)
+    : Except String (SMTDDM.SExpr Provenance) := do
   match s with
-  | .smtsort_ident _ (.iden_simple _ sym) => return .se_symbol srnone sym
+  | .smtsort_ident _ (.iden_simple _ sym) => return .se_symbol smtProv sym
   | .smtsort_ident _ (.iden_indexed _ sym indices) =>
     return indexedIdentToSExpr sym indices
   | .smtsort_param _ (.iden_simple _ sym) args =>
     let argsSExpr ← args.val.toList.mapM sortToSExpr
-    return .se_ls srnone (Ann.mk srnone ((.se_symbol srnone sym :: argsSExpr).toArray))
+    return .se_ls smtProv (smtAnn ((.se_symbol smtProv sym :: argsSExpr).toArray))
   | _ => throw s!"Doesn't know how to convert sort {repr s} to SMTDDM.SExpr"
   termination_by SizeOf.sizeOf s
   decreasing_by cases args; simp_all; term_by_mem
 
 
 -- Helper: convert a QualIdentifier to an SExpr for use in pattern attributes
-private def qiToSExpr (qi : SMTDDM.QualIdentifier SourceRange)
-    : Except String (SMTDDM.SExpr SourceRange) := do
-  let srnone := SourceRange.none
+private def qiToSExpr (qi : SMTDDM.QualIdentifier Provenance)
+    : Except String (SMTDDM.SExpr Provenance) := do
   match qi with
-  | .qi_ident _ (.iden_simple _ sym) => pure (.se_symbol srnone sym)
+  | .qi_ident _ (.iden_simple _ sym) => pure (.se_symbol smtProv sym)
   | .qi_ident _ (.iden_indexed _ sym indices) =>
     pure (indexedIdentToSExpr sym indices)
   | .qi_isort _ (.iden_simple _ sym) sort =>
     let sortSExpr ← sortToSExpr sort
-    let asSym := SMTDDM.SExpr.se_symbol srnone (mkSymbol "as")
-    pure (.se_ls srnone (Ann.mk srnone #[asSym, .se_symbol srnone sym, sortSExpr]))
+    let asSym := SMTDDM.SExpr.se_symbol smtProv (mkSymbol "as")
+    pure (.se_ls smtProv (smtAnn #[asSym, .se_symbol smtProv sym, sortSExpr]))
   | _ => throw s!"Doesn't know how to convert QI {repr qi} to SMTDDM.SExpr"
 
 -- Helper function to convert a SMTDDM.Term to SExpr for use in pattern attributes
-def termToSExpr (t : SMTDDM.Term SourceRange)
-    : Except String (SMTDDM.SExpr SourceRange) := do
-  let srnone := SourceRange.none
+def termToSExpr (t : SMTDDM.Term Provenance)
+    : Except String (SMTDDM.SExpr Provenance) := do
   match t with
   | .qual_identifier _ qi => qiToSExpr qi
   | .qual_identifier_args _ qi args =>
       let qiSExpr ← qiToSExpr qi
       let argsSExpr ← args.val.mapM termToSExpr
-      return .se_ls srnone (Ann.mk srnone ((qiSExpr :: argsSExpr.toList).toArray))
-  | .spec_constant_term _ s => return .se_spec_const srnone s
+      return .se_ls smtProv (smtAnn ((qiSExpr :: argsSExpr.toList).toArray))
+  | .spec_constant_term _ s => return .se_spec_const smtProv s
   | _ => throw s!"Doesn't know how to convert {repr t} to SMTDDM.SExpr"
   decreasing_by cases args; term_by_mem
 
-partial def translateFromTerm (t:SMT.Term): Except String (SMTDDM.Term SourceRange) := do
-  let srnone := SourceRange.none
+partial def translateFromTerm (t:SMT.Term): Except String (SMTDDM.Term Provenance) := do
   match t with
   | .prim p => translateFromTermPrim p
   | .var v =>
-    return .qual_identifier srnone (.qi_ident srnone (.iden_simple srnone
-      (.symbol srnone (mkSimpleSymbol v.id))))
-  | .none _ | .some _ => throw "don't know how to translate none and some"
+    return .qual_identifier smtProv (.qi_ident smtProv (.iden_simple smtProv
+      (.symbol smtProv (mkSimpleSymbol v.id))))
+  | .none ty =>
+    let retSort ← translateFromTermType (.option ty)
+    let qi := QualIdentifier.qi_isort smtProv (mkIdentifier "none") retSort
+    return .qual_identifier smtProv qi
+  | .some inner =>
+    let innerTerm ← translateFromTerm inner
+    let qi := QualIdentifier.qi_ident smtProv (mkIdentifier "some")
+    return .qual_identifier_args smtProv qi (smtAnn #[innerTerm])
   | .app op args retTy =>
     let args' <- args.mapM translateFromTerm
     let args_array := args'.toArray
-    let mk_qual_identifier (qi:QualIdentifier SourceRange) : SMTDDM.Term SourceRange :=
+    let mk_qual_identifier (qi:QualIdentifier Provenance) : SMTDDM.Term Provenance :=
       if args_array.isEmpty then
-        (.qual_identifier srnone qi)
+        (.qual_identifier smtProv qi)
       else
-        (.qual_identifier_args srnone qi (Ann.mk srnone args_array))
+        (.qual_identifier_args smtProv qi (smtAnn args_array))
 
     -- Datatype constructors need (as Name RetType) qualification for SMT-LIB
     match op with
     | .datatype_op .constructor name =>
       let retSort ← translateFromTermType retTy
-      let qi := QualIdentifier.qi_isort srnone (mkIdentifier name) retSort
+      let qi := QualIdentifier.qi_isort smtProv (mkIdentifier name) retSort
       return mk_qual_identifier qi
     | .bv (.zero_extend n) =>
-      let iden := SMTIdentifier.iden_indexed srnone (mkSymbol "zero_extend")
-        (Ann.mk srnone #[.ind_numeral srnone n])
-      return mk_qual_identifier (.qi_ident srnone iden)
+      let iden := SMTIdentifier.iden_indexed smtProv (mkSymbol "zero_extend")
+        (smtAnn #[.ind_numeral smtProv n])
+      return mk_qual_identifier (.qi_ident smtProv iden)
+    | .bv (.int_to_bv n) =>
+      let iden := SMTIdentifier.iden_indexed smtProv (mkSymbol "int_to_bv")
+        (smtAnn #[.ind_numeral smtProv n])
+      return mk_qual_identifier (.qi_ident smtProv iden)
     | .str (.re_index n) =>
-      let iden := SMTIdentifier.iden_indexed srnone (mkSymbol "re.^")
-        (Ann.mk srnone #[.ind_numeral srnone n])
-      return mk_qual_identifier (.qi_ident srnone iden)
+      let iden := SMTIdentifier.iden_indexed smtProv (mkSymbol "re.^")
+        (smtAnn #[.ind_numeral smtProv n])
+      return mk_qual_identifier (.qi_ident smtProv iden)
     | .str (.re_loop n₁ n₂) =>
-      let iden := SMTIdentifier.iden_indexed srnone (mkSymbol "re.loop")
-        (Ann.mk srnone #[.ind_numeral srnone n₁, .ind_numeral srnone n₂])
-      return mk_qual_identifier (.qi_ident srnone iden)
+      let iden := SMTIdentifier.iden_indexed smtProv (mkSymbol "re.loop")
+        (smtAnn #[.ind_numeral smtProv n₁, .ind_numeral smtProv n₂])
+      return mk_qual_identifier (.qi_ident smtProv iden)
     | _ =>
-      return mk_qual_identifier (.qi_ident srnone (mkIdentifier op.mkName))
+      return mk_qual_identifier (.qi_ident smtProv (mkIdentifier op.mkName))
   | .quant qkind args tr body =>
-    let args_sorted:List (SMTDDM.SortedVar SourceRange) <-
+    let args_sorted:List (SMTDDM.SortedVar Provenance) <-
       args.mapM
         (fun ⟨name,ty⟩ => do
           let ty' <- translateFromTermType ty
-          return .sorted_var srnone (mkSymbol name) ty')
+          return .sorted_var smtProv (mkSymbol name) ty')
     let args_array := args_sorted.toArray
     if args_array.isEmpty then
       throw "empty quantifier"
@@ -241,7 +251,7 @@ partial def translateFromTerm (t:SMT.Term): Except String (SMTDDM.Term SourceRan
             --   .app .triggers [.app .triggers group₁ .trigger, .app .triggers group₂ .trigger, ...] .trigger
             -- Each inner .app .triggers represents one :pattern group.
             -- If a trigger term is NOT .app .triggers, treat it as a single-term group.
-            let mut patternAttrs : Array (SMTDDM.Attribute SourceRange) := #[]
+            let mut patternAttrs : Array (SMTDDM.Attribute Provenance) := #[]
             for trigTerm in triggerTerms do
               let sexprs ← match trigTerm with
                 | .app .triggers its _ => do
@@ -250,22 +260,22 @@ partial def translateFromTerm (t:SMT.Term): Except String (SMTDDM.Term SourceRan
                 | other => do
                   let ddmTerm ← translateFromTerm other
                   pure [← termToSExpr ddmTerm]
-              let attr : SMTDDM.Attribute SourceRange :=
-                .att_kw srnone
-                  (.kw_symbol srnone (mkSimpleSymbol "pattern"))
-                  (Ann.mk srnone (some (.av_sel srnone (Ann.mk srnone sexprs.toArray))))
+              let attr : SMTDDM.Attribute Provenance :=
+                .att_kw smtProv
+                  (.kw_symbol smtProv (mkSimpleSymbol "pattern"))
+                  (smtAnn (some (.av_sel smtProv (smtAnn sexprs.toArray))))
               patternAttrs := patternAttrs.push attr
             -- Wrap body with bang operator and pattern attributes
-            pure (.bang srnone body (Ann.mk srnone patternAttrs))
+            pure (.bang smtProv body (smtAnn patternAttrs))
         | _ =>
           -- Unexpected trigger format - return body as-is
           pure body
 
       match qkind with
       | .all =>
-        return .forall_smt srnone (Ann.mk srnone args_array) bodyWithPattern
+        return .forall_smt smtProv (smtAnn args_array) bodyWithPattern
       | .exist =>
-        return .exists_smt srnone (Ann.mk srnone args_array) bodyWithPattern
+        return .exists_smt smtProv (smtAnn args_array) bodyWithPattern
 
 
 private def dummy_prg_for_toString :=
@@ -326,12 +336,13 @@ partial def translateFromDDMTermToUntyped (t : Strata.SMTResponseDDM.Term Strata
     : Except String Strata.SMT.Term := do
   match t with
   | .spec_constant_term _ sc =>
+    -- Exhaustive match over all SpecConstant variants; Lean will flag any missing case.
     match sc with
     | .sc_numeral _ n     => return .prim (.int n)
     | .sc_numeral_neg _ n => return .prim (.int (-(n : Int)))
     | .sc_decimal _ d     => return .prim (.real d)
+    | .sc_decimal_neg _ d => return .prim (.real { d with mantissa := -d.mantissa })
     | .sc_str _ s         => return .prim (.string s)
-    | _  => throw s!"translateFromDDMTermToUntyped: don't know how to convert {repr t}"
   | .qual_identifier _ qi =>
     match resolveQI qi with
     | some ("true", _)  => return .prim (.bool true)

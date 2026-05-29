@@ -415,7 +415,7 @@ Property: assert
 Assumptions:
 precond_allPositiveDiv_0: y@2 >= 0
 Obligation:
-forall __q0 : int :: __q0 > 0 ==> !(__q0 == 0)
+forall x : int :: x > 0 ==> !(x == 0)
 
 ---
 info:

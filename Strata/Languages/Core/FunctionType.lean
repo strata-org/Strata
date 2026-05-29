@@ -61,6 +61,19 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
     -- Apply the outer unification substitution back to the body so that type
     -- variables introduced inside it are resolved.
     let bodya := LExpr.applySubstT bodya S.subst
+    -- Validate the measure expression type for int-recursive functions.
+    -- Only validates non-fvar measures (fvar measures are validated in TermCheck
+    -- using the TypeFactory, which has ADT information).
+    match func.measure with
+    | some measure =>
+      match measure with
+      | .fvar _ _ _ => pure ()
+      | _ =>
+        let (measurea, _) ← LExpr.resolve C Env measure
+        let measurety := measurea.toLMonoTy
+        if measurety != .int then
+          .error f!"recursive function '{func.name}': non-variable decreases expression must have type int, got '{measurety}'. For structural recursion, use a parameter name"
+    | none => pure ()
     let Env := TEnv.popContext Env
     -- Resolve type aliases and monomorphize the body.
     let new_func := { func with body := some bodya.unresolved }

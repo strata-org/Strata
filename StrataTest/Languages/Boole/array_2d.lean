@@ -21,8 +21,12 @@ procedure array_2d_write_read(i: int, j: int, v: int) returns ()
 
 #end
 
-#guard_msgs (drop info) in
-#eval Strata.Boole.verify "cvc5" array_2d
+/-- info:
+Obligation: assert_0_298
+Property: assert
+Result: ✅ pass-/
+#guard_msgs in
+#eval Strata.Boole.verify "cvc5" array_2d (options := .quiet)
 
 example : Strata.smtVCsCorrect array_2d := by
   gen_smt_vcs
