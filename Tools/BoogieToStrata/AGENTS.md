@@ -172,6 +172,7 @@ dotnet run --project Source -- --smack <file.bpl>
 
 # Run integration tests
 dotnet test IntegrationTests/BoogieToStrata.IntegrationTests.csproj
+```
 
 ## Important Patterns in StrataGenerator.cs
 
