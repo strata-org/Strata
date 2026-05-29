@@ -14,12 +14,13 @@ depends on `HashMap` internals. If a child dialect imports a parent, the parent
 may be opened transitively before being visited directly. The fold must be
 idempotent (use `ensureLoaded!`, not `openLoadedDialect!`).
 
-We declare two dialects where one imports the other, then parse a program using
-the child. This exercises `DeclState.ofDialects` on a `LoadedDialects` containing
-both dialects with an import relationship.
+We simulate the problematic iteration order by calling `ensureLoaded!` on the
+child first (which transitively opens the parent), then on the parent directly.
+With the old `openLoadedDialect!` code, the second call would panic because the
+parent is already open.
 -/
 
-open Strata
+open Strata Strata.Elab
 
 -- Declare a parent dialect
 #guard_msgs in
@@ -36,18 +37,30 @@ import OfDialectsParent;
 type ChildType;
 #end
 
--- Parse a program using the child dialect.
--- The `LoadedDialects` passed to `DeclState.ofDialects` contains Init,
--- OfDialectsParent, and OfDialectsChild (where child imports parent).
--- `ensureLoaded!` guarantees idempotency: if HashMap iteration yields the child
--- before the parent, the parent is opened transitively first, and the subsequent
--- direct visit is a no-op.
-def testProgram := #strata
-program OfDialectsChild;
-#end
-
+-- Retrieve the loaded dialects from the Lean environment and simulate the
+-- problematic HashMap iteration order: child visited before parent.
+-- This directly exercises the `ensureLoaded!` idempotency that `ofDialects` relies on.
 /--
-info: "program OfDialectsChild;\n"
+info: true
 -/
 #guard_msgs in
-#eval toString testProgram
+#eval show Lean.CoreM _ from do
+  let loaded := (Strata.dialectExt.getState (← Lean.getEnv)).loaded
+  -- Start from a fresh DeclState
+  let s : DeclState := { openDialects := #[], openDialectSet := {} }
+  -- Open child first — this transitively opens the parent
+  let s := s.ensureLoaded! loaded "OfDialectsChild"
+  -- Open parent directly — with the old openLoadedDialect! this would panic
+  let s := s.ensureLoaded! loaded "OfDialectsParent"
+  return "OfDialectsParent" ∈ s.openDialectSet && "OfDialectsChild" ∈ s.openDialectSet
+
+-- Also call DeclState.ofDialects directly on the loaded dialects.
+-- This exercises the actual fixed function end-to-end.
+/--
+info: true
+-/
+#guard_msgs in
+#eval show Lean.CoreM _ from do
+  let loaded := (Strata.dialectExt.getState (← Lean.getEnv)).loaded
+  let s := DeclState.ofDialects loaded
+  return "OfDialectsParent" ∈ s.openDialectSet && "OfDialectsChild" ∈ s.openDialectSet
