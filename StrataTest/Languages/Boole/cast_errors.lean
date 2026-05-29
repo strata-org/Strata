@@ -24,21 +24,33 @@ private def helper (p : Strata.Program) : Except String Unit := do
 private def containsSubstr (haystack needle : String) : Bool :=
   (haystack.splitOn needle).length > 1
 
--- (1) `as_sint` on an `int` — must be rejected
+-- (1) `as_sint` on an `int` — identity no-op (int is already signed), consistent with `as_int`
 private def sintOnInt :=
 #strata
 program Boole;
-procedure bad_sint(n: int) returns ()
+procedure ok_sint(n: int) returns ()
 spec {
-  ensures n as_sint >= 0;
+  ensures n as_sint == n;
 } {
-  exit bad_sint;
+  exit ok_sint;
 };
 #end
 
-#guard match helper sintOnInt with
-  | .error e => containsSubstr e "'as sint' requires a bitvector source type"
-  | .ok _ => false
+#guard (helper sintOnInt).isOk
+
+-- (1b) `as_int` on an `int` — also identity no-op, locking in symmetric behaviour
+private def asIntOnInt :=
+#strata
+program Boole;
+procedure ok_as_int(n: int) returns ()
+spec {
+  ensures n as_int == n;
+} {
+  exit ok_as_int;
+};
+#end
+
+#guard (helper asIntOnInt).isOk
 
 -- (2) `as_int` on a `Map int bv8` — must be rejected
 private def asIntOnMap :=
