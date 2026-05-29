@@ -207,7 +207,8 @@ file held.
   [`StrataTest/Languages/Boole/find_max.lean`](../StrataTest/Languages/Boole/find_max.lean)
   for the canonical pattern. `#strata` is dialect-agnostic — Boole could use
   inline annotations the same way once a Boole-side helper analogous to
-  `testLaurelExpect` is written.
+  inline annotations the same way once a Boole-side helper analogous to
+  `testLaurel` is written.
 - **Python** has its own pipeline-driven harness; see
   [`StrataTest/Languages/Python/README.md`](../StrataTest/Languages/Python/README.md).
 
