@@ -804,13 +804,14 @@ private protected def fromIon (v : Ion SymbolId) : FromIonM SyntaxDefAtom := do
     match ← .asSymbolString "SyntaxDefAtom kind" args[0] with
     | "ident" => do
       let ⟨p⟩ ← .checkArgCount "ident" args 3
-      let level ← .asNat "SyntaxDef ident level" args[1]!
-      let prec ← .asNat "SyntaxDef ident prec" args[2]!
+      let level ← .asNat "SyntaxDef ident level" args[1]
+      let prec ← .asNat "SyntaxDef ident prec" args[2]
       return .ident level prec
     | "indent" => do
-      .indent <$> .asNat "SyntaxDef indent value" args[1]!
+      let ⟨_⟩ ← .checkArgMin "indent" args 2
+      .indent <$> .asNat "SyntaxDef indent value" args[1]
               <*> args.attach.mapM_off (start := 2) fun ⟨u, _⟩ =>
-                    have p : sizeOf u < sizeOf args := by decreasing_tactic
+                    have _h : sizeOf u < sizeOf args := by decreasing_tactic
                     SyntaxDefAtom.fromIon u
     | s =>
       throw s!"Unexpected binding kind {s}"
