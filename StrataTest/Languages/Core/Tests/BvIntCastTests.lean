@@ -20,6 +20,8 @@ namespace Core
 open Lambda
 open Strata.SMT
 
+private abbrev m := ExprSourceLoc.synthesized "test"
+
 private def coreEnv : Env := {Env.init with exprEnv := {
   Env.init.exprEnv with
     config := { Env.init.exprEnv.config with factory := Core.Factory }}}
@@ -31,7 +33,7 @@ info: "; x\n(declare-const x (_ BitVec 8))\n(assert (ubv_to_int x))\n"
 -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
-  (.app () (.op () ⟨"Bv8.ToUInt", ()⟩ (.some (.arrow (.bitvec 8) .int))) (.fvar () "x" (.some (.bitvec 8))))
+  (.app m (.op m ⟨"Bv8.ToUInt", ()⟩ (.some (.arrow (.bitvec 8) .int))) (.fvar m "x" (.some (.bitvec 8))))
   (E := coreEnv)
 
 /-! ## Bv8.ToInt — signed bitvector → Int (sbv_to_int) -/
@@ -41,7 +43,7 @@ info: "; x\n(declare-const x (_ BitVec 8))\n(assert (sbv_to_int x))\n"
 -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
-  (.app () (.op () ⟨"Bv8.ToInt", ()⟩ (.some (.arrow (.bitvec 8) .int))) (.fvar () "x" (.some (.bitvec 8))))
+  (.app m (.op m ⟨"Bv8.ToInt", ()⟩ (.some (.arrow (.bitvec 8) .int))) (.fvar m "x" (.some (.bitvec 8))))
   (E := coreEnv)
 
 /-! ## Int.ToBv8 — Int → bitvector (int_to_bv 8) -/
@@ -51,7 +53,7 @@ info: "; x\n(declare-const x Int)\n(assert ((_ int_to_bv 8) x))\n"
 -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
-  (.app () (.op () ⟨"Int.ToBv8", ()⟩ (.some (.arrow .int (.bitvec 8)))) (.fvar () "x" (.some .int)))
+  (.app m (.op m ⟨"Int.ToBv8", ()⟩ (.some (.arrow .int (.bitvec 8)))) (.fvar m "x" (.some .int)))
   (E := coreEnv)
 
 end Core
