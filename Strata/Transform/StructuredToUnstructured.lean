@@ -176,7 +176,7 @@ def stmtsToCFGM
   (ss : List (Stmt P CmdT)) :
   StringGenM (CFG String (DetBlock String CmdT P)) := do
   let lend ← StringGenState.gen "end$"
-  let bend := (lend, { cmds := [], transfer := .finish })
+  let bend := (lend, { cmds := [], transfer := .finish synthesizedMd })
   let (l, bs) ← stmtsToBlocks lend ss [] []
   pure { entry := l, blocks := bs ++ [bend] }
 
