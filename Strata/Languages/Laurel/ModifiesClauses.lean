@@ -9,6 +9,7 @@ public import Strata.Languages.Laurel.Laurel
 public import Strata.Languages.Laurel.LaurelTypes
 public import Strata.Languages.Core.Verifier
 public import Strata.Languages.Laurel.Resolution
+import Strata.Languages.Laurel.HeapParameterizationConstants
 
 /-
 Modifies clause transformation (Laurel → Laurel).
@@ -159,7 +160,7 @@ def transformModifiesClauses (model: SemanticModel)
         -- modifies * means the procedure can modify anything; no frame condition
         .ok { proc with body := .Opaque postconds impl [] }
       else if hasHeapOut proc then
-        let heapName : Identifier := "$heap"
+        let heapName := heapVarName
         let frameCondition := buildModifiesEnsures proc model modifiesExprs heapName
         let postconds' := match frameCondition with
           | some frame => postconds ++ [{ condition := frame, summary := "modifies clause" }]

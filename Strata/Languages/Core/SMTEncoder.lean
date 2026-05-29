@@ -95,7 +95,7 @@ def SMT.Context.withTypeFactory (ctx : SMT.Context) (tf : @Lambda.TypeFactory Co
 Helper function to convert LMonoTy to TermType for datatype constructor fields.
 Handles monomorphic types and type variables (as `.constr tv []`).
 -/
-private def lMonoTyToTermType (ty : LMonoTy) : TermType :=
+def lMonoTyToTermType (useArrayTheory : Bool := false) (ty : LMonoTy) : TermType :=
   match ty with
   | .bitvec n => .bitvec n
   | .tcons "bool" [] => .bool
@@ -103,19 +103,23 @@ private def lMonoTyToTermType (ty : LMonoTy) : TermType :=
   | .tcons "real" [] => .real
   | .tcons "string" [] => .string
   | .tcons "regex" [] => .regex
-  | .tcons name args => .constr name (args.map lMonoTyToTermType)
+  | .tcons name args =>
+    if name == "Map" && useArrayTheory then
+      .constr "Array" (args.map $ lMonoTyToTermType useArrayTheory)
+    else
+      .constr name (args.map $ lMonoTyToTermType useArrayTheory)
   | .ftvar tv => .constr tv []
 
 /-- Convert a datatype's constructors to typed SMT constructors. -/
-private def datatypeConstructorsToSMT (d : LDatatype CoreLParams.IDMeta) : List SMTConstructor :=
+private def datatypeConstructorsToSMT (d : LDatatype CoreLParams.IDMeta) (useArrayTheory : Bool := false): List SMTConstructor :=
   d.constrs.map fun c =>
     let fields := c.args.map fun (name, fieldTy) =>
-      (d.name ++ ".." ++ name.name, lMonoTyToTermType fieldTy)
+      (d.name ++ ".." ++ name.name, lMonoTyToTermType useArrayTheory fieldTy)
     { name := c.name.name, args := fields }
 
 /-- Ensures that all datatypes in the SMT encoding do not have arrow-typed
   constructor arguments-/
-private def validateDatatypesForSMT (typeFactory : @Lambda.TypeFactory CoreLParams.IDMeta)
+def validateDatatypesForSMT (typeFactory : @Lambda.TypeFactory CoreLParams.IDMeta)
     (seenDatatypes : Std.HashSet String) : Except Format Unit := do
   for block in typeFactory.toList do
     for d in block do
@@ -133,7 +137,7 @@ Uses the TypeFactory ordering (already topologically sorted).
 Only emits datatypes that have been seen (added via addDatatype).
 Single-element blocks use declare-datatype, multi-element blocks use declare-datatypes.
 -/
-def SMT.Context.emitDatatypes (ctx : SMT.Context) : Strata.SMT.SolverM Unit := do
+def SMT.Context.emitDatatypes (ctx : SMT.Context) (useArrayTheory : Bool := false): Strata.SMT.SolverM Unit := do
   match validateDatatypesForSMT ctx.typeFactory ctx.seenDatatypes with
   | .error msg => throw (IO.userError (toString msg))
   | .ok () => pure ()
@@ -142,10 +146,10 @@ def SMT.Context.emitDatatypes (ctx : SMT.Context) : Strata.SMT.SolverM Unit := d
     match usedBlock with
     | [] => pure ()
     | [d] =>
-      let constructors := datatypeConstructorsToSMT d
+      let constructors := datatypeConstructorsToSMT d useArrayTheory
       Strata.SMT.Solver.declareDatatype d.name d.typeArgs constructors
     | _ =>
-      let dts := usedBlock.map fun d => (d.name, d.typeArgs, datatypeConstructorsToSMT d)
+      let dts := usedBlock.map fun d => (d.name, d.typeArgs, datatypeConstructorsToSMT d useArrayTheory)
       Strata.SMT.Solver.declareDatatypes dts
 
 @[expose] abbrev BoundVars := List (String × TermType)
@@ -546,7 +550,10 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
     | .bv ⟨_, .SLe⟩  => .ok (.app Op.bvsle,      .bool,   ctx)
     | .bv ⟨_, .SGt⟩  => .ok (.app Op.bvsgt,      .bool,   ctx)
     | .bv ⟨_, .SGe⟩  => .ok (.app Op.bvsge,      .bool,   ctx)
-    | .bv ⟨n, .Concat⟩ => .ok (.app Op.bvconcat, .bitvec (n * 2), ctx)
+    | .bv ⟨n, .Concat⟩ => .ok (.app Op.bvconcat,    .bitvec (n * 2), ctx)
+    | .bv ⟨_, .ToUInt⟩  => .ok (.app Op.ubv_to_int,  .int,            ctx)
+    | .bv ⟨_, .ToInt⟩   => .ok (.app Op.sbv_to_int,  .int,            ctx)
+    | .intToBv n        => .ok (.app (Op.int_to_bv n), .bitvec n,     ctx)
 
     | .str .Length   => .ok (.app Op.str_length,    .int,    ctx)
     | .str .Concat   => .ok (.app Op.str_concat,    .string, ctx)
@@ -639,7 +646,7 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
               -- `.bvar`s. Use substFvarsLifting to properly lift indices under binders.
               let bvars := (List.range formals.length).map (fun i => LExpr.bvar () i)
               let body := LExpr.substFvarsLifting body (formals.zip bvars)
-              let (term, ctx) ← toSMTTerm E bvs body ctx
+              let (term, ctx) ← toSMTTerm E bvs body ctx useArrayTheory
               .ok (ctx.addIF uf term,  !ctx.ifs.contains ({ uf := uf, body := term }))
           -- For recursive functions with @[cases], generate per-constructor axioms.
           -- Int-recursive functions (no @[cases]) are pure UFs with no axioms.
@@ -666,7 +673,7 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
             let savedSubst := ctx.tySubst
             let ctx ← allAxioms.foldlM (fun acc_ctx (ax: LExpr CoreLParams.mono) => do
               let current_axiom_ctx := acc_ctx.addSubst smt_ty_inst
-                let (axiom_term, new_ctx) ← toSMTTerm E [] ax current_axiom_ctx
+                let (axiom_term, new_ctx) ← toSMTTerm E [] ax current_axiom_ctx useArrayTheory
                 .ok (new_ctx.addAxiom axiom_term)
             ) ctx
             let ctx := ctx.restoreSubst savedSubst
