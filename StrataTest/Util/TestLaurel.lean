@@ -183,14 +183,21 @@ private def parseAnnotations (snippet : String) : Array DiagnosticAnnotation := 
     }
   pure annotations
 
-/-- Try to match an annotation to a diagnostic. -/
+/-- Substring containment on `String`. Direct rather than the
+    `(d.splitOn a).length > 1` trick. -/
+private def isSubstrOf (needle haystack : String) : Bool :=
+  needle.isEmpty || (haystack.splitOn needle).length > 1
+
+/-- Try to match an annotation to a diagnostic. The annotation pins the
+    diagnostic's *start* line and column range; `d.ending.line` is treated as
+    informational so that a future multi-line diagnostic doesn't silently fail
+    to match. -/
 private def matchesAnnotation (d : Strata.Diagnostic) (a : DiagnosticAnnotation) : Bool :=
   d.start.line == a.line
-    && d.ending.line == a.line
     && d.start.column == a.colStart
     && d.ending.column == a.colEnd
     && diagnosticKindString d.type == a.kind
-    && (a.message.isEmpty || (d.message.splitOn a.message).length > 1)
+    && isSubstrOf a.message d.message
 
 /-- Format a single annotation for error reporting. -/
 private def formatAnnotation (a : DiagnosticAnnotation) : String :=
