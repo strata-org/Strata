@@ -60,7 +60,7 @@ def outcomeToMessage (outcome : VCOutcome) : String :=
       else if !m2.isEmpty then s!" (false: {Std.format m2})"
       else ""
     s!"True or false depending on inputs{models}"
-  | .unsat, .unsat => "Unreachable: path condition is contradictory"
+  | .unsat, .unsat => "Unreachable in this context: path condition is contradictory"
   | .sat _, .unknown _ => "Can be true, unknown if always true"
   | .unsat, .unknown _ => "Always false if reached, reachability unknown"
   | .unknown _, .sat m =>
