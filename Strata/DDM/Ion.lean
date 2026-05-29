@@ -808,7 +808,7 @@ private protected def fromIon (v : Ion SymbolId) : FromIonM SyntaxDefAtom := do
       let prec ← .asNat "SyntaxDef ident prec" args[2]
       return .ident level prec
     | "indent" => do
-      let ⟨p⟩ ← .checkArgMin "indent" args 2
+      let ⟨_⟩ ← .checkArgMin "indent" args 2
       .indent <$> .asNat "SyntaxDef indent value" args[1]
               <*> args.attach.mapM_off (start := 2) fun ⟨u, _⟩ =>
                     have _h : sizeOf u < sizeOf args := by decreasing_tactic
