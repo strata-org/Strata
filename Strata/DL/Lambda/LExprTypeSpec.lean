@@ -577,48 +577,9 @@ theorem TEnv.addTypeAlias_preserves_typeArgs
             have h := Except.ok.inj h; rw [← h]
             exact ⟨⟨alias.name, alias.typeArgs, _⟩, rfl, rfl, rfl⟩
 
-/-- The type stored by `addTypeAlias` is fully de-aliased w.r.t. the
-    pre-extension environment: calling `resolveAliases` on it again is
-    the identity.
-
-    The proof requires showing that `LMonoTy.resolveAliases` is idempotent
-    on types that are already resolved — i.e., types whose `tcons` names
-    do not match any alias in the environment. This follows from the
-    invariant that stored alias bodies are themselves alias-free, but
-    formalizing this requires an "alias-free" predicate and mutual
-    induction on the type structure. -/
-theorem TEnv.addTypeAlias_stored_dealiased
-    {T : LExprParams}
-    [DecidableEq T.IDMeta] [ToFormat T.Metadata] [ToFormat T.IDMeta]
-    (alias : TypeAlias) (C : LContext T) (Env Env' : TEnv T.IDMeta)
-    (h : TEnv.addTypeAlias alias C Env = .ok Env')
-    (stored : TypeAlias) (h_head : Env'.context.aliases.head? = some stored) :
-    LMonoTy.resolveAliases stored.type Env = .ok (stored.type, Env) := by
-  -- Extract: stored.type = rhsResolved, the output of resolveAliases alias.type Env
-  unfold TEnv.addTypeAlias at h
-  simp only [Bind.bind, Except.bind] at h
-  split at h
-  · cases h
-  · split at h
-    · cases h
-    · split at h
-      · cases h
-      · split at h
-        · cases h
-        · rename_i v1 h_resolve
-          obtain ⟨rhsResolved, Env1⟩ := v1
-          split at h
-          · cases h
-          · have h_eq := Except.ok.inj h
-            have h_env : Env1 = Env :=
-              LMonoTy.resolveAliases_env alias.type Env rhsResolved Env1 h_resolve
-            subst h_env; subst h_eq
-            simp [TEnv.context, TEnv.updateContext, List.head?] at h_head
-            rw [← h_head]
-            -- Goal: LMonoTy.resolveAliases rhsResolved Env = .ok (rhsResolved, Env)
-            -- This is idempotence of resolveAliases: the output of one pass is a
-            -- fixpoint. Requires mutual induction + alias-free predicate.
-            sorry
+-- TODO (#follow-up): `TEnv.addTypeAlias_stored_dealiased` — the stored type is
+-- a fixpoint of `resolveAliases`. Proof requires showing idempotence of
+-- `resolveAliases` via an "alias-free" predicate and mutual induction.
 
 /-- `LTy.instantiate` preserves the context. -/
 theorem LTy.instantiate_context {IDMeta : Type} [ToFormat IDMeta]
