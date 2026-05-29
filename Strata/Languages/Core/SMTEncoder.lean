@@ -78,14 +78,26 @@ def SMT.Context.restoreSubst (ctx : SMT.Context) (savedSubst: Map String TermTyp
 def SMT.Context.hasDatatype (ctx : SMT.Context) (name : String) : Bool :=
   ctx.seenDatatypes.contains name
 
-/-- Collect all sort and datatype names that have been pre-declared to the solver.
-    Used to pre-populate the encoder's `usedNames` registry. -/
+/-- Collect all sort, datatype, constructor, and selector names that have been
+    pre-declared to the solver. Used to pre-populate the encoder's `usedNames`
+    registry so that later UF/function encoding cannot collide with them. -/
 def SMT.Context.preDeclaredNames (ctx : SMT.Context) : Std.HashSet String :=
   let sortNames := ctx.sorts.foldl (init := ({} : Std.HashSet String)) fun acc s => acc.insert s.name
   let dtNames := ctx.typeFactory.toList.foldl (init := sortNames) fun acc block =>
     block.foldl (init := acc) fun acc d =>
-      if ctx.seenDatatypes.contains d.name then acc.insert d.name else acc
-  dtNames.insert "Option"
+      if ctx.seenDatatypes.contains d.name then
+        let acc := acc.insert d.name
+        -- Include constructor and selector names emitted by declareDatatype
+        d.constrs.foldl (init := acc) fun acc c =>
+          let acc := acc.insert c.name.name
+          c.args.foldl (init := acc) fun acc (fieldName, _) =>
+            acc.insert (d.name ++ ".." ++ fieldName.name)
+      else acc
+  -- Built-in Option datatype names
+  let acc := dtNames.insert "Option"
+  let acc := acc.insert "none"
+  let acc := acc.insert "some"
+  acc.insert "val"
 
 def SMT.Context.addDatatype (ctx : SMT.Context) (d : LDatatype CoreLParams.IDMeta) : SMT.Context :=
   if ctx.hasDatatype d.name then ctx

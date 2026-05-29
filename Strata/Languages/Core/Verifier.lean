@@ -97,7 +97,7 @@ private def uniquify (baseName : String) : AbstractEncoderM τ m String := do
   modify fun st => { st with base.usedNames := st.base.usedNames.insert id }
   return id
 
-private def encodeUF (solver : AbstractSolver τ σ m) (uf : UF) : AbstractEncoderM τ m String := do
+def encodeUF (solver : AbstractSolver τ σ m) (uf : UF) : AbstractEncoderM τ m String := do
   if let .some enc := (← get).base.ufs.get? uf then return enc
   let id ← uniquify (sanitizeSmtName uf.id)
   liftM (solver.comment uf.id)
@@ -231,7 +231,7 @@ decreasing_by
       · have := extractTriggers_sizeOf tr _ _ hmem ‹_ ∈ _›
         simp_all; omega
 
-private def encodeFunction (solver : AbstractSolver τ σ m) (uf : UF) (body : Term) : AbstractEncoderM τ m String := do
+def encodeFunction (solver : AbstractSolver τ σ m) (uf : UF) (body : Term) : AbstractEncoderM τ m String := do
   if let .some enc := (← get).base.ufs.get? uf then return enc
   let id ← uniquify (ufId (← get).base.ufs.size)
   liftM (solver.comment uf.id)
