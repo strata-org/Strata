@@ -946,7 +946,10 @@ partial def nondetTransferToCST {M} [Inhabited M]
   | .goto [l1, l2] _ =>
     pure (.transfer_nondet_goto default ⟨default, l1⟩ ⟨default, l2⟩)
   | .goto labels _ =>
-    panic! s!"nondetTransferToCST: nondeterministic goto with {labels.length} targets is not representable in concrete syntax"
+    ToCSTM.logError "nondetTransferToCST"
+      "nondeterministic goto arity not representable in concrete syntax"
+      s!"got {labels.length} targets, expected 0, 1, or 2"
+    pure (.transfer_return default)
 
 /-- Convert a single `DetBlock` to a CST `CFGBlock`. -/
 partial def detBlockToCST {M} [Inhabited M]
