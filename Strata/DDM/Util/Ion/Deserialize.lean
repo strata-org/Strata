@@ -529,9 +529,7 @@ def deserializeAux (bytes : ByteArray) (ds : DeserializeState bytes.size)
         let (symId, ⟨off, offp⟩) ← readVarUInt bytes ds.off
         let .isTrue offp := decideProp (off < bytes.size)
           | rfail off "Unexpected end of file"
-        let td := TypeDesc.ofByte bytes[off]
-        let isNop := td.isNopPad
-        let ds := if isNop then ds
+        let ds := if (TypeDesc.ofByte bytes[off]).isNopPad then ds
                   else { ds with symbols := ds.symbols.push ⟨symId⟩ }
         let off' : InRange off0 bytes.size := ⟨off, by omega⟩
         pure (ds, off')
