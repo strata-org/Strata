@@ -50,6 +50,9 @@ jobs:
         # https://github.com/strata-org/Strata/issues/952
         uses: ./.github/actions/restore-lake-cache
         with:
+          path: |
+            .lake
+            StrataCLI/.lake
           fail-on-cache-miss: "true"
           use-restore-keys: "false"
       - name: Build Strata

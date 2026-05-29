@@ -410,6 +410,7 @@ elab "#testJavaGenPreloaded" : command => do
     let result ← IO.Process.output {
       cmd := "lake"
       args := #["exe", "strata", "javaGen", "Laurel", "com.test.laurel", dir.toString]
+      cwd := "StrataCLI"
     }
     if result.exitCode != 0 then
       Lean.throwError s!"javaGen on preloaded Laurel dialect failed:\n{result.stdout}\n{result.stderr}"
