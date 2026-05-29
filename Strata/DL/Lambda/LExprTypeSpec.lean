@@ -4467,8 +4467,11 @@ theorem tconsAlias_eq_simple
   match ma with
   | none =>
     unfold LMonoTy.tconsAlias at h_tcons; rw [h_find] at h_tcons
-    simp at h_tcons
-    obtain ⟨h1, h2⟩ := h_tcons; rw [← h1, ← h2]
+    simp only [Bind.bind, Except.bind] at h_tcons
+    split at h_tcons
+    · contradiction
+    · simp at h_tcons
+      obtain ⟨h1, h2⟩ := h_tcons; rw [← h1, ← h2]
   | some alias =>
     have h_alias_wf := h_aliases_wf alias (List.mem_of_find?_eq_some h_find)
     have h_pred := List.find?_some h_find
