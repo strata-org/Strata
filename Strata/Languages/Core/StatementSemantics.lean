@@ -8,6 +8,7 @@ module
 public import Strata.DL.Lambda.LExpr
 public import Strata.DL.Lambda.LExprWF
 public import Strata.DL.Imperative.StmtSemantics
+public import Strata.DL.Imperative.CFGSemantics
 public import Strata.Languages.Core.CoreGen
 public import Strata.Languages.Core.Procedure
 
@@ -285,6 +286,45 @@ inductive CoreStepStar
     ----
     CoreStepStar π φ c₁ c₃
 
+/-- Reflexive-transitive closure of CFG steps for the Core language.
+    Each step looks up a block by label and evaluates it using the generic
+    `Imperative.EvalDetBlock` instantiated with `EvalCommand`. This works
+    because `EvalDetBlock` has a `cmd` constructor that directly references
+    `EvalCmd`, satisfying the Lean kernel's nested inductive requirement. -/
+inductive CoreCFGStepStar
+    (π : String → Option Procedure)
+    (φ : CoreEval → PureFunc Expression → CoreEval) :
+    DetCFG → CFGConfig String Expression →
+    CFGConfig String Expression → Prop where
+  | refl : CoreCFGStepStar π φ cfg c c
+  | step :
+    List.lookup t cfg.blocks = .some b →
+    Imperative.EvalDetBlock Expression (EvalCommand π φ) (EvalPureFunc φ) σ b config →
+    CoreCFGStepStar π φ cfg (updateFailure config failed) c₃ →
+    ----
+    CoreCFGStepStar π φ cfg (.cont t σ failed) c₃
+
+/-- Execution of a procedure body: either structured (via `CoreStepStar`)
+    or unstructured CFG (via `CoreCFGStepStar`).
+
+    The `cfg` constructor passes through the initial eval `δ` as terminal eval
+    because `CoreCFGStepStar` does not track eval changes. If CFG execution
+    ever needs `funcDecl` support, `CoreCFGStepStar` would need enrichment. -/
+inductive CoreBodyExec
+    (π : String → Option Procedure)
+    (φ : CoreEval → PureFunc Expression → CoreEval) :
+    Procedure.Body → CoreStore → CoreEval → CoreStore → CoreEval → Bool → Prop where
+  | structured :
+    CoreStepStar π φ
+      (.stmts ss ⟨σ, δ, false⟩)
+      (.terminal ρ') →
+    CoreBodyExec π φ (.structured ss) σ δ ρ'.store ρ'.eval ρ'.hasFailure
+  | cfg :
+    CoreCFGStepStar π φ cfg
+      (.cont cfg.entry σ false)
+      (.terminal σ' failed) →
+    CoreBodyExec π φ (.cfg cfg) σ δ σ' δ failed
+
 inductive EvalCommand (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) : CoreEval →
   CoreStore → Command → CoreStore → Bool → Prop where
   | cmd_sem {δ σ c σ' f} :
@@ -295,7 +335,7 @@ inductive EvalCommand (π : String → Option Procedure) (φ : CoreEval → Pure
   /-- Arguments are matched positionally: `inArgs` (from `getInputExprs`)
       aligns with `p.header.inputs`, and `lhs` (from `getLhs`) aligns
       with `p.header.outputs`. -/
-  | call_sem {δ σ₀ σ inArgs vals oVals σA σAO n p modvals callArgs σ' ρ' md} :
+  | call_sem {δ σ₀ σ inArgs vals oVals σA σAO n p modvals callArgs σ' σ_final δ_final failed md} :
     π n = .some p →
     -- inArg exprs + fvar refs for inoutArg ids
     CallArg.getInputExprs callArgs = inArgs →
@@ -317,13 +357,11 @@ inductive EvalCommand (π : String → Option Procedure) (φ : CoreEval → Pure
     (∀ pre, (Procedure.Spec.getCheckExprs p.spec.preconditions).contains pre →
       isDefinedOver (HasVarsPure.getVars) σAO pre ∧
       δ σAO pre = .some HasBool.tt) →
-    CoreStepStar π φ
-      (.stmts p.body ⟨σAO, δ, false⟩)
-      (.terminal ρ') →
+    CoreBodyExec π φ p.body σAO δ σ_final δ_final failed →
     (∀ post, (Procedure.Spec.getCheckExprs p.spec.postconditions).contains post →
       isDefinedOver (HasVarsPure.getVars) σAO post ∧
-      δ ρ'.store post = .some HasBool.tt) →
-    ReadValues ρ'.store (ListMap.keys (p.header.outputs)) modvals →
+      δ_final σ_final post = .some HasBool.tt) →
+    ReadValues σ_final (ListMap.keys (p.header.outputs)) modvals →
     -- positional: modvals[i] written back to lhs[i]
     UpdateStates σ lhs modvals σ' →
     ----

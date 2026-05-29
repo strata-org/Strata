@@ -948,7 +948,7 @@ private def translateProcedureDecl
   return [.proc {
     header := { name := mkIdent n, typeArgs := tys, inputs := allInputs, outputs := allOutputs }
     spec := spec
-    body := body
+    body := .structured body
   } .empty]
 
 def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Decl) := do
@@ -1023,8 +1023,10 @@ def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Dec
     return [.proc {
       header := { name := mkIdent topLevelBlockProcedureName, typeArgs := [], inputs := [], outputs := [] }
       spec := { preconditions := [], postconditions := [] }
-      body := ← toCoreBlock b
+      body := .structured (← toCoreBlock b)
     } .empty]
+  | .command_cfg_procedure _ _ _ _ _ _ =>
+    throwAt default "CFG procedures are not supported in the Boole dialect"
   | .command_datatypes _ ⟨_, decls⟩ =>
     return [.type (.data (← decls.toList.mapM toCoreDatatypeDecl)) .empty]
 

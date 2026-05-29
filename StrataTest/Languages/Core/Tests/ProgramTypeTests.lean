@@ -30,7 +30,7 @@ def bad_prog : Program := { decls := [
               spec := {
                   preconditions := [],
                   postconditions := [] },
-              body := [
+              body := .structured [
                 Statement.assert "test" eb[(~fooAliasVal == ~fooVal)] .empty
               ]
       } .empty
@@ -60,7 +60,7 @@ def good_prog : Program := { decls := [
               spec := {
                   preconditions := [],
                   postconditions := [] },
-              body := [
+              body := .structured [
                 Statement.assert "test" eb[(~fooAliasVal == ~fooVal)] .empty
               ]
       } .empty
@@ -102,7 +102,7 @@ def outOfScopeVarProg : Program := { decls := [
               spec := {
                   preconditions := [],
                   postconditions := [] },
-              body := [
+              body := .structured [
                 Statement.set "y" eb[((~Bool.Or x) x)] .empty,
                 .ite (.det eb[(x == #true)])
                   [Statement.init "q" t[int] (.det eb[#0]) .empty,
@@ -146,7 +146,7 @@ def polyFuncProg : Program := { decls := [
                       outputs := [] },
           spec := { preconditions := [],
                     postconditions := [] },
-          body := [
+          body := .structured [
             -- var m : Map int bool;
             Statement.init "m" (.forAll [] (.tcons "Map" [.tcons "int" [], .tcons "bool" []])) Imperative.ExprOrNondet.nondet .empty,
             -- m := makePair(identity(42), identity(true));

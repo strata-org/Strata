@@ -16,7 +16,7 @@ public section
 namespace Core
 
 open Std (ToFormat Format format)
-open Imperative (MetaData)
+open Imperative (MetaData HasVarsImp)
 open Strata (DiagnosticModel FileRange)
 
 namespace Procedure
@@ -30,10 +30,10 @@ private def checkNoDuplicates (proc : Procedure) (sourceLoc : FileRange) :
 
 private def checkModificationRights (proc : Procedure) (sourceLoc : FileRange) :
     Except DiagnosticModel Unit := do
-  let modifiedVars := (Imperative.Block.modifiedVars proc.body).eraseDups
-  let definedVars := (Imperative.Block.definedVars proc.body).eraseDups
+  let modifiedVars := (HasVarsImp.modifiedVars (P := Expression) proc.body).eraseDups
+  let definedVars := (HasVarsImp.definedVars (P := Expression) proc.body).eraseDups
   let allowedVars := proc.header.outputs.keys ++ definedVars
-  let disallowed := modifiedVars.filter (fun v => v ∉ allowedVars)
+  let disallowed := modifiedVars.filter (fun v => !allowedVars.contains v)
   if !disallowed.isEmpty then
     .error <| DiagnosticModel.withRange sourceLoc f!"[{proc.header.name}]: This procedure modifies variables it \
               is not allowed to!\n\
@@ -49,6 +49,73 @@ private def setupInputEnv (C : Core.Expression.TyContext) (Env : Core.Expression
   let inp_lty_sig := Lambda.LMonoTySignature.toTrivialLTy inp_mty_sig
   let Env := Env.addInNewestContext inp_lty_sig
   return (inp_mty_sig, Env)
+
+private def checkUniqueLabels (procName : CoreIdent) (cfg : DetCFG) (sourceLoc : FileRange) :
+    Except DiagnosticModel Unit := do
+  let labels := cfg.blocks.map (·.1)
+  if !labels.Nodup then
+    let dups := labels.filter (fun l => labels.countP (· == l) > 1) |>.eraseDups
+    .error <| DiagnosticModel.withRange sourceLoc
+      f!"[{procName}]: Duplicate block labels in CFG: {dups}"
+
+private def checkEntryExists (procName : CoreIdent) (cfg : DetCFG) (sourceLoc : FileRange) :
+    Except DiagnosticModel Unit := do
+  let labels := cfg.blocks.map (·.1)
+  if !labels.contains cfg.entry then
+    .error <| DiagnosticModel.withRange sourceLoc
+      f!"[{procName}]: Entry label \"{cfg.entry}\" not found in CFG blocks. \
+         Available labels: {labels}"
+
+private def checkTargetLabels (procName : CoreIdent) (cfg : DetCFG) (sourceLoc : FileRange) :
+    Except DiagnosticModel Unit := do
+  let labels := cfg.blocks.map (·.1)
+  for (lbl, blk) in cfg.blocks do
+    match blk.transfer with
+    | .condGoto _ lt lf _ =>
+      if !labels.contains lt then
+        .error <| DiagnosticModel.withRange sourceLoc
+          f!"[{procName}]: Block \"{lbl}\" branches to unknown label \"{lt}\". \
+             Available labels: {labels}"
+      if !labels.contains lf then
+        .error <| DiagnosticModel.withRange sourceLoc
+          f!"[{procName}]: Block \"{lbl}\" branches to unknown label \"{lf}\". \
+             Available labels: {labels}"
+    | .finish _ => pure ()
+
+-- Type environment flows sequentially through all blocks in list order,
+-- regardless of control-flow reachability.  This is a sound over-approximation:
+-- it may accept a program that uses an uninitialized variable at runtime (the
+-- verifier will still catch the error), but it never misses a real type error.
+-- Per-block scoping would require a dataflow fixpoint over the CFG.
+open Lambda Lambda.LTy.Syntax in
+private def typeCheckCFG (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
+    (P : Program) (proc : Procedure) (cfg : DetCFG) (sourceLoc : FileRange) :
+    Except DiagnosticModel (DetCFG × Core.Expression.TyEnv) := do
+  checkUniqueLabels proc.header.name cfg sourceLoc
+  checkEntryExists proc.header.name cfg sourceLoc
+  checkTargetLabels proc.header.name cfg sourceLoc
+  let mut currentEnv := Env
+  let mut annotatedBlocks : List (String × Imperative.DetBlock String Command Expression) := []
+  for (lbl, blk) in cfg.blocks do
+    let mut cmds' := []
+    for cmd in blk.cmds do
+      let (cmd', newEnv) ← Statement.typeCheckCmd C currentEnv P cmd
+      currentEnv := newEnv
+      cmds' := cmds' ++ [cmd']
+    let transfer' ← match blk.transfer with
+      | .condGoto p lt lf md =>
+        let (pa, newEnv) ← LExpr.resolve C currentEnv p
+          |>.mapError DiagnosticModel.fromFormat
+        currentEnv := newEnv
+        if pa.toLMonoTy != mty[bool] then
+          .error <| DiagnosticModel.withRange sourceLoc
+            f!"[{proc.header.name}]: Branch condition in block \"{lbl}\" \
+               is not of type bool, got {pa.toLMonoTy}"
+        pure (Imperative.DetTransferCmd.condGoto pa.unresolved lt lf md)
+      | .finish md => pure (.finish md)
+    annotatedBlocks := annotatedBlocks ++ [(lbl, { cmds := cmds', transfer := transfer' })]
+  let annotatedCFG : DetCFG := { entry := cfg.entry, blocks := annotatedBlocks }
+  return (annotatedCFG, currentEnv)
 
 -- Error message prefix for errors in processing procedure pre/post conditions.
 def conditionErrorMsgPrefix (procName : CoreIdent) (condName : CoreLabel)
@@ -111,7 +178,13 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p :
   -- Type check body.
   -- Note that `Statement.typeCheck` already reports source locations in
   -- error messages.
-  let (annotated_body, finalEnv) ← Statement.typeCheck C envAfterPostconds p (.some proc) proc.body
+  let (annotated_body, annotated_cfg, finalEnv) ← match proc.body with
+    | .structured ss =>
+      let (ss', env') ← Statement.typeCheck C envAfterPostconds p (.some proc) ss
+      pure (ss', none, env')
+    | .cfg cfgBody =>
+      let (cfg', env') ← typeCheckCFG C envAfterPostconds p proc cfgBody fileRange
+      pure ([], some cfg', env')
 
   -- Remove formals and returns from the context -- they ought to be local to
   -- the procedure body.
@@ -126,7 +199,10 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p :
                                     outputs := out_mty_sig }
   let new_spec := { proc.spec with preconditions := finalPreconditions,
                                    postconditions := finalPostconditions }
-  let new_proc := { proc with header := new_hdr, spec := new_spec, body := annotated_body }
+  let new_body := match annotated_cfg with
+    | some cfg' => .cfg cfg'
+    | none => .structured annotated_body
+  let new_proc := { proc with header := new_hdr, spec := new_spec, body := new_body }
 
   return (new_proc, finalEnv)
 

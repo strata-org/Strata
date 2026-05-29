@@ -75,8 +75,11 @@ private def seqEmptyTysIn (p : Strata.Program) : Except String (List String) := 
   for d in cp.decls do
     match d with
     | .proc proc _ =>
-      for stmt in proc.body do
-        out := out ++ (collectFromStmt stmt).map fmtSeqEmptyTy
+      match proc.body with
+      | .structured ss =>
+        for stmt in ss do
+          out := out ++ (collectFromStmt stmt).map fmtSeqEmptyTy
+      | .cfg _ => pure ()  -- Boole doesn't produce CFG bodies; skip if encountered
     | _ => pure ()
   return out
 

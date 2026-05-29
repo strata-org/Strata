@@ -332,10 +332,20 @@ def runProgram
           currentProcedureName := .some proc.header.name.1
         })
 
-        let (changed, new_body) ← runStmtsRec f proc.body
+        -- TODO: A `runCFGRec` counterpart could be added to apply command-level
+        -- transforms to CFG bodies. Since `f` returns `Option (List Statement)`
+        -- and a CFG block holds `List Command`, each returned statement would
+        -- need to be unwrapped as `.cmd`. If `f` returns nested structures
+        -- (blocks, if-then-else, loops), those can't be represented in a basic
+        -- block, so such cases would need to be rejected or left untransformed.
+        let bodyStmts ← match proc.body with
+          | .structured ss => pure ss
+          | .cfg _ => throw (Strata.DiagnosticModel.fromMessage
+              s!"runProgram: cannot apply statement-level transform to CFG body (procedure '{proc.header.name.1}')")
+        let (changed, new_body) ← runStmtsRec f bodyStmts
 
         if changed then
-          newDecls := newDecls.set i (Decl.proc { proc with body := new_body } md)
+          newDecls := newDecls.set i (Decl.proc { proc with body := .structured new_body } md)
           anyChanged := true
           modify (fun σ => { σ with
             currentProgram := .some { decls := newDecls }

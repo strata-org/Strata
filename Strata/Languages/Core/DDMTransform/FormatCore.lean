@@ -919,6 +919,61 @@ partial def invariantsToCST {M} [Inhabited M]
     let restCST ← invariantsToCST rest
     pure (.consInvariants default labelAnn exprCST restCST)
 
+/-- Convert a `DetTransferCmd` to its CFG-specific CST `Transfer` node.
+Always produces a deterministic CST: `transfer_goto` when both targets coincide,
+otherwise `transfer_cond_goto` over the condition expression. Nondeterministic
+gotos belong to `NondetTransferCmd`; see `nondetTransferToCST`. -/
+partial def transferToCST {M} [Inhabited M]
+    (t : Imperative.DetTransferCmd String Expression) : ToCSTM M (CoreDDM.Transfer M) := do
+  match t with
+  | .condGoto cond lt lf _ =>
+    if lt == lf then
+      pure (.transfer_goto default ⟨default, lt⟩)
+    else
+      let condCST ← lexprToExpr cond 0
+      pure (.transfer_cond_goto default condCST ⟨default, lt⟩ ⟨default, lf⟩)
+  | .finish _ => pure (.transfer_return default)
+
+/-- Convert a `NondetTransferCmd` to its CFG-specific CST `Transfer` node.
+A two-target nondeterministic goto becomes `transfer_nondet_goto`; a single
+target becomes `transfer_goto`; an empty target list becomes `transfer_return`.
+Other arities are not representable in the current concrete syntax. -/
+partial def nondetTransferToCST {M} [Inhabited M]
+    (t : Imperative.NondetTransferCmd String Expression) : ToCSTM M (CoreDDM.Transfer M) := do
+  match t with
+  | .goto [] _ => pure (.transfer_return default)
+  | .goto [l] _ => pure (.transfer_goto default ⟨default, l⟩)
+  | .goto [l1, l2] _ =>
+    pure (.transfer_nondet_goto default ⟨default, l1⟩ ⟨default, l2⟩)
+  | .goto labels _ =>
+    ToCSTM.logError "nondetTransferToCST"
+      "nondeterministic goto arity not representable in concrete syntax"
+      s!"got {labels.length} targets, expected 0, 1, or 2"
+    pure (.transfer_return default)
+
+/-- Convert a single `DetBlock` to a CST `CFGBlock`. -/
+partial def detBlockToCST {M} [Inhabited M]
+    (label : String) (blk : Imperative.DetBlock String Core.Command Expression)
+    : ToCSTM M (CoreDDM.CFGBlock M) := do
+  modify ToCSTContext.pushScope
+  let cmdStmts ← blk.cmds.toArray.mapM (stmtToCST ∘ Imperative.Stmt.cmd)
+  let transfer ← transferToCST blk.transfer
+  modify ToCSTContext.popScope
+  pure (.cfg_block default ⟨default, label⟩ ⟨default, cmdStmts⟩ transfer)
+
+/-- Convert a `DetCFG` to a CST `CFGBody`. -/
+partial def detCFGToCST {M} [Inhabited M] (cfg : Core.DetCFG)
+    : ToCSTM M (CoreDDM.CFGBody M) := do
+  let cfgBlocks ← cfg.blocks.mapM fun (label, blk) => detBlockToCST label blk
+  let blocks := cfgBlocks.foldr (init := none) fun blk acc =>
+    match acc with
+    | none => some (.cfg_blocks_one default blk)
+    | some rest => some (.cfg_blocks_cons default blk rest)
+  match blocks with
+  | some bs => pure (.cfg_body default ⟨default, cfg.entry⟩ bs)
+  | none => pure (.cfg_body default ⟨default, cfg.entry⟩
+      (.cfg_blocks_one default (.cfg_block default ⟨default, cfg.entry⟩ ⟨default, #[]⟩ (.transfer_return default))))
+
 partial def measureToCST {M} [Inhabited M]
     (measure : Option (Lambda.LExpr CoreLParams.mono)) :
     ToCSTM M (Ann (Option (Measure M)) M) := do
@@ -988,10 +1043,16 @@ def procToCST {M} [Inhabited M] (proc : Core.Procedure) : ToCSTM M (Command M) :
       ⟨default, none⟩
     else
       ⟨default, some (Spec.spec_mk default specAnn)⟩
-  let bodyCST ← blockToCST proc.body
-  let body : Ann (Option (CoreDDM.Block M)) M := ⟨default, some bodyCST⟩
+  let cmd ← match proc.body with
+    | .structured ss =>
+      let bodyCST ← blockToCST ss
+      let body : Ann (Option (CoreDDM.Block M)) M := ⟨default, some bodyCST⟩
+      pure (.command_procedure default name typeArgs arguments spec body)
+    | .cfg c =>
+      let cfgBody ← detCFGToCST c
+      pure (.command_cfg_procedure default name typeArgs arguments spec cfgBody)
   modify ToCSTContext.popScope
-  pure (.command_procedure default name typeArgs arguments spec body)
+  pure cmd
 
 -- Recreate enough of `GlobalContext` from `ToCSTContext` obtained from
 -- `programToCST`, purely for formatting.

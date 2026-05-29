@@ -58,6 +58,93 @@ private def mergeResults (fallback : Env) (results : List Env) : Env :=
       deferred := allDeferred,
       exprEnv  := { E.exprEnv with config := { E.exprEnv.config with usedNames := mergedNames } } }
 
+private def evalBlockCmds (E : Env) (old_var_subst : SubstMap)
+    (cmds : List Command) : Env :=
+  cmds.foldl (fun env cmd =>
+    if env.error.isSome then env
+    else (Statement.Command.eval env old_var_subst cmd).snd) E
+
+private def evalCFGStep (cfg : DetCFG) (old_var_subst : SubstMap)
+    (active : List (String × Env)) :
+    List (String × Env) × List Env × Statistics :=
+  active.foldl (fun (newActive, finished, stats) (label, env) =>
+    if env.error.isSome then
+      (newActive, env :: finished, stats)
+    else
+      match cfg.blocks.lookup label with
+      | none =>
+        let env' := { env with error := some (.Misc
+            s!"evalCFG: block '{label}' not found in CFG") }
+        (newActive, env' :: finished, stats)
+      | some blk =>
+        let env' := evalBlockCmds env old_var_subst blk.cmds
+        if env'.error.isSome then
+          (newActive, env' :: finished, stats)
+        else
+          let stats := stats.increment s!"{Evaluator.Stats.simulatedStmts}"
+          match blk.transfer with
+          | .finish _ =>
+            (newActive, env' :: finished, stats)
+          | .condGoto cond lt lf _ =>
+            let cond' := env'.exprEval cond
+            match cond' with
+            | .true _ => ((lt, env') :: newActive, finished, stats)
+            | .false _ => ((lf, env') :: newActive, finished, stats)
+            | _ =>
+              let condErased := cond.eraseTypes
+              let label_t := toString (f!"<cfgBranch_true: {condErased}>")
+              let label_f := toString (f!"<cfgBranch_false: !({condErased})>")
+              let env_t := { env' with pathConditions :=
+                (env'.pathConditions.addInNewest
+                  [.assumption label_t cond']) }
+              let env_f := { env' with pathConditions :=
+                (env'.pathConditions.addInNewest
+                  [.assumption label_f
+                    (Lambda.LExpr.ite () cond' (LExpr.false ()) (LExpr.true ()))]) }
+              ((lt, env_t) :: (lf, env_f) :: newActive, finished, stats))
+    ([], [], {})
+
+private def evalCFGBlocks (cfg : DetCFG) (old_var_subst : SubstMap)
+    (fuel : Nat) (active : List (String × Env)) (finished : List Env)
+    (stats : Statistics) : List Env × Statistics :=
+  match active with
+  | [] => (finished, stats)
+  | _ =>
+    match fuel with
+    | 0 =>
+      let errorEnvs := active.map fun (_, e) =>
+        { e with error := some .OutOfFuel }
+      (errorEnvs ++ finished,
+       stats.increment s!"{Evaluator.Stats.simulatingStmtHitOutOfFuel}" active.length)
+    | fuel' + 1 =>
+      let (newActive, newFinished, stepStats) :=
+        evalCFGStep cfg old_var_subst active
+      evalCFGBlocks cfg old_var_subst fuel' newActive
+        (newFinished ++ finished) (stats.merge stepStats)
+  termination_by fuel
+
+private def evalCFGBody (E : Env) (old_var_subst : SubstMap)
+    (precond_assumes postcond_asserts : Statements)
+    (cfg : DetCFG) (fuel : Nat) : List Env × Statistics :=
+  let (preEnvs, preStats) := Statement.eval E old_var_subst precond_assumes
+  let emptyAcc : List Env × Statistics := ([], {})
+  let (cfgResultsRev, cfgStats) :=
+    preEnvs.foldl (fun acc preEnv =>
+      let (accEnvs, accStats) := acc
+      let (envs, stats) :=
+        evalCFGBlocks cfg old_var_subst fuel [(cfg.entry, preEnv)] [] {}
+      (envs.reverse ++ accEnvs, accStats.merge stats)) emptyAcc
+  let cfgResults := cfgResultsRev.reverse
+  let (postResultsRev, postStats) :=
+    cfgResults.foldl (fun acc cfgEnv =>
+      let (accEnvs, accStats) := acc
+      if cfgEnv.error.isSome then
+        (cfgEnv :: accEnvs, accStats)
+      else
+        let (envs, stats) := Statement.eval cfgEnv old_var_subst postcond_asserts
+        (envs.reverse ++ accEnvs, accStats.merge stats)) emptyAcc
+  (postResultsRev.reverse, preStats.merge (cfgStats.merge postStats))
+
 /--
 Evaluate a single procedure: generate fresh variables for parameters,
 execute the body, check postconditions, and collect proof obligations.
@@ -113,8 +200,18 @@ def eval (E : Env) (p : Procedure) : Env × Statistics :=
       /- the assumptions from preconditions are set to have empty metadata  -/
       (.assume label check.expr check.md))
       p.spec.preconditions
-  let (ssEs, evalStats) := Statement.eval E old_g_subst (precond_assumes ++ p.body ++ postcond_asserts)
-  (mergeResults E (ssEs.map (fun sE => fixupError sE)), evalStats)
+  match p.body with
+  | .cfg cfgBody =>
+    -- 100 iterations per block: enough to unroll moderate loops while keeping
+    -- symbolic execution bounded.  Fuel is consumed per block visit, so a
+    -- single-block loop unrolls ~100 times and a 4-block diamond uses ~400.
+    let fuel := cfgBody.blocks.length * 100
+    let (ssEs, evalStats) :=
+      evalCFGBody E old_g_subst precond_assumes postcond_asserts cfgBody fuel
+    (mergeResults E (ssEs.map (fun sE => fixupError sE)), evalStats)
+  | .structured bodyStmts =>
+    let (ssEs, evalStats) := Statement.eval E old_g_subst (precond_assumes ++ bodyStmts ++ postcond_asserts)
+    (mergeResults E (ssEs.map (fun sE => fixupError sE)), evalStats)
 
 ---------------------------------------------------------------------
 

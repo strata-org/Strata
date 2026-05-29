@@ -249,52 +249,34 @@ def Statements.containsAsserts (ss : Statements) : Bool :=
     (fun c => match c with | .assert _ _ _ => true | _ => false) ss
 
 mutual
-/--
-Collect all `cover` commands from a statement `s` with their labels and metadata.
--/
-def Statement.collectCovers (s : Statement) : List (String × Imperative.MetaData Expression) :=
+def Statement.collectCmds (f : Imperative.Cmd Expression → Option α) (s : Statement) : List α :=
   match s with
-  | .cmd (.cmd (.cover label _expr md)) => [(label, md)]
+  | .cmd (.cmd c) => (f c).toList
   | .cmd _ => []
-  | .block _ inner_ss _ => Statements.collectCovers inner_ss
-  | .ite _ then_ss else_ss _ => Statements.collectCovers then_ss ++ Statements.collectCovers else_ss
-  | .loop _ _ _ body_ss _ => Statements.collectCovers body_ss
-  | .funcDecl _ _ | .exit _ _ | .typeDecl _ _ => []  -- Function/type declarations and exits don't contain cover commands
+  | .block _ inner_ss _ => Statements.collectCmds f inner_ss
+  | .ite _ then_ss else_ss _ => Statements.collectCmds f then_ss ++ Statements.collectCmds f else_ss
+  | .loop _ _ _ body_ss _ => Statements.collectCmds f body_ss
+  | .funcDecl _ _ | .exit _ _ | .typeDecl _ _ => []
   termination_by Imperative.Stmt.sizeOf s
-/--
-Collect all `cover` commands from statements `ss` with their labels and metadata.
--/
-def Statements.collectCovers (ss : Statements) : List (String × Imperative.MetaData Expression) :=
+def Statements.collectCmds (f : Imperative.Cmd Expression → Option α) (ss : Statements) : List α :=
   match ss with
   | [] => []
   | s :: ss =>
-    Statement.collectCovers s ++ Statements.collectCovers ss
+    Statement.collectCmds f s ++ Statements.collectCmds f ss
   termination_by Imperative.Block.sizeOf ss
 end
 
-mutual
-/--
-Collect all `assert` commands from a statement `s` with their labels and metadata.
--/
+def Statement.collectCovers (s : Statement) : List (String × Imperative.MetaData Expression) :=
+  Statement.collectCmds (fun | .cover label _expr md => some (label, md) | _ => none) s
+
+def Statements.collectCovers (ss : Statements) : List (String × Imperative.MetaData Expression) :=
+  Statements.collectCmds (fun | .cover label _expr md => some (label, md) | _ => none) ss
+
 def Statement.collectAsserts (s : Statement) : List (String × Imperative.MetaData Expression) :=
-  match s with
-  | .cmd (.cmd (.assert label _expr md)) => [(label, md)]
-  | .cmd _ => []
-  | .block _ inner_ss _ => Statements.collectAsserts inner_ss
-  | .ite _ then_ss else_ss _ => Statements.collectAsserts then_ss ++ Statements.collectAsserts else_ss
-  | .loop _ _ _ body_ss _ => Statements.collectAsserts body_ss
-  | .funcDecl _ _ | .exit _ _ | .typeDecl _ _ => []  -- Function/type declarations and exits don't contain assert commands
-  termination_by Imperative.Stmt.sizeOf s
-/--
-Collect all `assert` commands from statements `ss` with their labels and metadata.
--/
+  Statement.collectCmds (fun | .assert label _expr md => some (label, md) | _ => none) s
+
 def Statements.collectAsserts (ss : Statements) : List (String × Imperative.MetaData Expression) :=
-  match ss with
-  | [] => []
-  | s :: ss =>
-    Statement.collectAsserts s ++ Statements.collectAsserts ss
-  termination_by Imperative.Block.sizeOf ss
-end
+  Statements.collectCmds (fun | .assert label _expr md => some (label, md) | _ => none) ss
 
 /--
 Create cover obligations for covers in an unreachable (dead) branch, including
@@ -754,10 +736,41 @@ def evalOne (E : Env) (old_var_subst : SubstMap) (ss : Statements) : Env :=
 mutual
 
 /--
+Execute a CFG by following control flow from the entry block. For each block,
+translate the commands within it to a sequence of command statements and evaluate
+those using the structured interpreter, then dispatch on the block's transfer to
+either finish or jump to the next block. -/
+private def runCFG (cfg : Core.DetCFG) (fuel : Nat) (env : Env)
+    (ops : Imperative.RunOps Expression Command Env) : Env :=
+  go cfg.entry fuel env
+where
+  go (label : String) (fuel : Nat) (env : Env) : Env :=
+    match fuel with
+    | 0 => CmdEval.updateError env (.Misc s!"runCFG: fuel exhausted (possible infinite loop)")
+    | fuel' + 1 =>
+      match cfg.blocks.lookup label with
+      | none => CmdEval.updateError env (.Misc s!"runCFG: block '{label}' not found in CFG")
+      | some blk =>
+        let cmdStmts := blk.cmds.map (Imperative.Stmt.cmd ·)
+        match Imperative.runStmt ops fuel' (.stmts cmdStmts env) with
+        | .terminal env' =>
+          match blk.transfer with
+          | .finish _ => env'
+          | .condGoto cond lt lf _ =>
+            match ops.evalExpr env' cond with
+            | some (.boolConst _ true) => go lt fuel' env'
+            | some (.boolConst _ false) => go lf fuel' env'
+            | _ => CmdEval.updateError env'
+                (.Misc s!"runCFG: branch condition in block '{label}' is symbolic (e.g. nondeterministic goto); concrete execution requires deterministic conditions")
+        | _ => CmdEval.updateError env
+              (.Misc s!"runCFG: block '{label}' did not reach terminal (possibly inner-loop fuel exhaustion or unexpected exit)")
+
+/--
 Interpret a single procedure call.
 
 Importantly, this creates a separate Env to execute the body of the procedure with,
 which initially only contains input/output variables.
+
 The resulting Env is the original passed in Env with the output variables copied back into it.
 -/
 def Command.runCall (lhs : List Expression.Ident) (procName : String) (args : List Expression.Expr)
@@ -768,7 +781,7 @@ def Command.runCall (lhs : List Expression.Ident) (procName : String) (args : Li
     match Program.Procedure.find? E.program ⟨procName, ()⟩ with
     | none => CmdEval.updateError E (.Misc s!"procedure '{procName}' not found")
     | some proc =>
-      if proc.body.isEmpty then CmdEval.updateError E (.Misc s!"procedure '{proc.header.name}' has no body")
+      if proc.body.isAbstract then CmdEval.updateError E (.Misc s!"procedure '{proc.header.name}' has no body")
       else
         match args.mapM (LExpr.run E.exprEnv) with
         | .error s => CmdEval.updateError E (.Misc s)
@@ -808,10 +821,15 @@ def Command.runCall (lhs : List Expression.Ident) (procName : String) (args : Li
               hasError := fun E => E.error.isSome
               addError := fun E msg => CmdEval.updateError E (.Misc msg)
             }
-            let config : Imperative.RunConfig Expression Command Env :=
-              .stmts proc.body callEnv
-            let configAfter := Imperative.runStmt ops fuel' config
-            match configAfter with
+            let callEnvAfter := match proc.body with
+              | .structured ss =>
+                let config : Imperative.RunConfig Expression Command Env :=
+                  .stmts ss callEnv
+                Imperative.runStmt ops fuel' config
+              | .cfg cfgBody =>
+                -- Interpret CFG by following control flow from the entry block.
+                .terminal (runCFG cfgBody fuel' callEnv ops)
+            match callEnvAfter with
             | .terminal callEnv' =>
               match callEnv'.error with
               | some _ => { E with error := callEnv'.error }
@@ -838,5 +856,3 @@ end Statement
 end Core
 
 end -- public section
-
----------------------------------------------------------------------

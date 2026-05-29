@@ -292,7 +292,7 @@ private def mkTermCheckProc
                  (func.preconditions.mapIdx fun i p =>
                    (s!"{func.name.name}_requires_{i}", { expr := p.expr, attr := .Free })),
                postconditions := [] }
-    body := stmts
+    body := .structured stmts
   } md, obligations.length)
 
 /-- Add a termination-check procedure as a leaf node in the cached call graph. -/

@@ -19,9 +19,12 @@ namespace Imperative
 
 abbrev DetBlocks (Label CmdT : Type) (P : PureExpr) := List (Label × DetBlock Label CmdT P)
 
-def detCmdBlock [HasBool P] (c : CmdT) (k : Label) :
+private abbrev synthesizedMd {P : PureExpr} : MetaData P :=
+  MetaData.ofProvenance (.synthesized .structuredToUnstructured)
+
+def detCmdBlock [HasBool P] (c : CmdT) (k : Label) (md : MetaData P) :
   DetBlock Label CmdT P :=
-  { cmds := [c], transfer := .goto k }
+  { cmds := [c], transfer := .goto k md }
 
 open LabelGen
 
@@ -40,11 +43,8 @@ def flushCmds
     pure (k, [])
   else
     let l ← StringGenState.gen pfx
-    let b := (l, { cmds := accum.reverse, transfer := tr?.getD (.goto k) })
+    let b := (l, { cmds := accum.reverse, transfer := tr?.getD (.goto k synthesizedMd) })
     pure (l, [b])
-
-private abbrev synthesizedMd {P : PureExpr} : MetaData P :=
-  MetaData.ofProvenance (.synthesized .structuredToUnstructured)
 
 /-- Translate a list of statements to basic blocks, accumulating commands -/
 def stmtsToBlocks
@@ -68,7 +68,7 @@ match ss with
 | .typeDecl _ _ :: rest => do
   -- Not yet supported, so just continue with `rest`.
   stmtsToBlocks k rest exitConts accum
-| .block l bss _md :: rest => do
+| .block l bss md :: rest => do
   -- Process rest first
   let (kNext, bsNext) ← stmtsToBlocks k rest exitConts []
   -- Process block body, extending the list of exit continuations.
@@ -80,9 +80,9 @@ match ss with
     -- Empty accumulated block
     pure (accumEntry, accumBlocks ++ bbs ++ bsNext)
   else
-    let b := (l, { cmds := [], transfer := .goto bl })
+    let b := (l, { cmds := [], transfer := .goto bl md })
     pure (l, accumBlocks ++ [b] ++ bbs ++ bsNext)
-| .ite c tss fss _md :: rest => do
+| .ite c tss fss md :: rest => do
   -- Process rest first
   let (kNext, bsNext) ← stmtsToBlocks k rest exitConts []
   -- Create ite block
@@ -98,9 +98,9 @@ match ss with
       let initCmd := HasInit.init ident HasBool.boolTy .nondet synthesizedMd
       pure (HasFvar.mkFvar ident, [initCmd])
   let (accumEntry, accumBlocks) ← flushCmds "ite$" (accum ++ extraCmds)
-    (.some (.condGoto condExpr tl fl)) l
+    (.some (.condGoto condExpr tl fl md)) l
   pure (accumEntry, accumBlocks ++ tbs ++ fbs ++ bsNext)
-| .loop c m is bss _md :: rest => do
+| .loop c m is bss md :: rest => do
   -- Process rest first
   let (kNext, bsNext) ← stmtsToBlocks k rest exitConts []
   -- Create loop entry block
@@ -122,7 +122,7 @@ match ss with
       let decCmd   := HasPassiveCmds.assert s!"measure_decrease_{mLabel}"
                          (HasIntOrder.lt mExpr mOldExpr) synthesizedMd
       let ldec ← StringGenState.gen "measure_decrease$"
-      let decBlock := (ldec, { cmds := [decCmd], transfer := .goto lentry })
+      let decBlock := (ldec, { cmds := [decCmd], transfer := .goto lentry synthesizedMd })
       pure ([initCmd, assumeCmd, lbCmd], ldec, [decBlock])
   -- Body jumps to bodyK (either directly to lentry, or through the decrease block).
   let (bl, bbs) ← stmtsToBlocks bodyK bss ((.none, kNext) :: exitConts) []
@@ -135,10 +135,18 @@ match ss with
         if srcLabel.isEmpty then StringGenState.gen "inv$"
         else pure srcLabel
       pure (HasPassiveCmds.assert assertLabel i synthesizedMd))
+  -- Attach loop contract (invariants + measure) to the transfer metadata so
+  -- downstream CFG passes can recover the original spec without relying on the
+  -- lowered assert commands alone.
+  let contractMd := is.foldl (fun md (_, inv) =>
+      md.pushElem MetaData.specLoopInvariant (.expr inv)) md
+  let contractMd := match m with
+    | some mExpr => contractMd.pushElem MetaData.specDecreases (.expr mExpr)
+    | none => contractMd
   -- For nondet guards, introduce a fresh boolean variable
   match c with
   | .det e =>
-    let b := (lentry, { cmds := invCmds ++ measureCmds, transfer := .condGoto e bl kNext })
+    let b := (lentry, { cmds := invCmds ++ measureCmds, transfer := .condGoto e bl kNext contractMd })
     let (accumEntry, accumBlocks) ← flushCmds "before_loop$" accum .none lentry
     pure (accumEntry, accumBlocks ++ [b] ++ bbs ++ decreaseBlocks ++ bsNext)
   | .nondet => do
@@ -146,10 +154,10 @@ match ss with
     let ident := HasIdent.ident (P := P) freshName
     let initCmd := HasInit.init ident HasBool.boolTy .nondet synthesizedMd
     let b := (lentry, { cmds := [initCmd] ++ invCmds ++ measureCmds,
-                        transfer := .condGoto (HasFvar.mkFvar ident) bl kNext })
+                        transfer := .condGoto (HasFvar.mkFvar ident) bl kNext contractMd })
     let (accumEntry, accumBlocks) ← flushCmds "before_loop$" accum .none lentry
     pure (accumEntry, accumBlocks ++ [b] ++ bbs ++ decreaseBlocks ++ bsNext)
-| .exit l _md :: _ => do
+| .exit l md :: _ => do
   -- Find the continuation of the block labeled `l`.
   let bk :=
     match exitConts.lookup (.some l) with
@@ -160,7 +168,7 @@ match ss with
   -- Flush the accumulated commands, going to the continuation calculated above.
   -- Any statements after the `.exit` are skipped.
   let exitName := s!"block${l}$"
-  flushCmds exitName accum .none bk
+  flushCmds exitName accum (.some (.goto bk md)) bk
 
 def stmtsToCFGM
   [HasBool P] [HasPassiveCmds P CmdT] [HasInit P CmdT]

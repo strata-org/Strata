@@ -426,7 +426,7 @@ Proof Obligation:
                 spec := {
                     preconditions := [("0_lt_x", ⟨eb[((~Int.Lt #0) x)], .Default, #[]⟩)],
                     postconditions := [("ret_y_lt_0", ⟨eb[((~Int.Lt y) #0)], .Default, #[]⟩)] },
-                body := [
+                body := .structured [
                   Statement.set "y" eb[(~Int.Neg x)] .empty
                 ]
               }

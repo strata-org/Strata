@@ -95,7 +95,12 @@ def buildEnv (options : VerifyOptions) (program : Program)
         for func in funcs do E ← E.addFactoryFunc func
       | .distinct _ es _ => E := { E with distinct := es :: E.distinct }
       | .proc proc _ =>
-        for stmt in proc.body.flatMap collectFuncDecls do
+        let stmts := match proc.body with
+          | .structured ss => ss
+          -- CFG bodies cannot contain local function declarations;
+          -- funcDecl is a structured statement-level construct only.
+          | .cfg _ => []
+        for stmt in stmts.flatMap collectFuncDecls do
           match E.exprEnv.addFactoryFunc stmt with
           | .ok σ' => E := { E with exprEnv := σ' }
           | .error _ => pure ()
@@ -174,7 +179,7 @@ def toCoreProofObligationProgram (options : VerifyOptions) (program : Program)
     | some name => [Decl.proc {
         header := { name := name, typeArgs := [], inputs := [], outputs := [] },
         spec := { preconditions := [], postconditions := [] },
-        body := body
+        body := .structured body
       } .empty]
     | none => []
 

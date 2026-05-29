@@ -228,12 +228,17 @@ def extractCallsFromFunction (func : Function) : List String :=
   | some body => extractFunctionCallsFromExpr body
   | none => []
 
+/-- Extract procedure calls from a CmdExt -/
+def extractCallsFromCmdExt (cmd : Command) : List String :=
+  match cmd with
+  | .call procName _ _ => [procName]
+  | .cmd _ => []
+
 mutual
 /-- Extract procedure calls from a single statement -/
 def extractCallsFromStatement (stmt : Statement) : List String :=
   match stmt with
-  | .cmd (.call procName _ _) => [procName]
-  | .cmd _ => []
+  | .cmd c => extractCallsFromCmdExt c
   | .block _ body _ => extractCallsFromStatements body
   | .ite _ thenBody elseBody _ =>
     extractCallsFromStatements thenBody ++
@@ -251,9 +256,16 @@ def extractCallsFromStatements (stmts : List Statement) : List String :=
                  extractCallsFromStatements rest
 end
 
+/-- Extract procedure calls from a deterministic CFG -/
+def extractCallsFromDetCFG (cfg : DetCFG) : List String :=
+  cfg.blocks.flatMap fun (_, blk) =>
+    blk.cmds.flatMap extractCallsFromCmdExt
+
 /-- Extract all procedure calls from a procedure's body -/
 def extractCallsFromProcedure (proc : Procedure) : List String :=
-  extractCallsFromStatements proc.body
+  match proc.body with
+  | .structured ss => extractCallsFromStatements ss
+  | .cfg c => extractCallsFromDetCFG c
 
 @[expose] abbrev ProcedureCG := CallGraph
 @[expose] abbrev FunctionCG := CallGraph
