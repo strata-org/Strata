@@ -750,9 +750,8 @@ private theorem createAsserts_ok
   -- the underlying list.  Induct on that list, threading the state.
   induction conds generalizing γ with
   | nil =>
-    refine ⟨[], γ, ?_, rfl, [], rfl, ?_⟩
-    · simp [List.mapM_nil, pure, ExceptT.pure, StateT.pure, ExceptT.mk]
-    · simp
+    exact ⟨[], γ, by simp [List.mapM_nil, pure, ExceptT.pure, StateT.pure, ExceptT.mk],
+            rfl, [], rfl, by simp⟩
   | cons head rest ih =>
     obtain ⟨l, check⟩ := head
     -- Head: genIdent always succeeds, producing a label and updated state.
@@ -808,9 +807,8 @@ private theorem createAssumes_ok
   unfold Core.Transform.createAssumes
   induction conds generalizing γ with
   | nil =>
-    refine ⟨[], γ, ?_, rfl, [], rfl, ?_⟩
-    · simp [List.mapM_nil, pure, ExceptT.pure, StateT.pure, ExceptT.mk]
-    · simp
+    exact ⟨[], γ, by simp [List.mapM_nil, pure, ExceptT.pure, StateT.pure, ExceptT.mk],
+            rfl, [], rfl, by simp⟩
   | cons head rest ih =>
     obtain ⟨l, check⟩ := head
     cases hgi : Core.Transform.genIdent l (fun s => s!"{labelPrefix}{s}") γ.genState with
@@ -2324,10 +2322,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       intro v Hv1 Hv2
                       exact HlhsDisjArg Hv1
                         (Hfilt_argT_sub_argTemps v Hv2)
-                    -- Underlying full-zip has Pairwise distinct fst
-                    -- (via inputs.keys.Nodup), so its filter has the
-                    -- same Pairwise property, hence (filter).map fst
-                    -- has Pairwise (· ≠ ·) i.e. Nodup.
+                    -- inputs.keys.Nodup → Pairwise distinct fst on filter → Nodup on (filter.map fst).
                     have Hin_nd_pw :
                         List.Pairwise
                           (· ≠ ·) proc.header.inputs.keys :=
@@ -2550,11 +2545,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                   -- σA on inputs = positional argVals (via Hinitin).
                   have HrdA : ReadValues σA proc.header.inputs.keys argVals :=
                     InitStatesReadValues Hinitin
-                  -- ── Build Hsubst via per-pair direct argument ──
-                  -- (k1, k2) ∈ filtered_ks.zip filtered_ks' is either an
-                  -- output-pair (outputs.keys[i], lhs[i]) or input-pair
-                  -- (filtered_inputs[j], filtered_argTemps[j]).
-                  -- Build Hsubst via parallel ReadValues.
+                  -- ── Build Hsubst via parallel ReadValues over output / filtered-input pairs ──
                   have HinKVlen :
                       proc.header.inputs.keys.length = argVals.length :=
                     InitStatesLength Hinitin
@@ -2848,9 +2839,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     substDefined_of_app HσAO_def_in_L4 HσAO_def_out_L4
                       Hσ_old_def_argT Hσ_old_def_lhs
                   -- ── L4 substStores: substStores σ_old σAO ((argTemps ++ lhs).zip (inputs ++ outputs)) ──
-                  -- Strategy: build matching ReadValues on both σ_old and σAO,
-                  -- then close via ReadValuesSubstStores.
-                  -- σAO reads inputs ↦ argVals (via Hinitin lifted by Hinitout).
+                  -- Build matching ReadValues on σ_old and σAO, close via ReadValuesSubstStores.
                   have HrdAO_in_L4 :
                       ReadValues σAO proc.header.inputs.keys argVals := by
                     have HrdA_in : ReadValues σA proc.header.inputs.keys argVals :=
@@ -3030,10 +3019,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     have Hv_lhs : v ∈ lhs := HoldVars_sub_lhs v Hv_mem
                     have Hv_callLhs : v ∈ CallArg.getLhs args :=
                       HoldVars_sub_callLhs v Hv_mem
-                    -- Local helper: ReadValues σ' ks vs ∧ v ∈ ks ⇒
-                    --   σ' v = some vs[ks.idxOf v]. Folds the
-                    --   `unfold idxOf; findIdx_getElem; simpa` boilerplate
-                    --   that otherwise appears at each callsite.
+                    -- ReadValues σ' ks vs ∧ v ∈ ks ⇒ σ' v = some vs[ks.idxOf v].
                     have read_at : ∀ {σ' : Expression.Ident → Option _}
                         {ks : List Expression.Ident} {vs : List _}
                         (_ : ReadValues σ' ks vs) (Hmem : v ∈ ks)
@@ -3354,10 +3340,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     have Hc_filtered : c ∈ postsFiltered.map (·.snd) ∨
                                         c ∈ proc'.spec.postconditions.values := by
                       right; exact Hc_in
-                    -- HsurvBridge wants entry ∈ postsFiltered, not c ∈ ...values.
-                    -- We need to find entry' ∈ postsFiltered with entry'.snd = c.
-                    -- For the bridge, we just need v ∈ getVars c.expr ⇒
-                    -- ¬ isOldTempIdent v, which holds via HpostVarsFresh.
+                    -- v ∈ getVars c.expr ⇒ ¬ isOldTempIdent v, via HpostVarsFresh.
                     have HsurvBridgeC :
                         ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression)
                                 c.expr,
