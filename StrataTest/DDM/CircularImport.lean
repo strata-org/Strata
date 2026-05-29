@@ -26,4 +26,36 @@ info: 1 error(s) in StrataTest/DDM/testdata/CircA.dialect.st:
   | .ok _ => IO.println "unexpected success"
   | .error msg => IO.println msg
 
+/--
+info: 1 error(s) in StrataTest/DDM/testdata/CircSelf.dialect.st:
+  2:7: Dialect CircSelf already open.
+-/
+#guard_msgs in
+#eval show IO _ from do
+  let preloaded := Elab.LoadedDialects.builtin
+  let fm ← DialectFileMap.new preloaded
+  let fm ← match ← fm.add "StrataTest/DDM/testdata" |>.toBaseIO with
+    | .ok fm => pure fm
+    | .error msg => do IO.println msg; pure fm
+  match ← Elab.loadDialect fm "CircSelf" with
+  | .ok _ => IO.println "unexpected success"
+  | .error msg => IO.println msg
+
+/--
+info: 1 error(s) in StrataTest/DDM/testdata/CircX.dialect.st:
+  2:7: 1 error(s) in StrataTest/DDM/testdata/CircY.dialect.st:
+  2:7: 1 error(s) in StrataTest/DDM/testdata/CircZ.dialect.st:
+  2:7: Circular import detected: CircX -> CircY -> CircZ -> CircX
+-/
+#guard_msgs in
+#eval show IO _ from do
+  let preloaded := Elab.LoadedDialects.builtin
+  let fm ← DialectFileMap.new preloaded
+  let fm ← match ← fm.add "StrataTest/DDM/testdata" |>.toBaseIO with
+    | .ok fm => pure fm
+    | .error msg => do IO.println msg; pure fm
+  match ← Elab.loadDialect fm "CircX" with
+  | .ok _ => IO.println "unexpected success"
+  | .error msg => IO.println msg
+
 end Strata.Test.CircularImport
