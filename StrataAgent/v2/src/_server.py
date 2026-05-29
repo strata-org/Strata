@@ -62,6 +62,10 @@ class AgentCreateRequest(BaseModel):
     replicas: int | None = None
     routing: str | None = None
     routing_key: str | None = None
+    max_inbound_length: int | None = None
+    max_inbound_response: str | None = None
+    max_outbound_length: int | None = None
+    max_outbound_response: str | None = None
 
 
 class SwarmConfig(BaseModel):
@@ -205,14 +209,14 @@ class SwarmDashboard:
         @self.app.post("/api/swarm/pause_all")
         async def pause_all() -> dict[str, str]:
             if self._swarm:
-                for name in self._swarm._nodes:
+                for name in self._swarm._registry.nodes:
                     self._swarm.pause(name)
             return {"status": "paused_all"}
 
         @self.app.post("/api/swarm/resume_all")
         async def resume_all() -> dict[str, str]:
             if self._swarm:
-                for name in self._swarm._nodes:
+                for name in self._swarm._registry.nodes:
                     self._swarm.resume(name)
             return {"status": "resumed_all"}
 
@@ -348,9 +352,9 @@ class SwarmDashboard:
             - The current live session's budget cannot be changed mid-flight (Claude limitation)
             """
             amount = body.get("amount", 0)
-            if not self._swarm or name not in self._swarm._nodes:
+            if not self._swarm or name not in self._swarm._registry.nodes:
                 return {"status": "error", "message": f"Agent '{name}' not found"}
-            node = self._swarm._nodes[name]
+            node = self._swarm._registry.nodes[name]
             old_budget = node.spec.max_budget_usd or 0
             node.spec.max_budget_usd = old_budget + amount
             # Also update the agent_specs list so checkpoint/save captures it
@@ -370,7 +374,7 @@ class SwarmDashboard:
         async def interrupt_agent_api(name: str, body: dict[str, Any]) -> dict[str, str]:
             """Interrupt an agent's current work via backend.interrupt() and send a message."""
             message = body.get("message", "User interrupted. Stop and wait for instructions.")
-            if not self._swarm or name not in self._swarm._nodes:
+            if not self._swarm or name not in self._swarm._registry.nodes:
                 return {"status": "error", "message": f"Agent '{name}' not found"}
             await self._swarm.interrupt_agent(name, message)
             return {"status": "ok", "agent": name}
@@ -435,6 +439,53 @@ class SwarmDashboard:
             ]
             return {"history": history, "rules": rules}
 
+        @self.app.get("/api/agents/live")
+        async def get_live_agents() -> dict[str, Any]:
+            """Return runtime state of all agents including spawned ones."""
+            if not self._swarm:
+                return {"agents": []}
+            agents = []
+            for name, node in self._swarm._registry.nodes.items():
+                spec = node.spec
+                # Build tools info
+                allowed = spec.tools.to_claude_allowed() if spec.tools else []
+                disallowed = spec.tools.to_claude_disallowed() if spec.tools else []
+                # Workspace
+                ws = None
+                if spec.workspace:
+                    ws = {
+                        "read": spec.workspace.read,
+                        "write": spec.workspace.write,
+                        "edit": spec.workspace.edit,
+                    }
+                # Status from task
+                status = "unknown"
+                if name in self._swarm._registry.tasks:
+                    task = self._swarm._registry.tasks[name]
+                    status = "done" if task.done() else "running"
+                elif name in self._swarm._registry.results:
+                    r = self._swarm._registry.results[name]
+                    status = r.status.value if hasattr(r.status, "value") else str(r.status)
+                else:
+                    status = "pending"
+
+                agents.append({
+                    "name": name,
+                    "status": status,
+                    "is_super_agent": spec.is_super_agent,
+                    "reply_only": spec.reply_only,
+                    "spawned_by": getattr(spec, "_spawned_by", None),
+                    "system_prompt": spec.system_prompt,
+                    "prompt": spec.prompt[:500] if spec.prompt else None,
+                    "allowed_tools": allowed,
+                    "disallowed_tools": disallowed,
+                    "workspace": ws,
+                    "model": self._swarm._registry.models.get(name),
+                    "cost_usd": self._swarm._registry.costs.get(name),
+                    "session_id": self._swarm._registry.session_ids.get(name),
+                })
+            return {"agents": agents}
+
     async def _handle_client_message(self, data: dict[str, Any], ws: WebSocket) -> None:
         action = data.get("action")
         agent_name = data.get("agent")
@@ -457,12 +508,12 @@ class SwarmDashboard:
 
         elif action == "pause_all":
             if self._swarm:
-                for name in self._swarm._nodes:
+                for name in self._swarm._registry.nodes:
                     self._swarm.pause(name)
 
         elif action == "resume_all":
             if self._swarm:
-                for name in self._swarm._nodes:
+                for name in self._swarm._registry.nodes:
                     self._swarm.resume(name)
 
         elif action == "cancel":
@@ -583,7 +634,8 @@ class SwarmDashboard:
             await ws.send_json({"type": "chat_list", "chats": chats})
 
     async def _resume_from_chat(self, chat_data: dict[str, Any]) -> None:
-        """Resume a swarm from a saved chat using session IDs."""
+        """Resume a swarm from a saved chat using session IDs.
+        Restores replicas, affinities, and session bindings."""
         from ._swarm import Swarm, ExecutionMode
 
         sessions = chat_data.get("sessions", {})
@@ -644,6 +696,15 @@ class SwarmDashboard:
                     config["type"] = server_def.type
                 external_mcp[server_name] = config
 
+            # Build shard config if replicas requested
+            shard_config: ShardConfig | None = None
+            if spec_req.replicas and spec_req.replicas > 1:
+                shard_config = ShardConfig(
+                    replicas=spec_req.replicas,
+                    routing=spec_req.routing or "round_robin",
+                    routing_key=spec_req.routing_key,
+                )
+
             agent_spec = AgentSpec(
                 name=spec_req.name,
                 system_prompt=spec_req.system_prompt,
@@ -661,8 +722,33 @@ class SwarmDashboard:
                 description=spec_req.description,
                 visibility=spec_req.visibility,
                 child_prefix=spec_req.child_prefix,
+                shard=shard_config,
+                max_inbound_length=spec_req.max_inbound_length,
+                max_inbound_response=spec_req.max_inbound_response,
+                max_outbound_length=spec_req.max_outbound_length,
+                max_outbound_response=spec_req.max_outbound_response,
             )
-            self._swarm.add(agent_spec)
+
+            if shard_config and shard_config.replicas > 1:
+                from copy import copy
+                for i in range(shard_config.replicas):
+                    instance_spec = copy(agent_spec)
+                    instance_spec.name = f"{spec_req.name}_{i}"
+                    # Use per-instance session ID if available
+                    instance_session = sessions.get(f"{spec_req.name}_{i}")
+                    if instance_session:
+                        instance_spec.resume_session_id = instance_session
+                    self._swarm.add(instance_spec)
+                self._swarm._registry.sharded_agents[spec_req.name] = shard_config
+            else:
+                self._swarm.add(agent_spec)
+
+        # Restore affinities from checkpoint/saved state
+        affinities = chat_data.get("agent_affinities", {})
+        for key, physical in affinities.items():
+            if ":" in key:
+                sender, logical = key.split(":", 1)
+                self._swarm._registry.affinities[(sender, logical)] = physical
 
         self._swarm.set_event_callback(self.on_agent_event)
         await self._broadcast({"type": "swarm_started", "agents": self._get_specs_list()})
@@ -778,6 +864,10 @@ class SwarmDashboard:
                 visibility=spec_req.visibility,
                 child_prefix=spec_req.child_prefix,
                 shard=shard_config,
+                max_inbound_length=spec_req.max_inbound_length,
+                max_inbound_response=spec_req.max_inbound_response,
+                max_outbound_length=spec_req.max_outbound_length,
+                max_outbound_response=spec_req.max_outbound_response,
             )
 
             if shard_config and shard_config.replicas > 1:
@@ -788,7 +878,7 @@ class SwarmDashboard:
                     instance_spec = copy(agent_spec)
                     instance_spec.name = f"{spec_req.name}_{i}"
                     self._swarm.add(instance_spec)
-                self._swarm._sharded_agents[spec_req.name] = shard_config
+                self._swarm._registry.sharded_agents[spec_req.name] = shard_config
             else:
                 self._swarm.add(agent_spec)
 
@@ -829,9 +919,9 @@ class SwarmDashboard:
                     "cost_usd": result.cost_usd,
                     "num_turns": result.num_turns,
                     "halted_by": result.halted_by,
-                    "model": self._swarm._agent_models.get(name),
+                    "model": self._swarm._registry.models.get(name),
                 }
-            for name, node in self._swarm._nodes.items():
+            for name, node in self._swarm._registry.nodes.items():
                 spawned_by = getattr(node.spec, "_spawned_by", None)
                 if name not in agents:
                     # Determine status: check event history first, then task state
@@ -842,8 +932,8 @@ class SwarmDashboard:
                             if evt.get("event_type") == "status_change" and evt.get("data"):
                                 status = evt["data"]
                                 break
-                    elif name in self._swarm._tasks:
-                        task = self._swarm._tasks[name]
+                    elif name in self._swarm._registry.tasks:
+                        task = self._swarm._registry.tasks[name]
                         status = "running" if not task.done() else "completed"
                     # Get last known cost from event history
                     last_cost = None
@@ -855,7 +945,7 @@ class SwarmDashboard:
                                 except (ValueError, TypeError):
                                     pass
                                 break
-                    agents[name] = {"name": name, "status": status, "session_id": None, "cost_usd": last_cost, "spawned_by": spawned_by, "model": self._swarm._agent_models.get(name)}
+                    agents[name] = {"name": name, "status": status, "session_id": None, "cost_usd": last_cost, "spawned_by": spawned_by, "model": self._swarm._registry.models.get(name)}
                 else:
                     if spawned_by:
                         agents[name]["spawned_by"] = spawned_by

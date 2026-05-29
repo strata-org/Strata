@@ -3,8 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -15,10 +14,11 @@ from ._checkpoint import CheckpointManager
 from ._directory import create_directory_server
 from ._messaging import create_messaging_server
 from ._nudge import NudgeMonitor
+from ._registry import AgentNode, SwarmRegistry
 from ._spawn import create_spawn_server
 from ._telemetry import TelemetryEvent, TelemetryStream
-from ._tokens import CancellationToken, PauseToken
-from ._types import AgentEvent, AgentResult, AgentSpec, AgentStatus, ShardConfig, SwarmContext
+from ._tokens import CancellationToken
+from ._types import AgentEvent, AgentResult, AgentSpec, AgentStatus, SwarmContext
 
 logger = logging.getLogger("strataswarm.swarm")
 
@@ -27,13 +27,6 @@ class ExecutionMode:
     AWAIT_ALL = "all"
     AWAIT_FIRST = "first"
     FIRE_FORGET = "forget"
-
-
-@dataclass
-class AgentNode:
-    spec: AgentSpec[Any]
-    depends_on: list[str] = field(default_factory=list)
-    render_vars: dict[str, Any] = field(default_factory=dict)
 
 
 class Swarm:
@@ -48,13 +41,8 @@ class Swarm:
         checkpoint_dir: str | None = None,
         nudge_module: str | None = None,
     ) -> None:
-        self._nodes: dict[str, AgentNode] = {}
-        self._results: dict[str, AgentResult[Any]] = {}
-        self._tasks: dict[str, asyncio.Task[AgentResult[Any]]] = {}
+        self._registry = SwarmRegistry()
         self._cancellation = CancellationToken()
-        self._pause_tokens: dict[str, PauseToken] = {}
-        self._pending_successions: dict[str, AgentSpec[Any]] = {}
-        self._session_history: dict[str, list[str]] = {}
         self._channel_bus = ChannelBus()
         self._context = context or SwarmContext()
         self._backend_factory = backend_factory
@@ -63,21 +51,12 @@ class Swarm:
         self._cwd = cwd
         self._wait_after_completion = wait_after_completion
         self._name = name
-        self._visibility_graph: dict[str, set[str]] = {}
-        self._sharded_agents: dict[str, ShardConfig] = {}
-        self._shard_counters: dict[str, int] = {}
         self._telemetry = TelemetryStream()
         self._nudge_monitor = NudgeMonitor(
             nudge_module, self._telemetry,
             channel_bus=self._channel_bus,
             check_interval=30.0,
         )
-        self._live_session_ids: dict[str, str] = {}
-        self._agent_models: dict[str, str] = {}
-        self._agent_backends: dict[str, Any] = {}  # name -> backend instance (for interrupt)
-        self._agent_affinities: dict[tuple[str, str], str] = {}  # (sender, logical_name) -> physical instance
-        self._agent_start_times: dict[str, Any] = {}  # name -> datetime when agent started
-        self._live_costs: dict[str, float] = {}  # name -> cost_usd (updated on cost events)
         self._checkpoint_manager: CheckpointManager | None = None
         if checkpoint_dir:
             self._checkpoint_manager = CheckpointManager(self, Path(checkpoint_dir))
@@ -96,7 +75,7 @@ class Swarm:
 
     @property
     def results(self) -> dict[str, AgentResult[Any]]:
-        return dict(self._results)
+        return dict(self._registry.results)
 
     def set_event_callback(self, callback: EventCallback) -> None:
         self._event_callback = callback
@@ -132,16 +111,20 @@ class Swarm:
         """Wraps the user's event callback to also record telemetry."""
         # Track session IDs as they're emitted by agents
         if event.event_type == "session_id" and event.data:
-            self._live_session_ids[event.agent_name] = str(event.data)
+            self._registry.session_ids[event.agent_name] = str(event.data)
 
         # Track model names as they're reported by backends
         if event.event_type == "model_name" and event.data:
-            self._agent_models[event.agent_name] = str(event.data)
+            self._registry.models[event.agent_name] = str(event.data)
+
+        # Track stall events — nudge monitor will send recovery tip
+        if event.event_type == "stall":
+            self._nudge_monitor.record_stall(event.agent_name)
 
         # Track live costs as they're reported
         if event.event_type in ("cost_update", "cost_estimate") and event.data:
             try:
-                self._live_costs[event.agent_name] = float(event.data)
+                self._registry.costs[event.agent_name] = float(event.data)
             except (ValueError, TypeError):
                 pass
 
@@ -202,18 +185,12 @@ class Swarm:
                 f"AgentSpec '{spec.name}' must have a system_prompt when messaging is enabled. "
                 f"The system prompt should describe the agent's role and the other agents it can talk to."
             )
-        node = AgentNode(
-            spec=spec,
-            depends_on=depends_on or [],
-            render_vars=render_vars or {},
-        )
-        self._nodes[spec.name] = node
-        self._pause_tokens[spec.name] = PauseToken()
+        self._registry.add(spec, depends_on, render_vars)
         return self
 
     async def interrupt_agent(self, agent_name: str, message: str) -> bool:
         """Interrupt an agent's backend and send it a message. Returns True if successful."""
-        backend = self._agent_backends.get(agent_name)
+        backend = self._registry.backends.get(agent_name)
         if backend:
             try:
                 await backend.interrupt()
@@ -227,18 +204,18 @@ class Swarm:
         self._cancellation.cancel()
 
     def cancel_agent(self, name: str) -> None:
-        if name in self._tasks:
-            self._tasks[name].cancel()
+        if name in self._registry.tasks:
+            self._registry.tasks[name].cancel()
 
     def pause(self, agent_name: str) -> None:
-        self._pause_tokens[agent_name].pause()
+        self._registry.pause_tokens[agent_name].pause()
         # Also interrupt the backend to stop mid-response waiting
-        if agent_name in self._tasks and not self._tasks[agent_name].done():
+        if agent_name in self._registry.tasks and not self._registry.tasks[agent_name].done():
             # The agent will check the pause flag on next loop iteration
             logger.info(f"[PAUSE] {agent_name}: paused")
 
     def resume(self, agent_name: str) -> None:
-        self._pause_tokens[agent_name].resume()
+        self._registry.pause_tokens[agent_name].resume()
 
     async def send_to_agent(self, agent_name: str, sender: str, payload: Any) -> None:
         messages_channel = f"{agent_name}:messages"
@@ -246,7 +223,7 @@ class Swarm:
 
     def _is_shard_instance(self, name: str) -> bool:
         """Check if a node name is a shard instance (e.g. 'ProofValidator_0')."""
-        for logical_name in self._sharded_agents:
+        for logical_name in self._registry.sharded_agents:
             if name.startswith(f"{logical_name}_") and name[len(logical_name) + 1:].isdigit():
                 return True
         return False
@@ -258,19 +235,19 @@ class Swarm:
         even though only instances (ProofValidator_0, _1) exist in _nodes.
         Messaging routes through the logical name transparently.
         """
-        self._visibility_graph = {}
+        self._registry.visibility_graph = {}
 
         # Collect non-shard-instance nodes for visibility purposes
         logical_nodes = {
-            name: node for name, node in self._nodes.items()
+            name: node for name, node in self._registry.nodes.items()
             if not self._is_shard_instance(name)
         }
 
         # Also include sharded agents as logical entries (use first instance's spec)
-        for logical_name, shard_config in self._sharded_agents.items():
+        for logical_name, shard_config in self._registry.sharded_agents.items():
             instance_name = f"{logical_name}_0"
-            if instance_name in self._nodes:
-                logical_nodes[logical_name] = self._nodes[instance_name]
+            if instance_name in self._registry.nodes:
+                logical_nodes[logical_name] = self._registry.nodes[instance_name]
 
         # Identify service agents (visibility == "all")
         service_agents = {
@@ -282,20 +259,20 @@ class Swarm:
             spec = node.spec
             if spec.visibility == "all":
                 # Service agents can message everyone except themselves
-                self._visibility_graph[name] = set(logical_nodes.keys()) - {name}
+                self._registry.visibility_graph[name] = set(logical_nodes.keys()) - {name}
             else:
                 # Restricted agents can message their can_see list + all service agents
                 can_see: list[str] = []
                 if isinstance(spec.visibility, dict):
                     can_see = spec.visibility.get("can_see", [])
-                self._visibility_graph[name] = (set(can_see) | service_agents) - {name}
+                self._registry.visibility_graph[name] = (set(can_see) | service_agents) - {name}
 
         # Shard instances inherit their logical group's visibility
-        for logical_name in self._sharded_agents:
-            logical_visibility = self._visibility_graph.get(logical_name, set())
-            for name in self._nodes:
+        for logical_name in self._registry.sharded_agents:
+            logical_visibility = self._registry.visibility_graph.get(logical_name, set())
+            for name in self._registry.nodes:
                 if name.startswith(f"{logical_name}_") and name[len(logical_name) + 1:].isdigit():
-                    self._visibility_graph[name] = set(logical_visibility)
+                    self._registry.visibility_graph[name] = set(logical_visibility)
 
     def _on_agent_spawned(self, child_name: str, parent_name: str) -> None:
         """Update visibility graph when a sub-agent is spawned.
@@ -304,23 +281,18 @@ class Swarm:
         - Parent can see child.
         - Everyone who could see parent can now also see child.
         """
-        parent_visible = self._visibility_graph.get(parent_name, set())
+        parent_visible = self._registry.visibility_graph.get(parent_name, set())
         # Child can see everything parent can see, plus parent
-        self._visibility_graph[child_name] = parent_visible | {parent_name}
+        self._registry.visibility_graph[child_name] = parent_visible | {parent_name}
         # Parent can see child
-        self._visibility_graph[parent_name].add(child_name)
+        self._registry.visibility_graph[parent_name].add(child_name)
         # Everyone who can see parent can also see child
-        for agent, visible_set in self._visibility_graph.items():
+        for agent, visible_set in self._registry.visibility_graph.items():
             if agent == child_name:
                 continue
             if parent_name in visible_set:
                 visible_set.add(child_name)
 
-        # Register spawned agent with nudge monitor
-        self._nudge_monitor._agents.add(child_name)
-        node = self._nodes.get(child_name)
-        if node and node.spec.is_super_agent:
-            self._nudge_monitor._super_agents.add(child_name)
 
     def _build_roster(self, agent_name: str) -> str:
         """Generate a collaborator roster for restricted agents.
@@ -328,70 +300,113 @@ class Swarm:
         Service agents (visibility == "all") get no roster.
         Restricted agents get a list of all agents in their visibility set.
         """
-        spec = self._nodes[agent_name].spec
+        spec = self._registry.nodes[agent_name].spec
 
         # Service agents get no roster
         if spec.visibility == "all":
             return ""
 
-        visible = self._visibility_graph.get(agent_name, set())
+        visible = self._registry.visibility_graph.get(agent_name, set())
         lines = []
         for other_name in sorted(visible):
             # Resolve node — for sharded agents, use first instance
-            if other_name in self._nodes:
-                desc = self._nodes[other_name].spec.description or other_name
-            elif other_name in self._sharded_agents:
+            if other_name in self._registry.nodes:
+                other_spec = self._registry.nodes[other_name].spec
+                desc = other_spec.description or other_name
+            elif other_name in self._registry.sharded_agents:
                 instance = f"{other_name}_0"
-                if instance in self._nodes:
-                    desc = self._nodes[instance].spec.description or other_name
+                if instance in self._registry.nodes:
+                    other_spec = self._registry.nodes[instance].spec
+                    desc = other_spec.description or other_name
                 else:
                     continue
             else:
                 continue
-            lines.append(f"- {other_name}: {desc}")
+            # Include inbound limit if set
+            limit_note = ""
+            if other_spec.max_inbound_length:
+                limit_note = f" [MAX {other_spec.max_inbound_length} chars]"
+            lines.append(f"- {other_name}: {desc}{limit_note}")
 
         if not lines:
             return ""
+
+        # Add sender's own outbound limit
+        own_limit_note = ""
+        if spec.max_outbound_length:
+            own_limit_note = f"\nYOUR outbound limit: {spec.max_outbound_length} chars per message.\n"
 
         return (
             "\n\n=== YOUR COLLABORATORS ===\n"
             "You can message these agents:\n"
             + "\n".join(lines)
-            + "\nUse list_agents() to refresh — new agents may join at runtime."
+            + "\n" + own_limit_note
+            + "Use list_agents() to refresh — new agents may join at runtime."
             "\n==========================="
         )
+
+    async def _remove_agent(self, name: str, cancel_task: bool = True) -> None:
+        """Single point of agent removal. Cleans up ALL per-agent state."""
+        await self._registry.remove(name, cancel_task=cancel_task)
+
+        # Clean up nudge monitor pending replies tracker
+        self._nudge_monitor.pending._pending.pop(name, None)
+
+        # Sync checkpoint to reflect agent removal
+        if self._checkpoint_manager:
+            self._checkpoint_manager.create(reason=f"agent_removed:{name}")
+
+        logger.info(f"[REMOVE] Agent '{name}' removed from swarm")
+
+    def _get_inbound_limit(self, recipient: str) -> tuple[int | None, str | None]:
+        """Get the inbound message limit for a recipient (resolves sharded logical names)."""
+        # Check logical name for sharded agents
+        if recipient in self._registry.sharded_agents:
+            instance_name = f"{recipient}_0"
+            node = self._registry.nodes.get(instance_name)
+        else:
+            node = self._registry.nodes.get(recipient)
+        if node:
+            return (node.spec.max_inbound_length, node.spec.max_inbound_response)
+        return (None, None)
 
     def can_message(self, sender: str, recipient: str) -> bool:
         """Check if sender is allowed to message recipient.
 
         If the visibility graph is empty (not yet built), default to allowing
         all messages for backward compatibility.
+        Service agents (visibility: all) can always message anyone.
         """
-        if not self._visibility_graph:
+        if not self._registry.visibility_graph:
             return True
-        return recipient in self._visibility_graph.get(sender, set())
+        # Service agents can message anyone (including dynamically spawned agents)
+        sender_base = sender.rsplit("_", 1)[0] if sender not in self._registry.nodes else sender
+        node = self._registry.nodes.get(sender) or self._registry.nodes.get(sender_base)
+        if node and node.spec.visibility == "all":
+            return True
+        return recipient in self._registry.visibility_graph.get(sender, set())
 
     def _route_message(self, logical_name: str, message: str, sender: str = "") -> str:
         """Resolve logical agent name to physical instance for sharded agents.
         Uses affinity: if sender has talked to this service before, route to same instance."""
-        if logical_name not in self._sharded_agents:
+        if logical_name not in self._registry.sharded_agents:
             return logical_name
 
-        shard = self._sharded_agents[logical_name]
+        shard = self._registry.sharded_agents[logical_name]
 
         # Affinity: if sender already has a binding, use it
         if sender:
             affinity_key = (sender, logical_name)
-            if affinity_key in self._agent_affinities:
-                return self._agent_affinities[affinity_key]
+            if affinity_key in self._registry.affinities:
+                return self._registry.affinities[affinity_key]
 
         # No affinity — route normally
         if shard.routing == "hash":
             key = self._extract_routing_key(message, shard.routing_key)
             idx = hash(key) % shard.replicas
         elif shard.routing == "round_robin":
-            idx = self._shard_counters.get(logical_name, 0)
-            self._shard_counters[logical_name] = (idx + 1) % shard.replicas
+            idx = self._registry.shard_counters.get(logical_name, 0)
+            self._registry.shard_counters[logical_name] = (idx + 1) % shard.replicas
         else:
             idx = 0
 
@@ -399,7 +414,7 @@ class Swarm:
 
         # Establish affinity for this sender → this instance
         if sender:
-            self._agent_affinities[(sender, logical_name)] = physical
+            self._registry.affinities[(sender, logical_name)] = physical
 
         return physical
 
@@ -412,7 +427,7 @@ class Swarm:
 
     def _get_sender_display(self, agent_name: str) -> str:
         """Rewrite sharded instance name to logical name for outbound messages."""
-        for logical_name in self._sharded_agents:
+        for logical_name in self._registry.sharded_agents:
             prefix = f"{logical_name}_"
             if agent_name.startswith(prefix) and agent_name[len(prefix):].isdigit():
                 return logical_name
@@ -420,11 +435,11 @@ class Swarm:
 
     def get_agent_session_id(self, agent_name: str) -> str | None:
         # Check live session IDs first (captured from events during run)
-        if agent_name in self._live_session_ids:
-            return self._live_session_ids[agent_name]
+        if agent_name in self._registry.session_ids:
+            return self._registry.session_ids[agent_name]
         # Fallback: check completed results
-        if agent_name in self._results:
-            return self._results[agent_name].session_id
+        if agent_name in self._registry.results:
+            return self._registry.results[agent_name].session_id
         return None
 
     async def _run_node(self, name: str) -> AgentResult[Any]:
@@ -438,45 +453,45 @@ class Swarm:
             raise
 
     async def _run_node_inner(self, name: str) -> AgentResult[Any]:
-        node = self._nodes[name]
+        node = self._registry.nodes[name]
 
         if node.depends_on:
-            dep_tasks = [self._tasks[dep] for dep in node.depends_on if dep in self._tasks]
+            dep_tasks = [self._registry.tasks[dep] for dep in node.depends_on if dep in self._registry.tasks]
             if dep_tasks:
                 await asyncio.gather(*dep_tasks, return_exceptions=True)
                 for dep_name in node.depends_on:
-                    if dep_name in self._results:
-                        dep_result = self._results[dep_name]
+                    if dep_name in self._registry.results:
+                        dep_result = self._registry.results[dep_name]
                         if dep_result.halted_by == "cancelled":
                             result: AgentResult[Any] = AgentResult(
                                 name=name, halted_by="dependency", status=AgentStatus.CANCELLED
                             )
-                            self._results[name] = result
+                            self._registry.results[name] = result
                             return result
 
         render_vars = dict(node.render_vars)
         for dep_name in node.depends_on:
-            if dep_name in self._results:
-                render_vars[dep_name] = self._results[dep_name]
+            if dep_name in self._registry.results:
+                render_vars[dep_name] = self._registry.results[dep_name]
         render_vars["context"] = await self._context.snapshot()
 
         backend = self._backend_factory()
-        self._agent_backends[name] = backend
+        self._registry.backends[name] = backend
 
         mcp_servers: dict[str, Any] | None = None
         combined_system_prompt: str | None = None
 
         if self._enable_messaging:
-            other_agents = [n for n in self._nodes if n != name]
+            other_agents = [n for n in self._registry.nodes if n != name]
             # Service agents = reply_only agents (by logical name)
             service_agents = {
-                n for n, nd in self._nodes.items()
+                n for n, nd in self._registry.nodes.items()
                 if nd.spec.reply_only
-            } | set(self._sharded_agents.keys())
+            } | set(self._registry.sharded_agents.keys())
 
             from datetime import datetime as _dt
             agent_start_time = _dt.now()
-            self._agent_start_times[name] = agent_start_time
+            self._registry.start_times[name] = agent_start_time
 
             messaging_server = create_messaging_server(
                 agent_name=name,
@@ -489,6 +504,10 @@ class Swarm:
                 reply_only_mode=node.spec.reply_only,
                 known_service_agents=service_agents,
                 start_time=agent_start_time,
+                is_agent_alive=lambda r: r in self._registry.nodes or r in self._registry.sharded_agents,
+                outbound_limit=node.spec.max_outbound_length,
+                outbound_limit_response=node.spec.max_outbound_response,
+                get_inbound_limit=self._get_inbound_limit,
             )
             mcp_servers = dict(node.spec.mcp_servers)
             mcp_servers["agent_messaging"] = messaging_server
@@ -505,6 +524,16 @@ class Swarm:
                 f"NEVER use absolute paths starting with /. "
                 f"The tools resolve paths from the project root automatically.\n"
             ) if self._cwd else ""
+            # Build message limits note for service agents
+            limits_note = ""
+            if node.spec.max_outbound_length or node.spec.max_inbound_length:
+                parts = []
+                if node.spec.max_outbound_length:
+                    parts.append(f"Your responses MUST be under {node.spec.max_outbound_length} chars.")
+                if node.spec.max_inbound_length:
+                    parts.append(f"Messages TO you are limited to {node.spec.max_inbound_length} chars (enforced by framework).")
+                limits_note = "\nMESSAGE LIMITS:\n" + " ".join(parts) + "\n"
+
             if node.spec.reply_only:
                 messaging_suffix = (
                     f"\n\n=== ENVIRONMENT ===\n"
@@ -519,7 +548,8 @@ class Swarm:
                     f"- check_messages(): Read the next pending message from your inbox.\n"
                     f"- get_time(): Get the current timestamp.\n\n"
                     f"WORKFLOW: receive message → do the work → send_message(to=sender, message=result)\n"
-                    f"You cannot initiate conversations. Only respond to requests in order.\n\n"
+                    f"You cannot initiate conversations. Only respond to requests in order.\n"
+                    f"{limits_note}\n"
                     f"IMPORTANT — WAITING PROTOCOL:\n"
                     f"When you have nothing to do, simply STOP and end your turn. "
                     f"The framework will notify you when a new message arrives.\n"
@@ -551,8 +581,9 @@ class Swarm:
                     f"================="
                 )
 
-            # SuperAgent: inject spawn_agent tool
-            if node.spec.is_super_agent:
+            # Spawn server: always inject for spawned children (gives them sleep tool)
+            # SuperAgents get full spawn capabilities; leaf agents get sleep + my_workspace only
+            if node.spec.is_super_agent or getattr(node.spec, '_spawned_by', None):
                 spawn_server = create_spawn_server(
                     parent_name=name,
                     parent_spec=node.spec,
@@ -603,6 +634,9 @@ class Swarm:
             )
 
             combined_system_prompt = node.spec.system_prompt + messaging_suffix
+            # Store base prompt for inheritance (before workspace/messaging composition)
+            if not node.spec._base_system_prompt:
+                node.spec._base_system_prompt = node.spec.system_prompt
         else:
             combined_system_prompt = node.spec.system_prompt
 
@@ -611,7 +645,7 @@ class Swarm:
             backend=backend,
             channel_bus=self._channel_bus,
             cancellation=self._cancellation,
-            pause=self._pause_tokens[name],
+            pause=self._registry.pause_tokens[name],
             render_vars=render_vars,
             on_event=self._on_event_with_telemetry,
             mcp_servers_override=mcp_servers,
@@ -624,16 +658,16 @@ class Swarm:
         )
 
         result = await agent.run()
-        self._results[name] = result
+        self._registry.results[name] = result
         await self._context.set(f"result:{name}", result)
         await self._check_succession(name)
         return result
 
     async def _check_succession(self, agent_name: str) -> None:
         """If agent designated a successor, execute the atomic swap."""
-        if agent_name not in self._pending_successions:
+        if agent_name not in self._registry.pending_successions:
             return
-        successor_spec = self._pending_successions.pop(agent_name)
+        successor_spec = self._registry.pending_successions.pop(agent_name)
         await self._execute_succession(agent_name, successor_spec)
 
     async def _execute_succession(self, agent_name: str, successor_spec: Any) -> None:
@@ -641,22 +675,27 @@ class Swarm:
         # Checkpoint before swap
         if self._checkpoint_manager:
             self._checkpoint_manager.create(reason=f"pre_succession:{agent_name}")
-        # Record old session in history
-        self._session_history.setdefault(agent_name, []).append(f"pre_swap_{agent_name}")
+
+        # Clear stale per-instance state (new _run_node_inner will repopulate)
+        self._registry.clear_agent_runtime(agent_name)
 
         channel = self._channel_bus.get_or_create(f"{agent_name}:messages")
         channel.lock()
         try:
             successor_spec.name = agent_name
-            self._nodes[agent_name] = type(self._nodes[agent_name])(spec=successor_spec)
+            self._registry.nodes[agent_name] = type(self._registry.nodes[agent_name])(spec=successor_spec)
             task = asyncio.create_task(self._run_node(agent_name), name=f"swarm:{agent_name}")
-            self._tasks[agent_name] = task
+            self._registry.tasks[agent_name] = task
             logger.info(f"[SUCCESSION] {agent_name} swapped to fresh instance")
         finally:
             channel.unlock()
 
+        # Checkpoint after swap so latest reflects the new state
+        if self._checkpoint_manager:
+            self._checkpoint_manager.create(reason=f"post_succession:{agent_name}")
+
     async def run(self, mode: str = ExecutionMode.AWAIT_ALL) -> dict[str, AgentResult[Any]]:
-        logger.info(f"[SWARM] Building visibility graph for {len(self._nodes)} nodes...")
+        logger.info(f"[SWARM] Building visibility graph for {len(self._registry.nodes)} nodes...")
         try:
             self._build_visibility_graph()
         except Exception as e:
@@ -664,32 +703,22 @@ class Swarm:
             import traceback
             traceback.print_exc()
 
-        # Populate nudge monitor with agent info and start background loop
-        for name, node in self._nodes.items():
-            self._nudge_monitor._agents.add(name)
-            if node.spec.is_super_agent:
-                self._nudge_monitor._super_agents.add(name)
-            if node.spec.reply_only:
-                self._nudge_monitor._reply_only_agents.add(name)
-        # Give nudge monitor live references to swarm state
-        self._nudge_monitor._visibility_graph = self._visibility_graph
-        self._nudge_monitor._agent_start_times = self._agent_start_times
-        self._nudge_monitor._agent_costs = self._live_costs
-        self._nudge_monitor._agent_backends = self._agent_backends
+        # Give nudge monitor access to swarm (and thus registry) state
+        self._nudge_monitor._swarm = self
         self._nudge_monitor.start()
         logger.info(f"[SWARM] Visibility graph built. Starting agents...")
 
-        for name in self._nodes:
+        for name in self._registry.nodes:
             logger.info(f"[SWARM] Creating task for: {name}")
             task = asyncio.create_task(self._run_node(name), name=f"swarm:{name}")
-            self._tasks[name] = task
+            self._registry.tasks[name] = task
 
         if mode == ExecutionMode.AWAIT_ALL:
-            await asyncio.gather(*self._tasks.values(), return_exceptions=True)
+            await asyncio.gather(*self._registry.tasks.values(), return_exceptions=True)
 
         elif mode == ExecutionMode.AWAIT_FIRST:
             done, pending = await asyncio.wait(
-                self._tasks.values(), return_when=asyncio.FIRST_COMPLETED
+                self._registry.tasks.values(), return_when=asyncio.FIRST_COMPLETED
             )
             self._cancellation.cancel()
             for t in pending:
@@ -702,4 +731,4 @@ class Swarm:
         elif mode == ExecutionMode.FIRE_FORGET:
             pass
 
-        return dict(self._results)
+        return dict(self._registry.results)

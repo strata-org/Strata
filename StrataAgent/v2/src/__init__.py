@@ -15,7 +15,8 @@ from ._result_parsers import (
     ResultParser,
 )
 from ._server import SwarmDashboard
-from ._swarm import AgentNode, ExecutionMode, Swarm
+from ._registry import AgentNode, SwarmRegistry
+from ._swarm import ExecutionMode, Swarm
 from ._templates import render_prompt
 from ._tokens import CancellationToken, PauseToken
 from ._tools import Tool, ToolSet
@@ -66,6 +67,7 @@ __all__ = [
     "SwarmAgent",
     "SwarmContext",
     "SwarmDashboard",
+    "SwarmRegistry",
     "Tool",
     "ToolSet",
     "Workspace",

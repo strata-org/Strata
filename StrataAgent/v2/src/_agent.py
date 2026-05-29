@@ -101,16 +101,22 @@ class SwarmAgent(Generic[T]):
                 "mcp__agent_messaging__get_time",
             ]
         if mcp_servers and "agent_spawn" in mcp_servers:
-            allowed_tools = allowed_tools + [
-                "mcp__agent_spawn__spawn_agent",
-                "mcp__agent_spawn__check_sub_agents",
-                "mcp__agent_spawn__sleep",
-                "mcp__agent_spawn__broadcast",
-                "mcp__agent_spawn__designate_successor",
-                "mcp__agent_spawn__interrupt_agent",
-                "mcp__agent_spawn__kill_agent",
-                "mcp__agent_spawn__my_workspace",
-            ]
+            if self.spec.is_super_agent:
+                allowed_tools = allowed_tools + [
+                    "mcp__agent_spawn__spawn_agent",
+                    "mcp__agent_spawn__check_sub_agents",
+                    "mcp__agent_spawn__sleep",
+                    "mcp__agent_spawn__broadcast",
+                    "mcp__agent_spawn__designate_successor",
+                    "mcp__agent_spawn__interrupt_agent",
+                    "mcp__agent_spawn__kill_agent",
+                    "mcp__agent_spawn__my_workspace",
+                ]
+            else:
+                allowed_tools = allowed_tools + [
+                    "mcp__agent_spawn__sleep",
+                    "mcp__agent_spawn__my_workspace",
+                ]
         if mcp_servers and "agent_directory" in mcp_servers:
             allowed_tools = allowed_tools + [
                 "mcp__agent_directory__list_agents",
@@ -149,19 +155,30 @@ class SwarmAgent(Generic[T]):
                 return True  # Response complete, continue outer loop
             except asyncio.TimeoutError:
                 logger.warning(f"[STALL] {self.spec.name}: no message in {STALL_TIMEOUT}s")
-                await self._emit("message", f"[STALL] No progress for {STALL_TIMEOUT}s. Nudging...")
+                await self._emit("message", f"[STALL] No progress for {STALL_TIMEOUT}s. Recovering...")
+
+                # Step 1: Interrupt the current stream
                 try:
                     await self.backend.interrupt()
                 except Exception:
                     pass
-                # Send a nudge to restart
-                ts = datetime.now().strftime("%H:%M:%S")
-                await self.backend.send_query(
-                    f"[{ts}] [SYSTEM]: You appear stalled — no output for {STALL_TIMEOUT}s. "
-                    f"Please respond with your current status or continue your work."
-                )
-                await self._emit("message", "[Nudge sent — waiting for response...]")
-                return True  # Re-enter outer loop → receive_messages again
+
+                # Step 2: Reconnect using session ID
+                reconnected = False
+                try:
+                    reconnected = await self.backend.reconnect()
+                except Exception as e:
+                    logger.error(f"[STALL] {self.spec.name}: reconnect failed: {e}")
+
+                if reconnected:
+                    await self._emit("message", "[Reconnected after stall]")
+                else:
+                    await self._emit("message", "[Reconnect failed — session may be lost]")
+
+                # Step 3: Emit stall event — nudge monitor will send recovery tip
+                await self._emit("stall", f"stalled_for_{STALL_TIMEOUT}s")
+
+                return True  # Re-enter outer loop — nudge monitor handles the recovery message
             except (ConnectionError, OSError, RuntimeError) as e:
                 # Backend connection dropped — attempt reconnect
                 logger.warning(f"[DISCONNECT] {self.spec.name}: backend error: {e}")

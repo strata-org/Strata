@@ -65,6 +65,11 @@ class AgentSpec(Generic[T]):
     visibility: str | dict = "all"
     child_prefix: str | None = None
     shard: ShardConfig | None = None
+    max_inbound_length: int | None = None  # Max chars in messages sent TO this agent
+    max_inbound_response: str | None = None  # Error shown to sender when inbound limit exceeded
+    max_outbound_length: int | None = None  # Max chars in messages this agent sends
+    max_outbound_response: str | None = None  # Error shown to this agent when outbound limit exceeded
+    _base_system_prompt: str | None = None  # Original system prompt before workspace composition
 
 
 @dataclass

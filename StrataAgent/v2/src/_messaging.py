@@ -29,6 +29,10 @@ def create_messaging_server(
     reply_only_mode: bool = False,
     known_service_agents: set[str] | None = None,
     start_time: datetime | None = None,
+    is_agent_alive: Callable[[str], bool] | None = None,
+    outbound_limit: int | None = None,
+    outbound_limit_response: str | None = None,
+    get_inbound_limit: Callable[[str], tuple[int | None, str | None]] | None = None,
 ):
     """
     Create an MCP server exposing send_message and check_messages tools
@@ -92,6 +96,35 @@ def create_messaging_server(
                 f"Use list_agents() to see who you can communicate with."
             )}]}
 
+        # Check if recipient is still alive (killed agents are gone)
+        if is_agent_alive is not None and not is_agent_alive(recipient):
+            # Pop from pending_replies if we owed them a reply
+            if reply_only_mode and pending_replies and pending_replies[0] == recipient:
+                pending_replies.pop(0)
+            return {"content": [{"type": "text", "text": (
+                f"Agent '{recipient}' is no longer running (killed or completed). "
+                f"Message not delivered. Move on to the next task."
+            )}]}
+
+        # Enforce message length limits
+        msg_len = len(message)
+        # Sender's outbound limit
+        if outbound_limit and msg_len > outbound_limit:
+            resp = outbound_limit_response or "Shorten your message."
+            return {"content": [{"type": "text", "text": (
+                f"ERROR: Your message is {msg_len} chars but your outbound limit is "
+                f"{outbound_limit} chars. {resp}"
+            )}]}
+        # Recipient's inbound limit
+        if get_inbound_limit:
+            inbound_limit, inbound_resp = get_inbound_limit(recipient)
+            if inbound_limit and msg_len > inbound_limit:
+                resp = inbound_resp or f"Keep messages to '{recipient}' under {inbound_limit} chars."
+                return {"content": [{"type": "text", "text": (
+                    f"ERROR: Message to '{recipient}' is {msg_len} chars but their inbound "
+                    f"limit is {inbound_limit} chars. {resp}"
+                )}]}
+
         # Rewrite sender name for sharded instances (transparent to recipient)
         sender_display = get_sender_display(agent_name) if get_sender_display else agent_name
         # Route to physical instance if sharded (transparent to sender)
@@ -144,40 +177,6 @@ def create_messaging_server(
     # Queue of senders awaiting replies (FIFO)
     pending_replies: list[str] = []
 
-    @tool(
-        name="reply",
-        description=(
-            "Reply to the agent who last messaged you. You MUST use this instead of "
-            "send_message when responding to a request. This ensures replies go to "
-            "the correct requester in order. Only specify the message content."
-        ),
-        input_schema={
-            "type": "object",
-            "properties": {
-                "message": {
-                    "type": "string",
-                    "description": "Your reply message.",
-                },
-            },
-            "required": ["message"],
-        },
-    )
-    async def reply(input: dict[str, Any]) -> dict[str, Any]:
-        message = input["message"]
-
-        if not pending_replies:
-            return {"content": [{"type": "text", "text":
-                "ERROR: No pending message to reply to. Use send_message for unsolicited messages."}]}
-
-        recipient = pending_replies.pop(0)
-        sender_display = get_sender_display(agent_name) if get_sender_display else agent_name
-        physical_recipient = route_message(recipient, message, agent_name) if route_message else recipient
-        messages_channel = f"{physical_recipient}:messages"
-        await channel_bus.send_to(messages_channel, sender=sender_display, payload=message)
-        if on_tool_call:
-            on_tool_call(agent_name, "send_message", {"to": recipient})
-        return {"content": [{"type": "text", "text": f"Reply sent to '{recipient}' successfully."}]}
-
     _start_time = start_time or datetime.now()
 
     @tool(
@@ -206,7 +205,7 @@ def create_messaging_server(
     server = create_sdk_mcp_server(
         name="agent_messaging",
         version="1.0.0",
-        tools=[send_message, check_messages, reply, get_time],
+        tools=[send_message, check_messages, get_time],
     )
     # Expose pending_replies for framework injection path to push senders
     # Wrap in a simple namespace since sdk server is a dict

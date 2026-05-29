@@ -85,20 +85,12 @@ class NudgeMonitor:
         self._check_interval = check_interval
         self._rules: list[tuple[Callable[[TelemetryView], str | None], float, float]] = []
         self._cooldowns: dict[tuple[str, int], float] = {}  # (agent, rule_idx) -> next_fire_time
-        self._last_nudge_time: dict[str, float] = {}  # agent -> timestamp of last nudge sent
-        self._super_agents: set[str] = set()
-        self._reply_only_agents: set[str] = set()
-        self._agents: set[str] = set()
+        self._agents_fallback: set[str] = set()
         self.pending = PendingRepliesTracker()
         self._task: asyncio.Task | None = None
         self._history: list[dict[str, Any]] = []  # nudge evaluation history
         self._max_history: int = 500
-        # External state refs — set by swarm after construction
-        self._visibility_graph: dict[str, set[str]] | None = None
-        self._agent_costs: dict[str, float] | None = None  # name -> cost_usd so far
-        self._agent_start_times: dict[str, Any] | None = None  # name -> datetime
-        self._agent_backends: dict[str, Any] | None = None  # name -> backend (for token queries)
-        self._agent_token_usage: dict[str, float] = {}  # name -> context % (cached from async poll)
+        self._swarm: Any = None  # Set by swarm after construction (for registry access)
 
         if module_name:
             last_error = None
@@ -118,6 +110,24 @@ class NudgeMonitor:
     @property
     def rules_loaded(self) -> int:
         return len(self._rules)
+
+    @property
+    def _agents(self) -> set:
+        if self._swarm:
+            return self._swarm._registry.agent_names
+        return self._agents_fallback
+
+    @property
+    def _super_agents(self) -> set:
+        if self._swarm:
+            return self._swarm._registry.super_agents
+        return set()
+
+    @property
+    def _reply_only_agents(self) -> set:
+        if self._swarm:
+            return self._swarm._registry.reply_only_agents
+        return set()
 
     def start(self) -> None:
         """Start the background nudge loop."""
@@ -141,16 +151,26 @@ class NudgeMonitor:
 
     async def _evaluate_all(self) -> None:
         """Evaluate rules for all tracked agents and send tips."""
-        if not self._rules or not self._channel_bus:
+        if not self._channel_bus:
+            return
+
+        # Send recovery tips for stalled agents first (before rule evaluation)
+        await self._send_stall_recovery_tips()
+
+        # Kill orphaned agents (spawned agents whose parent is gone)
+        await self._kill_orphaned_agents()
+
+        if not self._rules:
             return
 
         # Poll token usage from backends (async, cached for this cycle)
-        if self._agent_backends:
-            for name, backend in self._agent_backends.items():
+        registry = self._swarm._registry if self._swarm else None
+        if registry and registry.backends:
+            for name, backend in registry.backends.items():
                 try:
                     pct = await backend.get_context_percentage()
                     if pct is not None:
-                        self._agent_token_usage[name] = pct
+                        registry.token_usage[name] = pct
                 except Exception:
                     pass
 
@@ -160,19 +180,21 @@ class NudgeMonitor:
             if tip:
                 await self._send_tip(agent_name, tip)
                 # Record nudge time — resets the window for time-based queries
-                self._last_nudge_time[agent_name] = now
+                if registry:
+                    registry.last_nudge_time[agent_name] = now
                 # Clear pending list for this agent after nudging — avoids stale nudges
                 self.pending._pending.pop(agent_name, None)
 
     def _evaluate_agent(self, agent_name: str, now: float) -> str | None:
         """Evaluate all rules for one agent. Returns tip or None."""
-        cost = self._agent_costs.get(agent_name) if self._agent_costs else None
+        registry = self._swarm._registry if self._swarm else None
+        cost = registry.costs.get(agent_name) if registry else None
         start_ts = None
-        if self._agent_start_times and agent_name in self._agent_start_times:
-            dt = self._agent_start_times[agent_name]
+        if registry and agent_name in registry.start_times:
+            dt = registry.start_times[agent_name]
             start_ts = dt.timestamp() if hasattr(dt, "timestamp") else None
-        visible = self._visibility_graph.get(agent_name) if self._visibility_graph else None
-        context_pct = self._agent_token_usage.get(agent_name)
+        visible = registry.visibility_graph.get(agent_name) if registry else None
+        context_pct = registry.token_usage.get(agent_name) if registry else None
 
         view = TelemetryView(
             agent=agent_name,
@@ -180,7 +202,7 @@ class NudgeMonitor:
             is_super=agent_name in self._super_agents,
             is_reply_only=agent_name in self._reply_only_agents,
             pending_tracker=self.pending,
-            window_start=self._last_nudge_time.get(agent_name, 0),
+            window_start=(registry.last_nudge_time.get(agent_name, 0) if registry else 0),
             cost_usd=cost,
             start_time=start_ts,
             visible_agents=visible,
@@ -247,6 +269,49 @@ class NudgeMonitor:
         channel_name = f"{agent_name}:messages"
         await self._channel_bus.send_to(channel_name, sender="TipAgent", payload=payload)
         logger.info(f"[NUDGE] Sent to {agent_name}: {tip}")
+
+    async def _kill_orphaned_agents(self) -> None:
+        """Kill spawned agents whose parent no longer exists."""
+        if not self._swarm:
+            return
+        registry = self._swarm._registry
+        orphans = []
+        for name, node in list(registry.nodes.items()):
+            parent = getattr(node.spec, "_spawned_by", None)
+            if not parent:
+                continue  # Top-level agent — never orphaned
+            if parent not in registry.nodes:
+                orphans.append(name)
+
+        for name in orphans:
+            logger.info(f"[NUDGE] Killing orphaned agent '{name}' (parent gone)")
+            await self._swarm._remove_agent(name)
+
+    def record_stall(self, agent_name: str) -> None:
+        """Record that an agent stalled. Next evaluation cycle will send recovery tip."""
+        if self._swarm:
+            self._swarm._registry.stalled_agents[agent_name] = time.time()
+        logger.info(f"[NUDGE] Stall recorded for '{agent_name}'")
+        # Checkpoint immediately — stall may indicate impending failure
+        if self._swarm and self._swarm._checkpoint_manager:
+            self._swarm._checkpoint_manager.create(reason=f"stall:{agent_name}")
+
+    async def _send_stall_recovery_tips(self) -> None:
+        """Send recovery tips to agents that stalled and have since reconnected."""
+        registry = self._swarm._registry if self._swarm else None
+        stalled = registry.stalled_agents if registry else {}
+        if not stalled or not self._channel_bus:
+            return
+        for agent_name, stall_time in list(stalled.items()):
+            elapsed = int(time.time() - stall_time)
+            tip = (
+                f"[RECOVERY] You stalled for {elapsed}s and were reconnected. "
+                f"Your session was interrupted and resumed. Pick up where you left off: "
+                f"check what work is done (read files in your workspace), then continue. "
+                f"If you were waiting for a response from another agent, re-send your request."
+            )
+            await self._send_tip(agent_name, tip)
+            del stalled[agent_name]
 
     # Legacy method for backward compat (called from agent between turns)
     def after_agent_turn(self, agent_name: str) -> str | None:

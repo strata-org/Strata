@@ -113,20 +113,6 @@ def poke_silent_child(view: TelemetryView) -> str | None:
     )
 
 
-def poke_idle_service_agent(view: TelemetryView) -> str | None:
-    """Poke a service agent that has overdue replies but seems stuck."""
-    if not view._is_reply_only:
-        return None
-    overdue = view.overdue_replies(timeout_seconds=180)
-    if not overdue:
-        return None
-    idle = view.seconds_since_last_event()
-    if idle == float("inf") or idle < 120:
-        return None
-    return (
-        f"You have {len(overdue)} overdue request(s) from: {', '.join(overdue)}. "
-        f"Idle for {int(idle)}s. Process their requests now."
-    )
 
 
 # =============================================================================
@@ -186,26 +172,6 @@ def sub_agent_context_high(view: TelemetryView) -> str | None:
 # CATEGORY 4: VIOLATION ALERTS (sustained misuse, with evidence)
 # =============================================================================
 
-def validator_browsing_not_validating(view: TelemetryView) -> str | None:
-    """ProofValidator is reading files excessively without using validation tools."""
-    if not view._agent.startswith("ProofValidator"):
-        return None
-    read_count = view.tool_used_count("Read", since_seconds=300)
-    bash_count = view.tool_used_count("Bash", since_seconds=300)
-    lean_goal_count = view.tool_used_count("mcp__lean_lsp__lean_goal", since_seconds=300)
-    lean_verify_count = view.tool_used_count("mcp__lean_lsp__lean_verify", since_seconds=300)
-    validation_calls = bash_count + lean_goal_count + lean_verify_count
-    if read_count < 8:
-        return None
-    if validation_calls >= 2:
-        return None
-    return (
-        f"VIOLATION: You have called Read {read_count} times but only "
-        f"{validation_calls} validation tools (lake lean: {bash_count}, "
-        f"lean_goal: {lean_goal_count}, lean_verify: {lean_verify_count}) "
-        f"in the last 5 min. Your job is VALIDATION — use lake lean, lean_goal, "
-        f"or lean_verify instead of browsing files."
-    )
 
 
 def cea_searching_not_testing(view: TelemetryView) -> str | None:
@@ -227,20 +193,6 @@ def cea_searching_not_testing(view: TelemetryView) -> str | None:
     )
 
 
-def reply_only_not_replying(view: TelemetryView) -> str | None:
-    """Reply-only agent has overdue replies — with evidence."""
-    if not view._is_reply_only:
-        return None
-    overdue = view.overdue_replies(timeout_seconds=300)
-    if not overdue:
-        return None
-    idle = view.seconds_since_last_event()
-    if idle == float("inf"):
-        return None
-    return (
-        f"OVERDUE REPLIES: {', '.join(overdue)} have been waiting >5 min for your response. "
-        f"You have been idle for {int(idle)}s. Process their requests now."
-    )
 
 
 def edit_without_compile(view: TelemetryView) -> str | None:
@@ -297,19 +249,16 @@ RULES = [
     (super_agent_child_status,       1.0, 300),   # 5 min cooldown
     (main_prover_report_to_tm,       1.0, 900),   # 15 min cooldown
 
-    # Category 2: Gentle poke
+    # Category 2: Gentle poke (non-service agents only)
     (poke_silent_child,              1.0, 480),   # 8 min cooldown
-    (poke_idle_service_agent,        1.0, 300),   # 5 min cooldown
 
     # Category 3: Handoff reminders (token-based, from backend context %)
     (handoff_warning_context_60,     1.0, 300),   # 5 min cooldown — early warning
     (handoff_urgent_context_80,      1.0, 120),   # 2 min cooldown — urgent, keep nagging
     (sub_agent_context_high,         1.0, 180),   # 3 min cooldown — sub-agents report up
 
-    # Category 4: Violation alerts (sustained misuse, with evidence)
-    (validator_browsing_not_validating, 1.0, 300),
+    # Category 4: Violation alerts (non-service agents only)
     (cea_searching_not_testing,      1.0, 300),
-    (reply_only_not_replying,        1.0, 300),
     (edit_without_compile,           1.0, 300),
     (agent_using_bash_when_disallowed, 1.0, 180),  # 3 min — catch early
 ]

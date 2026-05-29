@@ -58,9 +58,10 @@ def create_spawn_server(
     @tool(
         name="spawn_agent",
         description=(
-            "Create and start a new sub-agent. The sub-agent inherits your tool permissions "
-            "exactly. It runs concurrently and can communicate with you and other agents "
-            "via messaging. The sub-agent's budget must be <= your budget."
+            "Create and start a new sub-agent. Rules:\n"
+            "- recursive=true (SuperAgent): Inherits YOUR system prompt. Do NOT provide system_prompt.\n"
+            "- recursive=false (leaf): You MUST provide system_prompt describing the leaf's specific role.\n"
+            "The sub-agent runs concurrently and can communicate with other agents via messaging."
         ),
         input_schema={
             "type": "object",
@@ -79,37 +80,61 @@ def create_spawn_server(
                 },
                 "system_prompt": {
                     "type": "string",
-                    "description": "System prompt describing the sub-agent's role.",
+                    "description": (
+                        "System prompt for LEAF agents only (recursive=false). "
+                        "Describes the agent's specific role and constraints. "
+                        "Do NOT provide this when recursive=true — it will error."
+                    ),
                 },
                 "prompt": {
                     "type": "string",
-                    "description": "The task prompt for the sub-agent.",
+                    "description": (
+                        "The task for the sub-agent. Include ALL context: theorem statement, "
+                        "definitions, available tactics, recommended approach, relevant lemmas."
+                    ),
                 },
                 "recursive": {
                     "type": "boolean",
                     "description": (
-                        "If true, child is a SuperAgent that can spawn its own "
-                        "sub-agents within its folder. Default: false."
+                        "If true: child is a SuperAgent (inherits your system prompt, can spawn its own agents). "
+                        "If false: child is a leaf (uses system_prompt you provide, writes proofs directly). "
+                        "Default to true for complex tasks."
                     ),
                 },
             },
-            "required": ["name", "folder", "system_prompt", "prompt"],
+            "required": ["name", "folder", "prompt"],
         },
     )
     async def spawn_agent(input: dict[str, Any]) -> dict[str, Any]:
         name = input["name"]
         folder_name = input["folder"]
-        system_prompt = input["system_prompt"]
+        system_prompt = input.get("system_prompt")
         prompt = input["prompt"]
         recursive = input.get("recursive", False)
+
+        # Validate: recursive=true must NOT have system_prompt, recursive=false MUST have it
+        if recursive and system_prompt:
+            return {"content": [{"type": "text", "text": (
+                "ERROR: Do not provide system_prompt when recursive=true. "
+                "SuperAgent children inherit your system prompt automatically."
+            )}]}
+        if not recursive and not system_prompt:
+            return {"content": [{"type": "text", "text": (
+                "ERROR: You must provide system_prompt when recursive=false. "
+                "Leaf agents need a specific role description."
+            )}]}
         # Inherit budget/turns/timeout from parent
         max_budget = parent_spec.max_budget_usd
         max_turns = parent_spec.max_turns
         timeout = parent_spec.timeout_seconds
 
-        # Validate name uniqueness
-        if name in swarm._nodes:
-            return {"content": [{"type": "text", "text": f"ERROR: Agent '{name}' already exists."}]}
+        # Ensure name uniqueness — auto-suffix if collision
+        original_name = name
+        if name in swarm._registry.nodes:
+            suffix = len(swarm._registry.nodes)
+            while f"{original_name}_{suffix}" in swarm._registry.nodes:
+                suffix += 1
+            name = f"{original_name}_{suffix}"
 
         # --- Workspace scoping: child gets a subdirectory of parent's workspace ---
         workspace = parent_spec.workspace
@@ -121,21 +146,40 @@ def create_spawn_server(
         write_root = _infer_directory(workspace.write[0])
         child_dir = f"{write_root}/{folder_name}"
 
-        # Create the subdirectory
+        # Validate: prompt should not reference files outside child's workspace
+        import re
+        lean_file_refs = re.findall(r'\S+\.lean', prompt)
+        outside_refs = [
+            f for f in lean_file_refs
+            if not f.startswith(child_dir) and not f.startswith(f"{folder_name}/")
+            and "/" in f  # ignore bare filenames like "proof.lean"
+        ]
+        if outside_refs:
+            return {"content": [{"type": "text", "text": (
+                f"ERROR: Your prompt references files outside the child's workspace: "
+                f"{outside_refs[:3]}. The child can ONLY access '{child_dir}/'. "
+                f"Do NOT tell the child to edit files outside its folder. "
+                f"The child should create its own .lean file in its workspace and write the proof there. "
+                f"You (the parent) will later copy the proven code into the main file."
+            )}]}
+
+        # Create the subdirectory and write prompt as context file
         base_dir = Path.cwd()
         (base_dir / child_dir).mkdir(parents=True, exist_ok=True)
+        # Auto-write the prompt as context.md so child can reference it via Read
+        context_path = base_dir / child_dir / "context.md"
+        context_path.write_text(f"# Task from {parent_name}\n\n{prompt}\n")
 
-        # Child workspace: full access to its subdirectory + read parent's workspace
+        # Child workspace: full access to its subdirectory ONLY (no parent read access)
         from ._types import Workspace
         child_workspace = Workspace(
-            read=[f"{child_dir}/**", f"{write_root}/**"],
+            read=[f"{child_dir}/**"],
             write=[f"{child_dir}/**"],
             edit=[f"{child_dir}/**"],
         )
 
         child_tools = ToolSet()
         child_tools.allow(f"Read({child_dir}/**)")
-        child_tools.allow(f"Read({write_root}/**)")
         child_tools.allow(f"Write({child_dir}/**)")
         child_tools.allow(f"Edit({child_dir}/**)")
         # Inherit all disallowed tools from parent
@@ -144,17 +188,39 @@ def create_spawn_server(
                 child_tools.disallow(d.to_claude_format())
 
         # Build child's system prompt
-        child_system_prompt = ""
-        if parent_spec.child_prefix:
-            child_system_prompt += parent_spec.child_prefix + "\n\n"
-        child_system_prompt += f"Your workspace: {child_dir}/\n"
-        child_system_prompt += f"Create and edit files freely in this folder.\n"
         if recursive:
-            child_system_prompt += f"You are a SuperAgent (recursive=true). You can spawn sub-agents and call designate_successor.\n"
+            # SuperAgent children inherit the BASE system prompt (not the composed one)
+            # This prevents cascading workspace headers and file references from parent
+            base_prompt = parent_spec._base_system_prompt or parent_spec.system_prompt
+            child_system_prompt = (
+                f"Your workspace: {child_dir}/\n"
+                f"You are a SuperAgent spawned by '{parent_name}'. "
+                f"You coordinate proof work in your subdirectory — spawn sub-agents, delegate, assemble.\n"
+                f"When done, report result file path to your parent ('{parent_name}').\n\n"
+                f"YOUR TASK IS IN THE USER PROMPT BELOW. Your parent has already provided "
+                f"context (definitions, tactics, approach). Do NOT re-gather context that's "
+                f"already in your prompt — go straight to decomposing and spawning.\n\n"
+                f"ISOLATION: You CANNOT read files outside your folder ({child_dir}/). "
+                f"Do NOT try to read the main proof file or your parent's workspace — it will fail.\n"
+                f"Your parent may have written context files in your folder before spawning you. "
+                f"Check for context.md or .lean files in your workspace first.\n\n"
+            )
+            child_system_prompt += base_prompt
         else:
-            child_system_prompt += f"You are a leaf agent (recursive=false). You cannot spawn sub-agents or call designate_successor.\n"
-        child_system_prompt += f"When done, report result file path to your parent.\n\n"
-        child_system_prompt += system_prompt
+            # Leaf children get child_prefix (rules/constraints) + provided system_prompt
+            child_system_prompt = ""
+            if parent_spec.child_prefix:
+                child_system_prompt += parent_spec.child_prefix + "\n\n"
+            child_system_prompt += (
+                f"Your workspace: {child_dir}/\n"
+                f"You are a leaf agent (recursive=false). You cannot spawn sub-agents.\n"
+                f"Write proofs directly in your workspace. When done, report result file path "
+                f"to your parent ('{parent_name}').\n\n"
+            )
+            child_system_prompt += system_prompt  # type: ignore[operator]
+
+        # Preserve the base system prompt for further inheritance
+        base_for_child = parent_spec._base_system_prompt or parent_spec.system_prompt
 
         child_spec = AgentSpec(
             name=name,
@@ -167,6 +233,7 @@ def create_spawn_server(
             is_super_agent=recursive,
             workspace=child_workspace if recursive else None,
             child_prefix=parent_spec.child_prefix if recursive else None,
+            _base_system_prompt=base_for_child if recursive else None,
         )
         # Tag as spawned (for UI display, not saved)
         child_spec._spawned_by = parent_name  # type: ignore[attr-defined]
@@ -180,7 +247,7 @@ def create_spawn_server(
         swarm._on_agent_spawned(child_name=name, parent_name=parent_name)
 
         from ._tokens import PauseToken
-        swarm._pause_tokens[name] = PauseToken()
+        swarm._registry.pause_tokens[name] = PauseToken()
 
         # Emit event so the UI shows the new agent immediately
         if swarm._event_callback:
@@ -196,8 +263,8 @@ def create_spawn_server(
 
         # Start the sub-agent as a new task (with stagger delay to avoid resource contention)
         num_existing_children = sum(
-            1 for n in swarm._nodes
-            if getattr(swarm._nodes[n].spec, "_spawned_by", None) == parent_name
+            1 for n in swarm._registry.nodes
+            if getattr(swarm._registry.nodes[n].spec, "_spawned_by", None) == parent_name
         )
         stagger_delay = num_existing_children * 5.0  # 5s between each child startup
 
@@ -207,13 +274,14 @@ def create_spawn_server(
             return await swarm._run_node(name)
 
         task = asyncio.create_task(run_child(), name=f"swarm:{name}")
-        swarm._tasks[name] = task
+        swarm._registry.tasks[name] = task
 
         budget_str = f"${max_budget}" if max_budget is not None else "unlimited"
         turns_str = str(max_turns) if max_turns is not None else "unlimited"
+        rename_note = f" (renamed from '{original_name}' to avoid collision)" if name != original_name else ""
         return {"content": [{"type": "text", "text": (
-            f"Sub-agent '{name}' spawned successfully. "
-            f"It is now running and you can communicate with it via send_message. "
+            f"Sub-agent '{name}' spawned successfully.{rename_note} "
+            f"It is now running and you can communicate with it via send_message(to='{name}', ...). "
             f"Workspace: {child_dir}/, Budget: {budget_str}, Turns: {turns_str}"
         )}]}
 
@@ -232,18 +300,18 @@ def create_spawn_server(
     )
     async def check_sub_agents(input: dict[str, Any]) -> dict[str, Any]:
         lines = []
-        for name_key, node in swarm._nodes.items():
+        for name_key, node in swarm._registry.nodes.items():
             if getattr(node.spec, "_spawned_by", None) != parent_name:
                 continue
             # Get status from results if available
-            if name_key in swarm._results:
-                r = swarm._results[name_key]
+            if name_key in swarm._registry.results:
+                r = swarm._registry.results[name_key]
                 status = r.status.value if hasattr(r.status, "value") else str(r.status)
                 cost = f"${r.cost_usd:.4f}" if r.cost_usd else "N/A"
                 turns = r.num_turns
                 halted = r.halted_by if r.halted_by != "completion" else ""
-            elif name_key in swarm._tasks:
-                task = swarm._tasks[name_key]
+            elif name_key in swarm._registry.tasks:
+                task = swarm._registry.tasks[name_key]
                 if task.done():
                     status = "done"
                 else:
@@ -367,11 +435,31 @@ def create_spawn_server(
 
         # Successor inherits everything; prompt tells it to read handoff first
         relative_handoff = str(handoff_path.relative_to(Path.cwd()))
+
+        # Discover living children
+        living_children = [
+            n for n, node in swarm._registry.nodes.items()
+            if getattr(node.spec, "_spawned_by", None) == parent_name
+            and n in swarm._registry.tasks and not swarm._registry.tasks[n].done()
+        ]
+
+        children_note = ""
+        if living_children:
+            children_note = (
+                f"\n\nLIVING SUB-AGENTS (inherited from your predecessor):\n"
+                f"These sub-agents are still running and report to you:\n"
+                + "\n".join(f"- {c}" for c in living_children) + "\n"
+                f"Call check_sub_agents() immediately after reading the handoff file "
+                f"to see their current status.\n"
+            )
+
         successor_prompt = (
             f"You are resuming work from a previous instance. "
             f"FIRST: Read the handoff file at '{relative_handoff}' — it contains "
             f"what's been done, what's left, what approaches worked/failed, and your next steps. "
             f"Read it before doing anything else, then continue the work described there."
+            f"{children_note}"
+            f"\nSTART WORKING IMMEDIATELY after reading the handoff. Do not wait for instructions."
         )
 
         successor_spec = AgentSpec(
@@ -384,9 +472,24 @@ def create_spawn_server(
             child_prefix=parent_spec.child_prefix,
             description=parent_spec.description,
             visibility=parent_spec.visibility,
+            max_budget_usd=parent_spec.max_budget_usd,
+            max_turns=parent_spec.max_turns,
+            timeout_seconds=parent_spec.timeout_seconds,
+            model=parent_spec.model,
+            mcp_servers=parent_spec.mcp_servers,
+            _base_system_prompt=parent_spec._base_system_prompt,
+            max_inbound_length=parent_spec.max_inbound_length,
+            max_inbound_response=parent_spec.max_inbound_response,
+            max_outbound_length=parent_spec.max_outbound_length,
+            max_outbound_response=parent_spec.max_outbound_response,
+            reply_only=parent_spec.reply_only,
         )
 
-        swarm._pending_successions[parent_name] = successor_spec
+        # Preserve _spawned_by so orphan detection still works
+        if hasattr(parent_spec, "_spawned_by"):
+            successor_spec._spawned_by = parent_spec._spawned_by  # type: ignore[attr-defined]
+
+        swarm._registry.pending_successions[parent_name] = successor_spec
 
         logger.info(f"[SUCCESSION] {parent_name}: successor registered (handoff={relative_handoff})")
 
@@ -414,9 +517,9 @@ def create_spawn_server(
 
         # Find all living children of this parent
         children = [
-            name for name, node in swarm._nodes.items()
+            name for name, node in swarm._registry.nodes.items()
             if getattr(node.spec, "_spawned_by", None) == parent_name
-            and name in swarm._tasks and not swarm._tasks[name].done()
+            and name in swarm._registry.tasks and not swarm._registry.tasks[name].done()
         ]
 
         if not children:
@@ -458,9 +561,9 @@ def create_spawn_server(
         message = input["message"]
 
         # Verify ownership
-        if target not in swarm._nodes:
+        if target not in swarm._registry.nodes:
             return {"content": [{"type": "text", "text": f"ERROR: Agent '{target}' does not exist."}]}
-        target_node = swarm._nodes[target]
+        target_node = swarm._registry.nodes[target]
         spawned_by = getattr(target_node.spec, "_spawned_by", None)
         if spawned_by != parent_name:
             return {"content": [{"type": "text", "text": (
@@ -468,8 +571,8 @@ def create_spawn_server(
             )}]}
 
         # Interrupt the backend (kills current response stream)
-        if target in swarm._tasks:
-            task = swarm._tasks[target]
+        if target in swarm._registry.tasks:
+            task = swarm._registry.tasks[target]
             if not task.done():
                 # Cancel the current task — the agent will be restarted
                 task.cancel()
@@ -490,7 +593,7 @@ def create_spawn_server(
             return await swarm._run_node(target)
 
         new_task = asyncio.create_task(run_child(), name=f"swarm:{target}")
-        swarm._tasks[target] = new_task
+        swarm._registry.tasks[target] = new_task
 
         logger.info(f"[INTERRUPT] {parent_name} interrupted '{target}' with new direction")
         return {"content": [{"type": "text", "text": (
@@ -518,45 +621,16 @@ def create_spawn_server(
         target = input["name"]
 
         # Verify ownership
-        if target not in swarm._nodes:
+        if target not in swarm._registry.nodes:
             return {"content": [{"type": "text", "text": f"ERROR: Agent '{target}' does not exist."}]}
-        target_node = swarm._nodes[target]
+        target_node = swarm._registry.nodes[target]
         spawned_by = getattr(target_node.spec, "_spawned_by", None)
         if spawned_by != parent_name:
             return {"content": [{"type": "text", "text": (
                 f"ERROR: You do not own '{target}'. You can only kill agents you spawned."
             )}]}
 
-        # Cancel the task
-        if target in swarm._tasks:
-            task = swarm._tasks[target]
-            if not task.done():
-                task.cancel()
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    pass
-            del swarm._tasks[target]
-
-        # Remove from nodes
-        del swarm._nodes[target]
-
-        # Remove from visibility graph
-        swarm._visibility_graph.pop(target, None)
-        for visible_set in swarm._visibility_graph.values():
-            visible_set.discard(target)
-
-        # Remove from nudge monitor tracking
-        swarm._nudge_monitor._agents.discard(target)
-        swarm._nudge_monitor._super_agents.discard(target)
-        swarm._nudge_monitor._reply_only_agents.discard(target)
-        swarm._nudge_monitor._agent_token_usage.pop(target, None)
-
-        # Remove from swarm state tracking
-        swarm._agent_start_times.pop(target, None)
-        swarm._agent_backends.pop(target, None)
-        swarm._live_costs.pop(target, None)
-
+        await swarm._remove_agent(target)
         logger.info(f"[KILL] {parent_name} killed sub-agent '{target}'")
         return {"content": [{"type": "text", "text": f"Agent '{target}' killed and removed."}]}
 

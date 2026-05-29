@@ -35,7 +35,7 @@ class CheckpointManager:
 
         # Infer from agent workspaces — find the common root of all write paths
         all_write_paths: set[str] = set()
-        for node in self._swarm._nodes.values():
+        for node in self._swarm._registry.nodes.values():
             ws = getattr(node.spec, "workspace", None)
             if ws and ws.write:
                 for p in ws.write:
@@ -54,7 +54,7 @@ class CheckpointManager:
     def _get_session_ids(self) -> dict[str, str | None]:
         """Get current session IDs for all agents from their results."""
         sessions: dict[str, str | None] = {}
-        for name in self._swarm._nodes:
+        for name in self._swarm._registry.nodes:
             sessions[name] = self._swarm.get_agent_session_id(name)
         return sessions
 
@@ -65,20 +65,43 @@ class CheckpointManager:
         cp_dir = self._dir / name
         cp_dir.mkdir(parents=True)
 
+        # Collect spawned agent info for restoration
+        spawned_agents: list[dict[str, Any]] = []
+        for node_name, node in self._swarm._registry.nodes.items():
+            spawned_by = getattr(node.spec, "_spawned_by", None)
+            if spawned_by:
+                spawned_agents.append({
+                    "name": node_name,
+                    "spawned_by": spawned_by,
+                    "is_super_agent": node.spec.is_super_agent,
+                    "system_prompt": node.spec.system_prompt,
+                    "prompt": node.spec.prompt,
+                    "workspace": {
+                        "read": node.spec.workspace.read if node.spec.workspace else [],
+                        "write": node.spec.workspace.write if node.spec.workspace else [],
+                        "edit": node.spec.workspace.edit if node.spec.workspace else [],
+                    } if node.spec.workspace else None,
+                })
+
         # Save state
         state: dict[str, Any] = {
             "swarm_name": self._swarm._name,
             "timestamp": ts,
             "reason": reason,
             "sessions": self._get_session_ids(),
-            "session_history": getattr(self._swarm, "_session_history", {}),
+            "session_history": self._swarm._registry.session_history,
             "visibility_graph": {
-                k: list(v) for k, v in self._swarm._visibility_graph.items()
+                k: list(v) for k, v in self._swarm._registry.visibility_graph.items()
             },
             "sharded_agents": {
                 k: {"replicas": v.replicas, "routing": v.routing, "routing_key": v.routing_key}
-                for k, v in self._swarm._sharded_agents.items()
+                for k, v in self._swarm._registry.sharded_agents.items()
             },
+            "agent_affinities": {
+                f"{sender}:{logical}": physical
+                for (sender, logical), physical in self._swarm._registry.affinities.items()
+            },
+            "spawned_agents": spawned_agents,
         }
         (cp_dir / "state.yaml").write_text(
             yaml.dump(state, default_flow_style=False)
