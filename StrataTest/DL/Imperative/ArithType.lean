@@ -138,7 +138,7 @@ TEnv:
 private def testProgram2 : Cmds Arith.PureExpr :=
   [.init "x" .Bool (.det (.Num 0)) .empty]
 
-/-- info: error: Types .Bool and Num cannot be unified! -/
+/-- info: error: Variable x expected type .Bool but initialization expression has inferred type Num: Types .Bool and Num cannot be unified! -/
 #guard_msgs in
 #eval do let (cs, τ) ← Cmds.typeCheck () TEnv.init testProgram2
           return format (cs, τ)
