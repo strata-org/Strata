@@ -100,7 +100,7 @@ variable (φ : CoreEval → PureFunc Expression → CoreEval)
   Imperative.Specification.AssertSatisfiableWhen (Specification.Lang.core π φ)
     (ProcEnvWF proc) (Stmt.block "" proc.body #[]) a
 
-/-- The procedure named `procName` (looked up via `π`) has every assert
+/-- The procedure named `entryProcName` (looked up via `π`) has every assert
     valid and its postconditions valid on termination.
 
     0. The procedure exists in the lookup `π` (`procedureExists`);
@@ -156,41 +156,19 @@ variable (φ : CoreEval → PureFunc Expression → CoreEval)
     (1) assert validity in the body, and
     (2) postcondition validity on termination.
 -/
-
-/- TODO:
---- program p ---
-procedure procName (..., x:out int) spec {
-  requires
-  ensures (x == 3) <-- this is staisfiable even if not valid
-} {
-  // call procName2()
-  x := nondet
-}
-
-procedure procName2 (...) spec {
-  requires
-  ensures <- .postconditionsValid
-} {
-}
--------
-
-to check validity: we need to check both
-  ProcedureAssertsValid "procName" p /\
-  ProcedureAssertsValid "procName2" p
-<- we will need to eventually prove this
-
-to check satisfiability
-  entryPoint = "procName"
-
--/
-structure ProcedureAssertsValid (procName : String) (p : Program) : Prop where
+structure ProcedureAssertsValid (entryProcName : String) (p : Program) : Prop where
   /-- (0) The procedure name resolves in the lookup `π`. -/
-  procedureExists : ∃ proc, π procName = some proc
+  procedureExists : ∃ proc, π entryProcName = some proc
   /-- (1) The asserts in the body of the procedure are valid. -/
-  assertsValid : ∀ proc, π procName = some proc →
+  assertsValid : ∀ proc, π entryProcName = some proc →
     ∀ a, AssertValidInProcedure π φ proc a
-  /-- (2) The postconditions hold on termination. -/
-  postconditionsValid : ∀ proc, π procName = some proc →
+  /-- (2) The postconditions hold on termination.
+      Note that postconditionsValid doesn't have to describe the validity of postconditions
+      of other procedures called during execution of entryProcName because call_sem of EvalCommand
+      will have the postcondition check (for the particular input of procedure invocation)
+      already.
+  -/
+  postconditionsValid : ∀ proc, π entryProcName = some proc →
     WF.WFProcedureProp p proc →
     ∀ (ρ₀ ρ' : Imperative.Env Expression),
       ProcEnvWF proc ρ₀ →
@@ -211,20 +189,22 @@ structure ProcedureAssertsValid (procName : String) (p : Program) : Prop where
     2. The postconditions are *satisfiable*: some terminating run from a
        `ProcEnvWF` initial environment makes every non-free postcondition
        evaluate to `tt` and leaves `hasFailure = false`. -/
-structure ProcedureAssertsSatisfiable (entryPoint : String) (procName : String) (p : Program) : Prop where
+structure ProcedureAssertsSatisfiable (entryProcName : String) (p : Program) : Prop where
   /-- (0) The procedure name resolves in the lookup `π`. -/
-  procedureExists : ∃ proc, π procName = some proc
+  procedureExists : ∃ proc, π entryProcName = some proc
   /-- (1) The asserts in the body of the procedure are satisfiable. -/
-  <-- assertsSatisfiable must use entryPoint somehow.
-  assertsSatisfiable : ∀ proc, π procName = some proc →
+  assertsSatisfiable : ∀ proc, π entryProcName = some proc →
     ∀ a, AssertSatisfiableInProcedure π φ proc a
-  /-- (2) Some terminating run satisfies all postconditions and leaves
-      `hasFailure` false. -/
-  postconditionsSatisfiable : ∀ proc, π procName = some proc →
+  /-- (2) Some terminating run satisfies all postconditions.
+      Note that postconditionsSatisfiable doesn't have to describe the satisfiability of postconditions
+      of other procedures called during execution of entryProcName because call_sem of EvalCommand
+      will have the postcondition check (for the particular input of procedure invocation)
+      already.
+  -/
+  postconditionsSatisfiable : ∀ proc, π entryProcName = some proc →
     WF.WFProcedureProp p proc →
     ∃ (ρ₀ ρ' : Imperative.Env Expression),
       ProcEnvWF proc ρ₀ ∧
-      TODO: terminal with "the boundary at the end of procedure"; the interesting recursive proceudre
       CoreStepStar π φ (.stmts proc.body ρ₀) (.terminal ρ') ∧
       (∀ (label : CoreLabel) (check : Procedure.Check),
         (label, check) ∈ proc.spec.postconditions.toList →
@@ -236,13 +216,11 @@ structure ProcedureAssertsSatisfiable (entryPoint : String) (procName : String) 
 
 namespace Analysis
 
-/-- A program input to a contract checker: the procedure name to analyze
-    paired with the enclosing program (needed by `ProcedureCorrect`
-    for the `WFProcedureProp` precondition). The procedure itself is looked
-    up via `π`. -/
+/-- A program input to a contract checker: the procedure names to consider as
+    entry points, paired with the enclosing program
+    The procedure lookup function `π` is used. -/
 structure CoreVerifierInput where
-<- entryPoints: String → Prop, and maybe drop procName.
-  -- procName : String
+  entryPoints: String → Prop
   prog : Program
 
 /-- An analysis whose desirable property under each `VerificationMode` is:
@@ -267,12 +245,14 @@ def CoreVerifierModel
   { desirableProperty := fun input =>
       match mode with
       | .deductive =>
-        forall p ∈ input.prog, .... ProcedureAssertsValid π φ input.procName input.prog
+        forall procName, input.entryPoints procName
+          → ProcedureAssertsValid π φ procName input.prog
       | .bugFinding =>
-        ProcedureAssertsSatisfiable π φ <input.entryPoint> input.prog
+        forall procName, input.entryPoints procName
+          → ProcedureAssertsSatisfiable π φ procName input.prog
       | .bugFindingAssumingCompleteSpec =>
         -- bugFinding, but postcondition being checked with validity
-        --
+        -- TODO!
         False
     analyze := analyze mode
     pass := fun results =>
