@@ -11,6 +11,10 @@ public import Strata.Languages.Laurel.LaurelTypes
 public import Strata.Languages.Laurel.HeapParameterizationConstants
 public import Strata.Languages.Laurel.MapStmtExpr
 public import Strata.Util.Tactics
+public import Strata.Languages.Laurel.LaurelPass
+import Strata.Languages.Laurel.TypeHierarchy
+import Strata.Languages.Laurel.ModifiesClauses
+import Strata.Languages.Laurel.LiftImperativeExpressions
 
 /-
 Heap Parameterization Pass
@@ -570,6 +574,18 @@ def heapParameterization (model: SemanticModel) (program : Program) : Program :=
   { program with
     staticProcedures := heapConstants.staticProcedures ++ procs',
     types := fieldDatatype :: boxDatatype :: heapConstants.types ++ types' }
+
+/-- Pipeline pass: heap parameterization. -/
+public def heapParameterizationPass : LaurelPass where
+  name := "HeapParameterization"
+  documentation := "Transforms procedures that interact with the heap by adding explicit heap parameters. The heap is modeled as `Map Composite (Map Field Box)`. Procedures that write the heap receive both an input and output heap parameter; procedures that only read the heap receive an input heap parameter. Field reads and writes are rewritten to use `readField` and `updateField` functions."
+  needsResolves := true
+  run := fun p m =>
+    (heapParameterization m p, [], {})
+  comesBefore := [
+      ⟨ typeHierarchyTransformPass, "the type hierarchy pass modifies the 'Composite' datatype that is introduced by this pass." ⟩,
+      ⟨ modifiesClausesTransformPass, "the modifies pass refers to several types and variables introduced by heap parameterization: Composite, Field, $heap_in, $heap." ⟩,
+      ⟨ liftExpressionAssignmentsPass, "the heap paramterization pass introduces assignments (to the heap variables) that need to be lifted."⟩]
 
 end Strata.Laurel
 

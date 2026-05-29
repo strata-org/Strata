@@ -7,6 +7,7 @@ module
 
 public import Strata.Languages.Laurel.Laurel
 import Strata.Util.Tactics
+public import Strata.Languages.Laurel.LaurelPass
 
 /-!
 # Eliminate Returns in Expression Position
@@ -112,9 +113,17 @@ public section
 /--
 Transform a program by eliminating returns in all functional procedure bodies.
 -/
-def eliminateReturnsInExpressionTransform (program : Program) : Program :=
+def mergeAndLiftReturns (program : Program) : Program :=
   { program with staticProcedures := program.staticProcedures.map eliminateReturnsInExpression }
 
 end -- public section
+
+/-- Pipeline pass: merge and lift returns. -/
+public def mergeAndLiftReturnsPass : LaurelPass where
+  name := "MergeAndLiftReturns"
+  documentation := "Attempts to merge and lift returns so that only a single outer return remains, enabling the procedure to be more easily converted to a functional form."
+  needsResolves := true
+  run := fun p _m =>
+    (mergeAndLiftReturns p, [], {})
 
 end Laurel

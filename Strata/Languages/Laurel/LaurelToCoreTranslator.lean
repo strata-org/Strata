@@ -11,17 +11,7 @@ public import Strata.Languages.Core.Statement
 public import Strata.Languages.Core.Procedure
 public import Strata.Languages.Core.Options
 public import Strata.Languages.Laurel.Laurel
-public import Strata.Languages.Laurel.LiftImperativeExpressions
-import Strata.Languages.Laurel.DesugarShortCircuit
-public import Strata.Languages.Laurel.InferHoleTypes
-public import Strata.Languages.Laurel.EliminateHoles
-import Strata.Languages.Laurel.EliminateReturnsInExpression
-import Strata.Languages.Laurel.EliminateValueReturns
-public import Strata.Languages.Laurel.HeapParameterization
-public import Strata.Languages.Laurel.TypeHierarchy
 public import Strata.Languages.Laurel.LaurelTypes
-public import Strata.Languages.Laurel.ModifiesClauses
-public import Strata.Languages.Laurel.CoreDefinitionsForLaurel
 public import Strata.Languages.Laurel.CoreGroupingAndOrdering
 import Strata.DDM.Util.DecimalRat
 import Strata.DL.Imperative.Stmt
@@ -29,7 +19,6 @@ import Strata.Pipeline.Messages
 import Strata.DL.Imperative.MetaData
 import Strata.DL.Lambda.LExpr
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
-import Strata.Languages.Laurel.ConstrainedTypeElim
 import Strata.Util.Tactics
 
 open Core (VCResult VCResults VerifyOptions)

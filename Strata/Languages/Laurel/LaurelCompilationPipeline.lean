@@ -7,10 +7,18 @@ module
 
 public import Strata.Languages.Laurel.LaurelToCoreTranslator
 import Strata.Languages.Laurel.DesugarShortCircuit
-import Strata.Languages.Laurel.EliminateReturnsInExpression
-import Strata.Languages.Laurel.EliminateValueReturns
+import Strata.Languages.Laurel.MergeAndLiftReturns
+import Strata.Languages.Laurel.EliminateValueInReturns
+import Strata.Languages.Laurel.ModifiesClauses
+import Strata.Languages.Laurel.HeapParameterization
+import Strata.Languages.Laurel.TypeHierarchy
+import Strata.Languages.Laurel.InferHoleTypes
+import Strata.Languages.Laurel.EliminateDeterministicHoles
+import Strata.Languages.Laurel.CoreDefinitionsForLaurel
+import Strata.Languages.Laurel.LiftImperativeExpressions
 import Strata.Languages.Laurel.ConstrainedTypeElim
 import Strata.Languages.Laurel.TypeAliasElim
+public import Strata.Languages.Laurel.LaurelPass
 import Strata.Languages.Core.Verifier
 import Strata.Util.Statistics
 
@@ -76,63 +84,19 @@ public section
     Laurel-to-Laurel passes, before the final translation to Core). -/
 abbrev TranslateResultWithLaurel := (Option Core.Program) × (List DiagnosticModel) × Program × Statistics
 
-/-- A single Laurel-to-Laurel pass. Each pass receives the current program and
-    semantic model and returns the (possibly modified) program, accumulated
-    diagnostics, and statistics. -/
-structure LaurelPass where
-  /-- Human-readable name, used for profiling and file emission. -/
-  name : String
-  /-- Whether `resolve` should be run after the pass. -/
-  needsResolves : Bool := false
-  /-- The pass action. -/
-  run : Program → SemanticModel → Program × List DiagnosticModel × Statistics
-
 /-- The ordered sequence of Laurel-to-Laurel lowering passes. -/
-private def laurelPipeline : Array LaurelPass := #[
-  { name := "FilterNonCompositeModifies"
-    run := fun p m =>
-      let (p', diags) := filterNonCompositeModifies m p
-      (p', diags, {}) },
-  { name := "EliminateValueReturns"
-    run := fun p _m =>
-      let (p', diags) := eliminateValueReturnsTransform p
-      (p', diags.toList, {}) },
-  { name := "HeapParameterization"
-    needsResolves := true
-    run := fun p m =>
-      (heapParameterization m p, [], {}) },
-  { name := "TypeHierarchyTransform"
-    needsResolves := true
-    run := fun p m =>
-      (typeHierarchyTransform m p, [], {}) },
-  { name := "ModifiesClausesTransform"
-    needsResolves := true
-    run := fun p m =>
-      let (p', diags) := modifiesClausesTransform m p
-      (p', diags, {}) },
-  { name := "InferHoleTypes"
-    run := fun p m =>
-      let (p', diags, stats) := inferHoleTypes m p
-      (p', diags, stats) },
-  { name := "EliminateHoles"
-    run := fun p _m =>
-      let (p', stats) := eliminateHoles p
-      (p', [], stats) },
-  { name := "DesugarShortCircuit"
-    run := fun p m =>
-      (desugarShortCircuit m p, [], {}) },
-  { name := "LiftExpressionAssignments"
-    run := fun p m =>
-      (liftExpressionAssignments m p, [], {}) },
-  { name := "EliminateReturns"
-    needsResolves := true
-    run := fun p _m =>
-      (eliminateReturnsInExpressionTransform p, [], {}) },
-  { name := "ConstrainedTypeElim"
-    needsResolves := true
-    run := fun p m =>
-      let (p', diags) := constrainedTypeElim m p
-      (p', diags, {}) }
+def laurelPipeline : Array LaurelPass := #[
+  filterNonCompositeModifiesPass,
+  eliminateValueInReturnsPass,
+  heapParameterizationPass,
+  typeHierarchyTransformPass,
+  modifiesClausesTransformPass,
+  inferHoleTypesPass,
+  eliminateDeterministicHolesPass,
+  desugarShortCircuitPass,
+  liftExpressionAssignmentsPass,
+  mergeAndLiftReturnsPass,
+  constrainedTypeElimPass
 ]
 
 /--

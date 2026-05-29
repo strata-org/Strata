@@ -10,6 +10,7 @@ public import Strata.Languages.Laurel.LaurelTypes
 public import Strata.DL.Imperative.MetaData
 import Strata.Languages.Laurel.HeapParameterizationConstants
 import Strata.Util.Tactics
+public import Strata.Languages.Laurel.LaurelPass
 
 public section
 
@@ -285,6 +286,14 @@ def typeHierarchyTransform (model: SemanticModel) (program : Program) : Program 
     staticProcedures := procs',
     types := [typeTagDatatype] ++ remainingTypes,
     constants := program.constants ++ typeHierarchyConstants }
+
+/-- Pipeline pass: type hierarchy transform. -/
+public def typeHierarchyTransformPass : LaurelPass where
+  name := "TypeHierarchyTransform"
+  documentation := "Encodes the object-oriented type hierarchy (inheritance, dynamic dispatch, type tests, and casts) into explicit operations on a flat representation. Composite types with parents are flattened, and dynamic dispatch is resolved through type-test chains."
+  needsResolves := true
+  run := fun p m =>
+    (typeHierarchyTransform m p, [], {})
 
 end Strata.Laurel
 
