@@ -85,9 +85,7 @@ def callSiteTypeSubst (fn : LFunc T) (callee : LExpr T.mono)
       else match Constraints.unify argConstraints SubstInfo.empty with
         | .ok substInfo => some substInfo.subst
         | .error _ => none
-    match argSubst with
-    | some s => s
-    | none => fn.opTypeSubst callee |>.getD Subst.empty
+    argSubst.getD ((fn.opTypeSubst callee).getD Subst.empty)
 
 /--
 Collect all WF obligations from an expression by traversing it and finding

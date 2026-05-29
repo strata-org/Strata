@@ -243,8 +243,11 @@ def LMonoTy.toSMTType (E: Env) (ty : LMonoTy) (ctx : SMT.Context) (useArrayTheor
                       -- Treat as a fresh uninterpreted sort so the obligation can
                       -- still be encoded; the solver will report `unknown` rather
                       -- than the encoder failing outright (issue #1201).
-                      let ctx := ctx.addSort { name := tyv, arity := 0 }
-                      .ok ((.constr tyv []), ctx)
+                      -- Prefix with `__poly_` so the synthetic sort is visibly
+                      -- distinct from any user-declared sort with the same name.
+                      let synthName := s!"__poly_{tyv}"
+                      let ctx := ctx.addSort { name := synthName, arity := 0 }
+                      .ok ((.constr synthName []), ctx)
 
 def LMonoTys.toSMTType (E: Env) (args : LMonoTys) (ctx : SMT.Context) (useArrayTheory : Bool := false) :
     Except Format ((List TermType) × SMT.Context) := do
