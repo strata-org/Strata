@@ -11,7 +11,7 @@ import StrataDDM.Elab
 /-
 Allows testing whether a DDM dialect can parse and print a given program without losing information.
 -/
-open Strata
+open StrataDDM
 
 namespace StrataDDMTest
 
@@ -65,7 +65,7 @@ structure GrammarTestResult where
 def testGrammarFile (dialect: Dialect) (ctx : Lean.Parser.InputContext) : IO GrammarTestResult := do
   try
     let loaded := .ofDialects! #[initDialect, dialect]
-    let ddmProgram ← Strata.Elab.parseStrataProgramFromDialect loaded dialect.name ctx
+    let ddmProgram ← Elab.parseStrataProgramFromDialect loaded dialect.name ctx
     let formatted := toString ddmProgram
     let normalizedInput := normalizeWhitespace <| stripComments <|
       s!"program {dialect.name}; " ++ ctx.inputString

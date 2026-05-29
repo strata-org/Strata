@@ -10,7 +10,7 @@ import Lean.Data.Json.Basic
 import StrataDDM.Util.Ion.AST
 
 
-namespace Strata.Decimal
+namespace StrataDDM.Decimal
 
 def ofJsonNumber (n : Lean.JsonNumber) : Decimal where
   mantissa := n.mantissa
@@ -24,7 +24,7 @@ def toJsonNumber (d : Decimal) : Lean.JsonNumber :=
   else
     { mantissa := m, exponent := e.natAbs }
 
-end Strata.Decimal
+end StrataDDM.Decimal
 
 namespace Ion
 

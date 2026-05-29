@@ -20,6 +20,7 @@ Verifies that DDM AST → B3 AST → B3 CST → formatted output preserves struc
 namespace B3
 
 open Std (Format)
+open StrataDDM
 open Strata
 open Strata.B3CST
 

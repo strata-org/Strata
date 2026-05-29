@@ -9,6 +9,7 @@ meta import Strata.Languages.Core.Verifier
 import StrataDDM.Integration.Lean.HashCommands
 
 meta section
+open StrataDDM (Program)
 
 /-! ## DDM parsing tests for recursive functions
 

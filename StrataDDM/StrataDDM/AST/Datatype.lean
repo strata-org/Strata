@@ -25,7 +25,7 @@ declarations. Each template has:
 set_option autoImplicit false
 
 public section
-namespace Strata
+namespace StrataDDM
 
 /-! ## Function Template Types -/
 
@@ -122,5 +122,5 @@ def validateNamePattern (pattern : Array NamePatternPart) (scope : FunctionIterS
     else
       none
 
-end Strata
+end StrataDDM
 end

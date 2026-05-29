@@ -28,7 +28,7 @@ Near-upstream anchors:
   procedures.
 -/
 
-private def traitSpecMethodsSeed : Strata.Program :=
+private def traitSpecMethodsSeed : StrataDDM.Program :=
 #strata
 program Boole;
 

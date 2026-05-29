@@ -10,6 +10,7 @@ public import Strata.Languages.Core.Procedure
 public import StrataDDM.Util.DecimalRat
 public import StrataDDM.Format
 import Strata.Languages.Core.Factory
+open StrataDDM
 
 public section
 
@@ -269,7 +270,7 @@ def lconstToExpr {M} [Inhabited M] (c : Lambda.LConst) :
       let ty := CoreType.tvar default unknownTypeVar
       pure (.neg_expr default ty (.natToInt default ⟨default, n.natAbs⟩))
   | .realConst r =>
-    match Strata.Decimal.fromRat r with
+    match StrataDDM.Decimal.fromRat r with
     | some d => pure (.realLit default ⟨default, d⟩)
     | none => do
       ToCSTM.logError "lconstToExpr" "unsupported real" (toString r)

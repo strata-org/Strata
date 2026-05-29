@@ -21,6 +21,7 @@ Verifies entire programs with automatic diagnosis.
 namespace Strata.B3.Verifier
 
 open Strata
+open StrataDDM
 open Strata.SMT
 open Strata.B3AST
 

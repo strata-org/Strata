@@ -11,7 +11,7 @@ import all StrataDDM.Util.Lean
 import all StrataDDM.Util.String
 
 public section
-namespace Strata
+namespace StrataDDM
 
 structure Decimal where
   mantissa : Int
@@ -68,4 +68,4 @@ end
 
 end Decimal
 
-end Strata
+end StrataDDM

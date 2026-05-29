@@ -10,9 +10,9 @@ import all StrataDDM.Ion
 import StrataDDM.BuiltinDialects.StrataDDL
 import StrataDDM.Integration.Lean
 
-namespace Strata
+open Ion (SymbolTable Ion SymbolId)
 
-open _root_.Ion (SymbolTable Ion SymbolId)
+namespace StrataDDM
 
 def testRoundTrip {α} [FromIon α] [BEq α] [Inhabited α] (toF : α → ByteArray) (init : α) : Bool :=
   let bs := toF init

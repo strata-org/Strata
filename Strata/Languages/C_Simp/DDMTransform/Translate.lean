@@ -8,6 +8,7 @@ module
 public import Strata.Languages.C_Simp.C_Simp
 public import Strata.Languages.Core.CoreOp
 public import StrataDDM.AST
+open StrataDDM
 
 public section
 
@@ -89,13 +90,13 @@ def checkOpArg (arg : Arg) (name : QualifiedIdent) (argc : Nat) : TransM (Array 
 
 ---------------------------------------------------------------------
 
-def translateCommaSep [Inhabited α] (f : Strata.Arg → TransM α) (arg : Strata.Arg) :
+def translateCommaSep [Inhabited α] (f : Arg → TransM α) (arg : Arg) :
   TransM (Array α) := do
   let .seq _ .comma args := arg
     | TransM.error s!"Expected commaSepList: {repr arg}"
   args.mapM f
 
-def translateOption [Inhabited α] (f : Option Strata.Arg → TransM α) (arg : Arg) :
+def translateOption [Inhabited α] (f : Option Arg → TransM α) (arg : Arg) :
   TransM α := do
   let .option _ maybe_arg := arg
     | TransM.error s!"Expected Option: {repr arg}"
@@ -103,7 +104,7 @@ def translateOption [Inhabited α] (f : Option Strata.Arg → TransM α) (arg : 
 
 ---------------------------------------------------------------------
 
-def translateIdent (arg : Strata.Arg) : TransM String := do
+def translateIdent (arg : Arg) : TransM String := do
   let .ident _ name := arg
     | TransM.error s!"Expected ident: {repr arg}"
   pure name
@@ -295,7 +296,7 @@ def translateInvariant (bindings : TransBindings) (arg : Arg) :
 
 ---------------------------------------------------------------------
 
-def translateTypeArgs (op : Strata.Arg) : TransM (Array String) := do
+def translateTypeArgs (op : Arg) : TransM (Array String) := do
   translateOption (fun x => do match x with
                   | none => return Array.empty
                   | some a =>

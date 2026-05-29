@@ -26,10 +26,10 @@ see `StrataTest/Languages/Core/Examples/FunctionPreconditions.lean`.
 
 section PrecondElimTests
 
-def translate (t : Strata.Program) : Core.Program :=
+def translate (t : StrataDDM.Program) : Core.Program :=
   (TransM.run Inhabited.default (translateProgram t)).fst
 
-def transformProgram (t : Strata.Program) : Core.Program :=
+def transformProgram (t : StrataDDM.Program) : Core.Program :=
   let program := translate t
   match Core.Transform.run program PrecondElim.precondElim { Core.Transform.CoreTransformState.emp with factory := some Core.Factory } with
   | .error e => panic! s!"PrecondElim failed: {e}"

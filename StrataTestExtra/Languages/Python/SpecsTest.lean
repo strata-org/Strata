@@ -10,6 +10,8 @@ import StrataDDM.Ion
 import Strata.Languages.Python.PythonDialect
 meta import StrataTest.Util.Python
 
+open StrataDDM (SourceRange)
+
 namespace Strata.Python.Specs
 
 private meta def testDir : System.FilePath :=

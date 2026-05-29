@@ -16,10 +16,10 @@ import Lean.Exception
 
 open Lean
 open Lean.Elab
-open Strata.Lean
+open StrataDDM.Lean
 
 public section
-namespace Strata
+namespace StrataDDM
 
 namespace QualifiedIdent
 
@@ -527,5 +527,5 @@ instance Program.instToExpr : ToExpr Program where
       (toExpr ms.dialect)
       (toExpr ms.commands)
 
-end Strata
+end StrataDDM
 end

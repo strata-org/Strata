@@ -179,15 +179,15 @@ def loop_elimination(program : C_Simp.Program) : Core.Program :=
 def to_core(program : C_Simp.Program) : Core.Program :=
   loop_elimination program
 
-def C_Simp.get_program (p : Strata.Program) : C_Simp.Program :=
+def C_Simp.get_program (p : StrataDDM.Program) : C_Simp.Program :=
   (Strata.C_Simp.TransM.run Inhabited.default (Strata.C_Simp.translateProgram (p.commands))).fst
 
-def C_Simp.typeCheck (p : Strata.Program) (options : VerifyOptions := .default):
+def C_Simp.typeCheck (p : StrataDDM.Program) (options : VerifyOptions := .default):
   Except DiagnosticModel Core.Program := do
   let program := C_Simp.get_program p
   Core.typeCheck options (to_core program)
 
-def C_Simp.verify (p : Strata.Program)
+def C_Simp.verify (p : StrataDDM.Program)
     (options : VerifyOptions := .default)
     (tempDir : Option String := .none):
   IO Core.VCResults := do

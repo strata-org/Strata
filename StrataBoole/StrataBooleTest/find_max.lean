@@ -8,7 +8,7 @@ import StrataBoole.MetaVerifier
 
 open Strata
 
-private def find_max_program : Strata.Program :=
+private def find_max_program : StrataDDM.Program :=
 #strata
 program Boole;
 
@@ -51,7 +51,7 @@ Obligation: arbitrary_iter_maintain_invariant_0_1
 Property: assert
 Result: ✅ pass
 
-Obligation: FindMax_ensures_1_318
+Obligation: FindMax_ensures_1_321
 Property: assert
 Result: ✅ pass
 -/

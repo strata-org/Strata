@@ -11,6 +11,7 @@ meta import StrataTest.Languages.Core.Examples.Loops
 import StrataDDM.Integration.Lean.HashCommands
 
 meta section
+open StrataDDM (Program)
 ---------------------------------------------------------------------
 namespace Strata
 

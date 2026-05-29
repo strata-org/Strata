@@ -7,7 +7,7 @@ module
 public import StrataDDM.AST
 
 public section
-namespace Strata.DDM.Integration
+namespace StrataDDM.Integration
 
 /-- Init categories that map to primitive types (no interface/inductive needed) -/
 def primitiveCategories : Std.HashSet QualifiedIdent := Std.HashSet.ofList [
@@ -33,4 +33,4 @@ def abstractCategories : Std.HashSet QualifiedIdent := Std.HashSet.ofList [
   q`Init.TypeP
 ]
 
-end Strata.DDM.Integration
+end StrataDDM.Integration

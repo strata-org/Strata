@@ -10,6 +10,8 @@ public import Strata.DL.SMT.Op
 public import StrataDDM.Util.Decimal
 import StrataDDM.Util.DecimalRat
 
+open StrataDDM (Decimal)
+
 public section
 /-!
 Based on Cedar's Term language.

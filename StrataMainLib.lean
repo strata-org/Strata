@@ -38,6 +38,7 @@ import Strata.Languages.Python.Specs.DDM
 import Strata.Languages.Python.ReadPython
 
 open Strata
+open StrataDDM.Elab (LoadedDialects elabProgram)
 
 open Core (VerifyOptions VerboseMode VerificationMode CheckLevel EntryPoint)
 open Laurel (LaurelVerifyOptions LaurelTranslateOptions)
@@ -131,8 +132,8 @@ def getRepeated (pf : ParsedFlags) (name : String) : Array String :=
 def insert (pf : ParsedFlags) (name : String) (value : Option String) : ParsedFlags :=
   { pf with entries := pf.entries.push (name, value) }
 
-def buildDialectFileMap (pflags : ParsedFlags) : IO Strata.DialectFileMap := do
-  let preloaded := Strata.Elab.LoadedDialects.builtin
+def buildDialectFileMap (pflags : ParsedFlags) : IO StrataDDM.DialectFileMap := do
+  let preloaded := StrataDDM.Elab.LoadedDialects.builtin
     |>.addDialect! Strata.Python.Python
     |>.addDialect! Strata.Python.Specs.DDM.PythonSpecs
     |>.addDialect! Strata.Core
@@ -141,7 +142,7 @@ def buildDialectFileMap (pflags : ParsedFlags) : IO Strata.DialectFileMap := do
     |>.addDialect! Strata.SMTCore
     |>.addDialect! Strata.SMT
     |>.addDialect! Strata.SMTResponse
-  let mut sp ← Strata.DialectFileMap.new preloaded
+  let mut sp ← StrataDDM.DialectFileMap.new preloaded
   for path in pflags.getRepeated "include" do
     match ← sp.add path |>.toBaseIO with
     | .error msg => exitFailure msg
@@ -310,15 +311,15 @@ def parseLaurelVerifyOptions (pflags : ParsedFlags)
     dialects. Returns the parsed program and the input context (for source
     location resolution), or an array of error messages on failure. -/
 private def readStrataProgram (file : String)
-    : IO (Except (Array Lean.Message) (Strata.Program × Lean.Parser.InputContext)) := do
+    : IO (Except (Array Lean.Message) (StrataDDM.Program × Lean.Parser.InputContext)) := do
   let text ← Strata.Util.readInputSource file
   let inputCtx := Lean.Parser.mkInputContext text (Strata.Util.displayName file)
-  let dctx := Elab.LoadedDialects.builtin
+  let dctx := LoadedDialects.builtin
   let dctx := dctx.addDialect! Core
   let dctx := dctx.addDialect! C_Simp
   let dctx := dctx.addDialect! B3CST
   let leanEnv ← Lean.mkEmptyEnvironment 0
-  match Strata.Elab.elabProgram dctx leanEnv inputCtx with
+  match elabProgram dctx leanEnv inputCtx with
   | .ok pgm => pure (.ok (pgm, inputCtx))
   | .error msgs => pure (.error msgs)
 
@@ -583,12 +584,12 @@ private def reportUserCodeError (range : SourceRange) (msg : String)
       s!" at line {pos.line}, col {pos.column}"
     | none => ""
   let mut lines := #[
-    s!"(set-info :file {Strata.escapeSMTStringLit filePath})"
+    s!"(set-info :file {StrataDDM.escapeSMTStringLit filePath})"
   ]
   unless range.isNone do
     lines := lines.push s!"(set-info :start {range.start})"
     lines := lines.push s!"(set-info :stop {range.stop})"
-  lines := lines.push s!"(set-info :error-message {Strata.escapeSMTStringLit msg})"
+  lines := lines.push s!"(set-info :error-message {StrataDDM.escapeSMTStringLit msg})"
   for line in lines do
     IO.println line
   IO.FS.Handle.mk "user_errors.txt" .write >>= fun h =>
@@ -891,10 +892,10 @@ def javaGenCommand : Command where
       match ← Strata.readStrataFile fm v[0] with
       | .dialect d => pure d
       | .program _ => exitFailure "Expected a dialect file, not a program file."
-    match Strata.Java.generateDialect d v[1] with
+    match StrataDDM.Java.generateDialect d v[1] with
     | .ok files =>
-      Strata.Java.writeJavaFiles v[2] v[1] files
-      IO.println s!"Generated Java files for {d.name} in {v[2]}/{Strata.Java.packageToPath v[1]}"
+      StrataDDM.Java.writeJavaFiles v[2] v[1] files
+      IO.println s!"Generated Java files for {d.name} in {v[2]}/{StrataDDM.Java.packageToPath v[1]}"
     | .error msg =>
       exitFailure s!"Error generating Java: {msg}"
 
@@ -1112,7 +1113,7 @@ def laurelPrintCommand : Command where
       let c := p.formatContext {}
       let s := p.formatState
       let fmt := p.commands.foldl (init := f!"") fun f cmd =>
-        f ++ (Strata.mformat cmd c s).format
+        f ++ (StrataDDM.mformat cmd c s).format
       IO.println (fmt.pretty 100)
       IO.println ""
 

@@ -7,7 +7,7 @@ module
 public import StrataDDM.Elab.LoadedDialects
 import StrataDDM.BuiltinDialects
 
-namespace Strata
+namespace StrataDDM
 
 open Lean Parser
 
@@ -81,4 +81,4 @@ public initialize dialectExt : PersistentEnvExtension PersistentDialect (Name ×
     exportEntriesFn := exportEntries
   }
 
-end Strata
+end StrataDDM

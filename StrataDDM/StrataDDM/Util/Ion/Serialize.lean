@@ -8,7 +8,7 @@ module
 public import StrataDDM.Util.Ion.AST
 import all StrataDDM.Util.ByteArray
 
-namespace Strata.ByteArray
+namespace StrataDDM.ByteArray
 
 theorem size_set (a : ByteArray) (i : Nat) (v : UInt8) (p : _) : (a.set i v p).size = a.size := by
   simp only [ByteArray.set, ByteArray.size, Array.set]
@@ -31,7 +31,9 @@ theorem zeros_size (n : Nat) : (zeros n).size = n := by
     simp_all
     exact hyp
 
-end Strata.ByteArray
+end StrataDDM.ByteArray
+
+open StrataDDM.ByteArray (zeros size_set)
 
 namespace Ion
 
@@ -42,7 +44,7 @@ namespace ByteVector
 @[inline]
 def set {n} (bs : ByteVector n) (i : Nat) (b : UInt8) (p : i < n := by get_elem_tactic) : ByteVector n :=
   match bs with
-  | ⟨a, p⟩ => ⟨a.set i b, by simp [Strata.ByteArray.size_set]; exact p⟩
+  | ⟨a, p⟩ => ⟨a.set i b, by simp [size_set]; exact p⟩
 
 def setBytes {n} (v : ByteVector n) (off : Nat) (bs : ByteArray)
      (p : off + bs.size ≤ n) : ByteVector n :=
@@ -73,7 +75,7 @@ def setFoldrBytes {n} {α} (s : Nat) (e : Nat) (ep : e ≤ n) (f : α → UInt8 
       (cur : ByteVector n) : ByteVector n :=
   setFoldrBytes' s e ep f (fun _ bytes => bytes) x cur
 
-open Strata
+open StrataDDM
 
 def zeros (n : Nat) : ByteVector n :=
   ⟨.zeros n, ByteArray.zeros_size n⟩
@@ -156,13 +158,13 @@ def withReserve (cnt : Nat)
     let prev_size := prev_size + (cur.size - next)
     let min := SerializeState.init_cap
     if p : min > cnt then
-      let cur := Strata.ByteArray.zeros min
+      let cur := zeros min
       let next' := min - cnt
       have p : cur.size = min := by simp [cur]
       let ⟨cur, curp⟩ := act ⟨cur, p⟩ next' (by omega)
       { prev, prev_size, cur, next := next', next_valid := by omega }
     else
-      let cur := Strata.ByteArray.zeros cnt
+      let cur := zeros cnt
       have p : cur.size = cnt := by simp [cur]
       let ⟨cur, curp⟩ := act ⟨cur, p⟩ 0 (by omega)
       { prev, prev_size, cur, next := 0, next_valid := by omega }

@@ -9,6 +9,7 @@ meta import Strata.Languages.Core.Verifier
 import StrataDDM.Integration.Lean.HashCommands
 
 meta section
+open StrataDDM (Program)
 namespace Strata
 
 /-- Basic uninterpreted type declaration with equality reasoning -/

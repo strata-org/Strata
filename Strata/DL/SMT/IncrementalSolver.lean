@@ -23,6 +23,8 @@ repeated declarations of the same name. The shadow depth is tracked per name.
 
 namespace Strata.SMT
 
+open StrataDDM (quoteIdent)
+
 public section
 
 /-- State for the incremental SMT-LIB solver backend. Wraps a live solver

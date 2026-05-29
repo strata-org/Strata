@@ -9,10 +9,10 @@ public import StrataDDM.AST
 import StrataDDM.BuiltinDialects.BuiltinM
 import StrataDDM.BuiltinDialects.Init
 
-open Strata.Elab
+open StrataDDM.Elab
 
 public section
-namespace Strata
+namespace StrataDDM
 
 def StrataDDL : Dialect := BuiltinM.create! "StrataDDL" #[initDialect] do
   let Ident : ArgDeclKind := .cat <| .atom .none q`Init.Ident
@@ -189,5 +189,5 @@ def StrataDDL : Dialect := BuiltinM.create! "StrataDDL" #[initDialect] do
   declareMetadata { name := "scopeTVar", args := #[.mk "typeParams" .ident] }
   declareMetadata { name := "preRegisterFunctions", args := #[.mk "scope" .ident] }
 
-end Strata
+end StrataDDM
 end

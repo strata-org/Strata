@@ -46,7 +46,7 @@ end ByteArray
 #guard let a := ByteArray.empty |>.push 0 |>.push 1; (a |>.push 2 |>.pop) = a
 
 public section
-namespace Strata.ByteArray
+namespace StrataDDM.ByteArray
 
 def ofNatArray (a : Array Nat) : ByteArray := .mk (a.map UInt8.ofNat)
 
@@ -191,5 +191,5 @@ def unescapeBytes (s : String) : Except (s.Pos × s.Pos × String) ByteArray :=
   | .error (f, e, msg) => .error (f, e, msg)
   | .ok (a, _) => .ok a
 
-end Strata.ByteArray
+end StrataDDM.ByteArray
 end

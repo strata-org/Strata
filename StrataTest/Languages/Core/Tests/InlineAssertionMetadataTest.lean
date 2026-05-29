@@ -23,7 +23,7 @@ namespace Core.InlineAssertionMetadata.Tests
 
 open Imperative
 
-private def inlineAssertPgm : Strata.Program :=
+private def inlineAssertPgm : StrataDDM.Program :=
 #strata
 program Core;
 procedure callee() {

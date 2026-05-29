@@ -7,9 +7,9 @@ module
 
 meta import StrataDDM.Util.Decimal
 
-namespace Strata.Decimal.Tests
+namespace StrataDDM.Decimal.Tests
 
-open Strata
+open StrataDDM
 
 #guard s!"{Decimal.mk 0 0}" = "0.0"
 #guard s!"{Decimal.mk 1 0}" = "1.0"
@@ -28,4 +28,4 @@ open Strata
 #guard s!"{Decimal.mk 1 (-3)}"  = "0.001"
 #guard s!"{Decimal.mk (-2) (-2)}" = "-0.02"
 
-end Strata.Decimal.Tests
+end StrataDDM.Decimal.Tests

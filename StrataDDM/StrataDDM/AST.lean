@@ -18,7 +18,7 @@ import all StrataDDM.Util.DecideProp
 set_option autoImplicit false
 
 public section
-namespace Strata
+namespace StrataDDM
 open Std (ToFormat Format format)
 
 abbrev DialectName := String
@@ -46,7 +46,7 @@ def ofString (fullname : String) : Option QualifiedIdent := do
     none
 
 section
-open _root_.Lean
+open Lean
 public protected def quote (i : QualifiedIdent) : Term :=
   Syntax.mkCApp ``QualifiedIdent.mk #[quote i.dialect, quote i.name]
 
@@ -2303,5 +2303,5 @@ macro "sizeOf_op_arg_dec" : tactic =>
 
 macro_rules | `(tactic| decreasing_trivial) => `(tactic| sizeOf_op_arg_dec)
 
-end Strata
+end StrataDDM
 end

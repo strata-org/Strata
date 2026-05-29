@@ -23,7 +23,7 @@ proof fn use_lambda() {
   directly in Boole
 -/
 
-private def lambdaClosureSeed : Strata.Program :=
+private def lambdaClosureSeed : StrataDDM.Program :=
 #strata
 program Boole;
 

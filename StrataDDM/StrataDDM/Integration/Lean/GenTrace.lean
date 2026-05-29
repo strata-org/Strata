@@ -8,4 +8,4 @@ module
 -- This module defines a trace class used for the generator.
 import Lean.Util.Trace
 
-initialize Lean.registerTraceClass `Strata.generator
+initialize Lean.registerTraceClass `StrataDDM.generator

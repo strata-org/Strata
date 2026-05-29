@@ -76,7 +76,7 @@ def mkRootIdent (name : Name) : Ident :=
 end Lean
 
 public section
-namespace Strata.Lean
+namespace StrataDDM.Lean
 
 @[inline]
 def arrayToExpr (level : Level) (type : Expr) (a : Array Expr) : Expr :=
@@ -96,5 +96,5 @@ def optionToExpr (type : Lean.Expr) (a : Option Lean.Expr) : Lean.Expr :=
   | some a => mkApp2 (mkConst ``Option.some [levelZero]) type a
 
 
-end Strata.Lean
+end StrataDDM.Lean
 end section

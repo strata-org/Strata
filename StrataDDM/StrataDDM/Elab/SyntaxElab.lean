@@ -9,7 +9,7 @@ public import StrataDDM.AST
 import all StrataDDM.Util.DecideProp
 
 public section
-namespace Strata.Elab
+namespace StrataDDM.Elab
 
 /--
 Describes an elaboration relationship between a argument in the bindings and
@@ -179,5 +179,5 @@ private def addDecl (m : SyntaxElabMap) (dialect : String) (d : Decl) : Except S
 def addDialect (m : SyntaxElabMap) (d : Dialect) : Except String SyntaxElabMap :=
   d.declarations.foldlM (·.addDecl d.name) m
 
-end Strata.Elab.SyntaxElabMap
+end StrataDDM.Elab.SyntaxElabMap
 end

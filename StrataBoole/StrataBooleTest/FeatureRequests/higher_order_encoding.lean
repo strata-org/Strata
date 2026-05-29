@@ -22,7 +22,7 @@ Near-upstream anchors from `differential_status.md`:
   `FnIntInt`/`apply` workaround
 -/
 
-private def higherOrderSeed : Strata.Program :=
+private def higherOrderSeed : StrataDDM.Program :=
 #strata
 program Boole;
 
@@ -44,7 +44,7 @@ spec {
 
 /--
 info:
-Obligation: higher_order_seed_ensures_0_988
+Obligation: higher_order_seed_ensures_0_991
 Property: assert
 Result: ✅ pass
 -/
