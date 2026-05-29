@@ -770,8 +770,7 @@ def checkLeftRec (thisCatName : QualifiedIdent) (argDecls : ArgDecls) (as : List
     let .isTrue lt := decideProp (v < argDecls.size)
       | return panic! "Invalid index"
     let cat := argDecls[v].kind.categoryOf
-    let isListCategory := (SepFormat.fromCategoryName? cat.name).isSome ||
-                          cat.name == q`Init.Option
+    let isListCategory := SepFormat.isParametricCategory cat.name
     if isListCategory then
       assert! cat.args.size = 1
       let c := cat.args[0]!

@@ -24,10 +24,16 @@ op item (n : Num) : Item => n;
 op items (xs : NewlineSepBy Item) : Command => xs ";";
 #end
 
+/--
+info: program NewlineSepByLeadingTest;
+1
+2
+3;
+-/
 #guard_msgs in
-private def test_newline_sep_by_leading := #strata
+#eval (#strata
 program NewlineSepByLeadingTest;
 1
 2
 3;
-#end
+#end).format
