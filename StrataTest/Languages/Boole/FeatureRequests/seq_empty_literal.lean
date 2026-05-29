@@ -128,4 +128,48 @@ spec { }
 /-- info: Except.ok ["Sequence bv32"] -/
 #guard_msgs in #eval seqEmptyTysIn nonEmptyBv32LiteralPgm
 
+/-! ## Empty literals for bv8, bv16, bv64 must also lower to typed `Sequence.empty`. -/
+
+private def emptyBv8LiteralPgm : Strata.Program :=
+#strata
+program Boole;
+
+procedure p() returns (s: (Sequence bv8))
+spec { }
+{
+  s := Sequence.of_bv8[];
+};
+#end
+
+/-- info: Except.ok ["Sequence bv8"] -/
+#guard_msgs in #eval seqEmptyTysIn emptyBv8LiteralPgm
+
+private def emptyBv16LiteralPgm : Strata.Program :=
+#strata
+program Boole;
+
+procedure p() returns (s: (Sequence bv16))
+spec { }
+{
+  s := Sequence.of_bv16[];
+};
+#end
+
+/-- info: Except.ok ["Sequence bv16"] -/
+#guard_msgs in #eval seqEmptyTysIn emptyBv16LiteralPgm
+
+private def emptyBv64LiteralPgm : Strata.Program :=
+#strata
+program Boole;
+
+procedure p() returns (s: (Sequence bv64))
+spec { }
+{
+  s := Sequence.of_bv64[];
+};
+#end
+
+/-- info: Except.ok ["Sequence bv64"] -/
+#guard_msgs in #eval seqEmptyTysIn emptyBv64LiteralPgm
+
 end Strata
