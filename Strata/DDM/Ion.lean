@@ -864,15 +864,16 @@ private instance : ToIon SourceRange where
 
 private instance : FromIon SourceRange where
   fromIon v := do
+    let tag := "Source range"
     match v.app with
     | .null _ =>
       return .none
     | _ =>
-      let ⟨exp, _⟩ ← .asSexp "Source rang" v
-      let ⟨p⟩ ← .checkArgCount "Source range" exp 2
+      let ⟨exp, _⟩ ← .asSexp tag v
+      let ⟨p⟩ ← .checkArgCount tag exp 2
       return {
-          start := ⟨← .asNat "Source range start" exp[0]⟩
-          stop := ⟨← .asNat "Source range stop" exp[1]⟩
+          start := ⟨← .asNat s!"{tag} start" exp[0]⟩
+          stop := ⟨← .asNat s!"{tag} stop" exp[1]⟩
       }
 
 end SourceRange

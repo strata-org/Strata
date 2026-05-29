@@ -319,3 +319,25 @@ private def indentTestDialect (atom : Ion String) : Ion String :=
   match FromIon.deserialize (α := Dialect) bs with
   | .error msg => IO.println s!"error: {msg}"
   | .ok _      => IO.println "unexpected ok"
+
+-- SourceRange round-trip: null encodes as (0, 0)
+#guard
+  let bs := Ion.serialize #[Ion.SymbolTable.system.localSymbolTableValue, Ion.null (Sym := Ion.SymbolId)]
+  match FromIon.deserialize (α := SourceRange) bs with
+  | .error _ => false
+  | .ok r => r == { start := ⟨0⟩, stop := ⟨0⟩ }
+
+-- SourceRange round-trip: sexp with start/stop
+#guard
+  let bs := Ion.serialize #[Ion.SymbolTable.system.localSymbolTableValue,
+    Ion.sexp (Sym := Ion.SymbolId) #[.int 10, .int 42]]
+  match FromIon.deserialize (α := SourceRange) bs with
+  | .error _ => false
+  | .ok r => r == { start := ⟨10⟩, stop := ⟨42⟩ }
+
+-- Test that SourceRange.fromIon error message says "Source range" (not "Source rang")
+#guard
+  let bs := Ion.serialize #[Ion.SymbolTable.system.localSymbolTableValue, Ion.string (Sym := Ion.SymbolId) "bad"]
+  match FromIon.deserialize (α := SourceRange) bs with
+  | .error msg => "Error decoding Source range".isPrefixOf msg
+  | .ok _ => false
