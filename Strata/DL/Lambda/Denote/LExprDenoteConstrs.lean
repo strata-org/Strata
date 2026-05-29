@@ -95,8 +95,8 @@ theorem constr_callOfLFunc_argTys_eq
     {argTys₁ argTys₂ : List LMonoTy}
     (hcall₁ : Factory.callOfLFunc F e₁ = some (callee₁, args₁, fn))
     (hcall₂ : Factory.callOfLFunc F e₂ = some (callee₂, args₂, fn))
-    (h_args₁ : List.Forall₂ (LExpr.HasTypeA []) args₁ argTys₁)
-    (h_args₂ : List.Forall₂ (LExpr.HasTypeA []) args₂ argTys₂)
+    (h_args₁ : Strata.List.Forall₂ (LExpr.HasTypeA []) args₁ argTys₁)
+    (h_args₂ : Strata.List.Forall₂ (LExpr.HasTypeA []) args₂ argTys₂)
     (hoc₁ : OpsConsistent F e₁) (hoc₂ : OpsConsistent F e₂)
     (hfwf : FactoryWF F)
     (h_output_covers : ∀ v, v ∈ fn.typeArgs → v ∈ LMonoTy.freeVars fn.output)
@@ -179,8 +179,8 @@ theorem constr_callOfLFunc_argTys_eq'
     {argTys₁ argTys₂ : List LMonoTy}
     (hcall₁ : Factory.callOfLFunc F e₁ = some (callee₁, args₁, fn))
     (hcall₂ : Factory.callOfLFunc F e₂ = some (callee₂, args₂, fn))
-    (h_args₁ : List.Forall₂ (LExpr.HasTypeA []) args₁ argTys₁)
-    (h_args₂ : List.Forall₂ (LExpr.HasTypeA []) args₂ argTys₂)
+    (h_args₁ : Strata.List.Forall₂ (LExpr.HasTypeA []) args₁ argTys₁)
+    (h_args₂ : Strata.List.Forall₂ (LExpr.HasTypeA []) args₂ argTys₂)
     (hoc₁ : OpsConsistent F e₁) (hoc₂ : OpsConsistent F e₂)
     (hfwf : FactoryWF F)
     (hcwf : Factory.ConstrWellFormed F tf)
@@ -444,7 +444,7 @@ theorem callOfLFunc_constr_injective_denote
     exact cast_injective (congrArg (HList (SortDenote tcInterp)) (hvals ▸ h_inputSorts_eq)) (by grind)
   -- Extract pointwise denote equality from denoteArgs equality
   intro i a₁ a₂ σ ha₁ ha₂ hta₁ hta₂
-  obtain ⟨σ₁, hσ₁, hta₁'⟩ := List.Forall₂.getElem?_some h_args₁ ha₁
+  obtain ⟨σ₁, hσ₁, hta₁'⟩ := Strata.List.Forall₂.getElem?_some h_args₁ ha₁
   have hσ_eq : σ₁ = σ := HasTypeA_unique hta₁' hta₁
   subst hσ_eq
   exact denoteArgs_eq_implies_denote_eq tcInterp opInterp fvarVal vt .nil

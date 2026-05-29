@@ -52,7 +52,7 @@ noncomputable example (tcInterp : TyConstrInterp) [TyConstrInterp.AllInhabited t
   -- Normalize the types manually
   have : idFunc.inputs = [(⟨"x", ()⟩, .ftvar "a")] := rfl
   have : idFunc.output = .ftvar "a" := rfl
-  change ∀ (h_args : List.Forall₂ (LExpr.HasTypeA []) argExprs [LMonoTy.subst tySubst (.ftvar "a")])
+  change ∀ (h_args : Strata.List.Forall₂ (LExpr.HasTypeA []) argExprs [LMonoTy.subst tySubst (.ftvar "a")])
     (h_result : LExpr.HasTypeA [] resultExpr (LMonoTy.subst tySubst (.ftvar "a"))), _
   intro h_args h_result
   cases h_args with

@@ -79,17 +79,17 @@ private theorem state_map_forall₂_hasTypeA
     (hEnvTy : Env.Typed env)
     (hEnvLC : ∀ (x : T.Identifier) (v : LExpr T.mono),
       env x = some v → LExpr.lcAt 0 v = true)
-    : List.Forall₂ (LExpr.HasTypeA Δ) (entries.map Prod.snd)
+    : Strata.List.Forall₂ (LExpr.HasTypeA Δ) (entries.map Prod.snd)
         (entries.map (fun (k, _) =>
           match Map.find? hEnvTy.tyMap k with
           | some ty => ty
           | none => .bool)) := by
   induction entries with
-  | nil => exact List.Forall₂.nil
+  | nil => exact Strata.List.Forall₂.nil
   | cons p rest ih =>
     obtain ⟨k, v⟩ := p
     simp only [List.map_cons]
-    apply List.Forall₂.cons
+    apply Strata.List.Forall₂.cons
     · have h_mem_head : (k, v) ∈ (k, v) :: rest := List.mem_cons_self ..
       have h_env_kv := h_in_env k v h_mem_head
       obtain ⟨ty, h_envTys_k⟩ := hEnvTy.cover k v h_env_kv
@@ -195,7 +195,7 @@ private theorem substFvarsFromState_type_preserved
       simp [htsm] at h_find_sm; subst h_find_sm
       rw [henv_eq]; simp only [Scopes.toEnv]
       rw [Maps.find?_toSingleMap] at htsm; rw [htsm]; rfl
-  have h_wt : List.Forall₂ (LExpr.HasTypeA Δ) (ks.map Prod.snd) tys :=
+  have h_wt : Strata.List.Forall₂ (LExpr.HasTypeA Δ) (ks.map Prod.snd) tys :=
     state_map_forall₂_hasTypeA ks h_in_env hEnvTy
       (fun x v h => hEnvLC x v h)
   have h_annot_ks : fvars_annotated_by (ks.map Prod.fst |>.zip tys) e :=
@@ -262,7 +262,7 @@ private theorem substFvarsFromState_denote_preserved
       simp only [Scopes.toEnv]
       rw [Maps.find?_toSingleMap] at h_tsm
       rw [h_tsm]; rfl
-  have h_wt : List.Forall₂ (LExpr.HasTypeA Δ) (ks.map Prod.snd) tys :=
+  have h_wt : Strata.List.Forall₂ (LExpr.HasTypeA Δ) (ks.map Prod.snd) tys :=
     state_map_forall₂_hasTypeA ks h_in_env hEnvTy hEnvLC
   have h_sorts : sortBindings.map Prod.snd = tys.map (LMonoTy.substTyVars vt) := by
     simp only [sortBindings]
@@ -654,7 +654,7 @@ theorem Step.denote_preserved
       simp [List.length_zip, h_keys_len, bindings_vt']; grind
     have h_tys_len : argTys.length = (fn.inputs.keys.zip args).length := by
       rw [List.length_zip, h_keys_len, Nat.min_self]; grind
-    have h_wt : List.Forall₂ (LExpr.HasTypeA []) ((fn.inputs.keys.zip args).map Prod.snd) argTys := by
+    have h_wt : Strata.List.Forall₂ (LExpr.HasTypeA []) ((fn.inputs.keys.zip args).map Prod.snd) argTys := by
       rw [h_zip_snd]; exact h_args
     have h_denotes : HList.cast h_sorts_eq da = HList.cast h_sorts_eq.symm.symm
         (denoteArgs tcInterp opInterp fvarVal vt .nil ((fn.inputs.keys.zip args).map Prod.snd) argTys h_wt) := by
@@ -841,7 +841,7 @@ theorem Step.type_preserved
     have h_zip_snd : (fn.inputs.keys.zip args).map Prod.snd = args :=
       zip_map_snd_eq _ _ h_keys_len
     -- Forall₂ for bindings
-    have h_wt_bindings : List.Forall₂ (LExpr.HasTypeA [])
+    have h_wt_bindings : Strata.List.Forall₂ (LExpr.HasTypeA [])
         ((fn.inputs.keys.zip args).map Prod.snd)
         (fn.inputs.map Prod.snd |>.map (LMonoTy.subst tySubst')) := by
       rw [h_zip_snd]; exact h_args

@@ -399,12 +399,12 @@ theorem liftBVars_denote
 /-- The i-th element of `denoteArgs` is the denotation of the i-th expression. -/
 theorem denoteArgs_get
     {exprs : List (LExpr T.mono)} {tys : List LMonoTy} {e : LExpr T.mono} {ty : LMonoTy}
-    (h_wt : List.Forall₂ (LExpr.HasTypeA Δ) exprs tys)
+    (h_wt : Strata.List.Forall₂ (LExpr.HasTypeA Δ) exprs tys)
     (i : Nat)
     (h_e : exprs[i]? = some e) (h_ty : tys[i]? = some ty)
     (h_sort : (tys.map (LMonoTy.substTyVars vt))[i]? = some (LMonoTy.substTyVars vt ty))
     : (denoteArgs (tcInterp := tcInterp) (opInterp := opInterp) fvarVal vt bvarVal exprs tys h_wt).get i h_sort
-      = LExpr.denote tcInterp opInterp fvarVal vt bvarVal e ty (List.Forall₂.get? h_wt i h_e h_ty) := by
+      = LExpr.denote tcInterp opInterp fvarVal vt bvarVal e ty (Strata.List.Forall₂.get? h_wt i h_e h_ty) := by
   induction h_wt generalizing i with
   | nil => simp at h_e
   | cons h_head h_tail ih =>
@@ -479,7 +479,7 @@ private theorem go_typeCheck [DecidableEq T.IDMeta]
     {bindings : List (T.Identifier × LExpr T.mono)}
     {Δ_outer : List LMonoTy}
     {tys : List LMonoTy}
-    (h_wt : List.Forall₂ (LExpr.HasTypeA Δ_outer) (bindings.map Prod.snd) tys)
+    (h_wt : Strata.List.Forall₂ (LExpr.HasTypeA Δ_outer) (bindings.map Prod.snd) tys)
     {e : LExpr T.mono} {Δ_body : List LMonoTy}
     (h_annot : fvars_annotated_by (bindings.map Prod.fst |>.zip tys) e)
     : LExpr.typeCheck (Δ_body ++ Δ_outer) (LExpr.substFvarsLifting.go bindings e Δ_body.length)
@@ -550,7 +550,7 @@ theorem substFvarsLifting_typeCheck [DecidableEq T.IDMeta]
     {bindings : List (T.Identifier × LExpr T.mono)}
     {Δ : List LMonoTy}
     {tys : List LMonoTy}
-    (h_wt : List.Forall₂ (LExpr.HasTypeA Δ) (bindings.map Prod.snd) tys)
+    (h_wt : Strata.List.Forall₂ (LExpr.HasTypeA Δ) (bindings.map Prod.snd) tys)
     {e : LExpr T.mono} {τ : LMonoTy}
     (h_annot : fvars_annotated_by (bindings.map Prod.fst |>.zip tys) e)
     (h : LExpr.HasTypeA Δ e τ)
@@ -576,7 +576,7 @@ private theorem substFvarsLifting_go_denote [DecidableEq T.IDMeta]
     {tys : List LMonoTy}
     (h_tys_len : tys.length = bindings.length)
     (h_sorts : sortBindings.map Prod.snd = tys.map (LMonoTy.substTyVars vt))
-    (h_wt : List.Forall₂ (LExpr.HasTypeA Δ_outer) (bindings.map Prod.snd) tys)
+    (h_wt : Strata.List.Forall₂ (LExpr.HasTypeA Δ_outer) (bindings.map Prod.snd) tys)
     (h_denotes : h_args = HList.cast h_sorts.symm
         (denoteArgs tcInterp opInterp fvarVal vt bvarVal_outer (bindings.map Prod.snd) tys h_wt))
     {body : LExpr T.mono} {τ : LMonoTy}
@@ -645,7 +645,7 @@ private theorem substFvarsLifting_go_denote [DecidableEq T.IDMeta]
             simp at h_bound ⊢; exact h_bound
           have h_tys_eq : tys[i]? = some tys[i] :=
             List.getElem?_eq_some_iff.mpr ⟨h_i_lt, rfl⟩
-          have h_wt_i := List.Forall₂.get? h_wt i h_val_b h_tys_eq
+          have h_wt_i := Strata.List.Forall₂.get? h_wt i h_val_b h_tys_eq
           have h_eq := HasTypeA_unique h_wt_i h_orig
           rw [h_sorts, List.getElem?_map, h_tys_eq, h_eq]; simp
         have h_first : ∀ j < i, (sortBindings.map Prod.fst)[j]? ≠ some name := by
@@ -658,7 +658,7 @@ private theorem substFvarsLifting_go_denote [DecidableEq T.IDMeta]
               have ⟨h_bound, _⟩ := List.getElem?_eq_some_iff.mp h_val_b
               simp at h_bound ⊢; exact h_bound
             have h_tys_i := List.getElem?_eq_some_iff.mpr ⟨h_i_lt, rfl⟩
-            have h_wt_i := List.Forall₂.get? h_wt i h_val_b h_tys_i
+            have h_wt_i := Strata.List.Forall₂.get? h_wt i h_val_b h_tys_i
             rw [HasTypeA_unique h_wt_i h_orig] at h_tys_i
             exact h_tys_i
           rw [denoteArgs_get _ _ _ _ h_wt i h_val_b h_tys_eq]
@@ -771,7 +771,7 @@ theorem substFvarsLifting_denote [DecidableEq T.IDMeta]
     {tys : List LMonoTy}
     (h_tys_len : tys.length = bindings.length)
     (h_sorts : sortBindings.map Prod.snd = tys.map (LMonoTy.substTyVars vt))
-    (h_wt : List.Forall₂ (LExpr.HasTypeA Δ_outer) (bindings.map Prod.snd) tys)
+    (h_wt : Strata.List.Forall₂ (LExpr.HasTypeA Δ_outer) (bindings.map Prod.snd) tys)
     (h_denotes : h_args = HList.cast h_sorts.symm
         (denoteArgs tcInterp opInterp fvarVal vt bvarVal_outer (bindings.map Prod.snd) tys h_wt))
     (h_annot : fvars_annotated_by (bindings.map Prod.fst |>.zip tys) body)
@@ -824,7 +824,7 @@ theorem substFvars_denote [DecidableEq T.IDMeta]
     {tys : List LMonoTy}
     (h_tys_len : tys.length = bindings.length)
     (h_sorts : sortBindings.map Prod.snd = tys.map (LMonoTy.substTyVars vt))
-    (h_wt : List.Forall₂ (LExpr.HasTypeA Δ_outer) (bindings.map Prod.snd) tys)
+    (h_wt : Strata.List.Forall₂ (LExpr.HasTypeA Δ_outer) (bindings.map Prod.snd) tys)
     (h_denotes : h_args = HList.cast h_sorts.symm
         (denoteArgs tcInterp opInterp fvarVal vt bvarVal_outer (bindings.map Prod.snd) tys h_wt))
     (h_annot : fvars_annotated_by (bindings.map Prod.fst |>.zip tys) body)
