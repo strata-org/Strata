@@ -109,6 +109,11 @@ class AgentBackend(ABC):
             self._messages = [BackendMessage(type="text", content=summary.strip())]
 
     @property
+    def model_name(self) -> str | None:
+        """The actual model being used by this backend (reported by the API)."""
+        return getattr(self, "_model_name", None)
+
+    @property
     def messages(self) -> list[BackendMessage]:
         """Recent messages from this session. Backend owns the message history.
         Returns whatever is available locally — may be empty on resume if the

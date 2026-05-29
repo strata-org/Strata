@@ -44,6 +44,7 @@ class ClaudeBackend(AgentBackend):
         self._session_id: str | None = None
         self._config: BackendConfig | None = None
         self._messages: list[BackendMessage] = []
+        self._model_name: str | None = None
 
     def _estimate_cost(self) -> float:
         # Opus pricing: $15/M input, $75/M output, $1.5/M cache read
@@ -173,6 +174,8 @@ class ClaudeBackend(AgentBackend):
             if isinstance(message, AssistantMessage):
                 if message.session_id:
                     self._session_id = message.session_id
+                if message.model and not self._model_name:
+                    self._model_name = message.model
                 for block in message.content:
                     if isinstance(block, TextBlock):
                         yield BackendMessage(type="text", content=block.text)

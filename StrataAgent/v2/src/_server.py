@@ -48,6 +48,7 @@ class AgentCreateRequest(BaseModel):
     prompt: str
     allowed_tools: list[str] = []
     disallowed_tools: list[str] = []
+    model: str | None = None
     max_turns: int | None = None
     max_budget_usd: float | None = None
     timeout_seconds: float | None = None
@@ -365,6 +366,15 @@ class SwarmDashboard:
                 "note": "Takes effect on next reconnect/resume. Current session has its own budget.",
             }
 
+        @self.app.post("/api/agents/{name}/interrupt")
+        async def interrupt_agent_api(name: str, body: dict[str, Any]) -> dict[str, str]:
+            """Interrupt an agent's current work via backend.interrupt() and send a message."""
+            message = body.get("message", "User interrupted. Stop and wait for instructions.")
+            if not self._swarm or name not in self._swarm._nodes:
+                return {"status": "error", "message": f"Agent '{name}' not found"}
+            await self._swarm.interrupt_agent(name, message)
+            return {"status": "ok", "agent": name}
+
         @self.app.get("/api/telemetry")
         async def get_telemetry() -> dict[str, Any]:
             """Return telemetry summary for all agents."""
@@ -418,7 +428,7 @@ class SwarmDashboard:
             """Return nudge evaluation history (fired, skipped, errors)."""
             if not self._swarm:
                 return {"history": [], "rules": []}
-            history = self._swarm._nudge_monitor.get_history(limit=200)
+            history = self._swarm._nudge_monitor.get_history(limit=50)
             rules = [
                 {"idx": i, "name": fn.__name__, "probability": prob, "cooldown_s": cd}
                 for i, (fn, prob, cd) in enumerate(self._swarm._nudge_monitor._rules)
@@ -639,6 +649,7 @@ class SwarmDashboard:
                 system_prompt=spec_req.system_prompt,
                 prompt=spec_req.prompt,
                 tools=tools,
+                model=spec_req.model,
                 max_turns=spec_req.max_turns,
                 max_budget_usd=spec_req.max_budget_usd,
                 timeout_seconds=spec_req.timeout_seconds,
@@ -755,6 +766,7 @@ class SwarmDashboard:
                 system_prompt=spec_req.system_prompt,
                 prompt=spec_req.prompt,
                 tools=tools,
+                model=spec_req.model,
                 max_turns=spec_req.max_turns,
                 max_budget_usd=spec_req.max_budget_usd,
                 timeout_seconds=spec_req.timeout_seconds,
@@ -817,6 +829,7 @@ class SwarmDashboard:
                     "cost_usd": result.cost_usd,
                     "num_turns": result.num_turns,
                     "halted_by": result.halted_by,
+                    "model": self._swarm._agent_models.get(name),
                 }
             for name, node in self._swarm._nodes.items():
                 spawned_by = getattr(node.spec, "_spawned_by", None)
@@ -842,7 +855,7 @@ class SwarmDashboard:
                                 except (ValueError, TypeError):
                                     pass
                                 break
-                    agents[name] = {"name": name, "status": status, "session_id": None, "cost_usd": last_cost, "spawned_by": spawned_by}
+                    agents[name] = {"name": name, "status": status, "session_id": None, "cost_usd": last_cost, "spawned_by": spawned_by, "model": self._swarm._agent_models.get(name)}
                 else:
                     if spawned_by:
                         agents[name]["spawned_by"] = spawned_by

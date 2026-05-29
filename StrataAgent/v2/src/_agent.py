@@ -109,6 +109,7 @@ class SwarmAgent(Generic[T]):
                 "mcp__agent_spawn__designate_successor",
                 "mcp__agent_spawn__interrupt_agent",
                 "mcp__agent_spawn__kill_agent",
+                "mcp__agent_spawn__my_workspace",
             ]
         if mcp_servers and "agent_directory" in mcp_servers:
             allowed_tools = allowed_tools + [
@@ -210,6 +211,11 @@ class SwarmAgent(Generic[T]):
             if not result.session_id and hasattr(self.backend, '_session_id') and self.backend._session_id:
                 result.session_id = self.backend._session_id
                 await self._emit("session_id", self.backend._session_id)
+
+            # Emit model_name as soon as backend reports it
+            if self.backend.model_name and not getattr(result, '_model_emitted', False):
+                await self._emit("model_name", self.backend.model_name)
+                result._model_emitted = True
 
             # Emit to UI
             if message.type == "text" and message.content:
@@ -415,18 +421,22 @@ class SwarmAgent(Generic[T]):
                 if result.halted_by != "completion" or self.cancellation.is_cancelled:
                     break
 
-                # Compact if context is large
+                # Context management: compact for stateless agents, handoff for super agents
                 logger.debug(f"[LOOP] {self.spec.name}: checking context usage...")
                 ctx_pct = await self.backend.get_context_percentage()
                 if ctx_pct is not None and ctx_pct >= 70.0:
-                    logger.info(f"[COMPACT] {self.spec.name}: context at {ctx_pct:.0f}%, compacting")
-                    await self._emit("message", f"[Compacting context ({ctx_pct:.0f}% used)...]")
-                    if self.backend.supports_compaction:
-                        await self.backend.compact()
+                    if self.spec.is_super_agent:
+                        logger.info(f"[CONTEXT] {self.spec.name}: context at {ctx_pct:.0f}% (super agent, no compact)")
+                        await self._emit("message", f"[Context at {ctx_pct:.0f}% — waiting for nudge to trigger handoff]")
                     else:
-                        await self.backend.compact_with_summary(
-                            backend_factory=self._backend_factory
-                        )
+                        logger.info(f"[COMPACT] {self.spec.name}: context at {ctx_pct:.0f}%, compacting")
+                        await self._emit("message", f"[Compacting context ({ctx_pct:.0f}% used)...]")
+                        if self.backend.supports_compaction:
+                            await self.backend.compact()
+                        else:
+                            await self.backend.compact_with_summary(
+                                backend_factory=self._backend_factory
+                            )
 
                 # Nudges handled by background NudgeMonitor (sends via channel)
 

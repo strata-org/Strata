@@ -119,6 +119,7 @@ header h1 { font-size: 18px; color: #4fc3f7; }
     <div class="controls">
       <button class="btn-pause" onclick="pauseAgent()">Pause</button>
       <button class="btn-resume" onclick="resumeAgent()">Resume</button>
+      <button style="background:#ff6f00;color:white;padding:6px 14px;border:none;border-radius:4px;cursor:pointer;font-size:12px;font-weight:600;" onclick="interruptAgent()">Interrupt</button>
       <button class="btn-cancel" onclick="cancelAgent()">Cancel</button>
       <select id="msg-target" style="padding:6px 8px;border:1px solid #0f3460;border-radius:4px;background:#1a1a2e;color:#e0e0e0;font-size:12px;min-width:120px;">
         <option value="">-- select target --</option>
@@ -331,7 +332,10 @@ function handleEvent(ev) {
 
 function render() {
   renderSidebar();
-  renderMessages();
+  // Only re-render messages for views that use the messages panel
+  if (currentView === 'agent' || currentView === 'chitchat' || currentView === 'spec' || currentView === 'history') {
+    renderMessages();
+  }
   updateTargetDropdown();
   document.getElementById('btn-start').disabled = isRunning || specs.length === 0;
 }
@@ -353,7 +357,7 @@ function renderSidebar() {
       </div>
     `).join('') || '';
     // Show saved swarms when no agents are loaded
-    if (specs.length === 0 && savedList.length > 0) {
+    if (!isRunning && savedList.length > 0) {
       el.innerHTML += `
         <div style="padding:12px 14px;border-bottom:1px solid #0f3460;">
           <div style="font-size:11px;color:#888;text-transform:uppercase;margin-bottom:8px;">Saved Swarms</div>
@@ -375,7 +379,7 @@ function renderSidebar() {
       return `
       <div class="agent-item ${a.name === selectedAgent ? 'active' : ''}" onclick="selectAgent('${escapeAttr(a.name)}')" ${a.spawned_by ? 'style="padding-left:28px;border-left:2px solid #455a64;"' : ''}>
         <div class="name">${escapeHtml(a.name)} <span class="badge badge-${a.status || 'pending'}">${a.status || 'pending'}</span>${subBadge}${pulse}</div>
-        <div class="meta">${formatCost(a)} ${a.num_turns ? a.num_turns + ' turns' : ''} ${a.halted_by && a.halted_by !== 'completion' ? '(' + a.halted_by + ')' : ''} <button onclick="event.stopPropagation();increaseBudget('${escapeAttr(a.name)}')" style="padding:1px 5px;border:none;border-radius:2px;background:#2e7d32;color:#c8e6c9;font-size:9px;cursor:pointer;margin-left:4px;">+$</button></div>
+        <div class="meta">${a.model ? '<span style="color:#ce93d8;font-size:9px;">' + a.model + '</span> ' : ''}${formatCost(a)} ${a.num_turns ? a.num_turns + ' turns' : ''} ${a.halted_by && a.halted_by !== 'completion' ? '(' + a.halted_by + ')' : ''} <button onclick="event.stopPropagation();increaseBudget('${escapeAttr(a.name)}')" style="padding:1px 5px;border:none;border-radius:2px;background:#2e7d32;color:#c8e6c9;font-size:9px;cursor:pointer;margin-left:4px;">+$</button></div>
       </div>`;
     }).join('');
   }
@@ -518,12 +522,13 @@ function switchView(v) {
   document.getElementById('tab-telemetry').classList.toggle('active', v==='telemetry');
   document.getElementById('tab-nudges').classList.toggle('active', v==='nudges');
   if (v === 'history') { fetchCheckpointList(); }
-  if (v === 'telemetry') { refreshTelemetry(); }
-  if (v === 'nudges') { refreshNudges(); }
-  renderMessages();
+  else if (v === 'telemetry') { refreshTelemetry(); }
+  else if (v === 'nudges') { refreshNudges(); }
+  else { renderMessages(); }
 }
 
 function refreshTelemetry() {
+  document.getElementById('messages').innerHTML = '<div class="empty">Loading telemetry...</div>';
   fetch('/api/telemetry')
     .then(r => r.json())
     .then(data => {
@@ -558,23 +563,30 @@ function refreshTelemetry() {
 }
 
 function refreshNudges() {
+  const el = document.getElementById('messages');
+  el.innerHTML = '<div class="empty">Loading nudge data...</div>';
   fetch('/api/nudges')
     .then(r => r.json())
     .then(data => {
-      const el = document.getElementById('messages');
+      let html = '<div style="padding:16px;font-family:monospace;font-size:11px;">';
+      html += '<h3 style="color:#4fc3f7;margin:0 0 8px;">Nudge Rules (' + (data.rules || []).length + ' loaded)</h3>';
+      if (!data.rules || !data.rules.length) {
+        html += '<div class="empty">No nudge rules loaded. Check nudge_module in YAML config.</div>';
+      } else {
+        html += '<table style="width:100%;border-collapse:collapse;color:#aaa;margin-bottom:16px;">';
+        html += '<tr style="border-bottom:1px solid #333;color:#888;"><th style="text-align:left;padding:4px;">#</th><th style="text-align:left;">Rule</th><th>Prob</th><th>Cooldown</th></tr>';
+        (data.rules || []).forEach(r => {
+          html += `<tr style="border-bottom:1px solid #222;"><td style="padding:4px;">${r.idx}</td><td>${r.name}</td><td style="text-align:center;">${(r.probability*100).toFixed(0)}%</td><td style="text-align:center;">${r.cooldown_s}s</td></tr>`;
+        });
+        html += '</table>';
+      }
+      html += '<h3 style="color:#4fc3f7;margin:0 0 8px;">Recent Activity (newest first)</h3>';
       if (!data.history || !data.history.length) {
-        el.innerHTML = '<div class="empty">No nudge activity yet. Rules will evaluate once agents are running.</div>';
+        html += '<div style="color:#666;padding:8px;">No nudges fired yet. Rules evaluate every 30s once agents are running.</div>';
+        html += '</div>';
+        el.innerHTML = html;
         return;
       }
-      let html = '<div style="padding:16px;font-family:monospace;font-size:11px;">';
-      html += '<h3 style="color:#4fc3f7;margin:0 0 8px;">Nudge Rules</h3>';
-      html += '<table style="width:100%;border-collapse:collapse;color:#aaa;margin-bottom:16px;">';
-      html += '<tr style="border-bottom:1px solid #333;color:#888;"><th style="text-align:left;padding:4px;">#</th><th style="text-align:left;">Rule</th><th>Prob</th><th>Cooldown</th></tr>';
-      (data.rules || []).forEach(r => {
-        html += `<tr style="border-bottom:1px solid #222;"><td style="padding:4px;">${r.idx}</td><td>${r.name}</td><td style="text-align:center;">${(r.probability*100).toFixed(0)}%</td><td style="text-align:center;">${r.cooldown_s}s</td></tr>`;
-      });
-      html += '</table>';
-      html += '<h3 style="color:#4fc3f7;margin:0 0 8px;">Recent Activity (newest first)</h3>';
       html += '<table style="width:100%;border-collapse:collapse;color:#ccc;">';
       html += '<tr style="border-bottom:1px solid #333;color:#888;"><th style="text-align:left;padding:4px;">Time</th><th>Agent</th><th>Rule</th><th>Outcome</th><th>Detail</th></tr>';
       data.history.slice().reverse().forEach(h => {
@@ -668,6 +680,18 @@ function editAgent(name) {
 // Agent controls
 function pauseAgent() { if (selectedAgent) wsSend({ action: 'pause', agent: selectedAgent }); }
 function resumeAgent() { if (selectedAgent) wsSend({ action: 'resume', agent: selectedAgent }); }
+function interruptAgent() {
+  if (!selectedAgent) return;
+  const msg = prompt(`Interrupt "${selectedAgent}" with message (or leave empty to just stop):`, '');
+  if (msg === null) return;  // cancelled
+  fetch(`/api/agents/${encodeURIComponent(selectedAgent)}/interrupt`, {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({message: msg || 'User interrupted. Stop what you are doing and wait for new instructions.'})
+  }).then(r => r.json()).then(d => {
+    if (d.status === 'ok') alert(`${selectedAgent} interrupted.`);
+    else alert(d.message || 'Failed');
+  });
+}
 function cancelAgent() { if (selectedAgent) wsSend({ action: 'cancel_agent', agent: selectedAgent }); }
 function sendMessage() {
   const input = document.getElementById('msg-input');

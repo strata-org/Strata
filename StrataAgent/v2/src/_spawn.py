@@ -69,31 +69,40 @@ def create_spawn_server(
                     "type": "string",
                     "description": "Unique name for the sub-agent.",
                 },
-                "file": {
+                "folder": {
                     "type": "string",
                     "description": (
-                        "Filename (not path) for the child to work on. "
-                        "Resolved against parent's workspace write paths."
+                        "Folder name for the child's workspace. Relative to YOUR "
+                        "workspace directory. The child gets full read/write/edit "
+                        "access to this subfolder."
                     ),
                 },
                 "system_prompt": {
                     "type": "string",
-                    "description": "System prompt describing the sub-agent's role and collaborators.",
+                    "description": "System prompt describing the sub-agent's role.",
                 },
                 "prompt": {
                     "type": "string",
                     "description": "The task prompt for the sub-agent.",
                 },
+                "recursive": {
+                    "type": "boolean",
+                    "description": (
+                        "If true, child is a SuperAgent that can spawn its own "
+                        "sub-agents within its folder. Default: false."
+                    ),
+                },
             },
-            "required": ["name", "file", "system_prompt", "prompt"],
+            "required": ["name", "folder", "system_prompt", "prompt"],
         },
     )
     async def spawn_agent(input: dict[str, Any]) -> dict[str, Any]:
         name = input["name"]
-        filename = input["file"]
+        folder_name = input["folder"]
         system_prompt = input["system_prompt"]
         prompt = input["prompt"]
-        # Inherit budget/turns/timeout from parent — sub-agents can't set their own
+        recursive = input.get("recursive", False)
+        # Inherit budget/turns/timeout from parent
         max_budget = parent_spec.max_budget_usd
         max_turns = parent_spec.max_turns
         timeout = parent_spec.timeout_seconds
@@ -102,47 +111,51 @@ def create_spawn_server(
         if name in swarm._nodes:
             return {"content": [{"type": "text", "text": f"ERROR: Agent '{name}' already exists."}]}
 
-        # --- Permission narrowing: resolve file against parent's workspace ---
+        # --- Workspace scoping: child gets a subdirectory of parent's workspace ---
         workspace = parent_spec.workspace
         if not workspace or not workspace.write:
             return {"content": [{"type": "text", "text": (
-                "ERROR: Parent has no workspace write paths configured. "
-                "Cannot resolve file for child agent."
+                "ERROR: Parent has no workspace write paths configured."
             )}]}
 
-        # Infer root directory from the first write path pattern
         write_root = _infer_directory(workspace.write[0])
-        child_path = f"{write_root}/{filename}"
+        child_dir = f"{write_root}/{folder_name}"
 
-        # Resolve to absolute path for validation
+        # Create the subdirectory
         base_dir = Path.cwd()
-        resolved = base_dir / child_path
-        if not resolved.exists():
-            return {"content": [{"type": "text", "text": (
-                f"ERROR: File '{child_path}' does not exist. "
-                f"Write it first before spawning a child to work on it."
-            )}]}
+        (base_dir / child_dir).mkdir(parents=True, exist_ok=True)
 
-        # Build narrowed permissions — child gets ONLY its one file
+        # Child workspace: full access to its subdirectory + read parent's workspace
+        from ._types import Workspace
+        child_workspace = Workspace(
+            read=[f"{child_dir}/**", f"{write_root}/**"],
+            write=[f"{child_dir}/**"],
+            edit=[f"{child_dir}/**"],
+        )
+
         child_tools = ToolSet()
-        child_tools.allow(f"Read({child_path})")
-        child_tools.allow(f"Edit({child_path})")
-        # Block escape routes — but NOT generic Read (that would override the specific allow)
-        child_tools.disallow("Bash")
-        child_tools.disallow("Grep")
-        child_tools.disallow("Glob")
-        child_tools.disallow("Write")
+        child_tools.allow(f"Read({child_dir}/**)")
+        child_tools.allow(f"Read({write_root}/**)")
+        child_tools.allow(f"Write({child_dir}/**)")
+        child_tools.allow(f"Edit({child_dir}/**)")
+        # Inherit all disallowed tools from parent
+        if parent_spec.tools and parent_spec.tools.disallowed:
+            for d in parent_spec.tools.disallowed:
+                child_tools.disallow(d)
 
-        child_allowed = [t.to_claude_format() for t in child_tools.allowed]
-
-        # Build child's system prompt: prefix (framework-controlled) + file path + parent's suffix
+        # Build child's system prompt
         child_system_prompt = ""
         if parent_spec.child_prefix:
             child_system_prompt += parent_spec.child_prefix + "\n\n"
-        child_system_prompt += f"Your file: {child_path}\n\n"
-        child_system_prompt += system_prompt  # parent's suffix
+        child_system_prompt += f"Your workspace: {child_dir}/\n"
+        child_system_prompt += f"Create and edit files freely in this folder.\n"
+        if recursive:
+            child_system_prompt += f"You are a SuperAgent (recursive=true). You can spawn sub-agents and call designate_successor.\n"
+        else:
+            child_system_prompt += f"You are a leaf agent (recursive=false). You cannot spawn sub-agents or call designate_successor.\n"
+        child_system_prompt += f"When done, report result file path to your parent.\n\n"
+        child_system_prompt += system_prompt
 
-        # Create child spec — workspace=None prevents further spawning
         child_spec = AgentSpec(
             name=name,
             system_prompt=child_system_prompt,
@@ -151,8 +164,9 @@ def create_spawn_server(
             max_turns=max_turns,
             max_budget_usd=max_budget,
             timeout_seconds=timeout,
-            is_super_agent=False,
-            workspace=None,
+            is_super_agent=recursive,
+            workspace=child_workspace if recursive else None,
+            child_prefix=parent_spec.child_prefix if recursive else None,
         )
         # Tag as spawned (for UI display, not saved)
         child_spec._spawned_by = parent_name  # type: ignore[attr-defined]
@@ -195,10 +209,12 @@ def create_spawn_server(
         task = asyncio.create_task(run_child(), name=f"swarm:{name}")
         swarm._tasks[name] = task
 
+        budget_str = f"${max_budget}" if max_budget is not None else "unlimited"
+        turns_str = str(max_turns) if max_turns is not None else "unlimited"
         return {"content": [{"type": "text", "text": (
             f"Sub-agent '{name}' spawned successfully. "
             f"It is now running and you can communicate with it via send_message. "
-            f"Tools: {child_allowed}, Budget: ${max_budget}, Turns: {max_turns}"
+            f"Workspace: {child_dir}/, Budget: {budget_str}, Turns: {turns_str}"
         )}]}
 
     @tool(
@@ -313,45 +329,55 @@ def create_spawn_server(
     @tool(
         name="designate_successor",
         description=(
-            "Hand off to a fresh agent instance. Write a handoff file first, "
-            "then call this. Your current session will end and a new agent "
-            "with fresh context will take your place under the same name."
+            "Hand off to a fresh agent instance. Write a handoff file in your workspace "
+            "first (e.g., 'handoff.md'), then call this with just the filename. "
+            "Your session ends and a successor starts with fresh context, automatically "
+            "instructed to read your handoff file before doing anything else."
         ),
         input_schema={
             "type": "object",
             "properties": {
                 "handoff_file": {
                     "type": "string",
-                    "description": "Path to handoff file containing context for successor.",
-                },
-                "system_prompt": {
-                    "type": "string",
-                    "description": "System prompt for the successor (usually same as yours).",
-                },
-                "prompt": {
-                    "type": "string",
-                    "description": "Initial task for successor (e.g., 'Read handoff file and continue').",
+                    "description": (
+                        "Filename of handoff notes in your workspace (e.g., 'handoff.md'). "
+                        "Must already exist. Write it with the Write tool before calling this."
+                    ),
                 },
             },
-            "required": ["handoff_file", "system_prompt", "prompt"],
+            "required": ["handoff_file"],
         },
     )
     async def designate_successor(input: dict[str, Any]) -> dict[str, Any]:
-        handoff_file = input["handoff_file"]
-        system_prompt = input["system_prompt"]
-        prompt = input["prompt"]
+        handoff_filename = input["handoff_file"]
 
-        # Validate handoff file exists
-        if not Path(handoff_file).exists():
+        # Resolve handoff file path within workspace
+        workspace = parent_spec.workspace
+        if workspace and workspace.write:
+            write_root = _infer_directory(workspace.write[0])
+            handoff_path = Path.cwd() / write_root / handoff_filename
+        else:
+            handoff_path = Path.cwd() / handoff_filename
+
+        if not handoff_path.exists():
             return {"content": [{"type": "text", "text": (
-                "ERROR: Handoff file does not exist. Write it first before designating a successor."
+                f"ERROR: Handoff file '{handoff_path}' does not exist. "
+                f"Write it first (in your workspace) before calling designate_successor."
             )}]}
 
-        # Build successor spec inheriting parent's configuration
+        # Successor inherits everything; prompt tells it to read handoff first
+        relative_handoff = str(handoff_path.relative_to(Path.cwd()))
+        successor_prompt = (
+            f"You are resuming work from a previous instance. "
+            f"FIRST: Read the handoff file at '{relative_handoff}' — it contains "
+            f"what's been done, what's left, what approaches worked/failed, and your next steps. "
+            f"Read it before doing anything else, then continue the work described there."
+        )
+
         successor_spec = AgentSpec(
             name=f"__{parent_name}_successor",
-            system_prompt=system_prompt,
-            prompt=prompt,
+            system_prompt=parent_spec.system_prompt,
+            prompt=successor_prompt,
             tools=parent_spec.tools,
             workspace=parent_spec.workspace,
             is_super_agent=parent_spec.is_super_agent,
@@ -360,14 +386,13 @@ def create_spawn_server(
             visibility=parent_spec.visibility,
         )
 
-        # Register in swarm for atomic swap (Task #11)
         swarm._pending_successions[parent_name] = successor_spec
 
-        logger.info(f"[SUCCESSION] {parent_name}: successor registered (handoff={handoff_file})")
+        logger.info(f"[SUCCESSION] {parent_name}: successor registered (handoff={relative_handoff})")
 
         return {"content": [{"type": "text", "text": (
-            "Successor registered. Your session will end after this turn. "
-            "The successor will start with fresh context and read your handoff file."
+            f"Successor registered. Your session will end after this turn. "
+            f"The successor will start fresh and read '{relative_handoff}' automatically."
         )}]}
 
     @tool(
@@ -523,12 +548,37 @@ def create_spawn_server(
 
         # Remove from nudge monitor tracking
         swarm._nudge_monitor._agents.discard(target)
+        swarm._nudge_monitor._super_agents.discard(target)
+        swarm._nudge_monitor._reply_only_agents.discard(target)
+        swarm._nudge_monitor._agent_token_usage.pop(target, None)
+
+        # Remove from swarm state tracking
+        swarm._agent_start_times.pop(target, None)
+        swarm._agent_backends.pop(target, None)
+        swarm._live_costs.pop(target, None)
 
         logger.info(f"[KILL] {parent_name} killed sub-agent '{target}'")
         return {"content": [{"type": "text", "text": f"Agent '{target}' killed and removed."}]}
 
+    @tool(
+        name="my_workspace",
+        description="View your workspace directory path and permissions.",
+        input_schema={"type": "object", "properties": {}, "required": []},
+    )
+    async def my_workspace(input: dict[str, Any]) -> dict[str, Any]:
+        ws = parent_spec.workspace
+        if not ws:
+            return {"content": [{"type": "text", "text": "No workspace configured."}]}
+        info = (
+            f"Workspace:\n"
+            f"  Read:  {ws.read}\n"
+            f"  Write: {ws.write}\n"
+            f"  Edit:  {ws.edit}\n"
+        )
+        return {"content": [{"type": "text", "text": info}]}
+
     return create_sdk_mcp_server(
         name="agent_spawn",
         version="1.0.0",
-        tools=[spawn_agent, check_sub_agents, sleep_tool, broadcast, interrupt_agent, designate_successor, kill_agent],
+        tools=[spawn_agent, check_sub_agents, sleep_tool, broadcast, interrupt_agent, designate_successor, kill_agent, my_workspace],
     )

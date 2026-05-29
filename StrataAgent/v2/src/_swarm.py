@@ -73,6 +73,11 @@ class Swarm:
             check_interval=30.0,
         )
         self._live_session_ids: dict[str, str] = {}
+        self._agent_models: dict[str, str] = {}
+        self._agent_backends: dict[str, Any] = {}  # name -> backend instance (for interrupt)
+        self._agent_affinities: dict[tuple[str, str], str] = {}  # (sender, logical_name) -> physical instance
+        self._agent_start_times: dict[str, Any] = {}  # name -> datetime when agent started
+        self._live_costs: dict[str, float] = {}  # name -> cost_usd (updated on cost events)
         self._checkpoint_manager: CheckpointManager | None = None
         if checkpoint_dir:
             self._checkpoint_manager = CheckpointManager(self, Path(checkpoint_dir))
@@ -128,6 +133,17 @@ class Swarm:
         # Track session IDs as they're emitted by agents
         if event.event_type == "session_id" and event.data:
             self._live_session_ids[event.agent_name] = str(event.data)
+
+        # Track model names as they're reported by backends
+        if event.event_type == "model_name" and event.data:
+            self._agent_models[event.agent_name] = str(event.data)
+
+        # Track live costs as they're reported
+        if event.event_type in ("cost_update", "cost_estimate") and event.data:
+            try:
+                self._live_costs[event.agent_name] = float(event.data)
+            except (ValueError, TypeError):
+                pass
 
         # Record telemetry from agent events
         if event.event_type == "tool_use" and event.data:
@@ -194,6 +210,18 @@ class Swarm:
         self._nodes[spec.name] = node
         self._pause_tokens[spec.name] = PauseToken()
         return self
+
+    async def interrupt_agent(self, agent_name: str, message: str) -> bool:
+        """Interrupt an agent's backend and send it a message. Returns True if successful."""
+        backend = self._agent_backends.get(agent_name)
+        if backend:
+            try:
+                await backend.interrupt()
+            except Exception:
+                pass
+        # Send the interrupt message to the agent's channel
+        await self.send_to_agent(agent_name, sender="user", payload=f"[INTERRUPT]: {message}")
+        return True
 
     def cancel(self) -> None:
         self._cancellation.cancel()
@@ -288,6 +316,12 @@ class Swarm:
             if parent_name in visible_set:
                 visible_set.add(child_name)
 
+        # Register spawned agent with nudge monitor
+        self._nudge_monitor._agents.add(child_name)
+        node = self._nodes.get(child_name)
+        if node and node.spec.is_super_agent:
+            self._nudge_monitor._super_agents.add(child_name)
+
     def _build_roster(self, agent_name: str) -> str:
         """Generate a collaborator roster for restricted agents.
 
@@ -337,11 +371,21 @@ class Swarm:
             return True
         return recipient in self._visibility_graph.get(sender, set())
 
-    def _route_message(self, logical_name: str, message: str) -> str:
-        """Resolve logical agent name to physical instance for sharded agents."""
+    def _route_message(self, logical_name: str, message: str, sender: str = "") -> str:
+        """Resolve logical agent name to physical instance for sharded agents.
+        Uses affinity: if sender has talked to this service before, route to same instance."""
         if logical_name not in self._sharded_agents:
             return logical_name
+
         shard = self._sharded_agents[logical_name]
+
+        # Affinity: if sender already has a binding, use it
+        if sender:
+            affinity_key = (sender, logical_name)
+            if affinity_key in self._agent_affinities:
+                return self._agent_affinities[affinity_key]
+
+        # No affinity — route normally
         if shard.routing == "hash":
             key = self._extract_routing_key(message, shard.routing_key)
             idx = hash(key) % shard.replicas
@@ -350,7 +394,14 @@ class Swarm:
             self._shard_counters[logical_name] = (idx + 1) % shard.replicas
         else:
             idx = 0
-        return f"{logical_name}_{idx}"
+
+        physical = f"{logical_name}_{idx}"
+
+        # Establish affinity for this sender → this instance
+        if sender:
+            self._agent_affinities[(sender, logical_name)] = physical
+
+        return physical
 
     def _extract_routing_key(self, message: str, key_name: str | None) -> str:
         """Extract routing key from message for hash-based routing."""
@@ -410,12 +461,23 @@ class Swarm:
         render_vars["context"] = await self._context.snapshot()
 
         backend = self._backend_factory()
+        self._agent_backends[name] = backend
 
         mcp_servers: dict[str, Any] | None = None
         combined_system_prompt: str | None = None
 
         if self._enable_messaging:
             other_agents = [n for n in self._nodes if n != name]
+            # Service agents = reply_only agents (by logical name)
+            service_agents = {
+                n for n, nd in self._nodes.items()
+                if nd.spec.reply_only
+            } | set(self._sharded_agents.keys())
+
+            from datetime import datetime as _dt
+            agent_start_time = _dt.now()
+            self._agent_start_times[name] = agent_start_time
+
             messaging_server = create_messaging_server(
                 agent_name=name,
                 channel_bus=self._channel_bus,
@@ -425,6 +487,8 @@ class Swarm:
                 get_sender_display=self._get_sender_display,
                 on_tool_call=self._record_tool_call,
                 reply_only_mode=node.spec.reply_only,
+                known_service_agents=service_agents,
+                start_time=agent_start_time,
             )
             mcp_servers = dict(node.spec.mcp_servers)
             mcp_servers["agent_messaging"] = messaging_server
@@ -496,21 +560,47 @@ class Swarm:
                     swarm=self,
                 )
                 mcp_servers["agent_spawn"] = spawn_server
+
+                # Build workspace info for the prompt
+                ws_info = ""
+                if node.spec.workspace:
+                    ws = node.spec.workspace
+                    ws_info = (
+                        f"\n\n=== YOUR WORKSPACE ===\n"
+                        f"Read:  {ws.read}\n"
+                        f"Write: {ws.write}\n"
+                        f"Edit:  {ws.edit}\n"
+                        f"If you have file access issues, call my_workspace to check your permissions.\n"
+                        f"======================"
+                    )
+
                 messaging_suffix += (
                     f"\n\n=== SUPER AGENT ===\n"
                     f"You are a SuperAgent. You can spawn sub-agents using:\n"
-                    f"- spawn_agent(name, system_prompt, prompt, max_budget_usd, max_turns, timeout_seconds)\n"
-                    f"- sleep(seconds): Sleep for 5-300 seconds. Use this to control your polling interval. "
-                    f"Sleep longer (60-120s) when sub-agents need time, shorter (10-15s) when expecting results soon.\n\n"
-                    f"Sub-agents inherit your exact tool permissions. "
-                    f"You set their name, system prompt, task prompt, and budget (<= yours). "
-                    f"They join the swarm and can communicate via messaging.\n"
-                    f"You will be nudged every 30s if idle. Use sleep() to override this interval.\n"
+                    f"- spawn_agent(name, folder, system_prompt, prompt, recursive=false)\n"
+                    f"  folder: subdirectory name relative to YOUR workspace.\n"
+                    f"  recursive=true: child can spawn its own sub-agents.\n"
+                    f"- my_workspace(): View your workspace paths and permissions.\n"
+                    f"- sleep(seconds): Sleep 5-300s while waiting for sub-agents.\n"
+                    f"- kill_agent(name): Kill a sub-agent you own.\n"
+                    f"- interrupt_agent(name, message): Interrupt and redirect a sub-agent.\n\n"
+                    f"Sub-agents get their own workspace subfolder. They can create files freely.\n"
+                    f"They can talk to SearchAgent, ProofValidator, CEA, LemmaProposer directly.\n"
                     f"==================="
+                    f"{ws_info}"
                 )
 
             # Append collaborator roster for restricted agents
             messaging_suffix += self._build_roster(name)
+
+            # Inject start time so agent knows when it began
+            start_ts = agent_start_time.strftime("%Y-%m-%d %H:%M:%S")
+            messaging_suffix += (
+                f"\n\n=== TIMING ===\n"
+                f"You started at: {start_ts}\n"
+                f"Use get_time() to check elapsed time at any point.\n"
+                f"==============="
+            )
 
             combined_system_prompt = node.spec.system_prompt + messaging_suffix
         else:
@@ -581,6 +671,11 @@ class Swarm:
                 self._nudge_monitor._super_agents.add(name)
             if node.spec.reply_only:
                 self._nudge_monitor._reply_only_agents.add(name)
+        # Give nudge monitor live references to swarm state
+        self._nudge_monitor._visibility_graph = self._visibility_graph
+        self._nudge_monitor._agent_start_times = self._agent_start_times
+        self._nudge_monitor._agent_costs = self._live_costs
+        self._nudge_monitor._agent_backends = self._agent_backends
         self._nudge_monitor.start()
         logger.info(f"[SWARM] Visibility graph built. Starting agents...")
 

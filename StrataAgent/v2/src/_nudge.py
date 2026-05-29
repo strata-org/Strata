@@ -93,18 +93,27 @@ class NudgeMonitor:
         self._task: asyncio.Task | None = None
         self._history: list[dict[str, Any]] = []  # nudge evaluation history
         self._max_history: int = 500
+        # External state refs — set by swarm after construction
+        self._visibility_graph: dict[str, set[str]] | None = None
+        self._agent_costs: dict[str, float] | None = None  # name -> cost_usd so far
+        self._agent_start_times: dict[str, Any] | None = None  # name -> datetime
+        self._agent_backends: dict[str, Any] | None = None  # name -> backend (for token queries)
+        self._agent_token_usage: dict[str, float] = {}  # name -> context % (cached from async poll)
 
         if module_name:
+            last_error = None
             for candidate in [module_name, f"swarm_nudges.{module_name}"]:
                 try:
                     mod = importlib.import_module(candidate)
                     self._rules = mod.RULES
                     logger.info(f"Loaded {len(self._rules)} nudge rules from {candidate}")
                     break
-                except ImportError:
+                except Exception as e:
+                    last_error = e
+                    logger.debug(f"Failed to import nudge module '{candidate}': {e}")
                     continue
             else:
-                logger.warning(f"Could not load nudge module '{module_name}'")
+                logger.warning(f"Could not load nudge module '{module_name}': {last_error}")
 
     @property
     def rules_loaded(self) -> int:
@@ -135,6 +144,16 @@ class NudgeMonitor:
         if not self._rules or not self._channel_bus:
             return
 
+        # Poll token usage from backends (async, cached for this cycle)
+        if self._agent_backends:
+            for name, backend in self._agent_backends.items():
+                try:
+                    pct = await backend.get_context_percentage()
+                    if pct is not None:
+                        self._agent_token_usage[name] = pct
+                except Exception:
+                    pass
+
         now = time.time()
         for agent_name in list(self._agents):
             tip = self._evaluate_agent(agent_name, now)
@@ -147,6 +166,14 @@ class NudgeMonitor:
 
     def _evaluate_agent(self, agent_name: str, now: float) -> str | None:
         """Evaluate all rules for one agent. Returns tip or None."""
+        cost = self._agent_costs.get(agent_name) if self._agent_costs else None
+        start_ts = None
+        if self._agent_start_times and agent_name in self._agent_start_times:
+            dt = self._agent_start_times[agent_name]
+            start_ts = dt.timestamp() if hasattr(dt, "timestamp") else None
+        visible = self._visibility_graph.get(agent_name) if self._visibility_graph else None
+        context_pct = self._agent_token_usage.get(agent_name)
+
         view = TelemetryView(
             agent=agent_name,
             stream=self._telemetry,
@@ -154,6 +181,10 @@ class NudgeMonitor:
             is_reply_only=agent_name in self._reply_only_agents,
             pending_tracker=self.pending,
             window_start=self._last_nudge_time.get(agent_name, 0),
+            cost_usd=cost,
+            start_time=start_ts,
+            visible_agents=visible,
+            context_percentage=context_pct,
         )
 
         for i, (rule_fn, prob, cooldown_seconds) in enumerate(self._rules):

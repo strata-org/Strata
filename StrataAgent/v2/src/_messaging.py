@@ -23,10 +23,12 @@ def create_messaging_server(
     channel_bus: ChannelBus,
     known_agents: list[str],
     can_message: Callable[[str, str], bool] | None = None,
-    route_message: Callable[[str, str], str] | None = None,
+    route_message: Callable[[str, str, str], str] | None = None,
     get_sender_display: Callable[[str], str] | None = None,
     on_tool_call: Callable[[str, str, dict], None] | None = None,
     reply_only_mode: bool = False,
+    known_service_agents: set[str] | None = None,
+    start_time: datetime | None = None,
 ):
     """
     Create an MCP server exposing send_message and check_messages tools
@@ -67,7 +69,10 @@ def create_messaging_server(
                 "It cannot be responded to. Ignore its messages or act on the advice."}]}
 
         # reply_only enforcement: can only send to agents in pending_replies (FIFO)
-        if reply_only_mode:
+        # EXCEPTION: messages to other reply_only (service) agents are "research queries"
+        # and bypass the FIFO check. This lets reply_only agents consult each other.
+        is_research_query = recipient in known_service_agents if known_service_agents else False
+        if reply_only_mode and not is_research_query:
             if not pending_replies:
                 return {"content": [{"type": "text", "text":
                     "ERROR: You are reply-only. No one has asked you anything yet. "
@@ -90,7 +95,7 @@ def create_messaging_server(
         # Rewrite sender name for sharded instances (transparent to recipient)
         sender_display = get_sender_display(agent_name) if get_sender_display else agent_name
         # Route to physical instance if sharded (transparent to sender)
-        physical_recipient = route_message(recipient, message) if route_message else recipient
+        physical_recipient = route_message(recipient, message, agent_name) if route_message else recipient
         messages_channel = f"{physical_recipient}:messages"
         await channel_bus.send_to(messages_channel, sender=sender_display, payload=message)
 
@@ -166,18 +171,20 @@ def create_messaging_server(
 
         recipient = pending_replies.pop(0)
         sender_display = get_sender_display(agent_name) if get_sender_display else agent_name
-        physical_recipient = route_message(recipient, message) if route_message else recipient
+        physical_recipient = route_message(recipient, message, agent_name) if route_message else recipient
         messages_channel = f"{physical_recipient}:messages"
         await channel_bus.send_to(messages_channel, sender=sender_display, payload=message)
         if on_tool_call:
             on_tool_call(agent_name, "send_message", {"to": recipient})
         return {"content": [{"type": "text", "text": f"Reply sent to '{recipient}' successfully."}]}
 
+    _start_time = start_time or datetime.now()
+
     @tool(
         name="get_time",
         description=(
-            "Get the current time. Use this to track how long operations take "
-            "or to include timestamps in your messages."
+            "Get the current date/time and how long you have been running. "
+            "Use this to track elapsed time and manage your time budget."
         ),
         input_schema={
             "type": "object",
@@ -187,7 +194,14 @@ def create_messaging_server(
     )
     async def get_time(input: dict[str, Any]) -> dict[str, Any]:
         now = datetime.now()
-        return {"content": [{"type": "text", "text": now.strftime("%Y-%m-%d %H:%M:%S")}]}
+        elapsed = now - _start_time
+        elapsed_mins = int(elapsed.total_seconds() // 60)
+        elapsed_secs = int(elapsed.total_seconds() % 60)
+        return {"content": [{"type": "text", "text": (
+            f"Current time: {now.strftime('%Y-%m-%d %H:%M:%S')}\n"
+            f"Started at:   {_start_time.strftime('%Y-%m-%d %H:%M:%S')}\n"
+            f"Elapsed:      {elapsed_mins}m {elapsed_secs}s"
+        )}]}
 
     server = create_sdk_mcp_server(
         name="agent_messaging",

@@ -67,16 +67,45 @@ class TelemetryView:
 
     def __init__(self, agent: str, stream: TelemetryStream, is_super: bool = False,
                  is_reply_only: bool = False, pending_tracker: Any = None,
-                 window_start: float = 0):
+                 window_start: float = 0, cost_usd: float | None = None,
+                 start_time: float | None = None,
+                 visible_agents: set[str] | None = None,
+                 context_percentage: float | None = None):
         self._agent = agent
         self._stream = stream
         self._is_super = is_super
         self._is_reply_only = is_reply_only
         self._pending_tracker = pending_tracker
         self._window_start = window_start  # only consider events after this timestamp
+        self._cost_usd = cost_usd
+        self._start_time = start_time  # epoch seconds when agent started
+        self._visible_agents = visible_agents  # who this agent can see
+        self._context_percentage = context_percentage  # 0-100, how full context window is
 
     def agent_is_super(self) -> bool:
         return self._is_super
+
+    def agent_cost_usd(self) -> float | None:
+        """Current cost in USD for this agent, or None if unknown."""
+        return self._cost_usd
+
+    def agent_elapsed_seconds(self) -> float:
+        """Seconds since this agent started running."""
+        if self._start_time:
+            return time.time() - self._start_time
+        return 0.0
+
+    def agent_elapsed_minutes(self) -> float:
+        """Minutes since this agent started running."""
+        return self.agent_elapsed_seconds() / 60.0
+
+    def visible_agents(self) -> set[str]:
+        """Set of agent names this agent can communicate with."""
+        return self._visible_agents or set()
+
+    def context_percentage(self) -> float | None:
+        """How full the agent's context window is (0-100), or None if unknown."""
+        return self._context_percentage
 
     # --- Pending replies (from NudgeMonitor's PendingRepliesTracker) ---
 
