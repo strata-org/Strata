@@ -361,7 +361,7 @@ private def parseFloatString (s : String) : Option Decimal := do
     some { mantissa, exponent := sciExp }
   | _ => none
 
-def floatToAny (d : Decimal) := call "from_float" [mkNode (StmtExpr.LiteralDecimal d)]
+def floatToAny (d : Decimal) := call "from_float" [litDecimal d]
 def Any_to_bool (b: StmtExprMd) : TypedExpr .TBool :=
   Typed.call "Any_to_bool" [b] _
 
@@ -1259,7 +1259,7 @@ partial def translateCall (ctx : TranslationContext)
           [dictExpr, litStr arg.name]
         let val := DictStrAny_get_param trans_dict arg.name true
         let checks := arg.typeTesters.map fun callee =>
-          mkNode (.StaticCall (mkId callee) [val])
+          call callee [val]
         let isCorrectType := createBoolOrExpr checks.toList
         let cond := primOp .Implies [keyPresent, isCorrectType]
         typeAsserts := typeAsserts.push (mkNode (.Assert { condition := cond }))
@@ -1317,11 +1317,12 @@ def extractMultiOutputCalls (ctx : TranslationContext) (e : StmtExprMd)
       set (n + 1)
       let varName := s!"$mo_{n}"
       let varDecl := localVar varName AnyTy (some AnyNone)
-      let assign := mkNode (StmtExpr.Assign
-        [mkVarNode (.Local varName), maybeExceptVar]
-        (mkNode (.StaticCall callee args) (source := e.source))) (source := e.source)
-      let varRef := mkNode (StmtExpr.Var (.Local varName)) (source := e.source)
-      return ([varDecl, assign], varRef)
+      let assignStmt := assign
+        [freeVar varName e.source, maybeExceptVar]
+        (call callee.text args (source := e.source))
+        (source := e.source)
+      let varRef := ident varName (source := e.source)
+      return ([varDecl, assignStmt], varRef)
     else
       -- Recurse into arguments
       let results ← args.attach.mapM fun ⟨arg, _⟩ => extractMultiOutputCalls ctx arg
@@ -1956,8 +1957,8 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
           setupStmts := setupStmts ++ [mgrDecl, enterCall]
         cleanupStmts := cleanupStmts ++ [exitCall]
     let (bodyCtx, bodyStmts) ← translateStmtList currentCtx body.val.toList
-    let block := block (setupStmts ++ bodyStmts ++ cleanupStmts) none (source := md)
-    return (bodyCtx, [block])
+    let blk := block (setupStmts ++ bodyStmts ++ cleanupStmts) none (source := md)
+    return (bodyCtx, [blk])
 
   -- For loop is translated into a while loop:
   -- for x in iter : \n body
@@ -2233,7 +2234,7 @@ def paramInputPrefix : String := "$in_"
 def getTypeConstraint (var : String) (source : Option FileRange) (testers : Array String)
     (funcname : String) (displayName : String := var) : Option Condition :=
   let constraints := testers.toList.map fun callee =>
-    mkNode (.StaticCall (mkId callee) [ident var])
+    call callee [ident var]
   if constraints.isEmpty then none else
     some { condition := { createBoolOrExpr constraints with source := source },
            summary := some $ "(" ++ funcname ++ " requires) Type constraint of " ++ displayName }

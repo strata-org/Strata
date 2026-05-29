@@ -58,6 +58,8 @@ def litStr (s : String) (source : Option FileRange := none) : StmtExprMd :=
   mkNode (.LiteralString s) source
 def litBool (b : Bool) (source : Option FileRange := none) : StmtExprMd :=
   mkNode (.LiteralBool b) source
+def litDecimal (d : Decimal) (source : Option FileRange := none) : StmtExprMd :=
+  mkNode (.LiteralDecimal d) source
 def ident (name : Identifier) (source : Option FileRange := none) : StmtExprMd :=
   mkNode (.Var (.Local name)) source
 def fieldSelect (obj : StmtExprMd) (field : Identifier) (source : Option FileRange := none) : StmtExprMd :=

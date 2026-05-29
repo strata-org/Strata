@@ -221,7 +221,7 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
       return litInt n (source := src)
     | q`Laurel.real, #[arg0] =>
       let d ← translateDecimal arg0
-      return mkNode (.LiteralDecimal d) (source := src)
+      return litDecimal d (source := src)
     | q`Laurel.string, #[arg0] =>
       let s ← translateString arg0
       return litStr s (source := src)
