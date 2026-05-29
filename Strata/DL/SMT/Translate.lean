@@ -314,6 +314,17 @@ def translateTerm (t : SMT.Term) : TranslateM (Expr × Expr) := do
     let (_, f) ← findVar (.uf uf)
     let as ← as.mapM (translateTerm · >>= pure ∘ Prod.snd)
     return (← translateSort ty, mkAppN f as.toArray)
+  | .app (.datatype_op _ name) as ty =>
+    -- Datatype functions (constructors/selectors/testers) are lifted into ufs
+    -- during sanitization, so we look them up by name.
+    let state ← get
+    let found := state.bvars.toArray.find? fun (v, _) =>
+      match v with | .uf uf => uf.id == name | _ => false
+    let (_, f) ← match found with
+      | some (.uf uf, _) => findVar (.uf uf)
+      | _ => throw m!"Error: datatype function '{name}' not found in context"
+    let as ← as.mapM (translateTerm · >>= pure ∘ Prod.snd)
+    return (← translateSort ty, mkAppN f as.toArray)
   | .quant q ns _ b =>
     let state ← get
     let translateBinder := fun v => do

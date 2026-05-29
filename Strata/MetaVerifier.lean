@@ -31,8 +31,34 @@ structure SanitizedContext where
   tySubst : Map String TermType := []
 deriving Repr, Inhabited, DecidableEq
 
+-- Convert datatypes seen during SMT encoding into sorts + UF entries so that
+-- the translate/denote paths can handle them without the full datatype machinery.
+private def datatypeUFs (ctx : Core.SMT.Context) : Array UF :=
+  ctx.typeFactory.toList.flatten.foldl (init := #[]) fun acc d =>
+    if !ctx.seenDatatypes.contains d.name then acc
+    else
+      let dtTy : TermType := .constr d.name []
+      let dtVar : TermVar := { id := "self", ty := dtTy }
+      d.constrs.foldl (init := acc) fun acc c =>
+        -- constructor: field types → datatype
+        let fieldVars := c.args.map fun (n, ty) =>
+          (TermVar.mk (d.name ++ ".." ++ n.name) (Core.lMonoTyToTermType (ty := ty)) : TermVar)
+        let constrUF : UF := { id := c.name.name, args := fieldVars, out := dtTy }
+        -- tester: datatype → bool
+        let testerUF : UF := { id := c.testerName, args := [dtVar], out := .bool }
+        -- selectors: datatype → field type (one per field)
+        let selectorUFs := c.args.map fun (n, ty) =>
+          (UF.mk (d.name ++ ".." ++ n.name) [dtVar] (Core.lMonoTyToTermType (ty := ty)) : UF)
+        acc.push constrUF |>.push testerUF |> (· ++ selectorUFs.toArray)
+
 def SanitizedContext.ofCore (ctx : Core.SMT.Context) : SanitizedContext :=
-  { sorts := ctx.sorts, ufs := ctx.ufs, ifs := ctx.ifs, axms := ctx.axms, tySubst := ctx.tySubst }
+  let dtSorts := ctx.seenDatatypes.toArray.map fun name =>
+    (Core.SMT.Sort.mk name 0 : Core.SMT.Sort)
+  { sorts := ctx.sorts ++ dtSorts
+    ufs   := ctx.ufs ++ datatypeUFs ctx
+    ifs   := ctx.ifs
+    axms  := ctx.axms
+    tySubst := ctx.tySubst }
 
 def SanitizedContext.toCore (ctx : SanitizedContext) : Core.SMT.Context :=
   { sorts := ctx.sorts

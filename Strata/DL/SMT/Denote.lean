@@ -612,6 +612,31 @@ and semantics when successful.
       | none => none
     else
       none
+  -- Datatype function application: constructors/selectors/testers are lifted
+  -- into UFs during sanitization; look up by name instead of full-struct equality.
+  | .app (.datatype_op _ name) as _ =>
+    match ctx.tctx.ufs.find? (fun u => u.id == name) with
+    | none => none
+    | some uf =>
+      if hTys : (denoteFunSort ctx.sctx uf.args uf.out).isSome then
+        match h : ctx.tctx.ufs.findIdx? (· == uf) with
+        | some i =>
+          let as ← denoteTerms ctx as
+          if hufas : argTypesAlign as uf.args then
+            have hi := (List.findIdx?_eq_some_iff_findIdx_eq.mp h).left
+            have hiuf := of_decide_eq_true (List.getElem_of_findIdx?_eq_some h)
+            let ft (tdi : TermDenoteInput ctx) :=
+              have _ : i < tdi.tΓ.ufs.length := tdi.htΓ.huf.h ▸ hi
+              have hufΓ : denoteFunSort ctx.sctx uf.args uf.out = denoteFunSort ctx.sctx tdi.tΓ.ufs[i].uf.args tdi.tΓ.ufs[i].uf.out :=
+                hiuf.symm ▸ tdi.htΓ.huf.ha i hi ▸ rfl
+              @applyUF ctx uf.args uf.out hTys tdi
+                (Option.get_congr hufΓ ▸ tdi.tΓ.ufs[i].ufΓ) as hufas
+            return ⟨uf.out, denoteSortOut_isSome_of_denoteFunSort_isSome hTys, ft⟩
+          else
+            none
+        | none => none
+      else
+        none
   -- Quantifiers
   | .quant .all vs _ t =>
     if hTys : (denoteFunSort ctx.sctx vs (.prim .bool)).isSome then
