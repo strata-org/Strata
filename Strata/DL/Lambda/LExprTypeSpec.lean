@@ -1349,7 +1349,7 @@ private theorem LTy_resolveAliases_absorbs
     exact h_subst_eq ▸ LMonoTy.resolveAliases_absorbs mty0 {Env with genEnv := genEnv'} mty Env' h
 
 /-- Helper: extract a `Constraints.unify` hypothesis from a `mapError` wrapper. -/
-private theorem unify_of_mapError {constraints : Constraints} {S : SubstInfo} {S' : SubstInfo}
+theorem unify_of_mapError {constraints : Constraints} {S : SubstInfo} {S' : SubstInfo}
     (h : (Constraints.unify constraints S).mapError format = .ok S') :
     Constraints.unify constraints S = .ok S' := by
   revert h
@@ -1514,7 +1514,7 @@ private theorem typeBoundVar_absorbs
 /-- `subst (remove S k) mty = subst S mty` when `k ∉ freeVars mty`.
     Since `LMonoTy.subst` is single-pass, removing a key that doesn't
     appear in the type doesn't change the result. -/
-private theorem LMonoTy.subst_remove_not_fv (S : Subst) (k : TyIdentifier) (mty : LMonoTy)
+theorem LMonoTy.subst_remove_not_fv (S : Subst) (k : TyIdentifier) (mty : LMonoTy)
     (h_nfv : k ∉ LMonoTy.freeVars mty) :
     LMonoTy.subst (Maps.remove S k) mty = LMonoTy.subst S mty := by
   apply LMonoTy.subst_ext
@@ -1524,7 +1524,7 @@ private theorem LMonoTy.subst_remove_not_fv (S : Subst) (k : TyIdentifier) (mty 
 /-- Removing a fresh key from the outer substitution preserves absorption.
     This requires that the key is not in the inner substitution (neither as
     a key nor in any value). -/
-private theorem Subst.absorbs_of_remove (S_outer S_inner : Subst) (k : TyIdentifier)
+theorem Subst.absorbs_of_remove (S_outer S_inner : Subst) (k : TyIdentifier)
     (h_abs : Subst.absorbs S_outer S_inner)
     (h_not_key : Maps.find? S_inner k = none)
     (h_not_fv : ∀ a t, Maps.find? S_inner a = some t → k ∉ LMonoTy.freeVars t) :
@@ -2328,7 +2328,7 @@ private theorem typeBoundVar_xv_fresh_in_context
 omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /-- `typeBoundVar` always produces an environment with non-empty `context.types`,
     because it applies `addInNewestContext` which uses `Maps.addInNewest`. -/
-private theorem typeBoundVar_context_types_ne_nil
+theorem typeBoundVar_context_types_ne_nil
     (C : LContext T) (Env : TEnv T.IDMeta) (bty : Option LMonoTy)
     (xv : T.Identifier) (xty : LMonoTy) (Env1 : TEnv T.IDMeta)
     (h : typeBoundVar C Env bty = .ok (xv, xty, Env1)) :
@@ -2421,7 +2421,7 @@ omit [ToString T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
     The new entry `(xv, forAll [] xty)` has `boundVars = []`, so the Nodup
     condition is vacuously true. Existing entries are unchanged from the input
     environment. -/
-private theorem typeBoundVar_preserves_boundVarsNodup
+theorem typeBoundVar_preserves_boundVarsNodup
     (C : LContext T) (Env : TEnv T.IDMeta) (bty : Option LMonoTy)
     (xv : T.Identifier) (xty : LMonoTy) (Env' : TEnv T.IDMeta)
     (h : typeBoundVar C Env bty = .ok (xv, xty, Env'))
@@ -2611,6 +2611,20 @@ theorem typeBoundVar_preserves_invariant
         · rw [h_old] at h_find
           exact h_bf y ty_found h_find v hv n (by omega)
     }
+
+omit [ToString T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
+theorem TEnvWF.of_typeBoundVar
+    (C : LContext T) (Env : TEnv T.IDMeta) (bty : Option LMonoTy)
+    (xv : T.Identifier) (xty : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : typeBoundVar C Env bty = .ok (xv, xty, Env'))
+    (h_envwf : TEnvWF Env) : TEnvWF Env' :=
+  let h_inv := typeBoundVar_preserves_invariant C Env bty xv xty Env' h
+    h_envwf.substFreshForGen h_envwf.ctxFreshForGen h_envwf.aliasesWF h_envwf.boundVarsFresh
+  { aliasesWF := h_inv.aliasesWF
+    substFreshForGen := h_inv.substFreshForGen
+    ctxFreshForGen := h_inv.ctxFreshForGen
+    boundVarsNodup := typeBoundVar_preserves_boundVarsNodup C Env bty xv xty Env' h h_envwf.boundVarsNodup
+    boundVarsFresh := h_inv.boundVarsFresh }
 
 omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /--
@@ -3016,7 +3030,7 @@ omit [DecidableEq T.IDMeta] in
 
     This is the key lemma connecting the generator invariant to substitution
     freshness, used by the `app` case of `resolveAux_properties`. -/
-private theorem genTyVar_fresh_wrt_input_subst
+theorem genTyVar_fresh_wrt_input_subst
     (Env Env2 Env3 : TEnv T.IDMeta)
     (fresh_name : TyIdentifier)
     (h_gen : TEnv.genTyVar Env2 = .ok (fresh_name, Env3))
@@ -5328,7 +5342,7 @@ theorem TEnvWF.of_resolveAux
 omit [ToString T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 -- `varCloseT` preserves `toLMonoTy`: it only affects the tree structure
 -- (turning fvars into bvars) but does not change the root metadata.
-private theorem varCloseT_toLMonoTy (k : Nat) (x : T.Identifier) (e : LExprT T.mono) :
+theorem varCloseT_toLMonoTy (k : Nat) (x : T.Identifier) (e : LExprT T.mono) :
     (Lambda.LExpr.varCloseT k x e).toLMonoTy = e.toLMonoTy := by
   cases e with
   | const _ _ => rfl

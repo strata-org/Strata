@@ -2329,6 +2329,17 @@ theorem unify_absorbs (constraints : Constraints) (S_old S_new : SubstInfo)
     simp only [Except.ok.injEq] at h; subst h
     exact (Constraints.unifyCore_sound constraints S_old relS h_core).absorbs
 
+theorem unify_sound (constraints : Constraints) (S_old S_new : SubstInfo)
+    (h : Constraints.unify constraints S_old = .ok S_new) :
+    ∀ p, p ∈ constraints →
+      LMonoTy.subst S_new.subst p.1 = LMonoTy.subst S_new.subst p.2 := by
+  simp only [Constraints.unify, bind, Except.bind] at h
+  split at h
+  · simp at h
+  · rename_i relS h_core
+    simp only [Except.ok.injEq] at h; subst h
+    exact (Constraints.unifyCore_sound constraints S_old relS h_core).sound
+
 ---------------------------------------------------------------------
 
 end -- public section
