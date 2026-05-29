@@ -124,7 +124,7 @@ l$_1:
   assert [a3]: x == x;
   #[<[provenance]: <synthesized:structured-to-unstructured>>] condGoto true end$_0 end$_0
 end$_0:
-  finish
+  #[<[provenance]: <synthesized:structured-to-unstructured>>] finish
 -/
 #guard_msgs in
 #eval (Std.format (singleCFG exitPgm 0))
@@ -157,7 +157,7 @@ block$l5$_1:
   assert [a7]: x <= 0;
   #[<[provenance]: :1034-1042>] condGoto true end$_0 end$_0
 end$_0:
-  finish
+  #[<[provenance]: <synthesized:structured-to-unstructured>>] finish
 -/
 #guard_msgs in
 #eval (Std.format (singleCFG exitPgm 1))
