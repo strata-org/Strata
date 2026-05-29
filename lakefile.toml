@@ -14,7 +14,12 @@ git = "https://github.com/leanprover-community/plausible.git"
 rev = "bump_to_v4.29.0-rc8"
 
 [[lean_lib]]
+name = "PurityPlugin"
+defaultFacets = ["shared"]
+
+[[lean_lib]]
 name = "Strata"
+plugins = ["PurityPlugin:shared"]
 
 [[lean_lib]]
 name = "StrataExamples"
