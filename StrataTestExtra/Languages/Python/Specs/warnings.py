@@ -1,8 +1,8 @@
 from typing import Any, Dict, List, NotRequired, TypedDict, Unpack
 
-# Unsupported assert pattern: equality comparison
+# Unsupported assert pattern: chained comparison (more than one operator)
 def unsupported_assert(**kw: int) -> None:
-    assert kw["x"] == 1, 'x must be 1'
+    assert 0 <= kw["x"] <= 10, '0 <= x <= 10'
 
 # Unsupported __init__ assignment value (not self._ClassName() pattern)
 class BadInit:
