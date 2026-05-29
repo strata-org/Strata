@@ -1,9 +1,16 @@
 # Boole Feature Request Inventory
 
-This document tracks the selected Boole feature-request seeds. Fully-implemented
-seeds live in [`StrataTest/Languages/Boole/`](../StrataTest/Languages/Boole/);
-seeds with at least one open gap remain in
-[`StrataTest/Languages/Boole/FeatureRequests/`](../StrataTest/Languages/Boole/FeatureRequests).
+This document tracks the selected Boole feature-request seeds kept under
+[`StrataTest/Languages/Boole/FeatureRequests`](../StrataTest/Languages/Boole/FeatureRequests).
+
+## Current priorities
+
+- Prioritize Rust-facing language support over Verus-only proof-visibility features.
+- Treat `opaque`, `reveal`, `hide`, `reveal_with_fuel`, `closed`, and `HasType`
+  as lower-priority compatibility items unless they unblock a broader Rust path.
+- Keep widening casts/coercions active; prefer a centralized type-directed coercion
+  pass. This likely overlaps with `nat`/`int` boundary work given how Verus
+  internalizes fixed-width arithmetic.
 
 ## Implemented feature requests
 
@@ -31,10 +38,10 @@ seeds with at least one open gap remain in
   - Unsigned (`<`, `<=`, `>`, `>=`) lower to `Bv{N}.ULt/ULe/UGt/UGe` via `toBvCmpOp` (plain comparisons on bitvector operands default to unsigned).
   - Signed (`<s`, `<=s`, `>s`, `>=s`) lower to `Bv{N}.SLt/SLe/SGt/SGe`.
   - Benchmark: [`bitvector_ops.lean`](../StrataTest/Languages/Boole/bitvector_ops.lean).
-- **Mutual recursion** (#599, #1167)
-  - `rec function ... ;` blocks work for structural recursion over datatypes and for `int`-typed functions with `decreases`.
-  - Remaining gap: int-recursive functions are opaque UFs — functional properties (e.g. `even(1) == false`) cannot be proved without unfolding axioms. Blocked by Gap #1 (`opaque`/`reveal`).
-  - Benchmark: [`mutual_recursion.lean`](../StrataTest/Languages/Boole/mutual_recursion.lean).
+- **Mutual recursion over datatypes** (#599)
+  - `rec function ... ;` blocks work end-to-end for structural recursion over datatypes.
+  - Remaining gap: mutual recursion over `int` — unblocked by #1167; see #19.
+  - Benchmark: [`mutual_recursion.lean`](../StrataTest/Languages/Boole/FeatureRequests/mutual_recursion.lean) (`even`/`odd` over `MyNat`).
 - **`choose` syntax**
   - `w := choose z : T :: pred(z)` desugars to `assert ∃ z : T . pred(z); havoc w; assume pred[z/w]`.
   - The existence assertion guards soundness: without it, an unsatisfiable `pred` silently becomes `assume false`, making every downstream obligation a false positive.
@@ -42,14 +49,14 @@ seeds with at least one open gap remain in
 - **`decreases` annotation on functions, procedures, and `for` loops**
   - Parsing/forwarding implemented (#1075): accepted in function preconds, `spec {}` blocks, procedure headers, and `for v := init to/downto limit` loops; the `for`-loop measure is forwarded to the Core while-loop measure field and actively verified.
   - `decreases` on functions (structural): termination verification implemented (#1092).
-  - `decreases <int expr>` on `rec function`: implemented (#1167). Non-negativity and strict-decrease obligations generated at each call site. Int-recursive functions are pure UFs in SMT — functional properties (e.g. `even(1) == false`) cannot be proved without unfolding axioms; blocked by Gap #1.
+  - `decreases <int expr>` on `rec function`: implemented (#1167). Non-negativity and strict-decrease obligations generated at each call site. Int-recursive functions are pure UFs in SMT — no definitional axioms; manual axioms still needed for functional properties.
   - `decreases` on procedures: `decr : Option Measure` parameter on `boole_procedure`, reusing Core's existing `Measure` category; currently parsed and silently dropped.
   - Benchmark: [`decreases_metadata.lean`](../StrataTest/Languages/Boole/FeatureRequests/decreases_metadata.lean).
 - **`Sequence T` type and slicing ops**
   - All 8 Core inherited ops wired up; wrappers added for `Sequence.skip`, `Sequence.dropFirst`, `Sequence.subrange`.
   - Typed empty-sequence constants: `Sequence.empty_bv8/bv16/bv32/bv64/int`. Each needs a distinct token — 0-ary polymorphic `Sequence.empty` has no arguments to infer the type from.
   - Recursive spec functions over sequences: `decreases Sequence.length(s)` supported (#1167); `reconstruct` seed now active.
-  - Benchmark: [`seq_slicing.lean`](../StrataTest/Languages/Boole/seq_slicing.lean).
+  - Benchmark: [`seq_slicing.lean`](../StrataTest/Languages/Boole/FeatureRequests/seq_slicing.lean).
 - **Inline `let`-block postconditions**
   - `ensures ({ let x = e; ... })` now lowers correctly; enables dalek-lite's `mul_clamped` postcondition style.
   - Benchmark: [`embedded_postcondition.lean`](../StrataTest/Languages/Boole/embedded_postcondition.lean).
@@ -58,15 +65,14 @@ seeds with at least one open gap remain in
   - Remaining gap: first-class function values as procedure parameters / local variables still need abstract-type encoding for the SMT path.
   - Benchmark: [`lambda_closure.lean`](../StrataTest/Languages/Boole/FeatureRequests/lambda_closure.lean).
 - **SMT-LIB 2.7 cast operators** (`e as_int`, `e as_sint`, `e as_bv{n}`) (Gap #6)
-  - `e as_int` lowers to `Bv{n}.ToUInt` (Core op) → SMT-LIB 2.7 `ubv_to_int` (unsigned); widths 1/8/16/32/64/128.
-  - `e as_sint` lowers to `Bv{n}.ToInt` (Core op) → SMT-LIB 2.7 `sbv_to_int` (signed/two's complement); widths 1/8/16/32/64/128.
-  - `e as_bv{n}` lowers to `Int.ToBv{n}` (Core op) → SMT-LIB 2.7 `(_ int_to_bv n)` (truncating mod 2^n); widths 1/8/16/32/64/128.
-  - All three directions fully implemented end-to-end (grammar → Core → SMT encoder → denotation).
+  - `e as_int` → `Bv{n}.ToUInt` → SMT-LIB 2.7 `ubv_to_int` (unsigned); widths 1/8/16/32/64/128.
+  - `e as_sint` → `Bv{n}.ToInt` → SMT-LIB 2.7 `sbv_to_int` (signed); widths 1/8/16/32/64/128.
+  - `e as_bv{n}` → `Int.ToBv{n}` → SMT-LIB 2.7 `(_ int_to_bv n)` (truncating mod 2^n); widths 1/8/16/32/64/128.
   - Benchmarks: [`cast_expr.lean`](../StrataTest/Languages/Boole/cast_expr.lean), [`widening_casts.lean`](../StrataTest/Languages/Boole/widening_casts.lean), [`cast_all_directions.lean`](../StrataTest/Languages/Boole/cast_all_directions.lean).
 
 ## Semantic preservation requests
 
-1. **Generic `opaque` / `reveal`**: Lower priority. Preserve reveals for generic spec functions instead of dropping them. Also blocks functional reasoning about int-recursive functions: without unfolding axioms, `even` and `odd` are opaque UFs and concrete values like `even(1) == false` cannot be proved. The fix is to auto-emit defining equations as SMT assertions (bounded by a trigger) when `decreases` is present — the same mechanism as Dafny's `reveal` and Verus's `reveal_with_fuel`. See [`mutual_recursion.lean`](../StrataTest/Languages/Boole/mutual_recursion.lean) for a concrete example.
+1. **Generic `opaque` / `reveal`**: Lower priority. Preserve reveals for generic spec functions instead of dropping them.
 2. **`hide`**: Lower priority. Emit a real hiding boundary so a revealed body does not stay globally visible.
 3. **`reveal_with_fuel`**: Lower priority. Preserve the requested fuel amount instead of lowering it to an unrestricted reveal.
 4. **`closed` visibility**: Lower priority. Keep closed spec-function bodies hidden across module boundaries.
@@ -76,7 +82,7 @@ seeds with at least one open gap remain in
 
 ## Type/model requests
 
-8. **Native `nat` support**: Approach TBD.
+8. **Native `nat` support**: Stop modeling `nat` as a purely abstract type with uninterpreted coercions.
 9. **Missing model types**: Add or standardize support for model types such as `Cell`, `Atomic`, `Thread`, `Rwlock`, `Unit`, and `Arithmetic_overflow`.
 10. **On-demand stdlib/pervasive stubs**: Some pervasive stubs may be droppable after pruning translation output.
 11. **Sequence slicing**: Implemented. Int-based termination for recursive seq functions: implemented (#1167).
@@ -95,7 +101,7 @@ seeds with at least one open gap remain in
 
 17. **Higher-order / lambda / closure support**: Implemented. Remaining gap: first-class function values as procedure parameters or local variables.
 18. **`choose`**: Implemented.
-19. **Mutual recursion / forward references**: Implemented for datatypes (#599) and `int` (#1167). Remaining gap: functional reasoning about int-recursive functions blocked by Gap #1 (unfolding axioms).
+19. **Mutual recursion / forward references**: Implemented for functions over datatypes (structural recursion via `@[cases]`). Remaining gap: mutual recursion over `int` or other non-datatype types — now unblocked by #1167 (same mechanism as Gap #11).
 20. **Trait-spec symbol resolution**: Preserve trait-spec symbols across module boundaries.
 21. **Trait / interface with spec and proof methods**: `interface` declarations bundling `spec function` and `lemma` members, with `matches` pattern syntax in `ensures` and `external_body`-style trusted bodies. Confirmed as the backbone of Vest combinators.
 22. **Reusable math spec support**: `pow2`, summation, and modular arithmetic helpers for functional specs; avoids re-axiomatising arithmetic in each seed.
@@ -114,7 +120,7 @@ seeds with at least one open gap remain in
 
 ## Boole seed examples
 
-Seeds with all gaps closed have been moved to `StrataTest/Languages/Boole/`; the table below tracks all seeds regardless of location.
+These are the curated one-gap Boole seeds.
 
 | Definition | Primary request(s) | Source | Current status |
 | --- | --- | --- | --- |
@@ -128,20 +134,20 @@ Seeds with all gaps closed have been moved to `StrataTest/Languages/Boole/`; the
 | [`early_return.lean`](../StrataTest/Languages/Boole/early_return.lean) | Early return | Verus SST `return` translation gap from `differential_status.md` | Implemented (#871) |
 | [`widening_casts.lean`](../StrataTest/Languages/Boole/widening_casts.lean) | SMT-LIB 2.7 cast operators (#6) | Verus `guide/integers`, `quantifiers`, `statements` | Implemented |
 | [`cast_expr.lean`](../StrataTest/Languages/Boole/cast_expr.lean) | SMT-LIB 2.7 cast operators (#6) | dalek-lite `scalar.rs` B2/B5 | Implemented |
-| [`cast_all_directions.lean`](../StrataTest/Languages/Boole/cast_all_directions.lean) | SMT-LIB 2.7 cast operators (#6) | All three cast directions: `as_int`, `as_sint`, `as_bv{n}` | Implemented |
+| [`cast_all_directions.lean`](../StrataTest/Languages/Boole/cast_all_directions.lean) | SMT-LIB 2.7 cast operators (#6) | All three cast directions | Implemented |
 | [`choose_operator.lean`](../StrataTest/Languages/Boole/choose_operator.lean) | `choose` (#18) | Verus `trigger_loops` (`choose_example`, `quantifier_example`) | Implemented (#1075) |
 | [`higher_order_encoding.lean`](../StrataTest/Languages/Boole/FeatureRequests/higher_order_encoding.lean) | Higher-order values (#17) | Verus `fun_ext`, `trait_for_fn` | Active |
 | [`lambda_closure.lean`](../StrataTest/Languages/Boole/FeatureRequests/lambda_closure.lean) | Lambda / closure (#17) | Local reduced Rust/Verus-style lambda example | Implemented (#1075); remaining gap: first-class function values as procedure parameters/variables |
-| [`mutual_recursion.lean`](../StrataTest/Languages/Boole/mutual_recursion.lean) | Mutual recursion (#19) | Verus `guide/recursion`; VLIR `mutual_recursion`, `recursion` | Implemented for datatypes (#599) and `int` (#1167); functional reasoning blocked by Gap #1 (unfolding axioms) |
-| [`decreases_metadata.lean`](../StrataTest/Languages/Boole/FeatureRequests/decreases_metadata.lean) | `decreases` preservation (#7) | Verus `proposal-rw2022`, `rw2022_script`, `recursion`; VLIR `LoopSimpleWithSpec` | Implemented (#1092, #1167); procedure `decreases` parsed, silently dropped |
+| [`mutual_recursion.lean`](../StrataTest/Languages/Boole/FeatureRequests/mutual_recursion.lean) | Mutual recursion (#19) | Verus `guide/recursion`; VLIR `mutual_recursion`, `recursion` | Implemented for datatypes (#599); mutual recursion over `int` now unblocked by #1167 |
+| [`decreases_metadata.lean`](../StrataTest/Languages/Boole/FeatureRequests/decreases_metadata.lean) | `decreases` preservation (#7) | Verus `proposal-rw2022`, `rw2022_script`, `recursion`; VLIR `LoopSimpleWithSpec` | For-loop `decreases` actively verified; function `decreases` verified by #1092; int-recursive functions: verified (#1167 merged); procedure `decreases` parsed, silently dropped |
 | [`horner_poly_eval.lean`](../StrataTest/Languages/Boole/FeatureRequests/horner_poly_eval.lean) | Reusable math spec (#22) | CLRS Horner’s rule, Exercise 2.3 | Type-checks; full math spec still open |
 | [`embedded_postcondition.lean`](../StrataTest/Languages/Boole/embedded_postcondition.lean) | Inline `let`-binding blocks in `ensures` clauses | dalek-lite `montgomery.rs` `mul_clamped`, `mul_bits_be` | Implemented (#1075) |
 | [`montgomery_loop_invariant.lean`](../StrataTest/Languages/Boole/FeatureRequests/montgomery_loop_invariant.lean) | Relational loop invariants over two co-evolving variables | dalek-lite `montgomery.rs` `mul_bits_be` (Montgomery ladder) | Linear arithmetic case: implemented (#1075); elliptic curve case: open — requires group-law axioms (Costello-Smith 2017, eq. 4); whether cvc5 closes the invariant with those axioms is untested |
 | [`bitvector_ops.lean`](../StrataTest/Languages/Boole/bitvector_ops.lean) | Bitwise operators on `bvN` types | dalek-lite `scalar_specs.rs` | Implemented (#970) |
 | [`bitvector_proof_mode.lean`](../StrataTest/Languages/Boole/FeatureRequests/bitvector_proof_mode.lean) | `by (bit_vector)` proof mode (#27) | VeruSAGE-Bench Vest `leb128` | Active |
-| [`seq_slicing.lean`](../StrataTest/Languages/Boole/seq_slicing.lean) | Sequence slicing (#11) | dalek-lite `scalar_specs.rs`, `core_specs.rs`; Vest `leb128`, `repetition` | Implemented (#1075, #1167) |
-| [`scalar_reduce.lean`](../StrataTest/Languages/Boole/FeatureRequests/scalar_reduce.lean) | `reduce()` spec axiom for B2 (`Scalar::from_bytes_mod_order_wide`) | dalek-lite `scalar.rs` | Implemented (#1075) |
+| [`seq_slicing.lean`](../StrataTest/Languages/Boole/FeatureRequests/seq_slicing.lean) | Sequence slicing (#11) | dalek-lite `scalar_specs.rs`, `core_specs.rs`; Vest `leb128`, `repetition` | Implemented (#1075); recursive spec functions implemented (#1167 merged); `reconstruct` seed active |
+| [`scalar_reduce.lean`](../StrataTest/Languages/Boole/FeatureRequests/scalar_reduce.lean) | `reduce()` spec axiom for B2 (`Scalar::from_bytes_mod_order_wide`) | dalek-lite `scalar.rs` | Implemented (#1075); `u8_64_as_group_canonical` can now use recursive form (#1167 merged); manual axioms unchanged |
 | [`struct_field_access.lean`](../StrataTest/Languages/Boole/FeatureRequests/struct_field_access.lean) | Struct/record field access (#13) | dalek-lite `field_specs.rs`, `edwards_specs.rs` | Active |
 | [`trait_spec_methods.lean`](../StrataTest/Languages/Boole/FeatureRequests/trait_spec_methods.lean) | Trait / interface with spec methods (#21) | VeruSAGE-Bench Vest `SecureSpecCombinator` | Active |
 | [`option_matches.lean`](../StrataTest/Languages/Boole/FeatureRequests/option_matches.lean) | `Option<T>` in spec functions (#14) | VeruSAGE-Bench Vest `SecureSpecCombinator`, `leb128` | Active |
-| [`sha256_compact_indexed.lean`](../StrataTest/Languages/Boole/FeatureRequests/sha256_compact_indexed.lean) | Iterator protocol lowering (#23), array syntax (#15), slice types (#16), `bv` rotate primitives (#28) | RustCrypto SHA-256 compact port (indexed `Sequence` encoding) | Active — all 17 VCs pass (#1075); open gaps: iterator protocol (#23), array syntax (#15), slice types (#16) |
+| [`sha256_compact_indexed.lean`](../StrataTest/Languages/Boole/FeatureRequests/sha256_compact_indexed.lean) | Iterator protocol lowering (#23), array syntax (#15), slice types (#16), `bv` rotate primitives (#28) | RustCrypto SHA-256 compact port (indexed `Sequence` encoding) | Active — all 19 VCs pass (#1075); open gaps: iterator protocol (#23), array syntax (#15), slice types (#16) |
