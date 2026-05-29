@@ -4,6 +4,14 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
+/-
+Debug-only helpers for running the Laurel compilation pipeline manually
+(e.g. via `#eval`) when diagnosing pass-internal issues.
+
+Not used by any test in this repo. The regular test framework lives in
+`StrataTest.Util.TestLaurel`; see `docs/Testing.md`.
+-/
+
 import StrataTest.Util.TestDiagnostics
 import Strata.DDM.Elab
 import Strata.DDM.BuiltinDialects.Init

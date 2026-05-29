@@ -4,15 +4,14 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import StrataTest.Util.TestDiagnostics
-import StrataTest.Languages.Laurel.TestExamples
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
+open Strata
 
-namespace Strata
-namespace Laurel
-
-def bvProgram := r"
+#eval testLaurel
+#strata
+program Laurel;
 // Bitvector types in procedure signatures and variable declarations.
 
 // Parameters and return types
@@ -50,10 +49,4 @@ procedure mixedTypes(a: bv 32, b: int) returns (r: int)
 {
   r := b
 };
-"
-
-#guard_msgs(drop info, error) in
-#eval testInputWithOffset "BitvectorTypes" bvProgram 14 processLaurelFile
-
-end Laurel
-end Strata
+#end

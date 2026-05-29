@@ -4,23 +4,17 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import StrataTest.Util.TestDiagnostics
-import StrataTest.Languages.Laurel.TestExamples
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
+open Strata
 
-namespace Strata
-namespace Laurel
-
-def transparentBodyProgram := r"
+#eval testLaurel <|
+#strata
+program Laurel;
 procedure transparentBody()
 //        ^^^^^^^^^^^^^^^ error: transparent procedures are not yet supported. Add 'opaque' to make the procedure opaque
 {
   assert true
 };
-"
-
-#guard_msgs(drop info, error) in
-#eval testInputWithOffset "TransparentBody" transparentBodyProgram 14 processLaurelFile
-
-end Laurel
+#end

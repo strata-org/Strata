@@ -6,6 +6,7 @@
 module
 public import Strata.DDM.Util.SourceRange
 public import Lean.Data.Position
+public import Lean.ToExpr
 
 open Std (Format)
 
@@ -72,7 +73,7 @@ def FileRange.format (fr : FileRange) (fileMap : Option Lean.FileMap) (includeEn
       f!"{baseName}({fr.range.start}-{fr.range.stop})"
 
 inductive DiagnosticType where | Warning | UserError | NotYetImplemented | StrataBug
-  deriving Repr, BEq, Inhabited
+  deriving Repr, BEq, Inhabited, Lean.ToExpr
 
 /-- A diagnostic model that holds a file range and a message.
     This can be converted to a formatted string using a FileMap. -/

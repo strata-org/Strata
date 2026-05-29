@@ -11,9 +11,9 @@ Tests that the Laurel AST to DDM concrete syntax tree conversion
 
 import Strata.DDM.Elab
 import Strata.DDM.BuiltinDialects.Init
+import Strata.DDM.Integration.Lean.HashCommands
 import Strata.Languages.Laurel.Grammar.LaurelGrammar
 import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
-import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 
 open Strata
@@ -21,17 +21,12 @@ open Strata.Elab (parseStrataProgramFromDialect)
 
 namespace Strata.Laurel
 
-private def parseLaurel (input : String) : IO Program := do
-  let inputCtx := Strata.Parser.stringInputContext "test" input
-  let dialects := Strata.Elab.LoadedDialects.ofDialects! #[initDialect, Laurel]
-  let strataProgram ← parseStrataProgramFromDialect dialects Laurel.name inputCtx
-  let uri := Strata.Uri.file "test"
-  match Laurel.TransM.run uri (Laurel.parseProgram strataProgram) with
+private def parseFromStrata (strataProgram : Strata.Program) : IO Program := do
+  match Laurel.TransM.run (Strata.Uri.file "test") (Laurel.parseProgram strataProgram) with
   | .error e => throw (IO.userError s!"Translation errors: {e}")
   | .ok program => pure program
 
 private def laurelToText (prog : Program) : String :=
-  -- Trim trailing whitespace per line to avoid whitespace-sensitive test issues
   let text := (formatProgram prog).pretty
   let lines := text.splitOn "\n" |>.map (fun s => (s.trimAsciiEnd).toString)
   "\n".intercalate lines
@@ -43,12 +38,16 @@ private def roundtripViaDDM (prog : Program) : IO String := do
   | .error e => throw (IO.userError s!"DDM roundtrip parse errors: {e}")
   | .ok program2 => pure (laurelToText program2)
 
-/-- Parse text, roundtrip through DDM, print, then re-parse the output and verify convergence -/
-private def roundtrip (input : String) : IO String := do
-  let program ← parseLaurel input
+/-- Roundtrip a `Strata.Program` (already parsed by `#strata`) through DDM,
+    pretty-print, re-parse, and verify convergence. -/
+private def roundtrip (strataProgram : Strata.Program) : IO String := do
+  let program ← parseFromStrata strataProgram
   let firstPass ← roundtripViaDDM program
   -- Re-parse the output and verify it produces the same text (convergence)
-  let reparsed ← parseLaurel firstPass
+  let inputCtx := Strata.Parser.stringInputContext "test" firstPass
+  let dialects := Strata.Elab.LoadedDialects.ofDialects! #[initDialect, Laurel]
+  let reparsedStrata ← parseStrataProgramFromDialect dialects Laurel.name inputCtx
+  let reparsed ← parseFromStrata reparsedStrata
   let secondPass ← roundtripViaDDM reparsed
   if firstPass != secondPass then
     throw (IO.userError s!"Roundtrip does not converge.\nFirst pass:\n{firstPass}\nSecond pass:\n{secondPass}")
@@ -61,39 +60,57 @@ info: procedure foo()
 { assert true; assert false };
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip r"procedure foo() { assert true; assert false };")
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+procedure foo() { assert true; assert false };
+#end)
 
 /--
 info: procedure add(x: int, y: int): int
 { x + y };
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip r"procedure add(x: int, y: int): int { x + y };")
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+procedure add(x: int, y: int): int { x + y };
+#end)
 
 /--
 info: function aFunction(x: int): int
 { x };
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip r"function aFunction(x: int): int { x };")
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+function aFunction(x: int): int { x };
+#end)
 
 /--
 info: composite Point { var x: int var y: int }
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip r"
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
 composite Point {
   var x: int
   var y: int
 }
-")
+#end)
 
 /--
 info: procedure test(x: int): int
 { if x > 0 then x else 0 - x };
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip r"procedure test(x: int): int { if x > 0 then x else 0 - x };")
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+procedure test(x: int): int { if x > 0 then x else 0 - x };
+#end)
 
 /--
 info: procedure divide(x: int, y: int): int
@@ -103,25 +120,29 @@ info: procedure divide(x: int, y: int): int
 { x / y };
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip r"
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
 procedure divide(x: int, y: int): int
   requires y != 0
   opaque
   ensures result >= 0
 { x / y };
-")
+#end)
 
 /--
 info: procedure test()
 { assert forall(x: int) => x == x; assert exists(y: int) => y > 0 };
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip r"
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
 procedure test() {
     assert forall(x: int) => x == x;
     assert exists(y: int) => y > 0
 };
-")
+#end)
 
 /--
 info: composite Point { var x: int var y: int }
@@ -130,7 +151,9 @@ procedure test(): int
 { var p: Point := new Point; p#x := 5; p#x };
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip r"
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
 composite Point {
   var x: int
   var y: int
@@ -140,19 +163,27 @@ procedure test(): int {
     p#x := 5;
     p#x
 };
-")
+#end)
 
 /--
 info: datatype Color { Red, Green, Blue }
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip r"datatype Color { Red, Green, Blue }")
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+datatype Color { Red, Green, Blue }
+#end)
 
 /--
 info: datatype Pair { MkPair(fst: int, snd: bool) }
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip r"datatype Pair { MkPair(fst: int, snd: bool) }")
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+datatype Pair { MkPair(fst: int, snd: bool) }
+#end)
 
 /--
 info: composite Animal { }
@@ -163,11 +194,13 @@ procedure test(a: Animal): bool
 { a is Dog };
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip r"
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
 composite Animal {}
 composite Dog extends Animal {}
 procedure test(a: Animal): bool { a is Dog };
-")
+#end)
 
 -- Additional coverage: while loops
 
@@ -177,14 +210,16 @@ info: procedure test()
   invariant x >= 0 { x := x + 1 } };
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip r"
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
 procedure test() {
     var x: int := 0;
     while(x < 10)
       invariant x >= 0
     { x := x + 1 }
 };
-")
+#end)
 
 -- Additional coverage: constrained types
 
@@ -192,7 +227,11 @@ procedure test() {
 info: constrained Positive = v: int where v > 0 witness 1
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip r"constrained Positive = v: int where v > 0 witness 1")
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+constrained Positive = v: int where v > 0 witness 1
+#end)
 
 -- Additional coverage: modifies clauses
 
@@ -206,14 +245,16 @@ procedure modify(c: Container)
 { c#value := c#value + 1; true };
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip r"
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
 composite Container { var value: int }
 procedure modify(c: Container)
   opaque
   ensures true
   modifies c
 { c#value := c#value + 1; true };
-")
+#end)
 
 -- Additional coverage: nondeterministic holes
 
@@ -222,6 +263,10 @@ info: procedure test(): int
 { <??> };
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip r"procedure test(): int { <??> };")
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+procedure test(): int { <??> };
+#end)
 
 end Strata.Laurel

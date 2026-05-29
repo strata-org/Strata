@@ -4,14 +4,14 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import StrataTest.Util.TestDiagnostics
-import StrataTest.Languages.Laurel.TestExamples
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
+open Strata
 
-namespace Strata.Laurel
-
-def exitMultiPathProgram := r"
+#eval testLaurel <|
+#strata
+program Laurel;
 procedure foo(x: int)
   opaque
 {
@@ -23,9 +23,4 @@ procedure foo(x: int)
   assert false
 //^^^^^^^^^^^^ error: assertion does not hold
 };
-"
-
-#guard_msgs (error, drop all) in
-#eval! testInputWithOffset "ExitMultiPathAssert" exitMultiPathProgram 14 processLaurelFile
-
-end Strata.Laurel
+#end

@@ -11,15 +11,14 @@ in laurelAnalyze. The fix filters out non-composite modifies entries and emits
 a diagnostic error.
 -/
 
-import StrataTest.Util.TestDiagnostics
-import StrataTest.Languages.Laurel.TestExamples
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
+open Strata
 
-namespace Strata
-namespace Laurel
-
-def program := r"
+#eval testLaurel <|
+#strata
+program Laurel;
 composite Container {
   var value: int
 }
@@ -40,7 +39,4 @@ procedure modifyContainerAndPrimitive(c: Container, x: int)
 {
   c#value := 1
 };
-"
-
-#guard_msgs (drop info, error) in
-#eval testInputWithOffset "NonCompositeModifies" program 22 processLaurelFile
+#end

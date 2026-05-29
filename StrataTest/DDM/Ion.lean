@@ -153,7 +153,7 @@ eval g : mytype;
 
 -- `eval g` (command 1) references a declared variable via ExprF.fvar
 #guard
-  let cmd := testIonFvarPgm.commands[1]
+  let cmd := testIonFvarPgm.program.commands[1]
   match cmd.args[1]? with
   | some (ArgF.expr (.fvar _ _)) => true
   | _ => false
@@ -168,7 +168,7 @@ checkTypeP Type;
 
 -- `checkTypeP Type` (command 0) passes a category via ArgF.cat
 #guard
-  let cmd := testIonCatPgm.commands[0]
+  let cmd := testIonCatPgm.program.commands[0]
   match cmd.args[0]? with
   | some (ArgF.cat _) => true
   | _ => false
@@ -183,7 +183,7 @@ checkBound (T : Type) T;
 
 -- `checkBound` (command 0) references a scoped type variable via TypeExprF.bvar
 #guard
-  let cmd := testIonBvarPgm.commands[0]
+  let cmd := testIonBvarPgm.program.commands[0]
   match cmd.args[1]? with
   | some (ArgF.type (.bvar _ _)) => true
   | _ => false

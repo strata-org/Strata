@@ -10,32 +10,23 @@ out of assert and assume conditions, while leaving assignments untouched
 (so they are rejected downstream).
 -/
 
-import Strata.DDM.Elab
-import Strata.DDM.BuiltinDialects.Init
-import Strata.Languages.Laurel.Grammar.LaurelGrammar
-import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
+import StrataTest.Util.TestLaurel
 import Strata.Languages.Laurel.LaurelToCoreTranslator
+import Strata.Languages.Laurel.Resolution
 
 open Strata
-open Strata.Elab (parseStrataProgramFromDialect)
+open StrataTest.Util
 
 namespace Strata.Laurel
 
-private def parseLaurelAndLift (input : String) : IO Program := do
-  let inputCtx := Strata.Parser.stringInputContext "test" input
-  let dialects := Strata.Elab.LoadedDialects.ofDialects! #[initDialect, Laurel]
-  let strataProgram ← parseStrataProgramFromDialect dialects Laurel.name inputCtx
-  let uri := Strata.Uri.file "test"
-  match Laurel.TransM.run uri (Laurel.parseProgram strataProgram) with
-  | .error e => throw (IO.userError s!"Translation errors: {e}")
-  | .ok program =>
-    let result := resolve program
-    let (program, model) := (result.program, result.model)
-    pure (liftExpressionAssignments model program)
+private def parseLaurelAndLift (program : Strata.Program) : IO Program := do
+  let laurelProgram ← translateLaurel program
+  let result := resolve laurelProgram
+  pure (liftExpressionAssignments result.model result.program)
 
-private def printLifted (input : String) : IO Unit := do
-  let program ← parseLaurelAndLift input
-  for proc in program.staticProcedures do
+private def printLifted (program : Strata.Program) : IO Unit := do
+  let lifted ← parseLaurelAndLift program
+  for proc in lifted.staticProcedures do
     IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
 
 /-! ## Imperative calls in assert are lifted -/
@@ -47,7 +38,9 @@ procedure test()
 { var $c_0: int; $c_0 := impure(); assert $c_0 == 1 };
 -/
 #guard_msgs in
-#eval! printLifted r"
+#eval! printLifted
+#strata
+program Laurel;
 procedure impure(): int {
   var x: int := 0;
   x := x + 1;
@@ -56,7 +49,7 @@ procedure impure(): int {
 procedure test() {
   assert impure() == 1
 };
-"
+#end
 
 /-! ## Assignments in assert are NOT lifted (rejected downstream) -/
 
@@ -65,12 +58,14 @@ info: procedure test()
 { var x: int := 0; assert (x := 2) == 2 };
 -/
 #guard_msgs in
-#eval! printLifted r"
+#eval! printLifted
+#strata
+program Laurel;
 procedure test() {
   var x: int := 0;
   assert (x := 2) == 2
 };
-"
+#end
 
 /-! ## Imperative calls in assume are lifted -/
 
@@ -81,7 +76,9 @@ procedure test()
 { var $c_0: int; $c_0 := impure(); assume $c_0 == 1 };
 -/
 #guard_msgs in
-#eval! printLifted r"
+#eval! printLifted
+#strata
+program Laurel;
 procedure impure(): int {
   var x: int := 0;
   x := x + 1;
@@ -90,7 +87,7 @@ procedure impure(): int {
 procedure test() {
   assume impure() == 1
 };
-"
+#end
 
 /-! ## Multi-output calls in expression position produce a single (broken) target.
     This is intentional — multi-output calls should not appear in expression position.
@@ -104,7 +101,9 @@ procedure test()
 { var $c_0: BUG_MultiValuedExpr; $c_0 := multi_out(5); assert $c_0 == 6 };
 -/
 #guard_msgs in
-#eval! printLifted r"
+#eval! printLifted
+#strata
+program Laurel;
 procedure multi_out(x: int) returns (r: int, extra: int) {
   r := x + 1;
   extra := x + 2
@@ -112,6 +111,6 @@ procedure multi_out(x: int) returns (r: int, extra: int) {
 procedure test() {
   assert multi_out(5) == 6
 };
-"
+#end
 
 end Laurel

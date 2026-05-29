@@ -4,15 +4,20 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import StrataTest.Util.TestDiagnostics
-import StrataTest.Languages.Laurel.TestExamples
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
 open Strata
 
-namespace Strata.Laurel
+/-! ## Procedures used by the negative tests below -/
 
-def program: String := r"
+-- Resolution-only errors are reported via the resolution pass; we use the full
+-- pipeline helper because the expected diagnostics are not pure resolution
+-- errors.
+
+#eval testLaurel <|
+#strata
+program Laurel;
 procedure impure(): int
   opaque
 {
@@ -54,10 +59,4 @@ procedure impureContractIsNotLegal2(x: int)
   assert (x := 2) == 2
 //        ^^^^^^ error: destructive assignments are not supported in functions or contracts
 };
-"
-
-#guard_msgs (error, drop all) in
-#eval! testInputWithOffset "NestedImpureStatements" program 14 processLaurelFile
-
-
-end Laurel
+#end
