@@ -173,10 +173,6 @@ dotnet run --project Source -- --smack <file.bpl>
 # Run integration tests
 dotnet test IntegrationTests/BoogieToStrata.IntegrationTests.csproj
 
-# Batch translate all test files
-./translate-all.sh
-```
-
 ## Important Patterns in StrataGenerator.cs
 
 ### Emission Helpers

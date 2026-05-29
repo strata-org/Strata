@@ -30,9 +30,7 @@ Tools/BoogieToStrata/
 │   ├── BoogieToStrata.IntegrationTests.csproj  # xUnit test project
 │   └── BoogieToStrataIntegrationTests.cs       # Translation + verification tests
 ├── Tests/                          # Test inputs (.bpl) and expected outputs (.expect)
-├── EqualizerTests/                 # Additional regression tests (Equalizer-derived)
 ├── run-integration-tests.sh        # Build + run integration tests
-└── translate-all.sh                # Batch-translate all .bpl files
 ```
 
 ## Prerequisites
@@ -154,16 +152,6 @@ Each test:
    rm Tests/<Name>.core.st
    ```
 4. Run the integration tests to confirm everything passes
-
-### Batch Translation
-
-To translate all test files at once (useful for inspecting output):
-
-```bash
-./translate-all.sh
-```
-
-This produces `.boogie.st` files alongside each `.bpl` input.
 
 ## Known Limitations
 
