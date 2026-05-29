@@ -44,9 +44,9 @@ deriving DecidableEq, Repr
  the input stream. We assume that both the input and output streams conform to
  the SMTLib standard: the inputs are SMTLib script commands encoded as
  s-expressions, and the outputs are the s-expressions whose shape is determined
- by the standard for each command. We don't have an error stream here, since we
- configure solvers to run in quiet mode and not print anything to the error
- stream.
+ by the standard for each command. The solver's stderr is inherited by the parent process (see `spawnSolver`),
+ so diagnostic output goes directly to the verifier's stderr rather than
+ through a field on this structure.
 -/
 structure SMTLibSolver where
   smtLibInput : IO.FS.Stream
