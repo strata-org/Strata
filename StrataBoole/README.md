@@ -61,7 +61,7 @@ import StrataBoole.MetaVerifier
 
 open Strata
 
-def myProgram : Strata.Program :=
+def myProgram : StrataDDM.Program :=
 #strata
 program Boole;
 
@@ -77,8 +77,10 @@ spec {
 ```
 
 Programs can also be stored in `*.boole.st` source files. However, there is not
-currently a top-level CLI that will process these files. TODO: describe how
-programs using StrataBoole as a library can load them.
+currently a top-level CLI that will process these files. To load external files
+in the Boole dialect from a client of the `StrataBoole` package, use
+`Strata.readStrataFile` to get a `StrataDDM.Program` and
+`Strata.Boole.getProgram` to translate it to a `Strata.Boole.Program`.
 
 ## Verifying a Program
 

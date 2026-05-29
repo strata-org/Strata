@@ -122,7 +122,7 @@ lake build StrataBooleTest.demo
 
 ## Pitfalls
 
-- **Do not use Core's `out`/`inout` call argument syntax in Boole programs.** Boole enforces `call lhs := f(args)` for outputs. The translator will reject `out`/`inout` arguments with a clear error.
+- **Do not use Core's `out`/`inout` call argument syntax in Boole programs.** Boole's calling convention separates inputs (positional args) from outputs (returns declarations consumed by call lhs := f(args)). The `out` qualifier is unnecessary because the translator already emits `Core.CallArg.outArg` from each call's LHS, and `inout` would conflict with the implicit global-variable prefix added by `constructProcArgsPrefix` based on `modifies` clauses. So both exist at the Core level but are generated implicitly from Boole syntax.
 - **The `#strata_gen` macro in `Boole.lean` is expensive** (`maxHeartbeats 400000`). Avoid unnecessary rebuilds of this file.
 - **Grammar changes regenerate the AST.** After modifying `Grammar.lean`, all downstream files (`Boole.lean`, `Verify.lean`, tests) may need updates to match new/changed constructors.
 - **`old(x)` only applies to inout parameters.** For other variables, `old x = x`. This is handled by `oldifyExpr` checking against `currentInoutNames`.
