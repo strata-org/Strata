@@ -585,7 +585,7 @@ theorem genIdentMapM_Forall {α : Type} {P : Expression.Ident → Prop}
         | mk a₂ s₂ =>
           rw [hg2] at Hgen
           cases Hgen
-          simp [Forall]
+          simp [List.Forall_cons]
           exact ⟨Hone hg1, ih hg2⟩
 
 /-! ### Length lemmas for the `gen*ExprIdents{,Trip}` family

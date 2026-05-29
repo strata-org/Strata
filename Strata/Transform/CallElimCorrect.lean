@@ -565,9 +565,8 @@ private theorem inputOnlyOldSubst_pos_decomp
   · -- guard = true branch.
     have Hpair_eq' :
         (CoreIdent.mkOld pair.fst.name, pair.snd) = (k, w) := by
-      have HH := Hpair_eq
-      simp only [Hg, if_true] at HH
-      exact (Option.some_inj.mp HH)
+      simp only [Hg, if_true] at Hpair_eq
+      exact Option.some_inj.mp Hpair_eq
     have Hk_eq : k = CoreIdent.mkOld pair.fst.name :=
       ((Prod.mk.injEq _ _ _ _).mp Hpair_eq').1.symm
     have Hw_eq : w = pair.snd :=
@@ -595,12 +594,10 @@ private theorem inputOnlyOldSubst_pos_decomp
       have HgL : (!outputs.contains pair.fst) = true :=
         (Bool.and_eq_true _ _).mp Hg |>.1
       simp at HgL
-      rw [Hpair_shape] at HgL
-      exact HgL
+      rwa [Hpair_shape] at HgL
   · -- guard = false: contradiction.
-    have HH := Hpair_eq
-    simp only [Hg] at HH
-    exact absurd HH (by simp)
+    simp only [Hg] at Hpair_eq
+    exact absurd Hpair_eq (by simp)
 
 /-- Membership form: the entry's `.snd.expr` lies in `getCheckExprs conds`. -/
 private theorem filterCheck_mem_getCheckExprs
@@ -723,7 +720,6 @@ private theorem oldVars_oldTys_mapM_ok
                  bind, ExceptT.bind, ExceptT.bindCont,
                  ExceptT.mk, StateT.bind,
                  pure, ExceptT.pure, StateT.pure, Hty]
-      simp only [pure, ExceptT.pure, StateT.pure, ExceptT.mk] at Heqtail
       rw [Heqtail]
       rfl
     · simp [Hlen]
@@ -950,7 +946,7 @@ private theorem callElimCmd_call_eq
   simp only [incrementStat, modify, modifyGet, MonadStateOf.modifyGet,
              MonadState.modifyGet, StateT.modifyGet,
              bind, StateT.bind, ExceptT.bind, ExceptT.bindCont, ExceptT.mk,
-             pure, ExceptT.pure, StateT.pure,
+             pure, ExceptT.pure,
              get, getThe, MonadStateOf.get, MonadState.get, StateT.get,
              monadLift, MonadLift.monadLift, liftM, ExceptT.lift,
              Functor.map, StateT.map] at Heq
@@ -990,9 +986,7 @@ private theorem callElimCmd_call_eq
                   -- The next layer is `(StateT.map Except.ok
                   --   (liftCoreGenM (genOldExprIdents oldVars))).bind ...`.
                   simp only [liftCoreGenM, bind, StateT.bind,
-                             ExceptT.bind, ExceptT.bindCont, ExceptT.mk,
-                             pure, ExceptT.pure, StateT.pure,
-                             Functor.map, StateT.map] at Heq
+                             ExceptT.bindCont, pure, StateT.map] at Heq
                   -- Hoist the old-vars filter once for the rest of the proof.
                   let oldVars : List Expression.Ident := callElim_oldVars proc args
                   generalize Heqold :
@@ -1013,10 +1007,7 @@ private theorem callElimCmd_call_eq
                         Holdvars_in_inputs
                     -- Reduce `pure`/`throw` to match Heq.
                     bind_shell at Heq
-                    have HeqtyR : _ := Heqty
-                    simp only [pure, ExceptT.pure, StateT.pure,
-                               ExceptT.mk] at HeqtyR
-                    rw [HeqtyR] at Heq
+                    rw [Heqty] at Heq
                     bind_shell at Heq
                     -- ── B2 layer: asserts ← createAsserts ... ──
                     obtain ⟨asserts, s_assert, Heqas, _Hlenas,
@@ -1130,12 +1121,10 @@ private theorem callElimStmt_non_call_eq
   | .funcDecl _ _, _, hH
   | .typeDecl _ _, _, hH =>
       simp only [runWith, StateT.run, callElimStmt, bind, pure,
-                 StateT.bind, ExceptT.bind, ExceptT.bindCont,
-                 ExceptT.mk, ExceptT.pure, modify, modifyGet,
-                 MonadStateOf.modifyGet, MonadState.modifyGet,
-                 StateT.modifyGet, MonadStateOf.set,
-                 monadLift, MonadLift.monadLift, liftM, ExceptT.lift,
-                 StateT.pure, Functor.map, ExceptT.map, StateT.map,
+                 StateT.bind, ExceptT.bind, ExceptT.bindCont, ExceptT.mk, ExceptT.pure,
+                 modify, modifyGet, MonadStateOf.modifyGet, MonadState.modifyGet,
+                 StateT.modifyGet, monadLift, MonadLift.monadLift, ExceptT.lift,
+                 StateT.pure, Functor.map, StateT.map,
                  Prod.mk.injEq, Except.ok.injEq] at hH
       exact hH.1
 
@@ -1380,14 +1369,11 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
       | call procName args md =>
           -- B1: Destructure Helim to expose triplet plumbing.
           subst hst
-          simp only [runWith, StateT.run, callElimStmt,
-                     bind, pure,
-                     StateT.bind, ExceptT.bind, ExceptT.bindCont,
-                     ExceptT.mk, ExceptT.pure, modify, modifyGet,
-                     MonadStateOf.modifyGet, MonadState.modifyGet,
-                     StateT.modifyGet, MonadStateOf.set,
-                     monadLift, MonadLift.monadLift, liftM, ExceptT.lift,
-                     StateT.pure, Functor.map, StateT.map] at Helim
+          simp only [runWith, StateT.run, callElimStmt, bind, pure,
+                     StateT.bind, ExceptT.bind, ExceptT.bindCont, ExceptT.mk, ExceptT.pure,
+                     modify, modifyGet, MonadStateOf.modifyGet, MonadState.modifyGet,
+                     StateT.modifyGet, monadLift, MonadLift.monadLift, ExceptT.lift,
+                     Functor.map, StateT.map] at Helim
           -- Helim is now `(Except.ok sts, γ') = (match callElimCmd … γ_ext …)`.
           -- Successive splits peel the outer pair-binder, the inner Except,
           -- and the `Option (List Statement)`.
@@ -1608,9 +1594,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                 obtain ⟨oldVals, HoldVals⟩ :=
                   isDefinedReadValues HrdOldDef
                 -- Length facts.
-                have HoldValsLen : oldVals.length = oldVars.length := by
-                  have := ReadValuesLength HoldVals
-                  exact this.symm
+                have HoldValsLen : oldVals.length = oldVars.length :=
+                  (ReadValuesLength HoldVals).symm
                 -- genOld = oldTys = oldVars length facts for trip-shape.
                 have HgenOldLen : genOldIdents.length = oldVars.length :=
                   genOldExprIdents_length Heqold
@@ -1694,8 +1679,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     have Hwfcall : WF.WFcallProp p procName args := Hwfst_head.1
                     have Hlhs_args_nd :
                         (CallArg.getLhs args).Nodup := Hwfcall.lhsWF
-                    rw [hCallArgsLhs] at Hlhs_args_nd
-                    exact Hlhs_args_nd
+                    rwa [hCallArgsLhs] at Hlhs_args_nd
                   have Hout_nd_app :
                       List.Nodup (outTemps
                                   ++ outTrips.unzip.snd) := by
@@ -1720,14 +1704,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           argVals)
                         outTemps := by
                     intro v Hv
-                    have Hv_notin : ¬ v ∈ argTemps := by
-                      intro Hin
-                      exact HargOutDisj Hin Hv
-                    have Hfall := updatedStates_get_notin
-                      (σ:=σ)
-                      (ks:=argTemps)
-                      (vs:=argVals) Hv_notin
-                    rw [Hfall]
+                    have Hv_notin : v ∉ argTemps := fun Hin => HargOutDisj Hin Hv
+                    rw [updatedStates_get_notin (σ:=σ) (ks:=argTemps) (vs:=argVals) Hv_notin]
                     exact HndefOut_σ v Hv
                   have HL2 :
                       EvalStatementsContract π φ
@@ -1999,8 +1977,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     refine ⟨c, ?_, rfl⟩
                     rw [HprocEq] at Hc_in
                     rw [ListMap.values_eq_map_snd]
-                    rw [ListMap.values_eq_map_snd] at Hc_in
-                    exact Hc_in
+                    rwa [ListMap.values_eq_map_snd] at Hc_in
                   -- Specialize Hwfcallsite (over `proc`) to the call form;
                   -- spike uses `proc'` which HprocEq bridges.
                   obtain ⟨HpreVarsFresh, HpostVarsFresh, HargVarsNotInLhs,
@@ -3066,8 +3043,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       have Hg := readValues_get (σ:=σ') (ks:=ks) (vs:=vs) Hrv
                         (i:=ks.idxOf v)
                         (hi:=List.idxOf_lt_length_of_mem Hmem) (hi':=Hidx_lt)
-                      have Hk : ks[ks.idxOf v]'(List.idxOf_lt_length_of_mem Hmem)
-                                  = v := by
+                      have Hk : ks[ks.idxOf v]'(List.idxOf_lt_length_of_mem Hmem) = v := by
                         unfold List.idxOf
                         simpa using @List.findIdx_getElem _ (· == v) ks
                           (List.idxOf_lt_length_of_mem Hmem)
@@ -3340,8 +3316,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                             Lambda.LExpr.substFvars_app,
                             Lambda.LExpr.substFvars_eq,
                             Lambda.LExpr.substFvars_ite, *]
-                      rw [HsubstEmpty] at Hbridge
-                      exact Hbridge
+                      rwa [HsubstEmpty] at Hbridge
                     rw [Hw_argExpr, Hδ_R1_eq_δ_σ, HRHS_StepE,
                         ← HRHS_oldEqArgVal, ← Hk_mkOld]
                   -- HpostEval_bridge: per-entry σ_R1 eval bridge via

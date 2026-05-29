@@ -1321,7 +1321,7 @@ theorem H_check_block_zip
       have HheadStmts := mkSingletonEval lbl
         (Lambda.LExpr.substFvars check.expr (ks.zip (Core.Transform.createFvars ks')))
         (check.md.setCallSiteFileRange md) HevSubst
-      simp only [List.zip_cons_cons, List.map_cons, List.singleton_append]
+      simp only [List.zip_cons_cons, List.map_cons]
       exact EvalStatementsContractApp HheadStmts Htail
 
 /-! ### Pure list-shape analogues of `createAsserts` / `createAssumes`.
