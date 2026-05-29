@@ -15,13 +15,16 @@ in the Python-to-Laurel translator and other Laurel code generators.
 Each builder takes an optional `source` parameter so callers can
 attach source locations when available.
 
-## Type-safe builders (`Typed` namespace)
+## Type-safe conditions (`TypedExpr` and `Typed` namespace)
 
-The `Typed` sub-namespace provides phantom-typed wrappers (`TypedExpr tp`)
-that enforce type correctness at Lean compile time. These should be
-preferred for new code; the untyped builders remain for backward
-compatibility and for statement-level constructs that don't have a
-meaningful expression type.
+The `TypedExpr tp` phantom-typed wrapper lets `assert_`, `assume_`, and
+`ifThenElse` enforce — at Lean compile time — that their condition has
+type `TBool`. The `CoeOut` instance below lets a `TypedExpr tp` flow
+into any context expecting an untyped `StmtExprMd` (e.g. `while_`).
+
+Only the typed factory used by current consumers (`Typed.call`) lives
+here; further typed combinators should be added when their first caller
+arrives.
 -/
 
 namespace Strata.Laurel
@@ -105,65 +108,17 @@ def freeVar (name : Identifier) (source : Option FileRange := none) : VariableMd
 def fieldVar (obj : StmtExprMd) (field : Identifier) (source : Option FileRange := none) : VariableMd :=
   mkVarNode (.Field obj field) source
 
-/-! ## Type-safe builders -/
+/-! ## Typed factories
+
+Only the typed factory consumed by current call sites lives here.
+Add more entries when their first caller arrives. -/
 
 namespace Typed
 
-/-- Typed literal int. -/
-def litInt (n : Int) (source : Option FileRange := none) : TypedExpr .TInt :=
-  ⟨mkNode (.LiteralInt n) source⟩
-/-- Typed literal string. -/
-def litStr (s : String) (source : Option FileRange := none) : TypedExpr .TString :=
-  ⟨mkNode (.LiteralString s) source⟩
-/-- Typed literal bool. -/
-def litBool (b : Bool) (source : Option FileRange := none) : TypedExpr .TBool :=
-  ⟨mkNode (.LiteralBool b) source⟩
-/-- Typed identifier. -/
-def ident (name : Identifier) (tp : HighType) (source : Option FileRange := none) : TypedExpr tp :=
-  ⟨mkNode (.Var (.Local name)) source⟩
 /-- Typed static call. -/
 def call (name : String) (args : List StmtExprMd) (tp : HighType)
     (source : Option FileRange := none) : TypedExpr tp :=
   ⟨mkNode (.StaticCall name args) source⟩
-/-- Boolean negation. -/
-def not (x : TypedExpr .TBool) (source : Option FileRange := none) : TypedExpr .TBool :=
-  ⟨mkNode (.PrimitiveOp .Not [x.expr]) source⟩
-/-- Boolean and. -/
-def and (x y : TypedExpr .TBool) (source : Option FileRange := none) : TypedExpr .TBool :=
-  ⟨mkNode (.PrimitiveOp .And [x.expr, y.expr]) source⟩
-/-- Boolean or. -/
-def or (x y : TypedExpr .TBool) (source : Option FileRange := none) : TypedExpr .TBool :=
-  ⟨mkNode (.PrimitiveOp .Or [x.expr, y.expr]) source⟩
-/-- Boolean implies. -/
-def implies (x y : TypedExpr .TBool) (source : Option FileRange := none) : TypedExpr .TBool :=
-  ⟨mkNode (.PrimitiveOp .Implies [x.expr, y.expr]) source⟩
-/-- Equality. -/
-def eq (x y : TypedExpr tp) (source : Option FileRange := none) : TypedExpr .TBool :=
-  ⟨mkNode (.PrimitiveOp .Eq [x.expr, y.expr]) source⟩
-/-- Less than. -/
-def lt (x y : StmtExprMd) (source : Option FileRange := none) : TypedExpr .TBool :=
-  ⟨mkNode (.PrimitiveOp .Lt [x, y]) source⟩
-/-- Less than or equal. -/
-def leq (x y : StmtExprMd) (source : Option FileRange := none) : TypedExpr .TBool :=
-  ⟨mkNode (.PrimitiveOp .Leq [x, y]) source⟩
-/-- Greater than or equal. -/
-def geq (x y : StmtExprMd) (source : Option FileRange := none) : TypedExpr .TBool :=
-  ⟨mkNode (.PrimitiveOp .Geq [x, y]) source⟩
-/-- Greater than. -/
-def gt (x y : StmtExprMd) (source : Option FileRange := none) : TypedExpr .TBool :=
-  ⟨mkNode (.PrimitiveOp .Gt [x, y]) source⟩
-/-- Integer addition. -/
-def add (x y : StmtExprMd) (source : Option FileRange := none) : TypedExpr .TInt :=
-  ⟨mkNode (.PrimitiveOp .Add [x, y]) source⟩
-/-- Integer subtraction. -/
-def sub (x y : StmtExprMd) (source : Option FileRange := none) : TypedExpr .TInt :=
-  ⟨mkNode (.PrimitiveOp .Sub [x, y]) source⟩
-/-- String concatenation. -/
-def strConcat (x y : StmtExprMd) (source : Option FileRange := none) : TypedExpr .TString :=
-  ⟨mkNode (.PrimitiveOp .StrConcat [x, y]) source⟩
-/-- If-then-else (expression, returns typed value). -/
-def ite (cond : TypedExpr .TBool) (t e : TypedExpr tp) (source : Option FileRange := none) : TypedExpr tp :=
-  ⟨mkNode (.IfThenElse cond.expr t.expr (some e.expr)) source⟩
 
 end Typed
 
