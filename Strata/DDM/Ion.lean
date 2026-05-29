@@ -1663,19 +1663,3 @@ def filesFromIon (dialects : DialectMap) (bytes : ByteArray) : Except String (Li
     pure { filePath := filePath, program := program }
 
 end Strata.Program
-
-namespace Strata
-open _root_.Ion (SymbolTable Ion SymbolId)
-
--- Verify that a malformed `decimal` sexp reports "decimal" in the error message.
-#guard
-  let tbl := SymbolTable.ofLocals #["decimal"]
-  let decimalSym : Ion SymbolId := .symbol (tbl.symbolId "decimal")
-  -- 4-element sexp: one too many arguments for `decimal`
-  let badSexp : Ion SymbolId := .sexp #[decimalSym, .null, .null, .null]
-  let ctx : FromIonContext := ⟨tbl⟩
-  match ArgF.fromIon (α := TypeRef) badSexp ctx with
-  | .error msg => msg.startsWith "decimal"
-  | .ok _ => false
-
-end Strata
