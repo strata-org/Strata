@@ -21,12 +21,14 @@ open Std (ToFormat Format format)
 
 def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func : Function) :
     Except Format (Function × Core.Expression.TyEnv) := do
-  -- (FIXME) Very similar to `Lambda.inferOp`, except that the body is annotated
-  -- using `LExprT.resolve`. Can we share code here?
-  --
   -- `LFunc.type` below will also catch any ill-formed functions (e.g.,
   -- where there are duplicates in the formals, etc.).
+  let origTypeArgs := func.typeArgs
   let type ← func.type
+  let undeclaredVars := LTy.freeVars type
+  if undeclaredVars != [] then
+    .error f!"Function '{func.name}': type variables {undeclaredVars} appear in \
+              the signature but are not declared in typeArgs {func.typeArgs}"
   let (monoty, Env) ← LTy.instantiateWithCheck type C Env
   let monotys := monoty.destructArrow
   -- Use the number of formal parameters to determine which arrow components are
@@ -48,19 +50,39 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
   match func.body with
   | none => .ok (func, Env)
   | some body =>
-    -- Temporarily add formals in the context.
+    -- Reject body annotations referencing type variables not in typeArgs.
+    let bodyVars := body.annotationTyVars
+    let strayVars := bodyVars.filter (· ∉ origTypeArgs)
+    if !strayVars.isEmpty then
+      .error f!"Function '{func.name}': body contains undeclared type variables \
+                {strayVars.toList} (not in typeArgs {origTypeArgs})"
+    -- Add formals with monomorphic types (type parameters are fixed in the body).
     let Env := Env.pushEmptyContext
-    let Env := Env.addInNewestContext (LFunc.inputPolyTypes func)
-    -- Type check and annotate the body, and ensure that it unifies with the
-    -- return type.
+    let Env := Env.addInNewestContext (LFunc.inputMonoSignature func)
+    -- Type check the body and unify with the return type.
     let (bodya, Env) ← LExpr.resolve C Env body
     let bodyty := bodya.toLMonoTy
-    let (retty, Env) ← (LFunc.outputPolyType func).instantiateWithCheck C Env
+    let retty := func.output
     let S ← Constraints.unify [(retty, bodyty)] (TEnv.stateSubstInfo Env) |>.mapError format
+    -- The inferred type must be alpha-equivalent to the declared signature.
+    let inferredTy := LMonoTy.subst S.subst monoty
+    let bwdMap ← match LMonoTy.alphaEquivMap monoty inferredTy with
+      | some m => pure m
+      | none =>
+        let displaySubst : Subst :=
+          [func.typeArgs.zip origTypeArgs |>.map (fun (fresh, orig) => (fresh, .ftvar orig))]
+        let displayInferred := LMonoTy.subst displaySubst inferredTy
+        let displayMono := LMonoTy.subst displaySubst monoty
+        .error f!"Function '{func.name}': body constrains the type to '{displayInferred}', \
+                  incompatible with declared polymorphic signature '{displayMono}'"
     let Env := TEnv.updateSubst Env S
-    -- Apply the outer unification substitution back to the body so that type
-    -- variables introduced inside it are resolved.
+    -- Apply S to the body, then rename type variables to match the
+    -- instantiated typeArgs so that body annotations are consistent.
     let bodya := LExpr.applySubstT bodya S.subst
+    -- Identity entries are no-ops: bijectivity of bwdMap ensures no other key maps to k.
+    let renameSubst : Subst :=
+      [bwdMap.toList.filterMap (fun (k, v) => if k == v then none else some (k, .ftvar v))]
+    let bodya := LExpr.applySubstT bodya renameSubst
     -- Validate the measure expression type for int-recursive functions.
     -- Only validates non-fvar measures (fvar measures are validated in TermCheck
     -- using the TypeFactory, which has ADT information).
