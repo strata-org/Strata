@@ -105,4 +105,63 @@ info: [WFObligation(safeDiv, (∀ (bvar:int) ((~Bool.Implies : (arrow bool (arro
 #eval collectWFObligations testFactory
   esM[((λ (int): %0) ((~safeDiv a) b))]
 
+/-! ### Polymorphic preconditions: type substitution at call site
+
+A polymorphic function whose precondition mentions the type variable `%a`
+must have that variable substituted with the call site's instantiated type.
+Without this, downstream SMT encoding fails on unresolved type vars (issue #1201).
+-/
+
+-- A polymorphic function `polySel<a>(s : Sequence a) : a` whose precondition
+-- contains an operator annotated with the type variable `%a`. This mirrors
+-- `Sequence.select`'s `0 <= i && i < Sequence.length(s : Sequence %a)`
+-- bound check, which uses an annotated `Sequence.length` op.
+private def polySelFunc : LFunc TestParams :=
+  { name := "polySel"
+    typeArgs := ["a"]
+    inputs := [("s", mty[Sequence %a])]
+    output := mty[%a]
+    -- precondition: 0 < lenOf(s), i.e.
+    -- (((~Int.Lt : int → int → bool) #0) ((~lenOf : (Sequence %a) → int) s))
+    -- The inner `lenOf` op carries a `%a` annotation that must be substituted
+    -- at the call site. The outer `Int.Lt` makes the precondition `bool`-typed.
+    preconditions :=
+      [⟨esM[(((~Int.Lt : int → int → bool) #0) ((~lenOf : (Sequence %a) → int) s))], ()⟩]
+  }
+
+private def polyFactory : Factory TestParams := .ofArray #[polySelFunc]
+
+-- Call site annotates the operator with the instantiated arrow type
+-- `Sequence int → int`. After value substitution alone, the inner op annotation
+-- `(~lenOf : (Sequence %a) → int)` would still carry `%a`; the fix must also
+-- apply the call-site type substitution `[%a → int]`.
+/--
+info: [WFObligation(polySel, ((~Int.Lt : (arrow int (arrow int bool))) #0 ((~lenOf : (arrow (Sequence int) int)) myseq)), ())]
+-/
+#guard_msgs in
+#eval collectWFObligations polyFactory
+  esM[((~polySel : (Sequence int) → int) myseq)]
+
+-- Same expectation when the operator is unannotated: the argument-types
+-- fallback unifies `Sequence int` against `Sequence %a` to derive `[%a → int]`.
+/--
+info: [WFObligation(polySel, ((~Int.Lt : (arrow int (arrow int bool)))
+ #0
+ ((~lenOf : (arrow (Sequence int) int)) (myseq : (Sequence int)))), ())]
+-/
+#guard_msgs in
+#eval collectWFObligations polyFactory
+  esM[(~polySel (myseq : (Sequence int)))]
+
+-- Subst.empty arm: neither `.op` annotation nor typed arguments. The
+-- `callSiteTypeSubst` documentation (lines 63–66) promises this case returns
+-- `Subst.empty` and defers handling to the SMT encoder. The unsubstituted
+-- `%a` should remain in the inner `lenOf` op annotation.
+/--
+info: [WFObligation(polySel, ((~Int.Lt : (arrow int (arrow int bool))) #0 ((~lenOf : (arrow (Sequence a) int)) myseq)), ())]
+-/
+#guard_msgs in
+#eval collectWFObligations polyFactory
+  esM[(~polySel myseq)]
+
 end Lambda
