@@ -1420,9 +1420,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                   | refl => rfl
                   | step _ _ _ h _ => exact absurd h (by intro h; cases h)
               subst hρ_inner_eq
-              -- Now `hstep_call : StepStmtStar (.stmt (.cmd (.call ...)) ⟨σ,δ,false⟩) (.terminal ⟨σ',δ,false⟩)`.
-              -- A single `step_cmd` of `EvalCommandContract` lifts to
-              -- this multi-step trace; invert to extract `Hcc`.
+              -- Invert `hstep_call : StepStmtStar (.cmd (.call …)) … → terminal` to extract Hcc.
               have Hcc : EvalCommandContract π δ σ
                   (CmdExt.call procName args md) σ' false := by
                 match hstep_call with
@@ -1834,9 +1832,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                       HndefOldTrips
                   -- D2: L4 (asserts), L5 (havocs), L6 (assumes) chain.
                   rw [Hsts_struct]
-                  -- L5: build post-havoc store σ_havoc by applying HavocVars
-                  -- segment-by-segment to σ' = σ.update lhs modvals.  Derive
-                  -- HL5 directly:
+                  -- L5: build post-havoc store σ_havoc by HavocVars segments on σ' = σ.update lhs modvals.
                   have Hhav_σ : HavocVars σ lhs σ' :=
                     UpdateStatesHavocVars Hupdate
                   have Hhav_arg :
@@ -1886,9 +1882,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           oldTrips.unzip.fst.unzip.fst oldVals) lhs :=
                     isDefined_3layer_lift HlhsDisjArg HlhsDisjOut
                       (HoldTripsFst ▸ HlhsDisjOld) Hlhs_isLocl
-                  -- HL5: havocs over `lhs` from σ_old to σ_havoc (same
-                  -- 3-layer init applied to σ' instead of σ).  Use
-                  -- `hCallArgsLhs.symm` to align with `CallArg.getLhs args`.
+                  -- HL5: 3-layer havocs over lhs from σ_old → σ_havoc (uses hCallArgsLhs.symm).
                   have HL5_pre :
                       EvalStatementsContract π φ
                         ⟨updatedStates
@@ -2241,8 +2235,6 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                          (lhs ++ filtered_argTemps).length
                     rw [List.length_append, List.length_append,
                         HoutKeys_lhs_len, Hfilt_len_sym]
-                  -- (HinputsFresh/HoutputsFresh and inputs/outputs vs
-                  --  argTemps/outTemps/olds disjointness hoisted to C-aux.)
                   -- filtered_inputs ⊆ inputs.keys (via the filter zip path).
                   have Hfilt_in_eq_map :
                       filtered_inputs = filtered_argSubst.map Prod.fst := by
@@ -2461,9 +2453,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                     intro v Hv
                     have Hv_argT : v ∈ argTemps :=
                       Hfilt_argT_sub_argTemps v Hv
-                    -- σ_havoc[v]: v ∈ argTemps, layer 1 of σ_havoc writes
-                    -- argTemps to argVals.  Use updatedStatesDefined on
-                    -- (argTemps ++ outTemps ++ olds) over argVals++oVals++oldVals.
+                    -- σ_havoc[v] for v ∈ argTemps: 3-layer updatedStatesDefined.
                     show (updatedStates σ'
                       (argTemps ++
                         outTemps ++ genOldIdents)
@@ -2814,9 +2804,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                   have HσAO_def_out_L4 :
                       Imperative.isDefined σAO proc.header.outputs.keys :=
                     InitStatesDefined Hinitout
-                  -- σ_old definedness on argTemps (layer 1 fall-through).
-                  -- v ∈ argTemps ⇒ v ∉ genOldIdents (HargOldDisj) and v ∉ outTemps
-                  -- (HargOutDisj), so layers 2-3 fall through to layer 1.
+                  -- σ_old definedness on argTemps via layer-1 fall-through (HargOldDisj/HargOutDisj).
                   have Hσ_old_def_argT :
                       Imperative.isDefined σ_old
                         argTemps := by
@@ -2854,9 +2842,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
                           proc.header.outputs.keys)
                         (argVals ++ oVals) :=
                     ReadValuesApp HrdAO_in_L4 HrdAO_out_L4
-                  -- σ_old reads argTemps ↦ argVals: positional init at layer 1
-                  -- lifted through layers 2/3 via readValues_updatedStates
-                  -- (using disjointness from outTemps/olds).
+                  -- σ_old reads argTemps ↦ argVals: layer-1 init lifted via readValues_updatedStates.
                   have HrdLayer3_argT :
                       ReadValues σ_old
                         argTemps argVals :=
