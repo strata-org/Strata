@@ -27,21 +27,21 @@ program Boole;
  type nat;
  function int_to_nat (i : int) : nat;
  type Set (T : Type);
- function Seq_len (s : Sequence bv32) : nat {
+ function Seq_len_bv32 (s : Sequence bv32) : nat {
   int_to_nat(Sequence.length(s))
 }
- function Seq_lib_insert (s : Sequence bv32, i : int, val : bv32) : Sequence bv32
+ function Seq_lib_insert_bv32 (s : Sequence bv32, i : int, val : bv32) : Sequence bv32
   requires 0 <= i && i <= Sequence.length(s);
  {
   Sequence.append(Sequence.build(Sequence.take(s, i), val), Sequence.drop(s, i))
 }
- function Seq_new (len : nat, f : int -> bv32) : Sequence bv32;
- function Seq_lib_map (s : Sequence bv32, f : int -> bv32 -> bv32) : Sequence bv32;
- function Seq_lib_map_values (s : Sequence bv32, f : bv32 -> bv32) : Sequence bv32;
- function Seq_lib_filter (s : Sequence bv32, p : bv32 -> bool) : Sequence bv32;
- function Seq_lib_sort_by (s : Sequence bv32, less : bv32 -> bv32 -> bool) : Sequence bv32;
- function Seq_lib_to_set (s : Sequence bv32) : Set bv32;
- function Set_finite (s : Set bv32) : bool;
+ function Seq_new_bv32 (len : nat, f : int -> bv32) : Sequence bv32;
+ function Seq_lib_map_bv32 (s : Sequence bv32, f : int -> bv32 -> bv32) : Sequence bv32;
+ function Seq_lib_map_values_bv32 (s : Sequence bv32, f : bv32 -> bv32) : Sequence bv32;
+ function Seq_lib_filter_bv32 (s : Sequence bv32, p : bv32 -> bool) : Sequence bv32;
+ function Seq_lib_sort_by_bv32 (s : Sequence bv32, less : bv32 -> bv32 -> bool) : Sequence bv32;
+ function Seq_lib_to_set_bv32 (s : Sequence bv32) : Set bv32;
+ function Set_finite_bv32 (s : Set bv32) : bool;
  function bv8_to_bv32_u (x : bv8) : bv32;
  function k32 () : Sequence bv32 {
   Sequence.of_bv32[bv{32}(1116352408), bv{32}(1899447441), bv{32}(3049323471), bv{32}(3921009573), bv{32}(961987163), bv{32}(1508970993), bv{32}(2453635748), bv{32}(2870763221), bv{32}(3624381080), bv{32}(310598401), bv{32}(607225278), bv{32}(1426881987), bv{32}(1925078388), bv{32}(2162078206), bv{32}(2614888103), bv{32}(3248222580), bv{32}(3835390401), bv{32}(4022224774), bv{32}(264347078), bv{32}(604807628), bv{32}(770255983), bv{32}(1249150122), bv{32}(1555081692), bv{32}(1996064986), bv{32}(2554220882), bv{32}(2821834349), bv{32}(2952996808), bv{32}(3210313671), bv{32}(3336571891), bv{32}(3584528711), bv{32}(113926993), bv{32}(338241895), bv{32}(666307205), bv{32}(773529912), bv{32}(1294757372), bv{32}(1396182291), bv{32}(1695183700), bv{32}(1986661051), bv{32}(2177026350), bv{32}(2456956037), bv{32}(2730485921), bv{32}(2820302411), bv{32}(3259730800), bv{32}(3345764771), bv{32}(3516065817), bv{32}(3600352804), bv{32}(4094571909), bv{32}(275423344), bv{32}(430227734), bv{32}(506948616), bv{32}(659060556), bv{32}(883997877), bv{32}(958139571), bv{32}(1322822218), bv{32}(1537002063), bv{32}(1747873779), bv{32}(1955562222), bv{32}(2024104815), bv{32}(2227730452), bv{32}(2361852424), bv{32}(2428436474), bv{32}(2756734187), bv{32}(3204031479), bv{32}(3329325298)]
@@ -213,19 +213,19 @@ spec {
 #end
 
 /-- info:
-Obligation: Seq_lib_insert_body_calls_Sequence.take_0
+Obligation: Seq_lib_insert_bv32_body_calls_Sequence.take_0
 Property: out-of-bounds access check
 Result: ✅ pass
 
-Obligation: Seq_lib_insert_body_calls_Sequence.drop_1
+Obligation: Seq_lib_insert_bv32_body_calls_Sequence.drop_1
 Property: out-of-bounds access check
 Result: ✅ pass
 
-Obligation: assert_2_3107
+Obligation: assert_2_3152
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_3_3150
+Obligation: assert_3_3195
 Property: assert
 Result: ✅ pass
 
@@ -237,15 +237,15 @@ Obligation: entry_invariant_0_1
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_6_3830
+Obligation: assert_6_3875
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_7_3861
+Obligation: assert_7_3906
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_8_3892
+Obligation: assert_8_3937
 Property: assert
 Result: ✅ pass
 
@@ -277,7 +277,7 @@ Obligation: arbitrary_iter_maintain_invariant_0_1
 Property: assert
 Result: ✅ pass
 
-Obligation: to_u32s_ensures_5_3422
+Obligation: to_u32s_ensures_5_3467
 Property: assert
 Result: ✅ pass
 
@@ -333,15 +333,15 @@ Obligation: set_w15_calls_Sequence.select_0
 Property: out-of-bounds access check
 Result: ✅ pass
 
-Obligation: callElimAssert_rotate_right_requires_1_3056_39
+Obligation: callElimAssert_rotate_right_requires_1_3101_39
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_rotate_right_requires_1_3056_35
+Obligation: callElimAssert_rotate_right_requires_1_3101_35
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_12_5815
+Obligation: assert_12_5860
 Property: assert
 Result: ✅ pass
 
@@ -349,15 +349,15 @@ Obligation: set_w2_calls_Sequence.select_0
 Property: out-of-bounds access check
 Result: ✅ pass
 
-Obligation: callElimAssert_rotate_right_requires_1_3056_31
+Obligation: callElimAssert_rotate_right_requires_1_3101_31
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_rotate_right_requires_1_3056_27
+Obligation: callElimAssert_rotate_right_requires_1_3101_27
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_13_6054
+Obligation: assert_13_6099
 Property: assert
 Result: ✅ pass
 
@@ -373,15 +373,15 @@ Obligation: set_block_local_calls_Sequence.update_0
 Property: out-of-bounds access check
 Result: ✅ pass
 
-Obligation: callElimAssert_rotate_right_requires_1_3056_23
+Obligation: callElimAssert_rotate_right_requires_1_3101_23
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_rotate_right_requires_1_3056_19
+Obligation: callElimAssert_rotate_right_requires_1_3101_19
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_rotate_right_requires_1_3056_15
+Obligation: callElimAssert_rotate_right_requires_1_3101_15
 Property: assert
 Result: ✅ pass
 
@@ -389,15 +389,15 @@ Obligation: set_t1_calls_Sequence.select_0
 Property: out-of-bounds access check
 Result: ✅ pass
 
-Obligation: callElimAssert_rotate_right_requires_1_3056_11
+Obligation: callElimAssert_rotate_right_requires_1_3101_11
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_rotate_right_requires_1_3056_7
+Obligation: callElimAssert_rotate_right_requires_1_3101_7
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_rotate_right_requires_1_3056_3
+Obligation: callElimAssert_rotate_right_requires_1_3101_3
 Property: assert
 Result: ✅ pass
 
@@ -477,11 +477,11 @@ Obligation: set_state_out_calls_Sequence.update_1
 Property: out-of-bounds access check
 Result: ✅ pass
 
-Obligation: compress_u32_ensures_11_4416
+Obligation: compress_u32_ensures_11_4461
 Property: assert
 Result: ✅ pass
 
-Obligation: compress_pre_compress_requires_16_7819_calls_Sequence.select_0
+Obligation: compress_pre_compress_requires_16_7864_calls_Sequence.select_0
 Property: out-of-bounds access check
 Result: ✅ pass
 
@@ -497,11 +497,11 @@ Obligation: init_calls_Sequence.select_0
 Property: out-of-bounds access check
 Result: ✅ pass
 
-Obligation: callElimAssert_to_u32s_requires_4_3381_47
+Obligation: callElimAssert_to_u32s_requires_4_3426_47
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_compress_u32_requires_10_4344_43
+Obligation: callElimAssert_compress_u32_requires_10_4389_43
 Property: assert
 Result: ✅ pass
 
