@@ -88,6 +88,19 @@ subst:
                     ]
           return format ans
 
+/-- info: error: Variable x expected type bool but initialization expression has inferred type int: Impossible to unify bool with int. -/
+#guard_msgs in
+#eval do let ans ← typeCheck LContext.default TEnv.default Program.init none
+                    [.init "x" t[bool] (.det eb[#2]) .empty]
+          return format ans
+
+/-- info: error: Variable x expected type bool but expression has type int: Impossible to unify bool with int. -/
+#guard_msgs in
+#eval do let ans ← typeCheck LContext.default TEnv.default Program.init none
+                    [.init "x" t[bool] (.det eb[#true]) .empty,
+                     .set "x" eb[#2] .empty]
+          return format ans
+
 /-- info: error: Variable x of type bool already in context. -/
 #guard_msgs in
 #eval do let ans ← typeCheck LContext.default TEnv.default Program.init none
