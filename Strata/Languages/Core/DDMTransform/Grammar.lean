@@ -94,6 +94,15 @@ fn bv16Lit (n : Num) : bv16 => "bv{16}" "(" n ")";
 fn bv32Lit (n : Num) : bv32 => "bv{32}" "(" n ")";
 fn bv64Lit (n : Num) : bv64 => "bv{64}" "(" n ")";
 fn bv128Lit (n : Num) : bv128 => "bv{128}" "(" n ")";
+
+fn as_uint  (T : Type, e : T) : int  => "as_uint"  "(" e ")";
+fn as_sint  (T : Type, e : T) : int  => "as_sint"  "(" e ")";
+fn as_bv1   (e : int) : bv1   => "as_bv1"   "(" e ")";
+fn as_bv8   (e : int) : bv8   => "as_bv8"   "(" e ")";
+fn as_bv16  (e : int) : bv16  => "as_bv16"  "(" e ")";
+fn as_bv32  (e : int) : bv32  => "as_bv32"  "(" e ")";
+fn as_bv64  (e : int) : bv64  => "as_bv64"  "(" e ")";
+fn as_bv128 (e : int) : bv128 => "as_bv128" "(" e ")";
 fn strLit (s : Str) : string => s;
 fn realLit (d : Decimal) : real => d;
 
