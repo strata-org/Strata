@@ -552,7 +552,19 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
     | .bv ⟨_, .SGe⟩  => .ok (.app Op.bvsge,      .bool,   ctx)
     | .bv ⟨n, .Concat⟩ => .ok (.app Op.bvconcat,    .bitvec (n * 2), ctx)
     | .bv ⟨_, .ToUInt⟩  => .ok (.app Op.ubv_to_int,  .int,            ctx)
-    | .bv ⟨_, .ToInt⟩   => .ok (.app Op.sbv_to_int,  .int,            ctx)
+    | .bv ⟨n, .ToInt⟩   =>
+      -- sbv_to_int(x) = ite(bvslt(x, 0), bv2nat(x) - 2^n, bv2nat(x))
+      let sbvToIntApp := fun (args : List Term) (_retTy : TermType) =>
+        match args with
+        | [x] =>
+          let zero := Term.prim (.bitvec (BitVec.zero n))
+          let isNeg := Term.app Op.bvslt [x, zero] .bool
+          let unsigned := Term.app Op.ubv_to_int [x] .int
+          let modulus := Term.prim (.int (2 ^ n : Nat))
+          let signed := Term.app Op.sub [unsigned, modulus] .int
+          Factory.ite isNeg signed unsigned
+        | _ => Term.app Op.sub [] .int
+      .ok (sbvToIntApp, .int, ctx)
     | .intToBv n        => .ok (.app (Op.int_to_bv n), .bitvec n,     ctx)
 
     | .str .Length   => .ok (.app Op.str_length,    .int,    ctx)
