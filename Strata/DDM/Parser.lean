@@ -970,6 +970,11 @@ def opSyntaxParser (ctx : ParsingContext)
     let cat := argDecls[0].kind.categoryOf
     if cat.name == category then
       throw mf!"Passthrough syntax cannot be left-recursive"
+    if SepFormat.isParametricCategory cat.name then
+      if h : cat.args.size = 1 then
+        let c := cat.args[0]
+        if c.name == category then
+          throw mf!"Leading symbol cannot be recursive call to {c}"
     let p := liftToKind ctx [.ident 0 0] argDecls
     pure {
       category,
