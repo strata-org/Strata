@@ -101,8 +101,9 @@ def run(test_file: str, *, laurel: bool) -> bool:
     )
 
     # Run analysis with --sarif
+    strata_bin = str(REPO_ROOT / "StrataCLI" / ".lake" / "build" / "bin" / "strata")
     subprocess.run(
-        ["lake", "exe", "strata", cmd_name, "--sarif", ion_rel],
+        [strata_bin, cmd_name, "--sarif", ion_rel],
         cwd=REPO_ROOT,
         stdout=subprocess.DEVNULL,
     )
