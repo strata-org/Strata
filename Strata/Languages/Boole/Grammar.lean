@@ -144,6 +144,10 @@ fn cast_to_sint (T : Type, e : T) : int => @[prec(80)] e " as_sint";
 
 // Narrowing cast: `e as_bv{n}` converts an Int to a bitvector of width n (truncating mod 2^n).
 // Lowers to `Int.ToBv{n}` Core op → SMT-LIB 2.7 `(_ int_to_bv n)`.
+//
+// Keep widths in sync with Bv{n} types and Core's Int.ToBv{n} ops (Verify.lean,
+// Core/DDMTransform/Grammar.lean) when adding new widths.
+// prec(80) > mul(30) > add(25): `a * b as_bv8` → `a * (b as_bv8)`, `a as_int + b` → `(a as_int) + b`.
 fn cast_to_bv1   (e : int) : bv1   => @[prec(80)] e " as_bv1";
 fn cast_to_bv8   (e : int) : bv8   => @[prec(80)] e " as_bv8";
 fn cast_to_bv16  (e : int) : bv16  => @[prec(80)] e " as_bv16";
