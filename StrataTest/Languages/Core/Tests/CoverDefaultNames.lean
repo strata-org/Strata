@@ -51,3 +51,63 @@ Result: ✅ pass
 #eval verify coverDefaultNames (options := .quiet)
 
 ---------------------------------------------------------------------
+
+-- assert followed by cover: counters are independent
+def assertThenCover :=
+#strata
+program Core;
+procedure Test(x : int)
+spec {
+  requires x >= 0;
+}
+{
+  assert (true);
+  cover (true);
+};
+#end
+
+/--
+info: program Core;
+
+procedure Test (x : int)
+spec {
+  requires [Test_requires_0]: x >= 0;
+  } {
+  assert [assert_0]: true;
+  cover [cover_0]: true;
+};
+-/
+#guard_msgs in
+#eval TransM.run Inhabited.default (translateProgram assertThenCover) |>.fst
+
+---------------------------------------------------------------------
+
+-- cover followed by assert: counters are independent
+def coverThenAssert :=
+#strata
+program Core;
+procedure Test(x : int)
+spec {
+  requires x >= 0;
+}
+{
+  cover (true);
+  assert (true);
+};
+#end
+
+/--
+info: program Core;
+
+procedure Test (x : int)
+spec {
+  requires [Test_requires_0]: x >= 0;
+  } {
+  cover [cover_0]: true;
+  assert [assert_0]: true;
+};
+-/
+#guard_msgs in
+#eval TransM.run Inhabited.default (translateProgram coverThenAssert) |>.fst
+
+---------------------------------------------------------------------
