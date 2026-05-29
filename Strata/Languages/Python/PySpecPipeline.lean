@@ -20,6 +20,10 @@ import Strata.Languages.Python.Translation
 import Strata.Languages.FineGrainLaurel.Elaborate
 import Strata.Util.DecideProp
 import Strata.Util.Profile
+import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
+import Strata.DDM.Parser
+import Strata.DDM.Elab
+import Strata.DDM.Elab.LoadedDialects
 
 /-! ## PySpec Pipeline
 
@@ -466,59 +470,56 @@ public def pyAnalyzeLaurelV2
     | .ok r => pure r
     | .error msg => throw (.internal msg)
 
-  -- Step 1.5: Load imported module stubs for Resolution context
-  let importedCtx ← profileStep profile "Load imported module stubs" do
-    let mut ctx : Python.Resolution.Ctx := {}
-    let modules := stmts.toList.filterMap fun s => match s with
-      | .ImportFrom _ modOpt _ _ => match modOpt.val with
-        | some modAnn => some modAnn.val
-        | none => none
-      | .Import _ aliases => aliases.val.toList.head?.bind fun a => match a with
-        | .mk_alias _ modName _ => some modName.val
-      | _ => none
-    for modName in modules do
-      let baseDir := System.FilePath.mk pythonIonPath |>.parent.getD "."
-      let ionPath := baseDir / (modName ++ ".python.st.ion")
-      let ionPathParent := baseDir / ".." / (modName ++ ".python.st.ion")
-      let readResult ← match ← Python.readPythonStrata ionPath.toString |>.toBaseIO with
-        | .ok stmts => pure (.ok stmts)
-        | .error _ => Python.readPythonStrata ionPathParent.toString |>.toBaseIO
-      match readResult with
-      | .ok stubStmts =>
-        let stubResolved := Python.Resolution.resolve stubStmts
-        let _ := stubResolved -- extract context entries from stub
-        -- The stub's top-level functions are in the resolved output's moduleLocals
-        -- We need the Ctx that Resolution built internally. For now, re-resolve to get it.
-        let stubLocals := Python.Resolution.computeLocals stubStmts []
-        let stubCtx := stubLocals.foldl (fun c (n, ty) => c.insert n (Python.Resolution.CtxEntry.variable ty)) Python.Resolution.builtinContext
-        let (finalCtx, _) := stubStmts.foldl (init := (stubCtx, (#[] : Array _))) fun acc stmt =>
-          let (c, arr) := acc
-          let f : SourceRange → Python.Resolution.ResolvedAnn := fun sr => { sr, info := .irrelevant }
-          let (c', resolved) := Python.Resolution.resolveStmt c f stmt
-          (c', arr.push resolved)
-        -- Merge function entries from stub into imported context
-        for (name, entry) in finalCtx.toList do
-          match entry with
-          | .function _ => ctx := ctx.insert name entry
-          | .class_ _ _ _ => ctx := ctx.insert name entry
-          | _ => pure ()
-      | .error _ =>
-        unless quiet do
-          let _ ← IO.eprintln s!"warning: stub not found for module '{modName}'" |>.toBaseIO
-    pure ctx
+  -- Step 2: Resolution (scope the Python AST, loading imports on demand)
+  let baseDir := System.FilePath.mk pythonIonPath |>.parent.getD "."
+  let (resolvedStmts, importedModules) ← profileStep profile "Resolution (scope Python AST)" do
+    match ← (Python.Resolution.resolve stmts baseDir).toBaseIO with
+    | .ok r => pure r
+    | .error msg => throw (.internal s!"Resolution failed: {msg}")
 
-  -- Step 2: Resolution (scope the Python AST)
-  let resolvedStmts ← profileStep profile "Resolution (scope Python AST)" do
-    pure (Python.Resolution.resolve stmts importedCtx)
-
-  -- Step 3: Translation (fold resolved AST → Laurel)
+  -- Step 3: Translation (fold resolved AST → Laurel, including imported modules with caching)
   let metadataPath := sourcePath.getD pythonIonPath
   let laurelProgram ← profileStep profile "Translate Python to Laurel (V2)" do
+    let mut combinedProgram : Laurel.Program := { staticProcedures := [], staticFields := [], types := [], constants := [] }
+    for importedMod in importedModules do
+      let srcStr := importedMod.sourcePath.toString
+      let cachePath : System.FilePath :=
+        if srcStr.endsWith ".python.st.ion" then
+          ⟨srcStr.dropRight ".python.st.ion".length ++ ".laurel.st"⟩
+        else
+          importedMod.sourcePath.withExtension "laurel.st"
+      let laurel ← if ← cachePath.pathExists then
+        match ← (do
+          let content ← IO.FS.readFile cachePath
+          let input := Strata.Parser.stringInputContext cachePath content
+          let dialects := Strata.Elab.LoadedDialects.ofDialects! #[Strata.initDialect, Strata.Laurel.Laurel]
+          let strataProgram ← Strata.Elab.parseStrataProgramFromDialect dialects Strata.Laurel.Laurel.name input
+          let uri := Strata.Uri.file cachePath.toString
+          match Strata.Laurel.TransM.run uri (Strata.Laurel.parseProgram strataProgram) with
+          | .ok program => pure program
+          | .error errors => throw (IO.userError s!"Laurel cache parse errors: {errors}")
+          ).toBaseIO with
+        | .ok prog => pure (some prog)
+        | .error _ => pure none
+      else pure none
+      let laurel ← match laurel with
+      | some prog => pure prog
+      | none =>
+        match Python.Translation.runTranslation importedMod.program metadataPath with
+        | .error _ => pure combinedProgram
+        | .ok (prog, _) =>
+          let _ ← (IO.FS.writeFile cachePath (toString (Std.format prog))).toBaseIO
+          pure prog
+      combinedProgram := { combinedProgram with
+        staticProcedures := combinedProgram.staticProcedures ++ laurel.staticProcedures
+        types := combinedProgram.types ++ laurel.types }
     match Python.Translation.runTranslation resolvedStmts metadataPath with
     | .error e => match e with
       | .userError range msg => throw (.userCode range msg)
       | _ => throw (.internal s!"V2 Translation failed: {e}")
-    | .ok (program, _state) => pure program
+    | .ok (program, _state) => pure { program with
+        staticProcedures := combinedProgram.staticProcedures ++ program.staticProcedures
+        types := combinedProgram.types ++ program.types }
 
   -- Step 4: Elaboration needs ALL sigs (user + runtime) to insert coercions at call
   -- boundaries, but only user bodies are elaborated (runtime is trusted).

@@ -7,6 +7,7 @@ module
 public import Strata.Languages.Laurel.Laurel
 public import Strata.Languages.Python.PythonDialect
 import Strata.DDM.Util.SourceRange
+import Strata.Languages.Python.ReadPython
 
 /-!
 # Pass 1: Name Resolution
@@ -221,13 +222,26 @@ inductive CtxEntry where
   | class_ (name : PythonIdentifier) (fields : List (PythonIdentifier × PythonType)) (methods : List (PythonIdentifier × FuncSig))
   /-- A variable with its type annotation. -/
   | variable (ty : PythonType)
-  /-- An imported module (tracked for `module.name` attribute resolution). -/
-  | module_ (name : PythonIdentifier)
+  /-- An imported module with its resolved context. -/
+  | module_ (moduleCtx : Std.DHashMap.Raw PythonIdentifier (fun _ => CtxEntry))
   /-- An imported name whose type/kind is unknown. -/
   | unresolved
   deriving Inhabited
 
 abbrev Ctx := Std.HashMap PythonIdentifier CtxEntry
+
+/-- An imported module with its source path (for cache filename) and resolved program. -/
+structure ImportedModule where
+  sourcePath : System.FilePath
+  program : ResolvedPythonProgram
+
+/-- State for the resolution monad: collects resolved imported module programs. -/
+structure ResolveState where
+  importedModules : Array ImportedModule := #[]
+  resolvedPaths : Std.HashMap String Ctx := {}
+
+/-- The resolution monad. Reader carries baseDir, State collects imported module programs. -/
+abbrev ResolveM := ReaderT System.FilePath (StateT ResolveState (EIO String))
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- Annotation Extraction
@@ -748,7 +762,18 @@ private def resolveMethodCall (ctx : Ctx) (receiver : PythonExpr) (methodName : 
     | .Name _ rName _ =>
       let rId := PythonIdentifier.fromAst rName
       match ctx[rId]? with
-      | some (.module_ _modName) => .unresolved
+      | some (.module_ moduleRaw) =>
+        let moduleCtx : Ctx := moduleRaw.fold (fun c k v => c.insert k v) {}
+        match moduleCtx[methId]? with
+        | some (.function sig) => .funcCall sig
+        | some (.class_ cId _ methods) =>
+          let initId := PythonIdentifier.builtin "__init__"
+          match methods.find? (fun (mName, _) => mName == initId) with
+          | some (_, sig) => .classNew cId sig
+          | none =>
+            let emptySig : FuncSig := { name := initId, className := some cId, params := .static {required := [], optional := [], kwonly := []}, returnType := anyType, locals := [] }
+            .classNew cId emptySig
+        | _ => .unresolved
       | _ => .unresolved
     | _ => .unresolved
 
@@ -1011,25 +1036,30 @@ partial def resolveWithitem (ctx : Ctx) (f : SourceRange → ResolvedAnn) : Pyth
         | _ => NodeInfo.unresolved
       .mk_withitem { sr := a, info } (resolveExpr ctx f ctxExpr) (mapAnnOpt f (resolveExpr ctx f) optVars)
 
-partial def resolveExcepthandler (ctx : Ctx) (f : SourceRange → ResolvedAnn) : Python.excepthandler SourceRange → Python.excepthandler ResolvedAnn
-  | .ExceptHandler a ty name body =>
+partial def resolveExcepthandler (ctx : Ctx) (f : SourceRange → ResolvedAnn) : Python.excepthandler SourceRange → ResolveM (Python.excepthandler ResolvedAnn)
+  | .ExceptHandler a ty name body => do
       let handlerCtx := match name.val with
         | some n => ctx.insert (PythonIdentifier.fromAst n) (CtxEntry.variable (annotationToPythonType Option.none))
         | none => ctx
-      .ExceptHandler (f a) (mapAnnOpt f (resolveExpr ctx f) ty) (mapAnnOpt f (mapAnnVal f) name) ⟨f body.ann, resolveBlock handlerCtx f body.val⟩
+      let resolvedBody ← resolveBlock handlerCtx f body.val
+      return .ExceptHandler (f a) (mapAnnOpt f (resolveExpr ctx f) ty) (mapAnnOpt f (mapAnnVal f) name) ⟨f body.ann, resolvedBody⟩
 
-partial def resolveMatchCase (ctx : Ctx) (f : SourceRange → ResolvedAnn) : Python.match_case SourceRange → Python.match_case ResolvedAnn
-  | .mk_match_case a pat guard body => .mk_match_case (f a) (sorry) (mapAnnOpt f (resolveExpr ctx f) guard) ⟨f body.ann, resolveBlock ctx f body.val⟩
+partial def resolveMatchCase (ctx : Ctx) (f : SourceRange → ResolvedAnn) : Python.match_case SourceRange → ResolveM (Python.match_case ResolvedAnn)
+  | .mk_match_case a pat guard body => do
+    let resolvedBody ← resolveBlock ctx f body.val
+    return .mk_match_case (f a) (sorry) (mapAnnOpt f (resolveExpr ctx f) guard) ⟨f body.ann, resolvedBody⟩
 
 /-- Resolves an array of statements sequentially, threading the growing context.
     Each statement may extend the context (e.g., assignments, imports, defs) which
     subsequent statements in the same block can see. -/
-partial def resolveBlock (ctx : Ctx) (f : SourceRange → ResolvedAnn) (stmts : Array PythonStmt) : Array ResolvedPythonStmt :=
-  let (_, resolved) := stmts.foldl (init := (ctx, (#[] : Array ResolvedPythonStmt))) fun acc stmt =>
-    let (c, arr) := acc
-    let (c', r) := resolveStmt c f stmt
-    (c', arr.push r)
-  resolved
+partial def resolveBlock (ctx : Ctx) (f : SourceRange → ResolvedAnn) (stmts : Array PythonStmt) : ResolveM (Array ResolvedPythonStmt) := do
+  let mut c := ctx
+  let mut resolved : Array ResolvedPythonStmt := #[]
+  for stmt in stmts do
+    let (c', r) ← resolveStmt c f stmt
+    c := c'
+    resolved := resolved.push r
+  return resolved
 
 /-- Resolves a function definition. Takes the pre-computed `FuncSig` (from the ClassDef handler
     or freshly extracted), extends the context with the function name, builds the body context,
@@ -1040,16 +1070,59 @@ partial def resolveFuncDef (ctx : Ctx) (f : SourceRange → ResolvedAnn)
     (a : SourceRange) (name : Ann String SourceRange) (args : Python.arguments SourceRange)
     (body : Ann PythonProgram SourceRange) (decorators : Ann (Array PythonExpr) SourceRange)
     (returns : Ann (Option PythonExpr) SourceRange) (tc : Ann (Option (Ann String SourceRange)) SourceRange)
-    (typeParams : Ann (Array (Python.type_param SourceRange)) SourceRange) :=
+    (typeParams : Ann (Array (Python.type_param SourceRange)) SourceRange) := do
   let ctx' := ctx.insert (PythonIdentifier.fromAst name) (.function sig)
   let bodyCtx := resolveFunctionBody ctx' f args body.val
   let ann : ResolvedAnn := { sr := a, info := .funcDecl sig }
-  let rBody : Ann (Array ResolvedPythonStmt) ResolvedAnn := ⟨f body.ann, resolveBlock bodyCtx f body.val⟩
-  (ctx', ann, mapAnnVal f name, resolveArguments bodyCtx f args, rBody,
+  let resolvedBody ← resolveBlock bodyCtx f body.val
+  let rBody : Ann (Array ResolvedPythonStmt) ResolvedAnn := ⟨f body.ann, resolvedBody⟩
+  return (ctx', ann, mapAnnVal f name, resolveArguments bodyCtx f args, rBody,
     mapAnnArr f (resolveExpr ctx' f) decorators,
     mapAnnOpt f (resolveExpr ctx' f) returns,
     mapAnnOpt f (mapAnnVal f) tc,
     mapAnnArr f (resolveTypeParam ctx' f) typeParams)
+
+/-- Load a module component from disk and resolve it. Tries `dir/name.python.st.ion`
+    then `dir/name/__init__.python.st.ion`. Returns the module's resolved program and Ctx. -/
+partial def resolveModuleComponent (name : String) (dir : System.FilePath) (f : SourceRange → ResolvedAnn) : ResolveM (Ctx × ResolvedPythonProgram) := do
+  let ionPath := dir / (name ++ ".python.st.ion")
+  let initPath := dir / name / "__init__.python.st.ion"
+  let key := ionPath.toString
+  let state ← get
+  if let some cachedCtx := state.resolvedPaths[key]? then
+    return (cachedCtx, { stmts := #[], moduleLocals := [] })
+  let loadResult ← do
+    match ← (Python.readPythonStrata ionPath.toString).toBaseIO with
+    | .ok stmts => pure (some (ionPath, stmts))
+    | .error _ =>
+      match ← (Python.readPythonStrata initPath.toString).toBaseIO with
+      | .ok stmts => pure (some (initPath, stmts))
+      | .error _ => pure none
+  match loadResult with
+  | some (actualPath, stmts) =>
+    let moduleLocals := computeLocals stmts []
+    let initCtx := moduleLocals.foldl (fun c (n, ty) => c.insert n (CtxEntry.variable ty)) builtinContext
+    let mut ctx := initCtx
+    let mut resolved : Array ResolvedPythonStmt := #[]
+    for stmt in stmts do
+      let (ctx', r) ← resolveStmt ctx f stmt
+      ctx := ctx'
+      resolved := resolved.push r
+    let prog : ResolvedPythonProgram := { stmts := resolved, moduleLocals := moduleLocals }
+    modify fun s => { s with
+      importedModules := s.importedModules.push { sourcePath := actualPath, program := prog }
+      resolvedPaths := s.resolvedPaths.insert key ctx }
+    pure (ctx, prog)
+  | none => pure ({}, { stmts := #[], moduleLocals := [] })
+
+/-- Resolve a dotted module name (e.g. "boto3.AccessAnalyzer") by converting dots to path
+    separators and loading the final component. -/
+partial def resolveModule (dottedName : String) (dir : System.FilePath) (f : SourceRange → ResolvedAnn) : ResolveM (Ctx × ResolvedPythonProgram) := do
+  let components := dottedName.splitOn "."
+  let moduleDir := components.dropLast.foldl (· / ·) dir
+  match components.getLast? with
+  | some name => resolveModuleComponent name moduleDir f
+  | none => pure ({}, { stmts := #[], moduleLocals := [] })
 
 /-- The core statement resolver. Threads the context as accumulator:
     - `FunctionDef`/`AsyncFunctionDef` → reuses existing sig from ctx if already registered
@@ -1060,24 +1133,24 @@ partial def resolveFuncDef (ctx : Ctx) (f : SourceRange → ResolvedAnn)
     - `Assign`/`AnnAssign` → extends ctx with assigned names.
     - `AugAssign` → annotates with operator sig (`.funcCall`) for Translation.
     - Control flow → resolves sub-blocks in current ctx (no ctx extension from if/for/while). -/
-partial def resolveStmt (ctx : Ctx) (f : SourceRange → ResolvedAnn) (s : PythonStmt) : Ctx × ResolvedPythonStmt :=
+partial def resolveStmt (ctx : Ctx) (f : SourceRange → ResolvedAnn) (s : PythonStmt) : ResolveM (Ctx × ResolvedPythonStmt) := do
   match s with
   | .FunctionDef a name args body decorators returns tc typeParams =>
       let nameId := PythonIdentifier.fromAst name
       let sig := match ctx[nameId]? with
         | some (.function existingSig) => existingSig
         | _ => extractFuncSig ctx f nameId none args decorators.val returns body.val
-      let (ctx', ann, rName, rArgs, rBody, rDecs, rRets, rTc, rTps) :=
+      let (ctx', ann, rName, rArgs, rBody, rDecs, rRets, rTc, rTps) ←
         resolveFuncDef ctx f sig a name args body decorators returns tc typeParams
-      (ctx', .FunctionDef ann rName rArgs rBody rDecs rRets rTc rTps)
+      return (ctx', .FunctionDef ann rName rArgs rBody rDecs rRets rTc rTps)
   | .AsyncFunctionDef a name args body decorators returns tc typeParams =>
       let nameId := PythonIdentifier.fromAst name
       let sig := match ctx[nameId]? with
         | some (.function existingSig) => existingSig
         | _ => extractFuncSig ctx f nameId none args decorators.val returns body.val
-      let (ctx', ann, rName, rArgs, rBody, rDecs, rRets, rTc, rTps) :=
+      let (ctx', ann, rName, rArgs, rBody, rDecs, rRets, rTc, rTps) ←
         resolveFuncDef ctx f sig a name args body decorators returns tc typeParams
-      (ctx', .AsyncFunctionDef ann rName rArgs rBody rDecs rRets rTc rTps)
+      return (ctx', .AsyncFunctionDef ann rName rArgs rBody rDecs rRets rTc rTps)
   | .ClassDef a name bases keywords body decorators typeParams =>
       let classId := PythonIdentifier.fromAst name
       let classType : PythonType := .Name SourceRange.none ⟨SourceRange.none, name.val⟩ (.Load SourceRange.none)
@@ -1096,85 +1169,140 @@ partial def resolveStmt (ctx : Ctx) (f : SourceRange → ResolvedAnn) (s : Pytho
       let classCtx := ctx'.insert (PythonIdentifier.fromAst ⟨SourceRange.none, "self"⟩) (CtxEntry.variable classType)
       let classCtx := methods.foldl (fun c (mId, mSig) => c.insert mId (CtxEntry.function mSig)) classCtx
       let methodSigs := methods.map (·.2)
-      (ctx', .ClassDef { sr := a, info := .classDecl classId fields methodSigs } (mapAnnVal f name)
+      let resolvedBody ← resolveBlock classCtx f body.val
+      return (ctx', .ClassDef { sr := a, info := .classDecl classId fields methodSigs } (mapAnnVal f name)
         (mapAnnArr f (resolveExpr ctx' f) bases)
         (mapAnnArr f (resolveKeyword ctx' f) keywords)
-        ⟨f body.ann, resolveBlock classCtx f body.val⟩
+        ⟨f body.ann, resolvedBody⟩
         (mapAnnArr f (resolveExpr ctx' f) decorators)
         (mapAnnArr f (resolveTypeParam ctx' f) typeParams))
-  | .Import a aliases =>
-      let ctx' := aliases.val.foldl (fun c alias => match alias with
+  | .Import a aliases => do
+      let baseDir ← read
+      let mut ctx' := ctx
+      for alias in aliases.val do
+        match alias with
         | .mk_alias _ modName asName =>
-            let registeredId := match asName.val with
-              | some aliasName => PythonIdentifier.fromAst aliasName
-              | none => PythonIdentifier.fromImport modName
-            c.insert registeredId (CtxEntry.module_ (PythonIdentifier.fromAst modName))) ctx
-      (ctx', .Import (f a) (mapAnnArr f (resolveAlias f) aliases))
-  | .ImportFrom a modName imports level =>
-      let ctx' := imports.val.foldl (fun c imp => match imp with
-        | .mk_alias _ impName asName =>
+          let registeredId := match asName.val with
+            | some aliasName => PythonIdentifier.fromAst aliasName
+            | none => PythonIdentifier.fromImport modName
+          let (moduleCtx, _) ← resolveModule modName.val baseDir f
+          ctx' := ctx'.insert registeredId (CtxEntry.module_ moduleCtx.inner.inner)
+      return (ctx', .Import (f a) (mapAnnArr f (resolveAlias f) aliases))
+  | .ImportFrom a modName imports level => do
+      let baseDir ← read
+      let mut ctx' := ctx
+      match modName.val with
+      | some modAnn =>
+        let (moduleCtx, _) ← resolveModule modAnn.val baseDir f
+        for imp in imports.val do
+          match imp with
+          | .mk_alias _ impName asName =>
             let registeredId := match asName.val with
               | some aliasName => PythonIdentifier.fromAst aliasName
               | none => PythonIdentifier.fromAst impName
-            match c[registeredId]? with
-            | some _ => c
-            | none => c.insert registeredId CtxEntry.unresolved) ctx
-      (ctx', .ImportFrom (f a) (mapAnnOpt f (mapAnnVal f) modName) (mapAnnArr f (resolveAlias f) imports) (mapAnnOpt f (resolveInt f) level))
+            match ctx'[registeredId]? with
+            | some _ => pure ()
+            | none =>
+              let impId := PythonIdentifier.fromAst impName
+              match moduleCtx[impId]? with
+              | some entry => ctx' := ctx'.insert registeredId entry
+              | none => ctx' := ctx'.insert registeredId CtxEntry.unresolved
+      | none =>
+        for imp in imports.val do
+          match imp with
+          | .mk_alias _ impName asName =>
+            let registeredId := match asName.val with
+              | some aliasName => PythonIdentifier.fromAst aliasName
+              | none => PythonIdentifier.fromAst impName
+            match ctx'[registeredId]? with
+            | some _ => pure ()
+            | none => ctx' := ctx'.insert registeredId CtxEntry.unresolved
+      return (ctx', .ImportFrom (f a) (mapAnnOpt f (mapAnnVal f) modName) (mapAnnArr f (resolveAlias f) imports) (mapAnnOpt f (resolveInt f) level))
   | .Assign a targets value tc =>
       let newNames := targets.val.toList.flatMap collectNamesFromTarget
       let ctx' := newNames.foldl (fun c n => c.insert n (CtxEntry.variable (annotationToPythonType Option.none))) ctx
-      (ctx', .Assign (f a) (mapAnnArr f (resolveExpr ctx f) targets) (resolveExpr ctx f value) (mapAnnOpt f (mapAnnVal f) tc))
+      return (ctx', .Assign (f a) (mapAnnArr f (resolveExpr ctx f) targets) (resolveExpr ctx f value) (mapAnnOpt f (mapAnnVal f) tc))
   | .AnnAssign a target ann value simple =>
       let newNames := collectNamesFromTarget target
       let ctx' := newNames.foldl (fun c n => c.insert n (CtxEntry.variable ann)) ctx
-      (ctx', .AnnAssign (f a) (resolveExpr ctx f target) (resolveExpr ctx f ann) (mapAnnOpt f (resolveExpr ctx f) value) (resolveInt f simple))
+      return (ctx', .AnnAssign (f a) (resolveExpr ctx f target) (resolveExpr ctx f ann) (mapAnnOpt f (resolveExpr ctx f) value) (resolveInt f simple))
   | .AugAssign a target op value =>
       let opSig : FuncSig := { name := .builtin (operatorToLaurel op), className := none, params := .static {required := [(.builtin "left", anyType), (.builtin "right", anyType)], optional := [], kwonly := []}, returnType := anyType, locals := [] }
-      (ctx, .AugAssign { sr := a, info := .funcCall opSig } (resolveExpr ctx f target) (resolveOperator f op) (resolveExpr ctx f value))
-  | .If a test body orelse =>
-      (ctx, .If (f a) (resolveExpr ctx f test) ⟨f body.ann, resolveBlock ctx f body.val⟩ ⟨f orelse.ann, resolveBlock ctx f orelse.val⟩)
-  | .For a target iter body orelse tc =>
-      (ctx, .For (f a) (resolveExpr ctx f target) (resolveExpr ctx f iter) ⟨f body.ann, resolveBlock ctx f body.val⟩ ⟨f orelse.ann, resolveBlock ctx f orelse.val⟩ (mapAnnOpt f (mapAnnVal f) tc))
-  | .AsyncFor a target iter body orelse tc =>
-      (ctx, .AsyncFor (f a) (resolveExpr ctx f target) (resolveExpr ctx f iter) ⟨f body.ann, resolveBlock ctx f body.val⟩ ⟨f orelse.ann, resolveBlock ctx f orelse.val⟩ (mapAnnOpt f (mapAnnVal f) tc))
-  | .While a test body orelse =>
-      (ctx, .While (f a) (resolveExpr ctx f test) ⟨f body.ann, resolveBlock ctx f body.val⟩ ⟨f orelse.ann, resolveBlock ctx f orelse.val⟩)
-  | .Try a body handlers orelse finalbody =>
-      (ctx, .Try (f a) ⟨f body.ann, resolveBlock ctx f body.val⟩ (mapAnnArr f (resolveExcepthandler ctx f) handlers) ⟨f orelse.ann, resolveBlock ctx f orelse.val⟩ ⟨f finalbody.ann, resolveBlock ctx f finalbody.val⟩)
-  | .TryStar a body handlers orelse finalbody =>
-      (ctx, .TryStar (f a) ⟨f body.ann, resolveBlock ctx f body.val⟩ (mapAnnArr f (resolveExcepthandler ctx f) handlers) ⟨f orelse.ann, resolveBlock ctx f orelse.val⟩ ⟨f finalbody.ann, resolveBlock ctx f finalbody.val⟩)
-  | .With a items body tc =>
-      (ctx, .With (f a) (mapAnnArr f (resolveWithitem ctx f) items) ⟨f body.ann, resolveBlock ctx f body.val⟩ (mapAnnOpt f (mapAnnVal f) tc))
-  | .AsyncWith a items body tc =>
-      (ctx, .AsyncWith (f a) (mapAnnArr f (resolveWithitem ctx f) items) ⟨f body.ann, resolveBlock ctx f body.val⟩ (mapAnnOpt f (mapAnnVal f) tc))
-  | .Return a value => (ctx, .Return (f a) (mapAnnOpt f (resolveExpr ctx f) value))
-  | .Delete a targets => (ctx, .Delete (f a) (mapAnnArr f (resolveExpr ctx f) targets))
-  | .Raise a exc cause => (ctx, .Raise (f a) (mapAnnOpt f (resolveExpr ctx f) exc) (mapAnnOpt f (resolveExpr ctx f) cause))
-  | .Assert a test msg => (ctx, .Assert (f a) (resolveExpr ctx f test) (mapAnnOpt f (resolveExpr ctx f) msg))
-  | .Expr a value => (ctx, .Expr (f a) (resolveExpr ctx f value))
-  | .Pass a => (ctx, .Pass (f a))
-  | .Break a => (ctx, .Break (f a))
-  | .Continue a => (ctx, .Continue (f a))
-  | .Global a names => (ctx, .Global (f a) (mapAnnArr f (mapAnnVal f) names))
-  | .Nonlocal a names => (ctx, .Nonlocal (f a) (mapAnnArr f (mapAnnVal f) names))
-  | .Match a subject cases => (ctx, .Match (f a) (resolveExpr ctx f subject) (mapAnnArr f (resolveMatchCase ctx f) cases))
+      return (ctx, .AugAssign { sr := a, info := .funcCall opSig } (resolveExpr ctx f target) (resolveOperator f op) (resolveExpr ctx f value))
+  | .If a test body orelse => do
+      let rBody ← resolveBlock ctx f body.val
+      let rElse ← resolveBlock ctx f orelse.val
+      return (ctx, .If (f a) (resolveExpr ctx f test) ⟨f body.ann, rBody⟩ ⟨f orelse.ann, rElse⟩)
+  | .For a target iter body orelse tc => do
+      let rBody ← resolveBlock ctx f body.val
+      let rElse ← resolveBlock ctx f orelse.val
+      return (ctx, .For (f a) (resolveExpr ctx f target) (resolveExpr ctx f iter) ⟨f body.ann, rBody⟩ ⟨f orelse.ann, rElse⟩ (mapAnnOpt f (mapAnnVal f) tc))
+  | .AsyncFor a target iter body orelse tc => do
+      let rBody ← resolveBlock ctx f body.val
+      let rElse ← resolveBlock ctx f orelse.val
+      return (ctx, .AsyncFor (f a) (resolveExpr ctx f target) (resolveExpr ctx f iter) ⟨f body.ann, rBody⟩ ⟨f orelse.ann, rElse⟩ (mapAnnOpt f (mapAnnVal f) tc))
+  | .While a test body orelse => do
+      let rBody ← resolveBlock ctx f body.val
+      let rElse ← resolveBlock ctx f orelse.val
+      return (ctx, .While (f a) (resolveExpr ctx f test) ⟨f body.ann, rBody⟩ ⟨f orelse.ann, rElse⟩)
+  | .Try a body handlers orelse finalbody => do
+      let rBody ← resolveBlock ctx f body.val
+      let mut rHandlers : Array (Python.excepthandler ResolvedAnn) := #[]
+      for h in handlers.val do
+        rHandlers := rHandlers.push (← resolveExcepthandler ctx f h)
+      let rElse ← resolveBlock ctx f orelse.val
+      let rFinally ← resolveBlock ctx f finalbody.val
+      return (ctx, .Try (f a) ⟨f body.ann, rBody⟩ ⟨f handlers.ann, rHandlers⟩ ⟨f orelse.ann, rElse⟩ ⟨f finalbody.ann, rFinally⟩)
+  | .TryStar a body handlers orelse finalbody => do
+      let rBody ← resolveBlock ctx f body.val
+      let mut rHandlers : Array (Python.excepthandler ResolvedAnn) := #[]
+      for h in handlers.val do
+        rHandlers := rHandlers.push (← resolveExcepthandler ctx f h)
+      let rElse ← resolveBlock ctx f orelse.val
+      let rFinally ← resolveBlock ctx f finalbody.val
+      return (ctx, .TryStar (f a) ⟨f body.ann, rBody⟩ ⟨f handlers.ann, rHandlers⟩ ⟨f orelse.ann, rElse⟩ ⟨f finalbody.ann, rFinally⟩)
+  | .With a items body tc => do
+      let rBody ← resolveBlock ctx f body.val
+      return (ctx, .With (f a) (mapAnnArr f (resolveWithitem ctx f) items) ⟨f body.ann, rBody⟩ (mapAnnOpt f (mapAnnVal f) tc))
+  | .AsyncWith a items body tc => do
+      let rBody ← resolveBlock ctx f body.val
+      return (ctx, .AsyncWith (f a) (mapAnnArr f (resolveWithitem ctx f) items) ⟨f body.ann, rBody⟩ (mapAnnOpt f (mapAnnVal f) tc))
+  | .Return a value => return (ctx, .Return (f a) (mapAnnOpt f (resolveExpr ctx f) value))
+  | .Delete a targets => return (ctx, .Delete (f a) (mapAnnArr f (resolveExpr ctx f) targets))
+  | .Raise a exc cause => return (ctx, .Raise (f a) (mapAnnOpt f (resolveExpr ctx f) exc) (mapAnnOpt f (resolveExpr ctx f) cause))
+  | .Assert a test msg => return (ctx, .Assert (f a) (resolveExpr ctx f test) (mapAnnOpt f (resolveExpr ctx f) msg))
+  | .Expr a value => return (ctx, .Expr (f a) (resolveExpr ctx f value))
+  | .Pass a => return (ctx, .Pass (f a))
+  | .Break a => return (ctx, .Break (f a))
+  | .Continue a => return (ctx, .Continue (f a))
+  | .Global a names => return (ctx, .Global (f a) (mapAnnArr f (mapAnnVal f) names))
+  | .Nonlocal a names => return (ctx, .Nonlocal (f a) (mapAnnArr f (mapAnnVal f) names))
+  | .Match a subject cases => do
+      let mut resolvedCases : Array (Python.match_case ResolvedAnn) := #[]
+      for c in cases.val do
+        resolvedCases := resolvedCases.push (← resolveMatchCase ctx f c)
+      return (ctx, .Match (f a) (resolveExpr ctx f subject) ⟨f cases.ann, resolvedCases⟩)
   | .TypeAlias a name typeParams value =>
-      (ctx, .TypeAlias (f a) (resolveExpr ctx f name) (mapAnnArr f (resolveTypeParam ctx f) typeParams) (resolveExpr ctx f value))
+      return (ctx, .TypeAlias (f a) (resolveExpr ctx f name) (mapAnnArr f (resolveTypeParam ctx f) typeParams) (resolveExpr ctx f value))
 end
 
 /-- Entry point: resolves a full Python module. Computes module-level locals, seeds the
     context with builtins + those locals, then folds `resolveStmt` over all top-level statements.
     Returns `ResolvedPythonProgram` with fully-annotated AST and module locals list. -/
-def resolve (stmts : PythonProgram) (importedContext : Ctx := {}) : ResolvedPythonProgram :=
+def resolve (stmts : PythonProgram) (baseDir : System.FilePath := ".") : EIO String (ResolvedPythonProgram × Array ImportedModule) := do
   let f : SourceRange → ResolvedAnn := fun sr => { sr, info := .irrelevant }
   let moduleLocals := computeLocals stmts []
-  let baseCtx := importedContext.fold (fun c k v => c.insert k v) builtinContext
-  let initCtx := moduleLocals.foldl (fun c (n, ty) => c.insert n (CtxEntry.variable ty)) baseCtx
-  let (_, resolved) := stmts.foldl (init := (initCtx, (#[] : Array ResolvedPythonStmt))) fun acc stmt =>
-    let (ctx, arr) := acc
-    let (ctx', resolved) := resolveStmt ctx f stmt
-    (ctx', arr.push resolved)
-  { stmts := resolved, moduleLocals := moduleLocals }
+  let initCtx := moduleLocals.foldl (fun c (n, ty) => c.insert n (CtxEntry.variable ty)) builtinContext
+  let action : ResolveM ResolvedPythonProgram := do
+    let mut ctx := initCtx
+    let mut resolved : Array ResolvedPythonStmt := #[]
+    for stmt in stmts do
+      let (ctx', r) ← resolveStmt ctx f stmt
+      ctx := ctx'
+      resolved := resolved.push r
+    return { stmts := resolved, moduleLocals := moduleLocals }
+  let (prog, state) ← action.run baseDir |>.run {}
+  return (prog, state.importedModules)
 
 end -- public section
 end Strata.Python.Resolution

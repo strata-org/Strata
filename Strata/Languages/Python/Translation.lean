@@ -141,7 +141,7 @@ def pythonTypeToHighType : PythonType → HighType
     | "str" => .TString
     | "float" => .TFloat64
     | "None" => .TVoid
-    | "Any" => .TCore "Any"
+    | "Any" | "object" => .TCore "Any"
     | "dict" => .TCore "DictStrAny"
     | "list" => .TCore "ListAny"
     | name => .UserDefined { text := name, uniqueId := none }

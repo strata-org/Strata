@@ -534,6 +534,33 @@ function Any_real_to_int (v: Any) : int;
 
 function Any_type_to_Any (v: Any) : Any;
 
+function Any_len_to_Any (v: Any) : Any;
+function to_int_any (v: Any) : Any;
+function to_float_any (v: Any) : Any;
+function Any_abs_to_Any (v: Any) : Any;
+function Any_isinstance_to_bool (v: Any, t: Any) : bool;
+function Any_hasattr_to_bool (v: Any, name: Any) : bool;
+function Any_getattr_to_Any (v: Any, name: Any) : Any;
+function Any_setattr_to_Any (v: Any, name: Any, val: Any) : Any;
+function Any_sorted_to_Any (v: Any) : Any;
+function Any_reversed_to_Any (v: Any) : Any;
+function Any_enumerate_to_Any (v: Any) : Any;
+function Any_zip_to_Any (v: Any, w: Any) : Any;
+function Any_range_to_Any (v: Any) : Any;
+function Any_list_to_Any (v: Any) : Any;
+function Any_dict_to_Any (v: Any) : Any;
+function Any_set_to_Any (v: Any) : Any;
+function Any_tuple_to_Any (v: Any) : Any;
+function Any_min_to_Any (v: Any) : Any;
+function Any_max_to_Any (v: Any) : Any;
+function Any_sum_to_Any (v: Any) : Any;
+function Any_any_to_bool (v: Any) : bool;
+function Any_all_to_bool (v: Any) : bool;
+function Any_ord_to_Any (v: Any) : Any;
+function Any_chr_to_Any (v: Any) : Any;
+function Any_map_to_Any (f: Any, v: Any) : Any;
+function Any_filter_to_Any (f: Any, v: Any) : Any;
+
 function normalize_any (v : Any) : Any {
   if v == from_bool(true) then from_int(1)
   else (if v == from_bool(false) then from_int(0) else
@@ -696,6 +723,18 @@ function PMul (v1: Any, v2: Any) : Any
   else
     exception(UndefinedError ("Operand Type is not defined"))
 };
+
+function PDiv (v1: Any, v2: Any) : Any;
+function PBitAnd (v1: Any, v2: Any) : Any;
+function PBitOr (v1: Any, v2: Any) : Any;
+function PBitXor (v1: Any, v2: Any) : Any;
+function PLShift (v1: Any, v2: Any) : Any;
+function PRShift (v1: Any, v2: Any) : Any;
+function PMatMul (v1: Any, v2: Any) : Any;
+function PInvert (v1: Any) : Any;
+function PPos (v1: Any) : Any;
+function PIs (v1: Any, v2: Any) : bool;
+function PIsNot (v1: Any, v2: Any) : bool;
 
 function PFloorDiv (v1: Any, v2: Any) : Any
   requires (Any..isfrom_bool(v2)==>Any..as_bool!(v2)) && (Any..isfrom_int(v2)==>Any..as_int!(v2)!=0)

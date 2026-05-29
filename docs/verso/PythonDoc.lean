@@ -175,7 +175,7 @@ fold accumulator. At the top level, each declaration extends it:
 
 - `def f(...)` extends with `.function sig`
 - `class C` extends with `.class_ name fields methods`
-- `import M` extends with `.module_ name`
+- `import M` extends with `.module_ moduleCtx` (where moduleCtx is M's resolved Ctx)
 - `x : T = ...` extends with `.variable ty`
 
 {docstring Strata.Python.Resolution.CtxEntry}
@@ -192,6 +192,61 @@ function-local — is computed upfront:
 
 FunctionDef and ClassDef are NOT included in locals. They are declarations,
 not assignment targets.
+
+## Import Resolution
+
+Resolution is monadic (`ResolveM := ReaderT System.FilePath (StateT ResolveState (EIO String))`).
+The reader carries `baseDir` — the root directory for finding module files.
+The state collects resolved imported module programs for Translation.
+Statement-level functions (`resolveStmt`, `resolveBlock`, `resolveFuncDef`,
+`resolveMatchCase`, `resolve`) operate in this monad. Expression-level
+functions (`resolveExpr` and helpers) remain pure.
+
+A module is a Ctx. `CtxEntry.module_` carries the module's resolved context:
+
+```
+| module_ (moduleCtx : Ctx)
+```
+
+When the fold encounters `import M`:
+1. Split M on "." into path components
+2. Load the module from `baseDir / path / name.python.st.ion` (or `__init__`)
+3. Resolve the loaded module (same monadic fold, from builtinContext)
+4. Insert the registered name → `.module_ moduleCtx` into the fold's Ctx
+
+When the fold encounters `from M.N import X, Y`:
+1. Load and resolve M.N the same way → get target module Ctx
+2. For each name X, Y: look up in target Ctx, insert into fold's Ctx with actual CtxEntry
+3. If name not in target Ctx → `.unresolved`
+
+Dotted attribute access (`boto3.client(...)`) resolves through module structure:
+look up `boto3` → `.module_ ctx` → look up `client` in ctx → `.function sig`.
+
+## Compiled Module Cache
+
+Imported modules are compiled to Laurel on demand and cached to disk.
+This is analogous to CPython's `.pyc` mechanism: first import compiles,
+subsequent imports load the cached result.
+
+Resolution and Translation remain pure — the memoization lives in the
+pipeline. Resolution resolves all imports (building Ctxs — cheap) and
+collects resolved module ASTs with their source paths. The pipeline then
+translates each imported module, with caching:
+
+```
+for each imported module (sourcePath, resolvedAST):
+  cachePath := sourcePath.withExtension ".laurel.st"
+  if cachePath exists on disk:
+    load cached Laurel program
+  else:
+    translate resolvedAST → Laurel program
+    write Laurel program to cachePath
+  merge Laurel program into combined program
+```
+
+The cached Laurel contains only signatures (procedure declarations, type
+definitions — no bodies to elaborate). Subsequent runs skip Translation
+entirely for cached modules.
 
 ## Method Resolution
 
