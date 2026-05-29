@@ -368,11 +368,14 @@ arm, requiring $`\mathsf{TVoid} <: \mathit{expected}`).
 
 {docstring Strata.Laurel.Resolution.Check.block}
 
-$$`\frac{l \in \Gamma}{\Gamma \vdash \mathsf{Exit}\;l \Leftarrow A} \quad \text{([⇐] Exit)}`
+$$`\frac{l \in \Gamma_{\mathrm{lbl}}}{\Gamma \vdash \mathsf{Exit}\;l \Leftarrow A} \quad \text{([⇐] Exit)}`
 
 `exit` is non-returning — it transfers control out of the enclosing
 labeled block, so it checks at *any* value type $`A` (no
-$`\mathsf{TVoid}` side condition).
+$`\mathsf{TVoid}` side condition). Labels live in their own namespace
+$`\Gamma_{\mathrm{lbl}}`, populated by the surrounding `Block` rule
+when its $`\mathit{label}` is `some l`. An $`\mathsf{Exit}\;l`
+targeting a label not in $`\Gamma_{\mathrm{lbl}}` is rejected.
 
 {docstring Strata.Laurel.Resolution.Check.exit}
 

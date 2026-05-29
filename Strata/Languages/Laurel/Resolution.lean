@@ -276,6 +276,11 @@ structure ResolveState where
   currentScopeNames : Std.HashSet String := {}
   /-- Per-composite-type field scopes (type name → field name → scope entry). -/
   typeScopes : TypeScopes := {}
+  /-- Labels of enclosing labeled blocks, used by `Check.exit` to validate
+      that an `exit l` targets an in-scope label. Maintained as a separate
+      namespace (not part of `scope`) because labels are referenced by raw
+      string, not by `uniqueId`. -/
+  labelScope : Std.HashSet String := {}
   /-- Diagnostics collected during resolution. -/
   errors : Array DiagnosticModel := #[]
   /-- When resolving inside an instance procedure, the owning composite type name.
@@ -397,6 +402,17 @@ def withScope (action : ResolveM α) : ResolveM α := do
   modify fun s => { s with currentScopeNames := {} }
   let result ← action
   modify fun s => { s with scope := savedScope, currentScopeNames := savedNames }
+  return result
+
+/-- Run `action` with `label` (if any) added to `labelScope`, restoring the
+    previous label scope on exit. Used by `Check.block` so that `Check.exit`
+    can validate that `exit l` targets an enclosing labeled block. -/
+def withLabel (label : Option String) (action : ResolveM α) : ResolveM α := do
+  let savedLabels := (← get).labelScope
+  if let some l := label then
+    modify fun s => { s with labelScope := s.labelScope.insert l }
+  let result ← action
+  modify fun s => { s with labelScope := savedLabels }
   return result
 
 /-! ## AST traversal (Phase 1) -/
@@ -558,7 +574,9 @@ The judgment is bidirectional:
 Γ ⊢ e ⇐ A          (Check.resolveStmtExpr)
 ```
 
-- `Γ` — lexical scope (variables, fields, labels).
+- `Γ` — lexical scope (variables, fields). Block labels live in a
+  separate namespace `Γ_lbl` (`ResolveState.labelScope`), consulted
+  only by `Check.exit`.
 - `A` — *value type* of the term.
 
 The `Return` rules additionally depend on the enclosing procedure's
@@ -904,7 +922,7 @@ def Check.while (exprMd : StmtExprMd)
 
 /-- (Exit)
     ```
-    l ∈ Γ
+    l ∈ Γ_lbl
     ───────────────────
     Γ ⊢ Exit l ⇐ A
     ```
@@ -912,9 +930,19 @@ def Check.while (exprMd : StmtExprMd)
     the enclosing labeled block and does not deliver a value to the
     surrounding context. Anything after `exit l` in the same block is
     dead code, flagged by `Resolution.Check.block`. The construct
-    checks at any `A`. -/
+    checks at any `A`.
+
+    The premise `l ∈ Γ_lbl` requires the target label to name an
+    enclosing labeled block; labels live in their own namespace
+    (`ResolveState.labelScope`, populated by `Check.block` via
+    `withLabel`). An unknown label is reported here as
+    `"label '<l>' is not in scope"`. -/
 def Check.exit (target : String) (source : Option FileRange) :
     ResolveM StmtExprMd := do
+  unless (← get).labelScope.contains target do
+    let diag := diagnosticFromSource source
+      s!"label '{target}' is not in scope"
+    modify fun s => { s with errors := s.errors.push diag }
   pure { val := .Exit target, source := source }
 
 /-- (Return)
@@ -1084,13 +1112,15 @@ def Synth.emptyBlock (source : Option FileRange) : HighTypeMd :=
     The block opens a fresh nested scope (so declarations made inside
     don't leak), and emits a "dead code after `exit`/`return`"
     diagnostic when a terminator is followed by additional statements
-    in the same block. -/
+    in the same block. When `label` is `some l`, `l` is registered in
+    `ResolveState.labelScope` (via `withLabel`) for the duration of
+    the block so that nested `exit l` checks can see it. -/
 def Check.block (exprMd : StmtExprMd)
     (stmts : List StmtExprMd) (label : Option String)
     (expected : HighTypeMd) (source : Option FileRange)
     (h : exprMd.val = .Block stmts label) : ResolveM StmtExprMd := do
   let voidTy : HighTypeMd := { val := .TVoid, source := source }
-  withScope do
+  withScope <| withLabel label do
     let init' ← stmts.dropLast.attach.mapM (fun ⟨s, hMem⟩ => do
       have : s ∈ stmts := List.dropLast_subset stmts hMem
       -- Discard-Call carve-out: a non-void-returning call in non-last
