@@ -390,7 +390,7 @@ private partial def loadDialectRec
   if p : name ∈ ld.dialects then
     pure (.ok ld.dialects[name])
   else if name ∈ stk then
-    return .error s!"Circular import detected: {name} (stack: {stk})"
+    return .error s!"Circular import detected: {String.intercalate " -> " (stk.toList ++ [name])}"
   else
     let path ←
           match fm.findPath name with

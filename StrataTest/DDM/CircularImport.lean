@@ -13,7 +13,7 @@ namespace Strata.Test.CircularImport
 /--
 info: 1 error(s) in StrataTest/DDM/testdata/CircA.dialect.st:
   2:7: 1 error(s) in StrataTest/DDM/testdata/CircB.dialect.st:
-  2:7: Circular import detected: CircA (stack: #[CircA, CircB])
+  2:7: Circular import detected: CircA -> CircB -> CircA
 -/
 #guard_msgs in
 #eval show IO _ from do
