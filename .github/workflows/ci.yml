@@ -63,6 +63,15 @@ jobs:
           test: false
       - name: Run tests (excluding Python)
         run: lake test -- --exclude Languages.Python
+      - name: Verify generated editor syntax files are up to date
+        run: |
+          lake env lean --run editors/GenSyntax.lean all
+          git diff --exit-code editors/vscode/syntaxes/ editors/emacs/
+      - name: Build StrataCLI
+        uses: leanprover/lean-action@v1
+        with:
+          lake-package-directory: StrataCLI
+          use-github-cache: false
       - name: Save lake cache
         uses: ./.github/actions/save-lake-cache
         with:
@@ -73,15 +82,6 @@ jobs:
         run: |
           StrataTestExtra/Languages/Java/regenerate-testdata.sh
           git diff --exit-code StrataTestExtra/Languages/Java/testdata/
-      - name: Verify generated editor syntax files are up to date
-        run: |
-          lake env lean --run editors/GenSyntax.lean all
-          git diff --exit-code editors/vscode/syntaxes/ editors/emacs/
-      - name: Build StrataCLI
-        uses: leanprover/lean-action@v1
-        with:
-          lake-package-directory: StrataCLI
-          use-github-cache: false
       - name: Build and run strata verify
         run: lake exe strata verify ../Examples/SimpleProc.core.st
         working-directory: StrataCLI
