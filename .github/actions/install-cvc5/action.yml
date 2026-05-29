@@ -10,9 +10,9 @@ description: >
 
 inputs:
   version:
-    description: cvc5 release tag (e.g. "1.2.1").
+    description: cvc5 release tag (e.g. "1.3.4").
     required: false
-    default: "1.2.1"
+    default: "1.3.4"
   install-to:
     description: >
       Where to make the cvc5 binary available. One of:

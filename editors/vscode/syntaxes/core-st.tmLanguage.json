@@ -61,7 +61,7 @@
     },
     "type": {
       "name": "support.type.core-st",
-      "match": "\\b(bool|int|string|regex|real|bv1|bv8|bv16|bv32|bv64|Map|Sequence)\\b"
+      "match": "\\b(bool|int|string|regex|real|bv1|bv8|bv16|bv32|bv64|bv128|Map|Sequence)\\b"
     },
     "constant": {
       "name": "constant.language.core-st",

@@ -615,7 +615,7 @@ Erase entry for `x` from `T.context`.
 -/
 def TEnv.eraseFromContext (Env : TEnv T.IDMeta) (x : T.Identifier) : TEnv T.IDMeta :=
   let ctx := Env.context
-  let ctx' := { ctx with types := ctx.types.erase x }
+  let ctx' := { ctx with types := ctx.types.remove x }
   Env.updateContext ctx'
 
 def TEnv.freeVarCheck [DecidableEq T.IDMeta] (Env : TEnv T.IDMeta) (e : LExpr T.mono) (msg : Format) :
@@ -1216,18 +1216,6 @@ def TEnv.maybeGenMonoTypes [ToFormat IDMeta] (Env : TEnv IDMeta) (ids : IdentTs 
     | some xty => do
       let (ans, Env) ← maybeGenMonoTypes Env irest
       .ok (xty :: ans, Env)
-
-/--
-Insert `fvi` (where `fvi` is the `i`-th element of `fvs`) in the oldest context
-in `Env`, only if `fvi` doesn't already exist in some context in `Env`.
-
-If `fvi` has no type annotation, a fresh type variable is put in the context.
--/
-def TEnv.addInOldestContext [ToFormat IDMeta] [DecidableEq IDMeta] (fvs : IdentTs LMonoTy IDMeta) (Env : TEnv IDMeta) : Except Format (TEnv IDMeta) := do
-  let (monotys, Env) ← maybeGenMonoTypes Env fvs
-  let tys := monotys.map (fun mty => LTy.forAll [] mty)
-  let types := Env.context.types.addInOldest fvs.idents tys
-  return Env.updateContext { Env.genEnv.context with types := types }
 
 /--
 Add a well-formed `alias` to the context, where the type definition is first
