@@ -267,9 +267,10 @@ datatype Box(a: Type) { MkBox(val: a) };
 #guard testDialectRoundTrip TestIonDatatypes
 #guard testProgramRoundTrip testIonDatatypesPgm
 
--- Issue #1238: SyntaxDefAtom.fromIon should report a clean error on a
--- malformed (indent) sexp (only the tag, no value), not crash.
-private def malformedIndentDialect : Ion String :=
+-- Issue #1238: SyntaxDefAtom.fromIon coverage for the indent branch.
+
+-- Helper: wraps a single atom sexp into a minimal dialect Ion value.
+private def indentTestDialect (atom : Ion String) : Ion String :=
   .list #[
     .sexp #[.symbol "dialect", .string "TestIndentBounds"],
     .struct #[
@@ -277,16 +278,44 @@ private def malformedIndentDialect : Ion String :=
       ("name",   .string "testOp"),
       ("result", .symbol "TestIndentBounds.Command"),
       ("syntax", .struct #[
-        ("atoms", .list #[.sexp #[.symbol "indent"]]),
+        ("atoms", .list #[atom]),
         ("prec", .int 0)
       ])
     ]
   ]
 
+-- Malformed: (indent) with no second argument should error, not crash.
 /-- info: error: Error decoding indent expects at least 2 arguments -/
 #guard_msgs in
 #eval do
-  let bs := Ion.internAndSerialize [malformedIndentDialect]
+  let bs := Ion.internAndSerialize [indentTestDialect (.sexp #[.symbol "indent"])]
+  match FromIon.deserialize (α := Dialect) bs with
+  | .error msg => IO.println s!"error: {msg}"
+  | .ok _      => IO.println "unexpected ok"
+
+-- Successful empty tail: (indent 0) → .indent 0 #[]
+/-- info: ok -/
+#guard_msgs in
+#eval do
+  let bs := Ion.internAndSerialize [indentTestDialect (.sexp #[.symbol "indent", .int 0])]
+  match FromIon.deserialize (α := Dialect) bs with
+  | .error msg => IO.println s!"error: {msg}"
+  | .ok _      => IO.println "ok"
+
+-- Successful with inner atoms: (indent 2 "x") → .indent 2 #[.str "x"]
+/-- info: ok -/
+#guard_msgs in
+#eval do
+  let bs := Ion.internAndSerialize [indentTestDialect (.sexp #[.symbol "indent", .int 2, .string "x"])]
+  match FromIon.deserialize (α := Dialect) bs with
+  | .error msg => IO.println s!"error: {msg}"
+  | .ok _      => IO.println "ok"
+
+-- Wrong type at args[1]: (indent "notnum") should produce asNat error.
+/-- info: error: Error decoding Expected SyntaxDef indent value to be a nat instead of { app := Ion.IonF.string "notnum" }. -/
+#guard_msgs in
+#eval do
+  let bs := Ion.internAndSerialize [indentTestDialect (.sexp #[.symbol "indent", .string "notnum"])]
   match FromIon.deserialize (α := Dialect) bs with
   | .error msg => IO.println s!"error: {msg}"
   | .ok _      => IO.println "unexpected ok"
