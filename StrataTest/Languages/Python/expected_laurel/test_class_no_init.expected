@@ -1,4 +1,6 @@
 test_class_no_init.py(5, 4): ✅ pass - callElimAssert_requires_4
 test_class_no_init.py(6, 4): ❓ unknown - class without __init__
-DETAIL: 1 passed, 0 failed, 1 inconclusive
+test_class_no_init.py(4, 0): ✅ pass - Heap reference counter monotone (test)
+unknown location: ✅ pass - Heap reference counter monotone (__main__)
+DETAIL: 3 passed, 0 failed, 1 inconclusive
 RESULT: Inconclusive
