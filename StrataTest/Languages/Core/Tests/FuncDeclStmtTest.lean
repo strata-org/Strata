@@ -72,3 +72,7 @@ procedure test ()
 -/
 #guard_msgs in
 #eval (Std.format ((Core.typeCheck .default (translate localFuncDistinctTypesPgm).stripMetaData)))
+
+-- Contract: mkArrow' followed by destructArrow preserves input order
+#guard (Lambda.LMonoTy.mkArrow' .int [.int, .bool, .real]).destructArrow
+    == [.int, .bool, .real, .int]
