@@ -552,7 +552,8 @@ private def classifySyntaxArgs (args : Array Tree) : SingleAtomKind :=
     | _ => .standard
   else .standard
 
-def translateSyntaxDef {argc} (argDecls : ArgDeclsMap argc) (mdTree tree : Tree) : ElabM SyntaxDef := do
+def translateSyntaxDef {argc} (argDecls : ArgDeclsMap argc) (mdTree tree : Tree)
+    (resultType? : Option PreType := none) : ElabM SyntaxDef := do
   let (syntaxMetadata, success) ← runChecked <| translateOptMetadata! argDecls mdTree
   if !success then
     return default
@@ -608,17 +609,33 @@ def translateSyntaxDef {argc} (argDecls : ArgDeclsMap argc) (mdTree tree : Tree)
   if !success then
     return default
 
+  -- Type variables in the result type are inferable from invocation
+  -- context, so they count as used even when the production omits
+  -- them (e.g. `fn match_expr (... tp : Type, ...) : tp`).
+  match resultType? with
+  | some result =>
+    usedArgs := result.foldBoundTypeVars usedArgs fun s idx =>
+      if idx < argDecls.decls.size then
+        s.insert (argDecls.decls.size - 1 - idx) .implicit
+      else s
+  | none => pure ()
+
   -- Check every argument is used (including implicitly inferred type params).
   for i in Fin.range argDecls.decls.size do
     if i.val ∉ usedArgs then
       logError argDecls.decls[i].nameLoc s!"Argument is not elaborated."
       return default
 
-  -- Use passthrough for single-ident syntax without explicit precedence.
-  -- This runs after the argument-usage check so that polymorphic operators
-  -- with inferred type parameters are validated before simplification.
+  -- Passthrough only when the single ident is `argDecls[0]`: the
+  -- parser path hardcodes `[.ident 0 0]`, so other slots (e.g. when
+  -- leading args are implicit Type params) must take the `.std` path.
   if !hasExplicitPrec && singleAtomKind matches .ident then
-    return .passthrough
+    if h : atoms.size = 1 then
+      match atoms[0] with
+      | .ident 0 _ => return .passthrough
+      | _ => pure ()
+    else
+      pure ()
 
   return .std atoms prec
 
@@ -844,7 +861,9 @@ def elabFnCommand : DialectElab := fun tree => do
 
   let opMdTree := tree[4]
   let opStxTree := tree[5]
-  let (opStx, stxSuccess) ← runElab <| runChecked <| translateSyntaxDef argDeclsMap opMdTree opStxTree
+  let (opStx, stxSuccess) ← runElab <| runChecked <|
+    translateSyntaxDef argDeclsMap opMdTree opStxTree
+      (resultType? := if resultSuccess then some result else none)
 
   if !stxSuccess then
     return
