@@ -141,7 +141,7 @@ def create_spawn_server(
         # Inherit all disallowed tools from parent
         if parent_spec.tools and parent_spec.tools.disallowed:
             for d in parent_spec.tools.disallowed:
-                child_tools.disallow(d)
+                child_tools.disallow(d.to_claude_format())
 
         # Build child's system prompt
         child_system_prompt = ""
