@@ -5,6 +5,7 @@
 -/
 
 import Strata.DL.SMT.DDMTransform.Translate
+import Strata.DDM.Elab
 
 /-! ## Tests for SMT DDM Translate -/
 
@@ -48,4 +49,40 @@ namespace Strata.SMTDDM
      let trigger : SMT.Term := .app .triggers [.app .triggers [abv0] .trigger] .trigger
      .quant .all [⟨"a", bv32⟩] trigger body))
 
+/-- info: Except.ok "(as none (Option Bool))" -/
+#guard_msgs in #eval (termToString (.none (.prim .bool)))
+
+/-- info: Except.ok "(some true)" -/
+#guard_msgs in #eval (termToString (.some (.prim (.bool true))))
+
 end Strata.SMTDDM
+
+/-! ## Tests for bitvec literal decoding in translateFromDDMTermToUntyped -/
+
+namespace Strata.SMTResponseDDM
+
+/-- Helper: parse a get-value response term and decode it. -/
+private def decodeTerm (s : String) : IO (Except String Strata.SMT.Term) := do
+  let inputCtx := Strata.Parser.stringInputContext "test" s
+  let op ←
+    try pure (some (← Strata.Elab.parseCategoryFromDialect
+          smtResponseDialects q`SMTCore.Term inputCtx))
+    catch _ => pure none
+  match op with
+  | none => return .error "parse failed"
+  | some ast =>
+    match Term.ofAst ast with
+    | .ok t => return translateFromDDMTermToUntyped t
+    | .error e => return .error s!"ofAst failed: {e}"
+
+-- Decoding `(_ bv5 32)` yields `BitVec.ofNat 32 5`
+/-- info: Except.ok (Strata.SMT.Term.prim (Strata.SMT.TermPrim.bitvec 0x00000005#32)) -/
+#guard_msgs in #eval decodeTerm "(_ bv5 32)"
+
+/-- info: Except.ok (Strata.SMT.Term.prim (Strata.SMT.TermPrim.bitvec 0xff#8)) -/
+#guard_msgs in #eval decodeTerm "(_ bv255 8)"
+
+/-- info: Except.ok (Strata.SMT.Term.prim (Strata.SMT.TermPrim.bitvec 0x0000000000000000#64)) -/
+#guard_msgs in #eval decodeTerm "(_ bv0 64)"
+
+end Strata.SMTResponseDDM

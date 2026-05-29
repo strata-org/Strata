@@ -8,6 +8,7 @@ module
 public import Strata.Languages.Laurel.MapStmtExpr
 public import Strata.Languages.Laurel.LaurelTypes
 public import Strata.DL.Imperative.MetaData
+import Strata.Languages.Laurel.HeapParameterizationConstants
 import Strata.Util.Tactics
 
 public section
@@ -235,7 +236,7 @@ Lower `New name` to a block that:
 3. Constructs a `MkComposite(counter, name_TypeTag())` value
 -/
 def lowerNew (name : Identifier) (source : Option FileRange) : THM StmtExprMd := do
-  let heapVar : Identifier := "$heap"
+  let heapVar := heapVarName
   let freshVar ← freshVarName
   let getCounter := mkMd (.StaticCall "Heap..nextReference!" [mkMd (.Var (.Local heapVar))])
   let saveCounter := mkMd (.Assign [mkVarMd (.Declare ⟨freshVar, ⟨.TInt, none⟩⟩)] getCounter)

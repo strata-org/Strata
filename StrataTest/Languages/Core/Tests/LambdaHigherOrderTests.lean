@@ -93,7 +93,7 @@ info: [Strata.Core] Type checking succeeded.
 ---
 info: ok: program Core;
 
-function apply (f : int -> int, x : int) : int {
+inline function apply (f : int -> int, x : int) : int {
   f(x)
 }
 procedure TestLambdaApply (out result : int)
