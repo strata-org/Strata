@@ -973,7 +973,7 @@ partial def inferType (tctx : TypingContext) (e : Expr) : ElabM TypeExpr := do
   match f with
   | .bvar _ idx => do
     let .isTrue idxP := decideProp (idx < tctx.bindings.size)
-      | return panic! "Invalid index {idx}"
+      | return panic! s!"Invalid index {idx}"
     let lvl := tctx.bindings.size - 1 - idx
     let b := tctx.bindings[lvl]
     match b.kind with
