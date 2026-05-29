@@ -59,29 +59,46 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
     if !strayVars.isEmpty then
       .error f!"Function '{func.name}': body contains undeclared type variables \
                 {strayVars.toList} (not in typeArgs {origTypeArgs})"
-    -- Add formals with monomorphic types (type parameters are fixed in the body).
+    -- Treat each declared type parameter as an opaque (rigid) 0-ary type
+    -- constructor while checking the body. This gives parametric polymorphism:
+    -- type parameters are fixed within the body and cannot be unified with
+    -- any concrete type or with each other (Boogie/Java-generic style).
+    --
+    -- The transformation: for each `v ∈ func.typeArgs`, replace `.ftvar v`
+    -- with `.tcons v []` in the input/output types. After body checking, the
+    -- inverse transformation is applied to body annotations so that the
+    -- resulting `Function` reports its types using `.ftvar` for type
+    -- parameters (matching the rest of the type system's conventions).
+    let rigidTyArgs := func.typeArgs
+    let rigidSubst : Subst := [rigidTyArgs.map (fun v => (v, LMonoTy.tcons v []))]
+    let rigidInputs := func.inputs.map (fun (id, mty) => (id, LMonoTy.subst rigidSubst mty))
+    let rigidOutput := LMonoTy.subst rigidSubst func.output
+    -- Register the rigid type-parameter constructors as known 0-ary types
+    -- so that `LExpr.resolve` accepts them.
+    let knownTypesWithRigids : Lambda.KnownTypes :=
+      rigidTyArgs.foldl (fun ks v => ks.insert v 0) C.knownTypes
+    let C' := { C with knownTypes := knownTypesWithRigids }
+    -- Add formals with rigidified types to the body's typing context.
     let Env := Env.pushEmptyContext
     let monoInputs : @LTySignature Unit :=
-      func.inputs.map (fun (id, mty) => (id, .forAll [] mty))
+      rigidInputs.map (fun (id, mty) => (id, .forAll [] mty))
     let Env := Env.addInNewestContext monoInputs
-    -- Type check the body and unify with the return type.
-    let (bodya, Env) ← LExpr.resolve C Env body
+    -- Type check the body. Any attempt to constrain a rigid type parameter
+    -- to a concrete type (or to identify two distinct parameters) shows up
+    -- as a unification failure here.
+    let (bodya, Env) ← (LExpr.resolve C' Env body).mapError
+      fun e => f!"Function '{func.name}': body is incompatible with declared \
+                  polymorphic signature. {e}"
     let bodyty := bodya.toLMonoTy
-    let retty := func.output
-    let S ← Constraints.unify [(retty, bodyty)] (TEnv.stateSubstInfo Env) |>.mapError format
-    -- The inferred type must be alpha-equivalent to the declared signature.
-    let inferredTy := LMonoTy.subst S.subst monoty
-    let bwdMap ← match LMonoTy.alphaEquiv monoty inferredTy with
-      | some m => pure m
-      | none =>
-        .error f!"Function '{func.name}': body constrains the type to '{inferredTy}', \
-                  incompatible with declared polymorphic signature '{monoty}'"
+    let S ← Constraints.unify [(rigidOutput, bodyty)] (TEnv.stateSubstInfo Env)
+              |>.mapError fun e =>
+                f!"Function '{func.name}': body type {format bodyty} is incompatible \
+                   with declared signature. {format e}"
     let Env := TEnv.updateSubst Env S
-    -- Apply S to the body, then rename type variables to match the
-    -- instantiated typeArgs so that body annotations are consistent.
+    -- Apply the unification substitution and then strip the rigidification:
+    -- replace `.tcons v []` (for `v ∈ rigidTyArgs`) back with `.ftvar v`.
     let bodya := LExpr.applySubstT bodya S.subst
-    let renameSubst : Subst := [bwdMap.toList.map (fun (k, v) => (k, .ftvar v))]
-    let bodya := LExpr.applySubstT bodya renameSubst
+    let bodya := LExpr.unrigidifyTyArgs rigidTyArgs bodya
     -- Validate the measure expression type for int-recursive functions.
     -- Only validates non-fvar measures (fvar measures are validated in TermCheck
     -- using the TypeFactory, which has ADT information).

@@ -99,6 +99,19 @@ def applySubstT (e : LExprT T.mono) (S : Subst) : LExprT T.mono :=
       let ty := LMonoTy.subst S ty
       ⟨m, ty⟩
 
+/--
+Replace every 0-ary type constructor whose name is in `vars` with a free type
+variable of the same name, inside the metadata-stored types of `e`.
+
+This is the inverse of the rigidification used while type checking polymorphic
+function bodies: type parameters are temporarily treated as opaque 0-ary
+constructors during checking, then converted back to type variables here.
+-/
+def unrigidifyTyArgs (vars : List TyIdentifier) (e : LExprT T.mono) : LExprT T.mono :=
+  LExpr.replaceMetadata (T:=T.mono.typed) (NewMetadata:=T.mono.typed.base.Metadata) e <|
+    fun ⟨m, ty⟩ =>
+      ⟨m, LMonoTy.unrigidifyTyArgs vars ty⟩
+
 
 /--
 This function turns some free variables into bound variables to build an

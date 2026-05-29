@@ -100,7 +100,7 @@ private def identifyParamsFunc : Core.Function :=
     body := some (LExpr.fvar () ⟨"y", ()⟩ none) }
 
 /--
-info: error: Function 'swap': body constrains the type to '(arrow $__ty1 (arrow $__ty1 $__ty1))', incompatible with declared polymorphic signature '(arrow $__ty0 (arrow $__ty1 $__ty0))'
+info: error: Function 'swap': body type $__ty1 is incompatible with declared signature. Impossible to unify $__ty0 with $__ty1.
 -/
 #guard_msgs in
 #eval do
@@ -117,7 +117,8 @@ private def wrongAnnotFunc : Core.Function :=
     body := some (.app () (.abs () "y" (some .int) (.bvar () 0)) (.fvar () ⟨"x", ()⟩ none)) }
 
 /--
-info: error: Function 'bad': body constrains the type to '(arrow int int)', incompatible with declared polymorphic signature '(arrow $__ty0 $__ty0)'
+info: error: Function 'bad': body is incompatible with declared polymorphic signature. Impossible to unify (arrow int int) with (arrow $__ty0 $__ty1).
+First mismatch: int with $__ty0.
 -/
 #guard_msgs in
 #eval do
@@ -185,7 +186,8 @@ def issue586_pgm : Program := { decls := [
 ]}
 
 /--
-info: error: Function 'foo': body constrains the type to '(arrow int int)', incompatible with declared polymorphic signature '(arrow $__ty0 $__ty0)'
+info: error: Function 'foo': body is incompatible with declared polymorphic signature. Impossible to unify (arrow int (arrow int int)) with (arrow $__ty0 $__ty1).
+First mismatch: int with $__ty0.
 -/
 #guard_msgs in
 #eval (typeCheck .default issue586_pgm)

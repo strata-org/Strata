@@ -374,41 +374,28 @@ theorem LMonoTys.freeVars_exists
     | inl h => exact ⟨ty, .head _, h⟩
     | inr h => obtain ⟨t, ht, htv⟩ := ih h; exact ⟨t, .tail _ ht, htv⟩
 
+mutual
 /--
-Check if two monotypes are alpha-equivalent (equal up to consistent renaming of
-free type variables). Returns the backward mapping (ty2 vars → ty1 vars) on
-success, used to rename body annotations back to the declared type parameter names.
+Replace every 0-ary type constructor whose name is in `vars` with a free type
+variable of the same name. This is the inverse of the rigidification used while
+type checking polymorphic function bodies (where each declared type parameter
+is treated as an opaque 0-ary constructor): once the body has been checked, the
+constructors are converted back to type variables in body annotations.
 -/
-def LMonoTy.alphaEquiv (ty1 ty2 : LMonoTy) :
-    Option (Std.HashMap TyIdentifier TyIdentifier) :=
-  (go ty1 ty2 {} {}).map (·.2)
-where
-  go (t1 t2 : LMonoTy) (fwd : Std.HashMap TyIdentifier TyIdentifier)
-     (bwd : Std.HashMap TyIdentifier TyIdentifier) :
-     Option (Std.HashMap TyIdentifier TyIdentifier × Std.HashMap TyIdentifier TyIdentifier) :=
-    match t1, t2 with
-    | .ftvar x, .ftvar y =>
-      match fwd[x]? with
-      | some y' => if y' == y then some (fwd, bwd) else none
-      | none =>
-        match bwd[y]? with
-        | some x' => if x' == x then some (fwd, bwd) else none
-        | none => some (fwd.insert x y, bwd.insert y x)
-    | .bitvec n, .bitvec m => if n == m then some (fwd, bwd) else none
-    | .tcons n1 args1, .tcons n2 args2 =>
-      if n1 != n2 then none
-      else goList args1 args2 fwd bwd
-    | _, _ => none
-  goList (ts1 ts2 : List LMonoTy) (fwd : Std.HashMap TyIdentifier TyIdentifier)
-     (bwd : Std.HashMap TyIdentifier TyIdentifier) :
-     Option (Std.HashMap TyIdentifier TyIdentifier × Std.HashMap TyIdentifier TyIdentifier) :=
-    match ts1, ts2 with
-    | [], [] => some (fwd, bwd)
-    | t1 :: rest1, t2 :: rest2 =>
-      match go t1 t2 fwd bwd with
-      | some (fwd', bwd') => goList rest1 rest2 fwd' bwd'
-      | none => none
-    | _, _ => none
+def LMonoTy.unrigidifyTyArgs (vars : List TyIdentifier) (mty : LMonoTy) : LMonoTy :=
+  match mty with
+  | .ftvar _ | .bitvec _ => mty
+  | .tcons name args =>
+    if args.isEmpty && vars.contains name then
+      .ftvar name
+    else
+      .tcons name (LMonoTys.unrigidifyTyArgs vars args)
+
+def LMonoTys.unrigidifyTyArgs (vars : List TyIdentifier) (mtys : LMonoTys) : LMonoTys :=
+  match mtys with
+  | [] => []
+  | mty :: rest => LMonoTy.unrigidifyTyArgs vars mty :: LMonoTys.unrigidifyTyArgs vars rest
+end
 
 /--
 Get all type constructors in monotype `mty`.
