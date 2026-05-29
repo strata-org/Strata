@@ -2704,7 +2704,7 @@ private theorem typeBoundVar_erase_context
   -- Step 1: eraseFromContext only touches .types
   -- Step 2: Env2.context = Env1.context (by h_ctx)
   -- Step 3: Env1.context from typeBoundVar = addInNewestContext on preserved context
-  -- Step 4: erase_addInNewest_fresh cancels the add
+  -- Step 4: remove_addInNewest_fresh cancels the add
   -- First, extract what Env1.context looks like from typeBoundVar
   have h_types : Env1.context.types =
       Env.context.types.addInNewest [(xv, LTy.forAll [] xty)] ∧
@@ -2766,22 +2766,22 @@ private theorem typeBoundVar_erase_context
     · -- aliases
       exact congrArg TContext.aliases h_mid_ctx
   -- Now compute (eraseFromContext Env2 xv).context
-  have h_erase_types : (Env2.eraseFromContext xv).context.types = Env1.context.types.erase xv := by
+  have h_erase_types : (Env2.eraseFromContext xv).context.types = Env1.context.types.remove xv := by
     show (TEnv.eraseFromContext Env2 xv).context.types = _
     unfold TEnv.eraseFromContext TEnv.updateContext TEnv.context
-    simp; exact congrArg (Maps.erase · xv) (congrArg TContext.types h_ctx)
+    simp; exact congrArg (Maps.remove · xv) (congrArg TContext.types h_ctx)
   have h_erase_aliases : (Env2.eraseFromContext xv).context.aliases = Env1.context.aliases := by
     show (TEnv.eraseFromContext Env2 xv).context.aliases = _
     unfold TEnv.eraseFromContext TEnv.updateContext TEnv.context
     simp; exact congrArg TContext.aliases h_ctx
   -- Combine
   obtain ⟨h_ty, h_al⟩ := h_types
-  have h_cancel : Env1.context.types.erase xv = Env.context.types := by
+  have h_cancel : Env1.context.types.remove xv = Env.context.types := by
     rw [h_ty]
     cases h_types_ne : Env.context.types with
     | nil => exact absurd h_types_ne h_nonempty
     | cons m rest =>
-      exact Maps.erase_addInNewest_fresh xv _ (fun s hs => h_fresh_xv s (h_types_ne ▸ hs))
+      exact Maps.remove_addInNewest_fresh xv _ (fun s hs => h_fresh_xv s (h_types_ne ▸ hs))
   have h1 : (Env2.eraseFromContext xv).context.types = Env.context.types := by
     rw [h_erase_types, h_cancel]
   have h2 : (Env2.eraseFromContext xv).context.aliases = Env.context.aliases := by
@@ -3233,12 +3233,12 @@ private theorem resolveAux_properties_aux :
       intro v hv n_ hn
       exact h_sf4 v (by
         cases hv with
-        | inl h_key => exact Or.inl (Maps.mem_keys_of_mem_keys_remove _ _ _ h_key)
+        | inl h_key => exact Or.inl (Maps.keys_remove_subset _ _ _ h_key)
         | inr h_fv =>
           exact Or.inr (by
             simp only [Subst.freeVars, List.mem_flatMap] at h_fv ⊢
             obtain ⟨ty, h_ty_mem, h_v_fv⟩ := h_fv
-            exact ⟨ty, Maps.mem_values_of_mem_keys_remove _ _ _ h_ty_mem, h_v_fv⟩)) n_ hn
+            exact ⟨ty, Maps.values_remove_subset _ _ _ h_ty_mem, h_v_fv⟩)) n_ hn
     · -- Output type freshness
       intro v hv k hk; simp [toLMonoTy] at hv
       have hv_in := LMonoTy.freeVars_of_subst_subset v4.subst (.ftvar fresh_name) hv
@@ -3900,7 +3900,7 @@ private theorem keys_go_subset_keys (S : Subst) (xs : List TyIdentifier)
   | nil => simp [LTy.subst.go] at h; exact h
   | cons x rest ih =>
     simp [LTy.subst.go] at h
-    exact Maps.keys_erase_subset S x a (ih (Maps.erase S x) h)
+    exact Maps.keys_remove_subset S x a (ih (Maps.remove S x) h)
 
 /-- Keys of `go xs S` are not in `xs`. More precisely, if `a ∈ keys (go xs S)`,
     then `a ∉ xs`. -/
@@ -3914,12 +3914,12 @@ private theorem keys_go_not_mem_xs (S : Subst) (xs : List TyIdentifier)
     intro h_mem
     rcases List.mem_cons.mp h_mem with rfl | h_rest
     · -- a = x
-      have h_a_key := keys_go_subset_keys (Maps.erase S a) rest a h
-      exact (Maps.keys_erase_self_not_mem S a h_a_key).elim
-    · exact ih (Maps.erase S x) h h_rest
+      have h_a_key := keys_go_subset_keys (Maps.remove S a) rest a h
+      exact (Maps.keys_remove_self_not_mem S a h_a_key).elim
+    · exact ih (Maps.remove S x) h h_rest
 
 /-- If all keys of `S` that are NOT in `xs` are also not free vars of `mty`,
-    then `subst (go xs S) mty = mty`. This follows because `go xs S` erases
+    then `subst (go xs S) mty = mty`. This follows because `go xs S` removes
     keys in `xs`, and the remaining keys are not free vars of `mty`. -/
 private theorem subst_go_irrel_body (S : Subst)
     (xs : List TyIdentifier) (body : LMonoTy)
@@ -4838,16 +4838,16 @@ private theorem SubstWF.key_not_in_freeVars_subst
         · exact h_all hd (List.mem_cons_self ..) h_hd
         · exact ih_tl (fun m hm => h_all m (List.mem_cons_of_mem _ hm)) h_tl
 
-private theorem Subst.freeVars_erase_subset (S : Subst) (x : TyIdentifier) :
-    ∀ a, a ∈ Subst.freeVars (Maps.erase S x) → a ∈ Subst.freeVars S := by
+private theorem Subst.freeVars_remove_subset (S : Subst) (x : TyIdentifier) :
+    ∀ a, a ∈ Subst.freeVars (Maps.remove S x) → a ∈ Subst.freeVars S := by
   intro a ha; simp [Subst.freeVars] at ha ⊢
   obtain ⟨mty, h_val, h_fv⟩ := ha
-  exact ⟨mty, Maps.values_erase_subset S x mty h_val, h_fv⟩
+  exact ⟨mty, Maps.values_remove_subset S x mty h_val, h_fv⟩
 
-private theorem SubstWF_erase (S : Subst) (x : TyIdentifier) (h_wf : SubstWF S) :
-    SubstWF (Maps.erase S x) := by
+private theorem SubstWF_remove (S : Subst) (x : TyIdentifier) (h_wf : SubstWF S) :
+    SubstWF (Maps.remove S x) := by
   simp [SubstWF] at h_wf ⊢; intro k hk hk_fv
-  exact h_wf k (Maps.keys_erase_subset S x k hk) (Subst.freeVars_erase_subset S x k hk_fv)
+  exact h_wf k (Maps.keys_remove_subset S x k hk) (Subst.freeVars_remove_subset S x k hk_fv)
 
 private theorem SubstWF_go (S : Subst) (xs : List TyIdentifier) (h_wf : SubstWF S) :
     SubstWF (LTy.subst.go xs S) := by
@@ -4855,7 +4855,7 @@ private theorem SubstWF_go (S : Subst) (xs : List TyIdentifier) (h_wf : SubstWF 
   | nil => simp [LTy.subst.go]; exact h_wf
   | cons x rest ih =>
     simp [LTy.subst.go]
-    exact ih (Maps.erase S x) (SubstWF_erase S x h_wf)
+    exact ih (Maps.remove S x) (SubstWF_remove S x h_wf)
 
 private theorem keys_go_mem (S : Subst) (xs : List TyIdentifier) (a : TyIdentifier)
     (h_key : a ∈ Maps.keys S) (h_not_xs : a ∉ xs) :
@@ -4864,8 +4864,8 @@ private theorem keys_go_mem (S : Subst) (xs : List TyIdentifier) (a : TyIdentifi
   | nil => simp [LTy.subst.go]; exact h_key
   | cons x rest ih =>
     simp [LTy.subst.go]
-    apply ih (Maps.erase S x)
-    · exact Maps.keys_erase_mem_of_ne h_key
+    apply ih (Maps.remove S x)
+    · exact Maps.keys_remove_mem_of_ne h_key
         (fun h => h_not_xs (h ▸ List.mem_cons_self ..))
     · exact fun h => h_not_xs (List.mem_cons_of_mem x h)
 
@@ -5942,8 +5942,8 @@ theorem resolveAux_HasType :
               rw [← h_et]; simp [toLMonoTy]
               -- Goal: HasType C Γ (.app m e1 e2) (.forAll [] (subst S (subst v4 (ftvar fresh))))
               -- We need: S absorbs Env1.subst and S absorbs Env2.subst
-              -- Chain: S absorbs remove(v4, fresh) and v4 absorbs Env2 absorbs Env1
-              -- Derive absorbs S (remove v4.subst fresh_name) from h_abs_S
+              -- Chain: S absorbs erase(v4, fresh) and v4 absorbs Env2 absorbs Env1
+              -- Derive absorbs S (erase v4.subst fresh_name) from h_abs_S
               have h_abs_S_rem : Subst.absorbs S (Maps.remove v4.subst fresh_name) := by
                 rw [← h_env'] at h_abs_S
                 simp [TEnv.updateSubst] at h_abs_S
