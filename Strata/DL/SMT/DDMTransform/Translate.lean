@@ -213,6 +213,10 @@ partial def translateFromTerm (t:SMT.Term): Except String (SMTDDM.Term Provenanc
       let iden := SMTIdentifier.iden_indexed smtProv (mkSymbol "zero_extend")
         (smtAnn #[.ind_numeral smtProv n])
       return mk_qual_identifier (.qi_ident smtProv iden)
+    | .bv (.int_to_bv n) =>
+      let iden := SMTIdentifier.iden_indexed smtProv (mkSymbol "int_to_bv")
+        (smtAnn #[.ind_numeral smtProv n])
+      return mk_qual_identifier (.qi_ident smtProv iden)
     | .str (.re_index n) =>
       let iden := SMTIdentifier.iden_indexed smtProv (mkSymbol "re.^")
         (smtAnn #[.ind_numeral smtProv n])
@@ -341,31 +345,37 @@ partial def translateFromDDMTermToUntyped (t : Strata.SMTResponseDDM.Term Strata
     | .sc_str _ s         => return .prim (.string s)
   | .qual_identifier _ qi =>
     match resolveQI qi with
-    | some ("true", _)  => return .prim (.bool true)
-    | some ("false", _) => return .prim (.bool false)
-    | some (name, _)    => return mkUFApp name []
+    | some ("true", _, _)  => return .prim (.bool true)
+    | some ("false", _, _) => return .prim (.bool false)
+    | some (name, _, idxs) =>
+      if name.startsWith "bv" then
+        if let some value := (name.drop 2).toNat? then
+          if let #[.ind_numeral _ width] := idxs then
+            return .prim (.bitvec (BitVec.ofNat width value))
+      return mkUFApp name []
     | none              => throw s!"translateFromDDMTermUnsafe: don't know how to convert {repr t}"
   | .qual_identifier_args _ qi args =>
     match resolveQI qi with
-    | some (name, _) =>
+    | some (name, _, _) =>
       let argTerms ← args.val.toList.mapM translateFromDDMTermToUntyped
       return mkUFApp name argTerms
     | none => throw s!"translateFromDDMTermToUntyped: don't know how to convert {repr t}"
   | _ => throw s!"translateFromDDMTermToUntyped: don't know how to convert {repr t}"
 
 where
-  /-- Extract the name string from a QualIdentifier. -/
+  /-- Extract the name string, optional sort, and indices from a QualIdentifier. -/
   resolveQI (qi : Strata.SMTResponseDDM.QualIdentifier Strata.SourceRange)
-      : Option (String × Option (Strata.SMTResponseDDM.SMTSort Strata.SourceRange)) :=
+      : Option (String × Option (Strata.SMTResponseDDM.SMTSort Strata.SourceRange) ×
+                Array (Strata.SMTResponseDDM.Index Strata.SourceRange)) :=
     match qi with
     | .qi_ident _ iden =>
       match iden with
-      | .iden_simple _ sym | .iden_indexed _ sym _
-      => some (symbolToString sym, none)
+      | .iden_simple _ sym => some (symbolToString sym, none, #[])
+      | .iden_indexed _ sym idxs => some (symbolToString sym, none, idxs.val)
     | .qi_isort _ iden sort =>
       match iden with
-      | .iden_simple _ sym | .iden_indexed _ sym _
-      => some (symbolToString sym, some sort)
+      | .iden_simple _ sym => some (symbolToString sym, some sort, #[])
+      | .iden_indexed _ sym idxs => some (symbolToString sym, some sort, idxs.val)
   /-- Extract the raw string from a Symbol. -/
   symbolToString (sym : Strata.SMTResponseDDM.Symbol Strata.SourceRange) : String :=
     formatArg (.op (Strata.SMTResponseDDM.Symbol.toAst sym))
