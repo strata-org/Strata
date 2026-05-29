@@ -136,10 +136,9 @@ def sanitizeSmtName (name : String) : String :=
     let first := name.front
     if first == '@' || first == '.' then "$" ++ name else name
 
-/-- Base names for internally generated identifiers. Correctness is enforced
+/-- Base name for internally generated UF identifiers. Correctness is enforced
     by the `usedNames` registry which disambiguates via `@N` suffixes on
     collision. -/
-def termId (n : Nat)                    : String := s!"t.{n}"
 def ufId (n : Nat)                      : String := s!"f.{n}"
 
 def ufNum   : EncoderM Nat := do return (← get).ufs.size

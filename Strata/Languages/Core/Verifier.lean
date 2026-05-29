@@ -90,19 +90,22 @@ decreasing_by
   all_goals simp_wf
   all_goals (try omega) <;> (have := List.sizeOf_lt_of_mem ‹_›; omega)
 
+/-- Allocate a globally unique SMT-LIB identifier within the abstract encoder.
+    Mirrors `Encoder.uniquify` but operates on `AbstractEncoderState`. -/
+private def uniquify (baseName : String) : AbstractEncoderM τ m String := do
+  let id := Strata.Name.findUnique baseName 1 ((← get).base.usedNames.union smtReservedKeywordsSet)
+  modify fun st => { st with base.usedNames := st.base.usedNames.insert id }
+  return id
+
 private def encodeUF (solver : AbstractSolver τ σ m) (uf : UF) : AbstractEncoderM τ m String := do
   if let .some enc := (← get).base.ufs.get? uf then return enc
-  let baseName := sanitizeSmtName uf.id
-  let usedNames := (← get).base.usedNames.union smtReservedKeywordsSet
-  let id := Strata.Name.findUnique baseName 1 usedNames
+  let id ← uniquify (sanitizeSmtName uf.id)
   liftM (solver.comment uf.id)
   let argSorts ← uf.args.mapM (fun vt => liftM (termTypeToSort solver vt.ty))
   let outSort ← liftM (termTypeToSort solver uf.out)
   let handle ← liftM (solver.declareFun id argSorts outSort)
   modify fun st => { st with varHandles := st.varHandles.insert id handle }
-  modifyGet fun state => (id, { state with base := { state.base with
-    ufs := state.base.ufs.insert uf id
-    usedNames := state.base.usedNames.insert id } })
+  modifyGet fun state => (id, { state with base.ufs := state.base.ufs.insert uf id })
 
 private def defineApp (solver : AbstractSolver τ σ m) (retSort : σ) (op : Op) (tEncs : List τ) : AbstractEncoderM τ m τ := do
   -- Pattern: `liftM` lifts solver calls from `m` into `StateT`.
@@ -230,9 +233,7 @@ decreasing_by
 
 private def encodeFunction (solver : AbstractSolver τ σ m) (uf : UF) (body : Term) : AbstractEncoderM τ m String := do
   if let .some enc := (← get).base.ufs.get? uf then return enc
-  let baseName := ufId (← get).base.ufs.size
-  let usedNames := (← get).base.usedNames.union smtReservedKeywordsSet
-  let id := Strata.Name.findUnique baseName 1 usedNames
+  let id ← uniquify (ufId (← get).base.ufs.size)
   liftM (solver.comment uf.id)
   let argPairs ← uf.args.mapM fun vt => do
     let s ← liftM (termTypeToSort solver vt.ty)
@@ -240,9 +241,7 @@ private def encodeFunction (solver : AbstractSolver τ σ m) (uf : UF) (body : T
   let outSort ← liftM (termTypeToSort solver uf.out)
   let bodyEnc ← encodeTerm solver body
   liftM (solver.defineFun id argPairs outSort bodyEnc)
-  modifyGet fun state => (id, { state with base := { state.base with
-    ufs := state.base.ufs.insert uf id
-    usedNames := state.base.usedNames.insert id } })
+  modifyGet fun state => (id, { state with base.ufs := state.base.ufs.insert uf id })
 
 end AbstractEncoder
 
