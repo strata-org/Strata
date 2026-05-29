@@ -102,7 +102,7 @@ def makeVCResult (label : String) (outcome : VCOutcome)
 #guard outcomeToMessage (mkOutcome .unknown .unknown) = "Unknown (solver timeout or incomplete)"
 
 -- Test unreachable message
-#guard outcomeToMessage (mkOutcome .unsat .unsat) = "Unreachable: path condition is contradictory"
+#guard outcomeToMessage (mkOutcome .unsat .unsat) = "Unreachable in this context"
 
 /-! ## Location Extraction Tests -/
 
