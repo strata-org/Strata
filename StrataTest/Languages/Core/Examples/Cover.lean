@@ -123,11 +123,11 @@ procedure Test()
 info:
 Obligation: unreach_assert
 Property: assert
-Result: ✅ pass (❗path unreachable)
+Result: ✅ pass (❗unreachable in this context)
 
 Obligation: unreach_cover
 Property: cover
-Result: ❌ fail (❗path unreachable)
+Result: ❌ fail (❗unreachable in this context)
 -/
 #guard_msgs in
 #eval verify reachCheckGlobalPgm (options := {Core.VerifyOptions.quiet with checkLevel := .full})
@@ -164,11 +164,11 @@ procedure Test()
 info:
 Obligation: unreach_assert
 Property: assert
-Result: ✅ pass (❗path unreachable)
+Result: ✅ pass (❗unreachable in this context)
 
 Obligation: unreach_cover
 Property: cover
-Result: ❌ fail (❗path unreachable)
+Result: ❌ fail (❗unreachable in this context)
 
 Obligation: reach_assert_pass
 Property: assert
@@ -214,7 +214,7 @@ procedure Test()
 info:
 Obligation: rc_assert
 Property: assert
-Result: ✅ pass (❗path unreachable)
+Result: ✅ pass (❗unreachable in this context)
 
 Obligation: no_rc_assert
 Property: assert
@@ -222,7 +222,7 @@ Result: ✅ pass
 
 Obligation: rc_cover
 Property: cover
-Result: ❌ fail (❗path unreachable)
+Result: ❌ fail (❗unreachable in this context)
 
 Obligation: no_rc_cover
 Property: cover
@@ -252,7 +252,7 @@ procedure Test()
 #end
 
 /--
-info: #["assertion holds vacuously (path unreachable)", "cover property is unreachable"]
+info: #["assertion holds vacuously (unreachable in this context)", "cover property is unreachable in this context"]
 -/
 #guard_msgs in
 #eval do
@@ -290,19 +290,19 @@ procedure Test()
 info:
 Obligation: pe_assert_pass
 Property: assert
-Result: ✅ pass (❗path unreachable)
+Result: ✅ pass (❗unreachable in this context)
 
 Obligation: pe_cover_fail
 Property: cover
-Result: ❌ fail (❗path unreachable)
+Result: ❌ fail (❗unreachable in this context)
 
 Obligation: rc_assert
 Property: assert
-Result: ✅ pass (❗path unreachable)
+Result: ✅ pass (❗unreachable in this context)
 
 Obligation: rc_cover
 Property: cover
-Result: ❌ fail (❗path unreachable)
+Result: ❌ fail (❗unreachable in this context)
 -/
 #guard_msgs in
 #eval verify reachCheckPEPgm (options := {Core.VerifyOptions.quiet with checkLevel := .full})
