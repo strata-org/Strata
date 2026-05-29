@@ -262,11 +262,13 @@ def Procedure.Spec.eraseTypes (s : Procedure.Spec) : Procedure.Spec :=
     postconditions := s.postconditions.map (fun (l, c) => (l, c.eraseTypes))
   }
 
+@[expose]
 def Procedure.Spec.getCheckExprs (conds : ListMap CoreLabel Procedure.Check) :
   List Expression.Expr :=
   let checks := conds.values
   checks.map (fun c => c.expr)
 
+@[expose]
 def Procedure.Spec.updateCheckExprs
   (es : List Expression.Expr) (conds : ListMap CoreLabel Procedure.Check) :
   ListMap CoreLabel Procedure.Check :=

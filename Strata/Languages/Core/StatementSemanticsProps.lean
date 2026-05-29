@@ -1976,6 +1976,165 @@ theorem UpdatedStatesNotinSame :
       have HH := List.of_mem_zip Hin
       simp_all
 
+/-- Helper: lookup of an unrelated key through `updatedStates` falls
+    through. -/
+theorem updatedStates_get_notin
+    {σ : CoreStore} {ks : List Expression.Ident}
+    {vs : List Expression.Expr} {k : Expression.Ident}
+    (Hkn : ¬ k ∈ ks) :
+    (updatedStates σ ks vs) k = σ k := by
+  induction ks generalizing σ vs with
+  | nil =>
+    cases vs <;> simp [updatedStates, updatedStates']
+  | cons t ts ih =>
+    cases vs with
+    | nil => simp [updatedStates, updatedStates', List.zip]
+    | cons w ws =>
+      have Hkt : k ≠ t := fun h => Hkn (h ▸ List.mem_cons_self)
+      have Hkts : ¬ k ∈ ts := fun h => Hkn (List.mem_cons_of_mem _ h)
+      have Hunfold :
+          updatedStates σ (t :: ts) (w :: ws) =
+          updatedStates (updatedState σ t w) ts ws := by
+        simp [updatedStates, updatedStates', List.zip, List.zipWith]
+      rw [Hunfold]
+      rw [ih (σ := updatedState σ t w) (vs := ws) Hkts]
+      simp [updatedState, Hkt]
+
+/-- 2-layer fall-through of `updatedStates_get_notin`. -/
+theorem updatedStates_2layer_get_notin
+    {σ : CoreStore} {ks₁ ks₂ : List Expression.Ident}
+    {vs₁ vs₂ : List Expression.Expr} {k : Expression.Ident}
+    (Hk1 : ¬ k ∈ ks₁) (Hk2 : ¬ k ∈ ks₂) :
+    (updatedStates (updatedStates σ ks₁ vs₁) ks₂ vs₂) k = σ k := by
+  rw [updatedStates_get_notin Hk2, updatedStates_get_notin Hk1]
+
+/-- 3-layer fall-through of `updatedStates_get_notin`. -/
+theorem updatedStates_3layer_get_notin
+    {σ : CoreStore} {ks₁ ks₂ ks₃ : List Expression.Ident}
+    {vs₁ vs₂ vs₃ : List Expression.Expr} {k : Expression.Ident}
+    (Hk1 : ¬ k ∈ ks₁) (Hk2 : ¬ k ∈ ks₂) (Hk3 : ¬ k ∈ ks₃) :
+    (updatedStates
+      (updatedStates
+        (updatedStates σ ks₁ vs₁) ks₂ vs₂) ks₃ vs₃) k = σ k := by
+  rw [updatedStates_get_notin Hk3, updatedStates_get_notin Hk2,
+      updatedStates_get_notin Hk1]
+
+/-- Positional projection of `ReadValues`: when `ReadValues σ ks vs`
+    holds and `i < ks.length` (= `vs.length`), `σ ks[i] = some vs[i]`. -/
+theorem readValues_get
+    {σ : CoreStore} {ks : List Expression.Ident}
+    {vs : List Expression.Expr}
+    (Hrd : ReadValues σ ks vs) {i : Nat}
+    {hi : i < ks.length} {hi' : i < vs.length} :
+    σ (ks[i]'hi) = some (vs[i]'hi') := by
+  induction Hrd generalizing i with
+  | read_none =>
+    exact absurd hi (by simp)
+  | read_some Hsome Hrest ih =>
+    cases i with
+    | zero =>
+      simp only [List.getElem_cons_zero]
+      exact Hsome
+    | succ n =>
+      simp only [List.getElem_cons_succ]
+      have hi_n : n < _ := Nat.lt_of_succ_lt_succ hi
+      have hi'_n : n < _ := Nat.lt_of_succ_lt_succ hi'
+      exact ih (hi := hi_n) (hi' := hi'_n)
+
+/-- Positional projection of `EvalExpressions`. -/
+theorem evalExpressions_get
+    {δ : CoreEval} {σ : CoreStore}
+    {es : List Expression.Expr} {vs : List Expression.Expr}
+    (Heval : EvalExpressions (P:=Expression) δ σ es vs) {i : Nat}
+    (hi : i < es.length) (hi' : i < vs.length) :
+    δ σ (List.get es ⟨i, hi⟩) = some (List.get vs ⟨i, hi'⟩) := by
+  induction Heval generalizing i with
+  | eval_none =>
+    exact absurd hi (by simp)
+  | eval_some _ Hsome _ ih =>
+    cases i with
+    | zero =>
+      simp only [List.get]
+      exact Hsome
+    | succ n =>
+      simp only [List.get]
+      have hi_n : n < _ := Nat.lt_of_succ_lt_succ hi
+      have hi'_n : n < _ := Nat.lt_of_succ_lt_succ hi'
+      exact ih hi_n hi'_n
+
+/-- `ReadValues (updatedStates σ ks vs) ks vs` whenever `ks.Nodup` and
+    lengths agree. -/
+theorem readValues_updatedStatesSame
+    {σ : CoreStore} {ks : List Expression.Ident}
+    {vs : List Expression.Expr}
+    (Hlen : ks.length = vs.length)
+    (Hnd : ks.Nodup) :
+    ReadValues (updatedStates σ ks vs) ks vs := by
+  induction ks generalizing σ vs with
+  | nil =>
+    cases vs <;> simp_all
+    exact ReadValues.read_none
+  | cons k ks' ih =>
+    cases vs with
+    | nil => simp at Hlen
+    | cons v vs' =>
+      simp only [updatedStates, List.zip_cons_cons, updatedStates']
+      have Hk_notin : ¬ k ∈ ks' := (List.nodup_cons.mp Hnd).1
+      have Hnd' : ks'.Nodup := (List.nodup_cons.mp Hnd).2
+      have Hlen' : ks'.length = vs'.length := by
+        simp at Hlen; exact Hlen
+      have Hk_lookup : (updatedStates' (updatedState σ k v) (ks'.zip vs')) k = some v := by
+        have Hfall : (updatedStates (updatedState σ k v) ks' vs') k = (updatedState σ k v) k :=
+          updatedStates_get_notin (σ:=updatedState σ k v) (vs:=vs') Hk_notin
+        unfold updatedStates at Hfall
+        rw [Hfall]
+        simp [updatedState]
+      apply ReadValues.read_some Hk_lookup
+      have Hih := ih (σ := updatedState σ k v) Hlen' Hnd'
+      simp only [updatedStates] at Hih
+      exact Hih
+
+/-- Pointwise σ-definedness for the `flatMap getVars` of a list of
+    expressions, derived from `EvalExpressions.eval_some`. -/
+theorem evalExpressions_isDefined_flatMap
+    {δ : CoreEval} {σ : CoreStore}
+    {es : List Expression.Expr} {vs : List Expression.Expr}
+    (Heval : EvalExpressions (P:=Core.Expression) δ σ es vs) :
+    Imperative.isDefined σ
+      (List.flatMap (Imperative.HasVarsPure.getVars (P:=Expression)) es) := by
+  induction Heval with
+  | eval_none =>
+    intro v Hv
+    simp at Hv
+  | eval_some Hdef _ _ Hrec_isdef =>
+    intro v Hv
+    rw [List.flatMap_cons] at Hv
+    rcases List.mem_append.mp Hv with Hin | Hin
+    · exact Hdef v Hin
+    · exact Hrec_isdef v Hin
+
+/-- For any `v ∉ ks`, `InitStates σ ks vs σ'` leaves `σ' v = σ v`. -/
+theorem initStates_get_notin
+    {P : Imperative.PureExpr}
+    {σ σ' : Imperative.SemanticStore P}
+    {ks : List P.Ident} {vs : List P.Expr} {v : P.Ident}
+    (Hinit : InitStates σ ks vs σ')
+    (Hnin : v ∉ ks) :
+    σ' v = σ v := by
+  induction Hinit with
+  | init_none => rfl
+  | @init_some σ x e σ_step xs ys σ'' Hstep Hinits ih =>
+    have Hvx : x ≠ v := fun heq =>
+      Hnin (heq ▸ List.mem_cons_self)
+    have Hnin_tail : v ∉ xs := fun hin =>
+      Hnin (List.mem_cons_of_mem _ hin)
+    have Hstep_eq : σ_step v = σ v := by
+      cases Hstep with
+      | init _ _ Heq =>
+        exact Heq v Hvx
+    have Hih := ih Hnin_tail
+    rw [Hih, Hstep_eq]
+
 theorem InvStoresExceptUpdatedSame :
   invStoresExcept σ σ' ks →
   ks'.length = vs'.length →

@@ -326,7 +326,7 @@ Substitute `(.fvar x _)` in `e` with `to`. Does NOT lift de Bruijn indices in `t
 when going under binders - safe when `to` contains no bvars (e.g., substituting
 fvar→fvar). Use `substFvarLifting` when `to` contains bvars.
 -/
-def substFvar [BEq T.IDMeta] (e : LExpr ⟨T, GenericTy⟩) (fr : T.Identifier) (to : LExpr ⟨T, GenericTy⟩)
+@[expose] def substFvar [BEq T.IDMeta] (e : LExpr ⟨T, GenericTy⟩) (fr : T.Identifier) (to : LExpr ⟨T, GenericTy⟩)
   : (LExpr ⟨T, GenericTy⟩) :=
   match e with
   | .const _ _ => e | .bvar _ _ => e | .op _ _ _ => e
@@ -367,7 +367,7 @@ in a single pass, avoiding variable capture between substitutions.
 Does NOT lift de Bruijn indices when going under binders. Safe only when all
 replacement expressions contain no bvars.
 -/
-def substFvars [BEq T.IDMeta] (e : LExpr ⟨T, GenericTy⟩) (sm : Map T.Identifier (LExpr ⟨T, GenericTy⟩))
+@[expose] def substFvars [BEq T.IDMeta] (e : LExpr ⟨T, GenericTy⟩) (sm : Map T.Identifier (LExpr ⟨T, GenericTy⟩))
   : LExpr ⟨T, GenericTy⟩ :=
   if sm.isEmpty then e else substFvarsAux e sm
 where

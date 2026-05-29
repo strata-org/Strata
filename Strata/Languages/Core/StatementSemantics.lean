@@ -163,6 +163,7 @@ inductive TouchVars : SemanticStore P → List P.Ident → SemanticStore P → P
 inductive Inits : SemanticStore P → SemanticStore P → Prop where
   | init : InitVars σ xs σ' → Inits σ σ'
 
+@[expose]
 def updatedState
   (σ : SemanticStore P)
   (ident : P.Ident)
@@ -172,6 +173,7 @@ def updatedState
     then some val
     else (σ k)
 
+@[expose]
 def updatedStates'
   (σ : SemanticStore P)
   (idvals : List (P.Ident × P.Expr))
@@ -180,6 +182,7 @@ def updatedStates'
   | [] => σ
   | (ident, val) :: rest  => updatedStates' (updatedState σ ident val) rest
 
+@[expose]
 def updatedStates
   (σ : SemanticStore P)
   (idents : List P.Ident)
@@ -193,6 +196,7 @@ def updatedStates
 -- https://dafny.org/latest/DafnyRef/DafnyRef#sec-two-state
 -- where this condition will be asserted at procedures utilizing those two-state functions
 -/
+@[expose]
 def WellFormedCoreEvalTwoState (δ : CoreEval) (σ₀ σ : CoreStore) : Prop :=
       (∃ vs vs' σ₁, HavocVars σ₀ vs σ₁ ∧ InitVars σ₁ vs' σ) ∧
       (∀ vs vs' σ₀ σ₁ σ,
