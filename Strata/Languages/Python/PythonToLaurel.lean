@@ -362,7 +362,8 @@ private def parseFloatString (s : String) : Option Decimal := do
   | _ => none
 
 def floatToAny (d : Decimal) := call "from_float" [mkNode (StmtExpr.LiteralDecimal d)]
-def Any_to_bool (b: StmtExprMd) := call "Any_to_bool" [b]
+def Any_to_bool (b: StmtExprMd) : TypedExpr .TBool :=
+  Typed.call "Any_to_bool" [b] _
 
 /-- The set of PyLauType names that have runtime type-tester predicates
     (`Any..isfrom_<type>`). -/
@@ -752,7 +753,7 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
     let condExpr ← translateExpr ctx cond
     let thenExpr ← translateExpr ctx thenb
     let elseExpr ← translateExpr ctx elseb
-    return mkNode (StmtExpr.IfThenElse (Any_to_bool condExpr) thenExpr elseExpr) md
+    return ifThenElse (Any_to_bool condExpr) thenExpr (some elseExpr) (source := md)
 
   | .Call _ f args kwargs =>
       let result ← translateCall ctx f args.val.toList kwargs.val.toList
@@ -1765,7 +1766,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
       let (_, elseStmts) ← translateStmtList bodyCtx orelse.val.toList
       .ok (some (block elseStmts none))
     let (preamble, condRef) := getExceptionCheckPreamble ctx condExpr s!"$if_cond_{test.toAst.ann.start.byteIdx}"
-    let ifStmt := mkNode (StmtExpr.IfThenElse (Any_to_bool condRef) bodyBlock elseBlock) md
+    let ifStmt := ifThenElse (Any_to_bool condRef) bodyBlock elseBlock (source := md)
 
     return (bodyCtx, preamble ++ [ifStmt])
 
@@ -1814,7 +1815,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
         ([varDecl], varRef, { ctx with variableTypes := ctx.variableTypes ++ [(freshVar, "bool")] })
       | _ => ([], condExpr, ctx)
 
-    let assertStmt := mkNode (StmtExpr.Assert { condition := Any_to_bool finalCondExpr, summary }) md
+    let assertStmt := assert_ (Any_to_bool finalCondExpr) summary (source := md)
 
     -- Wrap in block if we hoisted condition
     let result := if condStmts.isEmpty then
