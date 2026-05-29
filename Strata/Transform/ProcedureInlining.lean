@@ -89,7 +89,7 @@ private def genOldToFreshIdMappings (old_vars : List Expression.Ident)
   return prev_map
 
 private def renameAllLocalNames (c:Procedure)
-    : CoreTransformM (Procedure × Map Expression.Ident Expression.Ident) := do
+    : CoreTransformM Procedure := do
   let var_map: Map Expression.Ident Expression.Ident := []
   let proc_name := c.header.name.name
 
@@ -128,7 +128,7 @@ private def renameAllLocalNames (c:Procedure)
       | .some id' => (id',ty)
       | .none => panic! "unreachable")
     }
-  return ({ c with body := new_body, header := new_header }, var_map)
+  return { c with body := new_body, header := new_header }
 
 
 /-- Update the call graph after inlining one f(caller) -> g(callee) invocation. -/
@@ -227,7 +227,7 @@ def inlineCallCmd
 
         -- Create a copy of the procedure that has all input/output/local vars
         -- replaced with fresh ones
-        let (proc, _) <- renameAllLocalNames proc
+        let proc <- renameAllLocalNames proc
 
         let sigOutputs := LMonoTySignature.toTrivialLTy proc.header.outputs
         let sigInputs := LMonoTySignature.toTrivialLTy proc.header.inputs
