@@ -919,7 +919,10 @@ partial def invariantsToCST {M} [Inhabited M]
     let restCST ← invariantsToCST rest
     pure (.consInvariants default labelAnn exprCST restCST)
 
-/-- Convert a `DetTransferCmd` to its CFG-specific CST `Transfer` node. -/
+/-- Convert a `DetTransferCmd` to its CFG-specific CST `Transfer` node.
+Always produces a deterministic CST: `transfer_goto` when both targets coincide,
+otherwise `transfer_cond_goto` over the condition expression. Nondeterministic
+gotos belong to `NondetTransferCmd`; see `nondetTransferToCST`. -/
 partial def transferToCST {M} [Inhabited M]
     (t : Imperative.DetTransferCmd String Expression) : ToCSTM M (CoreDDM.Transfer M) := do
   match t with
@@ -927,17 +930,23 @@ partial def transferToCST {M} [Inhabited M]
     if lt == lf then
       pure (.transfer_goto default ⟨default, lt⟩)
     else
-      match cond with
-      | .fvar _ id _ =>
-        if id.name.startsWith "$__nondet_" then
-          pure (.transfer_nondet_goto default ⟨default, lt⟩ ⟨default, lf⟩)
-        else
-          let condCST ← lexprToExpr cond 0
-          pure (.transfer_cond_goto default condCST ⟨default, lt⟩ ⟨default, lf⟩)
-      | _ =>
-        let condCST ← lexprToExpr cond 0
-        pure (.transfer_cond_goto default condCST ⟨default, lt⟩ ⟨default, lf⟩)
+      let condCST ← lexprToExpr cond 0
+      pure (.transfer_cond_goto default condCST ⟨default, lt⟩ ⟨default, lf⟩)
   | .finish _ => pure (.transfer_return default)
+
+/-- Convert a `NondetTransferCmd` to its CFG-specific CST `Transfer` node.
+A two-target nondeterministic goto becomes `transfer_nondet_goto`; a single
+target becomes `transfer_goto`; an empty target list becomes `transfer_return`.
+Other arities are not representable in the current concrete syntax. -/
+partial def nondetTransferToCST {M} [Inhabited M]
+    (t : Imperative.NondetTransferCmd String Expression) : ToCSTM M (CoreDDM.Transfer M) := do
+  match t with
+  | .goto [] _ => pure (.transfer_return default)
+  | .goto [l] _ => pure (.transfer_goto default ⟨default, l⟩)
+  | .goto [l1, l2] _ =>
+    pure (.transfer_nondet_goto default ⟨default, l1⟩ ⟨default, l2⟩)
+  | .goto labels _ =>
+    panic! s!"nondetTransferToCST: nondeterministic goto with {labels.length} targets is not representable in concrete syntax"
 
 /-- Convert a single `DetBlock` to a CST `CFGBlock`. -/
 partial def detBlockToCST {M} [Inhabited M]

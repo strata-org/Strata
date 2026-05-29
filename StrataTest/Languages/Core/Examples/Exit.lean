@@ -122,7 +122,7 @@ block$l1$_2:
   #[<[provenance]: :426-434>] condGoto true l$_1 l$_1
 l$_1:
   assert [a3]: x == x;
-  condGoto true end$_0 end$_0
+  #[<[provenance]: <synthesized:structured-to-unstructured>>] condGoto true end$_0 end$_0
 end$_0:
   finish
 -/
@@ -149,7 +149,7 @@ l2:
   #[<[provenance]: :848-921>] condGoto true l$_3 l$_3
 l$_3:
   assert [a5]: !(x == x);
-  condGoto true block$l5$_2 block$l5$_2
+  #[<[provenance]: <synthesized:structured-to-unstructured>>] condGoto true block$l5$_2 block$l5$_2
 block$l5$_2:
   assert [a6]: x * 2 > x;
   #[<[provenance]: :978-986>] condGoto true end$_0 end$_0

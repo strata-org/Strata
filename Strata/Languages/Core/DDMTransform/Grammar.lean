@@ -488,7 +488,7 @@ op transfer_nondet_goto (label1 : Ident, label2 : Ident) : Transfer =>
 // structured if-statement syntax. The DDM parser registers tokens globally,
 // so "if (" in Transfer would conflict with "if (" in Statement.
 op transfer_cond_goto (c : Expr, lt : Ident, lf : Ident) : Transfer =>
-  "branch (" c ") goto " lt " else " lf ";";
+  "branch (" c ") goto " lt " else goto " lf ";";
 
 // Return/finish (terminate execution)
 op transfer_return : Transfer =>

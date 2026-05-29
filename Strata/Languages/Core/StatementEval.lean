@@ -736,14 +736,10 @@ def evalOne (E : Env) (old_var_subst : SubstMap) (ss : Statements) : Env :=
 mutual
 
 /--
-Interpret a single procedure call.
-
-Importantly, this creates a separate Env to execute the body of the procedure with,
-which initially only contains input/output variables.
-
-Execute a CFG by following control flow from the entry block.
-    Returns the list of commands executed (as statements) for compatibility
-    with the structured interpreter. -/
+Execute a CFG by following control flow from the entry block. For each block,
+translate the commands within it to a sequence of command statements and evaluate
+those using the structured interpreter, then dispatch on the block's transfer to
+either finish or jump to the next block. -/
 private def runCFG (cfg : Core.DetCFG) (fuel : Nat) (env : Env)
     (ops : Imperative.RunOps Expression Command Env) : Env :=
   go cfg.entry fuel env
@@ -765,11 +761,16 @@ where
             | some (.boolConst _ true) => go lt fuel' env'
             | some (.boolConst _ false) => go lf fuel' env'
             | _ => CmdEval.updateError env'
-                (.Misc s!"runCFG: branch condition in block '{label}' did not evaluate to a boolean")
+                (.Misc s!"runCFG: branch condition in block '{label}' is symbolic (e.g. nondeterministic goto); concrete execution requires deterministic conditions")
         | _ => CmdEval.updateError env
               (.Misc s!"runCFG: block '{label}' did not reach terminal (possibly inner-loop fuel exhaustion or unexpected exit)")
 
 /--
+Interpret a single procedure call.
+
+Importantly, this creates a separate Env to execute the body of the procedure with,
+which initially only contains input/output variables.
+
 The resulting Env is the original passed in Env with the output variables copied back into it.
 -/
 def Command.runCall (lhs : List Expression.Ident) (procName : String) (args : List Expression.Expr)

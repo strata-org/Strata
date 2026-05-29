@@ -1012,7 +1012,7 @@ def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Dec
       body := .structured (← toCoreBlock b)
     } .empty]
   | .command_cfg_procedure _ _ _ _ _ _ =>
-    throwAt default "CFG procedures are not supported in Boole dialect"
+    throwAt default "CFG procedures are not supported in the Boole dialect"
   | .command_datatypes _ ⟨_, decls⟩ =>
     return [.type (.data (← decls.toList.mapM toCoreDatatypeDecl)) .empty]
 

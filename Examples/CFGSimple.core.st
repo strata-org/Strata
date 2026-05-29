@@ -9,7 +9,7 @@ spec {
 }
 cfg entry {
   entry: {
-    branch (x >= y) goto then_branch else else_branch;
+    branch (x >= y) goto then_branch else goto else_branch;
   }
   then_branch: {
     m := x;
@@ -36,7 +36,7 @@ cfg entry {
     goto loop;
   }
   loop: {
-    branch (y < n) goto body else done;
+    branch (y < n) goto body else goto done;
   }
   body: {
     y := y + 1;

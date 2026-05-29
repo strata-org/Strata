@@ -289,9 +289,8 @@ inductive CoreStepStar
 /-- Reflexive-transitive closure of CFG steps for the Core language.
     Each step looks up a block by label and evaluates it using the generic
     `Imperative.EvalDetBlock` instantiated with `EvalCommand`. This works
-    because `EvalDetBlock` has a `_enableNesting` constructor that directly
-    references `EvalCmd`, satisfying the Lean kernel's nested inductive
-    requirement. See `StrataTest/Languages/Core/Tests/NestedInductiveRestriction.lean`. -/
+    because `EvalDetBlock` has a `cmd` constructor that directly references
+    `EvalCmd`, satisfying the Lean kernel's nested inductive requirement. -/
 inductive CoreCFGStepStar
     (π : String → Option Procedure)
     (φ : CoreEval → PureFunc Expression → CoreEval) :

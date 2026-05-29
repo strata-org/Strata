@@ -40,7 +40,7 @@ inductive DetTransferCmd (Label : Type) (P : PureExpr) where
 model it instead using `condGoto`. By defining this function, we can easily
 create unconditional jumps, and future proof against the possibility of adding
 it as a constructor in the future.  -/
-def DetTransferCmd.goto [HasBool P] (l : Label) (md : MetaData P := .empty) : DetTransferCmd Label P :=
+def DetTransferCmd.goto [HasBool P] (l : Label) (md : MetaData P) : DetTransferCmd Label P :=
   condGoto HasBool.tt l l md
 
 /-- A `NondetTransfer` command terminates a non-deterministic basic block,

@@ -40,11 +40,16 @@ namespace Strata
 
 public section
 
+/-- Rewrite a `Core.CoreIdent` according to a name-substitution map. Names absent
+from `rn` pass through unchanged; metadata is preserved. -/
 def renameIdent (rn : Std.HashMap String String) (id : Core.CoreIdent) : Core.CoreIdent :=
   match rn[id.name]? with
   | some new => ⟨new, id.metadata⟩
   | none => id
 
+/-- Rewrite all free variable names in a `Core.Expression.Expr` according to `rn`.
+Recurses through binders and other expression forms; bound-variable indices are
+unchanged. -/
 partial def renameExpr
     (rn : Std.HashMap String String)
     : Core.Expression.Expr → Core.Expression.Expr
@@ -56,6 +61,8 @@ partial def renameExpr
   | .eq m e1 e2 => .eq m (renameExpr rn e1) (renameExpr rn e2)
   | e => e
 
+/-- Apply a name-substitution map to identifiers and expressions inside an
+`Imperative.Cmd` over Core expressions. -/
 def renameCmd
     (rn : Std.HashMap String String)
     : Imperative.Cmd Core.Expression → Imperative.Cmd Core.Expression

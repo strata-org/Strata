@@ -93,7 +93,7 @@ true
     body := .cfg { entry := "entry",
                    blocks := [
                      ("entry", { cmds := [CmdExt.cmd (Cmd.set "y" (.det eb[#42]) .empty)],
-                                 transfer := .goto "done" }),
+                                 transfer := .goto "done" .empty }),
                      ("done", { cmds := [], transfer := .finish })
                    ] } })
 
@@ -130,7 +130,7 @@ Deferred Proof Obligations:
     spec := { preconditions := [], postconditions := [] },
     body := .cfg { entry := "start",
                    blocks := [("start", { cmds := [],
-                                          transfer := .goto "nonexistent" })] } })
+                                          transfer := .goto "nonexistent" .empty })] } })
 
 /-! ## Fuel exhaustion: loop back-edge -/
 
@@ -147,7 +147,7 @@ info: has error: true
       body := .cfg { entry := "loop",
                      blocks := [
                        ("loop", { cmds := [CmdExt.cmd (Cmd.set "y" (.det eb[#1]) .empty)],
-                                  transfer := .goto "loop" })
+                                  transfer := .goto "loop" .empty })
                      ] } }
   let (E, _stats) := eval E p
   IO.println s!"has error: {E.error.isSome}"
@@ -247,9 +247,9 @@ Proof Obligation:
                      ("entry", { cmds := [],
                                  transfer := .condGoto eb[((~Int.Ge x) #0)] "pos" "neg" }),
                      ("pos", { cmds := [CmdExt.cmd (Cmd.set "y" (.det eb[x]) .empty)],
-                               transfer := .goto "done" }),
+                               transfer := .goto "done" .empty }),
                      ("neg", { cmds := [CmdExt.cmd (Cmd.set "y" (.det eb[((~Int.Sub #0) x)]) .empty)],
-                               transfer := .goto "done" }),
+                               transfer := .goto "done" .empty }),
                      ("done", { cmds := [], transfer := .finish })
                    ] } })
 

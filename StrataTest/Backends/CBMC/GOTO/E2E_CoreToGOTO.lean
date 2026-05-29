@@ -344,10 +344,12 @@ private def injectPropertySummary (stmts : List Core.Statement) (msg : String)
       .cmd (.cmd (.assert label b (md.withPropertySummary msg)))
     | other => other
 
--- TODO: This could be split into a two-stage transformation:
--- 1. structured → cfg (via StructuredToUnstructured)
--- 2. cfg → CProverGOTO (always operates on CFG, no pattern matching needed)
--- For now, unstructured bodies are not supported in this test helper.
+-- This helper is exercised only against structured Core programs because
+-- `injectPropertySummary` pattern-matches on `Core.Statement`. Adding CFG
+-- support would require an analogous injection over `DetCFG` block commands.
+-- The user-facing two-stage path (structured → CFG → GOTO) already exists as
+-- `procedureToGotoCtxViaCFG`; this helper deliberately uses the direct path
+-- to test summary propagation through the structured pipeline.
 private def coreToGotoJsonWithSummary (p : Strata.Program) (summary : String) :
     Except Std.Format (Lean.Json × Lean.Json) := do
   let cprog := translateCore p

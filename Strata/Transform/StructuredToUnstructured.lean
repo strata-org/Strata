@@ -19,9 +19,12 @@ namespace Imperative
 
 abbrev DetBlocks (Label CmdT : Type) (P : PureExpr) := List (Label × DetBlock Label CmdT P)
 
-def detCmdBlock [HasBool P] (c : CmdT) (k : Label) :
+private abbrev synthesizedMd {P : PureExpr} : MetaData P :=
+  MetaData.ofProvenance (.synthesized .structuredToUnstructured)
+
+def detCmdBlock [HasBool P] (c : CmdT) (k : Label) (md : MetaData P) :
   DetBlock Label CmdT P :=
-  { cmds := [c], transfer := .goto k }
+  { cmds := [c], transfer := .goto k md }
 
 open LabelGen
 
@@ -40,11 +43,8 @@ def flushCmds
     pure (k, [])
   else
     let l ← StringGenState.gen pfx
-    let b := (l, { cmds := accum.reverse, transfer := tr?.getD (.goto k) })
+    let b := (l, { cmds := accum.reverse, transfer := tr?.getD (.goto k synthesizedMd) })
     pure (l, [b])
-
-private abbrev synthesizedMd {P : PureExpr} : MetaData P :=
-  MetaData.ofProvenance (.synthesized .structuredToUnstructured)
 
 /-- Translate a list of statements to basic blocks, accumulating commands -/
 def stmtsToBlocks
@@ -122,7 +122,7 @@ match ss with
       let decCmd   := HasPassiveCmds.assert s!"measure_decrease_{mLabel}"
                          (HasIntOrder.lt mExpr mOldExpr) synthesizedMd
       let ldec ← StringGenState.gen "measure_decrease$"
-      let decBlock := (ldec, { cmds := [decCmd], transfer := .goto lentry })
+      let decBlock := (ldec, { cmds := [decCmd], transfer := .goto lentry synthesizedMd })
       pure ([initCmd, assumeCmd, lbCmd], ldec, [decBlock])
   -- Body jumps to bodyK (either directly to lentry, or through the decrease block).
   let (bl, bbs) ← stmtsToBlocks bodyK bss ((.none, kNext) :: exitConts) []
