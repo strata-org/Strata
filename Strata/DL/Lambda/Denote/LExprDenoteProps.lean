@@ -562,8 +562,8 @@ theorem denoteArgs_eq_of_denote_eq
     {args1 args2 : List (LExpr T.mono)}
     {argTys : List LMonoTy}
     (bvarVal : BVarVal tcInterp vt Δ)
-    (h_args1 : List.Forall₂ (LExpr.HasTypeA Δ) args1 argTys)
-    (h_args2 : List.Forall₂ (LExpr.HasTypeA Δ) args2 argTys)
+    (h_args1 : Strata.List.Forall₂ (LExpr.HasTypeA Δ) args1 argTys)
+    (h_args2 : Strata.List.Forall₂ (LExpr.HasTypeA Δ) args2 argTys)
     (hpw : ∀ (i : Nat) (a1 a2 : LExpr T.mono) (τ : LMonoTy),
       args1[i]? = some a1 → args2[i]? = some a2 → argTys[i]? = some τ →
       ∀ (ht1 : LExpr.HasTypeA Δ a1 τ) (ht2 : LExpr.HasTypeA Δ a2 τ),
@@ -595,8 +595,8 @@ theorem denoteArgs_eq_implies_denote_eq
     {args₁ args₂ : List (LExpr T.mono)}
     {argTys : List LMonoTy}
     (bvarVal : BVarVal tcInterp vt Δ)
-    (h_args₁ : List.Forall₂ (LExpr.HasTypeA Δ) args₁ argTys)
-    (h_args₂ : List.Forall₂ (LExpr.HasTypeA Δ) args₂ argTys)
+    (h_args₁ : Strata.List.Forall₂ (LExpr.HasTypeA Δ) args₁ argTys)
+    (h_args₂ : Strata.List.Forall₂ (LExpr.HasTypeA Δ) args₂ argTys)
     (hdArgs : denoteArgs tcInterp opInterp fvarVal vt bvarVal args₁ argTys h_args₁ =
               denoteArgs tcInterp opInterp fvarVal vt bvarVal args₂ argTys h_args₂)
     : ∀ (i : Nat) (a₁ a₂ : LExpr T.mono) (σ : LMonoTy),
@@ -637,8 +637,8 @@ theorem denote_cast_ty {Δ : List LMonoTy} {e : LExpr T.mono} {τ₁ τ₂ : LMo
 
 theorem denoteArgs_cast_ty {Δ : List LMonoTy} {l : List (LExpr T.mono)}
   {τ₁ τ₂ : List LMonoTy} (h_eq : τ₁ = τ₂)
-  (h₁ : List.Forall₂ (LExpr.HasTypeA Δ) l τ₁)
-  (h₂ : List.Forall₂ (LExpr.HasTypeA Δ) l τ₂)
+  (h₁ : Strata.List.Forall₂ (LExpr.HasTypeA Δ) l τ₁)
+  (h₂ : Strata.List.Forall₂ (LExpr.HasTypeA Δ) l τ₂)
     (bv : BVarVal tcInterp vt Δ)
     : denoteArgs tcInterp opInterp fvarVal vt bv l τ₁ h₁ =
       HList.cast (congrArg (List.map (Lambda.LMonoTy.substTyVars vt)) h_eq.symm)

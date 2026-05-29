@@ -547,8 +547,8 @@ theorem eql_false_implies_denote_ne
       callOfLFunc_denote tcInterp opInterp fvarVal vt hcall1 h₁
     obtain ⟨argTys2, ty_op2, m_op2, name_op2, h_args2, hty_op2, hcallee_op2, _⟩ :=
       callOfLFunc_denote tcInterp opInterp fvarVal vt hcall2 h₂
-    obtain ⟨σ, hσ, ha1_ty⟩ := List.Forall₂.getElem?_some h_args1 ha1
-    obtain ⟨σ', hσ', ha2_ty⟩ := List.Forall₂.getElem?_some h_args2 ha2
+    obtain ⟨σ, hσ, ha1_ty⟩ := Strata.List.Forall₂.getElem?_some h_args1 ha1
+    obtain ⟨σ', hσ', ha2_ty⟩ := Strata.List.Forall₂.getElem?_some h_args2 ha2
     -- Get argTys1 = argTys2
     have hargTys_eq : argTys1 = argTys2 :=
       constr_callOfLFunc_argTys_eq' hcall1 hcall2 h_args1 h_args2 hoc₁ hoc₂ hfwf hcwf hconstr1

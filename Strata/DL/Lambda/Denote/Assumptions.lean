@@ -97,7 +97,7 @@ def Factory.EvalWellTyped [DecidableEq T.IDMeta] (F : @Factory T) : Prop :=
   ∀ (f : String), (hf : f ∈ F) → ∀ ceval, (F[f]).concreteEval = some ceval →
     ∀ (md : T.Metadata) (args : List (LExpr T.mono)) (result : LExpr T.mono) (tySubst : Subst),
       ceval md args = some result →
-      List.Forall₂ (LExpr.HasTypeA []) args ((F[f]).inputs.map Prod.snd |>.map (LMonoTy.subst tySubst)) →
+      Strata.List.Forall₂ (LExpr.HasTypeA []) args ((F[f]).inputs.map Prod.snd |>.map (LMonoTy.subst tySubst)) →
       LExpr.HasTypeA [] result (LMonoTy.subst tySubst (F[f]).output)
 
 /-- `isConstr` faithfulness: `f.isConstr = true` implies `f` was generated

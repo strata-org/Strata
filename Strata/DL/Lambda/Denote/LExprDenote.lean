@@ -997,7 +997,7 @@ noncomputable def denoteArgs
     (fvarVal : FreeVarVal T tcInterp) (vt : TyVarVal)
     {Δ : List LMonoTy} (bvarVal : BVarVal tcInterp vt Δ) :
     (argExprs : List (LExpr T.mono)) → (tys : List LMonoTy)  →
-      List.Forall₂ (LExpr.HasTypeA Δ) argExprs tys →
+      Strata.List.Forall₂ (LExpr.HasTypeA Δ) argExprs tys →
       HList (SortDenote tcInterp) (tys.map (LMonoTy.substTyVars vt))
   | [], [], _ => .nil
   | e :: es, ty :: tys, h =>
@@ -1023,7 +1023,7 @@ def LFunc.InterpConsistentEval [DecidableEq T.IDMeta]
   let inputSorts := instInputTys.map (LMonoTy.substTyVars vt)
   let outputSort := LMonoTy.substTyVars vt instOutputTy
   let fullSort := LSort.mkArrow outputSort inputSorts
-  ∀ (h_args : List.Forall₂ (LExpr.HasTypeA []) argExprs instInputTys)
+  ∀ (h_args : Strata.List.Forall₂ (LExpr.HasTypeA []) argExprs instInputTys)
     (h_result : LExpr.HasTypeA [] resultExpr instOutputTy),
   LExpr.denote tcInterp opInterp fvarVal vt .nil resultExpr instOutputTy h_result =
     SortDenote.applyArgs tcInterp (opInterp f.name.name fullSort)

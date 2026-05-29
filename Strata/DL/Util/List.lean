@@ -631,27 +631,30 @@ theorem partition_length (l : List α) (p : α → Bool) :
 
 end List
 
-/-! ### List.Forall₂ -/
+/-! ### Strata.List.Forall₂ -/
 
-/-- Pointwise relation between two lists. -/
-inductive List.Forall₂ (R : α → β → Prop) : List α → List β → Prop where
-  | nil : Forall₂ R [] []
-  | cons : R a b → Forall₂ R as bs → Forall₂ R (a :: as) (b :: bs)
+namespace Strata
 
-theorem List.Forall₂.head {R : α → β → Prop} (h : Forall₂ R (a :: as) (b :: bs)) : R a b := by
+/-- Pointwise relation between two lists.
+Namespaced under `Strata.List` to avoid collision with `List.Forall₂` from Batteries. -/
+inductive List.Forall₂ (R : α → β → Prop) : _root_.List α → _root_.List β → Prop where
+  | nil : List.Forall₂ R [] []
+  | cons : R a b → List.Forall₂ R as bs → List.Forall₂ R (a :: as) (b :: bs)
+
+theorem List.Forall₂.head {R : α → β → Prop} (h : Strata.List.Forall₂ R (a :: as) (b :: bs)) : R a b := by
   cases h; assumption
 
-theorem List.Forall₂.tail {R : α → β → Prop} (h : Forall₂ R (a :: as) (b :: bs)) : Forall₂ R as bs := by
+theorem List.Forall₂.tail {R : α → β → Prop} (h : Strata.List.Forall₂ R (a :: as) (b :: bs)) : Strata.List.Forall₂ R as bs := by
   cases h; assumption
 
-theorem List.Forall₂.length_eq {R : α → β → Prop} {as : List α} {bs : List β}
-    (h : Forall₂ R as bs) : as.length = bs.length := by
+theorem List.Forall₂.length_eq {R : α → β → Prop} {as : _root_.List α} {bs : _root_.List β}
+    (h : Strata.List.Forall₂ R as bs) : as.length = bs.length := by
   induction h with
   | nil => rfl
   | cons _ _ ih => simp [ih]
 
-theorem List.Forall₂.get? {R : α → β → Prop} {as : List α} {bs : List β}
-    (h : Forall₂ R as bs) (i : Nat) (ha : as[i]? = some a) (hb : bs[i]? = some b)
+theorem List.Forall₂.get? {R : α → β → Prop} {as : _root_.List α} {bs : _root_.List β}
+    (h : Strata.List.Forall₂ R as bs) (i : Nat) (ha : as[i]? = some a) (hb : bs[i]? = some b)
     : R a b := by
   induction h generalizing i with
   | nil => simp at ha
@@ -660,11 +663,11 @@ theorem List.Forall₂.get? {R : α → β → Prop} {as : List α} {bs : List �
     | zero => simp at ha hb; cases ha; cases hb; exact h_head
     | succ n => simp at ha hb; exact ih n ha hb
 
-/-- If `Forall₂ R l1 l2` and `l1[i]? = some a`, then there exists `b` with
+/-- If `Strata.List.Forall₂ R l1 l2` and `l1[i]? = some a`, then there exists `b` with
 `l2[i]? = some b` and `R a b`. -/
 theorem List.Forall₂.getElem?_some {R : α → β → Prop}
-    {l1 : List α} {l2 : List β}
-    (h : List.Forall₂ R l1 l2) {i : Nat} {a : α}
+    {l1 : _root_.List α} {l2 : _root_.List β}
+    (h : Strata.List.Forall₂ R l1 l2) {i : Nat} {a : α}
     (ha : l1[i]? = some a)
     : ∃ b, l2[i]? = some b ∧ R a b := by
   induction h generalizing i with
@@ -672,7 +675,9 @@ theorem List.Forall₂.getElem?_some {R : α → β → Prop}
   | cons hr _ ih =>
     cases i with
     | zero => simp at ha; subst ha; exact ⟨_, rfl, hr⟩
-    | succ n => simp only [List.getElem?_cons_succ] at ha ⊢; exact ih ha
+    | succ n => simp only [_root_.List.getElem?_cons_succ] at ha ⊢; exact ih ha
+
+end Strata
 
 /-! ### Zip / map lemmas -/
 

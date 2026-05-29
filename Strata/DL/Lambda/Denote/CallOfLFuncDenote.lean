@@ -434,10 +434,10 @@ private theorem getLFuncCall_go_spec
     {e : LExpr T.mono} {τ : LMonoTy}
     {acc : List (LExpr T.mono)} {accTys : List LMonoTy}
     (h_e : LExpr.HasTypeA [] e (LMonoTy.mkArrow' τ accTys))
-    (h_acc : List.Forall₂ (LExpr.HasTypeA []) acc accTys)
+    (h_acc : Strata.List.Forall₂ (LExpr.HasTypeA []) acc accTys)
     : let (op, allArgs) := getLFuncCall.go e acc
       ∃ opArgTys,
-        List.Forall₂ (LExpr.HasTypeA []) allArgs opArgTys ∧
+        Strata.List.Forall₂ (LExpr.HasTypeA []) allArgs opArgTys ∧
         LExpr.HasTypeA [] op (LMonoTy.mkArrow' τ opArgTys) := by
   fun_induction getLFuncCall.go e acc generalizing τ accTys
   · -- case 1: .app _ (.app _ e' arg1) arg2 → go e' ([arg1, arg2] ++ acc)
@@ -458,7 +458,7 @@ theorem getLFuncCall_spec
     (h : LExpr.HasTypeA [] e τ)
     : let (op, args) := getLFuncCall e
       ∃ argTys,
-        List.Forall₂ (LExpr.HasTypeA []) args argTys ∧
+        Strata.List.Forall₂ (LExpr.HasTypeA []) args argTys ∧
         LExpr.HasTypeA [] op (LMonoTy.mkArrow' τ argTys) := by
   have h' : LExpr.HasTypeA [] e (LMonoTy.mkArrow' τ []) := by rw [LMonoTy.mkArrow'_nil]; exact h
   exact getLFuncCall_go_spec h' .nil
@@ -481,7 +481,7 @@ private theorem denoteArgs_cons
     {Δ : List LMonoTy} (bv : BVarVal tcInterp vt Δ)
     {e : LExpr T.mono} {es : List (LExpr T.mono)}
     {ty : LMonoTy} {tys : List LMonoTy}
-    (h : List.Forall₂ (LExpr.HasTypeA Δ) (e :: es) (ty :: tys))
+    (h : Strata.List.Forall₂ (LExpr.HasTypeA Δ) (e :: es) (ty :: tys))
     : denoteArgs tcInterp opInterp fvarVal vt bv (e :: es) (ty :: tys) h =
       .cons (LExpr.denote tcInterp opInterp fvarVal vt bv e ty h.head)
             (denoteArgs tcInterp opInterp fvarVal vt bv es tys h.tail) := by
@@ -535,12 +535,12 @@ private theorem denote_app_chain_go
     {e : LExpr T.mono} {τ : LMonoTy}
     {acc : List (LExpr T.mono)} {accTys : List LMonoTy}
     (h_e : LExpr.HasTypeA [] e (LMonoTy.mkArrow' τ accTys))
-    (h_acc : List.Forall₂ (LExpr.HasTypeA []) acc accTys)
+    (h_acc : Strata.List.Forall₂ (LExpr.HasTypeA []) acc accTys)
     {op : LExpr T.mono} {allArgs : List (LExpr T.mono)}
     (h_go : getLFuncCall.go e acc = (op, allArgs))
     {opArgTys : List LMonoTy}
     (h_op : LExpr.HasTypeA [] op (LMonoTy.mkArrow' τ opArgTys))
-    (h_allArgs : List.Forall₂ (LExpr.HasTypeA []) allArgs opArgTys)
+    (h_allArgs : Strata.List.Forall₂ (LExpr.HasTypeA []) allArgs opArgTys)
     : SortDenote.applyArgs tcInterp
         (cast (congrArg (SortDenote tcInterp) (substTyVars_mkArrow' vt τ accTys))
           (LExpr.denote tcInterp opInterp fvarVal vt .nil e (LMonoTy.mkArrow' τ accTys) h_e))
@@ -559,7 +559,7 @@ private theorem denote_app_chain_go
     have h_e' := h_e'_orig
     rw [← LMonoTy.mkArrow'_cons, ← LMonoTy.mkArrow'_cons] at h_e'
     -- Step 3: build extended Forall₂
-    have h_acc' : List.Forall₂ (LExpr.HasTypeA []) ([arg1, arg2] ++ acc0) (aty1 :: aty2 :: accTys) :=
+    have h_acc' : Strata.List.Forall₂ (LExpr.HasTypeA []) ([arg1, arg2] ++ acc0) (aty1 :: aty2 :: accTys) :=
       .cons h_arg1 (.cons h_arg2 h_acc)
     -- Step 4: apply IH, reduce to showing LHS = LHS-of-IH
     rw [← ih h_e' h_acc' h_go h_op h_allArgs]
@@ -594,7 +594,7 @@ private theorem denote_app_chain_go
     have h_unique := HasTypeA_unique h_op' h_op
     have hlen : (aty1 :: accTys).length = opArgTys.length := by
       simp only [List.cons_append, List.nil_append] at h_allArgs
-      have := (List.Forall₂.cons h_arg1 h_acc).length_eq; have := h_allArgs.length_eq; omega
+      have := (Strata.List.Forall₂.cons h_arg1 h_acc).length_eq; have := h_allArgs.length_eq; omega
     have ⟨_, h_tys⟩ := LMonoTy.mkArrow'_injective hlen h_unique
     subst h_tys
     -- denote_app
@@ -630,7 +630,7 @@ private theorem denote_app_chain
     (h_e : LExpr.HasTypeA [] e τ)
     (h_chain : getLFuncCall e = (op, args))
     (h_op : LExpr.HasTypeA [] op (LMonoTy.mkArrow' τ argTys))
-    (h_args : List.Forall₂ (LExpr.HasTypeA []) args argTys)
+    (h_args : Strata.List.Forall₂ (LExpr.HasTypeA []) args argTys)
     : let h_eq := substTyVars_mkArrow' vt τ argTys
       LExpr.denote tcInterp opInterp fvarVal vt .nil e τ h_e =
       SortDenote.applyArgs tcInterp
@@ -704,7 +704,7 @@ theorem callOfLFunc_output_type
     (h : LExpr.HasTypeA [] e τ)
     : ∃ argTys ty_op m name,
         callee = .op m name (some ty_op) ∧
-        List.Forall₂ (LExpr.HasTypeA []) args argTys ∧
+        Strata.List.Forall₂ (LExpr.HasTypeA []) args argTys ∧
         ty_op = LMonoTy.mkArrow' τ argTys ∧
         args.length = fn.inputs.length := by
   obtain ⟨m, name, ty, h_callee, h_get⟩ := Factory.callOfLFunc_getElem? hcall
@@ -731,7 +731,7 @@ theorem callOfLFunc_denote
     (h : LExpr.HasTypeA [] e τ)
     : ∃ (argTys : List LMonoTy) (ty_op : LMonoTy) (m : T.mono.base.Metadata)
         (name : Identifier T.IDMeta)
-        (h_args : List.Forall₂ (LExpr.HasTypeA []) args argTys)
+        (h_args : Strata.List.Forall₂ (LExpr.HasTypeA []) args argTys)
         (hty_op: ty_op = LMonoTy.mkArrow' τ argTys),
         callee = .op m name (some ty_op) ∧
         let h_eq : LMonoTy.substTyVars vt ty_op =
