@@ -988,6 +988,22 @@ partial def coerceToAny (ctx : TranslationContext) (expr : Python.expr SourceRan
     pure <| mkStmtExprMd (.Hole)
   else pure translated
 
+/-- Coerce each argument whose corresponding parameter type is Any.
+    Arguments aligned with non-Any parameters are kept unchanged.
+    When `fd` is `none` or the argument index exceeds the parameter list,
+    the argument is left unchanged (we cannot determine the target type). -/
+partial def coerceArgsToAny (ctx : TranslationContext)
+    (args : List (Python.expr SourceRange))
+    (rawTransArgs : List StmtExprMd)
+    (fd : Option PythonFunctionDecl) : Except TranslationError (List StmtExprMd) := do
+  let paramTypeNames : Array String := match fd with
+    | some fd => (fd.args.map fun a => highTypeToPyLauType a.laurelType.val).toArray
+    | none    => #[]
+  (args.zip rawTransArgs).zipIdx.mapM fun ((orig, trans), i) =>
+    match paramTypeNames[i]? with
+    | some ty => if ty == PyLauType.Any then coerceToAny ctx orig trans else pure trans
+    | none    => pure trans
+
 partial def refineFunctionCallExpr (ctx : TranslationContext) (func: Python.expr SourceRange) :
       Except TranslationError (String × Option (Python.expr SourceRange) × Bool) := do
   match func with
@@ -1268,7 +1284,8 @@ partial def translateCall (ctx : TranslationContext)
     if args.length > funcDecl.args.length then
       throwUserError callRange
         s!"'{name}' called with too many positional arguments: expected at most {funcDecl.args.length}, got {args.length}"
-    let trans_posArgs ← args.mapM (translateExpr ctx)
+    let rawPosArgs ← args.mapM (translateExpr ctx)
+    let trans_posArgs ← coerceArgsToAny ctx args rawPosArgs (some funcDecl)
     let trans_dict ← translateVarKwargs ctx kwords
     let remainingParams := funcDecl.args.drop args.length
     let trans_dictArgs := remainingParams.map fun arg =>
@@ -1299,7 +1316,8 @@ partial def translateCall (ctx : TranslationContext)
   else
   let (args, kwords, funcdecl_hasKwargs) ←
     combinePositionalAndKeywordArgs args kwords funcDecl methodName callRange
-  let trans_args ← args.mapM (translateExpr ctx)
+  let rawTransArgs ← args.mapM (translateExpr ctx)
+  let trans_args ← coerceArgsToAny ctx args rawTransArgs funcDecl
   let trans_kwords ← translateKwargs ctx kwords
   let trans_kwords_exprs :=
     if kwords.length == 0 then
