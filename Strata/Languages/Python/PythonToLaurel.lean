@@ -129,6 +129,11 @@ structure TranslationContext where
   classesInHierarchy : Std.HashSet String := {}
   loopBreakLabel : Option String := none
   loopContinueLabel : Option String := none
+  /-- When `true`, every site that would silently emit a `Hole` for a
+      Python construct outside the precise sound subset raises a hard
+      `unsupportedConstruct` error instead. Default is `false` for
+      back-compat; the `--reject-approximations` CLI flag turns it on. -/
+  rejectApproximations : Bool := false
 deriving Inhabited
 
 /-! ## Error Handling -/
@@ -207,6 +212,32 @@ def stmtExprToVar (e : StmtExprMd) : Except TranslationError VariableMd :=
 /-- A wildcard modifies list, meaning the procedure may modify anything. -/
 def wildcardModifies : List StmtExprMd := [mkStmtExprMd .All]
 
+/-- Emit a `Hole` (the lax behavior) or raise `unsupportedConstruct`
+    under `--reject-approximations`. Used at every site that would
+    otherwise approximate an unsupported Python construct as a havoc'd
+    Hole. The `construct` argument names the surface form (e.g.,
+    `"BinOp Div"`) for the error message. -/
+def rejectableHole (rejectApproximations : Bool) (construct astRepr : String)
+    : Except TranslationError StmtExprMd :=
+  if rejectApproximations then
+    throw (.unsupportedConstruct
+      s!"[approximation] {construct} is approximated as Hole; not in the sound subset"
+      astRepr)
+  else
+    pure (mkStmtExprMd .Hole)
+
+/-- Same as `rejectableHole` but for sites that silently drop a Python
+    statement (e.g., `raise`, `try…else`, `for…else`) under lax mode.
+    The error message names the dropped construct. -/
+def rejectableDrop (rejectApproximations : Bool) (construct astRepr : String)
+    : Except TranslationError Unit :=
+  if rejectApproximations then
+    throw (.unsupportedConstruct
+      s!"[approximation] {construct} is silently dropped today; not in the sound subset"
+      astRepr)
+  else
+    pure ()
+
 /-- Create a StmtExprMd with source location metadata. -/
 def mkStmtExprMdWithLoc (expr : StmtExpr) (source : Option FileRange) : StmtExprMd :=
   { val := expr, source := source }
@@ -224,12 +255,18 @@ def manglePythonMethod (className : String) (methodName : String) : String :=
   className ++ "@" ++ methodName
 
 /-- Build a StaticCall for an instance method: ClassName@methodName(self, args...).
-    For Any-typed receivers (no model available), returns a Hole instead. -/
-def mkInstanceMethodCall (className : String) (methodName : String)
+    For Any-typed receivers (no model available), returns a Hole under lax
+    mode, or raises `unsupportedConstruct` under `--reject-approximations`. -/
+def mkInstanceMethodCall (rejectApproximations : Bool) (className : String) (methodName : String)
     (self : StmtExprMd) (args : List StmtExprMd)
-    (source : Option FileRange := none) : StmtExprMd :=
-  if className == "Any" then mkStmtExprMdWithLoc .Hole source
-  else mkStmtExprMdWithLoc (StmtExpr.StaticCall (manglePythonMethod className methodName) (self :: args)) source
+    (source : Option FileRange := none) : Except TranslationError StmtExprMd :=
+  if className == "Any" then
+    rejectableHole rejectApproximations
+      s!"instance method call '{methodName}' on Any-typed receiver"
+      s!"<{className}>.{methodName}(...)" |>.map (fun h =>
+        { h with source := source })
+  else
+    pure (mkStmtExprMdWithLoc (StmtExpr.StaticCall (manglePythonMethod className methodName) (self :: args)) source)
 
 /-- Extract string representation from Python expression (for type annotations) -/
 partial def pyExprToString (e : Python.expr SourceRange) : String :=
@@ -572,21 +609,25 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
 
   -- Bytes literal
   | .Constant _ (.ConBytes _ _) _ =>
-    return mkStmtExprMd .Hole
+    rejectableHole ctx.rejectApproximations
+      "bytes literal" (toString (repr e))
 
   -- Float literal
   | .Constant _ (.ConFloat _ f) _ =>
     match parseFloatString f.val with
     | some d => return floatToAny d
-    | none => return mkStmtExprMd .Hole
+    | none => rejectableHole ctx.rejectApproximations
+                "unparseable float literal" (toString (repr e))
 
   -- Complex literal
   | .Constant _ (.ConComplex _ _ _) _ =>
-    return mkStmtExprMd .Hole
+    rejectableHole ctx.rejectApproximations
+      "complex literal" (toString (repr e))
 
   -- Ellipsis literal
   | .Constant _ (.ConEllipsis _) _ =>
-    return mkStmtExprMd .Hole
+    rejectableHole ctx.rejectApproximations
+      "ellipsis (...) as expression" (toString (repr e))
 
   -- Variable references
   | .Name _ name _ =>
@@ -601,15 +642,19 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
       | .Add _ => .ok "PAdd"
       | .Sub _ => .ok "PSub"
       | .Mult _ => .ok "PMul"
-      | .Div _ => return mkStmtExprMd .Hole -- Floating-point are not supported yet
+      | .Div _ => return ← rejectableHole ctx.rejectApproximations
+                              "BinOp Div (true division)" (toString (repr e))
       | .FloorDiv _ => .ok "PFloorDiv"  -- Python // maps to Laurel Div
       | .Mod _ => .ok "PMod"
       | .Pow _ => .ok "PPow"
       | .LShift _ => .ok "PLShift"
       | .RShift _ => .ok "PRShift"
-      | .BitAnd _ => return mkStmtExprMd .Hole --TODO: Adding BitVector subtype in Any type, then the related operations
-      | .BitOr _ => return mkStmtExprMd .Hole
-      | .BitXor _ => return mkStmtExprMd .Hole
+      | .BitAnd _ => return ← rejectableHole ctx.rejectApproximations
+                                "BinOp BitAnd" (toString (repr e))
+      | .BitOr _ => return ← rejectableHole ctx.rejectApproximations
+                               "BinOp BitOr" (toString (repr e))
+      | .BitXor _ => return ← rejectableHole ctx.rejectApproximations
+                                "BinOp BitXor" (toString (repr e))
       -- Unsupported for now
       | _ => throw (.unsupportedConstruct s!"Binary operator not yet supported: {repr op}" (toString (repr e)))
     return mkStmtExprMdWithLoc (StmtExpr.StaticCall preludeOpnames [leftExpr, rightExpr]) md
@@ -764,8 +809,12 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
       return mkStmtExprMd (.StaticCall "from_str" [concat])
 
   -- Interpolation / TemplateStr (Python 3.14+ t-strings) - not yet supported
-  | .Interpolation .. => return mkStmtExprMd .Hole
-  | .TemplateStr .. => return mkStmtExprMd .Hole
+  | .Interpolation .. =>
+    rejectableHole ctx.rejectApproximations
+      "string interpolation (t-string)" (toString (repr e))
+  | .TemplateStr .. =>
+    rejectableHole ctx.rejectApproximations
+      "template string (t-string)" (toString (repr e))
 
   | .IfExp _ cond thenb elseb =>
     let condExpr ← translateExpr ctx cond
@@ -833,7 +882,8 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
           -- so standalone reads like `x = self.field` are not silently lost.
           let hasDispatch := ctx.dispatchFieldTypes[className]?.any (·.contains attr.val)
           if hasDispatch then
-            return mkStmtExprMd .Hole
+            rejectableHole ctx.rejectApproximations
+              s!"dispatch field read (self.{attr.val})" (toString (repr e))
           else
             return fieldExpr
         | _ =>
@@ -841,7 +891,8 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
       else if isPackage ctx obj then
         -- FIXME: Module attribute (e.g., sys.argv): modules are not modeled as
         -- Laurel values, so return Hole like we do for unmodeled package calls.
-        return mkStmtExprMd .Hole
+        rejectableHole ctx.rejectApproximations
+          "module attribute access" (toString (repr e))
       else
         -- Regular object.field access
         let objExpr ← translateExpr ctx obj
@@ -867,24 +918,34 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
 
   -- Set literal: {1, 2, 3}
   -- Abstract: return havoc'd set (sound abstraction)
-  | .Set .. => return mkStmtExprMd .Hole
+  | .Set .. =>
+    rejectableHole ctx.rejectApproximations
+      "Set literal" (toString (repr e))
 
   -- Tuple literal: (1, 2)
   | .Tuple _ elems _ => translateList ctx elems.val.toList
 
   -- List comprehension: [x for x in items]
   -- Abstract: return havoc'd list (sound abstraction)
-  | .ListComp .. => return mkStmtExprMd .Hole
+  | .ListComp .. =>
+    rejectableHole ctx.rejectApproximations
+      "list comprehension" (toString (repr e))
 
   -- Set comprehension: {x for x in items}
   -- Abstract: return havoc'd set (sound abstraction)
-  | .SetComp .. => return mkStmtExprMd .Hole
+  | .SetComp .. =>
+    rejectableHole ctx.rejectApproximations
+      "set comprehension" (toString (repr e))
 
   -- Dict comprehension: {k: v for k, v in items}
-  | .DictComp .. => return mkStmtExprMd .Hole
+  | .DictComp .. =>
+    rejectableHole ctx.rejectApproximations
+      "dict comprehension" (toString (repr e))
 
   -- Generator expression: (x for x in items)
-  | .GeneratorExp .. => return mkStmtExprMd .Hole
+  | .GeneratorExp .. =>
+    rejectableHole ctx.rejectApproximations
+      "generator expression" (toString (repr e))
 
   | _ => throw (.unsupportedConstruct "Expression type not yet supported" (toString (repr e)))
 
@@ -978,12 +1039,14 @@ The following function return a tuple (translated function name, first argument,
 /-- Coerce an expression to Any if its inferred type is a Composite class.
     Composite values are replaced with a Hole (unconstrained Any value)
     since Composite→Any coercion is not yet modeled. This limits
-    bug-finding ability but avoids type unification errors. -/
+    bug-finding ability but avoids type unification errors.
+    Under `--reject-approximations`, refuse to lower the coercion. -/
 partial def coerceToAny (ctx : TranslationContext) (expr : Python.expr SourceRange)
     (translated : StmtExprMd) : Except TranslationError StmtExprMd := do
   let ty ← inferExprType ctx expr
   if isCompositeType ctx ty then
-    pure <| mkStmtExprMd (.Hole)
+    rejectableHole ctx.rejectApproximations
+      s!"Composite-to-Any coercion ({ty})" (toString (repr expr))
   else pure translated
 
 partial def refineFunctionCallExpr (ctx : TranslationContext) (func: Python.expr SourceRange) :
@@ -1197,10 +1260,13 @@ partial def translateCall (ctx : TranslationContext)
         | _ => []
       else []
     let havocStmts := receiverHavoc ++ argHavoc
+    let h ← rejectableHole ctx.rejectApproximations
+              s!"unmodeled call to '{funcName}'"
+              (toString (repr f))
     if havocStmts.isEmpty then
-      return mkStmtExprMd .Hole
+      return h
     else
-      return mkStmtExprMd (.Block (havocStmts ++ [mkStmtExprMd .Hole]) none)
+      return mkStmtExprMd (.Block (havocStmts ++ [h]) none)
   -- Step 3: translate the resolved call
   let methodName := match f with
     | .Attribute _ _ attr _ => attr.val
@@ -1250,12 +1316,17 @@ partial def translateCall (ctx : TranslationContext)
             -- so the static resolution may be wrong. Emit a Hole in that case.
             let classPrefix := funcName.splitOn "@" |>.head!
             if ctx.classesInHierarchy.contains classPrefix then
-              return mkStmtExprMdWithLoc (.Hole) callMd
-            let callWithSelf := mkStmtExprMdWithLoc
-              (StmtExpr.StaticCall funcName (target_trans :: callArgs)) callMd
-            return callWithSelf
+              rejectableHole ctx.rejectApproximations
+                s!"method call '{funcName}' with uncertain inheritance dispatch"
+                (toString (repr f))
+            else
+              let callWithSelf := mkStmtExprMdWithLoc
+                (StmtExpr.StaticCall funcName (target_trans :: callArgs)) callMd
+              return callWithSelf
           else
-            return mkStmtExprMdWithLoc (.Hole) callMd
+            rejectableHole ctx.rejectApproximations
+              s!"method call '{funcName}' on receiver of unknown type"
+              (toString (repr f))
         else return mkCall funcName
     | _ => throw (.unsupportedConstruct "Invalid call construct" (toString (repr f)))
   -- When ** is used at the call site and we have a known function signature,
@@ -1489,7 +1560,12 @@ partial def translateAssign  (ctx : TranslationContext)
               let newExpr := mkStmtExprMd (StmtExpr.New resolvedId)
               let varType := mkHighTypeMd (.UserDefined resolvedId)
               let selfRef := mkStmtExprMd (StmtExpr.Var (.Local n.val))
-              let initStmt := mkInstanceMethodCall laurelName "__init__" selfRef args source
+              -- `laurelName` came from `ImportedSymbol.compositeType` so it
+              -- is a concrete class name, never `"Any"`.
+              let initStmt := mkStmtExprMdWithLoc
+                (StmtExpr.StaticCall
+                  (manglePythonMethod laurelName "__init__")
+                  (selfRef :: args)) source
               if n.val ∈ ctx.variableTypes.unzip.1 then
                 let assignStmt := mkStmtExprMdWithLoc (StmtExpr.Assign [target] newExpr) source
                 [assignStmt, initStmt]
@@ -1800,8 +1876,11 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     return (bodyCtx, preamble ++ [ifStmt])
 
   -- While loop
-  | .While _ test body _orelse => do
+  | .While _ test body orelse => do
     -- Note: Python while-else not supported yet
+    if !orelse.val.isEmpty then
+      rejectableDrop ctx.rejectApproximations
+        "while…else clause" (toString (repr s))
     let condExpr ← translateExpr ctx test
     let breakLabel := s!"loop_break_{test.toAst.ann.start.byteIdx}"
     let continueLabel := s!"loop_continue_{test.toAst.ann.start.byteIdx}"
@@ -1892,7 +1971,13 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
   | .Import _ _ | .ImportFrom _ _ _ _ |.Pass _ => return (ctx, [])
 
   -- Try/except - wrap body with exception checks and handlers
-  | .Try _ body handlers _ _ => do
+  | .Try _ body handlers orelse finalbody => do
+    if !orelse.val.isEmpty then
+      rejectableDrop ctx.rejectApproximations
+        "try…else clause" (toString (repr s))
+    if !finalbody.val.isEmpty then
+      rejectableDrop ctx.rejectApproximations
+        "try…finally clause" (toString (repr s))
     let tryLabel := s!"try_end_{s.toAst.ann.start.byteIdx}"
     let catchersLabel := s!"exception_handlers_{s.toAst.ann.start.byteIdx}"
     let (bodyCtx, bodyStmts) ← translateStmtList ctx body.val.toList
@@ -1951,7 +2036,9 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
 
   -- FIXME: Placeholder — `raise` is dropped so the Hole type inferrer doesn't
   -- produce Unknown types. Must be replaced to correctly model exceptions later.
-  | .Raise _ _ _ => return (ctx, [])
+  | .Raise _ _ _ => do
+    rejectableDrop ctx.rejectApproximations "raise" (toString (repr s))
+    return (ctx, [])
 
   -- With statement: with EXPR as VAR: BODY
   -- Desugars to: mgr = EXPR; VAR = mgr.__enter__(); BODY; mgr.__exit__()
@@ -1969,8 +2056,8 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
         let mgrDecl := mkVarDeclInit mgrName mgrLauTy mgrExpr
         let mgrRef := mkStmtExprMd (StmtExpr.Var (.Local mgrName))
         currentCtx := {currentCtx with variableTypes := currentCtx.variableTypes ++ [(mgrName, mgrTy)]}
-        let enterCall := mkInstanceMethodCall mgrTy "__enter__" mgrRef [] md
-        let exitCall := mkInstanceMethodCall mgrTy "__exit__" mgrRef [] md
+        let enterCall ← mkInstanceMethodCall ctx.rejectApproximations mgrTy "__enter__" mgrRef [] md
+        let exitCall ← mkInstanceMethodCall ctx.rejectApproximations mgrTy "__exit__" mgrRef [] md
         match optVars.val with
         | some varExpr =>
           let varName := pyExprToString varExpr
@@ -2004,7 +2091,10 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
   -- Note that Any_iter_index(iter, index) should not return an exception when 0 <= index < Any_len(iter)
   -- and Any_iter_index is only called inside the loop body where that condition is satisfied,
   -- so it is sound to not put it inside AnyMaybeExceptionList
-  | .For _ target iter body _orelse _ => do
+  | .For _ target iter body orelse _ => do
+    if !orelse.val.isEmpty then
+      rejectableDrop ctx.rejectApproximations
+        "for…else clause" (toString (repr s))
     -- The iterator expression (we abstract it away).
     -- When the expression contains side-effect statements (e.g. a block with
     -- receiver havoc from an unmodeled method call), bind it to a temporary
@@ -2082,11 +2172,17 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
   | .Break _ =>
     match ctx.loopBreakLabel with
     | some lbl => return (ctx, [mkStmtExprMdWithLoc (StmtExpr.Exit lbl) md])
-    | none => return (ctx, [mkStmtExprMdWithLoc (StmtExpr.Assert { condition := mkStmtExprMd .Hole }) md])
+    | none =>
+      let h ← rejectableHole ctx.rejectApproximations
+        "break outside enclosing loop" "break"
+      return (ctx, [mkStmtExprMdWithLoc (StmtExpr.Assert { condition := h }) md])
   | .Continue _ =>
     match ctx.loopContinueLabel with
     | some lbl => return (ctx, [mkStmtExprMdWithLoc (StmtExpr.Exit lbl) md])
-    | none => return (ctx, [mkStmtExprMdWithLoc (StmtExpr.Assert { condition := mkStmtExprMd .Hole }) md])
+    | none =>
+      let h ← rejectableHole ctx.rejectApproximations
+        "continue outside enclosing loop" "continue"
+      return (ctx, [mkStmtExprMdWithLoc (StmtExpr.Assert { condition := h }) md])
 
   -- Augmented assignment: x += expr  →  x = x op expr
   | .AugAssign sr target op value => do
@@ -2811,6 +2907,7 @@ def pythonToLaurel (info : PreludeInfo)
     (body : Array (stmt SourceRange))
     (filePath : String := "")
     (overloadTable : OverloadTable := {})
+    (rejectApproximations : Bool := false)
     : Except TranslationError (Laurel.Program × TranslationContext) := do
   -- Collect user function names (top-level and class methods)
   let userFunctions := body.toList.flatMap fun stmt =>
@@ -2916,7 +3013,8 @@ def pythonToLaurel (info : PreludeInfo)
     compositeTypeReverse := compositeTypeReverse,
     exhaustiveClasses := exhaustiveClasses,
     classesInHierarchy := classesInHierarchy,
-    filePath := filePath
+    filePath := filePath,
+    rejectApproximations := rejectApproximations
   }
 
   -- Separate functions from other statements

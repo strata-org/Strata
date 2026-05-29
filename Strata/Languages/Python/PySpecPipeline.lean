@@ -134,7 +134,8 @@ private def mergeOverloads (old new : OverloadTable) : OverloadTable :=
     to namespace all generated Laurel names (e.g., `"servicelib_Storage"` for
     module `servicelib.Storage`). -/
 private def buildPySpecLaurelM (pyspecEntries : Array (Python.ModuleName × String))
-    (overloads : OverloadTable) : Pipeline.PipelineM PySpecLaurelResult := do
+    (overloads : OverloadTable) (rejectApproximations : Bool := false)
+    : Pipeline.PipelineM PySpecLaurelResult := do
   let mut combinedProcedures : Array (Laurel.Procedure × String) := #[]
   let mut combinedTypes : Array (Laurel.TypeDefinition × String) := #[]
   let mut allOverloads := overloads
@@ -150,6 +151,7 @@ private def buildPySpecLaurelM (pyspecEntries : Array (Python.ModuleName × Stri
         emitMessageAndAbort .pySpecReadError msg (file := ionFile)
     let { program, errors, overloads, typeAliases, exhaustiveClasses } :=
       Python.Specs.ToLaurel.signaturesToLaurel ionPath sigs moduleName
+        (rejectApproximations := rejectApproximations)
     for msg in errors do
       Pipeline.addMessage msg
       if msg.kind.impact.isFatal then throw ()
@@ -207,8 +209,9 @@ private def buildPySpecLaurelM (pyspecEntries : Array (Python.ModuleName × Stri
 public def buildPySpecLaurel
     (ctx : Pipeline.PipelineContext)
     (pyspecEntries : Array (Python.ModuleName × String))
-    (overloads : OverloadTable) : EIO Unit PySpecLaurelResult :=
-  buildPySpecLaurelM pyspecEntries overloads |>.run ctx
+    (overloads : OverloadTable) (rejectApproximations : Bool := false)
+    : EIO Unit PySpecLaurelResult :=
+  buildPySpecLaurelM pyspecEntries overloads (rejectApproximations := rejectApproximations) |>.run ctx
 
 /-- Read dispatch Ion files and merge their overload tables. -/
 private def readDispatchOverloadsM
@@ -278,6 +281,7 @@ public def resolveAndBuildLaurelPrelude
     (pyspecModules : Array String)
     (stmts : Array (Python.stmt SourceRange))
     (specDir : System.FilePath := ".")
+    (rejectApproximations : Bool := false)
     : Pipeline.PipelineM PySpecLaurelResult := do
   -- Dispatch modules (fatal on invalid name or missing file)
   let dispatchEntries ← resolveModules dispatchModules specDir
@@ -296,6 +300,7 @@ public def resolveAndBuildLaurelPrelude
   -- Explicit pyspec modules (fatal on invalid name or missing file)
   let explicitEntries ← resolveModules pyspecModules specDir
   buildPySpecLaurelM (autoSpecEntries ++ explicitEntries) dispatchOverloads
+    (rejectApproximations := rejectApproximations)
 
 /-! ### Pipeline Steps -/
 
@@ -427,6 +432,7 @@ public def pythonAndSpecToLaurel
     (pyspecModules : Array String := #[])
     (sourcePath : Option String := none)
     (specDir : System.FilePath := ".")
+    (rejectApproximations : Bool := false)
     : Pipeline.PipelineM Laurel.Program := do
   let stmts ← Pipeline.withPhase "readPythonIon" do
     match ← Python.readPythonStrata pythonIonPath |>.toBaseIO with
@@ -436,12 +442,14 @@ public def pythonAndSpecToLaurel
 
   let result ← Pipeline.withPhase "resolveAndBuildPrelude" do
     resolveAndBuildLaurelPrelude dispatchModules pyspecModules stmts specDir
+      (rejectApproximations := rejectApproximations)
 
   let preludeInfo := buildPreludeInfo result
   let metadataPath := sourcePath.getD pythonIonPath
 
   let (laurelProgram, _ctx) ←
-    match Python.pythonToLaurel preludeInfo stmts metadataPath result.overloads with
+    match Python.pythonToLaurel preludeInfo stmts metadataPath result.overloads
+            (rejectApproximations := rejectApproximations) with
     | .error (.userPythonError range msg) =>
       emitMessageAndAbort (file := sourcePath.getD pythonIonPath) (loc := range)
         .laurelLoweringUserError msg
