@@ -100,6 +100,20 @@ inductive Operation : Type where
   | StrConcat
   deriving Repr
 
+instance : ToString Operation where
+  toString
+    | .Eq => "=="          | .Neq => "!="
+    | .And => "&&"         | .Or => "||"
+    | .Not => "!"          | .Implies => "==>"
+    | .AndThen => "&&!"    | .OrElse => "||!"
+    | .Neg => "-"          | .Add => "+"
+    | .Sub => "-"          | .Mul => "*"
+    | .Div => "/"          | .Mod => "%"
+    | .DivT => "/t"        | .ModT => "%t"
+    | .Lt => "<"           | .Leq => "<="
+    | .Gt => ">"           | .Geq => ">="
+    | .StrConcat => "++"
+
 /--
 A wrapper that pairs a value with source-level metadata such as source
 locations and annotations. All Laurel AST nodes are wrapped in
@@ -334,6 +348,40 @@ inductive ContractType where
   | Reads | Modifies | Precondition | PostCondition
 end
 
+/-- A short user-facing name for the construct, used in diagnostic messages. -/
+def StmtExpr.constrName : StmtExpr → String
+  | .IfThenElse ..       => "if"
+  | .Block ..            => "block"
+  | .While ..            => "while"
+  | .Exit ..             => "exit"
+  | .Return ..           => "return"
+  | .LiteralInt ..       => "integer literal"
+  | .LiteralBool ..      => "boolean literal"
+  | .LiteralString ..    => "string literal"
+  | .LiteralDecimal ..   => "decimal literal"
+  | .Var ..              => "variable"
+  | .Assign ..           => ":="
+  | .PureFieldUpdate ..  => "field update"
+  | .StaticCall ..       => "call"
+  | .PrimitiveOp op _    => toString op
+  | .New ..              => "new"
+  | .This                => "this"
+  | .ReferenceEquals ..  => "reference equality"
+  | .AsType ..           => "as"
+  | .IsType ..           => "is"
+  | .InstanceCall ..     => "method call"
+  | .Quantifier ..       => "quantifier"
+  | .Assigned ..         => "assigned"
+  | .Old ..              => "old"
+  | .Fresh ..            => "fresh"
+  | .Assert ..           => "assert"
+  | .Assume ..           => "assume"
+  | .ProveBy ..          => "by"
+  | .ContractOf ..       => "contractOf"
+  | .Abstract            => "abstract"
+  | .All                 => "all"
+  | .Hole ..             => "hole"
+
 @[expose] abbrev HighTypeMd := AstNode HighType
 @[expose] abbrev StmtExprMd := AstNode StmtExpr
 @[expose] abbrev VariableMd := AstNode Variable
@@ -420,6 +468,7 @@ def highEq (a : HighTypeMd) (b : HighTypeMd) : Bool := match _a: a.val, _b: b.va
   | HighType.TSet t1, HighType.TSet t2 => highEq t1 t2
   | HighType.TMap k1 v1, HighType.TMap k2 v2 => highEq k1 k2 && highEq v1 v2
   | HighType.UserDefined r1, HighType.UserDefined r2 => r1.text == r2.text
+  | HighType.TCore s1, HighType.TCore s2 => s1 == s2
   | HighType.Applied b1 args1, HighType.Applied b2 args2 =>
       highEq b1 b2 && args1.length == args2.length && (args1.attach.zip args2 |>.all (fun (a1, a2) => highEq a1.1 a2))
   | HighType.Pure b1, HighType.Pure b2 => highEq b1 b2
@@ -440,6 +489,126 @@ instance : BEq HighTypeMd where
   beq := highEq
 
 deriving instance BEq for HighType
+
+/-- Lookup tables threaded through subtyping/consistency checks. Built from
+    the program's `TypeDefinition`s by the resolution pass:
+    - `unfoldMap` maps an alias or constrained type's name to the type it
+      unwraps to (alias target / constrained base). Followed transitively to
+      reach a non-alias, non-constrained type.
+    - `extendingMap` maps a composite type's name to the *direct* parents in
+      its `extending` list. Walked transitively for the subtype check. -/
+structure TypeContext where
+  unfoldMap : Std.HashMap String HighTypeMd := {}
+  extendingMap : Std.HashMap String (List String) := {}
+  deriving Inhabited
+
+/-- Unfold aliases and constrained types to their underlying type.
+    Composites and primitives are returned unchanged. A `visited` set guards
+    against cycles in the alias/constrained graph (already cycle-checked
+    elsewhere, but keeps `unfold` safe to call independently). -/
+partial def TypeContext.unfold (ctx : TypeContext) (ty : HighTypeMd)
+    (visited : Std.HashSet String := {}) : HighTypeMd :=
+  match ty.val with
+  | .UserDefined name =>
+    if visited.contains name.text then ty
+    else match ctx.unfoldMap.get? name.text with
+      | some target => ctx.unfold target (visited.insert name.text)
+      | none => ty
+  | _ => ty
+
+/-- All ancestors of a composite type (including itself), reachable via
+    repeated `extending` lookups. The `fuel` cap is the number of distinct
+    type names ever registered, bounding the BFS even with malformed input. -/
+partial def TypeContext.ancestors (ctx : TypeContext) (name : String) : Std.HashSet String :=
+  let rec go (acc : Std.HashSet String) (frontier : List String) : Std.HashSet String :=
+    match frontier with
+    | [] => acc
+    | n :: rest =>
+      if acc.contains n then go acc rest
+      else
+        let acc' := acc.insert n
+        let parents := (ctx.extendingMap.get? n).getD []
+        go acc' (parents ++ rest)
+  go {} [name]
+
+/-- Pure subtyping `<:`. Walks the `extending` chain for `CompositeType`
+    (via `TypeContext.ancestors`), unfolds `TypeAlias` to its target, and
+    unwraps `ConstrainedType` to its base (both via `TypeContext.unfold`),
+    then falls back to structural equality via `highEq`.
+
+    Used together with `isConsistent` to form `isConsistentSubtype`, which
+    is what the bidirectional checker invokes at every check-mode boundary
+    (rule `[⇐] Sub`). -/
+def isSubtype (ctx : TypeContext) (sub sup : HighTypeMd) : Bool :=
+  let sub' := ctx.unfold sub
+  let sup' := ctx.unfold sup
+  match sub'.val, sup'.val with
+  | .UserDefined subName, .UserDefined supName =>
+    -- After unfolding, both sides are composites (or unresolved). A composite
+    -- is a subtype of any type in its extending chain.
+    (ctx.ancestors subName.text).contains supName.text || highEq sub' sup'
+  | _, _ => highEq sub' sup'
+
+/-- Consistency `~` (Siek–Taha): the symmetric gradual relation. `Unknown`
+    is the dynamic type and is consistent with everything; otherwise
+    structural equality after unfolding aliases / constrained types.
+
+    `TCore "Any"` and `UserDefined "Any"` are also gradual — consistent with
+    everything. The Python front-end uses both representations to model
+    Python's `Any` type (depending on whether the name comes from a type
+    annotation or a synthesized expression type), and Python's `Any` is the
+    dynamic type of the gradual system, so treating both like `Unknown`
+    matches Python semantics. As a fallback, `TCore s` and `UserDefined s`
+    are also consistent when their names match for any other `s`, so the
+    two representations interoperate freely for non-`Any` Python datatypes
+    too.
+    `MultiValuedExpr` is checked element-wise so the same equivalence
+    propagates through procedure-output tuples.
+
+    Used directly by `[⇒] Op-Eq`, where the operand types must be mutually
+    consistent (no subtype direction is privileged), and as one half of
+    `isConsistentSubtype`. -/
+def isConsistent (ctx : TypeContext) (a b : HighTypeMd) : Bool :=
+  -- `MultiValuedExpr` is checked element-wise *before* unfolding so elements
+  -- remain demonstrable subterms of `a`/`b`. `unfold` is `partial`, and is in
+  -- any case the identity on `MultiValuedExpr`, so this loses no precision.
+  match _a: a.val, _b: b.val with
+  | .MultiValuedExpr ts1, .MultiValuedExpr ts2 =>
+    ts1.length == ts2.length &&
+      (ts1.attach.zip ts2).all (fun (t1, t2) => isConsistent ctx t1.1 t2)
+  | _, _ =>
+    let a' := ctx.unfold a
+    let b' := ctx.unfold b
+    match a'.val, b'.val with
+    | .Unknown, _ | _, .Unknown => true
+    | .TCore "Any", _ | _, .TCore "Any" => true
+    | .UserDefined ⟨"Any", _, _⟩, _ | _, .UserDefined ⟨"Any", _, _⟩ => true
+    | .TCore s, .UserDefined name | .UserDefined name, .TCore s => s == name.text
+    | _, _ => highEq a' b'
+  termination_by (SizeOf.sizeOf a)
+  decreasing_by
+    all_goals (cases a; cases b; try term_by_mem)
+    cases t1; term_by_mem
+
+/-- Consistent subtyping: `∃ R. sub ~ R ∧ R <: sup`. For our flat lattice
+    this collapses to `sub ~ sup ∨ sub <: sup` — the standard collapse.
+
+    Used by rule `[⇐] Sub` (and every bespoke check rule). That single
+    choice is what makes the system *gradual*: an expression of type
+    `Unknown` (a hole, an unresolved name, a `Hole _ none`) flows freely
+    into any typed slot, and any expression flows freely into a slot of
+    type `Unknown`. Strict checking is applied between fully-known types
+    only.
+
+    A previous iteration was synth-only with two *bivariantly-compatible*
+    wildcards: `Unknown` and `UserDefined`. The `UserDefined` carve-out was
+    load-bearing: no assignment, call argument, or comparison involving a
+    user type was ever rejected. The bidirectional design retires that
+    carve-out — user-defined types are now a regular participant in `<:`,
+    with `isSubtype` walking inheritance chains and unwrapping aliases
+    and constrained types to deliver real checking on user-defined code. -/
+def isConsistentSubtype (ctx : TypeContext) (sub sup : HighTypeMd) : Bool :=
+  isConsistent ctx sub sup || isSubtype ctx sub sup
 
 def HighType.isBool : HighType → Bool
   | TBool => true
@@ -577,6 +746,19 @@ def TypeDefinition.name : TypeDefinition → Identifier
   | .Constrained ty => ty.name
   | .Datatype ty => ty.name
   | .Alias ty => ty.name
+
+/-- Build a `TypeContext` from a list of `TypeDefinition`s.
+    Aliases populate `unfoldMap` with their target; constrained types populate
+    it with their base; composites populate `extendingMap` with their direct
+    parents. Datatypes contribute nothing — they're nominal and irreducible. -/
+def TypeContext.ofTypes (types : List TypeDefinition) : TypeContext :=
+  types.foldl (init := {}) fun ctx td =>
+    match td with
+    | .Alias ta => { ctx with unfoldMap := ctx.unfoldMap.insert ta.name.text ta.target }
+    | .Constrained ct => { ctx with unfoldMap := ctx.unfoldMap.insert ct.name.text ct.base }
+    | .Composite c =>
+      { ctx with extendingMap := ctx.extendingMap.insert c.name.text (c.extending.map (·.text)) }
+    | .Datatype _ => ctx
 
 structure Constant where
   name : Identifier

@@ -39,7 +39,7 @@ procedure mismatch()
 {
   var x: int;
   assign x := twoReturns()
-//^^^^^^^^^^^^^^^^^^^^^^^^ error: Assignment target count mismatch
+//            ^^^^^^^^^^^^ error: expected 'int', got '(int, int)'
 };
 "
 
