@@ -17,6 +17,8 @@ structure TypeDesc where
 
 def TypeDesc.code (d : TypeDesc) : UInt8 := d.toByte >>> 0x4
 def TypeDesc.length (d : TypeDesc) : UInt8 := d.toByte &&& 0xF
+/-- A NOP pad has type code 0 and length != 15 (length 15 would be a null value). -/
+def TypeDesc.isNopPad (d : TypeDesc) : Bool := d.code == 0 && d.length != 15
 
 inductive Step (α : Type u) (β : Type v) where
   | done  : β → Step α β
@@ -528,7 +530,7 @@ def deserializeAux (bytes : ByteArray) (ds : DeserializeState bytes.size)
         let .isTrue offp := decideProp (off < bytes.size)
           | rfail off "Unexpected end of file"
         let td := TypeDesc.ofByte bytes[off]
-        let isNop := td.code == 0 && td.length != 15
+        let isNop := td.isNopPad
         let ds := if isNop then ds
                   else { ds with symbols := ds.symbols.push ⟨symId⟩ }
         let off' : InRange off0 bytes.size := ⟨off, by omega⟩

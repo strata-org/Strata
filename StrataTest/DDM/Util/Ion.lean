@@ -71,3 +71,14 @@ private def nopPadInStruct : ByteArray :=
   | .ok #[#[.mk (.struct fields)]] =>
     fields == #[(.mk 1, .int 1), (.mk 2, .int 2)]
   | _ => false
+
+-- Issue #1228: NOP pad at start of struct
+-- Input: struct with NOP pad, then field (key=1, int 1)
+private def nopPadAtStartOfStruct : ByteArray :=
+  ⟨#[0xE0, 0x01, 0x00, 0xEA, 0xD5, 0x80, 0x00, 0x81, 0x21, 0x01]⟩
+
+#guard
+  match Ion.deserialize nopPadAtStartOfStruct with
+  | .ok #[#[.mk (.struct fields)]] =>
+    fields == #[(.mk 1, .int 1)]
+  | _ => false
