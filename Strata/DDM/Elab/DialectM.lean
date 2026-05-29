@@ -697,6 +697,16 @@ def checkTreeSize (tree : Tree) (size : Nat) : Decidable (tree.children.size = s
 
 abbrev DialectElab := Tree → DialectM Unit
 
+/-- Resolve a dialect by name: look up in loaded dialects, or invoke the load callback. -/
+private def getOrLoadDialect (name : DialectName) (loc : SourceRange) : DialectM (Option Dialect) := do
+  if let some d := (← getLoadedDialects).dialects[name]? then return some d
+  match ← (← read).loadDialect name with
+  | .ok d => return some d
+  | .error msg =>
+    logError loc msg
+    modify fun s => { s with missingImport := true }
+    return none
+
 def elabDialectImportCommand : DialectElab := fun tree => do
   let .isTrue _ := checkTreeSize tree 1
     | panic! "Invalid tree size"
@@ -705,19 +715,7 @@ def elabDialectImportCommand : DialectElab := fun tree => do
   if name ∈ (←getDeclState).openDialectSet then
     logError identTree.loc <| s!"Dialect {name} already open."
     return
-  let d ←
-    match (← getLoadedDialects).dialects[name]? with
-    | some d =>
-      pure d
-    | none =>
-      let r ← (← read).loadDialect name
-      match r with
-      | .ok d =>
-        pure d
-      | .error msg =>
-        logError identTree.loc msg
-        modify fun s => { s with missingImport := true }
-        return
+  let some d ← getOrLoadDialect name identTree.loc | return
   modifyDialect fun d => { d with imports := d.imports.push name }
   let loaded ← getLoadedDialects
   modify fun s => { s with declState := s.declState.openLoadedDialect! loaded d }

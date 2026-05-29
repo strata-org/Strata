@@ -26,10 +26,7 @@ assert;
 #end
 
 -- Test that a failed import does not remain in dialect.imports (#1243)
-/--
-info: failed import 'NonExistent' was correctly excluded from dialect.imports
--/
-#guard_msgs in
+-- Also exercises the downstream path: openLoadedDialect! must not panic.
 #eval do
   let src := "dialect TestBugB;\nimport NonExistent;\n"
   let inputCtx : Lean.Parser.InputContext := {
@@ -40,7 +37,9 @@ info: failed import 'NonExistent' was correctly excluded from dialect.imports
   let loaded := Strata.Elab.LoadedDialects.builtin
   let fm ← (Strata.DialectFileMap.new loaded).toIO
   let (d, _) ← (Strata.Elab.elabDialect fm inputCtx).toIO
-  if d.imports.contains "NonExistent" then
-    IO.println "BUG: failed import 'NonExistent' is still in dialect.imports"
-  else
-    IO.println "failed import 'NonExistent' was correctly excluded from dialect.imports"
+  -- The failed import must not appear in dialect.imports
+  assert! !d.imports.contains "NonExistent"
+  -- Opening the dialect in a fresh DeclState must not panic (the bug in #1243)
+  let ds : Strata.Elab.DeclState := default
+  let _ := ds.openLoadedDialect! loaded d
+  pure ()
