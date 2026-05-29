@@ -20,6 +20,9 @@ open Std (ToFormat Format format)
 namespace CmdEval
 
 def eval (E : Env) (e : Expression.Expr) : Expression.Expr :=
+  -- Pre-pass: expand inline factory calls under quantifier/lambda binders,
+  -- because `LExpr.eval` does not descend into closed binder bodies.
+  let e := LExpr.expandInlineCalls E.exprEnv.config.factory E.exprEnv.config.fuel e
   LExpr.eval E.exprEnv.config.fuel E.exprEnv e
 
 def updateError (E : Env) (e : EvalError Expression) : Env :=
