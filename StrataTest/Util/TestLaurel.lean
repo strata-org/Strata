@@ -54,6 +54,12 @@ private def renderSnippetLocal (basePos : Nat) (snippet : String)
       message := dm.message
       type := dm.type }
 
+/-- Default options used by `testLaurel` when the caller doesn't override:
+    quiet verifier, default solver. Override by passing
+    `(options := …)` to `testLaurel`. -/
+def defaultLaurelTestOptions : LaurelVerifyOptions :=
+  { verifyOptions := .quiet }
+
 /-- Run translate + resolve only on a parsed program. Skips SMT verification.
     Returns diagnostics as `DiagnosticModel`s so the caller can choose how to
     render them (snippet-local for inline annotations, file-global for editor
@@ -70,14 +76,13 @@ private def runLaurelResolutionRaw (program : Strata.Program) :
 
 /-- Run the full Laurel pipeline (translate + resolve + verify).
     Returns diagnostics as `DiagnosticModel`s. -/
-private def runLaurelPipelineRaw (program : Strata.Program) :
-    IO (Array Strata.DiagnosticModel) := do
+private def runLaurelPipelineRaw (program : Strata.Program)
+    (options : LaurelVerifyOptions) : IO (Array Strata.DiagnosticModel) := do
   let uri := Strata.Uri.file "<#strata>"
   match Laurel.TransM.run uri (Laurel.parseProgram program) with
   | .error e =>
     return #[Strata.DiagnosticModel.fromMessage s!"Translation error: {e}"]
   | .ok laurelProgram =>
-    let options : LaurelVerifyOptions := { verifyOptions := .quiet }
     Laurel.verifyToDiagnosticModels laurelProgram options
 
 /-! ## Inline-annotation matcher
@@ -240,10 +245,14 @@ private def runAndCheck (block : SourcedProgram)
 
 /-- Run the full Laurel pipeline (translate + resolve + verify) on a
     `#strata`-parsed program. If the snippet has inline `// ^^^ kind: message`
-    annotations, asserts an exact match; otherwise expects no diagnostics
-    and prints `ok`. -/
-def testLaurel (block : SourcedProgram) : IO Unit :=
-  runAndCheck block runLaurelPipelineRaw
+    annotations, asserts an exact match; otherwise expects no diagnostics.
+
+    `options` defaults to `defaultLaurelTestOptions` (quiet verifier, default
+    solver). Pass an explicit value to override the solver, timeout, etc. — for
+    example, `(options := { verifyOptions := { .quiet with solver := "z3" } })`. -/
+def testLaurel (block : SourcedProgram)
+    (options : LaurelVerifyOptions := defaultLaurelTestOptions) : IO Unit :=
+  runAndCheck block (runLaurelPipelineRaw · options)
 
 /-- Like `testLaurel` but skips SMT verification (translate + resolve only).
     Use when the test only cares about resolution, not the verifier — e.g.

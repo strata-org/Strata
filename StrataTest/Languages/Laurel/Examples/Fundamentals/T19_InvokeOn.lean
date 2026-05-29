@@ -9,7 +9,8 @@ import StrataTest.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-#eval testLaurel <|
+#eval testLaurel
+    (options := { verifyOptions := { Core.VerifyOptions.quiet with solver := "z3" } })
 #strata
 program Laurel;
 function P(x: int): bool;
@@ -40,6 +41,7 @@ procedure axiomDoesNotFireBecauseOfPattern(x: int)
   opaque
 {
   assert Q(x)
+//^^^^^^^^^^^ error: assertion could not be proved
 };
 
 function A(x: int, y: real): bool;
