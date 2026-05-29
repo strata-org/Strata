@@ -363,10 +363,16 @@ def Env.performMerge (cond : Expression.Expr) (E1 E2 : Env)
   { E1 with exprEnv := exprEnv, pathConditions := pcs, deferred := deferred }
 
 def Env.merge (cond : Expression.Expr) (E1 E2 : Env) : Env :=
+  -- When one branch errors, take that side's structure (state, scope, error,
+  -- pathConditions) but UNION `deferred`, so the sibling's already-accumulated
+  -- obligations survive the error wall. Dropping the non-errored side's path
+  -- conditions is sound: the merged env carries an error and downstream
+  -- evaluation short-circuits before PCs are consulted again. When both sides
+  -- error, E1's error value wins arbitrarily — the error flag is what matters.
   if h1: E1.error.isSome then
-    E1
+    { E1 with deferred := E1.deferred ++ E2.deferred }
   else if h2: E2.error.isSome then
-    E2
+    { E2 with deferred := E1.deferred ++ E2.deferred }
   else
     Env.performMerge cond E1 E2 (by simp_all) (by simp_all)
 
