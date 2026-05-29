@@ -1833,18 +1833,26 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let summary := match msg.val with
       | some (.Constant _ (.ConString _ str) _) => some str.val
       | _ => none
-    -- Check if condition contains a Hole - if so, hoist to variable
-    let (condStmts, finalCondExpr, condCtx) :=
+    -- Hoist unmodelled conditions (e.g. isinstance(...)) into a fresh
+    -- bool-typed variable. The `alreadyBool` flag records, at the point of
+    -- construction, whether `finalCondExpr` is statically known to have type
+    -- bool -- avoiding a fragile round-trip through `variableTypes` later.
+    -- See #1102.
+    let (condStmts, finalCondExpr, condCtx, alreadyBool) :=
       match condExpr.val with
       | .Hole =>
         let freshVar := s!"assert_cond_{test.toAst.ann.start.byteIdx}"
         let varType := mkHighTypeMd .TBool
         let varDecl := mkVarDeclInit freshVar varType condExpr
         let varRef := mkStmtExprMd (StmtExpr.Var (.Local freshVar))
-        ([varDecl], varRef, { ctx with variableTypes := ctx.variableTypes ++ [(freshVar, "bool")] })
-      | _ => ([], condExpr, ctx)
+        ([varDecl], varRef, { ctx with variableTypes := ctx.variableTypes ++ [(freshVar, PyLauType.Bool)] }, true)
+      | _ => ([], condExpr, ctx, false)
 
-    let assertStmt := mkStmtExprMdWithLoc (StmtExpr.Assert { condition := Any_to_bool finalCondExpr, summary }) md
+    -- Skip Any_to_bool when the condition is already a bool-typed local;
+    -- wrapping it would produce ill-typed Any_to_bool(bool). See #1102.
+    let coercedCond :=
+      if alreadyBool then finalCondExpr else Any_to_bool finalCondExpr
+    let assertStmt := mkStmtExprMdWithLoc (StmtExpr.Assert { condition := coercedCond, summary }) md
 
     -- Wrap in block if we hoisted condition
     let result := if condStmts.isEmpty then
