@@ -44,6 +44,10 @@ jobs:
         # https://github.com/strata-org/Strata/issues/952
         if: github.event_name == 'pull_request'
         uses: ./.github/actions/restore-lake-cache
+        with:
+          path: |
+            .lake
+            StrataCLI/.lake
       - name: Download ion-java jar for Java codegen test
         run: wget -q -O StrataTestExtra/Languages/Java/testdata/ion-java-1.11.11.jar https://github.com/amazon-ion/ion-java/releases/download/v1.11.11/ion-java-1.11.11.jar
       - name: Build StrataDDM
@@ -61,6 +65,10 @@ jobs:
         run: lake test -- --exclude Languages.Python
       - name: Save lake cache
         uses: ./.github/actions/save-lake-cache
+        with:
+          path: |
+            .lake
+            StrataCLI/.lake
       - name: Verify Java testdata is up to date
         run: |
           StrataTestExtra/Languages/Java/regenerate-testdata.sh
@@ -132,6 +140,9 @@ jobs:
       # https://github.com/strata-org/Strata/issues/952
       uses: ./.github/actions/restore-lake-cache
       with:
+        path: |
+          .lake
+          StrataCLI/.lake
         fail-on-cache-miss: "true"
         use-restore-keys: "false"
     - name: Install Lean
@@ -240,6 +251,9 @@ jobs:
       # https://github.com/strata-org/Strata/issues/952
       uses: ./.github/actions/restore-lake-cache
       with:
+        path: |
+          .lake
+          StrataCLI/.lake
         fail-on-cache-miss: "true"
         use-restore-keys: "false"
     - name: Install Lean (for lake env)
