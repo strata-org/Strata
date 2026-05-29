@@ -10,6 +10,7 @@ import Strata.Languages.Laurel.DesugarShortCircuit
 import Strata.Languages.Laurel.EliminateReturnsInExpression
 import Strata.Languages.Laurel.EliminateValueReturns
 import Strata.Languages.Laurel.ConstrainedTypeElim
+import Strata.Languages.Laurel.PushOldInward
 import Strata.Languages.Laurel.TypeAliasElim
 import Strata.Languages.Core.Verifier
 import Strata.Util.Statistics
@@ -109,6 +110,10 @@ private def laurelPipeline : Array LaurelPass := #[
     needsResolves := true
     run := fun p m =>
       let (p', diags) := modifiesClausesTransform m p
+      (p', diags, {}) },
+  { name := "PushOldInward"
+    run := fun p _m =>
+      let (p', diags) := pushOldInward p
       (p', diags, {}) },
   { name := "InferHoleTypes"
     run := fun p m =>
