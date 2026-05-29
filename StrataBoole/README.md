@@ -117,7 +117,8 @@ verification conditions as Lean goals. Each goal can then be discharged by
 | Boole | Core equivalent |
 |-------|----------------|
 | `var x : int;` | inout parameter |
-| `modifies x;` | inout parameter |
+| `var x : int;` (global) | adds `x` as `inout` parameter to procedures whose `modifies` lists it; `in` parameter elsewhere |
+| `modifies x;` (clause) | promotes the corresponding global to `inout` in this procedure's signature |
 | `returns (r: int)` | `out r: int` parameter |
 | `call y := f(x);` | `call(inout globals, in x, out y)` |
 | `for i := 0 to n` | `init i; while(i <= n) { ...; i := i + 1 }` |
