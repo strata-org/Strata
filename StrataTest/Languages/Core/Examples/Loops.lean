@@ -553,19 +553,35 @@ Result: ✅ pass
 #guard_msgs in
 #eval verify precondElimInMeasurePgm (options := .quiet)
 
-/-- This theorem requires a little bit of manual work, though most goals are
-solved partly or entirely by `grind`. I suspect a future version of `grind`
-might be able to do it unaided. -/
+/-- The measure `i / d` is non-negative when `i >= 0` and `d > 0`. -/
+private theorem ediv_nonneg_of_pos (i d : Int) (hi : i ≥ 0) (hd : d > 0) :
+    ¬ i / d < 0 :=
+  Int.not_lt.mpr (Int.ediv_nonneg hi (Int.le_of_lt hd))
+
+/-- The measure `i / d` strictly decreases when we subtract `d` from `i`,
+given `i >= d` and `d > 0`. -/
+private theorem ediv_sub_lt (i d : Int) (hd : d > 0) :
+    (i - d) / d < i / d := by
+  have key := Int.add_mul_ediv_left (i - d) 1 (Int.ne_of_gt hd)
+  grind
+
+/--
+This theorem requires a little bit of manual work to handle facts about
+division, using the lemmas above, though most goals are solved by `grind`.
+-/
 theorem precondElimInMeasurePgm_correct : smtVCsCorrect precondElimInMeasurePgm := by
   gen_smt_vcs
   all_goals (try grind)
-  intros n d i meas _ dpos _ _ _ inonneg meas_def
-  subst meas_def
-  exact Int.not_lt.mpr (Int.ediv_nonneg inonneg (Int.le_of_lt dpos))
-  intros n d i meas _ dpos _ _ _ _ meas_def
-  subst meas_def
-  have key := Int.add_mul_ediv_left (i - d) 1 (Int.ne_of_gt dpos)
-  grind
+  -- measure_lb_0: the loop measure i / d is non-negative
+  case measure_lb_0 =>
+    intro _ d i _ _ dpos _ _ _ inonneg meas_def
+    subst meas_def
+    exact ediv_nonneg_of_pos i d inonneg dpos
+  -- measure_decrease_0: the loop measure i / d strictly decreases
+  case measure_decrease_0 =>
+    intro _ d i _ _ dpos _ _ _ _ meas_def
+    subst meas_def
+    exact ediv_sub_lt i d dpos
 
 -- Now, we show the precondition (d > 0) is necessary for the measure-related
 -- checks.

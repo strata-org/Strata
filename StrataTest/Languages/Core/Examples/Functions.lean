@@ -73,7 +73,7 @@ Result: ✅ pass
 #guard_msgs in
 #eval verify funcPgm
 
-theorem testPgm_correct : smtVCsCorrect funcPgm := by
+theorem funcPgm_correct : smtVCsCorrect funcPgm := by
   gen_smt_vcs
   all_goals (try grind)
 
