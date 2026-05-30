@@ -23,6 +23,7 @@ import os
 import re
 import shutil
 import subprocess
+import signal
 import sys
 import tempfile
 from pathlib import Path
@@ -76,16 +77,98 @@ class PipelineResult:
         return "OK"
 
 
+def _probe_timeout_bin() -> str | None:
+    """Find a usable GNU coreutils timeout binary, verified to actually kill children.
+
+    Probe order: gtimeout (Homebrew on macOS), timeout (native on Linux). The
+    self-test runs `<bin> 0.5 sleep 10` and requires (a) exit code 124 and
+    (b) elapsed wall-time ≤ 2s. If either fails we treat the binary as
+    unavailable and fall through to the Popen+killpg backup in run_cmd.
+    """
+    import time as _time
+    for candidate in ("gtimeout", "timeout"):
+        path = shutil.which(candidate)
+        if path is None:
+            continue
+        try:
+            t0 = _time.monotonic()
+            r = subprocess.run(
+                [path, "0.5", "sleep", "10"],
+                capture_output=True, text=True, timeout=5,
+            )
+            elapsed = _time.monotonic() - t0
+        except subprocess.TimeoutExpired:
+            print(f"Warning: {candidate} self-test exceeded 5s; not using it.",
+                  file=sys.stderr)
+            continue
+        if r.returncode == 124 and elapsed <= 2.0:
+            return path
+        print(f"Warning: {candidate} self-test failed "
+              f"(rc={r.returncode}, elapsed={elapsed:.2f}s); not using it.",
+              file=sys.stderr)
+    return None
+
+
+TIMEOUT_BIN = _probe_timeout_bin()
+
+
 def run_cmd(cmd: list[str], cwd: str = None, timeout: int = 60) -> tuple[int, str, str]:
+    """Run `cmd`, returning (rc, stdout, stderr).
+
+    Timeout policy:
+      - Layer 1: if TIMEOUT_BIN is available, wrap as
+        `[bin, "--kill-after=5", str(timeout), *cmd]`. Exit code 124
+        is normalised to (-1, stdout, "TIMEOUT") so existing callers
+        that check `"TIMEOUT" in stderr` keep working.
+      - Layer 3 (fallback): subprocess.Popen with start_new_session=True;
+        on TimeoutExpired, os.killpg(SIGKILL); then communicate(timeout=5)
+        with manual pipe-close as a last resort.
+
+    Layer 2 (the startup self-test) is in _probe_timeout_bin above.
+    """
+    if TIMEOUT_BIN is not None:
+        wrapped = [TIMEOUT_BIN, "--kill-after=5", str(timeout), *cmd]
+        try:
+            r = subprocess.run(
+                wrapped, capture_output=True, text=True, cwd=cwd,
+                timeout=timeout + 10,
+            )
+        except subprocess.TimeoutExpired:
+            return -1, "", "TIMEOUT"
+        except FileNotFoundError as e:
+            return -1, "", str(e)
+        if r.returncode == 124:
+            return -1, r.stdout, "TIMEOUT"
+        return r.returncode, r.stdout, r.stderr
+
     try:
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, cwd=cwd, timeout=timeout
+        proc = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            cwd=cwd, start_new_session=True,
         )
-        return result.returncode, result.stdout, result.stderr
-    except subprocess.TimeoutExpired:
-        return -1, "", "TIMEOUT"
     except FileNotFoundError as e:
         return -1, "", str(e)
+
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
+        return proc.returncode, stdout, stderr
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        try:
+            stdout, stderr = proc.communicate(timeout=5)
+            return -1, stdout, "TIMEOUT"
+        except subprocess.TimeoutExpired:
+            try:
+                if proc.stdout is not None:
+                    proc.stdout.close()
+                if proc.stderr is not None:
+                    proc.stderr.close()
+            except Exception:
+                pass
+            return -1, "", "TIMEOUT"
 
 
 def run_translation(bpl_path: Path, tmpdir: Path, result: PipelineResult) -> Path | None:
