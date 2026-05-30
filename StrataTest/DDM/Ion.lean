@@ -267,6 +267,17 @@ datatype Box(a: Type) { MkBox(val: a) };
 #guard testDialectRoundTrip TestIonDatatypes
 #guard testProgramRoundTrip testIonDatatypesPgm
 
+-- Verify that a malformed `decimal` sexp reports "decimal" in the error message.
+#guard
+  let tbl := SymbolTable.ofLocals #["decimal"]
+  let decimalSym : Ion SymbolId := .symbol (tbl.symbolId "decimal")
+  -- 4-element sexp: one too many arguments for `decimal`
+  let badSexp : Ion SymbolId := .sexp #[decimalSym, .null, .null, .null]
+  let ctx : FromIonContext := ⟨tbl⟩
+  match ArgF.fromIon (α := TypeRef) badSexp ctx with
+  | .error msg => msg.startsWith "decimal"
+  | .ok _ => false
+
 -- Issue #1238: SyntaxDefAtom.fromIon coverage for the indent branch.
 
 -- Helper: wraps a single atom sexp into a minimal dialect Ion value.
