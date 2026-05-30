@@ -22,11 +22,11 @@ Implemented (#599):
   names before elaborating any body, so forward references are resolved.
   Termination is justified by structural recursion on the `@[cases]` param.
 
-Remaining gap:
-- Mutual recursion over `int` (or other non-datatype types) is not yet
-  supported. Structural recursion does not apply; an explicit `decreases`
-  clause would be needed for each function in the block, and the
-  infrastructure for that is not yet in place.
+Implemented (#1167):
+- Mutual recursion over `int`: each function in a `rec` block may carry a
+  `decreases` clause; termination VCs are discharged by cvc5.
+  The functions remain opaque UFs in the SMT model, so concrete evaluation
+  (e.g. `even(1) == false`) requires manual axioms.
 -/
 
 private def mutualRecursionSeed : Strata.Program :=
@@ -78,35 +78,35 @@ Obligation: odd_terminates_0
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_4_1499
+Obligation: assert_4_1511
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_5_1530
+Obligation: assert_5_1542
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_6_1561
+Obligation: assert_6_1573
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_7_1599
+Obligation: assert_7_1611
 Property: assert
 Result: ✅ pass
 
-Obligation: test_parity_ensures_0_1355
+Obligation: test_parity_ensures_0_1367
 Property: assert
 Result: ✅ pass
 
-Obligation: test_parity_ensures_1_1387
+Obligation: test_parity_ensures_1_1399
 Property: assert
 Result: ✅ pass
 
-Obligation: test_parity_ensures_2_1419
+Obligation: test_parity_ensures_2_1431
 Property: assert
 Result: ✅ pass
 
-Obligation: test_parity_ensures_3_1458
+Obligation: test_parity_ensures_3_1470
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
@@ -116,3 +116,58 @@ example : Strata.smtVCsCorrect mutualRecursionSeed := by
   gen_smt_vcs
   all_goals (try grind)
 
+/-
+Mutual recursion over int (#1167):
+- `decreases n` on each function in the `rec` block; the termination VCs
+  (`even_terminates_*`, `odd_terminates_*`) are discharged by cvc5.
+
+Open gap — unfolding (Gap #1 / opaque+reveal):
+- `even` and `odd` are emitted as uninterpreted functions (UFs) in the SMT
+  query.  The solver knows their types and that they terminate, but not what
+  they return at any specific argument.  Proving `even(1) == false` requires
+  the defining equations as SMT assertions:
+    ∀ n . n <= 0 ==> even(n) == true
+    ∀ n . n >  0 ==> even(n) == odd(n - 1)
+  (and symmetrically for `odd`).
+- These are exactly the unfolding axioms that Dafny emits via `reveal` and
+  that Verus controls via `opaque`/`reveal_with_fuel`.  The fix in Boole is
+  to auto-emit them when `decreases` is present — bounded by a trigger on the
+  function symbol to avoid infinite E-matching instantiation.
+- Tracked as Gap #1 (`opaque`/`reveal`) in BooleFeatureRequests.md.
+-/
+private def mutualRecursionIntSeed : Strata.Program :=
+#strata
+program Boole;
+
+rec
+function even(n: int) : bool
+  decreases n
+{
+  if n <= 0 then true else odd(n - 1)
+}
+function odd(n: int) : bool
+  decreases n
+{
+  if n <= 0 then false else even(n - 1)
+}
+;
+#end
+
+/-- info:
+Obligation: even_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: even_terminates_1
+Property: assert
+Result: ✅ pass
+
+Obligation: odd_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: odd_terminates_1
+Property: assert
+Result: ✅ pass-/
+#guard_msgs in
+#eval Strata.Boole.verify "cvc5" mutualRecursionIntSeed (options := .quiet)
