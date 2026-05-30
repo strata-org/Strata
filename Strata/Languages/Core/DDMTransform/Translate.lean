@@ -719,6 +719,9 @@ def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Core.Expres
   | .some .bv64, q`Core.bv_usub_overflow => return Core.bv64USubOverflowOp
   | .some .bv64, q`Core.bv_umul_overflow => return Core.bv64UMulOverflowOp
 
+  | .some (.bitvec n), q`Core.as_uint => return .op () ⟨s!"Bv{n}.ToUInt", ()⟩ (.some .int)
+  | .some (.bitvec n), q`Core.as_sint => return .op () ⟨s!"Bv{n}.ToInt",  ()⟩ (.some .int)
+
   | _, q`Core.str_len      => return Core.strLengthOp
   | _, q`Core.str_concat   => return Core.strConcatOp
   | _, q`Core.str_substr   => return Core.strSubstrOp
@@ -882,6 +885,24 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
     let fn : LExpr Core.CoreLParams.mono ←
       translateFn (.some tp) q`Core.bvnot
     return (.app () fn x)
+  -- Bv → Int casts
+  | .fn _ q`Core.as_uint, [tpa, xa] =>
+    let tp ← translateLMonoTy bindings (dealiasTypeArg p tpa)
+    let x ← translateExpr p bindings xa
+    let fn ← translateFn (.some tp) q`Core.as_uint
+    return .app () fn x
+  | .fn _ q`Core.as_sint, [tpa, xa] =>
+    let tp ← translateLMonoTy bindings (dealiasTypeArg p tpa)
+    let x ← translateExpr p bindings xa
+    let fn ← translateFn (.some tp) q`Core.as_sint
+    return .app () fn x
+  -- Int → Bv casts
+  | .fn _ q`Core.as_bv1,   [xa] => return .app () (.op () ⟨"Int.ToBv1",   ()⟩ (.some (.bitvec 1)))   (← translateExpr p bindings xa)
+  | .fn _ q`Core.as_bv8,   [xa] => return .app () (.op () ⟨"Int.ToBv8",   ()⟩ (.some (.bitvec 8)))   (← translateExpr p bindings xa)
+  | .fn _ q`Core.as_bv16,  [xa] => return .app () (.op () ⟨"Int.ToBv16",  ()⟩ (.some (.bitvec 16)))  (← translateExpr p bindings xa)
+  | .fn _ q`Core.as_bv32,  [xa] => return .app () (.op () ⟨"Int.ToBv32",  ()⟩ (.some (.bitvec 32)))  (← translateExpr p bindings xa)
+  | .fn _ q`Core.as_bv64,  [xa] => return .app () (.op () ⟨"Int.ToBv64",  ()⟩ (.some (.bitvec 64)))  (← translateExpr p bindings xa)
+  | .fn _ q`Core.as_bv128, [xa] => return .app () (.op () ⟨"Int.ToBv128", ()⟩ (.some (.bitvec 128))) (← translateExpr p bindings xa)
   -- If-then-else expression
   | .fn _ q`Core.if, [_tpa, ca, ta, fa] =>
     let c ← translateExpr p bindings ca
