@@ -1079,7 +1079,7 @@ private def scopeSepFormat (name : QualifiedIdent)
   match name with
   | q`Init.Seq              => some (.none, Syntax.getArgs)
   | q`Init.CommaSepBy       => some (.comma, Syntax.getSepArgs)
-  | q`Init.SemicolonSepBy   => some (.semicolon, Syntax.getSepArgs)
+  | q`Init.SemicolonSepBy   => some (.semicolonNewline, Syntax.getSepArgs)
   | q`Init.SpaceSepBy       => some (.space, Syntax.getSepArgs)
   | q`Init.SpacePrefixSepBy => some (.spacePrefix, Syntax.getArgs)
   | q`Init.NewlineSepBy     => some (.newline, Syntax.getArgs)
@@ -1668,7 +1668,7 @@ partial def catElaborator (c : SyntaxCat) : TypingContext → Syntax → ElabM T
   | q`Init.CommaSepBy =>
     elabSeqWith c .comma "commaSepBy" (·.getSepArgs)
   | q`Init.SemicolonSepBy =>
-    elabSeqWith c .semicolon "semicolonSepBy" (·.getSepArgs)
+    elabSeqWith c .semicolonNewline "semicolonSepBy" (·.getSepArgs)
   | q`Init.SpaceSepBy =>
     elabSeqWith c .space "spaceSepBy" (·.getArgs)
   | q`Init.SpacePrefixSepBy =>
