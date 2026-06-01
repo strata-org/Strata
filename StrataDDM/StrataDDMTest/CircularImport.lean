@@ -13,15 +13,15 @@ open StrataDDM
 namespace Strata.Test.CircularImport
 
 /--
-info: 1 error(s) in StrataDDM/StrataDDMTest/testdata/CircA.dialect.st:
-  2:7: 1 error(s) in StrataDDM/StrataDDMTest/testdata/CircB.dialect.st:
+info: 1 error(s) in StrataDDMTest/testdata/CircA.dialect.st:
+  2:7: 1 error(s) in StrataDDMTest/testdata/CircB.dialect.st:
   2:7: Circular import detected: CircA -> CircB -> CircA
 -/
 #guard_msgs in
 #eval show IO _ from do
   let preloaded := Elab.LoadedDialects.builtin
   let fm ← DialectFileMap.new preloaded
-  let fm ← match ← fm.add "StrataDDM/StrataDDMTest/testdata" |>.toBaseIO with
+  let fm ← match ← fm.add "StrataDDMTest/testdata" |>.toBaseIO with
     | .ok fm => pure fm
     | .error msg => do IO.println msg; pure fm
   match ← Elab.loadDialect fm "CircA" with
@@ -29,14 +29,14 @@ info: 1 error(s) in StrataDDM/StrataDDMTest/testdata/CircA.dialect.st:
   | .error msg => IO.println msg
 
 /--
-info: 1 error(s) in StrataDDM/StrataDDMTest/testdata/CircSelf.dialect.st:
+info: 1 error(s) in StrataDDMTest/testdata/CircSelf.dialect.st:
   2:7: Dialect CircSelf already open.
 -/
 #guard_msgs in
 #eval show IO _ from do
   let preloaded := Elab.LoadedDialects.builtin
   let fm ← DialectFileMap.new preloaded
-  let fm ← match ← fm.add "StrataDDM/StrataDDMTest/testdata" |>.toBaseIO with
+  let fm ← match ← fm.add "StrataDDMTest/testdata" |>.toBaseIO with
     | .ok fm => pure fm
     | .error msg => do IO.println msg; pure fm
   match ← Elab.loadDialect fm "CircSelf" with
@@ -44,16 +44,16 @@ info: 1 error(s) in StrataDDM/StrataDDMTest/testdata/CircSelf.dialect.st:
   | .error msg => IO.println msg
 
 /--
-info: 1 error(s) in StrataDDM/StrataDDMTest/testdata/CircX.dialect.st:
-  2:7: 1 error(s) in StrataDDM/StrataDDMTest/testdata/CircY.dialect.st:
-  2:7: 1 error(s) in StrataDDM/StrataDDMTest/testdata/CircZ.dialect.st:
+info: 1 error(s) in StrataDDMTest/testdata/CircX.dialect.st:
+  2:7: 1 error(s) in StrataDDMTest/testdata/CircY.dialect.st:
+  2:7: 1 error(s) in StrataDDMTest/testdata/CircZ.dialect.st:
   2:7: Circular import detected: CircX -> CircY -> CircZ -> CircX
 -/
 #guard_msgs in
 #eval show IO _ from do
   let preloaded := Elab.LoadedDialects.builtin
   let fm ← DialectFileMap.new preloaded
-  let fm ← match ← fm.add "StrataDDM/StrataDDMTest/testdata" |>.toBaseIO with
+  let fm ← match ← fm.add "StrataDDMTest/testdata" |>.toBaseIO with
     | .ok fm => pure fm
     | .error msg => do IO.println msg; pure fm
   match ← Elab.loadDialect fm "CircX" with

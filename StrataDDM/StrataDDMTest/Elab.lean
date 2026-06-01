@@ -120,13 +120,13 @@ error: Internal NonExistentDialect missing from loaded dialects.
 -/
 #guard_msgs in
 #eval do
-  let dialects := Strata.Elab.LoadedDialects.ofDialects! #[Strata.initDialect]
+  let dialects := StrataDDM.Elab.LoadedDialects.ofDialects! #[StrataDDM.initDialect]
   let input : Lean.Parser.InputContext := {
     inputString := ""
     fileName := "<test>"
     fileMap := .ofString ""
   }
-  let _ ← Strata.Elab.parseStrataProgramFromDialect dialects "NonExistentDialect" input
+  let _ ← StrataDDM.Elab.parseStrataProgramFromDialect dialects "NonExistentDialect" input
 
 -- Test escaping in string literals.
 
