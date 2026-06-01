@@ -1,0 +1,16 @@
+name = "StrataPython"
+version = "0.1.0"
+defaultTargets = ["StrataPython"]
+testDriver = "StrataTestMain"
+testDriverArgs = ["--dir", "StrataPythonTestExtra"]
+
+[[require]]
+name = "Strata"
+path = ".."
+
+[[lean_lib]]
+name = "StrataPython"
+
+[[lean_lib]]
+name = "StrataPythonTest"
+globs = ["StrataPythonTest.+"]

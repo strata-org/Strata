@@ -17,11 +17,11 @@ import Strata.Languages.C_Simp.Verify
 import Strata.Languages.B3.Verifier.Program
 import Strata.Languages.Laurel.LaurelCompilationPipeline
 import Strata.Pipeline.Diagnostic
-import Strata.Pipeline.PyAnalyzeLaurel
+import StrataPython.Pipeline.PyAnalyzeLaurel
 import Strata.Languages.C_Simp.DDMTransform.Parse
-import Strata.Languages.Python
-import Strata.Languages.Python.Specs.IdentifyOverloads
-import Strata.Languages.Python.Specs.ToLaurel
+import StrataPython
+import StrataPython.Specs.IdentifyOverloads
+import StrataPython.Specs.ToLaurel
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 import Strata.Languages.Laurel
 import Strata.Languages.Core.EntryPoint
@@ -32,10 +32,10 @@ import Strata.SimpleAPI
 import Strata.Util.Json
 import StrataDDM.BuiltinDialects
 import StrataDDM.Util.String
-import Strata.Languages.Python.PyFactory
-import Strata.Languages.Python.Specs
-import Strata.Languages.Python.Specs.DDM
-import Strata.Languages.Python.ReadPython
+import StrataPython.PyFactory
+import StrataPython.Specs
+import StrataPython.Specs.DDM
+import StrataPython.ReadPython
 
 open Strata
 open StrataDDM.Elab (LoadedDialects elabProgram)

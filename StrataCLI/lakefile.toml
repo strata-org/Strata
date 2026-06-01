@@ -3,8 +3,8 @@ version = "0.1.0"
 defaultTargets = ["StrataMainLib", "strata"]
 
 [[require]]
-name = "Strata"
-path = ".."
+name = "StrataPython"
+path = "../StrataPython"
 
 [[lean_lib]]
 name = "StrataMainLib"
@@ -12,3 +12,6 @@ name = "StrataMainLib"
 [[lean_exe]]
 name = "strata"
 root = "StrataMain"
+
+[[lean_exe]]
+name = "DiffTestCore"

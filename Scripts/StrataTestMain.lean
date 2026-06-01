@@ -22,12 +22,15 @@ partial def findTestFiles (root dir : FilePath) : IO (Array (FilePath × String)
   return results
 
 structure Config where
+  testDir : System.FilePath
   includes : Array String
   excludes : Array String
 
-def parseArgs (args : List String) : Except String Config := do
+def parseArgs (args : List String) (defaultDir : System.FilePath := "StrataTestExtra")
+    : Except String Config := do
   let mut includes := #[]
   let mut excludes := #[]
+  let mut dir := defaultDir
   let mut rest := args
   while h : !rest.isEmpty do
     have : rest ≠ [] := by simp_all
@@ -39,11 +42,17 @@ def parseArgs (args : List String) : Except String Config := do
       | val :: rest' =>
         excludes := excludes.push val
         rest := rest'
+    else if arg == "--dir" then
+      match rest with
+      | [] => throw "--dir requires an argument"
+      | val :: rest' =>
+        dir := ⟨val⟩
+        rest := rest'
     else if arg.startsWith "--" then
       throw s!"unknown flag: {arg}"
     else
       includes := includes.push arg
-  return { includes, excludes }
+  return { testDir := dir, includes, excludes }
 
 def Config.matches (cfg : Config) (modName : String) : Bool :=
   let included := cfg.includes.isEmpty || cfg.includes.any (fun inc => modName.startsWith inc)
@@ -51,11 +60,12 @@ def Config.matches (cfg : Config) (modName : String) : Bool :=
   included && !excluded
 
 def usage : String :=
-  "Usage: lake test [-- [MODULE_PREFIX...] [--exclude PREFIX...]]
+  "Usage: lake test [-- [--dir DIR] [MODULE_PREFIX...] [--exclude PREFIX...]]
 
-Run uncached tests under StrataTestExtra/.
+Run uncached tests under a directory (default: StrataTestExtra/).
 
 Options:
+  --dir DIR         Directory containing test files (default: StrataTestExtra)
   MODULE_PREFIX     Run only tests whose module name starts with PREFIX
   --exclude PREFIX  Exclude tests whose module name starts with PREFIX
   --help            Show this help message"
@@ -71,13 +81,13 @@ def main (args : List String) : IO UInt32 := do
       IO.eprintln usage
       return 1
 
-  let testDir : System.FilePath := "StrataTestExtra"
+  let testDir := cfg.testDir
   let allTests ← findTestFiles testDir testDir
   let tests := allTests.filter (fun (_, modName) => cfg.matches modName)
 
   if tests.isEmpty then
     if allTests.isEmpty then
-      IO.eprintln "No test files found under StrataTestExtra/"
+      IO.eprintln s!"No test files found under {testDir}/"
     else
       IO.eprintln "No tests matched the given filters."
       IO.eprintln "Available tests:"

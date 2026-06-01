@@ -44,8 +44,6 @@ import Strata.Languages.Core.EntryPoint
 import Strata.Languages.Core.VerifierProofs
 import Strata.Languages.Dyn.Dyn
 import Strata.Languages.Dyn.Verify
-import Strata.Languages.Python
-
 /- DDM -/
 import StrataDDM
 
@@ -67,9 +65,6 @@ import Strata.MetaVerifier
 
 /- Simple API -/
 import Strata.SimpleAPI
-
-/- Pipeline -/
-import Strata.Pipeline.PyAnalyzeLaurel
 
  -- deletion candidates: nothing imports these modules:
 

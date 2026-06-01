@@ -48,5 +48,3 @@ root = "Scripts.CheckImports"
 name = "ImportStats"
 root = "Scripts.ImportStats"
 
-[[lean_exe]]
-name = "DiffTestCore"
