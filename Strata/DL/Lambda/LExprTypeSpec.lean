@@ -2326,6 +2326,8 @@ theorem typeBoundVar_xv_fresh_in_context
     exact not_mem_knownVars_find_none Env.context xv_raw h_fresh
 
 omit [ToString T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
+/-- The fresh variable produced by `typeBoundVar` is added to the output context
+    with the monomorphic scheme `∀[]. xty`. -/
 theorem typeBoundVar_adds_to_context (C : LContext T) (Env : TEnv T.IDMeta)
     (bty : Option LMonoTy) (xv : T.Identifier) (xty : LMonoTy) (Env' : TEnv T.IDMeta)
     (h : typeBoundVar C Env bty = .ok (xv, xty, Env')) :
@@ -2686,6 +2688,7 @@ theorem typeBoundVar_preserves_invariant
     }
 
 omit [ToString T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
+/-- `typeBoundVar` preserves environment well-formedness. -/
 theorem TEnvWF.of_typeBoundVar
     (C : LContext T) (Env : TEnv T.IDMeta) (bty : Option LMonoTy)
     (xv : T.Identifier) (xty : LMonoTy) (Env' : TEnv T.IDMeta)
@@ -3723,6 +3726,8 @@ private theorem resolveAux_preserves_find_aux :
     simp only [TEnv.context] at h_ctx3; exact h_ctx3
 
 omit [ToString T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
+/-- `resolveAux` preserves existing context lookups: any variable already bound
+    in the input context remains bound with the same type in the output. -/
 theorem resolveAux_preserves_find (C : LContext T) (Env Env' : TEnv T.IDMeta)
     (e : LExpr T.mono) (et : LExprT T.mono)
     (xv : T.Identifier) (ty : LTy)
@@ -5573,8 +5578,8 @@ theorem TEnvWF.of_resolveAux
       props.genState_mono }
 
 omit [ToString T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
--- `varCloseT` preserves `toLMonoTy`: it only affects the tree structure
--- (turning fvars into bvars) but does not change the root metadata.
+/-- `varCloseT` preserves `toLMonoTy`: it only changes fvars to bvars without
+    affecting the root metadata. -/
 theorem varCloseT_toLMonoTy (k : Nat) (x : T.Identifier) (e : LExprT T.mono) :
     (Lambda.LExpr.varCloseT k x e).toLMonoTy = e.toLMonoTy := by
   cases e with

@@ -168,6 +168,7 @@ theorem Map.find?_append [DecidableEq α] (l₁ l₂ : List (α × β)) (x : α)
     · rfl
     · exact ih
 
+/-- Looking up in a concatenated map searches the first then the second. -/
 theorem Map.find?_map_append [DecidableEq α] (l₁ l₂ : Map α β) (x : α) :
     Map.find? (l₁ ++ l₂) x = match Map.find? l₁ x with
       | some v => some v
