@@ -3662,7 +3662,7 @@ private theorem resolveAux_preserves_find_aux :
         simp [varOpen_sizeOf, LExpr.sizeOf] at h_eq ⊢; omega
       exact ih _ h_sz _ rfl C Env_tbv Env_rec et_body xv ty h_rec h_ctx_tbv
     simp only [TEnv.context] at h_ctx_rec ⊢
-    rw [Maps.find?_erase_ne Env_rec.genEnv.context.types xv_fresh xv h_ne]; exact h_ctx_rec
+    rw [Maps.find?_remove_ne Env_rec.genEnv.context.types xv_fresh xv h_ne]; exact h_ctx_rec
   | .quant _ qk qname bty triggers e_body =>
     simp only [resolveAux, Bind.bind, Except.bind] at h_res
     split at h_res; · simp at h_res
@@ -3691,7 +3691,7 @@ private theorem resolveAux_preserves_find_aux :
         simp [varOpen_sizeOf, LExpr.sizeOf] at h_eq ⊢; omega
       exact ih _ h_sz _ rfl C Env_mid Env_rec triggersT xv ty h_rec2 h_ctx_mid
     simp only [TEnv.context] at h_ctx_rec ⊢
-    rw [Maps.find?_erase_ne Env_rec.genEnv.context.types xv_fresh xv h_ne]; exact h_ctx_rec
+    rw [Maps.find?_remove_ne Env_rec.genEnv.context.types xv_fresh xv h_ne]; exact h_ctx_rec
   | .eq _ e1 e2 =>
     simp only [resolveAux, Bind.bind, Except.bind] at h_res
     split at h_res; · simp at h_res
