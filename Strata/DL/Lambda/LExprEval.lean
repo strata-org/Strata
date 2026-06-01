@@ -104,7 +104,7 @@ def eql (F : @Factory T.base) (e1 e2 : LExpr T) : Option Bool :=
   termination_by e1.sizeOf
   decreasing_by
     . rw[varOpen_sizeOf]; simp_all
-    . have := Factory.callOfLFunc_smaller _h1; subst_vars; grind
+    . have := Factory.callOfLFunc_smaller _h1; subst_vars; simp_all
 
 
 /--
