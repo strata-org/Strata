@@ -200,11 +200,11 @@ def findPython3 (minVersion : Nat) (maxVersion : Nat) : IO System.FilePath := do
 
   throw <| IO.userError s!"Python 3.{minVersion} or later not found."
 
-/-- Run an action with a Python 3 command that has `strata.gen` installed.
-    Throws if Python is unavailable or `strata.gen` is not installed. -/
+/-- Run an action with a Python 3 command that has `strata_python.gen` installed.
+    Throws if Python is unavailable or `strata_python.gen` is not installed. -/
 def withPython (action : System.FilePath → IO Unit) : IO Unit := do
   let pythonCmd ← findPython3 (minVersion := 11) (maxVersion := 14)
-  if not (← pythonCheckModule pythonCmd "strata.gen") then
+  if not (← pythonCheckModule pythonCmd "strata_python.gen") then
     throw <| .userError
       s!"Python Strata libraries not installed in {pythonCmd}."
   action pythonCmd

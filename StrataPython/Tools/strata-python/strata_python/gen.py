@@ -10,7 +10,7 @@ import amazon.ion.simpleion as ion
 import argparse
 from pathlib import Path
 from strata.base import Dialect, Program
-import strata.pythonast as pythonast
+import strata_python.pythonast as pythonast
 import sys
 
 sys.setrecursionlimit(2500)
