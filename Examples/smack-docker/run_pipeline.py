@@ -160,12 +160,27 @@ def list_procedures(core_st: Path) -> list[str]:
 
 
 def parse_strata_output(output: str, mode: str, label: str) -> tuple[str, str]:
-    """Classify a single `strata verify` invocation. Returns (status, detail)."""
+    """Classify a single `strata verify` invocation. Returns (status, detail).
+
+    Status values:
+      PASS     — all VCs discharged with real proofs
+      PASS-?   — all VCs passed but ≥1 is annotated 'path unreachable' (vacuous)
+      PARTIAL  — some VCs discharged, others failed
+      FAIL     — verification failed
+      TIMEOUT  — timed out
+      WARN     — 0 VCs (e.g. declaration-only procedure)
+      SKIP     — known limitation, not a real failure
+    """
     if "All 0 goals passed" in output:
         return ("WARN", "0 VCs")
     if re.search(r"All \d+ goals passed", output):
         m = re.search(r"All (\d+) goals passed", output)
-        return ("PASS", f"{m.group(1)} VCs")
+        n = m.group(1)
+        # Check whether any goal was vacuously discharged (path unreachable).
+        # --check-level full annotates such goals as 'pass (❗path unreachable)'.
+        if "path unreachable" in output:
+            return ("PASS-?", f"{n} VCs (vacuous)")
+        return ("PASS", f"{n} VCs")
     if "cannot apply statement-level transform to CFG body" in output:
         return ("SKIP", "CFG body (transforms unsupported)")
     if "Cannot find this fvar" in output and "__nondet" in output:
@@ -191,15 +206,16 @@ def parse_strata_output(output: str, mode: str, label: str) -> tuple[str, str]:
 
 def run_strata_split_procs(core_st: Path, mode: str, result: PipelineResult,
                            extra_args: list[str] = None):
-    extra_args = extra_args or []
     """Run `strata verify` once per procedure and aggregate.
 
-    Sidesteps the cross-procedure Env.error contamination bug: when one
-    procedure's PE evaluation errors, its env is threaded into all later
-    procedures and silently suppresses their VCs (visible in the README
-    snapshot as `aws_array_eq` -> 0 VCs / WARN). Splitting per-procedure
-    gives each procedure a fresh env.
+    Two reasons to prefer this over the all-procedures path:
+      1. Performance: filterProceduresPipelinePhase prunes the program to
+         ~1/N of its size before SMT, which makes large multi-procedure
+         programs (e.g. sv_locks_*) tractable in the unified solver path.
+      2. Diagnostic clarity: per-procedure verdicts isolate which procedure
+         carries the failing/timing-out goal.
     """
+    extra_args = extra_args or []
     if not STRATA_BIN.exists():
         result.add_backend(mode, "FAIL", f"Binary not found: {STRATA_BIN}")
         return
@@ -212,21 +228,26 @@ def run_strata_split_procs(core_st: Path, mode: str, result: PipelineResult,
     total_pass = 0
     total_fail = 0
     contributing = 0
+    any_vacuous = False
     failed_procs: list[str] = []
     skipped_procs: list[tuple[str, str]] = []
+    timeout_procs: list[str] = []
     for proc in procs:
         rc, stdout, stderr = run_cmd(
             [str(STRATA_BIN), "verify", "--check-mode", mode,
+             "--check-level", "full",
              *extra_args,
              "--procedures", proc, str(core_st)],
             timeout=120,
         )
         output = stdout + stderr
         status, detail = parse_strata_output(output, mode, proc)
-        if status == "PASS":
+        if status in ("PASS", "PASS-?"):
             m = re.search(r"All (\d+) goals passed", output)
             total_pass += int(m.group(1)) if m else 0
             contributing += 1
+            if status == "PASS-?":
+                any_vacuous = True
         elif status == "PARTIAL":
             m = re.search(r"(\d+) goals passed, (\d+) failed", output)
             if m:
@@ -236,7 +257,12 @@ def run_strata_split_procs(core_st: Path, mode: str, result: PipelineResult,
             contributing += 1
         elif status == "FAIL":
             failed_procs.append(proc)
-        elif status in ("SKIP", "TIMEOUT", "WARN"):
+        elif status == "TIMEOUT":
+            # A timed-out procedure means its VCs were not checked; the overall
+            # verdict is incomplete regardless of other procs passing.
+            timeout_procs.append(proc)
+            skipped_procs.append((proc, status))
+        elif status in ("SKIP", "WARN"):
             if status != "WARN":  # WARN = 0 VCs is normal for decl-only procs
                 skipped_procs.append((proc, status))
 
@@ -249,7 +275,10 @@ def run_strata_split_procs(core_st: Path, mode: str, result: PipelineResult,
         suffix = ""
         if skipped_procs:
             suffix = f" ({len(skipped_procs)} proc skipped)"
-        result.add_backend(mode, "PASS", f"{total_pass} VCs across {contributing} procs{suffix}")
+        # Surface as PASS-? if any goal was vacuously discharged (path unreachable)
+        # or if any procedure timed out (incomplete verification coverage).
+        agg_status = "PASS-?" if (any_vacuous or timeout_procs) else "PASS"
+        result.add_backend(mode, agg_status, f"{total_pass} VCs across {contributing} procs{suffix}")
     elif failed_procs:
         result.add_backend(mode, "FAIL", f"{len(failed_procs)} procs failed: {','.join(failed_procs[:3])}")
     else:
@@ -264,14 +293,21 @@ def run_strata_backend(core_st: Path, mode: str, result: PipelineResult,
         return
 
     rc, stdout, stderr = run_cmd(
-        [str(STRATA_BIN), "verify", "--check-mode", mode, *extra_args, str(core_st)], timeout=120
+        [str(STRATA_BIN), "verify", "--check-mode", mode, "--check-level", "full",
+         *extra_args, str(core_st)], timeout=120
     )
     output = stdout + stderr
     if "All 0 goals passed" in output:
         result.add_backend(mode, "WARN", "0 VCs")
     elif re.search(r"All \d+ goals passed", output):
         m = re.search(r"All (\d+) goals passed", output)
-        result.add_backend(mode, "PASS", f"{m.group(1)} VCs")
+        n = m.group(1)
+        # Surface vacuous passes (path unreachable) as PASS-? to distinguish from
+        # real deductive proofs.
+        if "path unreachable" in output:
+            result.add_backend(mode, "PASS-?", f"{n} VCs (vacuous)")
+        else:
+            result.add_backend(mode, "PASS", f"{n} VCs")
     elif "cannot apply statement-level transform to CFG body" in output:
         result.add_backend(mode, "SKIP", "CFG body (transforms unsupported)")
     elif "Cannot find this fvar" in output and "__nondet" in output:
@@ -476,7 +512,7 @@ def print_results(results: list[PipelineResult], backends: list[str]):
             if b in r.backend_results:
                 status, d = r.backend_results[b]
                 cell = status
-                if status in ("PASS", "OK") and d:
+                if status in ("PASS", "PASS-?", "OK") and d:
                     cell = f"{status}"
                 if status in ("FAIL", "PARTIAL", "SKIP") and not detail:
                     detail = d
@@ -492,10 +528,13 @@ def print_results(results: list[PipelineResult], backends: list[str]):
     # Summary per backend
     for b in backends:
         passed = sum(1 for r in results if r.backend_results.get(b, ("", ""))[0] in ("PASS", "OK"))
-        failed = sum(1 for r in results if r.backend_results.get(b, ("", ""))[0] in ("FAIL", "PARTIAL"))
-        skipped = sum(1 for r in results if r.backend_results.get(b, ("", ""))[0] in ("SKIP", "WARN", "TIMEOUT"))
+        pass_vac = sum(1 for r in results if r.backend_results.get(b, ("", ""))[0] == "PASS-?")
+        partial = sum(1 for r in results if r.backend_results.get(b, ("", ""))[0] == "PARTIAL")
+        failed = sum(1 for r in results if r.backend_results.get(b, ("", ""))[0] == "FAIL")
+        timeout = sum(1 for r in results if r.backend_results.get(b, ("", ""))[0] == "TIMEOUT")
+        skipped = sum(1 for r in results if r.backend_results.get(b, ("", ""))[0] in ("SKIP", "WARN"))
         not_reached = sum(1 for r in results if b not in r.backend_results)
-        print(f"  {b:>12}: {passed} pass, {failed} fail, {skipped} skip, {not_reached} not reached")
+        print(f"  {b:>12}: {passed} pass, {pass_vac} pass-?, {partial} partial, {failed} fail, {timeout} timeout, {skipped} skip, {not_reached} not reached")
     print()
 
 
@@ -507,7 +546,8 @@ def main():
                              "deductive,bugFinding,cbmc,cbmc-native (default: all but cbmc-native)")
     parser.add_argument("--split-procs", action="store_true",
                         help="For deductive/bugFinding, run `strata verify --procedures <p>` once per procedure "
-                             "and aggregate. Sidesteps cross-procedure Env.error contamination.")
+                             "and aggregate. Sidesteps cross-procedure Env.error contamination "
+                             "and dramatically improves SMT scalability for multi-procedure programs.")
     parser.add_argument("--call-policy", default="contract",
                         choices=["contract", "body", "bodyOrContract"],
                         help="Pass --call-policy to `strata verify`. Default: 'contract' (today's behavior).")

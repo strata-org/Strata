@@ -127,19 +127,30 @@ fix that landed between runs. Earlier runs were captured pre-SV-COMP
 on the 64-program portfolio only; the v3 split-procs run is the
 baseline used by the *Default-policy results* below.
 
-| Run | deductive PASS | deductive not-PASS | mode | key change |
-|---|---:|---:|---|---|
-| v1 | 47 | 16 | non-split | baseline (64 programs) |
-| v2 | 33 | 30 | non-split | `__VERIFIER_assert` requires injection (64 programs) |
-| v3 | 21 | 43 | `--split-procs` | CFG-CallElim fix (`42ff8a4b8`) (64 programs) |
-| sv-comp | 18 | 11 | `--split-procs` | 29 SV-COMP programs imported (`eb8fbd513`) |
-| v3 + sv-comp combined | 39 | 54 | `--split-procs` | v3 ∪ sv-comp (93 programs total) |
-| v4 (bodyOrContract) | **82** | **11** | `--split-procs --call-policy bodyOrContract` | body-eval at call sites (`dd0c0d7cd`) on the combined 93-program suite |
+| Run | deductive PASS | deductive PASS-? | deductive not-PASS | mode | key change |
+|---|---:|---:|---:|---|---|
+| v1 | 47 | — | 16 | non-split | baseline (64 programs) |
+| v2 | 33 | — | 30 | non-split | `__VERIFIER_assert` requires injection (64 programs) |
+| v3 | 21 | — | 43 | `--split-procs` | CFG-CallElim fix (`42ff8a4b8`) (64 programs) |
+| sv-comp | 18 | — | 11 | `--split-procs` | 29 SV-COMP programs imported (`eb8fbd513`) |
+| v3 + sv-comp combined | 39 | — | 54 | `--split-procs` | v3 ∪ sv-comp (93 programs total) |
+| v4 (bodyOrContract) | 82 | — | 11 | `--split-procs --call-policy bodyOrContract` | body-eval at call sites (`dd0c0d7cd`) on the combined 93-program suite |
+| v5 (PASS-? surfacing) | **57** | **18** | **11** | `--split-procs --call-policy bodyOrContract --check-level full` | run-pipeline emits `--check-level full` and surfaces `path unreachable` as `PASS-?` (`07f2ebb7e` + uncommitted run_pipeline.py changes); 8 large `.bpl` (≥20K lines) excluded — see *Known blocker: stack overflow on large programs* |
 
 The deductive PASS climb from 21 → 39 → 82 is the project arc: each
 bend was driven by a specific fix landing on `htd/smack`. v3 → v3+sv-comp
 shows the SV-COMP programs adding 18 new PASSes; combined → v4 shows
-body-eval flipping 43 PARTIALs to PASS in a single change.
+body-eval flipping 43 PARTIALs to PASS in a single change. v4 → v5 is
+not directly comparable — the suite shrank by 8 (93 → 86) because
+`.bpl` files ≥20K lines hang under the new `--check-level full` flag
+(see *Known blocker* below). On the 86 programs that did run in both
+v4 and v5, the v4 PASS column splits into 57 real proofs + 18 vacuous
+discharges (path unreachable). The 11 PARTIAL count is unchanged.
+
+The 86 v5 numbers come from a single matrix run on 85 programs (which
+preemptively also excluded `sv_locks_11.bpl` on a misread of a prior
+hang) plus a standalone re-run of `sv_locks_11.bpl` that confirmed it
+completes as PASS-? rather than hanging.
 
 ### Default-policy results (contract; today's behaviour)
 
@@ -165,127 +176,10 @@ picohttpparser):
 | Strata-CBMC | 0 | 0 | 93 | 0 |
 | CBMC native | 70 | 0 | 23 | 0 |
 
-Per-program detail (full pipeline output in
-`wt-test/pipeline-portfolio-v3.txt` and `wt-test/pipeline-svcomp.txt`):
-
-```
-Program                                      |  Ded |  Bug |  CBM |  CBN | Detail
------------------------------------------------------------------------------------
-# Original benchmark
-abs_func                                     | PART | PART | FAIL | FAIL | 1p,1f / 2 (main)
-array_sum                                    | PASS | PART | FAIL | PASS | 0p,2f / 2 (assume,main)
-aws_array_eq                                 | PART | PART | FAIL | PASS | 1p,3f / 2 (main)
-aws_byte_cursor_advance                      | PART | PART | FAIL | PASS | 1p,4f / 2 (main)
-aws_ring_buffer                              | PART | PART | FAIL | PASS | 1p,8f / 2 (main)
-loop_sum                                     | PASS | PART | FAIL | PASS | 0p,2f / 2 (assume,main)
-max_func                                     | PART | PART | FAIL | PASS | 1p,3f / 2 (main)
-nondet_branch                                | PASS | PART | FAIL | FAIL | 0p,2f / 2 (assume,main)
-pointer_arith                                | PASS | PART | FAIL | FAIL | 0p,2f / 2 (assume,main)
-simple_add                                   | PASS | PART | FAIL | PASS | 0p,2f / 2 (assume,main)
-simple_assert                                | PART | PART | FAIL | PASS | 1p,1f / 2 (main)
-swap                                         | PART | PART | FAIL | PASS | 1p,2f / 2 (main)
-
-# Simplified AWS C Common
-aws_add_size_checked                         | PART | PART | FAIL | PASS | 1p,8f / 2 (main)
-aws_array_list_get                           | PART | PART | FAIL | PASS | 1p,6f / 2 (main)
-aws_array_list_set                           | PART | PART | FAIL | PASS | 1p,6f / 2 (main)
-aws_byte_buf_append                          | PART | PART | FAIL | PASS | 1p,7f / 2 (main)
-aws_byte_buf_init                            | PART | PART | FAIL | PASS | 1p,5f / 2 (main)
-aws_byte_cursor_eq                           | PART | PART | FAIL | PASS | 1p,4f / 2 (main)
-aws_hash_string                              | PART | PART | FAIL | PASS | 1p,4f / 2 (main)
-aws_is_power_of_two                          | PART | PART | FAIL | PASS | 1p,9f / 2 (main)
-aws_linked_list_push                         | PART | PART | FAIL | PASS | 1p,11f / 2 (main)
-aws_min_max                                  | PART | PART | FAIL | PASS | 1p,6f / 2 (main)
-aws_mul_size_checked                         | PART | PART | FAIL | PASS | 1p,7f / 2 (main)
-aws_round_up_to_power_of_two                 | PART | PART | FAIL | PASS | 1p,8f / 2 (main)
-aws_string_eq                                | PART | PART | FAIL | PASS | 1p,4f / 2 (main)
-
-# aws-c-common verbatim
-aws_add_size_checked_harness                 | PART | PART | FAIL | PASS | 1p,4f / 2 (main)
-aws_add_size_saturating_harness              | PART | PART | FAIL | PASS | 1p,4f / 2 (main)
-aws_is_power_of_two_harness                  | PART | PART | FAIL | PASS | 1p,1f / 2 (main)
-aws_mul_size_checked_harness                 | PART | PART | FAIL | PASS | 1p,4f / 2 (main)
-aws_mul_size_saturating_harness              | PART | PART | FAIL | PASS | 1p,4f / 2 (main)
-aws_round_up_to_power_of_two_harness         | PART | PART | FAIL | PASS | 1p,4f / 2 (main)
-
-# FreeRTOS coreJSON verbatim
-JSON_Iterate_harness                         | PASS | PART | FAIL | FAIL | 0p,1f / 1 (assume)
-JSON_SearchConst_harness                     | PASS | PART | FAIL | FAIL | 0p,1f / 1 (assume)
-JSON_Validate_harness                        | PART | PART | FAIL | PASS | 1p,1f / 2 (main)
-skipAnyScalar_harness                        | PART | PART | FAIL | PASS | 1p,5f / 2 (main)
-skipCollection_harness                       | PART | PART | FAIL | FAIL | 1p,1f / 2 (main)
-skipDigits_harness                           | PART | PART | FAIL | PASS | 1p,6f / 2 (main)
-skipEscape_harness                           | PASS | PART | FAIL | FAIL | 0p,1f / 1 (assume)
-skipObjectScalars_harness                    | PART | PART | FAIL | FAIL | 1p,3f / 2 (main)
-skipScalars_harness                          | PART | PART | FAIL | FAIL | 1p,3f / 2 (main)
-skipSpace_harness                            | PART | PART | FAIL | PASS | 1p,3f / 2 (main)
-skipString_harness                           | PART | PART | FAIL | PASS | 1p,5f / 2 (main)
-skipUTF8_harness                             | PART | PART | FAIL | PASS | 1p,5f / 2 (main)
-
-# FreeRTOS coreMQTT/coreHTTP/coreSNTP verbatim
-HTTPClient_AddHeader_harness                 | PASS | PART | FAIL | FAIL | 0p,1f / 1 (assume)
-HTTPClient_AddRangeHeader_harness            | PASS | PART | FAIL | FAIL | 0p,1f / 1 (assume)
-HTTPClient_InitializeRequestHeaders_harness  | PASS | PART | FAIL | FAIL | 0p,1f / 1 (assume)
-HTTPClient_ReadHeader_harness                | PASS | PART | FAIL | FAIL | 0p,1f / 1 (assume)
-HTTPClient_strerror_harness                  | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
-MQTT_GetPacketId_harness                     | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
-MQTT_Init_harness                            | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
-MQTT_Ping_harness                            | PASS | PART | FAIL | FAIL | 0p,1f / 1 (assume)
-Sntp_DeserializeResponse_harness             | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
-Sntp_SerializeRequest_harness                | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
-
-# Standalone parsers
-cjson_cJSON_IsArray_harness                  | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
-cjson_cJSON_Parse_harness                    | PASS | PART | FAIL | FAIL | 0p,1f / 1 (assume)
-jsmn_jsmn_parse_harness                      | PASS | PART | FAIL | FAIL | 0p,1f / 1 (assume)
-# picohttpparser_phr_parse_request_harness  excluded — cbmc-native OOMs (>32 GB) on the SAT instance.
-
-# RFC reference impls
-base64_decode_normal_harness                 | PART | PART | FAIL | PASS | 1p,1f / 2 (main)
-base64_decode_padding_only_harness           | PART | PART | FAIL | PASS | 1p,1f / 2 (main)
-base64_decode_short_input_harness            | PART | PART | FAIL | PASS | 1p,1f / 2 (main)
-percent_decode_nul_harness                   | PART | PART | FAIL | PASS | 1p,2f / 2 (main)
-percent_decode_truncated_harness             | PART | PART | FAIL | PASS | 1p,1f / 2 (main)
-utf8_validate_ascii_harness                  | PART | PART | FAIL | FAIL | 1p,1f / 2 (main)
-utf8_validate_overlong_harness               | PART | PART | FAIL | FAIL | 1p,1f / 2 (main)
-utf8_validate_surrogate_harness              | PART | PART | FAIL | FAIL | 1p,1f / 2 (main)
-
-# SV-COMP ReachSafety
-sv_locks_10                                  | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
-sv_locks_11                                  | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
-sv_locks_12                                  | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
-sv_locks_13                                  | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
-sv_locks_14_2                                | PASS | PART | FAIL | FAIL | 0p,1f / 1 (assume)
-sv_locks_15_2                                | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
-sv_locks_5                                   | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
-sv_locks_6                                   | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
-sv_locks_7                                   | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
-sv_locks_8                                   | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
-sv_locks_9                                   | PASS | PART | FAIL | PASS | 0p,1f / 1 (assume)
-sv_loops_iftelse                             | PART | PART | FAIL | PASS | 1p,1f / 2 (main)
-sv_loops_in_de20                             | PASS | PART | FAIL | PASS | 0p,2f / 2 (assume,main)
-sv_loops_in_de31                             | PART | PART | FAIL | PASS | 1p,1f / 2 (main)
-sv_loops_loopv1                              | PART | PART | FAIL | PASS | 1p,1f / 2 (main)
-sv_loops_loopv2                              | PART | PART | FAIL | PASS | 1p,1f / 2 (main)
-sv_loops_loopv3                              | PART | PART | FAIL | PASS | 1p,1f / 2 (main)
-sv_loops_mono1_1_2                           | PASS | PART | FAIL | PASS | 0p,2f / 2 (assume,main)
-sv_loops_mono3_1                             | PASS | PART | FAIL | PASS | 0p,2f / 2 (assume,main)
-sv_loops_mono4_1                             | PASS | PART | FAIL | PASS | 0p,2f / 2 (assume,main)
-sv_loops_mono5_1                             | PASS | PART | FAIL | PASS | 0p,2f / 2 (assume,main)
-sv_loops_mono6_1                             | PASS | PART | FAIL | PASS | 0p,2f / 2 (assume,main)
-sv_loops_nested3_1                           | PASS | PART | FAIL | PASS | 0p,4f / 2 (assume,main)
-sv_rc_avg05_1                                | PART | PART | FAIL | FAIL | 1p,1f / 2 (reach_error)
-sv_rc_max05_1                                | PART | PART | FAIL | PASS | 1p,1f / 2 (reach_error)
-sv_rc_max05_2                                | PART | PART | FAIL | PASS | 1p,1f / 2 (reach_error)
-sv_rc_rangesum05                             | PART | PART | FAIL | FAIL | 1p,1f / 2 (reach_error)
-sv_rc_sep05_1                                | PART | PART | FAIL | PASS | 1p,1f / 2 (reach_error)
-sv_rc_sum                                    | PART | PART | FAIL | FAIL | 1p,1f / 2 (reach_error)
-
-  Ded: 39 pass, 54 partial, 0 warn, 0 fail, 0 timeout
-  Bug:  0 pass, 93 partial, 0 warn, 0 fail, 0 timeout
-  CBM:  0 pass,  0 partial, 0 warn, 93 fail, 0 timeout
-  CBN: 70 pass,  0 partial, 0 warn, 23 fail, 0 timeout
-```
+Per-program v3 detail moved into the combined v3+v5 table under
+*v5 results* below; pointer kept here for reference. Full v3 pipeline
+output in `wt-test/pipeline-portfolio-v3.txt` and
+`wt-test/pipeline-svcomp.txt`.
 
 **Column legend:**
 
@@ -308,7 +202,8 @@ backend verdicts.
 | Token | Meaning |
 |---|---|
 | `OK` | stage succeeded (no errors) |
-| `PASS` | all VCs / properties discharged |
+| `PASS` | all VCs / properties discharged with real deductive proofs |
+| `PASS-?` | all VCs passed, but ≥1 annotated `pass (❗path unreachable)` — vacuously discharged because the path's conditions are contradictory; not a real proof |
 | `PART` | PARTIAL — some VCs discharged, others failed or `unknown` |
 | `FAIL` | verification failed (real verdict, not a stage error) |
 
@@ -323,6 +218,347 @@ backend verdicts.
 The `Detail` column reports per-procedure VC counts under
 `--split-procs`, which runs each procedure independently and rolls
 the verdicts up per-file.
+
+### v5 results: bodyOrContract + path-unreachable surfacing
+
+Latest run on the 86-program subset (8 large files excluded; see
+*Known blocker* below) under `--call-policy bodyOrContract --inline-fuel 100
+--check-level full --split-procs`:
+
+|  | PASS | PASS-? | PARTIAL | FAIL | TIMEOUT |
+|---|---:|---:|---:|---:|---:|
+| Strata deductive | 57 | 18 | 11 | 0 | 0 |
+| Strata bugFinding | 57 | 18 | 11 | 0 | 0 |
+| Strata-CBMC | 0 | 0 | 0 | 86 | 0 |
+
+The 18 PASS-? entries surface what was previously a hidden tooling
+gap (the matrix collapsed `pass (❗path unreachable)` into PASS).
+Splitting by the SV-COMP oracle's expected verdict:
+
+- **Would-be-FAIL (oracle: unsafe — PASS-? hides a real failure):**
+  `sv_locks_14_2`, `sv_locks_15_2`, `sv_loops_mono3_1`,
+  `sv_loops_mono4_1`, `sv_loops_mono5_1`, `sv_loops_mono6_1`. Strata
+  is correctly self-flagging the vacuity, but the underlying program
+  is genuinely unsafe; a sound verdict would be FAIL.
+- **Would-be-PASS (oracle: safe, or no oracle — vacuous proof on a
+  provable program):** `sv_locks_10`, `sv_locks_11`, `sv_locks_12`,
+  `sv_locks_13`, `sv_loops_loopv3`, `sv_loops_mono1_1_2`,
+  `sv_loops_nested3_1`, `array_sum`, `loop_sum`,
+  `HTTPClient_AddRangeHeader_harness`, `skipString_harness`,
+  `skipUTF8_harness`. These should reach a real PASS but Strata's
+  loop-havoc abstraction collapses the path-condition before the
+  assertion is reached.
+
+The remaining 57 PASS entries are real deductive proofs.
+
+**Why these are vacuous (qualitative analysis, 2026-05-30):** every
+PASS-? program has the shape "loop, then assertion." Strata's evaluator
+treats the loop as `loopHasNoInvariants` — havoc the loop-modified
+state, then assume the loop guard is false. The post-loop assertion is
+evaluated against havoc'd state, and the resulting path-condition turns
+out unsatisfiable, triggering `path unreachable`. **An empirical
+fuel-bump experiment (running 12 of the 18 at `--inline-fuel 500`)
+produced zero verdict changes** — `--inline-fuel` controls body-eval
+recursion, not loop unrolling. Even `array_sum` (4-iteration loop)
+remains PASS-? at fuel=500. Full analysis at
+`v5-pass-question-mark-analysis.md`.
+
+**Implication for matrix interpretation:** PASS-? lumps two
+semantically-opposite outcomes:
+- **Would-be-PASS** if loops were handled with concrete unrolling or
+  stronger invariants: 12 cases.
+- **Would-be-FAIL** because the program is genuinely unsafe and Strata
+  is hiding the failure behind a vacuous discharge: 6 cases.
+
+PASS-? at least flags both as not-real-proofs; a future enhancement
+(see analysis) could split them.
+
+**Per-program PASS-? detail.** Each row reports the oracle's expected
+verdict (where one exists), the structural cause of the vacuity, and
+the resulting class:
+
+| Program | Oracle | Loop / mechanism | Class |
+|---|---|---|---|
+| `sv_locks_14_2` | unsafe | 14-lock unlock chain in `while(1)`, ERROR arm; havoc collapses path | would-be-FAIL |
+| `sv_locks_15_2` | unsafe | 15-lock unlock chain | would-be-FAIL |
+| `sv_loops_mono3_1` | unsafe | loop to 1M; `assert y!=0` is false at termination | would-be-FAIL |
+| `sv_loops_mono4_1` | unsafe | loop to 1M; `assert y!=x` false at termination | would-be-FAIL |
+| `sv_loops_mono5_1` | unsafe | loop to 10M; `assert z!=0` false | would-be-FAIL |
+| `sv_loops_mono6_1` | unsafe | loop to 10M; `assert z!=x` false | would-be-FAIL |
+| `sv_locks_10` | safe | 10-lock chain in `while(1)`; havoc loses precision | would-be-PASS |
+| `sv_locks_11` | safe | 11-lock chain | would-be-PASS |
+| `sv_locks_12` | safe | 12-lock chain | would-be-PASS |
+| `sv_locks_13` | safe | 13-lock chain | would-be-PASS |
+| `sv_loops_loopv3` | safe | loop bound 50M; needs invariant | would-be-PASS |
+| `sv_loops_mono1_1_2` | safe | loop bound 100M; needs invariant | would-be-PASS |
+| `sv_loops_nested3_1` | safe | triply-nested loops to 0x0fffffff | would-be-PASS |
+| `array_sum` | n/a | `for (i=0;i<4;i++) sum+=a[i]; assert(sum==10)` — small loop havoc'd | would-be-PASS |
+| `loop_sum` | n/a | `for (i=0;i<5;i++) sum+=i; assert(sum==10)` — small loop havoc'd | would-be-PASS |
+| `HTTPClient_AddRangeHeader_harness` | n/a | inlined callee `convertInt32ToAscii` digit-buffer loop | would-be-PASS |
+| `skipString_harness` | n/a | inlined `skipString` while-loop + `skipUTF8` callee chain | would-be-PASS |
+| `skipUTF8_harness` | n/a | inlined `countHighBits` `while ((n & 0x80U) != 0U)` | would-be-PASS |
+
+`array_sum` (4-iteration loop) and `loop_sum` (5-iteration loop) are
+the most surprising — small concrete loops that should plausibly be
+unrollable. They were verified PASS-? at `--inline-fuel 500` in the
+fuel-bump experiment, confirming the issue is loop havoc abstraction,
+not body-eval recursion fuel.
+
+The 11 PARTIAL entries (`nondet_branch`, `sv_loops_iftelse`,
+`sv_loops_in_de31`, `sv_loops_loopv1`, `sv_loops_loopv2`,
+`sv_rc_avg05_1`, `sv_rc_max05_1`, `sv_rc_max05_2`, `sv_rc_rangesum05`,
+`sv_rc_sep05_1`, `sv_rc_sum`) are unchanged from v4 — body-eval can't
+handle their multi-branch result envs (`nondet_branch` is the
+canonical case; see `MULTIPATH_COMMAND_EVAL.md`) or their assertion
+genuinely fails.
+
+#### v5 per-program detail
+
+All 94 .bpl programs. `Ded` and `Bug` columns are v5 verdicts under
+`--call-policy bodyOrContract --inline-fuel 100 --check-level full
+--split-procs`. `CBN` is the v3 cbmc-native verdict (v5 didn't re-run
+cbmc-native). `CBM` (Strata-CBMC) is omitted because it was uniformly
+FAIL on every row in both runs — see "Why CBM is FAIL on every row"
+below. `—` means the program was excluded from v5 (8 hangs + the
+always-excluded picohttpparser). For per-program v3 (contract-policy)
+verdicts and the historical PARTIAL VC counts, see the v3→v5 diff
+table below.
+
+```
+Program                                      |  Ded |  Bug |  CBN
+-------------------------------------------------------------------
+# Original benchmark
+abs_func                                     |   PASS |   PASS |   FAIL
+array_sum                                    | PASS-? | PASS-? |   PASS
+aws_array_eq                                 |   PASS |   PASS |   PASS
+aws_byte_cursor_advance                      |   PASS |   PASS |   PASS
+aws_ring_buffer                              |   PASS |   PASS |   PASS
+loop_sum                                     | PASS-? | PASS-? |   PASS
+max_func                                     |   PASS |   PASS |   PASS
+nondet_branch                                |   PART |   PART |   FAIL
+pointer_arith                                |   PASS |   PASS |   FAIL
+simple_add                                   |   PASS |   PASS |   PASS
+simple_assert                                |   PASS |   PASS |   PASS
+swap                                         |   PASS |   PASS |   PASS
+
+# Simplified AWS C Common
+aws_add_size_checked                         |   PASS |   PASS |   PASS
+aws_array_eq_stripped                        |   PASS |   PASS |      —
+aws_array_list_get                           |   PASS |   PASS |   PASS
+aws_array_list_set                           |   PASS |   PASS |   PASS
+aws_byte_buf_append                          |   PASS |   PASS |   PASS
+aws_byte_buf_init                            |   PASS |   PASS |   PASS
+aws_byte_cursor_eq                           |   PASS |   PASS |   PASS
+aws_hash_string                              |   PASS |   PASS |   PASS
+aws_is_power_of_two                          |   PASS |   PASS |   PASS
+aws_linked_list_push                         |   PASS |   PASS |   PASS
+aws_min_max                                  |   PASS |   PASS |   PASS
+aws_mul_size_checked                         |   PASS |   PASS |   PASS
+aws_round_up_to_power_of_two                 |   PASS |   PASS |   PASS
+aws_string_eq                                |   PASS |   PASS |   PASS
+
+# aws-c-common verbatim
+aws_add_size_checked_harness                 |   PASS |   PASS |   PASS
+aws_add_size_saturating_harness              |   PASS |   PASS |   PASS
+aws_is_power_of_two_harness                  |   PASS |   PASS |   PASS
+aws_mul_size_checked_harness                 |   PASS |   PASS |   PASS
+aws_mul_size_saturating_harness              |   PASS |   PASS |   PASS
+aws_round_up_to_power_of_two_harness         |   PASS |   PASS |   PASS
+
+# FreeRTOS coreJSON verbatim
+JSON_Iterate_harness                         |      — |      — |   FAIL
+JSON_SearchConst_harness                     |      — |      — |   FAIL
+JSON_Validate_harness                        |      — |      — |   PASS
+skipAnyScalar_harness                        |      — |      — |   PASS
+skipCollection_harness                       |      — |      — |   FAIL
+skipDigits_harness                           |   PASS |   PASS |   PASS
+skipEscape_harness                           |   PASS |   PASS |   FAIL
+skipObjectScalars_harness                    |      — |      — |   FAIL
+skipScalars_harness                          |      — |      — |   FAIL
+skipSpace_harness                            |   PASS |   PASS |   PASS
+skipString_harness                           | PASS-? | PASS-? |   PASS
+skipUTF8_harness                             | PASS-? | PASS-? |   PASS
+
+# FreeRTOS coreMQTT/coreHTTP/coreSNTP verbatim
+HTTPClient_AddHeader_harness                 |   PASS |   PASS |   FAIL
+HTTPClient_AddRangeHeader_harness            | PASS-? | PASS-? |   FAIL
+HTTPClient_InitializeRequestHeaders_harness  |   PASS |   PASS |   FAIL
+HTTPClient_ReadHeader_harness                |   PASS |   PASS |   FAIL
+HTTPClient_strerror_harness                  |   PASS |   PASS |   PASS
+MQTT_GetPacketId_harness                     |   PASS |   PASS |   PASS
+MQTT_Init_harness                            |   PASS |   PASS |   PASS
+MQTT_Ping_harness                            |   PASS |   PASS |   FAIL
+Sntp_DeserializeResponse_harness             |   PASS |   PASS |   PASS
+Sntp_SerializeRequest_harness                |   PASS |   PASS |   PASS
+
+# Standalone parsers
+cjson_cJSON_IsArray_harness                  |   PASS |   PASS |   PASS
+cjson_cJSON_Parse_harness                    |      — |      — |   FAIL
+jsmn_jsmn_parse_harness                      |   PASS |   PASS |   FAIL
+# picohttpparser_phr_parse_request_harness  excluded — cbmc-native OOMs (>32 GB) on the SAT instance.
+
+# RFC reference impls
+base64_decode_normal_harness                 |   PASS |   PASS |   PASS
+base64_decode_padding_only_harness           |   PASS |   PASS |   PASS
+base64_decode_short_input_harness            |   PASS |   PASS |   PASS
+percent_decode_nul_harness                   |   PASS |   PASS |   PASS
+percent_decode_truncated_harness             |   PASS |   PASS |   PASS
+utf8_validate_ascii_harness                  |   PASS |   PASS |   FAIL
+utf8_validate_overlong_harness               |   PASS |   PASS |   FAIL
+utf8_validate_surrogate_harness              |   PASS |   PASS |   FAIL
+
+# SV-COMP ReachSafety
+sv_locks_10                                  | PASS-? | PASS-? |   PASS
+sv_locks_11                                  | PASS-? | PASS-? |   PASS
+sv_locks_12                                  | PASS-? | PASS-? |   PASS
+sv_locks_13                                  | PASS-? | PASS-? |   PASS
+sv_locks_14_2                                | PASS-? | PASS-? |   FAIL
+sv_locks_15_2                                | PASS-? | PASS-? |   PASS
+sv_locks_5                                   |   PASS |   PASS |   PASS
+sv_locks_6                                   |   PASS |   PASS |   PASS
+sv_locks_7                                   |   PASS |   PASS |   PASS
+sv_locks_8                                   |   PASS |   PASS |   PASS
+sv_locks_9                                   |   PASS |   PASS |   PASS
+sv_loops_iftelse                             |   PART |   PART |   PASS
+sv_loops_in_de20                             |   PASS |   PASS |   PASS
+sv_loops_in_de31                             |   PART |   PART |   PASS
+sv_loops_loopv1                              |   PART |   PART |   PASS
+sv_loops_loopv2                              |   PART |   PART |   PASS
+sv_loops_loopv3                              | PASS-? | PASS-? |   PASS
+sv_loops_mono1_1_2                           | PASS-? | PASS-? |   PASS
+sv_loops_mono3_1                             | PASS-? | PASS-? |   PASS
+sv_loops_mono4_1                             | PASS-? | PASS-? |   PASS
+sv_loops_mono5_1                             | PASS-? | PASS-? |   PASS
+sv_loops_mono6_1                             | PASS-? | PASS-? |   PASS
+sv_loops_nested3_1                           | PASS-? | PASS-? |   PASS
+sv_rc_avg05_1                                |   PART |   PART |   FAIL
+sv_rc_max05_1                                |   PART |   PART |   PASS
+sv_rc_max05_2                                |   PART |   PART |   PASS
+sv_rc_rangesum05                             |   PART |   PART |   FAIL
+sv_rc_sep05_1                                |   PART |   PART |   PASS
+sv_rc_sum                                    |   PART |   PART |   FAIL
+
+  Ded: 57 pass, 18 pass-?, 11 partial (86 verdicts; 8 hangs)
+  Bug: 57 pass, 18 pass-?, 11 partial (matches Ded exactly)
+  CBM:  0 pass — uniform FAIL on all 86 (see below)
+  CBN: 70 pass, 23 fail (v3 only; cbmc-native didn't run in v5)
+```
+
+#### v3 → v5 per-program diff
+
+Only rows where the v3 (contract-baseline) verdict differs from v5 are
+listed. 63 of 94 programs changed; 30 unchanged rows omitted (20 same
+PASS, 10 same PART), plus `aws_array_eq_stripped` v5-only and 8 v5 hangs.
+Group order matches root cause.
+
+| Programs | v3 | v5 | Cause |
+|---|---|---|---|
+| `abs_func`, `aws_array_eq`, `aws_byte_cursor_advance`, `aws_ring_buffer`, `max_func`, `simple_assert`, `swap`, all 13 simplified-AWS, all 6 aws-c-common verbatim, `skipDigits_harness`, `skipSpace_harness`, all 8 RFC programs (36 total) | PART | PASS | **body-eval at call sites** (`dd0c0d7cd`, the v3→v4 lever): callee body is analyzed symbolically, post-call assertions discharge directly |
+| `skipString_harness`, `skipUTF8_harness`, `sv_loops_loopv3` | PART | PASS-? | body-eval discharges, but Strata's loop-havoc abstraction collapses the post-loop path-condition (see *v5 results*) |
+| `array_sum`, `loop_sum`, `HTTPClient_AddRangeHeader_harness`, `sv_locks_10`, `sv_locks_11`, `sv_locks_12`, `sv_locks_13`, `sv_locks_14_2`, `sv_locks_15_2`, `sv_loops_mono1_1_2`, `sv_loops_mono3_1`, `sv_loops_mono4_1`, `sv_loops_mono5_1`, `sv_loops_mono6_1`, `sv_loops_nested3_1` (15 total) | PASS | PASS-? | **PASS-? surfacing**: pipeline now passes `--check-level full` and parses the `pass (❗path unreachable)` annotation. These were already vacuous in v3/v4 — same Strata behavior, just newly visible |
+| `nondet_branch` | PASS | PART | Multi-branch regression: body-eval refuses callees whose body produces multiple result envs; v3's contract-policy was silently passing the resulting unknowns. See `MULTIPATH_COMMAND_EVAL.md` |
+| `aws_array_eq_stripped` | (n/a) | PASS | New variant — v3 wt-test capture predates this `.bpl` |
+| `JSON_Iterate_harness`, `JSON_SearchConst_harness`, `cjson_cJSON_Parse_harness` | PASS | — | v5 hang on ≥20K-line `.bpl` (see *Known blocker*) |
+| `JSON_Validate_harness`, `skipAnyScalar_harness`, `skipCollection_harness`, `skipObjectScalars_harness`, `skipScalars_harness` | PART | — | Same v5 hang |
+
+Net change in deductive verdicts (excluding hangs and stripped):
+- 36 PART → PASS (real verdict gain from body-eval)
+- 3 PART → PASS-? (body-eval discharges but vacuously)
+- 15 PASS → PASS-? (cosmetic — vacuity was already present, now visible)
+- 1 PASS → PART (regression — `nondet_branch`)
+
+**Two distinct Strata-side changes drove these flips:** v3→v4 body-eval
+(`dd0c0d7cd`) is responsible for the 36 PART→PASS gains (and the 3
+PART→PASS-? mixed gains, and the 1 PASS→PART regression on
+`nondet_branch`); v4→v5 PASS-? surfacing is a pipeline-only change
+(uncommitted `run_pipeline.py`) responsible for the 15 PASS→PASS-? and
+3 PART→PASS-? relabels — no Strata code change.
+
+**Why CBM is FAIL on every row.** The cbmc backend's failure here is
+**not a counterexample to the program** — it's a build-time failure
+inside `goto-cc`/cbmc due to bodyless prelude stubs. SMACK emits calls
+to `__VERIFIER_assume`, `assert_.i32`, and similar primitives;
+`coreToGotoFiles*` translates user-defined callees but leaves these
+prelude stubs as bodyless function declarations. CBMC then reports
+`[.no-body.<callee>]` and exits with an error code (`CBMC exit code 6`
+or `-6`). The exit codes are not the `PROPERTY HOLDS / VIOLATION`
+codes (0 / 10) — they're the "missing-body" build error.
+
+This is the residual CBMC blocker described in *What the cbmc=FAIL
+count actually means now* below; until the prelude stubs get synthetic
+bodies, the CBM column will stay FAIL for every program. CBN (cbmc on
+the source `.c`, no Strata) is unaffected.
+
+### Known blocker: pipeline hang on large programs (≥20K lines)
+
+8 programs are excluded from the v5 run because they cause `strata
+verify` to hang under `--check-level full --call-policy
+bodyOrContract --inline-fuel 100`. The symptom is a CPU-bound hang,
+not a stack overflow: strata stays alive, no SIGABRT, no `Stack
+overflow detected. Aborting.` message — it's just stuck.
+
+| Program | Lines |
+|---|---:|
+| `JSON_SearchConst_harness.bpl` | 25,246 |
+| `JSON_Iterate_harness.bpl` | 24,243 |
+| `cjson_cJSON_Parse_harness.bpl` | 23,317 |
+| `JSON_Validate_harness.bpl` | 23,046 |
+| `skipCollection_harness.bpl` | 22,892 |
+| `skipScalars_harness.bpl` | 22,117 |
+| `skipObjectScalars_harness.bpl` | 21,582 |
+| `skipAnyScalar_harness.bpl` | 20,817 |
+
+This is **sce3** in the TCO walker experiment
+(`docs/superpowers/specs/2026-05-29-tco-walker-experiment-design.md`),
+distinct from the two stack-overflow scenarios sce1 (long flat-list
+programs, `programToCST.mapM`-family walkers) and sce2 (deeply-nested
+expressions, `elabExpr` walker) which crash with SIGABRT rather than
+hang.
+
+**Root cause (per phase-bisection):**
+`Program.eval` / `Core.toCoreProofObligationProgram`, at
+`Strata/Languages/Core/Core.lean:142`. The lldb-attach path is
+blocked on macOS by `DevToolsSecurity`, so the bisection used a
+`[phase-start]` log gated on `--profile` to localise within the
+pipeline. The hang reproduces under both `--call-policy contract`
+(no body inlining) and `--call-policy bodyOrContract --inline-fuel
+100` — independent of call-elimination policy and inline-fuel
+budget. Earlier phases (`CallElim`, `TermCheck`, `PrecondElim`,
+`LoopElim`, type-check) all complete in ≤1s; `--check --no-solve`
+produces zero VC files in 60s, confirming the divergence is in
+the transformation pipeline (specifically `symbolicEval`), not in
+SMT. Full report on the `htd/smack-timeout-fix` branch at
+`cbmc-strata-divergence-large-bpl.md`.
+
+**Original conjecture (disconfirmed):** earlier triage in
+`stack-and-hang-conjectures-report.md` proposed Conjecture A — that
+all three scenarios shared a per-obligation left-deep ITE chain at
+`Core.lean:181-182` whose downstream walkers (`extractGo`,
+`stmtToCST`/`blockToCST`, `formatProgram`) descend non-tail-
+recursively. The TCO walker experiment patched two of those walkers
+on a sibling branch (`htd/smack-tco-experiment`); sce3's wall-time
+did not change. The walker-family hypothesis is correct for sce1 and
+sce2 — wrong for sce3, which is a different bug class
+(non-termination or super-linear time inside the symbolic
+interpreter).
+
+**Recommended next step:** file an upstream Strata bug against
+`Program.eval` / `toCoreProofObligationProgram` with the cached
+`.core.st` MWE, the phase-bisection evidence, and the repro command
+`strata verify --check-mode deductive --call-policy contract --check
+<file>` — completes in <1s on small `.core.st`, hangs indefinitely
+on these. With `sudo DevToolsSecurity -enable`, an lldb backtrace
+from inside `Program.eval` would name the specific helper (likely
+`LExpr.subst`, `Lambda.partialEval`, or a similar substitution
+helper). Workaround: continue to exclude the 8 large programs from
+default matrix runs; the new robust timeout in
+`run_pipeline.run_cmd` (commit `9f26fffd7`) makes accidental
+inclusion safe (clean TIMEOUT instead of pipeline hang).
+
+The threshold is fuzzy at the boundary — programs at ~17K can pass or
+hang depending on their exact structure (e.g. `sv_locks_14_2` at
+17,100 lines hung in one earlier run but completed as PASS-? in the
+v5 run).
 
 ### What the cbmc=FAIL count actually means now
 
@@ -374,9 +610,14 @@ deductive=PASS`):
 shows each PASS is annotated `✅ pass (❗path unreachable)` —
 Strata's deductive verifier is correctly self-flagging that the path
 to the assertion was unreachable under bounded CFG fuel, not that
-the property was proven. The matrix's PASS column collapses this
-qualifier; that's a tooling gap (matrix-display issue), not a
-verifier soundness bug.
+the property was proven.
+
+**Tooling gap closed in v5.** The pipeline's `run_pipeline.py` now
+passes `--check-level full` and parses the output for `path
+unreachable` annotations, surfacing those programs as `PASS-?` (see
+*v5 results* and *Verdict legend* above). All 6 candidate probes
+above (plus `sv_loops_mono1_1_2`, `sv_loops_nested3_1`, and
+`sv_loops_loopv3`) now correctly show `PASS-?` in the matrix.
 
 `bugFinding` correctly identifies 6 of 7 unsafe SV-COMP programs as
 PARTIAL with concrete failing VCs.

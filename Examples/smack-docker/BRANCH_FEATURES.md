@@ -770,26 +770,28 @@ Sibling open issue [#1184](https://github.com/strata-org/Strata/issues/1184) (CB
 | 15 | Transitive type-synonym chain not resolved for comparison/arithmetic operators — `<=`, `<`, `>=`, `>`, `+`, `-`, `*`, `div`, `mod` panicked when operands had a synonym-of-`int` type (e.g. `ref := i64 := int`) | [#1148](https://github.com/strata-org/Strata/issues/1148) (closed; tracking) | ✓ `e94635f8a` | — |
 | 16 | Type checker fails on nondet goto with undeclared `$__nondet_N` | [#1162](https://github.com/strata-org/Strata/issues/1162) (open; resolved on `htd/smack` per BoogieToStrata STATUS.md) | ✓ (referenced by translator change in `Tools/BoogieToStrata/`) | — |
 
-### 9.5 Strata `verify` runtime (1, filed but not patched)
+### 9.5 Strata `verify` runtime (2, filed but not patched)
 
 | # | Bug | Filed? | htd/smack | main/main2? |
 |---|---|---|---|---|
 | 17 | Stack overflow / SIGABRT on deeply-nested expressions — `Translate.translateExpr` is `partial def` with no fuel; reproduces at depth ≈ 4100 on `origin/main` HEAD. Manifested as `skipEscape_harness` SIGABRT in the deductive verifier. | drafted as `strata-verify-stack-overflow-deeply-nested-expr.md` (uncommitted, intended for upstream filing) | — | — |
+| 21 | Pipeline hang on large `.bpl` programs (≥20K lines, fuzzy threshold) — `strata verify` becomes CPU-bound for 30+ minutes under `--call-policy bodyOrContract --inline-fuel 100 --check-level full`. Conjecture A (`stack-and-hang-conjectures-report.md`): the per-obligation left-deep ITE chain at `Core.lean:181-182` plus non-TCO walkers (`extractGo`, `stmtToCST`/`blockToCST`) cause stack-depth-driven failure. Same root-cause family as bug 17 and the `programToCST` mapM ticket. | report at `stack-and-hang-conjectures-report.md`; experiment design at `docs/superpowers/specs/2026-05-29-tco-walker-experiment-design.md` (uncommitted) | — | — |
 
 ### 9.6 Pipeline-driver / matrix-display gaps (3 — not Strata bugs)
 
 | # | Issue | Filed? | htd/smack | main/main2? |
 |---|---|---|---|---|
-| 18 | `run_pipeline.py` collapses `path unreachable` PASSes — six SV-COMP unsafe programs initially looked like soundness probes (`unsafe ∧ deductive=PASS`); each is actually `pass (path unreachable)`. Matrix-display gap, not soundness bug. | — | — | — |
+| 18 | `run_pipeline.py` collapses `path unreachable` PASSes — six SV-COMP unsafe programs initially looked like soundness probes (`unsafe ∧ deductive=PASS`); each is actually `pass (path unreachable)`. Matrix-display gap, not soundness bug. | — | **fixed** — `run_pipeline.py` now emits `--check-level full` and surfaces vacuous discharges as `PASS-?` (uncommitted run_pipeline.py changes) | — |
 | 19 | bugFinding partials dominated by `__VERIFIER_assume`-only failures — bugFinding under `bodyOrContract` produces zero verdict improvements (verified on full portfolio: 0/65 contract, 0/64 bodyOrContract). bugFinding's PARTIALs are about unconstrained inputs, not missing ensures. | — | — | — |
 | 20 | Multi-branch body-eval refused as soundness guard — `Command.inlineCallBody` errors when a callee body produces multiple result envs. The single residual portfolio PARTIAL (`nondet_branch`) is this case. Design proposal exists for fork-and-continue (return `List Env`). | — | partial guard in `dd0c0d7cd`; design doc `Examples/smack-docker/MULTIPATH_COMMAND_EVAL.md` | — |
 
 ### Summary stats
 
-- **20 distinct bugs/issues** surfaced (or confirmed) on this branch.
-- **15 fixed** with commits on `htd/smack`.
+- **21 distinct bugs/issues** surfaced (or confirmed) on this branch.
+- **16 fixed** with commits on `htd/smack` (+#18 PASS-? matrix gap fixed via uncommitted `run_pipeline.py` changes).
 - **2 fixed elsewhere** (#1185 fix lives on `htd/fix-eval`; not on `htd/smack` or `main`).
 - **3 not yet patched** (#1184, #1186, draft `strata-verify-stack-overflow`).
+- **1 newly investigated** (#21 large-`.bpl` hang — root cause conjectured in `stack-and-hang-conjectures-report.md`, experiment design ready, no fix landed).
 - **0 fixes have landed on `main` or `main2`** — every CBMC-backend, BoogieToStrata, and Core-transform fix is still `htd/smack`-only.
 
 ### Filed-issue index
