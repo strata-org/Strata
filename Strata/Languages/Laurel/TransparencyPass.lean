@@ -8,6 +8,7 @@ module
 public import Strata.Languages.Laurel.MapStmtExpr
 public import Strata.Languages.Laurel.Laurel
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
+import Strata.DL.Lambda.TypeFactory
 
 /-!
 ## Transparency Pass
@@ -61,18 +62,16 @@ def stripAssertAssume (expr : StmtExprMd) : StmtExprMd :=
     - `proof = true` → use safe selectors (strip `!` suffix)
     - `proof = false` → use unsafe selectors (add `!` suffix) -/
 private def adjustSelectorName (name : Identifier) : Identifier :=
-  -- Only adjust destructor names (contain ".." but are not testers)
-  match name.text.splitOn ".." with
-  | [_, suffix] =>
-    if suffix.startsWith "is" then name  -- tester, leave unchanged
-    else
-      -- Unsafe: add trailing "!" if not already present
-      if name.text.endsWith "!" then name else name.text ++ "!"
-  | _ => name  -- not a destructor name, leave unchanged
+  if Lambda.isTesterName name.text then name
+  else if Lambda.isDestructorName name.text then
+    -- Unsafe: add trailing "!" if not already present
+    if name.text.endsWith Lambda.unsafeDestructorSuffix then name
+    else { text := name.text ++ Lambda.unsafeDestructorSuffix, source := name.source }
+  else name
 
 /-- Rewrite StaticCall callees to their `$asFunction` versions,
     but only for procedures whose names appear in `nonExternalNames`. -/
-private def rewriteCallsToFunctional (asFunctionNames : List String) (expr : StmtExprMd) : StmtExprMd :=
+private def rewriteCallsToFunctional (asFunctionNames : Std.HashSet String) (expr : StmtExprMd) : StmtExprMd :=
   mapStmtExpr (fun e =>
     match e.val with
     | .StaticCall callee args =>
@@ -80,7 +79,7 @@ private def rewriteCallsToFunctional (asFunctionNames : List String) (expr : Stm
         let funcCallee := { callee with text := callee.text ++ "$asFunction", uniqueId := none }
         ⟨.StaticCall funcCallee args, e.source⟩
       else
-        let newName := adjustSelectorName callee.text
+        let newName := adjustSelectorName callee
         ⟨ .StaticCall newName args, e.source⟩
     | .PrimitiveOp operator arguments _ => ⟨ .PrimitiveOp operator arguments true, e.source⟩
     | _ => e) expr
@@ -89,7 +88,7 @@ private def rewriteCallsToFunctional (asFunctionNames : List String) (expr : Stm
     rewrite calls to their `$asFunction` variants. This ensures that calls
     inside quantifiers (e.g. in modifies frame conditions) reference the
     pure functional version and are not treated as imperative by later passes. -/
-private def rewriteQuantifierBodies (nonExternalNames : List String) (expr : StmtExprMd) : StmtExprMd :=
+private def rewriteQuantifierBodies (nonExternalNames : Std.HashSet String) (expr : StmtExprMd) : StmtExprMd :=
   mapStmtExpr (fun e =>
     match e.val with
     | .Quantifier mode param trigger body =>
@@ -100,7 +99,7 @@ private def rewriteQuantifierBodies (nonExternalNames : List String) (expr : Stm
 
 /-- Apply quantifier body rewriting to all postconditions and the implementation
     of a procedure. -/
-private def rewriteQuantifierBodiesInProc (nonExternalNames : List String) (proc : Procedure) : Procedure :=
+private def rewriteQuantifierBodiesInProc (nonExternalNames : Std.HashSet String) (proc : Procedure) : Procedure :=
   let rewrite := rewriteQuantifierBodies nonExternalNames
   match proc.body with
   | .Opaque postconds impl modif =>
@@ -129,7 +128,7 @@ private def mkFreePostcondition (proc : Procedure) : StmtExprMd :=
 /-- Create the function copy of a procedure (suffixed `$asFunction`).
     If the procedure is transparent, include a functional body.
     Otherwise the function is opaque. -/
-private def mkFunctionCopy (asFunctionNames : List String) (proc : Procedure) : Procedure :=
+private def mkFunctionCopy (asFunctionNames : Std.HashSet String) (proc : Procedure) : Procedure :=
   let hasProcedureTwin := asFunctionNames.contains proc.name.text
   let funcName := if hasProcedureTwin then
     { proc.name with text := proc.name.text ++ "$asFunction", uniqueId := none }
@@ -140,16 +139,11 @@ private def mkFunctionCopy (asFunctionNames : List String) (proc : Procedure) : 
     | x => x
   { proc with name := funcName, isFunctional := true, body := body }
 
-/-- Check whether a function copy has a body (i.e. the procedure was transparent). -/
-private def functionHasBody (proc : Procedure) : Bool :=
-  match proc.body with
-  | .Transparent _ => true
-  | _ => false
-
 /-- Append a free postcondition to a procedure's body postconditions.
     For Opaque and Abstract bodies, the free condition is appended to the
     existing postcondition list. For Transparent bodies, the body is promoted
-    to Opaque so the free postcondition can be carried. -/
+    to Opaque so the free postcondition can be carried.
+    This change in opaqueness is fine since the function copy now carries the transparent semantics. -/
 private def addFreePostcondition (proc : Procedure) (freePost : StmtExprMd) : Procedure :=
   match freePost.val with
   | .LiteralBool true => proc  -- trivial, skip
@@ -174,7 +168,7 @@ For each procedure:
 -/
 def transparencyPass (program : Program) : UnorderedCoreWithLaurelTypes :=
   let (toUpdate, _) := program.staticProcedures.partition (fun p => !p.body.isExternal && !p.isFunctional)
-  let toUpdateNames := toUpdate.map (fun p => p.name.text)
+  let toUpdateNames : Std.HashSet String := toUpdate.foldl (fun s p => s.insert p.name.text) {}
   -- $asFunction copies for non-external procedures
   let functions := program.staticProcedures.map (mkFunctionCopy toUpdateNames)
   let coreProcedures := toUpdate.map fun proc =>

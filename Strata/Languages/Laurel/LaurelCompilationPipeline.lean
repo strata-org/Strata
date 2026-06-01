@@ -300,13 +300,11 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
       emit "CoreWithLaurelTypes" "core.st" coreWithLaurelTypes
     let initState : TranslateState := { model := fnModel, overflowChecks := options.overflowChecks }
     let (coreProgramOption, translateState) :=
-      runTranslateM initState (translateLaurelToCore options program coreWithLaurelTypes)
-    -- Because of the duplication between functions and proofs, this translation is liable to create duplicate diagnostics
-    -- User errors should be checked in an earlier phase, and all dumb translation errors are Strata bugs
-    let mut allDiagnostics := translateState.diagnostics.eraseDups
-    if translateState.coreDiagnostics.length > 0 && allDiagnostics.isEmpty then
-      -- The program was suppressed but no diagnostics explain why — report the core diagnostics
-      -- that have a known source location (those without one are not actionable for the user).
+      runTranslateM initState (translateLaurelToCore options coreWithLaurelTypes)
+    -- Because of the duplication between functions and procedures, this translation is liable to create duplicate diagnostics
+    let mut allDiagnostics: List DiagnosticModel := passDiags ++ translateState.diagnostics.eraseDups;
+
+    if !translateState.coreDiagnostics.isEmpty && allDiagnostics.isEmpty then
       allDiagnostics := allDiagnostics ++ translateState.coreDiagnostics
 
     if coreProgramOption.isSome then

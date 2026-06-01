@@ -21,29 +21,23 @@ private def runSolverM (act : SolverM α) : IO α := do
   let (a, _) ← act.run solver
   return a
 
--- termToSMTString throws on Term.none instead of panicking.
+-- termToSMTString succeeds on Term.none producing valid SMT-LIB.
 /--
-info: termToSMTString correctly threw: Solver.termToSMTString failed: don't know how to translate none and some
+info: termToSMTString Term.none: (as none (Option Bool))
 -/
 #guard_msgs in
 #eval do
-  try
-    let _ ← runSolverM (termToSMTString (Term.none .bool))
-    IO.println "ERROR: termToSMTString did not throw"
-  catch e =>
-    IO.println s!"termToSMTString correctly threw: {e}"
+  let s ← runSolverM (termToSMTString (Term.none .bool))
+  IO.println s!"termToSMTString Term.none: {s}"
 
--- termToSMTString throws on Term.some instead of panicking.
+-- termToSMTString succeeds on Term.some producing valid SMT-LIB.
 /--
-info: termToSMTString correctly threw: Solver.termToSMTString failed: don't know how to translate none and some
+info: termToSMTString Term.some: (some true)
 -/
 #guard_msgs in
 #eval do
-  try
-    let _ ← runSolverM (termToSMTString (Term.some (Term.prim (.bool true))))
-    IO.println "ERROR: termToSMTString did not throw"
-  catch e =>
-    IO.println s!"termToSMTString correctly threw: {e}"
+  let s ← runSolverM (termToSMTString (Term.some (Term.prim (.bool true))))
+  IO.println s!"termToSMTString Term.some: {s}"
 
 -- typeToSMTString throws on TermType.trigger instead of panicking.
 /--

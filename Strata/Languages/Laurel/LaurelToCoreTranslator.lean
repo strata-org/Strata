@@ -76,9 +76,12 @@ structure TranslateState where
 def emitDiagnostic (d : DiagnosticModel) : TranslateM Unit :=
   modify fun s => { s with diagnostics := s.diagnostics ++ [d] }
 
+/-- Emit a core diagnostic that flags the Core program as invalid. -/
+def emitCoreDiagnostic (d : DiagnosticModel) : TranslateM Unit :=
+  modify fun s => { s with coreDiagnostics := s.coreDiagnostics ++ [d] }
+
 private def invalidCoreType (source : Option FileRange) (reason : String) : TranslateM LMonoTy := do
-  modify fun s => { s with coreDiagnostics := s.coreDiagnostics ++
-    [diagnosticFromSource source reason DiagnosticType.StrataBug] }
+  emitCoreDiagnostic (diagnosticFromSource source reason DiagnosticType.StrataBug)
   return .tcons s!"LaurelResolutionErrorPlaceholder" []
 
 /-
@@ -102,9 +105,7 @@ def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
     | some (.datatypeDefinition dt) => return .tcons dt.name.text []
     | some (.datatypeConstructor typeName _) => return .tcons typeName.text []
     | _ => do -- resolution should have already emitted a diagnostic
-      modify fun s => { s with coreDiagnostics := s.coreDiagnostics ++
-        [diagnosticFromSource ty.source s!"UserDefined type could not be resolved to a composite or datatype" DiagnosticType.StrataBug]
-      }
+      emitCoreDiagnostic (diagnosticFromSource ty.source s!"UserDefined type could not be resolved to a composite or datatype" DiagnosticType.StrataBug)
       return .tcons "Composite" []
   | .TCore s => return .tcons s []
   | .TReal => return LMonoTy.real
@@ -133,7 +134,7 @@ private def freshId : TranslateM Nat := do
 /-- Throw a hard diagnostic error, aborting the current translation -/
 def throwExprDiagnostic (d : DiagnosticModel): TranslateM Core.Expression.Expr := do
   emitDiagnostic d
-  modify fun s => { s with coreDiagnostics := s.coreDiagnostics ++ [d] }
+  emitCoreDiagnostic d
   return default
 
 /--
@@ -351,7 +352,7 @@ private def exprAsUnusedInit (expr : StmtExprMd) (md : Imperative.MetaData Core.
 
 def throwStmtDiagnostic (d : DiagnosticModel): TranslateM (List Core.Statement) := do
   emitDiagnostic d
-  modify fun s => { s with coreDiagnostics := s.coreDiagnostics ++ [d] }
+  emitCoreDiagnostic d
   return []
 
 /--
@@ -499,8 +500,8 @@ def translateStmt (stmt : StmtExprMd)
       | none =>
           return [.exit "$body" md]
       | some _ =>
-          let d := md.toDiagnostic "Return statement with value should have been eliminated by EliminateValuesInReturns pass" DiagnosticType.StrataBug
-          modify fun s => { s with coreDiagnostics := s.coreDiagnostics ++ [d] }
+          let d := md.toDiagnostic "Return statement with value should have been eliminated by EliminateValueReturns pass" DiagnosticType.StrataBug
+          emitCoreDiagnostic d
           return [.exit "$body" md]
   | .While cond invariants decreasesExpr body =>
       let condExpr ← translateExpr cond
@@ -582,7 +583,7 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
   let postconditions : ListMap Core.CoreLabel Core.Procedure.Check ←
     match proc.body with
     | .Opaque postconds _ _ | .Abstract postconds =>
-        translateChecks postconds s!"postcondition{(bodyStmts.getD []).length}" bodyStmts.isNone
+        translateChecks postconds s!"postcondition" bodyStmts.isNone
           (defaultSummary := "postcondition")
     | _ => pure []
 
@@ -733,7 +734,7 @@ abbrev TranslateResult := (Option Core.Program) × (List DiagnosticModel)
 Translate a `CoreWithLaurelTypes` program to a `Core.Program`.
 The `program` parameter is the lowered Laurel program, used for type definitions.
 -/
-def translateLaurelToCore (options: LaurelTranslateOptions) (program : Program) (ordered : CoreWithLaurelTypes): TranslateM Core.Program := do
+def translateLaurelToCore (options: LaurelTranslateOptions) (ordered : CoreWithLaurelTypes): TranslateM Core.Program := do
 
   let coreDecls ← ordered.decls.flatMapM fun
     | .funcs funcs isRecursive => do
@@ -766,15 +767,6 @@ def translateLaurelToCore (options: LaurelTranslateOptions) (program : Program) 
         output := coreTy
         body := body
       } mdWithUnknownLoc]
-
-
-  -- Emit diagnostics for composite types with instance procedures.
-  for td in program.types do
-    if let .Composite ct := td then
-      for proc in ct.instanceProcedures do
-        emitDiagnostic $ diagnosticFromSource proc.name.source
-          s!"Instance procedure '{proc.name.text}' on composite type '{ct.name.text}' is not yet supported"
-          DiagnosticType.NotYetImplemented
 
   pure { decls := coreDecls }
 
