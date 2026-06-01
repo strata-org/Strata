@@ -724,7 +724,7 @@ private protected def ArgF.fromIon {α} [FromIon α] (v : Ion SymbolId) : FromIo
       | throw s!"Arg num given {repr sexp}."
     pure <| .num ann x
   | "decimal" =>
-    let ⟨p⟩ ← .checkArgCount "num" sexp 3
+    let ⟨p⟩ ← .checkArgCount "decimal" sexp 3
     let ann ← fromIon sexp[1]
     let some d := sexp[2].asDecimal?
       | throw "decimal arg expects a decimal number."
