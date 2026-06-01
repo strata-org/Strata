@@ -11,7 +11,7 @@ set -o pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TESTS_DIR="$SCRIPT_DIR/tests"
 EXPECTED="$TESTS_DIR/cbmc_expected.txt"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 DIALECT="$PROJECT_ROOT/Tools/Python/dialects/Python.dialect.st.ion"
 PYTHON=${PYTHON:-python3}
 

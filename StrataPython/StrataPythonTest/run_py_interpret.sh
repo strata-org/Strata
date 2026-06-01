@@ -21,7 +21,7 @@ set -o pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TESTS_DIR="$SCRIPT_DIR/tests"
 EXPECTED_DIR="$SCRIPT_DIR/expected_interpret"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 passed=0
 errors=0
@@ -78,7 +78,7 @@ for test_file in "$TESTS_DIR"/test_*.py; do
     fi
 
     # Run interpreter
-    rel_ion="StrataTest/Languages/Python/tests/${base_name}.python.st.ion"
+    rel_ion="StrataPython/StrataPythonTest/tests/${base_name}.python.st.ion"
     output=$(cd "$PROJECT_ROOT" && ./StrataCLI/.lake/build/bin/strata pyInterpret $fuel $keepAllFiles \
         "$rel_ion" 2>&1)
     exit_code=$?

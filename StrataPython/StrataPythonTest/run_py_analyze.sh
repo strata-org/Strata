@@ -37,7 +37,7 @@ done
 command="pyAnalyzeLaurel"
 expected_dir="expected_laurel"
 
-(cd ../../.. && ./StrataCLI/.lake/build/bin/strata --help > /dev/null)
+(cd ../.. && ./StrataCLI/.lake/build/bin/strata --help > /dev/null)
 
 pending_total=0
 pending_error=0
@@ -58,13 +58,13 @@ for test_file in tests/test_*.py; do
         expected_file="${expected_dir}/${base_name}.expected"
 
         if [ -f "$expected_file" ]; then
-            (cd ../../../Tools/Python && python3 -m strata.gen py_to_strata --dialect "dialects/Python.dialect.st.ion" "../../StrataTest/Languages/Python/$test_file" "../../StrataTest/Languages/Python/$ion_file")
+            (cd ../../Tools/Python && python3 -m strata.gen py_to_strata --dialect "dialects/Python.dialect.st.ion" "../../StrataPython/StrataPythonTest/$test_file" "../../StrataPython/StrataPythonTest/$ion_file")
 
             # Check for per-file strata arguments (e.g. # strata-args: --check-mode bugFinding)
             extra_args=$(grep '^# strata-args:' "$test_file" | sed 's/^# strata-args://' | head -1)
             vc_flag=""
             [ -n "$vc_directory" ] && vc_flag="--vc-directory $vc_directory"
-            output=$(cd ../../.. && ./StrataCLI/.lake/build/bin/strata $command $extra_args $vc_flag "StrataTest/Languages/Python/${ion_file}")
+            output=$(cd ../.. && ./StrataCLI/.lake/build/bin/strata $command $extra_args $vc_flag "StrataPython/StrataPythonTest/${ion_file}")
 
             if [ $update -eq 1 ]; then
                 echo "$output" > "$expected_file"
@@ -79,7 +79,7 @@ for test_file in tests/test_*.py; do
 
             # Check user_errors.txt if a .user_errors.expected file exists
             user_errors_expected="${expected_dir}/${base_name}.user_errors.expected"
-            user_errors_file="../../../user_errors.txt"
+            user_errors_file="../../user_errors.txt"
             if [ $update -eq 1 ] && [ -f "$user_errors_file" ]; then
                 cp "$user_errors_file" "$user_errors_expected"
                 echo "Updated: $user_errors_expected"
@@ -110,7 +110,7 @@ if [ -n "$metrics_test_file" ] && [ -z "$filter" ]; then
     metrics_out=$(mktemp)
     # Ion file should already exist from the loop above
     if [ -f "$metrics_ion" ]; then
-        (cd ../../.. && ./StrataCLI/.lake/build/bin/strata $command --metrics "$metrics_out" "StrataTest/Languages/Python/${metrics_ion}" 2>/dev/null) || true
+        (cd ../.. && ./StrataCLI/.lake/build/bin/strata $command --metrics "$metrics_out" "StrataPython/StrataPythonTest/${metrics_ion}" 2>/dev/null) || true
         if [ ! -s "$metrics_out" ]; then
             echo "ERROR: --metrics file is empty for $metrics_base"
             failed=1
@@ -150,20 +150,20 @@ if [ $pending -eq 1 ]; then
         pending_total=$((pending_total + 1))
         ion_file="tests/pending/${base_name}.python.st.ion"
 
-        parse_output=$(cd ../../../Tools/Python && python3 -m strata.gen py_to_strata --dialect "dialects/Python.dialect.st.ion" "../../StrataTest/Languages/Python/$test_file" "../../StrataTest/Languages/Python/$ion_file" 2>&1)
+        parse_output=$(cd ../../Tools/Python && python3 -m strata.gen py_to_strata --dialect "dialects/Python.dialect.st.ion" "../../StrataPython/StrataPythonTest/$test_file" "../../StrataPython/StrataPythonTest/$ion_file" 2>&1)
         parse_exit=$?
 
         if [ $parse_exit -ne 0 ]; then
             echo "Pending (parse error):    $base_name"
             pending_error=$((pending_error + 1))
-            rm -f "../../../user_errors.txt"
+            rm -f "../../user_errors.txt"
             continue
         fi
 
         extra_args=$(grep '^# strata-args:' "$test_file" | sed 's/^# strata-args://' | head -1)
         vc_flag=""
         [ -n "$vc_directory" ] && vc_flag="--vc-directory $vc_directory"
-        output=$(cd ../../.. && timeout 20 ./StrataCLI/.lake/build/bin/strata $command $extra_args $vc_flag "StrataTest/Languages/Python/${ion_file}" 2>&1)
+        output=$(cd ../.. && timeout 20 ./StrataCLI/.lake/build/bin/strata $command $extra_args $vc_flag "StrataPython/StrataPythonTest/${ion_file}" 2>&1)
         exit_code=$?
 
         if [ $exit_code -ne 0 ] || echo "$output" | grep -q "error\|Error\|ERROR\|panic\|PANIC"; then
@@ -179,7 +179,7 @@ if [ $pending -eq 1 ]; then
             echo "Pending (pass):           $base_name"
             pending_pass=$((pending_pass + 1))
         fi
-        rm -f "../../../user_errors.txt"
+        rm -f "../../user_errors.txt"
     done
 
     if [ $pending_total -gt 0 ]; then

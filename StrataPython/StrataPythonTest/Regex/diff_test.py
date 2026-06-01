@@ -827,9 +827,9 @@ def run_python(regex: str, string: str, mode: str) -> str:
 # ── Strata oracle ──────────────────────────────────────────────────────────────
 
 # Path to the project root, inferred from this script's location.
-# Script is at StrataTest/Languages/Python/Regex/diff_test.py, so root is 4 dirs up.
+# Script is at StrataPython/StrataPythonTest/Regex/diff_test.py, so root is 3 dirs up.
 _SCRIPT_DIR   = os.path.dirname(os.path.abspath(__file__))
-_PROJECT_ROOT = os.path.abspath(os.path.join(_SCRIPT_DIR, "..", "..", "..", ".."))
+_PROJECT_ROOT = os.path.abspath(os.path.join(_SCRIPT_DIR, "..", "..", ".."))
 
 
 def run_strata(cases: list[tuple[str, str, str]], lake_exe: str,

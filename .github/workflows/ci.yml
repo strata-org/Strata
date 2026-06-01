@@ -48,6 +48,7 @@ jobs:
           path: |
             .lake
             StrataCLI/.lake
+            StrataPython/.lake
       - name: Download ion-java jar for Java codegen test
         run: wget -q -O StrataTestExtra/Languages/Java/testdata/ion-java-1.11.11.jar https://github.com/amazon-ion/ion-java/releases/download/v1.11.11/ion-java-1.11.11.jar
       - name: Build StrataDDM
@@ -62,11 +63,17 @@ jobs:
           use-github-cache: false
           test: false
       - name: Run tests (excluding Python)
-        run: lake test -- --exclude Languages.Python
+        run: lake test
       - name: Verify generated editor syntax files are up to date
         run: |
           lake env lean --run editors/GenSyntax.lean all
           git diff --exit-code editors/vscode/syntaxes/ editors/emacs/
+      - name: Build StrataPython
+        uses: leanprover/lean-action@v1
+        with:
+          lake-package-directory: StrataPython
+          build-args: StrataPython StrataPythonTest
+          use-github-cache: false
       - name: Build StrataCLI
         uses: leanprover/lean-action@v1
         with:
@@ -78,6 +85,7 @@ jobs:
           path: |
             .lake
             StrataCLI/.lake
+            StrataPython/.lake
       - name: Verify Java testdata is up to date
         run: |
           StrataTestExtra/Languages/Java/regenerate-testdata.sh
@@ -105,19 +113,19 @@ jobs:
         run: pip install .
         working-directory: Tools/Python
       - name: Run pyInterpret golden-file tests
-        working-directory: StrataTest/Languages/Python
+        working-directory: StrataPython/StrataPythonTest
         shell: bash
         run: ./run_py_interpret.sh
       - name: Run pyAnalyze SARIF tests
-        working-directory: StrataTest/Languages/Python
+        working-directory: StrataPython/StrataPythonTest
         shell: bash
         run: python run_py_analyze_sarif.py --laurel
       - name: Run pyAnalyze golden-file tests
-        working-directory: StrataTest/Languages/Python
+        working-directory: StrataPython/StrataPythonTest
         shell: bash
         run: ./run_py_analyze.sh
       - name: Run regex differential tests
-        working-directory: StrataTest/Languages/Python/Regex
+        working-directory: StrataPython/StrataPythonTest/Regex
         run: python diff_test.py
 
   check_pending_python:
@@ -143,6 +151,7 @@ jobs:
         path: |
           .lake
           StrataCLI/.lake
+          StrataPython/.lake
         fail-on-cache-miss: "true"
         use-restore-keys: "false"
     - name: Install Lean
@@ -155,7 +164,7 @@ jobs:
       with:
         install-to: system
     - name: Check pending tests for newly passing
-      working-directory: StrataTest/Languages/Python
+      working-directory: StrataPython/StrataPythonTest
       shell: bash
       run: ./run_py_analyze.sh --check-pending
 
@@ -254,6 +263,7 @@ jobs:
         path: |
           .lake
           StrataCLI/.lake
+          StrataPython/.lake
         fail-on-cache-miss: "true"
         use-restore-keys: "false"
     - name: Install Lean (for lake env)
@@ -279,7 +289,8 @@ jobs:
               sudo cp z3-4.13.4-x64-glibc-2.35/bin/z3 /usr/local/bin/
             fi
     - name: Run PySpec and dispatch tests
-      run: PYTHON=python lake test -- Languages.Python
+      run: PYTHON=python lake test
+      working-directory: StrataPython
     - name: Run test script
       run: FAIL_FAST=1 ./scripts/run_cpython_tests.sh ${{ matrix.python_version }}
       working-directory: Tools/Python

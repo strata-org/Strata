@@ -61,8 +61,8 @@ Translate a Python source file to a Strata Ion program file:
 cd Tools/Python
 python -m strata.gen py_to_strata \
    --dialect dialects/Python.dialect.st.ion \
-   ../../StrataTest/Languages/Python/test.py \
-   ../../StrataTest/Languages/Python/test.python.st.ion
+   ../../StrataPython/StrataPythonTest/test.py \
+   ../../StrataPython/StrataPythonTest/test.python.st.ion
 ```
 
 The output `.python.st.ion` file contains the Python AST in Strata's Ion

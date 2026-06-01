@@ -3,7 +3,7 @@
 
 Runs pyAnalyze --sarif (or pyAnalyzeLaurel --sarif with --laurel) on selected
 test files and validates the SARIF output.
-Run from StrataTest/Languages/Python/ (same as run_py_analyze.sh).
+Run from StrataPython/StrataPythonTest/ (same as run_py_analyze.sh).
 """
 
 import argparse
@@ -13,7 +13,7 @@ from pathlib import Path
 
 from validate_sarif import validate
 
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 TEST_DIR = Path(__file__).resolve().parent
 TEST_FILES = sorted(
     f"tests/{p.name}" for p in (Path(__file__).resolve().parent / "tests").glob("test_*.py")
@@ -81,7 +81,7 @@ def run(test_file: str, *, laurel: bool) -> bool:
         print(f"Skipping: {base_name}")
         return True
 
-    ion_rel = f"StrataTest/Languages/Python/tests/{base_name}.python.st.ion"
+    ion_rel = f"StrataPython/StrataPythonTest/tests/{base_name}.python.st.ion"
     ion_abs = REPO_ROOT / ion_rel
     sarif_abs = REPO_ROOT / f"{ion_rel}.sarif"
 
