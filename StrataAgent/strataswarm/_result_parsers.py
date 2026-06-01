@@ -26,6 +26,9 @@ class ResultParser(ABC, Generic[T]):
         return {}
 
 
+_PRIMITIVE_TYPES = (bool, int, float, str)
+
+
 @dataclass
 class JsonSchemaParser(ResultParser[T]):
     output_type: type[T]
@@ -34,8 +37,24 @@ class JsonSchemaParser(ResultParser[T]):
     def name(self) -> str:
         return "json_schema"
 
+    @property
+    def _is_primitive(self) -> bool:
+        return self.output_type in _PRIMITIVE_TYPES
+
     def parse(self, raw_result: str | None, structured_output: Any | None) -> T | None:
         adapter = TypeAdapter(self.output_type)
+        # For primitives, unwrap from {"value": ...} wrapper
+        if self._is_primitive:
+            if structured_output is not None and isinstance(structured_output, dict):
+                structured_output = structured_output.get("value")
+            elif raw_result:
+                try:
+                    import json
+                    wrapped = json.loads(raw_result)
+                    if isinstance(wrapped, dict) and "value" in wrapped:
+                        return adapter.validate_python(wrapped["value"])
+                except Exception:
+                    pass
         if structured_output is not None:
             return adapter.validate_python(structured_output)
         if raw_result:
@@ -47,7 +66,15 @@ class JsonSchemaParser(ResultParser[T]):
 
     def get_output_format(self) -> dict[str, Any]:
         adapter = TypeAdapter(self.output_type)
-        return {"type": "json_schema", "schema": adapter.json_schema()}
+        schema = adapter.json_schema()
+        # Primitives need wrapping in an object for the API
+        if self._is_primitive:
+            schema = {
+                "type": "object",
+                "properties": {"value": schema},
+                "required": ["value"],
+            }
+        return {"type": "json_schema", "schema": schema}
 
     def _params(self) -> dict[str, Any]:
         return {"output_type": self.output_type.__name__}

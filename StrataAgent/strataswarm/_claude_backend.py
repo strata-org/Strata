@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -42,6 +43,8 @@ class ClaudeBackend(AgentBackend):
         self._turn_count: int = 0
         self._session_id: str | None = None
         self._config: BackendConfig | None = None
+        self._messages: list[BackendMessage] = []
+        self._model_name: str | None = None
 
     def _estimate_cost(self) -> float:
         # Opus pricing: $15/M input, $75/M output, $1.5/M cache read
@@ -64,7 +67,8 @@ class ClaudeBackend(AgentBackend):
         }
         if config.max_turns:
             opts_kwargs["max_turns"] = config.max_turns
-        if config.max_budget_usd:
+        # Only pass budget if explicitly set — None means unlimited
+        if config.max_budget_usd is not None and config.max_budget_usd > 0:
             opts_kwargs["max_budget_usd"] = config.max_budget_usd
         if config.model:
             opts_kwargs["model"] = config.model
@@ -101,16 +105,77 @@ class ClaudeBackend(AgentBackend):
         except Exception:
             return False
 
+    async def get_message_history(self) -> list[BackendMessage] | None:
+        """Retrieve message history from local JSONL session files.
+
+        Claude stores session transcripts at:
+        ~/.claude/projects/{encoded_cwd}/{session_id}.jsonl
+
+        Returns parsed messages or None if unavailable.
+        """
+        if not self._session_id or not self._config:
+            return None
+
+        import json
+        from pathlib import Path
+
+        cwd = self._config.cwd or os.getcwd()
+        encoded_cwd = cwd.replace("/", "-")
+        history_file = Path.home() / ".claude" / "projects" / encoded_cwd / f"{self._session_id}.jsonl"
+
+        if not history_file.exists():
+            return None
+
+        messages: list[BackendMessage] = []
+        try:
+            with open(history_file, "r", encoding="utf-8") as f:
+                for line in f:
+                    if not line.strip():
+                        continue
+                    event = json.loads(line)
+                    ev_type = event.get("type")
+
+                    if ev_type == "user":
+                        msg = event.get("message", {})
+                        content = msg.get("content", "")
+                        if isinstance(content, str):
+                            messages.append(BackendMessage(type="text", content=content))
+
+                    elif ev_type == "assistant":
+                        msg = event.get("message", {})
+                        for block in msg.get("content", []):
+                            block_type = block.get("type")
+                            if block_type == "text":
+                                messages.append(BackendMessage(type="text", content=block.get("text", "")))
+                            elif block_type == "tool_use":
+                                messages.append(BackendMessage(
+                                    type="tool_use",
+                                    content=f"{block.get('name', '')}({block.get('input', '')})",
+                                ))
+        except (json.JSONDecodeError, OSError):
+            return None
+
+        return messages if messages else None
+
     async def send_query(self, prompt: str) -> None:
         assert self._client is not None
         await self._client.query(prompt)
 
     async def receive_messages(self) -> AsyncIterator[BackendMessage]:
+        import random
+        async for msg in self._receive_messages_inner():
+            self._messages.append(msg)
+            await asyncio.sleep(random.uniform(0.02, 0.15))
+            yield msg
+
+    async def _receive_messages_inner(self) -> AsyncIterator[BackendMessage]:
         assert self._client is not None
         async for message in self._client.receive_response():
             if isinstance(message, AssistantMessage):
                 if message.session_id:
                     self._session_id = message.session_id
+                if message.model and not self._model_name:
+                    self._model_name = message.model
                 for block in message.content:
                     if isinstance(block, TextBlock):
                         yield BackendMessage(type="text", content=block.text)
@@ -197,10 +262,13 @@ class ClaudeBackend(AgentBackend):
         except Exception:
             return None
 
+    @property
+    def supports_compaction(self) -> bool:
+        return True
+
     async def compact(self) -> None:
         if self._client:
             await self._client.query("/compact")
-            # Consume the compaction response
             async for _ in self._client.receive_response():
                 pass
 
@@ -208,3 +276,4 @@ class ClaudeBackend(AgentBackend):
         if self._client:
             await self._client.disconnect()
             self._client = None
+

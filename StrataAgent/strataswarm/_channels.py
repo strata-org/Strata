@@ -17,8 +17,24 @@ class Channel:
         self.name = name
         self._queue: asyncio.Queue[ChannelMessage] = asyncio.Queue(maxsize)
         self._subscribers: list[asyncio.Queue[ChannelMessage]] = []
+        self._locked: bool = False
+        self._queue_during_lock: list[ChannelMessage] = []
+
+    def lock(self) -> None:
+        self._locked = True
+
+    def unlock(self) -> None:
+        self._locked = False
+        for msg in self._queue_during_lock:
+            self._queue.put_nowait(msg)
+            for sub in self._subscribers:
+                sub.put_nowait(msg)
+        self._queue_during_lock.clear()
 
     async def send(self, msg: ChannelMessage) -> None:
+        if self._locked:
+            self._queue_during_lock.append(msg)
+            return
         await self._queue.put(msg)
         for sub in self._subscribers:
             await sub.put(msg)

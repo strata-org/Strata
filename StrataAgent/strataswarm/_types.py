@@ -25,10 +25,28 @@ class AgentStatus(str, Enum):
 
 
 @dataclass
+class ShardConfig:
+    """Configuration for sharded (replicated) agents."""
+
+    replicas: int = 1
+    routing: str = "round_robin"  # "hash" | "round_robin" | "least_busy"
+    routing_key: str | None = None  # for hash routing: key to extract from message
+
+
+@dataclass
+class Workspace:
+    """Defines the file-system paths an agent is allowed to access."""
+
+    read: list[str] = field(default_factory=list)   # paths agent can read
+    write: list[str] = field(default_factory=list)  # paths agent can write/create
+    edit: list[str] = field(default_factory=list)   # paths agent can edit
+
+
+@dataclass
 class AgentSpec(Generic[T]):
     name: str
-    prompt: str | Path
-    tools: ToolSet
+    prompt: str | Path = ""
+    tools: ToolSet | None = None
     result_parser: ResultParser[T] | None = None
     model: str | None = None
     max_turns: int | None = None
@@ -40,7 +58,21 @@ class AgentSpec(Generic[T]):
     mcp_servers: dict[str, Any] = field(default_factory=dict)
     inbox_channel: str | None = None
     is_super_agent: bool = False
+    reply_only: bool = False
     resume_session_id: str | None = None
+    workspace: Workspace | None = None
+    description: str = ""
+    visibility: str | dict = "all"
+    child_prefix: str | None = None
+    shard: ShardConfig | None = None
+    max_inbound_length: int | None = None  # Max chars in messages sent TO this agent
+    max_inbound_response: str | None = None  # Error shown to sender when inbound limit exceeded
+    max_outbound_length: int | None = None  # Max chars in messages this agent sends
+    max_outbound_response: str | None = None  # Error shown to this agent when outbound limit exceeded
+    ignore_stall: bool = False  # If True, never trigger stall detection (e.g., user agent)
+    stateless: bool = False  # If True, agent disconnects after first response (no persistence)
+    module: str | None = None  # Python module path for custom workflow orchestration
+    _base_system_prompt: str | None = None  # Original system prompt before workspace composition
 
 
 @dataclass
