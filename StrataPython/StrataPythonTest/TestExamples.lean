@@ -17,7 +17,7 @@ open StrataTest.Util
 open Strata
 open Lean.Parser (InputContext)
 
-namespace Strata.Python
+namespace StrataPython
 
 /-- Run the Python → Ion → Laurel pipeline inside a temp directory and pass
     the resulting Laurel program and the temp source path to a continuation. -/
@@ -27,7 +27,7 @@ def withPythonToLaurel (pythonCmd : System.FilePath) (input : InputContext)
     let pyFile := tmpDir / "test.py"
     IO.FS.writeFile pyFile input.inputString
     let dialectFile := tmpDir / "dialect.ion"
-    IO.FS.writeBinFile dialectFile Python.Python.toIon
+    IO.FS.writeBinFile dialectFile Python.toIon
     let ionFile := tmpDir / "test.python.st.ion"
     let child ← IO.Process.spawn {
       cmd := pythonCmd.toString
@@ -78,9 +78,9 @@ public def processPythonFile (pythonCmd : System.FilePath) (input : InputContext
       let vcResults ← IO.FS.withTempDir fun vcDir =>
         EIO.toIO (fun f => IO.Error.userError (toString f))
           (_root_.Core.verify core vcDir .none options
-            (moreFns := Strata.Python.ReFactory)
+            (moreFns := StrataPython.ReFactory)
             (externalPhases := [Strata.frontEndPhase]))
       let vcDiags := vcResults.toList.filterMap (fun vcr => vcr.toDiagnostic files Core.coreAbstractedPhases)
       pure ((translateDiags.map (·.toDiagnostic files)) ++ vcDiags).toArray
 
-end Strata.Python
+end StrataPython

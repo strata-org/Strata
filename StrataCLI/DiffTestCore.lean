@@ -30,7 +30,8 @@
 import Strata.Languages.Core
 import StrataPython.Regex.ReToCore
 
-open Strata Strata.Python
+open Strata
+open StrataPython (MatchMode pythonRegexToCore)
 open Core (VerifyOptions)
 open StrataDDM.Elab (LoadedDialects elabProgram)
 

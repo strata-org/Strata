@@ -10,15 +10,15 @@ import StrataDDM.Util.Ion
 public import StrataPython.PythonDialect
 
 public section
-namespace Strata.Python
+namespace StrataPython
 
-def readPythonStrataBytes (strataPath : String) (bytes : ByteArray) : Except String (Array (Strata.Python.stmt StrataDDM.SourceRange)) := do
+def readPythonStrataBytes (strataPath : String) (bytes : ByteArray) : Except String (Array (stmt StrataDDM.SourceRange)) := do
   if ! Ion.isIonFile bytes then
     throw <| s!"{strataPath} is not an Ion file."
-  match StrataDDM.Program.fromIon Strata.Python.Python_map Strata.Python.Python.name bytes with
+  match StrataDDM.Program.fromIon Python_map Python.name bytes with
   | .ok pgm =>
     let pyCmds ← pgm.commands.mapM fun cmd =>
-      match Strata.Python.Command.ofAst cmd with
+      match Command.ofAst cmd with
       | .error msg =>
         throw s!"Error reading {strataPath}: {msg}"
       | .ok r => pure r
@@ -107,7 +107,7 @@ private def runPyToStrata (pythonCmd : String) (extraPythonArgs : Array String)
     throw <| msg
 
 /-- Reads a pre-compiled Strata file (Ion format) containing Python AST statements. -/
-def readPythonStrata (strataPath : String) : EIO String (Array (Strata.Python.stmt StrataDDM.SourceRange)) := do
+def readPythonStrata (strataPath : String) : EIO String (Array (stmt StrataDDM.SourceRange)) := do
   let bytes ←
     match ← IO.FS.readBinFile strataPath |>.toBaseIO with
     | .ok b =>
@@ -129,7 +129,7 @@ or the Python file cannot be parsed.
 def pythonToStrata (dialectFile pythonFile : System.FilePath)
     (pythonCmd : String := "python")
     (options : PythonToStrataOptions := {})
-    : EIO String (Array (Strata.Python.stmt StrataDDM.SourceRange)) := do
+    : EIO String (Array (stmt StrataDDM.SourceRange)) := do
   let (_handle, strataFile) ←
     match ← IO.FS.createTempFile |>.toBaseIO with
     | .ok p => pure p
@@ -146,5 +146,5 @@ def pythonToStrata (dialectFile pythonFile : System.FilePath)
     | .error msg => throw s!"Internal: Error deleting temp file {strataFile}: {msg}"
 
 
-end Strata.Python
+end StrataPython
 end

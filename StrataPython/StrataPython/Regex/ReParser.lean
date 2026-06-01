@@ -5,9 +5,7 @@
 -/
 module
 
-public section
-namespace Strata
-namespace Python
+namespace StrataPython
 
 /-
 Parser and translator for some basic regular expression patterns supported by
@@ -21,7 +19,7 @@ for a reference implementation.
 
 -------------------------------------------------------------------------------
 
-inductive ParseError where
+public inductive ParseError where
   /--
     `patternError` is raised when Python's `re.patternError` exception is
     raised.
@@ -52,7 +50,7 @@ instance : ToString ParseError where
 /--
 Regular Expression Nodes
 -/
-inductive RegexAST where
+public inductive RegexAST where
   /-- Single literal character: `a` -/
   | char : Char → RegexAST
   /-- Character range: `[a-z]` -/
@@ -332,9 +330,8 @@ partial def parseGroup (s : String) (pos : String.Pos.Raw) (endChar : Option Cha
 end
 
 /-- Parse entire regex string (implicit top-level group). -/
-def parseTop (s : String) : Except ParseError RegexAST :=
+public def parseTop (s : String) : Except ParseError RegexAST :=
   parseGroup s 0 none |>.map (fun (r, _) => r)
 
 -------------------------------------------------------------------------------
-end Strata.Python
-end
+end StrataPython

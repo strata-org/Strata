@@ -9,11 +9,11 @@ import StrataTest.Util.TestDiagnostics
 import StrataPythonTest.Util.Python
 
 open StrataTest.Util
-open Strata.Python (processPythonFile withPython)
+open StrataPython (processPythonFile withPython)
 open StrataDDM.Parser (stringInputContext)
 open Strata
 
-namespace Strata.Python.Issue1000
+namespace StrataPython.Issue1000
 
 /-! ## Test: Procedure call inside negated if-condition (Issue #1000)
 
@@ -39,4 +39,4 @@ def main() -> None:
   if diags.size ≠ 0 then
     throw <| .userError s!"Expected 0 diagnostics, got {diags.size}: {diags.map (·.message)}"
 
-end Strata.Python.Issue1000
+end StrataPython.Issue1000

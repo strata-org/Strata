@@ -12,7 +12,7 @@ meta import StrataPythonTest.Util.Python
 
 open StrataDDM (SourceRange)
 
-namespace Strata.Python.Specs
+namespace StrataPython.Specs
 
 private meta def testDir : System.FilePath :=
   "StrataPythonTestExtra/Specs"
@@ -219,7 +219,7 @@ class "ClassWithInit" {
 
 meta def testCase : IO Unit := withPython fun pythonCmd => do
   IO.FS.withTempFile fun _handle dialectFile => do
-    IO.FS.writeBinFile dialectFile Strata.Python.Python.toIon
+    IO.FS.writeBinFile dialectFile StrataPython.Python.toIon
     IO.FS.withTempDir fun strataDir => do
       let r ←
         translateFile
@@ -258,7 +258,7 @@ meta def testCase : IO Unit := withPython fun pythonCmd => do
 /-- Test that unsupported patterns emit appropriate warnings. -/
 meta def warningTestCase : IO Unit := withPython fun pythonCmd => do
   IO.FS.withTempFile fun _handle dialectFile => do
-    IO.FS.writeBinFile dialectFile Strata.Python.Python.toIon
+    IO.FS.writeBinFile dialectFile StrataPython.Python.toIon
     IO.FS.withTempDir fun strataDir => do
       let r ←
         translateFile
@@ -312,4 +312,4 @@ meta def testIntRoundTrip (v : Int) : Bool :=
 #guard testIntRoundTrip (42)
 #guard testIntRoundTrip (-100)
 
-end Strata.Python.Specs
+end StrataPython.Specs

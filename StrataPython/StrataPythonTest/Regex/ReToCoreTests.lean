@@ -10,9 +10,7 @@ meta import Strata.Languages.Core.DDMTransform.ASTtoCST
 
 meta section
 
-namespace Strata.Python.Tests
-
-open Strata.Python
+namespace StrataPython.Tests
 
 private def pythonRegexToCoreEraseTypes (r : String) (mode : MatchMode := MatchMode.fullmatch) :=
   let (exp, err) := pythonRegexToCore r mode
@@ -226,5 +224,5 @@ info: (re.union(re.concat(re.concat(str.to.re(""), str.to.re("a")), str.to.re(""
 #guard_msgs in
 #eval Std.format $ pythonRegexToCoreEraseTypes "^a" .fullmatch
 
-end Strata.Python.Tests
+end StrataPython.Tests
 end

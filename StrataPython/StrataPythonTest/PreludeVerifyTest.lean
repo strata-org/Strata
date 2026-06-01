@@ -17,11 +17,12 @@ Verify that all prelude procedures pass verification.
 This ensures the Python runtime prelude is well-formed
 after PrecondElim generates WF-checking procedures. -/
 
-namespace Strata.Python.PreludeVerifyTest
+open Strata
+namespace StrataPython.PreludeVerifyTest
 
 /-- Build the full Core prelude program (Laurel-translated + Core-only parts). -/
 private def preludeProgram : IO Core.Program := do
-  let (coreOption, _) ← Strata.translateCombinedLaurel pythonRuntimeLaurelPart
+  let (coreOption, _) ← StrataPython.translateCombinedLaurel pythonRuntimeLaurelPart
   match coreOption with
   | some prog => return prog
   | none => return { decls := [] }
@@ -32,7 +33,7 @@ private def verifyPrelude : IO (Array DiagnosticModel) := do
     let r ← EIO.toIO (IO.Error.userError ∘ toString)
       (_root_.Core.verify prog tempDir
         (options := .quiet)
-        (moreFns := Strata.Python.ReFactory)
+        (moreFns := StrataPython.ReFactory)
         (externalPhases := [Strata.frontEndPhase]))
     return r.flatMap (fun vcr => (toDiagnosticModel vcr []).toArray)
 
@@ -40,5 +41,5 @@ private def verifyPrelude : IO (Array DiagnosticModel) := do
 #guard_msgs in
 #eval verifyPrelude
 
-end Strata.Python.PreludeVerifyTest
+end StrataPython.PreludeVerifyTest
 end

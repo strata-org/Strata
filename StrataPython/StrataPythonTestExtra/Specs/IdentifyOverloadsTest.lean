@@ -11,6 +11,7 @@ meta import StrataPython.ReadPython
 meta import StrataPython.PythonToCore
 meta import StrataPython.Specs.IdentifyOverloads
 meta import StrataPythonTest.Util.Python
+import StataPython
 
 /-! ## Unit tests for `resolveOverloads`
 
@@ -19,12 +20,12 @@ sets, ensuring we identify precisely the needed specs — no more, no
 fewer.
 -/
 
-namespace Strata.Python.Specs.IdentifyOverloadsTest
+open Strata (pySpecsDir pySpecOutputPath)
+open StrataPython (ModuleName OverloadTable readDispatchOverloads)
+open StrataPython.Specs.IdentifyOverloads (resolveOverloads)
 
-open Strata (readDispatchOverloads pySpecsDir pySpecOutputPath)
-open Strata.Python (ModuleName)
-open Strata.Python.Specs.IdentifyOverloads (resolveOverloads)
-open Strata.Python (OverloadTable)
+
+namespace StrataPython.Specs.IdentifyOverloadsTest
 
 private meta def testDir : System.FilePath :=
   "StrataPythonTestExtra/Specs/dispatch_test"
@@ -85,7 +86,7 @@ private meta def buildOverloadTable
 /-- Parse a user Python Ion file into statements. -/
 private meta def parseStmts (ionPath : System.FilePath)
     : IO (Array (Python.stmt SourceRange)) := do
-  match ← Strata.Python.readPythonStrata ionPath.toString |>.toBaseIO with
+  match ← StrataPython.readPythonStrata ionPath.toString |>.toBaseIO with
   | .ok stmts =>
     return stmts
   | .error msg =>
@@ -166,4 +167,4 @@ private meta def runTestCase
     if errors.size > 0 then
       throw <| IO.userError ("\n".intercalate errors.toList)
 
-end Strata.Python.Specs.IdentifyOverloadsTest
+end StrataPython.Specs.IdentifyOverloadsTest

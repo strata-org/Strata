@@ -10,10 +10,9 @@ public import Strata.Languages.Core.Identifiers
 import Strata.Languages.Core.Factory
 import StrataPython.Regex.ReToCore
 
-namespace Strata
-namespace Python
-
 public section
+namespace StrataPython
+open Strata
 
 -------------------------------------------------------------------------------
 
@@ -175,7 +174,7 @@ def ReFactory : Factory Core.CoreLParams := .ofArray
 /-- Core.Factory extended with regex factory functions. -/
 def PythonFactory : @Lambda.Factory Core.CoreLParams :=
     Core.Factory.append ReFactory.toArray
-
+end StrataPython
 end -- public section
 
 -------------------------------------------------------------------------------

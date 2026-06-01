@@ -4,16 +4,15 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
-
-
-
 public import StrataPython.PythonDialect
 public import StrataPython.FunctionSignatures
 public import Strata.Languages.Core.Program
 import Strata.Languages.Core.Env
+
+open Strata
 open StrataDDM
 
-namespace Strata
+namespace StrataPython
 open Lambda.LTy.Syntax
 
 public section
@@ -84,7 +83,7 @@ def extractProcedureNames (pgm : Core.Program) : List String :=
     | _ => none
 
 structure TranslationContext where
-  signatures : Python.Signatures
+  signatures : Signatures
   filePath : String := ""
   expectedType : Option (Lambda.LMonoTy) := none
   variableTypes : List (String × Lambda.LMonoTy) := []
@@ -106,12 +105,12 @@ def strToCoreExpr (s: String) : Core.Expression.Expr :=
 def intToCoreExpr (i: Int) : Core.Expression.Expr :=
   .intConst () i
 
-def PyIntToInt (i : Python.int SourceRange) : Int :=
+def PyIntToInt (i : StrataPython.int SourceRange) : Int :=
   match i with
   | .IntPos _ n => n.val
   | .IntNeg _ n => -n.val
 
-def PyConstToCore (c: Python.constant SourceRange) : Core.Expression.Expr :=
+def PyConstToCore (c: constant SourceRange) : Core.Expression.Expr :=
   match c with
   | .ConString _ s => .strConst () s.val
   | .ConPos _ i => .intConst () i.val
@@ -120,7 +119,7 @@ def PyConstToCore (c: Python.constant SourceRange) : Core.Expression.Expr :=
   | .ConFloat _ f => .strConst () (f.val)
   | _ => panic! s!"Unhandled Constant: {repr c}"
 
-def PyAliasToCoreExpr (a : Python.alias SourceRange) : Core.Expression.Expr :=
+def PyAliasToCoreExpr (a : alias SourceRange) : Core.Expression.Expr :=
   match a with
   | .mk_alias _ n as_n =>
   assert! as_n.val.isNone
@@ -211,7 +210,7 @@ def handleGtE (lhs rhs: Core.Expression.Expr) : Core.Expression.Expr :=
   .app () (.app () (Core.coreOpExpr (.numeric ⟨.int, .Ge⟩) (some mty[int → (int → bool)])) lhs) rhs
 
 structure SubstitutionRecord where
-  pyExpr : Python.expr SourceRange
+  pyExpr : expr SourceRange
   coreExpr : Core.Expression.Expr
 
 instance : Repr (List SubstitutionRecord) where
@@ -219,28 +218,28 @@ instance : Repr (List SubstitutionRecord) where
     let py_exprs := xs.map (λ r => r.pyExpr)
     s!"{repr py_exprs}"
 
-def PyExprIdent (e1 e2: Python.expr SourceRange) : Bool :=
+def PyExprIdent (e1 e2: expr SourceRange) : Bool :=
   match e1, e2 with
   | .Call sr1 _ _ _, .Call sr2 _ _ _ => sr1 == sr2
   | _ , _ => false
 
 -- TODO: handle rest of names
-def PyListStrToCore (names : Array (Python.alias SourceRange)) : Core.Expression.Expr :=
+def PyListStrToCore (names : Array (alias SourceRange)) : Core.Expression.Expr :=
   .app () (.app () (.op () "ListStr_cons" mty[string → (ListStr → ListStr)]) (PyAliasToCoreExpr names[0]!))
        (.op () "ListStr_nil" mty[ListStr])
 
-def handleList (_elmts: Array (Python.expr SourceRange)) (expected_type : Lambda.LMonoTy): PyExprTranslated :=
+def handleList (_elmts: Array (expr SourceRange)) (expected_type : Lambda.LMonoTy): PyExprTranslated :=
   match expected_type with
   | (.tcons "ListStr" _) => {stmts := [], expr := (.op () "ListStr_nil" expected_type)}
   | (.tcons "ListDictStrAny" _) => {stmts := [], expr := (.op () "ListDictStrAny_nil" expected_type)}
   | _ => panic! s!"Unexpected type : {expected_type}"
 
-def PyOptExprToString (e : Python.opt_expr SourceRange) : String :=
+def PyOptExprToString (e : opt_expr SourceRange) : String :=
   match e with
   | .some_expr _ (.Constant _ (.ConString _ s) _) => s.val
   | _ => panic! "Expected some constant string: {e}"
 
-partial def PyExprToString (e : Python.expr SourceRange) : String :=
+partial def PyExprToString (e : expr SourceRange) : String :=
   match e with
   | .Name _ n _ => n.val
   | .Attribute _ v attr _ => s!"{PyExprToString v}_{attr.val}"
@@ -260,7 +259,7 @@ partial def PyExprToString (e : Python.expr SourceRange) : String :=
     | _ => panic! s!"Unsupported subscript to string: {repr e}"
   | _ => panic! s!"Unhandled Expr: {repr e}"
 
-def PyExprToMonoTy (e : Python.expr SourceRange) : Lambda.LMonoTy :=
+def PyExprToMonoTy (e : expr SourceRange) : Lambda.LMonoTy :=
   match e with
   | .Name _ n _ =>
     match n.val with
@@ -286,7 +285,7 @@ def PyExprToMonoTy (e : Python.expr SourceRange) : Lambda.LMonoTy :=
 -- This information should come from our prelude. For now, we use the fact that
 -- these functions are exactly the ones
 -- represented as `Call(Attribute(Name(...)))` in the AST (instead of `Call(Name(...))`).
-def callCanThrow (func_infos : List PythonFunctionDecl) (stmt: Python.stmt SourceRange) : Bool :=
+def callCanThrow (func_infos : List PythonFunctionDecl) (stmt: stmt SourceRange) : Bool :=
   match stmt with
   | .Expr _ (.Call _ (.Attribute _ _ _ _) _ _) | .Assign _ _ (.Call _ (.Attribute _ _ _ _) _ _) _ => true
   | .Expr _ (.Call _ f _ _) | .Assign _ _ (.Call _ f _ _) _ => match f with
@@ -333,8 +332,8 @@ def deduplicateTypeAnnotations (l : List (String × Option String)) : List (Stri
     | .some ty => (n, ty)
     | .none => panic s!"Missing type annotations for {n}")
 
-partial def collectVarDecls (translation_ctx : TranslationContext) (stmts: Array (Python.stmt SourceRange)) : List Core.Statement :=
-  let rec go (s : Python.stmt SourceRange) : List (String × Option String) :=
+partial def collectVarDecls (translation_ctx : TranslationContext) (stmts: Array (stmt SourceRange)) : List Core.Statement :=
+  let rec go (s : stmt SourceRange) : List (String × Option String) :=
     match s with
     | .Assign _ lhs _ _ =>
       let names := lhs.val.toList.map PyExprToString
@@ -372,7 +371,7 @@ partial def collectVarDecls (translation_ctx : TranslationContext) (stmts: Array
   let foo := dedup.map toCore
   foo.flatten
 
-def isCall (e: Python.expr SourceRange) : Bool :=
+def isCall (e: expr SourceRange) : Bool :=
   match e with
   | .Call _ _ _ _ => true
   | _ => false
@@ -394,11 +393,11 @@ def noFuncModel (translation_ctx: TranslationContext) (fname: String) : Bool :=
 
 def handleUnmodeledFunCall (lhs: List Core.Expression.Ident)
                                (fname: String)
-                               (args: Ann (Array (Python.expr SourceRange)) SourceRange)
-                               (kwords: Ann (Array (Python.keyword SourceRange)) SourceRange)
+                               (args: Ann (Array (expr SourceRange)) SourceRange)
+                               (kwords: Ann (Array (keyword SourceRange)) SourceRange)
                                (_jmp_targets: List String)
                                (translation_ctx: TranslationContext)
-                               (s : Python.stmt SourceRange) : List Core.Statement :=
+                               (s : stmt SourceRange) : List Core.Statement :=
   let md := sourceRangeToMetaData translation_ctx.filePath s.toAst.ann
   match translation_ctx.extrinsicsModelConfig.behaviors fname with
   | .havocAll => panic! "Unimplemented"
@@ -417,10 +416,10 @@ def handleUnmodeledFunCall (lhs: List Core.Expression.Ident)
 
 mutual
 
-partial def PyExprToCoreWithSubst (translation_ctx : TranslationContext)  (substitution_records : Option (List SubstitutionRecord)) (e : Python.expr SourceRange) : PyExprTranslated :=
+partial def PyExprToCoreWithSubst (translation_ctx : TranslationContext)  (substitution_records : Option (List SubstitutionRecord)) (e : expr SourceRange) : PyExprTranslated :=
   PyExprToCore translation_ctx e substitution_records
 
-partial def PyKWordsToCore (substitution_records : Option (List SubstitutionRecord)) (kw : Python.keyword SourceRange) : (String × PyExprTranslated) :=
+partial def PyKWordsToCore (substitution_records : Option (List SubstitutionRecord)) (kw : keyword SourceRange) : (String × PyExprTranslated) :=
   match kw with
   | .mk_keyword _ name expr =>
     match name.val with
@@ -430,8 +429,8 @@ partial def PyKWordsToCore (substitution_records : Option (List SubstitutionReco
 -- TODO: we should be checking that args are right
 partial def argsAndKWordsToCanonicalList (translation_ctx : TranslationContext)
                                  (fname: String)
-                                 (args : Array (Python.expr SourceRange))
-                                 (kwords: Array (Python.keyword SourceRange))
+                                 (args : Array (expr SourceRange))
+                                 (kwords: Array (keyword SourceRange))
                                  (substitution_records : Option (List SubstitutionRecord) := none) : List Core.Expression.Expr × List Core.Statement :=
   if translation_ctx.func_infos.any (λ e => e.name == fname) || translation_ctx.class_infos.any (λ e => e.name++"___init__" == fname) then
     if translation_ctx.func_infos.any (λ e => e.name == fname) then
@@ -452,7 +451,7 @@ partial def argsAndKWordsToCanonicalList (translation_ctx : TranslationContext)
       | .none =>
         match translation_ctx.signatures.getFuncSigType fname n with
         | .error e => panic! s!"argsAndKWordsToCanonicalList called fname not found in getFuncSigType: {e}"
-        | .ok arg_ty => Strata.Python.TypeStrToCoreExpr arg_ty)
+        | .ok arg_ty => TypeStrToCoreExpr arg_ty)
     let args := args.map (PyExprToCoreWithSubst default substitution_records)
     let args := (List.range required_order.length).filterMap (λ n =>
         if n < args.size then
@@ -462,7 +461,7 @@ partial def argsAndKWordsToCanonicalList (translation_ctx : TranslationContext)
           none)
     (args ++ ordered_remaining_args, kws_and_exprs.flatMap (λ p => p.snd.stmts))
 
-partial def handleDict (translation_ctx: TranslationContext) (sr : SourceRange) (keys: Array (Python.opt_expr SourceRange)) (values: Array (Python.expr SourceRange)) : PyExprTranslated :=
+partial def handleDict (translation_ctx: TranslationContext) (sr : SourceRange) (keys: Array (opt_expr SourceRange)) (values: Array (expr SourceRange)) : PyExprTranslated :=
   let md := sourceRangeToMetaData translation_ctx.filePath sr
   let dict := .app () (.op () "DictStrAny_mk" none) (.strConst () "DefaultDict") -- TODO: need to generate unique dict arg
   assert! keys.size == values.size
@@ -486,7 +485,7 @@ partial def handleDict (translation_ctx: TranslationContext) (sr : SourceRange) 
 
   {stmts := res , expr := dict, post_stmts := []}
 
-partial def PyExprToCore (translation_ctx : TranslationContext) (e : Python.expr SourceRange) (substitution_records : Option (List SubstitutionRecord) := none) : PyExprTranslated :=
+partial def PyExprToCore (translation_ctx : TranslationContext) (e : expr SourceRange) (substitution_records : Option (List SubstitutionRecord) := none) : PyExprTranslated :=
   if h : substitution_records.isSome && (substitution_records.get!.find? (λ r => PyExprIdent r.pyExpr e)).isSome then
     have hr : (List.find? (fun r => PyExprIdent r.pyExpr e) substitution_records.get!).isSome = true := by rw [Bool.and_eq_true] at h; exact h.2
     let record := (substitution_records.get!.find? (λ r => PyExprIdent r.pyExpr e)).get hr
@@ -529,17 +528,17 @@ partial def PyExprToCore (translation_ctx : TranslationContext) (e : Python.expr
       let rhs := PyExprToCore translation_ctx rhs.val[0]!
       match op.val with
       | #[v] => match v with
-        | Strata.Python.cmpop.Eq _ =>
+        | cmpop.Eq _ =>
           {stmts := lhs.stmts ++ rhs.stmts, expr := (.eq () lhs.expr rhs.expr)}
-        | Strata.Python.cmpop.In _ =>
+        | cmpop.In _ =>
           {stmts := lhs.stmts ++ rhs.stmts, expr := .app () (.app () (.op () "str_in_dict_str_any" none) lhs.expr) rhs.expr}
-        | Strata.Python.cmpop.Lt _ =>
+        | cmpop.Lt _ =>
           {stmts := lhs.stmts ++ rhs.stmts, expr := handleLt translation_ctx lhs.expr rhs.expr}
-        | Strata.Python.cmpop.LtE _ =>
+        | cmpop.LtE _ =>
           {stmts := lhs.stmts ++ rhs.stmts, expr := handleLtE translation_ctx lhs.expr rhs.expr}
-        | Strata.Python.cmpop.Gt _ =>
+        | cmpop.Gt _ =>
           {stmts := lhs.stmts ++ rhs.stmts, expr := handleGt lhs.expr rhs.expr}
-        | Strata.Python.cmpop.GtE _ =>
+        | cmpop.GtE _ =>
           {stmts := lhs.stmts ++ rhs.stmts, expr := handleGtE lhs.expr rhs.expr}
         | _ => panic! s!"Unhandled comparison op: {repr op.val}"
       | _ => panic! s!"Unhandled comparison op: {repr op.val}"
@@ -582,14 +581,14 @@ partial def PyExprToCore (translation_ctx : TranslationContext) (e : Python.expr
       {stmts := [], expr := strToCoreExpr (pre ++ "_" ++ attr.val)}
     | _ => panic! s!"Unhandled Expr: {repr e}"
 
-partial def initTmpParam (translation_ctx: TranslationContext) (p: Python.expr SourceRange × String) : List Core.Statement :=
+partial def initTmpParam (translation_ctx: TranslationContext) (p: expr SourceRange × String) : List Core.Statement :=
   let md := sourceRangeToMetaData translation_ctx.filePath p.fst.toAst.ann
   match p.fst with
   | .Call _ f args _ =>
     match f with
     | .Name _ n _ =>
       match n.val with
-      | "json_dumps" => [(.init p.snd t[string] (.det (.strConst () "")) md), .call "json_dumps" ([.inArg (.app () (.op () "DictStrAny_mk" none) (.strConst () "DefaultDict")), .inArg (Strata.Python.TypeStrToCoreExpr "IntOrNone")] ++ [.outArg p.snd, .outArg "maybe_except"]) md]
+      | "json_dumps" => [(.init p.snd t[string] (.det (.strConst () "")) md), .call "json_dumps" ([.inArg (.app () (.op () "DictStrAny_mk" none) (.strConst () "DefaultDict")), .inArg (TypeStrToCoreExpr "IntOrNone")] ++ [.outArg p.snd, .outArg "maybe_except"]) md]
       | "str" =>
         assert! args.val.size == 1
         [(.init p.snd t[string] (.det (.strConst () "")) md), .set p.snd (.app () (.op () "datetime_to_str" none) ((PyExprToCore default args.val[0]!).expr)) md]
@@ -598,7 +597,7 @@ partial def initTmpParam (translation_ctx: TranslationContext) (p: Python.expr S
     | _ => panic! s!"Unsupported tmp param init call: {repr f}"
   | _ => panic! "Expected Call"
 
-partial def exceptHandlersToCore (jmp_targets: List String) (translation_ctx: TranslationContext) (h : Python.excepthandler SourceRange) : List Core.Statement :=
+partial def exceptHandlersToCore (jmp_targets: List String) (translation_ctx: TranslationContext) (h : excepthandler SourceRange) : List Core.Statement :=
   assert! jmp_targets.length >= 2
   match h with
   | .ExceptHandler sr ex_ty _ body =>
@@ -621,11 +620,11 @@ partial def exceptHandlersToCore (jmp_targets: List String) (translation_ctx: Tr
 
 partial def handleFunctionCall (lhs: List Core.Expression.Ident)
                                (fname: String)
-                               (args: Ann (Array (Python.expr SourceRange)) SourceRange)
-                               (kwords: Ann (Array (Python.keyword SourceRange)) SourceRange)
+                               (args: Ann (Array (expr SourceRange)) SourceRange)
+                               (kwords: Ann (Array (keyword SourceRange)) SourceRange)
                                (jmp_targets: List String)
                                (translation_ctx: TranslationContext)
-                               (s : Python.stmt SourceRange) : List Core.Statement :=
+                               (s : stmt SourceRange) : List Core.Statement :=
 
   let fname := remapFname translation_ctx fname
 
@@ -651,7 +650,7 @@ partial def handleFunctionCall (lhs: List Core.Expression.Ident)
     kwords_calls_to_tmps.toList.flatMap (initTmpParam translation_ctx) ++
     res.snd ++ [.call fname (res.fst.map .inArg ++ lhs.map .outArg) md]
 
-partial def handleComprehension (translation_ctx: TranslationContext) (lhs: Python.expr SourceRange) (gen: Array (Python.comprehension SourceRange)) : List Core.Statement :=
+partial def handleComprehension (translation_ctx: TranslationContext) (lhs: expr SourceRange) (gen: Array (comprehension SourceRange)) : List Core.Statement :=
   assert! gen.size == 1
   match gen[0]! with
   | .mk_comprehension sr _ itr _ _ =>
@@ -662,7 +661,7 @@ partial def handleComprehension (translation_ctx: TranslationContext) (lhs: Pyth
     let else_ss: List Core.Statement := [.set (PyExprToString lhs) (.op () "ListStr_nil" none) md]
     res.stmts ++ [.ite (.det guard) then_ss else_ss md]
 
-partial def PyStmtToCore (jmp_targets: List String) (translation_ctx : TranslationContext) (s : Python.stmt SourceRange) : List Core.Statement × TranslationContext :=
+partial def PyStmtToCore (jmp_targets: List String) (translation_ctx : TranslationContext) (s : stmt SourceRange) : List Core.Statement × TranslationContext :=
   assert! jmp_targets.length > 0
   let md := sourceRangeToMetaData translation_ctx.filePath s.toAst.ann
   let non_throw : List Core.Statement × Option (String × Lambda.LMonoTy) := match s with
@@ -764,7 +763,7 @@ partial def PyStmtToCore (jmp_targets: List String) (translation_ctx : Translati
   else
     (non_throw.fst, new_translation_ctx)
 
-partial def ArrPyStmtToCore (translation_ctx: TranslationContext) (a : Array (Python.stmt SourceRange)) : (List Core.Statement × TranslationContext) :=
+partial def ArrPyStmtToCore (translation_ctx: TranslationContext) (a : Array (stmt SourceRange)) : (List Core.Statement × TranslationContext) :=
   a.foldl (fun (stmts, ctx) stmt =>
     let (newStmts, newCtx) := PyStmtToCore ["end"] ctx stmt
     (stmts ++ newStmts, newCtx)
@@ -773,7 +772,7 @@ partial def ArrPyStmtToCore (translation_ctx: TranslationContext) (a : Array (Py
 end --mutual
 
 
-def translateFunctions (a : Array (Python.stmt SourceRange)) (translation_ctx: TranslationContext) : List Core.Decl :=
+def translateFunctions (a : Array (stmt SourceRange)) (translation_ctx: TranslationContext) : List Core.Decl :=
   a.toList.filterMap (λ s => match s with
     | .FunctionDef _ name _args body _ _ret _ _ =>
 
@@ -797,7 +796,7 @@ def pyTyStrToLMonoTy (ty_str: String) : Lambda.LMonoTy :=
   | "datetime" => (.tcons "Datetime" [])
   | _ => panic! s!"Unsupported type: {ty_str}"
 
-def pythonFuncToCore (name : String) (args: List (String × String)) (body: Array (Python.stmt SourceRange)) (ret : Option (Python.expr SourceRange)) (spec : Core.Procedure.Spec) (translation_ctx : TranslationContext) : Core.Procedure :=
+def pythonFuncToCore (name : String) (args: List (String × String)) (body: Array (stmt SourceRange)) (ret : Option (expr SourceRange)) (spec : Core.Procedure.Spec) (translation_ctx : TranslationContext) : Core.Procedure :=
   let inputs : List (Lambda.Identifier Unit × Lambda.LMonoTy) := args.map (λ p => (p.fst, pyTyStrToLMonoTy p.snd))
   let varDecls := collectVarDecls translation_ctx body ++ [(.init "exception_ty_matches" t[bool] (.det (.boolConst () false)) .empty), (.havoc "exception_ty_matches" .empty)]
   let stmts := (ArrPyStmtToCore translation_ctx body).fst
@@ -819,7 +818,7 @@ def pythonFuncToCore (name : String) (args: List (String × String)) (body: Arra
     body
   }
 
-def unpackPyArguments (args: Python.arguments SourceRange) : List (String × String) :=
+def unpackPyArguments (args: arguments SourceRange) : List (String × String) :=
 -- Python AST:
 -- arguments = (arg* posonlyargs, arg* args, arg? vararg, arg* kwonlyargs,
 --                  expr* kw_defaults, arg? kwarg, expr* defaults)
@@ -836,7 +835,7 @@ def unpackPyArguments (args: Python.arguments SourceRange) : List (String × Str
         | .some ty => some (name.val, PyExprToString ty)
         | _ => panic! s!"Missing type annotation on arg: {repr a} ({repr args})")
 
-def PyFuncDefToCore (s: Python.stmt SourceRange) (translation_ctx: TranslationContext) : List Core.Decl × PythonFunctionDecl :=
+def PyFuncDefToCore (s: stmt SourceRange) (translation_ctx: TranslationContext) : List Core.Decl × PythonFunctionDecl :=
   match s with
   | .FunctionDef _ name args body _ ret _ _ =>
     let args := unpackPyArguments args
@@ -844,7 +843,7 @@ def PyFuncDefToCore (s: Python.stmt SourceRange) (translation_ctx: TranslationCo
      {name := name.val, args, ret := s!"{repr ret}"})
   | _ => panic! s!"Expected function def: {repr s}"
 
-def PyClassDefToCore (s: Python.stmt SourceRange) (translation_ctx: TranslationContext) : List Core.Decl × PythonClassDecl :=
+def PyClassDefToCore (s: stmt SourceRange) (translation_ctx: TranslationContext) : List Core.Decl × PythonClassDecl :=
   match s with
   | .ClassDef _ c_name _ _ body _ _ =>
     let member_fn_defs := body.val.toList.filterMap (λ s => match s with
@@ -859,7 +858,7 @@ def PyClassDefToCore (s: Python.stmt SourceRange) (translation_ctx: TranslationC
       {name := c_name.val})
   | _ => panic! s!"Expected function def: {repr s}"
 
-def pythonToCore (signatures : Python.Signatures) (insideMod : Array (Python.stmt SourceRange)) (prelude : Core.Program) (filePath : String := ""): Core.Program :=
+def pythonToCore (signatures : Signatures) (insideMod : Array (stmt SourceRange)) (prelude : Core.Program) (filePath : String := ""): Core.Program :=
   let func_defs := insideMod.filter (λ s => match s with
   | .FunctionDef _ _ _ _ _ _ _ _ => true
   | _ => false)
@@ -873,10 +872,10 @@ def pythonToCore (signatures : Python.Signatures) (insideMod : Array (Python.stm
   | .ClassDef _ _ _ _ _ _ _ => false
   | _ => true)
 
-  let rec helper {α : Type} (f : Python.stmt SourceRange → TranslationContext → List Core.Decl × α)
+  let rec helper {α : Type} (f : stmt SourceRange → TranslationContext → List Core.Decl × α)
                (update : TranslationContext → α → TranslationContext)
                (acc : TranslationContext) :
-               List (Python.stmt SourceRange) → List Core.Decl × TranslationContext
+               List (stmt SourceRange) → List Core.Decl × TranslationContext
   | [] => ([], acc)
   | x :: xs =>
     let (y, info) := f x acc
@@ -903,4 +902,4 @@ def pythonToCore (signatures : Python.Signatures) (insideMod : Array (Python.stm
     [.proc (pythonFuncToCore "__main__" [] non_func_blocks none default func_infos) .empty]}
 
 end -- public section
-end Strata
+end StrataPython

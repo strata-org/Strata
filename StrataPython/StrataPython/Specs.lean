@@ -12,7 +12,7 @@ public import StrataPython.Specs.Decls
 import StrataPython.Specs.MessageKind
 import        Strata.Util.DecideProp
 
-namespace Strata.Python.ModuleName
+namespace StrataPython.ModuleName
 
 public def foldlDirs {α} (mod : ModuleName) (init : α) (f : α → String → α) : α :=
   mod.components.foldl (init := init) (stop := mod.components.size - 1) fun a c => f a c.val
@@ -71,12 +71,13 @@ public def specIonPath (mod : ModuleName) (specDir : System.FilePath)
 def mkIdent (mod : ModuleName) (name : String) : PythonIdent :=
   { pythonModule := mod, name }
 
-end Strata.Python.ModuleName
+end StrataPython.ModuleName
 
+open Strata (decideProp)
 open Strata.Pipeline
 open StrataDDM (SourceRange eformat Ann)
 
-namespace Strata.Python.Specs
+namespace StrataPython.Specs
 
 /-- Type class for monads that support PySpec error and warning reporting. -/
 public class PySpecMClass (m : Type → Type) where
@@ -275,7 +276,7 @@ def logEvent (event : EventType) (message : String) : PySpecM Unit := do
 
 /-- Check whether a decorator list contains `@overload`. -/
 private def hasOverloadDecorator
-    (decorators : Array (Strata.Python.expr StrataDDM.SourceRange)) : Bool :=
+    (decorators : Array (expr StrataDDM.SourceRange)) : Bool :=
   decorators.any fun d =>
     match d with
     | .Name _ ⟨_, "overload"⟩ _ => true
@@ -626,7 +627,7 @@ def pyDefaultValue (val : expr SourceRange) (_tp : SpecType) : PySpecM Unit := d
 
 def pySpecArg (usedNames : Std.HashSet String)
               (selfType : Option String)
-              (arg : Strata.Python.arg StrataDDM.SourceRange)
+              (arg : arg StrataDDM.SourceRange)
               (de : Option (expr SourceRange)) : PySpecM Arg := do
   let .mk_arg loc ⟨_, name⟩ ⟨_typeLoc, type⟩ ⟨_, comment⟩ := arg
   if name ∈ usedNames then
@@ -1065,7 +1066,7 @@ def pySpecFunctionArgs (fnLoc : SourceRange)
                        (className : Option String)
                        (funName : String)
                        (arguments : arguments SourceRange)
-                       (body : Array (Python.stmt SourceRange))
+                       (body : Array (stmt SourceRange))
                        (decorators : Array (expr SourceRange))
                        (returns : Option (expr SourceRange)) : PySpecM FunctionDecl := do
   let mut overload : Bool := false
@@ -1183,7 +1184,7 @@ private def resolveBaseClasses (bases : Array (expr SourceRange))
 
 partial def pySpecClassBody (loc : SourceRange) (className : String)
     (bases : Array PythonIdent)
-    (body : Array (Strata.Python.stmt StrataDDM.SourceRange)) : PySpecM ClassDef := do
+    (body : Array (stmt StrataDDM.SourceRange)) : PySpecM ClassDef := do
   let mut usedNames : Std.HashSet String := {}
   let mut fields : Array ClassField := #[]
   let mut classVars : Array ClassVariable := #[]
@@ -1558,7 +1559,7 @@ partial def translate (body : Array (stmt StrataDDM.SourceRange)) : PySpecM Unit
         pushSignature (.classDef d)
     | _ => specError stmt.ann s!"Unknown statement {stmt}"
 
-partial def translateModuleAux (body : Array (Strata.Python.stmt StrataDDM.SourceRange))
+partial def translateModuleAux (body : Array (stmt StrataDDM.SourceRange))
   : PySpecM (Array Signature) := do
   let ctx ← read
   let start ← IO.monoNanosNow
@@ -1578,7 +1579,7 @@ end
 def translateModule
     (dialectFile searchPath strataDir pythonFile : System.FilePath)
     (fileMap : Lean.FileMap)
-    (body : Array (Strata.Python.stmt StrataDDM.SourceRange))
+    (body : Array (stmt StrataDDM.SourceRange))
     (currentModule : ModuleName)
     (pythonCmd : String := "python")
     (events : Std.HashSet EventType := {})
@@ -1661,4 +1662,4 @@ public def translateFile
     throw msg
   pure (sigs, ← warnings.mapM ppErr)
 
-end Strata.Python.Specs
+end StrataPython.Specs

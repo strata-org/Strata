@@ -9,7 +9,7 @@ meta import StrataPython.Specs.Decls
 
 meta section
 
-open Strata.Python.Specs
+open StrataPython.Specs
 
 namespace DeclsTest
 

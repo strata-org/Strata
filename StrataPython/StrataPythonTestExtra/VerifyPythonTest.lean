@@ -15,10 +15,10 @@ Verifies that `processPythonFile` correctly runs the full
 Python → Laurel → Core → SMT pipeline and produces diagnostics.
 -/
 
-namespace Strata.Python.VerifyPythonTest
+namespace StrataPython.VerifyPythonTest
 
 open StrataTest.Util
-open Strata.Python (processPythonFile processPythonToLaurel withPython manglePythonMethod)
+open StrataPython (processPythonFile processPythonToLaurel withPython manglePythonMethod)
 open StrataDDM.Parser (stringInputContext)
 
 /-- Run the Python → Laurel pipeline and return the Laurel program together
@@ -714,4 +714,4 @@ def main() -> None:
   unless failures.isEmpty do
     throw <| .userError s!"Field method resolution test: expected all checks to pass but got: {failures.map (·.message)}"
 
-end Strata.Python.VerifyPythonTest
+end StrataPython.VerifyPythonTest

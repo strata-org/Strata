@@ -5,6 +5,7 @@
 -/
 module
 
+public import StrataPython.PythonIdent
 meta import all StrataPython.PySpecPipeline
 meta import all StrataPython.Specs.DDM
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
@@ -17,11 +18,13 @@ Verifies that `buildPySpecLaurel` populates `laurelType` on `PyArgInfo`
 and that `typeTesters` is empty (type assertions live in the procedure body).
 -/
 
-namespace Strata.Python.PySpecArgTypeTest
+namespace StrataPython.PySpecArgTypeTest
 
-open Strata.Python.Specs
-open Strata (buildPySpecLaurel)
-open Strata.Python (ModuleName OverloadTable PythonFunctionDecl PyArgInfo highTypeToPyLauType)
+open StrataPython.Specs
+open StrataPython (buildPySpecLaurel)
+open StrataPython (ModuleName OverloadTable)
+open StrataPython.ToLaurel (PythonFunctionDecl PyArgInfo highTypeToPyLauType)
+open Strata
 open Strata.Laurel (Procedure formatProcedure)
 
 private def loc : SourceRange := default
@@ -43,7 +46,7 @@ private def mkFunc (name : String) (args : Array Specs.Arg) (ret : SpecType) : S
 
 /-- Build PySpec signatures, write to temp Ion, read back via buildPySpecLaurel,
     and return the full result. -/
-private def buildSpecs (sigs : Array Signature) : IO Strata.PySpecLaurelResult := do
+private def buildSpecs (sigs : Array Signature) : IO StrataPython.PySpecLaurelResult := do
   IO.FS.withTempDir fun dir => do
     let ionFile := dir / "test.pyspec.ion"
     writeDDM ionFile sigs
@@ -118,5 +121,5 @@ info: procedure test_typed_func(x: Any, y: Any): Any
     | throw <| IO.userError "test_typed_func not found"
   IO.println (toString (formatProcedure proc))
 
-end Strata.Python.PySpecArgTypeTest
+end StrataPython.PySpecArgTypeTest
 end

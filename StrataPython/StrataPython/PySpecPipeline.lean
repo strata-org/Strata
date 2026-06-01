@@ -27,10 +27,11 @@ Reads PySpec Ion files, resolves overloads, builds Laurel declarations,
 and translates through to Core for verification.
 -/
 
-namespace Strata
+namespace StrataPython
+open Strata
+open StrataPython.ToLaurel
 
 open Pipeline (emitMessage emitMessageAndAbort)
-open Python (OverloadTable)
 
 /-! ### Types -/
 
@@ -38,7 +39,7 @@ open Python (OverloadTable)
 public structure PySpecLaurelResult where
   laurelProgram : Laurel.Program
   overloads : OverloadTable
-  functionSignatures : List Python.PythonFunctionDecl := []
+  functionSignatures : List PythonFunctionDecl := []
   /-- Maps unprefixed class names to prefixed names for type resolution. -/
   typeAliases : Std.HashMap String String := {}
   /-- Classes whose spec is considered exhaustive (lists all methods). -/
@@ -48,7 +49,7 @@ public structure PySpecLaurelResult where
 /-! ### Private Helpers -/
 
 /-- Convert a SpecDefault to a Python None expression. -/
-private def specDefaultToExpr : Python.Specs.SpecDefault → Python.expr SourceRange
+private def specDefaultToExpr : Specs.SpecDefault → expr SourceRange
   | .none => .Constant default (.ConNone default) default
 
 /-- Compute `laurelType` for a pyspec parameter.
@@ -56,20 +57,20 @@ private def specDefaultToExpr : Python.Specs.SpecDefault → Python.expr SourceR
     other single-ident types → `UserDefined(prefixedName)`.
     Uses the type's own module (not the function's module) to derive the
     Laurel prefix, so cross-module type references resolve correctly. -/
-private def specArgLaurelType (arg : Python.Specs.Arg) : Laurel.HighTypeMd :=
+private def specArgLaurelType (arg : Specs.Arg) : Laurel.HighTypeMd :=
   match arg.type.asIdent with
   | some id =>
-    if id ∈ Python.Specs.ToLaurel.builtinIdents then
-      Python.AnyTy
+    if id ∈ Specs.ToLaurel.builtinIdents then
+      AnyTy
     else
-      Python.mkHighTypeMd (.UserDefined { text := id.toLaurelName })
-  | none => Python.AnyTy
+      mkHighTypeMd (.UserDefined { text := id.toLaurelName })
+  | none => AnyTy
 
 /-- Convert a pyspec Arg to a PythonFunctionDecl arg info.
     `typeTesters` is empty because `buildSpecBody` already generates type
     assertions in the procedure body — call-site preconditions would be
     redundant. -/
-private def specArgToFuncDeclArg (arg : Python.Specs.Arg) : Python.PyArgInfo :=
+private def specArgToFuncDeclArg (arg : Specs.Arg) : PyArgInfo :=
   { name := arg.name,
     source := none,
     laurelType := specArgLaurelType arg,
@@ -79,9 +80,9 @@ private def specArgToFuncDeclArg (arg : Python.Specs.Arg) : Python.PyArgInfo :=
 
 /-- Build a PythonFunctionDecl from a PySpec FunctionDecl or class method,
     expanding `**kwargs` TypedDict fields into individual parameters. -/
-private def funcDeclToFunctionDecl (name : String) (args : Python.Specs.ArgDecls)
-    : Except String Python.PythonFunctionDecl := do
-  let kwargsArgs ← Python.Specs.ToLaurel.expandKwargsArgs args.kwargs
+private def funcDeclToFunctionDecl (name : String) (args : Specs.ArgDecls)
+    : Except String PythonFunctionDecl := do
+  let kwargsArgs ← Specs.ToLaurel.expandKwargsArgs args.kwargs
   let allArgs := args.args ++ args.kwonly ++ kwargsArgs
   pure {
     name,
@@ -93,10 +94,10 @@ private def funcDeclToFunctionDecl (name : String) (args : Python.Specs.ArgDecls
 /-- Extract PythonFunctionDecl entries from pyspec signatures.
     Handles both top-level functions and class methods.
     Strips `self` from class methods and expands `**kwargs` TypedDict fields. -/
-private def extractFunctionSignatures (sigs : Array Python.Specs.Signature)
-    (moduleName : Python.ModuleName) : Except String (Array Python.PythonFunctionDecl) := do
+private def extractFunctionSignatures (sigs : Array Specs.Signature)
+    (moduleName : ModuleName) : Except String (Array PythonFunctionDecl) := do
   let funcPrefix := moduleName.toString (sep := "_") ++ "_"
-  let mut result : Array Python.PythonFunctionDecl := #[]
+  let mut result : Array PythonFunctionDecl := #[]
   for sig in sigs do
     match sig with
     | .functionDecl func =>
@@ -132,23 +133,23 @@ private def mergeOverloads (old new : OverloadTable) : OverloadTable :=
     Each entry is a `(moduleName, ionPath)` pair. The module name is used
     to namespace all generated Laurel names (e.g., `"servicelib_Storage"` for
     module `servicelib.Storage`). -/
-private def buildPySpecLaurelM (pyspecEntries : Array (Python.ModuleName × String))
+private def buildPySpecLaurelM (pyspecEntries : Array (ModuleName × String))
     (overloads : OverloadTable) : Pipeline.PipelineM PySpecLaurelResult := do
   let mut combinedProcedures : Array (Laurel.Procedure × String) := #[]
   let mut combinedTypes : Array (Laurel.TypeDefinition × String) := #[]
   let mut allOverloads := overloads
-  let mut funcSigs : Array Python.PythonFunctionDecl := #[]
+  let mut funcSigs : Array PythonFunctionDecl := #[]
   let mut allTypeAliases : Std.HashMap String String := {}
   let mut allExhaustiveClasses : Std.HashSet String := {}
   for (moduleName, ionPath) in pyspecEntries do
     let ionFile : System.FilePath := ionPath
     let sigs ←
-      match ← Python.Specs.readDDM ionFile |>.toBaseIO with
+      match ← Specs.readDDM ionFile |>.toBaseIO with
       | .ok t => pure t
       | .error msg =>
         emitMessageAndAbort .pySpecReadError msg (file := ionFile)
     let { program, errors, overloads, typeAliases, exhaustiveClasses } :=
-      Python.Specs.ToLaurel.signaturesToLaurel ionPath sigs moduleName
+      Specs.ToLaurel.signaturesToLaurel ionPath sigs moduleName
     for msg in errors do
       Pipeline.addMessage msg
       if msg.kind.impact.isFatal then throw ()
@@ -191,9 +192,9 @@ private def buildPySpecLaurelM (pyspecEntries : Array (Python.ModuleName × Stri
       dedupedProcs := dedupedProcs.push (proc, srcFile)
 
   let combinedLaurel : Laurel.Program := {
-    staticProcedures := Strata.Python.pythonRuntimeLaurelPart.staticProcedures ++ dedupedProcs.toList.map Prod.fst
+    staticProcedures := pythonRuntimeLaurelPart.staticProcedures ++ dedupedProcs.toList.map Prod.fst
     staticFields := []
-    types := Strata.Python.pythonRuntimeLaurelPart.types ++ dedupedTypes.toList.map Prod.fst
+    types := pythonRuntimeLaurelPart.types ++ dedupedTypes.toList.map Prod.fst
     constants := []
   }
   return { laurelProgram := combinedLaurel, overloads := allOverloads
@@ -205,7 +206,7 @@ private def buildPySpecLaurelM (pyspecEntries : Array (Python.ModuleName × Stri
     tables into a single combined result. -/
 public def buildPySpecLaurel
     (ctx : Pipeline.PipelineContext)
-    (pyspecEntries : Array (Python.ModuleName × String))
+    (pyspecEntries : Array (ModuleName × String))
     (overloads : OverloadTable) : EIO Unit PySpecLaurelResult :=
   buildPySpecLaurelM pyspecEntries overloads |>.run ctx
 
@@ -216,11 +217,11 @@ private def readDispatchOverloadsM
   for dispatchPath in dispatchPaths do
     let ionFile : System.FilePath := dispatchPath
     let sigs ←
-      match ← Python.Specs.readDDM ionFile |>.toBaseIO with
+      match ← Specs.readDDM ionFile |>.toBaseIO with
       | .ok t => pure t
       | .error msg =>
         emitMessageAndAbort .pySpecReadError msg (file := ionFile)
-    let (overloads, errors) := Python.Specs.ToLaurel.extractOverloads dispatchPath sigs
+    let (overloads, errors) := Specs.ToLaurel.extractOverloads dispatchPath sigs
     for msg in errors do
       Pipeline.addMessage msg
       if msg.kind.impact.isFatal then throw ()
@@ -235,17 +236,17 @@ public def readDispatchOverloads
 
 /-- Resolve a parsed module name to its .ion path.
     Returns `none` if the file is not found on disk. -/
-private def resolveModuleEntry (mod : Python.ModuleName) (specDir : System.FilePath)
-    : Pipeline.PipelineM (Option (Python.ModuleName × String)) := do
+private def resolveModuleEntry (mod : ModuleName) (specDir : System.FilePath)
+    : Pipeline.PipelineM (Option (ModuleName × String)) := do
   match ← mod.specIonPath specDir with
   | some specPath =>
     return some (mod, specPath.toString)
   | none => return none
 
 /-- Resolve already-parsed module names that must exist. Fatal on missing file. -/
-private def resolveModuleNames (modules : Array Python.ModuleName) (specDir : System.FilePath)
-    : Pipeline.PipelineM (Array (Python.ModuleName × String)) := do
-  let mut entries : Array (Python.ModuleName × String) := #[]
+private def resolveModuleNames (modules : Array ModuleName) (specDir : System.FilePath)
+    : Pipeline.PipelineM (Array (ModuleName × String)) := do
+  let mut entries : Array (ModuleName × String) := #[]
   for mod in modules do
     let some entry ← resolveModuleEntry mod specDir
       | emitMessageAndAbort .missingPySpecModule
@@ -255,10 +256,10 @@ private def resolveModuleNames (modules : Array Python.ModuleName) (specDir : Sy
 
 /-- Resolve module name strings that must exist. Fatal on invalid name or missing file. -/
 private def resolveModules (modules : Array String) (specDir : System.FilePath)
-    : Pipeline.PipelineM (Array (Python.ModuleName × String)) := do
-  let mut parsed : Array Python.ModuleName := #[]
+    : Pipeline.PipelineM (Array (ModuleName × String)) := do
+  let mut parsed : Array ModuleName := #[]
   for modName in modules do
-    let some mod := Python.ModuleName.ofString? modName
+    let some mod := ModuleName.ofString? modName
       | emitMessageAndAbort .invalidModuleName s!"invalid module name '{modName}'" (file := specDir)
     parsed := parsed.push mod
   resolveModuleNames parsed specDir
@@ -275,7 +276,7 @@ private def resolveModules (modules : Array String) (specDir : System.FilePath)
 public def resolveAndBuildLaurelPrelude
     (dispatchModules : Array String)
     (pyspecModules : Array String)
-    (stmts : Array (Python.stmt SourceRange))
+    (stmts : Array (stmt SourceRange))
     (specDir : System.FilePath := ".")
     : Pipeline.PipelineM PySpecLaurelResult := do
   -- Dispatch modules (fatal on invalid name or missing file)
@@ -283,7 +284,7 @@ public def resolveAndBuildLaurelPrelude
   let dispatchPaths := dispatchEntries.map (·.2)
   let dispatchOverloads ← readDispatchOverloadsM dispatchPaths
   let resolveState :=
-    Python.Specs.IdentifyOverloads.resolveOverloads dispatchOverloads stmts
+    Specs.IdentifyOverloads.resolveOverloads dispatchOverloads stmts
   for w in resolveState.warnings do
     emitMessage .overloadResolveWarning w (file := specDir)
   -- Auto-resolved from dispatch overload table
@@ -300,13 +301,13 @@ public def resolveAndBuildLaurelPrelude
 
 /-- Build PreludeInfo by merging the base Core prelude with PySpec
     Laurel-level declarations and extracted function signatures. -/
-public def buildPreludeInfo (result : PySpecLaurelResult) : Python.PreludeInfo :=
-  let baseInfo := Python.PreludeInfo.ofCoreProgram { decls := Python.coreOnlyFromRuntimeCorePart }
+public def buildPreludeInfo (result : PySpecLaurelResult) : PreludeInfo :=
+  let baseInfo := PreludeInfo.ofCoreProgram { decls := coreOnlyFromRuntimeCorePart }
   let merged := baseInfo.merge
-    (Python.PreludeInfo.ofLaurelProgram result.laurelProgram)
+    (PreludeInfo.ofLaurelProgram result.laurelProgram)
   -- Build importedSymbols from merged info + type aliases
   -- Register composite types under their Laurel names
-  let symbols : Std.HashMap String Python.ImportedSymbol :=
+  let symbols : Std.HashMap String ImportedSymbol :=
     merged.compositeTypes.fold (init := {}) fun m name =>
       m.insert name (.compositeType name)
   -- Register procedures under their Laurel names
@@ -359,7 +360,7 @@ public def combinePySpecLaurel
     procedure bodies, etc.) to the Core program produced by Laurel
     translation. -/
 private def appendCorePartOfRuntime (coreFromLaurel : Core.Program) : Core.Program :=
-  { decls := coreFromLaurel.decls ++ Python.coreOnlyFromRuntimeCorePart  }
+  { decls := coreFromLaurel.decls ++ coreOnlyFromRuntimeCorePart  }
 
 /-- Split procedure names in a Core program into prelude names and user names.
     A declaration is considered a user declaration only if its file range
@@ -428,7 +429,7 @@ public def pythonAndSpecToLaurel
     (specDir : System.FilePath := ".")
     : Pipeline.PipelineM Laurel.Program := do
   let stmts ← Pipeline.withPhase "readPythonIon" do
-    match ← Python.readPythonStrata pythonIonPath |>.toBaseIO with
+    match ← readPythonStrata pythonIonPath |>.toBaseIO with
     | .ok r => pure r
     | .error msg =>
       emitMessageAndAbort (file := pythonIonPath) .pySpecParsingError msg
@@ -440,7 +441,7 @@ public def pythonAndSpecToLaurel
   let metadataPath := sourcePath.getD pythonIonPath
 
   let (laurelProgram, _ctx) ←
-    match Python.pythonToLaurel preludeInfo stmts metadataPath result.overloads with
+    match pythonToLaurel preludeInfo stmts metadataPath result.overloads with
     | .error (.userPythonError range msg) =>
       emitMessageAndAbort (file := sourcePath.getD pythonIonPath) (loc := range)
         .laurelLoweringUserError msg
@@ -461,4 +462,4 @@ public def pythonAndSpecToLaurel
   let combined := combinePySpecLaurel filteredPrelude laurelProgram
   return combined
 
-end Strata
+end StrataPython

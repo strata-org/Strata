@@ -14,7 +14,7 @@ Verifies that `assert cond, "message"` in Python flows through as a
 property summary in the Core verification results.
 -/
 
-namespace Strata.Python.PropertySummaryTest
+namespace StrataPython.PropertySummaryTest
 
 open Strata (pyTranslateLaurel)
 
@@ -44,7 +44,7 @@ private def getPropertySummaries (pythonCmd : System.FilePath) (source : String)
       | .ok r => pure r
       | .error msg => throw <| .userError s!"pyTranslateLaurel failed: {msg}"
     let results ← match ← Core.verifyProgram core Core.VerifyOptions.quiet
-        (moreFns := Strata.Python.ReFactory) |>.toBaseIO with
+        (moreFns := StrataPython.ReFactory) |>.toBaseIO with
       | .ok r => pure r
       | .error msg => throw <| .userError s!"verifyCore failed: {msg}"
     return results.filterMap fun vcr =>
@@ -59,4 +59,4 @@ private def getPropertySummaries (pythonCmd : System.FilePath) (source : String)
     unless summaries.any (· == msg) do
       throw <| .userError s!"FAIL: \"{msg}\" not found in summaries: {summaries}"
 
-end Strata.Python.PropertySummaryTest
+end StrataPython.PropertySummaryTest

@@ -20,10 +20,10 @@ with `--dispatch` through the SimpleAPI. The mock services (Storage,
 Messaging) are generic and not tied to any cloud provider.
 -/
 
-namespace Strata.Python.AnalyzeLaurelTest
-
-open Strata (pythonAndSpecToLaurel pySpecsDir)
+open StrataPython (pythonAndSpecToLaurel pySpecsDir)
 open Strata.Pipeline (PipelineContext)
+
+namespace StrataPython.AnalyzeLaurelTest
 
 meta def quietCtx : BaseIO PipelineContext :=
   PipelineContext.create (outputMode := .quiet)
@@ -105,7 +105,7 @@ meta def runAnalyze
   match ← Strata.translateCombinedLaurel laurel with
   | (some core, []) =>
     -- Also run Core type checking to catch semantic errors (e.g. Heap vs Any)
-    match Core.typeCheck Core.VerifyOptions.quiet core (moreFns := Strata.Python.ReFactory) with
+    match Core.typeCheck Core.VerifyOptions.quiet core (moreFns := StrataPython.ReFactory) with
     | .error diag => return .error s!"Core type checking failed: {diag}"
     | .ok _ => return .ok core
   | (_, errors) => return .error s!"Laurel to Core translation failed: {errors}"
@@ -153,7 +153,7 @@ meta def runAnalyzeAndVerify
       stopOnFirstError := false, verbose := .quiet, solver := "z3",
       checkMode := .bugFinding, checkLevel := .full }
   match ← Core.verifyProgram coreProgram options
-      (moreFns := Strata.Python.ReFactory)
+      (moreFns := StrataPython.ReFactory)
       (proceduresToVerify := some entryPoints)
       (externalPhases := [Strata.frontEndPhase])
       (prefixPhases := inlinePhases) |>.toBaseIO with
@@ -276,7 +276,7 @@ meta def runTestCase (pythonCmd : System.FilePath) (tmpDir : System.FilePath)
           return some s!"test_class_any_as_composite.py: {detail}"
       match ← Strata.translateCombinedLaurel laurel with
       | (some core, []) =>
-        match Core.typeCheck Core.VerifyOptions.quiet core (moreFns := Strata.Python.ReFactory) with
+        match Core.typeCheck Core.VerifyOptions.quiet core (moreFns := StrataPython.ReFactory) with
         | .error diag =>
           -- Expected: assigning str (Any) to a Composite-typed field is a type error
           if (diag.message.splitOn "Impossible to unify").length > 1 then return none
@@ -433,4 +433,4 @@ invoking the Storage spec, so precondition violations would go undetected. -/
         throw <| IO.userError
           "Expected ✖️ always false for empty bucket violation via self.field dispatch"
 
-end Strata.Python.AnalyzeLaurelTest
+end StrataPython.AnalyzeLaurelTest

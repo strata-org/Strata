@@ -12,7 +12,7 @@ import StrataDDM.Ion
 import StrataDDM.Integration.Lean -- shake: keep
 open StrataDDM
 
-namespace Strata.Python
+namespace StrataPython
 
 /-- Converts a Python identifier to an annotated string for DDM serialization. -/
 def PythonIdent.toDDM (d : PythonIdent) : Ann String SourceRange :=
@@ -541,4 +541,4 @@ public def writeDDM (path : System.FilePath) (sigs : Array Signature) : IO Unit 
   let pgm := toDDMProgram sigs
   IO.FS.writeBinFile path <| pgm.toIon
 
-end Strata.Python.Specs
+end StrataPython.Specs

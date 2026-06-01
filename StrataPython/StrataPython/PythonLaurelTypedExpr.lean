@@ -21,8 +21,9 @@ The wrapped functions correspond to declarations in
 -/
 
 public section
-namespace Strata.Python.Laurel
+namespace StrataPython.Laurel
 
+open Strata (FileRange)
 open Strata.Laurel (HighType HighTypeMd StmtExpr StmtExprMd mkId)
 
 abbrev tyAny : HighType := .UserDefined "Any"
@@ -162,5 +163,5 @@ instance : Inhabited SomeTypedStmtExpr where
 
 end SomeTypedStmtExpr
 
-end Strata.Python.Laurel
+end StrataPython.Laurel
 end

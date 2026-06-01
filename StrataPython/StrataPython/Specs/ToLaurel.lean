@@ -14,6 +14,11 @@ import Strata.Util.DecideProp
 public import StrataPython.OverloadTable
 import StrataPython.Specs.MessageKind
 
+open Strata
+open Strata.Laurel
+open Strata.Pipeline (PipelineMessage MessageKind Phase)
+open StrataPython.Laurel (SomeTypedStmtExpr TypedStmtExpr)
+
 /-!
 # PySpec to Laurel Translation
 
@@ -30,7 +35,7 @@ converts those signatures into Laurel programs that can be verified.
 - `externTypeDecl`: Ignored — PySpec fully qualifies imported class names
 -/
 
-namespace Strata.Python
+namespace StrataPython
 
 public section
 
@@ -55,17 +60,8 @@ def PythonIdent.toLaurelName (id : PythonIdent) : String :=
   id.toString (sep := "_")
 
 end -- public section
-end Strata.Python
 
-namespace Strata.Python.Specs
-
-end Strata.Python.Specs
-
-namespace Strata.Python.Specs.ToLaurel
-
-open Strata.Laurel
-open Strata.Python.Laurel
-open Strata.Pipeline (PipelineMessage MessageKind Phase)
+namespace Specs.ToLaurel
 
 /-! ## ToLaurelM Monad -/
 
@@ -286,7 +282,7 @@ structure SpecExprContext where
 
 abbrev ToLaurelExprM := ReaderT SpecExprContext ToLaurelM
 
-private def asAny (loc : SourceRange) (act : ToLaurelExprM SomeTypedStmtExpr) : ToLaurelExprM (TypedStmtExpr Laurel.tyAny) := do
+private def asAny (loc : SourceRange) (act : ToLaurelExprM SomeTypedStmtExpr) : ToLaurelExprM (TypedStmtExpr StrataPython.Laurel.tyAny) := do
   let ctx ← read
   let (se, success) ← runChecked <| act ctx
   if !success then
@@ -475,7 +471,7 @@ def buildSpecBody (allArgs : Array Arg)
         stmts := stmts.push assertStmt
     | none =>
       if arg.default.isNone then
-        let cond : TypedStmtExpr _ := .not (.anyIsfromNone (.identifier arg.name Laurel.tyAny))
+        let cond : TypedStmtExpr _ := .not (.anyIsfromNone (.identifier arg.name StrataPython.Laurel.tyAny))
         let msg := SpecAssertMsg.requiredParam arg.name |>.render
         let assertStmt ← mkStmtWithLoc (.Assert { condition := cond.stmt, summary := some msg }) default
         stmts := stmts.push assertStmt
@@ -554,7 +550,7 @@ def funcDeclToLaurel (procName : String) (func : FunctionDecl)
     return ({ name := a.name, type := ty } : Parameter)
   let outputs : List Parameter := [{ name := "result", type := tyAny }]
   let argTypes : Std.HashMap String HighType :=
-    inputs.foldl (init := ({} : Std.HashMap String HighType).insert "result" Laurel.tyAny) fun m p =>
+    inputs.foldl (init := ({} : Std.HashMap String HighType).insert "result" StrataPython.Laurel.tyAny) fun m p =>
       m.insert p.name.text p.type.val
   let specCtx : SpecExprContext := { procName, argTypes }
   let body ← buildSpecBody allArgs func.preconditions func.postconditions
@@ -674,4 +670,4 @@ public def extractOverloads (filepath : System.FilePath) (sigs : Array Signature
   (state.overloads, state.errors)
 
 
-end Strata.Python.Specs.ToLaurel
+end StrataPython.Specs.ToLaurel

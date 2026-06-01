@@ -9,8 +9,9 @@ public import Strata.Languages.Core.Program
 import Strata.Languages.Core.Verifier
 import StrataDDM.Integration.Lean.HashCommands -- shake: keep
 
-namespace Strata
-namespace Python
+open Strata
+
+namespace StrataPython
 
 public section
 
@@ -343,5 +344,4 @@ def Core.prelude : Core.Program :=
    Core.getProgram corePrelude |>.fst
 
 end -- public section
-end Python
-end Strata
+end StrataPython

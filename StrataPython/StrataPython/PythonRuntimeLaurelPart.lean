@@ -10,8 +10,8 @@ public import Strata.Languages.Laurel.LaurelAST
 public import StrataDDM.AST
 public import StrataDDM.Integration.Lean.HashCommands -- shake: keep
 
-namespace Strata
-namespace Python
+open Strata
+namespace StrataPython
 
 /--
 Python prelude declarations expressed in Laurel grammar.
@@ -23,7 +23,7 @@ Core-specific constructs that Laurel does not support:
 - Axioms: commented out
 - `mutual`/`end` blocks: flattened (Laurel does not support mutual blocks)
 -/
-private def pythonRuntimeLaurelPartDDM :=
+def pythonRuntimeLaurelPartDDM :=
 #strata
 program Laurel;
 
@@ -1105,5 +1105,4 @@ public def pythonRuntimeLaurelPart : Laurel.Program :=
   | .ok p => p
   | .error e => dbg_trace s!"SOUND BUG: Failed to parse Python runtime Laurel part: {e}"; default
 
-end Python
-end Strata
+end StrataPython

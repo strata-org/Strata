@@ -9,8 +9,9 @@ import StrataDDM.Integration.Lean.HashCommands -- shake: keep
 public import Strata.Languages.Core.Program
 import Strata.Languages.Core.Verifier
 
-namespace Strata
-namespace Python
+open Strata
+
+namespace StrataPython
 
 /--
 Core-only prelude declarations for the Python-through-Laurel pipeline.
@@ -156,5 +157,4 @@ def coreOnlyFromRuntimeCorePart : List Core.Decl :=
 end -- public section
 
 
-end Python
-end Strata
+end StrataPython

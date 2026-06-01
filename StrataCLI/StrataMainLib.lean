@@ -38,6 +38,7 @@ import StrataPython.Specs.DDM
 import StrataPython.ReadPython
 
 open Strata
+open StrataPython
 open StrataDDM.Elab (LoadedDialects elabProgram)
 
 open Core (VerifyOptions VerboseMode VerificationMode CheckLevel EntryPoint)
@@ -134,8 +135,8 @@ def insert (pf : ParsedFlags) (name : String) (value : Option String) : ParsedFl
 
 def buildDialectFileMap (pflags : ParsedFlags) : IO StrataDDM.DialectFileMap := do
   let preloaded := StrataDDM.Elab.LoadedDialects.builtin
-    |>.addDialect! Strata.Python.Python
-    |>.addDialect! Strata.Python.Specs.DDM.PythonSpecs
+    |>.addDialect! StrataPython.Python
+    |>.addDialect! StrataPython.Specs.DDM.PythonSpecs
     |>.addDialect! Strata.Core
     |>.addDialect! C_Simp
     |>.addDialect! B3CST
@@ -423,12 +424,12 @@ def pySpecsCommand : Command where
       events := events.insert e
     let skipNames := pflags.getRepeated "skip"
     let modules := pflags.getRepeated "module"
-    let warningOutput : Strata.WarningOutput :=
+    let warningOutput : StrataPython.WarningOutput :=
       if quiet then .none else .detail
     -- Serialize embedded dialect for Python subprocess
     IO.FS.withTempFile fun _handle dialectFile => do
-      IO.FS.writeBinFile dialectFile Strata.Python.Python.toIon
-      let r ← Strata.pySpecsDir (events := events)
+      IO.FS.writeBinFile dialectFile StrataPython.Python.toIon
+      let r ← StrataPython.pySpecsDir (events := events)
                 (skipNames := skipNames)
                 (modules := modules)
                 (warningOutput := warningOutput)
@@ -783,12 +784,12 @@ def pyAnalyzeToGotoCommand : Command where
       | some (pyPath, _) => pyPath
       | none => filePath
     let sourceText := pySourceOpt.map (·.2)
-    let newPgm ← Strata.pythonDirectToCore filePath sourcePathForMetadata
+    let newPgm ← StrataPython.pythonDirectToCore filePath sourcePathForMetadata
     match ← (Strata.Core.runTransforms newPgm [Strata.Core.passInlineExcept ["main"]]).toBaseIO with
     | .error e => exitInternalError (toString e)
     | .ok (newPgm, _) =>
       -- Type-check the full program (registers Python types like ExceptOrNone)
-      let Ctx := { Lambda.LContext.default with functions := Strata.Python.PythonFactory, knownTypes := Core.KnownTypes }
+      let Ctx := { Lambda.LContext.default with functions := StrataPython.PythonFactory, knownTypes := Core.KnownTypes }
       let Env := Lambda.TEnv.default
       let (tcPgm, _) ← match Core.Program.typeCheck Ctx Env newPgm with
         | .ok r => pure r
@@ -842,7 +843,7 @@ def pyTranslateLaurelCommand : Command where
     unless ← System.FilePath.isDir specDir do
       exitFailure s!"spec-dir '{specDir}' does not exist or is not a directory"
     let coreProgram ←
-      match ← Strata.pyTranslateLaurel v[0] dispatchModules pyspecModules (specDir := specDir) |>.toBaseIO with
+      match ← StrataPython.pyTranslateLaurel v[0] dispatchModules pyspecModules (specDir := specDir) |>.toBaseIO with
       | .ok r => pure r
       | .error msg => exitFailure msg
     IO.print coreProgram
@@ -868,13 +869,13 @@ def pyAnalyzeLaurelToGotoCommand : Command where
     unless ← System.FilePath.isDir specDir do
       exitFailure s!"spec-dir '{specDir}' does not exist or is not a directory"
     let (coreProgram, laurelTranslateErrors) ←
-      match ← Strata.pyTranslateLaurel filePath dispatchModules pyspecModules (specDir := specDir) |>.toBaseIO with
+      match ← StrataPython.pyTranslateLaurel filePath dispatchModules pyspecModules (specDir := specDir) |>.toBaseIO with
       | .ok r => pure r
       | .error msg => exitFailure msg
     let sourceText := (← tryReadPythonSource filePath).map (·.2)
     let baseName := deriveBaseName filePath
     match ← Strata.inlineCoreToGotoFiles coreProgram baseName sourceText
-              (factory := Strata.Python.PythonFactory) |>.toBaseIO with
+              (factory := StrataPython.PythonFactory) |>.toBaseIO with
     | .ok () => pure ()
     | .error msg => exitFailure msg
 
@@ -923,14 +924,14 @@ def pySpecToLaurelCommand : Command where
     let strataDir : System.FilePath := v[1]
     let some mod := pythonFile.fileStem
       | exitFailure s!"No stem {pythonFile}"
-    let some mod := Strata.Python.ModuleName.ofString? mod
+    let some mod := StrataPython.ModuleName.ofString? mod
       | exitFailure s!"Invalid module {mod}"
     let ionFile := strataDir / mod.strataFileName
     let sigs ←
-      match ← Strata.Python.Specs.readDDM ionFile |>.toBaseIO with
+      match ← StrataPython.Specs.readDDM ionFile |>.toBaseIO with
       | .ok t => pure t
       | .error msg => exitFailure s!"Could not read {ionFile}: {msg}"
-    let result := Strata.Python.Specs.ToLaurel.signaturesToLaurel pythonFile sigs mod
+    let result := StrataPython.Specs.ToLaurel.signaturesToLaurel pythonFile sigs mod
     if result.errors.size > 0 then
       IO.eprintln s!"{result.errors.size} translation warning(s):"
       for err in result.errors do
@@ -964,13 +965,13 @@ def pyResolveOverloadsCommand : Command where
     let stmts ←
       IO.FS.withTempFile fun _handle dialectFile => do
         IO.FS.writeBinFile dialectFile
-          Strata.Python.Python.toIon
-        match ← Strata.Python.pythonToStrata dialectFile pythonFile |>.toBaseIO with
+          StrataPython.Python.toIon
+        match ← StrataPython.pythonToStrata dialectFile pythonFile |>.toBaseIO with
         | .ok s => pure s
         | .error msg => exitFailure msg
     -- Walk AST and collect modules
     let state :=
-      Strata.Python.Specs.IdentifyOverloads.resolveOverloads
+      StrataPython.Specs.IdentifyOverloads.resolveOverloads
         overloads stmts
     for w in state.warnings do
       IO.eprintln s!"warning: {w}"
@@ -1372,12 +1373,12 @@ def pyInterpretCommand : Command where
 
     let quietCtx ← Strata.Pipeline.PipelineContext.create (outputMode := .quiet)
     let (core, _diags) ←
-      match ← (Strata.pythonAndSpecToLaurel filePath (specDir := ".")).run quietCtx |>.toBaseIO with
+      match ← (StrataPython.pythonAndSpecToLaurel filePath (specDir := ".")).run quietCtx |>.toBaseIO with
       | .ok laurel =>
         if let some dir := keepDir then
           IO.FS.createDirAll dir
           IO.FS.writeFile (dir ++ "/laurel.st") (toString (Std.format laurel))
-        match ← Strata.translateCombinedLaurel laurel with
+        match ← StrataPython.translateCombinedLaurel laurel with
         | (some core, diags) => pure (core, diags)
         | (none, diags) => exitFailure s!"Laurel to Core translation failed: {diags}"
       | .error () =>
@@ -1387,7 +1388,7 @@ def pyInterpretCommand : Command where
     if let some dir := keepDir then
       IO.FS.writeFile (dir ++ "/core.st") (toString (Std.format core))
     let core ← match Core.typeCheck Core.VerifyOptions.quiet core
-        (moreFns := Strata.Python.ReFactory) with
+        (moreFns := StrataPython.ReFactory) with
       | .ok prog => pure prog
       | .error e =>
         println!  s!"Core type checking failed: {e.message}"

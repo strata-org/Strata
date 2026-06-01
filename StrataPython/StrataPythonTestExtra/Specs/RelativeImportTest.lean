@@ -18,10 +18,10 @@ Negative tests verify that unsupported import forms produce clear,
 actionable error messages.
 -/
 
-namespace Strata.Python.Specs.RelativeImportTest
+namespace StrataPython.Specs.RelativeImportTest
 
-open Strata.Python.Specs (translateFile)
-open Strata.Python (ModuleName)
+open StrataPython.Specs (translateFile)
+open StrataPython (ModuleName)
 
 private meta def testDir : System.FilePath :=
   "StrataPythonTestExtra/Specs/import_test"
@@ -122,7 +122,7 @@ private meta def testCases : Array TestCase := #[
 
 private meta def runAllTests : IO Unit := withPython fun pythonCmd => do
   IO.FS.withTempFile fun _handle dialectFile => do
-    IO.FS.writeBinFile dialectFile Strata.Python.Python.toIon
+    IO.FS.writeBinFile dialectFile StrataPython.Python.toIon
     let mut errors : Array String := #[]
     for tc in testCases do
       match ← runTest pythonCmd dialectFile tc.file tc.expectedErrors
@@ -137,4 +137,4 @@ private meta def runAllTests : IO Unit := withPython fun pythonCmd => do
 #guard_msgs in
 #eval runAllTests
 
-end Strata.Python.Specs.RelativeImportTest
+end StrataPython.Specs.RelativeImportTest

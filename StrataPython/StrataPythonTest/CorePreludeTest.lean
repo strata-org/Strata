@@ -11,14 +11,14 @@ meta import StrataDDM.Ion
 meta section
 open StrataDDM (Program)
 
-namespace Strata.Python
+namespace StrataPython
 
 /--
 Test that the Python CorePrelude can be serialized to Ion format and
 deserialized back without loss of information.
 -/
 private def testCorePreludeRoundTrip : Bool :=
-  let prelude := Python.corePrelude
+  let prelude := corePrelude
   let bytes := prelude.toIon
   match Program.fromIon Strata.Core_map Strata.Core.name bytes with
   | .ok pgm => pgm.commands.size == prelude.commands.size
@@ -26,5 +26,5 @@ private def testCorePreludeRoundTrip : Bool :=
 
 #guard testCorePreludeRoundTrip
 
-end Strata.Python
+end StrataPython
 end

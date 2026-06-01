@@ -17,6 +17,10 @@ import StrataPython.ReadPython
 public import StrataPython.PySpecPipeline
 public import StrataDDM.Util.IO
 
+open StrataDDM (SourceRange)
+open StrataPython (ModuleName)
+open Strata.Pipeline (PipelineContext)
+
 /-! ## Strata Python API
 
 Reading Python sources, translating them to Core or Laurel, and managing
@@ -25,9 +29,8 @@ PySpec directories.
 
 public section
 
-namespace Strata
+namespace StrataPython
 
-open Strata.Python (ModuleName)
 
 /-! ### Python direct-to-Core pipeline -/
 
@@ -35,9 +38,9 @@ open Strata.Python (ModuleName)
 Read Python statements from a Strata Ion file.
 -/
 def readPythonIon (path : String)
-    : IO (Array (Strata.Python.stmt SourceRange)) := do
+    : IO (Array (StrataPython.stmt SourceRange)) := do
   let bytes ← StrataDDM.Util.readBinInputSource path
-  match Strata.Python.readPythonStrataBytes path bytes with
+  match StrataPython.readPythonStrataBytes path bytes with
   | .ok stmts => pure stmts
   | .error msg => throw (IO.userError msg)
 
@@ -50,9 +53,9 @@ def pythonDirectToCore (pythonIonPath : String)
     (filePath : String := "")
     : IO Core.Program := do
   let stmts ← readPythonIon pythonIonPath
-  let preludePgm := Strata.Python.Core.prelude
-  let bpgm := Strata.pythonToCore
-    Strata.Python.coreSignatures stmts preludePgm filePath
+  let preludePgm := StrataPython.Core.prelude
+  let bpgm := StrataPython.pythonToCore
+    StrataPython.coreSignatures stmts preludePgm filePath
   pure { decls := preludePgm.decls ++ bpgm.decls }
 
 /-- Recursively discover all Python modules under a directory.
@@ -126,7 +129,7 @@ def pySpecsDir (sourceDir strataDir dialectFile : System.FilePath)
 
   -- Build skip identifiers
   let skipIdents := skipNames.foldl (init := {}) fun acc s =>
-    match Python.PythonIdent.ofString s with
+    match PythonIdent.ofString s with
     | some id => acc.insert id
     | none => acc  -- Unqualified skip names can't be resolved without a module context
 
@@ -160,8 +163,8 @@ def pySpecsDir (sourceDir strataDir dialectFile : System.FilePath)
       | throw s!"Internal error: Could not find {pythonFile}"
 
     -- Timestamp check: skip if output is newer than source
-    if ← Python.Specs.isNewer outPath pythonMd then
-      Python.Specs.baseLogEvent events "import" s!"Skipping {mod} (up to date)"
+    if ← Specs.isNewer outPath pythonMd then
+      Specs.baseLogEvent events "import" s!"Skipping {mod} (up to date)"
       continue
 
     -- Ensure output subdirectory exists
@@ -171,17 +174,17 @@ def pySpecsDir (sourceDir strataDir dialectFile : System.FilePath)
       throw s!"Internal error: Could not create directory {parent}: {e}"
 
     -- Translate
-    Python.Specs.baseLogEvent events "import" s!"Translating {mod}"
-    match ← Strata.Python.Specs.translateFile
+    Specs.baseLogEvent events "import" s!"Translating {mod}"
+    match ← StrataPython.Specs.translateFile
         dialectFile strataDir pythonFile sourceDir mod
         (events := events) (skipNames := skipIdents)
         (pythonCmd := pythonCmd) |>.toBaseIO with
     | .error msg =>
-      Python.Specs.baseLogEvent events "import" s!"Failed {mod}: {msg}"
+      Specs.baseLogEvent events "import" s!"Failed {mod}: {msg}"
       failures := failures.push (toString mod, msg)
     | .ok (sigs, warnings) =>
       -- Write output
-      match ← Strata.Python.Specs.writeDDM outPath sigs |>.toBaseIO with
+      match ← StrataPython.Specs.writeDDM outPath sigs |>.toBaseIO with
       | .ok () => pure ()
       | .error e =>
         failures := failures.push (toString mod, s!"Could not write {outPath}: {e}")
@@ -213,8 +216,8 @@ def pyTranslateLaurel
     (dispatchModules : Array String := #[])
     (pyspecModules : Array String := #[])
     (specDir : System.FilePath := ".")
-    : EIO String (Core.Program × List DiagnosticModel) := do
-  let pctx ← Pipeline.PipelineContext.create (outputMode := .quiet)
+    : EIO String (Core.Program × List Strata.DiagnosticModel) := do
+  let pctx ← PipelineContext.create (outputMode := .quiet)
   let laurel ←
     match ← (pythonAndSpecToLaurel pythonIonPath dispatchModules pyspecModules (specDir := specDir)).run pctx |>.toBaseIO with
     | .ok r => pure r
@@ -229,6 +232,6 @@ def pyTranslateLaurel
   | none => throw s!"Laurel to Core translation failed: {laurelTranslateErrors}"
   | some core => pure (core, laurelTranslateErrors)
 
-end Strata
+end StrataPython
 
 end -- public section

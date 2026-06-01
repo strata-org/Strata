@@ -5,20 +5,20 @@
 -/
 module
 
-
 public import StrataDDM.Integration.Lean.OfAstM
 public import StrataDDM.Format
 import StrataDDM.Integration.Lean.Gen
 import StrataDDM.Integration.Lean.HashCommands
+
 open StrataDDM
 
 public section
-namespace Strata.Python
-#load_dialect "../Tools/Python/dialects/Python.dialect.st.ion"
+namespace StrataPython
+#load_dialect "/home/joehx/features/strata_python/Tools/Python/dialects/Python.dialect.st.ion"
 
 #strata_gen Python
 
-instance {α} [Inhabited α] : ToString (Strata.Python.constant α) where
+instance {α} [Inhabited α] : ToString (constant α) where
   toString s := toString (eformat s.toAst)
 
 deriving instance DecidableEq for operator
@@ -136,14 +136,14 @@ def ann {α} : stmt α → α
 
 end stmt
 
-instance {α} [Inhabited α] : ToString (Strata.Python.expr α) where
+instance {α} [Inhabited α] : ToString (expr α) where
   toString s := toString (eformat s.toAst)
 
-@[reducible] def stmt.format {α} [Inhabited α] : ToString (Strata.Python.stmt α) where
+@[reducible] def stmt.format {α} [Inhabited α] : ToString (stmt α) where
   toString s := toString (mformat s.toAst (.ofDialects Python_map) .empty |>.format)
 
-instance {α} [Inhabited α] : ToString (Strata.Python.stmt α) where
+instance {α} [Inhabited α] : ToString (stmt α) where
   toString s := toString (mformat s.toAst (.ofDialects Python_map) .empty |>.format)
 
-end Strata.Python
+end StrataPython
 end

@@ -8,10 +8,10 @@ module
 public import Strata.Languages.Core.Expressions
 import Strata.Languages.Core.Env
 
-namespace Strata
-namespace Python
-
 public section
+
+namespace StrataPython
+open Strata
 
 /-- A type identifier in the Strata Core prelude for Python. -/
 @[expose] abbrev TypeId := String
@@ -164,7 +164,5 @@ def TypeStrToCoreExpr (ty: String) : Core.Expression.Expr :=
     | "DictStrStrOrNone" => .app () (.op () "DictStrStrOrNone_mk_none" none) (.op () "None_none" none)
     | _ => panic! s!"unsupported type: {ty}"
 
+end StrataPython
 end -- public section
-
-end Python
-end Strata

@@ -6,7 +6,7 @@
 module
 
 public section
-namespace Strata.Python
+namespace StrataPython
 
 abbrev ModuleComponent := { nm : String // nm ≠ "" }
 
@@ -247,5 +247,5 @@ instance : ToString PythonIdent where
 
 end PythonIdent
 
-end Strata.Python
+end StrataPython
 end

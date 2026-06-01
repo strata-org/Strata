@@ -5,21 +5,21 @@
 -/
 module
 
-meta import StrataPython.Regex.ReParser
+meta import all StrataPython.Regex.ReParser
 
 meta section
 
 /-! ## Tests for Python Regex ReParser -/
 
-namespace Strata.Python
+namespace StrataPython
 
 section parseCharClass
 
-/-- info: Except.ok (Strata.Python.RegexAST.range 'A' 'z', { byteIdx := 5 }) -/
+/-- info: Except.ok (StrataPython.RegexAST.range 'A' 'z', { byteIdx := 5 }) -/
 #guard_msgs in
 #eval parseCharClass "[A-z]" ⟨0⟩
 /--
-info: Except.error (Strata.Python.ParseError.patternError
+info: Except.error (StrataPython.ParseError.patternError
   "Invalid character range [a-Z]: start character 'a' is greater than end character 'Z'"
   "[a-Z]"
   { byteIdx := 1 })
@@ -28,7 +28,7 @@ info: Except.error (Strata.Python.ParseError.patternError
 #eval parseCharClass "[a-Z]" ⟨0⟩
 
 /--
-info: Except.error (Strata.Python.ParseError.patternError
+info: Except.error (StrataPython.ParseError.patternError
   "Invalid character range [a-0]: start character 'a' is greater than end character '0'"
   "[a-0]"
   { byteIdx := 1 })
@@ -37,31 +37,31 @@ info: Except.error (Strata.Python.ParseError.patternError
 #eval parseCharClass "[a-0]" ⟨0⟩
 
 /--
-info: Except.ok (Strata.Python.RegexAST.union
-   (Strata.Python.RegexAST.union (Strata.Python.RegexAST.range 'a' 'z') (Strata.Python.RegexAST.range '0' '9'))
-   (Strata.Python.RegexAST.range 'A' 'Z'),
+info: Except.ok (StrataPython.RegexAST.union
+   (StrataPython.RegexAST.union (StrataPython.RegexAST.range 'a' 'z') (StrataPython.RegexAST.range '0' '9'))
+   (StrataPython.RegexAST.range 'A' 'Z'),
  { byteIdx := 11 })
 -/
 #guard_msgs in
 #eval parseCharClass "[a-z0-9A-Z]" ⟨0⟩
 /--
-info: Except.ok (Strata.Python.RegexAST.union (Strata.Python.RegexAST.char '0') (Strata.Python.RegexAST.range 'a' 'z'),
+info: Except.ok (StrataPython.RegexAST.union (StrataPython.RegexAST.char '0') (StrataPython.RegexAST.range 'a' 'z'),
  { byteIdx := 6 })
 -/
 #guard_msgs in
 #eval parseCharClass "[0a-z]" ⟨0⟩
-/-- info: Except.ok (Strata.Python.RegexAST.char 'a', { byteIdx := 3 }) -/
+/-- info: Except.ok (StrataPython.RegexAST.char 'a', { byteIdx := 3 }) -/
 #guard_msgs in
 #eval parseCharClass "[a]" ⟨0⟩
 /--
-info: Except.error (Strata.Python.ParseError.patternError "Expected '[' at start of character class" "a" { byteIdx := 0 })
+info: Except.error (StrataPython.ParseError.patternError "Expected '[' at start of character class" "a" { byteIdx := 0 })
 -/
 #guard_msgs in
 #eval parseCharClass "a" ⟨0⟩
 
 -- Incomplete escape sequences
 /--
-info: Except.error (Strata.Python.ParseError.patternError
+info: Except.error (StrataPython.ParseError.patternError
   "Incomplete escape sequence in character class"
   "[a\\"
   { byteIdx := 2 })
@@ -70,29 +70,29 @@ info: Except.error (Strata.Python.ParseError.patternError
 #eval parseCharClass "[a\\" ⟨0⟩
 
 -- Escape sequences inside character classes
-/-- info: Except.ok (Strata.Python.RegexAST.char '.', { byteIdx := 4 }) -/
+/-- info: Except.ok (StrataPython.RegexAST.char '.', { byteIdx := 4 }) -/
 #guard_msgs in
 #eval parseCharClass "[\\.] " ⟨0⟩  -- trailing space so string is valid; byteIdx 4 = past ']'
 
-/-- info: Except.ok (Strata.Python.RegexAST.char '-', { byteIdx := 4 }) -/
+/-- info: Except.ok (StrataPython.RegexAST.char '-', { byteIdx := 4 }) -/
 #guard_msgs in
 #eval parseCharClass "[\\-] " ⟨0⟩  -- trailing space so string is valid; byteIdx 4 = past ']'
 
 /--
-info: Except.ok (Strata.Python.RegexAST.union (Strata.Python.RegexAST.char '.') (Strata.Python.RegexAST.char '-'),
+info: Except.ok (StrataPython.RegexAST.union (StrataPython.RegexAST.char '.') (StrataPython.RegexAST.char '-'),
  { byteIdx := 6 })
 -/
 #guard_msgs in
 #eval parseCharClass "[\\.\\-]" ⟨0⟩
 
 -- Escape as range start: [\.-z] = range from '.' to 'z'
-/-- info: Except.ok (Strata.Python.RegexAST.range '.' 'z', { byteIdx := 6 }) -/
+/-- info: Except.ok (StrataPython.RegexAST.range '.' 'z', { byteIdx := 6 }) -/
 #guard_msgs in
 #eval parseCharClass "[\\.-z]" ⟨0⟩
 
 -- Escape as range start with invalid bounds: [\.-,] errors (. > ,)
 /--
-info: Except.error (Strata.Python.ParseError.patternError
+info: Except.error (StrataPython.ParseError.patternError
   "Invalid character range [.-,]: start character '.' is greater than end character ','"
   "[\\.-,]"
   { byteIdx := 1 })
@@ -101,7 +101,7 @@ info: Except.error (Strata.Python.ParseError.patternError
 #eval parseCharClass "[\\.-,]" ⟨0⟩
 
 /--
-info: Except.error (Strata.Python.ParseError.unimplemented
+info: Except.error (StrataPython.ParseError.unimplemented
   "Special sequence \\d in character class is not supported"
   "[\\d]"
   { byteIdx := 1 })
@@ -110,7 +110,7 @@ info: Except.error (Strata.Python.ParseError.unimplemented
 #eval parseCharClass "[\\d]" ⟨0⟩
 
 /--
-info: Except.error (Strata.Python.ParseError.unimplemented
+info: Except.error (StrataPython.ParseError.unimplemented
   "Escape sequence \\n in character class is not supported"
   "[\\n]"
   { byteIdx := 1 })
@@ -129,12 +129,12 @@ section Test.parseBounds
 #guard_msgs in
 #eval parseBounds "{100,100}" ⟨0⟩
 /--
-info: Except.error (Strata.Python.ParseError.patternError "Expected '{' at start of bounds" "abc" { byteIdx := 0 })
+info: Except.error (StrataPython.ParseError.patternError "Expected '{' at start of bounds" "abc" { byteIdx := 0 })
 -/
 #guard_msgs in
 #eval parseBounds "abc" ⟨0⟩
 /--
-info: Except.error (Strata.Python.ParseError.patternError
+info: Except.error (StrataPython.ParseError.patternError
   "Invalid repeat bounds {100,2}: maximum 2 is less than minimum 100"
   "{100,2}"
   { byteIdx := 0 })
@@ -147,9 +147,9 @@ end Test.parseBounds
 section Test.parseTop
 
 /--
-info: Except.ok (Strata.Python.RegexAST.union
-  (Strata.Python.RegexAST.union (Strata.Python.RegexAST.char '1') (Strata.Python.RegexAST.range '0' '1'))
-  (Strata.Python.RegexAST.char '5'))
+info: Except.ok (StrataPython.RegexAST.union
+  (StrataPython.RegexAST.union (StrataPython.RegexAST.char '1') (StrataPython.RegexAST.range '0' '1'))
+  (StrataPython.RegexAST.char '5'))
 -/
 #guard_msgs in
 /-
@@ -160,35 +160,35 @@ Cross-checked with:
 #eval parseTop "[10-15]"
 
 /--
-info: Except.ok (Strata.Python.RegexAST.concat
-  (Strata.Python.RegexAST.char 'a')
-  (Strata.Python.RegexAST.optional (Strata.Python.RegexAST.char 'b')))
+info: Except.ok (StrataPython.RegexAST.concat
+  (StrataPython.RegexAST.char 'a')
+  (StrataPython.RegexAST.optional (StrataPython.RegexAST.char 'b')))
 -/
 #guard_msgs in
 #eval parseTop "ab?"
 
-/-- info: Except.ok (Strata.Python.RegexAST.star (Strata.Python.RegexAST.anychar)) -/
+/-- info: Except.ok (StrataPython.RegexAST.star (StrataPython.RegexAST.anychar)) -/
 #guard_msgs in
 #eval parseTop ".*"
 
 /--
-info: Except.ok (Strata.Python.RegexAST.concat
-  (Strata.Python.RegexAST.concat
-    (Strata.Python.RegexAST.concat
-      (Strata.Python.RegexAST.concat
-        (Strata.Python.RegexAST.concat
-          (Strata.Python.RegexAST.star (Strata.Python.RegexAST.anychar))
-          (Strata.Python.RegexAST.char '.'))
-        (Strata.Python.RegexAST.char '.'))
-      (Strata.Python.RegexAST.anychar))
-    (Strata.Python.RegexAST.star (Strata.Python.RegexAST.anychar)))
-  (Strata.Python.RegexAST.char 'x'))
+info: Except.ok (StrataPython.RegexAST.concat
+  (StrataPython.RegexAST.concat
+    (StrataPython.RegexAST.concat
+      (StrataPython.RegexAST.concat
+        (StrataPython.RegexAST.concat
+          (StrataPython.RegexAST.star (StrataPython.RegexAST.anychar))
+          (StrataPython.RegexAST.char '.'))
+        (StrataPython.RegexAST.char '.'))
+      (StrataPython.RegexAST.anychar))
+    (StrataPython.RegexAST.star (StrataPython.RegexAST.anychar)))
+  (StrataPython.RegexAST.char 'x'))
 -/
 #guard_msgs in
 #eval parseTop ".*\\.\\...*x"
 
 /--
-info: Except.error (Strata.Python.ParseError.patternError
+info: Except.error (StrataPython.ParseError.patternError
   "Quantifier '{' at position 2 has nothing to quantify"
   ".*{1,10}"
   { byteIdx := 2 })
@@ -196,12 +196,12 @@ info: Except.error (Strata.Python.ParseError.patternError
 #guard_msgs in
 #eval parseTop ".*{1,10}"
 
-/-- info: Except.ok (Strata.Python.RegexAST.star (Strata.Python.RegexAST.anychar)) -/
+/-- info: Except.ok (StrataPython.RegexAST.star (StrataPython.RegexAST.anychar)) -/
 #guard_msgs in
 #eval parseTop ".*"
 
 /--
-info: Except.error (Strata.Python.ParseError.patternError
+info: Except.error (StrataPython.ParseError.patternError
   "Quantifier '*' at position 0 has nothing to quantify"
   "*abc"
   { byteIdx := 0 })
@@ -210,7 +210,7 @@ info: Except.error (Strata.Python.ParseError.patternError
 #eval parseTop "*abc"
 
 /--
-info: Except.error (Strata.Python.ParseError.patternError
+info: Except.error (StrataPython.ParseError.patternError
   "Quantifier '+' at position 0 has nothing to quantify"
   "+abc"
   { byteIdx := 0 })
@@ -218,71 +218,71 @@ info: Except.error (Strata.Python.ParseError.patternError
 #guard_msgs in
 #eval parseTop "+abc"
 
-/-- info: Except.ok (Strata.Python.RegexAST.loop (Strata.Python.RegexAST.range 'a' 'z') 1 10) -/
+/-- info: Except.ok (StrataPython.RegexAST.loop (StrataPython.RegexAST.range 'a' 'z') 1 10) -/
 #guard_msgs in
 #eval parseTop "[a-z]{1,10}"
 
-/-- info: Except.ok (Strata.Python.RegexAST.loop (Strata.Python.RegexAST.range 'a' 'z') 10 10) -/
+/-- info: Except.ok (StrataPython.RegexAST.loop (StrataPython.RegexAST.range 'a' 'z') 10 10) -/
 #guard_msgs in
 #eval parseTop "[a-z]{10}"
 
 /--
-info: Except.ok (Strata.Python.RegexAST.concat
-  (Strata.Python.RegexAST.concat
-    (Strata.Python.RegexAST.concat
-      (Strata.Python.RegexAST.anchor_start)
-      (Strata.Python.RegexAST.union (Strata.Python.RegexAST.range 'a' 'z') (Strata.Python.RegexAST.range '0' '9')))
-    (Strata.Python.RegexAST.loop
-      (Strata.Python.RegexAST.union
-        (Strata.Python.RegexAST.union
-          (Strata.Python.RegexAST.union (Strata.Python.RegexAST.range 'a' 'z') (Strata.Python.RegexAST.range '0' '9'))
-          (Strata.Python.RegexAST.char '.'))
-        (Strata.Python.RegexAST.char '-'))
+info: Except.ok (StrataPython.RegexAST.concat
+  (StrataPython.RegexAST.concat
+    (StrataPython.RegexAST.concat
+      (StrataPython.RegexAST.anchor_start)
+      (StrataPython.RegexAST.union (StrataPython.RegexAST.range 'a' 'z') (StrataPython.RegexAST.range '0' '9')))
+    (StrataPython.RegexAST.loop
+      (StrataPython.RegexAST.union
+        (StrataPython.RegexAST.union
+          (StrataPython.RegexAST.union (StrataPython.RegexAST.range 'a' 'z') (StrataPython.RegexAST.range '0' '9'))
+          (StrataPython.RegexAST.char '.'))
+        (StrataPython.RegexAST.char '-'))
       1
       10))
-  (Strata.Python.RegexAST.anchor_end))
+  (StrataPython.RegexAST.anchor_end))
 -/
 #guard_msgs in
 #eval parseTop "^[a-z0-9][a-z0-9.-]{1,10}$"
 
 -- Incomplete escape sequence at top level
 /--
-info: Except.error (Strata.Python.ParseError.patternError "Incomplete escape sequence" "\\" { byteIdx := 0 })
+info: Except.error (StrataPython.ParseError.patternError "Incomplete escape sequence" "\\" { byteIdx := 0 })
 -/
 #guard_msgs in
 #eval parseTop "\\"
 
 -- Test escape sequences (need \\ in Lean strings to get single \)
 /--
-info: Except.ok (Strata.Python.RegexAST.concat
-  (Strata.Python.RegexAST.concat
-    (Strata.Python.RegexAST.concat
-      (Strata.Python.RegexAST.concat
-        (Strata.Python.RegexAST.star (Strata.Python.RegexAST.anychar))
-        (Strata.Python.RegexAST.char '.'))
-      (Strata.Python.RegexAST.char '.'))
-    (Strata.Python.RegexAST.anychar))
-  (Strata.Python.RegexAST.star (Strata.Python.RegexAST.anychar)))
+info: Except.ok (StrataPython.RegexAST.concat
+  (StrataPython.RegexAST.concat
+    (StrataPython.RegexAST.concat
+      (StrataPython.RegexAST.concat
+        (StrataPython.RegexAST.star (StrataPython.RegexAST.anychar))
+        (StrataPython.RegexAST.char '.'))
+      (StrataPython.RegexAST.char '.'))
+    (StrataPython.RegexAST.anychar))
+  (StrataPython.RegexAST.star (StrataPython.RegexAST.anychar)))
 -/
 #guard_msgs in
 #eval parseTop ".*\\.\\...*"
 
 /--
-info: Except.ok (Strata.Python.RegexAST.concat
-  (Strata.Python.RegexAST.concat
-    (Strata.Python.RegexAST.concat
-      (Strata.Python.RegexAST.concat
-        (Strata.Python.RegexAST.concat (Strata.Python.RegexAST.anchor_start) (Strata.Python.RegexAST.char 'x'))
-        (Strata.Python.RegexAST.char 'n'))
-      (Strata.Python.RegexAST.char '-'))
-    (Strata.Python.RegexAST.char '-'))
-  (Strata.Python.RegexAST.star (Strata.Python.RegexAST.anychar)))
+info: Except.ok (StrataPython.RegexAST.concat
+  (StrataPython.RegexAST.concat
+    (StrataPython.RegexAST.concat
+      (StrataPython.RegexAST.concat
+        (StrataPython.RegexAST.concat (StrataPython.RegexAST.anchor_start) (StrataPython.RegexAST.char 'x'))
+        (StrataPython.RegexAST.char 'n'))
+      (StrataPython.RegexAST.char '-'))
+    (StrataPython.RegexAST.char '-'))
+  (StrataPython.RegexAST.star (StrataPython.RegexAST.anychar)))
 -/
 #guard_msgs in
 #eval parseTop "^xn--.*"
 
 /--
-info: Except.error (Strata.Python.ParseError.patternError
+info: Except.error (StrataPython.ParseError.patternError
   "Invalid character range [x-c]: start character 'x' is greater than end character 'c'"
   "[x-c]"
   { byteIdx := 1 })
@@ -291,7 +291,7 @@ info: Except.error (Strata.Python.ParseError.patternError
 #eval parseTop "[x-c]"
 
 /--
-info: Except.error (Strata.Python.ParseError.patternError
+info: Except.error (StrataPython.ParseError.patternError
   "Invalid character range [1-0]: start character '1' is greater than end character '0'"
   "[51-08]"
   { byteIdx := 2 })
@@ -300,71 +300,71 @@ info: Except.error (Strata.Python.ParseError.patternError
 #eval parseTop "[51-08]"
 
 /--
-info: Except.ok (Strata.Python.RegexAST.group
-  (Strata.Python.RegexAST.concat
-    (Strata.Python.RegexAST.concat (Strata.Python.RegexAST.char 'a') (Strata.Python.RegexAST.char 'b'))
-    (Strata.Python.RegexAST.char 'c')))
+info: Except.ok (StrataPython.RegexAST.group
+  (StrataPython.RegexAST.concat
+    (StrataPython.RegexAST.concat (StrataPython.RegexAST.char 'a') (StrataPython.RegexAST.char 'b'))
+    (StrataPython.RegexAST.char 'c')))
 -/
 #guard_msgs in
 #eval parseTop "(abc)"
 
 /--
-info: Except.ok (Strata.Python.RegexAST.group
-  (Strata.Python.RegexAST.union (Strata.Python.RegexAST.char 'a') (Strata.Python.RegexAST.char 'b')))
+info: Except.ok (StrataPython.RegexAST.group
+  (StrataPython.RegexAST.union (StrataPython.RegexAST.char 'a') (StrataPython.RegexAST.char 'b')))
 -/
 #guard_msgs in
 #eval parseTop "(a|b)"
 
 /--
-info: Except.ok (Strata.Python.RegexAST.union
-  (Strata.Python.RegexAST.concat
-    (Strata.Python.RegexAST.concat (Strata.Python.RegexAST.anchor_start) (Strata.Python.RegexAST.char 'a'))
-    (Strata.Python.RegexAST.anchor_end))
-  (Strata.Python.RegexAST.concat
-    (Strata.Python.RegexAST.concat (Strata.Python.RegexAST.anchor_start) (Strata.Python.RegexAST.char 'b'))
-    (Strata.Python.RegexAST.anchor_end)))
+info: Except.ok (StrataPython.RegexAST.union
+  (StrataPython.RegexAST.concat
+    (StrataPython.RegexAST.concat (StrataPython.RegexAST.anchor_start) (StrataPython.RegexAST.char 'a'))
+    (StrataPython.RegexAST.anchor_end))
+  (StrataPython.RegexAST.concat
+    (StrataPython.RegexAST.concat (StrataPython.RegexAST.anchor_start) (StrataPython.RegexAST.char 'b'))
+    (StrataPython.RegexAST.anchor_end)))
 -/
 #guard_msgs in
 #eval parseTop "^a$|^b$"
 
 /--
-info: Except.ok (Strata.Python.RegexAST.union
-  (Strata.Python.RegexAST.group
-    (Strata.Python.RegexAST.concat
-      (Strata.Python.RegexAST.concat (Strata.Python.RegexAST.anchor_start) (Strata.Python.RegexAST.char 'a'))
-      (Strata.Python.RegexAST.anchor_end)))
-  (Strata.Python.RegexAST.group
-    (Strata.Python.RegexAST.concat
-      (Strata.Python.RegexAST.concat (Strata.Python.RegexAST.anchor_start) (Strata.Python.RegexAST.char 'b'))
-      (Strata.Python.RegexAST.anchor_end))))
+info: Except.ok (StrataPython.RegexAST.union
+  (StrataPython.RegexAST.group
+    (StrataPython.RegexAST.concat
+      (StrataPython.RegexAST.concat (StrataPython.RegexAST.anchor_start) (StrataPython.RegexAST.char 'a'))
+      (StrataPython.RegexAST.anchor_end)))
+  (StrataPython.RegexAST.group
+    (StrataPython.RegexAST.concat
+      (StrataPython.RegexAST.concat (StrataPython.RegexAST.anchor_start) (StrataPython.RegexAST.char 'b'))
+      (StrataPython.RegexAST.anchor_end))))
 -/
 #guard_msgs in
 #eval parseTop "(^a$)|(^b$)"
 
 /--
-info: Except.ok (Strata.Python.RegexAST.star
-  (Strata.Python.RegexAST.group
-    (Strata.Python.RegexAST.union
-      (Strata.Python.RegexAST.concat (Strata.Python.RegexAST.char 'a') (Strata.Python.RegexAST.char 'b'))
-      (Strata.Python.RegexAST.concat (Strata.Python.RegexAST.char 'c') (Strata.Python.RegexAST.char 'd')))))
+info: Except.ok (StrataPython.RegexAST.star
+  (StrataPython.RegexAST.group
+    (StrataPython.RegexAST.union
+      (StrataPython.RegexAST.concat (StrataPython.RegexAST.char 'a') (StrataPython.RegexAST.char 'b'))
+      (StrataPython.RegexAST.concat (StrataPython.RegexAST.char 'c') (StrataPython.RegexAST.char 'd')))))
 -/
 #guard_msgs in
 #eval parseTop "(ab|cd)*"
 
 /--
-info: Except.ok (Strata.Python.RegexAST.concat
-  (Strata.Python.RegexAST.char 'a')
-  (Strata.Python.RegexAST.optional (Strata.Python.RegexAST.char 'b')))
+info: Except.ok (StrataPython.RegexAST.concat
+  (StrataPython.RegexAST.char 'a')
+  (StrataPython.RegexAST.optional (StrataPython.RegexAST.char 'b')))
 -/
 #guard_msgs in
 #eval parseTop "ab?"
 
-/-- info: Except.ok (Strata.Python.RegexAST.optional (Strata.Python.RegexAST.range 'a' 'z')) -/
+/-- info: Except.ok (StrataPython.RegexAST.optional (StrataPython.RegexAST.range 'a' 'z')) -/
 #guard_msgs in
 #eval parseTop "[a-z]?"
 
 /--
-info: Except.error (Strata.Python.ParseError.unimplemented
+info: Except.error (StrataPython.ParseError.unimplemented
   "Positive lookahead (?=...) is not supported"
   "(?=test)"
   { byteIdx := 0 })
@@ -373,7 +373,7 @@ info: Except.error (Strata.Python.ParseError.unimplemented
 #eval parseTop "(?=test)"
 
 /--
-info: Except.error (Strata.Python.ParseError.unimplemented
+info: Except.error (StrataPython.ParseError.unimplemented
   "Negative lookahead (?!...) is not supported"
   "(?!silly-)"
   { byteIdx := 0 })
@@ -382,7 +382,7 @@ info: Except.error (Strata.Python.ParseError.unimplemented
 #eval parseTop "(?!silly-)"
 
 /--
-info: Except.error (Strata.Python.ParseError.unimplemented
+info: Except.error (StrataPython.ParseError.unimplemented
   "Extension notation (?...) is not supported"
   "(?:abc)"
   { byteIdx := 0 })
@@ -391,7 +391,7 @@ info: Except.error (Strata.Python.ParseError.unimplemented
 #eval parseTop "(?:abc)"
 
 /--
-info: Except.error (Strata.Python.ParseError.unimplemented
+info: Except.error (StrataPython.ParseError.unimplemented
   "Extension notation (?...) is not supported"
   "(?P<name>test)"
   { byteIdx := 0 })
@@ -400,101 +400,101 @@ info: Except.error (Strata.Python.ParseError.unimplemented
 #eval parseTop "(?P<name>test)"
 
 /--
-info: Except.error (Strata.Python.ParseError.unimplemented "Special sequence \\d is not supported" "\\d+" { byteIdx := 0 })
+info: Except.error (StrataPython.ParseError.unimplemented "Special sequence \\d is not supported" "\\d+" { byteIdx := 0 })
 -/
 #guard_msgs in
 #eval parseTop "\\d+"
 
 /--
-info: Except.error (Strata.Python.ParseError.unimplemented "Special sequence \\w is not supported" "\\w*" { byteIdx := 0 })
+info: Except.error (StrataPython.ParseError.unimplemented "Special sequence \\w is not supported" "\\w*" { byteIdx := 0 })
 -/
 #guard_msgs in
 #eval parseTop "\\w*"
 
 /--
-info: Except.error (Strata.Python.ParseError.unimplemented "Special sequence \\s is not supported" "\\s+" { byteIdx := 0 })
+info: Except.error (StrataPython.ParseError.unimplemented "Special sequence \\s is not supported" "\\s+" { byteIdx := 0 })
 -/
 #guard_msgs in
 #eval parseTop "\\s+"
 
 /--
-info: Except.error (Strata.Python.ParseError.unimplemented "Escape sequence \\n is not supported" "test\\n" { byteIdx := 4 })
+info: Except.error (StrataPython.ParseError.unimplemented "Escape sequence \\n is not supported" "test\\n" { byteIdx := 4 })
 -/
 #guard_msgs in
 #eval parseTop "test\\n"
 
 /--
-info: Except.error (Strata.Python.ParseError.unimplemented "Backreference \\1 is not supported" "(a)\\1" { byteIdx := 3 })
+info: Except.error (StrataPython.ParseError.unimplemented "Backreference \\1 is not supported" "(a)\\1" { byteIdx := 3 })
 -/
 #guard_msgs in
 #eval parseTop "(a)\\1"
 
 /--
-info: Except.error (Strata.Python.ParseError.unimplemented "Non-greedy quantifier *? is not supported" "a*?" { byteIdx := 1 })
+info: Except.error (StrataPython.ParseError.unimplemented "Non-greedy quantifier *? is not supported" "a*?" { byteIdx := 1 })
 -/
 #guard_msgs in
 #eval parseTop "a*?"
 
 /--
-info: Except.error (Strata.Python.ParseError.unimplemented "Non-greedy quantifier +? is not supported" "a+?" { byteIdx := 1 })
+info: Except.error (StrataPython.ParseError.unimplemented "Non-greedy quantifier +? is not supported" "a+?" { byteIdx := 1 })
 -/
 #guard_msgs in
 #eval parseTop "a+?"
 
 /--
-info: Except.error (Strata.Python.ParseError.unimplemented "Non-greedy quantifier ?? is not supported" "a??" { byteIdx := 1 })
+info: Except.error (StrataPython.ParseError.unimplemented "Non-greedy quantifier ?? is not supported" "a??" { byteIdx := 1 })
 -/
 #guard_msgs in
 #eval parseTop "a??"
 
 /--
-info: Except.error (Strata.Python.ParseError.unimplemented "Possessive quantifier *+ is not supported" "a*+" { byteIdx := 1 })
+info: Except.error (StrataPython.ParseError.unimplemented "Possessive quantifier *+ is not supported" "a*+" { byteIdx := 1 })
 -/
 #guard_msgs in
 #eval parseTop "a*+"
 
 /--
-info: Except.error (Strata.Python.ParseError.unimplemented "Possessive quantifier ++ is not supported" "a++" { byteIdx := 1 })
+info: Except.error (StrataPython.ParseError.unimplemented "Possessive quantifier ++ is not supported" "a++" { byteIdx := 1 })
 -/
 #guard_msgs in
 #eval parseTop "a++"
 
 /--
-info: Except.error (Strata.Python.ParseError.unimplemented "Possessive quantifier ?+ is not supported" "a?+" { byteIdx := 1 })
+info: Except.error (StrataPython.ParseError.unimplemented "Possessive quantifier ?+ is not supported" "a?+" { byteIdx := 1 })
 -/
 #guard_msgs in
 #eval parseTop "a?+"
 
 /--
-info: Except.ok (Strata.Python.RegexAST.union
-  (Strata.Python.RegexAST.empty)
-  (Strata.Python.RegexAST.concat (Strata.Python.RegexAST.char 'x') (Strata.Python.RegexAST.char 'y')))
+info: Except.ok (StrataPython.RegexAST.union
+  (StrataPython.RegexAST.empty)
+  (StrataPython.RegexAST.concat (StrataPython.RegexAST.char 'x') (StrataPython.RegexAST.char 'y')))
 -/
 #guard_msgs in
 #eval parseTop "|xy"
 
 /--
-info: Except.ok (Strata.Python.RegexAST.concat
-  (Strata.Python.RegexAST.char 'a')
-  (Strata.Python.RegexAST.group
-    (Strata.Python.RegexAST.union (Strata.Python.RegexAST.empty) (Strata.Python.RegexAST.char 'b'))))
+info: Except.ok (StrataPython.RegexAST.concat
+  (StrataPython.RegexAST.char 'a')
+  (StrataPython.RegexAST.group
+    (StrataPython.RegexAST.union (StrataPython.RegexAST.empty) (StrataPython.RegexAST.char 'b'))))
 -/
 #guard_msgs in
 #eval parseTop "a(|b)"
 
 /--
-info: Except.error (Strata.Python.ParseError.patternError "Unbalanced parenthesis" "x)" { byteIdx := 1 })
+info: Except.error (StrataPython.ParseError.patternError "Unbalanced parenthesis" "x)" { byteIdx := 1 })
 -/
 #guard_msgs in
 #eval parseTop "x)"
 
 /--
-info: Except.error (Strata.Python.ParseError.patternError "Unbalanced parenthesis" "())" { byteIdx := 2 })
+info: Except.error (StrataPython.ParseError.patternError "Unbalanced parenthesis" "())" { byteIdx := 2 })
 -/
 #guard_msgs in
 #eval parseTop "())"
 
 end Test.parseTop
 
-end Strata.Python
+end StrataPython
 end

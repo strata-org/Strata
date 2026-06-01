@@ -14,10 +14,9 @@ These tests verify that passing `None` where a typed parameter is expected
 is correctly detected as a bug, both for direct assignments and dict unpacking.
 -/
 
-namespace Strata.Python.DictNoneTest
-
-open Strata.Python (processPythonFile withPython)
 open StrataDDM.Parser (stringInputContext)
+
+namespace StrataPython.DictNoneTest
 
 -- Test 1: Using a valid int should succeed (0 diagnostics).
 #guard_msgs in
@@ -113,4 +112,4 @@ def main() -> None:
     unless (toString err).contains "len() is not supported" do
       throw <| IO.userError s!"Unexpected error: {err}"
 
-end Strata.Python.DictNoneTest
+end StrataPython.DictNoneTest

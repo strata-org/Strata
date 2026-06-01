@@ -18,7 +18,7 @@ running `mise`.
 -/
 
 public meta section
-namespace Strata.Python
+namespace StrataPython
 
 /--
 This runs `mise where {runtime}` to identify where a Mise runtime
@@ -209,5 +209,5 @@ def withPython (action : System.FilePath → IO Unit) : IO Unit := do
       s!"Python Strata libraries not installed in {pythonCmd}."
   action pythonCmd
 
-end Strata.Python
+end StrataPython
 end
