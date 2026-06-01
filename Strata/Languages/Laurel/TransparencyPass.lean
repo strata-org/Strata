@@ -108,16 +108,11 @@ private def mkFunctionCopy (asFunctionNames : List String) (proc : Procedure) : 
     | x => x
   { proc with name := funcName, isFunctional := true, body := body, preconditions := [] }
 
-/-- Check whether a function copy has a body (i.e. the procedure was transparent). -/
-private def functionHasBody (proc : Procedure) : Bool :=
-  match proc.body with
-  | .Transparent _ => true
-  | _ => false
-
 /-- Append a free postcondition to a procedure's body postconditions.
     For Opaque and Abstract bodies, the free condition is appended to the
     existing postcondition list. For Transparent bodies, the body is promoted
-    to Opaque so the free postcondition can be carried. -/
+    to Opaque so the free postcondition can be carried.
+    This change in opaqueness is fine since the function copy now carries the transparent semantics. -/
 private def addFreePostcondition (proc : Procedure) (freePost : StmtExprMd) : Procedure :=
   match freePost.val with
   | .LiteralBool true => proc  -- trivial, skip
