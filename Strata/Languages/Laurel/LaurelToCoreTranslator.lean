@@ -63,8 +63,11 @@ structure TranslateState where
   model : SemanticModel
   /-- Overflow check configuration -/
   overflowChecks : Core.OverflowChecks := {}
-  /-- Do not process the produces Core program, since it has superfluous errors -/
-  coreProgramHasSuperfluousErrors: Bool := false
+  /-- Diagnostics that indicate the Core program should not be processed further.
+      When non-empty, the produced Core program is suppressed. Each entry records
+      why the program was deemed invalid so that if no other diagnostics explain
+      the suppression, these can be surfaced to the user. -/
+  coreDiagnostics : List DiagnosticModel := []
 
 /-- The translation monad: state over Except, allowing both accumulated diagnostics and hard failures -/
 @[expose] abbrev TranslateM := OptionT (StateM TranslateState)
@@ -73,8 +76,12 @@ structure TranslateState where
 def emitDiagnostic (d : DiagnosticModel) : TranslateM Unit :=
   modify fun s => { s with diagnostics := s.diagnostics ++ [d] }
 
-private def invalidCoreType : TranslateM LMonoTy := do
-  modify fun s => { s with coreProgramHasSuperfluousErrors := true }
+/-- Emit a core diagnostic that flags the Core program as invalid. -/
+def emitCoreDiagnostic (d : DiagnosticModel) : TranslateM Unit :=
+  modify fun s => { s with coreDiagnostics := s.coreDiagnostics ++ [d] }
+
+private def invalidCoreType (source : Option FileRange) (reason : String) : TranslateM LMonoTy := do
+  emitCoreDiagnostic (diagnosticFromSource source reason DiagnosticType.StrataBug)
   return .tcons s!"LaurelResolutionErrorPlaceholder" []
 
 /-
@@ -98,15 +105,14 @@ def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
     | some (.datatypeDefinition dt) => return .tcons dt.name.text []
     | some (.datatypeConstructor typeName _) => return .tcons typeName.text []
     | _ => do -- resolution should have already emitted a diagnostic
-      modify fun s => { s with coreProgramHasSuperfluousErrors := true }
+      emitCoreDiagnostic (diagnosticFromSource ty.source s!"UserDefined type could not be resolved to a composite or datatype" DiagnosticType.StrataBug)
       return .tcons "Composite" []
   | .TCore s => return .tcons s []
   | .TReal => return LMonoTy.real
-  | .MultiValuedExpr _ => invalidCoreType
-  | .Unknown => invalidCoreType
+  | .MultiValuedExpr _ => invalidCoreType ty.source "MultiValuedExpr type encountered during Core translation"
+  | .Unknown => invalidCoreType ty.source "Unknown type encountered during Core translation"
   | _ => do
-    emitDiagnostic (diagnosticFromSource ty.source "cannot translate type to Core: not supported yet" DiagnosticType.StrataBug)
-    invalidCoreType
+    invalidCoreType ty.source s!"cannot translate type to Core: not supported yet"
 
 termination_by ty.val
 decreasing_by all_goals (first | (cases elementType; term_by_mem) | (cases keyType; term_by_mem) | (cases valueType; term_by_mem))
@@ -131,7 +137,7 @@ private def freshId : TranslateM Nat := do
 /-- Throw a hard diagnostic error, aborting the current translation -/
 def throwExprDiagnostic (d : DiagnosticModel): TranslateM Core.Expression.Expr := do
   emitDiagnostic d
-  modify fun s => { s with coreProgramHasSuperfluousErrors := true }
+  emitCoreDiagnostic d
   let id ← freshId
   return LExpr.fvar () (⟨s!"DUMMY_VAR_{id}", ()⟩) none
 
@@ -349,7 +355,7 @@ private def exprAsUnusedInit (expr : StmtExprMd) (md : Imperative.MetaData Core.
 
 def throwStmtDiagnostic (d : DiagnosticModel): TranslateM (List Core.Statement) := do
   emitDiagnostic d
-  modify fun s => { s with coreProgramHasSuperfluousErrors := true }
+  emitCoreDiagnostic d
   return []
 
 /--
@@ -497,8 +503,8 @@ def translateStmt (stmt : StmtExprMd)
       | none =>
           return [.exit "$body" md]
       | some _ =>
-          emitDiagnostic $ md.toDiagnostic "Return statement with value should have been eliminated by EliminateValueReturns pass" DiagnosticType.StrataBug
-          modify fun s => { s with coreProgramHasSuperfluousErrors := true }
+          let d := md.toDiagnostic "Return statement with value should have been eliminated by EliminateValueReturns pass" DiagnosticType.StrataBug
+          emitCoreDiagnostic d
           return [.exit "$body" md]
   | .While cond invariants decreasesExpr body =>
       let condExpr ← translateExpr cond
