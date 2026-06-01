@@ -136,9 +136,9 @@ baseline used by the *Default-policy results* below.
 | v3 + sv-comp combined | 39 | — | 54 | `--split-procs` | v3 ∪ sv-comp (93 programs total) |
 | v4 (bodyOrContract) | 82 | — | 11 | `--split-procs --call-policy bodyOrContract` | body-eval at call sites (`dd0c0d7cd`) on the combined 93-program suite |
 | v5 (PASS-? surfacing) | 57 | 18 | 11 | `--split-procs --call-policy bodyOrContract --check-level full` | run-pipeline emits `--check-level full` and surfaces `path unreachable` as `PASS-?` (`a817909fc`); 8 large `.bpl` (≥20K lines) excluded due to the deferred-obligation hang since fixed in v6 — see *Resolved blockers (history)* |
-| v6 (deferred-dedup) | **TBD** | **TBD** | **TBD** | `--split-procs --call-policy bodyOrContract --inline-fuel 100 --check-level full` | CFG `condGoto` deferred-dedup fix (`277c468cb`) on the full 94-program suite (no programs excluded) |
+| v6 (deferred-dedup) | **68** | **15** | **11** | `--split-procs --call-policy bodyOrContract --inline-fuel 100 --check-level full` | CFG `condGoto` deferred-dedup fix (`277c468cb`) on the full 94-program suite (no programs excluded) |
 
-The deductive PASS climb from 21 → 39 → 82 → 57 → TBD is the project
+The deductive PASS climb from 21 → 39 → 82 → 57 → 68 is the project
 arc: each bend was driven by a specific fix landing on `htd/smack`.
 v3 → v3+sv-comp shows the SV-COMP programs adding 18 new PASSes;
 combined → v4 shows body-eval flipping 43 PARTIALs to PASS in a single
@@ -230,19 +230,20 @@ The `Detail` column reports per-procedure VC counts under
 `--split-procs`, which runs each procedure independently and rolls
 the verdicts up per-file.
 
-### v5 results: bodyOrContract + path-unreachable surfacing
+### v6 results: bodyOrContract + path-unreachable surfacing + deferred-dedup
 
-Latest run on the 86-program subset (8 large files excluded; see
-*Known blocker* below) under `--call-policy bodyOrContract --inline-fuel 100
+Latest run on the full 94-program suite (no exclusions; the eight
+previously-hanging programs now run cleanly thanks to commit
+`277c468cb`) under `--call-policy bodyOrContract --inline-fuel 100
 --check-level full --split-procs`:
 
 |  | PASS | PASS-? | PARTIAL | FAIL | TIMEOUT |
 |---|---:|---:|---:|---:|---:|
-| Strata deductive | 57 | 18 | 11 | 0 | 0 |
-| Strata bugFinding | 57 | 18 | 11 | 0 | 0 |
-| Strata-CBMC | 0 | 0 | 0 | 86 | 0 |
+| Strata deductive | 68 | 15 | 11 | 0 | 0 |
+| Strata bugFinding | 68 | 15 | 11 | 0 | 0 |
+| Strata-CBMC | 0 | 0 | 0 | 94 | 0 |
 
-The 18 PASS-? entries surface what was previously a hidden tooling
+The 15 PASS-? entries surface what was previously a hidden tooling
 gap (the matrix collapsed `pass (❗path unreachable)` into PASS).
 Splitting by the SV-COMP oracle's expected verdict:
 
@@ -254,13 +255,21 @@ Splitting by the SV-COMP oracle's expected verdict:
 - **Would-be-PASS (oracle: safe, or no oracle — vacuous proof on a
   provable program):** `sv_locks_10`, `sv_locks_11`, `sv_locks_12`,
   `sv_locks_13`, `sv_loops_loopv3`, `sv_loops_mono1_1_2`,
-  `sv_loops_nested3_1`, `array_sum`, `loop_sum`,
-  `HTTPClient_AddRangeHeader_harness`, `skipString_harness`,
-  `skipUTF8_harness`. These should reach a real PASS but Strata's
-  loop-havoc abstraction collapses the path-condition before the
-  assertion is reached.
+  `sv_loops_nested3_1`, `array_sum`, `loop_sum`. These should reach a
+  real PASS but Strata's loop-havoc abstraction collapses the
+  path-condition before the assertion is reached.
 
-The remaining 57 PASS entries are real deductive proofs.
+The remaining 68 PASS entries are real deductive proofs.
+
+**Three v5 PASS-? programs flipped to clean PASS in v6:**
+`HTTPClient_AddRangeHeader_harness`, `skipString_harness`,
+`skipUTF8_harness`. These programs reach the post-loop assertion via
+inlined callee bodies whose deferred-obligation set was previously
+duplicated across symbolic CFG branches — the dedup fix
+(`277c468cb`) lets the verifier prove the assertion directly rather
+than vacuously discharge it on contradictory accumulated path-
+conditions. The remaining 15 PASS-? cases involve top-level loops
+that don't depend on the dedup, so they're unchanged.
 
 **Why these are vacuous (qualitative analysis, 2026-05-30):** every
 PASS-? program has the shape "loop, then assertion." Strata's evaluator
@@ -268,16 +277,19 @@ treats the loop as `loopHasNoInvariants` — havoc the loop-modified
 state, then assume the loop guard is false. The post-loop assertion is
 evaluated against havoc'd state, and the resulting path-condition turns
 out unsatisfiable, triggering `path unreachable`. **An empirical
-fuel-bump experiment (running 12 of the 18 at `--inline-fuel 500`)
-produced zero verdict changes** — `--inline-fuel` controls body-eval
-recursion, not loop unrolling. Even `array_sum` (4-iteration loop)
-remains PASS-? at fuel=500. Full analysis at
-`../../reports/v5-pass-question-mark-analysis.md`.
+fuel-bump experiment (running 12 of the v5's 18 at `--inline-fuel
+500`) produced zero verdict changes** — `--inline-fuel` controls
+body-eval recursion, not loop unrolling. Even `array_sum`
+(4-iteration loop) remains PASS-? at fuel=500. Full analysis at
+`../../reports/v5-pass-question-mark-analysis.md`. (The v6 deferred-
+dedup fix subsequently flipped 3 of those cases to real PASS by
+removing duplicate path-conditions, but the remaining 15 are still
+loop-havoc-driven.)
 
 **Implication for matrix interpretation:** PASS-? lumps two
 semantically-opposite outcomes:
 - **Would-be-PASS** if loops were handled with concrete unrolling or
-  stronger invariants: 12 cases.
+  stronger invariants: 9 cases (in v6).
 - **Would-be-FAIL** because the program is genuinely unsafe and Strata
   is hiding the failure behind a vacuous discharge: 6 cases.
 
@@ -305,9 +317,11 @@ the resulting class:
 | `sv_loops_nested3_1` | safe | triply-nested loops to 0x0fffffff | would-be-PASS |
 | `array_sum` | n/a | `for (i=0;i<4;i++) sum+=a[i]; assert(sum==10)` — small loop havoc'd | would-be-PASS |
 | `loop_sum` | n/a | `for (i=0;i<5;i++) sum+=i; assert(sum==10)` — small loop havoc'd | would-be-PASS |
-| `HTTPClient_AddRangeHeader_harness` | n/a | inlined callee `convertInt32ToAscii` digit-buffer loop | would-be-PASS |
-| `skipString_harness` | n/a | inlined `skipString` while-loop + `skipUTF8` callee chain | would-be-PASS |
-| `skipUTF8_harness` | n/a | inlined `countHighBits` `while ((n & 0x80U) != 0U)` | would-be-PASS |
+
+(In v5, three additional programs were classified PASS-? —
+`HTTPClient_AddRangeHeader_harness`, `skipString_harness`,
+`skipUTF8_harness` — but the v6 deferred-dedup fix lets all three
+reach a real PASS, so they're no longer in the table.)
 
 `array_sum` (4-iteration loop) and `loop_sum` (5-iteration loop) are
 the most surprising — small concrete loops that should plausibly be
@@ -323,17 +337,15 @@ handle their multi-branch result envs (`nondet_branch` is the
 canonical case; see `MULTIPATH_COMMAND_EVAL.md`) or their assertion
 genuinely fails.
 
-#### v5 per-program detail
+#### v6 per-program detail
 
-All 94 .bpl programs. `Ded` and `Bug` columns are v5 verdicts under
+All 94 .bpl programs. `Ded` and `Bug` columns are v6 verdicts under
 `--call-policy bodyOrContract --inline-fuel 100 --check-level full
---split-procs`. `CBN` is the v3 cbmc-native verdict (v5 didn't re-run
+--split-procs`. `CBN` is the v3 cbmc-native verdict (v6 didn't re-run
 cbmc-native). `CBM` (Strata-CBMC) is omitted because it was uniformly
 FAIL on every row in both runs — see "Why CBM is FAIL on every row"
-below. `—` means the program was excluded from v5 (8 hangs + the
-always-excluded picohttpparser). For per-program v3 (contract-policy)
-verdicts and the historical PARTIAL VC counts, see the v3→v5 diff
-table below.
+below. For per-program v3 (contract-policy) verdicts and the
+historical PARTIAL VC counts, see the v3→v6 diff table below.
 
 ```
 Program                                      |  Ded |  Bug |  CBN
@@ -377,22 +389,22 @@ aws_mul_size_saturating_harness              |   PASS |   PASS |   PASS
 aws_round_up_to_power_of_two_harness         |   PASS |   PASS |   PASS
 
 # FreeRTOS coreJSON verbatim
-JSON_Iterate_harness                         |      — |      — |   FAIL
-JSON_SearchConst_harness                     |      — |      — |   FAIL
-JSON_Validate_harness                        |      — |      — |   PASS
-skipAnyScalar_harness                        |      — |      — |   PASS
-skipCollection_harness                       |      — |      — |   FAIL
+JSON_Iterate_harness                         |   PASS |   PASS |   FAIL
+JSON_SearchConst_harness                     |   PASS |   PASS |   FAIL
+JSON_Validate_harness                        |   PASS |   PASS |   PASS
+skipAnyScalar_harness                        |   PASS |   PASS |   PASS
+skipCollection_harness                       |   PASS |   PASS |   FAIL
 skipDigits_harness                           |   PASS |   PASS |   PASS
 skipEscape_harness                           |   PASS |   PASS |   FAIL
-skipObjectScalars_harness                    |      — |      — |   FAIL
-skipScalars_harness                          |      — |      — |   FAIL
+skipObjectScalars_harness                    |   PASS |   PASS |   FAIL
+skipScalars_harness                          |   PASS |   PASS |   FAIL
 skipSpace_harness                            |   PASS |   PASS |   PASS
-skipString_harness                           | PASS-? | PASS-? |   PASS
-skipUTF8_harness                             | PASS-? | PASS-? |   PASS
+skipString_harness                           |   PASS |   PASS |   PASS
+skipUTF8_harness                             |   PASS |   PASS |   PASS
 
 # FreeRTOS coreMQTT/coreHTTP/coreSNTP verbatim
 HTTPClient_AddHeader_harness                 |   PASS |   PASS |   FAIL
-HTTPClient_AddRangeHeader_harness            | PASS-? | PASS-? |   FAIL
+HTTPClient_AddRangeHeader_harness            |   PASS |   PASS |   FAIL
 HTTPClient_InitializeRequestHeaders_harness  |   PASS |   PASS |   FAIL
 HTTPClient_ReadHeader_harness                |   PASS |   PASS |   FAIL
 HTTPClient_strerror_harness                  |   PASS |   PASS |   PASS
@@ -404,7 +416,7 @@ Sntp_SerializeRequest_harness                |   PASS |   PASS |   PASS
 
 # Standalone parsers
 cjson_cJSON_IsArray_harness                  |   PASS |   PASS |   PASS
-cjson_cJSON_Parse_harness                    |      — |      — |   FAIL
+cjson_cJSON_Parse_harness                    |   PASS |   PASS |   FAIL
 jsmn_jsmn_parse_harness                      |   PASS |   PASS |   FAIL
 # picohttpparser_phr_parse_request_harness  excluded — cbmc-native OOMs (>32 GB) on the SAT instance.
 
@@ -449,41 +461,43 @@ sv_rc_rangesum05                             |   PART |   PART |   FAIL
 sv_rc_sep05_1                                |   PART |   PART |   PASS
 sv_rc_sum                                    |   PART |   PART |   FAIL
 
-  Ded: 57 pass, 18 pass-?, 11 partial (86 verdicts; 8 hangs)
-  Bug: 57 pass, 18 pass-?, 11 partial (matches Ded exactly)
-  CBM:  0 pass — uniform FAIL on all 86 (see below)
-  CBN: 70 pass, 23 fail (v3 only; cbmc-native didn't run in v5)
+  Ded: 68 pass, 15 pass-?, 11 partial (94 verdicts; 0 hangs)
+  Bug: 68 pass, 15 pass-?, 11 partial (matches Ded exactly)
+  CBM:  0 pass — uniform FAIL on all 94 (see below)
+  CBN: 70 pass, 23 fail (v3 only; cbmc-native didn't run in v6)
 ```
 
-#### v3 → v5 per-program diff
+#### v3 → v6 per-program diff
 
-Only rows where the v3 (contract-baseline) verdict differs from v5 are
-listed. 63 of 94 programs changed; 30 unchanged rows omitted (20 same
-PASS, 10 same PART), plus `aws_array_eq_stripped` v5-only and 8 v5 hangs.
+Only rows where the v3 (contract-baseline) verdict differs from v6 are
+listed. 64 of 94 programs changed; 29 unchanged rows omitted (19 same
+PASS, 10 same PART), plus `aws_array_eq_stripped` v5+only.
 Group order matches root cause.
 
-| Programs | v3 | v5 | Cause |
+| Programs | v3 | v6 | Cause |
 |---|---|---|---|
-| `abs_func`, `aws_array_eq`, `aws_byte_cursor_advance`, `aws_ring_buffer`, `max_func`, `simple_assert`, `swap`, all 13 simplified-AWS, all 6 aws-c-common verbatim, `skipDigits_harness`, `skipSpace_harness`, all 8 RFC programs (36 total) | PART | PASS | **body-eval at call sites** (`dd0c0d7cd`, the v3→v4 lever): callee body is analyzed symbolically, post-call assertions discharge directly |
-| `skipString_harness`, `skipUTF8_harness`, `sv_loops_loopv3` | PART | PASS-? | body-eval discharges, but Strata's loop-havoc abstraction collapses the post-loop path-condition (see *v5 results*) |
-| `array_sum`, `loop_sum`, `HTTPClient_AddRangeHeader_harness`, `sv_locks_10`, `sv_locks_11`, `sv_locks_12`, `sv_locks_13`, `sv_locks_14_2`, `sv_locks_15_2`, `sv_loops_mono1_1_2`, `sv_loops_mono3_1`, `sv_loops_mono4_1`, `sv_loops_mono5_1`, `sv_loops_mono6_1`, `sv_loops_nested3_1` (15 total) | PASS | PASS-? | **PASS-? surfacing**: pipeline now passes `--check-level full` and parses the `pass (❗path unreachable)` annotation. These were already vacuous in v3/v4 — same Strata behavior, just newly visible |
+| `abs_func`, `aws_array_eq`, `aws_byte_cursor_advance`, `aws_ring_buffer`, `max_func`, `simple_assert`, `swap`, all 13 simplified-AWS, all 6 aws-c-common verbatim, `skipDigits_harness`, `skipSpace_harness`, `skipString_harness`, `skipUTF8_harness`, `HTTPClient_AddRangeHeader_harness`, all 8 RFC programs (39 total) | PART | PASS | **body-eval at call sites** (`dd0c0d7cd`, the v3→v4 lever): callee body is analyzed symbolically, post-call assertions discharge directly. The three programs in italics moved further: PART (v3) → PASS-? (v5) → PASS (v6) — the deferred-dedup fix unblocked their inlined callee paths from vacuous discharge |
+| `JSON_Iterate_harness`, `JSON_SearchConst_harness`, `cjson_cJSON_Parse_harness` | PASS | PASS | v3 → v5 hang → v6 PASS (deferred-dedup fix `277c468cb`); v3's PASS verdict was on the contract-only path before the symbolic-CFG hang manifested under bodyOrContract |
+| `JSON_Validate_harness`, `skipAnyScalar_harness`, `skipCollection_harness`, `skipObjectScalars_harness`, `skipScalars_harness` | PART | PASS | Same path: v3 PART → v5 hang → v6 PASS (the four `skip*Scalars` + `skipCollection` and `JSON_Validate` all benefit from body-eval and were previously hung on the deferred-dedup bug) |
+| `array_sum`, `loop_sum`, `sv_locks_10`, `sv_locks_11`, `sv_locks_12`, `sv_locks_13`, `sv_locks_14_2`, `sv_locks_15_2`, `sv_loops_mono1_1_2`, `sv_loops_mono3_1`, `sv_loops_mono4_1`, `sv_loops_mono5_1`, `sv_loops_mono6_1`, `sv_loops_nested3_1` (14 total) | PASS | PASS-? | **PASS-? surfacing**: pipeline now passes `--check-level full` and parses the `pass (❗path unreachable)` annotation. These were already vacuous in v3/v4 — same Strata behavior, just newly visible |
+| `sv_loops_loopv3` | PART | PASS-? | body-eval discharges, but Strata's loop-havoc abstraction collapses the post-loop path-condition |
 | `nondet_branch` | PASS | PART | Multi-branch regression: body-eval refuses callees whose body produces multiple result envs; v3's contract-policy was silently passing the resulting unknowns. See `MULTIPATH_COMMAND_EVAL.md` |
 | `aws_array_eq_stripped` | (n/a) | PASS | New variant — v3 wt-test capture predates this `.bpl` |
-| `JSON_Iterate_harness`, `JSON_SearchConst_harness`, `cjson_cJSON_Parse_harness` | PASS | — | v5 hang on ≥20K-line `.bpl` (see *Known blocker*) |
-| `JSON_Validate_harness`, `skipAnyScalar_harness`, `skipCollection_harness`, `skipObjectScalars_harness`, `skipScalars_harness` | PART | — | Same v5 hang |
 
-Net change in deductive verdicts (excluding hangs and stripped):
-- 36 PART → PASS (real verdict gain from body-eval)
-- 3 PART → PASS-? (body-eval discharges but vacuously)
-- 15 PASS → PASS-? (cosmetic — vacuity was already present, now visible)
+Net change in deductive verdicts:
+- 39 PART → PASS (body-eval + deferred-dedup combined)
+- 5 PART → PASS via the v3→v5→v6 path (originally would have hung in v5)
+- 14 PASS → PASS-? (cosmetic — vacuity was already present, now visible)
+- 1 PART → PASS-? (loop-havoc unblocks via body-eval but vacuously)
 - 1 PASS → PART (regression — `nondet_branch`)
 
-**Two distinct Strata-side changes drove these flips:** v3→v4 body-eval
-(`dd0c0d7cd`) is responsible for the 36 PART→PASS gains (and the 3
-PART→PASS-? mixed gains, and the 1 PASS→PART regression on
-`nondet_branch`); v4→v5 PASS-? surfacing is a pipeline-only change
-(uncommitted `run_pipeline.py`) responsible for the 15 PASS→PASS-? and
-3 PART→PASS-? relabels — no Strata code change.
+**Three distinct Strata-side changes drove these flips:** v3→v4
+body-eval (`dd0c0d7cd`) is responsible for most PART→PASS gains and
+the `nondet_branch` regression; v4→v5 PASS-? surfacing (`a817909fc`)
+is a pipeline-only change responsible for the 14 PASS→PASS-?
+relabels; v5→v6 deferred-dedup (`277c468cb`) unblocked the 8 hanging
+programs and incidentally graduated 3 v5-PASS-? programs to v6 real
+PASS by removing duplicate accumulated path-conditions.
 
 **Why CBM is FAIL on every row.** The cbmc backend's failure here is
 **not a counterexample to the program** — it's a build-time failure
@@ -783,9 +797,11 @@ Regression coverage in `StrataTest/Backends/CBMC/GOTO/E2E_CoreToGOTO.lean`,
 - **CFG block emission produced spurious back-edges.** Fixed by
   RPO emission (`520f3f573`); 3 of 4 cbmc-TIMEOUT programs flipped
   to real verdicts.
-- **Pipeline hang on ≥20K-line `.bpl` programs.** Four programs
+- **Pipeline hang on ≥20K-line `.bpl` programs.** Eight programs
   (`JSON_Iterate_harness`, `JSON_SearchConst_harness`,
-  `JSON_Validate_harness`, `cjson_cJSON_Parse_harness`) hung the
+  `JSON_Validate_harness`, `cjson_cJSON_Parse_harness`,
+  `skipAnyScalar_harness`, `skipCollection_harness`,
+  `skipObjectScalars_harness`, `skipScalars_harness`) hung the
   verifier indefinitely under every `--call-policy` and
   `--inline-fuel` setting; the workaround was to exclude them from
   matrix runs. Phase-bisection traced the divergence to

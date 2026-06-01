@@ -532,15 +532,20 @@ unchanged. `env.deferred` is otherwise write-only during eval
 and `ProcedureEval.lean:60` read it).
 
 **Result.** `cjson_cJSON_Parse_harness.bpl`, previously hanging
-indefinitely under every flag combination (8/8 sweep cells
-TIMEOUT at 122s), now PASSes deductive verification in 22s.
-`JSON_Iterate_harness`, `JSON_Validate_harness`,
-`JSON_SearchConst_harness` likewise unblocked. The full 94-program
-sweep under `--split-procs --call-policy bodyOrContract` produces
-83 PASS / 11 PARTIAL / 0 FAIL / 0 TIMEOUT — identical PARTIAL
+indefinitely under every flag combination, now PASSes deductive
+verification. `JSON_Iterate_harness`, `JSON_Validate_harness`,
+`JSON_SearchConst_harness`, `skipAnyScalar_harness`,
+`skipCollection_harness`, `skipObjectScalars_harness`,
+`skipScalars_harness` likewise unblocked. The full 94-program sweep
+under `--split-procs --call-policy bodyOrContract --inline-fuel 100
+--check-level full` (the v6 row in the run history) produces 68 PASS
+/ 15 PASS-? / 11 PARTIAL / 0 FAIL / 0 TIMEOUT — identical PARTIAL
 identities to the v4 baseline (no soundness regression; full
-empirical confirmation that the dropped obligations were
-duplicates).
+empirical confirmation that the dropped obligations were duplicates).
+Three v5-PASS-? programs (`HTTPClient_AddRangeHeader_harness`,
+`skipString_harness`, `skipUTF8_harness`) graduate to clean PASS in
+v6 — the dedup removes duplicate accumulated path-conditions that
+had been collapsing into vacuous discharges.
 
 **Files:** `Strata/Languages/Core/ProcedureEval.lean` (the fix),
 `StrataTest/Languages/Core/Tests/ProcedureEvalCFGTests.lean`
@@ -889,7 +894,7 @@ The branch is a substantial body of fix work. Most of it is upstream-able once t
 | Contract-ported coreJSON harnesses | 0 | 9 |
 | Cross-validation backends | 0 | 4 (deductive, bugFinding, Strata-CBMC, cbmc-native) |
 | Strata defects identified by cross-validation | 0 | 5 (4 fixed; 1 stack-overflow filed) |
-| Cross-validation matrix | none | 94-program 4-backend (64 portfolio + 29 SV-COMP + picohttpparser); v6 deductive: 83 PASS / 11 PARTIAL under `--call-policy bodyOrContract --check-level full` |
+| Cross-validation matrix | none | 94-program 4-backend (64 portfolio + 29 SV-COMP + picohttpparser); v6 deductive: 68 PASS / 15 PASS-? / 11 PARTIAL under `--call-policy bodyOrContract --inline-fuel 100 --check-level full --split-procs` |
 
 **Verdict on the combined 93-program suite (`--split-procs` mode):**
 
