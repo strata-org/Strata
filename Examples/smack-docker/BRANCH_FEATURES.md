@@ -665,16 +665,16 @@ fixtures, known issues with cross-references to upstream issues.
 Four GitHub issue drafts in the repo root (uncommitted, intended
 for opening upstream):
 
-- `strata-verify-stack-overflow-deeply-nested-expr.md` — `strata
+- `../../reports/strata-verify-stack-overflow-deeply-nested-expr.md` — `strata
   verify` SIGABRT on deeply nested `if-then-else`. Verified on
   origin/main (HEAD: `349b1cf49`); reproduces at depth ≈ 4100.
   Suspected location: `Translate.translateExpr` partial def
   recursion with no fuel.
-- `cbmc-inout-rename-collision.md` — original triage that led to
+- `../../reports/cbmc-inout-rename-collision.md` — original triage that led to
   fix 2.1.
-- `cbmc-timeouts-and-stale-expects-report.md` — RPO emission triage
+- `../../reports/cbmc-timeouts-and-stale-expects-report.md` — RPO emission triage
   that led to fix 2.5.
-- `verifier-assume-synthesis-report.md` — investigation that led to
+- `../../reports/verifier-assume-synthesis-report.md` — investigation that led to
   feature 3.3.
 
 ---
@@ -774,8 +774,8 @@ Sibling open issue [#1184](https://github.com/strata-org/Strata/issues/1184) (CB
 
 | # | Bug | Filed? | htd/smack | main/main2? |
 |---|---|---|---|---|
-| 17 | Stack overflow / SIGABRT on deeply-nested expressions — `Translate.translateExpr` is `partial def` with no fuel; reproduces at depth ≈ 4100 on `origin/main` HEAD. Manifested as `skipEscape_harness` SIGABRT in the deductive verifier. | drafted as `strata-verify-stack-overflow-deeply-nested-expr.md` (uncommitted, intended for upstream filing) | — | — |
-| 21 | Pipeline hang on large `.bpl` programs (≥20K lines, fuzzy threshold) — `strata verify` becomes CPU-bound for 30+ minutes under `--call-policy bodyOrContract --inline-fuel 100 --check-level full`. Conjecture A (`stack-and-hang-conjectures-report.md`): the per-obligation left-deep ITE chain at `Core.lean:181-182` plus non-TCO walkers (`extractGo`, `stmtToCST`/`blockToCST`) cause stack-depth-driven failure. Same root-cause family as bug 17 and the `programToCST` mapM ticket. | report at `stack-and-hang-conjectures-report.md`; experiment design at `docs/superpowers/specs/2026-05-29-tco-walker-experiment-design.md` (uncommitted) | — | — |
+| 17 | Stack overflow / SIGABRT on deeply-nested expressions — `Translate.translateExpr` is `partial def` with no fuel; reproduces at depth ≈ 4100 on `origin/main` HEAD. Manifested as `skipEscape_harness` SIGABRT in the deductive verifier. | drafted as `../../reports/strata-verify-stack-overflow-deeply-nested-expr.md` (uncommitted, intended for upstream filing) | — | — |
+| 21 | Pipeline hang on large `.bpl` programs (≥20K lines, fuzzy threshold) — `strata verify` becomes CPU-bound for 30+ minutes under `--call-policy bodyOrContract --inline-fuel 100 --check-level full`. Conjecture A (`../../reports/stack-and-hang-conjectures-report.md`): the per-obligation left-deep ITE chain at `Core.lean:181-182` plus non-TCO walkers (`extractGo`, `stmtToCST`/`blockToCST`) cause stack-depth-driven failure. Same root-cause family as bug 17 and the `programToCST` mapM ticket. | report at `../../reports/stack-and-hang-conjectures-report.md`; experiment design at `docs/superpowers/specs/2026-05-29-tco-walker-experiment-design.md` (uncommitted) | — | — |
 
 ### 9.6 Pipeline-driver / matrix-display gaps (3 — not Strata bugs)
 
@@ -791,14 +791,14 @@ Sibling open issue [#1184](https://github.com/strata-org/Strata/issues/1184) (CB
 - **16 fixed** with commits on `htd/smack` (+#18 PASS-? matrix gap fixed via uncommitted `run_pipeline.py` changes).
 - **2 fixed elsewhere** (#1185 fix lives on `htd/fix-eval`; not on `htd/smack` or `main`).
 - **3 not yet patched** (#1184, #1186, draft `strata-verify-stack-overflow`).
-- **1 newly investigated** (#21 large-`.bpl` hang — root cause conjectured in `stack-and-hang-conjectures-report.md`, experiment design ready, no fix landed).
+- **1 newly investigated** (#21 large-`.bpl` hang — root cause conjectured in `../../reports/stack-and-hang-conjectures-report.md`, experiment design ready, no fix landed).
 - **0 fixes have landed on `main` or `main2`** — every CBMC-backend, BoogieToStrata, and Core-transform fix is still `htd/smack`-only.
 
 ### Filed-issue index
 
 - **Open and unresolved on main:** #1184, #1185, #1186, #1198, #1162.
 - **Closed (tracking-issue):** #1148 (BoogieToStrata blockers — its sub-issues are addressed by branch fixes).
-- **Drafted but unfiled:** `strata-verify-stack-overflow-deeply-nested-expr.md`, `cbmc-inout-rename-collision.md` (predates the actual #1198 filing), `cbmc-timeouts-and-stale-expects-report.md`, `verifier-assume-synthesis-report.md`.
+- **Drafted but unfiled:** `../../reports/strata-verify-stack-overflow-deeply-nested-expr.md`, `../../reports/cbmc-inout-rename-collision.md` (predates the actual #1198 filing), `../../reports/cbmc-timeouts-and-stale-expects-report.md`, `../../reports/verifier-assume-synthesis-report.md`.
 
 ### Path to upstream
 

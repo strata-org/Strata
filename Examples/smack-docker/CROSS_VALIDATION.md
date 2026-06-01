@@ -164,7 +164,7 @@ array-type-mismatch and CBMC-native's harness-side issue both fire.
   recover a verdict.
 - **`skipEscape_harness`**: every backend FAILs. Deductive's failure
   is the verifier crashing with `Stack overflow detected. Aborting.`
-  (filed today as `strata-verify-stack-overflow-deeply-nested-expr.md`,
+  (filed today as `../../reports/strata-verify-stack-overflow-deeply-nested-expr.md`,
   reproducible on origin/main with a hand-crafted deeply-nested
   `.core.st`). The other three failures are independent. This row
   alone surfaced two separate Strata bugs: the SMTEncoder/Translate

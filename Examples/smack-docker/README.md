@@ -261,7 +261,7 @@ fuel-bump experiment (running 12 of the 18 at `--inline-fuel 500`)
 produced zero verdict changes** — `--inline-fuel` controls body-eval
 recursion, not loop unrolling. Even `array_sum` (4-iteration loop)
 remains PASS-? at fuel=500. Full analysis at
-`v5-pass-question-mark-analysis.md`.
+`../../reports/v5-pass-question-mark-analysis.md`.
 
 **Implication for matrix interpretation:** PASS-? lumps two
 semantically-opposite outcomes:
@@ -531,7 +531,7 @@ SMT. Full report on the `htd/smack-timeout-fix` branch at
 `cbmc-strata-divergence-large-bpl.md`.
 
 **Original conjecture (disconfirmed):** earlier triage in
-`stack-and-hang-conjectures-report.md` proposed Conjecture A — that
+`../../reports/stack-and-hang-conjectures-report.md` proposed Conjecture A — that
 all three scenarios shared a per-obligation left-deep ITE chain at
 `Core.lean:181-182` whose downstream walkers (`extractGo`,
 `stmtToCST`/`blockToCST`, `formatProgram`) descend non-tail-
@@ -632,7 +632,7 @@ their respective upstream proof trees:
   segfault inside SMACK's clang frontend). One of the 12,
   `skipEscape_harness`, exits the deductive verifier with SIGABRT,
   surfacing a Strata-side bug worth tracking as a regression input
-  (filed at `strata-verify-stack-overflow-deeply-nested-expr.md`).
+  (filed at `../../reports/strata-verify-stack-overflow-deeply-nested-expr.md`).
 
 ## What this branch ships (vs `origin/main`)
 
