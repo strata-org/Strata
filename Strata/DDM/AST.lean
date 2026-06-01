@@ -216,6 +216,11 @@ def fromCategoryName? : QualifiedIdent → Option SepFormat
 
 #guard fromCategoryName? ⟨"Init", "Ident"⟩ == .none
 
+/-- Returns true if the category name is a parametric (single-argument) built-in category:
+    any separator format or `Init.Option`. -/
+def isParametricCategory (name : QualifiedIdent) : Bool :=
+  (fromCategoryName? name).isSome || name == q`Init.Option
+
 instance : ToString SepFormat where
   toString := SepFormat.toString
 
