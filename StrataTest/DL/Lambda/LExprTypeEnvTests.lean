@@ -164,5 +164,49 @@ info: ok: (x : $__ty0) (y : int) (z : $__ty0)
                     [("x", mty[%a]), ("y", mty[myInt %a %b]), ("z", mty[%a])])
          return Signature.format ans.fst
 
+/-! ### Tests for addTypeAlias: chained resolution and preserved typeArgs -/
+
+section AddTypeAliasTests
+
+open LTy.Syntax in
+private def testContext : LContext TTyDefault :=
+  { LContext.default (T := TTyDefault) with
+    knownTypes := makeKnownTypes
+      ([t[∀a b. %a → %b], t[bool], t[int], t[string], t[∀a. Foo %a]].map
+        (fun k => LTy.toKnownType! k)) }
+
+-- Test (a): Chained aliases are fully resolved.
+-- `FooAlias a := Foo a` and `BarAlias a := FooAlias a` should result in
+-- `resolveAliases (BarAlias int)` returning `Foo int`.
+/-- info: ok: (Foo int) -/
+#guard_msgs in
+#eval do
+  let Env : TEnv TyIdentifier := TEnv.default
+  let Env ← TEnv.addTypeAlias
+    { typeArgs := ["a"], name := "FooAlias", type := mty[Foo %a] } testContext Env
+  let Env ← TEnv.addTypeAlias
+    { typeArgs := ["a"], name := "BarAlias", type := mty[FooAlias %a] } testContext Env
+  let (resolved, _) ← LMonoTy.resolveAliases mty[BarAlias int] Env
+  return format resolved
+
+-- Test (b): Stored alias preserves user-supplied typeArgs.
+-- After `addTypeAlias` with `typeArgs := ["a", "b"]`, the stored alias's
+-- `typeArgs` equals `["a", "b"]`.
+/-- info: ok: [a, b] -/
+#guard_msgs in
+#eval do
+  let C : LContext TTyDefault :=
+    { LContext.default (T := TTyDefault) with
+      knownTypes := makeKnownTypes
+        ([t[∀a b. %a → %b], t[bool], t[int], t[string], t[∀a b. Foo %a %b]].map
+          (fun k => LTy.toKnownType! k)) }
+  let Env : TEnv TyIdentifier := TEnv.default
+  let Env ← TEnv.addTypeAlias
+    { typeArgs := ["a", "b"], name := "MyAlias", type := mty[Foo %a %b] } C Env
+  let stored := Env.context.aliases.head!
+  return format stored.typeArgs
+
+end AddTypeAliasTests
+
 end Lambda
 end
