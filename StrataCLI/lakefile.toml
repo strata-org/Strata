@@ -3,6 +3,10 @@ version = "0.1.0"
 defaultTargets = ["StrataMainLib", "strata"]
 
 [[require]]
+name = "Strata"
+path = ".."
+
+[[require]]
 name = "StrataPython"
 path = "../StrataPython"
 

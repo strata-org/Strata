@@ -3,15 +3,20 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-open System in
+open System (FilePath)
+
+namespace Strata.IOTests
+
+
 /-- Recursively find all `.lean` files under `dir` and return pairs of
     (filePath, moduleName) where moduleName is relative to `root`. -/
-partial def Strata.Util.IOTests.findTestFiles (root dir : FilePath) : IO (Array (FilePath × String)) := do
+partial def findTestFiles (root dir : FilePath) : IO (Array (FilePath × String)) := do
   let mut results := #[]
   for entry in ← dir.readDir do
     if ← entry.path.isDir then
-      results := results ++ (← Strata.Util.IOTests.findTestFiles root entry.path)
+      results := results ++ (← findTestFiles root entry.path)
     else if entry.path.extension == some "lean" then
       let relPath := entry.path.toString.dropPrefix root.toString |>.toString
         |>.dropPrefix "/"
@@ -19,14 +24,13 @@ partial def Strata.Util.IOTests.findTestFiles (root dir : FilePath) : IO (Array 
       results := results.push (entry.path, modStr)
   return results
 
-namespace Strata.Util.IOTests
 
 structure Config where
-  testDir : System.FilePath
+  testDir : FilePath
   includes : Array String
   excludes : Array String
 
-def parseArgs (args : List String) (defaultDir : System.FilePath := "StrataTestExtra")
+def parseArgs (args : List String) (defaultDir : FilePath := "StrataTestExtra")
     : Except String Config := do
   let mut includes := #[]
   let mut excludes := #[]
@@ -70,16 +74,16 @@ Options:
   --exclude PREFIX  Exclude tests whose module name starts with PREFIX
   --help            Show this help message"
 
-def testMain (args : List String) (defaultDir : System.FilePath := "StrataTestExtra")
+public def testMain (testDir : FilePath) (args : List String)
     : IO UInt32 := do
   if args.any (· == "--help") then
-    IO.println (usage (toString defaultDir))
+    IO.println (usage (toString testDir))
     return 0
-  let cfg ← match parseArgs args (defaultDir := defaultDir) with
+  let cfg ← match parseArgs args (defaultDir := testDir) with
     | .ok cfg => pure cfg
     | .error msg =>
       IO.eprintln s!"Error: {msg}"
-      IO.eprintln (usage (toString defaultDir))
+      IO.eprintln (usage (toString testDir))
       return 1
 
   let testDir := cfg.testDir
@@ -137,4 +141,4 @@ def testMain (args : List String) (defaultDir : System.FilePath := "StrataTestEx
     stdout.putStrLn s!"\nAll {tests.size} test file(s) passed."
     return 0
 
-end Strata.Util.IOTests
+end Strata.IOTests

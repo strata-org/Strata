@@ -62,7 +62,7 @@ jobs:
         with:
           use-github-cache: false
           test: false
-      - name: Run tests (excluding Python)
+      - name: Run tests
         run: lake test
       - name: Verify generated editor syntax files are up to date
         run: |

@@ -38,11 +38,11 @@ public inductive ParseError where
   | unimplemented (message : String) (pattern : String) (pos : String.Pos.Raw)
   deriving Repr
 
-def ParseError.toString : ParseError → String
+public def ParseError.toString : ParseError → String
   | .patternError msg pat pos => s!"Pattern error at position {pos.byteIdx}: {msg} in pattern '{pat}'"
   | .unimplemented msg pat pos => s!"Unimplemented at position {pos.byteIdx}: {msg} in pattern '{pat}'"
 
-instance : ToString ParseError where
+public instance : ToString ParseError where
   toString := ParseError.toString
 
 -------------------------------------------------------------------------------
