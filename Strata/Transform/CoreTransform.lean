@@ -364,11 +364,22 @@ def runProgram
   : CoreTransformM (Bool × Program) := do
   modify (fun σ => { σ with currentProgram := .some p })
 
+  -- Single-pass walker (was O(N²): indexed `p.decls[i]?` and `newDecls.set i`
+  -- on a List are both O(i)). We walk `p.decls` once, push into an Array,
+  -- and convert back to List once at the end.
+  --
+  -- Mid-walk visibility of `currentProgram`: the only callers that read
+  -- `currentProgram` mid-walk are CallElim (reads header/spec only — body
+  -- mutations are unobservable) and ProcedureInlining (reads body but is
+  -- driven by `runProgramUntil`, which converges to the same fixed point
+  -- regardless of whether prior decls' transformed bodies are visible
+  -- within the current iteration). Updating `currentProgram` only at
+  -- end-of-walk preserves correctness for both.
   let mut anyChanged := false
-  let mut newDecls := p.decls
-  for i in [:p.decls.length] do
-    match p.decls[i]? with
-    | some (.proc proc md) =>
+  let mut acc : Array Decl := Array.mkEmpty p.decls.length
+  for d in p.decls do
+    match d with
+    | .proc proc md =>
       let isTargetProc := match targetProcList with
          | .none => true
          | .some pl => proc.header.name.1 ∈ pl
@@ -386,38 +397,40 @@ def runProgram
           -- `.call procName args md`) with whatever `f c` returns. Block
           -- structure (entry, transfers, labels) is preserved.
           let mut blockChanged := false
-          let mut newBlocks := cfg.blocks
-          for j in [:cfg.blocks.length] do
-            match cfg.blocks[j]? with
-            | some (lbl, blk) =>
-              let (cmdChanged, newCmds) ← runCmdsRec f blk.cmds
-              if cmdChanged then
-                let newBlk : Imperative.DetBlock String Command Expression :=
-                  { blk with cmds := newCmds }
-                newBlocks := newBlocks.set j (lbl, newBlk)
-                blockChanged := true
-            | none => pure ()
+          let mut newBlocksAcc : Array (String × Imperative.DetBlock String Command Expression) :=
+            Array.mkEmpty cfg.blocks.length
+          for (lbl, blk) in cfg.blocks do
+            let (cmdChanged, newCmds) ← runCmdsRec f blk.cmds
+            if cmdChanged then
+              let newBlk : Imperative.DetBlock String Command Expression :=
+                { blk with cmds := newCmds }
+              newBlocksAcc := newBlocksAcc.push (lbl, newBlk)
+              blockChanged := true
+            else
+              newBlocksAcc := newBlocksAcc.push (lbl, blk)
           if blockChanged then
-            let newCfg : DetCFG := { cfg with blocks := newBlocks }
-            newDecls := newDecls.set i (Decl.proc { proc with body := .cfg newCfg } md)
+            let newCfg : DetCFG := { cfg with blocks := newBlocksAcc.toList }
+            acc := acc.push (Decl.proc { proc with body := .cfg newCfg } md)
             anyChanged := true
-            modify (fun σ => { σ with
-              currentProgram := .some { decls := newDecls }
-            })
+          else
+            acc := acc.push d
         | .structured bodyStmts =>
           let (changed, new_body) ← runStmtsRec f bodyStmts
 
           if changed then
-            newDecls := newDecls.set i (Decl.proc { proc with body := .structured new_body } md)
+            acc := acc.push (Decl.proc { proc with body := .structured new_body } md)
             anyChanged := true
-            modify (fun σ => { σ with
-              currentProgram := .some { decls := newDecls }
-            })
-    | _ => pure ()
+          else
+            acc := acc.push d
+      else
+        acc := acc.push d
+    | _ => acc := acc.push d
 
-  let newProg : Program := { decls := newDecls }
+  let newProg : Program := { decls := acc.toList }
+  -- Single end-of-walk update for currentProgram + currentProcedureName.
   modify (fun σ => { σ with
-    currentProcedureName := .none
+    currentProcedureName := .none,
+    currentProgram := .some newProg
   })
   return (anyChanged, newProg)
 
