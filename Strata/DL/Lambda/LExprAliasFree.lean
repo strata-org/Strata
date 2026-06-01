@@ -273,13 +273,10 @@ theorem instantiateWithCheck_aliasFree
     (h : LMonoTy.instantiateWithCheck mty C Env = .ok (result, Env'))
     (h_resolved : TContext.AliasesResolved Env.context) :
     LMonoTy.aliasFree Env.context.aliases result := by
-  -- Decompose instantiateWithCheck using the existing theorem
   have ⟨mty_ie, Env_ie, Env_ra, h_ie, h_ra⟩ :=
     LMonoTy.instantiateWithCheck_decompose mty C Env result Env' h
-  -- instantiateEnv preserves context
   have h_ie_ctx : Env_ie.context = Env.context :=
     LMonoTys.instantiateEnv_context _ _ _ _ _ h_ie
-  -- Apply resolveAliases_output_aliasFree
   have h_resolved_ie : TContext.AliasesResolved Env_ie.context := by
     rw [h_ie_ctx]; exact h_resolved
   have h_af := resolveAliases_output_aliasFree mty_ie Env_ie result Env_ra h_ra h_resolved_ie
@@ -296,7 +293,6 @@ theorem typeBoundVar_xty_aliasFree [HasGen T.IDMeta] (C : LContext T) (Env : TEn
   simp only [typeBoundVar, liftGenEnv, Bind.bind, Except.bind] at h
   elim_err h
   rename_i genResult h_gen
-  -- Case split on bty
   split at h
   · -- bty = some bty_val: xty comes from instantiateWithCheck
     rename_i bty_val
@@ -306,7 +302,6 @@ theorem typeBoundVar_xty_aliasFree [HasGen T.IDMeta] (C : LContext T) (Env : TEn
     simp [Prod.mk.injEq] at heq
     obtain ⟨_, h_xty, _⟩ := heq
     subst h_xty
-    -- genResult.snd has same context as Env (liftGenEnv only changes genState)
     have h_gen_ctx : genResult.snd.context = Env.context := by
       elim_err h_gen
       rename_i a_id T'_env h_genVar

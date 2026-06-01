@@ -613,29 +613,24 @@ private theorem resolveAux_HasTypeA_aux [DecidableEq T.IDMeta] [HasGen T.IDMeta]
     elim_err h
     rename_i substInfo heq_unify
     cases h
-    -- Unwrap mapError to get raw unify success
     have h_unify : Constraints.unify
         [(toLMonoTy e1t_env.fst, LMonoTy.tcons "arrow" [toLMonoTy e2t_env.fst, LMonoTy.ftvar genEnv.fst])]
         genEnv.snd.stateSubstInfo = .ok substInfo :=
       unify_of_mapError heq_unify
-    -- genTyVar facts
     have h_gen_subst := TEnv.genTyVar_subst e2t_env.snd genEnv.fst genEnv.snd heq_gen
     have h_gen_ctx := TEnv.genTyVar_context e2t_env.snd genEnv.fst genEnv.snd heq_gen
     have h_gen_tyGen := genTyVar_tyGen e2t_env.snd genEnv.fst genEnv.snd heq_gen
     have h_gen_name := genTyVar_name_eq e2t_env.snd genEnv.fst genEnv.snd heq_gen
-    -- Properties for e1
     have h_inv1 := ResolveAuxInvariants.mk_from_resolveAux (T := T) e1 e1t_env.fst C Env e1t_env.snd heq_e1 h_envwf h_ne h_fwf h_resolved
     have h_props1 := resolveAux_properties e1 e1t_env.fst C Env e1t_env.snd heq_e1
       h_ne h_envwf.aliasesWF h_fwf h_envwf.substFreshForGen h_envwf.ctxFreshForGen
       h_envwf.boundVarsFresh
-    -- Properties for e2
     have h_props2 := resolveAux_properties e2 e2t_env.fst C e1t_env.snd e2t_env.snd heq_e2
       h_inv1.ne h_inv1.envwf.aliasesWF h_fwf h_inv1.envwf.substFreshForGen h_inv1.envwf.ctxFreshForGen
       h_inv1.envwf.boundVarsFresh
     -- Absorption: h_absorbs : S.absorbs (Maps.remove substInfo.subst genEnv.fst)
     have h_abs_S_rem : S.absorbs (Maps.remove substInfo.subst genEnv.fst) := by
       simp [TEnv.updateSubst] at h_absorbs; exact h_absorbs
-    -- Rewrite unify to use e2t_env.snd.stateSubstInfo (genTyVar preserves subst)
     rw [h_gen_subst] at h_unify
     have h_abs_unify := unify_absorbs _ _ _ h_unify
     -- Freshness: genEnv.fst not in Env.subst and e1t_env.snd.subst
@@ -655,7 +650,6 @@ private theorem resolveAux_HasTypeA_aux [DecidableEq T.IDMeta] [HasGen T.IDMeta]
           genEnv.fst ∉ LMonoTy.freeVars t) :=
       genTyVar_fresh_wrt_input_subst e2t_env.snd e2t_env.snd genEnv.snd genEnv.fst heq_gen
         h_props2.preserves.1 (Nat.le_refl _)
-    -- absorbs (remove substInfo genEnv.fst) Env1.subst / Env2.subst
     have h_abs_rem_e2 := Subst.absorbs_of_remove
       substInfo.subst e2t_env.snd.stateSubstInfo.subst genEnv.fst
       h_abs_unify h_fresh_e2.1 h_fresh_e2.2
@@ -663,7 +657,6 @@ private theorem resolveAux_HasTypeA_aux [DecidableEq T.IDMeta] [HasGen T.IDMeta]
       substInfo.subst e1t_env.snd.stateSubstInfo.subst genEnv.fst
       (Subst.absorbs_trans _ _ _ h_props2.absorbs h_abs_unify)
       h_fresh_e1.1 h_fresh_e1.2
-    -- Chain: S absorbs (remove substInfo fresh) absorbs Env1/Env2
     have h_abs_e2 : S.absorbs e2t_env.snd.stateSubstInfo.subst :=
       Subst.absorbs_trans _ _ _ h_abs_rem_e2 h_abs_S_rem
     have h_abs_e1 : S.absorbs e1t_env.snd.stateSubstInfo.subst :=
@@ -685,7 +678,6 @@ private theorem resolveAux_HasTypeA_aux [DecidableEq T.IDMeta] [HasGen T.IDMeta]
           (LMonoTy.tcons "arrow" [e2t_env.fst.toLMonoTy, .ftvar genEnv.fst]) := by
       have h_p := unify_sound _ _ _ h_unify _ (List.Mem.head _)
       simp at h_p; exact h_p
-    -- subst S (subst substInfo e1t.toLMonoTy) = subst S e1t.toLMonoTy
     have h_subst_e1t : LMonoTy.subst S (LMonoTy.subst substInfo.subst e1t_env.fst.toLMonoTy) =
         LMonoTy.subst S e1t_env.fst.toLMonoTy := by
       rw [← LMonoTy.subst_remove_not_fv substInfo.subst genEnv.fst
@@ -712,14 +704,12 @@ private theorem resolveAux_HasTypeA_aux [DecidableEq T.IDMeta] [HasGen T.IDMeta]
             (LMonoTy.subst substInfo.subst (.ftvar genEnv.fst))] at h_congr
       rw [h_subst_e2t] at h_congr
       exact h_congr
-    -- IH for e1 and e2
     have h_sz1 : e1.sizeOf < n := by subst h_eq; simp [LExpr.sizeOf]; omega
     have h_sz2 : e2.sizeOf < n := by subst h_eq; simp [LExpr.sizeOf]; omega
     have h_ih_e1 := ih e1.sizeOf h_sz1 e1 rfl e1t_env.fst C Env e1t_env.snd heq_e1
       h_envwf h_ne h_fwf h_resolved S h_abs_e1
     have h_ih_e2 := ih e2.sizeOf h_sz2 e2 rfl e2t_env.fst C e1t_env.snd e2t_env.snd heq_e2
       h_inv1.envwf h_inv1.ne h_fwf h_inv1.resolved S h_abs_e2
-    -- Simplify and apply HasTypeA.app
     simp [applySubstT, replaceMetadata, unresolved, toLMonoTy]
     rw [applySubstT_toLMonoTy] at h_ih_e1 h_ih_e2
     rw [h_eq_S] at h_ih_e1
@@ -737,17 +727,12 @@ private theorem resolveAux_HasTypeA_aux [DecidableEq T.IDMeta] [HasGen T.IDMeta]
     simp at h
     obtain ⟨h_et, h_env'⟩ := h
     subst h_et h_env'
-    -- Env' = eraseFromContext Env2 xv
-    -- et = .abs ⟨m_abs, subst Env2.subst (arrow [xty, (varCloseT ..).toLMonoTy])⟩ name bty (varCloseT 0 xv et_body)
-    -- Get TEnvWF for Env1
     have h_envwf1 : TEnvWF Env1 :=
       TEnvWF.of_typeBoundVar C Env bty_abs xv xty Env1 h_tbv h_envwf
     have h_ne1 : Env1.context.types ≠ [] :=
       typeBoundVar_context_types_ne_nil C Env bty_abs xv xty Env1 h_tbv
-    -- IH for the opened body
     have h_sz_body : (LExpr.varOpen 0 (xv, some xty) e_body).sizeOf < n := by
       subst h_eq; simp [LExpr.sizeOf, LExpr.varOpen_sizeOf]
-    -- Absorption for Env2
     have h_abs_Env2 : S.absorbs Env2.stateSubstInfo.subst := by
       simp [TEnv.eraseFromContext, TEnv.updateContext] at h_absorbs
       exact h_absorbs
@@ -757,8 +742,6 @@ private theorem resolveAux_HasTypeA_aux [DecidableEq T.IDMeta] [HasGen T.IDMeta]
     have h_ih_body := ih (LExpr.varOpen 0 (xv, some xty) e_body).sizeOf h_sz_body
       (LExpr.varOpen 0 (xv, some xty) e_body) rfl et_body C Env1 Env2 h_res_body
       h_envwf1 h_ne1 h_fwf h_resolved1 S h_abs_Env2
-    -- h_ih_body : HasTypeA [] (applySubstT et_body S).unresolved (toLMonoTy (applySubstT et_body S))
-    -- Need: HasTypeA [] (applySubstT (.abs ...) S).unresolved (toLMonoTy (applySubstT (.abs ...) S))
     show HasTypeA []
       (applySubstT (.abs ⟨m_abs, LMonoTy.subst Env2.stateSubstInfo.subst
         (LMonoTy.tcons "arrow" [xty, (LExpr.varCloseT 0 xv et_body).toLMonoTy])⟩
@@ -819,12 +802,10 @@ private theorem resolveAux_HasTypeA_aux [DecidableEq T.IDMeta] [HasGen T.IDMeta]
     rename_i h_body_bool
     have h_body_ty_bool : toLMonoTy et_body = LMonoTy.bool := by
       simp [bne] at h_body_bool; exact h_body_bool
-    -- Get TEnvWF chain
     have h_envwf1 : TEnvWF Env1 :=
       TEnvWF.of_typeBoundVar C Env bty_q xv xty Env1 h_tbv h_envwf
     have h_ne1 : Env1.context.types ≠ [] :=
       typeBoundVar_context_types_ne_nil C Env bty_q xv xty Env1 h_tbv
-    -- Get properties for body resolution
     have h_props_body := resolveAux_properties
       (LExpr.varOpen 0 (xv, some xty) e_q) et_body C Env1 Env2 h_res_body
       h_ne1 h_envwf1.aliasesWF h_fwf h_envwf1.substFreshForGen
@@ -850,13 +831,11 @@ private theorem resolveAux_HasTypeA_aux [DecidableEq T.IDMeta] [HasGen T.IDMeta]
       intro a h_mem; rw [h_aliases_eq1] at h_mem ⊢; exact h_resolved a h_mem
     have h_resolved2 : TContext.AliasesResolved Env2.context :=
       h_ctx_body ▸ h_resolved1
-    -- IH for body
     have h_sz_body : (LExpr.varOpen 0 (xv, some xty) e_q).sizeOf < n := by
       subst h_eq; simp [LExpr.sizeOf, LExpr.varOpen_sizeOf]; omega
     have h_ih_body := ih (LExpr.varOpen 0 (xv, some xty) e_q).sizeOf h_sz_body
       (LExpr.varOpen 0 (xv, some xty) e_q) rfl et_body C Env1 Env2 h_res_body
       h_envwf1 h_ne1 h_fwf h_resolved1 S h_abs_Env2
-    -- IH for trigger
     have h_sz_tr : (LExpr.varOpen 0 (xv, some xty) trigger_q).sizeOf < n := by
       subst h_eq; simp [LExpr.sizeOf, LExpr.varOpen_sizeOf]; omega
     have h_ih_tr := ih (LExpr.varOpen 0 (xv, some xty) trigger_q).sizeOf h_sz_tr
@@ -872,10 +851,6 @@ private theorem resolveAux_HasTypeA_aux [DecidableEq T.IDMeta] [HasGen T.IDMeta]
         (LExpr.varCloseT 0 xv et_tr) (LExpr.varCloseT 0 xv et_body)) S).toLMonoTy)
     simp only [toLMonoTy]
     simp only [applySubstT, replaceMetadata, unresolved]
-    -- Goal: HasTypeA [] (.quant m_q qk_q name_q (some (subst S (subst Env3.subst xty)))
-    --   (replaceMetadata (varCloseT 0 xv et_tr) ...).unresolved
-    --   (replaceMetadata (varCloseT 0 xv et_body) ...).unresolved) .bool
-    -- Recognize replaceMetadata ... as applySubstT (varCloseT ...) S
     change HasTypeA []
       (.quant m_q qk_q name_q (some (LMonoTy.subst S (LMonoTy.subst Env3.stateSubstInfo.subst xty)))
         (applySubstT (LExpr.varCloseT 0 xv et_tr) S).unresolved
@@ -885,9 +860,7 @@ private theorem resolveAux_HasTypeA_aux [DecidableEq T.IDMeta] [HasGen T.IDMeta]
         applySubstT_varCloseT_comm (xv := xv) (et := et_body)]
     rw [LMonoTy.subst_absorbs S Env3.stateSubstInfo.subst xty h_abs_Env3]
     refine HasTypeA.quant (τ_tr := (LExpr.varCloseT 0 xv (applySubstT et_tr S)).toLMonoTy) ?_ ?_
-    · -- Trigger: HasTypeA [subst S xty] (varCloseT 0 xv (applySubstT et_tr S)).unresolved
-      --                                  (varCloseT 0 xv (applySubstT et_tr S)).toLMonoTy
-      have h_ctx_xv : Env1.context.types.find? xv = some (.forAll [] xty) :=
+    · have h_ctx_xv : Env1.context.types.find? xv = some (.forAll [] xty) :=
         typeBoundVar_adds_to_context C Env bty_q xv xty Env1 h_tbv
       have h_ctx_xv2 : Env2.context.types.find? xv = some (.forAll [] xty) :=
         h_ctx_body ▸ h_ctx_xv
@@ -904,8 +877,7 @@ private theorem resolveAux_HasTypeA_aux [DecidableEq T.IDMeta] [HasGen T.IDMeta]
         applySubstT_allFvarAnnot xv xty et_tr S h_annot_tr_raw
       exact varCloseT_unresolved_HasTypeA_nil xv (LMonoTy.subst S xty)
         (applySubstT et_tr S) h_ih_tr h_annot_tr
-    · -- Body: HasTypeA [subst S xty] (varCloseT 0 xv (applySubstT et_body S)).unresolved .bool
-      have h_body_ty_eq : (LExpr.varCloseT 0 xv (applySubstT et_body S)).toLMonoTy = LMonoTy.bool := by
+    · have h_body_ty_eq : (LExpr.varCloseT 0 xv (applySubstT et_body S)).toLMonoTy = LMonoTy.bool := by
         rw [varCloseT_toLMonoTy, applySubstT_toLMonoTy, h_body_ty_bool, LMonoTy.subst_bool]
       rw [← h_body_ty_eq]
       have h_ctx_xv : Env1.context.types.find? xv = some (.forAll [] xty) :=
@@ -930,7 +902,6 @@ private theorem resolveAux_HasTypeA_aux [DecidableEq T.IDMeta] [HasGen T.IDMeta]
     elim_err h
     rename_i substInfo heq_unify
     cases h
-    -- Unwrap mapError to get raw unify success
     have h_unify : Constraints.unify [(e1t_env.fst.toLMonoTy, e2t_env.fst.toLMonoTy)]
         e2t_env.snd.stateSubstInfo = .ok substInfo := by
       revert heq_unify
@@ -939,7 +910,6 @@ private theorem resolveAux_HasTypeA_aux [DecidableEq T.IDMeta] [HasGen T.IDMeta]
       intro h_me; match res, h_me with
       | .ok _, h_me => simp [Except.mapError] at h_me; rw [h_me]
       | .error _, h_me => simp [Except.mapError] at h_me
-    -- Get properties from resolveAux on e1 and e2
     have h_inv1 := ResolveAuxInvariants.mk_from_resolveAux (T := T) e1 e1t_env.fst C Env e1t_env.snd heq_e1 h_envwf h_ne h_fwf h_resolved
     have h_props2 := resolveAux_properties e2 e2t_env.fst C e1t_env.snd e2t_env.snd heq_e2
       h_inv1.ne h_inv1.envwf.aliasesWF h_fwf h_inv1.envwf.substFreshForGen h_inv1.envwf.ctxFreshForGen
@@ -952,7 +922,6 @@ private theorem resolveAux_HasTypeA_aux [DecidableEq T.IDMeta] [HasGen T.IDMeta]
     have h_abs_e1 : S.absorbs e1t_env.snd.stateSubstInfo.subst :=
       Subst.absorbs_trans _ _ _
         h_props2.absorbs h_abs_e2
-    -- Simplify h_absorbs to use substInfo directly
     have h_S_abs_substInfo : S.absorbs substInfo.subst := by
       simp [TEnv.updateSubst] at h_absorbs; exact h_absorbs
     -- Unification soundness: both types become equal under S
@@ -981,7 +950,6 @@ private theorem resolveAux_HasTypeA_aux [DecidableEq T.IDMeta] [HasGen T.IDMeta]
     elim_err h
     rename_i substInfo heq_unify
     cases h
-    -- Unwrap mapError
     have h_unify : Constraints.unify
         [(ct_env.fst.toLMonoTy, LMonoTy.bool),
          (tht_env.fst.toLMonoTy, elt_env.fst.toLMonoTy)]
@@ -991,7 +959,6 @@ private theorem resolveAux_HasTypeA_aux [DecidableEq T.IDMeta] [HasGen T.IDMeta]
       intro h_me; match res, h_me with
       | .ok _, h_me => simp [Except.mapError] at h_me; rw [h_me]
       | .error _, h_me => simp [Except.mapError] at h_me
-    -- Invariants for c, th, el
     have h_inv_c := ResolveAuxInvariants.mk_from_resolveAux (T := T) c_expr ct_env.fst C Env ct_env.snd heq_c h_envwf h_ne h_fwf h_resolved
     have h_inv_th := ResolveAuxInvariants.mk_from_resolveAux (T := T) th_expr tht_env.fst C ct_env.snd tht_env.snd heq_th h_inv_c.envwf h_inv_c.ne h_fwf h_inv_c.resolved
     have h_props_el := resolveAux_properties el_expr elt_env.fst C tht_env.snd elt_env.snd heq_el
@@ -1077,7 +1044,6 @@ theorem resolve_HasTypeA [DecidableEq T.IDMeta] [HasGen T.IDMeta]
     LExpr.HasTypeA [] e_typed.unresolved (e_typed.toLMonoTy) := by
   unfold LExpr.resolve at h
   simp only [Bind.bind, Except.bind] at h
-  -- Case split on resolveAux result
   have h_resolve := h
   generalize h_res : resolveAux C _ e = res at h_resolve
   cases res with
