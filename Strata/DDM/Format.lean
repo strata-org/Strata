@@ -449,11 +449,11 @@ private partial def ArgF.mformatM {α} : ArgF α → FormatM PrecFormat
       let f i q s := return s ++ "\n" ++ (← entries[i].mformatM).format
       let a := (← entries[0].mformatM).format
       .atom <$> entries.size.foldlM f (start := 1) a
-  | .semicolon =>
+  | .semicolonNewline =>
     if z : entries.size = 0 then
       pure (.atom .nil)
     else do
-      let f i q s := return s ++ "; " ++ (← entries[i].mformatM).format
+      let f i q s := return s ++ ";\n" ++ (← entries[i].mformatM).format
       let a := (← entries[0].mformatM).format
       .atom <$> entries.size.foldlM f (start := 1) a
 
