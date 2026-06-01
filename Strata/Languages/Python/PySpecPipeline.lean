@@ -488,28 +488,10 @@ public def pyAnalyzeLaurelV2
           ⟨srcStr.dropRight ".python.st.ion".length ++ ".laurel.st"⟩
         else
           importedMod.sourcePath.withExtension "laurel.st"
-      let laurel ← if ← cachePath.pathExists then
-        match ← (do
-          let content ← IO.FS.readFile cachePath
-          let input := Strata.Parser.stringInputContext cachePath content
-          let dialects := Strata.Elab.LoadedDialects.ofDialects! #[Strata.initDialect, Strata.Laurel.Laurel]
-          let strataProgram ← Strata.Elab.parseStrataProgramFromDialect dialects Strata.Laurel.Laurel.name input
-          let uri := Strata.Uri.file cachePath.toString
-          match Strata.Laurel.TransM.run uri (Strata.Laurel.parseProgram strataProgram) with
-          | .ok program => pure program
-          | .error errors => throw (IO.userError s!"Laurel cache parse errors: {errors}")
-          ).toBaseIO with
-        | .ok prog => pure (some prog)
-        | .error _ => pure none
-      else pure none
-      let laurel ← match laurel with
-      | some prog => pure prog
-      | none =>
+      let laurel ←
         match Python.Translation.runTranslation importedMod.program metadataPath with
         | .error _ => pure combinedProgram
-        | .ok (prog, _) =>
-          let _ ← (IO.FS.writeFile cachePath (toString (Std.format prog))).toBaseIO
-          pure prog
+        | .ok (prog, _) => pure prog
       combinedProgram := { combinedProgram with
         staticProcedures := combinedProgram.staticProcedures ++ laurel.staticProcedures
         types := combinedProgram.types ++ laurel.types }
@@ -523,11 +505,32 @@ public def pyAnalyzeLaurelV2
 
   -- Step 4: Elaboration needs ALL sigs (user + runtime) to insert coercions at call
   -- boundaries, but only user bodies are elaborated (runtime is trusted).
+  -- Separate user procedures (have bodies) from imported stubs (no bodies).
+  let userProcNames : Std.HashSet String := match Python.Translation.runTranslation resolvedStmts metadataPath with
+    | .ok (prog, _) => prog.staticProcedures.foldl (fun s p => s.insert p.name.text) {}
+    | .error _ => {}
+  let importedProcs := laurelProgram.staticProcedures.filter fun proc =>
+    !userProcNames.contains proc.name.text
+  let importedTypes := laurelProgram.types.filter fun td => match td with
+    | .Composite ct => !userProcNames.contains ct.name.text
+    | _ => false
+  let userLaurel : Laurel.Program := {
+    laurelProgram with
+    staticProcedures := laurelProgram.staticProcedures.filter fun proc =>
+      userProcNames.contains proc.name.text
+    types := laurelProgram.types.filter fun td => match td with
+      | .Composite ct => userProcNames.contains ct.name.text
+      | _ => true }
+  let fullRuntime : Laurel.Program := {
+    staticProcedures := Python.pythonRuntimeLaurelPart.staticProcedures ++ importedProcs
+    staticFields := Python.pythonRuntimeLaurelPart.staticFields
+    types := Python.pythonRuntimeLaurelPart.types ++ importedTypes
+    constants := [] }
   let elaboratedProgram ← profileStep profile "Elaborate (full: coercions + type infrastructure)" do
-    let runtimeGrades := Python.pythonRuntimeLaurelPart.staticProcedures.foldl (fun acc proc =>
+    let runtimeGrades := fullRuntime.staticProcedures.foldl (fun acc proc =>
       acc.insert proc.name.text (FineGrainLaurel.gradeFromSignature proc))
       ({} : Std.HashMap String FineGrainLaurel.Grade)
-    match FineGrainLaurel.fullElaborate laurelProgram Python.pythonRuntimeLaurelPart runtimeGrades with
+    match FineGrainLaurel.fullElaborate userLaurel fullRuntime runtimeGrades with
     | .error e => throw (.internal s!"Elaboration failed: {e}")
     | .ok (prog, failures) =>
       unless failures.isEmpty do
@@ -536,7 +539,7 @@ public def pyAnalyzeLaurelV2
 
   -- Step 6: Filter prelude (remove unused procedures that would cause type errors in Core)
   let filteredPrelude ← profileStep profile "Filter prelude" do
-    match Laurel.filterPrelude Python.pythonRuntimeLaurelPart elaboratedProgram with
+    match Laurel.filterPrelude fullRuntime elaboratedProgram with
     | .ok prog => pure prog
     | .error msg => throw (.internal msg)
 

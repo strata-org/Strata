@@ -199,6 +199,7 @@ partial def translateExpr (e : Python.expr ResolvedAnn) : TransM StmtExprMd := d
   | .Name ann _ _ => match ann.info with
     | .variable name => mkExpr sr (.Identifier name.toLaurel)
     | .unresolved => mkExpr sr (.Hole (deterministic := false))
+    | .irrelevant => mkExpr sr (.Hole (deterministic := false))
     | _ => panic! "Resolution bug: invalid NodeInfo on Name node"
   | .Call ann func args kwargs => match ann.info with
     | .funcCall sig => do

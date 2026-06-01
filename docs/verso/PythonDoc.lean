@@ -294,6 +294,33 @@ def client(service_name: Literal["ec2"]) -> boto3.EC2: ...
 Each service class lives in its own file (`boto3/S3.python.st.ion`).
 Only the services actually used by the analyzed program get loaded.
 
+### Query-Based Module Resolution
+
+Imported modules are resolved lazily at the declaration level. Loading a
+module does NOT resolve all its statements. Instead:
+
+1. **Index** — scan the module AST for top-level declarations (class names,
+   function names, method names within classes). This is a shallow structural
+   scan — no body resolution, no type resolution. Fast (O(n) in declaration
+   count, not statement count).
+
+2. **Store thunked entries** — the Ctx entry for an imported class stores
+   method names with `Thunk FuncSig` for each method's signature. The thunk
+   captures the raw AST of the method definition.
+
+3. **Force on demand** — when `resolveMethodCall` needs a specific method's
+   signature (e.g. `s3.list_buckets(...)`), it forces that method's thunk.
+   This runs `extractFuncSig` on just that one function definition. Other
+   methods in the class remain unresolved.
+
+This means loading a 2841-line module (like S3) takes milliseconds (indexing
+only). Each method call pays only for resolving one function's parameter list.
+
+The indexing scan is a simple structural match on the AST:
+- `FunctionDef name ...` → record function name + raw AST
+- `ClassDef name body ...` → record class name, scan body for method names + raw ASTs
+- Everything else (TypedDicts, assignments, imports) → skip
+
 ## Overload Resolution
 
 Python `@overload` functions define multiple signatures for the same name.

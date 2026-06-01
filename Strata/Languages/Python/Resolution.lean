@@ -220,8 +220,8 @@ Within a function body, the context is extended with:
 inductive CtxEntry where
   /-- A function or method with its full signature. -/
   | function (sig : FuncSig)
-  /-- A class with its field list and method signatures. -/
-  | class_ (name : PythonIdentifier) (fields : List (PythonIdentifier × PythonType)) (methods : List (PythonIdentifier × FuncSig))
+  /-- A class with its field list and method signatures (lazily resolved via Thunk). -/
+  | class_ (name : PythonIdentifier) (fields : List (PythonIdentifier × PythonType)) (methods : List (PythonIdentifier × Thunk FuncSig))
   /-- A variable with its type annotation. -/
   | variable (ty : PythonType)
   /-- An overloaded function: multiple signatures under the same name, matched in order. -/
@@ -516,6 +516,16 @@ def computeLocals (body : PythonProgram) (paramNames : List PythonIdentifier)
 private def argToParam (arg : Python.arg SourceRange) : PythonIdentifier × PythonType :=
   match arg with
   | .mk_arg _ argName annotation _ => (PythonIdentifier.fromAst argName, annotationToPythonType annotation.val)
+
+/-- Lightweight param list extraction for indexing imported modules.
+    Only reads param names and type annotations — no default resolution.
+    All params treated as required (imported stubs don't need default handling). -/
+private def extractParamListShallow (args : Python.arguments SourceRange) : ParamList :=
+  match args with
+  | .mk_arguments _ posonlyargs argList _ _ _ _ _ =>
+    let posAndRegular := posonlyargs.val.toList ++ argList.val.toList
+    let required := posAndRegular.map argToParam
+    { required, optional := [], kwonly := [] }
 
 private def extractAllParamNames (args : Python.arguments SourceRange) : List PythonIdentifier :=
   match args with
@@ -987,7 +997,7 @@ partial def resolveExpr (ctx : Ctx) (f : SourceRange → ResolvedAnn) (e : Pytho
           | some (.class_ cId _ methods) =>
               let initId := PythonIdentifier.builtin "__init__"
               match methods.find? (fun (mName, _) => mName == initId) with
-              | some (_, sig) => pure (.classNew cId sig)
+              | some (_, sigThunk) => pure (.classNew cId sigThunk.get)
               | none =>
                 let emptySig : FuncSig := { name := initId, className := some cId, params := .static {required := [], optional := [], kwonly := []}, returnType := anyType, locals := [] }
                 pure (.classNew cId emptySig)
@@ -1148,8 +1158,8 @@ partial def resolveWithitem (ctx : Ctx) (f : SourceRange → ResolvedAnn) : Pyth
           let classId := PythonIdentifier.fromAst className
           match ctx[classId]? with
           | some (.class_ _ _ methods) =>
-            let enterSig := methods.find? (fun (mName, _) => mName == enterId) |>.map (·.2)
-            let exitSig := methods.find? (fun (mName, _) => mName == exitId) |>.map (·.2)
+            let enterSig := methods.find? (fun (mName, _) => mName == enterId) |>.map (·.2.get)
+            let exitSig := methods.find? (fun (mName, _) => mName == exitId) |>.map (·.2.get)
             match enterSig, exitSig with
             | some es, some xs => pure (NodeInfo.withCtx es xs)
             | _, _ => pure NodeInfo.unresolved
@@ -1264,7 +1274,7 @@ partial def resolveMethodCall (ctx : Ctx) (receiver : PythonExpr) (methodName : 
     match ctx[classId]? with
     | some (.class_ _ _ methods) =>
       match methods.find? (fun (mName, _) => mName == methId) with
-      | some (_, sig) => pure (.funcCall sig)
+      | some (_, sigThunk) => pure (.funcCall sigThunk.get)
       | none => pure .unresolved
     | _ => pure .unresolved
   | _ => match receiver with
@@ -1284,7 +1294,7 @@ partial def resolveMethodCall (ctx : Ctx) (receiver : PythonExpr) (methodName : 
         | some (.class_ cId _ methods) =>
           let initId := PythonIdentifier.builtin "__init__"
           match methods.find? (fun (mName, _) => mName == initId) with
-          | some (_, sig) => pure (.classNew cId sig)
+          | some (_, sigThunk) => pure (.classNew cId sigThunk.get)
           | none =>
             let emptySig : FuncSig := { name := initId, className := some cId, params := .static {required := [], optional := [], kwonly := []}, returnType := anyType, locals := [] }
             pure (.classNew cId emptySig)
@@ -1310,19 +1320,58 @@ partial def resolveModuleComponent (name : String) (dir : System.FilePath) (f : 
       | .error _ => pure none
   match loadResult with
   | some (actualPath, stmts) =>
-    let moduleLocals := computeLocals stmts []
-    let initCtx := moduleLocals.foldl (fun c (n, ty) => c.insert n (CtxEntry.variable ty)) builtinContext
-    let mut ctx := initCtx
-    let mut resolved : Array ResolvedPythonStmt := #[]
+    -- Index-only scan: extract top-level class/function declarations without resolving bodies
+    let mut ctx : Ctx := builtinContext
     for stmt in stmts do
-      let (ctx', r) ← resolveStmt ctx f stmt
-      ctx := ctx'
-      resolved := resolved.push r
-    let prog : ResolvedPythonProgram := { stmts := resolved, moduleLocals := moduleLocals }
+      match stmt with
+      | .FunctionDef _ name args _ decorators returns _ _ =>
+        let nameId := PythonIdentifier.fromAst name
+        if hasOverloadDecorator decorators.val then
+          let overloads := match ctx[nameId]? with
+            | some (.overloadedFunction existing) => existing
+            | _ => []
+          let idx := overloads.length
+          let sigThunk := Thunk.mk fun () =>
+            let pl := extractParamListShallow args
+            let retTy := annotationToPythonType returns.val
+            { name := nameId, className := none, params := .static pl, returnType := retTy, locals := [], overloadIndex := some idx }
+          ctx := ctx.insert nameId (.overloadedFunction (overloads ++ [(idx, sigThunk.get)]))
+        else
+          match ctx[nameId]? with
+          | some (.overloadedFunction _) => pure ()  -- implementation stub after overloads, keep overloads
+          | _ =>
+            let sig : FuncSig :=
+              let pl := extractParamListShallow args
+              let retTy := annotationToPythonType returns.val
+              { name := nameId, className := none, params := .static pl, returnType := retTy, locals := [] }
+            ctx := ctx.insert nameId (.function sig)
+      | .ClassDef _ name _ _ body _ _ =>
+        let classId := PythonIdentifier.fromAst name
+        let fields := body.val.toList.filterMap fun s => match s with
+          | .AnnAssign _ (.Name _ n _) annotation _ _ => some (PythonIdentifier.fromAst n, annotation)
+          | _ => none
+        let methodThunks := body.val.toList.filterMap fun s => match s with
+          | .FunctionDef _ mName mArgs _ _ mReturns _ _ =>
+            let mId := PythonIdentifier.fromAst mName
+            let thunk := Thunk.mk fun () =>
+              let pl := extractParamListShallow mArgs
+              let retTy := annotationToPythonType mReturns.val
+              { name := mId, className := some classId, params := .instance (.builtin "self") pl, returnType := retTy, locals := [] }
+            some (mId, thunk)
+          | .AsyncFunctionDef _ mName mArgs _ _ mReturns _ _ =>
+            let mId := PythonIdentifier.fromAst mName
+            let thunk := Thunk.mk fun () =>
+              let pl := extractParamListShallow mArgs
+              let retTy := annotationToPythonType mReturns.val
+              { name := mId, className := some classId, params := .instance (.builtin "self") pl, returnType := retTy, locals := [] }
+            some (mId, thunk)
+          | _ => none
+        ctx := ctx.insert classId (.class_ classId fields methodThunks)
+      | _ => pure ()
     modify fun s => { s with
-      importedModules := s.importedModules.push { sourcePath := actualPath, program := prog }
+      importedModules := s.importedModules.push { sourcePath := actualPath, program := { stmts := #[], moduleLocals := [] } }
       resolvedPaths := s.resolvedPaths.insert key ctx }
-    pure (ctx, prog)
+    pure (ctx, { stmts := #[], moduleLocals := [] })
   | none => pure ({}, { stmts := #[], moduleLocals := [] })
 
 /-- Resolve a dotted module name (e.g. "boto3.AccessAnalyzer") by converting dots to path
@@ -1398,7 +1447,8 @@ partial def resolveStmt (ctx : Ctx) (f : SourceRange → ResolvedAnn) (s : Pytho
             let sig ← extractFuncSig ctx f mId (some classId) mArgs mDecs.val mReturns mBody
             methods := methods ++ [(mId, sig)]
         | _ => pure ()
-      let ctx' := ctx.insert classId (CtxEntry.class_ classId fields methods)
+      let thunkedMethods := methods.map fun (mId, sig) => (mId, Thunk.mk fun () => sig)
+      let ctx' := ctx.insert classId (CtxEntry.class_ classId fields thunkedMethods)
       let classCtx := ctx'.insert (PythonIdentifier.fromAst ⟨SourceRange.none, "self"⟩) (CtxEntry.variable classType)
       let classCtx := methods.foldl (fun c (mId, mSig) => c.insert mId (CtxEntry.function mSig)) classCtx
       let methodSigs := methods.map (·.2)
