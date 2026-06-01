@@ -2299,7 +2299,7 @@ private theorem not_mem_knownVars_find_none
 omit [ToString T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /-- The variable `xv` produced by `typeBoundVar` is fresh in the input context:
     it does not appear as a key in any map of `Env.context.types`. -/
-private theorem typeBoundVar_xv_fresh_in_context
+theorem typeBoundVar_xv_fresh_in_context
     (C : LContext T) (Env : TEnv T.IDMeta) (bty : Option LMonoTy)
     (xv : T.Identifier) (xty : LMonoTy) (Env1 : TEnv T.IDMeta)
     (h : typeBoundVar C Env bty = .ok (xv, xty, Env1)) :
@@ -2324,6 +2324,79 @@ private theorem typeBoundVar_xv_fresh_in_context
     simp at h
     obtain ⟨h_xv, _, _⟩ := h; subst h_xv
     exact not_mem_knownVars_find_none Env.context xv_raw h_fresh
+
+omit [ToString T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
+theorem typeBoundVar_adds_to_context (C : LContext T) (Env : TEnv T.IDMeta)
+    (bty : Option LMonoTy) (xv : T.Identifier) (xty : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : typeBoundVar C Env bty = .ok (xv, xty, Env')) :
+    Env'.context.types.find? xv = some (.forAll [] xty) := by
+  have h_fresh := typeBoundVar_xv_fresh_in_context C Env bty xv xty Env' h
+  simp only [typeBoundVar, Bind.bind, Except.bind] at h
+  split at h; · simp at h
+  rename_i v_gen h_gen; obtain ⟨xv_raw, Env_g⟩ := v_gen
+  simp at h; cases bty with
+  | some bty_val =>
+    simp at h; split at h; · simp at h
+    rename_i v_ic h_ic; obtain ⟨bty_mty, Env_mid⟩ := v_ic
+    simp at h; obtain ⟨h_xv, h_xty, h_env⟩ := h
+    subst h_xv; subst h_xty; subst h_env
+    simp only [TEnv.addInNewestContext, TEnv.updateContext, TEnv.context]
+    have h_ctx_g := liftGenEnv_context Env xv_raw Env_g h_gen
+    have h_ctx_ic := LMonoTy_instantiateWithCheck_context' bty_val C Env_g _ ⟨bty_mty, Env_mid⟩ h_ic
+    have h_ctx : bty_mty.context = Env.context := by
+      simp [TEnv.context] at h_ctx_ic h_ctx_g ⊢; rw [h_ctx_ic, h_ctx_g]
+    rw [show bty_mty.context.types = Env.context.types from congrArg TContext.types h_ctx]
+    exact Maps.find?_addInNewest_self Env.context.types xv_raw _ h_fresh
+  | none =>
+    simp at h; split at h; · simp at h
+    rename_i v_tg h_tg; obtain ⟨tv, Env_mid⟩ := v_tg
+    simp at h; obtain ⟨h_xv, h_xty, h_env⟩ := h
+    subst h_xv; subst h_xty; subst h_env
+    simp only [TEnv.addInNewestContext, TEnv.updateContext, TEnv.context]
+    have h_ctx_g := liftGenEnv_context Env xv_raw Env_g h_gen
+    have h_ctx_tg := TEnv.genTyVar_context Env_g tv Env_mid h_tg
+    have h_ctx : Env_mid.genEnv.context = Env.genEnv.context := by
+      simp [TEnv.context] at h_ctx_tg h_ctx_g; rw [h_ctx_tg, h_ctx_g]
+    rw [show Env_mid.genEnv.context.types = Env.genEnv.context.types from
+      congrArg TContext.types h_ctx]
+    exact Maps.find?_addInNewest_self Env.genEnv.context.types xv_raw _ h_fresh
+
+omit [ToString T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
+/-- `typeBoundVar` preserves existing context lookups for variables different from the fresh one. -/
+theorem typeBoundVar_preserves_find (C : LContext T) (Env : TEnv T.IDMeta)
+    (bty : Option LMonoTy) (xv : T.Identifier) (xty : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : typeBoundVar C Env bty = .ok (xv, xty, Env'))
+    (y : T.Identifier) (yty : LTy) (h_ne : y ≠ xv)
+    (h_ctx : Env.context.types.find? y = some yty) :
+    Env'.context.types.find? y = some yty := by
+  simp only [typeBoundVar, Bind.bind, Except.bind] at h
+  split at h; · simp at h
+  rename_i v_gen h_gen; obtain ⟨xv_raw, Env_g⟩ := v_gen
+  simp at h; cases bty with
+  | some bty_val =>
+    simp at h; split at h; · simp at h
+    rename_i v_ic h_ic; obtain ⟨bty_mty, Env_mid⟩ := v_ic
+    simp at h; obtain ⟨h_xv, _, h_env⟩ := h
+    subst h_xv; subst h_env
+    simp only [TEnv.addInNewestContext, TEnv.updateContext, TEnv.context]
+    have h_ctx_g := liftGenEnv_context Env xv_raw Env_g h_gen
+    have h_ctx_ic := LMonoTy_instantiateWithCheck_context' bty_val C Env_g _ ⟨bty_mty, Env_mid⟩ h_ic
+    have h_ctx_eq : bty_mty.context.types = Env.context.types := by
+      simp [TEnv.context] at h_ctx_ic h_ctx_g ⊢; rw [h_ctx_ic, h_ctx_g]
+    rw [h_ctx_eq, Maps.find?_addInNewest_ne Env.context.types xv_raw _ y h_ne]
+    exact h_ctx
+  | none =>
+    simp at h; split at h; · simp at h
+    rename_i v_tg h_tg; obtain ⟨tv, Env_mid⟩ := v_tg
+    simp at h; obtain ⟨h_xv, _, h_env⟩ := h
+    subst h_xv; subst h_env
+    simp only [TEnv.addInNewestContext, TEnv.updateContext, TEnv.context]
+    have h_ctx_g := liftGenEnv_context Env xv_raw Env_g h_gen
+    have h_ctx_tg := TEnv.genTyVar_context Env_g tv Env_mid h_tg
+    have h_ctx_eq : Env_mid.genEnv.context.types = Env.genEnv.context.types := by
+      simp [TEnv.context] at h_ctx_tg h_ctx_g; rw [h_ctx_tg, h_ctx_g]
+    rw [h_ctx_eq, Maps.find?_addInNewest_ne Env.genEnv.context.types xv_raw _ y h_ne]
+    exact h_ctx
 
 omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /-- `typeBoundVar` always produces an environment with non-empty `context.types`,
@@ -3497,6 +3570,166 @@ theorem resolveAux_properties
     ResolveAuxProperties e et C Env Env' h_ne h_aw h_fwf h_sf h_cf h_bvf :=
   let ⟨h1, h2, h3, h4⟩ := resolveAux_properties_aux e.sizeOf e rfl et C Env Env' h h_ne h_aw h_fwf h_sf h_cf h_bvf
   { genState_mono := h1, context := h2, preserves := h3, absorbs := h4 }
+
+omit [ToString T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
+/-- `resolveAux` preserves existing context lookups (no preconditions needed). -/
+private theorem resolveAux_preserves_find_aux :
+    forall (n : Nat) (e : LExpr T.mono), e.sizeOf = n ->
+      forall (C : LContext T) (Env Env' : TEnv T.IDMeta)
+      (et : LExprT T.mono) (xv : T.Identifier) (ty : LTy),
+      resolveAux C Env e = Except.ok (et, Env') ->
+      Env.context.types.find? xv = some ty ->
+      Env'.context.types.find? xv = some ty := by
+  intro n
+  induction n using Nat.strongRecOn with
+  | _ n ih =>
+  intro e h_eq C Env Env' et xv ty h_res h_ctx
+  match e with
+  | .const _ _ =>
+    simp [resolveAux, inferConst] at h_res
+    split at h_res
+    · simp [Bind.bind, Except.bind] at h_res
+      obtain ⟨_, h_env⟩ := h_res; rw [<- h_env]; exact h_ctx
+    · exact absurd h_res (by simp [Bind.bind, Except.bind])
+  | .bvar _ _ => simp [resolveAux] at h_res
+  | .fvar _ _ _ =>
+    simp only [resolveAux, Bind.bind, Except.bind] at h_res
+    split at h_res; · simp at h_res
+    rename_i v1 h_infer; obtain ⟨ty_res, Env_res⟩ := v1; simp at h_res
+    obtain ⟨_, h_env⟩ := h_res; rw [<- h_env]
+    have h_ctx_eq := inferFVar_context C Env _ _ ty_res Env_res h_infer
+    rw [h_ctx_eq]; exact h_ctx
+  | .op _ _ oty =>
+    simp only [resolveAux, Bind.bind, Except.bind] at h_res
+    split at h_res; · simp at h_res
+    split at h_res; · simp at h_res
+    split at h_res; · simp at h_res
+    rename_i v1 h_inst; obtain ⟨ty_inst, Env1⟩ := v1; dsimp at h_res h_inst
+    have h_ctx1 := LTy_instantiateWithCheck_context _ C Env ty_inst Env1 h_inst
+    cases oty with
+    | none =>
+      simp at h_res; obtain ⟨_, h_env⟩ := h_res; rw [<- h_env]
+      rw [h_ctx1]; exact h_ctx
+    | some oty_val =>
+      simp only [Except.mapError] at h_res
+      split at h_res; · simp at h_res
+      rename_i v2 h_inst2; obtain ⟨oty_inst, Env2⟩ := v2; dsimp at h_res h_inst2
+      split at h_res; · simp at h_res
+      simp at h_res; obtain ⟨_, h_env⟩ := h_res; rw [<- h_env]
+      have h_ctx2 := LMonoTy_instantiateWithCheck_context' oty_val C Env1 oty_inst Env2 h_inst2
+      simp only [TEnv.updateSubst, TEnv.context]
+      simp only [TEnv.context] at h_ctx2 h_ctx1
+      rw [h_ctx2, h_ctx1]; exact h_ctx
+  | .app _ e1 e2 =>
+    simp only [resolveAux, Bind.bind, Except.bind] at h_res
+    split at h_res; · simp at h_res
+    rename_i v1 h_res1; obtain ⟨e1t, Env1⟩ := v1; dsimp at h_res h_res1
+    split at h_res; · simp at h_res
+    rename_i v2 h_res2; obtain ⟨e2t, Env2⟩ := v2; dsimp at h_res h_res2
+    split at h_res; · simp at h_res
+    rename_i v3 h_gtv; obtain ⟨fresh_name, Env3⟩ := v3; dsimp at h_res h_gtv
+    split at h_res; · simp at h_res
+    simp at h_res; obtain ⟨_, h_env⟩ := h_res; rw [<- h_env]
+    simp only [TEnv.updateSubst, TEnv.context]
+    have h_ctx1 : Env1.context.types.find? xv = some ty :=
+      ih e1.sizeOf (by simp [LExpr.sizeOf] at h_eq; omega) e1 rfl C Env Env1 e1t xv ty h_res1 h_ctx
+    have h_ctx2 : Env2.context.types.find? xv = some ty :=
+      ih e2.sizeOf (by simp [LExpr.sizeOf] at h_eq; omega) e2 rfl C Env1 Env2 e2t xv ty h_res2 h_ctx1
+    have h_ctx3 := TEnv.genTyVar_context Env2 fresh_name Env3 h_gtv
+    simp only [TEnv.context] at h_ctx2 h_ctx3
+    rw [h_ctx3]; exact h_ctx2
+  | .abs _ name bty e_body =>
+    simp only [resolveAux, Bind.bind, Except.bind] at h_res
+    split at h_res; · simp at h_res
+    rename_i v1 h_tbv; obtain ⟨xv_fresh, xty_fresh, Env_tbv⟩ := v1
+    dsimp at h_res h_tbv
+    split at h_res; · simp at h_res
+    rename_i v2 h_rec; obtain ⟨et_body, Env_rec⟩ := v2; dsimp at h_res h_rec
+    simp at h_res; obtain ⟨_, h_env⟩ := h_res; rw [<- h_env]
+    simp only [TEnv.eraseFromContext, TEnv.updateContext, TEnv.context]
+    have h_fresh := typeBoundVar_xv_fresh_in_context C Env bty xv_fresh xty_fresh Env_tbv h_tbv
+    have h_ne : xv ≠ xv_fresh := by
+      intro h_eq; subst h_eq
+      have h_none := Maps.find?_of_all_none Env.context.types xv h_fresh
+      rw [h_ctx] at h_none; exact absurd h_none (by simp)
+    have h_ctx_tbv : Env_tbv.context.types.find? xv = some ty :=
+      typeBoundVar_preserves_find C Env bty xv_fresh xty_fresh Env_tbv h_tbv xv ty h_ne h_ctx
+    have h_ctx_rec : Env_rec.context.types.find? xv = some ty := by
+      have h_sz : (LExpr.varOpen 0 (xv_fresh, some xty_fresh) e_body).sizeOf < n := by
+        simp [varOpen_sizeOf, LExpr.sizeOf] at h_eq ⊢; omega
+      exact ih _ h_sz _ rfl C Env_tbv Env_rec et_body xv ty h_rec h_ctx_tbv
+    simp only [TEnv.context] at h_ctx_rec ⊢
+    rw [Maps.find?_erase_ne Env_rec.genEnv.context.types xv_fresh xv h_ne]; exact h_ctx_rec
+  | .quant _ qk qname bty triggers e_body =>
+    simp only [resolveAux, Bind.bind, Except.bind] at h_res
+    split at h_res; · simp at h_res
+    rename_i v1 h_tbv; obtain ⟨xv_fresh, xty_fresh, Env_tbv⟩ := v1
+    dsimp at h_res h_tbv
+    split at h_res; · simp at h_res
+    rename_i v2 h_rec1; obtain ⟨et_body, Env_mid⟩ := v2; dsimp at h_res h_rec1
+    split at h_res; · simp at h_res
+    rename_i v3 h_rec2; obtain ⟨triggersT, Env_rec⟩ := v3; dsimp at h_res h_rec2
+    split at h_res; · simp at h_res
+    simp at h_res; obtain ⟨_, h_env⟩ := h_res; rw [<- h_env]
+    simp only [TEnv.eraseFromContext, TEnv.updateContext, TEnv.context]
+    have h_fresh := typeBoundVar_xv_fresh_in_context C Env bty xv_fresh xty_fresh Env_tbv h_tbv
+    have h_ne : xv ≠ xv_fresh := by
+      intro h_eq; subst h_eq
+      have h_none := Maps.find?_of_all_none Env.context.types xv h_fresh
+      rw [h_ctx] at h_none; exact absurd h_none (by simp)
+    have h_ctx_tbv : Env_tbv.context.types.find? xv = some ty :=
+      typeBoundVar_preserves_find C Env bty xv_fresh xty_fresh Env_tbv h_tbv xv ty h_ne h_ctx
+    have h_ctx_mid : Env_mid.context.types.find? xv = some ty := by
+      have h_sz : (LExpr.varOpen 0 (xv_fresh, some xty_fresh) e_body).sizeOf < n := by
+        simp [varOpen_sizeOf, LExpr.sizeOf] at h_eq ⊢; omega
+      exact ih _ h_sz _ rfl C Env_tbv Env_mid et_body xv ty h_rec1 h_ctx_tbv
+    have h_ctx_rec : Env_rec.context.types.find? xv = some ty := by
+      have h_sz : (LExpr.varOpen 0 (xv_fresh, some xty_fresh) triggers).sizeOf < n := by
+        simp [varOpen_sizeOf, LExpr.sizeOf] at h_eq ⊢; omega
+      exact ih _ h_sz _ rfl C Env_mid Env_rec triggersT xv ty h_rec2 h_ctx_mid
+    simp only [TEnv.context] at h_ctx_rec ⊢
+    rw [Maps.find?_erase_ne Env_rec.genEnv.context.types xv_fresh xv h_ne]; exact h_ctx_rec
+  | .eq _ e1 e2 =>
+    simp only [resolveAux, Bind.bind, Except.bind] at h_res
+    split at h_res; · simp at h_res
+    rename_i v1 h_res1; obtain ⟨e1t, Env1⟩ := v1; dsimp at h_res h_res1
+    split at h_res; · simp at h_res
+    rename_i v2 h_res2; obtain ⟨e2t, Env2⟩ := v2; dsimp at h_res h_res2
+    split at h_res; · simp at h_res
+    simp at h_res; obtain ⟨_, h_env⟩ := h_res; rw [<- h_env]
+    simp only [TEnv.updateSubst, TEnv.context]
+    have h_ctx1 : Env1.context.types.find? xv = some ty :=
+      ih e1.sizeOf (by simp [LExpr.sizeOf] at h_eq; omega) e1 rfl C Env Env1 e1t xv ty h_res1 h_ctx
+    have h_ctx2 : Env2.context.types.find? xv = some ty :=
+      ih e2.sizeOf (by simp [LExpr.sizeOf] at h_eq; omega) e2 rfl C Env1 Env2 e2t xv ty h_res2 h_ctx1
+    simp only [TEnv.context] at h_ctx2; exact h_ctx2
+  | .ite _ c th el =>
+    simp only [resolveAux, Bind.bind, Except.bind] at h_res
+    split at h_res; · simp at h_res
+    rename_i v1 h_res1; obtain ⟨ct, Env1⟩ := v1; dsimp at h_res h_res1
+    split at h_res; · simp at h_res
+    rename_i v2 h_res2; obtain ⟨tt, Env2⟩ := v2; dsimp at h_res h_res2
+    split at h_res; · simp at h_res
+    rename_i v3 h_res3; obtain ⟨elt, Env3⟩ := v3; dsimp at h_res h_res3
+    split at h_res; · simp at h_res
+    simp at h_res; obtain ⟨_, h_env⟩ := h_res; rw [<- h_env]
+    simp only [TEnv.updateSubst, TEnv.context]
+    have h_ctx1 : Env1.context.types.find? xv = some ty :=
+      ih c.sizeOf (by simp [LExpr.sizeOf] at h_eq; omega) c rfl C Env Env1 ct xv ty h_res1 h_ctx
+    have h_ctx2 : Env2.context.types.find? xv = some ty :=
+      ih th.sizeOf (by simp [LExpr.sizeOf] at h_eq; omega) th rfl C Env1 Env2 tt xv ty h_res2 h_ctx1
+    have h_ctx3 : Env3.context.types.find? xv = some ty :=
+      ih el.sizeOf (by simp [LExpr.sizeOf] at h_eq; omega) el rfl C Env2 Env3 elt xv ty h_res3 h_ctx2
+    simp only [TEnv.context] at h_ctx3; exact h_ctx3
+
+omit [ToString T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
+theorem resolveAux_preserves_find (C : LContext T) (Env Env' : TEnv T.IDMeta)
+    (e : LExpr T.mono) (et : LExprT T.mono)
+    (xv : T.Identifier) (ty : LTy)
+    (h_res : resolveAux C Env e = Except.ok (et, Env'))
+    (h_ctx : Env.context.types.find? xv = some ty) :
+    Env'.context.types.find? xv = some ty :=
+  resolveAux_preserves_find_aux e.sizeOf e rfl C Env Env' et xv ty h_res h_ctx
 
 omit [ToString T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /--

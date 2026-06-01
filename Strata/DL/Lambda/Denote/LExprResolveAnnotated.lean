@@ -23,30 +23,34 @@ open LExpr
 
 section
 
-variable {T : LExprParams} [ToString T.IDMeta] [DecidableEq T.IDMeta]
-  [Std.ToFormat T.IDMeta] [HasGen T.IDMeta] [Std.ToFormat (LFunc T)]
-  [Std.ToFormat T.Metadata]
-
-/-! ### Layer 1: `applySubstT` preserves `HasTypeA` -/
-
-theorem applySubstT_unresolved_HasTypeA (S : Subst) (et : LExprT T.mono)
-    (Δ : List LMonoTy)
-    (h : HasTypeA Δ et.unresolved (et.toLMonoTy)) :
-    HasTypeA (Δ.map (LMonoTy.subst S))
-             (applySubstT et S).unresolved
-             ((applySubstT et S).toLMonoTy) := by
-  sorry
-
-theorem applySubstT_unresolved_HasTypeA_nil (S : Subst) (et : LExprT T.mono)
-    (h : HasTypeA [] et.unresolved (et.toLMonoTy)) :
-    HasTypeA [] (applySubstT et S).unresolved ((applySubstT et S).toLMonoTy) := by
-  sorry
+variable {T : LExprParams} [Std.ToFormat T.IDMeta]
 
 /-! ### Helper: `applySubstT` and `varCloseT` commute -/
-
-theorem applySubstT_varCloseT_comm (k : Nat) (xv : T.Identifier) (et : LExprT T.mono) (S : Subst) :
+omit [Std.ToFormat T.IDMeta] in
+theorem applySubstT_varCloseT_comm [DecidableEq T.IDMeta] (k : Nat) (xv : T.Identifier) (et : LExprT T.mono) (S : Subst) :
     applySubstT (LExpr.varCloseT k xv et) S = LExpr.varCloseT k xv (applySubstT et S) := by
-  sorry
+  induction et generalizing k with
+  | const m c => simp [applySubstT, LExpr.replaceMetadata, LExpr.varCloseT]
+  | op m o ty => simp [applySubstT, LExpr.replaceMetadata, LExpr.varCloseT]
+  | bvar m i => simp [applySubstT, LExpr.replaceMetadata, LExpr.varCloseT]
+  | fvar m y yty =>
+    simp only [applySubstT, LExpr.replaceMetadata, LExpr.varCloseT]
+    split <;> simp_all [LExpr.replaceMetadata]
+  | app m e1 e2 ih1 ih2 =>
+    simp only [applySubstT, LExpr.replaceMetadata, LExpr.varCloseT]
+    congr 1; exact ih1 k; exact ih2 k
+  | abs m name ty e_body ih =>
+    simp only [applySubstT, LExpr.replaceMetadata, LExpr.varCloseT]
+    congr 1; exact ih (k + 1)
+  | quant m qk name ty tr e_body ih_tr ih_e =>
+    simp only [applySubstT, LExpr.replaceMetadata, LExpr.varCloseT]
+    congr 1; exact ih_tr (k + 1); exact ih_e (k + 1)
+  | ite m c t f_expr ih_c ih_t ih_f =>
+    simp only [applySubstT, LExpr.replaceMetadata, LExpr.varCloseT]
+    congr 1; exact ih_c k; congr 1; exact ih_t k; exact ih_f k
+  | eq m e1 e2 ih1 ih2 =>
+    simp only [applySubstT, LExpr.replaceMetadata, LExpr.varCloseT]
+    congr 1; exact ih1 k; exact ih2 k
 
 /-! ### Layer 2: `varCloseT` preserves `HasTypeA` -/
 
@@ -61,50 +65,786 @@ def LExprT.allFvarAnnot (xv : T.Identifier) (t : LMonoTy) : LExprT T.mono → Pr
   | _ => True
 
 /-! ### Helper: `applySubstT` preserves `allFvarAnnot` -/
-
+omit [Std.ToFormat T.IDMeta] in
 theorem applySubstT_allFvarAnnot (xv : T.Identifier) (t : LMonoTy) (et : LExprT T.mono) (S : Subst)
     (h : LExprT.allFvarAnnot xv t et) :
     LExprT.allFvarAnnot xv (LMonoTy.subst S t) (applySubstT et S) := by
-  sorry
+  induction et with
+  | fvar m y yty =>
+    simp only [LExprT.allFvarAnnot, applySubstT, LExpr.replaceMetadata] at *
+    intro heq
+    have := h heq
+    rw [this]
+  | app m f a ih_f ih_a =>
+    simp only [LExprT.allFvarAnnot, applySubstT, LExpr.replaceMetadata] at *
+    exact ⟨ih_f h.1, ih_a h.2⟩
+  | abs m name ty e ih_e =>
+    simp only [LExprT.allFvarAnnot, applySubstT, LExpr.replaceMetadata] at *
+    exact ih_e h
+  | quant m qk name ty tr e ih_tr ih_e =>
+    simp only [LExprT.allFvarAnnot, applySubstT, LExpr.replaceMetadata] at *
+    exact ⟨ih_tr h.1, ih_e h.2⟩
+  | ite m c th el ih_c ih_th ih_el =>
+    simp only [LExprT.allFvarAnnot, applySubstT, LExpr.replaceMetadata] at *
+    exact ⟨ih_c h.1, ih_th h.2.1, ih_el h.2.2⟩
+  | eq m e1 e2 ih1 ih2 =>
+    simp only [LExprT.allFvarAnnot, applySubstT, LExpr.replaceMetadata] at *
+    exact ⟨ih1 h.1, ih2 h.2⟩
+  | const m c => trivial
+  | op m o ty => trivial
+  | bvar m i => trivial
+
+/-! ### Helper: alias-free types are fixpoints of `resolveAliases` -/
+
+mutual
+private theorem resolveAliasesList_aliasFree (mtys : LMonoTys) (Env : TEnv T.IDMeta)
+    (h_af : LMonoTys.aliasFree Env.context.aliases mtys) :
+    LMonoTys.resolveAliases mtys Env = .ok (mtys, Env) := by
+  match mtys with
+  | [] => simp [LMonoTys.resolveAliases, Pure.pure, Except.pure]
+  | hd :: tl =>
+    simp only [LMonoTys.resolveAliases, Bind.bind, Except.bind]
+    have h_hd := resolveAliases_aliasFree hd Env h_af.1
+    rw [h_hd]; dsimp
+    have h_tl := resolveAliasesList_aliasFree tl Env h_af.2
+    rw [h_tl]; simp [Pure.pure, Except.pure]
+termination_by sizeOf mtys
+
+theorem resolveAliases_aliasFree (mty : LMonoTy) (Env : TEnv T.IDMeta)
+    (h_af : LMonoTy.aliasFree Env.context.aliases mty) :
+    LMonoTy.resolveAliases mty Env = .ok (mty, Env) := by
+  match mty with
+  | .ftvar _ => simp [LMonoTy.resolveAliases, Pure.pure, Except.pure]
+  | .bitvec _ => simp [LMonoTy.resolveAliases, Pure.pure, Except.pure]
+  | .tcons name args =>
+    simp only [LMonoTy.resolveAliases, Bind.bind, Except.bind]
+    have h_args := resolveAliasesList_aliasFree args Env h_af.2
+    rw [h_args]; dsimp
+    simp only [Pure.pure, Except.pure, LMonoTy.tconsAliasSimple]
+    rw [h_af.1]
+termination_by sizeOf mty
+end
+
+/-! ### Helper: `typeBoundVar` preserves aliases (only adds to types) -/
+
+theorem typeBoundVar_aliases_eq [DecidableEq T.IDMeta] [HasGen T.IDMeta] (C : LContext T) (Env : TEnv T.IDMeta)
+    (bty : Option LMonoTy) (xv : T.Identifier) (xty : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : typeBoundVar C Env bty = .ok (xv, xty, Env')) :
+    Env'.context.aliases = Env.context.aliases := by
+  simp only [typeBoundVar, Bind.bind, Except.bind] at h
+  split at h; · contradiction
+  rename_i v_gen h_gen; obtain ⟨xv_raw, Env_g⟩ := v_gen
+  dsimp at h; cases bty with
+  | some bty_val =>
+    dsimp at h; split at h; · contradiction
+    rename_i v_ic h_ic; obtain ⟨bty_ic, Env_ic⟩ := v_ic
+    cases h
+    simp only [TEnv.addInNewestContext, TEnv.updateContext, TEnv.context]
+    have h_ctx_g := liftGenEnv_context Env xv Env_g h_gen
+    have h_ctx_ic := LMonoTy_instantiateWithCheck_context' bty_val C Env_g _ ⟨bty_ic, Env_ic⟩ h_ic
+    have h_ctx : (⟨bty_ic, Env_ic⟩ : TEnv T.IDMeta).context = Env.context := by
+      simp [TEnv.context] at h_ctx_ic h_ctx_g ⊢; rw [h_ctx_ic, h_ctx_g]
+    exact congrArg TContext.aliases h_ctx
+  | none =>
+    dsimp at h; split at h; · contradiction
+    rename_i v_tg h_tg; obtain ⟨tv, Env_tv⟩ := v_tg
+    cases h
+    simp only [TEnv.addInNewestContext, TEnv.updateContext, TEnv.context]
+    have h_ctx_g := liftGenEnv_context Env xv Env_g h_gen
+    have h_ctx_tg := TEnv.genTyVar_context Env_g tv Env_tv h_tg
+    have h_ctx : Env_tv.context = Env.context := by
+      simp [TEnv.context] at h_ctx_tg h_ctx_g ⊢; rw [h_ctx_tg, h_ctx_g]
+    exact congrArg TContext.aliases h_ctx
+
+/-! ### Helper: `resolveAliases` always produces alias-free output -/
+
+private theorem zip_find_mem_snd (vars : List TyIdentifier) (vals : LMonoTys)
+    (x : TyIdentifier) (p : TyIdentifier × LMonoTy)
+    (h : (List.zip vars vals).find? (fun p => p.1 == x) = some p) :
+    p.2 ∈ vals := by
+  have h_mem := List.mem_of_find?_eq_some h
+  exact (List.of_mem_zip h_mem).2
+
+private theorem aliasFree_of_mem (aliases : List TypeAlias) (vals : LMonoTys) (v : LMonoTy)
+    (h_vals : LMonoTys.aliasFree aliases vals) (h_mem : v ∈ vals) :
+    LMonoTy.aliasFree aliases v := by
+  induction vals with
+  | nil => simp at h_mem
+  | cons hd tl ih =>
+    simp [LMonoTys.aliasFree] at h_vals
+    cases List.mem_cons.mp h_mem with
+    | inl h_eq => subst h_eq; exact h_vals.1
+    | inr h_tl => exact ih h_vals.2 h_tl
+
+private theorem openVars_length (vars : List TyIdentifier) (vals : LMonoTys)
+    (mtys : LMonoTys) :
+    (LMonoTys.openVars vars vals mtys).length = mtys.length := by
+  induction mtys with
+  | nil => simp [LMonoTys.openVars]
+  | cons hd tl ih => simp [LMonoTys.openVars, ih]
+
+mutual
+private theorem openVarsList_aliasFree (vars : List TyIdentifier) (vals : LMonoTys)
+    (aliases : List TypeAlias) (mtys : LMonoTys)
+    (h_body : LMonoTys.aliasFree aliases mtys)
+    (h_vals : LMonoTys.aliasFree aliases vals) :
+    LMonoTys.aliasFree aliases (LMonoTys.openVars vars vals mtys) := by
+  match mtys with
+  | [] => simp [LMonoTys.openVars, LMonoTys.aliasFree]
+  | hd :: tl =>
+    simp only [LMonoTys.openVars, LMonoTys.aliasFree]
+    exact ⟨openVars_aliasFree vars vals aliases hd h_body.1 h_vals,
+           openVarsList_aliasFree vars vals aliases tl h_body.2 h_vals⟩
+termination_by sizeOf mtys
+
+private theorem openVars_aliasFree (vars : List TyIdentifier) (vals : LMonoTys)
+    (aliases : List TypeAlias) (mty : LMonoTy)
+    (h_body : LMonoTy.aliasFree aliases mty)
+    (h_vals : LMonoTys.aliasFree aliases vals) :
+    LMonoTy.aliasFree aliases (LMonoTy.openVars vars vals mty) := by
+  match mty with
+  | .ftvar x =>
+    simp only [LMonoTy.openVars]
+    split
+    · rename_i fst_val v h_find
+      have h_mem := zip_find_mem_snd vars vals x (fst_val, v) h_find
+      exact aliasFree_of_mem aliases vals v h_vals h_mem
+    · simp [LMonoTy.aliasFree]
+  | .bitvec _ => simp [LMonoTy.openVars, LMonoTy.aliasFree]
+  | .tcons name args =>
+    simp only [LMonoTy.openVars, LMonoTy.aliasFree]
+    have h_len : (LMonoTys.openVars vars vals args).length = args.length :=
+      openVars_length vars vals args
+    rw [h_len]
+    exact ⟨h_body.1, openVarsList_aliasFree vars vals aliases args h_body.2 h_vals⟩
+termination_by sizeOf mty
+end
+
+private theorem tconsAliasSimple_aliasFree (name : String) (args : LMonoTys)
+    (aliases : List TypeAlias)
+    (h_resolved : ∀ a, a ∈ aliases → LMonoTy.aliasFree aliases a.type)
+    (h_args : LMonoTys.aliasFree aliases args) :
+    LMonoTy.aliasFree aliases (LMonoTy.tconsAliasSimple name args aliases) := by
+  simp only [LMonoTy.tconsAliasSimple]
+  split
+  · -- no matching alias: result is .tcons name args
+    rename_i h_none
+    simp only [LMonoTy.aliasFree]
+    exact ⟨h_none, h_args⟩
+  · -- matching alias found
+    rename_i a h_find
+    have h_mem : a ∈ aliases := List.mem_of_find?_eq_some h_find
+    have h_body_af := h_resolved a h_mem
+    exact openVars_aliasFree a.typeArgs args aliases a.type h_body_af h_args
+
+mutual
+private theorem resolveAliases_output_aliasFree_aux
+    (mty : LMonoTy) (Env : TEnv T.IDMeta)
+    (result : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : LMonoTy.resolveAliases mty Env = .ok (result, Env'))
+    (h_resolved : TContext.AliasesResolved Env.context) :
+    LMonoTy.aliasFree Env.context.aliases result := by
+  match mty with
+  | .ftvar _ =>
+    simp [LMonoTy.resolveAliases, Pure.pure, Except.pure] at h
+    obtain ⟨h_res, _⟩ := h
+    subst h_res
+    simp [LMonoTy.aliasFree]
+  | .bitvec _ =>
+    simp [LMonoTy.resolveAliases, Pure.pure, Except.pure] at h
+    obtain ⟨h_res, _⟩ := h
+    subst h_res
+    simp [LMonoTy.aliasFree]
+  | .tcons name args =>
+    simp [LMonoTy.resolveAliases, Bind.bind, Except.bind] at h
+    split at h
+    · contradiction
+    · rename_i args_result h_args
+      obtain ⟨args', Env_mid⟩ := args_result
+      dsimp at h h_args
+      simp [Pure.pure, Except.pure] at h
+      obtain ⟨h_res, h_env⟩ := h
+      subst h_res h_env
+      have h_ctx_mid := LMonoTys.resolveAliases_context args Env args' Env_mid h_args
+      have h_resolved_mid : TContext.AliasesResolved Env_mid.context := by
+        rw [h_ctx_mid]; exact h_resolved
+      have h_args_af := resolveAliasesList_output_aliasFree args Env args' Env_mid h_args h_resolved
+      rw [← h_ctx_mid]
+      rw [← h_ctx_mid] at h_args_af
+      exact tconsAliasSimple_aliasFree name args' Env_mid.context.aliases
+        h_resolved_mid h_args_af
+termination_by sizeOf mty
+
+private theorem resolveAliasesList_output_aliasFree
+    (mtys : LMonoTys) (Env : TEnv T.IDMeta)
+    (results : LMonoTys) (Env' : TEnv T.IDMeta)
+    (h : LMonoTys.resolveAliases mtys Env = .ok (results, Env'))
+    (h_resolved : TContext.AliasesResolved Env.context) :
+    LMonoTys.aliasFree Env.context.aliases results := by
+  match mtys with
+  | [] =>
+    simp [LMonoTys.resolveAliases, Pure.pure, Except.pure] at h
+    obtain ⟨h_res, _⟩ := h
+    subst h_res
+    simp [LMonoTys.aliasFree]
+  | hd :: tl =>
+    simp [LMonoTys.resolveAliases, Bind.bind, Except.bind] at h
+    split at h
+    · contradiction
+    · rename_i hd_result h_hd
+      obtain ⟨hd', Env_hd⟩ := hd_result
+      dsimp at h h_hd
+      split at h
+      · contradiction
+      · rename_i tl_result h_tl
+        obtain ⟨tl', Env_tl⟩ := tl_result
+        dsimp at h h_tl
+        simp [Pure.pure, Except.pure] at h
+        obtain ⟨h_res, h_env⟩ := h
+        subst h_res h_env
+        have h_ctx_hd := LMonoTy.resolveAliases_context hd Env hd' Env_hd h_hd
+        have h_resolved_hd : TContext.AliasesResolved Env_hd.context := by
+          rw [h_ctx_hd]; exact h_resolved
+        constructor
+        · exact resolveAliases_output_aliasFree_aux hd Env hd' Env_hd h_hd h_resolved
+        · have h_tl_af := resolveAliasesList_output_aliasFree tl Env_hd tl' Env_tl h_tl h_resolved_hd
+          rw [h_ctx_hd] at h_tl_af
+          exact h_tl_af
+termination_by sizeOf mtys
+end
+
+theorem resolveAliases_output_aliasFree
+  (mty : LMonoTy) (Env : TEnv T.IDMeta)
+    (result : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : LMonoTy.resolveAliases mty Env = .ok (result, Env'))
+    (h_resolved : TContext.AliasesResolved Env.context) :
+    LMonoTy.aliasFree Env.context.aliases result :=
+  resolveAliases_output_aliasFree_aux mty Env result Env' h h_resolved
+
+/-! ### Helper: `instantiateWithCheck` produces alias-free types -/
+
+theorem instantiateWithCheck_aliasFree
+  (mty : LMonoTy) (C : LContext T)
+    (Env : TEnv T.IDMeta) (result : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : LMonoTy.instantiateWithCheck mty C Env = .ok (result, Env'))
+    (h_resolved : TContext.AliasesResolved Env.context) :
+    LMonoTy.aliasFree Env.context.aliases result := by
+  -- Decompose instantiateWithCheck using the existing theorem
+  have ⟨mty_ie, Env_ie, Env_ra, h_ie, h_ra⟩ :=
+    LMonoTy.instantiateWithCheck_decompose mty C Env result Env' h
+  -- instantiateEnv preserves context
+  have h_ie_ctx : Env_ie.context = Env.context :=
+    LMonoTys.instantiateEnv_context _ _ _ _ _ h_ie
+  -- Apply resolveAliases_output_aliasFree
+  have h_resolved_ie : TContext.AliasesResolved Env_ie.context := by
+    rw [h_ie_ctx]; exact h_resolved
+  have h_af := resolveAliases_output_aliasFree mty_ie Env_ie result Env_ra h_ra h_resolved_ie
+  rw [h_ie_ctx] at h_af
+  exact h_af
+
+/-! ### Helper: type produced by `typeBoundVar` is alias-free -/
+
+theorem typeBoundVar_xty_aliasFree [HasGen T.IDMeta] (C : LContext T) (Env : TEnv T.IDMeta)
+    (bty : Option LMonoTy) (xv : T.Identifier) (xty : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : typeBoundVar C Env bty = .ok (xv, xty, Env'))
+    (h_resolved : TContext.AliasesResolved Env.context) :
+    LMonoTy.aliasFree Env.context.aliases xty := by
+  simp only [typeBoundVar, liftGenEnv, Bind.bind, Except.bind] at h
+  split at h
+  · contradiction
+  · rename_i genResult h_gen
+    -- Case split on bty
+    split at h
+    · -- bty = some bty_val: xty comes from instantiateWithCheck
+      rename_i bty_val
+      split at h
+      · contradiction
+      · -- instantiateWithCheck succeeded
+        rename_i result h_inst
+        have heq := Except.ok.inj h
+        simp [Prod.mk.injEq] at heq
+        obtain ⟨_, h_xty, _⟩ := heq
+        subst h_xty
+        -- genResult.snd has same context as Env (liftGenEnv only changes genState)
+        have h_gen_ctx : genResult.snd.context = Env.context := by
+          split at h_gen; · contradiction
+          rename_i a_id T'_env h_genVar
+          have h_eq := Except.ok.inj h_gen; rw [← h_eq]
+          simp only [TEnv.context]
+          exact HasGen.genVar_context Env.genEnv a_id T'_env h_genVar
+        have h_af := instantiateWithCheck_aliasFree bty_val C genResult.snd _ result h_inst
+          (h_gen_ctx ▸ h_resolved)
+        rw [h_gen_ctx] at h_af
+        exact h_af
+    · -- bty = none: xty = .ftvar xtyid, trivially alias-free
+      rename_i h_none
+      split at h
+      · contradiction
+      · rename_i genResult2 h_genTyVar
+        have heq := Except.ok.inj h
+        simp [Prod.mk.injEq] at heq
+        obtain ⟨_, h_xty, _⟩ := heq
+        subst h_xty
+        simp [LMonoTy.aliasFree]
+
+/-! ### Helper: `varCloseT` for a different variable preserves `allFvarAnnot` -/
+
+omit [Std.ToFormat T.IDMeta] in
+theorem allFvarAnnot_varCloseT_ne [DecidableEq T.IDMeta]
+  (xv y : T.Identifier) (t : LMonoTy)
+    (k : Nat) (et : LExprT T.mono)
+    (h : LExprT.allFvarAnnot xv t et) :
+    LExprT.allFvarAnnot xv t (LExpr.varCloseT k y et) := by
+  induction et generalizing k with
+  | fvar m z zty =>
+    simp only [LExpr.varCloseT]
+    split
+    · -- z = y, result is .bvar m k
+      simp [LExprT.allFvarAnnot]
+    · -- z ≠ y, unchanged
+      exact h
+  | app m e1 e2 ih1 ih2 =>
+    simp only [LExpr.varCloseT, LExprT.allFvarAnnot] at *
+    exact ⟨ih1 k h.1, ih2 k h.2⟩
+  | abs m name ty body ih =>
+    simp only [LExpr.varCloseT, LExprT.allFvarAnnot] at *
+    exact ih (k + 1) h
+  | quant m qk name ty tr body ih_tr ih_body =>
+    simp only [LExpr.varCloseT, LExprT.allFvarAnnot] at *
+    exact ⟨ih_tr (k + 1) h.1, ih_body (k + 1) h.2⟩
+  | ite m c th el ih_c ih_th ih_el =>
+    simp only [LExpr.varCloseT, LExprT.allFvarAnnot] at *
+    exact ⟨ih_c k h.1, ih_th k h.2.1, ih_el k h.2.2⟩
+  | eq m e1 e2 ih1 ih2 =>
+    simp only [LExpr.varCloseT, LExprT.allFvarAnnot] at *
+    exact ⟨ih1 k h.1, ih2 k h.2⟩
+  | const _ _ => trivial
+  | op _ _ _ => trivial
+  | bvar _ _ => trivial
+
+/-! ### Helper: `inferFVar` returns the context type for monomorphic alias-free schemes -/
+
+private theorem inferFVar_mono_aliasFree [DecidableEq T.IDMeta] (C : LContext T) (Env : TEnv T.IDMeta)
+    (x : T.Identifier) (fty : Option LMonoTy) (ty_res : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : inferFVar C Env x fty = .ok (ty_res, Env'))
+    (h_ctx : Env.context.types.find? x = some (.forAll [] xty))
+    (h_af : LMonoTy.aliasFree Env.context.aliases xty) :
+    ty_res = xty := by
+  simp only [inferFVar, Bind.bind, Except.bind, h_ctx] at h
+  simp only [LTy.instantiateWithCheck, Bind.bind, Except.bind,
+             LTy.resolveAliases, LTy.instantiate] at h
+  rw [resolveAliases_aliasFree xty Env h_af] at h
+  split at h
+  · simp at h
+  · rename_i heq_iwc
+    simp at heq_iwc
+    split at heq_iwc
+    · simp at heq_iwc
+    · split at heq_iwc
+      · simp [Pure.pure, Except.pure] at heq_iwc
+        subst heq_iwc
+        simp at h
+        split at h
+        · cases h; rfl
+        · split at h
+          · simp at h
+          · split at h
+            · simp at h
+            · cases h; rfl
+      · simp at heq_iwc
 
 /-! ### Helper: `resolveAux` annotates free variables from context -/
 
-theorem resolveAux_allFvarAnnot (C : LContext T) (Env Env' : TEnv T.IDMeta)
+private theorem resolveAux_allFvarAnnot_aux
+  [DecidableEq T.IDMeta] [HasGen T.IDMeta] :
+    ∀ (n : Nat) (e : LExpr T.mono), e.sizeOf = n →
+    ∀ (C : LContext T) (Env Env' : TEnv T.IDMeta)
+      (et : LExprT T.mono) (xv : T.Identifier) (xty : LMonoTy),
+    resolveAux C Env e = Except.ok (et, Env') →
+    Env.context.types.find? xv = some (.forAll [] xty) →
+    TEnvWF Env →
+    Env.context.types ≠ [] →
+    FactoryWF C.functions →
+    TContext.AliasesResolved Env.context →
+    LMonoTy.aliasFree Env.context.aliases xty →
+    LExprT.allFvarAnnot xv xty et := by
+  intro n
+  induction n using Nat.strongRecOn with
+  | _ n ih =>
+    intro e h_eq C Env Env' et xv xty h_res h_ctx h_envwf h_ne h_fwf h_resolved h_af
+    match e with
+    | .fvar m x fty =>
+      simp only [resolveAux, Bind.bind, Except.bind] at h_res
+      split at h_res
+      · simp at h_res
+      · rename_i v1 h_infer
+        obtain ⟨ty_res, Env_res⟩ := v1
+        simp at h_res h_infer
+        obtain ⟨h_et, h_env'⟩ := h_res
+        subst h_et h_env'
+        simp only [LExprT.allFvarAnnot]
+        intro h_xeq
+        subst h_xeq
+        exact inferFVar_mono_aliasFree C Env x fty ty_res Env_res h_infer h_ctx h_af
+    | .const _ _ =>
+      simp only [resolveAux, Bind.bind, Except.bind] at h_res
+      split at h_res
+      · simp at h_res
+      · rename_i v1 h_ic; obtain ⟨ty, Env1⟩ := v1; simp at h_res
+        obtain ⟨h_et, _⟩ := h_res; subst h_et
+        simp [LExprT.allFvarAnnot]
+    | .op _ _ _ =>
+      simp only [resolveAux, Bind.bind, Except.bind] at h_res
+      split at h_res
+      · simp at h_res
+      · split at h_res
+        · simp at h_res
+        · split at h_res
+          · simp at h_res
+          · split at h_res
+            · simp only [Except.ok.injEq, Prod.mk.injEq] at h_res
+              obtain ⟨h_et, _⟩ := h_res; subst h_et; simp [LExprT.allFvarAnnot]
+            · split at h_res
+              · simp at h_res
+              · split at h_res
+                · simp at h_res
+                · simp only [Except.ok.injEq, Prod.mk.injEq] at h_res
+                  obtain ⟨h_et, _⟩ := h_res; subst h_et; simp [LExprT.allFvarAnnot]
+    | .bvar _ _ =>
+      simp only [resolveAux] at h_res
+      simp at h_res
+    | .app m e1 e2 =>
+      simp only [resolveAux, Bind.bind, Except.bind] at h_res
+      split at h_res
+      · simp at h_res
+      · rename_i v1 h_res1; obtain ⟨e1t, Env1⟩ := v1; simp at h_res h_res1
+        split at h_res
+        · simp at h_res
+        · rename_i v2 h_res2; obtain ⟨e2t, Env2⟩ := v2; simp at h_res h_res2
+          split at h_res
+          · simp at h_res
+          · split at h_res
+            · simp at h_res
+            · simp only [Except.ok.injEq, Prod.mk.injEq] at h_res
+              obtain ⟨h_et, _⟩ := h_res; subst h_et
+              simp only [LExprT.allFvarAnnot]
+              have h_sz1 : e1.sizeOf < n := by subst h_eq; simp [LExpr.sizeOf]; omega
+              have h_sz2 : e2.sizeOf < n := by subst h_eq; simp [LExpr.sizeOf]; omega
+              have h_ctx1 := resolveAux_preserves_find C Env Env1 e1 e1t xv (.forAll [] xty) h_res1 h_ctx
+              have h_props1 := resolveAux_properties e1 e1t C Env Env1 h_res1
+                h_ne h_envwf.aliasesWF h_fwf h_envwf.substFreshForGen
+                h_envwf.ctxFreshForGen h_envwf.boundVarsFresh
+              have h_envwf1 := TEnvWF.of_resolveAux e1 e1t C Env Env1 h_res1 h_envwf h_ne h_fwf h_props1.context
+              have h_ne1 : Env1.context.types ≠ [] := h_props1.context ▸ h_ne
+              have h_resolved1 : TContext.AliasesResolved Env1.context := h_props1.context ▸ h_resolved
+              have h_af1 : LMonoTy.aliasFree Env1.context.aliases xty := by
+                rw [show Env1.context.aliases = Env.context.aliases from congrArg TContext.aliases h_props1.context]
+                exact h_af
+              exact ⟨ih e1.sizeOf h_sz1 e1 rfl C Env Env1 e1t xv xty h_res1 h_ctx h_envwf h_ne h_fwf h_resolved h_af,
+                     ih e2.sizeOf h_sz2 e2 rfl C Env1 Env2 e2t xv xty h_res2 h_ctx1 h_envwf1 h_ne1 h_fwf h_resolved1 h_af1⟩
+    | .abs m name bty body =>
+      simp only [resolveAux, Bind.bind, Except.bind] at h_res
+      split at h_res
+      · simp at h_res
+      · rename_i v1 h_tbv; obtain ⟨xv', xty', Env1⟩ := v1; simp at h_res h_tbv
+        split at h_res
+        · simp at h_res
+        · rename_i v2 h_res_body; obtain ⟨et_body, Env2⟩ := v2; simp at h_res h_res_body
+          obtain ⟨h_et, _⟩ := h_res; subst h_et
+          simp only [LExprT.allFvarAnnot]
+          have h_ne_xv : xv ≠ xv' := by
+            intro heq; subst heq
+            have h_fresh := typeBoundVar_xv_fresh_in_context C Env bty xv xty' Env1 h_tbv
+            have h_none := Maps.find?_of_all_none Env.context.types xv h_fresh
+            rw [h_ctx] at h_none; exact absurd h_none (by simp)
+          have h_ctx1 := typeBoundVar_preserves_find C Env bty xv' xty' Env1 h_tbv xv (.forAll [] xty) h_ne_xv h_ctx
+          have h_envwf1 := TEnvWF.of_typeBoundVar C Env bty xv' xty' Env1 h_tbv h_envwf
+          have h_ne1 := typeBoundVar_context_types_ne_nil C Env bty xv' xty' Env1 h_tbv
+          have h_aliases_eq := typeBoundVar_aliases_eq C Env bty xv' xty' Env1 h_tbv
+          have h_resolved1 : TContext.AliasesResolved Env1.context := by
+            intro a h_mem; rw [h_aliases_eq] at h_mem ⊢; exact h_resolved a h_mem
+          have h_af1 : LMonoTy.aliasFree Env1.context.aliases xty := by
+            rw [h_aliases_eq]; exact h_af
+          have h_sz : (LExpr.varOpen 0 (xv', some xty') body).sizeOf < n := by
+            subst h_eq; simp [LExpr.sizeOf, LExpr.varOpen_sizeOf]
+          have h_ih_body := ih _ h_sz _ rfl C Env1 Env2 et_body xv xty h_res_body h_ctx1 h_envwf1 h_ne1 h_fwf h_resolved1 h_af1
+          exact allFvarAnnot_varCloseT_ne xv xv' xty 0 et_body h_ih_body
+    | .quant m qk name bty tr body =>
+      simp only [resolveAux, Bind.bind, Except.bind] at h_res
+      split at h_res
+      · simp at h_res
+      · rename_i v1 h_tbv; obtain ⟨xv', xty', Env1⟩ := v1; simp at h_res h_tbv
+        split at h_res
+        · simp at h_res
+        · rename_i v2 h_res_body; obtain ⟨et_body, Env2⟩ := v2; simp at h_res h_res_body
+          split at h_res
+          · simp at h_res
+          · rename_i v3 h_res_tr; obtain ⟨et_tr, Env3⟩ := v3; simp at h_res h_res_tr
+            split at h_res <;> cases h_res
+            simp only [LExprT.allFvarAnnot]
+            have h_ne_xv : xv ≠ xv' := by
+              intro heq; subst heq
+              have h_fresh := typeBoundVar_xv_fresh_in_context C Env bty xv xty' Env1 h_tbv
+              have h_none := Maps.find?_of_all_none Env.context.types xv h_fresh
+              rw [h_ctx] at h_none; exact absurd h_none (by simp)
+            have h_ctx1 := typeBoundVar_preserves_find C Env bty xv' xty' Env1 h_tbv xv (.forAll [] xty) h_ne_xv h_ctx
+            have h_envwf1 := TEnvWF.of_typeBoundVar C Env bty xv' xty' Env1 h_tbv h_envwf
+            have h_ne1 := typeBoundVar_context_types_ne_nil C Env bty xv' xty' Env1 h_tbv
+            have h_aliases_eq := typeBoundVar_aliases_eq C Env bty xv' xty' Env1 h_tbv
+            have h_resolved1 : TContext.AliasesResolved Env1.context := by
+              intro a h_mem; rw [h_aliases_eq] at h_mem ⊢; exact h_resolved a h_mem
+            have h_af1 : LMonoTy.aliasFree Env1.context.aliases xty := by
+              rw [h_aliases_eq]; exact h_af
+            have h_sz_body : (LExpr.varOpen 0 (xv', some xty') body).sizeOf < n := by
+              subst h_eq; simp [LExpr.sizeOf, LExpr.varOpen_sizeOf]; omega
+            have h_ih_body := ih _ h_sz_body _ rfl C Env1 Env2 et_body xv xty h_res_body h_ctx1 h_envwf1 h_ne1 h_fwf h_resolved1 h_af1
+            -- For trigger: need Env2 context preserves xv
+            have h_props_body := resolveAux_properties
+              (LExpr.varOpen 0 (xv', some xty') body) et_body C Env1 Env2 h_res_body
+              h_ne1 h_envwf1.aliasesWF h_fwf h_envwf1.substFreshForGen
+              h_envwf1.ctxFreshForGen h_envwf1.boundVarsFresh
+            have h_ctx2 := h_props_body.context ▸ h_ctx1
+            have h_envwf2 := TEnvWF.of_resolveAux
+              (LExpr.varOpen 0 (xv', some xty') body) et_body C Env1 Env2
+              h_res_body h_envwf1 h_ne1 h_fwf h_props_body.context
+            have h_ne2 : Env2.context.types ≠ [] := h_props_body.context ▸ h_ne1
+            have h_resolved2 : TContext.AliasesResolved Env2.context := h_props_body.context ▸ h_resolved1
+            have h_af2 : LMonoTy.aliasFree Env2.context.aliases xty := by
+              rw [show Env2.context.aliases = Env1.context.aliases from congrArg TContext.aliases h_props_body.context]
+              exact h_af1
+            have h_sz_tr : (LExpr.varOpen 0 (xv', some xty') tr).sizeOf < n := by
+              subst h_eq; simp [LExpr.sizeOf, LExpr.varOpen_sizeOf]; omega
+            have h_ih_tr := ih _ h_sz_tr _ rfl C Env2 Env3 et_tr xv xty h_res_tr h_ctx2 h_envwf2 h_ne2 h_fwf h_resolved2 h_af2
+            exact ⟨allFvarAnnot_varCloseT_ne xv xv' xty 0 et_tr h_ih_tr,
+                   allFvarAnnot_varCloseT_ne xv xv' xty 0 et_body h_ih_body⟩
+    | .ite m c th el =>
+      simp only [resolveAux, Bind.bind, Except.bind] at h_res
+      split at h_res
+      · simp at h_res
+      · rename_i v1 h_res_c; obtain ⟨ct, Env1⟩ := v1; simp at h_res h_res_c
+        split at h_res
+        · simp at h_res
+        · rename_i v2 h_res_th; obtain ⟨tht, Env2⟩ := v2; simp at h_res h_res_th
+          split at h_res
+          · simp at h_res
+          · rename_i v3 h_res_el; obtain ⟨elt, Env3⟩ := v3; simp at h_res h_res_el
+            split at h_res
+            · simp at h_res
+            · simp only [Except.ok.injEq, Prod.mk.injEq] at h_res
+              obtain ⟨h_et, _⟩ := h_res; subst h_et
+              simp only [LExprT.allFvarAnnot]
+              have h_sz_c : c.sizeOf < n := by subst h_eq; simp [LExpr.sizeOf]; omega
+              have h_sz_th : th.sizeOf < n := by subst h_eq; simp [LExpr.sizeOf]; omega
+              have h_sz_el : el.sizeOf < n := by subst h_eq; simp [LExpr.sizeOf]; omega
+              -- Context preservation chain
+              have h_props_c := resolveAux_properties c ct C Env Env1 h_res_c
+                h_ne h_envwf.aliasesWF h_fwf h_envwf.substFreshForGen
+                h_envwf.ctxFreshForGen h_envwf.boundVarsFresh
+              have h_ctx1 := resolveAux_preserves_find C Env Env1 c ct xv (.forAll [] xty) h_res_c h_ctx
+              have h_envwf1 := TEnvWF.of_resolveAux c ct C Env Env1 h_res_c h_envwf h_ne h_fwf h_props_c.context
+              have h_ne1 : Env1.context.types ≠ [] := h_props_c.context ▸ h_ne
+              have h_resolved1 : TContext.AliasesResolved Env1.context := h_props_c.context ▸ h_resolved
+              have h_af1 : LMonoTy.aliasFree Env1.context.aliases xty := by
+                rw [show Env1.context.aliases = Env.context.aliases from congrArg TContext.aliases h_props_c.context]
+                exact h_af
+              have h_props_th := resolveAux_properties th tht C Env1 Env2 h_res_th
+                h_ne1 h_envwf1.aliasesWF h_fwf h_envwf1.substFreshForGen
+                h_envwf1.ctxFreshForGen h_envwf1.boundVarsFresh
+              have h_ctx2 := resolveAux_preserves_find C Env1 Env2 th tht xv (.forAll [] xty) h_res_th h_ctx1
+              have h_envwf2 := TEnvWF.of_resolveAux th tht C Env1 Env2 h_res_th h_envwf1 h_ne1 h_fwf h_props_th.context
+              have h_ne2 : Env2.context.types ≠ [] := h_props_th.context ▸ h_ne1
+              have h_resolved2 : TContext.AliasesResolved Env2.context := h_props_th.context ▸ h_resolved1
+              have h_af2 : LMonoTy.aliasFree Env2.context.aliases xty := by
+                rw [show Env2.context.aliases = Env1.context.aliases from congrArg TContext.aliases h_props_th.context]
+                exact h_af1
+              have h_ctx3 := resolveAux_preserves_find C Env2 Env3 el elt xv (.forAll [] xty) h_res_el h_ctx2
+              have h_resolved3 : TContext.AliasesResolved Env3.context := by
+                have h_props_el := resolveAux_properties el elt C Env2 Env3 h_res_el
+                  h_ne2 h_envwf2.aliasesWF h_fwf h_envwf2.substFreshForGen
+                  h_envwf2.ctxFreshForGen h_envwf2.boundVarsFresh
+                exact h_props_el.context ▸ h_resolved2
+              have h_af3 : LMonoTy.aliasFree Env3.context.aliases xty := by
+                have h_props_el := resolveAux_properties el elt C Env2 Env3 h_res_el
+                  h_ne2 h_envwf2.aliasesWF h_fwf h_envwf2.substFreshForGen
+                  h_envwf2.ctxFreshForGen h_envwf2.boundVarsFresh
+                rw [show Env3.context.aliases = Env2.context.aliases from congrArg TContext.aliases h_props_el.context]
+                exact h_af2
+              have h_envwf3 := TEnvWF.of_resolveAux el elt C Env2 Env3 h_res_el h_envwf2 h_ne2 h_fwf
+                (resolveAux_properties el elt C Env2 Env3 h_res_el h_ne2 h_envwf2.aliasesWF h_fwf
+                  h_envwf2.substFreshForGen h_envwf2.ctxFreshForGen h_envwf2.boundVarsFresh).context
+              have h_ne3 : Env3.context.types ≠ [] := by
+                have h_props_el := resolveAux_properties el elt C Env2 Env3 h_res_el
+                  h_ne2 h_envwf2.aliasesWF h_fwf h_envwf2.substFreshForGen
+                  h_envwf2.ctxFreshForGen h_envwf2.boundVarsFresh
+                exact h_props_el.context ▸ h_ne2
+              exact ⟨ih c.sizeOf h_sz_c c rfl C Env Env1 ct xv xty h_res_c h_ctx h_envwf h_ne h_fwf h_resolved h_af,
+                     ih th.sizeOf h_sz_th th rfl C Env1 Env2 tht xv xty h_res_th h_ctx1 h_envwf1 h_ne1 h_fwf h_resolved1 h_af1,
+                     ih el.sizeOf h_sz_el el rfl C Env2 Env3 elt xv xty h_res_el h_ctx2 h_envwf2 h_ne2 h_fwf h_resolved2 h_af2⟩
+    | .eq m e1 e2 =>
+      simp only [resolveAux, Bind.bind, Except.bind] at h_res
+      split at h_res
+      · simp at h_res
+      · rename_i v1 h_res1; obtain ⟨e1t, Env1⟩ := v1; simp at h_res h_res1
+        split at h_res
+        · simp at h_res
+        · rename_i v2 h_res2; obtain ⟨e2t, Env2⟩ := v2; simp at h_res h_res2
+          split at h_res
+          · simp at h_res
+          · simp only [Except.ok.injEq, Prod.mk.injEq] at h_res
+            obtain ⟨h_et, _⟩ := h_res; subst h_et
+            simp only [LExprT.allFvarAnnot]
+            have h_sz1 : e1.sizeOf < n := by subst h_eq; simp [LExpr.sizeOf]; omega
+            have h_sz2 : e2.sizeOf < n := by subst h_eq; simp [LExpr.sizeOf]; omega
+            have h_props1 := resolveAux_properties e1 e1t C Env Env1 h_res1
+              h_ne h_envwf.aliasesWF h_fwf h_envwf.substFreshForGen
+              h_envwf.ctxFreshForGen h_envwf.boundVarsFresh
+            have h_ctx1 := resolveAux_preserves_find C Env Env1 e1 e1t xv (.forAll [] xty) h_res1 h_ctx
+            have h_envwf1 := TEnvWF.of_resolveAux e1 e1t C Env Env1 h_res1 h_envwf h_ne h_fwf h_props1.context
+            have h_ne1 : Env1.context.types ≠ [] := h_props1.context ▸ h_ne
+            have h_resolved1 : TContext.AliasesResolved Env1.context := h_props1.context ▸ h_resolved
+            have h_af1 : LMonoTy.aliasFree Env1.context.aliases xty := by
+              rw [show Env1.context.aliases = Env.context.aliases from congrArg TContext.aliases h_props1.context]
+              exact h_af
+            exact ⟨ih e1.sizeOf h_sz1 e1 rfl C Env Env1 e1t xv xty h_res1 h_ctx h_envwf h_ne h_fwf h_resolved h_af,
+                   ih e2.sizeOf h_sz2 e2 rfl C Env1 Env2 e2t xv xty h_res2 h_ctx1 h_envwf1 h_ne1 h_fwf h_resolved1 h_af1⟩
+
+theorem resolveAux_allFvarAnnot [DecidableEq T.IDMeta] [HasGen T.IDMeta]
+  (C : LContext T) (Env Env' : TEnv T.IDMeta)
     (e : LExpr T.mono) (et : LExprT T.mono)
     (xv : T.Identifier) (xty : LMonoTy)
     (h_res : resolveAux C Env e = Except.ok (et, Env'))
-    (h_ctx : Env.context.types.find? xv = some (.forAll [] xty)) :
+    (h_ctx : Env.context.types.find? xv = some (.forAll [] xty))
+    (h_envwf : TEnvWF Env)
+    (h_ne : Env.context.types ≠ [])
+    (h_fwf : FactoryWF C.functions)
+    (h_resolved : TContext.AliasesResolved Env.context)
+    (h_af : LMonoTy.aliasFree Env.context.aliases xty) :
     LExprT.allFvarAnnot xv xty et := by
-  sorry
+  exact resolveAux_allFvarAnnot_aux e.sizeOf e rfl C Env Env' et xv xty
+    h_res h_ctx h_envwf h_ne h_fwf h_resolved h_af
 
-/-! ### Helper: `typeBoundVar` adds the variable to the context -/
+omit [Std.ToFormat T.IDMeta] in
+private theorem varCloseT_unresolved_HasTypeA_gen [DecidableEq T.IDMeta] (k : Nat) (Δ : List LMonoTy) (hk : Δ.length = k)
+    (xv : T.Identifier) (t : LMonoTy) (et : LExprT T.mono) (τ : LMonoTy)
+    (h_typed : HasTypeA Δ et.unresolved τ)
+    (h_annot : LExprT.allFvarAnnot xv t et) :
+    HasTypeA (Δ ++ [t]) (LExpr.varCloseT k xv et).unresolved τ := by
+  induction et generalizing Δ k τ with
+  | fvar m x fty =>
+    simp only [LExpr.varCloseT, LExprT.allFvarAnnot] at h_annot ⊢
+    split
+    · rename_i h_xeq
+      simp only [unresolved] at h_typed ⊢
+      have h_xeq' : x = xv := by
+        simp [BEq.beq] at h_xeq; exact h_xeq.symm
+      have h_ty_eq := h_annot h_xeq'
+      cases h_typed
+      rw [← h_ty_eq]
+      apply HasTypeA.bvar
+      rw [List.getElem?_append_right (by omega)]
+      simp [hk]
+    · simp only [unresolved] at h_typed ⊢
+      exact HasTypeA_append_right h_typed [t]
+  | const m c =>
+    simp only [LExpr.varCloseT, unresolved] at h_typed ⊢
+    exact HasTypeA_append_right h_typed [t]
+  | op m o ty =>
+    simp only [LExpr.varCloseT, unresolved] at h_typed ⊢
+    exact HasTypeA_append_right h_typed [t]
+  | bvar m i =>
+    simp only [LExpr.varCloseT, unresolved] at h_typed ⊢
+    exact HasTypeA_append_right h_typed [t]
+  | app m e1 e2 ih1 ih2 =>
+    simp only [LExpr.varCloseT, unresolved, LExprT.allFvarAnnot] at h_typed h_annot ⊢
+    cases h_typed with
+    | app h_fn h_arg =>
+      exact HasTypeA.app (ih1 _ _ hk _ h_fn h_annot.1) (ih2 _ _ hk _ h_arg h_annot.2)
+  | abs m name bty body ih_body =>
+    simp only [LExprT.allFvarAnnot] at h_annot
+    simp only [LExpr.varCloseT]
+    match h_isA : m.type.isArrow with
+    | some (aty, _) =>
+      unfold unresolved at h_typed ⊢
+      rw [h_isA] at h_typed ⊢
+      cases h_typed with
+      | abs h_body_typed =>
+        apply HasTypeA.abs
+        have h_len : (aty :: Δ).length = k + 1 := by simp [hk]
+        exact ih_body (k + 1) (aty :: Δ) h_len _ h_body_typed h_annot
+    | none =>
+      unfold unresolved at h_typed ⊢
+      rw [h_isA] at h_typed ⊢
+      simp at h_typed ⊢
+      cases bty with
+      | none => cases h_typed
+      | some aty =>
+        cases h_typed with
+        | abs h_body_typed =>
+          apply HasTypeA.abs
+          have h_len : (aty :: Δ).length = k + 1 := by simp [hk]
+          exact ih_body (k + 1) (aty :: Δ) h_len _ h_body_typed h_annot
+  | quant m qk name bty tr body ih_tr ih_body =>
+    simp only [LExprT.allFvarAnnot] at h_annot
+    simp only [LExpr.varCloseT, unresolved] at h_typed ⊢
+    cases h_typed with
+    | quant h_tr h_body =>
+      rename_i τ_tr
+      refine HasTypeA.quant (τ_tr := τ_tr) ?_ ?_
+      · have h_len : (m.type :: Δ).length = k + 1 := by simp [hk]
+        exact ih_tr (k + 1) (m.type :: Δ) h_len _ h_tr h_annot.1
+      · have h_len : (m.type :: Δ).length = k + 1 := by simp [hk]
+        exact ih_body (k + 1) (m.type :: Δ) h_len _ h_body h_annot.2
+  | ite m c_e t_e e_e ih_c ih_t ih_e =>
+    simp only [LExpr.varCloseT, unresolved, LExprT.allFvarAnnot] at h_typed h_annot ⊢
+    cases h_typed with
+    | ite h_c h_t h_e =>
+      exact HasTypeA.ite (ih_c _ _ hk _ h_c h_annot.1) (ih_t _ _ hk _ h_t h_annot.2.1) (ih_e _ _ hk _ h_e h_annot.2.2)
+  | eq m e1 e2 ih1 ih2 =>
+    simp only [LExpr.varCloseT, unresolved, LExprT.allFvarAnnot] at h_typed h_annot ⊢
+    cases h_typed with
+    | eq h1 h2 =>
+      exact HasTypeA.eq (ih1 _ _ hk _ h1 h_annot.1) (ih2 _ _ hk _ h2 h_annot.2)
 
-theorem typeBoundVar_adds_to_context (C : LContext T) (Env : TEnv T.IDMeta)
-    (bty : Option LMonoTy) (xv : T.Identifier) (xty : LMonoTy) (Env' : TEnv T.IDMeta)
-    (h : typeBoundVar C Env bty = .ok (xv, xty, Env')) :
-    Env'.context.types.find? xv = some (.forAll [] xty) := by
-  sorry
-
-theorem varCloseT_unresolved_HasTypeA (k : Nat) (Δ : List LMonoTy) (hk : Δ.length = k)
+omit [Std.ToFormat T.IDMeta] in
+theorem varCloseT_unresolved_HasTypeA [DecidableEq T.IDMeta] (k : Nat) (Δ : List LMonoTy) (hk : Δ.length = k)
     (xv : T.Identifier) (t : LMonoTy) (et : LExprT T.mono)
     (h_typed : HasTypeA Δ et.unresolved (et.toLMonoTy))
     (h_annot : LExprT.allFvarAnnot xv t et) :
     HasTypeA (Δ ++ [t]) (LExpr.varCloseT k xv et).unresolved ((LExpr.varCloseT k xv et).toLMonoTy) := by
-  sorry
+  rw [varCloseT_toLMonoTy]
+  exact varCloseT_unresolved_HasTypeA_gen k Δ hk xv t et _ h_typed h_annot
 
-theorem varCloseT_unresolved_HasTypeA_nil (xv : T.Identifier) (t : LMonoTy) (et : LExprT T.mono)
+omit [Std.ToFormat T.IDMeta] in
+theorem varCloseT_unresolved_HasTypeA_nil [DecidableEq T.IDMeta] (xv : T.Identifier) (t : LMonoTy) (et : LExprT T.mono)
     (h_typed : HasTypeA [] et.unresolved (et.toLMonoTy))
     (h_annot : LExprT.allFvarAnnot xv t et) :
     HasTypeA [t] (LExpr.varCloseT 0 xv et).unresolved ((LExpr.varCloseT 0 xv et).toLMonoTy) := by
-  sorry
+  exact varCloseT_unresolved_HasTypeA 0 [] rfl xv t et h_typed h_annot
 
 /-! ### Helper: `TEnvWF` preserved by `resolve`'s context initialization -/
 
-theorem TEnvWF_resolve_init (Env : TEnv T.IDMeta) (h_envwf : TEnvWF Env) :
+omit [Std.ToFormat T.IDMeta] in
+theorem TEnvWF_resolve_init [DecidableEq T.IDMeta]
+  (Env : TEnv T.IDMeta) (h_envwf : TEnvWF Env) :
     TEnvWF (if Env.context.types.isEmpty = true then
       Env.updateContext { types := [[]], aliases := Env.context.aliases }
     else Env) := by
-  sorry
+  cases h_emp : Env.context.types.isEmpty with
+  | false => simp; exact h_envwf
+  | true =>
+    simp [TEnv.updateContext]
+    refine ⟨?_, ?_, ?_, ?_, ?_⟩
+    · exact h_envwf.aliasesWF
+    · exact h_envwf.substFreshForGen
+    · intro v hv n hn
+      change v ∈ TContext.types.knownTypeVars [[]] at hv
+      simp [TContext.types.knownTypeVars, TContext.types.knownTypeVars.go] at hv
+    · intro y ty hf
+      change Maps.find? [[]] y = some ty at hf
+      simp [Maps.find?, Map.find?] at hf
+    · intro y ty hf
+      change Maps.find? [[]] y = some ty at hf
+      simp [Maps.find?, Map.find?] at hf
 
 /-! ### Helper: absorption from `resolveAux_properties`
 
@@ -115,20 +855,21 @@ theorem TEnvWF_resolve_init (Env : TEnv T.IDMeta) (h_envwf : TEnvWF Env) :
 
 /-! ### Layer 3: `resolveAux` produces well-annotated terms -/
 
-private theorem resolveAux_HasTypeA_aux :
+private theorem resolveAux_HasTypeA_aux [DecidableEq T.IDMeta] [HasGen T.IDMeta] :
     ∀ (n : Nat) (e : LExpr T.mono), e.sizeOf = n →
       ∀ (et : LExprT T.mono) (C : LContext T) (Env Env' : TEnv T.IDMeta),
       resolveAux C Env e = Except.ok (et, Env') →
       TEnvWF Env →
       Env.context.types ≠ [] →
       FactoryWF C.functions →
+      TContext.AliasesResolved Env.context →
       ∀ (S : Subst), Subst.absorbs S Env'.stateSubstInfo.subst →
       HasTypeA [] (applySubstT et S).unresolved
                  ((applySubstT et S).toLMonoTy) := by
   intro n
   induction n using Nat.strongRecOn with
   | _ n ih =>
-  intro e h_eq et C Env Env' h h_envwf h_ne h_fwf S h_absorbs
+  intro e h_eq et C Env Env' h h_envwf h_ne h_fwf h_resolved S h_absorbs
   match e with
   | .const _ _ =>
     simp only [resolveAux, inferConst, Bind.bind, Except.bind] at h
@@ -290,9 +1031,9 @@ private theorem resolveAux_HasTypeA_aux :
             have h_sz1 : e1.sizeOf < n := by subst h_eq; simp [LExpr.sizeOf]; omega
             have h_sz2 : e2.sizeOf < n := by subst h_eq; simp [LExpr.sizeOf]; omega
             have h_ih_e1 := ih e1.sizeOf h_sz1 e1 rfl e1t_env.fst C Env e1t_env.snd heq_e1
-              h_envwf h_ne h_fwf S h_abs_e1
+              h_envwf h_ne h_fwf h_resolved S h_abs_e1
             have h_ih_e2 := ih e2.sizeOf h_sz2 e2 rfl e2t_env.fst C e1t_env.snd e2t_env.snd heq_e2
-              h_envwf1 h_ne1 h_fwf S h_abs_e2
+              h_envwf1 h_ne1 h_fwf (h_ctx1 ▸ h_resolved) S h_abs_e2
             -- Simplify and apply HasTypeA.app
             simp [applySubstT, replaceMetadata, unresolved, toLMonoTy]
             rw [applySubstT_toLMonoTy] at h_ih_e1 h_ih_e2
@@ -327,9 +1068,12 @@ private theorem resolveAux_HasTypeA_aux :
         have h_abs_Env2 : S.absorbs Env2.stateSubstInfo.subst := by
           simp [TEnv.eraseFromContext, TEnv.updateContext] at h_absorbs
           exact h_absorbs
+        have h_aliases_eq1 := typeBoundVar_aliases_eq C Env bty_abs xv xty Env1 h_tbv
+        have h_resolved1 : TContext.AliasesResolved Env1.context := by
+          intro a h_mem; rw [h_aliases_eq1] at h_mem ⊢; exact h_resolved a h_mem
         have h_ih_body := ih (LExpr.varOpen 0 (xv, some xty) e_body).sizeOf h_sz_body
           (LExpr.varOpen 0 (xv, some xty) e_body) rfl et_body C Env1 Env2 h_res_body
-          h_envwf1 h_ne1 h_fwf S h_abs_Env2
+          h_envwf1 h_ne1 h_fwf h_resolved1 S h_abs_Env2
         -- h_ih_body : HasTypeA [] (applySubstT et_body S).unresolved (toLMonoTy (applySubstT et_body S))
         -- Need: HasTypeA [] (applySubstT (.abs ...) S).unresolved (toLMonoTy (applySubstT (.abs ...) S))
         show HasTypeA []
@@ -361,9 +1105,12 @@ private theorem resolveAux_HasTypeA_aux :
         rw [h_ty_eq]
         have h_ctx_xv : Env1.context.types.find? xv = some (.forAll [] xty) :=
           typeBoundVar_adds_to_context C Env bty_abs xv xty Env1 h_tbv
+        have h_xty_af : LMonoTy.aliasFree Env1.context.aliases xty := by
+          rw [h_aliases_eq1]; exact typeBoundVar_xty_aliasFree C Env bty_abs xv xty Env1 h_tbv h_resolved
         have h_annot_raw : LExprT.allFvarAnnot xv xty et_body :=
           resolveAux_allFvarAnnot C Env1 Env2
             (LExpr.varOpen 0 (xv, some xty) e_body) et_body xv xty h_res_body h_ctx_xv
+            h_envwf1 h_ne1 h_fwf h_resolved1 h_xty_af
         have h_annot : LExprT.allFvarAnnot xv (LMonoTy.subst S xty) (applySubstT et_body S) :=
           applySubstT_allFvarAnnot xv xty et_body S h_annot_raw
         exact varCloseT_unresolved_HasTypeA_nil xv (LMonoTy.subst S xty)
@@ -419,18 +1166,24 @@ private theorem resolveAux_HasTypeA_aux :
                 h_ne2 h_envwf2.aliasesWF h_fwf h_envwf2.substFreshForGen
                 h_envwf2.ctxFreshForGen h_envwf2.boundVarsFresh
               exact Subst.absorbs_trans _ _ _ h_props_tr.absorbs h_abs_Env3
+            -- AliasesResolved for Env1 and Env2
+            have h_aliases_eq1 := typeBoundVar_aliases_eq C Env bty_q xv xty Env1 h_tbv
+            have h_resolved1 : TContext.AliasesResolved Env1.context := by
+              intro a h_mem; rw [h_aliases_eq1] at h_mem ⊢; exact h_resolved a h_mem
+            have h_resolved2 : TContext.AliasesResolved Env2.context :=
+              h_ctx_body ▸ h_resolved1
             -- IH for body
             have h_sz_body : (LExpr.varOpen 0 (xv, some xty) e_q).sizeOf < n := by
               subst h_eq; simp [LExpr.sizeOf, LExpr.varOpen_sizeOf]; omega
             have h_ih_body := ih (LExpr.varOpen 0 (xv, some xty) e_q).sizeOf h_sz_body
               (LExpr.varOpen 0 (xv, some xty) e_q) rfl et_body C Env1 Env2 h_res_body
-              h_envwf1 h_ne1 h_fwf S h_abs_Env2
+              h_envwf1 h_ne1 h_fwf h_resolved1 S h_abs_Env2
             -- IH for trigger
             have h_sz_tr : (LExpr.varOpen 0 (xv, some xty) trigger_q).sizeOf < n := by
               subst h_eq; simp [LExpr.sizeOf, LExpr.varOpen_sizeOf]; omega
             have h_ih_tr := ih (LExpr.varOpen 0 (xv, some xty) trigger_q).sizeOf h_sz_tr
               (LExpr.varOpen 0 (xv, some xty) trigger_q) rfl et_tr C Env2 Env3 h_res_tr
-              h_envwf2 h_ne2 h_fwf S h_abs_Env3
+              h_envwf2 h_ne2 h_fwf h_resolved2 S h_abs_Env3
             -- Simplify goal: RHS is already bool via toLMonoTy of quant
             show HasTypeA []
               (applySubstT (.quant ⟨m_q, LMonoTy.subst Env3.stateSubstInfo.subst xty⟩
@@ -460,9 +1213,15 @@ private theorem resolveAux_HasTypeA_aux :
                 typeBoundVar_adds_to_context C Env bty_q xv xty Env1 h_tbv
               have h_ctx_xv2 : Env2.context.types.find? xv = some (.forAll [] xty) :=
                 h_ctx_body ▸ h_ctx_xv
+              have h_xty_af2 : LMonoTy.aliasFree Env2.context.aliases xty := by
+                rw [show Env2.context.aliases = Env1.context.aliases from by
+                  rw [show Env2.context = Env1.context from h_ctx_body]]
+                rw [h_aliases_eq1]
+                exact typeBoundVar_xty_aliasFree C Env bty_q xv xty Env1 h_tbv h_resolved
               have h_annot_tr_raw : LExprT.allFvarAnnot xv xty et_tr :=
                 resolveAux_allFvarAnnot C Env2 Env3
                   (LExpr.varOpen 0 (xv, some xty) trigger_q) et_tr xv xty h_res_tr h_ctx_xv2
+                  h_envwf2 h_ne2 h_fwf h_resolved2 h_xty_af2
               have h_annot_tr : LExprT.allFvarAnnot xv (LMonoTy.subst S xty) (applySubstT et_tr S) :=
                 applySubstT_allFvarAnnot xv xty et_tr S h_annot_tr_raw
               exact varCloseT_unresolved_HasTypeA_nil xv (LMonoTy.subst S xty)
@@ -473,9 +1232,13 @@ private theorem resolveAux_HasTypeA_aux :
               rw [← h_body_ty_eq]
               have h_ctx_xv : Env1.context.types.find? xv = some (.forAll [] xty) :=
                 typeBoundVar_adds_to_context C Env bty_q xv xty Env1 h_tbv
+              have h_xty_af1 : LMonoTy.aliasFree Env1.context.aliases xty := by
+                rw [h_aliases_eq1]
+                exact typeBoundVar_xty_aliasFree C Env bty_q xv xty Env1 h_tbv h_resolved
               have h_annot_body_raw : LExprT.allFvarAnnot xv xty et_body :=
                 resolveAux_allFvarAnnot C Env1 Env2
                   (LExpr.varOpen 0 (xv, some xty) e_q) et_body xv xty h_res_body h_ctx_xv
+                  h_envwf1 h_ne1 h_fwf h_resolved1 h_xty_af1
               have h_annot_body : LExprT.allFvarAnnot xv (LMonoTy.subst S xty) (applySubstT et_body S) :=
                 applySubstT_allFvarAnnot xv xty et_body S h_annot_body_raw
               exact varCloseT_unresolved_HasTypeA_nil xv (LMonoTy.subst S xty)
@@ -541,10 +1304,10 @@ private theorem resolveAux_HasTypeA_aux :
           rw [LMonoTy.subst_bool]
           apply HasTypeA.eq (τ := toLMonoTy (applySubstT e1t_env.fst S))
           · have h_sz : e1.sizeOf < n := by subst h_eq; simp_all [LExpr.sizeOf]; omega
-            exact ih e1.sizeOf h_sz e1 rfl e1t_env.fst C Env e1t_env.snd heq_e1 h_envwf h_ne h_fwf S h_abs_e1
+            exact ih e1.sizeOf h_sz e1 rfl e1t_env.fst C Env e1t_env.snd heq_e1 h_envwf h_ne h_fwf h_resolved S h_abs_e1
           · rw [h_eq_types]
             have h_sz2 : e2.sizeOf < n := by subst h_eq; simp_all [LExpr.sizeOf]; omega
-            exact ih e2.sizeOf h_sz2 e2 rfl e2t_env.fst C e1t_env.snd e2t_env.snd heq_e2 h_envwf1 h_ne1 h_fwf S h_abs_e2
+            exact ih e2.sizeOf h_sz2 e2 rfl e2t_env.fst C e1t_env.snd e2t_env.snd heq_e2 h_envwf1 h_ne1 h_fwf (h_ctx1 ▸ h_resolved) S h_abs_e2
   | .ite m_ite c_expr th_expr el_expr =>
     simp only [resolveAux, Bind.bind, Except.bind] at h
     split at h
@@ -633,36 +1396,38 @@ private theorem resolveAux_HasTypeA_aux :
               (LMonoTy.subst S (toLMonoTy tht_env.fst))
             rw [← applySubstT_toLMonoTy tht_env.fst S]
             apply HasTypeA.ite
-            · have h_ih_c := ih c_expr.sizeOf h_sz_c c_expr rfl ct_env.fst C Env ct_env.snd heq_c h_envwf h_ne h_fwf S h_abs_c
+            · have h_ih_c := ih c_expr.sizeOf h_sz_c c_expr rfl ct_env.fst C Env ct_env.snd heq_c h_envwf h_ne h_fwf h_resolved S h_abs_c
               rw [applySubstT_toLMonoTy, h_c_type_bool] at h_ih_c
               exact h_ih_c
-            · exact ih th_expr.sizeOf h_sz_th th_expr rfl tht_env.fst C ct_env.snd tht_env.snd heq_th h_envwf_c h_ne_c h_fwf S h_abs_th
-            · have h_ih_el := ih el_expr.sizeOf h_sz_el el_expr rfl elt_env.fst C tht_env.snd elt_env.snd heq_el h_envwf_th h_ne_th h_fwf S h_abs_el
+            · exact ih th_expr.sizeOf h_sz_th th_expr rfl tht_env.fst C ct_env.snd tht_env.snd heq_th h_envwf_c h_ne_c h_fwf (h_ctx_c ▸ h_resolved) S h_abs_th
+            · have h_ih_el := ih el_expr.sizeOf h_sz_el el_expr rfl elt_env.fst C tht_env.snd elt_env.snd heq_el h_envwf_th h_ne_th h_fwf (h_ctx_th ▸ h_ctx_c ▸ h_resolved) S h_abs_el
               rw [applySubstT_toLMonoTy] at h_ih_el
               rw [applySubstT_toLMonoTy, h_th_el_eq]
               exact h_ih_el
 
-theorem resolveAux_HasTypeA
+theorem resolveAux_HasTypeA [DecidableEq T.IDMeta] [HasGen T.IDMeta]
     (C : LContext T) (Env : TEnv T.IDMeta) (e : LExpr T.mono)
     (et : LExprT T.mono) (Env' : TEnv T.IDMeta)
     (h : resolveAux C Env e = Except.ok (et, Env'))
     (h_envwf : TEnvWF Env)
     (h_ne : Env.context.types ≠ [])
-    (h_fwf : FactoryWF C.functions) :
+    (h_fwf : FactoryWF C.functions)
+    (h_resolved : TContext.AliasesResolved Env.context) :
     HasTypeA [] (applySubstT et Env'.stateSubstInfo.subst).unresolved
                ((applySubstT et Env'.stateSubstInfo.subst).toLMonoTy) := by
   have h_absorbs := Subst.absorbs_refl Env'.stateSubstInfo.subst Env'.stateSubstInfo.isWF
-  exact resolveAux_HasTypeA_aux e.sizeOf e rfl et C Env Env' h h_envwf h_ne h_fwf
+  exact resolveAux_HasTypeA_aux e.sizeOf e rfl et C Env Env' h h_envwf h_ne h_fwf h_resolved
     Env'.stateSubstInfo.subst h_absorbs
 
 /-! ### Layer 4: Top-level `resolve_HasTypeA` -/
 
-theorem resolve_HasTypeA
+theorem resolve_HasTypeA [DecidableEq T.IDMeta] [HasGen T.IDMeta]
     (e : LExpr T.mono) (e_typed : LExprT T.mono) (C : LContext T)
     (Env : TEnv T.IDMeta) (Env' : TEnv T.IDMeta)
     (h : e.resolve C Env = Except.ok (e_typed, Env'))
     (h_envwf : TEnvWF Env)
-    (h_fwf : FactoryWF C.functions) :
+    (h_fwf : FactoryWF C.functions)
+    (h_resolved : TContext.AliasesResolved Env.context) :
     LExpr.HasTypeA [] e_typed.unresolved (e_typed.toLMonoTy) := by
   unfold LExpr.resolve at h
   simp only [Bind.bind, Except.bind] at h
@@ -685,7 +1450,14 @@ theorem resolve_HasTypeA
         intro h_abs
         simp_all
         contradiction
-    exact resolveAux_HasTypeA C _ e val.fst val.snd h_res h_envwf0 h_ne0 h_fwf
+    have h_resolved0 : (if Env.context.types.isEmpty = true then
+        Env.updateContext { types := [[]], aliases := Env.context.aliases }
+      else Env).context.AliasesResolved := by
+      split
+      · simp [TEnv.updateContext, TEnv.context, TContext.AliasesResolved] at h_resolved ⊢
+        exact h_resolved
+      · exact h_resolved
+    exact resolveAux_HasTypeA C _ e val.fst val.snd h_res h_envwf0 h_ne0 h_fwf h_resolved0
 
 end
 

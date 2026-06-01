@@ -143,6 +143,31 @@ structure TContext (IDMeta : Type) where
 def TContext.AliasesWF (Γ : TContext IDMeta) : Prop :=
   ∀ a, a ∈ Γ.aliases → a.WF
 
+mutual
+/-- A monotype is alias-free w.r.t. an alias list: none of its `.tcons` names
+    match any alias name in the list. -/
+def LMonoTy.aliasFree (aliases : List TypeAlias) (mty : LMonoTy) : Prop :=
+  match mty with
+  | .ftvar _ => True
+  | .bitvec _ => True
+  | .tcons name args =>
+    (aliases.find? (fun a => a.name == name && a.typeArgs.length == args.length) = none) ∧
+    LMonoTys.aliasFree aliases args
+
+/-- All types in a list are alias-free. -/
+def LMonoTys.aliasFree (aliases : List TypeAlias) (mtys : LMonoTys) : Prop :=
+  match mtys with
+  | [] => True
+  | mty :: rest => LMonoTy.aliasFree aliases mty ∧ LMonoTys.aliasFree aliases rest
+end
+
+/-- All alias bodies in the context are fully resolved: they do not reference
+    other alias names. This is established by `TEnv.addTypeAlias` which calls
+    `instantiateWithCheck` (and therefore `resolveAliases`) on the alias body
+    before storing it. -/
+def TContext.AliasesResolved (Γ : TContext IDMeta) : Prop :=
+  ∀ a, a ∈ Γ.aliases → LMonoTy.aliasFree Γ.aliases a.type
+
 instance {IDMeta} [ToFormat IDMeta] : ToFormat (TContext IDMeta) where
   format ctx :=
     f!"types:   {ctx.types}\n\
