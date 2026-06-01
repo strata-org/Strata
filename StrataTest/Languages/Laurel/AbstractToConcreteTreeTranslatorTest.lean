@@ -58,21 +58,30 @@ private def roundtrip (input : String) : IO String := do
 
 /--
 info: procedure foo()
-{ assert true; assert false };
+  opaque
+{
+  assert true;
+  assert false
+};
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip r"procedure foo() { assert true; assert false };")
+#eval do IO.println (← roundtrip r"procedure foo() opaque { assert true; assert false };")
 
 /--
 info: procedure add(x: int, y: int): int
-{ x + y };
+  opaque
+{
+  x + y
+};
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip r"procedure add(x: int, y: int): int { x + y };")
+#eval do IO.println (← roundtrip r"procedure add(x: int, y: int): int opaque { x + y };")
 
 /--
 info: function aFunction(x: int): int
-{ x };
+{
+  x
+};
 -/
 #guard_msgs in
 #eval do IO.println (← roundtrip r"function aFunction(x: int): int { x };")
@@ -90,17 +99,22 @@ composite Point {
 
 /--
 info: procedure test(x: int): int
-{ if x > 0 then x else 0 - x };
+  opaque
+{
+  if x > 0 then x else 0 - x
+};
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip r"procedure test(x: int): int { if x > 0 then x else 0 - x };")
+#eval do IO.println (← roundtrip r"procedure test(x: int): int opaque { if x > 0 then x else 0 - x };")
 
 /--
 info: procedure divide(x: int, y: int): int
   requires y != 0
   opaque
   ensures result >= 0
-{ x / y };
+{
+  x / y
+};
 -/
 #guard_msgs in
 #eval do IO.println (← roundtrip r"
@@ -113,11 +127,15 @@ procedure divide(x: int, y: int): int
 
 /--
 info: procedure test()
-{ assert forall(x: int) => x == x; assert exists(y: int) => y > 0 };
+  opaque
+{
+  assert forall(x: int) => x == x;
+  assert exists(y: int) => y > 0
+};
 -/
 #guard_msgs in
 #eval do IO.println (← roundtrip r"
-procedure test() {
+procedure test() opaque {
     assert forall(x: int) => x == x;
     assert exists(y: int) => y > 0
 };
@@ -127,7 +145,12 @@ procedure test() {
 info: composite Point { var x: int var y: int }
 
 procedure test(): int
-{ var p: Point := new Point; p#x := 5; p#x };
+  opaque
+{
+  var p: Point := new Point;
+  p#x := 5;
+  p#x
+};
 -/
 #guard_msgs in
 #eval do IO.println (← roundtrip r"
@@ -135,7 +158,7 @@ composite Point {
   var x: int
   var y: int
 }
-procedure test(): int {
+procedure test(): int opaque {
     var p: Point := new Point;
     p#x := 5;
     p#x
@@ -160,25 +183,34 @@ info: composite Animal { }
 composite Dog extends Animal { }
 
 procedure test(a: Animal): bool
-{ a is Dog };
+  opaque
+{
+  a is Dog
+};
 -/
 #guard_msgs in
 #eval do IO.println (← roundtrip r"
 composite Animal {}
 composite Dog extends Animal {}
-procedure test(a: Animal): bool { a is Dog };
+procedure test(a: Animal): bool opaque { a is Dog };
 ")
 
 -- Additional coverage: while loops
 
 /--
 info: procedure test()
-{ var x: int := 0; while(x < 10)
-  invariant x >= 0 { x := x + 1 } };
+  opaque
+{
+  var x: int := 0;
+  while(x < 10)
+    invariant x >= 0 {
+    x := x + 1
+  }
+};
 -/
 #guard_msgs in
 #eval do IO.println (← roundtrip r"
-procedure test() {
+procedure test() opaque {
     var x: int := 0;
     while(x < 10)
       invariant x >= 0
@@ -203,7 +235,10 @@ procedure modify(c: Container)
   opaque
   ensures true
   modifies c
-{ c#value := c#value + 1; true };
+{
+  c#value := c#value + 1;
+  true
+};
 -/
 #guard_msgs in
 #eval do IO.println (← roundtrip r"
@@ -219,9 +254,12 @@ procedure modify(c: Container)
 
 /--
 info: procedure test(): int
-{ <??> };
+  opaque
+{
+  <??>
+};
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip r"procedure test(): int { <??> };")
+#eval do IO.println (← roundtrip r"procedure test(): int opaque { <??> };")
 
 end Strata.Laurel
