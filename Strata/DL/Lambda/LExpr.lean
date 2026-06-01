@@ -340,11 +340,14 @@ def collectFvarNames {T : LExprParamsT} : LExpr T → List (Identifier T.base.ID
   | .eq _ e1 e2 => collectFvarNames e1 ++ collectFvarNames e2
   | _ => []
 
+/-- Collects type variables from user-written binder annotations (abs/quant only).
+    fvar/op annotations are excluded because they come from the typing context
+    (e.g. datatype selectors) and will be instantiated during resolution. -/
 def annotationTyVars (e : LExpr ⟨⟨M, IDMeta⟩, LMonoTy⟩) : Std.HashSet TyIdentifier :=
   match e with
-  | .fvar _ _ (some ty) => LMonoTy.freeVars ty |>.foldl .insert {}
+  | .fvar _ _ (some _) => {}
   | .fvar _ _ none => {}
-  | .op _ _ (some ty) => LMonoTy.freeVars ty |>.foldl .insert {}
+  | .op _ _ (some _) => {}
   | .op _ _ none => {}
   | .const _ _ => {}
   | .bvar _ _ => {}

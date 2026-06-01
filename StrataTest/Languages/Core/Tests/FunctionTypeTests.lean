@@ -239,7 +239,10 @@ private def strayFvarAnnotFunc : Core.Function :=
     body := some (.fvar () ⟨"x", ()⟩ (some (.ftvar "V"))) }
 
 /--
-info: error: Function 'g': body contains undeclared type variables [V] (not in typeArgs [T])
+info: ok: typeArgs: [$__ty0]
+inputs: (x, $__ty0)
+output: $__ty0
+body: some x
 -/
 #guard_msgs in
 #eval do
