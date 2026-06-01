@@ -82,11 +82,37 @@ op intGeExpr(subject : SpecExprDecl, bound : SpecExprDecl) : SpecExprDecl =>
   @[prec(15)] subject " >=_int " bound;
 op intLeExpr(subject : SpecExprDecl, bound : SpecExprDecl) : SpecExprDecl =>
   @[prec(15)] subject " <=_int " bound;
+op intGtExpr(subject : SpecExprDecl, bound : SpecExprDecl) : SpecExprDecl =>
+  @[prec(15)] subject " >_int " bound;
+op intLtExpr(subject : SpecExprDecl, bound : SpecExprDecl) : SpecExprDecl =>
+  @[prec(15)] subject " <_int " bound;
+op intEqExpr(lhs : SpecExprDecl, rhs : SpecExprDecl) : SpecExprDecl =>
+  @[prec(15)] lhs " ==_int " rhs;
+op intNeExpr(lhs : SpecExprDecl, rhs : SpecExprDecl) : SpecExprDecl =>
+  @[prec(15)] lhs " !=_int " rhs;
+op intAddExpr(lhs : SpecExprDecl, rhs : SpecExprDecl) : SpecExprDecl =>
+  @[prec(20), leftassoc] lhs " +_int " rhs;
+op intSubExpr(lhs : SpecExprDecl, rhs : SpecExprDecl) : SpecExprDecl =>
+  @[prec(20), leftassoc] lhs " -_int " rhs;
+op intMulExpr(lhs : SpecExprDecl, rhs : SpecExprDecl) : SpecExprDecl =>
+  @[prec(25), leftassoc] lhs " *_int " rhs;
+op intDivExpr(lhs : SpecExprDecl, rhs : SpecExprDecl) : SpecExprDecl =>
+  @[prec(25), leftassoc] lhs " //_int " rhs;
+op intModExpr(lhs : SpecExprDecl, rhs : SpecExprDecl) : SpecExprDecl =>
+  @[prec(25), leftassoc] lhs " %_int " rhs;
 op floatExpr(value : Str) : SpecExprDecl => value;
 op floatGeExpr(subject : SpecExprDecl, bound : SpecExprDecl) : SpecExprDecl =>
   @[prec(15)] subject " >=_float " bound;
 op floatLeExpr(subject : SpecExprDecl, bound : SpecExprDecl) : SpecExprDecl =>
   @[prec(15)] subject " <=_float " bound;
+op floatGtExpr(subject : SpecExprDecl, bound : SpecExprDecl) : SpecExprDecl =>
+  @[prec(15)] subject " >_float " bound;
+op floatLtExpr(subject : SpecExprDecl, bound : SpecExprDecl) : SpecExprDecl =>
+  @[prec(15)] subject " <_float " bound;
+op floatEqExpr(lhs : SpecExprDecl, rhs : SpecExprDecl) : SpecExprDecl =>
+  @[prec(15)] lhs " ==_float " rhs;
+op floatNeExpr(lhs : SpecExprDecl, rhs : SpecExprDecl) : SpecExprDecl =>
+  @[prec(15)] lhs " !=_float " rhs;
 op enumMemberExpr(subject : SpecExprDecl, values : Seq Str) : SpecExprDecl =>
   "enum" "(" subject ", [" values "]" ")";
 op regexMatchExpr(subject : SpecExprDecl, pattern : Str) : SpecExprDecl =>
@@ -270,9 +296,22 @@ protected def SpecExpr.toDDM (e : SpecExpr) : DDM.SpecExprDecl SourceRange :=
   | .intLit v loc => .intExpr loc (toDDMInt loc v)
   | .intGe subj bound loc => .intGeExpr loc subj.toDDM bound.toDDM
   | .intLe subj bound loc => .intLeExpr loc subj.toDDM bound.toDDM
+  | .intGt subj bound loc => .intGtExpr loc subj.toDDM bound.toDDM
+  | .intLt subj bound loc => .intLtExpr loc subj.toDDM bound.toDDM
+  | .intEq l r loc => .intEqExpr loc l.toDDM r.toDDM
+  | .intNe l r loc => .intNeExpr loc l.toDDM r.toDDM
+  | .intAdd l r loc => .intAddExpr loc l.toDDM r.toDDM
+  | .intSub l r loc => .intSubExpr loc l.toDDM r.toDDM
+  | .intMul l r loc => .intMulExpr loc l.toDDM r.toDDM
+  | .intDiv l r loc => .intDivExpr loc l.toDDM r.toDDM
+  | .intMod l r loc => .intModExpr loc l.toDDM r.toDDM
   | .floatLit v loc => .floatExpr loc ⟨loc, v⟩
   | .floatGe subj bound loc => .floatGeExpr loc subj.toDDM bound.toDDM
   | .floatLe subj bound loc => .floatLeExpr loc subj.toDDM bound.toDDM
+  | .floatGt subj bound loc => .floatGtExpr loc subj.toDDM bound.toDDM
+  | .floatLt subj bound loc => .floatLtExpr loc subj.toDDM bound.toDDM
+  | .floatEq l r loc => .floatEqExpr loc l.toDDM r.toDDM
+  | .floatNe l r loc => .floatNeExpr loc l.toDDM r.toDDM
   | .enumMember subj values loc =>
     .enumMemberExpr loc subj.toDDM
       ⟨loc, values.map (⟨loc, ·⟩)⟩
@@ -427,9 +466,22 @@ def DDM.SpecExprDecl.fromDDM (d : DDM.SpecExprDecl SourceRange) : Specs.SpecExpr
   | .intExpr loc i => .intLit i.ofDDM loc
   | .intGeExpr loc subj bound => .intGe subj.fromDDM bound.fromDDM loc
   | .intLeExpr loc subj bound => .intLe subj.fromDDM bound.fromDDM loc
+  | .intGtExpr loc subj bound => .intGt subj.fromDDM bound.fromDDM loc
+  | .intLtExpr loc subj bound => .intLt subj.fromDDM bound.fromDDM loc
+  | .intEqExpr loc l r => .intEq l.fromDDM r.fromDDM loc
+  | .intNeExpr loc l r => .intNe l.fromDDM r.fromDDM loc
+  | .intAddExpr loc l r => .intAdd l.fromDDM r.fromDDM loc
+  | .intSubExpr loc l r => .intSub l.fromDDM r.fromDDM loc
+  | .intMulExpr loc l r => .intMul l.fromDDM r.fromDDM loc
+  | .intDivExpr loc l r => .intDiv l.fromDDM r.fromDDM loc
+  | .intModExpr loc l r => .intMod l.fromDDM r.fromDDM loc
   | .floatExpr loc ⟨_, v⟩ => .floatLit v loc
   | .floatGeExpr loc subj bound => .floatGe subj.fromDDM bound.fromDDM loc
   | .floatLeExpr loc subj bound => .floatLe subj.fromDDM bound.fromDDM loc
+  | .floatGtExpr loc subj bound => .floatGt subj.fromDDM bound.fromDDM loc
+  | .floatLtExpr loc subj bound => .floatLt subj.fromDDM bound.fromDDM loc
+  | .floatEqExpr loc l r => .floatEq l.fromDDM r.fromDDM loc
+  | .floatNeExpr loc l r => .floatNe l.fromDDM r.fromDDM loc
   | .enumMemberExpr loc subj ⟨_, values⟩ => .enumMember subj.fromDDM (values.map (·.2)) loc
   | .regexMatchExpr loc subj ⟨_, pattern⟩ => .regexMatch subj.fromDDM pattern loc
   | .containsKeyExpr loc container ⟨_, key⟩ => .containsKey container.fromDDM key loc
