@@ -52,11 +52,11 @@ spec {
 #end
 
 /-- info:
-Obligation: assert_1_1141
+Obligation: assert_1_1149
 Property: assert
 Result: ✅ pass
 
-Obligation: reveal_with_fuel_seed_ensures_0_1121
+Obligation: reveal_with_fuel_seed_ensures_0_1129
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in

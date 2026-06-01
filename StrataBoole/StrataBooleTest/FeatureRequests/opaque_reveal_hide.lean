@@ -51,7 +51,7 @@ procedure opaque_reveal_hide_seed(x: int) returns ()
 #end
 
 /-- info:
-Obligation: assert_1_1334
+Obligation: assert_1_1342
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in

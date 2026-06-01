@@ -61,15 +61,15 @@ spec {
 #end
 
 /-- info:
-Obligation: assert_1_1330
+Obligation: assert_1_1338
 Property: assert
 Result: ✅ pass
 
-Obligation: use_lambda_ensures_0_1284
+Obligation: use_lambda_ensures_0_1292
 Property: assert
 Result: ✅ pass
 
-Obligation: higher_order_seed_ensures_3_1718
+Obligation: higher_order_seed_ensures_3_1726
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in

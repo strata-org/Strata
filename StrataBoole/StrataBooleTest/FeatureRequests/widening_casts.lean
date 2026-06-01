@@ -46,11 +46,11 @@ spec {
 #end
 
 /-- info:
-Obligation: assert_3_1226
+Obligation: assert_3_1234
 Property: assert
 Result: ✅ pass
 
-Obligation: widening_cast_seed_ensures_2_1152
+Obligation: widening_cast_seed_ensures_2_1160
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in

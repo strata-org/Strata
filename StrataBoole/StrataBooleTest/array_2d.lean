@@ -22,7 +22,7 @@ procedure array_2d_write_read(i: int, j: int, v: int) returns ()
 #end
 
 /-- info:
-Obligation: assert_0_298
+Obligation: assert_0_303
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in

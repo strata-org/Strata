@@ -39,11 +39,11 @@ spec {
 #end
 
 /-- info:
-Obligation: assert_2_986
+Obligation: assert_2_983
 Property: assert
 Result: ✅ pass
 
-Obligation: map_extensionality_seed_ensures_1_963
+Obligation: map_extensionality_seed_ensures_1_960
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in

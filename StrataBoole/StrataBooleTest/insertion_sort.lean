@@ -83,7 +83,7 @@ Obligation: arbitrary_iter_maintain_invariant_0_1
 Property: assert
 Result: ✅ pass
 
-Obligation: InsertionSort_ensures_2_337
+Obligation: InsertionSort_ensures_2_342
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in

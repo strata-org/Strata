@@ -43,7 +43,7 @@ spec {
 #end
 
 /-- info:
-Obligation: assert_2_1035
+Obligation: assert_2_1043
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in

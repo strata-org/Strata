@@ -49,11 +49,11 @@ spec {
 #end
 
 /-- info:
-Obligation: assert_4_1350
+Obligation: assert_4_1358
 Property: assert
 Result: ✅ pass
 
-Obligation: nat_int_boundary_seed_ensures_2_1275
+Obligation: nat_int_boundary_seed_ensures_2_1283
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
