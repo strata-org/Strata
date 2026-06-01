@@ -15,6 +15,40 @@ import all Strata.DL.Lambda.Denote.LExprAnnotated
 This module proves that when `LExpr.resolve` succeeds, the resulting expression
 satisfies `HasTypeA` — i.e., the type annotations placed by resolution are
 internally consistent.
+
+### Comparison with `resolve_HasType`
+
+`resolve_HasType` (in `LExprTypeSpec`) proves full polymorphic typing
+(`HasType`) but requires `WellScoped`, `allKeysFresh`, and
+`checkContextTypesClosed` assumptions .`resolve_HasTypeA` here proves
+annotation-consistency (`HasTypeA`) under weaker assumptions: only `TEnvWF`,
+`FactoryWF`, and `AliasesResolved`.
+
+### Proof structure
+
+The proof proceeds in layers:
+
+1. **Alias-free infrastructure** (`resolveAliases_aliasFree`,
+`resolveAliases_output_aliasFree`, `instantiateWithCheck_aliasFree`,
+`typeBoundVar_xty_aliasFree`). We need alias-freeness because `inferFVar` on a
+monomorphic scheme `∀[]. xty` is only a no-op (returning exactly `xty`) when
+`xty` is alias-free. Without this, the `fvar` case of the main induction cannot
+conclude that the metadata annotation equals the context type.
+
+2. **`allFvarAnnot` and `varCloseT`** (`resolveAux_allFvarAnnot`,
+`varCloseT_unresolved_HasTypeA`).
+The abs/quant cases of `resolveAux` open a bound variable as a fresh fvar,
+recurse, then close it. To show the result is well-annotated, we need (a) that
+`resolveAux` annotates every free occurrence of the fresh variable with its
+type, and (b) that closing turns these into correctly-indexed bvars in the
+`HasTypeA` sense.
+
+3. **Main induction** (`resolveAux_HasTypeA_aux`). Our result is generalized
+ over an arbitrary substitution `S` absorbing the output, rather than fixing
+`S` to be the final substitution. This generalization is essential:
+`resolveAux` recurses on sub-expressions whose output substitutions are smaller
+than the final one, and the IH must apply to each sub-result under the caller's
+(larger) substitution.
 -/
 
 namespace Lambda
@@ -25,79 +59,7 @@ section
 
 variable {T : LExprParams} [Std.ToFormat T.IDMeta]
 
-/-! ### Helper: `applySubstT` and `varCloseT` commute -/
-omit [Std.ToFormat T.IDMeta] in
-/-- Type substitution commutes with variable closing: substituting metadata types
-    and then closing a free variable is the same as closing first then substituting. -/
-theorem applySubstT_varCloseT_comm [DecidableEq T.IDMeta] (k : Nat) (xv : T.Identifier) (et : LExprT T.mono) (S : Subst) :
-    applySubstT (LExpr.varCloseT k xv et) S = LExpr.varCloseT k xv (applySubstT et S) := by
-  induction et generalizing k with
-  | const m c => simp [applySubstT, LExpr.replaceMetadata, LExpr.varCloseT]
-  | op m o ty => simp [applySubstT, LExpr.replaceMetadata, LExpr.varCloseT]
-  | bvar m i => simp [applySubstT, LExpr.replaceMetadata, LExpr.varCloseT]
-  | fvar m y yty =>
-    simp only [applySubstT, LExpr.replaceMetadata, LExpr.varCloseT]
-    split <;> simp_all [LExpr.replaceMetadata]
-  | app m e1 e2 ih1 ih2 =>
-    simp only [applySubstT, LExpr.replaceMetadata, LExpr.varCloseT]
-    congr 1; exact ih1 k; exact ih2 k
-  | abs m name ty e_body ih =>
-    simp only [applySubstT, LExpr.replaceMetadata, LExpr.varCloseT]
-    congr 1; exact ih (k + 1)
-  | quant m qk name ty tr e_body ih_tr ih_e =>
-    simp only [applySubstT, LExpr.replaceMetadata, LExpr.varCloseT]
-    congr 1; exact ih_tr (k + 1); exact ih_e (k + 1)
-  | ite m c t f_expr ih_c ih_t ih_f =>
-    simp only [applySubstT, LExpr.replaceMetadata, LExpr.varCloseT]
-    congr 1; exact ih_c k; congr 1; exact ih_t k; exact ih_f k
-  | eq m e1 e2 ih1 ih2 =>
-    simp only [applySubstT, LExpr.replaceMetadata, LExpr.varCloseT]
-    congr 1; exact ih1 k; exact ih2 k
-
-/-! ### Layer 2: `varCloseT` preserves `HasTypeA` -/
-
-/-- Every free occurrence of `xv` in `et` carries type `t` in its metadata. -/
-def LExprT.allFvarAnnot (xv : T.Identifier) (t : LMonoTy) : LExprT T.mono → Prop
-  | .fvar m y _ => y = xv → m.type = t
-  | .app _ f a => allFvarAnnot xv t f ∧ allFvarAnnot xv t a
-  | .abs _ _ _ e => allFvarAnnot xv t e
-  | .quant _ _ _ _ tr e => allFvarAnnot xv t tr ∧ allFvarAnnot xv t e
-  | .ite _ c th el => allFvarAnnot xv t c ∧ allFvarAnnot xv t th ∧ allFvarAnnot xv t el
-  | .eq _ e1 e2 => allFvarAnnot xv t e1 ∧ allFvarAnnot xv t e2
-  | _ => True
-
-/-! ### Helper: `applySubstT` preserves `allFvarAnnot` -/
-omit [Std.ToFormat T.IDMeta] in
-/-- Applying a type substitution to metadata preserves `allFvarAnnot`,
-    transforming the annotation type by the same substitution. -/
-theorem applySubstT_allFvarAnnot (xv : T.Identifier) (t : LMonoTy) (et : LExprT T.mono) (S : Subst)
-    (h : LExprT.allFvarAnnot xv t et) :
-    LExprT.allFvarAnnot xv (LMonoTy.subst S t) (applySubstT et S) := by
-  induction et with
-  | fvar m y yty =>
-    simp only [LExprT.allFvarAnnot, applySubstT, LExpr.replaceMetadata] at *
-    intro heq
-    rw [h heq]
-  | app m f a ih_f ih_a =>
-    simp only [LExprT.allFvarAnnot, applySubstT, LExpr.replaceMetadata] at *
-    exact ⟨ih_f h.1, ih_a h.2⟩
-  | abs m name ty e ih_e =>
-    simp only [LExprT.allFvarAnnot, applySubstT, LExpr.replaceMetadata] at *
-    exact ih_e h
-  | quant m qk name ty tr e ih_tr ih_e =>
-    simp only [LExprT.allFvarAnnot, applySubstT, LExpr.replaceMetadata] at *
-    exact ⟨ih_tr h.1, ih_e h.2⟩
-  | ite m c th el ih_c ih_th ih_el =>
-    simp only [LExprT.allFvarAnnot, applySubstT, LExpr.replaceMetadata] at *
-    exact ⟨ih_c h.1, ih_th h.2.1, ih_el h.2.2⟩
-  | eq m e1 e2 ih1 ih2 =>
-    simp only [LExprT.allFvarAnnot, applySubstT, LExpr.replaceMetadata] at *
-    exact ⟨ih1 h.1, ih2 h.2⟩
-  | const m c => trivial
-  | op m o ty => trivial
-  | bvar m i => trivial
-
-/-! ### Helper: alias-free types are fixpoints of `resolveAliases` -/
+/-! ### Layer 1: Alias-free infrastructure -/
 
 mutual
 private theorem resolveAliasesList_aliasFree (mtys : LMonoTys) (Env : TEnv T.IDMeta)
@@ -130,7 +92,6 @@ theorem resolveAliases_aliasFree (mty : LMonoTy) (Env : TEnv T.IDMeta)
 termination_by sizeOf mty
 end
 
-/-! ### Helper: `typeBoundVar` preserves aliases (only adds to types) -/
 
 /-- `typeBoundVar` only adds to the type scope — it does not modify the alias list. -/
 theorem typeBoundVar_aliases_eq [DecidableEq T.IDMeta] [HasGen T.IDMeta] (C : LContext T) (Env : TEnv T.IDMeta)
@@ -162,7 +123,6 @@ theorem typeBoundVar_aliases_eq [DecidableEq T.IDMeta] [HasGen T.IDMeta] (C : LC
       simp [TEnv.context] at h_ctx_tg h_ctx_g ⊢; rw [h_ctx_tg, h_ctx_g]
     exact congrArg TContext.aliases h_ctx
 
-/-! ### Helper: `resolveAliases` always produces alias-free output -/
 
 private theorem zip_find_mem_snd (vars : List TyIdentifier) (vals : LMonoTys)
     (x : TyIdentifier) (p : TyIdentifier × LMonoTy)
@@ -329,7 +289,6 @@ theorem resolveAliases_output_aliasFree
     LMonoTy.aliasFree Env.context.aliases result :=
   resolveAliases_output_aliasFree_aux mty Env result Env' h h_resolved
 
-/-! ### Helper: `instantiateWithCheck` produces alias-free types -/
 
 /-- `instantiateWithCheck` produces alias-free output, since it runs `resolveAliases`
     internally after instantiating bound type variables. -/
@@ -352,7 +311,6 @@ theorem instantiateWithCheck_aliasFree
   rw [h_ie_ctx] at h_af
   exact h_af
 
-/-! ### Helper: type produced by `typeBoundVar` is alias-free -/
 
 /-- The type assigned to the bound variable by `typeBoundVar` is alias-free. -/
 theorem typeBoundVar_xty_aliasFree [HasGen T.IDMeta] (C : LContext T) (Env : TEnv T.IDMeta)
@@ -398,7 +356,77 @@ theorem typeBoundVar_xty_aliasFree [HasGen T.IDMeta] (C : LContext T) (Env : TEn
         subst h_xty
         simp [LMonoTy.aliasFree]
 
-/-! ### Helper: `varCloseT` for a different variable preserves `allFvarAnnot` -/
+
+/-! ### Layer 2: `allFvarAnnot`, `varCloseT`, and structural helpers -/
+omit [Std.ToFormat T.IDMeta] in
+/-- Type substitution commutes with variable closing: substituting metadata types
+    and then closing a free variable is the same as closing first then substituting. -/
+theorem applySubstT_varCloseT_comm [DecidableEq T.IDMeta] (k : Nat) (xv : T.Identifier) (et : LExprT T.mono) (S : Subst) :
+    applySubstT (LExpr.varCloseT k xv et) S = LExpr.varCloseT k xv (applySubstT et S) := by
+  induction et generalizing k with
+  | const m c => simp [applySubstT, LExpr.replaceMetadata, LExpr.varCloseT]
+  | op m o ty => simp [applySubstT, LExpr.replaceMetadata, LExpr.varCloseT]
+  | bvar m i => simp [applySubstT, LExpr.replaceMetadata, LExpr.varCloseT]
+  | fvar m y yty =>
+    simp only [applySubstT, LExpr.replaceMetadata, LExpr.varCloseT]
+    split <;> simp_all [LExpr.replaceMetadata]
+  | app m e1 e2 ih1 ih2 =>
+    simp only [applySubstT, LExpr.replaceMetadata, LExpr.varCloseT]
+    congr 1; exact ih1 k; exact ih2 k
+  | abs m name ty e_body ih =>
+    simp only [applySubstT, LExpr.replaceMetadata, LExpr.varCloseT]
+    congr 1; exact ih (k + 1)
+  | quant m qk name ty tr e_body ih_tr ih_e =>
+    simp only [applySubstT, LExpr.replaceMetadata, LExpr.varCloseT]
+    congr 1; exact ih_tr (k + 1); exact ih_e (k + 1)
+  | ite m c t f_expr ih_c ih_t ih_f =>
+    simp only [applySubstT, LExpr.replaceMetadata, LExpr.varCloseT]
+    congr 1; exact ih_c k; congr 1; exact ih_t k; exact ih_f k
+  | eq m e1 e2 ih1 ih2 =>
+    simp only [applySubstT, LExpr.replaceMetadata, LExpr.varCloseT]
+    congr 1; exact ih1 k; exact ih2 k
+
+
+/-- Every free occurrence of `xv` in `et` carries type `t` in its metadata. -/
+def LExprT.allFvarAnnot (xv : T.Identifier) (t : LMonoTy) : LExprT T.mono → Prop
+  | .fvar m y _ => y = xv → m.type = t
+  | .app _ f a => allFvarAnnot xv t f ∧ allFvarAnnot xv t a
+  | .abs _ _ _ e => allFvarAnnot xv t e
+  | .quant _ _ _ _ tr e => allFvarAnnot xv t tr ∧ allFvarAnnot xv t e
+  | .ite _ c th el => allFvarAnnot xv t c ∧ allFvarAnnot xv t th ∧ allFvarAnnot xv t el
+  | .eq _ e1 e2 => allFvarAnnot xv t e1 ∧ allFvarAnnot xv t e2
+  | _ => True
+
+omit [Std.ToFormat T.IDMeta] in
+/-- Applying a type substitution to metadata preserves `allFvarAnnot`,
+    transforming the annotation type by the same substitution. -/
+theorem applySubstT_allFvarAnnot (xv : T.Identifier) (t : LMonoTy) (et : LExprT T.mono) (S : Subst)
+    (h : LExprT.allFvarAnnot xv t et) :
+    LExprT.allFvarAnnot xv (LMonoTy.subst S t) (applySubstT et S) := by
+  induction et with
+  | fvar m y yty =>
+    simp only [LExprT.allFvarAnnot, applySubstT, LExpr.replaceMetadata] at *
+    intro heq
+    rw [h heq]
+  | app m f a ih_f ih_a =>
+    simp only [LExprT.allFvarAnnot, applySubstT, LExpr.replaceMetadata] at *
+    exact ⟨ih_f h.1, ih_a h.2⟩
+  | abs m name ty e ih_e =>
+    simp only [LExprT.allFvarAnnot, applySubstT, LExpr.replaceMetadata] at *
+    exact ih_e h
+  | quant m qk name ty tr e ih_tr ih_e =>
+    simp only [LExprT.allFvarAnnot, applySubstT, LExpr.replaceMetadata] at *
+    exact ⟨ih_tr h.1, ih_e h.2⟩
+  | ite m c th el ih_c ih_th ih_el =>
+    simp only [LExprT.allFvarAnnot, applySubstT, LExpr.replaceMetadata] at *
+    exact ⟨ih_c h.1, ih_th h.2.1, ih_el h.2.2⟩
+  | eq m e1 e2 ih1 ih2 =>
+    simp only [LExprT.allFvarAnnot, applySubstT, LExpr.replaceMetadata] at *
+    exact ⟨ih1 h.1, ih2 h.2⟩
+  | const m c => trivial
+  | op m o ty => trivial
+  | bvar m i => trivial
+
 
 omit [Std.ToFormat T.IDMeta] in
 /-- `varCloseT` preserves `allFvarAnnot`: if `y ≠ xv` the annotations are unchanged;
@@ -435,7 +463,6 @@ theorem allFvarAnnot_varCloseT_ne [DecidableEq T.IDMeta]
   | op _ _ _ => trivial
   | bvar _ _ => trivial
 
-/-! ### Helper: `inferFVar` returns the context type for monomorphic alias-free schemes -/
 
 /-- When a variable has a monomorphic, alias-free scheme `∀[]. xty` in the context,
     `inferFVar` returns exactly `xty` (instantiation and alias resolution are no-ops). -/
@@ -468,7 +495,6 @@ private theorem inferFVar_mono_aliasFree [DecidableEq T.IDMeta] (C : LContext T)
             · cases h; rfl
       · simp at heq_iwc
 
-/-! ### Helper: bundled environment invariants after `resolveAux` -/
 
 /-- Bundled invariants that hold for the output environment of `resolveAux`:
     context is preserved, well-formedness holds, types are non-empty, and
@@ -506,7 +532,6 @@ private theorem ResolveAuxInvariants.aliasFree_preserved
     LMonoTy.aliasFree Env'.context.aliases xty :=
   (congrArg TContext.aliases inv.context) ▸ h_af
 
-/-! ### Helper: `resolveAux` annotates free variables from context -/
 
 /-- Core lemma: `resolveAux` annotates every free occurrence of a context variable
     `xv` with exactly its context type `xty`. Proved by well-founded induction on
@@ -824,7 +849,6 @@ theorem varCloseT_unresolved_HasTypeA_nil [DecidableEq T.IDMeta] (xv : T.Identif
     HasTypeA [t] (LExpr.varCloseT 0 xv et).unresolved ((LExpr.varCloseT 0 xv et).toLMonoTy) := by
   exact varCloseT_unresolved_HasTypeA 0 [] rfl xv t et h_typed h_annot
 
-/-! ### Helper: `TEnvWF` preserved by `resolve`'s context initialization -/
 
 omit [Std.ToFormat T.IDMeta] in
 /-- The context initialization in `resolve` (pushing an empty scope if types is
@@ -851,14 +875,7 @@ theorem TEnvWF_resolve_init [DecidableEq T.IDMeta]
       change Maps.find? [[]] y = some ty at hf
       simp [Maps.find?, Map.find?] at hf
 
-/-! ### Helper: absorption from `resolveAux_properties`
-
-  `resolveAux_properties` (in LExprTypeSpec) already proves that `resolveAux`
-  monotonically extends substitutions (`.absorbs`). We use it directly below
-  rather than reproving it — the app case requires `SubstFreshForGen` due to
-  the `Maps.remove` step, so a truly assumption-free version is impossible. -/
-
-/-! ### Layer 3: `resolveAux` produces well-annotated terms -/
+/-! ### Layer 3: Main induction -/
 
 /-- Core soundness lemma: for any substitution `S` absorbing the output substitution,
     the resolved and substituted expression satisfies `HasTypeA`. Proved by
@@ -1394,8 +1411,6 @@ theorem resolveAux_HasTypeA [DecidableEq T.IDMeta] [HasGen T.IDMeta]
   have h_absorbs := Subst.absorbs_refl Env'.stateSubstInfo.subst Env'.stateSubstInfo.isWF
   exact resolveAux_HasTypeA_aux e.sizeOf e rfl et C Env Env' h h_envwf h_ne h_fwf h_resolved
     Env'.stateSubstInfo.subst h_absorbs
-
-/-! ### Layer 4: Top-level `resolve_HasTypeA` -/
 
 /-- Main soundness theorem: `LExpr.resolve` produces a well-typed and
     well-annotated `LExprT` according to `HasTypeA`. Unlike `resolve_HasType`,
