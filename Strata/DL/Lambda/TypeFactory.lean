@@ -509,9 +509,25 @@ def destructorConcreteEval {T: LExprParams} [BEq T.Identifier] (d: LDatatype T.I
         then a[idx]? else none)
     | _ => none
 
-def destructorFuncName {IDMeta} (d: LDatatype IDMeta) (name: Identifier IDMeta) := d.name ++ ".." ++ name.name
+def destructorSeparator := ".."
+
+def destructorFuncName {IDMeta} (d: LDatatype IDMeta) (name: Identifier IDMeta) := d.name ++ destructorSeparator ++ name.name
 
 def unsafeDestructorSuffix := "!"
+
+/-- Check whether a name is a destructor or tester name (contains the `..` separator). -/
+def isSelectorName (name : String) : Bool :=
+  (name.splitOn destructorSeparator).length == 2
+
+/-- Check whether a name is a tester name (e.g. `IntList..isCons`). -/
+def isTesterName (name : String) : Bool :=
+  match name.splitOn destructorSeparator with
+  | [_, suffix] => suffix.startsWith "is"
+  | _ => false
+
+/-- Check whether a name is a destructor name (e.g. `IntList..head` or `IntList..head!`). -/
+def isDestructorName (name : String) : Bool :=
+  isSelectorName name && !isTesterName name
 
 def unsafeDestructorFuncName {IDMeta} (d: LDatatype IDMeta)
   (name: Identifier IDMeta) :=
