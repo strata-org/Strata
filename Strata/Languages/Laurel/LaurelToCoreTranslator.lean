@@ -18,6 +18,7 @@ public import Strata.Languages.Laurel.EliminateHoles
 import Strata.Languages.Laurel.EliminateReturnsInExpression
 import Strata.Languages.Laurel.EliminateValueReturns
 public import Strata.Languages.Laurel.HeapParameterization
+public import Strata.Languages.Laurel.PushOldInward
 public import Strata.Languages.Laurel.TypeHierarchy
 public import Strata.Languages.Laurel.LaurelTypes
 public import Strata.Languages.Laurel.ModifiesClauses
@@ -65,6 +66,10 @@ structure TranslateState where
   overflowChecks : Core.OverflowChecks := {}
   /-- Do not process the produces Core program, since it has superfluous errors -/
   coreProgramHasSuperfluousErrors: Bool := false
+  /-- Inout parameter names of the procedure currently being translated.
+      Used by the `.Old (Var (Local n))` arm to defensively check `n` against
+      the procedure's inout list. Empty when not translating a procedure body. -/
+  currentProcInouts : List String := []
 
 /-- The translation monad: state over Except, allowing both accumulated diagnostics and hard failures -/
 @[expose] abbrev TranslateM := OptionT (StateM TranslateState)
@@ -302,14 +307,29 @@ def translateExpr (expr : StmtExprMd)
   | .AsType target _ => throwExprDiagnostic $ diagnosticFromSource expr.source "AsType expression translation" DiagnosticType.NotYetImplemented
   | .Assigned _ => throwExprDiagnostic $ diagnosticFromSource expr.source "assigned expression translation" DiagnosticType.NotYetImplemented
   | .Old value =>
-      -- After PushOldInward, every `Old` immediately wraps a Local Var of an inout parameter.
+      -- `pushOldInward` guarantees every `Old` wraps `Var (Local n)` with
+      -- `n` an inout parameter of the enclosing procedure. The static
+      -- guarantee is `pushOldInward_old_normalized` in
+      -- `PushOldInwardInvariant.lean`. We additionally defend at translate
+      -- time: if PushOldInward has a bug or a later pass mutates the AST,
+      -- we emit a StrataBug diagnostic instead of silently producing a
+      -- dangling `mkOld n` name.
       match value.val with
       | .Var (.Local name) =>
-          let coreTy ← translateType (model.get name).getType
-          return .fvar () (Core.CoreIdent.mkOld name.text) (some coreTy)
+          let inouts := s.currentProcInouts
+          if !inouts.contains name.text then
+            throwExprDiagnostic $ diagnosticFromSource expr.source
+              s!"old({name.text}) refers to a name that is not an inout parameter \
+                 of the enclosing procedure (inouts: {inouts}). This violates the \
+                 `pushOldInward_old_normalized` invariant."
+              DiagnosticType.StrataBug
+          else
+            let coreTy ← translateType (model.get name).getType
+            return .fvar () (Core.CoreIdent.mkOld name.text) (some coreTy)
       | _ =>
           throwExprDiagnostic $ diagnosticFromSource expr.source
-            "old(...) should have been pushed inward to a variable reference"
+            "old(...) should have been pushed inward to a variable reference. \
+             This violates the `pushOldInward_old_normalized` invariant."
             DiagnosticType.StrataBug
   | .Fresh _ => throwExprDiagnostic $ diagnosticFromSource expr.source "fresh expression translation" DiagnosticType.NotYetImplemented
   | .Assert _ => throwExprDiagnostic $ diagnosticFromSource expr.source "assert expression translation" DiagnosticType.NotYetImplemented
@@ -587,6 +607,9 @@ Diagnostics from disallowed constructs in preconditions, postconditions, and bod
 are emitted into the monad state.
 -/
 def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
+  -- Track inout parameter names for the `.Old (Var (Local n))` defensive check.
+  -- Reset to [] after the procedure so siblings start fresh.
+  modify fun s => { s with currentProcInouts := procInoutNames proc }
   let inputPairs ← proc.inputs.mapM translateParameterToCore
   let inputs := inputPairs
   let outputs ← proc.outputs.mapM translateParameterToCore
@@ -677,6 +700,9 @@ Translate a Laurel Procedure to a Core Function (when applicable) using `Transla
 Diagnostics for disallowed constructs in the function body are emitted into the monad state.
 -/
 def translateProcedureToFunction (options: LaurelTranslateOptions) (isRecursive: Bool) (proc : Procedure) : TranslateM Core.Decl := do
+  -- Functions are pure: no inout parameters, so the `.Old` defensive check
+  -- will reject any old(...) reference (which is the correct behavior here).
+  modify fun s => { s with currentProcInouts := [] }
   let inputs ← proc.inputs.mapM translateParameterToCore
   let outputTy ← match proc.outputs.head? with
     | some p => translateType p.type

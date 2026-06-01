@@ -28,6 +28,7 @@ public section
 Bottom-up monadic traversal of `StmtExprMd`. Recurses into all `StmtExprMd`
 children first, then applies `f` to the rebuilt node.
 -/
+@[expose]
 def mapStmtExprM [Monad m] (f : StmtExprMd → m StmtExprMd) (expr : StmtExprMd) : m StmtExprMd := do
   let source := expr.source
   -- `.attach` wraps each element with a proof of membership, which the
@@ -112,6 +113,7 @@ children, `pre` is called. If `pre` returns `some result`, that result is used
 directly (children are NOT recursed into). If `pre` returns `none`, normal
 bottom-up recursion proceeds and `post` is applied after children are rebuilt.
 -/
+@[expose]
 def mapStmtExprPrePostM [Monad m] (pre : StmtExprMd → m (Option StmtExprMd))
     (post : StmtExprMd → m StmtExprMd) (expr : StmtExprMd) : m StmtExprMd := do
   match ← pre expr with
@@ -186,6 +188,7 @@ decreasing_by
   all_goals (cases expr; simp_all; omega)
 
 /-- Apply a monadic transformation to all procedure bodies. -/
+@[expose]
 def mapProcedureBodiesM [Monad m] (f : StmtExprMd → m StmtExprMd) (proc : Procedure) : m Procedure := do
   match proc.body with
   | .Transparent b => return { proc with body := .Transparent (← f b) }
@@ -196,6 +199,7 @@ def mapProcedureBodiesM [Monad m] (f : StmtExprMd → m StmtExprMd) (proc : Proc
 
 /-- Apply a monadic transformation to all `StmtExprMd` nodes in a procedure
     (preconditions, decreases, body, and invokeOn). -/
+@[expose]
 def mapProcedureM [Monad m] (f : StmtExprMd → m StmtExprMd) (proc : Procedure) : m Procedure := do
   let proc ← mapProcedureBodiesM f proc
   return { proc with
