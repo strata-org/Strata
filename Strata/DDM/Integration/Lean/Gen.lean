@@ -699,27 +699,15 @@ partial def genCatTypeTerm (annType : Ident) (c : SyntaxCat)
     (addAnn : Bool) : GenM Term := do
   let args ← c.args.mapM (genCatTypeTerm annType · true)
   match c.name, eq : args.size with
-  | q`Init.CommaSepBy, 1 =>
-    let inner := mkCApp ``Array #[args[0]]
-    return if addAnn then mkCApp ``Ann #[inner, annType] else inner
-  | q`Init.SpaceSepBy, 1 =>
-    let inner := mkCApp ``Array #[args[0]]
-    return if addAnn then mkCApp ``Ann #[inner, annType] else inner
-  | q`Init.SpacePrefixSepBy, 1 =>
-    let inner := mkCApp ``Array #[args[0]]
-    return if addAnn then mkCApp ``Ann #[inner, annType] else inner
-  | q`Init.NewlineSepBy, 1 =>
-    let inner := mkCApp ``Array #[args[0]]
-    return if addAnn then mkCApp ``Ann #[inner, annType] else inner
-  | q`Init.SemicolonSepBy, 1 =>
-    let inner := mkCApp ``Array #[args[0]]
-    return if addAnn then mkCApp ``Ann #[inner, annType] else inner
   | q`Init.Option, 1 =>
     let inner := mkCApp ``Option #[args[0]]
     return if addAnn then mkCApp ``Ann #[inner, annType] else inner
-  | q`Init.Seq, 1 =>
-    let inner := mkCApp ``Array #[args[0]]
-    return if addAnn then mkCApp ``Ann #[inner, annType] else inner
+  | _, 1 =>
+    if (SepFormat.fromCategoryName? c.name).isSome then
+      let inner := mkCApp ``Array #[args[0]]
+      return if addAnn then mkCApp ``Ann #[inner, annType] else inner
+    else
+      throwError "Unsupported parametric category {c.name.fullName}"
   | cat, 0 =>
     match declaredCategories[cat]? with
     | some nm =>
