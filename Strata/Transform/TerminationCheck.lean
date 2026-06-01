@@ -247,13 +247,128 @@ private def mkAdtRankDecls
         axioms.mapIdx fun i ax =>
           (s!"{adtRankFuncName dt.name}_{i}", ax) }
 
+/-- Per-element work for `transformDeclsIter`. Factored out of the recursive
+    `transformDecls` walker (kept as fallback in `where`) so the iterative
+    driver below can drive it from a `for`-loop instead of stacking
+    `CoreTransformM` bind frames per declaration.
+
+    Returns `(changed, splicedDecls, tf', emittedAdtRank')`:
+    - `changed`: whether this declaration produced any new output.
+    - `splicedDecls`: the per-element output (multi-decl for `.recFuncBlock`,
+      single-element for everything else).
+    - `tf'`: updated TypeFactory (only changes on `.type (.data ...)`).
+    - `emittedAdtRank'`: updated set of already-emitted adtRank UF names. -/
+private def transformDecl (d : Decl) (tf : @TypeFactory Unit)
+    (emittedAdtRank : Std.HashSet String)
+    : CoreTransformM (Bool × List Decl × @TypeFactory Unit × Std.HashSet String) := do
+  match d with
+  | .recFuncBlock funcs md => do
+    -- Step 1: error checking (fail-fast: an ill-formed function may
+    -- invalidate subsequent definitions in the mutual block)
+    -- Skip polymorphic functions: adtRank axioms are monomorphic, so we
+    -- cannot generate them for polymorphic datatypes yet. The user-facing
+    -- error is in Env.addFactoryFunc; when that restriction is lifted,
+    -- this filter must be updated to handle polymorphic adtRank generation.
+    let fileRange := Imperative.getFileRange md |>.getD FileRange.unknown
+    let throwErr (msg : String) : CoreTransformM Unit :=
+      throw (DiagnosticModel.withRange fileRange msg)
+    for func in funcs do
+      if func.typeArgs.isEmpty then
+        match getDecreasesIdx func with
+        | none =>
+          match func.measure with
+          | some _ =>
+            throwErr s!"recursive function '{func.name.name}': decreases clause must be a parameter name. Non-structural recursion is not yet supported"
+          | none =>
+            throwErr s!"recursive function '{func.name.name}' requires a 'decreases' clause or a '@[cases]' parameter for termination checking"
+        | some idx =>
+          match func.inputs.values[idx]? with
+          | some (.tcons n _) =>
+            if (tf.getType n).isNone then
+              throwErr s!"recursive function '{func.name.name}': decreasing parameter type '{n}' is not a known datatype"
+          | some _ =>
+            throwErr s!"recursive function '{func.name.name}': decreasing parameter must have a datatype type"
+          | none =>
+            throwErr s!"recursive function '{func.name.name}': decreasing parameter index {idx} is out of range"
+    -- Step 2: Build a map from function name to (decreasing param index, type).
+    let funcDecreasesMap := funcs.filterMap fun func => do
+      if !func.typeArgs.isEmpty then none
+      let idx ← getDecreasesIdx func
+      let ty ← func.inputs.values[idx]?
+      pure (func.name.name, idx, ty)
+    -- Step 3: Generate adtRank UF declarations and per-constructor axioms.
+    -- `allAdtRank` is computed once for all datatypes in this block.
+    -- `newFuncDecls` filters to only UF decls not yet emitted.
+    -- Each $$term proc filters axioms to its own decreasing type's
+    -- mutual datatype block (see mkTermCheckProc).
+    let allAdtNames := funcDecreasesMap.map (fun (_, _, ty) => adtNameOf ty)
+      |>.eraseDups
+    let allAdtRank : AdtRankDecls :=
+      let (_, revResults) : Std.HashSet String × List AdtRankDecls :=
+        allAdtNames.foldl (init := ({}, [])) fun (seen, acc) adtName =>
+          if seen.contains adtName then (seen, acc)
+          else
+            let r := mkAdtRankDecls adtName tf md
+            (r.namedDecls.foldl (fun s (n, _) => s.insert n) seen, r :: acc)
+      let results := revResults.reverse
+      { namedDecls := results.flatMap (·.namedDecls)
+        axioms := results.flatMap (·.axioms) }
+    let newFuncDecls := allAdtRank.namedDecls.filterMap
+      fun (n, d) => if emittedAdtRank.contains n then none else some d
+    let emittedAdtRank' := allAdtRank.namedDecls.foldl (fun s (n, _) => s.insert n) emittedAdtRank
+    incrementStat s!"{Stats.adtRankAxiomsGenerated}" allAdtRank.axioms.length
+    -- Step 4: Generate a $$term procedure per function with adtRank
+    -- decrease assertions at each recursive call site.
+    let recNames := funcs.map (·.name.name)
+    let termDecls ← funcs.filterMapM fun func => do
+      match mkTermCheckProc func recNames funcDecreasesMap allAdtRank.axioms tf md with
+      | .error msg => do throwErr msg; return none
+      | .ok (some (decl, numAsserts)) => do
+        incrementStat s!"{Stats.termCheckProcsGenerated}"
+        incrementStat s!"{Stats.termCheckAssertsEmitted}" numAsserts
+        addTermProcToCallGraph (termProcName func.name.name)
+        return some decl
+      | .ok none => return none
+    -- Step 5: Splice adtRank decls before the rec block, term procs after.
+    if newFuncDecls.isEmpty && termDecls.isEmpty then
+      return (false, [d], tf, emittedAdtRank')
+    else
+      return (true, newFuncDecls ++ [d] ++ termDecls, tf, emittedAdtRank')
+  | .type (.data block) _md => do
+    let tf' : @TypeFactory Unit := tf.push block
+    return (false, [d], tf', emittedAdtRank)
+  | .func _ _ | .proc _ _ | .ax _ _ | .distinct _ _ _
+  | .type (.con _) _ | .type (.syn _) _ => do
+    return (false, [d], tf, emittedAdtRank)
+
+/-- Iterative driver for the termination-checking walker. Walks `decls` with
+    a `for`-loop, threading `tf` and `emittedAdtRank` through `mut` variables,
+    instead of recursing through `CoreTransformM` (a StateT stack) which
+    stacks bind frames at depth = decls.length and SIGABRTs on programs
+    with ~30K+ declarations. Calls `transformDecl` per element; must produce
+    the same outputs as the recursive `transformDecls` for the same inputs. -/
+private def transformDeclsIter (decls : List Decl)
+    : CoreTransformM (Bool × List Decl) := do
+  let mut anyChanged := false
+  let mut tf : @TypeFactory Unit := TypeFactory.default
+  let mut emittedAdtRank : Std.HashSet String := {}
+  let mut acc : Array Decl := Array.mkEmpty decls.length
+  for d in decls do
+    let (changed, splice, tf', emittedAdtRank') ← transformDecl d tf emittedAdtRank
+    if changed then anyChanged := true
+    for s in splice do
+      acc := acc.push s
+    tf := tf'
+    emittedAdtRank := emittedAdtRank'
+  return (anyChanged, acc.toList)
+
 /-- Main transformation: iterate over declarations, generating adtRank axioms
     and termination-checking procedures for each `recFuncBlock`. -/
 def termCheck (p : Program) : CoreTransformM (Bool × Program) := do
   match (← get).factory with
   | .none => return (false, p)
   | .some _ =>
-    let (changed, newDecls) ← transformDecls p.decls TypeFactory.default {}
+    let (changed, newDecls) ← transformDeclsIter p.decls
     return (changed, { decls := newDecls })
 where
   transformDecls (decls : List Decl) (tf : @TypeFactory Unit)
