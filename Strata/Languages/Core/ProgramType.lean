@@ -155,6 +155,119 @@ C are already well-typed.
 
     go C Env drest (decl' :: acc)
 
+/-- Type-check a single declaration. Factored out of `go` so the iterative
+    `typeCheckIter` below can call it from a `for`-loop. The recursive `go`
+    above continues to inline its body for backwards compatibility with the
+    proofs in `ProgramWF.lean` (which `induction decls` over `go`'s shape). -/
+@[expose] def typeCheckOne (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
+    (program : Program) (decl : Decl)
+    : Except DiagnosticModel (Decl × Core.Expression.TyContext × Core.Expression.TyEnv) := do
+  let fileRange := Imperative.getFileRange decl.metadata |>.getD FileRange.unknown
+  -- Add all names from the declaration (multiple for mutual datatypes)
+  let idents ← C.idents.addListWithError decl.names (fun n =>
+    (DiagnosticModel.withRange fileRange f!"Error in {decl.kind} {n}: a declaration of this name already exists."))
+  let C := {C with idents}
+  match decl with
+
+  | .type td md => try
+      match td with
+      | .con tc =>
+        let C ← C.addKnownTypeWithError { name := tc.name, metadata := tc.numargs } (DiagnosticModel.withRange fileRange f!"This type declaration's name is reserved!\n\
+                  {td}\n\
+                  KnownTypes' names:\n\
+                  {C.knownTypes.keywords}")
+        .ok (Decl.type td md, C, Env)
+      | .syn ts =>
+        let Env ← TEnv.addTypeAlias { typeArgs := ts.typeArgs, name := ts.name, type := ts.type } C Env
+           |>.mapError (fun e => DiagnosticModel.withRange fileRange e)
+        .ok (.type td md, C, Env)
+      | .data block =>
+        let (block, Env) ← MutualDatatype.resolveAliases block Env |>.mapError (fun e => DiagnosticModel.withRange fileRange e)
+        let C ← C.addMutualBlock block
+        .ok (.type (.data block) md, C, Env)
+      catch e =>
+        .error (e.withRangeIfUnknown fileRange)
+
+  | .ax a md => try
+    let (ae, Env) ← LExpr.resolve C Env a.e |>.mapError (fun e => DiagnosticModel.withRange fileRange e)
+    match ae.toLMonoTy with
+    | .bool => .ok (Decl.ax { a with e := ae.unresolved } md, C, Env)
+    | _ => .error <| DiagnosticModel.withRange fileRange f!"Axiom {a.name} has non-boolean type."
+      catch e =>
+        .error (e.withRangeIfUnknown fileRange)
+
+  | .distinct l es md => try
+    let es' ← es.mapM (LExpr.resolve C Env) |>.mapError (fun e => DiagnosticModel.withRange fileRange e)
+    .ok (Decl.distinct l (es'.map (λ e => e.fst.unresolved)) md, C, Env)
+    catch e =>
+      .error (e.withRangeIfUnknown fileRange)
+
+  | .proc proc md =>
+    -- Already reports source locations.
+    let Env := Env.pushEmptySubstScope
+    let (proc', Env) ← Procedure.typeCheck C Env program proc md
+    let Env := Env.popSubstScope
+    .ok (Decl.proc proc' md, C, Env)
+
+  | .func func md => try
+    if func.isRecursive then
+      .error (DiagnosticModel.withRange fileRange <|
+        f!"Decl.func does not allow recursive functions. Use recFuncBlock instead: '{func.name}'")
+    let Env := Env.pushEmptySubstScope
+    let (func', Env) ← Function.typeCheck C Env func |>.mapError (fun e => DiagnosticModel.withRange fileRange e)
+    let C := C.addFactoryFunction func'
+    let Env := Env.popSubstScope
+    .ok (Decl.func func' md, C, Env)
+      catch e =>
+        .error (e.withRangeIfUnknown fileRange)
+
+  | .recFuncBlock funcs md => try
+    let Env := Env.pushEmptySubstScope
+    -- Validate: non-empty
+    if funcs.isEmpty then
+      .error (DiagnosticModel.withRange fileRange <|
+        f!"recursive function block must contain at least one function")
+    -- Validate: no inline functions in the block
+    let _ ← funcs.foldlM (fun _ func => do
+      if func.attr.any (· == .inline) then
+        .error (DiagnosticModel.withRange fileRange <|
+          f!"recursive function '{func.name}' cannot be marked inline")
+      else pure ()) ()
+    -- Phase 1: Add ALL function signatures as stubs so mutual calls resolve.
+    let C' := funcs.foldl (fun C func =>
+      C.addFactoryFunction { name := func.name, typeArgs := func.typeArgs,
+                             inputs := func.inputs, output := func.output }) C
+    -- Phase 2: Type-check each function body against C'
+    let (funcs', Env) ← funcs.foldlM (fun (acc, Env) func => do
+      let (func', Env) ← Function.typeCheck C' Env func
+        |>.mapError (fun e => DiagnosticModel.withRange fileRange e)
+      pure (acc ++ [func'], Env)) ([], Env)
+    -- Phase 3: Add all type-checked functions to the real context
+    let C := funcs'.foldl (fun C func => C.addFactoryFunction func) C
+    let Env := Env.popSubstScope
+    .ok (Decl.recFuncBlock funcs' md, C, Env)
+      catch e =>
+        .error (e.withRangeIfUnknown fileRange)
+
+/-- Iterative variant of `Program.typeCheck`. Walks `program.decls` with an
+    explicit for-loop instead of recursing through `Except.bind` per decl
+    (which stacks frames at depth = decls.length and SIGABRTs at ~30K-100K
+    decls on a default 8MB thread stack). Calls `typeCheckOne` per decl;
+    must produce the same outputs as `typeCheck` for the same inputs. -/
+@[expose] def typeCheckIter (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
+    (program : Program)
+    : Except DiagnosticModel (Program × Core.Expression.TyEnv) := do
+  let Env := Env.updateSubst { subst := [[]], isWF := SubstWF_of_empty_empty }
+  let mut Cmut := C
+  let mut Envmut := Env
+  let mut acc : Array Decl := Array.mkEmpty program.decls.length
+  for decl in program.decls do
+    let (decl', C', Env') ← typeCheckOne Cmut Envmut program decl
+    Cmut := C'
+    Envmut := Env'
+    acc := acc.push decl'
+  .ok ({ decls := acc.toList }, Envmut)
+
 end Program
 end Core
 

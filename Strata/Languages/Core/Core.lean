@@ -49,7 +49,13 @@ def typeCheck (options : VerifyOptions) (program : Program)
     -- TODO: DiagnosticModel for functions defined in Factory?
     throw (DiagnosticModel.fromFormat k)
   | .ok T =>
-    let (program, _T) ← Program.typeCheck C T program
+    -- typeCheckIter is the iterative twin of Program.typeCheck (same outputs,
+    -- O(1) native stack instead of O(decls.length) frames). The recursive
+    -- Program.typeCheck stays in the file as the spec the proofs in
+    -- Strata.Languages.Core.ProgramWF reason about; this call site is the
+    -- only production user, and switching it eliminates SIGABRT on long
+    -- decl lists (issue (1) in stack-and-hang-conjectures-report.md).
+    let (program, _T) ← Program.typeCheckIter C T program
     -- dbg_trace f!"[Strata.Core] Annotated program:\n{program}"
     if options.verbose >= .normal then dbg_trace f!"[Strata.Core] Type checking succeeded.\n"
     return program

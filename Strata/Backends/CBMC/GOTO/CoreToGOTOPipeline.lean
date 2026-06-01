@@ -481,7 +481,7 @@ public def typeCheckCore (program : Core.Program)
   let Ctx := { Lambda.LContext.default with
     functions := factory, knownTypes := Core.KnownTypes }
   let Env := Lambda.TEnv.default
-  match Core.Program.typeCheck Ctx Env program with
+  match Core.Program.typeCheckIter Ctx Env program with
   | .ok (tcPgm, Env') => return (tcPgm, Env')
   | .error e => throw s!"{e.format none}"
 

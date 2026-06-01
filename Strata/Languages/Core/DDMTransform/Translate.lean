@@ -2213,46 +2213,52 @@ def translateDatatypes (p : Program) (bindings : TransBindings) (op : Operation)
 
 ---------------------------------------------------------------------
 
+/-- Translate a single DDM Operation into a Core declaration. Factored out of
+    `translateCoreDecls` so the iterative loop below can call it per-op
+    instead of the original `where go` walker, whose recursion through
+    `TransM` (a StateT) stacked bind frames at depth = ops.size and SIGABRTed
+    on programs with ~30K-100K commands. -/
+partial def translateCoreDecl (p : Program) (bindings : TransBindings)
+    (op : Strata.Operation) : TransM (Core.Decl × TransBindings) := do
+  match op.name with
+  | q`Core.command_datatypes =>
+    translateDatatypes p bindings op
+  | q`Core.command_constdecl =>
+    translateConstant bindings op
+  | q`Core.command_typedecl =>
+    translateTypeDecl bindings op
+  | q`Core.command_typesynonym =>
+    translateTypeSynonym bindings op
+  | q`Core.command_axiom =>
+    translateAxiom p bindings op
+  | q`Core.command_distinct =>
+    translateDistinct p bindings op
+  | q`Core.command_procedure =>
+    translateProcedure p bindings op
+  | q`Core.command_fndef =>
+    translateFunction .Definition p bindings op
+  | q`Core.command_fndecl =>
+    translateFunction .Declaration p bindings op
+  | q`Core.command_recfndefs =>
+    translateRecFuncBlock p bindings op
+  | q`Core.command_block =>
+    translateBlockCommand p bindings op
+  | q`Core.command_cfg_procedure =>
+    translateCFGProcedure p bindings op
+  | _ => TransM.error s!"translateCoreDecls unimplemented for {repr op}"
+
 partial def translateCoreDecls (p : Program) (bindings : TransBindings) :
   TransM Core.Decls := do
-  let (decls, _) ← go 0 p.commands.size bindings p.commands
-  return decls
-  where go (count max : Nat) bindings ops : TransM (Core.Decls × TransBindings) := do
-  match (max - count) with
-  | 0 => return ([], bindings)
-  | _ + 1 =>
-    let op := ops[count]!
-    let (newDecls, bindings) ← do
-        let (decl, bindings) ←
-          match op.name with
-          | q`Core.command_datatypes =>
-            translateDatatypes p bindings op
-          | q`Core.command_constdecl =>
-            translateConstant bindings op
-          | q`Core.command_typedecl =>
-            translateTypeDecl bindings op
-          | q`Core.command_typesynonym =>
-            translateTypeSynonym bindings op
-          | q`Core.command_axiom =>
-            translateAxiom p bindings op
-          | q`Core.command_distinct =>
-            translateDistinct p bindings op
-          | q`Core.command_procedure =>
-            translateProcedure p bindings op
-          | q`Core.command_fndef =>
-            translateFunction .Definition p bindings op
-          | q`Core.command_fndecl =>
-            translateFunction .Declaration p bindings op
-          | q`Core.command_recfndefs =>
-            translateRecFuncBlock p bindings op
-          | q`Core.command_block =>
-            translateBlockCommand p bindings op
-          | q`Core.command_cfg_procedure =>
-            translateCFGProcedure p bindings op
-          | _ => TransM.error s!"translateCoreDecls unimplemented for {repr op}"
-        pure ([decl], bindings)
-    let (decls, bindings) ← go (count + 1) max bindings ops
-    return (newDecls ++ decls, bindings)
+  -- Iterative for-loop over p.commands, threading TransBindings through the
+  -- mut variable. The original where-recursive go walker stacked one
+  -- TransM bind frame per command and SIGABRTed at ~30K-100K commands.
+  let mut bs := bindings
+  let mut acc : Array Core.Decl := Array.mkEmpty p.commands.size
+  for op in p.commands do
+    let (decl, bs') ← translateCoreDecl p bs op
+    bs := bs'
+    acc := acc.push decl
+  return acc.toList
 
 def translateProgram (p : Program) : TransM Core.Program := do
   fun s => ((), { s with globalContext := p.globalContext })
