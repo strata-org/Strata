@@ -538,7 +538,7 @@ Result: ✅ pass
 #eval verify programOrderConcreteFalse (options := .quiet)
 
 -- Unreachable annotation test: with full check level, dead-branch asserts carry
--- `(❗path unreachable)` and dead-branch covers fail with the same annotation.
+-- `(❗unreachable in this context)` and dead-branch covers fail with the same annotation.
 -- Within a dead branch, covers are emitted before asserts (collectDeadBranchDeferred
 -- calls createUnreachableCoverObligations ++ createUnreachableAssertObligations).
 def deadBranchAnnotations :=
@@ -557,11 +557,11 @@ procedure p() {
 info:
 Obligation: dead_cover
 Property: cover
-Result: ❌ fail (❗path unreachable)
+Result: ❌ fail (❗unreachable in this context)
 
 Obligation: dead_assert
 Property: assert
-Result: ✅ pass (❗path unreachable)
+Result: ✅ pass (❗unreachable in this context)
 -/
 #guard_msgs in
 #eval verify deadBranchAnnotations
