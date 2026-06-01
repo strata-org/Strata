@@ -294,6 +294,42 @@ def client(service_name: Literal["ec2"]) -> boto3.EC2: ...
 Each service class lives in its own file (`boto3/S3.python.st.ion`).
 Only the services actually used by the analyzed program get loaded.
 
+## Overload Resolution
+
+Python `@overload` functions define multiple signatures for the same name.
+Resolution stores them as an ordered list of `FuncSig` under a single
+`CtxEntry`:
+
+```
+| overloadedFunction (overloads : List FuncSig)
+```
+
+When Resolution encounters a call to an overloaded name, it walks the
+overload list in declaration order and checks if the call site's arguments
+match the parameter types of each overload. First match wins.
+
+Matching: for each parameter position, check if the argument's static type
+(from `typeOfExpr` or literal type) is compatible with the parameter's
+declared type. A `Literal["s3"]` parameter matches a string literal `"s3"`.
+A `str` parameter matches any string-typed expression. `Any` matches
+everything.
+
+The resolved call references a specific overload. Translation emits each
+overload as a distinctly-named procedure:
+
+```
+client → client$0, client$1, ..., client$N
+```
+
+Only the overloads actually referenced by resolved calls are emitted (the
+rest are dead code — never translated). The call site's annotation carries
+the specific overload's sig, so Translation knows which disambiguated name
+to call.
+
+Resolution builds the overload list from consecutive `@overload`-decorated
+function definitions with the same name. The `@overload` decorator is
+recognized by checking the `decorators` field for a `.Name "overload"` node.
+
 ## Method Resolution
 
 When Resolution encounters `receiver.method()`, it needs to determine the

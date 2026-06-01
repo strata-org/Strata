@@ -146,6 +146,8 @@ structure FuncSig where
   returnType : PythonType
   /-- All local variables in the function body (computed by `computeLocals`). -/
   locals : List (PythonIdentifier × PythonType)
+  /-- Overload index for disambiguated naming. `none` for non-overloaded functions. -/
+  overloadIndex : Option Nat := none
 
 /-- The resolution annotation on each Python AST node.
     Each variant carries exactly what Translation needs to emit Laurel. -/
@@ -222,6 +224,8 @@ inductive CtxEntry where
   | class_ (name : PythonIdentifier) (fields : List (PythonIdentifier × PythonType)) (methods : List (PythonIdentifier × FuncSig))
   /-- A variable with its type annotation. -/
   | variable (ty : PythonType)
+  /-- An overloaded function: multiple signatures under the same name, matched in order. -/
+  | overloadedFunction (overloads : List (Nat × FuncSig))
   /-- An imported module with its resolved context. -/
   | module_ (moduleCtx : Std.DHashMap.Raw PythonIdentifier (fun _ => CtxEntry))
   /-- An imported name whose type/kind is unknown. -/
@@ -527,6 +531,34 @@ private def hasStaticmethodDecorator (decorators : Array PythonExpr) : Bool :=
     | .Name _ n _ => n.val == "staticmethod"
     | _ => false
 
+private def hasOverloadDecorator (decorators : Array PythonExpr) : Bool :=
+  decorators.any fun d => match d with
+    | .Name _ n _ => n.val == "overload"
+    | _ => false
+
+/-- Check if a call argument matches a parameter's type for overload resolution.
+    A Literal["value"] parameter matches a string constant with the same value.
+    All other parameter types match any argument (broad matching). -/
+private def argMatchesParam (arg : PythonExpr) (paramTy : PythonType) : Bool :=
+  match paramTy with
+  | .Subscript _ (.Name _ tName _) (.Constant _ (.ConString _ litVal) _) _ =>
+    if tName.val == "Literal" then
+      match arg with
+      | .Constant _ (.ConString _ argVal) _ => argVal == litVal
+      | _ => false
+    else true
+  | _ => true
+
+/-- Check if call arguments match an overload's parameter signature. -/
+private def matchOverload (sig : FuncSig) (args : Array PythonExpr) : Bool :=
+  match sig.params with
+  | .static pl =>
+    let params := pl.required
+    params.zip args.toList |>.all fun ((_, paramTy), arg) => argMatchesParam arg paramTy
+  | .instance _ pl =>
+    let params := pl.required
+    params.zip args.toList |>.all fun ((_, paramTy), arg) => argMatchesParam arg paramTy
+
 /-! ## Python Name → Laurel Name Mapping
 
 The builtin mapping (`len` → `Any_len_to_Any`), method qualification
@@ -606,9 +638,13 @@ def PythonIdentifier.toLaurel (id : PythonIdentifier) : Laurel.Identifier :=
     functions (`len` → `Any_len_to_Any`) and class qualification for methods
     (`get_x` with `className = some "Account"` → `Account@get_x`). -/
 def FuncSig.laurelName (sig : FuncSig) : Laurel.Identifier :=
-  match sig.className with
-  | some cls => { text := s!"{cls.val}@{sig.name.val}", uniqueId := none }
-  | none => { text := pythonNameToLaurel sig.name.val, uniqueId := none }
+  let baseName := match sig.className with
+    | some cls => s!"{cls.val}@{sig.name.val}"
+    | none => pythonNameToLaurel sig.name.val
+  let name := match sig.overloadIndex with
+    | some idx => s!"{baseName}${idx}"
+    | none => baseName
+  { text := name, uniqueId := none }
 
 private def ParamList.allParams (pl : ParamList) : List (PythonIdentifier × PythonType) :=
   pl.required ++ pl.optional.map (fun (n, ty, _) => (n, ty)) ++ pl.kwonly.map (fun (n, ty, _) => (n, ty))
@@ -929,6 +965,7 @@ partial def resolveExpr (ctx : Ctx) (f : SourceRange → ResolvedAnn) (e : Pytho
       let nId := PythonIdentifier.fromAst n
       let info := match ctx[nId]? with
         | some (.function _) => .variable nId
+        | some (.overloadedFunction _) => .variable nId
         | some (.class_ cId _ _) => .variable cId
         | some (.variable _) => .variable nId
         | some (.module_ _) => .irrelevant
@@ -941,6 +978,12 @@ partial def resolveExpr (ctx : Ctx) (f : SourceRange → ResolvedAnn) (e : Pytho
           let nId := PythonIdentifier.fromAst n
           match ctx[nId]? with
           | some (.function sig) => pure (.funcCall sig)
+          | some (.overloadedFunction overloads) =>
+              let matched := overloads.find? fun (_, olSig) =>
+                matchOverload olSig args.val
+              match matched with
+              | some (idx, sig) => pure (.funcCall { sig with overloadIndex := some idx })
+              | none => pure .unresolved
           | some (.class_ cId _ methods) =>
               let initId := PythonIdentifier.builtin "__init__"
               match methods.find? (fun (mName, _) => mName == initId) with
@@ -950,7 +993,7 @@ partial def resolveExpr (ctx : Ctx) (f : SourceRange → ResolvedAnn) (e : Pytho
                 pure (.classNew cId emptySig)
           | _ => pure .unresolved
         | .Attribute _ receiver methodName _ =>
-            resolveMethodCall ctx receiver methodName
+            resolveMethodCall ctx receiver methodName args.val
         | _ => pure .unresolved
       let rFunc ← resolveExpr ctx f func
       let mut rArgs : Array ResolvedPythonExpr := #[]
@@ -1213,7 +1256,7 @@ partial def typeOfExpr (ctx : Ctx) : PythonExpr → ResolveM (Option PythonType)
 
 /-- Resolves `receiver.method(...)` calls. Monadic: uses `typeOfExpr` which may
     trigger demand-driven module loads. -/
-partial def resolveMethodCall (ctx : Ctx) (receiver : PythonExpr) (methodName : Ann String SourceRange) : ResolveM NodeInfo := do
+partial def resolveMethodCall (ctx : Ctx) (receiver : PythonExpr) (methodName : Ann String SourceRange) (callArgs : Array PythonExpr := #[]) : ResolveM NodeInfo := do
   let methId := PythonIdentifier.fromAst methodName
   match ← typeOfExpr ctx receiver with
   | some (.Name _ className _) =>
@@ -1232,6 +1275,12 @@ partial def resolveMethodCall (ctx : Ctx) (receiver : PythonExpr) (methodName : 
         let moduleCtx : Ctx := moduleRaw.fold (fun c k v => c.insert k v) {}
         match moduleCtx[methId]? with
         | some (.function sig) => pure (.funcCall sig)
+        | some (.overloadedFunction overloads) =>
+          let matched := overloads.find? fun (_, olSig) =>
+            matchOverload olSig callArgs
+          match matched with
+          | some (idx, sig) => pure (.funcCall { sig with overloadIndex := some idx })
+          | none => pure .unresolved
         | some (.class_ cId _ methods) =>
           let initId := PythonIdentifier.builtin "__init__"
           match methods.find? (fun (mName, _) => mName == initId) with
@@ -1298,12 +1347,31 @@ partial def resolveStmt (ctx : Ctx) (f : SourceRange → ResolvedAnn) (s : Pytho
   match s with
   | .FunctionDef a name args body decorators returns tc typeParams =>
       let nameId := PythonIdentifier.fromAst name
-      let sig ← match ctx[nameId]? with
-        | some (.function existingSig) => pure existingSig
-        | _ => extractFuncSig ctx f nameId none args decorators.val returns body.val
-      let (ctx', ann, rName, rArgs, rBody, rDecs, rRets, rTc, rTps) ←
-        resolveFuncDef ctx f sig a name args body decorators returns tc typeParams
-      return (ctx', .FunctionDef ann rName rArgs rBody rDecs rRets rTc rTps)
+      if hasOverloadDecorator decorators.val then
+        let sig ← extractFuncSig ctx f nameId none args decorators.val returns body.val
+        let overloads := match ctx[nameId]? with
+          | some (.overloadedFunction existing) => existing
+          | _ => []
+        let idx := overloads.length
+        let ctx' := ctx.insert nameId (.overloadedFunction (overloads ++ [(idx, sig)]))
+        let (_, ann, rName, rArgs, rBody, rDecs, rRets, rTc, rTps) ←
+          resolveFuncDef ctx f sig a name args body decorators returns tc typeParams
+        return (ctx', .FunctionDef ann rName rArgs rBody rDecs rRets rTc rTps)
+      else
+        match ctx[nameId]? with
+        | some (.overloadedFunction _) =>
+          -- Non-@overload def after overloads = implementation stub. Keep the overload list.
+          let sig ← extractFuncSig ctx f nameId none args decorators.val returns body.val
+          let (_, ann, rName, rArgs, rBody, rDecs, rRets, rTc, rTps) ←
+            resolveFuncDef ctx f sig a name args body decorators returns tc typeParams
+          return (ctx, .FunctionDef ann rName rArgs rBody rDecs rRets rTc rTps)
+        | _ =>
+          let sig ← match ctx[nameId]? with
+            | some (.function existingSig) => pure existingSig
+            | _ => extractFuncSig ctx f nameId none args decorators.val returns body.val
+          let (ctx', ann, rName, rArgs, rBody, rDecs, rRets, rTc, rTps) ←
+            resolveFuncDef ctx f sig a name args body decorators returns tc typeParams
+          return (ctx', .FunctionDef ann rName rArgs rBody rDecs rRets rTc rTps)
   | .AsyncFunctionDef a name args body decorators returns tc typeParams =>
       let nameId := PythonIdentifier.fromAst name
       let sig ← match ctx[nameId]? with
