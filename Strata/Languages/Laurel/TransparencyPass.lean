@@ -60,14 +60,14 @@ def stripAssertAssume (expr : StmtExprMd) : StmtExprMd :=
     Tester names also contain `..` but start with `is` after the separator.
     - `proof = true` → use safe selectors (strip `!` suffix)
     - `proof = false` → use unsafe selectors (add `!` suffix) -/
-private def adjustSelectorName (name : String) : String :=
+private def adjustSelectorName (name : Identifier) : Identifier :=
   -- Only adjust destructor names (contain ".." but are not testers)
-  match name.splitOn ".." with
+  match name.text.splitOn ".." with
   | [_, suffix] =>
     if suffix.startsWith "is" then name  -- tester, leave unchanged
     else
       -- Unsafe: add trailing "!" if not already present
-      if name.endsWith "!" then name else name ++ "!"
+      if name.text.endsWith "!" then name else { text := name.text ++ "!", source := name.source }
   | _ => name  -- not a destructor name, leave unchanged
 
 /-- Rewrite StaticCall callees to their `$asFunction` versions,
@@ -80,7 +80,7 @@ private def rewriteCallsToFunctional (asFunctionNames : List String) (expr : Stm
         let funcCallee := { callee with text := callee.text ++ "$asFunction", uniqueId := none }
         ⟨.StaticCall funcCallee args, e.source⟩
       else
-        let newName := adjustSelectorName callee.text
+        let newName := adjustSelectorName callee
         ⟨ .StaticCall newName args, e.source⟩
     | .PrimitiveOp operator arguments _ => ⟨ .PrimitiveOp operator arguments true, e.source⟩
     | _ => e) expr
