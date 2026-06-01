@@ -5,12 +5,11 @@
 -/
 module
 
-public import Strata.Languages.B3.DDMTransform.DefinitionAST
-public import Strata.DL.SMT.SMT
-public import Strata.DL.SMT.Factory
 public import Strata.Languages.B3.DDMTransform.Conversion
-import Strata.DDM.Format
+import StrataDDM.Format
 import Strata.Util.Tactics
+public import Strata.DL.SMT.Term
+import Strata.DL.SMT.Factory
 
 public section
 
@@ -23,6 +22,7 @@ Converts B3 abstract syntax trees to SMT terms for verification.
 namespace Strata.B3.Verifier
 
 open Strata
+open StrataDDM
 open Strata.B3AST
 open Strata.SMT
 open Strata.SMT.Factory

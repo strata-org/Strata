@@ -7,7 +7,7 @@ module
 
 public import Strata.Languages.Python.OverloadTable
 public import Strata.Languages.Python.PythonDialect
-import Strata.Languages.Python.Specs.ToLaurel
+import Strata.Languages.Core.Factory
 
 /-!
 # Overload Resolution for Python Programs

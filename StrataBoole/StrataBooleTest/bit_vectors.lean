@@ -1,0 +1,46 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
+
+import StrataBoole.MetaVerifier
+
+private def bit_vectors :=
+#strata
+program Boole;
+
+type StrataHeap;
+type StrataRef;
+type StrataField (t: Type);
+
+// Variables
+var x : bv32;
+
+// Uninterpreted procedures
+// Implementations
+procedure main() returns ()
+spec {
+  modifies x;
+}
+{
+  anon0: {
+    x := bv{32}(0);
+    assume (x == bv{32}(1));
+    assert false;
+  }
+  end : {}
+};
+
+#end
+
+/-- info:
+Obligation: assert_1_418
+Property: assert
+Result: ✅ pass-/
+#guard_msgs in
+#eval Strata.Boole.verify "cvc5" bit_vectors (options := .quiet)
+
+example : Strata.smtVCsCorrectBoole bit_vectors := by
+  gen_smt_vcs_boole
+  all_goals grind

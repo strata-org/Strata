@@ -5,17 +5,16 @@
 -/
 module
 
-public import Strata.DDM.Integration.Lean
 
-import Strata.DDM.AST
-import Strata.DDM.Util.ByteArray
-import Strata.DDM.Format
-import Strata.DDM.BuiltinDialects.Init
-public import Strata.DDM.Integration.Lean.OfAstM
+public import StrataDDM.Integration.Lean.OfAstM
+public import StrataDDM.Format
+import StrataDDM.Integration.Lean.Gen
+import StrataDDM.Integration.Lean.HashCommands
+open StrataDDM
 
 public section
 namespace Strata.Python
-#load_dialect "../../../Tools/Python/dialects/Python.dialect.st.ion"
+#load_dialect "Tools/Python/dialects/Python.dialect.st.ion"
 
 #strata_gen Python
 

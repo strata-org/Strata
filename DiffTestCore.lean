@@ -27,11 +27,12 @@
 --
 -- Restriction: <regex> and <string> fields must not contain tab characters.
 
-import Strata.Languages.Core.Verifier
+import Strata.Languages.Core
 import Strata.Languages.Python.Regex.ReToCore
 
 open Strata Strata.Python
 open Core (VerifyOptions)
+open StrataDDM.Elab (LoadedDialects elabProgram)
 
 /-- Escape a string for embedding as a double-quoted Core string literal. -/
 def escapeForCore (s : String) : String :=
@@ -92,16 +93,16 @@ def checkMatch (pyRegex testStr : String) (mode : MatchMode)
       catch e =>
         IO.eprintln s!"[log] Failed to write {path}: {e}"
     let inputCtx := Lean.Parser.mkInputContext progText "<diff_test>"
-    let dctx := Elab.LoadedDialects.builtin
+    let dctx := LoadedDialects.builtin
     let dctx := dctx.addDialect! Core
     let leanEnv ← Lean.mkEmptyEnvironment 0
-    match Strata.Elab.elabProgram dctx leanEnv inputCtx with
+    match elabProgram dctx leanEnv inputCtx with
     | .error errors =>
       let msgs ← errors.toList.mapM (·.toString)
       let errStr := String.intercalate "; " msgs
       return .smtError s!"elab: {errStr}"
     | .ok pgm =>
-      let vcResults ← verify pgm inputCtx none .quiet
+      let vcResults ← Strata.Core.verify pgm inputCtx none .quiet
       match vcResults[0]? with
       | none    => return .smtError "no VCs generated"
       | some vc =>

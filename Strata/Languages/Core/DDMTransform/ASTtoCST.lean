@@ -5,8 +5,8 @@
 -/
 module
 
-public import Strata.Languages.Core.DDMTransform.FormatCore
 public import Strata.Languages.Core.Program
+open StrataDDM
 
 public section
 

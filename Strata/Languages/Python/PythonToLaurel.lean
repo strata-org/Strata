@@ -6,11 +6,12 @@
 module
 
 public import Strata.Languages.Core.Program
-public import Strata.Languages.Laurel.Laurel
+public import Strata.Languages.Laurel.LaurelAST
 public import Strata.Languages.Python.OverloadTable
 public import Strata.Languages.Python.PythonDialect
 import Strata.Languages.Python.PythonRuntimeLaurelPart
-import Strata.Util.DecideProp
+import Std.Tactic.BVDecide.Normalize.Prop
+import Strata.Util.Tactics
 
 /-!
 # Python to Laurel Translation
@@ -33,6 +34,7 @@ This module translates Python AST to Laurel intermediate representation.
 
 namespace Strata.Python
 
+open StrataDDM
 open Laurel
 
 public section

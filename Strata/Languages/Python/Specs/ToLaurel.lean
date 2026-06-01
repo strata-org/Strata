@@ -5,8 +5,7 @@
 -/
 module
 
-public import Strata.Languages.Laurel.Laurel
-import Strata.DDM.Format
+public import Strata.Languages.Laurel.LaurelAST
 import Strata.Languages.Python.PythonLaurelTypedExpr
 public import Strata.Languages.Python.Specs.Decls
 public import Strata.Pipeline.Messages

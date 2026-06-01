@@ -6,9 +6,11 @@
 module
 meta import Strata.Languages.Python.Specs
 meta import all Strata.Languages.Python.Specs.DDM
-import Strata.DDM.Ion
+import StrataDDM.Ion
 import Strata.Languages.Python.PythonDialect
 meta import StrataTest.Util.Python
+
+open StrataDDM (SourceRange)
 
 namespace Strata.Python.Specs
 

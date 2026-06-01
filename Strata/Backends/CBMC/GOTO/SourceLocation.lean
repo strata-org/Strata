@@ -5,7 +5,7 @@
 -/
 module
 
-public import Lean.Data.Json
+public import Lean.Data.Json.FromToJson.Basic
 
 namespace CProverGOTO
 -------------------------------------------------------------------------------

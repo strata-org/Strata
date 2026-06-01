@@ -3,9 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Python.CorePrelude
-import Strata.DDM.Ion
+meta import Strata.Languages.Python.CorePrelude
+meta import StrataDDM.Ion
+
+meta section
+open StrataDDM (Program)
 
 namespace Strata.Python
 
@@ -23,3 +27,4 @@ private def testCorePreludeRoundTrip : Bool :=
 #guard testCorePreludeRoundTrip
 
 end Strata.Python
+end

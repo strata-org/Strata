@@ -3,9 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core
+import StrataDDM.Integration.Lean.HashCommands
 
+meta section
 ---------------------------------------------------------------------
 namespace Strata
 
@@ -28,7 +31,7 @@ def runAndCheckForSMTFiles : IO Unit := do
   if ← vcDir.pathExists then
     IO.FS.removeDirAll vcDir
   IO.FS.createDirAll vcDir
-  let _ ← verify alwaysGenerateSMTPgm (options := { Core.VerifyOptions.default with
+  let _ ← Core.verify alwaysGenerateSMTPgm (options := { Core.VerifyOptions.default with
     alwaysGenerateSMT := true,
     vcDirectory := vcDir})
   -- Check that vcDir has exactly one `.smt2` file in it
@@ -54,4 +57,6 @@ Number of `.smt2` files: 1
 #guard_msgs in
 #eval runAndCheckForSMTFiles
 
+end Strata
+end
 ---------------------------------------------------------------------

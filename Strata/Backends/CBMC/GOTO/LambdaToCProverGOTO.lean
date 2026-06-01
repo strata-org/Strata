@@ -5,9 +5,9 @@
 -/
 module
 
-public import Strata.DL.Lambda.Lambda
 public import Strata.Backends.CBMC.GOTO.Expr
 import Strata.Languages.Core.CoreOp
+public import Strata.DL.Lambda.LExprT
 
 public section
 namespace Lambda

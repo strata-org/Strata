@@ -4,9 +4,10 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
+import StrataDDM.Parser
 import StrataTest.Languages.Python.TestExamples
+import StrataTest.Util.Python
 import StrataTest.Util.TestDiagnostics
-import Strata.DDM.Parser
 
 /-! ## Test: Inline Python verification via processPythonFile
 
@@ -18,7 +19,7 @@ namespace Strata.Python.VerifyPythonTest
 
 open StrataTest.Util
 open Strata.Python (processPythonFile processPythonToLaurel withPython manglePythonMethod)
-open Strata.Parser (stringInputContext)
+open StrataDDM.Parser (stringInputContext)
 
 /-- Run the Python → Laurel pipeline and return the Laurel program together
     with its formatted string representation. -/
