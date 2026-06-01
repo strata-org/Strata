@@ -585,7 +585,7 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
   let postconditions : ListMap Core.CoreLabel Core.Procedure.Check ←
     match proc.body with
     | .Opaque postconds _ _ | .Abstract postconds =>
-        translateChecks postconds s!"postcondition{(bodyStmts.getD []).length}" bodyStmts.isNone
+        translateChecks postconds s!"postcondition" bodyStmts.isNone
     | _ => pure []
 
   let body : List Core.Statement := [.block "$body" (bodyStmts.getD []) mdWithUnknownLoc]
@@ -761,15 +761,6 @@ def translateLaurelToCore (options: LaurelTranslateOptions) (program : Program) 
         output := coreTy
         body := body
       } mdWithUnknownLoc]
-
-
-  -- Emit diagnostics for composite types with instance procedures.
-  for td in program.types do
-    if let .Composite ct := td then
-      for proc in ct.instanceProcedures do
-        emitDiagnostic $ diagnosticFromSource proc.name.source
-          s!"Instance procedure '{proc.name.text}' on composite type '{ct.name.text}' is not yet supported"
-          DiagnosticType.NotYetImplemented
 
   pure { decls := coreDecls }
 

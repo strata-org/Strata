@@ -226,7 +226,6 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
     let (coreProgramOption, translateState) :=
       runTranslateM initState (translateLaurelToCore options program coreWithLaurelTypes)
     -- Because of the duplication between functions and procedures, this translation is liable to create duplicate diagnostics
-    -- User errors should be checked in an earlier phase, and all dumb translation errors are Strata bugs
     let mut allDiagnostics: List DiagnosticModel := passDiags ++ translateState.diagnostics.eraseDups;
 
     if translateState.coreDiagnostics.length > 0 && allDiagnostics.isEmpty then
