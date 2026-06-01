@@ -595,8 +595,8 @@ private theorem resolveAux_allFvarAnnot_aux
       simp only [LExprT.allFvarAnnot]
       have h_sz1 : e1.sizeOf < n := by subst h_eq; simp [LExpr.sizeOf]; omega
       have h_sz2 : e2.sizeOf < n := by subst h_eq; simp [LExpr.sizeOf]; omega
-      have h_ctx1 := resolveAux_preserves_find C Env Env1 e1 e1t xv (.forAll [] xty) h_res1 h_ctx
       have h_inv1 := ResolveAuxInvariants.mk_from_resolveAux (T := T) e1 e1t C Env Env1 h_res1 h_envwf h_ne h_fwf h_resolved
+      have h_ctx1 : Env1.context.types.find? xv = some (.forAll [] xty) := h_inv1.context ▸ h_ctx
       exact ⟨ih e1.sizeOf h_sz1 e1 rfl C Env Env1 e1t xv xty h_res1 h_ctx h_envwf h_ne h_fwf h_resolved h_af,
              ih e2.sizeOf h_sz2 e2 rfl C Env1 Env2 e2t xv xty h_res2 h_ctx1 h_inv1.envwf h_inv1.ne h_fwf h_inv1.resolved (h_inv1.aliasFree_preserved h_af)⟩
     | .abs m name bty body =>
@@ -674,9 +674,9 @@ private theorem resolveAux_allFvarAnnot_aux
       have h_sz_th : th.sizeOf < n := by subst h_eq; simp [LExpr.sizeOf]; omega
       have h_sz_el : el.sizeOf < n := by subst h_eq; simp [LExpr.sizeOf]; omega
       have h_inv1 := ResolveAuxInvariants.mk_from_resolveAux (T := T) c ct C Env Env1 h_res_c h_envwf h_ne h_fwf h_resolved
-      have h_ctx1 := resolveAux_preserves_find C Env Env1 c ct xv (.forAll [] xty) h_res_c h_ctx
+      have h_ctx1 : Env1.context.types.find? xv = some (.forAll [] xty) := h_inv1.context ▸ h_ctx
       have h_inv2 := ResolveAuxInvariants.mk_from_resolveAux (T := T) th tht C Env1 Env2 h_res_th h_inv1.envwf h_inv1.ne h_fwf h_inv1.resolved
-      have h_ctx2 := resolveAux_preserves_find C Env1 Env2 th tht xv (.forAll [] xty) h_res_th h_ctx1
+      have h_ctx2 : Env2.context.types.find? xv = some (.forAll [] xty) := h_inv2.context ▸ h_ctx1
       exact ⟨ih c.sizeOf h_sz_c c rfl C Env Env1 ct xv xty h_res_c h_ctx h_envwf h_ne h_fwf h_resolved h_af,
              ih th.sizeOf h_sz_th th rfl C Env1 Env2 tht xv xty h_res_th h_ctx1 h_inv1.envwf h_inv1.ne h_fwf h_inv1.resolved (h_inv1.aliasFree_preserved h_af),
              ih el.sizeOf h_sz_el el rfl C Env2 Env3 elt xv xty h_res_el h_ctx2 h_inv2.envwf h_inv2.ne h_fwf h_inv2.resolved (h_inv2.aliasFree_preserved (h_inv1.aliasFree_preserved h_af))⟩
@@ -692,8 +692,8 @@ private theorem resolveAux_allFvarAnnot_aux
       simp only [LExprT.allFvarAnnot]
       have h_sz1 : e1.sizeOf < n := by subst h_eq; simp [LExpr.sizeOf]; omega
       have h_sz2 : e2.sizeOf < n := by subst h_eq; simp [LExpr.sizeOf]; omega
-      have h_ctx1 := resolveAux_preserves_find C Env Env1 e1 e1t xv (.forAll [] xty) h_res1 h_ctx
       have h_inv1 := ResolveAuxInvariants.mk_from_resolveAux (T := T) e1 e1t C Env Env1 h_res1 h_envwf h_ne h_fwf h_resolved
+      have h_ctx1 : Env1.context.types.find? xv = some (.forAll [] xty) := h_inv1.context ▸ h_ctx
       exact ⟨ih e1.sizeOf h_sz1 e1 rfl C Env Env1 e1t xv xty h_res1 h_ctx h_envwf h_ne h_fwf h_resolved h_af,
              ih e2.sizeOf h_sz2 e2 rfl C Env1 Env2 e2t xv xty h_res2 h_ctx1 h_inv1.envwf h_inv1.ne h_fwf h_inv1.resolved (h_inv1.aliasFree_preserved h_af)⟩
 
