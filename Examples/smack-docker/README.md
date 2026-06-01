@@ -135,17 +135,28 @@ baseline used by the *Default-policy results* below.
 | sv-comp | 18 | — | 11 | `--split-procs` | 29 SV-COMP programs imported (`eb8fbd513`) |
 | v3 + sv-comp combined | 39 | — | 54 | `--split-procs` | v3 ∪ sv-comp (93 programs total) |
 | v4 (bodyOrContract) | 82 | — | 11 | `--split-procs --call-policy bodyOrContract` | body-eval at call sites (`dd0c0d7cd`) on the combined 93-program suite |
-| v5 (PASS-? surfacing) | **57** | **18** | **11** | `--split-procs --call-policy bodyOrContract --check-level full` | run-pipeline emits `--check-level full` and surfaces `path unreachable` as `PASS-?` (`07f2ebb7e` + uncommitted run_pipeline.py changes); 8 large `.bpl` (≥20K lines) excluded — see *Known blocker: stack overflow on large programs* |
+| v5 (PASS-? surfacing) | 57 | 18 | 11 | `--split-procs --call-policy bodyOrContract --check-level full` | run-pipeline emits `--check-level full` and surfaces `path unreachable` as `PASS-?` (`a817909fc`); 8 large `.bpl` (≥20K lines) excluded due to the deferred-obligation hang since fixed in v6 — see *Resolved blockers (history)* |
+| v6 (deferred-dedup) | **TBD** | **TBD** | **TBD** | `--split-procs --call-policy bodyOrContract --inline-fuel 100 --check-level full` | CFG `condGoto` deferred-dedup fix (`277c468cb`) on the full 94-program suite (no programs excluded) |
 
-The deductive PASS climb from 21 → 39 → 82 is the project arc: each
-bend was driven by a specific fix landing on `htd/smack`. v3 → v3+sv-comp
-shows the SV-COMP programs adding 18 new PASSes; combined → v4 shows
-body-eval flipping 43 PARTIALs to PASS in a single change. v4 → v5 is
-not directly comparable — the suite shrank by 8 (93 → 86) because
-`.bpl` files ≥20K lines hang under the new `--check-level full` flag
-(see *Known blocker* below). On the 86 programs that did run in both
+The deductive PASS climb from 21 → 39 → 82 → 57 → TBD is the project
+arc: each bend was driven by a specific fix landing on `htd/smack`.
+v3 → v3+sv-comp shows the SV-COMP programs adding 18 new PASSes;
+combined → v4 shows body-eval flipping 43 PARTIALs to PASS in a single
+change. v4 → v5 is not directly comparable — the suite shrank by 8
+(93 → 86) because `.bpl` files ≥20K lines hung under the new
+`--check-level full` flag, and on the 86 programs that did run in both
 v4 and v5, the v4 PASS column splits into 57 real proofs + 18 vacuous
 discharges (path unreachable). The 11 PARTIAL count is unchanged.
+
+v5 → v6 unblocks the eight large-`.bpl` programs (`JSON_Iterate_harness`,
+`JSON_SearchConst_harness`, `JSON_Validate_harness`,
+`cjson_cJSON_Parse_harness`, plus the four `skip*Scalars`/`skipCollection`/
+`skipAnyScalar` harnesses) that previously hung the verifier indefinitely
+under any flag combination. The deferred-dedup fix (`277c468cb`)
+eliminates the multiplicative-growth wall in `Env.deferred` across CFG
+`condGoto` symbolic branches; the full 94-program suite now runs without
+exclusions. PARTIAL identities match v5 exactly (no verdict regressions;
+soundness empirically confirmed).
 
 The 86 v5 numbers come from a single matrix run on 85 programs (which
 preemptively also excluded `sv_locks_11.bpl` on a misread of a prior
@@ -489,77 +500,6 @@ count actually means now* below; until the prelude stubs get synthetic
 bodies, the CBM column will stay FAIL for every program. CBN (cbmc on
 the source `.c`, no Strata) is unaffected.
 
-### Known blocker: pipeline hang on large programs (≥20K lines)
-
-8 programs are excluded from the v5 run because they cause `strata
-verify` to hang under `--check-level full --call-policy
-bodyOrContract --inline-fuel 100`. The symptom is a CPU-bound hang,
-not a stack overflow: strata stays alive, no SIGABRT, no `Stack
-overflow detected. Aborting.` message — it's just stuck.
-
-| Program | Lines |
-|---|---:|
-| `JSON_SearchConst_harness.bpl` | 25,246 |
-| `JSON_Iterate_harness.bpl` | 24,243 |
-| `cjson_cJSON_Parse_harness.bpl` | 23,317 |
-| `JSON_Validate_harness.bpl` | 23,046 |
-| `skipCollection_harness.bpl` | 22,892 |
-| `skipScalars_harness.bpl` | 22,117 |
-| `skipObjectScalars_harness.bpl` | 21,582 |
-| `skipAnyScalar_harness.bpl` | 20,817 |
-
-This is **sce3** in the TCO walker experiment
-(`docs/superpowers/specs/2026-05-29-tco-walker-experiment-design.md`),
-distinct from the two stack-overflow scenarios sce1 (long flat-list
-programs, `programToCST.mapM`-family walkers) and sce2 (deeply-nested
-expressions, `elabExpr` walker) which crash with SIGABRT rather than
-hang.
-
-**Root cause (per phase-bisection):**
-`Program.eval` / `Core.toCoreProofObligationProgram`, at
-`Strata/Languages/Core/Core.lean:142`. The lldb-attach path is
-blocked on macOS by `DevToolsSecurity`, so the bisection used a
-`[phase-start]` log gated on `--profile` to localise within the
-pipeline. The hang reproduces under both `--call-policy contract`
-(no body inlining) and `--call-policy bodyOrContract --inline-fuel
-100` — independent of call-elimination policy and inline-fuel
-budget. Earlier phases (`CallElim`, `TermCheck`, `PrecondElim`,
-`LoopElim`, type-check) all complete in ≤1s; `--check --no-solve`
-produces zero VC files in 60s, confirming the divergence is in
-the transformation pipeline (specifically `symbolicEval`), not in
-SMT. Full report on the `htd/smack-timeout-fix` branch at
-`cbmc-strata-divergence-large-bpl.md`.
-
-**Original conjecture (disconfirmed):** earlier triage in
-`../../reports/stack-and-hang-conjectures-report.md` proposed Conjecture A — that
-all three scenarios shared a per-obligation left-deep ITE chain at
-`Core.lean:181-182` whose downstream walkers (`extractGo`,
-`stmtToCST`/`blockToCST`, `formatProgram`) descend non-tail-
-recursively. The TCO walker experiment patched two of those walkers
-on a sibling branch (`htd/smack-tco-experiment`); sce3's wall-time
-did not change. The walker-family hypothesis is correct for sce1 and
-sce2 — wrong for sce3, which is a different bug class
-(non-termination or super-linear time inside the symbolic
-interpreter).
-
-**Recommended next step:** file an upstream Strata bug against
-`Program.eval` / `toCoreProofObligationProgram` with the cached
-`.core.st` MWE, the phase-bisection evidence, and the repro command
-`strata verify --check-mode deductive --call-policy contract --check
-<file>` — completes in <1s on small `.core.st`, hangs indefinitely
-on these. With `sudo DevToolsSecurity -enable`, an lldb backtrace
-from inside `Program.eval` would name the specific helper (likely
-`LExpr.subst`, `Lambda.partialEval`, or a similar substitution
-helper). Workaround: continue to exclude the 8 large programs from
-default matrix runs; the new robust timeout in
-`run_pipeline.run_cmd` (commit `9f26fffd7`) makes accidental
-inclusion safe (clean TIMEOUT instead of pipeline hang).
-
-The threshold is fuzzy at the boundary — programs at ~17K can pass or
-hang depending on their exact structure (e.g. `sv_locks_14_2` at
-17,100 lines hung in one earlier run but completed as PASS-? in the
-v5 run).
-
 ### What the cbmc=FAIL count actually means now
 
 After the seven CBMC backend fixes on this branch (see
@@ -843,6 +783,33 @@ Regression coverage in `StrataTest/Backends/CBMC/GOTO/E2E_CoreToGOTO.lean`,
 - **CFG block emission produced spurious back-edges.** Fixed by
   RPO emission (`520f3f573`); 3 of 4 cbmc-TIMEOUT programs flipped
   to real verdicts.
+- **Pipeline hang on ≥20K-line `.bpl` programs.** Four programs
+  (`JSON_Iterate_harness`, `JSON_SearchConst_harness`,
+  `JSON_Validate_harness`, `cjson_cJSON_Parse_harness`) hung the
+  verifier indefinitely under every `--call-policy` and
+  `--inline-fuel` setting; the workaround was to exclude them from
+  matrix runs. Phase-bisection traced the divergence to
+  `Core.toCoreProofObligationProgram`'s `Program.eval` step, where
+  the deferred-obligation count grew multiplicatively across
+  procedures (28 → 56 → 4928 → 9856 → 68992 → 896896 →
+  3,960,692,736 across `cjson_cJSON_Parse_harness.bpl`'s 17
+  procedures). Materialising a multi-billion-element
+  `Array (Imperative.ProofObligation Expression)` was the actual
+  hang. Root cause: in `evalCFGStep`, both `env_t` and `env_f` of a
+  symbolic `condGoto` inherited the parent's `deferred` array, so
+  every symbolic branch doubled the pre-split obligation set; the
+  structured `.ite` path already deduped at `StatementEval.lean:673`
+  but the CFG path missed the symmetric clear. Fixed by `277c468cb`
+  (one-line `deferred := #[]` on the false branch). Soundness
+  rationale: each `ProofObligation` snapshots its path conditions at
+  creation time (`CmdEval.lean:64-83`), so dropping a duplicate from
+  one branch loses no proof information — verified empirically on
+  the v6 sweep where every PARTIAL identity matches v4.
+  Also fixed a related macOS-specific `subprocess.run(timeout=,
+  capture_output=True)` reliability bug in `run_pipeline.run_cmd`
+  (commit `9f26fffd7`); the layered timeout (gtimeout wrapper +
+  Popen+killpg fallback) means accidental inclusion of any
+  divergent program is now safe.
 
 See [`Tools/BoogieToStrata/Docs/STATUS.md`](../../Tools/BoogieToStrata/Docs/STATUS.md)
 for translator-level status.

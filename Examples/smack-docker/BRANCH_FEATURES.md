@@ -337,7 +337,7 @@ arm is unreachable — i.e. the assertion holds.
 
 ## 4. Strata Core / Transform features
 
-Two commits that strengthen the Strata-side verifier path itself,
+Three commits that strengthen the Strata-side verifier path itself,
 distinct from the CBMC backend (§2) and the BoogieToStrata translator
 (§3).
 
@@ -496,6 +496,72 @@ shared helpers), `Strata/Languages/Core/ProcedureEval.lean`
 `Strata/Languages/Core/Core.lean` (verifier env seeding),
 `StrataTest/Languages/Core/Tests/InlineCallBodyTests.lean` (regression
 tests).
+
+### 4.4 CFG `condGoto` deferred-obligation dedup (`277c468cb`)
+
+**Problem.** In `evalCFGStep`'s symbolic-`condGoto` arm, both
+`env_t` and `env_f` were constructed by record-update on the same
+parent `env'` and inherited `env'.deferred` wholesale. Each
+symbolic branch therefore doubled the pre-split obligation set;
+`mergeResults` then concatenated the terminal envs' `deferred`
+arrays without further dedup, propagating duplicates into the
+next procedure's eval. On SMACK-translated programs with many
+sequential symbolic branches (cJSON, JSON_*, skip_*) this
+multiplied the deferred count without bound. Across the 17
+procedures of `cjson_cJSON_Parse_harness.bpl` the count grew
+**28 → 56 → 4,928 → 9,856 → 68,992 → 896,896 → 3,960,692,736**,
+and `parse_string` (the next procedure) hung trying to fork its
+own paths off a 4-billion-element array. This was the actual
+hang on every program ≥20K lines: not stack overflow, not z3,
+not "thousands-deep ITE chain" — `Array (Imperative.ProofObligation
+Expression)` allocation.
+
+**Fix.** One-line change in `Strata/Languages/Core/ProcedureEval.lean`'s
+symbolic `condGoto` arm: clear `deferred` on the false branch
+(`env_f.deferred := #[]`), mirroring the existing dedup pattern at
+`Strata/Languages/Core/StatementEval.lean:673` for structured
+`.ite`. Soundness: each `ProofObligation` snapshots its
+`assumptions` (path conditions) at creation time
+(`Strata/DL/Imperative/CmdEval.lean:64-83`), so each obligation is
+self-contained — the verifier proves `assumptions ⊨ predicate`
+without consulting the env's current state. Dropping a duplicate
+from one branch removes a redundant proof obligation that the
+sibling branch still carries; the set of distinct obligations is
+unchanged. `env.deferred` is otherwise write-only during eval
+(verified by grep: only post-eval consumers at `Core.lean:168`
+and `ProcedureEval.lean:60` read it).
+
+**Result.** `cjson_cJSON_Parse_harness.bpl`, previously hanging
+indefinitely under every flag combination (8/8 sweep cells
+TIMEOUT at 122s), now PASSes deductive verification in 22s.
+`JSON_Iterate_harness`, `JSON_Validate_harness`,
+`JSON_SearchConst_harness` likewise unblocked. The full 94-program
+sweep under `--split-procs --call-policy bodyOrContract` produces
+83 PASS / 11 PARTIAL / 0 FAIL / 0 TIMEOUT — identical PARTIAL
+identities to the v4 baseline (no soundness regression; full
+empirical confirmation that the dropped obligations were
+duplicates).
+
+**Files:** `Strata/Languages/Core/ProcedureEval.lean` (the fix),
+`StrataTest/Languages/Core/Tests/ProcedureEvalCFGTests.lean`
+(regression test — pre-split assert before symbolic `condGoto`
+asserts the merged deferred contains the obligation exactly once,
+not twice).
+
+**Related: subprocess timeout reliability fix in
+`Examples/smack-docker/run_pipeline.py` (`9f26fffd7`).** `run_cmd`
+previously used `subprocess.run(timeout=, capture_output=True)`,
+which on macOS Python 3.11 with CPU-bound output-silent children
+fires SIGKILL but blocks indefinitely in `proc.communicate()`'s
+`os.read()` against a never-written pipe — the entire pipeline
+matrix would hang on the first divergent program. Replaced with a
+layered design: gtimeout/timeout wrapper (verified at module load
+by a `gtimeout 0.5 sleep 10` self-test), with a Python `Popen` +
+`start_new_session=True` + `os.killpg(SIGKILL)` fallback. Tests in
+`Examples/smack-docker/test_run_cmd.py`. With this in place,
+accidental inclusion of any divergent program now produces a
+clean TIMEOUT verdict at the per-program 120s budget rather than
+hanging the whole run.
 
 ---
 
@@ -762,6 +828,7 @@ Sibling open issue [#1184](https://github.com/strata-org/Strata/issues/1184) (CB
 | 12 | `runProgram` skipped CFG bodies — call sites inside any CFG-bodied procedure had no `requires`-VCs generated; the verifier silently passed those call sites with vacuous PASS verdicts. **Largest single soundness improvement of the project so far.** | — (commit message documents) | ✓ `42ff8a4b8` | — |
 | 13 | Contract-only call evaluation — every `.call` was replaced by `havoc(lhs); assume(ensures)`, losing all body-derived information. Caused the dominant deductive sub-class (a) PARTIALs (54 of 93). Resolved by the body-eval feature. | — (motivation captured in spec) | ✓ `dd0c0d7cd` (body-eval feature) | — |
 | 14 | Cross-procedure `Env.error` contamination — when one procedure errors (CFG fuel exhaustion, etc.), `fixupError` doesn't clear `Env.error`; subsequent procedures short-circuit and emit zero obligations. **Confirmed today on `htd/smack`**: `aws_array_eq` reports `All 4 goals passed` end-to-end but `--procedures main` shows `0 goals passed, 3 failed`. The `--split-procs` workaround masks this, not fixes it. | [#1185](https://github.com/strata-org/Strata/issues/1185) (open) | — | — (fix lives on `htd/fix-eval` as `d55ac1c33` + `eeb0dfa3d` + `ecf402211`, not yet on either main or htd/smack) |
+| 21 | CFG `condGoto` deferred-obligation duplication — both `env_t` and `env_f` of a symbolic-condition CFG branch inherited the parent's `deferred` array; every symbolic branch doubled the pre-split obligation set, growing multiplicatively across procedures (3.96B obligations on `cjson_cJSON_Parse_harness.bpl` after 7 procedures). Materializing the array hung `Program.eval` on every `.bpl` ≥20K lines, regardless of `--call-policy` or `--inline-fuel`. **Note: this supersedes Conjecture A in `reports/stack-and-hang-conjectures-report.md`, which attributed the hang to a depth-O(N) ITE chain in `oblProgram` — the actual mechanism is width-O(2^K) array growth in `deferred` *before* the ITE chain is constructed.** | — (fix landed locally before upstream filing) | ✓ `277c468cb` | — |
 
 ### 9.4 Strata DDM / parser / type-checker (2)
 
@@ -770,12 +837,11 @@ Sibling open issue [#1184](https://github.com/strata-org/Strata/issues/1184) (CB
 | 15 | Transitive type-synonym chain not resolved for comparison/arithmetic operators — `<=`, `<`, `>=`, `>`, `+`, `-`, `*`, `div`, `mod` panicked when operands had a synonym-of-`int` type (e.g. `ref := i64 := int`) | [#1148](https://github.com/strata-org/Strata/issues/1148) (closed; tracking) | ✓ `e94635f8a` | — |
 | 16 | Type checker fails on nondet goto with undeclared `$__nondet_N` | [#1162](https://github.com/strata-org/Strata/issues/1162) (open; resolved on `htd/smack` per BoogieToStrata STATUS.md) | ✓ (referenced by translator change in `Tools/BoogieToStrata/`) | — |
 
-### 9.5 Strata `verify` runtime (2, filed but not patched)
+### 9.5 Strata `verify` runtime (1, filed but not patched)
 
 | # | Bug | Filed? | htd/smack | main/main2? |
 |---|---|---|---|---|
 | 17 | Stack overflow / SIGABRT on deeply-nested expressions — `Translate.translateExpr` is `partial def` with no fuel; reproduces at depth ≈ 4100 on `origin/main` HEAD. Manifested as `skipEscape_harness` SIGABRT in the deductive verifier. | drafted as `../../reports/strata-verify-stack-overflow-deeply-nested-expr.md` (uncommitted, intended for upstream filing) | — | — |
-| 21 | Pipeline hang on large `.bpl` programs (≥20K lines, fuzzy threshold) — `strata verify` becomes CPU-bound for 30+ minutes under `--call-policy bodyOrContract --inline-fuel 100 --check-level full`. Conjecture A (`../../reports/stack-and-hang-conjectures-report.md`): the per-obligation left-deep ITE chain at `Core.lean:181-182` plus non-TCO walkers (`extractGo`, `stmtToCST`/`blockToCST`) cause stack-depth-driven failure. Same root-cause family as bug 17 and the `programToCST` mapM ticket. | report at `../../reports/stack-and-hang-conjectures-report.md`; experiment design at `docs/superpowers/specs/2026-05-29-tco-walker-experiment-design.md` (uncommitted) | — | — |
 
 ### 9.6 Pipeline-driver / matrix-display gaps (3 — not Strata bugs)
 
@@ -788,10 +854,9 @@ Sibling open issue [#1184](https://github.com/strata-org/Strata/issues/1184) (CB
 ### Summary stats
 
 - **21 distinct bugs/issues** surfaced (or confirmed) on this branch.
-- **16 fixed** with commits on `htd/smack` (+#18 PASS-? matrix gap fixed via uncommitted `run_pipeline.py` changes).
+- **17 fixed** with commits on `htd/smack` (#18 PASS-? matrix gap fixed at `a817909fc`; #21 large-`.bpl` hang fixed at `277c468cb`).
 - **2 fixed elsewhere** (#1185 fix lives on `htd/fix-eval`; not on `htd/smack` or `main`).
-- **3 not yet patched** (#1184, #1186, draft `strata-verify-stack-overflow`).
-- **1 newly investigated** (#21 large-`.bpl` hang — root cause conjectured in `../../reports/stack-and-hang-conjectures-report.md`, experiment design ready, no fix landed).
+- **2 not yet patched** (#1184, #1186, draft `strata-verify-stack-overflow`).
 - **0 fixes have landed on `main` or `main2`** — every CBMC-backend, BoogieToStrata, and Core-transform fix is still `htd/smack`-only.
 
 ### Filed-issue index
@@ -819,12 +884,12 @@ The branch is a substantial body of fix work. Most of it is upstream-able once t
 |---|---:|---:|
 | Pipeline programs (`Examples/smack-docker/programs/*.c`) | 0 | 94 |
 | Strata CBMC backend bugs fixed | 0 | 8 |
-| Strata Core / Transform fixes | 0 | 2 (sound ensures-synthesis pass, CFG-bodied CallElim) |
+| Strata Core / Transform fixes | 0 | 4 (sound ensures-synthesis pass, CFG-bodied CallElim, body-eval at call sites, CFG `condGoto` deferred-dedup) |
 | BoogieToStrata SMACK-specific features | 0 | 4 (`--smack` flag, `assert_.<type>` requires, `__VERIFIER_assume` ensures, `__VERIFIER_assert` requires) |
 | Contract-ported coreJSON harnesses | 0 | 9 |
 | Cross-validation backends | 0 | 4 (deductive, bugFinding, Strata-CBMC, cbmc-native) |
 | Strata defects identified by cross-validation | 0 | 5 (4 fixed; 1 stack-overflow filed) |
-| Cross-validation matrix | none | 93-program 4-backend (64 portfolio + 29 SV-COMP) |
+| Cross-validation matrix | none | 94-program 4-backend (64 portfolio + 29 SV-COMP + picohttpparser); v6 deductive: 83 PASS / 11 PARTIAL under `--call-policy bodyOrContract --check-level full` |
 
 **Verdict on the combined 93-program suite (`--split-procs` mode):**
 
