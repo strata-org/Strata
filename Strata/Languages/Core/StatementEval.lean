@@ -17,6 +17,7 @@ public import Strata.DL.Imperative.StmtEval
 public import Strata.Languages.Core.StatementSemantics
 import all Strata.DL.Imperative.Stmt
 import all Strata.DL.Imperative.CmdEval
+import all Strata.DL.Util.List
 
 ---------------------------------------------------------------------
 

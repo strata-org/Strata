@@ -17,6 +17,7 @@ import all Strata.DL.Lambda.Factory
 public import Strata.DL.Lambda.FactoryWF
 import all Strata.DL.Lambda.Scopes
 public import Strata.DL.Util.Relations
+import all Strata.DL.Util.List
 
 /-!
   Small-step semantics for `LExpr` and soundness of `LExpr.eval`.

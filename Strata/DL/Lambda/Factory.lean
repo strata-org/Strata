@@ -9,12 +9,12 @@ public import Strata.DL.Lambda.LExprWF
 import all Strata.DL.Lambda.LExprWF
 import all Strata.DL.Lambda.LExpr
 public import Strata.DL.Lambda.LTy
-public import Strata.DL.Lambda.LTyUnify
+import Strata.DL.Lambda.LTyUnify
 import all Strata.DL.Lambda.LTyUnify
 public import Strata.DDM.AST
 public import Strata.DDM.Util.Array
 public import Strata.DL.Util.Func
-public import Strata.DL.Util.List
+import Strata.DL.Util.List
 public import Strata.DL.Util.ListMap
 
 /-!

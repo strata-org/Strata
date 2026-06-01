@@ -12,7 +12,7 @@ public import Strata.DL.Lambda.LExprWF
 public import Strata.DL.Lambda.LTy
 public import Strata.DDM.Util.Array
 public import Strata.DL.Util.Func
-public import Strata.DL.Util.List
+import Strata.DL.Util.List
 public import Strata.DL.Util.ListMap
 
 /-!
