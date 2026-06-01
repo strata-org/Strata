@@ -76,9 +76,12 @@ structure TranslateState where
 def emitDiagnostic (d : DiagnosticModel) : TranslateM Unit :=
   modify fun s => { s with diagnostics := s.diagnostics ++ [d] }
 
+/-- Emit a core diagnostic that flags the Core program as invalid. -/
+def emitCoreDiagnostic (d : DiagnosticModel) : TranslateM Unit :=
+  modify fun s => { s with coreDiagnostics := s.coreDiagnostics ++ [d] }
+
 private def invalidCoreType (source : Option FileRange) (reason : String) : TranslateM LMonoTy := do
-  modify fun s => { s with coreDiagnostics := s.coreDiagnostics ++
-    [diagnosticFromSource source reason DiagnosticType.StrataBug] }
+  emitCoreDiagnostic (diagnosticFromSource source reason DiagnosticType.StrataBug)
   return .tcons s!"LaurelResolutionErrorPlaceholder" []
 
 /-
@@ -102,9 +105,7 @@ def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
     | some (.datatypeDefinition dt) => return .tcons dt.name.text []
     | some (.datatypeConstructor typeName _) => return .tcons typeName.text []
     | _ => do -- resolution should have already emitted a diagnostic
-      modify fun s => { s with coreDiagnostics := s.coreDiagnostics ++
-        [diagnosticFromSource ty.source s!"UserDefined type could not be resolved to a composite or datatype" DiagnosticType.StrataBug]
-      }
+      emitCoreDiagnostic (diagnosticFromSource ty.source s!"UserDefined type could not be resolved to a composite or datatype" DiagnosticType.StrataBug)
       return .tcons "Composite" []
   | .TCore s => return .tcons s []
   | .TReal => return LMonoTy.real
@@ -133,7 +134,7 @@ private def freshId : TranslateM Nat := do
 /-- Throw a hard diagnostic error, aborting the current translation -/
 def throwExprDiagnostic (d : DiagnosticModel): TranslateM Core.Expression.Expr := do
   emitDiagnostic d
-  modify fun s => { s with coreDiagnostics := s.coreDiagnostics ++ [d] }
+  emitCoreDiagnostic d
   return default
 
 /--
@@ -355,7 +356,7 @@ private def exprAsUnusedInit (expr : StmtExprMd) (md : Imperative.MetaData Core.
 
 def throwStmtDiagnostic (d : DiagnosticModel): TranslateM (List Core.Statement) := do
   emitDiagnostic d
-  modify fun s => { s with coreDiagnostics := s.coreDiagnostics ++ [d] }
+  emitCoreDiagnostic d
   return []
 
 /--
@@ -504,7 +505,7 @@ def translateStmt (stmt : StmtExprMd)
           return [.exit "$body" md]
       | some _ =>
           let d := md.toDiagnostic "Return statement with value should have been eliminated by EliminateValueReturns pass" DiagnosticType.StrataBug
-          modify fun s => { s with coreDiagnostics := s.coreDiagnostics ++ [d] }
+          emitCoreDiagnostic d
           return [.exit "$body" md]
   | .While cond invariants decreasesExpr body =>
       let condExpr ← translateExpr cond

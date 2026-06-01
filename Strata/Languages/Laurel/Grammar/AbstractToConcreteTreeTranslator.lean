@@ -28,7 +28,7 @@ private def optionArg (a : Option Arg) : Arg := .option sr a
 
 private def commaSep (args : Array Arg) : Arg := .seq sr .comma args
 
-private def semicolonSep (args : Array Arg) : Arg := .seq sr .semicolon args
+private def semicolonSep (args : Array Arg) : Arg := .seq sr .semicolonNewline args
 
 private def seqArg (args : Array Arg) : Arg := .seq sr .none args
 
