@@ -103,7 +103,12 @@ preconditions redundant. -/
 info: procedure test_typed_func(x: Any, y: Any): Any
   opaque
   modifies *
-{ result := <??>; assert Any..isfrom_int(x); assert Any..isfrom_str(y); assume Any..isfrom_float(result) };
+{
+  result := <??>;
+  assert Any..isfrom_int(x);
+  assert Any..isfrom_str(y);
+  assume Any..isfrom_float(result)
+};
 -/
 #guard_msgs in
 #eval! do

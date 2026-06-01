@@ -238,7 +238,7 @@ def handleList (_elmts: Array (Python.expr SourceRange)) (expected_type : Lambda
 def PyOptExprToString (e : Python.opt_expr SourceRange) : String :=
   match e with
   | .some_expr _ (.Constant _ (.ConString _ s) _) => s.val
-  | _ => panic! "Expected some constant string: {e}"
+  | _ => panic! s!"Expected some constant string: {repr e}"
 
 partial def PyExprToString (e : Python.expr SourceRange) : String :=
   match e with
@@ -549,7 +549,7 @@ partial def PyExprToCore (translation_ctx : TranslationContext) (e : Python.expr
     | .ListComp _ keys values => panic! "ListComp must be handled at stmt level"
     | .UnaryOp _ op arg => match op with
       | .Not _ => {stmts := [], expr := handleNot (PyExprToCore translation_ctx arg).expr}
-      | _ => panic! "Unsupported UnaryOp: {repr e}"
+      | _ => panic! s!"Unsupported UnaryOp: {repr e}"
     | .Subscript sr_sub v slice _ =>
       let sub_md := sourceRangeToMetaData translation_ctx.filePath sr_sub
       let l := PyExprToCore translation_ctx v

@@ -918,7 +918,7 @@ partial def toAstApplyArg (vn : Name) (cat : SyntaxCat)
   | q`Init.CommaSepBy => do
     toAstApplyArgSeq v cat ``SepFormat.comma
   | q`Init.SemicolonSepBy => do
-    toAstApplyArgSeq v cat ``SepFormat.semicolon
+    toAstApplyArgSeq v cat ``SepFormat.semicolonNewline
   | q`Init.SpaceSepBy => do
     toAstApplyArgSeq v cat ``SepFormat.space
   | q`Init.SpacePrefixSepBy => do
@@ -1182,7 +1182,7 @@ partial def genOfAstArgTerm (varName : String) (cat : SyntaxCat)
   | q`Init.CommaSepBy => do
     genOfAstSeqArgTerm varName cat e ``SepFormat.comma
   | q`Init.SemicolonSepBy => do
-    genOfAstSeqArgTerm varName cat e ``SepFormat.semicolon
+    genOfAstSeqArgTerm varName cat e ``SepFormat.semicolonNewline
   | q`Init.SpaceSepBy => do
     genOfAstSeqArgTerm varName cat e ``SepFormat.space
   | q`Init.SpacePrefixSepBy => do
