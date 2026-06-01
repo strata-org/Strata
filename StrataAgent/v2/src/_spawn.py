@@ -241,7 +241,7 @@ def create_spawn_server(
         # Register and start the sub-agent in the swarm
         logger.info(f"[SPAWN] {parent_name} spawning sub-agent '{name}' (budget=${max_budget})")
 
-        swarm.add(child_spec)
+        await swarm._registry.add_async(child_spec)
 
         # Update visibility graph so the child can participate in messaging
         swarm._on_agent_spawned(child_name=name, parent_name=parent_name)
@@ -490,11 +490,13 @@ def create_spawn_server(
             successor_spec._spawned_by = parent_spec._spawned_by  # type: ignore[attr-defined]
 
         swarm._registry.pending_successions[parent_name] = successor_spec
+        # Signal the agent loop to exit (same mechanism as done())
+        swarm._registry.exit_signals[parent_name] = True
 
         logger.info(f"[SUCCESSION] {parent_name}: successor registered (handoff={relative_handoff})")
 
         return {"content": [{"type": "text", "text": (
-            f"Successor registered. Your session will end after this turn. "
+            f"Successor registered. Your session will end now. "
             f"The successor will start fresh and read '{relative_handoff}' automatically."
         )}]}
 
@@ -651,8 +653,107 @@ def create_spawn_server(
         )
         return {"content": [{"type": "text", "text": info}]}
 
+    @tool(
+        name="done",
+        description=(
+            "Call this when you believe your work is complete. Sends your result summary "
+            "to your parent and waits for their confirmation. Returns whether you should "
+            "exit (true) or continue working (false). Only call when you've finished "
+            "your assigned task and have a result to report."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "summary": {
+                    "type": "string",
+                    "description": (
+                        "Brief summary of what you accomplished. Include file paths "
+                        "of any proof files you created."
+                    ),
+                },
+            },
+            "required": ["summary"],
+        },
+    )
+    async def done_tool(input: dict[str, Any]) -> dict[str, Any]:
+        summary = input["summary"]
+
+        # Top-level agents: silently acknowledge (no parent to confirm with)
+        spawned_by = getattr(parent_spec, "_spawned_by", None)
+        if not spawned_by:
+            return {"content": [{"type": "text", "text":
+                f"Acknowledged. Summary recorded: {summary[:200]}"}]}
+
+        # Send structured done message to parent
+        done_msg = (
+            f"[DONE_REQUEST] Child '{parent_name}' reports completion:\n"
+            f"{summary}\n\n"
+            f"Please respond with EXACTLY one of:\n"
+            f"- [CONFIRMED_DONE] — if the work is satisfactory\n"
+            f"- [NOT_DONE: <instructions>] — if more work is needed (include what to do next)"
+        )
+        sender_display = parent_name
+        physical_parent = spawned_by
+        parent_channel = f"{physical_parent}:messages"
+        await channel_bus.send_to(parent_channel, sender=sender_display, payload=done_msg)
+
+        # Wait for parent's binary response (block up to 5 min)
+        import time as _time
+        my_channel = channel_bus.get_or_create(f"{parent_name}:messages")
+        deadline = _time.monotonic() + 300  # 5 min max wait
+
+        while _time.monotonic() < deadline:
+            msg = await my_channel.receive(timeout=30)
+            if msg and msg.sender == spawned_by:
+                payload = msg.payload.strip()
+                if "[CONFIRMED_DONE]" in payload:
+                    # === CONFIRMED: agent will exit ===
+                    # Send final goodbye to parent
+                    final_msg = (
+                        f"[EXITING] '{parent_name}' exiting. Final result: {summary}\n"
+                        f"My workspace files remain at their current location for you to read."
+                    )
+                    await channel_bus.send_to(parent_channel, sender=sender_display, payload=final_msg)
+
+                    # Set exit signal — agent loop will break on next iteration
+                    swarm._registry.exit_signals[parent_name] = True
+
+                    return {"content": [{"type": "text", "text": (
+                        f"DONE = true\n"
+                        f"Parent confirmed you are done. Your session will end after this response.\n"
+                        f"Do not start any new work."
+                    )}]}
+
+                elif "[NOT_DONE" in payload:
+                    # === NOT DONE: extract parent's instructions ===
+                    # Parse reason after [NOT_DONE: ...]
+                    if ":" in payload.split("[NOT_DONE")[1]:
+                        reason = payload.split("[NOT_DONE")[1].split(":", 1)[-1].strip().rstrip("]")
+                    else:
+                        reason = payload.split("[NOT_DONE")[1].strip("]").strip()
+
+                    return {"content": [{"type": "text", "text": (
+                        f"DONE = false\n"
+                        f"Parent says more work is needed.\n"
+                        f"Instructions from parent: {reason}\n"
+                        f"Continue working on the above."
+                    )}]}
+                else:
+                    # Non-confirmation message — put back and keep waiting
+                    await my_channel.send(msg)
+            elif msg:
+                # Message from someone else — put back
+                await my_channel.send(msg)
+
+        # Timeout — parent didn't respond
+        return {"content": [{"type": "text", "text": (
+            "DONE = timeout\n"
+            "Parent did not respond within 5 minutes. "
+            "Send a status update to your parent and try calling done() again later."
+        )}]}
+
     return create_sdk_mcp_server(
         name="agent_spawn",
         version="1.0.0",
-        tools=[spawn_agent, check_sub_agents, sleep_tool, broadcast, interrupt_agent, designate_successor, kill_agent, my_workspace],
+        tools=[spawn_agent, check_sub_agents, sleep_tool, broadcast, interrupt_agent, designate_successor, kill_agent, my_workspace, done_tool],
     )

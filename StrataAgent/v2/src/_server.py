@@ -72,6 +72,7 @@ class SwarmConfig(BaseModel):
     name: str
     agents: list[AgentCreateRequest]
     nudge_module: str | None = None
+    manager: str | None = None
     checkpoint: dict | None = None
 
 
@@ -140,6 +141,7 @@ class SwarmDashboard:
         self._agent_specs: list[AgentCreateRequest] = []
         self._swarm_name: str = ""
         self._nudge_module: str | None = None
+        self._manager: str | None = None
         self._agent_sessions: dict[str, str] = {}
         self._setup_routes()
         self._setup_middleware()
@@ -305,6 +307,7 @@ class SwarmDashboard:
             self._agent_specs = config.agents
             self._swarm_name = config.name
             self._nudge_module = config.nudge_module
+            self._manager = config.manager
             await self._broadcast({"type": "specs_updated", "specs": self._get_specs_list()})
             await self._broadcast({"type": "swarm_loaded", "name": config.name})
             return {"status": "loaded", "name": config.name}
@@ -338,8 +341,9 @@ class SwarmDashboard:
         @self.app.post("/api/agents/{name}/message")
         async def send_message_to_agent(name: str, body: dict[str, Any]) -> dict[str, str]:
             message = body.get("message", "")
-            if self._swarm:
-                await self._swarm.send_to_agent(name, sender="user", payload=message)
+            if self._swarm and hasattr(self._swarm, '_user_backend'):
+                # Human typing = backend output. Inject with target so agent loop routes it.
+                self._swarm._user_backend.inject_user_input(f"[to:{name}] {message}")
             return {"status": "sent"}
 
         @self.app.post("/api/agents/{name}/budget")
@@ -433,8 +437,15 @@ class SwarmDashboard:
             if not self._swarm:
                 return {"history": [], "rules": []}
             history = self._swarm._nudge_monitor.get_history(limit=50)
+            fire_counts = self._swarm._nudge_monitor._fire_counts
             rules = [
-                {"idx": i, "name": fn.__name__, "probability": prob, "cooldown_s": cd}
+                {
+                    "idx": i,
+                    "name": fn.__name__,
+                    "probability": prob,
+                    "cooldown_s": cd,
+                    "fire_count": fire_counts.get(i, 0),
+                }
                 for i, (fn, prob, cd) in enumerate(self._swarm._nudge_monitor._rules)
             ]
             return {"history": history, "rules": rules}
@@ -458,13 +469,35 @@ class SwarmDashboard:
                         "write": spec.workspace.write,
                         "edit": spec.workspace.edit,
                     }
-                # Status from task
+                # Status from task + result
                 status = "unknown"
+                halted_by = None
                 if name in self._swarm._registry.tasks:
                     task = self._swarm._registry.tasks[name]
-                    status = "done" if task.done() else "running"
+                    if task.done():
+                        # Task finished — check result for details
+                        if name in self._swarm._registry.results:
+                            r = self._swarm._registry.results[name]
+                            halted_by = r.halted_by
+                            if r.halted_by == "done_confirmed":
+                                status = "done (confirmed)"
+                            elif r.halted_by == "completion":
+                                status = "completed"
+                            elif r.halted_by:
+                                status = f"stopped ({r.halted_by})"
+                            else:
+                                status = r.status.value if hasattr(r.status, "value") else "done"
+                        else:
+                            status = "done"
+                    else:
+                        # Check if it's exiting
+                        if self._swarm._registry.exit_signals.get(name):
+                            status = "exiting"
+                        else:
+                            status = "running"
                 elif name in self._swarm._registry.results:
                     r = self._swarm._registry.results[name]
+                    halted_by = r.halted_by
                     status = r.status.value if hasattr(r.status, "value") else str(r.status)
                 else:
                     status = "pending"
@@ -472,6 +505,7 @@ class SwarmDashboard:
                 agents.append({
                     "name": name,
                     "status": status,
+                    "halted_by": halted_by,
                     "is_super_agent": spec.is_super_agent,
                     "reply_only": spec.reply_only,
                     "spawned_by": getattr(spec, "_spawned_by", None),
@@ -544,10 +578,9 @@ class SwarmDashboard:
                 self._swarm.cancel_agent(agent_name)
 
         elif action == "send_message" and agent_name:
-            if self._swarm:
-                await self._swarm.send_to_agent(
-                    agent_name, sender="user", payload=data.get("message", "")
-                )
+            if self._swarm and hasattr(self._swarm, '_user_backend'):
+                message = data.get("message", "")
+                self._swarm._user_backend.inject_user_input(f"[to:{agent_name}] {message}")
 
         elif action == "save_swarm":
             name = data.get("name", "").strip()
@@ -571,6 +604,7 @@ class SwarmDashboard:
             self._agent_specs = config.agents
             self._swarm_name = config.name
             self._nudge_module = config.nudge_module
+            self._manager = config.manager
             await ws.send_json({"type": "specs_updated", "specs": self._get_specs_list()})
             await ws.send_json({"type": "swarm_loaded", "name": config.name})
 
@@ -657,6 +691,7 @@ class SwarmDashboard:
             cwd=project_root,
             checkpoint_dir=str(SWARM_SAVE_DIR / "checkpoints"),
             nudge_module=self._nudge_module,
+            manager=self._manager,
         )
 
         for spec_req in self._agent_specs:
@@ -802,6 +837,7 @@ class SwarmDashboard:
             cwd=project_root,
             checkpoint_dir=str(SWARM_SAVE_DIR / "checkpoints"),
             nudge_module=self._nudge_module,
+            manager=self._manager,
         )
 
         for spec_req in self._agent_specs:
@@ -954,8 +990,8 @@ class SwarmDashboard:
                     "name": node.spec.name,
                     "system_prompt": node.spec.system_prompt or "",
                     "prompt": str(node.spec.prompt),
-                    "allowed_tools": [t.to_claude_format() for t in node.spec.tools.allowed],
-                    "disallowed_tools": [t.to_claude_format() for t in node.spec.tools.disallowed],
+                    "allowed_tools": [t.to_claude_format() for t in node.spec.tools.allowed] if node.spec.tools else [],
+                    "disallowed_tools": [t.to_claude_format() for t in node.spec.tools.disallowed] if node.spec.tools else [],
                     "max_turns": node.spec.max_turns,
                     "max_budget_usd": node.spec.max_budget_usd,
                     "timeout_seconds": node.spec.timeout_seconds,

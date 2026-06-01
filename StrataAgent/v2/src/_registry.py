@@ -21,9 +21,15 @@ class AgentNode:
 
 
 class SwarmRegistry:
-    """Centralized registry of all agent state. Single source of truth."""
+    """Centralized registry of all agent state. Single source of truth.
+
+    All mutation methods acquire self._lock to prevent interleaving corruption
+    when multiple coroutines access the registry concurrently.
+    """
 
     def __init__(self):
+        self._lock = asyncio.Lock()
+
         # Core topology
         self.nodes: dict[str, AgentNode] = {}
         self.tasks: dict[str, asyncio.Task] = {}
@@ -49,6 +55,13 @@ class SwarmRegistry:
         self.token_usage: dict[str, float] = {}  # context % per agent
         self.stalled_agents: dict[str, float] = {}  # stall timestamps
         self.last_nudge_time: dict[str, float] = {}
+
+        # Done/exit signals for spawned agents
+        self.exit_signals: dict[str, bool] = {}  # name -> True means agent should exit
+
+        # User blocking state
+        self.blocked_on_user: bool = False  # True = swarm waiting for human input
+        self.blocked_by_agent: str | None = None  # which agent triggered the block
 
     # --- Query methods ---
 
@@ -86,56 +99,75 @@ class SwarmRegistry:
     def reply_only_agents(self) -> set[str]:
         return {n for n, nd in self.nodes.items() if nd.spec.reply_only}
 
-    # --- Mutation methods ---
+    # --- Mutation methods (all acquire lock for safety) ---
+
+    async def add_async(self, spec: AgentSpec, depends_on: list[str] | None = None,
+                        render_vars: dict[str, Any] | None = None) -> None:
+        """Thread-safe add. Use when called from concurrent coroutines (e.g., spawn)."""
+        async with self._lock:
+            self._add_inner(spec, depends_on, render_vars)
 
     def add(self, spec: AgentSpec, depends_on: list[str] | None = None,
             render_vars: dict[str, Any] | None = None) -> None:
+        """Synchronous add. Safe during init (before event loop runs concurrently)."""
+        self._add_inner(spec, depends_on, render_vars)
+
+    def _add_inner(self, spec: AgentSpec, depends_on: list[str] | None = None,
+                   render_vars: dict[str, Any] | None = None) -> None:
         node = AgentNode(spec=spec, depends_on=depends_on or [], render_vars=render_vars or {})
         self.nodes[spec.name] = node
         self.pause_tokens[spec.name] = PauseToken()
 
     async def remove(self, name: str, cancel_task: bool = True) -> None:
-        """Remove an agent and ALL associated state."""
-        # Cancel task
-        if cancel_task and name in self.tasks:
-            task = self.tasks[name]
-            if not task.done():
-                task.cancel()
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    pass
-            del self.tasks[name]
+        """Remove an agent and ALL associated state. Thread-safe."""
+        async with self._lock:
+            # Cancel task
+            if cancel_task and name in self.tasks:
+                task = self.tasks[name]
+                if not task.done():
+                    task.cancel()
+                    try:
+                        await task
+                    except asyncio.CancelledError:
+                        pass
+                del self.tasks[name]
 
-        # Core topology
-        self.nodes.pop(name, None)
-        self.visibility_graph.pop(name, None)
-        for visible_set in self.visibility_graph.values():
-            visible_set.discard(name)
+            # Core topology
+            self.nodes.pop(name, None)
+            self.visibility_graph.pop(name, None)
+            for visible_set in self.visibility_graph.values():
+                visible_set.discard(name)
 
-        # Runtime state
-        self.start_times.pop(name, None)
-        self.backends.pop(name, None)
-        self.costs.pop(name, None)
-        self.session_ids.pop(name, None)
-        self.models.pop(name, None)
-        self.pause_tokens.pop(name, None)
-        self.pending_successions.pop(name, None)
+            # Runtime state
+            self.start_times.pop(name, None)
+            self.backends.pop(name, None)
+            self.costs.pop(name, None)
+            self.session_ids.pop(name, None)
+            self.models.pop(name, None)
+            self.pause_tokens.pop(name, None)
+            self.pending_successions.pop(name, None)
+            self.exit_signals.pop(name, None)
 
-        # Nudge state
-        self.token_usage.pop(name, None)
-        self.stalled_agents.pop(name, None)
-        self.last_nudge_time.pop(name, None)
+            # Nudge state
+            self.token_usage.pop(name, None)
+            self.stalled_agents.pop(name, None)
+            self.last_nudge_time.pop(name, None)
 
         logger.info(f"[REGISTRY] Agent '{name}' removed")
 
-    def clear_agent_runtime(self, name: str) -> None:
-        """Clear runtime state for succession (agent stays in nodes)."""
-        old_session = self.session_ids.get(name)
-        self.session_history.setdefault(name, []).append(old_session or f"pre_swap_{name}")
-        self.session_ids.pop(name, None)
-        self.models.pop(name, None)
-        self.costs.pop(name, None)
-        self.backends.pop(name, None)
-        self.start_times.pop(name, None)
-        self.results.pop(name, None)
+    async def clear_agent_runtime(self, name: str) -> None:
+        """Clear runtime state for succession (agent stays in nodes). Thread-safe."""
+        async with self._lock:
+            old_session = self.session_ids.get(name)
+            self.session_history.setdefault(name, []).append(old_session or f"pre_swap_{name}")
+            self.session_ids.pop(name, None)
+            self.models.pop(name, None)
+            self.costs.pop(name, None)
+            self.backends.pop(name, None)
+            self.start_times.pop(name, None)
+            self.results.pop(name, None)
+
+    async def update_visibility(self, agent_name: str, visible_to: set[str]) -> None:
+        """Thread-safe visibility update."""
+        async with self._lock:
+            self.visibility_graph[agent_name] = visible_to

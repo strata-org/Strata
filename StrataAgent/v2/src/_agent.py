@@ -40,6 +40,7 @@ class SwarmAgent(Generic[T]):
         swarm_name: str = "",
         cwd: str | None = None,
         nudge_monitor: Any = None,
+        should_exit: Callable[[], bool] | None = None,
     ) -> None:
         self.spec = spec
         self.backend = backend
@@ -57,6 +58,7 @@ class SwarmAgent(Generic[T]):
         self._swarm_name = swarm_name
         self._cwd = cwd
         self._nudge_monitor = nudge_monitor
+        self._should_exit = should_exit
         self._last_emit_time = time.monotonic()
 
     # ─── Event emission ───────────────────────────────────────────────────
@@ -111,11 +113,13 @@ class SwarmAgent(Generic[T]):
                     "mcp__agent_spawn__interrupt_agent",
                     "mcp__agent_spawn__kill_agent",
                     "mcp__agent_spawn__my_workspace",
+                    "mcp__agent_spawn__done",
                 ]
             else:
                 allowed_tools = allowed_tools + [
                     "mcp__agent_spawn__sleep",
                     "mcp__agent_spawn__my_workspace",
+                    "mcp__agent_spawn__done",
                 ]
         if mcp_servers and "agent_directory" in mcp_servers:
             allowed_tools = allowed_tools + [
@@ -148,9 +152,11 @@ class SwarmAgent(Generic[T]):
 
         while True:
             # Stall detection: if no message in STALL_TIMEOUT seconds, nudge
+            # (disabled for agents with ignore_stall=True, e.g., user agent)
             try:
                 await self._emit("message", "[waiting for receiving message from backend model...]")
-                message = await asyncio.wait_for(msg_iter.__anext__(), timeout=STALL_TIMEOUT)
+                stall_timeout = None if self.spec.ignore_stall else STALL_TIMEOUT
+                message = await asyncio.wait_for(msg_iter.__anext__(), timeout=stall_timeout)
             except StopAsyncIteration:
                 return True  # Response complete, continue outer loop
             except asyncio.TimeoutError:
@@ -436,6 +442,12 @@ class SwarmAgent(Generic[T]):
 
                 # Exit if halted
                 if result.halted_by != "completion" or self.cancellation.is_cancelled:
+                    break
+
+                # Exit if done/succession signal set
+                if self._should_exit and self._should_exit():
+                    result.halted_by = "exit_signal"
+                    await self._emit("status_change", "exiting")
                     break
 
                 # Context management: compact for stateless agents, handoff for super agents

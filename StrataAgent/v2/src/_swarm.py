@@ -40,6 +40,7 @@ class Swarm:
         cwd: str | None = None,
         checkpoint_dir: str | None = None,
         nudge_module: str | None = None,
+        manager: str | None = None,
     ) -> None:
         self._registry = SwarmRegistry()
         self._cancellation = CancellationToken()
@@ -51,6 +52,7 @@ class Swarm:
         self._cwd = cwd
         self._wait_after_completion = wait_after_completion
         self._name = name
+        self._manager = manager
         self._telemetry = TelemetryStream()
         self._nudge_monitor = NudgeMonitor(
             nudge_module, self._telemetry,
@@ -475,7 +477,11 @@ class Swarm:
                 render_vars[dep_name] = self._registry.results[dep_name]
         render_vars["context"] = await self._context.snapshot()
 
-        backend = self._backend_factory()
+        # Use UserBackend for the virtual user agent, normal factory for others
+        if getattr(node.spec, '_is_virtual', False) and name == "user" and hasattr(self, '_user_backend'):
+            backend = self._user_backend
+        else:
+            backend = self._backend_factory()
         self._registry.backends[name] = backend
 
         mcp_servers: dict[str, Any] | None = None
@@ -655,11 +661,28 @@ class Swarm:
             swarm_name=self._name,
             cwd=self._cwd,
             nudge_monitor=self._nudge_monitor,
+            should_exit=lambda: self._registry.exit_signals.get(name, False),
         )
 
         result = await agent.run()
         self._registry.results[name] = result
         await self._context.set(f"result:{name}", result)
+
+        # Clear exit signal
+        self._registry.exit_signals.pop(name, None)
+
+        # Check if succession was registered (takes priority over done-exit)
+        if name in self._registry.pending_successions:
+            await self._check_succession(name)
+            return result
+
+        # If agent exited via exit signal with no succession → done exit, clean up
+        if result.halted_by == "exit_signal":
+            await self._registry.remove(name, cancel_task=False)
+            if self._checkpoint_manager:
+                self._checkpoint_manager.create(reason=f"done_exit:{name}")
+            return result
+
         await self._check_succession(name)
         return result
 
@@ -677,7 +700,7 @@ class Swarm:
             self._checkpoint_manager.create(reason=f"pre_succession:{agent_name}")
 
         # Clear stale per-instance state (new _run_node_inner will repopulate)
-        self._registry.clear_agent_runtime(agent_name)
+        await self._registry.clear_agent_runtime(agent_name)
 
         channel = self._channel_bus.get_or_create(f"{agent_name}:messages")
         channel.lock()
@@ -694,7 +717,85 @@ class Swarm:
         if self._checkpoint_manager:
             self._checkpoint_manager.create(reason=f"post_succession:{agent_name}")
 
+    def _register_user_agent(self) -> None:
+        """Register 'user' as a virtual agent — visible to all, has an inbox.
+        Uses UserBackend so it participates in the standard agent lifecycle."""
+        if "user" in self._registry.nodes:
+            return
+        from ._user_backend import UserBackend
+
+        async def _on_user_event(event_type: str, data: Any) -> None:
+            """Handle block/unblock events from UserBackend."""
+            if event_type == "blocked_on_user":
+                self._registry.blocked_on_user = True
+                self._registry.blocked_by_agent = data.get("from")
+                logger.info(f"[USER] Nudge monitor PAUSED (blocked by '{data.get('from')}')")
+                # Checkpoint before blocking — preserves state in case user takes long
+                if self._checkpoint_manager:
+                    self._checkpoint_manager.create(reason=f"blocked_on_user:{data.get('from')}")
+                # Emit to UI
+                if self._event_callback:
+                    event = AgentEvent(
+                        agent_name="user",
+                        event_type="blocked_on_user",
+                        data=data,
+                        timestamp_ms=int(asyncio.get_event_loop().time() * 1000),
+                    )
+                    await self._event_callback(event)
+            elif event_type == "unblocked_by_user":
+                self._registry.blocked_on_user = False
+                self._registry.blocked_by_agent = None
+                logger.info("[USER] Nudge monitor RESUMED (user responded)")
+                if self._event_callback:
+                    event = AgentEvent(
+                        agent_name="user",
+                        event_type="unblocked_by_user",
+                        data=data,
+                        timestamp_ms=int(asyncio.get_event_loop().time() * 1000),
+                    )
+                    await self._event_callback(event)
+            elif event_type == "user_message_received":
+                # Emit as a normal message event so UI shows it in user's tab
+                if self._event_callback:
+                    event = AgentEvent(
+                        agent_name="user",
+                        event_type="message",
+                        data=data.get("message", ""),
+                        timestamp_ms=int(asyncio.get_event_loop().time() * 1000),
+                    )
+                    await self._event_callback(event)
+
+        self._user_backend = UserBackend(on_event=_on_user_event, channel_bus=self._channel_bus)
+
+        from ._tools import ToolSet
+        manager = self._manager or "TaskManager"
+        user_tools = ToolSet()
+        user_spec = AgentSpec(
+            name="user",
+            prompt=(
+                f"You are the user agent. When you receive a message, wait for the human to respond. "
+                f"The human's response will be delivered to you automatically. "
+                f"Then forward it to {manager} using send_message."
+            ),
+            system_prompt=(
+                f"You are the bridge between the human user and {manager}. "
+                f"When {manager} sends you a message, the human sees it. "
+                f"When the human types a response, you receive it and forward it to {manager}. "
+                f"Always use send_message(to='{manager}', message=<response>)."
+            ),
+            tools=user_tools,
+            visibility={"visible_to": [manager], "can_see": [manager]},
+            reply_only=False,
+            ignore_stall=True,
+            description=f"Human user. Only {manager} communicates here.",
+        )
+        user_spec._is_virtual = True  # type: ignore[attr-defined]
+        self._registry.add(user_spec)
+
     async def run(self, mode: str = ExecutionMode.AWAIT_ALL) -> dict[str, AgentResult[Any]]:
+        # Register the "user" virtual agent before building visibility
+        self._register_user_agent()
+
         logger.info(f"[SWARM] Building visibility graph for {len(self._registry.nodes)} nodes...")
         try:
             self._build_visibility_graph()

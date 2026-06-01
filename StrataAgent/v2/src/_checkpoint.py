@@ -54,7 +54,9 @@ class CheckpointManager:
     def _get_session_ids(self) -> dict[str, str | None]:
         """Get current session IDs for all agents from their results."""
         sessions: dict[str, str | None] = {}
-        for name in self._swarm._registry.nodes:
+        for name, node in self._swarm._registry.nodes.items():
+            if getattr(node.spec, '_is_virtual', False):
+                continue
             sessions[name] = self._swarm.get_agent_session_id(name)
         return sessions
 

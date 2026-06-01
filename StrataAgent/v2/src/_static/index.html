@@ -574,9 +574,10 @@ function refreshNudges() {
         html += '<div class="empty">No nudge rules loaded. Check nudge_module in YAML config.</div>';
       } else {
         html += '<table style="width:100%;border-collapse:collapse;color:#aaa;margin-bottom:16px;">';
-        html += '<tr style="border-bottom:1px solid #333;color:#888;"><th style="text-align:left;padding:4px;">#</th><th style="text-align:left;">Rule</th><th>Prob</th><th>Cooldown</th></tr>';
+        html += '<tr style="border-bottom:1px solid #333;color:#888;"><th style="text-align:left;padding:4px;">#</th><th style="text-align:left;">Rule</th><th>Prob</th><th>Cooldown</th><th>Fired</th></tr>';
         (data.rules || []).forEach(r => {
-          html += `<tr style="border-bottom:1px solid #222;"><td style="padding:4px;">${r.idx}</td><td>${r.name}</td><td style="text-align:center;">${(r.probability*100).toFixed(0)}%</td><td style="text-align:center;">${r.cooldown_s}s</td></tr>`;
+          const fireColor = r.fire_count > 0 ? '#4caf50' : '#555';
+          html += `<tr style="border-bottom:1px solid #222;"><td style="padding:4px;">${r.idx}</td><td>${r.name}</td><td style="text-align:center;">${(r.probability*100).toFixed(0)}%</td><td style="text-align:center;">${r.cooldown_s}s</td><td style="text-align:center;color:${fireColor};">${r.fire_count || 0}</td></tr>`;
         });
         html += '</table>';
       }

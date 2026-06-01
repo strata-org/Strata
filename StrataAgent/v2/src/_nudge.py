@@ -85,6 +85,7 @@ class NudgeMonitor:
         self._check_interval = check_interval
         self._rules: list[tuple[Callable[[TelemetryView], str | None], float, float]] = []
         self._cooldowns: dict[tuple[str, int], float] = {}  # (agent, rule_idx) -> next_fire_time
+        self._fire_counts: dict[int, int] = {}  # rule_idx -> number of times fired
         self._agents_fallback: set[str] = set()
         self.pending = PendingRepliesTracker()
         self._task: asyncio.Task | None = None
@@ -154,11 +155,18 @@ class NudgeMonitor:
         if not self._channel_bus:
             return
 
+        # If swarm is blocked on user input, skip ALL nudging
+        if self._swarm and self._swarm._registry.blocked_on_user:
+            return
+
         # Send recovery tips for stalled agents first (before rule evaluation)
         await self._send_stall_recovery_tips()
 
         # Kill orphaned agents (spawned agents whose parent is gone)
         await self._kill_orphaned_agents()
+
+        # Reconnect service agents with stale MCP (overdue replies > 3 min)
+        await self._reconnect_stalled_services()
 
         if not self._rules:
             return
@@ -171,6 +179,8 @@ class NudgeMonitor:
                     pct = await backend.get_context_percentage()
                     if pct is not None:
                         registry.token_usage[name] = pct
+                        if pct >= 50:
+                            logger.info(f"[NUDGE] Context usage: {name} = {pct:.0f}%")
                 except Exception:
                     pass
 
@@ -237,8 +247,9 @@ class NudgeMonitor:
                                   f"roll={roll:.2f} > prob={prob}")
                 continue
 
-            # Fire — set cooldown and return
+            # Fire — set cooldown, increment counter, and return
             self._cooldowns[key] = now + cooldown_seconds
+            self._fire_counts[i] = self._fire_counts.get(i, 0) + 1
             self._log_history(now, agent_name, rule_name, i, "fired", tip)
             logger.info(f"[NUDGE] Fired for {agent_name} (rule {i}): {tip}")
             return tip
@@ -286,6 +297,38 @@ class NudgeMonitor:
         for name in orphans:
             logger.info(f"[NUDGE] Killing orphaned agent '{name}' (parent gone)")
             await self._swarm._remove_agent(name)
+
+    async def _reconnect_stalled_services(self) -> None:
+        """Reconnect reply_only agents that have overdue replies for >3 min.
+        This catches MCP server death — the agent received a request but can't respond
+        because its tool calls are timing out internally."""
+        if not self._swarm:
+            return
+        registry = self._swarm._registry
+        now = time.time()
+        for agent_name in list(self._reply_only_agents):
+            overdue = self.pending.get_overdue(agent_name, timeout_seconds=180)
+            if not overdue:
+                continue
+            # This agent has requests waiting >3 min — likely MCP is dead
+            backend = registry.backends.get(agent_name)
+            if not backend:
+                continue
+            # Only reconnect once per 5 min per agent (avoid spam)
+            last_reconnect_key = f"_reconnect_{agent_name}"
+            last_time = getattr(self, last_reconnect_key, 0)
+            if now - last_time < 300:
+                continue
+            setattr(self, last_reconnect_key, now)
+            logger.warning(f"[NUDGE] Service agent '{agent_name}' has {len(overdue)} overdue replies (>3 min). Forcing reconnect.")
+            try:
+                success = await backend.reconnect()
+                if success:
+                    logger.info(f"[NUDGE] Reconnected '{agent_name}' successfully")
+                else:
+                    logger.warning(f"[NUDGE] Reconnect failed for '{agent_name}'")
+            except Exception as e:
+                logger.error(f"[NUDGE] Reconnect error for '{agent_name}': {e}")
 
     def record_stall(self, agent_name: str) -> None:
         """Record that an agent stalled. Next evaluation cycle will send recovery tip."""

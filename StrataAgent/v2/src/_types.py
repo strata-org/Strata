@@ -69,6 +69,7 @@ class AgentSpec(Generic[T]):
     max_inbound_response: str | None = None  # Error shown to sender when inbound limit exceeded
     max_outbound_length: int | None = None  # Max chars in messages this agent sends
     max_outbound_response: str | None = None  # Error shown to this agent when outbound limit exceeded
+    ignore_stall: bool = False  # If True, never trigger stall detection (e.g., user agent)
     _base_system_prompt: str | None = None  # Original system prompt before workspace composition
 
 
