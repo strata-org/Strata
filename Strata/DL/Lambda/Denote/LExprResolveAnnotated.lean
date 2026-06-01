@@ -544,6 +544,48 @@ theorem TEnvWF_resolve_init [DecidableEq T.IDMeta]
       change Maps.find? [[]] y = some ty at hf
       simp [Maps.find?, Map.find?] at hf
 
+/-- `TEnvWF` is preserved through `resolveAux`: the output environment is
+    well-formed whenever the input is. -/
+theorem resolveAux_TEnvWF [DecidableEq T.IDMeta] [HasGen T.IDMeta]
+    (e : LExpr T.mono) (et : LExprT T.mono) (C : LContext T)
+    (Env Env' : TEnv T.IDMeta)
+    (h_res : resolveAux C Env e = .ok (et, Env'))
+    (h_envwf : TEnvWF Env)
+    (h_ne : Env.context.types ≠ [])
+    (h_fwf : FactoryWF C.functions) :
+    TEnvWF Env' :=
+  let props := resolveAux_properties e et C Env Env' h_res h_ne
+    h_envwf.aliasesWF h_fwf h_envwf.substFreshForGen h_envwf.ctxFreshForGen h_envwf.boundVarsFresh
+  TEnvWF.of_resolveAux e et C Env Env' h_res h_envwf h_ne h_fwf props.context
+
+/-- `TEnvWF` is preserved through `resolve`: the output environment is
+    well-formed whenever the input is. -/
+theorem resolve_TEnvWF [DecidableEq T.IDMeta] [HasGen T.IDMeta]
+    (e : LExpr T.mono) (e_typed : LExprT T.mono) (C : LContext T)
+    (Env Env' : TEnv T.IDMeta)
+    (h : e.resolve C Env = .ok (e_typed, Env'))
+    (h_envwf : TEnvWF Env)
+    (h_fwf : FactoryWF C.functions) :
+    TEnvWF Env' := by
+  unfold LExpr.resolve at h
+  simp only [Bind.bind, Except.bind] at h
+  generalize h_init : (if Env.context.types.isEmpty = true then
+      Env.updateContext { types := [[]], aliases := Env.context.aliases }
+    else Env) = Env0 at h
+  match h_res : resolveAux C Env0 e with
+  | .error _ => simp [h_res] at h
+  | .ok (et, Env_out) =>
+    simp [h_res] at h
+    obtain ⟨_, h_env'⟩ := h
+    subst h_env'
+    have h_envwf0 : TEnvWF Env0 := h_init ▸ TEnvWF_resolve_init Env h_envwf
+    have h_ne0 : Env0.context.types ≠ [] := by
+      subst h_init
+      split
+      · exact List.cons_ne_nil _ _
+      · rename_i h_not_empty; intro h_abs; simp_all; contradiction
+    exact resolveAux_TEnvWF e et C Env0 Env_out h_res h_envwf0 h_ne0 h_fwf
+
 /-! ### Layer 3: Main induction -/
 
 /-- Core soundness lemma: for any substitution `S` absorbing the output substitution,
