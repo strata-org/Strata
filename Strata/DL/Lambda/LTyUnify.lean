@@ -133,13 +133,13 @@ theorem Subst.mem_freeVars_of_mem_freeVars_remove (S : Subst) (id : TyIdentifier
   simp_all [Subst.freeVars]
   obtain ⟨aty, h1, h2⟩ := h
   apply Exists.intro aty; simp_all
-  simp [@Maps.mem_values_of_mem_keys_remove _ _ _ _ S id aty h1]
+  simp [Maps.values_remove_subset S id aty h1]
 
 theorem SubstWF_of_remove (id : TyIdentifier) (h : SubstWF S) :
   SubstWF (Maps.remove S id) := by
   simp_all [SubstWF]
   intro xty h_xty_in_keys h_xty_in_fvs
-  have h_xty_in_s_keys := @Maps.mem_keys_of_mem_keys_remove _ _ _ _ S id xty h_xty_in_keys
+  have h_xty_in_s_keys := Maps.keys_remove_subset S id xty h_xty_in_keys
   have h_xty_not_in_fvs := @h xty h_xty_in_s_keys
   have := @Subst.mem_freeVars_of_mem_freeVars_remove xty S id h_xty_in_fvs
   contradiction
@@ -728,7 +728,7 @@ def LTy.subst (S : Subst) (ty : LTy) : LTy :=
     .forAll xs (LMonoTy.subst S' ty)
   where go xs S :=
   match xs with
-  | [] => S | x :: rest => go rest (S.erase x)
+  | [] => S | x :: rest => go rest (S.remove x)
 
 theorem LTy.subst_forAll_nil (S : Subst) (mty : LMonoTy) :
     LTy.subst S (.forAll [] mty) = .forAll [] (LMonoTy.subst S mty) := by
