@@ -723,59 +723,9 @@ def builtinContext : Ctx :=
 -- Spine type resolution (chases .Name and .Attribute chains)
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Spine type resolution: chases `.Name` and `.Attribute` chains to determine the
-    PythonType of an expression. Used for method lookup — if `typeOfExpr ctx receiver`
-    yields a class name, we can look up methods in that class's CtxEntry. Returns `none`
-    for expressions whose type can't be statically determined (most things). -/
-def typeOfExpr (ctx : Ctx) : PythonExpr → Option PythonType
-  | .Name _ n _ => match ctx[PythonIdentifier.fromAst n]? with
-    | some (.variable ty) => some ty
-    | some (.function _) => none
-    | some (.class_ _ _ _) => none
-    | some (.module_ _) => none
-    | some .unresolved => none
-    | none => none
-  | .Attribute _ obj fieldName _ =>
-    match typeOfExpr ctx obj with
-    | some (.Name _ className _) => match ctx[PythonIdentifier.fromAst className]? with
-      | some (.class_ _ fields _) =>
-        fields.find? (fun (fName, _) => fName == PythonIdentifier.fromAst fieldName) |>.map (·.2)
-      | _ => none
-    | _ => none
-  | _ => none
+-- typeOfExpr and resolveMethodCall moved into the mutual block below
 
-/-- Resolves `receiver.method(...)` calls. Uses `typeOfExpr` to get the receiver's class,
-    then looks up `methodName` in that class's method list. Returns `.funcCall sig` on success,
-    `.unresolved` if the receiver type is unknown or the method doesn't exist. -/
-private def resolveMethodCall (ctx : Ctx) (receiver : PythonExpr) (methodName : Ann String SourceRange) : NodeInfo :=
-  let methId := PythonIdentifier.fromAst methodName
-  match typeOfExpr ctx receiver with
-  | some (.Name _ className _) =>
-    let classId := PythonIdentifier.fromAst className
-    match ctx[classId]? with
-    | some (.class_ _ _ methods) =>
-      match methods.find? (fun (mName, _) => mName == methId) with
-      | some (_, sig) => .funcCall sig
-      | none => .unresolved
-    | _ => .unresolved
-  | _ => match receiver with
-    | .Name _ rName _ =>
-      let rId := PythonIdentifier.fromAst rName
-      match ctx[rId]? with
-      | some (.module_ moduleRaw) =>
-        let moduleCtx : Ctx := moduleRaw.fold (fun c k v => c.insert k v) {}
-        match moduleCtx[methId]? with
-        | some (.function sig) => .funcCall sig
-        | some (.class_ cId _ methods) =>
-          let initId := PythonIdentifier.builtin "__init__"
-          match methods.find? (fun (mName, _) => mName == initId) with
-          | some (_, sig) => .classNew cId sig
-          | none =>
-            let emptySig : FuncSig := { name := initId, className := some cId, params := .static {required := [], optional := [], kwonly := []}, returnType := anyType, locals := [] }
-            .classNew cId emptySig
-        | _ => .unresolved
-      | _ => .unresolved
-    | _ => .unresolved
+-- resolveMethodCall moved into the mutual block below
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- AST Annotation Mapping (f : SourceRange → ResolvedAnn through the tree)
@@ -798,7 +748,7 @@ mutual
 
 /-- Extracts a `ParamList` from Python's `arguments` AST node. Resolves default expressions
     via `resolveExpr` so they carry `ResolvedAnn` annotations for later Translation use. -/
-partial def extractParamList (ctx : Ctx) (f : SourceRange → ResolvedAnn) (args : Python.arguments SourceRange) : ParamList :=
+partial def extractParamList (ctx : Ctx) (f : SourceRange → ResolvedAnn) (args : Python.arguments SourceRange) : ResolveM ParamList := do
   match args with
   | .mk_arguments _ posonlyargs argList _ kwonlyargs kwDefaults _ defaults =>
       let posAndRegular := posonlyargs.val.toList ++ argList.val.toList
@@ -807,13 +757,16 @@ partial def extractParamList (ctx : Ctx) (f : SourceRange → ResolvedAnn) (args
       let requiredCount := allPosParams.length - defaultCount
       let required := allPosParams.take requiredCount
       let optionalParams := allPosParams.drop requiredCount
-      let optional := optionalParams.zip (defaults.val.toList) |>.map fun ((n, ty), dflt) => (n, ty, resolveExpr ctx f dflt)
+      let mut optional : List (PythonIdentifier × PythonType × ResolvedPythonExpr) := []
+      for ((n, ty), dflt) in optionalParams.zip (defaults.val.toList) do
+        optional := optional ++ [(n, ty, ← resolveExpr ctx f dflt)]
       let kwParams := kwonlyargs.val.toList.map argToParam
-      let kwonly := kwParams.zip (kwDefaults.val.toList) |>.map fun ((n, ty), optExpr) =>
+      let mut kwonly : List (PythonIdentifier × PythonType × Option ResolvedPythonExpr) := []
+      for ((n, ty), optExpr) in kwParams.zip (kwDefaults.val.toList) do
         match optExpr with
-        | .some_expr _ e => (n, ty, some (resolveExpr ctx f e))
-        | .missing_expr _ => (n, ty, none)
-      { required, optional, kwonly }
+        | .some_expr _ e => kwonly := kwonly ++ [(n, ty, some (← resolveExpr ctx f e))]
+        | .missing_expr _ => kwonly := kwonly ++ [(n, ty, none)]
+      return { required, optional, kwonly }
 
 /-- Builds a complete `FuncSig` for a function/method definition. Determines instance vs static
     (if `className` is set and no `@staticmethod`, first param becomes receiver), computes locals,
@@ -822,8 +775,8 @@ partial def extractFuncSig (ctx : Ctx) (f : SourceRange → ResolvedAnn)
     (pythonName : PythonIdentifier) (className : Option PythonIdentifier)
     (args : Python.arguments SourceRange) (decorators : Array PythonExpr)
     (returns : Ann (Option PythonExpr) SourceRange)
-    (body : PythonProgram) : FuncSig :=
-  let paramList := extractParamList ctx f args
+    (body : PythonProgram) : ResolveM FuncSig := do
+  let paramList ← extractParamList ctx f args
   let retTy := annotationToPythonType returns.val
   let allParamNames := extractAllParamNames args
   let locals := computeLocals body allParamNames
@@ -833,13 +786,13 @@ partial def extractFuncSig (ctx : Ctx) (f : SourceRange → ResolvedAnn)
     else match paramList.required with
       | (recv, _) :: rest => .instance recv { paramList with required := rest }
       | [] => .static paramList
-  { name := pythonName, className, params := funcParams, returnType := retTy, locals }
+  return { name := pythonName, className, params := funcParams, returnType := retTy, locals }
 
 /-- Builds the body context for resolving statements inside a function. Extends ctx with
     all params (including vararg/kwarg) and locals. Used by `resolveFuncDef` to create the
     scope in which the function body is resolved. -/
-partial def resolveFunctionBody (ctx : Ctx) (f : SourceRange → ResolvedAnn) (args : Python.arguments SourceRange) (body : PythonProgram) : Ctx :=
-  let pl := extractParamList ctx f args
+partial def resolveFunctionBody (ctx : Ctx) (f : SourceRange → ResolvedAnn) (args : Python.arguments SourceRange) (body : PythonProgram) : ResolveM Ctx := do
+  let pl ← extractParamList ctx f args
   let allParams := pl.required ++ pl.optional.map (fun (n, ty, _) => (n, ty)) ++ pl.kwonly.map (fun (n, ty, _) => (n, ty))
   let varargKwarg : List (PythonIdentifier × PythonType) := match args with
     | .mk_arguments _ _ _ vararg _ _ kwarg _ =>
@@ -850,7 +803,7 @@ partial def resolveFunctionBody (ctx : Ctx) (f : SourceRange → ResolvedAnn) (a
   let locals := computeLocals body allParamNames
   let bodyCtx := allParams.foldl (fun c (n, ty) => c.insert n (CtxEntry.variable ty)) ctx
   let bodyCtx := varargKwarg.foldl (fun c (n, ty) => c.insert n (CtxEntry.variable ty)) bodyCtx
-  locals.foldl (fun c (n, ty) => c.insert n (CtxEntry.variable ty)) bodyCtx
+  return locals.foldl (fun c (n, ty) => c.insert n (CtxEntry.variable ty)) bodyCtx
 
 partial def resolveExprCtx (f : SourceRange → ResolvedAnn) : Python.expr_context SourceRange → Python.expr_context ResolvedAnn
   | .Load a => .Load (f a) | .Store a => .Store (f a) | .Del a => .Del (f a)
@@ -883,46 +836,86 @@ partial def resolveCmpop (f : SourceRange → ResolvedAnn) : Python.cmpop Source
   | .Gt a => .Gt (f a) | .GtE a => .GtE (f a) | .Is a => .Is (f a) | .IsNot a => .IsNot (f a)
   | .In a => .In (f a) | .NotIn a => .NotIn (f a)
 
-partial def resolveOptExpr (ctx : Ctx) (f : SourceRange → ResolvedAnn) : Python.opt_expr SourceRange → Python.opt_expr ResolvedAnn
-  | .some_expr a e => .some_expr (f a) (resolveExpr ctx f e)
-  | .missing_expr a => .missing_expr (f a)
+partial def resolveOptExpr (ctx : Ctx) (f : SourceRange → ResolvedAnn) : Python.opt_expr SourceRange → ResolveM (Python.opt_expr ResolvedAnn)
+  | .some_expr a e => do return .some_expr (f a) (← resolveExpr ctx f e)
+  | .missing_expr a => return .missing_expr (f a)
 
-partial def resolveKeyword (ctx : Ctx) (f : SourceRange → ResolvedAnn) : Python.keyword SourceRange → Python.keyword ResolvedAnn
-  | .mk_keyword a arg val => .mk_keyword (f a) (mapAnnOpt f (mapAnnVal f) arg) (resolveExpr ctx f val)
+partial def resolveKeyword (ctx : Ctx) (f : SourceRange → ResolvedAnn) : Python.keyword SourceRange → ResolveM (Python.keyword ResolvedAnn)
+  | .mk_keyword a arg val => do return .mk_keyword (f a) (mapAnnOpt f (mapAnnVal f) arg) (← resolveExpr ctx f val)
 
-partial def resolveArg (ctx : Ctx) (f : SourceRange → ResolvedAnn) : Python.arg SourceRange → Python.arg ResolvedAnn
-  | .mk_arg a name ann tc => .mk_arg (f a) (mapAnnVal f name) (mapAnnOpt f (resolveExpr ctx f) ann) (mapAnnOpt f (mapAnnVal f) tc)
+partial def resolveArg (ctx : Ctx) (f : SourceRange → ResolvedAnn) : Python.arg SourceRange → ResolveM (Python.arg ResolvedAnn)
+  | .mk_arg a name ann tc => do
+    let rAnn ← match ann.val with
+      | some e => pure (some (← resolveExpr ctx f e))
+      | none => pure none
+    return .mk_arg (f a) (mapAnnVal f name) ⟨f ann.ann, rAnn⟩ (mapAnnOpt f (mapAnnVal f) tc)
 
-partial def resolveArguments (ctx : Ctx) (f : SourceRange → ResolvedAnn) : Python.arguments SourceRange → Python.arguments ResolvedAnn
-  | .mk_arguments a posonlyargs args vararg kwonlyargs kwDefaults kwarg defaults =>
-      .mk_arguments (f a)
-        (mapAnnArr f (resolveArg ctx f) posonlyargs)
-        (mapAnnArr f (resolveArg ctx f) args)
-        (mapAnnOpt f (resolveArg ctx f) vararg)
-        (mapAnnArr f (resolveArg ctx f) kwonlyargs)
-        (mapAnnArr f (resolveOptExpr ctx f) kwDefaults)
-        (mapAnnOpt f (resolveArg ctx f) kwarg)
-        (mapAnnArr f (resolveExpr ctx f) defaults)
+partial def resolveArguments (ctx : Ctx) (f : SourceRange → ResolvedAnn) : Python.arguments SourceRange → ResolveM (Python.arguments ResolvedAnn)
+  | .mk_arguments a posonlyargs args vararg kwonlyargs kwDefaults kwarg defaults => do
+      let mut rPosonlyargs : Array (Python.arg ResolvedAnn) := #[]
+      for arg in posonlyargs.val do rPosonlyargs := rPosonlyargs.push (← resolveArg ctx f arg)
+      let mut rArgs : Array (Python.arg ResolvedAnn) := #[]
+      for arg in args.val do rArgs := rArgs.push (← resolveArg ctx f arg)
+      let rVararg ← match vararg.val with
+        | some a => pure (some (← resolveArg ctx f a))
+        | none => pure none
+      let mut rKwonlyargs : Array (Python.arg ResolvedAnn) := #[]
+      for arg in kwonlyargs.val do rKwonlyargs := rKwonlyargs.push (← resolveArg ctx f arg)
+      let mut rKwDefaults : Array (Python.opt_expr ResolvedAnn) := #[]
+      for oe in kwDefaults.val do rKwDefaults := rKwDefaults.push (← resolveOptExpr ctx f oe)
+      let rKwarg ← match kwarg.val with
+        | some a => pure (some (← resolveArg ctx f a))
+        | none => pure none
+      let mut rDefaults : Array ResolvedPythonExpr := #[]
+      for d in defaults.val do rDefaults := rDefaults.push (← resolveExpr ctx f d)
+      return .mk_arguments (f a)
+        ⟨f posonlyargs.ann, rPosonlyargs⟩
+        ⟨f args.ann, rArgs⟩
+        ⟨f vararg.ann, rVararg⟩
+        ⟨f kwonlyargs.ann, rKwonlyargs⟩
+        ⟨f kwDefaults.ann, rKwDefaults⟩
+        ⟨f kwarg.ann, rKwarg⟩
+        ⟨f defaults.ann, rDefaults⟩
 
-partial def resolveComprehension (ctx : Ctx) (f : SourceRange → ResolvedAnn) (comp : Python.comprehension SourceRange) : Ctx × Python.comprehension ResolvedAnn :=
+partial def resolveComprehension (ctx : Ctx) (f : SourceRange → ResolvedAnn) (comp : Python.comprehension SourceRange) : ResolveM (Ctx × Python.comprehension ResolvedAnn) := do
   match comp with
   | .mk_comprehension a target iter ifs isAsync =>
       let targetNames := collectNamesFromTarget target
       let compCtx := targetNames.foldl (fun c n => c.insert n (CtxEntry.variable (annotationToPythonType Option.none))) ctx
-      (compCtx, .mk_comprehension (f a) (resolveExpr compCtx f target) (resolveExpr ctx f iter)
-        (mapAnnArr f (resolveExpr compCtx f) ifs) (resolveInt f isAsync))
+      let rTarget ← resolveExpr compCtx f target
+      let rIter ← resolveExpr ctx f iter
+      let mut rIfs : Array ResolvedPythonExpr := #[]
+      for i in ifs.val do rIfs := rIfs.push (← resolveExpr compCtx f i)
+      return (compCtx, .mk_comprehension (f a) rTarget rIter ⟨f ifs.ann, rIfs⟩ (resolveInt f isAsync))
 
-partial def resolveComprehensions (ctx : Ctx) (f : SourceRange → ResolvedAnn) (comps : List (Python.comprehension SourceRange)) : Ctx × List (Python.comprehension ResolvedAnn) :=
-  comps.foldl (init := (ctx, ([] : List (Python.comprehension ResolvedAnn)))) fun acc comp =>
-    let (c, resolved) := acc
-    let (c', r) := resolveComprehension c f comp
-    (c', resolved ++ [r])
+partial def resolveComprehensions (ctx : Ctx) (f : SourceRange → ResolvedAnn) (comps : List (Python.comprehension SourceRange)) : ResolveM (Ctx × List (Python.comprehension ResolvedAnn)) := do
+  let mut c := ctx
+  let mut resolved : List (Python.comprehension ResolvedAnn) := []
+  for comp in comps do
+    let (c', r) ← resolveComprehension c f comp
+    c := c'
+    resolved := resolved ++ [r]
+  return (c, resolved)
 
-partial def resolveTypeParam (ctx : Ctx) (f : SourceRange → ResolvedAnn) : Python.type_param SourceRange → Python.type_param ResolvedAnn
-  | .TypeVar a name bound def_ => .TypeVar (f a) (mapAnnVal f name)
-      (mapAnnOpt f (resolveExpr ctx f) bound) (mapAnnOpt f (resolveExpr ctx f) def_)
-  | .TypeVarTuple a name def_ => .TypeVarTuple (f a) (mapAnnVal f name) (mapAnnOpt f (resolveExpr ctx f) def_)
-  | .ParamSpec a name def_ => .ParamSpec (f a) (mapAnnVal f name) (mapAnnOpt f (resolveExpr ctx f) def_)
+partial def resolveTypeParam (ctx : Ctx) (f : SourceRange → ResolvedAnn) : Python.type_param SourceRange → ResolveM (Python.type_param ResolvedAnn)
+  | .TypeVar a name bound def_ => do
+    let rBound ← match bound.val with
+      | some e => pure (some (← resolveExpr ctx f e))
+      | none => pure none
+    let rDef ← match def_.val with
+      | some e => pure (some (← resolveExpr ctx f e))
+      | none => pure none
+    return .TypeVar (f a) (mapAnnVal f name) ⟨f bound.ann, rBound⟩ ⟨f def_.ann, rDef⟩
+  | .TypeVarTuple a name def_ => do
+    let rDef ← match def_.val with
+      | some e => pure (some (← resolveExpr ctx f e))
+      | none => pure none
+    return .TypeVarTuple (f a) (mapAnnVal f name) ⟨f def_.ann, rDef⟩
+  | .ParamSpec a name def_ => do
+    let rDef ← match def_.val with
+      | some e => pure (some (← resolveExpr ctx f e))
+      | none => pure none
+    return .ParamSpec (f a) (mapAnnVal f name) ⟨f def_.ann, rDef⟩
 
 /-- The core expression resolver. Annotates each expression node with appropriate `NodeInfo`:
     - `.Name` → look up in ctx, annotate with `.variable`
@@ -930,7 +923,7 @@ partial def resolveTypeParam (ctx : Ctx) (f : SourceRange → ResolvedAnn) : Pyt
     - `.Attribute` → annotate with `.attribute` (bare field name; Elaboration resolves via receiver type)
     - `.BinOp`/`.UnaryOp`/`.Compare`/`.BoolOp` → create operator FuncSig, annotate with `.funcCall`
     - Comprehensions → extend ctx with iteration variables before resolving element expression -/
-partial def resolveExpr (ctx : Ctx) (f : SourceRange → ResolvedAnn) (e : PythonExpr) : ResolvedPythonExpr :=
+partial def resolveExpr (ctx : Ctx) (f : SourceRange → ResolvedAnn) (e : PythonExpr) : ResolveM ResolvedPythonExpr := do
   match e with
   | .Name a n ectx =>
       let nId := PythonIdentifier.fromAst n
@@ -941,76 +934,161 @@ partial def resolveExpr (ctx : Ctx) (f : SourceRange → ResolvedAnn) (e : Pytho
         | some (.module_ _) => .irrelevant
         | some .unresolved => .unresolved
         | none => .unresolved
-      .Name { sr := a, info } (mapAnnVal f n) (resolveExprCtx f ectx)
+      return .Name { sr := a, info } (mapAnnVal f n) (resolveExprCtx f ectx)
   | .Call a func args kwargs =>
-      let callInfo : NodeInfo := match func with
+      let callInfo : NodeInfo ← match func with
         | .Name _ n _ =>
           let nId := PythonIdentifier.fromAst n
           match ctx[nId]? with
-          | some (.function sig) => .funcCall sig
+          | some (.function sig) => pure (.funcCall sig)
           | some (.class_ cId _ methods) =>
               let initId := PythonIdentifier.builtin "__init__"
               match methods.find? (fun (mName, _) => mName == initId) with
-              | some (_, sig) => .classNew cId sig
+              | some (_, sig) => pure (.classNew cId sig)
               | none =>
                 let emptySig : FuncSig := { name := initId, className := some cId, params := .static {required := [], optional := [], kwonly := []}, returnType := anyType, locals := [] }
-                .classNew cId emptySig
-          | _ => .unresolved
+                pure (.classNew cId emptySig)
+          | _ => pure .unresolved
         | .Attribute _ receiver methodName _ =>
             resolveMethodCall ctx receiver methodName
-        | _ => .unresolved
-      .Call { sr := a, info := callInfo } (resolveExpr ctx f func)
-        (mapAnnArr f (resolveExpr ctx f) args)
-        (mapAnnArr f (resolveKeyword ctx f) kwargs)
+        | _ => pure .unresolved
+      let rFunc ← resolveExpr ctx f func
+      let mut rArgs : Array ResolvedPythonExpr := #[]
+      for arg in args.val do
+        rArgs := rArgs.push (← resolveExpr ctx f arg)
+      let mut rKwargs : Array (Python.keyword ResolvedAnn) := #[]
+      for kw in kwargs.val do
+        rKwargs := rKwargs.push (← resolveKeyword ctx f kw)
+      return .Call { sr := a, info := callInfo } rFunc ⟨f args.ann, rArgs⟩ ⟨f kwargs.ann, rKwargs⟩
   | .Attribute a obj attr ectx =>
-      .Attribute { sr := a, info := .attribute (PythonIdentifier.fromAst attr) } (resolveExpr ctx f obj) (mapAnnVal f attr) (resolveExprCtx f ectx)
-  | .Constant a c tc => .Constant (f a) (resolveConstant f c) (mapAnnOpt f (mapAnnVal f) tc)
+      let rObj ← resolveExpr ctx f obj
+      return .Attribute { sr := a, info := .attribute (PythonIdentifier.fromAst attr) } rObj (mapAnnVal f attr) (resolveExprCtx f ectx)
+  | .Constant a c tc => return .Constant (f a) (resolveConstant f c) (mapAnnOpt f (mapAnnVal f) tc)
   | .BinOp a left op right =>
       let opSig : FuncSig := { name := .builtin (operatorToLaurel op), className := none, params := .static {required := [(.builtin "left", anyType), (.builtin "right", anyType)], optional := [], kwonly := []}, returnType := anyType, locals := [] }
-      .BinOp { sr := a, info := .funcCall opSig } (resolveExpr ctx f left) (resolveOperator f op) (resolveExpr ctx f right)
+      let rLeft ← resolveExpr ctx f left
+      let rRight ← resolveExpr ctx f right
+      return .BinOp { sr := a, info := .funcCall opSig } rLeft (resolveOperator f op) rRight
   | .BoolOp a op operands =>
       let opSig : FuncSig := { name := .builtin (boolopToLaurel op), className := none, params := .static {required := [(.builtin "left", anyType), (.builtin "right", anyType)], optional := [], kwonly := []}, returnType := anyType, locals := [] }
-      .BoolOp { sr := a, info := .funcCall opSig } (resolveBoolop f op) (mapAnnArr f (resolveExpr ctx f) operands)
+      let mut rOperands : Array ResolvedPythonExpr := #[]
+      for operand in operands.val do
+        rOperands := rOperands.push (← resolveExpr ctx f operand)
+      return .BoolOp { sr := a, info := .funcCall opSig } (resolveBoolop f op) ⟨f operands.ann, rOperands⟩
   | .UnaryOp a op operand =>
       let opSig : FuncSig := { name := .builtin (unaryopToLaurel op), className := none, params := .static {required := [(.builtin "operand", anyType)], optional := [], kwonly := []}, returnType := anyType, locals := [] }
-      .UnaryOp { sr := a, info := .funcCall opSig } (resolveUnaryop f op) (resolveExpr ctx f operand)
+      let rOperand ← resolveExpr ctx f operand
+      return .UnaryOp { sr := a, info := .funcCall opSig } (resolveUnaryop f op) rOperand
   | .Compare a left ops comps =>
       let opName := match ops.val[0]? with | some op => cmpopToLaurel op | none => "PEq"
       let opSig : FuncSig := { name := .builtin opName, className := none, params := .static {required := [(.builtin "left", anyType), (.builtin "right", anyType)], optional := [], kwonly := []}, returnType := anyType, locals := [] }
-      .Compare { sr := a, info := .funcCall opSig } (resolveExpr ctx f left) (mapAnnArr f (resolveCmpop f) ops) (mapAnnArr f (resolveExpr ctx f) comps)
-  | .IfExp a test body orelse => .IfExp (f a) (resolveExpr ctx f test) (resolveExpr ctx f body) (resolveExpr ctx f orelse)
-  | .Dict a keys vals => .Dict (f a) (mapAnnArr f (resolveOptExpr ctx f) keys) (mapAnnArr f (resolveExpr ctx f) vals)
-  | .Set a elts => .Set (f a) (mapAnnArr f (resolveExpr ctx f) elts)
+      let rLeft ← resolveExpr ctx f left
+      let mut rComps : Array ResolvedPythonExpr := #[]
+      for comp in comps.val do
+        rComps := rComps.push (← resolveExpr ctx f comp)
+      return .Compare { sr := a, info := .funcCall opSig } rLeft (mapAnnArr f (resolveCmpop f) ops) ⟨f comps.ann, rComps⟩
+  | .IfExp a test body orelse =>
+      let rTest ← resolveExpr ctx f test
+      let rBody ← resolveExpr ctx f body
+      let rElse ← resolveExpr ctx f orelse
+      return .IfExp (f a) rTest rBody rElse
+  | .Dict a keys vals =>
+      let mut rKeys : Array (Python.opt_expr ResolvedAnn) := #[]
+      for k in keys.val do
+        rKeys := rKeys.push (← resolveOptExpr ctx f k)
+      let mut rVals : Array ResolvedPythonExpr := #[]
+      for v in vals.val do
+        rVals := rVals.push (← resolveExpr ctx f v)
+      return .Dict (f a) ⟨f keys.ann, rKeys⟩ ⟨f vals.ann, rVals⟩
+  | .Set a elts =>
+      let mut rElts : Array ResolvedPythonExpr := #[]
+      for elt in elts.val do
+        rElts := rElts.push (← resolveExpr ctx f elt)
+      return .Set (f a) ⟨f elts.ann, rElts⟩
   | .ListComp a elt gens =>
-      let (compCtx, resolvedGens) := resolveComprehensions ctx f gens.val.toList
-      .ListComp (f a) (resolveExpr compCtx f elt) ⟨f gens.ann, resolvedGens.toArray⟩
+      let (compCtx, resolvedGens) ← resolveComprehensions ctx f gens.val.toList
+      let rElt ← resolveExpr compCtx f elt
+      return .ListComp (f a) rElt ⟨f gens.ann, resolvedGens.toArray⟩
   | .SetComp a elt gens =>
-      let (compCtx, resolvedGens) := resolveComprehensions ctx f gens.val.toList
-      .SetComp (f a) (resolveExpr compCtx f elt) ⟨f gens.ann, resolvedGens.toArray⟩
+      let (compCtx, resolvedGens) ← resolveComprehensions ctx f gens.val.toList
+      let rElt ← resolveExpr compCtx f elt
+      return .SetComp (f a) rElt ⟨f gens.ann, resolvedGens.toArray⟩
   | .DictComp a key val gens =>
-      let (compCtx, resolvedGens) := resolveComprehensions ctx f gens.val.toList
-      .DictComp (f a) (resolveExpr compCtx f key) (resolveExpr compCtx f val) ⟨f gens.ann, resolvedGens.toArray⟩
+      let (compCtx, resolvedGens) ← resolveComprehensions ctx f gens.val.toList
+      let rKey ← resolveExpr compCtx f key
+      let rVal ← resolveExpr compCtx f val
+      return .DictComp (f a) rKey rVal ⟨f gens.ann, resolvedGens.toArray⟩
   | .GeneratorExp a elt gens =>
-      let (compCtx, resolvedGens) := resolveComprehensions ctx f gens.val.toList
-      .GeneratorExp (f a) (resolveExpr compCtx f elt) ⟨f gens.ann, resolvedGens.toArray⟩
-  | .Await a inner => .Await (f a) (resolveExpr ctx f inner)
-  | .Yield a valOpt => .Yield (f a) (mapAnnOpt f (resolveExpr ctx f) valOpt)
-  | .YieldFrom a inner => .YieldFrom (f a) (resolveExpr ctx f inner)
-  | .FormattedValue a value conv fmt => .FormattedValue (f a) (resolveExpr ctx f value) (resolveInt f conv) (mapAnnOpt f (resolveExpr ctx f) fmt)
-  | .JoinedStr a values => .JoinedStr (f a) (mapAnnArr f (resolveExpr ctx f) values)
-  | .Subscript a obj slice ectx => .Subscript (f a) (resolveExpr ctx f obj) (resolveExpr ctx f slice) (resolveExprCtx f ectx)
-  | .Starred a inner ectx => .Starred (f a) (resolveExpr ctx f inner) (resolveExprCtx f ectx)
-  | .Tuple a elts ectx => .Tuple (f a) (mapAnnArr f (resolveExpr ctx f) elts) (resolveExprCtx f ectx)
-  | .List a elts ectx => .List (f a) (mapAnnArr f (resolveExpr ctx f) elts) (resolveExprCtx f ectx)
-  | .NamedExpr a target value => .NamedExpr (f a) (resolveExpr ctx f target) (resolveExpr ctx f value)
-  | .Lambda a args body =>
-      let pl := extractParamList ctx f args
+      let (compCtx, resolvedGens) ← resolveComprehensions ctx f gens.val.toList
+      let rElt ← resolveExpr compCtx f elt
+      return .GeneratorExp (f a) rElt ⟨f gens.ann, resolvedGens.toArray⟩
+  | .Await a inner => return .Await (f a) (← resolveExpr ctx f inner)
+  | .Yield a valOpt =>
+      let rVal ← match valOpt.val with
+        | some v => pure (some (← resolveExpr ctx f v))
+        | none => pure none
+      return .Yield (f a) ⟨f valOpt.ann, rVal⟩
+  | .YieldFrom a inner => return .YieldFrom (f a) (← resolveExpr ctx f inner)
+  | .FormattedValue a value conv fmt =>
+      let rValue ← resolveExpr ctx f value
+      let rFmt ← match fmt.val with
+        | some fmtExpr => pure (some (← resolveExpr ctx f fmtExpr))
+        | none => pure none
+      return .FormattedValue (f a) rValue (resolveInt f conv) ⟨f fmt.ann, rFmt⟩
+  | .JoinedStr a values =>
+      let mut rValues : Array ResolvedPythonExpr := #[]
+      for v in values.val do
+        rValues := rValues.push (← resolveExpr ctx f v)
+      return .JoinedStr (f a) ⟨f values.ann, rValues⟩
+  | .Subscript a obj slice ectx =>
+      let rObj ← resolveExpr ctx f obj
+      let rSlice ← resolveExpr ctx f slice
+      return .Subscript (f a) rObj rSlice (resolveExprCtx f ectx)
+  | .Starred a inner ectx =>
+      return .Starred (f a) (← resolveExpr ctx f inner) (resolveExprCtx f ectx)
+  | .Tuple a elts ectx =>
+      let mut rElts : Array ResolvedPythonExpr := #[]
+      for elt in elts.val do
+        rElts := rElts.push (← resolveExpr ctx f elt)
+      return .Tuple (f a) ⟨f elts.ann, rElts⟩ (resolveExprCtx f ectx)
+  | .List a elts ectx =>
+      let mut rElts : Array ResolvedPythonExpr := #[]
+      for elt in elts.val do
+        rElts := rElts.push (← resolveExpr ctx f elt)
+      return .List (f a) ⟨f elts.ann, rElts⟩ (resolveExprCtx f ectx)
+  | .NamedExpr a target value =>
+      let rTarget ← resolveExpr ctx f target
+      let rValue ← resolveExpr ctx f value
+      return .NamedExpr (f a) rTarget rValue
+  | .Lambda a args body => do
+      let pl ← extractParamList ctx f args
       let allParams := pl.required ++ pl.optional.map (fun (n, ty, _) => (n, ty)) ++ pl.kwonly.map (fun (n, ty, _) => (n, ty))
       let lambdaCtx := allParams.foldl (fun c (n, ty) => c.insert n (CtxEntry.variable ty)) ctx
-      .Lambda (f a) (resolveArguments lambdaCtx f args) (resolveExpr lambdaCtx f body)
-  | .Slice a start stop step => .Slice (f a) (mapAnnOpt f (resolveExpr ctx f) start) (mapAnnOpt f (resolveExpr ctx f) stop) (mapAnnOpt f (resolveExpr ctx f) step)
-  | .TemplateStr a parts => .TemplateStr (f a) (mapAnnArr f (resolveExpr ctx f) parts)
-  | .Interpolation a value conv fmtSpec fmt => .Interpolation (f a) (resolveExpr ctx f value) (resolveConstant f conv) (resolveInt f fmtSpec) (mapAnnOpt f (resolveExpr ctx f) fmt)
+      let rBody ← resolveExpr lambdaCtx f body
+      let rArgs ← resolveArguments lambdaCtx f args
+      return .Lambda (f a) rArgs rBody
+  | .Slice a start stop step =>
+      let rStart ← match start.val with
+        | some e => pure (some (← resolveExpr ctx f e))
+        | none => pure none
+      let rStop ← match stop.val with
+        | some e => pure (some (← resolveExpr ctx f e))
+        | none => pure none
+      let rStep ← match step.val with
+        | some e => pure (some (← resolveExpr ctx f e))
+        | none => pure none
+      return .Slice (f a) ⟨f start.ann, rStart⟩ ⟨f stop.ann, rStop⟩ ⟨f step.ann, rStep⟩
+  | .TemplateStr a parts =>
+      let mut rParts : Array ResolvedPythonExpr := #[]
+      for p in parts.val do
+        rParts := rParts.push (← resolveExpr ctx f p)
+      return .TemplateStr (f a) ⟨f parts.ann, rParts⟩
+  | .Interpolation a value conv fmtSpec fmt => do
+      let rValue ← resolveExpr ctx f value
+      let rFmt ← match fmt.val with
+        | some e => pure (some (← resolveExpr ctx f e))
+        | none => pure none
+      return .Interpolation (f a) rValue (resolveConstant f conv) (resolveInt f fmtSpec) ⟨f fmt.ann, rFmt⟩
 
 partial def resolveAlias (f : SourceRange → ResolvedAnn) : Python.alias SourceRange → Python.alias ResolvedAnn
   | .mk_alias a name asname => .mk_alias (f a) (mapAnnVal f name) (mapAnnOpt f (mapAnnVal f) asname)
@@ -1018,11 +1096,11 @@ partial def resolveAlias (f : SourceRange → ResolvedAnn) : Python.alias Source
 /-- Resolves a `with` item: uses `typeOfExpr` on the context expression to find the class,
     then looks up `__enter__` and `__exit__` in its method list. Annotates with `.withCtx`
     carrying both sigs so Translation can emit `StaticCall enter [mgr]` / `StaticCall exit [mgr]`. -/
-partial def resolveWithitem (ctx : Ctx) (f : SourceRange → ResolvedAnn) : Python.withitem SourceRange → Python.withitem ResolvedAnn
-  | .mk_withitem a ctxExpr optVars =>
+partial def resolveWithitem (ctx : Ctx) (f : SourceRange → ResolvedAnn) : Python.withitem SourceRange → ResolveM (Python.withitem ResolvedAnn)
+  | .mk_withitem a ctxExpr optVars => do
       let enterId := PythonIdentifier.builtin "__enter__"
       let exitId := PythonIdentifier.builtin "__exit__"
-      let info := match typeOfExpr ctx ctxExpr with
+      let info ← match ← typeOfExpr ctx ctxExpr with
         | some (.Name _ className _) =>
           let classId := PythonIdentifier.fromAst className
           match ctx[classId]? with
@@ -1030,11 +1108,15 @@ partial def resolveWithitem (ctx : Ctx) (f : SourceRange → ResolvedAnn) : Pyth
             let enterSig := methods.find? (fun (mName, _) => mName == enterId) |>.map (·.2)
             let exitSig := methods.find? (fun (mName, _) => mName == exitId) |>.map (·.2)
             match enterSig, exitSig with
-            | some es, some xs => NodeInfo.withCtx es xs
-            | _, _ => NodeInfo.unresolved
-          | _ => NodeInfo.unresolved
-        | _ => NodeInfo.unresolved
-      .mk_withitem { sr := a, info } (resolveExpr ctx f ctxExpr) (mapAnnOpt f (resolveExpr ctx f) optVars)
+            | some es, some xs => pure (NodeInfo.withCtx es xs)
+            | _, _ => pure NodeInfo.unresolved
+          | _ => pure NodeInfo.unresolved
+        | _ => pure NodeInfo.unresolved
+      let rCtxExpr ← resolveExpr ctx f ctxExpr
+      let rOptVars ← match optVars.val with
+        | some v => pure (some (← resolveExpr ctx f v))
+        | none => pure none
+      return .mk_withitem { sr := a, info } rCtxExpr ⟨f optVars.ann, rOptVars⟩
 
 partial def resolveExcepthandler (ctx : Ctx) (f : SourceRange → ResolvedAnn) : Python.excepthandler SourceRange → ResolveM (Python.excepthandler ResolvedAnn)
   | .ExceptHandler a ty name body => do
@@ -1042,12 +1124,18 @@ partial def resolveExcepthandler (ctx : Ctx) (f : SourceRange → ResolvedAnn) :
         | some n => ctx.insert (PythonIdentifier.fromAst n) (CtxEntry.variable (annotationToPythonType Option.none))
         | none => ctx
       let resolvedBody ← resolveBlock handlerCtx f body.val
-      return .ExceptHandler (f a) (mapAnnOpt f (resolveExpr ctx f) ty) (mapAnnOpt f (mapAnnVal f) name) ⟨f body.ann, resolvedBody⟩
+      let rTy ← match ty.val with
+        | some e => pure (some (← resolveExpr ctx f e))
+        | none => pure none
+      return .ExceptHandler (f a) ⟨f ty.ann, rTy⟩ (mapAnnOpt f (mapAnnVal f) name) ⟨f body.ann, resolvedBody⟩
 
 partial def resolveMatchCase (ctx : Ctx) (f : SourceRange → ResolvedAnn) : Python.match_case SourceRange → ResolveM (Python.match_case ResolvedAnn)
   | .mk_match_case a pat guard body => do
     let resolvedBody ← resolveBlock ctx f body.val
-    return .mk_match_case (f a) (sorry) (mapAnnOpt f (resolveExpr ctx f) guard) ⟨f body.ann, resolvedBody⟩
+    let rGuard ← match guard.val with
+      | some e => pure (some (← resolveExpr ctx f e))
+      | none => pure none
+    return .mk_match_case (f a) (sorry) ⟨f guard.ann, rGuard⟩ ⟨f body.ann, resolvedBody⟩
 
 /-- Resolves an array of statements sequentially, threading the growing context.
     Each statement may extend the context (e.g., assignments, imports, defs) which
@@ -1072,15 +1160,88 @@ partial def resolveFuncDef (ctx : Ctx) (f : SourceRange → ResolvedAnn)
     (returns : Ann (Option PythonExpr) SourceRange) (tc : Ann (Option (Ann String SourceRange)) SourceRange)
     (typeParams : Ann (Array (Python.type_param SourceRange)) SourceRange) := do
   let ctx' := ctx.insert (PythonIdentifier.fromAst name) (.function sig)
-  let bodyCtx := resolveFunctionBody ctx' f args body.val
+  let bodyCtx ← resolveFunctionBody ctx' f args body.val
   let ann : ResolvedAnn := { sr := a, info := .funcDecl sig }
   let resolvedBody ← resolveBlock bodyCtx f body.val
   let rBody : Ann (Array ResolvedPythonStmt) ResolvedAnn := ⟨f body.ann, resolvedBody⟩
-  return (ctx', ann, mapAnnVal f name, resolveArguments bodyCtx f args, rBody,
-    mapAnnArr f (resolveExpr ctx' f) decorators,
-    mapAnnOpt f (resolveExpr ctx' f) returns,
-    mapAnnOpt f (mapAnnVal f) tc,
-    mapAnnArr f (resolveTypeParam ctx' f) typeParams)
+  let rArgs ← resolveArguments bodyCtx f args
+  let mut rDecs : Array ResolvedPythonExpr := #[]
+  for d in decorators.val do rDecs := rDecs.push (← resolveExpr ctx' f d)
+  let rRets ← match returns.val with
+    | some e => pure (some (← resolveExpr ctx' f e))
+    | none => pure none
+  let mut rTps : Array (Python.type_param ResolvedAnn) := #[]
+  for tp in typeParams.val do rTps := rTps.push (← resolveTypeParam ctx' f tp)
+  let rDecsAnn : Ann (Array ResolvedPythonExpr) ResolvedAnn := ⟨f decorators.ann, rDecs⟩
+  let rRetsAnn : Ann (Option ResolvedPythonExpr) ResolvedAnn := ⟨f returns.ann, rRets⟩
+  let rTpsAnn : Ann (Array (Python.type_param ResolvedAnn)) ResolvedAnn := ⟨f typeParams.ann, rTps⟩
+  return (ctx', ann, mapAnnVal f name, rArgs, rBody, rDecsAnn, rRetsAnn, mapAnnOpt f (mapAnnVal f) tc, rTpsAnn)
+
+/-- Spine type resolution. Monadic: may trigger demand-driven module loads when
+    traversing qualified type annotations (e.g. `boto3.S3`) through module contexts. -/
+partial def typeOfExpr (ctx : Ctx) : PythonExpr → ResolveM (Option PythonType)
+  | .Name _ n _ => match ctx[PythonIdentifier.fromAst n]? with
+    | some (.variable ty) => pure (some ty)
+    | _ => pure none
+  | .Attribute _ obj fieldName _ => do
+    match ← typeOfExpr ctx obj with
+    | some (.Name _ className _) =>
+      let classId := PythonIdentifier.fromAst className
+      match ctx[classId]? with
+      | some (.class_ _ fields _) =>
+        pure (fields.find? (fun (fName, _) => fName == PythonIdentifier.fromAst fieldName) |>.map (·.2))
+      | some (.module_ moduleRaw) =>
+        let moduleCtx : Ctx := moduleRaw.fold (fun c k v => c.insert k v) {}
+        let fieldId := PythonIdentifier.fromAst fieldName
+        match moduleCtx[fieldId]? with
+        | some (.variable ty) => pure (some ty)
+        | some (.class_ _ fields _) =>
+          pure (fields.find? (fun (fName, _) => fName == fieldId) |>.map (·.2))
+        | none =>
+          let baseDir ← read
+          let components := className.val.splitOn "."
+          let moduleDir := components.foldl (· / ·) baseDir
+          let f : SourceRange → ResolvedAnn := fun sr => { sr, info := .irrelevant }
+          let (subCtx, _) ← resolveModuleComponent fieldName.val moduleDir f
+          match subCtx[fieldId]? with
+          | some (.variable ty) => pure (some ty)
+          | _ => pure none
+        | _ => pure none
+      | _ => pure none
+    | _ => pure none
+  | _ => pure none
+
+/-- Resolves `receiver.method(...)` calls. Monadic: uses `typeOfExpr` which may
+    trigger demand-driven module loads. -/
+partial def resolveMethodCall (ctx : Ctx) (receiver : PythonExpr) (methodName : Ann String SourceRange) : ResolveM NodeInfo := do
+  let methId := PythonIdentifier.fromAst methodName
+  match ← typeOfExpr ctx receiver with
+  | some (.Name _ className _) =>
+    let classId := PythonIdentifier.fromAst className
+    match ctx[classId]? with
+    | some (.class_ _ _ methods) =>
+      match methods.find? (fun (mName, _) => mName == methId) with
+      | some (_, sig) => pure (.funcCall sig)
+      | none => pure .unresolved
+    | _ => pure .unresolved
+  | _ => match receiver with
+    | .Name _ rName _ =>
+      let rId := PythonIdentifier.fromAst rName
+      match ctx[rId]? with
+      | some (.module_ moduleRaw) =>
+        let moduleCtx : Ctx := moduleRaw.fold (fun c k v => c.insert k v) {}
+        match moduleCtx[methId]? with
+        | some (.function sig) => pure (.funcCall sig)
+        | some (.class_ cId _ methods) =>
+          let initId := PythonIdentifier.builtin "__init__"
+          match methods.find? (fun (mName, _) => mName == initId) with
+          | some (_, sig) => pure (.classNew cId sig)
+          | none =>
+            let emptySig : FuncSig := { name := initId, className := some cId, params := .static {required := [], optional := [], kwonly := []}, returnType := anyType, locals := [] }
+            pure (.classNew cId emptySig)
+        | _ => pure .unresolved
+      | _ => pure .unresolved
+    | _ => pure .unresolved
 
 /-- Load a module component from disk and resolve it. Tries `dir/name.python.st.ion`
     then `dir/name/__init__.python.st.ion`. Returns the module's resolved program and Ctx. -/
@@ -1137,16 +1298,16 @@ partial def resolveStmt (ctx : Ctx) (f : SourceRange → ResolvedAnn) (s : Pytho
   match s with
   | .FunctionDef a name args body decorators returns tc typeParams =>
       let nameId := PythonIdentifier.fromAst name
-      let sig := match ctx[nameId]? with
-        | some (.function existingSig) => existingSig
+      let sig ← match ctx[nameId]? with
+        | some (.function existingSig) => pure existingSig
         | _ => extractFuncSig ctx f nameId none args decorators.val returns body.val
       let (ctx', ann, rName, rArgs, rBody, rDecs, rRets, rTc, rTps) ←
         resolveFuncDef ctx f sig a name args body decorators returns tc typeParams
       return (ctx', .FunctionDef ann rName rArgs rBody rDecs rRets rTc rTps)
   | .AsyncFunctionDef a name args body decorators returns tc typeParams =>
       let nameId := PythonIdentifier.fromAst name
-      let sig := match ctx[nameId]? with
-        | some (.function existingSig) => existingSig
+      let sig ← match ctx[nameId]? with
+        | some (.function existingSig) => pure existingSig
         | _ => extractFuncSig ctx f nameId none args decorators.val returns body.val
       let (ctx', ann, rName, rArgs, rBody, rDecs, rRets, rTc, rTps) ←
         resolveFuncDef ctx f sig a name args body decorators returns tc typeParams
@@ -1157,25 +1318,37 @@ partial def resolveStmt (ctx : Ctx) (f : SourceRange → ResolvedAnn) (s : Pytho
       let fields := body.val.toList.filterMap fun s => match s with
         | .AnnAssign _ (.Name _ n _) annotation _ _ => some (PythonIdentifier.fromAst n, annotation)
         | _ => Option.none
-      let methods := body.val.toList.filterMap fun s => match s with
+      let mut methods : List (PythonIdentifier × FuncSig) := []
+      for s in body.val.toList do
+        match s with
         | .FunctionDef _ mName mArgs ⟨_, mBody⟩ mDecs mReturns _ _ =>
             let mId := PythonIdentifier.fromAst mName
-            some (mId, extractFuncSig ctx f mId (some classId) mArgs mDecs.val mReturns mBody)
+            let sig ← extractFuncSig ctx f mId (some classId) mArgs mDecs.val mReturns mBody
+            methods := methods ++ [(mId, sig)]
         | .AsyncFunctionDef _ mName mArgs ⟨_, mBody⟩ mDecs mReturns _ _ =>
             let mId := PythonIdentifier.fromAst mName
-            some (mId, extractFuncSig ctx f mId (some classId) mArgs mDecs.val mReturns mBody)
-        | _ => Option.none
+            let sig ← extractFuncSig ctx f mId (some classId) mArgs mDecs.val mReturns mBody
+            methods := methods ++ [(mId, sig)]
+        | _ => pure ()
       let ctx' := ctx.insert classId (CtxEntry.class_ classId fields methods)
       let classCtx := ctx'.insert (PythonIdentifier.fromAst ⟨SourceRange.none, "self"⟩) (CtxEntry.variable classType)
       let classCtx := methods.foldl (fun c (mId, mSig) => c.insert mId (CtxEntry.function mSig)) classCtx
       let methodSigs := methods.map (·.2)
       let resolvedBody ← resolveBlock classCtx f body.val
+      let mut rBases : Array ResolvedPythonExpr := #[]
+      for b in bases.val do rBases := rBases.push (← resolveExpr ctx' f b)
+      let mut rKeywords : Array (Python.keyword ResolvedAnn) := #[]
+      for kw in keywords.val do rKeywords := rKeywords.push (← resolveKeyword ctx' f kw)
+      let mut rDecorators : Array ResolvedPythonExpr := #[]
+      for d in decorators.val do rDecorators := rDecorators.push (← resolveExpr ctx' f d)
+      let mut rTypeParams : Array (Python.type_param ResolvedAnn) := #[]
+      for tp in typeParams.val do rTypeParams := rTypeParams.push (← resolveTypeParam ctx' f tp)
       return (ctx', .ClassDef { sr := a, info := .classDecl classId fields methodSigs } (mapAnnVal f name)
-        (mapAnnArr f (resolveExpr ctx' f) bases)
-        (mapAnnArr f (resolveKeyword ctx' f) keywords)
+        ⟨f bases.ann, rBases⟩
+        ⟨f keywords.ann, rKeywords⟩
         ⟨f body.ann, resolvedBody⟩
-        (mapAnnArr f (resolveExpr ctx' f) decorators)
-        (mapAnnArr f (resolveTypeParam ctx' f) typeParams))
+        ⟨f decorators.ann, rDecorators⟩
+        ⟨f typeParams.ann, rTypeParams⟩)
   | .Import a aliases => do
       let baseDir ← read
       let mut ctx' := ctx
@@ -1218,33 +1391,49 @@ partial def resolveStmt (ctx : Ctx) (f : SourceRange → ResolvedAnn) (s : Pytho
             | some _ => pure ()
             | none => ctx' := ctx'.insert registeredId CtxEntry.unresolved
       return (ctx', .ImportFrom (f a) (mapAnnOpt f (mapAnnVal f) modName) (mapAnnArr f (resolveAlias f) imports) (mapAnnOpt f (resolveInt f) level))
-  | .Assign a targets value tc =>
+  | .Assign a targets value tc => do
       let newNames := targets.val.toList.flatMap collectNamesFromTarget
       let ctx' := newNames.foldl (fun c n => c.insert n (CtxEntry.variable (annotationToPythonType Option.none))) ctx
-      return (ctx', .Assign (f a) (mapAnnArr f (resolveExpr ctx f) targets) (resolveExpr ctx f value) (mapAnnOpt f (mapAnnVal f) tc))
-  | .AnnAssign a target ann value simple =>
+      let mut rTargets : Array ResolvedPythonExpr := #[]
+      for t in targets.val do rTargets := rTargets.push (← resolveExpr ctx f t)
+      let rValue ← resolveExpr ctx f value
+      return (ctx', .Assign (f a) ⟨f targets.ann, rTargets⟩ rValue (mapAnnOpt f (mapAnnVal f) tc))
+  | .AnnAssign a target ann value simple => do
       let newNames := collectNamesFromTarget target
       let ctx' := newNames.foldl (fun c n => c.insert n (CtxEntry.variable ann)) ctx
-      return (ctx', .AnnAssign (f a) (resolveExpr ctx f target) (resolveExpr ctx f ann) (mapAnnOpt f (resolveExpr ctx f) value) (resolveInt f simple))
-  | .AugAssign a target op value =>
+      let rTarget ← resolveExpr ctx f target
+      let rAnn ← resolveExpr ctx f ann
+      let rValue ← match value.val with
+        | some v => pure (some (← resolveExpr ctx f v))
+        | none => pure none
+      return (ctx', .AnnAssign (f a) rTarget rAnn ⟨f value.ann, rValue⟩ (resolveInt f simple))
+  | .AugAssign a target op value => do
       let opSig : FuncSig := { name := .builtin (operatorToLaurel op), className := none, params := .static {required := [(.builtin "left", anyType), (.builtin "right", anyType)], optional := [], kwonly := []}, returnType := anyType, locals := [] }
-      return (ctx, .AugAssign { sr := a, info := .funcCall opSig } (resolveExpr ctx f target) (resolveOperator f op) (resolveExpr ctx f value))
+      let rTarget ← resolveExpr ctx f target
+      let rValue ← resolveExpr ctx f value
+      return (ctx, .AugAssign { sr := a, info := .funcCall opSig } rTarget (resolveOperator f op) rValue)
   | .If a test body orelse => do
+      let rTest ← resolveExpr ctx f test
       let rBody ← resolveBlock ctx f body.val
       let rElse ← resolveBlock ctx f orelse.val
-      return (ctx, .If (f a) (resolveExpr ctx f test) ⟨f body.ann, rBody⟩ ⟨f orelse.ann, rElse⟩)
+      return (ctx, .If (f a) rTest ⟨f body.ann, rBody⟩ ⟨f orelse.ann, rElse⟩)
   | .For a target iter body orelse tc => do
+      let rTarget ← resolveExpr ctx f target
+      let rIter ← resolveExpr ctx f iter
       let rBody ← resolveBlock ctx f body.val
       let rElse ← resolveBlock ctx f orelse.val
-      return (ctx, .For (f a) (resolveExpr ctx f target) (resolveExpr ctx f iter) ⟨f body.ann, rBody⟩ ⟨f orelse.ann, rElse⟩ (mapAnnOpt f (mapAnnVal f) tc))
+      return (ctx, .For (f a) rTarget rIter ⟨f body.ann, rBody⟩ ⟨f orelse.ann, rElse⟩ (mapAnnOpt f (mapAnnVal f) tc))
   | .AsyncFor a target iter body orelse tc => do
+      let rTarget ← resolveExpr ctx f target
+      let rIter ← resolveExpr ctx f iter
       let rBody ← resolveBlock ctx f body.val
       let rElse ← resolveBlock ctx f orelse.val
-      return (ctx, .AsyncFor (f a) (resolveExpr ctx f target) (resolveExpr ctx f iter) ⟨f body.ann, rBody⟩ ⟨f orelse.ann, rElse⟩ (mapAnnOpt f (mapAnnVal f) tc))
+      return (ctx, .AsyncFor (f a) rTarget rIter ⟨f body.ann, rBody⟩ ⟨f orelse.ann, rElse⟩ (mapAnnOpt f (mapAnnVal f) tc))
   | .While a test body orelse => do
+      let rTest ← resolveExpr ctx f test
       let rBody ← resolveBlock ctx f body.val
       let rElse ← resolveBlock ctx f orelse.val
-      return (ctx, .While (f a) (resolveExpr ctx f test) ⟨f body.ann, rBody⟩ ⟨f orelse.ann, rElse⟩)
+      return (ctx, .While (f a) rTest ⟨f body.ann, rBody⟩ ⟨f orelse.ann, rElse⟩)
   | .Try a body handlers orelse finalbody => do
       let rBody ← resolveBlock ctx f body.val
       let mut rHandlers : Array (Python.excepthandler ResolvedAnn) := #[]
@@ -1262,28 +1451,58 @@ partial def resolveStmt (ctx : Ctx) (f : SourceRange → ResolvedAnn) (s : Pytho
       let rFinally ← resolveBlock ctx f finalbody.val
       return (ctx, .TryStar (f a) ⟨f body.ann, rBody⟩ ⟨f handlers.ann, rHandlers⟩ ⟨f orelse.ann, rElse⟩ ⟨f finalbody.ann, rFinally⟩)
   | .With a items body tc => do
+      let mut rItems : Array (Python.withitem ResolvedAnn) := #[]
+      for item in items.val do rItems := rItems.push (← resolveWithitem ctx f item)
       let rBody ← resolveBlock ctx f body.val
-      return (ctx, .With (f a) (mapAnnArr f (resolveWithitem ctx f) items) ⟨f body.ann, rBody⟩ (mapAnnOpt f (mapAnnVal f) tc))
+      return (ctx, .With (f a) ⟨f items.ann, rItems⟩ ⟨f body.ann, rBody⟩ (mapAnnOpt f (mapAnnVal f) tc))
   | .AsyncWith a items body tc => do
+      let mut rItems : Array (Python.withitem ResolvedAnn) := #[]
+      for item in items.val do rItems := rItems.push (← resolveWithitem ctx f item)
       let rBody ← resolveBlock ctx f body.val
-      return (ctx, .AsyncWith (f a) (mapAnnArr f (resolveWithitem ctx f) items) ⟨f body.ann, rBody⟩ (mapAnnOpt f (mapAnnVal f) tc))
-  | .Return a value => return (ctx, .Return (f a) (mapAnnOpt f (resolveExpr ctx f) value))
-  | .Delete a targets => return (ctx, .Delete (f a) (mapAnnArr f (resolveExpr ctx f) targets))
-  | .Raise a exc cause => return (ctx, .Raise (f a) (mapAnnOpt f (resolveExpr ctx f) exc) (mapAnnOpt f (resolveExpr ctx f) cause))
-  | .Assert a test msg => return (ctx, .Assert (f a) (resolveExpr ctx f test) (mapAnnOpt f (resolveExpr ctx f) msg))
-  | .Expr a value => return (ctx, .Expr (f a) (resolveExpr ctx f value))
+      return (ctx, .AsyncWith (f a) ⟨f items.ann, rItems⟩ ⟨f body.ann, rBody⟩ (mapAnnOpt f (mapAnnVal f) tc))
+  | .Return a value => do
+      let rValue ← match value.val with
+        | some v => pure (some (← resolveExpr ctx f v))
+        | none => pure none
+      return (ctx, .Return (f a) ⟨f value.ann, rValue⟩)
+  | .Delete a targets => do
+      let mut rTargets : Array ResolvedPythonExpr := #[]
+      for t in targets.val do rTargets := rTargets.push (← resolveExpr ctx f t)
+      return (ctx, .Delete (f a) ⟨f targets.ann, rTargets⟩)
+  | .Raise a exc cause => do
+      let rExc ← match exc.val with
+        | some e => pure (some (← resolveExpr ctx f e))
+        | none => pure none
+      let rCause ← match cause.val with
+        | some e => pure (some (← resolveExpr ctx f e))
+        | none => pure none
+      return (ctx, .Raise (f a) ⟨f exc.ann, rExc⟩ ⟨f cause.ann, rCause⟩)
+  | .Assert a test msg => do
+      let rTest ← resolveExpr ctx f test
+      let rMsg ← match msg.val with
+        | some m => pure (some (← resolveExpr ctx f m))
+        | none => pure none
+      return (ctx, .Assert (f a) rTest ⟨f msg.ann, rMsg⟩)
+  | .Expr a value => do
+      let rValue ← resolveExpr ctx f value
+      return (ctx, .Expr (f a) rValue)
   | .Pass a => return (ctx, .Pass (f a))
   | .Break a => return (ctx, .Break (f a))
   | .Continue a => return (ctx, .Continue (f a))
   | .Global a names => return (ctx, .Global (f a) (mapAnnArr f (mapAnnVal f) names))
   | .Nonlocal a names => return (ctx, .Nonlocal (f a) (mapAnnArr f (mapAnnVal f) names))
   | .Match a subject cases => do
+      let rSubject ← resolveExpr ctx f subject
       let mut resolvedCases : Array (Python.match_case ResolvedAnn) := #[]
       for c in cases.val do
         resolvedCases := resolvedCases.push (← resolveMatchCase ctx f c)
-      return (ctx, .Match (f a) (resolveExpr ctx f subject) ⟨f cases.ann, resolvedCases⟩)
-  | .TypeAlias a name typeParams value =>
-      return (ctx, .TypeAlias (f a) (resolveExpr ctx f name) (mapAnnArr f (resolveTypeParam ctx f) typeParams) (resolveExpr ctx f value))
+      return (ctx, .Match (f a) rSubject ⟨f cases.ann, resolvedCases⟩)
+  | .TypeAlias a name typeParams value => do
+      let rName ← resolveExpr ctx f name
+      let mut rTypeParams : Array (Python.type_param ResolvedAnn) := #[]
+      for tp in typeParams.val do rTypeParams := rTypeParams.push (← resolveTypeParam ctx f tp)
+      let rValue ← resolveExpr ctx f value
+      return (ctx, .TypeAlias (f a) rName ⟨f typeParams.ann, rTypeParams⟩ rValue)
 end
 
 /-- Entry point: resolves a full Python module. Computes module-level locals, seeds the

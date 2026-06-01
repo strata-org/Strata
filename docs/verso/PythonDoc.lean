@@ -197,10 +197,8 @@ not assignment targets.
 
 Resolution is monadic (`ResolveM := ReaderT System.FilePath (StateT ResolveState (EIO String))`).
 The reader carries `baseDir` — the root directory for finding module files.
-The state collects resolved imported module programs for Translation.
-Statement-level functions (`resolveStmt`, `resolveBlock`, `resolveFuncDef`,
-`resolveMatchCase`, `resolve`) operate in this monad. Expression-level
-functions (`resolveExpr` and helpers) remain pure.
+The state collects resolved imported module programs for Translation and
+memoizes already-resolved module paths.
 
 A module is a Ctx. `CtxEntry.module_` carries the module's resolved context:
 
@@ -208,34 +206,66 @@ A module is a Ctx. `CtxEntry.module_` carries the module's resolved context:
 | module_ (moduleCtx : Ctx)
 ```
 
-When the fold encounters `import M`:
-1. Split M on "." into path components
-2. Load the module from `baseDir / path / name.python.st.ion` (or `__init__`)
-3. Resolve the loaded module (same monadic fold, from builtinContext)
-4. Insert the registered name → `.module_ moduleCtx` into the fold's Ctx
+### Demand-Driven Loading
 
-When the fold encounters `from M.N import X, Y`:
-1. Load and resolve M.N the same way → get target module Ctx
-2. For each name X, Y: look up in target Ctx, insert into fold's Ctx with actual CtxEntry
-3. If name not in target Ctx → `.unresolved`
+Modules are loaded on demand — only when a name from them is actually
+referenced. This avoids eagerly loading an entire package (e.g. boto3's 421
+submodules) when only one service is used.
 
-Dotted attribute access (`boto3.client(...)`) resolves through module structure:
-look up `boto3` → `.module_ ctx` → look up `client` in ctx → `.function sig`.
+The mechanism relies on **qualified type annotations** in generated stubs.
+The boto3 `__init__` stub declares:
 
-## Compiled Module Cache
+```python
+@overload
+def client(service_name: Literal["s3"]) -> boto3.S3: ...
+```
 
-Imported modules are compiled to Laurel on demand and cached to disk.
-This is analogous to CPython's `.pyc` mechanism: first import compiles,
-subsequent imports load the cached result.
+The return type `boto3.S3` is an attribute expression (`.Attribute (.Name "boto3") "S3"`),
+not a string. It is structured data in the AST.
 
-Resolution and Translation remain pure — the memoization lives in the
-pipeline. Resolution resolves all imports (building Ctxs — cheap) and
-collects resolved module ASTs with their source paths. The pipeline then
-translates each imported module, with caching:
+Loading proceeds lazily:
+
+1. `import boto3` → load `boto3/__init__.python.st.ion` (slim: only `client()` overloads,
+   no `from boto3.X import X`). Insert `boto3 → .module_ ctx` with `client` in ctx.
+
+2. `x = boto3.client("s3")` → `resolveMethodCall` looks up `client` in boto3's ctx →
+   `.function sig`. The return type annotation is `boto3.S3` (an Attribute expr).
+
+3. `x.list_buckets(...)` → `typeOfExpr` on `x` yields the annotation `boto3.S3`.
+   `resolveMethodCall` needs the `S3` class. It walks the attribute chain:
+   look up `boto3` → `.module_ ctx` → look up `S3` in ctx → not found →
+   **load `boto3/S3.python.st.ion` on demand**, resolve it, insert `S3` into
+   boto3's module ctx → now resolve `list_buckets` from `S3`'s methods.
+
+The key insight: the attribute chain `boto3.S3` in the type annotation IS the
+load path. No external dispatch table needed. The structured AST contains
+the information needed to locate the module file.
+
+### What becomes monadic
+
+Both statement-level AND type-resolution functions operate in `ResolveM`:
+- `resolveStmt`, `resolveBlock`, `resolveFuncDef`, `resolveMatchCase` — encounter imports
+- `resolveMethodCall`, `typeOfExpr` — may trigger demand-driven loads when
+  traversing qualified type annotations through module contexts
+
+`resolveExpr` itself remains pure for most cases. Only the `.Call` case
+(which dispatches to `resolveMethodCall`) touches the monad.
+
+### Module file lookup
+
+Given component name `n` and directory `dir`:
+1. Try `dir / (n ++ ".python.st.ion")`
+2. Try `dir / n / "__init__.python.st.ion"` (package)
+
+### Compiled Module Cache
+
+Imported modules are compiled to Laurel on demand and cached to disk
+(analogous to CPython's `.pyc`). The pipeline translates each imported
+module's resolved AST with caching:
 
 ```
 for each imported module (sourcePath, resolvedAST):
-  cachePath := sourcePath.withExtension ".laurel.st"
+  cachePath := sourcePath with ".python.st.ion" → ".laurel.st"
   if cachePath exists on disk:
     load cached Laurel program
   else:
@@ -247,6 +277,22 @@ for each imported module (sourcePath, resolvedAST):
 The cached Laurel contains only signatures (procedure declarations, type
 definitions — no bodies to elaborate). Subsequent runs skip Translation
 entirely for cached modules.
+
+### Stub generation convention
+
+Generated library stubs (e.g. boto3) use **qualified attribute references**
+for return types, not imports:
+
+```python
+# boto3/__init__.py — SLIM, no from-imports of submodules
+@overload
+def client(service_name: Literal["s3"]) -> boto3.S3: ...
+@overload
+def client(service_name: Literal["ec2"]) -> boto3.EC2: ...
+```
+
+Each service class lives in its own file (`boto3/S3.python.st.ion`).
+Only the services actually used by the analyzed program get loaded.
 
 ## Method Resolution
 
