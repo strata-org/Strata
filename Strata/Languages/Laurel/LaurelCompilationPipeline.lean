@@ -228,7 +228,7 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
     -- Because of the duplication between functions and procedures, this translation is liable to create duplicate diagnostics
     let mut allDiagnostics: List DiagnosticModel := passDiags ++ translateState.diagnostics.eraseDups;
 
-    if translateState.coreDiagnostics.length > 0 && allDiagnostics.isEmpty then
+    if !translateState.coreDiagnostics.isEmpty && allDiagnostics.isEmpty then
       allDiagnostics := allDiagnostics ++ translateState.coreDiagnostics
 
     if coreProgramOption.isSome then
