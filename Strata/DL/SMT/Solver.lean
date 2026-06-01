@@ -44,9 +44,9 @@ deriving DecidableEq, Repr
  the input stream. We assume that both the input and output streams conform to
  the SMTLib standard: the inputs are SMTLib script commands encoded as
  s-expressions, and the outputs are the s-expressions whose shape is determined
- by the standard for each command. We don't have an error stream here, since we
- configure solvers to run in quiet mode and not print anything to the error
- stream.
+ by the standard for each command. The solver's stderr is inherited by the parent process (see `spawnSolver`),
+ so diagnostic output goes directly to the verifier's stderr rather than
+ through a field on this structure.
 -/
 structure SMTLibSolver where
   smtLibInput : IO.FS.Stream
@@ -97,13 +97,17 @@ namespace Solver
   Returns an SMTLibSolver for the given path and arguments. This function
   expects `path` to point to an SMT solver executable, and `args` to specify
   valid arguments to that solver.
+
+  Uses `stderr := .inherit` so that solver diagnostic output (fatal errors, OOM,
+  unsupported logic) goes directly to the verifier's stderr rather than into an
+  unread pipe that could fill up and SIGPIPE the solver process.
 -/
 def spawn (path : String) (args : Array String) : IO SMTLibSolver := do
   try
     let proc ← IO.Process.spawn {
       stdin  := .piped
       stdout := .piped
-      stderr := .piped
+      stderr := .inherit
       cmd    := path
       args   := args
     }
