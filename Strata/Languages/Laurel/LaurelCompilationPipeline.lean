@@ -224,7 +224,7 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
     emit "CoreWithLaurelTypes" "core.st" coreWithLaurelTypes
     let initState : TranslateState := { model := model, overflowChecks := options.overflowChecks }
     let (coreProgramOption, translateState) :=
-      runTranslateM initState (translateLaurelToCore options program coreWithLaurelTypes)
+      runTranslateM initState (translateLaurelToCore options coreWithLaurelTypes)
     -- Because of the duplication between functions and procedures, this translation is liable to create duplicate diagnostics
     let mut allDiagnostics: List DiagnosticModel := passDiags ++ translateState.diagnostics.eraseDups;
 
