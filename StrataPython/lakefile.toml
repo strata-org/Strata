@@ -2,7 +2,6 @@ name = "StrataPython"
 version = "0.1.0"
 defaultTargets = ["StrataPython"]
 testDriver = "StrataTestMain"
-testDriverArgs = ["--dir", "StrataPythonTestExtra"]
 
 [[require]]
 name = "Strata"
@@ -14,3 +13,7 @@ name = "StrataPython"
 [[lean_lib]]
 name = "StrataPythonTest"
 globs = ["StrataPythonTest.+"]
+
+[[lean_exe]]
+name = "StrataTestMain"
+needs = ["StrataPython", "StrataPythonTest"]

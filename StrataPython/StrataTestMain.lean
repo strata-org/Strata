@@ -6,4 +6,4 @@
 import Strata.Util.IOTests
 
 def main (args : List String) : IO UInt32 :=
-  Strata.Util.IOTests.testMain args
+  Strata.Util.IOTests.testMain args (defaultDir := "StrataPythonTestExtra")
