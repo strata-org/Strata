@@ -115,26 +115,12 @@ Look up `(x : α)` in all the maps in `ms`, returning the default element `d` if
     | some v => v
 
 /--
-Remove the first occurence of element with key `a'` in `m`, starting from the
-newest map.
+Remove `x` and its associated value from `ms`.
 -/
-def Maps.remove [DecidableEq α] [BEq (Map α β)] (m : Maps α β) (a' : α) : Maps α β :=
-  match m with
-  | [] => []
-  | m :: mrest =>
-    let m' := Map.remove m a'
-    if m' == m then
-      m :: (remove mrest a')
-    else
-      m' :: (remove mrest a')
-
-/--
-Erase `x` and its associated value from `ms`.
--/
-def Maps.erase [DecidableEq α] (ms : Maps α β) (x : α) : Maps α β :=
+def Maps.remove [DecidableEq α] (ms : Maps α β) (x : α) : Maps α β :=
   match ms with
   | [] => []
-  | m :: rest => Map.erase m x :: Maps.erase rest x
+  | m :: rest => Map.erase m x :: Maps.remove rest x
 
 /--
 Update `x` with `v` in `ms`. Do nothing if `x` is not in `ms`.
@@ -315,50 +301,6 @@ theorem Maps.values_of_push_empty :
   (Maps.push ms []).values = ms.values := by
   simp_all [Maps.push, Maps.values, Map.values]
 
-theorem Maps.mem_keys_of_mem_keys_remove [DecidableEq α] [BEq (Map α β)]
-  (ms : Maps α β) (k1 k2 : α) (h : k2 ∈ (Maps.remove ms k1).keys) :
-  k2 ∈ ms.keys := by
-  induction ms
-  case nil => simp_all [Maps.keys, Maps.remove]
-  case cons m ms ih =>
-    simp_all [Maps.remove, Maps.keys]
-    split at h <;> simp_all [Maps.keys]
-    · grind
-    · cases h
-      · simp [@Map.mem_keys_of_mem_keys_remove _ _ _ m k1 k2 (by assumption)]
-      · simp_all
-
-theorem Maps.mem_keys_remove_of_ne [DecidableEq α] [BEq (Map α β)]
-    (ms : Maps α β) (k a : α)
-    (h_mem : a ∈ Maps.keys ms) (h_ne : a ≠ k) :
-    a ∈ Maps.keys (Maps.remove ms k) := by
-  induction ms with
-  | nil => simp [Maps.keys] at h_mem
-  | cons m mrest ih =>
-    simp [Maps.keys] at h_mem
-    simp [Maps.remove]
-    split <;> simp [Maps.keys]
-    · cases h_mem with
-      | inl h => left; exact h
-      | inr h => right; exact ih h
-    · cases h_mem with
-      | inl h =>
-        left; exact Map.mem_keys_remove_of_ne m k a h h_ne
-      | inr h => right; exact ih h
-
-theorem Maps.mem_values_of_mem_keys_remove [DecidableEq α] [BEq (Map α β)]
-  (ms : Maps α β) (k : α) (v : β) (h : v ∈ (Maps.remove ms k).values) :
-  v ∈ ms.values := by
-  induction ms
-  case nil => simp_all [Maps.values, Maps.remove]
-  case cons m ms ih =>
-    simp_all [Maps.remove, Maps.values]
-    split at h <;> simp_all [Maps.values]
-    · grind
-    · cases h
-      · simp [@Map.mem_values_of_mem_keys_remove _ _ _ m k v (by assumption)]
-      · simp_all
-
 /-- `Maps.find?` returns `none` when the key is not in `Maps.keys`. -/
 theorem Maps.not_mem_keys_find?_none' [DecidableEq α] (S : Maps α β) (i : α)
     (h : i ∉ Maps.keys S) : Maps.find? S i = none := by
@@ -433,28 +375,28 @@ theorem Maps.find?_insert_ne [DecidableEq α]
       · simp only [Maps.find?]
         rw [Map.find?_insert_ne _ _ _ _ h_ne]
 
-/-- `Maps.erase` on a key not in any scope is identity. -/
-theorem Maps.erase_of_fresh [DecidableEq α]
+/-- `Maps.remove` on a key not in any scope is identity. -/
+theorem Maps.remove_of_fresh [DecidableEq α]
     (ms : Maps α β) (x : α) (h : ∀ m, m ∈ ms → Map.find? m x = none) :
-    Maps.erase ms x = ms := by
+    Maps.remove ms x = ms := by
   induction ms with
-  | nil => simp [Maps.erase]
+  | nil => simp [Maps.remove]
   | cons m rest ih =>
-    simp only [Maps.erase]; congr 1
+    simp only [Maps.remove]; congr 1
     · exact Map.erase_of_find?_none m x (h m List.mem_cons_self)
     · exact ih (fun r hr => h r (List.mem_cons_of_mem m hr))
 
-/-- Erasing a key that was just added to the newest scope restores the original value,
+/-- Removing a key that was just added to the newest scope restores the original value,
     provided the key didn't exist in the original and the maps are non-empty. -/
-theorem Maps.erase_addInNewest_fresh [DecidableEq α]
+theorem Maps.remove_addInNewest_fresh [DecidableEq α]
     {m : Map α β} {rest : Maps α β} (x : α) (v : β)
     (h_fresh : ∀ s, s ∈ (m :: rest) → Map.find? s x = none) :
-    Maps.erase (Maps.addInNewest (m :: rest) [(x, v)]) x = m :: rest := by
+    Maps.remove (Maps.addInNewest (m :: rest) [(x, v)]) x = m :: rest := by
   -- addInNewest (m :: rest) [(x, v)] = (m ++ [(x, v)]) :: rest
-  show Map.erase (List.append m [(x, v)]) x :: Maps.erase rest x = m :: rest
+  show Map.erase (List.append m [(x, v)]) x :: Maps.remove rest x = m :: rest
   congr 1
   · exact Map.erase_append_singleton m x v (h_fresh m List.mem_cons_self)
-  · exact Maps.erase_of_fresh rest x (fun r hr => h_fresh r (List.mem_cons_of_mem m hr))
+  · exact Maps.remove_of_fresh rest x (fun r hr => h_fresh r (List.mem_cons_of_mem m hr))
 
 /-- Looking up in `addInNewest ms [(x, v)]` either returns the new binding or
     falls through to the original map. -/
@@ -541,77 +483,63 @@ theorem Maps.insert_eq_addInNewest_fresh [DecidableEq α]
   unfold Maps.addInNewest
   rfl
 
-/-- After erasing key `x` from all scopes, looking up `x` returns `none`. -/
-theorem Maps.find?_erase_self [DecidableEq α]
+/-- After removing key `x` from all scopes, looking up `x` returns `none`. -/
+theorem Maps.find?_remove_self [DecidableEq α]
     (ms : Maps α β) (x : α) :
-    Maps.find? (Maps.erase ms x) x = none := by
+    Maps.find? (Maps.remove ms x) x = none := by
   induction ms with
-  | nil => simp [Maps.erase, Maps.find?]
+  | nil => simp [Maps.remove, Maps.find?]
   | cons m rest ih =>
-    simp only [Maps.erase, Maps.find?, Map.find?_erase_self, ih]
+    simp only [Maps.remove, Maps.find?, Map.find?_erase_self, ih]
 
-/-- Erasing key `x` from all scopes does not affect lookups for `y ≠ x`. -/
-theorem Maps.find?_erase_ne [DecidableEq α]
+/-- Removing key `x` from all scopes does not affect lookups for `y ≠ x`. -/
+theorem Maps.find?_remove_ne [DecidableEq α]
     (ms : Maps α β) (x y : α) (h_ne : y ≠ x) :
-    Maps.find? (Maps.erase ms x) y = Maps.find? ms y := by
+    Maps.find? (Maps.remove ms x) y = Maps.find? ms y := by
   induction ms with
-  | nil => simp [Maps.erase, Maps.find?]
+  | nil => simp [Maps.remove, Maps.find?]
   | cons m rest ih =>
-    simp only [Maps.erase, Maps.find?, Map.find?_erase_ne m x y h_ne, ih]
+    simp only [Maps.remove, Maps.find?, Map.find?_erase_ne m x y h_ne, ih]
 
-/-- Removing a key `k` from maps doesn't affect lookups of other keys `a ≠ k`. -/
-theorem Maps.find?_remove_ne [DecidableEq α] [BEq (Map α β)]
-    (ms : Maps α β) (k a : α) (h_ne : a ≠ k) :
-    Maps.find? (Maps.remove ms k) a = Maps.find? ms a := by
-  induction ms with
-  | nil => rfl
-  | cons m rest ih =>
-    simp only [Maps.remove]
-    show Maps.find? (if Map.remove m k == m then m :: Maps.remove rest k
-         else Map.remove m k :: Maps.remove rest k) a = _
-    split
-    · simp only [Maps.find?]; rw [ih]
-    · simp only [Maps.find?]; rw [Map.find?_remove_ne m k a h_ne, ih]
-
-theorem Maps.keys_erase_subset [DecidableEq α] (S : Maps α β) (x : α) :
-    ∀ k, k ∈ Maps.keys (Maps.erase S x) → k ∈ Maps.keys S := by
+theorem Maps.keys_remove_subset [DecidableEq α] (S : Maps α β) (x : α) :
+    ∀ k, k ∈ Maps.keys (Maps.remove S x) → k ∈ Maps.keys S := by
   intro k hk; induction S with
-  | nil => simp [Maps.erase, Maps.keys] at hk
+  | nil => simp [Maps.remove, Maps.keys] at hk
   | cons scope rest ih =>
-    simp only [Maps.erase, Maps.keys] at hk ⊢
+    simp only [Maps.remove, Maps.keys] at hk ⊢
     rcases List.mem_append.mp hk with h | h
     · exact List.mem_append_left _ (Map.keys_erase_subset scope x k h)
     · exact List.mem_append_right _ (ih h)
 
-/-- Erasing key `a` from Maps `S` removes `a` from the keys. -/
-theorem Maps.keys_erase_self_not_mem [DecidableEq α]
+/-- Removing key `a` from Maps `S` removes `a` from the keys. -/
+theorem Maps.keys_remove_self_not_mem [DecidableEq α]
     (S : Maps α β) (a : α)
-    (h : a ∈ Maps.keys (Maps.erase S a)) : False := by
+    (h : a ∈ Maps.keys (Maps.remove S a)) : False := by
   induction S with
-  | nil => simp [Maps.erase, Maps.keys] at h
+  | nil => simp [Maps.remove, Maps.keys] at h
   | cons scope rest ih =>
-    simp only [Maps.erase, Maps.keys] at h
+    simp only [Maps.remove, Maps.keys] at h
     rcases List.mem_append.mp h with h_scope | h_rest
     · exact Map.keys_erase_self_not_mem scope a h_scope
     · exact ih h_rest
 
-theorem Maps.values_erase_subset [DecidableEq α] (ms : Maps α β) (x : α) :
-    ∀ v, v ∈ Maps.values (Maps.erase ms x) → v ∈ Maps.values ms := by
+theorem Maps.values_remove_subset [DecidableEq α] (ms : Maps α β) (x : α) :
+    ∀ v, v ∈ Maps.values (Maps.remove ms x) → v ∈ Maps.values ms := by
   induction ms with
-  | nil => simp [Maps.erase, Maps.values]
+  | nil => simp [Maps.remove, Maps.values]
   | cons scope rest ih =>
-    intro v hv; simp only [Maps.erase, Maps.values] at hv ⊢
+    intro v hv; simp only [Maps.remove, Maps.values] at hv ⊢
     rcases List.mem_append.mp hv with h | h
     · exact List.mem_append_left _ (Map.values_erase_subset scope x v h)
     · exact List.mem_append_right _ (ih v h)
 
-theorem Maps.keys_erase_mem_of_ne [DecidableEq α] {S : Maps α β} {a x : α}
+theorem Maps.keys_remove_mem_of_ne [DecidableEq α] {S : Maps α β} {a x : α}
     (h_key : a ∈ Maps.keys S) (h_ne : a ≠ x) :
-    a ∈ Maps.keys (Maps.erase S x) := by
+    a ∈ Maps.keys (Maps.remove S x) := by
   induction S with
   | nil => simp [Maps.keys] at h_key
   | cons scope rest ih =>
-    simp only [Maps.erase, Maps.keys] at h_key ⊢
+    simp only [Maps.remove, Maps.keys] at h_key ⊢
     rcases List.mem_append.mp h_key with h | h
     · exact List.mem_append_left _ (Map.keys_erase_mem_of_ne scope h h_ne)
     · exact List.mem_append_right _ (ih h)

@@ -640,7 +640,7 @@ Erase entry for `x` from `T.context`.
 -/
 def TEnv.eraseFromContext (Env : TEnv T.IDMeta) (x : T.Identifier) : TEnv T.IDMeta :=
   let ctx := Env.context
-  let ctx' := { ctx with types := ctx.types.erase x }
+  let ctx' := { ctx with types := ctx.types.remove x }
   Env.updateContext ctx'
 
 def TEnv.freeVarCheck [DecidableEq T.IDMeta] (Env : TEnv T.IDMeta) (e : LExpr T.mono) (msg : Format) :

@@ -60,3 +60,25 @@ def testRoundtrip (v : List (Ion SymbolId)) : Bool :=
 #guard testRoundtrip [.annotation #[.mk 1] (.int 1)]
 
 #guard testRoundtrip <| intern [example2] |>.toList
+
+-- Issue #1228: NOP pad in struct must not shift subsequent field-key indices
+-- Input: struct with fields (key=1, int 1), NOP pad, (key=2, int 2)
+private def nopPadInStruct : ByteArray :=
+  ⟨#[0xE0, 0x01, 0x00, 0xEA, 0xD8, 0x81, 0x21, 0x01, 0x80, 0x00, 0x82, 0x21, 0x02]⟩
+
+#guard
+  match Ion.deserialize nopPadInStruct with
+  | .ok #[#[.mk (.struct fields)]] =>
+    fields == #[(.mk 1, .int 1), (.mk 2, .int 2)]
+  | _ => false
+
+-- Issue #1228: NOP pad at start of struct
+-- Input: struct with NOP pad, then field (key=1, int 1)
+private def nopPadAtStartOfStruct : ByteArray :=
+  ⟨#[0xE0, 0x01, 0x00, 0xEA, 0xD5, 0x80, 0x00, 0x81, 0x21, 0x01]⟩
+
+#guard
+  match Ion.deserialize nopPadAtStartOfStruct with
+  | .ok #[#[.mk (.struct fields)]] =>
+    fields == #[(.mk 1, .int 1)]
+  | _ => false
