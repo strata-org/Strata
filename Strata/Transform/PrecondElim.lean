@@ -412,6 +412,123 @@ private def addWFProcToCallGraph (name : String) : CoreTransformM Unit :=
       callGraph := .some (cg.addLeafNode name) } }
   | .none => σ
 
+/-- Per-element work for `transformDeclsIter`. Factored out of the recursive
+    `transformDecls` walker (kept as fallback in `where`) so the iterative
+    driver below can drive it from a `for`-loop instead of stacking
+    `CoreTransformM` bind frames per declaration.
+
+    The factory is threaded through `CoreTransformM`'s state via
+    `getFactory`/`setFactory`, so unlike TermCheck's helper there are no
+    extra parameters.
+
+    Returns `(changed, splicedDecls)`:
+    - `changed`: whether this declaration produced any new output.
+    - `splicedDecls`: the per-element output (multi-decl when a WF proc is
+      spliced; single-element otherwise).
+
+    Side-effect ordering note: in the original recursive walker, some
+    `incrementStat`/`addWFProcToCallGraph` calls fire AFTER the recursive
+    `transformDecls rest`, interleaving them with effects of subsequent
+    declarations. Here all effects for declaration `i` fire before iteration
+    `i+1`. The end-state of counters and call-graph is identical because
+    `incrementStat` and `addWFProcToCallGraph` are commutative state updates
+    that no other code in this walker reads. -/
+private def transformDecl (d : Decl) : CoreTransformM (Bool × List Decl) := do
+  match d with
+  | .proc proc md => do
+    if TermCheck.isTermProc proc.header.name.name then
+      return (false, [d])
+    else
+    let F ← getFactory
+    let (changedBody, body') ← match proc.body with
+      | .structured ss => do
+        let (c, ss') ← transformStmts ss
+        pure (c, Procedure.Body.structured ss')
+      | .cfg cfg =>
+        let (c, cfg') := transformDetCFG F cfg
+        pure (c, Procedure.Body.cfg cfg')
+    setFactory F
+    let proc' := { proc with body := body' }
+    let procDecl := Decl.proc proc' md
+    match mkContractWFProc F proc md with
+    | some wfDecl => do
+      incrementStat s!"{Stats.wfProceduresGenerated}"
+      incrementStat s!"{Stats.wfProcedureBodyStmtsEmitted}"
+        (match wfDecl with | .proc p _ => p.body.structuredLength | _ => 0)
+
+      addWFProcToCallGraph (wfProcName (CoreIdent.toPretty proc.header.name))
+      return (true, [wfDecl, procDecl])
+    | none => return (changedBody, [procDecl])
+  | .func func md => do
+    let F ← getFactory
+    let .isFalse notMem := Strata.decideProp (func.name.name ∈ F)
+      | throw (md.toDiagnosticF f!"{func.name.name} already in factory.")
+    let F' := F.push func notMem
+    setFactory F'
+    let func' := { func with preconditions := [] }
+    let funcDecl := Decl.func func' md
+    let hasPreconds := !func.preconditions.isEmpty
+    if hasPreconds then incrementStat s!"{Stats.numFuncsRemovedAfterPrecondStripped}"
+    match mkFuncWFProc F' func md with
+    | some wfDecl => do
+      incrementStat s!"{Stats.wfProceduresGenerated}"
+      incrementStat s!"{Stats.wfProcedureBodyStmtsEmitted}"
+        (match wfDecl with | .proc p _ => p.body.structuredLength | _ => 0)
+
+      addWFProcToCallGraph (wfProcName (CoreIdent.toPretty func.name))
+      return (true, [wfDecl, funcDecl])
+    | none => return (hasPreconds, [funcDecl])
+  | .recFuncBlock funcs md => do
+    let F ← getFactory
+    let F' ← funcs.foldlM (init := F) fun F func =>  do
+      let .isFalse notMem := Strata.decideProp (func.name.name ∈ F)
+        | throw (md.toDiagnosticF f!"{func.name.name} already in factory.")
+      pure <| F.push func notMem
+    setFactory F'
+    let funcs' := funcs.map ({ · with preconditions := [] })
+    let funcDecl := Decl.recFuncBlock funcs' md
+    let hasPreconds := funcs.any (!·.preconditions.isEmpty)
+    let numStripped := funcs.foldl (fun n f =>
+      if !f.preconditions.isEmpty then n + 1 else n) 0
+    incrementStat s!"{Stats.numFuncsRemovedAfterPrecondStripped}" numStripped
+
+    let wfDecls ← funcs.filterMapM fun func => do
+      match mkFuncWFProc F' func md with
+      | some wfDecl => do
+        incrementStat s!"{Stats.wfProceduresGenerated}"
+        incrementStat s!"{Stats.wfProcedureBodyStmtsEmitted}"
+          (match wfDecl with | .proc p _ => p.body.structuredLength | _ => 0)
+
+        addWFProcToCallGraph (wfProcName (CoreIdent.toPretty func.name))
+        return some wfDecl
+      | none => return none
+    if !wfDecls.isEmpty then return (true, funcDecl :: wfDecls)
+    else return (hasPreconds, [funcDecl])
+  | .type (.data block) _ => do
+    let F ← getFactory
+    let bf ← liftDiag (Lambda.genBlockFactory (T := CoreLParams) block)
+    let F' ← liftDiag (F.addFactory bf)
+    setFactory F'
+    return (false, [d])
+  | _ => return (false, [d])
+
+/-- Iterative driver for the precondition-elimination walker. Walks `decls`
+    with a `for`-loop, threading factory state through `CoreTransformM`'s
+    state instead of recursing through `CoreTransformM` (a StateT stack)
+    which stacks bind frames at depth = decls.length and SIGABRTs on programs
+    with ~30K+ declarations. Calls `transformDecl` per element; must produce
+    the same outputs as the recursive `transformDecls` for the same inputs. -/
+private def transformDeclsIter (decls : List Decl)
+    : CoreTransformM (Bool × List Decl) := do
+  let mut anyChanged := false
+  let mut acc : Array Decl := Array.mkEmpty decls.length
+  for d in decls do
+    let (changed, splice) ← transformDecl d
+    if changed then anyChanged := true
+    for s in splice do
+      acc := acc.push s
+  return (anyChanged, acc.toList)
+
 /--
 Transform an entire program:
 1. For each procedure, transform its body and if needed generate a WF procedure
@@ -427,7 +544,7 @@ def precondElim (p : Program)
   | .none =>
     return (false, p)
   | .some _ =>
-    let (changed, newDecls) ← transformDecls p.decls
+    let (changed, newDecls) ← transformDeclsIter p.decls
     return (changed, { decls := newDecls })
 where
   transformDecls (decls : List Decl)
