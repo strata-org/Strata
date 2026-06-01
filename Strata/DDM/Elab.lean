@@ -516,7 +516,7 @@ def parseStrataProgramFromDialect (dialects : LoadedDialects) (dialect : Dialect
   let input := normalizeInputContext input
 
   let isTrue mem := (inferInstance : Decidable (dialect ∈ dialects.dialects))
-    | throw <| IO.userError "Internal {dialect} missing from loaded dialects."
+    | throw <| IO.userError s!"Internal {dialect} missing from loaded dialects."
 
   let strataProgram ←
     match elabProgramRest dialects leanEnv input dialect mem 0 (normalizePos originalInput.inputString input.endPos) with
