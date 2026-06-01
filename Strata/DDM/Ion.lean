@@ -724,7 +724,7 @@ private protected def ArgF.fromIon {α} [FromIon α] (v : Ion SymbolId) : FromIo
       | throw s!"Arg num given {repr sexp}."
     pure <| .num ann x
   | "decimal" =>
-    let ⟨p⟩ ← .checkArgCount "num" sexp 3
+    let ⟨p⟩ ← .checkArgCount "decimal" sexp 3
     let ann ← fromIon sexp[1]
     let some d := sexp[2].asDecimal?
       | throw "decimal arg expects a decimal number."
@@ -804,13 +804,14 @@ private protected def fromIon (v : Ion SymbolId) : FromIonM SyntaxDefAtom := do
     match ← .asSymbolString "SyntaxDefAtom kind" args[0] with
     | "ident" => do
       let ⟨p⟩ ← .checkArgCount "ident" args 3
-      let level ← .asNat "SyntaxDef ident level" args[1]!
-      let prec ← .asNat "SyntaxDef ident prec" args[2]!
+      let level ← .asNat "SyntaxDef ident level" args[1]
+      let prec ← .asNat "SyntaxDef ident prec" args[2]
       return .ident level prec
     | "indent" => do
-      .indent <$> .asNat "SyntaxDef indent value" args[1]!
+      let ⟨_⟩ ← .checkArgMin "indent" args 2
+      .indent <$> .asNat "SyntaxDef indent value" args[1]
               <*> args.attach.mapM_off (start := 2) fun ⟨u, _⟩ =>
-                    have p : sizeOf u < sizeOf args := by decreasing_tactic
+                    have _h : sizeOf u < sizeOf args := by decreasing_tactic
                     SyntaxDefAtom.fromIon u
     | s =>
       throw s!"Unexpected binding kind {s}"
@@ -863,15 +864,16 @@ private instance : ToIon SourceRange where
 
 private instance : FromIon SourceRange where
   fromIon v := do
+    let tag := "Source range"
     match v.app with
     | .null _ =>
       return .none
     | _ =>
-      let ⟨exp, _⟩ ← .asSexp "Source rang" v
-      let ⟨p⟩ ← .checkArgCount "Source range" exp 2
+      let ⟨exp, _⟩ ← .asSexp tag v
+      let ⟨p⟩ ← .checkArgCount tag exp 2
       return {
-          start := ⟨← .asNat "Source range start" exp[0]⟩
-          stop := ⟨← .asNat "Source range stop" exp[1]⟩
+          start := ⟨← .asNat s!"{tag} start" exp[0]⟩
+          stop := ⟨← .asNat s!"{tag} stop" exp[1]⟩
       }
 
 end SourceRange
