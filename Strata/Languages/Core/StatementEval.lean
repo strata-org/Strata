@@ -158,7 +158,7 @@ Evaluate a procedure call by inlining its contract.
 -/
 def Command.inlineCallContract (E : Env)
     (lhs : List Expression.Ident) (pname : String) (args : List Expression.Expr)
-    (md : Imperative.MetaData Expression) : Command × Env :=
+    (md : Imperative.MetaData Expression) : Command × List Env :=
   match Program.Procedure.find? E.program pname with
   | some proc =>
     let tySubst := computeTypeSubst proc.header.inputs.values
@@ -196,12 +196,12 @@ def Command.inlineCallContract (E : Env)
     let callArgs := args.map .inArg ++ lhs.map .outArg
     let c' := CmdExt.call pname callArgs md'
     let E := E.addToContext lhs_post_subst
-    (c', E)
+    (c', [E])
   | _ =>
     let callArgs := args.map .inArg ++ lhs.map .outArg
     let c' := CmdExt.call pname callArgs md
     let E := { E with error := some (.Misc f!"Procedure {pname} not found!") }
-    (c', E)
+    (c', [E])
 
 -- Command.handleCall, Command.inlineCallBody, and Command.eval are defined
 -- inside the mutual block below (after Statement.eval) so that
@@ -554,8 +554,9 @@ private partial def evalOneStmt (old_var_subst : SubstMap)
     List EnvWithNext × Statistics × Nat :=
   match s with
   | .cmd c =>
-    let (_, E) := Command.eval Ewn.env old_var_subst c
-    ([{ Ewn with env := E, exitLabel := .none }], noStats, nextSplitId)
+    let (_, envs) := Command.eval Ewn.env old_var_subst c
+    (envs.map (fun E => { Ewn with env := E, exitLabel := .none }),
+     noStats, nextSplitId)
   | .block label ss _ =>
     let Ewn := { Ewn with env := Ewn.env.pushEmptyScope }
     let (Ewns, blockStats, nextSplitId) := evalSub Ewn ss nextSplitId
@@ -824,17 +825,17 @@ sees the body-derived values, not a havoc'd post-state.
 -/
 partial def Command.inlineCallBody (E : Env)
     (lhs : List Expression.Ident) (pname : String) (args : List Expression.Expr)
-    (md : Imperative.MetaData Expression) : Command × Env :=
+    (md : Imperative.MetaData Expression) : Command × List Env :=
   let retCmd : Command :=
     CmdExt.call pname (args.map .inArg ++ lhs.map .outArg) md
   match Program.Procedure.find? E.program pname with
   | none =>
     let E := { E with error := some (.Misc f!"Procedure {pname} not found!") }
-    (retCmd, E)
+    (retCmd, [E])
   | some proc =>
     if E.fuel == 0 then
       let E := { E with error := some .OutOfFuel }
-      (retCmd, E)
+      (retCmd, [E])
     else
       -- ── Shared call setup (structured and CFG bodies) ──────────────────────
       -- 1. Compute type substitution.
@@ -900,28 +901,11 @@ partial def Command.inlineCallBody (E : Env)
           lhs.zip outVals |>.foldl (fun env (l, v) =>
             env.insertInContext (l, none) v) E'
       let processedEnvs := resultEnvs.map processResult
-      -- 9. Reduce result environments down to a single env for the caller.
-      --    Single-branch bodies are the common case for SMACK output (CFG
-      --    bodies use `evalCalleeCFG`, which threads branch-splits through
-      --    path conditions inside a single env). Structured bodies that
-      --    contain a symbolic `if`, however, can produce multiple result
-      --    envs with divergent variable bindings — and our merge cannot
-      --    soundly combine them: while `deferred` and `usedNames` are
-      --    unioned, `exprEnv.state` would have to be path-conditionally
-      --    merged (mirroring `processIteBranches`), and the path conditions
-      --    need to be threaded up from `eval`'s result list. Until that
-      --    proper merge lands, a multi-result body produces an explicit
-      --    error so the unsoundness can't propagate silently. The
-      --    `.BodyOrContract` policy catches this via the same OutOfFuel
-      --    fall-back mechanism (handleCall), which discards the partial
-      --    state and re-runs as contract.
-      let mergedE :=
-        match processedEnvs with
-        | [] => { E with error := some (.Misc s!"inlineCallBody: no result from body eval of {pname}") }
-        | [e] => e
-        | _ :: _ :: _ =>
-          { E with error := some (.Misc s!"inlineCallBody: callee {pname} produced multiple result envs (symbolic branch in body); multi-branch merge is not yet sound. Use --call-policy bodyOrContract to fall back to contract.") }
-      (retCmd, mergedE)
+      -- 9. Surface per-path envs; multi-path machinery handles fan-out.
+      match processedEnvs with
+      | [] =>
+        (retCmd, [{ E with error := some (.Misc s!"inlineCallBody: no result from body eval of {pname}") }])
+      | _ => (retCmd, processedEnvs)
 
 /--
 Dispatch a `.call` command according to the active `CallPolicy`.
@@ -934,27 +918,30 @@ Dispatch a `.call` command according to the active `CallPolicy`.
 partial def Command.handleCall (policy : CallPolicy) (E : Env)
     (lhs : List Expression.Ident) (pname : String)
     (args : List Expression.Expr) (md : Imperative.MetaData Expression)
-    : Command × Env :=
+    : Command × List Env :=
   match policy with
   | .Contract => Command.inlineCallContract E lhs pname args md
   | .Body =>
     Command.inlineCallBody E lhs pname args md
   | .BodyOrContract =>
-    let (c, E') := Command.inlineCallBody E lhs pname args md
-    match E'.error with
-    -- Fuel exhaustion → fall back to contract on the ORIGINAL `E` (discard
-    -- partial state). Same for the multi-branch merge guard: an unsound
-    -- merge surfaces as a `.Misc` error, and contract semantics is the
-    -- safe alternative.
-    | some .OutOfFuel => Command.inlineCallContract E lhs pname args md
-    | some (.Misc _) => Command.inlineCallContract E lhs pname args md
-    | _ => (c, E')
+    let (c, envs) := Command.inlineCallBody E lhs pname args md
+    -- Fall back to contract on any body-eval failure (OutOfFuel / .Misc).
+    -- Multi-path success is no longer a failure mode.
+    let needsFallback := envs.any fun e =>
+      match e.error with
+      | some .OutOfFuel => true
+      | some (.Misc _) => true
+      | _ => false
+    if needsFallback then
+      Command.inlineCallContract E lhs pname args md
+    else
+      (c, envs)
 
-partial def Command.eval (E : Env) (old_var_subst : SubstMap) (c : Command) : Command × Env :=
+partial def Command.eval (E : Env) (old_var_subst : SubstMap) (c : Command) : Command × List Env :=
   match c with
   | .cmd c =>
     let (c, E) := Imperative.Cmd.eval { E with substMap := old_var_subst } c
-    (.cmd c, E)
+    (.cmd c, [E])
   | .call pname callArgs md =>
     let lhs := CallArg.getLhs callArgs
     let inArgs := CallArg.getInputExprs callArgs

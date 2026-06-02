@@ -362,4 +362,133 @@ x@1 == 1
 
 end InlineCallBodyCFGTests
 
+/-! ## Multi-path body-eval tests
+
+These tests cover the case where a callee's body produces multiple
+result envs (a CFG with a symbolic `condGoto` that doesn't reconverge).
+Before the multi-path command-eval landing, this path produced a `.Misc`
+error and `--call-policy bodyOrContract` fell back to contract. After
+the change, the per-path envs flow upward through `evalAuxGo`'s
+active-path machinery and each path's assertions are evaluated
+independently.
+-/
+
+section InlineCallBodyMultipathTests
+
+open Std (ToFormat Format format)
+open Statement Lambda Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Core.Syntax
+open Imperative
+
+/-! ### Setup: CFG callee with a symbolic branch that does not reconverge.
+
+  ```
+  proc maybe_one(in b : bool, out r : int) {
+    entry:  goto tt, ff   when b
+    tt:     set r := 1; finish
+    ff:     set r := 2; finish
+  }
+  ```
+-/
+
+private def calleeMaybeOne : Procedure :=
+  { header :=
+      { name := "maybe_one",
+        typeArgs := [],
+        inputs := [("b", mty[bool])],
+        outputs := [("r", mty[int])] },
+    spec := { preconditions := [], postconditions := [] },
+    body := .cfg
+      { entry := "entry",
+        blocks := [
+          ("entry", { cmds := [],
+                      transfer := .condGoto eb[b] "tt" "ff" .empty }),
+          ("tt",    { cmds := [CmdExt.cmd (Cmd.set "r" (.det eb[#1]) .empty)],
+                      transfer := .finish }),
+          ("ff",    { cmds := [CmdExt.cmd (Cmd.set "r" (.det eb[#2]) .empty)],
+                      transfer := .finish })
+        ] } }
+
+private def mkMaybeEnv (policy : CallPolicy) : Env :=
+  let prog : Program := { decls := [.proc calleeMaybeOne .empty] }
+  { (∅ : Env) with
+    program := prog,
+    callPolicy := policy,
+    fuel := 100 }
+
+private def callerMaybeStmts : Statements :=
+  [ .init "guard" t[bool] .nondet .empty,
+    .init "x" t[int] (.det eb[#0]) .empty,
+    Statement.call "maybe_one" [.inArg eb[guard], .outArg "x"] .empty,
+    .assert "x_eq_1" eb[x == #1] .empty ]
+
+/-! ## Test 7: `.Body` policy fans out — one provable path, one failing path.
+
+The CFG forks on `b == guard` (symbolic). Path 1 (`b == true`) sets `r := 1`,
+caller's `x_eq_1` simplifies to `true`. Path 2 (`b == false`) sets `r := 2`,
+caller's `x_eq_1` evaluates to `false` and surfaces `AssertFail` on that path.
+The resulting env list has length 2 with the expected per-path verdicts.
+-/
+
+/--
+info: 2 envs
+env 0: error=none, x→1
+env 1: error=AssertFail x_eq_1, x→2
+-/
+#guard_msgs in
+#eval do
+  let envs := (Statement.eval (mkMaybeEnv .Body) ∅ callerMaybeStmts).fst
+  IO.println s!"{envs.length} envs"
+  let mut i := 0
+  for e in envs do
+    let errStr := match e.error with
+      | none => "none"
+      | some (.AssertFail label _) => s!"AssertFail {label}"
+      | some _ => "other"
+    let xStr := match e.exprEnv.state.findD ⟨"x", ()⟩ (none, .fvar () ⟨"x", ()⟩ none) with
+      | (_, e) => toString (format e)
+    IO.println s!"env {i}: error={errStr}, x→{xStr}"
+    i := i + 1
+
+/-! ## Test 8: `.Contract` policy is unchanged — single env, fresh-fvar lhs.
+
+Under `.Contract`, no body-eval occurs; the existing single-env path produces
+exactly the legacy behaviour (havoc'd lhs, deferred `x@1 == 1`).
+-/
+
+/--
+info: 1 envs
+env 0: error=none
+deferred obligation: x@1 == 1
+-/
+#guard_msgs in
+#eval do
+  let envs := (Statement.eval (mkMaybeEnv .Contract) ∅ callerMaybeStmts).fst
+  IO.println s!"{envs.length} envs"
+  let mut i := 0
+  for e in envs do
+    let errStr := match e.error with
+      | none => "none"
+      | some _ => "other"
+    IO.println s!"env {i}: error={errStr}"
+    for o in e.deferred do
+      IO.println s!"deferred obligation: {format o.obligation}"
+    i := i + 1
+
+/-! ## Test 9: `.BodyOrContract` exposes body-eval verdicts (no fallback).
+
+Multi-path success is no longer a body-eval failure: the contract fallback only
+triggers on `OutOfFuel` or `.Misc`. So `.BodyOrContract` produces the same
+2-env fan-out as `.Body`.
+-/
+
+/--
+info: 2 envs
+-/
+#guard_msgs in
+#eval do
+  let envs := (Statement.eval (mkMaybeEnv .BodyOrContract) ∅ callerMaybeStmts).fst
+  IO.println s!"{envs.length} envs"
+
+end InlineCallBodyMultipathTests
+
 end Core

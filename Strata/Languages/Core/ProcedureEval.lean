@@ -66,9 +66,21 @@ private def mergeResults (fallback : Env) (results : List Env) : Env :=
 
 private def evalBlockCmds (E : Env) (old_var_subst : SubstMap)
     (cmds : List Command) : Env :=
+  -- Top-level CFG eval threads a single env per block; symbolic branching
+  -- happens in `evalCFGStep`'s `.condGoto`, not in `Command.eval`'s list.
+  -- A multi-env return here (only possible when a callee body fans out)
+  -- becomes a `.Misc` error; `--call-policy bodyOrContract` already
+  -- intercepts this case in `handleCall`.
   cmds.foldl (fun env cmd =>
     if env.error.isSome then env
-    else (Statement.Command.eval env old_var_subst cmd).snd) E
+    else
+      match (Statement.Command.eval env old_var_subst cmd).snd with
+      | [] =>
+        { env with error := some (.Misc s!"evalBlockCmds: command produced no result envs") }
+      | [e] => e
+      | _ :: _ :: _ =>
+        { env with error := some (.Misc s!"evalBlockCmds: command produced multiple result envs at top-level CFG block; multi-path top-level CFG is not yet supported. Use --call-policy bodyOrContract to fall back to contract.") })
+    E
 
 private def evalCFGStep (cfg : DetCFG) (old_var_subst : SubstMap)
     (active : List (String × Env)) :
