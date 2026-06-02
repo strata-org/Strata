@@ -351,6 +351,8 @@ private def exprAsUnusedInit (expr : StmtExprMd) (md : Imperative.MetaData Core.
   let model := (← get).model
   let ident : Core.CoreIdent := ⟨s!"$unused_{id}", ()⟩
   let ty ← translateType (computeExprType model expr)
+  -- The empty type-variable list is valid because Laurel does not currently
+  -- support polymorphism. If polymorphism is added, this will need updating.
   let coreType := LTy.forAll [] ty
   return [Core.Statement.init ident coreType (.det coreExpr) md]
 
