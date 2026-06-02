@@ -14,7 +14,7 @@ open StrataDDM
 
 public section
 namespace StrataPython
-#load_dialect "/home/joehx/features/strata_python/Tools/Python/dialects/Python.dialect.st.ion"
+#load_dialect "../Tools/Python/dialects/Python.dialect.st.ion"
 
 #strata_gen Python
 
