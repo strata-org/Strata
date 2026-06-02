@@ -244,7 +244,7 @@ theorem Cmd.typeCheck_sound (C : LContext CoreLParams) (Env : TEnv Unit)
                     rw [h_idem] at h_mty
                     cases h_mty; rfl
                   rw [h_mty_eq]
-                  exact CmdHasType.init_det _ x xty heq_det _ md
+                  exact CmdHasType'.init_det _ x xty heq_det _ md
                     h_find_none_subst h_not_in_vars h_hastype
       · -- nondet case
         rename_i heq_nondet
@@ -278,7 +278,7 @@ theorem Cmd.typeCheck_sound (C : LContext CoreLParams) (Env : TEnv Unit)
               exact ⟨_, rfl⟩
             obtain ⟨mty, h_mty⟩ := h_v2_mono
             rw [h_ctx_eq, h_mty]
-            exact CmdHasType.init_nondet _ x xty mty md h_find_none_subst
+            exact CmdHasType'.init_nondet _ x xty mty md h_find_none_subst
     · -- lookup returned some → variable already declared → contradiction
       contradiction
   | set x e md =>
@@ -314,15 +314,22 @@ theorem Cmd.typeCheck_sound (C : LContext CoreLParams) (Env : TEnv Unit)
             have h_ctx : Env'.context = Env.context := by rw [h_ctx_unify, h_ctx_infer]
             rw [h_ctx]
             rw [LTy.subst_forAll_nil] at h_find_subst h_hastype
-            exact CmdHasType.set_det _ x (.forAll [] (LMonoTy.subst Env'.stateSubstInfo.subst mty_x)) expr md
+            exact CmdHasType'.set_det _ x (LMonoTy.subst Env'.stateSubstInfo.subst mty_x) expr md
               h_find_subst h_hastype
       | nondet =>
         simp at h
         cases h
         -- h_lookup : lookup Env x = some xty, Env' = Env
         have h_find := (CmdType.lookup_some_iff_find_some Env x xty).mp h_lookup
-        have h_find_subst := subst_find_some Env.context Env.stateSubstInfo.subst x xty h_find
-        exact CmdHasType.set_nondet _ x (LTy.subst Env.stateSubstInfo.subst xty) md h_find_subst
+        have h_xty_bv := h_mono x xty h_find
+        obtain ⟨xs, mty_x⟩ := xty
+        simp [LTy.boundVars] at h_xty_bv
+        subst h_xty_bv
+        have h_find_subst := subst_find_some Env.context Env.stateSubstInfo.subst x
+          (.forAll [] mty_x) h_find
+        rw [LTy.subst_forAll_nil] at h_find_subst
+        exact CmdHasType'.set_nondet _ x (LMonoTy.subst Env.stateSubstInfo.subst mty_x) md
+          h_find_subst
   | assert label e md =>
     simp only [Cmd.typeCheck, Bind.bind, Except.bind] at h
     split at h
@@ -335,7 +342,7 @@ theorem Cmd.typeCheck_sound (C : LContext CoreLParams) (Env : TEnv Unit)
         obtain ⟨h_ht, h_ctx⟩ := inferType_bool_HasType C Env Env_out
           (.assert label e md) e e' ety heq h_bool h_wf h_fwf h_ne h_mono
         rw [h_ctx]
-        exact CmdHasType.assert _ label e md h_ht
+        exact CmdHasType'.assert _ label e md h_ht
       · contradiction
   | assume label e md =>
     simp only [Cmd.typeCheck, Bind.bind, Except.bind] at h
@@ -349,7 +356,7 @@ theorem Cmd.typeCheck_sound (C : LContext CoreLParams) (Env : TEnv Unit)
         obtain ⟨h_ht, h_ctx⟩ := inferType_bool_HasType C Env Env_out
           (.assume label e md) e e' ety heq h_bool h_wf h_fwf h_ne h_mono
         rw [h_ctx]
-        exact CmdHasType.assume _ label e md h_ht
+        exact CmdHasType'.assume _ label e md h_ht
       · contradiction
   | cover label e md =>
     simp only [Cmd.typeCheck, Bind.bind, Except.bind] at h
@@ -363,7 +370,7 @@ theorem Cmd.typeCheck_sound (C : LContext CoreLParams) (Env : TEnv Unit)
         obtain ⟨h_ht, h_ctx⟩ := inferType_bool_HasType C Env Env_out
           (.cover label e md) e e' ety heq h_bool h_wf h_fwf h_ne h_mono
         rw [h_ctx]
-        exact CmdHasType.cover _ label e md h_ht
+        exact CmdHasType'.cover _ label e md h_ht
       · contradiction
 
 end TypeSpec

@@ -9,8 +9,8 @@ public import Strata.Languages.Core.StatementTypeSpec
 
 /-! ## Declarative Typing Specification for Procedures
 
-Specifies when a `Procedure` is well-typed using `HasType` rather than
-`LExpr.resolve`.
+Specifies when a `Procedure` is well-typed, parameterized over the expression
+typing predicate.
 -/
 
 namespace Core
@@ -36,7 +36,7 @@ def procFullContext (proc : Procedure) (aliases : List TypeAlias) : TContext Uni
   { types := [ins ++ outs ++ old], aliases }
 
 /--
-Declarative typing for procedures.
+Declarative typing for procedures, parameterized over `ExprTypingSpec`.
 
 A procedure is well-typed if:
 - Inputs and outputs have no duplicates
@@ -44,7 +44,8 @@ A procedure is well-typed if:
 - Postconditions are bool-typed in the input+output+old context
 - The body is well-typed in the full context
 -/
-def ProcHasType (C : LContext CoreLParams) (P : Program) (proc : Procedure)
+def ProcHasType' (τ : Type) [S : ExprTypingSpec τ]
+    (C : LContext CoreLParams) (P : Program) (proc : Procedure)
     (aliases : List TypeAlias) : Prop :=
   let Γ_in := procInputContext proc aliases
   let Γ_full := procFullContext proc aliases
@@ -52,12 +53,22 @@ def ProcHasType (C : LContext CoreLParams) (P : Program) (proc : Procedure)
   proc.header.outputs.keys.Nodup ∧
   -- Preconditions are bool-typed in Γ_in
   (∀ lbl check, ListMap.find? proc.spec.preconditions lbl = some check →
-    HasType (T := CoreLParams) C Γ_in check.expr (.forAll [] .bool)) ∧
+    S.exprTyped C Γ_in check.expr (S.embed .bool)) ∧
   -- Postconditions are bool-typed in Γ_full
   (∀ lbl check, ListMap.find? proc.spec.postconditions lbl = some check →
-    HasType (T := CoreLParams) C Γ_full check.expr (.forAll [] .bool)) ∧
+    S.exprTyped C Γ_full check.expr (S.embed .bool)) ∧
   -- Body is well-typed in Γ_full
-  (∃ C' Γ', StmtsHasType P C Γ_full proc.body C' Γ')
+  (∃ C' Γ', StmtsHasType' τ P C Γ_full proc.body C' Γ')
+
+/-- `ProcHasType` instantiated with `HasType`. -/
+abbrev ProcHasType (C : LContext CoreLParams) (P : Program) (proc : Procedure)
+    (aliases : List TypeAlias) : Prop :=
+  @ProcHasType' LTy instHasType C P proc aliases
+
+/-- `ProcHasType` instantiated with `HasTypeA`. -/
+abbrev ProcHasTypeA (C : LContext CoreLParams) (P : Program) (proc : Procedure)
+    (aliases : List TypeAlias) : Prop :=
+  @ProcHasType' LMonoTy instHasTypeA C P proc aliases
 
 end -- public section
 
