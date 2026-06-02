@@ -2092,7 +2092,11 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
     let savedAnswer := (← get).answerType
     modify fun s => { s with answerType := some (outputs'.map (·.type)) }
     let bodyExpected := procedureBodyType proc.isFunctional outputs' proc.name.source
-    let body' ← resolveBody proc.body bodyExpected
+    -- Pre-register the implicit `$body` label that the LaurelToCore
+    -- translator wraps the body in (`Core.Statement.block "$body" …`),
+    -- so that frontends emitting `Exit "$body"` for early-return lowering
+    -- (e.g. PythonToLaurel) don't trip Check.exit's label-scope check.
+    let body' ← withLabel (some "$body") <| resolveBody proc.body bodyExpected
     modify fun s => { s with answerType := savedAnswer }
     if !proc.isFunctional && body'.isTransparent then
       let diag := diagnosticFromSource proc.name.source
@@ -2129,7 +2133,8 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
     let savedAnswer := (← get).answerType
     modify fun s => { s with answerType := some (outputs'.map (·.type)) }
     let bodyExpected := procedureBodyType proc.isFunctional outputs' proc.name.source
-    let body' ← resolveBody proc.body bodyExpected
+    -- See `resolveProcedure` for the rationale on `$body`.
+    let body' ← withLabel (some "$body") <| resolveBody proc.body bodyExpected
     modify fun s => { s with answerType := savedAnswer }
     if !proc.isFunctional && body'.isTransparent then
       let diag := diagnosticFromSource proc.name.source
