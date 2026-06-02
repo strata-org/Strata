@@ -272,11 +272,11 @@ def manglePythonMethod (className : String) (methodName : String) : String :=
 /-- Build a StaticCall for an instance method: ClassName@methodName(self, args...).
     For Any-typed receivers (no model available), returns a Hole under lax
     mode, or raises `unsupportedConstruct` under `--reject-approximations`. -/
-def mkInstanceMethodCall (rejectApproximations : Bool) (className : String) (methodName : String)
+def mkInstanceMethodCall (ctx : TranslationContext) (className : String) (methodName : String)
     (self : StmtExprMd) (args : List StmtExprMd)
     (source : Option FileRange := none) : Except TranslationError StmtExprMd :=
   if className == "Any" then
-    rejectableHole rejectApproximations
+    rejectableHole ctx.rejectApproximations
       s!"instance method call '{methodName}' on Any-typed receiver"
       (source := source)
   else
@@ -2071,8 +2071,8 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
         let mgrDecl := mkVarDeclInit mgrName mgrLauTy mgrExpr
         let mgrRef := mkStmtExprMd (StmtExpr.Var (.Local mgrName))
         currentCtx := {currentCtx with variableTypes := currentCtx.variableTypes ++ [(mgrName, mgrTy)]}
-        let enterCall ← mkInstanceMethodCall ctx.rejectApproximations mgrTy "__enter__" mgrRef [] md
-        let exitCall ← mkInstanceMethodCall ctx.rejectApproximations mgrTy "__exit__" mgrRef [] md
+        let enterCall ← mkInstanceMethodCall ctx mgrTy "__enter__" mgrRef [] md
+        let exitCall ← mkInstanceMethodCall ctx mgrTy "__exit__" mgrRef [] md
         match optVars.val with
         | some varExpr =>
           let varName := pyExprToString varExpr
