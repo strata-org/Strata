@@ -74,6 +74,7 @@ jobs:
           lake-package-directory: StrataPython
           build-args: StrataPython StrataPythonTest
           use-github-cache: false
+          test: false
       - name: Build StrataCLI
         uses: leanprover/lean-action@v1
         with:
