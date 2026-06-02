@@ -44,6 +44,8 @@ import Strata.Languages.Core.EntryPoint
 import Strata.Languages.Core.VerifierProofs
 import Strata.Languages.Dyn.Dyn
 import Strata.Languages.Dyn.Verify
+import Strata.Languages.Laurel.FilterPrelude
+
 /- DDM -/
 import StrataDDM
 
@@ -62,6 +64,9 @@ import Strata.Transform.StructuredToUnstructured
 
 /- Other -/
 import Strata.MetaVerifier
+
+/- Pipeline -/
+import Strata.Pipeline.Diagnostic
 
 /- Simple API -/
 import Strata.SimpleAPI
@@ -90,8 +95,6 @@ import Strata.Languages.Core.ProgramWF
 import Strata.Languages.Core.StatementWF
 import Strata.Languages.Dyn.DDMTransform.Parse
 import Strata.Languages.Dyn.DDMTransform.Translate
-import Strata.Languages.Laurel.FilterPrelude
-import Strata.Pipeline.Diagnostic
 import Strata.Util.Random
 
 -- noimport: Strata.Util.IOTests (used for tests)

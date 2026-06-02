@@ -5,6 +5,13 @@
 -/
 module
 
+/-! # Shared test runner harness
+
+`testMain` is the concurrent file-runner used by every package's `lake test`.
+Each package provides a thin wrapper exe that calls `testMain` with its own
+`testDir` (e.g. `StrataTestExtra`, `StrataPythonTestExtra`); this module is
+the only shared implementation. -/
+
 open System (FilePath)
 
 namespace Strata.IOTests
@@ -30,7 +37,7 @@ structure Config where
   includes : Array String
   excludes : Array String
 
-def parseArgs (args : List String) (defaultDir : FilePath := "StrataTestExtra")
+def parseArgs (args : List String) (defaultDir : FilePath)
     : Except String Config := do
   let mut includes := #[]
   let mut excludes := #[]
