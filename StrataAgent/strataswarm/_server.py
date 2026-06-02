@@ -13,9 +13,10 @@ from pydantic import BaseModel
 
 from ._backend import AgentBackend
 from ._channels import ChannelBus
-from ._types import AgentEvent, AgentSpec, AgentStatus
+from ._types import AgentEvent, AgentSpec, AgentStatus, ShardConfig, Workspace
 
-SWARM_SAVE_DIR = Path(__file__).parent.parent / "temp"
+AGENT_SPECS_DIR = Path(__file__).parent / "agent_specs"
+SWARM_SAVE_DIR = Path(__file__).parent / "temp"
 CHAT_SAVE_DIR = SWARM_SAVE_DIR / "chats"
 LOG_DIR = SWARM_SAVE_DIR
 
@@ -48,16 +49,32 @@ class AgentCreateRequest(BaseModel):
     prompt: str
     allowed_tools: list[str] = []
     disallowed_tools: list[str] = []
+    model: str | None = None
     max_turns: int | None = None
     max_budget_usd: float | None = None
     timeout_seconds: float | None = None
     is_super_agent: bool = False
+    reply_only: bool = False
     mcp_servers: dict[str, McpServerDef] = {}
+    workspace: dict[str, list[str]] | None = None
+    description: str = ""
+    visibility: str | dict = "all"
+    child_prefix: str | None = None
+    replicas: int | None = None
+    routing: str | None = None
+    routing_key: str | None = None
+    max_inbound_length: int | None = None
+    max_inbound_response: str | None = None
+    max_outbound_length: int | None = None
+    max_outbound_response: str | None = None
 
 
 class SwarmConfig(BaseModel):
     name: str
     agents: list[AgentCreateRequest]
+    nudge_module: str | None = None
+    manager: str | None = None
+    checkpoint: dict | None = None
 
 
 def check_mcp_dependencies(agent_specs: list[AgentCreateRequest]) -> tuple[list[str], list[str]]:
@@ -111,12 +128,12 @@ class SwarmDashboard:
         self,
         backend_factory: Any,
         host: str = "0.0.0.0",
-        port: int = 8420,
+        port: int = 8421,
     ) -> None:
         self._backend_factory = backend_factory
         self.host = host
         self.port = port
-        self.app = FastAPI(title="StrataSwarm Dashboard")
+        self.app = FastAPI(title="StrataSwarm v2 Dashboard")
         self._connections: list[WebSocket] = []
         self._event_history: dict[str, list[dict[str, Any]]] = {}
         self._all_messages: list[dict[str, Any]] = []
@@ -124,6 +141,8 @@ class SwarmDashboard:
         self._swarm_task: asyncio.Task | None = None
         self._agent_specs: list[AgentCreateRequest] = []
         self._swarm_name: str = ""
+        self._nudge_module: str | None = None
+        self._manager: str | None = None
         self._agent_sessions: dict[str, str] = {}
         self._setup_routes()
         self._setup_middleware()
@@ -193,14 +212,14 @@ class SwarmDashboard:
         @self.app.post("/api/swarm/pause_all")
         async def pause_all() -> dict[str, str]:
             if self._swarm:
-                for name in self._swarm._nodes:
+                for name in self._swarm._registry.nodes:
                     self._swarm.pause(name)
             return {"status": "paused_all"}
 
         @self.app.post("/api/swarm/resume_all")
         async def resume_all() -> dict[str, str]:
             if self._swarm:
-                for name in self._swarm._nodes:
+                for name in self._swarm._registry.nodes:
                     self._swarm.resume(name)
             return {"status": "resumed_all"}
 
@@ -209,6 +228,52 @@ class SwarmDashboard:
             if self._swarm:
                 self._swarm.cancel()
             return {"status": "cancelled"}
+
+        @self.app.post("/api/swarm/checkpoint")
+        async def create_checkpoint() -> dict[str, str]:
+            if self._swarm and self._swarm._checkpoint_manager:
+                path = self._swarm._checkpoint_manager.create(reason="user_request")
+                return {"status": "created", "path": str(path)}
+            return {"status": "error", "message": "No swarm or checkpointing disabled"}
+
+        @self.app.get("/api/swarm/checkpoints")
+        async def list_checkpoints() -> list[str]:
+            if self._swarm and self._swarm._checkpoint_manager:
+                return self._swarm._checkpoint_manager.list_checkpoints()
+            # Fallback: check checkpoint dir directly (visible even without running swarm)
+            cp_dir = SWARM_SAVE_DIR / "checkpoints"
+            if cp_dir.exists():
+                return sorted([d.name for d in cp_dir.iterdir() if d.is_dir()])
+            return []
+
+        @self.app.post("/api/swarm/resume_checkpoint")
+        async def resume_checkpoint(body: dict[str, Any]) -> dict[str, str]:
+            checkpoint_name = body.get("checkpoint", "")
+            if not checkpoint_name:
+                return {"status": "error", "message": "checkpoint name required"}
+            if not self._swarm or not self._swarm._checkpoint_manager:
+                return {"status": "error", "message": "no swarm or checkpointing disabled"}
+            try:
+                state = self._swarm._checkpoint_manager.restore(checkpoint_name)
+                sessions = state.get("sessions", {})
+
+                # Load per-agent checkpoint .md files for resume
+                cp_dir = self._swarm._checkpoint_manager._dir / checkpoint_name / "agents"
+                agent_checkpoints: dict[str, str] = {}
+                if cp_dir.exists():
+                    for f in cp_dir.glob("*.md"):
+                        agent_checkpoints[f.stem] = f.read_text()
+
+                chat_data = {
+                    "swarm_name": state.get("swarm_name", "resumed"),
+                    "agents": [s.model_dump() for s in self._agent_specs],
+                    "sessions": sessions,
+                    "agent_checkpoints": agent_checkpoints,
+                }
+                await self._resume_from_chat(chat_data)
+                return {"status": "resumed", "from": checkpoint_name}
+            except FileNotFoundError:
+                return {"status": "error", "message": f"checkpoint '{checkpoint_name}' not found"}
 
         @self.app.post("/api/swarm/create_new")
         async def create_new() -> dict[str, str]:
@@ -228,28 +293,30 @@ class SwarmDashboard:
         @self.app.get("/api/swarm/saved")
         async def list_saved() -> list[str]:
             SWARM_SAVE_DIR.mkdir(parents=True, exist_ok=True)
-            return [f.stem for f in SWARM_SAVE_DIR.glob("*.yaml")]
+            return [f.stem for f in AGENT_SPECS_DIR.glob("*.yaml")]
 
         @self.app.post("/api/swarm/save")
         async def save_swarm(body: dict[str, Any]) -> dict[str, str]:
             name = body.get("name", "").strip()
             if not name:
                 return {"status": "error", "message": "Name is required"}
-            SWARM_SAVE_DIR.mkdir(parents=True, exist_ok=True)
+            AGENT_SPECS_DIR.mkdir(parents=True, exist_ok=True)
             config = SwarmConfig(name=name, agents=self._agent_specs)
-            path = SWARM_SAVE_DIR / f"{name}.yaml"
+            path = AGENT_SPECS_DIR / f"{name}.yaml"
             path.write_text(yaml.dump(config.model_dump(), default_flow_style=False, sort_keys=False))
             return {"status": "saved", "path": str(path)}
 
         @self.app.post("/api/swarm/load")
         async def load_swarm(body: dict[str, Any]) -> dict[str, str]:
             name = body.get("name", "").strip()
-            path = SWARM_SAVE_DIR / f"{name}.yaml"
+            path = AGENT_SPECS_DIR / f"{name}.yaml"
             if not path.exists():
                 return {"status": "error", "message": f"Not found: {name}"}
             config = SwarmConfig.model_validate(yaml.safe_load(path.read_text()))
             self._agent_specs = config.agents
             self._swarm_name = config.name
+            self._nudge_module = config.nudge_module
+            self._manager = config.manager
             await self._broadcast({"type": "specs_updated", "specs": self._get_specs_list()})
             await self._broadcast({"type": "swarm_loaded", "name": config.name})
             return {"status": "loaded", "name": config.name}
@@ -257,7 +324,7 @@ class SwarmDashboard:
         @self.app.post("/api/swarm/delete_saved")
         async def delete_saved(body: dict[str, Any]) -> dict[str, str]:
             name = body.get("name", "").strip()
-            path = SWARM_SAVE_DIR / f"{name}.yaml"
+            path = AGENT_SPECS_DIR / f"{name}.yaml"
             if path.exists():
                 path.unlink()
             return {"status": "deleted"}
@@ -283,9 +350,199 @@ class SwarmDashboard:
         @self.app.post("/api/agents/{name}/message")
         async def send_message_to_agent(name: str, body: dict[str, Any]) -> dict[str, str]:
             message = body.get("message", "")
-            if self._swarm:
-                await self._swarm.send_to_agent(name, sender="user", payload=message)
+            if self._swarm and hasattr(self._swarm, '_user_backend'):
+                # Human typing = backend output. Inject with target so agent loop routes it.
+                self._swarm._user_backend.inject_user_input(f"[to:{name}] {message}")
             return {"status": "sent"}
+
+        @self.app.post("/api/agents/{name}/budget")
+        async def increase_budget(name: str, body: dict[str, Any]) -> dict[str, str]:
+            """Increase an agent's budget. Takes effect on next session reconnect.
+
+            For a running agent, this updates the spec so that:
+            - If the agent hits budget limit and retries, it reconnects with more budget
+            - On checkpoint/resume, the new budget is used
+            - The current live session's budget cannot be changed mid-flight (Claude limitation)
+            """
+            amount = body.get("amount", 0)
+            if not self._swarm or name not in self._swarm._registry.nodes:
+                return {"status": "error", "message": f"Agent '{name}' not found"}
+            node = self._swarm._registry.nodes[name]
+            old_budget = node.spec.max_budget_usd or 0
+            node.spec.max_budget_usd = old_budget + amount
+            # Also update the agent_specs list so checkpoint/save captures it
+            for spec_req in self._agent_specs:
+                if spec_req.name == name:
+                    spec_req.max_budget_usd = node.spec.max_budget_usd
+                    break
+            return {
+                "status": "ok",
+                "agent": name,
+                "old_budget": str(old_budget),
+                "new_budget": str(node.spec.max_budget_usd),
+                "note": "Takes effect on next reconnect/resume. Current session has its own budget.",
+            }
+
+        @self.app.post("/api/agents/{name}/interrupt")
+        async def interrupt_agent_api(name: str, body: dict[str, Any]) -> dict[str, str]:
+            """Interrupt an agent's current work via backend.interrupt() and send a message."""
+            message = body.get("message", "User interrupted. Stop and wait for instructions.")
+            if not self._swarm or name not in self._swarm._registry.nodes:
+                return {"status": "error", "message": f"Agent '{name}' not found"}
+            await self._swarm.interrupt_agent(name, message)
+            return {"status": "ok", "agent": name}
+
+        @self.app.get("/api/telemetry")
+        async def get_telemetry() -> dict[str, Any]:
+            """Return telemetry summary for all agents."""
+            if not self._swarm:
+                return {"agents": {}}
+            import time as _time
+            all_events = self._swarm._telemetry.get_all()
+            summary: dict[str, Any] = {}
+            for agent_name, events in all_events.items():
+                tool_counts: dict[str, int] = {}
+                message_sent_count = 0
+                message_received_count = 0
+                for ev in events:
+                    if ev.event_type == "tool_call":
+                        tool_counts[ev.tool_name or "unknown"] = tool_counts.get(ev.tool_name or "unknown", 0) + 1
+                    elif ev.event_type == "message_sent":
+                        message_sent_count += 1
+                    elif ev.event_type == "message_received":
+                        message_received_count += 1
+                summary[agent_name] = {
+                    "total_events": len(events),
+                    "tool_calls": tool_counts,
+                    "messages_sent": message_sent_count,
+                    "messages_received": message_received_count,
+                    "last_event_age_s": round(_time.time() - events[-1].timestamp, 1) if events else None,
+                }
+            return {"agents": summary}
+
+        @self.app.get("/api/telemetry/{name}")
+        async def get_agent_telemetry(name: str) -> dict[str, Any]:
+            """Return detailed telemetry for a specific agent."""
+            if not self._swarm:
+                return {"events": []}
+            events = self._swarm._telemetry.get_recent(name, n=100)
+            return {
+                "agent": name,
+                "events": [
+                    {
+                        "type": ev.event_type,
+                        "tool": ev.tool_name,
+                        "target": ev.target,
+                        "timestamp": ev.timestamp,
+                        "success": ev.success,
+                    }
+                    for ev in events
+                ],
+            }
+
+        @self.app.get("/api/nudges")
+        async def get_nudge_history() -> dict[str, Any]:
+            """Return nudge evaluation history (fired, skipped, errors)."""
+            if not self._swarm:
+                return {"history": [], "rules": []}
+            history = self._swarm._nudge_monitor.get_history(limit=50)
+            fire_counts = self._swarm._nudge_monitor._fire_counts
+            rules = [
+                {
+                    "idx": i,
+                    "name": fn.__name__,
+                    "probability": prob,
+                    "cooldown_s": cd,
+                    "fire_count": fire_counts.get(i, 0),
+                }
+                for i, (fn, prob, cd) in enumerate(self._swarm._nudge_monitor._rules)
+            ]
+            return {"history": history, "rules": rules}
+
+        @self.app.post("/api/mcp/restart")
+        async def restart_mcp() -> dict[str, Any]:
+            """Trigger domain-specific MCP restart via the nudge module hook."""
+            if not self._swarm:
+                return {"status": "error", "message": "No swarm running"}
+            hook = self._swarm._nudge_monitor._on_mcp_restart
+            if not hook:
+                return {"status": "error", "message": "No ON_MCP_RESTART hook in nudge module"}
+            try:
+                result = await hook(self._swarm)
+                return {"status": "restarted", "details": result}
+            except Exception as e:
+                logger.error(f"[MCP RESTART] Hook error: {e}")
+                return {"status": "error", "message": str(e)}
+
+        @self.app.get("/api/agents/live")
+        async def get_live_agents() -> dict[str, Any]:
+            """Return runtime state of all agents including spawned ones."""
+            if not self._swarm:
+                return {"agents": []}
+            agents = []
+            for name, node in self._swarm._registry.nodes.items():
+                spec = node.spec
+                # Build tools info
+                allowed = spec.tools.to_claude_allowed() if spec.tools else []
+                disallowed = spec.tools.to_claude_disallowed() if spec.tools else []
+                # Workspace
+                ws = None
+                if spec.workspace:
+                    ws = {
+                        "read": spec.workspace.read,
+                        "write": spec.workspace.write,
+                        "edit": spec.workspace.edit,
+                    }
+                # Status from task + result
+                status = "unknown"
+                halted_by = None
+                if name in self._swarm._registry.tasks:
+                    task = self._swarm._registry.tasks[name]
+                    if task.done():
+                        # Task finished — check result for details
+                        if name in self._swarm._registry.results:
+                            r = self._swarm._registry.results[name]
+                            halted_by = r.halted_by
+                            if r.halted_by == "done_confirmed":
+                                status = "done (confirmed)"
+                            elif r.halted_by == "completion":
+                                status = "completed"
+                            elif r.halted_by:
+                                status = f"stopped ({r.halted_by})"
+                            else:
+                                status = r.status.value if hasattr(r.status, "value") else "done"
+                        else:
+                            status = "done"
+                    else:
+                        # Check if it's exiting
+                        if self._swarm._registry.exit_signals.get(name):
+                            status = "exiting"
+                        else:
+                            status = "running"
+                elif name in self._swarm._registry.results:
+                    r = self._swarm._registry.results[name]
+                    halted_by = r.halted_by
+                    status = r.status.value if hasattr(r.status, "value") else str(r.status)
+                else:
+                    status = "pending"
+
+                agents.append({
+                    "name": name,
+                    "status": status,
+                    "halted_by": halted_by,
+                    "is_super_agent": spec.is_super_agent,
+                    "reply_only": spec.reply_only,
+                    "spawned_by": getattr(spec, "_spawned_by", None),
+                    "system_prompt": spec.system_prompt,
+                    "prompt": spec.prompt[:500] if spec.prompt else None,
+                    "allowed_tools": allowed,
+                    "disallowed_tools": disallowed,
+                    "workspace": ws,
+                    "model": self._swarm._registry.models.get(name),
+                    "cost_usd": self._swarm._registry.costs.get(name),
+                    "session_id": self._swarm._registry.session_ids.get(name),
+                })
+            return {"agents": agents}
 
     async def _handle_client_message(self, data: dict[str, Any], ws: WebSocket) -> None:
         action = data.get("action")
@@ -309,12 +566,12 @@ class SwarmDashboard:
 
         elif action == "pause_all":
             if self._swarm:
-                for name in self._swarm._nodes:
+                for name in self._swarm._registry.nodes:
                     self._swarm.pause(name)
 
         elif action == "resume_all":
             if self._swarm:
-                for name in self._swarm._nodes:
+                for name in self._swarm._registry.nodes:
                     self._swarm.resume(name)
 
         elif action == "cancel":
@@ -345,46 +602,47 @@ class SwarmDashboard:
                 self._swarm.cancel_agent(agent_name)
 
         elif action == "send_message" and agent_name:
-            if self._swarm:
-                await self._swarm.send_to_agent(
-                    agent_name, sender="user", payload=data.get("message", "")
-                )
+            if self._swarm and hasattr(self._swarm, '_user_backend'):
+                message = data.get("message", "")
+                self._swarm._user_backend.inject_user_input(f"[to:{agent_name}] {message}")
 
         elif action == "save_swarm":
             name = data.get("name", "").strip()
             if not name:
                 await self._broadcast({"type": "error", "message": "Swarm name is required"})
                 return
-            SWARM_SAVE_DIR.mkdir(parents=True, exist_ok=True)
+            AGENT_SPECS_DIR.mkdir(parents=True, exist_ok=True)
             config = SwarmConfig(name=name, agents=self._agent_specs)
-            path = SWARM_SAVE_DIR / f"{name}.yaml"
+            path = AGENT_SPECS_DIR / f"{name}.yaml"
             path.write_text(yaml.dump(config.model_dump(), default_flow_style=False, sort_keys=False))
-            saved_list = [f.stem for f in SWARM_SAVE_DIR.glob("*.yaml")]
+            saved_list = [f.stem for f in AGENT_SPECS_DIR.glob("*.yaml")]
             await self._broadcast({"type": "swarm_saved", "name": name, "saved_list": saved_list})
 
         elif action == "load_swarm":
             name = data.get("name", "").strip()
-            path = SWARM_SAVE_DIR / f"{name}.yaml"
+            path = AGENT_SPECS_DIR / f"{name}.yaml"
             if not path.exists():
                 await ws.send_json({"type": "error", "message": f"Swarm '{name}' not found"})
                 return
             config = SwarmConfig.model_validate(yaml.safe_load(path.read_text()))
             self._agent_specs = config.agents
             self._swarm_name = config.name
+            self._nudge_module = config.nudge_module
+            self._manager = config.manager
             await ws.send_json({"type": "specs_updated", "specs": self._get_specs_list()})
             await ws.send_json({"type": "swarm_loaded", "name": config.name})
 
         elif action == "delete_swarm":
             name = data.get("name", "").strip()
-            path = SWARM_SAVE_DIR / f"{name}.yaml"
+            path = AGENT_SPECS_DIR / f"{name}.yaml"
             if path.exists():
                 path.unlink()
-            saved_list = [f.stem for f in SWARM_SAVE_DIR.glob("*.yaml")]
+            saved_list = [f.stem for f in AGENT_SPECS_DIR.glob("*.yaml")]
             await ws.send_json({"type": "swarm_deleted", "name": name, "saved_list": saved_list})
 
         elif action == "list_saved":
-            SWARM_SAVE_DIR.mkdir(parents=True, exist_ok=True)
-            saved_list = [f.stem for f in SWARM_SAVE_DIR.glob("*.yaml")]
+            AGENT_SPECS_DIR.mkdir(parents=True, exist_ok=True)
+            saved_list = [f.stem for f in AGENT_SPECS_DIR.glob("*.yaml")]
             await ws.send_json({"type": "saved_list", "saved_list": saved_list})
 
         elif action == "save_chat":
@@ -434,7 +692,8 @@ class SwarmDashboard:
             await ws.send_json({"type": "chat_list", "chats": chats})
 
     async def _resume_from_chat(self, chat_data: dict[str, Any]) -> None:
-        """Resume a swarm from a saved chat using session IDs."""
+        """Resume a swarm from a saved chat using session IDs.
+        Restores replicas, affinities, and session bindings."""
         from ._swarm import Swarm, ExecutionMode
 
         sessions = chat_data.get("sessions", {})
@@ -447,13 +706,16 @@ class SwarmDashboard:
         self._event_history = {}
         self._all_messages = []
 
-        project_root = str(Path(__file__).parent.parent.parent)
+        project_root = str(Path.cwd())
         self._swarm = Swarm(
             backend_factory=self._backend_factory,
             enable_messaging=True,
             wait_after_completion=True,
             name=swarm_name,
             cwd=project_root,
+            checkpoint_dir=str(SWARM_SAVE_DIR / "checkpoints"),
+            nudge_module=self._nudge_module,
+            manager=self._manager,
         )
 
         for spec_req in self._agent_specs:
@@ -465,6 +727,21 @@ class SwarmDashboard:
 
             # Get session ID for this agent from saved chat
             session_id = sessions.get(spec_req.name)
+
+            # Parse workspace and generate tool permissions from it
+            ws_obj: Workspace | None = None
+            if spec_req.workspace:
+                ws_obj = Workspace(
+                    read=spec_req.workspace.get("read", []),
+                    write=spec_req.workspace.get("write", []),
+                    edit=spec_req.workspace.get("edit", []),
+                )
+                for path in ws_obj.read:
+                    tools.allow(f"Read({path})")
+                for path in ws_obj.write:
+                    tools.allow(f"Write({path})")
+                for path in ws_obj.edit:
+                    tools.allow(f"Edit({path})")
 
             # Convert MCP server defs
             external_mcp: dict[str, Any] = {}
@@ -478,34 +755,83 @@ class SwarmDashboard:
                     config["type"] = server_def.type
                 external_mcp[server_name] = config
 
+            # Build shard config if replicas requested
+            shard_config: ShardConfig | None = None
+            if spec_req.replicas and spec_req.replicas > 1:
+                shard_config = ShardConfig(
+                    replicas=spec_req.replicas,
+                    routing=spec_req.routing or "round_robin",
+                    routing_key=spec_req.routing_key,
+                )
+
             agent_spec = AgentSpec(
                 name=spec_req.name,
                 system_prompt=spec_req.system_prompt,
                 prompt=spec_req.prompt,
                 tools=tools,
+                model=spec_req.model,
                 max_turns=spec_req.max_turns,
                 max_budget_usd=spec_req.max_budget_usd,
                 timeout_seconds=spec_req.timeout_seconds,
                 is_super_agent=spec_req.is_super_agent,
+                reply_only=spec_req.reply_only,
                 resume_session_id=session_id,
                 mcp_servers=external_mcp,
+                workspace=ws_obj,
+                description=spec_req.description,
+                visibility=spec_req.visibility,
+                child_prefix=spec_req.child_prefix,
+                shard=shard_config,
+                max_inbound_length=spec_req.max_inbound_length,
+                max_inbound_response=spec_req.max_inbound_response,
+                max_outbound_length=spec_req.max_outbound_length,
+                max_outbound_response=spec_req.max_outbound_response,
             )
-            self._swarm.add(agent_spec)
+
+            if shard_config and shard_config.replicas > 1:
+                from copy import copy
+                for i in range(shard_config.replicas):
+                    instance_spec = copy(agent_spec)
+                    instance_spec.name = f"{spec_req.name}_{i}"
+                    # Use per-instance session ID if available
+                    instance_session = sessions.get(f"{spec_req.name}_{i}")
+                    if instance_session:
+                        instance_spec.resume_session_id = instance_session
+                    self._swarm.add(instance_spec)
+                self._swarm._registry.sharded_agents[spec_req.name] = shard_config
+            else:
+                self._swarm.add(agent_spec)
+
+        # Restore affinities from checkpoint/saved state
+        affinities = chat_data.get("agent_affinities", {})
+        for key, physical in affinities.items():
+            if ":" in key:
+                sender, logical = key.split(":", 1)
+                self._swarm._registry.affinities[(sender, logical)] = physical
+
+        # Store per-agent checkpoint data for restore on run
+        self._swarm._agent_checkpoints = chat_data.get("agent_checkpoints", {})
 
         self._swarm.set_event_callback(self.on_agent_event)
         await self._broadcast({"type": "swarm_started", "agents": self._get_specs_list()})
 
         async def run_swarm():
-            results = await self._swarm.run(mode=ExecutionMode.AWAIT_ALL)
-            summary = {}
-            for name, r in results.items():
-                summary[name] = {
-                    "status": r.status.value,
-                    "halted_by": r.halted_by,
-                    "cost_usd": r.cost_usd,
-                    "num_turns": r.num_turns,
-                }
-            await self._broadcast({"type": "swarm_completed", "results": summary})
+            try:
+                results = await self._swarm.run(mode=ExecutionMode.AWAIT_ALL)
+                summary = {}
+                for name, r in results.items():
+                    summary[name] = {
+                        "status": r.status.value,
+                        "halted_by": r.halted_by,
+                        "cost_usd": r.cost_usd,
+                        "num_turns": r.num_turns,
+                    }
+                await self._broadcast({"type": "swarm_completed", "results": summary})
+            except Exception as e:
+                logger.error(f"[SWARM] run_swarm crashed: {e}")
+                import traceback
+                traceback.print_exc()
+                await self._broadcast({"type": "error", "message": f"Swarm crashed: {e}"})
 
         self._swarm_task = asyncio.create_task(run_swarm())
         logger.info(f"Swarm resumed from chat with sessions: {sessions}")
@@ -529,13 +855,16 @@ class SwarmDashboard:
         swarm_name = self._swarm_name or "_".join(s.name for s in self._agent_specs[:3]) or "swarm"
         self._swarm_name = swarm_name
         # Project root is parent of StrataAgent (where relative paths in tool perms resolve)
-        project_root = str(Path(__file__).parent.parent.parent)
+        project_root = str(Path.cwd())
         self._swarm = Swarm(
             backend_factory=self._backend_factory,
             enable_messaging=True,
             wait_after_completion=True,
             name=swarm_name,
             cwd=project_root,
+            checkpoint_dir=str(SWARM_SAVE_DIR / "checkpoints"),
+            nudge_module=self._nudge_module,
+            manager=self._manager,
         )
 
         for spec_req in self._agent_specs:
@@ -544,6 +873,21 @@ class SwarmDashboard:
                 tools.allow(t)
             for t in spec_req.disallowed_tools:
                 tools.disallow(t)
+
+            # Parse workspace and generate tool permissions from it
+            ws_obj: Workspace | None = None
+            if spec_req.workspace:
+                ws_obj = Workspace(
+                    read=spec_req.workspace.get("read", []),
+                    write=spec_req.workspace.get("write", []),
+                    edit=spec_req.workspace.get("edit", []),
+                )
+                for path in ws_obj.read:
+                    tools.allow(f"Read({path})")
+                for path in ws_obj.write:
+                    tools.allow(f"Write({path})")
+                for path in ws_obj.edit:
+                    tools.allow(f"Edit({path})")
 
             # Convert MCP server defs to the format Claude SDK expects
             external_mcp: dict[str, Any] = {}
@@ -557,33 +901,70 @@ class SwarmDashboard:
                     config["type"] = server_def.type
                 external_mcp[server_name] = config
 
+            # Build shard config if replicas requested
+            shard_config: ShardConfig | None = None
+            if spec_req.replicas and spec_req.replicas > 1:
+                shard_config = ShardConfig(
+                    replicas=spec_req.replicas,
+                    routing=spec_req.routing or "round_robin",
+                    routing_key=spec_req.routing_key,
+                )
+
             agent_spec = AgentSpec(
                 name=spec_req.name,
                 system_prompt=spec_req.system_prompt,
                 prompt=spec_req.prompt,
                 tools=tools,
+                model=spec_req.model,
                 max_turns=spec_req.max_turns,
                 max_budget_usd=spec_req.max_budget_usd,
                 timeout_seconds=spec_req.timeout_seconds,
                 is_super_agent=spec_req.is_super_agent,
+                reply_only=spec_req.reply_only,
                 mcp_servers=external_mcp,
+                workspace=ws_obj,
+                description=spec_req.description,
+                visibility=spec_req.visibility,
+                child_prefix=spec_req.child_prefix,
+                shard=shard_config,
+                max_inbound_length=spec_req.max_inbound_length,
+                max_inbound_response=spec_req.max_inbound_response,
+                max_outbound_length=spec_req.max_outbound_length,
+                max_outbound_response=spec_req.max_outbound_response,
             )
-            self._swarm.add(agent_spec)
+
+            if shard_config and shard_config.replicas > 1:
+                # Create N instances; only logical name appears in visibility graph
+                from copy import copy
+
+                for i in range(shard_config.replicas):
+                    instance_spec = copy(agent_spec)
+                    instance_spec.name = f"{spec_req.name}_{i}"
+                    self._swarm.add(instance_spec)
+                self._swarm._registry.sharded_agents[spec_req.name] = shard_config
+            else:
+                self._swarm.add(agent_spec)
 
         self._swarm.set_event_callback(self.on_agent_event)
         await self._broadcast({"type": "swarm_started", "agents": self._get_specs_list()})
 
         async def run_swarm():
-            results = await self._swarm.run(mode=ExecutionMode.AWAIT_ALL)
-            summary = {}
-            for name, r in results.items():
-                summary[name] = {
-                    "status": r.status.value,
-                    "halted_by": r.halted_by,
-                    "cost_usd": r.cost_usd,
-                    "num_turns": r.num_turns,
-                }
-            await self._broadcast({"type": "swarm_completed", "results": summary})
+            try:
+                results = await self._swarm.run(mode=ExecutionMode.AWAIT_ALL)
+                summary = {}
+                for name, r in results.items():
+                    summary[name] = {
+                        "status": r.status.value,
+                        "halted_by": r.halted_by,
+                        "cost_usd": r.cost_usd,
+                        "num_turns": r.num_turns,
+                    }
+                await self._broadcast({"type": "swarm_completed", "results": summary})
+            except Exception as e:
+                logger.error(f"[SWARM] run_swarm crashed: {e}")
+                import traceback
+                traceback.print_exc()
+                await self._broadcast({"type": "error", "message": f"Swarm crashed: {e}"})
 
         self._swarm_task = asyncio.create_task(run_swarm())
 
@@ -601,8 +982,9 @@ class SwarmDashboard:
                     "cost_usd": result.cost_usd,
                     "num_turns": result.num_turns,
                     "halted_by": result.halted_by,
+                    "model": self._swarm._registry.models.get(name),
                 }
-            for name, node in self._swarm._nodes.items():
+            for name, node in self._swarm._registry.nodes.items():
                 spawned_by = getattr(node.spec, "_spawned_by", None)
                 if name not in agents:
                     # Determine status: check event history first, then task state
@@ -613,10 +995,20 @@ class SwarmDashboard:
                             if evt.get("event_type") == "status_change" and evt.get("data"):
                                 status = evt["data"]
                                 break
-                    elif name in self._swarm._tasks:
-                        task = self._swarm._tasks[name]
+                    elif name in self._swarm._registry.tasks:
+                        task = self._swarm._registry.tasks[name]
                         status = "running" if not task.done() else "completed"
-                    agents[name] = {"name": name, "status": status, "session_id": None, "spawned_by": spawned_by}
+                    # Get last known cost from event history
+                    last_cost = None
+                    if name in self._event_history:
+                        for evt in reversed(self._event_history[name]):
+                            if evt.get("event_type") == "cost_update" and evt.get("data"):
+                                try:
+                                    last_cost = float(evt["data"])
+                                except (ValueError, TypeError):
+                                    pass
+                                break
+                    agents[name] = {"name": name, "status": status, "session_id": None, "cost_usd": last_cost, "spawned_by": spawned_by, "model": self._swarm._registry.models.get(name)}
                 else:
                     if spawned_by:
                         agents[name]["spawned_by"] = spawned_by
@@ -625,8 +1017,8 @@ class SwarmDashboard:
                     "name": node.spec.name,
                     "system_prompt": node.spec.system_prompt or "",
                     "prompt": str(node.spec.prompt),
-                    "allowed_tools": [t.to_claude_format() for t in node.spec.tools.allowed],
-                    "disallowed_tools": [t.to_claude_format() for t in node.spec.tools.disallowed],
+                    "allowed_tools": [t.to_claude_format() for t in node.spec.tools.allowed] if node.spec.tools else [],
+                    "disallowed_tools": [t.to_claude_format() for t in node.spec.tools.disallowed] if node.spec.tools else [],
                     "max_turns": node.spec.max_turns,
                     "max_budget_usd": node.spec.max_budget_usd,
                     "timeout_seconds": node.spec.timeout_seconds,
@@ -634,8 +1026,8 @@ class SwarmDashboard:
                     "spawned_by": spawned_by,
                 }
 
-        SWARM_SAVE_DIR.mkdir(parents=True, exist_ok=True)
-        saved_list = [f.stem for f in SWARM_SAVE_DIR.glob("*.yaml")]
+        AGENT_SPECS_DIR.mkdir(parents=True, exist_ok=True)
+        saved_list = [f.stem for f in AGENT_SPECS_DIR.glob("*.yaml")]
 
         # Per-agent message history (last 100 per agent)
         agent_messages: dict[str, list[dict[str, Any]]] = {}

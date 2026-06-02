@@ -31,6 +31,20 @@ EventCallback = Callable[[AgentEvent], Awaitable[None]]
 STALL_TIMEOUT = 600
 
 
+def parse_checkpoint_state(checkpoint_md: str) -> dict | None:
+    """Extract machine-readable YAML state from a checkpoint .md file.
+    Returns the parsed dict, or None if no machine state found."""
+    import yaml as _yaml
+    import re
+    match = re.search(r'## Machine State\s*```yaml\s*(.+?)```', checkpoint_md, re.DOTALL)
+    if match:
+        try:
+            return _yaml.safe_load(match.group(1))
+        except Exception:
+            return None
+    return None
+
+
 class SwarmAgent:
     """Unified agent. Stateless or stateful based on spec.stateless flag.
 
@@ -67,6 +81,7 @@ class SwarmAgent:
         self.channel_bus = channel_bus or ChannelBus()
         self.cancellation = cancellation or CancellationToken()
         self.pause = pause or PauseToken()
+        self._backend_lock = asyncio.Lock()
         self._render_vars = render_vars or {}
         self._on_event = on_event
         self._mcp_servers_override = mcp_servers_override
@@ -74,6 +89,7 @@ class SwarmAgent:
         self._wait_after_completion = wait_after_completion and not spec.stateless
         self._backend_factory = backend_factory
         self._cwd = cwd
+        self.swarm = None  # Set by Swarm._run_node_inner — gives module access to registry/topology
         self._nudge_monitor = nudge_monitor
         self._should_exit = should_exit
         self._last_emit_time = time.monotonic()
@@ -97,6 +113,10 @@ class SwarmAgent:
 
     # ─── Config building ─────────────────────────────────────────────────
 
+    CHECKPOINT_SYSTEM_HINT = (
+        "\nYou may receive a [CHECKPOINT] request. When you do, follow the instructions in that message."
+    )
+
     def _build_config(self) -> BackendConfig:
         output_format = None
         if isinstance(self.spec.result_parser, JsonSchemaParser):
@@ -104,6 +124,10 @@ class SwarmAgent:
 
         mcp_servers = self._mcp_servers_override or self.spec.mcp_servers or None
         system_prompt = self._system_prompt_override or self.spec.system_prompt
+
+        # Minimal hint for checkpointable agents (full instructions sent at checkpoint time)
+        if self.spec.checkpointable and system_prompt:
+            system_prompt = system_prompt + self.CHECKPOINT_SYSTEM_HINT
 
         allowed_tools = self.spec.tools.to_claude_allowed() if self.spec.tools else []
         disallowed_tools = self.spec.tools.to_claude_disallowed() if self.spec.tools else []
@@ -146,9 +170,17 @@ class SwarmAgent:
 
     # ─── Response consumption ────────────────────────────────────────────
 
-    async def _consume_response(self, result: AgentResult[T], start_time: float) -> bool:
-        """Consume one full response from the backend.
+    async def _consume_response(self, result: AgentResult[T], start_time: float,
+                                query: str | None = None) -> bool:
+        """Send query (if given) + consume response from backend, under lock.
         Returns True to continue outer loop, False to break."""
+        async with self._backend_lock:
+            if query:
+                await self.backend.send_query(query)
+            return await self._consume_response_inner(result, start_time)
+
+    async def _consume_response_inner(self, result: AgentResult[T], start_time: float) -> bool:
+        """Inner consume logic (called under lock)."""
         msg_iter = self.backend.receive_messages().__aiter__()
 
         while True:
@@ -254,8 +286,8 @@ class SwarmAgent:
 
     # ─── Wait for wakeup (stateful only) ─────────────────────────────────
 
-    async def _wait_for_wakeup(self, result: AgentResult[T]) -> bool:
-        """Block until a message arrives. Only called for stateful agents."""
+    async def _wait_for_wakeup(self, result: AgentResult[T]) -> str | None:
+        """Block until a message arrives. Returns the injection string, or None if cancelled."""
         result.status = AgentStatus.COMPLETED
         await self._emit("status_change", AgentStatus.COMPLETED.value)
         await self._emit("message", "[Waiting for messages...]")
@@ -273,13 +305,12 @@ class SwarmAgent:
                         ms["_pending_replies"].append(msg.sender)
                 injection = f"[{ts}] [From {msg.sender}]: {msg.payload}"
                 logger.info(f"[WAKE] {self.spec.name}: from '{msg.sender}'")
-                await self.backend.send_query(injection)
                 await self._emit("message", injection)
-                return True
+                return injection
 
         result.halted_by = "cancelled"
         result.status = AgentStatus.CANCELLED
-        return False
+        return None
 
     # ─── Crash recovery (stateful only) ──────────────────────────────────
 
@@ -301,6 +332,64 @@ class SwarmAgent:
             logger.error(f"[RETRY] {self.spec.name}: reconnect failed: {e}")
         return False
 
+    # ─── AI control handoff ─────────────────────────────────────────────
+
+    async def run_ai(self, inp: Any = None, result_type: type[T] | None = None) -> AgentResult[T]:
+        """Run the standard AI loop (bypass module dispatch).
+
+        Use this from inside a module to temporarily hand control to the LLM.
+        The LLM runs the stateful/stateless loop normally. When it finishes
+        (halt predicate, exit signal, budget, or response complete for stateless),
+        control returns here with the result.
+
+        Example in a module:
+            result = await agent.run_ai(inp="Handle this negotiation with Prover")
+        """
+        return await self._run_inner(inp, result_type)
+
+    async def run_checkpoint(self) -> str:
+        """Generate a checkpoint handoff note.
+
+        For LLM agents: queries backend with [CHECKPOINT], collects response.
+        For module agents: serializes _workflow_state.
+        Both combined into one .md file (handoff text first, machine state last).
+
+        Returns:
+            Markdown string suitable for resume.
+        """
+        import yaml as _yaml
+        from dataclasses import asdict as _asdict
+
+        parts: list[str] = []
+        parts.append(f"# {self.spec.name} Checkpoint\n")
+
+        # LLM agents (non-module): query backend for handoff text
+        if not self.spec.module:
+            instructions = self.spec.checkpoint_prompt or (
+                "Generate a detailed handoff note so a successor can continue your work. "
+                "Include: current state, what's done, what's in progress, what's remaining, "
+                "key context, and recommended next steps."
+            )
+            cp_result: AgentResult = AgentResult(name=self.spec.name, status=AgentStatus.RUNNING)
+            await self._consume_response(cp_result, time.monotonic(), query=f"[CHECKPOINT] {instructions}")
+            if cp_result.raw_result:
+                parts.append(cp_result.raw_result)
+                parts.append("")
+
+        # Module agents: serialize workflow state (machine-readable, at the end)
+        workflow_state = getattr(self, '_workflow_state', None)
+        if workflow_state:
+            parts.append("## Machine State")
+            parts.append("```yaml")
+            state_dict = _asdict(workflow_state) if hasattr(workflow_state, '__dataclass_fields__') else workflow_state
+            parts.append(_yaml.dump(state_dict, default_flow_style=False).strip())
+            parts.append("```")
+
+        handoff = "\n".join(parts)
+        self.backend._last_handoff = handoff
+        logger.info(f"[CHECKPOINT] {self.spec.name}: generated {len(handoff)} chars")
+        return handoff
+
     # ─── Main run ────────────────────────────────────────────────────────
 
     async def run(self, inp: Any = None, result_type: type[T] | None = None) -> AgentResult[T]:
@@ -311,7 +400,20 @@ class SwarmAgent:
                  If None, uses spec.prompt. Ignored for stateful agents.
             result_type: If provided, sets result_parser for typed structured output.
                          The response is validated against this type.
+
+        If spec.module is set, the module's run_workflow() is called instead of
+        the default agent loop. The module receives (agent, inp, result_type).
         """
+        # Hybrid/custom agent: delegate to module
+        if self.spec.module:
+            import importlib
+            mod = importlib.import_module(self.spec.module)
+            return await mod.run_workflow(self, inp, result_type)
+
+        return await self._run_inner(inp, result_type)
+
+    async def _run_inner(self, inp: Any = None, result_type: type[T] | None = None) -> AgentResult[T]:
+        """The actual agent loop. Called by run() (after module check) and run_ai() (direct)."""
         if inp is not None and self.spec.stateless:
             prompt = str(inp)
         else:
@@ -359,12 +461,10 @@ class SwarmAgent:
         )
 
         try:
-            await self.backend.send_query(prompt)
+            # First send+consume (initial prompt)
+            should_continue = await self._consume_response(result, start_time, query=prompt)
 
-            while True:
-                should_continue = await self._consume_response(result, start_time)
-                if not should_continue:
-                    break
+            while should_continue:
                 if result.halted_by != "completion" or self.cancellation.is_cancelled:
                     break
                 if self._should_exit and self._should_exit():
@@ -372,11 +472,25 @@ class SwarmAgent:
                     await self._emit("status_change", "exiting")
                     break
 
-                # Context compaction (stateful only — stateless exits before this matters)
+                # Yield to event loop between cycles
+                await asyncio.sleep(0)
+
+                # Context management (stateful only)
                 if not self.spec.stateless:
                     ctx_pct = await self.backend.get_context_percentage()
-                    if ctx_pct is not None and ctx_pct >= 70.0 and self.backend.supports_compaction:
-                        await self.backend.compact()
+                    if ctx_pct is not None and ctx_pct >= 70.0:
+                        if self.spec.checkpointable:
+                            # Checkpointable agents: handoff-restart instead of compact
+                            # Generate handoff, then signal exit for fresh restart
+                            logger.info(f"[HANDOFF-RESTART] {self.spec.name}: context at {ctx_pct:.0f}%")
+                            await self._emit("message", f"[Context at {ctx_pct:.0f}% — generating handoff for restart]")
+                            await self.run_checkpoint()
+                            result.halted_by = "context_handoff"
+                            await self._emit("status_change", "context_handoff")
+                            break
+                        elif self.backend.supports_compaction:
+                            # Non-checkpointable: fall back to compact
+                            await self.backend.compact()
 
                 # Check for pending messages
                 if has_messaging:
@@ -390,8 +504,9 @@ class SwarmAgent:
                         await self._emit("message_received", f"from:{msg.sender}")
                         ts = datetime.now().strftime("%H:%M:%S")
                         injection = f"[{ts}] [From {msg.sender}]: {msg.payload}"
-                        await self.backend.send_query(injection)
                         await self._emit("message", injection)
+                        # Send + consume under lock
+                        should_continue = await self._consume_response(result, start_time, query=injection)
                         continue
 
                 # Stateless: exit after first response cycle
@@ -399,9 +514,11 @@ class SwarmAgent:
                 if not self._wait_after_completion:
                     break
 
-                should_continue = await self._wait_for_wakeup(result)
-                if not should_continue:
+                wakeup_query = await self._wait_for_wakeup(result)
+                if wakeup_query is None:
                     break
+                # Send + consume the wakeup message under lock
+                should_continue = await self._consume_response(result, start_time, query=wakeup_query)
 
         except Exception as e:
             logger.error(f"[ERROR] {self.spec.name}: crashed: {e}")

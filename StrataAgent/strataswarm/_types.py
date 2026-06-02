@@ -72,6 +72,8 @@ class AgentSpec(Generic[T]):
     ignore_stall: bool = False  # If True, never trigger stall detection (e.g., user agent)
     stateless: bool = False  # If True, agent disconnects after first response (no persistence)
     module: str | None = None  # Python module path for custom workflow orchestration
+    checkpointable: bool = False  # If True, appends handoff suffix to system prompt
+    checkpoint_prompt: str | None = None  # Domain-specific handoff instructions (appended when checkpointable)
     _base_system_prompt: str | None = None  # Original system prompt before workspace composition
 
 

@@ -41,19 +41,15 @@ def agent_from_yaml(path: str | Path, cwd: str | None = None, **overrides) -> Sw
 
 def agent_from_name(name: str, cwd: str | None = None, **overrides) -> SwarmAgent:
     """Create a SwarmAgent from an agent name in agent_specs/agents/.
+    For agents that need swarm registration (messaging), use `swarm_agent()` context manager.
 
     Args:
         name: Agent config name (without .yaml extension).
-              e.g., "deep_proof_validator", "proof_compiler", "search_agent"
         cwd: Working directory for file operations.
         **overrides: Override any spec field.
 
     Returns:
-        Ready-to-run SwarmAgent instance.
-
-    Example:
-        agent = agent_from_name("deep_proof_validator", cwd="/project")
-        result = await agent.run(inp={"stub_file": ..., "complete_file": ...}, result_type=bool)
+        Ready-to-run SwarmAgent instance (standalone, not registered in any swarm).
     """
     path = AGENT_SPECS_DIR / f"{name}.yaml"
     if not path.exists():
@@ -62,6 +58,76 @@ def agent_from_name(name: str, cwd: str | None = None, **overrides) -> SwarmAgen
             f"Available: {[f.stem for f in AGENT_SPECS_DIR.glob('*.yaml')]}"
         )
     return SwarmAgent(spec=_load_spec(path, overrides), cwd=cwd)
+
+
+class swarm_agent:
+    """Context manager: creates an agent registered in the swarm, removes on exit.
+
+    Registers the agent in the swarm registry and visibility graph on entry.
+    Other agents can message it while it's alive. On exit, removes it cleanly.
+
+    Usage:
+        async with swarm_agent("counter_example", swarm=agent.swarm, cwd=cwd) as cea:
+            result = await cea.run(inp=..., result_type=Verdict)
+        # cea is now removed from swarm — no dangling references
+
+    The agent gets a unique name (suffixed with timestamp) to avoid collisions.
+    """
+
+    def __init__(self, name: str, swarm: Any, cwd: str | None = None, **overrides):
+        import time as _time
+        self._swarm = swarm
+        self._cwd = cwd
+        self._spec_name = name
+        self._overrides = overrides
+        self._unique_name: str | None = None
+        self._agent: SwarmAgent | None = None
+
+    async def __aenter__(self) -> SwarmAgent:
+        import time as _time
+        path = AGENT_SPECS_DIR / f"{self._spec_name}.yaml"
+        if not path.exists():
+            raise FileNotFoundError(
+                f"Agent spec '{self._spec_name}' not found at {path}. "
+                f"Available: {[f.stem for f in AGENT_SPECS_DIR.glob('*.yaml')]}"
+            )
+        spec = _load_spec(path, self._overrides)
+
+        # Unique name
+        self._unique_name = f"{spec.name}_{int(_time.time()) % 100000}"
+        spec.name = self._unique_name
+
+        # Create agent connected to swarm's channel bus
+        self._agent = SwarmAgent(
+            spec=spec,
+            channel_bus=self._swarm._channel_bus,
+            cwd=self._cwd,
+        )
+        self._agent.swarm = self._swarm
+
+        # Register in swarm
+        self._swarm._registry.add(spec)
+        self._swarm._registry.agents[self._unique_name] = self._agent
+
+        # Add to visibility graph (visible to all, can see all)
+        self._swarm._registry.visibility_graph[self._unique_name] = set(
+            self._swarm._registry.visibility_graph.keys()
+        )
+        for visible_set in self._swarm._registry.visibility_graph.values():
+            visible_set.add(self._unique_name)
+
+        return self._agent
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self._unique_name and self._swarm:
+            # Clean removal from swarm (nodes, visibility, all state)
+            await self._swarm._registry.remove(self._unique_name, cancel_task=False)
+            # Remove the channel to avoid message buildup from dead agents
+            channel_name = f"{self._unique_name}:messages"
+            self._swarm._channel_bus._channels.pop(channel_name, None)
+            # Drop local references for GC
+            self._agent = None
+        return False
 
 
 def _load_spec(path: Path, overrides: dict[str, Any]) -> AgentSpec:
@@ -87,6 +153,9 @@ def _load_spec(path: Path, overrides: dict[str, Any]) -> AgentSpec:
         name=raw.get("name", path.stem),
         stateless=raw.get("stateless", False),
         reply_only=raw.get("reply_only", False),
+        module=raw.get("module"),
+        checkpointable=raw.get("checkpointable", False),
+        checkpoint_prompt=raw.get("checkpoint_prompt"),
         system_prompt=raw.get("system_prompt", ""),
         prompt=raw.get("prompt", ""),
         model=raw.get("model"),

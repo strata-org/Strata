@@ -1,7 +1,7 @@
 """StrataSwarm - Lightweight multi-agent orchestration for claude_agent_sdk."""
 
 from ._agent import SwarmAgent
-from ._helpers import ask, compile_check, has_sorry, agent_from_yaml, agent_from_name
+from ._helpers import ask, compile_check, has_sorry, agent_from_yaml, agent_from_name, swarm_agent
 from ._backend import AgentBackend, BackendConfig, BackendMessage
 from ._messaging import create_messaging_server
 from ._spawn import create_spawn_server
