@@ -134,7 +134,8 @@ private def mergeOverloads (old new : OverloadTable) : OverloadTable :=
     to namespace all generated Laurel names (e.g., `"servicelib_Storage"` for
     module `servicelib.Storage`). -/
 private def buildPySpecLaurelM (pyspecEntries : Array (Python.ModuleName × String))
-    (overloads : OverloadTable) : Pipeline.PipelineM PySpecLaurelResult := do
+    (overloads : OverloadTable) (typedPython : Bool := false)
+    : Pipeline.PipelineM PySpecLaurelResult := do
   let mut combinedProcedures : Array (Laurel.Procedure × String) := #[]
   let mut combinedTypes : Array (Laurel.TypeDefinition × String) := #[]
   let mut allOverloads := overloads
@@ -150,9 +151,15 @@ private def buildPySpecLaurelM (pyspecEntries : Array (Python.ModuleName × Stri
         emitMessageAndAbort .pySpecReadError msg (file := ionFile)
     let { program, errors, overloads, typeAliases, exhaustiveClasses } :=
       Python.Specs.ToLaurel.signaturesToLaurel ionPath sigs moduleName
+        (typedPython := typedPython)
     for msg in errors do
       Pipeline.addMessage msg
       if msg.kind.impact.isFatal then throw ()
+    -- Strict typed-python: any pyspec-side warning must abort the pipeline.
+    if typedPython && !errors.isEmpty then
+      emitMessageAndAbort .typedPythonRefusal
+        s!"--typed-python: pyspec '{ionPath}' produced {errors.size} warning(s); strict mode rejects approximations"
+        (file := ionFile)
     allOverloads := mergeOverloads allOverloads overloads
     allTypeAliases := typeAliases.fold (init := allTypeAliases) fun m k v => m.insert k v
     allExhaustiveClasses := exhaustiveClasses.fold (init := allExhaustiveClasses) fun s name => s.insert name
@@ -207,8 +214,9 @@ private def buildPySpecLaurelM (pyspecEntries : Array (Python.ModuleName × Stri
 public def buildPySpecLaurel
     (ctx : Pipeline.PipelineContext)
     (pyspecEntries : Array (Python.ModuleName × String))
-    (overloads : OverloadTable) : EIO Unit PySpecLaurelResult :=
-  buildPySpecLaurelM pyspecEntries overloads |>.run ctx
+    (overloads : OverloadTable) (typedPython : Bool := false)
+    : EIO Unit PySpecLaurelResult :=
+  buildPySpecLaurelM pyspecEntries overloads typedPython |>.run ctx
 
 /-- Read dispatch Ion files and merge their overload tables. -/
 private def readDispatchOverloadsM
@@ -278,6 +286,7 @@ public def resolveAndBuildLaurelPrelude
     (pyspecModules : Array String)
     (stmts : Array (Python.stmt SourceRange))
     (specDir : System.FilePath := ".")
+    (typedPython : Bool := false)
     : Pipeline.PipelineM PySpecLaurelResult := do
   -- Dispatch modules (fatal on invalid name or missing file)
   let dispatchEntries ← resolveModules dispatchModules specDir
@@ -295,7 +304,7 @@ public def resolveAndBuildLaurelPrelude
     else pure #[]
   -- Explicit pyspec modules (fatal on invalid name or missing file)
   let explicitEntries ← resolveModules pyspecModules specDir
-  buildPySpecLaurelM (autoSpecEntries ++ explicitEntries) dispatchOverloads
+  buildPySpecLaurelM (autoSpecEntries ++ explicitEntries) dispatchOverloads typedPython
 
 /-! ### Pipeline Steps -/
 
@@ -427,6 +436,7 @@ public def pythonAndSpecToLaurel
     (pyspecModules : Array String := #[])
     (sourcePath : Option String := none)
     (specDir : System.FilePath := ".")
+    (typedPython : Bool := false)
     : Pipeline.PipelineM Laurel.Program := do
   let stmts ← Pipeline.withPhase "readPythonIon" do
     match ← Python.readPythonStrata pythonIonPath |>.toBaseIO with
@@ -435,7 +445,7 @@ public def pythonAndSpecToLaurel
       emitMessageAndAbort (file := pythonIonPath) .pySpecParsingError msg
 
   let result ← Pipeline.withPhase "resolveAndBuildPrelude" do
-    resolveAndBuildLaurelPrelude dispatchModules pyspecModules stmts specDir
+    resolveAndBuildLaurelPrelude dispatchModules pyspecModules stmts specDir typedPython
 
   let preludeInfo := buildPreludeInfo result
   let metadataPath := sourcePath.getD pythonIonPath

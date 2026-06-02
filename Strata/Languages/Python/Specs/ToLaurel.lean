@@ -76,6 +76,8 @@ structure ToLaurelContext where
   /-- Module prefix prepended to generated type and procedure names
       to avoid collisions when multiple PySpec files are combined. -/
   modulePrefix : String
+  /-- Lower primitives and typed containers to native Laurel sorts. -/
+  typedPython : Bool := false
 
 /-- State for PySpec to Laurel translation. -/
 structure ToLaurelState where
@@ -640,11 +642,12 @@ public structure TranslationResult where
 /-- Run the translation and return a Laurel Program, dispatch table,
     and any errors. -/
 public def signaturesToLaurel (filepath : System.FilePath) (sigs : Array Signature)
-    (moduleName : ModuleName)
+    (moduleName : ModuleName) (typedPython : Bool := false)
     : TranslationResult :=
   let ctx : ToLaurelContext := {
     filepath,
-    modulePrefix := moduleName.toString (sep := "_")
+    modulePrefix := moduleName.toString (sep := "_"),
+    typedPython
   }
   let ((), state) := (sigs.forM signatureToLaurel).run ctx |>.run {}
   let pgm : Laurel.Program := {

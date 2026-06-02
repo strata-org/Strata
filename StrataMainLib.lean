@@ -623,6 +623,9 @@ def pyAnalyzeLaurelCommand : Command where
               takesArg := .arg "file" },
             { name := "skip-verification",
               help := "Run Python-to-Laurel and Laurel-to-Core translation only (skip SMT verification).",
+              takesArg := .none },
+            { name := "typed-python",
+              help := "Lower icontract-decorated procedures' primitive scalars (int, bool, float, str) and typed homogeneous containers (list[T], dict[str, V]) to native Laurel sorts instead of the universal Any encoding. Refuses anything outside the supported subset. Off by default.",
               takesArg := .none }]
   help := "Verify a Python Ion program via the Laurel pipeline. Translates Python to Laurel to Core, then runs SMT verification."
   callback := fun v pflags => do
@@ -685,6 +688,7 @@ def pyAnalyzeLaurelCommand : Command where
       else if quiet then .quiet
       else .default
     let skipVerification := pflags.getBool "skip-verification"
+    let typedPython := pflags.getBool "typed-python"
 
     -- Run the pipeline
     let (outcome, laurelPassStats, pctx) ← Strata.Pipeline.runPyAnalyzePipeline {
@@ -693,7 +697,7 @@ def pyAnalyzeLaurelCommand : Command where
       keepAllFilesPrefix := keepPrefix
       verifyOptions := options
       entryPoint, isBugFinding
-      outputMode, skipVerification
+      outputMode, skipVerification, typedPython
       metricsHandle
     }
 

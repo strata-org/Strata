@@ -37,6 +37,7 @@ public structure PyAnalyzeConfig where
   isBugFinding : Bool := true
   outputMode : OutputMode := .default
   skipVerification : Bool := false
+  typedPython : Bool := false
   profilePipeline : Bool := true
   metricsHandle : Option IO.FS.Handle := none
 
@@ -44,7 +45,7 @@ private def runPipeline (config : PyAnalyzeConfig)
     : PipelineM (PyAnalyzeOutcome × Statistics) := do
   let combinedLaurel ← withPhase "pythonAndSpecToLaurel" do
     Strata.pythonAndSpecToLaurel
-      (specDir := config.specDir)
+      (specDir := config.specDir) (typedPython := config.typedPython)
       config.filePath config.dispatchModules config.pyspecModules config.sourcePath
 
   if config.outputMode == .verbose then

@@ -69,5 +69,9 @@ def invalidModuleName : MessageKind :=
 def missingPySpecModule : MessageKind :=
   { category := "missingPySpecModule", impact := .configurationError }
 
+-- Strict typed-python mode: any pyspec-side warning must be a hard error.
+def typedPythonRefusal : MessageKind :=
+  { category := "typedPythonRefusal", impact := .configurationError }
+
 end Strata.Pipeline.MessageKind
 end
