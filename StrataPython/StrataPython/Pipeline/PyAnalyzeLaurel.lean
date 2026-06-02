@@ -14,7 +14,9 @@ import Strata.SimpleAPI
 import Strata.Languages.Core.DDMTransform.ASTtoCST
 import Strata.Pipeline.Diagnostic
 
-namespace Strata.Pipeline
+open Strata.Pipeline
+
+namespace StrataPython.Pipeline
 
 /-- The outcome of the full pyAnalyzeLaurel pipeline.
     Error details are derived from the accumulated messages in PipelineContext. -/
@@ -139,4 +141,4 @@ public def runPyAnalyzePipeline (config : PyAnalyzeConfig)
   | .ok (outcome, stats) => return (outcome, stats, ctx)
   | .error () => return (.failed, {}, ctx)
 
-end Strata.Pipeline
+end StrataPython.Pipeline
