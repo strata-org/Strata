@@ -204,6 +204,45 @@ def specTypeToLaurelType (ty : SpecType) : ToLaurelM HighTypeMd := do
     return mkTy (.UserDefined { text := nm.toLaurelName })
   | none => return tyAny
 
+/-- Lower a Python primitive ident to its native Laurel `HighType`. -/
+private def pythonPrimToHighType (nm : PythonIdent) : Option HighType :=
+  if      nm == .builtinsInt   then some .TInt
+  else if nm == .builtinsBool  then some .TBool
+  else if nm == .builtinsFloat then some .TReal
+  else if nm == .builtinsStr   then some .TString
+  else none
+
+/-- Lower a SpecType to a native Laurel HighType. Recurses into
+    list[T] / dict[K, V]; rejects unions, literals, typed-dicts. -/
+private partial def specTypeToNative (ty : SpecType) : Option HighType :=
+  match ty.asIdent with
+  | some nm => pythonPrimToHighType nm
+  | none =>
+    if ty.intLits.size != 0 || ty.stringLits.size != 0
+       || ty.typedDicts.size != 0 || ty.idents.size != 1 then
+      none
+    else
+      let si := ty.idents[0]!
+      if (si.name == .typingList || si.name == .typingSequence) && si.args.size == 1 then
+        (specTypeToNative si.args[0]!).map fun inner => .TSeq ⟨inner, none⟩
+      else if (si.name == .typingDict || si.name == .typingMapping) && si.args.size == 2 then
+        match specTypeToNative si.args[0]!, specTypeToNative si.args[1]! with
+        | some k, some v => some (.TMap ⟨k, none⟩ ⟨v, none⟩)
+        | _, _ => none
+      else none
+
+/-- `specTypeToLaurelType` for argument position; refuses non-native
+    types under `--typed-python`. -/
+def specArgumentType (ty : SpecType) (procName : String) : ToLaurelM HighTypeMd := do
+  if !(← read).typedPython then return ← specTypeToLaurelType ty
+  match specTypeToNative ty with
+  | some t => return mkTy t
+  | none =>
+    reportError .typeError ty.loc
+      s!"--typed-python: '{ty}' is not a supported native type in '{procName}'. \
+         Supported: int, bool, float, str, list[T], dict[K, V] over native types."
+    return tyAny
+
 /-- Build the assertion for a single atom: type tester for idents,
     `isfrom_X(v) && as_X!(v) == literal` for literals.
     When `isUnion` is true, warns on ident atoms that lack testers.
@@ -308,9 +347,50 @@ private def asBool (loc : SourceRange) (act : ToLaurelExprM SomeTypedStmtExpr) :
     return ⟨se.2.stmt⟩
   match se with
   | ⟨.TBool, e⟩ => pure e
+  | ⟨.UserDefined "Any", e⟩ =>
+    pure ⟨.StaticCall (mkId "Any..as_bool!") [e.stmt], e.stmt.source⟩
   | ⟨tp, e⟩ =>
     let pn := (← read).procName
     reportError .typeError loc s!"Expected Bool-typed expression but got {repr tp} in '{pn}'"
+    pure ⟨e.stmt⟩
+
+private def asInt (loc : SourceRange) (act : ToLaurelExprM SomeTypedStmtExpr)
+    : ToLaurelExprM (TypedStmtExpr .TInt) := do
+  let ctx ← read
+  let (se, success) ← runChecked <| act ctx
+  if !success then return ⟨se.2.stmt⟩
+  match se with
+  | ⟨.TInt, e⟩ => pure e
+  | ⟨.UserDefined "Any", e⟩ => pure (.anyAsInt e)
+  | ⟨tp, e⟩ =>
+    let pn := (← read).procName
+    reportError .typeError loc s!"Expected Int-typed expression but got {repr tp} in '{pn}'"
+    pure ⟨e.stmt⟩
+
+private def asReal (loc : SourceRange) (act : ToLaurelExprM SomeTypedStmtExpr)
+    : ToLaurelExprM (TypedStmtExpr .TReal) := do
+  let ctx ← read
+  let (se, success) ← runChecked <| act ctx
+  if !success then return ⟨se.2.stmt⟩
+  match se with
+  | ⟨.TReal, e⟩ => pure e
+  | ⟨.UserDefined "Any", e⟩ => pure (.anyAsFloat e)
+  | ⟨tp, e⟩ =>
+    let pn := (← read).procName
+    reportError .typeError loc s!"Expected Real-typed expression but got {repr tp} in '{pn}'"
+    pure ⟨e.stmt⟩
+
+private def asString (loc : SourceRange) (act : ToLaurelExprM SomeTypedStmtExpr)
+    : ToLaurelExprM (TypedStmtExpr .TString) := do
+  let ctx ← read
+  let (se, success) ← runChecked <| act ctx
+  if !success then return ⟨se.2.stmt⟩
+  match se with
+  | ⟨.TString, e⟩ => pure e
+  | ⟨.UserDefined "Any", e⟩ => pure (.anyAsString e)
+  | ⟨tp, e⟩ =>
+    let pn := (← read).procName
+    reportError .typeError loc s!"Expected String-typed expression but got {repr tp} in '{pn}'"
     pure ⟨e.stmt⟩
 
 /-- Look up an identifier's type from the SpecExprContext and create a typed identifier.
@@ -350,7 +430,7 @@ def specExprToLaurel (e : SpecExpr) (source : Option FileRange)
     lookupIdentifier name loc src
   | .intLit v loc => do
     let src ← nodeSource loc
-    return .mkSome <| .fromInt (.literalInt v src)
+    return .mkSome <| .literalInt v src
   | .floatLit _ loc => do
     reportError .floatLiteral loc "Float literals not yet supported in preconditions"
     return default
@@ -361,36 +441,55 @@ def specExprToLaurel (e : SpecExpr) (source : Option FileRange)
       lookupIdentifier field loc src
     | _ => do
       let src ← nodeSource loc
-      let s ← asAny loc <| specExprToLaurel subject src
-      let from_str := .fromStr (.literalString field src) src
-      return .mkSome <| .anyGet s from_str src
+      let subjExpr : SomeTypedStmtExpr ← specExprToLaurel subject src
+      let anyFallback : ToLaurelExprM SomeTypedStmtExpr := do
+        let s ← asAny loc <| pure subjExpr
+        return .mkSome <| .anyGet s (.fromStr (.literalString field src) src) src
+      match h : subjExpr.1 with
+      | .TMap keyNode valNode =>
+        match h2 : keyNode.val with
+        | .TString =>
+          let key : TypedStmtExpr keyNode.val := h2 ▸ (.literalString field src)
+          let m : TypedStmtExpr (.TMap keyNode valNode) := h ▸ subjExpr.2
+          return ⟨valNode.val, .mapSelect m key src⟩
+        | _ => anyFallback
+      | _ => anyFallback
   | .isInstanceOf _ typeName loc => do
     reportError .isinstanceUnsupported loc s!"isinstance check for '{typeName}' not yet supported in preconditions"
     return default
   | .stringLen subject loc => do
     let src ← nodeSource loc
-    let s ← asAny loc <| specExprToLaurel subject src
-    return .mkSome <| .fromInt (.strLength (.anyAsString s))
+    let subjExpr : SomeTypedStmtExpr ← specExprToLaurel subject src
+    match h : subjExpr.1 with
+    | .TSeq elemNode =>
+      let s : TypedStmtExpr (.TSeq elemNode) := h ▸ subjExpr.2
+      return .mkSome <| .seqLength s src
+    | .TString =>
+      let s : TypedStmtExpr .TString := h ▸ subjExpr.2
+      return .mkSome <| .strLength s
+    | _ =>
+      let s ← asString loc <| pure subjExpr
+      return .mkSome <| .strLength s
   | .intGe subject bound loc => do
     let src ← nodeSource loc
-    let s ← asAny loc <| specExprToLaurel subject src
-    let b ← asAny loc <| specExprToLaurel bound src
-    return .mkSome <| .intGeq (.anyAsInt s) (.anyAsInt b)
+    let s ← asInt loc <| specExprToLaurel subject src
+    let b ← asInt loc <| specExprToLaurel bound src
+    return .mkSome <| .intGeq s b
   | .intLe subject bound loc => do
     let src ← nodeSource loc
-    let s ← asAny loc <| specExprToLaurel subject src
-    let b ← asAny loc <| specExprToLaurel bound src
-    return .mkSome <| .intLeq (.anyAsInt s) (.anyAsInt b)
+    let s ← asInt loc <| specExprToLaurel subject src
+    let b ← asInt loc <| specExprToLaurel bound src
+    return .mkSome <| .intLeq s b
   | .floatGe subject bound loc => do
     let src ← nodeSource loc
-    let s ← asAny loc <| specExprToLaurel subject src
-    let b ← asAny loc <| specExprToLaurel bound src
-    return .mkSome <| .realGeq (.anyAsFloat s) (.anyAsFloat b)
+    let s ← asReal loc <| specExprToLaurel subject src
+    let b ← asReal loc <| specExprToLaurel bound src
+    return .mkSome <| .realGeq s b
   | .floatLe subject bound loc => do
     let src ← nodeSource loc
-    let s ← asAny loc <| specExprToLaurel subject src
-    let b ← asAny loc <| specExprToLaurel bound src
-    return .mkSome <| .realLeq (.anyAsFloat s) (.anyAsFloat b)
+    let s ← asReal loc <| specExprToLaurel subject src
+    let b ← asReal loc <| specExprToLaurel bound src
+    return .mkSome <| .realLeq s b
   | .not inner loc => do
     let src ← nodeSource loc
     let i ← asBool loc <| specExprToLaurel inner src
@@ -427,6 +526,17 @@ def specExprToLaurel (e : SpecExpr) (source : Option FileRange)
   | .forallDict _ _ _ _ loc => do
     reportError .forallDictUnsupported loc "forallDict quantifier not yet supported in preconditions"
     return default
+  | .seqIndex subject idx loc => do
+    let src ← nodeSource loc
+    let subjExpr : SomeTypedStmtExpr ← specExprToLaurel subject src
+    let i ← asInt loc <| specExprToLaurel idx src
+    match h : subjExpr.1 with
+    | .TSeq elemNode =>
+      let s : TypedStmtExpr (.TSeq elemNode) := h ▸ subjExpr.2
+      return ⟨elemNode.val, .seqSelect s i src⟩
+    | _ =>
+      let s ← asAny loc <| pure subjExpr
+      return .mkSome <| .anyGet s (.fromInt i src) src
 
 private def formatAssertionMessage (msg : Array MessagePart) : String :=
   let parts := msg.map fun
@@ -463,8 +573,14 @@ def buildSpecBody (allArgs : Array Arg)
   let resultId : AstNode Variable := { val := Variable.Local (mkId "result"), source := source }
   let assignStmt ← mkStmtWithLoc (.Assign [resultId] holeExpr) default
   stmts := stmts.push assignStmt
-  -- 2. Assert type / required-param preconditions
+  -- 2. Type / required-param preconditions; native params skip
+  -- the Any-shape testers (declaration carries the guarantee).
   for arg in allArgs do
+    let isNative :=
+      match ctx.argTypes[arg.name]? with
+      | some t => t != Laurel.tyAny
+      | none => false
+    if isNative then continue
     let paramId : StmtExprMd := { val := .Var $ Variable.Local (mkId arg.name), source := source }
     match ← typeAssertion? arg.type paramId source with
     | some assertion =>
@@ -508,10 +624,14 @@ def buildSpecBody (allArgs : Array Arg)
       else
         reportError .typeError default
           s!"Postcondition expression is not Bool in '{ctx.procName}' (skipping)"
-  -- 5. Assume return type postcondition
-  -- NOTE. Skip NoneType: generated stubs currently declare `-> None` even for methods
-  -- that return values. Assuming isfrom_None would make callers unreachable.
-  if returnType.asIdent != some .noneType then
+  -- 5. Return-type postcondition. Skip NoneType (`-> None` stubs are
+  -- declared even on methods that return values) and native results
+  -- (declaration carries the type).
+  let resultIsNative :=
+    match ctx.argTypes["result"]? with
+    | some t => t != Laurel.tyAny
+    | none => false
+  if returnType.asIdent != some .noneType && !resultIsNative then
     let resultRef : StmtExprMd := { val := .Var $ Variable.Local (mkId "result"), source := source }
     if let some retAssertion ← typeAssertion? returnType resultRef source then
       let assumeStmt ← mkStmtWithLoc (.Assume retAssertion) default
@@ -553,12 +673,16 @@ def funcDeclToLaurel (procName : String) (func : FunctionDecl)
     | .error msg => do reportError .kwargsExpansionError default msg; pure #[]
   let allArgs := posArgs ++ func.args.kwonly ++ kwargsArgs
   let inputs ← allArgs.mapM fun a => do
-    let ty ← specTypeToLaurelType a.type
+    let ty ← specArgumentType a.type procName
     return ({ name := a.name, type := ty } : Parameter)
-  let outputs : List Parameter := [{ name := "result", type := tyAny }]
+  let resultType ←
+    if (← read).typedPython then specArgumentType func.returnType procName
+    else pure tyAny
+  let outputs : List Parameter := [{ name := "result", type := resultType }]
   let argTypes : Std.HashMap String HighType :=
-    inputs.foldl (init := ({} : Std.HashMap String HighType).insert "result" Laurel.tyAny) fun m p =>
-      m.insert p.name.text p.type.val
+    inputs.foldl
+      (init := ({} : Std.HashMap String HighType).insert "result" resultType.val)
+      fun m p => m.insert p.name.text p.type.val
   let specCtx : SpecExprContext := { procName, argTypes }
   let body ← buildSpecBody allArgs func.preconditions func.postconditions
     func.returnType none specCtx

@@ -140,6 +140,26 @@ def reSearchBool (pattern s : TypedStmtExpr .TString)
     (source : Option FileRange := none) : TypedStmtExpr .TBool :=
   .ofStmt (.StaticCall (mkId "re_search_bool") [pattern.stmt, s.stmt]) source
 
+/-- `Sequence.length(s)` over a typed sequence. -/
+def seqLength {elem : HighTypeMd} (s : TypedStmtExpr (.TSeq elem))
+    (source : Option FileRange := s.stmt.source) : TypedStmtExpr .TInt :=
+  .ofStmt (.StaticCall (mkId "Sequence.length") [s.stmt]) source
+
+/-- `Sequence.select(s, i)` over a typed sequence; result has the
+    sequence's element type. -/
+def seqSelect {elem : HighTypeMd}
+    (s : TypedStmtExpr (.TSeq elem)) (i : TypedStmtExpr .TInt)
+    (source : Option FileRange := s.stmt.source) : TypedStmtExpr elem.val :=
+  .ofStmt (.StaticCall (mkId "Sequence.select") [s.stmt, i.stmt]) source
+
+/-- `m[k]` (Map.select) over a typed map; result has the map's
+    value type. -/
+def mapSelect {key val : HighTypeMd}
+    (m : TypedStmtExpr (.TMap key val))
+    (k : TypedStmtExpr key.val)
+    (source : Option FileRange := m.stmt.source) : TypedStmtExpr val.val :=
+  .ofStmt (.StaticCall (mkId "select") [m.stmt, k.stmt]) source
+
 end TypedStmtExpr
 
 /--

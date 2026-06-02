@@ -513,6 +513,10 @@ inductive SpecExpr where
     key-value pair in `dict`. Both `keyVar` and `valVar` are bound in `body`.
     Corresponds to `for keyVar, valVar in dict.items(): assert body`. -/
 | forallDict (dict : SpecExpr) (keyVar : String) (valVar : String) (body : SpecExpr) (loc : SourceRange)
+/-- `seqIndex subject idx` represents `subject[idx]` over a sequence.
+    Lowers to `Sequence.select` under typed-python; falls back to
+    `Any_get` over Any-typed subjects. -/
+| seqIndex (subject : SpecExpr) (idx : SpecExpr) (loc : SourceRange)
 deriving Inhabited
 
 /-- Structural equality ignoring source locations. -/
@@ -537,6 +541,7 @@ def SpecExpr.softBEq : SpecExpr → SpecExpr → Bool
     l₁.softBEq l₂ && v₁ == v₂ && b₁.softBEq b₂
   | .forallDict d₁ k₁ v₁ b₁ _, .forallDict d₂ k₂ v₂ b₂ _ =>
     d₁.softBEq d₂ && k₁ == k₂ && v₁ == v₂ && b₁.softBEq b₂
+  | .seqIndex s₁ i₁ _, .seqIndex s₂ i₂ _ => s₁.softBEq s₂ && i₁.softBEq i₂
   | _, _ => false
 
 inductive MessagePart where

@@ -102,6 +102,8 @@ op forallListExpr(list : SpecExprDecl, varName : Ident, body : SpecExprDecl) : S
 op forallDictExpr(dict : SpecExprDecl, keyVar : Ident,
     valVar : Ident, body : SpecExprDecl) : SpecExprDecl =>
   "forallDict" "(" dict ", " keyVar ", " valVar ", " body ")";
+op seqIndexExpr(subject : SpecExprDecl, idx : SpecExprDecl) : SpecExprDecl =>
+  "seqIndex" "(" subject ", " idx ")";
 
 category MessagePart;
 op strMessagePart(s : Str) : MessagePart => s;
@@ -287,6 +289,7 @@ protected def SpecExpr.toDDM (e : SpecExpr) : DDM.SpecExprDecl SourceRange :=
     .forallListExpr loc list.toDDM ⟨loc, varName⟩ body.toDDM
   | .forallDict dict keyVar valVar body loc =>
     .forallDictExpr loc dict.toDDM ⟨loc, keyVar⟩ ⟨loc, valVar⟩ body.toDDM
+  | .seqIndex subj idx loc => .seqIndexExpr loc subj.toDDM idx.toDDM
 
 def specExprFormatContext : FormatContext :=
   .ofDialects DDM.PythonSpecs_map
@@ -439,6 +442,7 @@ def DDM.SpecExprDecl.fromDDM (d : DDM.SpecExprDecl SourceRange) : Specs.SpecExpr
     .forallList list.fromDDM varName body.fromDDM loc
   | .forallDictExpr loc dict ⟨_, keyVar⟩ ⟨_, valVar⟩ body =>
     .forallDict dict.fromDDM keyVar valVar body.fromDDM loc
+  | .seqIndexExpr loc subj idx => .seqIndex subj.fromDDM idx.fromDDM loc
 
 def DDM.MessagePart.fromDDM (d : DDM.MessagePart SourceRange) : Specs.MessagePart :=
   match d with
