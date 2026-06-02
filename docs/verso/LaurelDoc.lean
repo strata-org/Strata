@@ -22,8 +22,6 @@ open Verso.Genre Manual
 -- environment as Verso
 open Verso.Genre.Manual.InlineLean
 
-open Verso.Doc.Elab (DocElabM)
-
 set_option pp.rawOnError true
 
 /-- Block command that generates documentation for all Laurel pipeline passes.
@@ -35,7 +33,7 @@ def laurelPipelineDocs : Verso.Doc.Elab.BlockCommandOf Unit := fun () => do
     if pass.comesBefore.isEmpty then base
     else
       let deps := pass.comesBefore.map fun cb =>
-        s!"  - Comes before **{cb.name.name}** because: {cb.reason}"
+        s!"  - Comes before **{cb.pass.name}** because: {cb.reason}"
       base ++ "\n" ++ "\n".intercalate deps
 
   let md := "\n".intercalate entries.toList
@@ -53,7 +51,7 @@ def laurelPipelineDependencyGraph : Verso.Doc.Elab.BlockCommandOf Unit := fun ()
   let mut edges : List (String × String × String) := []
   for pass in laurelPipeline do
     for cb in pass.comesBefore do
-      edges := edges ++ [(pass.name, cb.name.name, cb.reason)]
+      edges := edges ++ [(pass.name, cb.pass.name, cb.reason)]
 
   -- Build the graph as a markdown list showing dependencies
   let mut md := "**Dependency edges** (A → B means A must run before B):\n\n"
@@ -68,7 +66,7 @@ def laurelPipelineDependencyGraph : Verso.Doc.Elab.BlockCommandOf Unit := fun ()
   md := md ++ "```\n"
   let mut idx := 1
   for pass in laurelPipeline do
-    let deps := pass.comesBefore.map (s!" → {·.name.name}")
+    let deps := pass.comesBefore.map (s!" → {·.pass.name}")
     let depStr := if deps.isEmpty then "" else String.join deps
     md := md ++ s!"{idx}. {pass.name}{depStr}\n"
     idx := idx + 1
@@ -216,7 +214,7 @@ If new references or definitions are created during compilation, `resolve` must 
 ## Translation Pipeline
 
 Laurel programs are verified by translating them to Strata Core and then invoking the Core
-verification pipeline. The Laurel compilation pipelines consists of three parts:
+verification pipeline. The Laurel compilation pipeline consists of three parts:
 Lowering, consisting of many phases. Maps Laurel to Laurel
 Ordering, consisting of a single pass. Maps Laurel to OrderedLaurel
 Translation, consisting of a single pass. Maps OrderedLaurel to Core.
@@ -240,7 +238,7 @@ The following graph shows the ordering constraints between passes.
 ## Language design
 
 ### Parameter lists
-Parameter lists. In Laurel, input and output parameters are defined in a separate list. Inout parameters are defined by repeated the parameter name in both lists. In Core, there is a single parameter list where each parameter defines its kind (in/out/inout).
+Parameter lists. In Laurel, input and output parameters are defined in a separate list. Inout parameters are defined by repeating the parameter name in both lists. In Core, there is a single parameter list where each parameter defines its kind (in/out/inout).
 
 At the call-site, Laurel requires calls with multiple out parameters to occur inside an assignment, like this:
 `assign x, y := multiOutCall(a, b)`

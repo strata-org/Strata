@@ -327,7 +327,7 @@ inductive StmtExpr : Type where
       This can be used to represent programs that are still under development, for example the program `3 + `
       The defining property of a hole is that interaction with it and other code should not produce any errors.
       Besides representing partial user programs,
-      holes can also to handle under development parts of compilers that target Laurel.
+      holes can also be used to handle under development parts of compilers that target Laurel.
       - `deterministic`: if true, the hole represents a deterministic unknown
         (translated as an uninterpreted function); if false, a nondeterministic
         unknown (translated as a havoced variable). Nondeterministic holes are

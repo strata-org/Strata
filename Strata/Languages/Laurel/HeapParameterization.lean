@@ -585,7 +585,7 @@ public def heapParameterizationPass : LaurelPass where
   comesBefore := [
       ⟨ typeHierarchyTransformPass, "the type hierarchy pass modifies the 'Composite' datatype that is introduced by this pass." ⟩,
       ⟨ modifiesClausesTransformPass, "the modifies pass refers to several types and variables introduced by heap parameterization: Composite, Field, $heap_in, $heap." ⟩,
-      ⟨ liftExpressionAssignmentsPass, "the heap paramterization pass introduces assignments (to the heap variables) that need to be lifted."⟩]
+      ⟨ liftExpressionAssignmentsPass, "the heap parameterization pass introduces assignments (to the heap variables) that need to be lifted."⟩]
 
 end Strata.Laurel
 

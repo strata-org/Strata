@@ -14,7 +14,7 @@ public section
 
 mutual
 structure ComesBefore where
-  name : LaurelPass
+  pass : LaurelPass
   reason: String
 
 /-- A single Laurel-to-Laurel pass. Each pass receives the current program and
