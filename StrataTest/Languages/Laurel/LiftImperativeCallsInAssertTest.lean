@@ -33,9 +33,17 @@ private def printLifted (program : Strata.Program) : IO Unit := do
 
 /--
 info: procedure impure(): int
-{ var x: int := 0; x := x + 1; x };
+{
+  var x: int := 0;
+  x := x + 1;
+  x
+};
 procedure test()
-{ var $c_0: int; $c_0 := impure(); assert $c_0 == 1 };
+{
+  var $c_0: int;
+  $c_0 := impure();
+  assert $c_0 == 1
+};
 -/
 #guard_msgs in
 #eval! printLifted
@@ -55,7 +63,10 @@ procedure test() {
 
 /--
 info: procedure test()
-{ var x: int := 0; assert (x := 2) == 2 };
+{
+  var x: int := 0;
+  assert (x := 2) == 2
+};
 -/
 #guard_msgs in
 #eval! printLifted
@@ -71,9 +82,17 @@ procedure test() {
 
 /--
 info: procedure impure(): int
-{ var x: int := 0; x := x + 1; x };
+{
+  var x: int := 0;
+  x := x + 1;
+  x
+};
 procedure test()
-{ var $c_0: int; $c_0 := impure(); assume $c_0 == 1 };
+{
+  var $c_0: int;
+  $c_0 := impure();
+  assume $c_0 == 1
+};
 -/
 #guard_msgs in
 #eval! printLifted
@@ -96,9 +115,16 @@ procedure test() {
 /--
 info: procedure multi_out(x: int)
   returns (r: int, extra: int)
-{ r := x + 1; extra := x + 2 };
+{
+  r := x + 1;
+  extra := x + 2
+};
 procedure test()
-{ var $c_0: BUG_MultiValuedExpr; $c_0 := multi_out(5); assert $c_0 == 6 };
+{
+  var $c_0: BUG_MultiValuedExpr;
+  $c_0 := multi_out(5);
+  assert $c_0 == 6
+};
 -/
 #guard_msgs in
 #eval! printLifted

@@ -389,6 +389,8 @@ private partial def loadDialectRec
   let ld ← fm.getLoaded
   if p : name ∈ ld.dialects then
     pure (.ok ld.dialects[name])
+  else if name ∈ stk then
+    return .error s!"Circular import detected: {String.intercalate " -> " (stk.toList ++ [name])}"
   else
     let path ←
           match fm.findPath name with
@@ -516,7 +518,7 @@ def parseStrataProgramFromDialect (dialects : LoadedDialects) (dialect : Dialect
   let input := normalizeInputContext input
 
   let isTrue mem := (inferInstance : Decidable (dialect ∈ dialects.dialects))
-    | throw <| IO.userError "Internal {dialect} missing from loaded dialects."
+    | throw <| IO.userError s!"Internal {dialect} missing from loaded dialects."
 
   let strataProgram ←
     match elabProgramRest dialects leanEnv input dialect mem 0 (normalizePos originalInput.inputString input.endPos) with
