@@ -451,7 +451,8 @@ public def pythonAndSpecToLaurel
   let metadataPath := sourcePath.getD pythonIonPath
 
   let (laurelProgram, _ctx) ←
-    match Python.pythonToLaurel preludeInfo stmts metadataPath result.overloads with
+    match Python.pythonToLaurel preludeInfo stmts metadataPath result.overloads
+                                  (typedPython := typedPython) with
     | .error (.userPythonError range msg) =>
       emitMessageAndAbort (file := sourcePath.getD pythonIonPath) (loc := range)
         .laurelLoweringUserError msg

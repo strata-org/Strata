@@ -135,7 +135,10 @@ structure TranslationContext where
   loopContinueLabel : Option String := none
   /-- Lower primitives and typed containers natively in user procedures. -/
   typedPython : Bool := false
-deriving Inhabited
+  /-- Static type of `LaurelResult`; `return` unwraps native results. -/
+  resultType : HighType := .TCore "Any"
+
+instance : Inhabited TranslationContext where default := {}
 
 /-! ## Error Handling -/
 
@@ -1426,7 +1429,17 @@ partial def translateCall (ctx : TranslationContext)
     | .Attribute range _ _ _ => range
     | .Name range _ _ => range
     | _ => .none
-  let funcDecl := ctx.functionSignatures.find? fun x => (x.name == funcName || x.name == funcName ++ "@__init__")
+  let nameMatches (x : PythonFunctionDecl) : Bool :=
+    x.name == funcName || x.name == funcName ++ "@__init__"
+  let funcDecl := ctx.functionSignatures.find? nameMatches
+  -- Two declarations can share a name: a Laurel-program entry that
+  -- preserves native types and a Core-prelude entry that stamps
+  -- everything Any. Boundary shim needs the former.
+  let typedFuncDecl :=
+    if ctx.typedPython then
+      ctx.functionSignatures.find? fun x =>
+        nameMatches x && x.args.any (fun a => a.laurelType.val != pyAny)
+    else none
   if funcDecl.isNone && kwords.length > 0 then
     throwUserError f.ann s!"Undeclared function '{funcName}' called with keyword args"
   -- Emit the final call, handling Name vs Attribute dispatch and transparent procedures.
@@ -1515,12 +1528,27 @@ partial def translateCall (ctx : TranslationContext)
   let (args, kwords, funcdecl_hasKwargs) ←
     combinePositionalAndKeywordArgs args kwords funcDecl methodName callRange
   let trans_args ← args.mapM (translateExpr ctx)
+  -- Unwrap each Any-typed argument to its callee-declared native type.
+  let trans_args :=
+    match typedFuncDecl with
+    | some fd =>
+      trans_args.zipIdx.map fun (a, i) =>
+        match fd.args[i]? with
+        | some param => fromAny param.laurelType.val a
+        | none => a
+    | none => trans_args
   let trans_kwords ← translateKwargs ctx kwords
   let trans_kwords_exprs :=
     if kwords.length == 0 then
       if funcdecl_hasKwargs then [DictStrAny_empty] else []
     else [trans_kwords]
-  emitCall (trans_args ++ trans_kwords_exprs)
+  let call ← emitCall (trans_args ++ trans_kwords_exprs)
+  -- Wrap a native return back into Any for the caller.
+  match typedFuncDecl with
+  | some fd => match fd.ret with
+    | some retInfo => return toAny retInfo.laurelType.val call
+    | none => return call
+  | none => return call
 
 
 end
@@ -2051,15 +2079,17 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let whileWrapped := mkStmtExprMdWithLoc (StmtExpr.Block [whileStmt] (some breakLabel)) md
     return (loopCtx, preamble ++ [whileWrapped])
 
-  -- Return statement: assign to the LaurelResult output parameter, then exit $body.
+  -- Return: assign LaurelResult, then exit $body. Native results are
+  -- unwrapped here; the fromAny peephole cancels the wrap from the
+  -- typed expression-translation paths.
   | .Return _ value => do
     let stmts ← match value.val with
       | some expr => do
         let e ← translateExpr ctx expr
         let (preamble, eRef) := getExceptionCheckPreamble ctx e s!"$ret_exc_{expr.toAst.ann.start.byteIdx}"
-        -- Coerce Composite return values to Any for LaurelResult : Any
         let eRef ← coerceToAny ctx expr eRef
-        let assign := mkStmtExprMdWithLoc (StmtExpr.Assign [mkVariableMd (.Local PyLauFuncReturnVar)] eRef) md
+        let coerced := fromAny ctx.resultType eRef
+        let assign := mkStmtExprMdWithLoc (StmtExpr.Assign [mkVariableMd (.Local PyLauFuncReturnVar)] coerced) md
         .ok $ preamble ++ [assign, mkStmtExprMdWithLoc (StmtExpr.Exit "$body") md]
       | none => .ok [mkStmtExprMdWithLoc (StmtExpr.Exit "$body") md]
     return (ctx, stmts)
@@ -2564,8 +2594,12 @@ def translateFunctionBody (ctx : TranslationContext) (kwargsName : Option String
     let nonSelfParams := inputs.filter (fun p => p.name.text != "self")
     let (_, paramCopies) := renameInputParams nonSelfParams
       (match kwargsName with | some kw => (· == kw) | none => fun _ => false)
-    let noneReturn := mkStmtExprMd (.Assign [mkVariableMd (.Local PyLauFuncReturnVar)] AnyNone)
-    let bodyStmts := noneReturn::paramCopies ++ bodyStmts
+    -- The from_None initializer is type-incorrect against a native return.
+    let bodyStmts :=
+      if ctx.resultType == pyAny then
+        mkStmtExprMd (.Assign [mkVariableMd (.Local PyLauFuncReturnVar)] AnyNone) :: paramCopies ++ bodyStmts
+      else
+        paramCopies ++ bodyStmts
     let bodyStmts := (mkStmtExprMd (.Assign [mkVariableMd $ .Declare ⟨ "nullcall_ret", AnyTy⟩] AnyNone)) :: bodyStmts
     return (mkStmtExprMd (StmtExpr.Block bodyStmts none), newctx)
 
@@ -2605,14 +2639,22 @@ def translateFunction (ctx : TranslationContext) (sourceRange: SourceRange) (fun
           | none => []
         | _ => []
 
-    -- Translate return type
-    -- All methods return Any (void methods return Any via from_None)
-    let outputs : List Parameter := [{ name := PyLauFuncReturnVar, type := AnyTy }]
+    -- Native return: the signature matches the spec layer; the body
+    -- stays Any-internal and `Return` injects an unwrap to this type.
+    let nativeReturnTy : Option HighType := funcDecl.ret.bind fun retInfo =>
+      match retInfo.laurelType.val with
+      | .TInt | .TBool | .TReal | .TString => some retInfo.laurelType.val
+      | _ => none
+    let outputType : HighTypeMd :=
+      nativeReturnTy.map mkHighTypeMd |>.getD AnyTy
+    let outputs : List Parameter := [{ name := PyLauFuncReturnVar, type := outputType }]
 
     -- Translate function body
     let inputTypes : List (String × HighType) := funcDecl.args.map fun arg =>
       (arg.name, arg.laurelType.val)
-    let ctx := {ctx with variableTypes:= ("nullcall_ret", pyAny)::inputTypes}
+    let ctx := {ctx with
+      variableTypes := ("nullcall_ret", pyAny)::inputTypes,
+      resultType := outputType.val}
     let ctx := match ctx.currentClassName with
       | some cn => {ctx with variableTypes :=
           ("self", HighType.UserDefined { text := cn }) :: ctx.variableTypes}
