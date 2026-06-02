@@ -826,7 +826,7 @@ Sibling open issue [#1186](https://github.com/strata-org/Strata/issues/1186) (As
 
 Sibling open issue [#1184](https://github.com/strata-org/Strata/issues/1184) (CBMC backend missing multi-return support, error silently swallowed) — surfaced during the same investigation but not patched on this branch.
 
-### 9.3 Strata Core / Transform (3)
+### 9.3 Strata Core / Transform (4)
 
 | # | Bug | Filed? | htd/smack | main/main2? |
 |---|---|---|---|---|
@@ -842,11 +842,12 @@ Sibling open issue [#1184](https://github.com/strata-org/Strata/issues/1184) (CB
 | 15 | Transitive type-synonym chain not resolved for comparison/arithmetic operators — `<=`, `<`, `>=`, `>`, `+`, `-`, `*`, `div`, `mod` panicked when operands had a synonym-of-`int` type (e.g. `ref := i64 := int`) | [#1148](https://github.com/strata-org/Strata/issues/1148) (closed; tracking) | ✓ `e94635f8a` | — |
 | 16 | Type checker fails on nondet goto with undeclared `$__nondet_N` | [#1162](https://github.com/strata-org/Strata/issues/1162) (open; resolved on `htd/smack` per BoogieToStrata STATUS.md) | ✓ (referenced by translator change in `Tools/BoogieToStrata/`) | — |
 
-### 9.5 Strata `verify` runtime (1, filed but not patched)
+### 9.5 Strata `verify` runtime (2, partially patched)
 
 | # | Bug | Filed? | htd/smack | main/main2? |
 |---|---|---|---|---|
-| 17 | Stack overflow / SIGABRT on deeply-nested expressions — `Translate.translateExpr` is `partial def` with no fuel; reproduces at depth ≈ 4100 on `origin/main` HEAD. Manifested as `skipEscape_harness` SIGABRT in the deductive verifier. | drafted as `../../reports/strata-verify-stack-overflow-deeply-nested-expr.md` (uncommitted, intended for upstream filing) | — | — |
+| 17 | Stack overflow / SIGABRT on deeply-nested expressions — reproduces at depth ≈ 4100 on `origin/main` HEAD. Manifested as `skipEscape_harness` SIGABRT in the deductive verifier. **Diagnosis corrected (2026-06-02):** original report cited `Translate.translateExpr` (Core translation). Empirical bisection localised the actual walker to **`elabExpr` cycle in `StrataDDM/StrataDDM/Elab/Core.lean:1694`** (DDM elaboration, *before* `Translate.lean` runs). Trampolining `translateExpr` was attempted and verified to have zero effect; a paren-strip experiment (`reports/elabexpr-paren-strip-experiment.md`) confirmed `elabExpr` is the dominant frame consumer. Worklist rewrite of the `elabExpr`/`runSyntaxElaborator`/`elabSyntaxArg` cycle estimated 8-12h. | drafted as `reports/strata-verify-stack-overflow-deeply-nested-expr.md` (intended for upstream filing) | — | — |
+| 22 | Stack overflow / SIGABRT on long flat-list `prog.decls` (~30K-50K axioms) — `transformDecls` in `Strata/Transform/PrecondElim.lean` walked decls via direct list-recursion; threshold ≈30K under default `--check-mode deductive`. **Diagnosis corrected (2026-06-02):** original report cited `programToCST.mapM` (formatter path); the actual walker is in `PrecondElim` (transformation pipeline). Partial fix on `htd/smack-tco-experiment` (commits `a3fb64376`, `f3f409c66`, `869d59f30`, `438052e86`) iterativizes `PrecondElim.transformDecls`, `TermCheck.transformDecls`, `translateCoreDecls`, `Program.typeCheckIter`, and the `runProgram` O(N) walker. Threshold advances from N≈30K to ≥50K. **Residual at N≥100K:** a different downstream walker still SIGABRTs (`--type-check` overflows; not yet identified). | report at `reports/stack-and-hang-conjectures-report.md` issue (1) section | — | — (fix lives on `htd/smack-tco-experiment`, not yet on `htd/smack` or `main`) |
 
 ### 9.6 Pipeline-driver / matrix-display gaps (3 — not Strata bugs)
 
@@ -858,17 +859,17 @@ Sibling open issue [#1184](https://github.com/strata-org/Strata/issues/1184) (CB
 
 ### Summary stats
 
-- **21 distinct bugs/issues** surfaced (or confirmed) on this branch.
+- **22 distinct bugs/issues** surfaced (or confirmed) on this branch.
 - **17 fixed** with commits on `htd/smack` (#18 PASS-? matrix gap fixed at `a817909fc`; #21 large-`.bpl` hang fixed at `277c468cb`).
-- **2 fixed elsewhere** (#1185 fix lives on `htd/fix-eval`; not on `htd/smack` or `main`).
-- **2 not yet patched** (#1184, #1186, draft `strata-verify-stack-overflow`).
+- **2 fixed elsewhere** (#14 fix lives on `htd/fix-eval`; #22 partial fix lives on `htd/smack-tco-experiment` — neither on `htd/smack` or `main`).
+- **3 not yet patched** (#1184, #1186, #17 deeply-nested-expr `elabExpr` rewrite).
 - **0 fixes have landed on `main` or `main2`** — every CBMC-backend, BoogieToStrata, and Core-transform fix is still `htd/smack`-only.
 
 ### Filed-issue index
 
 - **Open and unresolved on main:** #1184, #1185, #1186, #1198, #1162.
 - **Closed (tracking-issue):** #1148 (BoogieToStrata blockers — its sub-issues are addressed by branch fixes).
-- **Drafted but unfiled:** `../../reports/strata-verify-stack-overflow-deeply-nested-expr.md`, `../../reports/cbmc-inout-rename-collision.md` (predates the actual #1198 filing), `../../reports/cbmc-timeouts-and-stale-expects-report.md`, `../../reports/verifier-assume-synthesis-report.md`.
+- **Drafted but unfiled:** `../../reports/strata-verify-stack-overflow-deeply-nested-expr.md` (issue 2; corrected diagnosis 2026-06-02), `../../reports/elabexpr-paren-strip-experiment.md` (failed micro-fix; triage evidence for issue 2), `../../reports/cbmc-inout-rename-collision.md` (predates the actual #1198 filing), `../../reports/cbmc-timeouts-and-stale-expects-report.md`, `../../reports/verifier-assume-synthesis-report.md`. The `reports/INDEX.md` page is the canonical entry point.
 
 ### Path to upstream
 
@@ -877,7 +878,10 @@ Every fix on this branch is currently `htd/smack`-unique. None has reached `main
 1. The **8 CBMC GOTO backend fixes** depend on `htd/unstructured-procedure`'s CFG-Procedure work (in flight).
 2. The **BoogieToStrata fixes** are tied to PR #1149.
 3. The **Core-transform fixes** (`42ff8a4b8`, `dd0c0d7cd`) depend on CFG-eval which is in `htd/unstructured-procedure`.
-4. The **#1185 fix** (cross-procedure `Env.error`) lives on `htd/fix-eval` — most independent of all; could land directly on `main` and be back-merged.
+4. The **#14 fix** (cross-procedure `Env.error`) lives on `htd/fix-eval` — most independent of all; could land directly on `main` and be back-merged.
+5. The **#21 fix** (CFG `condGoto` deferred-dedup, commit `277c468cb`) is on `htd/smack`; can land upstream directly with no dependency.
+6. The **#22 partial fix** (long flat-list overflow) lives on `htd/smack-tco-experiment` (commits `a3fb64376`, `f3f409c66`, `869d59f30`, `438052e86`); pending re-validation against the post-deferred-dedup matrix before cherry-picking to `htd/smack`. Independent of upstream PRs.
+7. The **#17 fix** (deeply-nested-expr `elabExpr` rewrite) is not yet attempted; estimated 8-12h on a critical mutual block in `StrataDDM`.
 
 The branch is a substantial body of fix work. Most of it is upstream-able once the underlying PRs (`htd/unstructured-procedure`, #1149) merge.
 

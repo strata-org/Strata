@@ -1,49 +1,114 @@
 # Three issues, distinct root causes: non‑TCO walkers (issues 1, 2) + symbolic-eval array blowup (issue 3)
 
-> **Resolution status (2026-06-01).** Issue (3) is **resolved** by commit
-> `277c468cb` on `htd/smack-timeout-fix`. The actual root cause **is not**
-> what Conjecture A predicted: the hang was width-O(2^K) array growth in
-> `Env.deferred` *inside* `Program.eval`, *before* `oblProgram` and the
-> ITE chain are constructed. Specifically, in `evalCFGStep`'s symbolic-
-> `condGoto` arm, both `env_t` and `env_f` inherited the parent env's
-> `deferred` array; every symbolic branch doubled the pre-split obligation
-> set, growing 28 → 56 → 4,928 → 9,856 → 68,992 → 896,896 → 3,960,692,736
-> across the 17 procedures of `cjson_cJSON_Parse_harness.bpl`. Materialising
-> a 4-billion-element `Array (Imperative.ProofObligation Expression)` was
-> the actual hang. Fix: one line, `deferred := #[]` on the false branch,
-> mirroring the existing `StatementEval.lean:673` dedup for structured
-> `.ite`. Soundness verified empirically (full 94-program sweep: 83 PASS /
-> 11 PARTIAL with identical PARTIAL identities to the v4 baseline).
+> **Resolution status (2026-06-02).** Diagnoses below have been updated
+> against empirical bisection on origin/main:
 >
-> Issues **(1) and (2) remain unsolved**. The analysis below correctly
-> identifies them as non-TCO `partial def` walker problems on different
-> axes (flat-list mapM for (1), expression-tree depth for (2)); those
-> root causes still hold and the proposed fix path (convert to
-> explicit-stack / iterative) still applies. The "shared root cause
-> across (1)/(2)/(3)" framing in the original Conjecture A is wrong:
-> (3) was a different bug (missing dedup in symbolic eval) that
-> superficially correlated with obligation count for an unrelated
-> reason (more procedures with symbolic branches → more multiplicative
-> growth steps).
+> - **Issue (3) — RESOLVED on `htd/smack-timeout-fix`** (commit `277c468cb`).
+>   Root cause was width-O(2^K) growth of `Env.deferred` inside
+>   `Program.eval`, *before* `oblProgram` is constructed. In `evalCFGStep`'s
+>   symbolic-`condGoto` arm, both `env_t` and `env_f` inherited the parent
+>   env's `deferred` array; every symbolic branch doubled the pre-split
+>   obligation set (28 → 56 → 4,928 → 9,856 → 68,992 → 896,896 →
+>   3,960,692,736 across the 17 procedures of `cjson_cJSON_Parse_harness.bpl`).
+>   Fix: one line, `deferred := #[]` on the false branch, mirroring the
+>   existing `StatementEval.lean:673` dedup for structured `.ite`.
+>   Soundness verified empirically (full 94-program sweep: 83 PASS /
+>   11 PARTIAL with identical PARTIAL identities to the v4 baseline).
+>
+> - **Issue (1) — partially resolved** (commit `15b84c160` on a local
+>   `draft-fix/precondelim-iterative` branch off origin/main `75f005566`).
+>   The actual overflowing walker is **not** `programToCST` as the
+>   original report suspected. Empirical phase-bisection on origin/main
+>   localised the hang to `transformDecls` in
+>   `Strata/Transform/PrecondElim.lean` (the `PrecondElim` pipeline
+>   phase). That function walked `decls` via direct list-recursion
+>   (`let (changed, rest') ← transformDecls rest`); converting it to a
+>   for-loop with reverse-accumulation moves the threshold from N≈30K to
+>   beyond 50K. Per-decl side effects (factory updates, call-graph leaf
+>   nodes, stat increments) all commute across declarations, so the
+>   ordering change is benign. PrecondElim's own tests + 7 sibling
+>   Transform tests pass with the change. **At N≥100K a different
+>   downstream walker still SIGABRTs** — `--parse-only` succeeds but
+>   `--type-check` overflows; that walker has not been identified yet,
+>   it's a follow-up. The original `programToCST` hypothesis is wrong
+>   for the reproducible threshold; programToCST may still overflow at
+>   higher N but isn't on the documented failure path.
+>
+> - **Issue (2) — diagnosis corrected, fix not landed.** The original
+>   report cited `partial def translateExpr` at
+>   `Strata/Languages/Core/DDMTransform/Translate.lean:818` as the
+>   overflowing walker. Empirically, the SIGABRT happens *before*
+>   `Successfully parsed.` is printed — i.e. inside DDM elaboration,
+>   *before* `Translate.lean`'s walkers ever run. The actual culprit is
+>   **`elabExpr` at `StrataDDM/StrataDDM/Elab/Core.lean:1694`** (in the
+>   relocated `StrataDDM` package on origin/main; was at
+>   `Strata/DDM/Elab/Core.lean:1659` pre-relocation). The recursion is
+>   a 3-function monadic cycle: `elabExpr → runSyntaxElaborator →
+>   elabSyntaxArg → elabExpr`, costing ~3 native frames per ITE level.
+>   The cycle threads typing context with sequential side effects
+>   (`unifyTypes`, etc.), which makes a clean trampoline rewrite
+>   substantially harder than the `translateExpr` shape (which only
+>   needed an internal worklist). An attempt at a full CPS rewrite
+>   was started and discarded as multi-day work; left as upstream
+>   memo. Trampolining `translateExpr` *would have* helped if the bug
+>   had been there, but doesn't reach the actual walker. See §4.
+
+> The "shared root cause across (1)/(2)/(3)" framing in the original
+> Conjecture A is wrong on multiple axes:
+> - (3) was a different bug class entirely (missing dedup in symbolic
+>   eval, not a non-TCO walker).
+> - (1) IS a non-TCO walker, but in `PrecondElim.transformDecls` —
+>   not `programToCST`.
+> - (2) IS a non-TCO walker, but in `elabExpr`/`runSyntaxElaborator`/
+>   `elabSyntaxArg` (DDM elaboration) — not `translateExpr` (Core
+>   translation, which runs *after* parsing).
+>
+> The general "non-TCO walker" anti-pattern is real and pervasive
+> across the codebase, but the specific walkers identified in the
+> original report were guesses based on grep, not validated by
+> running. The actual culprits were found by empirical phase
+> bisection (stop-flag walks + `dbg_trace` instrumentation in
+> the pipeline loop).
 
 ## 1. Facts about each issue
 
-### Issue (1) — flat-list stack overflow (30K axioms in 34s)
+### Issue (1) — flat-list stack overflow (~30K-50K axioms) [PARTIALLY RESOLVED on `draft-fix/precondelim-iterative`]
 
 - Trigger: `prog.decls : List Decl` of length tens of thousands; default `--check-mode deductive` path.
-- Symptom: SIGABRT (rc=-6), "Stack overflow detected. Aborting." Wall ~34s on 30K axioms; identical at 50K.
-- Workaround the user reports: `ulimit -s 65536` (8MB → 64MB) lets the same input complete.
-- `strata verify --parse-only` on 100K axioms completes in 1.5s. Only the **post-parse** verify pipeline overflows.
-- The user's hypothesis is that `programToCST` walks `prog.decls.mapM declToCST` inside `StateT ToCSTContext`, and that `StateT.bind` is not TCO-ed in the Lean runtime, so each list element grows the native stack by ~4 frames. `ChunkedFormat.formatProgramChunked` is described as a 500-decl chunked workaround. **Note: `ChunkedFormat`/`formatProgramChunked` does not currently exist in the working tree** (`grep` returns zero hits); this is a proposed fix that hasn't landed.
+- Symptom: SIGABRT (rc=-6), "Stack overflow detected. Aborting."
+- `strata verify --parse-only` on 100K axioms completes in ≤2s; **the bug is not in parsing**. Empirically, the SIGABRT happens after `Successfully parsed.` is printed.
+- **Actual culprit (verified by phase bisection on origin/main `75f005566`)**: `transformDecls` (the `where`-bound helper inside `precondElim`) at `Strata/Transform/PrecondElim.lean:374-456`. Each arm did `let (changed, rest') ← transformDecls rest` then `cons` the current decl(s) onto the result. With ~50K axioms, ~50K nested calls → SIGABRT.
+- Pre-fix bisection (origin/main `75f005566`):
+  - `--parse-only` on 50K axioms: PASS in 1s
+  - `--type-check` on 50K axioms: PASS in 1s
+  - `--check` (full transformation pipeline) on 50K axioms: SIGABRT
+  - With `--profile` + a one-line `[phase-start]` log added to the pipeline loop in `Verifier.lean`: the crash happens during the `PrecondElim` phase. Adding `dbg_trace` inside `transformDecls` confirmed the recursion depth equals `decls.length`.
+- **Fix landed** locally as commit `15b84c160` on `draft-fix/precondelim-iterative`: split per-decl logic into `processOneDecl`, drive with a for-loop that builds the result in reverse and reverses once at the end. Empirical results (origin/main vs. fix):
 
-### Issue (2) — deeply-nested-Expr stack overflow (~5000 deep ITE)
+| N axioms | Pre-fix | Post-fix |
+| --- | --- | --- |
+| 30,000 | PASS (7s) | PASS (8s) |
+| 50,000 | SIGABRT (12s) | PASS (23s) |
+| 100,000 | SIGABRT | SIGABRT (different walker — see below) |
 
-`/Users/htd/Documents/Strata-smack/strata-verify-stack-overflow-deeply-nested-expr.md`. Status: present on origin/main.
+- **Residual at N≥100K**: a *different* downstream walker still SIGABRTs. `--parse-only` succeeds but `--type-check` overflows. Not yet identified; likely another `partial def` mutual block in the `mapM`-over-decls shape (candidates: `programToCST.mapM declToCST`, `translateLMonoTys.args.mapM`, `translateExprs.args.mapM (translateExpr …)`, `preconds.toArray.mapM`). Follow-up needed.
+- The original report's `programToCST` hypothesis was incorrect for the documented threshold but may apply at higher N. `ChunkedFormat.formatProgramChunked` mentioned in the original report does not exist in the tree.
+
+### Issue (2) — deeply-nested-Expr stack overflow (~4100+ deep ITE) [DIAGNOSIS CORRECTED, NO FIX]
+
+`/Users/htd/Documents/Strata-smack/strata-verify-stack-overflow-deeply-nested-expr.md`. Status: present on origin/main `75f005566`.
 
 - Trigger: a single expression nested ~4100+ deep (e.g. 5000-deep `if/then/else` in an ensures clause).
-- Symptom: SIGABRT before the parse banner is printed; `--parse-only`, `--type-check`, `--check`, `--no-solve` all crash. Wall ~90 ms.
-- Implicates `partial def translateExpr` at `Strata/Languages/Core/DDMTransform/Translate.lean:818` (DDM elaboration) and the same anti-pattern in `toSMTTerm` / `appToSMTTerm` (`SMTEncoder.lean:258, 333`) and in several `partial def` walkers in `DDMTransform/FormatCore.lean`.
-- Root-cause shape: direct recursive descent through expression branches with no fuel/iterative fallback; depth bounded by native stack rather than heap.
+- Symptom: SIGABRT before the parse banner is printed; `--parse-only`, `--type-check`, `--check`, `--no-solve` all crash. Wall ~90-280 ms.
+- **Original diagnosis was wrong about location.** The report cited `partial def translateExpr` at `Strata/Languages/Core/DDMTransform/Translate.lean:818`. Empirically, the SIGABRT happens *before* `Successfully parsed.` is printed — i.e. inside DDM elaboration, *before* `Translate.lean` runs. Tested by building a trampolined `translateExpr` (commit attempted then discarded): the fix had **zero effect** on the reproducer at any depth.
+- **Actual culprit (verified by code reading + reproduction)**: `partial def elabExpr` at `StrataDDM/StrataDDM/Elab/Core.lean:1694` (origin/main `75f005566`; was at `Strata/DDM/Elab/Core.lean:1659` before the StrataDDM package extraction in commit `703404f66`). Recursion is a 3-function monadic cycle inside the file's `mutual` block:
+  - `elabExpr` recurses on itself for `Init.exprParen` (1 frame).
+  - `elabExpr` calls `runSyntaxElaborator` for op-elaboration (2nd frame).
+  - `runSyntaxElaborator` iterates over args, calling `elabSyntaxArg` (3rd frame).
+  - `elabSyntaxArg` for `.typeExpr`/`.preType` calls back into `elabExpr` (back to 1st).
+  - Net depth per ITE level: ~3 frames in the elabExpr/runSyntaxElaborator/elabSyntaxArg cycle, plus 1 frame per paren wrap.
+- **Why a fix is hard**: the cycle threads typing context with sequential side effects (`tctx` for arg N+1 may depend on `trees[N].resultContext` per `runSyntaxElaborator`'s loop body lines 1264-1268; `unifyTypes` mutates the trees vector in-place). A trampoline equivalent has to model "elaborate one arg, do bookkeeping, elaborate next" as worklist tasks with intermediate state — not the simple "elaborate all sub-args, combine results" shape that `translateExpr` admitted. Estimated 8-12 hours for a tested fix; an attempted CPS rewrite was started and discarded.
+- The `translateExpr`/`toSMTTerm`/`appToSMTTerm`/`FormatCore.lean lexprToExpr` walkers cited in the original report **do** have the same anti-pattern shape, but they're downstream of DDM elaboration. They could overflow on a different reproducer (one whose syntax parses but whose Core IR is deep), but not on the documented N=5000 deep-ITE input.
 
 ### Issue (3) — pipeline hang on ≥20K-line `.bpl` (no SIGABRT, no z3 child) [RESOLVED]
 
@@ -145,23 +210,74 @@ So body-eval's contribution to (3) is not introducing a new non-TCO walker; it i
 - Hanging `skipAnyScalar_harness.bpl`: 20,817 lines, ~9,636 `(assert|assume|requires|ensures)`. Passing `jsmn_jsmn_parse_harness.bpl`: 19,434 lines, ~8,933. The threshold is at ~9K obligations per program, which on an 8MB default thread stack with ~1KB/frame is exactly where a depth-9K ITE chain would overflow. (The user's issue-(1) workaround `ulimit -s 65536` would be the first thing to test on a hanging issue-(3) `.bpl` to confirm Conjecture A.)
 - Hanging programs are not unusual in call density (~890 calls vs ~822 for the largest passing). They are unusual in total `assume`/`assert` count after translation. This matches A and is inconsistent with C.
 
-## 4. One-line recommendation
+## 4. Status and recommendation
 
-**For (3) — DONE.** Resolved by commit `277c468cb` (`fix(eval): clear Env.deferred on false branch of CFG condGoto`). Diagnosed via per-procedure `dbg_trace s!"[proc-eval-end] {name} (deferred={E.deferred.size})"` instrumentation in `Program.eval`; fixed in one line in `evalCFGStep`. Verification: full 94-program sweep produces 83 PASS / 11 PARTIAL with PARTIAL identities matching the v4 baseline exactly.
+**Issue (3) — DONE.** Resolved by commit `277c468cb` (`fix(eval): clear Env.deferred on false branch of CFG condGoto`) on `htd/smack-timeout-fix`. Diagnosed via per-procedure `dbg_trace s!"[proc-eval-end] {name} (deferred={E.deferred.size})"` instrumentation in `Program.eval`; fixed in one line in `evalCFGStep`. Verification: full 94-program sweep produces 83 PASS / 11 PARTIAL with PARTIAL identities matching the v4 baseline exactly.
 
-**For (1) and (2) — still open. Empirically confirmed against post-fix strata (`htd/smack-timeout-fix` HEAD `2d6c295f2`):**
+**Issue (1) — partial fix landed locally.** Commit `15b84c160` on local branch `draft-fix/precondelim-iterative` (off origin/main `75f005566`). Converts `transformDecls` in `Strata/Transform/PrecondElim.lean` to iterative form. Empirically shifts the threshold from N≈30K to beyond 50K (verified: 50K SIGABRT pre-fix → PASS post-fix). PrecondElim's own tests + 7 sibling Transform tests pass with the change. Branch not pushed; awaiting decision on whether to file as PR.
 
-- Issue (2) reproducer (`N=5000` deep ITE in `ensures`): `Stack overflow detected. Aborting.`, ~1s wall-clock. **Unchanged from pre-fix behaviour.**
-- Issue (1) reproducer (flat axiom list, `axiom [axN]: (1 == 1);`): N=30,000 passes (7s — threshold drifted up slightly vs the report's 30K trigger, likely because the simple `1 == 1` axiom is cheaper than the report's actual axioms); N=50,000 SIGABRTs at 13s with `Stack overflow detected. Aborting.`; N=100,000 SIGABRTs at 2s. **Still broken.**
+Residual at N≥100K: a different downstream walker still SIGABRTs. The fix path remains the same shape: identify the next `partial def`-with-direct-recursion or `mapM`-over-long-list and convert to iterative. Candidates to investigate: `programToCST.decls.mapM declToCST`, `translateLMonoTys.args.mapM`, the various `mapM` chains in `DDMTransform/`, `translateStmt` if the program has nested-block depth.
 
-The fix path described originally still applies: convert the `partial def` mutual walkers (`lexprToExpr`/`liteToExpr` for (2); `programToCST`'s `mapM` chain for (1); plus `translateExpr`, `toSMTTerm`/`appToSMTTerm` if the same shape recurs there) to explicit-stack / iterative form. `ulimit -s 65536` is a viable workaround for the user-reported (1) cases until the root-cause fix lands.
+**Issue (2) — diagnosis corrected, no fix landed.** The original `translateExpr` cite was wrong; the actual walker is `elabExpr`/`runSyntaxElaborator`/`elabSyntaxArg` in `StrataDDM/StrataDDM/Elab/Core.lean` (the 3-function monadic cycle described in §1). A trampoline rewrite of `translateExpr` was attempted, built clean, and verified to have **zero effect on the reproducer** (because the walker overflows during DDM elaboration, before `translateExpr` runs). That work was discarded.
 
-## 5. Method note: how (3) was actually diagnosed
+A real fix for (2) requires CPS-converting the elaboration cycle, which is genuinely 8-12 hours of work given the sequential typing-context threading and per-arg side effects. An attempt was started and discarded. Recommendation: file as upstream-maintained issue; the fix touches a critical component that warrants maintainer collaboration.
 
-For future reference if a similar hang appears: the diagnostic that worked was *not* `lldb` (blocked by macOS DevToolsSecurity codesigning) and *not* `--profile` alone (`profileStep` only prints *after* a step completes — hung steps print nothing). The methods that worked, in order of escalation:
+**Cross-cutting observation about the original report.** Both (1) and (2) had walker locations identified by *grep + heuristic* (find `partial def` X with direct recursion that takes a list/expr-tree). The actual walkers were elsewhere on the call graph. **The reliable diagnostic is empirical bisection** — combine `--parse-only`/`--type-check`/`--check` stop-flag walks with a one-line `[phase-start]` log inserted into the pipeline loop in `Verifier.lean`. This identifies the failing phase by name. Then `dbg_trace` inside the suspect phase localises the failing function. This worked for both (3) and (1); was the right approach we should have used from the start for (2) too (and would have located `elabExpr` immediately).
 
-1. **CLI stop-flag bisection.** `strata verify --parse-only` (1s) → `--type-check` (1s) → `--check --no-solve` (TIMEOUT) localised the hang to the transformation pipeline (between Core type-check and SMT generation), not to parsing or solving.
-2. **Per-phase logging.** Added a one-line `IO.println s!"[phase-start] {pp.phase.name}"` at `Strata/Languages/Core/Verifier.lean:1177` (gated on `--profile`), rebuilt strata, re-ran. Output identified `symbolicEval` (= `Core.toCoreProofObligationProgram`) as the hung phase.
-3. **Per-procedure logging inside `Program.eval`.** Added `dbg_trace` on the `.proc` arm at `Strata/Languages/Core/ProgramEval.lean:61`, printing `proc.header.name` and `E.deferred.size` after `Procedure.eval`. The exponential growth in deferred size was visible in the output; this localised the bug to the symbolic evaluator, not any later phase.
+## 5. Method note: how to diagnose stack/hang issues
 
-`dbg_trace` is the right tool for instrumenting `Except`-monadic Strata code where `IO.println` is unavailable; combined with line-buffered stdout (`stdbuf -oL -eL`) and `gtimeout`, it produces useful traces even when the process is killed mid-run.
+The diagnostics that worked, in order of escalation. **Skip lldb on
+macOS** — DevToolsSecurity blocks attaching to locally-built strata
+binaries and the workaround takes longer to set up than the
+alternatives below.
+
+1. **CLI stop-flag bisection.** `strata verify --parse-only` →
+   `--type-check` → `--check` → `--no-solve` → full verify. Whichever
+   stage transitions from PASS to SIGABRT/TIMEOUT contains the bug.
+   This pinpoints the failure to one of: parser/elaborator, Core
+   type-check, transformation pipeline, SMT generation, SMT solving.
+   - For (3): localised to "transformation pipeline" (`--type-check` PASS, `--check` TIMEOUT).
+   - For (1): localised to "transformation pipeline" (`--type-check` PASS, `--check` SIGABRT).
+   - For (2): localised to "parser/elaborator" (`--parse-only` SIGABRT).
+
+2. **Per-phase logging in the pipeline loop.** When the failure is in
+   "transformation pipeline" (the broadest of the stop-flag buckets),
+   add a one-line `IO.println s!"[phase-start] {pp.phase.name}"` to
+   the `for pp in pipelinePhases do` loop in
+   `Strata/Languages/Core/Verifier.lean:1177`, gated on the existing
+   `profile` flag. Rebuild strata (incremental, ~3-5s), re-run. The
+   last-printed phase name is the hanging/overflowing phase.
+   - For (3): identified `symbolicEval` (= `Core.toCoreProofObligationProgram`).
+   - For (1): identified `PrecondElim`.
+
+3. **Per-element `dbg_trace` inside the suspect phase.** Drop a
+   `dbg_trace` on the recursive arm to log per-element progress
+   (procedure name, decl index, list-length, accumulator size, etc.).
+   `dbg_trace` works in `Except`-monadic Strata code where
+   `IO.println` isn't available. Combined with `stdbuf -oL -eL` for
+   line-buffered stdout and `gtimeout N` for bounded wall-clock, this
+   produces useful traces even when the process is killed mid-run.
+   - For (3): `dbg_trace` on `Program.eval`'s `.proc` arm at
+     `Strata/Languages/Core/ProgramEval.lean:61` printing
+     `proc.header.name` and `E.deferred.size`. Exponential growth in
+     deferred size was immediately visible.
+   - For (1): direct read of the recursive `transformDecls` source
+     was sufficient (the `let (changed, rest') ← transformDecls rest`
+     pattern is unmistakable once you know the failing phase).
+
+4. **For parser/elaborator failures (issue (2)):** stop-flag bisection
+   identifies the broad area but doesn't help further because no
+   phase-loop runs yet at that point. Code reading on the relevant
+   `mutual` blocks — looking for `partial def` walkers with direct
+   recursion on syntax-tree children — is the right next step. Look
+   in `StrataDDM/StrataDDM/Elab/Core.lean` (DDM elaboration), not in
+   `Strata/Languages/Core/DDMTransform/Translate.lean` (Core
+   translation, runs after parsing).
+
+5. **Always validate empirically before committing to a fix.** The
+   biggest mistake in the original report (and in the first attempted
+   fix for issue (2)) was identifying a walker by grep without
+   confirming it was actually on the failure path. Build a candidate
+   fix, run the reproducer, *check whether the SIGABRT message
+   changes or the threshold shifts*. If neither, you have the wrong
+   walker.
