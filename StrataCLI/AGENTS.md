@@ -12,28 +12,6 @@ StrataCLI is the command-line frontend for Strata. It builds the `strata` execut
 
 - `StrataMain.lean` - Minimal entry point. Calls `runCommandMap commandMap commandGroups args`. Do not add logic here.
 - `StrataMainLib.lean` - Contains everything else: command definitions, flag parsing infrastructure, exit code constants, and helper utilities. This is the file you will modify for almost all CLI changes.
-- `lakefile.toml` - Build config. Declares dependency on parent `Strata` package via `path = ".."`. Exposes `StrataMainLib` as a library and `strata` as an executable.
-- `lean-toolchain` - Lean version pin (currently v4.29.1).
-
-### Key Abstractions
-
-**`Command`** - A CLI subcommand. Fields:
-- `name : String` - subcommand name (e.g., "verify")
-- `args : List String` - positional argument names (determines arity)
-- `flags : List Flag` - accepted flags
-- `help : String` - help text
-- `callback : Vector String args.length → ParsedFlags → IO Unit` - implementation
-
-**`Flag`** - A CLI flag definition. Fields:
-- `name : String` - flag name without `--`
-- `help : String` - description
-- `takesArg : FlagArg` - `.none` (boolean), `.arg name` (single value), or `.repeat name` (multi-value)
-
-**`ParsedFlags`** - Ordered array of `(String × Option String)` entries preserving command-line position. Key methods: `getBool`, `getString`, `getRepeated`, `buildDialectFileMap`.
-
-**`CommandGroup`** - Groups commands for help display. Groups: Core, Code Generation, Python, Laurel.
-
-**`runCommandMap`** - Top-level dispatcher. Parses the subcommand name, handles `--help`, splits flags from positional args, validates arity, then calls the command's callback.
 
 ### Exit Codes (namespace `ExitCode`)
 
@@ -44,16 +22,6 @@ StrataCLI is the command-line frontend for Strata. It builds the `strata` execut
 | `failuresFound` | 2 | Verification found assertion violations |
 | `internalError` | 3 | SMT encoding bug, solver crash, translation error |
 | `knownLimitation` | 4 | Unsupported language construct |
-
-### Exit Helpers
-
-- `exitFailure` / `exitCmdFailure` - exit 1 with message and help hint
-- `exitUserError` - exit 1
-- `exitFailuresFound` - exit 2
-- `exitInternalError` - exit 3
-- `exitKnownLimitation` - exit 4
-
-The `pyAnalyzeLaurel` command has its own exit helpers (`exitPyAnalyze*`) that additionally emit structured `RESULT:`/`DETAIL:` lines on stdout.
 
 ## How to Add a New Command
 
