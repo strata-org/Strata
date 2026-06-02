@@ -215,9 +215,9 @@ If new references or definitions are created during compilation, `resolve` must 
 
 Laurel programs are verified by translating them to Strata Core and then invoking the Core
 verification pipeline. The Laurel compilation pipeline consists of three parts:
-Lowering, consisting of many phases. Maps Laurel to Laurel
-Ordering, consisting of a single pass. Maps Laurel to OrderedLaurel
-Translation, consisting of a single pass. Maps OrderedLaurel to Core.
+- Lowering, consisting of many phases. Maps Laurel to Laurel
+- Ordering, consisting of a single pass. Maps Laurel to OrderedLaurel
+- Translation, consisting of a single pass. Maps OrderedLaurel to Core.
 
 Ideally the translation pass only translates between types but does not change the structure of the program.
 
