@@ -102,12 +102,21 @@ def intMul (x y : TypedStmtExpr .TInt)
     (source : Option FileRange := x.stmt.source) : TypedStmtExpr .TInt :=
   .ofStmt (.PrimitiveOp .Mul [x.stmt, y.stmt]) source
 
-/-- Python `//` is floor (Euclidean) division → Laurel `Div`. -/
+/-- Lowers Python `//` to Laurel `Div`. Laurel `Div` is Euclidean
+    division (`Int.ediv`, non-negative remainder); Python `//` is floor
+    division (rounds toward `-∞`). The two coincide only when the
+    divisor is positive — e.g. `-7 // -2` is `3` in Python but `4` in
+    Euclidean. The recognizer in `Specs.lean` emits a warning when the
+    divisor's sign cannot be proven positive. -/
 def intFloorDiv (x y : TypedStmtExpr .TInt)
     (source : Option FileRange := x.stmt.source) : TypedStmtExpr .TInt :=
   .ofStmt (.PrimitiveOp .Div [x.stmt, y.stmt]) source
 
-/-- Python `%` is Euclidean modulus → Laurel `Mod`. -/
+/-- Lowers Python `%` to Laurel `Mod`. Laurel `Mod` is Euclidean
+    modulus (always non-negative); Python `%` matches the sign of the
+    divisor. They coincide only when the divisor is positive. The
+    recognizer in `Specs.lean` emits a warning when the divisor's sign
+    cannot be proven positive. -/
 def intMod (x y : TypedStmtExpr .TInt)
     (source : Option FileRange := x.stmt.source) : TypedStmtExpr .TInt :=
   .ofStmt (.PrimitiveOp .Mod [x.stmt, y.stmt]) source

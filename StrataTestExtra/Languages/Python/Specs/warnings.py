@@ -30,3 +30,11 @@ def for_else_loop(**kw: Unpack[LoopRequest]) -> None:
 # Skipped Expr in function body (non-ellipsis expression statement)
 def skipped_expr(**kw: int) -> None:
     kw["a"]
+
+# Floor division with a non-positive-literal divisor: Python `//` and
+# Laurel `Div` (Euclidean) only agree when the divisor is a positive
+# literal, so the recognizer emits a warning.
+DivArgs = TypedDict('DivArgs', {'x': int, 'y': int})
+
+def floor_div_symbolic_divisor(**kw: Unpack[DivArgs]) -> None:
+    assert kw["x"] // kw["y"] >= 0, "x // y >= 0"

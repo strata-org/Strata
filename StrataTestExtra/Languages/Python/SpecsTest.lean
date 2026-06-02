@@ -275,11 +275,12 @@ meta def warningTestCase : IO Unit := withPython fun pythonCmd => do
           throw <| IO.userError "Expected warnings from warnings.py but got none"
         -- Check for specific expected warning substrings
         let expectedWarnings := #[
-          "unsupported comparison",               -- assert kw["x"] == 1
+          "unsupported comparison",               -- chained comparison
           "unsupported __init__ assignment",   -- self.name = "hello"
           "skipped Assign in function body",   -- x = kw["a"]
           "For: else clause not supported",    -- for/else loop
-          "skipped Expr in function body"      -- kw["a"] (bare expression)
+          "skipped Expr in function body",     -- kw["a"] (bare expression)
+          "Python `//` (floor) and Laurel `Div`" -- non-positive divisor
         ]
         for expected in expectedWarnings do
           if !warnings.any (containsSubstr · expected) then

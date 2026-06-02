@@ -944,13 +944,28 @@ partial def transExpr (e : expr SourceRange)
     let (lhs, lhsTp) ← transExpr left
     let (rhs, rhsTp) ← transExpr right
     let okType (tp : SpecType) : Bool := tp.isIntType || tp.isAnyType
+    -- Python `//` and `%` round toward `-∞` and follow the divisor's
+    -- sign respectively; Laurel `Div`/`Mod` are Euclidean. The two
+    -- agree only when the divisor is positive, which we can confirm
+    -- statically just for positive integer literals.
+    let divisorPositive : Bool := match rhs with
+      | .intLit v _ => v > 0
+      | _ => false
     if okType lhsTp && okType rhsTp then
       match op with
       | .Add _ => return (.intAdd lhs rhs (loc := loc), intType)
       | .Sub _ => return (.intSub lhs rhs (loc := loc), intType)
       | .Mult _ => return (.intMul lhs rhs (loc := loc), intType)
-      | .FloorDiv _ => return (.intDiv lhs rhs (loc := loc), intType)
-      | .Mod _ => return (.intMod lhs rhs (loc := loc), intType)
+      | .FloorDiv _ =>
+        unless divisorPositive do
+          specWarning loc
+            "Python `//` (floor) and Laurel `Div` (Euclidean) only agree when the divisor is a positive literal; generated VC may diverge from runtime semantics for negative or symbolic divisors"
+        return (.intDiv lhs rhs (loc := loc), intType)
+      | .Mod _ =>
+        unless divisorPositive do
+          specWarning loc
+            "Python `%` (sign-of-divisor) and Laurel `Mod` (Euclidean) only agree when the divisor is a positive literal; generated VC may diverge from runtime semantics for negative or symbolic divisors"
+        return (.intMod lhs rhs (loc := loc), intType)
       | _ =>
         specWarning loc s!"unsupported BinOp in predicate: {repr op}"
         return placeholder
