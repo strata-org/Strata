@@ -2074,9 +2074,18 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
       | _ =>
           mkStmtExprMd $ .PrimitiveOp .Lt [counterExpr,
                           mkStmtExprMd $ .StaticCall "Any_len" [iterExpr]]
-    let bodyStmts := targetDecls ++ assumeStmts ++ bodyStmts ++ [counterIncrease]
-    let innerBlock := mkStmtExprMd (StmtExpr.Block bodyStmts (some continueLabel))
-    let loopStmt := mkStmtExprMdWithLoc (StmtExpr.While counterLtLen [] none innerBlock) md
+    -- The continue-labeled block contains the body but *not* the counter
+    -- increment: `continue` (translated to `exit continueLabel`) must skip
+    -- the rest of the body and fall through to the increment, otherwise the
+    -- loop counter never advances and the loop is non-terminating. Putting
+    -- the increment outside the labeled block also avoids spurious
+    -- "dead code after 'exit'" diagnostics from `break`/`continue` followed
+    -- by `counterIncrease` in the same block.
+    let bodyInner := targetDecls ++ assumeStmts ++ bodyStmts
+    let continueBlock := mkStmtExprMd (StmtExpr.Block bodyInner (some continueLabel))
+    let bodyStmts := [continueBlock, counterIncrease]
+    let whileBody := mkStmtExprMd (StmtExpr.Block bodyStmts none)
+    let loopStmt := mkStmtExprMdWithLoc (StmtExpr.While counterLtLen [] none whileBody) md
     let loopBlock := mkStmtExprMdWithLoc (StmtExpr.Block [loopStmt] (some breakLabel)) md
     let (preamble, _) := getExceptionCheckPreamble ctx iterExpr s!"$for_iter_{iter.toAst.ann.start.byteIdx}"
     return (finalCtx, iterPreamble ++ preamble ++ [counterDecl] ++ [loopBlock])
