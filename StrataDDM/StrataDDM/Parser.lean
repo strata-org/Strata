@@ -770,12 +770,7 @@ def checkLeftRec (thisCatName : QualifiedIdent) (argDecls : ArgDecls) (as : List
     let .isTrue lt := decideProp (v < argDecls.size)
       | return panic! "Invalid index"
     let cat := argDecls[v].kind.categoryOf
-    let isListCategory := cat.name == q`Init.CommaSepBy ||
-                          cat.name == q`Init.SpaceSepBy ||
-                          cat.name == q`Init.SpacePrefixSepBy ||
-                          cat.name == q`Init.Seq ||
-                          cat.name == q`Init.SemicolonSepBy ||
-                          cat.name == q`Init.Option
+    let isListCategory := SepFormat.isParametricCategory cat.name
     if isListCategory then
       assert! cat.args.size = 1
       let c := cat.args[0]!
@@ -975,6 +970,11 @@ def opSyntaxParser (ctx : ParsingContext)
     let cat := argDecls[0].kind.categoryOf
     if cat.name == category then
       throw mf!"Passthrough syntax cannot be left-recursive"
+    if SepFormat.isParametricCategory cat.name then
+      if h : cat.args.size = 1 then
+        let c := cat.args[0]
+        if c.name == category then
+          throw mf!"Leading symbol cannot be recursive call to {c}"
     let p := liftToKind ctx [.ident 0 0] argDecls
     pure {
       category,

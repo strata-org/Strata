@@ -125,12 +125,14 @@ partial def syntaxCatToJavaType (cat : SyntaxCat) : JavaType :=
     match cat.args[0]? with
     | some inner => .optional (syntaxCatToJavaType inner)
     | none => panic! "Init.Option requires a type argument"
-  | q`Init.Seq | q`Init.CommaSepBy | q`Init.NewlineSepBy | q`Init.SpaceSepBy | q`Init.SpacePrefixSepBy | q`Init.SemicolonSepBy =>
-    match cat.args[0]? with
-    | some inner => .list (syntaxCatToJavaType inner)
-    | none => panic! "List category requires a type argument"
-  | ⟨"Init", _⟩ => panic! s!"Unknown Init category: {cat.name.name}"
-  | ⟨_, name⟩ => .simple (escapeJavaName (toPascalCase name))
+  | _ =>
+    if (SepFormat.fromCategoryName? cat.name).isSome then
+      match cat.args[0]? with
+      | some inner => .list (syntaxCatToJavaType inner)
+      | none => panic! "List category requires a type argument"
+    else match cat.name with
+    | ⟨"Init", _⟩ => panic! s!"Unknown Init category: {cat.name.name}"
+    | ⟨_, name⟩ => .simple (escapeJavaName (toPascalCase name))
 
 def argDeclKindToJavaType : ArgDeclKind → JavaType
   | .type _ => .simple "Expr"
@@ -140,10 +142,9 @@ def argDeclKindToJavaType : ArgDeclKind → JavaType
 partial def syntaxCatToQualifiedName (cat : SyntaxCat) : Option QualifiedIdent :=
   if primitiveCategories.contains cat.name then none
   else if abstractCategories.contains cat.name then some cat.name
-  else match cat.name with
-  | q`Init.Option | q`Init.Seq | q`Init.CommaSepBy
-  | q`Init.NewlineSepBy | q`Init.SpaceSepBy | q`Init.SpacePrefixSepBy | q`Init.SemicolonSepBy =>
+  else if SepFormat.isParametricCategory cat.name then
     cat.args[0]?.bind syntaxCatToQualifiedName
+  else match cat.name with
   | ⟨"Init", _⟩ => none
   | qid => some qid
 
@@ -179,12 +180,11 @@ def serializeFieldExpr (kind : ArgDeclKind) (fieldName : String) : String :=
       | q`Init.Option =>
         let inner := c.args[0]!
         s!"$s.serializeOption({fieldName}, {serializerFnRef inner})"
-      | q`Init.Seq | q`Init.CommaSepBy | q`Init.NewlineSepBy | q`Init.SpaceSepBy
-      | q`Init.SpacePrefixSepBy | q`Init.SemicolonSepBy =>
-        let inner := c.args[0]!
-        let sep := (SepFormat.fromCategoryName? c.name).get!.toIonName
-        s!"$s.serializeSeq({fieldName}, \"{sep}\", {serializerFnRef inner})"
-      | _ => s!"$s.serialize({fieldName})"
+      | _ =>
+        if let some sep := SepFormat.fromCategoryName? c.name then
+          let inner := c.args[0]!
+          s!"$s.serializeSeq({fieldName}, \"{sep.toIonName}\", {serializerFnRef inner})"
+        else s!"$s.serialize({fieldName})"
 
 /-! ## Java Structures -/
 
