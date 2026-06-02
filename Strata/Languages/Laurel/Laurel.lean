@@ -553,15 +553,8 @@ def isSubtype (ctx : TypeContext) (sub sup : HighTypeMd) : Bool :=
     is the dynamic type and is consistent with everything; otherwise
     structural equality after unfolding aliases / constrained types.
 
-    `TCore "Any"` and `UserDefined "Any"` are also gradual — consistent with
-    everything. The Python front-end uses both representations to model
-    Python's `Any` type (depending on whether the name comes from a type
-    annotation or a synthesized expression type), and Python's `Any` is the
-    dynamic type of the gradual system, so treating both like `Unknown`
-    matches Python semantics. As a fallback, `TCore s` and `UserDefined s`
-    are also consistent when their names match for any other `s`, so the
-    two representations interoperate freely for non-`Any` Python datatypes
-    too.
+    `TCore _` is also treated as gradual — consistent with everything —
+    pending its removal from the type representation.
     `MultiValuedExpr` is checked element-wise so the same equivalence
     propagates through procedure-output tuples.
 
@@ -581,9 +574,7 @@ def isConsistent (ctx : TypeContext) (a b : HighTypeMd) : Bool :=
     let b' := ctx.unfold b
     match a'.val, b'.val with
     | .Unknown, _ | _, .Unknown => true
-    | .TCore "Any", _ | _, .TCore "Any" => true
-    | .UserDefined ⟨"Any", _, _⟩, _ | _, .UserDefined ⟨"Any", _, _⟩ => true
-    | .TCore s, .UserDefined name | .UserDefined name, .TCore s => s == name.text
+    | .TCore _, _ | _, .TCore _ => true
     | _, _ => highEq a' b'
   termination_by (SizeOf.sizeOf a)
   decreasing_by
