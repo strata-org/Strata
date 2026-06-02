@@ -71,6 +71,10 @@ import Strata.Pipeline.Diagnostic
 /- Simple API -/
 import Strata.SimpleAPI
 
+/- CLI -/
+import Strata.Cli.Framework
+import Strata.Cli.VerifyOptions
+
  -- deletion candidates: nothing imports these modules:
 
 -- noimport:
@@ -96,5 +100,6 @@ import Strata.Languages.Core.StatementWF
 import Strata.Languages.Dyn.DDMTransform.Parse
 import Strata.Languages.Dyn.DDMTransform.Translate
 import Strata.Util.Random
+
 
 -- noimport: Strata.Util.IOTests (used for tests)
