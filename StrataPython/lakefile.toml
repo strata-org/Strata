@@ -21,3 +21,6 @@ globs = ["StrataPythonTestExtra.+"]
 [[lean_exe]]
 name = "StrataTestMain"
 needs = ["StrataPython", "StrataPythonTest"]
+
+[[lean_exe]]
+name = "DiffTestCore"

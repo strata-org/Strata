@@ -826,10 +826,10 @@ def run_python(regex: str, string: str, mode: str) -> str:
 
 # ── Strata oracle ──────────────────────────────────────────────────────────────
 
-# Path to the project root, inferred from this script's location.
-# Script is at StrataPython/StrataPythonTest/Regex/diff_test.py, so root is 3 dirs up.
-_SCRIPT_DIR   = os.path.dirname(os.path.abspath(__file__))
-_PROJECT_ROOT = os.path.abspath(os.path.join(_SCRIPT_DIR, "..", "..", ".."))
+# Path to the StrataPython package root, inferred from this script's location.
+# Script is at StrataPython/StrataPythonTest/Regex/diff_test.py, so package root is 2 dirs up.
+_SCRIPT_DIR        = os.path.dirname(os.path.abspath(__file__))
+_STRATA_PYTHON_DIR = os.path.abspath(os.path.join(_SCRIPT_DIR, "..", ".."))
 
 
 def run_strata(cases: list[tuple[str, str, str]], lake_exe: str,
@@ -849,7 +849,7 @@ def run_strata(cases: list[tuple[str, str, str]], lake_exe: str,
         input=stdin_data,
         capture_output=True,
         text=True,
-        cwd=_PROJECT_ROOT,
+        cwd=_STRATA_PYTHON_DIR,
     )
     results = {}
     for line in proc.stdout.splitlines():
@@ -914,7 +914,7 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    print(f"Running {len(CORPUS)} test cases against Strata (project root: {_PROJECT_ROOT})...")
+    print(f"Running {len(CORPUS)} test cases against Strata (package dir: {_STRATA_PYTHON_DIR})...")
     if args.log_dir:
         print(f"Logging .core.st programs to: {args.log_dir}")
 

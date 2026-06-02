@@ -16,6 +16,3 @@ name = "StrataMainLib"
 [[lean_exe]]
 name = "strata"
 root = "StrataMain"
-
-[[lean_exe]]
-name = "DiffTestCore"
