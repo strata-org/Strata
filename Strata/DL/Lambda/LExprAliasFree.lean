@@ -10,9 +10,14 @@ import all Strata.DL.Lambda.LExprTypeSpec
 
 /-! ## Alias-free infrastructure
 
-This module proves properties of `aliasFree` and `AliasesResolved`:
+This module proves preservation of the alias-free property across utility
+functions used in `LExpr` type checking. It does not contain a top-level
+theorem itself; rather, its lemmas are consumed by `LExprResolveAnnotated.lean`
+to establish `resolve_HasTypeA`.
 
-1. Alias-free types are fixpoints of `resolveAliases`.
+Key results:
+
+1. `resolveAliases` is the identity on alias-free types.
 2. The output of `resolveAliases` is alias-free when `AliasesResolved` holds.
 3. `instantiateWithCheck` produces alias-free output.
 4. `typeBoundVar` preserves the alias list and produces alias-free types.
@@ -36,10 +41,10 @@ macro "elim_err" h:ident : tactic =>
 macro "elim_errs" h:ident : tactic =>
   `(tactic| repeat (split at $h:ident; · (solve | simp at $h:ident | contradiction)))
 
-/-! ### Alias-free fixpoint lemmas -/
+/-! ### `resolveAliases` identity lemmas -/
 
 mutual
-/-- Alias-free type lists are fixpoints of `resolveAliases`. -/
+/-- `resolveAliases` is the identity on alias-free type lists. -/
 private theorem resolveAliasesList_aliasFree (mtys : LMonoTys) (Env : TEnv T.IDMeta)
     (h_af : LMonoTys.aliasFree Env.context.aliases mtys) :
     LMonoTys.resolveAliases mtys Env = .ok (mtys, Env) := by
@@ -53,7 +58,7 @@ private theorem resolveAliasesList_aliasFree (mtys : LMonoTys) (Env : TEnv T.IDM
     rw [h_tl]; simp [Pure.pure, Except.pure]
 termination_by sizeOf mtys
 
-/-- Alias-free types are fixpoints of `resolveAliases`: resolving a type that
+/-- `resolveAliases` is the identity on alias-free types: resolving a type that
     already contains no alias references returns it unchanged. -/
 theorem resolveAliases_aliasFree (mty : LMonoTy) (Env : TEnv T.IDMeta)
     (h_af : LMonoTy.aliasFree Env.context.aliases mty) :
@@ -113,14 +118,6 @@ private theorem aliasFree_of_mem (aliases : List TypeAlias) (vals : LMonoTys) (v
     cases List.mem_cons.mp h_mem with
     | inl h_eq => subst h_eq; exact h_vals.1
     | inr h_tl => exact ih h_vals.2 h_tl
-
-/-- `openVars` preserves list length. -/
-private theorem openVars_length (vars : List TyIdentifier) (vals : LMonoTys)
-    (mtys : LMonoTys) :
-    (LMonoTys.openVars vars vals mtys).length = mtys.length := by
-  induction mtys with
-  | nil => simp [LMonoTys.openVars]
-  | cons hd tl ih => simp [LMonoTys.openVars, ih]
 
 mutual
 /-- Substituting alias-free values into alias-free type lists preserves alias-freeness. -/

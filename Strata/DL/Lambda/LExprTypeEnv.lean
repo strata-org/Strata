@@ -77,6 +77,14 @@ def LMonoTys.openVars (vars : List TyIdentifier) (vals : LMonoTys) (mtys : LMono
   | mty :: rest => LMonoTy.openVars vars vals mty :: LMonoTys.openVars vars vals rest
 end
 
+/-- `openVars` preserves list length. -/
+theorem openVars_length (vars : List TyIdentifier) (vals : LMonoTys)
+    (mtys : LMonoTys) :
+    (LMonoTys.openVars vars vals mtys).length = mtys.length := by
+  induction mtys with
+  | nil => simp [LMonoTys.openVars]
+  | cons hd tl ih => simp [LMonoTys.openVars, ih]
+
 /-- Pure alias expansion: substitute `args` for `a.typeArgs` in `a.type`. -/
 def TypeAlias.expand (a : TypeAlias) (args : LMonoTys) : LMonoTy :=
   LMonoTy.openVars a.typeArgs args a.type
@@ -144,8 +152,10 @@ def TContext.AliasesWF (Γ : TContext IDMeta) : Prop :=
   ∀ a, a ∈ Γ.aliases → a.WF
 
 mutual
-/-- A monotype is alias-free w.r.t. an alias list: none of its `.tcons` names
-    match any alias name in the list. -/
+/-- A monotype is alias-free w.r.t. an alias list: none of its `.tcons`
+    constructors match an alias by both name and parameter-list length.
+    This relies on the assumption that alias names do not overlap with
+    non-alias type constructor names. -/
 def LMonoTy.aliasFree (aliases : List TypeAlias) (mty : LMonoTy) : Prop :=
   match mty with
   | .ftvar _ => True

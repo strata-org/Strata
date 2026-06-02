@@ -67,9 +67,11 @@ def toLMonoTy {T : LExprParamsT} (e : LExprT T) : LMonoTy :=
   | .quant _ _ _ _ _ _ => LMonoTy.bool
 
 /--
-Remove any type annotation stored in metadata for all
-expressions, except the `.op`s, free variables
-`.fvar`s, and bound variables in `.abs` and `.quant`.
+Convert a typed `LExprT` back to an `LExpr`:
+- Strip the type annotation from metadata for all sub-expressions.
+- Set the optional type annotation field (not in metadata) to the type
+  previously stored in metadata for `.op`, `.fvar`, `.abs`, and `.quant`.
+  Any pre-existing optional annotation is overwritten unconditionally.
 -/
 @[expose] def unresolved {T : LExprParamsT} (e : LExprT T) : LExpr T.base.mono :=
   match e with
