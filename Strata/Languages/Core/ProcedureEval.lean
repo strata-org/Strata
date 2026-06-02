@@ -97,10 +97,17 @@ private def evalCFGStep (cfg : DetCFG) (old_var_subst : SubstMap)
               let env_t := { env' with pathConditions :=
                 (env'.pathConditions.addInNewest
                   [.assumption label_t cond']) }
-              let env_f := { env' with pathConditions :=
-                (env'.pathConditions.addInNewest
-                  [.assumption label_f
-                    (Lambda.LExpr.ite () cond' (LExpr.false ()) (LExpr.true ()))]) }
+              -- Mirror processIteBranches at StatementEval.lean: clear
+              -- `deferred` on the false branch so pre-split obligations
+              -- aren't duplicated across both branches. Without this, every
+              -- symbolic condGoto multiplies the deferred-obligation count
+              -- by 2, producing exponential blowup across procedures.
+              let env_f := { env' with
+                deferred := #[]
+                pathConditions :=
+                  (env'.pathConditions.addInNewest
+                    [.assumption label_f
+                      (Lambda.LExpr.ite () cond' (LExpr.false ()) (LExpr.true ()))]) }
               ((lt, env_t) :: (lf, env_f) :: newActive, finished, stats))
     ([], [], {})
 
