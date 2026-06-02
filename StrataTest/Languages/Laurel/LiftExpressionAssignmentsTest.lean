@@ -48,7 +48,7 @@ info: procedure assertInBlockExpr()
 #strata
 program Laurel;
 procedure assertInBlockExpr()
-{
+opaque {
   var x: int := 0;
   var y: int := { assert x == 0; x := 1; x };
   assert y == 1

@@ -67,7 +67,7 @@ info: procedure foo()
 #eval do IO.println (← roundtrip
 #strata
 program Laurel;
-procedure foo() { assert true; assert false };
+procedure foo() opaque { assert true; assert false };
 #end)
 
 /--
@@ -81,7 +81,7 @@ info: procedure add(x: int, y: int): int
 #eval do IO.println (← roundtrip
 #strata
 program Laurel;
-procedure add(x: int, y: int): int { x + y };
+procedure add(x: int, y: int): int opaque { x + y };
 #end)
 
 /--
@@ -121,7 +121,7 @@ info: procedure test(x: int): int
 #eval do IO.println (← roundtrip
 #strata
 program Laurel;
-procedure test(x: int): int { if x > 0 then x else 0 - x };
+procedure test(x: int): int opaque { if x > 0 then x else 0 - x };
 #end)
 
 /--
@@ -156,7 +156,7 @@ info: procedure test()
 #eval do IO.println (← roundtrip
 #strata
 program Laurel;
-procedure test() {
+procedure test() opaque {
     assert forall(x: int) => x == x;
     assert exists(y: int) => y > 0
 };
@@ -225,7 +225,7 @@ procedure test(a: Animal): bool
 program Laurel;
 composite Animal {}
 composite Dog extends Animal {}
-procedure test(a: Animal): bool { a is Dog };
+procedure test(a: Animal): bool opaque { a is Dog };
 #end)
 
 -- Additional coverage: while loops
@@ -245,7 +245,7 @@ info: procedure test()
 #eval do IO.println (← roundtrip
 #strata
 program Laurel;
-procedure test() {
+procedure test() opaque {
     var x: int := 0;
     while(x < 10)
       invariant x >= 0
@@ -304,7 +304,7 @@ info: procedure test(): int
 #eval do IO.println (← roundtrip
 #strata
 program Laurel;
-procedure test(): int { <??> };
+procedure test(): int opaque { <??> };
 #end)
 
 end Strata.Laurel

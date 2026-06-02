@@ -56,7 +56,7 @@ procedure $witness_nat()
 #strata
 program Laurel;
 constrained nat = x: int where x >= 0 witness 0
-procedure test(n: nat) returns (r: nat) {
+procedure test(n: nat) returns (r: nat) opaque {
   assert r >= 0;
   var y: nat := n;
   return y
@@ -129,7 +129,7 @@ procedure $witness_posint()
 #strata
 program Laurel;
 constrained posint = x: int where x > 0 witness 1
-procedure f() {
+procedure f() opaque {
   var x: posint;
   assert x == 1
 };
