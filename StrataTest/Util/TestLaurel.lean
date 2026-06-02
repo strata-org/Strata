@@ -186,7 +186,7 @@ private def parseAnnotations (snippet : String) : Array DiagnosticAnnotation := 
 /-- Substring containment on `String`. Direct rather than the
     `(d.splitOn a).length > 1` trick. -/
 private def isSubstrOf (needle haystack : String) : Bool :=
-  needle.isEmpty || (haystack.splitOn needle).length > 1
+  !needle.isEmpty && (haystack.splitOn needle).length > 1
 
 /-- Try to match an annotation to a diagnostic. The annotation pins the
     diagnostic's *start* line and column range; `d.ending.line` is treated as
