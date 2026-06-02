@@ -24,3 +24,6 @@ needs = ["StrataPython", "StrataPythonTest"]
 
 [[lean_exe]]
 name = "DiffTestCore"
+
+[[lean_exe]]
+name = "PyAnalyzeLaurelToGoto"

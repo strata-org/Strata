@@ -11,8 +11,8 @@ set -o pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TESTS_DIR="$SCRIPT_DIR/tests"
 EXPECTED="$TESTS_DIR/cbmc_expected.txt"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-DIALECT="$PROJECT_ROOT/Tools/Python/dialects/Python.dialect.st.ion"
+STRATA_PYTHON_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+DIALECT="$STRATA_PYTHON_DIR/../Tools/Python/dialects/Python.dialect.st.ion"
 PYTHON=${PYTHON:-python3}
 
 # Generate .py.ion files from .py sources (they are not committed)
@@ -20,7 +20,7 @@ echo "Generating .py.ion files from .py sources..."
 for py_file in "$TESTS_DIR"/*.py; do
   [ -f "$py_file" ] || continue
   ion_file="${py_file}.ion"
-  if ! (cd "$PROJECT_ROOT/Tools/Python" && \
+  if ! (cd "$STRATA_PYTHON_DIR/../Tools/Python" && \
         "$PYTHON" -m strata.gen py_to_strata --dialect "$DIALECT" "$py_file" "$ion_file") 2>/dev/null; then
     echo "  WARN: failed to generate $(basename "$ion_file")"
   fi
