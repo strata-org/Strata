@@ -54,7 +54,7 @@ false
 info:
 Obligation: arbitrary_iter_maintain_invariant_0_0
 Property: assert
-Result: ✅ pass (❗path unreachable)
+Result: ✅ pass (❗unreachable in this context)
 
 Obligation: entry_invariant_0_0
 Property: assert

@@ -192,7 +192,7 @@ inductive SepFormat where
 | space          -- Space separator (SpaceSepBy)
 | spacePrefix    -- Space before each element (SpacePrefixSepBy)
 | newline        -- Newline separator (NewlineSepBy)
-| semicolon      -- Semicolon separator (SemicolonSepBy)
+| semicolonNewline -- Semicolon+newline separator (SemicolonSepBy)
 deriving Inhabited, Repr, BEq
 
 namespace SepFormat
@@ -203,7 +203,7 @@ def toString : SepFormat → String
   | .space => "spaceSepBy"
   | .spacePrefix => "spacePrefixSepBy"
   | .newline => "newlineSepBy"
-  | .semicolon => "semicolonSepBy"
+  | .semicolonNewline => "semicolonSepBy"
 
 def fromCategoryName? : QualifiedIdent → Option SepFormat
   | q`Init.Seq => some .none
@@ -211,10 +211,15 @@ def fromCategoryName? : QualifiedIdent → Option SepFormat
   | q`Init.SpaceSepBy => some .space
   | q`Init.SpacePrefixSepBy => some .spacePrefix
   | q`Init.NewlineSepBy => some .newline
-  | q`Init.SemicolonSepBy => some .semicolon
+  | q`Init.SemicolonSepBy => some .semicolonNewline
   | _ => .none
 
 #guard fromCategoryName? ⟨"Init", "Ident"⟩ == .none
+
+/-- Returns true if the category name is a parametric (single-argument) built-in category:
+    any separator format or `Init.Option`. -/
+def isParametricCategory (name : QualifiedIdent) : Bool :=
+  (fromCategoryName? name).isSome || name == q`Init.Option
 
 instance : ToString SepFormat where
   toString := SepFormat.toString
