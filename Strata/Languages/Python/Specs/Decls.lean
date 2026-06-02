@@ -488,6 +488,17 @@ inductive SpecExpr where
     Used in preconditions like `assert len(name) >= 1`. -/
 | stringLen (subject : SpecExpr) (loc : SourceRange)
 | intLit (value : Int) (loc : SourceRange)
+-- TODO(refactor): collapse the int{Ge,Le,Gt,Lt,Eq,Ne} and
+-- int{Add,Sub,Mul,Div,Mod} families into two parameterised
+-- constructors `intCompare (op : IntCmp) (lhs rhs) (loc)` and
+-- `intBinOp (op : IntBinOp) (lhs rhs) (loc)` (and the same for
+-- floats). Each new operator currently forces synchronized edits in
+-- ~8 places (`SpecExpr` ctor, `softBEq`, the DDM `op` decl, `toDDM`,
+-- `fromDDM`, `specExprToLaurel`, `PythonLaurelTypedExpr` def, the
+-- recognizer in `Specs.lean`); a parameterised shape would reduce
+-- that to one match per family and turn the round-trip property
+-- `(toDDM ∘ fromDDM) e == e` into a one-liner per family. Out of
+-- scope for the predicate-ops PR — track via follow-up.
 | intGe (subject : SpecExpr) (bound : SpecExpr) (loc : SourceRange)
 | intLe (subject : SpecExpr) (bound : SpecExpr) (loc : SourceRange)
 | intGt (subject : SpecExpr) (bound : SpecExpr) (loc : SourceRange)

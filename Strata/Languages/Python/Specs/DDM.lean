@@ -444,7 +444,7 @@ private def DDM.ArgDecl.fromDDM (d : DDM.ArgDecl SourceRange) : Specs.Arg :=
     default := default.map (·.fromDDM)
   }
 
-private def DDM.SpecExprDecl.fromDDM (d : DDM.SpecExprDecl SourceRange) : Specs.SpecExpr :=
+protected def DDM.SpecExprDecl.fromDDM (d : DDM.SpecExprDecl SourceRange) : Specs.SpecExpr :=
   match d with
   | .placeholderExpr loc => .placeholder loc
   | .varExpr loc ⟨_, name⟩ => .var name loc

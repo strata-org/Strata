@@ -366,4 +366,42 @@ meta def testIntRoundTrip (v : Int) : Bool :=
 #guard testIntRoundTrip (42)
 #guard testIntRoundTrip (-100)
 
+/-- Catches regressions where a hand-written `toDDM`/`fromDDM` pair
+    swaps operands or routes through the wrong DDM constructor.
+    The 13 SpecExpr arithmetic/comparison ctors added by this PR each
+    require synchronized edits across both directions; this property
+    pins them as a unit until the parameterised `intBinOp`/`intCompare`
+    refactor (see TODO above the ctor list in `Decls.lean`) lands. -/
+meta def testSpecExprDDMRoundTrip (e : SpecExpr) : Bool :=
+  (DDM.SpecExprDecl.fromDDM e.toDDM).softBEq e
+
+private meta def loc : SourceRange := SourceRange.none
+private meta def x : SpecExpr := .var "x" loc
+private meta def y : SpecExpr := .var "y" loc
+private meta def k : SpecExpr := .intLit 1 loc
+
+-- Pin every new comparison constructor.
+#guard testSpecExprDDMRoundTrip (.intGe x k loc)
+#guard testSpecExprDDMRoundTrip (.intLe x k loc)
+#guard testSpecExprDDMRoundTrip (.intGt x k loc)
+#guard testSpecExprDDMRoundTrip (.intLt x k loc)
+#guard testSpecExprDDMRoundTrip (.intEq x k loc)
+#guard testSpecExprDDMRoundTrip (.intNe x k loc)
+-- Operand asymmetry (lhs ≠ rhs) catches a fromDDM that swaps l/r.
+#guard testSpecExprDDMRoundTrip (.intGt x y loc)
+#guard testSpecExprDDMRoundTrip (.intLt x y loc)
+#guard testSpecExprDDMRoundTrip (.intEq x y loc)
+#guard testSpecExprDDMRoundTrip (.intNe x y loc)
+-- Pin every new arithmetic constructor, with operand asymmetry.
+#guard testSpecExprDDMRoundTrip (.intAdd x y loc)
+#guard testSpecExprDDMRoundTrip (.intSub x y loc)
+#guard testSpecExprDDMRoundTrip (.intMul x y loc)
+#guard testSpecExprDDMRoundTrip (.intDiv x y loc)
+#guard testSpecExprDDMRoundTrip (.intMod x y loc)
+-- Float comparison ctors (operand asymmetry).
+#guard testSpecExprDDMRoundTrip (.floatGt x y loc)
+#guard testSpecExprDDMRoundTrip (.floatLt x y loc)
+#guard testSpecExprDDMRoundTrip (.floatEq x y loc)
+#guard testSpecExprDDMRoundTrip (.floatNe x y loc)
+
 end Strata.Python.Specs
