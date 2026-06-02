@@ -1451,7 +1451,7 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     -- The DDM parser's @[scope(b)] on the body adds only the parameters.
     -- The function name is NOT in scope inside the body (declareFn adds it
     -- for subsequent statements only). So body bindings = outer + parameters.
-    let funcType := Lambda.LMonoTy.mkArrow outputMono (inputs.values.reverse)
+    let funcType := Lambda.LMonoTy.mkArrow' outputMono inputs.values
     let funcBinding : LExpr Core.CoreLParams.mono := .op () name (some funcType)
     let in_bindings := (inputs.map (fun (v, ty) => (LExpr.fvar () v ty))).toArray
 
