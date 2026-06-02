@@ -5,7 +5,7 @@
 -/
 module
 
-meta import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core
 import StrataDDM.Integration.Lean.HashCommands
 
 meta section
@@ -54,7 +54,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify ifElsePlusPgm (options := .quiet)
+#eval Core.verify ifElsePlusPgm (options := .quiet)
 
 end Strata.IfElsePrecedenceTest
 

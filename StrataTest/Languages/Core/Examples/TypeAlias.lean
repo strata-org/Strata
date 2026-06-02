@@ -5,7 +5,7 @@
 -/
 module
 
-meta import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core
 import StrataDDM.Integration.Lean.HashCommands
 
 meta section
@@ -101,7 +101,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify goodTypeAlias
+#eval Core.verify goodTypeAlias
 
 --------------------------------------------------------------------
 
@@ -143,7 +143,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify funcAndTypeAliasesPgm
+#eval Core.verify funcAndTypeAliasesPgm
 
 end Strata
 end

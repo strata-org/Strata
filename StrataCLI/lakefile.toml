@@ -1,0 +1,14 @@
+name = "StrataCLI"
+version = "0.1.0"
+defaultTargets = ["StrataMainLib", "strata"]
+
+[[require]]
+name = "Strata"
+path = ".."
+
+[[lean_lib]]
+name = "StrataMainLib"
+
+[[lean_exe]]
+name = "strata"
+root = "StrataMain"

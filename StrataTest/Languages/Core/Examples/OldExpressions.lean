@@ -5,7 +5,7 @@
 -/
 module
 
-meta import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core
 import StrataDDM.Integration.Lean.HashCommands
 
 meta section
@@ -155,7 +155,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify oldExprPgm
+#eval Core.verify oldExprPgm
 
 end Strata
 end

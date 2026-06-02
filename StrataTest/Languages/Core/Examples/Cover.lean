@@ -6,7 +6,7 @@
 module
 
 meta import Strata.Languages.Core.Options
-meta import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core
 import StrataDDM.Integration.Lean.HashCommands
 
 meta section
@@ -61,7 +61,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify coverPgm1 (options := .quiet)
+#eval Core.verify coverPgm1 (options := .quiet)
 
 ---------------------------------------------------------------------
 
@@ -97,7 +97,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify coverPgm2 (options := .quiet)
+#eval Core.verify coverPgm2 (options := .quiet)
 
 ---------------------------------------------------------------------
 
@@ -133,7 +133,7 @@ Property: cover
 Result: ❌ fail (❗path unreachable)
 -/
 #guard_msgs in
-#eval verify reachCheckGlobalPgm (options := {Core.VerifyOptions.quiet with checkLevel := .full})
+#eval Core.verify reachCheckGlobalPgm (options := {Core.VerifyOptions.quiet with checkLevel := .full})
 
 ---------------------------------------------------------------------
 
@@ -186,7 +186,7 @@ Property: cover
 Result: ❌ always false and is reachable from declaration entry
 -/
 #guard_msgs in
-#eval verify reachCheckMixedPgm (options := {Core.VerifyOptions.quiet with checkLevel := .full})
+#eval Core.verify reachCheckMixedPgm (options := {Core.VerifyOptions.quiet with checkLevel := .full})
 
 ---------------------------------------------------------------------
 
@@ -232,7 +232,7 @@ Property: cover
 Result: ❌ fail
 -/
 #guard_msgs in
-#eval verify reachCheckPerStmtPgm (options := Core.VerifyOptions.quiet)
+#eval Core.verify reachCheckPerStmtPgm (options := Core.VerifyOptions.quiet)
 
 ---------------------------------------------------------------------
 
@@ -259,7 +259,7 @@ info: #["assertion holds vacuously (path unreachable)", "cover property is unrea
 -/
 #guard_msgs in
 #eval do
-  let results ← verify reachCheckDiagnosticsPgm (options := {Core.VerifyOptions.quiet with checkLevel := .full})
+  let results ← Core.verify reachCheckDiagnosticsPgm (options := {Core.VerifyOptions.quiet with checkLevel := .full})
   let diagnostics := results.filterMap toDiagnosticModel
   return diagnostics.map DiagnosticModel.message
 
@@ -308,7 +308,7 @@ Property: cover
 Result: ❌ fail (❗path unreachable)
 -/
 #guard_msgs in
-#eval verify reachCheckPEPgm (options := {Core.VerifyOptions.quiet with checkLevel := .full})
+#eval Core.verify reachCheckPEPgm (options := {Core.VerifyOptions.quiet with checkLevel := .full})
 
 ---------------------------------------------------------------------
 
@@ -338,7 +338,7 @@ Property: assert
 Result: ➖ can be false and is reachable from declaration entry
 -/
 #guard_msgs in
-#eval verify minimalVerbosePgm (options := {Core.VerifyOptions.quiet with checkLevel := .minimalVerbose})
+#eval Core.verify minimalVerbosePgm (options := {Core.VerifyOptions.quiet with checkLevel := .minimalVerbose})
 
 -- Test: minimalVerbose in bugFinding mode (satisfiability check only)
 /--
@@ -352,7 +352,7 @@ Property: assert
 Result: ✖️ always false if reached
 -/
 #guard_msgs in
-#eval verify minimalVerbosePgm (options := {Core.VerifyOptions.quiet with checkLevel := .minimalVerbose, checkMode := .bugFinding})
+#eval Core.verify minimalVerbosePgm (options := {Core.VerifyOptions.quiet with checkLevel := .minimalVerbose, checkMode := .bugFinding})
 
 end Strata
 end

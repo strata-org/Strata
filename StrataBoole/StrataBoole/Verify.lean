@@ -7,7 +7,7 @@ module
 
 public import StrataBoole.Boole
 public import Strata.Languages.Core.Verifier
-import Strata.Languages.Core.Core
+import Strata.Languages.Core
 import Strata.Util.Tactics
 
 public section
@@ -969,7 +969,7 @@ def verify
     | .ok cp =>
       let runner tempPath :=
         EIO.toIO (fun dm => IO.Error.userError (toString (dm.format (some ictx.fileMap))))
-          (Core.verify cp tempPath proceduresToVerify options)
+          (_root_.Core.verify cp tempPath proceduresToVerify options)
       match tempDir with
       | .none =>
         IO.FS.withTempDir runner

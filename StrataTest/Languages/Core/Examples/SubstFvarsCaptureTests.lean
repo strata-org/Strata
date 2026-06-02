@@ -5,7 +5,7 @@
 -/
 module
 
-meta import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core
 meta import Strata.DL.Lambda.Preconditions
 import StrataDDM.Integration.Lean.HashCommands
 import Strata.Languages.Core.StatementEval
@@ -46,7 +46,7 @@ Property: assert
 Result: ❌ fail
 -/
 #guard_msgs in
-#eval verify issue653Pgm (options := .quiet)
+#eval Core.verify issue653Pgm (options := .quiet)
 
 ---------------------------------------------------------------------
 /-! ## callConditions: procedure call precondition substitution -/
@@ -79,7 +79,7 @@ Property: assert
 Result: ❌ fail
 -/
 #guard_msgs in
-#eval verify callCondBugPgm (options := .quiet)
+#eval Core.verify callCondBugPgm (options := .quiet)
 
 end Strata
 
