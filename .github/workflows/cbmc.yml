@@ -48,11 +48,16 @@ jobs:
         # The cache is safe to use here because we just saved it for this exact SHA
         # in the build_and_test_lean job from ci.yml
         # https://github.com/strata-org/Strata/issues/952
+        # Path list must match the save step in ci.yml's build_and_test_lean —
+        # actions/cache hashes the path list into the cache version, so a
+        # mismatch causes a miss even when the key matches.
         uses: ./.github/actions/restore-lake-cache
         with:
           path: |
             .lake
             StrataCLI/.lake
+            StrataDDM/.lake
+            StrataBoole/.lake
           fail-on-cache-miss: "true"
           use-restore-keys: "false"
       - name: Build Strata
