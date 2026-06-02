@@ -364,13 +364,19 @@ def translateType (ctx : TranslationContext) (typeStr : String) : Except Transla
           -- Map it to a core PyAnyType
           .ok (mkCoreType PyLauType.Any)
 
-/-- Translate a field type annotation: builtins become Any, composites stay Composite.
-    This matches the two-kind system where method signatures use Any for builtins. -/
+/-- Translate a field type annotation. Composite types resolve to
+    `UserDefined`; primitives resolve to native HighTypes under
+    `--typed-python`; everything else collapses to `Any`. -/
 def translateFieldType (ctx : TranslationContext) (typeStr : String) : Except TranslationError HighTypeMd :=
   match ctx.importedSymbols[typeStr]? with
   | some (ImportedSymbol.compositeType laurelName) =>
     .ok (mkHighTypeMd (.UserDefined laurelName))
-  | _ => .ok (mkCoreType PyLauType.Any)
+  | _ =>
+    if ctx.typedPython then
+      match pythonPrimToHighType typeStr with
+      | some t => .ok (mkHighTypeMd t)
+      | none => .ok (mkCoreType PyLauType.Any)
+    else .ok (mkCoreType PyLauType.Any)
 
 def AnyTy := mkCoreType PyLauType.Any
 def compositeToStringName (typeName : String) : String := "$composite_to_string_" ++ typeName
@@ -1041,7 +1047,8 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
             return mkStmtExprMd .Hole
           else
             return fieldExpr
-        | _ =>
+        | some ty => wrapFieldInAny ty fieldExpr
+        | none =>
           return fieldExpr
       else if isPackage ctx obj then
         -- FIXME: Module attribute (e.g., sys.argv): modules are not modeled as
@@ -1434,11 +1441,20 @@ partial def translateCall (ctx : TranslationContext)
   let funcDecl := ctx.functionSignatures.find? nameMatches
   -- Two declarations can share a name: a Laurel-program entry that
   -- preserves native types and a Core-prelude entry that stamps
-  -- everything Any. Boundary shim needs the former.
+  -- everything Any. Boundary shim needs the former. Class receivers
+  -- (`self : UserDefined`) are non-Any in both, so the discriminator
+  -- looks for at least one primitive/container parameter or return.
+  let isTypedSig (x : PythonFunctionDecl) : Bool :=
+    let isNative (t : HighType) : Bool :=
+      match t with
+      | .TInt | .TBool | .TReal | .TString
+      | .TSeq _ | .TMap _ _ | .TSet _ => true
+      | _ => false
+    x.args.any (fun a => isNative a.laurelType.val) ||
+    (match x.ret with | some r => isNative r.laurelType.val | none => false)
   let typedFuncDecl :=
     if ctx.typedPython then
-      ctx.functionSignatures.find? fun x =>
-        nameMatches x && x.args.any (fun a => a.laurelType.val != pyAny)
+      ctx.functionSignatures.find? fun x => nameMatches x && isTypedSig x
     else none
   if funcDecl.isNone && kwords.length > 0 then
     throwUserError f.ann s!"Undeclared function '{funcName}' called with keyword args"
