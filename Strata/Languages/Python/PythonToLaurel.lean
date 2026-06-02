@@ -437,11 +437,19 @@ def fromAny (ty : HighType) (e : StmtExprMd) : StmtExprMd :=
     | _ => mkStmtExprMd (.StaticCall accessor [e])
   | _, _ => e
 
-/-- Recover a native HighType from a Python type-annotation AST,
-    preserving inner types of `list[T]` / `dict[K, V]`. -/
+/-- Recover a native HighType from a Python type-annotation AST.
+    `list`/`Sequence` and `dict`/`Mapping` resolve to `TSeq` / `TMap`
+    over `Any` when the inner types aren't given. -/
 partial def pythonTypeExprToHighType (e : Python.expr SourceRange) : Option HighType :=
+  let pyAnyMd : AstNode HighType := ⟨.TCore "Any", none⟩
+  let isListName (s : String) : Bool := s == "List" || s == "list" || s == "Sequence"
+  let isDictName (s : String) : Bool := s == "Dict" || s == "dict" || s == "Mapping"
   match e with
-  | .Name _ n _ => pythonPrimToHighType n.val
+  | .Name _ n _ =>
+    if let some t := pythonPrimToHighType n.val then some t
+    else if isListName n.val then some (.TSeq pyAnyMd)
+    else if isDictName n.val then some (.TMap pyAnyMd pyAnyMd)
+    else none
   | .Subscript _ baseExpr slice _ =>
     let baseName : String :=
       match baseExpr with
@@ -452,14 +460,18 @@ partial def pythonTypeExprToHighType (e : Python.expr SourceRange) : Option High
       match slice with
       | .Tuple _ elts _ => elts.val.toList
       | _ => [slice]
-    match baseName, elems with
-    | "List", [t] | "list", [t] | "Sequence", [t] =>
-      pythonTypeExprToHighType t |>.map fun inner => .TSeq ⟨inner, none⟩
-    | "Dict", [k, v] | "dict", [k, v] | "Mapping", [k, v] =>
-      match pythonTypeExprToHighType k, pythonTypeExprToHighType v with
-      | some kt, some vt => some (.TMap ⟨kt, none⟩ ⟨vt, none⟩)
-      | _, _ => none
-    | _, _ => none
+    if isListName baseName then
+      match elems with
+      | [t] => pythonTypeExprToHighType t |>.map fun inner => .TSeq ⟨inner, none⟩
+      | _ => none
+    else if isDictName baseName then
+      match elems with
+      | [k, v] =>
+        match pythonTypeExprToHighType k, pythonTypeExprToHighType v with
+        | some kt, some vt => some (.TMap ⟨kt, none⟩ ⟨vt, none⟩)
+        | _, _ => none
+      | _ => none
+    else none
   | _ => none
 def strToAny (s: String) := mkStmtExprMd (.StaticCall "from_str" [mkStmtExprMd (StmtExpr.LiteralString s)])
 def intToAny (i: Int) := mkStmtExprMd (.StaticCall "from_int" [mkStmtExprMd (StmtExpr.LiteralInt i)])
@@ -1000,9 +1012,9 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
               let raw := mkStmtExprMd
                 (.StaticCall "Sequence.select" [dictOrList, fromAny .TInt index])
               return { toAny elem.val raw with source := md }
-            | .TMap _ valNode =>
+            | .TMap keyNode valNode =>
               let raw := mkStmtExprMd
-                (.StaticCall "select" [dictOrList, fromAny .TString index])
+                (.StaticCall "select" [dictOrList, fromAny keyNode.val index])
               return { toAny valNode.val raw with source := md }
             | _ => pure ()
           -- Negative-index rewrite: xs[-n] → xs[len(xs) - n] (lists only).
