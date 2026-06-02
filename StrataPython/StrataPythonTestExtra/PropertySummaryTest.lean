@@ -4,11 +4,10 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
-
-import StrataPythonTest.Util.Python
-import Strata.SimpleAPI
-import StrataPython.PyFactory
-import StrataPython
+meta import Strata.Languages.Core
+meta import StrataPython
+meta import StrataPython.PyFactory
+meta import StrataPythonTest.Util.Python
 
 /-! ## Test: Python assert messages propagate as property summaries
 
@@ -16,12 +15,12 @@ Verifies that `assert cond, "message"` in Python flows through as a
 property summary in the Core verification results.
 -/
 
-open StrataPython
-open Strata
+open Strata.Core (verifyProgram)
+open StrataPython (Python ReFactory pyTranslateLaurel withPython)
 
 /-- Compile a Python string to Ion, translate to Core, verify, and return
     the property summaries from the VCResults. -/
-private def getPropertySummaries (pythonCmd : System.FilePath) (source : String)
+meta def getPropertySummaries (pythonCmd : System.FilePath) (source : String)
     : IO (Array String) := do
   IO.FS.withTempDir fun tmpDir => do
     let pyFile := tmpDir / "test.py"
@@ -44,8 +43,8 @@ private def getPropertySummaries (pythonCmd : System.FilePath) (source : String)
     let (core, _diags) ← match ← pyTranslateLaurel ionFile.toString |>.toBaseIO with
       | .ok r => pure r
       | .error msg => throw <| .userError s!"pyTranslateLaurel failed: {msg}"
-    let results ← match ← Core.verifyProgram core Core.VerifyOptions.quiet
-        (moreFns := StrataPython.ReFactory) |>.toBaseIO with
+    let results ← match ← verifyProgram core Core.VerifyOptions.quiet
+        (moreFns := ReFactory) |>.toBaseIO with
       | .ok r => pure r
       | .error msg => throw <| .userError s!"verifyCore failed: {msg}"
     return results.filterMap fun vcr =>

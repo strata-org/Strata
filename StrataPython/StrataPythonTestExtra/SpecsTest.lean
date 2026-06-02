@@ -6,18 +6,17 @@
 module
 meta import StrataPython.Specs
 meta import all StrataPython.Specs.DDM
-import StrataDDM.Ion
-import StrataPython.PythonDialect
+meta import StrataPython.PythonDialect
 meta import StrataPythonTest.Util.Python
 
 open StrataDDM (SourceRange)
+open StrataPython
+open StrataPython.Specs
 
-namespace StrataPython.Specs
+meta section
+def testDir : System.FilePath := "StrataPythonTestExtra/Specs"
 
-private meta def testDir : System.FilePath :=
-  "StrataPythonTestExtra/Specs"
-
-meta def expectedPySpec :=
+def expectedPySpec :=
 #strata
 program PythonSpecs;
 extern "BaseClass" from "basetypes.BaseClass";
@@ -256,7 +255,7 @@ meta def testCase : IO Unit := withPython fun pythonCmd => do
 #eval testCase
 
 /-- Test that unsupported patterns emit appropriate warnings. -/
-meta def warningTestCase : IO Unit := withPython fun pythonCmd => do
+def warningTestCase : IO Unit := withPython fun pythonCmd => do
   IO.FS.withTempFile fun _handle dialectFile => do
     IO.FS.writeBinFile dialectFile StrataPython.Python.toIon
     IO.FS.withTempDir fun strataDir => do
@@ -303,7 +302,7 @@ meta def testNegRoundTrip (v : Nat) : Bool :=
 #guard testNegRoundTrip 0
 #guard testNegRoundTrip 1
 
-meta def testIntRoundTrip (v : Int) : Bool :=
+def testIntRoundTrip (v : Int) : Bool :=
   DDM.Int.ofDDM (toDDMInt SourceRange.none v) = v
 
 #guard testIntRoundTrip 0
@@ -311,5 +310,4 @@ meta def testIntRoundTrip (v : Int) : Bool :=
 #guard testIntRoundTrip (-1)
 #guard testIntRoundTrip (42)
 #guard testIntRoundTrip (-100)
-
-end StrataPython.Specs
+end
