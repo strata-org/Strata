@@ -8,6 +8,7 @@ module
 meta import Strata.SimpleAPI
 import StrataPython.PythonDialect
 meta import StrataPythonTest.Util.Python
+meta import StrataPython
 
 /-! ## Tests for directory-based pySpecsDir
 
@@ -16,8 +17,6 @@ PySpec Ion files for a directory of Python modules.
 -/
 
 namespace StrataPython.Specs.PySpecsDirTest
-
-open Strata (pySpecsDir pySpecOutputPath)
 
 private meta def testDir : System.FilePath :=
   "StrataPythonTestExtra/Specs/pyspecs_dir_test"

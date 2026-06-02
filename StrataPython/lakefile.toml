@@ -14,6 +14,10 @@ name = "StrataPython"
 name = "StrataPythonTest"
 globs = ["StrataPythonTest.+"]
 
+[[lean_lib]]
+name = "StrataPythonTestExtra"
+globs = ["StrataPythonTestExtra.+"]
+
 [[lean_exe]]
 name = "StrataTestMain"
 needs = ["StrataPython", "StrataPythonTest"]

@@ -3,10 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 import StrataPythonTest.Util.Python
 import Strata.SimpleAPI
 import StrataPython.PyFactory
+import StrataPython
 
 /-! ## Test: Python assert messages propagate as property summaries
 
@@ -14,9 +16,8 @@ Verifies that `assert cond, "message"` in Python flows through as a
 property summary in the Core verification results.
 -/
 
-namespace StrataPython.PropertySummaryTest
-
-open Strata (pyTranslateLaurel)
+open StrataPython
+open Strata
 
 /-- Compile a Python string to Ion, translate to Core, verify, and return
     the property summaries from the VCResults. -/
@@ -26,7 +27,7 @@ private def getPropertySummaries (pythonCmd : System.FilePath) (source : String)
     let pyFile := tmpDir / "test.py"
     IO.FS.writeFile pyFile source
     let dialectFile := tmpDir / "dialect.ion"
-    IO.FS.writeBinFile dialectFile Python.Python.toIon
+    IO.FS.writeBinFile dialectFile Python.toIon
     let ionFile := tmpDir / "test.python.st.ion"
     let child ← IO.Process.spawn {
       cmd := pythonCmd.toString
@@ -58,5 +59,3 @@ private def getPropertySummaries (pythonCmd : System.FilePath) (source : String)
   for msg in expected do
     unless summaries.any (· == msg) do
       throw <| .userError s!"FAIL: \"{msg}\" not found in summaries: {summaries}"
-
-end StrataPython.PropertySummaryTest

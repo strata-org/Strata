@@ -3,10 +3,11 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import StrataPythonTest.TestExamples
-import StrataTest.Util.TestDiagnostics
-import StrataPythonTest.Util.Python
+meta import StrataPythonTest.TestExamples
+meta import StrataTest.Util.TestDiagnostics
+meta import StrataPythonTest.Util.Python
 
 /-! ## Tests: None-for-typed-parameter detection
 
@@ -15,8 +16,7 @@ is correctly detected as a bug, both for direct assignments and dict unpacking.
 -/
 
 open StrataDDM.Parser (stringInputContext)
-
-namespace StrataPython.DictNoneTest
+open StrataPython
 
 -- Test 1: Using a valid int should succeed (0 diagnostics).
 #guard_msgs in
@@ -111,5 +111,3 @@ def main() -> None:
   | .error err =>
     unless (toString err).contains "len() is not supported" do
       throw <| IO.userError s!"Unexpected error: {err}"
-
-end StrataPython.DictNoneTest

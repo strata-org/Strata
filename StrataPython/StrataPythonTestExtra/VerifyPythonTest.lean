@@ -3,11 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import StrataDDM.Parser
-import StrataPythonTest.TestExamples
-import StrataPythonTest.Util.Python
-import StrataTest.Util.TestDiagnostics
+meta import all StrataPythonTest.TestExamples
+meta import StrataPythonTest.Util.Python -- shake: keep
+meta import all StrataTest.Util.TestDiagnostics
+meta import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
+
+import Strata.Languages.Laurel.LaurelAST
 
 /-! ## Test: Inline Python verification via processPythonFile
 
@@ -15,11 +18,13 @@ Verifies that `processPythonFile` correctly runs the full
 Python → Laurel → Core → SMT pipeline and produces diagnostics.
 -/
 
-namespace StrataPython.VerifyPythonTest
-
-open StrataTest.Util
-open StrataPython (processPythonFile processPythonToLaurel withPython manglePythonMethod)
+open Strata
 open StrataDDM.Parser (stringInputContext)
+open StrataPython
+open StrataPython.ToLaurel
+open StrataTest.Util
+
+meta section
 
 /-- Run the Python → Laurel pipeline and return the Laurel program together
     with its formatted string representation. -/
@@ -650,7 +655,7 @@ def retry(func: typing.Callable[..., typing.Any], retries: int = 3) -> typing.An
     return x + y
 "
   let laurel ← processPythonToLaurel pythonCmd (stringInputContext "test.py" program)
-  let prelude := Python.PreludeInfo.ofLaurelProgram laurel
+  let prelude := PreludeInfo.ofLaurelProgram laurel
   match prelude.functionSignatures.find? (fun f => f.name == "add") with
   | none => throw <| .userError "add not found in functionSignatures"
   | some sig =>
@@ -714,4 +719,4 @@ def main() -> None:
   unless failures.isEmpty do
     throw <| .userError s!"Field method resolution test: expected all checks to pass but got: {failures.map (·.message)}"
 
-end StrataPython.VerifyPythonTest
+end
