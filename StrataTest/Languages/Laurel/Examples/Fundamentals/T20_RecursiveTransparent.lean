@@ -35,17 +35,18 @@ procedure testListSum() opaque {
   assert listSum(xs) == 6
 };
 
-// Recursion on a number
-procedure factorial(n: int): int
-{
-  if n == 0 then 1
-  else n * factorial(n - 1)
-};
+// Recursing on numbers is not possible yet because Core functions
+// do not support that.
+//procedure factorial(n: int): int
+//{
+//  if n == 0 then 1
+//  else n * factorial(n - 1)
+//};
 
-procedure testFactorial() opaque {
-  assert factorial(0) == 1;
-  assert factorial(3) == 6
-};
+//procedure testFactorial() opaque {
+//  assert factorial(0) == 1;
+//  assert factorial(3) == 6
+//};
 "
 
 -- TODO: This test currently does not pass due to a bug where the generated

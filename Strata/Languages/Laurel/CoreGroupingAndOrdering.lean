@@ -53,7 +53,7 @@ def collectStaticCallNames (expr : StmtExprMd) : List String :=
   match val with
   | .StaticCall callee args =>
       callee.text :: args.flatMap (fun a => collectStaticCallNames a)
-  | .PrimitiveOp _ args => args.flatMap (fun a => collectStaticCallNames a)
+  | .PrimitiveOp _ args _ => args.flatMap (fun a => collectStaticCallNames a)
   | .IfThenElse cond t e =>
       collectStaticCallNames cond ++
       collectStaticCallNames t ++
