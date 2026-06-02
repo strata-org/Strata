@@ -920,7 +920,7 @@ public def resolve (program : Program) (existingModel: Option SemanticModel := n
     refToDef := refToDef,
     nextId := finalState.nextId
   }
-  let diamondErrors := validateDiamondFieldAccesses semanticModel program
+  let diamondErrors := validateDiamondFieldAccesses semanticModel program'
   { program := program',
     model := semanticModel,
     errors := finalState.errors ++ diamondErrors

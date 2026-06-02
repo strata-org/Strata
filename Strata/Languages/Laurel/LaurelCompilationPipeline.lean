@@ -125,7 +125,6 @@ private def runLaurelPasses (options : LaurelTranslateOptions)
   let resolutionErrors : List DiagnosticModel :=
     if options.emitResolutionErrors then result.errors.toList else []
   let (program, model) := (result.program, result.model)
-  emit "Resolve" "laurel.st" program
 
   let mut program := program
   let mut model := model

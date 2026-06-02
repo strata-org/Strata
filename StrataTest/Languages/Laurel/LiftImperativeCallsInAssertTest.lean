@@ -15,6 +15,7 @@ import Strata.DDM.BuiltinDialects.Init
 import Strata.Languages.Laurel.Grammar.LaurelGrammar
 import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 import Strata.Languages.Laurel.LiftImperativeExpressions
+import Strata.Languages.Laurel.Resolution
 
 open Strata
 open Strata.Elab (parseStrataProgramFromDialect)
