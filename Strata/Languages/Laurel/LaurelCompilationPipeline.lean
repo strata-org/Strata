@@ -87,6 +87,7 @@ abbrev TranslateResultWithLaurel := (Option Core.Program) × (List DiagnosticMod
 
 /-- The ordered sequence of Laurel-to-Laurel lowering passes. -/
 def laurelPipeline : Array LaurelPass := #[
+  typeAliasElimPass,
   filterNonCompositeModifiesPass,
   eliminateValueInReturnsPass,
   heapParameterizationPass,
@@ -125,9 +126,6 @@ private def runLaurelPasses (options : LaurelTranslateOptions)
     if options.emitResolutionErrors then result.errors.toList else []
   let (program, model) := (result.program, result.model)
   emit "Resolve" "laurel.st" program
-
-  let program := typeAliasElim model program
-  emit "TypeAliasElim" "laurel.st" program
 
   let mut program := program
   let mut model := model
