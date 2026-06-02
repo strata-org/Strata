@@ -61,9 +61,10 @@ generic type when `PrecondElim` runs before type checking. Falls back to the
 operator annotation when arguments carry no type information.
 
 Returns `Subst.empty` for monomorphic functions or when no useful constraints
-are available; the resulting unsubstituted precondition will be handled
-downstream (the SMT encoder treats unresolved type variables as uninterpreted
-sorts, yielding `unknown` rather than failing).
+are available. The SMT encoder rejects any unresolved type variables that
+survive into the obligation: encoding them as uninterpreted sorts is unsound
+for `--check-mode bugFinding`. Polymorphic function body verification (sound
+under deductive mode) is not yet supported.
 
 Note: this is structurally similar to `LFunc.computeTypeSubst` in `Factory.lean`,
 but with the priority *reversed*. `computeTypeSubst` prefers `.op` annotations

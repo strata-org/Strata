@@ -153,10 +153,8 @@ info: [WFObligation(polySel, ((~Int.Lt : (arrow int (arrow int bool)))
 #eval collectWFObligations polyFactory
   esM[(~polySel (myseq : (Sequence int)))]
 
--- Subst.empty arm: neither `.op` annotation nor typed arguments. The
--- `callSiteTypeSubst` documentation (lines 63–66) promises this case returns
--- `Subst.empty` and defers handling to the SMT encoder. The unsubstituted
--- `%a` should remain in the inner `lenOf` op annotation.
+-- Subst.empty arm: no `.op` annotation, no typed arguments — `%a` survives
+-- unsubstituted in the inner `lenOf` op annotation.
 /--
 info: [WFObligation(polySel, ((~Int.Lt : (arrow int (arrow int bool))) #0 ((~lenOf : (arrow (Sequence a) int)) myseq)), ())]
 -/

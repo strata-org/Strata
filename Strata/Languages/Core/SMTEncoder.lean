@@ -237,17 +237,18 @@ def LMonoTy.toSMTType (E: Env) (ty : LMonoTy) (ctx : SMT.Context) (useArrayTheor
                     | .some termTy =>
                       .ok (termTy, ctx)
                     | _ =>
-                      -- Unresolved type variable from a polymorphic precondition
-                      -- whose call-site type couldn't be inferred (e.g. inside a
-                      -- polymorphic function body, or with polymorphic args).
-                      -- Treat as a fresh uninterpreted sort so the obligation can
-                      -- still be encoded; the solver will report `unknown` rather
-                      -- than the encoder failing outright (issue #1201).
-                      -- Prefix with `__poly_` so the synthetic sort is visibly
-                      -- distinct from any user-declared sort with the same name.
-                      let synthName := s!"__poly_{tyv}"
-                      let ctx := ctx.addSort { name := synthName, arity := 0 }
-                      .ok ((.constr synthName []), ctx)
+                      -- Encoding `tyv` as an uninterpreted sort would be unsound
+                      -- for `--check-mode bugFinding`: the solver could satisfy
+                      -- the obligation in the synthetic sort and report "no bug"
+                      -- when no concrete instantiation admits one. Sound under
+                      -- deductive mode (would let us verify polymorphic function
+                      -- bodies for any T), but mode-aware encoding is not yet
+                      -- wired through; reject for now until a concrete use case
+                      -- justifies the plumbing.
+                      .error f!"Cannot encode unresolved type variable '{tyv}' to SMT. \
+                                Polymorphic function body verification is not yet \
+                                supported (would require mode-aware encoding to \
+                                stay sound for bugFinding)."
 
 def LMonoTys.toSMTType (E: Env) (args : LMonoTys) (ctx : SMT.Context) (useArrayTheory : Bool := false) :
     Except Format ((List TermType) × SMT.Context) := do
