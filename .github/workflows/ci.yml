@@ -48,6 +48,8 @@ jobs:
           path: |
             .lake
             StrataCLI/.lake
+            StrataDDM/.lake
+            StrataBoole/.lake
       - name: Download ion-java jar for Java codegen test
         run: wget -q -O StrataTestExtra/Languages/Java/testdata/ion-java-1.11.11.jar https://github.com/amazon-ion/ion-java/releases/download/v1.11.11/ion-java-1.11.11.jar
       - name: Build StrataDDM
@@ -78,6 +80,8 @@ jobs:
           path: |
             .lake
             StrataCLI/.lake
+            StrataDDM/.lake
+            StrataBoole/.lake
       - name: Verify Java testdata is up to date
         run: |
           StrataTestExtra/Languages/Java/regenerate-testdata.sh
@@ -143,6 +147,8 @@ jobs:
         path: |
           .lake
           StrataCLI/.lake
+          StrataDDM/.lake
+          StrataBoole/.lake
         fail-on-cache-miss: "true"
         use-restore-keys: "false"
     - name: Install Lean
@@ -256,6 +262,8 @@ jobs:
         path: |
           .lake
           StrataCLI/.lake
+          StrataDDM/.lake
+          StrataBoole/.lake
         fail-on-cache-miss: "true"
         use-restore-keys: "false"
     - name: Install Lean (for lake env)
