@@ -982,6 +982,16 @@ partial def transExpr (e : expr SourceRange)
       | _ =>
         specWarning loc s!"unsupported BinOp in predicate: {repr op}"
         return placeholder
+    else if lhsTp.isFloatType || rhsTp.isFloatType then
+      -- Float arithmetic in predicate bodies is deliberately deferred:
+      -- Laurel `Real` arithmetic models exact mathematical reals, but
+      -- Python floats are IEEE-754 doubles, so a faithful encoding
+      -- needs a `Float64` lowering path that doesn't yet exist in
+      -- `ToLaurel.lean`. Fall through with an explicit warning rather
+      -- than silently producing a `Real`-typed VC.
+      specWarning loc
+        s!"float arithmetic in predicates is not yet supported (op={repr op}); use the int variant or restructure the assertion"
+      return placeholder
     else
       specWarning loc s!"BinOp with non-int operand: lhs={repr lhsTp}, rhs={repr rhsTp}"
       return placeholder

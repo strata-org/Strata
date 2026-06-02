@@ -281,7 +281,8 @@ meta def warningTestCase : IO Unit := withPython fun pythonCmd => do
           "For: else clause not supported",    -- for/else loop
           "skipped Expr in function body",     -- kw["a"] (bare expression)
           "Python `//` (floor) and Laurel `Div`", -- non-positive divisor
-          "comparison between Any-typed operands" -- both operands Any-typed
+          "comparison between Any-typed operands", -- both operands Any-typed
+          "float arithmetic in predicates is not yet supported" -- deferred float arith
         ]
         for expected in expectedWarnings do
           if !warnings.any (containsSubstr · expected) then

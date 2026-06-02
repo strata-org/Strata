@@ -47,3 +47,12 @@ AnyArgs = TypedDict('AnyArgs', {'x': Any, 'y': Any})
 
 def compare_any_to_any(**kw: Unpack[AnyArgs]) -> None:
     assert kw["x"] < kw["y"], "x < y"
+
+# Float arithmetic in predicate bodies is deliberately deferred — the
+# recognizer can't honestly emit Real-typed VCs for IEEE-754 floats —
+# so a warning is emitted instead of silently dropping into the int
+# branch.
+FloatArgs = TypedDict('FloatArgs', {'x': float, 'y': float})
+
+def float_arith_unsupported(**kw: Unpack[FloatArgs]) -> None:
+    assert kw["x"] + kw["y"] >= 0.0, "x + y >= 0"
