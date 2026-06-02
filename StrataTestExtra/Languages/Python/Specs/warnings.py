@@ -38,3 +38,12 @@ DivArgs = TypedDict('DivArgs', {'x': int, 'y': int})
 
 def floor_div_symbolic_divisor(**kw: Unpack[DivArgs]) -> None:
     assert kw["x"] // kw["y"] >= 0, "x // y >= 0"
+
+# Comparison between two `Any`-typed operands. The recognizer can't
+# tell whether the operands are int or float and assumes int; if the
+# runtime values are floats the generated VC has the wrong sort, so a
+# warning is emitted.
+AnyArgs = TypedDict('AnyArgs', {'x': Any, 'y': Any})
+
+def compare_any_to_any(**kw: Unpack[AnyArgs]) -> None:
+    assert kw["x"] < kw["y"], "x < y"

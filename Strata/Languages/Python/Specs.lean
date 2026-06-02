@@ -789,38 +789,51 @@ def assumeCondition (cond : SpecExpr) (loc : SourceRange) (act : SpecAssertionM 
     { a with formula := .implies cond a.formula loc }
   modify fun s => { s with assertions := prevAssertions ++ wrapped }
 
-/-- Build a comparison expression dispatching to float or int variants based on type. -/
+/-- Build a comparison expression dispatching to float or int variants
+    based on type. Emits a `specWarning` when both operands are
+    `Any`-typed (e.g. unparameterised callees) and the recognizer has
+    to assume `int`: if the actual runtime values are floats the
+    generated SMT VC will have the wrong sort. -/
 private def makeComparison
+    (loc : SourceRange)
     (floatCtor intCtor : SpecExpr → SpecExpr → SpecExpr)
     (subj : SpecExpr) (subjType : SpecType) (bound : SpecExpr) (boundType : SpecType)
-    : Option SpecExpr :=
+    : SpecAssertionM (Option SpecExpr) :=
   if subjType.isFloatType then
     match bound with
-    | .floatLit .. => some (floatCtor subj bound)
-    | .intLit v loc => some (floatCtor subj (.floatLit (toString v) (loc := loc)))
-    | _ => none
+    | .floatLit .. => return some (floatCtor subj bound)
+    | .intLit v loc => return some (floatCtor subj (.floatLit (toString v) (loc := loc)))
+    | _ => return none
   else if subjType.isIntType then
     match bound with
-    | .intLit .. => some (intCtor subj bound)
+    | .intLit .. => return some (intCtor subj bound)
     | _ =>
       -- subj is int, bound is int- or Any-typed (a parameter etc.) →
       -- use the int comparison constructor.
-      if boundType.isIntType || boundType.isAnyType then some (intCtor subj bound) else none
+      if boundType.isIntType || boundType.isAnyType then
+        return some (intCtor subj bound)
+      else return none
   else if boundType.isFloatType then
     match bound with
-    | .floatLit .. => some (floatCtor subj bound)
-    | _ => none
+    | .floatLit .. => return some (floatCtor subj bound)
+    | _ => return none
   else if boundType.isIntType then
     match bound with
-    | .intLit .. => some (intCtor subj bound)
+    | .intLit .. => return some (intCtor subj bound)
     | _ =>
-      if subjType.isIntType || subjType.isAnyType then some (intCtor subj bound) else none
+      if subjType.isIntType || subjType.isAnyType then
+        return some (intCtor subj bound)
+      else return none
   else if subjType.isAnyType && boundType.isAnyType then
     -- Both sides Any-typed (e.g. two function parameters whose types
-    -- aren't seeded). Trust the user and use the int comparison.
-    some (intCtor subj bound)
+    -- aren't seeded). Assume int — if the runtime values are floats,
+    -- the generated SMT VC will have the wrong sort, so warn.
+    do
+      specWarning loc
+        "comparison between Any-typed operands; assuming int — generated VC may be unsound if runtime values are floats"
+      return some (intCtor subj bound)
   else
-    none
+    return none
 
 private def transCompare (loc : SourceRange)
     (lhsExpr : SpecExpr) (lhsType : SpecType)
@@ -869,17 +882,17 @@ private def transCompare (loc : SourceRange)
 
   match ops[0] with
   | .GtE _ =>
-    return makeComparison (.floatGe · · (loc := loc)) (.intGe · · (loc := loc)) lhsExpr lhsType boundExpr boundType
+    makeComparison loc (.floatGe · · (loc := loc)) (.intGe · · (loc := loc)) lhsExpr lhsType boundExpr boundType
   | .LtE _ =>
-    return makeComparison (.floatLe · · (loc := loc)) (.intLe · · (loc := loc)) lhsExpr lhsType boundExpr boundType
+    makeComparison loc (.floatLe · · (loc := loc)) (.intLe · · (loc := loc)) lhsExpr lhsType boundExpr boundType
   | .Gt _ =>
-    return makeComparison (.floatGt · · (loc := loc)) (.intGt · · (loc := loc)) lhsExpr lhsType boundExpr boundType
+    makeComparison loc (.floatGt · · (loc := loc)) (.intGt · · (loc := loc)) lhsExpr lhsType boundExpr boundType
   | .Lt _ =>
-    return makeComparison (.floatLt · · (loc := loc)) (.intLt · · (loc := loc)) lhsExpr lhsType boundExpr boundType
+    makeComparison loc (.floatLt · · (loc := loc)) (.intLt · · (loc := loc)) lhsExpr lhsType boundExpr boundType
   | .Eq _ =>
-    return makeComparison (.floatEq · · (loc := loc)) (.intEq · · (loc := loc)) lhsExpr lhsType boundExpr boundType
+    makeComparison loc (.floatEq · · (loc := loc)) (.intEq · · (loc := loc)) lhsExpr lhsType boundExpr boundType
   | .NotEq _ =>
-    return makeComparison (.floatNe · · (loc := loc)) (.intNe · · (loc := loc)) lhsExpr lhsType boundExpr boundType
+    makeComparison loc (.floatNe · · (loc := loc)) (.intNe · · (loc := loc)) lhsExpr lhsType boundExpr boundType
   | _ =>
     return none
 
