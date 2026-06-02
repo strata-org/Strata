@@ -149,7 +149,7 @@ procedure addProcCaller(): int
 "
 
 #guard_msgs (error, drop all) in
-#eval! testInputWithOffset "NestedImpureStatements" program 14 processLaurelFileKeepIntermediates
+#eval! testInputWithOffset "NestedImpureStatements" program 14 processLaurelFile
 
 
 end Laurel

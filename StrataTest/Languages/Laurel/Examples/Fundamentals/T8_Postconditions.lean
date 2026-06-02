@@ -40,4 +40,4 @@ procedure invalidPostcondition(x: int)
 "
 
 #guard_msgs (drop info, error) in
-#eval testInputWithOffset "Postconditions" program 14 processLaurelFileKeepIntermediates
+#eval testInputWithOffset "Postconditions" program 14 processLaurelFile
