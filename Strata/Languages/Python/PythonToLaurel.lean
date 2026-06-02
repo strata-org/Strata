@@ -9,6 +9,7 @@ public import Strata.Languages.Core.Program
 public import Strata.Languages.Laurel.Laurel
 public import Strata.Languages.Python.OverloadTable
 public import Strata.Languages.Python.PythonDialect
+import Strata.Languages.Python.Approximation
 import Strata.Languages.Python.PythonRuntimeLaurelPart
 import Strata.Util.DecideProp
 
@@ -239,7 +240,7 @@ def rejectableHole (rejectApproximations : Bool) (construct : String)
     : Except TranslationError StmtExprMd :=
   if rejectApproximations then
     throw (.unsupportedConstruct
-      s!"[approximation] {construct} is approximated as Hole; not in the sound subset"
+      (Strata.Python.Approximation.render .hole construct)
       (approximationAstPayload source astRepr))
   else
     pure (mkStmtExprMdWithLoc .Hole source)
@@ -252,7 +253,7 @@ def rejectableDrop (rejectApproximations : Bool) (construct : String)
     : Except TranslationError Unit :=
   if rejectApproximations then
     throw (.unsupportedConstruct
-      s!"[approximation] {construct} is silently dropped by current translation; not in the sound subset"
+      (Strata.Python.Approximation.render .drop construct)
       (approximationAstPayload source astRepr))
   else
     pure ()

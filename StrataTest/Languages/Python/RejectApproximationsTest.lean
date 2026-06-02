@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
+import Strata.Languages.Python.Approximation
 import Strata.Languages.Python.PythonToLaurel
 
 /-! # `--reject-approximations` flag tests
@@ -60,6 +61,37 @@ open Strata.Python.TranslationError
   | .error (.unsupportedConstruct _ payload) =>
       (payload.splitOn "huge").length == 1
         && (payload.splitOn "f.py").length > 1
+  | _ => false
+
+/-! ## Shared `Approximation.render` format
+
+All three approximation sites — `rejectableHole`, `rejectableDrop`, and
+`Specs.lean`'s `specWarning` warning→error promotion — render through
+`Strata.Python.Approximation.render`. The guards below pin the prefix
+and per-kind wording so the three sites cannot drift apart. -/
+
+open Strata.Python.Approximation (render Kind prefixTag)
+
+#guard (render .hole "BinOp Div").startsWith prefixTag
+#guard (render .drop "raise").startsWith prefixTag
+#guard (render .warningPromotion "fallback to placeholder").startsWith prefixTag
+
+#guard prefixTag == "[approximation] "
+
+#guard ((render .hole "X").splitOn "approximated as Hole").length > 1
+#guard ((render .drop "X").splitOn "silently dropped").length > 1
+#guard render .warningPromotion "msg" == "[approximation] msg"
+
+-- The strict-mode arm of `rejectableHole` shares wording with `render .hole`.
+#guard
+  match rejectableHole true "X" with
+  | .error (.unsupportedConstruct msg _) => msg == render .hole "X"
+  | _ => false
+
+-- Likewise for `rejectableDrop`.
+#guard
+  match rejectableDrop true "X" with
+  | .error (.unsupportedConstruct msg _) => msg == render .drop "X"
   | _ => false
 
 end Strata.Python.RejectApproximationsTest

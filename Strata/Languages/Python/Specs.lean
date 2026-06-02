@@ -7,6 +7,7 @@ module
 
 import        Strata.DDM.Format
 import all    Strata.DDM.Util.Fin
+import        Strata.Languages.Python.Approximation
 import        Strata.Languages.Python.ReadPython
 import        Strata.Languages.Python.Specs.DDM
 public import Strata.Languages.Python.Specs.Decls
@@ -308,7 +309,7 @@ instance : PySpecMClass PySpecM where
     -- error: the parser only emits warnings on patterns it falls back to
     -- `.placeholder` for, which silently drops the user's spec.
     if ctx.rejectApproximations then
-      specErrorAt ctx.pythonFile loc s!"[approximation] {message}"
+      specErrorAt ctx.pythonFile loc (Strata.Python.Approximation.render .warningPromotion message)
     else
       let w : PipelineMessage := { file := ctx.pythonFile, loc, phase := pySpecParsingPhase, kind := .pySpecParsingWarning, message }
       modify fun s => { s with warnings := s.warnings.push w }
