@@ -120,7 +120,7 @@ jobs:
       - name: Run pyAnalyze SARIF tests
         working-directory: StrataPython/StrataPythonTest
         shell: bash
-        run: python run_py_analyze_sarif.py --laurel
+        run: python run_py_analyze_sarif.py
       - name: Run pyAnalyze golden-file tests
         working-directory: StrataPython/StrataPythonTest
         shell: bash

@@ -24,6 +24,44 @@ needs = ["StrataPython", "StrataPythonTest"]
 
 [[lean_exe]]
 name = "DiffTestCore"
+needs = ["StrataPython"]
 
 [[lean_exe]]
-name = "PyAnalyzeLaurelToGoto"
+name = "pyAnalyzeLaurel"
+root = "Scripts.pyAnalyzeLaurel"
+needs = ["StrataPython"]
+
+[[lean_exe]]
+name = "pyAnalyzeToGoto"
+root = "Scripts.pyAnalyzeToGoto"
+needs = ["StrataPython"]
+
+[[lean_exe]]
+name = "pyTranslateLaurel"
+root = "Scripts.pyTranslateLaurel"
+needs = ["StrataPython"]
+
+[[lean_exe]]
+name = "pyAnalyzeLaurelToGoto"
+root = "Scripts.pyAnalyzeLaurelToGoto"
+needs = ["StrataPython"]
+
+[[lean_exe]]
+name = "pySpecToLaurel"
+root = "Scripts.pySpecToLaurel"
+needs = ["StrataPython"]
+
+[[lean_exe]]
+name = "pyResolveOverloads"
+root = "Scripts.pyResolveOverloads"
+needs = ["StrataPython"]
+
+[[lean_exe]]
+name = "pyInterpret"
+root = "Scripts.pyInterpret"
+needs = ["StrataPython"]
+
+[[lean_exe]]
+name = "pySpecs"
+root = "Scripts.pySpecs"
+needs = ["StrataPython"]

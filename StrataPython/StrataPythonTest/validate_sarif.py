@@ -5,7 +5,7 @@ import json
 import sys
 
 
-def validate(sarif_path: str, base_name: str, *, laurel: bool = False) -> str:
+def validate(sarif_path: str, base_name: str) -> str:
     with open(sarif_path) as f:
         d = json.load(f)
 
@@ -32,7 +32,6 @@ def validate(sarif_path: str, base_name: str, *, laurel: bool = False) -> str:
     located_results = [r for r in results if r.get("locations")]
 
     if base_name == "test_precondition_verification":
-        # Both laurel and non-laurel paths produce errors in deductive mode
         if len(error_results) < 1:
             errors.append(
                 f"expected errors, got {len(error_results)} error-level results"

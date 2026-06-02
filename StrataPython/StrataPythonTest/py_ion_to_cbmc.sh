@@ -41,8 +41,8 @@ run() {
   fi
 }
 
-# Run PyAnalyzeLaurelToGoto from StrataPython
-(cd "$STRATA_PYTHON_DIR" && run "PyAnalyzeLaurelToGoto" lake exe PyAnalyzeLaurelToGoto "$ION") || exit $?
+# Run pyAnalyzeLaurelToGoto from StrataPython
+(cd "$STRATA_PYTHON_DIR" && run "pyAnalyzeLaurelToGoto" lake exe pyAnalyzeLaurelToGoto "$ION") || exit $?
 
 # Intermediate files are created in cwd with basename
 run "symtab2gb" symtab2gb "$STRATA_PYTHON_DIR/$BN.symtab.json" \

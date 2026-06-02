@@ -34,10 +34,11 @@ while [ $# -gt 0 ]; do
     shift
 done
 
-command="pyAnalyzeLaurel"
 expected_dir="expected_laurel"
 
-(cd ../.. && ./StrataCLI/.lake/build/bin/strata --help > /dev/null)
+# Build the pyAnalyzeLaurel exe in the StrataPython package.
+(cd .. && lake build pyAnalyzeLaurel > /dev/null)
+pyAnalyzeLaurel="../.lake/build/bin/pyAnalyzeLaurel"
 
 pending_total=0
 pending_error=0
@@ -64,7 +65,7 @@ for test_file in tests/test_*.py; do
             extra_args=$(grep '^# strata-args:' "$test_file" | sed 's/^# strata-args://' | head -1)
             vc_flag=""
             [ -n "$vc_directory" ] && vc_flag="--vc-directory $vc_directory"
-            output=$(cd ../.. && ./StrataCLI/.lake/build/bin/strata $command $extra_args $vc_flag "StrataPython/StrataPythonTest/${ion_file}")
+            output=$("$pyAnalyzeLaurel" $extra_args $vc_flag "$ion_file")
 
             if [ $update -eq 1 ]; then
                 echo "$output" > "$expected_file"
@@ -110,7 +111,7 @@ if [ -n "$metrics_test_file" ] && [ -z "$filter" ]; then
     metrics_out=$(mktemp)
     # Ion file should already exist from the loop above
     if [ -f "$metrics_ion" ]; then
-        (cd ../.. && ./StrataCLI/.lake/build/bin/strata $command --metrics "$metrics_out" "StrataPython/StrataPythonTest/${metrics_ion}" 2>/dev/null) || true
+        ("$pyAnalyzeLaurel" --metrics "$metrics_out" "${metrics_ion}" 2>/dev/null) || true
         if [ ! -s "$metrics_out" ]; then
             echo "ERROR: --metrics file is empty for $metrics_base"
             failed=1
@@ -163,7 +164,7 @@ if [ $pending -eq 1 ]; then
         extra_args=$(grep '^# strata-args:' "$test_file" | sed 's/^# strata-args://' | head -1)
         vc_flag=""
         [ -n "$vc_directory" ] && vc_flag="--vc-directory $vc_directory"
-        output=$(cd ../.. && timeout 20 ./StrataCLI/.lake/build/bin/strata $command $extra_args $vc_flag "StrataPython/StrataPythonTest/${ion_file}" 2>&1)
+        output=$(timeout 20 "$pyAnalyzeLaurel" $extra_args $vc_flag "${ion_file}" 2>&1)
         exit_code=$?
 
         if [ $exit_code -ne 0 ] || echo "$output" | grep -q "error\|Error\|ERROR\|panic\|PANIC"; then
