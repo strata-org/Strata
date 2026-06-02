@@ -2639,12 +2639,12 @@ def translateFunction (ctx : TranslationContext) (sourceRange: SourceRange) (fun
           | none => []
         | _ => []
 
-    -- Native return: the signature matches the spec layer; the body
-    -- stays Any-internal and `Return` injects an unwrap to this type.
+    -- Native return: the signature matches the spec layer. Primitives
+    -- need a `fromAny` unwrap at every Return; container/UserDefined
+    -- types are kept as-is so the unwrap is identity.
     let nativeReturnTy : Option HighType := funcDecl.ret.bind fun retInfo =>
-      match retInfo.laurelType.val with
-      | .TInt | .TBool | .TReal | .TString => some retInfo.laurelType.val
-      | _ => none
+      let ty := retInfo.laurelType.val
+      if ty == pyAny then none else some ty
     let outputType : HighTypeMd :=
       nativeReturnTy.map mkHighTypeMd |>.getD AnyTy
     let outputs : List Parameter := [{ name := PyLauFuncReturnVar, type := outputType }]
