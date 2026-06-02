@@ -1,6 +1,7 @@
 """StrataSwarm - Lightweight multi-agent orchestration for claude_agent_sdk."""
 
 from ._agent import SwarmAgent
+from ._helpers import ask, compile_check, has_sorry, agent_from_yaml, agent_from_name
 from ._backend import AgentBackend, BackendConfig, BackendMessage
 from ._messaging import create_messaging_server
 from ._spawn import create_spawn_server
@@ -15,11 +16,12 @@ from ._result_parsers import (
     ResultParser,
 )
 from ._server import SwarmDashboard
-from ._swarm import AgentNode, ExecutionMode, Swarm
+from ._registry import AgentNode, SwarmRegistry
+from ._swarm import ExecutionMode, Swarm
 from ._templates import render_prompt
 from ._tokens import CancellationToken, PauseToken
 from ._tools import Tool, ToolSet
-from ._types import AgentEvent, AgentResult, AgentSpec, AgentStatus, SwarmContext
+from ._types import AgentEvent, AgentResult, AgentSpec, AgentStatus, SwarmContext, Workspace
 from ._validators import (
     AllOf,
     AnyOf,
@@ -66,7 +68,9 @@ __all__ = [
     "SwarmAgent",
     "SwarmContext",
     "SwarmDashboard",
+    "SwarmRegistry",
     "Tool",
     "ToolSet",
+    "Workspace",
     "render_prompt",
 ]

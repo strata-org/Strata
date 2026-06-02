@@ -6,12 +6,101 @@ Designed for use in orchestrator modules and custom workflows.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, TypeVar
+
+import yaml
 
 from ._agent import SwarmAgent
 from ._types import AgentResult, AgentSpec
 
 T = TypeVar("T")
+
+AGENT_SPECS_DIR = Path(__file__).parent / "agent_specs" / "agents"
+
+
+# ─── Agent creation from YAML ────────────────────────────────────────────────
+
+def agent_from_yaml(path: str | Path, cwd: str | None = None, **overrides) -> SwarmAgent:
+    """Create a SwarmAgent from an absolute or relative YAML file path.
+
+    Args:
+        path: Path to agent YAML spec file.
+        cwd: Working directory for file operations.
+        **overrides: Override any spec field (e.g., name="custom_name", stateless=True).
+
+    Returns:
+        Ready-to-run SwarmAgent instance.
+
+    Example:
+        agent = agent_from_yaml("/path/to/my_agent.yaml", cwd="/project")
+        result = await agent.run(inp=..., result_type=...)
+    """
+    return SwarmAgent(spec=_load_spec(Path(path), overrides), cwd=cwd)
+
+
+def agent_from_name(name: str, cwd: str | None = None, **overrides) -> SwarmAgent:
+    """Create a SwarmAgent from an agent name in agent_specs/agents/.
+
+    Args:
+        name: Agent config name (without .yaml extension).
+              e.g., "deep_proof_validator", "proof_compiler", "search_agent"
+        cwd: Working directory for file operations.
+        **overrides: Override any spec field.
+
+    Returns:
+        Ready-to-run SwarmAgent instance.
+
+    Example:
+        agent = agent_from_name("deep_proof_validator", cwd="/project")
+        result = await agent.run(inp={"stub_file": ..., "complete_file": ...}, result_type=bool)
+    """
+    path = AGENT_SPECS_DIR / f"{name}.yaml"
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Agent spec '{name}' not found at {path}. "
+            f"Available: {[f.stem for f in AGENT_SPECS_DIR.glob('*.yaml')]}"
+        )
+    return SwarmAgent(spec=_load_spec(path, overrides), cwd=cwd)
+
+
+def _load_spec(path: Path, overrides: dict[str, Any]) -> AgentSpec:
+    """Load an AgentSpec from a YAML file with optional overrides."""
+    from ._tools import ToolSet
+
+    with open(path) as f:
+        raw = yaml.safe_load(f)
+
+    # Apply overrides
+    raw.update(overrides)
+
+    # Build tools
+    tools = None
+    if raw.get("allowed_tools") or raw.get("disallowed_tools"):
+        tools = ToolSet()
+        for t in raw.get("allowed_tools", []):
+            tools.allow(t)
+        for t in raw.get("disallowed_tools", []):
+            tools.disallow(t)
+
+    return AgentSpec(
+        name=raw.get("name", path.stem),
+        stateless=raw.get("stateless", False),
+        reply_only=raw.get("reply_only", False),
+        system_prompt=raw.get("system_prompt", ""),
+        prompt=raw.get("prompt", ""),
+        model=raw.get("model"),
+        tools=tools,
+        mcp_servers=raw.get("mcp_servers", {}),
+        max_turns=raw.get("max_turns"),
+        max_budget_usd=raw.get("max_budget_usd"),
+        timeout_seconds=raw.get("timeout_seconds"),
+        max_inbound_length=raw.get("max_inbound_length"),
+        max_inbound_response=raw.get("max_inbound_response"),
+        max_outbound_length=raw.get("max_outbound_length"),
+        max_outbound_response=raw.get("max_outbound_response"),
+        description=raw.get("description", ""),
+    )
 
 
 async def ask(
