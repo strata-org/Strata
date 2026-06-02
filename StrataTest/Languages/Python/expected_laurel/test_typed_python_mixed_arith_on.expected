@@ -1,0 +1,8 @@
+test_typed_python_mixed_arith_on.py(6, 4): ❓ unknown - assert(319)
+test_typed_python_mixed_arith_on.py(7, 11): ❓ unknown - Check PAdd exception
+test_typed_python_mixed_arith_on.py(11, 4): ❓ unknown - assert(397)
+test_typed_python_mixed_arith_on.py(12, 11): ❓ unknown - Check PMul exception
+test_typed_python_mixed_arith_on.py(16, 4): ❓ unknown - assert(478)
+test_typed_python_mixed_arith_on.py(17, 11): ❓ unknown - Check PAdd exception
+DETAIL: 0 passed, 0 failed, 6 inconclusive
+RESULT: Inconclusive

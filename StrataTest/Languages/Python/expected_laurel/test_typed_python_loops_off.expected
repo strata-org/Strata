@@ -1,0 +1,28 @@
+test_typed_python_loops_off.py(4, 11): ✔️ always true if reached - Check PGe exception
+test_typed_python_loops_off.py(4, 4): ❓ unknown - assert(135)
+test_typed_python_loops_off.py(5, 4): ✔️ always true if reached - assert(153)
+test_typed_python_loops_off.py(6, 10): ✔️ always true if reached - Check PLt exception
+test_typed_python_loops_off.py(7, 12): ❓ unknown - Check PAdd exception
+test_typed_python_loops_off.py(3, 24): ❓ unknown - (count_up ensures) Return type constraint
+test_typed_python_loops_off.py(12, 11): ✔️ always true if reached - Check PGe exception
+test_typed_python_loops_off.py(12, 4): ❓ unknown - assert(245)
+test_typed_python_loops_off.py(13, 11): ✔️ always true if reached - Check PLe exception
+test_typed_python_loops_off.py(13, 4): ❓ unknown - assert(263)
+test_typed_python_loops_off.py(14, 4): ✔️ always true if reached - assert(283)
+test_typed_python_loops_off.py(15, 4): ✔️ always true if reached - assert(302)
+test_typed_python_loops_off.py(16, 10): ✔️ always true if reached - Check PLe exception
+test_typed_python_loops_off.py(17, 16): ❓ unknown - Check PAdd exception
+test_typed_python_loops_off.py(18, 12): ❓ unknown - Check PAdd exception
+test_typed_python_loops_off.py(11, 22): ❓ unknown - (sum_to ensures) Return type constraint
+test_typed_python_loops_off.py(23, 11): ✔️ always true if reached - Check PGe exception
+test_typed_python_loops_off.py(23, 4): ❓ unknown - assert(426)
+test_typed_python_loops_off.py(24, 11): ✔️ always true if reached - Check PLe exception
+test_typed_python_loops_off.py(24, 4): ❓ unknown - assert(444)
+test_typed_python_loops_off.py(25, 4): ✔️ always true if reached - assert(463)
+test_typed_python_loops_off.py(26, 4): ✔️ always true if reached - assert(478)
+test_typed_python_loops_off.py(27, 10): ✔️ always true if reached - Check PLe exception
+test_typed_python_loops_off.py(28, 12): ❓ unknown - Check PMul exception
+test_typed_python_loops_off.py(29, 12): ❓ unknown - Check PAdd exception
+test_typed_python_loops_off.py(22, 23): ❓ unknown - (product ensures) Return type constraint
+DETAIL: 13 passed, 0 failed, 13 inconclusive
+RESULT: Inconclusive

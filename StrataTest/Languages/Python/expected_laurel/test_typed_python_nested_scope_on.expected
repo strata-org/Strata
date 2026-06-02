@@ -1,0 +1,7 @@
+test_typed_python_nested_scope_on.py(6, 4): ❓ unknown - assert(304)
+test_typed_python_nested_scope_on.py(15, 4): ❓ unknown - assert(455)
+test_typed_python_nested_scope_on.py(16, 4): ❓ unknown - assert(473)
+test_typed_python_nested_scope_on.py(25, 4): ❓ unknown - assert(622)
+test_typed_python_nested_scope_on.py(26, 4): ❓ unknown - assert(640)
+DETAIL: 0 passed, 0 failed, 5 inconclusive
+RESULT: Inconclusive

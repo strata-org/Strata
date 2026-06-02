@@ -1,0 +1,9 @@
+test_typed_python_class_fields_off.py(9, 11): ❓ unknown - Check PGe exception
+test_typed_python_class_fields_off.py(9, 4): ❓ unknown - assert(215)
+test_typed_python_class_fields_off.py(10, 11): ✔️ always true if reached - Check PGe exception
+test_typed_python_class_fields_off.py(10, 4): ❓ unknown - assert(241)
+test_typed_python_class_fields_off.py(11, 11): ❓ unknown - Check PAdd exception
+test_typed_python_class_fields_off.py(8, 40): ❓ unknown - (deposit ensures) Return type constraint
+test_typed_python_class_fields_off.py(14, 26): ❓ unknown - (status ensures) Return type constraint
+DETAIL: 1 passed, 0 failed, 6 inconclusive
+RESULT: Inconclusive

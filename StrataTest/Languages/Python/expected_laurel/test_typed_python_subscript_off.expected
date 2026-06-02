@@ -1,0 +1,10 @@
+test_typed_python_subscript_off.py(6, 4): ❓ unknown - set_LaurelResult_calls_Any_get_0
+test_typed_python_subscript_off.py(5, 23): ❓ unknown - (first ensures) Return type constraint
+test_typed_python_subscript_off.py(10, 11): ✔️ always true if reached - Check PGe exception
+test_typed_python_subscript_off.py(10, 4): ❓ unknown - assert(295)
+test_typed_python_subscript_off.py(11, 4): ❓ unknown - set_LaurelResult_calls_Any_get_0
+test_typed_python_subscript_off.py(9, 34): ❓ unknown - (at_index ensures) Return type constraint
+test_typed_python_subscript_off.py(15, 4): ❓ unknown - set_LaurelResult_calls_Any_get_0
+test_typed_python_subscript_off.py(14, 31): ❓ unknown - (lookup ensures) Return type constraint
+DETAIL: 1 passed, 0 failed, 7 inconclusive
+RESULT: Inconclusive

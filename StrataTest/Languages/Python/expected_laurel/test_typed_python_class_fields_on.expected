@@ -1,0 +1,4 @@
+test_typed_python_class_fields_on.py(13, 4): ❓ unknown - assert(488)
+test_typed_python_class_fields_on.py(14, 4): ❓ unknown - assert(514)
+DETAIL: 0 passed, 0 failed, 2 inconclusive
+RESULT: Inconclusive

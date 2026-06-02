@@ -1,0 +1,9 @@
+test_typed_python_compose_calls_off.py(8, 13): ✔️ always true if reached - Check PAdd exception
+test_typed_python_compose_calls_off.py(8, 4): ✔️ always true if reached - Check PAdd exception
+test_typed_python_compose_calls_off.py(7, 18): ✔️ always true if reached - (f2 ensures) Return type constraint
+test_typed_python_compose_calls_off.py(12, 15): ✔️ always true if reached - Check PAdd exception
+test_typed_python_compose_calls_off.py(12, 13): ✔️ always true if reached - Check PAdd exception
+test_typed_python_compose_calls_off.py(12, 4): ✔️ always true if reached - Check PAdd exception
+test_typed_python_compose_calls_off.py(11, 18): ✔️ always true if reached - (f3 ensures) Return type constraint
+DETAIL: 7 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success

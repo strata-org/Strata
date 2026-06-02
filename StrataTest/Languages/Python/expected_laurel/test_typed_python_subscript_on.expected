@@ -1,0 +1,5 @@
+test_typed_python_subscript_on.py(7, 4): ❓ unknown - set_LaurelResult_calls_Sequence.select_0
+test_typed_python_subscript_on.py(11, 4): ❓ unknown - assert(427)
+test_typed_python_subscript_on.py(12, 4): ❓ unknown - set_LaurelResult_calls_Sequence.select_0
+DETAIL: 0 passed, 0 failed, 3 inconclusive
+RESULT: Inconclusive

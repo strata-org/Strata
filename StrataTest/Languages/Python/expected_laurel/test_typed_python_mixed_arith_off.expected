@@ -1,0 +1,16 @@
+test_typed_python_mixed_arith_off.py(4, 11): ✔️ always true if reached - Check PGe exception
+test_typed_python_mixed_arith_off.py(4, 4): ❓ unknown - assert(166)
+test_typed_python_mixed_arith_off.py(5, 11): ❓ unknown - Check PAdd exception
+test_typed_python_mixed_arith_off.py(3, 36): ❓ unknown - (typed_and_any_add ensures) Return type constraint
+test_typed_python_mixed_arith_off.py(9, 11): ✔️ always true if reached - Check PGe exception
+test_typed_python_mixed_arith_off.py(9, 4): ❓ unknown - assert(244)
+test_typed_python_mixed_arith_off.py(10, 11): ❓ unknown - Check PMul exception
+test_typed_python_mixed_arith_off.py(8, 36): ❓ unknown - (typed_and_any_mul ensures) Return type constraint
+test_typed_python_mixed_arith_off.py(14, 11): ✔️ always true if reached - Check PGe exception
+test_typed_python_mixed_arith_off.py(14, 4): ❓ unknown - assert(325)
+test_typed_python_mixed_arith_off.py(15, 11): ❓ unknown - Check PAdd exception
+test_typed_python_mixed_arith_off.py(13, 39): ❓ unknown - (any_first_then_typed ensures) Return type constraint
+test_typed_python_mixed_arith_off.py(19, 11): ✔️ always true if reached - Check PAdd exception
+test_typed_python_mixed_arith_off.py(18, 47): ✔️ always true if reached - (typed_int_and_typed_str ensures) Return type constraint
+DETAIL: 5 passed, 0 failed, 9 inconclusive
+RESULT: Inconclusive

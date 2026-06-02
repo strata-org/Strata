@@ -1,0 +1,6 @@
+test_typed_python_nested_arith_off.py(4, 11): ✔️ always true if reached - Check PAdd exception
+test_typed_python_nested_arith_off.py(3, 36): ✔️ always true if reached - (add3 ensures) Return type constraint
+test_typed_python_nested_arith_off.py(8, 11): ✔️ always true if reached - Check PAdd exception
+test_typed_python_nested_arith_off.py(7, 44): ✔️ always true if reached - (add4 ensures) Return type constraint
+DETAIL: 4 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success

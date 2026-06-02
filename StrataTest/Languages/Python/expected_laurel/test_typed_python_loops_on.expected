@@ -1,0 +1,7 @@
+test_typed_python_loops_on.py(5, 4): ❓ unknown - assert(235)
+test_typed_python_loops_on.py(13, 4): ❓ unknown - assert(345)
+test_typed_python_loops_on.py(14, 4): ❓ unknown - assert(363)
+test_typed_python_loops_on.py(24, 4): ❓ unknown - assert(526)
+test_typed_python_loops_on.py(25, 4): ❓ unknown - assert(544)
+DETAIL: 0 passed, 0 failed, 5 inconclusive
+RESULT: Inconclusive

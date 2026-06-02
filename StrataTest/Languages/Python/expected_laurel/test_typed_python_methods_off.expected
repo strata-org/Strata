@@ -1,0 +1,14 @@
+test_typed_python_methods_off.py(13, 8): ❓ unknown - assert(362)
+test_typed_python_methods_off.py(14, 8): ❓ unknown - assert(389)
+test_typed_python_methods_off.py(12, 39): ❓ unknown - (Wallet@withdraw ensures) Return type constraint
+test_typed_python_methods_off.py(19, 11): ✔️ always true if reached - Check PGe exception
+test_typed_python_methods_off.py(19, 4): ❓ unknown - assert(506)
+test_typed_python_methods_off.py(20, 11): ✔️ always true if reached - Check PLe exception
+test_typed_python_methods_off.py(20, 4): ❓ unknown - assert(526)
+test_typed_python_methods_off.py(21, 11): ❓ unknown - Check PGe exception
+test_typed_python_methods_off.py(21, 4): ❓ unknown - assert(548)
+test_typed_python_methods_off.py(22, 4): ❓ unknown - Wallet@deposit_assert(220)_8
+test_typed_python_methods_off.py(22, 4): ❓ unknown - Wallet@deposit_assert(247)_9
+test_typed_python_methods_off.py(18, 39): ❓ unknown - (use_wallet ensures) Return type constraint
+DETAIL: 2 passed, 0 failed, 10 inconclusive
+RESULT: Inconclusive

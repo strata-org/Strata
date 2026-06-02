@@ -1,0 +1,32 @@
+test_typed_python_nested_scope_off.py(4, 11): ✔️ always true if reached - Check PGe exception
+test_typed_python_nested_scope_off.py(4, 4): ❓ unknown - assert(165)
+test_typed_python_nested_scope_off.py(5, 7): ✔️ always true if reached - Check PGt exception
+test_typed_python_nested_scope_off.py(6, 17): ✔️ always true if reached - Check PMul exception
+test_typed_python_nested_scope_off.py(6, 8): ✔️ always true if reached - assert(202)
+test_typed_python_nested_scope_off.py(3, 32): ✔️ always true if reached - (conditional_decl ensures) Return type constraint
+test_typed_python_nested_scope_off.py(8, 13): ✔️ always true if reached - Check PAdd exception
+test_typed_python_nested_scope_off.py(8, 4): ✔️ always true if reached - assert(238)
+test_typed_python_nested_scope_off.py(13, 11): ✔️ always true if reached - Check PGe exception
+test_typed_python_nested_scope_off.py(13, 4): ❓ unknown - assert(316)
+test_typed_python_nested_scope_off.py(14, 11): ✔️ always true if reached - Check PGe exception
+test_typed_python_nested_scope_off.py(14, 4): ❓ unknown - assert(334)
+test_typed_python_nested_scope_off.py(15, 7): ✔️ always true if reached - Check PGt exception
+test_typed_python_nested_scope_off.py(16, 22): ✔️ always true if reached - Check PSub exception
+test_typed_python_nested_scope_off.py(16, 8): ✔️ always true if reached - assert(370)
+test_typed_python_nested_scope_off.py(18, 22): ✔️ always true if reached - Check PSub exception
+test_typed_python_nested_scope_off.py(18, 8): ✔️ always true if reached - assert(408)
+test_typed_python_nested_scope_off.py(12, 39): ✔️ always true if reached - (shadowed_locals ensures) Return type constraint
+test_typed_python_nested_scope_off.py(23, 11): ✔️ always true if reached - Check PGe exception
+test_typed_python_nested_scope_off.py(23, 4): ❓ unknown - assert(483)
+test_typed_python_nested_scope_off.py(24, 11): ✔️ always true if reached - Check PLe exception
+test_typed_python_nested_scope_off.py(24, 4): ❓ unknown - assert(501)
+test_typed_python_nested_scope_off.py(25, 4): ✔️ always true if reached - assert(520)
+test_typed_python_nested_scope_off.py(26, 4): ✔️ always true if reached - assert(537)
+test_typed_python_nested_scope_off.py(27, 10): ✔️ always true if reached - Check PLt exception
+test_typed_python_nested_scope_off.py(28, 21): ❓ unknown - Check PMul exception
+test_typed_python_nested_scope_off.py(28, 8): ❓ unknown - assert(573)
+test_typed_python_nested_scope_off.py(29, 14): ❓ unknown - Check PAdd exception
+test_typed_python_nested_scope_off.py(30, 12): ❓ unknown - Check PAdd exception
+test_typed_python_nested_scope_off.py(22, 26): ❓ unknown - (loop_local ensures) Return type constraint
+DETAIL: 20 passed, 0 failed, 10 inconclusive
+RESULT: Inconclusive
