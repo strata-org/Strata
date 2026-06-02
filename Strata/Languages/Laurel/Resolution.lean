@@ -350,6 +350,9 @@ def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
   | .TSet et =>
     let et' ← resolveHighType et
     pure (.TSet et')
+  | .TSeq et =>
+    let et' ← resolveHighType et
+    pure (.TSeq et')
   | .TMap kt vt =>
     let kt' ← resolveHighType kt
     let vt' ← resolveHighType vt
@@ -711,6 +714,7 @@ private def collectHighType (map : Std.HashMap Nat ResolvedNode) (ty : HighTypeM
   match val with
   | .TTypedField vt => collectHighType map vt
   | .TSet et => collectHighType map et
+  | .TSeq et => collectHighType map et
   | .TMap kt vt =>
     let map := collectHighType map kt
     collectHighType map vt

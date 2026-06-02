@@ -31,6 +31,7 @@ open Lambda (LMonoTy LExpr)
 def collectTypeRefs : HighTypeMd → List String
   | ⟨.UserDefined name, _⟩ => [name.text]
   | ⟨.TSet elem, _⟩ => collectTypeRefs elem
+  | ⟨.TSeq elem, _⟩ => collectTypeRefs elem
   | ⟨.TMap k v, _⟩ => collectTypeRefs k ++ collectTypeRefs v
   | ⟨.TTypedField vt, _⟩ => collectTypeRefs vt
   | ⟨.Applied base args, _⟩ =>

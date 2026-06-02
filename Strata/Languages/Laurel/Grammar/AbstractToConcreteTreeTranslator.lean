@@ -52,6 +52,7 @@ partial def highTypeValToArg : HighType → Arg
   -- Type parameters discarded; the grammar cannot represent Field[T] or Set[T]
   | .TTypedField _vt => laurelOp "compositeType" #[ident "Field"]
   | .TSet _et => laurelOp "compositeType" #[ident "Set"]
+  | .TSeq _et => laurelOp "compositeType" #[ident "Sequence"]
   | .Applied base _args =>
     -- Applied types are not directly representable in the grammar;
     -- emit the base type as a best-effort approximation

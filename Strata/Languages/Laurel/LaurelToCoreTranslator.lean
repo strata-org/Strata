@@ -98,6 +98,7 @@ def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
   | .THeap => return .tcons "Heap" []
   | .TTypedField _ => return .tcons "Field" []
   | .TSet elementType => return Core.mapTy (← translateType elementType) LMonoTy.bool
+  | .TSeq elementType => return Core.seqTy (← translateType elementType)
   | .TMap keyType valueType => return Core.mapTy (← translateType keyType) (← translateType valueType)
   | .UserDefined name =>
     match model.get? name with

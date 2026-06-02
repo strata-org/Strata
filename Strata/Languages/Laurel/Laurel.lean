@@ -141,6 +141,8 @@ inductive HighType : Type where
   | TTypedField (valueType : AstNode HighType)
   /-- Set type, e.g. `Set int`. -/
   | TSet (elementType : AstNode HighType)
+  /-- Sequence type, e.g. `Sequence int`. Lowers to Core's `Sequence elem`. -/
+  | TSeq (elementType : AstNode HighType)
   /-- Map type. -/
   | TMap (keyType : AstNode HighType) (valueType : AstNode HighType)
   /-- A Identifier to a user-defined composite or constrained type by name. -/
@@ -418,6 +420,7 @@ def highEq (a : HighTypeMd) (b : HighTypeMd) : Bool := match _a: a.val, _b: b.va
   | HighType.TBv n1, HighType.TBv n2 => n1 == n2
   | HighType.TTypedField t1, HighType.TTypedField t2 => highEq t1 t2
   | HighType.TSet t1, HighType.TSet t2 => highEq t1 t2
+  | HighType.TSeq t1, HighType.TSeq t2 => highEq t1 t2
   | HighType.TMap k1 v1, HighType.TMap k2 v2 => highEq k1 k2 && highEq v1 v2
   | HighType.UserDefined r1, HighType.UserDefined r2 => r1.text == r2.text
   | HighType.Applied b1 args1, HighType.Applied b2 args2 =>
@@ -444,6 +447,11 @@ deriving instance BEq for HighType
 def HighType.isBool : HighType → Bool
   | TBool => true
   | _ => false
+
+/-- The class name of a `UserDefined` HighType, if any. -/
+def HighType.className? : HighType → Option String
+  | UserDefined nm => some nm.text
+  | _ => none
 
 /-- Check whether a single modifies entry is the wildcard (`*`). -/
 def StmtExprMd.isWildcard (m : StmtExprMd) : Bool := match m.val with | .All => true | _ => false

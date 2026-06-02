@@ -39,6 +39,13 @@ function update(map: int, key: int, value: int) : int
 function const(value: int) : int
   external;
 
+// Polymorphic in elem, same as the Map ops above; `int` is a placeholder.
+function Sequence.length(s: int) : int
+  external;
+
+function Sequence.select(s: int, i: int) : int
+  external;
+
 #end
 
 /--

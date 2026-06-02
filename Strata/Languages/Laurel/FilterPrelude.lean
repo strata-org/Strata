@@ -72,6 +72,7 @@ private partial def collectHighTypeNames (ty : HighTypeMd) : CollectM Unit := do
   | .TCore _ => pure ()
   | .TTypedField vt => collectHighTypeNames vt
   | .TSet et => collectHighTypeNames et
+  | .TSeq et => collectHighTypeNames et
   | .TMap kt vt => collectHighTypeNames kt; collectHighTypeNames vt
   | .Applied base args =>
     collectHighTypeNames base; args.forM collectHighTypeNames
