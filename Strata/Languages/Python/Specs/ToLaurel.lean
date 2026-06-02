@@ -573,8 +573,7 @@ def buildSpecBody (allArgs : Array Arg)
   let resultId : AstNode Variable := { val := Variable.Local (mkId "result"), source := source }
   let assignStmt ← mkStmtWithLoc (.Assign [resultId] holeExpr) default
   stmts := stmts.push assignStmt
-  -- 2. Type / required-param preconditions; native params skip
-  -- the Any-shape testers (declaration carries the guarantee).
+  -- 2. Assert type / required-param preconditions
   for arg in allArgs do
     let isNative :=
       match ctx.argTypes[arg.name]? with
@@ -624,9 +623,10 @@ def buildSpecBody (allArgs : Array Arg)
       else
         reportError .typeError default
           s!"Postcondition expression is not Bool in '{ctx.procName}' (skipping)"
-  -- 5. Return-type postcondition. Skip NoneType (`-> None` stubs are
-  -- declared even on methods that return values) and native results
-  -- (declaration carries the type).
+  -- 5. Assume return type postcondition
+  -- NOTE. Skip NoneType: generated stubs currently declare `-> None` even for methods
+  -- that return values. Assuming isfrom_None would make callers unreachable.
+  -- Native results carry the type at the declaration, no postcondition needed.
   let resultIsNative :=
     match ctx.argTypes["result"]? with
     | some t => t != Laurel.tyAny

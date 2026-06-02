@@ -155,7 +155,6 @@ private def buildPySpecLaurelM (pyspecEntries : Array (Python.ModuleName × Stri
     for msg in errors do
       Pipeline.addMessage msg
       if msg.kind.impact.isFatal then throw ()
-    -- Strict typed-python: any pyspec-side warning must abort the pipeline.
     if typedPython && !errors.isEmpty then
       emitMessageAndAbort .typedPythonRefusal
         s!"--typed-python: pyspec '{ionPath}' produced {errors.size} warning(s); strict mode rejects approximations"

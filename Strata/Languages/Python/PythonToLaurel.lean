@@ -290,8 +290,6 @@ def pythonPrimToHighType (ty : String) : Option HighType :=
   else if ty == PyLauType.Str   then some .TString
   else none
 
-/-- Any-tag testers for declared parameter types. Native params skip:
-    `Any..isfrom_X` against a native sort would be ill-typed. -/
 def pyLauTypeTesters (typedPython : Bool) (tys : List String) : Array String :=
   tys.foldl (init := #[]) fun acc ty =>
     if typedPython && (pythonPrimToHighType ty).isSome then acc
@@ -320,9 +318,7 @@ def objectClassName (ty : HighType) : String := ty.className?.getD ""
 
 instance : Inhabited HighType where default := pyAny
 
-/-- Convert a Python type-string identifier to its `HighType`.
-    `"Any"` / `"None"` / unknown collapse to `pyAny`; everything else
-    everything else becomes a `UserDefined` reference. -/
+/-- Convert a Python type-string identifier to its `HighType`. -/
 def pyTypeStringToHighType (s : String) : HighType :=
   if s == PyLauType.Any || s == PyLauType.None || s == PyLauType.Package
      || s == PyLauType.ListAny || s == PyLauType.ListStr
@@ -364,9 +360,9 @@ def translateType (ctx : TranslationContext) (typeStr : String) : Except Transla
           -- Map it to a core PyAnyType
           .ok (mkCoreType PyLauType.Any)
 
-/-- Translate a field type annotation. Composite types resolve to
-    `UserDefined`; primitives resolve to native HighTypes under
-    `--typed-python`; everything else collapses to `Any`. -/
+/-- Translate a field type annotation: composite types stay
+    Composite, primitives lower natively under `--typed-python`,
+    everything else collapses to Any. -/
 def translateFieldType (ctx : TranslationContext) (typeStr : String) : Except TranslationError HighTypeMd :=
   match ctx.importedSymbols[typeStr]? with
   | some (ImportedSymbol.compositeType laurelName) =>
@@ -424,9 +420,8 @@ def toAny (ty : HighType) (e : StmtExprMd) : StmtExprMd :=
   | some ctor => mkStmtExprMd (.StaticCall ctor [e])
   | none => e
 
-/-- Unwrap an Any value to a native primitive; identity for
-    non-primitive types. Cancels a directly adjacent `from_X(inner)`
-    so wrap/unwrap pairs around an arithmetic operator collapse. -/
+/-- Unwrap an Any value, cancelling an adjacent `from_X(inner)` so
+    wrap/unwrap pairs around an operator collapse. -/
 def fromAny (ty : HighType) (e : StmtExprMd) : StmtExprMd :=
   match fromAnyAccessor ty, toAnyCtor ty with
   | some accessor, some ctor =>
@@ -437,9 +432,7 @@ def fromAny (ty : HighType) (e : StmtExprMd) : StmtExprMd :=
     | _ => mkStmtExprMd (.StaticCall accessor [e])
   | _, _ => e
 
-/-- Recover a native HighType from a Python type-annotation AST.
-    `list`/`Sequence` and `dict`/`Mapping` resolve to `TSeq` / `TMap`
-    over `Any` when the inner types aren't given. -/
+/-- Recover a native HighType from a Python type-annotation AST. -/
 partial def pythonTypeExprToHighType (e : Python.expr SourceRange) : Option HighType :=
   let pyAnyMd : AstNode HighType := ⟨.TCore "Any", none⟩
   let isListName (s : String) : Bool := s == "List" || s == "list" || s == "Sequence"
@@ -535,8 +528,6 @@ def wrapFieldInAny (ty : HighType) (expr : StmtExprMd) : Except TranslationError
   | .TReal => .ok <| mkStmtExprMd (.StaticCall "from_float" [expr])
   | .TString => .ok <| mkStmtExprMd (.StaticCall "from_str" [expr])
   | .TCore "Any" => .ok expr
-  -- Container fields stay as the typed value; the consumer's
-  -- subscript / inferExprType paths see the native sort directly.
   | .TSeq _ | .TMap _ _ | .TSet _ => .ok expr
   | .UserDefined name => .error (.unsupportedConstruct
     s!"Coercion from user-defined class '{name.text}' to Any is not yet supported" name.text)
@@ -721,9 +712,6 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
   | .Constant _ (.ConEllipsis _) _ =>
     return mkStmtExprMd .Hole
 
-  -- Native locals: wrap the read into Any so the surrounding Any-typed
-  -- body stays well-typed. The fromAny peephole cancels this when the
-  -- consumer is itself a typed operator.
   | .Name _ name _ =>
     let bare := mkStmtExprMd (StmtExpr.Var (.Local name.val))
     if ctx.typedPython then
@@ -740,10 +728,16 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
       let rty := (inferExprType ctx right).toOption.getD pyAny
       let bothInt := isIntLikeHighType lty && isIntLikeHighType rty
       let bothStr := lty == .TString && rty == .TString
+      let bothReal := lty == .TReal && rty == .TReal
       let mkIntOp (primOp : Strata.Laurel.Operation) : Option StmtExprMd :=
         if bothInt then
           some <| toAny .TInt <| mkStmtExprMd <| .PrimitiveOp primOp
             [fromAny .TInt leftExpr, fromAny .TInt rightExpr]
+        else none
+      let mkRealOp (primOp : Strata.Laurel.Operation) : Option StmtExprMd :=
+        if bothReal then
+          some <| toAny .TReal <| mkStmtExprMd <| .PrimitiveOp primOp
+            [fromAny .TReal leftExpr, fromAny .TReal rightExpr]
         else none
       let mkStrConcat : Option StmtExprMd :=
         if bothStr then
@@ -751,9 +745,9 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
             [fromAny .TString leftExpr, fromAny .TString rightExpr]
         else none
       let native? : Option StmtExprMd := match op with
-        | .Add _ => mkIntOp .Add <|> mkStrConcat
-        | .Sub _ => mkIntOp .Sub
-        | .Mult _ => mkIntOp .Mul
+        | .Add _ => mkIntOp .Add <|> mkRealOp .Add <|> mkStrConcat
+        | .Sub _ => mkIntOp .Sub <|> mkRealOp .Sub
+        | .Mult _ => mkIntOp .Mul <|> mkRealOp .Mul
         | .FloorDiv _ => mkIntOp .Div
         | .Mod _ => mkIntOp .Mod
         | _ => none
@@ -806,20 +800,19 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
           | .IsNot _ => match comparators.val[i]'(by omega) with
               | .Constant _ (.ConNone _) _ => .ok "PNEq"
               | _ => throw (.unsupportedConstruct "`is not` is only supported with None" (toString (repr e)))
-      -- Native comparison only fires for `n = 1`; chained comparisons
-      -- (e.g. `a < b < c`) keep the Any path so evaluate-once semantics
-      -- is preserved by the existing temp-variable machinery below.
+      -- Chained `a < b < c` keeps the Any path; only n = 1 is native.
       let nativeOp? (cmp : Python.cmpop SourceRange) (lty rty : HighType)
           : Option Strata.Laurel.Operation :=
         let bothInt := isIntLikeHighType lty && isIntLikeHighType rty
         let bothStr := lty == .TString && rty == .TString
+        let bothReal := lty == .TReal && rty == .TReal
         match cmp with
-        | .Eq _    => if bothInt || bothStr then some .Eq else none
-        | .NotEq _ => if bothInt || bothStr then some .Eq else none
-        | .Lt _    => if bothInt then some .Lt else none
-        | .LtE _   => if bothInt then some .Leq else none
-        | .Gt _    => if bothInt then some .Gt else none
-        | .GtE _   => if bothInt then some .Geq else none
+        | .Eq _    => if bothInt || bothStr || bothReal then some .Eq else none
+        | .NotEq _ => if bothInt || bothStr || bothReal then some .Eq else none
+        | .Lt _    => if bothInt || bothReal then some .Lt else none
+        | .LtE _   => if bothInt || bothReal then some .Leq else none
+        | .Gt _    => if bothInt || bothReal then some .Gt else none
+        | .GtE _   => if bothInt || bothReal then some .Geq else none
         | _ => none
       -- Check if a Python expression is simple (no side effects when duplicated).
       -- Only `Name` and `Constant` are treated as simple. `Subscript` (e.g.,
@@ -874,7 +867,10 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
         let cmp := ops.val[i]'hi
         let lty := (inferExprType ctx left).toOption.getD pyAny
         let rty := (inferExprType ctx (comparators.val[i])).toOption.getD pyAny
-        let opTy := if lty == .TString then HighType.TString else .TInt
+        let opTy : HighType :=
+          if lty == .TString then .TString
+          else if lty == .TReal then .TReal
+          else .TInt
         match (if ctx.typedPython && n == 1 then nativeOp? cmp lty rty else none) with
         | some primOp =>
           let raw := mkStmtExprMd (.PrimitiveOp primOp
@@ -944,6 +940,9 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
         if oty == .TInt then
           let raw := mkStmtExprMd (.PrimitiveOp .Neg [fromAny .TInt operandExpr])
           return { toAny .TInt raw with source := md }
+        else if oty == .TReal then
+          let raw := mkStmtExprMd (.PrimitiveOp .Neg [fromAny .TReal operandExpr])
+          return { toAny .TReal raw with source := md }
       | _ => pure ()
     let preludeOpnames ← match op with
       | .Not _ => .ok "PNot"
@@ -1008,7 +1007,6 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
       | _ =>
           let index ← translateExpr ctx slice
           let valType := (inferExprType ctx val).toOption.getD pyAny
-          -- Native subscript over typed containers; result wraps into Any.
           if ctx.typedPython then
             match valType with
             | .TSeq elem =>
@@ -1020,7 +1018,11 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
                 (.StaticCall "select" [dictOrList, fromAny keyNode.val index])
               return { toAny valNode.val raw with source := md }
             | _ => pure ()
-          -- Negative-index rewrite: xs[-n] → xs[len(xs) - n] (lists only).
+          -- Emit bounds check for negative integer indices on lists (e.g., xs[-1])
+          -- and convert to positive index: xs[-n] becomes xs[len(xs) - n].
+          -- Skip for dicts, where negative integer keys are valid dict lookups.
+          -- Note: Python's AST represents `-1` as UnaryOp(USub, Constant(1)),
+          -- not Constant(-1), so we must match both forms.
           let isDictType := valType.className? == some PyLauType.DictStrAny
           let negLitVal? := match slice with
             | .Constant _ (.ConNeg _ n) _ => some n.val
@@ -1144,13 +1146,12 @@ partial def inferExprType (ctx : TranslationContext) (e: Python.expr SourceRange
   match e with
   | .Constant _ (.ConPos _ _) _
   | .Constant _ (.ConNeg _ _) _ => return .TInt
+  | .Constant _ (.ConFloat _ _) _ => return .TReal
   | .Constant _ (.ConString _ _) _ => return .TString
   | .Constant _ (.ConTrue _) _
   | .Constant _ (.ConFalse _) _
   | .BoolOp _ _ _
   | .Compare _ _ _ _ => return .TBool
-  -- Distinct sentinel for `None` so default-value handling can
-  -- detect `Union[T, None] = None`.
   | .Constant _ (.ConNone _) _ => return .TCore PyLauType.None
   | .Name _ n _ =>
       match ctx.variableTypes.find? (λ v => v.fst == n.val) with
@@ -1162,19 +1163,24 @@ partial def inferExprType (ctx : TranslationContext) (e: Python.expr SourceRange
     match tryLookupFieldHighType ctx cls attr.val with
       | some ty => return ty
       | none => return pyAny
-  -- Recover BinOp/UnaryOp static types so chains cascade natively.
   | .BinOp _ left op right =>
     if !ctx.typedPython then return pyAny else do
       let lty ← inferExprType ctx left
       let rty ← inferExprType ctx right
       let bothInt := isIntLikeHighType lty && isIntLikeHighType rty
       let bothStr := lty == .TString && rty == .TString
+      let bothReal := lty == .TReal && rty == .TReal
       match op with
       | .Add _ =>
         if bothInt then return .TInt
+        else if bothReal then return .TReal
         else if bothStr then return .TString
         else return pyAny
-      | .Sub _ | .Mult _ | .FloorDiv _ | .Mod _ =>
+      | .Sub _ | .Mult _ =>
+        if bothInt then return .TInt
+        else if bothReal then return .TReal
+        else return pyAny
+      | .FloorDiv _ | .Mod _ =>
         if bothInt then return .TInt else return pyAny
       | _ => return pyAny
   | .UnaryOp _ op operand =>
@@ -1182,7 +1188,10 @@ partial def inferExprType (ctx : TranslationContext) (e: Python.expr SourceRange
       let oty ← inferExprType ctx operand
       match op with
       | .Not _ => if oty == .TBool then return .TBool else return pyAny
-      | .USub _ => if oty == .TInt then return .TInt else return pyAny
+      | .USub _ =>
+        if oty == .TInt then return .TInt
+        else if oty == .TReal then return .TReal
+        else return pyAny
       | _ => return pyAny
   | .JoinedStr _ _ => return .TString
   | .FormattedValue _ _ _ _ => return .TString
@@ -1454,11 +1463,9 @@ partial def translateCall (ctx : TranslationContext)
   let nameMatches (x : PythonFunctionDecl) : Bool :=
     x.name == funcName || x.name == funcName ++ "@__init__"
   let funcDecl := ctx.functionSignatures.find? nameMatches
-  -- Two declarations can share a name: a Laurel-program entry that
-  -- preserves native types and a Core-prelude entry that stamps
-  -- everything Any. Boundary shim needs the former. Class receivers
-  -- (`self : UserDefined`) are non-Any in both, so the discriminator
-  -- looks for at least one primitive/container parameter or return.
+  -- Find the typed declaration when the same name has both a Laurel
+  -- and a Core-prelude entry. `self : UserDefined` is non-Any in both,
+  -- so we require at least one primitive or container.
   let isTypedSig (x : PythonFunctionDecl) : Bool :=
     let isNative (t : HighType) : Bool :=
       match t with
@@ -1471,14 +1478,10 @@ partial def translateCall (ctx : TranslationContext)
     if ctx.typedPython then
       ctx.functionSignatures.find? fun x => nameMatches x && isTypedSig x
     else none
-  -- For constructor / method calls, the callee's signature carries
-  -- a `self` parameter that the user-side call doesn't pass; the shim
-  -- needs to index callee.args[i + argOffset] against user-side args[i].
+  -- Methods and `__init__` carry an implicit `self`; user-side calls don't.
   let argOffset : Nat :=
     match typedFuncDecl with
     | some fd =>
-      -- Class methods and constructors carry an implicit `self` first
-      -- arg that the user-side call doesn't pass.
       match fd.args with
       | first :: _ => if first.name == "self" then 1 else 0
       | [] => 0
@@ -1495,6 +1498,18 @@ partial def translateCall (ctx : TranslationContext)
       | .ok (.UserDefined nm) =>
         if isCompositeType ctx nm.text then
           throwUserError f.ann s!"len() is not supported on '{nm.text}' (no __len__ method)"
+      | _ => pure ()
+    if ctx.typedPython && funcName == "Any_len_to_Any" && args.length == 1 then
+      match inferExprType ctx args[0]! with
+      | .ok (.TSeq _) =>
+        let arg := callArgs[0]!
+        let raw := mkStmtExprMdWithLoc
+          (.StaticCall "Sequence.length" [arg]) callMd
+        return toAny .TInt raw
+      | .ok .TString =>
+        let arg := fromAny .TString callArgs[0]!
+        let raw := mkStmtExprMdWithLoc (.StaticCall "Str.Length" [arg]) callMd
+        return toAny .TInt raw
       | _ => pure ()
     match f with
     | .Name  _ _ _ =>
@@ -1571,8 +1586,6 @@ partial def translateCall (ctx : TranslationContext)
   let (args, kwords, funcdecl_hasKwargs) ←
     combinePositionalAndKeywordArgs args kwords funcDecl methodName callRange
   let trans_args ← args.mapM (translateExpr ctx)
-  -- Unwrap each Any-typed argument to its callee-declared native type.
-  -- argOffset accounts for the implicit `self` on methods/__init__.
   let trans_args :=
     match typedFuncDecl with
     | some fd =>
@@ -1587,7 +1600,6 @@ partial def translateCall (ctx : TranslationContext)
       if funcdecl_hasKwargs then [DictStrAny_empty] else []
     else [trans_kwords]
   let call ← emitCall (trans_args ++ trans_kwords_exprs)
-  -- Wrap a native return back into Any for the caller.
   match typedFuncDecl with
   | some fd => match fd.ret with
     | some retInfo => return toAny retInfo.laurelType.val call
@@ -1809,11 +1821,6 @@ partial def translateAssign  (ctx : TranslationContext)
               newctx.variableTypes ++ [(n.val, .UserDefined className)]}
         | _=> newctx
         if n.val ∈ newctx.variableTypes.unzip.1 then
-          -- The hoisting pass declared the local with a primitive
-          -- native type; unwrap the RHS so the assignment typechecks.
-          -- UserDefined / container locals keep the existing
-          -- `assignStmts` (which carries the correct `New` / multi-stmt
-          -- expansion for class instantiation).
           let trackedTy := (newctx.variableTypes.find? (·.fst == n.val)).map (·.snd) |>.getD pyAny
           let isPrimitive : Bool := match trackedTy with
             | .TInt | .TBool | .TReal | .TString => true
@@ -1840,16 +1847,10 @@ partial def translateAssign  (ctx : TranslationContext)
                    let ty ← translateType ctx annStr
                    pure ty.val
                  else pure inferType
-          -- A native annotation under `--typed-python` produces a
-          -- native local (matching the spec layer's parameter shape);
-          -- otherwise the local stays Any for compatibility.
           let useNative := nativeFromAst.isSome
           let varTy : HighTypeMd := if useNative then mkHighTypeMd type else AnyTy
           let initExpr := if useNative then mkStmtExprMd .Hole else AnyNone
           let initStmt := mkVarDeclInit n.val varTy initExpr
-          -- Re-emit the assign so the RHS is unwrapped to the native
-          -- sort when the declaration is native; the fromAny peephole
-          -- cancels the wrap from typed callees.
           let assignStmts :=
             if useNative then
               [mkStmtExprMdWithLoc
@@ -1884,8 +1885,6 @@ partial def translateAssign  (ctx : TranslationContext)
                 pure (mkStmtExprMd (StmtExpr.New (mkId laurelName)))
               else pure rhs_trans
             | none => pure rhs_trans
-          -- Native field assignments: unwrap the Any-wrapped RHS so
-          -- the assignment matches the field's declared sort.
           let className := ctx.currentClassName.get!
           let rhs' :=
             if ctx.typedPython then
@@ -1942,9 +1941,6 @@ partial def collectDeclaredNamesAndTypes (ctx : TranslationContext) (stmts : Lis
       let names := (lhs.val.toList.filter (λ e => match e with |.Name _ _ _ => true | _=> false)).map pyExprToString
       names.map (λ n => (n, ty))
     | .AnnAssign _ lhs annoTy value _ =>
-      -- Under `--typed-python`, recover native primitives and
-      -- containers from the annotation AST; otherwise fall back to
-      -- the string-keyed lookup.
       let nativeFromAst : Option HighType :=
         if ctx.typedPython then pythonTypeExprToHighType annoTy else none
       let ty :=
@@ -1982,8 +1978,6 @@ def createVarDeclStmtsAndCtx (ctx : TranslationContext) (newDecls : List (String
   let newDecls := newDecls.foldl (fun acc (n, ty) =>
       if acc.any (fun (an, _) => an == n) || ctx.variableTypes.any (fun (vn, _) => vn == n)
       then acc else acc ++ [(n, ty)]) []
-  -- A type is "native" if its declaration sort matches the values that
-  -- the typed lowering produces (composite class, primitive, container).
   let isNative (ty : HighType) : Bool :=
     match ty with
     | .UserDefined nm => isCompositeType ctx nm.text
@@ -2123,6 +2117,8 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
         | .Name _ n _ =>
           if !typeAssertSafe then []
           else if s.toAst.ann == default then [] -- compiler-generated statement, no source location
+          else if ctx.typedPython
+                  && (pythonPrimToHighType (pyExprToString annotation)).isSome then []
           else
           let annStr := pyExprToString annotation
           match typeTester? annStr with
@@ -2174,9 +2170,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let whileWrapped := mkStmtExprMdWithLoc (StmtExpr.Block [whileStmt] (some breakLabel)) md
     return (loopCtx, preamble ++ [whileWrapped])
 
-  -- Return: assign LaurelResult, then exit $body. Native results are
-  -- unwrapped here; the fromAny peephole cancels the wrap from the
-  -- typed expression-translation paths.
+  -- Return statement: assign to the LaurelResult output parameter, then exit $body.
   | .Return _ value => do
     let stmts ← match value.val with
       | some expr => do
@@ -2582,8 +2576,6 @@ def unpackPyArguments (ctx : TranslationContext) (args: Python.arguments SourceR
             | _ =>
               pure ()
             tys ← checkValidInputTypeList ctx tys
-            -- Structural lowering keeps `list[int]` etc. inner type;
-            -- the String pipeline would collapse it to ListAny.
             let nativeTy : Option HighType :=
               if ctx.typedPython then
                 match oty.val with
@@ -2689,7 +2681,6 @@ def translateFunctionBody (ctx : TranslationContext) (kwargsName : Option String
     let nonSelfParams := inputs.filter (fun p => p.name.text != "self")
     let (_, paramCopies) := renameInputParams nonSelfParams
       (match kwargsName with | some kw => (· == kw) | none => fun _ => false)
-    -- The from_None initializer is type-incorrect against a native return.
     let bodyStmts :=
       if ctx.resultType == pyAny then
         mkStmtExprMd (.Assign [mkVariableMd (.Local PyLauFuncReturnVar)] AnyNone) :: paramCopies ++ bodyStmts
@@ -2734,10 +2725,7 @@ def translateFunction (ctx : TranslationContext) (sourceRange: SourceRange) (fun
           | none => []
         | _ => []
 
-    -- Native return: the signature matches the spec layer. Primitives
-    -- need a `fromAny` unwrap at every Return; container types are
-    -- kept as-is so the unwrap is identity. `__init__` is excluded —
-    -- Python's implicit `None` return shouldn't widen to the class type.
+    -- `__init__` returns implicit None, not the class type.
     let isInit := funcDecl.name.endsWith "@__init__"
     let nativeReturnTy : Option HighType := funcDecl.ret.bind fun retInfo =>
       let ty := retInfo.laurelType.val
@@ -2830,12 +2818,8 @@ def preludeSignatureToPythonFunctionDecl (prelude : Core.Program) : List PythonF
         ret
       }
     | none => none
-/-- Translate a field type from its annotation AST. Under
-    `--typed-python`, `pythonTypeExprToHighType` recovers native
-    primitive shapes that the string-based path collapses to `Any`.
-    Container fields (`list`/`dict`) stay `Any` because the
-    heap-parameterization pass doesn't yet box them; the typed
-    container paths are reserved for parameters and locals. -/
+/-- Translate a field type from its annotation AST. Container fields
+    stay `Any` (heap parameterization can't box them yet). -/
 def translateFieldTypeFromExpr (ctx : TranslationContext)
     (annotation : Python.expr SourceRange) : Except TranslationError HighTypeMd :=
   if ctx.typedPython then
@@ -3344,12 +3328,19 @@ def pythonToLaurel (info : PreludeInfo)
   -- Separate functions from other statements
   let mut otherStmts : Array (Python.stmt SourceRange) := #[]
 
+  -- Pre-collect signatures so recursive and forward calls see the callee.
+  let mut topFuncDecls : List PythonFunctionDecl := []
+  for stmt in body do
+    if let .FunctionDef _ _ _ _ _ _ _ _ := stmt then
+      let fd ← pyFuncDefToPythonFunctionDecl ctx stmt
+      topFuncDecls := topFuncDecls ++ [fd]
+  ctx := {ctx with functionSignatures := ctx.functionSignatures ++ topFuncDecls}
+
   for stmt in body do
     match stmt with
     | .FunctionDef _ _ _ fbody _ _ _ _ =>
       let funcDecl ←  pyFuncDefToPythonFunctionDecl ctx stmt
       let proc ← translateFunction ctx stmt.ann funcDecl fbody.val.toList
-      ctx := {ctx with functionSignatures:= ctx.functionSignatures ++ [funcDecl]}
       procedures := procedures.push proc.fst
     | .ClassDef _ _ _ _ _ _ _ =>
       pure ()  -- Already processed in first pass
