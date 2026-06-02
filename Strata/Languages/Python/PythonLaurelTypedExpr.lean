@@ -5,7 +5,7 @@
 -/
 module
 
-public import Strata.Languages.Laurel.Laurel
+public import Strata.Languages.Laurel.LaurelAST
 
 /-!
 # Typed Laurel Expression Builders for the Python Prelude

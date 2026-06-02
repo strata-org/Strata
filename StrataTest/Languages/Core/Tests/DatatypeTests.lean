@@ -5,7 +5,7 @@
 -/
 module
 
-meta import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core
 import StrataDDM.Integration.Lean.HashCommands
 
 meta section
@@ -80,7 +80,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify nestedPolyDestructorPgm (options := .quiet)
+#eval Core.verify nestedPolyDestructorPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 2: Hidden Type Recursion
@@ -138,7 +138,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify hiddenTypeRecursionPgm (options := .quiet)
+#eval Core.verify hiddenTypeRecursionPgm (options := .quiet)
 
 end Strata.DatatypeTests
 

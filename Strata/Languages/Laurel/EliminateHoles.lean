@@ -6,7 +6,7 @@
 module
 
 public import Strata.Util.Statistics
-public import Strata.Languages.Laurel.Laurel
+public import Strata.Languages.Laurel.LaurelAST
 import Strata.Languages.Laurel.MapStmtExpr
 
 /-!

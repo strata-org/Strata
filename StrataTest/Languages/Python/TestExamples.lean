@@ -5,8 +5,8 @@
 -/
 module
 
-public import Strata.Languages.Core.Verifier
-public import Strata.Languages.Laurel.Laurel
+public import Strata.Languages.Core
+public import Strata.Languages.Laurel
 import Strata.Languages.Python.PySpecPipeline
 import Strata.Languages.Python.PyFactory
 import StrataDDM.Ion
@@ -77,7 +77,7 @@ public def processPythonFile (pythonCmd : System.FilePath) (input : InputContext
         { Core.VerifyOptions.quiet with removeIrrelevantAxioms := .Precise }
       let vcResults ← IO.FS.withTempDir fun vcDir =>
         EIO.toIO (fun f => IO.Error.userError (toString f))
-          (Core.verify core vcDir .none options
+          (_root_.Core.verify core vcDir .none options
             (moreFns := Strata.Python.ReFactory)
             (externalPhases := [Strata.frontEndPhase]))
       let vcDiags := vcResults.toList.filterMap (fun vcr => vcr.toDiagnostic files Core.coreAbstractedPhases)

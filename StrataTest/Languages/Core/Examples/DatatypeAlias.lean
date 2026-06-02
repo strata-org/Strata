@@ -5,7 +5,7 @@
 -/
 module
 
-meta import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core
 import StrataDDM.Integration.Lean.HashCommands
 
 meta section
@@ -64,7 +64,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify datatypeAliasPgm (options := .quiet)
+#eval Core.verify datatypeAliasPgm (options := .quiet)
 
 end Strata.DatatypeAliasTest
 end

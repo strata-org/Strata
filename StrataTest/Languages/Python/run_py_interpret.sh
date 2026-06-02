@@ -79,7 +79,7 @@ for test_file in "$TESTS_DIR"/test_*.py; do
 
     # Run interpreter
     rel_ion="StrataTest/Languages/Python/tests/${base_name}.python.st.ion"
-    output=$(cd "$PROJECT_ROOT" && ./.lake/build/bin/strata pyInterpret $fuel $keepAllFiles \
+    output=$(cd "$PROJECT_ROOT" && ./StrataCLI/.lake/build/bin/strata pyInterpret $fuel $keepAllFiles \
         "$rel_ion" 2>&1)
     exit_code=$?
 
