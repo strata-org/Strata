@@ -2091,42 +2091,38 @@ def translateDatatypes (p : Program) (bindings : TransBindings) (op : Operation)
 
 partial def translateCoreDecls (p : Program) (bindings : TransBindings) :
   TransM Core.Decls := do
-  let (decls, _) ← go 0 p.commands.size bindings p.commands
-  return decls
-  where go (count max : Nat) bindings ops : TransM (Core.Decls × TransBindings) := do
-  match (max - count) with
-  | 0 => return ([], bindings)
-  | _ + 1 =>
-    let op := ops[count]!
-    let (newDecls, bindings) ← do
-        let (decl, bindings) ←
-          match op.name with
-          | q`Core.command_datatypes =>
-            translateDatatypes p bindings op
-          | q`Core.command_constdecl =>
-            translateConstant bindings op
-          | q`Core.command_typedecl =>
-            translateTypeDecl bindings op
-          | q`Core.command_typesynonym =>
-            translateTypeSynonym bindings op
-          | q`Core.command_axiom =>
-            translateAxiom p bindings op
-          | q`Core.command_distinct =>
-            translateDistinct p bindings op
-          | q`Core.command_procedure =>
-            translateProcedure p bindings op
-          | q`Core.command_fndef =>
-            translateFunction .Definition p bindings op
-          | q`Core.command_fndecl =>
-            translateFunction .Declaration p bindings op
-          | q`Core.command_recfndefs =>
-            translateRecFuncBlock p bindings op
-          | q`Core.command_block =>
-            translateBlockCommand p bindings op
-          | _ => TransM.error s!"translateCoreDecls unimplemented for {repr op}"
-        pure ([decl], bindings)
-    let (decls, bindings) ← go (count + 1) max bindings ops
-    return (newDecls ++ decls, bindings)
+  let mut acc : Array Core.Decl := #[]
+  let mut bindings := bindings
+  for i in [:p.commands.size] do
+    let op := p.commands[i]!
+    let (decl, bindings') ←
+      match op.name with
+      | q`Core.command_datatypes =>
+        translateDatatypes p bindings op
+      | q`Core.command_constdecl =>
+        translateConstant bindings op
+      | q`Core.command_typedecl =>
+        translateTypeDecl bindings op
+      | q`Core.command_typesynonym =>
+        translateTypeSynonym bindings op
+      | q`Core.command_axiom =>
+        translateAxiom p bindings op
+      | q`Core.command_distinct =>
+        translateDistinct p bindings op
+      | q`Core.command_procedure =>
+        translateProcedure p bindings op
+      | q`Core.command_fndef =>
+        translateFunction .Definition p bindings op
+      | q`Core.command_fndecl =>
+        translateFunction .Declaration p bindings op
+      | q`Core.command_recfndefs =>
+        translateRecFuncBlock p bindings op
+      | q`Core.command_block =>
+        translateBlockCommand p bindings op
+      | _ => TransM.error s!"translateCoreDecls unimplemented for {repr op}"
+    acc := acc.push decl
+    bindings := bindings'
+  return acc.toList
 
 def translateProgram (p : Program) : TransM Core.Program := do
   fun s => ((), { s with globalContext := p.globalContext })
