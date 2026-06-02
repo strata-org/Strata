@@ -19,6 +19,39 @@ namespace Strata.Python.RejectApproximationsTest
 open Strata.Python (rejectableHole rejectableDrop)
 open Strata.Python.TranslationError
 
+/-! ## Boolean dispatch lemmas
+
+Pin the bool branch of `rejectableHole` / `rejectableDrop` so a future
+refactor cannot accidentally reverse the strict/lax meaning. -/
+
+theorem rejectableHole_strict (c : String) (r : String) :
+    (rejectableHole (rejectApproximations := true) c (astRepr := r)).isOk = false := rfl
+
+theorem rejectableHole_lax (c : String) (r : String) :
+    (rejectableHole (rejectApproximations := false) c (astRepr := r)).isOk = true := rfl
+
+theorem rejectableDrop_strict (c : String) (r : String) :
+    (rejectableDrop (rejectApproximations := true) c (astRepr := r)).isOk = false := rfl
+
+theorem rejectableDrop_lax (c : String) (r : String) :
+    (rejectableDrop (rejectApproximations := false) c (astRepr := r)).isOk = true := rfl
+
+/-- Strict mode produces a `.unsupportedConstruct` whose message starts
+    with `Approximation.prefixTag`. Downstream tooling can rely on this. -/
+theorem rejectableHole_strict_message (c : String) (r : String) :
+    ∃ msg ast,
+      rejectableHole (rejectApproximations := true) c (astRepr := r)
+        = .error (.unsupportedConstruct msg ast)
+      ∧ msg = Strata.Python.Approximation.render .hole c :=
+  ⟨_, _, rfl, rfl⟩
+
+theorem rejectableDrop_strict_message (c : String) (r : String) :
+    ∃ msg ast,
+      rejectableDrop (rejectApproximations := true) c (astRepr := r)
+        = .error (.unsupportedConstruct msg ast)
+      ∧ msg = Strata.Python.Approximation.render .drop c :=
+  ⟨_, _, rfl, rfl⟩
+
 -- rejectableHole false -> emits a Hole (lax behavior preserved)
 #guard
   match rejectableHole false "BinOp Div" (astRepr := "<ast>") with
