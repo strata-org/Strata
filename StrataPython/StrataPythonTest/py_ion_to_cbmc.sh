@@ -24,9 +24,9 @@ BN="${BN%.py.ion}"
 BN="${BN%.python.st.ion}"
 BN="${BN%.st.ion}"
 
-# Locate project root (three levels up from this script's directory)
+# Locate project root (two levels up from this script's directory)
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # Use a temporary directory for intermediate files
 WORK_DIR=$(mktemp -d)
