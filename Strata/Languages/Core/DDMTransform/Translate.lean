@@ -103,13 +103,18 @@ def translateIdent (Identifier : Type) [Coe String Identifier] [Inhabited Identi
     | TransM.error s!"Expected ident: {repr arg}"
   pure name
 
-def translateOptionLabel (default : String) (arg : Arg) : TransM String := do
+/-- Translate an optional `Core.label` argument, returning the user-supplied
+    label name if one was written, or `none` otherwise. -/
+def translateOptionLabel? (arg : Arg) : TransM (Option String) := do
   translateOption (fun maybe_arg => do
                     match maybe_arg with
-                    | none => return default
+                    | none => return none
                     | some lop => let args ← checkOpArg lop q`Core.label 1
-                                  translateIdent String args[0]!)
+                                  return some (← translateIdent String args[0]!))
                   arg
+
+def translateOptionLabel (default : String) (arg : Arg) : TransM String := do
+  return (← translateOptionLabel? arg).getD default
 
 def translateNat (arg : Arg) : TransM Nat := do
   let .num _ n := arg
@@ -1495,11 +1500,22 @@ partial def translateFnPreconds (p : Program) (name : Core.CoreIdent) (bindings 
 /-- Translate an assert/cover/assume statement with optional metadata annotations. -/
 partial def translateLabeledCheck (p : Program) (bindings : TransBindings) (op : Operation)
     (namePrefix : String) (kind : GenKind) (annotsArg la ca : Arg)
-    (mk : String → Core.Expression.Expr → MetaData Core.Expression → Core.Statement) :
+    (mk : String → Core.Expression.Expr → MetaData Core.Expression → Core.Statement)
+    (promoteLabelToSummary : Bool := false) :
     TransM (List Core.Statement × TransBindings) := do
   let c ← translateExpr p bindings ca
+  let userLabel? ← translateOptionLabel? la
   let (l, bindings) ← nextLabel namePrefix kind la bindings
   let md ← getMetaDataWithAnn op annotsArg
+  -- A user-written label (`assert [name]: ...`) is the author's own description
+  -- of the obligation, so record it as the user-facing property summary (unless
+  -- one is already set). Failed-VC diagnostics then describe the assertion by
+  -- that summary rather than exposing the internal obligation label; obligations
+  -- with no user label keep the generic description and are told apart by their
+  -- source location. Auto-generated labels (`assert_N`) are not promoted.
+  let md := match promoteLabelToSummary, userLabel? with
+    | true, some ul => if md.getPropertySummary.isSome then md else md.withPropertySummary ul
+    | _, _ => md
   return ([mk l c md], bindings)
 
 partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
@@ -1526,6 +1542,7 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     return ([.havoc id md], bindings)
   | q`Core.assert, #[annotsArg, la, ca] =>
     translateLabeledCheck p bindings op "assert" .assert_def annotsArg la ca .assert
+      (promoteLabelToSummary := true)
   | q`Core.cover, #[annotsArg, la, ca] =>
     translateLabeledCheck p bindings op "cover" .cover_def annotsArg la ca .cover
   | q`Core.assume, #[annotsArg, la, ca] =>

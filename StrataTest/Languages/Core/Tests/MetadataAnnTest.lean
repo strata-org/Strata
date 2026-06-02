@@ -105,9 +105,9 @@ info: program Core;
 procedure Test ()
 {
   var x : int;
-  @[reachCheck] assert [a1]: x > 0;
-  @[reachCheck, propertyType = "divisionByZero"] assert [a2]: x > 0;
-  assert [a3]: x > 0;
+  @[reachCheck, propertySummary = "a1"] assert [a1]: x > 0;
+  @[reachCheck, propertyType = "divisionByZero", propertySummary = "a2"] assert [a2]: x > 0;
+  @[propertySummary = "a3"] assert [a3]: x > 0;
 };
 
 -/
@@ -152,9 +152,9 @@ info: program Core;
 procedure Test ()
 {
   var x : int;
-  @[reachCheck] assert [a1]: x > 0;
+  @[reachCheck, propertySummary = "a1"] assert [a1]: x > 0;
   @[fullCheck] cover [c1]: x > 0;
-  @[customFlag, myTool = "info"] assert [a2]: x > 0;
+  @[customFlag, myTool = "info", propertySummary = "a2"] assert [a2]: x > 0;
   assume [s1]: x > 0;
 };
 
@@ -314,7 +314,7 @@ info: program Core;
 procedure Test ()
 {
   var x : int;
-  @[python.source_line = "42", boogie.severity = "warning"] assert [a1]: x > 0;
+  @[python.source_line = "42", boogie.severity = "warning", propertySummary = "a1"] assert [a1]: x > 0;
 };
 
 -/
@@ -341,7 +341,7 @@ info: program Core;
 procedure Test ()
 {
   var x : int;
-  assert [a1]: x > 0;
+  @[propertySummary = "a1"] assert [a1]: x > 0;
 };
 
 -/
