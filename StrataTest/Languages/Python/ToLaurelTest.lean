@@ -836,4 +836,79 @@ private def translateFunc (args : Array Arg := #[])
   -- return type assume
   assert! body.contains "assume Any..isfrom_str(result)"
 
+/-! ## Predicate operator VC shape -/
+
+private def predFor (formula : SpecExpr) (args : Array Arg := #[arg "x" int, arg "y" int])
+    : String × Nat := translatePrecond
+  #[{ message := #[.str "p"], formula }] (args := args)
+
+-- intGt: x > 1
+#eval do
+  let (body, errs) := predFor (.intGt (.var "x" loc) (.intLit 1 loc) loc)
+  assert! errs == 0
+  assert! body.contains "Any..as_int!(x) > Any..as_int!"
+
+-- intLt: x < y (asymmetric: a swap would render the operands reversed)
+#eval do
+  let (body, errs) := predFor (.intLt (.var "x" loc) (.var "y" loc) loc)
+  assert! errs == 0
+  assert! body.contains "Any..as_int!(x) < Any..as_int!(y)"
+
+-- intEq: x == 0
+#eval do
+  let (body, errs) := predFor (.intEq (.var "x" loc) (.intLit 0 loc) loc)
+  assert! errs == 0
+  assert! body.contains "Any..as_int!(x) == Any..as_int!"
+
+-- intNe: x != y
+#eval do
+  let (body, errs) := predFor (.intNe (.var "x" loc) (.var "y" loc) loc)
+  assert! errs == 0
+  assert! body.contains "Any..as_int!(x) != Any..as_int!(y)"
+
+-- intAdd: x + y >= 0  (arithmetic wraps via from_int and feeds intGe)
+#eval do
+  let (body, errs) := predFor
+    (.intGe (.intAdd (.var "x" loc) (.var "y" loc) loc) (.intLit 0 loc) loc)
+  assert! errs == 0
+  assert! body.contains "from_int(Any..as_int!(x) + Any..as_int!(y))"
+
+-- intSub: x - y
+#eval do
+  let (body, errs) := predFor
+    (.intGe (.intSub (.var "x" loc) (.var "y" loc) loc) (.intLit 0 loc) loc)
+  assert! errs == 0
+  assert! body.contains "from_int(Any..as_int!(x) - Any..as_int!(y))"
+
+-- intMul: x * y
+#eval do
+  let (body, errs) := predFor
+    (.intGe (.intMul (.var "x" loc) (.var "y" loc) loc) (.intLit 0 loc) loc)
+  assert! errs == 0
+  assert! body.contains "from_int(Any..as_int!(x) * Any..as_int!(y))"
+
+-- intDiv: x // y  (Python `//` lowers to Laurel `Div` → ` / ` in output)
+#eval do
+  let (body, errs) := predFor
+    (.intGe (.intDiv (.var "x" loc) (.var "y" loc) loc) (.intLit 0 loc) loc)
+  assert! errs == 0
+  assert! body.contains "from_int(Any..as_int!(x) / Any..as_int!(y))"
+
+-- intMod: x % y
+#eval do
+  let (body, errs) := predFor
+    (.intGe (.intMod (.var "x" loc) (.var "y" loc) loc) (.intLit 0 loc) loc)
+  assert! errs == 0
+  assert! body.contains "from_int(Any..as_int!(x) % Any..as_int!(y))"
+
+-- floatLt sample: confirms float branch routes through `Any..as_float!`,
+-- not `Any..as_int!`; an int/float swap regression would fail this.
+#eval do
+  let (body, errs) := predFor
+    (.floatLt (.var "x" loc) (.var "y" loc) loc)
+    (args := #[arg "x" float_, arg "y" float_])
+  assert! errs == 0
+  assert! body.contains "Any..as_float!(x) < Any..as_float!(y)"
+  assert! !body.contains "Any..as_int!(x)"
+
 end Strata.Python.Specs.ToLaurel.Tests
