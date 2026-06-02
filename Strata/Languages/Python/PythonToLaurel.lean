@@ -535,6 +535,9 @@ def wrapFieldInAny (ty : HighType) (expr : StmtExprMd) : Except TranslationError
   | .TReal => .ok <| mkStmtExprMd (.StaticCall "from_float" [expr])
   | .TString => .ok <| mkStmtExprMd (.StaticCall "from_str" [expr])
   | .TCore "Any" => .ok expr
+  -- Container fields stay as the typed value; the consumer's
+  -- subscript / inferExprType paths see the native sort directly.
+  | .TSeq _ | .TMap _ _ | .TSet _ => .ok expr
   | .UserDefined name => .error (.unsupportedConstruct
     s!"Coercion from user-defined class '{name.text}' to Any is not yet supported" name.text)
   | other => .error (.typeError s!"wrapFieldInAny: no Any constructor for field type '{repr other}'")
@@ -1468,6 +1471,18 @@ partial def translateCall (ctx : TranslationContext)
     if ctx.typedPython then
       ctx.functionSignatures.find? fun x => nameMatches x && isTypedSig x
     else none
+  -- For constructor / method calls, the callee's signature carries
+  -- a `self` parameter that the user-side call doesn't pass; the shim
+  -- needs to index callee.args[i + argOffset] against user-side args[i].
+  let argOffset : Nat :=
+    match typedFuncDecl with
+    | some fd =>
+      -- Class methods and constructors carry an implicit `self` first
+      -- arg that the user-side call doesn't pass.
+      match fd.args with
+      | first :: _ => if first.name == "self" then 1 else 0
+      | [] => 0
+    | none => 0
   if funcDecl.isNone && kwords.length > 0 then
     throwUserError f.ann s!"Undeclared function '{funcName}' called with keyword args"
   -- Emit the final call, handling Name vs Attribute dispatch and transparent procedures.
@@ -1557,11 +1572,12 @@ partial def translateCall (ctx : TranslationContext)
     combinePositionalAndKeywordArgs args kwords funcDecl methodName callRange
   let trans_args ← args.mapM (translateExpr ctx)
   -- Unwrap each Any-typed argument to its callee-declared native type.
+  -- argOffset accounts for the implicit `self` on methods/__init__.
   let trans_args :=
     match typedFuncDecl with
     | some fd =>
       trans_args.zipIdx.map fun (a, i) =>
-        match fd.args[i]? with
+        match fd.args[i + argOffset]? with
         | some param => fromAny param.laurelType.val a
         | none => a
     | none => trans_args
@@ -1793,12 +1809,17 @@ partial def translateAssign  (ctx : TranslationContext)
               newctx.variableTypes ++ [(n.val, .UserDefined className)]}
         | _=> newctx
         if n.val ∈ newctx.variableTypes.unzip.1 then
-          -- The hoisting pass declared the local; if its tracked type
-          -- is native, unwrap the RHS so the assignment typechecks
-          -- against the declared sort.
+          -- The hoisting pass declared the local with a primitive
+          -- native type; unwrap the RHS so the assignment typechecks.
+          -- UserDefined / container locals keep the existing
+          -- `assignStmts` (which carries the correct `New` / multi-stmt
+          -- expansion for class instantiation).
           let trackedTy := (newctx.variableTypes.find? (·.fst == n.val)).map (·.snd) |>.getD pyAny
+          let isPrimitive : Bool := match trackedTy with
+            | .TInt | .TBool | .TReal | .TString => true
+            | _ => false
           let assignStmts :=
-            if trackedTy != pyAny && ctx.typedPython then
+            if isPrimitive && ctx.typedPython then
               [mkStmtExprMdWithLoc
                 (StmtExpr.Assign [target] (fromAny trackedTy rhs_trans)) source]
             else assignStmts
@@ -1863,6 +1884,15 @@ partial def translateAssign  (ctx : TranslationContext)
                 pure (mkStmtExprMd (StmtExpr.New (mkId laurelName)))
               else pure rhs_trans
             | none => pure rhs_trans
+          -- Native field assignments: unwrap the Any-wrapped RHS so
+          -- the assignment matches the field's declared sort.
+          let className := ctx.currentClassName.get!
+          let rhs' :=
+            if ctx.typedPython then
+              match tryLookupFieldHighType ctx className attr.val with
+              | some ty => if ty == pyAny then rhs' else fromAny ty rhs'
+              | none => rhs'
+            else rhs'
           let assignStmt := mkStmtExprMdWithLoc (StmtExpr.Assign [fieldAccess] rhs') source
           return (ctx, moExtracts ++ [assignStmt], true)
         else
@@ -2705,11 +2735,13 @@ def translateFunction (ctx : TranslationContext) (sourceRange: SourceRange) (fun
         | _ => []
 
     -- Native return: the signature matches the spec layer. Primitives
-    -- need a `fromAny` unwrap at every Return; container/UserDefined
-    -- types are kept as-is so the unwrap is identity.
+    -- need a `fromAny` unwrap at every Return; container types are
+    -- kept as-is so the unwrap is identity. `__init__` is excluded —
+    -- Python's implicit `None` return shouldn't widen to the class type.
+    let isInit := funcDecl.name.endsWith "@__init__"
     let nativeReturnTy : Option HighType := funcDecl.ret.bind fun retInfo =>
       let ty := retInfo.laurelType.val
-      if ty == pyAny then none else some ty
+      if isInit || ty == pyAny then none else some ty
     let outputType : HighTypeMd :=
       nativeReturnTy.map mkHighTypeMd |>.getD AnyTy
     let outputs : List Parameter := [{ name := PyLauFuncReturnVar, type := outputType }]
@@ -2798,6 +2830,21 @@ def preludeSignatureToPythonFunctionDecl (prelude : Core.Program) : List PythonF
         ret
       }
     | none => none
+/-- Translate a field type from its annotation AST. Under
+    `--typed-python`, `pythonTypeExprToHighType` recovers native
+    primitive shapes that the string-based path collapses to `Any`.
+    Container fields (`list`/`dict`) stay `Any` because the
+    heap-parameterization pass doesn't yet box them; the typed
+    container paths are reserved for parameters and locals. -/
+def translateFieldTypeFromExpr (ctx : TranslationContext)
+    (annotation : Python.expr SourceRange) : Except TranslationError HighTypeMd :=
+  if ctx.typedPython then
+    match pythonTypeExprToHighType annotation with
+    | some (.TInt) | some (.TBool) | some (.TReal) | some (.TString) =>
+      .ok (mkHighTypeMd (pythonTypeExprToHighType annotation).get!)
+    | _ => translateFieldType ctx (pyExprToString annotation)
+  else translateFieldType ctx (pyExprToString annotation)
+
 /-- Extract field declarations from class body (annotated assignments at class level) -/
 def extractClassFields (ctx : TranslationContext) (classBody : Array (Python.stmt SourceRange))
     : Except TranslationError (List Field) := do
@@ -2811,7 +2858,7 @@ def extractClassFields (ctx : TranslationContext) (classBody : Array (Python.stm
         | .Name _ name _ => .ok name.val
         | _ => continue  -- Skip non-simple targets, consistent with extractFieldsFromInit
 
-      let fieldType ← translateFieldType ctx (pyExprToString annotation)
+      let fieldType ← translateFieldTypeFromExpr ctx annotation
 
       fields := fields ++ [{
         name := fieldName
@@ -2830,7 +2877,7 @@ def extractFieldsFromInit (ctx : TranslationContext) (initBody : Array (Python.s
     match stmt with
     | .AnnAssign _ (.Attribute _ (.Name _ selfName _) attr _) annotation _ _ =>
       if selfName.val == "self" then
-        let fieldType ← translateFieldType ctx (pyExprToString annotation)
+        let fieldType ← translateFieldTypeFromExpr ctx annotation
         fields := fields ++ [{
           name := attr.val
           type := fieldType
