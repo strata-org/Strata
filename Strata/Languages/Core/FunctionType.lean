@@ -65,6 +65,10 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
     let retty := func.output
     let S ← Constraints.unify [(retty, bodyty)] (TEnv.stateSubstInfo Env) |>.mapError format
     -- The inferred type must be alpha-equivalent to the declared signature.
+    -- Unlike OCaml, where annotations are lower bounds (the body may be more
+    -- specific), we require exact polymorphism: if f<a>(x:a):a is declared,
+    -- the body cannot force a=int. This is appropriate for an IR where
+    -- the user can give annotations as needed.
     let inferredTy := LMonoTy.subst S.subst monoty
     let bwdMap ← match LMonoTy.alphaEquivMap monoty inferredTy with
       | some m => pure m
