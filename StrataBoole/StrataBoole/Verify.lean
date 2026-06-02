@@ -731,7 +731,7 @@ def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement 
         let bodyExpr ← toCoreExpr body
         return (precondsRev.reverse, bodyExpr) : TranslateM (List (DL.Util.FuncPrecondition Core.Expression.Expr Unit) × Core.Expression.Expr))
       let (preconds, bodyExpr) := pair
-      let funcTy := Lambda.LMonoTy.mkArrow outputMono ((inputsMono.map (·.2)).reverse)
+      let funcTy := Lambda.LMonoTy.mkArrow' outputMono (inputsMono.map (·.2))
       let decl : Imperative.PureFunc Core.Expression := {
         name := mkIdent n
         typeArgs := tys
