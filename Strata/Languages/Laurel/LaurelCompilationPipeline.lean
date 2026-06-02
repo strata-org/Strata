@@ -177,8 +177,12 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
     if let some coreProgram := coreProgramOption then
       emit "CoreProgram" "core.st" coreProgram
     let mut allDiagnostics := passDiags ++ translateState.diagnostics
+
+    if translateState.coreDiagnostics.length > 0 && allDiagnostics.isEmpty then
+      allDiagnostics := allDiagnostics ++ translateState.coreDiagnostics
+
     let coreProgramOption :=
-      if translateState.coreProgramHasSuperfluousErrors then none else coreProgramOption
+      if !translateState.coreDiagnostics.isEmpty then none else coreProgramOption
     return (coreProgramOption, allDiagnostics, program, stats)
 
 /--

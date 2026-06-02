@@ -158,6 +158,14 @@ structure TransBindings where
   freeVars  : Array Core.Decl := #[]
   gen : GenNum := (GenNum.mk 0 0 0 0 0)
 
+def getGenCount (gen_kind : GenKind) (g : GenNum) : Nat :=
+  match gen_kind with
+  | .var_def => g.var_def
+  | .axiom_def => g.axiom_def
+  | .assume_def => g.assume_def
+  | .assert_def => g.assert_def
+  | .cover_def => g.cover_def
+
 def incrNum (gen_kind : GenKind) (b : TransBindings) : TransBindings :=
   let gen := b.gen
   let new_gen :=
@@ -168,6 +176,14 @@ def incrNum (gen_kind : GenKind) (b : TransBindings) : TransBindings :=
     | .assert_def => { gen with assert_def := gen.assert_def + 1 }
     | .cover_def => { gen with cover_def := gen.cover_def + 1 }
   { b with gen := new_gen }
+
+/-- Generate a default label and increment the counter for the given kind. -/
+def nextLabel (namePrefix : String) (kind : GenKind) (labelArg : Arg)
+    (bindings : TransBindings) : TransM (String × TransBindings) := do
+  let default_name := s!"{namePrefix}_{getGenCount kind bindings.gen}"
+  let bindings := incrNum kind bindings
+  let l ← translateOptionLabel default_name labelArg
+  return (l, bindings)
 
 instance : ToFormat TransBindings where
   format b := f!"BoundTypeVars: {b.boundTypeVars}\
@@ -234,6 +250,7 @@ partial def translateLMonoTy (bindings : TransBindings) (arg : Arg) :
   | .ident _ q`Core.bv16 #[] => pure <| .bitvec 16
   | .ident _ q`Core.bv32 #[] => pure <| .bitvec 32
   | .ident _ q`Core.bv64 #[] => pure <| .bitvec 64
+  | .ident _ q`Core.bv128 #[] => pure <| .bitvec 128
   | .ident _ i argst =>
       let argst' ← translateLMonoTys bindings (argst.map ArgF.type)
       pure <| (.tcons i.name argst'.toList.reverse)
@@ -1335,6 +1352,18 @@ partial def translateFnPreconds (p : Program) (name : Core.CoreIdent) (bindings 
     | _ => TransM.error s!"translateFnPreconds: only requires allowed, got {repr op.name}"
   return preconds.1
 
+/-- Translate an assert/cover statement with optional reachability check. -/
+partial def translateLabeledCheck (p : Program) (bindings : TransBindings) (op : Operation)
+    (namePrefix : String) (kind : GenKind) (rca la ca : Arg)
+    (mk : String → Core.Expression.Expr → MetaData Core.Expression → Core.Statement) :
+    TransM (List Core.Statement × TransBindings) := do
+  let c ← translateExpr p bindings ca
+  let (l, bindings) ← nextLabel namePrefix kind la bindings
+  let hasRC ← translateOptionReachCheck rca
+  let md ← getOpMetaData op
+  let md := if hasRC then md.pushElem MetaData.reachCheck (.switch true) else md
+  return ([mk l c md], bindings)
+
 partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
   TransM (List Core.Statement × TransBindings) := do
   let .op op := arg
@@ -1358,28 +1387,12 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     let md ← getOpMetaData op
     return ([.havoc id md], bindings)
   | q`Core.assert, #[rca, la, ca] =>
-    let c ← translateExpr p bindings ca
-    let default_name := s!"assert_{bindings.gen.assert_def}"
-    let bindings := incrNum .assert_def bindings
-    let l ← translateOptionLabel default_name la
-    let hasRC ← translateOptionReachCheck rca
-    let md ← getOpMetaData op
-    let md := if hasRC then md.pushElem MetaData.reachCheck (.switch true) else md
-    return ([.assert l c md], bindings)
+    translateLabeledCheck p bindings op "assert" .assert_def rca la ca .assert
   | q`Core.cover, #[rca, la, ca] =>
-    let c ← translateExpr p bindings ca
-    let default_name := s!"cover_{bindings.gen.assert_def}"
-    let bindings := incrNum .cover_def bindings
-    let l ← translateOptionLabel default_name la
-    let hasRC ← translateOptionReachCheck rca
-    let md ← getOpMetaData op
-    let md := if hasRC then md.pushElem MetaData.reachCheck (.switch true) else md
-    return ([.cover l c md], bindings)
+    translateLabeledCheck p bindings op "cover" .cover_def rca la ca .cover
   | q`Core.assume, #[la, ca] =>
     let c ← translateExpr p bindings ca
-    let default_name := s!"assume_{bindings.gen.assume_def}"
-    let bindings := incrNum .assume_def bindings
-    let l ← translateOptionLabel default_name la
+    let (l, bindings) ← nextLabel "assume" .assume_def la bindings
     let md ← getOpMetaData op
     return ([.assume l c md], bindings)
   | q`Core.if_statement, #[ca, ta, fa] =>
@@ -1438,7 +1451,7 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     -- The DDM parser's @[scope(b)] on the body adds only the parameters.
     -- The function name is NOT in scope inside the body (declareFn adds it
     -- for subsequent statements only). So body bindings = outer + parameters.
-    let funcType := Lambda.LMonoTy.mkArrow outputMono (inputs.values.reverse)
+    let funcType := Lambda.LMonoTy.mkArrow' outputMono inputs.values
     let funcBinding : LExpr Core.CoreLParams.mono := .op () name (some funcType)
     let in_bindings := (inputs.map (fun (v, ty) => (LExpr.fvar () v ty))).toArray
 
@@ -1717,9 +1730,7 @@ def translateConstant (bindings : TransBindings) (op : Operation) :
 def translateAxiom (p : Program) (bindings : TransBindings) (op : Operation) :
   TransM (Core.Decl × TransBindings) := do
   let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_axiom 2
-  let default_name := s!"axiom_{bindings.gen.axiom_def}"
-  let bindings := incrNum .axiom_def bindings
-  let l ← translateOptionLabel default_name op.args[0]!
+  let (l, bindings) ← nextLabel "axiom" .axiom_def op.args[0]! bindings
   let e ← translateExpr p bindings op.args[1]!
   let md ← getOpMetaData op
   return (.ax (Core.Axiom.mk l e) md, bindings)
@@ -1727,9 +1738,7 @@ def translateAxiom (p : Program) (bindings : TransBindings) (op : Operation) :
 def translateDistinct (p : Program) (bindings : TransBindings) (op : Operation) :
   TransM (Core.Decl × TransBindings) := do
   let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_distinct 2
-  let default_name := s!"axiom_distinct_{bindings.gen.axiom_def}"
-  let bindings := incrNum .axiom_def bindings
-  let l ← translateOptionLabel default_name op.args[0]!
+  let (l, bindings) ← nextLabel "axiom_distinct" .axiom_def op.args[0]! bindings
   let es ← translateCommaSep (translateExpr p bindings) op.args[1]!
   if !(es.all LExpr.isOp) then
     TransM.error s!"arguments to `distinct` must all be constant names: {es}"

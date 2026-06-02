@@ -615,7 +615,7 @@ Erase entry for `x` from `T.context`.
 -/
 def TEnv.eraseFromContext (Env : TEnv T.IDMeta) (x : T.Identifier) : TEnv T.IDMeta :=
   let ctx := Env.context
-  let ctx' := { ctx with types := ctx.types.erase x }
+  let ctx' := { ctx with types := ctx.types.remove x }
   Env.updateContext ctx'
 
 def TEnv.freeVarCheck [DecidableEq T.IDMeta] (Env : TEnv T.IDMeta) (e : LExpr T.mono) (msg : Format) :
@@ -1218,18 +1218,6 @@ def TEnv.maybeGenMonoTypes [ToFormat IDMeta] (Env : TEnv IDMeta) (ids : IdentTs 
       .ok (xty :: ans, Env)
 
 /--
-Insert `fvi` (where `fvi` is the `i`-th element of `fvs`) in the oldest context
-in `Env`, only if `fvi` doesn't already exist in some context in `Env`.
-
-If `fvi` has no type annotation, a fresh type variable is put in the context.
--/
-def TEnv.addInOldestContext [ToFormat IDMeta] [DecidableEq IDMeta] (fvs : IdentTs LMonoTy IDMeta) (Env : TEnv IDMeta) : Except Format (TEnv IDMeta) := do
-  let (monotys, Env) ← maybeGenMonoTypes Env fvs
-  let tys := monotys.map (fun mty => LTy.forAll [] mty)
-  let types := Env.context.types.addInOldest fvs.idents tys
-  return Env.updateContext { Env.genEnv.context with types := types }
-
-/--
 Add a well-formed `alias` to the context, where the type definition is first
 de-aliased.
 -/
@@ -1252,22 +1240,17 @@ def TEnv.addTypeAlias (alias : TypeAlias) (C: LContext T) (Env : TEnv T.IDMeta) 
               KnownTypes' names:\n\
               {C.knownTypes.keywords}"
   else
-    let (mtys, Env) ← LMonoTys.instantiateEnv alias.typeArgs [alias_lty.toMonoTypeUnsafe, alias.type] Env
-    match mtys with
-    | [lhs, rhs] =>
-      let newTyArgs := lhs.freeVars
-      -- We expect `alias.type` to be a known, legal type, hence the use of
-      -- `instantiateWithCheck` below. Note that we only store type
-      -- declarations -- not synonyms -- as values in the alias table;
-      -- i.e., we don't store a type alias mapped to another type alias.
-      let (rhsmty, _) ← (LTy.forAll [] rhs).instantiateWithCheck C Env
-      let new_aliases := { typeArgs := newTyArgs,
-                           name := alias.name,
-                           type := rhsmty } :: Env.context.aliases
-      let context := { Env.context with aliases := new_aliases }
-      .ok (Env.updateContext context)
-    | _ => .error f!"[TEnv.addTypeAlias] Implementation error! \n\
-                      {alias}"
+    -- De-alias the RHS so that chained aliases are fully resolved.
+    -- This maintains the invariant that stored alias types are never
+    -- themselves aliases.
+    let (rhsResolved, Env) ← LMonoTy.resolveAliases alias.type Env
+    -- Validate that the de-aliased type is a known, legal type.
+    let (_, _) ← (LTy.forAll [] rhsResolved).instantiateWithCheck C Env
+    let new_aliases := { typeArgs := alias.typeArgs,
+                         name := alias.name,
+                         type := rhsResolved } :: Env.context.aliases
+    let context := { Env.context with aliases := new_aliases }
+    .ok (Env.updateContext context)
 
 ---------------------------------------------------------------------
 

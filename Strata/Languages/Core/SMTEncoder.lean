@@ -78,6 +78,27 @@ def SMT.Context.restoreSubst (ctx : SMT.Context) (savedSubst: Map String TermTyp
 def SMT.Context.hasDatatype (ctx : SMT.Context) (name : String) : Bool :=
   ctx.seenDatatypes.contains name
 
+/-- Collect all sort, datatype, constructor, and selector names that have been
+    pre-declared to the solver. Used to pre-populate the encoder's `usedNames`
+    registry so that later UF/function encoding cannot collide with them. -/
+def SMT.Context.preDeclaredNames (ctx : SMT.Context) : Std.HashSet String :=
+  let sortNames := ctx.sorts.foldl (init := ({} : Std.HashSet String)) fun acc s => acc.insert s.name
+  let dtNames := ctx.typeFactory.toList.foldl (init := sortNames) fun acc block =>
+    block.foldl (init := acc) fun acc d =>
+      if ctx.seenDatatypes.contains d.name then
+        let acc := acc.insert d.name
+        -- Include constructor and selector names emitted by declareDatatype
+        d.constrs.foldl (init := acc) fun acc c =>
+          let acc := acc.insert c.name.name
+          c.args.foldl (init := acc) fun acc (fieldName, _) =>
+            acc.insert (d.name ++ ".." ++ fieldName.name)
+      else acc
+  -- Built-in Option datatype names
+  let acc := dtNames.insert "Option"
+  let acc := acc.insert "none"
+  let acc := acc.insert "some"
+  acc.insert "val"
+
 def SMT.Context.addDatatype (ctx : SMT.Context) (d : LDatatype CoreLParams.IDMeta) : SMT.Context :=
   if ctx.hasDatatype d.name then ctx
   else
@@ -309,8 +330,9 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (
         let (b, s) := Strata.Name.breakDisambiguated name
         (Encoder.sanitizeSmtName b, s)
     let ctx := { ctx with bvCounter := ctx.bvCounter + 1 }
-    -- Check for clashes with existing bvars, fvars in ctx, and fvars in body
-    let usedNames := Std.HashSet.ofList (bvs.map (·.1) ++ ctx.ufs.toList.map (·.id) ++ fvarNames.toList)
+    -- Check for clashes with existing bvars, fvars, sorts, datatypes, and fvars in body
+    let usedNames := Std.HashSet.ofList (bvs.map (·.1) ++ ctx.ufs.toList.map (·.id) ++ fvarNames.toList
+      ++ ctx.sorts.toList.map (·.name) ++ ctx.seenDatatypes.toList)
     let x := Strata.Name.findUnique baseName startSuffix usedNames
     let (ety, ctx) ← LMonoTy.toSMTType E ty ctx useArrayTheory
     let (trt, ctx) ← appToSMTTerm E ((x, ety) :: bvs) tr [] ctx useArrayTheory
@@ -550,7 +572,10 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
     | .bv ⟨_, .SLe⟩  => .ok (.app Op.bvsle,      .bool,   ctx)
     | .bv ⟨_, .SGt⟩  => .ok (.app Op.bvsgt,      .bool,   ctx)
     | .bv ⟨_, .SGe⟩  => .ok (.app Op.bvsge,      .bool,   ctx)
-    | .bv ⟨n, .Concat⟩ => .ok (.app Op.bvconcat, .bitvec (n * 2), ctx)
+    | .bv ⟨n, .Concat⟩ => .ok (.app Op.bvconcat,    .bitvec (n * 2), ctx)
+    | .bv ⟨_, .ToUInt⟩  => .ok (.app Op.ubv_to_int,  .int,            ctx)
+    | .bv ⟨_, .ToInt⟩   => .ok (.app Op.sbv_to_int,  .int,            ctx)
+    | .intToBv n        => .ok (.app (Op.int_to_bv n), .bitvec n,     ctx)
 
     | .str .Length   => .ok (.app Op.str_length,    .int,    ctx)
     | .str .Concat   => .ok (.app Op.str_concat,    .string, ctx)
