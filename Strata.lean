@@ -90,4 +90,8 @@ import Strata.Languages.Core.ProgramWF
 import Strata.Languages.Core.StatementWF
 import Strata.Languages.Dyn.DDMTransform.Parse
 import Strata.Languages.Dyn.DDMTransform.Translate
+import Strata.Languages.Laurel.FilterPrelude
+import Strata.Pipeline.Diagnostic
 import Strata.Util.Random
+
+-- noimport: Strata.Util.IOTests (used for tests)
