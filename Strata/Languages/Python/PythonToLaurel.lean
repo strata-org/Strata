@@ -279,9 +279,22 @@ def AnyConstructor.None := "from_None"
 def isOfAnyType (ty: String): Bool := ty ∈ [PyLauType.None, PyLauType.Bool, PyLauType.Int, PyLauType.Float,
                            PyLauType.Str, PyLauType.Datetime, PyLauType.Bytes, PyLauType.ListAny, PyLauType.DictStrAny, PyLauType.Any]
 
-def pyLauTypeTesters (tys : List String) : Array String :=
+/-- Map a Python primitive type string to its native Laurel `HighType`. -/
+def pythonPrimToHighType (ty : String) : Option HighType :=
+  if      ty == PyLauType.Int   then some .TInt
+  else if ty == PyLauType.Bool  then some .TBool
+  else if ty == PyLauType.Float then some .TReal
+  else if ty == PyLauType.Str   then some .TString
+  else none
+
+/-- Any-tag testers for declared parameter types. Native params skip:
+    `Any..isfrom_X` against a native sort would be ill-typed. -/
+def pyLauTypeTesters (typedPython : Bool) (tys : List String) : Array String :=
   tys.foldl (init := #[]) fun acc ty =>
-    if isOfAnyType ty && ty ≠ "Any" then acc.push ("Any..isfrom_" ++ ty) else acc
+    if typedPython && (pythonPrimToHighType ty).isSome then acc
+    else if typedPython && ty ∈ [PyLauType.ListAny, PyLauType.DictStrAny] then acc
+    else if isOfAnyType ty && ty ≠ "Any" then acc.push ("Any..isfrom_" ++ ty)
+    else acc
 
 def PyLauFuncReturnVar := "LaurelResult"
 
@@ -299,10 +312,10 @@ def highTypeToPyLauType : HighType → String
 /-- Sentinel HighType for Python's universal `Any`. -/
 def pyAny : HighType := .TCore "Any"
 
-instance : Inhabited HighType where default := pyAny
-
 /-- Class name for a `UserDefined` type, or `""` otherwise. -/
 def objectClassName (ty : HighType) : String := ty.className?.getD ""
+
+instance : Inhabited HighType where default := pyAny
 
 /-- Convert a Python type-string identifier to its `HighType`.
     `"Any"` / `"None"` / unknown collapse to `pyAny`; everything else
@@ -366,8 +379,39 @@ def isCompositeType (ctx : TranslationContext) (typeName : String) : Bool :=
 
 def pyArgLaurelType (ctx : TranslationContext) (tys : List String) : HighTypeMd :=
   match tys with
-  | [ty] => if isCompositeType ctx ty then mkHighTypeMd (.UserDefined { text := ty }) else AnyTy
+  | [ty] =>
+    if isCompositeType ctx ty then mkHighTypeMd (.UserDefined { text := ty })
+    else if ctx.typedPython then
+      match pythonPrimToHighType ty with
+      | some t => mkHighTypeMd t
+      | none => AnyTy
+    else AnyTy
   | _ => AnyTy
+
+/-- Recover a native HighType from a Python type-annotation AST,
+    preserving inner types of `list[T]` / `dict[K, V]`. -/
+partial def pythonTypeExprToHighType (e : Python.expr SourceRange) : Option HighType :=
+  match e with
+  | .Name _ n _ => pythonPrimToHighType n.val
+  | .Subscript _ baseExpr slice _ =>
+    let baseName : String :=
+      match baseExpr with
+      | .Name _ n _ => n.val
+      | .Attribute _ _ ⟨_, attr⟩ _ => attr
+      | _ => ""
+    let elems : List (Python.expr SourceRange) :=
+      match slice with
+      | .Tuple _ elts _ => elts.val.toList
+      | _ => [slice]
+    match baseName, elems with
+    | "List", [t] | "list", [t] | "Sequence", [t] =>
+      pythonTypeExprToHighType t |>.map fun inner => .TSeq ⟨inner, none⟩
+    | "Dict", [k, v] | "dict", [k, v] | "Mapping", [k, v] =>
+      match pythonTypeExprToHighType k, pythonTypeExprToHighType v with
+      | some kt, some vt => some (.TMap ⟨kt, none⟩ ⟨vt, none⟩)
+      | _, _ => none
+    | _, _ => none
+  | _ => none
 def strToAny (s: String) := mkStmtExprMd (.StaticCall "from_str" [mkStmtExprMd (StmtExpr.LiteralString s)])
 def intToAny (i: Int) := mkStmtExprMd (.StaticCall "from_int" [mkStmtExprMd (StmtExpr.LiteralInt i)])
 def boolToAny (b: Bool) := mkStmtExprMd (.StaticCall "from_bool" [mkStmtExprMd (StmtExpr.LiteralBool b)])
@@ -2261,11 +2305,23 @@ def unpackPyArguments (ctx : TranslationContext) (args: Python.arguments SourceR
             | _ =>
               pure ()
             tys ← checkValidInputTypeList ctx tys
+            -- Structural lowering keeps `list[int]` etc. inner type;
+            -- the String pipeline would collapse it to ListAny.
+            let nativeTy : Option HighType :=
+              if ctx.typedPython then
+                match oty.val with
+                | .some ty => pythonTypeExprToHighType ty
+                | _ => none
+              else none
+            let laurelType : HighTypeMd :=
+              match nativeTy with
+              | some t => mkHighTypeMd t
+              | none => pyArgLaurelType ctx tys
             argtypes := argtypes.push {
               name:= name.val,
               source := md,
-              laurelType := pyArgLaurelType ctx tys,
-              typeTesters := pyLauTypeTesters tys,
+              laurelType,
+              typeTesters := pyLauTypeTesters ctx.typedPython tys,
               default:= default
             }
       let kwargsName := kwargs.val.map (λ kwarg => match kwarg with | .mk_arg _ name _ _ => name.val)
@@ -2291,10 +2347,16 @@ def pyFuncDefToPythonFunctionDecl  (ctx : TranslationContext) (f : Python.stmt S
               let retSource := sourceRangeToSource ctx.filePath retTy.ann
               match checkValidInputTypeList ctx (← getArgumentTypes retTy) with
               | .ok tys =>
+                let nativeTy : Option HighType :=
+                  if ctx.typedPython then pythonTypeExprToHighType retTy else none
+                let laurelType : HighTypeMd :=
+                  match nativeTy with
+                  | some t => mkHighTypeMd t
+                  | none => pyArgLaurelType ctx tys
                 pure $ some {
                   source := retSource,
-                  laurelType := pyArgLaurelType ctx tys,
-                  typeTesters := pyLauTypeTesters tys
+                  laurelType,
+                  typeTesters := pyLauTypeTesters ctx.typedPython tys
                 }
               | _ => pure none
           | none => pure none
@@ -2462,7 +2524,7 @@ def preludeSignatureToPythonFunctionDecl (prelude : Core.Program) : List PythonF
         let tys := [getTypeName tp]
         { source := none,
           laurelType := mkHighTypeMd (.UserDefined (mkId (getTypeName tp))),
-          typeTesters := pyLauTypeTesters tys : PyRetInfo }
+          typeTesters := pyLauTypeTesters false tys : PyRetInfo }
       some {
         name:= proc.header.name.name
         args:=  proc.header.inputs |>.map λ(nm,tp) =>
@@ -2470,7 +2532,7 @@ def preludeSignatureToPythonFunctionDecl (prelude : Core.Program) : List PythonF
           name:= nm.name,
           source := none,
           laurelType := AnyTy,
-          typeTesters := pyLauTypeTesters [getTypeName tp],
+          typeTesters := pyLauTypeTesters false [getTypeName tp],
           default:= noneexpr
         }
         kwargsName := none
@@ -2810,11 +2872,13 @@ def PreludeInfo.ofLaurelProgram (prog : Laurel.Program) : PreludeInfo where
           let argName := if param.name.text.startsWith paramInputPrefix then
             (param.name.text.drop paramInputPrefix.length).toString
           else param.name.text
-          {name:= argName, source := none, laurelType := param.type, typeTesters := pyLauTypeTesters [getHighTypeName param.type.val], default:= some noneexpr}
+          {name:= argName, source := none, laurelType := param.type,
+           typeTesters := pyLauTypeTesters false [getHighTypeName param.type.val],
+           default:= some noneexpr}
         let ret := p.outputs.head?.map fun param =>
           let tys := [getHighTypeName param.type.val]
           { source := none, laurelType := param.type,
-            typeTesters := pyLauTypeTesters tys : PyRetInfo }
+            typeTesters := pyLauTypeTesters false tys : PyRetInfo }
         some { name := p.name.text, args := args, kwargsName := none, ret := ret }
   functions :=
     let funcNames := prog.staticProcedures.filterMap fun p =>
