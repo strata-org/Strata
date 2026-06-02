@@ -5,15 +5,21 @@
 -/
 
 import Strata.Languages.Python.PySpecPipeline
+import Strata.Languages.Python.PythonToLaurel
 import Strata.Languages.Python.Specs.DDM
 
-/-! # `--typed-python` Spec-Layer Tests
+/-! # `--typed-python` Spec-Layer + Peephole Tests
 
 End-to-end coverage of the user-code lowering lives in the
 `tests/test_typed_python_*.py` snapshot pairs. This file unit-tests
-the spec-layer pieces those snapshots can't easily inspect: native
-  lowering of primitives and containers, refusal of unsupported types,
-  and emission of preconditions/postconditions in their native form.
+the two pieces those snapshots can't easily inspect:
+
+- The pyspec-layer translator: native lowering of primitives and
+  containers, refusal of unsupported types, and emission of
+  preconditions/postconditions in their native form.
+- The `toAny` / `fromAny` peephole: a directly adjacent
+  `from_X` / `Any..as_X!` pair around a typed operator must collapse
+  to the bare expression, with no soundness leaks across types.
 -/
 
 namespace Strata.Python.TypedPythonTest
@@ -227,5 +233,65 @@ private partial def shape : Strata.Laurel.HighType → String
   let count (needle : String) : Nat :=
     (body.splitOn needle).length - 1
   IO.println s!"any: {count "Any..isfrom_int"} isfrom_int / {count "Any..as_int!"} as_int!"
+
+/-! ## `toAny` / `fromAny` peephole
+
+These are the invariants the user-code lowering relies on for clean
+output. Snapshot tests verify the end-to-end Laurel; these tests pin
+the algebra directly. -/
+
+private def mkLocal (name : String) : Strata.Laurel.StmtExprMd :=
+  Strata.Python.mkStmtExprMd <| .Var (.Local name)
+
+-- A matching wrap/unwrap collapses to the bare expression.
+/-- info: collapsed: x -/
+#guard_msgs in
+#eval do
+  let x := mkLocal "x"
+  let unwrapped := Strata.Python.fromAny .TInt (Strata.Python.toAny .TInt x)
+  match unwrapped.val with
+  | .Var (.Local "x") => IO.println "collapsed: x"
+  | other => throw <| IO.userError s!"expected bare Local, got {repr other}"
+
+-- A type-mismatched wrap/unwrap does NOT collapse — wrong-type
+-- silent collapse would be a soundness bug.
+/-- info: did not cross-collapse -/
+#guard_msgs in
+#eval do
+  let x := mkLocal "x"
+  let unwrapped := Strata.Python.fromAny .TBool (Strata.Python.toAny .TInt x)
+  match unwrapped.val with
+  | .Var (.Local "x") =>
+    throw <| IO.userError "ERROR: peephole crossed types (TInt -> TBool)"
+  | _ => IO.println "did not cross-collapse"
+
+-- `toAny` and `fromAny` are identity on non-primitive types
+-- (containers, UserDefined).
+/-- info: TSeq identity / UserDefined identity -/
+#guard_msgs in
+#eval do
+  let x := mkLocal "x"
+  let seqIdent := Strata.Python.toAny (.TSeq ⟨.TInt, none⟩) x
+  let usrIdent := Strata.Python.fromAny (.UserDefined (Strata.Laurel.mkId "Foo")) x
+  let isBare (e : Strata.Laurel.StmtExprMd) : Bool :=
+    match e.val with | .Var (.Local "x") => true | _ => false
+  unless isBare seqIdent && isBare usrIdent do
+    throw <| IO.userError "expected identity"
+  IO.println "TSeq identity / UserDefined identity"
+
+-- An unrelated `StaticCall` does not match the peephole — only the
+-- matching `from_X(inner)` shape is the target.
+/-- info: emitted as_int! -/
+#guard_msgs in
+#eval do
+  let other := Strata.Python.mkStmtExprMd <|
+    .StaticCall (Strata.Laurel.mkId "some_func") [mkLocal "x"]
+  let unwrapped := Strata.Python.fromAny .TInt other
+  match unwrapped.val with
+  | .StaticCall fn _ =>
+    if fn.text == "Any..as_int!" then IO.println "emitted as_int!"
+    else throw <| IO.userError s!"expected Any..as_int!, got {fn.text}"
+  | other => throw <| IO.userError s!"expected StaticCall, got {repr other}"
+
 
 end Strata.Python.TypedPythonTest

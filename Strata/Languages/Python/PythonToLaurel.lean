@@ -319,7 +319,7 @@ instance : Inhabited HighType where default := pyAny
 
 /-- Convert a Python type-string identifier to its `HighType`.
     `"Any"` / `"None"` / unknown collapse to `pyAny`; everything else
-    becomes a `UserDefined` reference. -/
+    everything else becomes a `UserDefined` reference. -/
 def pyTypeStringToHighType (s : String) : HighType :=
   if s == PyLauType.Any || s == PyLauType.None || s == PyLauType.Package
      || s == PyLauType.ListAny || s == PyLauType.ListStr
@@ -387,6 +387,46 @@ def pyArgLaurelType (ctx : TranslationContext) (tys : List String) : HighTypeMd 
       | none => AnyTy
     else AnyTy
   | _ => AnyTy
+
+/-- TInt and TBool are mutually compatible (Python bool widens to int). -/
+def isIntLikeHighType : HighType → Bool
+  | .TInt | .TBool => true
+  | _ => false
+
+/-- Any-tag constructor name for a primitive HighType. -/
+def toAnyCtor : HighType → Option String
+  | .TInt    => some "from_int"
+  | .TBool   => some "from_bool"
+  | .TReal   => some "from_float"
+  | .TString => some "from_str"
+  | _ => none
+
+/-- Any-tag accessor name for a primitive HighType. -/
+def fromAnyAccessor : HighType → Option String
+  | .TInt    => some "Any..as_int!"
+  | .TBool   => some "Any..as_bool!"
+  | .TReal   => some "Any..as_float!"
+  | .TString => some "Any..as_string!"
+  | _ => none
+
+/-- Wrap a native value into Any; identity for non-primitive types. -/
+def toAny (ty : HighType) (e : StmtExprMd) : StmtExprMd :=
+  match toAnyCtor ty with
+  | some ctor => mkStmtExprMd (.StaticCall ctor [e])
+  | none => e
+
+/-- Unwrap an Any value to a native primitive; identity for
+    non-primitive types. Cancels a directly adjacent `from_X(inner)`
+    so wrap/unwrap pairs around an arithmetic operator collapse. -/
+def fromAny (ty : HighType) (e : StmtExprMd) : StmtExprMd :=
+  match fromAnyAccessor ty, toAnyCtor ty with
+  | some accessor, some ctor =>
+    match e.val with
+    | .StaticCall fn [inner] =>
+      if fn.text == ctor then inner
+      else mkStmtExprMd (.StaticCall accessor [e])
+    | _ => mkStmtExprMd (.StaticCall accessor [e])
+  | _, _ => e
 
 /-- Recover a native HighType from a Python type-annotation AST,
     preserving inner types of `list[T]` / `dict[K, V]`. -/
@@ -657,14 +697,44 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
   | .Constant _ (.ConEllipsis _) _ =>
     return mkStmtExprMd .Hole
 
-  -- Variable references
+  -- Native locals: wrap the read into Any so the surrounding Any-typed
+  -- body stays well-typed. The fromAny peephole cancels this when the
+  -- consumer is itself a typed operator.
   | .Name _ name _ =>
-    return mkStmtExprMd (StmtExpr.Var (.Local name.val))
+    let bare := mkStmtExprMd (StmtExpr.Var (.Local name.val))
+    if ctx.typedPython then
+      let ty := (ctx.variableTypes.find? (·.fst == name.val)).map (·.snd) |>.getD pyAny
+      return toAny ty bare
+    else return bare
 
   -- Binary operations
   | .BinOp _ left op right => do
     let leftExpr ← translateExpr ctx left
     let rightExpr ← translateExpr ctx right
+    if ctx.typedPython then
+      let lty := (inferExprType ctx left).toOption.getD pyAny
+      let rty := (inferExprType ctx right).toOption.getD pyAny
+      let bothInt := isIntLikeHighType lty && isIntLikeHighType rty
+      let bothStr := lty == .TString && rty == .TString
+      let mkIntOp (primOp : Strata.Laurel.Operation) : Option StmtExprMd :=
+        if bothInt then
+          some <| toAny .TInt <| mkStmtExprMd <| .PrimitiveOp primOp
+            [fromAny .TInt leftExpr, fromAny .TInt rightExpr]
+        else none
+      let mkStrConcat : Option StmtExprMd :=
+        if bothStr then
+          some <| toAny .TString <| mkStmtExprMd <| .PrimitiveOp .StrConcat
+            [fromAny .TString leftExpr, fromAny .TString rightExpr]
+        else none
+      let native? : Option StmtExprMd := match op with
+        | .Add _ => mkIntOp .Add <|> mkStrConcat
+        | .Sub _ => mkIntOp .Sub
+        | .Mult _ => mkIntOp .Mul
+        | .FloorDiv _ => mkIntOp .Div
+        | .Mod _ => mkIntOp .Mod
+        | _ => none
+      if let some result := native? then
+        return { result with source := md }
     let preludeOpnames ← match op with
       -- Arithmetic
       | .Add _ => .ok "PAdd"
@@ -712,6 +782,21 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
           | .IsNot _ => match comparators.val[i]'(by omega) with
               | .Constant _ (.ConNone _) _ => .ok "PNEq"
               | _ => throw (.unsupportedConstruct "`is not` is only supported with None" (toString (repr e)))
+      -- Native comparison only fires for `n = 1`; chained comparisons
+      -- (e.g. `a < b < c`) keep the Any path so evaluate-once semantics
+      -- is preserved by the existing temp-variable machinery below.
+      let nativeOp? (cmp : Python.cmpop SourceRange) (lty rty : HighType)
+          : Option Strata.Laurel.Operation :=
+        let bothInt := isIntLikeHighType lty && isIntLikeHighType rty
+        let bothStr := lty == .TString && rty == .TString
+        match cmp with
+        | .Eq _    => if bothInt || bothStr then some .Eq else none
+        | .NotEq _ => if bothInt || bothStr then some .Eq else none
+        | .Lt _    => if bothInt then some .Lt else none
+        | .LtE _   => if bothInt then some .Leq else none
+        | .Gt _    => if bothInt then some .Gt else none
+        | .GtE _   => if bothInt then some .Geq else none
+        | _ => none
       -- Check if a Python expression is simple (no side effects when duplicated).
       -- Only `Name` and `Constant` are treated as simple. `Subscript` (e.g.,
       -- `a[0]`) and `Attribute` (e.g., `self.x`) are intentionally non-simple
@@ -759,10 +844,25 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
         have hi : i < n := Membership.mem.upper h
         have : i < operandRefs.size := by omega
         have : i + 1 < operandRefs.size := by omega
-        let opName ← cmpopName i hi
+        have : i < comparators.val.size := by omega
         let lhs := operandRefs[i]
         let rhs := operandRefs[i+1]
-        pairs := pairs.push (mkStmtExprMd (StmtExpr.StaticCall opName [lhs, rhs]))
+        let cmp := ops.val[i]'hi
+        let lty := (inferExprType ctx left).toOption.getD pyAny
+        let rty := (inferExprType ctx (comparators.val[i])).toOption.getD pyAny
+        let opTy := if lty == .TString then HighType.TString else .TInt
+        match (if ctx.typedPython && n == 1 then nativeOp? cmp lty rty else none) with
+        | some primOp =>
+          let raw := mkStmtExprMd (.PrimitiveOp primOp
+            [fromAny opTy lhs, fromAny opTy rhs])
+          let wrapped := toAny .TBool raw
+          let final := match cmp with
+            | .NotEq _ => toAny .TBool (mkStmtExprMd (.PrimitiveOp .Not [fromAny .TBool wrapped]))
+            | _ => wrapped
+          pairs := pairs.push final
+        | none =>
+          let opName ← cmpopName i hi
+          pairs := pairs.push (mkStmtExprMd (StmtExpr.StaticCall opName [lhs, rhs]))
       let ⟨hPairsSize⟩ ← guardProp (p := pairs.size ≥ 1) "pairs is empty"
       -- Fold pairs with PAnd (pairs has n ≥ 1 elements)
       have : 0 < pairs.size := by omega
@@ -780,15 +880,27 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
   | .BoolOp _ op values => do
     if values.val.size < 2 then
       throw (.internalError "BoolOp must have at least 2 operands")
+    -- All-bool only: mixed types need Any (Python's `bool and int` returns int).
+    if ctx.typedPython then
+      let allBool := values.val.toList.all fun v =>
+        (inferExprType ctx v).toOption.getD pyAny == .TBool
+      if allBool then
+        let primOp : Strata.Laurel.Operation := match op with
+          | .And _ => .And
+          | .Or _ => .Or
+        let mut result : StmtExprMd := default
+        for h : i in [0:values.val.size] do
+          have : i < values.val.size := Membership.mem.upper h
+          let raw := fromAny .TBool (← translateExpr ctx values.val[i])
+          result := if i == 0 then raw else mkStmtExprMd (.PrimitiveOp primOp [result, raw])
+        return { toAny .TBool result with source := md }
     let preludeOpnames ← match op with
       | .And _ => .ok "PAnd"
       | .Or _ => .ok "POr"
-    -- Translate all operands
     let mut exprs : List StmtExprMd := []
     for val in values.val do
       let expr ← translateExpr ctx val
       exprs := exprs ++ [expr]
-    -- Chain binary operations: a && b && c becomes (a && b) && c
     let mut result := exprs[0]!
     for i in [1:exprs.length] do
       result := mkStmtExprMd (StmtExpr.StaticCall preludeOpnames [result, exprs[i]!])
@@ -797,6 +909,18 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
   -- Unary operations
   | .UnaryOp _ op operand => do
     let operandExpr ← translateExpr ctx operand
+    if ctx.typedPython then
+      let oty := (inferExprType ctx operand).toOption.getD pyAny
+      match op with
+      | .Not _ =>
+        if oty == .TBool then
+          let raw := mkStmtExprMd (.PrimitiveOp .Not [fromAny .TBool operandExpr])
+          return { toAny .TBool raw with source := md }
+      | .USub _ =>
+        if oty == .TInt then
+          let raw := mkStmtExprMd (.PrimitiveOp .Neg [fromAny .TInt operandExpr])
+          return { toAny .TInt raw with source := md }
+      | _ => pure ()
     let preludeOpnames ← match op with
       | .Not _ => .ok "PNot"
       | .USub _ => .ok "PNeg"
@@ -859,12 +983,20 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
           return mkStmtExprMdWithLoc (.StaticCall "Any_get_slice" [dictOrList, index]) md
       | _ =>
           let index ← translateExpr ctx slice
-          -- Emit bounds check for negative integer indices on lists (e.g., xs[-1])
-          -- and convert to positive index: xs[-n] becomes xs[len(xs) - n].
-          -- Skip for dicts, where negative integer keys are valid dict lookups.
-          -- Note: Python's AST represents `-1` as UnaryOp(USub, Constant(1)),
-          -- not Constant(-1), so we must match both forms.
-          let valType := (inferExprType ctx val).toOption.getD (pyAny)
+          let valType := (inferExprType ctx val).toOption.getD pyAny
+          -- Native subscript over typed containers; result wraps into Any.
+          if ctx.typedPython then
+            match valType with
+            | .TSeq elem =>
+              let raw := mkStmtExprMd
+                (.StaticCall "Sequence.select" [dictOrList, fromAny .TInt index])
+              return { toAny elem.val raw with source := md }
+            | .TMap _ valNode =>
+              let raw := mkStmtExprMd
+                (.StaticCall "select" [dictOrList, fromAny .TString index])
+              return { toAny valNode.val raw with source := md }
+            | _ => pure ()
+          -- Negative-index rewrite: xs[-n] → xs[len(xs) - n] (lists only).
           let isDictType := valType.className? == some PyLauType.DictStrAny
           let negLitVal? := match slice with
             | .Constant _ (.ConNeg _ n) _ => some n.val
@@ -1005,8 +1137,28 @@ partial def inferExprType (ctx : TranslationContext) (e: Python.expr SourceRange
     match tryLookupFieldHighType ctx cls attr.val with
       | some ty => return ty
       | none => return pyAny
-  | .BinOp _ _ _ _ => return pyAny
-  | .UnaryOp _ _ _ => return pyAny
+  -- Recover BinOp/UnaryOp static types so chains cascade natively.
+  | .BinOp _ left op right =>
+    if !ctx.typedPython then return pyAny else do
+      let lty ← inferExprType ctx left
+      let rty ← inferExprType ctx right
+      let bothInt := isIntLikeHighType lty && isIntLikeHighType rty
+      let bothStr := lty == .TString && rty == .TString
+      match op with
+      | .Add _ =>
+        if bothInt then return .TInt
+        else if bothStr then return .TString
+        else return pyAny
+      | .Sub _ | .Mult _ | .FloorDiv _ | .Mod _ =>
+        if bothInt then return .TInt else return pyAny
+      | _ => return pyAny
+  | .UnaryOp _ op operand =>
+    if !ctx.typedPython then return pyAny else do
+      let oty ← inferExprType ctx operand
+      match op with
+      | .Not _ => if oty == .TBool then return .TBool else return pyAny
+      | .USub _ => if oty == .TInt then return .TInt else return pyAny
+      | _ => return pyAny
   | .JoinedStr _ _ => return .TString
   | .FormattedValue _ _ _ _ => return .TString
   | .Call _ f args kwargs =>
