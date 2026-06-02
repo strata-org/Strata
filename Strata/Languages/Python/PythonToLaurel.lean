@@ -1793,20 +1793,47 @@ partial def translateAssign  (ctx : TranslationContext)
               newctx.variableTypes ++ [(n.val, .UserDefined className)]}
         | _=> newctx
         if n.val ∈ newctx.variableTypes.unzip.1 then
+          -- The hoisting pass declared the local; if its tracked type
+          -- is native, unwrap the RHS so the assignment typechecks
+          -- against the declared sort.
+          let trackedTy := (newctx.variableTypes.find? (·.fst == n.val)).map (·.snd) |>.getD pyAny
+          let assignStmts :=
+            if trackedTy != pyAny && ctx.typedPython then
+              [mkStmtExprMdWithLoc
+                (StmtExpr.Assign [target] (fromAny trackedTy rhs_trans)) source]
+            else assignStmts
           return (newctx, moExtracts ++ assignStmts, true)
         else
           let inferType ← inferExprType ctx rhs
-          let type ← match annotation with
-          | none => pure inferType
-          | some annotation => do
-               let annStr := pyExprToString annotation
-               -- If the annotation isn't a recognized type, prefer the
-               -- inferred type from the RHS (e.g., overload dispatch).
-               if isKnownType ctx annStr then
-                 let ty ← translateType ctx annStr
-                 pure ty.val
-               else pure inferType
-          let initStmt := mkVarDeclInit n.val AnyTy AnyNone
+          let nativeFromAst : Option HighType :=
+            if ctx.typedPython then
+              annotation.bind pythonTypeExprToHighType
+            else none
+          let type ← match nativeFromAst with
+          | some t => pure t
+          | none => match annotation with
+            | none => pure inferType
+            | some annotation => do
+                 let annStr := pyExprToString annotation
+                 if isKnownType ctx annStr then
+                   let ty ← translateType ctx annStr
+                   pure ty.val
+                 else pure inferType
+          -- A native annotation under `--typed-python` produces a
+          -- native local (matching the spec layer's parameter shape);
+          -- otherwise the local stays Any for compatibility.
+          let useNative := nativeFromAst.isSome
+          let varTy : HighTypeMd := if useNative then mkHighTypeMd type else AnyTy
+          let initExpr := if useNative then mkStmtExprMd .Hole else AnyNone
+          let initStmt := mkVarDeclInit n.val varTy initExpr
+          -- Re-emit the assign so the RHS is unwrapped to the native
+          -- sort when the declaration is native; the fromAny peephole
+          -- cancels the wrap from typed callees.
+          let assignStmts :=
+            if useNative then
+              [mkStmtExprMdWithLoc
+                (StmtExpr.Assign [target] (fromAny type rhs_trans)) source]
+            else assignStmts
           newctx := {ctx with variableTypes:=(n.val, type)::ctx.variableTypes}
           return (newctx, moExtracts ++ (initStmt :: assignStmts), true)
     | .Subscript _ _ _ _ =>
@@ -1885,13 +1912,20 @@ partial def collectDeclaredNamesAndTypes (ctx : TranslationContext) (stmts : Lis
       let names := (lhs.val.toList.filter (λ e => match e with |.Name _ _ _ => true | _=> false)).map pyExprToString
       names.map (λ n => (n, ty))
     | .AnnAssign _ lhs annoTy value _ =>
+      -- Under `--typed-python`, recover native primitives and
+      -- containers from the annotation AST; otherwise fall back to
+      -- the string-keyed lookup.
+      let nativeFromAst : Option HighType :=
+        if ctx.typedPython then pythonTypeExprToHighType annoTy else none
       let ty :=
-        match value.val with
-        | some value =>
-          match inferClassTypeFromLaurelExpr ctx value with
-          | some cn => toCls cn
-          | none => pyTypeStringToHighType (pyExprToString annoTy)
-        | _ => pyTypeStringToHighType (pyExprToString annoTy)
+        match nativeFromAst with
+        | some t => t
+        | none => match value.val with
+          | some value =>
+            match inferClassTypeFromLaurelExpr ctx value with
+            | some cn => toCls cn
+            | none => pyTypeStringToHighType (pyExprToString annoTy)
+          | _ => pyTypeStringToHighType (pyExprToString annoTy)
       [(pyExprToString lhs, ty)]
     | .If _ _ body elsebody => body.val.toList.flatMap go ++ elsebody.val.toList.flatMap go
     | .For _ targetIter _ body _ _
@@ -1918,17 +1952,20 @@ def createVarDeclStmtsAndCtx (ctx : TranslationContext) (newDecls : List (String
   let newDecls := newDecls.foldl (fun acc (n, ty) =>
       if acc.any (fun (an, _) => an == n) || ctx.variableTypes.any (fun (vn, _) => vn == n)
       then acc else acc ++ [(n, ty)]) []
-  let declType (ty : HighType) : HighTypeMd :=
+  -- A type is "native" if its declaration sort matches the values that
+  -- the typed lowering produces (composite class, primitive, container).
+  let isNative (ty : HighType) : Bool :=
     match ty with
-    | .UserDefined nm => if isCompositeType ctx nm.text then mkHighTypeMd ty else AnyTy
-    | _ => AnyTy
+    | .UserDefined nm => isCompositeType ctx nm.text
+    | .TInt | .TBool | .TReal | .TString
+    | .TSeq _ | .TMap _ _ | .TSet _ => ctx.typedPython
+    | _ => false
+  let declType (ty : HighType) : HighTypeMd :=
+    if isNative ty then mkHighTypeMd ty else AnyTy
   let hoistedDecls : List StmtExprMd := newDecls.map fun (name, ty) =>
     mkVarDeclInit name (declType ty) (mkStmtExprMd .Hole)
   let hoistedCtx := { ctx with variableTypes := ctx.variableTypes ++
-      (newDecls.map fun (n, ty) =>
-        match ty with
-        | .UserDefined nm => if isCompositeType ctx nm.text then (n, ty) else (n, pyAny)
-        | _ => (n, pyAny)) }
+      (newDecls.map fun (n, ty) => if isNative ty then (n, ty) else (n, pyAny)) }
   return (hoistedDecls, hoistedCtx)
 
 --Check if a prelude function returns a value of Any type, which may be an exception (such as PAdd, PMul, ...)
