@@ -1068,30 +1068,39 @@ def Synth.emptyBlock (source : Option FileRange) : HighTypeMd :=
 /-- (Block) Non-empty block.
     ```
     head = StaticCall .. | InstanceCall ..
-    Γ ⊢ s_i ⇒ _                  (Discard-Call, 1 ≤ i < n)
-    ──────────────────────────
-    Γ ⊢ s_i checks-non-last
+    Γ ⊢ s_1 ⇒ _                  (Discard-Call, n ≥ 2)
+    Γ ⊢ Block [s_2; …; s_n] _ ⇐ T
+    ───────────────────────────────────────────────────
+    Γ ⊢ Block [s_1; s_2; …; s_n] label ⇐ T
 
     head ≠ StaticCall .., InstanceCall ..
-    Γ ⊢ s_i ⇐ TVoid              (1 ≤ i < n)
-    ──────────────────────────
-    Γ ⊢ s_i checks-non-last
-
-    Γ ⊢ s_i checks-non-last (1 ≤ i < n)    Γ ⊢ s_n ⇐ T
+    Γ ⊢ s_1 ⇐ TVoid              (n ≥ 2)
+    Γ ⊢ Block [s_2; …; s_n] _ ⇐ T
     ───────────────────────────────────────────────────
-    Γ ⊢ Block [s_1; …; s_n] label ⇐ T
+    Γ ⊢ Block [s_1; s_2; …; s_n] label ⇐ T
 
-    head_n = StaticCall .. | InstanceCall ..   Γ ⊢ s_n ⇒ _
-    ──────────────────────────────────────────────────────  (Discard-Call, last, T = TVoid)
-    Γ ⊢ s_n ⇐ TVoid
+    Γ ⊢ s_1 ⇐ T                 (Singleton)
+    ───────────────────────────────────────
+    Γ ⊢ Block [s_1] label ⇐ T
+
+    head_1 = StaticCall .. | InstanceCall ..   Γ ⊢ s_1 ⇒ _
+    ──────────────────────────────────────────────────────  (Singleton-Discard-Call, T = TVoid)
+    Γ ⊢ Block [s_1] label ⇐ TVoid
     ```
-    The last statement carries the block's value, so it is checked
-    against the surrounding `T`. Non-last positions check at `TVoid`,
-    which by \[⇐\] Sub admits any statement-typed form (Var-Declare,
-    Assign, Assert, Assume, While, Exit, Return, IfThenElse — their
-    rule conclusions are polymorphic in `A`, so they trivially check
-    at `TVoid`) and rejects bare expressions like `5;` whose type is
-    not consistent with `TVoid`.
+    The block rule walks the statement list recursively (via the
+    inner `checkStmts` helper): the singleton case forwards the
+    surrounding `T` to the only statement, and the cons case checks
+    the head at `TVoid` and recurses on the tail with the same `T`.
+    The empty case never fires from this entry point — the dispatcher
+    narrows to `head :: tail` and routes empty blocks through
+    `Synth.emptyBlock` + \[⇐\] Sub.
+
+    Non-last positions check at `TVoid`, which by \[⇐\] Sub admits
+    any statement-typed form (Var-Declare, Assign, Assert, Assume,
+    While, Exit, Return, IfThenElse — their rule conclusions are
+    polymorphic in `A`, so they trivially check at `TVoid`) and
+    rejects bare expressions like `5;` whose type is not consistent
+    with `TVoid`.
 
     The one carve-out is **Discard-Call**: a procedure or method call
     in non-last position is synthesized and its result type dropped,
@@ -1099,15 +1108,10 @@ def Synth.emptyBlock (source : Option FileRange) : HighTypeMd :=
     non-void-returning `f` would be rejected even though discarding the
     returned value is the standard imperative idiom (Java / Python /
     JavaScript: `list.add(x);`). The same carve-out also applies to
-    the *last* statement when the surrounding `expected = TVoid` —
-    i.e. when the block itself is in statement position — so
-    `{ …; foo() }` is accepted as a statement even when `foo` returns
-    a non-void type (mirroring the inline-comment rationale below).
-
-    The empty block has its own rule (`Resolution.Synth.emptyBlock`,
-    a synthesis rule producing `TVoid`) and is handled directly in the
-    `Resolution.Check.resolveStmtExpr` dispatcher's wildcard arm via
-    the standard \[⇐\] Sub fallback.
+    the *last* (i.e. only-remaining) statement when the surrounding
+    `expected = TVoid` — i.e. when the block itself is in statement
+    position — so `{ …; foo() }` is accepted as a statement even when
+    `foo` returns a non-void type.
 
     The block opens a fresh nested scope (so declarations made inside
     don't leak), and emits a "dead code after `exit`/`return`"
@@ -1120,16 +1124,36 @@ def Check.block (exprMd : StmtExprMd)
     (expected : HighTypeMd) (source : Option FileRange)
     (h : exprMd.val = .Block stmts label) : ResolveM StmtExprMd := do
   let voidTy : HighTypeMd := { val := .TVoid, source := source }
+  -- Per-statement helpers, one per syntactic position the recursion
+  -- would distinguish. Defined as local functions to keep `Check.block`
+  -- itself out of the mutual block's list-walking termination story:
+  -- `dropLast.attach.mapM` + `getLast?` below is equivalent to a
+  -- structural cons/singleton recursion that calls `checkNonLast` at
+  -- the head and recurses on the tail until the singleton arm fires
+  -- and forwards `expected` via `checkLast`.
+  let checkNonLast (s : StmtExprMd) (_h_mem : s ∈ stmts) : ResolveM StmtExprMd := do
+    -- Discard-Call carve-out: a non-void-returning call in non-last
+    -- position is synth-and-drop instead of `⇐ TVoid`, which would
+    -- otherwise reject the standard `list.add(x);` idiom.
+    match s.val with
+    | .StaticCall .. | .InstanceCall .. =>
+      let (s', _) ← Synth.resolveStmtExpr s; pure s'
+    | _ => Check.resolveStmtExpr s voidTy
+  let checkLast (s : StmtExprMd) (_h_mem : s ∈ stmts) : ResolveM StmtExprMd := do
+    -- Discard-Call carve-out also applies to the last statement when
+    -- the block itself is in statement position (`expected = TVoid`):
+    -- a call's result is dropped, so it should not need to subtype
+    -- `TVoid`. Without this, `{ ...; foo() }` is rejected when `foo`
+    -- returns a non-void type, even though the block as a whole
+    -- produces nothing.
+    match s.val, expected.val with
+    | .StaticCall .., .TVoid | .InstanceCall .., .TVoid =>
+      let (s', _) ← Synth.resolveStmtExpr s; pure s'
+    | _, _ => Check.resolveStmtExpr s expected
   withScope <| withLabel label do
-    let init' ← stmts.dropLast.attach.mapM (fun ⟨s, hMem⟩ => do
-      have : s ∈ stmts := List.dropLast_subset stmts hMem
-      -- Discard-Call carve-out: a non-void-returning call in non-last
-      -- position is synth-and-drop instead of `⇐ TVoid`, which would
-      -- otherwise reject the standard `list.add(x);` idiom.
-      match s.val with
-      | .StaticCall .. | .InstanceCall .. =>
-        let (s', _) ← Synth.resolveStmtExpr s; pure s'
-      | _ => Check.resolveStmtExpr s voidTy)
+    let init' ← stmts.dropLast.attach.mapM fun ⟨s, hMem⟩ => do
+      have h_mem : s ∈ stmts := List.dropLast_subset stmts hMem
+      checkNonLast s h_mem
     -- Dead-code diagnostic: any terminator (`Exit`/`Return`) in init'
     -- is followed by at least one more statement (the last, or another
     -- non-last). Flag it once at the position of the next statement.
@@ -1153,27 +1177,16 @@ def Check.block (exprMd : StmtExprMd)
         s!"dead code after '{termName}'"
       modify fun st => { st with errors := st.errors.push diag }
     | none => pure ()
-    -- Non-empty block (the dispatcher in Check.resolveStmtExpr already
-    -- routes empty blocks through the synth-then-Sub fallback). The
-    -- last statement carries the block's value, so it is checked
-    -- against the surrounding `expected`.
+    -- Singleton/last case: forward `expected` to the trailing statement
+    -- (the dispatcher already narrows away the empty case, so this
+    -- `none` arm is dead in practice but kept to remain total).
     match _lastResult: stmts.getLast? with
     | none =>
-      -- Unreachable: dispatcher narrowed `.Block (head :: tail) label`.
-      -- Keep this arm to remain total; falls back to the empty-block synth.
       checkSubtype source expected (Synth.emptyBlock source)
       pure { val := .Block init' label, source := source }
     | some last =>
       have := List.mem_of_getLast? _lastResult
-      -- Discard-Call carve-out also applies to the last statement when the
-      -- block itself is in statement position (`expected = TVoid`): a call's
-      -- result is dropped, so it should not need to subtype `TVoid`. Without
-      -- this, `{ ...; foo() }` is rejected when `foo` returns a non-void
-      -- type, even though the block as a whole produces nothing.
-      let last' ← match last.val, expected.val with
-        | .StaticCall .., .TVoid | .InstanceCall .., .TVoid =>
-          let (s', _) ← Synth.resolveStmtExpr last; pure s'
-        | _, _ => Check.resolveStmtExpr last expected
+      let last' ← checkLast last ‹_›
       pure { val := .Block (init' ++ [last']) label, source := source }
   termination_by (exprMd, 0)
   decreasing_by

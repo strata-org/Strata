@@ -225,7 +225,8 @@ direction explicit.
 - {ref "rules-literals"}[*Literals*] — \[⇒\] Lit-Int, \[⇒\] Lit-Bool, \[⇒\] Lit-String, \[⇒\] Lit-Decimal
 - {ref "rules-variables"}[*Variables*] — \[⇒\] Var-Local, \[⇒\] Var-Field, \[⇐\] Var-Declare
 - {ref "rules-control-flow"}[*Control flow*] — \[⇐\] If, \[⇐\] If-NoElse;
-  \[⇐\] Block, \[⇒\] Skip, \[⇐\] Discard-Call; \[⇐\] Exit;
+  \[⇐\] Block-Singleton, \[⇐\] Block-Cons, \[⇒\] Skip,
+  \[⇐\] Discard-Call-Last, \[⇐\] Discard-Call-Cons; \[⇐\] Exit;
   \[⇐\] Return-None-Void, \[⇐\] Return-None-Single, \[⇐\] Return-None-Multi,
   \[⇐\] Return-Some, \[⇐\] Return-Void-Error,
   \[⇐\] Return-Multi-Error; \[⇐\] While
@@ -289,7 +290,7 @@ $$`\frac{\Gamma \vdash e \Rightarrow \_ \quad \Gamma(f) = T_f}{\Gamma \vdash \ma
 
 {docstring Strata.Laurel.Resolution.Synth.varField}
 
-$$`\frac{x \notin \mathrm{dom}(\Gamma)}{\Gamma \vdash \mathsf{Var}\;(\mathsf{.Declare}\;\langle x, T_x\rangle) \Leftarrow A \;\;\dashv\;\; \Gamma, x : T_x} \quad \text{([⇐] Var-Declare)}`
+$$`\frac{x \notin \mathrm{dom}(\Gamma)}{\Gamma \vdash \mathsf{Var}\;(\mathsf{.Declare}\;\langle x, T_x\rangle) \Leftarrow A \quad \dashv \quad \Gamma, x : T_x} \quad \text{([⇐] Var-Declare)}`
 
 {docstring Strata.Laurel.Resolution.Check.varDeclare}
 
@@ -304,49 +305,44 @@ $$`\frac{\Gamma \vdash \mathit{cond} \Leftarrow \mathsf{TBool} \quad \Gamma \vda
 
 {docstring Strata.Laurel.Resolution.Check.ifThenElse}
 
-A non-empty block routes the surrounding expected type to its last
-statement; each non-last statement is checked at $`\mathsf{TVoid}`,
-*except* calls — which are synthesized and have their result type
-dropped. The same Discard-Call carve-out also fires for the *last*
-statement of a block when the block itself is in statement position
-(i.e. $`T = \mathsf{TVoid}`), so $`\{\ldots;\;\mathit{foo}()\}` is
-accepted as a statement even when `foo` returns a non-void type.
-That carve-out is the only block-level rule that isn't already a
-consequence of the rules for individual statements.
+A non-empty block is typed by structural recursion on the statement
+list: the last statement inherits the surrounding expected type, and
+each non-last statement is checked at $`\mathsf{TVoid}`, *except*
+calls — which are synthesized and have their result type dropped. The
+same Discard-Call carve-out also fires for the *last* statement when
+the block itself is in statement position (i.e. $`T = \mathsf{TVoid}`),
+so $`\{\ldots;\,\mathit{foo}()\}` is accepted as a statement even when
+`foo` returns a non-void type. The Discard-Call carve-outs are the only
+block-level rules that aren't already consequences of the rules for
+individual statements.
 
-$$`\frac{\Gamma_0 = \Gamma \quad \Gamma_{i-1} \vdash s_i \Leftarrow \mathsf{TVoid} \;\;\dashv\;\; \Gamma_i \;(1 \le i < n) \quad \Gamma_{n-1} \vdash s_n \Leftarrow T}{\Gamma \vdash \mathsf{Block}\;[s_1; \ldots; s_n]\;\mathit{label} \Leftarrow T} \quad \text{([⇐] Block)}`
+$$`\frac{\Gamma \vdash s \Leftarrow T}{\Gamma \vdash \mathsf{Block}\;[s]\;\mathit{label} \Leftarrow T} \quad \text{([⇐] Block-Singleton)}`
 
-$$`\frac{\mathit{head} = \mathsf{StaticCall}\;\ldots \;\lor\; \mathit{head} = \mathsf{InstanceCall}\;\ldots \quad \Gamma \vdash \mathit{head} \Rightarrow \_}{\Gamma \vdash \mathit{head} \Leftarrow \mathsf{TVoid}} \quad \text{([⇐] Discard-Call)}`
+$$`\frac{\Gamma \vdash s \Leftarrow \mathsf{TVoid} \quad \dashv \quad \Gamma' \quad \Gamma' \vdash \mathsf{Block}\;\mathit{rest}\;\mathit{label} \Leftarrow T \quad \mathit{rest} \ne []}{\Gamma \vdash \mathsf{Block}\;(s :: \mathit{rest})\;\mathit{label} \Leftarrow T} \quad \text{([⇐] Block-Cons)}`
 
-The Discard-Call rule fires in two positions inside a block: (i)
-for every non-last statement $`s_i` whose head is a call (this is
-the carve-out implicit in the $`s_i \Leftarrow \mathsf{TVoid}`
-premise of \[⇐\] Block above), and (ii) for the last statement
-$`s_n` exactly when the surrounding expected type is
-$`T = \mathsf{TVoid}` — i.e. when the block itself appears in
-statement position.
+$$`\frac{s = \mathsf{StaticCall}\;\ldots \lor s = \mathsf{InstanceCall}\;\ldots \quad \Gamma \vdash s \Rightarrow \_ \quad \Gamma \vdash \mathsf{Block}\;\mathit{rest}\;\mathit{label} \Leftarrow T \quad \mathit{rest} \ne []}{\Gamma \vdash \mathsf{Block}\;(s :: \mathit{rest})\;\mathit{label} \Leftarrow T} \quad \text{([⇐] Discard-Call-Cons)}`
 
-Each $`s_i` is resolved under the scope $`\Gamma_{i-1}` produced by
-its predecessor and produces a possibly extended scope $`\Gamma_i`
-that the next statement sees. In practice only `Var (.Declare …)`
-actually extends the scope; every other construct leaves it
-unchanged so $`\Gamma_i = \Gamma_{i-1}`. The block opens a fresh
-nested scope, so declarations made inside don't leak out — once the
-block ends, the surrounding $`\Gamma` is restored. The block also
-emits a `"dead code after '<terminator>'"` diagnostic when an
-`Exit` or `Return` is followed by additional statements in the
-same block.
+$$`\frac{s = \mathsf{StaticCall}\;\ldots \lor s = \mathsf{InstanceCall}\;\ldots \quad \Gamma \vdash s \Rightarrow \_}{\Gamma \vdash \mathsf{Block}\;[s]\;\mathit{label} \Leftarrow \mathsf{TVoid}} \quad \text{([⇐] Discard-Call-Last)}`
+
+\[⇐\] Block-Cons resolves $`s` under the incoming $`\Gamma` and
+recurses on the tail under the possibly-extended scope $`\Gamma'`. In
+practice only `Var (.Declare …)` actually extends the scope; every
+other construct leaves it unchanged. The block opens a fresh nested
+scope, so declarations made inside don't leak out — once the block
+ends, the surrounding $`\Gamma` is restored. The block also emits a
+`"dead code after '<terminator>'"` diagnostic when an `Exit` or
+`Return` is followed by additional statements in the same block.
 
 Statement-typed forms (`Var-Declare`, `Assign`, `Assert`, `Assume`,
 `While`, `Exit`, `Return`, `IfThenElse`) trivially satisfy
-$`\Gamma \vdash s_i \Leftarrow \mathsf{TVoid}` — their rule
-conclusions are polymorphic in `A`, so they check at *any* type,
-including $`\mathsf{TVoid}`. Bare expressions like `5;` fail via
-\[⇐\] Sub: the synthesized type is not consistent with
-$`\mathsf{TVoid}`. The Discard-Call carve-out is what allows the
-standard `f(x);` idiom for a non-void-returning `f` — without it,
-$`\mathit{head} \Leftarrow \mathsf{TVoid}` would force every call to
-have a $`\mathsf{TVoid}`-compatible result type.
+$`\Gamma \vdash s \Leftarrow \mathsf{TVoid}` — their rule conclusions
+are polymorphic in `A`, so they check at *any* type, including
+$`\mathsf{TVoid}`. Bare expressions like `5;` fail via \[⇐\] Sub: the
+synthesized type is not consistent with $`\mathsf{TVoid}`. The two
+Discard-Call rules are what allow the standard `f(x);` idiom for a
+non-void-returning `f` — without them, $`s \Leftarrow \mathsf{TVoid}`
+would force every call to have a $`\mathsf{TVoid}`-compatible result
+type.
 
 Pushing $`T` into the last statement (rather than synthesizing the
 whole block and applying \[⇐\] Sub at the boundary) means a type
@@ -359,10 +355,13 @@ $$`\frac{}{\Gamma \vdash \mathsf{Block}\;[]\;\mathit{label} \Rightarrow \mathsf{
 
 The empty block has a fixed type and is the only block-level rule that
 synthesizes — written $`\mathsf{skip} : \mathsf{TVoid}` in the
-source-language presentation. When an empty block appears in check
-position with `expected ≠ TVoid`, the standard \[⇐\] Sub rule fires at
-the boundary (`Check.resolveStmtExpr`'s subsumption-fallback wildcard
-arm, requiring $`\mathsf{TVoid} <: \mathit{expected}`).
+source-language presentation. The recursive Block-Cons / Block-Singleton
+rules above never bottom out into an empty tail, so the empty case is
+reached only when the block is empty at the dispatch site. When an
+empty block appears in check position with `expected ≠ TVoid`, the
+standard \[⇐\] Sub rule fires at the boundary
+(`Check.resolveStmtExpr`'s subsumption-fallback wildcard arm, requiring
+$`\mathsf{TVoid} <: \mathit{expected}`).
 
 {docstring Strata.Laurel.Resolution.Synth.emptyBlock}
 
@@ -421,7 +420,7 @@ checks are skipped; well-formed input never produces this case.
 
 {docstring Strata.Laurel.Resolution.Check.return}
 
-$$`\frac{\Gamma \vdash \mathit{cond} \Leftarrow \mathsf{TBool} \quad \Gamma \vdash \mathit{invs}_i \Leftarrow \mathsf{TBool} \quad \Gamma \vdash \mathit{decreases} \Rightarrow U \quad \mathit{Numeric}\;U \quad \Gamma \vdash \mathit{body} \Leftarrow \mathsf{Unknown}}{\Gamma \vdash \mathsf{While}\;\mathit{cond}\;\mathit{invs}\;\mathit{decreases}\;\mathit{body} \Leftarrow A} \quad \text{([⇐] While)}`
+$$`\frac{\Gamma \vdash \mathit{cond} \Leftarrow \mathsf{TBool} \quad \Gamma \vdash \mathit{invs}_i \Leftarrow \mathsf{TBool} \quad \Gamma \vdash \mathit{decreases} \Rightarrow U \quad \mathsf{Numeric}\;U \quad \Gamma \vdash \mathit{body} \Leftarrow \mathsf{Unknown}}{\Gamma \vdash \mathsf{While}\;\mathit{cond}\;\mathit{invs}\;\mathit{decreases}\;\mathit{body} \Leftarrow A} \quad \text{([⇐] While)}`
 
 The body is checked at $`\mathsf{Unknown}`: control either re-enters
 the loop or falls through, so the body's value type is never observed
@@ -430,8 +429,8 @@ the surrounding $`A`, so its conclusion is polymorphic in $`A` like
 every other statement-typed form.
 
 The optional $`\mathit{decreases}` clause is synthesized and required
-to have a numeric type via the same $`\mathit{Numeric}` predicate
-used by the arithmetic primitive operations. $`\mathit{Numeric}` is
+to have a numeric type via the same $`\mathsf{Numeric}` predicate
+used by the arithmetic primitive operations. $`\mathsf{Numeric}` is
 a predicate (it admits $`\mathsf{TInt}`, $`\mathsf{TReal}`,
 $`\mathsf{TFloat64}`, and $`\mathsf{Unknown}` as the gradual escape
 hatch), not a single type, so the clause runs in synth mode rather
@@ -470,7 +469,7 @@ context with the target's type while the RHS is checked against it.
 
 {docstring Strata.Laurel.Resolution.Synth.assign}
 
-$$`\frac{\Gamma \vdash \mathsf{Assign}\;\mathit{targets}\;e \Rightarrow \mathit{ExpectedTy} \quad T = \mathsf{TVoid} \;\lor\; \mathit{ExpectedTy} <: T}{\Gamma \vdash \mathsf{Assign}\;\mathit{targets}\;e \Leftarrow T} \quad \text{([⇐] Assign)}`
+$$`\frac{\Gamma \vdash \mathsf{Assign}\;\mathit{targets}\;e \Rightarrow \mathit{ExpectedTy} \quad T = \mathsf{TVoid} \lor \mathit{ExpectedTy} <: T}{\Gamma \vdash \mathsf{Assign}\;\mathit{targets}\;e \Leftarrow T} \quad \text{([⇐] Assign)}`
 
 The check rule synthesizes the assignment's type via \[⇒\] Assign
 and then runs the standard \[⇐\] Sub boundary check `ExpectedTy <: T`
@@ -517,17 +516,17 @@ tag := "rules-primitive-operations"
 
 $$`\frac{\Gamma \vdash \mathit{args}_i \Rightarrow U_i \quad U_i <: \mathsf{TBool} \quad \mathit{op} \in \{\mathsf{And}, \mathsf{Or}, \mathsf{AndThen}, \mathsf{OrElse}, \mathsf{Not}, \mathsf{Implies}\}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;\mathit{args} \Rightarrow \mathsf{TBool}} \quad \text{([⇒] Op-Bool)}`
 
-$$`\frac{\Gamma \vdash \mathit{args}_i \Rightarrow U_i \quad \mathit{Numeric}\;U_i \quad \mathit{op} \in \{\mathsf{Lt}, \mathsf{Leq}, \mathsf{Gt}, \mathsf{Geq}\}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;\mathit{args} \Rightarrow \mathsf{TBool}} \quad \text{([⇒] Op-Cmp)}`
+$$`\frac{\Gamma \vdash \mathit{args}_i \Rightarrow U_i \quad \mathsf{Numeric}\;U_i \quad \mathit{op} \in \{\mathsf{Lt}, \mathsf{Leq}, \mathsf{Gt}, \mathsf{Geq}\}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;\mathit{args} \Rightarrow \mathsf{TBool}} \quad \text{([⇒] Op-Cmp)}`
 
 $$`\frac{\Gamma \vdash \mathit{lhs} \Rightarrow T_l \quad \Gamma \vdash \mathit{rhs} \Rightarrow T_r \quad T_l \sim T_r \quad \mathit{op} \in \{\mathsf{Eq}, \mathsf{Neq}\}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;[\mathit{lhs}; \mathit{rhs}] \Rightarrow \mathsf{TBool}} \quad \text{([⇒] Op-Eq)}`
 
-$$`\frac{\Gamma \vdash \mathit{args}_i \Rightarrow U_i \quad \mathit{Numeric}\;U_i \quad T = \bigsqcup U_i \text{ (consistency LUB)} \quad \mathit{op} \in \{\mathsf{Neg}, \mathsf{Add}, \mathsf{Sub}, \mathsf{Mul}, \mathsf{Div}, \mathsf{Mod}, \mathsf{DivT}, \mathsf{ModT}\}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;\mathit{args} \Rightarrow T} \quad \text{([⇒] Op-Arith)}`
+$$`\frac{\Gamma \vdash \mathit{args}_i \Rightarrow U_i \quad \mathsf{Numeric}\;U_i \quad T = \bigsqcup_i U_i \text{ (consistency LUB)} \quad \mathit{op} \in \{\mathsf{Neg}, \mathsf{Add}, \mathsf{Sub}, \mathsf{Mul}, \mathsf{Div}, \mathsf{Mod}, \mathsf{DivT}, \mathsf{ModT}\}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;\mathit{args} \Rightarrow T} \quad \text{([⇒] Op-Arith)}`
 
 The arithmetic synth rule mirrors $`[⇒]\,\text{Op-Eq}` but generalised
 to $`n` operands. Each operand is synthesized and required to be
-$`\mathit{Numeric}` (i.e. $`\mathsf{TInt}`, $`\mathsf{TReal}`,
+$`\mathsf{Numeric}` (i.e. $`\mathsf{TInt}`, $`\mathsf{TReal}`,
 $`\mathsf{TFloat64}`, or the gradual $`\mathsf{Unknown}`). The
-result type is the *consistency LUB* $`\bigsqcup U_i` — a fold of
+result type is the *consistency LUB* $`\bigsqcup_i U_i` — a fold of
 the operand types under
 {name Strata.Laurel.isConsistent}`isConsistent`'s flat lattice:
 $`\mathsf{Unknown} \sqcup T = T`, $`T \sqcup T = T`, and any other
@@ -549,7 +548,7 @@ pushes the operand type into each operand via
 `Check.resolveStmtExpr`, replacing the synth-then-`checkSubtype`
 discipline with bidirectional check.
 
-$$`\frac{\mathit{Numeric}\;T \quad \Gamma \vdash \mathit{args}_i \Leftarrow T \quad \mathit{op} \in \{\mathsf{Neg}, \mathsf{Add}, \mathsf{Sub}, \mathsf{Mul}, \mathsf{Div}, \mathsf{Mod}, \mathsf{DivT}, \mathsf{ModT}\}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;\mathit{args} \Leftarrow T} \quad \text{([⇐] Op-Arith)}`
+$$`\frac{\mathsf{Numeric}\;T \quad \Gamma \vdash \mathit{args}_i \Leftarrow T \quad \mathit{op} \in \{\mathsf{Neg}, \mathsf{Add}, \mathsf{Sub}, \mathsf{Mul}, \mathsf{Div}, \mathsf{Mod}, \mathsf{DivT}, \mathsf{ModT}\}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;\mathit{args} \Leftarrow T} \quad \text{([⇐] Op-Arith)}`
 
 $$`\frac{\mathsf{TBool} <: T \quad \Gamma \vdash \mathit{args}_i \Leftarrow \mathsf{TBool} \quad \mathit{op} \in \{\mathsf{And}, \mathsf{Or}, \mathsf{AndThen}, \mathsf{OrElse}, \mathsf{Not}, \mathsf{Implies}\}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;\mathit{args} \Leftarrow T} \quad \text{([⇐] Op-Bool)}`
 
@@ -566,11 +565,11 @@ $$`\frac{\Gamma(\mathit{ref}) \text{ is not a composite or datatype}}{\Gamma \vd
 
 {docstring Strata.Laurel.Resolution.Synth.new}
 
-$$`\frac{\Gamma \vdash \mathit{target} \Rightarrow U \quad U \sim T \;\vee\; U <: T \;\vee\; T <: U}{\Gamma \vdash \mathsf{AsType}\;\mathit{target}\;T \Rightarrow T} \quad \text{([⇒] AsType)}`
+$$`\frac{\Gamma \vdash \mathit{target} \Rightarrow U \quad U \sim T \lor U <: T \lor T <: U}{\Gamma \vdash \mathsf{AsType}\;\mathit{target}\;T \Rightarrow T} \quad \text{([⇒] AsType)}`
 
 {docstring Strata.Laurel.Resolution.Synth.asType}
 
-$$`\frac{\Gamma \vdash \mathit{target} \Rightarrow U \quad U \sim T \;\vee\; U <: T \;\vee\; T <: U}{\Gamma \vdash \mathsf{IsType}\;\mathit{target}\;T \Rightarrow \mathsf{TBool}} \quad \text{([⇒] IsType)}`
+$$`\frac{\Gamma \vdash \mathit{target} \Rightarrow U \quad U \sim T \lor U <: T \lor T <: U}{\Gamma \vdash \mathsf{IsType}\;\mathit{target}\;T \Rightarrow \mathsf{TBool}} \quad \text{([⇒] IsType)}`
 
 {docstring Strata.Laurel.Resolution.Synth.isType}
 
@@ -619,7 +618,7 @@ tag := "rules-self-reference"
 
 $$`\frac{\Gamma.\mathit{instanceTypeName} = \mathsf{some}\;T}{\Gamma \vdash \mathsf{This} \Rightarrow \mathsf{UserDefined}\;T} \quad \text{([⇒] This-Inside)}`
 
-$$`\frac{\Gamma.\mathit{instanceTypeName} = \mathsf{none}}{\Gamma \vdash \mathsf{This} \Rightarrow \mathsf{Unknown}\;\;[\text{emits “‘this’ is not allowed outside instance methods”}]} \quad \text{([⇒] This-Outside)}`
+$$`\frac{\Gamma.\mathit{instanceTypeName} = \mathsf{none}}{\Gamma \vdash \mathsf{This} \Rightarrow \mathsf{Unknown} \quad [\text{emits “‘this’ is not allowed outside instance methods”}]} \quad \text{([⇒] This-Outside)}`
 
 {docstring Strata.Laurel.Resolution.Synth.this}
 
@@ -628,7 +627,7 @@ $$`\frac{\Gamma.\mathit{instanceTypeName} = \mathsf{none}}{\Gamma \vdash \mathsf
 tag := "rules-untyped-forms"
 %%%
 
-$$`\frac{}{\Gamma \vdash \mathsf{Abstract}\;/\;\mathsf{All}\;\ldots \Rightarrow \mathsf{Unknown}} \quad \text{([⇒] Abstract / All)}`
+$$`\frac{}{\Gamma \vdash \mathsf{Abstract}\,/\,\mathsf{All}\;\ldots \Rightarrow \mathsf{Unknown}} \quad \text{([⇒] Abstract / All)}`
 
 {docstring Strata.Laurel.Resolution.Synth.abstract}
 
@@ -639,9 +638,9 @@ $$`\frac{}{\Gamma \vdash \mathsf{Abstract}\;/\;\mathsf{All}\;\ldots \Rightarrow 
 tag := "rules-contract-of"
 %%%
 
-$$`\frac{\mathit{fn} = \mathsf{Var}\;(\mathsf{.Local}\;\mathit{id}) \quad \Gamma(\mathit{id}) \in \{\mathit{staticProcedure}, \mathit{instanceProcedure}\}}{\Gamma \vdash \mathsf{ContractOf}\;\mathsf{Precondition}\;\mathit{fn} \Rightarrow \mathsf{TBool} \quad\quad \Gamma \vdash \mathsf{ContractOf}\;\mathsf{PostCondition}\;\mathit{fn} \Rightarrow \mathsf{TBool}} \quad \text{([⇒] ContractOf-Bool)}`
+$$`\frac{\mathit{fn} = \mathsf{Var}\;(\mathsf{.Local}\;\mathit{id}) \quad \Gamma(\mathit{id}) \in \{\mathit{staticProcedure}, \mathit{instanceProcedure}\}}{\Gamma \vdash \mathsf{ContractOf}\;\mathsf{Precondition}\;\mathit{fn} \Rightarrow \mathsf{TBool} \qquad \Gamma \vdash \mathsf{ContractOf}\;\mathsf{PostCondition}\;\mathit{fn} \Rightarrow \mathsf{TBool}} \quad \text{([⇒] ContractOf-Bool)}`
 
-$$`\frac{\mathit{fn} = \mathsf{Var}\;(\mathsf{.Local}\;\mathit{id}) \quad \Gamma(\mathit{id}) \in \{\mathit{staticProcedure}, \mathit{instanceProcedure}\}}{\Gamma \vdash \mathsf{ContractOf}\;\mathsf{Reads}\;\mathit{fn} \Rightarrow \mathsf{TSet}\;\mathsf{Unknown} \quad\quad \Gamma \vdash \mathsf{ContractOf}\;\mathsf{Modifies}\;\mathit{fn} \Rightarrow \mathsf{TSet}\;\mathsf{Unknown}} \quad \text{([⇒] ContractOf-Set)}`
+$$`\frac{\mathit{fn} = \mathsf{Var}\;(\mathsf{.Local}\;\mathit{id}) \quad \Gamma(\mathit{id}) \in \{\mathit{staticProcedure}, \mathit{instanceProcedure}\}}{\Gamma \vdash \mathsf{ContractOf}\;\mathsf{Reads}\;\mathit{fn} \Rightarrow \mathsf{TSet}\;\mathsf{Unknown} \qquad \Gamma \vdash \mathsf{ContractOf}\;\mathsf{Modifies}\;\mathit{fn} \Rightarrow \mathsf{TSet}\;\mathsf{Unknown}} \quad \text{([⇒] ContractOf-Set)}`
 
 $$`\frac{\mathit{fn} \text{ is not a procedure reference}}{\Gamma \vdash \mathsf{ContractOf}\;\ldots\;\mathit{fn} \rightsquigarrow \text{error: “‘contractOf’ expected a procedure reference”}} \quad \text{([⇒] ContractOf-Error)}`
 
@@ -656,7 +655,7 @@ $$`\frac{T_h <: T}{\Gamma \vdash \mathsf{Hole}\;d\;(\mathsf{some}\;T_h) \Leftarr
 
 {docstring Strata.Laurel.Resolution.Check.holeSome}
 
-$$`\frac{}{\Gamma \vdash \mathsf{Hole}\;d\;\mathsf{none} \Leftarrow T \;\;\mapsto\;\; \mathsf{Hole}\;d\;(\mathsf{some}\;T)} \quad \text{([⇐] Hole-None)}`
+$$`\frac{}{\Gamma \vdash \mathsf{Hole}\;d\;\mathsf{none} \Leftarrow T \quad \mapsto \quad \mathsf{Hole}\;d\;(\mathsf{some}\;T)} \quad \text{([⇐] Hole-None)}`
 
 {docstring Strata.Laurel.Resolution.Check.holeNone}
 
