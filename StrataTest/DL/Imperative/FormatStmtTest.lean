@@ -3,8 +3,11 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-import Strata.Languages.Core.Statement
-import Strata.Languages.Core.DDMTransform.FormatCore
+module
+meta import Strata.Languages.Core.Statement
+meta import Strata.Languages.Core.DDMTransform.FormatCore
+
+meta section
 
 namespace FormatStmtTest
 open Core
@@ -174,3 +177,4 @@ info: {
                 Statement.assert "check" xEq1 .empty] : Ss)
 
 end FormatStmtTest
+end

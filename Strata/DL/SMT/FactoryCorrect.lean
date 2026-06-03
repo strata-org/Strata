@@ -7,8 +7,8 @@ module
 
 public import Strata.DL.SMT.Denote
 import all Strata.DL.SMT.Denote
-public import Strata.DL.SMT.Factory
 import all Strata.DL.SMT.Factory
+import Std.Tactic.BVDecide.Normalize.BitVec
 
 /-!
 # Correctness of Factory optimizations

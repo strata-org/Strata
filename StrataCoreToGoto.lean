@@ -6,9 +6,10 @@
 
 import Strata.Backends.CBMC.GOTO.CoreToCProverGOTO
 import Strata.Languages.Core.Verifier
-import Strata.Util.IO
+import StrataDDM.Util.IO
 
 open Strata
+open StrataDDM.Elab (elabProgram LoadedDialects)
 
 def usageMessage : Std.Format :=
   f!"Usage: StrataCoreToGoto [OPTIONS] <file.core.st>{Std.Format.line}\
@@ -55,12 +56,12 @@ def main (args : List String) : IO UInt32 := do
       return 1
     let dir := System.FilePath.mk opts.outputDir
     IO.FS.createDirAll dir
-    let text ← Strata.Util.readInputSource file
-    let inputCtx := Lean.Parser.mkInputContext text (Strata.Util.displayName file)
-    let dctx := Elab.LoadedDialects.builtin
+    let text ← StrataDDM.Util.readInputSource file
+    let inputCtx := Lean.Parser.mkInputContext text (StrataDDM.Util.displayName file)
+    let dctx := LoadedDialects.builtin
     let dctx := dctx.addDialect! Core
     let leanEnv ← Lean.mkEmptyEnvironment 0
-    match Strata.Elab.elabProgram dctx leanEnv inputCtx with
+    match elabProgram dctx leanEnv inputCtx with
     | .ok pgm =>
       let symTabFile := dir / s!"{programName}.symtab.json"
       let gotoFile := dir / s!"{programName}.goto.json"

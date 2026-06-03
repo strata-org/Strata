@@ -5,13 +5,10 @@
 -/
 module
 
-public import Strata.DL.Lambda.LExpr
 import all Strata.DL.Lambda.LExpr
 public import Strata.DL.Lambda.LExprEval
 import all Strata.DL.Lambda.LExprEval
-public import Strata.DL.Lambda.LExprWF
 import all Strata.DL.Lambda.LExprWF
-public import Strata.DL.Lambda.LState
 import all Strata.DL.Lambda.LState
 import all Strata.DL.Lambda.Factory
 public import Strata.DL.Lambda.FactoryWF

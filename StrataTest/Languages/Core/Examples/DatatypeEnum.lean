@@ -3,9 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core
+import StrataDDM.Integration.Lean.HashCommands
 
+meta section
+open StrataDDM (Program)
 /-!
 # Datatype Enum Integration Test
 
@@ -73,7 +77,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify enumPgm (options := .quiet)
+#eval Core.verify enumPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 2: Enum with Havoc (requires SMT reasoning)
@@ -128,7 +132,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify enumHavocPgm (options := .quiet)
+#eval Core.verify enumHavocPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 3: Enum Exhaustiveness (exactly one tester is true)
@@ -173,6 +177,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify enumExhaustivePgm (options := .quiet)
+#eval Core.verify enumExhaustivePgm (options := .quiet)
 
 end Strata.DatatypeEnumTest
+end

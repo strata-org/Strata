@@ -7,7 +7,6 @@ module
 
 public import Strata.DL.Lambda.LExprTypeEnv
 import all Strata.DL.Lambda.LExprTypeEnv
-public import Strata.DL.Lambda.LExprWF
 import all Strata.DL.Lambda.LExprWF
 
 /-! ## Type Inference Transform for Lambda Expressions.

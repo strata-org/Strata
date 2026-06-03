@@ -25,7 +25,7 @@ for test_file in *.st; do
         expected_file="expected/${base_name}.expected"
         if [ -f "$expected_file" ]; then
 
-            output=$(cd .. && lake exe strata verify --vc-directory vcs "Examples/${test_file}")
+            output=$(cd .. && ./StrataCLI/.lake/build/bin/strata verify --vc-directory vcs "Examples/${test_file}")
 
             if ! echo "$output" | diff -q "$expected_file" - > /dev/null; then
                 echo "ERROR: Analysis output for $base_name does not match expected result"
@@ -99,7 +99,7 @@ for transform_file in expected/*.*.core.st; do
     # 1. Check transform output matches the .core.st file
     tmp_transform=$(mktemp)
     tmp_stderr=$(mktemp)
-    if ! (cd .. && lake exe strata transform "Examples/${source_file}" $transform_flags) > "$tmp_transform" 2>"$tmp_stderr"; then
+    if ! (cd .. && ./StrataCLI/.lake/build/bin/strata transform "Examples/${source_file}" $transform_flags) > "$tmp_transform" 2>"$tmp_stderr"; then
         echo "ERROR: Transform command failed for $transform_base"
         cat "$tmp_stderr"
         rm -f "$tmp_transform" "$tmp_stderr"
@@ -118,7 +118,7 @@ for transform_file in expected/*.*.core.st; do
     # 2. Verify the transformed file and check against .core.expected
     verify_expected="expected/${transform_base}.core.expected"
     if [ -f "$verify_expected" ]; then
-        verify_output=$(cd .. && lake exe strata verify "Examples/${transform_file}")
+        verify_output=$(cd .. && ./StrataCLI/.lake/build/bin/strata verify "Examples/${transform_file}")
         if ! echo "$verify_output" | diff -q "$verify_expected" - > /dev/null; then
             echo "ERROR: Verify output for $transform_base does not match expected"
             echo "$verify_output" | diff "$verify_expected" -

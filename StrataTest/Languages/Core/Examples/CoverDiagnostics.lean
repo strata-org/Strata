@@ -3,9 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core
+import StrataDDM.Integration.Lean.HashCommands
 
+meta section
 ---------------------------------------------------------------------
 namespace Strata
 
@@ -27,7 +30,7 @@ info: #["cover property is not satisfiable", "assertion does not hold"]
 -/
 #guard_msgs in
 #eval do
-  let results ← verify coverDiagnosticsPgm (options := .quiet)
+  let results ← Core.verify coverDiagnosticsPgm (options := .quiet)
   let diagnostics := results.filterMap toDiagnosticModel
   return diagnostics.map DiagnosticModel.message
 
@@ -53,7 +56,7 @@ info: #[]
 -/
 #guard_msgs in
 #eval do
-  let results ← verify passingPgm (options := .quiet)
+  let results ← Core.verify passingPgm (options := .quiet)
   let diagnostics := results.filterMap toDiagnosticModel
   return diagnostics.map DiagnosticModel.message
 
@@ -78,8 +81,10 @@ info: #["assertion does not hold"]
 -/
 #guard_msgs in
 #eval do
-  let results ← verify coverPassAssertFailPgm (options := .quiet)
+  let results ← Core.verify coverPassAssertFailPgm (options := .quiet)
   let diagnostics := results.filterMap toDiagnosticModel
   return diagnostics.map DiagnosticModel.message
 
+end Strata
+end
 ---------------------------------------------------------------------
