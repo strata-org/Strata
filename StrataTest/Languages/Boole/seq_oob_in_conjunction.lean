@@ -49,3 +49,7 @@ Property: assert
 Result: ✅ pass-/
 #guard_msgs in
 #eval Strata.Boole.verify "cvc5" seqOobConjunctionPgm (options := .quiet)
+
+example : Strata.smtVCsCorrect seqOobConjunctionPgm := by
+  gen_smt_vcs
+  all_goals (try grind)
