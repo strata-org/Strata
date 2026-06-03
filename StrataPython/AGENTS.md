@@ -10,16 +10,14 @@ workflows that aren't obvious from reading the code.
 
 There are two Python-to-IR pipelines:
 
-1. **Direct to Core** (`PythonToCore.lean`) — bypasses Laurel. Used by
-   `pyInterpret` and `pyAnalyzeToGoto`.
-2. **Through Laurel** (`PythonToLaurel.lean` + `PySpecPipeline.lean`) — main
+1. **Through Laurel** (`PythonToLaurel.lean` + `PySpecPipeline.lean`) — main
    pipeline. Combines Python source with PySpec type specifications, resolves
    overloads, and produces typed Laurel that compiles to Core. Used by
-   `pyAnalyzeLaurel`.
-
-When adding a feature, decide which path it belongs to first. Direct-to-Core is
-simpler but lacks PySpec / overload support; the Laurel path is the strategic
-target for future work.
+   `pyAnalyzeLaurel`. **All new work should target this path.**
+2. **Direct to Core** (`PythonToCore.lean`) — **deprecated.** Bypasses Laurel.
+   Still used by `pyInterpret` and `pyAnalyzeToGoto`, but lacks PySpec /
+   overload support. Do not extend this path; if you need new behavior here,
+   consider porting the consumer to the Laurel path instead.
 
 ## Convention: `open Strata` pattern
 
@@ -38,7 +36,7 @@ The pipeline orchestration framework (`PipelineM`, `MessageKind`,
 ## How to add a Python translation feature
 
 1. If it's a new expression/statement handler, modify `PythonToLaurel.lean`
-   (Laurel path) or `PythonToCore.lean` (direct-to-Core path).
+   (the Laurel path is the only one taking new work — see Architecture above).
 2. If it's a new PySpec feature (new type form, new declaration kind), modify
    `Specs/Decls.lean` for the data type and `Specs/ToLaurel.lean` for the
    translation.
