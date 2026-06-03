@@ -15,7 +15,7 @@ This builds the `StrataPython` library, `DiffTestCore` executable, and the `Stra
 StrataPython provides:
 
 - **Python AST** - Types generated from the Python dialect DDM definition
-- **Python-to-Laurel translation** - Translation through the Laurel IR (higher-level, supports dispatch and overloads). This is the strategic translation path
+- **Python-to-Laurel translation** - Translation through the Laurel IR (higher-level, supports dispatch and overloads).
 - **Python-to-Core translation** - *Deprecated.* Direct translation from Python to Core IR, kept for `pyInterpret` and `pyAnalyzeToGoto`; new features should target the Laurel path
 - **PySpec pipeline** - Reads Python type specifications (`.pyspec.st.ion`) and generates Laurel declarations for verification
 - **Regex support** - Translates Python regular expressions to Core SMT assertions
