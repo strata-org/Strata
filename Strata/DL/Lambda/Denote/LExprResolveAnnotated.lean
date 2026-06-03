@@ -670,7 +670,7 @@ private theorem resolveAux_HasTypeA_aux [DecidableEq T.IDMeta] [HasGen T.IDMeta]
     have h_abs_S_rem : S.absorbs (Maps.remove substInfo.subst genEnv.fst) := by
       simp [TEnv.updateSubst] at h_absorbs; exact h_absorbs
     rw [h_gen_subst] at h_unify
-    have h_abs_unify := unify_absorbs _ _ _ h_unify
+    have h_abs_unify := Constraints.unify_absorbs _ _ _ h_unify
     -- Freshness: genEnv.fst not in Env.subst and e1t_env.snd.subst
     have h_fresh_Env : Maps.find? Env.stateSubstInfo.subst genEnv.fst = none ∧
         (∀ a t, Maps.find? Env.stateSubstInfo.subst a = some t →
@@ -714,7 +714,7 @@ private theorem resolveAux_HasTypeA_aux [DecidableEq T.IDMeta] [HasGen T.IDMeta]
     have h_unify_eq : LMonoTy.subst substInfo.subst e1t_env.fst.toLMonoTy =
         LMonoTy.subst substInfo.subst
           (LMonoTy.tcons "arrow" [e2t_env.fst.toLMonoTy, .ftvar genEnv.fst]) := by
-      have h_p := unify_sound _ _ _ h_unify _ (List.Mem.head _)
+      have h_p := Constraints.unify_sound _ _ _ h_unify _ (List.Mem.head _)
       simp at h_p; exact h_p
     have h_subst_e1t : LMonoTy.subst S (LMonoTy.subst substInfo.subst e1t_env.fst.toLMonoTy) =
         LMonoTy.subst S e1t_env.fst.toLMonoTy := by
@@ -953,7 +953,7 @@ private theorem resolveAux_HasTypeA_aux [DecidableEq T.IDMeta] [HasGen T.IDMeta]
       h_wf1.ne h_wf1.envwf.aliasesWF h_fwf h_wf1.envwf.substFreshForGen h_wf1.envwf.ctxFreshForGen
       h_wf1.envwf.boundVarsFresh
     -- Absorption chain
-    have h_abs_unify := unify_absorbs _ _ _ h_unify
+    have h_abs_unify := Constraints.unify_absorbs _ _ _ h_unify
     have h_abs_e2 : S.absorbs e2t_env.snd.stateSubstInfo.subst :=
       Subst.absorbs_trans _ _ _
         h_abs_unify h_absorbs
@@ -965,7 +965,7 @@ private theorem resolveAux_HasTypeA_aux [DecidableEq T.IDMeta] [HasGen T.IDMeta]
     -- Unification soundness: both types become equal under S
     have h_eq_types : toLMonoTy (applySubstT e1t_env.fst S) = toLMonoTy (applySubstT e2t_env.fst S) := by
       rw [applySubstT_toLMonoTy, applySubstT_toLMonoTy]
-      have h_sound := unify_sound _ _ _ h_unify
+      have h_sound := Constraints.unify_sound _ _ _ h_unify
       have h_pair := h_sound _ (List.Mem.head _)
       simp at h_pair
       exact LMonoTy.subst_eq_of_absorbs S substInfo.subst _ _ h_S_abs_substInfo h_pair
@@ -1006,7 +1006,7 @@ private theorem resolveAux_HasTypeA_aux [DecidableEq T.IDMeta] [HasGen T.IDMeta]
       h_wf_c.ne h_wf_c.envwf.aliasesWF h_fwf h_wf_c.envwf.substFreshForGen h_wf_c.envwf.ctxFreshForGen
       h_wf_c.envwf.boundVarsFresh
     -- Absorption chain
-    have h_abs_unify := unify_absorbs _ _ _ h_unify
+    have h_abs_unify := Constraints.unify_absorbs _ _ _ h_unify
     have h_S_abs_substInfo : S.absorbs substInfo.subst := by
       simp [TEnv.updateSubst] at h_absorbs; exact h_absorbs
     have h_abs_el : S.absorbs elt_env.snd.stateSubstInfo.subst :=
@@ -1016,7 +1016,7 @@ private theorem resolveAux_HasTypeA_aux [DecidableEq T.IDMeta] [HasGen T.IDMeta]
     have h_abs_c : S.absorbs ct_env.snd.stateSubstInfo.subst :=
       Subst.absorbs_trans _ _ _ h_props_th.absorbs h_abs_th
     -- Unification soundness
-    have h_sound := unify_sound _ _ _ h_unify
+    have h_sound := Constraints.unify_sound _ _ _ h_unify
     have h_c_bool : LMonoTy.subst substInfo.subst ct_env.fst.toLMonoTy = LMonoTy.bool := by
       have h_p := h_sound _ (List.Mem.head _)
       simp [LMonoTy.subst_bool] at h_p; exact h_p

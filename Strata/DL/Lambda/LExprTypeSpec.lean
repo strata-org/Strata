@@ -335,7 +335,9 @@ The proof is structured in two layers:
 
 - **`Constraint.UnifyOneProperties`** / **`Constraints.UnifyCoreProperties`**: Bundled soundness, absorption, and key-inclusion for `unifyOne` / `unifyCore`.
 
-- **`unify_absorbs`**: Unification absorbs the pre-unification substitution.
+- **`Constraints.unify_absorbs`**: Unification absorbs the pre-unification substitution.
+
+- **`Constraints.unify_sound`**: Unification makes every constraint pair equal under the output substitution.
 
 - **`unify_makes_equal`**: Unification makes constrained types equal.
 
@@ -1536,7 +1538,7 @@ private theorem inferFVar_absorbs
                 Env.stateSubstInfo.subst Env1.stateSubstInfo.subst Env2.stateSubstInfo.subst
                 (LTy_instantiateWithCheck_absorbs ty C Env mty Env1 h_inst)
                 (LMonoTy_instantiateWithCheck_absorbs fty_val C Env1 fty_inst Env2 h_inst2))
-              (unify_absorbs _ _ _ h_unify)
+              (Constraints.unify_absorbs _ _ _ h_unify)
 
 omit [ToString T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /-- `typeBoundVar` produces a substitution that absorbs the input.
@@ -3321,7 +3323,7 @@ private theorem resolveAux_properties_aux :
                (Subst.absorbs_trans Env.stateSubstInfo.subst Env1.stateSubstInfo.subst Env2.stateSubstInfo.subst
                  (LTy_instantiateWithCheck_absorbs type_val C Env ty_inst Env1 h_inst)
                  (LMonoTy_instantiateWithCheck_absorbs oty_val C Env1 oty_inst Env2 h_inst2))
-               (unify_absorbs _ _ _ h_unify)⟩
+               (Constraints.unify_absorbs _ _ _ h_unify)⟩
       · -- context: Env2.context = Env.context
         show Env2.context = Env.context
         rw [LMonoTy_instantiateWithCheck_context _ C Env1 oty_inst Env2 h_inst2,
@@ -3392,7 +3394,7 @@ private theorem resolveAux_properties_aux :
       Env.stateSubstInfo.subst Env2.stateSubstInfo.subst v4.subst
       (Subst.absorbs_trans Env.stateSubstInfo.subst Env1.stateSubstInfo.subst Env2.stateSubstInfo.subst
         h_abs1 h_abs2)
-      (unify_absorbs _ _ _ h_unify)
+      (Constraints.unify_absorbs _ _ _ h_unify)
     have ⟨h_not_key, h_not_fv⟩ :=
       genTyVar_fresh_wrt_input_subst Env Env2 Env3 fresh_name h_gen h_sf (Nat.le_trans h_mono1 h_mono2)
     refine ⟨by omega, ?_, ⟨?_, ?_⟩,
@@ -3547,7 +3549,7 @@ private theorem resolveAux_properties_aux :
             Subst.absorbs_trans Env.stateSubstInfo.subst Env2.stateSubstInfo.subst v3.subst
               (Subst.absorbs_trans Env.stateSubstInfo.subst Env1.stateSubstInfo.subst Env2.stateSubstInfo.subst
                 h_abs1 h_abs2)
-              (unify_absorbs _ _ _ h_unify)⟩
+              (Constraints.unify_absorbs _ _ _ h_unify)⟩
     · -- context
       show Env2.context = Env.context; rw [h_ctx2_eq, h_ctx1_eq]
     · -- SubstFreshForGen
@@ -3596,7 +3598,7 @@ private theorem resolveAux_properties_aux :
                 (Subst.absorbs_trans Env.stateSubstInfo.subst Env1.stateSubstInfo.subst Env2.stateSubstInfo.subst
                   h_abs_c h_abs_t)
                 h_abs_e)
-              (unify_absorbs _ _ _ h_unify)⟩
+              (Constraints.unify_absorbs _ _ _ h_unify)⟩
     · -- context
       show Env3.context = Env.context; rw [h_ctx3_eq, h_ctx2_eq, h_ctx1_eq]
     · -- SubstFreshForGen
@@ -5462,7 +5464,7 @@ original context.
 Each IH directly gives typing under the caller's `S`, provided we can show
 `S` absorbs each intermediate environment's substitution via the chain:
 - `resolveAux_properties.absorbs`: each `resolveAux` call absorbs its input substitution
-- `unify_absorbs`: unification absorbs the pre-unification substitution
+- `Constraints.unify_absorbs`: unification absorbs the pre-unification substitution
 - `Subst.absorbs_trans`: absorption composes transitively
 -/
 omit [ToString T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
@@ -6092,7 +6094,7 @@ theorem resolveAux_HasType :
               rw [h_ctx1]; intro x hx; exact h_ws x (by simp [LExpr.freeVars, List.mem_append]; right; exact hx)
             have ⟨h_ctx2, h_ty2⟩ := ih2 e2t C Env1 Env2 h_res2 h_envwf1 h_ne1 h_fwf h_ws2
             -- Absorption chain: v4 absorbs Env3.subst = Env2.subst
-            have h_abs_v4_Env3 := unify_absorbs
+            have h_abs_v4_Env3 := Constraints.unify_absorbs
               [(e1t.toLMonoTy, LMonoTy.tcons "arrow" [e2t.toLMonoTy, .ftvar fresh_name])]
               Env3.stateSubstInfo v4 h_unify
             rw [h_gen_subst] at h_abs_v4_Env3
@@ -6637,7 +6639,7 @@ theorem resolveAux_HasType :
             have h_envwf2 := TEnvWF.of_resolveAux t tht C Env1 Env2 h_res_t h_envwf1 h_ne1 h_fwf h_ctx2
             have ⟨h_ctx3, h_ty_e⟩ := ih_e elt C Env2 Env3 h_res_e h_envwf2 h_ne2 h_fwf (by rw [h_ctx2, h_ctx1]; intro x hx; apply h_ws; simp only [LExpr.freeVars]; exact List.mem_append_right _ hx)
             -- Absorption chain: v4 absorbs Env3 absorbs Env2 absorbs Env1 absorbs Env
-            have h_abs_v4_Env3 := unify_absorbs
+            have h_abs_v4_Env3 := Constraints.unify_absorbs
               [(ct.toLMonoTy, LMonoTy.bool), (tht.toLMonoTy, elt.toLMonoTy)]
               Env3.stateSubstInfo v4 h_unify
             have h_ne3 := h_ctx3 ▸ h_ne2
@@ -6745,7 +6747,7 @@ theorem resolveAux_HasType :
           have h_envwf1 := TEnvWF.of_resolveAux e1 e1t C Env Env1 h_res1 h_envwf h_ne h_fwf h_ctx1
           have ⟨h_ctx2, h_ty2⟩ := ih2 e2t C Env1 Env2 h_res2 h_envwf1 h_ne1 h_fwf (by rw [h_ctx1]; intro x hx; exact h_ws x (by simp [LExpr.freeVars, List.mem_append]; right; exact hx))
           -- Absorption chain: v3 absorbs Env2 absorbs Env1 absorbs Env
-          have h_abs_v3_Env2 := unify_absorbs [(e1t.toLMonoTy, e2t.toLMonoTy)]
+          have h_abs_v3_Env2 := Constraints.unify_absorbs [(e1t.toLMonoTy, e2t.toLMonoTy)]
             Env2.stateSubstInfo v3 h_unify
           have props1 := resolveAux_properties e1 e1t C Env Env1 h_res1 h_ne h_aw h_fwf h_envwf.substFreshForGen h_envwf.ctxFreshForGen h_envwf.boundVarsFresh
           have props2 := resolveAux_properties e2 e2t C Env1 Env2 h_res2 h_ne1 h_envwf1.aliasesWF h_fwf h_envwf1.substFreshForGen h_envwf1.ctxFreshForGen h_envwf1.boundVarsFresh

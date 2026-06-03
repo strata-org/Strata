@@ -747,6 +747,14 @@ over arbitrary types, this denotation can be used only for reasoning, not for
 computation. Validity of a Lambda expression means that `LExpr.denote` evaluates
 to `true` under all possible interpretations.
 
+### Well-Annotated Output of Type Resolution
+
+The theorem {name Lambda.LExpr.resolve_HasTypeA}`resolve_HasTypeA` establishes
+that when type inference (`LExpr.resolve`) succeeds, the resulting expression
+satisfies `HasTypeA` — i.e., the type annotations placed by resolution are
+internally consistent. This allows us to give well-defined denotations for all
+terms that pass the typechecker.
+
 ### Consistency with Operational Semantics
 
 A key metatheoretic result is that the operational and denotational semantics

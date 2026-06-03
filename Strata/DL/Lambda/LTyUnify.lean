@@ -2329,7 +2329,7 @@ theorem Constraints.unifyCore_sound (cs : Constraints) (S : SubstInfo)
             · right; right; exact h_s
 
 /-- Unification produces a substitution that absorbs the input substitution. -/
-theorem unify_absorbs (constraints : Constraints) (S_old S_new : SubstInfo)
+theorem Constraints.unify_absorbs (constraints : Constraints) (S_old S_new : SubstInfo)
     (h : Constraints.unify constraints S_old = .ok S_new) :
     Subst.absorbs S_new.subst S_old.subst := by
   simp only [Constraints.unify, bind, Except.bind] at h
@@ -2340,7 +2340,7 @@ theorem unify_absorbs (constraints : Constraints) (S_old S_new : SubstInfo)
     exact (Constraints.unifyCore_sound constraints S_old relS h_core).absorbs
 
 /-- Unification produces a substitution that makes every constraint pair equal. -/
-theorem unify_sound (constraints : Constraints) (S_old S_new : SubstInfo)
+theorem Constraints.unify_sound (constraints : Constraints) (S_old S_new : SubstInfo)
     (h : Constraints.unify constraints S_old = .ok S_new) :
     ∀ p, p ∈ constraints →
       LMonoTy.subst S_new.subst p.1 = LMonoTy.subst S_new.subst p.2 := by
