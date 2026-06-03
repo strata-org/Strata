@@ -193,22 +193,11 @@ and {name Strata.Laurel.isConsistentSubtype}`isConsistentSubtype`:
 
 {docstring Strata.Laurel.isConsistentSubtype}
 
-Statement-shaped constructs check at any value type. Their
-conclusions are polymorphic in $`T`: the form contributes nothing to
-the surrounding value flow, so its rule does not constrain $`T`
-beyond what its own premises do. The block rule
+The type of a block is the type of its last statement; non-last
+statements can be of any type. The block rule
 ({ref "rules-control-flow"}[Block]) is what supplies the value type
 for a block: it routes the surrounding $`T` to the last statement
-and ignores the value of every non-last statement. Every statement
-form ({name Strata.Laurel.StmtExpr.Return}`Return`,
-{name Strata.Laurel.StmtExpr.Exit}`Exit`,
-{name Strata.Laurel.StmtExpr.While}`While`,
-{name Strata.Laurel.StmtExpr.Assert}`Assert`,
-{name Strata.Laurel.StmtExpr.Assume}`Assume`,
-{name Strata.Laurel.StmtExpr.Assign}`Assign`,
-{name Strata.Laurel.Variable.Declare}`Var Declare`) thus has a
-conclusion of the form $`\Gamma \vdash s \Leftarrow A`, with $`A`
-unconstrained.
+and ignores the value of every non-last statement.
 
 ## Typing rules
 

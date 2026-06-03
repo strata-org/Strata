@@ -1057,95 +1057,70 @@ def Check.return (exprMd : StmtExprMd)
     The empty block has a fixed type `TVoid` — written `skip : TVoid`
     in the source-language presentation. This is the only block-level
     rule that synthesizes: non-empty blocks are typed structurally by
-    `Resolution.Check.block` (last statement `⇐ T`, non-last positions
-    `⇐ TVoid` or Discard-Call) and never recurse into an empty tail,
-    so they never bottom out here. When an empty block appears in
+    `Resolution.Check.block` (last statement carries the value, non-last
+    positions `⇐ TVoid` or Discard-Call) and never recurse into an empty
+    tail, so they never bottom out here. When an empty block appears in
     check position, `Resolution.Check.resolveStmtExpr`'s wildcard arm
     synth-then-subsumes via the standard \[⇐\] Sub fallback. -/
 def Synth.emptyBlock (source : Option FileRange) : HighTypeMd :=
   { val := .TVoid, source := source }
 
-/-- (Block) Non-empty block.
-    ```
-    head = StaticCall .. | InstanceCall ..
-    Γ ⊢ s_1 ⇒ _                  (Discard-Call, n ≥ 2)
-    Γ ⊢ Block [s_2; …; s_n] _ ⇐ T
-    ───────────────────────────────────────────────────
-    Γ ⊢ Block [s_1; s_2; …; s_n] label ⇐ T
+/-- (Block) Check-mode typing rule for a non-empty block.
 
-    head ≠ StaticCall .., InstanceCall ..
-    Γ ⊢ s_1 ⇐ TVoid              (n ≥ 2)
-    Γ ⊢ Block [s_2; …; s_n] _ ⇐ T
-    ───────────────────────────────────────────────────
-    Γ ⊢ Block [s_1; s_2; …; s_n] label ⇐ T
+    A block's value is the value of its **last** statement; every
+    earlier statement is run only for its effect. The rule splits the
+    statement list into `init` (all but the last) and `last` and is one
+    recursion over that structure:
 
-    Γ ⊢ s_1 ⇐ T                 (Singleton)
-    ───────────────────────────────────────
-    Γ ⊢ Block [s_1] label ⇐ T
+    * **non-last — `Γ ⊢ s ⇐ TVoid`.** A non-last statement is a pure
+      effect, so it is checked at `TVoid`. By \[⇐\] Sub this admits
+      every statement-shaped form (`Var-Declare`, `Assign`, `Assert`,
+      `Assume`, `While`, `Exit`, `Return`, `IfThenElse` — their
+      conclusions are polymorphic in the value type, so they trivially
+      check at `TVoid`) and rejects a stranded value expression like
+      `5;`, whose `TInt` is not consistent with `TVoid`. The one
+      **Discard-Call** carve-out: a call (`StaticCall`/`InstanceCall`)
+      is synthesized and its result dropped, so the standard
+      `list.add(x);` discard idiom is allowed even when the callee
+      returns a value.
 
-    head_1 = StaticCall .. | InstanceCall ..   Γ ⊢ s_1 ⇒ _
-    ──────────────────────────────────────────────────────  (Singleton-Discard-Call, T = TVoid)
-    Γ ⊢ Block [s_1] label ⇐ TVoid
-    ```
-    The block rule walks the statement list recursively (via the
-    inner `checkStmts` helper): the singleton case forwards the
-    surrounding `T` to the only statement, and the cons case checks
-    the head at `TVoid` and recurses on the tail with the same `T`.
-    The empty case never fires from this entry point — the dispatcher
-    narrows to `head :: tail` and routes empty blocks through
-    `Synth.emptyBlock` + \[⇐\] Sub.
+    * **last — `Γ ⊢ last ⇐ T`.** The surrounding expected type `T` is
+      routed to the last statement, so a check-only trailing form
+      (`IfThenElse`, a nested `Block`, `Hole`, `Return`, …) still
+      receives its expected type. The same Discard-Call carve-out
+      applies when `T = TVoid` (a trailing `foo()` in statement
+      position discards its result, so `{ …; foo() }` type-checks as a
+      statement even when `foo` returns a value).
 
-    Non-last positions check at `TVoid`, which by \[⇐\] Sub admits
-    any statement-typed form (Var-Declare, Assign, Assert, Assume,
-    While, Exit, Return, IfThenElse — their rule conclusions are
-    polymorphic in `A`, so they trivially check at `TVoid`) and
-    rejects bare expressions like `5;` whose type is not consistent
-    with `TVoid`.
+    There is deliberately no synthesis rule for non-empty blocks: a
+    block is statement-shaped and always occurs in check position
+    (procedure bodies, branches, loop bodies, assignment RHS, call
+    arguments all supply an expected type). A block in a synth-only
+    operand position has no contextual type and is reported by the
+    `Synth.resolveStmtExpr` wildcard.
 
-    The one carve-out is **Discard-Call**: a procedure or method call
-    in non-last position is synthesized and its result type dropped,
-    *not* checked at `TVoid`. Without that carve-out, `f(x);` for a
-    non-void-returning `f` would be rejected even though discarding the
-    returned value is the standard imperative idiom (Java / Python /
-    JavaScript: `list.add(x);`). The same carve-out also applies to
-    the *last* (i.e. only-remaining) statement when the surrounding
-    `expected = TVoid` — i.e. when the block itself is in statement
-    position — so `{ …; foo() }` is accepted as a statement even when
-    `foo` returns a non-void type.
-
-    The block opens a fresh nested scope (so declarations made inside
+    The block opens a fresh nested scope (declarations made inside
     don't leak), and emits a "dead code after `exit`/`return`"
-    diagnostic when a terminator is followed by additional statements
-    in the same block. When `label` is `some l`, `l` is registered in
-    `ResolveState.labelScope` (via `withLabel`) for the duration of
-    the block so that nested `exit l` checks can see it. -/
+    diagnostic when a terminator is followed by further statements.
+    When `label` is `some l`, `l` is registered in
+    `ResolveState.labelScope` (via `withLabel`) for the block's extent
+    so nested `exit l` checks can see it. -/
 def Check.block (exprMd : StmtExprMd)
     (stmts : List StmtExprMd) (label : Option String)
     (expected : HighTypeMd) (source : Option FileRange)
     (h : exprMd.val = .Block stmts label) : ResolveM StmtExprMd := do
   let voidTy : HighTypeMd := { val := .TVoid, source := source }
-  -- Per-statement helpers, one per syntactic position the recursion
-  -- would distinguish. Defined as local functions to keep `Check.block`
-  -- itself out of the mutual block's list-walking termination story:
-  -- `dropLast.attach.mapM` + `getLast?` below is equivalent to a
-  -- structural cons/singleton recursion that calls `checkNonLast` at
-  -- the head and recurses on the tail until the singleton arm fires
-  -- and forwards `expected` via `checkLast`.
+  -- A non-last statement is an effect: check it at `TVoid`, *except* a
+  -- call, whose result we synthesize and drop (the `list.add(x);` idiom).
   let checkNonLast (s : StmtExprMd) (_h_mem : s ∈ stmts) : ResolveM StmtExprMd := do
-    -- Discard-Call carve-out: a non-void-returning call in non-last
-    -- position is synth-and-drop instead of `⇐ TVoid`, which would
-    -- otherwise reject the standard `list.add(x);` idiom.
     match s.val with
     | .StaticCall .. | .InstanceCall .. =>
       let (s', _) ← Synth.resolveStmtExpr s; pure s'
     | _ => Check.resolveStmtExpr s voidTy
+  -- The last statement carries the block's value: push `expected` in
+  -- (so check-only forms are reachable), with the Discard-Call carve-out
+  -- when the block is itself in statement position (`expected = TVoid`).
   let checkLast (s : StmtExprMd) (_h_mem : s ∈ stmts) : ResolveM StmtExprMd := do
-    -- Discard-Call carve-out also applies to the last statement when
-    -- the block itself is in statement position (`expected = TVoid`):
-    -- a call's result is dropped, so it should not need to subtype
-    -- `TVoid`. Without this, `{ ...; foo() }` is rejected when `foo`
-    -- returns a non-void type, even though the block as a whole
-    -- produces nothing.
     match s.val, expected.val with
     | .StaticCall .., .TVoid | .InstanceCall .., .TVoid =>
       let (s', _) ← Synth.resolveStmtExpr s; pure s'
@@ -1154,9 +1129,9 @@ def Check.block (exprMd : StmtExprMd)
     let init' ← stmts.dropLast.attach.mapM fun ⟨s, hMem⟩ => do
       have h_mem : s ∈ stmts := List.dropLast_subset stmts hMem
       checkNonLast s h_mem
-    -- Dead-code diagnostic: any terminator (`Exit`/`Return`) in init'
-    -- is followed by at least one more statement (the last, or another
-    -- non-last). Flag it once at the position of the next statement.
+    -- Dead-code diagnostic: a terminator (`Exit`/`Return`) among the
+    -- non-last statements is followed by at least one more statement.
+    -- Flag it once at the position of the next statement.
     let isTerminator (s : StmtExprMd) : Bool :=
       match s.val with
       | .Exit _ | .Return _ => true
@@ -1177,9 +1152,9 @@ def Check.block (exprMd : StmtExprMd)
         s!"dead code after '{termName}'"
       modify fun st => { st with errors := st.errors.push diag }
     | none => pure ()
-    -- Singleton/last case: forward `expected` to the trailing statement
-    -- (the dispatcher already narrows away the empty case, so this
-    -- `none` arm is dead in practice but kept to remain total).
+    -- Check the last statement against `expected`. The dispatcher only
+    -- calls `Check.block` on `head :: tail`, so the `none` (empty-list)
+    -- arm is dead and kept only to remain total.
     match _lastResult: stmts.getLast? with
     | none =>
       checkSubtype source expected (Synth.emptyBlock source)
