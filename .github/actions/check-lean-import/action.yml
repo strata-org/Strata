@@ -1,0 +1,22 @@
+# Copyright Strata Contributors
+# SPDX-License-Identifier: Apache-2.0 OR MIT
+name: Check Lean import
+description: >
+  Ensure no .lean file uses a bare "import Lean" statement. Encourages
+  importing only the specific parts of Lean that are needed.
+
+inputs:
+  directory:
+    description: Directory to scan for .lean files (relative to the workspace).
+    required: false
+    default: "."
+
+runs:
+  using: composite
+  steps:
+    - name: Check for bare import Lean
+      shell: bash
+      env:
+        LINT_DIR: ${{ inputs.directory }}
+      run: |
+        ! (find "$LINT_DIR" -name "*.lean" -type f -print0 | xargs -0 grep -E -n '^import Lean$')
