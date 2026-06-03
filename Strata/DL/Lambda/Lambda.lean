@@ -10,6 +10,7 @@ public import Strata.DL.Lambda.LExprType
 public import Strata.DL.Lambda.LExpr
 public import Strata.DL.Lambda.Semantics
 public import Strata.DL.Lambda.Denote.LExprSemanticsConsistent
+public import Strata.DL.Lambda.Denote.LExprResolveAnnotated
 public import Strata.DL.Lambda.TypeFactory
 public import Strata.DL.Lambda.Reflect
 
