@@ -19,8 +19,12 @@ procedure transparentBody(): int
   3
 };
 
-procedure transparentProcedureCaller() opaque {
-  var x: int := transparentBody();
+procedure tranparentCaller(): int {
+  transparentBody()
+};
+
+procedure transparentCallerCaller() opaque {
+  var x: int := tranparentCaller();
   assert x == 3
 };
 "
