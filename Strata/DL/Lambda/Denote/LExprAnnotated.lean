@@ -534,6 +534,16 @@ def HasTypeA.quant_inv {T : LExprParams} {Δ : List LMonoTy} {m k name qty tr bo
       (by unfold tcTr tcBody at *
           simp [LExpr.typeCheck, h_tr, Option.bind])
 
+/-- Weakening: extending the bound-variable context on the right preserves typing. -/
+theorem HasTypeA_append_right {T : LExprParams} {e : LExpr T.mono} {τ : LMonoTy} {Δ : List LMonoTy}
+    (h : HasTypeA Δ e τ) (Δ' : List LMonoTy) :
+    HasTypeA (Δ ++ Δ') e τ := by
+  rw [HasTypeA_iff_typeCheck] at h ⊢
+  have h_lc := HasTypeA_lcAt (typeCheck_to_HasTypeA h)
+  have h_eq := typeCheck_of_lcAt_aux (Δ := Δ ++ Δ') (Δ' := Δ) h_lc (fun i hi => by
+    simp [List.getElem?_append_left (show i < Δ.length from hi)])
+  rw [h_eq]; exact h
+
 end -- public section
 
 end Lambda
