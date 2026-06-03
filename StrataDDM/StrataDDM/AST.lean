@@ -1550,9 +1550,12 @@ def ofList! (l : List Dialect) : DialectMap :=
   else
     panic! "Invalid list"
 
-private def toListAux (m : DialectMap) : List Dialect := m.map.values
+/--
+Return dialects in map.
 
-protected def toList (m : DialectMap) : List Dialect := toListAux m
+Note that no specific ordering is made on dialects returned.
+-/
+protected def toList (m : DialectMap) : List Dialect := m.map.values
 
 def decl! (dm : DialectMap) (ident : QualifiedIdent) : Decl :=
   match dm.map[ident.dialect]? with
