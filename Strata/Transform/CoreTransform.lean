@@ -364,20 +364,30 @@ def runProgram
   : CoreTransformM (Bool × Program) := do
   modify (fun σ => { σ with currentProgram := .some p })
 
-  -- Single-pass walker (was O(N²): indexed `p.decls[i]?` and `newDecls.set i`
-  -- on a List are both O(i)). We walk `p.decls` once, push into an Array,
-  -- and convert back to List once at the end.
+  -- Single-pass walker (avoids the O(N²) of the prior `p.decls[i]?` /
+  -- `newDecls.set i` shape on a List). We walk `p.decls` linearly,
+  -- pushing each (possibly-rewritten) decl into an Array `acc`, and
+  -- convert back to List once at the end.
   --
-  -- Mid-walk visibility of `currentProgram`: the only callers that read
-  -- `currentProgram` mid-walk are CallElim (reads header/spec only — body
-  -- mutations are unobservable) and ProcedureInlining (reads body but is
-  -- driven by `runProgramUntil`, which converges to the same fixed point
-  -- regardless of whether prior decls' transformed bodies are visible
-  -- within the current iteration). Updating `currentProgram` only at
-  -- end-of-walk preserves correctness for both.
+  -- Mid-walk `currentProgram` visibility: per the contract documented
+  -- on `CoreTransformState.currentProgram` ("currentProgram will store
+  -- the latest versions of finished procedures"), readers downstream
+  -- of the walk position must see the post-walk view of prior decls.
+  -- We satisfy this by snapshotting `acc.toList ++ tail` into
+  -- `currentProgram` after each rewritten decl. The snapshot is O(N)
+  -- per change rather than O(N²) total because changes are typically
+  -- a small fraction of the decl list (in particular for
+  -- ProcedureInlining, which depends on this visibility for its
+  -- call-graph cache).
   let mut anyChanged := false
   let mut acc : Array Decl := Array.mkEmpty p.decls.length
+  let mut tail : List Decl := p.decls
   for d in p.decls do
+    -- `tail` always equals `p.decls.drop (acc.size + 1)` *before* the
+    -- current decl is pushed; we rotate it forward at the end of each
+    -- iteration so the snapshot for this iteration sees the unprocessed
+    -- suffix excluding the current decl.
+    tail := match tail with | _ :: rest => rest | [] => []
     match d with
     | .proc proc md =>
       let isTargetProc := match targetProcList with
@@ -410,16 +420,24 @@ def runProgram
               newBlocksAcc := newBlocksAcc.push (lbl, blk)
           if blockChanged then
             let newCfg : DetCFG := { cfg with blocks := newBlocksAcc.toList }
-            acc := acc.push (Decl.proc { proc with body := .cfg newCfg } md)
+            let newDecl := Decl.proc { proc with body := .cfg newCfg } md
+            acc := acc.push newDecl
             anyChanged := true
+            modify (fun σ => { σ with
+              currentProgram := .some { decls := acc.toList ++ tail }
+            })
           else
             acc := acc.push d
         | .structured bodyStmts =>
           let (changed, new_body) ← runStmtsRec f bodyStmts
 
           if changed then
-            acc := acc.push (Decl.proc { proc with body := .structured new_body } md)
+            let newDecl := Decl.proc { proc with body := .structured new_body } md
+            acc := acc.push newDecl
             anyChanged := true
+            modify (fun σ => { σ with
+              currentProgram := .some { decls := acc.toList ++ tail }
+            })
           else
             acc := acc.push d
       else
@@ -427,7 +445,9 @@ def runProgram
     | _ => acc := acc.push d
 
   let newProg : Program := { decls := acc.toList }
-  -- Single end-of-walk update for currentProgram + currentProcedureName.
+  -- End-of-walk: clear currentProcedureName and ensure currentProgram
+  -- holds the fully-rewritten program (a no-op if every change updated
+  -- currentProgram already, but explicit for the no-changes path).
   modify (fun σ => { σ with
     currentProcedureName := .none,
     currentProgram := .some newProg
