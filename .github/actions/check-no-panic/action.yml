@@ -4,7 +4,8 @@ name: Check no panic
 description: >
   Detect net-new panic! calls introduced in a PR. Only fails when more
   panics are added than removed. Suppression: add "-- nopanic:ok" on a line.
-  Uses the checkNoPanic.sh script bundled with this repository.
+  Requires actions/checkout with fetch-depth: 0 (needs full git history
+  to compute the merge base).
 
 inputs:
   base-ref:
