@@ -100,6 +100,13 @@ where
           let lhsObs := go F lhs implications
           let rhsObs := go F rhs ((md, lhs) :: implications)
           lhsObs ++ rhsObs
+        else if opName == (@boolAndFunc T).name then
+          -- Short-circuit: when checking bounds in rhs, lhs is already known true.
+          -- E.g. `0 <= j && j < n && Sequence.select(s, j)` treats the prefix
+          -- as a hypothesis for the select's out-of-bounds check.
+          let lhsObs := go F lhs implications
+          let rhsObs := go F rhs ((md, lhs) :: implications)
+          lhsObs ++ rhsObs
         else
           go F lhs implications ++ go F rhs implications
       /- Let-binding encoded as (λ x. body) arg:
