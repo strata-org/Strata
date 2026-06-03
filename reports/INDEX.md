@@ -15,7 +15,8 @@ For open feature work (not tied to a specific bug report), see [`BACKLOG.md`](BA
 | [issue-3-mwe-15procs.core.st](issue-3-mwe-15procs.core.st) | reference artifact | Linked from the upstream filing; reproduces the doubling on `htd/smack` pre-fix. |
 | [strata-verify-stack-overflow-deeply-nested-expr.md](strata-verify-stack-overflow-deeply-nested-expr.md) | OPEN (issue 2 — superseded as the upstream-filing target by `issue-2-elabexpr-overflow-upstream-filing.md`) | Use `issue-2-elabexpr-overflow-upstream-filing.md` for the actual filing; this older draft retained for triage history. |
 | [elabexpr-paren-strip-experiment.md](elabexpr-paren-strip-experiment.md) | discarded micro-fix | Already consumed as triage evidence in `issue-2-elabexpr-overflow-upstream-filing.md`. Not a standalone report. |
-| [v5-pass-question-mark-analysis.md](v5-pass-question-mark-analysis.md) | informational | None (records the qualitative analysis behind v5/v6 PASS-? matrix surfacing; closed when fuel-bump experiment confirmed loop-havoc as cause). |
+| [v5-pass-question-mark-analysis.md](v5-pass-question-mark-analysis.md) | informational | Superseded by [v6-pass-question-mark-classification.md](v6-pass-question-mark-classification.md). Retained as an earlier-vintage analysis. |
+| [v6-pass-question-mark-classification.md](v6-pass-question-mark-classification.md) | informational (BACKLOG item resolved) | All 15 PASS-? cases are EVALUATOR-GAP — CFG-eval explores loop-exit branches with concrete pre-loop induction-variable values, producing `assume false` path conditions. Fix lives in CFG-eval's loop-handling logic (fresh-var havoc on the modified set, optionally with bounded unrolling). |
 
 The cluster's umbrella issue, "non-TCO walker family across the verify pipeline," was originally tracked as Conjecture A. Empirical bisection has now disambiguated three issues:
 
