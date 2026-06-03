@@ -37,6 +37,7 @@ public structure PyAnalyzeConfig where
   isBugFinding : Bool := true
   outputMode : OutputMode := .default
   skipVerification : Bool := false
+  rejectApproximations : Bool := false
   profilePipeline : Bool := true
   metricsHandle : Option IO.FS.Handle := none
 
@@ -45,6 +46,7 @@ private def runPipeline (config : PyAnalyzeConfig)
   let combinedLaurel ← withPhase "pythonAndSpecToLaurel" do
     Strata.pythonAndSpecToLaurel
       (specDir := config.specDir)
+      (rejectApproximations := config.rejectApproximations)
       config.filePath config.dispatchModules config.pyspecModules config.sourcePath
 
   if config.outputMode == .verbose then

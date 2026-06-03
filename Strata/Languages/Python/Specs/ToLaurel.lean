@@ -76,6 +76,12 @@ structure ToLaurelContext where
   /-- Module prefix prepended to generated type and procedure names
       to avoid collisions when multiple PySpec files are combined. -/
   modulePrefix : String
+  /-- When `true`, every spec-level approximation (placeholder expression,
+      unsupported `isinstance` / `forall` / float literal, etc.) raises a
+      hard error rather than being silently skipped. The downstream
+      pipeline should fail the build when this flag is on and any errors
+      were reported. Off by default for back-compat. -/
+  rejectApproximations : Bool := false
 
 /-- State for PySpec to Laurel translation. -/
 structure ToLaurelState where
@@ -640,11 +646,12 @@ public structure TranslationResult where
 /-- Run the translation and return a Laurel Program, dispatch table,
     and any errors. -/
 public def signaturesToLaurel (filepath : System.FilePath) (sigs : Array Signature)
-    (moduleName : ModuleName)
+    (moduleName : ModuleName) (rejectApproximations : Bool := false)
     : TranslationResult :=
   let ctx : ToLaurelContext := {
     filepath,
     modulePrefix := moduleName.toString (sep := "_")
+    rejectApproximations
   }
   let ((), state) := (sigs.forM signatureToLaurel).run ctx |>.run {}
   let pgm : Laurel.Program := {

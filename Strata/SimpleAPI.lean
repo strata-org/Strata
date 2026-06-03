@@ -456,6 +456,7 @@ def pySpecsDir (sourceDir strataDir dialectFile : System.FilePath)
     (skipNames : Array String := #[])
     (warningOutput : WarningOutput := .detail)
     (pythonCmd : String := "python")
+    (rejectApproximations : Bool := false)
     : EIO String Unit := do
   -- Create output dir
   match ← IO.FS.createDirAll strataDir |>.toBaseIO with
@@ -513,7 +514,8 @@ def pySpecsDir (sourceDir strataDir dialectFile : System.FilePath)
     match ← Strata.Python.Specs.translateFile
         dialectFile strataDir pythonFile sourceDir mod
         (events := events) (skipNames := skipIdents)
-        (pythonCmd := pythonCmd) |>.toBaseIO with
+        (pythonCmd := pythonCmd)
+        (rejectApproximations := rejectApproximations) |>.toBaseIO with
     | .error msg =>
       Python.Specs.baseLogEvent events "import" s!"Failed {mod}: {msg}"
       failures := failures.push (toString mod, msg)
