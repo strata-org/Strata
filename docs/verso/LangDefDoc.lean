@@ -17,6 +17,7 @@ import Strata.DL.Lambda.LExpr
 import Strata.DL.Lambda.Semantics
 import Strata.DL.Lambda.LExprTypeSpec
 import Strata.DL.Lambda.Denote.LExprDenote
+import Strata.DL.Lambda.Denote.LExprResolveAnnotated
 import Strata.DL.Lambda.Denote.LExprSemanticsConsistent
 import Strata.Languages.Core.Procedure
 import Strata.Languages.Core.Program
@@ -749,7 +750,7 @@ to `true` under all possible interpretations.
 
 ### Well-Annotated Output of Type Resolution
 
-The theorem {name Lambda.LExpr.resolve_HasTypeA}`resolve_HasTypeA` establishes
+The theorem `resolve_HasTypeA` establishes
 that when type inference (`LExpr.resolve`) succeeds, the resulting expression
 satisfies `HasTypeA` — i.e., the type annotations placed by resolution are
 internally consistent. This allows us to give well-defined denotations for all
