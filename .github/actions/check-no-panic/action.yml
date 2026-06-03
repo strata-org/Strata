@@ -1,0 +1,22 @@
+# Copyright Strata Contributors
+# SPDX-License-Identifier: Apache-2.0 OR MIT
+name: Check no panic
+description: >
+  Detect net-new panic! calls introduced in a PR. Only fails when more
+  panics are added than removed. Suppression: add "-- nopanic:ok" on a line.
+  Uses the checkNoPanic.sh script bundled with this repository.
+
+inputs:
+  base-ref:
+    description: >
+      Git ref to diff against (e.g. "origin/main"). The script computes
+      the merge base automatically.
+    required: false
+    default: "origin/main"
+
+runs:
+  using: composite
+  steps:
+    - name: Check for new panic! usage
+      shell: bash
+      run: "${{ github.action_path }}/checkNoPanic.sh" "${{ inputs.base-ref }}"
