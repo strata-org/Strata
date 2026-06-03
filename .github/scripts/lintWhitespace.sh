@@ -1,9 +1,11 @@
 #!/bin/bash
 
+LINT_DIR="${1:-Strata}"
+
 tmpfile=$(mktemp)
 issues_found=0
 
-find Strata -type f -name "*.lean" | while IFS= read -r file; do
+find "$LINT_DIR" -type f -name "*.lean" | while IFS= read -r file; do
     # Check for trailing whitespace and print line number if found
     while IFS=: read -r line_num line; do
         echo "Trailing whitespace found in $file at line $line_num: $line"

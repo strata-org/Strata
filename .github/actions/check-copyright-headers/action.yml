@@ -1,0 +1,19 @@
+# Copyright Strata Contributors
+# SPDX-License-Identifier: Apache-2.0 OR MIT
+name: Check copyright headers
+description: >
+  Verify that all .lean and .py files have the expected copyright header.
+
+inputs:
+  directory:
+    description: Root directory to scan (relative to the workspace).
+    required: false
+    default: "."
+
+runs:
+  using: composite
+  steps:
+    - name: Check copyright headers
+      shell: bash
+      run: |
+        python3 "${{ github.action_path }}/../../scripts/check_copyright_headers.py" "${{ inputs.directory }}"
