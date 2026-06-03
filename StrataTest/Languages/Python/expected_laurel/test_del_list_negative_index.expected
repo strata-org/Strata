@@ -1,0 +1,11 @@
+unknown location: ✅ pass - Check Any_remove exception
+test_del_list_negative_index.py(4, 4): ✅ pass - assert_assert(53)_calls_Any_get_0
+test_del_list_negative_index.py(4, 4): ✅ pass - first unchanged
+test_del_list_negative_index.py(5, 4): ✅ pass - assert_assert(94)_calls_Any_get_0
+test_del_list_negative_index.py(5, 4): ✅ pass - second unchanged
+test_del_list_negative_index.py(6, 4): ✅ pass - assert_assert(136)_calls_Any_get_0
+test_del_list_negative_index.py(6, 4): ✅ pass - third unchanged
+unknown location: ❓ unknown - Check Any_remove exception
+unknown location: ✅ pass - Check Any_remove exception
+DETAIL: 8 passed, 0 failed, 1 inconclusive
+RESULT: Inconclusive
