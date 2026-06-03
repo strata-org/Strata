@@ -67,13 +67,26 @@ The plan was to cherry-pick `a3fb64376 f3f409c66 869d59f30 438052e86` (four comm
 
 The 94-program matrix re-run is in flight on the merged experiment branch. A clean baseline match (68 PASS / 15 PASS-? / 11 PARTIAL) confirms that the iterative-walker rewrites don't perturb the SMACK pipeline; that's the gate for the cherry-pick.
 
+## Cherry-pick result and follow-up fix
+
+The cherry-pick landed cleanly on `htd/smack` as commits `95abbe567` (translateCoreDecls + Program.typeCheckIter), `7b1018e81` (TermCheck.transformDecls), `73c17b1bd` (PrecondElim.transformDecls), and `fab1575f8` (runProgram O(N²)→O(N)). Post-cherry-pick 94-program SMACK matrix: 68 PASS / 15 PASS-? / 11 PARTIAL — exact match to the v6 baseline. sce1 at N=100K verified PASS in 37.7s on `htd/smack`.
+
+A `lake test --exclude Languages.Python` run post-cherry-pick caught one regression: `StrataTest/Transform/ProcedureInlining.lean:515` failed with `ERROR: leaf not available at Std.HashMap.ofList []` instead of the expected `some true`. Root cause: `fab1575f8`'s O(N) refactor deferred `currentProgram` state updates to end-of-walk, but `ProcedureInlining.inlineCallCmd` reads `currentProgram` mid-walk to look up callee bodies and updates the cached call-graph after each inline. The `CoreTransformState.currentProgram` contract docstring (`CoreTransform.lean:106-109`) is explicit: "currentProgram will store the latest versions of finished procedures." The deferred-update implementation violated this.
+
+Fix: commit `1dfa61e1f` (`fix(transform): preserve mid-walk currentProgram visibility in runProgram`). Snapshots `acc.toList ++ tail` into `currentProgram` after each rewritten decl, where `tail` is the unprocessed suffix of `p.decls` rotated forward in lockstep with the loop. This restores the finished-prefix + unprocessed-suffix view the contract requires without paying O(N²) on every iteration — the snapshot is only O(N) when a decl is actually rewritten, matching the per-mutation cost the original pre-`fab1575f8` code paid.
+
+Verification post-`1dfa61e1f`:
+- `lake build`: clean (542 jobs).
+- `lake test`: ProcedureInlining now PASS. Four other test failures (`EnsuresSynthesisTest`, `CFGParseTests`, `Examples.Loops`, `ProcedureEvalCFGTests:127,140`) are pre-existing API drifts confirmed on the parent commit `c46c75e41` — not regressions.
+- Spot-check on `cjson_cJSON_Parse`, `JSON_Iterate`, `skipScalars`, `aws_array_eq` under `--call-policy bodyOrContract --inline-fuel 100 --split-procs`: all PASS, matching v6 baseline.
+
 ## Why was the SUMMARY stale
 
 The experiment harness records logs per round (`logs/{pre,post-B,…}/`); the SUMMARY summarizes the most recently captured round. After Round B's first-ply commit (`a3fb64376`), the SUMMARY was written. Subsequent walker work on 2026-06-01 14:00-16:14 did not re-trigger a re-run of `run-all.sh`, so no new logs were captured and the SUMMARY's numbers stayed at the `a3fb64376` snapshot. This is a process gap (not an issue with the experiment itself); a follow-up note in `SUMMARY.md` would close it.
 
 ## Action items
 
-1. **Cherry-pick** `a3fb64376 f3f409c66 869d59f30 438052e86` to `htd/smack` once the 94-program matrix on the merged experiment branch confirms the v6 baseline (68/15/11). Do this as four separate commits to preserve attribution; do not squash.
-2. **Update `Examples/tco-experiment/SUMMARY.md`** on the experiment branch with a "2026-06-02 update" section recording the four-commit set and the 38.9s / 144s timings.
-3. **Update `reports/stack-and-hang-conjectures-report.md`** issue (1) section: replace "Residual at N≥100K" with "Resolved at N=100K (38.9s) and N=200K (144s) on the merged experiment branch; threshold for the next downstream walker is now N≥??? — TBD if relevant."
-4. **Update `BRANCH_FEATURES.md` bug #22** to reflect the now-fully-fixed-at-N=100K state (was "partial fix"; becomes "issue 1 fix complete at the documented reproducer; tracked further only if a larger-N reproducer becomes load-bearing").
+1. ~~**Cherry-pick** `a3fb64376 f3f409c66 869d59f30 438052e86` to `htd/smack`~~ — DONE as `95abbe567`/`7b1018e81`/`73c17b1bd`/`fab1575f8`, plus follow-up regression fix `1dfa61e1f`.
+2. **Update `Examples/tco-experiment/SUMMARY.md`** on the experiment branch with a "2026-06-02 update" section recording the four-commit set and the 38.9s / 144s timings — still pending.
+3. ~~**Update `reports/stack-and-hang-conjectures-report.md`** issue (1) section~~ — DONE in commit `2046c8e37`.
+4. ~~**Update `BRANCH_FEATURES.md` bug #22**~~ — DONE in commit `95e0dbfdc` (then refined in this update to mention the follow-up regression fix).

@@ -604,6 +604,29 @@ was also non-tail-recursive on long decl lists. Additionally,
    replacement instead of `List.set`-based search-and-replace, going
    from O(N²) to O(N).
 
+   **Follow-up fix (`1dfa61e1f`).** The cherry-picked O(N) refactor
+   regressed `StrataTest/Transform/ProcedureInlining.lean:515`: the
+   refactor deferred `currentProgram` state updates to end-of-walk,
+   but `ProcedureInlining.inlineCallCmd` reads `currentProgram`
+   mid-walk to look up callee bodies and updates the cached
+   call-graph after each inline (line 297). With the deferred
+   update, the cached and freshly-computed call-graphs diverged. The
+   `CoreTransformState.currentProgram` contract docstring (lines
+   106-109) is explicit: "currentProgram will store the latest
+   versions of finished procedures." Fix: snapshot
+   `acc.toList ++ tail` into `currentProgram` after each rewritten
+   decl, where `tail` is the unprocessed suffix of `p.decls` rotated
+   forward in lockstep with the loop. This restores the
+   finished-prefix + unprocessed-suffix view the contract requires
+   without paying O(N²) on every iteration — the snapshot is only
+   O(N) when a decl is actually rewritten, matching the per-mutation
+   cost the original pre-`fab1575f8` code paid. Caught by `lake test
+   -- --exclude Languages.Python` post-cherry-pick; the four other
+   test failures observed (`EnsuresSynthesisTest`, `CFGParseTests`,
+   `Examples.Loops`, `ProcedureEvalCFGTests:127,140`) are
+   pre-existing API drifts confirmed on the parent commit
+   `c46c75e41`, not regressions.
+
 **Result.** sce1 reaches a verdict at any reasonable N:
 - N=30K: PASS in 7s (pre-fix: PASS in 7s — threshold not yet hit)
 - N=50K: PASS in 23s (pre-fix: SIGABRT in 12s)
@@ -912,7 +935,7 @@ Sibling open issue [#1184](https://github.com/strata-org/Strata/issues/1184) (CB
 | # | Bug | Filed? | htd/smack | main/main2? |
 |---|---|---|---|---|
 | 17 | Stack overflow / SIGABRT on deeply-nested expressions — reproduces at depth ≈ 4100 on `origin/main` HEAD. Manifested as `skipEscape_harness` SIGABRT in the deductive verifier. **Diagnosis corrected (2026-06-02):** original report cited `Translate.translateExpr` (Core translation). Empirical bisection localised the actual walker to **`elabExpr` cycle in `StrataDDM/StrataDDM/Elab/Core.lean:1694`** (DDM elaboration, *before* `Translate.lean` runs). Trampolining `translateExpr` was attempted and verified to have zero effect; a paren-strip experiment (`reports/elabexpr-paren-strip-experiment.md`) confirmed `elabExpr` is the dominant frame consumer. Worklist rewrite of the `elabExpr`/`runSyntaxElaborator`/`elabSyntaxArg` cycle estimated 8-12h. | drafted as `reports/strata-verify-stack-overflow-deeply-nested-expr.md` (intended for upstream filing) | — | — |
-| 22 | Stack overflow / SIGABRT on long flat-list `prog.decls` (~30K-100K axioms) — `transformDecls` in `Strata/Transform/PrecondElim.lean` walked decls via direct list-recursion; `TermCheck.transformDecls` and `translateCoreDecls` overflowed at higher N. **Diagnosis corrected (2026-06-02):** original report cited `programToCST.mapM` (formatter path); the actual walkers are in `PrecondElim`, `TermCheck`, `translateCoreDecls`, plus `Program.typeCheck` (transformation + type-check pipeline). **Boundary scan (2026-06-02):** sce1 reaches a verdict at N=100K (38s) and N=200K (144s) post-fix; at N=500K strata is CPU-bound and times out at 10min without SIGABRT — performance ceiling, not a stack bug. The "residual walker" follow-up flagged in the experiment SUMMARY is not load-bearing. | report at `reports/stack-and-hang-conjectures-report.md` issue (1) section + `reports/issue-1-unblocking-2026-06-02.md` | ✓ `95abbe567`, `7b1018e81`, `73c17b1bd`, `fab1575f8` (cherry-picked from `htd/smack-tco-experiment` commits `a3fb64376`, `f3f409c66`, `869d59f30`, `438052e86`) | — |
+| 22 | Stack overflow / SIGABRT on long flat-list `prog.decls` (~30K-100K axioms) — `transformDecls` in `Strata/Transform/PrecondElim.lean` walked decls via direct list-recursion; `TermCheck.transformDecls` and `translateCoreDecls` overflowed at higher N. **Diagnosis corrected (2026-06-02):** original report cited `programToCST.mapM` (formatter path); the actual walkers are in `PrecondElim`, `TermCheck`, `translateCoreDecls`, plus `Program.typeCheck` (transformation + type-check pipeline). **Boundary scan (2026-06-02):** sce1 reaches a verdict at N=100K (38s) and N=200K (144s) post-fix; at N=500K strata is CPU-bound and times out at 10min without SIGABRT — performance ceiling, not a stack bug. The "residual walker" follow-up flagged in the experiment SUMMARY is not load-bearing. | report at `reports/stack-and-hang-conjectures-report.md` issue (1) section + `reports/issue-1-unblocking-2026-06-02.md` | ✓ `95abbe567`, `7b1018e81`, `73c17b1bd`, `fab1575f8` (cherry-picked from `htd/smack-tco-experiment` commits `a3fb64376`, `f3f409c66`, `869d59f30`, `438052e86`); follow-up `1dfa61e1f` restores mid-walk `currentProgram` visibility for ProcedureInlining's call-graph cache | — |
 
 ### 9.6 Pipeline-driver / matrix-display gaps (3 — not Strata bugs)
 

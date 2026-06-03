@@ -9,7 +9,7 @@ For open feature work (not tied to a specific bug report), see [`BACKLOG.md`](BA
 | Report | Status | Next action |
 |---|---|---|
 | [stack-and-hang-conjectures-report.md](stack-and-hang-conjectures-report.md) | **truth-of-record** | None — diagnoses for issues 1, 2, 3 are now stable. |
-| [issue-1-unblocking-2026-06-02.md](issue-1-unblocking-2026-06-02.md) | RESOLVED on `htd/smack` — sce1 reaches verdict at N=100K (38s), N=200K (144s); N=500K is CPU-bound (performance, not stack). 4-commit cherry-pick `95abbe567`/`7b1018e81`/`73c17b1bd`/`fab1575f8`. | None — sce1 fully unblocked. |
+| [issue-1-unblocking-2026-06-02.md](issue-1-unblocking-2026-06-02.md) | RESOLVED on `htd/smack` — sce1 reaches verdict at N=100K (38s), N=200K (144s); N=500K is CPU-bound (performance, not stack). 4-commit cherry-pick `95abbe567`/`7b1018e81`/`73c17b1bd`/`fab1575f8` + follow-up `1dfa61e1f` (restores mid-walk `currentProgram` visibility for ProcedureInlining's call-graph cache). | None — sce1 fully unblocked. |
 | [issue-2-elabexpr-overflow-upstream-filing.md](issue-2-elabexpr-overflow-upstream-filing.md) | OPEN — self-contained upstream-filing artifact ready | File standalone issue against strata-org/Strata. Fix is 8-12h on the `elabExpr`/`runSyntaxElaborator`/`elabSyntaxArg` cycle in `StrataDDM`. |
 | [issue-3-deferred-doubling-upstream-filing.md](issue-3-deferred-doubling-upstream-filing.md) | RESOLVED on `htd/smack` (commit `8f019818f`); filed upstream as [#1316](https://github.com/strata-org/Strata/issues/1316) + PR [#1317](https://github.com/strata-org/Strata/pull/1317) | Track #1317 review/merge. |
 | [issue-3-mwe-15procs.core.st](issue-3-mwe-15procs.core.st) | reference artifact | Linked from the upstream filing; reproduces the doubling on `htd/smack` pre-fix. |
