@@ -10,6 +10,7 @@ import Strata.Languages.Laurel.DesugarShortCircuit
 import Strata.Languages.Laurel.EliminateReturnsInExpression
 import Strata.Languages.Laurel.EliminateValueReturns
 import Strata.Languages.Laurel.ConstrainedTypeElim
+import Strata.Languages.Laurel.LiftInstanceProcedures
 import Strata.Languages.Laurel.TypeAliasElim
 public import Strata.Languages.Core
 import Strata.Languages.Core.DDMTransform.ASTtoCST
@@ -105,6 +106,10 @@ private def laurelPipeline : Array LaurelPass := #[
     run := fun p _m =>
       let (p', diags) := eliminateValueReturnsTransform p
       (p', diags.toList, {}) },
+  { name := "LiftInstanceProcedures"
+    needsResolves := true
+    run := fun p m =>
+      (liftInstanceProcedures m p, [], {}) },
   { name := "HeapParameterization"
     needsResolves := true
     run := fun p m =>

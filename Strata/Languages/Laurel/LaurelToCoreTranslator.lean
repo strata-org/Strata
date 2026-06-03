@@ -706,9 +706,15 @@ abbrev TranslateResult := (Option Core.Program) × (List DiagnosticModel)
 
 /--
 Translate an `OrderedLaurel` program to a `Core.Program`.
-The `program` parameter is the lowered Laurel program, used for type definitions.
+
+The `_program` parameter is the lowered Laurel program. It is currently
+unused — instance procedures are lifted into static procedures by
+`LiftInstanceProcedures` before this point, so all translatable
+declarations are already reachable through `ordered`. The parameter is
+retained for callers that still pass it and for future use (e.g.
+emitting type-level metadata not exposed by `OrderedLaurel`).
 -/
-def translateLaurelToCore (options: LaurelTranslateOptions) (program : Program) (ordered : OrderedLaurel): TranslateM Core.Program := do
+def translateLaurelToCore (options: LaurelTranslateOptions) (_program : Program) (ordered : OrderedLaurel): TranslateM Core.Program := do
 
   let coreDecls ← ordered.decls.flatMapM fun
     | .procs procs isRecursive => do
@@ -749,13 +755,9 @@ def translateLaurelToCore (options: LaurelTranslateOptions) (program : Program) 
       } mdWithUnknownLoc]
 
 
-  -- Emit diagnostics for composite types with instance procedures.
-  for td in program.types do
-    if let .Composite ct := td then
-      for proc in ct.instanceProcedures do
-        emitDiagnostic $ diagnosticFromSource proc.name.source
-          s!"Instance procedure '{proc.name.text}' on composite type '{ct.name.text}' is not yet supported"
-          DiagnosticType.NotYetImplemented
+  -- Instance procedures are lifted to top-level static procedures by the
+  -- `LiftInstanceProcedures` pass, so by the time we reach Core translation,
+  -- every composite's `instanceProcedures` list is empty.
   pure { decls := coreDecls }
 
 end -- public section
