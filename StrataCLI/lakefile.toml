@@ -6,6 +6,10 @@ defaultTargets = ["StrataMainLib", "strata"]
 name = "Strata"
 path = ".."
 
+[[require]]
+name = "StrataPython"
+path = "../StrataPython"
+
 [[lean_lib]]
 name = "StrataMainLib"
 
