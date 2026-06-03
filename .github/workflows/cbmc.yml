@@ -74,9 +74,6 @@ jobs:
           OUTPUT=$(cbmc full_checking.goto --function simpleTest --trace)
           echo "$OUTPUT"
           [[ "$OUTPUT" == *"VERIFICATION SUCCESSFUL"* ]]
-      - name: Build PyAnalyzeLaurelToGoto
-        run: lake build PyAnalyzeLaurelToGoto
-        working-directory: StrataPython
       - name: Run Python CBMC pipeline tests
         shell: bash
         run: |

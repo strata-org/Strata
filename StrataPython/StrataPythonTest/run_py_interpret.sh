@@ -45,9 +45,8 @@ while [ $# -gt 0 ]; do
     shift
 done
 
-# Ensure pyInterpret is built
+# Ensure pyInterpret is built (lake exe will build on demand, but pre-build for cleaner output)
 (cd "$STRATA_PYTHON_DIR" && lake build pyInterpret > /dev/null 2>&1)
-pyInterpret="$STRATA_PYTHON_DIR/.lake/build/bin/pyInterpret"
 
 for test_file in "$TESTS_DIR"/test_*.py; do
     [ -f "$test_file" ] || continue
@@ -81,7 +80,7 @@ for test_file in "$TESTS_DIR"/test_*.py; do
 
     # Run interpreter
     rel_ion="StrataPythonTest/tests/${base_name}.python.st.ion"
-    output=$(cd "$STRATA_PYTHON_DIR" && "$pyInterpret" $fuel $keepAllFiles \
+    output=$(cd "$STRATA_PYTHON_DIR" && lake exe pyInterpret $fuel $keepAllFiles \
         "$rel_ion" 2>&1)
     exit_code=$?
 

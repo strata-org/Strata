@@ -59,10 +59,9 @@ def run(test_file: str) -> bool:
         check=True,
     )
 
-    # Run analysis with --sarif
-    pyAnalyzeLaurel = str(STRATA_PYTHON_DIR / ".lake" / "build" / "bin" / "pyAnalyzeLaurel")
+    # Run analysis with --sarif (lake exe builds the binary on demand)
     subprocess.run(
-        [pyAnalyzeLaurel, "--sarif", ion_rel],
+        ["lake", "exe", "pyAnalyzeLaurel", "--sarif", ion_rel],
         cwd=STRATA_PYTHON_DIR,
         stdout=subprocess.DEVNULL,
     )
