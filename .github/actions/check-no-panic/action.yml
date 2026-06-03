@@ -19,4 +19,5 @@ runs:
   steps:
     - name: Check for new panic! usage
       shell: bash
-      run: "${{ github.action_path }}/checkNoPanic.sh" "${{ inputs.base-ref }}"
+      run: |
+        "${{ github.action_path }}/checkNoPanic.sh" "${{ inputs.base-ref }}"

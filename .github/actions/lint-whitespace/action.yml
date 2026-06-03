@@ -16,4 +16,5 @@ runs:
   steps:
     - name: Check for trailing whitespace
       shell: bash
-      run: "${{ github.action_path }}/lintWhitespace.sh" "${{ inputs.directory }}"
+      run: |
+        "${{ github.action_path }}/lintWhitespace.sh" "${{ inputs.directory }}"
