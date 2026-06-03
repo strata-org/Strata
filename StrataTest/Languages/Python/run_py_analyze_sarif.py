@@ -43,6 +43,7 @@ SKIP_TESTS = BOTH_SKIP | {
     "test_dict_operations",
     "test_for_loop",
     "test_func_input_type_constraints",
+    "test_heap_reference_monotone",
     "test_if_elif",
     "test_ifexpr",
     "test_list",

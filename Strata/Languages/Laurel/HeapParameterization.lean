@@ -476,6 +476,10 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
     -- Preconditions use $heap_in (the input state)
     let preconditions' ← proc.preconditions.mapM (·.mapM (heapTransformExpr heapInName model))
 
+    let inHeapRef := mkMd $ .StaticCall "Heap..nextReference!" [mkMd $ .Var (.Local heapInName)]
+    let outHeapRef := mkMd $ .StaticCall "Heap..nextReference!" [mkMd $ .Var (.Local heapName)]
+    let monoCond : Condition := {condition:= {val:= .PrimitiveOp .Geq [outHeapRef, inHeapRef], source:= proc.name.source}, summary := s!"Heap reference counter monotone ({proc.name.text})"}
+
     let bodyValueIsUsed := !proc.outputs.isEmpty
     let body' ← match proc.body with
       | .Transparent bodyExpr =>
@@ -493,10 +497,15 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
                 pure (some (mkMd (.Block [assignHeap, implExpr'] none)))
             | none => pure none
           let modif' ← modif.mapM (heapTransformExpr heapName model ·)
-          pure (.Opaque postconds' impl' modif')
+          -- When impl' = none, monoCond is axiomatic; it's safe to assume
+          -- because heapTransformExpr only uses updateField (preserves
+          -- nextReference) and increment (increases it by 1).
+          pure (.Opaque (monoCond::postconds') impl' modif')
       | .Abstract postconds =>
           let postconds' ← postconds.mapM (·.mapM (heapTransformExpr heapName model))
-          pure (.Abstract postconds')
+          -- monoCond is safe to assume because heapTransformExpr only uses
+          -- updateField (preserves nextReference) and increment (increases it by 1)
+          pure (.Abstract (monoCond::postconds'))
       | .External => pure .External
 
     return { proc with

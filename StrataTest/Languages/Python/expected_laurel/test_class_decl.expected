@@ -1,3 +1,5 @@
 test_class_decl.py(9, 4): ✅ pass - (CircularBuffer@__init__ requires) Type constraint of n
-DETAIL: 1 passed, 0 failed, 0 inconclusive
+test_class_decl.py(8, 0): ✅ pass - Heap reference counter monotone (main)
+unknown location: ✅ pass - Heap reference counter monotone (__main__)
+DETAIL: 3 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

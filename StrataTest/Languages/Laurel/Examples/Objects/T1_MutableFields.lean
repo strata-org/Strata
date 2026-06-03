@@ -158,6 +158,23 @@ procedure datatypeField()
 //   assert x == 4;
 // }
 
+procedure someWriteHeapProcedure(c: Container) returns ()
+  opaque
+  modifies c
+{
+  c#intValue := 5
+}
+;
+
+procedure callerUsesAllocateTwo()
+  opaque
+{
+  var c: Container;
+  var d: Container;
+  c := new Container;
+  someWriteHeapProcedure(c);
+  d := new Container;
+  assert c != d
 procedure modifyHeapAndReturnMultiple(c: Container) returns (x: int, y: int, z: int)
   opaque
   ensures x == 1 && y == 2 && z == 3
