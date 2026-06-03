@@ -73,6 +73,14 @@ def LMonoTys.openVars (vars : List TyIdentifier) (vals : LMonoTys) (mtys : LMono
   | mty :: rest => LMonoTy.openVars vars vals mty :: LMonoTys.openVars vars vals rest
 end
 
+/-- `openVars` preserves list length. -/
+theorem openVars_length (vars : List TyIdentifier) (vals : LMonoTys)
+    (mtys : LMonoTys) :
+    (LMonoTys.openVars vars vals mtys).length = mtys.length := by
+  induction mtys with
+  | nil => simp [LMonoTys.openVars]
+  | cons hd tl ih => simp [LMonoTys.openVars, ih]
+
 /-- Pure alias expansion: substitute `args` for `a.typeArgs` in `a.type`. -/
 def TypeAlias.expand (a : TypeAlias) (args : LMonoTys) : LMonoTy :=
   LMonoTy.openVars a.typeArgs args a.type
@@ -138,6 +146,33 @@ structure TContext (IDMeta : Type) where
 /-- All type aliases in a context are well-formed. -/
 def TContext.AliasesWF (Γ : TContext IDMeta) : Prop :=
   ∀ a, a ∈ Γ.aliases → a.WF
+
+mutual
+/-- A monotype is alias-free w.r.t. an alias list: none of its `.tcons`
+    constructors match an alias by both name and parameter-list length.
+    This relies on the assumption that alias names do not overlap with
+    non-alias type constructor names. -/
+def LMonoTy.aliasFree (aliases : List TypeAlias) (mty : LMonoTy) : Prop :=
+  match mty with
+  | .ftvar _ => True
+  | .bitvec _ => True
+  | .tcons name args =>
+    (aliases.find? (fun a => a.name == name && a.typeArgs.length == args.length) = none) ∧
+    LMonoTys.aliasFree aliases args
+
+/-- All types in a list are alias-free. -/
+def LMonoTys.aliasFree (aliases : List TypeAlias) (mtys : LMonoTys) : Prop :=
+  match mtys with
+  | [] => True
+  | mty :: rest => LMonoTy.aliasFree aliases mty ∧ LMonoTys.aliasFree aliases rest
+end
+
+/-- All alias bodies in the context are fully resolved: they do not reference
+    other alias names. This is established by `TEnv.addTypeAlias` which calls
+    `instantiateWithCheck` (and therefore `resolveAliases`) on the alias body
+    before storing it. -/
+def TContext.AliasesResolved (Γ : TContext IDMeta) : Prop :=
+  ∀ a, a ∈ Γ.aliases → LMonoTy.aliasFree Γ.aliases a.type
 
 instance {IDMeta} [ToFormat IDMeta] : ToFormat (TContext IDMeta) where
   format ctx :=
