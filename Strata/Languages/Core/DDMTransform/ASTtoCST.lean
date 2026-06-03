@@ -255,10 +255,15 @@ def declToCST {M} [Inhabited M] (decl : Core.Decl) : ToCSTM M (List (Command M))
 def programToCST {M} [Inhabited M] (prog : Core.Program)
     (initCtx : ToCSTContext M := ToCSTContext.empty) :
     ToCSTContext M × List (Command M) :=
-  let (cmds, finalCtx) := (do
-    let cmdLists ← prog.decls.mapM declToCST
-    pure cmdLists.flatten).run initCtx
-  (finalCtx, cmds)
+  let rec go (decls : List Core.Decl) (acc : List (Command M))
+      (ctx : ToCSTContext M) : List (Command M) × ToCSTContext M :=
+    match decls with
+    | [] => (acc, ctx)
+    | d :: ds =>
+      let (cmds, ctx') := (declToCST d).run ctx
+      go ds (cmds.reverse ++ acc) ctx'
+  let (cmds, finalCtx) := go prog.decls [] initCtx
+  (finalCtx, cmds.reverse)
 
 /-- Render `Core.Program` to a format object.
 
