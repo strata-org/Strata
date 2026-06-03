@@ -426,6 +426,40 @@ theorem Maps.find?_addInNewest_single [DecidableEq α]
     · left; rw [h1]; exact ⟨rfl, h2⟩
     · right; rw [h1]
 
+/-- Looking up `y` in `addInNewest ms [(x, v)]` is unchanged when `y != x`. -/
+theorem Maps.find?_addInNewest_ne [DecidableEq α]
+    (ms : Maps α β) (x : α) (v : β) (y : α) (h_ne : y ≠ x) :
+    Maps.find? (Maps.addInNewest ms [(x, v)]) y = Maps.find? ms y := by
+  rcases Maps.find?_addInNewest_single ms x v y with ⟨_, h_eq⟩ | h
+  · exact absurd h_eq h_ne
+  · exact h
+
+/-- If every scope gives `none` for `x`, then `Maps.find?` gives `none`. -/
+theorem Maps.find?_of_all_none [DecidableEq α]
+    (ms : Maps α β) (x : α) (h : ∀ m, m ∈ ms → Map.find? m x = none) :
+    Maps.find? ms x = none := by
+  induction ms with
+  | nil => rfl
+  | cons m rest ih =>
+    simp only [Maps.find?]
+    rw [h m (.head _)]
+    exact ih (fun m' hm' => h m' (.tail _ hm'))
+
+/-- When `x` is fresh (not found in any scope), `addInNewest` makes it findable. -/
+theorem Maps.find?_addInNewest_self [DecidableEq α]
+    (ms : Maps α β) (x : α) (v : β)
+    (h_fresh : ∀ m, m ∈ ms → Map.find? m x = none) :
+    Maps.find? (Maps.addInNewest ms [(x, v)]) x = some v := by
+  cases ms with
+  | nil =>
+    show Maps.find? [[(x, v)]] x = some v
+    simp [Maps.find?, Map.find?]
+  | cons m rest =>
+    simp only [Maps.addInNewest, Maps.newest, Maps.pop, Maps.push]
+    unfold Maps.find?
+    rw [Map.find?_map_append, h_fresh m (.head _)]
+    simp [Map.find?]
+
 /-- When `Maps.find? ms x = none`, the newest scope also has `find? = none`. -/
 theorem Maps.find?_none_newest [DecidableEq α]
     (ms : Maps α β) (x : α) (h : Maps.find? ms x = none) :
