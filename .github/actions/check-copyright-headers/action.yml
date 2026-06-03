@@ -3,7 +3,6 @@
 name: Check copyright headers
 description: >
   Verify that all .lean and .py files have the expected copyright header.
-  Uses the check_copyright_headers.py script bundled with this repository.
 
 inputs:
   directory:
@@ -16,4 +15,5 @@ runs:
   steps:
     - name: Check copyright headers
       shell: bash
-      run: python3 "${{ github.action_path }}/check_copyright_headers.py" "${{ inputs.directory }}"
+      run: |
+        python3 "${{ github.action_path }}/../../scripts/check_copyright_headers.py" "${{ inputs.directory }}"

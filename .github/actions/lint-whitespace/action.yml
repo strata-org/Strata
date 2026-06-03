@@ -3,7 +3,6 @@
 name: Lint whitespace
 description: >
   Check .lean files for trailing whitespace and missing final newlines.
-  Uses the lintWhitespace.sh script bundled with this repository.
 
 inputs:
   directory:
@@ -17,4 +16,4 @@ runs:
     - name: Check for trailing whitespace
       shell: bash
       run: |
-        "${{ github.action_path }}/lintWhitespace.sh" "${{ inputs.directory }}"
+        "${{ github.action_path }}/../../scripts/lintWhitespace.sh" "${{ inputs.directory }}"
