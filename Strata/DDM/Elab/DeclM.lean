@@ -357,7 +357,7 @@ def ofDialects (ds : LoadedDialects) : DeclState :=
     openDialectSet := {}
     tokenTable := initTokenTable
   }
-  ds.dialects.toList.foldl (init := s) (·.openLoadedDialect! ds ·)
+  ds.dialects.toList.foldl (init := s) fun s d => s.ensureLoaded! ds d.name
 
 end DeclState
 

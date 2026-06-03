@@ -502,6 +502,85 @@ theorem LMonoTys.resolveAliases_context {IDMeta : Type} [ToFormat IDMeta]
             LMonoTy.resolveAliases_context mty Env mty' Env1 h_hd]
 end
 
+---------------------------------------------------------------------
+/-! ### `addTypeAlias` invariants -/
+
+mutual
+/-- `LMonoTy.resolveAliases` preserves the full environment (not just context). -/
+private theorem LMonoTy.resolveAliases_env {IDMeta : Type} [ToFormat IDMeta]
+    (mty : LMonoTy) (Env : TEnv IDMeta) (mty' : LMonoTy) (Env' : TEnv IDMeta)
+    (h : LMonoTy.resolveAliases mty Env = .ok (mty', Env')) :
+    Env' = Env := by
+  match mty with
+  | .ftvar _ =>
+    simp [LMonoTy.resolveAliases] at h
+    obtain ⟨_, h2⟩ := h; exact h2.symm
+  | .bitvec _ =>
+    simp [LMonoTy.resolveAliases] at h
+    obtain ⟨_, h2⟩ := h; exact h2.symm
+  | .tcons name args =>
+    simp [LMonoTy.resolveAliases, Bind.bind, Except.bind] at h
+    split at h
+    · simp at h
+    · rename_i v1 h_args
+      obtain ⟨args', Env1⟩ := v1; simp at h h_args
+      simp only [LMonoTy.tconsAliasSimple] at h
+      split at h <;> (obtain ⟨_, h2⟩ := h; rw [← h2])
+      all_goals exact LMonoTys.resolveAliases_env args Env args' Env1 h_args
+private theorem LMonoTys.resolveAliases_env {IDMeta : Type} [ToFormat IDMeta]
+    (mtys : LMonoTys) (Env : TEnv IDMeta) (mtys' : LMonoTys) (Env' : TEnv IDMeta)
+    (h : LMonoTys.resolveAliases mtys Env = .ok (mtys', Env')) :
+    Env' = Env := by
+  match mtys with
+  | [] =>
+    simp [LMonoTys.resolveAliases] at h
+    obtain ⟨_, h2⟩ := h; exact h2.symm
+  | mty :: mrest =>
+    simp [LMonoTys.resolveAliases, Bind.bind, Except.bind] at h
+    split at h
+    · simp at h
+    · rename_i v1 h_hd
+      obtain ⟨mty', Env1⟩ := v1; simp at h h_hd
+      split at h
+      · simp at h
+      · rename_i v2 h_tl
+        obtain ⟨mrest', Env2⟩ := v2
+        simp at h; obtain ⟨_, h2⟩ := h; rw [← h2]
+        rw [LMonoTys.resolveAliases_env mrest Env1 mrest' Env2 h_tl,
+            LMonoTy.resolveAliases_env mty Env mty' Env1 h_hd]
+end
+
+/-- The alias stored by `addTypeAlias` preserves the user-supplied `typeArgs`. -/
+theorem TEnv.addTypeAlias_preserves_typeArgs
+    {T : LExprParams}
+    [DecidableEq T.IDMeta] [ToFormat T.Metadata] [ToFormat T.IDMeta]
+    (alias : TypeAlias) (C : LContext T) (Env Env' : TEnv T.IDMeta)
+    (h : TEnv.addTypeAlias alias C Env = .ok Env') :
+    ∃ stored, Env'.context.aliases.head? = some stored ∧
+              stored.name = alias.name ∧
+              stored.typeArgs = alias.typeArgs := by
+  unfold TEnv.addTypeAlias at h
+  simp only [Bind.bind, Except.bind] at h
+  split at h
+  · cases h
+  · split at h
+    · cases h
+    · split at h
+      · cases h
+      · -- Now in the success branch: resolveAliases
+        split at h
+        · cases h
+        · -- instantiateWithCheck
+          split at h
+          · cases h
+          · -- h : Except.ok (...) = Except.ok Env'
+            have h := Except.ok.inj h; rw [← h]
+            exact ⟨⟨alias.name, alias.typeArgs, _⟩, rfl, rfl, rfl⟩
+
+-- TODO (#follow-up): `TEnv.addTypeAlias_stored_dealiased` — the stored type is
+-- a fixpoint of `resolveAliases`. Proof requires showing idempotence of
+-- `resolveAliases` via an "alias-free" predicate and mutual induction.
+
 /-- `LTy.instantiate` preserves the context. -/
 theorem LTy.instantiate_context {IDMeta : Type} [ToFormat IDMeta]
     (ty : LTy) (Env : TGenEnv IDMeta)
