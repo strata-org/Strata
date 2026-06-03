@@ -66,11 +66,13 @@ def toLMonoTy {T : LExprParamsT} (e : LExprT T) : LMonoTy :=
   | .quant _ _ _ _ _ _ => LMonoTy.bool
 
 /--
-Remove any type annotation stored in metadata for all
-expressions, except the `.op`s, free variables
-`.fvar`s, and bound variables in `.abs` and `.quant`.
+Convert a typed `LExprT` back to an `LExpr`:
+- Strip the type annotation from metadata for all sub-expressions.
+- Set the optional type annotation field (not in metadata) to the type
+  previously stored in metadata for `.op`, `.fvar`, `.abs`, and `.quant`.
+  Any pre-existing optional annotation is overwritten unconditionally.
 -/
-def unresolved {T : LExprParamsT} (e : LExprT T) : LExpr T.base.mono :=
+@[expose] def unresolved {T : LExprParamsT} (e : LExprT T) : LExpr T.base.mono :=
   match e with
   | .const m c => .const m.underlying c
   | .op m o _ => .op m.underlying o (some m.type)
@@ -78,14 +80,16 @@ def unresolved {T : LExprParamsT} (e : LExprT T) : LExpr T.base.mono :=
   | .fvar m f _ => .fvar m.underlying f (some m.type)
   | .app m e1 e2 =>
     .app m.underlying e1.unresolved e2.unresolved
-  | .abs ⟨underlying, .arrow aty _⟩ name _ e =>
-    .abs underlying name (some aty) e.unresolved
-  | .abs m name t e => .abs m.underlying name t e.unresolved
+  | .abs m name t e =>
+    match m.type.isArrow with
+    | some (aty, _) => .abs m.underlying name (some aty) e.unresolved
+    | none => .abs m.underlying name t e.unresolved
   -- Since quantifiers are bools, the type stored in their
   -- metadata is the type of the argument
   | .quant m qk name _ tr e => .quant m.underlying qk name (some m.type) tr.unresolved e.unresolved
   | .ite m c t f => .ite m.underlying c.unresolved t.unresolved f.unresolved
   | .eq m e1 e2 => .eq m.underlying e1.unresolved e2.unresolved
+
 
 /--
 Apply type substitution `S` to `LExpr e`.
