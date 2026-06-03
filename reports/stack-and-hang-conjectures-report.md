@@ -89,9 +89,11 @@
 | --- | --- | --- |
 | 30,000 | PASS (7s) | PASS (8s) |
 | 50,000 | SIGABRT (12s) | PASS (23s) |
-| 100,000 | SIGABRT | SIGABRT (different walker — see below) |
+| 100,000 | SIGABRT | PASS (38.9s) (post-merge) |
+| 200,000 | (untested) | PASS (144s) (post-merge) |
+| 500,000 | (untested) | TIMEOUT at 10min (CPU-bound, rc=124 — performance, not SIGABRT) |
 
-- **Residual at N≥100K**: a *different* downstream walker still SIGABRTs. `--parse-only` succeeds but `--type-check` overflows. Not yet identified; likely another `partial def` mutual block in the `mapM`-over-decls shape (candidates: `programToCST.mapM declToCST`, `translateLMonoTys.args.mapM`, `translateExprs.args.mapM (translateExpr …)`, `preconds.toArray.mapM`). Follow-up needed.
+- **Boundary scan (2026-06-02 post-merge)**: sce1 reaches a verdict at N=100K and N=200K on the merged experiment branch (`htd/smack-tco-experiment` after `git merge htd/smack`). At N=500K strata is CPU-bound and times out at 10 minutes without SIGABRT — performance scaling, not a stack bug. **The "next downstream walker" follow-up the experiment SUMMARY flagged is not load-bearing**: the iterative-walker family (`PrecondElim.transformDecls`, `TermCheck.transformDecls`, `translateCoreDecls`, `Program.typeCheckIter`, `runProgram` O(N)) cures the stack-overflow bottleneck for sce1 at any reasonable N. The pre-merge SUMMARY's "SIGABRT in 13.4s" was based on `a3fb64376` only and predated the three follow-up walker rewrites that landed on 2026-06-01 14:00-16:14 (`f3f409c66`, `869d59f30`, `438052e86`). See [`issue-1-unblocking-2026-06-02.md`](issue-1-unblocking-2026-06-02.md).
 - The original report's `programToCST` hypothesis was incorrect for the documented threshold but may apply at higher N. `ChunkedFormat.formatProgramChunked` mentioned in the original report does not exist in the tree.
 
 ### Issue (2) — deeply-nested-Expr stack overflow (~4100+ deep ITE) [DIAGNOSIS CORRECTED, NO FIX]
@@ -212,11 +214,9 @@ So body-eval's contribution to (3) is not introducing a new non-TCO walker; it i
 
 ## 4. Status and recommendation
 
-**Issue (3) — DONE.** Resolved by commit `277c468cb` (`fix(eval): clear Env.deferred on false branch of CFG condGoto`) on `htd/smack-timeout-fix`. Diagnosed via per-procedure `dbg_trace s!"[proc-eval-end] {name} (deferred={E.deferred.size})"` instrumentation in `Program.eval`; fixed in one line in `evalCFGStep`. Verification: full 94-program sweep produces 83 PASS / 11 PARTIAL with PARTIAL identities matching the v4 baseline exactly.
+**Issue (3) — DONE.** Resolved by commit `277c468cb` (`fix(eval): clear Env.deferred on false branch of CFG condGoto`) on `htd/smack-timeout-fix`, cherry-picked as `8f019818f` on `htd/smack`. Upstream: filed as [#1316](https://github.com/strata-org/Strata/issues/1316) with PR [#1317](https://github.com/strata-org/Strata/pull/1317) targeting `htd/unstructured-procedure`. Diagnosed via per-procedure `dbg_trace s!"[proc-eval-end] {name} (deferred={E.deferred.size})"` instrumentation in `Program.eval`; fixed in one line in `evalCFGStep`. Verification: full 94-program sweep produces 68 PASS / 15 PASS-? / 11 PARTIAL with PARTIAL identities matching the v4 baseline exactly.
 
-**Issue (1) — partial fix landed locally.** Commit `15b84c160` on local branch `draft-fix/precondelim-iterative` (off origin/main `75f005566`). Converts `transformDecls` in `Strata/Transform/PrecondElim.lean` to iterative form. Empirically shifts the threshold from N≈30K to beyond 50K (verified: 50K SIGABRT pre-fix → PASS post-fix). PrecondElim's own tests + 7 sibling Transform tests pass with the change. Branch not pushed; awaiting decision on whether to file as PR.
-
-Residual at N≥100K: a different downstream walker still SIGABRTs. The fix path remains the same shape: identify the next `partial def`-with-direct-recursion or `mapM`-over-long-list and convert to iterative. Candidates to investigate: `programToCST.decls.mapM declToCST`, `translateLMonoTys.args.mapM`, the various `mapM` chains in `DDMTransform/`, `translateStmt` if the program has nested-block depth.
+**Issue (1) — fix landed on `htd/smack-tco-experiment`; sce1 reaches verdict at any reasonable N.** Four commits (`a3fb64376`, `f3f409c66`, `869d59f30`, `438052e86`) iterativize `translateCoreDecls`, `Program.typeCheckIter`, `TermCheck.transformDecls`, `PrecondElim.transformDecls`, plus an O(N²)→O(N) `runProgram` walker fix. Empirical results post-merge of `htd/smack`: N=100K passes in 38.9s, N=200K passes in 144s, N=500K is CPU-bound at 10min (rc=124, no SIGABRT) — a performance ceiling, not a stack bug. The earlier "next downstream walker" follow-up flagged in `Examples/tco-experiment/SUMMARY.md` is **not load-bearing**; the iterative-walker family fully cures the stack-overflow bottleneck for sce1. See [`issue-1-unblocking-2026-06-02.md`](issue-1-unblocking-2026-06-02.md). Cherry-pick to `htd/smack` is pending (Phase B3).
 
 **Issue (2) — diagnosis corrected, no fix landed.** The original `translateExpr` cite was wrong; the actual walker is `elabExpr`/`runSyntaxElaborator`/`elabSyntaxArg` in `StrataDDM/StrataDDM/Elab/Core.lean` (the 3-function monadic cycle described in §1). A trampoline rewrite of `translateExpr` was attempted, built clean, and verified to have **zero effect on the reproducer** (because the walker overflows during DDM elaboration, before `translateExpr` runs). That work was discarded.
 

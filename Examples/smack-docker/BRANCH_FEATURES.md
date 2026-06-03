@@ -568,6 +568,71 @@ accidental inclusion of any divergent program now produces a
 clean TIMEOUT verdict at the per-program 120s budget rather than
 hanging the whole run.
 
+### 4.5 Iterative walker family for long flat-list programs (4 commits)
+
+**Problem.** A `prog.decls : List Decl` of tens of thousands of
+elements (e.g. 100K trivial axioms — the canonical sce1 reproducer
+from `reports/stack-and-hang-conjectures-report.md` issue 1) caused
+`strata verify` to SIGABRT with `Stack overflow detected. Aborting.`
+Pre-fix bisection pinpointed `transformDecls` (`Strata/Transform/PrecondElim.lean`)
+as the dominant culprit at N≈30K-50K, with `TermCheck.transformDecls`
+and `translateCoreDecls` overflowing at higher N. `Program.typeCheck`
+was also non-tail-recursive on long decl lists. Additionally,
+`runProgram` had an O(N²) replacement pattern using `List.set`.
+
+**Fix.** Four commits, cherry-picked from `htd/smack-tco-experiment`:
+
+1. **`fix(verify): iterativize translateCoreDecls and Program.typeCheck`**
+   (`a3fb64376` → cherry-picked as `95abbe567`). Rewrites
+   `translateCoreDecls` from `where go` recursion to a `for`-loop
+   with reverse-accumulation. Adds `Program.typeCheckIter` alongside
+   the original `typeCheck`/`go` so `ProgramWF.lean` proofs survive
+   by `induction decls` over the original shape; switches three
+   call sites in `Core.lean`, `CoreToCProverGOTO.lean`,
+   `CoreToGOTOPipeline.lean` to `typeCheckIter`.
+2. **`refactor(transform): iterativize TermCheck.transformDecls`**
+   (`f3f409c66` → cherry-picked as `7b1018e81`). Splits per-decl
+   logic into `processOneDecl`, drives with a for-loop building the
+   result in reverse and reversing once at the end.
+3. **`refactor(transform): iterativize PrecondElim.transformDecls`**
+   (`869d59f30` → cherry-picked as `73c17b1bd`). Same pattern as
+   TermCheck. The empirical hot walker for sce1 — pre-fix this one
+   was the dominant SIGABRT source at N≈30K-50K.
+4. **`perf(transform): O(N) runProgram walker`** (`438052e86` →
+   cherry-picked as `fab1575f8`). Rewrites `runProgram` in
+   `Strata/Transform/CoreTransform.lean` to use index-tracked
+   replacement instead of `List.set`-based search-and-replace, going
+   from O(N²) to O(N).
+
+**Result.** sce1 reaches a verdict at any reasonable N:
+- N=30K: PASS in 7s (pre-fix: PASS in 7s — threshold not yet hit)
+- N=50K: PASS in 23s (pre-fix: SIGABRT in 12s)
+- N=100K: PASS in 38s (pre-fix: SIGABRT)
+- N=200K: PASS in 144s (pre-fix: untested; presumed SIGABRT)
+- N=500K: TIMEOUT at 10min, no SIGABRT (CPU-bound; performance
+  ceiling, not a stack bug)
+
+The 94-program SMACK portfolio under `--call-policy bodyOrContract
+--inline-fuel 100 --check-level full --split-procs` is unchanged
+from the pre-cherry-pick v6 baseline (68 PASS / 15 PASS-? / 11
+PARTIAL). PARTIAL identities match exactly — no soundness regressions.
+
+**Diagnostic recipe.** Pre-fix bisection used a one-line
+`[phase-start]` log on the pipeline loop in `Verifier.lean:1177`,
+gated on `--profile`, plus per-element `dbg_trace` inside the
+suspect `transformDecls`. The instrumentation is described in
+[`reports/stack-and-hang-conjectures-report.md`](../../reports/stack-and-hang-conjectures-report.md)
+§5.
+
+**Files:** `Strata/Languages/Core/DDMTransform/Translate.lean`
+(translateCoreDecls), `Strata/Languages/Core/ProgramType.lean`
+(typeCheckIter, typeCheckOne), `Strata/Languages/Core/Core.lean`
++ `Strata/Backends/CBMC/GOTO/CoreToCProverGOTO.lean` +
+`Strata/Backends/CBMC/GOTO/CoreToGOTOPipeline.lean` (call-site
+switches), `Strata/Transform/TerminationCheck.lean`,
+`Strata/Transform/PrecondElim.lean`, `Strata/Transform/CoreTransform.lean`.
+Net: 6 Lean files modified, +441 / -71 lines.
+
 ---
 
 ## 5. Benchmark suite: 94 programs
@@ -833,7 +898,7 @@ Sibling open issue [#1184](https://github.com/strata-org/Strata/issues/1184) (CB
 | 12 | `runProgram` skipped CFG bodies — call sites inside any CFG-bodied procedure had no `requires`-VCs generated; the verifier silently passed those call sites with vacuous PASS verdicts. **Largest single soundness improvement of the project so far.** | — (commit message documents) | ✓ `42ff8a4b8` | — |
 | 13 | Contract-only call evaluation — every `.call` was replaced by `havoc(lhs); assume(ensures)`, losing all body-derived information. Caused the dominant deductive sub-class (a) PARTIALs (54 of 93). Resolved by the body-eval feature. | — (motivation captured in spec) | ✓ `dd0c0d7cd` (body-eval feature) | — |
 | 14 | Cross-procedure `Env.error` contamination — when one procedure errors (CFG fuel exhaustion, etc.), `fixupError` doesn't clear `Env.error`; subsequent procedures short-circuit and emit zero obligations. **Confirmed today on `htd/smack`**: `aws_array_eq` reports `All 4 goals passed` end-to-end but `--procedures main` shows `0 goals passed, 3 failed`. The `--split-procs` workaround masks this, not fixes it. | [#1185](https://github.com/strata-org/Strata/issues/1185) (open) | — | — (fix lives on `htd/fix-eval` as `d55ac1c33` + `eeb0dfa3d` + `ecf402211`, not yet on either main or htd/smack) |
-| 21 | CFG `condGoto` deferred-obligation duplication — both `env_t` and `env_f` of a symbolic-condition CFG branch inherited the parent's `deferred` array; every symbolic branch doubled the pre-split obligation set, growing multiplicatively across procedures (3.96B obligations on `cjson_cJSON_Parse_harness.bpl` after 7 procedures). Materializing the array hung `Program.eval` on every `.bpl` ≥20K lines, regardless of `--call-policy` or `--inline-fuel`. **Note: this supersedes Conjecture A in `reports/stack-and-hang-conjectures-report.md`, which attributed the hang to a depth-O(N) ITE chain in `oblProgram` — the actual mechanism is width-O(2^K) array growth in `deferred` *before* the ITE chain is constructed.** | — (fix landed locally before upstream filing) | ✓ `277c468cb` | — |
+| 21 | CFG `condGoto` deferred-obligation duplication — both `env_t` and `env_f` of a symbolic-condition CFG branch inherited the parent's `deferred` array; every symbolic branch doubled the pre-split obligation set, growing multiplicatively across procedures (3.96B obligations on `cjson_cJSON_Parse_harness.bpl` after 7 procedures). Materializing the array hung `Program.eval` on every `.bpl` ≥20K lines, regardless of `--call-policy` or `--inline-fuel`. **Note: this supersedes Conjecture A in `reports/stack-and-hang-conjectures-report.md`, which attributed the hang to a depth-O(N) ITE chain in `oblProgram` — the actual mechanism is width-O(2^K) array growth in `deferred` *before* the ITE chain is constructed.** | [#1316](https://github.com/strata-org/Strata/issues/1316) (open) + PR [#1317](https://github.com/strata-org/Strata/pull/1317) targeting `htd/unstructured-procedure` | ✓ `8f019818f` (cherry-picked from `277c468cb` on `htd/smack-timeout-fix`) | — |
 
 ### 9.4 Strata DDM / parser / type-checker (2)
 
@@ -842,12 +907,12 @@ Sibling open issue [#1184](https://github.com/strata-org/Strata/issues/1184) (CB
 | 15 | Transitive type-synonym chain not resolved for comparison/arithmetic operators — `<=`, `<`, `>=`, `>`, `+`, `-`, `*`, `div`, `mod` panicked when operands had a synonym-of-`int` type (e.g. `ref := i64 := int`) | [#1148](https://github.com/strata-org/Strata/issues/1148) (closed; tracking) | ✓ `e94635f8a` | — |
 | 16 | Type checker fails on nondet goto with undeclared `$__nondet_N` | [#1162](https://github.com/strata-org/Strata/issues/1162) (open; resolved on `htd/smack` per BoogieToStrata STATUS.md) | ✓ (referenced by translator change in `Tools/BoogieToStrata/`) | — |
 
-### 9.5 Strata `verify` runtime (2, partially patched)
+### 9.5 Strata `verify` runtime (2 — #17 open, #22 fixed via cherry-pick)
 
 | # | Bug | Filed? | htd/smack | main/main2? |
 |---|---|---|---|---|
 | 17 | Stack overflow / SIGABRT on deeply-nested expressions — reproduces at depth ≈ 4100 on `origin/main` HEAD. Manifested as `skipEscape_harness` SIGABRT in the deductive verifier. **Diagnosis corrected (2026-06-02):** original report cited `Translate.translateExpr` (Core translation). Empirical bisection localised the actual walker to **`elabExpr` cycle in `StrataDDM/StrataDDM/Elab/Core.lean:1694`** (DDM elaboration, *before* `Translate.lean` runs). Trampolining `translateExpr` was attempted and verified to have zero effect; a paren-strip experiment (`reports/elabexpr-paren-strip-experiment.md`) confirmed `elabExpr` is the dominant frame consumer. Worklist rewrite of the `elabExpr`/`runSyntaxElaborator`/`elabSyntaxArg` cycle estimated 8-12h. | drafted as `reports/strata-verify-stack-overflow-deeply-nested-expr.md` (intended for upstream filing) | — | — |
-| 22 | Stack overflow / SIGABRT on long flat-list `prog.decls` (~30K-50K axioms) — `transformDecls` in `Strata/Transform/PrecondElim.lean` walked decls via direct list-recursion; threshold ≈30K under default `--check-mode deductive`. **Diagnosis corrected (2026-06-02):** original report cited `programToCST.mapM` (formatter path); the actual walker is in `PrecondElim` (transformation pipeline). Partial fix on `htd/smack-tco-experiment` (commits `a3fb64376`, `f3f409c66`, `869d59f30`, `438052e86`) iterativizes `PrecondElim.transformDecls`, `TermCheck.transformDecls`, `translateCoreDecls`, `Program.typeCheckIter`, and the `runProgram` O(N) walker. Threshold advances from N≈30K to ≥50K. **Residual at N≥100K:** a different downstream walker still SIGABRTs (`--type-check` overflows; not yet identified). | report at `reports/stack-and-hang-conjectures-report.md` issue (1) section | — | — (fix lives on `htd/smack-tco-experiment`, not yet on `htd/smack` or `main`) |
+| 22 | Stack overflow / SIGABRT on long flat-list `prog.decls` (~30K-100K axioms) — `transformDecls` in `Strata/Transform/PrecondElim.lean` walked decls via direct list-recursion; `TermCheck.transformDecls` and `translateCoreDecls` overflowed at higher N. **Diagnosis corrected (2026-06-02):** original report cited `programToCST.mapM` (formatter path); the actual walkers are in `PrecondElim`, `TermCheck`, `translateCoreDecls`, plus `Program.typeCheck` (transformation + type-check pipeline). **Boundary scan (2026-06-02):** sce1 reaches a verdict at N=100K (38s) and N=200K (144s) post-fix; at N=500K strata is CPU-bound and times out at 10min without SIGABRT — performance ceiling, not a stack bug. The "residual walker" follow-up flagged in the experiment SUMMARY is not load-bearing. | report at `reports/stack-and-hang-conjectures-report.md` issue (1) section + `reports/issue-1-unblocking-2026-06-02.md` | ✓ `95abbe567`, `7b1018e81`, `73c17b1bd`, `fab1575f8` (cherry-picked from `htd/smack-tco-experiment` commits `a3fb64376`, `f3f409c66`, `869d59f30`, `438052e86`) | — |
 
 ### 9.6 Pipeline-driver / matrix-display gaps (3 — not Strata bugs)
 
@@ -860,8 +925,8 @@ Sibling open issue [#1184](https://github.com/strata-org/Strata/issues/1184) (CB
 ### Summary stats
 
 - **22 distinct bugs/issues** surfaced (or confirmed) on this branch.
-- **17 fixed** with commits on `htd/smack` (#18 PASS-? matrix gap fixed at `a817909fc`; #21 large-`.bpl` hang fixed at `277c468cb`).
-- **2 fixed elsewhere** (#14 fix lives on `htd/fix-eval`; #22 partial fix lives on `htd/smack-tco-experiment` — neither on `htd/smack` or `main`).
+- **18 fixed** with commits on `htd/smack` (#18 PASS-? matrix gap fixed at `a817909fc`; #21 large-`.bpl` hang fixed at `277c468cb`; #22 long flat-list overflow fixed by 4-commit cherry-pick `95abbe567`/`7b1018e81`/`73c17b1bd`/`fab1575f8`).
+- **1 fixed elsewhere** (#14 fix lives on `htd/fix-eval`; not on `htd/smack` or `main`).
 - **3 not yet patched** (#1184, #1186, #17 deeply-nested-expr `elabExpr` rewrite).
 - **0 fixes have landed on `main` or `main2`** — every CBMC-backend, BoogieToStrata, and Core-transform fix is still `htd/smack`-only.
 
@@ -869,7 +934,7 @@ Sibling open issue [#1184](https://github.com/strata-org/Strata/issues/1184) (CB
 
 - **Open and unresolved on main:** #1184, #1185, #1186, #1198, #1162.
 - **Closed (tracking-issue):** #1148 (BoogieToStrata blockers — its sub-issues are addressed by branch fixes).
-- **Drafted but unfiled:** `../../reports/strata-verify-stack-overflow-deeply-nested-expr.md` (issue 2; corrected diagnosis 2026-06-02), `../../reports/elabexpr-paren-strip-experiment.md` (failed micro-fix; triage evidence for issue 2), `../../reports/cbmc-inout-rename-collision.md` (predates the actual #1198 filing), `../../reports/cbmc-timeouts-and-stale-expects-report.md`, `../../reports/verifier-assume-synthesis-report.md`. The `reports/INDEX.md` page is the canonical entry point.
+- **Drafted but unfiled:** `../../reports/issue-2-elabexpr-overflow-upstream-filing.md` (issue 2; self-contained upstream-filing artifact ready), `../../reports/cbmc-inout-rename-collision.md` (predates the actual #1198 filing), `../../reports/cbmc-timeouts-and-stale-expects-report.md`, `../../reports/verifier-assume-synthesis-report.md`. Older issue-2 drafts (`strata-verify-stack-overflow-deeply-nested-expr.md`, `elabexpr-paren-strip-experiment.md`) are retained as triage history; superseded by the upstream-filing artifact. The `reports/INDEX.md` page is the canonical entry point.
 
 ### Path to upstream
 
@@ -880,7 +945,7 @@ Every fix on this branch is currently `htd/smack`-unique. None has reached `main
 3. The **Core-transform fixes** (`42ff8a4b8`, `dd0c0d7cd`) depend on CFG-eval which is in `htd/unstructured-procedure`.
 4. The **#14 fix** (cross-procedure `Env.error`) lives on `htd/fix-eval` — most independent of all; could land directly on `main` and be back-merged.
 5. The **#21 fix** (CFG `condGoto` deferred-dedup, commit `277c468cb`) is on `htd/smack`; can land upstream directly with no dependency.
-6. The **#22 partial fix** (long flat-list overflow) lives on `htd/smack-tco-experiment` (commits `a3fb64376`, `f3f409c66`, `869d59f30`, `438052e86`); pending re-validation against the post-deferred-dedup matrix before cherry-picking to `htd/smack`. Independent of upstream PRs.
+6. The **#22 fix** (long flat-list overflow) is on `htd/smack` (cherry-picks `95abbe567`, `7b1018e81`, `73c17b1bd`, `fab1575f8`). 94-program SMACK matrix matches v6 baseline exactly post-cherry-pick (no soundness regressions). Independent of upstream PRs; can land directly on main.
 7. The **#17 fix** (deeply-nested-expr `elabExpr` rewrite) is not yet attempted; estimated 8-12h on a critical mutual block in `StrataDDM`.
 
 The branch is a substantial body of fix work. Most of it is upstream-able once the underlying PRs (`htd/unstructured-procedure`, #1149) merge.
