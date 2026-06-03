@@ -80,7 +80,7 @@ for test_file in tests/test_*.py; do
 
             # Check user_errors.txt if a .user_errors.expected file exists
             user_errors_expected="${expected_dir}/${base_name}.user_errors.expected"
-            user_errors_file="../../user_errors.txt"
+            user_errors_file="user_errors.txt"
             if [ $update -eq 1 ] && [ -f "$user_errors_file" ]; then
                 cp "$user_errors_file" "$user_errors_expected"
                 echo "Updated: $user_errors_expected"
@@ -157,7 +157,7 @@ if [ $pending -eq 1 ]; then
         if [ $parse_exit -ne 0 ]; then
             echo "Pending (parse error):    $base_name"
             pending_error=$((pending_error + 1))
-            rm -f "../../user_errors.txt"
+            rm -f "user_errors.txt"
             continue
         fi
 
