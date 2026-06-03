@@ -7,6 +7,7 @@ module
 
 public import Strata.Languages.Laurel.LaurelToCoreTranslator
 import Strata.Languages.Laurel.DesugarShortCircuit
+import Strata.Languages.Laurel.EliminateIncrDecr
 import Strata.Languages.Laurel.EliminateReturnsInExpression
 import Strata.Languages.Laurel.EliminateValueReturns
 import Strata.Languages.Laurel.ConstrainedTypeElim
@@ -89,6 +90,9 @@ structure LaurelPass where
 
 /-- The ordered sequence of Laurel-to-Laurel lowering passes. -/
 private def laurelPipeline : Array LaurelPass := #[
+  { name := "EliminateIncrDecr"
+    run := fun p _m =>
+      (eliminateIncrDecr p, [], {}) },
   { name := "FilterNonCompositeModifies"
     run := fun p m =>
       let (p', diags) := filterNonCompositeModifies m p

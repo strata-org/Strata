@@ -55,6 +55,9 @@ def mapStmtExprM [Monad m] (f : StmtExprMd → m StmtExprMd) (expr : StmtExprMd)
     pure ⟨.Assign targets' (← mapStmtExprM f value), source⟩
   | .Var (.Field target fieldName) =>
     pure ⟨.Var (.Field (← mapStmtExprM f target) fieldName), source⟩
+  | .IncrDecr mode op ⟨.Field tgt fieldName, vs⟩ =>
+    pure ⟨.IncrDecr mode op ⟨.Field (← mapStmtExprM f tgt) fieldName, vs⟩, source⟩
+  | .IncrDecr _ _ ⟨.Local _, _⟩ | .IncrDecr _ _ ⟨.Declare _, _⟩ => pure expr
   | .PureFieldUpdate target fieldName newValue =>
     pure ⟨.PureFieldUpdate (← mapStmtExprM f target) fieldName (← mapStmtExprM f newValue), source⟩
   | .StaticCall callee args =>

@@ -103,6 +103,11 @@ private partial def collectExprNames (expr : StmtExprMd) : CollectM Unit := do
       | .Field target _ => collectExprNames target
       | .Local _ => pure ()
       | .Declare param => collectHighTypeNames param.type
+  | .IncrDecr _ _ target =>
+    match target.val with
+    | .Field tgt _ => collectExprNames tgt
+    | .Local _ => pure ()
+    | .Declare param => collectHighTypeNames param.type
   | .Var (.Field target _) => collectExprNames target
   | .Var (.Declare param) => collectHighTypeNames param.type
   | .PureFieldUpdate target _ newVal =>

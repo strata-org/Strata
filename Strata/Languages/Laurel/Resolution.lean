@@ -448,6 +448,17 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
         s!"Assignment target count mismatch: {targets'.length} targets but right-hand side produces {expectedOutputCount} values"
       modify fun s => { s with errors := s.errors.push diag }
     pure (.Assign targets' value')
+  | .IncrDecr mode op ⟨.Local ref, vs⟩ =>
+    let ref' ← resolveRef ref source
+    pure (.IncrDecr mode op ⟨.Local ref', vs⟩)
+  | .IncrDecr mode op ⟨.Field tgt fieldName, vs⟩ =>
+    let tgt' ← resolveStmtExpr tgt
+    let fieldName' ← resolveFieldRef tgt' fieldName source
+    pure (.IncrDecr mode op ⟨.Field tgt' fieldName', vs⟩)
+  | .IncrDecr mode op ⟨.Declare param, vs⟩ =>
+    -- Should not occur — translator rejects; treat conservatively.
+    let ty' ← resolveHighType param.type
+    pure (.IncrDecr mode op ⟨.Declare ⟨param.name, ty'⟩, vs⟩)
   | .Var (.Field target fieldName) =>
     let target' ← resolveStmtExpr target
     let fieldName' ← resolveFieldRef target' fieldName source
@@ -752,6 +763,8 @@ private def collectStmtExpr (map : Std.HashMap Nat ResolvedNode) (expr : StmtExp
         collectHighType map param.type
       | _ => map) map
     collectStmtExpr map value
+  | .IncrDecr _ _ ⟨.Field tgt _, _⟩ => collectStmtExpr map tgt
+  | .IncrDecr _ _ ⟨.Local _, _⟩ | .IncrDecr _ _ ⟨.Declare _, _⟩ => map
   | .Var (.Field target _) => collectStmtExpr map target
   | .PureFieldUpdate target _ newVal =>
     let map := collectStmtExpr map target

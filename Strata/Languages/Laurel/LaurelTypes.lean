@@ -84,6 +84,12 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   | .Exit _ => ⟨ .TVoid, source ⟩
   | .Return _ => ⟨ .TVoid, source ⟩
   | .Assign _ value => computeExprType model value
+  | .IncrDecr _ _ target =>
+    -- The expression's type is the type of the target variable.
+    match target.val with
+    | .Local id => (model.get id).getType
+    | .Field _ fieldName => (model.get fieldName).getType
+    | .Declare _ => ⟨ .TVoid, source ⟩  -- shouldn't happen; rejected by translator
   | .Assert _ => ⟨ .TVoid, source ⟩
   | .Assume _ => ⟨ .TVoid, source ⟩
   -- Instance related

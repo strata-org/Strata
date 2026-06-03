@@ -129,6 +129,18 @@ where
         laurelOp "assign" #[targetArg, stmtExprToArg value]
     | .Var (.Field target field) =>
       laurelOp "fieldAccess" #[stmtExprToArg target, ident field.text]
+    | .IncrDecr mode op target =>
+      let opName := match mode, op with
+        | .Pre,  .Incr => "preIncr"
+        | .Pre,  .Decr => "preDecr"
+        | .Post, .Incr => "postIncr"
+        | .Post, .Decr => "postDecr"
+      let targetArg := match target.val with
+        | .Field obj fieldName =>
+          laurelOp "fieldAccess" #[stmtExprToArg obj, ident fieldName.text]
+        | .Local name => laurelOp "identifier" #[ident name.text]
+        | .Declare param => laurelOp "identifier" #[ident param.name.text]
+      laurelOp opName #[targetArg]
     | .StaticCall callee args =>
       let calleeArg := laurelOp "identifier" #[ident callee.text]
       let argsArr := args.map stmtExprToArg |>.toArray

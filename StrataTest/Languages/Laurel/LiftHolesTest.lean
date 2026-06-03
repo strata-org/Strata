@@ -233,12 +233,12 @@ info: function $hole_0()
 procedure test()
   opaque
 {
-  var s: string := "hello" ++ $hole_0()
+  var s: string := "hello" ^ $hole_0()
 };
 -/
 #guard_msgs in
 #eval! parseElimAndPrint
-  "procedure test() opaque { var s: string := \"hello\" ++ <?> };"
+  "procedure test() opaque { var s: string := \"hello\" ^ <?> };"
 
 /-! ## Multiple holes -/
 

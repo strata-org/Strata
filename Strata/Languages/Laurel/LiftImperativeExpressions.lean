@@ -163,6 +163,7 @@ def containsAssignment (expr : StmtExprMd) : Bool :=
   | AstNode.mk val _ =>
   match val with
   | .Assign .. => true
+  | .IncrDecr .. => true
   | .StaticCall _ args => args.attach.any (fun x => containsAssignment x.val)
   | .PrimitiveOp _ args => args.attach.any (fun x => containsAssignment x.val)
   | .Block stmts _ => stmts.attach.any (fun x => containsAssignment x.val)
@@ -181,6 +182,7 @@ def containsBareAssignment (expr : StmtExprMd) : Bool :=
   | AstNode.mk val _ =>
   match val with
   | .Assign .. => true
+  | .IncrDecr .. => true
   | .StaticCall _ args => args.attach.any (fun x => containsBareAssignment x.val)
   | .PrimitiveOp _ args => args.attach.any (fun x => containsBareAssignment x.val)
   | .Block _ _ => false
@@ -498,6 +500,22 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
       let seqArgs ← args.mapM transformExpr
       let prepends ← takePrepends
       return prepends ++ [⟨.StaticCall name seqArgs, source⟩]
+
+  | .PrimitiveOp _ _ =>
+      -- A `PrimitiveOp` in statement position. If it carries any side effects
+      -- (an embedded assignment or imperative call — typically the result of
+      -- the postfix increment lowering `(x := x + 1) - 1`), lift them out and
+      -- discard the unused pure result. Otherwise leave the expression
+      -- statement intact so the Core translator can preserve it via
+      -- `exprAsUnusedInit`.
+      let model := (← get).model
+      if containsAssignmentOrImperativeCall model stmt then
+        let _ ← transformExpr stmt
+        let prepends ← takePrepends
+        modify fun s => { s with subst := [] }
+        return prepends
+      else
+        return [stmt]
 
   | .Return (some retExpr) =>
       let seqRet ← transformExpr retExpr

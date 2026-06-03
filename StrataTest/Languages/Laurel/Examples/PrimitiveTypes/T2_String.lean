@@ -38,14 +38,14 @@ returns (result: string)
 procedure testStringLiteralConcatOK()
   opaque
 {
-  var result: string := "a" ++ "b";
+  var result: string := "a" ^ "b";
   assert(result == "ab")
 };
 
 procedure testStringLiteralConcatKO()
   opaque
 {
-  var result: string := "a" ++ "b";
+  var result: string := "a" ^ "b";
   assert(result == "cd")
 //^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
@@ -54,7 +54,7 @@ procedure testStringVarConcatOK()
   opaque
 {
   var x: string := "Hello";
-  var result: string := x ++ " World";
+  var result: string := x ^ " World";
   assert(result == "Hello World")
 };
 
@@ -62,7 +62,7 @@ procedure testStringVarConcatKO()
   opaque
 {
   var x: string := "Hello";
-  var result: string := x ++ " World";
+  var result: string := x ^ " World";
   assert(result == "Goodbye")
 //^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };

@@ -173,6 +173,23 @@ inductive QuantifierMode where
   | Exists
   deriving Repr, BEq, Inhabited
 
+/-- Whether an increment/decrement operator is in prefix or postfix form.
+    Prefix form yields the new value; postfix form yields the old value. -/
+inductive IncrDecrMode where
+  /-- Prefix form: `++x` or `--x`. Yields the new value. -/
+  | Pre
+  /-- Postfix form: `x++` or `x--`. Yields the old value. -/
+  | Post
+  deriving Repr, BEq, Inhabited
+
+/-- Whether an increment/decrement operator increments by 1 or decrements by 1. -/
+inductive IncrDecrOp where
+  /-- `++` — adds 1 to the target. -/
+  | Incr
+  /-- `--` — subtracts 1 from the target. -/
+  | Decr
+  deriving Repr, BEq, Inhabited
+
 mutual
 
 /--
@@ -284,6 +301,12 @@ inductive StmtExpr : Type where
   | Var (var : Variable)
   /-- Assignment to one or more targets. Multiple targets are only supported with identifier targets and a call as the RHS. -/
   | Assign (targets : List (AstNode Variable)) (value : AstNode StmtExpr)
+  /-- Java-style increment/decrement operator. The target must be a `Local` or `Field`
+      `Variable`. As an expression, prefix form yields the new value (after the update)
+      and postfix form yields the old value (before the update). As a statement the
+      yielded value is discarded.
+      Eliminated by the `EliminateIncrDecr` pass before lifting imperative expressions. -/
+  | IncrDecr (mode : IncrDecrMode) (op : IncrDecrOp) (target : AstNode Variable)
   /-- Update a field on a pure (value) type, producing a new value. -/
   | PureFieldUpdate (target : AstNode StmtExpr) (fieldName : Identifier) (newValue : AstNode StmtExpr)
   /-- Call a static procedure by name with the given arguments. -/
