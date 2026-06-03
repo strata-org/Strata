@@ -40,6 +40,11 @@ import Strata.Languages.Boole.Boole
 import Strata.Languages.Boole.Verify
 import Strata.Languages.C_Simp.C_Simp
 import Strata.Languages.C_Simp.Verify
+import Strata.Languages.CoreMatch.CoreMatch
+import Strata.Languages.CoreMatch.ToCore
+import Strata.Languages.CoreMatch.Verify
+import Strata.Languages.CoreMatch.DDMTransform.StrataGen
+import Strata.Languages.CoreMatch.DDMTransform.Translate
 import Strata.Languages.Core.EntryPoint
 import Strata.Languages.Core.VerifierProofs
 import Strata.Languages.Dyn.Dyn

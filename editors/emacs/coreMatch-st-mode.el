@@ -1,45 +1,41 @@
-;;; core-st-mode.el --- Major mode for Strata Core (.core.st) files -*- lexical-binding: t; -*-
+;;; coreMatch-st-mode.el --- Major mode for Strata CoreMatch (.coreMatch.st) files -*- lexical-binding: t; -*-
 
 ;; AUTO-GENERATED from the Strata DDM grammar.
 ;; Do not edit by hand; run: lake env lean --run editors/GenSyntax.lean emacs
 
 ;; Keywords
-(defvar core-st-keywords
+(defvar coreMatch-st-keywords
   '(    "var" "assume" "assert" "cover" "if" "else" "havoc" "invariant"
     "decreases" "while" "out" "inout" "call" "exit" "free" "ensures"
     "requires" "spec" "procedure" "type" "const" "function" "inline"
     "rec" "axiom" "distinct" "datatype" "old" "forall" "exists"
-    "program"))
+    "program" "match" "arm"))
 
-(defvar core-st-types
+(defvar coreMatch-st-types
   '(    "bool" "int" "string" "regex" "real" "bv1" "bv8" "bv16" "bv32"
-    "bv64" "bv128" "Map" "Sequence"))
+    "bv64" "Map" "Sequence"))
 
-(defvar core-st-constants
+(defvar coreMatch-st-constants
   '(    "true" "false" "null"))
 
-(defvar core-st-operators
+(defvar coreMatch-st-operators
   '(    "div" "mod" "sdiv" "smod" "safesdiv" "safesmod"))
 
-(defvar core-st-builtins
-  '(    "Sequence.empty" "Sequence.length" "Sequence.select"
-    "Sequence.append" "Sequence.build" "Sequence.update"
-    "Sequence.contains" "Sequence.take" "Sequence.drop" "str.len"
-    "str.concat" "str.substr" "str.to.re" "str.in.re" "str.prefixof"
-    "str.suffixof" "re.allchar" "re.all" "re.range" "re.concat" "re.*"
-    "re.+" "re.loop" "re.union" "re.inter" "re.comp" "re.none"
-    "Int.DivT" "Int.ModT" "Bv.SNegOverflow" "Bv.UNegOverflow"
-    "Bv.SAddOverflow" "Bv.SSubOverflow" "Bv.SMulOverflow"
-    "Bv.SDivOverflow" "Bv.UAddOverflow" "Bv.USubOverflow"
-    "Bv.UMulOverflow"))
+(defvar coreMatch-st-builtins
+  '(    "Sequence.length" "Sequence.select" "Sequence.append"
+    "Sequence.build" "Sequence.update" "Sequence.contains"
+    "Sequence.take" "Sequence.drop" "str.len" "str.concat" "str.substr"
+    "str.to.re" "str.in.re" "str.prefixof" "str.suffixof" "re.allchar"
+    "re.all" "re.range" "re.concat" "re.*" "re.+" "re.loop" "re.union"
+    "re.inter" "re.comp" "re.none" "Int.DivT" "Int.ModT"))
 
 ;; Font-lock rules
-(defvar core-st-font-lock-keywords
-  (let ((kw-re  (regexp-opt core-st-keywords  'symbols))
-        (ty-re  (regexp-opt core-st-types     'symbols))
-        (ct-re  (regexp-opt core-st-constants 'symbols))
-        (op-re  (regexp-opt core-st-operators 'symbols))
-        (bi-re  (regexp-opt core-st-builtins  'symbols)))
+(defvar coreMatch-st-font-lock-keywords
+  (let ((kw-re  (regexp-opt coreMatch-st-keywords  'symbols))
+        (ty-re  (regexp-opt coreMatch-st-types     'symbols))
+        (ct-re  (regexp-opt coreMatch-st-constants 'symbols))
+        (op-re  (regexp-opt coreMatch-st-operators 'symbols))
+        (bi-re  (regexp-opt coreMatch-st-builtins  'symbols)))
     `((,kw-re . font-lock-keyword-face)
       (,ty-re . font-lock-type-face)
       (,ct-re . font-lock-constant-face)
@@ -53,7 +49,7 @@
       ("\\b[0-9]+\\(?:\\.[0-9]+\\)?\\b" . font-lock-constant-face))))
 
 ;; Syntax table
-(defvar core-st-mode-syntax-table
+(defvar coreMatch-st-mode-syntax-table
   (let ((st (make-syntax-table)))
     ;; // line comments
     (modify-syntax-entry ?/ ". 12" st)
@@ -75,15 +71,15 @@
     st))
 
 ;;;###autoload
-(define-derived-mode core-st-mode prog-mode "Core.st"
-  "Major mode for editing Strata Core (.core.st) files."
-  :syntax-table core-st-mode-syntax-table
-  (setq-local font-lock-defaults '(core-st-font-lock-keywords))
+(define-derived-mode coreMatch-st-mode prog-mode "CoreMatch.st"
+  "Major mode for editing Strata CoreMatch (.coreMatch.st) files."
+  :syntax-table coreMatch-st-mode-syntax-table
+  (setq-local font-lock-defaults '(coreMatch-st-font-lock-keywords))
   (setq-local comment-start "// ")
   (setq-local comment-end ""))
 
 ;;;###autoload
-(add-to-list 'auto-mode-alist '("\\.core\\.st\\'" . core-st-mode))
+(add-to-list 'auto-mode-alist '("\\.coreMatch\\.st\\'" . coreMatch-st-mode))
 
-(provide 'core-st-mode)
-;;; core-st-mode.el ends here
+(provide 'coreMatch-st-mode)
+;;; coreMatch-st-mode.el ends here
