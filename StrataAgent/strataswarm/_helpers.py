@@ -97,11 +97,43 @@ class swarm_agent:
         self._unique_name = f"{spec.name}_{int(_time.time()) % 100000}"
         spec.name = self._unique_name
 
-        # Create agent connected to swarm's channel bus
+        # Build MCP servers (messaging + any from spec)
+        from ._messaging import create_messaging_server
+        from ._directory import create_directory_server
+
+        mcp_servers = dict(spec.mcp_servers or {})
+        messaging_server = create_messaging_server(
+            agent_name=self._unique_name,
+            channel_bus=self._swarm._channel_bus,
+            known_agents=[n for n in self._swarm._registry.nodes if n != self._unique_name],
+            can_message=self._swarm.can_message,
+            route_message=self._swarm._route_message,
+            get_sender_display=self._swarm._get_sender_display,
+            on_tool_call=self._swarm._record_tool_call,
+            reply_only_mode=spec.reply_only,
+            known_service_agents=set(),
+            start_time=None,
+            is_agent_alive=lambda r: r in self._swarm._registry.nodes or r in self._swarm._registry.sharded_agents,
+            outbound_limit=spec.max_outbound_length,
+            outbound_limit_response=spec.max_outbound_response,
+            get_inbound_limit=self._swarm._get_inbound_limit,
+        )
+        mcp_servers["agent_messaging"] = messaging_server
+        mcp_servers["agent_directory"] = create_directory_server(
+            agent_name=self._unique_name, swarm=self._swarm,
+        )
+
+        # Get event callback from swarm for dashboard visibility
+        on_event = getattr(self._swarm, '_on_event_with_telemetry', None)
+
+        # Create agent with full swarm integration
         self._agent = SwarmAgent(
             spec=spec,
             channel_bus=self._swarm._channel_bus,
             cwd=self._cwd,
+            on_event=on_event,
+            mcp_servers_override=mcp_servers,
+            backend_factory=self._swarm._backend_factory,
         )
         self._agent.swarm = self._swarm
 
@@ -156,6 +188,7 @@ def _load_spec(path: Path, overrides: dict[str, Any]) -> AgentSpec:
         module=raw.get("module"),
         checkpointable=raw.get("checkpointable", False),
         checkpoint_prompt=raw.get("checkpoint_prompt"),
+        auto_start=raw.get("auto_start", True),
         system_prompt=raw.get("system_prompt", ""),
         prompt=raw.get("prompt", ""),
         model=raw.get("model"),

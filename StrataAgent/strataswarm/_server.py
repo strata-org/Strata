@@ -45,8 +45,8 @@ class McpServerDef(BaseModel):
 
 class AgentCreateRequest(BaseModel):
     name: str
-    system_prompt: str
-    prompt: str
+    system_prompt: str = ""
+    prompt: str = ""
     allowed_tools: list[str] = []
     disallowed_tools: list[str] = []
     model: str | None = None
@@ -55,6 +55,11 @@ class AgentCreateRequest(BaseModel):
     timeout_seconds: float | None = None
     is_super_agent: bool = False
     reply_only: bool = False
+    stateless: bool = False
+    module: str | None = None
+    checkpointable: bool = False
+    checkpoint_prompt: str | None = None
+    auto_start: bool = True
     mcp_servers: dict[str, McpServerDef] = {}
     workspace: dict[str, list[str]] | None = None
     description: str = ""
@@ -109,6 +114,42 @@ def check_mcp_dependencies(agent_specs: list[AgentCreateRequest]) -> tuple[list[
                             f"will be degraded."
                         )
     return errors, warnings
+
+
+def _agent_request_from_raw(agent_raw: dict[str, Any], fallback_name: str) -> AgentCreateRequest:
+    """Build an AgentCreateRequest from a decomposed agent YAML dict."""
+    return AgentCreateRequest(
+        name=agent_raw.get("name", fallback_name),
+        system_prompt=agent_raw.get("system_prompt", ""),
+        prompt=agent_raw.get("prompt", ""),
+        allowed_tools=agent_raw.get("allowed_tools", []),
+        disallowed_tools=agent_raw.get("disallowed_tools", []),
+        model=agent_raw.get("model"),
+        max_turns=agent_raw.get("max_turns"),
+        max_budget_usd=agent_raw.get("max_budget_usd"),
+        timeout_seconds=agent_raw.get("timeout_seconds"),
+        is_super_agent=agent_raw.get("is_super_agent", False),
+        reply_only=agent_raw.get("reply_only", False),
+        stateless=agent_raw.get("stateless", False),
+        module=agent_raw.get("module"),
+        checkpointable=agent_raw.get("checkpointable", False),
+        checkpoint_prompt=agent_raw.get("checkpoint_prompt"),
+        auto_start=agent_raw.get("auto_start", True),
+        mcp_servers={
+            k: McpServerDef(**v) if isinstance(v, dict) else v
+            for k, v in agent_raw.get("mcp_servers", {}).items()
+        },
+        workspace=agent_raw.get("workspace"),
+        description=agent_raw.get("description", ""),
+        visibility=agent_raw.get("visibility", "all"),
+        replicas=agent_raw.get("replicas"),
+        routing=agent_raw.get("routing"),
+        routing_key=agent_raw.get("routing_key"),
+        max_inbound_length=agent_raw.get("max_inbound_length"),
+        max_inbound_response=agent_raw.get("max_inbound_response"),
+        max_outbound_length=agent_raw.get("max_outbound_length"),
+        max_outbound_response=agent_raw.get("max_outbound_response"),
+    )
 
 
 class SwarmDashboard:
@@ -312,14 +353,35 @@ class SwarmDashboard:
             path = AGENT_SPECS_DIR / f"{name}.yaml"
             if not path.exists():
                 return {"status": "error", "message": f"Not found: {name}"}
-            config = SwarmConfig.model_validate(yaml.safe_load(path.read_text()))
-            self._agent_specs = config.agents
-            self._swarm_name = config.name
-            self._nudge_module = config.nudge_module
-            self._manager = config.manager
+            raw = yaml.safe_load(path.read_text())
+
+            # Detect decomposed format: agents is a list of strings (names)
+            agents_raw = raw.get("agents", [])
+            if agents_raw and isinstance(agents_raw[0], str):
+                # Decomposed: resolve each agent name from agents/ subdir
+                agents_dir = AGENT_SPECS_DIR / "agents"
+                agent_specs: list[AgentCreateRequest] = []
+                for agent_name in agents_raw:
+                    agent_path = agents_dir / f"{agent_name}.yaml"
+                    if not agent_path.exists():
+                        return {"status": "error", "message": f"Agent spec not found: {agent_name}"}
+                    agent_raw = yaml.safe_load(agent_path.read_text())
+                    agent_specs.append(_agent_request_from_raw(agent_raw, agent_name))
+                self._agent_specs = agent_specs
+                self._swarm_name = raw.get("name", name)
+                self._nudge_module = raw.get("nudge_module")
+                self._manager = raw.get("manager")
+            else:
+                # Legacy inline format
+                config = SwarmConfig.model_validate(raw)
+                self._agent_specs = config.agents
+                self._swarm_name = config.name
+                self._nudge_module = config.nudge_module
+                self._manager = config.manager
+
             await self._broadcast({"type": "specs_updated", "specs": self._get_specs_list()})
-            await self._broadcast({"type": "swarm_loaded", "name": config.name})
-            return {"status": "loaded", "name": config.name}
+            await self._broadcast({"type": "swarm_loaded", "name": self._swarm_name})
+            return {"status": "loaded", "name": self._swarm_name}
 
         @self.app.post("/api/swarm/delete_saved")
         async def delete_saved(body: dict[str, Any]) -> dict[str, str]:
@@ -474,6 +536,61 @@ class SwarmDashboard:
                 logger.error(f"[MCP RESTART] Hook error: {e}")
                 return {"status": "error", "message": str(e)}
 
+        @self.app.get("/api/agents/{name}/state_machine")
+        async def get_state_machine(name: str) -> dict[str, Any]:
+            """Return the state machine definition and current state for a module agent."""
+            if not self._swarm:
+                return {"error": "No swarm running"}
+            agent_instance = self._swarm._registry.agents.get(name)
+            if not agent_instance:
+                return {"error": f"Agent '{name}' not found or not running"}
+            spec = self._swarm._registry.nodes[name].spec if name in self._swarm._registry.nodes else None
+            if not spec or not spec.module:
+                return {"error": f"Agent '{name}' is not a module agent"}
+
+            # Import the module and extract TRANSITIONS
+            import importlib
+            try:
+                mod = importlib.import_module(spec.module)
+            except ImportError as e:
+                return {"error": f"Cannot import module '{spec.module}': {e}"}
+
+            transitions_raw = getattr(mod, "TRANSITIONS", None)
+            if not transitions_raw:
+                return {"error": f"Module '{spec.module}' has no TRANSITIONS table"}
+
+            # Convert (state, transition) → next_state to serializable format
+            transitions = [
+                {"from": k[0], "transition": k[1], "to": v}
+                for k, v in transitions_raw.items()
+            ]
+
+            # Extract states (all unique states mentioned)
+            states = sorted(set(
+                [t["from"] for t in transitions] + [t["to"] for t in transitions]
+            ))
+
+            # Get current workflow state
+            workflow_state = getattr(agent_instance, '_workflow_state', None)
+            current_state = None
+            state_data = None
+            if workflow_state:
+                from dataclasses import asdict
+                current_state = workflow_state.stage
+                try:
+                    state_data = asdict(workflow_state)
+                except Exception:
+                    state_data = {"stage": workflow_state.stage}
+
+            return {
+                "agent": name,
+                "module": spec.module,
+                "states": states,
+                "transitions": transitions,
+                "current_state": current_state,
+                "state_data": state_data,
+            }
+
         @self.app.get("/api/agents/live")
         async def get_live_agents() -> dict[str, Any]:
             """Return runtime state of all agents including spawned ones."""
@@ -624,13 +741,30 @@ class SwarmDashboard:
             if not path.exists():
                 await ws.send_json({"type": "error", "message": f"Swarm '{name}' not found"})
                 return
-            config = SwarmConfig.model_validate(yaml.safe_load(path.read_text()))
-            self._agent_specs = config.agents
-            self._swarm_name = config.name
-            self._nudge_module = config.nudge_module
-            self._manager = config.manager
+            raw = yaml.safe_load(path.read_text())
+            agents_raw = raw.get("agents", [])
+            if agents_raw and isinstance(agents_raw[0], str):
+                agents_dir = AGENT_SPECS_DIR / "agents"
+                agent_specs: list[AgentCreateRequest] = []
+                for agent_name_str in agents_raw:
+                    agent_path = agents_dir / f"{agent_name_str}.yaml"
+                    if not agent_path.exists():
+                        await ws.send_json({"type": "error", "message": f"Agent spec not found: {agent_name_str}"})
+                        return
+                    agent_raw = yaml.safe_load(agent_path.read_text())
+                    agent_specs.append(_agent_request_from_raw(agent_raw, agent_name_str))
+                self._agent_specs = agent_specs
+                self._swarm_name = raw.get("name", name)
+                self._nudge_module = raw.get("nudge_module")
+                self._manager = raw.get("manager")
+            else:
+                config = SwarmConfig.model_validate(raw)
+                self._agent_specs = config.agents
+                self._swarm_name = config.name
+                self._nudge_module = config.nudge_module
+                self._manager = config.manager
             await ws.send_json({"type": "specs_updated", "specs": self._get_specs_list()})
-            await ws.send_json({"type": "swarm_loaded", "name": config.name})
+            await ws.send_json({"type": "swarm_loaded", "name": self._swarm_name})
 
         elif action == "delete_swarm":
             name = data.get("name", "").strip()
@@ -921,6 +1055,11 @@ class SwarmDashboard:
                 timeout_seconds=spec_req.timeout_seconds,
                 is_super_agent=spec_req.is_super_agent,
                 reply_only=spec_req.reply_only,
+                stateless=spec_req.stateless,
+                module=spec_req.module,
+                checkpointable=spec_req.checkpointable,
+                checkpoint_prompt=spec_req.checkpoint_prompt,
+                auto_start=spec_req.auto_start,
                 mcp_servers=external_mcp,
                 workspace=ws_obj,
                 description=spec_req.description,
@@ -934,7 +1073,6 @@ class SwarmDashboard:
             )
 
             if shard_config and shard_config.replicas > 1:
-                # Create N instances; only logical name appears in visibility graph
                 from copy import copy
 
                 for i in range(shard_config.replicas):

@@ -109,10 +109,13 @@ class CheckpointManager:
             yaml.dump(state, default_flow_style=False)
         )
 
-        # Collect handoff notes from live checkpointable agents
+        # Collect handoff notes from all checkpointable agents in visibility graph
         agents_dir = cp_dir / "agents"
         agents_dir.mkdir(exist_ok=True)
-        for node_name, node in self._swarm._registry.nodes.items():
+        for node_name in self._swarm._registry.visibility_graph:
+            node = self._swarm._registry.nodes.get(node_name)
+            if not node:
+                continue
             if getattr(node.spec, '_is_virtual', False):
                 continue
             if not getattr(node.spec, 'checkpointable', False):

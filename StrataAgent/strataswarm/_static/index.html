@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>StrataSwarm Dashboard</title>
+<title>StrataSwarm v3 Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: system-ui, -apple-system, sans-serif; background: #1a1a2e; color: #e0e0e0; height: 100vh; display: flex; flex-direction: column; }
@@ -83,12 +84,13 @@ header h1 { font-size: 18px; color: #4fc3f7; }
 </head>
 <body>
 <header>
-  <h1>StrataSwarm</h1>
+  <h1>StrataSwarm v2</h1>
   <div class="header-controls">
     <span id="total-cost">$0.0000</span>
     <button class="btn-save" onclick="showSaveModal()">Save</button>
     <button class="btn-load" onclick="showLoadModal()">Load</button>
-    <button style="background:#37474f;color:#90a4ae;padding:6px 14px;border:none;border-radius:4px;cursor:pointer;font-size:12px;font-weight:600;" onclick="saveChat()">Save Chat</button>
+    <button style="background:#2e7d32;color:#c8e6c9;padding:6px 14px;border:none;border-radius:4px;cursor:pointer;font-size:12px;font-weight:600;" onclick="createCheckpoint()">Checkpoint</button>
+    <button style="background:#37474f;color:#90a4ae;padding:6px 14px;border:none;border-radius:4px;cursor:pointer;font-size:12px;font-weight:600;" onclick="listCheckpoints()">Resume</button>
     <button class="btn-create" onclick="createNew()" title="Clear all agents and start fresh">New</button>
     <button class="btn-cancel" onclick="unloadSwarm()" title="Unload current agents (keeps saved configs)">Unload</button>
     <button class="btn-start" id="btn-start" onclick="startSwarm()">Start</button>
@@ -110,12 +112,16 @@ header h1 { font-size: 18px; color: #4fc3f7; }
       <div class="view-tab active" onclick="switchView('agent')" id="tab-agent">Agent View</div>
       <div class="view-tab" onclick="switchView('chitchat')" id="tab-chitchat">All Messages</div>
       <div class="view-tab" onclick="switchView('spec')" id="tab-spec">Agent Spec</div>
-      <div class="view-tab" onclick="switchView('history')" id="tab-history">Chat History</div>
+      <div class="view-tab" onclick="switchView('history')" id="tab-history">Checkpoints</div>
+      <div class="view-tab" onclick="switchView('telemetry')" id="tab-telemetry">Telemetry</div>
+      <div class="view-tab" onclick="switchView('nudges')" id="tab-nudges">Nudges</div>
+      <div class="view-tab" onclick="switchView('statemachine')" id="tab-statemachine">State Machine</div>
     </div>
     <div class="messages" id="messages"><div class="empty">Add agents and start the swarm</div></div>
     <div class="controls">
       <button class="btn-pause" onclick="pauseAgent()">Pause</button>
       <button class="btn-resume" onclick="resumeAgent()">Resume</button>
+      <button style="background:#ff6f00;color:white;padding:6px 14px;border:none;border-radius:4px;cursor:pointer;font-size:12px;font-weight:600;" onclick="interruptAgent()">Interrupt</button>
       <button class="btn-cancel" onclick="cancelAgent()">Cancel</button>
       <select id="msg-target" style="padding:6px 8px;border:1px solid #0f3460;border-radius:4px;background:#1a1a2e;color:#e0e0e0;font-size:12px;min-width:120px;">
         <option value="">-- select target --</option>
@@ -193,6 +199,7 @@ let isRunning = false;
 let pendingMessages = [];
 let savedList = [];
 let chatList = [];
+let checkpointList = [];
 let loadedChat = null;
 
 function wsSend(obj) {
@@ -321,13 +328,18 @@ function handleEvent(ev) {
     agents[name].cost_usd = parseFloat(ev.data);
     agents[name].cost_is_estimate = false;
     updateCostDisplay();
+  } else if (ev.event_type === 'state_transition' && ev.data) {
+    handleStateTransitionEvent(name, ev.data);
   }
   render();
 }
 
 function render() {
   renderSidebar();
-  renderMessages();
+  // Only re-render messages for views that use the messages panel
+  if (currentView === 'agent' || currentView === 'chitchat' || currentView === 'spec' || currentView === 'history') {
+    renderMessages();
+  }
   updateTargetDropdown();
   document.getElementById('btn-start').disabled = isRunning || specs.length === 0;
 }
@@ -349,7 +361,7 @@ function renderSidebar() {
       </div>
     `).join('') || '';
     // Show saved swarms when no agents are loaded
-    if (specs.length === 0 && savedList.length > 0) {
+    if (!isRunning && savedList.length > 0) {
       el.innerHTML += `
         <div style="padding:12px 14px;border-bottom:1px solid #0f3460;">
           <div style="font-size:11px;color:#888;text-transform:uppercase;margin-bottom:8px;">Saved Swarms</div>
@@ -371,7 +383,7 @@ function renderSidebar() {
       return `
       <div class="agent-item ${a.name === selectedAgent ? 'active' : ''}" onclick="selectAgent('${escapeAttr(a.name)}')" ${a.spawned_by ? 'style="padding-left:28px;border-left:2px solid #455a64;"' : ''}>
         <div class="name">${escapeHtml(a.name)} <span class="badge badge-${a.status || 'pending'}">${a.status || 'pending'}</span>${subBadge}${pulse}</div>
-        <div class="meta">${formatCost(a)} ${a.num_turns ? a.num_turns + ' turns' : ''} ${a.halted_by && a.halted_by !== 'completion' ? '(' + a.halted_by + ')' : ''}</div>
+        <div class="meta">${a.model ? '<span style="color:#ce93d8;font-size:9px;">' + a.model + '</span> ' : ''}${formatCost(a)} ${a.num_turns ? a.num_turns + ' turns' : ''} ${a.halted_by && a.halted_by !== 'completion' ? '(' + a.halted_by + ')' : ''} <button onclick="event.stopPropagation();increaseBudget('${escapeAttr(a.name)}')" style="padding:1px 5px;border:none;border-radius:2px;background:#2e7d32;color:#c8e6c9;font-size:9px;cursor:pointer;margin-left:4px;">+$</button></div>
       </div>`;
     }).join('');
   }
@@ -379,6 +391,9 @@ function renderSidebar() {
 
 function renderMessages() {
   const el = document.getElementById('messages');
+
+  // Don't overwrite these views — they manage their own content
+  if (currentView === 'telemetry' || currentView === 'nudges') return;
 
   if (currentView === 'history') {
     if (loadedChat) {
@@ -409,17 +424,16 @@ function renderMessages() {
     el.scrollTop = el.scrollHeight;
   }
     } else {
-      // Show chat list
-      if (!chatList.length) {
-        el.innerHTML = '<div class="empty">No saved chats. Use "Save Chat" to save one.</div>';
+      // Show checkpoint list (populated by fetchCheckpointList)
+      if (!checkpointList || !checkpointList.length) {
+        el.innerHTML = '<div class="empty">No checkpoints yet. Use the "Checkpoint" button to create one.</div>';
       } else {
         el.innerHTML = `<div style="padding:4px 0;">
-          ${chatList.map(name => `
+          ${checkpointList.map(name => `
             <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:#1e2a3a;border-radius:5px;margin-bottom:6px;font-size:12px;">
-              <span style="cursor:pointer;color:#4fc3f7;" onclick="loadChatHistory('${escapeAttr(name)}')">${escapeHtml(name)}</span>
+              <span style="color:#4fc3f7;">${escapeHtml(name)}</span>
               <div>
-                <button onclick="resumeChat('${escapeAttr(name)}')" style="padding:3px 8px;border:none;border-radius:3px;background:#1b5e20;color:#a5d6a7;font-size:10px;cursor:pointer;margin-right:4px;">Resume</button>
-                <button onclick="deleteChat('${escapeAttr(name)}')" style="padding:3px 8px;border:none;border-radius:3px;background:#b71c1c;color:#ef9a9a;font-size:10px;cursor:pointer;">Delete</button>
+                <button onclick="resumeFromCheckpoint('${escapeAttr(name)}')" style="padding:3px 8px;border:none;border-radius:3px;background:#1b5e20;color:#a5d6a7;font-size:10px;cursor:pointer;">Resume</button>
               </div>
             </div>
           `).join('')}
@@ -509,13 +523,283 @@ function switchView(v) {
   document.getElementById('tab-chitchat').classList.toggle('active', v==='chitchat');
   document.getElementById('tab-spec').classList.toggle('active', v==='spec');
   document.getElementById('tab-history').classList.toggle('active', v==='history');
-  if (v === 'history') { wsSend({ action: 'list_chats' }); }
-  renderMessages();
+  document.getElementById('tab-telemetry').classList.toggle('active', v==='telemetry');
+  document.getElementById('tab-nudges').classList.toggle('active', v==='nudges');
+  document.getElementById('tab-statemachine').classList.toggle('active', v==='statemachine');
+  if (v === 'history') { fetchCheckpointList(); }
+  else if (v === 'telemetry') { refreshTelemetry(); }
+  else if (v === 'nudges') { refreshNudges(); }
+  else if (v === 'statemachine') { refreshStateMachine(); }
+  else { renderMessages(); }
+}
+
+function refreshTelemetry() {
+  document.getElementById('messages').innerHTML = '<div class="empty">Loading telemetry...</div>';
+  fetch('/api/telemetry')
+    .then(r => r.json())
+    .then(data => {
+      const el = document.getElementById('messages');
+      if (!data.agents || Object.keys(data.agents).length === 0) {
+        el.innerHTML = '<div class="empty">No telemetry data yet. Start the swarm to see metrics.</div>';
+        return;
+      }
+      let html = '<div style="padding:16px;font-family:monospace;font-size:12px;">';
+      html += '<h3 style="color:#4fc3f7;margin:0 0 12px;">Telemetry Dashboard</h3>';
+      html += '<table style="width:100%;border-collapse:collapse;color:#ccc;">';
+      html += '<tr style="border-bottom:1px solid #333;color:#888;"><th style="text-align:left;padding:6px;">Agent</th><th>Events</th><th>Msgs Sent</th><th>Msgs Recv</th><th>Last Activity</th><th>Top Tools</th></tr>';
+      for (const [name, info] of Object.entries(data.agents)) {
+        const topTools = Object.entries(info.tool_calls || {})
+          .sort((a,b) => b[1]-a[1])
+          .slice(0,3)
+          .map(([t,c]) => `${t}:${c}`)
+          .join(', ') || '-';
+        const lastAge = info.last_event_age_s != null ? info.last_event_age_s + 's ago' : '-';
+        html += `<tr style="border-bottom:1px solid #222;">`;
+        html += `<td style="padding:6px;color:#4fc3f7;">${name}</td>`;
+        html += `<td style="text-align:center;">${info.total_events}</td>`;
+        html += `<td style="text-align:center;">${info.messages_sent}</td>`;
+        html += `<td style="text-align:center;">${info.messages_received}</td>`;
+        html += `<td style="text-align:center;color:#888;">${lastAge}</td>`;
+        html += `<td style="color:#aaa;">${topTools}</td>`;
+        html += `</tr>`;
+      }
+      html += '</table></div>';
+      el.innerHTML = html;
+    });
+}
+
+function refreshNudges() {
+  const el = document.getElementById('messages');
+  el.innerHTML = '<div class="empty">Loading nudge data...</div>';
+  fetch('/api/nudges')
+    .then(r => r.json())
+    .then(data => {
+      let html = '<div style="padding:16px;font-family:monospace;font-size:11px;">';
+      html += '<h3 style="color:#4fc3f7;margin:0 0 8px;">Nudge Rules (' + (data.rules || []).length + ' loaded)</h3>';
+      if (!data.rules || !data.rules.length) {
+        html += '<div class="empty">No nudge rules loaded. Check nudge_module in YAML config.</div>';
+      } else {
+        html += '<table style="width:100%;border-collapse:collapse;color:#aaa;margin-bottom:16px;">';
+        html += '<tr style="border-bottom:1px solid #333;color:#888;"><th style="text-align:left;padding:4px;">#</th><th style="text-align:left;">Rule</th><th>Prob</th><th>Cooldown</th><th>Fired</th></tr>';
+        (data.rules || []).forEach(r => {
+          const fireColor = r.fire_count > 0 ? '#4caf50' : '#555';
+          html += `<tr style="border-bottom:1px solid #222;"><td style="padding:4px;">${r.idx}</td><td>${r.name}</td><td style="text-align:center;">${(r.probability*100).toFixed(0)}%</td><td style="text-align:center;">${r.cooldown_s}s</td><td style="text-align:center;color:${fireColor};">${r.fire_count || 0}</td></tr>`;
+        });
+        html += '</table>';
+      }
+      html += '<h3 style="color:#4fc3f7;margin:0 0 8px;">Recent Activity (newest first)</h3>';
+      if (!data.history || !data.history.length) {
+        html += '<div style="color:#666;padding:8px;">No nudges fired yet. Rules evaluate every 30s once agents are running.</div>';
+        html += '</div>';
+        el.innerHTML = html;
+        return;
+      }
+      html += '<table style="width:100%;border-collapse:collapse;color:#ccc;">';
+      html += '<tr style="border-bottom:1px solid #333;color:#888;"><th style="text-align:left;padding:4px;">Time</th><th>Agent</th><th>Rule</th><th>Outcome</th><th>Detail</th></tr>';
+      data.history.slice().reverse().forEach(h => {
+        const t = new Date(h.timestamp * 1000).toLocaleTimeString();
+        const color = h.outcome === 'fired' ? '#4caf50' : h.outcome === 'cooldown' ? '#ff9800' : h.outcome === 'probability_skip' ? '#9e9e9e' : '#f44336';
+        const detail = (h.detail || '').substring(0, 80);
+        html += `<tr style="border-bottom:1px solid #222;"><td style="padding:4px;color:#888;">${t}</td><td style="color:#4fc3f7;">${h.agent}</td><td>${h.rule}</td><td style="color:${color};">${h.outcome}</td><td style="color:#777;font-size:10px;">${detail}</td></tr>`;
+      });
+      html += '</table></div>';
+      el.innerHTML = html;
+    });
+}
+
+// State Machine visualization — mermaid.js + live WebSocket updates
+let smCache = {}; // agent_name → {states, transitions, current_state, state_data, module, lastTransition}
+let smTransitionHistory = {}; // agent_name → [{from, to, transition, ts}]
+let smRenderCounter = 0;
+
+mermaid.initialize({ startOnLoad: false, theme: 'dark', themeVariables: {
+  primaryColor: '#1e2a3a', primaryBorderColor: '#4fc3f7', primaryTextColor: '#e0e0e0',
+  lineColor: '#555', stateBkg: '#1e2a3a', stateBorder: '#4fc3f7',
+}});
+
+function refreshStateMachine() {
+  const el = document.getElementById('messages');
+  el.innerHTML = '<div class="empty">Loading state machines...</div>';
+  fetch('/api/agents/live').then(r => r.json()).then(liveData => {
+    const moduleAgents = (liveData.agents || []).map(a => a.name);
+    if (!moduleAgents.length) {
+      el.innerHTML = '<div class="empty">No agents running. Start the swarm to see state machines.</div>';
+      return;
+    }
+    Promise.all(moduleAgents.map(name =>
+      fetch(`/api/agents/${encodeURIComponent(name)}/state_machine`).then(r => r.json()).then(d => ({name, ...d}))
+    )).then(results => {
+      const valid = results.filter(r => r.states && r.transitions);
+      if (!valid.length) {
+        el.innerHTML = '<div class="empty">No module agents with state machines found.</div>';
+        return;
+      }
+      valid.forEach(sm => {
+        smCache[sm.agent] = sm;
+        if (!smTransitionHistory[sm.agent]) smTransitionHistory[sm.agent] = [];
+      });
+      renderAllStateMachines();
+    });
+  });
+}
+
+function handleStateTransitionEvent(agentName, data) {
+  let transData;
+  try { transData = typeof data === 'string' ? JSON.parse(data) : data; } catch(e) { return; }
+  if (!transData || !transData.from || !transData.to) return;
+
+  if (smCache[agentName]) {
+    smCache[agentName].current_state = transData.to;
+    smCache[agentName].lastTransition = { from: transData.from, to: transData.to, transition: transData.transition, ts: Date.now() };
+  }
+  if (!smTransitionHistory[agentName]) smTransitionHistory[agentName] = [];
+  smTransitionHistory[agentName].push({ ...transData, ts: Date.now() });
+  if (smTransitionHistory[agentName].length > 50) smTransitionHistory[agentName].shift();
+
+  if (currentView === 'statemachine') renderAllStateMachines();
+}
+
+async function renderAllStateMachines() {
+  const el = document.getElementById('messages');
+  const valid = Object.values(smCache).filter(sm => sm.states && sm.transitions);
+  if (!valid.length) {
+    el.innerHTML = '<div class="empty">No module agents with state machines found.</div>';
+    return;
+  }
+  let html = '<div style="padding:16px;overflow-y:auto;">';
+  for (const sm of valid) {
+    html += await renderStateMachineGraph(sm);
+  }
+  html += '</div>';
+  el.innerHTML = html;
+}
+
+async function renderStateMachineGraph(sm) {
+  const transitions = sm.transitions || [];
+  const current = sm.current_state;
+  const stateData = sm.state_data || {};
+  const lastTrans = sm.lastTransition;
+  const history = smTransitionHistory[sm.agent] || [];
+  const recentEdge = lastTrans && (Date.now() - lastTrans.ts < 3000) ? lastTrans : null;
+
+  // Build mermaid diagram string
+  let diagram = 'stateDiagram-v2\n';
+  diagram += '  [*] --> ' + (transitions[0] ? transitions[0].from : 'idle') + '\n';
+
+  // Group transitions by (from, to) to combine labels
+  const edgeLabels = {};
+  transitions.forEach(t => {
+    const key = `${t.from}__${t.to}`;
+    if (!edgeLabels[key]) edgeLabels[key] = [];
+    edgeLabels[key].push(t.transition);
+  });
+  for (const [key, labels] of Object.entries(edgeLabels)) {
+    const [from, to] = key.split('__');
+    diagram += `  ${from} --> ${to} : ${labels.join(' / ')}\n`;
+  }
+
+  // Style classes
+  diagram += '\n  classDef active fill:#1b5e20,stroke:#4caf50,stroke-width:2px,color:#a5d6a7\n';
+  diagram += '  classDef fired fill:#4a3800,stroke:#ffab00,stroke-width:2px,color:#ffe082\n';
+  diagram += '  classDef inactive fill:#1e2a3a,stroke:#333,color:#aaa\n';
+
+  // Assign classes
+  if (current) diagram += `  class ${current} active\n`;
+  if (recentEdge && recentEdge.from !== current) diagram += `  class ${recentEdge.from} fired\n`;
+
+  // Render with mermaid
+  let svgHtml = '';
+  try {
+    const id = `sm-${sm.agent}-${smRenderCounter++}`;
+    const { svg } = await mermaid.render(id, diagram);
+    svgHtml = svg;
+  } catch (e) {
+    svgHtml = `<div style="color:#f44336;font-size:11px;">Mermaid render error: ${e.message}</div>`;
+  }
+
+  // State data panel
+  let dataHtml = '';
+  if (stateData && Object.keys(stateData).length > 0) {
+    dataHtml = '<div style="background:#1e2a3a;border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:11px;font-family:monospace;color:#aaa;max-height:200px;overflow-y:auto;">';
+    dataHtml += '<div style="color:#4fc3f7;font-weight:bold;margin-bottom:6px;">WorkflowState</div>';
+    for (const [k, v] of Object.entries(stateData)) {
+      const val = (typeof v === 'object' && v !== null) ? JSON.stringify(v) : String(v ?? 'null');
+      const display = val.length > 80 ? val.slice(0, 80) + '...' : val;
+      const highlight = k === 'stage' ? 'color:#4caf50;' : '';
+      dataHtml += `<div style="${highlight}"><span style="color:#888;">${k}:</span> ${display}</div>`;
+    }
+    dataHtml += '</div>';
+  }
+
+  // Transition history
+  let histHtml = '';
+  if (history.length > 0) {
+    histHtml = '<div style="background:#1a1a2e;border-radius:6px;padding:8px 12px;margin-bottom:12px;font-size:10px;font-family:monospace;color:#888;max-height:120px;overflow-y:auto;">';
+    histHtml += '<div style="color:#666;margin-bottom:4px;">Recent transitions:</div>';
+    history.slice(-10).reverse().forEach(h => {
+      const age = Math.round((Date.now() - h.ts) / 1000);
+      histHtml += `<div><span style="color:#ffab00;">${h.from}</span> →<span style="color:#80cbc4;">${h.transition}</span>→ <span style="color:#4caf50;">${h.to}</span> <span style="color:#555;">(${age}s ago)</span></div>`;
+    });
+    histHtml += '</div>';
+  }
+
+  return `<div style="margin-bottom:24px;">
+    <h3 style="color:#4fc3f7;margin:0 0 8px;font-size:14px;">${sm.agent} <span style="font-size:11px;color:#888;font-weight:normal;">(${sm.module})</span></h3>
+    <div style="background:#111;border-radius:8px;padding:16px;margin-bottom:12px;overflow-x:auto;">${svgHtml}</div>
+    ${dataHtml}
+    ${histHtml}
+  </div>`;
+}
+
+// Budget control
+function increaseBudget(agentName) {
+  const amount = prompt(`Increase budget for "${agentName}" by how much ($)?`, "10");
+  if (!amount) return;
+  const val = parseFloat(amount);
+  if (isNaN(val) || val <= 0) { alert('Invalid amount'); return; }
+  fetch(`/api/agents/${encodeURIComponent(agentName)}/budget`, {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({amount: val})
+  }).then(r => r.json()).then(d => {
+    if (d.status === 'ok') alert(`${agentName} budget: $${d.old_budget} → $${d.new_budget}`);
+    else alert(d.message || 'Failed');
+  });
 }
 
 // Swarm controls
 function createNew() { if (isRunning) { alert('Cancel the running swarm first.'); return; } wsSend({ action: 'create_new' }); }
-function saveChat() { const label = prompt('Chat label (optional):') || ''; wsSend({ action: 'save_chat', label }); }
+function createCheckpoint() {
+  fetch('/api/swarm/checkpoint', { method: 'POST' })
+    .then(r => r.json())
+    .then(d => { if (d.status === 'created') alert('Checkpoint created: ' + d.path); else alert(d.message || 'Failed'); });
+}
+function fetchCheckpointList() {
+  fetch('/api/swarm/checkpoints')
+    .then(r => r.json())
+    .then(cps => { checkpointList = cps; renderMessages(); });
+}
+function resumeFromCheckpoint(name) {
+  if (confirm('Resume from checkpoint "' + name + '"?')) {
+    fetch('/api/swarm/resume_checkpoint', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({checkpoint: name}) })
+      .then(r => r.json()).then(d => alert(d.status === 'resumed' ? 'Resumed from ' + name : (d.message || 'Failed')));
+  }
+}
+function listCheckpoints() {
+  fetch('/api/swarm/checkpoints')
+    .then(r => r.json())
+    .then(cps => {
+      if (!cps.length) { alert('No checkpoints available.'); return; }
+      const choice = prompt('Available checkpoints:\\n' + cps.map((c,i) => (i+1)+'. '+c).join('\\n') + '\\n\\nEnter number to resume:');
+      if (!choice) return;
+      const idx = parseInt(choice) - 1;
+      if (idx >= 0 && idx < cps.length) {
+        if (confirm('Resume from checkpoint "' + cps[idx] + '"?')) {
+          fetch('/api/swarm/resume_checkpoint', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({checkpoint: cps[idx]}) })
+            .then(r => r.json()).then(d => alert(d.status === 'resumed' ? 'Resumed from ' + cps[idx] : d.message));
+        }
+      }
+    });
+}
 function loadChatHistory(name) { wsSend({ action: 'load_chat', name }); }
 function resumeChat(name) { if (confirm(`Resume swarm from chat '${name}'? This will start all agents from their saved sessions.`)) { wsSend({ action: 'resume_chat', name }); switchView('chitchat'); } }
 function deleteChat(name) { if (confirm(`Delete chat '${name}'?`)) wsSend({ action: 'delete_chat', name }); }
@@ -547,6 +831,18 @@ function editAgent(name) {
 // Agent controls
 function pauseAgent() { if (selectedAgent) wsSend({ action: 'pause', agent: selectedAgent }); }
 function resumeAgent() { if (selectedAgent) wsSend({ action: 'resume', agent: selectedAgent }); }
+function interruptAgent() {
+  if (!selectedAgent) return;
+  const msg = prompt(`Interrupt "${selectedAgent}" with message (or leave empty to just stop):`, '');
+  if (msg === null) return;  // cancelled
+  fetch(`/api/agents/${encodeURIComponent(selectedAgent)}/interrupt`, {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({message: msg || 'User interrupted. Stop what you are doing and wait for new instructions.'})
+  }).then(r => r.json()).then(d => {
+    if (d.status === 'ok') alert(`${selectedAgent} interrupted.`);
+    else alert(d.message || 'Failed');
+  });
+}
 function cancelAgent() { if (selectedAgent) wsSend({ action: 'cancel_agent', agent: selectedAgent }); }
 function sendMessage() {
   const input = document.getElementById('msg-input');

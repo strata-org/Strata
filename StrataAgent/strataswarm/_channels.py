@@ -55,6 +55,22 @@ class Channel:
         """Non-destructive peek: returns (sender, topic) for each pending message."""
         return [(msg.sender, msg.topic) for msg in list(self._queue._queue)]
 
+    async def wait_for_message(self, timeout: float | None = None) -> bool:
+        """Block until at least one message is in the queue. Does NOT consume it.
+        Returns True if a message is available, False on timeout."""
+        if self._queue.qsize() > 0:
+            return True
+        # Subscribe temporarily to get notified on next send
+        notify: asyncio.Queue[ChannelMessage] = asyncio.Queue(maxsize=1)
+        self._subscribers.append(notify)
+        try:
+            await asyncio.wait_for(notify.get(), timeout=timeout)
+            return True
+        except (asyncio.TimeoutError, asyncio.CancelledError):
+            return False
+        finally:
+            self._subscribers.remove(notify)
+
     def subscribe(self) -> asyncio.Queue[ChannelMessage]:
         q: asyncio.Queue[ChannelMessage] = asyncio.Queue()
         self._subscribers.append(q)

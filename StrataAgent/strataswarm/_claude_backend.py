@@ -55,6 +55,21 @@ class ClaudeBackend(AgentBackend):
 
     async def connect(self, config: BackendConfig) -> None:
         self._config = config
+        # Already connected — don't create a new session
+        if self._client is not None and self._session_id:
+            return
+        await self._do_connect(resume=False)
+
+    async def force_new_session(self) -> None:
+        """Force a fresh session (for handoff-restart / checkpoint recovery).
+        Disconnects existing client and creates a new session."""
+        if self._client:
+            try:
+                await self.disconnect()
+            except Exception:
+                pass
+        self._client = None
+        self._session_id = None
         await self._do_connect(resume=False)
 
     async def _do_connect(self, resume: bool = False) -> None:

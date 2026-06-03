@@ -68,6 +68,7 @@ class SwarmAgent:
         cwd: str | None = None,
         nudge_monitor: Any = None,
         should_exit: Callable[[], bool] | None = None,
+        swarm_name: str = "",
     ) -> None:
         # Default backend_factory to ClaudeBackend (lazy import to avoid cycles)
         if backend_factory is None:
@@ -89,6 +90,7 @@ class SwarmAgent:
         self._wait_after_completion = wait_after_completion and not spec.stateless
         self._backend_factory = backend_factory
         self._cwd = cwd
+        self._swarm_name = swarm_name
         self.swarm = None  # Set by Swarm._run_node_inner — gives module access to registry/topology
         self._nudge_monitor = nudge_monitor
         self._should_exit = should_exit
@@ -138,11 +140,10 @@ class SwarmAgent:
         permission_mode = "acceptEdits" if has_write_tools else self.spec.permission_mode
 
         if mcp_servers and "agent_messaging" in mcp_servers:
-            allowed_tools = allowed_tools + [
-                "mcp__agent_messaging__send_message",
-                "mcp__agent_messaging__check_messages",
-                "mcp__agent_messaging__get_time",
-            ]
+            messaging_tools = ["mcp__agent_messaging__send_message", "mcp__agent_messaging__get_time"]
+            if not self.spec.reply_only:
+                messaging_tools.append("mcp__agent_messaging__check_messages")
+            allowed_tools = allowed_tools + messaging_tools
         if mcp_servers and "agent_directory" in mcp_servers:
             allowed_tools = allowed_tools + [
                 "mcp__agent_directory__list_agents",
@@ -334,18 +335,33 @@ class SwarmAgent:
 
     # ─── AI control handoff ─────────────────────────────────────────────
 
-    async def run_ai(self, inp: Any = None, result_type: type[T] | None = None) -> AgentResult[T]:
-        """Run the standard AI loop (bypass module dispatch).
+    async def run_ai(
+        self,
+        inp: Any = None,
+        result_type: type[T] | None = None,
+        max_turns: int | None = None,
+    ) -> AgentResult[T]:
+        """Hand control to the LLM on the existing session.
 
-        Use this from inside a module to temporarily hand control to the LLM.
-        The LLM runs the stateful/stateless loop normally. When it finishes
-        (halt predicate, exit signal, budget, or response complete for stateless),
-        control returns here with the result.
+        The session persists between run_ai() calls — backend.connect() is
+        idempotent (no-op if already connected). The agent retains full
+        conversation history across calls.
 
-        Example in a module:
-            result = await agent.run_ai(inp="Handle this negotiation with Prover")
+        Args:
+            inp: Optional query to send. None = agent picks up from inbox.
+            result_type: Force structured output. None = freeform text.
+            max_turns: Cap LLM turns for this call. Prevents runaway.
         """
-        return await self._run_inner(inp, result_type)
+        saved_wait = self._wait_after_completion
+        saved_turns = self.spec.max_turns
+        self._wait_after_completion = False
+        if max_turns is not None:
+            self.spec.max_turns = max_turns
+        try:
+            return await self._run_inner(inp, result_type)
+        finally:
+            self._wait_after_completion = saved_wait
+            self.spec.max_turns = saved_turns
 
     async def run_checkpoint(self) -> str:
         """Generate a checkpoint handoff note.
@@ -535,10 +551,15 @@ class SwarmAgent:
                 result.status = AgentStatus.FAILED
                 await self._emit("status_change", AgentStatus.FAILED.value)
         finally:
-            try:
-                await self.backend.disconnect()
-            except Exception:
-                pass
+            # Don't disconnect if this is a run_ai() call from a module —
+            # the session must persist between run_ai() calls.
+            # Only disconnect when _wait_after_completion is True (normal agent lifecycle)
+            # or for stateless agents.
+            if self._wait_after_completion or self.spec.stateless:
+                try:
+                    await self.backend.disconnect()
+                except Exception:
+                    pass
 
         if result.status == AgentStatus.RUNNING:
             result.status = AgentStatus.COMPLETED

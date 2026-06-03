@@ -74,6 +74,7 @@ class AgentSpec(Generic[T]):
     module: str | None = None  # Python module path for custom workflow orchestration
     checkpointable: bool = False  # If True, appends handoff suffix to system prompt
     checkpoint_prompt: str | None = None  # Domain-specific handoff instructions (appended when checkpointable)
+    auto_start: bool = True  # If False, agent is not started by the swarm — must be launched manually
     _base_system_prompt: str | None = None  # Original system prompt before workspace composition
 
 

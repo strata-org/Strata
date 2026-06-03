@@ -851,7 +851,10 @@ class Swarm:
         self._nudge_monitor.start()
         logger.info(f"[SWARM] Visibility graph built. Starting agents...")
 
-        for name in self._registry.nodes:
+        for name, node in self._registry.nodes.items():
+            if not node.spec.auto_start:
+                logger.info(f"[SWARM] Skipping auto-start for: {name}")
+                continue
             logger.info(f"[SWARM] Creating task for: {name}")
             task = asyncio.create_task(self._run_node(name), name=f"swarm:{name}")
             self._registry.tasks[name] = task

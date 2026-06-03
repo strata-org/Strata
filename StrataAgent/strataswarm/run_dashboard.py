@@ -1,4 +1,4 @@
-"""Start the StrataSwarm v2 dashboard on port 8421."""
+"""Start the StrataSwarm v3 dashboard on port 8421."""
 
 import asyncio
 import os
@@ -6,19 +6,18 @@ import signal
 import sys
 from pathlib import Path
 
-# Ensure the StrataAgent directory is on the path so `strataswarm` is importable
+# Ensure StrataAgent is importable
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from strataswarm._claude_backend import ClaudeBackend
 from strataswarm._server import SwarmDashboard
 
 PORT = 8421
-PID_FILE = Path(__file__).parent / "temp" / "dashboard.pid"
+PID_FILE = Path(__file__).parent.parent / "temp" / "dashboard.pid"
 
 
 def kill_stale_process():
     """Kill any stale dashboard process using our port or PID file."""
-    # Try PID file first
     if PID_FILE.exists():
         try:
             old_pid = int(PID_FILE.read_text().strip())
@@ -30,7 +29,6 @@ def kill_stale_process():
             pass
         PID_FILE.unlink(missing_ok=True)
 
-    # Also check if port is in use
     try:
         import subprocess
         result = subprocess.run(
@@ -58,7 +56,7 @@ async def main() -> None:
     pid = os.getpid()
     PID_FILE.parent.mkdir(parents=True, exist_ok=True)
     PID_FILE.write_text(str(pid))
-    print(f"StrataSwarm v2 Dashboard PID: {pid} (written to {PID_FILE})")
+    print(f"StrataSwarm v3 Dashboard PID: {pid}")
 
     dashboard = SwarmDashboard(
         backend_factory=ClaudeBackend,
@@ -66,7 +64,8 @@ async def main() -> None:
         port=PORT,
     )
     await dashboard.start()
-    print(f"StrataSwarm v2 Dashboard running at http://localhost:{PORT} (PID: {pid})")
+    print(f"Dashboard running at http://localhost:{PORT}")
+    print(f"Load 'swarm' from the UI to start the LeanSwarm config.")
     try:
         await asyncio.Event().wait()
     finally:

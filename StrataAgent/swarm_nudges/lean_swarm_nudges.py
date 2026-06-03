@@ -81,35 +81,40 @@ def main_prover_report_to_tm(view: TelemetryView) -> str | None:
 
 
 # =============================================================================
-# CATEGORY 2: GENTLE POKE (ask agents to self-report or take action)
+# CATEGORY 2: DONE REMINDER (for spawned agents only)
 # =============================================================================
 
-def poke_silent_child(view: TelemetryView) -> str | None:
-    """Poke a sub-agent that's been silent for 8+ min — ask it to report to parent."""
-    if view.agent_is_super():
-        return None
+def done_reminder(view: TelemetryView) -> str | None:
+    """Remind spawned agents to call done() or send a status update if idle."""
+    # Only target spawned agents (not top-level, not service agents, not virtual)
     if view._is_reply_only:
         return None
-    # Target any non-service agent (including spawned sub-agents)
+    # Skip all top-level and virtual agents
+    base_agents = {
+        "TaskManager", "Editor", "Prover", "CounterExampleAgent", "user",
+    }
+    if view._agent in base_agents:
+        return None
     if view._agent.startswith("SearchAgent") or view._agent.startswith("ProofValidator"):
         return None
-    if view._agent.startswith("LeanSyntax"):
+    if view._agent.startswith("LeanSyntax") or view._agent.startswith("LemmaProposer"):
         return None
-    if view._agent in ("TaskManager", "Editor", "ProofCondenser"):
+    if view._agent.startswith("ProofCondenser"):
         return None
-    # Silent for 8+ min
-    if not view.is_idle(idle_seconds=480):
+    # Silent for 5+ min
+    if not view.is_idle(idle_seconds=300):
         return None
     idle = view.seconds_since_last_event()
     if idle == float("inf"):
-        return None  # No events yet — agent hasn't started
+        return None
     elapsed_min = int(view.agent_elapsed_minutes())
     cost = view.agent_cost_usd()
-    cost_str = f" (cost so far: ${cost:.3f})" if cost else ""
+    cost_str = f" (cost: ${cost:.3f})" if cost else ""
     return (
-        f"You have been silent for {int(idle)}s (running {elapsed_min} min total{cost_str}). "
-        f"Send your parent a brief status: what you're working on, "
-        f"whether you're stuck, or if you're done."
+        f"You have been idle for {int(idle)}s (running {elapsed_min} min{cost_str}). "
+        f"Are you done? If YES → call done(summary='<your results>') to exit cleanly. "
+        f"If NO → send a status update to your parent explaining what you're waiting for. "
+        f"If STUCK → ask LemmaProposer or SearchAgent for a different approach."
     )
 
 
@@ -240,25 +245,191 @@ def agent_using_bash_when_disallowed(view: TelemetryView) -> str | None:
 
 
 # =============================================================================
+# CATEGORY 5: RESOURCE MONITORING (CPU/RAM alerts to TaskManager)
+# =============================================================================
+
+def resource_alarm(view: TelemetryView) -> str | None:
+    """Alert TaskManager about high system resource usage."""
+    if view._agent != "TaskManager":
+        return None
+    try:
+        import psutil
+        # System-wide metrics
+        cpu_pct = psutil.cpu_percent(interval=0)
+        mem = psutil.virtual_memory()
+        mem_pct = mem.percent
+
+        # Only fire if resources are stressed
+        if cpu_pct < 85 and mem_pct < 80:
+            return None
+
+        # Find top memory consumers (Claude/lake processes)
+        top_procs = []
+        for proc in psutil.process_iter(['pid', 'name', 'memory_info', 'cmdline']):
+            try:
+                info = proc.info
+                cmd = " ".join(info.get('cmdline', [])[:3]) if info.get('cmdline') else info.get('name', '')
+                if any(k in cmd for k in ['claude', 'lake', 'lean', 'node']):
+                    mem_mb = (info['memory_info'].rss / 1024 / 1024) if info.get('memory_info') else 0
+                    if mem_mb > 100:
+                        top_procs.append((cmd[:60], mem_mb))
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+
+        top_procs.sort(key=lambda x: -x[1])
+        top_str = "\n".join(f"  - {name}: {mb:.0f} MB" for name, mb in top_procs[:5])
+
+        parts = []
+        if cpu_pct >= 85:
+            parts.append(f"CPU at {cpu_pct:.0f}%")
+        if mem_pct >= 80:
+            parts.append(f"RAM at {mem_pct:.0f}% ({mem.used // (1024**3)}GB / {mem.total // (1024**3)}GB)")
+
+        return (
+            f"RESOURCE ALERT: {', '.join(parts)}.\n"
+            f"Top consumers:\n{top_str}\n"
+            f"Consider: kill idle/stuck sub-agents, reduce parallelism, or wait for compilations to finish."
+        )
+    except ImportError:
+        return None
+    except Exception:
+        return None
+
+
+# =============================================================================
+# CATEGORY 6: FORCE SPAWNING (coordinators must delegate)
+# =============================================================================
+
+def force_spawn_reminder(view: TelemetryView) -> str | None:
+    """Force coordinators to spawn children if they haven't in 10+ min."""
+    if not view.agent_is_super():
+        return None
+    if view._is_reply_only:
+        return None
+    if view._agent in ("TaskManager", "Editor", "user"):
+        return None
+    elapsed_min = view.agent_elapsed_minutes()
+    if elapsed_min < 10:
+        return None
+    spawn_count = view.tool_used_count("spawn_agent", since_seconds=600)
+    if spawn_count >= 1:
+        return None
+    cost = view.agent_cost_usd()
+    cost_str = f" (cost: ${cost:.3f})" if cost else ""
+    return (
+        f"You have been working for {int(elapsed_min)} min without spawning any children{cost_str}. "
+        f"You are a COORDINATOR — you should NOT be writing proofs yourself. "
+        f"Decompose your current work into independent pieces and spawn sub-agents NOW. "
+        f"Even small pieces (5-10 lines) should be delegated to leaf agents (recursive=false)."
+    )
+
+
+# =============================================================================
 # REGISTRY
 # =============================================================================
 
 # (rule_function, probability, cooldown_seconds)
 RULES = [
-    # Category 1: Status informer (factual, for SuperAgents)
+    # Category 1: Status informer (for SuperAgents only)
     (super_agent_child_status,       1.0, 300),   # 5 min cooldown
     (main_prover_report_to_tm,       1.0, 900),   # 15 min cooldown
 
-    # Category 2: Gentle poke (non-service agents only)
-    (poke_silent_child,              1.0, 480),   # 8 min cooldown
+    # Category 2: Done reminder (spawned agents only — not service, not top-level)
+    (done_reminder,                  1.0, 300),   # 5 min cooldown
 
-    # Category 3: Handoff reminders (token-based, from backend context %)
+    # Category 3: Handoff reminders (token-based, super agents only)
     (handoff_warning_context_60,     1.0, 300),   # 5 min cooldown — early warning
     (handoff_urgent_context_80,      1.0, 120),   # 2 min cooldown — urgent, keep nagging
-    (sub_agent_context_high,         1.0, 180),   # 3 min cooldown — sub-agents report up
+    (sub_agent_context_high,         1.0, 180),   # 3 min cooldown — non-super spawned agents
 
-    # Category 4: Violation alerts (non-service agents only)
+        # Category 5: Resource monitoring (alerts TaskManager)
+    (resource_alarm,                 1.0, 120),   # 2 min cooldown — check frequently
+
+    # Category 6: Force spawning (coordinators must delegate)
+    (force_spawn_reminder,           1.0, 600),   # 10 min cooldown
+
+    # Category 7: Violation alerts (spawned agents + CEA only)
     (cea_searching_not_testing,      1.0, 300),
     (edit_without_compile,           1.0, 300),
     (agent_using_bash_when_disallowed, 1.0, 180),  # 3 min — catch early
 ]
+
+
+# =============================================================================
+# HOOKS: Domain-specific recovery callbacks
+# =============================================================================
+
+async def _kill_lean_mcp_processes() -> list[dict]:
+    """Kill all lean-lsp-mcp and lean --server processes. Returns list of killed."""
+    import signal
+    try:
+        import psutil
+    except ImportError:
+        return []
+    killed = []
+    for proc in psutil.process_iter(['pid', 'cmdline']):
+        try:
+            cmd = " ".join(proc.info.get('cmdline', []) or [])
+            if "lean-lsp-mcp" in cmd or "lean --server" in cmd:
+                proc.send_signal(signal.SIGTERM)
+                killed.append({"pid": proc.info['pid'], "cmd": cmd[:80]})
+        except Exception:
+            continue
+    return killed
+
+
+async def _reconnect_all_validators(swarm) -> list[str]:
+    """Disconnect + reconnect all ProofValidator backends."""
+    reconnected = []
+    registry = swarm._registry
+    for name, backend in list(registry.backends.items()):
+        if not name.startswith("ProofValidator"):
+            continue
+        try:
+            await backend.disconnect()
+            config = getattr(backend, '_config', None)
+            if config:
+                await backend.connect(config)
+                reconnected.append(name)
+        except Exception:
+            pass
+    return reconnected
+
+
+async def ON_STALLED_SERVICE(swarm, agent_name: str) -> None:
+    """Called when any agent appears stalled (overdue replies or stall event).
+    For ProofValidator: kill MCP + reconnect all replicas.
+    For other agents: disconnect + reconnect that specific agent."""
+    import logging
+    logger = logging.getLogger("strataswarm.nudge")
+
+    if agent_name.startswith("ProofValidator"):
+        # ProofValidator stall = likely dead MCP. Kill all + reconnect all replicas.
+        killed = await _kill_lean_mcp_processes()
+        logger.info(f"[LEAN MCP] Stalled validator '{agent_name}' — killed {len(killed)} MCP processes")
+        reconnected = await _reconnect_all_validators(swarm)
+        logger.info(f"[LEAN MCP] Reconnected {len(reconnected)} validators: {reconnected}")
+    else:
+        # Non-validator stall: disconnect + reconnect that specific agent's backend
+        registry = swarm._registry
+        backend = registry.backends.get(agent_name)
+        if backend:
+            try:
+                await backend.disconnect()
+                config = getattr(backend, '_config', None)
+                if config:
+                    await backend.connect(config)
+                    logger.info(f"[STALL RECOVERY] Reconnected '{agent_name}'")
+            except Exception as e:
+                logger.error(f"[STALL RECOVERY] Failed to reconnect '{agent_name}': {e}")
+
+
+async def ON_MCP_RESTART(swarm) -> dict:
+    """Called from /api/mcp/restart endpoint. Same logic as stall recovery."""
+    import logging
+    logger = logging.getLogger("strataswarm.nudge")
+    killed = await _kill_lean_mcp_processes()
+    logger.info(f"[LEAN MCP] Manual restart: killed {len(killed)} processes")
+    reconnected = await _reconnect_all_validators(swarm)
+    logger.info(f"[LEAN MCP] Manual restart: reconnected {len(reconnected)} validators")
+    return {"killed": killed, "reconnected": reconnected}
