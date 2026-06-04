@@ -9,6 +9,7 @@ public import Strata.Backends.CBMC.CollectSymbols
 public import Strata.Backends.CBMC.GOTO.CoreToCProverGOTO
 import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
 import Strata.Transform.StructuredToUnstructured
+import Strata.Languages.Core.StatementSemantics
 
 /-! ## Core-to-GOTO translation via CFG
 

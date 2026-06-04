@@ -3,8 +3,8 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-import Strata.DDM.Elab
-import Strata.DDM.BuiltinDialects.Init
+import StrataDDM.Elab
+import StrataDDM.BuiltinDialects.Init
 import Strata.Languages.Core.DDMTransform.Grammar
 import Strata.Languages.Core.Verifier
 import Strata.SimpleAPI
@@ -12,15 +12,17 @@ import Strata.SimpleAPI
 /-! # Tests for CFG (unstructured) procedure parsing -/
 
 open Strata
-open Strata.Elab (parseStrataProgramFromDialect)
+open StrataDDM.Elab (parseStrataProgramFromDialect)
 
 private def parseCoreText (input : String) : IO Core.Program := do
-  let inputCtx := Strata.Parser.stringInputContext "inline" input
-  let dialects := Strata.Elab.LoadedDialects.ofDialects! #[initDialect, Strata.Core]
+  let inputCtx := StrataDDM.Parser.stringInputContext "inline" input
+  let dialects := StrataDDM.Elab.LoadedDialects.ofDialects! #[StrataDDM.initDialect, Strata.Core]
   let strataProgram ← parseStrataProgramFromDialect dialects Strata.Core.name inputCtx
-  match genericToCore strataProgram with
-  | .ok program => pure program
-  | .error msg => throw (IO.userError msg)
+  let (program, errors) := Core.getProgram strataProgram inputCtx
+  if errors.isEmpty then
+    pure program
+  else
+    throw (IO.userError s!"Core DDM translation errors:\n{String.intercalate "\n" errors.toList}")
 
 private def printCFGProcInfo (prog : Core.Program) : IO Unit := do
   for d in prog.decls do

@@ -6,6 +6,9 @@
 import Strata.Backends.CBMC.CollectSymbols
 import Strata.Backends.CBMC.GOTO.CoreCFGToGOTOPipeline
 import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
+import StrataDDM.Integration.Lean.HashCommands
+import Strata.Languages.Core.DDMTransform.Translate
+import Lean.Server.Utils
 
 /-! ## Equivalence tests: direct path vs. CFG path
 
@@ -21,7 +24,7 @@ and LOCATION differences.
 
 open Strata
 
-private def translateCore (p : Strata.Program) : Core.Program :=
+private def translateCore (p : StrataDDM.Program) : Core.Program :=
   (TransM.run Inhabited.default (translateProgram p)).fst
 
 /-! ### Instruction-level comparison helpers -/
@@ -75,7 +78,7 @@ private def toJson (ctx : CoreToGOTO.CProverGOTO.Context) (pname : String)
   return (json.symtab, json.goto)
 
 /-- Run both pipelines and compare semantic instructions + contracts + JSON validity. -/
-private def testEquivalence (prog : Strata.Program) (procName : String := "main")
+private def testEquivalence (prog : StrataDDM.Program) (procName : String := "main")
     : IO Unit := do
   let cprog := translateCore prog
   let directResult := runDirectPipeline cprog procName
