@@ -564,6 +564,9 @@ structure ConstrainedType where
 structure DatatypeConstructor where
   name : Identifier
   args : List Parameter
+  /-- Identifier for the auto-generated tester function (e.g. `IntList..isNil`).
+      Populated with a `uniqueId` during resolution. -/
+  testerName : Identifier := mkId ""
 
 /-- A Laurel datatype definition with optional type parameters.
     Zero constructors produces an opaque (abstract) type in Core.

@@ -675,7 +675,12 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
         -- parameter's own name should stay unqualified.
         let destructorId := { p.name with uniqueId := resolved.uniqueId }
         return ⟨ destructorId, ty' ⟩
-      return { name := ctorName', args := args' : DatatypeConstructor }
+      -- Resolve the tester name so its uniqueId is set.
+      let testerResolved ← resolveRef (dt.testerName ctor)
+      let testerName' := { ctor.testerName with
+        text := testerResolved.text
+        uniqueId := testerResolved.uniqueId }
+      return { name := ctorName', args := args', testerName := testerName' : DatatypeConstructor }
     return .Datatype { name := dtName', typeArgs := dt.typeArgs, constructors := ctors' }
   | .Alias ta =>
     let target' ← resolveHighType ta.target
@@ -690,6 +695,28 @@ def resolveConstant (c : Constant) : ResolveM Constant := do
   return { name := name', type := ty', initializer := init' }
 
 /-! ## Phase 2: Build refToDef map from the resolved program -/
+
+/-- Generate a virtual tester procedure for a single constructor of a datatype.
+    The tester takes a single argument of the datatype's type and returns `bool`.
+    Used during resolution to synthesize the scope entry for tester calls
+    (e.g. `IntList..isNil(x)`) without requiring a separate AST pass. -/
+private def mkTesterProcedure (dt : DatatypeDefinition) (ctor : DatatypeConstructor) : Procedure :=
+  let tName := dt.testerName ctor
+  let inputParam : Parameter := {
+    name := mkId "value"
+    type := { val := .UserDefined dt.name, source := none }
+  }
+  let outputParam : Parameter := {
+    name := mkId "$result"
+    type := { val := .TBool, source := none }
+  }
+  { name := mkId tName
+    inputs := [inputParam]
+    outputs := [outputParam]
+    preconditions := []
+    decreases := none
+    isFunctional := true
+    body := .External }
 
 /-- Insert a definition into the refToDef map using the ID already on the identifier. -/
 private def register (map : Std.HashMap Nat ResolvedNode) (iden : Identifier) (node : ResolvedNode)
@@ -827,6 +854,9 @@ private def collectTypeDefinition (map : Std.HashMap Nat ResolvedNode) (td : Typ
     let map := register map dt.name (.datatypeDefinition dt)
     dt.constructors.foldl (fun map ctor =>
       let map := register map ctor.name (.datatypeConstructor dt.name ctor)
+      -- Register the tester function in the refToDef map.
+      let testerProc := mkTesterProcedure dt ctor
+      let map := register map ctor.testerName (.staticProcedure testerProc)
       ctor.args.foldl (fun map p =>
         -- The constructor parameter's `uniqueId` (set by `resolveTypeDefinition`)
         -- is the shared uniqueId of the safe/unsafe destructor scope entries,
@@ -885,6 +915,10 @@ private def preRegisterTopLevel (program : Program) : ResolveM Unit := do
       let _ ← defineNameCheckDup dt.name (.datatypeDefinition dt)
       for ctor in dt.constructors do
         let _ ← defineNameCheckDup ctor.name (.datatypeConstructor dt.name ctor)
+        -- Register the tester function (e.g. `IntList..isNil`) as a static procedure.
+        let testerProc := mkTesterProcedure dt ctor
+        let _ ← defineNameCheckDup (mkId (dt.testerName ctor))
+          (.staticProcedure testerProc) (some (dt.testerName ctor))
         for p in ctor.args do
           -- Same chaining trick for the safe and unsafe destructor names: both
           -- point to the same uniqueId so `IntList..head` and `IntList..head!`

@@ -6,7 +6,6 @@
 module
 
 public import Strata.Languages.Laurel.LaurelToCoreTranslator
-import Strata.Languages.Laurel.DatatypeTesters
 import Strata.Languages.Laurel.DesugarShortCircuit
 import Strata.Languages.Laurel.EliminateReturnsInExpression
 import Strata.Languages.Laurel.EliminateReturnStatements
@@ -173,9 +172,6 @@ private def runLaurelPasses (options : LaurelTranslateOptions)
     staticProcedures := coreDefinitionsForLaurel.staticProcedures ++ program.staticProcedures,
     types := coreDefinitionsForLaurel.types ++ program.types
   }
-
-  -- Generate external tester functions for datatype constructors
-  let program := generateDatatypeTesters program
 
   -- Step 0: the input program before any passes
   emit "Initial" "laurel.st" program
