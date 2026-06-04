@@ -425,7 +425,12 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
         let ty' ← resolveHighType param.type
         let name' ← defineNameCheckDup param.name (.var param.name ty')
         pure (⟨.Declare ⟨name', ty'⟩, vs⟩ : VariableMd)
+    -- The RHS of an assignment is NOT in value context — the assignment captures
+    -- all outputs, so multi-output calls are fine here.
+    let saved := (← get).inValueContext
+    modify fun s => { s with inValueContext := false }
     let value' ← resolveStmtExpr value
+    modify fun s => { s with inValueContext := saved }
     -- Check that LHS target count matches the number of outputs from the RHS
     let expectedOutputCount ← match value'.val with
       | .StaticCall callee _ => do
