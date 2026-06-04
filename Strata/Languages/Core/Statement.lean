@@ -110,6 +110,39 @@ abbrev Statement := Imperative.Stmt Core.Expression Core.Command
 @[expose]
 abbrev Statements := List Statement
 
+/-! ### NoCall
+
+Predicate stating that a Core statement or block contains no procedure-call
+commands.  Lives in `Core` (rather than generic `Imperative`) because calls
+are a Core-only concept — `Imperative.Cmd` has no procedure-call constructor.
+
+Used by `Imperative.LoopElim.removeLoopsLoopCase` to reject loop bodies that
+contain procedure calls. -/
+
+mutual
+/-- Returns true if every command syntactically inside `s` is not a procedure
+    call. -/
+@[expose] def Statement.noCall (s : Statement) : Bool :=
+  match s with
+  | .cmd (.cmd _) => true
+  | .cmd (.call _ _ _) => false
+  | .block _ bss _ => Statements.noCall bss
+  | .ite _ tss ess _ => Statements.noCall tss && Statements.noCall ess
+  | .loop _ _ _ bss _ => Statements.noCall bss
+  | .exit _ _ => true
+  | .funcDecl _ _ => true
+  | .typeDecl _ _ => true
+  termination_by (Imperative.Stmt.sizeOf s)
+
+/-- Returns true if every command syntactically inside `ss` is not a procedure
+    call. -/
+@[expose] def Statements.noCall (ss : Statements) : Bool :=
+  match ss with
+  | [] => true
+  | s :: srest => Statement.noCall s && Statements.noCall srest
+  termination_by (Imperative.Block.sizeOf ss)
+end
+
 @[expose, match_pattern]
 abbrev Statement.init (name : Expression.Ident) (ty : Expression.Ty) (expr : ExprOrNondet Expression)
     (md : MetaData Expression) :=
@@ -191,20 +224,28 @@ end
 
 ---------------------------------------------------------------------
 
-def Command.getVars (c : Command) : List Expression.Ident :=
+@[expose] def Command.getVars (c : Command) : List Expression.Ident :=
   match c with
   | .cmd c => c.getVars
-  | .call _ args _ => (CallArg.getInputExprs args).flatMap HasVarsPure.getVars
+  | .call _ args _ => (CallArg.getInputExprs args).flatMap HasFvars.getFvars
 
 instance : HasVarsPure Expression Command where
   getVars := Command.getVars
 
-def Command.definedVars (c : Command) : List Expression.Ident :=
+@[expose] def Command.getOps (c : Command) : List Expression.Ident :=
+  match c with
+  | .cmd c => Cmd.getOps c
+  | .call _ args _ => (CallArg.getInputExprs args).flatMap HasOps.getOps
+
+instance : HasOpsImp Expression Command where
+  getOps := Command.getOps
+
+@[expose] def Command.definedVars (c : Command) : List Expression.Ident :=
   match c with
   | .cmd c => c.definedVars
   | _ => []
 
-def Command.modifiedVars (c : Command) : List Expression.Ident :=
+@[expose] def Command.modifiedVars (c : Command) : List Expression.Ident :=
   match c with
   | .cmd c => c.modifiedVars
   | .call _ args _ => CallArg.getLhs args
@@ -213,20 +254,16 @@ def Command.modifiedOrDefinedVars (c : Command) : List Expression.Ident :=
   Command.definedVars c ++ Command.modifiedVars c
 
 instance : HasVarsImp Expression Command where
-  definedVars := Command.definedVars
+  definedVars c _ := Command.definedVars c
   modifiedVars := Command.modifiedVars
-  modifiedOrDefinedVars := Command.modifiedOrDefinedVars
 
 instance : HasVarsImp Expression Statement where
   definedVars := Stmt.definedVars
   modifiedVars := Stmt.modifiedVars
-  modifiedOrDefinedVars := Stmt.modifiedOrDefinedVars
 
 instance : HasVarsImp Expression (List Statement) where
   definedVars := Block.definedVars
   modifiedVars := Block.modifiedVars
-  -- order matters for Havoc, so needs to override the default
-  modifiedOrDefinedVars := Block.modifiedOrDefinedVars
 
 ---------------------------------------------------------------------
 
@@ -276,7 +313,7 @@ def Command.getVarsTrans
   | .cmd c => Cmd.getVars (P:=Expression) c
   | .call f args _ =>
     let lhs := CallArg.getLhs args
-    (CallArg.getInputExprs args).flatMap HasVarsPure.getVars ++
+    (CallArg.getInputExprs args).flatMap HasFvars.getFvars ++
     match π f with
     | some proc => lhs ++ HasVarsTrans.getVarsTrans π proc
     | none => []
@@ -300,7 +337,7 @@ def Statement.getVarsTrans
     match decl.body with
     | none => []
     | some body =>
-      let bodyVars := HasVarsPure.getVars body
+      let bodyVars := HasFvars.getFvars body
       let formals := decl.inputs.map (·.1)
       bodyVars.filter (fun v => formals.all (fun f => v.name != f.name))
   | .typeDecl _ _ => []  -- Type declarations don't reference variables
@@ -324,13 +361,13 @@ def Command.definedVarsTrans
 -- since call statement does not define any new variables
 def Statement.definedVarsTrans
   (_ : String → Option ProcType) (s : Statement) :=
-  Stmt.definedVars s
+  Stmt.definedVars s false
 
 -- don't need to transitively lookup for procedures
 -- since call statement does not define any new variables
 def Statements.definedVarsTrans
   (_ : String → Option ProcType) (s : Statements) :=
-  Block.definedVars s
+  Block.definedVars s false
 
 mutual
 /-- get all variables modified or defined by the statement `s` (write-set, transitive). -/
@@ -404,7 +441,7 @@ def Statement.substFvar (s : Core.Statement)
           (Block.substFvar elseb fr to) metadata
   | .loop guard measure invariant body metadata =>
     .loop (guard.map (Lambda.LExpr.substFvar · fr to))
-          (Option.map (Lambda.LExpr.substFvar · fr to) measure)
+          (measure.map (fun (l, e) => (l, Lambda.LExpr.substFvar e fr to)))
           (invariant.map (fun (l, e) => (l, Lambda.LExpr.substFvar e fr to)))
           (Block.substFvar body fr to)
           metadata
@@ -495,10 +532,10 @@ def Statement.collectExprs :
     tss.flatMap Statement.collectExprs ++
     ess.flatMap Statement.collectExprs
   | .loop (.det g) measure inv body _ =>
-    [g] ++ measure.toList ++
+    [g] ++ (measure.map Prod.snd).toList ++
     inv.map Prod.snd ++ body.flatMap Statement.collectExprs
   | .loop .nondet measure inv body _ =>
-    measure.toList ++
+    (measure.map Prod.snd).toList ++
     inv.map Prod.snd ++ body.flatMap Statement.collectExprs
   | .cmd (.cmd (.init _ _ .nondet _)) => []
   | .cmd (.cmd (.set _ .nondet _)) => []

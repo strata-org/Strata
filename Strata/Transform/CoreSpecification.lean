@@ -8,6 +8,11 @@ module
 public import Strata.Languages.Core.StatementSemantics
 public import Strata.Transform.Specification
 public import Strata.Languages.Core.WF
+public import Strata.Languages.Core.Factory
+import all Strata.Languages.Core.Factory
+import all Strata.DL.Lambda.IntBoolFactory
+import all Strata.DL.Lambda.FactoryWF
+import all Strata.DL.Lambda.Factory
 
 public section
 
@@ -30,6 +35,71 @@ open Core Imperative
 
 /-! ## Core `Lang` bundle -/
 
+/-- Store-well-formedness needed for a statement `s` to execute in env `ρ` without
+    getting stuck. -/
+structure InitEnvWF (reserved : List String)
+    (declaredFuncs : Expression.Ident → Bool)
+    (s : Statement) (ρ : Env Expression) :
+    Prop where
+  readWritesDefined : ∀ n ∈ Stmt.touchedVars s, n ∉ Stmt.definedVars s false →
+    (ρ.store n).isSome
+  defsUndefined : ∀ n ∈ Stmt.definedVars s false, (ρ.store n).isNone
+  /-- Source's `definedVars` don't use any of the reserved prefixes. -/
+  definedVarsNotReserved : ∀ n ∈ Stmt.definedVars s false, ∀ p ∈ reserved,
+    ¬ p.toList.isPrefixOf n.name.toList
+  /-- Source's `funcDeclNames` don't use any of the reserved prefixes.
+      `funcDecl` names live in the evaluator (not the store), so they aren't
+      covered by `definedVarsNotReserved`. -/
+  funcDeclNamesNotReserved : ∀ n ∈ Stmt.funcDeclNames s false, ∀ p ∈ reserved,
+    ¬ p.toList.isPrefixOf n.name.toList
+  reservedFresh : ∀ n, (ρ.store n).isSome →
+    ∀ p ∈ reserved, ¬ p.toList.isPrefixOf n.name.toList
+  wfBool : WellFormedSemanticEvalBool ρ.eval
+  wfVal  : WellFormedSemanticEvalVal ρ.eval
+  wfVar  : WellFormedSemanticEvalVar ρ.eval
+  wfInt : WellFormedSemanticEvalInt ρ.eval
+  evalCong : WellFormedCoreEvalCong ρ.eval
+  exprCongr : WellFormedSemanticEvalExprCongr ρ.eval
+  defUseOk : Stmt.defUseWellFormed (fun n => (ρ.store n).isSome) declaredFuncs s = Bool.true
+  factoryDeclared : ∀ s, Core.isNameInFactory s = Bool.true →
+    declaredFuncs ⟨s, ()⟩ = Bool.true
+
+/-- Block-level analog of `InitEnvWF`: well-formedness for executing a block of
+    statements `bss` from env `ρ`. -/
+structure BlockInitEnvWF (reserved : List String)
+    (declaredFuncs : Expression.Ident → Bool)
+    (bss : Statements)
+    (ρ : Env Expression) : Prop where
+  readWritesDefined : ∀ n ∈ Block.touchedVars bss, n ∉ Block.definedVars bss false →
+    (ρ.store n).isSome
+  defsUndefined : ∀ n ∈ Block.definedVars bss false, (ρ.store n).isNone
+  definedVarsNotReserved : ∀ n ∈ Block.definedVars bss false, ∀ p ∈ reserved,
+    ¬ p.toList.isPrefixOf n.name.toList
+  funcDeclNamesNotReserved : ∀ n ∈ Block.funcDeclNames bss false, ∀ p ∈ reserved,
+    ¬ p.toList.isPrefixOf n.name.toList
+  reservedFresh : ∀ n, (ρ.store n).isSome →
+    ∀ p ∈ reserved, ¬ p.toList.isPrefixOf n.name.toList
+  wfBool : WellFormedSemanticEvalBool ρ.eval
+  wfVal  : WellFormedSemanticEvalVal ρ.eval
+  wfVar  : WellFormedSemanticEvalVar ρ.eval
+  wfInt : WellFormedSemanticEvalInt ρ.eval
+  evalCong : WellFormedCoreEvalCong ρ.eval
+  exprCongr : WellFormedSemanticEvalExprCongr ρ.eval
+  defUseOk : Block.defUseWellFormed (fun n => (ρ.store n).isSome) declaredFuncs bss = Bool.true
+  factoryDeclared : ∀ s, Core.isNameInFactory s = Bool.true →
+    declaredFuncs ⟨s, ()⟩ = Bool.true
+
+/-! ## Core factory-membership lemmas
+
+Used by transforms (e.g. `LoopElim`) that synthesize references to standard
+ops to discharge the `factoryDeclared` precondition for those specific ops. -/
+
+theorem boolNot_isNameInFactory :
+    Core.isNameInFactory "Bool.Not" = Bool.true := by native_decide
+
+theorem intLt_isNameInFactory :
+    Core.isNameInFactory "Int.Lt" = Bool.true := by native_decide
+
 /-- The `Lang Expression` bundle for Core small-step semantics. -/
 @[expose] def Lang.core
     (π : String → Option Procedure)
@@ -37,6 +107,7 @@ open Core Imperative
     Imperative.Specification.Lang Expression :=
   Imperative.Specification.Lang.imperative
     Expression Command (EvalCommand π φ) (EvalPureFunc φ) coreIsAtAssert
+    InitEnvWF
 
 /-! ## Well-formed program state at the entry of procedure -/
 
@@ -78,7 +149,11 @@ variable (π : String → Option Procedure)
 variable (φ : CoreEval → PureFunc Expression → CoreEval)
 
 /-- A specific assertion `a` in procedure `proc` is valid
-    for initial program states satisfying the preconditions (`ProcEnvWF`). -/
+    for initial program states satisfying the preconditions (`ProcEnvWF`).
+
+    `AssertValidWhen` only uses the language's reachability/star and isAtAssert
+    predicates, so the `Lang.core`'s `initEnvWF` (parameterized by reserved
+    prefixes) doesn't affect this definition. -/
 @[expose] def AssertValidInProcedure
     (proc : Procedure)
     (a : Imperative.AssertId Expression) : Prop :=
@@ -136,10 +211,17 @@ variable (φ : CoreEval → PureFunc Expression → CoreEval)
     (1) assert validity in the body, and
     (2) postcondition validity on termination.
 -/
-structure ProcedureCorrect (proc : Procedure) (p : Program) : Prop where
+structure ProcedureCorrect (proc : Procedure)
+    (p : Program) : Prop where
   /-- (1) The asserts in the body of proc are valid. -/
   assertsValid : ∀ a, AssertValidInProcedure π φ proc a
-  /-- (2) The postconditions hold on termination. -/
+  /-- (2) The postconditions hold on termination.
+
+      Postconditions are evaluated against the parent's evaluator `ρ₀.eval`
+      (function declarations introduced inside the procedure body are local
+      to the body and are not visible to the postcondition).  The store is
+      projected: only variables defined in `ρ₀.store` carry their final
+      `ρ'.store` values; variables initialized within the body are dropped. -/
   postconditionsValid :
     WF.WFProcedureProp p proc →
     ∀ (ρ₀ ρ' : Env Expression),
@@ -148,7 +230,7 @@ structure ProcedureCorrect (proc : Procedure) (p : Program) : Prop where
       (∀ (label : CoreLabel) (check : Procedure.Check),
         (label, check) ∈ proc.spec.postconditions.toList →
         check.attr = Procedure.CheckAttr.Default →
-        ρ'.eval ρ'.store check.expr = some HasBool.tt) ∧
+        ρ₀.eval (projectStore ρ₀.store ρ'.store) check.expr = some HasBool.tt) ∧
       ρ'.hasFailure = Bool.false
 
 end Core.Specification

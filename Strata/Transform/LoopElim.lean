@@ -5,20 +5,26 @@
 -/
 module
 
+public import Strata.DL.Imperative.Stmt
+public import Strata.DL.Util.LabelGen
 public import Strata.Languages.Core.PipelinePhase
 import Strata.Languages.Core.StatementSemantics
 
-namespace Core
-open Imperative Lambda
-
 public section
 
-/-- Label prefix for loop-elimination invariant assumptions. -/
-def loopElimInvariantPrefix : String := "assume_invariant_"
-/-- Label prefix for loop-elimination guard assumptions. -/
-def loopElimGuardPrefix : String := "assume_guard_"
+namespace Imperative.LoopElim
+open Lambda
 
-namespace LoopElim
+/-- Label prefix for loop-elimination assumptions. -/
+def loopElimAssumePrefix : String := "loopElimAssume_"
+/-- Label prefix for loop-elimination asserts. -/
+def loopElimAssertPrefix : String := "loopElimAssert_"
+/-- Label prefix of blocks created by LoopElim. -/
+def loopElimBlockPrefix : String := "loopElim_"
+/-- The identifier prefix that loop-elimination claims for its fresh names
+    (e.g. measure-snapshot variables `$__loop_measure_<n>`). Any caller of
+    `loopElim_overapproximatesAggressive` must include this in `reserved`. -/
+def loopElimReservedPrefix : String := "$__loop"
 
 /-- Statistics keys tracked by the loop elimination transformation. -/
 inductive Stats where
@@ -27,11 +33,11 @@ inductive Stats where
 
 #derive_prefixed_toString Stats "LoopElim"
 
-end LoopElim
-
-/-- State threaded through loop elimination. -/
+/-- State threaded through loop elimination.
+    `gen` is a `StringGenState` used to mint unique loop numbers and block
+    labels; `statistics` accumulates per-pass counters. -/
 structure LoopElimState where
-  loopCounter : Nat := 0
+  gen : StringGenState := .emp
   statistics : Statistics := {}
 
 /-! ## Loop elimination
@@ -113,157 +119,267 @@ path conditions. However, we choose to keep this assumption for a higher-quality
 encoding.
 -/
 
+/-- Generate a fresh loop number, drawing from the embedded `StringGenState`. -/
+def genLoopNum : StateM LoopElimState String := fun s =>
+  let (nm, gen') := StringGenState.gen "loop" s.gen
+  (nm, { s with gen := gen' })
+
+/-- Increment a statistic key by `n` (default 1). -/
+def bumpStat (key : String) (n : Nat := 1) : StateM LoopElimState Unit :=
+  modify fun s => { s with statistics := s.statistics.increment key n }
+
+/-! ## Auxiliary builders for the loop-elimination encoding.
+
+These pure (non-monadic) functions construct the various pieces of the passive
+loop encoding. Splitting them out lets us prove focused lemmas like
+"`Block.modifiedVars (havocBlock ...) = filtered_vars`" without having to dig
+through a giant monadic term. -/
+
+/-- The per-invariant label suffix: `"i"` if the source label is empty, else
+    `"i_lbl"` (where `i` is the index). Used by all invariant-related builders. -/
+@[expose, reducible] def invSuffix (i : Nat) (lbl : String) : String :=
+  if lbl.isEmpty then toString i else s!"{i}_{lbl}"
+
+/-- Termination stmts when guard is `.det g` and measure is `some m`:
+    `init m_old` and `assert(¬(m_old < 0))` go into the prefix; `assert(m < m_old)`
+    goes into the suffix. -/
+@[expose] def buildTerminationStmtsSome
+    [HasPassiveCmds P C] [HasInit P C] [HasIdent P] [HasFvar P]
+    [HasBool P] [HasFvars P] [HasInt P] [HasIntOps P] [HasBoolOps P]
+    (loop_num : String) (m : P.Expr) (md : MetaData P) :
+    List (Stmt P C) × List (Stmt P C) :=
+  let m_old_ident := HasIdent.ident s!"{loopElimReservedPrefix}_measure_{loop_num}"
+  let m_old_expr := HasFvar.mkFvar m_old_ident
+  let init_m_old := Stmt.cmd (HasInit.init m_old_ident HasInt.intTy (.det m) md)
+  let assert_lb := Stmt.cmd (HasPassiveCmds.assert
+    s!"{loopElimAssertPrefix}{loop_num}_measure_lb"
+    (HasBoolOps.not (HasIntOps.lt m_old_expr HasInt.zero)) md)
+  let assert_decrease := Stmt.cmd (HasPassiveCmds.assert
+    s!"{loopElimAssertPrefix}{loop_num}_measure_decrease" (HasIntOps.lt m m_old_expr) md)
+  ([init_m_old, assert_lb], [assert_decrease])
+
+/-- The fresh measure-snapshot identifier for a given loop number.
+    Returns `Some` when measure is `Some _` and freshness check passes. -/
+@[expose, reducible] def measureOldIdent [HasIdent P] (loop_num : String) : P.Ident :=
+  HasIdent.ident s!"{loopElimReservedPrefix}_measure_{loop_num}"
+
+/-- The full output of the loop-elimination encoding for one loop:
+    `block loop_label [first_iter_facts, loop_passive] {}`, where
+    `first_iter_facts` collects entry-invariant asserts/assumes and
+    `loop_passive` is the `if (G)` arbitrary-iteration encoding. -/
+@[expose, reducible] def buildLoopOutput
+    [HasVarsImp P C] [HasHavoc P C] [HasPassiveCmds P C] [DecidableEq P.Ident]
+    (loop_num : String) (guard : ExprOrNondet P) (bss : List (Stmt P C))
+    (assumeGuard preTermination postTermination exitGuard : List (Stmt P C))
+    (invariants : List (String × P.Expr))
+    (md : MetaData P) : Stmt P C :=
+  let local_defs := Block.definedVars bss false
+  let assigned_vars := (Block.modifiedVars bss).filter (fun v => v ∉ local_defs)
+  let havocd : Stmt P C := .block s!"{loopElimBlockPrefix}loop_havoc_{loop_num}"
+    (assigned_vars.map (fun n => Stmt.cmd (HasHavoc.havoc n md))) {}
+  let entry_invariants := invariants.mapIdx fun i lp =>
+    Stmt.cmd (HasPassiveCmds.assert
+      s!"{loopElimAssertPrefix}{loop_num}_entry_invariant_{invSuffix i lp.1}" lp.2 md)
+  let entry_invariant_assumes := invariants.mapIdx fun i lp =>
+    Stmt.cmd (HasPassiveCmds.assume
+      s!"{loopElimAssumePrefix}{loop_num}_entry_invariant_{invSuffix i lp.1}" lp.2 md)
+  let first_iter_facts : Stmt P C :=
+    .block s!"{loopElimBlockPrefix}first_iter_asserts_{loop_num}"
+      (entry_invariants ++ entry_invariant_assumes) {}
+  let inv_assumes := invariants.mapIdx fun i lp =>
+    Stmt.cmd (HasPassiveCmds.assume
+      s!"{loopElimAssumePrefix}{loop_num}_invariant_{invSuffix i lp.1}" lp.2 md)
+  let maintain_invariants := invariants.mapIdx fun i lp =>
+    Stmt.cmd (HasPassiveCmds.assert
+      s!"{loopElimAssertPrefix}{loop_num}_arbitrary_iter_maintain_invariant_{invSuffix i lp.1}" lp.2 md)
+  let exit_invariant_assumes := invariants.mapIdx fun i lp =>
+    Stmt.cmd (HasPassiveCmds.assume
+      s!"{loopElimAssumePrefix}{loop_num}_exit_invariant_{invSuffix i lp.1}" lp.2 md)
+  let arb_assumes : Stmt P C :=
+    .block s!"{loopElimBlockPrefix}arbitrary_iter_assumes_{loop_num}"
+      (assumeGuard ++ inv_assumes) md
+  let arb_facts : Stmt P C :=
+    .block s!"{loopElimBlockPrefix}arbitrary_iter_facts_{loop_num}"
+      ([havocd, arb_assumes] ++ preTermination ++ bss ++
+       maintain_invariants ++ postTermination) {}
+  let exit_state : List (Stmt P C) := [havocd] ++ exitGuard ++ exit_invariant_assumes
+  let loop_passive : Stmt P C := .ite guard (arb_facts :: exit_state) [] {}
+  .block s!"{loopElimBlockPrefix}loop_{loop_num}"
+    [first_iter_facts, loop_passive] {}
+
+/-- The label-conflict freshness check. Returns `false` if no conflict (= ok),
+    `true` if there's a conflict. -/
+@[expose, reducible] def hasLabelConflict (loop_num : String) (bss : List (Stmt P C)) : Bool :=
+  let arb_iter_facts_label := s!"{loopElimBlockPrefix}arbitrary_iter_facts_{loop_num}"
+  let loop_label := s!"{loopElimBlockPrefix}loop_{loop_num}"
+  let body_exit_labels := Block.labels bss
+  arb_iter_facts_label ∈ body_exit_labels || loop_label ∈ body_exit_labels
+
+/-- The loop case of `Stmt.removeLoopsM`, factored out so the proofs can pattern
+    on `removeLoopsLoopCase` rather than the giant in-place `do`-block.
+    The match on `guard` and `measure` is inlined directly so that proofs can
+    `dsimp` past these branches and see each concrete guard-parts tuple. -/
+@[reducible] def removeLoopsLoopCase
+    [HasBoolOps P] [HasVarsImp P C] [HasFvars P] [HasVarsPure P C]
+    [HasHavoc P C] [HasInit P C] [HasPassiveCmds P C]
+    [DecidableEq P.Ident]
+    [HasIdent P] [HasFvar P] [HasInt P] [HasIntOps P]
+    (guard : ExprOrNondet P) (measure : Option (String × P.Expr))
+    (invariants : List (String × P.Expr)) (bss : List (Stmt P C))
+    (md : MetaData P) :
+    ExceptT String (StateM LoopElimState) (Bool × Stmt P C) := do
+  let loop_num ← genLoopNum
+  if hasLabelConflict loop_num bss then
+    throw s!"Generated loop block label conflicts with exit target in loop body (loop {loop_num})"
+  -- Note: loop bodies must not contain procedure calls; this is checked once at
+  -- the procedure level by `Core.LoopElim.removeLoopsDecls` (the havoc-based
+  -- encoding of loop elimination does not preserve call semantics).
+  -- The guard × measure match is inlined here (rather than going through a
+  -- helper) so that proofs can `dsimp` past these branches and see each
+  -- concrete guard-parts tuple directly.
+  let (assumeGuard, preTermination, postTermination, exitGuard) ← match guard with
+    | .det g =>
+      let assumeGuard := [Stmt.cmd (HasPassiveCmds.assume
+        s!"{loopElimAssumePrefix}{loop_num}_guard" g md)]
+      let notGuard := [Stmt.cmd (HasPassiveCmds.assume
+        s!"{loopElimAssumePrefix}{loop_num}_not_guard" (HasBoolOps.not g) md)]
+      match measure with
+      | none =>
+        pure (assumeGuard, ([] : List (Stmt P C)), ([] : List (Stmt P C)), notGuard)
+      | some (_, m) =>
+        let m_old_ident : P.Ident := measureOldIdent loop_num
+        if m_old_ident ∈ Block.touchedVars bss then
+          throw s!"Loop measure variable conflicts with body variable"
+        else
+          let (pre, post) := buildTerminationStmtsSome loop_num m md
+          pure (assumeGuard, pre, post, notGuard)
+    | .nondet =>
+      pure (([] : List (Stmt P C)), ([] : List (Stmt P C)),
+            ([] : List (Stmt P C)), ([] : List (Stmt P C)))
+  let result := buildLoopOutput loop_num guard bss
+    assumeGuard preTermination postTermination exitGuard invariants md
+  bumpStat s!"{LoopElim.Stats.erasedLoops}"
+  -- Total assert/assume statements emitted for this loop: 4·#invariants
+  -- (entry asserts + entry assumes + mid-iter assumes + maintain asserts +
+  -- exit assumes) + |assumeGuard| + |exitGuard| + 2 if measure is some
+  -- (measure_lb assert + measure_decrease assert).
+  let measureExtra := if measure.isSome then 2 else 0
+  let numAssertAssumes :=
+    invariants.length + invariants.length + assumeGuard.length +
+      invariants.length + invariants.length + exitGuard.length +
+      invariants.length + measureExtra
+  bumpStat s!"{LoopElim.Stats.insertedAssertAssumes}" numAssertAssumes
+  pure (true, result)
+
 mutual
 
 def Stmt.removeLoopsM
-  [HasNot P] [HasVarsImp P C] [HasHavoc P C] [HasInit P C] [HasPassiveCmds P C]
+  [HasBoolOps P] [HasVarsImp P C] [HasFvars P] [HasVarsPure P C]
+  [HasHavoc P C] [HasInit P C] [HasPassiveCmds P C]
   [DecidableEq P.Ident]
-  [HasIdent P] [HasFvar P] [HasIntOrder P]
-  (s : Stmt P C) : StateM LoopElimState (Stmt P C) :=
+  [HasIdent P] [HasFvar P] [HasInt P] [HasIntOps P]
+  (s : Stmt P C) : ExceptT String (StateM LoopElimState) (Bool × Stmt P C) :=
   match s with
-  | .loop guard measure invariants bss md => do
-    let loop_num ← modifyGet fun s =>
-      (s.loopCounter, { s with loopCounter := s.loopCounter + 1 })
-    -- Havoc only loop-carried variables. Variables declared inside the loop
-    -- body are block-local and should not be treated as pre-existing state by
-    -- the passive loop encoding.
-    let local_defs := Block.definedVars bss
-    let assigned_vars :=
-      (Block.modifiedVars bss).filter (fun v => v ∉ local_defs)
-    -- All of the replaced statements reuse the metadata md.
-    let havocd : Stmt P C :=
-      .block s!"loop_havoc_{loop_num}" (assigned_vars.map (λ n => Stmt.cmd (HasHavoc.havoc n md))) {}
-    let body_statements ← Block.removeLoopsM bss
-    -- The per-invariant source label is carried through as part of the suffix
-    -- (alongside the index `i`, which guarantees uniqueness when source labels
-    -- coincide or are empty) so each generated assert/assume preserves a stable
-    -- reference to the source invariant.
-    let invSuffix : Nat → String → String := fun i lbl =>
-      if lbl.isEmpty then toString i else s!"{i}_{lbl}"
-    let entry_invariants := invariants.mapIdx fun i (lbl, inv) =>
-      Stmt.cmd (HasPassiveCmds.assert s!"entry_invariant_{loop_num}_{invSuffix i lbl}" inv md)
-    let entry_invariant_assumes := invariants.mapIdx fun i (lbl, inv) =>
-      Stmt.cmd (HasPassiveCmds.assume s!"assume_entry_invariant_{loop_num}_{invSuffix i lbl}" inv md)
-    let first_iter_facts :=
-      .block s!"first_iter_asserts_{loop_num}" (entry_invariants ++ entry_invariant_assumes) {}
-    let inv_assumes := invariants.mapIdx fun i (lbl, inv) =>
-      Stmt.cmd (HasPassiveCmds.assume s!"{loopElimInvariantPrefix}{loop_num}_{invSuffix i lbl}" inv md)
-    let maintain_invariants := invariants.mapIdx fun i (lbl, inv) =>
-      Stmt.cmd (HasPassiveCmds.assert s!"arbitrary_iter_maintain_invariant_{loop_num}_{invSuffix i lbl}" inv md)
-    -- Guard-specific parts: assume_guard, termination, not_guard
-    let (guard_assumes, pre_termination, post_termination, exit_guard) ← match guard with
-      | .det g => do
-        let assume_guard := [Stmt.cmd (HasPassiveCmds.assume s!"{loopElimGuardPrefix}{loop_num}" g md)]
-        let termination_stmts ←
-          match measure with
-          | none => pure ([], [])
-          | some m =>
-            let m_old_ident    := HasIdent.ident s!"$__loop_measure_{loop_num}"
-            let m_old_expr     := HasFvar.mkFvar m_old_ident
-            let init_m_old     := Stmt.cmd (HasInit.init m_old_ident HasIntOrder.intTy .nondet md)
-            let assume_m_old   := Stmt.cmd (HasPassiveCmds.assume
-              s!"assume_measure_{loop_num}" (HasIntOrder.eq m_old_expr m) md)
-            let assert_lb      := Stmt.cmd (HasPassiveCmds.assert
-              s!"measure_lb_{loop_num}"
-              (HasNot.not (HasIntOrder.lt m_old_expr HasIntOrder.zero)) md)
-            let assert_decrease := Stmt.cmd (HasPassiveCmds.assert
-              s!"measure_decrease_{loop_num}" (HasIntOrder.lt m m_old_expr) md)
-            pure ([init_m_old, assume_m_old, assert_lb], [assert_decrease])
-        let (pre, post) := termination_stmts
-        let not_guard := [Stmt.cmd (HasPassiveCmds.assume s!"not_guard_{loop_num}" (HasNot.not g) md)]
-        pure (assume_guard, pre, post, not_guard)
-      | .nondet =>
-        -- Nondet loop: no guard assume, no termination, no not_guard
-        pure ([], [], [], [])
-    let arbitrary_iter_assumes := .block s!"arbitrary_iter_assumes_{loop_num}"
-      (guard_assumes ++ inv_assumes) md
-    let arbitrary_iter_facts := .block s!"arbitrary_iter_facts_{loop_num}"
-      ([havocd, arbitrary_iter_assumes] ++ pre_termination ++
-       body_statements ++ maintain_invariants ++ post_termination) {}
-    let invariant_assumes := invariants.mapIdx fun i (lbl, inv) =>
-      Stmt.cmd (HasPassiveCmds.assume s!"invariant_{loop_num}_{invSuffix i lbl}" inv md)
-    let exit_state_assumes := [havocd] ++ exit_guard ++ invariant_assumes
-    let loop_passive :=
-      .ite guard (arbitrary_iter_facts :: exit_state_assumes) [] {}
-
-    -- Count assert/assume statements generated for this loop:
-    --   entry_invariants, entry_invariant_assumes, guard_assumes, inv_assumes,
-    --   maintain_invariants, exit_guard, invariant_assumes,
-    --   plus from measure: assume_m_old, assert_lb, assert_decrease
-    let measureAssertAssumes := if measure.isSome then 3 else 0
-    let numAssertAssumes := entry_invariants.length + entry_invariant_assumes.length +
-      guard_assumes.length + inv_assumes.length + maintain_invariants.length +
-      exit_guard.length + invariant_assumes.length + measureAssertAssumes
-    let newStats := (← get).statistics
-      |>.increment s!"{LoopElim.Stats.erasedLoops}"
-      |>.increment s!"{LoopElim.Stats.insertedAssertAssumes}" numAssertAssumes
-    modify fun st => { st with statistics := newStats }
-
-    pure (.block s!"loop_{loop_num}" [first_iter_facts, loop_passive] {})
+  | .loop guard measure invariants bss md =>
+    removeLoopsLoopCase guard measure invariants bss md
   | .ite c tss ess md => do
-    let tss ← Block.removeLoopsM tss
-    let ess ← Block.removeLoopsM ess
-    pure (.ite c tss ess md)
+    let (c1, tss) ← Block.removeLoopsM tss
+    let (c2, ess) ← Block.removeLoopsM ess
+    pure (c1 || c2, .ite c tss ess md)
   | .block label bss md => do
-    let bss ← Block.removeLoopsM bss
-    pure (.block label bss md)
-  | .cmd _ => pure s
-  | .exit _ _ => pure s
-  | .funcDecl _ _ => pure s  -- Function declarations pass through unchanged
-  | .typeDecl _ _ => pure s  -- Type declarations pass through unchanged
+    let (changed, bss) ← Block.removeLoopsM bss
+    pure (changed, .block label bss md)
+  | .cmd _ => pure (false, s)
+  | .exit _ _ => pure (false, s)
+  | .funcDecl _ _ => pure (false, s)  -- Function declarations pass through unchanged
+  | .typeDecl _ _ => pure (false, s)  -- Type declarations pass through unchanged
 
 def Block.removeLoopsM
-  [HasNot P] [HasVarsImp P C] [HasHavoc P C] [HasInit P C] [HasPassiveCmds P C]
+  [HasBoolOps P] [HasVarsImp P C] [HasFvars P] [HasVarsPure P C]
+  [HasHavoc P C] [HasInit P C] [HasPassiveCmds P C]
   [DecidableEq P.Ident]
-  [HasIdent P] [HasFvar P] [HasIntOrder P]
-  (ss : List (Stmt P C)) : StateM LoopElimState (List (Stmt P C)) :=
+  [HasIdent P] [HasFvar P] [HasInt P] [HasIntOps P]
+  (ss : List (Stmt P C)) : ExceptT String (StateM LoopElimState) (Bool × List (Stmt P C)) :=
   match ss with
-  | [] => pure []
+  | [] => pure (false, [])
   | s :: ss => do
-    let s ← Stmt.removeLoopsM s
-    let ss ← Block.removeLoopsM ss
-    pure (s :: ss)
+    let (c1, s) ← Stmt.removeLoopsM s
+    let (c2, ss) ← Block.removeLoopsM ss
+    pure (c1 || c2, s :: ss)
 
 end
+end Imperative.LoopElim
 
-def Stmt.removeLoops
-  [HasNot P] [HasVarsImp P C] [HasHavoc P C] [HasInit P C] [HasPassiveCmds P C]
-  [DecidableEq P.Ident]
-  [HasIdent P] [HasFvar P] [HasIntOrder P]
-  (s : Stmt P C) : Stmt P C :=
-  (StateT.run (removeLoopsM s) {}).fst
+namespace Core.LoopElim
+open Imperative Lambda Imperative.LoopElim
 
-/-- Eliminate loops in all procedures of a Core program by replacing each loop
-    with assertions and assumptions about its invariants.
-    Returns the transformed program together with accumulated statistics. -/
-def loopElim (p : Program) : Program × Statistics :=
-  let (decls, stats) := p.decls.foldl (fun (acc, stats) d =>
-    match d with
-    | .proc proc md =>
-      let (body, st) := StateT.run (Block.removeLoopsM proc.body) {}
-      ((.proc { proc with body := body } md) :: acc, stats.merge st.statistics)
-    | other => (other :: acc, stats)) ([], {})
-  ({ decls := decls.reverse }, stats)
+/-!
+# Specialization of removeLoopsM from Imperative.Stmt to Core
+-/
 
-/-- Loop elimination as a `CoreTransformM` pass suitable for the pipeline. -/
-def loopElim' (p : Program) : Transform.CoreTransformM (Bool × Program) := do
-  let (p', stats) := loopElim p
-  modify fun σ => { σ with statistics := σ.statistics.merge stats }
-  return (true, p')
+/-- Repeatedly apply `Block.removeLoopsM` until no more loops remain (fixpoint).
+    Uses a fuel parameter to guarantee termination (each pass eliminates at least
+    one loop, so the depth of loop nesting is a bound). -/
+private def removeLoopsBlock (fuel : Nat) (body : List (Stmt Expression Command)) :
+    ExceptT String (StateM LoopElimState) (Bool × List (Stmt Expression Command)) := do
+  match fuel with
+  | 0 => return (false, body)
+  | fuel + 1 =>
+    let (changed, result) ← Block.removeLoopsM body
+    if changed then
+      let (_, result') ← removeLoopsBlock fuel result
+      return (true, result')
+    else
+      return (false, body)
+
+private def removeLoopsDecls :
+    List Core.Decl → ExceptT String (StateM LoopElimState) (Bool × List Core.Decl)
+  | [] => pure (false, [])
+  | .proc proc md :: ds => do
+    -- Loop bodies must not contain procedure calls: the havoc-based encoding
+    -- of loop elimination does not preserve call semantics.  Loop elim
+    -- runs after CallElim in the Core pipeline, so this check is defensive.
+    if !Core.Statements.noCall proc.body then
+      throw s!"Procedure body contains a procedure call (loop elim does not support calls)"
+    let (c1, body) ← removeLoopsBlock 100 proc.body
+    let (c2, ds) ← removeLoopsDecls ds
+    return (c1 || c2, .proc { proc with body := body } md :: ds)
+  | d :: ds => do
+    let (changed, ds) ← removeLoopsDecls ds
+    return (changed, d :: ds)
+
+/-- Eliminate loops in all procedures of a Core program by replacing each
+    loop with assertions and assumptions about its invariants.  Loop
+    elimination as a `CoreTransformM` pass suitable for the pipeline.
+    Returns `(changed, program)` and merges the generated label state back
+    into the transform's `genState.cs`. -/
+def loopElim (p : Core.Program) :
+    Core.Transform.CoreTransformM (Bool × Core.Program) := do
+  let σ ← get
+  let initState : LoopElimState := { gen := σ.genState.cs }
+  let (result, finalState) := StateT.run (ExceptT.run (removeLoopsDecls p.decls)) initState
+  set { σ with
+    genState := { σ.genState with cs := finalState.gen },
+    statistics := σ.statistics.merge finalState.statistics }
+  match result with
+  | .ok (changed, decls) => return (changed, { decls := decls })
+  | .error e => throw (Strata.DiagnosticModel.fromMessage e)
+
+end LoopElim
 
 /-- Loop-elimination pipeline phase: replaces each loop with an
     invariant-based acyclic encoding. If the obligation's path includes
     labels from loop elimination, the loop was replaced by an
     over-approximation, so SAT models are demoted to unknown. -/
-def loopElimPipelinePhase : PipelinePhase where
-  transform := loopElim'
+def loopElimPipelinePhase : Core.PipelinePhase where
+  transform := Core.LoopElim.loopElim
   phase.name := "LoopElim"
   phase.getValidation obligation :=
-    if obligationHasLabelPrefix obligation loopElimInvariantPrefix
-       || obligationHasLabelPrefix obligation loopElimGuardPrefix then
+    if Core.obligationHasLabelPrefix obligation Imperative.LoopElim.loopElimAssumePrefix
+       || Core.obligationHasLabelPrefix obligation Imperative.LoopElim.loopElimAssertPrefix then
       .modelToValidate (fun _ => /- TODO -/ false)
     else .modelPreserving
 
-end -- public section
-
 end Core
+
+end -- public section

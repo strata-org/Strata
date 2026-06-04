@@ -79,27 +79,27 @@ end$_0:
 
 /--
 info:
-Obligation: entry_invariant_0_0
+Obligation: loopElimAssert_loop_0_entry_invariant_0
 Property: assert
 Result: ✅ pass
 
-Obligation: entry_invariant_0_1
+Obligation: loopElimAssert_loop_0_entry_invariant_1
 Property: assert
 Result: ✅ pass
 
-Obligation: measure_lb_0
+Obligation: loopElimAssert_loop_0_measure_lb
 Property: assert
 Result: ✅ pass
 
-Obligation: arbitrary_iter_maintain_invariant_0_0
+Obligation: loopElimAssert_loop_0_arbitrary_iter_maintain_invariant_0
 Property: assert
 Result: ✅ pass
 
-Obligation: arbitrary_iter_maintain_invariant_0_1
+Obligation: loopElimAssert_loop_0_arbitrary_iter_maintain_invariant_1
 Property: assert
 Result: ✅ pass
 
-Obligation: measure_decrease_0
+Obligation: loopElimAssert_loop_0_measure_decrease
 Property: assert
 Result: ❓ unknown
 
@@ -185,112 +185,106 @@ sum_requires_0: n@2 >= 0
 Obligation:
 true
 
-Label: entry_invariant_0_0
+Label: loopElimAssert_loop_0_entry_invariant_0
 Property: assert
 Assumptions:
 sum_requires_0: n@2 >= 0
 Obligation:
 true
 
-Label: entry_invariant_0_1
+Label: loopElimAssert_loop_0_entry_invariant_1
 Property: assert
 Assumptions:
 sum_requires_0: n@2 >= 0
 Obligation:
 0 <= n@2
 
-Label: entry_invariant_0_2
+Label: loopElimAssert_loop_0_entry_invariant_2
 Property: assert
 Assumptions:
 sum_requires_0: n@2 >= 0
 Obligation:
 true
 
-Label: measure_lb_0
+Label: loopElimAssert_loop_0_measure_lb
 Property: assert
 Assumptions:
 <label_ite_cond_true: i < n>: 0 < n@2
-assume_guard_0: i@1 < n@2
-assume_invariant_0_0: 0 <= i@1
-assume_invariant_0_1: i@1 <= n@2
-assume_invariant_0_2: s@3 == i@1 * (i@1 + 1) / 2
-assume_measure_0: $__loop_measure_0 == n@2 - i@1
+loopElimAssume_loop_0_guard: i@1 < n@2
+loopElimAssume_loop_0_invariant_0: 0 <= i@1
+loopElimAssume_loop_0_invariant_1: i@1 <= n@2
+loopElimAssume_loop_0_invariant_2: s@3 == i@1 * (i@1 + 1) / 2
 sum_requires_0: n@2 >= 0
-assume_entry_invariant_0_1: 0 <= n@2
+loopElimAssume_loop_0_entry_invariant_1: 0 <= n@2
 Obligation:
-!($__loop_measure_0 < 0)
+!(n@2 - i@1 < 0)
 
-Label: arbitrary_iter_maintain_invariant_0_0
+Label: loopElimAssert_loop_0_arbitrary_iter_maintain_invariant_0
 Property: assert
 Assumptions:
 <label_ite_cond_true: i < n>: 0 < n@2
-assume_guard_0: i@1 < n@2
-assume_invariant_0_0: 0 <= i@1
-assume_invariant_0_1: i@1 <= n@2
-assume_invariant_0_2: s@3 == i@1 * (i@1 + 1) / 2
-assume_measure_0: $__loop_measure_0 == n@2 - i@1
+loopElimAssume_loop_0_guard: i@1 < n@2
+loopElimAssume_loop_0_invariant_0: 0 <= i@1
+loopElimAssume_loop_0_invariant_1: i@1 <= n@2
+loopElimAssume_loop_0_invariant_2: s@3 == i@1 * (i@1 + 1) / 2
 sum_requires_0: n@2 >= 0
-assume_entry_invariant_0_1: 0 <= n@2
+loopElimAssume_loop_0_entry_invariant_1: 0 <= n@2
 Obligation:
 0 <= i@1 + 1
 
-Label: arbitrary_iter_maintain_invariant_0_1
+Label: loopElimAssert_loop_0_arbitrary_iter_maintain_invariant_1
 Property: assert
 Assumptions:
 <label_ite_cond_true: i < n>: 0 < n@2
-assume_guard_0: i@1 < n@2
-assume_invariant_0_0: 0 <= i@1
-assume_invariant_0_1: i@1 <= n@2
-assume_invariant_0_2: s@3 == i@1 * (i@1 + 1) / 2
-assume_measure_0: $__loop_measure_0 == n@2 - i@1
+loopElimAssume_loop_0_guard: i@1 < n@2
+loopElimAssume_loop_0_invariant_0: 0 <= i@1
+loopElimAssume_loop_0_invariant_1: i@1 <= n@2
+loopElimAssume_loop_0_invariant_2: s@3 == i@1 * (i@1 + 1) / 2
 sum_requires_0: n@2 >= 0
-assume_entry_invariant_0_1: 0 <= n@2
+loopElimAssume_loop_0_entry_invariant_1: 0 <= n@2
 Obligation:
 i@1 + 1 <= n@2
 
-Label: arbitrary_iter_maintain_invariant_0_2
+Label: loopElimAssert_loop_0_arbitrary_iter_maintain_invariant_2
 Property: assert
 Assumptions:
 <label_ite_cond_true: i < n>: 0 < n@2
-assume_guard_0: i@1 < n@2
-assume_invariant_0_0: 0 <= i@1
-assume_invariant_0_1: i@1 <= n@2
-assume_invariant_0_2: s@3 == i@1 * (i@1 + 1) / 2
-assume_measure_0: $__loop_measure_0 == n@2 - i@1
+loopElimAssume_loop_0_guard: i@1 < n@2
+loopElimAssume_loop_0_invariant_0: 0 <= i@1
+loopElimAssume_loop_0_invariant_1: i@1 <= n@2
+loopElimAssume_loop_0_invariant_2: s@3 == i@1 * (i@1 + 1) / 2
 sum_requires_0: n@2 >= 0
-assume_entry_invariant_0_1: 0 <= n@2
+loopElimAssume_loop_0_entry_invariant_1: 0 <= n@2
 Obligation:
 s@3 + (i@1 + 1) == (i@1 + 1) * (i@1 + 1 + 1) / 2
 
-Label: measure_decrease_0
+Label: loopElimAssert_loop_0_measure_decrease
 Property: assert
 Assumptions:
 <label_ite_cond_true: i < n>: 0 < n@2
-assume_guard_0: i@1 < n@2
-assume_invariant_0_0: 0 <= i@1
-assume_invariant_0_1: i@1 <= n@2
-assume_invariant_0_2: s@3 == i@1 * (i@1 + 1) / 2
-assume_measure_0: $__loop_measure_0 == n@2 - i@1
+loopElimAssume_loop_0_guard: i@1 < n@2
+loopElimAssume_loop_0_invariant_0: 0 <= i@1
+loopElimAssume_loop_0_invariant_1: i@1 <= n@2
+loopElimAssume_loop_0_invariant_2: s@3 == i@1 * (i@1 + 1) / 2
 sum_requires_0: n@2 >= 0
-assume_entry_invariant_0_1: 0 <= n@2
+loopElimAssume_loop_0_entry_invariant_1: 0 <= n@2
 Obligation:
-n@2 - (i@1 + 1) < $__loop_measure_0
+n@2 - (i@1 + 1) < n@2 - i@1
 
 Label: sum_ensures_1
 Property: assert
 Assumptions:
 sum_requires_0: n@2 >= 0
-assume_entry_invariant_0_1: 0 <= n@2
+loopElimAssume_loop_0_entry_invariant_1: 0 <= n@2
 <label_ite_cond_true: i < n>: if 0 < n@2 then 0 < n@2 else true
-assume_guard_0: if 0 < n@2 then i@1 < n@2 else true
-assume_invariant_0_0: if 0 < n@2 then 0 <= i@1 else true
-assume_invariant_0_1: if 0 < n@2 then i@1 <= n@2 else true
-assume_invariant_0_2: if 0 < n@2 then s@3 == i@1 * (i@1 + 1) / 2 else true
-assume_measure_0: if 0 < n@2 then $__loop_measure_0 == n@2 - i@1 else true
-not_guard_0: if 0 < n@2 then !(i@2 < n@2) else true
-invariant_0_0: if 0 < n@2 then 0 <= i@2 else true
-invariant_0_1: if 0 < n@2 then i@2 <= n@2 else true
-invariant_0_2: if 0 < n@2 then s@4 == i@2 * (i@2 + 1) / 2 else true
+loopElimAssume_loop_0_guard: if 0 < n@2 then i@1 < n@2 else true
+loopElimAssume_loop_0_invariant_0: if 0 < n@2 then 0 <= i@1 else true
+loopElimAssume_loop_0_invariant_1: if 0 < n@2 then i@1 <= n@2 else true
+loopElimAssume_loop_0_invariant_2: if 0 < n@2 then s@3 == i@1 * (i@1 + 1) / 2 else true
+loopElimAssume_loop_0_not_guard: if 0 < n@2 then !(i@2 < n@2) else true
+loopElimAssume_loop_0_exit_invariant_0: if 0 < n@2 then 0 <= i@2 else true
+loopElimAssume_loop_0_exit_invariant_1: if 0 < n@2 then i@2 <= n@2 else true
+loopElimAssume_loop_0_exit_invariant_2: if 0 < n@2 then s@4 == i@2 * (i@2 + 1) / 2 else true
 <label_ite_cond_false: !(i < n)>: if if 0 < n@2 then false else true then if 0 < n@2 then false else true else true
 Obligation:
 if 0 < n@2 then s@4 else 0 == n@2 * (n@2 + 1) / 2
@@ -305,35 +299,35 @@ Obligation: loop_invariant_calls_Int.SafeDiv_0
 Property: division by zero check
 Result: ✅ pass
 
-Obligation: entry_invariant_0_0
+Obligation: loopElimAssert_loop_0_entry_invariant_0
 Property: assert
 Result: ✅ pass
 
-Obligation: entry_invariant_0_1
+Obligation: loopElimAssert_loop_0_entry_invariant_1
 Property: assert
 Result: ✅ pass
 
-Obligation: entry_invariant_0_2
+Obligation: loopElimAssert_loop_0_entry_invariant_2
 Property: assert
 Result: ✅ pass
 
-Obligation: measure_lb_0
+Obligation: loopElimAssert_loop_0_measure_lb
 Property: assert
 Result: ✅ pass
 
-Obligation: arbitrary_iter_maintain_invariant_0_0
+Obligation: loopElimAssert_loop_0_arbitrary_iter_maintain_invariant_0
 Property: assert
 Result: ✅ pass
 
-Obligation: arbitrary_iter_maintain_invariant_0_1
+Obligation: loopElimAssert_loop_0_arbitrary_iter_maintain_invariant_1
 Property: assert
 Result: ✅ pass
 
-Obligation: arbitrary_iter_maintain_invariant_0_2
+Obligation: loopElimAssert_loop_0_arbitrary_iter_maintain_invariant_2
 Property: assert
 Result: ✅ pass
 
-Obligation: measure_decrease_0
+Obligation: loopElimAssert_loop_0_measure_decrease
 Property: assert
 Result: ✅ pass
 
@@ -431,59 +425,59 @@ end$_0:
 
 /--
 info:
-Obligation: entry_invariant_0_0
+Obligation: loopElimAssert_loop_0_entry_invariant_0
 Property: assert
 Result: ✅ pass
 
-Obligation: entry_invariant_0_1
+Obligation: loopElimAssert_loop_0_entry_invariant_1
 Property: assert
 Result: ✅ pass
 
-Obligation: entry_invariant_0_2
+Obligation: loopElimAssert_loop_0_entry_invariant_2
 Property: assert
 Result: ✅ pass
 
-Obligation: measure_lb_0
+Obligation: loopElimAssert_loop_0_measure_lb
 Property: assert
 Result: ✅ pass
 
-Obligation: entry_invariant_1_0
+Obligation: loopElimAssert_loop_1_entry_invariant_0
 Property: assert
 Result: ✅ pass
 
-Obligation: entry_invariant_1_1
+Obligation: loopElimAssert_loop_1_entry_invariant_1
 Property: assert
 Result: ✅ pass
 
-Obligation: measure_lb_1
+Obligation: loopElimAssert_loop_1_measure_lb
 Property: assert
 Result: ✅ pass
 
-Obligation: arbitrary_iter_maintain_invariant_1_0
+Obligation: loopElimAssert_loop_1_arbitrary_iter_maintain_invariant_0
 Property: assert
 Result: ✅ pass
 
-Obligation: arbitrary_iter_maintain_invariant_1_1
+Obligation: loopElimAssert_loop_1_arbitrary_iter_maintain_invariant_1
 Property: assert
 Result: ✅ pass
 
-Obligation: measure_decrease_1
+Obligation: loopElimAssert_loop_1_measure_decrease
 Property: assert
 Result: ✅ pass
 
-Obligation: arbitrary_iter_maintain_invariant_0_0
+Obligation: loopElimAssert_loop_0_arbitrary_iter_maintain_invariant_0
 Property: assert
 Result: ✅ pass
 
-Obligation: arbitrary_iter_maintain_invariant_0_1
+Obligation: loopElimAssert_loop_0_arbitrary_iter_maintain_invariant_1
 Property: assert
 Result: ✅ pass
 
-Obligation: arbitrary_iter_maintain_invariant_0_2
+Obligation: loopElimAssert_loop_0_arbitrary_iter_maintain_invariant_2
 Property: assert
 Result: ✅ pass
 
-Obligation: measure_decrease_0
+Obligation: loopElimAssert_loop_0_measure_decrease
 Property: assert
 Result: ✅ pass
 -/
@@ -525,11 +519,11 @@ Obligation: loop_measure_calls_Int.SafeDiv_0
 Property: division by zero check
 Result: ✅ pass
 
-Obligation: entry_invariant_0_0
+Obligation: loopElimAssert_loop_0_entry_invariant_0
 Property: assert
 Result: ✅ pass
 
-Obligation: measure_lb_0
+Obligation: loopElimAssert_loop_0_measure_lb
 Property: assert
 Result: ✅ pass
 
@@ -537,11 +531,11 @@ Obligation: loop_measure_end_calls_Int.SafeDiv_0
 Property: division by zero check
 Result: ✅ pass
 
-Obligation: arbitrary_iter_maintain_invariant_0_0
+Obligation: loopElimAssert_loop_0_arbitrary_iter_maintain_invariant_0
 Property: assert
 Result: ✅ pass
 
-Obligation: measure_decrease_0
+Obligation: loopElimAssert_loop_0_measure_decrease
 Property: assert
 Result: ✅ pass
 
@@ -586,11 +580,11 @@ Obligation: loop_measure_calls_Int.SafeDiv_0
 Property: division by zero check
 Result: ❌ fail
 
-Obligation: entry_invariant_0_0
+Obligation: loopElimAssert_loop_0_entry_invariant_0
 Property: assert
 Result: ✅ pass
 
-Obligation: measure_lb_0
+Obligation: loopElimAssert_loop_0_measure_lb
 Property: assert
 Result: ❓ unknown
 
@@ -598,11 +592,11 @@ Obligation: loop_measure_end_calls_Int.SafeDiv_0
 Property: division by zero check
 Result: ❓ unknown
 
-Obligation: arbitrary_iter_maintain_invariant_0_0
+Obligation: loopElimAssert_loop_0_arbitrary_iter_maintain_invariant_0
 Property: assert
 Result: ✅ pass
 
-Obligation: measure_decrease_0
+Obligation: loopElimAssert_loop_0_measure_decrease
 Property: assert
 Result: ❓ unknown
 
@@ -655,11 +649,11 @@ Obligation: loop_measure_calls_Int.SafeDiv_0
 Property: division by zero check
 Result: ✅ pass
 
-Obligation: entry_invariant_0_0
+Obligation: loopElimAssert_loop_0_entry_invariant_0
 Property: assert
 Result: ✅ pass
 
-Obligation: measure_lb_0
+Obligation: loopElimAssert_loop_0_measure_lb
 Property: assert
 Result: ❓ unknown
 
@@ -667,11 +661,11 @@ Obligation: loop_measure_end_calls_Int.SafeDiv_0
 Property: division by zero check
 Result: ❓ unknown
 
-Obligation: arbitrary_iter_maintain_invariant_0_0
+Obligation: loopElimAssert_loop_0_arbitrary_iter_maintain_invariant_0
 Property: assert
 Result: ✅ pass
 
-Obligation: measure_decrease_0
+Obligation: loopElimAssert_loop_0_measure_decrease
 Property: assert
 Result: ❓ unknown
 

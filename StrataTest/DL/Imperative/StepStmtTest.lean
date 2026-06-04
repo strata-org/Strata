@@ -52,6 +52,13 @@ instance : HasBool MiniPureExpr where
 instance : HasNot MiniPureExpr where
   not := .not
 
+instance : HasIntOrder MiniPureExpr where
+  eq := fun _ _ => .tt
+  lt := fun _ _ => .ff
+  zero := .ff
+  intTy := .Bool
+  decr := fun e => e
+
 ---------------------------------------------------------------------
 
 /-! ## Evaluator and well-formedness setup -/
@@ -112,6 +119,11 @@ def noCmd : EvalCmdParam MiniPureExpr CmdT := fun _ _ _ _ _ => False
 
 The `exit "L"` propagates out of body's per-iteration block and the loop's
 recursive step (mismatch propagates), reaching the labeled outer block.
+
+With the new per-iteration loop semantics (each body wrapped in its own block),
+`exit "L"` propagates correctly because labeled exits propagate through both
+the body's anonymous block (label .none ≠ .some "L", mismatch) and the seq
+context (step_seq_exit), then is caught by the outer labeled block.
 -/
 
 /-- The test program: a labeled outer block containing a deterministic
@@ -135,11 +147,12 @@ theorem progReachesTerminal :
     (StepStmt.step_block_body
       (StepStmt.step_seq_inner
         (StepStmt.step_loop_enter (hasInvFailure := false) htt ?inv_bool ?inv_iff
-          miniEval_wfBool))) ?_
+          miniEval_wfBool ?meas))) ?_
   · intro _ hmem; nomatch hmem
   · constructor <;> intro h
     · cases h
     · rcases h with ⟨_, hmem, _⟩; nomatch hmem
+  · intro _ _ h; nomatch h
   -- Now: outer block (L) > seq > seq > body's block (.none) > stmts [exit "L"]
   -- Step 4: descend into the inner seq, then into the body's block,
   --         then through stmts_cons.
@@ -512,7 +525,7 @@ theorem loopScopeTest :
   -- Need to reconcile the env shape.
   conv => rhs; rw [show Env.mk storeWithX miniEval false =
     { Env.mk (projectStore storeWithX storeWithXY) miniEval false with
-      hasFailure := false || false } from by simp [hproj]]
+      hasFailure := false || false } from by simp [hproj, Bool.or_false]]
   exact .step _ _ _ StepStmt.step_stmts_nil (.refl _)
 
 ---------------------------------------------------------------------

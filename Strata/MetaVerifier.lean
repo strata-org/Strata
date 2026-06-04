@@ -68,22 +68,21 @@ abbrev CoreVC := Env × Imperative.ProofObligation Expression
 abbrev coreVCs := List (Env × Imperative.ProofObligation Expression)
 
 def genVCs (program : Program) (options : VerifyOptions := .default) : Option coreVCs := do
-  let program := (loopElim program).fst
-  match Core.typeCheck options program with
+  let program := match Core.Transform.run program (fun p => do
+      let (_, p') ← Core.LoopElim.loopElim p
+      return p') with
+    | .ok p => p
+    | .error _ => program
+  match Core.typeCheckAndEval options program with
   | .error _ => none
-  | .ok tcProgram =>
-    match Core.toCoreProofObligationProgram options tcProgram with
+  | .ok (pEs, _stats) =>
+    match Core.toCoreProofObligationProgram options program with
     | .error _ => none
     | .ok (oblProgram, _stats) =>
       match Core.ObligationExtraction.extractObligations oblProgram with
       | .error _ => none
       | .ok obligations =>
-        let E := match Core.buildEnv options tcProgram with
-          | .ok (initE, _) =>
-            match Program.eval initE with
-            | .ok (pEs, _) => pEs.head?.getD initE
-            | .error _ => initE
-          | .error _ => Env.init (empty_factory := true)
+        let E := pEs.head?.getD (Env.init (empty_factory := true))
         return obligations.toList.map (fun ob => (E, ob))
 
 end Core

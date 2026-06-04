@@ -337,7 +337,7 @@ def Stmt.toGotoInstructions {P} [G: ToGoto P] [BEq P.Ident]
       for (_invLabel, inv) in invariants do
         let inv_expr ← G.toGotoExpr inv
         backGuard := backGuard.setNamedField "#spec_loop_invariant" inv_expr
-      if let some meas := measure then
+      if let some (_, meas) := measure then
         let meas_expr ← G.toGotoExpr meas
         backGuard := backGuard.setNamedField "#spec_decreases" meas_expr
       let back_inst : Instruction :=

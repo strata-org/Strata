@@ -268,14 +268,20 @@ partial def translateExprs (bindings : TransBindings) (args : Array Arg) :
   args.mapM (fun a => translateExpr bindings a)
 end
 
-def translateMeasure (bindings : TransBindings) (arg : Arg) : TransM (Option (LExpr CSimpLParams.mono)) := do
+def translateMeasure (bindings : TransBindings) (arg : Arg) :
+    TransM (Option (String × LExpr CSimpLParams.mono)) := do
   translateOption (fun maybe_arg => do
                     match maybe_arg with
                     | none => return none
                     | some a =>
                       let e ← checkOpArg a q`C_Simp.measure 1
                       assert! e.size == 1
-                      return some (← translateExpr bindings e[0]!))
+                      let fname :=
+                        if bindings.currentFunction.isEmpty then "anon"
+                        else bindings.currentFunction
+                      let sr := a.ann
+                      let label := s!"{fname}_measure_{sr.start}_{sr.stop}"
+                      return some (label, ← translateExpr bindings e[0]!))
                   arg
 
 def translateInvariant (bindings : TransBindings) (arg : Arg) :

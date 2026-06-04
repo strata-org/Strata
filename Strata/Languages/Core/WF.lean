@@ -66,7 +66,7 @@ structure WFblockProp (Cmd : Type) (p : Program) (label : String) (b : Block) : 
 
 structure WFifProp    (Cmd : Type) (p : Program) (cond : ExprOrNondet Expression)  (thenb : Block) (elseb : Block) : Prop where
 
-structure WFloopProp    (Cmd : Type) (p : Program) (guard : ExprOrNondet Expression) (measure : Option Expression.Expr) (invariant : List (String × Expression.Expr)) (b : Block) : Prop where
+structure WFloopProp    (Cmd : Type) (p : Program) (guard : ExprOrNondet Expression) (measure : Option (String × Expression.Expr)) (invariant : List (String × Expression.Expr)) (b : Block) : Prop where
 
 structure WFexitProp  (p : Program) (label : String) : Prop where
 
@@ -90,7 +90,7 @@ def WFStatementProp (p : Program) (stmt : Statement) : Prop := match stmt with
   | .block (label : String) (b : Block) _ => WFblockProp (CmdExt Expression) p label b
   | .ite   (cond : ExprOrNondet Expression) (thenb : Block) (elseb : Block) _ =>
      WFifProp (CmdExt Expression) p cond thenb elseb
-  | .loop  (guard : ExprOrNondet Expression) (measure : Option Expression.Expr)
+  | .loop  (guard : ExprOrNondet Expression) (measure : Option (String × Expression.Expr))
            (invariant : List (String × Expression.Expr)) (body : Block) _ =>
      WFloopProp (CmdExt Expression) p guard measure invariant body
   | .exit (label : String) _ => WFexitProp p label
@@ -114,7 +114,7 @@ structure WFPreProp (p : Program) (d : Procedure) (pp : CoreLabel × Procedure.C
 
 structure WFPostProp (p : Program) (d : Procedure) (pp : CoreLabel × Procedure.Check)
   : Prop extends WFPrePostProp p d pp where
-  oldOnlyInout : ∀ id ∈ Imperative.HasVarsPure.getVars (P := Expression) pp.2.expr,
+  oldOnlyInout : ∀ id ∈ Imperative.HasFvars.getFvars (P := Expression) pp.2.expr,
     CoreIdent.isOldIdent id → id ∈ ListMap.keys (d.header.getInoutParams.map
       (fun (x, ty) => (CoreIdent.mkOld x.name, ty)))
 
@@ -138,7 +138,7 @@ structure WFDistinctDeclarationProp (p : Program) (l : Expression.Ident) (es : L
 
 structure WFProcedureProp (p : Program) (d : Procedure) : Prop where
   wfstmts : WFStatementsProp p d.body
-  wfloclnd : (HasVarsImp.definedVars (P:=Expression) d.body).Nodup
+  wfloclnd : (HasVarsImp.definedVars (P:=Expression) d.body false).Nodup
   inputsNodup : (ListMap.keys d.header.inputs).Nodup
   outputsNodup : (ListMap.keys d.header.outputs).Nodup
   ioNotOld : ∀ id ∈ ListMap.keys d.header.inputs ++ ListMap.keys d.header.outputs,

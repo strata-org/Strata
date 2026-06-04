@@ -8,21 +8,24 @@ module
 import all Strata.DL.Imperative.CmdSemantics
 public import Strata.DL.Imperative.StmtSemantics
 import all Strata.DL.Imperative.StmtSemantics
+public import Strata.DL.Imperative.StmtSemanticsProps
+import all Strata.DL.Imperative.StmtSemanticsProps
 import all Strata.DL.Imperative.Cmd
+import all Strata.DL.Util.Relations
 
 namespace Imperative
 
 public section
 
 theorem eval_assert_store_cst
-  [HasFvar P] [HasBool P] [HasNot P]:
+  [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P]:
   EvalCmd P δ σ (.assert l e md) σ' f → σ = σ' := by
   intros Heval; cases Heval with
   | eval_assert_pass _ => rfl
   | eval_assert_fail _ => rfl
 
 theorem eval_stmt_assert_store_cst
-  [HasFvar P] [HasBool P] [HasNot P] :
+  [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P] :
   EvalStmtSmall P (EvalCmd P) extendEval ρ (.cmd (Cmd.assert l e md)) ρ' → ρ.store = ρ'.store := by
   intro Heval
   unfold EvalStmtSmall at Heval
@@ -36,7 +39,7 @@ theorem eval_stmt_assert_store_cst
     | step _ _ _ hstep _ => exact absurd hstep (by intro h; cases h)
 
 theorem eval_stmt_assert_eval_cst
-  [HasFvar P] [HasBool P] [HasNot P] :
+  [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P] :
   EvalStmtSmall P (EvalCmd P) extendEval ρ (.cmd (Cmd.assert l e md)) ρ' → ρ.eval = ρ'.eval := by
   intro Heval
   unfold EvalStmtSmall at Heval
@@ -47,7 +50,7 @@ theorem eval_stmt_assert_eval_cst
     | step _ _ _ hstep _ => exact absurd hstep (by intro h; cases h)
 
 theorem eval_stmts_assert_store_cst
-  [HasFvar P] [HasBool P] [HasNot P] :
+  [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P] :
   EvalStmtsSmall P (EvalCmd P) extendEval ρ [(.cmd (Cmd.assert l e md))] ρ' → ρ.store = ρ'.store := by
   intro Heval
   -- Use stmts_cons_step inversion: the singleton list steps through
@@ -74,7 +77,7 @@ theorem eval_stmts_assert_store_cst
   exact eval_stmt_assert_store_cst hstmt
 
 theorem eval_stmt_assert_eq_of_pure_expr_eq
-  [HasFvar P] [HasBool P] [HasNot P] :
+  [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P] :
   WellFormedSemanticEvalBool ρ.eval →
   (EvalStmtSmall P (EvalCmd P) extendEval ρ (.cmd (Cmd.assert l1 e md1)) ρ' ↔
   EvalStmtSmall P (EvalCmd P) extendEval ρ (.cmd (Cmd.assert l2 e md2)) ρ') := by
@@ -106,7 +109,7 @@ same `store` and `eval` in the output).
 private theorem step_hasFailure_monotone
   {P : PureExpr} {CmdT : Type} {EvalCmd : EvalCmdParam P CmdT}
   {extendEval : ExtendEval P}
-  [HasBool P] [HasNot P]
+  [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P]
   {c c' : Config P CmdT}
   (hstep : StepStmt P EvalCmd extendEval c c')
   (hf : c.getEnv.hasFailure = true) :
@@ -118,8 +121,8 @@ private theorem step_hasFailure_monotone
   | step_ite_false _ _ => exact hf
   | step_ite_nondet_true => exact hf
   | step_ite_nondet_false => exact hf
-  | step_loop_enter _ _ _ _ =>
-    simp [Config.getEnv]; left; exact hf
+  | step_loop_enter _ _ _ _ _ _ _ =>
+    simp [Config.getEnv]; left; left; exact hf
   | step_loop_exit _ _ _ _ =>
     simp [Config.getEnv]; left; exact hf
   | step_loop_nondet_enter _ _ =>
@@ -143,7 +146,7 @@ theorem EvalStmtSmall_hasFailure_monotone
   {P : PureExpr} {CmdT : Type} {EvalCmd : EvalCmdParam P CmdT}
   {extendEval : ExtendEval P}
   {ρ ρ' : Env P} {s : Stmt P CmdT}
-  [HasBool P] [HasNot P] :
+  [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P] :
   EvalStmtSmall P EvalCmd extendEval ρ s ρ' →
   ρ.hasFailure = true → ρ'.hasFailure = true := by
   intro Heval Hf
@@ -159,7 +162,7 @@ theorem EvalStmtsSmall_hasFailure_monotone
   {P : PureExpr} {CmdT : Type} {EvalCmd : EvalCmdParam P CmdT}
   {extendEval : ExtendEval P}
   {ρ ρ' : Env P} {ss : List (Stmt P CmdT)}
-  [HasBool P] [HasNot P] :
+  [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P] :
   EvalStmtsSmall P EvalCmd extendEval ρ ss ρ' →
   ρ.hasFailure = true → ρ'.hasFailure = true := by
   intro Heval Hf
@@ -174,7 +177,7 @@ theorem EvalStmtsSmall_hasFailure_monotone
 theorem StepStmtStar_hasFailure_monotone
   {P : PureExpr} {CmdT : Type} {EvalCmd : EvalCmdParam P CmdT}
   {extendEval : ExtendEval P}
-  [HasBool P] [HasNot P]
+  [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P]
   {c c' : Config P CmdT}
   (hstar : StepStmtStar P EvalCmd extendEval c c')
   (hf : c.getEnv.hasFailure = true) :
@@ -187,7 +190,7 @@ theorem EvalStmtSmall_hasFailure_irrel
   {P : PureExpr} {CmdT : Type} {EvalCmd : EvalCmdParam P CmdT}
   {extendEval : ExtendEval P}
   {ρ ρ' : Env P} {s : Stmt P CmdT}
-  [HasBool P] [HasNot P] :
+  [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P] :
   EvalStmtSmall P EvalCmd extendEval ρ s ρ' →
   ∀ (ρ₂ : Env P), ρ₂.store = ρ.store → ρ₂.eval = ρ.eval →
   ∃ ρ₂', EvalStmtSmall P EvalCmd extendEval ρ₂ s ρ₂' ∧
@@ -198,7 +201,7 @@ theorem EvalStmtsSmall_hasFailure_irrel
   {P : PureExpr} {CmdT : Type} {EvalCmd : EvalCmdParam P CmdT}
   {extendEval : ExtendEval P}
   {ρ ρ' : Env P} {ss : List (Stmt P CmdT)}
-  [HasBool P] [HasNot P] :
+  [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P] :
   EvalStmtsSmall P EvalCmd extendEval ρ ss ρ' →
   ∀ (ρ₂ : Env P), ρ₂.store = ρ.store → ρ₂.eval = ρ.eval →
   ∃ ρ₂', EvalStmtsSmall P EvalCmd extendEval ρ₂ ss ρ₂' ∧
@@ -226,7 +229,7 @@ theorem EvalStmtsSmall_hasFailure_irrel
 /-! ### Assert elimination -/
 
 theorem eval_stmts_assert_elim
-  [HasFvar P] [HasBool P] [HasNot P] :
+  [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P] :
   WellFormedSemanticEvalBool ρ.eval →
   EvalStmtsSmall P (EvalCmd P) extendEval ρ (.cmd (.assert l1 e md1) :: cmds) ρ' →
   ∃ ρ'', EvalStmtsSmall P (EvalCmd P) extendEval ρ cmds ρ'' ∧
@@ -267,7 +270,7 @@ theorem eval_stmts_assert_elim
         exact absurd (EvalStmtsSmall_hasFailure_monotone htail hf1) (by simp [Hf])
 
 theorem assert_elim
-  [HasFvar P] [HasBool P] [HasNot P] :
+  [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P] :
   WellFormedSemanticEvalBool ρ.eval →
   EvalStmtsSmall P (EvalCmd P) extendEval ρ (.cmd (.assert l1 e md1) :: [.cmd (.assert l2 e md2)]) ρ' →
   EvalStmtsSmall P (EvalCmd P) extendEval ρ [.cmd (.assert l3 e md3)] ρ' := by
@@ -374,16 +377,16 @@ theorem UpdateState_InitStateComm {P: PureExpr} {x1 x2: P.Ident} {σ σ' σ'' σ
   simp_all
 
 theorem semantic_eval_eq_of_eval_cmd_set_unrelated_var
-  [HasVarsImp P (Cmd P)] [HasVarsPure P P.Expr]
-  [HasFvar P] [HasVal P] [HasBool P] [HasNot P]:
+  [HasVarsImp P (Cmd P)] [HasFvars P]
+  [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P]:
   WellFormedSemanticEvalExprCongr δ →
-  ¬ v ∈ HasVarsPure.getVars e →
+  ¬ v ∈ HasFvars.getFvars e →
   EvalCmd P δ σ (Cmd.set v (.det e') md) σ' f →
   δ σ e = δ σ' e := by
   intro Hwf Hnin Heval
   unfold WellFormedSemanticEvalExprCongr at Hwf
   specialize Hwf e σ σ'
-  have: ∀ (v : P.Ident), v ∈ HasVarsPure.getVars e → σ v = σ' v := by
+  have: ∀ (v : P.Ident), v ∈ HasFvars.getFvars e → σ v = σ' v := by
     cases Heval
     rename_i Hu
     cases Hu
@@ -398,7 +401,7 @@ theorem semantic_eval_eq_of_eval_cmd_set_unrelated_var
 
 theorem eval_cmd_set_comm'
   [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)]
-  [HasFvar P] [HasVal P] [HasBool P] [HasNot P] [DecidableEq P.Ident] :
+  [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P] [DecidableEq P.Ident] :
   ¬ x1 = x2 →
   δ σ v1 = δ σ2 v1 →
   δ σ v2 = δ σ1 v2 →
@@ -416,12 +419,12 @@ theorem eval_cmd_set_comm'
   exact UpdateStateComm Hneq Hu1 Hu2 Hu3 Hu4
 
 theorem eval_cmd_set_comm
-  [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)] [HasVarsPure P P.Expr]
-  [HasFvar P] [HasVal P] [HasBool P] [HasNot P] [DecidableEq P.Ident]:
+  [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)] [HasFvars P]
+  [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P] [DecidableEq P.Ident]:
   WellFormedSemanticEvalExprCongr δ →
   ¬ x1 = x2 →
-  ¬ x1 ∈ HasVarsPure.getVars v2 →
-  ¬ x2 ∈ HasVarsPure.getVars v1 →
+  ¬ x1 ∈ HasFvars.getFvars v2 →
+  ¬ x2 ∈ HasFvars.getFvars v1 →
   EvalCmd P δ σ (Cmd.set x1 (.det v1) md1) σ1 f1 →
   EvalCmd P δ σ1 (Cmd.set x2 (.det v2) md2) σ' f2 →
   EvalCmd P δ σ (Cmd.set x2 (.det v2) md2') σ2 f3 →
@@ -433,12 +436,12 @@ theorem eval_cmd_set_comm
   exact eval_cmd_set_comm' Hneq Heval1 Heval2 Hs1 Hs2 Hs3 Hs4
 
 theorem eval_stmt_set_comm
-  [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)] [HasVarsPure P P.Expr]
-  [HasFvar P] [HasVal P] [HasBool P] [HasNot P] [DecidableEq P.Ident]:
+  [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)] [HasFvars P]
+  [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P] [DecidableEq P.Ident]:
   WellFormedSemanticEvalExprCongr ρ.eval →
   ¬ x1 = x2 →
-  ¬ x1 ∈ HasVarsPure.getVars v2 →
-  ¬ x2 ∈ HasVarsPure.getVars v1 →
+  ¬ x1 ∈ HasFvars.getFvars v2 →
+  ¬ x2 ∈ HasFvars.getFvars v1 →
   EvalStmtSmall P (EvalCmd P) evalFun ρ (.cmd (Cmd.set x1 (.det v1) md1)) ρ1 →
   EvalStmtSmall P (EvalCmd P) evalFun ρ1 (.cmd (Cmd.set x2 (.det v2) md2)) ρ' →
   EvalStmtSmall P (EvalCmd P) evalFun ρ (.cmd (Cmd.set x2 (.det v2) md2')) ρ2 →
@@ -455,12 +458,12 @@ theorem eval_stmt_set_comm
     exact eval_cmd_set_comm Hwf Hneq Hnin1 Hnin2 Hc1 Hc2 Hc3 Hc4
 
 theorem eval_stmts_set_comm
-  [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)] [HasVarsPure P P.Expr]
-  [HasFvar P] [HasVal P] [HasBool P] [HasNot P] [DecidableEq P.Ident] :
+  [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)] [HasFvars P]
+  [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P] [DecidableEq P.Ident] :
   WellFormedSemanticEvalExprCongr ρ.eval →
   ¬ x1 = x2 →
-  ¬ x1 ∈ HasVarsPure.getVars v2 →
-  ¬ x2 ∈ HasVarsPure.getVars v1 →
+  ¬ x1 ∈ HasFvars.getFvars v2 →
+  ¬ x2 ∈ HasFvars.getFvars v1 →
   EvalStmtsSmall P (EvalCmd P) evalFun ρ [(.cmd (Cmd.set x1 (.det v1) md1)), (.cmd (Cmd.set x2 (.det v2) md2))] ρ' →
   EvalStmtsSmall P (EvalCmd P) evalFun ρ [(.cmd (Cmd.set x2 (.det v2) md2')), (.cmd (Cmd.set x1 (.det v1) md1'))] ρ'' →
   ρ'.store = ρ''.store := by
@@ -485,5 +488,315 @@ theorem eval_stmts_set_comm
   have ⟨ρ_mid1, Hs1, Hs2⟩ := extract _ _ _ _ Heval1
   have ⟨ρ_mid2, Hs3, Hs4⟩ := extract _ _ _ _ Heval2
   exact eval_stmt_set_comm Hwf Hneq Hnin1 Hnin2 Hs1 Hs2 Hs3 Hs4
+
+/-! ## `ReflTransT` decomposition helpers
+
+Structural inversion lemmas for multi-step derivations indexed in `Type`
+(so step counts can be used by `termination_by`).  Generic over `CmdT`
+and the command-evaluation parameter. -/
+
+section ReflTransTHelpers
+
+variable {P : PureExpr} {CmdT : Type}
+  [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P]
+  {EvalCmd : EvalCmdParam P CmdT} {extendEval : ExtendEval P}
+
+/-- Invert a `.seq` execution reaching terminal in `ReflTransT`: the inner
+    terminates first, then the tail stmts run to terminal.  Length bound
+    is strict so callers can recurse on `hstar.len`. -/
+theorem seqT_reaches_terminal
+    {inner : Config P CmdT} {ss : List (Stmt P CmdT)} {ρ' : Env P}
+    (hstar : ReflTransT (StepStmt P EvalCmd extendEval) (.seq inner ss) (.terminal ρ')) :
+    ∃ (ρ₁ : Env P), ∃ (h1 : ReflTransT (StepStmt P EvalCmd extendEval) inner (.terminal ρ₁)),
+      ∃ (h2 : ReflTransT (StepStmt P EvalCmd extendEval) (.stmts ss ρ₁) (.terminal ρ')),
+      h1.len + h2.len < hstar.len := by
+  match hstar with
+  | .step _ _ _ (.step_seq_inner h) hrest =>
+    have ⟨ρ₁, hterm, htail, hlen⟩ := seqT_reaches_terminal hrest
+    exact ⟨ρ₁, .step _ _ _ h hterm, htail, by simp [ReflTransT.len]; omega⟩
+  | .step _ _ _ .step_seq_done hrest =>
+    exact ⟨_, .refl _, hrest, by show 0 + hrest.len < 1 + hrest.len; omega⟩
+  | .step _ _ _ .step_seq_exit hrest =>
+    match hrest with
+    | .step _ _ _ h _ => exact nomatch h
+
+/-- Invert a `.stmts (s :: rest)` execution reaching terminal in `ReflTransT`. -/
+theorem stmtsT_cons_terminal
+    {s : Stmt P CmdT} {rest : List (Stmt P CmdT)} {ρ₀ ρ' : Env P}
+    (hstar : ReflTransT (StepStmt P EvalCmd extendEval) (.stmts (s :: rest) ρ₀) (.terminal ρ')) :
+    ∃ (ρ₁ : Env P), ∃ (h1 : ReflTransT (StepStmt P EvalCmd extendEval) (.stmt s ρ₀) (.terminal ρ₁)),
+      ∃ (h2 : ReflTransT (StepStmt P EvalCmd extendEval) (.stmts rest ρ₁) (.terminal ρ')),
+      h1.len + h2.len + 2 ≤ hstar.len := by
+  match hstar with
+  | .step _ _ _ .step_stmts_cons hrest =>
+    have ⟨ρ₁, h1, h2, hlen⟩ := seqT_reaches_terminal hrest
+    exact ⟨ρ₁, h1, h2, by simp [ReflTransT.len]; omega⟩
+
+/-- Invert a block execution reaching terminal when the inner config cannot
+    exit: the inner reaches terminal with a strictly shorter derivation. -/
+theorem blockT_reaches_terminal_noExit
+    {inner : Config P CmdT} {l : Option String} {σ_parent : SemanticStore P}
+    {e_parent : SemanticEval P} {ρ' : Env P}
+    (hstar : ReflTransT (StepStmt P EvalCmd extendEval) (.block l σ_parent e_parent inner) (.terminal ρ'))
+    (h_no_exit : ∀ lbl ρ_x,
+      ¬ StepStmtStar P EvalCmd extendEval inner (.exiting lbl ρ_x)) :
+    ∃ (ρ_inner : Env P) (h : ReflTransT (StepStmt P EvalCmd extendEval) inner (.terminal ρ_inner)),
+      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store, eval := e_parent } ∧
+      h.len < hstar.len := by
+  match hstar with
+  | .step _ (.block _ _ _ inner₁) _ (.step_block_body h) hrest =>
+    have h_no_exit' : ∀ lbl ρ_x,
+        ¬ StepStmtStar P EvalCmd extendEval inner₁ (.exiting lbl ρ_x) := by
+      intro lbl ρ_x hinner₁
+      exact h_no_exit lbl ρ_x (.step _ _ _ h hinner₁)
+    have ⟨ρ_inner, hterm, heq, hlen⟩ := blockT_reaches_terminal_noExit hrest h_no_exit'
+    exact ⟨ρ_inner, .step _ _ _ h hterm, heq, by simp [ReflTransT.len]; omega⟩
+  | .step _ _ _ .step_block_done hrest =>
+    match hrest with
+    | .refl _ => exact ⟨_, .refl _, rfl, by simp [ReflTransT.len]⟩
+    | .step _ _ _ h _ => exact nomatch h
+  | .step _ _ _ (.step_block_exit_match _) hrest =>
+    exfalso
+    exact h_no_exit _ _ (.refl _)
+  | .step _ _ _ (.step_block_exit_mismatch _) hrest =>
+    match hrest with
+    | .step _ _ _ h _ => exact nomatch h
+
+/-- Decompose `.stmts (ss₁ ++ [s])` reaching terminal into: a full `.stmts ss₁`
+    run to some intermediate `ρ₁` followed by a strictly shorter `s`-run.
+    The escape-free hypothesis `hcov` rules out the exiting case. -/
+theorem stmtsT_append_terminal
+    (ss₁ : List (Stmt P CmdT)) (s : Stmt P CmdT) (ρ₀ ρ' : Env P)
+    (hstar : ReflTransT (StepStmt P EvalCmd extendEval) (.stmts (ss₁ ++ [s]) ρ₀) (.terminal ρ'))
+    (hcov : Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks (P := P) (CmdT := CmdT) [] ss₁) :
+    ∃ (ρ₁ : Env P), ∃ (_ : StepStmtStar P EvalCmd extendEval (.stmts ss₁ ρ₀) (.terminal ρ₁)),
+      ∃ (hs : ReflTransT (StepStmt P EvalCmd extendEval) (.stmt s ρ₁) (.terminal ρ')),
+      hs.len < hstar.len := by
+  induction ss₁ generalizing ρ₀ with
+  | nil =>
+    have ⟨ρ₁, h1, h2, hlen⟩ := stmtsT_cons_terminal hstar
+    have hρ : ρ₁ = ρ' := by
+      match h2 with
+      | .step _ _ _ .step_stmts_nil (.refl _) => rfl
+    subst hρ
+    exact ⟨ρ₀, .step _ _ _ .step_stmts_nil (.refl _), h1, by grind⟩
+  | cons s' rest' ih =>
+    have ⟨ρ₁, h_s', h_rest, hlen₁⟩ := stmtsT_cons_terminal hstar
+    have ⟨ρ₂, h_rest', h_s, hlen₂⟩ := ih ρ₁ h_rest hcov.2
+    exact ⟨ρ₂,
+      ReflTrans_Transitive _ _ _ _
+        (stmts_cons_step P EvalCmd extendEval s' rest' ρ₀ ρ₁ (reflTransT_to_prop h_s'))
+        h_rest',
+      h_s, by grind⟩
+
+/-! ## Failing-state decomposition helpers -/
+
+/-- Decompose a `.seq` execution reaching a failing config in `ReflTransT`:
+    either failure happens inside `inner`, or `inner` terminates and
+    failure happens in the tail. -/
+theorem seqT_canfail
+    {inner : Config P CmdT} {ss : List (Stmt P CmdT)} {cfg : Config P CmdT}
+    (hstar : ReflTransT (StepStmt P EvalCmd extendEval) (.seq inner ss) cfg)
+    (hf : cfg.getEnv.hasFailure = true) :
+    (∃ (cfg' : Config P CmdT),
+      ∃ (h : ReflTransT (StepStmt P EvalCmd extendEval) inner cfg'),
+        cfg'.getEnv.hasFailure = true ∧ h.len ≤ hstar.len) ∨
+    (∃ (ρ₁ : Env P),
+      ∃ (h1 : ReflTransT (StepStmt P EvalCmd extendEval) inner (.terminal ρ₁)),
+      ∃ (h2 : ReflTransT (StepStmt P EvalCmd extendEval) (.stmts ss ρ₁) cfg),
+        h1.len + h2.len < hstar.len) := by
+  match hstar with
+  | .refl _ => exact .inl ⟨inner, .refl _, hf, Nat.le_refl _⟩
+  | .step _ _ _ (.step_seq_inner h) hrest =>
+    match seqT_canfail hrest hf with
+    | .inl ⟨cfg', h_inner, hf', _⟩ =>
+      exact .inl ⟨cfg', .step _ _ _ h h_inner, hf', by simp [ReflTransT.len]; omega⟩
+    | .inr ⟨ρ₁, h1, h2, _⟩ =>
+      exact .inr ⟨ρ₁, .step _ _ _ h h1, h2, by simp [ReflTransT.len]; omega⟩
+  | .step _ _ _ .step_seq_done hrest =>
+    exact .inr ⟨_, .refl _, hrest, by simp [ReflTransT.len]⟩
+  | .step _ _ _ .step_seq_exit hrest =>
+    match hrest with
+    | .refl _ => exact .inl ⟨_, .refl _, hf, by simp [ReflTransT.len]⟩
+    | .step _ _ _ h _ => exact nomatch h
+
+/-- An empty-statement-list run that reaches a failing config must already
+    have been failing. -/
+theorem stmts_nil_canfail_env
+    {ρ : Env P} {cfg : Config P CmdT}
+    (hstar : StepStmtStar P EvalCmd extendEval
+      (.stmts ([] : List (Stmt P CmdT)) ρ) cfg)
+    (hf : cfg.getEnv.hasFailure = true) :
+    ρ.hasFailure = true := by
+  cases hstar with
+  | refl => exact hf
+  | step _ _ _ h1 r1 => cases h1 with
+    | step_stmts_nil => cases r1 with
+      | refl => exact hf
+      | step _ _ _ h _ => cases h
+
+/-- Decompose `.stmts [s] ρ₀` reaching a failing config: extract a failing
+    trace from `.stmt s ρ₀`, with a length bound `≤`. -/
+theorem stmtsT_singleton_canfail
+    {s : Stmt P CmdT} {ρ₀ : Env P} {cfg : Config P CmdT}
+    (hstar : ReflTransT (StepStmt P EvalCmd extendEval) (.stmts [s] ρ₀) cfg)
+    (hf : cfg.getEnv.hasFailure = true) :
+    ∃ (cfg' : Config P CmdT)
+      (h : ReflTransT (StepStmt P EvalCmd extendEval) (.stmt s ρ₀) cfg'),
+        cfg'.getEnv.hasFailure = true ∧ h.len ≤ hstar.len := by
+  match hstar with
+  | .refl _ =>
+    -- cfg = .stmts [s] ρ₀, so ρ₀.hasFailure = true.
+    -- Use refl of .stmt s ρ₀ — but the env at that point is ρ₀, and
+    -- ρ₀.hasFailure = true.
+    have hf₀ : ρ₀.hasFailure = true := hf
+    refine ⟨.stmt s ρ₀, .refl _, ?_, ?_⟩
+    · exact hf₀
+    · simp [ReflTransT.len]
+  | .step _ _ _ .step_stmts_cons hrest =>
+    -- hrest : ReflTransT _ (.seq (.stmt s ρ₀) []) cfg
+    match seqT_canfail hrest hf with
+    | .inl ⟨cfg', h_inner, hf', hlen⟩ =>
+      refine ⟨cfg', h_inner, hf', ?_⟩
+      simp [ReflTransT.len] at hlen ⊢; omega
+    | .inr ⟨ρ_x, h1, h2, hlen⟩ =>
+      have hf_x : ρ_x.hasFailure = true := stmts_nil_canfail_env (reflTransT_to_prop h2) hf
+      refine ⟨_, h1, hf_x, ?_⟩
+      simp [ReflTransT.len] at hlen ⊢; omega
+
+/-- Decompose `.stmts (ss₁ ++ [s])` reaching a failing config: either
+    failure happens before reaching `s`, or `ss₁` terminates at `ρ₁` and
+    the failure happens in `s`. -/
+theorem stmtsT_append_canfail
+    (ss₁ : List (Stmt P CmdT)) (s : Stmt P CmdT) (ρ₀ : Env P)
+    {cfg : Config P CmdT}
+    (hstar : ReflTransT (StepStmt P EvalCmd extendEval)
+      (.stmts (ss₁ ++ [s]) ρ₀) cfg)
+    (hf : cfg.getEnv.hasFailure = true) :
+    (∃ cfg', cfg'.getEnv.hasFailure = true ∧
+      StepStmtStar P EvalCmd extendEval (.stmts ss₁ ρ₀) cfg') ∨
+    (∃ (ρ₁ : Env P),
+      StepStmtStar P EvalCmd extendEval (.stmts ss₁ ρ₀) (.terminal ρ₁) ∧
+      ∃ (cfg₂ : Config P CmdT),
+      ∃ (hs : ReflTransT (StepStmt P EvalCmd extendEval) (.stmt s ρ₁) cfg₂),
+        cfg₂.getEnv.hasFailure = true ∧ hs.len < hstar.len) := by
+  induction ss₁ generalizing ρ₀ with
+  | nil =>
+    match hstar with
+    | .refl _ =>
+      exact .inl ⟨.stmts [] ρ₀, hf, .refl _⟩
+    | .step _ _ _ .step_stmts_cons hrest =>
+      match seqT_canfail hrest hf with
+      | .inl ⟨cfg', h, hf', _⟩ =>
+        exact .inr ⟨ρ₀, .step _ _ _ .step_stmts_nil (.refl _), cfg', h, hf',
+          by simp [ReflTransT.len]; omega⟩
+      | .inr ⟨ρ₁, h1, h2, _⟩ =>
+        exact .inr ⟨ρ₀, .step _ _ _ .step_stmts_nil (.refl _), .terminal ρ₁, h1,
+          stmts_nil_canfail_env (reflTransT_to_prop h2) hf,
+          by simp [ReflTransT.len]; omega⟩
+  | cons s' rest' ih =>
+    match hstar with
+    | .refl _ =>
+      exact .inl ⟨.stmts (s' :: rest') ρ₀, hf, .refl _⟩
+    | .step _ _ _ .step_stmts_cons hrest =>
+      match seqT_canfail hrest hf with
+      | .inl ⟨cfg', h, hf', _⟩ =>
+        exact .inl ⟨.seq cfg' rest', hf',
+          .step _ _ _ .step_stmts_cons
+            (seq_inner_star P EvalCmd extendEval _ cfg' rest' (reflTransT_to_prop h))⟩
+      | .inr ⟨ρ₁, h1, h2, _⟩ =>
+        have hpre := stmts_cons_step P EvalCmd extendEval s' rest' ρ₀ ρ₁
+          (reflTransT_to_prop h1)
+        match ih ρ₁ h2 with
+        | .inl ⟨cfg'_rest, hf'_rest, hstar_rest⟩ =>
+          exact .inl ⟨cfg'_rest, hf'_rest,
+            ReflTrans_Transitive _ _ _ _ hpre hstar_rest⟩
+        | .inr ⟨ρ₂, hterm_rest, cfg₂, hs, hf₂, _⟩ =>
+          exact .inr ⟨ρ₂, ReflTrans_Transitive _ _ _ _ hpre hterm_rest,
+            cfg₂, hs, hf₂, by simp [ReflTransT.len]; omega⟩
+
+/-- Unwrap a failing `.block l σ_parent e_parent inner` execution to a failing run on `inner`. -/
+theorem block_canfail_to_inner
+    {inner : Config P CmdT} {l : Option String} {σ_parent : SemanticStore P}
+    {e_parent : SemanticEval P} {cfg : Config P CmdT}
+    (hstar : StepStmtStar P EvalCmd extendEval (.block l σ_parent e_parent inner) cfg)
+    (hf : cfg.getEnv.hasFailure = true) :
+    ∃ inner', inner'.getEnv.hasFailure = true ∧
+      StepStmtStar P EvalCmd extendEval inner inner' := by
+  suffices ∀ src tgt, StepStmtStar P EvalCmd extendEval src tgt →
+      ∀ (inner : Config P CmdT), src = .block l σ_parent e_parent inner →
+      tgt.getEnv.hasFailure = true →
+      ∃ inner', inner'.getEnv.hasFailure = true ∧
+        StepStmtStar P EvalCmd extendEval inner inner' from
+    this _ _ hstar _ rfl hf
+  intro src tgt hstar_g
+  induction hstar_g with
+  | refl =>
+    intro inner hsrc hf; subst hsrc; exact ⟨inner, hf, .refl _⟩
+  | step _ mid _ hstep hrest ih =>
+    intro inner hsrc hf; subst hsrc
+    match hstep with
+    | .step_block_body h =>
+      have ⟨inner', hf', hstar'⟩ := ih _ rfl hf
+      exact ⟨inner', hf', .step _ _ _ h hstar'⟩
+    | .step_block_done
+    | .step_block_exit_match _ | .step_block_exit_mismatch _ =>
+      match hrest with
+      | .refl _ => refine ⟨_, ?_, .refl _⟩; simp [Config.getEnv] at hf ⊢; exact hf
+      | .step _ _ _ h _ => exact nomatch h
+
+/-- Type-level variant of `block_canfail_to_inner` preserving length bounds
+    on the inner derivation.  Required when the inner derivation must
+    decrease for a recursive call. -/
+theorem blockT_canfail_to_inner
+    {inner : Config P CmdT} {l : Option String} {σ_parent : SemanticStore P}
+    {e_parent : SemanticEval P} {cfg : Config P CmdT}
+    (hstar : ReflTransT (StepStmt P EvalCmd extendEval) (.block l σ_parent e_parent inner) cfg)
+    (hf : cfg.getEnv.hasFailure = true) :
+    ∃ (inner' : Config P CmdT),
+      ∃ (h : ReflTransT (StepStmt P EvalCmd extendEval) inner inner'),
+        inner'.getEnv.hasFailure = true ∧ h.len ≤ hstar.len := by
+  match hstar with
+  | .refl _ => exact ⟨inner, .refl _, hf, Nat.le_refl _⟩
+  | .step _ _ _ (.step_block_body h) hrest =>
+    have ⟨inner', h_inner', hf', hlen⟩ := blockT_canfail_to_inner hrest hf
+    exact ⟨inner', .step _ _ _ h h_inner', hf',
+      by simp [ReflTransT.len]; omega⟩
+  | .step _ _ _ .step_block_done hrest =>
+    match hrest with
+    | .refl _ =>
+      refine ⟨.terminal _, .refl _, ?_, by simp [ReflTransT.len]⟩
+      simp [Config.getEnv] at hf ⊢; exact hf
+    | .step _ _ _ h _ => exact nomatch h
+  | .step _ _ _ (.step_block_exit_match _) hrest =>
+    match hrest with
+    | .refl _ =>
+      refine ⟨.exiting _ _, .refl _, ?_, by simp [ReflTransT.len]⟩
+      simp [Config.getEnv] at hf ⊢; exact hf
+    | .step _ _ _ h _ => exact nomatch h
+  | .step _ _ _ (.step_block_exit_mismatch _) hrest =>
+    match hrest with
+    | .refl _ =>
+      refine ⟨.exiting _ _, .refl _, ?_, by simp [ReflTransT.len]⟩
+      simp [Config.getEnv] at hf ⊢; exact hf
+    | .step _ _ _ h _ => exact nomatch h
+  termination_by hstar.len
+  decreasing_by all_goals (simp_wf; try simp [ReflTransT.len]; try omega)
+
+/-- Prop-level seq-canfail decomposition (without length bounds). -/
+theorem seq_canfail_prop
+    {inner : Config P CmdT} {ss : List (Stmt P CmdT)} {cfg : Config P CmdT}
+    (hstar : StepStmtStar P EvalCmd extendEval (.seq inner ss) cfg)
+    (hf : cfg.getEnv.hasFailure = true) :
+    (∃ cfg', cfg'.getEnv.hasFailure = true ∧
+      StepStmtStar P EvalCmd extendEval inner cfg') ∨
+    (∃ ρ₁, StepStmtStar P EvalCmd extendEval inner (.terminal ρ₁) ∧
+      ∃ cfg', cfg'.getEnv.hasFailure = true ∧
+        StepStmtStar P EvalCmd extendEval (.stmts ss ρ₁) cfg') :=
+  match seqT_canfail (reflTrans_to_T hstar) hf with
+  | .inl ⟨cfg', h, hf', _⟩ => .inl ⟨cfg', hf', reflTransT_to_prop h⟩
+  | .inr ⟨ρ₁, h1, h2, _⟩ => .inr ⟨ρ₁, reflTransT_to_prop h1, _, hf, reflTransT_to_prop h2⟩
+
+end ReflTransTHelpers
 
 end -- public section

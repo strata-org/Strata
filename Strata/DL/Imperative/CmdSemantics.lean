@@ -215,16 +215,11 @@ theorem invStoresExceptComm :
 
 /-! ### Well-Formedness of `SemanticEval`s -/
 
-/-- The boolean evaluator and the general evaluator are in agreement
--- only defined conservatively,
--- since there could be coercions like [1 >>= True] and [0 >>= False]
--- or that when δ evaluates to none, δP evaluates to False
-  -/
-def WellFormedSemanticEvalBool {P : PureExpr} [HasBool P] [HasNot P]
+@[expose] def WellFormedSemanticEvalBool {P : PureExpr} [HasBool P] [HasBoolOps P]
     (δ : SemanticEval P) : Prop :=
     ∀ σ e,
-      (δ σ e = some Imperative.HasBool.tt ↔ δ σ (Imperative.HasNot.not e) = (some HasBool.ff)) ∧
-      (δ σ e = some Imperative.HasBool.ff ↔ δ σ (Imperative.HasNot.not e) = (some HasBool.tt))
+      (δ σ e = some Imperative.HasBool.tt ↔ δ σ (Imperative.HasBoolOps.not e) = (some HasBool.ff)) ∧
+      (δ σ e = some Imperative.HasBool.ff ↔ δ σ (Imperative.HasBoolOps.not e) = (some HasBool.tt))
 
 def WellFormedSemanticEvalVal {P : PureExpr} [HasVal P]
     (δ : SemanticEval P) : Prop :=
@@ -236,8 +231,18 @@ def WellFormedSemanticEvalVal {P : PureExpr} [HasVal P]
 @[expose] def WellFormedSemanticEvalVar {P : PureExpr} [HasFvar P] (δ : SemanticEval P)
     : Prop := (∀ e v σ, HasFvar.getFvar e = some v → δ σ e = σ v)
 
-@[expose] def WellFormedSemanticEvalExprCongr {P : PureExpr} [HasVarsPure P P.Expr] (δ : SemanticEval P)
-    : Prop := ∀ e σ σ', (∀ x ∈ HasVarsPure.getVars e, σ x = σ' x) → δ σ e = δ σ' e
+@[expose] def WellFormedSemanticEvalExprCongr {P : PureExpr} [HasFvars P] (δ : SemanticEval P)
+    : Prop := ∀ e σ σ', (∀ x ∈ HasFvars.getFvars e, σ x = σ' x) → δ σ e = δ σ' e
+
+/-- Well-formedness for the integer fragment of an evaluator. -/
+structure WellFormedSemanticEvalInt {P : PureExpr}
+    [HasBool P] [HasFvars P] [HasInt P] [HasIntOps P]
+    (δ : SemanticEval P) : Prop where
+  ltReduces : ∀ σ x y nx ny,
+    δ σ x = some nx → HasInt.isNumeral nx = Bool.true →
+    δ σ y = some ny → HasInt.isNumeral ny = Bool.true →
+    δ σ (HasIntOps.lt x y) = some HasBool.tt ∨
+    δ σ (HasIntOps.lt x y) = some HasBool.ff
 
 /--
 Abstract variable update.
@@ -281,7 +286,7 @@ sets it to `true`; all other constructors report `false`.
 The failure flag is accumulated in `Env.hasFailure` by the statement
 semantics (`EvalStmt`).
 -/
-inductive EvalCmd [HasFvar P] [HasBool P] [HasNot P] :
+inductive EvalCmd [HasFvar P] [HasBool P] [HasBoolOps P] :
   SemanticEval P → SemanticStore P → Cmd P → SemanticStore P → Bool → Prop where
   /-- If `e` evaluates to a value `v`, initialize `x` according to `InitState`. -/
   | eval_init :
@@ -297,6 +302,7 @@ inductive EvalCmd [HasFvar P] [HasBool P] [HasNot P] :
     WellFormedSemanticEvalVar δ →
     ---
     EvalCmd δ σ (.init x _ .nondet _) σ' false
+
 
   /-- If `e` evaluates to a value `v`, assign `x` according to `UpdateState`. -/
   | eval_set :

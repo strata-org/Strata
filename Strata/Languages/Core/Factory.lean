@@ -865,10 +865,7 @@ def bv64Extract_15_0_Func  := bvExtractFunc 64 15  0
 def bv64Extract_7_0_Func   := bvExtractFunc 64  7  0
 
 @[expose]
-def WFFactory : Lambda.WFLFactory CoreLParams :=
-  -- (T := CoreLParams) annotations needed for IntBoolFactory
-  -- functions to resolve typeclass instances.
-  WFLFactory.ofArray (name_nodup := by native_decide) (#[
+def WFFactoryArray : Array (Lambda.WFLFunc CoreLParams) := #[
   intAddFunc (T := CoreLParams),
   intSubFunc (T := CoreLParams),
   intMulFunc (T := CoreLParams),
@@ -973,10 +970,20 @@ def WFFactory : Lambda.WFLFactory CoreLParams :=
   bv64Extract_7_0_Func,
 ] ++ (ExpandBVOpFuncNames [1,8,16,32,64])
   ++ (ExpandBVSafeOpFuncNames [1,8,16,32,64])
-  ++ (ExpandBVSafeDivOpFuncNames [1,8,16,32,64]))
+  ++ (ExpandBVSafeDivOpFuncNames [1,8,16,32,64])
+
+@[expose]
+def WFFactory : Lambda.WFLFactory CoreLParams :=
+  WFLFactory.ofArray (name_nodup := by native_decide) WFFactoryArray
 
 @[expose]
 def Factory : @Factory CoreLParams := WFLFactory.toFactory WFFactory
+
+def FactoryFuncNames : List String :=
+  (WFFactoryArray.map (·.func.name.name)).toList
+
+/-- Decidable predicate: is `s` the name of a built-in factory function? -/
+def isNameInFactory (s : String) : Bool := s ∈ FactoryFuncNames
 
 end -- public section
 
@@ -1054,7 +1061,7 @@ def intSafeDivTOp : Expression.Expr := (@intSafeDivTFunc CoreLParams _ _).opExpr
 def intModTOp : Expression.Expr := (@intModTFunc CoreLParams _).opExpr
 def intSafeModTOp : Expression.Expr := (@intSafeModTFunc CoreLParams _ _).opExpr
 def intNegOp : Expression.Expr := (@intNegFunc CoreLParams _).opExpr
-def intLtOp : Expression.Expr := (@intLtFunc CoreLParams _).opExpr
+@[expose] def intLtOp : Expression.Expr := (@intLtFunc CoreLParams _).opExpr
 def intLeOp : Expression.Expr := (@intLeFunc CoreLParams _).opExpr
 def intGtOp : Expression.Expr := (@intGtFunc CoreLParams _).opExpr
 def intGeOp : Expression.Expr := (@intGeFunc CoreLParams _).opExpr

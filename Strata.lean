@@ -33,6 +33,7 @@ import Strata.Languages.Laurel.LaurelCompilationPipeline
 import Strata.Transform.CallElimCorrect
 import Strata.Transform.CoreSpecification
 import Strata.Transform.DetToKleeneCorrect
+import Strata.Transform.LoopElimCorrect
 import Strata.Transform.ProcBodyVerifyCorrect
 import Strata.Transform.Specification
 
