@@ -6,7 +6,7 @@
 module
 
 public import Strata.Languages.Laurel.MapStmtExpr
-public import Strata.Languages.Laurel.Laurel
+public import Strata.Languages.Laurel.LaurelAST
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 import Strata.DL.Lambda.TypeFactory
 

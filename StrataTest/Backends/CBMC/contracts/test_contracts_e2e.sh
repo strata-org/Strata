@@ -9,13 +9,13 @@
 #   CBMC              - path to cbmc binary (default: cbmc)
 #   GOTO_CC           - path to goto-cc binary (default: goto-cc)
 #   GOTO_INSTRUMENT   - path to goto-instrument binary (default: goto-instrument)
-#   STRATA            - path to strata binary (default: uses .lake/build/bin/strata)
+#   STRATA            - path to strata binary (default: uses StrataCLI/.lake/build/bin/strata)
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
-STRATA="${STRATA:-$PROJECT_ROOT/.lake/build/bin/strata}"
+STRATA="${STRATA:-$PROJECT_ROOT/StrataCLI/.lake/build/bin/strata}"
 CBMC="${CBMC:-cbmc}"
 GOTO_CC="${GOTO_CC:-goto-cc}"
 GOTO_INSTRUMENT="${GOTO_INSTRUMENT:-goto-instrument}"

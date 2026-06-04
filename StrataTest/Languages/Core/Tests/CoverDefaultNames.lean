@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
+import Strata.Languages.Core
 import Strata.Languages.Core.Verifier
 
 ---------------------------------------------------------------------
@@ -48,7 +49,7 @@ Property: cover
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify coverDefaultNames (options := .quiet)
+#eval Strata.Core.verify coverDefaultNames (options := .quiet)
 
 ---------------------------------------------------------------------
 

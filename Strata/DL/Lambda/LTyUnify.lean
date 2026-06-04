@@ -12,6 +12,7 @@ import all Strata.DL.Util.List
 public import Strata.DL.Util.Maps
 import all Strata.DL.Util.Maps
 import all Strata.DL.Util.Map
+import Std.Tactic.BVDecide.Normalize.BitVec
 
 /-!
 ## Type Substitution and Unification
@@ -1669,6 +1670,16 @@ theorem LMonoTy.subst_absorbs (S_outer S_inner : Subst) (mty : LMonoTy)
           rw [ih_cons a List.mem_cons_self,
               ih_rest (fun m hm => ih_cons m (List.mem_cons_of_mem a hm))]
 
+/-- If `S` absorbs `S_inner` and two types are equal under `S_inner`, they are
+    equal under `S`. -/
+theorem LMonoTy.subst_eq_of_absorbs (S S_inner : Subst) (ty1 ty2 : LMonoTy)
+    (h_abs : Subst.absorbs S S_inner)
+    (h_eq : LMonoTy.subst S_inner ty1 = LMonoTy.subst S_inner ty2) :
+    LMonoTy.subst S ty1 = LMonoTy.subst S ty2 := by
+  have h1 := (LMonoTy.subst_absorbs S S_inner ty1 h_abs).symm
+  have h2 := LMonoTy.subst_absorbs S S_inner ty2 h_abs
+  rw [h1, h_eq, h2]
+
 /-- Every well-formed substitution absorbs itself. -/
 theorem Subst.absorbs_refl (S : Subst) (h_wf : SubstWF S) :
     Subst.absorbs S S := by
@@ -2319,7 +2330,7 @@ theorem Constraints.unifyCore_sound (cs : Constraints) (S : SubstInfo)
             · right; right; exact h_s
 
 /-- Unification produces a substitution that absorbs the input substitution. -/
-theorem unify_absorbs (constraints : Constraints) (S_old S_new : SubstInfo)
+theorem Constraints.unify_absorbs (constraints : Constraints) (S_old S_new : SubstInfo)
     (h : Constraints.unify constraints S_old = .ok S_new) :
     Subst.absorbs S_new.subst S_old.subst := by
   simp only [Constraints.unify, bind, Except.bind] at h
@@ -2328,6 +2339,18 @@ theorem unify_absorbs (constraints : Constraints) (S_old S_new : SubstInfo)
   · rename_i relS h_core
     simp only [Except.ok.injEq] at h; subst h
     exact (Constraints.unifyCore_sound constraints S_old relS h_core).absorbs
+
+/-- Unification produces a substitution that makes every constraint pair equal. -/
+theorem Constraints.unify_sound (constraints : Constraints) (S_old S_new : SubstInfo)
+    (h : Constraints.unify constraints S_old = .ok S_new) :
+    ∀ p, p ∈ constraints →
+      LMonoTy.subst S_new.subst p.1 = LMonoTy.subst S_new.subst p.2 := by
+  simp only [Constraints.unify, bind, Except.bind] at h
+  split at h
+  · simp at h
+  · rename_i relS h_core
+    simp only [Except.ok.injEq] at h; subst h
+    exact (Constraints.unifyCore_sound constraints S_old relS h_core).sound
 
 ---------------------------------------------------------------------
 

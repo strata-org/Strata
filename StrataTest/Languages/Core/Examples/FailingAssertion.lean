@@ -3,10 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
+meta import Strata.Languages.Core
+import StrataDDM.Integration.Lean.HashCommands
 
-import Strata.Languages.Core.Verifier
-
+meta section
 ---------------------------------------------------------------------
 open Strata
 
@@ -54,7 +56,7 @@ Property: assert
 Result: ❌ fail
 -/
 #guard_msgs in
-#eval verify failing (options := .quiet)
+#eval Strata.Core.verify failing (options := .quiet)
 
 ---------------------------------------------------------------------
 
@@ -88,4 +90,6 @@ Property: assert
 Result: ❌ fail
 -/
 #guard_msgs in
-#eval verify failingThrice (options := .quiet)
+#eval Strata.Core.verify failingThrice (options := .quiet)
+
+end

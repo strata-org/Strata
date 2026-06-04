@@ -3,10 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.SimpleAPI
-import StrataTest.Util.TestDiagnostics
-import StrataTest.Languages.Laurel.TestExamples
+meta import all Strata.SimpleAPI
+meta import all StrataTest.Util.TestDiagnostics
+meta import all StrataTest.Languages.Laurel.TestExamples
+
+meta section
 
 /-! # Bodiless Procedure Inlining Test
 
@@ -42,3 +45,4 @@ procedure caller()
   (fun p => processLaurelFileWithOptions { translateOptions := { inlineFunctionsWhenPossible := true} } p)
 
 end Strata.Laurel.BodilessInliningTest
+end

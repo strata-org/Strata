@@ -18,5 +18,6 @@ lake exe ddm --with-html-single --output _out/ddm
 lake exe langdef --with-html-single --output _out/langdef
 lake exe laurel --with-html-single --output _out/laurel
 lake exe transforms --with-html-single --output _out/transforms
+lake exe irtranslation --with-html-single --output _out/irtranslation
 cp strata-hourglass.png _out/langdef/html-single/
 cp -r ../api/.lake/build/doc _out/api

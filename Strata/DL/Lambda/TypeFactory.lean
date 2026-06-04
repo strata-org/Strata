@@ -5,12 +5,8 @@
 -/
 module
 
-public import Strata.DL.Lambda.LExprWF
-public import Strata.DL.Lambda.LTy
 import all Strata.DL.Lambda.LTy
 public import Strata.DL.Lambda.Factory
-public import Strata.DL.Util.List
-public import Strata.Util.Tactics
 import all Strata.Util.Tactics
 
 /-!
