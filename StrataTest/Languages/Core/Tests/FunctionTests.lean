@@ -3,8 +3,11 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Function
+meta import Strata.Languages.Core.Function
+
+meta section
 
 /-! ## Tests for Core Function -/
 
@@ -24,3 +27,5 @@ open LTy.Syntax LExpr.SyntaxMono
          return format type
 
 end Core
+
+end

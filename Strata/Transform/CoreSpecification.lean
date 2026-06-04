@@ -6,7 +6,6 @@
 module
 
 public import Strata.Languages.Core.StatementSemantics
-public import Strata.Languages.Core.StatementSemanticsProps
 public import Strata.Transform.Specification
 public import Strata.Languages.Core.WF
 

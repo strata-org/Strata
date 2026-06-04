@@ -6,7 +6,6 @@
 module
 
 public import Strata.DL.Imperative.MetaData
-public import Strata.DL.Imperative.PureExpr
 
 public section
 

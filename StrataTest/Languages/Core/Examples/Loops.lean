@@ -3,11 +3,23 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-
-import Strata.Languages.Core.Program
+module
 import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core
 import Strata.Transform.StructuredToUnstructured
+import Lean.Parser.Types
+meta import Strata.Languages.Core.DDMTransform.Grammar
+meta import Strata.Languages.Core.DDMTransform.Translate
+meta import Strata.Languages.Core.Options
+public import StrataDDM.AST
+public import Strata.DL.Imperative.BasicBlock
+public import Strata.Languages.Core.Statement
+public import Strata.Languages.Core.Expressions
+import StrataDDM.Integration.Lean.HashCommands
+import Strata.Languages.Core.StatementSemantics
 
+public section
+open StrataDDM (Program)
 namespace Strata
 
 def singleCFG (p : Program) (n : Nat) : Imperative.CFG String
@@ -54,7 +66,7 @@ loop_entry$_1:
   var loop_measure$_2 : int;
   assume [assume_loop_measure$_2]: loop_measure$_2 == n;
   assert [measure_lb_loop_measure$_2]: !(loop_measure$_2 < 0);
-  #[<[provenance]: :869-975>,
+  #[<[provenance]: :1354-1460>,
  <[#spec_loop_invariant]: 0 <= i>,
  <[#spec_loop_invariant]: i <= n>,
  <[#spec_decreases]: n>] condGoto i < n l$_4 end$_0
@@ -101,7 +113,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify measureFailExamplePgm (options := .quiet)
+#eval Core.verify measureFailExamplePgm (options := .quiet)
 
 ---------------------------------------------------------------------
 
@@ -145,7 +157,7 @@ loop_entry$_1:
   var loop_measure$_2 : int;
   assume [assume_loop_measure$_2]: loop_measure$_2 == n - i;
   assert [measure_lb_loop_measure$_2]: !(loop_measure$_2 < 0);
-  #[<[provenance]: :2830-2986>,
+  #[<[provenance]: :3322-3478>,
  <[#spec_loop_invariant]: 0 <= i>,
  <[#spec_loop_invariant]: i <= n>,
  <[#spec_loop_invariant]: s == i * (i + 1) / 2>,
@@ -339,7 +351,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify gaussPgm
+#eval Core.verify gaussPgm
 
 ---------------------------------------------------------------------
 
@@ -397,7 +409,7 @@ Context: Global scope:
   var loop_measure$_2 : int;
   assume [assume_loop_measure$_2]: loop_measure$_2 == n - x;
   assert [measure_lb_loop_measure$_2]: !(loop_measure$_2 < 0);
-  #[<[provenance]: :8840-9093>,
+  #[<[provenance]: :9337-9590>,
  <[#spec_loop_invariant]: x >= 0>,
  <[#spec_loop_invariant]: x <= n>,
  <[#spec_loop_invariant]: n < top>,
@@ -411,7 +423,7 @@ loop_entry$_5:
   var loop_measure$_6 : int;
   assume [assume_loop_measure$_6]: loop_measure$_6 == x - y;
   assert [measure_lb_loop_measure$_6]: !(loop_measure$_6 < 0);
-  #[<[provenance]: :8960-9073>,
+  #[<[provenance]: :9457-9570>,
  <[#spec_loop_invariant]: y >= 0>,
  <[#spec_loop_invariant]: y <= x>,
  <[#spec_decreases]: x - y>] condGoto y < x l$_8 l$_4
@@ -492,7 +504,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify nestedPgm (options := .quiet)
+#eval Core.verify nestedPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 
@@ -558,7 +570,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify precondElimInMeasurePgm (options := .quiet)
+#eval Core.verify precondElimInMeasurePgm (options := .quiet)
 
 -- Now, we show the precondition (d > 0) is necessary for the measure-related
 -- checks.
@@ -619,7 +631,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify precondElimInMeasureBadPgm (options := .quiet)
+#eval Core.verify precondElimInMeasureBadPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 
@@ -684,4 +696,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify precondElimMeasureBodyMutatesPgm (options := .quiet)
+#eval Core.verify precondElimMeasureBodyMutatesPgm (options := .quiet)
+
+end Strata
+end

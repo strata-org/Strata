@@ -6,33 +6,17 @@
 module
 
 public import Strata.Languages.Core.Program
-public import Strata.Languages.Core.Verifier
-public import Strata.Languages.Core.Statement
-public import Strata.Languages.Core.Procedure
 public import Strata.Languages.Core.Options
-public import Strata.Languages.Laurel.Laurel
-public import Strata.Languages.Laurel.LiftImperativeExpressions
-import Strata.Languages.Laurel.DesugarShortCircuit
-public import Strata.Languages.Laurel.InferHoleTypes
-public import Strata.Languages.Laurel.EliminateHoles
-import Strata.Languages.Laurel.EliminateReturnsInExpression
-import Strata.Languages.Laurel.EliminateValueReturns
-public import Strata.Languages.Laurel.HeapParameterization
-public import Strata.Languages.Laurel.TypeHierarchy
-public import Strata.Languages.Laurel.LaurelTypes
-public import Strata.Languages.Laurel.ModifiesClauses
-public import Strata.Languages.Laurel.CoreDefinitionsForLaurel
 public import Strata.Languages.Laurel.CoreGroupingAndOrdering
-import Strata.DDM.Util.DecimalRat
-import Strata.DL.Imperative.Stmt
-import Strata.Pipeline.Messages
-import Strata.DL.Imperative.MetaData
-import Strata.DL.Lambda.LExpr
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
-import Strata.Languages.Laurel.ConstrainedTypeElim
 import Strata.Util.Tactics
+public import Strata.Languages.Laurel.Resolution
+import Std.Tactic.BVDecide.Normalize.Bool
+import Std.Tactic.BVDecide.Normalize.Prop
+import Strata.Languages.Core.Factory
+import Strata.Languages.Laurel.LaurelTypes
 
-open Core (VCResult VCResults VerifyOptions)
+open Core (VerifyOptions)
 open Core (intAddOp intSubOp intMulOp intSafeDivOp intSafeModOp intSafeDivTOp intSafeModTOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp boolImpliesOp strConcatOp)
 open Core (realAddOp realSubOp realMulOp realDivOp realNegOp realLtOp realLeOp realGtOp realGeOp)
 
@@ -63,8 +47,11 @@ structure TranslateState where
   model : SemanticModel
   /-- Overflow check configuration -/
   overflowChecks : Core.OverflowChecks := {}
-  /-- Do not process the produces Core program, since it has superfluous errors -/
-  coreProgramHasSuperfluousErrors: Bool := false
+  /-- Diagnostics that indicate the Core program should not be processed further.
+      When non-empty, the produced Core program is suppressed. Each entry records
+      why the program was deemed invalid so that if no other diagnostics explain
+      the suppression, these can be surfaced to the user. -/
+  coreDiagnostics : List DiagnosticModel := []
 
 /-- The translation monad: state over Except, allowing both accumulated diagnostics and hard failures -/
 @[expose] abbrev TranslateM := OptionT (StateM TranslateState)
@@ -73,8 +60,12 @@ structure TranslateState where
 def emitDiagnostic (d : DiagnosticModel) : TranslateM Unit :=
   modify fun s => { s with diagnostics := s.diagnostics ++ [d] }
 
-private def invalidCoreType : TranslateM LMonoTy := do
-  modify fun s => { s with coreProgramHasSuperfluousErrors := true }
+/-- Emit a core diagnostic that flags the Core program as invalid. -/
+def emitCoreDiagnostic (d : DiagnosticModel) : TranslateM Unit :=
+  modify fun s => { s with coreDiagnostics := s.coreDiagnostics ++ [d] }
+
+private def invalidCoreType (source : Option FileRange) (reason : String) : TranslateM LMonoTy := do
+  emitCoreDiagnostic (diagnosticFromSource source reason DiagnosticType.StrataBug)
   return .tcons s!"LaurelResolutionErrorPlaceholder" []
 
 /-
@@ -98,15 +89,14 @@ def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
     | some (.datatypeDefinition dt) => return .tcons dt.name.text []
     | some (.datatypeConstructor typeName _) => return .tcons typeName.text []
     | _ => do -- resolution should have already emitted a diagnostic
-      modify fun s => { s with coreProgramHasSuperfluousErrors := true }
+      emitCoreDiagnostic (diagnosticFromSource ty.source s!"UserDefined type could not be resolved to a composite or datatype" DiagnosticType.StrataBug)
       return .tcons "Composite" []
   | .TCore s => return .tcons s []
   | .TReal => return LMonoTy.real
-  | .MultiValuedExpr _ => invalidCoreType
-  | .Unknown => invalidCoreType
+  | .MultiValuedExpr _ => invalidCoreType ty.source "MultiValuedExpr type encountered during Core translation"
+  | .Unknown => invalidCoreType ty.source "Unknown type encountered during Core translation"
   | _ => do
-    emitDiagnostic (diagnosticFromSource ty.source "cannot translate type to Core: not supported yet" DiagnosticType.StrataBug)
-    invalidCoreType
+    invalidCoreType ty.source s!"cannot translate type to Core: not supported yet"
 
 termination_by ty.val
 decreasing_by all_goals (first | (cases elementType; term_by_mem) | (cases keyType; term_by_mem) | (cases valueType; term_by_mem))
@@ -131,7 +121,7 @@ private def freshId : TranslateM Nat := do
 /-- Throw a hard diagnostic error, aborting the current translation -/
 def throwExprDiagnostic (d : DiagnosticModel): TranslateM Core.Expression.Expr := do
   emitDiagnostic d
-  modify fun s => { s with coreProgramHasSuperfluousErrors := true }
+  emitCoreDiagnostic d
   let id ← freshId
   return LExpr.fvar () (⟨s!"DUMMY_VAR_{id}", ()⟩) none
 
@@ -164,7 +154,7 @@ def translateExpr (expr : StmtExprMd)
   | .LiteralBool b => return .const () (.boolConst b)
   | .LiteralInt i => return .const () (.intConst i)
   | .LiteralString s => return .const () (.strConst s)
-  | .LiteralDecimal d => return .const () (.realConst (Strata.Decimal.toRat d))
+  | .LiteralDecimal d => return .const () (.realConst (StrataDDM.Decimal.toRat d))
   | .Var (.Local name) =>
       -- First check if this name is bound by an enclosing quantifier
       match boundVars.findIdx? (· == name) with
@@ -349,7 +339,7 @@ private def exprAsUnusedInit (expr : StmtExprMd) (md : Imperative.MetaData Core.
 
 def throwStmtDiagnostic (d : DiagnosticModel): TranslateM (List Core.Statement) := do
   emitDiagnostic d
-  modify fun s => { s with coreProgramHasSuperfluousErrors := true }
+  emitCoreDiagnostic d
   return []
 
 /--
@@ -497,8 +487,8 @@ def translateStmt (stmt : StmtExprMd)
       | none =>
           return [.exit "$body" md]
       | some _ =>
-          emitDiagnostic $ md.toDiagnostic "Return statement with value should have been eliminated by EliminateValueReturns pass" DiagnosticType.StrataBug
-          modify fun s => { s with coreProgramHasSuperfluousErrors := true }
+          let d := md.toDiagnostic "Return statement with value should have been eliminated by EliminateValueReturns pass" DiagnosticType.StrataBug
+          emitCoreDiagnostic d
           return [.exit "$body" md]
   | .While cond invariants decreasesExpr body =>
       let condExpr ← translateExpr cond

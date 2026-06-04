@@ -5,12 +5,12 @@
 -/
 module
 
-public import Strata.DL.Lambda.LExpr
-public import Strata.DL.Lambda.LExprWF
 public import Strata.DL.Imperative.StmtSemantics
 public import Strata.DL.Imperative.CFGSemantics
 public import Strata.Languages.Core.CoreGen
 public import Strata.Languages.Core.Procedure
+public import Strata.Languages.Core.Factory
+import Std.Tactic.BVDecide.Normalize.Prop
 
 ---------------------------------------------------------------------
 

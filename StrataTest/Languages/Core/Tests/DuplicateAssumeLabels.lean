@@ -3,11 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
+meta import Strata.Languages.Core
+meta import Strata.Transform.CallElim
+import StrataDDM.Integration.Lean.HashCommands
 
-import Strata.Languages.Core.Verifier
-import Strata.Transform.CallElim
-
+meta section
+open StrataDDM (Program)
 
 ---------------------------------------------------------------------
 namespace Strata
@@ -64,6 +67,10 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify duplicateAssumes (options := .default)
+#eval Core.verify duplicateAssumes (options := .default)
 
 ---------------------------------------------------------------------
+
+end Strata
+
+end

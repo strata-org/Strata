@@ -3,9 +3,11 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Lambda.LExprWF
+meta import Strata.DL.Lambda.LExprWF
 
+meta section
 namespace Lambda.LExpr.WFTests
 
 open Lambda
@@ -103,3 +105,4 @@ def qa (e : MonoExpr) : MonoExpr := .quant () .all "" .none (bv 0) e
 #guard substFvarsLifting (fv "x") [] == fv "x"
 
 end Lambda.LExpr.WFTests
+end

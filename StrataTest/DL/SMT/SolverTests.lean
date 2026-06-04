@@ -3,8 +3,11 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.SMT.Solver
+meta import Strata.DL.SMT.Solver
+
+meta section
 
 /-! ## Tests for Solver.termToSMTString / Solver.typeToSMTString error handling
 
@@ -50,3 +53,5 @@ info: typeToSMTString correctly threw: Solver.typeToSMTString failed: don't know
     IO.println "ERROR: typeToSMTString did not throw"
   catch e =>
     IO.println s!"typeToSMTString correctly threw: {e}"
+
+end
