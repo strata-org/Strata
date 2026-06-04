@@ -584,15 +584,33 @@ declared output-type list, written `T_o-bar` in the rule statements.
 That list is bound on entry to a procedure body (by
 `resolveProcedure` / `resolveInstanceProcedure`, stored on
 `ResolveState.answerType`) and consulted only by `Check.return`;
-every other rule is independent of it. Statement-typed forms
-(`Var-Declare`, `Assert`, `Assume`, `While`, `Exit`, `Return`)
-check at any `A`: their conclusions are polymorphic in `A` because
-they contribute nothing to the surrounding value flow. `Assign`
-synthesizes its target tuple type but its check rule skips the
-\[⇐\] Sub boundary check when expected is `TVoid`, so it also
-behaves statement-shaped in discard position. `Block` routes the
-surrounding expected type to the last statement, not to non-last
-statements.
+every other rule is independent of it.
+
+Several constructs are *statements*: their job is to have an effect,
+not to produce a value. Their check rules accept whatever type the
+surrounding context expects — the rule is written with the expected
+type `A` left as a free variable (we call this **check at any `A`**),
+which just means the rule does not look at `A` at all. There are two
+reasons a construct ignores `A`:
+
+- It is a **control-flow terminator** (`Exit`, `Return`): it jumps
+  somewhere else and never hands a value back, so whatever the
+  context wanted, the jump satisfies it vacuously. `if c then 5 else
+  return` is fine in an `Int` context because the `else` branch never
+  produces anything at all.
+- It runs and then **falls through without a value** (`Assert`,
+  `Assume`, `While`, `Var-Declare`). These conceptually have the unit
+  type `TVoid`; accepting any `A` is a slight over-acceptance that is
+  harmless in practice because such statements only ever appear in
+  non-last (discard) position, which is checked at `TVoid` anyway.
+
+`Assign` is the one statement that *does* produce a value: it
+synthesizes the type of its right-hand side (so `x := e` can be used
+where that type is expected), and its check rule skips the \[⇐\] Sub
+boundary check only when the expected type is `TVoid` — i.e. when the
+assignment is used purely for effect. `Block` routes the surrounding
+expected type to its last statement (the block's value), not to the
+non-last statements (which are effects, checked at `TVoid`).
 
 Each typing rule is implemented as its own helper inside the mutual
 block below. Helpers are grouped by section to mirror the *Typing
@@ -860,9 +878,8 @@ def Synth.varField (exprMd : StmtExprMd)
     `⊣ Γ, x : T_x` records that the surrounding scope is extended with
     the new binding for the remainder of the enclosing block. The
     declaration itself does no work other than registering `x : T_x`,
-    so its conclusion is polymorphic in `A` — declarations are
-    statement-shaped and never deliver a value to the surrounding
-    context. -/
+    and yields no value, so its rule accepts whatever type `A` the
+    context expects (the rule ignores `A`). -/
 def Check.varDeclare (param : Parameter) (source : Option FileRange) :
     ResolveM StmtExprMd := do
   let ty' ← resolveHighType param.type
@@ -883,9 +900,9 @@ def Check.varDeclare (param : Parameter) (source : Option FileRange) :
     `TBool`. The body's *value type* is discarded — control either
     re-enters the loop or falls through, so the body is checked at
     `Unknown` (the gradual wildcard) and any value the body's tail
-    might produce is ignored. The loop itself contributes no value
-    to its surrounding context, so its conclusion is polymorphic in
-    `A`.
+    might produce is ignored. A loop is a statement: it yields no
+    value, so its rule accepts whatever type `A` the context expects
+    (the rule ignores `A`).
 
     The optional `decreases` clause is synthesized and required to
     have a numeric type (`TInt`, `TReal`, `TFloat64`, or `Unknown` as
@@ -926,11 +943,13 @@ def Check.while (exprMd : StmtExprMd)
     ───────────────────
     Γ ⊢ Exit l ⇐ A
     ```
-    `exit` is a control-flow terminator: it transfers control out of
-    the enclosing labeled block and does not deliver a value to the
-    surrounding context. Anything after `exit l` in the same block is
-    dead code, flagged by `Resolution.Check.block`. The construct
-    checks at any `A`.
+    `exit` is a control-flow terminator — an unconditional jump out of
+    the enclosing labeled block. Because it never falls through, it
+    never delivers a value, so the rule accepts whatever type `A` the
+    context expects (the rule ignores `A`): an `exit` slots into any
+    position, even one expecting a value, since control leaves before
+    any value would be needed. Anything after `exit l` in the same
+    block is dead code, flagged by `Resolution.Check.block`.
 
     The premise `l ∈ Γ_lbl` requires the target label to name an
     enclosing labeled block; labels live in their own namespace
@@ -977,11 +996,13 @@ def Check.exit (target : String) (source : Option FileRange) :
     Γ ⊢ Return (some e) ↝ "multi-output procedure cannot use 'return e'; assign to named outputs instead"
     ```
     `return` is the *only* rule whose premises depend on the enclosing
-    procedure's declared outputs. It is also a control-flow terminator:
-    it transfers control out of the enclosing procedure and does not
-    deliver a value to the surrounding block, so the conclusion is
-    polymorphic in `A` (anything after `return` in the same block is
-    dead code, flagged by `Resolution.Check.block`).
+    procedure's declared outputs. Like `Exit`, it is a control-flow
+    terminator: it transfers control out of the enclosing procedure and
+    never falls through to the surrounding block, so the rule accepts
+    whatever type `A` the context expects (the rule ignores `A`). The
+    returned value, if any, is checked against the procedure's declared
+    output rather than against `A`. Anything after `return` in the same
+    block is dead code, flagged by `Resolution.Check.block`.
 
     When `answerType = none` we are not inside any procedure body (e.g.
     resolving a constant initializer), so all `Return` checks are
@@ -1065,6 +1086,40 @@ def Check.return (exprMd : StmtExprMd)
 def Synth.emptyBlock (source : Option FileRange) : HighTypeMd :=
   { val := .TVoid, source := source }
 
+/-- (Discard) Check a statement in *effect position*, written `Γ ⊢ s ⋄`.
+
+    Laurel has no syntactic statement/expression split — everything is a
+    `StmtExpr` — so "what may appear where its value is discarded" is
+    defined by this rule rather than by the grammar. A statement `s` is
+    admitted in effect position iff one of:
+
+    * **`Γ ⊢ s ⇐ TVoid`** — `s` checks against `TVoid`. Every
+      statement-shaped form lands here: `Var-Declare`, `Assign`, `Assert`,
+      `Assume`, `While`, the terminators `Exit`/`Return` (whose check
+      rules are polymorphic in the expected type), an `IfThenElse` with
+      void branches, and a nested void `Block`. A stranded *value* — a
+      literal `5`, a variable load `x`, a comparison `a < b`, a `new`, a
+      value-producing `IfThenElse` — fails this check (its type is not
+      consistent with `TVoid`) and is reported as dead code.
+
+    * **Discard-Call** — `s` is a call (`StaticCall`/`InstanceCall`). The
+      call is synthesized and its result dropped, so the `list.add(x);`
+      idiom type-checks even when the callee returns a value. A call is
+      the *only* value-producing form admitted in effect position: its
+      effects are the point and its result is incidental.
+
+    This is the single definition of "what counts as a statement". It is
+    used by `Check.block` for every non-last statement, and for the last
+    statement when the block itself sits in statement position
+    (`expected = TVoid`). -/
+def Check.statement (s : StmtExprMd) : ResolveM StmtExprMd := do
+  match s.val with
+  | .StaticCall .. | .InstanceCall .. =>
+    let (s', _) ← Synth.resolveStmtExpr s; pure s'
+  | _ => Check.resolveStmtExpr s { val := .TVoid, source := s.source }
+  termination_by (s, 4)
+  decreasing_by all_goals (apply Prod.Lex.right; decide)
+
 /-- (Block) Check-mode typing rule for a non-empty block.
 
     A block's value is the value of its **last** statement; every
@@ -1073,12 +1128,12 @@ def Synth.emptyBlock (source : Option FileRange) : HighTypeMd :=
     recursion over that structure:
 
     * **non-last — `Γ ⊢ s ⇐ TVoid`.** A non-last statement is a pure
-      effect, so it is checked at `TVoid`. By \[⇐\] Sub this admits
-      every statement-shaped form (`Var-Declare`, `Assign`, `Assert`,
-      `Assume`, `While`, `Exit`, `Return`, `IfThenElse` — their
-      conclusions are polymorphic in the value type, so they trivially
-      check at `TVoid`) and rejects a stranded value expression like
-      `5;`, whose `TInt` is not consistent with `TVoid`. The one
+      effect, so it is checked at `TVoid`. This admits every statement
+      form (`Var-Declare`, `Assign`, `Assert`, `Assume`, `While`,
+      `Exit`, `Return`, `IfThenElse`), since each either yields no
+      value or — for the terminators `Exit`/`Return` — accepts any
+      expected type, and rejects a stranded value expression like `5;`,
+      whose `TInt` is not consistent with `TVoid`. The one
       **Discard-Call** carve-out: a call (`StaticCall`/`InstanceCall`)
       is synthesized and its result dropped, so the standard
       `list.add(x);` discard idiom is allowed even when the callee
@@ -1109,22 +1164,18 @@ def Check.block (exprMd : StmtExprMd)
     (stmts : List StmtExprMd) (label : Option String)
     (expected : HighTypeMd) (source : Option FileRange)
     (h : exprMd.val = .Block stmts label) : ResolveM StmtExprMd := do
-  let voidTy : HighTypeMd := { val := .TVoid, source := source }
-  -- A non-last statement is an effect: check it at `TVoid`, *except* a
-  -- call, whose result we synthesize and drop (the `list.add(x);` idiom).
-  let checkNonLast (s : StmtExprMd) (_h_mem : s ∈ stmts) : ResolveM StmtExprMd := do
-    match s.val with
-    | .StaticCall .. | .InstanceCall .. =>
-      let (s', _) ← Synth.resolveStmtExpr s; pure s'
-    | _ => Check.resolveStmtExpr s voidTy
-  -- The last statement carries the block's value: push `expected` in
-  -- (so check-only forms are reachable), with the Discard-Call carve-out
-  -- when the block is itself in statement position (`expected = TVoid`).
+  -- A non-last statement is in effect position: admitted by `Check.statement`
+  -- (`Γ ⊢ s ⋄` — checks at `TVoid`, with the Discard-Call carve-out for calls).
+  let checkNonLast (s : StmtExprMd) (_h_mem : s ∈ stmts) : ResolveM StmtExprMd :=
+    Check.statement s
+  -- The last statement carries the block's value: push `expected` in (so
+  -- check-only forms are reachable). When the block itself sits in statement
+  -- position (`expected = TVoid`), the last statement is also in effect
+  -- position and goes through `Check.statement` (same Discard-Call carve-out).
   let checkLast (s : StmtExprMd) (_h_mem : s ∈ stmts) : ResolveM StmtExprMd := do
-    match s.val, expected.val with
-    | .StaticCall .., .TVoid | .InstanceCall .., .TVoid =>
-      let (s', _) ← Synth.resolveStmtExpr s; pure s'
-    | _, _ => Check.resolveStmtExpr s expected
+    match expected.val with
+    | .TVoid => Check.statement s
+    | _ => Check.resolveStmtExpr s expected
   withScope <| withLabel label do
     let init' ← stmts.dropLast.attach.mapM fun ⟨s, hMem⟩ => do
       have h_mem : s ∈ stmts := List.dropLast_subset stmts hMem
@@ -1220,9 +1271,9 @@ def Check.ifThenElse (exprMd : StmtExprMd)
     ──────────────────────────────────
     Γ ⊢ Assert cond ⇐ A
     ```
-    `cond` is checked against `TBool`. The assertion form is
-    statement-typed and contributes nothing to the surrounding value
-    flow, so its conclusion is polymorphic in `A`. -/
+    `cond` is checked against `TBool`. `assert` is a statement: it
+    yields no value, so the rule accepts whatever type `A` the context
+    expects (the rule ignores `A`). -/
 def Check.assert (exprMd : StmtExprMd)
     (condExpr : StmtExprMd) (summary : Option String)
     (source : Option FileRange)
@@ -1244,9 +1295,9 @@ def Check.assert (exprMd : StmtExprMd)
     ──────────────────────────────────
     Γ ⊢ Assume cond ⇐ A
     ```
-    `cond` is checked against `TBool`. The assumption form is
-    statement-typed and contributes nothing to the surrounding value
-    flow, so its conclusion is polymorphic in `A`. -/
+    `cond` is checked against `TBool`. `assume` is a statement: it
+    yields no value, so the rule accepts whatever type `A` the context
+    expects (the rule ignores `A`). -/
 def Check.assume (exprMd : StmtExprMd)
     (cond : StmtExprMd) (source : Option FileRange)
     (h : exprMd.val = .Assume cond) :
@@ -2029,8 +2080,8 @@ def resolveBody (body : Body) (expected : HighTypeMd) : ResolveM Body := do
     the `A` in `Γ ⊢ body ⇐ A`. Functional procedures with a single
     output `T` expect `A = T`: the body's last statement is the result
     and must produce a `T`. Non-functional procedures expect
-    `A = Unknown`: their body is statement-typed and the last
-    statement (if any) is discarded — outputs are observed via
+    `A = Unknown`: their body is run as a statement and the last
+    statement's value (if any) is discarded — outputs are observed via
     `return e` (whose payload is matched against the procedure's
     declared outputs by `Resolution.Check.return`) or via named-output
     assignment.

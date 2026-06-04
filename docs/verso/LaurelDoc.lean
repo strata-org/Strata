@@ -322,16 +322,18 @@ ends, the surrounding $`\Gamma` is restored. The block also emits a
 `"dead code after '<terminator>'"` diagnostic when an `Exit` or
 `Return` is followed by additional statements in the same block.
 
-Statement-typed forms (`Var-Declare`, `Assign`, `Assert`, `Assume`,
-`While`, `Exit`, `Return`, `IfThenElse`) trivially satisfy
-$`\Gamma \vdash s \Leftarrow \mathsf{TVoid}` — their rule conclusions
-are polymorphic in `A`, so they check at *any* type, including
-$`\mathsf{TVoid}`. Bare expressions like `5;` fail via \[⇐\] Sub: the
-synthesized type is not consistent with $`\mathsf{TVoid}`. The two
-Discard-Call rules are what allow the standard `f(x);` idiom for a
-non-void-returning `f` — without them, $`s \Leftarrow \mathsf{TVoid}`
-would force every call to have a $`\mathsf{TVoid}`-compatible result
-type.
+Statement forms (`Var-Declare`, `Assign`, `Assert`, `Assume`,
+`While`, `Exit`, `Return`, `IfThenElse`) all check against
+$`\mathsf{TVoid}`. They fit there for one of two reasons: most yield
+no value (so the unit type $`\mathsf{TVoid}` is exactly right), and
+the terminators `Exit`/`Return` accept *any* expected type (their
+rules leave the value type free — see \[⇐\] Exit and the Return rules
+below — because control leaves before any value is needed). Bare
+expressions like `5;` fail via \[⇐\] Sub: the synthesized type is not
+consistent with $`\mathsf{TVoid}`. The two Discard-Call rules are what
+allow the standard `f(x);` idiom for a non-void-returning `f` —
+without them, $`s \Leftarrow \mathsf{TVoid}` would force every call to
+have a $`\mathsf{TVoid}`-compatible result type.
 
 Pushing $`T` into the last statement (rather than synthesizing the
 whole block and applying \[⇐\] Sub at the boundary) means a type
@@ -358,12 +360,15 @@ $`\mathsf{TVoid} <: \mathit{expected}`).
 
 $$`\frac{l \in \Gamma_{\mathrm{lbl}}}{\Gamma \vdash \mathsf{Exit}\;l \Leftarrow A} \quad \text{([⇐] Exit)}`
 
-`exit` is non-returning — it transfers control out of the enclosing
-labeled block, so it checks at *any* value type $`A` (no
-$`\mathsf{TVoid}` side condition). Labels live in their own namespace
-$`\Gamma_{\mathrm{lbl}}`, populated by the surrounding `Block` rule
-when its $`\mathit{label}` is `some l`. An $`\mathsf{Exit}\;l`
-targeting a label not in $`\Gamma_{\mathrm{lbl}}` is rejected.
+`exit` is an unconditional jump out of the enclosing labeled block.
+Because control leaves before any value is needed, the rule accepts
+*any* expected value type $`A` — it leaves $`A` free, with no
+$`\mathsf{TVoid}` side condition — so an `exit` slots into any
+position, even one expecting a value. Labels live in their own
+namespace $`\Gamma_{\mathrm{lbl}}`, populated by the surrounding
+`Block` rule when its $`\mathit{label}` is `some l`. An
+$`\mathsf{Exit}\;l` targeting a label not in $`\Gamma_{\mathrm{lbl}}`
+is rejected.
 
 {docstring Strata.Laurel.Resolution.Check.exit}
 
@@ -384,10 +389,13 @@ $$`\frac{\overline{T_o} = []}{\Gamma \vdash \mathsf{Return}\;(\mathsf{some}\;e) 
 $$`\frac{\overline{T_o} = [T_1; \ldots; T_n] \quad (n \ge 2)}{\Gamma \vdash \mathsf{Return}\;(\mathsf{some}\;e) \rightsquigarrow \text{error: “multi-output procedure cannot use 'return e'; assign to named outputs instead”}} \quad \text{([⇐] Return-Multi-Error)}`
 
 `return` is the only rule whose premises depend on the enclosing
-procedure's declared outputs. The conclusion's value type $`A` is
-unconstrained, since `return` never falls through — it is a
-control-flow terminator. The error arms fire when $`\overline{T_o}`'s
-arity does not match the syntactic shape of `return e`.
+procedure's declared outputs. The conclusion's value type $`A` is left
+free — the rule accepts any expected type — because `return` is a
+control-flow terminator: it never falls through, so it can stand in
+any position, even one expecting a value. The returned value (if any)
+is checked against the procedure's declared output, not against $`A`.
+The error arms fire when $`\overline{T_o}`'s arity does not match the
+syntactic shape of `return e`.
 
 Regardless of which arm fires, $`e` is always elaborated — it is
 checked against the declared output in the single-output case,
@@ -413,9 +421,9 @@ $$`\frac{\Gamma \vdash \mathit{cond} \Leftarrow \mathsf{TBool} \quad \Gamma \vda
 
 The body is checked at $`\mathsf{Unknown}`: control either re-enters
 the loop or falls through, so the body's value type is never observed
-by the surrounding context. The loop itself contributes nothing to
-the surrounding $`A`, so its conclusion is polymorphic in $`A` like
-every other statement-typed form.
+by the surrounding context. A loop is a statement and yields no value,
+so the rule accepts any expected type $`A` (it leaves $`A` free),
+exactly like the other statement forms.
 
 The optional $`\mathit{decreases}` clause is synthesized and required
 to have a numeric type via the same $`\mathsf{Numeric}` predicate
@@ -663,7 +671,7 @@ $$`\frac{\overline{T_o} = \mathit{proc}.\mathit{outputs}.\mathit{types} \quad A 
 The body's value type $`A` is computed by `procedureBodyType`: a
 single-output functional procedure expects $`A = T` (its body's last
 statement is the result), while every other procedure expects
-$`A = \mathsf{Unknown}` (its body is statement-typed and the last
+$`A = \mathsf{Unknown}` (its body is run as a statement and the last
 statement's value is discarded; outputs are observed via `return e`,
 matched against $`\overline{T_o}` by
 {name Strata.Laurel.Resolution.Check.return}`Check.return`, or via
