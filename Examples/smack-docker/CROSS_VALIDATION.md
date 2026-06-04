@@ -468,19 +468,11 @@ loses any knowledge of what the callee accomplished. The post-call
 cursor correctly — then become unprovable from first principles.
 
 This is sub-class **(S)** territory: missing ensures on user-defined
-helpers, not a defect in the program under test. Two fix levers exist:
-
-1. **`--synthesize-ensures` pass** (commit `390fadc37`): the existing
-   sound ensures-synthesis pass handles structured bodies. Extending
-   it to also walk CFG bodies (mirroring the CallElim CFG extension)
-   would automatically infer `ensures` for the linear-shaped parser
-   stubs, eliminating most of these failing VCs without any manual
-   annotation.
-
-2. **Hand-porting upstream ensures**: `core_json_contracts.h` already
-   defines postconditions for each parser. Porting these into the
-   implementations themselves (not just the harness) would make the
-   ensures available to CallElim and close the gap directly.
+helpers, not a defect in the program under test. Fix lever:
+**hand-porting upstream ensures**: `core_json_contracts.h` already
+defines postconditions for each parser. Porting these into the
+implementations themselves (not just the harness) would make the
+ensures available to CallElim and close the gap directly.
 
 ### One important nuance
 
@@ -564,9 +556,11 @@ showing on the portfolio: pipeline-side issues currently dominate
 the matrix. With ground-truth labels in hand, the absence of an
 actual `unsafe ∧ PASS` is the cleanest soundness statement to date.
 The remaining gap to a (P) finding (a real program defect surfaced
-by Strata that CBMC misses) is unchanged: ensures synthesis on
-CFG bodies is the lever, with `390fadc37` covering structured
-bodies as a starting point.
+by Strata that CBMC misses) is unchanged: hand-porting upstream
+`ensures` clauses onto user-defined helpers (e.g. coreJSON
+contracts) is the lever for the contract-only path; under
+`--call-policy bodyOrContract` body-eval already discharges most
+of these obligations.
 
 ## Reproducing
 

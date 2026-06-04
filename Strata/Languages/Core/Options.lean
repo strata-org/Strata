@@ -219,13 +219,6 @@ structure VerifyOptions where
       untouched — they skip remaining statements and accumulate at
       most linearly. -/
   pathCap : Option Nat := .none
-  -- Ensures synthesis
-  /-- When `true`, run the ensures-synthesis pre-pass before call elimination.
-      The pass synthesises `free ensures` clauses for pure linear procedures
-      (bodies with no branches, memory accesses, or user calls) so that
-      callers can discharge proof obligations at call sites.
-      Off by default to avoid breaking existing tests. -/
-  synthesizeEnsures : Bool := false
   /-- How `.call` commands are handled. See `CallPolicy`. -/
   callPolicy : CallPolicy := .Contract
   /-- Fuel budget passed to `Procedure.eval` for body-eval call handling.
@@ -256,7 +249,6 @@ def VerifyOptions.default : VerifyOptions := {
   skipSolver := false
   profile := false
   pathCap := .none
-  synthesizeEnsures := false
   callPolicy := .Contract
   inlineFuel := 100000
 }

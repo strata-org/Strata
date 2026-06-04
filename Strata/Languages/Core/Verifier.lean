@@ -23,7 +23,6 @@ import Strata.Transform.ANFEncoder
 import Strata.Languages.Core.ObligationExtraction
 public import Strata.Transform.IrrelevantAxioms
 import Strata.Util.Profile
-import Strata.Languages.Core.Transform.EnsuresSynthesis
 
 ---------------------------------------------------------------------
 
@@ -881,16 +880,6 @@ def transformPipelinePhases (procs : Option (List String) := none)
       let targets := ps ++ ps.map PrecondElim.wfProcName ++ ps.map TermCheck.termProcName
       [filterProceduresPipelinePhase targets (respectNoFilter := false)]
     | none => []
-  -- Optional ensures-synthesis pre-pass (opt-in via --synthesize-ensures).
-  -- Runs before callElim so that synthesised postconditions are available
-  -- when call-elimination rewrites call sites.
-  let ensuresSynthPhases : List PipelinePhase :=
-    if options.synthesizeEnsures then
-      [modelPreservingPipelinePhase "ensuresSynthesis" fun prog => do
-        let prog' := EnsuresSynthesis.synthesizeEnsures prog
-        return (true, prog')]
-    else
-      []
   -- callElimPipelinePhase rewrites .call → asserts(pre)/havocs/assumes(post). When
   -- the policy is Body or BodyOrContract, .call commands must survive into the
   -- evaluator so handleCall can dispatch per-call.
@@ -898,7 +887,7 @@ def transformPipelinePhases (procs : Option (List String) := none)
     if options.callPolicy = .Contract then [callElimPipelinePhase] else []
   -- precondElimPipelinePhase will immediately return if there is no Factory
   -- set up at CoreTransformState.
-  filterPhases ++ ensuresSynthPhases ++ callElimPhases ++ [termCheckPipelinePhase] ++ [precondElimPipelinePhase] ++ postFilterPhases ++ [loopElimPipelinePhase]
+  filterPhases ++ callElimPhases ++ [termCheckPipelinePhase] ++ [precondElimPipelinePhase] ++ postFilterPhases ++ [loopElimPipelinePhase]
 
 /-- The full pipeline phases for program-to-program transforms, including
     type checking, symbolic evaluation, and ANF encoding.

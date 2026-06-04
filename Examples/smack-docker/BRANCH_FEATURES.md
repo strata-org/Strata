@@ -337,57 +337,11 @@ arm is unreachable — i.e. the assertion holds.
 
 ## 4. Strata Core / Transform features
 
-Three commits that strengthen the Strata-side verifier path itself,
+Commits that strengthen the Strata-side verifier path itself,
 distinct from the CBMC backend (§2) and the BoogieToStrata translator
 (§3).
 
-### 4.1 Sound `ensures` synthesis pass (`390fadc37`)
-
-**What.** Adds a Strata-side analysis under the `--synthesize-ensures`
-flag (off by default) that infers `ensures` clauses for procedures
-whose bodies match a sound linear pattern. For each output-only
-parameter, the pass forward-substitutes through intermediate locals
-to a closed expression over input parameters and emits `free ensures
-(out == expr)`.
-
-**Soundness.** Three checks gate emission:
-
-1. `collectLinearCmds` rejects bodies with branches/loops.
-2. `buildSubstMap` rejects bodies with user-procedure calls or havoc
-   (`.set _ .nondet _`) that could break determinism mid-body.
-3. `onlyInputFvars` rejects synthesised expressions that mention any
-   variable not declared as a procedure input.
-
-Together these guarantee the synthesised ensures holds for any input
-satisfying the procedure's preconditions. The `Free` flag means
-callers benefit; the body itself isn't checked against the synthesised
-clause.
-
-**Concrete example.** `Examples/smack-docker/programs/simple_assert.c`:
-
-```c
-int add(int a, int b) { return a + b; }
-int main(void) {
-  int r = add(3, 4);
-  assert(r == 7);
-}
-```
-
-Without the flag: `deductive=PARTIAL` (1 pass, 1 fail; the call-elim
-pass havocs `r` because `add` has no `ensures`, and `r == 7` becomes
-unprovable).
-
-With `--synthesize-ensures`: the pass derives
-`ensures (_r == _add_i32(_i0, _i1))` for `add`. Call-elim substitutes
-through, and `r == 7` discharges. `deductive=PASS` (3 goals, all pass
-— including the synthesised ensures and the original assertion).
-
-**Files:** `Strata/Languages/Core/Transform/EnsuresSynthesis.lean`
-(new); `Strata/Languages/Core/Options.lean`,
-`Strata/Languages/Core/Verifier.lean`, `StrataMain.lean` (modified);
-`StrataTest/Languages/Core/Tests/EnsuresSynthesisTest.lean` (new).
-
-### 4.2 Apply CallElim to CFG-bodied procedures (`42ff8a4b8`)
+### 4.1 Apply CallElim to CFG-bodied procedures (`42ff8a4b8`)
 
 **Problem.** `runProgram` in `Strata/Transform/CoreTransform.lean`
 previously skipped CFG bodies with the comment `Skip CFG bodies;
@@ -432,7 +386,7 @@ any single fix in the project so far.
 
 **Files:** `Strata/Transform/CoreTransform.lean`.
 
-### 4.3 Body evaluation at call sites (`dd0c0d7cd`)
+### 4.2 Body evaluation at call sites (`dd0c0d7cd`)
 
 Adds a `--call-policy {contract|body|bodyOrContract}` option that
 lets the deductive evaluator analyse the callee's body at the call
@@ -497,7 +451,7 @@ shared helpers), `Strata/Languages/Core/ProcedureEval.lean`
 `StrataTest/Languages/Core/Tests/InlineCallBodyTests.lean` (regression
 tests).
 
-### 4.4 CFG `condGoto` deferred-obligation dedup (`277c468cb`)
+### 4.3 CFG `condGoto` deferred-obligation dedup (`277c468cb`)
 
 **Problem.** In `evalCFGStep`'s symbolic-`condGoto` arm, both
 `env_t` and `env_f` were constructed by record-update on the same
@@ -568,7 +522,7 @@ accidental inclusion of any divergent program now produces a
 clean TIMEOUT verdict at the per-program 120s budget rather than
 hanging the whole run.
 
-### 4.5 Iterative walker family for long flat-list programs (4 commits)
+### 4.4 Iterative walker family for long flat-list programs (4 commits)
 
 **Problem.** A `prog.decls : List Decl` of tens of thousands of
 elements (e.g. 100K trivial axioms — the canonical sce1 reproducer
@@ -621,8 +575,8 @@ was also non-tail-recursive on long decl lists. Additionally,
    without paying O(N²) on every iteration — the snapshot is only
    O(N) when a decl is actually rewritten, matching the per-mutation
    cost the original pre-`fab1575f8` code paid. Caught by `lake test
-   -- --exclude Languages.Python` post-cherry-pick; the four other
-   test failures observed (`EnsuresSynthesisTest`, `CFGParseTests`,
+   -- --exclude Languages.Python` post-cherry-pick; the other
+   test failures observed (`CFGParseTests`,
    `Examples.Loops`, `ProcedureEvalCFGTests:127,140`) are
    pre-existing API drifts confirmed on the parent commit
    `c46c75e41`, not regressions.
@@ -694,7 +648,7 @@ The remaining 3 (`skipEscape_harness` and the two SearchConst/Iterate
 ones) keep their original vacuous shape.
 
 Pre-port: vacuous PASS (no obligations). Post-port: real obligations
-land at the deductive verifier (after fix §4.2 above) — the contracts
+land at the deductive verifier (after fix §4.1 above) — the contracts
 are the source of the postcondition assertions whose VCs the matrix
 now reports.
 
@@ -855,14 +809,11 @@ New tests in `StrataTest/Backends/CBMC/GOTO/`:
 New tests in `StrataTest/Languages/Core/Tests/`:
 
 - `InlineCallBodyTests.lean` — six tests for the body-eval feature
-  (§4.3): structured callee under `.Body` (assertion reduces to
+  (§4.2): structured callee under `.Body` (assertion reduces to
   `true`), structured callee under `.Contract` (assertion deferred
   against havoc'd fresh fvar), CFG callee under each policy, looping
   CFG under `.Body` low-fuel (surfaces `OutOfFuel`), looping CFG
   under `.BodyOrContract` low-fuel (falls back to contract).
-- `EnsuresSynthesisTest.lean` — covers the `--synthesize-ensures`
-  pre-pass (§4.1): three soundness checks (linear-body shape,
-  postcondition implication, no user calls).
 
 `Tools/BoogieToStrata/IntegrationTests/BoogieToStrataIntegrationTests.cs`
 — `--smack` marker support: each `.bpl` test fixture may carry a
@@ -981,7 +932,7 @@ The branch is a substantial body of fix work. Most of it is upstream-able once t
 |---|---:|---:|
 | Pipeline programs (`Examples/smack-docker/programs/*.c`) | 0 | 94 |
 | Strata CBMC backend bugs fixed | 0 | 8 |
-| Strata Core / Transform fixes | 0 | 4 (sound ensures-synthesis pass, CFG-bodied CallElim, body-eval at call sites, CFG `condGoto` deferred-dedup) |
+| Strata Core / Transform fixes | 0 | 3 (CFG-bodied CallElim, body-eval at call sites, CFG `condGoto` deferred-dedup) |
 | BoogieToStrata SMACK-specific features | 0 | 4 (`--smack` flag, `assert_.<type>` requires, `__VERIFIER_assume` ensures, `__VERIFIER_assert` requires) |
 | Contract-ported coreJSON harnesses | 0 | 9 |
 | Cross-validation backends | 0 | 4 (deductive, bugFinding, Strata-CBMC, cbmc-native) |

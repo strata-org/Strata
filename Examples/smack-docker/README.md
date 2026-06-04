@@ -172,7 +172,7 @@ matches today's verifier behaviour):
   SV-COMP imports + `picohttpparser` which OOMs cbmc-native). Captured
   in `wt-test/pipeline-portfolio-v3.txt`. Run after fixes
   `7bff2d48e` (array-type), `23926094f` (nondet-symbol),
-  `42ff8a4b8` (CFG-CallElim), `390fadc37` (ensures-synthesis), and
+  `42ff8a4b8` (CFG-CallElim), and
   `b3e606bb6` (`__VERIFIER_assert` requires injection).
 - **sv-comp (`--split-procs`):** 29 SV-COMP programs. Captured in
   `wt-test/pipeline-svcomp.txt`.
@@ -663,12 +663,6 @@ CBMC backend (`Strata/Backends/CBMC/GOTO/`):
 
 Strata Core / Transform features:
 
-- **Sound `ensures` synthesis pass under `--synthesize-ensures`**.
-  Infers ensures clauses for procedures whose bodies are linear
-  (no branches, only deterministic assignments and safe
-  instrumentation calls). Soundness rests on three checks ensuring
-  every synthesised clause holds for any input satisfying the
-  preconditions. Off by default. Commit `390fadc37`.
 - **Apply CallElim to CFG-bodied procedures**. Previously
   `runProgram` skipped CFG bodies, so call sites inside any
   CFG-bodied procedure (most SMACK output) had no `requires`-VCs
@@ -687,9 +681,8 @@ Strata Core / Transform features:
   See `MULTIPATH_COMMAND_EVAL.md` for the proposed multi-branch
   follow-up.
 
-Regression coverage in `StrataTest/Backends/CBMC/GOTO/E2E_CoreToGOTO.lean`,
-`StrataTest/Languages/Core/Tests/EnsuresSynthesisTest.lean`, and
-`Tools/BoogieToStrata/IntegrationTests/BoogieToStrataIntegrationTests.cs`.
+Regression coverage in `StrataTest/Backends/CBMC/GOTO/E2E_CoreToGOTO.lean`
+and `Tools/BoogieToStrata/IntegrationTests/BoogieToStrataIntegrationTests.cs`.
 
 ## Known blockers
 
@@ -730,10 +723,9 @@ Regression coverage in `StrataTest/Backends/CBMC/GOTO/E2E_CoreToGOTO.lean`,
     callee body symbolically and discharges the post-call assertions
     directly. The 42 portfolio rows that were sub-class (a) PARTIALs
     under contract policy now PASS under bodyOrContract. The original
-    contract-policy fix levers (extend `--synthesize-ensures`
-    (`390fadc37`) to handle CFG bodies, or hand-port upstream
+    contract-policy fix lever (hand-port upstream
     `core_json_contracts.h` ensures onto the parser implementations)
-    remain valid for the contract-only path.
+    remains valid for the contract-only path.
     Triage detail in `wt-test/triage/contract-ported-parser-vcs.md`.
   - **(b) Solver returns `unknown` on bitwise-heavy formulas** —
     verdict `❓ unknown`. Sample: `aws_byte_buf_append`, all 7 VCs.

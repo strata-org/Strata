@@ -209,8 +209,6 @@ def verifyOptionsFlags : List Flag := [
   { name := "path-cap",
     help := "Maximum continuing paths between statements. 'none' (default) disables; N merges paths when count exceeds N.",
     takesArg := .arg "N|none" },
-  { name := "synthesize-ensures",
-    help := "Synthesise 'free ensures' clauses for pure linear procedures before call elimination (opt-in; off by default)." },
   { name := "call-policy",
     help := s!"Call-handling policy: {Core.CallPolicy.options}. Default: 'contract'.",
     takesArg := .arg "policy" },
@@ -289,7 +287,6 @@ def parseVerifyOptions (pflags : ParsedFlags)
     overflowChecks,
     vcDirectory,
     pathCap,
-    synthesizeEnsures := pflags.getBool "synthesize-ensures" || base.synthesizeEnsures,
     callPolicy,
     inlineFuel
   }
