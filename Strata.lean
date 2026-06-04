@@ -35,6 +35,7 @@ import Strata.Transform.CoreSpecification
 import Strata.Transform.DetToKleeneCorrect
 import Strata.Transform.ProcBodyVerifyCorrect
 import Strata.Transform.Specification
+import Strata.Transform.SpecificationProps
 
 /- Strata Languages — additional -/
 import Strata.Languages.B3
@@ -79,7 +80,6 @@ import Strata.Cli.VerifyOptions
 
 -- noimport:
 import Strata.DL.Imperative.CFGSemantics
-import Strata.DL.Imperative.SemanticsProps
 import Strata.DL.Lambda.Denote.Assumptions
 import Strata.DL.Lambda.Denote.CallOfLFuncDenote
 import Strata.DL.Lambda.Denote.LExprDenote
