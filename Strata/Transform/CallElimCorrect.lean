@@ -1321,7 +1321,7 @@ private theorem fresh_triple_σ_facts
     that extends σ' on the freshly-introduced temp variables.  The
     call case chains L1–L6 via `EvalCallElim_glue`; non-call cases
     are immediate. -/
-theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
+private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
     {π : String → Option Procedure}
     {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
     {δ : CoreEval}
@@ -3808,6 +3808,115 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
             rename_i e_err heq_err
             simp only [pure, StateT.pure, Prod.mk.injEq] at Helim
             exact absurd Helim.1 (by simp)
+
+/-- Exit-arm correctness of `callElimStmt` per source statement.
+
+    Non-call sources reuse the original `Heval` verbatim: `callElimStmt_non_call_eq`
+    gives `sts = [st]`, so we close with `σ'' = σ'`.  Call sources are vacuously
+    discharged: `step_cmd` only ever produces `.terminal`, never `.exiting`, so
+    `(.stmts [.cmd (.call …)] _) →* .exiting lbl _` is unreachable. -/
+private theorem callElimStatementCorrect_exit [LawfulBEq Expression.Expr]
+    {π : String → Option Procedure}
+    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
+    {δ : CoreEval}
+    {σ σ' : CoreStore}
+    {p : Program}
+    {γ γ' : CoreTransformState}
+    {st : Statement}
+    {sts : List Statement}
+    {lbl : String}
+    (Heval : Imperative.StepStmtStar Expression (EvalCommandContract π) (EvalPureFunc φ)
+      (.stmts [st] ⟨σ, δ, false⟩) (.exiting lbl ⟨σ', δ, false⟩))
+    (Helim : (Except.ok sts, γ') = (runWith st (callElimStmt · p) γ)) :
+    ∃ σ'',
+      Inits σ' σ'' ∧
+      Imperative.StepStmtStar Expression (EvalCommandContract π) (EvalPureFunc φ)
+        (.stmts sts ⟨σ, δ, false⟩) (.exiting lbl ⟨σ'', δ, false⟩) := by
+  have nc_close_exit : ∀ {b : Statement} (_ : st = b)
+      (_ : ∀ pn ar mt, b ≠ .cmd (CmdExt.call pn ar mt)),
+      ∃ σ'', Inits σ' σ'' ∧
+        Imperative.StepStmtStar Expression (EvalCommandContract π) (EvalPureFunc φ)
+          (.stmts sts ⟨σ, δ, false⟩) (.exiting lbl ⟨σ'', δ, false⟩) := by
+    intro b heq hne
+    refine ⟨σ', Inits.init InitVars.init_none, ?_⟩
+    have hsts := callElimStmt_non_call_eq hne (heq ▸ Helim)
+    rw [hsts]; rw [← heq]; exact Heval
+  cases hst : st with
+  | block lbl' b md => exact nc_close_exit hst (by intro _ _ _ h; cases h)
+  | ite cd tb eb md => exact nc_close_exit hst (by intro _ _ _ h; cases h)
+  | loop g m i b md => exact nc_close_exit hst (by intro _ _ _ h; cases h)
+  | exit lbl' md => exact nc_close_exit hst (by intro _ _ _ h; cases h)
+  | funcDecl f md => exact nc_close_exit hst (by intro _ _ _ h; cases h)
+  | typeDecl tc md => exact nc_close_exit hst (by intro _ _ _ h; cases h)
+  | cmd c =>
+      cases c with
+      | cmd c' => exact nc_close_exit hst (by intro _ _ _ h; cases h)
+      | call procName args md =>
+          -- Vacuous: a call statement reaches only `.terminal`.
+          subst hst
+          -- Peel `.stmts (s :: [])` → `.seq (.stmt s ρ) []` via step_stmts_cons.
+          match Heval with
+          | .step _ _ _ .step_stmts_cons hrest =>
+            -- Use seq_reaches_exiting to split.
+            match Imperative.seq_reaches_exiting Expression
+                (EvalCommandContract π) (EvalPureFunc φ) hrest with
+            | .inl hexit =>
+                -- Inner `.stmt (.cmd (.call …)) ρ →* .exiting lbl ρ` is
+                -- impossible: step_cmd targets only `.terminal`.
+                match hexit with
+                | .step _ _ _ (.step_cmd _) hrest' =>
+                    cases hrest' with
+                    | step _ _ _ h _ => exact absurd h (by intro h; cases h)
+            | .inr ⟨_, _, htail⟩ =>
+                -- Tail: `.stmts [] ρ₁ →* .exiting lbl ρ'`.  step_stmts_nil
+                -- yields `.terminal ρ₁`, which cannot step further to `.exiting`.
+                match htail with
+                | .step _ _ _ .step_stmts_nil hrest' =>
+                    cases hrest' with
+                    | step _ _ _ h _ => exact absurd h (by intro h; cases h)
+
+/-- Correctness of `callElimStmt` per source statement, in conjunctive
+    `Specification.Overapproximates`-style shape: terminal-arm and
+    exit-arm are quantified separately so that an exiting source trace
+    is mirrored by an exiting target trace.
+
+    The terminal arm reuses the call-elim chain via
+    `callElimStatementCorrect_terminal`.  The exit arm dispatches to
+    `callElimStatementCorrect_exit`. -/
+theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
+    {π : String → Option Procedure}
+    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
+    {δ : CoreEval}
+    {σ : CoreStore}
+    {p : Program}
+    {γ γ' : CoreTransformState}
+    {st : Statement}
+    {sts : List Statement}
+    (Hp : ∀ pname, π pname = Program.Procedure.find? p ⟨pname, ()⟩)
+    (Hwfc : WellFormedCoreEvalCong δ)
+    (Hwf : WF.WFStatementsProp p [st])
+    (Hgenrel : CoreGenStateRel σ γ)
+    (Hwfcallsite : WFCallSiteProp p π st)
+    (Helim : (Except.ok sts, γ') = (runWith st (callElimStmt · p) γ)) :
+    -- Terminal arm
+    (∀ {σ' : CoreStore},
+      Imperative.StepStmtStar Expression (EvalCommandContract π) (EvalPureFunc φ)
+        (.stmts [st] ⟨σ, δ, false⟩) (.terminal ⟨σ', δ, false⟩) →
+      ∃ σ'',
+        Inits σ' σ'' ∧
+        Imperative.StepStmtStar Expression (EvalCommandContract π) (EvalPureFunc φ)
+          (.stmts sts ⟨σ, δ, false⟩) (.terminal ⟨σ'', δ, false⟩))
+    ∧
+    -- Exit arm
+    (∀ {lbl : String} {σ' : CoreStore},
+      Imperative.StepStmtStar Expression (EvalCommandContract π) (EvalPureFunc φ)
+        (.stmts [st] ⟨σ, δ, false⟩) (.exiting lbl ⟨σ', δ, false⟩) →
+      ∃ σ'',
+        Inits σ' σ'' ∧
+        Imperative.StepStmtStar Expression (EvalCommandContract π) (EvalPureFunc φ)
+          (.stmts sts ⟨σ, δ, false⟩) (.exiting lbl ⟨σ'', δ, false⟩)) :=
+  ⟨fun Heval => callElimStatementCorrect_terminal Hp Heval Hwfc Hwf Hgenrel Hwfcallsite Helim,
+   fun Heval => callElimStatementCorrect_exit Heval Helim⟩
 
 end -- public section
 
