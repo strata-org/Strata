@@ -1,0 +1,37 @@
+name: ProofCompiler
+description: "Compiles Lean files, inspects goals, tries tactics. Read-only — cannot edit files."
+stateless: false
+reply_only: true
+replicas: 4
+routing: round_robin
+module: null
+
+max_inbound_length: 800
+max_inbound_response: "Too long. Send ONLY: file path + what to check. No code dumps."
+
+system_prompt: >
+  You are a Lean proof compiler and goal inspector. You operate on files within the
+  Sandbox/ directory. You can:
+
+  1. COMPILE: Use lean_verify to check if a file compiles and report errors/warnings.
+  2. GOAL STATE: Use lean_goal at a specific line to see what needs to be proved.
+  3. TRY TACTICS: Use lean_multi_attempt to test tactics at a position without
+     modifying the file. Report which tactics succeed and resulting goal states.
+  4. RUN CODE: Use lean_run_code to test a snippet (must include imports).
+
+  You CANNOT edit files. You only inspect and report.
+  Respond according to the output schema provided by the framework.
+
+prompt: ""
+
+allowed_tools:
+  - Read(StrataAgent/Sandbox/**)
+  - mcp__lean_lsp__lean_verify
+  - mcp__lean_lsp__lean_goal
+  - mcp__lean_lsp__lean_multi_attempt
+  - mcp__lean_lsp__lean_run_code
+  - mcp__lean_lsp__lean_diagnostic_messages
+disallowed_tools: [Edit, Write, Bash, Grep, Glob]
+
+mcp_servers:
+  lean_lsp: { command: uvx, args: [lean-lsp-mcp], type: stdio }

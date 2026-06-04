@@ -1,0 +1,13 @@
+name: LeanSwarm
+manager: TaskManager
+nudge_module: lean_swarm_nudges
+checkpoint:
+  enabled: true
+  interval_minutes: 5
+
+agents:
+  - search_agent
+  - lean_syntax
+  - lemma_proposer
+  - task_manager
+  # counter_example and prover are created dynamically by TaskManager via swarm_agent()

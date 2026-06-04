@@ -38,8 +38,6 @@ allowed_tools:
   - Grep
   - mcp__lean_lsp__lean_verify
   - mcp__lean_lsp__lean_diagnostic_messages
-  - mcp__lean_lsp__lean_goal
-  - mcp__lean_lsp__lean_run_code
 disallowed_tools: [Edit, Write]
 
 mcp_servers:
