@@ -7,9 +7,7 @@ module
 
 public import Strata.Languages.Laurel.LaurelAST
 import Strata.Util.Tactics
-import Strata.Languages.Python.PythonLaurelCorePrelude
 public import Strata.Languages.Laurel.SemanticModel
-import Strata.Languages.Laurel.LaurelTypes
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 
 /-!
@@ -767,7 +765,12 @@ and if so return a diagnostic error using the given `source` range.
 -/
 private def checkDiamondFieldAccess (model : SemanticModel) (target : StmtExprMd)
     (fieldName : Identifier) (source : Option FileRange) : List DiagnosticModel :=
-  match (computeExprType model target).val with
+  let targetType := match target.val with
+    | .Var (.Local name) => (model.get name).getType
+    | .Var (.Field _ fName) => (model.get fName).getType
+    | .New ref => ⟨ .UserDefined ref, target.source ⟩
+    | _ => ⟨ .Unknown, target.source ⟩
+  match targetType.val with
   | .UserDefined typeName =>
     if isDiamondInheritedField model typeName fieldName then
       match source with

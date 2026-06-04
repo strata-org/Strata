@@ -8,6 +8,7 @@ module
 public import Strata.Languages.Laurel.LaurelAST
 public import Strata.Languages.Laurel.LaurelPass
 import Strata.Languages.Laurel.MapStmtExpr
+import Strata.Languages.Laurel.HeapParameterization
 import Strata.Util.Tactics
 
 /-!

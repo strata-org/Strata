@@ -12,6 +12,9 @@ import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 import Strata.Languages.Laurel.HeapParameterizationConstants
 import Strata.Languages.Laurel.LaurelTypes
 import Strata.Util.Tactics
+import Strata.Languages.Laurel.TypeHierarchy
+import Strata.Languages.Laurel.ModifiesClauses
+import Strata.Languages.Laurel.LiftImperativeExpressions
 
 /-
 Heap Parameterization Pass

@@ -9,6 +9,7 @@ public import Strata.Util.Statistics
 public import Strata.Languages.Laurel.LaurelPass
 public import Strata.Languages.Laurel.Resolution
 import Strata.Languages.Laurel.LaurelTypes
+import Strata.Languages.Laurel.EliminateDeterministicHoles
 
 /-!
 # Hole Type Inference
