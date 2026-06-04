@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 
 LINT_DIR="${1:-Strata}"
 

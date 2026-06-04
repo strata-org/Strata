@@ -16,7 +16,5 @@ runs:
   steps:
     - name: Check for bare import Lean
       shell: bash
-      env:
-        LINT_DIR: ${{ inputs.directory }}
       run: |
-        ! (find "$LINT_DIR" -name "*.lean" -type f -print0 | xargs -0 grep -E -n '^import Lean$')
+        "${{ github.action_path }}/../../scripts/checkLeanImport.sh" "${{ inputs.directory }}"
