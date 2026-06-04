@@ -390,6 +390,21 @@ def StmtExpr.constrName : StmtExpr → String
 @[expose] abbrev StmtExprMd := AstNode StmtExpr
 @[expose] abbrev VariableMd := AstNode Variable
 
+/-- The label of the implicit block that wraps every procedure body.
+
+    `LaurelToCoreTranslator` lowers each procedure body to a single
+    `Core.Statement.block bodyLabel …`, and lowers an early `return`
+    (or, in the Python frontend, a Python `return`) to `Exit bodyLabel`,
+    so that jumping to the end of the body falls through past the block.
+    The resolution pass pre-registers this label in scope (via `withLabel`)
+    before walking a body, so those `Exit bodyLabel` jumps resolve even
+    though the label has no syntactic declaration site.
+
+    Shared here so the translator, the resolver, and frontends agree on the
+    exact string rather than each hard-coding it. The leading `$` keeps it
+    out of the user-name space (no source identifier can contain `$`). -/
+def bodyLabel : String := "$body"
+
 theorem AstNode.sizeOf_val_lt {t : Type} [SizeOf t] (e : AstNode t) : sizeOf e.val < sizeOf e := by
   cases e; grind
 

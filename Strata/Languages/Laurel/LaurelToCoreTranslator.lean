@@ -485,11 +485,11 @@ def translateStmt (stmt : StmtExprMd)
   | .Return valueOpt =>
       match valueOpt with
       | none =>
-          return [.exit "$body" md]
+          return [.exit bodyLabel md]
       | some _ =>
           let d := md.toDiagnostic "Return statement with value should have been eliminated by EliminateValueReturns pass" DiagnosticType.StrataBug
           emitCoreDiagnostic d
-          return [.exit "$body" md]
+          return [.exit bodyLabel md]
   | .While cond invariants decreasesExpr body =>
       let condExpr ← translateExpr cond
       let invExprs ← invariants.mapM (fun i => do return ("", ← translateExpr i))
@@ -570,7 +570,7 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
       pure (postconditions.map fun (label, check) =>
         Core.Statement.assume label check.expr mdWithUnknownLoc)
   -- Wrap body in a labeled block so early returns (exit) work correctly.
-  let body : List Core.Statement := [.block "$body" bodyStmts mdWithUnknownLoc]
+  let body : List Core.Statement := [.block bodyLabel bodyStmts mdWithUnknownLoc]
   let spec : Core.Procedure.Spec := { preconditions, postconditions }
   return { header, spec, body }
 

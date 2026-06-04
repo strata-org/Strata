@@ -2158,8 +2158,8 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
     let savedAnswer := (← get).answerType
     modify fun s => { s with answerType := some (outputs'.map (·.type)) }
     let bodyExpected := procedureBodyType proc.isFunctional outputs' proc.name.source
-    -- See `resolveProcedure` for the rationale on `$body`.
-    let body' ← withLabel (some "$body") <| resolveBody proc.body bodyExpected
+    -- See `resolveProcedure` for the rationale on `bodyLabel`.
+    let body' ← withLabel (some bodyLabel) <| resolveBody proc.body bodyExpected
     modify fun s => { s with answerType := savedAnswer }
     if !proc.isFunctional && body'.isTransparent then
       let diag := diagnosticFromSource proc.name.source
