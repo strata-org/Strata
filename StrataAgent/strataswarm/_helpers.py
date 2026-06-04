@@ -69,16 +69,21 @@ class swarm_agent:
     Usage:
         async with swarm_agent("counter_example", swarm=agent.swarm, cwd=cwd) as cea:
             result = await cea.run(inp=..., result_type=Verdict)
-        # cea is now removed from swarm — no dangling references
+
+        # With workspace scoping (agent can only access files in scope_dir):
+        async with swarm_agent("proof_writer", swarm=agent.swarm, cwd=cwd,
+                               workspace="StrataAgent/Sandbox/lemma_1") as writer:
+            result = await writer.run(inp=..., result_type=...)
 
     The agent gets a unique name (suffixed with timestamp) to avoid collisions.
     """
 
-    def __init__(self, name: str, swarm: Any, cwd: str | None = None, **overrides):
+    def __init__(self, name: str, swarm: Any, cwd: str | None = None, workspace: str | None = None, **overrides):
         import time as _time
         self._swarm = swarm
         self._cwd = cwd
         self._spec_name = name
+        self._workspace = workspace
         self._overrides = overrides
         self._unique_name: str | None = None
         self._agent: SwarmAgent | None = None
@@ -92,6 +97,39 @@ class swarm_agent:
                 f"Available: {[f.stem for f in AGENT_SPECS_DIR.glob('*.yaml')]}"
             )
         spec = _load_spec(path, self._overrides)
+
+        # Workspace scoping: override spec's workspace and tool permissions
+        if self._workspace:
+            from ._types import Workspace
+            from ._tools import ToolSet
+
+            scope = f"{self._workspace}/**"
+            spec.workspace = Workspace(read=[scope], write=[scope], edit=[scope])
+
+            # Tools that must be scoped (generic versions stripped, scoped versions added)
+            _MUST_SCOPE = ("Read", "Write", "Edit", "Bash", "Grep", "Glob")
+
+            # Rebuild tools: only scoped access + non-filesystem tools from spec
+            tools = ToolSet()
+            tools.allow(f"Read({scope})")
+            tools.allow(f"Write({scope})")
+            tools.allow(f"Edit({scope})")
+            if spec.tools:
+                for t in spec.tools.allowed:
+                    if t.name in _MUST_SCOPE:
+                        # Drop generic and unscoped — only keep if already scoped to our workspace
+                        if t.pattern and t.pattern.startswith(self._workspace):
+                            tools.allow(t.to_claude_format())
+                        # Otherwise skip (replaced by our scoped versions above)
+                    else:
+                        tools.allow(t.to_claude_format())
+                for t in spec.tools.disallowed:
+                    tools.disallow(t.to_claude_format())
+            spec.tools = tools
+
+            # Create workspace directory
+            from pathlib import Path as _P
+            _P(self._cwd or ".").joinpath(self._workspace).mkdir(parents=True, exist_ok=True)
 
         # Unique name
         self._unique_name = f"{spec.name}_{int(_time.time()) % 100000}"

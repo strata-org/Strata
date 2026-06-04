@@ -17,20 +17,20 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, TypeVar
 
+from .._helpers import swarm_agent
+
 T = TypeVar("T")
 
 MAX_RETRIES = 3
 MAX_PARALLEL_WRITERS = 3
+MAX_PARALLEL_VALIDATORS = 5
 WRITER_MAX_TURNS = 50
 DECOMPOSER_MAX_TURNS = 25
-ASSEMBLER_MAX_TURNS = 20
-ROUTER_MAX_TURNS = 3
 
 
 # ─── Enums ────────────────────────────────────────────────────────────────────
 
 class ProverStage(str, Enum):
-    IDLE = "idle"
     DECOMPOSE = "decompose"
     DIRECT_ATTEMPT = "direct_attempt"
     PROVE_LEMMAS = "prove_lemmas"
@@ -43,7 +43,6 @@ class ProverStage(str, Enum):
 
 
 class ProverTransition(str, Enum):
-    START = "start"
     DECOMPOSED = "decomposed"
     SIMPLE_ENOUGH = "simple_enough"
     PROOF_FOUND = "proof_found"
@@ -64,8 +63,6 @@ class ProverTransition(str, Enum):
 # ─── Transitions ──────────────────────────────────────────────────────────────
 
 TRANSITIONS: dict[tuple[ProverStage, ProverTransition], ProverStage] = {
-    (ProverStage.IDLE, ProverTransition.START):              ProverStage.DECOMPOSE,
-
     (ProverStage.DECOMPOSE, ProverTransition.DECOMPOSED):   ProverStage.PROVE_LEMMAS,
     (ProverStage.DECOMPOSE, ProverTransition.SIMPLE_ENOUGH): ProverStage.DIRECT_ATTEMPT,
 
@@ -96,21 +93,15 @@ TRANSITIONS: dict[tuple[ProverStage, ProverTransition], ProverStage] = {
 
 @dataclass
 class ProverState:
-    stage: ProverStage = ProverStage.IDLE
+    stage: ProverStage = ProverStage.DECOMPOSE
     theorem_file: str = ""
     theorem_name: str = ""
     workspace: str = ""
     axiom_files: list[str] = field(default_factory=list)
     proved_files: list[str] = field(default_factory=list)
     attempt: int = 0
-    attempt_logs: list[str] = field(default_factory=list)
     parent_agent: str = "TaskManager"
 
-
-@dataclass
-class ProverRouteDecision:
-    transition: ProverTransition = ProverTransition.STUCK
-    message_to_parent: str | None = None
 
 
 # ─── Main loop ────────────────────────────────────────────────────────────────
@@ -124,38 +115,61 @@ async def run_workflow(agent, inp: Any, result_type: type[T] | None = None):
     if isinstance(inp, dict):
         theorem_file = inp.get("theorem_file", "")
         theorem_name = inp.get("theorem_name", "")
+        workspace_rel = inp.get("workspace", "")
         parent_agent = inp.get("parent_agent", "TaskManager")
     elif isinstance(inp, str):
         theorem_file = inp
         theorem_name = ""
+        workspace_rel = ""
         parent_agent = "TaskManager"
     else:
         theorem_file = str(inp)
         theorem_name = ""
+        workspace_rel = ""
         parent_agent = "TaskManager"
 
     cwd = Path(agent._cwd) if agent._cwd else Path.cwd()
-    base_name = Path(theorem_file).stem
-    workspace = cwd / "StrataAgent" / "Sandbox" / base_name
-    workspace.mkdir(parents=True, exist_ok=True)
 
-    # Copy source file to workspace
-    src = cwd / theorem_file
-    dst = workspace / "Stub.lean"
-    if src.exists() and not dst.exists():
-        shutil.copy2(src, dst)
+    if not workspace_rel:
+        await agent._emit("message", "[Prover] ERROR: No workspace provided by parent.")
+        from .._types import AgentResult, AgentStatus as _AS
+        result = AgentResult(name=agent.spec.name, status=_AS.FAILED)
+        result.output = {"stage": "failed", "error": "no_workspace"}
+        return result
+
+    # All paths stored RELATIVE to cwd — tool scoping needs relative paths
+    workspace_abs = cwd / workspace_rel
+    workspace_abs.mkdir(parents=True, exist_ok=True)
+
+    # Stub.lean MUST exist — placed by TM (top-level) or parent orchestrator (recursive)
+    stub_file = workspace_abs / "Stub.lean"
+    if not stub_file.exists():
+        from .._types import AgentResult, AgentStatus as _AS
+        await agent._emit("message", f"[Prover] ERROR: No Stub.lean found in {workspace_rel}. Cannot proceed.")
+        await _notify_parent(agent, ProverState(parent_agent=parent_agent),
+                             f"Failed: Stub.lean not found in workspace {workspace_rel}")
+        result = AgentResult(name=agent.spec.name, status=_AS.FAILED)
+        result.output = {"stage": "failed", "error": "stub_not_found"}
+        return result
+
+    # Keep original copy for self-validation
+    originals_dir = workspace_abs / "_originals"
+    originals_dir.mkdir(exist_ok=True)
+    own_original = originals_dir / "Stub.lean"
+    if not own_original.exists():
+        shutil.copy2(stub_file, own_original)
 
     state = ProverState(
         stage=ProverStage.DECOMPOSE,
         theorem_file=theorem_file,
         theorem_name=theorem_name,
-        workspace=str(workspace),
+        workspace=workspace_rel,  # always relative to cwd
         parent_agent=parent_agent,
     )
     agent._workflow_state = state
 
     await agent._emit("message", f"[Prover] Starting: {theorem_name} in {theorem_file}")
-    await agent._emit("message", f"[Prover] Workspace: {workspace}")
+    await agent._emit("message", f"[Prover] Workspace: {workspace_rel}")
 
     while not agent.cancellation.is_cancelled:
         if state.stage in (ProverStage.DONE, ProverStage.FAILED):
@@ -177,7 +191,7 @@ async def run_workflow(agent, inp: Any, result_type: type[T] | None = None):
                 "from": state.stage.value, "transition": transition.value, "to": next_stage.value,
             })
             await agent._emit("message",
-                f"[Prover] {state.stage.value} →{transition.value}→ {next_stage.value}")
+                f"[Prover] {state.stage.value} → {transition.value} → {next_stage.value}")
 
             state.stage = next_stage
             agent._workflow_state = state
@@ -193,7 +207,6 @@ async def run_workflow(agent, inp: Any, result_type: type[T] | None = None):
 
     # Cleanup internal agents
     await _cleanup_internal(agent, "decomposer")
-    await _cleanup_internal(agent, "assembler")
 
     result = AgentResult(name=agent.spec.name, status=AgentStatus.COMPLETED)
     result.output = {"stage": state.stage.value, "theorem_file": theorem_file, "attempts": state.attempt}
@@ -203,40 +216,57 @@ async def run_workflow(agent, inp: Any, result_type: type[T] | None = None):
 # ─── Stage handlers ───────────────────────────────────────────────────────────
 
 async def _stage_decompose(state: ProverState, agent) -> ProverTransition:
-    """Decomposer agent analyzes theorem and proposes strategy."""
+    """Decomposer agent analyzes theorem and proposes strategy.
+    Returns structured axioms — module creates files deterministically."""
     decomposer = await _get_internal(agent, "decomposer")
 
-    attempt_context = ""
-    if state.attempt_logs:
-        attempt_context = f"\nPrevious failed attempts:\n" + "\n".join(state.attempt_logs[-2:])
+    msg = f"Decompose theorem: {state.theorem_name}\nFile: {state.workspace}/Stub.lean\n"
+    if state.attempt > 0:
+        msg += f"Attempt {state.attempt + 1}/{MAX_RETRIES}. Previous decomposition didn't work — try a different approach.\n"
+    msg += "Read the file, use lean_hover_info on the sorry, and decide strategy. Use lean_run_code to verify your formalizations compile."
 
     await agent.channel_bus.send_to(
         f"{decomposer.spec.name}:messages",
         sender="system",
-        payload=(
-            f"Decompose theorem: {state.theorem_name}\n"
-            f"File: {state.workspace}/Stub.lean\n"
-            f"Attempt: {state.attempt + 1}/{MAX_RETRIES}\n"
-            f"{attempt_context}\n"
-            f"Read the file, use lean_hover_info on the sorry, and decide strategy."
-        ),
+        payload=msg,
     )
+
+    @dataclass
+    class _Axiom:
+        name: str = ""
+        description: str = ""
+        formalization: str = ""  # full Lean code (imports + theorem statement with sorry)
+        depends_on: list[str] = field(default_factory=list)
 
     @dataclass
     class _DecomposeResult:
         strategy: str = "decompose"  # "direct" or "decompose"
-        axiom_files_created: list[str] = field(default_factory=list)
+        axioms: list[_Axiom] = field(default_factory=list)
+        proof_sketch: str = ""  # how axioms combine to prove the main theorem
         reasoning: str = ""
 
     result = await decomposer.run_ai(inp=None, result_type=_DecomposeResult, max_turns=DECOMPOSER_MAX_TURNS)
+    decompose_output : _DecomposeResult | None = result.output
 
-    if result.output:
-        if result.output.strategy == "direct":
-            await agent._emit("message", "[Prover] Strategy: direct attempt")
+    if decompose_output:
+        if decompose_output.strategy == "direct":
+            await agent._emit("message", f"[Prover] Strategy: direct attempt. Sketch: {decompose_output.proof_sketch}")
             return ProverTransition.SIMPLE_ENOUGH
 
-        state.axiom_files = result.output.axiom_files_created or []
-        await agent._emit("message", f"[Prover] Decomposed: {len(state.axiom_files)} axioms")
+        # Create axiom files deterministically from structured output
+        cwd = _resolve(agent, "")
+        state.axiom_files = []
+
+        for i, axiom in enumerate(decompose_output.axioms or []):
+            content = axiom.formalization
+            if not content:
+                desc_lines = "\n".join(f"-- {line}" for line in (axiom.description or "TODO").splitlines())
+                content = f"{desc_lines}\nsorry\n"
+            rel_path = _create_axiom_file(cwd, state.workspace, "axiom", i, axiom.name, content)
+            state.axiom_files.append(rel_path)
+
+        await agent._emit("message",
+            f"[Prover] Decomposed: {len(state.axiom_files)} axioms. Sketch: {decompose_output.proof_sketch[:200]}")
 
         if state.axiom_files:
             return ProverTransition.DECOMPOSED
@@ -246,7 +276,7 @@ async def _stage_decompose(state: ProverState, agent) -> ProverTransition:
 
 async def _stage_direct_attempt(state: ProverState, agent) -> ProverTransition:
     """Single proof_writer on the stub file."""
-    target = str(Path(state.workspace) / "Stub.lean")
+    target = f"{state.workspace}/Stub.lean"
 
     @dataclass
     class _ProofResult:
@@ -254,7 +284,7 @@ async def _stage_direct_attempt(state: ProverState, agent) -> ProverTransition:
         needs_decomposition: bool = False
         blocking_reason: str = ""
 
-    async with _scoped_agent("proof_writer", agent, state.workspace) as writer:
+    async with swarm_agent("proof_writer", swarm=agent.swarm, cwd=agent._cwd, workspace=state.workspace) as writer:
         result = await writer.run(
             inp={"file": target, "theorem": state.theorem_name, "action": "Prove the sorry"},
             result_type=_ProofResult,
@@ -271,38 +301,59 @@ async def _stage_direct_attempt(state: ProverState, agent) -> ProverTransition:
 
 
 async def _stage_prove_lemmas(state: ProverState, agent) -> ProverTransition:
-    """Proof_writer on each axiom (parallel, capped)."""
-    await agent._emit("message", f"[Prover] Proving {len(state.axiom_files)} lemmas...")
+    """Spawn a child prover_orchestrator for each UNPROVED axiom (parallel, capped).
+    Accumulates into proved_files — doesn't re-prove already proved ones."""
+
+    # Only attempt unproved axioms
+    to_prove = [f for f in state.axiom_files if f not in state.proved_files]
+    if not to_prove:
+        return ProverTransition.ALL_PROVED
+
+    await agent._emit("message", f"[Prover] Proving {len(to_prove)} axioms ({len(state.proved_files)} already proved)...")
 
     semaphore = asyncio.Semaphore(MAX_PARALLEL_WRITERS)
-    proved = []
+    newly_proved = []
     failed = []
+
+    cwd = _resolve(agent, "")
 
     async def _prove_one(axiom_file: str):
         async with semaphore:
-            @dataclass
-            class _Result:
-                success: bool
-                blocking_reason: str = ""
+            axiom_path = Path(axiom_file)
+            child_workspace = f"{axiom_path.parent}/{axiom_path.stem}"
+            (cwd / child_workspace).mkdir(parents=True, exist_ok=True)
 
-            axiom_dir = str(Path(axiom_file).parent)
-            async with _scoped_agent("proof_writer", agent, axiom_dir) as writer:
-                result = await writer.run(
-                    inp={"file": axiom_file, "action": "Prove the sorry"},
-                    result_type=_Result,
+            # Copy axiom file as the child's Stub.lean
+            child_stub = cwd / child_workspace / "Stub.lean"
+            shutil.copy2(cwd / axiom_file, child_stub)
+
+            # Spawn child orchestrator scoped to its subdirectory
+            async with swarm_agent("prover", swarm=agent.swarm, cwd=agent._cwd, workspace=child_workspace) as child:
+                result = await child.run(
+                    inp={
+                        "theorem_file": axiom_file,
+                        "theorem_name": axiom_path.stem,
+                        "workspace": child_workspace,
+                        "parent_agent": agent.spec.name,
+                    },
+                    result_type=None,
                 )
 
-            if result.output and result.output.success:
-                proved.append(axiom_file)
+            if result.output and result.output.get("stage") == "done":
+                newly_proved.append(axiom_file)
+                await agent._emit("message", f"[Prover] Child proved: {axiom_path.name}")
             else:
                 failed.append(axiom_file)
+                await agent._emit("message", f"[Prover] Child failed: {axiom_path.name}")
 
-    await asyncio.gather(*[_prove_one(f) for f in state.axiom_files])
+    await asyncio.gather(*[_prove_one(f) for f in to_prove])
 
-    state.proved_files = proved
-    await agent._emit("message", f"[Prover] Proved {len(proved)}/{len(state.axiom_files)}")
+    # Accumulate — don't replace
+    state.proved_files.extend(newly_proved)
+    total = len(state.axiom_files)
+    await agent._emit("message", f"[Prover] Proved {len(state.proved_files)}/{total}")
 
-    if len(proved) == len(state.axiom_files):
+    if len(state.proved_files) == total:
         return ProverTransition.ALL_PROVED
     if failed:
         return ProverTransition.HAS_SORRY
@@ -310,114 +361,287 @@ async def _stage_prove_lemmas(state: ProverState, agent) -> ProverTransition:
 
 
 async def _stage_refactor(state: ProverState, agent) -> ProverTransition:
-    """Refactoring agent on unproved files."""
+    """All-or-nothing refactoring: for each unproved file, axiomatize ALL its sorries
+    or reject entirely and retry with a different approach.
+
+    Flow per unproved file:
+    1. Refactoring agent finds all sorries + goals in the file
+    2. For each sorry: decomposer proposes axiom, we test it closes the sorry
+    3. If ALL sorries have working axioms: edit file, verify, accept
+    4. If ANY sorry can't be axiomatized: reject this file → retry
+    """
+
     unproved = [f for f in state.axiom_files if f not in state.proved_files]
-    await agent._emit("message", f"[Prover] Refactoring {len(unproved)} files...")
+    await agent._emit("message", f"[Prover] Refactoring {len(unproved)} unproved files...")
+
+    decomposer = await _get_internal(agent, "decomposer")
+    cwd = _resolve(agent, "")
 
     @dataclass
-    class _RefactorResult:
-        new_axiom_files: list[str] = field(default_factory=list)
+    class _SorryGoal:
+        file: str
+        line: int
+        goal: str
+
+    @dataclass
+    class _RefactorFindResult:
+        sorries: list[_SorryGoal] = field(default_factory=list)
         cannot_refactor: bool = False
 
-    async with _scoped_agent("refactoring_agent", agent, state.workspace) as refactorer:
-        result = await refactorer.run(
-            inp={
-                "files": unproved,
-                "workspace": state.workspace,
-                "action": "Use lean_hover_info at each sorry, create axiom files for sub-goals",
-            },
-            result_type=_RefactorResult,
+    @dataclass
+    class _AxiomProposal:
+        name: str = ""
+        formalization: str = ""  # compilable axiom declaration only
+
+    all_new_axioms = []
+    any_success = False
+
+    for unproved_file in unproved:
+        await agent._emit("message", f"[Prover] Refactoring: {Path(unproved_file).name}")
+
+        # Phase 1: Find all sorries in this file
+        async with swarm_agent("refactoring_agent", swarm=agent.swarm, cwd=agent._cwd, workspace=state.workspace) as refactorer:
+            find_result = await refactorer.run(
+                inp={
+                    "files": [unproved_file],
+                    "workspace": state.workspace,
+                    "action": (
+                        "Use lean_hover_info at each sorry position to get the exact goal. "
+                        "Return ALL sorries with file, line, and goal type."
+                    ),
+                },
+                result_type=_RefactorFindResult,
+            )
+
+        if not find_result.output or find_result.output.cannot_refactor:
+            await agent._emit("message", f"[Prover] Cannot refactor {Path(unproved_file).name}")
+            return ProverTransition.CANNOT_REFACTOR
+
+        sorries = find_result.output.sorries or []
+        if not sorries:
+            return ProverTransition.CANNOT_REFACTOR
+
+        await agent._emit("message", f"[Prover] {Path(unproved_file).name}: {len(sorries)} sorries")
+
+        # Phase 2: Decomposer proposes compilable axiom for each sorry
+        axioms_for_file = []
+        all_have_axioms = True
+
+        for sorry in sorries:
+            proposal = await decomposer.run_ai(
+                inp=(
+                    f"Propose a compilable axiom for this goal (from {sorry.file} line {sorry.line}):\n"
+                    f"Goal: {sorry.goal}\n\n"
+                    f"Just the axiom declaration (name + type). Verify it compiles with lean_run_code."
+                ),
+                result_type=_AxiomProposal,
+                max_turns=DECOMPOSER_MAX_TURNS,
+            )
+
+            if proposal.output and proposal.output.formalization:
+                axioms_for_file.append((sorry, proposal.output))
+            else:
+                await agent._emit("message",
+                    f"[Prover] Cannot axiomatize sorry at {sorry.file}:{sorry.line} — rejecting file")
+                all_have_axioms = False
+                break
+
+        if not all_have_axioms:
+            return ProverTransition.CANNOT_REFACTOR
+
+        # Phase 3: Write axiom files first (so they're importable)
+        file_new_axioms = []
+        for i, (_, axiom) in enumerate(axioms_for_file):
+            global_idx = len(all_new_axioms) + i
+            rel_path = _create_axiom_file(cwd, state.workspace, "refactor", global_idx, axiom.name, axiom.formalization)
+            file_new_axioms.append(rel_path)
+
+        # Phase 4: Refactoring agent imports axioms and tests closures (all-or-nothing)
+        axiom_info = "\n".join(
+            f"- Sorry at line {s.line}, goal: {s.goal}\n  Axiom: {a.name} (file: {file_new_axioms[i]})"
+            for i, (s, a) in enumerate(axioms_for_file)
         )
 
-    if result.output and result.output.new_axiom_files:
-        state.axiom_files = state.proved_files + result.output.new_axiom_files
+        # Save a backup before refactoring agent touches the file
+        backup_path = cwd / state.workspace / f"{Path(unproved_file).stem}.backup.lean"
+        shutil.copy2(cwd / unproved_file, backup_path)
+
+        @dataclass
+        class _EditResult:
+            success: bool
+            error: str = ""
+
+        async with swarm_agent("refactoring_agent", swarm=agent.swarm, cwd=agent._cwd, workspace=state.workspace) as refactorer:
+            edit_result = await refactorer.run(
+                inp={
+                    "file": unproved_file,
+                    "action": (
+                        f"The axiom files have been created. Now:\n\n"
+                        f"1. Read the file\n"
+                        f"2. Add axiom imports at the top\n"
+                        f"3. Replace EACH sorry with:\n"
+                        f"   `first | exact <axiom> | rw [<axiom>] | simp [<axiom>] | apply <axiom>`\n"
+                        f"   This lets Lean try each simple tactic and use whichever works.\n"
+                        f"4. Write the entire file in one shot\n"
+                        f"5. Run lean_verify once\n"
+                        f"   - If it compiles with no sorry → success=true\n"
+                        f"   - If it fails → the axioms don't fit → success=false\n\n"
+                        f"Do NOT write complex proofs. Only the `first | ... ` combinator above.\n\n"
+                        f"Axioms:\n{axiom_info}"
+                    ),
+                },
+                result_type=_EditResult,
+            )
+
+        if not edit_result.output or not edit_result.output.success:
+            await agent._emit("message", f"[Prover] Cannot close sorries in {Path(unproved_file).name} — reverting")
+            # Revert file and clean up axiom files
+            shutil.copy2(backup_path, cwd / unproved_file)
+            backup_path.unlink(missing_ok=True)
+            for f in file_new_axioms:
+                (cwd / f).unlink(missing_ok=True)
+            return ProverTransition.CANNOT_REFACTOR
+
+        # Success — delete backup
+        backup_path.unlink(missing_ok=True)
+
+        state.proved_files.append(unproved_file)
+        all_new_axioms.extend(file_new_axioms)
+        any_success = True
+        await agent._emit("message",
+            f"[Prover] {Path(unproved_file).name} closed with {len(file_new_axioms)} new axioms to prove")
+
+    if all_new_axioms:
+        state.axiom_files.extend(all_new_axioms)
+        await agent._emit("message", f"[Prover] Total new axioms to prove: {len(all_new_axioms)}")
+        return ProverTransition.NEW_AXIOMS
+
+    if any_success:
         return ProverTransition.NEW_AXIOMS
 
     return ProverTransition.CANNOT_REFACTOR
 
 
 async def _stage_validate(state: ProverState, agent) -> ProverTransition:
-    """Assembler agent validates proved files compile and are sorry-free."""
-    assembler = await _get_internal(agent, "assembler")
+    """Deep validation: compare each proved file against its original (stub).
+    Checks: compiles, no sorry, theorem statements unchanged."""
 
-    files_list = "\n".join(state.proved_files)
-    await agent.channel_bus.send_to(
-        f"{assembler.spec.name}:messages",
-        sender="system",
-        payload=(
-            f"Validate these proved files (lean_verify each, check for sorry):\n{files_list}\n"
-            f"Workspace: {state.workspace}"
-        ),
-    )
+    cwd = _resolve(agent, "")
+    originals_dir = cwd / state.workspace / "_originals"
 
     @dataclass
-    class _ValidateResult:
-        all_valid: bool
-        issues: list[str] = field(default_factory=list)
+    class _Validation:
+        compiles: bool
+        has_sorry: bool
+        statements_match: bool
 
-    result = await assembler.run_ai(inp=None, result_type=_ValidateResult, max_turns=ASSEMBLER_MAX_TURNS)
+    issues = []
+    semaphore = asyncio.Semaphore(MAX_PARALLEL_VALIDATORS)
 
-    if result.output and result.output.all_valid:
+    async def _validate_one(proved_file: str):
+        proved_path = Path(proved_file)
+        original_path = originals_dir / proved_path.name
+
+        if not original_path.exists():
+            issues.append(f"No original found for {proved_path.name} — cannot validate")
+            return
+
+        async with semaphore, swarm_agent("deep_proof_validator", swarm=agent.swarm, cwd=agent._cwd, workspace=state.workspace) as validator:
+            result = await validator.run(
+                inp={
+                    "stub_file": f"{state.workspace}/_originals/{proved_path.name}",
+                    "complete_file": proved_file,
+                },
+                result_type=_Validation,
+            )
+
+        if result.output:
+            v = result.output
+            if not v.compiles:
+                issues.append(f"{proved_path.name}: doesn't compile")
+            if v.has_sorry:
+                issues.append(f"{proved_path.name}: still has sorry")
+            if not v.statements_match:
+                issues.append(f"{proved_path.name}: theorem statements changed")
+
+    await asyncio.gather(*[_validate_one(f) for f in state.proved_files])
+
+    if not issues:
+        await agent._emit("message", f"[Prover] Validation passed: {len(state.proved_files)} files clean")
         return ProverTransition.VALID
-    if result.output and result.output.issues:
-        await agent._emit("message", f"[Prover] Validation issues: {result.output.issues}")
-        return ProverTransition.INVALID
 
-    return ProverTransition.STUCK
+    await agent._emit("message", f"[Prover] Validation failed: {issues}")
+    return ProverTransition.INVALID
 
 
 async def _stage_assemble(state: ProverState, agent) -> ProverTransition:
-    """Assembler combines proofs into the original file."""
-    assembler = await _get_internal(agent, "assembler")
+    """Mechanical assembly: copy each child's Stub.lean back into the parent axiom file.
+    Then lean_verify the parent Stub.lean to confirm everything links up.
+    No LLM needed — purely deterministic file operations."""
 
-    await agent.channel_bus.send_to(
-        f"{assembler.spec.name}:messages",
-        sender="system",
-        payload=(
-            f"Assemble final proof:\n"
-            f"- Original: {state.workspace}/Stub.lean\n"
-            f"- Proved files: {state.proved_files}\n"
-            f"Replace axioms/sorry with actual proofs. Run lean_verify on result."
-        ),
-    )
+    cwd = _resolve(agent, "")
+    await agent._emit("message", f"[Prover] Assembling {len(state.axiom_files)} axioms...")
+
+    # For each axiom file, find the child workspace and copy its Stub.lean back
+    for axiom_file in state.axiom_files:
+        axiom_path = Path(axiom_file)
+        child_workspace = axiom_path.parent / axiom_path.stem
+        child_stub = cwd / child_workspace / "Stub.lean"
+
+        if child_stub.exists():
+            shutil.copy2(child_stub, cwd / axiom_file)
+            await agent._emit("message", f"[Prover] Assembled: {axiom_path.name}")
+        elif axiom_file in state.proved_files:
+            # Proved in-place (by refactor stage) — already contains proof
+            pass
+        else:
+            await agent._emit("message", f"[Prover] Assembly error: no proof found for {axiom_path.name}")
+            return ProverTransition.FAILED
+
+    # Final verification: parent Stub.lean should compile with all axioms now proved
+    stub_rel = f"{state.workspace}/Stub.lean"
+    original_rel = f"{state.workspace}/_originals/Stub.lean"
+
+    if not (cwd / stub_rel).exists():
+        await agent._emit("message", "[Prover] Assembly error: Stub.lean missing")
+        return ProverTransition.FAILED
 
     @dataclass
-    class _AssembleResult:
-        success: bool
-        output_file: str = ""
-        error: str = ""
+    class _VerifyResult:
+        compiles: bool
+        has_sorry: bool
 
-    result = await assembler.run_ai(inp=None, result_type=_AssembleResult, max_turns=ASSEMBLER_MAX_TURNS)
+    async with swarm_agent("deep_proof_validator", swarm=agent.swarm, cwd=agent._cwd, workspace=state.workspace) as validator:
+        result = await validator.run(
+            inp={
+                "stub_file": original_rel,
+                "complete_file": stub_rel,
+            },
+            result_type=_VerifyResult,
+        )
 
-    if result.output and result.output.success:
-        await agent._emit("message", f"[Prover] Assembled: {result.output.output_file}")
+    if result.output and result.output.compiles and not result.output.has_sorry:
+        await agent._emit("message", "[Prover] Assembly verified — proof complete!")
         return ProverTransition.ASSEMBLED
 
+    issues = []
+    if result.output:
+        if not result.output.compiles:
+            issues.append("doesn't compile")
+        if result.output.has_sorry:
+            issues.append("still has sorry")
+    await agent._emit("message", f"[Prover] Assembly verification failed: {issues}")
     return ProverTransition.FAILED
 
 
 async def _stage_retry(state: ProverState, agent) -> ProverTransition:
-    """Log attempt, decide retry or give up."""
+    """Increment attempt, reset, or give up."""
     state.attempt += 1
-
-    workspace = Path(state.workspace)
-    log_file = workspace / f"attempt_{state.attempt}.md"
-    log_content = (
-        f"# Attempt {state.attempt}\n\n"
-        f"Theorem: {state.theorem_file} / {state.theorem_name}\n"
-        f"Axioms tried: {state.axiom_files}\n"
-        f"Proved: {state.proved_files}\n"
-        f"Time: {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
-    )
-    log_file.write_text(log_content)
-    state.attempt_logs.append(log_content)
-
-    await agent._emit("message", f"[Prover] Attempt {state.attempt}/{MAX_RETRIES} logged")
+    await agent._emit("message", f"[Prover] Attempt {state.attempt}/{MAX_RETRIES}")
 
     if state.attempt >= MAX_RETRIES:
         return ProverTransition.MAX_RETRIES
 
-    # Reset for next attempt
     state.axiom_files = []
     state.proved_files = []
     return ProverTransition.NEW_APPROACH
@@ -440,7 +664,6 @@ STAGE_HANDLERS: dict[ProverStage, Any] = {
 
 async def _get_internal(agent, which: str):
     """Get or create an internal agent (decomposer, assembler). Session persists."""
-    from .._helpers import swarm_agent
 
     attr = f"_po_{which}"
     attr_ctx = f"_po_{which}_ctx"
@@ -465,109 +688,32 @@ async def _cleanup_internal(agent, which: str):
         setattr(agent, attr, None)
 
 
-# ─── Scoped agent spawning ───────────────────────────────────────────────────
-
-class _scoped_agent:
-    """Creates a workspace-scoped stateless agent. Mirrors _spawn.py's workspace isolation."""
-
-    def __init__(self, spec_name: str, parent_agent, scope_dir: str):
-        self._spec_name = spec_name
-        self._parent = parent_agent
-        self._scope_dir = scope_dir
-        self._agent = None
-        self._unique_name = None
-
-    async def __aenter__(self):
-        from .._helpers import _load_spec, AGENT_SPECS_DIR
-        from .._types import Workspace
-        from .._tools import ToolSet
-        from .._agent import SwarmAgent
-        from .._messaging import create_messaging_server
-        from .._directory import create_directory_server
-        import time as _time
-
-        path = AGENT_SPECS_DIR / f"{self._spec_name}.yaml"
-        spec = _load_spec(path, {})
-
-        # Scope workspace
-        scope = f"{self._scope_dir}/**"
-        spec.workspace = Workspace(read=[scope], write=[scope], edit=[scope])
-
-        # Rebuild tools with scoped paths
-        tools = ToolSet()
-        tools.allow(f"Read({scope})")
-        tools.allow(f"Write({scope})")
-        tools.allow(f"Edit({scope})")
-        if spec.tools:
-            for t in spec.tools.allowed:
-                if not any(t.name.startswith(p) for p in ("Read", "Write", "Edit")):
-                    tools.allow(t.to_claude_format())
-            for t in spec.tools.disallowed:
-                tools.disallow(t.to_claude_format())
-        spec.tools = tools
-
-        # Unique name
-        self._unique_name = f"{spec.name}_{int(_time.time()) % 100000}"
-        spec.name = self._unique_name
-
-        swarm = self._parent.swarm
-        cwd = self._parent._cwd
-
-        # Build MCP servers
-        mcp_servers = dict(spec.mcp_servers or {})
-        messaging_server = create_messaging_server(
-            agent_name=self._unique_name,
-            channel_bus=swarm._channel_bus,
-            known_agents=[n for n in swarm._registry.nodes if n != self._unique_name],
-            can_message=swarm.can_message,
-            route_message=swarm._route_message,
-            get_sender_display=swarm._get_sender_display,
-            on_tool_call=swarm._record_tool_call,
-            reply_only_mode=spec.reply_only,
-            known_service_agents=set(),
-            start_time=None,
-            is_agent_alive=lambda r: r in swarm._registry.nodes or r in swarm._registry.sharded_agents,
-            outbound_limit=spec.max_outbound_length,
-            outbound_limit_response=spec.max_outbound_response,
-            get_inbound_limit=swarm._get_inbound_limit,
-        )
-        mcp_servers["agent_messaging"] = messaging_server
-        mcp_servers["agent_directory"] = create_directory_server(agent_name=self._unique_name, swarm=swarm)
-
-        on_event = getattr(swarm, '_on_event_with_telemetry', None)
-
-        self._agent = SwarmAgent(
-            spec=spec,
-            channel_bus=swarm._channel_bus,
-            cwd=cwd,
-            on_event=on_event,
-            mcp_servers_override=mcp_servers,
-            backend_factory=swarm._backend_factory,
-        )
-        self._agent.swarm = swarm
-
-        # Register
-        swarm._registry.add(spec)
-        swarm._registry.agents[self._unique_name] = self._agent
-        swarm._registry.visibility_graph[self._unique_name] = set(swarm._registry.visibility_graph.keys())
-        for visible_set in swarm._registry.visibility_graph.values():
-            visible_set.add(self._unique_name)
-
-        # Create workspace directory
-        Path(cwd or ".").joinpath(self._scope_dir).mkdir(parents=True, exist_ok=True)
-
-        return self._agent
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        if self._unique_name and self._parent.swarm:
-            swarm = self._parent.swarm
-            await swarm._registry.remove(self._unique_name, cancel_task=False)
-            swarm._channel_bus._channels.pop(f"{self._unique_name}:messages", None)
-            self._agent = None
-        return False
-
-
 # ─── Helpers ──────────────────────────────────────────────────────────────────
+
+def _resolve(agent, rel_path: str) -> Path:
+    """Resolve a relative workspace path to absolute using agent's cwd."""
+    cwd = Path(agent._cwd) if agent._cwd else Path.cwd()
+    return cwd / rel_path
+
+
+def _create_axiom_file(cwd: Path, workspace_rel: str, prefix: str, index: int, name: str, content: str) -> str:
+    """Create an axiom file in workspace and save a copy in _originals.
+    Returns RELATIVE path (to cwd) for use in state and tool scoping."""
+    workspace_abs = cwd / workspace_rel
+    originals_dir = workspace_abs / "_originals"
+    originals_dir.mkdir(exist_ok=True)
+
+    safe_name = name.replace(" ", "_").replace("/", "_")[:40] or f"{prefix}_{index}"
+    filename = f"{prefix}_{index}_{safe_name}.lean"
+    filepath = workspace_abs / filename
+
+    if not content:
+        content = f"-- {name}\nsorry\n"
+    filepath.write_text(content)
+
+    shutil.copy2(filepath, originals_dir / filename)
+    return f"{workspace_rel}/{filename}"
+
 
 async def _notify_parent(agent, state: ProverState, message: str):
     try:

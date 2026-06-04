@@ -203,6 +203,12 @@ async def _state_idle(state: WorkflowState, agent) -> Transition:
     has_msg = await messages_ch.wait_for_message(timeout=wait_timeout)
 
     if not has_msg:
+        # Check if prover task crashed without sending a message
+        if state.mode == WorkflowMode.PROVING and hasattr(agent, '_prover_task'):
+            if agent._prover_task and agent._prover_task.done():
+                state.raw_input = "Prover task completed without sending a message."
+                state.sender = "system"
+                return Transition.MESSAGE_RECEIVED
         return Transition.MONITOR_TICK
 
     summary = messages_ch.peek_summary()
@@ -313,6 +319,7 @@ async def _state_dispatch(state: WorkflowState, agent) -> Transition:
     prover_input = {
         "theorem_file": task.theorem_file,
         "theorem_name": task.notes or "",
+        "workspace": "StrataAgent/Sandbox",
         "parent_agent": agent.spec.name,
     }
 
@@ -347,7 +354,10 @@ async def _state_validate(state: WorkflowState, agent) -> Transition:
 
     async with swarm_agent("deep_proof_validator", swarm=agent.swarm, cwd=agent._cwd) as validator:
         result = await validator.run(
-            inp={"stub_file": task.theorem_file, "complete_file": task.theorem_file},
+            inp={
+                "stub_file": task.theorem_file,
+                "complete_file": "StrataAgent/Sandbox/Stub.lean",
+            },
             result_type=_Validation,
         )
 
