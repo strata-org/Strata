@@ -3,12 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Util.Random
-import StrataTest.DL.Lambda.TestGen
+meta import all Strata.Util.Random
+meta import all StrataTest.DL.Lambda.TestGen
+meta import Strata.DL.Lambda.IntBoolFactory
 
 /-! ## Tests for TestGen -/
 
+meta section
 namespace Lambda
 open Plausible
 open LTy
@@ -181,3 +184,4 @@ in factory
       continue
 
 end Lambda
+end

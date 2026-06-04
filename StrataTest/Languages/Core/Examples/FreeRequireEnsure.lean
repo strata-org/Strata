@@ -3,9 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core
+import StrataDDM.Integration.Lean.HashCommands
 
+meta section
+open StrataDDM (Program)
 ---------------------------------------------------------------------
 namespace Strata
 
@@ -62,6 +66,8 @@ Model:
 (g@5, 0)
 -/
 #guard_msgs in
-#eval verify freeReqEnsPgm
+#eval Core.verify freeReqEnsPgm
 
+end Strata
+end
 ---------------------------------------------------------------------

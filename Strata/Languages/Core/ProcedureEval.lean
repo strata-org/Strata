@@ -5,10 +5,9 @@
 -/
 module
 
-public import Strata.Languages.Core.Procedure
-public import Strata.Languages.Core.Statement
-public import Strata.Languages.Core.StatementEval
-public import Strata.Languages.Core.StatementSemantics
+public import Strata.Languages.Core.Env
+public import Strata.Util.Statistics
+import Strata.Languages.Core.StatementEval
 public section
 
 ---------------------------------------------------------------------

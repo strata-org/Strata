@@ -5,11 +5,11 @@
 -/
 module
 
-public import Strata.DL.Lambda.Lambda
-public import Strata.DL.Imperative.PureExpr
 public import Strata.Languages.Core.Identifiers
 public import Strata.Languages.Core.CoreOp
 public import Strata.DL.Imperative.HasVars
+public import Strata.DL.Lambda.LExprTypeEnv
+public import Strata.DL.Lambda.LState
 
 namespace Core
 open Std (ToFormat Format format)

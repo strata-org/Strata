@@ -3,9 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core
+import Strata.Languages.Core.DDMTransform.Translate
+import StrataDDM.Integration.Lean.HashCommands
 
+meta section
+open StrataDDM (Program)
 ---------------------------------------------------------------------
 namespace Strata
 
@@ -46,7 +51,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify typeDeclPgm1
+#eval Core.verify typeDeclPgm1
 
 --------------------------------------------------------------------
 
@@ -111,7 +116,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify typeDeclPgm3
+#eval Core.verify typeDeclPgm3
 
 
 --------------------------------------------------------------------
@@ -130,6 +135,8 @@ KnownTypes' names:
 [arrow, Sequence, TriggerGroup, real, string, bitvec, Triggers, int, bool, Map, errorVoid, regex]
 -/
 #guard_msgs in
-#eval verify typeDeclPgm4
+#eval Core.verify typeDeclPgm4
 
+end Strata
+end
 --------------------------------------------------------------------

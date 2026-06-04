@@ -3,27 +3,30 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 /-
 Tests that the Laurel AST to DDM concrete syntax tree conversion
 (programToStrata) preserves program structure through roundtripping.
 -/
 
-import Strata.DDM.Elab
-import Strata.DDM.BuiltinDialects.Init
-import Strata.Languages.Laurel.Grammar.LaurelGrammar
-import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
-import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
-import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
+meta import StrataDDM.Elab
+meta import StrataDDM.BuiltinDialects.Init
+meta import Strata.Languages.Laurel.Grammar.LaurelGrammar
+meta import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
+meta import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
+
+meta section
 
 open Strata
-open Strata.Elab (parseStrataProgramFromDialect)
+open StrataDDM (initDialect)
+open StrataDDM.Elab (parseStrataProgramFromDialect)
 
 namespace Strata.Laurel
 
 private def parseLaurel (input : String) : IO Program := do
-  let inputCtx := Strata.Parser.stringInputContext "test" input
-  let dialects := Strata.Elab.LoadedDialects.ofDialects! #[initDialect, Laurel]
+  let inputCtx := StrataDDM.Parser.stringInputContext "test" input
+  let dialects := StrataDDM.Elab.LoadedDialects.ofDialects! #[initDialect, Laurel]
   let strataProgram ← parseStrataProgramFromDialect dialects Laurel.name inputCtx
   let uri := Strata.Uri.file "test"
   match Laurel.TransM.run uri (Laurel.parseProgram strataProgram) with
@@ -36,7 +39,7 @@ private def laurelToText (prog : Program) : String :=
   let lines := text.splitOn "\n" |>.map (fun s => (s.trimAsciiEnd).toString)
   "\n".intercalate lines
 
-/-- Roundtrip through the DDM tree: Laurel AST → Strata.Program → Laurel AST → text -/
+/-- Roundtrip through the DDM tree: Laurel AST → StrataDDM.Program → Laurel AST → text -/
 private def roundtripViaDDM (prog : Program) : IO String := do
   let strataProgram := programToStrata prog
   match Laurel.TransM.run .none (Laurel.parseProgram strataProgram) with
@@ -282,3 +285,4 @@ info: procedure test(): int
 { <??> };")
 
 end Strata.Laurel
+end

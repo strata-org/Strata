@@ -5,17 +5,30 @@
 -/
 module
 
-import Lean.Meta
-import Lean.Elab.Tactic
-
-import Strata.Languages.Core.Verifier
 import Strata.Transform.LoopElim
 import Strata.Languages.Core.ObligationExtraction
-public import Strata.Languages.C_Simp.Verify
-public import Strata.Languages.Boole.Verify
-import Strata.DL.Imperative.SMTUtils
-public import Strata.DL.SMT.Denote
-public import Strata.DL.SMT.Translate
+public import Strata.Languages.C_Simp.C_Simp
+public import Strata.Languages.Core.SMTEncoder
+import Std.Tactic.BVDecide.Normalize.Prop
+import Strata.DL.Lambda.Denote.LExprAnnotated
+import Strata.DL.SMT.Denote
+import Strata.Languages.C_Simp.DDMTransform.Translate
+import Strata.Languages.C_Simp.Verify
+import Strata.Languages.Core
+import Strata.Languages.Core.DDMTransform.Translate
+import Strata.Languages.Core.ProgramEval
+
+-- For some reason shake wants to meta import the following
+-- while lake itself only requires imports.
+
+public meta import Strata.DL.SMT.Translate
+import Strata.DL.SMT.Translate -- shake: keep
+meta import Lean.Meta.Eval
+import Lean.Meta.Tactic.Rewrite -- shake: keep
+meta import Lean.Meta.Tactic.Rewrite
+import Lean.Meta.Tactic.Unfold -- shake: keep
+meta import Lean.Meta.Tactic.Unfold
+import Lean.Meta.Eval -- shake: keep
 
 open Lean hiding Options
 
@@ -83,19 +96,16 @@ def genVCs (program : Strata.C_Simp.Program) (options : Core.VerifyOptions := .d
 
 end C_Simp
 
-namespace Boole
-
-def genVCs (program : Strata.Boole.Program) (gctx : Strata.GlobalContext) (options : Core.VerifyOptions := .default) : Option Core.coreVCs := do
-  let program ← (Strata.Boole.toCoreProgram program gctx).toOption
-  Core.genVCs program options
-
-end Boole
-
 namespace Strata
 
+open StrataDDM
+
 /--
-Generate verification conditions for a `Strata.Program` by translating it to the
+Generate verification conditions for a `StrataDDM.Program` by translating it to the
 appropriate frontend verifier and collecting its deferred proof obligations.
+
+Note that this can be extended to new dialects by using
+`unsafe/@[implemented_by]` as in `StrataBoole.MetaVerifier`.
 -/
 def genCoreVCs (program : Program) : Option Core.coreVCs := do
   if program.dialect == "Core" then
@@ -104,11 +114,6 @@ def genCoreVCs (program : Program) : Option Core.coreVCs := do
   else if program.dialect == "C_Simp" then
     let (program, #[]) := C_Simp.TransM.run default (C_Simp.translateProgram program.commands) | none
     C_Simp.genVCs program { (default : Core.VerifyOptions) with verbose := .quiet : Core.VerifyOptions }
-  else if program.dialect == "Boole" then
-    match Boole.getProgram program with
-    | .ok booleProgram =>
-      Boole.genVCs booleProgram program.globalContext { (default : Core.VerifyOptions) with verbose := .quiet : Core.VerifyOptions }
-    | .error _ => none
   else
     none
 
@@ -160,7 +165,7 @@ def toSMTVCs (vcs : Core.coreVCs) : Option SMT.SMTVCs := do
     return (label, ctx, ts, t) :: vcs
 
 /--
-Generate SMT verification conditions for a `Strata.Program`.
+Generate SMT verification conditions for a `StrataDDM.Program`.
 -/
 def genSMTVCs (program : Program) : Option SMT.SMTVCs := do
   let coreVCs ← genCoreVCs program

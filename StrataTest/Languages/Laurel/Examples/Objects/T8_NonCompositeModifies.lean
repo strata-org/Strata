@@ -3,6 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 /-
 Regression test for issue #490: a modifies clause referencing a non-composite
@@ -11,8 +12,10 @@ in laurelAnalyze. The fix filters out non-composite modifies entries and emits
 a diagnostic error.
 -/
 
-import StrataTest.Util.TestDiagnostics
-import StrataTest.Languages.Laurel.TestExamples
+meta import all StrataTest.Util.TestDiagnostics
+meta import all StrataTest.Languages.Laurel.TestExamples
+
+meta section
 
 open StrataTest.Util
 

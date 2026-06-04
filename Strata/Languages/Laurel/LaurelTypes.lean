@@ -5,10 +5,7 @@
 -/
 module
 
-public import Strata.Languages.Laurel.Laurel
-public import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 public import Strata.Languages.Laurel.Resolution
-import Strata.Util.Tactics
 
 public section
 
