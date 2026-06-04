@@ -52,7 +52,7 @@ Result: ✅ pass-/
 example : Strata.smtVCsCorrectBoole mapExtensionalitySeed := by
   gen_smt_vcs_boole
   all_goals
-    intro Map inst select a b hPointwise i
+    intro a b hPointwise i
     exact hPointwise i
 
 /-!

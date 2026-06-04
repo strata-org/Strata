@@ -59,5 +59,5 @@ Result: ✅ pass-/
 example : Strata.smtVCsCorrectBoole wideningCastsSeed := by
   gen_smt_vcs_boole
   all_goals
-    intro Map inst n bv32_to_int_u select v hNonneg hn i hi
-    exact hNonneg (select v i)
+    intro bv32_to_int_u n v hNonneg hn i hi
+    exact hNonneg (v.select i)

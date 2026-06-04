@@ -110,10 +110,10 @@ Note that this can be extended to new dialects by using
 def genCoreVCs (program : Program) : Option Core.coreVCs := do
   if program.dialect == "Core" then
     let (program, #[]) := TransM.run default (translateProgram program) | none
-    Core.genVCs program { (default : Core.VerifyOptions) with verbose := .quiet : Core.VerifyOptions }
+    Core.genVCs program { Core.VerifyOptions.default with verbose := .quiet, useArrayTheory := true }
   else if program.dialect == "C_Simp" then
     let (program, #[]) := C_Simp.TransM.run default (C_Simp.translateProgram program.commands) | none
-    C_Simp.genVCs program { (default : Core.VerifyOptions) with verbose := .quiet : Core.VerifyOptions }
+    C_Simp.genVCs program { Core.VerifyOptions.default with verbose := .quiet, useArrayTheory := true }
   else
     none
 
@@ -129,7 +129,7 @@ private def sanitizeSMTContext (ctx : Core.SMT.Context) : SMT.SanitizedContext :
 
 def Core.ProofObligation.toSMTObligation (E : Core.Env) (ob : Imperative.ProofObligation Core.Expression) :
   Option SMT.SMTVC := do
-    let maybeTerms := Core.ProofObligation.toSMTTerms E ob
+    let maybeTerms := Core.ProofObligation.toSMTTerms E ob (useArrayTheory := true)
     match maybeTerms with
     | .error _ => none
     | .ok (ts, varDefs, _varDecls, t, ctx, _stats) =>
