@@ -4,12 +4,11 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Languages.Dyn.DDMTransform.Parse -- shake: keep
 
 -- Main Dyn dialect definition
 -- TODO: Implement AST structure for dynamic Python-like language
 
-public import Strata.Languages.Dyn.DDMTransform.Parse
-public import Strata.Languages.Dyn.DDMTransform.Translate
 
 public section
 

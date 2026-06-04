@@ -6,7 +6,7 @@
 
 import VersoManual
 
-import Strata.Languages.Laurel.Laurel
+import Strata.Languages.Laurel
 import Strata.Languages.Laurel.LaurelTypes
 import Strata.Languages.Laurel.LaurelCompilationPipeline
 import Strata.Languages.Laurel.HeapParameterization

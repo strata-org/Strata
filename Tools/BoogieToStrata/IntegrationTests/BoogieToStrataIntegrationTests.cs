@@ -37,7 +37,7 @@ public class BoogieToStrataIntegrationTests(ITestOutputHelper output) {
             throw new DirectoryNotFoundException("Could not find project parent directory");
         }
 
-        return Path.Combine(directory.FullName, ".lake", "build", "bin", "strata");
+        return Path.Combine(directory.FullName, "StrataCLI", ".lake", "build", "bin", "strata");
     }
 
     public static IEnumerable<object[]> GetBoogieTestFiles() {

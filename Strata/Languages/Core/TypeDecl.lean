@@ -6,8 +6,8 @@
 module
 
 
-public import Strata.Languages.Core.Statement
 public import Strata.DL.Lambda.TypeConstructor
+public import Strata.Languages.Core.Expressions
 
 ---------------------------------------------------------------------
 

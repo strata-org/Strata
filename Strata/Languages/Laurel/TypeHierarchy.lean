@@ -5,12 +5,13 @@
 -/
 module
 
-public import Strata.Languages.Laurel.MapStmtExpr
-public import Strata.Languages.Laurel.LaurelTypes
-public import Strata.DL.Imperative.MetaData
 import Strata.Languages.Laurel.HeapParameterizationConstants
 import Strata.Util.Tactics
 public import Strata.Languages.Laurel.LaurelPass
+public import Strata.Languages.Laurel.Resolution
+import Std.Tactic.BVDecide.Normalize.Prop
+import Strata.Languages.Laurel.LaurelTypes
+import Strata.Languages.Laurel.MapStmtExpr
 
 public section
 

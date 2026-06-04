@@ -5,7 +5,7 @@
 -/
 module
 
-public import Strata.Languages.Laurel.Laurel
+public import Strata.Languages.Laurel.LaurelAST
 import Strata.Util.Tactics
 public import Strata.Languages.Laurel.LaurelPass
 

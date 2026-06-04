@@ -5,9 +5,10 @@
 -/
 module
 
-public import Strata.Languages.Laurel.MapStmtExpr
+public import Strata.Languages.Laurel.Resolution
 public import Strata.Languages.Laurel.LaurelPass
 import Strata.Languages.Laurel.LiftImperativeExpressions
+import Strata.Languages.Laurel.MapStmtExpr
 
 /-!
 # Desugar Short-Circuit Operators

@@ -5,10 +5,7 @@
 -/
 module
 
-public import Strata.Languages.Laurel.Laurel
-public import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
-public import Strata.Languages.Laurel.SemanticModel
-import Strata.Util.Tactics
+public import Strata.Languages.Laurel.Resolution
 
 public section
 

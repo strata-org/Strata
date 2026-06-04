@@ -5,16 +5,13 @@
 -/
 module
 
-public import Strata.Languages.Laurel.Laurel
-public import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
-public import Strata.Languages.Laurel.LaurelTypes
-public import Strata.Languages.Laurel.HeapParameterizationConstants
-public import Strata.Languages.Laurel.MapStmtExpr
-public import Strata.Util.Tactics
+public import Strata.Languages.Laurel.Resolution
 public import Strata.Languages.Laurel.LaurelPass
-import Strata.Languages.Laurel.TypeHierarchy
-import Strata.Languages.Laurel.ModifiesClauses
-import Strata.Languages.Laurel.LiftImperativeExpressions
+import Std.Tactic.BVDecide.Normalize.Prop
+import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
+import Strata.Languages.Laurel.HeapParameterizationConstants
+import Strata.Languages.Laurel.LaurelTypes
+import Strata.Util.Tactics
 
 /-
 Heap Parameterization Pass

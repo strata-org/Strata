@@ -5,12 +5,12 @@
 -/
 module
 
-public import Strata.Languages.Laurel.Laurel
-public import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
+public import Strata.Languages.Laurel.LaurelAST
 import Strata.Util.Tactics
 import Strata.Languages.Python.PythonLaurelCorePrelude
 public import Strata.Languages.Laurel.SemanticModel
 import Strata.Languages.Laurel.LaurelTypes
+import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 
 /-!
 # Name Resolution Pass
