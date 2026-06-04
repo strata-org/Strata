@@ -834,7 +834,7 @@ def Synth.litString (v : String) (source : Option FileRange) : StmtExpr × HighT
   (.LiteralString v, { val := .TString, source := source })
 
 /-- `Γ ⊢ LiteralDecimal d ⇒ TReal` -/
-def Synth.litDecimal (v : Decimal) (source : Option FileRange) : StmtExpr × HighTypeMd :=
+def Synth.litDecimal (v : StrataDDM.Decimal) (source : Option FileRange) : StmtExpr × HighTypeMd :=
   (.LiteralDecimal v, { val := .TReal, source := source })
 
 -- ### Variables
