@@ -12,7 +12,7 @@ public import Strata.Languages.Core.SMTEncoder
 public section
 
 open Lean
-open Strata hiding Expr
+open Strata
 open SMT
 
 deriving instance Hashable for Core.SMT.Sort

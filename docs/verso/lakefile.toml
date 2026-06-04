@@ -1,5 +1,5 @@
 name = "StrataDoc"
-defaultTargets = ["ddm", "langdef", "laurel", "transforms"]
+defaultTargets = ["ddm", "langdef", "laurel", "transforms", "irtranslation"]
 
 [[require]]
 name = "Strata"
@@ -37,3 +37,10 @@ name = "TransformsDoc"
 [[lean_exe]]
 name = "transforms"
 root = "TransformsDocMain"
+
+[[lean_lib]]
+name = "IRTranslationPhilosophyDoc"
+
+[[lean_exe]]
+name = "irtranslation"
+root = "IRTranslationPhilosophyDocMain"

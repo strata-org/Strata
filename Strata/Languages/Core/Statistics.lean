@@ -5,7 +5,7 @@
 -/
 module
 
-public import Strata.Util.Statistics
+import Strata.Util.Statistics
 
 /-! # Core evaluator statistics keys -/
 

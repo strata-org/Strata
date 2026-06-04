@@ -5,7 +5,6 @@
 -/
 module
 
-public import Strata.DL.Lambda.LState
 public import Strata.DL.Lambda.FactoryWF
 import all Strata.DL.Lambda.LTy
 import all Strata.DL.Lambda.LExpr
