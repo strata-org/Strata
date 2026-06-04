@@ -699,11 +699,17 @@ async function renderStateMachineGraph(sm) {
   }
 
   // Style classes
-  diagram += '\n  classDef active fill:#1b5e20,stroke:#4caf50,stroke-width:2px,color:#a5d6a7\n';
+  diagram += '\n  classDef active fill:#1b5e20,stroke:#4caf50,stroke-width:2px,color:#a5d6a7,font-weight:bold\n';
   diagram += '  classDef fired fill:#4a3800,stroke:#ffab00,stroke-width:2px,color:#ffe082\n';
-  diagram += '  classDef inactive fill:#1e2a3a,stroke:#333,color:#aaa\n';
+  diagram += '  classDef inactive fill:#1e2a3a,stroke:#555,stroke-width:1px,color:#e0e0e0\n';
 
-  // Assign classes
+  // Assign classes — inactive to all, then override active/fired
+  const allStates = [...new Set(transitions.map(t => t.from).concat(transitions.map(t => t.to)))];
+  const activeStates = new Set();
+  if (current) activeStates.add(current);
+  if (recentEdge && recentEdge.from !== current) activeStates.add(recentEdge.from);
+  const inactiveStates = allStates.filter(s => !activeStates.has(s));
+  if (inactiveStates.length) diagram += `  class ${inactiveStates.join(',')} inactive\n`;
   if (current) diagram += `  class ${current} active\n`;
   if (recentEdge && recentEdge.from !== current) diagram += `  class ${recentEdge.from} fired\n`;
 

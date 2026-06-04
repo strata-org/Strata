@@ -27,21 +27,25 @@ def generate_mermaid(module_name: str) -> str:
         print(f"Error: {full_module} has no TRANSITIONS table", file=sys.stderr)
         sys.exit(1)
 
+    # Extract string values (handles both plain strings and enums)
+    def val(x):
+        return x.value if hasattr(x, 'value') else str(x)
+
     states = sorted(set(
-        [k[0] for k in transitions] + [v for v in transitions.values()]
+        [val(k[0]) for k in transitions] + [val(v) for v in transitions.values()]
     ))
 
     lines = ["stateDiagram-v2"]
 
     # Mark start state
-    first_state = next(iter(transitions))[0]
+    first_state = val(next(iter(transitions))[0])
     lines.append(f"    [*] --> {first_state}")
 
     # Group transitions by (from, to) to combine labels
     edge_labels: dict[tuple[str, str], list[str]] = {}
     for (from_state, transition_name), to_state in transitions.items():
-        key = (from_state, to_state)
-        edge_labels.setdefault(key, []).append(transition_name)
+        key = (val(from_state), val(to_state))
+        edge_labels.setdefault(key, []).append(val(transition_name))
 
     for (from_state, to_state), labels in edge_labels.items():
         label = " / ".join(labels)
