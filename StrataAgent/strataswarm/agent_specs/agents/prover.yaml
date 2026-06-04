@@ -7,7 +7,6 @@ checkpointable: true
 
 visibility:
   visible_to: [TaskManager]
-  can_see: [SearchAgent, LemmaProposer, LeanSyntaxAgent]
 
 system_prompt: >
   You are the Proof Orchestrator router. Your session persists and you remember

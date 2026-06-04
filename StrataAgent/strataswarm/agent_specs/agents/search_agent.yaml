@@ -6,8 +6,8 @@ replicas: 6
 routing: round_robin
 module: null
 
-max_inbound_length: 500
-max_inbound_response: "Too long. Ask a specific question in under 500 chars."
+max_inbound_length: 725
+max_inbound_response: "Too long. Ask a specific question in under 725 chars."
 
 system_prompt: >
   You are a Lean 4 codebase search agent. Find information and report it. Fast.
@@ -21,7 +21,7 @@ system_prompt: >
   - What the requester might expect but DOESN'T exist
   - Missing lemmas relevant to the query
 
-  Keep answers under 20 lines. No suggestions, just facts.
+  Be thorough in your answers. No suggestions, just facts.
 
 prompt: "Stop and wait. You will be notified when a message arrives."
 

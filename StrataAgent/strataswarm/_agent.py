@@ -177,16 +177,21 @@ class SwarmAgent:
         Returns True to continue outer loop, False to break."""
         async with self._backend_lock:
             if query:
+                await self._emit("message", "[Sending query to backend...]")
                 await self.backend.send_query(query)
+                await self._emit("message", "[Query sent]")
             return await self._consume_response_inner(result, start_time)
 
     async def _consume_response_inner(self, result: AgentResult[T], start_time: float) -> bool:
         """Inner consume logic (called under lock)."""
+        await self._emit("message", "[Waiting for backend response...]")
         msg_iter = self.backend.receive_messages().__aiter__()
 
         while True:
             try:
                 stall_timeout = None if self.spec.ignore_stall else STALL_TIMEOUT
+                await self._emit_heartbeat_if_needed()
+                await self._emit("message", "[Waiting for backend response...]")
                 message = await asyncio.wait_for(msg_iter.__anext__(), timeout=stall_timeout)
             except StopAsyncIteration:
                 return True

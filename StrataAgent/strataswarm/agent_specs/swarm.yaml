@@ -7,7 +7,8 @@ checkpoint:
 
 agents:
   - search_agent
-  - lean_syntax
-  - lemma_proposer
   - task_manager
-  # counter_example and prover are created dynamically by TaskManager via swarm_agent()
+  # All other agents are created dynamically:
+  # - counter_example, prover: by TaskManager via swarm_agent()
+  # - po_decomposer, proof_writer, refactoring_agent, deep_proof_validator: by Prover via swarm_agent()
+  # - tm_clarifier, tm_monitor, tm_chat: by TaskManager internally

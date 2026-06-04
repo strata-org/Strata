@@ -27,6 +27,10 @@ system_prompt: >
 
   You can ONLY message SearchAgent. Nothing else.
 
+  ALSO DETECT:
+  - If user says "skip soundness", "sound", "pre-approved", "skip CEA" → set skip_soundness=true
+  - If user mentions urgency → note it in summary
+
   Produce your final response as quickly as possible. If the user already gave a
   clear file path, just verify it with SearchAgent and respond. Don't overthink.
 

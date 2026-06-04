@@ -113,6 +113,7 @@ class ClarifierResponse:
     file_path: str | None = None
     theorem_names: list[str] | None = None
     has_sorry: bool = False
+    skip_soundness: bool = False
     needs_user_input: bool = False
     question_for_user: str | None = None
     summary: str = ""
@@ -213,7 +214,11 @@ async def _state_idle(state: WorkflowState, agent) -> Transition:
 
     summary = messages_ch.peek_summary()
     if summary:
-        await agent._emit("message", f"[TM] ← {summary[0][0]}")
+        sender, _ = summary[0]
+        # Peek the actual payload for display (non-destructive via queue internals)
+        pending = list(messages_ch._queue._queue)
+        payload_preview = pending[0].payload[:300] if pending else ""
+        await agent._emit("message", f"[{sender}]: {payload_preview}")
 
     return Transition.MESSAGE_RECEIVED
 
@@ -463,11 +468,12 @@ async def _delegate(state: WorkflowState, agent, handler_name: Handler) -> tuple
             if out.file_path:
                 state.task = {
                     "theorem_file": out.file_path,
-                    "skip_soundness": False,
+                    "skip_soundness": out.skip_soundness,
                     "notes": f"Theorems: {out.theorem_names or []}",
                 }
                 response = f"File: {out.file_path}\nTheorems with sorry: {out.theorem_names}\n{out.summary}"
                 await _send_to_user(agent, response)
+                await agent._emit("message", f"[TM → user]: {response}")
                 state.mode = WorkflowMode.CLARIFYING
                 return response, Transition.NEW_TASK
 
@@ -476,6 +482,18 @@ async def _delegate(state: WorkflowState, agent, handler_name: Handler) -> tuple
     else:
         result = await internal_agent.run_ai(inp=None, result_type=str, max_turns=THINKING_MAX_TURNS)
         response = result.output or result.raw_result or ""
+
+        # Send monitor/chat response to user
+        if response:
+            await _send_to_user(agent, response)
+            await agent._emit("message", f"[TM → user]: {response}")
+
+        # Detect prover completion from monitor response
+        if handler_name == Handler.MONITOR and response:
+            lower = response.lower()
+            if any(w in lower for w in ["proof complete", "proof failed", "failed:", "complete:"]):
+                return response, Transition.PROVER_DONE
+
         return response, None
 
 
@@ -508,7 +526,9 @@ async def _get_internal_agent(state: WorkflowState, agent, which: Handler):
     attr_ctx = f"_tm_{which.value}_ctx"
 
     if getattr(agent, attr, None) is None:
-        ctx = swarm_agent(f"tm_{which.value}", swarm=agent.swarm, cwd=agent._cwd)
+        # Monitor needs workspace scoping to read Sandbox files
+        workspace = "StrataAgent/Sandbox" if which == Handler.MONITOR else None
+        ctx = swarm_agent(f"tm_{which.value}", swarm=agent.swarm, cwd=agent._cwd, workspace=workspace)
         internal = await ctx.__aenter__()
         setattr(agent, attr_ctx, ctx)
         setattr(agent, attr, internal)
