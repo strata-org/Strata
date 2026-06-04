@@ -340,9 +340,30 @@ def collectFvarNames {T : LExprParamsT} : LExpr T → List (Identifier T.base.ID
   | .eq _ e1 e2 => collectFvarNames e1 ++ collectFvarNames e2
   | _ => []
 
-/-- Collects type variables from user-written binder annotations (abs/quant only).
-    fvar/op annotations are excluded because they come from the typing context
-    (e.g. datatype selectors) and will be instantiated during resolution. -/
+/-- Collects type variables from user-written binder annotations (abs/quant only). Used to rule out unbound type variables in `FunctionType.lean`.
+    fvar/op annotations are excluded because they carry type variables from
+    external declarations unrelated to the current expression's typeArgs.
+
+    For `.op`: function references carry the callee's own type parameters. E.g.:
+      ```
+      function g<U>(x: U): U { x }
+      function f<T>(y: T): T { g(y) }
+      ```
+      After translation, `f`'s body contains `.op () "g" (some (arrow (ftvar "U") (ftvar "U")))`, but "U" should not be considered unbound here,
+      merely not-yet-resolved.
+      The same applies to datatype destructors (e.g. `List.head` carries `(arrow (list T) T)`
+      where T is from the datatype declaration).
+
+    For `.fvar`: references to variables from an enclosing scope carry that scope's type
+    parameters. E.g.:
+      ```
+      procedure p<V>(x: V) (z: V) {
+        function g<T>(y: T): T { if x == z then y else y }
+        g(0);
+      }
+      ```
+      Here `x` and `z` appear as `.fvar` with type annotation `(ftvar "V")`.
+      "V" is not unbound here either, since it is fixed from the outer context.-/
 def tyVarsOfBinderAnnotations (e : LExpr ⟨⟨M, IDMeta⟩, LMonoTy⟩) : Std.HashSet TyIdentifier :=
   match e with
   | .fvar _ _ (some _) => {}
