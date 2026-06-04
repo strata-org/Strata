@@ -216,8 +216,8 @@ def testOuterTyVarCapture : List Statement :=
     isConstr := false,
     inputs := [(⟨"y", ()⟩, .forAll [] (.ftvar "b"))],
     output := .forAll [] (.ftvar "b"),
-    body := some (.app () (.abs () "z" (some (.ftvar "a")) (.bvar () 0))
-                          (.fvar () ⟨"y", ()⟩ none)),
+    body := some (.app default (.abs default "z" (some (.ftvar "a")) (.bvar default 0))
+                          (.fvar default ⟨"y", ()⟩ none)),
     attr := #[],
     concreteEval := none,
     axioms := []
