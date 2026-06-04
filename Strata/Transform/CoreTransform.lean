@@ -5,10 +5,8 @@
 -/
 module
 
-public import Strata.Languages.Core.Statement
 public import Strata.Languages.Core.CallGraph
 public import Strata.Languages.Core.CoreGen
-public import Strata.DL.Util.LabelGen
 public import Strata.Util.Statistics
 
 /-! # Utility functions for program transformation in Strata Core -/

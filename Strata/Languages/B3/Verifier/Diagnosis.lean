@@ -5,8 +5,6 @@
 -/
 module
 
-public import Strata.Languages.B3.Verifier.State
-public import Strata.Languages.B3.Verifier.Expression
 public import Strata.Languages.B3.Verifier.Statements
 
 public section
@@ -24,6 +22,7 @@ When a verification fails, these strategies help identify the root cause by:
 
 namespace Strata.B3.Verifier
 
+open StrataDDM (SourceRange)
 open Strata.SMT
 
 ---------------------------------------------------------------------

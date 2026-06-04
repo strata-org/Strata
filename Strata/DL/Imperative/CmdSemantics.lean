@@ -6,9 +6,6 @@
 module
 
 public import Strata.DL.Imperative.Cmd
-public import Strata.DL.Imperative.HasVars
-public import Strata.DL.Util.Map
-public import Strata.DL.Util.ListUtils
 import all Strata.DL.Util.ListUtils
 
 ---------------------------------------------------------------------

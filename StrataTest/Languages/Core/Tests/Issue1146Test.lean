@@ -3,8 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.DDMTransform.Translate
+meta import Strata.Languages.Core.DDMTransform.Translate
+import StrataDDM.Integration.Lean.HashCommands
+
+meta section
 
 /-!
 # Regression test for https://github.com/strata-org/Strata/issues/1146
@@ -19,7 +23,7 @@ namespace Strata.Issue1146Test
 
 /-! ## Canonical form: datatype + function translates without error -/
 
-private def datatypeAndFunction : Strata.Program :=
+private def datatypeAndFunction : StrataDDM.Program :=
 #strata
 program Core;
 
@@ -41,7 +45,7 @@ function Len (xs : List) : int
 error: unexpected token ';'; expected 'function', Core.Block or expected at least one element
 -/
 #guard_msgs in
-def strayTrailingSemi : Strata.Program :=
+def strayTrailingSemi : StrataDDM.Program :=
 #strata
 program Core;
 
@@ -54,3 +58,5 @@ function Len (xs : List) : int
 #end
 
 end Strata.Issue1146Test
+
+end

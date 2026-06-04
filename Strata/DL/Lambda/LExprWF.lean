@@ -7,6 +7,7 @@ module
 
 public import Strata.DL.Lambda.LExpr
 import all Strata.DL.Lambda.LExpr
+public import Strata.DL.Util.Map
 
 /-! ## Well-formedness of Lambda Expressions
 

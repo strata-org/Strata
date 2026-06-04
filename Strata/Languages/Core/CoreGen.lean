@@ -5,13 +5,12 @@
 -/
 module
 
-public import Strata.Languages.Core.Statement
 public import Strata.DL.Util.LabelGen
-public import Strata.DL.Util.StringGen
 import all Strata.DL.Util.StringGen
 import all Strata.DL.Util.Counter
-public import Strata.DL.Util.ListUtils
-open Core Lambda Imperative
+public import Strata.Languages.Core.Identifiers
+import Std.Tactic.BVDecide.Normalize.Prop
+open Core Lambda
 
 /-! ## Strata Core Identifier Generator
   This file contains a Strata Core Identifier generator `CoreGenState.gen`, where the

@@ -3,8 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core.Verifier
+import StrataDDM.Integration.Lean.HashCommands
+
+meta section
+open StrataDDM (Program)
 
 /-!
 # Polymorphic Unification Test
@@ -62,10 +67,12 @@ function BadFunc (o: Option(int)) : int {
 #end
 
 /--
-info: error: (1284-1357) Impossible to unify (arrow string int) with (arrow int $__ty4).
+info: error: (1382-1455) Impossible to unify (arrow string int) with (arrow int $__ty4).
 First mismatch: string with int.
 -/
 #guard_msgs in
 #eval Core.typeCheck .quiet (TransM.run Inhabited.default (translateProgram polyUnifBadPgm)).fst
 
 end Strata.PolyUnifTest
+
+end
