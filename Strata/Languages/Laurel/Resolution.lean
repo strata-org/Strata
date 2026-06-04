@@ -510,7 +510,7 @@ private def isNumeric (ctx : TypeContext) (ty : HighTypeMd) : Bool :=
     type: a homogeneous arithmetic expression `1 + 2` yields `TInt`,
     `1 + <?>` yields `TInt` (Unknown promotes), `<?> + <?>` yields
     `Unknown`, and `1 + 2.0` is rejected. -/
-private def consistencyLub (ctx : TypeContext)
+private def join (ctx : TypeContext)
     (a b : HighTypeMd) : Option HighTypeMd :=
   let a' := ctx.unfold a
   let b' := ctx.unfold b
@@ -1520,7 +1520,7 @@ def Synth.instanceCall (exprMd : StmtExprMd)
 
     Arithmetic follows the same shape as `Op-Eq` but for n operands:
     synthesize each operand's type, require it to be `Numeric`, and
-    fold the operand types under `consistencyLub` (the LUB on the
+    fold the operand types under `join` (the LUB on the
     flat consistency lattice — `Unknown ⊔ T = T`, `T ⊔ T = T`,
     everything else inconsistent). The fold's result is the
     synthesized type. If any pair is inconsistent the rule emits a
@@ -1554,7 +1554,7 @@ def Synth.primitiveOp (exprMd : StmtExprMd) (expr : StmtExpr)
     for (a, aTy) in args'.zip argTypes do
       unless isNumeric ctx aTy do
         typeMismatch a.source (some expr) "expected a numeric type" aTy
-    -- Fold operands by consistencyLub, starting from `Unknown` so the
+    -- Fold operands by join, starting from `Unknown` so the
     -- empty list (impossible for these ops, but kept for totality)
     -- yields `Unknown` and a single-operand fold (`Neg`) yields the
     -- operand's type.
@@ -1562,7 +1562,7 @@ def Synth.primitiveOp (exprMd : StmtExprMd) (expr : StmtExpr)
     let resultTy := argTypes.foldl
       (fun acc aTy =>
         match acc with
-        | some lub => consistencyLub ctx lub aTy
+        | some lub => join ctx lub aTy
         | none => none)
       (some unknownTy)
     match resultTy with
