@@ -15,7 +15,7 @@ import all Strata.DL.Util.Nodup
 
   Pure-Imperative property lemmas about `substDefined` / `substNodup`
   that do not depend on any specific `PureExpr` instantiation (e.g.,
-  Core).  Live here rather than in `Strata.Transform.SubstSemanticsProps`
+  Core).  Live here rather than in `Strata.Transform.SubstProps`
   because they are reusable across any transform that introduces fresh
   variables and substitutes them. -/
 

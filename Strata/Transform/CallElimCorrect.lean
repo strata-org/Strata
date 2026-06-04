@@ -18,8 +18,8 @@ public import Strata.Transform.CallElim
 public import Strata.DL.Imperative.CmdSemantics
 public import Strata.Languages.Core.StatementSemantics
 import Strata.Languages.Core.StatementSemanticsProps
-public import Strata.Transform.SubstSemanticsProps
-import Strata.Transform.CoreTransformSemanticsProps
+public import Strata.Transform.SubstProps
+import Strata.Transform.CoreTransformProps
 import Strata.DL.Util.ListUtils
 public import Strata.DL.Util.String
 

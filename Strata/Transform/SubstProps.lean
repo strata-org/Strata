@@ -12,7 +12,7 @@ public import Strata.DL.Imperative.CmdSemantics
 public import Strata.DL.Imperative.CmdSemanticsProps
 public import Strata.Languages.Core.StatementSemantics
 public import Strata.Transform.CoreTransform
-public import Strata.Transform.CoreTransformSemanticsProps
+public import Strata.Transform.CoreTransformProps
 import Strata.Languages.Core.StatementSemanticsProps
 import Strata.DL.Util.ListUtils
 
