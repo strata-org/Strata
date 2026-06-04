@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 -- Grammar updated: renamed Optional* categories (op names updated)
+-- Grammar updated: `call` callee at prec 89 to accept fieldAccess (prec 90) chains
 module
 
 -- Laurel dialect definition, loaded from LaurelGrammar.st

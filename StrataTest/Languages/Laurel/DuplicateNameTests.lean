@@ -89,7 +89,7 @@ def dupInstanceProcs := r"
 composite Foo {
   procedure bar() opaque { };
   procedure bar() opaque { };
-//          ^^^ error: Duplicate definition 'bar' is already defined in this scope
+//          ^^^ error: Duplicate definition 'Foo$bar' is already defined in this scope
 }
 "
 

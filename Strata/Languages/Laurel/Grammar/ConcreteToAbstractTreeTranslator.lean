@@ -287,13 +287,20 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
       return mkStmtExprMd (.AsType target (mkHighTypeMd (.UserDefined typeName) src)) src
     | q`Laurel.call, #[arg0, argsSeq] =>
       let callee ← translateStmtExpr arg0
-      let calleeName := match callee.val with
-        | .Var (.Local name) => name
-        | _ => ""
       let argsList ← match argsSeq with
         | .seq _ .comma args => args.toList.mapM translateStmtExpr
         | _ => pure []
-      return mkStmtExprMd (.StaticCall calleeName argsList) src
+      -- `obj#method(args)` parses as `call(fieldAccess(obj, method), args)`.
+      -- Treat such calls as instance-method calls; everything else stays a
+      -- static call by callee text (empty when the callee is a higher-order
+      -- expression — preserved to match prior behavior).
+      match callee.val with
+      | .Var (.Field target fieldName) =>
+        return mkStmtExprMd (.InstanceCall target fieldName argsList) src
+      | .Var (.Local name) =>
+        return mkStmtExprMd (.StaticCall name argsList) src
+      | _ =>
+        return mkStmtExprMd (.StaticCall (mkId "") argsList) src
     | q`Laurel.return, #[arg0] =>
       let value ← translateStmtExpr arg0
       return mkStmtExprMd (.Return (some value)) src

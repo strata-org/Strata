@@ -32,10 +32,6 @@ and `self#field` accesses are simply preserved verbatim on the lifted proc.
 
 namespace Strata.Laurel
 
-/-- Canonical lifted name: `"<CompositeName>_<methodName>"`. -/
-def liftedProcName (typeName methodName : Identifier) : Identifier :=
-  mkId s!"{typeName.text}_{methodName.text}"
-
 /-! ## uniqueId clearing on cloned procedures
 
 The cloned procedure inherits `Identifier.uniqueId` values from the prior
