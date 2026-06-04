@@ -143,41 +143,41 @@ spec {
 
 
 VCs:
-Label: inc_ensures_1_2429
+Label: inc_ensures_1_2587
 Property: assert
 Assumptions:
-inc_requires_0_2411: z@1 > 0
+inc_requires_0_2569: z@1 > 0
 Obligation:
 true
 
-Label: callElimAssert_inc_requires_0_2411_6
+Label: callElimAssert_inc_requires_0_2569_6
 Property: assert
 Assumptions:
-main_caller_requires_2_2545: z@3 == 10
-main_caller_requires_3_2565: g@3 == 0
+main_caller_requires_2_2703: z@3 == 10
+main_caller_requires_3_2723: g@3 == 0
 Obligation:
 z@3 > 0
 
-Label: main_caller_ensures_4_2584
+Label: main_caller_ensures_4_2742
 Property: assert
 Assumptions:
-main_caller_requires_2_2545: z@3 == 10
-main_caller_requires_3_2565: g@3 == 0
-callElimAssume_inc_ensures_1_2429_7: g@5 == g@3 + 5 + z@5
+main_caller_requires_2_2703: z@3 == 10
+main_caller_requires_3_2723: g@3 == 0
+callElimAssume_inc_ensures_1_2587_7: g@5 == g@3 + 5 + z@5
 Obligation:
 g@5 == 15
 
 ---
 info:
-Obligation: inc_ensures_1_2429
+Obligation: inc_ensures_1_2587
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_inc_requires_0_2411_6
+Obligation: callElimAssert_inc_requires_0_2569_6
 Property: assert
 Result: ✅ pass
 
-Obligation: main_caller_ensures_4_2584
+Obligation: main_caller_ensures_4_2742
 Property: assert
 Result: ❓ unknown
 Model:
