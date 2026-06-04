@@ -752,9 +752,7 @@ def translateLaurelToCore (options: LaurelTranslateOptions) (program : Program) 
 
   -- Instance procedures are lifted to top-level static procedures by the
   -- `LiftInstanceProcedures` pass, so by the time we reach Core translation,
-  -- every composite's `instanceProcedures` list should be empty. If it's
-  -- not, the pipeline ordering is broken — flag loudly rather than silently
-  -- dropping the procedure.
+  -- every composite's `instanceProcedures` list should be empty
   for td in program.types do
     if let .Composite ct := td then
       for proc in ct.instanceProcedures do
