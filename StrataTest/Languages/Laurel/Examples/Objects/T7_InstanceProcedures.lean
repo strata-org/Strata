@@ -131,11 +131,8 @@ procedure useCell(x: int)
 #guard_msgs (drop info, error) in
 #eval testInputWithOffset "MethodWithExtraArgs" methodWithExtraArgs 107 processLaurelFile
 
-/-! ## 4. Instance method declared on the receiver via the lifted-name
-    convention: a top-level procedure named `Counter$foo` and an instance
-    procedure `foo` on `Counter` would collide in lifting. This test does
-    NOT collide — it just confirms a procedure with `$` in its name parses
-    and resolves. -/
+/-! ## 4. Boolean-typed field updated through an instance method, and read
+    back via field access in the caller's `assert`. -/
 
 def liftedNameRoundTrip := r"
 composite Widget {
@@ -161,9 +158,10 @@ procedure useWidget()
 #guard_msgs (drop info, error) in
 #eval testInputWithOffset "LiftedNameRoundTrip" liftedNameRoundTrip 138 processLaurelFile
 
-/-! ## 5. Calling an instance method from another procedure body via the
-    lifted top-level name (`Counter$reset`) directly. After the lifting
-    pass, this is just a normal static-procedure call. -/
+/-! ## 5. Calling an instance method from a top-level procedure that takes
+    the receiver as a parameter. The caller's own modifies clause covers
+    only `a`; the unused `b` parameter is included to confirm method
+    dispatch picks the right receiver. -/
 
 def callViaLiftedName := r"
 composite Counter {
@@ -189,10 +187,9 @@ procedure resetTwoCounters(a: Counter, b: Counter)
 #guard_msgs (drop info, error) in
 #eval testInputWithOffset "CallViaLiftedName" callViaLiftedName 162 processLaurelFile
 
-/-! ## 6. Instance method with no modifies clause: a pure observer pattern
-    is not yet representable since methods today implicitly take `self` and
-    no return values without modifies — but we can confirm the parse path
-    handles a method whose body is just a contract. -/
+/-! ## 6. Instance method whose extra parameter is unused in the body:
+    confirms an extra (unused) method parameter doesn't break call
+    dispatch or framing. -/
 
 def opaqueMethodNoBody := r"
 composite Account {

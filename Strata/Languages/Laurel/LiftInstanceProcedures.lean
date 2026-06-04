@@ -13,14 +13,17 @@ public import Strata.Languages.Laurel.Resolution
 
 A Laurel-to-Laurel pass that lifts every instance procedure (a procedure
 defined inside a `composite` block) to a top-level static procedure with a
-mangled name `<CompositeName>_<methodName>`, then rewrites every call site
+mangled name `<CompositeName>$<methodName>`, then rewrites every call site
 that resolved to such an instance procedure to use the lifted name.
 
 After this pass:
 - `CompositeType.instanceProcedures` is empty for every composite.
 - `program.staticProcedures` contains the lifted procedures.
-- Every `StaticCall` (and defensively every `InstanceCall`) whose callee
-  resolved to a `.instanceProcedure` now points at the lifted name.
+- Every `InstanceCall` (from `obj#method(args)` surface syntax) and every
+  `StaticCall` whose callee resolved to a `.instanceProcedure` now points
+  at the lifted name. For `InstanceCall`, the receiver is prepended to
+  the argument list to match the lifted procedure's `self : <CompositeName>`
+  parameter.
 
 The pipeline runs `resolve` again after this pass (`needsResolves := true`)
 so the fresh static procedures and the rewritten call sites get bound.
@@ -131,8 +134,9 @@ private def rewriteCallNode (model : SemanticModel) (expr : StmtExprMd) : StmtEx
       { expr with val := .StaticCall lifted args }
     | _ => expr
   | .InstanceCall target callee args =>
-    -- Defensive: surface syntax never produces InstanceCall, but if it ever does
-    -- (e.g. future Python frontend changes), lower it to the lifted static call.
+    -- `obj#method(args)` surface syntax parses to InstanceCall. Flatten it to
+    -- a static call against the lifted name, prepending the receiver as the
+    -- first argument to match the lifted procedure's `self` parameter.
     match model.get? callee with
     | some (.instanceProcedure typeName _) =>
       let lifted := liftedProcName typeName callee
@@ -172,9 +176,9 @@ public section
 
 /--
 Lift every `proc ∈ ct.instanceProcedures` to a top-level static procedure
-named `s!"{ct.name.text}_{proc.name.text}"`, rewrite every call site whose
-callee resolved to an instance procedure, and clear `instanceProcedures` on
-every composite.
+named `s!"{ct.name.text}${proc.name.text}"` (see `liftedProcName`), rewrite
+every call site whose callee resolved to an instance procedure, and clear
+`instanceProcedures` on every composite.
 
 The pipeline re-runs `resolve` after this pass so the fresh names get bound.
 -/

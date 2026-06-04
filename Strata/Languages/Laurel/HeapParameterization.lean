@@ -536,6 +536,8 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
     return proc
 
 def heapParameterization (model: SemanticModel) (program : Program) : Program :=
+  -- Instance procedures are already lifted to `staticProcedures` by an earlier
+  -- pass, so they're covered by the calls below.
   let heapReaders := computeReadsHeap program.staticProcedures
   let heapWriters := computeWritesHeap program.staticProcedures
   let initState : TransformState := { heapReaders, heapWriters }
