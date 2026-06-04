@@ -277,7 +277,11 @@ async def _state_soundness(state: WorkflowState, agent) -> Transition:
 
     async with swarm_agent("counter_example", swarm=agent.swarm, cwd=agent._cwd) as cea:
         verdict = await cea.run(
-            inp={"file": task.theorem_file, "action": "Check soundness"},
+            inp={
+                "file": task.theorem_file,
+                "theorem": task.notes,
+                "action": f"Check soundness of theorem(s): {task.notes}",
+            },
             result_type=_Verdict,
         )
 
@@ -306,11 +310,15 @@ async def _state_dispatch(state: WorkflowState, agent) -> Transition:
     agent._prover_agent = prover
     state.prover_agent_name = prover.spec.name
 
-    briefing = f"Prove theorem in {task.theorem_file}. {task.notes or ''}. Message TaskManager when done."
+    prover_input = {
+        "theorem_file": task.theorem_file,
+        "theorem_name": task.notes or "",
+        "parent_agent": agent.spec.name,
+    }
 
     async def _run_prover():
         try:
-            await prover.run(inp=briefing, result_type=None)
+            await prover.run(inp=prover_input, result_type=None)
         except Exception as e:
             await agent._emit("message", f"[TM] Prover error: {e}")
 
