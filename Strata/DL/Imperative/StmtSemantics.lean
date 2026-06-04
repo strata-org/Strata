@@ -186,6 +186,21 @@ theorem StoreAgreement.of_projectStore {P : PureExpr}
   · simp [hp]
   · simp [hp] at h
 
+/-- Bundle `StoreAgreement.of_projectStore` with `.trans` and a `ρ_blk` rewrite,
+the four-line idiom that recurs after every `.block`-step in the simulation
+proofs. Given a record-update equality showing the outer env's store is the
+projection of the inner env's store, and an agreement between the inner store
+and a CFG store, derive agreement between the outer store and the CFG store. -/
+theorem StoreAgreement.through_projectStore {P : PureExpr}
+    {σ_parent : SemanticStore P}
+    {ρ_inner ρ_blk : Env P}
+    {σ_cfg : SemanticStore P}
+    (h_ρ_blk_eq : ρ_blk = { ρ_inner with store := projectStore σ_parent ρ_inner.store })
+    (h_agree_body : StoreAgreement ρ_inner.store σ_cfg) :
+    StoreAgreement ρ_blk.store σ_cfg := by
+  rw [h_ρ_blk_eq]
+  exact StoreAgreement.trans (StoreAgreement.of_projectStore _ _) h_agree_body
+
 /-! ## Single-step relation -/
 
 section

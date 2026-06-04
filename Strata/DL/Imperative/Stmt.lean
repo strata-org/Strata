@@ -201,6 +201,66 @@ pattern the CFG cannot replicate. -/
 
 ---------------------------------------------------------------------
 
+/-! ### SimpleShape
+
+Predicate stating that a statement or block has a "simple" shape suitable
+for the structured-to-CFG soundness proof under axiom-free assumptions:
+- no nondeterministic `.ite`
+- no `.loop` of any kind (the `.loop` arm discharges by contradiction)
+
+`.ite (.det _)`, `.block`, sequential `.cmd`s, `.exit`, `.funcDecl`,
+and `.typeDecl` are all allowed.
+-/
+
+mutual
+/-- Returns true if the statement satisfies the simple-shape restriction. -/
+@[expose] def Stmt.simpleShape (s : Stmt P (Cmd P)) : Bool :=
+  match s with
+  | .cmd _ => true
+  | .block _ bss _ => Block.simpleShape bss
+  | .ite (.det _) tss ess _ => Block.simpleShape tss && Block.simpleShape ess
+  | .ite .nondet _ _ _ => false
+  | .loop _ _ _ _ _ => false
+  | .exit _ _ => true
+  | .funcDecl _ _ => true
+  | .typeDecl _ _ => true
+  termination_by (Stmt.sizeOf s)
+
+/-- Returns true if the block satisfies the simple-shape restriction. -/
+@[expose] def Block.simpleShape (ss : List (Stmt P (Cmd P))) : Bool :=
+  match ss with
+  | [] => true
+  | s :: srest => Stmt.simpleShape s && Block.simpleShape srest
+  termination_by (Block.sizeOf ss)
+end
+
+/-- `Block.simpleShape` on `s :: rest` decomposes to the conjunction. -/
+theorem Block.simpleShape_cons_iff
+    {s : Stmt P (Cmd P)} {rest : List (Stmt P (Cmd P))} :
+    Block.simpleShape (s :: rest) = true ↔
+      Stmt.simpleShape s = true ∧ Block.simpleShape rest = true := by
+  simp only [Block.simpleShape, Bool.and_eq_true]
+
+/-- The then-branch of an `.ite (.det _)` is simple when the whole ite is. -/
+theorem Stmt.simpleShape_branch_then
+    {g : P.Expr} {tss ess : List (Stmt P (Cmd P))} {md : MetaData P} :
+    Stmt.simpleShape (.ite (.det g) tss ess md) = true →
+    Block.simpleShape tss = true := by
+  simp only [Stmt.simpleShape, Bool.and_eq_true]
+  intro h
+  exact h.1
+
+/-- The else-branch of an `.ite (.det _)` is simple when the whole ite is. -/
+theorem Stmt.simpleShape_branch_else
+    {g : P.Expr} {tss ess : List (Stmt P (Cmd P))} {md : MetaData P} :
+    Stmt.simpleShape (.ite (.det g) tss ess md) = true →
+    Block.simpleShape ess = true := by
+  simp only [Stmt.simpleShape, Bool.and_eq_true]
+  intro h
+  exact h.2
+
+---------------------------------------------------------------------
+
 /-! ### NoBlocks
 
 A boolean predicate asserting that a statement (or block) contains no
