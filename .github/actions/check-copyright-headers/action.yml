@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0 OR MIT
 name: Check copyright headers
 description: >
-  Verify that all .lean and .py files have the expected copyright header.
+  Verify that all .lean files have the expected copyright header.
+  Downstream repos can add their own checks for other file types.
 
 inputs:
   directory:
