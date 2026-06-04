@@ -330,7 +330,7 @@ inductive EvalCommand (π : String → Option Procedure) (φ : CoreEval → Pure
     -- positional: modvals[i] written back to lhs[i]
     UpdateStates σ lhs modvals σ' →
     ----
-    EvalCommand π φ δ σ (CmdExt.call n callArgs md) σ' false
+    EvalCommand π φ δ σ (CmdExt.call n callArgs md) σ' ρ'.hasFailure
 
 end
 

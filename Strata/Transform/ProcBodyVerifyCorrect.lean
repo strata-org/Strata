@@ -9,7 +9,7 @@ public import Strata.Transform.ProcBodyVerify
 public import Strata.Transform.CoreSpecification
 import Std.Tactic.BVDecide.Normalize.Prop
 import Strata.Languages.Core.ProcedureWF
-import Strata.Languages.Core.StatementSemanticsProps
+public import Strata.Languages.Core.StatementSemanticsProps
 
 public section
 
@@ -639,7 +639,14 @@ theorem procBodyVerify_procedureCorrect
     -- `h_wf_ext`: the evaluator extension `φ` is well-formed
     (h_wf_ext : Core.WFEvalExtension φ)
     -- `h_wf_proc`: the procedure is well-formed
-    (h_wf_proc : WF.WFProcedureProp p proc) :
+    (h_wf_proc : WF.WFProcedureProp p proc)
+    -- `h_callees`: every procedure body in `π`, run from a non-failing init
+    -- env, terminates with `hasFailure = false`. Required by
+    -- `core_noFailure_preserved` because `EvalCommand.call_sem` propagates
+    -- the callee body's terminal `hasFailure` flag (Layer-A small-step
+    -- semantics). Discharged by the caller via repeated application of
+    -- this very theorem to all procedures in `π`.
+    (h_callees : Core.CalleesNoFailure π φ) :
     -- Conclusion: ProcedureCorrect holds.
     Core.Specification.ProcedureCorrect π φ proc p := by
 
@@ -771,7 +778,7 @@ theorem procBodyVerify_procedureCorrect
     -- hasFailure = false
     have h_nf' : ρ'.hasFailure = Bool.false :=
       Core.core_noFailure_preserved π φ
-        (.stmts proc.body ρ₀) (.terminal ρ') h_valid h_wf.noFailure h_term
+        (.stmts proc.body ρ₀) (.terminal ρ') h_callees h_valid h_wf.noFailure h_term
     -- wfBool preservation
     have h_wfb_term : WellFormedSemanticEvalBool ρ'.eval :=
       Core.core_wfBool_preserved π φ h_wf_ext

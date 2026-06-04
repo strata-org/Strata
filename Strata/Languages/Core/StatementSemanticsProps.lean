@@ -2644,20 +2644,57 @@ private theorem coreIsAtAssert_block_of_inner
     {label} {σ_parent} {inner : CoreConfig} {a}
     (h : coreIsAtAssert inner a) : coreIsAtAssert (.block label σ_parent inner) a := h
 
+/-- Program-level precondition: every procedure body, run from a non-failing
+    initial environment, terminates with `hasFailure = false`.
+
+    Required by `evalCommand_failure_implies_assert_ff` and
+    `core_noFailure_preserved` because `EvalCommand.call_sem` propagates the
+    callee body's terminal `hasFailure` flag (Layer-A small-step semantics).
+    Without this hypothesis, a failing assert inside a callee body would
+    surface as `EvalCommand … σ' true` at the call site, but the call site
+    itself is not an assert location (per `coreIsAtAssert`), so the lemma's
+    existential witness would be unprovable.
+
+    The hypothesis is discharged by the caller using
+    `procBodyVerify_procedureCorrect` (clause 2 of `ProcedureCorrect`), which
+    establishes exactly this fact for each verified procedure. -/
+@[expose] def CalleesNoFailure
+    (π : String → Option Procedure)
+    (φ : CoreEval → PureFunc Expression → CoreEval) : Prop :=
+  ∀ (n : String) (p : Procedure) (ρ ρ' : Env Expression),
+    π n = some p →
+    ρ.hasFailure = false →
+    CoreStepStar π φ (.stmts p.body ρ) (.terminal ρ') →
+    ρ'.hasFailure = false
+
 private theorem evalCommand_failure_implies_assert_ff
     {π : String → Option Procedure} {φ : CoreEval → PureFunc Expression → CoreEval}
     {ρ : Env Expression} {c : Command} {σ'}
+    (hCallees : CalleesNoFailure π φ)
     (hcmd : EvalCommand π φ ρ.eval ρ.store c σ' true) :
     ∃ a : AssertId Expression,
       coreIsAtAssert (.stmt (.cmd c) ρ) a ∧
       ρ.eval ρ.store a.expr = some HasBool.ff := by
+  -- Generalize the `true` index so dependent elimination can split both
+  -- constructors of `EvalCommand` (the `call_sem` case carries an opaque
+  -- `ρ'.hasFailure` index that does not unify with the literal `true`).
+  generalize hb : (true : Bool) = b at hcmd
   cases hcmd with
   | cmd_sem heval =>
+    subst hb
     cases heval with
     | eval_assert_fail hff _ => exact ⟨⟨_, _⟩, ⟨rfl, rfl⟩, hff⟩
+  | call_sem hπ _ _ _ _ _ _ _ _ _ _ _ _ hbody _ _ _ =>
+    -- `call_sem` body trace: `CoreStepStar π φ (.stmts p.body ⟨σAO, δ, false⟩)
+    --                                            (.terminal ρ')` plus
+    -- `hb : true = ρ'.hasFailure`. Apply `hCallees` to extract
+    -- `ρ'.hasFailure = false`, contradicting `hb`.
+    have hρ' : _ = false := hCallees _ _ _ _ hπ rfl hbody
+    exact absurd (hb.trans hρ') (by decide)
 
 theorem core_noFailure_preserved
     (c₁ c₂ : CoreConfig)
+    (hCallees : CalleesNoFailure π φ)
     (hvalid : ∀ (a : AssertId Expression) (cfg : CoreConfig),
       CoreStepStar π φ c₁ cfg →
       coreIsAtAssert cfg a →
@@ -2683,7 +2720,7 @@ theorem core_noFailure_preserved
       (Imperative.step_preserves_noFailure
         (P := Expression) (extendEval := EvalPureFunc φ)
         coreIsAtAssert
-        evalCommand_failure_implies_assert_ff
+        (evalCommand_failure_implies_assert_ff hCallees)
         coreIsAtAssert_of_inv_mem
         coreIsAtAssert_seq_of_inner
         coreIsAtAssert_block_of_inner
