@@ -1,8 +1,7 @@
 Python:
   - changed-files:
       - any-glob-to-any-file:
-          - 'Strata/Languages/Python/**'
-          - 'StrataTest/Languages/Python/**'
+          - 'StrataPython/**'
           - 'Tools/Python/**'
 
 Laurel:

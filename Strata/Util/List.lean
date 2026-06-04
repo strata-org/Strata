@@ -5,7 +5,7 @@
 -/
 module
 
-public import Std
+public import Std.Data.HashMap.Basic
 
 /-! # List duplicate detection
 

@@ -8,7 +8,7 @@ script_dir="$(cd "$(dirname "$0")" && pwd)"
 tools_python_dir="$(cd "$script_dir/.." && pwd)"
 cd "$tools_python_dir"
 
-strata=../../.lake/build/bin/strata
+strata=../../StrataCLI/.lake/build/bin/strata
 
 if [ ! -f $strata ]; then
   echo "strata is not built: $strata"

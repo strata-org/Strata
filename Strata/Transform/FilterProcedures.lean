@@ -5,8 +5,8 @@
 -/
 module
 
-public import Strata.Transform.CoreTransform
 public import Strata.Languages.Core.PipelinePhase
+import Std.Data.HashMap.AdditionalOperations
 
 /-! # Erase procedures satisfying specific criteria -/
 

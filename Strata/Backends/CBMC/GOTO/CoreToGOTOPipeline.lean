@@ -5,9 +5,13 @@
 -/
 module
 
-public import Strata.Backends.CBMC.CollectSymbols
 public import Strata.Backends.CBMC.GOTO.CoreToCProverGOTO
 import Strata.Transform.ProcedureInlining
+public import Strata.Languages.Core.Factory
+import Strata.Backends.CBMC.CollectSymbols
+import Strata.Backends.CBMC.GOTO.DefaultSymbols
+import Strata.Languages.Core.ProgramType
+import Strata.Util.Json
 
 /-! ## Core-to-GOTO translation pipeline
 

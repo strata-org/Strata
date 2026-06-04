@@ -5,7 +5,8 @@
 -/
 module
 
-public import Strata.Languages.Core.Env
+public import Strata.DL.Imperative.EvalContext
+public import Strata.Languages.Core.Program
 /-! # Proof Obligation Extraction
 
 A Core-to-obligations pass that walks a post-PE program and extracts

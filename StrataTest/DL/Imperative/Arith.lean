@@ -3,10 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import StrataTest.DL.Imperative.ArithExpr
-import StrataTest.DL.Imperative.ArithEval
-import StrataTest.DL.Imperative.ArithType
+meta import all StrataTest.DL.Imperative.ArithExpr
+meta import all StrataTest.DL.Imperative.ArithEval
+meta import all StrataTest.DL.Imperative.ArithType
+
+meta section
 
 ---------------------------------------------------------------------
 namespace Arith
@@ -77,3 +80,4 @@ genNum: 0
 
 end Arith
 ---------------------------------------------------------------------
+end

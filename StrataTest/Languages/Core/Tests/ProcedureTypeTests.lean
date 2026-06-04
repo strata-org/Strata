@@ -3,8 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.ProcedureType
+meta import Strata.Languages.Core.ProcedureType
+import Strata.Languages.Core.Factory
+
+meta section
 
 namespace Core
 
@@ -47,3 +51,5 @@ info: ok: (procedure P (x : int, out y : int)
 ---------------------------------------------------------------------
 end Tests
 end Core
+
+end
