@@ -202,7 +202,7 @@ the Python pipeline.
 
 The CI builds CBMC 6.8.0 from source with four patches applied:
 
-1. **`cbmc-string-support.patch`** (`StrataTest/Languages/Python/`): Adds
+1. **`cbmc-string-support.patch`** (`StrataPython/StrataPythonTest/`): Adds
    `String` as a recognized type in CBMC's SMT2 backend, enabling string
    constants and operations to be encoded in SMT-LIB.
 

@@ -31,7 +31,7 @@ jobs:
           sudo apt-get -qq install -y cmake ninja-build flex bison ccache
           git clone --depth 1 --branch cbmc-6.8.0 https://github.com/diffblue/cbmc.git cbmc-src
           cd cbmc-src
-          git apply "$GITHUB_WORKSPACE/StrataTest/Languages/Python/cbmc-string-support.patch"
+          git apply "$GITHUB_WORKSPACE/StrataPython/StrataPythonTest/cbmc-string-support.patch"
           git apply "$GITHUB_WORKSPACE/StrataTest/Languages/Laurel/cbmc-bounds-check.patch"
           git apply "$GITHUB_WORKSPACE/StrataTest/Backends/CBMC/cbmc-regex-support.patch"
           git apply "$GITHUB_WORKSPACE/StrataTest/Backends/CBMC/cbmc-quantifier-simplify.patch"
@@ -48,8 +48,17 @@ jobs:
         # The cache is safe to use here because we just saved it for this exact SHA
         # in the build_and_test_lean job from ci.yml
         # https://github.com/strata-org/Strata/issues/952
+        # Path list must match the save step in ci.yml's build_and_test_lean —
+        # actions/cache hashes the path list into the cache version, so a
+        # mismatch causes a miss even when the key matches.
         uses: ./.github/actions/restore-lake-cache
         with:
+          path: |
+            .lake
+            StrataCLI/.lake
+            StrataDDM/.lake
+            StrataBoole/.lake
+            StrataPython/.lake
           fail-on-cache-miss: "true"
           use-restore-keys: "false"
       - name: Build Strata
@@ -74,7 +83,7 @@ jobs:
         shell: bash
         run: |
           pip install ./Tools/Python
-          ./StrataTest/Languages/Python/run_py_cbmc_tests.sh
+          ./StrataPython/StrataPythonTest/run_py_cbmc_tests.sh
       - name: Run property summary tests
         shell: bash
         run: |

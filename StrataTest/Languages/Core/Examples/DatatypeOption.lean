@@ -3,9 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core
+import StrataDDM.Integration.Lean.HashCommands
 
+meta section
+open StrataDDM (Program)
 /-!
 # Datatype Option Integration Test
 
@@ -87,7 +91,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify optionTesterPgm (options := .quiet)
+#eval Core.verify optionTesterPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 2: Option with Havoc (requires SMT reasoning)
@@ -135,7 +139,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify optionHavocPgm (options := .quiet)
+#eval Core.verify optionHavocPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 3: Option Exhaustiveness (exactly one tester is true)
@@ -180,7 +184,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify optionExhaustivePgm (options := .quiet)
+#eval Core.verify optionExhaustivePgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 4: Option Mutual Exclusion (testers are mutually exclusive)
@@ -228,7 +232,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify optionMutualExclusionPgm (options := .quiet)
+#eval Core.verify optionMutualExclusionPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 5: Option Constructor Equality
@@ -285,7 +289,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify optionEqualityPgm (options := .quiet)
+#eval Core.verify optionEqualityPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 6: Option Constructor Inequality
@@ -331,7 +335,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify optionInequalityPgm (options := .quiet)
+#eval Core.verify optionInequalityPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 7: Option Destructor Function (field accessor)
@@ -388,6 +392,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify optionDestructorPgm (options := .quiet)
+#eval Core.verify optionDestructorPgm (options := .quiet)
 
 end Strata.DatatypeOptionTest
+end
