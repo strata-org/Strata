@@ -723,32 +723,6 @@ theorem genOutExprIdentsTrip_extract
       exact this.symm
     · simp at Hlen; exact Hlen
 
-/-! ### Trip-shape geometry helpers
-
-The Arg/Out/Old trip lemmas all share a `((g.zip ys).zip xs)` outer
-shape and project either the `.unzip.snd` (= `xs`, given length
-agreement) or `.unzip.fst.unzip.fst` (= `g`, ditto).  These pure list
-facts are extracted once so that the trip-level lemmas can short-cut
-their unzip/zip ceremony. -/
-
-theorem zip_zip_unzip_snd_of_lengths {α β γ}
-    {g : List α} {ys : List β} {xs : List γ}
-    (Hgx : g.length = xs.length) (Hyx : ys.length = xs.length) :
-    ((g.zip ys).zip xs).unzip.snd = xs := by
-  rw [List.unzip_zip_right]
-  rw [List.length_zip]
-  omega
-
-theorem zip_zip_unzip_fst_unzip_fst_of_lengths {α β γ}
-    {g : List α} {ys : List β} {xs : List γ}
-    (Hgx : g.length = xs.length) (Hyx : ys.length = xs.length) :
-    ((g.zip ys).zip xs).unzip.fst.unzip.fst = g := by
-  rw [List.unzip_zip_left (l₁ := (g.zip ys)) (l₂ := xs)]
-  · rw [List.unzip_zip_left (l₁ := g) (l₂ := ys)]
-    omega
-  · rw [List.length_zip]
-    omega
-
 /-! ### `_snd` projection lemmas for the `gen*ExprIdentsTrip` family
 
 These say: the `Prod.snd` projection of the trip list is exactly the
@@ -765,7 +739,7 @@ theorem genArgExprIdentsTrip_snd
     argTrips.unzip.snd = args := by
   obtain ⟨Hat, _, Hilen⟩ := genArgExprIdentsTrip_extract Hgen
   rw [← Hat]
-  exact zip_zip_unzip_snd_of_lengths
+  exact List.zip_zip_unzip_snd_of_lengths
           (genArgExprIdents_length' args.length s.genState)
           (by simp [List.length_map]; omega)
 
@@ -777,7 +751,7 @@ theorem genOutExprIdentsTrip_snd
     outTrips.unzip.snd = lhs := by
   obtain ⟨Hot, _, Hilen⟩ := genOutExprIdentsTrip_extract Hgen
   rw [← Hot]
-  exact zip_zip_unzip_snd_of_lengths
+  exact List.zip_zip_unzip_snd_of_lengths
           (genOutExprIdents_length' lhs s.genState)
           (by simp [List.length_map]; omega)
 
@@ -798,7 +772,7 @@ theorem genOldExprIdentsTrip_snd
     (Hgen : Core.Transform.genOldExprIdents oldVars s = (genOldIdents, s'))
     (Htylen : oldTys.length = oldVars.length) :
     ((genOldIdents.zip oldTys).zip oldVars).unzip.snd = oldVars :=
-  zip_zip_unzip_snd_of_lengths (genOldExprIdents_length Hgen) Htylen
+  List.zip_zip_unzip_snd_of_lengths (genOldExprIdents_length Hgen) Htylen
 
 /-! ### `*GeneratedWF` lemmas: each generator pushes its results to `generated`
 
@@ -872,7 +846,7 @@ theorem genArgExprIdentsTripGeneratedWF
         (ls := (Core.Transform.genArgExprIdents args.length s.genState).fst) rfl]
   congr 1
   rw [← Hat]
-  rw [zip_zip_unzip_fst_unzip_fst_of_lengths
+  rw [List.zip_zip_unzip_fst_unzip_fst_of_lengths
         (genArgExprIdents_length' args.length s.genState)
         (by simp [List.length_map]; omega)]
 
@@ -890,7 +864,7 @@ theorem genOutExprIdentsTripGeneratedWF
         (ls := (Core.Transform.genOutExprIdents lhs s.genState).fst) rfl]
   congr 1
   rw [← Hot]
-  rw [zip_zip_unzip_fst_unzip_fst_of_lengths
+  rw [List.zip_zip_unzip_fst_unzip_fst_of_lengths
         (genOutExprIdents_length' lhs s.genState)
         (by simp [List.length_map]; omega)]
 
@@ -973,7 +947,7 @@ theorem genOldExprIdentsTripGeneratedWF
     s'.generated =
         ((genOldIdents.zip oldTys).zip oldVars).unzip.fst.unzip.fst.reverse ++ s.generated := by
   rw [genOldExprIdents_GeneratedWF Hgen]
-  rw [zip_zip_unzip_fst_unzip_fst_of_lengths
+  rw [List.zip_zip_unzip_fst_unzip_fst_of_lengths
         (genOldExprIdents_length Hgen) Htylen]
 
 /-! ### `isTempIdent` / `isOldTempIdent` predicates and producing-side lemmas
@@ -1108,7 +1082,7 @@ theorem genArgExprIdentsTrip_isTempIdent
     Forall (fun x => isTempIdent x) argTrips.unzip.fst.unzip.fst := by
   obtain ⟨Hat, _, Hilen⟩ := genArgExprIdentsTrip_extract Hgen
   rw [← Hat]
-  rw [zip_zip_unzip_fst_unzip_fst_of_lengths
+  rw [List.zip_zip_unzip_fst_unzip_fst_of_lengths
         (genArgExprIdents_length' args.length s.genState)
         (by simp [List.length_map]; omega)]
   exact genArgExprIdents_isTempIdent (s := s.genState)
@@ -1123,7 +1097,7 @@ theorem genOutExprIdentsTrip_isTempIdent
     Forall (fun x => isTempIdent x) outTrips.unzip.fst.unzip.fst := by
   obtain ⟨Hot, _, Hilen⟩ := genOutExprIdentsTrip_extract Hgen
   rw [← Hot]
-  rw [zip_zip_unzip_fst_unzip_fst_of_lengths
+  rw [List.zip_zip_unzip_fst_unzip_fst_of_lengths
         (genOutExprIdents_length' lhs s.genState)
         (by simp [List.length_map]; omega)]
   exact genOutExprIdents_isTempIdent (s := s.genState)
@@ -1142,7 +1116,7 @@ theorem genOldExprIdentsTrip_isOldTempIdent
     (Htylen : oldTys.length = oldVars.length) :
     Forall (fun x => isOldTempIdent x)
       ((genOldIdents.zip oldTys).zip oldVars).unzip.fst.unzip.fst := by
-  rw [zip_zip_unzip_fst_unzip_fst_of_lengths
+  rw [List.zip_zip_unzip_fst_unzip_fst_of_lengths
         (genOldExprIdents_length Hgen) Htylen]
   exact genOldExprIdents_isOldTempIdent Hgen
 

@@ -556,3 +556,91 @@ public theorem List.nodup_append_three_disjoint
     a.Disjoint b ∧ b.Disjoint c ∧ a.Disjoint c :=
   let ⟨h1, h2, h3⟩ := List.disjoint_of_nodup_append_three Hnd
   ⟨h1, h3, h2⟩
+
+/-- If `(h, x) ∉ List.zip t t'` for every `x : β` and `t.length = t'.length`,
+    then `h ∉ t`.  Pure list lemma with no Imperative or Core dependencies. -/
+public theorem List.zip_notin_fst_pair {α β : Type _}
+    {h : α} {t : List α} {t' : List β} :
+    t.length = t'.length →
+    (∀ x, ¬(h, x) ∈ List.zip t t') →
+    ¬ h ∈ t := by
+  intros Hlen H
+  induction t generalizing t' h <;> simp_all
+  case cons h t ih =>
+    cases t' with
+    | nil => simp at Hlen
+    | cons h' t' =>
+      simp_all
+      have HH := H h'
+      simp_all
+      exact ih rfl H
+
+/-- Symmetric to `zip_notin_fst_pair`: if `(x, h) ∉ List.zip t t'` for every
+    `x : α` and `t.length = t'.length`, then `h ∉ t'`. -/
+public theorem List.zip_notin_snd_pair {α β : Type _}
+    {h : β} {t : List α} {t' : List β} :
+    t.length = t'.length →
+    (∀ x, ¬(x, h) ∈ List.zip t t') →
+    ¬ h ∈ t' := by
+  intros Hlen H
+  induction t' generalizing t h <;> simp_all
+  case cons h t ih =>
+    cases t with
+    | nil => simp at Hlen
+    | cons h' t' =>
+      simp_all
+      have HH := H h'
+      simp_all
+      exact ih Hlen H
+
+/-- Decompose `(ks.zip ks').get n = (k1, k2)` into per-component equalities,
+    given explicit bounds for each list. -/
+public theorem List.zip_pair_split {α β} {ks : List α} {ks' : List β}
+    {n : Fin (ks.zip ks').length} {k1 : α} {k2 : β}
+    (hn : n.val < ks.length) (hn' : n.val < ks'.length)
+    (heq : (ks.zip ks').get n = (k1, k2)) :
+    k1 = ks[n.val]'hn ∧ k2 = ks'[n.val]'hn' := by
+  rw [show (ks.zip ks').get n = (ks.zip ks')[n.val]'n.isLt from rfl,
+      List.getElem_zip] at heq
+  exact ⟨((Prod.mk.injEq _ _ _ _).mp heq.symm).1,
+         ((Prod.mk.injEq _ _ _ _).mp heq.symm).2⟩
+
+/-- Decompose `(a ++ b ++ c).Nodup` into its three component-Nodups and three
+    pairwise disjointnesses (in the local `List.Disjoint` form: `a → b → False`).
+    Repackages `List.nodup_append` and `List.disjoint_of_nodup_append_three`. -/
+public theorem List.nodup_3_decompose {α} {a b c : List α}
+    (Hnd : (a ++ b ++ c).Nodup) :
+    a.Nodup ∧ b.Nodup ∧ c.Nodup ∧
+      a.Disjoint b ∧ a.Disjoint c ∧ b.Disjoint c :=
+  let Hsplit := List.nodup_append.mp Hnd
+  let Hab := List.nodup_append.mp Hsplit.1
+  let ⟨Hd_ab, Hd_ac, Hd_bc⟩ := List.disjoint_of_nodup_append_three Hnd
+  ⟨Hab.1, Hab.2.1, Hsplit.2.1, Hd_ab, Hd_ac, Hd_bc⟩
+
+/-- Build `x ∉ a ++ b ++ c` from per-list non-membership. -/
+public theorem List.notin_3_append_of {α} [DecidableEq α] {a b c : List α} {x : α}
+    (h₁ : x ∉ a) (h₂ : x ∉ b) (h₃ : x ∉ c) : x ∉ a ++ b ++ c := by
+  simp only [List.mem_append, not_or]; exact ⟨⟨h₁, h₂⟩, h₃⟩
+
+/-- Project the snd-component out of a doubly-zipped triple-list, given the
+    matching length facts.  Pure list-shape geometry helper used in
+    trip-shape computations. -/
+public theorem List.zip_zip_unzip_snd_of_lengths {α β γ}
+    {g : List α} {ys : List β} {xs : List γ}
+    (Hgx : g.length = xs.length) (Hyx : ys.length = xs.length) :
+    ((g.zip ys).zip xs).unzip.snd = xs := by
+  rw [List.unzip_zip_right]
+  rw [List.length_zip]
+  omega
+
+/-- Project the fst-fst-component out of a doubly-zipped triple-list, given
+    the matching length facts.  Pure list-shape geometry helper. -/
+public theorem List.zip_zip_unzip_fst_unzip_fst_of_lengths {α β γ}
+    {g : List α} {ys : List β} {xs : List γ}
+    (Hgx : g.length = xs.length) (Hyx : ys.length = xs.length) :
+    ((g.zip ys).zip xs).unzip.fst.unzip.fst = g := by
+  rw [List.unzip_zip_left (l₁ := (g.zip ys)) (l₂ := xs)]
+  · rw [List.unzip_zip_left (l₁ := g) (l₂ := ys)]
+    omega
+  · rw [List.length_zip]
+    omega

@@ -9,9 +9,10 @@ import Init.Data.List.Basic
 import Init.Data.List.Lemmas
 public import Strata.DL.Lambda.Lambda
 public import Strata.DL.Imperative.CmdSemantics
+public import Strata.DL.Imperative.CmdSemanticsProps
 public import Strata.Languages.Core.StatementSemantics
 public import Strata.Transform.CoreTransform
-public import Strata.Transform.CoreTransformSemantics
+public import Strata.Transform.CoreTransformSemanticsProps
 import Strata.Languages.Core.StatementSemanticsProps
 import Strata.DL.Util.ListUtils
 
@@ -241,24 +242,6 @@ theorem updatedStateIsDefinedMono'
   simp [updatedState]
   split <;> simp_all
 
-theorem subst_defined_tail
-    {σ σ' : CoreStore} {h : Expression.Ident × Expression.Ident}
-    {t : List (Expression.Ident × Expression.Ident)} :
-    Imperative.substDefined σ σ' (h :: t) →
-    Imperative.substDefined σ σ' t := by
-  intros Hsubst k1 k2 Hin
-  apply Hsubst
-  exact List.mem_cons_of_mem h Hin
-
-theorem subst_nodup_tail
-    {h : Expression.Ident × Expression.Ident}
-    {t : List (Expression.Ident × Expression.Ident)} :
-    Imperative.substNodup (h :: t) →
-    Imperative.substNodup t := by
-  intros Hsubst
-  simp [Imperative.substNodup] at *
-  exact (List.nodup_cons.mp (nodup_middle Hsubst.right)).right
-
 theorem subst_defined_updatedState
     {σ σ' : CoreStore} {k : Expression.Ident} {v : Expression.Expr}
     {ls : List (Expression.Ident × Expression.Ident)} :
@@ -268,39 +251,17 @@ theorem subst_defined_updatedState
   refine ⟨?_, (Hsubst k1 k2 Hin).2⟩
   exact updatedStateIsDefinedMono' (Hsubst k1 k2 Hin).1
 
-theorem zip_notin_fst_pair
-    {h : Expression.Ident}
-    {t : List Expression.Ident} {t' : List Expression.Ident} :
-    t.length = t'.length →
-    (∀ x, ¬(h, x) ∈ List.zip t t') →
-    ¬ h ∈ t := by
-  intros Hlen H
-  induction t generalizing t' h <;> simp_all
-  case cons h t ih =>
-    cases t' with
-    | nil => simp at Hlen
-    | cons h' t' =>
-      simp_all
-      have HH := H h'
-      simp_all
-      exact ih rfl H
-
-theorem zip_notin_snd_pair
-    {h : Expression.Ident}
-    {t : List Expression.Ident} {t' : List Expression.Ident} :
-    t.length = t'.length →
-    (∀ x, ¬(x, h) ∈ List.zip t t') →
-    ¬ h ∈ t' := by
-  intros Hlen H
-  induction t' generalizing t h <;> simp_all
-  case cons h t ih =>
-    cases t with
-    | nil => simp at Hlen
-    | cons h' t' =>
-      simp_all
-      have HH := H h'
-      simp_all
-      exact ih Hlen H
+/-- Build `substDefined σ σ' ((a₁ ++ b₁).zip (a₂ ++ b₂))` from per-half
+    `isDefined` facts. -/
+theorem substDefined_of_app
+    {σ σ' : CoreStore} {a₁ b₁ a₂ b₂ : List Expression.Ident}
+    (Hσ_a : Imperative.isDefined σ a₁) (Hσ_b : Imperative.isDefined σ b₁)
+    (Hσ'_a : Imperative.isDefined σ' a₂) (Hσ'_b : Imperative.isDefined σ' b₂) :
+    Imperative.substDefined σ σ' ((a₁ ++ b₁).zip (a₂ ++ b₂)) := by
+  intro k1 k2 Hkin
+  have Hmem := List.of_mem_zip Hkin
+  exact ⟨(List.mem_append.mp Hmem.1).elim (Hσ_a _) (Hσ_b _),
+         (List.mem_append.mp Hmem.2).elim (Hσ'_a _) (Hσ'_b _)⟩
 
 theorem subst_nodup_ht
     {h h' : Expression.Ident}
@@ -311,11 +272,11 @@ theorem subst_nodup_ht
   intros Hlen Hsubst
   simp [Imperative.substNodup] at Hsubst
   refine ⟨?_, ?_⟩
-  · exact zip_notin_fst_pair Hlen Hsubst.1.1
+  · exact List.zip_notin_fst_pair Hlen Hsubst.1.1
   · have Hnd := nodup_middle Hsubst.2
     simp at Hnd
     have Hnd' := Hnd.1.2
-    exact zip_notin_snd_pair Hlen Hnd'
+    exact List.zip_notin_snd_pair Hlen Hnd'
 
 theorem getVars_substFvar_or
     {e : Expression.Expr} {h h' v : Expression.Ident} :

@@ -18,8 +18,8 @@ public import Strata.Transform.CallElim
 public import Strata.DL.Imperative.CmdSemantics
 public import Strata.Languages.Core.StatementSemantics
 import Strata.Languages.Core.StatementSemanticsProps
-public import Strata.Transform.SubstSemantics
-import Strata.Transform.CoreTransformSemantics
+public import Strata.Transform.SubstSemanticsProps
+import Strata.Transform.CoreTransformSemanticsProps
 import Strata.DL.Util.ListUtils
 public import Strata.DL.Util.String
 
@@ -56,46 +56,6 @@ private theorem notin_of_isSome_isNotDefined {P : Imperative.PureExpr}
     (Hsome : (σ k).isSome) (Hndef : Imperative.isNotDefined σ ks) : k ∉ ks :=
   fun h => σ_some_contradiction Hsome (Hndef k h)
 
-/-- Build `substDefined σ σ' ((a₁ ++ b₁).zip (a₂ ++ b₂))` from per-half
-    `isDefined` facts. -/
-private theorem substDefined_of_app
-    {σ σ' : CoreStore} {a₁ b₁ a₂ b₂ : List Expression.Ident}
-    (Hσ_a : Imperative.isDefined σ a₁) (Hσ_b : Imperative.isDefined σ b₁)
-    (Hσ'_a : Imperative.isDefined σ' a₂) (Hσ'_b : Imperative.isDefined σ' b₂) :
-    Imperative.substDefined σ σ' ((a₁ ++ b₁).zip (a₂ ++ b₂)) := by
-  intro k1 k2 Hkin
-  have Hmem := List.of_mem_zip Hkin
-  exact ⟨(List.mem_append.mp Hmem.1).elim (Hσ_a _) (Hσ_b _),
-         (List.mem_append.mp Hmem.2).elim (Hσ'_a _) (Hσ'_b _)⟩
-
-/-- Decompose `(ks.zip ks').get n = (k1, k2)` into per-component equalities,
-    given explicit bounds for each list. -/
-private theorem zip_pair_split {α β} {ks : List α} {ks' : List β}
-    {n : Fin (ks.zip ks').length} {k1 : α} {k2 : β}
-    (hn : n.val < ks.length) (hn' : n.val < ks'.length)
-    (heq : (ks.zip ks').get n = (k1, k2)) :
-    k1 = ks[n.val]'hn ∧ k2 = ks'[n.val]'hn' := by
-  rw [show (ks.zip ks').get n = (ks.zip ks')[n.val]'n.isLt from rfl,
-      List.getElem_zip] at heq
-  exact ⟨((Prod.mk.injEq _ _ _ _).mp heq.symm).1,
-         ((Prod.mk.injEq _ _ _ _).mp heq.symm).2⟩
-
-/-- Decompose `(a ++ b ++ c).Nodup` into its three component-Nodups and three
-    pairwise disjointnesses (in the local `List.Disjoint` form: `a → b → False`).
-    Repackages `List.nodup_append` and `List.disjoint_of_nodup_append_three`. -/
-private theorem nodup_3_decompose {α} {a b c : List α}
-    (Hnd : (a ++ b ++ c).Nodup) :
-    a.Nodup ∧ b.Nodup ∧ c.Nodup ∧
-      a.Disjoint b ∧ a.Disjoint c ∧ b.Disjoint c :=
-  let Hsplit := List.nodup_append.mp Hnd
-  let Hab := List.nodup_append.mp Hsplit.1
-  let ⟨Hd_ab, Hd_ac, Hd_bc⟩ := List.disjoint_of_nodup_append_three Hnd
-  ⟨Hab.1, Hab.2.1, Hsplit.2.1, Hd_ab, Hd_ac, Hd_bc⟩
-
-/-- Build `x ∉ a ++ b ++ c` from per-list non-membership. -/
-private theorem notin_3_append_of {α} [DecidableEq α] {a b c : List α} {x : α}
-    (h₁ : x ∉ a) (h₂ : x ∉ b) (h₃ : x ∉ c) : x ∉ a ++ b ++ c := by
-  simp only [List.mem_append, not_or]; exact ⟨⟨h₁, h₂⟩, h₃⟩
 
 /-- `Map.find?_append` "some" branch packaged: if a key resolves to `some v`
     in `l₁` and to `some w` in `l₁ ++ l₂`, then `v = w`. -/
@@ -1626,7 +1586,7 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                 · -- L1-L6 chain via EvalCallElim_glue.
                   obtain ⟨HargNd, HoutNd, HoldNd,
                           HargOutDisj, HargOldDisj, HoutOldDisj⟩ :=
-                    nodup_3_decompose Hgennd
+                    List.nodup_3_decompose Hgennd
                   -- argTemps fresh from σ; arg-expr vars defined in σ ⇒ disjoint.
                   have HdefVars : Imperative.isDefined σ
                       (List.flatMap
@@ -2444,7 +2404,7 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                         outTemps ++ genOldIdents)
                       (argVals ++ oVals ++ oldVals) v).isSome = true
                     have Hv_notin : v ∉ argTemps ++ outTemps ++ genOldIdents :=
-                      notin_3_append_of (HlhsDisjArg Hv) (HlhsDisjOut Hv) (HlhsDisjOld Hv)
+                      List.notin_3_append_of (HlhsDisjArg Hv) (HlhsDisjOut Hv) (HlhsDisjOld Hv)
                     rw [updatedStates_get_notin Hv_notin]
                     exact HavocVarsDefined (UpdateStatesHavocVars Hupdate) v Hv
                   -- σ_havoc definedness on filtered_argTemps.
@@ -2485,7 +2445,7 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                     have H5 : σ k = σ' k := by
                       rw [Hσ'_eq, updatedStates_get_notin Hk_lhs]
                     have Hk_notin_layered : k ∉ argTemps ++ outTemps ++ genOldIdents :=
-                      notin_3_append_of Hk_argT Hk_outT Hk_genOld
+                      List.notin_3_append_of Hk_argT Hk_outT Hk_genOld
                     have H6 : σ' k = σ_havoc k := by
                       show σ' k = updatedStates σ'
                         (argTemps ++ outTemps ++ genOldIdents)
@@ -2504,7 +2464,7 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                       ∀ v ∈ lhs, σ_havoc v = σ' v := by
                     intro v Hv
                     have Hv_notin : v ∉ argTemps ++ outTemps ++ genOldIdents :=
-                      notin_3_append_of (HlhsDisjArg Hv) (HlhsDisjOut Hv) (HlhsDisjOld Hv)
+                      List.notin_3_append_of (HlhsDisjArg Hv) (HlhsDisjOut Hv) (HlhsDisjOld Hv)
                     show updatedStates σ'
                       (argTemps ++
                         outTemps ++ genOldIdents)
@@ -2608,7 +2568,7 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                     have Hn_lt_ks' : n.val < filtered_ks'.length := by
                       rw [← Hkslen]; exact Hn_lt_ks
                     have ⟨Hk1_eq, Hk2_eq⟩ :=
-                      zip_pair_split Hn_lt_ks Hn_lt_ks' Hn
+                      List.zip_pair_split Hn_lt_ks Hn_lt_ks' Hn
                     by_cases Hsplit : n.val < proc.header.outputs.keys.length
                     · -- Output-half.
                       have Hks_app_lt :
