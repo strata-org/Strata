@@ -3,8 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core
+import StrataDDM.Integration.Lean.HashCommands
+
+meta section
+open StrataDDM (Program)
 
 /-!
 # Recursive Function Error Tests
@@ -43,7 +48,7 @@ error: ❌ Symbolic evaluation error.
 Polymorphic recursive functions are not yet supported for SMT verification: 'len'. SMT solvers require monomorphic axioms.
 -/
 #guard_msgs in
-#eval verify polyRecPgm (options := .quiet)
+#eval Core.verify polyRecPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 2: recursive function without @[cases] parameter is rejected
@@ -67,7 +72,7 @@ decreases xs
 error: recursive function 'listLen': structural recursion requires @[cases]
 -/
 #guard_msgs in
-#eval verify noCasesPgm (options := .quiet)
+#eval Core.verify noCasesPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 3: error — decreases on non-int expression
@@ -89,7 +94,7 @@ rec function bad (n : int) : int
 /-- error: ❌ Type checking error.
 recursive function 'bad': non-variable decreases expression must have type int, got 'bool'. For structural recursion, use a parameter name-/
 #guard_msgs in
-#eval verify decreasesNonIntPgm (options := .quiet)
+#eval Strata.Core.verify decreasesNonIntPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 4: error — decreasing argument contains recursive call
@@ -108,7 +113,7 @@ rec function bad (n : int) : int
 
 /-- error: termination checking 'bad': decreasing argument contains a recursive call -/
 #guard_msgs in
-#eval verify decreasesRecCallPgm (options := .quiet)
+#eval Strata.Core.verify decreasesRecCallPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 5: error — decreases expression calls function in same mutual block
@@ -132,7 +137,7 @@ function bad (n : int) : int
 
 /-- error: termination checking 'bad': decreasing argument contains a recursive call -/
 #guard_msgs in
-#eval verify decreasesMutualCallPgm (options := .quiet)
+#eval Strata.Core.verify decreasesMutualCallPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 6: error — mutual block mixes structural and int-valued measures
@@ -157,6 +162,8 @@ function countdown (n : int) : int
 
 /-- error: mutual recursive block mixes structural and int-valued termination measures; all functions in a mutual block must use the same kind of measure -/
 #guard_msgs in
-#eval verify mixedMutualPgm (options := .quiet)
+#eval Strata.Core.verify mixedMutualPgm (options := .quiet)
 
 end Strata.RecursiveFunctionErrorTest
+
+end

@@ -3,8 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Imperative.StmtSemantics
+meta import Strata.DL.Imperative.StmtSemantics
+import all Strata.DL.Imperative.CmdSemantics
+
+meta section
 
 /-! # Tests for the small-step `StepStmt` semantics -/
 
@@ -538,3 +542,4 @@ theorem reinit_stuck :
 ---------------------------------------------------------------------
 
 end StepStmtTest
+end

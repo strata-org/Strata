@@ -5,8 +5,9 @@
 -/
 module
 
-public import Strata.DDM.Integration.Lean
-import Strata.DDM.Util.Format
+public import StrataDDM.AST
+import StrataDDM.BuiltinDialects.Init
+import StrataDDM.Integration.Lean.HashCommands -- shake: keep
 
 public section
 

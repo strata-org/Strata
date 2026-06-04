@@ -5,9 +5,6 @@
 -/
 module
 
-public import Strata.Languages.Core.Procedure
-public import Strata.Languages.Core.Statement
-public import Strata.Languages.Core.Identifiers
 public import Strata.Transform.CoreTransform
 
 public section
