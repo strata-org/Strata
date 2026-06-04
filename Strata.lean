@@ -13,7 +13,7 @@ import StrataDDM.Ion
 
 /- Dialect Library -/
 import Strata.DL.SMT
-import Strata.DL.Lambda.Lambda
+import Strata.DL.Lambda
 import Strata.DL.Imperative
 
 /- Utilities -/
