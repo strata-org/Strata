@@ -253,5 +253,64 @@ Proof Obligation:
                      ("done", { cmds := [], transfer := .finish .empty })
                    ] } })
 
+/-! ## Pre-split assert deduped across symbolic condGoto
+
+An `assert` evaluated *before* a symbolic `condGoto` lands in the parent
+env's `deferred` array. Both branches inherit `env'` by record-update, so
+without dedup the pre-split obligation would appear once per terminal
+path after `mergeResults` concatenates them. Each `ProofObligation`
+captures its assumptions at creation time (see
+`Strata/DL/Imperative/CmdEval.lean`), so duplicates are redundant: the
+fix in `evalCFGStep` clears the false-branch's `deferred`, mirroring
+`Strata/Languages/Core/StatementEval.lean` for the structured `.ite`
+path. This test exercises that dedup — the `pre_assert` obligation must
+appear exactly once in the merged output.
+-/
+
+/--
+info: Error:
+none
+Subst Map:
+
+Expression Env:
+State:
+
+
+Evaluation Config:
+Eval Depth: 200
+Factory Functions:
+
+
+
+Datatypes:
+
+Path Conditions:
+
+
+Warnings:
+[]
+Deferred Proof Obligations:
+Label: pre_assert
+Property: assert
+Assumptions:
+
+Proof Obligation:
+x@1 >= 0
+-/
+#guard_msgs in
+#eval IO.println (cfgEval
+  { header := {name := "PreSplitAssert", typeArgs := [],
+               inputs := [("x", mty[int])],
+               outputs := [] },
+    spec := { preconditions := [],
+              postconditions := [] },
+    body := .cfg { entry := "entry",
+                   blocks := [
+                     ("entry", { cmds := [CmdExt.cmd (Cmd.assert "pre_assert" eb[((~Int.Ge x) #0)] .empty)],
+                                 transfer := .condGoto eb[((~Int.Ge x) #0)] "left" "right" .empty }),
+                     ("left",  { cmds := [], transfer := .finish .empty }),
+                     ("right", { cmds := [], transfer := .finish .empty })
+                   ] } })
+
 end CFGEvalTests
 end Core
