@@ -1426,8 +1426,9 @@ def Check.assign (exprMd : StmtExprMd)
     `Γ(callee) = static-procedure with inputs Ts and outputs [T_1; …; T_n] (n ≠ 1),  Γ ⊢ args_i ⇐ Ts_i (pairwise)  ∴  Γ ⊢ StaticCall callee args ⇒ MultiValuedExpr [T_1; …; T_n]`
 
     Callee is resolved against the expected kinds (parameter, static
-    procedure, datatype constructor, constant); each argument is
-    *checked* against the corresponding parameter type. The bidirectional
+    procedure, datatype constructor, datatype destructor, constant); each
+    argument is *checked* against the corresponding parameter type. The
+    bidirectional
     push lets impure-expression arguments (`{x := 1; x}`, `if c then …`,
     holes) flow through their own check rules instead of bottoming out at
     the synth wildcard. Arguments past the declared parameter list (or
@@ -1839,7 +1840,20 @@ def Synth.quantifier (exprMd : StmtExprMd)
 
 /-- `Γ ⊢ name ⇒ _  ∴  Γ ⊢ Assigned name ⇒ TBool`
 
-    `name` is synthesized; the construct synthesizes `TBool`. -/
+    `assigned x` is a verification predicate that holds when `x` has
+    been definitely assigned. The construct unconditionally synthesizes
+    `TBool`; the operand's synthesized type is discarded, and `Assigned`
+    imposes no constraint on it.
+
+    The operand is still resolved (via `Synth.resolveStmtExpr`) purely
+    for its name-resolution side effects — its identifier must point at a
+    definition so that downstream passes can reason about the binding —
+    but the result type is thrown away. `Assigned` is meant to name a
+    variable or field, yet its AST field is an arbitrary `StmtExpr`
+    (`Assigned (name : StmtExprMd)`), so this rule does *not* enforce
+    that shape: it is not correct-by-construction, and the type checker
+    deliberately leaves the operand unconstrained rather than rejecting,
+    say, `assigned (a + b)`. -/
 def Synth.assigned (exprMd : StmtExprMd)
     (name : StmtExprMd) (source : Option FileRange)
     (h : exprMd.val = .Assigned name) :
@@ -1855,8 +1869,19 @@ def Synth.assigned (exprMd : StmtExprMd)
 
 /-- `Γ ⊢ v ⇐ T  ∴  Γ ⊢ Old v ⇐ T`
 
-    `Old v` has the same type as `v`, so the surrounding expectation
-    propagates straight through. -/
+    `old(v)` refers to the pre-state value of `v` in a postcondition.
+    It has the same type as `v`, so the surrounding expectation
+    propagates straight through: `v` is checked against the same `T`,
+    and the result is wrapped back up as `Old v'`.
+
+    The rule is type-transparent and deliberately does *not* restrict
+    `v` to an identifier or lvalue. `old` wraps an arbitrary expression
+    (`Old (value : StmtExprMd)`), matching Dafny, where `old(this.f +
+    g())` is legal — the pre-state is taken of the whole expression.
+    Whether `v` denotes something whose pre-state is meaningful is a
+    well-formedness question for the verifier's heap model, not a typing
+    one, so resolution only resolves names inside `v` and checks its
+    type; it imposes no syntactic shape on `v`. -/
 def Check.old (exprMd : StmtExprMd)
     (val : StmtExprMd) (expected : HighTypeMd) (source : Option FileRange)
     (h : exprMd.val = .Old val) :
@@ -2117,11 +2142,11 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
     let savedAnswer := (← get).answerType
     modify fun s => { s with answerType := some (outputs'.map (·.type)) }
     let bodyExpected := procedureBodyType proc.isFunctional outputs' proc.name.source
-    -- Pre-register the implicit `$body` label that the LaurelToCore
-    -- translator wraps the body in (`Core.Statement.block "$body" …`),
-    -- so that frontends emitting `Exit "$body"` for early-return lowering
+    -- Pre-register the implicit `bodyLabel` block that the LaurelToCore
+    -- translator wraps every body in (`Core.Statement.block bodyLabel …`),
+    -- so that frontends emitting `Exit bodyLabel` for early-return lowering
     -- (e.g. PythonToLaurel) don't trip Check.exit's label-scope check.
-    let body' ← withLabel (some "$body") <| resolveBody proc.body bodyExpected
+    let body' ← withLabel (some bodyLabel) <| resolveBody proc.body bodyExpected
     modify fun s => { s with answerType := savedAnswer }
     if !proc.isFunctional && body'.isTransparent then
       let diag := diagnosticFromSource proc.name.source

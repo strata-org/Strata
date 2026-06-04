@@ -358,6 +358,14 @@ $`\mathsf{TVoid} <: \mathit{expected}`).
 
 {docstring Strata.Laurel.Resolution.Check.block}
 
+The Discard-Call carve-outs and the "checks against $`\mathsf{TVoid}`"
+behaviour for non-last (and discarded-last) statements are factored out
+into {name Strata.Laurel.Resolution.Check.statement}`Check.statement`,
+the single definition of what counts as a statement in effect position
+($`\Gamma \vdash s\;\diamond`):
+
+{docstring Strata.Laurel.Resolution.Check.statement}
+
 $$`\frac{l \in \Gamma_{\mathrm{lbl}}}{\Gamma \vdash \mathsf{Exit}\;l \Leftarrow A} \quad \text{([⇐] Exit)}`
 
 `exit` is an unconditional jump out of the enclosing labeled block.
