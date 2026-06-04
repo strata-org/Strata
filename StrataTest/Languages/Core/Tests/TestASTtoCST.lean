@@ -3,10 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.DDMTransform.ASTtoCST
-import Strata.Languages.Core.DDMTransform.Translate
+meta import Strata.Languages.Core.DDMTransform.ASTtoCST
+meta import Strata.Languages.Core.DDMTransform.Translate
+import StrataDDM.Integration.Lean.HashCommands
 -- Test fixtures build Core expressions directly with synthesized provenance
+
+meta section
+open StrataDDM (Program)
 
 -- Tests for Core.Program → CST Conversion
 -- This file tests one-direction conversion: AST → CST using the old
@@ -18,7 +23,7 @@ open Strata.CoreDDM
 open Strata
 open Core
 
-def ASTtoCST (program : Strata.Program) := do
+def ASTtoCST (program : StrataDDM.Program) := do
   -- Use old translator to get AST
   let (ast, errs) := TransM.run Inhabited.default (translateProgram program)
   if !errs.isEmpty then
@@ -778,3 +783,5 @@ spec {
 #eval ASTtoCST strPrefixSuffixPgm
 
 end Strata.Test
+
+end

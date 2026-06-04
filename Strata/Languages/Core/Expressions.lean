@@ -6,12 +6,12 @@
 -- Default instances and operator constructors use synthesized provenance
 module
 
-public import Strata.DL.Lambda.Lambda
-public import Strata.DL.Imperative.PureExpr
 public import Strata.Languages.Core.Identifiers
 public import Strata.Languages.Core.CoreOp
 public import Strata.DL.Imperative.HasVars
-public import Strata.DDM.Util.SourceRange
+public import StrataDDM.Util.SourceRange
+public import Strata.DL.Lambda.LExprTypeEnv
+public import Strata.DL.Lambda.LState
 
 namespace Core
 open Std (ToFormat Format format)

@@ -6,10 +6,10 @@
 -- Defines ExprSourceLoc and its elaborator/test infrastructure
 module
 
-public import Strata.DL.Lambda.LExprTypeEnv
-public import Strata.DL.Lambda.Factory
 public meta import Strata.DL.Lambda.LExpr
-public import Strata.DDM.Util.SourceRange
+public meta import Std.Do.Triple.SpecLemmas
+public import Strata.DL.Lambda.LExpr
+public import StrataDDM.Util.SourceRange
 
 public section
 

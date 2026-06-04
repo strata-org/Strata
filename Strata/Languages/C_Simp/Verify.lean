@@ -6,12 +6,10 @@
 module
 
 public import Strata.Languages.C_Simp.C_Simp
-public import Strata.Languages.C_Simp.DDMTransform.Translate
-public import Strata.Languages.Core.Options
 public import Strata.Languages.Core.Verifier
-import Lean.Parser.Types
-import Strata.Languages.Core.CoreOp
-import Strata.DL.Imperative.Stmt
+import Strata.Languages.C_Simp.DDMTransform.Translate
+import Strata.Languages.Core
+import Strata.Languages.Core.StatementSemantics
 
 public section
 
@@ -190,21 +188,21 @@ def loop_elimination(program : C_Simp.Program) : Core.Program :=
 def to_core(program : C_Simp.Program) : Core.Program :=
   loop_elimination program
 
-def C_Simp.get_program (p : Strata.Program) : C_Simp.Program :=
+def C_Simp.get_program (p : StrataDDM.Program) : C_Simp.Program :=
   (Strata.C_Simp.TransM.run Inhabited.default (Strata.C_Simp.translateProgram (p.commands))).fst
 
-def C_Simp.typeCheck (p : Strata.Program) (options : VerifyOptions := .default):
+def C_Simp.typeCheck (p : StrataDDM.Program) (options : VerifyOptions := .default):
   Except DiagnosticModel Core.Program := do
   let program := C_Simp.get_program p
   Core.typeCheck options (to_core program)
 
-def C_Simp.verify (p : Strata.Program)
+def C_Simp.verify (p : StrataDDM.Program)
     (options : VerifyOptions := .default)
     (tempDir : Option String := .none):
   IO Core.VCResults := do
   let program := C_Simp.get_program p
   let runner tempDir := EIO.toIO (fun f => IO.Error.userError (toString f))
-    (Core.verify (to_core program) tempDir .none options)
+    (_root_.Core.verify (to_core program) tempDir .none options)
   match tempDir with
   | .none =>
     IO.FS.withTempDir runner

@@ -3,17 +3,20 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DDM.Integration.Lean
-import Strata.DDM.Util.Format
-import Strata.Languages.Core.Core
-import Strata.Languages.Core.DDMTransform.Translate
-import Strata.Languages.Core.ProgramType
-import Strata.Languages.Core.ProgramWF
-import Strata.Languages.Core.StatementSemantics
-import Strata.Transform.CoreTransform
-import Strata.Transform.CallElim
-import Strata.Languages.Core.Verifier
+import StrataDDM.Integration.Lean
+meta import StrataDDM.Util.Format
+meta import Strata.Languages.Core
+meta import Strata.Languages.Core.DDMTransform.Translate
+meta import Strata.Languages.Core.ProgramType
+meta import Strata.Languages.Core.ProgramWF
+meta import Strata.Languages.Core.StatementSemantics
+meta import Strata.Transform.CoreTransform
+meta import Strata.Transform.CallElim
+meta import Strata.Languages.Core.Verifier
+
+meta section
 
 
 open Core
@@ -186,7 +189,7 @@ procedure h(inout j : bool, k : bool) {
 };
 #end
 
-def translate (t : Strata.Program) : Core.Program := (TransM.run Inhabited.default (translateProgram t)).fst
+def translate (t : StrataDDM.Program) : Core.Program := (TransM.run Inhabited.default (translateProgram t)).fst
 
 def env : Lambda.LContext CoreLParams := .default (functions := Core.Factory)
 
@@ -238,3 +241,4 @@ private def cleanObligation : Imperative.ProofObligation Core.Expression :=
 #guard (satResult.adjustForPhases [callElimPipelinePhase.phase] cleanObligation).1 == satResult
 
 end CallElimPhaseTests
+end

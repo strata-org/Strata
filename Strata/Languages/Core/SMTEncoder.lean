@@ -5,13 +5,14 @@
 -/
 module
 
-public import Strata.Languages.Core.Core
-public import Strata.DL.SMT.SMT
 public import Strata.DL.Imperative.SMTUtils
 public import Strata.DL.Lambda.RecursiveAxioms
-import Init.Data.String.Extra
-public import Strata.DDM.Util.DecimalRat
-public import Strata.Languages.Core.CoreOp
+public import Strata.DL.SMT.Factory
+public import Strata.Languages.Core.Env
+public import Strata.Util.Name
+public import Strata.Util.Statistics
+public import Strata.DL.SMT.DDMTransform.Translate -- shake: keep
+import Strata.Languages.Core.Statistics
 
 ---------------------------------------------------------------------
 
@@ -283,7 +284,7 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (
   | .boolConst _ b => .ok (Term.bool b, ctx)
   | .intConst _ i => .ok (Term.int i, ctx)
   | .realConst _ r =>
-    match Strata.Decimal.fromRat r with
+    match StrataDDM.Decimal.fromRat r with
     | some d => .ok (Term.real d, ctx)
     | none => .error f!"Non-decimal real value {e}"
   | .bitvecConst _ n b => .ok (Term.bitvec b, ctx)

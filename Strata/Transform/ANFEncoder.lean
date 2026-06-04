@@ -6,6 +6,7 @@
 module
 
 public import Strata.Languages.Core.PipelinePhase
+import Strata.DL.Lambda.LExprEval
 import Strata.Util.List
 
 /-! # ANF Encoder

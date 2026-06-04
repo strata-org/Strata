@@ -3,9 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import StrataTest.Languages.B3.DDMFormatDeclarationsTests
-import Strata.Languages.B3.DDMTransform.Conversion
+meta import all StrataTest.Languages.B3.DDMFormatDeclarationsTests
+meta import Strata.Languages.B3.DDMTransform.Conversion
+import StrataDDM.Integration.Lean.HashCommands
+
+meta section
 
 /-!
 # B3 Program Formatting Tests
@@ -17,6 +21,7 @@ Verifies that DDM AST → B3 AST → B3 CST → formatted output preserves struc
 namespace B3
 
 open Std (Format)
+open StrataDDM
 open Strata
 open Strata.B3CST
 
@@ -383,3 +388,4 @@ procedure Print(a: string, b: string, c: string)
 end ProgramRoundtripTests
 
 end B3
+end

@@ -3,8 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core
+import StrataDDM.Integration.Lean.HashCommands
+
+meta section
+open StrataDDM (Program)
 
 /-!
 # Recursive Function Integration Tests
@@ -115,7 +120,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify listLenPgm (options := .default)
+#eval Core.verify listLenPgm (options := .default)
 
 ---------------------------------------------------------------------
 -- Test 2: listLen with symbolic arguments and axiom reasoning
@@ -241,7 +246,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify listLenAxiomPgm (options := .default)
+#eval Core.verify listLenAxiomPgm (options := .default)
 
 ---------------------------------------------------------------------
 -- Test 3: recursive function with decreases on non-first parameter
@@ -306,7 +311,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify lookupPgm (options := .quiet)
+#eval Core.verify lookupPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 4: imperative loop equivalent to recursive function
@@ -460,7 +465,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify impEquivPgm (options := .default)
+#eval Core.verify impEquivPgm (options := .default)
 
 ---------------------------------------------------------------------
 -- Test 5: recursive function with precondition
@@ -572,6 +577,8 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify recPrecondPgm (options := .quiet)
+#eval Core.verify recPrecondPgm (options := .quiet)
 
 end Strata.RecursiveFunctionTest
+
+end

@@ -1,0 +1,173 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
+module
+
+public import Strata.Languages.Core.Expressions
+import Strata.Languages.Core.Env
+
+public section
+
+namespace StrataPython
+open Strata
+
+/-- A type identifier in the Strata Core prelude for Python. -/
+@[expose] abbrev TypeId := String
+
+/-- An argument declaration for a Python method -/
+structure ArgDecl where
+  name : String
+  type : TypeId
+deriving Inhabited
+
+/-- A function signature with argument information. -/
+structure FuncDecl where
+  /-- Array of arguments. -/
+  args : Array ArgDecl
+  /--
+  Number of position-only arguments.
+
+  Position only arguments occur before other arguments.
+  -/
+  posOnlyCount : Nat := 0
+  /--
+  First index for keyword only arguments.
+
+  Keyword only arguments appear after other arguments in args.
+   -/
+  keywordOnly : Nat := args.size
+  /--
+  Position only arguments are before start of keyword only.
+  -/
+  posOnlyBound : posOnlyCount <= keywordOnly := by omega
+  /--
+  Keyword only arguments (if any) come at end
+  -/
+  keywordBound : keywordOnly <= args.size := by omega
+  /-- Map from argument names to their index in args. -/
+  argIndexMap : Std.HashMap String (Fin args.size)
+
+instance : Inhabited FuncDecl where
+  default := { args := #[], argIndexMap := {} }
+
+/-- The name of a Python method as encoded in the Strata Core dialect-/
+@[expose] abbrev FuncName := String
+
+/-- A collection of function signatures. -/
+class Signatures where
+  functions : Std.HashMap FuncName FuncDecl := {}
+
+instance : Inhabited Signatures where
+  default := {}
+
+namespace Signatures
+
+def getFuncSigOrder (db : Signatures) (fname: FuncName) : Except String (List String) :=
+  match  db.functions[fname]? with
+  | some decl => .ok (decl.args |>.map (·.name) |>.toList)
+  | none => .error s!"Missing function signature : {fname}"
+
+-- We should extract the function signatures from the prelude:
+def getFuncSigType (db : Signatures) (fname: FuncName) (arg: String) : Except String String :=
+  match  db.functions[fname]? with
+  | none => .error s!"Missing function signature : {fname}"
+  | some decl =>
+    match decl.argIndexMap[arg]? with
+    | none => .error s!"Unrecognized arg : {arg}"
+    | some idx => .ok decl.args[idx].type
+
+end Signatures
+
+/--
+Monad for extending a signatures collection.
+-/
+@[expose]
+def SignatureM := StateM Signatures
+deriving Monad, MonadState Signatures
+
+namespace SignatureM
+
+@[reducible] def run (m : SignatureM Unit) (init : Signatures := {}) : Signatures := m init |>.snd
+
+def decl (name : FuncName) (args : List ArgDecl)
+         (posOnlyCount : Nat := 0)
+         (keywordOnly := args.length) : SignatureM Unit := do
+  assert! name ∉ (←get).functions
+  assert! posOnlyCount <= keywordOnly
+  let args := args.toArray
+  assert! keywordOnly <= args.size
+
+  let argIndexMap : Std.HashMap String (Fin args.size) :=
+    Fin.foldl args.size (init := {}) fun m i =>
+      let a := args[i]
+      assert! a.name ∉ m
+      m.insert a.name i
+
+  let .isTrue posOnlyBound := (inferInstance : Decidable (posOnlyCount <= keywordOnly))
+    | return panic! "Invalid number of position-only parameters."
+  let .isTrue keywordBound := (inferInstance : Decidable (keywordOnly <= args.size))
+    | return panic! "Invalid start for keyword only parameters."
+
+  let decl : FuncDecl := {
+    args,
+    posOnlyCount,
+    keywordOnly,
+    posOnlyBound,
+    keywordBound,
+    argIndexMap,
+  }
+  modify fun m => { m with functions := m.functions.insert name decl }
+
+private meta def identToStr (t : Lean.TSyntax `ident) : Lean.StrLit :=
+  match t.raw.isIdOrAtom? with
+  | none => panic! "Unexpected string"
+  | some s => Lean.Syntax.mkStrLit s
+
+scoped macro v:ident ":<" t:ident : term => `(ArgDecl.mk $(identToStr v) $(identToStr t))
+
+end SignatureM
+
+section
+open SignatureM
+
+def addCoreDecls : SignatureM Unit := do
+  decl "test_helper_procedure" [req_name :< string, opt_name :< StrOrNone]
+  decl "print" [msg :< string, opt :< StrOrNone, sep :< StrOrNone, «end» :< StrOrNone, file :< AnyOrNone, flush :< BoolOrNone]
+  decl "json_dumps" [msg :< DictStrAny, opt_indent :< IntOrNone]
+  decl "json_loads" [msg :< string]
+  decl "input" [msg :< string]
+  decl "random_choice" [l :< ListStr]
+  decl "datetime_now" [tz :< AnyOrNone]
+  decl "datetime_utcnow" []
+  decl "datetime_date" [dt :< Datetime]
+  decl "timedelta" [ days :< IntOrNone, hours :< IntOrNone]
+  decl "datetime_strptime" [time :< string, format :< string]
+  decl "str_to_float" [s :< string]
+
+@[reducible] def coreSignatures : Signatures := addCoreDecls |>.run
+
+end
+
+/-- Build a `None` value expression for a given `OrNone` type.
+    Synthesized expression for default parameter values. -/
+def TypeStrToCoreExpr (ty: String) : Core.Expression.Expr :=
+  if !ty.endsWith "OrNone" then
+    panic! s!"Should only be called for possibly None types. Called for: {ty}"
+  else
+    let loc := ExprSourceLoc.synthesized "python-default-value"
+    let mkNoneExpr (ty : String) : Core.Expression.Expr :=
+      .app loc (.op loc (ty ++ "_mk_none") none) (.op loc "None_none" none)
+    match ty with
+    | "StrOrNone" => mkNoneExpr "StrOrNone"
+    | "BoolOrNone" => mkNoneExpr "BoolOrNone"
+    | "BoolOrStrOrNone" => mkNoneExpr "BoolOrStrOrNone"
+    | "AnyOrNone" => mkNoneExpr "AnyOrNone"
+    | "IntOrNone" => mkNoneExpr "IntOrNone"
+    | "BytesOrStrOrNone" => mkNoneExpr "BytesOrStrOrNone"
+    | "DictStrStrOrNone" => mkNoneExpr "DictStrStrOrNone"
+    | _ => panic! s!"unsupported type: {ty}"
+
+end StrataPython
+end -- public section

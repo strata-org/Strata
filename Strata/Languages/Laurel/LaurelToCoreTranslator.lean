@@ -6,33 +6,17 @@
 module
 
 public import Strata.Languages.Core.Program
-public import Strata.Languages.Core.Verifier
-public import Strata.Languages.Core.Statement
-public import Strata.Languages.Core.Procedure
 public import Strata.Languages.Core.Options
-public import Strata.Languages.Laurel.Laurel
-public import Strata.Languages.Laurel.LiftImperativeExpressions
-import Strata.Languages.Laurel.DesugarShortCircuit
-public import Strata.Languages.Laurel.InferHoleTypes
-public import Strata.Languages.Laurel.EliminateHoles
-import Strata.Languages.Laurel.EliminateReturnsInExpression
-import Strata.Languages.Laurel.EliminateValueReturns
-public import Strata.Languages.Laurel.HeapParameterization
-public import Strata.Languages.Laurel.TypeHierarchy
-public import Strata.Languages.Laurel.LaurelTypes
-public import Strata.Languages.Laurel.ModifiesClauses
-public import Strata.Languages.Laurel.CoreDefinitionsForLaurel
 public import Strata.Languages.Laurel.CoreGroupingAndOrdering
-import Strata.DDM.Util.DecimalRat
-import Strata.DL.Imperative.Stmt
-import Strata.Pipeline.Messages
-import Strata.DL.Imperative.MetaData
-import Strata.DL.Lambda.LExpr
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
-import Strata.Languages.Laurel.ConstrainedTypeElim
 import Strata.Util.Tactics
+public import Strata.Languages.Laurel.Resolution
+import Std.Tactic.BVDecide.Normalize.Bool
+import Std.Tactic.BVDecide.Normalize.Prop
+import Strata.Languages.Core.Factory
+import Strata.Languages.Laurel.LaurelTypes
 
-open Core (VCResult VCResults VerifyOptions)
+open Core (VerifyOptions)
 open Core (intAddOp intSubOp intMulOp intSafeDivOp intSafeModOp intSafeDivTOp intSafeModTOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp boolImpliesOp strConcatOp)
 open Core (realAddOp realSubOp realMulOp realDivOp realNegOp realLtOp realLeOp realGtOp realGeOp)
 
@@ -179,7 +163,7 @@ def translateExpr (expr : StmtExprMd)
   | .LiteralBool b => return .const sr (.boolConst b)
   | .LiteralInt i => return .const sr (.intConst i)
   | .LiteralString s => return .const sr (.strConst s)
-  | .LiteralDecimal d => return .const sr (.realConst (Strata.Decimal.toRat d))
+  | .LiteralDecimal d => return .const sr (.realConst (StrataDDM.Decimal.toRat d))
   | .Var (.Local name) =>
       -- First check if this name is bound by an enclosing quantifier
       match boundVars.findIdx? (· == name) with

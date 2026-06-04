@@ -7,11 +7,8 @@ module
 
 public meta import Lean.Elab.Command
 
-public import Strata.Languages.Core.Identifiers
-public meta import Strata.Languages.Core.Identifiers
 public import Strata.Languages.Core.Expressions
-public import Strata.DL.Lambda.Factory
-public import Strata.DL.Lambda.FactoryWF
+public meta import Strata.Languages.Core.Identifiers
 public import Strata.DL.Lambda.IntBoolFactory
 import all Strata.DL.Lambda.IntBoolFactory
 import all Strata.DL.Lambda.LTy
@@ -19,6 +16,7 @@ import all Strata.DL.Lambda.LExpr
 import all Strata.DL.Lambda.Factory
 import all Strata.DL.Lambda.FactoryWF
 import Strata.DL.Util.BitVec
+public meta import Strata.DL.Lambda.IntBoolFactory
 ---------------------------------------------------------------------
 
 -- Operator constructors and factory helpers use ExprSourceLoc.synthesized "factory" because

@@ -5,7 +5,12 @@
 -/
 
 
-import Strata.Languages.Core.Verifier
+module
+meta import Strata.Languages.Core.Verifier
+import StrataDDM.Integration.Lean.HashCommands
+
+meta section
+open StrataDDM (Program)
 
 ---------------------------------------------------------------------
 namespace Strata
@@ -91,11 +96,6 @@ axiom [updateSelect]: forall m : (Map v k), kk : k, vv : v :: (m[kk:=vv])[kk] ==
 axiom [updatePreserves]: forall m : (Map v k), okk : k, kk : k, vv : v :: (m[kk:=vv])[okk] == m[okk];
 -/
 #guard_msgs in
-#eval IO.println examplePgm
-
-/--
-info: #[{ ann := { start := { byteIdx := 296 }, stop := { byteIdx := 303 } },
-    name := { dialect := "Core", name := "command_typedecl" },
     args :=
       ((Array.mkEmpty 2).push (ArgF.ident { start := { byteIdx := 301 }, stop := { byteIdx := 302 } } "k")).push
         (ArgF.option { start := { byteIdx := 302 }, stop := { byteIdx := 302 } } none) },

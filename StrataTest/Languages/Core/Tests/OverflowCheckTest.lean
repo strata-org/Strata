@@ -3,11 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Factory
-import Strata.DL.Lambda.Preconditions
-import Strata.Transform.PrecondElim
+meta import all Strata.Languages.Core.Factory
+meta import all Strata.DL.Lambda.Preconditions
+meta import all Strata.Transform.PrecondElim
 -- Test fixtures build Core expressions directly with synthesized provenance
+
+meta section
 
 /-! # Tests: overflow safe operators
 
@@ -111,3 +114,5 @@ open Strata Core Lambda Core.PrecondElim Imperative in
   assert! md2.getPropertyType == some MetaData.divisionByZero
   let md3 : MetaData Core.Expression := match stmts[3]! with | Statement.assert _ _ md => md | _ => #[]
   assert! md3.getPropertyType == some MetaData.arithmeticOverflow
+
+end

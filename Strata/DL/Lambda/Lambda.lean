@@ -6,7 +6,7 @@
 module
 
 public import Strata.DL.Lambda.LExprEval
-public import Strata.DL.Lambda.LExprType
+public import Strata.DL.Lambda.LExprT
 public import Strata.DL.Lambda.LExpr
 public import Strata.DL.Lambda.Semantics
 public import Strata.DL.Lambda.Denote.LExprSemanticsConsistent
