@@ -5,11 +5,12 @@
 -/
 module
 
-public import Strata.Languages.Laurel.MapStmtExpr
-public import Strata.Languages.Laurel.LaurelTypes
-public import Strata.DL.Imperative.MetaData
 import Strata.Languages.Laurel.HeapParameterizationConstants
 import Strata.Util.Tactics
+public import Strata.Languages.Laurel.Resolution
+import Std.Tactic.BVDecide.Normalize.Prop
+import Strata.Languages.Laurel.LaurelTypes
+import Strata.Languages.Laurel.MapStmtExpr
 
 public section
 
@@ -173,16 +174,24 @@ def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
   | .StaticCall _ args =>
     args.attach.foldl (fun acc ⟨a, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr model a) []
   | .Return (some v) => validateDiamondFieldAccessesForStmtExpr model v
+  | .IncrDecr _ _ target =>
+    match _htgt : target.val with
+    | .Field tgt fieldName =>
+      let innerErrors := validateDiamondFieldAccessesForStmtExpr model tgt
+      let fieldError := checkDiamondFieldAccess model tgt fieldName target.source
+      innerErrors ++ fieldError
+    | .Local _ | .Declare _ => []
   | _ => []
   termination_by sizeOf expr
   decreasing_by
     all_goals simp_wf
     all_goals (try have := AstNode.sizeOf_val_lt expr)
     all_goals (try have := AstNode.sizeOf_val_lt t)
+    all_goals (try have := Variable.sizeOf_field_target_lt_of_eq _htgt)
     all_goals (try have := Condition.sizeOf_condition_lt ‹_›)
     all_goals (try term_by_mem)
     all_goals (try omega)
-    -- For nested Variable.Field in Var (.Field ..) case
+    -- For nested Variable.Field in Var (.Field ..) or IncrDecr (.Field ..) cases
     all_goals (cases expr; rename_i val _ _ _h; subst _h; simp_all; omega)
 
 /--

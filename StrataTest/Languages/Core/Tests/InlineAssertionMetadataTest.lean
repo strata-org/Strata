@@ -3,9 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
-import Strata.SimpleAPI
+meta import Strata.Languages.Core.Verifier
+meta import Strata.SimpleAPI
+import StrataDDM.Integration.Lean.HashCommands
+
+meta section
 
 /-!
 # Inline Assertion Metadata Test
@@ -19,7 +23,7 @@ namespace Core.InlineAssertionMetadata.Tests
 
 open Imperative
 
-private def inlineAssertPgm : Strata.Program :=
+private def inlineAssertPgm : StrataDDM.Program :=
 #strata
 program Core;
 procedure callee() {
@@ -34,8 +38,8 @@ procedure caller() {
 #guard_msgs in
 #eval show IO String from do
   let (coreProg, _) := Strata.Core.getProgram inlineAssertPgm
-  let inlined ← match Strata.Core.inlineProcedures coreProg {} with
-    | .ok p => pure p
+  let inlined ← match ← (Strata.Core.runTransforms coreProg [Strata.Core.passInlineAll]).toBaseIO with
+    | .ok (p, _) => pure p
     | .error e => throw (IO.userError s!"Inlining failed: {e}")
   let vcResults ←
     EIO.toIO (fun e => IO.Error.userError e)
@@ -55,3 +59,5 @@ procedure caller() {
   return output
 
 end Core.InlineAssertionMetadata.Tests
+
+end
