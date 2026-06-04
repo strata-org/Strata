@@ -47,11 +47,19 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
                   typeArgs := monoty.freeVars.eraseDups,
                   inputs := func.inputs.keys.zip input_mtys,
                   output := output_mty}
+  -- Substitution to rename fresh type variables back to user-supplied names.
+  let userSubst : Subst :=
+    [func.typeArgs.zip origTypeArgs |>.map (fun (fresh, orig) => (fresh, .ftvar orig))]
   match func.body with
-  | none => .ok (func, Env)
+  | none =>
+    let func := { func with
+      typeArgs := origTypeArgs,
+      inputs := func.inputs.map (fun (id, mty) => (id, LMonoTy.subst userSubst mty)),
+      output := LMonoTy.subst userSubst func.output }
+    .ok (func, Env)
   | some body =>
     -- Reject body annotations referencing type variables not in typeArgs.
-    let bodyVars := body.annotationTyVars
+    let bodyVars := body.tyVarsOfBinderAnnotations
     let strayVars := bodyVars.filter (· ∉ origTypeArgs)
     if !strayVars.isEmpty then
       .error f!"Function '{func.name}': body contains undeclared type variables \
@@ -73,10 +81,8 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
     let bwdMap ← match LMonoTy.alphaEquivMap monoty inferredTy with
       | some m => pure m
       | none =>
-        let displaySubst : Subst :=
-          [func.typeArgs.zip origTypeArgs |>.map (fun (fresh, orig) => (fresh, .ftvar orig))]
-        let displayInferred := LMonoTy.subst displaySubst inferredTy
-        let displayMono := LMonoTy.subst displaySubst monoty
+        let displayInferred := LMonoTy.subst userSubst inferredTy
+        let displayMono := LMonoTy.subst userSubst monoty
         .error f!"Function '{func.name}': body constrains the type to '{displayInferred}', \
                   incompatible with declared polymorphic signature '{displayMono}'"
     let Env := TEnv.updateSubst Env S
@@ -101,8 +107,13 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
           .error f!"recursive function '{func.name}': non-variable decreases expression must have type int, got '{measurety}'. For structural recursion, use a parameter name"
     | none => pure ()
     let Env := TEnv.popContext Env
-    -- Resolve type aliases and monomorphize the body.
-    let new_func := { func with body := some bodya.unresolved }
+    -- Rename back to user type variable names.
+    let bodya := LExpr.applySubstT bodya userSubst
+    let new_func := { func with
+      typeArgs := origTypeArgs,
+      inputs := func.inputs.map (fun (id, mty) => (id, LMonoTy.subst userSubst mty)),
+      output := LMonoTy.subst userSubst func.output,
+      body := some bodya.unresolved }
     .ok (new_func, Env)
 
 end Function

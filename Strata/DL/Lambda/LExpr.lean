@@ -343,7 +343,7 @@ def collectFvarNames {T : LExprParamsT} : LExpr T → List (Identifier T.base.ID
 /-- Collects type variables from user-written binder annotations (abs/quant only).
     fvar/op annotations are excluded because they come from the typing context
     (e.g. datatype selectors) and will be instantiated during resolution. -/
-def annotationTyVars (e : LExpr ⟨⟨M, IDMeta⟩, LMonoTy⟩) : Std.HashSet TyIdentifier :=
+def tyVarsOfBinderAnnotations (e : LExpr ⟨⟨M, IDMeta⟩, LMonoTy⟩) : Std.HashSet TyIdentifier :=
   match e with
   | .fvar _ _ (some _) => {}
   | .fvar _ _ none => {}
@@ -351,14 +351,14 @@ def annotationTyVars (e : LExpr ⟨⟨M, IDMeta⟩, LMonoTy⟩) : Std.HashSet Ty
   | .op _ _ none => {}
   | .const _ _ => {}
   | .bvar _ _ => {}
-  | .abs _ _ (some ty) body => LMonoTy.freeVars ty |>.foldl .insert (annotationTyVars body)
-  | .abs _ _ none body => annotationTyVars body
+  | .abs _ _ (some ty) body => LMonoTy.freeVars ty |>.foldl .insert (tyVarsOfBinderAnnotations body)
+  | .abs _ _ none body => tyVarsOfBinderAnnotations body
   | .quant _ _ _ (some ty) tr body =>
-    LMonoTy.freeVars ty |>.foldl .insert (annotationTyVars tr |>.union (annotationTyVars body))
-  | .quant _ _ _ none tr body => (annotationTyVars tr).union (annotationTyVars body)
-  | .app _ e1 e2 => (annotationTyVars e1).union (annotationTyVars e2)
-  | .ite _ c t f => (annotationTyVars c).union ((annotationTyVars t).union (annotationTyVars f))
-  | .eq _ e1 e2 => (annotationTyVars e1).union (annotationTyVars e2)
+    LMonoTy.freeVars ty |>.foldl .insert (tyVarsOfBinderAnnotations tr |>.union (tyVarsOfBinderAnnotations body))
+  | .quant _ _ _ none tr body => (tyVarsOfBinderAnnotations tr).union (tyVarsOfBinderAnnotations body)
+  | .app _ e1 e2 => (tyVarsOfBinderAnnotations e1).union (tyVarsOfBinderAnnotations e2)
+  | .ite _ c t f => (tyVarsOfBinderAnnotations c).union ((tyVarsOfBinderAnnotations t).union (tyVarsOfBinderAnnotations f))
+  | .eq _ e1 e2 => (tyVarsOfBinderAnnotations e1).union (tyVarsOfBinderAnnotations e2)
 
 /-- Checks if the expression contains a lambda abstraction anywhere. -/
 def hasAbs {T : LExprParamsT} : LExpr T → Bool

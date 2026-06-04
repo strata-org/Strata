@@ -36,10 +36,10 @@ private def inferredBinderFunc : Core.Function :=
     body := some (.app () (.abs () "y" none (.bvar () 0)) (.fvar () ⟨"x", ()⟩ none)) }
 
 /--
-info: ok: typeArgs: [$__ty0]
-inputs: (x, $__ty0)
-output: $__ty0
-body: some (fun y : ($__ty0) => y)(x)
+info: ok: typeArgs: [T]
+inputs: (x, T)
+output: T
+body: some (fun y : (T) => y)(x)
 -/
 #guard_msgs in
 #eval do
@@ -64,7 +64,7 @@ info: [Strata.Core] Type checking succeeded.
 ---
 info: ok: program Core;
 
-function fst<$__ty0, $__ty1> (x : $__ty0, y : $__ty1) : $__ty0 {
+function fst<a, b> (x : a, y : b) : a {
   x
 }
 -/
@@ -92,8 +92,8 @@ info: [Strata.Core] Type checking succeeded.
 ---
 info: ok: program Core;
 
-function id<$__ty0> (x : $__ty0) : $__ty0 {
-  (fun y : ($__ty0) => y)(x)
+function id<T> (x : T) : T {
+  (fun y : (T) => y)(x)
 }
 -/
 #guard_msgs in
@@ -239,9 +239,9 @@ private def strayFvarAnnotFunc : Core.Function :=
     body := some (.fvar () ⟨"x", ()⟩ (some (.ftvar "V"))) }
 
 /--
-info: ok: typeArgs: [$__ty0]
-inputs: (x, $__ty0)
-output: $__ty0
+info: ok: typeArgs: [T]
+inputs: (x, T)
+output: T
 body: some x
 -/
 #guard_msgs in
@@ -262,10 +262,10 @@ private def nonTrivialBwdFunc : Core.Function :=
       (.fvar () ⟨"x", ()⟩ none)) }
 
 /--
-info: ok: typeArgs: [$__ty0, $__ty1]
-inputs: (f, (arrow $__ty0 $__ty1)) (x, $__ty0)
-output: $__ty1
-body: some (fun y : ($__ty0) => f(y))(x)
+info: ok: typeArgs: [a, b]
+inputs: (f, (arrow a b)) (x, a)
+output: b
+body: some (fun y : (a) => f(y))(x)
 -/
 #guard_msgs in
 #eval do
@@ -290,7 +290,7 @@ info: [Strata.Core] Type checking succeeded.
 ---
 info: ok: program Core;
 
-inline function apply<$__ty0, $__ty1> (f : $__ty0 -> $__ty1, x : $__ty0) : $__ty1 {
+inline function apply<a, b> (f : a -> b, x : a) : b {
   f(x)
 }
 -/
