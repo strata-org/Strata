@@ -6,7 +6,8 @@
 module
 
 public import Strata.Languages.Core.Function
-public import Strata.Languages.Core.Program
+import Strata.DL.Lambda.LExprT
+import Strata.Languages.Core.Procedure
 
 ---------------------------------------------------------------------
 
@@ -48,12 +49,14 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
                   inputs := func.inputs.keys.zip input_mtys,
                   output := output_mty}
   -- Substitution to rename fresh type variables back to user-supplied names.
+  -- Only pairs where the fresh name actually survived alias resolution are included.
+  let userTypeArgs := func.typeArgs.zip origTypeArgs
   let userSubst : Subst :=
-    [func.typeArgs.zip origTypeArgs |>.map (fun (fresh, orig) => (fresh, .ftvar orig))]
+    [userTypeArgs.map (fun (fresh, orig) => (fresh, .ftvar orig))]
   match func.body with
   | none =>
     let func := { func with
-      typeArgs := origTypeArgs,
+      typeArgs := userTypeArgs.map (·.2),
       inputs := func.inputs.map (fun (id, mty) => (id, LMonoTy.subst userSubst mty)),
       output := LMonoTy.subst userSubst func.output }
     .ok (func, Env)
@@ -110,7 +113,7 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
     -- Rename back to user type variable names.
     let bodya := LExpr.applySubstT bodya userSubst
     let new_func := { func with
-      typeArgs := origTypeArgs,
+      typeArgs := userTypeArgs.map (·.2),
       inputs := func.inputs.map (fun (id, mty) => (id, LMonoTy.subst userSubst mty)),
       output := LMonoTy.subst userSubst func.output,
       body := some bodya.unresolved }

@@ -6,7 +6,6 @@
 module
 
 public import Strata.Languages.B3.Verifier.Expression
-public import Strata.Languages.B3.DDMTransform.DefinitionAST
 public import Strata.DL.SMT.Solver
 import Strata.DL.SMT.Factory
 
@@ -21,6 +20,7 @@ Manages incremental verification state for interactive debugging.
 namespace Strata.B3.Verifier
 
 open Strata
+open StrataDDM (SourceRange)
 open Strata.SMT
 open Strata.B3AST
 open Strata.B3.Verifier (UF_ARG_PLACEHOLDER)

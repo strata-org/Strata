@@ -5,9 +5,10 @@
 -/
 
 module
-public import Strata.Languages.Laurel.Laurel
-import Strata.DL.Lambda.LExpr
-import Strata.DDM.Util.Graph.Tarjan
+public import Strata.Languages.Laurel.LaurelAST
+import StrataDDM.Util.Graph.Tarjan
+import Strata.Util.Tactics
+open StrataDDM
 
 /-!
 ## Grouping and Ordering for Core Translation
@@ -150,8 +151,8 @@ public def computeSccDecls (program : Program) : List (List Procedure × Bool) :
 
   -- Build the OutGraph for Tarjan.
   let n := nonExternalArr.size
-  let graph : Strata.OutGraph n :=
-    nonExternalArr.foldl (fun (acc : Strata.OutGraph n × Nat) proc =>
+  let graph : OutGraph n :=
+    nonExternalArr.foldl (fun (acc : OutGraph n × Nat) proc =>
       let callerIdx := acc.2
       let g := acc.1
       let callees := procCallees proc
@@ -159,11 +160,11 @@ public def computeSccDecls (program : Program) : List (List Procedure × Bool) :
         match nameToIdx.get? callee with
         | some calleeIdx => g.addEdge! calleeIdx callerIdx
         | none => g) g
-      (g', callerIdx + 1)) (Strata.OutGraph.empty n, 0) |>.1
+      (g', callerIdx + 1)) (OutGraph.empty n, 0) |>.1
 
   -- Run Tarjan's SCC algorithm. Results are in reverse topological order
   -- (a node appears after all nodes that have paths to it).
-  let sccs := Strata.OutGraph.tarjan graph
+  let sccs := OutGraph.tarjan graph
 
   sccs.toList.filterMap fun scc =>
     let procs := scc.toList.filterMap fun idx =>

@@ -3,24 +3,28 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import StrataTest.Util.TestDiagnostics
-import Strata.DDM.Elab
-import Strata.DDM.BuiltinDialects.Init
-import Strata.Util.IO
-import Strata.Languages.Laurel.Grammar.LaurelGrammar
-import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
-import Strata.Languages.Laurel.LaurelCompilationPipeline
+meta import all StrataTest.Util.TestDiagnostics
+meta import StrataDDM.Elab
+meta import StrataDDM.BuiltinDialects.Init
+meta import StrataDDM.Util.IO
+meta import Strata.Languages.Laurel.Grammar.LaurelGrammar
+meta import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
+meta import Strata.Languages.Laurel.LaurelCompilationPipeline
+
+meta section
 
 open StrataTest.Util
 open Strata
-open Strata.Elab (parseStrataProgramFromDialect)
+open StrataDDM (initDialect)
+open StrataDDM.Elab (parseStrataProgramFromDialect)
 open Lean.Parser (InputContext)
 
 namespace Strata.Laurel
 
 def processLaurelFileWithOptions (options : LaurelVerifyOptions) (input : InputContext) : IO (Array Diagnostic) := do
-  let dialects := Strata.Elab.LoadedDialects.ofDialects! #[initDialect, Laurel]
+  let dialects := StrataDDM.Elab.LoadedDialects.ofDialects! #[initDialect, Laurel]
   let strataProgram ← parseStrataProgramFromDialect dialects Laurel.name input
 
   let uri := Strata.Uri.file input.fileName
@@ -50,3 +54,5 @@ def processLaurelFileKeepIntermediates (input : InputContext) : IO (Array Diagno
   processLaurelFileWithOptions { translateOptions := { keepAllFilesPrefix := dir}} input
 
 end Laurel
+end Strata
+end

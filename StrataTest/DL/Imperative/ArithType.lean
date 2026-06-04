@@ -3,12 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Imperative.CmdType
-import StrataTest.DL.Imperative.ArithExpr
+meta import Strata.DL.Imperative.CmdType
+import all StrataTest.DL.Imperative.ArithExpr
+public meta import Strata.DL.Util.Map
 
 open Strata
 
+meta section
 namespace Arith
 
 /-! ## Instantiate `Imperative`'s Type Checker
@@ -215,3 +218,4 @@ private def testProgram8 : Cmds Arith.PureExpr :=
 
 end TypeCheck
 end Arith
+end

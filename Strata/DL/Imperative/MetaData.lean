@@ -7,7 +7,6 @@ module
 
 public import Strata.DL.Imperative.PureExpr
 public import Strata.DL.Util.DecidableEq
-public import Strata.Util.FileRange
 public import Strata.Util.Provenance
 
 namespace Imperative

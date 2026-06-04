@@ -9,7 +9,7 @@ echo "Storing temporary results in $temp_dir"
 function exiting() { rm -R "${temp_dir}"; exit; }
 trap exiting exit
 
-strata="./.lake/build/bin/strata"
+strata="./StrataCLI/.lake/build/bin/strata"
 
 failed=0
 

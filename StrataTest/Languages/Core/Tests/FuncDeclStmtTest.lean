@@ -3,14 +3,17 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Core
-import Strata.Languages.Core.DDMTransform.Translate
+meta import Strata.Languages.Core
+meta import Strata.Languages.Core.DDMTransform.Translate
+import StrataDDM.Integration.Lean.HashCommands
 
+meta section
 open Core
 open Strata
 
-def translate (t : Strata.Program) : Core.Program :=
+def translate (t : StrataDDM.Program) : Core.Program :=
   (TransM.run Inhabited.default (translateProgram t)).fst
 
 def simpleFuncDeclPgm :=
@@ -76,3 +79,5 @@ procedure test ()
 -- Contract: mkArrow' followed by destructArrow preserves input order
 #guard (Lambda.LMonoTy.mkArrow' .int [.int, .bool, .real]).destructArrow
     == [.int, .bool, .real, .int]
+
+end
