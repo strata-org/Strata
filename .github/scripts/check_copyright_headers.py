@@ -78,8 +78,10 @@ def main():
     if not check_all_source_files(directory_path, ext=".lean", header=lean_copyright_header):
         success = False
 
-    if not check_all_source_files(directory_path / 'Tools', ext=".py", header=python_copyright_header):
-        success = False
+    tools_dir = directory_path / 'Tools'
+    if tools_dir.is_dir():
+        if not check_all_source_files(tools_dir, ext=".py", header=python_copyright_header):
+            success = False
 
     # Exit with appropriate code
     sys.exit(0 if success else 1)
