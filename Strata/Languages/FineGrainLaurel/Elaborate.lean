@@ -1237,7 +1237,7 @@ mutual
 ⟦·⟧⁻¹  : (⟦Γ⟧ ⊢ V ⇔ ⟦A⟧)     → ∃e. (Γ ⊢ e : A)
 ```
 Dispatches to per-constructor helpers. -/
-partial def proj (dest : StmtExprMd) : FGLProducer → ProjM (List StmtExprMd)
+partial def proj (dest : Option StmtExprMd) : FGLProducer → ProjM (List StmtExprMd)
   | .produce md v => projProduce dest md v
   | .varDecl md name ty init body => projVarDecl dest md name ty init body
   | .assign md target val body => projAssign dest md target val body
@@ -1255,15 +1255,19 @@ partial def proj (dest : StmtExprMd) : FGLProducer → ProjM (List StmtExprMd)
 D :: ⟦Γ⟧ ⊢ produce V ⇐ ⟦A⟧ & d   [produce]
 └─ D_V :: ⟦Γ⟧ ⊢ V ⇐ ⟦A⟧
 
-    ↦
+    ↦   (destination x : A present)
 
 ⟦D⟧ₓ⁻¹ :: Γ, x : A ⊢ (x := e_V); skip : TVoid   [assign]
 ├─ ⟦D_V⟧⁻¹ :: Γ ⊢ e_V : A
 └─ Γ ⊢ skip : TVoid   [skip]
 ```
--/
-partial def projProduce (dest : StmtExprMd) (md : Md) (v : FGLValue) : ProjM (List StmtExprMd) :=
-  pure [mkLaurel md (.Assign [dest] (projectValue v))]
+With no destination (a `TVoid` command — the body, or a control-flow path with
+no `x : A` in context), the produced value has nowhere to go and projects to the
+empty statement list. -/
+partial def projProduce (dest : Option StmtExprMd) (md : Md) (v : FGLValue) : ProjM (List StmtExprMd) :=
+  match dest with
+  | some d => pure [mkLaurel md (.Assign [d] (projectValue v))]
+  | none => pure []
 
 /-- projVarDecl:
 ```
@@ -1278,12 +1282,12 @@ D :: ⟦Γ⟧ ⊢ varDecl y T M N ⇐ ⟦A⟧ & d
 └─ ⟦D_N⟧ₓ⁻¹ :: Γ, x : A, y : T ⊢ e⃗_N : TVoid
 ```
 -/
-partial def projVarDecl (dest : StmtExprMd) (md : Md) (name : String) (ty : LowType)
+partial def projVarDecl (dest : Option StmtExprMd) (md : Md) (name : String) (ty : LowType)
     (init : FGLProducer) (body : FGLProducer) : ProjM (List StmtExprMd) := do
   let nameExpr := mkLaurel md (.Identifier (Identifier.mk name none))
   let decl := mkLaurel md (.LocalVariable (Identifier.mk name none) (mkHighTypeMd md (liftType ty)) none)
   projDecl decl
-  let initStmts ← proj nameExpr init
+  let initStmts ← proj (some nameExpr) init
   let bodyStmts ← proj dest body
   pure (initStmts ++ bodyStmts)
 
@@ -1300,9 +1304,9 @@ D :: ⟦Γ⟧ ⊢ assign y M K ⇐ ⟦A⟧ & d
 └─ ⟦D_K⟧ₓ⁻¹ :: Γ, x : A ⊢ e⃗_K : TVoid
 ```
 -/
-partial def projAssign (dest : StmtExprMd) (_md : Md) (target : FGLValue)
+partial def projAssign (dest : Option StmtExprMd) (_md : Md) (target : FGLValue)
     (val : FGLProducer) (body : FGLProducer) : ProjM (List StmtExprMd) := do
-  let valStmts ← proj (projectValue target) val
+  let valStmts ← proj (some (projectValue target)) val
   let bodyStmts ← proj dest body
   pure (valStmts ++ bodyStmts)
 
@@ -1323,7 +1327,7 @@ D :: ⟦Γ⟧ ⊢ ifThenElse V M N K ⇐ ⟦A⟧ & d
 └─ ⟦D_K⟧ₓ⁻¹ :: Γ, x : A ⊢ e⃗_K : TVoid
 ```
 -/
-partial def projIfThenElse (dest : StmtExprMd) (md : Md) (cond : FGLValue)
+partial def projIfThenElse (dest : Option StmtExprMd) (md : Md) (cond : FGLValue)
     (thn els after : FGLProducer) : ProjM (List StmtExprMd) := do
   let thnStmts ← proj dest thn
   let elsStmts ← proj dest els
@@ -1348,7 +1352,7 @@ D :: ⟦Γ⟧ ⊢ whileLoop V M K ⇐ ⟦A⟧ & d
 └─ ⟦D_K⟧ₓ⁻¹ :: Γ, x : A ⊢ e⃗_K : TVoid
 ```
 -/
-partial def projWhileLoop (dest : StmtExprMd) (md : Md) (cond : FGLValue)
+partial def projWhileLoop (dest : Option StmtExprMd) (md : Md) (cond : FGLValue)
     (body after : FGLProducer) : ProjM (List StmtExprMd) := do
   let bodyStmts ← proj dest body
   let bodyBlock := mkLaurel md (.Block bodyStmts none)
@@ -1369,7 +1373,7 @@ D :: ⟦Γ⟧ ⊢ procedureCall f [Vᵢ] [outⱼ : Tⱼ] K ⇐ ⟦A⟧ & d
 └─ ⟦D_K⟧ₓ⁻¹ :: Γ, x : A, out₁:T₁, ..., outₙ:Tₙ ⊢ e⃗_K : TVoid
 ```
 -/
-partial def projProcedureCall (dest : StmtExprMd) (md : Md) (callee : String)
+partial def projProcedureCall (dest : Option StmtExprMd) (md : Md) (callee : String)
     (args : List FGLValue) (outputs : List (String × LowType)) (body : FGLProducer) : ProjM (List StmtExprMd) := do
   for (n, ty) in outputs do
     projDecl (mkLaurel md (.LocalVariable (Identifier.mk n none) (mkHighTypeMd md (liftType ty)) none))
@@ -1391,7 +1395,7 @@ D :: ⟦Γ⟧ ⊢ assert V K ⇐ ⟦A⟧ & d
 └─ ⟦D_K⟧ₓ⁻¹ :: Γ, x : A ⊢ e⃗_K : TVoid
 ```
 -/
-partial def projAssert (dest : StmtExprMd) (md : Md) (cond : FGLValue)
+partial def projAssert (dest : Option StmtExprMd) (md : Md) (cond : FGLValue)
     (body : FGLProducer) : ProjM (List StmtExprMd) := do
   let bodyStmts ← proj dest body
   pure ([mkLaurel md (.Assert (projectValue cond))] ++ bodyStmts)
@@ -1409,7 +1413,7 @@ D :: ⟦Γ⟧ ⊢ assume V K ⇐ ⟦A⟧ & d
 └─ ⟦D_K⟧ₓ⁻¹ :: Γ, x : A ⊢ e⃗_K : TVoid
 ```
 -/
-partial def projAssume (dest : StmtExprMd) (md : Md) (cond : FGLValue)
+partial def projAssume (dest : Option StmtExprMd) (md : Md) (cond : FGLValue)
     (body : FGLProducer) : ProjM (List StmtExprMd) := do
   let bodyStmts ← proj dest body
   pure ([mkLaurel md (.Assume (projectValue cond))] ++ bodyStmts)
@@ -1427,7 +1431,7 @@ D :: ⟦Γ⟧ ⊢ labeledBlock l M K ⇐ ⟦A⟧ & d
 └─ ⟦D_K⟧ₓ⁻¹ :: Γ, x : A ⊢ e⃗_K : TVoid
 ```
 -/
-partial def projLabeledBlock (dest : StmtExprMd) (md : Md) (label : String)
+partial def projLabeledBlock (dest : Option StmtExprMd) (md : Md) (label : String)
     (body after : FGLProducer) : ProjM (List StmtExprMd) := do
   let bodyStmts ← proj dest body
   let bodyBlock := mkLaurel md (.Block bodyStmts (some label))
@@ -1456,9 +1460,12 @@ partial def projSkip : ProjM (List StmtExprMd) := pure []
 
 end
 
-/-- Run projection with `LaurelResult` as destination. Declarations hoisted to top. -/
+/-- Run projection of a procedure body. The body is a command (`TVoid`), so it
+    has no destination: its return value reaches `LaurelResult` only through the
+    explicit `LaurelResult := e` assignments Translation emits for `return e`, not
+    through a tail value. Declarations hoisted to top. -/
 def projectProducer (prod : FGLProducer) : List StmtExprMd :=
-  let (stmts, decls) := (proj (mkLaurel #[] (.Identifier (Identifier.mk "LaurelResult" none))) prod).run
+  let (stmts, decls) := (proj none prod).run
   decls ++ stmts
 
 /-- Run projection, return as a block. -/
@@ -1494,9 +1501,9 @@ def fullElaborate (program : Laurel.Program) (runtime : Laurel.Program := defaul
           (fun (e : ElabTypeEnv) p => { e with names := e.names.insert p.name.text (.variable p.type.val) }) typeEnv
         let inputList := proc.inputs.map fun p => (p.name.text, p.type.val)
         let procEnv : ElabEnv := { baseEnv with typeEnv := extEnv, procGrades := knownGrades, procInputs := inputList }
-        let retTy := match (proc.outputs.filter fun o => eraseType o.type.val != .TCore "Error").head? with
-          | some o => o.type.val | none => .TVoid
-        match tryGrades proc.name.text procEnv bodyExpr retTy [.pure, .proc, .err, .heap, .heapErr] with
+        -- The body is a command (DPS): checked at TVoid, not the return type. The
+        -- return value flows only through explicit `LaurelResult := e` assigns.
+        match tryGrades proc.name.text procEnv bodyExpr .TVoid [.pure, .proc, .err, .heap, .heapErr] with
         | some g =>
           let g := if proc.outputs.length > 1 then Grade.join g .err else g
           if knownGrades[proc.name.text]? != some g then
@@ -1519,8 +1526,6 @@ def fullElaborate (program : Laurel.Program) (runtime : Laurel.Program := defaul
       let inputList := proc.inputs.map fun p => (p.name.text, p.type.val)
       let procEnv : ElabEnv := { baseEnv with typeEnv := extEnv, procGrades := knownGrades, procInputs := inputList }
       let g := knownGrades[proc.name.text]?.getD .pure
-      let retTy := match (proc.outputs.filter fun o => eraseType o.type.val != .TCore "Error").head? with
-        | some o => o.type.val | none => .TVoid
       let st : ElabState := {
         freshCounter := globalCounter
         heapVar := if g == .heap || g == .heapErr then some "$heap" else none }
@@ -1543,7 +1548,7 @@ def fullElaborate (program : Laurel.Program) (runtime : Laurel.Program := defaul
           elabPreconditions := elabPreconditions ++ [⟨(projectValue preVal).val, pre.md⟩]
         | none => elabPreconditions := elabPreconditions ++ [pre]
       let proc := { proc with preconditions := elabPreconditions }
-      match (checkProducer bodyExpr [] retTy g).run procEnv |>.run st with
+      match (checkProducer bodyExpr [] .TVoid g).run procEnv |>.run st with
       | some (fgl, st') =>
         globalCounter := st'.freshCounter
         allBoxConstructors := allBoxConstructors ++ st'.usedBoxConstructors.filter

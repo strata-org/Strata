@@ -758,6 +758,24 @@ infer grades for each procedure.
 Runtime procedure grades are not inferred — they're read from the signature
 by `gradeFromSignature` (does it have a Heap input? An Error output?).
 
+### Procedure bodies are commands (checked at `TVoid`)
+
+Both passes elaborate the body at expected type `.TVoid`, not the procedure's
+return type. A translated procedure body is a statement command, not a value:
+Python statements do not return their last expression, and `return e` was already
+lowered by Translation to `LaurelResult := e; exit`. So the value, when there is
+one, flows through that explicit assignment — which `checkAssign` types against
+`LaurelResult`'s own declared type, independent of the ambient expected type.
+
+Checking the body at the return type instead would conflate the two. A loop body
+or branch arm whose last statement is a void call (`print(...)`) would have that
+call's `()` result coerced toward the declared return type and projected as a
+spurious `LaurelResult := from_None()` — ill-typed when the return type is a
+scalar (`Impossible to unify Any with string`). At `.TVoid` no such coercion
+arises, and the void tail projects to nothing (see Projection's optional
+destination). The return value reaches `LaurelResult` only through the `return`
+assignment.
+
 ### Preconditions
 
 A `requires` clause is a pure value of type `bool` — no effects, no sequencing,
@@ -885,14 +903,26 @@ Given a GFGL checking derivation `D` and a destination variable `x : A`,
 projection produces a Laurel statement list `e⃗` that assigns to `x`.
 One GFGL rule maps to one or more Laurel typing rules in the output.
 
-`proj` is a plain function — no monad. The destination is a parameter.
-The output is a list. Branches are recursive calls.
+The destination is **optional**: `x : A` may be omitted. A producer whose value
+has nowhere to go (a `TVoid` command — see "Procedure bodies are commands"
+below) projects with no destination, and its tail `produce` emits no assignment
+at all rather than `x := v`. This is the only correct reading when there is no
+`x : A` in the context: there is nothing to assign to.
 
 ```
-proj : StmtExprMd → FGLProducer → List StmtExprMd
+proj : Option StmtExprMd → FGLProducer → List StmtExprMd
 ```
 
-Top-level call passes `LaurelResult` as destination.
+The destination threads down unchanged through control flow (`if`/`while`/
+labeled block) and through a procedure call's continuation; an assignment's RHS
+subproducer is projected with `some target`, so `x := f()` still writes `x` even
+inside a void body. `projProduce none` yields `[]`; `projProduce (some d)` yields
+`d := v`.
+
+The top-level body is projected with no destination (`none`). A `return e` was
+already lowered by Translation to `LaurelResult := e; exit`, so the returned
+value reaches `LaurelResult` through that explicit assignment, not through the
+body's tail.
 
 Each helper carries its derivation tree showing the GFGL rule on top
 and the Laurel rules on bottom:
