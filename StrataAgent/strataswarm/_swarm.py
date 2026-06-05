@@ -59,6 +59,7 @@ class Swarm:
             channel_bus=self._channel_bus,
             check_interval=30.0,
         )
+        self._total_cost: float = 0.0  # Cumulative cost across all agents (never resets)
         self._checkpoint_manager: CheckpointManager | None = None
         if checkpoint_dir:
             self._checkpoint_manager = CheckpointManager(self, Path(checkpoint_dir))
@@ -131,7 +132,12 @@ class Swarm:
         # Track live costs as they're reported
         if event.event_type in ("cost_update", "cost_estimate") and event.data:
             try:
-                self._registry.costs[event.agent_name] = float(event.data)
+                new_cost = float(event.data)
+                old_cost = self._registry.costs.get(event.agent_name, 0.0)
+                self._registry.costs[event.agent_name] = new_cost
+                # Accumulate delta into total (cost_update reports cumulative per-agent)
+                if new_cost > old_cost:
+                    self._total_cost += (new_cost - old_cost)
             except (ValueError, TypeError):
                 pass
 

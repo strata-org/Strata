@@ -11,8 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import shutil
-import time
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Any, TypeVar
@@ -25,7 +24,7 @@ MAX_RETRIES = 3
 MAX_PARALLEL_WRITERS = 3
 MAX_PARALLEL_VALIDATORS = 5
 WRITER_MAX_TURNS = 50
-DECOMPOSER_MAX_TURNS = 25
+DECOMPOSER_MAX_TURNS = 100  # Generous but bounded — prevents infinite loops on child decomposers
 
 
 # ─── Enums ────────────────────────────────────────────────────────────────────
@@ -118,6 +117,7 @@ class ProverState:
     attempt: int = 0
     parent_agent: str = "TaskManager"
     failure_reason: str = ""
+    last_failure_details: str = ""  # context from the most recent failure (passed to decomposer on retry)
 
 
 # ─── Structured output types (module-level for Pydantic compatibility) ────────
@@ -312,6 +312,7 @@ async def run_workflow(agent, inp: Any, result_type: type[T] | None = None):
         "theorem_file": theorem_file,
         "attempts": state.attempt,
         "failure_reason": state.failure_reason,
+        "details": state.last_failure_details,
     }
     return result
 
@@ -385,10 +386,40 @@ async def _stage_decompose(state: ProverState, agent) -> ProverTransition:
     msg = f"Decompose theorem: {state.theorem_name}\nFile: {state.workspace}/Stub.lean\n"
     if state.attempt > 0:
         msg += f"Attempt {state.attempt + 1}/{MAX_RETRIES}. Previous decomposition didn't work — try a different approach.\n"
+        if state.last_failure_details:
+            msg += f"Previous failure details:\n{state.last_failure_details}\n"
     msg += "Read the file, use lean_goal at the sorry line to see the exact goal, and decide strategy. Use lean_run_code to verify your formalizations compile."
 
     result = await decomposer.run_ai(inp=msg, result_type=DecomposeResult, max_turns=DECOMPOSER_MAX_TURNS)
     decompose_output: DecomposeResult | None = result.output
+
+    # Keep asking until we get structured output (session persists, has all context)
+    retries = 0
+    while decompose_output is None and retries < 3:
+        retries += 1
+        await agent._emit("message", f"[Prover] Decomposer didn't return output — nudging (attempt {retries}/3)")
+        result = await decomposer.run_ai(
+            inp="You haven't produced your structured output yet. Please call StructuredOutput now with your decomposition result.",
+            result_type=DecomposeResult,
+            max_turns=DECOMPOSER_MAX_TURNS,
+        )
+        decompose_output = result.output
+
+    # Last resort: check if files were written to decomposed/ anyway
+    if decompose_output is None:
+        cwd = _resolve(agent, "")
+        decomposed_dir = cwd / state.workspace / "decomposed"
+        if decomposed_dir.exists():
+            written_files = list(decomposed_dir.glob("*.lean"))
+            if written_files:
+                await agent._emit("message",
+                    f"[Prover] Decomposer never returned output but wrote {len(written_files)} files — using them")
+                decompose_output = DecomposeResult(
+                    strategy="decompose",
+                    axioms=[Axiom(name=f.stem, filename=f"{state.workspace}/decomposed/{f.name}")
+                            for f in written_files],
+                    proof_sketch="(decomposer was cut off — no sketch available)",
+                )
 
     await agent._emit("message",
         f"[Prover] Decomposer returned: strategy={decompose_output.strategy if decompose_output else 'None'}, "
@@ -399,9 +430,11 @@ async def _stage_decompose(state: ProverState, agent) -> ProverTransition:
             await agent._emit("message", f"[Prover] Strategy: direct attempt. Sketch: {decompose_output.proof_sketch}")
             return ProverTransition.SIMPLE_ENOUGH
 
-        # Axiom files were written by decomposer (paths relative to cwd)
-        # Verify each compiles, then copy to workspace root + originals
+        # Axiom files live in decomposed/ — use them directly
+        # Just verify they exist and save originals for validation
         cwd = _resolve(agent, "")
+        originals_dir = cwd / state.workspace / "_originals"
+        originals_dir.mkdir(exist_ok=True)
         state.axiom_files = []
         verify_failed = False
 
@@ -422,10 +455,9 @@ async def _stage_decompose(state: ProverState, agent) -> ProverTransition:
                 verify_failed = True
                 break
 
-            # Passed — copy to workspace root + originals
-            rel_path = _create_axiom_file(cwd, state.workspace, "axiom",
-                                          len(state.axiom_files), axiom.name, src.read_text())
-            state.axiom_files.append(rel_path)
+            # Use the file as-is, save original for validation
+            state.axiom_files.append(axiom.filename)
+            shutil.copy2(src, originals_dir / Path(axiom.filename).name)
 
         if verify_failed:
             state.axiom_files = []
@@ -437,47 +469,82 @@ async def _stage_decompose(state: ProverState, agent) -> ProverTransition:
         if not state.axiom_files:
             return ProverTransition.SIMPLE_ENOUGH
 
-        # Verify the proof sketch works: can Stub.lean be proved using axioms?
-        # proof_writer attempts the main theorem with axioms declared (not proved)
-        await agent._emit("message", "[Prover] Testing proof sketch with axioms declared...")
-
-        # Backup Stub.lean before writer touches it
+        # Verify the proof sketch works — loop: try sketch, if fails ask decomposer to revise
         cwd = _resolve(agent, "")
-        stub_path = cwd / state.workspace / "Stub.lean"
-        stub_backup = cwd / state.workspace / "Stub.sketch_backup.lean"
-        shutil.copy2(stub_path, stub_backup)
+        sketch_attempts = 0
+        max_sketch_attempts = 3
 
-        target = f"{state.workspace}/Stub.lean"
-        async with swarm_agent("proof_writer", swarm=agent.swarm, cwd=agent._cwd, workspace=state.workspace) as writer:
-            sketch_result = await writer.run(
-                inp={
-                    "file": target,
-                    "theorem": state.theorem_name,
-                    "action": (
-                        f"The following axiom files have been created in your workspace. "
-                        f"Import them and use the axioms to prove the sorry in Stub.lean.\n"
-                        f"Axioms: {[Path(f).name for f in state.axiom_files]}\n"
-                        f"Proof sketch: {decompose_output.proof_sketch}\n\n"
-                        f"RULES:\n"
-                        f"- Do NOT modify the axiom files\n"
-                        f"- Do NOT change theorem statements or types\n"
-                        f"- ONLY fill in the proof body (replace sorry with a proof using the axioms)\n"
-                        f"- If the axioms don't fit the goal, report failure — do NOT invent new axioms"
-                    ),
-                },
-                result_type=SketchResult,
-            )
+        while sketch_attempts < max_sketch_attempts:
+            sketch_attempts += 1
+            await agent._emit("message", f"[Prover] Testing proof sketch (attempt {sketch_attempts}/{max_sketch_attempts})...")
 
-        if sketch_result.output and sketch_result.output.success:
-            await agent._emit("message", "[Prover] Proof sketch verified — axioms fit the goal")
+            # Backup Stub.lean before writer touches it
+            stub_path = cwd / state.workspace / "Stub.lean"
+            stub_backup = cwd / state.workspace / "Stub.sketch_backup.lean"
+            shutil.copy2(stub_path, stub_backup)
+
+            target = f"{state.workspace}/Stub.lean"
+            async with swarm_agent("proof_writer", swarm=agent.swarm, cwd=agent._cwd, workspace=state.workspace) as writer:
+                sketch_result = await writer.run(
+                    inp={
+                        "file": target,
+                        "theorem": state.theorem_name,
+                        "action": (
+                            f"The following axiom files have been created in your workspace. "
+                            f"Import them and use the axioms to prove the sorry in Stub.lean.\n"
+                            f"Axioms: {[Path(f).name for f in state.axiom_files]}\n"
+                            f"Proof sketch: {decompose_output.proof_sketch}\n\n"
+                            f"RULES:\n"
+                            f"- Do NOT modify the axiom files\n"
+                            f"- Do NOT change theorem statements or types\n"
+                            f"- ONLY fill in the proof body (replace sorry with a proof using the axioms)\n"
+                            f"- If the axioms don't fit the goal, report failure — do NOT invent new axioms"
+                        ),
+                    },
+                    result_type=SketchResult,
+                )
+
+            if sketch_result.output and sketch_result.output.success:
+                await agent._emit("message", "[Prover] Proof sketch verified — axioms fit the goal")
+                stub_backup.unlink(missing_ok=True)
+                return ProverTransition.DECOMPOSED
+
+            # Sketch failed — revert Stub.lean
+            shutil.copy2(stub_backup, stub_path)
             stub_backup.unlink(missing_ok=True)
-            return ProverTransition.DECOMPOSED
 
-        # Sketch doesn't work — revert Stub.lean, bad decomposition
-        shutil.copy2(stub_backup, stub_path)
-        stub_backup.unlink(missing_ok=True)
-        await agent._emit("message",
-            f"[Prover] Proof sketch FAILED: {sketch_result.output.blocking_reason if sketch_result.output else 'unknown'}")
+            reason = sketch_result.output.blocking_reason if sketch_result.output else "unknown"
+            await agent._emit("message", f"[Prover] Sketch failed: {reason}")
+
+            if sketch_attempts >= max_sketch_attempts:
+                break
+
+            # Ask decomposer for a revised decomposition (session remembers previous attempt)
+            await agent._emit("message", "[Prover] Asking decomposer to revise...")
+            result = await decomposer.run_ai(
+                inp=(
+                    f"The proof writer could not prove Stub.lean using your axioms.\n"
+                    f"Reason: {reason}\n"
+                    f"Please revise your decomposition — write new files to decomposed/ and return updated metadata."
+                ),
+                result_type=DecomposeResult,
+                max_turns=DECOMPOSER_MAX_TURNS,
+            )
+            decompose_output = result.output
+
+            if decompose_output is None or not decompose_output.axioms:
+                break
+
+            # Reload axiom files from revised decomposition
+            state.axiom_files = []
+            originals_dir = cwd / state.workspace / "_originals"
+            for axiom in decompose_output.axioms:
+                src = cwd / axiom.filename
+                if src.exists():
+                    state.axiom_files.append(axiom.filename)
+                    shutil.copy2(src, originals_dir / Path(axiom.filename).name)
+
+        # All sketch attempts exhausted
         state.axiom_files = []
         state.proved_files = []
         return ProverTransition.NEEDS_DECOMP
@@ -506,7 +573,11 @@ async def _stage_direct_attempt(state: ProverState, agent) -> ProverTransition:
             state.proved_files = [target]
             return ProverTransition.PROOF_FOUND
         if result.output.needs_decomposition:
+            state.last_failure_details = f"Direct attempt said: needs decomposition. Reason: {result.output.blocking_reason}"
             return ProverTransition.NEEDS_DECOMP
+        state.last_failure_details = f"Direct attempt failed: {result.output.blocking_reason}"
+    else:
+        state.last_failure_details = "Direct attempt returned no output"
 
     return ProverTransition.FAILED
 
@@ -556,11 +627,12 @@ async def _stage_prove_lemmas(state: ProverState, agent) -> ProverTransition:
                 newly_proved.append(axiom_file)
                 await agent._emit("message", f"[Prover] Child proved: {axiom_path.name}")
             elif result.output and result.output.get("failure_reason") == "unsound":
-                unsound.append(axiom_file)
+                unsound.append((axiom_file, "unsound — counterexample found"))
                 await agent._emit("message", f"[Prover] Child UNSOUND: {axiom_path.name}")
             else:
-                failed.append(axiom_file)
-                await agent._emit("message", f"[Prover] Child failed: {axiom_path.name}")
+                reason = result.output.get("failure_reason", "unknown") if result.output else "no output"
+                failed.append((axiom_file, reason))
+                await agent._emit("message", f"[Prover] Child failed: {axiom_path.name} ({reason})")
 
     await asyncio.gather(*[_prove_one(f) for f in to_prove])
 
@@ -574,12 +646,15 @@ async def _stage_prove_lemmas(state: ProverState, agent) -> ProverTransition:
 
     # Unsound axiom = decomposition was wrong → go straight to retry (new decomposition)
     if unsound:
-        await agent._emit("message", f"[Prover] Unsound axioms detected — decomposition invalid, retrying")
+        details = "\n".join(f"- {Path(f).name}: {r}" for f, r in unsound)
+        state.last_failure_details = f"Unsound axioms:\n{details}"
         state.axiom_files = []
         state.proved_files = []
         return ProverTransition.STUCK
 
     if failed:
+        details = "\n".join(f"- {Path(f).name}: {r}" for f, r in failed)
+        state.last_failure_details = f"Failed axioms:\n{details}"
         return ProverTransition.HAS_SORRY
     return ProverTransition.STUCK
 
@@ -623,10 +698,12 @@ async def _stage_refactor(state: ProverState, agent) -> ProverTransition:
 
         if not find_result.output or find_result.output.cannot_refactor:
             await agent._emit("message", f"[Prover] Cannot refactor {Path(unproved_file).name}")
+            state.last_failure_details = f"Refactor: cannot find/extract sorries from {Path(unproved_file).name}"
             return ProverTransition.CANNOT_REFACTOR
 
         sorries = find_result.output.sorries or []
         if not sorries:
+            state.last_failure_details = f"Refactor: no sorries found in {Path(unproved_file).name}"
             return ProverTransition.CANNOT_REFACTOR
 
         await agent._emit("message", f"[Prover] {Path(unproved_file).name}: {len(sorries)} sorries")
@@ -655,6 +732,7 @@ async def _stage_refactor(state: ProverState, agent) -> ProverTransition:
                 break
 
         if not all_have_axioms:
+            state.last_failure_details = f"Refactor: decomposer couldn't axiomatize all sorries in {Path(unproved_file).name}"
             return ProverTransition.CANNOT_REFACTOR
 
         # Phase 3: Write axiom files first (so they're importable)
@@ -697,12 +775,14 @@ async def _stage_refactor(state: ProverState, agent) -> ProverTransition:
             )
 
         if not edit_result.output or not edit_result.output.success:
+            error = edit_result.output.error if edit_result.output else "unknown"
             await agent._emit("message", f"[Prover] Cannot close sorries in {Path(unproved_file).name} — reverting")
             # Revert file and clean up axiom files
             shutil.copy2(backup_path, cwd / unproved_file)
             backup_path.unlink(missing_ok=True)
             for f in file_new_axioms:
                 (cwd / f).unlink(missing_ok=True)
+            state.last_failure_details = f"Refactor: axioms don't close sorries in {Path(unproved_file).name}. Error: {error}"
             return ProverTransition.CANNOT_REFACTOR
 
         # Success — delete backup

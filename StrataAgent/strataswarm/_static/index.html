@@ -250,6 +250,8 @@ function connect() {
         });
       }
       Object.keys(agents).forEach(name => { if (!agentMessages[name]) agentMessages[name] = []; });
+      if (data.total_cost != null) window._swarmTotalCost = data.total_cost;
+      updateCostDisplay();
       render();
     } else if (data.type === 'agent_event') {
       handleEvent(data);
@@ -322,11 +324,13 @@ function handleEvent(ev) {
     if (!agents[name]) agents[name] = { name };
     agents[name].cost_usd = parseFloat(ev.data);
     agents[name].cost_is_estimate = true;
+    if (ev.total_cost != null) window._swarmTotalCost = ev.total_cost;
     updateCostDisplay();
   } else if (ev.event_type === 'cost_update' && ev.data) {
     if (!agents[name]) agents[name] = { name };
     agents[name].cost_usd = parseFloat(ev.data);
     agents[name].cost_is_estimate = false;
+    if (ev.total_cost != null) window._swarmTotalCost = ev.total_cost;
     updateCostDisplay();
   } else if (ev.event_type === 'state_transition' && ev.data) {
     handleStateTransitionEvent(name, ev.data);
@@ -510,9 +514,23 @@ function renderMessages() {
 function escapeHtml(t) { return (t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function escapeAttr(t) { return (t||'').replace(/&/g,'&amp;').replace(/'/g,'&#39;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function updateCostDisplay() {
-  totalCost = Object.values(agents).reduce((s, a) => s + (a.cost_usd || 0), 0);
-  const anyEstimate = Object.values(agents).some(a => a.cost_is_estimate);
-  document.getElementById('total-cost').textContent = `${anyEstimate ? '~' : ''}$${totalCost.toFixed(4)}`;
+  // Use swarm-level total_cost (persists across agent removal) if available
+  if (window._swarmTotalCost != null) {
+    totalCost = window._swarmTotalCost;
+  } else {
+    totalCost = Object.values(agents).reduce((s, a) => s + (a.cost_usd || 0), 0);
+  }
+  // Separate estimate (running agents) from confirmed (completed)
+  let confirmed = 0, estimated = 0;
+  Object.values(agents).forEach(a => {
+    if (a.cost_usd) {
+      if (a.cost_is_estimate) estimated += a.cost_usd;
+      else confirmed += a.cost_usd;
+    }
+  });
+  let display = `$${totalCost.toFixed(4)}`;
+  if (estimated > 0) display += ` (~$${estimated.toFixed(4)} est)`;
+  document.getElementById('total-cost').textContent = display;
 }
 function formatCost(a) { return a.cost_usd ? `${a.cost_is_estimate ? '~' : ''}$${a.cost_usd.toFixed(4)}` : ''; }
 

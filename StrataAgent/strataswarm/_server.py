@@ -1178,6 +1178,7 @@ class SwarmDashboard:
             "agents": agents,
             "specs": self._get_specs_list(),
             "running": self._swarm_task is not None and not self._swarm_task.done(),
+            "total_cost": self._swarm._total_cost if self._swarm else 0.0,
             "all_messages": self._all_messages[-200:],
             "agent_messages": agent_messages,
             "saved_list": saved_list,
@@ -1201,6 +1202,8 @@ class SwarmDashboard:
             self._agent_sessions[event.agent_name] = str(event.data)
 
         payload = {"type": "agent_event", **entry}
+        if event.event_type in ("cost_update", "cost_estimate") and self._swarm:
+            payload["total_cost"] = self._swarm._total_cost
         await self._broadcast(payload)
 
     def _save_chat(self, label: str = "") -> str | None:
