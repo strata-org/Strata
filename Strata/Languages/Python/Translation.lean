@@ -212,7 +212,7 @@ partial def translateExpr (e : Python.expr ResolvedAnn) : TransM StmtExprMd := d
           | .mk_keyword _ kwName kwExpr => do
             let val ← translateExpr kwExpr
             match kwName.val with | some n => pure (some (n.val, val)) | none => pure none
-        mkExpr sr (.StaticCall sig.laurelName (← sig.matchArgs (receiver ++ posArgs) kwargPairs translateExpr))
+        mkExpr sr (.StaticCall sig.laurelName (← sig.matchArgs (receiver ++ posArgs) kwargPairs translateExpr (mkKwargs := (do return some (← mkExpr sr (.Hole (deterministic := false)))))))
     | .classNew cls initSig => do
         let tmp ← freshId "new"
         let tmpRef ← mkExpr sr (.Identifier tmp)
@@ -222,7 +222,7 @@ partial def translateExpr (e : Python.expr ResolvedAnn) : TransM StmtExprMd := d
           | .mk_keyword _ kwName kwExpr => do
             let val ← translateExpr kwExpr
             match kwName.val with | some n => pure (some (n.val, val)) | none => pure none
-        let initCall ← mkExpr sr (.StaticCall initSig.laurelName (← initSig.matchArgs ([tmpRef] ++ posArgs) kwargPairs translateExpr))
+        let initCall ← mkExpr sr (.StaticCall initSig.laurelName (← initSig.matchArgs ([tmpRef] ++ posArgs) kwargPairs translateExpr (mkKwargs := (do return some (← mkExpr sr (.Hole (deterministic := false)))))))
         tell [assignNew, initCall]
         pure tmpRef
     | .unresolved => mkExpr sr (.Hole (deterministic := false))
@@ -328,7 +328,7 @@ partial def translateAssign (sr : SourceRange) (target : Python.expr ResolvedAnn
           | .mk_keyword _ kwName kwExpr => do
             let val ← translateExpr kwExpr
             match kwName.val with | some n => pure (some (n.val, val)) | none => pure none
-        let initCall ← mkExpr sr (.StaticCall initSig.laurelName (← initSig.matchArgs ([targetExpr] ++ posArgs) kwargPairs translateExpr))
+        let initCall ← mkExpr sr (.StaticCall initSig.laurelName (← initSig.matchArgs ([targetExpr] ++ posArgs) kwargPairs translateExpr (mkKwargs := (do return some (← mkExpr sr (.Hole (deterministic := false)))))))
         tell [assignNew, initCall]
     | _ => tell [← mkExpr sr (.Assign [← translateExpr target] (← translateExpr value))]
   | _ => tell [← mkExpr sr (.Assign [← translateExpr target] (← translateExpr value))]
@@ -532,6 +532,36 @@ partial def translateTryExcept (sr : SourceRange)
 -- Function / Class / Module — reads NodeInfo directly
 -- ═══════════════════════════════════════════════════════════════════════════════
 
+/-- Rewrite identifiers in a precondition expression: each declared parameter name
+    `x` becomes the input name `$in_x`. Laurel `requires` clauses are evaluated in
+    the procedure's INPUT scope (where params are named `$in_x`), not the body scope
+    (where they are copied to locals `x`). -/
+partial def renameParamsToInputs (paramNames : List String) (e : StmtExprMd) : StmtExprMd :=
+  let rw := renameParamsToInputs paramNames
+  let rwOpt := fun (o : Option StmtExprMd) => o.map rw
+  let rwList := fun (l : List StmtExprMd) => l.map rw
+  let val := match e.val with
+    | .Identifier name =>
+      if paramNames.contains name.text then .Identifier { name with text := s!"$in_{name.text}" } else e.val
+    | .IfThenElse c t el => .IfThenElse (rw c) (rw t) (rwOpt el)
+    | .Block ss l => .Block (rwList ss) l
+    | .Assign ts v => .Assign (rwList ts) (rw v)
+    | .FieldSelect t fn => .FieldSelect (rw t) fn
+    | .PureFieldUpdate t fn nv => .PureFieldUpdate (rw t) fn (rw nv)
+    | .StaticCall c args => .StaticCall c (rwList args)
+    | .PrimitiveOp op args => .PrimitiveOp op (rwList args)
+    | .ReferenceEquals l r => .ReferenceEquals (rw l) (rw r)
+    | .AsType t ty => .AsType (rw t) ty
+    | .IsType t ty => .IsType (rw t) ty
+    | .InstanceCall t c args => .InstanceCall (rw t) c (rwList args)
+    | .Old v => .Old (rw v)
+    | .Fresh v => .Fresh (rw v)
+    | .Assert c => .Assert (rw c)
+    | .Assume c => .Assume (rw c)
+    | .Return v => .Return (rwOpt v)
+    | other => other
+  { e with val }
+
 partial def translateFunction (sig : FuncSig) (body : Array (Python.stmt ResolvedAnn))
     (sr : SourceRange) : TransM Procedure := do
   let declInputs := sig.laurelDeclInputs
@@ -547,8 +577,9 @@ partial def translateFunction (sig : FuncSig) (body : Array (Python.stmt Resolve
     mkExprDefault (.LocalVariable lId (mkTypeDefault (pythonTypeToHighType lTy)) none)
   let (preAsserts, restBody) := body.toList.span fun s => match s with
     | .Assert _ _ _ => true | _ => false
+  let paramNames := declInputs.map (·.1.text)
   let preconditions ← preAsserts.mapM fun s => match s with
-    | .Assert _ test _ => translateExpr test
+    | .Assert _ test _ => do pure (renameParamsToInputs paramNames (← translateExpr test))
     | _ => unreachable!
   let bodyStmts ← execWriter restBody
   let bodyBlock ← mkExpr sr (.Block (paramCopies ++ localDecls ++ bodyStmts) none)

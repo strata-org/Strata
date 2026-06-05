@@ -148,6 +148,9 @@ structure FuncSig where
   locals : List (PythonIdentifier × PythonType)
   /-- Overload index for disambiguated naming. `none` for non-overloaded functions. -/
   overloadIndex : Option Nat := none
+  /-- The `**kwargs` parameter name, if present. A declared input (Any-typed) but not
+      matched positionally by `matchArgs`. -/
+  kwargName : Option PythonIdentifier := none
 
 /-- The resolution annotation on each Python AST node.
     Each variant carries exactly what Translation needs to emit Laurel. -/
@@ -669,11 +672,14 @@ private def ParamList.allParams (pl : ParamList) : List (PythonIdentifier × Pyt
     Inputs are named `$in_X` at the Laurel level (body uses mutable local `X`). -/
 def FuncSig.laurelDeclInputs (sig : FuncSig) : List (Laurel.Identifier × PythonType) :=
   let anyTy : PythonType := .Name SourceRange.none ⟨SourceRange.none, "Any"⟩ (.Load SourceRange.none)
-  match sig.params with
-  | .instance recv pl =>
-    ({ text := recv.val, uniqueId := none }, anyTy) :: pl.allParams.map fun (id, ty) => ({ text := id.val, uniqueId := none }, ty)
-  | .static pl =>
-    pl.allParams.map fun (id, ty) => ({ text := id.val, uniqueId := none }, ty)
+  let base := match sig.params with
+    | .instance recv pl =>
+      ({ text := recv.val, uniqueId := none }, anyTy) :: pl.allParams.map fun (id, ty) => ({ text := id.val, uniqueId := none }, ty)
+    | .static pl =>
+      pl.allParams.map fun (id, ty) => ({ text := id.val, uniqueId := none }, ty)
+  match sig.kwargName with
+  | some kw => base ++ [({ text := kw.val, uniqueId := none }, anyTy)]
+  | none => base
 
 /-- Zip-fold arg matching. Each param slot is filled in order:
     1. If a positional arg remains → consume it
@@ -684,7 +690,7 @@ def FuncSig.laurelDeclInputs (sig : FuncSig) : List (Laurel.Identifier × Python
     Includes receiver slot for instance methods. Lives in Resolution
     because it accesses private `ParamList` fields and resolved defaults. -/
 def FuncSig.matchArgs [Monad m] [Inhabited (m α)] (sig : FuncSig) (posArgs : List α) (kwargs : List (String × α))
-    (translateDefault : ResolvedPythonExpr → m α) : m (List α) := do
+    (translateDefault : ResolvedPythonExpr → m α) (mkKwargs : m (Option α) := pure none) : m (List α) := do
   let (receiverSlot, pl) := match sig.params with
     | .instance recv pl => ([(recv.val, (none : Option ResolvedPythonExpr))], pl)
     | .static pl => ([], pl)
@@ -704,7 +710,14 @@ def FuncSig.matchArgs [Monad m] [Inhabited (m α)] (sig : FuncSig) (posArgs : Li
           | none => panic! "Resolution bug: required param without arg"
       pure (acc ++ [v], [])
   ) ([], posArgs)
-  pure result
+  -- Append a value for the `**kwargs` declared input, if present.
+  if sig.kwargName.isSome then
+    let kwOpt ← mkKwargs
+    match kwOpt with
+    | some kw => return (result ++ [kw])
+    | none => return result
+  else
+    return result
 
 /-- Locals as `(Laurel.Identifier × PythonType)` for `LocalVariable` declarations. -/
 def FuncSig.laurelLocals (sig : FuncSig) : List (Laurel.Identifier × PythonType) :=
@@ -837,7 +850,11 @@ partial def extractFuncSig (ctx : Ctx) (f : SourceRange → ResolvedAnn)
     else match paramList.required with
       | (recv, _) :: rest => .instance recv { paramList with required := rest }
       | [] => .static paramList
-  return { name := pythonName, className, params := funcParams, returnType := retTy, locals }
+  let kwargName := match args with
+    | .mk_arguments _ _ _ _ _ _ kwarg _ => match kwarg.val with
+      | some (.mk_arg _ n _ _) => some (PythonIdentifier.fromAst n)
+      | none => none
+  return { name := pythonName, className, params := funcParams, returnType := retTy, locals, kwargName }
 
 /-- Builds the body context for resolving statements inside a function. Extends ctx with
     all params (including vararg/kwarg) and locals. Used by `resolveFuncDef` to create the
