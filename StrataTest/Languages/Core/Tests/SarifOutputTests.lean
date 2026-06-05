@@ -3,10 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.SarifOutput
-import Strata.Languages.Core.Verifier
-import Lean.Data.Json
+meta import Strata.Languages.Core.SarifOutput
+meta import Strata.Languages.Core.Verifier
+meta import Lean.Data.Json
+
+meta section
 
 /-!
 # SARIF Output Tests
@@ -35,13 +38,13 @@ private def mkOutcome (sat val : Result) : VCOutcome :=
 def makeMetadata (file : String) (_line _col : Nat) : MetaData Expression :=
   let uri := Strata.Uri.file file
   -- Create a 1D range (byte offsets). For testing, we use simple offsets.
-  let range : Strata.SourceRange := { start := ⟨0⟩, stop := ⟨10⟩ }
+  let range : StrataDDM.SourceRange := { start := ⟨0⟩, stop := ⟨10⟩ }
   Imperative.MetaData.ofProvenance (Strata.Provenance.ofSourceRange uri range)
 
 /-- Create metadata with a specific byte offset for the file range start. -/
 def makeMetadataAt (file : String) (startByte : Nat) : MetaData Expression :=
   let uri := Strata.Uri.file file
-  let range : Strata.SourceRange := { start := ⟨startByte⟩, stop := ⟨startByte + 10⟩ }
+  let range : StrataDDM.SourceRange := { start := ⟨startByte⟩, stop := ⟨startByte + 10⟩ }
   Imperative.MetaData.ofProvenance (Strata.Provenance.ofSourceRange uri range)
 
 /-- Create a simple FileMap for testing -/
@@ -101,7 +104,7 @@ def makeVCResult (label : String) (outcome : VCOutcome)
 #guard outcomeToMessage (mkOutcome .unknown .unknown) = "Unknown (solver timeout or incomplete)"
 
 -- Test unreachable message
-#guard outcomeToMessage (mkOutcome .unsat .unsat) = "Unreachable: path condition is contradictory"
+#guard outcomeToMessage (mkOutcome .unsat .unsat) = "Unreachable in this context"
 
 /-! ## Location Extraction Tests -/
 
@@ -377,3 +380,5 @@ private def sarifPropertyType (vcr : VCResult) : String :=
 #eval sarifPropertyType (makeVCResult "t" (mkOutcome (.sat []) .unsat) (property := .cover))
 
 end Core.Sarif.Tests
+
+end

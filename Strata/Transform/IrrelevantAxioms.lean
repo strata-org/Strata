@@ -5,6 +5,7 @@
 -/
 module
 
+public import Strata.Languages.Core.PipelinePhase
 public import Strata.Transform.CoreTransform
 
 /-! # Per-goal irrelevant-axiom filtering for Strata Core verification
@@ -19,8 +20,8 @@ This module provides a two-step API designed for use inside a verification loop:
 This avoids rebuilding the call graph and axiom map on every proof obligation,
 which would be expensive for programs with many goals.
 
-See `IrrelevantAxiomsMode` in `Options.lean` for the soundness discussion and
-the distinction between `Aggressive` and `Precise` modes.
+`IrrelevantAxiomsMode` in `Options.lean` is used separatedly from
+preprocessObligation (Verifier.lean), not from this pass.
 -/
 
 namespace Core
@@ -68,6 +69,16 @@ def run (prog : Program) (functions : List String) : CoreTransformM Program := d
   return { prog with decls := prunedDecls }
 
 end IrrelevantAxioms
+
+/-- Pipeline phase that removes axiom declarations irrelevant to the named
+    functions. The transform only deletes axioms (no new assumptions are
+    introduced), so it is model-preserving.
+    If the user of this pass removes further axioms because e.g., it is in the
+    'aggressive' mode, it will have to validate the model by itself. -/
+def irrelevantAxiomsPipelinePhase (functions : List String) : PipelinePhase :=
+  modelPreservingPipelinePhase "RemoveIrrelevantAxioms" fun prog => do
+    let pruned ← IrrelevantAxioms.run prog functions
+    return (true, pruned)
 
 end -- public section
 end Core

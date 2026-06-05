@@ -3,8 +3,11 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Lambda.LExpr
+meta import Strata.DL.Lambda.LExpr
+
+meta section
 
 namespace Lambda.LExpr.SyntaxTests
 

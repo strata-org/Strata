@@ -3,17 +3,20 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DDM.Integration.Lean
-import Strata.DDM.Util.Format
-import Strata.Languages.Core.Core
-import Strata.Languages.Core.DDMTransform.Translate
-import Strata.Languages.Core.StatementSemantics
-import Strata.Languages.Core.ProgramType
-import Strata.Languages.Core.ProgramWF
-import Strata.Transform.CoreTransform
-import Strata.Transform.ProcedureInlining
-import Strata.Util.Tactics
+import StrataDDM.Integration.Lean
+meta import StrataDDM.Util.Format
+meta import Strata.Languages.Core
+meta import Strata.Languages.Core.DDMTransform.Translate
+meta import Strata.Languages.Core.StatementSemantics
+meta import Strata.Languages.Core.ProgramType
+meta import Strata.Languages.Core.ProgramWF
+meta import Strata.Transform.CoreTransform
+meta import Strata.Transform.ProcedureInlining
+meta import Strata.Util.Tactics
+
+meta section
 
 open Core
 open Core.Transform
@@ -227,7 +230,7 @@ private def alphaEquiv (p1 p2:Core.Procedure):Except Format Bool := do
 
 
 
-def translate (t : Strata.Program) : Core.Program :=
+def translate (t : StrataDDM.Program) : Core.Program :=
   (TransM.run Inhabited.default (translateProgram t)).fst
 
 def runInlineCall (p : Core.Program) : Core.Program :=
@@ -481,3 +484,4 @@ def testThreeChainCG := do
   | ⟨.error m, _⟩ => s!"ERROR: {m}"))
 
 end ProcedureInliningExamples
+end

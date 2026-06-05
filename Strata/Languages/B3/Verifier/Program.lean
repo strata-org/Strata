@@ -5,13 +5,9 @@
 -/
 module
 
-public import Strata.Languages.B3.Verifier.Diagnosis
-import Strata.Languages.B3.Verifier.State
-import Strata.Languages.B3.Verifier.Expression
-import Strata.Languages.B3.Verifier.Formatter
-import Strata.Languages.B3.Verifier.Statements
 import Strata.Languages.B3.Transform.FunctionToAxiom
-import Strata.Languages.B3.DDMTransform.Conversion
+public import Strata.Languages.B3.Verifier.State
+import Strata.Languages.B3.Verifier.Diagnosis
 
 public section
 
@@ -25,6 +21,7 @@ Verifies entire programs with automatic diagnosis.
 namespace Strata.B3.Verifier
 
 open Strata
+open StrataDDM
 open Strata.SMT
 open Strata.B3AST
 

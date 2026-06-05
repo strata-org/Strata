@@ -6,9 +6,11 @@
 module
 
 import Strata.DL.Lambda.Denote.LExprAnnotated
-public import Strata.DL.Util.HList
 import Strata.DL.Lambda.Factory
-import Strata.DL.Lambda.TypeFactory
+meta import Init.Grind.Cases
+import Std.Tactic.BVDecide.Normalize.BitVec
+import Std.Tactic.BVDecide.Normalize.Prop
+import Strata.DL.Util.HList
 
 /-!
 ## Core Denotational Semantics
