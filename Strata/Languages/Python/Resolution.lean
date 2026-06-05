@@ -800,7 +800,7 @@ mutual
     via `resolveExpr` so they carry `ResolvedAnn` annotations for later Translation use. -/
 partial def extractParamList (ctx : Ctx) (f : SourceRange → ResolvedAnn) (args : Python.arguments SourceRange) : ResolveM ParamList := do
   match args with
-  | .mk_arguments _ posonlyargs argList _ kwonlyargs kwDefaults _ defaults =>
+  | .mk_arguments _ posonlyargs argList _ kwonlyargs kwDefaults kwarg defaults =>
       let posAndRegular := posonlyargs.val.toList ++ argList.val.toList
       let allPosParams := posAndRegular.map argToParam
       let defaultCount := defaults.val.size
@@ -816,6 +816,7 @@ partial def extractParamList (ctx : Ctx) (f : SourceRange → ResolvedAnn) (args
         match optExpr with
         | .some_expr _ e => kwonly := kwonly ++ [(n, ty, some (← resolveExpr ctx f e))]
         | .missing_expr _ => kwonly := kwonly ++ [(n, ty, none)]
+      let _ := kwarg  -- `**kwargs` registered separately by resolveFunctionBody
       return { required, optional, kwonly }
 
 /-- Builds a complete `FuncSig` for a function/method definition. Determines instance vs static
