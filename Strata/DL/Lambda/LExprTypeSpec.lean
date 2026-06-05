@@ -10,6 +10,8 @@ import all Strata.DL.Lambda.LExprWF
 import all Strata.DL.Lambda.LExpr
 import all Strata.DL.Lambda.LTy
 import all Strata.DL.Lambda.LTyUnify
+public import Strata.DL.Lambda.LTyUnifyProps
+import all Strata.DL.Lambda.LTyUnifyProps
 import all Strata.DL.Util.Map
 import all Strata.DL.Util.Maps
 import all Strata.DL.Lambda.Identifiers
