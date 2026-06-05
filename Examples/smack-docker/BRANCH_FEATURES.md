@@ -610,6 +610,67 @@ switches), `Strata/Transform/TerminationCheck.lean`,
 `Strata/Transform/PrecondElim.lean`, `Strata/Transform/CoreTransform.lean`.
 Net: 6 Lean files modified, +441 / -71 lines.
 
+### 4.5 Balanced ITE-tree in obligation-program builder (`494cf1147`)
+
+**Problem.** `Core.toCoreProofObligationProgram` combined per-obligation
+statement blocks via a left-deep `foldl` of `Stmt.ite .nondet`,
+producing AST depth proportional to the obligation count. The `foldl`
+itself completes (it's TCO), but the *output AST* has depth = N. The
+first downstream consumer that recurses structurally on `Stmt.ite`
+arms (`ANFEncoder.anfEncodeBody` walking then-branch then else-branch)
+overflows the OS C stack at moderate N. On `EQ_2aa5bx1uwko_out.bpl`
+(smallest medium SO repro from the EQ portfolio), N = 2,857,392 →
+SIGABRT at default 8 MB stack in ~15s; raising the stack 8× to 64 MB
+defers but doesn't prevent the crash (~226s elapsed instead of 15s).
+
+**Localization (4 probes, 2026-06-04..05).** dbg_trace counter
+instrumentation pinned the depth-driver to the foldl-built ITE tree,
+not to the eval-side recursion that initial triage suspected. Probe
+3 measured `[ITE-FORK]=0` events fired before SIGABRT, falsifying the
+"processIteBranches fork-explosion" hypothesis. Probe 4 traced
+`[FOLD-DEFERRED] blocks=2857392` immediately preceding `[ENCODE-VC]
+anfEncodeBody entered` and the SIGABRT, identifying `Core.lean:185-189`
+as the depth-driver and `ANFEncoder.lean:197+` as the trigger site.
+
+**Fix.** Replace the foldl with `balancedNondetIte`, a balanced-
+bisection helper producing AST depth O(log N) ≈ 22 for N = 2.86M.
+Preserves per-obligation path-condition isolation:
+`ObligationExtraction.extractGo` still resets `pc` to the parent's
+value when entering each `ite .nondet` arm, so siblings cannot leak
+`assume` constraints into each other's path conditions. Flattening
+the blocks to a single `List Stmt` (Option A in the probe-4 report)
+would have been simpler but breaks pc isolation; balancing (Option B)
+preserves the semantics of every existing consumer.
+
+```lean
+def balancedNondetIte (blocks : List (List Statement)) : List Statement :=
+  match blocks with
+  | [] => []
+  | [b] => b
+  | b₀ :: b₁ :: rest =>
+    let bs := b₀ :: b₁ :: rest
+    let mid := bs.length / 2
+    [Imperative.Stmt.ite .nondet
+      (balancedNondetIte (bs.take mid))
+      (balancedNondetIte (bs.drop mid))
+      .empty]
+  termination_by blocks.length
+```
+
+**Result.** All 7 known SO reproducers from the EQ portfolio
+(`EQ_2zvm5xvfu22`, `EQ_wnksggs1hpx`, `EQ_cvrikypthwe`, `EQ_2aa5bx1uwko`,
+`EQ_wfgmxv3m3tx`, `EQ_sertrlracdg`, `EQ_0xaksnfuqqv`) cleared on
+`htd/so-fix`: zero rc=134, zero "Stack overflow detected" stderr.
+All 7 now hit the post-SO long-running SMT regime within
+`gtimeout=90s` (rc=124) — acceptable behavior; SMT timeout is not a
+verifier crash. 94-program SMACK matrix bit-identical PASS+PARTIAL
+file sets vs the v6 baseline (68/11/0); 6 PASS-? → TIMEOUT shifts on
+`sv_locks_*` are pre-documented probe variance, not fix-induced.
+
+**Files:** `Strata/Languages/Core/Core.lean` (+29 / −5). Merged into
+`htd/smack` as `346f55083`. Probe lineage at
+`reports/so-localization-probe4-2026-06-05.md`.
+
 ---
 
 ## 5. Benchmark suite: 94 programs
@@ -865,7 +926,7 @@ Sibling open issue [#1186](https://github.com/strata-org/Strata/issues/1186) (As
 
 Sibling open issue [#1184](https://github.com/strata-org/Strata/issues/1184) (CBMC backend missing multi-return support, error silently swallowed) — surfaced during the same investigation but not patched on this branch.
 
-### 9.3 Strata Core / Transform (4)
+### 9.3 Strata Core / Transform (5)
 
 | # | Bug | Filed? | htd/smack | main/main2? |
 |---|---|---|---|---|
@@ -873,6 +934,7 @@ Sibling open issue [#1184](https://github.com/strata-org/Strata/issues/1184) (CB
 | 13 | Contract-only call evaluation — every `.call` was replaced by `havoc(lhs); assume(ensures)`, losing all body-derived information. Caused the dominant deductive sub-class (a) PARTIALs (54 of 93). Resolved by the body-eval feature. | — (motivation captured in spec) | ✓ `dd0c0d7cd` (body-eval feature) | — |
 | 14 | Cross-procedure `Env.error` contamination — when one procedure errors (CFG fuel exhaustion, etc.), `fixupError` doesn't clear `Env.error`; subsequent procedures short-circuit and emit zero obligations. **Confirmed today on `htd/smack`**: `aws_array_eq` reports `All 4 goals passed` end-to-end but `--procedures main` shows `0 goals passed, 3 failed`. The `--split-procs` workaround masks this, not fixes it. | [#1185](https://github.com/strata-org/Strata/issues/1185) (open) | — | — (fix lives on `htd/fix-eval` as `d55ac1c33` + `eeb0dfa3d` + `ecf402211`, not yet on either main or htd/smack) |
 | 21 | CFG `condGoto` deferred-obligation duplication — both `env_t` and `env_f` of a symbolic-condition CFG branch inherited the parent's `deferred` array; every symbolic branch doubled the pre-split obligation set, growing multiplicatively across procedures (3.96B obligations on `cjson_cJSON_Parse_harness.bpl` after 7 procedures). Materializing the array hung `Program.eval` on every `.bpl` ≥20K lines, regardless of `--call-policy` or `--inline-fuel`. **Note: this supersedes Conjecture A in `reports/stack-and-hang-conjectures-report.md`, which attributed the hang to a depth-O(N) ITE chain in `oblProgram` — the actual mechanism is width-O(2^K) array growth in `deferred` *before* the ITE chain is constructed.** | [#1316](https://github.com/strata-org/Strata/issues/1316) (open) + PR [#1317](https://github.com/strata-org/Strata/pull/1317) targeting `htd/unstructured-procedure` | ✓ `8f019818f` (cherry-picked from `277c468cb` on `htd/smack-timeout-fix`) | — |
+| 23 | `Core.toCoreProofObligationProgram` builds a left-deep `Stmt.ite .nondet` tree by `foldl` over the deferred-obligations list, producing AST depth = N (the obligation count). `ANFEncoder.anfEncodeBody`, the first downstream non-TCO consumer, walks then-branch then else-branch structurally and overflows the OS C stack. **Affects all 7 SO reproducers from the EQ portfolio** (`EQ_2zvm5xvfu22`, `EQ_wnksggs1hpx`, `EQ_cvrikypthwe`, `EQ_2aa5bx1uwko`, `EQ_wfgmxv3m3tx`, `EQ_sertrlracdg`, `EQ_0xaksnfuqqv`); on `EQ_2aa5bx1uwko` N = 2,857,392 obligations → 2.86M-deep ITE → SIGABRT in ~15s under default 8 MB stack, ~226s under raised 64 MB stack (depth grows with N regardless of stack budget). Probe-localized via 4 dbg_trace probes over 2026-06-04..05; original "processIteBranches fork-explosion" hypothesis was empirically falsified at probe 3 (`[ITE-FORK]=0`). Independent of `--call-policy`/`--inline-fuel`/SMT subprocess. **Fix: `balancedNondetIte` (depth O(log N) ≈ 22 instead of N) preserving per-obligation pc isolation that ObligationExtraction relies on.** Validation: 7/7 SO reproducers cleared (zero rc=134); 94-program SMACK matrix bit-identical PASS+PARTIAL file sets (68/11/0). | not filed yet — bug requires `--call-policy bodyOrContract` which exists only on the htd/smack feature line (commit `dd0c0d7cd`); should ship alongside body-eval merge to main/main2 | ✓ `494cf1147` merged via `346f55083` | — |
 
 ### 9.4 Strata DDM / parser / type-checker (2)
 
@@ -898,10 +960,11 @@ Sibling open issue [#1184](https://github.com/strata-org/Strata/issues/1184) (CB
 
 ### Summary stats
 
-- **22 distinct bugs/issues** surfaced (or confirmed) on this branch.
-- **18 fixed** with commits on `htd/smack` (#18 PASS-? matrix gap fixed at `a817909fc`; #21 large-`.bpl` hang fixed at `277c468cb`; #22 long flat-list overflow fixed by 4-commit cherry-pick `95abbe567`/`7b1018e81`/`73c17b1bd`/`fab1575f8`).
+- **23 distinct bugs/issues** surfaced (or confirmed) on this branch.
+- **19 fixed** with commits on `htd/smack` (#18 PASS-? matrix gap fixed at `a817909fc`; #21 large-`.bpl` hang fixed at `277c468cb`; #22 long flat-list overflow fixed by 4-commit cherry-pick `95abbe567`/`7b1018e81`/`73c17b1bd`/`fab1575f8`; #23 obligation-pipeline SO fixed at `494cf1147` via `balancedNondetIte`, merged as `346f55083`).
 - **1 fixed elsewhere** (#14 fix lives on `htd/fix-eval`; not on `htd/smack` or `main`).
 - **3 not yet patched** (#1184, #1186, #17 deeply-nested-expr `elabExpr` rewrite).
+- **1 filed upstream from htd/smack** (#1331, BoogieToStrata `old(<unmodified-global>)` typecheck rejection; reproduces on `origin/main2@4e4ceb9d1`).
 - **0 fixes have landed on `main` or `main2`** — every CBMC-backend, BoogieToStrata, and Core-transform fix is still `htd/smack`-only.
 
 ### Filed-issue index

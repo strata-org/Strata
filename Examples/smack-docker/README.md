@@ -818,6 +818,27 @@ and `Tools/BoogieToStrata/IntegrationTests/BoogieToStrataIntegrationTests.cs`.
   (commit `9f26fffd7`); the layered timeout (gtimeout wrapper +
   Popen+killpg fallback) means accidental inclusion of any
   divergent program is now safe.
+- **Obligation-pipeline stack overflow under `--call-policy bodyOrContract`.**
+  All 7 SO reproducers from the EQ portfolio (`EQ_2zvm5xvfu22`,
+  `EQ_wnksggs1hpx`, `EQ_cvrikypthwe`, `EQ_2aa5bx1uwko`, `EQ_wfgmxv3m3tx`,
+  `EQ_sertrlracdg`, `EQ_0xaksnfuqqv`) crashed with rc=134 (SIGABRT,
+  "Stack overflow detected. Aborting.") under `--call-policy
+  bodyOrContract`. Phase-bisection (4 dbg_trace probes, 2026-06-04..05;
+  see `reports/so-localization-probe4-2026-06-05.md`) localized the
+  depth-driver to `Core.toCoreProofObligationProgram` at
+  `Strata/Languages/Core/Core.lean:185-189`, which combined per-
+  obligation blocks via a left-deep `foldl` of `Stmt.ite .nondet`,
+  producing AST depth = N (the obligation count). On
+  `EQ_2aa5bx1uwko`, N = 2,857,392 → 2.86M-deep ITE → SIGABRT in
+  `ANFEncoder.anfEncodeBody` as the first non-TCO downstream consumer.
+  Fixed by `494cf1147` (merged via `346f55083`): replace the foldl
+  with `balancedNondetIte`, a balanced-bisection helper producing
+  AST depth O(log N) ≈ 22 for N = 2.86M. Per-obligation pc isolation
+  preserved by `ObligationExtraction.extractGo`. All 7 reproducers
+  now run to completion within the SMT regime (no SIGABRT, rc=124 at
+  90s budget — TIMEOUT not crash). 94-program SMACK matrix bit-
+  identical PASS+PARTIAL file sets vs v6 baseline (68/11/0).
+  Fix-axis details in `BRANCH_FEATURES.md` §4.5.
 
 See [`Tools/BoogieToStrata/Docs/STATUS.md`](../../Tools/BoogieToStrata/Docs/STATUS.md)
 for translator-level status.
