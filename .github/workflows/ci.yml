@@ -182,7 +182,7 @@ jobs:
         uses: ./.github/actions/lint-whitespace
       - name: Check for import Lean
         uses: ./.github/actions/check-lean-import
-      - name: Check Lean version consistncy
+      - name: Check Lean version consistency
         run: .github/scripts/check_lean_consistency.sh
       - name: Check for new panic! usage
         uses: ./.github/actions/check-no-panic
