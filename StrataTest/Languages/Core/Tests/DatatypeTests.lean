@@ -3,8 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core
+import StrataDDM.Integration.Lean.HashCommands
+
+meta section
+open StrataDDM (Program)
 
 /-!
 # Datatype Verification Tests
@@ -75,7 +80,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify nestedPolyDestructorPgm (options := .quiet)
+#eval Core.verify nestedPolyDestructorPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 2: Hidden Type Recursion
@@ -133,6 +138,8 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify hiddenTypeRecursionPgm (options := .quiet)
+#eval Core.verify hiddenTypeRecursionPgm (options := .quiet)
 
 end Strata.DatatypeTests
+
+end

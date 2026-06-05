@@ -5,13 +5,8 @@
 -/
 module
 
-public import Strata.Languages.B3.Verifier.Expression
 public import Strata.Languages.B3.Verifier.State
-public import Strata.Languages.B3.DDMTransform.ParseCST
-public import Strata.Languages.B3.DDMTransform.Conversion
-import Strata.DDM.Format
-import Strata.DDM.Integration.Lean
-import Strata.DDM.Util.Format
+import StrataDDM.Format
 import Strata.Util.Tactics
 
 /-!
@@ -36,6 +31,7 @@ namespace Strata.B3.Verifier
 public section
 
 open Strata
+open StrataDDM
 open Strata.SMT
 
 inductive StatementResult where
