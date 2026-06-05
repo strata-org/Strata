@@ -197,13 +197,14 @@ def Core.coreAbstractedPhases (procs : Option (List String) := none)
     : List Core.AbstractedPhase :=
   _root_.Core.coreAbstractedPhases procs options moreFns
 
-/-- Front-end phase: any translation from a source language to Core may
-    introduce over-approximations. Until front-ends can validate models or
-    determine that an assertion is unaffected, all sat results are converted
-    to unknown. -/
+/-- Front-end phase: source-language translations may over-approximate, so
+    sat models are demoted by default. Universal VCs are exempt
+    (see `obligationLabelIsUniversal`). -/
 def frontEndPhase : Core.AbstractedPhase where
   name := "FrontEnd"
-  getValidation _ := .modelToValidate (fun _ => /- TODO -/ false)
+  getValidation obligation :=
+    if Core.obligationLabelIsUniversal obligation then .modelPreserving
+    else .modelToValidate (fun _ => /- TODO -/ false)
 
 /-! ### Analysis of Core programs -/
 

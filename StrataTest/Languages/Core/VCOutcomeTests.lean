@@ -270,17 +270,25 @@ private def cleanObligation : Imperative.ProofObligation Core.Expression :=
     assumptions := [[.assumption "precond_x_positive" (.true ())]],
     obligation := .true (), metadata := {} }
 
--- Combined Core phases: clean obligation preserves sat
+private def universalLoopMaintainObligation : Imperative.ProofObligation Core.Expression :=
+  { label := "arbitrary_iter_maintain_invariant_0_3", property := .assert,
+    assumptions := [[.assumption "assume_invariant_0_3" (.true ())]],
+    obligation := .true (), metadata := {} }
+
+private def universalPostconditionObligation : Imperative.ProofObligation Core.Expression :=
+  { label := "myProc:postcondition_2", property := .assert,
+    assumptions := [[.assumption "callElimAssume_post" (.true ())]],
+    obligation := .true (), metadata := {} }
+
 #guard (satResult.adjustForPhases [callElimPipelinePhase.phase, loopElimPipelinePhase.phase] cleanObligation).1 == satResult
-
--- Combined Core phases: call-elim obligation becomes unknown
 #guard (satResult.adjustForPhases [callElimPipelinePhase.phase, loopElimPipelinePhase.phase] callElimObligation).1 == unknownResult
+#guard (satResult.adjustForPhases [callElimPipelinePhase.phase, loopElimPipelinePhase.phase] universalLoopMaintainObligation).1 == satResult
+#guard (satResult.adjustForPhases [callElimPipelinePhase.phase, loopElimPipelinePhase.phase] universalPostconditionObligation).1 == satResult
 
--- frontEndPhase: always rejects sat regardless of obligation
 #guard (satResult.adjustForPhases [Strata.frontEndPhase] cleanObligation).1 == unknownResult
 #guard (satResult.adjustForPhases [Strata.frontEndPhase] callElimObligation).1 == unknownResult
-
--- frontEndPhase: unsat is unchanged
+#guard (satResult.adjustForPhases [Strata.frontEndPhase] universalLoopMaintainObligation).1 == satResult
+#guard (satResult.adjustForPhases [Strata.frontEndPhase] universalPostconditionObligation).1 == satResult
 #guard (unsatResult.adjustForPhases [Strata.frontEndPhase] cleanObligation).1 == unsatResult
 
 end Core
