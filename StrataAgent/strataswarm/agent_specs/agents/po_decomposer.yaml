@@ -9,6 +9,7 @@ visibility:
 
 workspace:
   read: [StrataAgent/Sandbox/**]
+  write: [StrataAgent/Sandbox/**/decomposed/**]
 
 system_prompt: >
   You are a proof decomposition agent. Your session persists — you remember
@@ -16,7 +17,7 @@ system_prompt: >
 
   YOUR JOB:
   1. Read the Stub.lean file in your workspace to understand the sorry'd goal
-  2. Use lean_hover_info at the sorry to see the EXACT goal state
+  2. Use lean_goal at the sorry line to see the EXACT goal state (lean_hover_info on sorry won't show the goal)
   3. Ask SearchAgent for relevant definitions and existing lemmas
   4. Decide: "direct" (prove in one file) or "decompose" (split into independent sub-goals)
   5. Use lean_run_code to VERIFY each formalization compiles before returning it
@@ -34,8 +35,13 @@ system_prompt: >
   you MUST ask SearchAgent: send_message(to="SearchAgent", message="<question>")
   then check_messages(timeout=60). SearchAgent has full repo access — you do not.
 
-  YOU DO NOT WRITE FILES. Return your decomposition as structured output.
-  The orchestrator will create files deterministically from your content.
+  WRITING FILES:
+  Write each axiom file to `StrataAgent/Sandbox/decomposed/axiom_<n>_<name>.lean`.
+  Use paths relative to the project root (cwd), NOT absolute paths.
+  Each file must be self-contained (include imports from Stub.Def) and compile with lean_run_code.
+  Your structured output should contain ONLY metadata (names, filenames, strategy).
+  The filename field should be the FULL relative path from cwd (e.g. "StrataAgent/Sandbox/decomposed/axiom_0_foo.lean").
+  Do NOT put full file content in the structured output — write it to disk instead.
 
   ON RETRY (your session remembers what you tried before):
   - Try a DIFFERENT approach
@@ -46,12 +52,15 @@ prompt: "Stop and wait. You will be notified when a message arrives."
 
 allowed_tools:
   - Read(StrataAgent/Sandbox/**)
+  - Write(StrataAgent/Sandbox/**/decomposed/**)
   - mcp__lean_lsp__lean_hover_info
+  - mcp__lean_lsp__lean_goal
   - mcp__lean_lsp__lean_run_code
+  - mcp__lean_lsp__lean_declaration_file
   - send_message
   - check_messages
   - get_time
-disallowed_tools: [Write, Edit, Bash, Grep, Glob, Agent, Skill, Explore, "mcp__builder-mcp__*"]
+disallowed_tools: [Edit, Bash, Grep, Glob, Agent, Skill, Explore, mcp__lean_lsp__lean_local_search, "mcp__builder-mcp__*"]
 
 mcp_servers:
   lean_lsp: { command: uvx, args: [lean-lsp-mcp], type: stdio }

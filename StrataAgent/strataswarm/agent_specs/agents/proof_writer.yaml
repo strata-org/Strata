@@ -52,6 +52,8 @@ allowed_tools:
   - mcp__lean_lsp__lean_goal
   - mcp__lean_lsp__lean_multi_attempt
   - mcp__lean_lsp__lean_diagnostic_messages
+  - mcp__lean_lsp__lean_local_search
+  - mcp__lean_lsp__lean_declaration_file
   - send_message
   - check_messages
   - get_time

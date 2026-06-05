@@ -44,9 +44,6 @@ class Transition(str, Enum):
     CANCEL = "cancel"
     READY = "ready"
     FILE_NOT_FOUND = "file_not_found"
-    SOUND = "sound"
-    SKIPPED = "skipped"
-    UNSOUND = "unsound"
     DISPATCHED = "dispatched"
     PASSED = "passed"
     FAILED = "failed"
@@ -58,7 +55,6 @@ class Stage(str, Enum):
     IDLE = "idle"
     THINKING = "thinking"
     SETUP = "setup"
-    SOUNDNESS = "soundness"
     DISPATCH = "dispatch"
     VALIDATE = "validate"
     REPORT = "report"
@@ -82,12 +78,8 @@ TRANSITIONS: dict[tuple[Stage, Transition], Stage] = {
     (Stage.THINKING, Transition.RESPOND):       Stage.IDLE,
     (Stage.THINKING, Transition.CANCEL):        Stage.REPORT,
 
-    (Stage.SETUP, Transition.READY):            Stage.SOUNDNESS,
+    (Stage.SETUP, Transition.READY):            Stage.DISPATCH,
     (Stage.SETUP, Transition.FILE_NOT_FOUND):   Stage.THINKING,
-
-    (Stage.SOUNDNESS, Transition.SOUND):        Stage.DISPATCH,
-    (Stage.SOUNDNESS, Transition.SKIPPED):      Stage.DISPATCH,
-    (Stage.SOUNDNESS, Transition.UNSOUND):      Stage.THINKING,
 
     (Stage.DISPATCH, Transition.DISPATCHED):    Stage.IDLE,
 
@@ -269,42 +261,6 @@ async def _state_setup(state: WorkflowState, agent) -> Transition:
     return Transition.READY
 
 
-async def _state_soundness(state: WorkflowState, agent) -> Transition:
-    from .._helpers import swarm_agent
-
-    task = UserIntent(**{k: v for k, v in state.task.items() if k in UserIntent.__dataclass_fields__})
-    if task.skip_soundness:
-        await agent._emit("message", "[TM] Soundness skipped.")
-        return Transition.SKIPPED
-
-    await agent._emit("message", "[TM] Running soundness check...")
-
-    @dataclass
-    class _Verdict:
-        sound: bool
-        confidence: str = "medium"
-        counterexample: str | None = None
-        reasoning: str | None = None
-
-    async with swarm_agent("counter_example", swarm=agent.swarm, cwd=agent._cwd) as cea:
-        verdict = await cea.run(
-            inp={
-                "file": task.theorem_file,
-                "theorem": task.notes,
-                "action": f"Check soundness of theorem(s): {task.notes}",
-            },
-            result_type=_Verdict,
-        )
-
-    if verdict.output and not verdict.output.sound:
-        await agent._emit("message", f"[TM] UNSOUND: {verdict.output.counterexample}")
-        state.raw_input = f"Unsound: {verdict.output.counterexample}. {verdict.output.reasoning}"
-        state.sender = "system"
-        return Transition.UNSOUND
-
-    await agent._emit("message", f"[TM] Sound ({verdict.output.confidence if verdict.output else '?'}).")
-    return Transition.SOUND
-
 
 async def _state_dispatch(state: WorkflowState, agent) -> Transition:
     import asyncio
@@ -325,6 +281,7 @@ async def _state_dispatch(state: WorkflowState, agent) -> Transition:
         "theorem_file": task.theorem_file,
         "theorem_name": task.notes or "",
         "workspace": "StrataAgent/Sandbox",
+        "skip_soundness": task.skip_soundness,
         "parent_agent": agent.spec.name,
     }
 
@@ -420,7 +377,6 @@ STAGE_HANDLERS: dict[Stage, Any] = {
     Stage.IDLE: _state_idle,
     Stage.THINKING: _state_thinking,
     Stage.SETUP: _state_setup,
-    Stage.SOUNDNESS: _state_soundness,
     Stage.DISPATCH: _state_dispatch,
     Stage.VALIDATE: _state_validate,
     Stage.REPORT: _state_report,
@@ -488,12 +444,7 @@ async def _delegate(state: WorkflowState, agent, handler_name: Handler) -> tuple
             await _send_to_user(agent, response)
             await agent._emit("message", f"[TM → user]: {response}")
 
-        # Detect prover completion from monitor response
-        if handler_name == Handler.MONITOR and response:
-            lower = response.lower()
-            if any(w in lower for w in ["proof complete", "proof failed", "failed:", "complete:"]):
-                return response, Transition.PROVER_DONE
-
+        # Let the TM router decide the transition based on the full response
         return response, None
 
 

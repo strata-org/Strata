@@ -277,6 +277,15 @@ class SwarmAgent:
                         message.raw_result, message.structured_output
                     )
                     result.structured_output = result.output
+                    # If parse failed but we have raw text, ask the LLM to retry with proper schema
+                    if result.output is None and message.raw_result:
+                        await self._emit("message", "[Parse error — requesting structured output retry]")
+                        await self.backend.send_query(
+                            "Your response could not be parsed as the required structured output. "
+                            "Please call the StructuredOutput tool with the correct schema. "
+                            "Do NOT repeat your analysis — just produce the structured output now."
+                        )
+                        continue  # loop back to consume the retry response
                 if self.spec.halt_when and self.spec.halt_when.should_halt_on_result(
                     result.output, result.raw_result
                 ):
@@ -435,7 +444,7 @@ class SwarmAgent:
 
     async def _run_inner(self, inp: Any = None, result_type: type[T] | None = None) -> AgentResult[T]:
         """The actual agent loop. Called by run() (after module check) and run_ai() (direct)."""
-        if inp is not None and self.spec.stateless:
+        if inp is not None:
             prompt = str(inp)
         else:
             prompt = render_prompt(self.spec.prompt, self._render_vars)

@@ -15,7 +15,7 @@ system_prompt: >
   CANNOT message it or interfere. You observe progress by reading its workspace.
 
   YOUR JOB:
-  1. When asked about progress, read files in StrataAgent/Sandbox/ to assess:
+  1. When asked about progress, read files using RELATIVE paths (e.g. StrataAgent/Sandbox/Stub.lean):
      - How many axiom files exist? Which have sorry remaining?
      - Are there _originals/ copies? (means decomposition happened)
      - Are there child workspaces? (means recursive proving)
