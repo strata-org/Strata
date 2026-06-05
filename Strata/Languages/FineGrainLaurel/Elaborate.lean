@@ -488,39 +488,64 @@ inductive CoercionResult where
   | unrelated
   deriving Inhabited
 
-/-- Subtyping judgment: `A ≤ B ↦ c`. Returns the coercion witness.
+/-- Subtyping judgment `A ≤ B ↦ c` as a total case analysis: every `(A, B)` pair
+is decided. `.refl` when `A = B`; `.coerce w` when Python implicitly converts
+`A → B`, witnessed by one direct runtime function; `.unrelated` otherwise — a
+deliberate verdict, never a forgotten case. `TCore` names outside the finite set
+`eraseType` produces are `.unrelated` (sound default for an unknown type).
 ```
 A ≤ A ↦ id  (reflexivity)
 
-TInt ≤ Any ↦ fromInt          TBool ≤ Any ↦ fromBool
-TString ≤ Any ↦ fromStr       TFloat64 ≤ Any ↦ fromFloat
-Composite ≤ Any ↦ fromComposite
-ListAny ≤ Any ↦ fromListAny   DictStrAny ≤ Any ↦ fromDictStrAny
-TVoid ≤ Any ↦ fromNone
-
-Any ≤ TBool ↦ Any_to_bool     Any ≤ TInt ↦ Any..as_int!
-Any ≤ TString ↦ Any..as_string!
-Any ≤ TFloat64 ↦ Any..as_float!
-Any ≤ Composite ↦ Any..as_Composite!
+box   T ≤ Any:    TInt↦fromInt  TBool↦fromBool  TString↦fromStr  TFloat64↦fromFloat
+                  Composite↦fromComposite  ListAny↦fromListAny
+                  DictStrAny↦fromDictStrAny  TVoid↦fromNone
+unbox Any ≤ T:    bool↦Any_to_bool  int↦as_int!  str↦as_string!  float↦as_float!
+                  Composite↦as_Composite!  DictStrAny↦as_Dict!  ListAny↦as_ListAny!
+truth T ≤ bool:   TInt↦int_to_bool  TString↦str_to_bool  TFloat64↦float_to_bool
+                  ListAny↦list_to_bool  DictStrAny↦dict_to_bool
+                  TVoid↦false  Composite↦true
+num   bool≤int≤float: TBool↦int bool_to_int  TInt↦float int_to_real
+                  TBool↦float bool_to_real
 ```
 -/
 def subtype (actual expected : LowType) : CoercionResult :=
-  if actual == expected then .refl else match actual, expected with
-  | .TInt, .TCore "Any" => .coerce (fun md => .fromInt md)
-  | .TBool, .TCore "Any" => .coerce (fun md => .fromBool md)
-  | .TString, .TCore "Any" => .coerce (fun md => .fromStr md)
-  | .TFloat64, .TCore "Any" => .coerce (fun md => .fromFloat md)
-  | .TCore "Composite", .TCore "Any" => .coerce (fun md => .fromComposite md)
-  | .TCore "ListAny", .TCore "Any" => .coerce (fun md => .fromListAny md)
-  | .TCore "DictStrAny", .TCore "Any" => .coerce (fun md => .fromDictStrAny md)
-  | .TVoid, .TCore "Any" => .coerce (fun md _ => .fromNone md)
-  | .TCore "Any", .TBool => .coerce (fun md v => .staticCall md "Any_to_bool" [v])
-  | .TCore "Any", .TInt => .coerce (fun md v => .staticCall md "Any..as_int!" [v])
-  | .TCore "Any", .TString => .coerce (fun md v => .staticCall md "Any..as_string!" [v])
-  | .TCore "Any", .TFloat64 => .coerce (fun md v => .staticCall md "Any..as_float!" [v])
-  | .TCore "Any", .TCore "Composite" => .coerce (fun md v => .staticCall md "Any..as_Composite!" [v])
-  | .TCore "Any", .TCore "DictStrAny" => .coerce (fun md v => .staticCall md "Any..as_Dict!" [v])
-  | .TCore "Any", .TCore "ListAny" => .coerce (fun md v => .staticCall md "Any..as_ListAny!" [v])
+  if actual == expected then .refl else match expected, actual with
+  -- box: T ≤ Any
+  | .TCore "Any", .TInt => .coerce (fun md => .fromInt md)
+  | .TCore "Any", .TBool => .coerce (fun md => .fromBool md)
+  | .TCore "Any", .TString => .coerce (fun md => .fromStr md)
+  | .TCore "Any", .TFloat64 => .coerce (fun md => .fromFloat md)
+  | .TCore "Any", .TCore "Composite" => .coerce (fun md => .fromComposite md)
+  | .TCore "Any", .TCore "ListAny" => .coerce (fun md => .fromListAny md)
+  | .TCore "Any", .TCore "DictStrAny" => .coerce (fun md => .fromDictStrAny md)
+  | .TCore "Any", .TVoid => .coerce (fun md _ => .fromNone md)
+  | .TCore "Any", _ => .unrelated
+  -- to bool: unbox from Any, else per-type truthiness
+  | .TBool, .TCore "Any" => .coerce (fun md v => .staticCall md "Any_to_bool" [v])
+  | .TBool, .TInt => .coerce (fun md v => .staticCall md "int_to_bool" [v])
+  | .TBool, .TString => .coerce (fun md v => .staticCall md "str_to_bool" [v])
+  | .TBool, .TFloat64 => .coerce (fun md v => .staticCall md "float_to_bool" [v])
+  | .TBool, .TCore "ListAny" => .coerce (fun md v => .staticCall md "list_to_bool" [v])
+  | .TBool, .TCore "DictStrAny" => .coerce (fun md v => .staticCall md "dict_to_bool" [v])
+  | .TBool, .TVoid => .coerce (fun md _ => .litBool md false)
+  | .TBool, .TCore "Composite" => .coerce (fun md _ => .litBool md true)
+  | .TBool, _ => .unrelated
+  -- to int: unbox from Any, else bool widening
+  | .TInt, .TCore "Any" => .coerce (fun md v => .staticCall md "Any..as_int!" [v])
+  | .TInt, .TBool => .coerce (fun md v => .staticCall md "bool_to_int" [v])
+  | .TInt, _ => .unrelated
+  -- to float: unbox from Any, else int/bool widening
+  | .TFloat64, .TCore "Any" => .coerce (fun md v => .staticCall md "Any..as_float!" [v])
+  | .TFloat64, .TInt => .coerce (fun md v => .staticCall md "int_to_real" [v])
+  | .TFloat64, .TBool => .coerce (fun md v => .staticCall md "bool_to_real" [v])
+  | .TFloat64, _ => .unrelated
+  -- to string: unbox from Any
+  | .TString, .TCore "Any" => .coerce (fun md v => .staticCall md "Any..as_string!" [v])
+  | .TString, _ => .unrelated
+  -- to container/Composite: unbox from Any
+  | .TCore "Composite", .TCore "Any" => .coerce (fun md v => .staticCall md "Any..as_Composite!" [v])
+  | .TCore "DictStrAny", .TCore "Any" => .coerce (fun md v => .staticCall md "Any..as_Dict!" [v])
+  | .TCore "ListAny", .TCore "Any" => .coerce (fun md v => .staticCall md "Any..as_ListAny!" [v])
   | _, _ => .unrelated
 
 /-- Apply the coercion witness for `actual <= expected` to a value. Identity if equal. -/

@@ -651,6 +651,34 @@ $$`\Gamma \vdash V \Rightarrow A \qquad \Gamma \vdash V \Leftarrow A \qquad \Gam
 
 ### Subtyping: A ≤ B ↦ c
 
+`subtype` is a total case analysis of the coercion relation over `LowType`. Every
+ordered pair `(A, B)` is decided: `.refl` when `A = B`, `.coerce w` when Python
+performs an implicit conversion `A → B` (witnessed by one direct runtime
+function), and `.unrelated` otherwise. `.unrelated` is a deliberate verdict per
+pair, not a fall-through for forgotten cases.
+
+`LowType.TCore` carries an open name string, so the relation cannot match one arm
+per name. It decides the finite set of core types that `eraseType` produces
+(`Any`, `Composite`, `ListAny`, `DictStrAny`, …); any unrecognized `TCore` name
+is `.unrelated`, the sound default for a type the relation knows nothing about.
+
+The coercion families, all witnessed by functions in the runtime:
+
+- **box** (`T ≤ Any`): the value constructors `from_int`, `from_str`, `from_bool`,
+  `from_float`, `from_Composite`, `from_ListAny`, `from_DictStrAny`, `from_None`.
+- **unbox** (`Any ≤ T`): the projections `Any_to_bool`, `Any..as_int!`,
+  `Any..as_string!`, `Any..as_float!`, `Any..as_Composite!`, `Any..as_Dict!`,
+  `Any..as_ListAny!`.
+- **truthiness** (`T ≤ bool`): Python's `bool(x)` per type — `int_to_bool`,
+  `str_to_bool`, `float_to_bool`, `list_to_bool`, `dict_to_bool`, `None ↦ false`,
+  `Composite ↦ true` (objects are truthy by default).
+- **numeric** (`bool ≤ int ≤ float`): `bool_to_int`, `int_to_real`, `bool_to_real`
+  — Python's numeric tower for arithmetic.
+
+`subtype` returns one witness; the elaborator applies it once at each typing
+boundary (only from `checkValue`) and never chains two `subtype` results, so each
+pair needs only its single direct witness.
+
 {docstring Strata.FineGrainLaurel.subtype}
 
 ### Subgrading: d ≤ e ↦ (pre, outs)

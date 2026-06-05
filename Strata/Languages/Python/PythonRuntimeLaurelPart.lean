@@ -320,6 +320,14 @@ function Any_to_bool (v: Any) : bool
   //WILL BE ADDED
 };
 
+// Python truthiness per type: the subtyping coercions T <: bool.
+
+function int_to_bool (n: int) : bool { !(n == 0) };
+function str_to_bool (s: string) : bool { !(s == "") };
+function float_to_bool (f: real) : bool { !(f == 0.0) };
+function list_to_bool (l: ListAny) : bool { !(l == ListAny_nil()) };
+function dict_to_bool (d: DictStrAny) : bool { !(d == DictStrAny_empty()) };
+
 // /////////////////////////////////////////////////////////////////////////////////////
 // ListAny functions
 // /////////////////////////////////////////////////////////////////////////////////////
