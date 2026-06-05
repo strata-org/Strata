@@ -132,8 +132,22 @@ def currentContinueLabel : TransM (Option Laurel.Identifier) := do return (← g
 -- PythonType → HighType
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Maps Python type annotations to Laurel's `HighType`. Primitive types map directly
-    (`int` → `TInt`, `str` → `TString`, etc.). Unknown or complex types map to `TCore "Any"`. -/
+/-- Map a resolved Python type annotation to a Laurel `HighType`.
+
+Base names map to Core types: `int`/`bool`/`str`/`float`/`None` to their
+scalars, `Any`/`object` to `Any`, and the container names `dict`/`list` to the
+homogeneous Core encodings `DictStrAny`/`ListAny`. A bare name that matches none
+of these is a user-defined class (`.UserDefined`), which Translation emits as a
+`Composite`.
+
+Subscripted generics carry the same meaning as their base: the parameterized
+containers (`dict[...]`, `list[...]`, and the `typing` aliases `Dict`/`List`/
+`Tuple`/`Set`) map to the container encodings, and the type-level operators
+(`Optional`/`Union`/`Literal`/`Unpack`/`NotRequired`/`Required`/`Type`) erase to
+`Any`. A subscripted name with no concrete encoding is a user-defined generic
+class (`.UserDefined`). The lowercase `dict`/`list` subscript cases must agree
+with the bare-name cases — otherwise `body: dict[str, Any]` is typed `Composite`
+while its dict-literal value is `DictStrAny`, and Core fails to unify the two. -/
 def pythonTypeToHighType : PythonType → HighType
   | .Name _ n _ => match n.val with
     | "int" => .TInt
@@ -148,7 +162,9 @@ def pythonTypeToHighType : PythonType → HighType
   | .Constant _ (.ConNone _) _ => .TVoid
   | .BinOp _ _ (.BitOr _) _ => .TCore "Any"
   | .Subscript _ (.Name _ n _) _ _ => match n.val with
-    | "Optional" | "Union" | "List" | "Dict" | "Tuple" | "Set" | "Type"
+    | "dict" | "Dict" => .TCore "DictStrAny"
+    | "list" | "List" | "tuple" | "Tuple" | "set" | "Set" | "frozenset" => .TCore "ListAny"
+    | "Optional" | "Union" | "Type"
     | "Literal" | "Unpack" | "NotRequired" | "Required" => .TCore "Any"
     | other => .UserDefined { text := other, uniqueId := none }
   | _ => .TCore "Any"
