@@ -412,8 +412,13 @@ inductive EvalCommandContract : (String → Option Procedure)  → CoreEval →
 
   /-- Contract-based semantics: like `EvalCommand.call_sem` but replaces
       body execution with havoc + postcondition check.
+      The Bool failure flag `failed` is connected to the precondition status
+      via an iff: the call fails iff some precondition fails to evaluate to
+      `tt` at the post-init/pre-havoc store `σAO`.  When `failed = true`,
+      the result store is unchanged (`σ' = σ`); when `failed = false`, the
+      result store is produced by havoc + write-back via `UpdateStates`.
       Same positional matching as `EvalCommand.call_sem`. -/
-  | call_sem {π δ σ σ₀ inArgs oVals vals σA σAO σO n p modvals callArgs σ' md} :
+  | call_sem {π δ σ σ₀ inArgs oVals vals σA σAO σO n p modvals callArgs σ' md failed} :
     π n = .some p →
     CallArg.getInputExprs callArgs = inArgs →
     CallArg.getLhs callArgs = lhs →
@@ -428,18 +433,23 @@ inductive EvalCommandContract : (String → Option Procedure)  → CoreEval →
     InitStates σ (ListMap.keys (p.header.inputs)) vals σA →
     -- positional: oVals[i] initializes p.header.outputs[i]
     InitStates σA (ListMap.keys (p.header.outputs)) oVals σAO →
+    -- preconditions are always defined; their truth controls `failed`
     (∀ pre, (Procedure.Spec.getCheckExprs p.spec.preconditions).contains pre →
-      isDefinedOver (HasVarsPure.getVars) σAO pre ∧
-      δ σAO pre = .some HasBool.tt) →
+      isDefinedOver (HasVarsPure.getVars) σAO pre) →
+    (failed = false ↔
+      (∀ pre, (Procedure.Spec.getCheckExprs p.spec.preconditions).contains pre →
+        δ σAO pre = .some HasBool.tt)) →
     HavocVars σAO (ListMap.keys p.header.outputs) σO →
     (∀ post, (Procedure.Spec.getCheckExprs p.spec.postconditions).contains post →
       isDefinedOver (HasVarsPure.getVars) σAO post ∧
       δ σO post = .some HasBool.tt) →
     ReadValues σO (ListMap.keys (p.header.outputs)) modvals →
-    -- positional: modvals[i] written back to lhs[i]
-    UpdateStates σ lhs modvals σ' →
+    -- success path: positional write-back
+    (failed = false → UpdateStates σ lhs modvals σ') →
+    -- failure path: store unchanged
+    (failed = true → σ' = σ) →
     ----
-    EvalCommandContract π δ σ (.call n callArgs md) σ' false
+    EvalCommandContract π δ σ (.call n callArgs md) σ' failed
 
 @[expose] abbrev EvalStatementContract (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) :
     Imperative.Env Expression → Statement → Imperative.Env Expression → Prop :=

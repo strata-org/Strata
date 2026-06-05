@@ -7,6 +7,7 @@ module
 
 import all Strata.DL.Imperative.CmdSemantics
 import all Strata.DL.Imperative.StmtSemantics
+import all Strata.DL.Imperative.SemanticsProps
 import all Strata.DL.Imperative.HasVars
 import all Strata.DL.Util.Nodup
 public import Strata.DL.Util.ListUtils
@@ -2315,39 +2316,87 @@ theorem EvalCallBodyRefinesContract :
       exact heq
     -- ρ'.hasFailure = false closes the index mismatch in the goal.
     rw [hρ'_failure]
+    -- Split the combined Hpre into the new (def, iff) shape required by the
+    -- bool-indicator EvalCommandContract.call_sem rule.
+    have Hpre_def : ∀ pre,
+        (Procedure.Spec.getCheckExprs p.spec.preconditions).contains pre →
+        isDefinedOver (HasVarsPure.getVars (P := Expression)) σAO pre :=
+      fun pre h => (Hpre pre h).1
+    have Hpre_iff :
+        (false = false ↔
+          ∀ pre, (Procedure.Spec.getCheckExprs p.spec.preconditions).contains pre →
+            δ σAO pre = .some HasBool.tt) :=
+      ⟨fun _ pre h => (Hpre pre h).2, fun _ => rfl⟩
     exact EvalCommandContract.call_sem pFound heqIn heqLhs Hev_in HrdLhs hwfV hwfVar hwfBool
-            hwf2s hdef Hin_inputs Hin_outputs Hpre h_havoc h_post h_rd_σO Hupd
+            hwf2s hdef Hin_inputs Hin_outputs Hpre_def Hpre_iff h_havoc h_post h_rd_σO
+            (fun _ => Hupd) (fun h => Bool.noConfusion h)
 
-/-
-NOTE: The transit theorems (`EvalCommandRefinesContract`,
-`StepStmt_refines_contract`, `StepStmtStar_refines_contract`,
-`EvalStatementsRefinesContract`, `EvalStatementRefinesContract`) require
-the same three side-conditions as `EvalCallBodyRefinesContract`
-(`δ_wfCong`, `p_outputs_nodup`, `p_post_scoped`) to be threaded through.
-They are kept commented until those hypotheses are wired through the
-small-step refinement chain.
-
-theorem EvalCommandRefinesContract :
-EvalCommand π φ δ σ c σ' f →
-EvalCommandContract π δ σ c σ' f := by
-  intros H
+/-- `EvalCommand` with concrete semantics (`f = false` non-failure case)
+    refines `EvalCommandContract`.  Threads through the three side-conditions
+    needed by `EvalCallBodyRefinesContract`. -/
+theorem EvalCommandRefinesContract
+    {π : String → Option Procedure}
+    {φ : CoreEval → PureFunc Expression → CoreEval}
+    {δ : CoreEval} {σ σ' : CoreStore} {c : Command}
+    (δ_wfCong : @Imperative.WellFormedSemanticEvalExprCongr Expression _ δ)
+    (π_wf : ∀ {n : String} {p : Procedure}, π n = .some p →
+      (ListMap.keys p.header.outputs).Nodup ∧
+      (∀ post : Expression.Expr,
+        (Procedure.Spec.getCheckExprs p.spec.postconditions).contains post →
+        (HasVarsPure.getVars (P := Expression) post).Subset
+          (ListMap.keys p.header.outputs))) :
+    EvalCommand π φ δ σ c σ' false →
+    EvalCommandContract π δ σ c σ' false := by
+  intro H
+  -- Generalize the failure-flag index to enable dependent elimination on H.
+  generalize hb : (false : Bool) = b at H
   cases H with
-  | cmd_sem H => exact EvalCommandContract.cmd_sem H
-  | call_sem _ =>
-    apply EvalCallBodyRefinesContract <;> try assumption
-    constructor <;> assumption
+  | cmd_sem H' =>
+    cases hb
+    exact EvalCommandContract.cmd_sem H'
+  | @call_sem _ _ _ σ₀ inArgs vals oVals σA σAO _ p_c modvals _ _ ρ' _
+              hπ heqIn heqLhs Hev_in HrdLhs hwfV hwfVar hwfBool hwf2s hdef
+              Hin_inputs Hin_outputs Hpre Hbody Hpost_at_ρ' Hrd_body Hupd =>
+    -- ρ'.hasFailure = false from generalize equation
+    have hρ'_failure : ρ'.hasFailure = false := hb.symm
+    have ⟨h_outs_nodup, h_post_scoped⟩ := π_wf hπ
+    -- Apply the leaf refinement (with md' := md) under the failure rewrite.
+    exact hρ'_failure ▸
+      EvalCallBodyRefinesContract δ_wfCong h_outs_nodup h_post_scoped hπ
+        (hρ'_failure ▸ EvalCommand.call_sem hπ heqIn heqLhs Hev_in HrdLhs hwfV
+          hwfVar hwfBool hwf2s hdef Hin_inputs Hin_outputs Hpre Hbody
+          Hpost_at_ρ' Hrd_body Hupd)
 
-/-- A single `StepStmt` with `EvalCommand` can be simulated by a single
-    `StepStmt` with `EvalCommandContract`. -/
+/-- A single `StepStmt` with `EvalCommand` ending in a non-failed terminal can
+    be simulated by a single `StepStmt` with `EvalCommandContract`.  Threads
+    through the three side-conditions plus an explicit non-failure witness. -/
 private theorem StepStmt_refines_contract
-    {c₁ c₂ : Imperative.Config Expression Command} :
+    {π : String → Option Procedure}
+    {φ : CoreEval → PureFunc Expression → CoreEval}
+    {c₁ c₂ : Imperative.Config Expression Command}
+    (δ_wfCong : @Imperative.WellFormedSemanticEvalExprCongr Expression _ c₁.getEnv.eval)
+    (π_wf : ∀ {n : String} {p : Procedure}, π n = .some p →
+      (ListMap.keys p.header.outputs).Nodup ∧
+      (∀ post : Expression.Expr,
+        (Procedure.Spec.getCheckExprs p.spec.postconditions).contains post →
+        (HasVarsPure.getVars (P := Expression) post).Subset
+          (ListMap.keys p.header.outputs)))
+    (h_no_fail : c₂.getEnv.hasFailure = false) :
     Imperative.StepStmt Expression (EvalCommand π φ) (EvalPureFunc φ) c₁ c₂ →
     Imperative.StepStmt Expression (EvalCommandContract π) (EvalPureFunc φ) c₁ c₂ := by
   intro H
   induction H with
-  | step_cmd hcmd => exact .step_cmd (EvalCommandRefinesContract hcmd)
-  | step_seq_inner _ ih => exact .step_seq_inner ih
-  | step_block_body _ ih => exact .step_block_body ih
+  | @step_cmd ρ c σ' hasAssertFailure hcmd =>
+    -- step_cmd produces hasFailure := ρ.hasFailure || hasAssertFailure.
+    -- h_no_fail says this OR is false; extract that hasAssertFailure = false.
+    simp only [Imperative.Config.getEnv] at h_no_fail
+    have ⟨_, h_aff⟩ := Bool.or_eq_false_iff.mp h_no_fail
+    subst h_aff
+    -- δ_wfCong is at c₁.getEnv.eval = ρ.eval
+    simp only [Imperative.Config.getEnv] at δ_wfCong
+    exact .step_cmd (EvalCommandRefinesContract δ_wfCong π_wf hcmd)
+  | step_seq_inner _ ih => exact .step_seq_inner (ih δ_wfCong h_no_fail)
+  | step_block_body _ ih => exact .step_block_body (ih δ_wfCong h_no_fail)
   | step_block => exact .step_block
   | step_ite_true h1 h2 => exact .step_ite_true h1 h2
   | step_ite_false h1 h2 => exact .step_ite_false h1 h2
@@ -2367,30 +2416,6 @@ private theorem StepStmt_refines_contract
   | step_block_done => exact .step_block_done
   | step_block_exit_match h => exact .step_block_exit_match h
   | step_block_exit_mismatch h => exact .step_block_exit_mismatch h
-
-/-- Small-step execution with `EvalCommand` refines `EvalCommandContract`. -/
-theorem StepStmtStar_refines_contract
-    {c₁ c₂ : Imperative.Config Expression Command} :
-    Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ) c₁ c₂ →
-    Imperative.StepStmtStar Expression (EvalCommandContract π) (EvalPureFunc φ) c₁ c₂ := by
-  intro H
-  induction H with
-  | refl => exact .refl _
-  | step _ _ _ hstep _ ih =>
-    exact .step _ _ _ (StepStmt_refines_contract hstep) ih
-
-/-- `EvalStatements` with concrete semantics refines contract semantics. -/
-theorem EvalStatementsRefinesContract :
-    EvalStatements π φ ρ ss ρ' →
-    EvalStatementsContract π φ ρ ss ρ' :=
-  StepStmtStar_refines_contract
-
-/-- `EvalStatement` with concrete semantics refines contract semantics. -/
-theorem EvalStatementRefinesContract :
-    EvalStatement π φ ρ s ρ' →
-    EvalStatementContract π φ ρ s ρ' :=
-  StepStmtStar_refines_contract
--/
 
 /-- If an expression is defined, all its free variables are defined in the store.
     Relies on the definedness propagation properties in `WellFormedCoreEvalCong`
@@ -2648,6 +2673,85 @@ theorem core_wfExprCongr_preserved
   | refl => exact hwf₀
   | step _ _ _ hstep _ ih =>
     exact ih (core_step_preserves_wfExprCongr π φ h_wf_ext _ _ hwf₀ hstep)
+
+/-- Small-step star with `EvalCommand` ending in non-failure refines
+    `EvalCommandContract`.  Uses `StepStmtStar_hasFailure_monotone` to back-
+    propagate the non-failure witness, and `core_step_preserves_wfExprCongr`
+    to refresh the expression-congruence hypothesis after each step. -/
+theorem StepStmtStar_refines_contract
+    {π : String → Option Procedure}
+    {φ : CoreEval → PureFunc Expression → CoreEval}
+    {c₁ c₂ : Imperative.Config Expression Command}
+    (h_wf_ext : WFEvalExtension φ)
+    (π_wf : ∀ {n : String} {p : Procedure}, π n = .some p →
+      (ListMap.keys p.header.outputs).Nodup ∧
+      (∀ post : Expression.Expr,
+        (Procedure.Spec.getCheckExprs p.spec.postconditions).contains post →
+        (HasVarsPure.getVars (P := Expression) post).Subset
+          (ListMap.keys p.header.outputs)))
+    (δ_wfCong : @Imperative.WellFormedSemanticEvalExprCongr Expression _ c₁.getEnv.eval)
+    (h_no_fail : c₂.getEnv.hasFailure = false) :
+    Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ) c₁ c₂ →
+    Imperative.StepStmtStar Expression (EvalCommandContract π) (EvalPureFunc φ) c₁ c₂ := by
+  intro H
+  -- Generalize δ_wfCong and h_no_fail so the IH stays usable across steps.
+  revert δ_wfCong h_no_fail
+  induction H with
+  | refl => intros; exact .refl _
+  | @step c₁ cm c₂ hstep hrest ih =>
+    intro δ_wfCong h_no_fail
+    -- Backwards-propagate the no-failure witness via monotonicity:
+    -- case-split on cm.getEnv.hasFailure; the `true` case contradicts
+    -- h_no_fail by `StepStmtStar_hasFailure_monotone`.
+    have h_cm_no_fail : cm.getEnv.hasFailure = false := by
+      cases hcm : cm.getEnv.hasFailure
+      · rfl
+      · have h_c2_true :=
+          Imperative.StepStmtStar_hasFailure_monotone hrest hcm
+        rw [h_c2_true] at h_no_fail
+        exact Bool.noConfusion h_no_fail
+    -- Refresh δ_wfCong for the IH at cm.
+    have hwf_cm : @Imperative.WellFormedSemanticEvalExprCongr Expression _ cm.getEnv.eval :=
+      core_step_preserves_wfExprCongr π φ h_wf_ext _ _ δ_wfCong hstep
+    exact .step _ _ _
+      (StepStmt_refines_contract δ_wfCong π_wf h_cm_no_fail hstep)
+      (ih hwf_cm h_no_fail)
+
+/-- `EvalStatements` with concrete semantics refines contract semantics. -/
+theorem EvalStatementsRefinesContract
+    {π : String → Option Procedure}
+    {φ : CoreEval → PureFunc Expression → CoreEval}
+    {ρ ρ' : Env Expression} {ss : List Statement}
+    (h_wf_ext : WFEvalExtension φ)
+    (π_wf : ∀ {n : String} {p : Procedure}, π n = .some p →
+      (ListMap.keys p.header.outputs).Nodup ∧
+      (∀ post : Expression.Expr,
+        (Procedure.Spec.getCheckExprs p.spec.postconditions).contains post →
+        (HasVarsPure.getVars (P := Expression) post).Subset
+          (ListMap.keys p.header.outputs)))
+    (δ_wfCong : @Imperative.WellFormedSemanticEvalExprCongr Expression _ ρ.eval)
+    (h_no_fail : ρ'.hasFailure = false) :
+    EvalStatements π φ ρ ss ρ' →
+    EvalStatementsContract π φ ρ ss ρ' :=
+  StepStmtStar_refines_contract h_wf_ext π_wf δ_wfCong h_no_fail
+
+/-- `EvalStatement` with concrete semantics refines contract semantics. -/
+theorem EvalStatementRefinesContract
+    {π : String → Option Procedure}
+    {φ : CoreEval → PureFunc Expression → CoreEval}
+    {ρ ρ' : Env Expression} {s : Statement}
+    (h_wf_ext : WFEvalExtension φ)
+    (π_wf : ∀ {n : String} {p : Procedure}, π n = .some p →
+      (ListMap.keys p.header.outputs).Nodup ∧
+      (∀ post : Expression.Expr,
+        (Procedure.Spec.getCheckExprs p.spec.postconditions).contains post →
+        (HasVarsPure.getVars (P := Expression) post).Subset
+          (ListMap.keys p.header.outputs)))
+    (δ_wfCong : @Imperative.WellFormedSemanticEvalExprCongr Expression _ ρ.eval)
+    (h_no_fail : ρ'.hasFailure = false) :
+    EvalStatement π φ ρ s ρ' →
+    EvalStatementContract π φ ρ s ρ' :=
+  StepStmtStar_refines_contract h_wf_ext π_wf δ_wfCong h_no_fail
 
 /-! ## projectStore and expression evaluation -/
 
