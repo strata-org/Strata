@@ -14,12 +14,6 @@ top-level static procedure named `<CompositeName>$<methodName>` by the
 global scope under the lifted key, so two composites can share a method
 name without colliding. `c#m(args)` parses as `InstanceCall c m args` and
 the lifting pass rewrites it to `StaticCall Counter$m (c :: args)`.
-
-These tests exercise a variety of call shapes; they are intentionally
-verification-light because the underlying SMT framework today can't always
-prove frame conditions for chains of `modifies`-bearing calls in callers
-without their own modifies clause. That is unrelated to instance-procedure
-lowering.
 -/
 
 meta import all StrataTest.Util.TestDiagnostics
