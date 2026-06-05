@@ -12,9 +12,9 @@ In the short term, Strata intends to support deductive verification with largely
 
 ## Dialect Definition Mechanism
 
-The Dialect Definition Mechanism (DDM), in the [`Strata.DDM`](../Strata/DDM/) namespace, provides an embedded DSL within Lean to define syntax and typing rules for a dialect. It then can produce an AST type, parser, pretty printer, and preliminary type checker. The parser can be used for processing either snippets embedded in a Lean source file or text read from external files.
+The Dialect Definition Mechanism (DDM), in the [`StrataDDM`](https://github.com/strata-org/Strata-DDM/) namespace, provides an embedded DSL within Lean to define syntax and typing rules for a dialect. It then can produce an AST type, parser, pretty printer, and preliminary type checker. The parser can be used for processing either snippets embedded in a Lean source file or text read from external files.
 
-The immediate result of processing text written in a specific dialect is a generic and very flexible [AST](../Strata/DDM/AST.lean) that captures all of the constructs possible in Strata. This representation allows flexibility, but is not particularly well-suited to concise traversals and transformations. Therefore, each dialect may have either an auto-generated or a hand-written Lean AST, as well, and a transformation from the generic syntax into dialect-specialized syntax. This transformation can be automated when using the auto-generated AST for the dialect.
+The immediate result of processing text written in a specific dialect is a generic and very flexible [AST](https://github.com/strata-org/Strata-DDM/blob/main/StrataDDM/AST.lean) that captures all of the constructs possible in Strata. This representation allows flexibility, but is not particularly well-suited to concise traversals and transformations. Therefore, each dialect may have either an auto-generated or a hand-written Lean AST, as well, and a transformation from the generic syntax into dialect-specialized syntax. This transformation can be automated when using the auto-generated AST for the dialect.
 
 Not all dialects need to be defined with the DDM, but it is convenient for any dialect that will need to be serialized and exchanged with any other program. In this context, it both lowers development effort and clarifies external interfaces.
 
