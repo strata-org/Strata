@@ -4,21 +4,21 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.MetaVerifier
+import StrataBoole.MetaVerifier
 
 open Strata
 
 /-!
-Regression test: out-of-bounds check inside a conjunction.
+Out-of-bounds checks inside conjunctions are verified using the conjunction
+prefix as a hypothesis.
 
-`Bool.And` is now treated like `Bool.Implies` in `collectWFObligations`:
-the LHS of `&&` is added as a hypothesis before collecting obligations
-from the RHS.  This makes the bounds check on `Sequence.select(nums, j)`
-in `0 <= j && j < Sequence.length(nums) && ret == Sequence.select(nums, j)`
-provable — without the fix it returns ❓ unknown.
+For `0 <= j && j < Sequence.length(nums) && ret == Sequence.select(nums, j)`,
+the bounds check on `Sequence.select(nums, j)` is discharged using
+`0 <= j && j < Sequence.length(nums)` as an assumption, which is established
+by the earlier conjuncts via short-circuit semantics.
 -/
 
-private def seqOobConjunctionPgm : Strata.Program :=
+private def seqOobConjunctionPgm : StrataDDM.Program :=
 #strata
 program Boole;
 
@@ -36,7 +36,7 @@ spec {
 #end
 
 /-- info:
-Obligation: find_first_post_find_first_ensures_1_729_calls_Sequence.select_0
+Obligation: find_first_post_find_first_ensures_1_708_calls_Sequence.select_0
 Property: out-of-bounds access check
 Result: ✅ pass
 
@@ -44,12 +44,12 @@ Obligation: set_ret_calls_Sequence.select_0
 Property: out-of-bounds access check
 Result: ✅ pass
 
-Obligation: find_first_ensures_1_729
+Obligation: find_first_ensures_1_708
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
 #eval Strata.Boole.verify "cvc5" seqOobConjunctionPgm (options := .quiet)
 
-example : Strata.smtVCsCorrect seqOobConjunctionPgm := by
-  gen_smt_vcs
+example : Strata.smtVCsCorrectBoole seqOobConjunctionPgm := by
+  gen_smt_vcs_boole
   all_goals (try grind)
