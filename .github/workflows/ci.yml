@@ -108,8 +108,9 @@ jobs:
         with:
           python-version: '3.14'
       - name: Build using pip
-        run: pip install .
-        working-directory: Tools/Python
+        run: |
+          pip install ./Tools/Python-base
+          pip install ./StrataPython/Tools/strata-python
       - name: Run pyInterpret golden-file tests
         working-directory: StrataPython/StrataPythonTest
         shell: bash
@@ -138,8 +139,9 @@ jobs:
       with:
         python-version: '3.14'
     - name: Build using pip
-      run: pip install .
-      working-directory: Tools/Python
+      run: |
+        pip install ./Tools/Python-base
+        pip install ./StrataPython/Tools/strata-python
     - name: Restore Lean build cache
       # The cache is safe to use here because we just saved it for this exact SHA
       # in the build_and_test_lean job
@@ -251,8 +253,9 @@ jobs:
       with:
         python-version: ${{ matrix.python_version }}
     - name: Build using pip
-      run: pip install .
-      working-directory: Tools/Python
+      run: |
+        pip install ./Tools/Python-base
+        pip install ./StrataPython/Tools/strata-python
     - name: Restore Lean build cache
       # The cache is safe to use here because we just saved it for this exact SHA
       # in the build_and_test_lean job from ci.yml
@@ -292,7 +295,7 @@ jobs:
       working-directory: StrataPython
     - name: Run test script
       run: FAIL_FAST=1 ./scripts/run_cpython_tests.sh ${{ matrix.python_version }}
-      working-directory: Tools/Python
+      working-directory: StrataPython/Tools/strata-python
 
   cbmc:
     needs: build_and_test_lean

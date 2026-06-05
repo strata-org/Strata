@@ -7,8 +7,14 @@ testDriver = "StrataTestMain"
 name = "Strata"
 path = ".."
 
+[[input_file]]
+name = "PythonDialectIon"
+path = "Tools/strata-python/dialects/Python.dialect.st.ion"
+text = true
+
 [[lean_lib]]
 name = "StrataPython"
+extraDepTargets = ["PythonDialectIon"]
 
 [[lean_lib]]
 name = "StrataPythonTest"
