@@ -48,5 +48,49 @@ class HasVarsTrans
 
 @[expose] abbrev HasVarsProcTrans (P : PureExpr) (PT : Type) := HasVarsTrans P PT PT
 
+---------------------------------------------------------------------
+
+/-! # Lawful Typeclasses
+
+These typeclasses bundle the algebraic laws that the various `Has*` typeclasses
+on `PureExpr` are expected to satisfy with respect to free-variable computation.
+They allow downstream proofs (e.g., the `stmtsToCFG` correctness proof) to
+consume the laws as instance arguments rather than as explicit hypotheses.
+-/
+
+/-- Lawfulness of `HasFvar`: the round-trip `getFvar (mkFvar x) = some x`,
+    and the variable list of an `mkFvar x` expression is a subset of `[x]`. -/
+class LawfulHasFvar (P : PureExpr) [HasFvar P] [HasVarsPure P P.Expr] where
+  getFvar_mkFvar : ∀ x : P.Ident,
+    HasFvar.getFvar (HasFvar.mkFvar (P := P) x) = some x
+  mkFvar_getVars : ∀ x : P.Ident,
+    HasVarsPure.getVars (HasFvar.mkFvar (P := P) x) ⊆ [x]
+
+/-- Lawfulness of `HasBool`: `tt` has no free variables. -/
+class LawfulHasBool (P : PureExpr) [HasBool P] [HasVarsPure P P.Expr] where
+  tt_getVars : HasVarsPure.getVars (P := P) (HasBool.tt : P.Expr) = []
+
+/-- Lawfulness of `HasIdent`: the canonical identifier-injection is injective. -/
+class LawfulHasIdent (P : PureExpr) [HasIdent P] where
+  ident_inj : Function.Injective (HasIdent.ident (P := P))
+
+/-- Lawfulness of `HasIntOrder`: variable lists of compound integer-order
+    expressions are bounded above by their argument variable lists, and the
+    canonical `zero` constant has no free variables. -/
+class LawfulHasIntOrder (P : PureExpr) [HasIntOrder P] [HasVarsPure P P.Expr] where
+  eq_getVars : ∀ a b : P.Expr,
+    HasVarsPure.getVars (P := P) (HasIntOrder.eq a b)
+      ⊆ HasVarsPure.getVars (P := P) a ++ HasVarsPure.getVars (P := P) b
+  lt_getVars : ∀ a b : P.Expr,
+    HasVarsPure.getVars (P := P) (HasIntOrder.lt a b)
+      ⊆ HasVarsPure.getVars (P := P) a ++ HasVarsPure.getVars (P := P) b
+  zero_getVars : HasVarsPure.getVars (P := P) (HasIntOrder.zero : P.Expr) = []
+
+/-- Lawfulness of `HasNot`: the variable list of a negation is bounded above
+    by the variable list of its argument. -/
+class LawfulHasNot (P : PureExpr) [HasNot P] [HasVarsPure P P.Expr] where
+  not_getVars : ∀ a : P.Expr,
+    HasVarsPure.getVars (P := P) (HasNot.not a) ⊆ HasVarsPure.getVars (P := P) a
+
 end -- public section
 end Imperative

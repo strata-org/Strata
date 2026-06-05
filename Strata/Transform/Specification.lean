@@ -104,12 +104,12 @@ abbrev Lang.imperative (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P]
    .stmt, .terminal, .exiting, isAtAssert, Config.getEnv⟩
 
 /-- The standard `Lang` for `Cmd P` / `EvalCmd P` / `isAtAssert`. -/
-abbrev Lang.standard (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P]
+abbrev Lang.standard (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
     (extendEval : ExtendEval P) : Lang P :=
   Lang.imperative P (Cmd P) (EvalCmd P) extendEval (Imperative.isAtAssert P)
 
 
-variable {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVal P]
+variable {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasVarsPure P P.Expr]
 variable (L : Lang P)
 
 
@@ -169,10 +169,12 @@ namespace Hoare
     TODO: We will want to define Triple for total correctness. It will be useful
     when proving preservation of termination after program transformation.
 -/
-def Triple
+def Triple [HasVarsPure P P.Expr]
     (Pre : Env P → Prop) (s : L.StmtT) (Post : Env P → Prop) : Prop :=
   ∀ (ρ₀ ρ' : Env P),
-    Pre ρ₀ → WellFormedSemanticEvalBool ρ₀.eval → ρ₀.hasFailure = false →
+    Pre ρ₀ → WellFormedSemanticEvalBool ρ₀.eval →
+    WellFormedSemanticEvalExprCongr ρ₀.eval →
+    ρ₀.hasFailure = false →
     L.star (L.stmtCfg s ρ₀) (L.terminalCfg ρ') →
     Post ρ' ∧ ρ'.hasFailure = false
 
@@ -186,11 +188,13 @@ variable (isAtAssertFn : Config P CmdT → AssertId P → Prop)
 /-- Partial-correctness Hoare triple for a block body.
     The output configuration is allowed to be still in an exiting mode
     (see Config.exiting) because the outer block can catch the exit. -/
-def TripleBlock
+def TripleBlock [HasVarsPure P P.Expr]
     {CmdT : Type} (evalCmd : EvalCmdParam P CmdT) (extendEval : ExtendEval P)
     (Pre : Env P → Prop) (ss : List (Stmt P CmdT)) (Post : Env P → Prop) : Prop :=
   ∀ (ρ₀ ρ' : Env P),
-    Pre ρ₀ → WellFormedSemanticEvalBool ρ₀.eval → ρ₀.hasFailure = false →
+    Pre ρ₀ → WellFormedSemanticEvalBool ρ₀.eval →
+    WellFormedSemanticEvalExprCongr ρ₀.eval →
+    ρ₀.hasFailure = false →
     (StepStmtStar P evalCmd extendEval (.stmts ss ρ₀) (.terminal ρ') ∨
      ∃ lbl, StepStmtStar P evalCmd extendEval (.stmts ss ρ₀) (.exiting lbl ρ')) →
     Post ρ' ∧ ρ'.hasFailure = false
@@ -249,6 +253,7 @@ def Overapproximates (L₁ L₂ : Lang P) (T : L₁.StmtT → Option L₂.StmtT)
     ∀ (ρ₀ ρ' : Env P),
       WellFormedSemanticEvalBool ρ₀.eval →
       WellFormedSemanticEvalVal ρ₀.eval →
+      WellFormedSemanticEvalExprCongr ρ₀.eval →
       (L₁.star (L₁.stmtCfg st ρ₀) (L₁.terminalCfg ρ') →
        L₂.star (L₂.stmtCfg s' ρ₀) (L₂.terminalCfg ρ'))
       ∧

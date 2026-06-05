@@ -52,6 +52,10 @@ instance : HasBool MiniPureExpr where
 instance : HasNot MiniPureExpr where
   not := .not
 
+/-- `HasVarsPure` for `MiniPureExpr.Expr`: closed expressions, no free variables. -/
+instance : HasVarsPure MiniPureExpr Expr where
+  getVars _ := []
+
 ---------------------------------------------------------------------
 
 /-! ## Evaluator and well-formedness setup -/
@@ -350,6 +354,13 @@ theorem miniEval_wfVar : WellFormedSemanticEvalVar (P := MiniPureExpr) miniEval 
   intro e v σ hfv
   simp [HasFvar.getFvar] at hfv
 
+/-- `WellFormedSemanticEvalExprCongr` for `miniEval` — trivially holds since
+    `miniEval` ignores the store. -/
+theorem miniEval_wfCongr : WellFormedSemanticEvalExprCongr (P := MiniPureExpr) miniEval := by
+  unfold WellFormedSemanticEvalExprCongr
+  intros e σ σ' _
+  rfl
+
 /-- The standard `EvalCmd` for `Cmd MiniPureExpr`. -/
 def stdEvalCmd : EvalCmdParam MiniPureExpr (Cmd MiniPureExpr) :=
   EvalCmd MiniPureExpr
@@ -405,7 +416,8 @@ theorem blockScopeTest :
               (show storeWithX "y" = none from rfl)
               (show storeWithXY "y" = some .tt from rfl)
               storeWithXY_frame)
-            miniEval_wfVar)))) ?_
+            miniEval_wfVar
+            miniEval_wfCongr)))) ?_
   -- Step 4: step_block_body (step_seq_done) — seq is done, go to stmts [].
   refine .step _ _ _
     (StepStmt.step_block_body StepStmt.step_seq_done) ?_
@@ -476,7 +488,8 @@ theorem loopScopeTest :
                 (show storeWithX "y" = none from rfl)
                 (show storeWithXY "y" = some .tt from rfl)
                 storeWithXY_frame)
-              miniEval_wfVar))))) ?_
+              miniEval_wfVar
+              miniEval_wfCongr))))) ?_
   -- Step 4: step_seq_inner (step_block_body step_seq_done) — inner stmt terminal
   refine .step _ _ _
     (StepStmt.step_seq_inner
@@ -512,7 +525,7 @@ theorem loopScopeTest :
   -- Need to reconcile the env shape.
   conv => rhs; rw [show Env.mk storeWithX miniEval false =
     { Env.mk (projectStore storeWithX storeWithXY) miniEval false with
-      hasFailure := false || false } from by simp [hproj]]
+      hasFailure := false || false } from by simp [hproj, Bool.or_false]]
   exact .step _ _ _ StepStmt.step_stmts_nil (.refl _)
 
 ---------------------------------------------------------------------
@@ -536,7 +549,7 @@ theorem reinit_stuck :
       (.stmt (.cmd (.init "x" .Bool (.det .ff) .empty)) ρ_x) c₂ := by
   intro ⟨c₂, hstep⟩
   match hstep with
-  | .step_cmd (.eval_init _ (.init h_none _ _) _) =>
+  | .step_cmd (.eval_init _ (.init h_none _ _) _ _) =>
     exact absurd h_none (by simp [ρ_x, storeWithX])
 
 ---------------------------------------------------------------------

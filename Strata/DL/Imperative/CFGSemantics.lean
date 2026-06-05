@@ -20,18 +20,6 @@ This module defines small-step operational semantics for the Imperative
 dialect's control-flow graph representation.
 -/
 
-inductive EvalCmds
-  {CmdT : Type}
-  (P : PureExpr)
-  (EvalCmd : EvalCmdParam P CmdT) :
-  SemanticEval P → SemanticStore P → List CmdT → SemanticStore P → Bool → Prop where
-  | eval_cmds_none :
-    EvalCmds P EvalCmd δ σ [] σ false
-  | eval_cmds_some :
-    EvalCmd δ σ c σ' failed →
-    EvalCmds P EvalCmd δ σ' cs σ'' failed' →
-    EvalCmds P EvalCmd δ σ (c :: cs) σ'' (failed || failed')
-
 /--
 Configuration for small-step semantics, representing the current execution
 state. A configuration consists of a store and a failure indication flag paired
@@ -46,11 +34,24 @@ inductive CFGConfig (l : Type) (P : PureExpr): Type where
   /-- A terminal configuration, indicating that execution has finished. -/
   | terminal : SemanticStore P → Bool → CFGConfig l P
 
-/-- Small-step operational semantics for deterministic basic blocks. Each case
-first evaluates the commands in the block. A block ending in `.condGoto` results
-in a configuration pointing to the true or false label, depending on the
-evaluation of the condition. A block ending in `.finish` results in a terminal
-configuration. -/
+/-- Monotonically update the `failure` flag in a `CFGConfig`. It will be set to
+`true` if the provided Boolean is `true`. -/
+def updateFailure : CFGConfig l P → Bool → CFGConfig l P
+| .cont t σ failed, failed' => .cont t σ (failed || failed')
+| .terminal σ failed, failed' => .terminal σ (failed || failed')
+
+/-- Small-step operational semantics for deterministic basic blocks. Evaluates
+commands sequentially, then transfers control based on the block's terminator.
+
+This is a single recursive inductive that combines command evaluation with
+transfer semantics. The `cmd` constructor evaluates one command and recurses
+on the remaining commands. The terminal constructors handle the transfer once
+all commands are exhausted.
+
+Structuring it this way (rather than delegating to a separate `EvalCmds`
+inductive) ensures that `EvalCmd` is referenced directly in a constructor,
+which is required for Lean 4's kernel to accept this type as a nested
+inductive in mutual blocks. -/
 inductive EvalDetBlock
   {CmdT : Type}
   (P : PureExpr)
@@ -59,31 +60,31 @@ inductive EvalDetBlock
   [HasNot P] :
   SemanticStore P → DetBlock l CmdT P → CFGConfig l P → Prop where
 
-  | step_goto_true :
-    EvalCmds P EvalCmd δ σ cs σ' failed →
+  | cmd :
+    EvalCmd δ σ c σ' failed →
+    EvalDetBlock P EvalCmd extendEval σ' ⟨cs, transfer⟩ config →
+    EvalDetBlock P EvalCmd extendEval
+      σ ⟨ c :: cs, transfer ⟩ (updateFailure config failed)
+
+  | goto_true :
     δ σ c = .some HasBool.tt →
     WellFormedSemanticEvalBool δ →
     EvalDetBlock P EvalCmd extendEval
-      σ ⟨ cs, .condGoto c t e _ ⟩ (.cont t σ' failed)
+      σ ⟨ [], .condGoto c t e _ ⟩ (.cont t σ false)
 
-  | step_goto_false :
-    EvalCmds P EvalCmd δ σ cs σ' failed →
+  | goto_false :
     δ σ c = .some HasBool.ff →
     WellFormedSemanticEvalBool δ →
     EvalDetBlock P EvalCmd extendEval
-      σ ⟨ cs, .condGoto c t e _ ⟩ (.cont e σ' failed)
+      σ ⟨ [], .condGoto c t e _ ⟩ (.cont e σ false)
 
-  | step_terminal :
-    EvalCmds P EvalCmd δ σ cs σ' failed →
+  | terminal :
     EvalDetBlock P EvalCmd extendEval
-      σ ⟨ cs, .finish _ ⟩ (.terminal σ' failed)
+      σ ⟨ [], .finish _ ⟩ (.terminal σ false)
 
 /--
-Small-step operational semantics for non-deterministic basic blocks. Each case
-first evaluates the commands in the block. A block ending in `.goto` with no
-labels results in a terminal configuration. A block ending in `.goto` with a
-non-empty list of labels results in a configuration pointing to a
-non-deterministic choice of one of the labels.
+Small-step operational semantics for non-deterministic basic blocks. Evaluates
+commands sequentially, then transfers control nondeterministically.
 -/
 inductive EvalNondetBlock
   {CmdT : Type}
@@ -93,24 +94,20 @@ inductive EvalNondetBlock
   [HasNot P] :
   SemanticStore P → NondetBlock l CmdT P → CFGConfig l P → Prop where
 
-  | step_goto_none :
-    EvalCmds P EvalCmd δ σ cs σ' failed →
+  | cmd :
+    EvalCmd δ σ c σ' failed →
+    EvalNondetBlock P EvalCmd extendEval σ' ⟨cs, transfer⟩ config →
     EvalNondetBlock P EvalCmd extendEval
-      σ ⟨ cs, .goto [] _ ⟩ (.terminal σ' failed)
+      σ ⟨ c :: cs, transfer ⟩ (updateFailure config failed)
 
-  | step_goto_some :
-    EvalCmds P EvalCmd δ σ cs σ' failed →
+  | goto_none :
+    EvalNondetBlock P EvalCmd extendEval
+      σ ⟨ [], .goto [] _ ⟩ (.terminal σ false)
+
+  | goto_some :
     lt ∈ ls →
     EvalNondetBlock P EvalCmd extendEval
-      σ ⟨ cs, .goto ls _ ⟩ (.cont lt σ' failed)
-
-/--
-Monotonically update the `failure` flag in a `CFGConfig`. It will be set to
-`true` if the provided Boolean is `true`.
--/
-def updateFailure : CFGConfig l P → Bool → CFGConfig l P
-| .cont t σ failed, failed' => .cont t σ (failed || failed')
-| .terminal σ failed, failed' => .terminal σ (failed || failed')
+      σ ⟨ [], .goto ls _ ⟩ (.cont lt σ false)
 
 /--
 Operational semantics to step between two configurations of a control-flow

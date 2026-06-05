@@ -203,6 +203,55 @@ theorem block_reaches_terminal
     | step_block_exit_mismatch =>
       subst htgt; cases hrest with | step _ _ _ h _ => cases h
 
+/-- Stronger inversion of `.block (.some label) σ_parent inner → .terminal`:
+    when the block has an explicit label, the second disjunct (exit-match)
+    constrains the inner exit-label to equal the block's label.  This is
+    needed for downstream simulation lemmas that look up the exit's
+    continuation in `exitConts` keyed by the matching label. -/
+theorem block_some_reaches_terminal
+    {inner : Config P CmdT} {label : String} {σ_parent : SemanticStore P} {ρ' : Env P}
+    (hstar : StepStmtStar P EvalCmd extendEval
+      (.block (.some label) σ_parent inner) (.terminal ρ')) :
+    (∃ ρ_inner, StepStmtStar P EvalCmd extendEval inner (.terminal ρ_inner) ∧
+      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store }) ∨
+    (∃ ρ_inner, StepStmtStar P EvalCmd extendEval inner (.exiting label ρ_inner) ∧
+      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store }) := by
+  -- Same structure as block_reaches_terminal, but specialized to .some label.
+  -- At step_block_exit_match, the rule's `l` is unified with `label` (because
+  -- the rule premise `.some label = .some l` forces this).
+  suffices ∀ src tgt, StepStmtStar P EvalCmd extendEval src tgt →
+      ∀ inner ρ', src = .block (.some label) σ_parent inner → tgt = .terminal ρ' →
+      (∃ ρ_inner, StepStmtStar P EvalCmd extendEval inner (.terminal ρ_inner) ∧
+        ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store }) ∨
+      (∃ ρ_inner, StepStmtStar P EvalCmd extendEval inner (.exiting label ρ_inner) ∧
+        ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store }) from
+    this _ _ hstar _ _ rfl rfl
+  intro src tgt hstar_g
+  induction hstar_g with
+  | refl => intro _ _ hsrc htgt; subst hsrc; cases htgt
+  | step _ mid _ hstep hrest ih =>
+    intro inner ρ' hsrc htgt; subst hsrc
+    cases hstep with
+    | step_block_body h =>
+      match ih _ _ rfl htgt with
+      | .inl ⟨ρ_inner, hterm, heq⟩ => exact .inl ⟨ρ_inner, .step _ _ _ h hterm, heq⟩
+      | .inr ⟨ρ_inner, hexit, heq⟩ => exact .inr ⟨ρ_inner, .step _ _ _ h hexit, heq⟩
+    | step_block_done =>
+      subst htgt; cases hrest with
+      | refl => exact .inl ⟨_, .refl _, rfl⟩
+      | step _ _ _ h _ => cases h
+    | step_block_exit_match heq =>
+      -- heq : .some label = .some l (where l is implicit and must equal label)
+      -- The constructor's premise unifies l with label via injection on heq.
+      -- After unification, the inner config is .exiting label _.
+      injection heq with h_eq
+      subst h_eq
+      subst htgt; cases hrest with
+      | refl => exact .inr ⟨_, .refl _, rfl⟩
+      | step _ _ _ h _ => cases h
+    | step_block_exit_mismatch =>
+      subst htgt; cases hrest with | step _ _ _ h _ => cases h
+
 /-- Invert a block execution reaching exiting: the inner must have
     exited with a label that didn't match the block.  The env is projected. -/
 theorem block_reaches_exiting
@@ -713,6 +762,25 @@ theorem block_noFuncDecl_preserves_eval
     ρ'.eval = ρ.eval :=
   smallStep_noFuncDecl_preserves_eval_block P EvalCmd extendEval ss ρ ρ' hnofd hterm
 
+/-- When a block has no function declarations, small-step execution
+    preserves the evaluator (variant for `.exiting` target). -/
+theorem smallStep_noFuncDecl_preserves_eval_block_exiting
+    (bss : List (Stmt P CmdT)) (ρ ρ' : Env P) (lbl : String)
+    (hnofd : Block.noFuncDecl bss = true)
+    (hstar : StepStmtStar P EvalCmd extendEval (.stmts bss ρ) (.exiting lbl ρ')) :
+    ρ'.eval = ρ.eval := by
+  suffices ∀ c₁ c₂,
+      Config.noFuncDecl c₁ →
+      StepStmtStar P EvalCmd extendEval c₁ c₂ →
+      c₂.getEnv.eval = c₁.getEnv.eval by
+    exact this _ _ (show Config.noFuncDecl (.stmts bss ρ) from hnofd) hstar
+  intro c₁ c₂ hnofd_c hstar_c
+  induction hstar_c with
+  | refl => rfl
+  | step _ mid _ hstep _ ih =>
+    have ⟨heq, hnofd_mid⟩ := step_preserves_eval_noFuncDecl P EvalCmd extendEval _ _ hstep hnofd_c
+    rw [ih hnofd_mid, heq]
+
 /-! ### hasFailure monotonicity and irrelevance
 
 `hasFailure` is never consulted by any `StepStmt` premise,
@@ -824,10 +892,10 @@ end -- section
 
 section
 
-variable (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P]
+variable (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
 variable (extendEval : ExtendEval P)
 
-omit [HasFvar P] [HasBool P] [HasNot P] in
+omit [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] in
 /-- If a config has no matching assert, then `isAtAssert` doesn't match. -/
 private theorem noMatchingAssert_not_isAtAssert
     (cfg : Config P (Cmd P)) (label : String) (expr : P.Expr)
@@ -939,7 +1007,7 @@ theorem noMatchingAssert_implies_no_reachable_assert
   induction hstar_c with
   | refl => exact hno_c
   | step _ _ _ hstep _ ih =>
-    exact ih (@step_preserves_noMatchingAssert P _ _ _ extendEval _ _ _ hstep hno_c)
+    exact ih (@step_preserves_noMatchingAssert P _ _ _ _ extendEval _ _ _ hstep hno_c)
 
 /-! ## isAtAssert inversion lemmas -/
 
@@ -1160,7 +1228,7 @@ theorem allAssertsValid_preserves_noFailure
         (isAtAssert P)
         (fun hcmd => by
           cases hcmd with
-          | eval_assert_fail hff _ => exact ⟨⟨_, _⟩, ⟨rfl, rfl⟩, hff⟩)
+          | eval_assert_fail hff _ _ => exact ⟨⟨_, _⟩, ⟨rfl, rfl⟩, hff⟩)
         (fun hmem => hmem)
         (fun h => h)
         (fun h => h)
@@ -1172,7 +1240,7 @@ section AssertSetProps
 
 /-! ### Assert command properties (statement-level) -/
 
-variable {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
+variable {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
 variable {extendEval : ExtendEval P}
 
 theorem eval_stmt_assert_store_cst :
@@ -1225,10 +1293,10 @@ theorem eval_stmt_assert_eq_of_pure_expr_eq :
       cases hrest with
       | refl =>
         cases hcmd with
-        | eval_assert_pass htt _ =>
-          exact .step _ _ _ (.step_cmd (EvalCmd.eval_assert_pass htt Hwf)) (.refl _)
-        | eval_assert_fail hne _ =>
-          exact .step _ _ _ (.step_cmd (EvalCmd.eval_assert_fail hne Hwf)) (.refl _)
+        | eval_assert_pass htt _ hcongr =>
+          exact .step _ _ _ (.step_cmd (EvalCmd.eval_assert_pass htt Hwf hcongr)) (.refl _)
+        | eval_assert_fail hne _ hcongr =>
+          exact .step _ _ _ (.step_cmd (EvalCmd.eval_assert_fail hne Hwf hcongr)) (.refl _)
       | step _ _ _ hstep _ => exact absurd hstep (by intro h; cases h)
   )
 
@@ -1289,27 +1357,27 @@ theorem assert_elim :
           match htail2 with
           | .step _ _ _ .step_stmts_nil (.refl _) =>
             cases hcmd1 with
-            | eval_assert_pass h1 _ =>
+            | eval_assert_pass h1 _ hcongr =>
               cases hcmd2 with
-              | eval_assert_pass _ _ =>
+              | eval_assert_pass _ _ _ =>
                 apply ReflTrans.step _ _ _ .step_stmts_cons
-                apply ReflTrans.step _ _ _ (.step_seq_inner (.step_cmd (EvalCmd.eval_assert_pass h1 Hwf)))
+                apply ReflTrans.step _ _ _ (.step_seq_inner (.step_cmd (EvalCmd.eval_assert_pass h1 Hwf hcongr)))
                 apply ReflTrans.step _ _ _ .step_seq_done
                 apply ReflTrans.step _ _ _ .step_stmts_nil
                 simp_all [Bool.or_false]; exact .refl _
-              | eval_assert_fail h2 _ =>
+              | eval_assert_fail h2 _ _ =>
                 simp at h2
                 exact absurd (h1.symm.trans h2)
                   (by exact fun h => HasBool.tt_is_not_ff (Option.some.inj h))
-            | eval_assert_fail h1 _ =>
+            | eval_assert_fail h1 _ hcongr =>
               cases hcmd2 with
-              | eval_assert_pass h2 _ =>
+              | eval_assert_pass h2 _ _ =>
                 simp at h2
                 exact absurd (h2.symm.trans h1)
                   (by exact fun h => HasBool.tt_is_not_ff (Option.some.inj h))
-              | eval_assert_fail _ _ =>
+              | eval_assert_fail _ _ _ =>
                 apply ReflTrans.step _ _ _ .step_stmts_cons
-                apply ReflTrans.step _ _ _ (.step_seq_inner (.step_cmd (EvalCmd.eval_assert_fail h1 Hwf)))
+                apply ReflTrans.step _ _ _ (.step_seq_inner (.step_cmd (EvalCmd.eval_assert_fail h1 Hwf hcongr)))
                 apply ReflTrans.step _ _ _ .step_seq_done
                 apply ReflTrans.step _ _ _ .step_stmts_nil
                 simp_all [Bool.or_true]; exact .refl _

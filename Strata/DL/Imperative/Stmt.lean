@@ -159,6 +159,139 @@ end
 
 ---------------------------------------------------------------------
 
+/-! ### UniqueInits
+
+Collect the names of every variable initialized by an `init` command anywhere
+in a statement (across all nesting levels). The companion predicate
+`Block.uniqueInits` asserts that the resulting list is `Nodup`, ruling out
+the edge case where a name is projected away by `step_block_done` and then
+reinitialized — a pattern the unstructured CFG cannot replicate because its
+flat namespace has no projection.
+-/
+
+mutual
+/-- Collect every variable initialized by an `init` command in a statement. -/
+@[expose] def Stmt.initVars (s : Stmt P (Cmd P)) : List P.Ident :=
+  match s with
+  | .cmd (.init x _ _ _) => [x]
+  | .cmd _ => []
+  | .block _ bss _ => Block.initVars bss
+  | .ite _ tss ess _ => Block.initVars tss ++ Block.initVars ess
+  | .loop _ _ _ bss _ => Block.initVars bss
+  | .exit _ _ => []
+  | .funcDecl _ _ => []
+  | .typeDecl _ _ => []
+  termination_by (Stmt.sizeOf s)
+
+/-- Collect every variable initialized by an `init` command in a block. -/
+@[expose] def Block.initVars (ss : List (Stmt P (Cmd P))) : List P.Ident :=
+  match ss with
+  | [] => []
+  | s :: rest => Stmt.initVars s ++ Block.initVars rest
+  termination_by (Block.sizeOf ss)
+end
+
+/-- Every `init` in the program (across all nesting levels) names a unique
+variable. The flat-namespace CFG can simulate the structured semantics only
+when this holds — without uniqueness, structured `step_block_done` can
+project a name away that the structured semantics later reinitializes, a
+pattern the CFG cannot replicate. -/
+@[expose] def Block.uniqueInits (ss : List (Stmt P (Cmd P))) : Prop :=
+  (Block.initVars ss).Nodup
+
+---------------------------------------------------------------------
+
+/-! ### SimpleShape
+
+Predicate stating that a statement or block has a "simple" shape suitable
+for the structured-to-CFG soundness proof under axiom-free assumptions:
+- no nondeterministic `.ite`
+- no `.loop` of any kind (the `.loop` arm discharges by contradiction)
+
+`.ite (.det _)`, `.block`, sequential `.cmd`s, `.exit`, `.funcDecl`,
+and `.typeDecl` are all allowed.
+-/
+
+mutual
+/-- Returns true if the statement satisfies the simple-shape restriction. -/
+@[expose] def Stmt.simpleShape (s : Stmt P (Cmd P)) : Bool :=
+  match s with
+  | .cmd _ => true
+  | .block _ bss _ => Block.simpleShape bss
+  | .ite (.det _) tss ess _ => Block.simpleShape tss && Block.simpleShape ess
+  | .ite .nondet _ _ _ => false
+  | .loop _ _ _ _ _ => false
+  | .exit _ _ => true
+  | .funcDecl _ _ => true
+  | .typeDecl _ _ => true
+  termination_by (Stmt.sizeOf s)
+
+/-- Returns true if the block satisfies the simple-shape restriction. -/
+@[expose] def Block.simpleShape (ss : List (Stmt P (Cmd P))) : Bool :=
+  match ss with
+  | [] => true
+  | s :: srest => Stmt.simpleShape s && Block.simpleShape srest
+  termination_by (Block.sizeOf ss)
+end
+
+/-- `Block.simpleShape` on `s :: rest` decomposes to the conjunction. -/
+theorem Block.simpleShape_cons_iff
+    {s : Stmt P (Cmd P)} {rest : List (Stmt P (Cmd P))} :
+    Block.simpleShape (s :: rest) = true ↔
+      Stmt.simpleShape s = true ∧ Block.simpleShape rest = true := by
+  simp only [Block.simpleShape, Bool.and_eq_true]
+
+/-- The then-branch of an `.ite (.det _)` is simple when the whole ite is. -/
+theorem Stmt.simpleShape_branch_then
+    {g : P.Expr} {tss ess : List (Stmt P (Cmd P))} {md : MetaData P} :
+    Stmt.simpleShape (.ite (.det g) tss ess md) = true →
+    Block.simpleShape tss = true := by
+  simp only [Stmt.simpleShape, Bool.and_eq_true]
+  intro h
+  exact h.1
+
+/-- The else-branch of an `.ite (.det _)` is simple when the whole ite is. -/
+theorem Stmt.simpleShape_branch_else
+    {g : P.Expr} {tss ess : List (Stmt P (Cmd P))} {md : MetaData P} :
+    Stmt.simpleShape (.ite (.det g) tss ess md) = true →
+    Block.simpleShape ess = true := by
+  simp only [Stmt.simpleShape, Bool.and_eq_true]
+  intro h
+  exact h.2
+
+---------------------------------------------------------------------
+
+/-! ### NoBlocks
+
+A boolean predicate asserting that a statement (or block) contains no
+`.block` constructor anywhere in its tree. Used by the structured-to-CFG
+correctness proof to identify subprograms whose CFG end-store is exactly
+the structured end-store (no projection occurs).
+-/
+
+mutual
+/-- Returns true if the statement contains no `.block` constructor. -/
+@[expose] def Stmt.noBlocks (s : Stmt P C) : Bool :=
+  match s with
+  | .cmd _ => true
+  | .block _ _ _ => false
+  | .ite _ tss ess _ => Block.noBlocks tss && Block.noBlocks ess
+  | .loop _ _ _ bss _ => Block.noBlocks bss
+  | .exit _ _ => true
+  | .funcDecl _ _ => true
+  | .typeDecl _ _ => true
+  termination_by (Stmt.sizeOf s)
+
+/-- Returns true if the block contains no `.block` constructor. -/
+@[expose] def Block.noBlocks (ss : Block P C) : Bool :=
+  match ss with
+  | [] => true
+  | s :: srest => Stmt.noBlocks s && Block.noBlocks srest
+  termination_by (Block.sizeOf ss)
+end
+
+---------------------------------------------------------------------
+
 /-! ### MapExpr
 
 Apply a function to all expressions in a statement's structural positions
@@ -232,12 +365,16 @@ end
 
 mutual
 /-- Get all variables accessed by `s`. -/
-def Stmt.getVars [HasVarsPure P P.Expr] [HasVarsPure P C] (s : Stmt P C) : List P.Ident :=
+@[expose] def Stmt.getVars [HasVarsPure P P.Expr] [HasVarsPure P C] (s : Stmt P C) : List P.Ident :=
   match s with
   | .cmd cmd => HasVarsPure.getVars cmd
   | .block _ bss _ => Block.getVars bss
   | .ite cond tbss ebss _ => cond.getVars ++ Block.getVars tbss ++ Block.getVars ebss
-  | .loop guard _ _ bss _ => guard.getVars ++ Block.getVars bss
+  | .loop guard measure invariants bss _ =>
+    guard.getVars ++
+      (invariants.flatMap (fun p => HasVarsPure.getVars p.snd)) ++
+      (match measure with | none => [] | some m => HasVarsPure.getVars m) ++
+      Block.getVars bss
   | .exit _ _  => []
   | .funcDecl decl _ =>
     -- Get free variables from function body, excluding formal parameters
@@ -249,7 +386,7 @@ def Stmt.getVars [HasVarsPure P P.Expr] [HasVarsPure P C] (s : Stmt P C) : List 
       bodyVars.filter (fun v => formals.all (fun f => ¬(P.EqIdent v f).decide))
   | .typeDecl _ _ => []  -- Type declarations don't reference variables
 
-def Block.getVars [HasVarsPure P P.Expr] [HasVarsPure P C] (ss : Block P C) : List P.Ident :=
+@[expose] def Block.getVars [HasVarsPure P P.Expr] [HasVarsPure P C] (ss : Block P C) : List P.Ident :=
   match ss with
   | [] => []
   | s :: srest => Stmt.getVars s ++ Block.getVars srest
@@ -265,7 +402,7 @@ instance (P : PureExpr) [HasVarsPure P P.Expr] [HasVarsPure P C]
 
 mutual
 /-- Get all variables defined by the statement `s`. -/
-def Stmt.definedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
+@[expose] def Stmt.definedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
   match s with
   | .cmd cmd => HasVarsImp.definedVars cmd
   | .block _ bss _ => Block.definedVars bss
@@ -275,7 +412,7 @@ def Stmt.definedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
   | .typeDecl _ _ => []  -- Type declarations don't define variables
   | _ => []
 
-def Block.definedVars [HasVarsImp P C] (ss : Block P C) : List P.Ident :=
+@[expose] def Block.definedVars [HasVarsImp P C] (ss : Block P C) : List P.Ident :=
   match ss with
   | [] => []
   | s :: srest => Stmt.definedVars s ++ Block.definedVars srest
@@ -283,7 +420,7 @@ end
 
 mutual
 /-- Get all variables modified by the statement `s`. -/
-def Stmt.modifiedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
+@[expose] def Stmt.modifiedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
   match s with
   | .cmd cmd => HasVarsImp.modifiedVars cmd
   | .exit _ _ => []
@@ -293,7 +430,7 @@ def Stmt.modifiedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
   | .funcDecl _ _ => []  -- Function declarations don't modify variables
   | .typeDecl _ _ => []  -- Type declarations don't modify variables
 
-def Block.modifiedVars [HasVarsImp P C] (ss : Block P C) : List P.Ident :=
+@[expose] def Block.modifiedVars [HasVarsImp P C] (ss : Block P C) : List P.Ident :=
   match ss with
   | [] => []
   | s :: srest => Stmt.modifiedVars s ++ Block.modifiedVars srest
@@ -303,13 +440,13 @@ mutual
 /-- Get all variables modified/defined by the statement `s`.
     Note that we need a separate function because order matters here for sub-blocks
  -/
-def Stmt.modifiedOrDefinedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
+@[expose] def Stmt.modifiedOrDefinedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
   match s with
   | .block _ bss _ => Block.modifiedOrDefinedVars bss
   | .ite _ tbss ebss _ => Block.modifiedOrDefinedVars tbss ++ Block.modifiedOrDefinedVars ebss
   | _ => Stmt.definedVars s ++ Stmt.modifiedVars s
 
-def Block.modifiedOrDefinedVars [HasVarsImp P C] (ss : Block P C) : List P.Ident :=
+@[expose] def Block.modifiedOrDefinedVars [HasVarsImp P C] (ss : Block P C) : List P.Ident :=
   match ss with
   | [] => []
   | s :: srest => Stmt.modifiedOrDefinedVars s ++ Block.modifiedOrDefinedVars srest
@@ -317,11 +454,11 @@ end
 
 mutual
 /-- Get all variables touched (modified, defined, or read) by the statement `s`. -/
-def Stmt.touchedVars [HasVarsImp P C] [HasVarsPure P P.Expr] [HasVarsPure P C]
+@[expose] def Stmt.touchedVars [HasVarsImp P C] [HasVarsPure P P.Expr] [HasVarsPure P C]
     (s : Stmt P C) : List P.Ident :=
   Stmt.modifiedOrDefinedVars s ++ Stmt.getVars s
 
-def Block.touchedVars [HasVarsImp P C] [HasVarsPure P P.Expr] [HasVarsPure P C]
+@[expose] def Block.touchedVars [HasVarsImp P C] [HasVarsPure P P.Expr] [HasVarsPure P C]
     (ss : Block P C) : List P.Ident :=
   Block.modifiedOrDefinedVars ss ++ Block.getVars ss
 end
