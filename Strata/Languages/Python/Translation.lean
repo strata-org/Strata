@@ -204,9 +204,12 @@ partial def translateExpr (e : Python.expr ResolvedAnn) : TransM StmtExprMd := d
     | _ => panic! "Resolution bug: invalid NodeInfo on Name node"
   | .Call ann func args kwargs => match ann.info with
     | .funcCall sig => do
-        let receiver ← match func with
-          | .Attribute _ obj _ _ => pure [← translateExpr obj]
-          | _ => pure []
+        -- Prepend the receiver ONLY for instance methods (sig has a receiver slot).
+        -- A `.static` sig is a module/free function: its `.Attribute` base (e.g. the
+        -- module `boto3` in `boto3.client(...)`) is NOT an argument and must be dropped.
+        let receiver ← match sig.params, func with
+          | .instance _ _, .Attribute _ obj _ _ => pure [← translateExpr obj]
+          | _, _ => pure []
         let posArgs ← args.val.toList.mapM translateExpr
         let kwargPairs ← kwargs.val.toList.filterMapM fun kw => match kw with
           | .mk_keyword _ kwName kwExpr => do
