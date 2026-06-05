@@ -98,6 +98,19 @@ where
           let lhsObs := go F lhs implications
           let rhsObs := go F rhs ((md, lhs) :: implications)
           lhsObs ++ rhsObs
+        else if opName == (@boolAndFunc T).name then
+          -- Short-circuit &&: rhs is only reached when lhs is true.
+          -- E.g. `0 <= j && j < n && Sequence.select(s, j)` — the prefix
+          -- is a hypothesis for the select's out-of-bounds check.
+          let lhsObs := go F lhs implications
+          let rhsObs := go F rhs ((md, lhs) :: implications)
+          lhsObs ++ rhsObs
+        else if opName == (@boolOrFunc T).name then
+          -- Short-circuit ||: rhs is only reached when lhs is false.
+          -- E.g. `i == 0 || x / i > 1` — ¬(i == 0) is a hypothesis for x / i.
+          let lhsObs := go F lhs implications
+          let rhsObs := go F rhs ((md, .app md (@boolNotFunc T).opExpr lhs) :: implications)
+          lhsObs ++ rhsObs
         else
           go F lhs implications ++ go F rhs implications
       /- Let-binding encoded as (λ x. body) arg:
