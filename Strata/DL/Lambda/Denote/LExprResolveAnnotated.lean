@@ -310,7 +310,7 @@ private theorem resolveAux_allFvarAnnot_aux
     exact allFvarAnnot_varCloseT_ne xv xvb xty 0 et_body h_ih_body
   case h_quant =>
     intro m qk name bty triggers body et C Env Env' xvb xtyb Env1 et_body Env2 et_tr Env3
-      h_res h_tbv h_res_body h_res_tr h_et h_env' h_envwf h_ne h_fwf h_envwf1 h_ne1 h_aliases_eq
+      h_res h_tbv h_res_body h_res_tr h_et h_env' _ h_envwf h_ne h_fwf h_envwf1 h_ne1 h_aliases_eq
       h_envwf2 h_ctx2 h_ih_body h_ih_tr xv xty h_ctx h_af
     subst h_et
     simp only [LExprT.allFvarAnnot]
@@ -695,15 +695,9 @@ private theorem resolveAux_HasTypeA_aux [DecidableEq T.IDMeta] [HasGen T.IDMeta]
       (applySubstT et_body S) h_ih_body h_annot
   case h_quant =>
     intro m qk name bty triggers body et C Env Env' xv xty Env1 et_body Env2 et_tr Env3
-      h_res h_tbv h_res_body h_res_tr h_et h_env' h_envwf h_ne h_fwf h_envwf1 h_ne1 h_aliases_eq
+      h_res h_tbv h_res_body h_res_tr h_et h_env' h_body_ty_bool h_envwf h_ne h_fwf h_envwf1 h_ne1 h_aliases_eq
       h_envwf2 h_ctx2 h_ih_body h_ih_tr h_resolved S h_absorbs
     subst h_et h_env'
-    have h_body_ty_bool : toLMonoTy et_body = LMonoTy.bool := by
-      -- The quant constructor requires the body to type as bool; recover from h_res
-      simp only [resolveAux, Bind.bind, Except.bind, h_tbv, h_res_body, h_res_tr] at h_res
-      split at h_res
-      · simp at h_res
-      · rename_i h_body_bool; simp [bne] at h_body_bool; exact h_body_bool
     have h_ne2 : Env2.context.types ≠ [] := h_ctx2 ▸ h_ne1
     have h_resolved1 : TContext.AliasesResolved Env1.context := by
       intro a h_mem; rw [h_aliases_eq] at h_mem ⊢; exact h_resolved a h_mem
@@ -1127,7 +1121,7 @@ private theorem resolveAux_eqModuloAnnotations {T : LExprParams}
                exact ⟨trivial, varCloseT_varOpen_eqModuloAnnotations 0 xv xty et_body body h_ih_body h_fresh⟩)
   case h_quant =>
     intro m qk name bty triggers body et C Env Env' xv xty Env1 et_body Env2 et_tr Env3
-      h_res h_tbv h_res_body h_res_tr h_et h_env' h_envwf h_ne h_fwf h_envwf1 h_ne1 h_aliases_eq
+      h_res h_tbv h_res_body h_res_tr h_et h_env' _ h_envwf h_ne h_fwf h_envwf1 h_ne1 h_aliases_eq
       h_envwf2 h_ctx2 h_ih_body h_ih_tr h_ws
     subst h_et
     have h_ws_body : WellScoped body Env.context :=
