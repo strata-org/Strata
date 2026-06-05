@@ -412,8 +412,7 @@ inductive EvalCommandContract : (String → Option Procedure)  → CoreEval →
 
   /-- Contract-based semantics: like `EvalCommand.call_sem` but replaces
       body execution with havoc + postcondition check.
-      Same positional matching as `EvalCommand.call_sem`.
-      This is the precondition-passing arm. -/
+      Same positional matching as `EvalCommand.call_sem`. -/
   | call_sem {π δ σ σ₀ inArgs oVals vals σA σAO σO n p modvals callArgs σ' md} :
     π n = .some p →
     CallArg.getInputExprs callArgs = inArgs →
@@ -441,31 +440,6 @@ inductive EvalCommandContract : (String → Option Procedure)  → CoreEval →
     UpdateStates σ lhs modvals σ' →
     ----
     EvalCommandContract π δ σ (.call n callArgs md) σ' false
-
-  /-- Contract-based semantics: precondition-failing arm.
-      Mirrors `eval_assert_fail`: store is unchanged and the failure
-      flag is set to `true`. Retains all WF/defined/init witnesses
-      through `σAO` (the store at which `pre` is evaluated, after
-      formal-input + formal-output init). -/
-  | call_sem_pre_fail {π δ σ σ₀ inArgs oVals vals σA σAO n p callArgs md} :
-    π n = .some p →
-    CallArg.getInputExprs callArgs = inArgs →
-    CallArg.getLhs callArgs = lhs →
-    EvalExpressions (P:=Core.Expression) δ σ inArgs vals →
-    ReadValues σ lhs oVals →
-    WellFormedSemanticEvalVal δ →
-    WellFormedSemanticEvalVar δ →
-    WellFormedSemanticEvalBool δ →
-    WellFormedCoreEvalTwoState δ σ₀ σ →
-    isDefinedOver (HasVarsTrans.allVarsTrans π) σ (Statement.call n callArgs md) →
-    InitStates σ (ListMap.keys (p.header.inputs)) vals σA →
-    InitStates σA (ListMap.keys (p.header.outputs)) oVals σAO →
-    -- some precondition fails (mirrors `eval_assert_fail`)
-    (∃ pre, (Procedure.Spec.getCheckExprs p.spec.preconditions).contains pre ∧
-      isDefinedOver (HasVarsPure.getVars) σAO pre ∧
-      δ σAO pre = .some HasBool.ff) →
-    ----
-    EvalCommandContract π δ σ (.call n callArgs md) σ true
 
 @[expose] abbrev EvalStatementContract (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) :
     Imperative.Env Expression → Statement → Imperative.Env Expression → Prop :=
