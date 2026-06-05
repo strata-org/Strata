@@ -77,7 +77,7 @@ jobs:
       - name: Run Python CBMC pipeline tests
         shell: bash
         run: |
-          pip install ./Tools/Python
+          pip install ./Tools/Python-base ./StrataPython/Tools/strata-python
           ./StrataPython/StrataPythonTest/run_py_cbmc_tests.sh
       - name: Run property summary tests
         shell: bash
