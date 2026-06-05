@@ -2208,8 +2208,6 @@ theorem InvStoresExceptInvStores :
   assumption
 
 /-
-
-/-
 NOTE:
   In order to prove this refinement theorem, we need to reason about the
   assymmetry between the two semantics regarding the temporary variables
@@ -2218,15 +2216,116 @@ NOTE:
   discarded at the end of the call, it is possible to show that those created
   variables are irrelevant.
 -/
+/--
+Refinement of a procedure call from concrete (Layer-A small-step body trace)
+semantics to contract (havoc-and-postcondition) semantics.
+
+The proof requires three side-conditions that the concrete `call_sem`
+constructor does not by itself supply:
+
+* `δ_wfCong` — the evaluator respects free-variable congruence; needed to
+  rewrite `δ ρ'.store post` into `δ σO post` (where `σO` is the post-havoc
+  store the contract semantics evaluates against).
+
+* `p_outputs_nodup` — the procedure's output parameter list has no duplicate
+  keys; needed by `readValues_updatedStatesSame` to construct
+  `ReadValues σO outs modvals`.
+
+* `p_post_scoped` — every postcondition's free variables are a subset of
+  the output parameters.  This is the well-formed-postcondition assumption
+  that lets us reduce the per-key store agreement to the output keys.
+  Without this assumption, the proof would also need a body-locals
+  invariance lemma over `CoreStepStar` (i.e., a structural lemma like
+  `stmts_invStoresExcept_modifiedVarsTrans`); none such exists in the
+  codebase yet.  Since `p_post_scoped` is a natural well-formedness
+  consequence of `WFProcedureProp` (postconditions reference only the
+  procedure's outputs) we take it as a hypothesis here and let the caller
+  discharge it.
+-/
 theorem EvalCallBodyRefinesContract :
-  ∀ {π φ δ σ n callArgs σ' p md md'},
+  ∀ {π : String → Option Procedure}
+    {φ : CoreEval → PureFunc Expression → CoreEval}
+    {δ : CoreEval} {σ : CoreStore} {n : String}
+    {callArgs : List (CallArg Expression)} {σ' : CoreStore}
+    {p : Procedure} {md md' : MetaData Expression},
+  WellFormedSemanticEvalExprCongr δ →
+  (ListMap.keys p.header.outputs).Nodup →
+  (∀ post : Expression.Expr,
+    (Procedure.Spec.getCheckExprs p.spec.postconditions).contains post →
+    (HasVarsPure.getVars (P := Expression) post).Subset (ListMap.keys p.header.outputs)) →
   π n = .some p →
   EvalCommand π φ δ σ (CmdExt.call n callArgs md) σ' false →
   EvalCommandContract π δ σ (CmdExt.call n callArgs md') σ' false := by
-  intros π φ δ σ n callArgs σ' p md md' pFound H
+  intros π φ δ σ n callArgs σ' p md md'
+         δ_wfCong p_outputs_nodup p_post_scoped pFound H
+  -- Generalize `false` so dependent elimination produces an equality
+  -- between the constructor's `ρ'.hasFailure` and the goal's index.
+  generalize hf : (false : Bool) = b at H
   cases H with
-  | call_sem lkup Heval Hwfval Hwfvars Hwfb Hwf Hwf2 Hup Hhav Hpre Heval2 Hpost Hrd Hup2 =>
-    sorry
+  | @call_sem _ _ _ σ₀ inArgs vals oVals σA σAO _ p_c modvals _ σ_final ρ' _
+              hπ heqIn heqLhs Hev_in HrdLhs hwfV hwfVar hwfBool hwf2s hdef
+              Hin_inputs Hin_outputs Hpre Hbody Hpost_at_ρ' Hrd_body Hupd =>
+    -- Unify the case-bound `p_c` with the theorem-level `p`.
+    rw [pFound] at hπ
+    have hp_eq := Option.some.inj hπ
+    subst hp_eq
+    -- ρ'.hasFailure = false from generalize equation.
+    have hρ'_failure := hf.symm
+    -- Bind σO := updatedStates σAO outs modvals as a definitional unfold.
+    -- Length: outs.length = modvals.length (from Hrd_body).
+    have h_len := ReadValuesLength Hrd_body
+    -- `outs` are defined in σAO (initialized via Hin_outputs).
+    have h_def := InitStatesDefined Hin_outputs
+    -- HavocVars step: σAO can havoc to σO := updatedStates σAO outs modvals.
+    have h_upd := updatedStatesUpdate h_len h_def
+    have h_havoc := UpdateStatesHavocVars h_upd
+    -- ReadValues σO outs modvals, by readValues_updatedStatesSame.
+    have h_rd_σO :
+        ReadValues
+          (updatedStates σAO (ListMap.keys p.header.outputs) modvals)
+          (ListMap.keys p.header.outputs) modvals :=
+      readValues_updatedStatesSame h_len p_outputs_nodup
+    -- Postconditions transport from ρ'.store to σO via δ_wfCong.
+    have h_post : ∀ post : Expression.Expr,
+        (Procedure.Spec.getCheckExprs p.spec.postconditions).contains post →
+        isDefinedOver (HasVarsPure.getVars (P := Expression)) σAO post ∧
+        δ (updatedStates σAO (ListMap.keys p.header.outputs) modvals) post
+          = some HasBool.tt := by
+      intros post hin
+      have ⟨hdefp, heq⟩ := Hpost_at_ρ' post hin
+      refine ⟨hdefp, ?_⟩
+      -- σO and ρ'.store agree on getVars(post) (subset of outs).
+      have h_agree : ∀ x ∈ HasVarsPure.getVars (P := Expression) post,
+          updatedStates σAO (ListMap.keys p.header.outputs) modvals x
+            = ρ'.store x := by
+        intros x hx
+        have hx_in_outs : x ∈ (ListMap.keys p.header.outputs) :=
+          p_post_scoped post hin hx
+        -- Both σO x and ρ'.store x equal modvals[i] for x = outs[i].
+        have ⟨i, hi_lt, hi_eq⟩ :
+            ∃ i, ∃ (h : i < (ListMap.keys p.header.outputs).length),
+              (ListMap.keys p.header.outputs)[i]'h = x :=
+          List.getElem_of_mem hx_in_outs
+        have hi_lt' : i < modvals.length := h_len ▸ hi_lt
+        have hl := hi_eq ▸ readValues_get h_rd_σO (hi := hi_lt) (hi' := hi_lt')
+        have hr := hi_eq ▸ readValues_get Hrd_body (hi := hi_lt) (hi' := hi_lt')
+        rw [hl, hr]
+      -- Apply expression congruence.
+      rw [δ_wfCong post _ _ h_agree]
+      exact heq
+    -- ρ'.hasFailure = false closes the index mismatch in the goal.
+    rw [hρ'_failure]
+    exact EvalCommandContract.call_sem pFound heqIn heqLhs Hev_in HrdLhs hwfV hwfVar hwfBool
+            hwf2s hdef Hin_inputs Hin_outputs Hpre h_havoc h_post h_rd_σO Hupd
+
+/-
+NOTE: The transit theorems (`EvalCommandRefinesContract`,
+`StepStmt_refines_contract`, `StepStmtStar_refines_contract`,
+`EvalStatementsRefinesContract`, `EvalStatementRefinesContract`) require
+the same three side-conditions as `EvalCallBodyRefinesContract`
+(`δ_wfCong`, `p_outputs_nodup`, `p_post_scoped`) to be threaded through.
+They are kept commented until those hypotheses are wired through the
+small-step refinement chain.
 
 theorem EvalCommandRefinesContract :
 EvalCommand π φ δ σ c σ' f →
@@ -2254,10 +2353,10 @@ private theorem StepStmt_refines_contract
   | step_ite_false h1 h2 => exact .step_ite_false h1 h2
   | step_ite_nondet_true => exact .step_ite_nondet_true
   | step_ite_nondet_false => exact .step_ite_nondet_false
-  | step_loop_enter h1 h2 => exact .step_loop_enter h1 h2
-  | step_loop_exit h1 h2 => exact .step_loop_exit h1 h2
-  | step_loop_nondet_enter => exact .step_loop_nondet_enter
-  | step_loop_nondet_exit => exact .step_loop_nondet_exit
+  | step_loop_enter h1 h2 h3 h4 => exact .step_loop_enter h1 h2 h3 h4
+  | step_loop_exit h1 h2 h3 h4 => exact .step_loop_exit h1 h2 h3 h4
+  | step_loop_nondet_enter h1 h2 => exact .step_loop_nondet_enter h1 h2
+  | step_loop_nondet_exit h1 h2 => exact .step_loop_nondet_exit h1 h2
   | step_exit => exact .step_exit
   | step_funcDecl => exact .step_funcDecl
   | step_typeDecl => exact .step_typeDecl
@@ -2266,7 +2365,6 @@ private theorem StepStmt_refines_contract
   | step_seq_done => exact .step_seq_done
   | step_seq_exit => exact .step_seq_exit
   | step_block_done => exact .step_block_done
-  | step_block_exit_none => exact .step_block_exit_none
   | step_block_exit_match h => exact .step_block_exit_match h
   | step_block_exit_mismatch h => exact .step_block_exit_mismatch h
 
@@ -2292,7 +2390,6 @@ theorem EvalStatementRefinesContract :
     EvalStatement π φ ρ s ρ' →
     EvalStatementContract π φ ρ s ρ' :=
   StepStmtStar_refines_contract
-
 -/
 
 /-- If an expression is defined, all its free variables are defined in the store.
