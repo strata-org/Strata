@@ -757,7 +757,19 @@ rec function bad (@[cases] xs : IntList, n : int) : int
 };
 #end
 
-/-- error: recursive function 'bad': decreasing parameter type 'int' is not a known datatype -/
+/-- info:
+Obligation: bad_body_calls_IntList..tl_0
+Property: assert
+Result: ✅ pass
+
+Obligation: bad_terminates_0
+Property: assert
+Result: ❌ fail
+
+Obligation: bad_terminates_1
+Property: assert
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Core.verify decreasesNonADTPgm (options := .quiet)
 
@@ -1000,7 +1012,7 @@ rec function bad (@[cases] xs : IntList) : bool
 };
 #end
 
-/-- error: termination checking: decreasing argument contains a bound variable -/
+/-- error: termination checking 'bad': decreasing argument contains a bound variable -/
 #guard_msgs in
 #eval Core.verify boundVarDecrArgPgm (options := .quiet)
 
@@ -1020,7 +1032,7 @@ rec function bad (@[cases] xs : IntList) : IntList
 };
 #end
 
-/-- error: termination checking: decreasing argument contains a recursive call -/
+/-- error: termination checking 'bad': decreasing argument contains a recursive call -/
 #guard_msgs in
 #eval Core.verify recCallInDecrArgPgm (options := .quiet)
 
@@ -1210,7 +1222,8 @@ rec function bad (@[cases] xs : IntList) : int
 };
 #end
 
-/-- error: recursive function 'bad': decreases clause must be a parameter name. Non-structural recursion is not yet supported -/
+/-- error: ❌ Type checking error.
+recursive function 'bad': non-variable decreases expression must have type int, got 'IntList'. For structural recursion, use a parameter name -/
 #guard_msgs in
 #eval Core.verify decreasesNonVarPgm (options := .quiet)
 

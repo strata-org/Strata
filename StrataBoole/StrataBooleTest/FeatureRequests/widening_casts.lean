@@ -45,8 +45,16 @@ spec {
 };
 #end
 
-#guard_msgs (drop info) in
-#eval Strata.Boole.verify "cvc5" wideningCastsSeed
+/-- info:
+Obligation: assert_3_1234
+Property: assert
+Result: ✅ pass
+
+Obligation: widening_cast_seed_ensures_2_1160
+Property: assert
+Result: ✅ pass-/
+#guard_msgs in
+#eval Strata.Boole.verify "cvc5" wideningCastsSeed (options := .quiet)
 
 example : Strata.smtVCsCorrectBoole wideningCastsSeed := by
   gen_smt_vcs_boole

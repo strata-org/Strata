@@ -51,7 +51,7 @@ info: ok: context:
 types:   [(zinit, bool) (x, int) (y, int)]
 aliases: []
 state:
-tyGen: 1
+tyGen: 0
 tyPrefix: $__ty
 exprGen: 0
 exprPrefix: $__var
@@ -107,7 +107,7 @@ info: ok: context:
 types:   [(x, int)]
 aliases: []
 state:
-tyGen: 2
+tyGen: 1
 tyPrefix: $__ty
 exprGen: 0
 exprPrefix: $__var
@@ -146,11 +146,11 @@ info: ok: context:
 types:   [(fn, ∀[a]. (arrow a a)) (m1, (arrow int int)) (m2, (arrow (arrow bool int) int))]
 aliases: []
 state:
-tyGen: 10
+tyGen: 8
 tyPrefix: $__ty
 exprGen: 1
 exprPrefix: $__var
-subst: [($__ty0, int) ($__ty2, int) ($__ty6, (arrow bool int)) ($__ty7, bool) ($__ty5, (arrow bool int)) ($__ty3, (arrow bool int)) ($__ty9, int)]
+subst: [($__ty0, int) ($__ty1, int) ($__ty4, (arrow bool int)) ($__ty5, bool) ($__ty3, (arrow bool int)) ($__ty2, (arrow bool int)) ($__ty7, int)]
 -/
 #guard_msgs in
 #eval do let ans ← typeCheck LContext.default (TEnv.default.updateContext { types := [[("fn", t[∀a. %a → %a])]] })
@@ -207,6 +207,32 @@ info: ok: {
 #guard_msgs in
 #eval do let ans ← typeCheck LContext.default TEnv.default Program.init none testFuncDeclTypeCheck
          return format ans.fst
+
+-- Regression test for #1289: outer type variable captured in local function body.
+def testOuterTyVarCapture : List Statement :=
+  let localFunc : PureFunc Expression := {
+    name := ⟨"f", ()⟩,
+    typeArgs := ["b"],
+    isConstr := false,
+    inputs := [(⟨"y", ()⟩, .forAll [] (.ftvar "b"))],
+    output := .forAll [] (.ftvar "b"),
+    body := some (.app () (.abs () "z" (some (.ftvar "a")) (.bvar () 0))
+                          (.fvar () ⟨"y", ()⟩ none)),
+    attr := #[],
+    concreteEval := none,
+    axioms := []
+  }
+  [.funcDecl localFunc .empty]
+
+/--
+info: error: Function 'f': body contains undeclared type variables [a] (not in typeArgs [b])
+-/
+#guard_msgs in
+#eval do
+  -- "a" is in the outer context as a type variable (simulating a polymorphic procedure)
+  let Env := TEnv.default.updateContext {types := [[("x", .forAll ["a"] (.ftvar "a"))]]}
+  let ans ← typeCheck LContext.default Env Program.init none testOuterTyVarCapture
+  return format ans.fst
 
 end FuncDeclTests
 

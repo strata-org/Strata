@@ -17,6 +17,7 @@ import Strata.DL.Lambda.LExpr
 import Strata.DL.Lambda.Semantics
 import Strata.DL.Lambda.LExprTypeSpec
 import Strata.DL.Lambda.Denote.LExprDenote
+import Strata.DL.Lambda.Denote.LExprResolveAnnotated
 import Strata.DL.Lambda.Denote.LExprSemanticsConsistent
 import Strata.Languages.Core.Procedure
 import Strata.Languages.Core.Program
@@ -433,13 +434,18 @@ evaluation transform, when applied.
 
 ### Recursive Functions
 
-Currently, only recursive functions over algebraic datatypes are supported (both
-single and mutually recursive). Recursive functions are declared with the `rec`
-keyword, and exactly one parameter must be annotated with `@[cases]` to indicate
-the algebraic datatype argument for per-constructor axiom generation: one
-unfolding axiom is generated for each constructor of the datatype,
-case-splitting on the `@[cases]` parameter.
+Strata supports two kinds of recursive functions: *structural recursion* over
+algebraic datatypes, and *int-valued recursion* with integer termination
+measures. Both single and mutually recursive functions are supported.
 Recursive functions cannot be marked `inline`.
+
+#### Structural Recursion (ADT)
+
+Structural recursive functions are declared with the `rec` keyword, and exactly
+one parameter must be annotated with `@[cases]` to indicate the algebraic
+datatype argument for per-constructor axiom generation: one unfolding axiom is
+generated for each constructor of the datatype, case-splitting on the `@[cases]`
+parameter.
 
 ```
 rec function listLen (@[cases] xs : IntList) : int
@@ -463,8 +469,41 @@ rec function zipLen (@[cases] xs : IntList, ys : IntList) : int
 };
 ```
 
+#### Int-Valued Recursion
+
+When the `decreases` clause specifies an expression of type `int` (rather than
+a datatype-typed parameter), the function uses int-valued termination checking.
+These functions do NOT require `@[cases]`.
+
+```
+rec function fib (n : int) : int
+  decreases n
+{
+  if n <= 1 then n else fib(n - 1) + fib(n - 2)
+};
+```
+
+The `decreases` expression may be an arbitrary integer expression over the
+function's parameters:
+
+```
+rec function diagonal (m : int, n : int) : int
+  requires m >= 0;
+  requires n >= 0;
+  decreases m + n
+{
+  if m <= 0 then (if n <= 0 then 0 else diagonal(m, n - 1))
+  else diagonal(m - 1, n)
+};
+```
+
+#### General Rules
+
 Every recursive function must have at least a `@[cases]` annotation or a
 `decreases` clause; Strata rejects recursive functions without a termination hint.
+If a function has both `@[cases]` and an int-valued `decreases` clause,
+`@[cases]` enables per-constructor axiom generation and partial evaluation,
+while `decreases` is used for termination checking.
 
 Mutually recursive functions are declared as multiple functions within a single
 `rec` block:
@@ -480,6 +519,36 @@ function listSize (@[cases] xs : RoseList) : int
   else treeSize(RoseList..hd(xs)) + listSize(RoseList..tl(xs))
 };
 ```
+
+#### Termination Checking
+
+Termination checking is always on for all `rec` functions.
+
+For _structural recursion_, Strata checks that recursive calls pass a
+structurally smaller argument at the termination measure position. A rank
+function is generated for the datatype, and each recursive call must have
+strictly smaller rank than the caller's parameter.
+
+For _int-valued recursion_, two obligations are checked at each recursive
+call site:
+- The measure at the call site is non-negative (`0 <= call_measure`).
+- The measure strictly decreases (`call_measure < caller_measure`).
+
+A function that fails its termination check will produce a verification failure
+on its `_terminates_` obligations.
+
+#### Current Limitations
+
+- Polymorphic recursive functions are not yet supported.
+- Recursive functions must be declared at the top level (not as local
+  declarations inside procedures).
+- Only single-expression termination measures are supported; lexicographic
+  measures are not yet supported.
+- There is no way currently to give additional information for the
+  proofs of non-negativity for int-valued measures. For example,
+  using the measure `listLen(l1) + listLen(l2)` will produce currently
+  unprovable obligations about the nonnegativity of `listLen` over
+  arbitrary lists.
 
 ## Axioms
 
@@ -678,6 +747,14 @@ if-then-else becomes a Lean if-then-else, a `forall` quantifier becomes a Lean
 over arbitrary types, this denotation can be used only for reasoning, not for
 computation. Validity of a Lambda expression means that `LExpr.denote` evaluates
 to `true` under all possible interpretations.
+
+### Well-Annotated Output of Type Resolution
+
+The theorem `resolve_HasTypeA` establishes
+that when type inference (`LExpr.resolve`) succeeds, the resulting expression
+satisfies `HasTypeA` — i.e., the type annotations placed by resolution are
+internally consistent. This allows us to give well-defined denotations for all
+terms that pass the typechecker.
 
 ### Consistency with Operational Semantics
 

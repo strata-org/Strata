@@ -105,7 +105,7 @@ def pythonCheckModule (pythonCmd : System.FilePath) (moduleName : String) : IO B
   | 1 =>
     return false
   | 255 =>
-    throw <| .userError "{pythonCmd} not found."
+    throw <| .userError s!"{pythonCmd} not found."
   | _ =>
     throw <| .userError
       s!"{pythonCmd} has unexpected exit code {exitCode}"

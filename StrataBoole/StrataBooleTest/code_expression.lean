@@ -67,8 +67,32 @@ procedure D(a : (Map int T), n : int) returns ()
 
 #end
 
-#guard_msgs (drop info) in
-#eval Strata.Boole.verify "cvc5" code_expression
+/-- info:
+Obligation: callElimAssert_Q_requires_1_630_2
+Property: assert
+Result: ✅ pass
+
+Obligation: callElimAssert_P_requires_0_481_5
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_2_774
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_3_959
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_5_1211
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_7_1400
+Property: assert
+Result: ✅ pass-/
+#guard_msgs in
+#eval Strata.Boole.verify "cvc5" code_expression (options := .quiet)
 
 example : Strata.smtVCsCorrectBoole code_expression := by
   gen_smt_vcs_boole

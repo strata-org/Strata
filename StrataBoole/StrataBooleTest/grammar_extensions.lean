@@ -87,8 +87,100 @@ procedure test_arrays () returns ()
 
 #end
 
-#guard_msgs (drop info) in
-#eval Strata.Boole.verify "cvc5" grammarExtensions
+/-- info:
+Obligation: entry_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_0_526
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: entry_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_2_648
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: entry_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: entry_invariant_0_1
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_4_807
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_5_834
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_1
+Property: assert
+Result: ✅ pass
+
+Obligation: entry_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: entry_invariant_0_1
+Property: assert
+Result: ✅ pass
+
+Obligation: entry_invariant_0_2
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_7_990
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_1
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_2
+Property: assert
+Result: ✅ pass
+
+Obligation: entry_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: entry_invariant_0_1
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_1
+Property: assert
+Result: ✅ pass-/
+#guard_msgs in
+#eval Strata.Boole.verify "cvc5" grammarExtensions (options := .quiet)
 
 example : Strata.smtVCsCorrectBoole grammarExtensions := by
   gen_smt_vcs_boole

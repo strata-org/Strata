@@ -7,6 +7,7 @@ module
 
 public import Strata.Languages.Core.SMTEncoder
 public import Strata.Languages.Core.PipelinePhase
+import Strata.DL.SMT.IncrementalSolver
 import Strata.Transform.CallElim
 import Strata.Transform.FilterProcedures
 import Strata.Transform.PrecondElim
@@ -24,6 +25,7 @@ public import Strata.Languages.Core.Options
 public import Strata.Languages.Core.ProgramEval
 import Strata.Languages.Core.ProgramType
 import Strata.Util.Tactics
+import Strata.Pipeline.Context
 
 open Strata.Pipeline (PipelineContext)
 
@@ -90,18 +92,22 @@ decreasing_by
   all_goals simp_wf
   all_goals (try omega) <;> (have := List.sizeOf_lt_of_mem ‹_›; omega)
 
-private def encodeUF (solver : AbstractSolver τ σ m) (uf : UF) : AbstractEncoderM τ m String := do
+/-- Allocate a globally unique SMT-LIB identifier within the abstract encoder.
+    Mirrors `Encoder.uniquify` but operates on `AbstractEncoderState`. -/
+private def uniquify (baseName : String) : AbstractEncoderM τ m String := do
+  let id := Strata.Name.findUnique baseName 1 ((← get).base.usedNames.union smtReservedKeywordsSet)
+  modify fun st => { st with base.usedNames := st.base.usedNames.insert id }
+  return id
+
+def encodeUF (solver : AbstractSolver τ σ m) (uf : UF) : AbstractEncoderM τ m String := do
   if let .some enc := (← get).base.ufs.get? uf then return enc
-  let baseName := sanitizeSmtName uf.id
-  let existingNames := (← get).base.ufs.toList.map (·.2)
-  let usedNames := Std.HashSet.ofList (existingNames ++ smtReservedKeywords)
-  let id := Strata.Name.findUnique baseName 1 usedNames
+  let id ← uniquify (sanitizeSmtName uf.id)
   liftM (solver.comment uf.id)
   let argSorts ← uf.args.mapM (fun vt => liftM (termTypeToSort solver vt.ty))
   let outSort ← liftM (termTypeToSort solver uf.out)
   let handle ← liftM (solver.declareFun id argSorts outSort)
   modify fun st => { st with varHandles := st.varHandles.insert id handle }
-  modifyGet fun state => (id, { state with base := { state.base with ufs := state.base.ufs.insert uf id } })
+  modifyGet fun state => (id, { state with base.ufs := state.base.ufs.insert uf id })
 
 private def defineApp (solver : AbstractSolver τ σ m) (retSort : σ) (op : Op) (tEncs : List τ) : AbstractEncoderM τ m τ := do
   -- Pattern: `liftM` lifts solver calls from `m` into `StateT`.
@@ -227,9 +233,9 @@ decreasing_by
       · have := extractTriggers_sizeOf tr _ _ hmem ‹_ ∈ _›
         simp_all; omega
 
-private def encodeFunction (solver : AbstractSolver τ σ m) (uf : UF) (body : Term) : AbstractEncoderM τ m String := do
+def encodeFunction (solver : AbstractSolver τ σ m) (uf : UF) (body : Term) : AbstractEncoderM τ m String := do
   if let .some enc := (← get).base.ufs.get? uf then return enc
-  let id := ufId (← get).base.ufs.size
+  let id ← uniquify (ufId (← get).base.ufs.size)
   liftM (solver.comment uf.id)
   let argPairs ← uf.args.mapM fun vt => do
     let s ← liftM (termTypeToSort solver vt.ty)
@@ -237,7 +243,7 @@ private def encodeFunction (solver : AbstractSolver τ σ m) (uf : UF) (body : T
   let outSort ← liftM (termTypeToSort solver uf.out)
   let bodyEnc ← encodeTerm solver body
   liftM (solver.defineFun id argPairs outSort bodyEnc)
-  modifyGet fun state => (id, { state with base := { state.base with ufs := state.base.ufs.insert uf id } })
+  modifyGet fun state => (id, { state with base.ufs := state.base.ufs.insert uf id })
 
 end AbstractEncoder
 
@@ -303,7 +309,9 @@ def encodeDeclarationsAbstract [Monad m] [MonadExceptOf IO.Error m]
     if !ctx.seenDatatypes.contains s.name then
       let _ ← solver.declareSort s.name s.arity
   emitDatatypesAbstract solver ctx
-  let initState : AbstractEncoderState τ := { base := EncoderState.init }
+  -- Pre-populate usedNames with sort/datatype names already emitted to the solver
+  let preDeclaredNames := ctx.preDeclaredNames
+  let initState : AbstractEncoderState τ := { base := EncoderState.initWithNames preDeclaredNames }
   let varDefNames := varDefinitions.map (·.name)
   let varDeclNames := varDeclarations.map (·.name)
   let managedNames := varDefNames ++ varDeclNames
@@ -317,7 +325,9 @@ def encodeDeclarationsAbstract [Monad m] [MonadExceptOf IO.Error m]
     else
       let managedUfs := ctx.ufs.filter fun uf => managedNames.contains uf.id
       managedUfs.foldl (init := estate) fun estate uf =>
-        { estate with base := { estate.base with ufs := estate.base.ufs.insert uf uf.id } }
+        { estate with base := { estate.base with
+          ufs := estate.base.ufs.insert uf uf.id
+          usedNames := estate.base.usedNames.insert uf.id } }
   let (_ifs, estate) ← ctx.ifs.mapM (fun fn => AbstractEncoder.encodeFunction solver fn.uf fn.body) |>.run estate
   let (_axms, estate) ← ctx.axms.mapM (fun ax => AbstractEncoder.encodeTerm solver ax) |>.run estate
   for id in _axms do
@@ -364,10 +374,13 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
   let varDeclNames := varDeclarations.map (·.name)
   let managedNames := varDefNames ++ varDeclNames
 
+  -- Pre-populate usedNames with sort/datatype names already emitted to the solver
+  let preDeclaredNames := ctx.preDeclaredNames
+
   let estate ← phase "encodeUFs" do
     let ufsToDecl := if managedNames.isEmpty then ctx.ufs
       else ctx.ufs.filter fun uf => !managedNames.contains uf.id
-    let (_ufs, estate) ← ufsToDecl.mapM (fun uf => encodeUF uf) |>.run EncoderState.init
+    let (_ufs, estate) ← ufsToDecl.mapM (fun uf => encodeUF uf) |>.run (EncoderState.initWithNames preDeclaredNames)
     pure estate
 
   let estate ← phase "encodeFunctions" do
@@ -375,7 +388,9 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
       else
         let managedUfs := ctx.ufs.filter fun uf => managedNames.contains uf.id
         managedUfs.foldl (init := estate) fun estate uf =>
-          { estate with ufs := estate.ufs.insert uf uf.id }
+          { estate with
+            ufs := estate.ufs.insert uf uf.id
+            usedNames := estate.usedNames.insert uf.id }
     let (_ifs, estate) ← ctx.ifs.mapM (fun fn => encodeFunction fn.uf fn.body) |>.run estate
     pure estate
 
@@ -817,7 +832,7 @@ Unreachable covers display as ❌ (error) instead of ⛔ (warning).
   ✅     always true and is reachable                   sat      unsat    yes        pass       pass        pass                 Property always true, reachable from declaration entry
   ❌     always false and is reachable                  unsat    sat      yes        error      error       error                Property always false, reachable from declaration entry
   🔶     can be both true and false and is reachable    sat      sat      yes        error      note        error                Reachable, solver found models for both the property and its negation
-  ⛔     unreachable                                    unsat    unsat    no         warning    error       error                Dead code, path unreachable
+  ⛔     unreachable in this context                    unsat    unsat    no         warning    error       error                Dead code, unreachable in this context
   ➕     can be true and is reachable                   sat      unknown  yes        error      note        note                 Property can be true and is reachable, unknown if always true
   ✖️     always false if reached                        unsat    unknown  unknown    error      error       error                Property always false if reached, unknown if reachable
   ➖     can be false and is reachable                  unknown  sat      yes        error      note        error                Property can be false and is reachable, unknown if always false
@@ -973,7 +988,7 @@ def label (o : VCOutcome) (property : Imperative.PropertyType)
   -- Unreachable is detected when both checks ran (via fullCheck annotation or full level)
   if o.unreachable then
     unreachableMsg checkMode property.passWhenUnreachable
-      "pass (❗path unreachable)" "fail (❗path unreachable)"
+      "pass (❗unreachable in this context)" "fail (❗unreachable in this context)"
   -- Simplified labels for minimal check level
   else if checkLevel == .minimal then
     if property.passWhenUnreachable then
@@ -1919,14 +1934,14 @@ def toDiagnosticModel (vcr : Core.VCResult)
       if vcr.obligation.property == .cover then
         let description := vcr.obligation.metadata.getPropertySummary.getD "cover property"
         if outcome.isSatisfiable || outcome.passReachabilityUnknown then none
-        else if outcome.unreachable then some s!"{description} is unreachable"
+        else if outcome.unreachable then some s!"{description} is unreachable in this context"
         else if outcome.isPass then none
         else some s!"{description} is not satisfiable"
       else
         let phaseDescription := phases.findSome? (·.getAssertDescription vcr.obligation.label)
         let description := vcr.obligation.metadata.getPropertySummary.getD
           (phaseDescription.getD "assertion")
-        if outcome.unreachable then some s!"{description} holds vacuously (path unreachable)"
+        if outcome.unreachable then some s!"{description} holds vacuously (unreachable in this context)"
         else if outcome.isPass || outcome.isSatisfiable || outcome.passReachabilityUnknown then none
         else if outcome.alwaysFalseAndReachable || outcome.canBeTrueOrFalseAndIsReachable || outcome.canBeFalseAndIsReachable then
           some s!"{description} does not hold"

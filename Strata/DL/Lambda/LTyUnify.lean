@@ -134,13 +134,13 @@ theorem Subst.mem_freeVars_of_mem_freeVars_remove (S : Subst) (id : TyIdentifier
   simp_all [Subst.freeVars]
   obtain ⟨aty, h1, h2⟩ := h
   apply Exists.intro aty; simp_all
-  simp [@Maps.mem_values_of_mem_keys_remove _ _ _ _ S id aty h1]
+  simp [Maps.values_remove_subset S id aty h1]
 
 theorem SubstWF_of_remove (id : TyIdentifier) (h : SubstWF S) :
   SubstWF (Maps.remove S id) := by
   simp_all [SubstWF]
   intro xty h_xty_in_keys h_xty_in_fvs
-  have h_xty_in_s_keys := @Maps.mem_keys_of_mem_keys_remove _ _ _ _ S id xty h_xty_in_keys
+  have h_xty_in_s_keys := Maps.keys_remove_subset S id xty h_xty_in_keys
   have h_xty_not_in_fvs := @h xty h_xty_in_s_keys
   have := @Subst.mem_freeVars_of_mem_freeVars_remove xty S id h_xty_in_fvs
   contradiction
@@ -729,7 +729,11 @@ def LTy.subst (S : Subst) (ty : LTy) : LTy :=
     .forAll xs (LMonoTy.subst S' ty)
   where go xs S :=
   match xs with
-  | [] => S | x :: rest => go rest (S.erase x)
+  | [] => S | x :: rest => go rest (S.remove x)
+
+theorem LTy.subst_forAll_nil (S : Subst) (mty : LMonoTy) :
+    LTy.subst S (.forAll [] mty) = .forAll [] (LMonoTy.subst S mty) := by
+  simp [LTy.subst, LTy.subst.go]
 
 /--
 Open `ty` by instantiating the bound type variable `x` with `xty`.
@@ -1670,6 +1674,16 @@ theorem LMonoTy.subst_absorbs (S_outer S_inner : Subst) (mty : LMonoTy)
           rw [ih_cons a List.mem_cons_self,
               ih_rest (fun m hm => ih_cons m (List.mem_cons_of_mem a hm))]
 
+/-- If `S` absorbs `S_inner` and two types are equal under `S_inner`, they are
+    equal under `S`. -/
+theorem LMonoTy.subst_eq_of_absorbs (S S_inner : Subst) (ty1 ty2 : LMonoTy)
+    (h_abs : Subst.absorbs S S_inner)
+    (h_eq : LMonoTy.subst S_inner ty1 = LMonoTy.subst S_inner ty2) :
+    LMonoTy.subst S ty1 = LMonoTy.subst S ty2 := by
+  have h1 := (LMonoTy.subst_absorbs S S_inner ty1 h_abs).symm
+  have h2 := LMonoTy.subst_absorbs S S_inner ty2 h_abs
+  rw [h1, h_eq, h2]
+
 /-- Every well-formed substitution absorbs itself. -/
 theorem Subst.absorbs_refl (S : Subst) (h_wf : SubstWF S) :
     Subst.absorbs S S := by
@@ -2320,7 +2334,7 @@ theorem Constraints.unifyCore_sound (cs : Constraints) (S : SubstInfo)
             · right; right; exact h_s
 
 /-- Unification produces a substitution that absorbs the input substitution. -/
-theorem unify_absorbs (constraints : Constraints) (S_old S_new : SubstInfo)
+theorem Constraints.unify_absorbs (constraints : Constraints) (S_old S_new : SubstInfo)
     (h : Constraints.unify constraints S_old = .ok S_new) :
     Subst.absorbs S_new.subst S_old.subst := by
   simp only [Constraints.unify, bind, Except.bind] at h
@@ -2329,6 +2343,18 @@ theorem unify_absorbs (constraints : Constraints) (S_old S_new : SubstInfo)
   · rename_i relS h_core
     simp only [Except.ok.injEq] at h; subst h
     exact (Constraints.unifyCore_sound constraints S_old relS h_core).absorbs
+
+/-- Unification produces a substitution that makes every constraint pair equal. -/
+theorem Constraints.unify_sound (constraints : Constraints) (S_old S_new : SubstInfo)
+    (h : Constraints.unify constraints S_old = .ok S_new) :
+    ∀ p, p ∈ constraints →
+      LMonoTy.subst S_new.subst p.1 = LMonoTy.subst S_new.subst p.2 := by
+  simp only [Constraints.unify, bind, Except.bind] at h
+  split at h
+  · simp at h
+  · rename_i relS h_core
+    simp only [Except.ok.injEq] at h; subst h
+    exact (Constraints.unifyCore_sound constraints S_old relS h_core).sound
 
 ---------------------------------------------------------------------
 

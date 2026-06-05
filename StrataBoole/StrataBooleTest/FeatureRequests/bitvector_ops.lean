@@ -43,7 +43,27 @@ spec {
 };
 #end
 
-#guard_msgs (drop info) in
+/-- info:
+Obligation: clamp_seed_ensures_0_1145
+Property: assert
+Result: ✅ pass
+
+Obligation: clamp_seed_ensures_1_1187
+Property: assert
+Result: ✅ pass
+
+Obligation: clamp_seed_ensures_2_1251
+Property: assert
+Result: ✅ pass
+
+Obligation: clamp_seed_ensures_3_1298
+Property: assert
+Result: ✅ pass
+
+Obligation: clamp_seed_ensures_4_1345
+Property: assert
+Result: ✅ pass-/
+#guard_msgs in
 #eval Strata.Boole.verify "cvc5" bitvectorOpsSeed (options := .quiet)
 
 example : Strata.smtVCsCorrectBoole bitvectorOpsSeed := by
@@ -78,7 +98,39 @@ spec {
 };
 #end
 
-#guard_msgs (drop info) in
+/-- info:
+Obligation: bv_shift_xor_ensures_0_2339
+Property: assert
+Result: ✅ pass
+
+Obligation: bv_shift_xor_ensures_1_2362
+Property: assert
+Result: ✅ pass
+
+Obligation: bv_shift_xor_ensures_2_2388
+Property: assert
+Result: ✅ pass
+
+Obligation: bv_shift_xor_ensures_3_2422
+Property: assert
+Result: ✅ pass
+
+Obligation: bv_shift_xor_ensures_4_2497
+Property: assert
+Result: ✅ pass
+
+Obligation: bv_shift_xor_ensures_5_2560
+Property: assert
+Result: ✅ pass
+
+Obligation: bv_shift_xor_ensures_6_2638
+Property: assert
+Result: ✅ pass
+
+Obligation: bv_shift_xor_ensures_7_2731
+Property: assert
+Result: ✅ pass-/
+#guard_msgs in
 #eval Strata.Boole.verify "cvc5" bitvectorShiftXorSeed (options := .quiet)
 
 example : Strata.smtVCsCorrectBoole bitvectorShiftXorSeed := by
@@ -104,9 +156,75 @@ spec {
 };
 #end
 
-#guard_msgs (drop info) in
+/-- info:
+Obligation: bv_sshr_ensures_0_3965
+Property: assert
+Result: ✅ pass
+
+Obligation: bv_sshr_ensures_1_4059
+Property: assert
+Result: ✅ pass
+
+Obligation: bv_sshr_ensures_2_4171
+Property: assert
+Result: ✅ pass-/
+#guard_msgs in
 #eval Strata.Boole.verify "cvc5" bitvectorSShrSeed (options := .quiet)
 
 example : Strata.smtVCsCorrectBoole bitvectorSShrSeed := by
+  gen_smt_vcs_boole
+  all_goals (first | grind | decide)
+
+-- Exercises signed bitvector comparisons (<s, <=s, >s, >=s).
+-- In bv8 signed interpretation: 0xFF = -1, 0x7F = 127.
+private def bitvectorSignedCmpSeed : StrataDDM.Program :=
+#strata
+program Boole;
+
+procedure bv_signed_cmp(a: bv8, b: bv8) returns ()
+spec {
+  ensures bv{8}(255) <s  bv{8}(0);
+  ensures bv{8}(127) >s  bv{8}(0);
+  ensures bv{8}(255) <=s bv{8}(0);
+  ensures bv{8}(127) >=s bv{8}(0);
+  ensures bv{8}(0)   <=s bv{8}(0);
+  ensures bv{8}(0)   >=s bv{8}(0);
+  ensures bv{8}(255) <s  bv{8}(1);
+}
+{ };
+#end
+
+/-- info:
+Obligation: bv_signed_cmp_ensures_0_4954
+Property: assert
+Result: ✅ pass
+
+Obligation: bv_signed_cmp_ensures_1_4989
+Property: assert
+Result: ✅ pass
+
+Obligation: bv_signed_cmp_ensures_2_5024
+Property: assert
+Result: ✅ pass
+
+Obligation: bv_signed_cmp_ensures_3_5059
+Property: assert
+Result: ✅ pass
+
+Obligation: bv_signed_cmp_ensures_4_5094
+Property: assert
+Result: ✅ pass
+
+Obligation: bv_signed_cmp_ensures_5_5129
+Property: assert
+Result: ✅ pass
+
+Obligation: bv_signed_cmp_ensures_6_5164
+Property: assert
+Result: ✅ pass-/
+#guard_msgs in
+#eval Strata.Boole.verify "cvc5" bitvectorSignedCmpSeed (options := .quiet)
+
+example : Strata.smtVCsCorrectBoole bitvectorSignedCmpSeed := by
   gen_smt_vcs_boole
   all_goals (first | grind | decide)

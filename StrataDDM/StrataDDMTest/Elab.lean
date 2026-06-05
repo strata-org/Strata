@@ -114,6 +114,20 @@ eval ((fun (x : bool) => x)) : int;
 eval ((fun (x : bool) => x)) : bool -> bool;
 #end
 
+-- Test that parseStrataProgramFromDialect error message interpolates the dialect name.
+/--
+error: Internal NonExistentDialect missing from loaded dialects.
+-/
+#guard_msgs in
+#eval do
+  let dialects := StrataDDM.Elab.LoadedDialects.ofDialects! #[StrataDDM.initDialect]
+  let input : Lean.Parser.InputContext := {
+    inputString := ""
+    fileName := "<test>"
+    fileMap := .ofString ""
+  }
+  let _ ← StrataDDM.Elab.parseStrataProgramFromDialect dialects "NonExistentDialect" input
+
 -- Test escaping in string literals.
 
 /--

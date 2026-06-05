@@ -5,6 +5,7 @@
 -/
 module
 public import Strata.Pipeline.Messages
+import Lean.Data.Json.Printer
 import all StrataDDM.Util.String
 open StrataDDM
 

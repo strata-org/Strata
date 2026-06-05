@@ -48,6 +48,8 @@ jobs:
           path: |
             .lake
             StrataCLI/.lake
+            StrataDDM/.lake
+            StrataBoole/.lake
             StrataPython/.lake
       - name: Download ion-java jar for Java codegen test
         run: wget -q -O StrataTestExtra/Languages/Java/testdata/ion-java-1.11.11.jar https://github.com/amazon-ion/ion-java/releases/download/v1.11.11/ion-java-1.11.11.jar
@@ -86,6 +88,8 @@ jobs:
           path: |
             .lake
             StrataCLI/.lake
+            StrataDDM/.lake
+            StrataBoole/.lake
             StrataPython/.lake
       - name: Verify Java testdata is up to date
         run: |
@@ -152,6 +156,8 @@ jobs:
         path: |
           .lake
           StrataCLI/.lake
+          StrataDDM/.lake
+          StrataBoole/.lake
           StrataPython/.lake
         fail-on-cache-miss: "true"
         use-restore-keys: "false"
@@ -184,17 +190,18 @@ jobs:
         with:
           fetch-depth: 0
       - name: Check copyright headers
-        uses: ./.github/actions/check-copyright-headers
+        run: python3 .github/scripts/check_copyright_headers.py .
+        shell: bash
       - name: Check for trailing whitespace
-        uses: ./.github/actions/lint-whitespace
+        run: .github/scripts/lintWhitespace.sh
       - name: Check for import Lean
-        uses: ./.github/actions/check-lean-import
-      - name: Check Lean version consistency
+        run: .github/scripts/checkLeanImport.sh
+      - name: Check Lean version consistncy
         run: .github/scripts/check_lean_consistency.sh
       - name: Check for new panic! usage
-        uses: ./.github/actions/check-no-panic
-        with:
-          base-ref: "origin/${{ github.base_ref || 'main' }}"
+        run: .github/scripts/checkNoPanic.sh "origin/${{ github.base_ref || 'main' }}"
+      - name: Check for missing string interpolation prefix
+        run: .github/scripts/checkMissingInterpolation.sh
 
   build_doc:
     name: Build documentation
@@ -265,6 +272,8 @@ jobs:
         path: |
           .lake
           StrataCLI/.lake
+          StrataDDM/.lake
+          StrataBoole/.lake
           StrataPython/.lake
         fail-on-cache-miss: "true"
         use-restore-keys: "false"

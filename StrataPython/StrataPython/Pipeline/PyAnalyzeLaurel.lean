@@ -12,7 +12,8 @@ import StrataPython.PyFactory
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 import Strata.SimpleAPI
 import Strata.Languages.Core.DDMTransform.ASTtoCST
-import Strata.Pipeline.Diagnostic
+public import Strata.Pipeline.Diagnostic
+public import Strata.Util.Statistics
 
 open Strata.Pipeline
 
