@@ -8,7 +8,7 @@ module
 meta import Strata.DL.Lambda.LExprEval
 meta import Strata.DL.Lambda.IntBoolFactory
 meta import Strata.DL.Lambda.TypeFactory
-meta import Strata.DL.Lambda.Lambda
+meta import Strata.DL.Lambda
 
 /-!
 ## Tests for `eql`
