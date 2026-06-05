@@ -94,9 +94,6 @@ jobs:
       - name: Build and run strata verify
         run: lake exe strata verify ../Examples/SimpleProc.core.st
         working-directory: StrataCLI
-      - name: Build StrataBoole
-        run: lake build StrataBoole StrataBooleTest
-        working-directory: StrataBoole
       - name: Build BoogieToStrata
         run: dotnet build -warnaserror ${SOLUTION}
       - name: Test BoogieToStrata

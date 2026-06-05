@@ -503,7 +503,7 @@ def verifyCommand (mkDischarge : Core.MkDischargeFn := Core.mkDischargeFn) : Com
         else if pgm.dialect == "Boole" then
           -- TODO: this will be restored once StrataMainLib is in a separate
           -- package that can depend on the StrataBoole package.
-          throw <| IO.Error.userError "Boole dialect support requires the StrataBoole package"
+          throw <| IO.Error.userError "Boole dialect support requires the StrataBoole package (https://github.com/strata-org/Strata-Boole)"
         else
           Strata.Core.verify pgm inputCtx proceduresToVerify opts (mkDischarge := mkDischarge)
       catch e =>
