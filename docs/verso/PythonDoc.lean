@@ -116,7 +116,8 @@ The annotation on each node tells Translation exactly what to do:
 - Function call → `.funcCall sig` (sig carries everything needed for emission)
 - Class instantiation → `.classNew className initSig`
 - Method call → `.funcCall sig` (sig has `className = some _` for qualification)
-- Attribute access → `.attribute name` (bare field name; Elaboration resolves later)
+- Attribute access on a value → `.attribute name` (bare field name; Elaboration
+  resolves later). On a module/unresolved object → `.unresolved` (→ hole).
 - Operators → `.funcCall sig` (operators are runtime procedures with correct arity)
 - Unresolvable → `.unresolved` (Translation emits Hole)
 - Non-reference → `.irrelevant`
@@ -421,17 +422,25 @@ interpreting return types, but are not yet implemented.
 
 ## Attribute Resolution
 
-Every `.Attribute` node gets `.attribute name` where `name` is the bare
-Python field name. Resolution does NOT resolve which class the field belongs
-to — that requires knowing the receiver's type at use-site, which is
-Elaboration's job. Elaboration synthesizes the receiver type and branches:
+An `.Attribute` whose object is a VALUE (a bound variable / instance) gets
+`.attribute name`, where `name` is the bare Python field name. Resolution does
+NOT resolve which class the field belongs to — that requires knowing the
+receiver's type at use-site, which is Elaboration's job. Elaboration synthesizes
+the receiver type and branches:
 
 - Composite receiver: look up the field in the class, emit `readField`
 - Any receiver: produce Any (field access on Any is unknowable)
 
+An attribute access whose object is NOT a value has no receiver type, so it is
+not a field access. If the object resolved to `.irrelevant` (a module, e.g. `sys`
+in `sys.argv`) or `.unresolved`, the whole `.Attribute` resolves to `.unresolved`
+(→ hole in Translation). `sys.argv` is a module member, not a field of a value;
+emitting `FieldSelect` on a non-value would hand the elaborator a `FieldSelect`
+whose object is a hole, which it cannot type — a saturation violation.
+
 When the Attribute is the callee of a Call (`obj.method()`), the Call
 node's annotation carries `.funcCall sig` with the resolved method — the
-Attribute's own `.attribute` annotation is irrelevant.
+Attribute's own annotation is irrelevant.
 
 ## The Entry Point
 
@@ -561,7 +570,9 @@ tag := "coverage"
 - Context managers (with/as -> resolved enter/exit calls)
 - List/dict/tuple literals (-> `ListAny_cons`/`DictStrAny_cons` encoding)
 - F-strings (-> `to_string_any`)
-- Subscript read/write (-> `Any_get`/`Any_sets`)
+- Subscript read/write (-> `Any_get`/`Any_sets`). A subscript target is not an
+  lvalue identifier, so a subscript assignment — including augmented
+  (`a[i] op= v`) — writes back through `Any_sets`, never `Assign [Any_get ...]`.
 - Slice notation (-> `from_Slice`)
 - Module imports (-> qualified name resolution)
 - Class instantiation (-> New + init call)
@@ -804,6 +815,16 @@ infer grades for each procedure.
 
 Runtime procedure grades are not inferred — they're read from the signature
 by `gradeFromSignature` (does it have a Heap input? An Error output?).
+
+_Fail-fast contract._ Elaboration receives well-scoped Laurel by construction
+(Resolution saturates; Translation holes whatever it cannot bind), so every
+procedure is expected to elaborate. If one nonetheless cannot — the elaborator
+genuinely cannot produce Laurel that Core can consume — that is a hard error, not
+a recoverable condition. The pipeline collects the names of all such procedures
+and fails the whole run with a structured error listing them; it never emits a
+procedure unchanged and never lets un-elaborated Laurel (with holes) reach Core.
+A failure here means an upstream saturation gap to fix, located to a named
+procedure — not a silent downstream "holes should have been eliminated" in Core.
 
 ### Procedure bodies are commands (checked at `TVoid`)
 

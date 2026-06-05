@@ -518,7 +518,7 @@ public def pyAnalyzeLaurelV2
     | .error e => throw (.internal s!"Elaboration failed: {e}")
     | .ok (prog, failures) =>
       unless failures.isEmpty do
-        (IO.eprintln s!"[elab] failed to elaborate: {failures}" : IO Unit).toEIO (fun _ => .internal "")
+        throw (.internal s!"Elaboration failed for: {String.intercalate ", " failures}")
       pure prog
 
   -- Step 6: Filter prelude (remove unused procedures that would cause type errors in Core)

@@ -367,24 +367,7 @@ partial def translateStmt (s : Python.stmt ResolvedAnn) : TransM Unit := do
           tell [tmpDecl]
           unpackTargets sr elts.val.toList tmpRef
       | .Subscript .. => do
-          let (root, indices) ← collectSubscriptChain target
-          let rootExpr ← translateExpr root
-          let idxList ← indices.foldrM (fun idx acc => do
-            let idxExpr ← match idx with
-              | .Slice _ start stop _ => do
-                let s' ← match start.val with
-                  | some e => mkExpr sr (.StaticCall rtAnyAsInt [← translateExpr e])
-                  | none => mkExpr sr (.LiteralInt 0)
-                let e' ← match stop.val with
-                  | some e => mkExpr sr (.StaticCall rtOptSome [← mkExpr sr (.StaticCall rtAnyAsInt [← translateExpr e])])
-                  | none => mkExpr sr (.StaticCall rtOptNone [])
-                mkExpr sr (.StaticCall rtFromSlice [s', e'])
-              | _ => translateExpr idx
-            mkExpr sr (.StaticCall rtListAnyCons [idxExpr, acc])
-          ) (← mkExpr sr (.StaticCall rtListAnyNil []))
-          let rhs ← translateExpr value
-          let setsCall ← mkExpr sr (.StaticCall rtAnySets [idxList, rootExpr, rhs])
-          tell [← mkExpr sr (.Assign [rootExpr] setsCall)]
+          subscriptWriteBack sr target (← translateExpr value)
       | _ => translateAssign sr target value
 
   | .AnnAssign _ target _ value _ => do
@@ -395,7 +378,10 @@ partial def translateStmt (s : Python.stmt ResolvedAnn) : TransM Unit := do
   | .AugAssign ann target _ value => match ann.info with
     | .funcCall sig => do
         let t ← translateExpr target; let v ← translateExpr value
-        tell [← mkExpr sr (.Assign [t] (← mkExpr sr (.StaticCall sig.laurelName (← sig.matchArgs [t, v] [] translateExpr))))]
+        let newVal ← mkExpr sr (.StaticCall sig.laurelName (← sig.matchArgs [t, v] [] translateExpr))
+        match target with
+        | .Subscript .. => subscriptWriteBack sr target newVal
+        | _ => tell [← mkExpr sr (.Assign [t] newVal)]
     | _ => tell [← mkExpr sr .Hole]
 
   | .If _ test body orelse => do
@@ -527,6 +513,29 @@ partial def collectSubscriptChain (expr : Python.expr ResolvedAnn) : TransM (Pyt
     let (root, innerIndices) ← collectSubscriptChain container
     pure (root, innerIndices ++ [slice])
   | other => pure (other, [])
+
+/-- Write `rhs` back into the subscript target `a[i]...[j]` via `Any_sets`, then
+    assign the updated container to its root. Used by both plain and augmented
+    subscript assignment — a subscript is not an lvalue identifier. -/
+partial def subscriptWriteBack (sr : SourceRange) (target : Python.expr ResolvedAnn)
+    (rhs : StmtExprMd) : TransM Unit := do
+  let (root, indices) ← collectSubscriptChain target
+  let rootExpr ← translateExpr root
+  let idxList ← indices.foldrM (fun idx acc => do
+    let idxExpr ← match idx with
+      | .Slice _ start stop _ => do
+        let s' ← match start.val with
+          | some e => mkExpr sr (.StaticCall rtAnyAsInt [← translateExpr e])
+          | none => mkExpr sr (.LiteralInt 0)
+        let e' ← match stop.val with
+          | some e => mkExpr sr (.StaticCall rtOptSome [← mkExpr sr (.StaticCall rtAnyAsInt [← translateExpr e])])
+          | none => mkExpr sr (.StaticCall rtOptNone [])
+        mkExpr sr (.StaticCall rtFromSlice [s', e'])
+      | _ => translateExpr idx
+    mkExpr sr (.StaticCall rtListAnyCons [idxExpr, acc])
+  ) (← mkExpr sr (.StaticCall rtListAnyNil []))
+  let setsCall ← mkExpr sr (.StaticCall rtAnySets [idxList, rootExpr, rhs])
+  tell [← mkExpr sr (.Assign [rootExpr] setsCall)]
 
 partial def translateTryExcept (sr : SourceRange)
     (body : Ann (Array (Python.stmt ResolvedAnn)) ResolvedAnn)

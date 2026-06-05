@@ -1042,7 +1042,13 @@ partial def resolveExpr (ctx : Ctx) (f : SourceRange → ResolvedAnn) (e : Pytho
       return .Call { sr := a, info := callInfo } rFunc ⟨f args.ann, rArgs⟩ ⟨f kwargs.ann, rKwargs⟩
   | .Attribute a obj attr ectx =>
       let rObj ← resolveExpr ctx f obj
-      return .Attribute { sr := a, info := .attribute (PythonIdentifier.fromAst attr) } rObj (mapAnnVal f attr) (resolveExprCtx f ectx)
+      -- A field access requires a value receiver. If the object is a module
+      -- (.irrelevant) or unresolved, the attribute is not a field of a value
+      -- (e.g. `sys.argv` is a module member); it resolves to .unresolved (→ hole).
+      let info := match rObj.ann.info with
+        | .irrelevant | .unresolved => .unresolved
+        | _ => .attribute (PythonIdentifier.fromAst attr)
+      return .Attribute { sr := a, info } rObj (mapAnnVal f attr) (resolveExprCtx f ectx)
   | .Constant a c tc => return .Constant (f a) (resolveConstant f c) (mapAnnOpt f (mapAnnVal f) tc)
   | .BinOp a left op right =>
       let opSig : FuncSig := { name := .builtin (operatorToLaurel op), className := none, params := .static {required := [(.builtin "left", anyType), (.builtin "right", anyType)], optional := [], kwonly := []}, returnType := anyType, locals := [] }
