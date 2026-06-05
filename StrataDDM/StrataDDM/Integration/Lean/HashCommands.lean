@@ -186,21 +186,23 @@ meta def strataProgramImpl : TermElab := fun stx tp => do
 
 syntax (name := loadDialectCommand) "#load_dialect" str : command
 
-/-- Derive the package source root from a module's file path and name by
-stripping one directory component per name part. For example, given
-`/repo/Strata/Languages/Foo.lean` and module name `Strata.Languages.Foo`,
-returns `/repo`. -/
-def getModuleRoot (path : FilePath) (modName : Name) : Except String FilePath := do
-  let depth := modName.getNumParts
+/-- Find the package root by walking up from `path`'s directory until a
+directory containing `lean-toolchain` is found. This file marks the root
+of a Lake package and gives a stable answer independent of how the build
+tool launches `lean` (e.g. `lake` vs. the VSCode language server, which
+may use different working directories). -/
+partial def findPackageRoot (path : FilePath) : IO FilePath := do
   let some dir := path.parent
-    | throw s!"cannot get parent of file path '{path}'"
-  let mut dir := dir
-  for _ in List.range (depth - 1) do
+    | throw <| IO.userError s!"cannot get parent of file path '{path}'"
+  go dir
+where
+  go (dir : FilePath) : IO FilePath := do
+    if ← (dir / "lean-toolchain").pathExists then
+      return dir
     let some parent := dir.parent
-      | throw s!"cannot resolve package root from '{path}' \
-          with module '{modName}' (ran out of parent directories)"
-    dir := parent
-  pure dir
+      | throw <| IO.userError s!"cannot resolve package root from '{path}' \
+          (no lean-toolchain found in any parent directory)"
+    go parent
 
 /-- Resolve a relative path against the current package's source root.
 Absolute paths are returned unchanged. -/
@@ -210,10 +212,8 @@ private def resolveLeanRelPath (path : FilePath) : CommandElabM FilePath := do
   let mut currentFileName : FilePath := (← read).fileName
   if currentFileName.isRelative then
     currentFileName := (← IO.currentDir) / currentFileName
-  let modName := (← getEnv).mainModule
-  match getModuleRoot currentFileName modName with
-  | .ok dir => pure <| dir / path
-  | .error msg => throwError msg
+  let dir ← findPackageRoot currentFileName
+  pure <| dir / path
 
 @[command_elab loadDialectCommand]
 def loadDialectImpl : CommandElab := fun (stx : Syntax) => do
