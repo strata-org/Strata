@@ -177,7 +177,11 @@ theorem Cmd.typeCheck_annotated_sound (C : LContext CoreLParams) (Env : TEnv Uni
                   have h_resolve_eq := CmdType.inferType_decompose C v1.snd
                     (Cmd.init x xty (.det heq_det) md) heq_det v2.1 v2.2.fst v2.2.snd h_infer
                   obtain ⟨ea, h_resolve, h_v2_eq, _⟩ := h_resolve_eq
+                  have h_ws_pre : WellScoped heq_det v1.snd.context :=
+                    CmdType.inferType_fvars_in_knownVars C v1.snd
+                      (Cmd.init x xty (.det heq_det) md) heq_det v2.1 v2.2.fst v2.2.snd h_infer
                   have h_eqmod := resolve_eqModuloAnnotations heq_det ea C v1.snd v2.2.snd h_resolve
+                    h_wf_pre (h_ctx_pre ▸ h_ne) h_resolved_pre h_fwf h_ws_pre
                   have h_vars_eq : LExpr.getVars v2.1 = LExpr.getVars heq_det := by
                     rw [h_v2_eq]
                     exact eqModuloAnnotations_getVars h_eqmod

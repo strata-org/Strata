@@ -10,6 +10,8 @@ import all Strata.DL.Lambda.LExprWF
 import all Strata.DL.Lambda.LExpr
 import all Strata.DL.Lambda.LTy
 import all Strata.DL.Lambda.LTyUnify
+public import Strata.DL.Lambda.LTyUnifyProps
+import all Strata.DL.Lambda.LTyUnifyProps
 import all Strata.DL.Util.Map
 import all Strata.DL.Util.Maps
 import all Strata.DL.Lambda.Identifiers
@@ -323,7 +325,8 @@ theorem applySubstT_toLMonoTy {T : LExprParamsT}
 
 The proof is structured in three layers:
 
-1. **`resolveAux_HasType`**: The induction core, proved by induction on `e`.
+1. **`resolveAux_HasType`**: The induction core, proved via the `resolveAux`
+  induction principle.
    States that if `resolveAux C Env e = .ok (et, Env')`, then:
    - `Env'.context = Env.context` (context is preserved), and
    - for any substitution `S` that absorbs `Env'.stateSubstInfo.subst`,
