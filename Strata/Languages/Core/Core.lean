@@ -142,6 +142,34 @@ where
     | .loop _ _ _ body _ => body.flatMap collectFuncDecls
     | _ => []
 
+/-- Combine per-obligation statement blocks into a single body using a
+    balanced binary tree of `ite .nondet` nodes.
+
+    Each obligation's block (assumes ++ [assert]) is wrapped in its own
+    arm of an `ite .nondet`, which is essential for soundness:
+    `ObligationExtraction.extractGo` resets the path-condition to the
+    parent's value when entering each arm, so siblings cannot leak
+    assumes into each other's path conditions.
+
+    A balanced tree gives `O(log n)` AST depth instead of `O(n)`,
+    avoiding stack overflow on programs with many obligations. -/
+def balancedNondetIte (blocks : List (List Statement)) : List Statement :=
+  match blocks with
+  | [] => []
+  | [b] => b
+  | b₀ :: b₁ :: rest =>
+    let bs := b₀ :: b₁ :: rest
+    let n := bs.length
+    let mid := n / 2
+    let l := bs.take mid
+    let r := bs.drop mid
+    [Imperative.Stmt.ite .nondet (balancedNondetIte l) (balancedNondetIte r) .empty]
+  termination_by blocks.length
+  decreasing_by
+    all_goals
+      simp_wf
+      first | (simp [List.length_take, List.length_drop]; omega) | omega
+
 /-- Proof obligation program construction: Program → Program.
     Runs symbolic execution and converts obligations to a program
     suitable for downstream phases (ANF encoding, SMT encoding). -/
@@ -181,11 +209,7 @@ def toCoreProofObligationProgram (options : VerifyOptions) (program : Program)
       then Imperative.Cmd.cover ob.label ob.obligation ob.metadata
       else Imperative.Cmd.assert ob.label ob.obligation ob.metadata))
     assumes ++ [assertStmt]
-  let body := match blocks with
-    | [] => []
-    | [b] => b
-    | b :: rest => rest.foldl (fun acc block =>
-        [Imperative.Stmt.ite .nondet acc block .empty]) b
+  let body := balancedNondetIte blocks
   let oblProcs := match procName with
     | some name => [Decl.proc {
         header := { name := name, typeArgs := [], inputs := [], outputs := [] },
