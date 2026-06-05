@@ -996,10 +996,10 @@ partial def resolveExpr (ctx : Ctx) (f : SourceRange → ResolvedAnn) (e : Pytho
   | .Name a n ectx =>
       let nId := PythonIdentifier.fromAst n
       let info := match ctx[nId]? with
-        | some (.function _) => .variable nId
-        | some (.overloadedFunction _) => .variable nId
-        | some (.class_ cId _ _ _) => .variable cId
         | some (.variable _) => .variable nId
+        | some (.function _) => .unresolved
+        | some (.overloadedFunction _) => .unresolved
+        | some (.class_ _ _ _ _) => .unresolved
         | some (.module_ _) => .irrelevant
         | some .unresolved => .unresolved
         | none => .unresolved

@@ -111,7 +111,8 @@ program.
 
 The annotation on each node tells Translation exactly what to do:
 
-- Name use → `.variable name`
+- Name use of a bound local/param → `.variable name` (Translation emits a bare
+  identifier). `.variable` means a BOUND variable and nothing else.
 - Function call → `.funcCall sig` (sig carries everything needed for emission)
 - Class instantiation → `.classNew className initSig`
 - Method call → `.funcCall sig` (sig has `className = some _` for qualification)
@@ -119,6 +120,17 @@ The annotation on each node tells Translation exactly what to do:
 - Operators → `.funcCall sig` (operators are runtime procedures with correct arity)
 - Unresolvable → `.unresolved` (Translation emits Hole)
 - Non-reference → `.irrelevant`
+
+A function, overloaded function, or class name used in VALUE position (not as a
+call callee) — e.g. `str` in `isinstance(x, str)`, or `MyClass` assigned to a
+variable — resolves to `.unresolved`, not `.variable`. Laurel has no first-class
+function or class values, so there is no bound identifier to emit; Translation
+turns it into a hole. This is the saturation invariant: every name the elaborator
+sees is either a bound `.variable` or has been turned into a hole upstream. The
+elaborator, by definition, operates on well-scoped Laurel and never receives a
+name it cannot bind. (Call sites are unaffected: a call computes its own
+`.funcCall`/`.classNew` from the callee, independent of the callee name's
+value-position annotation.)
 
 {docstring Strata.Python.Resolution.NodeInfo}
 
@@ -562,6 +574,13 @@ that can take any value, so verification remains sound but cannot prove
 properties that depend on the precise semantics.
 
 - Unresolved names (not in context)
+- Function/overloaded/class names used as values (no first-class function/class
+  values in Laurel — e.g. the type argument `str` in `isinstance(x, str)`)
+- Unmodeled standard-library and third-party names — no spec exists, so each
+  resolves to a sound hole, never an internal error: `defaultdict` (collections),
+  `DictWriter` (csv), `ArgumentParser`/`Namespace` (argparse), `Logger`/
+  `getLogger` (logging), `bytes`, `sys.argv`, and boto3 service classes the stubs
+  do not cover (e.g. `KMS`). Modeling any of these is future work, not a bug.
 - Lambda expressions
 - List/set/dict comprehensions
 - Generator expressions
