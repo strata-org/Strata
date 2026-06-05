@@ -1333,6 +1333,37 @@ partial def resolveMethodCall (ctx : Ctx) (receiver : PythonExpr) (methodName : 
           pure (.funcCall sig)
         | none => pure .unresolved
     | _ => pure .unresolved
+  | some (.Attribute _ (.Name _ modName _) clsName _) =>
+    -- Qualified class type (e.g. boto3.S3): chase module → class, resolve method on demand
+    let modId := PythonIdentifier.fromAst modName
+    let baseDir ← read
+    -- Load the submodule `mod/cls` (e.g. boto3/S3) to find the class.
+    let (subCtx, _) ← resolveModuleComponent clsName.val (baseDir / modName.val) f
+    match subCtx[PythonIdentifier.fromAst clsName]? with
+    | some (.class_ classId fields methods methodAsts) =>
+      match methods.find? (fun (mName, _) => mName == methId) with
+      | some (_, sig) => pure (.funcCall sig)
+      | none => match methodAsts.find? (fun (mName, _) => mName == methId) with
+        | some (_, mAst) => do
+          let sig ← resolveMethodAstSig subCtx f classId fields mAst
+          pure (.funcCall sig)
+        | none => pure .unresolved
+    | _ =>
+      -- Fall back: maybe the name is a class directly in the parent module's ctx
+      match ctx[modId]? with
+      | some (.module_ moduleRaw) =>
+        let moduleCtx : Ctx := moduleRaw.fold (fun c k v => c.insert k v) {}
+        match moduleCtx[PythonIdentifier.fromAst clsName]? with
+        | some (.class_ classId fields methods methodAsts) =>
+          match methods.find? (fun (mName, _) => mName == methId) with
+          | some (_, sig) => pure (.funcCall sig)
+          | none => match methodAsts.find? (fun (mName, _) => mName == methId) with
+            | some (_, mAst) => do
+              let sig ← resolveMethodAstSig moduleCtx f classId fields mAst
+              pure (.funcCall sig)
+            | none => pure .unresolved
+        | _ => pure .unresolved
+      | _ => pure .unresolved
   | _ => match receiver with
     | .Name _ rName _ =>
       let rId := PythonIdentifier.fromAst rName
@@ -1564,12 +1595,18 @@ partial def resolveStmt (ctx : Ctx) (f : SourceRange → ResolvedAnn) (s : Pytho
       return (ctx', .Assign (f a) ⟨f targets.ann, rTargets⟩ rValue (mapAnnOpt f (mapAnnVal f) tc))
   | .AnnAssign a target ann value simple => do
       let newNames := collectNamesFromTarget target
-      let ctx' := newNames.foldl (fun c n => c.insert n (CtxEntry.variable ann)) ctx
       let rTarget ← resolveExpr ctx f target
       let rAnn ← resolveExpr ctx f ann
       let rValue ← match value.val with
         | some v => pure (some (← resolveExpr ctx f v))
         | none => pure none
+      -- Prefer the RHS call's resolved return type (e.g. boto3.S3) over the bare
+      -- written annotation (e.g. S3), so method calls on the variable resolve
+      -- through the module and demand the class.
+      let varTy : PythonType := match rValue with
+        | some (.Call { info := .funcCall sig, .. } ..) => sig.returnType
+        | _ => ann
+      let ctx' := newNames.foldl (fun c n => c.insert n (CtxEntry.variable varTy)) ctx
       return (ctx', .AnnAssign (f a) rTarget rAnn ⟨f value.ann, rValue⟩ (resolveInt f simple))
   | .AugAssign a target op value => do
       let opSig : FuncSig := { name := .builtin (operatorToLaurel op), className := none, params := .static {required := [(.builtin "left", anyType), (.builtin "right", anyType)], optional := [], kwonly := []}, returnType := anyType, locals := [] }
