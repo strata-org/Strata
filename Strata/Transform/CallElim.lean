@@ -168,7 +168,11 @@ def callElimPipelinePhase : PipelinePhase where
   phase.name := "CallElim"
   phase.getValidation obligation :=
     if obligationHasLabelPrefix obligation CallElim.callElimAssumePrefix then
-      .modelToValidate (fun _ => /- TODO -/ false)
+      -- Call elimination replaces a callee body with its contract, which is
+      -- an over-approximation; the validation hook is intentionally
+      -- conservative (returns `false`) until a per-obligation proof witness
+      -- is available.
+      .modelToValidate (fun _ => false)
     else .modelPreserving
   phase.getAssertDescription label :=
     if label.startsWith CallElim.callElimAssertPrefix then

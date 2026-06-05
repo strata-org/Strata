@@ -139,7 +139,7 @@ theorem H_init
   exact singleCmdToStmts Hcmd
 
 /-- If `k ∉ ks`, then `ReadValues σ ks vs` is preserved when extending σ
-    with an unrelated key.  Re-derived from the legacy `ReadValuesUpdatedState`. -/
+    with an unrelated key. -/
 theorem readValues_updatedState
     {σ : CoreStore} {k : Expression.Ident} {v : Expression.Expr}
     {ks : List Expression.Ident} {vs : List Expression.Expr}
@@ -280,8 +280,7 @@ theorem H_initVars
     exact Hcombined
 
 /-- If `k` is not in the free variables of `e`, evaluating `e` is unchanged
-    when σ is extended with `k ↦ v`.  Re-derived from the legacy
-    `EvalExpressionUpdatedState` for the small-step proof. -/
+    when σ is extended with `k ↦ v`. -/
 theorem evalExpression_updatedState
     {δ : CoreEval} {σ : CoreStore}
     {k : Expression.Ident} {v : Expression.Expr}
@@ -610,14 +609,6 @@ theorem genArgExprIdents_length'
   rw [genArgExprIdent_len']
   simp
 
-theorem genArgExprIdents_length
-    {n : Nat} {s s' : CoreGenState} {ls : List Expression.Ident}
-    (Hgen : Core.Transform.genArgExprIdents n s = (ls, s')) :
-    ls.length = n := by
-  have := genArgExprIdents_length' n s
-  rw [Hgen] at this
-  exact this
-
 theorem genOutExprIdent_len'
     {t : List Expression.Ident} {s : CoreGenState} :
     (List.mapM Core.Transform.genOutExprIdent t s).fst.length = t.length :=
@@ -628,15 +619,6 @@ theorem genOutExprIdents_length'
     (Core.Transform.genOutExprIdents idents s).fst.length = idents.length := by
   simp only [Core.Transform.genOutExprIdents]
   exact genOutExprIdent_len'
-
-theorem genOutExprIdents_length
-    {idents : List Expression.Ident} {s s' : CoreGenState}
-    {ls : List Expression.Ident}
-    (Hgen : Core.Transform.genOutExprIdents idents s = (ls, s')) :
-    ls.length = idents.length := by
-  have := genOutExprIdents_length' idents s
-  rw [Hgen] at this
-  exact this
 
 theorem genOldExprIdent_len'
     {t : List Expression.Ident} {s : CoreGenState} :
@@ -726,9 +708,8 @@ theorem genOutExprIdentsTrip_extract
 /-! ### `_snd` projection lemmas for the `gen*ExprIdentsTrip` family
 
 These say: the `Prod.snd` projection of the trip list is exactly the
-input arguments/lhs/old-vars list.  The legacy proofs went through
-intricate splittings; the live forms are short reductions through the
-monad layers because we have the structural form
+input arguments/lhs/old-vars list.  The forms are short reductions through
+the monad layers because we have the structural form
 `(gen_idents.zip inputs.unzip.2).zip args` directly visible. -/
 
 theorem genArgExprIdentsTrip_snd
@@ -755,25 +736,6 @@ theorem genOutExprIdentsTrip_snd
           (genOutExprIdents_length' lhs s.genState)
           (by simp [List.length_map]; omega)
 
-/-- The "snd" projection lemma for the `oldTripsRaw` shape used in the
-    live `callElimCmd`: `oldTripsRaw = (genOldIdents.zip oldTys).zip oldVars`,
-    so its `snd` projection is `oldVars` provided
-    `genOldIdents.length = oldVars.length` and `oldTys.length = oldVars.length`.
-
-    Unlike the arg/out cases, the live `callElimCmd` does not call a
-    dedicated `genOldExprIdentsTrip` wrapper; instead it constructs
-    `oldTripsRaw` inline.  This helper provides the equivalent
-    structural fact. -/
-theorem genOldExprIdentsTrip_snd
-    {oldVars : List Expression.Ident}
-    {oldTys : List Lambda.LTy}
-    {s s' : CoreGenState}
-    {genOldIdents : List Expression.Ident}
-    (Hgen : Core.Transform.genOldExprIdents oldVars s = (genOldIdents, s'))
-    (Htylen : oldTys.length = oldVars.length) :
-    ((genOldIdents.zip oldTys).zip oldVars).unzip.snd = oldVars :=
-  List.zip_zip_unzip_snd_of_lengths (genOldExprIdents_length Hgen) Htylen
-
 /-! ### `*GeneratedWF` lemmas: each generator pushes its results to `generated`
 
 `CoreGenState.gen` extends `generated` by one cons; running `mapM` of a
@@ -796,13 +758,6 @@ theorem genCoreIdentGeneratedWF
     simp at this
     exact this.symm
   rw [Hl, Hs]
-
-theorem genIdentGeneratedWF
-    {ident : Expression.Ident} {pf : String → String}
-    {s s' : CoreGenState} {l : Expression.Ident}
-    (Hgen : Core.Transform.genIdent ident pf s = (l, s')) :
-    s'.generated = l :: s.generated :=
-  genCoreIdentGeneratedWF Hgen
 
 theorem genArgExprIdents_GeneratedWF
     {n : Nat} {s s' : CoreGenState} {ls : List Expression.Ident}
@@ -935,20 +890,6 @@ theorem genOldExprIdentsTripWFMono
     (Hgen : Core.Transform.genOldExprIdents oldVars s = (genOldIdents, s')) :
     CoreGenState.WF s' :=
   genOldExprIdents_WFMono Hwf Hgen
-
-/-- Trip-level GeneratedWF for old trips, parameterized over the bare
-    `genOldExprIdents` (since the live `callElimCmd` constructs its
-    `oldTripsRaw` inline rather than through a wrapper). -/
-theorem genOldExprIdentsTripGeneratedWF
-    {oldVars : List Expression.Ident} {oldTys : List Lambda.LTy}
-    {s s' : CoreGenState} {genOldIdents : List Expression.Ident}
-    (Hgen : Core.Transform.genOldExprIdents oldVars s = (genOldIdents, s'))
-    (Htylen : oldTys.length = oldVars.length) :
-    s'.generated =
-        ((genOldIdents.zip oldTys).zip oldVars).unzip.fst.unzip.fst.reverse ++ s.generated := by
-  rw [genOldExprIdents_GeneratedWF Hgen]
-  rw [List.zip_zip_unzip_fst_unzip_fst_of_lengths
-        (genOldExprIdents_length Hgen) Htylen]
 
 /-! ### `isTempIdent` / `isOldTempIdent` predicates and producing-side lemmas
 
@@ -1103,22 +1044,6 @@ theorem genOutExprIdentsTrip_isTempIdent
   exact genOutExprIdents_isTempIdent (s := s.genState)
           (s' := (Core.Transform.genOutExprIdents lhs s.genState).snd)
           (ls := (Core.Transform.genOutExprIdents lhs s.genState).fst) rfl
-
-/-- For the live `callElimCmd`, `oldTrips`'s `fst.fst` projection is exactly
-    the fresh `genOldIdents` produced by `genOldExprIdents`, since the trip
-    structure is `((freshIdent, ty), origVar)`. -/
-theorem genOldExprIdentsTrip_isOldTempIdent
-    {oldVars : List Expression.Ident}
-    {oldTys : List Lambda.LTy}
-    {s s' : CoreGenState}
-    {genOldIdents : List Expression.Ident}
-    (Hgen : Core.Transform.genOldExprIdents oldVars s = (genOldIdents, s'))
-    (Htylen : oldTys.length = oldVars.length) :
-    Forall (fun x => isOldTempIdent x)
-      ((genOldIdents.zip oldTys).zip oldVars).unzip.fst.unzip.fst := by
-  rw [List.zip_zip_unzip_fst_unzip_fst_of_lengths
-        (genOldExprIdents_length Hgen) Htylen]
-  exact genOldExprIdents_isOldTempIdent Hgen
 
 end Core
 

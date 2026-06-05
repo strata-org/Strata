@@ -1088,8 +1088,7 @@ private theorem callElimStmt_non_call_eq
 
 /-- Call-site WF/disjointness invariants required by `callElimStatementCorrect`.
 
-    Bundles the six call-site WF clauses that were previously expressed as a
-    single nested conjunction (`Hpre_post_lhs_disj`).  Each field is a
+    Bundles the seven call-site WF clauses as named fields.  Each field is a
     universally-quantified property that fires only when `st` is a call;
     for non-call statements every field is vacuously true. -/
 structure WFCallSiteProp (p : Program)
@@ -1218,9 +1217,10 @@ theorem WFCallSiteProp.specialize {p : Program}
 /-- Relation between the source store `σ` and the call-elim transform
     state `γ`'s tracked fresh-name set.
 
-    Bundles the two halves of the legacy `Hwfgenst` hypothesis: the
+    Bundles the three fields of the legacy `Hwfgenst` hypothesis: the
     `tmp_*` alignment between `γ.genState.generated` and `σ`'s defined
-    keys, and the `old_*` freshness against `σ`. -/
+    keys, the `old_*` freshness against `σ`, and `CoreGenState.WF` of
+    `γ.genState`. -/
 structure CoreGenStateRel (σ : CoreStore) (γ : CoreTransformState) : Prop where
   /-- `tmp_*`-prefixed names in `γ.genState.generated` are exactly the
       `tmp_*`-defined names in `σ`. -/
@@ -1296,8 +1296,8 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
     (Hwf : WF.WFStatementsProp p [st])
     (Hgenrel : CoreGenStateRel σ γ)
     -- Call-site WF: pre/post vars are non-temp/non-old and disjoint
-    -- from `lhs`/inputs.keys/outputs.keys (six clauses; see WFCallSiteProp
-    -- in Strata/Languages/Core/WF.lean).
+    -- from `lhs`/inputs.keys/outputs.keys (seven clauses; see WFCallSiteProp
+    -- above (line 1095 of this file)).
     (Hwfcallsite : WFCallSiteProp p π st)
     (Helim : (Except.ok sts, γ') = (runWith st (callElimStmt · p) γ)) :
     ∃ σ'',
@@ -1387,7 +1387,8 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                 | .step _ _ _ (.step_cmd hcc) hrest =>
                   cases hrest with
                   | refl =>
-                    -- call_sem hardwires the failure flag to false.
+                    -- call_sem is failure-flag-parameterized; Hcc is pinned
+                    -- to `failed = false` at this destructure site.
                     exact hcc
                   | step _ _ _ h _ => exact absurd h (by intro h; cases h)
               cases Hcc with

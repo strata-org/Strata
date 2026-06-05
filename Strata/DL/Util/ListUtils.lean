@@ -548,15 +548,6 @@ public theorem List.disjoint_of_nodup_append_three
   · intro x hxb hxc
     exact Hbc.2.2 x hxb x hxc rfl
 
-/-- Specialization of `disjoint_of_nodup_append_three` to extract the
-    three pairwise disjointness facts as a Forall-friendly tuple. -/
-public theorem List.nodup_append_three_disjoint
-    {α} {a b c : List α}
-    (Hnd : (a ++ b ++ c).Nodup) :
-    a.Disjoint b ∧ b.Disjoint c ∧ a.Disjoint c :=
-  let ⟨h1, h2, h3⟩ := List.disjoint_of_nodup_append_three Hnd
-  ⟨h1, h3, h2⟩
-
 /-- If `(h, x) ∉ List.zip t t'` for every `x : β` and `t.length = t'.length`,
     then `h ∉ t`.  Pure list lemma with no Imperative or Core dependencies. -/
 public theorem List.zip_notin_fst_pair {α β : Type _}

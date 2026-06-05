@@ -1633,17 +1633,6 @@ theorem InitVarsDefMonotone' :
   | intro es Hinit =>
   exact InitStatesDefMonotone' Hdisj Hdef Hinit
 
--- theorem InitVarsNotDefMonotone' :
---   vs.Disjoint vs' →
---   isDefined σ' vs →
---   InitVars σ vs' σ' →
---   isNotDefined σ vs := by
---   intros Hdisj Hdef Hinit
---   have Hinit := InitVarsInitStates Hinit
---   cases Hinit with
---   | intro es Hinit =>
---   exact InitStatesDefMonotone' Hdisj Hdef Hinit
-
 theorem InitStatesDefined :
   InitStates σ hs vs σ' → isDefined σ' hs := by
   intros Hinit
@@ -2214,7 +2203,7 @@ theorem InvStoresExceptInvStores :
 /-
 NOTE:
   In order to prove this refinement theorem, we need to reason about the
-  assymmetry between the two semantics regarding the temporary variables
+  asymmetry between the two semantics regarding the temporary variables
   created in the concrete semantics. That is, evaluating the procedure body may
   create new variables in the store, and since the temporary variables are
   discarded at the end of the call, it is possible to show that those created
