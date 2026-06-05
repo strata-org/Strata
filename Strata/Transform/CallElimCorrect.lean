@@ -12,7 +12,7 @@ public import Strata.Languages.Core.Identifiers
 public import Strata.Languages.Core.Program
 public import Strata.Languages.Core.ProgramType
 public import Strata.Languages.Core.WF
-public import Strata.DL.Lambda.Lambda
+public import Strata.DL.Lambda
 public import Strata.Transform.CoreTransform
 public import Strata.Transform.CallElim
 public import Strata.DL.Imperative.CmdSemantics

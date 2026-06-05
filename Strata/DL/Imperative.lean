@@ -18,6 +18,4 @@ public import Strata.DL.Imperative.StmtSemantics
 public import Strata.DL.Imperative.KleeneStmt
 public import Strata.DL.Imperative.KleeneStmtSemantics
 
-public import Strata.DL.Imperative.SemanticsProps
-
 public import Strata.DL.Imperative.SMTUtils

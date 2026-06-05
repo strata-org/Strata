@@ -6,8 +6,11 @@
 module
 
 import all Strata.DL.Imperative.CmdSemantics
+public import Strata.DL.Imperative.CmdSemanticsProps
+import all Strata.DL.Imperative.CmdSemanticsProps
 import all Strata.DL.Imperative.StmtSemantics
-import all Strata.DL.Imperative.SemanticsProps
+public import Strata.DL.Imperative.StmtSemanticsProps
+import all Strata.DL.Imperative.StmtSemanticsProps
 import all Strata.DL.Imperative.HasVars
 import all Strata.DL.Util.Nodup
 public import Strata.DL.Util.ListUtils
@@ -2707,7 +2710,8 @@ theorem StepStmtStar_refines_contract
       cases hcm : cm.getEnv.hasFailure
       · rfl
       · have h_c2_true :=
-          Imperative.StepStmtStar_hasFailure_monotone hrest hcm
+          Imperative.StepStmtStar_hasFailure_monotone Expression
+            (EvalCommand π φ) (EvalPureFunc φ) hrest hcm
         rw [h_c2_true] at h_no_fail
         exact Bool.noConfusion h_no_fail
     -- Refresh δ_wfCong for the IH at cm.

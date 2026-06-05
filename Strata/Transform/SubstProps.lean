@@ -7,7 +7,7 @@ module
 
 import Init.Data.List.Basic
 import Init.Data.List.Lemmas
-public import Strata.DL.Lambda.Lambda
+public import Strata.DL.Lambda
 public import Strata.DL.Imperative.CmdSemantics
 public import Strata.DL.Imperative.CmdSemanticsProps
 public import Strata.Languages.Core.StatementSemantics
