@@ -758,6 +758,24 @@ infer grades for each procedure.
 Runtime procedure grades are not inferred — they're read from the signature
 by `gradeFromSignature` (does it have a Heap input? An Error output?).
 
+### Preconditions
+
+A `requires` clause is a pure value of type `bool` — no effects, no sequencing,
+no continuation — so pass 2 elaborates it with the value judgment `checkValue`
+(expected type `.TBool`), not the producer judgment that elaborates bodies.
+`checkValue` synthesizes the term and applies the subtyping coercions —
+`from_int`/`from_str` on the argument literals (the runtime operators take `Any`
+parameters) and `Any_to_bool` on the `Any`-typed result — and `projectValue`
+yields the single Core expression that replaces the clause. Holes it uses are
+collected into the program's hole procedures alongside the body's.
+
+Translation emits preconditions in surface form, e.g.
+`PGe(Any_len_to_Any(Any_get($in_kwargs, "Key")), 1)` — bare `intConst 1` and
+`strConst "Key"`, and an `Any`-typed `PGe(...)` standing in a `bool` position.
+Without this step those terms reach Core uncoerced; the Core type checker reports
+`Impossible to unify Any with (arrow Any (arrow Any Any))` at the clause's source
+range.
+
 {docstring Strata.FineGrainLaurel.gradeFromSignature}
 
 ### Type Erasure: ⟦·⟧ on types

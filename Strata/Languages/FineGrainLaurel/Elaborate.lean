@@ -938,8 +938,14 @@ partial def checkProducer (stmt : StmtExprMd) (rest : List StmtExprMd) (retTy : 
   | .Hole deterministic _ => do
     let hv ← freshVar "havoc"
     modify fun s => { s with usedHoles := s.usedHoles ++ [(hv, deterministic, retTy)] }
+    -- A deterministic hole is a pure function of the procedure's inputs, so it is
+    -- declared with those inputs (see emission below) and must be applied to them
+    -- here — same as the value-judgment `.Hole` case. A nondeterministic hole
+    -- (havoc) is declared with no inputs and called with none.
+    let env ← read
+    let args := if deterministic then env.procInputs.map (fun (name, _) => FGLValue.var md name) else []
     let declaredOutputs := [("result", retTy)]
-    mkGradedCall md hv [] declaredOutputs .proc fun rv => do
+    mkGradedCall md hv args declaredOutputs .proc fun rv => do
       let M_k ← checkProducers rest retTy grade
       match rest with
       | [] => pure (.produce md rv)
@@ -1508,6 +1514,25 @@ def fullElaborate (program : Laurel.Program) (runtime : Laurel.Program := defaul
       let st : ElabState := {
         freshCounter := globalCounter
         heapVar := if g == .heap || g == .heapErr then some "$heap" else none }
+      -- Elaborate preconditions: a `requires` is a pure value of type bool, not an
+      -- effect-sequenced statement, so it elaborates with the value judgment
+      -- (checkValue) rather than the producer judgment. checkValue synthesizes the
+      -- term and applies subtyping coercions — from_int/from_str on argument
+      -- literals (the runtime operators take Any parameters) and Any_to_bool on the
+      -- Any-typed result — then projectValue yields the single Core expression.
+      -- Holes are collected as for bodies.
+      let mut elabPreconditions : List (WithMetadata StmtExpr) := []
+      for pre in proc.preconditions do
+        let preSt : ElabState := { freshCounter := globalCounter }
+        match (checkValue pre .TBool).run procEnv |>.run preSt with
+        | some (preVal, preSt') =>
+          globalCounter := preSt'.freshCounter
+          let newHoles := (preSt'.usedHoles.map fun (name, det, outTy) => (name, det, inputList, outTy)).filter
+            (fun (n, _, _, _) => !allHoles.any (fun (n2, _, _, _) => n == n2))
+          allHoles := allHoles ++ newHoles
+          elabPreconditions := elabPreconditions ++ [⟨(projectValue preVal).val, pre.md⟩]
+        | none => elabPreconditions := elabPreconditions ++ [pre]
+      let proc := { proc with preconditions := elabPreconditions }
       match (checkProducer bodyExpr [] retTy g).run procEnv |>.run st with
       | some (fgl, st') =>
         globalCounter := st'.freshCounter
