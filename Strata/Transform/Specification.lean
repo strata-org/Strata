@@ -176,7 +176,7 @@ def Triple
     L.star (L.stmtCfg s ρ₀) (L.terminalCfg ρ') →
     Post ρ' ∧ ρ'.hasFailure = false
 
-/-! ## Structural Hoare rules (Imperative-specific) -/
+/-! ## Definitions for structural Hoare rules (Imperative-specific) -/
 
 section StmtRules
 
@@ -205,7 +205,7 @@ def PostWF (Post : Env P → Prop) : Prop :=
 end StmtRules
 
 
-/-! ## Connection between HoareTriple and AssertValid (standard Lang) -/
+/-! ## Definitions for connection between HoareTriple and AssertValid (standard Lang) -/
 
 section StandardConnection
 
