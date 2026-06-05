@@ -3,8 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core.Verifier
+import StrataDDM.Integration.Lean.HashCommands
+
+meta section
+open StrataDDM (Program)
 
 /-!
 # Polymorphic Function Integration Tests
@@ -30,7 +35,7 @@ function identity<a>(x : a) : a;
 /--
 info: ok: program Core;
 
-function identity<$__ty0> (x : $__ty0) : $__ty0;
+function identity<a> (x : a) : a;
 -/
 #guard_msgs in
 #eval Core.typeCheck .quiet (TransM.run Inhabited.default (translateProgram singleTypeParamDeclPgm)).fst
@@ -60,7 +65,7 @@ spec {
 /--
 info: ok: program Core;
 
-function identity<$__ty0> (x : $__ty0) : $__ty0;
+function identity<a> (x : a) : a;
 procedure TestIdentityInt ()
 spec {
   ensures [TestIdentityInt_ensures_0]: true;
@@ -97,7 +102,7 @@ spec {
 /--
 info: ok: program Core;
 
-function makePair<$__ty0, $__ty1> (x : $__ty0, y : $__ty1) : Map $__ty0 $__ty1;
+function makePair<a, b> (x : a, y : b) : Map a b;
 procedure TestMakePair ()
 spec {
   ensures [TestMakePair_ensures_0]: true;
@@ -133,7 +138,7 @@ spec {
 /--
 info: ok: program Core;
 
-function apply<$__ty0, $__ty1> (f : $__ty0 -> $__ty1, x : $__ty0) : $__ty1;
+function apply<a, b> (f : a -> b, x : a) : b;
 function intToBool (x : int) : bool;
 procedure TestApply ()
 spec {
@@ -170,8 +175,8 @@ spec {
 /--
 info: ok: program Core;
 
-function identity<$__ty0> (x : $__ty0) : $__ty0;
-function makePair<$__ty1, $__ty2> (x : $__ty1, y : $__ty2) : Map $__ty1 $__ty2;
+function identity<a> (x : a) : a;
+function makePair<a, b> (x : a, y : b) : Map a b;
 procedure TestDifferentInstantiations ()
 spec {
   ensures [TestDifferentInstantiations_ensures_0]: true;
@@ -204,10 +209,12 @@ spec {
 #end
 
 /--
-info: error: (4619-4642) Impossible to unify (arrow int bool) with (arrow bool $__ty5).
+info: error: (4582-4605) Impossible to unify (arrow int bool) with (arrow bool $__ty5).
 First mismatch: int with bool.
 -/
 #guard_msgs in
 #eval (Core.typeCheck .quiet (TransM.run Inhabited.default (translateProgram eqTypeMismatchPgm)).fst)
 
 end Strata.PolymorphicFunctionTest
+
+end

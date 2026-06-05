@@ -3,9 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core
+import StrataDDM.Integration.Lean.HashCommands
 
+meta section
 ---------------------------------------------------------------------
 namespace Strata
 
@@ -136,7 +139,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify regexPgm1
+#eval Core.verify regexPgm1
 
 ---------------------------------------------------------------------
 
@@ -195,7 +198,7 @@ Original expression: re.loop(re.range("a", "z"), 1, bvar!0)
 Context: Global scope:
 -/
 #guard_msgs in
-#eval verify regexPgm2
+#eval Core.verify regexPgm2
 
 ---------------------------------------------------------------------
 
@@ -228,6 +231,8 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify regexPgm3
+#eval Core.verify regexPgm3
 
+end Strata
+end
 ---------------------------------------------------------------------

@@ -3,13 +3,16 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core
+import StrataDDM.Integration.Lean.HashCommands
 
+meta section
 ---------------------------------------------------------------------
 namespace Strata
 
-def irrelevantAxiomsTestPgm : Strata.Program :=
+def irrelevantAxiomsTestPgm : StrataDDM.Program :=
 #strata
 program Core;
 type StrataHeap;
@@ -174,7 +177,7 @@ Model:
 -/
 #guard_msgs in
 #eval do
-  let results ← verify irrelevantAxiomsTestPgm
+  let results ← Core.verify irrelevantAxiomsTestPgm
         (options := {Core.VerifyOptions.models with removeIrrelevantAxioms := .Precise})
   IO.println (normalizeModelValues (toString results))
 
@@ -231,7 +234,9 @@ Property: assert
 Result: ❓ unknown
 -/
 #guard_msgs in
-#eval verify irrelevantAxiomsTestPgm
+#eval Core.verify irrelevantAxiomsTestPgm
         (options := {Core.VerifyOptions.models with removeIrrelevantAxioms := .Off})
 
+end Strata
+end
 ---------------------------------------------------------------------
