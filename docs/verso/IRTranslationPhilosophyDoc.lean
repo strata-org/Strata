@@ -105,8 +105,8 @@ back out of it.
            /     |        |           \
           /      |        |            \
          /       |        |             \
-   deductive   CBMC      Dragonstone   .....
-   verifier
+   deductive   model     abstract      .....
+   verifier    checker   interpreter
 ```
 
 Many sources translate *into* Core; many consumers translate
