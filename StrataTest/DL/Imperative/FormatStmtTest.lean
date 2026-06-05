@@ -138,14 +138,14 @@ info: while
 /--
 info: while
   x == 0
-  (some x)
+  (x)
   [[inv1]: true]
 {
   x := 1;
 }
 -/
 #guard_msgs in
-#eval! format (Stmt.loop (.det xEq0) (some x) [("inv1", tt)]
+#eval! format (Stmt.loop (.det xEq0) (some ("", x)) [("inv1", tt)]
                 ([Statement.set "x" int1 .empty] : Ss) .empty : S)
 
 -- 14. exit with label

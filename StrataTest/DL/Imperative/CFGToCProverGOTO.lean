@@ -53,11 +53,18 @@ instance : Imperative.ToGoto LExprTP where
   toGotoType := Lambda.LMonoTy.toGotoType
   toGotoExpr := Lambda.LExprT.toGotoExpr
 
+instance : Imperative.HasVal LExprTP where
+  value _ := True
+
+instance : Imperative.HasFvars LExprTP where
+  getFvars _ := []
+
 instance : Imperative.HasBool LExprTP where
   tt := .const { underlying := (), type := mty[bool] } (.boolConst true)
   ff := .const { underlying := (), type := mty[bool] } (.boolConst false)
   tt_is_not_ff := by simp
   boolTy := .tcons "bool" []
+  boolIsVal := ⟨trivial, trivial⟩
 
 instance : Imperative.HasIdent LExprTP where
   ident s := ⟨s, ()⟩
@@ -70,14 +77,23 @@ instance : Imperative.HasFvar LExprTP where
   | .fvar _ v _ => some v
   | _ => none
 
-instance : Imperative.HasIntOrder LExprTP where
-  eq    e1 e2 := .eq md e1 e2
-  lt    e1 e2 := .app md (.app md (.op md ⟨"Int.Lt", ()⟩ none) e1) e2
+instance : Imperative.HasInt LExprTP where
   zero        := .intConst md 0
   intTy       := .tcons "int" []
+  isNumeral _ := true
+  numeralIsValue := fun _ _ => trivial
+  zeroIsNumeral := by decide
+  numeralHasNoFvars := fun _ _ => rfl
 
-instance : Imperative.HasNot LExprTP where
+instance : Imperative.HasIntOps LExprTP where
+  eq    e1 e2 := .eq md e1 e2
+  lt    e1 e2 := .app md (.app md (.op md ⟨"Int.Lt", ()⟩ none) e1) e2
+  decr  e     := .app md (.app md (.op md ⟨"Int.Sub", ()⟩ none) e) (.intConst md 1)
+
+instance : Imperative.HasBoolOps LExprTP where
   not e := .app md (.op md ⟨"Bool.Not", ()⟩ none) e
+  and e1 e2 := .app md (.app md (.op md ⟨"Bool.And", ()⟩ none) e1) e2
+  imp e1 e2 := .app md (.app md (.op md ⟨"Bool.Imp", ()⟩ none) e1) e2
 
 -------------------------------------------------------------------------------
 

@@ -65,7 +65,7 @@ info: function loopTrivial {
   i := #0
   while
     (~Int.Lt i n)
-    (some (~Int.Sub n i))
+    ([loopTrivial_measure_412_430]: (~Int.Sub n i))
     [[loopTrivial_invariant_433_454]: (~Int.Le i n)]
   {
     i := (~Int.Add i #1)

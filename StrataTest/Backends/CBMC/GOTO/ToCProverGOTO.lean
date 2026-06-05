@@ -494,7 +494,7 @@ private def ExampleLoopMeasure : List (Imperative.Stmt LExprTP (Imperative.Cmd L
      -- guard: true
      (.det (.const { underlying := (), type := mty[bool] } (.boolConst true)))
      -- measure: i
-     (some (.fvar { underlying := (), type := mty[int] } (Lambda.Identifier.mk "i" ()) (some mty[int])))
+     (some ("decr_i", .fvar { underlying := (), type := mty[int] } (Lambda.Identifier.mk "i" ()) (some mty[int])))
      -- invariants: [true]
      [("inv_true", .const { underlying := (), type := mty[bool] } (.boolConst true))]
      -- body: empty

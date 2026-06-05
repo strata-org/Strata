@@ -77,7 +77,7 @@ namespace Specification
 
 /-- Bundles the abstract ingredients for small-step statement semantics,
     parameterized by a shared pure-expression system `P`. -/
-structure Lang (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P] where
+structure Lang (P : PureExpr) [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasInt P] [HasIntOps P] where
   /-- Statement type. -/
   StmtT : Type
   /-- Configuration type. -/
@@ -97,19 +97,19 @@ structure Lang (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P] where
 
 /-- Build a `Lang` from `Imperative.Stmt`/`Config` with a given command
     type and evaluator. -/
-abbrev Lang.imperative (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P]
+abbrev Lang.imperative (P : PureExpr) [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasInt P] [HasIntOps P]
     (CmdT : Type) (evalCmd : EvalCmdParam P CmdT) (extendEval : ExtendEval P)
     (isAtAssert : Config P CmdT → AssertId P → Prop) : Lang P :=
   ⟨Stmt P CmdT, Config P CmdT, StepStmtStar P evalCmd extendEval,
    .stmt, .terminal, .exiting, isAtAssert, Config.getEnv⟩
 
 /-- The standard `Lang` for `Cmd P` / `EvalCmd P` / `isAtAssert`. -/
-abbrev Lang.standard (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P]
+abbrev Lang.standard (P : PureExpr) [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasInt P] [HasIntOps P]
     (extendEval : ExtendEval P) : Lang P :=
   Lang.imperative P (Cmd P) (EvalCmd P) extendEval (Imperative.isAtAssert P)
 
 
-variable {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVal P]
+variable {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasInt P] [HasIntOps P] [HasVal P]
 variable (L : Lang P)
 
 
@@ -196,11 +196,12 @@ def TripleBlock
     Post ρ' ∧ ρ'.hasFailure = false
 
 omit [HasVal P] in
-/-- A postcondition is well-formed if it is stable under `projectStore`. -/
+/-- A postcondition is well-formed if it is stable under `projectStore` and
+    `eval`-replacement (the parent's eval is restored on block exit). -/
 def PostWF (Post : Env P → Prop) : Prop :=
-  ∀ ρ σ_parent, Post ρ → ρ.hasFailure = false →
-    Post { ρ with store := projectStore σ_parent ρ.store } ∧
-      ({ ρ with store := projectStore σ_parent ρ.store } : Env P).hasFailure = false
+  ∀ ρ σ_parent e_parent, Post ρ → ρ.hasFailure = false →
+    Post { ρ with store := projectStore σ_parent ρ.store, eval := e_parent } ∧
+      ({ ρ with store := projectStore σ_parent ρ.store, eval := e_parent } : Env P).hasFailure = false
 
 end StmtRules
 
@@ -209,7 +210,7 @@ end StmtRules
 
 section StandardConnection
 
-variable (P' : PureExpr) [HasFvar P'] [HasBool P'] [HasNot P']
+variable (P' : PureExpr) [HasFvar P'] [HasBool P'] [HasBoolOps P'] [HasFvars P'] [HasInt P'] [HasIntOps P']
 variable (extendEval : ExtendEval P')
 
 /-- The composite statement `assume pre; st; assert post` wrapped in a block. -/

@@ -148,7 +148,7 @@ structure ProcedureCorrect (proc : Procedure) (p : Program) : Prop where
       (∀ (label : CoreLabel) (check : Procedure.Check),
         (label, check) ∈ proc.spec.postconditions.toList →
         check.attr = Procedure.CheckAttr.Default →
-        ρ'.eval ρ'.store check.expr = some HasBool.tt) ∧
+        ρ₀.eval (projectStore ρ₀.store ρ'.store) check.expr = some HasBool.tt) ∧
       ρ'.hasFailure = Bool.false
 
 end Core.Specification

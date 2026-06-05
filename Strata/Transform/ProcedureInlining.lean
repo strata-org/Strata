@@ -25,14 +25,15 @@ inductive Stats where
 
 -- Gathers all labels including those in assert and assume.
 mutual
-def Block.labels (b : Block): List String :=
-  List.flatMap (fun s => Statement.labels s) b
+def Block.labelsOfBlocksAndAssertAssumes (b : Block): List String :=
+  List.flatMap (fun s => Statement.labelsOfBlocksAndAssertAssumes s) b
 
-def Statement.labels (s : Core.Statement) : List String :=
+def Statement.labelsOfBlocksAndAssertAssumes (s : Core.Statement) : List String :=
   match s with
-  | .block lbl b _ => lbl :: (Block.labels b)
-  | .ite _ thenb elseb _ => (Block.labels thenb) ++ (Block.labels elseb)
-  | .loop _ _ _ body _ => Block.labels body
+  | .block lbl b _ => lbl :: (Block.labelsOfBlocksAndAssertAssumes b)
+  | .ite _ thenb elseb _ =>
+    (Block.labelsOfBlocksAndAssertAssumes thenb) ++ (Block.labelsOfBlocksAndAssertAssumes elseb)
+  | .loop _ _ _ body _ => Block.labelsOfBlocksAndAssertAssumes body
   | .assume lbl _ _ => [lbl]
   | .assert lbl _ _ => [lbl]
   | .cover lbl _ _ => [lbl]
@@ -44,23 +45,23 @@ def Statement.labels (s : Core.Statement) : List String :=
 end
 
 mutual
-def Block.replaceLabels (b : Block) (map:Map String String)
+def Block.replaceLabelsOfAndAssertAssumes (b : Block) (map:Map String String)
     : Block :=
-  b.map (fun s => Statement.replaceLabels s map)
+  b.map (fun s => Statement.replaceLabelsOfAndAssertAssumes s map)
 
-def Statement.replaceLabels
+def Statement.replaceLabelsOfAndAssertAssumes
     (s : Core.Statement) (map:Map String String) : Core.Statement :=
   let app (s:String) :=
     match Map.find? map s with
     | .none => s
     | .some s' => s'
   match s with
-  | .block lbl b m => .block (app lbl) (Block.replaceLabels b map) m
+  | .block lbl b m => .block (app lbl) (Block.replaceLabelsOfAndAssertAssumes b map) m
   | .exit lbl m => .exit (app lbl) m
   | .ite cond thenb elseb m =>
-    .ite cond (Block.replaceLabels thenb map) (Block.replaceLabels elseb map) m
+    .ite cond (Block.replaceLabelsOfAndAssertAssumes thenb map) (Block.replaceLabelsOfAndAssertAssumes elseb map) m
   | .loop g measure inv body m =>
-    .loop g measure inv (Block.replaceLabels body map) m
+    .loop g measure inv (Block.replaceLabelsOfAndAssertAssumes body map) m
   | .assume lbl e m => .assume (app lbl) e m
   | .assert lbl e m => .assert (app lbl) e m
   | .cover lbl e m => .cover (app lbl) e m
@@ -86,13 +87,13 @@ private def renameAllLocalNames (c:Procedure)
   let proc_name := c.header.name.name
 
   -- Make a map for renaming local variables
-  let lhs_vars := List.flatMap (fun (s:Statement) => s.definedVars) c.body
+  let lhs_vars := List.flatMap (fun (s:Statement) => s.definedVars false) c.body
   let lhs_vars := lhs_vars ++ c.header.inputs.unzip.fst ++
                   c.header.outputs.unzip.fst
   let var_map <- genOldToFreshIdMappings lhs_vars var_map proc_name
 
   -- Make a map for renaming label names
-  let labels := List.flatMap (fun s => Statement.labels s) c.body
+  let labels := List.flatMap (fun s => Statement.labelsOfBlocksAndAssertAssumes s) c.body
   -- Reuse genOldToFreshIdMappings by introducing dummy data to Identifier
   let label_ids:List Expression.Ident := labels.map
       (fun s => { name:=s, metadata := () })
@@ -108,7 +109,7 @@ private def renameAllLocalNames (c:Procedure)
     var_map.foldl (fun (s:Statement) (old_id,new_id) =>
         let s := Statement.substFvar s old_id (.fvar () new_id .none)
         let s := Statement.renameLhs s old_id new_id
-        Statement.replaceLabels s label_map)
+        Statement.replaceLabelsOfAndAssertAssumes s label_map)
       s0) c.body
   let new_header := { c.header with
     inputs := c.header.inputs.map (fun (id,ty) =>

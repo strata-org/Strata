@@ -298,21 +298,17 @@ structure Procedure where
 
 open Imperative
 
-def Procedure.definedVars (_ : Procedure) : List Expression.Ident := []
-def Procedure.modifiedVars (p : Procedure) : List Expression.Ident :=
-  p.header.outputs.keys
-
 def Procedure.getVars (p : Procedure) : List Expression.Ident :=
-  (p.spec.postconditions.values.map Procedure.Check.expr).flatMap HasVarsPure.getVars ++
-  (p.spec.preconditions.values.map Procedure.Check.expr).flatMap HasVarsPure.getVars ++
+  (p.spec.postconditions.values.map Procedure.Check.expr).flatMap HasFvars.getFvars ++
+  (p.spec.preconditions.values.map Procedure.Check.expr).flatMap HasFvars.getFvars ++
   p.body.flatMap HasVarsPure.getVars |> List.filter (not $ Membership.mem p.header.inputs.keys ·)
 
 instance : HasVarsPure Expression Procedure where
   getVars := Procedure.getVars
 
 instance : HasVarsImp Expression Procedure where
-  definedVars := Procedure.definedVars
-  modifiedVars := Procedure.modifiedVars
+  definedVars _ _ := []
+  modifiedVars p := p.header.outputs.keys
 
 def Procedure.eraseTypes (p : Procedure) : Procedure :=
   { p with body := Statements.eraseTypes p.body, spec := p.spec }

@@ -254,7 +254,7 @@ theorem InitStateUniqueResult
 /-! ### Assert / set commutation -/
 
 theorem eval_assert_store_cst
-  [HasFvar P] [HasBool P] [HasNot P]:
+  [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P]:
   EvalCmd P δ σ (.assert l e md) σ' f → σ = σ' := by
   intros Heval; cases Heval with
   | eval_assert_pass _ => rfl
@@ -313,16 +313,16 @@ theorem UpdateState_InitStateComm {P: PureExpr} {x1 x2: P.Ident} {σ σ' σ'' σ
   simp_all
 
 theorem semantic_eval_eq_of_eval_cmd_set_unrelated_var
-  [HasVarsImp P (Cmd P)] [HasVarsPure P P.Expr]
-  [HasFvar P] [HasVal P] [HasBool P] [HasNot P]:
+  [HasVarsImp P (Cmd P)] [HasFvars P]
+  [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P]:
   WellFormedSemanticEvalExprCongr δ →
-  ¬ v ∈ HasVarsPure.getVars e →
+  ¬ v ∈ HasFvars.getFvars e →
   EvalCmd P δ σ (Cmd.set v (.det e') md) σ' f →
   δ σ e = δ σ' e := by
   intro Hwf Hnin Heval
   unfold WellFormedSemanticEvalExprCongr at Hwf
   specialize Hwf e σ σ'
-  have: ∀ (v : P.Ident), v ∈ HasVarsPure.getVars e → σ v = σ' v := by
+  have: ∀ (v : P.Ident), v ∈ HasFvars.getFvars e → σ v = σ' v := by
     cases Heval
     rename_i Hu
     cases Hu
@@ -337,7 +337,7 @@ theorem semantic_eval_eq_of_eval_cmd_set_unrelated_var
 
 theorem eval_cmd_set_comm'
   [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)]
-  [HasFvar P] [HasVal P] [HasBool P] [HasNot P] [DecidableEq P.Ident] :
+  [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P] [DecidableEq P.Ident] :
   ¬ x1 = x2 →
   δ σ v1 = δ σ2 v1 →
   δ σ v2 = δ σ1 v2 →
@@ -355,12 +355,12 @@ theorem eval_cmd_set_comm'
   exact UpdateStateComm Hneq Hu1 Hu2 Hu3 Hu4
 
 theorem eval_cmd_set_comm
-  [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)] [HasVarsPure P P.Expr]
-  [HasFvar P] [HasVal P] [HasBool P] [HasNot P] [DecidableEq P.Ident]:
+  [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)] [HasFvars P]
+  [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P] [DecidableEq P.Ident]:
   WellFormedSemanticEvalExprCongr δ →
   ¬ x1 = x2 →
-  ¬ x1 ∈ HasVarsPure.getVars v2 →
-  ¬ x2 ∈ HasVarsPure.getVars v1 →
+  ¬ x1 ∈ HasFvars.getFvars v2 →
+  ¬ x2 ∈ HasFvars.getFvars v1 →
   EvalCmd P δ σ (Cmd.set x1 (.det v1) md1) σ1 f1 →
   EvalCmd P δ σ1 (Cmd.set x2 (.det v2) md2) σ' f2 →
   EvalCmd P δ σ (Cmd.set x2 (.det v2) md2') σ2 f3 →

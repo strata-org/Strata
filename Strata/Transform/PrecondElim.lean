@@ -287,10 +287,10 @@ def transformStmt (s : Statement)
   | .loop guard measure invariant body md => do
     let measureAsserts := match measure with
       | none => []
-      | some m => collectPrecondAsserts F m "loop_measure" md
+      | some (_, m) => collectPrecondAsserts F m "loop_measure" md
     let measureAssertsEnd := match measure with
       | none => []
-      | some m => collectPrecondAsserts F m "loop_measure_end" md
+      | some (_, m) => collectPrecondAsserts F m "loop_measure_end" md
     -- Preserve the per-invariant label in the generated preconditions' prefix.
     -- For unlabeled invariants, fall back to the plain "loop_invariant" prefix.
     let invAsserts := invariant.flatMap (fun (lbl, inv) =>

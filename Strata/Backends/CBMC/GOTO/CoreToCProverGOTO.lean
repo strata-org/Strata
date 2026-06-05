@@ -221,7 +221,7 @@ def transformToGoto (cprog : Core.Program) : Except Format CProverGOTO.Context :
       let formals_renamed := formals.zip new_formals
       let formals_tys : Map String CProverGOTO.Ty := formals.zip formals_tys
 
-      let locals := (Imperative.Block.definedVars p.body).map Core.CoreIdent.toPretty
+      let locals := (Imperative.Block.definedVars p.body false).map Core.CoreIdent.toPretty
       let new_locals := locals.map (fun l => CProverGOTO.mkLocalSymbol pname l)
       let locals_renamed := locals.zip new_locals
 

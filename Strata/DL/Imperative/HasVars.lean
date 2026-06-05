@@ -19,10 +19,16 @@ class HasVarsPure (P : PureExpr) (α : Type) where
 /-! # Imperative Variable Lookup : HasVarsImp -/
 
 class HasVarsImp (P : PureExpr) (α : Type) where
-  definedVars : α → List P.Ident
+  definedVars : α → Bool/-exclude vars not visible from outside?-/ → List P.Ident
   modifiedVars : α → List P.Ident
-  modifiedOrDefinedVars : α → List P.Ident
-          := λ e ↦ definedVars e ++ modifiedVars e
+
+/-! # Operator/Function Name Lookup over Commands : HasOpsImp
+
+`HasOpsImp` collects the operator (function) names referenced by a command,
+parallel to `HasOps` for expressions. -/
+
+class HasOpsImp (P : PureExpr) (α : Type) where
+  getOps : α → List P.Ident
 
 ---------------------------------------------------------------------
 

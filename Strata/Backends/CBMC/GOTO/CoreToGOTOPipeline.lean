@@ -84,7 +84,7 @@ private partial def unwrapCmdExt
     .ok (.ite (c.map (renameExpr rn)) t' e' md)
   | .loop g m i body md => do
     let body' ← body.mapM (unwrapCmdExt rn)
-    .ok (.loop (g.map (renameExpr rn)) (m.map (renameExpr rn))
+    .ok (.loop (g.map (renameExpr rn)) (m.map (fun (l, e) => (l, renameExpr rn e)))
       (i.map (fun (l, e) => (l, renameExpr rn e))) body' md)
   | .exit l md => .ok (.exit l md)
   | .funcDecl _d _md =>
@@ -225,7 +225,7 @@ private partial def coreStmtsToGoto
             let inv_expr ← toExpr (renameExpr rn inv)
             backGuard := backGuard.setNamedField "#spec_loop_invariant" inv_expr
           match measure with
-            | some meas =>
+            | some (_, meas) =>
               let meas_expr ← toExpr (renameExpr rn meas)
               backGuard := backGuard.setNamedField "#spec_decreases" meas_expr
             | none => pure ()
@@ -274,7 +274,7 @@ def procedureToGotoCtx
   let formals_tys : Map String CProverGOTO.Ty := formals.zip formals_tys
   let outputs := p.header.outputs.keys.map Core.CoreIdent.toPretty
   let new_outputs := outputs.map (CProverGOTO.mkLocalSymbol pname ·)
-  let locals := (Imperative.Block.definedVars body).map Core.CoreIdent.toPretty
+  let locals := (Imperative.Block.definedVars body false).map Core.CoreIdent.toPretty
   let new_locals := locals.map (CProverGOTO.mkLocalSymbol pname ·)
   let rn : Std.HashMap String String :=
     (formals.zip new_formals ++ outputs.zip new_outputs ++ locals.zip new_locals).foldl
