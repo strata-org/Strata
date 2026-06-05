@@ -501,17 +501,20 @@ public def pyAnalyzeLaurelV2
       | _ => throw (.internal s!"V2 Translation failed: {e}")
     | .ok (program, _state) => pure program
 
-  -- Step 4: Elaboration elaborates user bodies; imported stubs are trusted runtime.
-  let fullRuntime : Laurel.Program := {
-    staticProcedures := Python.pythonRuntimeLaurelPart.staticProcedures ++ importedLaurel.staticProcedures
-    staticFields := Python.pythonRuntimeLaurelPart.staticFields
-    types := Python.pythonRuntimeLaurelPart.types ++ importedLaurel.types ++ demandedTypes
-    constants := [] }
+  -- Step 4: Elaboration. Imported demanded methods/functions have real bodies
+  -- (incl. stub holes), so they must be elaborated too — NOT treated as trusted
+  -- pre-elaborated runtime. Merge them into the elaboration input alongside user code.
+  let toElaborate : Laurel.Program := {
+    staticProcedures := userLaurel.staticProcedures ++ importedLaurel.staticProcedures
+    staticFields := userLaurel.staticFields
+    types := userLaurel.types ++ importedLaurel.types ++ demandedTypes
+    constants := userLaurel.constants }
+  let fullRuntime : Laurel.Program := Python.pythonRuntimeLaurelPart
   let elaboratedProgram ← profileStep profile "Elaborate (full: coercions + type infrastructure)" do
     let runtimeGrades := fullRuntime.staticProcedures.foldl (fun acc proc =>
       acc.insert proc.name.text (FineGrainLaurel.gradeFromSignature proc))
       ({} : Std.HashMap String FineGrainLaurel.Grade)
-    match FineGrainLaurel.fullElaborate userLaurel fullRuntime runtimeGrades with
+    match FineGrainLaurel.fullElaborate toElaborate fullRuntime runtimeGrades with
     | .error e => throw (.internal s!"Elaboration failed: {e}")
     | .ok (prog, failures) =>
       unless failures.isEmpty do
