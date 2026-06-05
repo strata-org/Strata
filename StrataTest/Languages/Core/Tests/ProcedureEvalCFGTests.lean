@@ -50,7 +50,7 @@ Deferred Proof Obligations:
   { header := {name := "Trivial", typeArgs := [], inputs := [], outputs := [] },
     spec := { preconditions := [], postconditions := [] },
     body := .cfg { entry := "start",
-                   blocks := [("start", { cmds := [], transfer := .finish })] } })
+                   blocks := [("start", { cmds := [], transfer := .finish .empty })] } })
 
 /-! ## Linear CFG: assignment via goto, postcondition holds -/
 
@@ -94,7 +94,7 @@ true
                    blocks := [
                      ("entry", { cmds := [CmdExt.cmd (Cmd.set "y" (.det eb[#42]) .empty)],
                                  transfer := .goto "done" .empty }),
-                     ("done", { cmds := [], transfer := .finish })
+                     ("done", { cmds := [], transfer := .finish .empty })
                    ] } })
 
 /-! ## Missing block error -/
@@ -193,7 +193,7 @@ false
     body := .cfg { entry := "entry",
                    blocks := [
                      ("entry", { cmds := [CmdExt.cmd (Cmd.set "y" (.det eb[#42]) .empty)],
-                                 transfer := .finish })
+                                 transfer := .finish .empty })
                    ] } })
 
 /-! ## Diamond CFG: symbolic branch produces two proof obligations -/
@@ -245,12 +245,12 @@ Proof Obligation:
     body := .cfg { entry := "entry",
                    blocks := [
                      ("entry", { cmds := [],
-                                 transfer := .condGoto eb[((~Int.Ge x) #0)] "pos" "neg" }),
+                                 transfer := .condGoto eb[((~Int.Ge x) #0)] "pos" "neg" .empty }),
                      ("pos", { cmds := [CmdExt.cmd (Cmd.set "y" (.det eb[x]) .empty)],
                                transfer := .goto "done" .empty }),
                      ("neg", { cmds := [CmdExt.cmd (Cmd.set "y" (.det eb[((~Int.Sub #0) x)]) .empty)],
                                transfer := .goto "done" .empty }),
-                     ("done", { cmds := [], transfer := .finish })
+                     ("done", { cmds := [], transfer := .finish .empty })
                    ] } })
 
 /-! ## Pre-split assert deduped across symbolic condGoto
@@ -307,9 +307,9 @@ x@1 >= 0
     body := .cfg { entry := "entry",
                    blocks := [
                      ("entry", { cmds := [CmdExt.cmd (Cmd.assert "pre_assert" eb[((~Int.Ge x) #0)] .empty)],
-                                 transfer := .condGoto eb[((~Int.Ge x) #0)] "left" "right" }),
-                     ("left",  { cmds := [], transfer := .finish }),
-                     ("right", { cmds := [], transfer := .finish })
+                                 transfer := .condGoto eb[((~Int.Ge x) #0)] "left" "right" .empty }),
+                     ("left",  { cmds := [], transfer := .finish .empty }),
+                     ("right", { cmds := [], transfer := .finish .empty })
                    ] } })
 
 end CFGEvalTests

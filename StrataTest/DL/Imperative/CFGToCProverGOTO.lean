@@ -275,8 +275,8 @@ info: ok: #[LOCATION 0,
   -- Construct a CFG where entry label doesn't match the first block
   let cfg : Imperative.CFG String (Imperative.DetBlock String (Imperative.Cmd LExprTP) LExprTP) :=
     { entry := "second",
-      blocks := [("first", { cmds := [], transfer := .finish }),
-                 ("second", { cmds := [], transfer := .finish })] }
+      blocks := [("first", { cmds := [], transfer := .finish .empty }),
+                 ("second", { cmds := [], transfer := .finish .empty })] }
   match Imperative.detCFGToGotoTransform Lambda.TEnv.default "test" cfg with
   | .error e => assert! (s!"{e}".splitOn "Entry label").length > 1
   | .ok _ => assert! false
@@ -304,7 +304,7 @@ info: ok: ()
   let trueExpr : LExprTP.Expr :=
     .const { underlying := (), type := mty[bool] } (.boolConst true)
   let blk : Imperative.DetBlock String (Imperative.Cmd LExprTP) LExprTP :=
-    { cmds := [], transfer := .condGoto trueExpr "missing_label" "also_missing" }
+    { cmds := [], transfer := .condGoto trueExpr "missing_label" "also_missing" .empty }
   let cfg : Imperative.CFG String (Imperative.DetBlock String (Imperative.Cmd LExprTP) LExprTP) :=
     { entry := "entry", blocks := [("entry", blk)] }
   match Imperative.detCFGToGotoTransform Lambda.TEnv.default "test" cfg with

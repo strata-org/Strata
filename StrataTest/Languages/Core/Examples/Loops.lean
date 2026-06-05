@@ -77,7 +77,7 @@ measure_decrease$_3:
   assert [measure_decrease_loop_measure$_2]: n < loop_measure$_2;
   #[<[provenance]: <synthesized:structured-to-unstructured>>] condGoto true loop_entry$_1 loop_entry$_1
 end$_0:
-  finish
+  #[<[provenance]: <synthesized:structured-to-unstructured>>] finish
 -/
 #guard_msgs in
 #eval (Std.format (singleCFG measureFailExamplePgm 0))
@@ -157,7 +157,7 @@ loop_entry$_1:
   var loop_measure$_2 : int;
   assume [assume_loop_measure$_2]: loop_measure$_2 == n - i;
   assert [measure_lb_loop_measure$_2]: !(loop_measure$_2 < 0);
-  #[<[provenance]: :3262-3418>,
+  #[<[provenance]: :3322-3478>,
  <[#spec_loop_invariant]: 0 <= i>,
  <[#spec_loop_invariant]: i <= n>,
  <[#spec_loop_invariant]: s == i * (i + 1) / 2>,
@@ -170,7 +170,7 @@ measure_decrease$_3:
   assert [measure_decrease_loop_measure$_2]: n - i < loop_measure$_2;
   #[<[provenance]: <synthesized:structured-to-unstructured>>] condGoto true loop_entry$_1 loop_entry$_1
 end$_0:
-  finish
+  #[<[provenance]: <synthesized:structured-to-unstructured>>] finish
 -/
 #guard_msgs in
 #eval (Std.format (singleCFG gaussPgm 0))
@@ -409,7 +409,7 @@ Context: Global scope:
   var loop_measure$_2 : int;
   assume [assume_loop_measure$_2]: loop_measure$_2 == n - x;
   assert [measure_lb_loop_measure$_2]: !(loop_measure$_2 < 0);
-  #[<[provenance]: :9217-9470>,
+  #[<[provenance]: :9337-9590>,
  <[#spec_loop_invariant]: x >= 0>,
  <[#spec_loop_invariant]: x <= n>,
  <[#spec_loop_invariant]: n < top>,
@@ -423,7 +423,7 @@ loop_entry$_5:
   var loop_measure$_6 : int;
   assume [assume_loop_measure$_6]: loop_measure$_6 == x - y;
   assert [measure_lb_loop_measure$_6]: !(loop_measure$_6 < 0);
-  #[<[provenance]: :9337-9450>,
+  #[<[provenance]: :9457-9570>,
  <[#spec_loop_invariant]: y >= 0>,
  <[#spec_loop_invariant]: y <= x>,
  <[#spec_decreases]: x - y>] condGoto y < x l$_8 l$_4
@@ -440,7 +440,7 @@ measure_decrease$_3:
   assert [measure_decrease_loop_measure$_2]: n - x < loop_measure$_2;
   #[<[provenance]: <synthesized:structured-to-unstructured>>] condGoto true loop_entry$_1 loop_entry$_1
 end$_0:
-  finish
+  #[<[provenance]: <synthesized:structured-to-unstructured>>] finish
 -/
 #guard_msgs in
 #eval (Std.format (singleCFG nestedPgm 2))
