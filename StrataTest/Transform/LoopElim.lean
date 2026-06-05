@@ -3,11 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Transform.LoopElim
-import Strata.Languages.Core.Verifier
+meta import Strata.Transform.LoopElim
+meta import Strata.Languages.Core.Verifier
 
 /-! ## Loop-elimination pipeline phase obligation tests -/
+meta section
 section LoopElimPhaseTests
 open Core
 open Strata.SMT
@@ -35,3 +37,4 @@ private def cleanObligation : Imperative.ProofObligation Core.Expression :=
 #guard (satResult.adjustForPhases [loopElimPipelinePhase.phase] cleanObligation).1 == satResult
 
 end LoopElimPhaseTests
+end

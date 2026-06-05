@@ -5,13 +5,9 @@
 -/
 module
 
-public import Strata.DL.Lambda.LExprWF
-public import Strata.DL.Lambda.LTyUnify
 import all Strata.DL.Lambda.LTyUnify
-public import Strata.DL.Lambda.Factory
 public import Strata.DL.Lambda.TypeFactory
-public import Strata.DL.Util.Maps
-public import Strata.DL.Util.String
+import Strata.DL.Util.String
 
 /-! ## Type Environment
 
@@ -76,6 +72,14 @@ def LMonoTys.openVars (vars : List TyIdentifier) (vals : LMonoTys) (mtys : LMono
   | [] => []
   | mty :: rest => LMonoTy.openVars vars vals mty :: LMonoTys.openVars vars vals rest
 end
+
+/-- `openVars` preserves list length. -/
+theorem openVars_length (vars : List TyIdentifier) (vals : LMonoTys)
+    (mtys : LMonoTys) :
+    (LMonoTys.openVars vars vals mtys).length = mtys.length := by
+  induction mtys with
+  | nil => simp [LMonoTys.openVars]
+  | cons hd tl ih => simp [LMonoTys.openVars, ih]
 
 /-- Pure alias expansion: substitute `args` for `a.typeArgs` in `a.type`. -/
 def TypeAlias.expand (a : TypeAlias) (args : LMonoTys) : LMonoTy :=
@@ -142,6 +146,33 @@ structure TContext (IDMeta : Type) where
 /-- All type aliases in a context are well-formed. -/
 def TContext.AliasesWF (Γ : TContext IDMeta) : Prop :=
   ∀ a, a ∈ Γ.aliases → a.WF
+
+mutual
+/-- A monotype is alias-free w.r.t. an alias list: none of its `.tcons`
+    constructors match an alias by both name and parameter-list length.
+    This relies on the assumption that alias names do not overlap with
+    non-alias type constructor names. -/
+def LMonoTy.aliasFree (aliases : List TypeAlias) (mty : LMonoTy) : Prop :=
+  match mty with
+  | .ftvar _ => True
+  | .bitvec _ => True
+  | .tcons name args =>
+    (aliases.find? (fun a => a.name == name && a.typeArgs.length == args.length) = none) ∧
+    LMonoTys.aliasFree aliases args
+
+/-- All types in a list are alias-free. -/
+def LMonoTys.aliasFree (aliases : List TypeAlias) (mtys : LMonoTys) : Prop :=
+  match mtys with
+  | [] => True
+  | mty :: rest => LMonoTy.aliasFree aliases mty ∧ LMonoTys.aliasFree aliases rest
+end
+
+/-- All alias bodies in the context are fully resolved: they do not reference
+    other alias names. This is established by `TEnv.addTypeAlias` which calls
+    `instantiateWithCheck` (and therefore `resolveAliases`) on the alias body
+    before storing it. -/
+def TContext.AliasesResolved (Γ : TContext IDMeta) : Prop :=
+  ∀ a, a ∈ Γ.aliases → LMonoTy.aliasFree Γ.aliases a.type
 
 instance {IDMeta} [ToFormat IDMeta] : ToFormat (TContext IDMeta) where
   format ctx :=
@@ -1296,22 +1327,17 @@ def TEnv.addTypeAlias (alias : TypeAlias) (C: LContext T) (Env : TEnv T.IDMeta) 
               KnownTypes' names:\n\
               {C.knownTypes.keywords}"
   else
-    let (mtys, Env) ← LMonoTys.instantiateEnv alias.typeArgs [alias_lty.toMonoTypeUnsafe, alias.type] Env
-    match mtys with
-    | [lhs, rhs] =>
-      let newTyArgs := lhs.freeVars
-      -- We expect `alias.type` to be a known, legal type, hence the use of
-      -- `instantiateWithCheck` below. Note that we only store type
-      -- declarations -- not synonyms -- as values in the alias table;
-      -- i.e., we don't store a type alias mapped to another type alias.
-      let (rhsmty, _) ← (LTy.forAll [] rhs).instantiateWithCheck C Env
-      let new_aliases := { typeArgs := newTyArgs,
-                           name := alias.name,
-                           type := rhsmty } :: Env.context.aliases
-      let context := { Env.context with aliases := new_aliases }
-      .ok (Env.updateContext context)
-    | _ => .error f!"[TEnv.addTypeAlias] Implementation error! \n\
-                      {alias}"
+    -- De-alias the RHS so that chained aliases are fully resolved.
+    -- This maintains the invariant that stored alias types are never
+    -- themselves aliases.
+    let (rhsResolved, Env) ← LMonoTy.resolveAliases alias.type Env
+    -- Validate that the de-aliased type is a known, legal type.
+    let (_, _) ← (LTy.forAll [] rhsResolved).instantiateWithCheck C Env
+    let new_aliases := { typeArgs := alias.typeArgs,
+                         name := alias.name,
+                         type := rhsResolved } :: Env.context.aliases
+    let context := { Env.context with aliases := new_aliases }
+    .ok (Env.updateContext context)
 
 ---------------------------------------------------------------------
 

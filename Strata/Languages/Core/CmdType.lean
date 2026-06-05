@@ -7,8 +7,7 @@ module
 
 public import Strata.Languages.Core.Expressions
 public import Strata.DL.Imperative.TypeContext
-public import Strata.DL.Lambda.Factory
-import Strata.DL.Lambda.LExprTypeSpec
+public import Strata.DL.Lambda.LExprTypeSpec
 
 namespace Core
 open Lambda Imperative LExpr
@@ -190,7 +189,7 @@ theorem unifyTypes_eq (Env Env' : TEnv Unit)
     rename_i h_unify
     cases hS
     simp [TEnv.updateSubst]
-    exact unify_sound [(xmty, emty)] Env.stateSubstInfo S h_unify (xmty, emty) (.head _)
+    exact Constraints.unify_sound [(xmty, emty)] Env.stateSubstInfo S h_unify (xmty, emty) (.head _)
 
 /-- `unifyTypes` does not change the context. -/
 theorem unifyTypes_preserves_context (Env Env' : TEnv Unit)
@@ -225,7 +224,7 @@ theorem unifyTypes_absorbs (Env Env' : TEnv Unit)
       simp [TEnv.updateSubst]
       have hS' : Constraints.unify cs Env.stateSubstInfo = .ok S := by
         revert hS; cases Constraints.unify cs Env.stateSubstInfo <;> simp
-      exact unify_absorbs cs Env.stateSubstInfo S hS'
+      exact Constraints.unify_absorbs cs Env.stateSubstInfo S hS'
 
 /--
 Decomposition of `inferType` success: if `inferType` returns `.ok`, then

@@ -3,9 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
-import Strata.Languages.Core.CallGraph
+meta import Strata.Languages.Core
+meta import Strata.Languages.Core.CallGraph
+import StrataDDM.Integration.Lean.HashCommands
+
+meta section
+open StrataDDM (Program)
 
 ---------------------------------------------------------------------
 namespace Strata
@@ -35,7 +40,9 @@ VCs:
 info:
 -/
 #guard_msgs in
-#eval verify program (options := .default)
+#eval Core.verify program (options := .default)
 
 ---------------------------------------------------------------------
 end Strata
+
+end

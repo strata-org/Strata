@@ -6,14 +6,8 @@
 module
 
 public import Strata.Languages.Core.Expressions
-public import Strata.DL.Imperative.PureExpr
-public import Strata.Languages.Core.Identifiers
-public import Strata.Languages.Core.Factory
 public import Strata.DL.Imperative.Stmt
-public import Strata.DL.Imperative.HasVars
-public import Strata.DL.Lambda.LExpr
-public import Strata.DL.Lambda.TypeConstructor
-import Strata.Util.Tactics
+import Std.Tactic.BVDecide.Normalize.Prop
 
 namespace Core
 open Imperative

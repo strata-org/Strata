@@ -28,6 +28,9 @@ variables (`substK`, `subst`) and free variables (`substFvarsLifting`)
 and `callOfLFunc` more generally
 - `LExprDenoteConstrs.lean` - proofs about semantics of datatype constructors
 - `LExprDenoteEq.lean` - proof of soundness of equality check `eql`
+- `LExprResolveAnnotated.lean` - proof that `LExpr.resolve` produces
+well-annotated terms (satisfying `HasTypeA`), i.e. that the type annotations
+placed by resolution are internally consistent
 - `LExprSemanticsConsistent.lean` - proof that operational and denotational 
 semantics are consistent (single-step, multi-step, and partial evaluator)
 

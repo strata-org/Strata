@@ -3,9 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core
+import StrataDDM.Integration.Lean.HashCommands
 
+meta section
+open StrataDDM (Program)
 /-!
 # Datatype List Integration Test
 
@@ -89,7 +93,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify listTesterPgm (options := .quiet)
+#eval Core.verify listTesterPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 2: List with Havoc (requires SMT reasoning)
@@ -137,7 +141,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify listHavocPgm (options := .quiet)
+#eval Core.verify listHavocPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 3: List Exhaustiveness (exactly one tester is true)
@@ -182,7 +186,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify listExhaustivePgm (options := .quiet)
+#eval Core.verify listExhaustivePgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 4: List Mutual Exclusion (testers are mutually exclusive)
@@ -230,7 +234,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify listMutualExclusionPgm (options := .quiet)
+#eval Core.verify listMutualExclusionPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 5: List Constructor Equality
@@ -287,7 +291,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify listEqualityPgm (options := .quiet)
+#eval Core.verify listEqualityPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 6: List Constructor Inequality
@@ -333,7 +337,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify listInequalityPgm (options := .quiet)
+#eval Core.verify listInequalityPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 7: List Destructor Functions (head and tail)
@@ -408,7 +412,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify listDestructorPgm (options := .quiet)
+#eval Core.verify listDestructorPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 8: Nested List Operations (head of tail)
@@ -464,7 +468,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify listNestedPgm (options := .quiet)
+#eval Core.verify listNestedPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 9: List Destructor with Havoc (requires SMT reasoning)
@@ -520,7 +524,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify listDestructorHavocPgm (options := .quiet)
+#eval Core.verify listDestructorHavocPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 10: List with Different Values (inequality of different heads)
@@ -566,6 +570,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify listDifferentValuesPgm (options := .quiet)
+#eval Core.verify listDifferentValuesPgm (options := .quiet)
 
 end Strata.DatatypeListTest
+end

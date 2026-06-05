@@ -7,13 +7,6 @@ module
 
 public import Strata.DL.Lambda.Factory
 import all Strata.DL.Lambda.Factory
-public import Strata.DL.Lambda.LExprEval
-public import Strata.DL.Lambda.LExprWF
-public import Strata.DL.Lambda.LTy
-public import Strata.DDM.Util.Array
-public import Strata.DL.Util.Func
-public import Strata.DL.Util.List
-public import Strata.DL.Util.ListMap
 
 /-!
 ## Well-formedness of LFunc and Factory

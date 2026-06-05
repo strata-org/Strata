@@ -6,8 +6,8 @@
 module
 
 public import Strata.DL.SMT.AbstractSolver
+import Strata.DL.SMT.DDMTransform.Translate
 public import Strata.DL.SMT.Factory
-import Strata.DDM.Format
 import Std.Data.HashMap
 
 /-!
@@ -23,6 +23,8 @@ repeated declarations of the same name. The shadow depth is tracked per name.
 -/
 
 namespace Strata.SMT
+
+open StrataDDM (quoteIdent)
 
 public section
 

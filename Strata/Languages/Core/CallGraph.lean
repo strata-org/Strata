@@ -6,6 +6,8 @@
 module
 
 public import Strata.Languages.Core.Program
+import Std.Data.HashMap.AdditionalOperations
+import Strata.Languages.Core.Factory
 
 ---------------------------------------------------------------------
 

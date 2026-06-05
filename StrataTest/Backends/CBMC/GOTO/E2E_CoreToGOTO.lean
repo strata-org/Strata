@@ -3,8 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-import Strata.Backends.CBMC.CollectSymbols
-import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
+module
+meta import Strata.Backends.CBMC.CollectSymbols
+meta import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
+import StrataDDM.Integration.Lean.HashCommands
+import Strata.Languages.Core.DDMTransform.Translate
+import Lean.Server.Utils
 
 /-! ## End-to-end tests: Core program → GOTO JSON
 
@@ -16,12 +20,14 @@ Core-to-GOTO gap-filling work:
 - Bitvector operations
 -/
 
+meta section
+
 open Strata
 
-private def translateCore (p : Strata.Program) : Core.Program :=
+private def translateCore (p : StrataDDM.Program) : Core.Program :=
   (TransM.run Inhabited.default (translateProgram p)).fst
 
-private def coreToGotoJson (p : Strata.Program) :
+private def coreToGotoJson (p : StrataDDM.Program) :
     Except Std.Format (Lean.Json × Lean.Json) := do
   let cprog := translateCore p
   let Env := Lambda.TEnv.default
@@ -182,7 +188,7 @@ procedure caller(out y : int) {
 #end
 
 -- Helper: translate a specific procedure by name
-private def coreToGotoJsonByName (p : Strata.Program) (name : String) :
+private def coreToGotoJsonByName (p : StrataDDM.Program) (name : String) :
     Except Std.Format (Lean.Json × Lean.Json) := do
   let cprog := translateCore p
   let Env := Lambda.TEnv.default
@@ -344,7 +350,7 @@ private def injectPropertySummary (stmts : List Core.Statement) (msg : String)
       .cmd (.cmd (.assert label b (md.withPropertySummary msg)))
     | other => other
 
-private def coreToGotoJsonWithSummary (p : Strata.Program) (summary : String) :
+private def coreToGotoJsonWithSummary (p : StrataDDM.Program) (summary : String) :
     Except Std.Format (Lean.Json × Lean.Json) := do
   let cprog := translateCore p
   let Env := Lambda.TEnv.default
@@ -372,3 +378,5 @@ procedure test(x : int) {
   assert! (gotoStr.splitOn "x must be positive").length > 1
   -- It should NOT contain the default label as the comment
   assert! (gotoStr.splitOn "assert_0").length == 1
+
+end
