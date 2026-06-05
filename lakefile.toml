@@ -6,7 +6,7 @@ lintDriver = "CheckImports"
 
 [[require]]
 name = "StrataDDM"
-path = "StrataDDM"
+git = "https://github.com/strata-org/Strata-DDM"
 
 [[require]]
 name = "plausible"
