@@ -3,11 +3,23 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-
-import Strata.Languages.Core.Program
+module
 import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core
 import Strata.Transform.StructuredToUnstructured
+import Lean.Parser.Types
+meta import Strata.Languages.Core.DDMTransform.Grammar
+meta import Strata.Languages.Core.DDMTransform.Translate
+meta import Strata.Languages.Core.Options
+public import StrataDDM.AST
+public import Strata.DL.Imperative.BasicBlock
+public import Strata.Languages.Core.Statement
+public import Strata.Languages.Core.Expressions
+import StrataDDM.Integration.Lean.HashCommands
+import Strata.Languages.Core.StatementSemantics
 
+public section
+open StrataDDM (Program)
 namespace Strata
 
 def singleCFG (p : Program) (n : Nat) : Imperative.CFG String
@@ -96,7 +108,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify measureFailExamplePgm (options := .quiet)
+#eval Core.verify measureFailExamplePgm (options := .quiet)
 
 ---------------------------------------------------------------------
 
@@ -330,7 +342,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify gaussPgm
+#eval Core.verify gaussPgm
 
 ---------------------------------------------------------------------
 
@@ -476,7 +488,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify nestedPgm (options := .quiet)
+#eval Core.verify nestedPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 
@@ -542,7 +554,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify precondElimInMeasurePgm (options := .quiet)
+#eval Core.verify precondElimInMeasurePgm (options := .quiet)
 
 -- Now, we show the precondition (d > 0) is necessary for the measure-related
 -- checks.
@@ -603,7 +615,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify precondElimInMeasureBadPgm (options := .quiet)
+#eval Core.verify precondElimInMeasureBadPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 
@@ -668,4 +680,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify precondElimMeasureBodyMutatesPgm (options := .quiet)
+#eval Core.verify precondElimMeasureBodyMutatesPgm (options := .quiet)
+
+end Strata
+end

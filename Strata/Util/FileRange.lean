@@ -4,13 +4,15 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
-public import Strata.DDM.Util.SourceRange
-public import Lean.Data.Position
+public import StrataDDM.Util.SourceRange
 
 open Std (Format)
 
 public section
 namespace Strata
+export StrataDDM (SourceRange)
+
+abbrev SourceRange.none := StrataDDM.SourceRange.none
 
 inductive Uri where
   | file (path: String)

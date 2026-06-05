@@ -3,8 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core
+import StrataDDM.Integration.Lean.HashCommands
+
+meta section
 
 
 -- Regression tests for LoopElim entry invariant soundness:
@@ -54,14 +58,16 @@ false
 info:
 Obligation: arbitrary_iter_maintain_invariant_0_0
 Property: assert
-Result: ✅ pass (❗path unreachable)
+Result: ✅ pass (❗unreachable in this context)
 
 Obligation: entry_invariant_0_0
 Property: assert
 Result: ❌ always false and is reachable from declaration entry
 -/
 #guard_msgs in
-#eval verify falseInvariantNeverExecuted
+#eval Core.verify falseInvariantNeverExecuted
         (options := { Core.VerifyOptions.default with checkLevel := .full })
 
 end Strata
+
+end

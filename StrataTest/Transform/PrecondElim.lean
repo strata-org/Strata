@@ -3,12 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DDM.Integration.Lean
-import Strata.Languages.Core.Core
-import Strata.Languages.Core.DDMTransform.Translate
-import Strata.Languages.Core.ProgramType
-import Strata.Transform.PrecondElim
+import StrataDDM.Integration.Lean
+meta import Strata.Languages.Core
+meta import Strata.Languages.Core.DDMTransform.Translate
+meta import Strata.Languages.Core.ProgramType
+meta import Strata.Transform.PrecondElim
+
+meta section
 
 open Core
 open Core.PrecondElim
@@ -23,10 +26,10 @@ see `StrataTest/Languages/Core/Examples/FunctionPreconditions.lean`.
 
 section PrecondElimTests
 
-def translate (t : Strata.Program) : Core.Program :=
+def translate (t : StrataDDM.Program) : Core.Program :=
   (TransM.run Inhabited.default (translateProgram t)).fst
 
-def transformProgram (t : Strata.Program) : Core.Program :=
+def transformProgram (t : StrataDDM.Program) : Core.Program :=
   let program := translate t
   match Core.Transform.run program PrecondElim.precondElim { Core.Transform.CoreTransformState.emp with factory := some Core.Factory } with
   | .error e => panic! s!"PrecondElim failed: {e}"
@@ -495,3 +498,4 @@ private def printFirstObligation (expr : Core.Expression.Expr) : IO Unit := do
 end SeqBoundsObligations
 
 end PrecondElimTests
+end

@@ -14,7 +14,7 @@ fi
 
 test_dir="$PWD/test_results"
 
-strata=../../.lake/build/bin/strata
+strata=../../StrataCLI/.lake/build/bin/strata
 
 # Dialect files:
 # dialects/Python.dialect.st.ion

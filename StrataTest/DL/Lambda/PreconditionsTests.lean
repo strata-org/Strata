@@ -3,11 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-import Strata.DL.Lambda.IntBoolFactory
-import Strata.DL.Lambda.Preconditions
+module
+meta import Strata.DL.Lambda.IntBoolFactory
+meta import Strata.DL.Lambda.Preconditions
 
 /-! # Preconditions Tests -/
 
+meta section
 namespace Lambda
 
 open Std (ToFormat Format format)
@@ -163,3 +165,4 @@ info: [WFObligation(polySel, ((~Int.Lt : (arrow int (arrow int bool))) #0 ((~len
   esM[(~polySel myseq)]
 
 end Lambda
+end

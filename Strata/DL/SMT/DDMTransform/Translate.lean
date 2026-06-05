@@ -8,10 +8,13 @@ module
 public import Strata.DL.SMT.DDMTransform.Parse
 public import Strata.DL.SMT.Term
 public import Strata.Util.Provenance
-public import Strata.Util.Tactics
-import Strata.DDM.Elab.LoadedDialects
+public import StrataDDM.Elab.LoadedDialects
+import StrataDDM.BuiltinDialects.Init
+import Strata.Util.Tactics
 
 namespace Strata
+
+open StrataDDM
 
 public section
 
@@ -186,7 +189,14 @@ partial def translateFromTerm (t:SMT.Term): Except String (SMTDDM.Term Provenanc
   | .var v =>
     return .qual_identifier smtProv (.qi_ident smtProv (.iden_simple smtProv
       (.symbol smtProv (mkSimpleSymbol v.id))))
-  | .none _ | .some _ => throw "don't know how to translate none and some"
+  | .none ty =>
+    let retSort ← translateFromTermType (.option ty)
+    let qi := QualIdentifier.qi_isort smtProv (mkIdentifier "none") retSort
+    return .qual_identifier smtProv qi
+  | .some inner =>
+    let innerTerm ← translateFromTerm inner
+    let qi := QualIdentifier.qi_ident smtProv (mkIdentifier "some")
+    return .qual_identifier_args smtProv qi (smtAnn #[innerTerm])
   | .app op args retTy =>
     let args' <- args.mapM translateFromTerm
     let args_array := args'.toArray
@@ -204,6 +214,10 @@ partial def translateFromTerm (t:SMT.Term): Except String (SMTDDM.Term Provenanc
       return mk_qual_identifier qi
     | .bv (.zero_extend n) =>
       let iden := SMTIdentifier.iden_indexed smtProv (mkSymbol "zero_extend")
+        (smtAnn #[.ind_numeral smtProv n])
+      return mk_qual_identifier (.qi_ident smtProv iden)
+    | .bv (.int_to_bv n) =>
+      let iden := SMTIdentifier.iden_indexed smtProv (mkSymbol "int_to_bv")
         (smtAnn #[.ind_numeral smtProv n])
       return mk_qual_identifier (.qi_ident smtProv iden)
     | .str (.re_index n) =>
@@ -269,7 +283,7 @@ partial def translateFromTerm (t:SMT.Term): Except String (SMTDDM.Term Provenanc
 
 private def dummy_prg_for_toString :=
   let dialect_map := DialectMap.ofList!
-    [Strata.initDialect, Strata.smtReservedKeywordsDialect, Strata.SMTCore,
+    [initDialect, Strata.smtReservedKeywordsDialect, Strata.SMTCore,
      Strata.SMT]
   Program.create dialect_map "SMT" #[]
 
@@ -292,21 +306,21 @@ end SMTDDM
 namespace SMTResponseDDM
 
 /-- The loaded dialects needed to parse SMTResponse commands. -/
-def smtResponseDialects : Strata.Elab.LoadedDialects :=
-  .ofDialects! #[Strata.initDialect, Strata.smtReservedKeywordsDialect,
+def smtResponseDialects : StrataDDM.Elab.LoadedDialects :=
+  .ofDialects! #[initDialect, Strata.smtReservedKeywordsDialect,
                  Strata.SMTCore, Strata.SMTResponse]
 
 /-- Format context for rendering SMTResponse `Arg` values back to strings. -/
-private def smtFormatContext : Strata.FormatContext :=
+private def smtFormatContext : FormatContext :=
   .ofDialects smtResponseDialects.dialects
 
 /-- Format state for rendering SMTResponse `Arg` values back to strings. -/
-private def smtFormatState : Strata.FormatState where
+private def smtFormatState : FormatState where
   openDialects := smtResponseDialects.dialects.toList.foldl (init := {}) fun s d => s.insert d.name
 
 /-- Render a DDM `Arg` to a string using the SMTResponse dialect formatting. -/
-def formatArg (arg : Strata.Arg) : String :=
-  (Strata.mformat arg smtFormatContext smtFormatState).format.pretty
+def formatArg (arg : Arg) : String :=
+  (StrataDDM.mformat arg smtFormatContext smtFormatState).format.pretty
 
 /--
 Convert an `SMTResponseDDM.Term` (parsed from solver output) into a
@@ -321,45 +335,52 @@ the type information does not exist in the Term itself. It is the caller's
 responsibility to correctly fill in the types in .app/.uf, or faithfully
 ignore these.
 -/
-partial def translateFromDDMTermToUntyped (t : Strata.SMTResponseDDM.Term Strata.SourceRange)
+partial def translateFromDDMTermToUntyped (t : Strata.SMTResponseDDM.Term StrataDDM.SourceRange)
     : Except String Strata.SMT.Term := do
   match t with
   | .spec_constant_term _ sc =>
+    -- Exhaustive match over all SpecConstant variants; Lean will flag any missing case.
     match sc with
     | .sc_numeral _ n     => return .prim (.int n)
     | .sc_numeral_neg _ n => return .prim (.int (-(n : Int)))
     | .sc_decimal _ d     => return .prim (.real d)
+    | .sc_decimal_neg _ d => return .prim (.real { d with mantissa := -d.mantissa })
     | .sc_str _ s         => return .prim (.string s)
-    | _  => throw s!"translateFromDDMTermToUntyped: don't know how to convert {repr t}"
   | .qual_identifier _ qi =>
     match resolveQI qi with
-    | some ("true", _)  => return .prim (.bool true)
-    | some ("false", _) => return .prim (.bool false)
-    | some (name, _)    => return mkUFApp name []
+    | some ("true", _, _)  => return .prim (.bool true)
+    | some ("false", _, _) => return .prim (.bool false)
+    | some (name, _, idxs) =>
+      if name.startsWith "bv" then
+        if let some value := (name.drop 2).toNat? then
+          if let #[.ind_numeral _ width] := idxs then
+            return .prim (.bitvec (BitVec.ofNat width value))
+      return mkUFApp name []
     | none              => throw s!"translateFromDDMTermUnsafe: don't know how to convert {repr t}"
   | .qual_identifier_args _ qi args =>
     match resolveQI qi with
-    | some (name, _) =>
+    | some (name, _, _) =>
       let argTerms ← args.val.toList.mapM translateFromDDMTermToUntyped
       return mkUFApp name argTerms
     | none => throw s!"translateFromDDMTermToUntyped: don't know how to convert {repr t}"
   | _ => throw s!"translateFromDDMTermToUntyped: don't know how to convert {repr t}"
 
 where
-  /-- Extract the name string from a QualIdentifier. -/
-  resolveQI (qi : Strata.SMTResponseDDM.QualIdentifier Strata.SourceRange)
-      : Option (String × Option (Strata.SMTResponseDDM.SMTSort Strata.SourceRange)) :=
+  /-- Extract the name string, optional sort, and indices from a QualIdentifier. -/
+  resolveQI (qi : Strata.SMTResponseDDM.QualIdentifier StrataDDM.SourceRange)
+      : Option (String × Option (Strata.SMTResponseDDM.SMTSort StrataDDM.SourceRange) ×
+                Array (Strata.SMTResponseDDM.Index StrataDDM.SourceRange)) :=
     match qi with
     | .qi_ident _ iden =>
       match iden with
-      | .iden_simple _ sym | .iden_indexed _ sym _
-      => some (symbolToString sym, none)
+      | .iden_simple _ sym => some (symbolToString sym, none, #[])
+      | .iden_indexed _ sym idxs => some (symbolToString sym, none, idxs.val)
     | .qi_isort _ iden sort =>
       match iden with
-      | .iden_simple _ sym | .iden_indexed _ sym _
-      => some (symbolToString sym, some sort)
+      | .iden_simple _ sym => some (symbolToString sym, some sort, #[])
+      | .iden_indexed _ sym idxs => some (symbolToString sym, some sort, idxs.val)
   /-- Extract the raw string from a Symbol. -/
-  symbolToString (sym : Strata.SMTResponseDDM.Symbol Strata.SourceRange) : String :=
+  symbolToString (sym : Strata.SMTResponseDDM.Symbol StrataDDM.SourceRange) : String :=
     formatArg (.op (Strata.SMTResponseDDM.Symbol.toAst sym))
   /-- Build a `Term.app` with a UF op for a named function/constructor.
       Since the SMTDDM's term does not have any type annotation, the return

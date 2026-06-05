@@ -11,8 +11,16 @@ import Strata.Languages.Laurel.EliminateReturnsInExpression
 import Strata.Languages.Laurel.EliminateValueReturns
 import Strata.Languages.Laurel.ConstrainedTypeElim
 import Strata.Languages.Laurel.TypeAliasElim
-import Strata.Languages.Core.Verifier
-import Strata.Util.Statistics
+public import Strata.Languages.Core
+import Strata.Languages.Core.DDMTransform.ASTtoCST
+import Strata.Languages.Laurel.CoreDefinitionsForLaurel
+import Strata.Languages.Laurel.EliminateHoles
+import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
+import Strata.Languages.Laurel.HeapParameterization
+import Strata.Languages.Laurel.InferHoleTypes
+import Strata.Languages.Laurel.LiftImperativeExpressions
+import Strata.Languages.Laurel.ModifiesClauses
+import Strata.Languages.Laurel.TypeHierarchy
 
 /-!
 ## Laurel Compilation Pipeline
@@ -217,8 +225,12 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
     if let some coreProgram := coreProgramOption then
       emit "CoreProgram" "core.st" coreProgram
     let mut allDiagnostics := passDiags ++ translateState.diagnostics
+
+    if translateState.coreDiagnostics.length > 0 && allDiagnostics.isEmpty then
+      allDiagnostics := allDiagnostics ++ translateState.coreDiagnostics
+
     let coreProgramOption :=
-      if translateState.coreProgramHasSuperfluousErrors then none else coreProgramOption
+      if !translateState.coreDiagnostics.isEmpty then none else coreProgramOption
     return (coreProgramOption, allDiagnostics, program, stats)
 
 /--
@@ -241,7 +253,7 @@ def verifyToVcResults (program : Program)
     let options := { options.verifyOptions with removeIrrelevantAxioms := .Precise }
     let runner tempDir :=
       EIO.toIO (fun f => IO.Error.userError (toString f))
-          (Core.verify coreProgram tempDir .none options)
+          (_root_.Core.verify coreProgram tempDir .none options)
     let ioResult ← match options.vcDirectory with
       | .none => IO.FS.withTempDir runner
       | .some p => IO.FS.createDirAll ⟨p.toString⟩; runner ⟨p.toString⟩

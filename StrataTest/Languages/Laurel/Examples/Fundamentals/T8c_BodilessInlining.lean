@@ -3,8 +3,11 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.SimpleAPI
+meta import Strata.SimpleAPI
+
+meta section
 
 /-! # Bodiless Procedure Inlining Test
 
@@ -38,8 +41,8 @@ procedure caller()
   let coreProg ← match ← Strata.laurelToCore laurelProg with
     | .ok p => pure p
     | .error e => throw (IO.userError s!"Translation failed: {e}")
-  let inlined ← match Strata.Core.inlineProcedures coreProg {} with
-    | .ok p => pure p
+  let inlined ← match ← (Strata.Core.runTransforms coreProg [Strata.Core.passInlineAll]).toBaseIO with
+    | .ok (p, _) => pure p
     | .error e => throw (IO.userError s!"Inlining failed: {e}")
   let vcResults ←
     EIO.toIO (fun e => IO.Error.userError e)
@@ -57,3 +60,4 @@ procedure caller()
   return output
 
 end Strata.Laurel.BodilessInliningTest
+end
