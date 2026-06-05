@@ -321,31 +321,39 @@ The indexing scan is a simple structural match on the AST:
 - `ClassDef name body ...` → record class name, scan body for method names + raw ASTs
 - Everything else (TypedDicts, assignments, imports) → skip
 
-### Emitting Laurel Stubs from FuncSig
+### Emitting Demanded Imported Declarations
 
-Imported modules do NOT go through Translation. Translation processes user
-code only. Instead, the pipeline constructs Laurel `Procedure` stubs directly
-from the `FuncSig` data in the Ctx:
+Imported modules are NOT translated whole. Resolution records exactly the
+declarations a user program demands, and the pipeline translates only those.
+Three kinds of demand are recorded in `ResolveState`:
 
-```
-FuncSig → Laurel.Procedure
-  name := sig.laurelName
-  inputs := sig.laurelDeclInputs.map (fun (id, ty) => { name := id, type := pythonTypeToHighType ty })
-  outputs := [{ name := "result", type := pythonTypeToHighType sig.returnType }]
-  body := .Opaque [] none []    (no postconditions, no implementation)
-  determinism := .nondeterministic
-```
+- **`demandedMethods`** — when `resolveMethodCall` resolves a class method
+  (e.g. `s3.delete_object`), it resolves that method's raw AST into a resolved
+  `FunctionDef` (`className = some S3`) and records it. The pipeline runs
+  `runTranslation` on these; each becomes an `S3@delete_object` procedure with
+  its leading-assert preconditions intact (stub asserts = specs).
 
-This is a direct structural conversion — no fold, no expression resolution,
-no body traversal. Each stub is O(param count) to construct.
+- **`demandedFunctions`** — when a call matches a module-level `.function` or
+  an `.overloadedFunction` overload (e.g. `boto3.client("s3")` → overload N),
+  the matched overload's raw AST is resolved and recorded. The pipeline
+  translates it into a `client$N` procedure whose return type is the service
+  class (`boto3.S3`).
 
-The pipeline's Step 3 becomes:
-1. For each imported module's Ctx: walk its entries, construct Laurel stubs
-   for every `.function`, `.overloadedFunction`, and `.class_` method
-2. Translate user code normally via `runTranslation`
-3. Combine imported stubs + user Laurel into one program
+- **`demandedClasses`** — whenever a method or init of class `S3` is demanded,
+  `S3`'s name and field list (captured at index time in the `.class_` entry)
+  are recorded. The pipeline emits a `Composite` type definition for each, so
+  that `Composite "S3"` referenced by `client$N`'s return type is defined.
 
-Translation is never called on imported modules. The FuncSig IS the spec.
+The pipeline's Step 3:
+1. Translate user code normally via `runTranslation`.
+2. Translate `demandedMethods` and `demandedFunctions` (resolved ASTs) into
+   procedures.
+3. Emit a `Composite` type for each `demandedClass` (fields → `pythonTypeToHighType`).
+4. Imported procedures + types form the trusted runtime (not elaborated);
+   user code is elaborated normally.
+
+Only what the program touches is translated. The 345 TypedDicts and ~200
+uncalled methods of S3 never become Laurel.
 
 ## Overload Resolution
 

@@ -228,8 +228,9 @@ inductive CtxEntry where
       (methodAsts : List (PythonIdentifier × PythonStmt) := [])
   /-- A variable with its type annotation. -/
   | variable (ty : PythonType)
-  /-- An overloaded function: multiple signatures under the same name, matched in order. -/
-  | overloadedFunction (overloads : List (Nat × FuncSig))
+  /-- An overloaded function: signatures under the same name, matched in order.
+      Each carries its index, sig, and raw AST (for on-demand body resolution). -/
+  | overloadedFunction (overloads : List (Nat × FuncSig × Option PythonStmt))
   /-- An imported module with its resolved context. -/
   | module_ (moduleCtx : Std.DHashMap.Raw PythonIdentifier (fun _ => CtxEntry))
   /-- An imported name whose type/kind is unknown. -/
@@ -250,6 +251,12 @@ structure ResolveState where
   /-- Imported class methods resolved on demand (qualified name → resolved FunctionDef stmt).
       The pipeline translates only these, not whole imported modules. -/
   demandedMethods : Std.HashMap String ResolvedPythonStmt := {}
+  /-- Imported top-level functions / overloads resolved on demand
+      (disambiguated name → resolved FunctionDef stmt). -/
+  demandedFunctions : Std.HashMap String ResolvedPythonStmt := {}
+  /-- Imported classes whose methods/inits were demanded (class name → (id, fields)).
+      The pipeline emits a Composite type definition for each. -/
+  demandedClasses : Std.HashMap String (PythonIdentifier × List (PythonIdentifier × PythonType)) := {}
 
 /-- The resolution monad. Reader carries baseDir, State collects imported module programs. -/
 abbrev ResolveM := ReaderT System.FilePath (StateT ResolveState (EIO String))
@@ -986,10 +993,15 @@ partial def resolveExpr (ctx : Ctx) (f : SourceRange → ResolvedAnn) (e : Pytho
           match ctx[nId]? with
           | some (.function sig) => pure (.funcCall sig)
           | some (.overloadedFunction overloads) =>
-              let matched := overloads.find? fun (_, olSig) =>
+              let matched := overloads.find? fun (_, olSig, _) =>
                 matchOverload olSig args.val
               match matched with
-              | some (idx, sig) => pure (.funcCall { sig with overloadIndex := some idx })
+              | some (idx, sig, astOpt) => do
+                let sig' := { sig with overloadIndex := some idx }
+                match astOpt with
+                | some fAst => resolveFunctionAstSig ctx f sig' fAst
+                | none => pure ()
+                pure (.funcCall sig')
               | none => pure .unresolved
           | some (.class_ cId _ methods _) =>
               let initId := PythonIdentifier.builtin "__init__"
@@ -1263,25 +1275,45 @@ partial def typeOfExpr (ctx : Ctx) : PythonExpr → ResolveM (Option PythonType)
 
 /-- Resolve one imported class method from its raw AST on demand. Extracts the
     FuncSig, resolves the method body, records the resolved FunctionDef into
-    `demandedMethods` for the pipeline to translate, and returns the sig.
-    Memoized by qualified name so repeated calls don't re-resolve. -/
+    `demandedMethods` and the owning class into `demandedClasses` for the
+    pipeline to translate. Memoized by qualified name. -/
 partial def resolveMethodAstSig (ctx : Ctx) (f : SourceRange → ResolvedAnn)
-    (classId : PythonIdentifier) (mAst : PythonStmt) : ResolveM FuncSig := do
+    (classId : PythonIdentifier) (fields : List (PythonIdentifier × PythonType))
+    (mAst : PythonStmt) : ResolveM FuncSig := do
   match mAst with
   | .FunctionDef a mName mArgs body mDecs mReturns mTc mTypeParams =>
     let mId := PythonIdentifier.fromAst mName
     let qualName := s!"{classId.val}@{mName.val}"
     let sig ← extractFuncSig ctx f mId (some classId) mArgs mDecs.val mReturns body.val
-    -- Record resolved method for Translation (only once)
     let st ← get
     unless st.demandedMethods.contains qualName do
       let (_, ann, rName, rArgs, rBody, rDecs, rRets, rTc, rTps) ←
         resolveFuncDef ctx f sig a mName mArgs body mDecs mReturns mTc mTypeParams
       let resolvedStmt : ResolvedPythonStmt := .FunctionDef ann rName rArgs rBody rDecs rRets rTc rTps
-      modify fun s => { s with demandedMethods := s.demandedMethods.insert qualName resolvedStmt }
+      modify fun s => { s with
+        demandedMethods := s.demandedMethods.insert qualName resolvedStmt
+        demandedClasses := s.demandedClasses.insert classId.val (classId, fields) }
     pure sig
   | _ =>
     pure { name := PythonIdentifier.builtin "?", className := some classId, params := .static {required := [], optional := [], kwonly := []}, returnType := anyType, locals := [] }
+
+/-- Resolve one imported top-level function / overload from its raw AST on demand.
+    Records the resolved FunctionDef into `demandedFunctions` under its
+    disambiguated Laurel name. Memoized. -/
+partial def resolveFunctionAstSig (ctx : Ctx) (f : SourceRange → ResolvedAnn)
+    (sig : FuncSig) (fAst : PythonStmt) : ResolveM Unit := do
+  match fAst with
+  | .FunctionDef a fName fArgs body fDecs fReturns fTc fTypeParams =>
+    let key := sig.laurelName.text
+    let st ← get
+    unless st.demandedFunctions.contains key do
+      let (_, ann, rName, rArgs, rBody, rDecs, rRets, rTc, rTps) ←
+        resolveFuncDef ctx f sig a fName fArgs body fDecs fReturns fTc fTypeParams
+      -- Re-annotate the FunctionDef with the disambiguated sig so Translation emits client$N
+      let ann' : ResolvedAnn := { ann with info := .funcDecl sig }
+      let resolvedStmt : ResolvedPythonStmt := .FunctionDef ann' rName rArgs rBody rDecs rRets rTc rTps
+      modify fun s => { s with demandedFunctions := s.demandedFunctions.insert key resolvedStmt }
+  | _ => pure ()
 
 /-- Resolves `receiver.method(...)` calls. Monadic: uses `typeOfExpr` which may
     trigger demand-driven module loads. -/
@@ -1292,12 +1324,12 @@ partial def resolveMethodCall (ctx : Ctx) (receiver : PythonExpr) (methodName : 
   | some (.Name _ className _) =>
     let classId := PythonIdentifier.fromAst className
     match ctx[classId]? with
-    | some (.class_ classId _ methods methodAsts) =>
+    | some (.class_ classId fields methods methodAsts) =>
       match methods.find? (fun (mName, _) => mName == methId) with
       | some (_, sig) => pure (.funcCall sig)
       | none => match methodAsts.find? (fun (mName, _) => mName == methId) with
         | some (_, mAst) => do
-          let sig ← resolveMethodAstSig ctx f classId mAst
+          let sig ← resolveMethodAstSig ctx f classId fields mAst
           pure (.funcCall sig)
         | none => pure .unresolved
     | _ => pure .unresolved
@@ -1310,18 +1342,23 @@ partial def resolveMethodCall (ctx : Ctx) (receiver : PythonExpr) (methodName : 
         match moduleCtx[methId]? with
         | some (.function sig) => pure (.funcCall sig)
         | some (.overloadedFunction overloads) =>
-          let matched := overloads.find? fun (_, olSig) =>
+          let matched := overloads.find? fun (_, olSig, _) =>
             matchOverload olSig callArgs
           match matched with
-          | some (idx, sig) => pure (.funcCall { sig with overloadIndex := some idx })
+          | some (idx, sig, astOpt) => do
+            let sig' := { sig with overloadIndex := some idx }
+            match astOpt with
+            | some fAst => resolveFunctionAstSig moduleCtx f sig' fAst
+            | none => pure ()
+            pure (.funcCall sig')
           | none => pure .unresolved
-        | some (.class_ cId _ methods methodAsts) =>
+        | some (.class_ cId fields methods methodAsts) =>
           let initId := PythonIdentifier.builtin "__init__"
           match methods.find? (fun (mName, _) => mName == initId) with
           | some (_, sig) => pure (.classNew cId sig)
           | none => match methodAsts.find? (fun (mName, _) => mName == initId) with
             | some (_, mAst) => do
-              let sig ← resolveMethodAstSig ctx f cId mAst
+              let sig ← resolveMethodAstSig moduleCtx f cId fields mAst
               pure (.classNew cId sig)
             | none =>
               let emptySig : FuncSig := { name := initId, className := some cId, params := .static {required := [], optional := [], kwonly := []}, returnType := anyType, locals := [] }
@@ -1362,7 +1399,7 @@ partial def resolveModuleComponent (name : String) (dir : System.FilePath) (f : 
             | _ => []
           let idx := overloads.length
           let sig ← extractFuncSig ctx f nameId none fargs fdecs.val freturns fbody.val
-          ctx := ctx.insert nameId (.overloadedFunction (overloads ++ [(idx, sig)]))
+          ctx := ctx.insert nameId (.overloadedFunction (overloads ++ [(idx, sig, some stmt)]))
         else
           match ctx[nameId]? with
           | some (.overloadedFunction _) => pure ()  -- impl stub after overloads, keep overloads
@@ -1412,7 +1449,7 @@ partial def resolveStmt (ctx : Ctx) (f : SourceRange → ResolvedAnn) (s : Pytho
           | some (.overloadedFunction existing) => existing
           | _ => []
         let idx := overloads.length
-        let ctx' := ctx.insert nameId (.overloadedFunction (overloads ++ [(idx, sig)]))
+        let ctx' := ctx.insert nameId (.overloadedFunction (overloads ++ [(idx, sig, none)]))
         let (_, ann, rName, rArgs, rBody, rDecs, rRets, rTc, rTps) ←
           resolveFuncDef ctx f sig a name args body decorators returns tc typeParams
         return (ctx', .FunctionDef ann rName rArgs rBody rDecs rRets rTc rTps)
@@ -1632,10 +1669,18 @@ partial def resolveStmt (ctx : Ctx) (f : SourceRange → ResolvedAnn) (s : Pytho
       return (ctx, .TypeAlias (f a) rName ⟨f typeParams.ann, rTypeParams⟩ rValue)
 end
 
-/-- Entry point: resolves a full Python module. Computes module-level locals, seeds the
-    context with builtins + those locals, then folds `resolveStmt` over all top-level statements.
-    Returns `ResolvedPythonProgram` with fully-annotated AST and module locals list. -/
-def resolve (stmts : PythonProgram) (baseDir : System.FilePath := ".") : EIO String (ResolvedPythonProgram × Array ResolvedPythonStmt) := do
+/-- Result of resolving a program: the resolved AST plus the imported
+    declarations the program demanded (methods, functions, classes). -/
+structure ResolveResult where
+  program : ResolvedPythonProgram
+  /-- Resolved FunctionDef stmts for demanded imported methods + top-level functions. -/
+  demandedStmts : Array ResolvedPythonStmt
+  /-- Demanded imported classes (id × fields) for Composite type emission. -/
+  demandedClasses : List (PythonIdentifier × List (PythonIdentifier × PythonType))
+
+/-- Entry point: resolves a full Python module. Folds `resolveStmt` over top-level
+    statements, threading the context. Imports are loaded on demand. -/
+def resolve (stmts : PythonProgram) (baseDir : System.FilePath := ".") : EIO String ResolveResult := do
   let f : SourceRange → ResolvedAnn := fun sr => { sr, info := .irrelevant }
   let moduleLocals := computeLocals stmts []
   let initCtx := moduleLocals.foldl (fun c (n, ty) => c.insert n (CtxEntry.variable ty)) builtinContext
@@ -1648,9 +1693,9 @@ def resolve (stmts : PythonProgram) (baseDir : System.FilePath := ".") : EIO Str
       resolved := resolved.push r
     return { stmts := resolved, moduleLocals := moduleLocals }
   let (prog, state) ← action.run baseDir |>.run {}
-  -- Demanded imported methods (resolved on demand during call-site resolution)
-  let demanded := state.demandedMethods.toList.map (·.2) |>.toArray
-  return (prog, demanded)
+  let demandedStmts := (state.demandedMethods.toList.map (·.2) ++ state.demandedFunctions.toList.map (·.2)).toArray
+  let demandedClasses := state.demandedClasses.toList.map (·.2)
+  return { program := prog, demandedStmts, demandedClasses }
 
 end -- public section
 end Strata.Python.Resolution

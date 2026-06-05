@@ -472,20 +472,28 @@ public def pyAnalyzeLaurelV2
 
   -- Step 2: Resolution (scope the Python AST, loading imports on demand)
   let baseDir := System.FilePath.mk pythonIonPath |>.parent.getD "."
-  let (resolvedStmts, demandedMethods) ← profileStep profile "Resolution (scope Python AST)" do
+  let resolveResult ← profileStep profile "Resolution (scope Python AST)" do
     match ← (Python.Resolution.resolve stmts baseDir).toBaseIO with
     | .ok r => pure r
     | .error msg => throw (.internal s!"Resolution failed: {msg}")
+  let resolvedStmts := resolveResult.program
+  let demandedStmts := resolveResult.demandedStmts
 
   -- Step 3: Translation. User code translated normally. Imported stubs: only the
-  -- methods actually called (demandedMethods) are translated, as separate procedures.
+  -- methods/functions actually called (demandedStmts) are translated, as separate
+  -- procedures; demanded classes become Composite type declarations.
   let metadataPath := sourcePath.getD pythonIonPath
-  let importedLaurel ← profileStep profile "Translate demanded imported methods" do
+  let importedLaurel ← profileStep profile "Translate demanded imported decls" do
     let importedProg : Python.Resolution.ResolvedPythonProgram :=
-      { stmts := demandedMethods, moduleLocals := [] }
+      { stmts := demandedStmts, moduleLocals := [] }
     match Python.Translation.runTranslation importedProg metadataPath with
     | .error _ => pure ({ staticProcedures := [], staticFields := [], types := [], constants := [] } : Laurel.Program)
     | .ok (prog, _) => pure prog
+  -- Composite type declarations for demanded imported classes
+  let demandedTypes : List Laurel.TypeDefinition := resolveResult.demandedClasses.map fun (clsId, fields) =>
+    let laurelFields : List Laurel.Field := fields.map fun (fId, fTy) =>
+      { name := fId.toLaurel, isMutable := true, type := Python.Translation.mkTypeDefault (Python.Translation.pythonTypeToHighType fTy) }
+    .Composite { name := clsId.toLaurel, extending := [], fields := laurelFields, instanceProcedures := [] }
   let userLaurel ← profileStep profile "Translate Python to Laurel (V2)" do
     match Python.Translation.runTranslation resolvedStmts metadataPath with
     | .error e => match e with
@@ -493,11 +501,11 @@ public def pyAnalyzeLaurelV2
       | _ => throw (.internal s!"V2 Translation failed: {e}")
     | .ok (program, _state) => pure program
 
-  -- Step 4: Elaboration elaborates user bodies; imported method stubs are trusted runtime.
+  -- Step 4: Elaboration elaborates user bodies; imported stubs are trusted runtime.
   let fullRuntime : Laurel.Program := {
     staticProcedures := Python.pythonRuntimeLaurelPart.staticProcedures ++ importedLaurel.staticProcedures
     staticFields := Python.pythonRuntimeLaurelPart.staticFields
-    types := Python.pythonRuntimeLaurelPart.types ++ importedLaurel.types
+    types := Python.pythonRuntimeLaurelPart.types ++ importedLaurel.types ++ demandedTypes
     constants := [] }
   let elaboratedProgram ← profileStep profile "Elaborate (full: coercions + type infrastructure)" do
     let runtimeGrades := fullRuntime.staticProcedures.foldl (fun acc proc =>

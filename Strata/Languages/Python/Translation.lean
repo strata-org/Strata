@@ -148,7 +148,8 @@ def pythonTypeToHighType : PythonType → HighType
   | .Constant _ (.ConNone _) _ => .TVoid
   | .BinOp _ _ (.BitOr _) _ => .TCore "Any"
   | .Subscript _ (.Name _ n _) _ _ => match n.val with
-    | "Optional" | "Union" | "List" | "Dict" | "Tuple" | "Set" | "Type" => .TCore "Any"
+    | "Optional" | "Union" | "List" | "Dict" | "Tuple" | "Set" | "Type"
+    | "Literal" | "Unpack" | "NotRequired" | "Required" => .TCore "Any"
     | other => .UserDefined { text := other, uniqueId := none }
   | _ => .TCore "Any"
 
