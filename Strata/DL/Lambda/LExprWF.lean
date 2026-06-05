@@ -42,6 +42,20 @@ def freeVars (e : LExpr ⟨T, GenericTy⟩) : IdentTs GenericTy T.IDMeta :=
   | .ite _ c t e => freeVars c ++ freeVars t ++ freeVars e
   | .eq _ e1 e2 => freeVars e1 ++ freeVars e2
 
+omit [DecidableEq T.IDMeta] in
+theorem freeVars_map_fst_eq_getVars (e : LExpr ⟨T, GenericTy⟩) :
+    (freeVars e).map Prod.fst = LExpr.getVars e := by
+  induction e with
+  | fvar _ y _ => simp [freeVars, LExpr.getVars]
+  | const _ _ => simp [freeVars, LExpr.getVars]
+  | bvar _ _ => simp [freeVars, LExpr.getVars]
+  | op _ _ _ => simp [freeVars, LExpr.getVars]
+  | abs _ _ _ _ ih => simp [freeVars, LExpr.getVars, ih]
+  | app _ _ _ ih1 ih2 => simp [freeVars, LExpr.getVars, List.map_append, ih1, ih2]
+  | ite _ _ _ _ ih1 ih2 ih3 => simp [freeVars, LExpr.getVars, List.map_append, ih1, ih2, ih3]
+  | eq _ _ _ ih1 ih2 => simp [freeVars, LExpr.getVars, List.map_append, ih1, ih2]
+  | quant _ _ _ _ _ _ ih1 ih2 => simp [freeVars, LExpr.getVars, List.map_append, ih1, ih2]
+
 /--
 Is `x` a fresh variable w.r.t. `e`?
 -/
