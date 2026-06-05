@@ -321,6 +321,32 @@ The indexing scan is a simple structural match on the AST:
 - `ClassDef name body ...` → record class name, scan body for method names + raw ASTs
 - Everything else (TypedDicts, assignments, imports) → skip
 
+### Emitting Laurel Stubs from FuncSig
+
+Imported modules do NOT go through Translation. Translation processes user
+code only. Instead, the pipeline constructs Laurel `Procedure` stubs directly
+from the `FuncSig` data in the Ctx:
+
+```
+FuncSig → Laurel.Procedure
+  name := sig.laurelName
+  inputs := sig.laurelDeclInputs.map (fun (id, ty) => { name := id, type := pythonTypeToHighType ty })
+  outputs := [{ name := "result", type := pythonTypeToHighType sig.returnType }]
+  body := .Opaque [] none []    (no postconditions, no implementation)
+  determinism := .nondeterministic
+```
+
+This is a direct structural conversion — no fold, no expression resolution,
+no body traversal. Each stub is O(param count) to construct.
+
+The pipeline's Step 3 becomes:
+1. For each imported module's Ctx: walk its entries, construct Laurel stubs
+   for every `.function`, `.overloadedFunction`, and `.class_` method
+2. Translate user code normally via `runTranslation`
+3. Combine imported stubs + user Laurel into one program
+
+Translation is never called on imported modules. The FuncSig IS the spec.
+
 ## Overload Resolution
 
 Python `@overload` functions define multiple signatures for the same name.

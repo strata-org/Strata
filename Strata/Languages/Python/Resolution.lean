@@ -220,8 +220,12 @@ Within a function body, the context is extended with:
 inductive CtxEntry where
   /-- A function or method with its full signature. -/
   | function (sig : FuncSig)
-  /-- A class with its field list and method signatures (lazily resolved via Thunk). -/
-  | class_ (name : PythonIdentifier) (fields : List (PythonIdentifier × PythonType)) (methods : List (PythonIdentifier × Thunk FuncSig))
+  /-- A class with its field list and method signatures.
+      `methods` holds eagerly-resolved sigs (user classes); `methodAsts` holds raw
+      method statements for lazy on-demand resolution (imported classes). -/
+  | class_ (name : PythonIdentifier) (fields : List (PythonIdentifier × PythonType))
+      (methods : List (PythonIdentifier × FuncSig))
+      (methodAsts : List (PythonIdentifier × PythonStmt) := [])
   /-- A variable with its type annotation. -/
   | variable (ty : PythonType)
   /-- An overloaded function: multiple signatures under the same name, matched in order. -/
@@ -243,6 +247,9 @@ structure ImportedModule where
 structure ResolveState where
   importedModules : Array ImportedModule := #[]
   resolvedPaths : Std.HashMap String Ctx := {}
+  /-- Imported class methods resolved on demand (qualified name → resolved FunctionDef stmt).
+      The pipeline translates only these, not whole imported modules. -/
+  demandedMethods : Std.HashMap String ResolvedPythonStmt := {}
 
 /-- The resolution monad. Reader carries baseDir, State collects imported module programs. -/
 abbrev ResolveM := ReaderT System.FilePath (StateT ResolveState (EIO String))
@@ -516,16 +523,6 @@ def computeLocals (body : PythonProgram) (paramNames : List PythonIdentifier)
 private def argToParam (arg : Python.arg SourceRange) : PythonIdentifier × PythonType :=
   match arg with
   | .mk_arg _ argName annotation _ => (PythonIdentifier.fromAst argName, annotationToPythonType annotation.val)
-
-/-- Lightweight param list extraction for indexing imported modules.
-    Only reads param names and type annotations — no default resolution.
-    All params treated as required (imported stubs don't need default handling). -/
-private def extractParamListShallow (args : Python.arguments SourceRange) : ParamList :=
-  match args with
-  | .mk_arguments _ posonlyargs argList _ _ _ _ _ =>
-    let posAndRegular := posonlyargs.val.toList ++ argList.val.toList
-    let required := posAndRegular.map argToParam
-    { required, optional := [], kwonly := [] }
 
 private def extractAllParamNames (args : Python.arguments SourceRange) : List PythonIdentifier :=
   match args with
@@ -976,7 +973,7 @@ partial def resolveExpr (ctx : Ctx) (f : SourceRange → ResolvedAnn) (e : Pytho
       let info := match ctx[nId]? with
         | some (.function _) => .variable nId
         | some (.overloadedFunction _) => .variable nId
-        | some (.class_ cId _ _) => .variable cId
+        | some (.class_ cId _ _ _) => .variable cId
         | some (.variable _) => .variable nId
         | some (.module_ _) => .irrelevant
         | some .unresolved => .unresolved
@@ -994,10 +991,10 @@ partial def resolveExpr (ctx : Ctx) (f : SourceRange → ResolvedAnn) (e : Pytho
               match matched with
               | some (idx, sig) => pure (.funcCall { sig with overloadIndex := some idx })
               | none => pure .unresolved
-          | some (.class_ cId _ methods) =>
+          | some (.class_ cId _ methods _) =>
               let initId := PythonIdentifier.builtin "__init__"
               match methods.find? (fun (mName, _) => mName == initId) with
-              | some (_, sigThunk) => pure (.classNew cId sigThunk.get)
+              | some (_, sig) => pure (.classNew cId sig)
               | none =>
                 let emptySig : FuncSig := { name := initId, className := some cId, params := .static {required := [], optional := [], kwonly := []}, returnType := anyType, locals := [] }
                 pure (.classNew cId emptySig)
@@ -1157,9 +1154,9 @@ partial def resolveWithitem (ctx : Ctx) (f : SourceRange → ResolvedAnn) : Pyth
         | some (.Name _ className _) =>
           let classId := PythonIdentifier.fromAst className
           match ctx[classId]? with
-          | some (.class_ _ _ methods) =>
-            let enterSig := methods.find? (fun (mName, _) => mName == enterId) |>.map (·.2.get)
-            let exitSig := methods.find? (fun (mName, _) => mName == exitId) |>.map (·.2.get)
+          | some (.class_ _ _ methods _) =>
+            let enterSig := methods.find? (fun (mName, _) => mName == enterId) |>.map (·.2)
+            let exitSig := methods.find? (fun (mName, _) => mName == exitId) |>.map (·.2)
             match enterSig, exitSig with
             | some es, some xs => pure (NodeInfo.withCtx es xs)
             | _, _ => pure NodeInfo.unresolved
@@ -1241,14 +1238,14 @@ partial def typeOfExpr (ctx : Ctx) : PythonExpr → ResolveM (Option PythonType)
     | some (.Name _ className _) =>
       let classId := PythonIdentifier.fromAst className
       match ctx[classId]? with
-      | some (.class_ _ fields _) =>
+      | some (.class_ _ fields _ _) =>
         pure (fields.find? (fun (fName, _) => fName == PythonIdentifier.fromAst fieldName) |>.map (·.2))
       | some (.module_ moduleRaw) =>
         let moduleCtx : Ctx := moduleRaw.fold (fun c k v => c.insert k v) {}
         let fieldId := PythonIdentifier.fromAst fieldName
         match moduleCtx[fieldId]? with
         | some (.variable ty) => pure (some ty)
-        | some (.class_ _ fields _) =>
+        | some (.class_ _ fields _ _) =>
           pure (fields.find? (fun (fName, _) => fName == fieldId) |>.map (·.2))
         | none =>
           let baseDir ← read
@@ -1264,18 +1261,45 @@ partial def typeOfExpr (ctx : Ctx) : PythonExpr → ResolveM (Option PythonType)
     | _ => pure none
   | _ => pure none
 
+/-- Resolve one imported class method from its raw AST on demand. Extracts the
+    FuncSig, resolves the method body, records the resolved FunctionDef into
+    `demandedMethods` for the pipeline to translate, and returns the sig.
+    Memoized by qualified name so repeated calls don't re-resolve. -/
+partial def resolveMethodAstSig (ctx : Ctx) (f : SourceRange → ResolvedAnn)
+    (classId : PythonIdentifier) (mAst : PythonStmt) : ResolveM FuncSig := do
+  match mAst with
+  | .FunctionDef a mName mArgs body mDecs mReturns mTc mTypeParams =>
+    let mId := PythonIdentifier.fromAst mName
+    let qualName := s!"{classId.val}@{mName.val}"
+    let sig ← extractFuncSig ctx f mId (some classId) mArgs mDecs.val mReturns body.val
+    -- Record resolved method for Translation (only once)
+    let st ← get
+    unless st.demandedMethods.contains qualName do
+      let (_, ann, rName, rArgs, rBody, rDecs, rRets, rTc, rTps) ←
+        resolveFuncDef ctx f sig a mName mArgs body mDecs mReturns mTc mTypeParams
+      let resolvedStmt : ResolvedPythonStmt := .FunctionDef ann rName rArgs rBody rDecs rRets rTc rTps
+      modify fun s => { s with demandedMethods := s.demandedMethods.insert qualName resolvedStmt }
+    pure sig
+  | _ =>
+    pure { name := PythonIdentifier.builtin "?", className := some classId, params := .static {required := [], optional := [], kwonly := []}, returnType := anyType, locals := [] }
+
 /-- Resolves `receiver.method(...)` calls. Monadic: uses `typeOfExpr` which may
     trigger demand-driven module loads. -/
 partial def resolveMethodCall (ctx : Ctx) (receiver : PythonExpr) (methodName : Ann String SourceRange) (callArgs : Array PythonExpr := #[]) : ResolveM NodeInfo := do
   let methId := PythonIdentifier.fromAst methodName
+  let f : SourceRange → ResolvedAnn := fun sr => { sr, info := .irrelevant }
   match ← typeOfExpr ctx receiver with
   | some (.Name _ className _) =>
     let classId := PythonIdentifier.fromAst className
     match ctx[classId]? with
-    | some (.class_ _ _ methods) =>
+    | some (.class_ classId _ methods methodAsts) =>
       match methods.find? (fun (mName, _) => mName == methId) with
-      | some (_, sigThunk) => pure (.funcCall sigThunk.get)
-      | none => pure .unresolved
+      | some (_, sig) => pure (.funcCall sig)
+      | none => match methodAsts.find? (fun (mName, _) => mName == methId) with
+        | some (_, mAst) => do
+          let sig ← resolveMethodAstSig ctx f classId mAst
+          pure (.funcCall sig)
+        | none => pure .unresolved
     | _ => pure .unresolved
   | _ => match receiver with
     | .Name _ rName _ =>
@@ -1291,13 +1315,17 @@ partial def resolveMethodCall (ctx : Ctx) (receiver : PythonExpr) (methodName : 
           match matched with
           | some (idx, sig) => pure (.funcCall { sig with overloadIndex := some idx })
           | none => pure .unresolved
-        | some (.class_ cId _ methods) =>
+        | some (.class_ cId _ methods methodAsts) =>
           let initId := PythonIdentifier.builtin "__init__"
           match methods.find? (fun (mName, _) => mName == initId) with
-          | some (_, sigThunk) => pure (.classNew cId sigThunk.get)
-          | none =>
-            let emptySig : FuncSig := { name := initId, className := some cId, params := .static {required := [], optional := [], kwonly := []}, returnType := anyType, locals := [] }
-            pure (.classNew cId emptySig)
+          | some (_, sig) => pure (.classNew cId sig)
+          | none => match methodAsts.find? (fun (mName, _) => mName == initId) with
+            | some (_, mAst) => do
+              let sig ← resolveMethodAstSig ctx f cId mAst
+              pure (.classNew cId sig)
+            | none =>
+              let emptySig : FuncSig := { name := initId, className := some cId, params := .static {required := [], optional := [], kwonly := []}, returnType := anyType, locals := [] }
+              pure (.classNew cId emptySig)
         | _ => pure .unresolved
       | _ => pure .unresolved
     | _ => pure .unresolved
@@ -1319,58 +1347,40 @@ partial def resolveModuleComponent (name : String) (dir : System.FilePath) (f : 
       | .ok stmts => pure (some (initPath, stmts))
       | .error _ => pure none
   match loadResult with
-  | some (actualPath, stmts) =>
-    -- Index-only scan: extract top-level class/function declarations without resolving bodies
+  | some (_, stmts) =>
+    -- Index-only scan: top-level functions resolved eagerly (few, needed for overload
+    -- matching); class methods stored as raw ASTs for on-demand resolution; TypedDicts
+    -- and other assignments skipped. Avoids folding over thousands of irrelevant stmts.
     let mut ctx : Ctx := builtinContext
     for stmt in stmts do
       match stmt with
-      | .FunctionDef _ name args _ decorators returns _ _ =>
-        let nameId := PythonIdentifier.fromAst name
-        if hasOverloadDecorator decorators.val then
+      | .FunctionDef _ fname fargs fbody fdecs freturns _ _ =>
+        let nameId := PythonIdentifier.fromAst fname
+        if hasOverloadDecorator fdecs.val then
           let overloads := match ctx[nameId]? with
             | some (.overloadedFunction existing) => existing
             | _ => []
           let idx := overloads.length
-          let sigThunk := Thunk.mk fun () =>
-            let pl := extractParamListShallow args
-            let retTy := annotationToPythonType returns.val
-            { name := nameId, className := none, params := .static pl, returnType := retTy, locals := [], overloadIndex := some idx }
-          ctx := ctx.insert nameId (.overloadedFunction (overloads ++ [(idx, sigThunk.get)]))
+          let sig ← extractFuncSig ctx f nameId none fargs fdecs.val freturns fbody.val
+          ctx := ctx.insert nameId (.overloadedFunction (overloads ++ [(idx, sig)]))
         else
           match ctx[nameId]? with
-          | some (.overloadedFunction _) => pure ()  -- implementation stub after overloads, keep overloads
+          | some (.overloadedFunction _) => pure ()  -- impl stub after overloads, keep overloads
           | _ =>
-            let sig : FuncSig :=
-              let pl := extractParamListShallow args
-              let retTy := annotationToPythonType returns.val
-              { name := nameId, className := none, params := .static pl, returnType := retTy, locals := [] }
+            let sig ← extractFuncSig ctx f nameId none fargs fdecs.val freturns fbody.val
             ctx := ctx.insert nameId (.function sig)
-      | .ClassDef _ name _ _ body _ _ =>
-        let classId := PythonIdentifier.fromAst name
-        let fields := body.val.toList.filterMap fun s => match s with
+      | .ClassDef _ cname _ _ cbody _ _ =>
+        let classId := PythonIdentifier.fromAst cname
+        let fields := cbody.val.toList.filterMap fun s => match s with
           | .AnnAssign _ (.Name _ n _) annotation _ _ => some (PythonIdentifier.fromAst n, annotation)
           | _ => none
-        let methodThunks := body.val.toList.filterMap fun s => match s with
-          | .FunctionDef _ mName mArgs _ _ mReturns _ _ =>
-            let mId := PythonIdentifier.fromAst mName
-            let thunk := Thunk.mk fun () =>
-              let pl := extractParamListShallow mArgs
-              let retTy := annotationToPythonType mReturns.val
-              { name := mId, className := some classId, params := .instance (.builtin "self") pl, returnType := retTy, locals := [] }
-            some (mId, thunk)
-          | .AsyncFunctionDef _ mName mArgs _ _ mReturns _ _ =>
-            let mId := PythonIdentifier.fromAst mName
-            let thunk := Thunk.mk fun () =>
-              let pl := extractParamListShallow mArgs
-              let retTy := annotationToPythonType mReturns.val
-              { name := mId, className := some classId, params := .instance (.builtin "self") pl, returnType := retTy, locals := [] }
-            some (mId, thunk)
+        let methodAsts := cbody.val.toList.filterMap fun s => match s with
+          | .FunctionDef _ mName _ _ _ _ _ _ => some (PythonIdentifier.fromAst mName, s)
+          | .AsyncFunctionDef _ mName _ _ _ _ _ _ => some (PythonIdentifier.fromAst mName, s)
           | _ => none
-        ctx := ctx.insert classId (.class_ classId fields methodThunks)
-      | _ => pure ()
-    modify fun s => { s with
-      importedModules := s.importedModules.push { sourcePath := actualPath, program := { stmts := #[], moduleLocals := [] } }
-      resolvedPaths := s.resolvedPaths.insert key ctx }
+        ctx := ctx.insert classId (.class_ classId fields [] methodAsts)
+      | _ => pure ()  -- TypedDicts, assignments, imports — not needed by callers
+    modify fun s => { s with resolvedPaths := s.resolvedPaths.insert key ctx }
     pure (ctx, { stmts := #[], moduleLocals := [] })
   | none => pure ({}, { stmts := #[], moduleLocals := [] })
 
@@ -1447,8 +1457,7 @@ partial def resolveStmt (ctx : Ctx) (f : SourceRange → ResolvedAnn) (s : Pytho
             let sig ← extractFuncSig ctx f mId (some classId) mArgs mDecs.val mReturns mBody
             methods := methods ++ [(mId, sig)]
         | _ => pure ()
-      let thunkedMethods := methods.map fun (mId, sig) => (mId, Thunk.mk fun () => sig)
-      let ctx' := ctx.insert classId (CtxEntry.class_ classId fields thunkedMethods)
+      let ctx' := ctx.insert classId (CtxEntry.class_ classId fields methods)
       let classCtx := ctx'.insert (PythonIdentifier.fromAst ⟨SourceRange.none, "self"⟩) (CtxEntry.variable classType)
       let classCtx := methods.foldl (fun c (mId, mSig) => c.insert mId (CtxEntry.function mSig)) classCtx
       let methodSigs := methods.map (·.2)
@@ -1626,7 +1635,7 @@ end
 /-- Entry point: resolves a full Python module. Computes module-level locals, seeds the
     context with builtins + those locals, then folds `resolveStmt` over all top-level statements.
     Returns `ResolvedPythonProgram` with fully-annotated AST and module locals list. -/
-def resolve (stmts : PythonProgram) (baseDir : System.FilePath := ".") : EIO String (ResolvedPythonProgram × Array ImportedModule) := do
+def resolve (stmts : PythonProgram) (baseDir : System.FilePath := ".") : EIO String (ResolvedPythonProgram × Array ResolvedPythonStmt) := do
   let f : SourceRange → ResolvedAnn := fun sr => { sr, info := .irrelevant }
   let moduleLocals := computeLocals stmts []
   let initCtx := moduleLocals.foldl (fun c (n, ty) => c.insert n (CtxEntry.variable ty)) builtinContext
@@ -1639,7 +1648,9 @@ def resolve (stmts : PythonProgram) (baseDir : System.FilePath := ".") : EIO Str
       resolved := resolved.push r
     return { stmts := resolved, moduleLocals := moduleLocals }
   let (prog, state) ← action.run baseDir |>.run {}
-  return (prog, state.importedModules)
+  -- Demanded imported methods (resolved on demand during call-site resolution)
+  let demanded := state.demandedMethods.toList.map (·.2) |>.toArray
+  return (prog, demanded)
 
 end -- public section
 end Strata.Python.Resolution

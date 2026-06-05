@@ -472,59 +472,32 @@ public def pyAnalyzeLaurelV2
 
   -- Step 2: Resolution (scope the Python AST, loading imports on demand)
   let baseDir := System.FilePath.mk pythonIonPath |>.parent.getD "."
-  let (resolvedStmts, importedModules) ← profileStep profile "Resolution (scope Python AST)" do
+  let (resolvedStmts, demandedMethods) ← profileStep profile "Resolution (scope Python AST)" do
     match ← (Python.Resolution.resolve stmts baseDir).toBaseIO with
     | .ok r => pure r
     | .error msg => throw (.internal s!"Resolution failed: {msg}")
 
-  -- Step 3: Translation (fold resolved AST → Laurel, including imported modules with caching)
+  -- Step 3: Translation. User code translated normally. Imported stubs: only the
+  -- methods actually called (demandedMethods) are translated, as separate procedures.
   let metadataPath := sourcePath.getD pythonIonPath
-  let laurelProgram ← profileStep profile "Translate Python to Laurel (V2)" do
-    let mut combinedProgram : Laurel.Program := { staticProcedures := [], staticFields := [], types := [], constants := [] }
-    for importedMod in importedModules do
-      let srcStr := importedMod.sourcePath.toString
-      let cachePath : System.FilePath :=
-        if srcStr.endsWith ".python.st.ion" then
-          ⟨srcStr.dropRight ".python.st.ion".length ++ ".laurel.st"⟩
-        else
-          importedMod.sourcePath.withExtension "laurel.st"
-      let laurel ←
-        match Python.Translation.runTranslation importedMod.program metadataPath with
-        | .error _ => pure combinedProgram
-        | .ok (prog, _) => pure prog
-      combinedProgram := { combinedProgram with
-        staticProcedures := combinedProgram.staticProcedures ++ laurel.staticProcedures
-        types := combinedProgram.types ++ laurel.types }
+  let importedLaurel ← profileStep profile "Translate demanded imported methods" do
+    let importedProg : Python.Resolution.ResolvedPythonProgram :=
+      { stmts := demandedMethods, moduleLocals := [] }
+    match Python.Translation.runTranslation importedProg metadataPath with
+    | .error _ => pure ({ staticProcedures := [], staticFields := [], types := [], constants := [] } : Laurel.Program)
+    | .ok (prog, _) => pure prog
+  let userLaurel ← profileStep profile "Translate Python to Laurel (V2)" do
     match Python.Translation.runTranslation resolvedStmts metadataPath with
     | .error e => match e with
       | .userError range msg => throw (.userCode range msg)
       | _ => throw (.internal s!"V2 Translation failed: {e}")
-    | .ok (program, _state) => pure { program with
-        staticProcedures := combinedProgram.staticProcedures ++ program.staticProcedures
-        types := combinedProgram.types ++ program.types }
+    | .ok (program, _state) => pure program
 
-  -- Step 4: Elaboration needs ALL sigs (user + runtime) to insert coercions at call
-  -- boundaries, but only user bodies are elaborated (runtime is trusted).
-  -- Separate user procedures (have bodies) from imported stubs (no bodies).
-  let userProcNames : Std.HashSet String := match Python.Translation.runTranslation resolvedStmts metadataPath with
-    | .ok (prog, _) => prog.staticProcedures.foldl (fun s p => s.insert p.name.text) {}
-    | .error _ => {}
-  let importedProcs := laurelProgram.staticProcedures.filter fun proc =>
-    !userProcNames.contains proc.name.text
-  let importedTypes := laurelProgram.types.filter fun td => match td with
-    | .Composite ct => !userProcNames.contains ct.name.text
-    | _ => false
-  let userLaurel : Laurel.Program := {
-    laurelProgram with
-    staticProcedures := laurelProgram.staticProcedures.filter fun proc =>
-      userProcNames.contains proc.name.text
-    types := laurelProgram.types.filter fun td => match td with
-      | .Composite ct => userProcNames.contains ct.name.text
-      | _ => true }
+  -- Step 4: Elaboration elaborates user bodies; imported method stubs are trusted runtime.
   let fullRuntime : Laurel.Program := {
-    staticProcedures := Python.pythonRuntimeLaurelPart.staticProcedures ++ importedProcs
+    staticProcedures := Python.pythonRuntimeLaurelPart.staticProcedures ++ importedLaurel.staticProcedures
     staticFields := Python.pythonRuntimeLaurelPart.staticFields
-    types := Python.pythonRuntimeLaurelPart.types ++ importedTypes
+    types := Python.pythonRuntimeLaurelPart.types ++ importedLaurel.types
     constants := [] }
   let elaboratedProgram ← profileStep profile "Elaborate (full: coercions + type infrastructure)" do
     let runtimeGrades := fullRuntime.staticProcedures.foldl (fun acc proc =>
