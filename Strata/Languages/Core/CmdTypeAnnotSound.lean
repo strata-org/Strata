@@ -9,7 +9,7 @@ import Strata.Languages.Core.CmdTypeSpec
 import Strata.Languages.Core.CmdType
 import all Strata.Languages.Core.CmdTypeSound
 import Strata.DL.Imperative.CmdType
-import Strata.DL.Lambda.Denote.ResolveHasTypeAStub
+import all Strata.DL.Lambda.Denote.LExprResolveAnnotated
 import all Strata.DL.Lambda.Denote.LExprDenoteTySubst
 
 /-! ## Annotated Soundness of Command Typechecker

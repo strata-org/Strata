@@ -39,6 +39,16 @@ namespace Lambda
 
 open Std (ToFormat Format format)
 
+/-- Splits on `h` once and closes the first (error) branch via `simp at h` or `contradiction`.
+    Fails if neither closes the branch. -/
+macro "elim_err" h:ident : tactic =>
+  `(tactic| (split at $h:ident; · (solve | simp at $h:ident | contradiction)))
+
+/-- Repeatedly splits on `h` and closes error branches until a split fails or
+    the error branch can't be closed. -/
+macro "elim_errs" h:ident : tactic =>
+  `(tactic| repeat (split at $h:ident; · (solve | simp at $h:ident | contradiction)))
+
 public section
 
 namespace LExpr
@@ -2506,6 +2516,37 @@ theorem typeBoundVar_context_types_ne_nil
     obtain ⟨_, _, h_env1⟩ := h; rw [← h_env1]
     simp [TEnv.addInNewestContext, TEnv.updateContext, TEnv.context,
           Maps.addInNewest, Maps.push, Maps.pop, Maps.newest]
+
+omit [ToString T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
+theorem typeBoundVar_aliases_eq
+    (C : LContext T) (Env : TEnv T.IDMeta) (bty : Option LMonoTy)
+    (xv : T.Identifier) (xty : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : typeBoundVar C Env bty = .ok (xv, xty, Env')) :
+    Env'.context.aliases = Env.context.aliases := by
+  simp only [typeBoundVar, Bind.bind, Except.bind] at h
+  split at h; · simp at h
+  rename_i v_gen h_gen; obtain ⟨xv_raw, Env_g⟩ := v_gen
+  dsimp at h; cases bty with
+  | some bty_val =>
+    dsimp at h; split at h; · simp at h
+    rename_i v_ic h_ic; obtain ⟨bty_ic, Env_ic⟩ := v_ic
+    cases h
+    simp only [TEnv.addInNewestContext, TEnv.updateContext, TEnv.context]
+    have h_ctx_g := liftGenEnv_context Env xv Env_g h_gen
+    have h_ctx_ic := LMonoTy_instantiateWithCheck_context' bty_val C Env_g _ ⟨bty_ic, Env_ic⟩ h_ic
+    have h_ctx : (⟨bty_ic, Env_ic⟩ : TEnv T.IDMeta).context = Env.context := by
+      simp [TEnv.context] at h_ctx_ic h_ctx_g ⊢; rw [h_ctx_ic, h_ctx_g]
+    exact congrArg TContext.aliases h_ctx
+  | none =>
+    dsimp at h; split at h; · simp at h
+    rename_i v_tg h_tg; obtain ⟨tv, Env_tv⟩ := v_tg
+    cases h
+    simp only [TEnv.addInNewestContext, TEnv.updateContext, TEnv.context]
+    have h_ctx_g := liftGenEnv_context Env xv Env_g h_gen
+    have h_ctx_tg := TEnv.genTyVar_context Env_g tv Env_tv h_tg
+    have h_ctx : Env_tv.context = Env.context := by
+      simp [TEnv.context] at h_ctx_tg h_ctx_g ⊢; rw [h_ctx_tg, h_ctx_g]
+    exact congrArg TContext.aliases h_ctx
 
 omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /-- Backward direction: vars in knownTypeVars after addInNewest come from
@@ -5558,6 +5599,343 @@ theorem TEnvWF.of_resolveAux
     boundVarsFresh := transfer_boundVarsFresh h_envwf.boundVarsFresh h_ctx
       props.genState_mono }
 
+omit [ToString T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
+/-- Reusable induction principle for `resolveAux`. Handles strong induction on
+    expression size, monadic decomposition, and propagation of `TEnvWF` /
+    `types ≠ []` through the chain of environments. -/
+theorem resolveAux_ind
+    (P : (e : LExpr T.mono) → (et : LExprT T.mono) → (C : LContext T) →
+         (Env Env' : TEnv T.IDMeta) → Prop)
+    -- Base cases
+    (h_const : ∀ m c et C Env Env',
+      resolveAux C Env (.const m c) = .ok (et, Env') →
+      TEnvWF Env → Env.context.types ≠ [] → FactoryWF C.functions →
+      P (.const m c) et C Env Env')
+    (h_op : ∀ m o oty et C Env Env',
+      resolveAux C Env (.op m o oty) = .ok (et, Env') →
+      TEnvWF Env → Env.context.types ≠ [] → FactoryWF C.functions →
+      P (.op m o oty) et C Env Env')
+    (h_fvar : ∀ m x fty et C Env Env',
+      resolveAux C Env (.fvar m x fty) = .ok (et, Env') →
+      TEnvWF Env → Env.context.types ≠ [] → FactoryWF C.functions →
+      P (.fvar m x fty) et C Env Env')
+    -- Recursive: app (fully decomposed)
+    (h_app : ∀ m e1 e2 et C Env Env'
+      (e1t : LExprT T.mono) (Env1 : TEnv T.IDMeta)
+      (e2t : LExprT T.mono) (Env2 : TEnv T.IDMeta)
+      (fresh_name : String) (Env_gen : TEnv T.IDMeta)
+      (substInfo : SubstInfo),
+      resolveAux C Env (.app m e1 e2) = .ok (et, Env') →
+      resolveAux C Env e1 = .ok (e1t, Env1) →
+      resolveAux C Env1 e2 = .ok (e2t, Env2) →
+      TEnv.genTyVar Env2 = .ok (fresh_name, Env_gen) →
+      Constraints.unify [(e1t.toLMonoTy, .tcons "arrow" [e2t.toLMonoTy, .ftvar fresh_name])]
+        Env_gen.stateSubstInfo = .ok substInfo →
+      et = .app ⟨m, LMonoTy.subst substInfo.subst (.ftvar fresh_name)⟩ e1t e2t →
+      Env'.stateSubstInfo.subst = Maps.remove substInfo.subst fresh_name →
+      Subst.absorbs (Maps.remove substInfo.subst fresh_name) Env1.stateSubstInfo.subst →
+      Subst.absorbs (Maps.remove substInfo.subst fresh_name) Env2.stateSubstInfo.subst →
+      fresh_name ∉ LMonoTy.freeVars e1t.toLMonoTy →
+      fresh_name ∉ LMonoTy.freeVars e2t.toLMonoTy →
+      LMonoTy.subst substInfo.subst e1t.toLMonoTy =
+        LMonoTy.subst substInfo.subst (.tcons "arrow" [e2t.toLMonoTy, .ftvar fresh_name]) →
+      TEnvWF Env → Env.context.types ≠ [] → FactoryWF C.functions →
+      TEnvWF Env1 → Env1.context = Env.context →
+      TEnvWF Env2 → Env2.context = Env.context →
+      P e1 e1t C Env Env1 → P e2 e2t C Env1 Env2 →
+      P (.app m e1 e2) et C Env Env')
+    -- Recursive: abs
+    (h_abs : ∀ m name bty body et C Env Env'
+      (xv : T.Identifier) (xty : LMonoTy) (Env1 : TEnv T.IDMeta)
+      (et_body : LExprT T.mono) (Env2 : TEnv T.IDMeta),
+      resolveAux C Env (.abs m name bty body) = .ok (et, Env') →
+      typeBoundVar C Env bty = .ok (xv, xty, Env1) →
+      resolveAux C Env1 (LExpr.varOpen 0 (xv, some xty) body) = .ok (et_body, Env2) →
+      et = .abs ⟨m, LMonoTy.subst Env2.stateSubstInfo.subst
+        (.tcons "arrow" [xty, (LExpr.varCloseT 0 xv et_body).toLMonoTy])⟩
+        name bty (LExpr.varCloseT 0 xv et_body) →
+      Env' = Env2.eraseFromContext xv →
+      TEnvWF Env → Env.context.types ≠ [] → FactoryWF C.functions →
+      TEnvWF Env1 → Env1.context.types ≠ [] →
+      Env1.context.aliases = Env.context.aliases →
+      P (LExpr.varOpen 0 (xv, some xty) body) et_body C Env1 Env2 →
+      P (.abs m name bty body) et C Env Env')
+    -- Recursive: quant
+    (h_quant : ∀ m qk name bty triggers body et C Env Env'
+      (xv : T.Identifier) (xty : LMonoTy) (Env1 : TEnv T.IDMeta)
+      (et_body : LExprT T.mono) (Env2 : TEnv T.IDMeta)
+      (et_tr : LExprT T.mono) (Env3 : TEnv T.IDMeta),
+      resolveAux C Env (.quant m qk name bty triggers body) = .ok (et, Env') →
+      typeBoundVar C Env bty = .ok (xv, xty, Env1) →
+      resolveAux C Env1 (LExpr.varOpen 0 (xv, some xty) body) = .ok (et_body, Env2) →
+      resolveAux C Env2 (LExpr.varOpen 0 (xv, some xty) triggers) = .ok (et_tr, Env3) →
+      et = .quant ⟨m, LMonoTy.subst Env3.stateSubstInfo.subst xty⟩ qk name
+        (LMonoTy.subst Env3.stateSubstInfo.subst xty)
+        (LExpr.varCloseT 0 xv et_tr) (LExpr.varCloseT 0 xv et_body) →
+      Env' = Env3.eraseFromContext xv →
+      TEnvWF Env → Env.context.types ≠ [] → FactoryWF C.functions →
+      TEnvWF Env1 → Env1.context.types ≠ [] →
+      Env1.context.aliases = Env.context.aliases →
+      TEnvWF Env2 → Env2.context = Env1.context →
+      P (LExpr.varOpen 0 (xv, some xty) body) et_body C Env1 Env2 →
+      P (LExpr.varOpen 0 (xv, some xty) triggers) et_tr C Env2 Env3 →
+      P (.quant m qk name bty triggers body) et C Env Env')
+    -- Recursive: eq (with unify decomposition)
+    (h_eq : ∀ m e1 e2 et C Env Env'
+      (e1t : LExprT T.mono) (Env1 : TEnv T.IDMeta)
+      (e2t : LExprT T.mono) (Env2 : TEnv T.IDMeta)
+      (substInfo : SubstInfo),
+      resolveAux C Env (.eq m e1 e2) = .ok (et, Env') →
+      resolveAux C Env e1 = .ok (e1t, Env1) →
+      resolveAux C Env1 e2 = .ok (e2t, Env2) →
+      Constraints.unify [(e1t.toLMonoTy, e2t.toLMonoTy)]
+        Env2.stateSubstInfo = .ok substInfo →
+      et = .eq ⟨m, LMonoTy.bool⟩ e1t e2t →
+      Env'.stateSubstInfo.subst = substInfo.subst →
+      Subst.absorbs Env1.stateSubstInfo.subst Env.stateSubstInfo.subst →
+      Subst.absorbs Env2.stateSubstInfo.subst Env1.stateSubstInfo.subst →
+      TEnvWF Env → Env.context.types ≠ [] → FactoryWF C.functions →
+      TEnvWF Env1 → Env1.context = Env.context →
+      TEnvWF Env2 → Env2.context = Env.context →
+      P e1 e1t C Env Env1 → P e2 e2t C Env1 Env2 →
+      P (.eq m e1 e2) et C Env Env')
+    -- Recursive: ite (with unify decomposition)
+    (h_ite : ∀ m c th el et C Env Env'
+      (ct : LExprT T.mono) (Env1 : TEnv T.IDMeta)
+      (tht : LExprT T.mono) (Env2 : TEnv T.IDMeta)
+      (elt : LExprT T.mono) (Env3 : TEnv T.IDMeta)
+      (substInfo : SubstInfo),
+      resolveAux C Env (.ite m c th el) = .ok (et, Env') →
+      resolveAux C Env c = .ok (ct, Env1) →
+      resolveAux C Env1 th = .ok (tht, Env2) →
+      resolveAux C Env2 el = .ok (elt, Env3) →
+      Constraints.unify [(ct.toLMonoTy, LMonoTy.bool), (tht.toLMonoTy, elt.toLMonoTy)]
+        Env3.stateSubstInfo = .ok substInfo →
+      et = .ite ⟨m, tht.toLMonoTy⟩ ct tht elt →
+      Env'.stateSubstInfo.subst = substInfo.subst →
+      Subst.absorbs Env2.stateSubstInfo.subst Env1.stateSubstInfo.subst →
+      Subst.absorbs Env3.stateSubstInfo.subst Env2.stateSubstInfo.subst →
+      TEnvWF Env → Env.context.types ≠ [] → FactoryWF C.functions →
+      TEnvWF Env1 → Env1.context = Env.context →
+      TEnvWF Env2 → Env2.context = Env.context →
+      TEnvWF Env3 → Env3.context = Env.context →
+      P c ct C Env Env1 → P th tht C Env1 Env2 → P el elt C Env2 Env3 →
+      P (.ite m c th el) et C Env Env')
+    -- Main statement
+    (e : LExpr T.mono) (et : LExprT T.mono) (C : LContext T)
+    (Env Env' : TEnv T.IDMeta)
+    (h_res : resolveAux C Env e = .ok (et, Env'))
+    (h_envwf : TEnvWF Env)
+    (h_ne : Env.context.types ≠ [])
+    (h_fwf : FactoryWF C.functions) :
+    P e et C Env Env' := by
+  have h_main : ∀ (n : Nat) (e : LExpr T.mono), e.sizeOf = n →
+      ∀ (et : LExprT T.mono) (C : LContext T) (Env Env' : TEnv T.IDMeta),
+      resolveAux C Env e = .ok (et, Env') →
+      TEnvWF Env → Env.context.types ≠ [] → FactoryWF C.functions →
+      P e et C Env Env' := by
+    intro n
+    induction n using Nat.strongRecOn with
+    | _ n ih =>
+    intro e h_sz et C Env Env' h_res h_envwf' h_ne' h_fwf'
+    match e with
+    | .const m c => exact h_const m c et C Env Env' h_res h_envwf' h_ne' h_fwf'
+    | .op m o oty => exact h_op m o oty et C Env Env' h_res h_envwf' h_ne' h_fwf'
+    | .fvar m x fty => exact h_fvar m x fty et C Env Env' h_res h_envwf' h_ne' h_fwf'
+    | .bvar _ _ => simp [resolveAux] at h_res
+    | .app m e1 e2 =>
+      have h_orig := h_res
+      simp only [resolveAux, Bind.bind, Except.bind] at h_res
+      elim_err h_res
+      rename_i v1 h1; obtain ⟨e1t, Env1⟩ := v1; dsimp at h_res h1
+      elim_err h_res
+      rename_i v2 h2; obtain ⟨e2t, Env2⟩ := v2; dsimp at h_res h2
+      elim_err h_res
+      rename_i v3 h3; obtain ⟨fresh_name, Env_gen⟩ := v3; dsimp at h_res h3
+      elim_err h_res
+      rename_i substInfo h_unify
+      have h_unify' := unify_of_mapError h_unify
+      have h_sz1 : e1.sizeOf < n := by subst h_sz; simp [LExpr.sizeOf]; omega
+      have h_sz2 : e2.sizeOf < n := by subst h_sz; simp [LExpr.sizeOf]; omega
+      have h_props1 := resolveAux_properties e1 e1t C Env Env1 h1 h_ne'
+        h_envwf'.aliasesWF h_fwf' h_envwf'.substFreshForGen h_envwf'.ctxFreshForGen
+        h_envwf'.boundVarsFresh
+      have h_ctx1 := h_props1.context
+      have h_envwf1 := TEnvWF.of_resolveAux e1 e1t C Env Env1 h1 h_envwf' h_ne' h_fwf' h_ctx1
+      have h_ne1 : Env1.context.types ≠ [] := h_ctx1 ▸ h_ne'
+      have h_props2 := resolveAux_properties e2 e2t C Env1 Env2 h2 h_ne1
+        h_envwf1.aliasesWF h_fwf' h_envwf1.substFreshForGen h_envwf1.ctxFreshForGen
+        h_envwf1.boundVarsFresh
+      have h_ctx2 : Env2.context = Env.context := h_props2.context ▸ h_ctx1
+      have h_envwf2 := TEnvWF.of_resolveAux e2 e2t C Env1 Env2 h2 h_envwf1 h_ne1 h_fwf' h_props2.context
+      -- genTyVar facts and freshness/absorption derivations (S-independent)
+      have h_gen_subst := TEnv.genTyVar_subst Env2 fresh_name Env_gen h3
+      have h_gen_name := genTyVar_name_eq Env2 fresh_name Env_gen h3
+      have h_unify_gen := h_unify'
+      rw [h_gen_subst] at h_unify_gen
+      have h_abs_unify := Constraints.unify_absorbs _ _ _ h_unify_gen
+      have h_fresh_e1 : Maps.find? Env1.stateSubstInfo.subst fresh_name = none ∧
+          (∀ a t, Maps.find? Env1.stateSubstInfo.subst a = some t →
+            fresh_name ∉ LMonoTy.freeVars t) :=
+        genTyVar_fresh_wrt_input_subst Env1 Env2 Env_gen fresh_name h3
+          h_envwf1.substFreshForGen h_props2.genState_mono
+      have h_fresh_e2 : Maps.find? Env2.stateSubstInfo.subst fresh_name = none ∧
+          (∀ a t, Maps.find? Env2.stateSubstInfo.subst a = some t →
+            fresh_name ∉ LMonoTy.freeVars t) :=
+        genTyVar_fresh_wrt_input_subst Env2 Env2 Env_gen fresh_name h3
+          h_props2.preserves.1 (Nat.le_refl _)
+      have h_abs_rem_e2 := Subst.absorbs_of_remove
+        substInfo.subst Env2.stateSubstInfo.subst fresh_name
+        h_abs_unify h_fresh_e2.1 h_fresh_e2.2
+      have h_abs_rem_e1 := Subst.absorbs_of_remove
+        substInfo.subst Env1.stateSubstInfo.subst fresh_name
+        (Subst.absorbs_trans _ _ _ h_props2.absorbs h_abs_unify)
+        h_fresh_e1.1 h_fresh_e1.2
+      have h_e1t_no_fresh : fresh_name ∉ LMonoTy.freeVars e1t.toLMonoTy := by
+        intro h_mem
+        exact absurd h_gen_name
+          (h_props1.preserves.2 fresh_name h_mem Env2.genEnv.genState.tyGen
+            h_props2.genState_mono)
+      have h_e2t_no_fresh : fresh_name ∉ LMonoTy.freeVars e2t.toLMonoTy := by
+        intro h_mem
+        exact absurd h_gen_name
+          (h_props2.preserves.2 fresh_name h_mem Env2.genEnv.genState.tyGen
+            (Nat.le_refl _))
+      have h_unify_eq : LMonoTy.subst substInfo.subst e1t.toLMonoTy =
+          LMonoTy.subst substInfo.subst
+            (LMonoTy.tcons "arrow" [e2t.toLMonoTy, .ftvar fresh_name]) := by
+        have h_p := Constraints.unify_sound _ _ _ h_unify_gen _ (List.Mem.head _)
+        simp at h_p; exact h_p
+      cases h_res
+      have h_ih1 := ih e1.sizeOf h_sz1 e1 rfl e1t C Env Env1 h1 h_envwf' h_ne' h_fwf'
+      have h_ih2 := ih e2.sizeOf h_sz2 e2 rfl e2t C Env1 Env2 h2 h_envwf1 h_ne1 h_fwf'
+      exact h_app m e1 e2 _ C Env _ e1t Env1 e2t Env2 fresh_name Env_gen substInfo
+        h_orig h1 h2 h3 h_unify' rfl rfl h_abs_rem_e1 h_abs_rem_e2
+        h_e1t_no_fresh h_e2t_no_fresh h_unify_eq
+        h_envwf' h_ne' h_fwf' h_envwf1 h_ctx1 h_envwf2 h_ctx2
+        h_ih1 h_ih2
+    | .abs m name bty body =>
+      have h_orig := h_res
+      simp only [resolveAux, Bind.bind, Except.bind] at h_res
+      elim_err h_res
+      rename_i v1 h_tbv; obtain ⟨xv, xty, Env1⟩ := v1; dsimp at h_res h_tbv
+      elim_err h_res
+      rename_i v2 h_res_body; obtain ⟨et_body, Env2⟩ := v2; dsimp at h_res h_res_body
+      have h_sz_body : (LExpr.varOpen 0 (xv, some xty) body).sizeOf < n := by
+        subst h_sz; simp [LExpr.sizeOf, LExpr.varOpen_sizeOf]
+      have h_envwf1 := TEnvWF.of_typeBoundVar C Env bty xv xty Env1 h_tbv h_envwf'
+      have h_ne1 := typeBoundVar_context_types_ne_nil C Env bty xv xty Env1 h_tbv
+      have h_aliases_eq := typeBoundVar_aliases_eq C Env bty xv xty Env1 h_tbv
+      have h_ih := ih _ h_sz_body _ rfl et_body C Env1 Env2 h_res_body h_envwf1 h_ne1 h_fwf'
+      simp only [Except.ok.injEq, Prod.mk.injEq] at h_res
+      obtain ⟨h_et, h_env'⟩ := h_res
+      subst h_et h_env'
+      exact h_abs m name bty body _ C Env _ xv xty Env1 et_body Env2
+        h_orig h_tbv h_res_body rfl rfl h_envwf' h_ne' h_fwf' h_envwf1 h_ne1 h_aliases_eq h_ih
+    | .quant m qk name bty triggers body =>
+      have h_orig := h_res
+      simp only [resolveAux, Bind.bind, Except.bind] at h_res
+      elim_err h_res
+      rename_i v1 h_tbv; obtain ⟨xv, xty, Env1⟩ := v1; dsimp at h_res h_tbv
+      elim_err h_res
+      rename_i v2 h_res_body; obtain ⟨et_body, Env2⟩ := v2; dsimp at h_res h_res_body
+      elim_err h_res
+      rename_i v3 h_res_tr; obtain ⟨et_tr, Env3⟩ := v3; dsimp at h_res h_res_tr
+      have h_sz_body : (LExpr.varOpen 0 (xv, some xty) body).sizeOf < n := by
+        subst h_sz; simp [LExpr.sizeOf, LExpr.varOpen_sizeOf]; omega
+      have h_sz_tr : (LExpr.varOpen 0 (xv, some xty) triggers).sizeOf < n := by
+        subst h_sz; simp [LExpr.sizeOf, LExpr.varOpen_sizeOf]; omega
+      have h_envwf1 := TEnvWF.of_typeBoundVar C Env bty xv xty Env1 h_tbv h_envwf'
+      have h_ne1 := typeBoundVar_context_types_ne_nil C Env bty xv xty Env1 h_tbv
+      have h_aliases_eq := typeBoundVar_aliases_eq C Env bty xv xty Env1 h_tbv
+      have h_props_body := resolveAux_properties (LExpr.varOpen 0 (xv, some xty) body) et_body
+        C Env1 Env2 h_res_body h_ne1 h_envwf1.aliasesWF h_fwf'
+        h_envwf1.substFreshForGen h_envwf1.ctxFreshForGen h_envwf1.boundVarsFresh
+      have h_ctx2 := h_props_body.context
+      have h_envwf2 := TEnvWF.of_resolveAux (LExpr.varOpen 0 (xv, some xty) body) et_body
+        C Env1 Env2 h_res_body h_envwf1 h_ne1 h_fwf' h_ctx2
+      have h_ne2 : Env2.context.types ≠ [] := h_ctx2 ▸ h_ne1
+      have h_ih_body := ih _ h_sz_body _ rfl et_body C Env1 Env2 h_res_body h_envwf1 h_ne1 h_fwf'
+      have h_ih_tr := ih _ h_sz_tr _ rfl et_tr C Env2 Env3 h_res_tr h_envwf2 h_ne2 h_fwf'
+      split at h_res; · simp at h_res
+      simp only [Except.ok.injEq, Prod.mk.injEq] at h_res
+      obtain ⟨h_et, h_env'⟩ := h_res
+      subst h_et h_env'
+      exact h_quant m qk name bty triggers body _ C Env _ xv xty Env1 et_body Env2 et_tr Env3
+        h_orig h_tbv h_res_body h_res_tr rfl rfl h_envwf' h_ne' h_fwf' h_envwf1 h_ne1 h_aliases_eq
+        h_envwf2 h_ctx2 h_ih_body h_ih_tr
+    | .eq m e1 e2 =>
+      have h_orig := h_res
+      simp only [resolveAux, Bind.bind, Except.bind] at h_res
+      elim_err h_res
+      rename_i v1 h1; obtain ⟨e1t, Env1⟩ := v1; dsimp at h_res h1
+      elim_err h_res
+      rename_i v2 h2; obtain ⟨e2t, Env2⟩ := v2; dsimp at h_res h2
+      elim_err h_res
+      rename_i substInfo h_unify
+      have h_unify' := unify_of_mapError h_unify
+      have h_sz1 : e1.sizeOf < n := by subst h_sz; simp [LExpr.sizeOf]; omega
+      have h_sz2 : e2.sizeOf < n := by subst h_sz; simp [LExpr.sizeOf]; omega
+      have h_props1 := resolveAux_properties e1 e1t C Env Env1 h1 h_ne'
+        h_envwf'.aliasesWF h_fwf' h_envwf'.substFreshForGen h_envwf'.ctxFreshForGen
+        h_envwf'.boundVarsFresh
+      have h_ctx1 := h_props1.context
+      have h_envwf1 := TEnvWF.of_resolveAux e1 e1t C Env Env1 h1 h_envwf' h_ne' h_fwf' h_ctx1
+      have h_ne1 : Env1.context.types ≠ [] := h_ctx1 ▸ h_ne'
+      have h_props2 := resolveAux_properties e2 e2t C Env1 Env2 h2 h_ne1
+        h_envwf1.aliasesWF h_fwf' h_envwf1.substFreshForGen h_envwf1.ctxFreshForGen
+        h_envwf1.boundVarsFresh
+      have h_ctx2 : Env2.context = Env.context := h_props2.context ▸ h_ctx1
+      have h_envwf2 := TEnvWF.of_resolveAux e2 e2t C Env1 Env2 h2 h_envwf1 h_ne1 h_fwf' h_props2.context
+      cases h_res
+      have h_ih1 := ih e1.sizeOf h_sz1 e1 rfl e1t C Env Env1 h1 h_envwf' h_ne' h_fwf'
+      have h_ih2 := ih e2.sizeOf h_sz2 e2 rfl e2t C Env1 Env2 h2 h_envwf1 h_ne1 h_fwf'
+      exact h_eq m e1 e2 _ C Env _ e1t Env1 e2t Env2 substInfo
+        h_orig h1 h2 h_unify' rfl rfl h_props1.absorbs h_props2.absorbs
+        h_envwf' h_ne' h_fwf' h_envwf1 h_ctx1 h_envwf2 h_ctx2
+        h_ih1 h_ih2
+    | .ite m c th el =>
+      have h_orig := h_res
+      simp only [resolveAux, Bind.bind, Except.bind] at h_res
+      elim_err h_res
+      rename_i vc hc; obtain ⟨ct, Env1⟩ := vc; dsimp at h_res hc
+      elim_err h_res
+      rename_i vt ht; obtain ⟨tht, Env2⟩ := vt; dsimp at h_res ht
+      elim_err h_res
+      rename_i ve he; obtain ⟨elt, Env3⟩ := ve; dsimp at h_res he
+      elim_err h_res
+      rename_i substInfo h_unify
+      have h_unify' := unify_of_mapError h_unify
+      have h_szc : c.sizeOf < n := by subst h_sz; simp [LExpr.sizeOf]; omega
+      have h_szt : th.sizeOf < n := by subst h_sz; simp [LExpr.sizeOf]; omega
+      have h_sze : el.sizeOf < n := by subst h_sz; simp [LExpr.sizeOf]; omega
+      have h_props1 := resolveAux_properties c ct C Env Env1 hc h_ne'
+        h_envwf'.aliasesWF h_fwf' h_envwf'.substFreshForGen h_envwf'.ctxFreshForGen
+        h_envwf'.boundVarsFresh
+      have h_ctx1 := h_props1.context
+      have h_envwf1 := TEnvWF.of_resolveAux c ct C Env Env1 hc h_envwf' h_ne' h_fwf' h_ctx1
+      have h_ne1 : Env1.context.types ≠ [] := h_ctx1 ▸ h_ne'
+      have h_props2 := resolveAux_properties th tht C Env1 Env2 ht h_ne1
+        h_envwf1.aliasesWF h_fwf' h_envwf1.substFreshForGen h_envwf1.ctxFreshForGen
+        h_envwf1.boundVarsFresh
+      have h_ctx2 : Env2.context = Env.context := h_props2.context ▸ h_ctx1
+      have h_envwf2 := TEnvWF.of_resolveAux th tht C Env1 Env2 ht h_envwf1 h_ne1 h_fwf' h_props2.context
+      have h_ne2 : Env2.context.types ≠ [] := h_ctx2 ▸ h_ne'
+      have h_props3 := resolveAux_properties el elt C Env2 Env3 he h_ne2
+        h_envwf2.aliasesWF h_fwf' h_envwf2.substFreshForGen h_envwf2.ctxFreshForGen
+        h_envwf2.boundVarsFresh
+      have h_ctx3 : Env3.context = Env.context := h_props3.context ▸ h_ctx2
+      have h_envwf3 := TEnvWF.of_resolveAux el elt C Env2 Env3 he h_envwf2 h_ne2 h_fwf' h_props3.context
+      cases h_res
+      have h_ihc := ih c.sizeOf h_szc c rfl ct C Env Env1 hc h_envwf' h_ne' h_fwf'
+      have h_iht := ih th.sizeOf h_szt th rfl tht C Env1 Env2 ht h_envwf1 h_ne1 h_fwf'
+      have h_ihe := ih el.sizeOf h_sze el rfl elt C Env2 Env3 he h_envwf2 h_ne2 h_fwf'
+      exact h_ite m c th el _ C Env _ ct Env1 tht Env2 elt Env3 substInfo
+        h_orig hc ht he h_unify' rfl rfl h_props2.absorbs h_props3.absorbs
+        h_envwf' h_ne' h_fwf' h_envwf1 h_ctx1 h_envwf2 h_ctx2
+        h_envwf3 h_ctx3 h_ihc h_iht h_ihe
+  exact h_main e.sizeOf e rfl et C Env Env' h_res h_envwf h_ne h_fwf
+
 omit [ToString T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /-- `varCloseT` preserves `toLMonoTy`: it only changes fvars to bvars without
     affecting the root metadata. -/
@@ -5664,6 +6042,39 @@ private theorem WellScoped_varOpen
   rcases varOpen_freeVars_subset 0 (xv, some xty) e y hy with rfl | h_orig
   · exact h_xv
   · exact h_sub y.1 (h_ws y h_orig)
+
+omit [ToString T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] [DecidableEq T.IDMeta] in
+theorem typeBoundVar_xv_not_in_knownVars
+    (C : LContext T) (Env : TEnv T.IDMeta) (bty : Option LMonoTy)
+    (xv : T.Identifier) (xty : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : typeBoundVar C Env bty = .ok (xv, xty, Env')) :
+    xv ∉ TContext.knownVars Env.context := by
+  simp only [typeBoundVar, Bind.bind, Except.bind] at h
+  split at h; · simp at h
+  rename_i v_gen h_gen; obtain ⟨xv_raw, Env_g⟩ := v_gen
+  have h_fresh := liftGenEnv_genVar_fresh Env xv_raw Env_g h_gen
+  revert h; cases bty with
+  | some bty_val =>
+    simp only []; intro h; split at h; · simp at h
+    rename_i v_ic _; obtain ⟨_, _⟩ := v_ic
+    simp at h; obtain ⟨h_xv, _, _⟩ := h; subst h_xv; exact h_fresh
+  | none =>
+    simp; intro h; split at h; · simp at h
+    rename_i v_tg _; obtain ⟨_, _⟩ := v_tg
+    simp at h; obtain ⟨h_xv, _, _⟩ := h; subst h_xv; exact h_fresh
+
+omit [ToString T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] [DecidableEq T.IDMeta]  in
+theorem WellScoped_fresh_not_in_getVars
+    (e : LExpr T.mono) (Γ : TContext T.IDMeta) (xv : T.Identifier)
+    (h_ws : WellScoped e Γ) (h_fresh : xv ∉ TContext.knownVars Γ) :
+    xv ∉ LExpr.getVars e := by
+  intro h_mem
+  have h_eq := freeVars_map_fst_eq_getVars e
+  rw [← h_eq] at h_mem
+  simp only [List.mem_map] at h_mem
+  obtain ⟨⟨xv', ty'⟩, h_in, h_fst⟩ := h_mem
+  simp at h_fst; subst h_fst
+  exact h_fresh (h_ws ⟨xv', ty'⟩ h_in)
 
 omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 -- Helper: knownVars.go of addInNewest extends with new keys
