@@ -655,7 +655,11 @@ D :: Γ ⊢ f(e₁,…,eₙ) : B   [call, f : (Aᵢ) → B & pure]
 ```
 -/
 partial def synthValueStaticCall (md : Md) (callee : Identifier) (args : List StmtExprMd) : ElabM (FGLValue × HighType) := do
-  let some g := (← read).procGrades[callee.text]? | failure
+  -- A name carrying a function signature but no explicit procedure grade is pure:
+  -- datatype constructors (from_None, from_int, ...) and pure runtime functions
+  -- live in typeEnv.names but not in procGrades. Default to pure, as elaborateCall
+  -- and lookupProcOutputs do; only a name graded above pure is rejected here.
+  let g := (← read).procGrades[callee.text]?.getD .pure
   guard (g == .pure)
   let sig ← lookupFuncSig callee.text
   let checkedArgs ← checkArgValues args sig.params
@@ -693,8 +697,14 @@ partial def checkArgValues (args : List StmtExprMd) (params : List (String × Hi
 partial def checkValue (expr : StmtExprMd) (expected : HighType) : ElabM FGLValue := do
   let md := expr.md
   match expr.val with
-  | .Hole deterministic _ =>
-    guard deterministic
+  | .Hole _ _ =>
+    -- A hole in pure value position (a contract, or an argument of a pure call)
+    -- denotes a deterministic uninterpreted function of the procedure's inputs:
+    -- nondeterminism is meaningless in a pure value, so even a hole Translation
+    -- marked nondeterministic (e.g. an unresolved `re.search(...)` inside a
+    -- `requires`) is elaborated here as the deterministic `hole_N(inputs)`. This
+    -- keeps the contract well-typed; the caller obligation is sound but
+    -- uninterpretable (verification stays inconclusive, never unsound).
     let hv ← freshVar "hole"
     let args := (← read).procInputs.map fun (name, _) => FGLValue.var md name
     modify fun s => { s with usedHoles := s.usedHoles ++ [(hv, true, expected)] }

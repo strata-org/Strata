@@ -769,6 +769,17 @@ parameters) and `Any_to_bool` on the `Any`-typed result — and `projectValue`
 yields the single Core expression that replaces the clause. Holes it uses are
 collected into the program's hole procedures alongside the body's.
 
+A precondition may contain a hole — e.g. a stub assert
+`re.compile(...).search(kwargs["RoleName"]) is not None`, where `re` is unmodeled
+so the subterm is a hole. In a body such a hole is nondeterministic havoc, but in
+a pure value position nondeterminism has no meaning: the value must be a
+deterministic function of what is in scope. So `checkValue`'s `.Hole` case
+elaborates *any* hole as the deterministic `hole_N(inputs)` (an uninterpreted
+pure function of the procedure's inputs), regardless of how Translation marked it.
+The contract stays well-typed and the resulting caller obligation is sound but
+uninterpretable — verification is inconclusive, never unsound, and no conjunct is
+dropped.
+
 Translation emits preconditions in surface form, e.g.
 `PGe(Any_len_to_Any(Any_get($in_kwargs, "Key")), 1)` — bare `intConst 1` and
 `strConst "Key"`, and an `Any`-typed `PGe(...)` standing in a `bool` position.
