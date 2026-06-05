@@ -10,22 +10,33 @@ import all Strata.DL.Lambda.LExprAliasFree
 import Strata.DL.Lambda.Denote.LExprAnnotated
 import all Strata.DL.Lambda.Denote.LExprAnnotated
 
-/-! ## `resolve` produces well-annotated expressions (`HasTypeA`)
+/-! ## Properties of `LExpr.resolve`
 
-This module proves that when `LExpr.resolve` succeeds, the resulting expression
-satisfies `HasTypeA` — i.e., the type annotations placed by resolution are
-internally consistent.
+This module proves two major results about `LExpr.resolve`, both for the case
+where resolution succeeds:
+
+1. **`resolve_HasTypeA`** — the resulting expression satisfies `HasTypeA`, i.e.
+   the type annotations placed by resolution are internally consistent.
+
+2. **`resolve_eqModuloAnnotations`** — the resulting expression is equal to the
+   input *modulo annotations* (`EqModuloAnnotations`): resolution preserves the
+   structure (constructors, identifiers, constants), changing only metadata and
+   type annotations. In particular it leaves the free variables unchanged.
+
+Together these characterize resolution: it produces a well-typed annotation of
+the *same* underlying expression.
 
 ### Comparison with `resolve_HasType`
 
 `resolve_HasType` (in `LExprTypeSpec`) proves full polymorphic typing
-(`HasType`) but requires `WellScoped`, `allKeysFresh`, and
+(`HasType`) for the input but requires `WellScoped`, `allKeysFresh`, and
 `checkContextTypesClosed` assumptions. `resolve_HasTypeA` here proves
-annotation-consistency (`HasTypeA`) under different assumptions: `TEnvWF`,
-`FactoryWF`, and `AliasesResolved`. It drops the scoping/freshness/closure
-conditions but adds `AliasesResolved`, which `resolve_HasType` does not need.
+annotation-consistency (`HasTypeA`) for the output under different assumptions:
+`TEnvWF`, `FactoryWF`, and `AliasesResolved`. It drops the scoping/freshness/
+closure conditions but adds `AliasesResolved`, which `resolve_HasType` does not
+need.
 
-### Proof structure
+### Proof structure of `resolve_HasTypeA`
 
 The proof proceeds in layers:
 
