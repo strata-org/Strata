@@ -5,11 +5,12 @@
 -/
 module
 
-public import Strata.DL.SMT.TermType
 import all Strata.DL.Util.BitVec
 public import Strata.DL.SMT.Op
-public import Strata.DDM.Util.Decimal
-public import Strata.DDM.Util.DecimalRat
+public import StrataDDM.Util.Decimal
+import StrataDDM.Util.DecimalRat
+
+open StrataDDM (Decimal)
 
 public section
 /-!

@@ -5,10 +5,8 @@
 -/
 module
 
-public import Strata.DL.Lambda.LTy
-public import Strata.DL.Util.Map
 public import Strata.Util.FileRange
-public import Std.Data.HashMap.Lemmas
+import Std.Data.HashMap.Lemmas
 
 ---------------------------------------------------------------------
 
