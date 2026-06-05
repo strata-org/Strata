@@ -5,7 +5,7 @@
 -/
 
 import Strata.Transform.StructuredToUnstructured
-import Strata.DL.Lambda.Lambda
+import Strata.DL.Lambda
 
 /-! ## Tests for loop contract metadata preservation in StructuredToUnstructured -/
 
