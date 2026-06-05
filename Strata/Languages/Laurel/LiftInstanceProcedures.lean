@@ -19,18 +19,13 @@ that resolved to such an instance procedure to use the lifted name.
 After this pass:
 - `CompositeType.instanceProcedures` is empty for every composite.
 - `program.staticProcedures` contains the lifted procedures.
-- Every `InstanceCall` (from `obj#method(args)` surface syntax) and every
-  `StaticCall` whose callee resolved to a `.instanceProcedure` now points
+- Every `InstanceCall` (from `obj#method(args)` surface syntax) points
   at the lifted name. For `InstanceCall`, the receiver is prepended to
   the argument list to match the lifted procedure's `self : <CompositeName>`
   parameter.
 
 The pipeline runs `resolve` again after this pass (`needsResolves := true`)
 so the fresh static procedures and the rewritten call sites get bound.
-
-Surface syntax already declares `self` as an explicit parameter, so this
-pass does **not** rewrite procedure bodies — the `self : Counter` parameter
-and `self#field` accesses are simply preserved verbatim on the lifted proc.
 -/
 
 namespace Strata.Laurel
@@ -41,7 +36,7 @@ The cloned procedure inherits `Identifier.uniqueId` values from the prior
 resolve pass. `defineNameCheckDup` reuses an existing uniqueId, which can
 collide across siblings (e.g. two lifted procs both with a `self` parameter
 sharing a uid from the original composite scope). We clear every uniqueId
-on the clone; re-resolution mints fresh ids.
+on the clone; the resolution pass that follows will re-assign them.
 -/
 
 private def clearIdent (id : Identifier) : Identifier :=
