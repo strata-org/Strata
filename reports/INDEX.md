@@ -37,6 +37,13 @@ The cluster's umbrella issue, "non-TCO walker family across the verify pipeline,
 |---|---|---|
 | [verifier-assume-synthesis-report.md](verifier-assume-synthesis-report.md) | RESOLVED on `htd/smack` (commit `1b2231f99`, cherry-picked from PR 1149) | Track upstream PR 1149 |
 
+## Aaron's EQ portfolio sweep
+
+| Report | Status | Next action |
+|---|---|---|
+| [aaron-eq-portfolio-2026-06-03.md](aaron-eq-portfolio-2026-06-03.md) | initial 36-file sample (of 3530) under `htd/smack` post-multi-Env (commit `5648bdf62`) | Superseded by [aaron-eq-portfolio-batch2-2026-06-04.md](aaron-eq-portfolio-batch2-2026-06-04.md) for current state; retained for first-batch detail. |
+| [aaron-eq-portfolio-batch2-2026-06-04.md](aaron-eq-portfolio-batch2-2026-06-04.md) | combined 72-file sample (batch 1 + batch 2) | File two clean defects: elab/typecheck `old(<cross-prefix>)` (3 reproducers) and stack-overflow under bodyOrContract (now 7 reproducers, mixed bucket). Defer body-eval cost regression until characterized at varied timeouts. |
+
 ## Filing & follow-up tracking
 
 For the `htd/smack` branch's bug ledger (per-fix landing status, upstream issue numbers, etc.), see [`Examples/smack-docker/BRANCH_FEATURES.md`](../Examples/smack-docker/BRANCH_FEATURES.md) §9.
