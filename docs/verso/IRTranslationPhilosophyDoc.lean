@@ -59,7 +59,7 @@ A few terms recur with specific meanings:
   yet.
 - *Front-end* — the Strata-side component that ingests source
   artifacts and produces a Strata IR (typically a high-level
-  dialect). Examples: `StrataPython`, `StrataBoole`.
+  dialect). Examples: `StrataPython`, [`StrataBoole`](https://github.com/strata-org/Strata-Boole).
 - *Central IR* — an IR many producers and many consumers share.
   In Strata, *Core* is the central IR.
 - *Analysis* — anything that consumes a Strata IR and produces a
@@ -494,9 +494,9 @@ these interfaces _physical_ package boundaries:
 
   Python dialect + `Python → Laurel` translation.
 
-: `StrataBoole`
+: [`StrataBoole`](https://github.com/strata-org/Strata-Boole)
 
-  Boole dialect + translation to Core.
+  Boole dialect + translation to Core (separate repo).
 
 : `StrataBoogie`
 
@@ -516,7 +516,7 @@ rule for the boundaries that _do_ cross packages:
 - `StrataPython` owns `Python.toLaurel` and depends on the main
   `Strata` package; the main package does not depend on
   `StrataPython`.
-- `StrataBoole` owns `Boole.toCore` and depends on the main
+- [`StrataBoole`](https://github.com/strata-org/Strata-Boole) owns `Boole.toCore` and depends on the main
   `Strata` package; the main package does not depend on
   `StrataBoole`.
 - `StrataBoogie` produces `.core.st` / `.laurel.st` artifacts on
