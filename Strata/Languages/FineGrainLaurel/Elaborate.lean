@@ -986,11 +986,10 @@ partial def checkProducer (stmt : StmtExprMd) (rest : List StmtExprMd) (retTy : 
       | [] => pure (.produce md rv)
       | _ => pure M_k
   | _ => do
-    dbg_trace s!"checkProducer catch-all at grade={repr grade}"
     let v ← checkValue stmt retTy
     match rest with
     | [] => pure (.produce md v)
-    | _ => dbg_trace s!"checkProducer catch-all: non-empty rest"; failure
+    | _ => failure
 
 /-- Bind a list of arguments as producers via nested varDecls.
     Each arg is checked as a producer, bound to a fresh var, and the
