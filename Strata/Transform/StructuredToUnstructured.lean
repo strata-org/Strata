@@ -15,7 +15,7 @@ namespace Imperative
 
 abbrev DetBlocks (Label CmdT : Type) (P : PureExpr) := List (Label × DetBlock Label CmdT P)
 
-private abbrev synthesizedMd {P : PureExpr} : MetaData P :=
+abbrev synthesizedMd {P : PureExpr} : MetaData P :=
   MetaData.ofProvenance (.synthesized .structuredToUnstructured)
 
 def detCmdBlock [HasBool P] (c : CmdT) (k : Label) (md : MetaData P) :
@@ -24,10 +24,12 @@ def detCmdBlock [HasBool P] (c : CmdT) (k : Label) (md : MetaData P) :
 
 open LabelGen
 
-/-- Flush the list of accumulated commands. If the list is empty, propagate the
-provided continuation. If the list is non-empty, create a block containing
-one command that jumps to the provided continuation and provide the new block's
-label as a new continuation.  -/
+/-- Flush the list of accumulated commands. If both the accumulator is empty
+and no explicit transfer is provided, propagate the continuation `k`.
+Otherwise emit a block: when `tr?` is `some tr`, use `tr` as the transfer
+(this is required for `condGoto` so the conditional is materialized even
+with empty accum); when `tr?` is `none`, use `.goto k`. -/
+@[expose]
 def flushCmds
   [HasBool P]
   (pfx : String)
@@ -35,14 +37,21 @@ def flushCmds
   (tr? : Option (DetTransferCmd String P))
   (k : String) :
   StringGenM (String × DetBlocks String CmdT P) := do
-  if accum.isEmpty then
-    pure (k, [])
-  else
+  match tr? with
+  | none =>
+    if accum.isEmpty then
+      pure (k, [])
+    else
+      let l ← StringGenState.gen pfx
+      let b := (l, { cmds := accum.reverse, transfer := .goto k })
+      pure (l, [b])
+  | some tr =>
     let l ← StringGenState.gen pfx
-    let b := (l, { cmds := accum.reverse, transfer := tr?.getD (.goto k synthesizedMd) })
+    let b := (l, { cmds := accum.reverse, transfer := tr })
     pure (l, [b])
 
 /-- Translate a list of statements to basic blocks, accumulating commands -/
+@[expose]
 def stmtsToBlocks
   [HasBool P] [HasPassiveCmds P CmdT] [HasInit P CmdT]
   [HasIdent P] [HasFvar P] [HasIntOrder P] [HasNot P]
@@ -77,7 +86,7 @@ match ss with
     pure (accumEntry, accumBlocks ++ bbs ++ bsNext)
   else
     let b := (l, { cmds := [], transfer := .goto bl md })
-    pure (l, accumBlocks ++ [b] ++ bbs ++ bsNext)
+    pure (accumEntry, accumBlocks ++ [b] ++ bbs ++ bsNext)
 | .ite c tss fss md :: rest => do
   -- Process rest first
   let (kNext, bsNext) ← stmtsToBlocks k rest exitConts []
@@ -166,6 +175,7 @@ match ss with
   let exitName := s!"block${l}$"
   flushCmds exitName accum (.some (.goto bk md)) bk
 
+@[expose]
 def stmtsToCFGM
   [HasBool P] [HasPassiveCmds P CmdT] [HasInit P CmdT]
   [HasIdent P] [HasFvar P] [HasIntOrder P] [HasNot P]
@@ -176,6 +186,7 @@ def stmtsToCFGM
   let (l, bs) ← stmtsToBlocks lend ss [] []
   pure { entry := l, blocks := bs ++ [bend] }
 
+@[expose]
 def stmtsToCFG
   [HasBool P] [HasPassiveCmds P CmdT] [HasInit P CmdT]
   [HasIdent P] [HasFvar P] [HasIntOrder P] [HasNot P]

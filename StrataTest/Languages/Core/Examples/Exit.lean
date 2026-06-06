@@ -117,7 +117,7 @@ Result: ✅ pass
 
 
 /--
-info: Entry: l1
+info: Entry: block$l1$_2
 
 l1:
   #[<[provenance]: :480-595>] condGoto true block$l1$_2 block$l1$_2
@@ -126,7 +126,7 @@ block$l1$_2:
   #[<[provenance]: :519-527>] condGoto true l$_1 l$_1
 l$_1:
   assert [a3]: x == x;
-  #[<[provenance]: <synthesized:structured-to-unstructured>>] condGoto true end$_0 end$_0
+  condGoto true end$_0 end$_0
 end$_0:
   #[<[provenance]: <synthesized:structured-to-unstructured>>] finish
 -/
@@ -134,26 +134,30 @@ end$_0:
 #eval (Std.format (singleCFG exitPgm 0))
 
 /--
-info: Entry: l5
+info: Entry: ite$_7
 
 l5:
-  #[<[provenance]: :670-1149>] condGoto true l4 l4
+  #[<[provenance]: :670-1149>] condGoto true ite$_7 ite$_7
 l4:
-  #[<[provenance]: :682-1143>] condGoto true l4_before l4_before
+  #[<[provenance]: :682-1143>] condGoto true ite$_7 ite$_7
 l4_before:
-  #[<[provenance]: :696-1089>] condGoto true l3_before l3_before
+  #[<[provenance]: :696-1089>] condGoto true ite$_7 ite$_7
 l3_before:
-  #[<[provenance]: :719-1026>] condGoto true l1 l1
+  #[<[provenance]: :719-1026>] condGoto true ite$_7 ite$_7
 l1:
-  #[<[provenance]: :744-928>] condGoto true ite$_5 ite$_5
-ite$_5:
+  #[<[provenance]: :744-928>] condGoto true ite$_7 ite$_7
+ite$_7:
   assert [a4]: x == x;
-  #[<[provenance]: :799-914>] condGoto x > 0 block$l5$_2 block$l5$_1
+  #[<[provenance]: :799-914>] condGoto x > 0 block$l3_before$_5 block$l4_before$_6
+block$l3_before$_5:
+  #[<[provenance]: :828-843>] condGoto true block$l5$_2 block$l5$_2
+block$l4_before$_6:
+  #[<[provenance]: :883-898>] condGoto true block$l5$_1 block$l5$_1
 l2:
   #[<[provenance]: :941-1014>] condGoto true l$_3 l$_3
 l$_3:
   assert [a5]: !(x == x);
-  #[<[provenance]: <synthesized:structured-to-unstructured>>] condGoto true block$l5$_2 block$l5$_2
+  condGoto true block$l5$_2 block$l5$_2
 block$l5$_2:
   assert [a6]: x * 2 > x;
   #[<[provenance]: :1071-1079>] condGoto true end$_0 end$_0

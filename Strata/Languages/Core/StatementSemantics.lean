@@ -9,6 +9,10 @@ public import Strata.DL.Imperative.StmtSemantics
 public import Strata.Languages.Core.Procedure
 public import Strata.Languages.Core.Factory
 import Std.Tactic.BVDecide.Normalize.Prop
+import all Strata.DL.Lambda.IntBoolFactory
+import all Strata.DL.Lambda.Factory
+import all Strata.DL.Lambda.FactoryWF
+import all Strata.Languages.Core.Factory
 
 ---------------------------------------------------------------------
 
@@ -62,6 +66,84 @@ instance : HasNot Core.Expression where
   | Core.true => Core.false
   | Core.false => Core.true
   | e => Lambda.LExpr.app () (Lambda.boolNotFunc (T:=CoreLParams)).opExpr e
+
+/-! ### Lawful instances for `Core.Expression`
+
+These witness that `Core.Expression`'s `Has*` instances satisfy the algebraic
+laws expected by downstream proofs (e.g., the `stmtsToCFG` correctness proof). -/
+
+instance : LawfulHasFvar Core.Expression where
+  getFvar_mkFvar := fun _ => rfl
+  mkFvar_getVars := fun _ => by
+    -- mkFvar x = .fvar () x none, getVars = [x] ⊆ [x]
+    simp [HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars]
+
+instance : LawfulHasBool Core.Expression where
+  -- HasBool.tt = Core.true = .boolConst () true = .const _ _, getVars = []
+  tt_getVars := rfl
+
+instance : LawfulHasIdent Core.Expression where
+  ident_inj := by
+    intro a b h
+    -- HasIdent.ident s = ⟨s, ()⟩ : Identifier Unit
+    -- Identifier is a structure with field `name : String`, so injectivity is by `cases`
+    cases h
+    rfl
+
+instance : LawfulHasIntOrder Core.Expression where
+  -- HasIntOrder.eq a b = .eq () a b. getVars (.eq _ a b) = getVars a ++ getVars b.
+  eq_getVars := fun _ _ => by
+    simp [HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars]
+  -- HasIntOrder.lt a b = .app () (.app () intLtOp a) b. getVars expands and
+  -- getVars intLtOp = [] (it's an .op node), giving getVars a ++ getVars b.
+  lt_getVars := fun a b => by
+    show HasVarsPure.getVars
+      (Lambda.LExpr.app () (Lambda.LExpr.app () Core.intLtOp a) b)
+        ⊆ HasVarsPure.getVars a ++ HasVarsPure.getVars b
+    change Lambda.LExpr.LExpr.getVars _
+              ⊆ Lambda.LExpr.LExpr.getVars a ++ Lambda.LExpr.LExpr.getVars b
+    rw [Lambda.LExpr.LExpr.getVars, Lambda.LExpr.LExpr.getVars]
+    have h_op : Lambda.LExpr.LExpr.getVars Core.intLtOp = [] := by
+      simp [Core.intLtOp, Lambda.WFLFunc.opExpr, Lambda.LFunc.opExpr,
+            Lambda.intLtFunc, Lambda.binaryOp,
+            Lambda.LExpr.LExpr.getVars]
+    rw [h_op, List.nil_append]
+    exact List.Subset.refl _
+  -- HasIntOrder.zero = .intConst () 0 = .const _ _, getVars = []
+  zero_getVars := rfl
+
+instance : LawfulHasNot Core.Expression where
+  not_getVars := fun a => by
+    -- Case-split on the structure of `a` to handle the three branches of `not`.
+    -- For Core.true/Core.false branches, the result is the dual constant
+    -- (getVars = []) and the input also has getVars = [], so subset is vacuous.
+    -- For the general branch, `not e = .app () boolNotFunc.opExpr e`, and
+    -- getVars expands as getVars boolNotFunc.opExpr ++ getVars e = [] ++ getVars e.
+    show HasVarsPure.getVars (HasNot.not a) ⊆ HasVarsPure.getVars a
+    unfold HasNot.not instHasNotExpression
+    simp only
+    split
+    · -- not Core.true = Core.false: getVars Core.false = [] ⊆ getVars Core.true
+      simp [HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars]
+    · -- not Core.false = Core.true: symmetric
+      simp [HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars]
+    · -- not e = .app () boolNotFunc.opExpr e
+      -- getVars (.app _ x y) = getVars x ++ getVars y
+      -- boolNotFunc.opExpr is .op _ _ _ so getVars = []
+      show HasVarsPure.getVars
+        (Lambda.LExpr.app () (Lambda.boolNotFunc (T:=CoreLParams)).opExpr a)
+          ⊆ HasVarsPure.getVars a
+      change Lambda.LExpr.LExpr.getVars _ ⊆ Lambda.LExpr.LExpr.getVars a
+      rw [Lambda.LExpr.LExpr.getVars]
+      -- Now: getVars boolNotFunc.opExpr ++ getVars a ⊆ getVars a.
+      -- It suffices to show getVars boolNotFunc.opExpr = [].
+      have h_op : Lambda.LExpr.LExpr.getVars
+          (Lambda.boolNotFunc (T := CoreLParams)).opExpr = [] := by
+        simp [Lambda.WFLFunc.opExpr, Lambda.LFunc.opExpr,
+              Lambda.boolNotFunc, Lambda.unaryOp,
+              Lambda.LExpr.LExpr.getVars]
+      rw [h_op, List.nil_append]
+      exact List.Subset.refl _
 
 @[expose] abbrev CoreEval := SemanticEval Expression
 @[expose] abbrev CoreStore := SemanticStore Expression
