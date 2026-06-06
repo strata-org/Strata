@@ -9,9 +9,12 @@ public import Strata.DL.Imperative.KleeneStmtSemantics
 public import Strata.Transform.DetToKleene
 public import Strata.Transform.Specification
 import all Strata.Transform.Specification
+public import Strata.Transform.SpecificationProps
+import all Strata.Transform.SpecificationProps
 import all Strata.Transform.DetToKleene
 import all Strata.DL.Imperative.Stmt
 import all Strata.DL.Imperative.StmtSemantics
+import all Strata.DL.Imperative.StmtSemanticsProps
 import all Strata.DL.Imperative.CmdSemantics
 import all Strata.DL.Util.Relations
 import Std.Tactic.BVDecide.Normalize.Bool
