@@ -177,8 +177,11 @@ def getSolverPrelude : String → SolverM Unit
   -- These options are set by the standard Boogie implementation and are
   -- generally good for the Boogie dialect, too, though we may want to
   -- have more fine-grained criteria for when to use them.
-  Solver.setOption "smt.mbqi" "false"
-  Solver.setOption "auto_config" "false"
+  -- Option A test (smt-options-test): strip the pin to let z3 default
+  -- mbqi=true / auto_config=true. Restore by uncommenting if matrix regresses.
+  -- Solver.setOption "smt.mbqi" "false"
+  -- Solver.setOption "auto_config" "false"
+  return ()
 | "cvc5" => return ()
 | _ => return ()
 
