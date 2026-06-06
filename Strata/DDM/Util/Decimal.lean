@@ -35,9 +35,16 @@ def toString (d : Decimal) : String :=
     s!"0.0"
   else if e == 0 then
     s!"{m}.0"
-  else if e > 0 ∧ e ≤ maxPrettyExponent then
+  else if e > 0 then
+    -- For any positive exponent, append `e` zeros and `.0` to render a decimal
+    -- literal. Even for large `e` this is valid SMT-LIB decimal notation, which
+    -- is what consumers like the SMT solver require. Avoid emitting `1e6`
+    -- scientific notation, which is parsed as a free symbol by SMT solvers.
     s!"{m}{String.replicate e.natAbs '0'}.0"
-  else if e < 0 ∧ e ≥ minPrettyExponent then
+  else
+    -- e < 0: render `0.000...mantissa` with enough leading zeros. Valid for
+    -- any negative exponent. SMT-LIB has no scientific-notation literal, so
+    -- this is the only safe form for very small magnitudes (e.g. `1e-15`).
     let ms := if m < 0 then "-" else ""
     let ma := m.natAbs
     let width := (-e).natAbs
@@ -46,8 +53,6 @@ def toString (d : Decimal) : String :=
     let fracStr := s!"{md}"
     let padded := String.replicate (width - fracStr.length) '0' ++ fracStr
     s!"{ms}{ma / ne}.{padded}"
-  else
-    s!"{m}e{e}"
 
 instance : ToString Decimal where
   toString := private Decimal.toString
