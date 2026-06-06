@@ -816,24 +816,16 @@ Minimal Laurel-to-Core pipeline for V2: resolve + inferHoleTypes + Core translat
 Skips old lowering passes (heapParameterization, typeHierarchy, modifiesClauses,
 eliminateHoles, desugarShortCircuit, liftExpressionAssignments, eliminateReturns,
 constrainedTypeElim) — those are subsumed by Elaboration in the V2 pipeline.
-
-TECH DEBT — old machinery the V2 path still depends on, to be replaced:
-This still calls the OLD Laurel `resolve` (Laurel/Resolution.lean) and
-`inferHoleTypes`. They are not yet ported to the new Laurel resolver. Both are
-load-bearing as wired today: `resolve` builds the SemanticModel Core translation
-reads, and removing `inferHoleTypes` produces ill-typed Core across the suite
-(it annotates expression types Core translation relies on, despite its name).
-Replacing `resolve`/`inferHoleTypes` with the new Laurel resolver is follow-up
-work; do not delete them piecemeal — the dependency must be ported first.
+(`resolve` + `inferHoleTypes` are old-resolver tech debt — see PythonDoc Tech Debt.)
 -/
 def translateMinimal (options : LaurelTranslateOptions) (program : Program) : TranslateResultWithLaurel :=
   -- NOTE: coreDefinitionsForLaurel is already prepended by unifiedElaborate (Elaborate.lean:2044).
   -- Do NOT prepend it again here — that causes duplicate procedure definitions.
-  -- Step 1: Resolve (build SemanticModel) — OLD resolver, see tech-debt note above.
+  -- Step 1: Resolve (build SemanticModel)
   let result := resolve program
   let resolutionErrors : List DiagnosticModel := if options.emitResolutionErrors then result.errors.toList else []
   let (program, model) := (result.program, result.model)
-  -- Step 2: inferHoleTypes — OLD pass, load-bearing for Core typing, see note above.
+  -- Step 2: inferHoleTypes (cleanup)
   let program := inferHoleTypes model program
   -- Re-resolve after inferHoleTypes to ensure model is up-to-date
   let result := resolve program (some model)

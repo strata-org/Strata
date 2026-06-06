@@ -1033,3 +1033,9 @@ tag := "tech_debt"
 - _Loop labels:_ Push/pop on mutable state. Should be reader monad.
 - _Multi-output forces err grade:_ Translation declares `maybe_except`
   on every procedure, causing grade inference to always join with err.
+- _Old resolver in Laurel→Core:_ `translateMinimal` still calls the old Laurel
+  `resolve` and `inferHoleTypes` rather than the new Laurel resolver. Both are
+  load-bearing as wired: `resolve` builds the `SemanticModel` Core translation
+  reads, and removing `inferHoleTypes` produces ill-typed Core across the suite
+  (it annotates expression types Core translation depends on, despite its name).
+  They must be ported to the new resolver, not deleted piecemeal.
