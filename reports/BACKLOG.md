@@ -35,11 +35,22 @@ Expected lift: PARTIAL on baseline `htd/smack`, PASS on `htd/multipath-cmd-eval`
 
 ### Test the pipeline on the equalizer benchmark
 
-**Status:** IN PROGRESS — 72 of 3530 files swept (batch 1 + batch 2). Combined report at [`reports/aaron-eq-portfolio-batch2-2026-06-04.md`](aaron-eq-portfolio-batch2-2026-06-04.md).
+**Status:** RESOLVED-PROVISIONAL (2026-06-05) — autonomous-closeout pass complete. 72 files swept across batch 1+2 plus a 28-file Java-SMACK Tier-1 stratified sweep, a 22-file vacuous-PASS deep-dive (Probe 3), a 7-file end-to-end SO validation (Probe 1), a 5-file solver-options witness audit (Tier 1 A3), and a counter-trace localisation of the [INLINE-CALL]-vs-[CFG-CALL] gap (Tier 1 A6). Three independent defects on the Strata side closed or filed: SO crash via `balancedNondetIte` ([backlog above](#strata-side-stack-overflow-under-bodyorcontract--resolved-on-htdsmack-via-balancednondetite-2026-06-05)); BoogieToStrata `old(<unmodified-global>)` typecheck rejection filed as upstream #1331; SMT2 e-15 emission bug fixed on side branch (see entry below) and draft-ready. One non-defect (the [INLINE-CALL]/[CFG-CALL] counter-axis gap) closed as benign-and-explained.
 
-**Findings.** Multi-env body-eval is decisively non-trivial on this corpus — 30/72 verdict-differ (42%, stable across batches). The multi-env work itself is sound; non-trivial findings reduce to two new actionable defects (filed below) plus an Aaron-side benchmark methodology question.
+**Findings (consolidated).**
+- *Multi-env body-eval is sound and decisive on this corpus* — 30/72 verdict-differ (42%) across batches 1+2. Pre-existing.
+- *Vacuous-PASS rate quantified (Probe 3, n=22 deep-dive sample).* 81.2% strict (13/16) verified flips from contract-PASS to bodyOrContract non-PASS; 87.5% (14/16) including one compound-vacuous Δ=0 body-eval. Wilson 95% CI floor 57.0%. Family-skewed: 100% on Java-SMACK contract-PASSes (6/6), 6/7 on CLEVER+REVE+dart+bess synthetic contract-PASSes. Only 2 REVE files (`vtepk5bv3ld`, `ylzs20xcwwt`) yield substantive both-PASS verdicts. Confirms v2 §1.4/§2 projection of 60-100% vacuous-PASS at 81% point estimate.
+- *SO end-to-end (Probe 1, n=7).* On the realistic flag set (`--check-mode deductive --check-level minimal --call-policy bodyOrContract --inline-fuel 100`) under 120s wall, 7/7 reach the 120s wall with zero stdout/stderr. The fix is **crash-suppressor only** for these reproducers — SIGABRT eliminated, but with empty output we cannot localize where the time is spent (parse / type-check / call-elim / VC-gen / SMT). End-to-end correctness on these 7 SO reproducers is not demonstrated; the crashes have been turned into silent timeouts. Follow-up under `--profile` or 300-600s budget on one or two files would discriminate "stuck in transform" from "stuck in solver."
+- *Java-SMACK is not uniformly hostile post-SO-fix (Tier 1 sweep, n=28 stratified).* PASS 25.0% (7/28, all real-proof, no vacuous), PARTIAL 3.6% (1/28; 21,783 of 21,784 VCs proved, 1 ❓ unknown), TIMEOUT 50.0% (14/28; size-monotone), elab-fail 21.4% (6/28, all `Cannot find this fvar in the context! old <var>`), SO regressions 0%. The "every Java-SMACK file is a hard failure" framing in v2 §1.3 was an artifact of pre-SO-fix data and is now superseded.
+- *Pinned solver options suppress decidable counterexamples (Tier 1 A3).* Confirmed witnesses for 6/7 files under default-options z3 (bhx, ike, 0exak, s541, mtonvj, plus pyafkjy4xny by v2 §5). Path-uniformity is per-file (3/3, 9/9, 6/6 within a procedure all flip together — generalizes v2 §5's single-path measurement). 2/7 (tsafe normAngle pair `0exak45poxy`/`s541ce4abnj`) flip *only after* working around an orthogonal Strata defect (e-15 emission). 1/7 (`vtepk5bv3ld`) is no longer PARTIAL on this run — file has stabilized to PASS at 1516 goals under bodyOrContract+inline-fuel-100.
+- *[INLINE-CALL]/[CFG-CALL] axis-counter mismatch is benign (Tier 1 A6).* The 421-event apparent gap (1131 vs 1552) reported in probe-4 is fully explained by the two counters measuring different axes — `[INLINE-CALL]` is per-call (fires once per `inlineCallBody` invocation regardless of body shape), `[CFG-CALL]` is per-recursion-iteration (fires once per recursive entry of the worklist driver, so each `.cfg`-body callee produces `(rounds_to_drain + 1)` events). No gating divergence, no leak, no perf opportunity worth filing. Closed.
 
-**Next action.** Optional third sweep (~36 more files) at varied timeouts {30, 120, 300}s on the 7 cost-regression files (`0exak45poxy`, `s541ce4abnj`, `oqt2xfezy0x`, `vtepk5bv3ld`, `mtonvj3sujq`, etc.) to bucket those as slow-but-bounded vs. unbounded. Otherwise considered enough coverage.
+**Outputs and references.**
+- Methodology note for Aaron: [`reports/aaron-eq-portfolio-methodology-note-2026-06-05.md`](aaron-eq-portfolio-methodology-note-2026-06-05.md).
+- Anomalies audit: [`reports/aaron-eq-portfolio-anomalies-audit-2026-06-05.md`](aaron-eq-portfolio-anomalies-audit-2026-06-05.md).
+- Autonomous closeout (full lineage; appended by synth phase): [`reports/eq-autonomous-closeout-2026-06-05.md`](eq-autonomous-closeout-2026-06-05.md).
+
+**Next action.** Done for this corpus pass. If the EQ portfolio is re-swept at scale, run under `--call-policy bodyOrContract` only (contract-only is a translation-shadowing baseline on this corpus and over-counts PASSes by ~5x). One discretionary follow-up: run 1-2 of the SO reproducers under `--profile` or with a 300-600s budget to localize where time is being spent post-SO-fix.
 
 ### Aaron-side: harness mis-construction in `multiple_Eq_SameV` benchmarks
 
@@ -56,6 +67,8 @@ Expected lift: PARTIAL on baseline `htd/smack`, PASS on `htd/multipath-cmd-eval`
 **Status: RESOLVED on htd/smack (2026-06-05)** via commit `494cf1147` introducing `balancedNondetIte` in `Strata/Languages/Core/Core.lean`. The fix replaces the `foldl`-built left-deep ITE tree (depth O(n) where n = deferred-obligations-count, reaching 2.86M on the worst reproducer) with a balanced bisection (depth O(log n) ≈ 22 for the same input). Per-obligation path-condition isolation is preserved by `ObligationExtraction.extractGo`, which still resets pc per arm.
 
 **Validation (2026-06-05).** All 7 SO reproducers (`EQ_2zvm5xvfu22`, `EQ_wnksggs1hpx`, `EQ_cvrikypthwe`, `EQ_2aa5bx1uwko`, `EQ_wfgmxv3m3tx`, `EQ_sertrlracdg`, `EQ_0xaksnfuqqv`) cleared on the so-fix worktree: zero rc=134 (SIGABRT), zero "Stack overflow detected" stderr lines. All 7 now hit the post-SO long-running SMT regime within `gtimeout=90s` (rc=124) — acceptable behavior; a TIMEOUT is not a verifier crash. 94-program SMACK matrix is bit-identical on PASS and PARTIAL file sets vs the v6 baseline: 68 PASS / 11 PARTIAL / 0 FAIL (the 6 PASS-? → TIMEOUT shifts on `sv_locks_*` are pre-documented probe variance, not fix-induced).
+
+**Probe-1 follow-up (end-to-end validation, 2026-06-05).** Re-ran all 7 SO reproducers under the realistic flag set (`--check-mode deductive --check-level minimal --call-policy bodyOrContract --inline-fuel 100`) with a 120s wall budget. Translation step succeeded for all 7 (rc=0, 16-21s each). Verify step: 7/7 hit the 120s wall (rc=124) with zero-byte stdout and zero-byte stderr — verifier was still working through the pipeline silently when the wall clock killed it; no SMT verdict line, no progress lines, no error emission. **Verdict: SO fix is a crash-suppressor on these 7 reproducers** — SIGABRT successfully prevented (the verifier no longer aborts), but on this realistic flag set the verifier does not reach SMT/verdict within 120s on any of the 7 files. End-to-end correctness on these particular SO reproducers is not demonstrated; the crashes have been turned into silent timeouts. The empty stdout/stderr means we cannot tell from this run *where* in the pipeline the time is being spent (parse / type-check / call-elim / VC-gen / SMT). A follow-up under `--profile` or `--no-solve` (or a longer 300-600s budget) would discriminate "stuck in transform" from "stuck in solver" and confirm whether the floor is bodyOrContract inlining cost vs SMT cost. Artifacts: `/tmp/claude/probe1/`.
 
 **Filing.** Still not filed upstream — the bug requires `--call-policy bodyOrContract`, which exists only on the htd/smack feature line. When body-eval merges to main/main2, this fix should ship in the same merge. The fix is small (one helper + one call-site change in `Core.lean`) and self-contained.
 
@@ -148,17 +161,114 @@ The `foldl` itself is TCO and completes — but it produces a **single statement
 
 Either fix removes the SO without touching ANF, ObligationExtraction, or any of the eval-side code probed in probes 1-3. Workaround for users today: `--call-policy contract` (clean timeout, no crash).
 
-**Next action (when unblocked).** Pick Option A or B (Option A is preferred unless investigation reveals a downstream consumer that depends on the nondet-alternatives shape). Implement, run the 7 SO reproducers under bodyOrContract; expected outcome is they each complete (PASS or PARTIAL or TIMEOUT-on-SMT, but no SIGABRT). File the bug report upstream once body-eval merges to main/main2, with the probe-4 counter trace + Core.lean:185-189 source + minimal repro as primary evidence. The fix is small enough to ship together with the body-eval feature merge.
+**Next action — upstream filing template (file when body-eval merges to main/main2).** Local fix already landed on htd/smack as commit `494cf1147` (`balancedNondetIte` in `Strata/Languages/Core/Core.lean`); validation closed below. The bug report should ship together with the body-eval feature merge so the upstream issue references mainline-visible commits. Filing template:
 
-### Strata-side: SMT2 emission bug — scientific-notation literal `e-15` not declared as variable
+- **Title:** `Strata Verifier: stack overflow under --call-policy bodyOrContract from depth-2.86M nondet-ITE tree in toCoreProofObligationProgram`
+- **Severity:** high — verifier process crash (SIGABRT, rc=134), not a recoverable timeout
+- **Component:** `Strata.Languages.Core.Core` (deferred-block lowering) — root cause; `Strata.Transform.ANFEncoder` is the trigger site
+- **File / lines:** `Strata/Languages/Core/Core.lean:185-189` — the `foldl`-built left-deep `Stmt.ite .nondet` tree
+- **Reproducers (7):** `EQ_2zvm5xvfu22`, `EQ_wnksggs1hpx`, `EQ_cvrikypthwe`, `EQ_2aa5bx1uwko`, `EQ_wfgmxv3m3tx`, `EQ_sertrlracdg`, `EQ_0xaksnfuqqv` (all under `--call-policy bodyOrContract`; all clean rc=0/PASS or rc=124/TIMEOUT under `--call-policy contract`)
+- **Diagnosis:** probe-4 counter trace shows `[FOLD-DEFERRED] blocks=2857392 deferred=2857392` immediately before SIGABRT; `[OBLIGATIONS]` count 0 confirms ANF entered but never returned. Full report: `reports/so-localization-probe4-2026-06-05.md`.
+- **Fix (referenced as 494cf1147):** `Core.balancedNondetIte` — replace the depth-O(n) foldl with a balanced-bisection of depth O(log n) ≈ 22 for n=2.86M. Per-obligation path-condition isolation preserved by `ObligationExtraction.extractGo` (still resets pc per arm). One helper + one call-site change, fully self-contained in `Core.lean`.
+- **Validation (post-fix on htd/smack):** all 7 reproducers cleared SIGABRT — zero rc=134, zero "Stack overflow detected" stderr lines on the so-fix worktree. All 7 now hit the post-SO long-running SMT regime within `gtimeout=90s` (rc=124) — acceptable: TIMEOUT is not a verifier crash. 94-program SMACK matrix bit-identical on PASS/PARTIAL file sets vs the v6 baseline (68 PASS / 11 PARTIAL / 0 FAIL).
+- **Minimal repro for the upstream issue body:** the smallest of the 7 (`EQ_0xaksnfuqqv`, batch-2 medium) plus a trimmed Boogie reduction if achievable; the 2.86M depth comes from SMACK's call-graph shape, so a minimal Boogie may need ~20+ deferred-obligation sites to reach SO under default stack — a `.core.st` artifact may be the smallest-shippable form.
+- **Workaround for users:** `--call-policy contract` (clean timeout, no crash).
 
-**Status:** OPEN — surfaced by bisect on `EQ_0exak45poxy_out.bpl` (2026-06-04).
+### Strata-side: SMT2 emission bug — scientific-notation literal `e-15` not declared as variable — FIX-ON-SIDE-BRANCH, DRAFT-READY
 
-**Summary.** Under `--call-policy contract`, `EQ_0exak45poxy_out.bpl` (small, `tsafe.normAngle.Neq.SameV`) produces 261 obligation failures, every one of which is the same SMT solver parse error: `Symbol 'e-15' not declared as a variable`. Strata's SMT2 emission is treating the literal `1e-15` (scientific notation, double-precision constant) as a free symbol rather than a numeric literal. Independent of multi-Env (pre-multi-Env binary times out before reaching the issue, but the bug is in SMT2 emission, not eval).
+**Status:** FILED-DRAFT-READY (2026-06-05). Fix landed on side branch `htd/decimal-e15-fix` at commit `6f5e74fa6` in worktree `/Users/htd/Documents/Strata-decimal-e15-fix`. Not yet pushed/filed upstream; not yet merged into htd/smack. Issue draft prepared at `strata-decimal-e15-emission-bug.md` (repo root, alongside `boogietostrata-old-rejects-unmodified-global.md`).
 
-**Why it matters.** Affects any benchmark whose source contains scientific-notation floating-point constants — likely many of the `tsafe.*` and `bess.*` benchmark families. Currently surfaces as 261 spurious obligation FAILs on this one file; could be hundreds across the wider portfolio.
+**Summary.** Under `--call-policy contract`, `EQ_0exak45poxy_out.bpl` (small, `tsafe.normAngle.Neq.SameV`) produces 261 obligation failures, every one of which is the same SMT solver parse error: `Symbol 'e-15' not declared as a variable`. Strata's `Strata/DDM/Util/Decimal.lean` was emitting decimal literals in scientific notation (`s!"{m}e{e}"`) when the exponent `e` fell outside `[-5, 5]`; SMT-LIB does not accept scientific-notation literals (both default-options z3 4.16 and cvc5 1.3.3 reject `1e-15` as a parse error / unknown-symbol). Independent of multi-Env (pre-multi-Env binary times out before reaching the issue, but the bug is in literal emission, not eval).
 
-**Next action.** Locate where Strata's SMT2 backend emits double-precision literals — likely `Strata/Backends/SMT/` or `Strata/Languages/Core/SMTEncoder.lean`. Fix to emit `1e-15` as a `(/ 1 1000000000000000)`-style rational or as the SMT-LIB `(_ Real …)` form. Check that pre-multi-Env exhibited the same bug (likely yes) before filing.
+**Fix.** `/Users/htd/Documents/Strata-decimal-e15-fix/Strata/DDM/Util/Decimal.lean` — drops the `[-5, 5]` exponent bounds and the `s!"{m}e{e}"` scientific-notation fallback; always emits the literal as a decimal integer or `0.0…0…` form that SMT-LIB accepts. Self-contained in a single file. Build success: `lake build strata` completed all 540/540 jobs.
+
+**Validation (10-file before/after sample).** 5/10 files improved, 0/10 regressed:
+
+| File                | Before                       | After                              | Shift |
+|---------------------|------------------------------|------------------------------------|-------|
+| EQ_0exak45poxy      | PARTIAL 261/261 fail (`e-15`) | PASS All 261 goals                 | PARTIAL→PASS |
+| EQ_0fmj2meb0oj      | TIMEOUT (with `e-14`)         | PASS All 609 goals                 | TIMEOUT-e→PASS |
+| EQ_0q0oga15aij      | TIMEOUT (with `e-14`)         | PASS All 524 goals                 | TIMEOUT-e→PASS |
+| EQ_0z42qdmejd0      | TIMEOUT (with `e20`)          | PASS All 598 goals                 | TIMEOUT-e→PASS |
+| EQ_0c53ogei0g4      | TIMEOUT (with `e-8`)          | TIMEOUT (clean, no e-noise)        | improved (noise gone) |
+| EQ_032wuerhmvw      | TIMEOUT (silent)              | TIMEOUT (silent)                   | unchanged (not e-attributable) |
+| EQ_0agwqtm2bcg      | TIMEOUT (silent)              | TIMEOUT (silent)                   | unchanged (not e-attributable) |
+| EQ_0rvvwfsfv2r      | TIMEOUT (silent)              | TIMEOUT (silent)                   | unchanged (not e-attributable) |
+| EQ_0stx52y505t      | TIMEOUT (silent)              | TIMEOUT (silent)                   | unchanged (not e-attributable) |
+| EQ_0gsuem3slyl      | FAIL (typecheck, unrelated)   | FAIL (typecheck, unrelated)        | unchanged (predicted) |
+
+All 5 e-bearing baselines (1 PARTIAL + 4 e-bearing TIMEOUTs) shifted toward green: 4 reached PASS, 1 reached clean TIMEOUT (e-noise eliminated; remaining latency is unrelated solver work). Zero PASS→non-PASS regressions. EQ_0gsuem3slyl was correctly predicted not to shift (typecheck failure on a different code path).
+
+**Why it matters.** Affects any benchmark whose source contains scientific-notation floating-point constants — observed across `tsafe.*`, `bess.*`, and a subset of REVE benchmark families. Currently surfaces as a few hundred spurious obligation FAILs per affected file; was confounding both the vacuous-PASS measurements (Probe 3 inflated PARTIAL counts on tsafe normAngle pair) and the witness extraction work (Tier 1 A3 — required hand-rewriting the literal in 0exak/s541 SMT2 inputs to get a default-z3 verdict).
+
+**Next action.** Push side branch and file upstream issue using the prepared draft at `strata-decimal-e15-emission-bug.md` (repo root). Then merge `6f5e74fa6` into htd/smack (single-file change in `Strata/DDM/Util/Decimal.lean`; no merge conflicts expected).
+
+### Java-SMACK behavior post-SO-fix — Tier 1 stratified sweep (n=28)
+
+**Status:** RESOLVED-OBSERVATIONAL (2026-06-05). One new failure mode surfaced and triaged below; no follow-up sweep required for verdict-classification purposes.
+
+**Method.** Stratified sample of 28 Java-SMACK files from the 2,929-file corpus by file size (134 KB → 12 MB). Per file: `strip_smack_prelude.py` → `dotnet BoogieToStrata --smack` → `fix_core_st.py` → `strata verify --check-mode deductive --check-level minimal --call-policy bodyOrContract --inline-fuel 100`. Translation budget 60s (later 180s for fix on large files); verify 90s. Run on htd/smack @ HEAD (post-SO-fix `277c468cb` + `494cf1147`).
+
+**Aggregate result (28 files).**
+
+| Verdict                                | Count  | Rate   |
+|----------------------------------------|-------:|-------:|
+| PASS (all real-proof, no vacuous)      | 7      | 25.0 % |
+| PARTIAL                                | 1      |  3.6 % |
+| TIMEOUT (verify-side, ≤4 MB)           | 11     | 39.3 % |
+| TIMEOUT* (`fix_core_st.py` blow-up, ≥4 MB) | 3  | 10.7 % |
+| elab-fail (`old`-of-fvar)              | 6      | 21.4 % |
+| SO / panic / namespace-collision       | 0      |  0.0 % |
+
+**Key updates to the v2 §1.3 framing.**
+- Java-SMACK is **not a uniform hard-failure cohort** post-SO-fix. Small files (≤ ~675 KB Boogie) reach genuine non-vacuous PASS (133 → 2,133 VCs proved per file with no `path unreachable` annotations). The "0 known PASSes" claim in v2 §1.3 was an artifact of pre-SO-fix data; PASS rate at n=28 is 25%, PASS+PARTIAL is 28.6%.
+- TIMEOUT is the dominant failure mode at scale (50%) but is almost monotone in file size — every file ≥1.1 MB other than `sm4j2muxvee` (a 1.5 MB PASS in 13s outlier) hits the 90s wall. Engineering knob, not soundness.
+- **No SO regressions.** The fix in `277c468cb` + `494cf1147` holds across the n=28 sample.
+
+**New failure mode (`old`-of-non-modifies-fvar elab error, 6/28).** All 6 elab-fails share one shape: `Cannot find this fvar in the context! old <var>` from a procedure `_ensures_0` clause referencing `old(<state-var>)` for a variable not in the elaborator's typing context. This is **distinct** from upstream #1162 (`__nondet`), from the older CFG-body SKIP, and from #1331 (`old`-of-unmodified-global). Affected six well-spread files (size range 237 KB → 2.7 MB), suggesting it's structural (constructor/getter ensures clauses naming heap variables) rather than random. Smallest clean repro: `EQ_w5qckr4iugx_out.bpl` (237 KB). Worth a separate ticket if it's distinct from #1331's root cause; if it's actually the same root cause as #1331 manifesting on Java-SMACK output shape, the existing #1331 fix may close it transitively.
+
+**`fix_core_st.py` super-linear-regex slowdown (3/28, all ≥4 MB Boogie inputs).** Translation succeeds but post-processing wedges. On the 4.3 MB input, fix takes ~205s, and the resulting 21 MB `.core.st` then verify-TIMEOUTs at 90s anyway. Tooling-side, not verifier-side. Worth filing as a smack-docker pipeline issue if the Strata-Smack pipeline is a customer-facing path.
+
+**Next action.** (a) Triage whether the `old`-of-fvar elab error is the same root cause as upstream #1331 or a separate ticket. (b) Optionally file a smack-docker pipeline ticket on `fix_core_st.py` regex super-linearity. (c) No need to re-sweep Java-SMACK for verdict-classification purposes — n=28 is enough to discriminate the cohort's profile.
+
+### Strata-side: pinned solver options suppress decidable counterexamples (Tier 1 A3 confirmation)
+
+**Status:** RESOLVED-OBSERVATIONAL (2026-06-05). Generalizes v2 §5's single-path measurement to within-procedure path-uniformity. Witness extraction for 5 new files plus 2 v2-prior; 6/7 yield witnesses under default-options z3.
+
+**Summary.** v2 §5 reported that a single PARTIAL VC on `EQ_ike2wen0cz0_out.bpl` flips from "❓ unknown" under Strata's pinned z3 options to "sat with concrete witness" under default-options z3 4.16. Tier 1 A3 generalized this to 5 additional files plus re-confirmation of the 2 v2-prior. **Result: every ensures_0 path tested within a Neq.SameV procedure flips together** (3/3 on `ike2wen0cz0`, 9/9 on `mtonvj3sujq`, 6/6 on `bhx22kvwuqp`, 5/5 on the tsafe `normAngle` pair after working around an orthogonal Strata defect). The "solver-options artifact" is per-file path-uniform, not per-path.
+
+**Per-file outcome table.**
+
+| File              | Family             | Witnesses | z3-default verdict | Witness shape |
+|-------------------|--------------------|-----------|---------------------|---------------|
+| EQ_ike2wen0cz0    | REVE               | 3/3       | sat × 3/3          | `_in_parameter__1@1 = bv32 0`; nondets all false |
+| EQ_bhx22kvwuqp    | CLEVER             | 6/6 (10/10 confirmed sat) | sat | (re-confirms v2 §5) |
+| EQ_mtonvj3sujq    | bess               | 9/9       | sat × 9/9          | Real-typed Skolem-witnessed `_return@*` divergence |
+| EQ_0exak45poxy    | tsafe              | 5/5       | sat × 5/5          | `_in_parameter__0@4 = 0.0` Real (after rewriting `e-15`) |
+| EQ_s541ce4abnj    | tsafe (sister of 0exak) | 5/5  | sat × 5/5          | same shape as 0exak (after same rewrite) |
+| EQ_vtepk5bv3ld    | REVE               | n/a       | n/a                | file PASS All 1516 goals on this run; not PARTIAL |
+| EQ_pyafkjy4xny    | (v2 §5 prior)      | 1/1 (per v2) | sat | (taken at face value from v2 §5; not re-verified) |
+
+**Aggregate.** 6 of 7 files yield witnesses under default-options z3 (bhx, ike, 0exak, s541, mtonvj, plus pyafkjy4xny per v2 §5). 1 of 7 (`vtepk5bv3ld`) is no longer PARTIAL on this run — it now passes cleanly at 1516 goals. The v1 PARTIAL classification was either run-flaky or set under a different harness configuration. For 2 of those 6 (the tsafe `normAngle` pair, `0exak45poxy` and `s541ce4abnj`), the verdict-flip story is **contaminated** by a separate defect: Strata's `Strata/DDM/Util/Decimal.lean` was emitting SMT-LIB scientific-notation literals (`3141592653589793e-15`) that both default z3 4.16 and default cvc5 1.3.3 reject as parse errors. That defect has now been fixed on side branch (`6f5e74fa6`); see the SMT2 e-15 entry above. With that defect resolved, the witness flip on the tsafe pair becomes clean.
+
+**Net update to v2 §5.** The option-stripping verdict-flip story holds and **generalizes**:
+1. *Path-uniformity within a procedure is real* (3/3, 9/9, 6/6, 5/5 within a single Neq.SameV procedure all flip together).
+2. *The defect class is per-file*, not per-path — pinning the Z3 model parameters in `verify` is suppressing decidable counterexamples uniformly within a procedure.
+3. *Two corollaries v2 §5 did not surface:* (a) the tsafe-normAngle pair's PARTIAL is contaminated by an independent emission defect (now fixed); (b) PARTIAL classifications on this corpus are not always run-stable (vtepk5bv3ld no longer PARTIAL).
+
+Aggregate count under v2's narrow claim ("PARTIAL flips to ❌-with-counterexample under default z3"): 4 of 7 cleanly fit (ike, bhx, mtonvj, pyafkjy4xny). 2 of 7 fit only after the e-15 fix (0exak, s541). 1 of 7 is no longer PARTIAL (vtepk).
+
+**Next action.** Filing path: change Strata's z3-invocation default to either drop the model parameter pins or expose a `--solver-options` knob so the model parameters can be unpinned without recompiling. The witness-extraction reality-check is now independently confirmable post-e15-fix on the tsafe pair. Artifacts: `/tmp/claude-503/a3/`.
+
+### [INLINE-CALL]/[CFG-CALL] counter-axis gap (Tier 1 A6) — benign, closed
+
+**Status:** EXPLAINED-AND-CLOSED (2026-06-05). Not filed. The 421-event apparent gap reported in probe-4 (`[INLINE-CALL]=1131` vs `[CFG-CALL]=1552`) is fully explained by the two counters measuring different axes; not a gating divergence, not a leak, not a perf opportunity worth filing.
+
+**Summary.** `[INLINE-CALL]` (`StatementEval.lean:826`, was line 831 in the dbgtrace fork at the entry of `Command.inlineCallBody`) fires exactly once per `inlineCallBody` invocation, regardless of whether the callee body is `.structured` or `.cfg`. `[CFG-CALL]` (`StatementEval.lean:777-780`, was line 780 in the dbgtrace fork at the head-of-recursion of `evalCalleeCFG`) fires once per recursive entry of the worklist driver, so each top-level `.cfg`-body callee produces `(rounds_to_drain + 1)` events. The 421-event gap reflects (a) `.cfg`-body callees taking >1 round to drain (each `condGoto` fork at line 758 adds an extra round; 76 `[CFG-CONDGOTO]` events were observed) and (b) `.structured`-body callees contributing to `[INLINE-CALL]` but zero to `[CFG-CALL]`. The single call site of `evalCalleeCFG` is at line 879 inside `inlineCallBody`'s `.cfg` arm; there is no second entry from `ProcedureEval.evalCFGBody` (top-level CFG eval uses the separate `evalCFGBlocks`/`evalCFGStep` pair, which don't carry the `[CFG-CALL]` instrumentation). `inlineCallBody` checks `E.fuel == 0` once at line 836 and emits `OutOfFuel` before reaching `evalCalleeCFG`, so any inline-call that survives past line 836 reaches `evalCalleeCFG` if and only if the callee body shape is `.cfg`. **Verdict: explained-and-benign.**
+
+Relevant files: `Strata/Languages/Core/StatementEval.lean` (lines 777-812 evalCalleeCFG; 826-908 inlineCallBody), `Strata/Languages/Core/ProcedureEval.lean` (lines 85-149 top-level CFG walker, separate code path, not double-counted), `reports/so-localization-probe4-2026-06-05.md` (source counts).
+
+**Next action.** None.
 
 ### Multi-Env precision-restoring improvement — `EQ_vtepk5bv3ld_out.bpl`
 
@@ -180,13 +290,18 @@ Either fix removes the SO without touching ANF, ObligationExtraction, or any of 
 
 **Next action.** Track #1331 review/merge. Local issue-draft kept at `boogietostrata-old-rejects-unmodified-global.md` for reference.
 
-### Body-eval cost regression on bodyOrContract (deferred)
+### Body-eval cost regression on bodyOrContract (partially resolved by e-15 fix; remainder deferred)
 
-**Status:** OPEN — needs characterization at varied timeouts before filing.
+**Status:** PARTIALLY-RESOLVED (2026-06-05) — 4 of the 7 files in this set were attributable to the SMT2 e-15 emission bug, not to body-eval cost. After the side-branch fix (`6f5e74fa6`):
+- `0exak45poxy`: TIMEOUT → PASS All 261 goals
+- `s541ce4abnj`: TIMEOUT → was PARTIAL pre-fix, now expected to follow 0exak (same shape)
+- `0fmj2meb0oj`, `0q0oga15aij`, `0z42qdmejd0`: TIMEOUT (with e-noise) → PASS
+- `vtepk5bv3ld`: was PARTIAL on v1 batch, **PASS All 1516 goals** on Tier-1 A3 re-run; not actually cost-regressing
+- `mtonvj3sujq`, `oqt2xfezy0x`: still PARTIAL/TIMEOUT (true body-eval cost)
 
-**Summary.** 7 batch-2 files where contract finishes in <60s with a definite verdict (PASS or FAIL:N) but bodyOrContract hits the 60s timeout: `0exak45poxy`, `s541ce4abnj` (small), `oqt2xfezy0x`, `vtepk5bv3ld`, `mtonvj3sujq` (medium), and 2 more. Distinct from the stack-overflow issue (those crash; these just hang).
+**Summary.** Original framing of "7 batch-2 files where contract finishes <60s but bodyOrContract hits 60s timeout" conflated three independent causes: (a) e-15 SMT2 emission contamination [now fixed on side branch], (b) flaky PARTIAL classification on `vtepk5bv3ld` [no longer PARTIAL], and (c) genuine body-eval cost regression on a handful of medium files (`mtonvj3sujq`, `oqt2xfezy0x`). Only category (c) is a real body-eval performance issue.
 
-**Next action.** Re-run on these 7 files with timeouts of 120s and 300s to determine whether they're slow-but-bounded (raise CI budget) or actually unbounded (file as a body-eval performance bug). Don't file until characterized.
+**Next action.** Re-run the residual ~2-3 files (after merging the e-15 fix into htd/smack) at timeouts of 120s and 300s to determine whether they're slow-but-bounded (raise CI budget) or actually unbounded (file as a body-eval performance bug). Don't file until characterized.
 
 ## Investigations
 

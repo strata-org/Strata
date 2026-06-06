@@ -44,7 +44,12 @@ The cluster's umbrella issue, "non-TCO walker family across the verify pipeline,
 | Report | Status | Next action |
 |---|---|---|
 | [aaron-eq-portfolio-2026-06-03.md](aaron-eq-portfolio-2026-06-03.md) | initial 36-file sample (of 3530) under `htd/smack` post-multi-Env (commit `5648bdf62`) | Superseded by [aaron-eq-portfolio-batch2-2026-06-04.md](aaron-eq-portfolio-batch2-2026-06-04.md) for current state; retained for first-batch detail. |
-| [aaron-eq-portfolio-batch2-2026-06-04.md](aaron-eq-portfolio-batch2-2026-06-04.md) | combined 72-file sample (batch 1 + batch 2) | File two clean defects: elab/typecheck `old(<cross-prefix>)` (3 reproducers) and stack-overflow under bodyOrContract (now 7 reproducers, mixed bucket). Defer body-eval cost regression until characterized at varied timeouts. |
+| [aaron-eq-portfolio-batch2-2026-06-04.md](aaron-eq-portfolio-batch2-2026-06-04.md) | combined 72-file sample (batch 1 + batch 2) | Superseded by the 2026-06-05 closeout pass below for current state; retained for batch-1+2 detail. |
+| [aaron-eq-portfolio-qualitative-analysis-2026-06-04.md](aaron-eq-portfolio-qualitative-analysis-2026-06-04.md) | qualitative v1 (deeper than the batch sweeps) | Superseded by v2 (link below) for vacuous-PASS framing and SO predictor. |
+| [aaron-eq-portfolio-anomalies-audit-2026-06-05.md](aaron-eq-portfolio-anomalies-audit-2026-06-05.md) | audit of v2's anomalies — six independent threads (vacuous-PASS rate, SO end-to-end, witness extraction, Java-SMACK behavior, e-15 emission, counter-axis gap) | Inputs to the autonomous closeout pass (link below). |
+| [aaron-eq-portfolio-methodology-note-2026-06-05.md](aaron-eq-portfolio-methodology-note-2026-06-05.md) | external-facing methodology note (drafted for Aaron) | Send when ready; awaits Aaron's confirmation on three benchmark-design questions. |
+| [eq-autonomous-closeout-2026-06-05.md](eq-autonomous-closeout-2026-06-05.md) | autonomous-closeout pass — consolidates probes 1-3, Tier 1 (Java-SMACK n=28 + A3 witness extraction + A6 counter-axis), and the e-15 fix | Track three follow-ups: (a) push/file the e-15 issue draft, (b) merge `6f5e74fa6` into htd/smack, (c) one-or-two-file `--profile` follow-up on the post-SO-fix silent timeouts. |
+| [`../strata-decimal-e15-emission-bug.md`](../strata-decimal-e15-emission-bug.md) (repo root) | drafted upstream issue for the SMT2 e-15 emission bug; fix landed on side branch `htd/decimal-e15-fix` at `6f5e74fa6` | Push side branch and file upstream; then merge into htd/smack. |
 
 ## Filing & follow-up tracking
 

@@ -840,6 +840,43 @@ and `Tools/BoogieToStrata/IntegrationTests/BoogieToStrataIntegrationTests.cs`.
   identical PASS+PARTIAL file sets vs v6 baseline (68/11/0).
   Fix-axis details in `BRANCH_FEATURES.md` §4.5.
 
+  *End-to-end follow-up (2026-06-05).* Probe-1 re-ran all 7 SO
+  reproducers under the realistic flag set (`--check-mode deductive
+  --check-level minimal --call-policy bodyOrContract --inline-fuel
+  100`) at 120s wall budget. Translation succeeded for all 7 (rc=0,
+  16-21s); verify hit the 120s wall on all 7 (rc=124) with zero-byte
+  stdout and zero-byte stderr — verifier was still working through
+  the pipeline silently when the wall clock killed it. The SO fix is
+  thus a **crash-suppressor** on these particular reproducers: SIGABRT
+  is eliminated, but end-to-end correctness is not demonstrated; the
+  crashes have been turned into silent timeouts. Discriminating
+  "stuck in transform" from "stuck in solver" needs a `--profile` /
+  `--no-solve` follow-up or a 300-600s wall budget on 1-2 files.
+
+- **SMT2 emission of scientific-notation literals (`e-15`, etc.).**
+  Surfaced on `EQ_0exak45poxy_out.bpl` (`tsafe.normAngle.Neq.SameV`)
+  as 261 spurious obligation FAILs all reading `Symbol 'e-15' not
+  declared as a variable`. `Strata/DDM/Util/Decimal.lean` was emitting
+  decimal literals in scientific notation (`s!"{m}e{e}"`) when the
+  exponent fell outside `[-5, 5]`; SMT-LIB does not accept
+  scientific-notation literals (both default-options z3 4.16 and
+  cvc5 1.3.3 reject `1e-15` as parse / unknown-symbol). Affects any
+  benchmark with scientific-notation floating-point constants —
+  observed across `tsafe.*`, `bess.*`, and a subset of REVE families.
+  Was confounding both vacuous-PASS measurements (Probe 3 inflated
+  PARTIAL counts on the tsafe `normAngle` pair) and Tier 1 A3 witness
+  extraction (required hand-rewriting the literal in 0exak/s541 SMT2
+  inputs to get a default-z3 verdict). **Fixed on side branch
+  `htd/decimal-e15-fix` at commit `6f5e74fa6`** (single-file change
+  in `Strata/DDM/Util/Decimal.lean`: drop the `[-5, 5]` exponent
+  bounds and the `s!"{m}e{e}"` fallback; always emit decimal-form
+  literals SMT-LIB accepts). Validation on a 10-file before/after
+  sample: 5/10 files improved (4 PARTIAL/TIMEOUT-with-e-noise →
+  PASS, 1 TIMEOUT-with-e-noise → clean TIMEOUT), 0/10 regressed.
+  Issue draft at `strata-decimal-e15-emission-bug.md` (repo root,
+  alongside `boogietostrata-old-rejects-unmodified-global.md`). **Not
+  yet pushed/filed upstream; not yet merged into htd/smack.**
+
 See [`Tools/BoogieToStrata/Docs/STATUS.md`](../../Tools/BoogieToStrata/Docs/STATUS.md)
 for translator-level status.
 
