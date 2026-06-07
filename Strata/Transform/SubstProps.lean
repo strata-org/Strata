@@ -1082,81 +1082,12 @@ theorem subst_fvars_eval_bridge
 /-! ### Small-step block helpers for assert/assume sequences -/
 
 /-- Generic block-evaluator helper for the labels-aware (`zip`) variant of
-    assert/assume statement lists.  Used to derive both `H_asserts_zip` and
-    `H_assumes_zip`. -/
-theorem H_check_block_zip
-    {π : String → Option Procedure}
-    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
-    {δ : CoreEval} {σA σ' : CoreStore}
-    {ks ks' : List Expression.Ident}
-    {entries : List (CoreLabel × Procedure.Check)}
-    {labels : List String}
-    {md : Imperative.MetaData Expression}
-    (mkStmt : String → Expression.Expr → Imperative.MetaData Expression → Statement)
-    (mkSingletonEval :
-      ∀ (lbl : String) (e : Expression.Expr) (m : Imperative.MetaData Expression),
-        δ σ' e = some Imperative.HasBool.tt →
-        EvalStatementsContract π φ ⟨σ', δ, false⟩ [mkStmt lbl e m] ⟨σ', δ, false⟩)
-    (Hwfvr : Imperative.WellFormedSemanticEvalVar (P:=Expression) δ)
-    (Hwfvl : Imperative.WellFormedSemanticEvalVal (P:=Expression) δ)
-    (Hwfc  : Core.WellFormedCoreEvalCong δ)
-    (Hlen  : ks.length = ks'.length)
-    (Hnd   : Imperative.substNodup (ks.zip ks'))
-    (Hdef  : Imperative.substDefined σA σ' (ks.zip ks'))
-    (Hsubst : Imperative.substStores σA σ' (ks.zip ks'))
-    (Hentries : ∀ entry, entry ∈ entries →
-       Imperative.invStores σA σ'
-         ((Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr).removeAll
-            (ks ++ ks')) ∧
-       ks'.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr) ∧
-       δ σA entry.snd.expr = some Imperative.HasBool.tt) :
-    EvalStatementsContract π φ ⟨σ', δ, false⟩
-      ((entries.zip labels).map (fun (entry, lbl) =>
-        mkStmt lbl
-          (Lambda.LExpr.substFvars entry.snd.expr
-            (ks.zip (Core.Transform.createFvars ks')))
-          (entry.snd.md.setCallSiteFileRange md)))
-      ⟨σ', δ, false⟩ := by
-  induction entries generalizing labels with
-  | nil =>
-    simp [List.zip_nil_left, List.map_nil]
-    exact ReflTrans.step _ _ _ Imperative.StepStmt.step_stmts_nil (.refl _)
-  | cons head tail ih =>
-    cases labels with
-    | nil =>
-      simp [List.zip_nil_right, List.map_nil]
-      exact ReflTrans.step _ _ _ Imperative.StepStmt.step_stmts_nil (.refl _)
-    | cons lbl labels' =>
-      obtain ⟨_, check⟩ := head
-      have HtailHyp :
-          ∀ entry, entry ∈ tail →
-            Imperative.invStores σA σ'
-              ((Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr).removeAll
-                (ks ++ ks')) ∧
-            ks'.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr) ∧
-            δ σA entry.snd.expr = some Imperative.HasBool.tt := by
-        intros entry hin; exact Hentries entry (List.mem_cons_of_mem _ hin)
-      have Htail := ih (labels := labels') HtailHyp
-      have HlHead := Hentries _ List.mem_cons_self
-      obtain ⟨HinvHead, HnininHead, HevHead⟩ := HlHead
-      have Heq : δ σA check.expr =
-                  δ σ' (Lambda.LExpr.substFvars check.expr
-                          (ks.zip (Core.Transform.createFvars ks'))) :=
-        subst_fvars_correct Hwfc Hwfvr Hwfvl Hlen Hdef Hnd Hsubst HnininHead HinvHead
-      have HevSubst : δ σ' (Lambda.LExpr.substFvars check.expr
-                            (ks.zip (Core.Transform.createFvars ks'))) =
-                      some Imperative.HasBool.tt := by
-        rw [← Heq]; exact HevHead
-      have HheadStmts := mkSingletonEval lbl
-        (Lambda.LExpr.substFvars check.expr (ks.zip (Core.Transform.createFvars ks')))
-        (check.md.setCallSiteFileRange md) HevSubst
-      simp only [List.zip_cons_cons, List.map_cons]
-      exact EvalStatementsContractApp HheadStmts Htail
-
-/-- Polymorphic-`f` variant of `H_check_block_zip`: lifts any flag-`f`
-    singleton callback through the `(entries.zip labels).map` shape.
-    Used by `H_assumes_zip_poly` to keep the L5/L6 (havocs/assumes)
-    segments at `f = true` after the L4 flag flip. -/
+    assert/assume statement lists.  Polymorphic-`f` form: lifts any
+    flag-`f` singleton callback through the `(entries.zip labels).map`
+    shape.  Used by `H_assumes_zip_poly` to keep the L5/L6
+    (havocs/assumes) segments at `f = true` after the L4 flag flip,
+    and by the `f := false` corollary `H_check_block_zip` (and
+    `H_asserts_zip` / `H_assumes_zip` through it). -/
 theorem H_check_block_zip_poly
     {π : String → Option Procedure}
     {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
@@ -1226,6 +1157,45 @@ theorem H_check_block_zip_poly
       simp only [List.zip_cons_cons, List.map_cons]
       exact EvalStatementsContractApp HheadStmts Htail
 
+/-- `f := false` specialization of `H_check_block_zip_poly`.  Kept as a
+    corollary so existing call sites (`H_asserts_zip`) continue to work
+    after the polymorphic lift. -/
+theorem H_check_block_zip
+    {π : String → Option Procedure}
+    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
+    {δ : CoreEval} {σA σ' : CoreStore}
+    {ks ks' : List Expression.Ident}
+    {entries : List (CoreLabel × Procedure.Check)}
+    {labels : List String}
+    {md : Imperative.MetaData Expression}
+    (mkStmt : String → Expression.Expr → Imperative.MetaData Expression → Statement)
+    (mkSingletonEval :
+      ∀ (lbl : String) (e : Expression.Expr) (m : Imperative.MetaData Expression),
+        δ σ' e = some Imperative.HasBool.tt →
+        EvalStatementsContract π φ ⟨σ', δ, false⟩ [mkStmt lbl e m] ⟨σ', δ, false⟩)
+    (Hwfvr : Imperative.WellFormedSemanticEvalVar (P:=Expression) δ)
+    (Hwfvl : Imperative.WellFormedSemanticEvalVal (P:=Expression) δ)
+    (Hwfc  : Core.WellFormedCoreEvalCong δ)
+    (Hlen  : ks.length = ks'.length)
+    (Hnd   : Imperative.substNodup (ks.zip ks'))
+    (Hdef  : Imperative.substDefined σA σ' (ks.zip ks'))
+    (Hsubst : Imperative.substStores σA σ' (ks.zip ks'))
+    (Hentries : ∀ entry, entry ∈ entries →
+       Imperative.invStores σA σ'
+         ((Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr).removeAll
+            (ks ++ ks')) ∧
+       ks'.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr) ∧
+       δ σA entry.snd.expr = some Imperative.HasBool.tt) :
+    EvalStatementsContract π φ ⟨σ', δ, false⟩
+      ((entries.zip labels).map (fun (entry, lbl) =>
+        mkStmt lbl
+          (Lambda.LExpr.substFvars entry.snd.expr
+            (ks.zip (Core.Transform.createFvars ks')))
+          (entry.snd.md.setCallSiteFileRange md)))
+      ⟨σ', δ, false⟩ :=
+  H_check_block_zip_poly (f := false) mkStmt mkSingletonEval
+    Hwfvr Hwfvl Hwfc Hlen Hnd Hdef Hsubst Hentries
+
 /-- Labels-aware variant of `H_asserts`: takes a separate `labels`
     list (paired positionally with `pres` via `zip`) rather than a
     `labelOf` projection.  This matches the shape exposed by the
@@ -1268,44 +1238,6 @@ theorem H_asserts_zip
     (mkSingletonEval := singletonAssertEval Hwfb)
     Hwfvr Hwfvl Hwfc Hlen Hnd Hdef Hsubst' Hpres
 
-/-- Labels-aware variant of `H_assumes`: takes a separate `labels`
-    list (paired positionally with `posts` via `zip`) rather than a
-    `labelOf` projection.  This matches the shape exposed by the
-    `HassumesShape` clause of `callElimCmd_call_eq` (B3 layer), which
-    forms the assumes list as `(posts.zip labels).map (fun (entry, lbl) => …)`. -/
-theorem H_assumes_zip
-    {π : String → Option Procedure}
-    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
-    {δ : CoreEval} {σA σ' : CoreStore}
-    {ks ks' : List Expression.Ident}
-    {posts : List (CoreLabel × Procedure.Check)}
-    {labels : List String}
-    {md : Imperative.MetaData Expression}
-    (Hwfb  : Imperative.WellFormedSemanticEvalBool δ)
-    (Hwfvr : Imperative.WellFormedSemanticEvalVar (P:=Expression) δ)
-    (Hwfvl : Imperative.WellFormedSemanticEvalVal (P:=Expression) δ)
-    (Hwfc  : Core.WellFormedCoreEvalCong δ)
-    (Hlen  : ks.length = ks'.length)
-    (Hnd   : Imperative.substNodup (ks.zip ks'))
-    (Hdef  : Imperative.substDefined σA σ' (ks.zip ks'))
-    (Hsubst : Imperative.substStores σA σ' (ks.zip ks'))
-    (Hposts : ∀ entry, entry ∈ posts →
-       Imperative.invStores σA σ'
-         ((Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr).removeAll
-            (ks ++ ks')) ∧
-       ks'.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr) ∧
-       δ σA entry.snd.expr = some Imperative.HasBool.tt) :
-    EvalStatementsContract π φ ⟨σ', δ, false⟩
-      ((posts.zip labels).map (fun (entry, lbl) =>
-        Statement.assume lbl
-          (Lambda.LExpr.substFvars entry.snd.expr
-            (ks.zip (Core.Transform.createFvars ks')))
-          (entry.snd.md.setCallSiteFileRange md)))
-      ⟨σ', δ, false⟩ :=
-  H_check_block_zip (entries := posts) (labels := labels) Statement.assume
-    (mkSingletonEval := singletonAssumeEval Hwfb)
-    Hwfvr Hwfvl Hwfc Hlen Hnd Hdef Hsubst Hposts
-
 /-- Polymorphic-`f` variant of `H_assumes_zip`.  Lets the L6 (assumes)
     segment of the call-elim glue stay at `f = true` once the L4 flag
     flip has fired.  See `EvalCallElim_glue_fail`. -/
@@ -1342,6 +1274,40 @@ theorem H_assumes_zip_poly
     Statement.assume
     (mkSingletonEval := singletonAssumeEval_poly Hwfb)
     Hwfvr Hwfvl Hwfc Hlen Hnd Hdef Hsubst Hposts
+
+/-- Labels-aware variant of `H_assumes`: takes a separate `labels`
+    list (paired positionally with `posts` via `zip`) rather than a
+    `labelOf` projection.  `f := false` corollary of `H_assumes_zip_poly`. -/
+theorem H_assumes_zip
+    {π : String → Option Procedure}
+    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
+    {δ : CoreEval} {σA σ' : CoreStore}
+    {ks ks' : List Expression.Ident}
+    {posts : List (CoreLabel × Procedure.Check)}
+    {labels : List String}
+    {md : Imperative.MetaData Expression}
+    (Hwfb  : Imperative.WellFormedSemanticEvalBool δ)
+    (Hwfvr : Imperative.WellFormedSemanticEvalVar (P:=Expression) δ)
+    (Hwfvl : Imperative.WellFormedSemanticEvalVal (P:=Expression) δ)
+    (Hwfc  : Core.WellFormedCoreEvalCong δ)
+    (Hlen  : ks.length = ks'.length)
+    (Hnd   : Imperative.substNodup (ks.zip ks'))
+    (Hdef  : Imperative.substDefined σA σ' (ks.zip ks'))
+    (Hsubst : Imperative.substStores σA σ' (ks.zip ks'))
+    (Hposts : ∀ entry, entry ∈ posts →
+       Imperative.invStores σA σ'
+         ((Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr).removeAll
+            (ks ++ ks')) ∧
+       ks'.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr) ∧
+       δ σA entry.snd.expr = some Imperative.HasBool.tt) :
+    EvalStatementsContract π φ ⟨σ', δ, false⟩
+      ((posts.zip labels).map (fun (entry, lbl) =>
+        Statement.assume lbl
+          (Lambda.LExpr.substFvars entry.snd.expr
+            (ks.zip (Core.Transform.createFvars ks')))
+          (entry.snd.md.setCallSiteFileRange md)))
+      ⟨σ', δ, false⟩ :=
+  H_assumes_zip_poly (f := false) Hwfb Hwfvr Hwfvl Hwfc Hlen Hnd Hdef Hsubst Hposts
 
 /-- Helper: lifting `ReadValues σ ks vs` across an `updatedStates` extension
     by names disjoint from `ks`. -/
