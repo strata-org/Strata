@@ -1673,9 +1673,6 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
     (Hwfvars : Imperative.WellFormedSemanticEvalVar δ)
     (Hwfb : Imperative.WellFormedSemanticEvalBool δ)
     (Hwf2 : WellFormedCoreEvalTwoState δ σ₀ σ)
-    (_HdefOver :
-      Imperative.isDefinedOver (Imperative.HasVarsTrans.allVarsTrans π) σ
-        (Statement.call procName args md))
     (Hinitin :
       InitStates σ (ListMap.keys proc.header.inputs) argVals σA)
     (Hinitout :
@@ -3929,7 +3926,7 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                   exact callElimStatementCorrect_terminal_call_arm_fail
                     Hp Hwfc Hwf Hgenrel Hwfcallsite heq_ce
                     lkup hCallArgsIn hCallArgsLhs Hevalargs Hevalouts
-                    Hwfval Hwfvars Hwfb Hwf2 HdefOver
+                    Hwfval Hwfvars Hwfb Hwf2
                     Hinitin Hinitout Hpre_def Hpre_iff Hhav1 Hpost Hrd
                     Hupdate
                 | false =>
