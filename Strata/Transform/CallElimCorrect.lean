@@ -1273,6 +1273,116 @@ private theorem fresh_triple_σ_facts
   · exact HOut v h
   · exact HOld v h
 
+/-- Per-index δ-eval bridge for `mkOld`-prefixed old-variable fvars at the
+    post-havoc store `σO`.
+
+    For each `i < oldVars.length`, the evaluator at `σO` of the old-name
+    fvar `mkOld oldVars[i].name` returns the pre-call value `oldVals[i]`.
+    Backs the L6 `HoldSubBridge` derivation in `_terminal`'s call arm.
+
+    Inputs:
+    * `Hwf2_univ`: per-output bridge `δ σO (mkOld v.name) = σAO v` (derived
+      from `Hwf2.2` instantiated at `(outputs.keys, [], σAO, σO, σO)` with
+      `Hhav1 ∧ InitVars.init_none`).
+    * `Hinitout`: positional init witness for outputs at `σA → σAO`.
+    * `HσAO_reads_outs`: `ReadValues σAO outputs.keys oVals` (just
+      `InitStatesReadValues Hinitout`).
+    * `Hevalouts`, `hCallArgsLhs`: caller-side lhs read + the callArgs
+      shape equality.
+    * `HoutAlign`: positional alignment from `WFCallSiteSpec` (lhs idx
+      agrees with outputs.keys idx for shared inout outputs).
+    * `HoldVars_sub_outs`, `HoldVars_sub_lhs`, `HoldVars_sub_callLhs`:
+      `oldVars` is the filter that narrows `lhs` ↪ `oldVars`, so each
+      element is in `outputs.keys`, `lhs`, and `CallArg.getLhs args`.
+    * `HoldVals`: `ReadValues σ oldVars oldVals`.
+    * `HoldValsLen`: `oldVals.length = oldVars.length`. -/
+private theorem HoldEval_bridge_at_σO
+    {δ : CoreEval} {σ σAO σO : CoreStore}
+    {oldVars lhs : List Expression.Ident} {oldVals oVals : List Expression.Expr}
+    {proc : Procedure} {args : List (CallArg Expression)}
+    {σA : CoreStore}
+    (Hwf2_univ :
+      ∀ v ∈ proc.header.outputs.keys,
+        δ σO (Lambda.LExpr.fvar () (CoreIdent.mkOld v.name) none) = σAO v)
+    (Hinitout :
+      InitStates σA (ListMap.keys proc.header.outputs) oVals σAO)
+    (HσAO_reads_outs : ReadValues σAO proc.header.outputs.keys oVals)
+    (Hevalouts : ReadValues σ lhs oVals)
+    (hCallArgsLhs : CallArg.getLhs args = lhs)
+    (HoutAlign :
+      ∀ v ∈ ListMap.keys proc.header.outputs,
+        v ∈ CallArg.getLhs args →
+        (CallArg.getLhs args).idxOf v =
+          (ListMap.keys proc.header.outputs).idxOf v)
+    (HoldVars_sub_outs : ∀ v ∈ oldVars, v ∈ proc.header.outputs.keys)
+    (HoldVars_sub_lhs : ∀ v ∈ oldVars, v ∈ lhs)
+    (HoldVars_sub_callLhs : ∀ v ∈ oldVars, v ∈ CallArg.getLhs args)
+    (HoldVals : ReadValues σ oldVars oldVals)
+    (HoldValsLen : oldVals.length = oldVars.length) :
+    ∀ (i : Nat) (Hi : i < oldVars.length),
+      δ σO
+          (Lambda.LExpr.fvar ()
+            (CoreIdent.mkOld (oldVars[i]'Hi).name) none) =
+        some (oldVals[i]'(HoldValsLen.symm ▸ Hi)) := by
+  intro i Hi
+  let v : Expression.Ident := oldVars[i]'Hi
+  have Hv_mem : v ∈ oldVars := List.getElem_mem _
+  have Hv_out : v ∈ ListMap.keys proc.header.outputs :=
+    HoldVars_sub_outs v Hv_mem
+  have Hv_lhs : v ∈ lhs := HoldVars_sub_lhs v Hv_mem
+  have Hv_callLhs : v ∈ CallArg.getLhs args :=
+    HoldVars_sub_callLhs v Hv_mem
+  -- ReadValues σ' ks vs ∧ v ∈ ks ⇒ σ' v = some vs[ks.idxOf v].
+  have read_at : ∀ {σ' : Expression.Ident → Option _}
+      {ks : List Expression.Ident} {vs : List _}
+      (_ : ReadValues σ' ks vs) (Hmem : v ∈ ks)
+      (Hidx_lt : ks.idxOf v < vs.length),
+      σ' v = some (vs[ks.idxOf v]'Hidx_lt) := by
+    intro σ' ks vs Hrv Hmem Hidx_lt
+    have Hg := readValues_get (σ:=σ') (ks:=ks) (vs:=vs) Hrv
+      (i:=ks.idxOf v)
+      (hi:=List.idxOf_lt_length_of_mem Hmem) (hi':=Hidx_lt)
+    have Hk : ks[ks.idxOf v]'(List.idxOf_lt_length_of_mem Hmem) = v := by
+      unfold List.idxOf
+      simpa using @List.findIdx_getElem _ (· == v) ks
+        (List.idxOf_lt_length_of_mem Hmem)
+    rwa [Hk] at Hg
+  -- Step 1: δ σO (mkOld v.name) = σAO v.
+  have HStep1 :
+      δ σO (Lambda.LExpr.fvar () (CoreIdent.mkOld v.name) none) = σAO v :=
+    Hwf2_univ v Hv_out
+  -- Step 2: σAO v = oVals[outputs.keys.idxOf v] via HσAO_reads_outs.
+  let j_out := (ListMap.keys proc.header.outputs).idxOf v
+  have Hj_out_lt_oVals : j_out < oVals.length := by
+    rw [← InitStatesLength Hinitout]
+    exact List.idxOf_lt_length_of_mem Hv_out
+  have HStep2 : σAO v = some (oVals[j_out]'Hj_out_lt_oVals) :=
+    read_at HσAO_reads_outs Hv_out Hj_out_lt_oVals
+  -- Step 3: lhs.idxOf v = outputs.keys.idxOf v (alignment).
+  have HAlign_lhs : lhs.idxOf v = j_out := by
+    show lhs.idxOf v = (ListMap.keys proc.header.outputs).idxOf v
+    rw [← HoutAlign v Hv_out Hv_callLhs, hCallArgsLhs]
+  -- Step 4: σ v = oVals[lhs.idxOf v]'_.
+  let j_lhs := lhs.idxOf v
+  have Hj_lhs_lt_oVals : j_lhs < oVals.length := by
+    rw [← ReadValuesLength Hevalouts]
+    exact List.idxOf_lt_length_of_mem Hv_lhs
+  have HStep4 : σ v = some (oVals[j_lhs]'Hj_lhs_lt_oVals) :=
+    read_at Hevalouts Hv_lhs Hj_lhs_lt_oVals
+  -- Step 5: σ v = some oldVals[i]'_ (HoldVals positional).
+  have Hi_oldVals : i < oldVals.length := HoldValsLen.symm ▸ Hi
+  have HStep5 : σ v = some (oldVals[i]'Hi_oldVals) :=
+    readValues_get (σ:=σ) (ks:=oldVars) (vs:=oldVals) HoldVals
+      (i:=i) (hi:=Hi) (hi':=Hi_oldVals)
+  -- Combine: δ σO (mkOld v.name) = some oldVals[i].
+  show δ σO (Lambda.LExpr.fvar () (CoreIdent.mkOld v.name) none)
+        = some (oldVals[i]'Hi_oldVals)
+  rw [HStep1, HStep2]
+  have Hj_eq : oVals[j_out]'Hj_out_lt_oVals =
+               oVals[j_lhs]'Hj_lhs_lt_oVals := by
+    congr 1; exact HAlign_lhs.symm
+  rw [Hj_eq, ← HStep4, HStep5]
+
 /-- Call-elimination correctness for a single statement.
 
     Given a small-step `EvalStatementsContract` derivation of `[st]`
@@ -2972,67 +3082,10 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                         δ σO
                             (Lambda.LExpr.fvar ()
                               (CoreIdent.mkOld (oldVars[i]'Hi).name) none) =
-                          some (oldVals[i]'(HoldValsLen.symm ▸ Hi)) := by
-                    intro i Hi
-                    let v : Expression.Ident := oldVars[i]'Hi
-                    have Hv_mem : v ∈ oldVars := List.getElem_mem _
-                    have Hv_out : v ∈ ListMap.keys proc.header.outputs :=
-                      HoldVars_sub_outs v Hv_mem
-                    have Hv_lhs : v ∈ lhs := HoldVars_sub_lhs v Hv_mem
-                    have Hv_callLhs : v ∈ CallArg.getLhs args :=
-                      HoldVars_sub_callLhs v Hv_mem
-                    -- ReadValues σ' ks vs ∧ v ∈ ks ⇒ σ' v = some vs[ks.idxOf v].
-                    have read_at : ∀ {σ' : Expression.Ident → Option _}
-                        {ks : List Expression.Ident} {vs : List _}
-                        (_ : ReadValues σ' ks vs) (Hmem : v ∈ ks)
-                        (Hidx_lt : ks.idxOf v < vs.length),
-                        σ' v = some (vs[ks.idxOf v]'Hidx_lt) := by
-                      intro σ' ks vs Hrv Hmem Hidx_lt
-                      have Hg := readValues_get (σ:=σ') (ks:=ks) (vs:=vs) Hrv
-                        (i:=ks.idxOf v)
-                        (hi:=List.idxOf_lt_length_of_mem Hmem) (hi':=Hidx_lt)
-                      have Hk : ks[ks.idxOf v]'(List.idxOf_lt_length_of_mem Hmem) = v := by
-                        unfold List.idxOf
-                        simpa using @List.findIdx_getElem _ (· == v) ks
-                          (List.idxOf_lt_length_of_mem Hmem)
-                      rwa [Hk] at Hg
-                    -- Step 1: δ σO (mkOld v.name) = σAO v.
-                    have HStep1 :
-                        δ σO (Lambda.LExpr.fvar () (CoreIdent.mkOld v.name)
-                                                         none) =
-                          σAO v :=
-                      Hwf2_univ v Hv_out
-                    -- Step 2: σAO v = oVals[outputs.keys.idxOf v] via HσAO_reads_outs.
-                    let j_out := (ListMap.keys proc.header.outputs).idxOf v
-                    have Hj_out_lt_oVals : j_out < oVals.length := by
-                      rw [← InitStatesLength Hinitout]
-                      exact List.idxOf_lt_length_of_mem Hv_out
-                    have HStep2 : σAO v = some (oVals[j_out]'Hj_out_lt_oVals) :=
-                      read_at HσAO_reads_outs Hv_out Hj_out_lt_oVals
-                    -- Step 3: lhs.idxOf v = outputs.keys.idxOf v (alignment).
-                    have HAlign_lhs : lhs.idxOf v = j_out := by
-                      show lhs.idxOf v = (ListMap.keys proc.header.outputs).idxOf v
-                      rw [← HoutAlign v Hv_out Hv_callLhs, hCallArgsLhs]
-                    -- Step 4: σ v = oVals[lhs.idxOf v]'_.
-                    let j_lhs := lhs.idxOf v
-                    have Hj_lhs_lt_oVals : j_lhs < oVals.length := by
-                      rw [← ReadValuesLength Hevalouts]
-                      exact List.idxOf_lt_length_of_mem Hv_lhs
-                    have HStep4 : σ v = some (oVals[j_lhs]'Hj_lhs_lt_oVals) :=
-                      read_at Hevalouts Hv_lhs Hj_lhs_lt_oVals
-                    -- Step 5: σ v = some oldVals[i]'_ (HoldVals positional).
-                    have Hi_oldVals : i < oldVals.length := HoldValsLen.symm ▸ Hi
-                    have HStep5 : σ v = some (oldVals[i]'Hi_oldVals) :=
-                      readValues_get (σ:=σ) (ks:=oldVars) (vs:=oldVals) HoldVals
-                        (i:=i) (hi:=Hi) (hi':=Hi_oldVals)
-                    -- Combine: δ σO (mkOld v.name) = some oldVals[i].
-                    show δ σO (Lambda.LExpr.fvar () (CoreIdent.mkOld v.name) none)
-                          = some (oldVals[i]'Hi_oldVals)
-                    rw [HStep1, HStep2]
-                    have Hj_eq : oVals[j_out]'Hj_out_lt_oVals =
-                                 oVals[j_lhs]'Hj_lhs_lt_oVals := by
-                      congr 1; exact HAlign_lhs.symm
-                    rw [Hj_eq, ← HStep4, HStep5]
+                          some (oldVals[i]'(HoldValsLen.symm ▸ Hi)) :=
+                    HoldEval_bridge_at_σO Hwf2_univ Hinitout HσAO_reads_outs
+                      Hevalouts hCallArgsLhs HoutAlign HoldVars_sub_outs
+                      HoldVars_sub_lhs HoldVars_sub_callLhs HoldVals HoldValsLen
                   -- D2d: Structural pieces of HpostPayload (per-entry).
                   let oldTripsCanonical_L6 :
                       List ((Expression.Ident × Expression.Ty) ×
