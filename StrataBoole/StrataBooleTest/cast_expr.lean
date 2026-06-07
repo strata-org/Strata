@@ -4,7 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.MetaVerifier
+import StrataBoole.MetaVerifier
 
 open Strata
 
@@ -22,7 +22,7 @@ Lowers to a native `Bv{n}.ToUInt : bvN → int` Core op; the SMT encoder maps
 it to the SMT-LIB 2.7 `ubv_to_int` function. No axioms injected.
 -/
 
-private def castExprSeed : Strata.Program :=
+private def castExprSeed : StrataDDM.Program :=
 #strata
 program Boole;
 
@@ -76,51 +76,51 @@ spec {
 #end
 
 /-- info:
-Obligation: assert_1_836
+Obligation: assert_1_844
 Property: assert
 Result: ✅ pass
 
-Obligation: cast_bv8_nonneg_ensures_0_805
+Obligation: cast_bv8_nonneg_ensures_0_813
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_3_951
+Obligation: assert_3_959
 Property: assert
 Result: ✅ pass
 
-Obligation: cast_bv64_nonneg_ensures_2_920
+Obligation: cast_bv64_nonneg_ensures_2_928
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_5_1094
+Obligation: assert_5_1102
 Property: assert
 Result: ✅ pass
 
-Obligation: cast_bv32_bounded_ensures_4_1036
+Obligation: cast_bv32_bounded_ensures_4_1044
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_7_1234
+Obligation: assert_7_1242
 Property: assert
 Result: ✅ pass
 
-Obligation: cast_bv1_nonneg_ensures_6_1203
+Obligation: cast_bv1_nonneg_ensures_6_1211
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_9_1349
+Obligation: assert_9_1357
 Property: assert
 Result: ✅ pass
 
-Obligation: cast_bv16_nonneg_ensures_8_1318
+Obligation: cast_bv16_nonneg_ensures_8_1326
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_11_1466
+Obligation: assert_11_1474
 Property: assert
 Result: ✅ pass
 
-Obligation: cast_bv128_nonneg_ensures_10_1435
+Obligation: cast_bv128_nonneg_ensures_10_1443
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in

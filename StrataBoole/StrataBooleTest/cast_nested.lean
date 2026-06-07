@@ -4,7 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.MetaVerifier
+import StrataBoole.MetaVerifier
 
 open Strata
 
@@ -23,7 +23,7 @@ Exercises `e as_int` in contexts beyond the flat `x as_int` covered by
   properties (single-byte decode and empty-sequence base case)
 -/
 
-private def castNestedSeed : Strata.Program :=
+private def castNestedSeed : StrataDDM.Program :=
 #strata
 program Boole;
 
@@ -91,62 +91,88 @@ procedure test_rec_single_byte(x: bv8) returns ()
 spec {
   ensures bytes_to_nat(Sequence.build(Sequence.empty_bv8, x)) == (x as_int);
 } { exit test_rec_single_byte; };
+
+// Cast inside a `decreases` clause.
+// `decreases (n as_int)` uses a cast expression as the termination measure.
+rec function countdown_bv(n: bv8) : int
+  decreases (n as_int)
+{
+  if n == bv{8}(0) then 0
+  else 1 + countdown_bv(n - bv{8}(1))
+}
+;
+
+// Cast in a function precondition.
+function decode_low_byte(b: bv8) : int
+  requires (b as_int) < 128;
+{
+  (b as_int)
+}
+
+procedure call_decode_byte(x: bv8) returns (r: int)
+spec {
+  requires (x as_int) < 128;
+  ensures r == (x as_int);
+}
+{
+  r := decode_low_byte(x);
+};
 #end
 
 /-- info:
-Obligation: cast_in_forall_post_cast_in_forall_ensures_1_829_calls_Sequence.select_0
+Obligation: cast_in_forall_post_cast_in_forall_ensures_1_837_calls_Sequence.select_0
 Property: out-of-bounds access check
 Result: ✅ pass
 
-Obligation: assert_assert_2_915_calls_Sequence.select_0
+Obligation: assert_assert_2_923_calls_Sequence.select_0
 Property: out-of-bounds access check
 Result: ✅ pass
 
-Obligation: assert_2_915
+Obligation: assert_2_923
 Property: assert
 Result: ✅ pass
 
-Obligation: cast_in_forall_ensures_1_829
+Obligation: cast_in_forall_ensures_1_837
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_5_1132
+Obligation: assert_5_1140
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_6_1164
+Obligation: assert_6_1172
 Property: assert
 Result: ✅ pass
 
-Obligation: cast_compound_bv_ensures_3_1061
+Obligation: cast_compound_bv_ensures_3_1069
 Property: assert
 Result: ✅ pass
 
-Obligation: cast_compound_bv_ensures_4_1094
+Obligation: cast_compound_bv_ensures_4_1102
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_8_1305
+Obligation: assert_8_1313
 Property: assert
 Result: ✅ pass
 
-Obligation: cast_sum_bound_ensures_7_1260
+Obligation: cast_sum_bound_ensures_7_1268
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_10_1459
+Obligation: assert_10_1467
 Property: assert
 Result: ✅ pass
 
-Obligation: cast_in_let_ensures_9_1397
+Obligation: cast_in_let_ensures_9_1405
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_12_1627
+Obligation: assert_12_1635
 Property: assert
 Result: ✅ pass
 
-Obligation: cast_in_exists_ensures_11_1572
+Obligation: cast_in_exists_ensures_11_1580
 Property: assert
 Result: ✅ pass
 
@@ -166,11 +192,27 @@ Obligation: bytes_to_nat_terminates_1
 Property: assert
 Result: ✅ pass
 
-Obligation: test_rec_empty_ensures_15_2096
+Obligation: test_rec_empty_ensures_15_2104
 Property: assert
 Result: ✅ pass
 
-Obligation: test_rec_single_byte_ensures_16_2231
+Obligation: test_rec_single_byte_ensures_16_2239
+Property: assert
+Result: ✅ pass
+
+Obligation: countdown_bv_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: countdown_bv_terminates_1
+Property: assert
+Result: ✅ pass
+
+Obligation: set_r_calls_decode_low_byte_0
+Property: assert
+Result: ✅ pass
+
+Obligation: call_decode_byte_ensures_19_2809
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in

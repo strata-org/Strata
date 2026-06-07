@@ -6,6 +6,9 @@
 import StrataBooleTest.array_2d
 import StrataBooleTest.array_assignment
 import StrataBooleTest.bit_vectors
+import StrataBooleTest.cast_all_directions
+import StrataBooleTest.cast_expr
+import StrataBooleTest.cast_nested
 import StrataBooleTest.code_expression
 import StrataBooleTest.demo
 import StrataBooleTest.deterministic

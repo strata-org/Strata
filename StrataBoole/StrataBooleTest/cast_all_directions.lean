@@ -4,7 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.MetaVerifier
+import StrataBoole.MetaVerifier
 
 open Strata
 
@@ -15,7 +15,7 @@ Tests all three SMT-LIB 2.7 cast directions:
   3. `e as_bv{n}` — Int → bv           ((_ int_to_bv n))
 -/
 
-private def castAllDirectionsSeed : Strata.Program :=
+private def castAllDirectionsSeed : StrataDDM.Program :=
 #strata
 program Boole;
 
@@ -67,31 +67,31 @@ spec {
 #end
 
 /-- info:
-Obligation: test_ubv_to_int_ensures_0_546
+Obligation: test_ubv_to_int_ensures_0_554
 Property: assert
 Result: ✅ pass
 
-Obligation: test_ubv_to_int_ensures_1_571
+Obligation: test_ubv_to_int_ensures_1_579
 Property: assert
 Result: ✅ pass
 
-Obligation: test_sbv_to_int_ensures_2_742
+Obligation: test_sbv_to_int_ensures_2_750
 Property: assert
 Result: ✅ pass
 
-Obligation: test_sbv_to_int_ensures_3_771
+Obligation: test_sbv_to_int_ensures_3_779
 Property: assert
 Result: ✅ pass
 
-Obligation: test_int_to_bv_ensures_5_995
+Obligation: test_int_to_bv_ensures_5_1003
 Property: assert
 Result: ✅ pass
 
-Obligation: test_roundtrip_ensures_7_1215
+Obligation: test_roundtrip_ensures_7_1223
 Property: assert
 Result: ✅ pass
 
-Obligation: test_sign_agreement_ensures_9_1419
+Obligation: test_sign_agreement_ensures_9_1427
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
