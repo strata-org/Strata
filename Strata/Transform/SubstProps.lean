@@ -1537,19 +1537,6 @@ private theorem singletonAssertFailEval
   apply ReflTrans.step _ _ _ Imperative.StepStmt.step_seq_done
   exact ReflTrans.step _ _ _ Imperative.StepStmt.step_stmts_nil (.refl _)
 
-/-- Polymorphic-`f` variant of `singletonAssertEval`: lifts assert-pass
-    into a flag-`f`-preserving step. -/
-private theorem singletonAssertEval_poly
-    {π : String → Option Procedure}
-    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
-    {δ : CoreEval} {σ : CoreStore} {f : Bool}
-    (Hwfb : Imperative.WellFormedSemanticEvalBool δ)
-    (lbl : String) (e : Expression.Expr) (m : Imperative.MetaData Expression)
-    (Hev : δ σ e = some Imperative.HasBool.tt) :
-    EvalStatementsContract π φ ⟨σ, δ, f⟩ [Statement.assert lbl e m] ⟨σ, δ, f⟩ :=
-  singleCmdToStmts_poly (π := π) (φ := φ) (f := f)
-    (Core.EvalCommandContract.cmd_sem (Imperative.EvalCmd.eval_assert_pass Hev Hwfb))
-
 /-- Walk the asserts segment in the failing arm.  Each entry's substituted
     expression evaluates either to `tt` (pass) or `ff` (fail) at `σ'`; at
     least one entry fails (or the input flag is already `true`).  Output

@@ -30,67 +30,24 @@ namespace Core
 
 open Imperative
 
-/-- A single contract-evaluating command produces a single-statement
-    `EvalStatementsContract` derivation.  Reusable scaffold for the
-    block helpers below. -/
-theorem singleCmdToStmts
-    {π : String → Option Procedure}
-    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
-    {δ : CoreEval} {σ σ' : CoreStore} {c : Core.Command}
-    (Hcmd : Core.EvalCommandContract π δ σ c σ' false) :
-    EvalStatementsContract π φ ⟨σ, δ, false⟩
-      [Imperative.Stmt.cmd c]
-      ⟨σ', δ, false⟩ := by
-  unfold EvalStatementsContract Imperative.EvalStmtsSmall
-  apply ReflTrans.step _ _ _ Imperative.StepStmt.step_stmts_cons
-  apply ReflTrans.step _ _ _
-          (Imperative.StepStmt.step_seq_inner (Imperative.StepStmt.step_cmd Hcmd))
-  apply ReflTrans.step _ _ _ Imperative.StepStmt.step_seq_done
-  exact ReflTrans.step _ _ _ Imperative.StepStmt.step_stmts_nil (.refl _)
+/-! ### Polymorphic-flag block helpers
 
-/-- Singleton-eval helper for `Statement.assert`: lifts the assert evaluation
-    rule into a single-statement `EvalStatementsContract`. -/
-theorem singletonAssertEval
-    {π : String → Option Procedure}
-    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
-    {δ : CoreEval} {σ : CoreStore}
-    (Hwfb : Imperative.WellFormedSemanticEvalBool δ)
-    (lbl : String) (e : Expression.Expr) (m : Imperative.MetaData Expression)
-    (Hev : δ σ e = some Imperative.HasBool.tt) :
-    EvalStatementsContract π φ ⟨σ, δ, false⟩ [Statement.assert lbl e m] ⟨σ, δ, false⟩ :=
-  singleCmdToStmts (π := π) (φ := φ)
-    (Core.EvalCommandContract.cmd_sem (Imperative.EvalCmd.eval_assert_pass Hev Hwfb))
-
-/-- Singleton-eval helper for `Statement.assume`. -/
-theorem singletonAssumeEval
-    {π : String → Option Procedure}
-    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
-    {δ : CoreEval} {σ : CoreStore}
-    (Hwfb : Imperative.WellFormedSemanticEvalBool δ)
-    (lbl : String) (e : Expression.Expr) (m : Imperative.MetaData Expression)
-    (Hev : δ σ e = some Imperative.HasBool.tt) :
-    EvalStatementsContract π φ ⟨σ, δ, false⟩ [Statement.assume lbl e m] ⟨σ, δ, false⟩ :=
-  singleCmdToStmts (π := π) (φ := φ)
-    (Core.EvalCommandContract.cmd_sem (Imperative.EvalCmd.eval_assume Hev Hwfb))
-
-/-! ### Polymorphic-flag variants
-
-The polymorphic-`f` variants of `singleCmdToStmts`, `singletonAssumeEval`,
-and `H_havocs` lift command derivations whose local failure flag is
-`false` (i.e., `Hcmd` produces `σ' false`) into a step starting from any
-input flag `f` and ending at `f`.  This is sound because the small-step
-`step_cmd` rule OR-s the per-command flag into the cumulative flag, and
-`f || false = f`.
+The polymorphic-`f` lemmas below lift command derivations whose local
+failure flag is `false` (i.e., `Hcmd` produces `σ' false`) into a step
+starting from any input flag `f` and ending at `f`.  This is sound
+because the small-step `step_cmd` rule OR-s the per-command flag into
+the cumulative flag, and `f || false = f`.
 
 These polymorphic variants are needed at the L4 (asserts) flag-flip in
 `EvalCallElim_glue_fail`, where pre-L4 segments stay at `f = false`,
 the failing precondition flips `f` to `true`, and post-failure segments
-must continue propagating `f = true`.  -/
+must continue propagating `f = true`.  The flag-`false` corollaries
+beneath each `_poly` lemma are one-line specializations for callers
+that don't need a polymorphic flag. -/
 
-/-- Polymorphic-`f` variant of `singleCmdToStmts`: lift any flag-`false`
-    command derivation into an `EvalStatementsContract` step that
-    preserves the input failure flag `f`.  See `singleCmdToStmts` for
-    the concrete-`false` form. -/
+/-- Polymorphic-`f` variant: lift any flag-`false` command derivation
+    into an `EvalStatementsContract` step that preserves the input
+    failure flag `f`.  Reusable scaffold for the block helpers below. -/
 theorem singleCmdToStmts_poly
     {π : String → Option Procedure}
     {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
@@ -116,6 +73,41 @@ theorem singleCmdToStmts_poly
   apply ReflTrans.step _ _ _ Imperative.StepStmt.step_seq_done
   exact ReflTrans.step _ _ _ Imperative.StepStmt.step_stmts_nil (.refl _)
 
+/-- Flag-`false` corollary of `singleCmdToStmts_poly`. -/
+theorem singleCmdToStmts
+    {π : String → Option Procedure}
+    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
+    {δ : CoreEval} {σ σ' : CoreStore} {c : Core.Command}
+    (Hcmd : Core.EvalCommandContract π δ σ c σ' false) :
+    EvalStatementsContract π φ ⟨σ, δ, false⟩
+      [Imperative.Stmt.cmd c]
+      ⟨σ', δ, false⟩ :=
+  singleCmdToStmts_poly (π := π) (φ := φ) (f := false) Hcmd
+
+/-- Polymorphic-`f` variant of `singletonAssertEval`: lifts assert-pass
+    into a flag-`f`-preserving step. -/
+theorem singletonAssertEval_poly
+    {π : String → Option Procedure}
+    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
+    {δ : CoreEval} {σ : CoreStore} {f : Bool}
+    (Hwfb : Imperative.WellFormedSemanticEvalBool δ)
+    (lbl : String) (e : Expression.Expr) (m : Imperative.MetaData Expression)
+    (Hev : δ σ e = some Imperative.HasBool.tt) :
+    EvalStatementsContract π φ ⟨σ, δ, f⟩ [Statement.assert lbl e m] ⟨σ, δ, f⟩ :=
+  singleCmdToStmts_poly (π := π) (φ := φ) (f := f)
+    (Core.EvalCommandContract.cmd_sem (Imperative.EvalCmd.eval_assert_pass Hev Hwfb))
+
+/-- Flag-`false` corollary of `singletonAssertEval_poly`. -/
+theorem singletonAssertEval
+    {π : String → Option Procedure}
+    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
+    {δ : CoreEval} {σ : CoreStore}
+    (Hwfb : Imperative.WellFormedSemanticEvalBool δ)
+    (lbl : String) (e : Expression.Expr) (m : Imperative.MetaData Expression)
+    (Hev : δ σ e = some Imperative.HasBool.tt) :
+    EvalStatementsContract π φ ⟨σ, δ, false⟩ [Statement.assert lbl e m] ⟨σ, δ, false⟩ :=
+  singletonAssertEval_poly (π := π) (φ := φ) (f := false) Hwfb lbl e m Hev
+
 /-- Polymorphic-`f` variant of `singletonAssumeEval`. -/
 theorem singletonAssumeEval_poly
     {π : String → Option Procedure}
@@ -128,44 +120,21 @@ theorem singletonAssumeEval_poly
   singleCmdToStmts_poly (π := π) (φ := φ) (f := f)
     (Core.EvalCommandContract.cmd_sem (Imperative.EvalCmd.eval_assume Hev Hwfb))
 
-/-- Evaluating `createHavocs vs md` under contract semantics steps from σ
-    through `HavocVars vs` to σ'. -/
-theorem H_havocs
+/-- Flag-`false` corollary of `singletonAssumeEval_poly`. -/
+theorem singletonAssumeEval
     {π : String → Option Procedure}
     {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
-    {δ : CoreEval} {σ σ' : CoreStore}
-    {vs : List Expression.Ident}
-    {md : Imperative.MetaData Expression}
-    (Hwfv : Imperative.WellFormedSemanticEvalVar δ)
-    (Hdef : Imperative.isDefined σ vs)
-    (Hhav : HavocVars σ vs σ') :
-    EvalStatementsContract π φ ⟨σ, δ, false⟩
-      (Core.Transform.createHavocs vs md)
-      ⟨σ', δ, false⟩ := by
-  induction vs generalizing σ with
-  | nil =>
-    have heq : σ' = σ := by cases Hhav; rfl
-    subst heq
-    exact ReflTrans.step _ _ _ Imperative.StepStmt.step_stmts_nil (.refl _)
-  | cons h t ih =>
-    cases Hhav with
-    | update_some hUp hTail =>
-      rename_i v σmid
-      have Hcmd : Core.EvalCommandContract π δ σ
-                    (Core.CmdExt.cmd (Imperative.Cmd.set h .nondet md))
-                    σmid false :=
-        Core.EvalCommandContract.cmd_sem (Imperative.EvalCmd.eval_set_nondet hUp Hwfv)
-      have Hdef_tail : Imperative.isDefined σ t :=
-        fun v hv => Hdef v (List.mem_cons_of_mem h hv)
-      have HdefTail : Imperative.isDefined σmid t :=
-        Imperative.UpdateStateDefMonotone Hdef_tail hUp
-      have HrecTail := ih HdefTail hTail
-      simp only [Core.Transform.createHavocs, List.map_cons,
-                 Core.Transform.createHavoc]
-      exact EvalStatementsContractApp (singleCmdToStmts Hcmd) HrecTail
+    {δ : CoreEval} {σ : CoreStore}
+    (Hwfb : Imperative.WellFormedSemanticEvalBool δ)
+    (lbl : String) (e : Expression.Expr) (m : Imperative.MetaData Expression)
+    (Hev : δ σ e = some Imperative.HasBool.tt) :
+    EvalStatementsContract π φ ⟨σ, δ, false⟩ [Statement.assume lbl e m] ⟨σ, δ, false⟩ :=
+  singletonAssumeEval_poly (π := π) (φ := φ) (f := false) Hwfb lbl e m Hev
 
-/-- Polymorphic-`f` variant of `H_havocs`: havoc commands locally produce
-    `flag=false`, and OR-ing into the running `f` keeps it as `f`. -/
+/-- Polymorphic-`f` variant: havoc commands locally produce `flag=false`,
+    and OR-ing into the running `f` keeps it as `f`.  Evaluating
+    `createHavocs vs md` under contract semantics steps from σ through
+    `HavocVars vs` to σ'. -/
 theorem H_havocs_poly
     {π : String → Option Procedure}
     {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
@@ -200,6 +169,21 @@ theorem H_havocs_poly
                  Core.Transform.createHavoc]
       exact EvalStatementsContractApp
               (singleCmdToStmts_poly (f := f) Hcmd) HrecTail
+
+/-- Flag-`false` corollary of `H_havocs_poly`. -/
+theorem H_havocs
+    {π : String → Option Procedure}
+    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
+    {δ : CoreEval} {σ σ' : CoreStore}
+    {vs : List Expression.Ident}
+    {md : Imperative.MetaData Expression}
+    (Hwfv : Imperative.WellFormedSemanticEvalVar δ)
+    (Hdef : Imperative.isDefined σ vs)
+    (Hhav : HavocVars σ vs σ') :
+    EvalStatementsContract π φ ⟨σ, δ, false⟩
+      (Core.Transform.createHavocs vs md)
+      ⟨σ', δ, false⟩ :=
+  H_havocs_poly (π := π) (φ := φ) (f := false) Hwfv Hdef Hhav
 
 /-- Evaluating a single `Statement.init x ty (.det e) md` under contract
     semantics steps from σ to `updatedState σ x v`, given `δ σ e = some v`
