@@ -32,6 +32,7 @@ class BackendConfig:
     extra: dict[str, Any] | None = None
     cwd: str | None = None
     resume_session_id: str | None = None
+    hooks: dict[str, Any] | None = None
 
 
 class AgentBackend(ABC):

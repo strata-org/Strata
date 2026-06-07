@@ -131,8 +131,16 @@ class swarm_agent:
             from pathlib import Path as _P
             _P(self._cwd or ".").joinpath(self._workspace).mkdir(parents=True, exist_ok=True)
 
+        # Workspace enforcement hook: deny access outside allowed paths
+        workspace_hooks = None
+        if self._workspace:
+            from .modules.hooks import workspace_hooks as _ws_hooks
+            workspace_hooks = _ws_hooks(self._workspace)
+
         # Unique name
-        self._unique_name = f"{spec.name}_{int(_time.time()) % 100000}"
+        # Use a global counter to avoid collisions for agents spawned in the same second
+        swarm_agent._counter = getattr(swarm_agent, '_counter', 0) + 1
+        self._unique_name = f"{spec.name}_{swarm_agent._counter}"
         spec.name = self._unique_name
 
         # Build MCP servers (messaging + any from spec)
@@ -174,6 +182,7 @@ class swarm_agent:
             backend_factory=self._swarm._backend_factory,
         )
         self._agent.swarm = self._swarm
+        self._agent._hooks = workspace_hooks
 
         # Register in swarm
         self._swarm._registry.add(spec)
@@ -240,6 +249,7 @@ def _load_spec(path: Path, overrides: dict[str, Any]) -> AgentSpec:
         max_outbound_length=raw.get("max_outbound_length"),
         max_outbound_response=raw.get("max_outbound_response"),
         description=raw.get("description", ""),
+        hooks=raw.get("hooks"),
     )
 
 

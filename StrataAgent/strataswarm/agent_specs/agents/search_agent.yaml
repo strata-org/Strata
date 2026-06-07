@@ -5,6 +5,7 @@ reply_only: true
 replicas: 6
 routing: round_robin
 module: null
+hooks: search_agent_hooks
 
 max_inbound_length: 725
 max_inbound_response: "Too long. Ask a specific question in under 725 chars."

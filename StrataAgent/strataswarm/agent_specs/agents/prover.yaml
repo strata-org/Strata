@@ -1,7 +1,7 @@
 name: Prover
 description: "Proof orchestrator. Routes between decomposer, writers, and assembler."
 stateless: false
-module: strataswarm.modules.prover_orchestrator
+module: strataswarm.modules.po_v2
 auto_start: false
 checkpointable: true
 

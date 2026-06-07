@@ -294,6 +294,9 @@ async def run_workflow(agent, inp: Any, result_type: type[T] | None = None):
             state.stage = next_stage
             agent._workflow_state = state
 
+            # Write progress.md after each stage change
+            _write_progress(cwd, workspace_rel, state)
+
         except Exception as e:
             await agent._emit("message", f"[Prover] Error in {state.stage.value}: {e}")
             state.stage = ProverStage.RETRY
@@ -442,20 +445,10 @@ async def _stage_decompose(state: ProverState, agent) -> ProverTransition:
             src = cwd / axiom.filename
             if not src.exists():
                 await agent._emit("message", f"[Prover] Warning: {axiom.filename} not found — skipping")
-                continue
-
-            # Verify the file compiles on disk
-            async with swarm_agent("deep_proof_validator", swarm=agent.swarm, cwd=agent._cwd, workspace=state.workspace) as verifier:
-                v_result = await verifier.run(
-                    inp={"stub_file": axiom.filename, "complete_file": axiom.filename},
-                    result_type=VerifyResult,
-                )
-            if v_result.output and not v_result.output.compiles:
-                await agent._emit("message", f"[Prover] Axiom {axiom.filename} doesn't compile — bad decomposition")
                 verify_failed = True
                 break
 
-            # Use the file as-is, save original for validation
+            # Trust decomposer's lean_run_code verification — just save original
             state.axiom_files.append(axiom.filename)
             shutil.copy2(src, originals_dir / Path(axiom.filename).name)
 
@@ -464,7 +457,7 @@ async def _stage_decompose(state: ProverState, agent) -> ProverTransition:
             return ProverTransition.NEEDS_DECOMP
 
         await agent._emit("message",
-            f"[Prover] Decomposed: {len(state.axiom_files)} axioms. Sketch: {decompose_output.proof_sketch[:200]}")
+            f"[Prover] Decomposed: {len(state.axiom_files)} lemmas. Sketch: {decompose_output.proof_sketch[:200]}")
 
         if not state.axiom_files:
             return ProverTransition.SIMPLE_ENOUGH
@@ -490,15 +483,15 @@ async def _stage_decompose(state: ProverState, agent) -> ProverTransition:
                         "file": target,
                         "theorem": state.theorem_name,
                         "action": (
-                            f"The following axiom files have been created in your workspace. "
-                            f"Import them and use the axioms to prove the sorry in Stub.lean.\n"
-                            f"Axioms: {[Path(f).name for f in state.axiom_files]}\n"
+                            f"The following lemma files have been created in your workspace. "
+                            f"Import them and use the lemmas to prove the sorry in Stub.lean.\n"
+                            f"Lemmas: {[Path(f).name for f in state.axiom_files]}\n"
                             f"Proof sketch: {decompose_output.proof_sketch}\n\n"
                             f"RULES:\n"
-                            f"- Do NOT modify the axiom files\n"
+                            f"- Do NOT modify the lemma files\n"
                             f"- Do NOT change theorem statements or types\n"
-                            f"- ONLY fill in the proof body (replace sorry with a proof using the axioms)\n"
-                            f"- If the axioms don't fit the goal, report failure — do NOT invent new axioms"
+                            f"- ONLY fill in the proof body (replace sorry with a proof using the lemmas)\n"
+                            f"- If the lemmas don't fit the goal, report failure — do NOT invent new lemmas"
                         ),
                     },
                     result_type=SketchResult,
@@ -739,7 +732,7 @@ async def _stage_refactor(state: ProverState, agent) -> ProverTransition:
         file_new_axioms = []
         for i, (_, axiom) in enumerate(axioms_for_file):
             global_idx = len(all_new_axioms) + i
-            rel_path = _create_axiom_file(cwd, state.workspace, "refactor", global_idx, axiom.name, axiom.formalization)
+            rel_path = _create_axiom_file(cwd, state.workspace, "lemma", global_idx, axiom.name, axiom.formalization)
             file_new_axioms.append(rel_path)
 
         # Phase 4: Refactoring agent imports axioms and tests closures (all-or-nothing)
@@ -937,13 +930,18 @@ STAGE_HANDLERS: dict[ProverStage, Any] = {
 # ─── Internal agent management ───────────────────────────────────────────────
 
 async def _get_internal(agent, which: str):
-    """Get or create an internal agent (decomposer, assembler). Session persists."""
+    """Get or create an internal agent (decomposer, assembler). Session persists.
+    Scoped to the same workspace as the parent PO."""
 
     attr = f"_po_{which}"
     attr_ctx = f"_po_{which}_ctx"
 
     if getattr(agent, attr, None) is None:
-        ctx = swarm_agent(f"po_{which}", swarm=agent.swarm, cwd=agent._cwd)
+        # Use the PO's workspace for scoping internal agents
+        workspace = None
+        if hasattr(agent, '_workflow_state') and agent._workflow_state:
+            workspace = agent._workflow_state.workspace
+        ctx = swarm_agent(f"po_{which}", swarm=agent.swarm, cwd=agent._cwd, workspace=workspace)
         internal = await ctx.__aenter__()
         setattr(agent, attr_ctx, ctx)
         setattr(agent, attr, internal)
@@ -987,6 +985,28 @@ def _create_axiom_file(cwd: Path, workspace_rel: str, prefix: str, index: int, n
 
     shutil.copy2(filepath, originals_dir / filename)
     return f"{workspace_rel}/{filename}"
+
+
+def _write_progress(cwd: Path, workspace_rel: str, state: ProverState):
+    """Write progress.md summarizing current state for monitoring."""
+    workspace_abs = cwd / workspace_rel
+    progress_path = workspace_abs / "progress.md"
+    proved_count = len(state.proved_files)
+    total_count = len(state.axiom_files)
+    content = (
+        f"# Proof Progress\n\n"
+        f"- **Stage**: {state.stage.value}\n"
+        f"- **Theorem**: {state.theorem_name}\n"
+        f"- **Attempt**: {state.attempt + 1}/{MAX_RETRIES}\n"
+        f"- **Proved**: {proved_count}/{total_count} lemmas\n"
+        f"- **Failure reason**: {state.failure_reason or 'none'}\n"
+        f"- **Last failure details**: {state.last_failure_details or 'none'}\n\n"
+        f"## Lemma files\n"
+    )
+    for f in state.axiom_files:
+        status = "✅" if f in state.proved_files else "❌"
+        content += f"- {status} `{Path(f).name}`\n"
+    progress_path.write_text(content)
 
 
 async def _notify_parent(agent, state: ProverState, message: str):

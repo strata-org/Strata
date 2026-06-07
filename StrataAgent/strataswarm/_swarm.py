@@ -23,6 +23,24 @@ from ._types import AgentEvent, AgentResult, AgentSpec, AgentStatus, SwarmContex
 logger = logging.getLogger("strataswarm.swarm")
 
 
+def _resolve_hooks(hook_ref: str) -> dict[str, Any] | None:
+    """Resolve a hook reference string to an actual hooks dict.
+
+    The hook_ref is a dotted name resolved from modules/hooks.py.
+    E.g. "search_agent_hooks" → modules.hooks.search_agent_hooks()
+    """
+    import importlib
+    try:
+        module = importlib.import_module(".modules.hooks", package="strataswarm")
+        factory = getattr(module, hook_ref, None)
+        if factory and callable(factory):
+            return factory()
+        logger.warning(f"Hook '{hook_ref}' not found in modules.hooks")
+    except Exception as e:
+        logger.warning(f"Failed to resolve hook '{hook_ref}': {e}")
+    return None
+
+
 class ExecutionMode:
     AWAIT_ALL = "all"
     AWAIT_FIRST = "first"
@@ -676,6 +694,10 @@ class Swarm:
         )
         agent.swarm = self  # Give module agents access to registry/topology
         self._registry.agents[name] = agent  # Store for checkpoint access
+
+        # Load hooks from spec (declared in YAML via `hooks:` field)
+        if node.spec.hooks:
+            agent._hooks = _resolve_hooks(node.spec.hooks)
 
         # Restore state from checkpoint if resuming
         agent_checkpoints = getattr(self, '_agent_checkpoints', {})

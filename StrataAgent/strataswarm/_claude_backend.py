@@ -99,6 +99,10 @@ class ClaudeBackend(AgentBackend):
             if "mcp_servers" in config.extra:
                 opts_kwargs["mcp_servers"] = config.extra["mcp_servers"]
 
+        # Hooks (workspace enforcement, etc.)
+        if config.hooks:
+            opts_kwargs["hooks"] = config.hooks
+
         # Resume from previous session if available
         if resume and self._session_id:
             opts_kwargs["resume"] = self._session_id

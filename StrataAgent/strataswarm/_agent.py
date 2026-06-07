@@ -95,6 +95,7 @@ class SwarmAgent:
         self._nudge_monitor = nudge_monitor
         self._should_exit = should_exit
         self._last_emit_time = time.monotonic()
+        self._hooks: dict[str, Any] | None = None
 
     # ─── Event emission ──────────────────────────────────────────────────
 
@@ -134,10 +135,22 @@ class SwarmAgent:
         allowed_tools = self.spec.tools.to_claude_allowed() if self.spec.tools else []
         disallowed_tools = self.spec.tools.to_claude_disallowed() if self.spec.tools else []
 
+        has_file_tools = any(
+            t.startswith("Read") or t.startswith("Write") or t.startswith("Edit") for t in allowed_tools
+        )
         has_write_tools = any(
             t.startswith("Edit") or t.startswith("Write") for t in allowed_tools
         )
         permission_mode = "acceptEdits" if has_write_tools else self.spec.permission_mode
+
+        # Inject path guidance for agents with file tools
+        if has_file_tools and system_prompt:
+            system_prompt = system_prompt + (
+                "\n\nPATH RULES: ALWAYS use relative paths from the project root. "
+                "Example: Read({'file_path': 'StrataAgent/Sandbox/Stub.lean'}) "
+                "NOT Read({'file_path': '/local/home/.../StrataAgent/Sandbox/Stub.lean'}). "
+                "Absolute system paths will be DENIED."
+            )
 
         if mcp_servers and "agent_messaging" in mcp_servers:
             messaging_tools = ["mcp__agent_messaging__send_message", "mcp__agent_messaging__get_time"]
@@ -167,6 +180,7 @@ class SwarmAgent:
             extra={"mcp_servers": mcp_servers} if mcp_servers else None,
             cwd=self._cwd,
             resume_session_id=self.spec.resume_session_id,
+            hooks=self._hooks,
         )
 
     # ─── Response consumption ────────────────────────────────────────────
