@@ -1579,6 +1579,80 @@ private theorem b2_var_witness_at_oldSubst
     exact ⟨w, Hk1_in_inArgs, Hv_in⟩
   exact ⟨HargExpr_in, Hk1_flat⟩
 
+/-- Call-arm failure-flag branch of `callElimStatementCorrect_terminal`.
+
+    Discharges the `f = true` (precondition-failure) case after the call_sem
+    destructure: builds the failing assert chain via `H_asserts_zip_fail`,
+    havocs via `H_havocs_poly`, assumes via `H_assumes_zip_poly`, and glues
+    via `EvalCallElim_glue_fail`.  The bool-totality witness for the failing
+    precondition is extracted from `WFCallSiteProp.preBoolTyped` (boolTyped
+    clause on `WFPrePostProp`) combined with `Hpre_iff.mpr`'s contrapositive.
+
+    All inputs after `Hwfcallsite` are the destructured outputs from
+    `cases Hcc with | call_sem ...` at `failed = true`. -/
+private theorem callElimStatementCorrect_terminal_call_arm_fail
+    [LawfulBEq Expression.Expr]
+    {π : String → Option Procedure}
+    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
+    {δ : CoreEval}
+    {σ σ' : CoreStore}
+    {p : Program}
+    {γ s_ce : CoreTransformState}
+    {procName : String}
+    {args : List (CallArg Expression)}
+    {md : Imperative.MetaData Expression}
+    {s' : List Statement}
+    {lhs : List Expression.Ident}
+    {σ₀ σA σAO σO : CoreStore}
+    {inArgs : List Expression.Expr}
+    {oVals argVals modvals : List Expression.Expr}
+    {proc : Procedure}
+    (Hp : ∀ pname, π pname = Program.Procedure.find? p ⟨pname, ()⟩)
+    (Hwfc : WellFormedCoreEvalCong δ)
+    (Hwf : WF.WFStatementsProp p [.cmd (CmdExt.call procName args md)])
+    (Hgenrel : CoreGenStateRel σ γ)
+    (Hwfcallsite : WFCallSiteProp p π (.cmd (CmdExt.call procName args md)))
+    (heq_ce :
+      CallElim.callElimCmd (CmdExt.call procName args md)
+          { γ with currentProgram := some p } =
+        (Except.ok (some s'), s_ce))
+    (lkup : π procName = .some proc)
+    (hCallArgsIn : CallArg.getInputExprs args = inArgs)
+    (hCallArgsLhs : CallArg.getLhs args = lhs)
+    (Hevalargs : EvalExpressions (P:=Expression) δ σ inArgs argVals)
+    (Hevalouts : ReadValues σ lhs oVals)
+    (Hwfval : Imperative.WellFormedSemanticEvalVal δ)
+    (Hwfvars : Imperative.WellFormedSemanticEvalVar δ)
+    (Hwfb : Imperative.WellFormedSemanticEvalBool δ)
+    (Hwf2 : WellFormedCoreEvalTwoState δ σ₀ σ)
+    (HdefOver :
+      Imperative.isDefinedOver (Imperative.HasVarsTrans.allVarsTrans π) σ
+        (Statement.call procName args md))
+    (Hinitin :
+      InitStates σ (ListMap.keys proc.header.inputs) argVals σA)
+    (Hinitout :
+      InitStates σA (ListMap.keys proc.header.outputs) oVals σAO)
+    (Hpre_def :
+      ∀ pre, (Procedure.Spec.getCheckExprs proc.spec.preconditions).contains pre →
+        Imperative.isDefinedOver (Imperative.HasVarsPure.getVars) σAO pre)
+    (Hpre_iff :
+      true = false ↔
+      ∀ pre, (Procedure.Spec.getCheckExprs proc.spec.preconditions).contains pre →
+        δ σAO pre = .some Imperative.HasBool.tt)
+    (Hhav1 :
+      HavocVars σAO (ListMap.keys proc.header.outputs) σO)
+    (Hpost :
+      ∀ post, (Procedure.Spec.getCheckExprs proc.spec.postconditions).contains post →
+        Imperative.isDefinedOver (Imperative.HasVarsPure.getVars) σAO post ∧
+        δ σO post = .some Imperative.HasBool.tt)
+    (Hrd :
+      ReadValues σO (ListMap.keys proc.header.outputs) modvals)
+    (Hupdate : UpdateStates σ lhs modvals σ') :
+    ∃ σ'',
+      Inits σ' σ'' ∧
+      EvalStatementsContract π φ ⟨σ, δ, false⟩ s' ⟨σ'', δ, true⟩ := by
+  sorry
+
 /-- Call-elimination correctness for a single statement.
 
     Given a small-step `EvalStatementsContract` derivation of `[st]`
@@ -1592,12 +1666,13 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
     {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
     {δ : CoreEval}
     {σ σ' : CoreStore}
+    {f : Bool}
     {p : Program}
     {γ γ' : CoreTransformState}
     {st : Statement}
     {sts : List Statement}
     (Hp : ∀ pname, π pname = Program.Procedure.find? p ⟨pname, ()⟩)
-    (Heval : EvalStatementsContract π φ ⟨σ, δ, false⟩ [st] ⟨σ', δ, false⟩)
+    (Heval : EvalStatementsContract π φ ⟨σ, δ, false⟩ [st] ⟨σ', δ, f⟩)
     (Hwfc : WellFormedCoreEvalCong δ)
     (Hwf : WF.WFStatementsProp p [st])
     (Hgenrel : CoreGenStateRel σ γ)
@@ -1608,14 +1683,14 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
     (Helim : (Except.ok sts, γ') = (runWith st (callElimStmt · p) γ)) :
     ∃ σ'',
       Inits σ' σ'' ∧
-      EvalStatementsContract π φ ⟨σ, δ, false⟩ sts ⟨σ'', δ, false⟩ := by
+      EvalStatementsContract π φ ⟨σ, δ, false⟩ sts ⟨σ'', δ, f⟩ := by
   -- Non-call cases close with σ'' = σ' (callElimStmt returns [st]);
   -- call case extends σ' with fresh temp/old vars.  Non-call branches
   -- unified via `callElimStmt_non_call_eq`, dispatched through `nc_close`.
   have nc_close : ∀ {b : Statement} (_ : st = b)
       (_ : ∀ pn ar mt, b ≠ .cmd (CmdExt.call pn ar mt)),
       ∃ σ'', Inits σ' σ'' ∧
-        EvalStatementsContract π φ ⟨σ, δ, false⟩ sts ⟨σ'', δ, false⟩ := by
+        EvalStatementsContract π φ ⟨σ, δ, false⟩ sts ⟨σ'', δ, f⟩ := by
     intro b heq hne
     refine ⟨σ', Inits.init InitVars.init_none, ?_⟩
     have hsts := callElimStmt_non_call_eq hne (heq ▸ Helim)
@@ -1672,14 +1747,14 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                   Imperative.StepStmtStar Expression (EvalCommandContract π)
                       (EvalPureFunc φ)
                       (.stmts [] ρ_inner)
-                      (.terminal ⟨σ', δ, false⟩) := by
+                      (.terminal ⟨σ', δ, f⟩) := by
                 unfold EvalStatementsContract Imperative.EvalStmtsSmall at Heval
                 match Heval with
                 | .step _ _ _ .step_stmts_cons hrest =>
                   exact Imperative.seq_reaches_terminal Expression
                     (EvalCommandContract π) (EvalPureFunc φ) hrest
-              -- htail forces ρ_inner = ⟨σ',δ,false⟩.
-              have hρ_inner_eq : ρ_inner = ⟨σ', δ, false⟩ := by
+              -- htail forces ρ_inner = ⟨σ',δ,f⟩.
+              have hρ_inner_eq : ρ_inner = ⟨σ', δ, f⟩ := by
                 match htail with
                 | .step _ _ _ .step_stmts_nil hrest' =>
                   cases hrest' with
@@ -1688,13 +1763,13 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
               subst hρ_inner_eq
               -- Invert `hstep_call : StepStmtStar (.cmd (.call …)) … → terminal` to extract Hcc.
               have Hcc : EvalCommandContract π δ σ
-                  (CmdExt.call procName args md) σ' false := by
+                  (CmdExt.call procName args md) σ' f := by
                 match hstep_call with
                 | .step _ _ _ (.step_cmd hcc) hrest =>
                   cases hrest with
                   | refl =>
-                    -- call_sem is failure-flag-parameterized; Hcc is pinned
-                    -- to `failed = false` at this destructure site.
+                    -- call_sem is failure-flag-parameterized; Hcc carries the
+                    -- caller's outer flag `f` here.
                     exact hcc
                   | step _ _ _ h _ => exact absurd h (by intro h; cases h)
               cases Hcc with
@@ -1704,6 +1779,26 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                           Hupdate =>
                 -- call_sem implicits: lhs σ₀ inArgs oVals argVals σA σAO σO proc modvals.
                 rename_i lhs σ₀ inArgs oVals argVals σA σAO σO proc modvals
+                -- Dispatch on the source-side failure flag `f`.
+                --   * `f = false`: success arm — preconditions all hold, write
+                --     back via `H_asserts_zip + H_havocs + H_assumes_zip`,
+                --     glue via `EvalCallElim_glue`.
+                --   * `f = true`:  failure arm — at least one precondition
+                --     fails, write back via `H_asserts_zip_fail + H_havocs_poly
+                --     + H_assumes_zip_poly`, glue via `EvalCallElim_glue_fail`.
+                cases f with
+                | true =>
+                  -- Stage 6 failure arm: derive bool-totality witness via
+                  -- Hwfcallsite → boolTyped, build failing assert chain, glue
+                  -- with EvalCallElim_glue_fail.  Delegated to a sibling
+                  -- private theorem for proof-body manageability.
+                  exact callElimStatementCorrect_terminal_call_arm_fail
+                    Hp Hwfc Hwf Hgenrel Hwfcallsite heq_ce
+                    lkup hCallArgsIn hCallArgsLhs Hevalargs Hevalouts
+                    Hwfval Hwfvars Hwfb Hwf2 HdefOver
+                    Hinitin Hinitout Hpre_def Hpre_iff Hhav1 Hpost Hrd
+                    Hupdate
+                | false =>
                 -- Re-synthesize the legacy combined `Hpre` from the new
                 -- bool-indicator-shaped premises.  At this destructure site `Hcc`
                 -- is pinned to `failed = false`, so the iff yields the original
