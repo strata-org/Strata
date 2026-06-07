@@ -2611,7 +2611,6 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
         rw [← Hzip_get]
         exact List.getElem_mem _
       refine ⟨(entryFail, lblFail), HpairIn, ?_⟩
-      simp only
       exact HentryFail_old_ff
     have HL4_pre :
         EvalStatementsContract π φ ⟨σ_old, δ, false⟩
