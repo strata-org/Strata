@@ -1256,6 +1256,20 @@ structure CoreGenStateRel (σ : CoreStore) (γ : CoreTransformState) : Prop wher
       call-elim proof. -/
   wfgen : CoreGenState.WF γ.genState
 
+/-- Generic δ-fvar lookup: from a `WellFormedSemanticEvalVar` witness on
+    the evaluator, evaluating an `fvar v` at any store reduces to the store
+    lookup `σ v`. Used wherever the call-elim proof needs to push δ through
+    a free-variable expression. -/
+private theorem delta_fvar_eq_of_wfvars
+    {delta : CoreEval}
+    (Hwfvars : Imperative.WellFormedSemanticEvalVar delta)
+    (sigma : CoreStore) (v : Expression.Ident) :
+    delta sigma (Lambda.LExpr.fvar () v none) = sigma v := by
+  have Hwfvr := Hwfvars
+  simp [Imperative.WellFormedSemanticEvalVar] at Hwfvr
+  rw [Hwfvr (Lambda.LExpr.fvar () v none) v]
+  simp [Imperative.HasFvar.getFvar]
+
 /-- Bundle the σ-freshness chain: from a Nodup of the combined
     `(γ.generated.reverse ++ argTemps ++ outTemps ++ genOldIdents)` plus
     the temp/old predicates and a downstream `UpdateStates`, derive the
@@ -1453,14 +1467,7 @@ private theorem HoldSubBridge_at_σO
       δ σ_R1 w =
         δ σO (Lambda.LExpr.fvar () k none) := by
   -- Generic δ-fvar lookup derived from Hwfvars.
-  have δ_fvar_eq :
-      ∀ (σ' : CoreStore) (v : Expression.Ident),
-        δ σ' (Lambda.LExpr.fvar () v none) = σ' v := by
-    intro σ' v
-    have Hwfvr := Hwfvars
-    simp [Imperative.WellFormedSemanticEvalVar] at Hwfvr
-    rw [Hwfvr (Lambda.LExpr.fvar () v none) v]
-    simp [Imperative.HasFvar.getFvar]
+  have δ_fvar_eq := delta_fvar_eq_of_wfvars Hwfvars (delta := δ)
   intro k w Hf
   obtain ⟨ni_val, Hni_lt, Hk_eqMkOld, Hw_eq⟩ :=
     createOldVarsSubst_pos_decomp HgenOldLen HoldTysLen Hf
@@ -3167,14 +3174,7 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
         exact Hbool.1.2
       rw [HprocEq] at HinOuts'
       exact List.contains_iff_mem.mp HinOuts'
-    have Hwfvr := Hwfvars
-    simp [Imperative.WellFormedSemanticEvalVar] at Hwfvr
-    have δ_fvar_eq :
-        ∀ (σ' : CoreStore) (v : Expression.Ident),
-        δ σ' (Lambda.LExpr.fvar () v none) = σ' v := by
-      intro σ' v
-      rw [Hwfvr (Lambda.LExpr.fvar () v none) v]
-      simp [Imperative.HasFvar.getFvar]
+    have δ_fvar_eq := delta_fvar_eq_of_wfvars Hwfvars (delta := δ)
     -- σ_R1 read olds positional.
     have HrdR1_olds : ReadValues σ_R1 genOldIdents oldVals := by
       show ReadValues (updatedStates σO genOldIdents oldVals) _ _
@@ -3991,16 +3991,8 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                   argTrips.unzip.fst.unzip.fst
                 let outTemps : List Expression.Ident :=
                   outTrips.unzip.fst.unzip.fst
-                -- Pre-simped Hwfvars for repeated δ-fvar lookups.
-                have Hwfvr := Hwfvars
-                simp [Imperative.WellFormedSemanticEvalVar] at Hwfvr
                 -- Generic δ-fvar lookup: `δ σ (fvar v) = σ v` for any σ.
-                have δ_fvar_eq :
-                    ∀ (σ' : CoreStore) (v : Expression.Ident),
-                    δ σ' (Lambda.LExpr.fvar () v none) = σ' v := by
-                  intro σ' v
-                  rw [Hwfvr (Lambda.LExpr.fvar () v none) v]
-                  simp [Imperative.HasFvar.getFvar]
+                have δ_fvar_eq := delta_fvar_eq_of_wfvars Hwfvars (delta := δ)
                 -- C1: aux facts derived from the destructured binders.
                 have Hwfgenargs : CoreGenState.WF s_arg.genState := by
                   apply genArgExprIdentsTripWFMono ?_ Heqarg
