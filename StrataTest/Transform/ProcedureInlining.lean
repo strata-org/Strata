@@ -214,19 +214,56 @@ def alphaEquivStatement (s1 s2: Core.Statement) (map:IdMap)
 
 end
 
-private def alphaEquiv (p1 p2:Core.Procedure):Except Format Bool := do
-  if p1.body.length ≠ p2.body.length then
-    .error (s!"# statements do not match: in {p1.header.name}, "
-        ++ s!"inlined fn one has {p1.body.length}"
-        ++ s!" whereas the answer has {p2.body.length}")
+private def alphaEquivCmds (cmds1 cmds2 : List Core.Command) (map : IdMap)
+    : Except Format IdMap := do
+  if cmds1.length ≠ cmds2.length then
+    .error f!"CFG block command count mismatch: {cmds1.length} vs {cmds2.length}"
   else
+    (cmds1.zip cmds2).foldlM (fun map (c1, c2) =>
+      alphaEquivStatement (.cmd c1) (.cmd c2) map) map
+
+private def alphaEquivTransfer (t1 t2 : Imperative.DetTransferCmd String Core.Expression)
+    (map : IdMap) : Except Format IdMap := do
+  match t1, t2 with
+  | .condGoto c1 lt1 lf1 _, .condGoto c2 lt2 lf2 _ =>
+    if ¬ alphaEquivExprs c1 c2 map then
+      .error f!"CFG transfer condition mismatch"
+    else
+      let map ← IdMap.updateLabel map lt1 lt2
+      IdMap.updateLabel map lf1 lf2
+  | .finish _, .finish _ => .ok map
+  | _, _ => .error "CFG transfer type mismatch"
+
+private def alphaEquivCFG (cfg1 cfg2 : Core.DetCFG) (map : IdMap)
+    : Except Format IdMap := do
+  let map ← IdMap.updateLabel map cfg1.entry cfg2.entry
+  if cfg1.blocks.length ≠ cfg2.blocks.length then
+    .error f!"CFG block count mismatch: {cfg1.blocks.length} vs {cfg2.blocks.length}"
+  else
+    (cfg1.blocks.zip cfg2.blocks).foldlM (fun map ((lbl1, blk1), (lbl2, blk2)) => do
+      let map ← IdMap.updateLabel map lbl1 lbl2
+      let map ← alphaEquivCmds blk1.cmds blk2.cmds map
+      alphaEquivTransfer blk1.transfer blk2.transfer map) map
+
+private def alphaEquiv (p1 p2:Core.Procedure):Except Format Bool := do
+  match p1.body, p2.body with
+  | .structured ss1, .structured ss2 =>
+    if ss1.length ≠ ss2.length then
+      .error (s!"# statements do not match: in {p1.header.name}, "
+          ++ s!"inlined fn one has {ss1.length}"
+          ++ s!" whereas the answer has {ss2.length}")
+    else
+      let newmap:IdMap := IdMap.mk ([], []) []
+      let m ← List.foldlM (fun (map:IdMap) (s1,s2) =>
+          alphaEquivStatement s1 s2 map)
+        newmap (ss1.zip ss2)
+      return ((p1.header.outputs.zip p2.header.outputs).map (fun ((x, _), (y, _)) => alphaEquivIdents x y m)).all id
+  | .cfg cfg1, .cfg cfg2 =>
     let newmap:IdMap := IdMap.mk ([], []) []
-    let stmts := (p1.body.zip p2.body)
-    let m ← List.foldlM (fun (map:IdMap) (s1,s2) =>
-        alphaEquivStatement s1 s2 map)
-      newmap stmts
-    -- The corresponding outputs should be pairwise α-equivalent
+    let m ← alphaEquivCFG cfg1 cfg2 newmap
     return ((p1.header.outputs.zip p2.header.outputs).map (fun ((x, _), (y, _)) => alphaEquivIdents x y m)).all id
+  | .structured _, .cfg _ => .error "body type mismatch: structured vs cfg"
+  | .cfg _, .structured _ => .error "body type mismatch: cfg vs structured"
 
 
 

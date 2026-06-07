@@ -16,7 +16,7 @@ public section
 namespace Core
 
 open Std (ToFormat Format format)
-open Imperative (MetaData)
+open Imperative (MetaData HasVarsImp)
 open Strata (DiagnosticModel FileRange)
 
 namespace Procedure
@@ -30,10 +30,10 @@ private def checkNoDuplicates (proc : Procedure) (sourceLoc : FileRange) :
 
 private def checkModificationRights (proc : Procedure) (sourceLoc : FileRange) :
     Except DiagnosticModel Unit := do
-  let modifiedVars := (Imperative.Block.modifiedVars proc.body).eraseDups
-  let definedVars := (Imperative.Block.definedVars proc.body).eraseDups
+  let modifiedVars := (HasVarsImp.modifiedVars (P := Expression) proc.body).eraseDups
+  let definedVars := (HasVarsImp.definedVars (P := Expression) proc.body).eraseDups
   let allowedVars := proc.header.outputs.keys ++ definedVars
-  let disallowed := modifiedVars.filter (fun v => v ∉ allowedVars)
+  let disallowed := modifiedVars.filter (fun v => !allowedVars.contains v)
   if !disallowed.isEmpty then
     .error <| DiagnosticModel.withRange sourceLoc f!"[{proc.header.name}]: This procedure modifies variables it \
               is not allowed to!\n\
@@ -111,7 +111,12 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p :
   -- Type check body.
   -- Note that `Statement.typeCheck` already reports source locations in
   -- error messages.
-  let (annotated_body, finalEnv) ← Statement.typeCheck C envAfterPostconds p (.some proc) proc.body
+  let bodyStmts : List Statement ← match proc.body with
+    | .structured ss => pure ss
+    | .cfg _ =>
+      Except.error (DiagnosticModel.withRange fileRange
+        f!"[{proc.header.name}]: CFG procedures not supported on procedure-body branch")
+  let (annotated_body, finalEnv) ← Statement.typeCheck C envAfterPostconds p (.some proc) bodyStmts
 
   -- Remove formals and returns from the context -- they ought to be local to
   -- the procedure body.
@@ -126,7 +131,7 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p :
                                     outputs := out_mty_sig }
   let new_spec := { proc.spec with preconditions := finalPreconditions,
                                    postconditions := finalPostconditions }
-  let new_proc := { proc with header := new_hdr, spec := new_spec, body := annotated_body }
+  let new_proc := { proc with header := new_hdr, spec := new_spec, body := .structured annotated_body }
 
   return (new_proc, finalEnv)
 

@@ -282,7 +282,7 @@ private def testProc : Procedure :=
       inputs := [(⟨"x", ()⟩, .int)],
       outputs := [(⟨"x", ()⟩, .int), (⟨"y", ()⟩, .int)] },
     spec := { preconditions := [], postconditions := [] },
-    body := [] }
+    body := .structured [] }
 
 private def testProgram : Program :=
   { decls := [.proc testProc .empty] }

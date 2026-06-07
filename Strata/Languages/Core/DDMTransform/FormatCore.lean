@@ -989,7 +989,10 @@ def procToCST {M} [Inhabited M] (proc : Core.Procedure) : ToCSTM M (Command M) :
       ⟨default, none⟩
     else
       ⟨default, some (Spec.spec_mk default specAnn)⟩
-  let bodyCST ← blockToCST proc.body
+  let bodyStmts ← match proc.body with
+    | .structured ss => pure ss
+    | .cfg _ => panic! "procToCST: CFG bodies not supported on procedure-body branch"
+  let bodyCST ← blockToCST bodyStmts
   let body : Ann (Option (CoreDDM.Block M)) M := ⟨default, some bodyCST⟩
   modify ToCSTContext.popScope
   pure (.command_procedure default name typeArgs arguments spec body)

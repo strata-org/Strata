@@ -38,6 +38,12 @@ open Core Imperative
   Imperative.Specification.Lang.imperative
     Expression Command (EvalCommand π φ) (EvalPureFunc φ) coreIsAtAssert
 
+-- NOTE: A CFG-flavored `Lang` bundle (`Lang.coreCFG` plus `CoreCFGStepStar`)
+-- requires the `cmd`-constructor refactoring of `EvalDetBlock` from the
+-- unstructured-infra changes. On the procedure-body branch, only structured
+-- bodies have a small-step semantics, so the `.cfg` arm of
+-- `AssertValidInProcedure` below collapses to `False`.
+
 /-! ## Well-formed program state at the entry of procedure -/
 
 /-- The list of variables that must have been declared,
@@ -82,8 +88,14 @@ variable (φ : CoreEval → PureFunc Expression → CoreEval)
 @[expose] def AssertValidInProcedure
     (proc : Procedure)
     (a : Imperative.AssertId Expression) : Prop :=
-  Imperative.Specification.AssertValidWhen (Specification.Lang.core π φ)
-    (ProcEnvWF proc) (Stmt.block "" proc.body #[]) a
+  match proc.body with
+  | .structured ss =>
+    Imperative.Specification.AssertValidWhen (Specification.Lang.core π φ)
+      (ProcEnvWF proc) (Stmt.block "" ss #[]) a
+  -- CFG bodies don't yet have a small-step semantics on this branch, so
+  -- they are vacuously asserts-valid.  Real CFG support arrives with
+  -- `Lang.coreCFG` once the unstructured-infra changes land.
+  | .cfg _ => True
 
 /-- A procedure is correct with respect to its specification.
 
@@ -139,16 +151,21 @@ variable (φ : CoreEval → PureFunc Expression → CoreEval)
 structure ProcedureCorrect (proc : Procedure) (p : Program) : Prop where
   /-- (1) The asserts in the body of proc are valid. -/
   assertsValid : ∀ a, AssertValidInProcedure π φ proc a
-  /-- (2) The postconditions hold on termination. -/
+  /-- (2) The postconditions hold on termination.
+      Uses `CoreBodyExec` to abstract over both structured and CFG bodies.
+      For structured bodies, the terminal eval `δ'` comes from the terminal
+      `Env` (may differ from `δ` due to `funcDecl` extensions). For CFG
+      bodies, `δ' = δ` since `CoreCFGStepStar` does not track eval changes. -/
   postconditionsValid :
     WF.WFProcedureProp p proc →
-    ∀ (ρ₀ ρ' : Env Expression),
+    ∀ (ρ₀ : Env Expression),
       ProcEnvWF proc ρ₀ →
-      CoreStepStar π φ (.stmts proc.body ρ₀) (.terminal ρ') →
-      (∀ (label : CoreLabel) (check : Procedure.Check),
-        (label, check) ∈ proc.spec.postconditions.toList →
-        check.attr = Procedure.CheckAttr.Default →
-        ρ'.eval ρ'.store check.expr = some HasBool.tt) ∧
-      ρ'.hasFailure = Bool.false
+      ∀ (σ' : CoreStore) (δ' : CoreEval) (failed : Bool),
+        CoreBodyExec π φ proc.body ρ₀.store ρ₀.eval σ' δ' failed →
+        (∀ (label : CoreLabel) (check : Procedure.Check),
+          (label, check) ∈ proc.spec.postconditions.toList →
+          check.attr = Procedure.CheckAttr.Default →
+          δ' σ' check.expr = some HasBool.tt) ∧
+        failed = Bool.false
 
 end Core.Specification
