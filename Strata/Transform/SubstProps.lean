@@ -1668,56 +1668,39 @@ theorem H_asserts_zip_fail
         have Htail := ih (labels := labels') (f := true) HtailBool HtailWitness
         exact EvalStatementsContractApp HheadStep Htail
 
-/-- Glue lemma: chain L1–L6 via `EvalStatementsContractApp` to produce the
-    full call-elim block evaluation from σ to σ_havoc. -/
-theorem EvalCallElim_glue
-    {π : String → Option Procedure}
-    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
-    {δ : CoreEval} {σ σ_arg σ_out σ_old σ_havoc : CoreStore}
-    {argInit outInit oldInit asserts havocs assumes : List Statement}
-    (HL1 : EvalStatementsContract π φ ⟨σ, δ, false⟩ argInit ⟨σ_arg, δ, false⟩)
-    (HL2 : EvalStatementsContract π φ ⟨σ_arg, δ, false⟩ outInit ⟨σ_out, δ, false⟩)
-    (HL3 : EvalStatementsContract π φ ⟨σ_out, δ, false⟩ oldInit ⟨σ_old, δ, false⟩)
-    (HL4 : EvalStatementsContract π φ ⟨σ_old, δ, false⟩ asserts ⟨σ_old, δ, false⟩)
-    (HL5 : EvalStatementsContract π φ ⟨σ_old, δ, false⟩ havocs ⟨σ_havoc, δ, false⟩)
-    (HL6 : EvalStatementsContract π φ ⟨σ_havoc, δ, false⟩ assumes ⟨σ_havoc, δ, false⟩) :
-    EvalStatementsContract π φ ⟨σ, δ, false⟩
-      (argInit ++ outInit ++ oldInit ++ asserts ++ havocs ++ assumes)
-      ⟨σ_havoc, δ, false⟩ := by
-  have H12 := EvalStatementsContractApp HL1 HL2
-  have H123 := EvalStatementsContractApp H12 HL3
-  have H1234 := EvalStatementsContractApp H123 HL4
-  have H12345 := EvalStatementsContractApp H1234 HL5
-  exact EvalStatementsContractApp H12345 HL6
+/-- Unified glue lemma: chain L1–L6 via `EvalStatementsContractApp` to
+    produce the full call-elim block evaluation from σ to σ_havoc.  The
+    flag `f` is inferred from `HL4`'s output: `f = false` recovers the
+    passing arm, `f = true` the failing arm (asserts flips from `false`
+    to `true`, then L5/L6 stay at `true` via the polymorphic-`f` lifts).
 
-/-- Failing-arm glue lemma: chain L1–L6 where the L4 (asserts) segment
-    flips the cumulative `hasFailure` flag from `false` to `true`, and
-    the L5/L6 (havocs/assumes) segments stay at `true` via the
-    polymorphic-`f` lifts.
-
-    The L4 flag-flip is materialized via `H_asserts_zip_fail`; L5 uses
-    `H_havocs_poly`; L6 uses `H_assumes_zip_poly`.  The resulting
-    derivation lands in env `⟨σ_havoc, δ, true⟩`, matching the
-    `failed = true` arm of `EvalCommandContract.call_sem`. -/
+    The L4 flag-flip in the failing arm is materialized via
+    `H_asserts_zip_fail`; L5 uses `H_havocs_poly`; L6 uses
+    `H_assumes_zip_poly`.  `EvalCallElim_glue` is a deprecated alias —
+    new code should reference this name directly. -/
 theorem EvalCallElim_glue_fail
     {π : String → Option Procedure}
     {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
-    {δ : CoreEval} {σ σ_arg σ_out σ_old σ_havoc : CoreStore}
+    {δ : CoreEval} {σ σ_arg σ_out σ_old σ_havoc : CoreStore} {f : Bool}
     {argInit outInit oldInit asserts havocs assumes : List Statement}
     (HL1 : EvalStatementsContract π φ ⟨σ, δ, false⟩ argInit ⟨σ_arg, δ, false⟩)
     (HL2 : EvalStatementsContract π φ ⟨σ_arg, δ, false⟩ outInit ⟨σ_out, δ, false⟩)
     (HL3 : EvalStatementsContract π φ ⟨σ_out, δ, false⟩ oldInit ⟨σ_old, δ, false⟩)
-    (HL4 : EvalStatementsContract π φ ⟨σ_old, δ, false⟩ asserts ⟨σ_old, δ, true⟩)
-    (HL5 : EvalStatementsContract π φ ⟨σ_old, δ, true⟩ havocs ⟨σ_havoc, δ, true⟩)
-    (HL6 : EvalStatementsContract π φ ⟨σ_havoc, δ, true⟩ assumes ⟨σ_havoc, δ, true⟩) :
+    (HL4 : EvalStatementsContract π φ ⟨σ_old, δ, false⟩ asserts ⟨σ_old, δ, f⟩)
+    (HL5 : EvalStatementsContract π φ ⟨σ_old, δ, f⟩ havocs ⟨σ_havoc, δ, f⟩)
+    (HL6 : EvalStatementsContract π φ ⟨σ_havoc, δ, f⟩ assumes ⟨σ_havoc, δ, f⟩) :
     EvalStatementsContract π φ ⟨σ, δ, false⟩
       (argInit ++ outInit ++ oldInit ++ asserts ++ havocs ++ assumes)
-      ⟨σ_havoc, δ, true⟩ := by
-  have H12 := EvalStatementsContractApp HL1 HL2
-  have H123 := EvalStatementsContractApp H12 HL3
-  have H1234 := EvalStatementsContractApp H123 HL4
-  have H12345 := EvalStatementsContractApp H1234 HL5
-  exact EvalStatementsContractApp H12345 HL6
+      ⟨σ_havoc, δ, f⟩ :=
+  EvalStatementsContractApp
+    (EvalStatementsContractApp
+      (EvalStatementsContractApp
+        (EvalStatementsContractApp
+          (EvalStatementsContractApp HL1 HL2) HL3) HL4) HL5) HL6
+
+/-- Passing-arm alias for `EvalCallElim_glue_fail` (`f` is inferred from
+    `HL4` as `false`). -/
+abbrev EvalCallElim_glue := @EvalCallElim_glue_fail
 
 end
 
