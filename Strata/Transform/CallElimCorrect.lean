@@ -1395,14 +1395,13 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
               | call_sem lkup hCallArgsIn hCallArgsLhs Hevalargs Hevalouts
                           Hwfval Hwfvars Hwfb Hwf2 HdefOver
                           Hinitin Hinitout Hpre_def Hpre_iff Hhav1 Hpost Hrd
-                          Hupdate_succ Hupdate_fail =>
+                          Hupdate =>
                 -- call_sem implicits: lhs σ₀ inArgs oVals argVals σA σAO σO proc modvals.
                 rename_i lhs σ₀ inArgs oVals argVals σA σAO σO proc modvals
-                -- Re-synthesize the legacy combined `Hpre` and the success-path
-                -- `Hupdate` from the new bool-indicator-shaped premises.  At this
-                -- destructure site `Hcc` is pinned to `failed = false`, so the
-                -- iff yields the original universal eval-tt and the success-path
-                -- arrow yields `UpdateStates σ lhs modvals σ'`.
+                -- Re-synthesize the legacy combined `Hpre` from the new
+                -- bool-indicator-shaped premises.  At this destructure site `Hcc`
+                -- is pinned to `failed = false`, so the iff yields the original
+                -- universal eval-tt.
                 have Hpre_evalTt :
                     ∀ pre, (Procedure.Spec.getCheckExprs proc.spec.preconditions).contains pre →
                       δ σAO pre = .some Imperative.HasBool.tt :=
@@ -1413,7 +1412,6 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                         (Imperative.HasVarsPure.getVars (P:=Expression)) σAO pre ∧
                       δ σAO pre = .some Imperative.HasBool.tt :=
                   fun pre h => ⟨Hpre_def pre h, Hpre_evalTt pre h⟩
-                have Hupdate : UpdateStates σ lhs modvals σ' := Hupdate_succ rfl
                 -- B1-tail: destructure heq_ce via callElimCmd_call_eq.
                 obtain ⟨proc', argTrips, outTrips, genOldIdents, oldTys,
                         asserts, assumes,

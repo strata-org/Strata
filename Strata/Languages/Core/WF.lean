@@ -8,6 +8,7 @@ module
 public import Strata.DL.Util.ListUtils
 import all Strata.DL.Util.ListUtils
 public import Strata.Languages.Core.Program
+public import Strata.Languages.Core.StatementSemantics
 
 public section
 
@@ -108,6 +109,15 @@ instance (p : Program) : ListP (WFStatementProp p) (WFStatementsProp p) where
 
 structure WFPrePostProp (p : Program) (d : Procedure) (pp : CoreLabel × Procedure.Check)
   : Prop where
+  /-- The check expression evaluates to a Boolean value whenever its
+      free variables are defined in the store. -/
+  boolTyped :
+    ∀ (δ : Imperative.SemanticEval Expression)
+      (σ : Imperative.SemanticStore Expression),
+      Imperative.isDefinedOver
+        (Imperative.HasVarsPure.getVars (P := Expression)) σ pp.2.expr →
+      δ σ pp.2.expr = some Imperative.HasBool.tt ∨
+      δ σ pp.2.expr = some Imperative.HasBool.ff
 
 structure WFPreProp (p : Program) (d : Procedure) (pp : CoreLabel × Procedure.Check)
   : Prop extends WFPrePostProp p d pp where

@@ -2321,7 +2321,7 @@ theorem EvalCallBodyRefinesContract :
       ⟨fun _ pre h => (Hpre pre h).2, fun _ => rfl⟩
     exact EvalCommandContract.call_sem pFound heqIn heqLhs Hev_in HrdLhs hwfV hwfVar hwfBool
             hwf2s hdef Hin_inputs Hin_outputs Hpre_def Hpre_iff h_havoc h_post h_rd_σO
-            (fun _ => Hupd) (fun h => Bool.noConfusion h)
+            Hupd
 
 /-- `EvalCommand` with concrete semantics (`f = false` non-failure case)
     refines `EvalCommandContract`.  Threads through the three side-conditions

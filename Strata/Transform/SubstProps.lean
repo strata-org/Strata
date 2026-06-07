@@ -1153,6 +1153,79 @@ theorem H_check_block_zip
       simp only [List.zip_cons_cons, List.map_cons]
       exact EvalStatementsContractApp HheadStmts Htail
 
+/-- Polymorphic-`f` variant of `H_check_block_zip`: lifts any flag-`f`
+    singleton callback through the `(entries.zip labels).map` shape.
+    Used by `H_assumes_zip_poly` to keep the L5/L6 (havocs/assumes)
+    segments at `f = true` after the L4 flag flip. -/
+theorem H_check_block_zip_poly
+    {π : String → Option Procedure}
+    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
+    {δ : CoreEval} {σA σ' : CoreStore} {f : Bool}
+    {ks ks' : List Expression.Ident}
+    {entries : List (CoreLabel × Procedure.Check)}
+    {labels : List String}
+    {md : Imperative.MetaData Expression}
+    (mkStmt : String → Expression.Expr → Imperative.MetaData Expression → Statement)
+    (mkSingletonEval :
+      ∀ (lbl : String) (e : Expression.Expr) (m : Imperative.MetaData Expression),
+        δ σ' e = some Imperative.HasBool.tt →
+        EvalStatementsContract π φ ⟨σ', δ, f⟩ [mkStmt lbl e m] ⟨σ', δ, f⟩)
+    (Hwfvr : Imperative.WellFormedSemanticEvalVar (P:=Expression) δ)
+    (Hwfvl : Imperative.WellFormedSemanticEvalVal (P:=Expression) δ)
+    (Hwfc  : Core.WellFormedCoreEvalCong δ)
+    (Hlen  : ks.length = ks'.length)
+    (Hnd   : Imperative.substNodup (ks.zip ks'))
+    (Hdef  : Imperative.substDefined σA σ' (ks.zip ks'))
+    (Hsubst : Imperative.substStores σA σ' (ks.zip ks'))
+    (Hentries : ∀ entry, entry ∈ entries →
+       Imperative.invStores σA σ'
+         ((Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr).removeAll
+            (ks ++ ks')) ∧
+       ks'.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr) ∧
+       δ σA entry.snd.expr = some Imperative.HasBool.tt) :
+    EvalStatementsContract π φ ⟨σ', δ, f⟩
+      ((entries.zip labels).map (fun (entry, lbl) =>
+        mkStmt lbl
+          (Lambda.LExpr.substFvars entry.snd.expr
+            (ks.zip (Core.Transform.createFvars ks')))
+          (entry.snd.md.setCallSiteFileRange md)))
+      ⟨σ', δ, f⟩ := by
+  induction entries generalizing labels with
+  | nil =>
+    simp [List.zip_nil_left, List.map_nil]
+    exact ReflTrans.step _ _ _ Imperative.StepStmt.step_stmts_nil (.refl _)
+  | cons head tail ih =>
+    cases labels with
+    | nil =>
+      simp [List.zip_nil_right, List.map_nil]
+      exact ReflTrans.step _ _ _ Imperative.StepStmt.step_stmts_nil (.refl _)
+    | cons lbl labels' =>
+      obtain ⟨_, check⟩ := head
+      have HtailHyp :
+          ∀ entry, entry ∈ tail →
+            Imperative.invStores σA σ'
+              ((Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr).removeAll
+                (ks ++ ks')) ∧
+            ks'.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr) ∧
+            δ σA entry.snd.expr = some Imperative.HasBool.tt := by
+        intros entry hin; exact Hentries entry (List.mem_cons_of_mem _ hin)
+      have Htail := ih (labels := labels') HtailHyp
+      have HlHead := Hentries _ List.mem_cons_self
+      obtain ⟨HinvHead, HnininHead, HevHead⟩ := HlHead
+      have Heq : δ σA check.expr =
+                  δ σ' (Lambda.LExpr.substFvars check.expr
+                          (ks.zip (Core.Transform.createFvars ks'))) :=
+        subst_fvars_correct Hwfc Hwfvr Hwfvl Hlen Hdef Hnd Hsubst HnininHead HinvHead
+      have HevSubst : δ σ' (Lambda.LExpr.substFvars check.expr
+                            (ks.zip (Core.Transform.createFvars ks'))) =
+                      some Imperative.HasBool.tt := by
+        rw [← Heq]; exact HevHead
+      have HheadStmts := mkSingletonEval lbl
+        (Lambda.LExpr.substFvars check.expr (ks.zip (Core.Transform.createFvars ks')))
+        (check.md.setCallSiteFileRange md) HevSubst
+      simp only [List.zip_cons_cons, List.map_cons]
+      exact EvalStatementsContractApp HheadStmts Htail
+
 /-- Labels-aware variant of `H_asserts`: takes a separate `labels`
     list (paired positionally with `pres` via `zip`) rather than a
     `labelOf` projection.  This matches the shape exposed by the
@@ -1231,6 +1304,43 @@ theorem H_assumes_zip
       ⟨σ', δ, false⟩ :=
   H_check_block_zip (entries := posts) (labels := labels) Statement.assume
     (mkSingletonEval := singletonAssumeEval Hwfb)
+    Hwfvr Hwfvl Hwfc Hlen Hnd Hdef Hsubst Hposts
+
+/-- Polymorphic-`f` variant of `H_assumes_zip`.  Lets the L6 (assumes)
+    segment of the call-elim glue stay at `f = true` once the L4 flag
+    flip has fired.  See `EvalCallElim_glue_fail`. -/
+theorem H_assumes_zip_poly
+    {π : String → Option Procedure}
+    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
+    {δ : CoreEval} {σA σ' : CoreStore} {f : Bool}
+    {ks ks' : List Expression.Ident}
+    {posts : List (CoreLabel × Procedure.Check)}
+    {labels : List String}
+    {md : Imperative.MetaData Expression}
+    (Hwfb  : Imperative.WellFormedSemanticEvalBool δ)
+    (Hwfvr : Imperative.WellFormedSemanticEvalVar (P:=Expression) δ)
+    (Hwfvl : Imperative.WellFormedSemanticEvalVal (P:=Expression) δ)
+    (Hwfc  : Core.WellFormedCoreEvalCong δ)
+    (Hlen  : ks.length = ks'.length)
+    (Hnd   : Imperative.substNodup (ks.zip ks'))
+    (Hdef  : Imperative.substDefined σA σ' (ks.zip ks'))
+    (Hsubst : Imperative.substStores σA σ' (ks.zip ks'))
+    (Hposts : ∀ entry, entry ∈ posts →
+       Imperative.invStores σA σ'
+         ((Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr).removeAll
+            (ks ++ ks')) ∧
+       ks'.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr) ∧
+       δ σA entry.snd.expr = some Imperative.HasBool.tt) :
+    EvalStatementsContract π φ ⟨σ', δ, f⟩
+      ((posts.zip labels).map (fun (entry, lbl) =>
+        Statement.assume lbl
+          (Lambda.LExpr.substFvars entry.snd.expr
+            (ks.zip (Core.Transform.createFvars ks')))
+          (entry.snd.md.setCallSiteFileRange md)))
+      ⟨σ', δ, f⟩ :=
+  H_check_block_zip_poly (entries := posts) (labels := labels) (f := f)
+    Statement.assume
+    (mkSingletonEval := singletonAssumeEval_poly Hwfb)
     Hwfvr Hwfvl Hwfc Hlen Hnd Hdef Hsubst Hposts
 
 /-- Helper: lifting `ReadValues σ ks vs` across an `updatedStates` extension
@@ -1418,6 +1528,193 @@ theorem havocVars_updatedStates_lift
       ih Hdisj_t
     exact HavocVars.update_some hUp' hTail'
 
+/-! ### Failing-arm helpers for `EvalCallElim_glue_fail`
+
+These helpers walk the asserts segment when at least one precondition
+evaluates to `ff` after substitution, producing an `EvalStatementsContract`
+derivation that flips the cumulative `hasFailure` flag from `false` to
+`true`.  The walk handles entries before, at, and after the failing
+witness uniformly via the OR-stable accumulator.  See
+`EvalCallElim_glue_fail` below for the orchestration. -/
+
+/-- Singleton-eval helper for `Statement.assert` at the failing arm:
+    lifts the assert-fail evaluation rule into a single-statement
+    `EvalStatementsContract` that flips `f` to `f || true = true`. -/
+private theorem singletonAssertFailEval
+    {π : String → Option Procedure}
+    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
+    {δ : CoreEval} {σ : CoreStore} {f : Bool}
+    (Hwfb : Imperative.WellFormedSemanticEvalBool δ)
+    (lbl : String) (e : Expression.Expr) (m : Imperative.MetaData Expression)
+    (Hev : δ σ e = some Imperative.HasBool.ff) :
+    EvalStatementsContract π φ ⟨σ, δ, f⟩
+      [Statement.assert lbl e m]
+      ⟨σ, δ, f || true⟩ := by
+  unfold EvalStatementsContract Imperative.EvalStmtsSmall
+  apply ReflTrans.step _ _ _ Imperative.StepStmt.step_stmts_cons
+  have Hcmd : Core.EvalCommandContract π δ σ
+                (Core.CmdExt.cmd (Imperative.Cmd.assert lbl e m))
+                σ true :=
+    Core.EvalCommandContract.cmd_sem (Imperative.EvalCmd.eval_assert_fail Hev Hwfb)
+  have Hstep_cmd :
+      Imperative.StepStmt Expression (EvalCommandContract π) (EvalPureFunc φ)
+        (.stmt (Imperative.Stmt.cmd (Core.CmdExt.cmd (Imperative.Cmd.assert lbl e m)))
+          ⟨σ, δ, f⟩)
+        (.terminal ⟨σ, δ, f || true⟩) := by
+    have := Imperative.StepStmt.step_cmd (P := Expression)
+              (EvalCmd := EvalCommandContract π) (extendEval := EvalPureFunc φ)
+              (ρ := ⟨σ, δ, f⟩) (c := Core.CmdExt.cmd (Imperative.Cmd.assert lbl e m))
+              (σ' := σ) (hasAssertFailure := true) Hcmd
+    simpa using this
+  apply ReflTrans.step _ _ _
+          (Imperative.StepStmt.step_seq_inner Hstep_cmd)
+  apply ReflTrans.step _ _ _ Imperative.StepStmt.step_seq_done
+  exact ReflTrans.step _ _ _ Imperative.StepStmt.step_stmts_nil (.refl _)
+
+/-- Polymorphic-`f` variant of `singletonAssertEval`: lifts assert-pass
+    into a flag-`f`-preserving step. -/
+private theorem singletonAssertEval_poly
+    {π : String → Option Procedure}
+    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
+    {δ : CoreEval} {σ : CoreStore} {f : Bool}
+    (Hwfb : Imperative.WellFormedSemanticEvalBool δ)
+    (lbl : String) (e : Expression.Expr) (m : Imperative.MetaData Expression)
+    (Hev : δ σ e = some Imperative.HasBool.tt) :
+    EvalStatementsContract π φ ⟨σ, δ, f⟩ [Statement.assert lbl e m] ⟨σ, δ, f⟩ :=
+  singleCmdToStmts_poly (π := π) (φ := φ) (f := f)
+    (Core.EvalCommandContract.cmd_sem (Imperative.EvalCmd.eval_assert_pass Hev Hwfb))
+
+/-- Walk the asserts segment in the failing arm.  Each entry's substituted
+    expression evaluates either to `tt` (pass) or `ff` (fail) at `σ'`; at
+    least one entry fails (or the input flag is already `true`).  Output
+    cumulative flag is `true`.
+
+    The `Hbool` and `Hfail_or_input` premises range over `(pres.zip labels)`
+    — the actually-realized statement list — rather than over `pres` alone,
+    so length-mismatched corner cases (`labels.length < pres.length`) are
+    avoided.  Callers ensure `labels.length = pres.length`. -/
+theorem H_asserts_zip_fail
+    {π : String → Option Procedure}
+    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
+    {δ : CoreEval} {σ' : CoreStore} {f : Bool}
+    {ks ks' : List Expression.Ident}
+    {pres : List (CoreLabel × Procedure.Check)}
+    {labels : List String}
+    {md : Imperative.MetaData Expression}
+    (Hwfb : Imperative.WellFormedSemanticEvalBool δ)
+    (Hbool :
+      ∀ pair ∈ pres.zip labels,
+        δ σ' (Lambda.LExpr.substFvars pair.fst.snd.expr
+                (ks.zip (Core.Transform.createFvars ks'))) =
+            some Imperative.HasBool.tt ∨
+        δ σ' (Lambda.LExpr.substFvars pair.fst.snd.expr
+                (ks.zip (Core.Transform.createFvars ks'))) =
+            some Imperative.HasBool.ff)
+    (Hfail_or_input :
+      f = true ∨
+        ∃ pair ∈ pres.zip labels,
+          δ σ' (Lambda.LExpr.substFvars pair.fst.snd.expr
+                  (ks.zip (Core.Transform.createFvars ks'))) =
+              some Imperative.HasBool.ff) :
+    EvalStatementsContract π φ ⟨σ', δ, f⟩
+      ((pres.zip labels).map (fun (entry, lbl) =>
+        Statement.assert lbl
+          (Lambda.LExpr.substFvars entry.snd.expr
+            (ks.zip (Core.Transform.createFvars ks')))
+          (entry.snd.md.setCallSiteFileRange md)))
+      ⟨σ', δ, true⟩ := by
+  induction pres generalizing labels f with
+  | nil =>
+    -- No entries → witness must be `f = true`.
+    simp only [List.zip_nil_left] at Hbool Hfail_or_input
+    rcases Hfail_or_input with Hf | ⟨pair, Hin, _⟩
+    · subst Hf
+      simp [List.map_nil]
+      exact ReflTrans.step _ _ _ Imperative.StepStmt.step_stmts_nil (.refl _)
+    · cases Hin
+  | cons head tail ih =>
+    cases labels with
+    | nil =>
+      -- No labels → empty zip; witness must be `f = true`.
+      simp only [List.zip_nil_right] at Hbool Hfail_or_input
+      rcases Hfail_or_input with Hf | ⟨pair, Hin, _⟩
+      · subst Hf
+        simp [List.map_nil]
+        exact ReflTrans.step _ _ _ Imperative.StepStmt.step_stmts_nil (.refl _)
+      · cases Hin
+    | cons lbl labels' =>
+      -- Walk the head, then recurse.
+      have HheadCase := Hbool (head, lbl) (by simp [List.zip_cons_cons])
+      have HtailBool : ∀ pair ∈ tail.zip labels',
+          δ σ' (Lambda.LExpr.substFvars pair.fst.snd.expr
+                  (ks.zip (Core.Transform.createFvars ks'))) =
+              some Imperative.HasBool.tt ∨
+          δ σ' (Lambda.LExpr.substFvars pair.fst.snd.expr
+                  (ks.zip (Core.Transform.createFvars ks'))) =
+              some Imperative.HasBool.ff := by
+        intro pair Hin
+        exact Hbool pair (by simp [List.zip_cons_cons]; exact Or.inr Hin)
+      simp only [List.zip_cons_cons, List.map_cons]
+      -- Two branches based on head's eval.
+      rcases HheadCase with HheadTt | HheadFf
+      · -- Head passes; flag stays at f.
+        have HheadStep :
+            EvalStatementsContract π φ ⟨σ', δ, f⟩
+              [Statement.assert lbl
+                (Lambda.LExpr.substFvars head.snd.expr
+                  (ks.zip (Core.Transform.createFvars ks')))
+                (head.snd.md.setCallSiteFileRange md)]
+              ⟨σ', δ, f⟩ :=
+          singletonAssertEval_poly Hwfb _ _ _ HheadTt
+        -- Witness migration: f=true OR ∃ in tail (since head passes).
+        have HtailWitness :
+            f = true ∨
+              ∃ pair ∈ tail.zip labels',
+                δ σ' (Lambda.LExpr.substFvars pair.fst.snd.expr
+                        (ks.zip (Core.Transform.createFvars ks'))) =
+                    some Imperative.HasBool.ff := by
+          rcases Hfail_or_input with Hf | ⟨pair, Hin_zip, Heq⟩
+          · exact Or.inl Hf
+          · simp only [List.zip_cons_cons, List.mem_cons] at Hin_zip
+            cases Hin_zip with
+            | inl Hpair_eq =>
+              -- pair = (head, lbl); but head evaluates to tt, contradicting Heq.
+              subst Hpair_eq
+              simp at Heq
+              exact absurd HheadTt (by rw [Heq]; intro h; injection h with h; cases h)
+            | inr Hin_tail =>
+              exact Or.inr ⟨pair, Hin_tail, Heq⟩
+        have Htail := ih (labels := labels') (f := f) HtailBool HtailWitness
+        exact EvalStatementsContractApp HheadStep Htail
+      · -- Head fails; flag flips from f to true.
+        have HheadStep_pre :
+            EvalStatementsContract π φ ⟨σ', δ, f⟩
+              [Statement.assert lbl
+                (Lambda.LExpr.substFvars head.snd.expr
+                  (ks.zip (Core.Transform.createFvars ks')))
+                (head.snd.md.setCallSiteFileRange md)]
+              ⟨σ', δ, f || true⟩ :=
+          singletonAssertFailEval Hwfb _ _ _ HheadFf
+        have HheadStep :
+            EvalStatementsContract π φ ⟨σ', δ, f⟩
+              [Statement.assert lbl
+                (Lambda.LExpr.substFvars head.snd.expr
+                  (ks.zip (Core.Transform.createFvars ks')))
+                (head.snd.md.setCallSiteFileRange md)]
+              ⟨σ', δ, true⟩ := by
+          have Hftrue : f || true = true := Bool.or_true f
+          rw [← Hftrue]; exact HheadStep_pre
+        -- Recurse on tail with f := true.
+        have HtailWitness :
+            (true : Bool) = true ∨
+              ∃ pair ∈ tail.zip labels',
+                δ σ' (Lambda.LExpr.substFvars pair.fst.snd.expr
+                        (ks.zip (Core.Transform.createFvars ks'))) =
+                    some Imperative.HasBool.ff :=
+          Or.inl rfl
+        have Htail := ih (labels := labels') (f := true) HtailBool HtailWitness
+        exact EvalStatementsContractApp HheadStep Htail
+
 /-- Glue lemma: chain L1–L6 via `EvalStatementsContractApp` to produce the
     full call-elim block evaluation from σ to σ_havoc. -/
 theorem EvalCallElim_glue
@@ -1434,6 +1731,35 @@ theorem EvalCallElim_glue
     EvalStatementsContract π φ ⟨σ, δ, false⟩
       (argInit ++ outInit ++ oldInit ++ asserts ++ havocs ++ assumes)
       ⟨σ_havoc, δ, false⟩ := by
+  have H12 := EvalStatementsContractApp HL1 HL2
+  have H123 := EvalStatementsContractApp H12 HL3
+  have H1234 := EvalStatementsContractApp H123 HL4
+  have H12345 := EvalStatementsContractApp H1234 HL5
+  exact EvalStatementsContractApp H12345 HL6
+
+/-- Failing-arm glue lemma: chain L1–L6 where the L4 (asserts) segment
+    flips the cumulative `hasFailure` flag from `false` to `true`, and
+    the L5/L6 (havocs/assumes) segments stay at `true` via the
+    polymorphic-`f` lifts.
+
+    The L4 flag-flip is materialized via `H_asserts_zip_fail`; L5 uses
+    `H_havocs_poly`; L6 uses `H_assumes_zip_poly`.  The resulting
+    derivation lands in env `⟨σ_havoc, δ, true⟩`, matching the
+    `failed = true` arm of `EvalCommandContract.call_sem`. -/
+theorem EvalCallElim_glue_fail
+    {π : String → Option Procedure}
+    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
+    {δ : CoreEval} {σ σ_arg σ_out σ_old σ_havoc : CoreStore}
+    {argInit outInit oldInit asserts havocs assumes : List Statement}
+    (HL1 : EvalStatementsContract π φ ⟨σ, δ, false⟩ argInit ⟨σ_arg, δ, false⟩)
+    (HL2 : EvalStatementsContract π φ ⟨σ_arg, δ, false⟩ outInit ⟨σ_out, δ, false⟩)
+    (HL3 : EvalStatementsContract π φ ⟨σ_out, δ, false⟩ oldInit ⟨σ_old, δ, false⟩)
+    (HL4 : EvalStatementsContract π φ ⟨σ_old, δ, false⟩ asserts ⟨σ_old, δ, true⟩)
+    (HL5 : EvalStatementsContract π φ ⟨σ_old, δ, true⟩ havocs ⟨σ_havoc, δ, true⟩)
+    (HL6 : EvalStatementsContract π φ ⟨σ_havoc, δ, true⟩ assumes ⟨σ_havoc, δ, true⟩) :
+    EvalStatementsContract π φ ⟨σ, δ, false⟩
+      (argInit ++ outInit ++ oldInit ++ asserts ++ havocs ++ assumes)
+      ⟨σ_havoc, δ, true⟩ := by
   have H12 := EvalStatementsContractApp HL1 HL2
   have H123 := EvalStatementsContractApp H12 HL3
   have H1234 := EvalStatementsContractApp H123 HL4

@@ -414,10 +414,9 @@ inductive EvalCommandContract : (String → Option Procedure)  → CoreEval →
       body execution with havoc + postcondition check.
       The Bool failure flag `failed` is connected to the precondition status
       via an iff: the call fails iff some precondition fails to evaluate to
-      `tt` at the post-init/pre-havoc store `σAO`.  When `failed = true`,
-      the result store is unchanged (`σ' = σ`); when `failed = false`, the
-      result store is produced by havoc + write-back via `UpdateStates`.
-      Same positional matching as `EvalCommand.call_sem`. -/
+      `tt` at the post-init/pre-havoc store `σAO`.  The result store `σ'`
+      is unconditionally the writeback result via `UpdateStates`, regardless
+      of `failed`.  Same positional matching as `EvalCommand.call_sem`. -/
   | call_sem {π δ σ σ₀ inArgs oVals vals σA σAO σO n p modvals callArgs σ' md failed} :
     π n = .some p →
     CallArg.getInputExprs callArgs = inArgs →
@@ -444,10 +443,8 @@ inductive EvalCommandContract : (String → Option Procedure)  → CoreEval →
       isDefinedOver (HasVarsPure.getVars) σAO post ∧
       δ σO post = .some HasBool.tt) →
     ReadValues σO (ListMap.keys (p.header.outputs)) modvals →
-    -- success path: positional write-back
-    (failed = false → UpdateStates σ lhs modvals σ') →
-    -- failure path: store unchanged
-    (failed = true → σ' = σ) →
+    -- positional write-back (unconditional)
+    UpdateStates σ lhs modvals σ' →
     ----
     EvalCommandContract π δ σ (.call n callArgs md) σ' failed
 

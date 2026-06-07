@@ -73,6 +73,61 @@ theorem singletonAssumeEval
   singleCmdToStmts (π := π) (φ := φ)
     (Core.EvalCommandContract.cmd_sem (Imperative.EvalCmd.eval_assume Hev Hwfb))
 
+/-! ### Polymorphic-flag variants
+
+The polymorphic-`f` variants of `singleCmdToStmts`, `singletonAssumeEval`,
+and `H_havocs` lift command derivations whose local failure flag is
+`false` (i.e., `Hcmd` produces `σ' false`) into a step starting from any
+input flag `f` and ending at `f`.  This is sound because the small-step
+`step_cmd` rule OR-s the per-command flag into the cumulative flag, and
+`f || false = f`.
+
+These polymorphic variants are needed at the L4 (asserts) flag-flip in
+`EvalCallElim_glue_fail`, where pre-L4 segments stay at `f = false`,
+the failing precondition flips `f` to `true`, and post-failure segments
+must continue propagating `f = true`.  -/
+
+/-- Polymorphic-`f` variant of `singleCmdToStmts`: lift any flag-`false`
+    command derivation into an `EvalStatementsContract` step that
+    preserves the input failure flag `f`.  See `singleCmdToStmts` for
+    the concrete-`false` form. -/
+theorem singleCmdToStmts_poly
+    {π : String → Option Procedure}
+    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
+    {δ : CoreEval} {σ σ' : CoreStore} {c : Core.Command} {f : Bool}
+    (Hcmd : Core.EvalCommandContract π δ σ c σ' false) :
+    EvalStatementsContract π φ ⟨σ, δ, f⟩
+      [Imperative.Stmt.cmd c]
+      ⟨σ', δ, f⟩ := by
+  unfold EvalStatementsContract Imperative.EvalStmtsSmall
+  apply ReflTrans.step _ _ _ Imperative.StepStmt.step_stmts_cons
+  -- step_cmd produces hasFailure := f || false = f.
+  have Hstep_cmd :
+      Imperative.StepStmt Expression (EvalCommandContract π) (EvalPureFunc φ)
+        (.stmt (Imperative.Stmt.cmd c) ⟨σ, δ, f⟩)
+        (.terminal ⟨σ', δ, f⟩) := by
+    have := Imperative.StepStmt.step_cmd (P := Expression)
+              (EvalCmd := EvalCommandContract π) (extendEval := EvalPureFunc φ)
+              (ρ := ⟨σ, δ, f⟩) (c := c) (σ' := σ') (hasAssertFailure := false)
+              Hcmd
+    simpa using this
+  apply ReflTrans.step _ _ _
+          (Imperative.StepStmt.step_seq_inner Hstep_cmd)
+  apply ReflTrans.step _ _ _ Imperative.StepStmt.step_seq_done
+  exact ReflTrans.step _ _ _ Imperative.StepStmt.step_stmts_nil (.refl _)
+
+/-- Polymorphic-`f` variant of `singletonAssumeEval`. -/
+theorem singletonAssumeEval_poly
+    {π : String → Option Procedure}
+    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
+    {δ : CoreEval} {σ : CoreStore} {f : Bool}
+    (Hwfb : Imperative.WellFormedSemanticEvalBool δ)
+    (lbl : String) (e : Expression.Expr) (m : Imperative.MetaData Expression)
+    (Hev : δ σ e = some Imperative.HasBool.tt) :
+    EvalStatementsContract π φ ⟨σ, δ, f⟩ [Statement.assume lbl e m] ⟨σ, δ, f⟩ :=
+  singleCmdToStmts_poly (π := π) (φ := φ) (f := f)
+    (Core.EvalCommandContract.cmd_sem (Imperative.EvalCmd.eval_assume Hev Hwfb))
+
 /-- Evaluating `createHavocs vs md` under contract semantics steps from σ
     through `HavocVars vs` to σ'. -/
 theorem H_havocs
@@ -108,6 +163,43 @@ theorem H_havocs
       simp only [Core.Transform.createHavocs, List.map_cons,
                  Core.Transform.createHavoc]
       exact EvalStatementsContractApp (singleCmdToStmts Hcmd) HrecTail
+
+/-- Polymorphic-`f` variant of `H_havocs`: havoc commands locally produce
+    `flag=false`, and OR-ing into the running `f` keeps it as `f`. -/
+theorem H_havocs_poly
+    {π : String → Option Procedure}
+    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
+    {δ : CoreEval} {σ σ' : CoreStore} {f : Bool}
+    {vs : List Expression.Ident}
+    {md : Imperative.MetaData Expression}
+    (Hwfv : Imperative.WellFormedSemanticEvalVar δ)
+    (Hdef : Imperative.isDefined σ vs)
+    (Hhav : HavocVars σ vs σ') :
+    EvalStatementsContract π φ ⟨σ, δ, f⟩
+      (Core.Transform.createHavocs vs md)
+      ⟨σ', δ, f⟩ := by
+  induction vs generalizing σ with
+  | nil =>
+    have heq : σ' = σ := by cases Hhav; rfl
+    subst heq
+    exact ReflTrans.step _ _ _ Imperative.StepStmt.step_stmts_nil (.refl _)
+  | cons h t ih =>
+    cases Hhav with
+    | update_some hUp hTail =>
+      rename_i v σmid
+      have Hcmd : Core.EvalCommandContract π δ σ
+                    (Core.CmdExt.cmd (Imperative.Cmd.set h .nondet md))
+                    σmid false :=
+        Core.EvalCommandContract.cmd_sem (Imperative.EvalCmd.eval_set_nondet hUp Hwfv)
+      have Hdef_tail : Imperative.isDefined σ t :=
+        fun v hv => Hdef v (List.mem_cons_of_mem h hv)
+      have HdefTail : Imperative.isDefined σmid t :=
+        Imperative.UpdateStateDefMonotone Hdef_tail hUp
+      have HrecTail := ih HdefTail hTail
+      simp only [Core.Transform.createHavocs, List.map_cons,
+                 Core.Transform.createHavoc]
+      exact EvalStatementsContractApp
+              (singleCmdToStmts_poly (f := f) Hcmd) HrecTail
 
 /-- Evaluating a single `Statement.init x ty (.det e) md` under contract
     semantics steps from σ to `updatedState σ x v`, given `δ σ e = some v`
