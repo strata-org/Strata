@@ -1383,6 +1383,85 @@ private theorem HoldEval_bridge_at_σO
     congr 1; exact HAlign_lhs.symm
   rw [Hj_eq, ← HStep4, HStep5]
 
+/-- Per-fvar bridge for `createOldVarsSubst`'s codomain at the L6
+    intermediate stores `σ_R1`/`σO`.
+
+    For any `(k, w) ∈ createOldVarsSubst oldTripsCanonical`, the evaluator
+    at `σ_R1` of `w` (a fresh-old `createFvar gen`) coincides with the
+    evaluator at `σO` of the fvar `k = mkOld oldVars[i].name`, because
+    both reduce to `some oldVals[i]` for the same positional `i`.
+
+    Backs the L6 `Hsub` derivation: combines this with `HinputSubBridge`
+    (input-side codomain) to discharge `subst_fvars_eval_bridge`'s
+    sub-evaluator hypothesis on `oldSubst_L6 = createOldVarsSubst ++
+    inputOnlyOldSubst`.
+
+    Inputs:
+    * `oldTripsCanonical`: the canonical trip-list aligning `genOldIdents`,
+      `oldTys`, `oldVars`, and the `mkOld` keys.
+    * `HgenOldLen`, `HoldTysLen`, `HoldValsLen`: positional length facts.
+    * `σ_R1_read_olds`: positional reads `σ_R1 genOldIdents[i] = some oldVals[i]`.
+    * `HoldEval_bridge`: positional bridge from Stage 1's helper. -/
+private theorem HoldSubBridge_at_σO
+    {δ : CoreEval} {σ_R1 σO : CoreStore}
+    {oldVars genOldIdents : List Expression.Ident}
+    {oldTys : List Expression.Ty}
+    {oldVals : List Expression.Expr}
+    (Hwfvars : Imperative.WellFormedSemanticEvalVar δ)
+    (HgenOldLen : genOldIdents.length = oldVars.length)
+    (HoldTysLen : oldTys.length = oldVars.length)
+    (HoldValsLen : oldVals.length = oldVars.length)
+    (σ_R1_read_olds :
+      ∀ (i : Nat) (Hi : i < genOldIdents.length)
+        (Hi' : i < oldVals.length),
+        σ_R1 (genOldIdents[i]'Hi) = some (oldVals[i]'Hi'))
+    (HoldEval_bridge :
+      ∀ (i : Nat) (Hi : i < oldVars.length),
+        δ σO
+            (Lambda.LExpr.fvar ()
+              (CoreIdent.mkOld (oldVars[i]'Hi).name) none) =
+          some (oldVals[i]'(HoldValsLen.symm ▸ Hi))) :
+    ∀ k w,
+      Map.find?
+        (Core.Transform.createOldVarsSubst
+          ((((genOldIdents.zip oldTys).zip oldVars).zip
+            (oldVars.map (fun g => CoreIdent.mkOld g.name))).map
+            fun (((fresh, ty), _orig), oldG) => ((fresh, ty), oldG))) k = some w →
+      δ σ_R1 w =
+        δ σO (Lambda.LExpr.fvar () k none) := by
+  -- Generic δ-fvar lookup derived from Hwfvars.
+  have δ_fvar_eq :
+      ∀ (σ' : CoreStore) (v : Expression.Ident),
+        δ σ' (Lambda.LExpr.fvar () v none) = σ' v := by
+    intro σ' v
+    have Hwfvr := Hwfvars
+    simp [Imperative.WellFormedSemanticEvalVar] at Hwfvr
+    rw [Hwfvr (Lambda.LExpr.fvar () v none) v]
+    simp [Imperative.HasFvar.getFvar]
+  intro k w Hf
+  obtain ⟨ni_val, Hni_lt, Hk_eqMkOld, Hw_eq⟩ :=
+    createOldVarsSubst_pos_decomp HgenOldLen HoldTysLen Hf
+  have Hni_lt_genOld : ni_val < genOldIdents.length := HgenOldLen.symm ▸ Hni_lt
+  have Hni_lt_oldVals : ni_val < oldVals.length := HoldValsLen.symm ▸ Hni_lt
+  have HrdR1_get :
+      σ_R1 (genOldIdents[ni_val]'Hni_lt_genOld) =
+        some (oldVals[ni_val]'Hni_lt_oldVals) :=
+    σ_R1_read_olds ni_val Hni_lt_genOld Hni_lt_oldVals
+  have HwfL :
+      δ σ_R1 (Core.Transform.createFvar
+               (genOldIdents[ni_val]'Hni_lt_genOld)) =
+        σ_R1 (genOldIdents[ni_val]'Hni_lt_genOld) := by
+    show δ σ_R1 (Lambda.LExpr.fvar () _ none) = _
+    exact δ_fvar_eq σ_R1 _
+  have HoldEv :
+      δ σO (Lambda.LExpr.fvar ()
+              (CoreIdent.mkOld
+                (oldVars[ni_val]'Hni_lt).name)
+              none) =
+        some (oldVals[ni_val]'Hni_lt_oldVals) :=
+    HoldEval_bridge ni_val Hni_lt
+  rw [Hw_eq, HwfL, HrdR1_get, Hk_eqMkOld, HoldEv]
+
 /-- Call-elimination correctness for a single statement.
 
     Given a small-step `EvalStatementsContract` derivation of `[st]`
@@ -3129,35 +3208,9 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                           (Core.Transform.createOldVarsSubst
                             oldTripsCanonical_L6) k = some w →
                         δ σ_R1 w =
-                          δ σO (Lambda.LExpr.fvar () k none) := by
-                    intro k w Hf
-                    -- Positional decomposition via createOldVarsSubst_pos_decomp.
-                    obtain ⟨ni_val, Hni_lt, Hk_eqMkOld, Hw_eq⟩ :=
-                      createOldVarsSubst_pos_decomp HgenOldLen HoldTysLen Hf
-                    have Hni_lt_genOld : ni_val < genOldIdents.length := HgenOldLen.symm ▸ Hni_lt
-                    -- LHS: δ σ_R1 w = σ_R1 genOldIdents[i] = some oldVals[i].
-                    have Hni_lt_oldVals : ni_val < oldVals.length := HoldValsLen.symm ▸ Hni_lt
-                    have HrdR1_get :
-                        σ_R1 (genOldIdents[ni_val]'Hni_lt_genOld) =
-                          some (oldVals[ni_val]'Hni_lt_oldVals) :=
-                      σ_R1_read_olds ni_val Hni_lt_genOld Hni_lt_oldVals
-                    -- δ σ_R1 (createFvar gen) = σ_R1 gen.
-                    have HwfL :
-                        δ σ_R1 (Core.Transform.createFvar
-                                 (genOldIdents[ni_val]'Hni_lt_genOld)) =
-                          σ_R1 (genOldIdents[ni_val]'Hni_lt_genOld) := by
-                      show δ σ_R1 (Lambda.LExpr.fvar () _ none) = _
-                      exact δ_fvar_eq σ_R1 _
-                    -- RHS via HoldEval_bridge.
-                    have HoldEv :
-                        δ σO (Lambda.LExpr.fvar ()
-                                (CoreIdent.mkOld
-                                  (oldVars[ni_val]'Hni_lt).name)
-                                none) =
-                          some (oldVals[ni_val]'Hni_lt_oldVals) :=
-                      HoldEval_bridge ni_val Hni_lt
-                    -- Conclude.
-                    rw [Hw_eq, HwfL, HrdR1_get, Hk_eqMkOld, HoldEv]
+                          δ σO (Lambda.LExpr.fvar () k none) :=
+                    HoldSubBridge_at_σO Hwfvars HgenOldLen HoldTysLen
+                      HoldValsLen σ_R1_read_olds HoldEval_bridge
                   -- (2b) HinputSubBridge: inputOnlyOldSubst codomain.
                   have HinputSubBridge :
                       ∀ k w,
