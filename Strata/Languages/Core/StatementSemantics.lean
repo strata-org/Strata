@@ -413,10 +413,14 @@ inductive EvalCommandContract : (String → Option Procedure)  → CoreEval →
   /-- Contract-based semantics: like `EvalCommand.call_sem` but replaces
       body execution with havoc + postcondition check.
       The Bool failure flag `failed` is connected to the precondition status
-      via an iff: the call fails iff some precondition fails to evaluate to
-      `tt` at the post-init/pre-havoc store `σAO`.  The result store `σ'`
-      is unconditionally the writeback result via `UpdateStates`, regardless
-      of `failed`.  Same positional matching as `EvalCommand.call_sem`. -/
+      via an iff: the call fails iff some *checked* precondition fails to
+      evaluate to `tt` at the post-init/pre-havoc store `σAO`.  Free
+      preconditions (`free requires`) are assumed by the implementation but
+      not checked at call sites (Procedure.lean §92), so they are excluded
+      from the iff — the iff and definedness premises both range over
+      non-Free preconditions only.  The result store `σ'` is unconditionally
+      the writeback result via `UpdateStates`, regardless of `failed`.
+      Same positional matching as `EvalCommand.call_sem`. -/
   | call_sem {π δ σ σ₀ inArgs oVals vals σA σAO σO n p modvals callArgs σ' md failed} :
     π n = .some p →
     CallArg.getInputExprs callArgs = inArgs →
@@ -432,11 +436,15 @@ inductive EvalCommandContract : (String → Option Procedure)  → CoreEval →
     InitStates σ (ListMap.keys (p.header.inputs)) vals σA →
     -- positional: oVals[i] initializes p.header.outputs[i]
     InitStates σA (ListMap.keys (p.header.outputs)) oVals σAO →
-    -- preconditions are always defined; their truth controls `failed`
-    (∀ pre, (Procedure.Spec.getCheckExprs p.spec.preconditions).contains pre →
+    -- non-Free preconditions are always defined; their truth controls `failed`
+    (∀ pre, (Procedure.Spec.getCheckExprs
+              (p.spec.preconditions.filter
+                (fun (_, c) => c.attr ≠ .Free))).contains pre →
       isDefinedOver (HasVarsPure.getVars) σAO pre) →
     (failed = false ↔
-      (∀ pre, (Procedure.Spec.getCheckExprs p.spec.preconditions).contains pre →
+      (∀ pre, (Procedure.Spec.getCheckExprs
+                (p.spec.preconditions.filter
+                  (fun (_, c) => c.attr ≠ .Free))).contains pre →
         δ σAO pre = .some HasBool.tt)) →
     HavocVars σAO (ListMap.keys p.header.outputs) σO →
     (∀ post, (Procedure.Spec.getCheckExprs p.spec.postconditions).contains post →

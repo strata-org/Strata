@@ -2235,7 +2235,7 @@ constructor does not by itself supply:
   procedure's outputs) we take it as a hypothesis here and let the caller
   discharge it.
 -/
-theorem EvalCallBodyRefinesContract :
+theorem EvalCallBodyRefinesContract [LawfulBEq Expression.Expr] :
   ∀ {π : String → Option Procedure}
     {φ : CoreEval → PureFunc Expression → CoreEval}
     {δ : CoreEval} {σ : CoreStore} {n : String}
@@ -2309,16 +2309,41 @@ theorem EvalCallBodyRefinesContract :
     -- ρ'.hasFailure = false closes the index mismatch in the goal.
     rw [hρ'_failure]
     -- Split the combined Hpre into the new (def, iff) shape required by the
-    -- bool-indicator EvalCommandContract.call_sem rule.
+    -- bool-indicator EvalCommandContract.call_sem rule.  The new rule ranges
+    -- the iff/definedness premises over non-Free preconditions only (Free
+    -- preconditions are assumed, not checked at call sites — see
+    -- Procedure.lean §92), so we restrict via `presFiltered_subset`.
+    have presFiltered_subset :
+        ∀ pre,
+          (Procedure.Spec.getCheckExprs
+            (p.spec.preconditions.filter
+              (fun (_, c) => c.attr ≠ .Free))).contains pre →
+          (Procedure.Spec.getCheckExprs p.spec.preconditions).contains pre := by
+      intro pre h
+      rw [List.contains_iff_mem] at h ⊢
+      simp only [Procedure.Spec.getCheckExprs,
+                 ListMap.values_eq_map_snd, List.map_map,
+                 List.mem_map] at h ⊢
+      obtain ⟨entry, hentry_in, hentry_eq⟩ := h
+      -- hentry_in : entry ∈ List.filter ... p.spec.preconditions
+      -- (Lean displays the goal's "p.spec.preconditions" with ListMap type
+      --  but the underlying Membership is List's).
+      refine ⟨entry, ?_, hentry_eq⟩
+      exact (List.mem_filter.mp hentry_in).1
     have Hpre_def : ∀ pre,
-        (Procedure.Spec.getCheckExprs p.spec.preconditions).contains pre →
+        (Procedure.Spec.getCheckExprs
+          (p.spec.preconditions.filter
+            (fun (_, c) => c.attr ≠ .Free))).contains pre →
         isDefinedOver (HasVarsPure.getVars (P := Expression)) σAO pre :=
-      fun pre h => (Hpre pre h).1
+      fun pre h => (Hpre pre (presFiltered_subset pre h)).1
     have Hpre_iff :
         (false = false ↔
-          ∀ pre, (Procedure.Spec.getCheckExprs p.spec.preconditions).contains pre →
+          ∀ pre, (Procedure.Spec.getCheckExprs
+                    (p.spec.preconditions.filter
+                      (fun (_, c) => c.attr ≠ .Free))).contains pre →
             δ σAO pre = .some HasBool.tt) :=
-      ⟨fun _ pre h => (Hpre pre h).2, fun _ => rfl⟩
+      ⟨fun _ pre h => (Hpre pre (presFiltered_subset pre h)).2,
+       fun _ => rfl⟩
     exact EvalCommandContract.call_sem pFound heqIn heqLhs Hev_in HrdLhs hwfV hwfVar hwfBool
             hwf2s hdef Hin_inputs Hin_outputs Hpre_def Hpre_iff h_havoc h_post h_rd_σO
             Hupd
@@ -2327,6 +2352,7 @@ theorem EvalCallBodyRefinesContract :
     refines `EvalCommandContract`.  Threads through the three side-conditions
     needed by `EvalCallBodyRefinesContract`. -/
 theorem EvalCommandRefinesContract
+    [LawfulBEq Expression.Expr]
     {π : String → Option Procedure}
     {φ : CoreEval → PureFunc Expression → CoreEval}
     {δ : CoreEval} {σ σ' : CoreStore} {c : Command}
@@ -2363,6 +2389,7 @@ theorem EvalCommandRefinesContract
     be simulated by a single `StepStmt` with `EvalCommandContract`.  Threads
     through the three side-conditions plus an explicit non-failure witness. -/
 private theorem StepStmt_refines_contract
+    [LawfulBEq Expression.Expr]
     {π : String → Option Procedure}
     {φ : CoreEval → PureFunc Expression → CoreEval}
     {c₁ c₂ : Imperative.Config Expression Command}
@@ -2671,6 +2698,7 @@ theorem core_wfExprCongr_preserved
     propagate the non-failure witness, and `core_step_preserves_wfExprCongr`
     to refresh the expression-congruence hypothesis after each step. -/
 theorem StepStmtStar_refines_contract
+    [LawfulBEq Expression.Expr]
     {π : String → Option Procedure}
     {φ : CoreEval → PureFunc Expression → CoreEval}
     {c₁ c₂ : Imperative.Config Expression Command}
@@ -2712,6 +2740,7 @@ theorem StepStmtStar_refines_contract
 
 /-- `EvalStatements` with concrete semantics refines contract semantics. -/
 theorem EvalStatementsRefinesContract
+    [LawfulBEq Expression.Expr]
     {π : String → Option Procedure}
     {φ : CoreEval → PureFunc Expression → CoreEval}
     {ρ ρ' : Env Expression} {ss : List Statement}
@@ -2730,6 +2759,7 @@ theorem EvalStatementsRefinesContract
 
 /-- `EvalStatement` with concrete semantics refines contract semantics. -/
 theorem EvalStatementRefinesContract
+    [LawfulBEq Expression.Expr]
     {π : String → Option Procedure}
     {φ : CoreEval → PureFunc Expression → CoreEval}
     {ρ ρ' : Env Expression} {s : Statement}

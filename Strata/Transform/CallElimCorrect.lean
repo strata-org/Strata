@@ -1633,11 +1633,15 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
     (Hinitout :
       InitStates σA (ListMap.keys proc.header.outputs) oVals σAO)
     (Hpre_def :
-      ∀ pre, (Procedure.Spec.getCheckExprs proc.spec.preconditions).contains pre →
+      ∀ pre, (Procedure.Spec.getCheckExprs
+                (proc.spec.preconditions.filter
+                  (fun (_, c) => c.attr ≠ .Free))).contains pre →
         Imperative.isDefinedOver (Imperative.HasVarsPure.getVars) σAO pre)
     (Hpre_iff :
       true = false ↔
-      ∀ pre, (Procedure.Spec.getCheckExprs proc.spec.preconditions).contains pre →
+      ∀ pre, (Procedure.Spec.getCheckExprs
+                (proc.spec.preconditions.filter
+                  (fun (_, c) => c.attr ≠ .Free))).contains pre →
         δ σAO pre = .some Imperative.HasBool.tt)
     (Hhav1 :
       HavocVars σAO (ListMap.keys proc.header.outputs) σO)
@@ -1801,14 +1805,19 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                 | false =>
                 -- Re-synthesize the legacy combined `Hpre` from the new
                 -- bool-indicator-shaped premises.  At this destructure site `Hcc`
-                -- is pinned to `failed = false`, so the iff yields the original
-                -- universal eval-tt.
+                -- is pinned to `failed = false`, so the iff yields universal
+                -- eval-tt over non-Free preconditions only — exactly what
+                -- the L4 callElim asserts chain (which filters out Free) needs.
                 have Hpre_evalTt :
-                    ∀ pre, (Procedure.Spec.getCheckExprs proc.spec.preconditions).contains pre →
+                    ∀ pre, (Procedure.Spec.getCheckExprs
+                             (proc.spec.preconditions.filter
+                               (fun (_, c) => c.attr ≠ .Free))).contains pre →
                       δ σAO pre = .some Imperative.HasBool.tt :=
                   Hpre_iff.mp rfl
                 have Hpre :
-                    ∀ pre, (Procedure.Spec.getCheckExprs proc.spec.preconditions).contains pre →
+                    ∀ pre, (Procedure.Spec.getCheckExprs
+                             (proc.spec.preconditions.filter
+                               (fun (_, c) => c.attr ≠ .Free))).contains pre →
                       Imperative.isDefinedOver
                         (Imperative.HasVarsPure.getVars (P:=Expression)) σAO pre ∧
                       δ σAO pre = .some Imperative.HasBool.tt :=
@@ -2407,6 +2416,10 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                     proc.spec.preconditions.filter
                       (fun (_, c) => c.attr ≠ .Free)
                   -- Bind σAO definedness/eval-tt for each filtered entry.
+                  -- Hpre's domain is `getCheckExprs presFiltered.contains`, so
+                  -- mapping `entry ∈ presFiltered` to that contains-membership
+                  -- is direct: it's the membership of `entry.snd.expr` in
+                  -- `getCheckExprs presFiltered` (no filter-bridge needed).
                   have HpreFiltered :
                       ∀ entry ∈ presFiltered,
                         Imperative.isDefinedOver
@@ -2414,7 +2427,13 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                           σAO entry.snd.expr ∧
                         δ σAO entry.snd.expr = some Imperative.HasBool.tt := by
                     intro entry Hentry
-                    exact Hpre entry.snd.expr (filterCheck_in_getCheckExprs Hentry)
+                    apply Hpre entry.snd.expr
+                    rw [List.contains_iff_mem]
+                    simp only [Procedure.Spec.getCheckExprs,
+                               ListMap.values_eq_map_snd, List.mem_map,
+                               List.map_map]
+                    refine ⟨entry, Hentry, ?_⟩
+                    rfl
                   -- Pre-var freshness lemma against σ_old / σAO.
                   have HpresVarsFresh' :
                       ∀ entry ∈ presFiltered,
