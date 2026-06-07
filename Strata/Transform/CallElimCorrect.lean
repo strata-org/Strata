@@ -2537,27 +2537,21 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
       -- Use classical reasoning to find the first failing entry.
       have HexFail :
           ∃ entry ∈ presFiltered, δ σAO entry.snd.expr ≠ some Imperative.HasBool.tt := by
-        -- Prove via classical-style: assume not exists, derive ∀, contradict.
-        rcases Classical.em
-                (∃ entry ∈ presFiltered,
-                  δ σAO entry.snd.expr ≠ some Imperative.HasBool.tt) with
-          Hyes | Hno
-        · exact Hyes
-        · exfalso
-          apply Hnot_all
-          intro pre Hpre
-          rw [List.contains_iff_mem] at Hpre
-          simp only [Procedure.Spec.getCheckExprs,
-                     ListMap.values_eq_map_snd, List.mem_map,
-                     List.map_map] at Hpre
-          obtain ⟨entry, Hentry_in, Hpre_eq⟩ := Hpre
-          rw [← Hpre_eq]
-          -- entry ∈ presFiltered ⇒ either eval-tt or contradict Hno.
-          rcases Classical.em
-                  (δ σAO entry.snd.expr = some Imperative.HasBool.tt) with
-            Htt | Hntt
-          · exact Htt
-          · exact absurd ⟨entry, Hentry_in, Hntt⟩ Hno
+        -- Prove via Classical.byContradiction: assume not exists, derive ∀, contradict.
+        apply Classical.byContradiction
+        intro Hno
+        apply Hnot_all
+        intro pre Hpre
+        rw [List.contains_iff_mem] at Hpre
+        simp only [Procedure.Spec.getCheckExprs,
+                   ListMap.values_eq_map_snd, List.mem_map,
+                   List.map_map] at Hpre
+        obtain ⟨entry, Hentry_in, Hpre_eq⟩ := Hpre
+        rw [← Hpre_eq]
+        -- entry ∈ presFiltered ⇒ either eval-tt or contradict Hno.
+        by_cases Htt : δ σAO entry.snd.expr = some Imperative.HasBool.tt
+        · exact Htt
+        · exact absurd ⟨entry, Hentry_in, Htt⟩ Hno
       obtain ⟨entryFail, HentryFail_in, HentryFail_ne_tt⟩ := HexFail
       -- bool-totality: entryFail evaluates to either tt or ff at σAO.
       have HboolAO := HpreFilteredBool entryFail HentryFail_in
