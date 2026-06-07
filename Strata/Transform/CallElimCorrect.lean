@@ -584,6 +584,24 @@ private theorem filterCheck_in_getCheckExprs [LawfulBEq Expression.Expr]
     (Procedure.Spec.getCheckExprs conds).contains entry.snd.expr :=
   List.contains_iff_mem.mpr (filterCheck_mem_getCheckExprs Hentry)
 
+/-- Bridge between the boolean (`!=`) and propositional (`≠`) forms of the
+    "non-Free" precondition filter.  Both filters select the same entries; the
+    proof is a per-entry `decide` reduction.  Used at three sites in the
+    fail-arm of `callElimStatementCorrect_terminal_call_arm_fail` to align
+    `presFiltered` (uses `≠`) with the filter shape produced by the L4
+    `H_asserts_zip_fail` chain (uses `!=`). -/
+private theorem filter_bne_eq_filter_ne
+    (preconditions : List (CoreLabel × Procedure.Check)) :
+    preconditions.filter (fun (_, check) => check.attr != .Free) =
+    preconditions.filter (fun (_, c) => c.attr ≠ .Free) := by
+  apply List.filter_congr
+  intro entry _
+  cases entry with
+  | mk _ c =>
+    by_cases hc : c.attr = Procedure.CheckAttr.Free
+    · simp [hc]
+    · simp [hc]
+
 /-- Store-agreement helper for `σ_R1`-style stacks (the σ_R1 layer
     overlaying `genOldIdents ↦ oldVals` on σO, plus the σO ← σAO ←
     σA ← σ chain from havoc + InitStates).
@@ -2565,18 +2583,8 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
       -- Find the position of entryFail in presFiltered to pair with assertLabels.
       have Hfilter_eq_pres :
           (proc.spec.preconditions.filter
-            (fun (_, check) => check.attr != .Free)) = presFiltered := by
-        show _ = (proc.spec.preconditions.filter
-                    (fun (_, c) => c.attr ≠ .Free))
-        apply List.filter_congr
-        intro entry _
-        cases entry with
-        | mk lbl c =>
-          show (c.attr != Procedure.CheckAttr.Free) =
-                decide (c.attr ≠ Procedure.CheckAttr.Free)
-          by_cases hc : c.attr = Procedure.CheckAttr.Free
-          · simp [hc]
-          · simp [hc]
+            (fun (_, check) => check.attr != .Free)) = presFiltered :=
+        filter_bne_eq_filter_ne proc.spec.preconditions
       have HassertLen' : presFiltered.length = assertLabels.length := by
         have HH := HassertLabelsLen
         rw [HprocEq] at HH
@@ -2629,37 +2637,15 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
         have Hpair' : pair ∈ presFiltered.zip assertLabels := by
           show pair ∈ (proc.spec.preconditions.filter
                         (fun (_, c) => c.attr ≠ .Free)).zip assertLabels
-          have Hfilter_eq :
-              (proc.spec.preconditions.filter
-                (fun (_, c) => c.attr ≠ .Free)) =
-              (proc.spec.preconditions.filter
-                (fun (_, check) => check.attr != .Free)) := by
-            apply List.filter_congr
-            intro entry _
-            cases entry with
-            | mk lbl c =>
-              by_cases hc : c.attr = Procedure.CheckAttr.Free
-              · simp [hc]
-              · simp [hc]
-          rw [Hfilter_eq]; exact Hpair
+          rw [← filter_bne_eq_filter_ne proc.spec.preconditions]
+          exact Hpair
         exact HboolAtOld pair Hpair'
       · -- Hfail_or_input: false = true ∨ ∃ failing pair.  Bridge filter forms.
         rcases Hfail_or_input with Hf | ⟨pair, Hpair_in, Hpair_ff⟩
         · exact Or.inl Hf
         · refine Or.inr ⟨pair, ?_, Hpair_ff⟩
-          have Hfilter_eq :
-              (proc.spec.preconditions.filter
-                (fun (_, check) => check.attr != .Free)) =
-              (proc.spec.preconditions.filter
-                (fun (_, c) => c.attr ≠ .Free)) := by
-            apply List.filter_congr
-            intro entry _
-            cases entry with
-            | mk lbl c =>
-              by_cases hc : c.attr = Procedure.CheckAttr.Free
-              · simp [hc]
-              · simp [hc]
-          rw [Hfilter_eq]; exact Hpair_in
+          rw [filter_bne_eq_filter_ne proc.spec.preconditions]
+          exact Hpair_in
     have HL4 :
         EvalStatementsContract π φ ⟨σ_old, δ, false⟩
           asserts ⟨σ_old, δ, true⟩ := by
@@ -5442,25 +5428,13 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                       (labels := assertLabels)
                       Hwfb Hwfvars Hwfval Hwfc
                       Hks_len_L4 Hnd_L4 Hdef_L4 Hsubst_L4
-                    -- HpresPayload over presFiltered.  Two filter forms
-                    -- (`!=` boolean ↔ `≠` Prop) agree via decide reduction.
+                    -- HpresPayload over presFiltered.  Bridge `!=` ↔ `≠` filter forms.
                     intros entry Hentry
                     have Hentry' : entry ∈ presFiltered := by
                       show entry ∈ proc.spec.preconditions.filter
                                     (fun (_, c) => c.attr ≠ .Free)
-                      have Hin :
-                          entry ∈
-                            (List.filter
-                              (fun x => match x with
-                                | (_, check) => check.attr != Procedure.CheckAttr.Free)
-                              proc.spec.preconditions) := Hentry
-                      rw [List.mem_filter] at Hin ⊢
-                      refine ⟨Hin.1, ?_⟩
-                      simp only [decide_not, Bool.not_eq_eq_eq_not, Bool.not_true,
-                                 decide_eq_false_iff_not, ne_eq]
-                      have := Hin.2
-                      simp only [bne_iff_ne, ne_eq] at this
-                      exact this
+                      rw [← filter_bne_eq_filter_ne proc.spec.preconditions]
+                      exact Hentry
                     exact HpresPayload entry Hentry'
                   -- Bridge to the actual `asserts` list via HassertsShape.
                   have HL4 :
