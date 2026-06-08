@@ -146,11 +146,11 @@ theorem seq_reaches_terminal
     (hstar : StepStmtStar P EvalCmd extendEval (.seq inner ss) (.terminal ρ')) :
     ∃ ρ₁, StepStmtStar P EvalCmd extendEval inner (.terminal ρ₁) ∧
       StepStmtStar P EvalCmd extendEval (.stmts ss ρ₁) (.terminal ρ') := by
-  suffices ∀ src tgt, StepStmtStar P EvalCmd extendEval src tgt →
+  suffices h_gen : ∀ src tgt, StepStmtStar P EvalCmd extendEval src tgt →
       ∀ inner ss ρ', src = .seq inner ss → tgt = .terminal ρ' →
       ∃ ρ₁, StepStmtStar P EvalCmd extendEval inner (.terminal ρ₁) ∧
         StepStmtStar P EvalCmd extendEval (.stmts ss ρ₁) (.terminal ρ') from
-    this _ _ hstar _ _ _ rfl rfl
+    h_gen _ _ hstar _ _ _ rfl rfl
   intro src tgt hstar_g
   induction hstar_g with
   | refl => intro _ _ _ hsrc htgt; subst hsrc; cases htgt
@@ -172,12 +172,12 @@ theorem seq_reaches_exiting
     (StepStmtStar P EvalCmd extendEval inner (.exiting lbl ρ')) ∨
     (∃ ρ₁, StepStmtStar P EvalCmd extendEval inner (.terminal ρ₁) ∧
       StepStmtStar P EvalCmd extendEval (.stmts ss ρ₁) (.exiting lbl ρ')) := by
-  suffices ∀ src tgt, StepStmtStar P EvalCmd extendEval src tgt →
+  suffices h_gen : ∀ src tgt, StepStmtStar P EvalCmd extendEval src tgt →
       ∀ inner ss lbl ρ', src = .seq inner ss → tgt = .exiting lbl ρ' →
       (StepStmtStar P EvalCmd extendEval inner (.exiting lbl ρ')) ∨
       (∃ ρ₁, StepStmtStar P EvalCmd extendEval inner (.terminal ρ₁) ∧
         StepStmtStar P EvalCmd extendEval (.stmts ss ρ₁) (.exiting lbl ρ')) from
-    this _ _ hstar _ _ _ _ rfl rfl
+    h_gen _ _ hstar _ _ _ _ rfl rfl
   intro src tgt hstar_g
   induction hstar_g with
   | refl => intro _ _ _ _ hsrc htgt; subst hsrc; cases htgt
@@ -203,13 +203,13 @@ theorem block_reaches_terminal
       ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store, eval := e_parent }) ∨
     (∃ lbl ρ_inner, StepStmtStar P EvalCmd extendEval inner (.exiting lbl ρ_inner) ∧
       ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store, eval := e_parent }) := by
-  suffices ∀ src tgt, StepStmtStar P EvalCmd extendEval src tgt →
+  suffices h_gen : ∀ src tgt, StepStmtStar P EvalCmd extendEval src tgt →
       ∀ inner ρ', src = .block l σ_parent e_parent inner → tgt = .terminal ρ' →
       (∃ ρ_inner, StepStmtStar P EvalCmd extendEval inner (.terminal ρ_inner) ∧
         ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store, eval := e_parent }) ∨
       (∃ lbl ρ_inner, StepStmtStar P EvalCmd extendEval inner (.exiting lbl ρ_inner) ∧
         ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store, eval := e_parent }) from
-    this _ _ hstar _ _ rfl rfl
+    h_gen _ _ hstar _ _ rfl rfl
   intro src tgt hstar_g
   induction hstar_g with
   | refl => intro _ _ hsrc htgt; subst hsrc; cases htgt
@@ -240,11 +240,11 @@ theorem block_reaches_exiting
     (hstar : StepStmtStar P EvalCmd extendEval (.block l σ_parent e_parent inner) (.exiting lbl ρ')) :
     ∃ lbl_inner ρ_inner, StepStmtStar P EvalCmd extendEval inner (.exiting lbl_inner ρ_inner) ∧
       ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store, eval := e_parent } := by
-  suffices ∀ src tgt, StepStmtStar P EvalCmd extendEval src tgt →
+  suffices h_gen : ∀ src tgt, StepStmtStar P EvalCmd extendEval src tgt →
       ∀ inner lbl ρ', src = .block l σ_parent e_parent inner → tgt = .exiting lbl ρ' →
       ∃ lbl_inner ρ_inner, StepStmtStar P EvalCmd extendEval inner (.exiting lbl_inner ρ_inner) ∧
         ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store, eval := e_parent } from
-    this _ _ hstar _ _ _ rfl rfl
+    h_gen _ _ hstar _ _ _ rfl rfl
   intro src tgt hstar_g
   induction hstar_g with
   | refl => intro _ _ _ hsrc htgt; subst hsrc; cases htgt
@@ -453,12 +453,12 @@ theorem smallStep_hasFailure_irrel
     ∃ ρ₂', StepStmtStar P EvalCmd extendEval (.stmt s ρ₂) (.terminal ρ₂') ∧
       ρ₂'.store = ρ'.store ∧ ρ₂'.eval = ρ'.eval := by
   intro ρ₂ hs he
-  suffices ∀ (c₁ c₂ : Config P CmdT),
+  suffices h_sim : ∀ (c₁ c₂ : Config P CmdT),
       ConfigSE P c₁ c₂ →
       ∀ c₁', StepStmtStar P EvalCmd extendEval c₁ c₁' →
       ∃ c₂', StepStmtStar P EvalCmd extendEval c₂ c₂' ∧ ConfigSE P c₁' c₂' by
     have heq_init : ConfigSE P (.stmt s ρ) (.stmt s ρ₂) := ⟨rfl, hs.symm, he.symm⟩
-    have ⟨c₂', hstar₂, heq₂⟩ := this _ _ heq_init _ h
+    have ⟨c₂', hstar₂, heq₂⟩ := h_sim _ _ heq_init _ h
     match c₂', heq₂ with
     | .terminal ρ₂', heq_t => exact ⟨ρ₂', hstar₂, heq_t.1.symm, heq_t.2.symm⟩
   intro c₁ c₂ heq c₁' hstar
@@ -503,9 +503,9 @@ theorem step_preserves_exitsCoveredByBlocks
     c₂.exitsCoveredByBlocks labels := by
   -- Prove a generalized version where labels is universally quantified,
   -- so the IH works at any nesting depth (needed for step_block_body).
-  suffices ∀ c₁ c₂, StepStmt P EvalCmd extendEval c₁ c₂ →
+  suffices h_gen : ∀ c₁ c₂, StepStmt P EvalCmd extendEval c₁ c₂ →
       ∀ labels, c₁.exitsCoveredByBlocks labels → c₂.exitsCoveredByBlocks labels by
-    exact this c₁ c₂ hstep labels hwp
+    exact h_gen c₁ c₂ hstep labels hwp
   intro c₁ c₂ hstep
   induction hstep with
   | step_cmd => intro _ _; trivial
@@ -561,11 +561,11 @@ theorem exitsCoveredByBlocks_noEscape
       ¬ StepStmtStar P EvalCmd extendEval (.stmt s ρ) (.exiting lbl ρ') := by
   intro ρ lbl ρ' hstar
   -- Prove Config.exitsCoveredByBlocks [] is preserved, then show .exiting contradicts it.
-  suffices ∀ c₁ c₂,
+  suffices h_pres : ∀ c₁ c₂,
       c₁.exitsCoveredByBlocks ([] : List String) →
       StepStmtStar P EvalCmd extendEval c₁ c₂ →
       c₂.exitsCoveredByBlocks ([] : List String) by
-    have hwp' := this _ _ (show Config.exitsCoveredByBlocks [] (.stmt s ρ) from hwp) hstar
+    have hwp' := h_pres _ _ (show Config.exitsCoveredByBlocks [] (.stmt s ρ) from hwp) hstar
     -- Config.exitsCoveredByBlocks [] (.exiting lbl ρ') requires lbl ∈ [] (False).
     exact absurd hwp' (by simp [Config.exitsCoveredByBlocks])
   intro c₁ c₂ hwp_c hstar_c
@@ -584,11 +584,11 @@ theorem block_exitsCoveredByBlocks_noEscape
     ∀ (ρ : Env P) (lbl : String) (ρ' : Env P),
       ¬ StepStmtStar P EvalCmd extendEval (.stmts bss ρ) (.exiting lbl ρ') := by
   intro ρ lbl ρ' hstar
-  suffices ∀ c₁ c₂,
+  suffices h_pres : ∀ c₁ c₂,
       c₁.exitsCoveredByBlocks ([] : List String) →
       StepStmtStar P EvalCmd extendEval c₁ c₂ →
       c₂.exitsCoveredByBlocks ([] : List String) by
-    have hwp' := this _ _ (show Config.exitsCoveredByBlocks [] (.stmts bss ρ) from hwp) hstar
+    have hwp' := h_pres _ _ (show Config.exitsCoveredByBlocks [] (.stmts bss ρ) from hwp) hstar
     exact absurd hwp' (by simp [Config.exitsCoveredByBlocks])
   intro c₁ c₂ hwp_c hstar_c
   induction hstar_c with
@@ -610,14 +610,14 @@ theorem block_star_extract_inner
     (h_not_exiting : ∀ lbl ρ', cfg ≠ .exiting lbl ρ') :
     ∃ inner', cfg = .block l σ_parent e_parent inner' ∧
       StepStmtStar P EvalCmd extendEval inner inner' := by
-  suffices ∀ c₁ c₂,
+  suffices h_gen : ∀ c₁ c₂,
       StepStmtStar P EvalCmd extendEval c₁ c₂ →
       ∀ inner₀, c₁ = .block l σ_parent e_parent inner₀ →
       (∀ lbl ρ', ¬ StepStmtStar P EvalCmd extendEval inner₀ (.exiting lbl ρ')) →
       (∀ ρ', c₂ ≠ .terminal ρ') → (∀ lbl ρ', c₂ ≠ .exiting lbl ρ') →
       ∃ inner', c₂ = .block l σ_parent e_parent inner' ∧
         StepStmtStar P EvalCmd extendEval inner₀ inner' from
-    this _ _ h_star _ rfl h_no_exit h_not_terminal h_not_exiting
+    h_gen _ _ h_star _ rfl h_no_exit h_not_terminal h_not_exiting
   intro c₁ c₂ h_star
   induction h_star with
   | refl => intro inner₀ heq _ _ _; subst heq; exact ⟨inner₀, rfl, .refl _⟩
@@ -646,10 +646,10 @@ private theorem step_preserves_eval_noFuncDecl
     (hstep : StepStmt P EvalCmd extendEval c₁ c₂)
     (hnofd : Config.noFuncDecl c₁) :
     c₂.getEnv.eval = c₁.getEnv.eval ∧ Config.noFuncDecl c₂ := by
-  suffices ∀ c₁ c₂, StepStmt P EvalCmd extendEval c₁ c₂ →
+  suffices h_gen : ∀ c₁ c₂, StepStmt P EvalCmd extendEval c₁ c₂ →
       ∀ (_ : Config.noFuncDecl c₁),
       c₂.getEnv.eval = c₁.getEnv.eval ∧ Config.noFuncDecl c₂ by
-    exact this c₁ c₂ hstep hnofd
+    exact h_gen c₁ c₂ hstep hnofd
   intro c₁ c₂ hstep
   induction hstep with
   | step_cmd => intro _; exact ⟨rfl, trivial⟩
@@ -740,11 +740,11 @@ theorem smallStep_noFuncDecl_preserves_eval
     (hnofd : Stmt.noFuncDecl s = true)
     (hstar : StepStmtStar P EvalCmd extendEval (.stmt s ρ) (.terminal ρ')) :
     ρ'.eval = ρ.eval := by
-  suffices ∀ c₁ c₂,
+  suffices h_gen : ∀ c₁ c₂,
       Config.noFuncDecl c₁ →
       StepStmtStar P EvalCmd extendEval c₁ c₂ →
       c₂.getEnv.eval = c₁.getEnv.eval by
-    exact this _ _ (show Config.noFuncDecl (.stmt s ρ) from hnofd) hstar
+    exact h_gen _ _ (show Config.noFuncDecl (.stmt s ρ) from hnofd) hstar
   intro c₁ c₂ hnofd_c hstar_c
   induction hstar_c with
   | refl => rfl
@@ -760,11 +760,11 @@ theorem smallStep_noFuncDecl_preserves_eval_block
     (hnofd : Block.noFuncDecl bss = true)
     (hstar : StepStmtStar P EvalCmd extendEval (.stmts bss ρ) (.terminal ρ')) :
     ρ'.eval = ρ.eval := by
-  suffices ∀ c₁ c₂,
+  suffices h_gen : ∀ c₁ c₂,
       Config.noFuncDecl c₁ →
       StepStmtStar P EvalCmd extendEval c₁ c₂ →
       c₂.getEnv.eval = c₁.getEnv.eval by
-    exact this _ _ (show Config.noFuncDecl (.stmts bss ρ) from hnofd) hstar
+    exact h_gen _ _ (show Config.noFuncDecl (.stmts bss ρ) from hnofd) hstar
   intro c₁ c₂ hnofd_c hstar_c
   induction hstar_c with
   | refl => rfl
@@ -790,11 +790,11 @@ theorem block_noFuncDecl_preserves_eval_exiting
     (hnofd : Block.noFuncDecl ss = true)
     (hexit : StepStmtStar P EvalCmd extendEval (.stmts ss ρ) (.exiting lbl ρ')) :
     ρ'.eval = ρ.eval := by
-  suffices ∀ c₁ c₂,
+  suffices h_gen : ∀ c₁ c₂,
       Config.noFuncDecl c₁ →
       StepStmtStar P EvalCmd extendEval c₁ c₂ →
       c₂.getEnv.eval = c₁.getEnv.eval by
-    exact this _ _ (show Config.noFuncDecl (.stmts ss ρ) from hnofd) hexit
+    exact h_gen _ _ (show Config.noFuncDecl (.stmts ss ρ) from hnofd) hexit
   intro c₁ c₂ hnofd_c hstar_c
   induction hstar_c with
   | refl => rfl
@@ -897,8 +897,9 @@ private def step_preserves_noMatchingAssert
   | step_seq_done => exact hno.2
   | step_seq_exit => trivial
   | step_block_body h =>
-    have := step_preserves_noMatchingAssert (c₁ := _) (c₂ := _) (label := _) h hno
-    exact this
+    have h_inner :=
+      step_preserves_noMatchingAssert (c₁ := _) (c₂ := _) (label := _) h hno
+    exact h_inner
   | step_block_done => trivial
   | step_block_exit_match => trivial
   | step_block_exit_mismatch => trivial
@@ -913,12 +914,12 @@ theorem noMatchingAssert_implies_no_reachable_assert
       StepStmtStar P (EvalCmd P) extendEval (.stmt st ρ) cfg →
       ¬ isAtAssert P cfg ⟨label, expr⟩ := by
   intro ρ cfg hstar
-  suffices ∀ (c₁ c₂ : Config P (Cmd P)),
+  suffices h_pres : ∀ (c₁ c₂ : Config P (Cmd P)),
       c₁.noMatchingAssert label →
       StepStmtStar P (EvalCmd P) extendEval c₁ c₂ →
       c₂.noMatchingAssert label from
     noMatchingAssert_not_isAtAssert P cfg label expr
-      (this (.stmt st ρ) cfg (show Config.noMatchingAssert (.stmt st ρ) label from hno) hstar)
+      (h_pres (.stmt st ρ) cfg (show Config.noMatchingAssert (.stmt st ρ) label from hno) hstar)
   intro c₁ c₂ hno_c hstar_c
   induction hstar_c with
   | refl => exact hno_c
@@ -1138,13 +1139,13 @@ theorem allAssertsValid_preserves_noFailure
     (hf₀ : ρ₀.hasFailure = false)
     (hstar : StepStmtStar P (EvalCmd P) extendEval (.stmt st ρ₀) (.terminal ρ')) :
     ρ'.hasFailure = false := by
-  suffices ∀ c₁ c₂,
+  suffices h_gen : ∀ c₁ c₂,
       (∀ a cfg, StepStmtStar P (EvalCmd P) extendEval c₁ cfg →
         isAtAssert P cfg a → cfg.getEval cfg.getStore a.expr = some HasBool.tt) →
       c₁.getEnv.hasFailure = false →
       StepStmtStar P (EvalCmd P) extendEval c₁ c₂ →
       c₂.getEnv.hasFailure = false by
-    exact this _ _ hvalid hf₀ hstar
+    exact h_gen _ _ hvalid hf₀ hstar
   intro c₁ c₂ hv hnf hstar_c
   induction hstar_c with
   | refl => exact hnf
@@ -1189,9 +1190,9 @@ theorem EvalStmtSmall_hasFailure_monotone
   EvalStmtSmall P EvalCmd extendEval ρ s ρ' →
   ρ.hasFailure = true → ρ'.hasFailure = true := by
   intro Heval Hf
-  suffices ∀ c c', StepStmtStar P EvalCmd extendEval c c' →
+  suffices h_gen : ∀ c c', StepStmtStar P EvalCmd extendEval c c' →
       c.getEnv.hasFailure = true → c'.getEnv.hasFailure = true by
-    exact this _ _ Heval Hf
+    exact h_gen _ _ Heval Hf
   intro c c' hstar hf
   induction hstar with
   | refl => exact hf
@@ -1205,9 +1206,9 @@ theorem EvalStmtsSmall_hasFailure_monotone
   EvalStmtsSmall P EvalCmd extendEval ρ ss ρ' →
   ρ.hasFailure = true → ρ'.hasFailure = true := by
   intro Heval Hf
-  suffices ∀ c c', StepStmtStar P EvalCmd extendEval c c' →
+  suffices h_gen : ∀ c c', StepStmtStar P EvalCmd extendEval c c' →
       c.getEnv.hasFailure = true → c'.getEnv.hasFailure = true by
-    exact this _ _ Heval Hf
+    exact h_gen _ _ Heval Hf
   intro c c' hstar hf
   induction hstar with
   | refl => exact hf
@@ -1249,12 +1250,12 @@ theorem EvalStmtsSmall_hasFailure_irrel
   -- Reuse the simulation-based proof from StmtSemantics
   -- smallStep_hasFailure_irrel works on .stmt configs; we need .stmts
   -- Use the same simulation technique directly
-  suffices ∀ (c₁ c₂ : Config P CmdT),
+  suffices h_sim : ∀ (c₁ c₂ : Config P CmdT),
       ConfigSE P c₁ c₂ →
       ∀ c₁', StepStmtStar P EvalCmd extendEval c₁ c₁' →
       ∃ c₂', StepStmtStar P EvalCmd extendEval c₂ c₂' ∧ ConfigSE P c₁' c₂' by
     have heq_init : ConfigSE P (.stmts ss ρ) (.stmts ss ρ₂) := ⟨rfl, Hstore.symm, Heval_eq.symm⟩
-    have ⟨c₂', hstar₂, heq₂⟩ := this _ _ heq_init _ Heval
+    have ⟨c₂', hstar₂, heq₂⟩ := h_sim _ _ heq_init _ Heval
     match c₂', heq₂ with
     | .terminal ρ₂', heq_t => exact ⟨ρ₂', hstar₂, heq_t.1.symm, heq_t.2.symm⟩
   intro c₁ c₂ heq c₁' hstar
@@ -1363,9 +1364,9 @@ theorem eval_stmts_assert_elim :
         exists ρ'
         refine ⟨?_, rfl, rfl, id⟩
         show StepStmtStar P (EvalCmd P) extendEval (.stmts cmds ρ) (.terminal ρ')
-        have : ρ = { store := ρ.store, eval := ρ.eval, hasFailure := ρ.hasFailure || false } := by
+        have h_eta : ρ = { store := ρ.store, eval := ρ.eval, hasFailure := ρ.hasFailure || false } := by
           cases ρ; simp
-        rw [this]; exact htail
+        rw [h_eta]; exact htail
       | eval_assert_fail =>
         exists ρ''
         refine ⟨Hblock, Hstore, Heval_eq, ?_⟩
@@ -1717,12 +1718,12 @@ theorem block_canfail_to_inner
     (hf : cfg.getEnv.hasFailure = true) :
     ∃ inner', inner'.getEnv.hasFailure = true ∧
       StepStmtStar P EvalCmd extendEval inner inner' := by
-  suffices ∀ src tgt, StepStmtStar P EvalCmd extendEval src tgt →
+  suffices h_gen : ∀ src tgt, StepStmtStar P EvalCmd extendEval src tgt →
       ∀ (inner : Config P CmdT), src = .block l σ_parent e_parent inner →
       tgt.getEnv.hasFailure = true →
       ∃ inner', inner'.getEnv.hasFailure = true ∧
         StepStmtStar P EvalCmd extendEval inner inner' from
-    this _ _ hstar _ rfl hf
+    h_gen _ _ hstar _ rfl hf
   intro src tgt hstar_g
   induction hstar_g with
   | refl =>

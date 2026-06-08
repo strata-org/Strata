@@ -755,6 +755,42 @@ theorem progLoopFuncDecl_eval_restored :
     cases ρ_x; simp [projectStore_self]]
   exact .step _ _ _ StepStmt.step_stmts_nil (.refl _)
 
+/-! ## Negative test: calling a `funcDecl`'d function after its block exits
+
+`progBlockFuncDecl` is the program
+
+  block "B" { funcDecl f := … }
+
+Here we make that scoping discipline observable by contrasting evaluator
+behaviour at three points along that trace, then proving that "calling f"
+after the block (modeled as an `ite` whose guard is the opaque expression
+`.op "f"`) is stuck because `f` has gone out of scope. -/
+
+/-- *Before* entering the block (the initial env): `miniEval` doesn't know
+    about `f`, so `.op "f"` stays opaque (returns itself). -/
+example : ρ_x.eval ρ_x.store (.op "f") = some (.op "f") := rfl
+
+/-- *Inside* the block, after `step_funcDecl` has fired: the env's eval is
+    `addEval miniEval ρ_x.store fFunc`, which gives `.op "f"` the boolean
+    value `tt` — `f` is now in scope and "callable". -/
+example :
+    let inner_eval := addEval miniEval ρ_x.store fFunc
+    inner_eval ρ_x.store (.op "f") = some HasBool.tt := rfl
+
+/-- *After* the block exits: `progBlockFuncDecl_eval_restored` returns us to
+    `ρ_x`, where `.op "f"` is opaque again — the funcDecl extension is gone. -/
+example : ρ_x.eval ρ_x.store (.op "f") = some (.op "f") := rfl
+
+/-- And as a step-level consequence: from `ρ_x` (the env after the block),
+    an `ite` guarded by `.op "f"` cannot step. -/
+theorem funcDecl_out_of_scope_after_block :
+    ¬ ∃ c₂, StepStmt MiniPureExpr stdEvalCmd addEval
+      (.stmt (.ite (.det (.op "f")) [] [] .empty) ρ_x) c₂ := by
+  intro ⟨_, hstep⟩
+  cases hstep with
+  | step_ite_true h _ => simp [ρ_x, miniEval, Expr.normBool] at h
+  | step_ite_false h _ => simp [ρ_x, miniEval, Expr.normBool] at h
+
 ---------------------------------------------------------------------
 
 end StepStmtTest
