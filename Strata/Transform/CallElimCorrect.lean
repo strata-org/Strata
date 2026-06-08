@@ -1741,6 +1741,210 @@ private theorem b2_var_witness_at_oldSubst
     exact ⟨w, Hk1_in_inArgs, Hv_in⟩
   exact ⟨HargExpr_in, Hk1_flat⟩
 
+/-- Per-fvar bridge for `callElim_inputOnlyOldSubst`'s codomain at the L6
+    intermediate stores `σ_R1`/`σO`.
+
+    For any `(k, w) ∈ callElim_inputOnlyOldSubst proc' args`, the evaluator
+    at `σ_R1` of `w` (a positional `inArgs` element) coincides with the
+    evaluator at `σO` of the fvar `k = mkOld inputId.name`, because both
+    reduce to `some argVals[ni]` for the same positional `ni`.
+
+    Mirror of `HoldSubBridge_at_σO` for the input-only old substitution
+    map; backs the L6 `Hsub` derivation in both the success and failure
+    arms of `callElimStatementCorrect`'s call-statement case. -/
+private theorem HinputSubBridge_at_σO
+    {δ : CoreEval}
+    {σ σ_R1 σO σAO σA σ₀ σ₂ : CoreStore}
+    {γ : CoreTransformState}
+    {genOldIdents : List Expression.Ident}
+    {oldVals argVals : List Expression.Expr}
+    {proc proc' : Procedure}
+    {args : List (CallArg Expression)}
+    {inArgs : List Expression.Expr}
+    {oVals : List Expression.Expr}
+    (Hwfvars : Imperative.WellFormedSemanticEvalVar (P:=Expression) δ)
+    (Hwfval  : Imperative.WellFormedSemanticEvalVal (P:=Expression) δ)
+    (Hwfc    : Core.WellFormedCoreEvalCong δ)
+    (Hwf2    : WellFormedCoreEvalTwoState δ σ₀ σ₂)
+    (HprocEq : proc' = proc)
+    (Hiodisj :
+      (proc.header.inputs.keys).Disjoint
+        (proc.header.outputs.keys))
+    (Hinitin :
+      InitStates σ proc.header.inputs.keys argVals σA)
+    (Hinitout :
+      InitStates σA proc.header.outputs.keys oVals σAO)
+    (Hhav1 : HavocVars σAO proc.header.outputs.keys σO)
+    (HInitVars_empty : InitVars σO [] σO)
+    (Hevalargs :
+      EvalExpressions (P:=Expression) δ σ inArgs argVals)
+    (hCallArgsIn : CallArg.getInputExprs args = inArgs)
+    (HargIsDef :
+      ∀ v ∈ List.flatMap
+              (Imperative.HasVarsPure.getVars (P:=Expression))
+              inArgs,
+        (σ v).isSome)
+    (HoldIdentsTemp :
+      Forall (fun x => isOldTempIdent x) genOldIdents)
+    (Hgenrel : CoreGenStateRel σ γ)
+    (HargVarsNotInInKeys :
+      ∀ argExpr ∈ CallArg.getInputExprs args,
+      ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) argExpr,
+        v ∉ proc.header.inputs.keys)
+    (HargVarsNotInOutKeys :
+      ∀ argExpr ∈ CallArg.getInputExprs args,
+      ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) argExpr,
+        v ∉ proc.header.outputs.keys)
+    (Hσ_R1_eq :
+      σ_R1 = updatedStates σO genOldIdents oldVals) :
+    ∀ k w,
+      Map.find?
+        (callElim_inputOnlyOldSubst proc' args) k = some w →
+      δ σ_R1 w =
+        δ σO (Lambda.LExpr.fvar () k none) := by
+  -- Generic δ-fvar lookup derived from Hwfvars.
+  have δ_fvar_eq := delta_fvar_eq_of_wfvars Hwfvars (delta := δ)
+  intro k w Hf
+  obtain ⟨ni_val, Hni_lt_inKeys, Hni_lt_inArgs,
+          Hk_eq_proc', Hw_eq_proc', _Hin_notin_outs_proc'⟩ :=
+    inputOnlyOldSubst_pos_decomp Hf
+  have Hni_lt_inKeys' :
+      ni_val < proc.header.inputs.keys.length := by
+    have HEqLen : proc'.header.inputs.keys.length =
+        proc.header.inputs.keys.length := by rw [HprocEq]
+    omega
+  have HpinKeys :
+      proc'.header.inputs.keys[ni_val]'Hni_lt_inKeys =
+        proc.header.inputs.keys[ni_val]'Hni_lt_inKeys' := by
+    subst HprocEq; rfl
+  let inputId : Expression.Ident :=
+    proc.header.inputs.keys[ni_val]'Hni_lt_inKeys'
+  have HinputId_in : inputId ∈ proc.header.inputs.keys :=
+    List.getElem_mem _
+  have HinputId_notin_outs :
+      inputId ∉ proc.header.outputs.keys :=
+    fun h => Hiodisj HinputId_in h
+  let argExpr : Expression.Expr :=
+    (CallArg.getInputExprs args)[ni_val]'Hni_lt_inArgs
+  have HargExpr_in : argExpr ∈ CallArg.getInputExprs args :=
+    List.getElem_mem _
+  have Hk_mkOld : k = CoreIdent.mkOld inputId.name := by
+    rw [Hk_eq_proc', HpinKeys]
+  have Hw_argExpr : w = argExpr := Hw_eq_proc'
+  let ni : Fin (CallArg.getInputExprs args).length :=
+    ⟨ni_val, Hni_lt_inArgs⟩
+  have Hni_lt_inArgsCall : ni.val < inArgs.length := by
+    have : (CallArg.getInputExprs args).length =
+        inArgs.length := by rw [hCallArgsIn]
+    rw [← this]
+    exact Hni_lt_inArgs
+  have HargExpr_eq_inArgs :
+      argExpr = inArgs[ni.val]'Hni_lt_inArgsCall := by
+    show (CallArg.getInputExprs args)[ni.val]'Hni_lt_inArgs =
+          inArgs[ni.val]'Hni_lt_inArgsCall
+    congr 1 <;> exact hCallArgsIn
+  have HinKeys_argVals_len :
+      proc.header.inputs.keys.length = argVals.length :=
+    InitStatesLength Hinitin
+  have Hni_lt_argVals : ni.val < argVals.length := by
+    rw [← HinKeys_argVals_len]
+    exact Hni_lt_inKeys'
+  have σO_eq_σAO_off_outs :
+      ∀ {v}, v ∉ proc.header.outputs.keys → σO v = σAO v := by
+    obtain ⟨_ovh, Hup_havoc⟩ := HavocVarsUpdateStates Hhav1
+    intro v Hv
+    rw [UpdateStatesUpdated Hup_havoc, updatedStates_get_notin Hv]
+  have HRHS_oldEqArgVal :
+      δ σO (Lambda.LExpr.fvar ()
+              (CoreIdent.mkOld inputId.name) none) =
+        some (argVals[ni.val]'Hni_lt_argVals) := by
+    simp only [WellFormedCoreEvalTwoState] at Hwf2
+    rw [(Hwf2.2 proc.header.outputs.keys [] σAO σO σO
+          ⟨Hhav1, HInitVars_empty⟩ inputId).2 HinputId_notin_outs,
+        σO_eq_σAO_off_outs HinputId_notin_outs,
+        initStates_get_notin Hinitout HinputId_notin_outs]
+    exact readValues_get (InitStatesReadValues Hinitin)
+      (i:=ni.val) (hi:=Hni_lt_inKeys') (hi':=Hni_lt_argVals)
+  have HRHS_StepE :
+      δ σ argExpr =
+        some (argVals[ni.val]'Hni_lt_argVals) := by
+    have Hev := evalExpressions_get Hevalargs
+                  Hni_lt_inArgsCall Hni_lt_argVals
+    have HargList :
+        List.get inArgs ⟨ni.val, Hni_lt_inArgsCall⟩ =
+          inArgs[ni.val]'Hni_lt_inArgsCall := rfl
+    have HvalList :
+        List.get argVals ⟨ni.val, Hni_lt_argVals⟩ =
+          argVals[ni.val]'Hni_lt_argVals := rfl
+    rw [HargList, HvalList] at Hev
+    rw [HargExpr_eq_inArgs]
+    exact Hev
+  have HargExpr_in_argList : argExpr ∈ inArgs := by
+    rw [HargExpr_eq_inArgs]
+    exact List.getElem_mem _
+  have HargExpr_in_callList :
+      argExpr ∈ CallArg.getInputExprs args := HargExpr_in
+  have Hσ_R1_eq_σ_argVars :
+      ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression)
+              argExpr,
+        σ_R1 v = σ v := by
+    intro v Hv
+    have Hσv_some : (σ v).isSome := HargIsDef v <|
+      List.mem_flatMap.mpr ⟨argExpr, HargExpr_in_argList, Hv⟩
+    have HvNotGen : v ∉ genOldIdents :=
+      notMem_of_Forall_neg HoldIdentsTemp fun Hold =>
+        σ_some_contradiction Hσv_some
+          (Option.isNone_iff_eq_none.mp (Hgenrel.oldFresh v Hold))
+    rw [Hσ_R1_eq]
+    exact σR1_eq_σ_for_notTouched Hinitin Hinitout Hhav1
+      (HargVarsNotInInKeys argExpr HargExpr_in_callList v Hv)
+      (HargVarsNotInOutKeys argExpr HargExpr_in_callList v Hv)
+      HvNotGen
+  have Hδ_R1_eq_δ_σ :
+      δ σ_R1 argExpr = δ σ argExpr := by
+    have Hsurv :
+        ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression)
+                argExpr,
+          Map.find? (∅ : Map Expression.Ident
+                        Expression.Expr) v = none →
+          δ σ_R1 (Lambda.LExpr.fvar () v none) =
+            δ σ (Lambda.LExpr.fvar () v none) := by
+      intro v Hv _
+      rw [δ_fvar_eq σ_R1 v, δ_fvar_eq σ v]
+      exact Hσ_R1_eq_σ_argVars v Hv
+    have Hsub :
+        ∀ k' w', k' ∈ Imperative.HasVarsPure.getVars
+                        (P:=Expression) argExpr →
+          Map.find? (∅ : Map Expression.Ident
+                        Expression.Expr) k' = some w' →
+          δ σ_R1 w' =
+            δ σ (Lambda.LExpr.fvar () k' none) := by
+      intro k' w' _ Hf
+      simp [Map.find?] at Hf
+    have Hbridge :
+        δ σ_R1 (Lambda.LExpr.substFvars argExpr
+                  (∅ : Map Expression.Ident
+                        Expression.Expr)) =
+          δ σ argExpr :=
+      subst_fvars_eval_bridge Hwfc Hwfvars Hwfval
+        (sm:=∅)
+        Hsurv Hsub
+    have HsubstEmpty :
+        Lambda.LExpr.substFvars argExpr
+            (∅ : Map Expression.Ident Expression.Expr) =
+          argExpr := by
+      induction argExpr with
+      | fvar m name ty =>
+        rw [Lambda.LExpr.substFvars_fvar_none m name ty]; rfl
+      | _ => simp [Lambda.LExpr.substFvars_abs,
+          Lambda.LExpr.substFvars_quant,
+          Lambda.LExpr.substFvars_app,
+          Lambda.LExpr.substFvars_eq,
+          Lambda.LExpr.substFvars_ite, *]
+    rwa [HsubstEmpty] at Hbridge
+  rw [Hw_argExpr, Hδ_R1_eq_δ_σ, HRHS_StepE,
+      ← HRHS_oldEqArgVal, ← Hk_mkOld]
+
 /-- Call-arm failure-flag branch of `callElimStatementCorrect_terminal`.
 
     Discharges the `f = true` (precondition-failure) case after the call_sem
@@ -3246,148 +3450,11 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
         ∀ k w,
           Map.find? inputOnlyOldSubst_L6 k = some w →
           δ σ_R1 w =
-            δ σO (Lambda.LExpr.fvar () k none) := by
-      intro k w Hf
-      obtain ⟨ni_val, Hni_lt_inKeys, Hni_lt_inArgs,
-              Hk_eq_proc', Hw_eq_proc', Hin_notin_outs_proc'⟩ :=
-        inputOnlyOldSubst_pos_decomp Hf
-      have Hni_lt_inKeys' :
-          ni_val < proc.header.inputs.keys.length := by
-        have HEqLen : proc'.header.inputs.keys.length =
-            proc.header.inputs.keys.length := by rw [HprocEq]
-        omega
-      have HpinKeys :
-          proc'.header.inputs.keys[ni_val]'Hni_lt_inKeys =
-            proc.header.inputs.keys[ni_val]'Hni_lt_inKeys' := by
-        subst HprocEq; rfl
-      let inputId : Expression.Ident :=
-        proc.header.inputs.keys[ni_val]'Hni_lt_inKeys'
-      have HinputId_in : inputId ∈ proc.header.inputs.keys :=
-        List.getElem_mem _
-      have HinputId_notin_outs :
-          inputId ∉ proc.header.outputs.keys :=
-        fun h => Hiodisj HinputId_in h
-      let argExpr : Expression.Expr :=
-        (CallArg.getInputExprs args)[ni_val]'Hni_lt_inArgs
-      have HargExpr_in : argExpr ∈ CallArg.getInputExprs args :=
-        List.getElem_mem _
-      have Hk_mkOld : k = CoreIdent.mkOld inputId.name := by
-        rw [Hk_eq_proc', HpinKeys]
-      have Hw_argExpr : w = argExpr := Hw_eq_proc'
-      let ni : Fin (CallArg.getInputExprs args).length :=
-        ⟨ni_val, Hni_lt_inArgs⟩
-      have Hni_lt_inArgsCall : ni.val < inArgs.length := by
-        have : (CallArg.getInputExprs args).length =
-            inArgs.length := by rw [hCallArgsIn]
-        rw [← this]
-        exact Hni_lt_inArgs
-      have HargExpr_eq_inArgs :
-          argExpr = inArgs[ni.val]'Hni_lt_inArgsCall := by
-        show (CallArg.getInputExprs args)[ni.val]'Hni_lt_inArgs =
-              inArgs[ni.val]'Hni_lt_inArgsCall
-        congr 1 <;> exact hCallArgsIn
-      have HinKeys_argVals_len :
-          proc.header.inputs.keys.length = argVals.length :=
-        InitStatesLength Hinitin
-      have Hni_lt_argVals : ni.val < argVals.length := by
-        rw [← HinKeys_argVals_len]
-        exact Hni_lt_inKeys'
-      have σO_eq_σAO_off_outs :
-          ∀ {v}, v ∉ proc.header.outputs.keys → σO v = σAO v := by
-        obtain ⟨ovh, Hup_havoc⟩ := HavocVarsUpdateStates Hhav1
-        intro v Hv
-        rw [UpdateStatesUpdated Hup_havoc, updatedStates_get_notin Hv]
-      have HRHS_oldEqArgVal :
-          δ σO (Lambda.LExpr.fvar ()
-                  (CoreIdent.mkOld inputId.name) none) =
-            some (argVals[ni.val]'Hni_lt_argVals) := by
-        simp only [WellFormedCoreEvalTwoState] at Hwf2
-        rw [(Hwf2.2 proc.header.outputs.keys [] σAO σO σO
-              ⟨Hhav1, HInitVars_empty⟩ inputId).2 HinputId_notin_outs,
-            σO_eq_σAO_off_outs HinputId_notin_outs,
-            initStates_get_notin Hinitout HinputId_notin_outs]
-        exact readValues_get (InitStatesReadValues Hinitin)
-          (i:=ni.val) (hi:=Hni_lt_inKeys') (hi':=Hni_lt_argVals)
-      have HRHS_StepE :
-          δ σ argExpr =
-            some (argVals[ni.val]'Hni_lt_argVals) := by
-        have Hev := evalExpressions_get Hevalargs
-                      Hni_lt_inArgsCall Hni_lt_argVals
-        have HargList :
-            List.get inArgs ⟨ni.val, Hni_lt_inArgsCall⟩ =
-              inArgs[ni.val]'Hni_lt_inArgsCall := rfl
-        have HvalList :
-            List.get argVals ⟨ni.val, Hni_lt_argVals⟩ =
-              argVals[ni.val]'Hni_lt_argVals := rfl
-        rw [HargList, HvalList] at Hev
-        rw [HargExpr_eq_inArgs]
-        exact Hev
-      have HargExpr_in_argList :
-          argExpr ∈ inArgs := by
-        rw [HargExpr_eq_inArgs]
-        exact List.getElem_mem _
-      have HargExpr_in_callList :
-          argExpr ∈ CallArg.getInputExprs args := HargExpr_in
-      have Hσ_R1_eq_σ_argVars :
-          ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression)
-                  argExpr,
-            σ_R1 v = σ v := by
-        intro v Hv
-        have Hσv_some : (σ v).isSome := HargIsDef v <|
-          List.mem_flatMap.mpr ⟨argExpr, HargExpr_in_argList, Hv⟩
-        have HvNotGen : v ∉ genOldIdents :=
-          notMem_of_Forall_neg HoldIdentsTemp fun Hold =>
-            σ_some_contradiction Hσv_some
-              (Option.isNone_iff_eq_none.mp (Hgenrel.oldFresh v Hold))
-        show updatedStates σO genOldIdents oldVals v = σ v
-        exact σR1_eq_σ_for_notTouched Hinitin Hinitout Hhav1
-          (HargVarsNotInInKeys argExpr HargExpr_in_callList v Hv)
-          (HargVarsNotInOutKeys argExpr HargExpr_in_callList v Hv)
-          HvNotGen
-      have Hδ_R1_eq_δ_σ :
-          δ σ_R1 argExpr = δ σ argExpr := by
-        have Hsurv :
-            ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression)
-                    argExpr,
-              Map.find? (∅ : Map Expression.Ident
-                            Expression.Expr) v = none →
-              δ σ_R1 (Lambda.LExpr.fvar () v none) =
-                δ σ (Lambda.LExpr.fvar () v none) := by
-          intro v Hv _
-          rw [δ_fvar_eq σ_R1 v, δ_fvar_eq σ v]
-          exact Hσ_R1_eq_σ_argVars v Hv
-        have Hsub :
-            ∀ k' w', k' ∈ Imperative.HasVarsPure.getVars
-                            (P:=Expression) argExpr →
-              Map.find? (∅ : Map Expression.Ident
-                            Expression.Expr) k' = some w' →
-              δ σ_R1 w' =
-                δ σ (Lambda.LExpr.fvar () k' none) := by
-          intro k' w' _ Hf
-          simp [Map.find?] at Hf
-        have Hbridge :
-            δ σ_R1 (Lambda.LExpr.substFvars argExpr
-                      (∅ : Map Expression.Ident
-                            Expression.Expr)) =
-              δ σ argExpr :=
-          subst_fvars_eval_bridge Hwfc Hwfvars Hwfval
-            (sm:=∅)
-            Hsurv Hsub
-        have HsubstEmpty :
-            Lambda.LExpr.substFvars argExpr
-                (∅ : Map Expression.Ident Expression.Expr) =
-              argExpr := by
-          induction argExpr with
-          | fvar m name ty =>
-            rw [Lambda.LExpr.substFvars_fvar_none m name ty]; rfl
-          | _ => simp [Lambda.LExpr.substFvars_abs,
-              Lambda.LExpr.substFvars_quant,
-              Lambda.LExpr.substFvars_app,
-              Lambda.LExpr.substFvars_eq,
-              Lambda.LExpr.substFvars_ite, *]
-        rwa [HsubstEmpty] at Hbridge
-      rw [Hw_argExpr, Hδ_R1_eq_δ_σ, HRHS_StepE,
-          ← HRHS_oldEqArgVal, ← Hk_mkOld]
+            δ σO (Lambda.LExpr.fvar () k none) :=
+      HinputSubBridge_at_σO Hwfvars Hwfval Hwfc Hwf2 HprocEq Hiodisj
+        Hinitin Hinitout Hhav1 HInitVars_empty Hevalargs hCallArgsIn
+        HargIsDef HoldIdentsTemp Hgenrel
+        HargVarsNotInInKeys HargVarsNotInOutKeys rfl
     have HpostEval_bridge :
         ∀ entry : CoreLabel × Procedure.Check,
           entry ∈ posts_filtered_L6.toList →
@@ -5462,163 +5529,12 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                       ∀ k w,
                         Map.find? inputOnlyOldSubst_L6 k = some w →
                         δ σ_R1 w =
-                          δ σO (Lambda.LExpr.fvar () k none) := by
-                    intro k w Hf
-                    -- Positional decomposition via the shared helper.
-                    obtain ⟨ni_val, Hni_lt_inKeys, Hni_lt_inArgs,
-                            Hk_eq_proc', Hw_eq_proc', Hin_notin_outs_proc'⟩ :=
-                      inputOnlyOldSubst_pos_decomp Hf
-                    -- Bridge proc' = proc.
-                    have Hni_lt_inKeys' :
-                        ni_val < proc.header.inputs.keys.length := by
-                      have HEqLen : proc'.header.inputs.keys.length =
-                          proc.header.inputs.keys.length := by rw [HprocEq]
-                      omega
-                    have HpinKeys :
-                        proc'.header.inputs.keys[ni_val]'Hni_lt_inKeys =
-                          proc.header.inputs.keys[ni_val]'Hni_lt_inKeys' := by
-                      subst HprocEq; rfl
-                    -- Let `inputId := inputs.keys[ni_val]`.
-                    let inputId : Expression.Ident :=
-                      proc.header.inputs.keys[ni_val]'Hni_lt_inKeys'
-                    have HinputId_in : inputId ∈ proc.header.inputs.keys :=
-                      List.getElem_mem _
-                    have HinputId_notin_outs :
-                        inputId ∉ proc.header.outputs.keys :=
-                      fun h => Hiodisj HinputId_in h
-                    -- argExpr := the snd projection.
-                    let argExpr : Expression.Expr :=
-                      (CallArg.getInputExprs args)[ni_val]'Hni_lt_inArgs
-                    have HargExpr_in : argExpr ∈ CallArg.getInputExprs args :=
-                      List.getElem_mem _
-                    -- k = mkOld inputId.name.
-                    have Hk_mkOld : k = CoreIdent.mkOld inputId.name := by
-                      rw [Hk_eq_proc', HpinKeys]
-                    -- w = argExpr.
-                    have Hw_argExpr : w = argExpr := Hw_eq_proc'
-                    -- Fin-packaging so existing `ni : Fin …` users still apply.
-                    let ni : Fin (CallArg.getInputExprs args).length :=
-                      ⟨ni_val, Hni_lt_inArgs⟩
-                    have Hni_lt_inArgsCall : ni.val < inArgs.length := by
-                      have : (CallArg.getInputExprs args).length =
-                          inArgs.length := by rw [hCallArgsIn]
-                      rw [← this]
-                      exact Hni_lt_inArgs
-                    have HargExpr_eq_inArgs :
-                        argExpr = inArgs[ni.val]'Hni_lt_inArgsCall := by
-                      show (CallArg.getInputExprs args)[ni.val]'Hni_lt_inArgs =
-                            inArgs[ni.val]'Hni_lt_inArgsCall
-                      congr 1 <;> exact hCallArgsIn
-                    -- argVals length facts.
-                    have HinKeys_argVals_len :
-                        proc.header.inputs.keys.length = argVals.length :=
-                      InitStatesLength Hinitin
-                    have Hni_lt_argVals : ni.val < argVals.length := by
-                      rw [← HinKeys_argVals_len]
-                      exact Hni_lt_inKeys'
-                    -- ── RHS chain (StepA→StepD fused): δ σO (mkOld inputId.name)
-                    --   = some argVals[ni.val] via Hwf2 → σO_eq_σAO_off_outs →
-                    --   initStates_get_notin → readValues_get. ──
-                    have HRHS_oldEqArgVal :
-                        δ σO (Lambda.LExpr.fvar ()
-                                (CoreIdent.mkOld inputId.name) none) =
-                          some (argVals[ni.val]'Hni_lt_argVals) := by
-                      simp only [WellFormedCoreEvalTwoState] at Hwf2
-                      rw [(Hwf2.2 proc.header.outputs.keys [] σAO σO σO
-                            ⟨Hhav1, HInitVars_empty⟩ inputId).2 HinputId_notin_outs,
-                          σO_eq_σAO_off_outs HinputId_notin_outs,
-                          initStates_get_notin Hinitout HinputId_notin_outs]
-                      exact readValues_get (InitStatesReadValues Hinitin)
-                        (i:=ni.val) (hi:=Hni_lt_inKeys') (hi':=Hni_lt_argVals)
-                    -- ── RHS Step E: argVals[ni.val] = δ σ argExpr
-                    --   via evalExpressions_get + hCallArgsIn. ──
-                    have HRHS_StepE :
-                        δ σ argExpr =
-                          some (argVals[ni.val]'Hni_lt_argVals) := by
-                      have Hev := evalExpressions_get Hevalargs
-                                    Hni_lt_inArgsCall Hni_lt_argVals
-                      -- Bridge δ σ argExpr = δ σ inArgs[ni.val].
-                      have HargList :
-                          List.get inArgs ⟨ni.val, Hni_lt_inArgsCall⟩ =
-                            inArgs[ni.val]'Hni_lt_inArgsCall := rfl
-                      have HvalList :
-                          List.get argVals ⟨ni.val, Hni_lt_argVals⟩ =
-                            argVals[ni.val]'Hni_lt_argVals := rfl
-                      rw [HargList, HvalList] at Hev
-                      rw [HargExpr_eq_inArgs]
-                      exact Hev
-                    -- LHS Step F: δ σ_R1 argExpr = δ σ argExpr.
-                    -- For v ∈ getVars argExpr, σ v is some (definedness lift).
-                    have HargExpr_in_argList :
-                        argExpr ∈ inArgs := by
-                      rw [HargExpr_eq_inArgs]
-                      exact List.getElem_mem _
-                    have HargExpr_in_callList :
-                        argExpr ∈ CallArg.getInputExprs args := HargExpr_in
-                    -- σ_R1 ↔ σ pointwise on argExpr's free vars.
-                    have Hσ_R1_eq_σ_argVars :
-                        ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression)
-                                argExpr,
-                          σ_R1 v = σ v := by
-                      intro v Hv
-                      have Hσv_some : (σ v).isSome := HargIsDef v <|
-                        List.mem_flatMap.mpr ⟨argExpr, HargExpr_in_argList, Hv⟩
-                      have HvNotGen : v ∉ genOldIdents :=
-                        notMem_of_Forall_neg HoldIdentsTemp fun Hold =>
-                          σ_some_contradiction Hσv_some
-                            (Option.isNone_iff_eq_none.mp (Hgenrel.oldFresh v Hold))
-                      show updatedStates σO genOldIdents oldVals v = σ v
-                      exact σR1_eq_σ_for_notTouched Hinitin Hinitout Hhav1
-                        (HargVarsNotInInKeys argExpr HargExpr_in_callList v Hv)
-                        (HargVarsNotInOutKeys argExpr HargExpr_in_callList v Hv)
-                        HvNotGen
-                    -- Lift to δ-eval via Hwfvars (fvarcongr-like).
-                    have Hδ_R1_eq_δ_σ :
-                        δ σ_R1 argExpr = δ σ argExpr := by
-                      -- Apply subst_fvars_eval_bridge with empty subst map.
-                      have Hsurv :
-                          ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression)
-                                  argExpr,
-                            Map.find? (∅ : Map Expression.Ident
-                                          Expression.Expr) v = none →
-                            δ σ_R1 (Lambda.LExpr.fvar () v none) =
-                              δ σ (Lambda.LExpr.fvar () v none) := by
-                        intro v Hv _
-                        rw [δ_fvar_eq σ_R1 v, δ_fvar_eq σ v]
-                        exact Hσ_R1_eq_σ_argVars v Hv
-                      have Hsub :
-                          ∀ k' w', k' ∈ Imperative.HasVarsPure.getVars
-                                          (P:=Expression) argExpr →
-                            Map.find? (∅ : Map Expression.Ident
-                                          Expression.Expr) k' = some w' →
-                            δ σ_R1 w' =
-                              δ σ (Lambda.LExpr.fvar () k' none) := by
-                        intro k' w' _ Hf
-                        simp [Map.find?] at Hf
-                      have Hbridge :
-                          δ σ_R1 (Lambda.LExpr.substFvars argExpr
-                                    (∅ : Map Expression.Ident
-                                          Expression.Expr)) =
-                            δ σ argExpr :=
-                        subst_fvars_eval_bridge Hwfc Hwfvars Hwfval
-                          (sm:=∅)
-                          Hsurv Hsub
-                      -- substFvars argExpr ∅ = argExpr.
-                      have HsubstEmpty :
-                          Lambda.LExpr.substFvars argExpr
-                              (∅ : Map Expression.Ident Expression.Expr) =
-                            argExpr := by
-                        induction argExpr with
-                        | fvar m name ty =>
-                          rw [Lambda.LExpr.substFvars_fvar_none m name ty]; rfl
-                        | _ => simp [Lambda.LExpr.substFvars_abs,
-                            Lambda.LExpr.substFvars_quant,
-                            Lambda.LExpr.substFvars_app,
-                            Lambda.LExpr.substFvars_eq,
-                            Lambda.LExpr.substFvars_ite, *]
-                      rwa [HsubstEmpty] at Hbridge
-                    rw [Hw_argExpr, Hδ_R1_eq_δ_σ, HRHS_StepE,
-                        ← HRHS_oldEqArgVal, ← Hk_mkOld]
+                          δ σO (Lambda.LExpr.fvar () k none) :=
+                    HinputSubBridge_at_σO Hwfvars Hwfval Hwfc Hwf2
+                      HprocEq Hiodisj Hinitin Hinitout Hhav1
+                      HInitVars_empty Hevalargs hCallArgsIn HargIsDef
+                      HoldIdentsTemp Hgenrel HargVarsNotInInKeys
+                      HargVarsNotInOutKeys rfl
                   -- HpostEval_bridge: per-entry σ_R1 eval bridge via
                   -- subst_fvars_eval_bridge + HpostFiltered_corresp.
                   have HpostEval_bridge :
