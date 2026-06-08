@@ -437,14 +437,10 @@ inductive EvalCommandContract : (String → Option Procedure)  → CoreEval →
     -- positional: oVals[i] initializes p.header.outputs[i]
     InitStates σA (ListMap.keys (p.header.outputs)) oVals σAO →
     -- non-Free preconditions are always defined; their truth controls `failed`
-    (∀ pre, (Procedure.Spec.getCheckExprs
-              (p.spec.preconditions.filter
-                (fun (_, c) => c.attr ≠ .Free))).contains pre →
+    (∀ pre, (Procedure.Spec.getCheckExprs p.spec.checkedPreconditions).contains pre →
       isDefinedOver (HasVarsPure.getVars) σAO pre) →
     (failed = false ↔
-      (∀ pre, (Procedure.Spec.getCheckExprs
-                (p.spec.preconditions.filter
-                  (fun (_, c) => c.attr ≠ .Free))).contains pre →
+      (∀ pre, (Procedure.Spec.getCheckExprs p.spec.checkedPreconditions).contains pre →
         δ σAO pre = .some HasBool.tt)) →
     HavocVars σAO (ListMap.keys p.header.outputs) σO →
     (∀ post, (Procedure.Spec.getCheckExprs p.spec.postconditions).contains post →

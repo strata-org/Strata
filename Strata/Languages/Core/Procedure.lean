@@ -255,6 +255,12 @@ def Procedure.Spec.preconditionNames (s : Procedure.Spec) : List CoreLabel :=
 def Procedure.Spec.postconditionNames (s : Procedure.Spec) : List CoreLabel :=
   s.postconditions.keys
 
+/-- Non-`Free` preconditions: those that are *checked* at call sites.
+    See `Procedure.CheckAttr` and Procedure.lean §92 for the meaning of `Free`. -/
+@[expose] abbrev Procedure.Spec.checkedPreconditions (s : Procedure.Spec) :
+    List (CoreLabel × Procedure.Check) :=
+  s.preconditions.filter (fun (_, c) => c.attr ≠ .Free)
+
 def Procedure.Spec.eraseTypes (s : Procedure.Spec) : Procedure.Spec :=
   { s with
     preconditions := s.preconditions.map (fun (l, c) => (l, c.eraseTypes)),
