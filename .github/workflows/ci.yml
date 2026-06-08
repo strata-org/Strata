@@ -146,7 +146,7 @@ jobs:
           .lake
           StrataCLI/.lake
           StrataPython/.lake
-        fail-on-cache-miss: "true"
+        fail-on-cache-miss: "false"
         use-restore-keys: "false"
     - name: Install Lean
       uses: leanprover/lean-action@v1
@@ -260,7 +260,7 @@ jobs:
           .lake
           StrataCLI/.lake
           StrataPython/.lake
-        fail-on-cache-miss: "true"
+        fail-on-cache-miss: "false"
         use-restore-keys: "false"
     - name: Install Lean (for lake env)
       uses: leanprover/lean-action@v1
