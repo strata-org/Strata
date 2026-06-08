@@ -9,12 +9,14 @@ from pathlib import Path
 
 def check_import_dag(file_path: Path, workspace_rel: str) -> list[str]:
     """Check that a Lean file only imports from:
-    - Its own workspace subtree (e.g. StrataAgent.Sandbox.decomposed.*)
-    - Stub.Def (the definitions file at the workspace root)
-    - External project libraries (Strata.*, etc.)
+    - Its own workspace subtree (e.g. StrataAgent.Sandbox.decomposed.lemma_2.*)
+    - External project libraries (Strata.*, Mathlib.*, Init.*, etc.)
 
-    Returns list of bad imports (from parent/sibling Sandbox paths that aren't allowed).
-    Empty list = all good.
+    With import isolation, each workspace is self-contained. A file should
+    NEVER import from a parent or sibling workspace. The workspace's own
+    Stub.Def is at `<workspace_module>.Stub.Def` — not any parent's.
+
+    Returns list of bad imports (empty = all good).
     """
     if not file_path.exists():
         return []
@@ -29,19 +31,15 @@ def check_import_dag(file_path: Path, workspace_rel: str) -> list[str]:
             continue
         module = stripped.removeprefix("import ").strip()
 
-        # External imports (Strata.*, Mathlib.*, etc.) — always OK
+        # External imports (Strata.*, Mathlib.*, Init.*, etc.) — always OK
         if not module.startswith(sandbox_prefix):
             continue
 
-        # Imports within Sandbox — must be from OUR workspace or a Stub.Def ancestor
+        # Imports within our own workspace module — OK
         if module.startswith(workspace_module):
-            continue  # Within our own workspace — OK
-
-        # Allow Stub.Def at any parent level (needed for definitions)
-        if module.endswith(".Stub.Def"):
             continue
 
-        # Anything else from Sandbox is a DAG violation (importing sibling/parent decomposed)
+        # Anything else from Sandbox is a DAG violation
         bad.append(module)
 
     return bad
@@ -99,16 +97,40 @@ def verify_all_files_dag(cwd: Path, files: list[str], workspace_rel: str) -> dic
 
 
 def is_bare_sorry(cwd: Path, rel_path: str) -> bool:
-    """Check if a file is just a theorem with bare sorry (no structural progress).
-    Returns True if the proof body is entirely 'sorry' with no proof structure."""
+    """Check if a file has no structural proof progress — just sorry.
+
+    A file is "bare" if:
+    - The only non-import, non-variable, non-comment content ends with := sorry or by sorry
+    - OR the file has a very high sorry density (>5 sorries with <20 tactic lines)
+
+    This means decomposition is needed — proof_writer can't make progress
+    without a structural starting point.
+    """
     path = cwd / rel_path
     if not path.exists():
         return True
-    content = path.read_text().strip()
-    return (content.endswith(":= by\n  sorry") or
-            content.endswith("by\n  sorry") or
-            content.endswith(":= sorry") or
-            content.endswith("by sorry"))
+    content = path.read_text()
+    lines = content.splitlines()
+
+    # Check for simple bare sorry patterns
+    stripped = content.strip()
+    if (stripped.endswith(":= by\n  sorry") or
+            stripped.endswith("by\n  sorry") or
+            stripped.endswith(":= sorry") or
+            stripped.endswith("by sorry")):
+        return True
+
+    # Check sorry density: many sorries with very few tactic lines = no progress
+    sorry_count = count_sorries(cwd, rel_path)
+    tactic_lines = sum(1 for l in lines if l.strip().startswith((
+        "cases", "induction", "apply", "exact", "simp", "rw",
+        "have", "obtain", "intro", "match", "refine", "constructor",
+        "unfold", "ext", "funext", "calc")))
+
+    if sorry_count > 5 and tactic_lines < 5:
+        return True
+
+    return False
 
 
 def verify_stub_imports_def(cwd: Path, workspace_rel: str) -> bool:

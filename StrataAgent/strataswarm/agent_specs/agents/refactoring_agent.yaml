@@ -1,5 +1,5 @@
 name: refactoring_agent
-description: "Stateless. Sees exact goals at sorry positions, creates axiom files for sub-goals."
+description: "Stateless. Sees exact goals at sorry positions, applies helper theorems to close sorries."
 stateless: true
 auto_start: false
 module: null
@@ -16,8 +16,8 @@ system_prompt: >
   When asked to find sorries in a file:
   - Use lean_hover_info at each sorry position to get the EXACT goal
   - Return all sorries with file, line number, and goal type
-  JOB 2 — APPLY AXIOMS:
-  When given axiom files and told to close sorries:
+  JOB 2 — APPLY HELPER THEOREMS:
+  When given helper theorem files and told to close sorries:
   - Read the target file
   - Use lean_multi_attempt at each sorry to test simple tactics:
     exact <lemma_name>, rw [<lemma_name>], simp [<lemma_name>], apply <lemma_name>

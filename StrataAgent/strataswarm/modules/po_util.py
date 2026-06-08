@@ -1,0 +1,156 @@
+"""PO Utilities: file operations, checkpointing, import rewriting.
+
+Pure functions — no agents, no async, no swarm dependency.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import shutil
+from dataclasses import asdict
+from pathlib import Path
+from typing import Any
+
+
+# ─── Import rewriting ────────────────────────────────────────────────────────
+
+def rewrite_imports_for_child(child_stub: Path, parent_workspace: str, child_workspace: str):
+    """Rewrite imports so child workspace is self-contained.
+
+    - Parent's Stub.Def → child's Stub.Def
+    - Sibling decomposed imports → removed
+    """
+    if not child_stub.exists():
+        return
+
+    parent_module = parent_workspace.replace("/", ".")
+    child_module = child_workspace.replace("/", ".")
+    decomposed_prefix = f"{parent_module}.decomposed."
+
+    content = child_stub.read_text()
+    new_lines = []
+    for line in content.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("import "):
+            module = stripped.removeprefix("import ").strip()
+            if module.startswith(decomposed_prefix):
+                continue
+            if module.startswith(f"{parent_module}.Stub"):
+                module = module.replace(parent_module, child_module, 1)
+                new_lines.append(f"import {module}")
+                continue
+        new_lines.append(line)
+
+    child_stub.write_text("\n".join(new_lines) + "\n")
+
+
+# ─── Theorem extraction ─────────────────────────────────────────────────────
+
+def find_sorry_theorems(lean_file: Path) -> list[tuple[str, str]]:
+    """Find theorem blocks that contain sorry.
+    Returns [(theorem_name, full_block_text), ...]"""
+    if not lean_file.exists():
+        return []
+    content = lean_file.read_text()
+    lines = content.splitlines()
+    theorems = []
+    current_name = ""
+    current_start = -1
+
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith("theorem ") or stripped.startswith("private theorem "):
+            if current_start >= 0 and current_name:
+                block = "\n".join(lines[current_start:i])
+                if "sorry" in block:
+                    theorems.append((current_name, block))
+            parts = stripped.split()
+            idx = parts.index("theorem") + 1
+            current_name = parts[idx].rstrip(":").rstrip("(") if idx < len(parts) else ""
+            current_start = i
+
+    if current_start >= 0 and current_name:
+        block = "\n".join(lines[current_start:])
+        if "sorry" in block:
+            theorems.append((current_name, block))
+
+    return theorems
+
+
+def extract_imports(content: str) -> str:
+    """Extract the import/open/variable header from a Lean file."""
+    lines = []
+    for line in content.splitlines():
+        stripped = line.strip()
+        if (stripped.startswith("import ") or stripped.startswith("open ") or
+                stripped.startswith("variable ") or stripped.startswith("set_option") or
+                stripped.startswith("/-!") or stripped.startswith("--") or not stripped):
+            lines.append(line)
+        else:
+            break
+    return "\n".join(lines)
+
+
+# ─── Checkpointing ──────────────────────────────────────────────────────────
+
+def write_checkpoint(cwd: Path, state: Any):
+    """Persist ProverState as JSON for crash recovery."""
+    workspace_abs = cwd / state.workspace
+    workspace_abs.mkdir(parents=True, exist_ok=True)
+    (workspace_abs / "checkpoint.json").write_text(json.dumps(asdict(state), indent=2))
+
+
+def write_progress(cwd: Path, state: Any):
+    """Write progress.md for monitoring."""
+    workspace_abs = cwd / state.workspace
+    workspace_abs.mkdir(parents=True, exist_ok=True)
+    progress = workspace_abs / "progress.md"
+
+    content = (
+        f"# Proof Progress\n\n"
+        f"- **Stage**: {state.stage.value}\n"
+        f"- **Theorem**: {state.theorem_name}\n"
+        f"- **Attempt**: {state.attempt + 1}/3\n"
+        f"- **Depth**: {state.depth}/2\n"
+        f"- **Drain round**: {state.drain_round}/5\n"
+        f"- **Proved**: {len(state.proved_files)}\n"
+        f"- **Direct queue**: {len(state.direct_files)}\n"
+        f"- **Recursive queue**: {len(state.recursive_files)}\n"
+        f"- **Details**: {state.last_failure_details or 'none'}\n\n"
+        f"## Files\n"
+    )
+    for f in state.proved_files:
+        content += f"- ✅ `{Path(f).name}`\n"
+    for f in state.direct_files:
+        content += f"- 🔄 `{Path(f).name}` (direct)\n"
+    for f in state.recursive_files:
+        content += f"- 🔁 `{Path(f).name}` (recursive)\n"
+
+    progress.write_text(content)
+
+
+# ─── Child workspace setup ───────────────────────────────────────────────────
+
+def setup_child_workspace(cwd: Path, lemma_file: str, parent_workspace: str) -> str:
+    """Create child workspace, copy Stub.lean + Def.lean, rewrite imports.
+    Returns the child workspace relative path."""
+    lemma_path = Path(lemma_file)
+    child_workspace = f"{lemma_path.parent}/{lemma_path.stem}"
+    (cwd / child_workspace).mkdir(parents=True, exist_ok=True)
+
+    # Copy as child's Stub.lean
+    shutil.copy2(cwd / lemma_file, cwd / child_workspace / "Stub.lean")
+
+    # Inherit Def.lean
+    parent_def = cwd / parent_workspace / "Stub" / "Def.lean"
+    if parent_def.exists():
+        child_def_dir = cwd / child_workspace / "Stub"
+        child_def_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(parent_def, child_def_dir / "Def.lean")
+
+    # Import isolation
+    child_stub = cwd / child_workspace / "Stub.lean"
+    rewrite_imports_for_child(child_stub, parent_workspace, child_workspace)
+
+    return child_workspace

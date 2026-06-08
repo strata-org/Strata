@@ -15,6 +15,7 @@ from ._directory import create_directory_server
 from ._messaging import create_messaging_server
 from ._nudge import NudgeMonitor
 from ._registry import AgentNode, SwarmRegistry
+from ._session_log import SessionLogger
 from ._spawn import create_spawn_server
 from ._telemetry import TelemetryEvent, TelemetryStream
 from ._tokens import CancellationToken
@@ -82,6 +83,11 @@ class Swarm:
         if checkpoint_dir:
             self._checkpoint_manager = CheckpointManager(self, Path(checkpoint_dir))
 
+        # Persistent session logger — survives agent GC/crashes
+        from pathlib import Path as _P
+        _log_base = _P(__file__).parent / "temp"
+        self._session_logger = SessionLogger(_log_base, name)
+
     @property
     def name(self) -> str:
         return self._name
@@ -135,6 +141,9 @@ class Swarm:
 
     async def _on_event_with_telemetry(self, event: AgentEvent) -> None:
         """Wraps the user's event callback to also record telemetry."""
+        # ── Persistent session log (append-only, survives GC) ──
+        self._session_logger.log(event)
+
         # Track session IDs as they're emitted by agents
         if event.event_type == "session_id" and event.data:
             self._registry.session_ids[event.agent_name] = str(event.data)

@@ -169,6 +169,11 @@ class swarm_agent:
             agent_name=self._unique_name, swarm=self._swarm,
         )
 
+        # Inject lean_tools MCP for agents that need verified file operations
+        if self._workspace:
+            from ._lean_tools_mcp import create_lean_tools_server
+            mcp_servers["lean_tools"] = create_lean_tools_server(workspace=self._workspace)
+
         # Get event callback from swarm for dashboard visibility
         on_event = getattr(self._swarm, '_on_event_with_telemetry', None)
 
@@ -182,7 +187,23 @@ class swarm_agent:
             backend_factory=self._swarm._backend_factory,
         )
         self._agent.swarm = self._swarm
-        self._agent._hooks = workspace_hooks
+
+        # Combine workspace hooks + spec-level hooks
+        combined_hooks = workspace_hooks
+        if spec.hooks:
+            from ._swarm import _resolve_hooks
+            spec_hooks = _resolve_hooks(spec.hooks)
+            if spec_hooks:
+                if combined_hooks:
+                    # Merge: append matchers for each event
+                    for event, matchers in spec_hooks.items():
+                        if event in combined_hooks:
+                            combined_hooks[event].extend(matchers)
+                        else:
+                            combined_hooks[event] = matchers
+                else:
+                    combined_hooks = spec_hooks
+        self._agent._hooks = combined_hooks
 
         # Register in swarm
         self._swarm._registry.add(spec)

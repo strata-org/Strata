@@ -298,11 +298,28 @@ async def _state_dispatch(state: WorkflowState, agent) -> Transition:
     state.active_handler = Handler.MONITOR
 
     await agent._emit("message", f"[TM] Prover: {state.prover_agent_name}")
+
+    # Checkpoint — prover dispatched, task is committed
+    swarm = getattr(agent, 'swarm', None)
+    if swarm and hasattr(swarm, 'checkpoint'):
+        try:
+            await swarm.checkpoint(reason=f"tm_dispatch:{state.prover_agent_name}")
+        except Exception:
+            pass
+
     return Transition.DISPATCHED
 
 
 async def _state_validate(state: WorkflowState, agent) -> Transition:
     from .._helpers import swarm_agent
+
+    # Checkpoint — prover finished, capture state before validation
+    swarm = getattr(agent, 'swarm', None)
+    if swarm and hasattr(swarm, 'checkpoint'):
+        try:
+            await swarm.checkpoint(reason="tm_prover_done")
+        except Exception:
+            pass
 
     task = UserIntent(**{k: v for k, v in state.task.items() if k in UserIntent.__dataclass_fields__})
     await agent._emit("message", "[TM] Validating...")
@@ -326,6 +343,15 @@ async def _state_validate(state: WorkflowState, agent) -> Transition:
     if result.output:
         state.validation = asdict(result.output)
         v = result.output
+
+        # Checkpoint — validation result captured
+        swarm = getattr(agent, 'swarm', None)
+        if swarm and hasattr(swarm, 'checkpoint'):
+            try:
+                await swarm.checkpoint(reason=f"tm_validated:{'pass' if (v.compiles and not v.has_sorry) else 'fail'}")
+            except Exception:
+                pass
+
         if v.compiles and not v.has_sorry and v.statements_match:
             return Transition.PASSED
         reasons = []

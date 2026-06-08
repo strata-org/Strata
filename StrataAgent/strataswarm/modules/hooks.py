@@ -8,6 +8,10 @@ Uses framework utilities from _workspace_hooks (path matching, extraction).
 
 from __future__ import annotations
 
+from typing import Any
+
+from claude_agent_sdk.types import HookMatcher
+
 from .._workspace_hooks import matches_any, deny, allow, make_hook
 
 
@@ -35,6 +39,47 @@ def search_agent_hooks() -> dict:
         return None
 
     return make_hook(enforce)
+
+
+# ─── Decomposer: redirect Write/Edit to write_decomposed_lemma ───────────────
+
+def decomposer_hooks() -> dict:
+    """Decomposer hint hook: if it tries Write or Edit, tell it to use
+    write_decomposed_lemma instead.
+
+    The CLI already blocks Write/Edit via disallowed_tools, but gives a
+    generic error. This hook fires first and provides a helpful redirect.
+    """
+
+    async def _enforce(input_data, tool_use_id, context):
+        if not isinstance(input_data, dict):
+            return {}
+        if input_data.get("hook_event_name") != "PreToolUse":
+            return {}
+
+        tool_name = input_data.get("tool_name", "")
+
+        if tool_name in ("Write", "Edit", "MultiEdit"):
+            return {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "deny",
+                    "permissionDecisionReason": (
+                        "You cannot use Write/Edit directly. "
+                        "To create decomposed lemma files, use the write_decomposed_lemma tool:\n"
+                        "  write_decomposed_lemma(file_content=\"import ...\\n\\ntheorem name ... := by\\n  sorry\", "
+                        "theorem_name=\"name\")\n"
+                        "This tool validates your file (one theorem, name matches, compiles) "
+                        "and creates it with the correct naming convention."
+                    ),
+                }
+            }
+
+        return {}
+
+    return {
+        "PreToolUse": [HookMatcher(matcher="Write|Edit|MultiEdit", hooks=[_enforce])]
+    }
 
 
 # ─── Workspace-scoped agents: can only access their workspace ────────────────
