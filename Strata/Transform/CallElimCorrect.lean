@@ -1178,10 +1178,10 @@ structure WFCallSiteSpec (proc : Procedure) (args : List (CallArg Expression)) :
       v ∈ CallArg.getLhs args →
       (CallArg.getLhs args).idxOf v =
         (ListMap.keys proc.header.outputs).idxOf v
-  /-- Bool-totality of preconditions (`WFPrePostProp.boolTyped` clause): a
-      precondition expression evaluates to either `tt` or `ff` whenever
-      its free variables are defined in the store.  Backs the failing-arm
-      witness derivation in `callElimStatementCorrect_terminal_call_arm_fail`. -/
+  /-- Bool-totality of preconditions: a precondition expression evaluates
+      to either `tt` or `ff` whenever its free variables are defined in
+      the store.  Backs the failing-arm witness derivation in
+      `callElimStatementCorrect_terminal_call_arm_fail`. -/
   preBoolTyped :
     ∀ pre ∈ Procedure.Spec.getCheckExprs proc.spec.preconditions,
     ∀ (δ : Imperative.SemanticEval Expression)
@@ -1885,8 +1885,8 @@ private theorem HinputSubBridge_at_σO
     destructure: builds the failing assert chain via `H_asserts_zip_fail`,
     havocs via `H_havocs_poly`, assumes via `H_assumes_zip_poly`, and glues
     via `EvalCallElim_glue_fail`.  The bool-totality witness for the failing
-    precondition is extracted from `WFCallSiteProp.preBoolTyped` (boolTyped
-    clause on `WFPrePostProp`) combined with `Hpre_iff.mpr`'s contrapositive.
+    precondition is extracted from `WFCallSiteSpec.preBoolTyped` combined
+    with `Hpre_iff.mpr`'s contrapositive.
 
     All inputs after `Hwfcallsite` are the destructured outputs from
     `cases Hcc with | call_sem ...` at `failed = true`. -/
@@ -2527,11 +2527,8 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
       rw [List.zip_append]
       rw [createFvarsLength]
       exact HinKeys_argTemps_len
-    -- Per-pair "tt or ff" totality fact at σ_old via subst_fvars_correct + boolTyped.
-    -- For each pair (entry, lbl) ∈ presFiltered.zip assertLabels,
-    -- build the totality witness at σ_old.
-    -- First derive HpresPayload-like facts (without the eval-tt — use boolTyped).
-    -- Bool-totality witness at σAO for filtered preconditions.
+    -- Bool-totality witness at σAO for filtered preconditions, via
+    -- subst_fvars_correct + preBoolTyped (no eval-tt assumed).
     have HpreFilteredBool :
         ∀ entry ∈ presFiltered,
           δ σAO entry.snd.expr = some Imperative.HasBool.tt ∨
@@ -3823,8 +3820,8 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                 cases f with
                 | true =>
                   -- Stage 6 failure arm: derive bool-totality witness via
-                  -- Hwfcallsite → boolTyped, build failing assert chain, glue
-                  -- with EvalCallElim_glue_fail.  Delegated to a sibling
+                  -- Hwfcallsite → preBoolTyped, build failing assert chain,
+                  -- glue with EvalCallElim_glue_fail.  Delegated to a sibling
                   -- private theorem for proof-body manageability.
                   exact callElimStatementCorrect_terminal_call_arm_fail
                     Hp Hwfc Hwf Hgenrel Hwfcallsite heq_ce
