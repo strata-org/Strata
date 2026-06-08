@@ -130,7 +130,7 @@ spec { }
 
 /-! ## Empty literals for bv8, bv16, bv64 must also lower to typed `Sequence.empty`. -/
 
-private def emptyBv8LiteralPgm : Strata.Program :=
+private def emptyBv8LiteralPgm : StrataDDM.Program :=
 #strata
 program Boole;
 
@@ -144,7 +144,7 @@ spec { }
 /-- info: Except.ok ["Sequence bv8"] -/
 #guard_msgs in #eval seqEmptyTysIn emptyBv8LiteralPgm
 
-private def emptyBv16LiteralPgm : Strata.Program :=
+private def emptyBv16LiteralPgm : StrataDDM.Program :=
 #strata
 program Boole;
 
@@ -158,7 +158,7 @@ spec { }
 /-- info: Except.ok ["Sequence bv16"] -/
 #guard_msgs in #eval seqEmptyTysIn emptyBv16LiteralPgm
 
-private def emptyBv64LiteralPgm : Strata.Program :=
+private def emptyBv64LiteralPgm : StrataDDM.Program :=
 #strata
 program Boole;
 
