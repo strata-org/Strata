@@ -2160,11 +2160,8 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
       rw [show oldTrips = (genOldIdents.zip oldTys).zip oldVars
           from rfl]
       simp [List.unzip_eq_map, List.map_snd_zip, HzipLen]
-    have HoldVars_sub_lhs : ∀ g ∈ oldVars, g ∈ lhs := by
-      intro g Hg
-      have Hg_in_getLhs : g ∈ CallArg.getLhs args :=
-        (List.mem_filter.mp Hg).1
-      exact hCallArgsLhs ▸ Hg_in_getLhs
+    have HoldVars_sub_lhs : ∀ g ∈ oldVars, g ∈ lhs := fun _ Hg =>
+      hCallArgsLhs ▸ (List.mem_filter.mp Hg).1
     have oldVars_disj_via_lhs :
         ∀ {ks : List Expression.Ident}, lhs.Disjoint ks → oldVars.Disjoint ks :=
       fun H x Hin1 Hin2 => H (HoldVars_sub_lhs x Hin1) Hin2
@@ -4092,11 +4089,8 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                     simp [List.unzip_eq_map, List.map_snd_zip, HzipLen]
                   -- Disjointness of oldVars from argTemps/outTemps and
                   -- oldVars Nodup follow from `oldVars ⊆ lhs`.
-                  have HoldVars_sub_lhs : ∀ g ∈ oldVars, g ∈ lhs := by
-                    intro g Hg
-                    have Hg_in_getLhs : g ∈ CallArg.getLhs args :=
-                      (List.mem_filter.mp Hg).1
-                    exact hCallArgsLhs ▸ Hg_in_getLhs
+                  have HoldVars_sub_lhs : ∀ g ∈ oldVars, g ∈ lhs := fun _ Hg =>
+                    hCallArgsLhs ▸ (List.mem_filter.mp Hg).1
                   have oldVars_disj_via_lhs :
                       ∀ {ks : List Expression.Ident}, lhs.Disjoint ks → oldVars.Disjoint ks :=
                     fun H x Hin1 Hin2 => H (HoldVars_sub_lhs x Hin1) Hin2
