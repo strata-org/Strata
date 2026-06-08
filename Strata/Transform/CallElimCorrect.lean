@@ -586,6 +586,28 @@ private theorem filterCheck_mem_getCheckExprs
   rw [ListMap.values_eq_map_snd]
   exact List.mem_map_of_mem Hin_full
 
+/-- `Hp`+`Hfind`+`lkup` ⇒ `proc' = proc` ∧ postcondition-membership lift
+    `proc' ↦ proc`. Aligns `Hwfcallsite` (over `proc`) with checks indexed
+    by the destructured `proc'` at both call-arm sites. -/
+private theorem procEq_and_postExprs_bridge
+    {π : String → Option Procedure}
+    {p : Program} {procName : String} {proc proc' : Procedure}
+    (Hp : ∀ pname, π pname = Program.Procedure.find? p ⟨pname, ()⟩)
+    (Hfind : Program.Procedure.find? p ⟨procName, ()⟩ = some proc')
+    (lkup : π procName = some proc) :
+    proc' = proc ∧
+    (∀ c, c ∈ proc'.spec.postconditions.values →
+        c.expr ∈ Procedure.Spec.getCheckExprs proc.spec.postconditions) := by
+  have HprocEq : proc' = proc := by
+    have Hπ := Hp procName; rw [Hπ] at lkup; rw [Hfind] at lkup
+    exact (Option.some_inj.mp lkup.symm).symm
+  refine ⟨HprocEq, fun c Hc_in => ?_⟩
+  simp only [Procedure.Spec.getCheckExprs, List.mem_map]
+  refine ⟨c, ?_, rfl⟩
+  rw [HprocEq] at Hc_in
+  rw [ListMap.values_eq_map_snd]
+  rwa [ListMap.values_eq_map_snd] at Hc_in
+
 /-- Bridge between the boolean (`!=`) and propositional (`≠`) forms of the
     "non-Free" precondition filter.  Both filters select the same entries; the
     proof is a per-entry `decide` reduction.  Used at three sites in the
@@ -2222,21 +2244,8 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
       rw [Hflatten_eq, hCallArgsLhs]
       exact HL5_pre
     -- ── D2a: per-precondition payload for L4 (asserts) ──
-    have HprocEq : proc' = proc := by
-      have Hπ := Hp procName
-      rw [Hπ] at lkup
-      rw [Hfind] at lkup
-      exact (Option.some_inj.mp lkup.symm).symm
-    have c_in_postExprs_of_proc' :
-        ∀ c, c ∈ proc'.spec.postconditions.values →
-          c.expr ∈ Procedure.Spec.getCheckExprs
-                      proc.spec.postconditions := by
-      intro c Hc_in
-      simp only [Procedure.Spec.getCheckExprs, List.mem_map]
-      refine ⟨c, ?_, rfl⟩
-      rw [HprocEq] at Hc_in
-      rw [ListMap.values_eq_map_snd]
-      rwa [ListMap.values_eq_map_snd] at Hc_in
+    obtain ⟨HprocEq, c_in_postExprs_of_proc'⟩ :=
+      procEq_and_postExprs_bridge Hp Hfind lkup
     obtain ⟨HpreVarsFresh, _HpostVarsFresh, _HargVarsNotInLhs,
             HinoutFresh, HargVarsNotInOutKeys,
             HargVarsNotInInKeys, _HoutAlign, HpreBoolTyped⟩ :=
@@ -4421,23 +4430,8 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                     rw [Hflatten_eq, hCallArgsLhs]
                     exact HL5_pre
                   -- D2a: per-precondition payload for L4 (asserts).
-                  have HprocEq : proc' = proc := by
-                    have Hπ := Hp procName
-                    rw [Hπ] at lkup
-                    rw [Hfind] at lkup
-                    exact (Option.some_inj.mp lkup.symm).symm
-                  -- Bridge `c ∈ proc'.spec.postconditions.values` to
-                  -- `c.expr ∈ getCheckExprs proc.spec.postconditions` via HprocEq.
-                  have c_in_postExprs_of_proc' :
-                      ∀ c, c ∈ proc'.spec.postconditions.values →
-                        c.expr ∈ Procedure.Spec.getCheckExprs
-                                    proc.spec.postconditions := by
-                    intro c Hc_in
-                    simp only [Procedure.Spec.getCheckExprs, List.mem_map]
-                    refine ⟨c, ?_, rfl⟩
-                    rw [HprocEq] at Hc_in
-                    rw [ListMap.values_eq_map_snd]
-                    rwa [ListMap.values_eq_map_snd] at Hc_in
+                  obtain ⟨HprocEq, c_in_postExprs_of_proc'⟩ :=
+                    procEq_and_postExprs_bridge Hp Hfind lkup
                   -- Specialize Hwfcallsite (over `proc`) to the call form;
                   -- spike uses `proc'` which HprocEq bridges.
                   obtain ⟨HpreVarsFresh, HpostVarsFresh, HargVarsNotInLhs,
