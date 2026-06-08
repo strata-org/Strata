@@ -77,7 +77,7 @@ namespace Specification
 
 /-- Bundles the abstract ingredients for small-step statement semantics,
     parameterized by a shared pure-expression system `P`. -/
-structure Lang (P : PureExpr) [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasInt P] [HasIntOps P] where
+structure Lang (P : PureExpr) where
   /-- Statement type. -/
   StmtT : Type
   /-- Configuration type. -/
@@ -97,19 +97,19 @@ structure Lang (P : PureExpr) [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P
 
 /-- Build a `Lang` from `Imperative.Stmt`/`Config` with a given command
     type and evaluator. -/
-abbrev Lang.imperative (P : PureExpr) [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasInt P] [HasIntOps P]
+abbrev Lang.imperative (P : PureExpr) [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasInt P]
     (CmdT : Type) (evalCmd : EvalCmdParam P CmdT) (extendEval : ExtendEval P)
     (isAtAssert : Config P CmdT → AssertId P → Prop) : Lang P :=
   ⟨Stmt P CmdT, Config P CmdT, StepStmtStar P evalCmd extendEval,
    .stmt, .terminal, .exiting, isAtAssert, Config.getEnv⟩
 
 /-- The standard `Lang` for `Cmd P` / `EvalCmd P` / `isAtAssert`. -/
-abbrev Lang.standard (P : PureExpr) [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasInt P] [HasIntOps P]
+abbrev Lang.standard (P : PureExpr) [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasInt P]
     (extendEval : ExtendEval P) : Lang P :=
   Lang.imperative P (Cmd P) (EvalCmd P) extendEval (Imperative.isAtAssert P)
 
 
-variable {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasInt P] [HasIntOps P] [HasVal P]
+variable {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasInt P] [HasVal P]
 variable (L : Lang P)
 
 

@@ -55,7 +55,7 @@ section
 variable
   {CmdT : Type}
   (P : PureExpr)
-  [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P]
+  [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P]
   (EvalCmd : EvalCmdParam P CmdT)
   (extendEval : ExtendEval P)
 
@@ -471,7 +471,7 @@ theorem smallStep_hasFailure_irrel
 
 /-! ## Well-paired exits: preservation and no-escape -/
 
-omit [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P] in
+omit [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P] in
 /-- Helper: when the inner of a block reaches `.exiting l` and the
     block's label (if some) doesn't match `l`, then `l` must be in the outer
     labels list.  The conclusion is `l ∈ labels`, which is exactly the
@@ -807,10 +807,10 @@ end -- section
 
 section
 
-variable (P : PureExpr) [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P]
+variable (P : PureExpr) [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P]
 variable (extendEval : ExtendEval P)
 
-omit [HasFvar P] [HasOps P] in
+omit [HasFvar P] [HasOps P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasInt P] in
 /-- If a config has no matching assert, then `isAtAssert` doesn't match. -/
 private theorem noMatchingAssert_not_isAtAssert
     (cfg : Config P (Cmd P)) (label : String) (expr : P.Expr)
@@ -850,7 +850,7 @@ private theorem noMatchingAssert_not_isAtAssert
   | .block _ _ _ inner => exact noMatchingAssert_not_isAtAssert inner label expr hno
   | .seq inner _ => exact noMatchingAssert_not_isAtAssert inner label expr hno.1
 
-omit [HasFvar P] [HasBool P] [HasBoolOps P] [HasInt P] [HasIntOps P] [HasFvars P] [HasOps P] in
+omit [HasFvar P] [HasBool P] [HasBoolOps P] [HasInt P] [HasFvars P] [HasOps P] in
 /-- Helper: `Stmts.noMatchingAssert` for concatenation. -/
 private theorem stmts_noMatchingAssert_append
     (ss₁ ss₂ : List (Stmt P (Cmd P))) (label : String)
@@ -1172,7 +1172,7 @@ same `store` and `eval` in the output).
 private theorem step_hasFailure_monotone
   {P : PureExpr} {CmdT : Type} {EvalCmd : EvalCmdParam P CmdT}
   {extendEval : ExtendEval P}
-  [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P]
+  [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P]
   {c c' : Config P CmdT}
   (hstep : StepStmt P EvalCmd extendEval c c')
   (hf : c.getEnv.hasFailure = true) :
@@ -1185,7 +1185,7 @@ theorem EvalStmtSmall_hasFailure_monotone
   {P : PureExpr} {CmdT : Type} {EvalCmd : EvalCmdParam P CmdT}
   {extendEval : ExtendEval P}
   {ρ ρ' : Env P} {s : Stmt P CmdT}
-  [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P] :
+  [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P]:
   EvalStmtSmall P EvalCmd extendEval ρ s ρ' →
   ρ.hasFailure = true → ρ'.hasFailure = true := by
   intro Heval Hf
@@ -1201,7 +1201,7 @@ theorem EvalStmtsSmall_hasFailure_monotone
   {P : PureExpr} {CmdT : Type} {EvalCmd : EvalCmdParam P CmdT}
   {extendEval : ExtendEval P}
   {ρ ρ' : Env P} {ss : List (Stmt P CmdT)}
-  [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P] :
+  [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P] :
   EvalStmtsSmall P EvalCmd extendEval ρ ss ρ' →
   ρ.hasFailure = true → ρ'.hasFailure = true := by
   intro Heval Hf
@@ -1216,7 +1216,7 @@ theorem EvalStmtsSmall_hasFailure_monotone
 theorem StepStmtStar_hasFailure_monotone
   {P : PureExpr} {CmdT : Type} {EvalCmd : EvalCmdParam P CmdT}
   {extendEval : ExtendEval P}
-  [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P]
+  [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P]
   {c c' : Config P CmdT}
   (hstar : StepStmtStar P EvalCmd extendEval c c')
   (hf : c.getEnv.hasFailure = true) :
@@ -1229,7 +1229,7 @@ theorem EvalStmtSmall_hasFailure_irrel
   {P : PureExpr} {CmdT : Type} {EvalCmd : EvalCmdParam P CmdT}
   {extendEval : ExtendEval P}
   {ρ ρ' : Env P} {s : Stmt P CmdT}
-  [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P] :
+  [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P]:
   EvalStmtSmall P EvalCmd extendEval ρ s ρ' →
   ∀ (ρ₂ : Env P), ρ₂.store = ρ.store → ρ₂.eval = ρ.eval →
   ∃ ρ₂', EvalStmtSmall P EvalCmd extendEval ρ₂ s ρ₂' ∧
@@ -1240,7 +1240,7 @@ theorem EvalStmtsSmall_hasFailure_irrel
   {P : PureExpr} {CmdT : Type} {EvalCmd : EvalCmdParam P CmdT}
   {extendEval : ExtendEval P}
   {ρ ρ' : Env P} {ss : List (Stmt P CmdT)}
-  [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P] :
+  [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P] :
   EvalStmtsSmall P EvalCmd extendEval ρ ss ρ' →
   ∀ (ρ₂ : Env P), ρ₂.store = ρ.store → ρ₂.eval = ρ.eval →
   ∃ ρ₂', EvalStmtsSmall P EvalCmd extendEval ρ₂ ss ρ₂' ∧
@@ -1269,7 +1269,7 @@ end -- section
 
 section AssertSetProps
 
-variable {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P]
+variable {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P]
 variable {extendEval : ExtendEval P}
 
 /-! ### Assert command properties (statement-level) -/
@@ -1487,7 +1487,7 @@ and the command-evaluation parameter. -/
 section ReflTransTHelpers
 
 variable {P : PureExpr} {CmdT : Type}
-  [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P]
+  [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P]
   {EvalCmd : EvalCmdParam P CmdT} {extendEval : ExtendEval P}
 
 omit [HasOps P] in

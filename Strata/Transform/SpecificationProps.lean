@@ -23,20 +23,20 @@ namespace Imperative
 
 namespace Specification
 
-variable {P : PureExpr} [HasFvar P] [HasFvars P] [HasOps P] [HasBool P] [HasBoolOps P] [HasInt P] [HasIntOps P] [HasVal P]
+variable {P : PureExpr} [HasFvar P] [HasFvars P] [HasOps P] [HasBool P] [HasBoolOps P] [HasInt P] [HasVal P]
 variable (L : Lang P)
 
 namespace Hoare
 
 /-! ## Parametric Hoare rules -/
 
-omit [HasVal P] [HasOps P] in
+omit [HasVal P] [HasOps P] [HasFvar P] [HasFvars P] in
 /-- False precondition proves anything -/
 theorem false_pre (s : L.StmtT) (Post : Env P → Prop) :
     Triple L (fun _ => False) s Post := by
   intro _ _ hpre; exact absurd hpre id
 
-omit [HasVal P] [HasOps P] in
+omit [HasVal P] [HasOps P] [HasFvar P] [HasFvars P] in
 /-- Consequence (weakening): strengthen precondition, weaken postconditions. -/
 theorem consequence
     {Pre Pre' : Env P → Prop} {Post Post' : Env P → Prop} {s : L.StmtT}
@@ -222,7 +222,7 @@ end StmtRules
 
 section StandardConnection
 
-variable (P' : PureExpr) [HasFvar P'] [HasFvars P'] [HasOps P'] [HasBool P'] [HasBoolOps P'] [HasInt P'] [HasIntOps P']
+variable (P' : PureExpr) [HasFvar P'] [HasFvars P'] [HasOps P'] [HasBool P'] [HasBoolOps P'] [HasInt P']
 variable (extendEval : ExtendEval P')
 
 omit [HasOps P'] in
@@ -388,7 +388,7 @@ end Hoare
 
 namespace Transform
 
-omit [HasVal P] [HasOps P] in
+omit [HasVal P] [HasOps P] [HasFvar P] [HasFvars P] [HasBoolOps P] in
 theorem sound_comp (L₁ L₂ L₃ : Lang P)
     (T₁ : L₁.StmtT → Option L₂.StmtT) (T₂ : L₂.StmtT → Option L₃.StmtT)
     (h₁ : Sound L₁ L₂ T₁) (h₂ : Sound L₂ L₃ T₂) :
@@ -399,24 +399,25 @@ theorem sound_comp (L₁ L₂ L₃ : Lang P)
   | some s' => rw [h1] at hrun; exact h₁ s s' a h1 (h₂ s' s'' a hrun hvalid)
   | none => rw [h1] at hrun; exact absurd hrun (by nofun)
 
-omit [HasVal P] [HasOps P] in
+omit [HasVal P] [HasOps P] [HasFvar P] [HasFvars P] [HasBoolOps P] in
 theorem sound_assertValid (L₁ L₂ : Lang P)
     (T : L₁.StmtT → Option L₂.StmtT) (a : AssertId P)
     (s : L₁.StmtT) (s' : L₂.StmtT)
     (ht : T s = some s') (hsound : Sound L₁ L₂ T) (hvalid : AssertValid L₂ s' a) :
     AssertValid L₁ s a := hsound s s' a ht hvalid
 
-omit [HasVal P] [HasOps P] in
+omit [HasVal P] [HasOps P] [HasFvar P] [HasFvars P] [HasBoolOps P] in
 theorem sound_allAsserts (L₁ L₂ : Lang P)
     (T : L₁.StmtT → Option L₂.StmtT)
     (s : L₁.StmtT) (s' : L₂.StmtT) (ht : T s = some s')
     (hsound : Sound L₁ L₂ T) (hvalid : AllAssertsValid L₂ s') :
     AllAssertsValid L₁ s := fun a => hsound s s' a ht (hvalid a)
 
-omit [HasVal P] [HasOps P] in
+omit [HasVal P] [HasOps P] [HasFvar P] [HasFvars P] [HasBoolOps P] in
 theorem sound_id : Sound L L some := by
   intro s s' a ht hvalid; simp at ht; subst ht; exact hvalid
 
+omit [HasOps P] [HasFvar P] [HasFvars P] in
 /-- If `T` overapproximates and a Hoare triple holds on `T(st)` in L₂,
     then the triple holds on `st` in L₁. -/
 theorem overapproximates_triple (L₁ L₂ : Lang P)
@@ -431,12 +432,14 @@ theorem overapproximates_triple (L₁ L₂ : Lang P)
   exact htriple ρ₀ ρ' hpre hwfb hf₀
     ((hsem st s' ht ρ₀ ρ' hwfb (hwfv ρ₀ hpre)).1 hstar)
 
+omit [HasOps P] [HasFvar P] [HasFvars P] in
 theorem overapproximates_id (L₁ : Lang P) :
     Overapproximates L₁ L₁ some := by
   intro st s' ht ρ₀ ρ' _ _
   simp at ht; subst ht
   exact ⟨id, fun _ => id⟩
 
+omit [HasOps P] [HasFvar P] [HasFvars P] in
 theorem overapproximates_comp (L₁ L₂ L₃ : Lang P)
     (T₁ : L₁.StmtT → Option L₂.StmtT) (T₂ : L₂.StmtT → Option L₃.StmtT)
     (h₁ : Overapproximates L₁ L₂ T₁)
@@ -465,6 +468,7 @@ section ImperativeStmts
 variable {CmdT : Type} (evalCmd : EvalCmdParam P CmdT) (extendEval : ExtendEval P)
 variable (isAtAssertFn : Config P CmdT → AssertId P → Prop)
 
+omit [HasFvar P] [HasFvars P] [HasOps P] [HasBool P] [HasBoolOps P] [HasVal P] in
 private theorem mapM_noFuncDecl
     (T : Stmt P CmdT → Option (Stmt P CmdT))
     (hnofd_T : ∀ s s', T s = some s' → Stmt.noFuncDecl s = true)
@@ -477,6 +481,7 @@ private theorem mapM_noFuncDecl
     have ⟨s', rest', hs, hrm, hss'⟩ := List.mapM_cons_some hmap
     simp [Block.noFuncDecl, hnofd_T s s' hs, ih rest' hrm]
 
+omit [HasOps P] in
 private theorem overapproximates_stmts_aux
     (T : Stmt P CmdT → Option (Stmt P CmdT))
     (hsem : Overapproximates (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) T)
@@ -537,6 +542,7 @@ private theorem overapproximates_stmts_aux
                 ((hsem s s' hs ρ₀ ρ₁ hwfb hwfv).1 hterm_s))
               ((ih hnofd_rest rest' hrm ρ₁ ρ' hwfb₁ hwfv₁).2 lbl hexit_rest)
 
+omit [HasOps P] in
 theorem overapproximates_stmts
     (T : Stmt P CmdT → Option (Stmt P CmdT))
     (hsem : Overapproximates (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) T)

@@ -30,7 +30,7 @@ public section
 
 open Imperative Specification
 
-variable {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P]
+variable {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P]
 
 /-! ## Lang instances -/
 
@@ -55,7 +55,7 @@ abbrev Lang.kleene : Lang P where
 
 /-! ## Transform-success helpers: extract sub-transform results -/
 
-omit [HasFvar P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P] in
+omit [HasFvar P] [HasFvars P] [HasOps P] [HasInt P] in
 private theorem ite_transform_some_det
     (cond : P.Expr) (tss ess : List (Stmt P (Cmd P))) (md : MetaData P)
     (ns : KleeneStmt P (Cmd P))
@@ -72,7 +72,7 @@ private theorem ite_transform_some_det
   | some _, none => simp [h1, h2, Option.bind] at ht
   | none, _ => simp [h1, Option.bind] at ht
 
-omit [HasFvar P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P] in
+omit [HasFvar P] [HasFvars P] [HasOps P] [HasInt P] in
 private theorem ite_transform_some_nondet
     (tss ess : List (Stmt P (Cmd P))) (md : MetaData P)
     (ns : KleeneStmt P (Cmd P))
@@ -87,7 +87,7 @@ private theorem ite_transform_some_nondet
   | some _, none => simp [h1, h2, Option.bind] at ht
   | none, _ => simp [h1, Option.bind] at ht
 
-omit [HasFvar P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P] in
+omit [HasFvar P] [HasFvars P] [HasOps P] [HasInt P] in
 private theorem loop_transform_some_det
     (g : P.Expr) (m : Option P.Expr) (inv : List (String × P.Expr))
     (body : List (Stmt P (Cmd P))) (md : MetaData P)
@@ -104,7 +104,7 @@ private theorem loop_transform_some_det
     | none => simp [hb] at ht
   | _ :: _ => simp [Option.bind] at ht
 
-omit [HasFvar P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P] in
+omit [HasFvar P] [HasFvars P] [HasOps P] [HasInt P] in
 private theorem loop_transform_some_nondet
     (m : Option P.Expr) (inv : List (String × P.Expr))
     (body : List (Stmt P (Cmd P))) (md : MetaData P)
@@ -121,7 +121,7 @@ private theorem loop_transform_some_nondet
     | none => simp [hb] at ht
   | _ :: _ => simp [Option.bind] at ht
 
-omit [HasFvar P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P] in
+omit [HasFvar P] [HasFvars P] [HasOps P] [HasInt P] in
 private theorem block_transform_some
     (s : Stmt P (Cmd P)) (rest : List (Stmt P (Cmd P)))
     (ns : KleeneStmt P (Cmd P))
@@ -138,7 +138,7 @@ private theorem block_transform_some
 
 /-! ## exitsCoveredByBlocks from successful transform -/
 
-omit [HasFvar P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P] in
+omit [HasFvar P] [HasFvars P] [HasOps P] [HasInt P] in
 private theorem stmtToKleene_some_exitsCovered
     (labels : List String)
     (st : Stmt P (Cmd P)) (ns : KleeneStmt P (Cmd P))
@@ -189,7 +189,7 @@ where
 
 /-! ## noFuncDecl from successful transform -/
 
-omit [HasFvar P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P] in
+omit [HasFvar P] [HasFvars P] [HasOps P] [HasInt P] in
 private theorem stmtToKleene_some_noFuncDecl
     (st : Stmt P (Cmd P)) (ns : KleeneStmt P (Cmd P))
     (ht : StmtToKleeneStmt st = some ns) :

@@ -111,7 +111,7 @@ def Stmt.inductionOn {P : PureExpr} {Cmd : Type}
 /-! ### sizeOf -/
 
 mutual
-@[simp, expose]
+@[simp]
 def Stmt.sizeOf (s : Imperative.Stmt P C) : Nat :=
   match s with
   | .cmd c => 1 + SizeOf.sizeOf c
@@ -122,7 +122,7 @@ def Stmt.sizeOf (s : Imperative.Stmt P C) : Nat :=
   | .funcDecl _ _ => 1
   | .typeDecl _ _ => 1
 
-@[simp, expose]
+@[simp]
 def Block.sizeOf (ss : Imperative.Block P C) : Nat :=
   match ss with
   | [] => 1
