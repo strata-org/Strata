@@ -15,18 +15,6 @@ Near-upstream anchors from `differential_status.md`:
 - `vlir-tests:recursion`
 - Verus link:
   `guide/recursion`: https://github.com/verus-lang/verus/blob/main/examples/guide/recursion.rs
-
-Implemented (#599):
-- Mutual recursion for spec functions over datatypes works end-to-end.
-  The `rec function ... function ... ;` block pre-registers all sibling
-  names before elaborating any body, so forward references are resolved.
-  Termination is justified by structural recursion on the `@[cases]` param.
-
-Remaining gap:
-- Mutual recursion over `int` (or other non-datatype types) is not yet
-  supported. Structural recursion does not apply; an explicit `decreases`
-  clause would be needed for each function in the block, and the
-  infrastructure for that is not yet in place.
 -/
 
 -- Working: mutual recursion over a Peano-style datatype.
@@ -64,23 +52,105 @@ spec {
 };
 #end
 
-#guard_msgs (drop info) in
-#eval Strata.Boole.verify "cvc5" mutualRecursionSeed
+/-- info:
+Obligation: even_body_calls_MyNat..pred_0
+Property: assert
+Result: ✅ pass
+
+Obligation: odd_body_calls_MyNat..pred_0
+Property: assert
+Result: ✅ pass
+
+Obligation: even_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: odd_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_4_1094
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_5_1125
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_6_1156
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_7_1194
+Property: assert
+Result: ✅ pass
+
+Obligation: test_parity_ensures_0_950
+Property: assert
+Result: ✅ pass
+
+Obligation: test_parity_ensures_1_982
+Property: assert
+Result: ✅ pass
+
+Obligation: test_parity_ensures_2_1014
+Property: assert
+Result: ✅ pass
+
+Obligation: test_parity_ensures_3_1053
+Property: assert
+Result: ✅ pass-/
+#guard_msgs in
+#eval Strata.Boole.verify "cvc5" mutualRecursionSeed (options := .quiet)
 
 example : Strata.smtVCsCorrectBoole mutualRecursionSeed := by
   gen_smt_vcs_boole
   all_goals (try grind)
 
--- Still open: mutual recursion over int requires a decreases clause.
--- Target shape once function-level decreases is supported:
---
--- rec
--- function even_int(n: int) : bool
--- {
---   if n == 0 then true else odd_int(n - 1)
--- }
--- function odd_int(n: int) : bool
--- {
---   if n == 0 then false else even_int(n - 1)
--- }
--- ;
+/-
+Mutual recursion over int (#1167):
+- `decreases n` on each function in the `rec` block; the termination VCs
+  (`even_terminates_*`, `odd_terminates_*`) are discharged by cvc5.
+
+Open gap — unfolding (Gap #1 / opaque+reveal):
+- `even` and `odd` are emitted as uninterpreted functions (UFs) in the SMT
+  query.  The solver knows their types and that they terminate, but not what
+  they return at any specific argument.  Proving `even(1) == false` requires
+  the defining equations as SMT assertions — blocked by Gap #1 (`opaque`/`reveal`).
+-/
+private def mutualRecursionIntSeed : StrataDDM.Program :=
+#strata
+program Boole;
+
+rec
+function even(n: int) : bool
+  decreases n
+{
+  if n <= 0 then true else odd(n - 1)
+}
+function odd(n: int) : bool
+  decreases n
+{
+  if n <= 0 then false else even(n - 1)
+}
+;
+#end
+
+/-- info:
+Obligation: even_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: even_terminates_1
+Property: assert
+Result: ✅ pass
+
+Obligation: odd_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: odd_terminates_1
+Property: assert
+Result: ✅ pass-/
+#guard_msgs in
+#eval Strata.Boole.verify "cvc5" mutualRecursionIntSeed (options := .quiet)
