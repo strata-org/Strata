@@ -2722,26 +2722,16 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
         rw [HprocEq] at HH
         rw [Hfilter_eq_pres] at HH
         exact HH.symm
-      have HentryFail_idx : ∃ i, ∃ (Hi : i < presFiltered.length)
-          (Hi' : i < assertLabels.length),
-          presFiltered[i]'Hi = entryFail := by
-        rcases List.mem_iff_get.mp HentryFail_in with ⟨n, Hn_eq⟩
-        refine ⟨n.val, n.isLt, ?_, ?_⟩
-        · rw [← HassertLen']; exact n.isLt
-        · exact Hn_eq
-      obtain ⟨i, Hi, Hi', Hi_eq⟩ := HentryFail_idx
-      let lblFail := assertLabels[i]'Hi'
-      have HpairIn : (entryFail, lblFail) ∈ presFiltered.zip assertLabels := by
-        have Hzip_get :
-            (presFiltered.zip assertLabels)[i]'(by
-              exact List.length_zip ▸ Nat.lt_min.mpr ⟨Hi, Hi'⟩) =
-              (entryFail, lblFail) := by
-          rw [List.getElem_zip]
-          show (presFiltered[i]'Hi, assertLabels[i]'Hi') = (entryFail, lblFail)
-          rw [Hi_eq]
-        exact Hzip_get.symm ▸ List.getElem_mem _
-      refine ⟨(entryFail, lblFail), HpairIn, ?_⟩
-      exact HentryFail_old_ff
+      rcases List.mem_iff_get.mp HentryFail_in with ⟨n, Hn_eq⟩
+      have Hi' : n.val < assertLabels.length := HassertLen' ▸ n.isLt
+      have Hi_eq : presFiltered[n.val]'n.isLt = entryFail := Hn_eq
+      refine ⟨(entryFail, assertLabels[n.val]'Hi'), ?_, HentryFail_old_ff⟩
+      have Hzip_get :
+          (presFiltered.zip assertLabels)[n.val]'(by
+            exact List.length_zip ▸ Nat.lt_min.mpr ⟨n.isLt, Hi'⟩) =
+            (entryFail, assertLabels[n.val]'Hi') := by
+        rw [List.getElem_zip, Hi_eq]
+      exact Hzip_get.symm ▸ List.getElem_mem _
     have HL4_pre :
         EvalStatementsContract π φ ⟨σ_old, δ, false⟩
           (((proc.spec.preconditions.filter
