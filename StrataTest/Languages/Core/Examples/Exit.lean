@@ -5,7 +5,6 @@
 -/
 
 import Strata.Languages.Core
-import Strata.Languages.Core
 import StrataTest.Languages.Core.Examples.Loops
 import StrataDDM.Integration.Lean.HashCommands
 

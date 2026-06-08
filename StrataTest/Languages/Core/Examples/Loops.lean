@@ -564,21 +564,9 @@ Result: ✅ pass
 #guard_msgs in
 #eval Core.verify precondElimInMeasurePgm (options := .quiet)
 
-/-- The measure `i / d` is non-negative when `i >= 0` and `d > 0`. -/
-private theorem ediv_nonneg_of_pos (i d : Int) (hi : i ≥ 0) (hd : d > 0) :
-    ¬ i / d < 0 :=
-  Int.not_lt.mpr (Int.ediv_nonneg hi (Int.le_of_lt hd))
-
-/-- The measure `i / d` strictly decreases when we subtract `d` from `i`,
-given `i >= d` and `d > 0`. -/
-private theorem ediv_sub_lt (i d : Int) (hd : d > 0) :
-    (i - d) / d < i / d := by
-  have key := Int.add_mul_ediv_left (i - d) 1 (Int.ne_of_gt hd)
-  grind
-
 /--
 This theorem requires a little bit of manual work to handle facts about
-division, using the lemmas above, though most goals are solved by `grind`.
+division, though most goals are solved by `grind`.
 -/
 theorem precondElimInMeasurePgm_correct : smtVCsCorrect precondElimInMeasurePgm := by
   gen_smt_vcs
@@ -587,12 +575,14 @@ theorem precondElimInMeasurePgm_correct : smtVCsCorrect precondElimInMeasurePgm 
   case measure_lb_0 =>
     intro _ d i _ _ dpos _ _ _ inonneg meas_def
     subst meas_def
-    exact ediv_nonneg_of_pos i d inonneg dpos
+    have p := Int.ediv_nonneg (a := i) (b := d)
+    grind
   -- measure_decrease_0: the loop measure i / d strictly decreases
   case measure_decrease_0 =>
     intro _ d i _ _ dpos _ _ _ _ meas_def
     subst meas_def
-    exact ediv_sub_lt i d dpos
+    have p := Int.add_mul_ediv_left (a := i) (b := d) (c := -1)
+    grind
 
 -- Now, we show the precondition (d > 0) is necessary for the measure-related
 -- checks.
