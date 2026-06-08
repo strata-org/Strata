@@ -7,6 +7,8 @@ module
 
 public import Strata.Languages.Core.CmdType
 import all Strata.Languages.Core.CmdType
+import all Strata.DL.Lambda.LTy
+import all Strata.DL.Lambda.LExprTypeEnv
 import Strata.Util.Tactics
 
 /-! ## Soundness helper lemmas for the Core command typechecker

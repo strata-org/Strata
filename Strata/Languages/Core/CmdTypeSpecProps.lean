@@ -8,6 +8,7 @@ module
 import Strata.Languages.Core.CmdTypeSpec
 import Strata.Languages.Core.CmdTypeProps
 import Strata.DL.Imperative.CmdType
+import all Strata.DL.Imperative.CmdType
 import all Strata.DL.Lambda.LExprResolveProps
 import all Strata.DL.Lambda.Denote.LExprDenoteTySubst
 
@@ -37,6 +38,12 @@ namespace Core
 namespace TypeSpec
 
 open Lambda LExpr Imperative
+
+/-- All context types are monomorphic (have empty bound variables).
+In Core this always holds: `preprocess` instantiates poly annotations, and
+`update`/`postprocess` stores only `forAll [] _`. -/
+def ContextMono (Γ : TContext Unit) : Prop :=
+  ∀ x ty, Γ.types.find? x = some ty → LTy.boundVars ty = []
 
 /-! ### Helper lemmas -/
 

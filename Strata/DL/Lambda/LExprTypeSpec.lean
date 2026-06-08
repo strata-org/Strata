@@ -407,7 +407,7 @@ theorem relevantKeys_decrease (S : Subst) (a : TyIdentifier) (t : LMonoTy)
     rw [decide_eq_true_eq]; exact ha_not_in_subst
 
 /-- All keys in substitution `S` are fresh w.r.t. context `Γ`. -/
-@[expose] def Subst.allKeysFresh {T : LExprParams} [DecidableEq T.IDMeta]
+def Subst.allKeysFresh {T : LExprParams} [DecidableEq T.IDMeta]
     (S : Subst) (Γ : TContext T.IDMeta) : Prop :=
   ∀ a, a ∈ Maps.keys S → TContext.isFresh (T := T) a Γ
 

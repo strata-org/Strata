@@ -506,10 +506,10 @@ def LContext.empty {IDMeta} : LContext IDMeta :=
 instance : EmptyCollection (LContext IDMeta) where
   emptyCollection := LContext.empty
 
-@[expose] def TEnv.context (T: TEnv IDMeta) : TContext IDMeta :=
+def TEnv.context (T: TEnv IDMeta) : TContext IDMeta :=
   T.genEnv.context
 
-@[expose] def TEnv.updateContext {IDMeta} (T: TEnv IDMeta) (C: TContext IDMeta) : TEnv IDMeta :=
+def TEnv.updateContext {IDMeta} (T: TEnv IDMeta) (C: TContext IDMeta) : TEnv IDMeta :=
   let g := {T.genEnv with context := C}
   {T with genEnv := g}
 
@@ -605,7 +605,7 @@ def LContext.addTypeFactory [Inhabited T.IDMeta] [Inhabited T.Metadata] (C: LCon
 /--
 Replace the global substitution in `T.state.subst` with `S`.
 -/
-@[expose] def TEnv.updateSubst (Env : TEnv IDMeta) (S : SubstInfo) : TEnv IDMeta :=
+def TEnv.updateSubst (Env : TEnv IDMeta) (S : SubstInfo) : TEnv IDMeta :=
   { Env with stateSubstInfo := S }
 
 theorem TEnv.SubstWF_of_pushemptySubstScope (T : TEnv IDMeta) :

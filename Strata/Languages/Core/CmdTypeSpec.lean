@@ -96,12 +96,6 @@ abbrev CmdHasType (C : LContext CoreLParams) :=
 abbrev CmdHasTypeA (C : LContext CoreLParams) :=
   @CmdHasType' LMonoTy C instHasTypeA
 
-/-- All context types are monomorphic (have empty bound variables).
-In Core this always holds: `preprocess` instantiates poly annotations, and
-`update`/`postprocess` stores only `forAll [] _`. -/
-@[expose] def ContextMono (Γ : TContext Unit) : Prop :=
-  ∀ x ty, Γ.types.find? x = some ty → LTy.boundVars ty = []
-
 end -- public section
 
 end TypeSpec
