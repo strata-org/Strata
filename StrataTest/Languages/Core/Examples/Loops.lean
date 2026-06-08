@@ -66,7 +66,7 @@ loop_entry$_1:
   var loop_measure$_2 : int;
   assume [assume_loop_measure$_2]: loop_measure$_2 == n;
   assert [measure_lb_loop_measure$_2]: !(loop_measure$_2 < 0);
-  #[<[provenance]: :1354-1460>,
+  #[<[provenance]: :1312-1418>,
  <[#spec_loop_invariant]: 0 <= i>,
  <[#spec_loop_invariant]: i <= n>,
  <[#spec_decreases]: n>] condGoto i < n l$_4 end$_0
@@ -157,7 +157,7 @@ loop_entry$_1:
   var loop_measure$_2 : int;
   assume [assume_loop_measure$_2]: loop_measure$_2 == n - i;
   assert [measure_lb_loop_measure$_2]: !(loop_measure$_2 < 0);
-  #[<[provenance]: :3322-3478>,
+  #[<[provenance]: :3280-3436>,
  <[#spec_loop_invariant]: 0 <= i>,
  <[#spec_loop_invariant]: i <= n>,
  <[#spec_loop_invariant]: s == i * (i + 1) / 2>,
@@ -413,7 +413,7 @@ Context: Global scope:
   var loop_measure$_2 : int;
   assume [assume_loop_measure$_2]: loop_measure$_2 == n - x;
   assert [measure_lb_loop_measure$_2]: !(loop_measure$_2 < 0);
-  #[<[provenance]: :9337-9590>,
+  #[<[provenance]: :9390-9643>,
  <[#spec_loop_invariant]: x >= 0>,
  <[#spec_loop_invariant]: x <= n>,
  <[#spec_loop_invariant]: n < top>,
@@ -427,7 +427,7 @@ loop_entry$_5:
   var loop_measure$_6 : int;
   assume [assume_loop_measure$_6]: loop_measure$_6 == x - y;
   assert [measure_lb_loop_measure$_6]: !(loop_measure$_6 < 0);
-  #[<[provenance]: :9457-9570>,
+  #[<[provenance]: :9510-9623>,
  <[#spec_loop_invariant]: y >= 0>,
  <[#spec_loop_invariant]: y <= x>,
  <[#spec_decreases]: x - y>] condGoto y < x l$_8 l$_4
