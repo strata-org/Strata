@@ -135,6 +135,11 @@ Emit these from passes; do **not** accept them as user identifiers:
 * The Laurel pipeline is meant to produce user-actionable diagnostics.
   "Not yet implemented" is an acceptable diagnostic for an unreachable
   case; a panic is not.
+* Every user-facing diagnostic must carry a source location. Build it with
+  `DiagnosticModel.withRange` from the offending node's `source : FileRange`;
+  reserve `DiagnosticModel.fromMessage` (no range) for internal or genuinely
+  unreachable cases. A diagnostic with no location is hard for the user to act
+  on, so thread `source` through generated nodes rather than dropping it.
 
 ## Common bugs
 
