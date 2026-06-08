@@ -6,9 +6,6 @@ on:
   push:
     branches: [main]
 
-env:
-  SOLUTION: Tools/BoogieToStrata/BoogieToStrata.sln
-
 jobs:
   get-branch-name:
     runs-on: ubuntu-latest
@@ -88,10 +85,6 @@ jobs:
       - name: Build and run strata verify
         run: lake exe strata verify ../Examples/SimpleProc.core.st
         working-directory: StrataCLI
-      - name: Build BoogieToStrata
-        run: dotnet build -warnaserror ${SOLUTION}
-      - name: Test BoogieToStrata
-        run: dotnet test ${SOLUTION}
       - name: Test Strata Command line
         run: .github/scripts/testStrataCommand.sh
       - name: Validate examples against expected output
