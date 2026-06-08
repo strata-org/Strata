@@ -373,19 +373,6 @@ private theorem fresh_temps_not_defined
         simp [hσ]
       exact ((Hwfgentmp v).mpr Hbundle).1
 
-/-- Bridge from the `old_` half of `Hwfgenst` to `isNotDefined` for a list
-    of fresh `old_`-prefixed names: if every name is `isOldTempIdent`, then
-    each must be undefined in σ by the freshness clause. -/
-private theorem fresh_olds_not_defined
-    {σ : CoreStore}
-    (Hwfgenold : ∀ v, isOldTempIdent v → (σ v).isNone)
-    {newOlds : List Expression.Ident}
-    (HoldPred : Forall (fun x => isOldTempIdent x) newOlds) :
-    Imperative.isNotDefined σ newOlds := by
-  intro v Hin
-  have Hold : isOldTempIdent v := (List.Forall_mem_iff.mp HoldPred) v Hin
-  exact Option.isNone_iff_eq_none.mp (Hwfgenold v Hold)
-
 /-- Positional decomposition for `Map.find?` against the L6 canonical
     `createOldVarsSubst` map.  Given a hit
     `Map.find? (createOldVarsSubst (...zip-form...)) k = some w`, extract
@@ -1308,7 +1295,9 @@ private theorem fresh_triple_σ_facts
     (fun _ h => Hnot _ (List.mem_append_left _ h)) HargTemp
   have HOut := fresh_temps_not_defined Hgenrel.tmpAlign
     (fun _ h => Hnot _ (List.mem_append_right _ (List.mem_append_left _ h))) HoutTemp
-  have HOld := fresh_olds_not_defined Hgenrel.oldFresh HoldIdentsTemp
+  have HOld : Imperative.isNotDefined _ _ := fun v Hin =>
+    Option.isNone_iff_eq_none.mp
+      (Hgenrel.oldFresh v ((List.Forall_mem_iff.mp HoldIdentsTemp) v Hin))
   refine ⟨Hnd3, HArg, HOut, HOld, UpdateStatesNotDefMonotone (fun v Hv => ?_) Hupdate⟩
   simp only [List.append_assoc, List.mem_append] at Hv
   rcases Hv with h | h | h
