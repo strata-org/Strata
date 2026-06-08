@@ -125,3 +125,15 @@ elab "generalize_lhs_last_arg" : tactic => do
   | _ => throwError "LHS is not a function application"
 
 end
+
+/-- Splits on `h` once, then closes every resulting branch that `simp at h` or
+    `contradiction` can fully discharge. Fails unless at least one branch is
+    closed, so a `split` that produces no error branch is rejected. Handles
+    error branches in any position — first, last, or interleaved. -/
+macro "elim_err" h:ident : tactic =>
+  `(tactic| (split at $h:ident; any_goals (solve | simp at $h:ident | contradiction)))
+
+/-- Repeatedly applies the `elim_err` step to `h`: splits and closes error
+    branches until a split no longer produces a closable branch. -/
+macro "elim_errs" h:ident : tactic =>
+  `(tactic| repeat (split at $h:ident; any_goals (solve | simp at $h:ident | contradiction)))

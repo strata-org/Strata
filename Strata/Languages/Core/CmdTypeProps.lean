@@ -7,6 +7,7 @@ module
 
 public import Strata.Languages.Core.CmdType
 import all Strata.Languages.Core.CmdType
+import Strata.Util.Tactics
 
 /-! ## Soundness helper lemmas for the Core command typechecker
 
@@ -70,10 +71,9 @@ theorem preprocess_mono (C : LContext CoreLParams) (Env : TEnv Unit)
     (h : CmdType.preprocess C Env ty = .ok (ty', Env')) :
     ∃ mty, ty' = .forAll [] mty := by
   simp [CmdType.preprocess, Bind.bind, Except.bind, Except.mapError] at h
-  split at h
-  · simp at h
-  · simp only [Except.ok.injEq, Prod.mk.injEq, pure, Except.pure] at h
-    exact ⟨_, h.1.symm⟩
+  elim_err h
+  simp only [Except.ok.injEq, Prod.mk.injEq, pure, Except.pure] at h
+  exact ⟨_, h.1.symm⟩
 
 /-- `postprocess` on a mono type applies the current substitution and preserves the environment. -/
 theorem postprocess_result (C : LContext CoreLParams) (Env Env' : TEnv Unit)
@@ -82,10 +82,9 @@ theorem postprocess_result (C : LContext CoreLParams) (Env Env' : TEnv Unit)
     ty' = .forAll [] (LMonoTy.subst Env.stateSubstInfo.subst mty) ∧
     Env' = Env := by
   simp only [CmdType.postprocess, LTy.isMonoType, LTy.toMonoType] at h
-  split at h
-  · simp only [Except.ok.injEq, Prod.mk.injEq] at h
-    exact ⟨h.1.symm, h.2.symm⟩
-  · simp at h
+  elim_err h
+  simp only [Except.ok.injEq, Prod.mk.injEq] at h
+  exact ⟨h.1.symm, h.2.symm⟩
 
 /-- After unification, both sides of a mono constraint are equal under the result substitution. -/
 theorem unifyTypes_eq (Env Env' : TEnv Unit)
@@ -95,16 +94,15 @@ theorem unifyTypes_eq (Env Env' : TEnv Unit)
       LMonoTy.subst Env'.stateSubstInfo.subst emty := by
   simp [CmdType.unifyTypes, CmdType.canonicalizeConstraints, LTy.isMonoType, LTy.boundVars,
     LTy.toMonoType, Bind.bind, Except.bind, Except.mapError, pure, Except.pure] at h
-  split at h
-  · simp at h
-  · rename_i S hS
-    simp only [Except.ok.injEq] at h
-    subst h
-    split at hS <;> try contradiction
-    rename_i h_unify
-    cases hS
-    simp [TEnv.updateSubst]
-    exact Constraints.unify_sound [(xmty, emty)] Env.stateSubstInfo S h_unify (xmty, emty) (.head _)
+  elim_err h
+  rename_i S hS
+  simp only [Except.ok.injEq] at h
+  subst h
+  split at hS <;> try contradiction
+  rename_i h_unify
+  cases hS
+  simp [TEnv.updateSubst]
+  exact Constraints.unify_sound [(xmty, emty)] Env.stateSubstInfo S h_unify (xmty, emty) (.head _)
 
 /-- `unifyTypes` does not change the context. -/
 theorem unifyTypes_preserves_context (Env Env' : TEnv Unit)
@@ -112,15 +110,10 @@ theorem unifyTypes_preserves_context (Env Env' : TEnv Unit)
     (h : CmdType.unifyTypes Env constraints = .ok Env') :
     Env'.context = Env.context := by
   simp [CmdType.unifyTypes, Bind.bind, Except.bind, Except.mapError, pure, Except.pure] at h
-  split at h
-  · simp at h
-  · rename_i cs hcs
-    split at h
-    · simp at h
-    · rename_i S hS
-      simp only [Except.ok.injEq] at h
-      subst h
-      simp [TEnv.updateSubst, TEnv.context]
+  elim_errs h
+  simp only [Except.ok.injEq] at h
+  subst h
+  simp [TEnv.updateSubst, TEnv.context]
 
 /-- The result substitution of `unifyTypes` absorbs the input substitution. -/
 theorem unifyTypes_absorbs (Env Env' : TEnv Unit)
@@ -128,18 +121,14 @@ theorem unifyTypes_absorbs (Env Env' : TEnv Unit)
     (h : CmdType.unifyTypes Env constraints = .ok Env') :
     Subst.absorbs Env'.stateSubstInfo.subst Env.stateSubstInfo.subst := by
   simp [CmdType.unifyTypes, Bind.bind, Except.bind, Except.mapError, pure, Except.pure] at h
-  split at h
-  · simp at h
-  · rename_i cs hcs
-    split at h
-    · simp at h
-    · rename_i S hS
-      simp only [Except.ok.injEq] at h
-      subst h
-      simp [TEnv.updateSubst]
-      have hS' : Constraints.unify cs Env.stateSubstInfo = .ok S := by
-        revert hS; cases Constraints.unify cs Env.stateSubstInfo <;> simp
-      exact Constraints.unify_absorbs cs Env.stateSubstInfo S hS'
+  elim_errs h
+  rename_i _ cs _ _ S hS
+  simp only [Except.ok.injEq] at h
+  subst h
+  simp [TEnv.updateSubst]
+  have hS' : Constraints.unify cs Env.stateSubstInfo = .ok S := by
+    revert hS; cases Constraints.unify cs Env.stateSubstInfo <;> simp
+  exact Constraints.unify_absorbs cs Env.stateSubstInfo S hS'
 
 /--
 Decomposition of `inferType` success: if `inferType` returns `.ok`, then
@@ -153,19 +142,16 @@ theorem inferType_decompose (C : LContext CoreLParams) (Env : TEnv Unit)
       e' = ea.unresolved ∧
       ety = .forAll [] ea.toLMonoTy := by
   simp only [CmdType.inferType, Bind.bind, Except.bind, Except.mapError] at h
-  split at h
-  · simp at h
-  · split at h
-    · simp at h
-    · rename_i v h_resolve
-      obtain ⟨ea, Env_r⟩ := v
-      simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
-      obtain ⟨h_e', h_ety, h_env'⟩ := h
-      subst h_e' h_ety h_env'
-      have h_res : LExpr.resolve C Env e = .ok (ea, Env_r) := by
-        revert h_resolve
-        cases h_r : LExpr.resolve C Env e <;> simp
-      exact ⟨ea, h_res, rfl, rfl⟩
+  elim_errs h
+  · rename_i v h_resolve
+    obtain ⟨ea, Env_r⟩ := v
+    simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨h_e', h_ety, h_env'⟩ := h
+    subst h_e' h_ety h_env'
+    have h_res : LExpr.resolve C Env e = .ok (ea, Env_r) := by
+      revert h_resolve
+      cases h_r : LExpr.resolve C Env e <;> simp
+    exact ⟨ea, h_res, rfl, rfl⟩
 
 /--
 `inferType` success implies all free vars of `e` are in `Env.context.knownVars`.
@@ -175,15 +161,14 @@ theorem inferType_fvars_in_knownVars (C : LContext CoreLParams) (Env : TEnv Unit
     (h : CmdType.inferType C Env c e = .ok (e', ety, Env')) :
     ∀ x ∈ LExpr.freeVars e, x.1 ∈ TContext.knownVars Env.context := by
   simp only [CmdType.inferType, Bind.bind, Except.bind, Except.mapError] at h
-  split at h
-  · simp at h
-  · rename_i h_fvc
-    have h_fvc_ok : Env.freeVarCheck e (Std.format "[" ++ Std.format c ++ Std.format "]") = .ok () := by
-      revert h_fvc
-      cases h_r : Env.freeVarCheck e (Std.format "[" ++ Std.format c ++ Std.format "]") with
-      | error => simp
-      | ok v => simp
-    exact TEnv.freeVarCheck_implies_fvars_in_knownVars Env e _ h_fvc_ok
+  elim_err h
+  rename_i h_fvc
+  have h_fvc_ok : Env.freeVarCheck e (Std.format "[" ++ Std.format c ++ Std.format "]") = .ok () := by
+    revert h_fvc
+    cases h_r : Env.freeVarCheck e (Std.format "[" ++ Std.format c ++ Std.format "]") with
+    | error => simp
+    | ok v => simp
+  exact TEnv.freeVarCheck_implies_fvars_in_knownVars Env e _ h_fvc_ok
 
 /-- `preprocess` does not change the context. -/
 theorem preprocess_preserves_context (C : LContext CoreLParams) (Env : TEnv Unit)
@@ -191,15 +176,14 @@ theorem preprocess_preserves_context (C : LContext CoreLParams) (Env : TEnv Unit
     (h : CmdType.preprocess C Env ty = .ok (ty', Env')) :
     Env'.context = Env.context := by
   simp only [CmdType.preprocess, Bind.bind, Except.bind, Except.mapError] at h
-  split at h
-  · simp at h
-  · rename_i v h_iwc
-    obtain ⟨mty, Env1⟩ := v
-    simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
-    obtain ⟨_, h2⟩ := h; subst h2
-    have h_iwc' : LTy.instantiateWithCheck ty C Env = .ok (mty, Env1) := by
-      revert h_iwc; cases LTy.instantiateWithCheck ty C Env <;> simp
-    exact LTy_instantiateWithCheck_context' ty C Env mty Env1 h_iwc'
+  elim_err h
+  rename_i v h_iwc
+  obtain ⟨mty, Env1⟩ := v
+  simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
+  obtain ⟨_, h2⟩ := h; subst h2
+  have h_iwc' : LTy.instantiateWithCheck ty C Env = .ok (mty, Env1) := by
+    revert h_iwc; cases LTy.instantiateWithCheck ty C Env <;> simp
+  exact LTy_instantiateWithCheck_context' ty C Env mty Env1 h_iwc'
 
 /-- `preprocess` preserves well-formedness of the type environment. -/
 theorem preprocess_preserves_TEnvWF (C : LContext CoreLParams) (Env : TEnv Unit)
