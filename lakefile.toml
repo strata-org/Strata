@@ -50,6 +50,10 @@ globs = ["StrataAgent.+"]
 [[lean_exe]]
 name = "DiffTestCore"
 
+[[lean_exe]]
+name = "SwarmAgentTools"
+root = "StrataAgent.LeanTools.Main"
+
 [[require]]
 name = "repl"
 git = "https://github.com/leanprover-community/repl"
