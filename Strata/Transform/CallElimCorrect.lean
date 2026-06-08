@@ -3711,7 +3711,7 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
     (Hwf : WF.WFStatementsProp p [st])
     (Hgenrel : CoreGenStateRel σ γ)
     -- Call-site WF: pre/post vars are non-temp/non-old and disjoint
-    -- from `lhs`/inputs.keys/outputs.keys (seven clauses; see WFCallSiteProp
+    -- from `lhs`/inputs.keys/outputs.keys (eight clauses; see WFCallSiteProp
     -- above (line 1095 of this file)).
     (Hwfcallsite : WFCallSiteProp p π st)
     (Helim : (Except.ok sts, γ') = (runWith st (callElimStmt · p) γ)) :
