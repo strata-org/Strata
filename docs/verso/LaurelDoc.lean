@@ -216,19 +216,18 @@ A Laurel program consists of procedures, global variables, type definitions, and
 
 ## Holes are the uniform "unknown" marker
 
-The `.Hole` constructor of `StmtExpr` is how Laurel represents any expression whose
-identity is not yet known. It is used by front-end translators when a construct has no
-Laurel encoding yet, by error-recovery paths when an error is encountered (so the rest of
-the program can still compile and produce useful diagnostics), and by specification
-pipelines that cannot materialise a precondition.
+The `.Hole` constructor of `StmtExpr` is Laurel's single representation for an expression
+whose identity is not yet known. The `StmtExpr` documentation above describes when
+front-ends and error-recovery paths emit one.
 
-Two pipeline passes close the loop: `InferHoleTypes` labels every hole with the type its
-context demands, and `EliminateHoles` replaces deterministic holes with calls to freshly
-generated uninterpreted functions, and non-deterministic holes with havocs.
+`InferHoleTypes` labels every hole with the type its context demands. `EliminateHoles` then
+replaces deterministic holes with calls to freshly generated uninterpreted functions.
+Non-deterministic holes are preserved by `EliminateHoles` and lowered to havoced variables
+later, by `LiftExpressionAssignments`.
 
-The invariant is that any hole that survives past `EliminateHoles` is a pipeline bug. If a
-new translator case introduces holes inside a constructor the elimination pass does not
-traverse, that is where the fix has to go.
+A deterministic hole that survives past `EliminateHoles` indicates a pipeline bug — usually
+a new translator case that emits a hole inside a constructor the elimination pass does not
+traverse (see issue #1176).
 
 ## Reserved identifier prefixes
 
