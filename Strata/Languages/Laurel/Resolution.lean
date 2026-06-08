@@ -527,17 +527,22 @@ private def isReference (ctx : TypeContext) (ty : HighTypeMd) : Bool :=
   | .UserDefined _ | .Unknown => true
   | _ => false
 
-/-- Get the type of a resolved reference. Tries the lexical scope by name
-    first; if that misses (notably for fields, which are scoped under
-    qualified keys like "Container.intValue"), falls back to a uniqueId
-    lookup populated as definitions are registered. -/
+/-- Get the type of a resolved reference. Prefers the resolved definition by
+    `uniqueId` (the post-resolution ground truth, populated as definitions are
+    registered and never shadowed): a field reference carries its field's
+    `uniqueId`, but its bare `text` may collide with a same-named local in
+    `scope`, so a name-keyed lookup would read the shadowing local's type
+    instead of the field's. Falls back to a name lookup for references whose
+    `uniqueId` is not filled in — notably local loads, which `Synth.varLocal`
+    passes here unresolved and which are correctly keyed by `text` — and
+    finally to `Unknown`. -/
 private def getVarType (ref : Identifier) : ResolveM HighTypeMd := do
   let s ← get
-  match s.scope.get? ref.text with
-  | some (_, node) => pure node.getType
+  match ref.uniqueId.bind s.idToNode.get? with
+  | some node => pure node.getType
   | none =>
-    match ref.uniqueId.bind s.idToNode.get? with
-    | some node => pure node.getType
+    match s.scope.get? ref.text with
+    | some (_, node) => pure node.getType
     | none => pure { val := .Unknown, source := ref.source }
 
 /-- Get the call return type and parameter types for a callee from scope. -/
