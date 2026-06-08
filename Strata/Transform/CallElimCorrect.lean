@@ -1599,8 +1599,6 @@ private theorem b1_var_witness_at_oldSubst
           callElim_inputOnlyOldSubst proc' args) k = some w)
       (_Hv_in : var ∈ Imperative.HasVarsPure.getVars (P:=Expression) w),
     ∃ (ni : Nat) (Hni : ni < genOldIdents.length),
-      w = Core.Transform.createFvar
-            (genOldIdents[ni]'Hni) ∧
       var = genOldIdents[ni]'Hni := by
   intro var k w w' hfind Hf Hv_in
   have Hw'w : w' = w := find?_append_some_eq hfind Hf
@@ -1611,7 +1609,7 @@ private theorem b1_var_witness_at_oldSubst
       Core.Transform.createFvar
         (genOldIdents[ni_val]'Hni_lt_genOld) := by
     rw [← Hw'w]; exact Hw'_eq
-  refine ⟨ni_val, Hni_lt_genOld, Hw_eq, ?_⟩
+  refine ⟨ni_val, Hni_lt_genOld, ?_⟩
   rw [Hw_eq] at Hv_in
   have Hv_in' :
       var ∈ Imperative.HasVarsPure.getVars (P:=Expression)
@@ -3506,7 +3504,7 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
                         (Core.Transform.createOldVarsSubst
                           oldTripsCanonical_L6) k with
         | some w' =>
-          obtain ⟨ni_val, Hni_lt_genOld, _Hw_eq, Hv_eq_gen⟩ :=
+          obtain ⟨ni_val, Hni_lt_genOld, Hv_eq_gen⟩ :=
             b1_var_witness hfind Hf Hv_in
           have Hni_lt_oldVals : ni_val < oldVals.length :=
             HoldValsLen.symm ▸ HgenOldLen ▸ Hni_lt_genOld
@@ -3570,7 +3568,7 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
                         (Core.Transform.createOldVarsSubst
                           oldTripsCanonical_L6) k' with
         | some w' =>
-          obtain ⟨ni_val, Hni_lt_genOld, _Hw_eq, Hx_eq_gen⟩ :=
+          obtain ⟨ni_val, Hni_lt_genOld, Hx_eq_gen⟩ :=
             b1_var_witness hfind Hf Hv_in
           rw [Hx_eq_gen] at Hin1
           cases List.mem_append.mp Hin1 with
@@ -5495,7 +5493,7 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                                         oldTripsCanonical_L6) k with
                       | some w' =>
                         -- (b1) createOldVarsSubst flavor — via shared helper.
-                        obtain ⟨ni_val, Hni_lt_genOld, _Hw_eq, Hv_eq_gen⟩ :=
+                        obtain ⟨ni_val, Hni_lt_genOld, Hv_eq_gen⟩ :=
                           b1_var_witness hfind Hf Hv_in
                         -- σ_R1 k1 = oldVals[ni_val]; σ_havoc k1 = oldVals[ni_val].
                         have Hni_lt_oldVals : ni_val < oldVals.length :=
@@ -5584,7 +5582,7 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                                         oldTripsCanonical_L6) k' with
                       | some w' =>
                         -- (b1) createOldVarsSubst flavor — via shared helper.
-                        obtain ⟨ni_val, Hni_lt_genOld, _Hw_eq, Hx_eq_gen⟩ :=
+                        obtain ⟨ni_val, Hni_lt_genOld, Hx_eq_gen⟩ :=
                           b1_var_witness hfind Hf Hv_in
                         rw [Hx_eq_gen] at Hin1
                         -- genOldIdents[ni_val] ∈ filtered_ks' = lhs ++ filtered_argTemps.
