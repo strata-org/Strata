@@ -54,9 +54,12 @@ garbage-collected source languages (Java, Python, JavaScript, TypeScript).
 * **Keep the translation to Core "dumb".** If a Laurel → Core case needs
   non-trivial work, the work probably belongs in an earlier
   Laurel → Laurel pass.
-* **Use `.Hole` to recover from errors in translators.** Emit a
-  diagnostic and a hole in place of the problematic sub-expression; the
-  rest of the program still compiles and the user sees a useful error.
+* **Use `.Hole` to recover from errors in translators.** Where an error is
+  recoverable, emit a diagnostic and a hole in place of the problematic
+  sub-expression so the rest of the program still compiles and the user sees a
+  useful error. This is a recovery tool, not a guarantee that input is never
+  rejected: unrecoverable errors (e.g. resolution failures) still abort the
+  pipeline — see *Error reporting* below.
 * **When you add a `StmtExpr` constructor, update every pass.** At
   minimum: `MapStmtExpr`, `Resolution`, `HeapParameterization`,
   `InferHoleTypes` / `EliminateHoles` (if the constructor can contain a
