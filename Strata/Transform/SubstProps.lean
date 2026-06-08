@@ -1335,6 +1335,25 @@ theorem havocVars_updatedStates_lift
       ih Hdisj_t
     exact HavocVars.update_some hUp' hTail'
 
+/-- Lift `HavocVars σ lhs σ'` across three nested `updatedStates` extensions
+    given `lhs` is disjoint from each layer's identifiers. -/
+theorem havocVars_3layer_lift
+    {σ σ' : CoreStore} {lhs : List Expression.Ident}
+    {ts1 ts2 ts3 : List Expression.Ident}
+    {vs1 vs2 vs3 : List Expression.Expr}
+    (Hdisj1 : lhs.Disjoint ts1) (Hdisj2 : lhs.Disjoint ts2)
+    (Hdisj3 : lhs.Disjoint ts3)
+    (Hhav : HavocVars σ lhs σ') :
+    HavocVars
+      (updatedStates
+        (updatedStates (updatedStates σ ts1 vs1) ts2 vs2) ts3 vs3)
+      lhs
+      (updatedStates
+        (updatedStates (updatedStates σ' ts1 vs1) ts2 vs2) ts3 vs3) :=
+  havocVars_updatedStates_lift Hdisj3
+    (havocVars_updatedStates_lift Hdisj2
+      (havocVars_updatedStates_lift Hdisj1 Hhav))
+
 /-! ### Failing-arm helpers for `EvalCallElim_glue_fail`
 
 These helpers walk the asserts segment when at least one precondition
