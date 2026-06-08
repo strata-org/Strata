@@ -1951,7 +1951,7 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
           asserts, assumes,
           s_arg, s_out, s_old,
           Hfind, Heqarg, Heqout, Heqold, Holdtylen,
-          Hsts_struct, HassertsShape, _HassumesShape⟩ :=
+          Hsts_struct, HassertsShape, HassumesShape⟩ :=
     callElimCmd_call_eq heq_ce
   have Heqargs : argTrips.unzip.snd =
       CallArg.getInputExprs args :=
@@ -2337,9 +2337,9 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
     -- ── D2a: per-precondition payload for L4 (asserts) ──
     obtain ⟨HprocEq, c_in_postExprs_of_proc'⟩ :=
       procEq_and_postExprs_bridge Hp Hfind lkup
-    obtain ⟨HpreVarsFresh, _HpostVarsFresh, _HargVarsNotInLhs,
+    obtain ⟨HpreVarsFresh, HpostVarsFresh, _HargVarsNotInLhs,
             HinoutFresh, HargVarsNotInOutKeys,
-            HargVarsNotInInKeys, _HoutAlign, HpreBoolTyped⟩ :=
+            HargVarsNotInInKeys, HoutAlign, HpreBoolTyped⟩ :=
       Hwfcallsite.specialize (procName := procName)
         (args := args) (md := md) rfl lkup
     have HinputsFresh :
@@ -3235,7 +3235,7 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
                 (CoreIdent.mkOld (oldVars[i]'Hi).name) none) =
             some (oldVals[i]'(HoldValsLen.symm ▸ Hi)) :=
       HoldEval_bridge_at_σO Hwf2_univ Hinitout HσAO_reads_outs
-        Hevalouts hCallArgsLhs _HoutAlign HoldVars_sub_outs
+        Hevalouts hCallArgsLhs HoutAlign HoldVars_sub_outs
         HoldVars_sub_lhs HoldVals HoldValsLen
     -- L6 oldTripsCanonical/oldSubst/posts_filtered shape.
     let oldTripsCanonical_L6 :
@@ -3318,7 +3318,7 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
             ¬ isTempIdent v ∧ ¬ isOldTempIdent v ∧
             v ∉ CallArg.getLhs args := by
         intro c Hc_in v Hv
-        exact _HpostVarsFresh c.expr (c_in_postExprs_of_proc' c Hc_in) v Hv
+        exact HpostVarsFresh c.expr (c_in_postExprs_of_proc' c Hc_in) v Hv
       have HsurvBridgeC :
           ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression)
                   c.expr,
@@ -3422,7 +3422,7 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
           ¬ isTempIdent v ∧ ¬ isOldTempIdent v ∧
           v ∉ CallArg.getLhs args := by
       intro c Hc_in v Hv
-      exact _HpostVarsFresh c.expr (c_in_postExprs_of_proc' c Hc_in) v Hv
+      exact HpostVarsFresh c.expr (c_in_postExprs_of_proc' c Hc_in) v Hv
     have HfiltArgT_sub_argT :
         ∀ x ∈ filtered_argTemps, x ∈ argTemps := by
       intro x Hx
@@ -3614,7 +3614,7 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
               HpostEval_bridge entry Hentry⟩
     -- L6 (assumes) via H_assumes_zip_poly with f := true.
     obtain ⟨assumeLabels, _HassumeLabelsLen, HassumeShape⟩ :=
-      _HassumesShape
+      HassumesShape
     have HassumeSubst_eq :
         ((proc'.header.outputs.keys.zip
             (Core.Transform.createFvars (CallArg.getLhs args))) ++
