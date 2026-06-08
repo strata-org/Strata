@@ -47,7 +47,6 @@ jobs:
         with:
           path: |
             .lake
-            StrataCLI/.lake
             StrataPython/.lake
       - name: Download ion-java jar for Java codegen test
         run: wget -q -O StrataTestExtra/Languages/Java/testdata/ion-java-1.11.11.jar https://github.com/amazon-ion/ion-java/releases/download/v1.11.11/ion-java-1.11.11.jar
@@ -75,17 +74,11 @@ jobs:
           build-args: StrataPython StrataPythonTest
           use-github-cache: false
           test: false
-      - name: Build StrataCLI
-        uses: leanprover/lean-action@v1
-        with:
-          lake-package-directory: StrataCLI
-          use-github-cache: false
       - name: Save lake cache
         uses: ./.github/actions/save-lake-cache
         with:
           path: |
             .lake
-            StrataCLI/.lake
             StrataPython/.lake
       - name: Verify Java testdata is up to date
         run: |
@@ -145,7 +138,6 @@ jobs:
       with:
         path: |
           .lake
-          StrataCLI/.lake
           StrataPython/.lake
         fail-on-cache-miss: "true"
         use-restore-keys: "false"
@@ -259,7 +251,6 @@ jobs:
       with:
         path: |
           .lake
-          StrataCLI/.lake
           StrataPython/.lake
         fail-on-cache-miss: "true"
         use-restore-keys: "false"
