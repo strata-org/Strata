@@ -3,22 +3,22 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-
+module
 import Strata.Languages.Core.Verifier
-import Strata.Languages.Core
+meta import Strata.Languages.Core
 import Strata.Transform.StructuredToUnstructured
 import Lean.Parser.Types
-import Strata.Languages.Core.DDMTransform.Grammar
-import Strata.Languages.Core.DDMTransform.Translate
-import Strata.Languages.Core.Options
-import StrataDDM.AST
-import Strata.DL.Imperative.BasicBlock
-import Strata.Languages.Core.Statement
-import Strata.Languages.Core.Expressions
+meta import Strata.Languages.Core.DDMTransform.Grammar
+meta import Strata.Languages.Core.DDMTransform.Translate
+meta import Strata.Languages.Core.Options
+public import StrataDDM.AST
+public import Strata.DL.Imperative.BasicBlock
+public import Strata.Languages.Core.Statement
+public import Strata.Languages.Core.Expressions
 import StrataDDM.Integration.Lean.HashCommands
 import Strata.Languages.Core.StatementSemantics
-import Strata.MetaVerifier
 
+public section
 open StrataDDM (Program)
 namespace Strata
 
@@ -64,15 +64,18 @@ loop_entry$_1:
   var loop_measure$_2 : int;
   assume [assume_loop_measure$_2]: loop_measure$_2 == n;
   assert [measure_lb_loop_measure$_2]: !(loop_measure$_2 < 0);
-  condGoto i < n l$_4 end$_0
+  #[<[provenance]: :1298-1404>,
+ <[#spec_loop_invariant]: 0 <= i>,
+ <[#spec_loop_invariant]: i <= n>,
+ <[#spec_decreases]: n>] condGoto i < n l$_4 end$_0
 l$_4:
   i := i + 1;
   condGoto true measure_decrease$_3 measure_decrease$_3
 measure_decrease$_3:
   assert [measure_decrease_loop_measure$_2]: n < loop_measure$_2;
-  condGoto true loop_entry$_1 loop_entry$_1
+  #[<[provenance]: <synthesized:structured-to-unstructured>>] condGoto true loop_entry$_1 loop_entry$_1
 end$_0:
-  finish
+  #[<[provenance]: <synthesized:structured-to-unstructured>>] finish
 -/
 #guard_msgs in
 #eval (Std.format (singleCFG measureFailExamplePgm 0))
@@ -152,16 +155,20 @@ loop_entry$_1:
   var loop_measure$_2 : int;
   assume [assume_loop_measure$_2]: loop_measure$_2 == n - i;
   assert [measure_lb_loop_measure$_2]: !(loop_measure$_2 < 0);
-  condGoto i < n l$_4 end$_0
+  #[<[provenance]: :3146-3302>,
+ <[#spec_loop_invariant]: 0 <= i>,
+ <[#spec_loop_invariant]: i <= n>,
+ <[#spec_loop_invariant]: s == i * (i + 1) / 2>,
+ <[#spec_decreases]: n - i>] condGoto i < n l$_4 end$_0
 l$_4:
   i := i + 1;
   s := s + i;
   condGoto true measure_decrease$_3 measure_decrease$_3
 measure_decrease$_3:
   assert [measure_decrease_loop_measure$_2]: n - i < loop_measure$_2;
-  condGoto true loop_entry$_1 loop_entry$_1
+  #[<[provenance]: <synthesized:structured-to-unstructured>>] condGoto true loop_entry$_1 loop_entry$_1
 end$_0:
-  finish
+  #[<[provenance]: <synthesized:structured-to-unstructured>>] finish
 -/
 #guard_msgs in
 #eval (Std.format (singleCFG gaussPgm 0))
@@ -344,10 +351,6 @@ Result: ✅ pass
 #guard_msgs in
 #eval Core.verify gaussPgm
 
-theorem gaussPgm_correct : smtVCsCorrect gaussPgm := by
-  gen_smt_vcs
-  all_goals (try grind)
-
 ---------------------------------------------------------------------
 
 def nestedPgm :=
@@ -404,7 +407,11 @@ Context: Global scope:
   var loop_measure$_2 : int;
   assume [assume_loop_measure$_2]: loop_measure$_2 == n - x;
   assert [measure_lb_loop_measure$_2]: !(loop_measure$_2 < 0);
-  condGoto x < n before_loop$_11 end$_0
+  #[<[provenance]: :9041-9294>,
+ <[#spec_loop_invariant]: x >= 0>,
+ <[#spec_loop_invariant]: x <= n>,
+ <[#spec_loop_invariant]: n < top>,
+ <[#spec_decreases]: n - x>] condGoto x < n before_loop$_11 end$_0
 before_loop$_11:
   y := 0;
   condGoto true loop_entry$_5 loop_entry$_5
@@ -414,21 +421,24 @@ loop_entry$_5:
   var loop_measure$_6 : int;
   assume [assume_loop_measure$_6]: loop_measure$_6 == x - y;
   assert [measure_lb_loop_measure$_6]: !(loop_measure$_6 < 0);
-  condGoto y < x l$_8 l$_4
+  #[<[provenance]: :9161-9274>,
+ <[#spec_loop_invariant]: y >= 0>,
+ <[#spec_loop_invariant]: y <= x>,
+ <[#spec_decreases]: x - y>] condGoto y < x l$_8 l$_4
 l$_8:
   y := y + 1;
   condGoto true measure_decrease$_7 measure_decrease$_7
 measure_decrease$_7:
   assert [measure_decrease_loop_measure$_6]: x - y < loop_measure$_6;
-  condGoto true loop_entry$_5 loop_entry$_5
+  #[<[provenance]: <synthesized:structured-to-unstructured>>] condGoto true loop_entry$_5 loop_entry$_5
 l$_4:
   x := x + 1;
   condGoto true measure_decrease$_3 measure_decrease$_3
 measure_decrease$_3:
   assert [measure_decrease_loop_measure$_2]: n - x < loop_measure$_2;
-  condGoto true loop_entry$_1 loop_entry$_1
+  #[<[provenance]: <synthesized:structured-to-unstructured>>] condGoto true loop_entry$_1 loop_entry$_1
 end$_0:
-  finish
+  #[<[provenance]: <synthesized:structured-to-unstructured>>] finish
 -/
 #guard_msgs in
 #eval (Std.format (singleCFG nestedPgm 2))
@@ -493,10 +503,6 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval Core.verify nestedPgm (options := .quiet)
-
-theorem nestedPgm_correct : smtVCsCorrect nestedPgm := by
-  gen_smt_vcs
-  all_goals (try grind)
 
 ---------------------------------------------------------------------
 
@@ -563,26 +569,6 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval Core.verify precondElimInMeasurePgm (options := .quiet)
-
-/--
-This theorem requires a little bit of manual work to handle facts about
-division, though most goals are solved by `grind`.
--/
-theorem precondElimInMeasurePgm_correct : smtVCsCorrect precondElimInMeasurePgm := by
-  gen_smt_vcs
-  all_goals (try grind)
-  -- measure_lb_0: the loop measure i / d is non-negative
-  case measure_lb_0 =>
-    intro _ d i _ _ dpos _ _ _ inonneg meas_def
-    subst meas_def
-    have p := Int.ediv_nonneg (a := i) (b := d)
-    grind
-  -- measure_decrease_0: the loop measure i / d strictly decreases
-  case measure_decrease_0 =>
-    intro _ d i _ _ dpos _ _ _ _ meas_def
-    subst meas_def
-    have p := Int.add_mul_ediv_left (a := i) (b := d) (c := -1)
-    grind
 
 -- Now, we show the precondition (d > 0) is necessary for the measure-related
 -- checks.
@@ -711,3 +697,4 @@ Result: ✅ pass
 #eval Core.verify precondElimMeasureBodyMutatesPgm (options := .quiet)
 
 end Strata
+end

@@ -47,6 +47,36 @@ when the command signals a failure.
 def isNotDefined {P : PureExpr} (σ : SemanticStore P) (vs : List P.Ident) : Prop :=
   ∀ v, v ∈ vs → σ v = none
 
+/-- The store `σ_cfg` contains everything `σ_struct` contains, with matching
+values. `σ_cfg` may have additional entries that `σ_struct` does not.
+
+Equivalently: for every variable defined in `σ_struct` (in the sense of
+`isDefined`), `σ_cfg` assigns the same value at that variable. -/
+@[expose] def StoreAgreement {P : PureExpr}
+    (σ_struct σ_cfg : SemanticStore P) : Prop :=
+  ∀ x, isDefined σ_struct [x] → σ_struct x = σ_cfg x
+
+theorem StoreAgreement.refl {P : PureExpr} (σ : SemanticStore P) :
+    StoreAgreement σ σ :=
+  fun _ _ => rfl
+
+theorem StoreAgreement.trans {P : PureExpr} {σ₁ σ₂ σ₃ : SemanticStore P}
+    (h₁ : StoreAgreement σ₁ σ₂) (h₂ : StoreAgreement σ₂ σ₃) :
+    StoreAgreement σ₁ σ₃ := by
+  intro x h_def₁
+  -- σ₁ x = σ₂ x from h₁; need σ₂ x = σ₃ x from h₂, which needs isDefined σ₂ [x].
+  have h12 : σ₁ x = σ₂ x := h₁ x h_def₁
+  have h_def₂ : isDefined σ₂ [x] := by
+    intro v hv
+    rw [List.mem_singleton] at hv
+    -- hv : v = x; rewrite goal to be about x
+    rw [hv]
+    have h := h_def₁ x (List.mem_singleton.mpr rfl)
+    -- h : (σ₁ x).isSome = true; rewrite via h12
+    rw [← h12]; exact h
+  have h23 : σ₂ x = σ₃ x := h₂ x h_def₂
+  exact h12.trans h23
+
 -- Can make this more generic by supplying a predicate function
 -- (SemanticStore P) → P.Ident → Bool
 -- determining whether each variable in the store is valid
@@ -107,6 +137,11 @@ def WellFormedSemanticEvalVal {P : PureExpr} [HasVal P]
 @[expose] def WellFormedSemanticEvalExprCongr {P : PureExpr} [HasVarsPure P P.Expr] (δ : SemanticEval P)
     : Prop := ∀ e σ σ', (∀ x ∈ HasVarsPure.getVars e, σ x = σ' x) → δ σ e = δ σ' e
 
+/-- A successful evaluation implies all the read-vars are defined. -/
+@[expose] def WellFormedSemanticEvalDef {P : PureExpr} [HasVarsPure P P.Expr]
+    (δ : SemanticEval P) : Prop :=
+  ∀ e v σ, δ σ e = some v → isDefined σ (HasVarsPure.getVars e)
+
 /--
 Abstract variable update.
 
@@ -149,13 +184,14 @@ sets it to `true`; all other constructors report `false`.
 The failure flag is accumulated in `Env.hasFailure` by the statement
 semantics (`EvalStmt`).
 -/
-inductive EvalCmd [HasFvar P] [HasBool P] [HasNot P] :
+inductive EvalCmd [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] :
   SemanticEval P → SemanticStore P → Cmd P → SemanticStore P → Bool → Prop where
   /-- If `e` evaluates to a value `v`, initialize `x` according to `InitState`. -/
   | eval_init :
     δ σ e = .some v →
     InitState P σ x v σ' →
     WellFormedSemanticEvalVar δ →
+    WellFormedSemanticEvalExprCongr δ →
     ---
     EvalCmd δ σ (.init x _ (.det e) _) σ' false
 
@@ -171,6 +207,7 @@ inductive EvalCmd [HasFvar P] [HasBool P] [HasNot P] :
     δ σ e = .some v →
     UpdateState P σ x v σ' →
     WellFormedSemanticEvalVar δ →
+    WellFormedSemanticEvalExprCongr δ →
     ----
     EvalCmd δ σ (.set x (.det e) _) σ' false
 
@@ -185,6 +222,7 @@ inductive EvalCmd [HasFvar P] [HasBool P] [HasNot P] :
   | eval_assert_pass :
     δ σ e = .some HasBool.tt →
     WellFormedSemanticEvalBool δ →
+    WellFormedSemanticEvalExprCongr δ →
     ----
     EvalCmd δ σ (.assert _ e _) σ false
 
@@ -194,6 +232,7 @@ inductive EvalCmd [HasFvar P] [HasBool P] [HasNot P] :
   | eval_assert_fail :
     δ σ e = .some HasBool.ff →
     WellFormedSemanticEvalBool δ →
+    WellFormedSemanticEvalExprCongr δ →
     ----
     EvalCmd δ σ (.assert _ e _) σ true
 
@@ -201,6 +240,7 @@ inductive EvalCmd [HasFvar P] [HasBool P] [HasNot P] :
   | eval_assume :
     δ σ e = .some HasBool.tt →
     WellFormedSemanticEvalBool δ →
+    WellFormedSemanticEvalExprCongr δ →
     ----
     EvalCmd δ σ (.assume _ e _) σ false
 

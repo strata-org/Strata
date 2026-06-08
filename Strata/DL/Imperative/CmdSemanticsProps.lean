@@ -254,7 +254,7 @@ theorem InitStateUniqueResult
 /-! ### Assert / set commutation -/
 
 theorem eval_assert_store_cst
-  [HasFvar P] [HasBool P] [HasNot P]:
+  [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]:
   EvalCmd P δ σ (.assert l e md) σ' f → σ = σ' := by
   intros Heval; cases Heval with
   | eval_assert_pass _ => rfl
@@ -336,7 +336,7 @@ theorem semantic_eval_eq_of_eval_cmd_set_unrelated_var
   exact Hwf this
 
 theorem eval_cmd_set_comm'
-  [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)]
+  [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)] [HasVarsPure P P.Expr]
   [HasFvar P] [HasVal P] [HasBool P] [HasNot P] [DecidableEq P.Ident] :
   ¬ x1 = x2 →
   δ σ v1 = δ σ2 v1 →
@@ -347,10 +347,10 @@ theorem eval_cmd_set_comm'
   EvalCmd P δ σ2 (Cmd.set x1 (.det v1) md1') σ'' f4 →
   σ' = σ'' := by
   intro Hneq Heq1 Heq2 Hs1 Hs2 Hs3 Hs4
-  cases Hs1 with | eval_set _ Hu1 _ =>
-  cases Hs2 with | eval_set _ Hu2 _ =>
-  cases Hs3 with | eval_set _ Hu3 _ =>
-  cases Hs4 with | eval_set _ Hu4 _ =>
+  cases Hs1 with | eval_set _ Hu1 _ _ =>
+  cases Hs2 with | eval_set _ Hu2 _ _ =>
+  cases Hs3 with | eval_set _ Hu3 _ _ =>
+  cases Hs4 with | eval_set _ Hu4 _ _ =>
   simp_all
   exact UpdateStateComm Hneq Hu1 Hu2 Hu3 Hu4
 

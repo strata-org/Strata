@@ -167,6 +167,40 @@ def Config.noFuncDecl : Config P CmdT → Prop
 @[expose] def projectStore (σ_parent σ_inner : SemanticStore P) : SemanticStore P :=
   fun x => if (σ_parent x).isSome then σ_inner x else none
 
+/-- The projected inner store agrees with the unprojected inner store on
+`σ_parent`'s domain. Variables present in the parent are unchanged by
+projection; variables absent from the parent become `none` in the projection,
+but those don't satisfy `isDefined (projectStore _ _) [x]`, so
+`StoreAgreement` doesn't constrain them. -/
+theorem StoreAgreement.of_projectStore {P : PureExpr}
+    (σ_parent σ_inner : SemanticStore P) :
+    StoreAgreement (projectStore σ_parent σ_inner) σ_inner := by
+  intro x h_def
+  -- h_def : isDefined (projectStore σ_parent σ_inner) [x]
+  -- Goal: projectStore σ_parent σ_inner x = σ_inner x
+  have h := h_def x (List.mem_singleton.mpr rfl)
+  unfold projectStore at h ⊢
+  -- h : (if (σ_parent x).isSome then σ_inner x else none).isSome = true
+  -- Goal : (if (σ_parent x).isSome then σ_inner x else none) = σ_inner x
+  by_cases hp : (σ_parent x).isSome
+  · simp [hp]
+  · simp [hp] at h
+
+/-- Bundle `StoreAgreement.of_projectStore` with `.trans` and a `ρ_blk` rewrite,
+the four-line idiom that recurs after every `.block`-step in the simulation
+proofs. Given a record-update equality showing the outer env's store is the
+projection of the inner env's store, and an agreement between the inner store
+and a CFG store, derive agreement between the outer store and the CFG store. -/
+theorem StoreAgreement.through_projectStore {P : PureExpr}
+    {σ_parent : SemanticStore P}
+    {ρ_inner ρ_blk : Env P}
+    {σ_cfg : SemanticStore P}
+    (h_ρ_blk_eq : ρ_blk = { ρ_inner with store := projectStore σ_parent ρ_inner.store })
+    (h_agree_body : StoreAgreement ρ_inner.store σ_cfg) :
+    StoreAgreement ρ_blk.store σ_cfg := by
+  rw [h_ρ_blk_eq]
+  exact StoreAgreement.trans (StoreAgreement.of_projectStore _ _) h_agree_body
+
 /-! ## Single-step relation -/
 
 section
