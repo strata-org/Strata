@@ -120,6 +120,11 @@ Emit these from passes; do **not** accept them as user identifiers:
   placeholders.
 * `$` prefix in general — reserved for translator-generated names.
 
+> **Source-language `$` collision.** Java (and some other languages) permit
+> identifiers that begin with `$`. A front-end for such a language must escape
+> or namespace user identifiers that start with `$` before emitting Laurel, so
+> they cannot collide with `$heap`, `$hole_N`, and the other reserved names.
+
 ## Error reporting
 
 * Collect diagnostics; do not abort on the first error if you can
