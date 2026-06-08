@@ -48,6 +48,9 @@ garbage-collected source languages (Java, Python, JavaScript, TypeScript).
 
 ## Do
 
+* **Keep the translation to Core "dumb".** If a Laurel → Core case needs
+  non-trivial work, the work probably belongs in an earlier
+  Laurel → Laurel pass.
 * **Use `.Hole` to recover from errors in translators.** Emit a
   diagnostic and a hole in place of the problematic sub-expression; the
   rest of the program still compiles and the user sees a useful error.
@@ -67,9 +70,6 @@ garbage-collected source languages (Java, Python, JavaScript, TypeScript).
   update the *Pipeline order* section below and the pass list in the Laurel
   manual. (PR #1222 replaces these hand-maintained lists with
   auto-generated documentation; prefer that mechanism once it lands.)
-* **Keep the translation to Core "dumb".** If a Laurel → Core case needs
-  non-trivial work, the work probably belongs in an earlier
-  Laurel → Laurel pass.
 * **Add an `Examples/` test for any new construct.** The
   `StrataTest/Languages/Laurel/Examples/Fundamentals/T*.lean` tests are
   numbered by convention; add to the appropriate theme or create a new
