@@ -14,7 +14,7 @@ fi
 
 test_dir="$PWD/test_results"
 
-strata=../../StrataCLI/.lake/build/bin/strata
+strata=../../../StrataCLI/.lake/build/bin/strata
 
 # Dialect files:
 # dialects/Python.dialect.st.ion
@@ -25,7 +25,7 @@ filename=`basename "$input_path"`
 mkdir -p $test_dir/$input_dir
 
 python=${PYTHON:-python3}
-$python -m strata.gen py_to_strata --dialect "dialects/Python.dialect.st.ion" $input_path "$test_dir/$input_dir/$filename.st.ion"
+$python -m strata_python.gen py_to_strata --dialect "dialects/Python.dialect.st.ion" $input_path "$test_dir/$input_dir/$filename.st.ion"
 
 $strata toIon --include "dialects" "$test_dir/$input_dir/$filename.st.ion" "$test_dir/$input_dir/$filename.st.ion2"
 
