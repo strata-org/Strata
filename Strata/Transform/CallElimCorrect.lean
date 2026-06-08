@@ -2244,27 +2244,6 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
         HndefOldTrips
     rw [Hsts_struct]
     -- L5 setup: build havocs from σ_old to σ_havoc, polymorphic-flag.
-    have Hhav_σ : HavocVars σ lhs σ' :=
-      UpdateStatesHavocVars Hupdate
-    have Hhav_arg :
-        HavocVars (updatedStates σ
-                    argTemps argVals)
-                  lhs
-                  (updatedStates σ'
-                    argTemps argVals) :=
-      havocVars_updatedStates_lift HlhsDisjArg Hhav_σ
-    have Hhav_out :
-        HavocVars
-          (updatedStates
-            (updatedStates σ
-              argTemps argVals)
-            outTemps oVals)
-          lhs
-          (updatedStates
-            (updatedStates σ'
-              argTemps argVals)
-            outTemps oVals) :=
-      havocVars_updatedStates_lift HlhsDisjOut Hhav_arg
     have Hhav_old :
         HavocVars
           (updatedStates
@@ -2279,9 +2258,9 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
               (updatedStates σ'
                 argTemps argVals)
               outTemps oVals)
-            oldTrips.unzip.fst.unzip.fst oldVals) := by
-      rw [HoldTripsFst]
-      apply havocVars_updatedStates_lift HlhsDisjOld Hhav_out
+            oldTrips.unzip.fst.unzip.fst oldVals) :=
+      havocVars_3layer_lift HlhsDisjArg HlhsDisjOut
+        (HoldTripsFst ▸ HlhsDisjOld) (UpdateStatesHavocVars Hupdate)
     have HlhsDef_old :
         Imperative.isDefined
           (updatedStates
@@ -4258,27 +4237,6 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                   -- D2: L4 (asserts), L5 (havocs), L6 (assumes) chain.
                   rw [Hsts_struct]
                   -- L5: build post-havoc store σ_havoc by HavocVars segments on σ' = σ.update lhs modvals.
-                  have Hhav_σ : HavocVars σ lhs σ' :=
-                    UpdateStatesHavocVars Hupdate
-                  have Hhav_arg :
-                      HavocVars (updatedStates σ
-                                  argTemps argVals)
-                                lhs
-                                (updatedStates σ'
-                                  argTemps argVals) :=
-                    havocVars_updatedStates_lift HlhsDisjArg Hhav_σ
-                  have Hhav_out :
-                      HavocVars
-                        (updatedStates
-                          (updatedStates σ
-                            argTemps argVals)
-                          outTemps oVals)
-                        lhs
-                        (updatedStates
-                          (updatedStates σ'
-                            argTemps argVals)
-                          outTemps oVals) :=
-                    havocVars_updatedStates_lift HlhsDisjOut Hhav_arg
                   have Hhav_old :
                       HavocVars
                         (updatedStates
@@ -4293,9 +4251,9 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                             (updatedStates σ'
                               argTemps argVals)
                             outTemps oVals)
-                          oldTrips.unzip.fst.unzip.fst oldVals) := by
-                    rw [HoldTripsFst]
-                    apply havocVars_updatedStates_lift HlhsDisjOld Hhav_out
+                          oldTrips.unzip.fst.unzip.fst oldVals) :=
+                    havocVars_3layer_lift HlhsDisjArg HlhsDisjOut
+                      (HoldTripsFst ▸ HlhsDisjOld) (UpdateStatesHavocVars Hupdate)
                   -- isDefined σ_old lhs (via 3-layer extension monotone).
                   have HlhsDef_old :
                       Imperative.isDefined
