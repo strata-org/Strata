@@ -572,18 +572,6 @@ private theorem filterCheck_mem_getCheckExprs
   rw [ListMap.values_eq_map_snd]
   exact List.mem_map_of_mem Hin_full
 
-/-- `.contains` form of `filterCheck_mem_getCheckExprs`. Used at the
-    pre-filtered and post-filtered sites of `callElimStatementCorrect` to
-    bridge filter membership to the `.contains` argument expected by the
-    `Hpre`/`Hpost` hypotheses from `call_sem`. -/
-private theorem filterCheck_in_getCheckExprs [LawfulBEq Expression.Expr]
-    {conds : ListMap CoreLabel Procedure.Check}
-    {f : CoreLabel × Procedure.Check → Bool}
-    {entry : CoreLabel × Procedure.Check}
-    (Hentry : entry ∈ conds.filter f) :
-    (Procedure.Spec.getCheckExprs conds).contains entry.snd.expr :=
-  List.contains_iff_mem.mpr (filterCheck_mem_getCheckExprs Hentry)
-
 /-- Bridge between the boolean (`!=`) and propositional (`≠`) forms of the
     "non-Free" precondition filter.  Both filters select the same entries; the
     proof is a per-entry `decide` reduction.  Used at three sites in the
