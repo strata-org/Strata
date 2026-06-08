@@ -138,7 +138,7 @@ info: while
 /--
 info: while
   x == 0
-  (x)
+  (some x)
   [[inv1]: true]
 {
   x := 1;

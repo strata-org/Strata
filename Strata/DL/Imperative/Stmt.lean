@@ -40,7 +40,10 @@ inductive Stmt (P : PureExpr) (Cmd : Type) : Type where
   termination) and labeled invariants. When `guard` is `.nondet`, the
   loop iterates a non-deterministic number of times and measure must be none.
   Each invariant carries a label string (expected to be distinct, like
-  assert labels do). -/
+  assert labels do).
+  TODO: measure will be moved to metadata md, since it doesn't contribute to
+  the small-step semantics (StepStmt).
+  -/
   | loop     (guard : ExprOrNondet P) (measure : Option P.Expr)
              (invariants : List (String × P.Expr))
              (body : List (Stmt P Cmd)) (md : MetaData P)
@@ -466,7 +469,7 @@ def formatStmt (P : PureExpr) (s : Stmt P C)
       let invFmt : Format := f!"[{Format.joinSep invParts f!", "}]"
       let measureFmt : Format := match measure with
         | none => f!"none"
-        | some e => f!"{e}"
+        | some e => f!"some {e}"
       let beforeBody := nestD f!"{line}{guard}{line}({measureFmt}){line}{invFmt}"
       let children := group f!"{beforeBody}{line}{body}"
       f!"{md}while{children}"

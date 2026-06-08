@@ -1178,32 +1178,8 @@ private theorem step_hasFailure_monotone
   (hf : c.getEnv.hasFailure = true) :
   c'.getEnv.hasFailure = true := by
   induction hstep with
-  | step_cmd _ => simp [Config.getEnv]; left; exact hf
-  | step_block => simp [Config.getEnv]; exact hf
-  | step_ite_true _ _ => exact hf
-  | step_ite_false _ _ => exact hf
-  | step_ite_nondet_true => exact hf
-  | step_ite_nondet_false => exact hf
-  | step_loop_enter _ _ _ _ _ =>
-    simp [Config.getEnv]; left; exact hf
-  | step_loop_exit _ _ _ _ =>
-    simp [Config.getEnv]; left; exact hf
-  | step_loop_nondet_enter _ _ =>
-    simp [Config.getEnv]; left; exact hf
-  | step_loop_nondet_exit _ _ =>
-    simp [Config.getEnv]; left; exact hf
-  | step_exit => exact hf
-  | step_funcDecl => simp [Config.getEnv]; exact hf
-  | step_typeDecl => exact hf
-  | step_stmts_nil => exact hf
-  | step_stmts_cons => exact hf
-  | step_seq_inner _ ih => exact ih hf
-  | step_seq_done => exact hf
-  | step_seq_exit => exact hf
-  | step_block_body _ ih => exact ih hf
-  | step_block_done => exact hf
-  | step_block_exit_match _ => exact hf
-  | step_block_exit_mismatch _ => exact hf
+  | step_seq_inner _ ih | step_block_body _ ih => exact ih hf
+  | _ => simp_all [Config.getEnv]
 
 theorem EvalStmtSmall_hasFailure_monotone
   {P : PureExpr} {CmdT : Type} {EvalCmd : EvalCmdParam P CmdT}
