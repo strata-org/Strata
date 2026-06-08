@@ -1251,9 +1251,8 @@ private theorem delta_fvar_eq_of_wfvars
     (Hwfvars : Imperative.WellFormedSemanticEvalVar delta)
     (sigma : CoreStore) (v : Expression.Ident) :
     delta sigma (Lambda.LExpr.fvar () v none) = sigma v := by
-  have Hwfvr := Hwfvars
-  simp [Imperative.WellFormedSemanticEvalVar] at Hwfvr
-  rw [Hwfvr (Lambda.LExpr.fvar () v none) v]
+  simp [Imperative.WellFormedSemanticEvalVar] at Hwfvars
+  rw [Hwfvars (Lambda.LExpr.fvar () v none) v]
   simp [Imperative.HasFvar.getFvar]
 
 /-- Bundle the σ-freshness chain: from a Nodup of the combined
