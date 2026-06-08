@@ -86,7 +86,8 @@ Invariants across passes:
 1. After `Resolution`, every identifier reference has a `uniqueId` that
    matches some declaration.
 2. After `EliminateHoles`, the program contains no deterministic holes.
-   Non-deterministic holes are translated to havocs.
+   Non-deterministic holes are preserved by `EliminateHoles` and lowered to
+   havocs later, by `LiftExpressionAssignments`.
 3. After `LiftExpressionAssignments`, every statement-like `StmtExpr`
    sits in a statement position. Expression positions contain only
    expression-like constructors.
