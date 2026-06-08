@@ -844,8 +844,12 @@ def Synth.litDecimal (v : StrataDDM.Decimal) (source : Option FileRange) : StmtE
 
 -- ### Variables
 
-/-- `Γ(x) = T  ∴  Γ ⊢ Var (.Local x) ⇒ T`
-
+/-- (Var-Local)
+    ```
+    Γ(x) = T
+    ──────────────────────
+    Γ ⊢ Var (.Local x) ⇒ T
+    ```
     Resolves `ref` against the lexical scope and reads its declared type. -/
 def Synth.varLocal (ref : Identifier) (source : Option FileRange) :
     ResolveM (StmtExpr × HighTypeMd) := do
@@ -853,8 +857,13 @@ def Synth.varLocal (ref : Identifier) (source : Option FileRange) :
   let ty ← getVarType ref
   pure (.Var (.Local ref'), ty)
 
-/-- `Γ ⊢ e ⇒ _,  Γ(f) = T_f  ∴  Γ ⊢ Var (.Field e f) ⇒ T_f`
-
+/-- (Var-Field)
+    ```
+    Γ ⊢ e ⇒ _
+    Γ(f) = T_f
+    ───────────────────────────
+    Γ ⊢ Var (.Field e f) ⇒ T_f
+    ```
     `f` is looked up against the type of `e` (or the enclosing instance type
     for `self.f`); the typing rule itself is path-agnostic. -/
 def Synth.varField (exprMd : StmtExprMd)
@@ -894,8 +903,10 @@ def Check.varDeclare (param : Parameter) (source : Option FileRange) :
 
 /-- (While)
     ```
-    Γ ⊢ cond ⇐ TBool      Γ ⊢ invs_i ⇐ TBool
-    Γ ⊢ decreases ⇒ U     Numeric U
+    Γ ⊢ cond ⇐ TBool
+    Γ ⊢ invs_i ⇐ TBool
+    Γ ⊢ decreases ⇒ U
+    Numeric U
     Γ ⊢ body ⇐ Unknown
     ─────────────────────────────────────────────────
     Γ ⊢ While cond invs decreases body ⇐ A
@@ -1230,11 +1241,15 @@ def Check.block (exprMd : StmtExprMd)
 
 /-- (If / If-NoElse)
     ```
-    Γ ⊢ cond ⇐ TBool   Γ ⊢ thenBr ⇐ T   Γ ⊢ elseBr ⇐ T            (If)
+    Γ ⊢ cond ⇐ TBool                                            (If)
+    Γ ⊢ thenBr ⇐ T
+    Γ ⊢ elseBr ⇐ T
     ──────────────────────────────────────────────────────────────────
     Γ ⊢ IfThenElse cond thenBr (some elseBr) ⇐ T
 
-    Γ ⊢ cond ⇐ TBool   Γ ⊢ thenBr ⇐ T   TVoid <: T                (If-NoElse)
+    Γ ⊢ cond ⇐ TBool                                            (If-NoElse)
+    Γ ⊢ thenBr ⇐ T
+    TVoid <: T
     ──────────────────────────────────────────────────────────────────
     Γ ⊢ IfThenElse cond thenBr none ⇐ T
     ```
@@ -1320,7 +1335,8 @@ def Check.assume (exprMd : StmtExprMd)
 
 /-- (Assign)
     ```
-    Γ ⊢ targets_i ⇒ T_i    Γ ⊢ e ⇐ ExpectedTy
+    Γ ⊢ targets_i ⇒ T_i
+    Γ ⊢ e ⇐ ExpectedTy
     ─────────────────────────────────────────────────────────
     Γ ⊢ Assign targets e ⇒ ExpectedTy
     ```
@@ -1425,11 +1441,18 @@ def Check.assign (exprMd : StmtExprMd)
 -- ### Calls
 
 /-- Cases on the arity of the callee's declared outputs.
+    ```
+    Γ(callee) = static-procedure with input T and output T'      (Static-Call)
+    Γ ⊢ arg ⇐ T
+    ──────────────────────────────────────────────────────
+    Γ ⊢ StaticCall callee arg ⇒ T'
 
-    `Γ(callee) = static-procedure with input T and output T',  Γ ⊢ arg ⇐ T  ∴  Γ ⊢ StaticCall callee arg ⇒ T'`
-
-    `Γ(callee) = static-procedure with inputs Ts and outputs [T_1; …; T_n] (n ≠ 1),  Γ ⊢ args_i ⇐ Ts_i (pairwise)  ∴  Γ ⊢ StaticCall callee args ⇒ MultiValuedExpr [T_1; …; T_n]`
-
+    Γ(callee) = static-procedure with inputs Ts                  (Static-Call-Multi)
+      and outputs [T_1; …; T_n] (n ≠ 1)
+    Γ ⊢ args_i ⇐ Ts_i (pairwise)
+    ──────────────────────────────────────────────────────
+    Γ ⊢ StaticCall callee args ⇒ MultiValuedExpr [T_1; …; T_n]
+    ```
     Callee is resolved against the expected kinds (parameter, static
     procedure, datatype constructor, datatype destructor, constant); each
     argument is *checked* against the corresponding parameter type. The
@@ -1464,8 +1487,15 @@ def Synth.staticCall (exprMd : StmtExprMd)
     have := List.sizeOf_lt_of_mem ‹_ ∈ args›
     omega
 
-/-- `Γ ⊢ target ⇒ _,  Γ(callee) = instance- or static-procedure with inputs [self; T] and output T',  Γ ⊢ arg ⇐ T  ∴  Γ ⊢ InstanceCall target callee arg ⇒ T'`
-
+/-- (Instance-Call)
+    ```
+    Γ ⊢ target ⇒ _
+    Γ(callee) = instance- or static-procedure
+      with inputs [self; T] and output T'
+    Γ ⊢ arg ⇐ T
+    ─────────────────────────────────────────
+    Γ ⊢ InstanceCall target callee arg ⇒ T'
+    ```
     Target is synthesized; callee resolves to an instance or static
     procedure; arguments are checked pairwise against the callee's
     parameter types after dropping `self`. Like `Synth.staticCall`, the
@@ -1501,17 +1531,39 @@ def Synth.instanceCall (exprMd : StmtExprMd)
 -- ### Primitive operations
 
 /-- Cases on the operator family.
+    ```
+    Γ ⊢ args_i ⇒ U_i                                            (Op-Bool)
+    U_i <: TBool
+    op ∈ {And, Or, AndThen, OrElse, Not, Implies}
+    ─────────────────────────────────────────────
+    Γ ⊢ PrimitiveOp op args ⇒ TBool
 
-    `Γ ⊢ args_i ⇒ U_i,  U_i <: TBool,  op ∈ {And, Or, AndThen, OrElse, Not, Implies}  ∴  Γ ⊢ PrimitiveOp op args ⇒ TBool`
+    Γ ⊢ args_i ⇒ U_i                                            (Op-Cmp)
+    Numeric U_i
+    op ∈ {Lt, Leq, Gt, Geq}
+    ─────────────────────────────────────────────
+    Γ ⊢ PrimitiveOp op args ⇒ TBool
 
-    `Γ ⊢ args_i ⇒ U_i,  Numeric U_i,  op ∈ {Lt, Leq, Gt, Geq}  ∴  Γ ⊢ PrimitiveOp op args ⇒ TBool`
+    Γ ⊢ lhs ⇒ T_l                                               (Op-Eq)
+    Γ ⊢ rhs ⇒ T_r
+    T_l ~ T_r
+    op ∈ {Eq, Neq}
+    ─────────────────────────────────────────────
+    Γ ⊢ PrimitiveOp op [lhs; rhs] ⇒ TBool
 
-    `Γ ⊢ lhs ⇒ T_l,  Γ ⊢ rhs ⇒ T_r,  T_l ~ T_r,  op ∈ {Eq, Neq}  ∴  Γ ⊢ PrimitiveOp op [lhs; rhs] ⇒ TBool`
+    Γ ⊢ args_i ⇒ U_i                                            (Op-Arith)
+    Numeric U_i
+    T = ⨆ U_i (consistency LUB)
+    op ∈ {Neg, Add, Sub, Mul, Div, Mod, DivT, ModT}
+    ─────────────────────────────────────────────
+    Γ ⊢ PrimitiveOp op args ⇒ T
 
-    `Γ ⊢ args_i ⇒ U_i,  Numeric U_i,  T = ⨆ U_i (consistency LUB),  op ∈ {Neg, Add, Sub, Mul, Div, Mod, DivT, ModT}  ∴  Γ ⊢ PrimitiveOp op args ⇒ T`
-
-    `Γ ⊢ args_i ⇒ U_i,  U_i <: TString,  op = StrConcat  ∴  Γ ⊢ PrimitiveOp op args ⇒ TString`
-
+    Γ ⊢ args_i ⇒ U_i                                            (Op-Concat)
+    U_i <: TString
+    op = StrConcat
+    ─────────────────────────────────────────────
+    Γ ⊢ PrimitiveOp op args ⇒ TString
+    ```
     `Numeric T` is the predicate "T unfolds to TInt / TReal / TFloat64
     (or Unknown via the gradual escape hatch)" — not a single type, so it
     cannot serve as an `expected` for `Check.resolveStmtExpr`. `~` is
@@ -1623,11 +1675,19 @@ def Synth.primitiveOp (exprMd : StmtExprMd) (expr : StmtExpr)
       omega
 
 /-- Cases on the operator family.
+    ```
+    Numeric T                                                   (Op-Arith)
+    Γ ⊢ args_i ⇐ T
+    op ∈ {Neg, Add, Sub, Mul, Div, Mod, DivT, ModT}
+    ─────────────────────────────────────────────
+    Γ ⊢ PrimitiveOp op args ⇐ T
 
-    `Numeric T,  Γ ⊢ args_i ⇐ T,  op ∈ {Neg, Add, Sub, Mul, Div, Mod, DivT, ModT}  ∴  Γ ⊢ PrimitiveOp op args ⇐ T`
-
-    `TBool <: T,  Γ ⊢ args_i ⇐ TBool,  op ∈ {And, Or, AndThen, OrElse, Not, Implies}  ∴  Γ ⊢ PrimitiveOp op args ⇐ T`
-
+    TBool <: T                                                  (Op-Bool)
+    Γ ⊢ args_i ⇐ TBool
+    op ∈ {And, Or, AndThen, OrElse, Not, Implies}
+    ─────────────────────────────────────────────
+    Γ ⊢ PrimitiveOp op args ⇐ T
+    ```
     Both families run in check mode: the surrounding `expected` must
     admit the family's natural result type (numeric for arithmetic,
     `TBool` for boolean), and that operand type is pushed into every
@@ -1680,11 +1740,15 @@ def Check.primitiveOp (exprMd : StmtExprMd)
 -- ### Object forms
 
 /-- Cases on whether `ref` resolves to a composite/datatype.
+    ```
+    Γ(ref) is a composite or datatype T      (New-Ok)
+    ───────────────────────────────────
+    Γ ⊢ New ref ⇒ UserDefined T
 
-    `Γ(ref) is a composite or datatype T  ∴  Γ ⊢ New ref ⇒ UserDefined T`
-
-    `Γ(ref) is not a composite or datatype  ∴  Γ ⊢ New ref ⇒ Unknown`
-
+    Γ(ref) is not a composite or datatype    (New-Fallback)
+    ───────────────────────────────────
+    Γ ⊢ New ref ⇒ Unknown
+    ```
     When `ref` resolves to a composite or datatype, the type is
     `UserDefined ref`; otherwise `Unknown` (suppresses cascading errors
     after the kind diagnostic has already fired). -/
@@ -1701,8 +1765,13 @@ def Synth.new (ref : Identifier) (source : Option FileRange) :
             else { val := HighType.Unknown, source := source }
   pure (.New ref', ty)
 
-/-- `Γ ⊢ target ⇒ U,  U ~ T  ∨  U <: T  ∨  T <: U  ∴  Γ ⊢ AsType target T ⇒ T`
-
+/-- (AsType)
+    ```
+    Γ ⊢ target ⇒ U
+    U ~ T  ∨  U <: T  ∨  T <: U
+    ──────────────────────────────────────────────
+    Γ ⊢ AsType target T ⇒ T
+    ```
     `target` synthesizes some type `U`; the cast is allowed when `U` and
     `T` sit in the same lineage modulo gradual `Unknown` — either
     consistent after unfolding aliases/constrained types (e.g. `5 as Int`
@@ -1731,8 +1800,13 @@ def Synth.asType (exprMd : StmtExprMd)
     simp [h] at hsz
     omega
 
-/-- `Γ ⊢ target ⇒ U,  U ~ T  ∨  U <: T  ∨  T <: U  ∴  Γ ⊢ IsType target T ⇒ TBool`
-
+/-- (IsType)
+    ```
+    Γ ⊢ target ⇒ U
+    U ~ T  ∨  U <: T  ∨  T <: U
+    ──────────────────────────────────────────────
+    Γ ⊢ IsType target T ⇒ TBool
+    ```
     Same lineage check as `AsType` — `is` only makes sense between types
     that share a lineage modulo gradual `Unknown`; testing `5 is Cat`
     is statically nonsense. The synthesized type is `TBool`. -/
@@ -1755,8 +1829,16 @@ def Synth.isType (exprMd : StmtExprMd)
     simp [h] at hsz
     omega
 
-/-- `Γ ⊢ lhs ⇒ T_l,  Γ ⊢ rhs ⇒ T_r,  isReference T_l,  isReference T_r,  T_l ~ T_r  ∴  Γ ⊢ ReferenceEquals lhs rhs ⇒ TBool`
-
+/-- (RefEq)
+    ```
+    Γ ⊢ lhs ⇒ T_l
+    Γ ⊢ rhs ⇒ T_r
+    isReference T_l
+    isReference T_r
+    T_l ~ T_r
+    ──────────────────────────────────────────────────
+    Γ ⊢ ReferenceEquals lhs rhs ⇒ TBool
+    ```
     Both operands must be reference types (`UserDefined` or `Unknown`) —
     reference equality is meaningless on primitives. The operands must
     also be mutually consistent (the symmetric `isConsistent`), so
@@ -1790,8 +1872,14 @@ def Synth.refEq (exprMd : StmtExprMd) (expr : StmtExpr)
       simp [h] at hsz
       omega
 
-/-- `Γ ⊢ target ⇒ T_t,  Γ(f) = T_f,  Γ ⊢ newVal ⇐ T_f  ∴  Γ ⊢ PureFieldUpdate target f newVal ⇒ T_t`
-
+/-- (PureFieldUpdate)
+    ```
+    Γ ⊢ target ⇒ T_t
+    Γ(f) = T_f
+    Γ ⊢ newVal ⇐ T_f
+    ─────────────────────────────────────────────────────
+    Γ ⊢ PureFieldUpdate target f newVal ⇒ T_t
+    ```
     `target` is synthesized, `f` resolved against `T_t` (or the enclosing
     instance type), and `newVal` checked against the field's declared
     type. The synthesized type is `T_t` — updating a field on a pure type
@@ -1815,8 +1903,12 @@ def Synth.pureFieldUpdate (exprMd : StmtExprMd)
 
 -- ### Verification expressions
 
-/-- `Γ, x : T ⊢ body ⇐ TBool  ∴  Γ ⊢ Quantifier mode ⟨x, T⟩ trig body ⇒ TBool`
-
+/-- (Quantifier)
+    ```
+    Γ, x : T ⊢ body ⇐ TBool
+    ────────────────────────────────────────────
+    Γ ⊢ Quantifier mode ⟨x, T⟩ trig body ⇒ TBool
+    ```
     Opens a fresh scope, binds `x : T` (in scope only for the body and
     trigger), resolves the optional trigger, and checks the body against
     `TBool` since a quantifier is a proposition. Without that body check,
@@ -1843,8 +1935,12 @@ def Synth.quantifier (exprMd : StmtExprMd)
       try simp_all
       omega
 
-/-- `Γ ⊢ name ⇒ _  ∴  Γ ⊢ Assigned name ⇒ TBool`
-
+/-- (Assigned)
+    ```
+    Γ ⊢ name ⇒ _
+    ────────────────────────────
+    Γ ⊢ Assigned name ⇒ TBool
+    ```
     `assigned x` is a verification predicate that holds when `x` has
     been definitely assigned. The construct unconditionally synthesizes
     `TBool`; the operand's synthesized type is discarded, and `Assigned`
@@ -1872,8 +1968,12 @@ def Synth.assigned (exprMd : StmtExprMd)
     simp [h] at hsz
     omega
 
-/-- `Γ ⊢ v ⇐ T  ∴  Γ ⊢ Old v ⇐ T`
-
+/-- (Old)
+    ```
+    Γ ⊢ v ⇐ T
+    ───────────────
+    Γ ⊢ Old v ⇐ T
+    ```
     `old(v)` refers to the pre-state value of `v` in a postcondition.
     It has the same type as `v`, so the surrounding expectation
     propagates straight through: `v` is checked against the same `T`,
@@ -1900,8 +2000,13 @@ def Check.old (exprMd : StmtExprMd)
     simp [h] at hsz
     omega
 
-/-- `Γ ⊢ v ⇒ T,  isReference T  ∴  Γ ⊢ Fresh v ⇒ TBool`
-
+/-- (Fresh)
+    ```
+    Γ ⊢ v ⇒ T
+    isReference T
+    ────────────────────────────
+    Γ ⊢ Fresh v ⇒ TBool
+    ```
     `v` is synthesized and must have a reference type (`UserDefined` or
     `Unknown`) — `Fresh` only makes sense on heap-allocated references, so
     `fresh(5)` is rejected. The construct itself synthesizes `TBool`. -/
@@ -1922,8 +2027,13 @@ def Synth.fresh (exprMd : StmtExprMd) (expr : StmtExpr)
     simp [h] at hsz
     omega
 
-/-- `Γ ⊢ v ⇐ T,  Γ ⊢ proof ⇒ _  ∴  Γ ⊢ ProveBy v proof ⇐ T`
-
+/-- (ProveBy)
+    ```
+    Γ ⊢ v ⇐ T
+    Γ ⊢ proof ⇒ _
+    ────────────────────────────
+    Γ ⊢ ProveBy v proof ⇐ T
+    ```
     `ProveBy v proof` has the same type as `v` (the proof is just a hint
     for downstream verification), so the surrounding expectation
     propagates into `v`. The proof itself has no constraint on its type
@@ -1948,10 +2058,15 @@ def Check.proveBy (exprMd : StmtExprMd)
 /-- Cases on whether `instanceTypeName` is set (i.e., we're inside an
     instance method).
 
-    `Γ.instanceTypeName = some T  ∴  Γ ⊢ This ⇒ UserDefined T`
+    ```
+    Γ.instanceTypeName = some T      (This-Inside)
+    ───────────────────────────
+    Γ ⊢ This ⇒ UserDefined T
 
-    `Γ.instanceTypeName = none  ∴  Γ ⊢ This ⇒ Unknown`  (emits "'this' is not allowed outside instance methods")
-
+    Γ.instanceTypeName = none        (This-Outside)
+    ───────────────────────────
+    Γ ⊢ This ⇒ Unknown               (emits "'this' is not allowed outside instance methods")
+    ```
     When `instanceTypeName` is set (we're inside an instance method,
     populated on `ResolveState` by `resolveInstanceProcedure` for the
     duration of an instance method body), `This` synthesizes
@@ -1990,12 +2105,23 @@ def Synth.all (source : Option FileRange) : StmtExpr × HighTypeMd :=
 /-- Cases on the contract type `ty` and on whether `fn` is a procedure
     reference.
 
-    `fn = Var (.Local id),  Γ(id) ∈ {staticProcedure, instanceProcedure}  ∴  Γ ⊢ ContractOf Precondition fn ⇒ TBool  and  Γ ⊢ ContractOf PostCondition fn ⇒ TBool`
+    ```
+    fn = Var (.Local id)                                       (ContractOf-Bool)
+    Γ(id) ∈ {staticProcedure, instanceProcedure}
+    ────────────────────────────────────────────
+    Γ ⊢ ContractOf Precondition fn ⇒ TBool
+    Γ ⊢ ContractOf PostCondition fn ⇒ TBool
 
-    `fn = Var (.Local id),  Γ(id) ∈ {staticProcedure, instanceProcedure}  ∴  Γ ⊢ ContractOf Reads fn ⇒ TSet Unknown  and  Γ ⊢ ContractOf Modifies fn ⇒ TSet Unknown`
+    fn = Var (.Local id)                                       (ContractOf-Set)
+    Γ(id) ∈ {staticProcedure, instanceProcedure}
+    ────────────────────────────────────────────
+    Γ ⊢ ContractOf Reads fn ⇒ TSet Unknown
+    Γ ⊢ ContractOf Modifies fn ⇒ TSet Unknown
 
-    `fn is not a procedure reference  ∴  Γ ⊢ ContractOf _ fn ↝ error: "'contractOf' expected a procedure reference"`
-
+    fn is not a procedure reference                            (ContractOf-Error)
+    ────────────────────────────────────────────
+    Γ ⊢ ContractOf _ fn ↝ error: "'contractOf' expected a procedure reference"
+    ```
     `ContractOf ty fn` extracts a procedure's contract clause as a value:
     its preconditions (`Precondition`), postconditions (`PostCondition`),
     reads set (`Reads`), or modifies set (`Modifies`). `fn` must be a
@@ -2047,8 +2173,12 @@ def Synth.contractOf (exprMd : StmtExprMd)
 
 -- ### Holes
 
-/-- `T_h <: T  ∴  Γ ⊢ Hole d (some T_h) ⇐ T`
-
+/-- (Hole-Some)
+    ```
+    T_h <: T
+    ────────────────────────────
+    Γ ⊢ Hole d (some T_h) ⇐ T
+    ```
     A typed hole carries the user's annotation `T_h`. The annotation is
     resolved and verified against the surrounding `expected` type via
     subsumption; the resolved annotation is preserved on the node so
@@ -2060,8 +2190,11 @@ def Check.holeSome (det : Bool) (ty : HighTypeMd) (expected : HighTypeMd)
   checkSubtype source expected ty'
   pure { val := .Hole det (some ty'), source := source }
 
-/-- `Γ ⊢ Hole d none ⇐ T  ↦  Γ ⊢ Hole d (some T)`
-
+/-- (Hole-None)
+    ```
+    ────────────────────────────────────────
+    Γ ⊢ Hole d none ⇐ T  ↦  Γ ⊢ Hole d (some T)
+    ```
     An untyped hole in check mode records the expected type on the node
     so downstream passes (hole elimination) don't have to infer it
     again. -/
