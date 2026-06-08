@@ -4327,7 +4327,7 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                               argTemps argVals)
                             outTemps oVals)
                           oldTrips.unzip.fst.unzip.fst oldVals, δ, false⟩ :=
-                    H_havocs Hwfvars HlhsDef_old Hhav_old
+                    H_havocs_poly Hwfvars HlhsDef_old Hhav_old
                   -- Equality: σ_havoc (3-layer over σ') = σ'' (flat) via zip-append.
                   have HoldFstLen :
                       oldTrips.unzip.fst.unzip.fst.length = oldVals.length := by
@@ -5810,7 +5810,7 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                                   (Core.Transform.createFvars filtered_ks')))
                               (entry.snd.md.setCallSiteFileRange md)))
                         ⟨σ_havoc, δ, false⟩ := by
-                    apply H_assumes_zip
+                    apply H_assumes_zip_poly (f := false)
                       (σA := σ_R1) (σ' := σ_havoc)
                       (ks := filtered_ks)
                       (ks' := filtered_ks')
