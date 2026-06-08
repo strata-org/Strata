@@ -62,6 +62,11 @@ garbage-collected source languages (Java, Python, JavaScript, TypeScript).
 * **Mark passes that invalidate resolution with `needsResolves := true`**
   in `LaurelCompilationPipeline.lean`. Otherwise subsequent passes will
   trip over dangling `uniqueId`s.
+* **Keep the documented pipeline order in sync.** If you add, remove, or
+  reorder a Laurel-to-Laurel pass in `LaurelCompilationPipeline.lean`,
+  update the *Pipeline order* section below and the pass list in the Laurel
+  manual. (PR #1222 replaces these hand-maintained lists with
+  auto-generated documentation; prefer that mechanism once it lands.)
 * **Keep the translation to Core "dumb".** If a Laurel → Core case needs
   non-trivial work, the work probably belongs in an earlier
   Laurel → Laurel pass.
