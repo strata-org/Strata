@@ -67,7 +67,12 @@ garbage-collected source languages (Java, Python, JavaScript, TypeScript).
   `LaurelFormat`, and `ConcreteToAbstractTreeTranslator` +
   `AbstractToConcreteTreeTranslator`. Missing one produces the classic
   "holes should have been eliminated before translation" error or
-  equivalent.
+  equivalent. There is no build-time check that enforces this across all
+  passes: Lean's exhaustiveness checking catches a missing case only in passes
+  that `match` on every constructor (e.g. those built on `MapStmtExpr`), while
+  passes with a wildcard `_` or a hand-rolled traversal silently ignore the new
+  constructor and fail at runtime. A cross-pass guard would be worth a tracking
+  issue.
 * **Mark passes that invalidate resolution with `needsResolves := true`**
   in `LaurelCompilationPipeline.lean`. A pass invalidates resolution when it
   introduces new declarations or references, or rewrites existing references —
