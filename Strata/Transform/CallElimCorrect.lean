@@ -2665,23 +2665,13 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
                       (ks_L4.zip (Core.Transform.createFvars ks'_L4))) =
                 some Imperative.HasBool.ff := by
       right
-      -- "Not all preconditions evaluate to tt at σAO" via Hpre_iff.mpr.
-      have Hnot_all :
-          ¬ (∀ pre, (Procedure.Spec.getCheckExprs proc.spec.checkedPreconditions).contains pre →
-                  δ σAO pre = .some Imperative.HasBool.tt) := by
-        intro Hall
-        have : true = false := Hpre_iff.mpr Hall
-        cases this
-      -- From Hnot_all, extract a witness pre that fails to eval to tt.
-      -- Combined with bool-totality, that pre evaluates to ff.
-      -- We need to find an entry in presFiltered.
-      -- Use classical reasoning to find the first failing entry.
+      -- Extract a precondition failing eval-tt at σAO via Hpre_iff.mpr's
+      -- contrapositive: if all eval-tt, then `true = false`, impossible.
       have HexFail :
           ∃ entry ∈ presFiltered, δ σAO entry.snd.expr ≠ some Imperative.HasBool.tt := by
-        -- Prove via Classical.byContradiction: assume not exists, derive ∀, contradict.
         apply Classical.byContradiction
         intro Hno
-        apply Hnot_all
+        refine Bool.noConfusion (Hpre_iff.mpr ?_)
         intro pre Hpre
         rw [List.contains_iff_mem] at Hpre
         simp only [Procedure.Spec.getCheckExprs,
