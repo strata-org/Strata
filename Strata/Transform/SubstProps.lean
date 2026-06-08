@@ -837,16 +837,9 @@ theorem subst_fvars_eval_bridge
               δ σ' w = δ σ (Lambda.LExpr.fvar () k none)) :
     δ σ' (Lambda.LExpr.substFvars e sm) = δ σ e := by
   induction e with
-  | const m c =>
-    simp only [Lambda.LExpr.substFvars_const']
-    rw [Hwfvl.2, Hwfvl.2]
-    constructor; constructor
-  | op m n t =>
-    simp only [Lambda.LExpr.substFvars_op']
-    rw [Hwfvl.2, Hwfvl.2]
-    constructor; constructor
-  | bvar m i =>
-    simp only [Lambda.LExpr.substFvars_bvar]
+  | const | op | bvar =>
+    simp only [Lambda.LExpr.substFvars_const', Lambda.LExpr.substFvars_op',
+               Lambda.LExpr.substFvars_bvar]
     rw [Hwfvl.2, Hwfvl.2]
     constructor; constructor
   | fvar m name ty =>
@@ -893,114 +886,57 @@ theorem subst_fvars_eval_bridge
       exact HsubAt
   | abs m name ty body ih =>
     simp only [Lambda.LExpr.substFvars_abs]
-    have Hsurv_body :
-        ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) body,
-          Map.find? sm v = none →
-          δ σ' (Lambda.LExpr.fvar () v none) =
-            δ σ (Lambda.LExpr.fvar () v none) := by
-      intro v Hv Hnone
-      apply Hsurv v ?_ Hnone
-      show v ∈ Lambda.LExpr.LExpr.getVars (Lambda.LExpr.abs m name ty body)
-      simp [Lambda.LExpr.LExpr.getVars]
-      show v ∈ Lambda.LExpr.LExpr.getVars body
-      exact Hv
-    have Hsub_body :
-        ∀ k w, k ∈ Imperative.HasVarsPure.getVars (P:=Expression) body →
-          Map.find? sm k = some w →
-          δ σ' w = δ σ (Lambda.LExpr.fvar () k none) := by
-      intro k w Hk Hf
-      apply Hsub k w ?_ Hf
-      show k ∈ Lambda.LExpr.LExpr.getVars (Lambda.LExpr.abs m name ty body)
-      simp [Lambda.LExpr.LExpr.getVars]
-      show k ∈ Lambda.LExpr.LExpr.getVars body
-      exact Hk
-    have Hbody := ih Hsurv_body Hsub_body
+    have Hmk : ∀ {x : Expression.Ident},
+        x ∈ Imperative.HasVarsPure.getVars (P:=Expression) body →
+        x ∈ Imperative.HasVarsPure.getVars (P:=Expression)
+              (Lambda.LExpr.abs m name ty body) := by
+      intro x Hx
+      show x ∈ Lambda.LExpr.LExpr.getVars body
+      exact Hx
+    have Hbody := ih (fun v Hv Hnone => Hsurv v (Hmk Hv) Hnone)
+                     (fun k w Hk Hf => Hsub k w (Hmk Hk) Hf)
     exact Hwfc.abscongr σ' σ _ _ Hbody m name ty
   | quant m qk name ty tr body trih bih =>
     simp only [Lambda.LExpr.substFvars_quant]
-    have Hsurv_tr :
-        ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) tr,
-          Map.find? sm v = none →
-          δ σ' (Lambda.LExpr.fvar () v none) =
-            δ σ (Lambda.LExpr.fvar () v none) := by
-      intro v Hv Hnone
-      apply Hsurv v ?_ Hnone
-      show v ∈ Lambda.LExpr.LExpr.getVars (Lambda.LExpr.quant m qk name ty tr body)
-      simp [Lambda.LExpr.LExpr.getVars, List.mem_append]
-      exact Or.inl Hv
-    have Hsurv_body :
-        ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) body,
-          Map.find? sm v = none →
-          δ σ' (Lambda.LExpr.fvar () v none) =
-            δ σ (Lambda.LExpr.fvar () v none) := by
-      intro v Hv Hnone
-      apply Hsurv v ?_ Hnone
-      show v ∈ Lambda.LExpr.LExpr.getVars (Lambda.LExpr.quant m qk name ty tr body)
-      simp [Lambda.LExpr.LExpr.getVars, List.mem_append]
-      exact Or.inr Hv
-    have Hsub_tr :
-        ∀ k w, k ∈ Imperative.HasVarsPure.getVars (P:=Expression) tr →
-          Map.find? sm k = some w →
-          δ σ' w = δ σ (Lambda.LExpr.fvar () k none) := by
-      intro k w Hk Hf
-      apply Hsub k w ?_ Hf
-      show k ∈ Lambda.LExpr.LExpr.getVars (Lambda.LExpr.quant m qk name ty tr body)
-      simp [Lambda.LExpr.LExpr.getVars, List.mem_append]
-      exact Or.inl Hk
-    have Hsub_body :
-        ∀ k w, k ∈ Imperative.HasVarsPure.getVars (P:=Expression) body →
-          Map.find? sm k = some w →
-          δ σ' w = δ σ (Lambda.LExpr.fvar () k none) := by
-      intro k w Hk Hf
-      apply Hsub k w ?_ Hf
-      show k ∈ Lambda.LExpr.LExpr.getVars (Lambda.LExpr.quant m qk name ty tr body)
-      simp [Lambda.LExpr.LExpr.getVars, List.mem_append]
-      exact Or.inr Hk
-    have Htr := trih Hsurv_tr Hsub_tr
-    have Hbody := bih Hsurv_body Hsub_body
+    have HmkL : ∀ {x : Expression.Ident},
+        x ∈ Imperative.HasVarsPure.getVars (P:=Expression) tr →
+        x ∈ Imperative.HasVarsPure.getVars (P:=Expression)
+              (Lambda.LExpr.quant m qk name ty tr body) := by
+      intro x Hx
+      show x ∈ Lambda.LExpr.LExpr.getVars tr ++ Lambda.LExpr.LExpr.getVars body
+      exact List.mem_append.mpr (Or.inl Hx)
+    have HmkR : ∀ {x : Expression.Ident},
+        x ∈ Imperative.HasVarsPure.getVars (P:=Expression) body →
+        x ∈ Imperative.HasVarsPure.getVars (P:=Expression)
+              (Lambda.LExpr.quant m qk name ty tr body) := by
+      intro x Hx
+      show x ∈ Lambda.LExpr.LExpr.getVars tr ++ Lambda.LExpr.LExpr.getVars body
+      exact List.mem_append.mpr (Or.inr Hx)
+    have Htr := trih (fun v Hv Hnone => Hsurv v (HmkL Hv) Hnone)
+                     (fun k w Hk Hf => Hsub k w (HmkL Hk) Hf)
+    have Hbody := bih (fun v Hv Hnone => Hsurv v (HmkR Hv) Hnone)
+                      (fun k w Hk Hf => Hsub k w (HmkR Hk) Hf)
     exact Hwfc.quantcongr σ' σ m qk name ty _ _ _ _ Htr Hbody
   | app m fn arg fih aih =>
     simp only [Lambda.LExpr.substFvars_app]
-    have Hsurv_fn :
-        ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) fn,
-          Map.find? sm v = none →
-          δ σ' (Lambda.LExpr.fvar () v none) =
-            δ σ (Lambda.LExpr.fvar () v none) := by
-      intro v Hv Hnone
-      apply Hsurv v ?_ Hnone
-      show v ∈ Lambda.LExpr.LExpr.getVars (Lambda.LExpr.app m fn arg)
-      simp [Lambda.LExpr.LExpr.getVars, List.mem_append]
-      exact Or.inl Hv
-    have Hsurv_arg :
-        ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) arg,
-          Map.find? sm v = none →
-          δ σ' (Lambda.LExpr.fvar () v none) =
-            δ σ (Lambda.LExpr.fvar () v none) := by
-      intro v Hv Hnone
-      apply Hsurv v ?_ Hnone
-      show v ∈ Lambda.LExpr.LExpr.getVars (Lambda.LExpr.app m fn arg)
-      simp [Lambda.LExpr.LExpr.getVars, List.mem_append]
-      exact Or.inr Hv
-    have Hsub_fn :
-        ∀ k w, k ∈ Imperative.HasVarsPure.getVars (P:=Expression) fn →
-          Map.find? sm k = some w →
-          δ σ' w = δ σ (Lambda.LExpr.fvar () k none) := by
-      intro k w Hk Hf
-      apply Hsub k w ?_ Hf
-      show k ∈ Lambda.LExpr.LExpr.getVars (Lambda.LExpr.app m fn arg)
-      simp [Lambda.LExpr.LExpr.getVars, List.mem_append]
-      exact Or.inl Hk
-    have Hsub_arg :
-        ∀ k w, k ∈ Imperative.HasVarsPure.getVars (P:=Expression) arg →
-          Map.find? sm k = some w →
-          δ σ' w = δ σ (Lambda.LExpr.fvar () k none) := by
-      intro k w Hk Hf
-      apply Hsub k w ?_ Hf
-      show k ∈ Lambda.LExpr.LExpr.getVars (Lambda.LExpr.app m fn arg)
-      simp [Lambda.LExpr.LExpr.getVars, List.mem_append]
-      exact Or.inr Hk
-    have Hfn := fih Hsurv_fn Hsub_fn
-    have Harg := aih Hsurv_arg Hsub_arg
+    have HmkL : ∀ {x : Expression.Ident},
+        x ∈ Imperative.HasVarsPure.getVars (P:=Expression) fn →
+        x ∈ Imperative.HasVarsPure.getVars (P:=Expression)
+              (Lambda.LExpr.app m fn arg) := by
+      intro x Hx
+      show x ∈ Lambda.LExpr.LExpr.getVars fn ++ Lambda.LExpr.LExpr.getVars arg
+      exact List.mem_append.mpr (Or.inl Hx)
+    have HmkR : ∀ {x : Expression.Ident},
+        x ∈ Imperative.HasVarsPure.getVars (P:=Expression) arg →
+        x ∈ Imperative.HasVarsPure.getVars (P:=Expression)
+              (Lambda.LExpr.app m fn arg) := by
+      intro x Hx
+      show x ∈ Lambda.LExpr.LExpr.getVars fn ++ Lambda.LExpr.LExpr.getVars arg
+      exact List.mem_append.mpr (Or.inr Hx)
+    have Hfn := fih (fun v Hv Hnone => Hsurv v (HmkL Hv) Hnone)
+                    (fun k w Hk Hf => Hsub k w (HmkL Hk) Hf)
+    have Harg := aih (fun v Hv Hnone => Hsurv v (HmkR Hv) Hnone)
+                     (fun k w Hk Hf => Hsub k w (HmkR Hk) Hf)
     exact Hwfc.appcongr σ' σ m _ _ _ _ Hfn Harg
   | ite m c t f cih tih fih =>
     simp only [Lambda.LExpr.substFvars_ite]
@@ -1037,57 +973,39 @@ theorem subst_fvars_eval_bridge
     exact Hwfc.itecongr σ' σ m _ _ _ _ _ _ Ht Hf' Hc
   | eq m e1 e2 e1ih e2ih =>
     simp only [Lambda.LExpr.substFvars_eq]
-    have Hsurv_l :
-        ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) e1,
-          Map.find? sm v = none →
-          δ σ' (Lambda.LExpr.fvar () v none) =
-            δ σ (Lambda.LExpr.fvar () v none) := by
-      intro v Hv Hnone
-      apply Hsurv v ?_ Hnone
-      show v ∈ Lambda.LExpr.LExpr.getVars (Lambda.LExpr.eq m e1 e2)
-      simp [Lambda.LExpr.LExpr.getVars, List.mem_append]
-      exact Or.inl Hv
-    have Hsurv_r :
-        ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) e2,
-          Map.find? sm v = none →
-          δ σ' (Lambda.LExpr.fvar () v none) =
-            δ σ (Lambda.LExpr.fvar () v none) := by
-      intro v Hv Hnone
-      apply Hsurv v ?_ Hnone
-      show v ∈ Lambda.LExpr.LExpr.getVars (Lambda.LExpr.eq m e1 e2)
-      simp [Lambda.LExpr.LExpr.getVars, List.mem_append]
-      exact Or.inr Hv
-    have Hsub_l :
-        ∀ k w, k ∈ Imperative.HasVarsPure.getVars (P:=Expression) e1 →
-          Map.find? sm k = some w →
-          δ σ' w = δ σ (Lambda.LExpr.fvar () k none) := by
-      intro k w Hk Hf
-      apply Hsub k w ?_ Hf
-      show k ∈ Lambda.LExpr.LExpr.getVars (Lambda.LExpr.eq m e1 e2)
-      simp [Lambda.LExpr.LExpr.getVars, List.mem_append]
-      exact Or.inl Hk
-    have Hsub_r :
-        ∀ k w, k ∈ Imperative.HasVarsPure.getVars (P:=Expression) e2 →
-          Map.find? sm k = some w →
-          δ σ' w = δ σ (Lambda.LExpr.fvar () k none) := by
-      intro k w Hk Hf
-      apply Hsub k w ?_ Hf
-      show k ∈ Lambda.LExpr.LExpr.getVars (Lambda.LExpr.eq m e1 e2)
-      simp [Lambda.LExpr.LExpr.getVars, List.mem_append]
-      exact Or.inr Hk
-    have Hl := e1ih Hsurv_l Hsub_l
-    have Hr := e2ih Hsurv_r Hsub_r
+    have HmkL : ∀ {x : Expression.Ident},
+        x ∈ Imperative.HasVarsPure.getVars (P:=Expression) e1 →
+        x ∈ Imperative.HasVarsPure.getVars (P:=Expression)
+              (Lambda.LExpr.eq m e1 e2) := by
+      intro x Hx
+      show x ∈ Lambda.LExpr.LExpr.getVars e1 ++ Lambda.LExpr.LExpr.getVars e2
+      exact List.mem_append.mpr (Or.inl Hx)
+    have HmkR : ∀ {x : Expression.Ident},
+        x ∈ Imperative.HasVarsPure.getVars (P:=Expression) e2 →
+        x ∈ Imperative.HasVarsPure.getVars (P:=Expression)
+              (Lambda.LExpr.eq m e1 e2) := by
+      intro x Hx
+      show x ∈ Lambda.LExpr.LExpr.getVars e1 ++ Lambda.LExpr.LExpr.getVars e2
+      exact List.mem_append.mpr (Or.inr Hx)
+    have Hl := e1ih (fun v Hv Hnone => Hsurv v (HmkL Hv) Hnone)
+                    (fun k w Hk Hf => Hsub k w (HmkL Hk) Hf)
+    have Hr := e2ih (fun v Hv Hnone => Hsurv v (HmkR Hv) Hnone)
+                    (fun k w Hk Hf => Hsub k w (HmkR Hk) Hf)
     exact Hwfc.eqcongr σ' σ m _ _ _ _ Hl Hr
 
 /-! ### Small-step block helpers for assert/assume sequences -/
 
 /-- Generic block-evaluator helper for the labels-aware (`zip`) variant of
-    assert/assume statement lists.  Used to derive both `H_asserts_zip` and
-    `H_assumes_zip`. -/
-theorem H_check_block_zip
+    assert/assume statement lists.  Polymorphic-`f` form: lifts any
+    flag-`f` singleton callback through the `(entries.zip labels).map`
+    shape.  Used by `H_assumes_zip_poly` to keep the L5/L6
+    (havocs/assumes) segments at `f = true` after the L4 flag flip,
+    and by the `f := false` corollary `H_check_block_zip` (and
+    `H_asserts_zip` / `H_assumes_zip` through it). -/
+theorem H_check_block_zip_poly
     {π : String → Option Procedure}
     {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
-    {δ : CoreEval} {σA σ' : CoreStore}
+    {δ : CoreEval} {σA σ' : CoreStore} {f : Bool}
     {ks ks' : List Expression.Ident}
     {entries : List (CoreLabel × Procedure.Check)}
     {labels : List String}
@@ -1096,7 +1014,7 @@ theorem H_check_block_zip
     (mkSingletonEval :
       ∀ (lbl : String) (e : Expression.Expr) (m : Imperative.MetaData Expression),
         δ σ' e = some Imperative.HasBool.tt →
-        EvalStatementsContract π φ ⟨σ', δ, false⟩ [mkStmt lbl e m] ⟨σ', δ, false⟩)
+        EvalStatementsContract π φ ⟨σ', δ, f⟩ [mkStmt lbl e m] ⟨σ', δ, f⟩)
     (Hwfvr : Imperative.WellFormedSemanticEvalVar (P:=Expression) δ)
     (Hwfvl : Imperative.WellFormedSemanticEvalVal (P:=Expression) δ)
     (Hwfc  : Core.WellFormedCoreEvalCong δ)
@@ -1110,13 +1028,13 @@ theorem H_check_block_zip
             (ks ++ ks')) ∧
        ks'.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr) ∧
        δ σA entry.snd.expr = some Imperative.HasBool.tt) :
-    EvalStatementsContract π φ ⟨σ', δ, false⟩
+    EvalStatementsContract π φ ⟨σ', δ, f⟩
       ((entries.zip labels).map (fun (entry, lbl) =>
         mkStmt lbl
           (Lambda.LExpr.substFvars entry.snd.expr
             (ks.zip (Core.Transform.createFvars ks')))
           (entry.snd.md.setCallSiteFileRange md)))
-      ⟨σ', δ, false⟩ := by
+      ⟨σ', δ, f⟩ := by
   induction entries generalizing labels with
   | nil =>
     simp [List.zip_nil_left, List.map_nil]
@@ -1152,6 +1070,45 @@ theorem H_check_block_zip
         (check.md.setCallSiteFileRange md) HevSubst
       simp only [List.zip_cons_cons, List.map_cons]
       exact EvalStatementsContractApp HheadStmts Htail
+
+/-- `f := false` specialization of `H_check_block_zip_poly`.  Kept as a
+    corollary so existing call sites (`H_asserts_zip`) continue to work
+    after the polymorphic lift. -/
+theorem H_check_block_zip
+    {π : String → Option Procedure}
+    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
+    {δ : CoreEval} {σA σ' : CoreStore}
+    {ks ks' : List Expression.Ident}
+    {entries : List (CoreLabel × Procedure.Check)}
+    {labels : List String}
+    {md : Imperative.MetaData Expression}
+    (mkStmt : String → Expression.Expr → Imperative.MetaData Expression → Statement)
+    (mkSingletonEval :
+      ∀ (lbl : String) (e : Expression.Expr) (m : Imperative.MetaData Expression),
+        δ σ' e = some Imperative.HasBool.tt →
+        EvalStatementsContract π φ ⟨σ', δ, false⟩ [mkStmt lbl e m] ⟨σ', δ, false⟩)
+    (Hwfvr : Imperative.WellFormedSemanticEvalVar (P:=Expression) δ)
+    (Hwfvl : Imperative.WellFormedSemanticEvalVal (P:=Expression) δ)
+    (Hwfc  : Core.WellFormedCoreEvalCong δ)
+    (Hlen  : ks.length = ks'.length)
+    (Hnd   : Imperative.substNodup (ks.zip ks'))
+    (Hdef  : Imperative.substDefined σA σ' (ks.zip ks'))
+    (Hsubst : Imperative.substStores σA σ' (ks.zip ks'))
+    (Hentries : ∀ entry, entry ∈ entries →
+       Imperative.invStores σA σ'
+         ((Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr).removeAll
+            (ks ++ ks')) ∧
+       ks'.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr) ∧
+       δ σA entry.snd.expr = some Imperative.HasBool.tt) :
+    EvalStatementsContract π φ ⟨σ', δ, false⟩
+      ((entries.zip labels).map (fun (entry, lbl) =>
+        mkStmt lbl
+          (Lambda.LExpr.substFvars entry.snd.expr
+            (ks.zip (Core.Transform.createFvars ks')))
+          (entry.snd.md.setCallSiteFileRange md)))
+      ⟨σ', δ, false⟩ :=
+  H_check_block_zip_poly (f := false) mkStmt mkSingletonEval
+    Hwfvr Hwfvl Hwfc Hlen Hnd Hdef Hsubst Hentries
 
 /-- Labels-aware variant of `H_asserts`: takes a separate `labels`
     list (paired positionally with `pres` via `zip`) rather than a
@@ -1195,11 +1152,46 @@ theorem H_asserts_zip
     (mkSingletonEval := singletonAssertEval Hwfb)
     Hwfvr Hwfvl Hwfc Hlen Hnd Hdef Hsubst' Hpres
 
+/-- Polymorphic-`f` variant of `H_assumes_zip`.  Lets the L6 (assumes)
+    segment of the call-elim glue stay at `f = true` once the L4 flag
+    flip has fired.  See `EvalCallElim_glue_fail`. -/
+theorem H_assumes_zip_poly
+    {π : String → Option Procedure}
+    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
+    {δ : CoreEval} {σA σ' : CoreStore} {f : Bool}
+    {ks ks' : List Expression.Ident}
+    {posts : List (CoreLabel × Procedure.Check)}
+    {labels : List String}
+    {md : Imperative.MetaData Expression}
+    (Hwfb  : Imperative.WellFormedSemanticEvalBool δ)
+    (Hwfvr : Imperative.WellFormedSemanticEvalVar (P:=Expression) δ)
+    (Hwfvl : Imperative.WellFormedSemanticEvalVal (P:=Expression) δ)
+    (Hwfc  : Core.WellFormedCoreEvalCong δ)
+    (Hlen  : ks.length = ks'.length)
+    (Hnd   : Imperative.substNodup (ks.zip ks'))
+    (Hdef  : Imperative.substDefined σA σ' (ks.zip ks'))
+    (Hsubst : Imperative.substStores σA σ' (ks.zip ks'))
+    (Hposts : ∀ entry, entry ∈ posts →
+       Imperative.invStores σA σ'
+         ((Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr).removeAll
+            (ks ++ ks')) ∧
+       ks'.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr) ∧
+       δ σA entry.snd.expr = some Imperative.HasBool.tt) :
+    EvalStatementsContract π φ ⟨σ', δ, f⟩
+      ((posts.zip labels).map (fun (entry, lbl) =>
+        Statement.assume lbl
+          (Lambda.LExpr.substFvars entry.snd.expr
+            (ks.zip (Core.Transform.createFvars ks')))
+          (entry.snd.md.setCallSiteFileRange md)))
+      ⟨σ', δ, f⟩ :=
+  H_check_block_zip_poly (entries := posts) (labels := labels) (f := f)
+    Statement.assume
+    (mkSingletonEval := singletonAssumeEval_poly Hwfb)
+    Hwfvr Hwfvl Hwfc Hlen Hnd Hdef Hsubst Hposts
+
 /-- Labels-aware variant of `H_assumes`: takes a separate `labels`
     list (paired positionally with `posts` via `zip`) rather than a
-    `labelOf` projection.  This matches the shape exposed by the
-    `HassumesShape` clause of `callElimCmd_call_eq` (B3 layer), which
-    forms the assumes list as `(posts.zip labels).map (fun (entry, lbl) => …)`. -/
+    `labelOf` projection.  `f := false` corollary of `H_assumes_zip_poly`. -/
 theorem H_assumes_zip
     {π : String → Option Procedure}
     {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
@@ -1229,9 +1221,7 @@ theorem H_assumes_zip
             (ks.zip (Core.Transform.createFvars ks')))
           (entry.snd.md.setCallSiteFileRange md)))
       ⟨σ', δ, false⟩ :=
-  H_check_block_zip (entries := posts) (labels := labels) Statement.assume
-    (mkSingletonEval := singletonAssumeEval Hwfb)
-    Hwfvr Hwfvl Hwfc Hlen Hnd Hdef Hsubst Hposts
+  H_assumes_zip_poly (f := false) Hwfb Hwfvr Hwfvl Hwfc Hlen Hnd Hdef Hsubst Hposts
 
 /-- Helper: lifting `ReadValues σ ks vs` across an `updatedStates` extension
     by names disjoint from `ks`. -/
@@ -1418,27 +1408,213 @@ theorem havocVars_updatedStates_lift
       ih Hdisj_t
     exact HavocVars.update_some hUp' hTail'
 
-/-- Glue lemma: chain L1–L6 via `EvalStatementsContractApp` to produce the
-    full call-elim block evaluation from σ to σ_havoc. -/
-theorem EvalCallElim_glue
+/-! ### Failing-arm helpers for `EvalCallElim_glue_fail`
+
+These helpers walk the asserts segment when at least one precondition
+evaluates to `ff` after substitution, producing an `EvalStatementsContract`
+derivation that flips the cumulative `hasFailure` flag from `false` to
+`true`.  The walk handles entries before, at, and after the failing
+witness uniformly via the OR-stable accumulator.  See
+`EvalCallElim_glue_fail` below for the orchestration. -/
+
+/-- Singleton-eval helper for `Statement.assert` at the failing arm:
+    lifts the assert-fail evaluation rule into a single-statement
+    `EvalStatementsContract` that flips `f` to `f || true = true`. -/
+private theorem singletonAssertFailEval
     {π : String → Option Procedure}
     {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
-    {δ : CoreEval} {σ σ_arg σ_out σ_old σ_havoc : CoreStore}
+    {δ : CoreEval} {σ : CoreStore} {f : Bool}
+    (Hwfb : Imperative.WellFormedSemanticEvalBool δ)
+    (lbl : String) (e : Expression.Expr) (m : Imperative.MetaData Expression)
+    (Hev : δ σ e = some Imperative.HasBool.ff) :
+    EvalStatementsContract π φ ⟨σ, δ, f⟩
+      [Statement.assert lbl e m]
+      ⟨σ, δ, f || true⟩ := by
+  unfold EvalStatementsContract Imperative.EvalStmtsSmall
+  apply ReflTrans.step _ _ _ Imperative.StepStmt.step_stmts_cons
+  have Hcmd : Core.EvalCommandContract π δ σ
+                (Core.CmdExt.cmd (Imperative.Cmd.assert lbl e m))
+                σ true :=
+    Core.EvalCommandContract.cmd_sem (Imperative.EvalCmd.eval_assert_fail Hev Hwfb)
+  have Hstep_cmd :
+      Imperative.StepStmt Expression (EvalCommandContract π) (EvalPureFunc φ)
+        (.stmt (Imperative.Stmt.cmd (Core.CmdExt.cmd (Imperative.Cmd.assert lbl e m)))
+          ⟨σ, δ, f⟩)
+        (.terminal ⟨σ, δ, f || true⟩) := by
+    have := Imperative.StepStmt.step_cmd (P := Expression)
+              (EvalCmd := EvalCommandContract π) (extendEval := EvalPureFunc φ)
+              (ρ := ⟨σ, δ, f⟩) (c := Core.CmdExt.cmd (Imperative.Cmd.assert lbl e m))
+              (σ' := σ) (hasAssertFailure := true) Hcmd
+    simpa using this
+  apply ReflTrans.step _ _ _
+          (Imperative.StepStmt.step_seq_inner Hstep_cmd)
+  apply ReflTrans.step _ _ _ Imperative.StepStmt.step_seq_done
+  exact ReflTrans.step _ _ _ Imperative.StepStmt.step_stmts_nil (.refl _)
+
+/-- Walk the asserts segment in the failing arm.  Each entry's substituted
+    expression evaluates either to `tt` (pass) or `ff` (fail) at `σ'`; at
+    least one entry fails (or the input flag is already `true`).  Output
+    cumulative flag is `true`.
+
+    The `Hbool` and `Hfail_or_input` premises range over `(pres.zip labels)`
+    — the actually-realized statement list — rather than over `pres` alone,
+    so length-mismatched corner cases (`labels.length < pres.length`) are
+    avoided.  Callers ensure `labels.length = pres.length`. -/
+theorem H_asserts_zip_fail
+    {π : String → Option Procedure}
+    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
+    {δ : CoreEval} {σ' : CoreStore} {f : Bool}
+    {ks ks' : List Expression.Ident}
+    {pres : List (CoreLabel × Procedure.Check)}
+    {labels : List String}
+    {md : Imperative.MetaData Expression}
+    (Hwfb : Imperative.WellFormedSemanticEvalBool δ)
+    (Hbool :
+      ∀ pair ∈ pres.zip labels,
+        δ σ' (Lambda.LExpr.substFvars pair.fst.snd.expr
+                (ks.zip (Core.Transform.createFvars ks'))) =
+            some Imperative.HasBool.tt ∨
+        δ σ' (Lambda.LExpr.substFvars pair.fst.snd.expr
+                (ks.zip (Core.Transform.createFvars ks'))) =
+            some Imperative.HasBool.ff)
+    (Hfail_or_input :
+      f = true ∨
+        ∃ pair ∈ pres.zip labels,
+          δ σ' (Lambda.LExpr.substFvars pair.fst.snd.expr
+                  (ks.zip (Core.Transform.createFvars ks'))) =
+              some Imperative.HasBool.ff) :
+    EvalStatementsContract π φ ⟨σ', δ, f⟩
+      ((pres.zip labels).map (fun (entry, lbl) =>
+        Statement.assert lbl
+          (Lambda.LExpr.substFvars entry.snd.expr
+            (ks.zip (Core.Transform.createFvars ks')))
+          (entry.snd.md.setCallSiteFileRange md)))
+      ⟨σ', δ, true⟩ := by
+  induction pres generalizing labels f with
+  | nil =>
+    -- No entries → witness must be `f = true`.
+    simp only [List.zip_nil_left] at Hbool Hfail_or_input
+    rcases Hfail_or_input with Hf | ⟨pair, Hin, _⟩
+    · subst Hf
+      simp [List.map_nil]
+      exact ReflTrans.step _ _ _ Imperative.StepStmt.step_stmts_nil (.refl _)
+    · cases Hin
+  | cons head tail ih =>
+    cases labels with
+    | nil =>
+      -- No labels → empty zip; witness must be `f = true`.
+      simp only [List.zip_nil_right] at Hbool Hfail_or_input
+      rcases Hfail_or_input with Hf | ⟨pair, Hin, _⟩
+      · subst Hf
+        simp [List.map_nil]
+        exact ReflTrans.step _ _ _ Imperative.StepStmt.step_stmts_nil (.refl _)
+      · cases Hin
+    | cons lbl labels' =>
+      -- Walk the head, then recurse.
+      have HheadCase := Hbool (head, lbl) (by simp [List.zip_cons_cons])
+      have HtailBool : ∀ pair ∈ tail.zip labels',
+          δ σ' (Lambda.LExpr.substFvars pair.fst.snd.expr
+                  (ks.zip (Core.Transform.createFvars ks'))) =
+              some Imperative.HasBool.tt ∨
+          δ σ' (Lambda.LExpr.substFvars pair.fst.snd.expr
+                  (ks.zip (Core.Transform.createFvars ks'))) =
+              some Imperative.HasBool.ff := by
+        intro pair Hin
+        exact Hbool pair (by simp [List.zip_cons_cons]; exact Or.inr Hin)
+      simp only [List.zip_cons_cons, List.map_cons]
+      -- Two branches based on head's eval.
+      rcases HheadCase with HheadTt | HheadFf
+      · -- Head passes; flag stays at f.
+        have HheadStep :
+            EvalStatementsContract π φ ⟨σ', δ, f⟩
+              [Statement.assert lbl
+                (Lambda.LExpr.substFvars head.snd.expr
+                  (ks.zip (Core.Transform.createFvars ks')))
+                (head.snd.md.setCallSiteFileRange md)]
+              ⟨σ', δ, f⟩ :=
+          singletonAssertEval_poly Hwfb _ _ _ HheadTt
+        -- Witness migration: f=true OR ∃ in tail (since head passes).
+        have HtailWitness :
+            f = true ∨
+              ∃ pair ∈ tail.zip labels',
+                δ σ' (Lambda.LExpr.substFvars pair.fst.snd.expr
+                        (ks.zip (Core.Transform.createFvars ks'))) =
+                    some Imperative.HasBool.ff := by
+          rcases Hfail_or_input with Hf | ⟨pair, Hin_zip, Heq⟩
+          · exact Or.inl Hf
+          · simp only [List.zip_cons_cons, List.mem_cons] at Hin_zip
+            cases Hin_zip with
+            | inl Hpair_eq =>
+              -- pair = (head, lbl); but head evaluates to tt, contradicting Heq.
+              subst Hpair_eq
+              simp at Heq
+              exact absurd HheadTt (by rw [Heq]; intro h; injection h with h; cases h)
+            | inr Hin_tail =>
+              exact Or.inr ⟨pair, Hin_tail, Heq⟩
+        have Htail := ih (labels := labels') (f := f) HtailBool HtailWitness
+        exact EvalStatementsContractApp HheadStep Htail
+      · -- Head fails; flag flips from f to true.
+        have HheadStep_pre :
+            EvalStatementsContract π φ ⟨σ', δ, f⟩
+              [Statement.assert lbl
+                (Lambda.LExpr.substFvars head.snd.expr
+                  (ks.zip (Core.Transform.createFvars ks')))
+                (head.snd.md.setCallSiteFileRange md)]
+              ⟨σ', δ, f || true⟩ :=
+          singletonAssertFailEval Hwfb _ _ _ HheadFf
+        have HheadStep :
+            EvalStatementsContract π φ ⟨σ', δ, f⟩
+              [Statement.assert lbl
+                (Lambda.LExpr.substFvars head.snd.expr
+                  (ks.zip (Core.Transform.createFvars ks')))
+                (head.snd.md.setCallSiteFileRange md)]
+              ⟨σ', δ, true⟩ := by
+          have Hftrue : f || true = true := Bool.or_true f
+          rw [← Hftrue]; exact HheadStep_pre
+        -- Recurse on tail with f := true.
+        have HtailWitness :
+            (true : Bool) = true ∨
+              ∃ pair ∈ tail.zip labels',
+                δ σ' (Lambda.LExpr.substFvars pair.fst.snd.expr
+                        (ks.zip (Core.Transform.createFvars ks'))) =
+                    some Imperative.HasBool.ff :=
+          Or.inl rfl
+        have Htail := ih (labels := labels') (f := true) HtailBool HtailWitness
+        exact EvalStatementsContractApp HheadStep Htail
+
+/-- Unified glue lemma: chain L1–L6 via `EvalStatementsContractApp` to
+    produce the full call-elim block evaluation from σ to σ_havoc.  The
+    flag `f` is inferred from `HL4`'s output: `f = false` recovers the
+    passing arm, `f = true` the failing arm (asserts flips from `false`
+    to `true`, then L5/L6 stay at `true` via the polymorphic-`f` lifts).
+
+    The L4 flag-flip in the failing arm is materialized via
+    `H_asserts_zip_fail`; L5 uses `H_havocs_poly`; L6 uses
+    `H_assumes_zip_poly`.  `EvalCallElim_glue` is a deprecated alias —
+    new code should reference this name directly. -/
+theorem EvalCallElim_glue_fail
+    {π : String → Option Procedure}
+    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
+    {δ : CoreEval} {σ σ_arg σ_out σ_old σ_havoc : CoreStore} {f : Bool}
     {argInit outInit oldInit asserts havocs assumes : List Statement}
     (HL1 : EvalStatementsContract π φ ⟨σ, δ, false⟩ argInit ⟨σ_arg, δ, false⟩)
     (HL2 : EvalStatementsContract π φ ⟨σ_arg, δ, false⟩ outInit ⟨σ_out, δ, false⟩)
     (HL3 : EvalStatementsContract π φ ⟨σ_out, δ, false⟩ oldInit ⟨σ_old, δ, false⟩)
-    (HL4 : EvalStatementsContract π φ ⟨σ_old, δ, false⟩ asserts ⟨σ_old, δ, false⟩)
-    (HL5 : EvalStatementsContract π φ ⟨σ_old, δ, false⟩ havocs ⟨σ_havoc, δ, false⟩)
-    (HL6 : EvalStatementsContract π φ ⟨σ_havoc, δ, false⟩ assumes ⟨σ_havoc, δ, false⟩) :
+    (HL4 : EvalStatementsContract π φ ⟨σ_old, δ, false⟩ asserts ⟨σ_old, δ, f⟩)
+    (HL5 : EvalStatementsContract π φ ⟨σ_old, δ, f⟩ havocs ⟨σ_havoc, δ, f⟩)
+    (HL6 : EvalStatementsContract π φ ⟨σ_havoc, δ, f⟩ assumes ⟨σ_havoc, δ, f⟩) :
     EvalStatementsContract π φ ⟨σ, δ, false⟩
       (argInit ++ outInit ++ oldInit ++ asserts ++ havocs ++ assumes)
-      ⟨σ_havoc, δ, false⟩ := by
-  have H12 := EvalStatementsContractApp HL1 HL2
-  have H123 := EvalStatementsContractApp H12 HL3
-  have H1234 := EvalStatementsContractApp H123 HL4
-  have H12345 := EvalStatementsContractApp H1234 HL5
-  exact EvalStatementsContractApp H12345 HL6
+      ⟨σ_havoc, δ, f⟩ :=
+  EvalStatementsContractApp
+    (EvalStatementsContractApp
+      (EvalStatementsContractApp
+        (EvalStatementsContractApp
+          (EvalStatementsContractApp HL1 HL2) HL3) HL4) HL5) HL6
+
+/-- Passing-arm alias for `EvalCallElim_glue_fail` (`f` is inferred from
+    `HL4` as `false`). -/
+abbrev EvalCallElim_glue := @EvalCallElim_glue_fail
 
 end
 
