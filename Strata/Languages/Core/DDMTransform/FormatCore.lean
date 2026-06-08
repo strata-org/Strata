@@ -991,7 +991,9 @@ def procToCST {M} [Inhabited M] (proc : Core.Procedure) : ToCSTM M (Command M) :
       ⟨default, some (Spec.spec_mk default specAnn)⟩
   let bodyStmts ← match proc.body with
     | .structured ss => pure ss
-    | .cfg _ => panic! "procToCST: CFG bodies not supported on procedure-body branch"
+    | .cfg _ => do
+        ToCSTM.logError "procToCST" "CFG bodies not yet supported in CST conversion" proc.header.name.toPretty
+        pure []
   let bodyCST ← blockToCST bodyStmts
   let body : Ann (Option (CoreDDM.Block M)) M := ⟨default, some bodyCST⟩
   modify ToCSTContext.popScope
