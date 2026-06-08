@@ -15,7 +15,7 @@ Strata is a Lean4 verification framework using **dialects** as composable langua
 - `Strata/` - Core implementation (DDM, dialects, languages, transforms, backends)
 - `StrataTest/` - Unit tests (mirrors Strata/ structure)
 - `Examples/` - Sample programs (`.st` files, naming: `<name>.<dialect>.st`)
-- `Tools/` - External tools (BoogieToStrata, Python utilities)
+- `Tools/` - External tools (Python utilities)
 - `vcs/` - Generated SMT2 verification conditions
 
 ### Core Components
