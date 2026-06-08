@@ -77,7 +77,6 @@ instance : HasInt MiniPureExpr where
 instance : HasIntOps MiniPureExpr where
   eq := fun _ _ => .tt
   lt := fun _ _ => .ff
-  decr := fun e => e
 
 ---------------------------------------------------------------------
 

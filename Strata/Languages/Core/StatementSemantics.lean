@@ -94,7 +94,6 @@ instance : HasInt Core.Expression where
 instance : HasIntOps Core.Expression where
   eq    e1 e2 := .eq () e1 e2
   lt    e1 e2 := .app () (.app () Core.intLtOp e1) e2
-  decr  e     := .app () (.app () Core.intSubOp e) (.intConst () 1)
 
 instance : HasBoolOps Core.Expression where
   not

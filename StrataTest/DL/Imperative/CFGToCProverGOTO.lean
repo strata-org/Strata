@@ -88,7 +88,6 @@ instance : Imperative.HasInt LExprTP where
 instance : Imperative.HasIntOps LExprTP where
   eq    e1 e2 := .eq md e1 e2
   lt    e1 e2 := .app md (.app md (.op md ⟨"Int.Lt", ()⟩ none) e1) e2
-  decr  e     := .app md (.app md (.op md ⟨"Int.Sub", ()⟩ none) e) (.intConst md 1)
 
 instance : Imperative.HasBoolOps LExprTP where
   not e := .app md (.op md ⟨"Bool.Not", ()⟩ none) e

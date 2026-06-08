@@ -95,7 +95,6 @@ class HasInt (P : PureExpr) [HasVal P] [HasFvars P] where
 class HasIntOps (P : PureExpr) [HasBool P] [HasFvars P] [HasInt P] where
   eq    : P.Expr → P.Expr → P.Expr
   lt    : P.Expr → P.Expr → P.Expr
-  decr  : P.Expr → P.Expr
 
 /-- Substitution of free variables in expressions.
     Used for closure capture in function declarations. -/
