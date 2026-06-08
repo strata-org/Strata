@@ -40,7 +40,7 @@ private meta def compilePython
     let ionPath := outDir / s!"{stem}.python.st.ion"
     let spawnArgs : IO.Process.SpawnArgs := {
       cmd := toString pythonCmd
-      args := #["-m", "strata.gen", "py_to_strata",
+      args := #["-m", "strata_python.gen", "py_to_strata",
                 "--dialect", dialectFile.toString,
                 pyFile.toString, ionPath.toString]
       cwd := none
