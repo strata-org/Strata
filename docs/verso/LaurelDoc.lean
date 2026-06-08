@@ -117,12 +117,12 @@ the design:
 
 ## One AST node, many back-ends
 
-Because Laurel targets multiple analyses — deductive verification, and in the future model
-checking, property-based testing, and data-flow analysis — semantic features that are
-specific to one discharge strategy must not leak into the AST. Opacity, for example, is a
-concept connected to deductive verification: it is about how to generate VCs that don't
-include too much irrelevant information. Analyses other than deductive verification should
-not need to take opacity into account.
+Laurel targets multiple analyses — deductive verification, and in the future model
+checking, property-based testing, and data-flow analysis. Verification-specific constructs
+(opacity, `assume` statements) are first-class in the AST; the design rule is not that they
+stay out of the AST, but that analyses which do not need them can ignore them. Opacity, for
+example, only governs how deductive verification generates VCs that omit irrelevant
+information; another analysis can treat an opaque body as if it were transparent.
 
 ## Constructs are not defined by their Core encoding
 
