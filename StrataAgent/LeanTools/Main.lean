@@ -46,7 +46,9 @@ def commandNames : List String := [
   "check__imports_",
   "check__compile_",
   "split_theorems_",
-  "check___axioms_"
+  "check___axioms_",
+  "thm_signature__",
+  "thm_depends_on_"
 ]
 
 def commandMaxPad : Nat := 15
@@ -255,6 +257,122 @@ private def handleSplitTheorems (filePath : String) : IO String := do
   catch e =>
     return s!"\{\"error\":\"{jsonEscape (toString e)}\"}"
 
+private def handleThmSignature (input : String) : IO String := do
+  -- Input format: "file_path:theorem_name"
+  try
+    let parts := input.splitOn ":"
+    if parts.length < 2 then
+      return "{\"error\":\"expected file_path:theorem_name\"}"
+    let filePath := parts[0]!
+    let thmName := (String.intercalate ":" (parts.drop 1)).trimAsciiStart.toString
+    let content ← FS.readFile ⟨filePath⟩
+    let code := stripComments content
+    let lines := code.splitOn "\n"
+    -- Find the theorem declaration line
+    let mut found := false
+    let mut sigLines : Array String := #[]
+    let mut collecting := false
+    for line in lines do
+      let trimmed := line.trimAsciiStart.toString
+      if !collecting then
+        -- Look for "theorem <name>" or "private theorem <name>"
+        if (trimmed.startsWith s!"theorem {thmName}") ||
+           (trimmed.startsWith s!"private theorem {thmName}") then
+          collecting := true
+          sigLines := sigLines.push line
+      else
+        -- Collect until we hit ":= by" or ":= " (proof body start)
+        if strContains line ":= by" || strContains line ":= " then
+          -- Include up to but not including the proof body
+          let beforeProof := (line.splitOn ":=")[0]!
+          if !beforeProof.trimAsciiStart.toString.isEmpty then
+            sigLines := sigLines.push beforeProof
+          found := true
+          break
+        else if trimmed.startsWith "theorem " || trimmed.startsWith "private theorem " ||
+                trimmed.startsWith "def " || trimmed.startsWith "axiom " then
+          -- Hit another declaration before finding := , signature was on one line
+          found := true
+          break
+        else
+          sigLines := sigLines.push line
+    if !found && !sigLines.isEmpty then
+      found := true
+    if !found then
+      return s!"\{\"error\":\"theorem '{jsonEscape thmName}' not found\"}"
+    let sig := String.intercalate "\n" sigLines.toList
+    return s!"\{\"name\":\"{jsonEscape thmName}\",\"signature\":\"{jsonEscape sig}\"}"
+  catch e =>
+    return s!"\{\"error\":\"{jsonEscape (toString e)}\"}"
+
+private def handleThmDependsOn (input : String) : IO String := do
+  -- Input format: "file_path:theorem_name"
+  -- Returns which other theorems in the same file are referenced in the proof body
+  try
+    let parts := input.splitOn ":"
+    if parts.length < 2 then
+      return "{\"error\":\"expected file_path:theorem_name\"}"
+    let filePath := parts[0]!
+    let thmName := (String.intercalate ":" (parts.drop 1)).trimAsciiStart.toString
+    let content ← FS.readFile ⟨filePath⟩
+    let code := stripComments content
+    let lines := code.splitOn "\n"
+
+    -- First pass: collect all theorem/def names in the file
+    let mut allNames : Array String := #[]
+    for line in lines do
+      let trimmed := line.trimAsciiStart.toString
+      if trimmed.startsWith "theorem " || trimmed.startsWith "private theorem " ||
+         trimmed.startsWith "def " || trimmed.startsWith "private def " then
+        let parts := trimmed.splitOn " "
+        let idx := if trimmed.startsWith "private" then 2 else 1
+        if h : idx < parts.length then
+          let name := ((parts[idx]).takeWhile (fun c => c != ':' && c != '(' && c != '{')).toString
+          if !name.isEmpty then
+            allNames := allNames.push name
+
+    -- Second pass: find the target theorem's proof body
+    let mut inBody := false
+    let mut bodyLines : Array String := #[]
+    let mut foundStart := false
+    for line in lines do
+      let trimmed := line.trimAsciiStart.toString
+      if !foundStart then
+        if (trimmed.startsWith s!"theorem {thmName}") ||
+           (trimmed.startsWith s!"private theorem {thmName}") then
+          foundStart := true
+          -- Check if := is on the same line
+          if strContains line ":= by" || strContains line ":= " then
+            let afterProof := (line.splitOn ":=")
+            if h : 1 < afterProof.length then
+              bodyLines := bodyLines.push afterProof[1]
+            inBody := true
+      else if !inBody then
+        -- Still in signature, look for :=
+        if strContains line ":= by" || strContains line ":= " then
+          let afterProof := (line.splitOn ":=")
+          if h : 1 < afterProof.length then
+            bodyLines := bodyLines.push afterProof[1]
+          inBody := true
+      else
+        -- In body — stop at next top-level declaration
+        if trimmed.startsWith "theorem " || trimmed.startsWith "private theorem " ||
+           trimmed.startsWith "def " || trimmed.startsWith "axiom " then
+          break
+        bodyLines := bodyLines.push line
+
+    -- Check which names from the file appear in the proof body
+    let body := String.intercalate "\n" bodyLines.toList
+    let mut uses : Array String := #[]
+    for name in allNames do
+      if name != thmName && strContains body name then
+        uses := uses.push name
+
+    let usesJson := String.intercalate "," (uses.toList.map (fun s => s!"\"{jsonEscape s}\""))
+    return s!"\{\"theorem\":\"{jsonEscape thmName}\",\"uses\":[{usesJson}]}"
+  catch e =>
+    return s!"\{\"error\":\"{jsonEscape (toString e)}\"}"
+
 private def handleCheckAxioms (filePath : String) : IO String := do
   try
     let content ← FS.readFile ⟨filePath⟩
@@ -334,6 +452,8 @@ unsafe def main (_args : List String) : IO Unit := do
           | "check__compile_" => handleCheckCompiles req.content
           | "split_theorems_" => handleSplitTheorems req.content
           | "check___axioms_" => handleCheckAxioms req.content
+          | "thm_signature__" => handleThmSignature req.content
+          | "thm_depends_on_" => handleThmDependsOn req.content
           | cmd => pure s!"\{\"error\":\"unknown command: {jsonEscape cmd}\"}"
         stdout.putStrLn result
         stdout.flush
