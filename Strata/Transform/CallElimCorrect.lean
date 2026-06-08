@@ -1523,8 +1523,7 @@ private theorem HoldEval_bridge_at_σO
   -- Step 2: σAO v = oVals[outputs.keys.idxOf v] via HσAO_reads_outs.
   let j_out := (ListMap.keys proc.header.outputs).idxOf v
   have Hj_out_lt_oVals : j_out < oVals.length := by
-    rw [← InitStatesLength Hinitout]
-    exact List.idxOf_lt_length_of_mem Hv_out
+    exact (InitStatesLength Hinitout).symm ▸ List.idxOf_lt_length_of_mem Hv_out
   have HStep2 : σAO v = some (oVals[j_out]'Hj_out_lt_oVals) :=
     read_at HσAO_reads_outs Hv_out Hj_out_lt_oVals
   -- Step 3: lhs.idxOf v = outputs.keys.idxOf v (alignment).
@@ -1534,8 +1533,7 @@ private theorem HoldEval_bridge_at_σO
   -- Step 4: σ v = oVals[lhs.idxOf v]'_.
   let j_lhs := lhs.idxOf v
   have Hj_lhs_lt_oVals : j_lhs < oVals.length := by
-    rw [← ReadValuesLength Hevalouts]
-    exact List.idxOf_lt_length_of_mem Hv_lhs
+    exact (ReadValuesLength Hevalouts).symm ▸ List.idxOf_lt_length_of_mem Hv_lhs
   have HStep4 : σ v = some (oVals[j_lhs]'Hj_lhs_lt_oVals) :=
     read_at Hevalouts Hv_lhs Hj_lhs_lt_oVals
   -- Step 5: σ v = some oldVals[i]'_ (HoldVals positional).
@@ -1721,8 +1719,7 @@ private theorem b2_var_witness_at_oldSubst
       ni2_val < inArgs.length := by
     have : (CallArg.getInputExprs args).length =
         inArgs.length := by rw [hCallArgsIn]
-    rw [← this]
-    exact Hni2_lt_inArgs
+    exact this.symm ▸ Hni2_lt_inArgs
   have HargExpr_eq_inArgs :
       w = inArgs[ni2_val]'Hni2_lt_inArgsCall := by
     rw [HargExpr_def]
@@ -1847,8 +1844,7 @@ private theorem HinputSubBridge_at_σO
       proc.header.inputs.keys.length = argVals.length :=
     InitStatesLength Hinitin
   have Hni_lt_argVals : ni.val < argVals.length := by
-    rw [← HinKeys_argVals_len]
-    exact Hni_lt_inKeys'
+    exact HinKeys_argVals_len.symm ▸ Hni_lt_inKeys'
   have σO_eq_σAO_off_outs :
       ∀ {v}, v ∉ proc.header.outputs.keys → σO v = σAO v := by
     obtain ⟨_ovh, Hup_havoc⟩ := HavocVarsUpdateStates Hhav1
@@ -1877,11 +1873,9 @@ private theorem HinputSubBridge_at_σO
         List.get argVals ⟨ni.val, Hni_lt_argVals⟩ =
           argVals[ni.val]'Hni_lt_argVals := rfl
     rw [HargList, HvalList] at Hev
-    rw [HargExpr_eq_inArgs]
-    exact Hev
+    exact HargExpr_eq_inArgs ▸ Hev
   have HargExpr_in_argList : argExpr ∈ inArgs := by
-    rw [HargExpr_eq_inArgs]
-    exact List.getElem_mem _
+    exact HargExpr_eq_inArgs ▸ List.getElem_mem _
   have HargExpr_in_callList :
       argExpr ∈ CallArg.getInputExprs args := HargExpr_in
   have Hσ_R1_eq_σ_argVars :
@@ -2196,8 +2190,7 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
           (updatedStates σ argTemps
             argVals)
           outTrips.unzip.snd oVals := by
-      rw [HoutSnd_eq_lhs]
-      exact readValues_updatedStates HargTempsLen HlhsDisjArg Hevalouts
+      exact HoutSnd_eq_lhs ▸ readValues_updatedStates HargTempsLen HlhsDisjArg Hevalouts
     have HndefOut_argLayer :
         Imperative.isNotDefined
           (updatedStates σ argTemps
@@ -2205,8 +2198,7 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
           outTemps := by
       intro v Hv
       have Hv_notin : v ∉ argTemps := fun Hin => HargOutDisj Hin Hv
-      rw [updatedStates_get_notin (σ:=σ) (ks:=argTemps) (vs:=argVals) Hv_notin]
-      exact HndefOut_σ v Hv
+      exact (updatedStates_get_notin (σ:=σ) (ks:=argTemps) (vs:=argVals) Hv_notin) ▸ HndefOut_σ v Hv
     have HL2 :
         EvalStatementsContract π φ
           ⟨updatedStates σ argTemps
@@ -2252,9 +2244,7 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
     have HoldVarsDisjOut : oldVars.Disjoint outTemps := oldVars_disj_via_lhs HlhsDisjOut
     have HoldVarsDisjOldT : oldVars.Disjoint genOldIdents := oldVars_disj_via_lhs HlhsDisjOld
     have HoldVarsNd : oldVars.Nodup := by
-      have HlhsArgs_nd : (CallArg.getLhs args).Nodup := by
-        rw [hCallArgsLhs]
-        exact HlhsNd
+      have HlhsArgs_nd : (CallArg.getLhs args).Nodup := hCallArgsLhs ▸ HlhsNd
       exact List.Sublist.nodup List.filter_sublist HlhsArgs_nd
     have HrdOlds_outLayer :
         ReadValues
@@ -2272,8 +2262,7 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
               argTemps argVals)
             outTemps oVals)
           oldTrips.unzip.snd oldVals := by
-      rw [HoldTripsSnd]
-      exact HrdOlds_outLayer
+      exact HoldTripsSnd ▸ HrdOlds_outLayer
     have HndefOld_outLayer :
         Imperative.isNotDefined
           (updatedStates
@@ -2300,8 +2289,7 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
               argTemps argVals)
             outTemps oVals)
           oldTrips.unzip.fst.unzip.fst := by
-      rw [HoldTripsFst]
-      exact HndefOld_outLayer
+      exact HoldTripsFst ▸ HndefOld_outLayer
     have HoldTrips_nd_app :
         List.Nodup
           (oldTrips.unzip.fst.unzip.fst ++ oldTrips.unzip.snd) := by
@@ -2545,8 +2533,7 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
     have Hnd_L4 : Imperative.substNodup
         (ks_L4.zip ks'_L4) := by
       unfold Imperative.substNodup
-      rw [List.unzip_zip Hks_len_L4]
-      exact Hbignd_L4
+      exact (List.unzip_zip Hks_len_L4) ▸ Hbignd_L4
     have HσAO_def_in_L4 :
         Imperative.isDefined σAO proc.header.inputs.keys := by
       apply InitStatesDefMonotone ?_ Hinitout
@@ -2850,14 +2837,12 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
       have HpairIn : (entryFail, lblFail) ∈ presFiltered.zip assertLabels := by
         have Hzip_get :
             (presFiltered.zip assertLabels)[i]'(by
-              rw [List.length_zip]
-              exact Nat.lt_min.mpr ⟨Hi, Hi'⟩) =
+              exact List.length_zip ▸ Nat.lt_min.mpr ⟨Hi, Hi'⟩) =
               (entryFail, lblFail) := by
           rw [List.getElem_zip]
           show (presFiltered[i]'Hi, assertLabels[i]'Hi') = (entryFail, lblFail)
           rw [Hi_eq]
-        rw [← Hzip_get]
-        exact List.getElem_mem _
+        exact Hzip_get.symm ▸ List.getElem_mem _
       refine ⟨(entryFail, lblFail), HpairIn, ?_⟩
       exact HentryFail_old_ff
     have HL4_pre :
@@ -2884,22 +2869,19 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
         have Hpair' : pair ∈ presFiltered.zip assertLabels := by
           show pair ∈ (proc.spec.preconditions.filter
                         (fun (_, c) => c.attr ≠ .Free)).zip assertLabels
-          rw [← filter_bne_eq_filter_ne proc.spec.preconditions]
-          exact Hpair
+          exact (filter_bne_eq_filter_ne proc.spec.preconditions).symm ▸ Hpair
         exact HboolAtOld pair Hpair'
       · -- Hfail_or_input: false = true ∨ ∃ failing pair.  Bridge filter forms.
         rcases Hfail_or_input with Hf | ⟨pair, Hpair_in, Hpair_ff⟩
         · exact Or.inl Hf
         · refine Or.inr ⟨pair, ?_, Hpair_ff⟩
-          rw [filter_bne_eq_filter_ne proc.spec.preconditions]
-          exact Hpair_in
+          exact (filter_bne_eq_filter_ne proc.spec.preconditions) ▸ Hpair_in
     have HL4 :
         EvalStatementsContract π φ ⟨σ_old, δ, false⟩
           asserts ⟨σ_old, δ, true⟩ := by
       rw [HassertShape]
       rw [HprocEq]
-      rw [HassertSubst_eq]
-      exact HL4_pre
+      exact HassertSubst_eq ▸ HL4_pre
     -- L6 (assumes): polymorphic-flag, both endpoints at f=true.
     -- Use H_assumes_zip_poly with a Disj/SubstStores/Defined setup that
     -- doesn't require the eval-tt witness — but H_assumes_zip_poly's
@@ -2981,8 +2963,7 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
       rcases List.mem_map.mp Hv' with ⟨pr, Hpr_in, Hpr_eq⟩
       have HinZip := (Hfilter_in pr Hpr_in).1
       have Hofzip := List.of_mem_zip HinZip
-      rw [← Hpr_eq]
-      exact Hofzip.1
+      exact Hpr_eq.symm ▸ Hofzip.1
     have Hfilt_argT_sub_argTemps :
         ∀ v ∈ filtered_argTemps, v ∈ argTemps := by
       intro v Hv
@@ -2991,8 +2972,7 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
       rcases List.mem_map.mp Hv' with ⟨pr, Hpr_in, Hpr_eq⟩
       have HinZip := (Hfilter_in pr Hpr_in).1
       have Hofzip := List.of_mem_zip HinZip
-      rw [← Hpr_eq]
-      exact Hofzip.2
+      exact Hpr_eq.symm ▸ Hofzip.2
     have Hfilt_in_disj_outs :
         filtered_inputs.Disjoint proc.header.outputs.keys := by
       intro v Hv1 Hv2
@@ -3136,14 +3116,12 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
     have Hσ_R1_def_outs :
         Imperative.isDefined σ_R1 proc.header.outputs.keys :=
       fun v Hv => by
-        rw [show σ_R1 v = σO v from σR1_off_olds (HoutKeys_disj_olds Hv)]
-        exact HσO_def_outs v Hv
+        exact (show σ_R1 v = σO v from σR1_off_olds (HoutKeys_disj_olds Hv)) ▸ HσO_def_outs v Hv
     have Hσ_R1_def_filt_in :
         Imperative.isDefined σ_R1 filtered_inputs :=
       fun v Hv => by
         have Hv_in := Hfilt_in_sub_inputs v Hv
-        rw [show σ_R1 v = σO v from σR1_off_olds (HinKeys_disj_olds Hv_in)]
-        exact HσO_def_inputs v Hv_in
+        exact (show σ_R1 v = σO v from σR1_off_olds (HinKeys_disj_olds Hv_in)) ▸ HσO_def_inputs v Hv_in
     have Hσ_havoc_def_lhs :
         Imperative.isDefined σ_havoc lhs := by
       intro v Hv
@@ -3153,8 +3131,7 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
         (argVals ++ oVals ++ oldVals) v).isSome = true
       have Hv_notin : v ∉ argTemps ++ outTemps ++ genOldIdents :=
         List.notin_3_append_of (HlhsDisjArg Hv) (HlhsDisjOut Hv) (HlhsDisjOld Hv)
-      rw [updatedStates_get_notin Hv_notin]
-      exact HavocVarsDefined (UpdateStatesHavocVars Hupdate) v Hv
+      exact (updatedStates_get_notin Hv_notin) ▸ HavocVarsDefined (UpdateStatesHavocVars Hupdate) v Hv
     have Hσ_havoc_def_filt_argT :
         Imperative.isDefined σ_havoc filtered_argTemps := by
       intro v Hv
@@ -3214,8 +3191,7 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
               (updatedStates σ' argTemps argVals)
               outTemps oVals) argTemps argVals :=
         readValues_updatedStates HoutTempsLen HargOutDisj HargF_σ'
-      rw [HoldTripsFst]
-      exact readValues_updatedStates HgenOldOldValsLen HargOldDisj HargF_step1
+      exact HoldTripsFst ▸ readValues_updatedStates HgenOldOldValsLen HargOldDisj HargF_step1
     have Hrd_havoc_lhs :
         ReadValues σ_havoc lhs modvals := by
       apply readValues_updatedStates
@@ -3343,8 +3319,7 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
               exact Hidx_eq.symm
             rw [Hk2_app, this]
         have HpairIn : (k1, k2) ∈ filtered_argSubst := by
-          rw [← HpairAtJ]
-          exact List.getElem_mem _
+          exact HpairAtJ.symm ▸ List.getElem_mem _
         have HpairZip := (Hfilter_in (k1, k2) HpairIn).1
         obtain ⟨m, Hm_lt_in, Hm_lt_argT, Hk1_inGet, Hk2_argTGet⟩ :=
           pair_in_zip_pos_decomp HinKeys_argTemps_len HpairZip
@@ -3476,8 +3451,7 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
                           oldTripsCanonical_L6) k with
         | some v =>
           have Hvw : v = w := find?_append_some_eq hfind Hf
-          rw [← Hvw]
-          exact HoldSubBridge k v hfind
+          exact Hvw.symm ▸ HoldSubBridge k v hfind
         | none =>
           exact HinputSubBridge k w (find?_append_none_elim hfind Hf)
       have HpostVarsFresh_via_c :
@@ -3548,8 +3522,7 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
         rw [HzipAppend2, updatedStates'App]
       have HrdHavoc :
           ReadValues σ_havoc genOldIdents oldVals := by
-        rw [HsplitOverlay]
-        exact readValues_updatedStatesSame HgenOldOldValsLen HoldNd
+        exact HsplitOverlay ▸ readValues_updatedStatesSame HgenOldOldValsLen HoldNd
       intro i Hi Hi'
       exact readValues_get HrdHavoc (i:=i) (hi:=Hi) (hi':=Hi')
     have b1_var_witness :=
@@ -3644,8 +3617,7 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
           have Hpair_in_zip :
               (k1, argTemps[n.val]'Hn_lt_argT) ∈
                 proc.header.inputs.keys.zip argTemps := by
-            rw [← HkE]
-            exact pair_in_zip_of_pos Hn_lt_in Hn_lt_argT
+            exact HkE.symm ▸ pair_in_zip_of_pos Hn_lt_in Hn_lt_argT
           have Hpair_in_filtAS :
               (k1, argTemps[n.val]'Hn_lt_argT) ∈
                 filtered_argSubst := by
@@ -3860,8 +3832,7 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
         EvalStatementsContract π φ ⟨σ_havoc, δ, true⟩
           assumes ⟨σ_havoc, δ, true⟩ := by
       rw [HassumeShape]
-      rw [HassumeSubst_eq]
-      exact HL6_pre
+      exact HassumeSubst_eq ▸ HL6_pre
     -- ── D2g: Glue via EvalCallElim_glue_fail ──
     exact EvalCallElim_glue_fail HL1 HL2 HL3 HL4 HL5 HL6
 
@@ -4232,8 +4203,7 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                         (updatedStates σ argTemps
                           argVals)
                         outTrips.unzip.snd oVals := by
-                    rw [HoutSnd_eq_lhs]
-                    exact readValues_updatedStates HargTempsLen HlhsDisjArg Hevalouts
+                    exact HoutSnd_eq_lhs ▸ readValues_updatedStates HargTempsLen HlhsDisjArg Hevalouts
                   -- outTemps undefined in σ_arg (argTemps disjoint from outTemps).
                   have HndefOut_argLayer :
                       Imperative.isNotDefined
@@ -4242,8 +4212,7 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                         outTemps := by
                     intro v Hv
                     have Hv_notin : v ∉ argTemps := fun Hin => HargOutDisj Hin Hv
-                    rw [updatedStates_get_notin (σ:=σ) (ks:=argTemps) (vs:=argVals) Hv_notin]
-                    exact HndefOut_σ v Hv
+                    exact (updatedStates_get_notin (σ:=σ) (ks:=argTemps) (vs:=argVals) Hv_notin) ▸ HndefOut_σ v Hv
                   have HL2 :
                       EvalStatementsContract π φ
                         ⟨updatedStates σ argTemps
@@ -4293,8 +4262,7 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                   have HoldVarsNd : oldVars.Nodup := by
                     -- oldVars ⊆ (CallArg.getLhs args) = lhs via filter sublist.
                     have HlhsArgs_nd : (CallArg.getLhs args).Nodup := by
-                      rw [hCallArgsLhs]
-                      exact HlhsNd
+                      exact hCallArgsLhs ▸ HlhsNd
                     exact List.Sublist.nodup List.filter_sublist HlhsArgs_nd
                   -- Lift HoldVals through 2 layers via readValues_updatedStates.
                   have HrdOlds_outLayer :
@@ -4314,8 +4282,7 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                             argTemps argVals)
                           outTemps oVals)
                         oldTrips.unzip.snd oldVals := by
-                    rw [HoldTripsSnd]
-                    exact HrdOlds_outLayer
+                    exact HoldTripsSnd ▸ HrdOlds_outLayer
                   -- genOldIdents disjoint from argTemps/outTemps ⇒ undef in σ_out.
                   have HndefOld_outLayer :
                       Imperative.isNotDefined
@@ -4344,8 +4311,7 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                             argTemps argVals)
                           outTemps oVals)
                         oldTrips.unzip.fst.unzip.fst := by
-                    rw [HoldTripsFst]
-                    exact HndefOld_outLayer
+                    exact HoldTripsFst ▸ HndefOld_outLayer
                   -- Nodup precondition: (genOldIdents ++ oldVars).Nodup.
                   have HoldTrips_nd_app :
                       List.Nodup
@@ -4775,8 +4741,7 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                     rcases List.mem_map.mp Hv' with ⟨pr, Hpr_in, Hpr_eq⟩
                     have HinZip := (Hfilter_in pr Hpr_in).1
                     have Hofzip := List.of_mem_zip HinZip
-                    rw [← Hpr_eq]
-                    exact Hofzip.1
+                    exact Hpr_eq.symm ▸ Hofzip.1
                   have Hfilt_argT_sub_argTemps :
                       ∀ v ∈ filtered_argTemps, v ∈ argTemps := by
                     intro v Hv
@@ -4785,8 +4750,7 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                     rcases List.mem_map.mp Hv' with ⟨pr, Hpr_in, Hpr_eq⟩
                     have HinZip := (Hfilter_in pr Hpr_in).1
                     have Hofzip := List.of_mem_zip HinZip
-                    rw [← Hpr_eq]
-                    exact Hofzip.2
+                    exact Hpr_eq.symm ▸ Hofzip.2
                   have Hfilt_in_disj_outs :
                       filtered_inputs.Disjoint proc.header.outputs.keys := by
                     intro v Hv1 Hv2
@@ -4950,14 +4914,12 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                   have Hσ_R1_def_outs :
                       Imperative.isDefined σ_R1 proc.header.outputs.keys :=
                     fun v Hv => by
-                      rw [show σ_R1 v = σO v from σR1_off_olds (HoutKeys_disj_olds Hv)]
-                      exact HσO_def_outs v Hv
+                      exact (show σ_R1 v = σO v from σR1_off_olds (HoutKeys_disj_olds Hv)) ▸ HσO_def_outs v Hv
                   have Hσ_R1_def_filt_in :
                       Imperative.isDefined σ_R1 filtered_inputs :=
                     fun v Hv => by
                       have Hv_in := Hfilt_in_sub_inputs v Hv
-                      rw [show σ_R1 v = σO v from σR1_off_olds (HinKeys_disj_olds Hv_in)]
-                      exact HσO_def_inputs v Hv_in
+                      exact (show σ_R1 v = σO v from σR1_off_olds (HinKeys_disj_olds Hv_in)) ▸ HσO_def_inputs v Hv_in
                   -- σ_havoc definedness on lhs.
                   have Hσ_havoc_def_lhs :
                       Imperative.isDefined σ_havoc lhs := by
@@ -4968,8 +4930,7 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                       (argVals ++ oVals ++ oldVals) v).isSome = true
                     have Hv_notin : v ∉ argTemps ++ outTemps ++ genOldIdents :=
                       List.notin_3_append_of (HlhsDisjArg Hv) (HlhsDisjOut Hv) (HlhsDisjOld Hv)
-                    rw [updatedStates_get_notin Hv_notin]
-                    exact HavocVarsDefined (UpdateStatesHavocVars Hupdate) v Hv
+                    exact (updatedStates_get_notin Hv_notin) ▸ HavocVarsDefined (UpdateStatesHavocVars Hupdate) v Hv
                   -- σ_havoc definedness on filtered_argTemps.
                   have Hσ_havoc_def_filt_argT :
                       Imperative.isDefined σ_havoc filtered_argTemps := by
@@ -5053,8 +5014,7 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                       ∀ v ∈ proc.header.inputs.keys, σO v = σA v := fun v Hv => by
                     have Hv_notin : v ∉ proc.header.outputs.keys :=
                       fun h => Hiodisj Hv h
-                    rw [σO_eq_σAO_off_outs Hv_notin]
-                    exact initStates_get_notin Hinitout Hv_notin
+                    exact (σO_eq_σAO_off_outs Hv_notin) ▸ initStates_get_notin Hinitout Hv_notin
                   -- σA on inputs = positional argVals (via Hinitin).
                   have HrdA : ReadValues σA proc.header.inputs.keys argVals :=
                     InitStatesReadValues Hinitin
@@ -5100,8 +5060,7 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                             (updatedStates σ' argTemps argVals)
                             outTemps oVals) argTemps argVals :=
                       readValues_updatedStates HoutTempsLen HargOutDisj HargF_σ'
-                    rw [HoldTripsFst]
-                    exact readValues_updatedStates HgenOldOldValsLen HargOldDisj HargF_step1
+                    exact HoldTripsFst ▸ readValues_updatedStates HgenOldOldValsLen HargOldDisj HargF_step1
                   -- σ_havoc reads lhs → modvals (fall-through to σ').
                   have HmodvalsLen' : lhs.length = modvals.length := by
                     have := UpdateStatesLength Hupdate; omega
@@ -5252,8 +5211,7 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                           rw [Hk2_app, this]
                       -- Pair (k1, k2) ∈ filtered_argSubst.
                       have HpairIn : (k1, k2) ∈ filtered_argSubst := by
-                        rw [← HpairAtJ]
-                        exact List.getElem_mem _
+                        exact HpairAtJ.symm ▸ List.getElem_mem _
                       -- (k1, k2) ∈ inputs.keys.zip argTemps via Hfilter_in.
                       have HpairZip := (Hfilter_in (k1, k2) HpairIn).1
                       obtain ⟨m, Hm_lt_in, Hm_lt_argT, Hk1_inGet, Hk2_argTGet⟩ :=
@@ -5317,8 +5275,7 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                   have Hnd_L4 : Imperative.substNodup
                       (ks_L4.zip ks'_L4) := by
                     unfold Imperative.substNodup
-                    rw [List.unzip_zip Hks_len_L4]
-                    exact Hbignd_L4
+                    exact (List.unzip_zip Hks_len_L4) ▸ Hbignd_L4
                   -- ── L4 substDefined ──
                   have HσAO_def_in_L4 :
                       Imperative.isDefined σAO proc.header.inputs.keys := by
@@ -5437,8 +5394,7 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                     have Hentry' : entry ∈ presFiltered := by
                       show entry ∈ proc.spec.preconditions.filter
                                     (fun (_, c) => c.attr ≠ .Free)
-                      rw [← filter_bne_eq_filter_ne proc.spec.preconditions]
-                      exact Hentry
+                      exact (filter_bne_eq_filter_ne proc.spec.preconditions).symm ▸ Hentry
                     exact HpresPayload entry Hentry'
                   -- Bridge to the actual `asserts` list via HassertsShape.
                   have HL4 :
@@ -5450,8 +5406,7 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                     -- Push proc' = proc through to reach the L4-derived form.
                     rw [HprocEq]
                     -- Rewrite the inner substitution map via HassertSubst_eq.
-                    rw [HassertSubst_eq]
-                    exact HL4_pre
+                    exact HassertSubst_eq ▸ HL4_pre
                   -- D2d-bridge: σO ↔ σAO old-binding bridge.
                   -- (a) Trivial empty-init witness (used by callee bridges).
                   have HInitVars_empty : InitVars σO [] σO := InitVars.init_none
@@ -5562,8 +5517,7 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                                         oldTripsCanonical_L6) k with
                       | some v =>
                         have Hvw : v = w := find?_append_some_eq hfind Hf
-                        rw [← Hvw]
-                        exact HoldSubBridge k v hfind
+                        exact Hvw.symm ▸ HoldSubBridge k v hfind
                       | none =>
                         exact HinputSubBridge k w (find?_append_none_elim hfind Hf)
                     -- Build HsurvBridge specialized to c.
@@ -5637,8 +5591,7 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                       rw [HzipAppend2, updatedStates'App]
                     have HrdHavoc :
                         ReadValues σ_havoc genOldIdents oldVals := by
-                      rw [HsplitOverlay]
-                      exact readValues_updatedStatesSame HgenOldOldValsLen HoldNd
+                      exact HsplitOverlay ▸ readValues_updatedStatesSame HgenOldOldValsLen HoldNd
                     intro i Hi Hi'
                     exact readValues_get HrdHavoc (i:=i) (hi:=Hi) (hi':=Hi')
                   -- Shared class-(b) decompositions for Hinv/Hpred_disj
@@ -5700,8 +5653,7 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                         have Hpair_in_zip :
                             (k1, argTemps[n.val]'Hn_lt_argT) ∈
                               proc.header.inputs.keys.zip argTemps := by
-                          rw [← HkE]
-                          exact pair_in_zip_of_pos Hn_lt_in Hn_lt_argT
+                          exact HkE.symm ▸ pair_in_zip_of_pos Hn_lt_in Hn_lt_argT
                         have Hpair_in_filtAS :
                             (k1, argTemps[n.val]'Hn_lt_argT) ∈
                               filtered_argSubst := by
@@ -5960,8 +5912,7 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                         assumes ⟨σ_havoc, δ, false⟩ := by
                     -- HassumeShape proc'-keys agree with proc via HprocEq.
                     rw [HassumeShape]
-                    rw [HassumeSubst_eq]
-                    exact HL6_pre
+                    exact HassumeSubst_eq ▸ HL6_pre
                   -- ── D2g: Chain L1-L6 via EvalCallElim_glue ──
                   exact EvalCallElim_glue HL1 HL2 HL3 HL4 HL5 HL6
           · -- inner `Except.error` branch — contradiction
