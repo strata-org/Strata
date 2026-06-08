@@ -109,7 +109,7 @@ private theorem find?_append_none_elim {α β} [DecidableEq α]
     then some (oldVar, argExpr)
     else none
 
-/-! ### Top-level call-elimination correctness theorem -/
+/-! ## Top-level call-elimination correctness theorem -/
 
 /-- Returns the call-elim transformation result of a single command:
     either the rewritten statement list (for a `.call`) or `[s]`
