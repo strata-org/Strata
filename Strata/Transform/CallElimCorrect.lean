@@ -1215,6 +1215,14 @@ theorem WFCallSiteProp.specialize {p : Program}
     (Hlkup : π procName = some proc) : WFCallSiteSpec proc args :=
   Hwfcs procName args md Hst proc Hlkup
 
+/-- Project `WFcallProp.lhsWF` out of a `WFStatementsProp` whose head is a call. -/
+private theorem callArgsLhs_nodup_of_wf {p : Program} {procName : String}
+    {args : List (CallArg Expression)} {md : Imperative.MetaData Expression}
+    {rest : List Statement} {lhs : List Expression.Ident}
+    (Hwf : WF.WFStatementsProp p (.cmd (CmdExt.call procName args md) :: rest))
+    (hCallArgsLhs : CallArg.getLhs args = lhs) : lhs.Nodup :=
+  hCallArgsLhs ▸ ((List.Forall_cons _ _ _).mp Hwf).1.lhsWF
+
 /-- Relation between the source store `σ` and the call-elim transform
     state `γ`'s tracked fresh-name set.
 
@@ -2100,12 +2108,7 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
       notin_of_isSome_isNotDefined (Hlhs_isLocl x Hin1) HndefOld_σ Hin2
     have HoutSnd_eq_lhs : outTrips.unzip.snd = lhs := by
       rw [Heqouts, hCallArgsLhs]
-    have HlhsNd : lhs.Nodup := by
-      have Hwfst_head := (List.Forall_cons _ _ _).mp Hwf
-      have Hwfcall : WF.WFcallProp p procName args := Hwfst_head.1
-      have Hlhs_args_nd :
-          (CallArg.getLhs args).Nodup := Hwfcall.lhsWF
-      rwa [hCallArgsLhs] at Hlhs_args_nd
+    have HlhsNd : lhs.Nodup := callArgsLhs_nodup_of_wf Hwf hCallArgsLhs
     have Hout_nd_app :
         List.Nodup (outTemps
                     ++ outTrips.unzip.snd) := by
@@ -4038,13 +4041,7 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                   -- Out-temp Nodup append form for `H_initVars`.
                   have HoutSnd_eq_lhs : outTrips.unzip.snd = lhs := by
                     rw [Heqouts, hCallArgsLhs]
-                  have HlhsNd : lhs.Nodup := by
-                    -- Project WFcallProp.lhsWF via Hwf's Forall_cons head.
-                    have Hwfst_head := (List.Forall_cons _ _ _).mp Hwf
-                    have Hwfcall : WF.WFcallProp p procName args := Hwfst_head.1
-                    have Hlhs_args_nd :
-                        (CallArg.getLhs args).Nodup := Hwfcall.lhsWF
-                    rwa [hCallArgsLhs] at Hlhs_args_nd
+                  have HlhsNd : lhs.Nodup := callArgsLhs_nodup_of_wf Hwf hCallArgsLhs
                   have Hout_nd_app :
                       List.Nodup (outTemps
                                   ++ outTrips.unzip.snd) := by
