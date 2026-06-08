@@ -99,10 +99,6 @@ belong in that front-end's translator, encoded using Laurel's primitives.
 Concrete instances of the principle:
 
 - Inheritance is in Laurel because Java, Python and TypeScript all use it.
-- Closures and thunks are not first-class in Laurel; they are modelled through the dynamic
-  dispatch mechanism — a caller can encode a closure as a composite with a named method and
-  use `InstanceCall`.
-- Manual memory management is out of scope in the short term.
 
 ## Imperative code need not hide behind a functional specification
 
