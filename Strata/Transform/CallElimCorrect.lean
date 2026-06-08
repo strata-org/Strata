@@ -1360,6 +1360,42 @@ private theorem genTrips_combined_nodup
              ← List.append_assoc] at Hnd
   exact Hnd
 
+/-- Prelude bundle for `HoldEval_bridge_at_σO` call sites.
+
+    Both arms of `_terminal`'s call branch derive the same four facts:
+    the per-output `Hwf2.2`-bridge, `σAO`-reads-outputs, and the two
+    `oldVars`-subset facts (filtered into `lhs`/`outputs.keys`). -/
+private theorem holdEval_bridge_prelude
+    {δ : CoreEval} {σ₀ σ σA σAO σO : CoreStore}
+    {proc proc' : Procedure} {args : List (CallArg Expression)}
+    {oVals : List Expression.Expr}
+    (Hwf2 : WellFormedCoreEvalTwoState δ σ₀ σ)
+    (Hhav1 : HavocVars σAO (ListMap.keys proc.header.outputs) σO)
+    (Hinitout :
+      InitStates σA (ListMap.keys proc.header.outputs) oVals σAO)
+    (HprocEq : proc' = proc) :
+    (∀ v ∈ proc.header.outputs.keys,
+       δ σO (Lambda.LExpr.fvar () (CoreIdent.mkOld v.name) none) = σAO v) ∧
+    ReadValues σAO proc.header.outputs.keys oVals ∧
+    (∀ v ∈ callElim_oldVars proc' args, v ∈ CallArg.getLhs args) ∧
+    (∀ v ∈ callElim_oldVars proc' args,
+       v ∈ ListMap.keys proc.header.outputs) := by
+  refine ⟨?_, InitStatesReadValues Hinitout, ?_, ?_⟩
+  · intro v Hv
+    simp only [WellFormedCoreEvalTwoState] at Hwf2
+    have HH := Hwf2.2 proc.header.outputs.keys [] σAO σO σO
+                ⟨Hhav1, InitVars.init_none⟩ v
+    exact HH.1 Hv
+  · intro v Hv
+    exact (List.mem_filter.mp Hv).1
+  · intro v Hv
+    have Hv_filt := List.mem_filter.mp Hv
+    have Hbool := Hv_filt.2
+    simp only [Bool.and_eq_true] at Hbool
+    have HinOuts' : (ListMap.keys proc'.header.outputs).contains v := Hbool.1.2
+    rw [HprocEq] at HinOuts'
+    exact List.contains_iff_mem.mp HinOuts'
+
 /-- Per-index δ-eval bridge for `mkOld`-prefixed old-variable fvars at the
     post-havoc store `σO`.
 
@@ -3111,16 +3147,9 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
     -- The success arm derives this; we copy.
     -- ── L6 plumbing (mirror success arm) ──
     have HInitVars_empty : InitVars σO [] σO := InitVars.init_none
-    have Hwf2_univ :
-        ∀ v ∈ proc.header.outputs.keys,
-          δ σO (Lambda.LExpr.fvar () (CoreIdent.mkOld v.name)
-                                                           none) =
-            σAO v := by
-      intro v Hv
-      simp only [WellFormedCoreEvalTwoState] at Hwf2
-      have HH := Hwf2.2 proc.header.outputs.keys [] σAO σO σO
-                  ⟨Hhav1, HInitVars_empty⟩ v
-      exact HH.1 Hv
+    obtain ⟨Hwf2_univ, HσAO_reads_outs, HoldVars_sub_callLhs,
+            HoldVars_sub_outs⟩ :=
+      holdEval_bridge_prelude (args := args) Hwf2 Hhav1 Hinitout HprocEq
     have HσAO_notin_eq_σ :
         ∀ v, v ∉ proc.header.outputs.keys →
              v ∉ proc.header.inputs.keys →
@@ -3128,22 +3157,6 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
       intro v Hv_notout Hv_notin
       rw [initStates_get_notin Hinitout Hv_notout,
           initStates_get_notin Hinitin Hv_notin]
-    have HσAO_reads_outs :
-        ReadValues σAO proc.header.outputs.keys oVals :=
-      InitStatesReadValues Hinitout
-    have HoldVars_sub_callLhs : ∀ v ∈ oldVars, v ∈ CallArg.getLhs args := by
-      intro v Hv
-      exact (List.mem_filter.mp Hv).1
-    have HoldVars_sub_outs : ∀ v ∈ oldVars,
-        v ∈ ListMap.keys proc.header.outputs := by
-      intro v Hv
-      have Hv_filt := List.mem_filter.mp Hv
-      have Hbool := Hv_filt.2
-      simp only [Bool.and_eq_true] at Hbool
-      have HinOuts' : (ListMap.keys proc'.header.outputs).contains v := by
-        exact Hbool.1.2
-      rw [HprocEq] at HinOuts'
-      exact List.contains_iff_mem.mp HinOuts'
     have δ_fvar_eq := delta_fvar_eq_of_wfvars Hwfvars (delta := δ)
     -- σ_R1 read olds positional.
     have HrdR1_olds : ReadValues σ_R1 genOldIdents oldVals := by
@@ -5388,24 +5401,14 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                     rw [HassertSubst_eq]
                     exact HL4_pre
                   -- D2d-bridge: σO ↔ σAO old-binding bridge.
-                  -- (a) Trivial empty-init witness.
+                  -- (a) Trivial empty-init witness (used by callee bridges).
                   have HInitVars_empty : InitVars σO [] σO := InitVars.init_none
-                  -- (b) Per-output bridge via Hwf2's universal clause.
-                  have Hwf2_univ :
-                      ∀ v ∈ proc.header.outputs.keys,
-                        δ σO (Lambda.LExpr.fvar () (CoreIdent.mkOld v.name)
-                                                         none) =
-                          σAO v := by
-                    intro v Hv
-                    -- Unfold Hwf2 to expose the `∧` structure.
-                    simp only [WellFormedCoreEvalTwoState] at Hwf2
-                    -- Hwf2.2 : universal clause; instantiate at
-                    -- (vs := outputs.keys, vs' := [], σ₀ := σAO, σ₁ := σO,
-                    --  σ_arg := σO) using `Hhav1 ∧ HInitVars_empty`.
-                    have HH := Hwf2.2 proc.header.outputs.keys [] σAO σO σO
-                                ⟨Hhav1, HInitVars_empty⟩ v
-                    exact HH.1 Hv
-                  -- (c) σAO[v] = σ[v] for v ∉ outputs ∪ inputs.
+                  -- (b) Per-output bridge, σAO reads outputs, oldVars ⊆ lhs/outs.
+                  obtain ⟨Hwf2_univ, HσAO_reads_outs, HoldVars_sub_callLhs,
+                          HoldVars_sub_outs⟩ :=
+                    holdEval_bridge_prelude (args := args)
+                      Hwf2 Hhav1 Hinitout HprocEq
+                  -- (b) σAO[v] = σ[v] for v ∉ outputs ∪ inputs.
                   have HσAO_notin_eq_σ :
                       ∀ v, v ∉ proc.header.outputs.keys →
                            v ∉ proc.header.inputs.keys →
@@ -5413,29 +5416,6 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                     intro v Hv_notout Hv_notin
                     rw [initStates_get_notin Hinitout Hv_notout,
                         initStates_get_notin Hinitin Hv_notin]
-                  -- (d) σAO reads outputs ↦ oVals (positional).
-                  have HσAO_reads_outs :
-                      ReadValues σAO proc.header.outputs.keys oVals :=
-                    InitStatesReadValues Hinitout
-                  -- (e) Positional alignment via HoutAlign (Hwfcallsite.specialize).
-                  -- (f) Per-index δ-eval bridge: δ σO (mkOld oldVars[i].name) = some oldVals[i].
-                  -- For v ∈ oldVars, v is in CallArg.getLhs args (filter).
-                  have HoldVars_sub_callLhs : ∀ v ∈ oldVars, v ∈ CallArg.getLhs args := by
-                    intro v Hv
-                    exact (List.mem_filter.mp Hv).1
-                  -- For v ∈ oldVars, v is in proc'.header.outputs.keys (filter).
-                  -- Bridge proc' = proc via HprocEq.
-                  have HoldVars_sub_outs : ∀ v ∈ oldVars,
-                      v ∈ ListMap.keys proc.header.outputs := by
-                    intro v Hv
-                    have Hv_filt := List.mem_filter.mp Hv
-                    have Hbool := Hv_filt.2
-                    -- Project the outputs.contains conjunct.
-                    simp only [Bool.and_eq_true] at Hbool
-                    have HinOuts' : (ListMap.keys proc'.header.outputs).contains v := by
-                      exact Hbool.1.2
-                    rw [HprocEq] at HinOuts'
-                    exact List.contains_iff_mem.mp HinOuts'
                   -- Per-index positional bridge for downstream consumers.
                   have HoldEval_bridge :
                       ∀ (i : Nat) (Hi : i < oldVars.length),
