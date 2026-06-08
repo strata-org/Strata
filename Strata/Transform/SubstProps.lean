@@ -837,16 +837,9 @@ theorem subst_fvars_eval_bridge
               δ σ' w = δ σ (Lambda.LExpr.fvar () k none)) :
     δ σ' (Lambda.LExpr.substFvars e sm) = δ σ e := by
   induction e with
-  | const m c =>
-    simp only [Lambda.LExpr.substFvars_const']
-    rw [Hwfvl.2, Hwfvl.2]
-    constructor; constructor
-  | op m n t =>
-    simp only [Lambda.LExpr.substFvars_op']
-    rw [Hwfvl.2, Hwfvl.2]
-    constructor; constructor
-  | bvar m i =>
-    simp only [Lambda.LExpr.substFvars_bvar]
+  | const | op | bvar =>
+    simp only [Lambda.LExpr.substFvars_const', Lambda.LExpr.substFvars_op',
+               Lambda.LExpr.substFvars_bvar]
     rw [Hwfvl.2, Hwfvl.2]
     constructor; constructor
   | fvar m name ty =>
