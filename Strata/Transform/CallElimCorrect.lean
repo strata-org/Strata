@@ -311,6 +311,33 @@ private theorem notMem_of_Forall_neg
     (Hforall : Forall p l) (Hnotp : ¬ p x) : x ∉ l := fun h =>
   Hnotp ((List.Forall_mem_iff.mp Hforall) x h)
 
+/-- Decompose the recurring `(k1, k2) ∈ zip self self` membership with
+    `self = (getVars expr).removeAll ((l₁ ++ l₂) ++ (l₃ ++ l₄))` into
+    the six leaf facts used at every per-entry `Hinv` site:
+    `k1 = k2`, `k1 ∈ getVars expr`, and `k1 ∉ lᵢ` for each `i`.
+    Replaces the recurring `zip_self_eq` + `simp [List.removeAll, ...]`
+    + `notin_append4` cascade. -/
+private theorem zip_removeAll4_decompose
+    {expr : Expression.Expr}
+    {l₁ l₂ l₃ l₄ : List Expression.Ident}
+    {k1 k2 : Expression.Ident}
+    (Hkin : (k1, k2) ∈
+              ((Imperative.HasVarsPure.getVars (P:=Expression) expr).removeAll
+                  ((l₁ ++ l₂) ++ (l₃ ++ l₄))).zip
+                ((Imperative.HasVarsPure.getVars (P:=Expression) expr).removeAll
+                  ((l₁ ++ l₂) ++ (l₃ ++ l₄)))) :
+    k1 = k2 ∧
+    k1 ∈ Imperative.HasVarsPure.getVars (P:=Expression) expr ∧
+    k1 ∉ l₁ ∧ k1 ∉ l₂ ∧ k1 ∉ l₃ ∧ k1 ∉ l₄ := by
+  refine ⟨zip_self_eq Hkin, ?_⟩
+  have Hk1_in := (List.of_mem_zip Hkin).1
+  simp only [List.removeAll, List.mem_filter,
+             List.elem_eq_mem, Bool.not_eq_true',
+             decide_eq_false_iff_not] at Hk1_in
+  obtain ⟨Hk1_pre, Hk1_notin⟩ := Hk1_in
+  obtain ⟨H1, H2, H3, H4⟩ := List.notin_append4 Hk1_notin
+  exact ⟨Hk1_pre, H1, H2, H3, H4⟩
+
 /-- Positional decomposition for `(k1, k2) ∈ ks.zip ks'` under length
     equality: produce a position `n` together with the bounds and the
     pair-projection equalities `k1 = ks[n]` and `k2 = ks'[n]`.  Absorbs the
@@ -2483,19 +2510,9 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
               (ks_L4 ++ ks'_L4)) := by
         simp only [Imperative.invStores, Imperative.substStores]
         intros k1 k2 Hkin
-        obtain rfl := zip_self_eq Hkin
-        have Hk1_in : k1 ∈
-            (Imperative.HasVarsPure.getVars (P:=Expression)
-              entry.snd.expr).removeAll
-              (ks_L4 ++ ks'_L4) :=
-          (List.of_mem_zip Hkin).1
-        simp only [List.removeAll, List.mem_filter,
-                   List.elem_eq_mem, Bool.not_eq_true',
-                   decide_eq_false_iff_not] at Hk1_in
-        obtain ⟨Hk1_pre, Hk1_notin⟩ := Hk1_in
-        obtain ⟨Hk1_notin_inputs, Hk1_notin_outputs,
+        obtain ⟨rfl, Hk1_pre, Hk1_notin_inputs, Hk1_notin_outputs,
                 Hk1_notin_argT, _Hk1_notin_lhs⟩ :=
-          List.notin_append4 Hk1_notin
+          zip_removeAll4_decompose Hkin
         have HfreshK := HfreshEnt k1 Hk1_pre
         have Hk1_notTemp : ¬ isTempIdent k1 := HfreshK.1
         have Hk1_notOld : ¬ isOldTempIdent k1 := HfreshK.2.1
@@ -3526,19 +3543,9 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
         forall_post_filtered_decompose entry Hentry
       simp only [Imperative.invStores, Imperative.substStores]
       intros k1 k2 Hkin
-      obtain rfl := zip_self_eq Hkin
-      have Hk1_in : k1 ∈
-          (Imperative.HasVarsPure.getVars (P:=Expression)
-            entry.snd.expr).removeAll
-            (filtered_ks ++ filtered_ks') :=
-        (List.of_mem_zip Hkin).1
-      simp only [List.removeAll, List.mem_filter,
-                 List.elem_eq_mem, Bool.not_eq_true',
-                 decide_eq_false_iff_not] at Hk1_in
-      obtain ⟨Hk1_pre, Hk1_notin_combined⟩ := Hk1_in
-      obtain ⟨Hk1_notin_outs, Hk1_notin_filtIn,
+      obtain ⟨rfl, Hk1_pre, Hk1_notin_outs, Hk1_notin_filtIn,
               Hk1_notin_lhs, Hk1_notin_filtArgT⟩ :=
-        List.notin_append4 Hk1_notin_combined
+        zip_removeAll4_decompose Hkin
       rw [Hentry_eq] at Hk1_pre
       rcases getVars_substFvars_mem Hk1_pre with
         Hclass_a | ⟨k, w, Hk_in, Hf, Hv_in⟩
@@ -4576,22 +4583,9 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                               (argTemps ++ lhs))) := by
                       simp only [Imperative.invStores, Imperative.substStores]
                       intros k1 k2 Hkin
-                      obtain rfl := zip_self_eq Hkin
-                      have Hk1_in : k1 ∈
-                          (Imperative.HasVarsPure.getVars (P:=Expression)
-                            entry.snd.expr).removeAll
-                            ((proc.header.inputs.keys ++
-                                proc.header.outputs.keys) ++
-                              (argTemps ++ lhs)) :=
-                        (List.of_mem_zip Hkin).1
-                      -- Decompose the removeAll membership.
-                      simp only [List.removeAll, List.mem_filter,
-                                 List.elem_eq_mem, Bool.not_eq_true',
-                                 decide_eq_false_iff_not] at Hk1_in
-                      obtain ⟨Hk1_pre, Hk1_notin⟩ := Hk1_in
-                      obtain ⟨Hk1_notin_inputs, Hk1_notin_outputs,
+                      obtain ⟨rfl, Hk1_pre, Hk1_notin_inputs, Hk1_notin_outputs,
                               Hk1_notin_argT, _Hk1_notin_lhs⟩ :=
-                        List.notin_append4 Hk1_notin
+                        zip_removeAll4_decompose Hkin
                       -- preVar k1 fresh facts (not tmp_, not old_, not in lhs).
                       have HfreshK := HfreshEnt k1 Hk1_pre
                       have Hk1_notTemp : ¬ isTempIdent k1 := HfreshK.1
@@ -5764,22 +5758,9 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                     -- Open invStores.
                     simp only [Imperative.invStores, Imperative.substStores]
                     intros k1 k2 Hkin
-                    obtain rfl := zip_self_eq Hkin
-                    have Hk1_in : k1 ∈
-                        (Imperative.HasVarsPure.getVars (P:=Expression)
-                          entry.snd.expr).removeAll
-                          (filtered_ks ++ filtered_ks') :=
-                      (List.of_mem_zip Hkin).1
-                    -- Decompose removeAll.
-                    simp only [List.removeAll, List.mem_filter,
-                               List.elem_eq_mem, Bool.not_eq_true',
-                               decide_eq_false_iff_not] at Hk1_in
-                    obtain ⟨Hk1_pre, Hk1_notin_combined⟩ := Hk1_in
-                    -- Decompose `k1 ∉ (outputs ++ filtered_inputs) ++
-                    -- (lhs ++ filtered_argTemps)` into 4 leaf facts.
-                    obtain ⟨Hk1_notin_outs, Hk1_notin_filtIn,
+                    obtain ⟨rfl, Hk1_pre, Hk1_notin_outs, Hk1_notin_filtIn,
                             Hk1_notin_lhs, Hk1_notin_filtArgT⟩ :=
-                      List.notin_append4 Hk1_notin_combined
+                      zip_removeAll4_decompose Hkin
                     -- entry.snd.expr = substFvars c.expr oldSubst_L6.
                     rw [Hentry_eq] at Hk1_pre
                     -- Decompose k1 ∈ getVars (substFvars c.expr oldSubst_L6).
