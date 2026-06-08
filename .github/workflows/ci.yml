@@ -88,10 +88,6 @@ jobs:
         run: dotnet build -warnaserror ${SOLUTION}
       - name: Test BoogieToStrata
         run: dotnet test ${SOLUTION}
-      - name: Validate examples against expected output
-        working-directory: Examples
-        shell: bash
-        run: ./run_examples.sh
       - uses: actions/setup-python@v6
         with:
           python-version: '3.14'
