@@ -38,12 +38,6 @@ open Core Imperative
   Imperative.Specification.Lang.imperative
     Expression Command (EvalCommand π φ) (EvalPureFunc φ) coreIsAtAssert
 
--- NOTE: A CFG-flavored `Lang` bundle (`Lang.coreCFG` plus `CoreCFGStepStar`)
--- requires the `cmd`-constructor refactoring of `EvalDetBlock` from the
--- unstructured-infra changes. On the procedure-body branch, only structured
--- bodies have a small-step semantics, so the `.cfg` arm of
--- `AssertValidInProcedure` below collapses to `False`.
-
 /-! ## Well-formed program state at the entry of procedure -/
 
 /-- The list of variables that must have been declared,
