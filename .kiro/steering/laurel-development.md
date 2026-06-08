@@ -63,8 +63,11 @@ garbage-collected source languages (Java, Python, JavaScript, TypeScript).
   "holes should have been eliminated before translation" error or
   equivalent.
 * **Mark passes that invalidate resolution with `needsResolves := true`**
-  in `LaurelCompilationPipeline.lean`. Otherwise subsequent passes will
-  trip over dangling `uniqueId`s.
+  in `LaurelCompilationPipeline.lean`. A pass invalidates resolution when it
+  introduces new declarations or references, or rewrites existing references —
+  anything that leaves a `uniqueId` that no longer matches a declaration in the
+  model. Otherwise subsequent passes will trip over dangling `uniqueId`s
+  (symptom: `Resolution failed: 'X' is not defined`).
 * **Keep the documented pipeline order in sync.** If you add, remove, or
   reorder a Laurel-to-Laurel pass in `LaurelCompilationPipeline.lean`,
   update the *Pipeline order* section below and the pass list in the Laurel
