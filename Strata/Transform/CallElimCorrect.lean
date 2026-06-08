@@ -35,6 +35,10 @@ open Core Core.Transform CallElim
 
 public section
 
+variable {π : String → Option Procedure}
+variable {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
+variable {δ : CoreEval}
+
 -- inidividual lemmas
 
 private theorem createFvarsApp :
@@ -590,7 +594,6 @@ private theorem filterCheck_mem_getCheckExprs
     `proc' ↦ proc`. Aligns `Hwfcallsite` (over `proc`) with checks indexed
     by the destructured `proc'` at both call-arm sites. -/
 private theorem procEq_and_postExprs_bridge
-    {π : String → Option Procedure}
     {p : Program} {procName : String} {proc proc' : Procedure}
     (Hp : ∀ pname, π pname = Program.Procedure.find? p ⟨pname, ()⟩)
     (Hfind : Program.Procedure.find? p ⟨procName, ()⟩ = some proc')
@@ -1204,7 +1207,7 @@ def WFCallSiteProp (_p : Program)
     form `st = .cmd (CmdExt.call procName args md)` and procedure lookup
     `π procName = some proc`. -/
 theorem WFCallSiteProp.specialize {p : Program}
-    {π : String → Option Procedure} {st : Statement}
+    {st : Statement}
     {procName : String} {args : List (CallArg Expression)} {md}
     {proc : Procedure}
     (Hwfcs : WFCallSiteProp p π st)
@@ -1348,7 +1351,7 @@ private theorem genTrips_combined_nodup
     the per-output `Hwf2.2`-bridge, `σAO`-reads-outputs, and the two
     `oldVars`-subset facts (filtered into `lhs`/`outputs.keys`). -/
 private theorem holdEval_bridge_prelude
-    {δ : CoreEval} {σ₀ σ σA σAO σO : CoreStore}
+    {σ₀ σ σA σAO σO : CoreStore}
     {proc proc' : Procedure} {args : List (CallArg Expression)}
     {oVals : List Expression.Expr}
     (Hwf2 : WellFormedCoreEvalTwoState δ σ₀ σ)
@@ -1402,7 +1405,7 @@ private theorem holdEval_bridge_prelude
     * `HoldVals`: `ReadValues σ oldVars oldVals`.
     * `HoldValsLen`: `oldVals.length = oldVars.length`. -/
 private theorem HoldEval_bridge_at_σO
-    {δ : CoreEval} {σ σAO σO : CoreStore}
+    {σ σAO σO : CoreStore}
     {oldVars lhs : List Expression.Ident} {oldVals oVals : List Expression.Expr}
     {proc : Procedure} {args : List (CallArg Expression)}
     {σA : CoreStore}
@@ -1506,7 +1509,7 @@ private theorem HoldEval_bridge_at_σO
     * `σ_R1_read_olds`: positional reads `σ_R1 genOldIdents[i] = some oldVals[i]`.
     * `HoldEval_bridge`: positional bridge from Stage 1's helper. -/
 private theorem HoldSubBridge_at_σO
-    {δ : CoreEval} {σ_R1 σO : CoreStore}
+    {σ_R1 σO : CoreStore}
     {oldVars genOldIdents : List Expression.Ident}
     {oldTys : List Expression.Ty}
     {oldVals : List Expression.Expr}
@@ -1685,7 +1688,6 @@ private theorem b2_var_witness_at_oldSubst
     map; backs the L6 `Hsub` derivation in both the success and failure
     arms of `callElimStatementCorrect`'s call-statement case. -/
 private theorem HinputSubBridge_at_σO
-    {δ : CoreEval}
     {σ σ_R1 σO σAO σA σ₀ σ₂ : CoreStore}
     {γ : CoreTransformState}
     {genOldIdents : List Expression.Ident}
@@ -1887,9 +1889,6 @@ private theorem HinputSubBridge_at_σO
     `cases Hcc with | call_sem ...` at `failed = true`. -/
 private theorem callElimStatementCorrect_terminal_call_arm_fail
     [LawfulBEq Expression.Expr]
-    {π : String → Option Procedure}
-    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
-    {δ : CoreEval}
     {σ σ' : CoreStore}
     {p : Program}
     {γ s_ce : CoreTransformState}
@@ -3767,9 +3766,6 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
     call case chains L1–L6 via `EvalCallElim_glue`; non-call cases
     are immediate. -/
 private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
-    {π : String → Option Procedure}
-    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
-    {δ : CoreEval}
     {σ σ' : CoreStore}
     {f : Bool}
     {p : Program}
@@ -5841,9 +5837,6 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
     discharged: `step_cmd` only ever produces `.terminal`, never `.exiting`, so
     `(.stmts [.cmd (.call …)] _) →* .exiting lbl _` is unreachable. -/
 private theorem callElimStatementCorrect_exit [LawfulBEq Expression.Expr]
-    {π : String → Option Procedure}
-    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
-    {δ : CoreEval}
     {σ σ' : CoreStore}
     {p : Program}
     {γ γ' : CoreTransformState}
@@ -5909,9 +5902,6 @@ private theorem callElimStatementCorrect_exit [LawfulBEq Expression.Expr]
     `callElimStatementCorrect_terminal`.  The exit arm dispatches to
     `callElimStatementCorrect_exit`. -/
 theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
-    {π : String → Option Procedure}
-    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
-    {δ : CoreEval}
     {σ : CoreStore}
     {p : Program}
     {γ γ' : CoreTransformState}
