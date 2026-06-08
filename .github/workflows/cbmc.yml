@@ -54,7 +54,7 @@ jobs:
             .lake
             StrataCLI/.lake
             StrataPython/.lake
-          fail-on-cache-miss: "true"
+          fail-on-cache-miss: "false"
           use-restore-keys: "false"
       - name: Build Strata
         uses: leanprover/lean-action@v1
