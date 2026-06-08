@@ -198,4 +198,28 @@ procedure test() opaque {
 #guard_msgs (error, drop all) in
 #eval testInputWithOffset "UserDefinedCrossType" userDefinedCrossType 170 processResolution
 
+/-! ## Field type is read from the field, not a shadowing local
+
+A field reference (`c#flag`) carries the field's `uniqueId`, but its bare
+name can collide with a same-named local. `getVarType` must read the field's
+declared type (`bool`) — not the shadowing local's type (`int`) — so the
+assignment of an `int` to a `bool` field is still rejected. (Regression guard
+for the scope-first lookup that previously returned the local's type and
+silently dropped the mismatch.) -/
+
+def fieldShadowedByLocal := r"
+composite C {
+  var flag: bool
+}
+procedure test() opaque {
+  var c: C := new C;
+  var flag: int := 0;
+  c#flag := flag
+//          ^^^^ error: expected 'bool', got 'int'
+};
+"
+
+#guard_msgs (error, drop all) in
+#eval testInputWithOffset "FieldShadowedByLocal" fieldShadowedByLocal 184 processResolution
+
 end Laurel
