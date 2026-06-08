@@ -1610,9 +1610,8 @@ private theorem HoldSubBridge_at_σO
   have HwfL :
       δ σ_R1 (Core.Transform.createFvar
                (genOldIdents[ni_val]'Hni_lt_genOld)) =
-        σ_R1 (genOldIdents[ni_val]'Hni_lt_genOld) := by
-    show δ σ_R1 (Lambda.LExpr.fvar () _ none) = _
-    exact δ_fvar_eq σ_R1 _
+        σ_R1 (genOldIdents[ni_val]'Hni_lt_genOld) :=
+    δ_fvar_eq σ_R1 _
   have HoldEv :
       δ σO (Lambda.LExpr.fvar ()
               (CoreIdent.mkOld
