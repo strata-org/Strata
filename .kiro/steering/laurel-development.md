@@ -5,10 +5,11 @@ fileMatchPattern: ['Strata/Languages/Laurel/**/*.lean', 'StrataTest/Languages/La
 
 # Working on Laurel
 
-Pointers for agents editing Laurel code. For background, read
-[the rendered Laurel manual](../../docs/verso/LaurelDoc.lean)
+Pointers for agents editing Laurel code. For background, read the
+[Laurel manual source](../../docs/verso/LaurelDoc.lean)
 (sections *Design Principles*, *Conventions and Invariants*,
-*Translation Pipeline*, and *Known Limits and Roadmap*).
+*Translation Pipeline*, and *Known Limits and Roadmap*), or its rendered HTML
+under `docs/verso/_out/laurel/html-single/` after running `docs/verso/generate.sh`.
 
 ## Scope rules
 

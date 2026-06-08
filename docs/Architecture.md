@@ -67,7 +67,7 @@ Key design choices that differentiate Laurel from Strata Core:
 - **Imperative code may be transparent.** Unlike some IVLs, Laurel does not require imperative code to hide behind a functional specification; a Laurel procedure's body can be visible to its callers.
 - **Translator-neutral semantics.** Features that are specific to one back-end (e.g. opacity, which is a deductive-verification concept) are carried as annotations but not baked into the core AST, so that model checkers and data-flow analyses do not need to know about them.
 
-For full documentation — design principles, conventions, the compilation pipeline, and all `{docstring}`-extracted type references — see **[The Laurel Language manual](./verso/LaurelDoc.lean)** (rendered HTML under `docs/api/.lake/build/doc/Strata/Languages/Laurel/Laurel.html` after running `docs/verso/generate.sh`). For how the Python front-end uses Laurel, see [`docs/PythonFrontend.md`](PythonFrontend.md).
+For full documentation — design principles, conventions, the compilation pipeline, and all `{docstring}`-extracted type references — see **[The Laurel Language manual source](./verso/LaurelDoc.lean)**, which renders to HTML under `docs/verso/_out/laurel/html-single/` after running `docs/verso/generate.sh`. For how the Python front-end uses Laurel, see [`docs/PythonFrontend.md`](PythonFrontend.md).
 
 ### SMTLib
 
