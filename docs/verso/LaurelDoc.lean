@@ -264,7 +264,8 @@ verification pipeline. The translation involves several Laurel-to-Laurel lowerin
 each annotated with whether it invalidates resolution (and therefore causes a re-run of the
 resolver), followed by an ordering step and a final "dumb" translation to Core.
 
-The passes run in the following order:
+After the initial `resolve`, `TypeAliasElim` replaces every type-alias reference with its
+resolved target type. The remaining Laurel-to-Laurel passes then run in this order:
 
 1. `FilterNonCompositeModifies` — strip modifies clauses on non-composite reads.
 2. `EliminateValueReturns` — remove `Return` from statement positions where values are
@@ -277,7 +278,8 @@ The passes run in the following order:
    ensures clauses.
 6. `InferHoleTypes` — assign a type to every `Hole` from its context.
 7. `EliminateHoles` — replace deterministic holes with calls to freshly generated
-   uninterpreted functions; non-deterministic holes become havocs.
+   uninterpreted functions. Non-deterministic holes are preserved here and lowered to
+   havocs later, by `LiftExpressionAssignments`.
 8. `DesugarShortCircuit` — desugar `&&` and `||` into conditional expressions.
 9. `LiftExpressionAssignments` — hoist statement-like `StmtExpr`s out of expression
    positions.
