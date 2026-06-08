@@ -3,14 +3,11 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import Strata.Languages.Core
-meta import Strata.Languages.Core
-meta import StrataTest.Languages.Core.Examples.Loops
+import Strata.Languages.Core
+import StrataTest.Languages.Core.Examples.Loops
 import StrataDDM.Integration.Lean.HashCommands
 
-meta section
 open StrataDDM (Program)
 ---------------------------------------------------------------------
 namespace Strata
@@ -165,6 +162,3 @@ end$_0:
 -/
 #guard_msgs in
 #eval (Std.format (singleCFG exitPgm 1))
-
-end Strata
-end
