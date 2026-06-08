@@ -135,4 +135,143 @@ def mapProgram (f : StmtExprMd → StmtExprMd) (program : Program) : Program :=
   mapProgramM (m := Id) f program
 
 end -- public section
+
+/-! ## Build-time traversal-coverage check
+
+`mapStmtExprM` is the single point through which every pass recurses into the
+AST, so the one structural invariant the passes rely on is that it descends into
+*every* `StmtExprMd` child of *every* constructor. The match above is exhaustive
+(no wildcard), so adding a constructor already forces a decision there — but a
+constructor that *carries* children could still be parked in the leaf arm
+(`pure expr`) and compile, silently skipping recursion. That is the bug class
+this check rules out at build time.
+
+For each constructor we build a representative with a sentinel literal in every
+`StmtExprMd` child position and run it through `mapStmtExprM` in a counting
+monad. If the traversal reaches fewer sentinels than were placed — because the
+constructor is treated as a leaf, or an arm forgets a child — the `#eval` below
+throws and `lake build` fails.
+
+Maintenance: a new constructor makes `covCtorKey` non-exhaustive (a compile
+error), and the completeness assertion fails until a probe with a fresh key is
+added to `covProbes`. Keep the placed-sentinel count in each probe in sync with
+the number of `StmtExprMd` children. The check uses `mapStmtExprM` itself, so it
+is a coverage test of the traversal, not an independent re-implementation of it.
+-/
+
+private def covSentinelText : String := "§MAP_STMT_EXPR_COVERAGE_SENTINEL§"
+private def covId (s : String) : Identifier := ⟨s, none, none⟩
+private def covS : StmtExprMd := ⟨.LiteralString covSentinelText, none⟩
+private def covMd (e : StmtExpr) : StmtExprMd := ⟨e, none⟩
+private def covVmd (v : Variable) : VariableMd := ⟨v, none⟩
+private def covTy : HighTypeMd := ⟨.TInt, none⟩
+private def covParam : Parameter := { name := covId "p", type := ⟨.TInt, none⟩ }
+private def covCond : Condition := { condition := covS, summary := none }
+
+/-- A distinct key per `StmtExpr` constructor. Exhaustive (no wildcard): a new
+    constructor forces an entry here, and then the completeness assertion in the
+    `#eval` below forces a matching probe in `covProbes`. -/
+private def covCtorKey : StmtExpr → Nat
+  | .IfThenElse ..    => 0
+  | .Block ..         => 1
+  | .While ..         => 2
+  | .Exit ..          => 3
+  | .Return ..        => 4
+  | .LiteralInt ..    => 5
+  | .LiteralBool ..   => 6
+  | .LiteralString .. => 7
+  | .LiteralDecimal .. => 8
+  | .Var ..           => 9
+  | .Assign ..        => 10
+  | .PureFieldUpdate .. => 11
+  | .StaticCall ..    => 12
+  | .PrimitiveOp ..   => 13
+  | .New ..           => 14
+  | .This             => 15
+  | .ReferenceEquals .. => 16
+  | .AsType ..        => 17
+  | .IsType ..        => 18
+  | .InstanceCall ..  => 19
+  | .Quantifier ..    => 20
+  | .Assigned ..      => 21
+  | .Old ..           => 22
+  | .Fresh ..         => 23
+  | .Assert ..        => 24
+  | .Assume ..        => 25
+  | .ProveBy ..       => 26
+  | .ContractOf ..    => 27
+  | .Abstract         => 28
+  | .All              => 29
+  | .Hole ..          => 30
+
+/-- The total number of `StmtExpr` constructors. Bump this when adding one. -/
+private def covCtorCount : Nat := 31
+
+/-- One representative per constructor, paired with the number of sentinels it
+    places in `StmtExprMd` child positions. -/
+private def covProbes : List (StmtExprMd × Nat) := [
+  (covMd (.IfThenElse covS covS (some covS)), 3),
+  (covMd (.Block [covS, covS] none), 2),
+  (covMd (.While covS [covS] (some covS) covS), 4),
+  (covMd (.Exit "blk"), 0),
+  (covMd (.Return (some covS)), 1),
+  (covMd (.LiteralInt 0), 0),
+  (covMd (.LiteralBool true), 0),
+  (covMd (.LiteralString "x"), 0),
+  (covMd (.LiteralDecimal ⟨0, 0⟩), 0),
+  (covMd (.Var (.Field covS (covId "f"))), 1),
+  (covMd (.Assign [covVmd (.Field covS (covId "f"))] covS), 2),
+  (covMd (.PureFieldUpdate covS (covId "f") covS), 2),
+  (covMd (.StaticCall (covId "c") [covS, covS]), 2),
+  (covMd (.PrimitiveOp .Add [covS, covS]), 2),
+  (covMd (.New (covId "r")), 0),
+  (covMd .This, 0),
+  (covMd (.ReferenceEquals covS covS), 2),
+  (covMd (.AsType covS covTy), 1),
+  (covMd (.IsType covS covTy), 1),
+  (covMd (.InstanceCall covS (covId "c") [covS, covS]), 3),
+  (covMd (.Quantifier .Forall covParam (some covS) covS), 2),
+  (covMd (.Assigned covS), 1),
+  (covMd (.Old covS), 1),
+  (covMd (.Fresh covS), 1),
+  (covMd (.Assert covCond), 1),
+  (covMd (.Assume covS), 1),
+  (covMd (.ProveBy covS covS), 2),
+  (covMd (.ContractOf .Reads covS), 1),
+  (covMd .Abstract, 0),
+  (covMd .All, 0),
+  (covMd (.Hole true none), 0)
+]
+
+/-- How many sentinels `mapStmtExprM` actually reaches when traversing `e`. -/
+private def covReached (e : StmtExprMd) : Nat :=
+  (mapStmtExprM (m := StateM Nat)
+    (fun n => do
+      match n.val with
+      | .LiteralString s => if s == covSentinelText then modify (· + 1)
+      | _ => pure ()
+      pure n) e |>.run 0).2
+
+-- Completeness: every constructor has exactly one probe. A new constructor makes
+-- `covCtorKey` non-exhaustive (compile error) and then fails this check until a
+-- probe with a fresh key and the right child count is added to `covProbes`.
+-- Coverage: `mapStmtExprM` reaches every sentinel placed in a child position. A
+-- constructor with children that is parked in the leaf arm (or an arm that drops
+-- a child) reaches fewer sentinels than were placed and fails here. Both checks
+-- run when this module is elaborated, so a violation fails `lake build`.
+#eval (do
+  let keys := covProbes.map (fun p => covCtorKey p.1.val)
+  unless keys.eraseDups.length == covCtorCount do
+    throw <| IO.userError
+      s!"mapStmtExprM coverage: probes cover {keys.eraseDups.length} distinct \
+         constructors, expected {covCtorCount}; add a probe for the new constructor."
+  for (node, placed) in covProbes do
+    let reached := covReached node
+    unless reached == placed do
+      throw <| IO.userError
+        s!"mapStmtExprM coverage: constructor with covCtorKey {covCtorKey node.val} has \
+           {placed} StmtExpr child slot(s) but the traversal reached {reached}; give it a \
+           recursing arm in mapStmtExprM rather than leaving it in the leaf arm."
+  : IO Unit)
+
 end Strata.Laurel
