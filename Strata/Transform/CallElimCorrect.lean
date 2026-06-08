@@ -726,28 +726,40 @@ private theorem oldVars_oldTys_mapM_ok
       rfl
     · simp [Hlen]
 
-/-- No-throw fact for `Core.Transform.createAsserts`.  Its inner
-    `mapM` only invokes `genIdent` (a pure non-throwing state mutation),
-    so the computation always reduces to `Except.ok asserts` with
-    `asserts.length = conds.length`.  The `asserts_shape` conjunct
-    exposes the list as a `conds.zip labels`-shape that the
-    label-agnostic downstream consumer needs. -/
-private theorem createAsserts_ok
+/-- Polymorphic no-throw fact for the shared body of
+    `Core.Transform.createAsserts` and `Core.Transform.createAssumes`.
+    Both functions are byte-identical modulo the `Statement`
+    constructor (`assert` vs `assume`); their inner `mapM` only
+    invokes `genIdent` (a pure non-throwing state mutation), so the
+    computation always reduces to `Except.ok stmts` with
+    `stmts.length = conds.length`.  The shape conjunct exposes the
+    list as a `conds.zip labels`-shape that the label-agnostic
+    downstream consumer needs.  Parameterized by the constructor
+    `mkStmt` so both `_ok` lemmas can share this proof. -/
+private theorem createCheckStmts_ok
+    (mkStmt : String → Expression.Expr → Imperative.MetaData Expression → Statement)
     (conds : ListMap CoreLabel Procedure.Check)
     (subst : Map Expression.Ident Expression.Expr)
     (md : Imperative.MetaData Expression)
     (labelPrefix : String)
     (γ : CoreTransformState) :
-    ∃ (asserts : List Statement) (γ' : CoreTransformState),
-      Core.Transform.createAsserts conds subst md labelPrefix γ
-        = (Except.ok asserts, γ') ∧
-      asserts.length = conds.length ∧
+    ∃ (stmts : List Statement) (γ' : CoreTransformState),
+      (conds.mapM
+            (fun (entry : CoreLabel × Procedure.Check) =>
+              (do
+                let newLabel ← Core.Transform.genIdent entry.fst
+                  (fun s => s!"{labelPrefix}{s}")
+                return mkStmt newLabel.toPretty
+                  (Lambda.LExpr.substFvars entry.snd.expr subst)
+                  (entry.snd.md.setCallSiteFileRange md)
+                : CoreTransformM Statement))) γ
+        = (Except.ok stmts, γ') ∧
+      stmts.length = conds.length ∧
       ∃ (labels : List String), labels.length = conds.length ∧
-        asserts = (conds.zip labels).map (fun (entry, lbl) =>
-          Statement.assert lbl
+        stmts = (conds.zip labels).map (fun (entry, lbl) =>
+          mkStmt lbl
             (Lambda.LExpr.substFvars entry.snd.expr subst)
             (entry.snd.md.setCallSiteFileRange md)) := by
-  unfold Core.Transform.createAsserts
   -- `ListMap α β := List (α × β)`, so `conds.mapM` is `List.mapM` over
   -- the underlying list.  Induct on that list, threading the state.
   induction conds generalizing γ with
@@ -767,13 +779,11 @@ private theorem createAsserts_ok
           cachedAnalyses := γ.cachedAnalyses,
           factory := γ.factory,
           statistics := γ.statistics }
-      obtain ⟨asserts', γ'', Heqtail, Hlen, labelsTail, HlblsLen, Hshape⟩ := ih (γ := γhead)
-      refine ⟨Statement.assert newLabel.toPretty
+      obtain ⟨stmts', γ'', Heqtail, Hlen, labelsTail, HlblsLen, Hshape⟩ := ih (γ := γhead)
+      refine ⟨mkStmt newLabel.toPretty
                 (Lambda.LExpr.substFvars check.expr subst)
-                (check.md.setCallSiteFileRange md) :: asserts', γ'', ?_, ?_, ?_⟩
+                (check.md.setCallSiteFileRange md) :: stmts', γ'', ?_, ?_, ?_⟩
       · -- Reduce both sides to the same `List.mapM` core, then chain via Heqtail.
-        -- Apply the same simp set on both the goal and Heqtail so the inner-mapM
-        -- shape matches.
         simp only [List.mapM_cons, bind, ExceptT.bind, ExceptT.bindCont,
                    ExceptT.mk, ExceptT.lift, ExceptT.pure,
                    StateT.bind, StateT.pure, pure,
@@ -788,9 +798,28 @@ private theorem createAsserts_ok
         · simp only [List.zip_cons_cons, List.map_cons]
           rw [Hshape]
 
-/-- No-throw fact for `Core.Transform.createAssumes`.  Mirror of
-    `createAsserts_ok` for the assume case.  Same `genIdent`-only
-    structure, same conclusion, same caveats about labels. -/
+/-- No-throw fact for `Core.Transform.createAsserts`.  Specialization
+    of `createCheckStmts_ok` to the `Statement.assert` constructor. -/
+private theorem createAsserts_ok
+    (conds : ListMap CoreLabel Procedure.Check)
+    (subst : Map Expression.Ident Expression.Expr)
+    (md : Imperative.MetaData Expression)
+    (labelPrefix : String)
+    (γ : CoreTransformState) :
+    ∃ (asserts : List Statement) (γ' : CoreTransformState),
+      Core.Transform.createAsserts conds subst md labelPrefix γ
+        = (Except.ok asserts, γ') ∧
+      asserts.length = conds.length ∧
+      ∃ (labels : List String), labels.length = conds.length ∧
+        asserts = (conds.zip labels).map (fun (entry, lbl) =>
+          Statement.assert lbl
+            (Lambda.LExpr.substFvars entry.snd.expr subst)
+            (entry.snd.md.setCallSiteFileRange md)) := by
+  unfold Core.Transform.createAsserts
+  exact createCheckStmts_ok Statement.assert conds subst md labelPrefix γ
+
+/-- No-throw fact for `Core.Transform.createAssumes`.  Specialization
+    of `createCheckStmts_ok` to the `Statement.assume` constructor. -/
 private theorem createAssumes_ok
     (conds : ListMap CoreLabel Procedure.Check)
     (subst : Map Expression.Ident Expression.Expr)
@@ -807,39 +836,7 @@ private theorem createAssumes_ok
             (Lambda.LExpr.substFvars entry.snd.expr subst)
             (entry.snd.md.setCallSiteFileRange md)) := by
   unfold Core.Transform.createAssumes
-  induction conds generalizing γ with
-  | nil =>
-    exact ⟨[], γ, by simp [List.mapM_nil, pure, ExceptT.pure, StateT.pure, ExceptT.mk],
-            rfl, [], rfl, by simp⟩
-  | cons head rest ih =>
-    obtain ⟨l, check⟩ := head
-    cases hgi : Core.Transform.genIdent l (fun s => s!"{labelPrefix}{s}") γ.genState with
-    | mk newLabel γgen' =>
-      let γhead : CoreTransformState :=
-        { genState := γgen',
-          currentProgram := γ.currentProgram,
-          currentProcedureName := γ.currentProcedureName,
-          cachedAnalyses := γ.cachedAnalyses,
-          factory := γ.factory,
-          statistics := γ.statistics }
-      obtain ⟨assumes', γ'', Heqtail, Hlen, labelsTail, HlblsLen, Hshape⟩ := ih (γ := γhead)
-      refine ⟨Statement.assume newLabel.toPretty
-                (Lambda.LExpr.substFvars check.expr subst)
-                (check.md.setCallSiteFileRange md) :: assumes', γ'', ?_, ?_, ?_⟩
-      · -- Reduce both sides to the same `List.mapM` core, then chain via Heqtail.
-        simp only [List.mapM_cons, bind, ExceptT.bind, ExceptT.bindCont,
-                   ExceptT.mk, ExceptT.lift, ExceptT.pure,
-                   StateT.bind, StateT.pure, pure,
-                   monadLift, MonadLift.monadLift, liftM,
-                   Functor.map, StateT.map, liftCoreGenM, hgi]
-        bind_shell_state at Heqtail
-        rw [Heqtail]
-        rfl
-      · simp [Hlen]
-      · refine ⟨newLabel.toPretty :: labelsTail, ?_, ?_⟩
-        · simp [HlblsLen]
-        · simp only [List.zip_cons_cons, List.map_cons]
-          rw [Hshape]
+  exact createCheckStmts_ok Statement.assume conds subst md labelPrefix γ
 
 /-- Internal-shape destructuring of a successful `callElimCmd` call.
 
