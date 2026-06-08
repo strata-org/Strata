@@ -893,114 +893,57 @@ theorem subst_fvars_eval_bridge
       exact HsubAt
   | abs m name ty body ih =>
     simp only [Lambda.LExpr.substFvars_abs]
-    have Hsurv_body :
-        ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) body,
-          Map.find? sm v = none →
-          δ σ' (Lambda.LExpr.fvar () v none) =
-            δ σ (Lambda.LExpr.fvar () v none) := by
-      intro v Hv Hnone
-      apply Hsurv v ?_ Hnone
-      show v ∈ Lambda.LExpr.LExpr.getVars (Lambda.LExpr.abs m name ty body)
-      simp [Lambda.LExpr.LExpr.getVars]
-      show v ∈ Lambda.LExpr.LExpr.getVars body
-      exact Hv
-    have Hsub_body :
-        ∀ k w, k ∈ Imperative.HasVarsPure.getVars (P:=Expression) body →
-          Map.find? sm k = some w →
-          δ σ' w = δ σ (Lambda.LExpr.fvar () k none) := by
-      intro k w Hk Hf
-      apply Hsub k w ?_ Hf
-      show k ∈ Lambda.LExpr.LExpr.getVars (Lambda.LExpr.abs m name ty body)
-      simp [Lambda.LExpr.LExpr.getVars]
-      show k ∈ Lambda.LExpr.LExpr.getVars body
-      exact Hk
-    have Hbody := ih Hsurv_body Hsub_body
+    have Hmk : ∀ {x : Expression.Ident},
+        x ∈ Imperative.HasVarsPure.getVars (P:=Expression) body →
+        x ∈ Imperative.HasVarsPure.getVars (P:=Expression)
+              (Lambda.LExpr.abs m name ty body) := by
+      intro x Hx
+      show x ∈ Lambda.LExpr.LExpr.getVars body
+      exact Hx
+    have Hbody := ih (fun v Hv Hnone => Hsurv v (Hmk Hv) Hnone)
+                     (fun k w Hk Hf => Hsub k w (Hmk Hk) Hf)
     exact Hwfc.abscongr σ' σ _ _ Hbody m name ty
   | quant m qk name ty tr body trih bih =>
     simp only [Lambda.LExpr.substFvars_quant]
-    have Hsurv_tr :
-        ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) tr,
-          Map.find? sm v = none →
-          δ σ' (Lambda.LExpr.fvar () v none) =
-            δ σ (Lambda.LExpr.fvar () v none) := by
-      intro v Hv Hnone
-      apply Hsurv v ?_ Hnone
-      show v ∈ Lambda.LExpr.LExpr.getVars (Lambda.LExpr.quant m qk name ty tr body)
-      simp [Lambda.LExpr.LExpr.getVars, List.mem_append]
-      exact Or.inl Hv
-    have Hsurv_body :
-        ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) body,
-          Map.find? sm v = none →
-          δ σ' (Lambda.LExpr.fvar () v none) =
-            δ σ (Lambda.LExpr.fvar () v none) := by
-      intro v Hv Hnone
-      apply Hsurv v ?_ Hnone
-      show v ∈ Lambda.LExpr.LExpr.getVars (Lambda.LExpr.quant m qk name ty tr body)
-      simp [Lambda.LExpr.LExpr.getVars, List.mem_append]
-      exact Or.inr Hv
-    have Hsub_tr :
-        ∀ k w, k ∈ Imperative.HasVarsPure.getVars (P:=Expression) tr →
-          Map.find? sm k = some w →
-          δ σ' w = δ σ (Lambda.LExpr.fvar () k none) := by
-      intro k w Hk Hf
-      apply Hsub k w ?_ Hf
-      show k ∈ Lambda.LExpr.LExpr.getVars (Lambda.LExpr.quant m qk name ty tr body)
-      simp [Lambda.LExpr.LExpr.getVars, List.mem_append]
-      exact Or.inl Hk
-    have Hsub_body :
-        ∀ k w, k ∈ Imperative.HasVarsPure.getVars (P:=Expression) body →
-          Map.find? sm k = some w →
-          δ σ' w = δ σ (Lambda.LExpr.fvar () k none) := by
-      intro k w Hk Hf
-      apply Hsub k w ?_ Hf
-      show k ∈ Lambda.LExpr.LExpr.getVars (Lambda.LExpr.quant m qk name ty tr body)
-      simp [Lambda.LExpr.LExpr.getVars, List.mem_append]
-      exact Or.inr Hk
-    have Htr := trih Hsurv_tr Hsub_tr
-    have Hbody := bih Hsurv_body Hsub_body
+    have HmkL : ∀ {x : Expression.Ident},
+        x ∈ Imperative.HasVarsPure.getVars (P:=Expression) tr →
+        x ∈ Imperative.HasVarsPure.getVars (P:=Expression)
+              (Lambda.LExpr.quant m qk name ty tr body) := by
+      intro x Hx
+      show x ∈ Lambda.LExpr.LExpr.getVars tr ++ Lambda.LExpr.LExpr.getVars body
+      exact List.mem_append.mpr (Or.inl Hx)
+    have HmkR : ∀ {x : Expression.Ident},
+        x ∈ Imperative.HasVarsPure.getVars (P:=Expression) body →
+        x ∈ Imperative.HasVarsPure.getVars (P:=Expression)
+              (Lambda.LExpr.quant m qk name ty tr body) := by
+      intro x Hx
+      show x ∈ Lambda.LExpr.LExpr.getVars tr ++ Lambda.LExpr.LExpr.getVars body
+      exact List.mem_append.mpr (Or.inr Hx)
+    have Htr := trih (fun v Hv Hnone => Hsurv v (HmkL Hv) Hnone)
+                     (fun k w Hk Hf => Hsub k w (HmkL Hk) Hf)
+    have Hbody := bih (fun v Hv Hnone => Hsurv v (HmkR Hv) Hnone)
+                      (fun k w Hk Hf => Hsub k w (HmkR Hk) Hf)
     exact Hwfc.quantcongr σ' σ m qk name ty _ _ _ _ Htr Hbody
   | app m fn arg fih aih =>
     simp only [Lambda.LExpr.substFvars_app]
-    have Hsurv_fn :
-        ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) fn,
-          Map.find? sm v = none →
-          δ σ' (Lambda.LExpr.fvar () v none) =
-            δ σ (Lambda.LExpr.fvar () v none) := by
-      intro v Hv Hnone
-      apply Hsurv v ?_ Hnone
-      show v ∈ Lambda.LExpr.LExpr.getVars (Lambda.LExpr.app m fn arg)
-      simp [Lambda.LExpr.LExpr.getVars, List.mem_append]
-      exact Or.inl Hv
-    have Hsurv_arg :
-        ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) arg,
-          Map.find? sm v = none →
-          δ σ' (Lambda.LExpr.fvar () v none) =
-            δ σ (Lambda.LExpr.fvar () v none) := by
-      intro v Hv Hnone
-      apply Hsurv v ?_ Hnone
-      show v ∈ Lambda.LExpr.LExpr.getVars (Lambda.LExpr.app m fn arg)
-      simp [Lambda.LExpr.LExpr.getVars, List.mem_append]
-      exact Or.inr Hv
-    have Hsub_fn :
-        ∀ k w, k ∈ Imperative.HasVarsPure.getVars (P:=Expression) fn →
-          Map.find? sm k = some w →
-          δ σ' w = δ σ (Lambda.LExpr.fvar () k none) := by
-      intro k w Hk Hf
-      apply Hsub k w ?_ Hf
-      show k ∈ Lambda.LExpr.LExpr.getVars (Lambda.LExpr.app m fn arg)
-      simp [Lambda.LExpr.LExpr.getVars, List.mem_append]
-      exact Or.inl Hk
-    have Hsub_arg :
-        ∀ k w, k ∈ Imperative.HasVarsPure.getVars (P:=Expression) arg →
-          Map.find? sm k = some w →
-          δ σ' w = δ σ (Lambda.LExpr.fvar () k none) := by
-      intro k w Hk Hf
-      apply Hsub k w ?_ Hf
-      show k ∈ Lambda.LExpr.LExpr.getVars (Lambda.LExpr.app m fn arg)
-      simp [Lambda.LExpr.LExpr.getVars, List.mem_append]
-      exact Or.inr Hk
-    have Hfn := fih Hsurv_fn Hsub_fn
-    have Harg := aih Hsurv_arg Hsub_arg
+    have HmkL : ∀ {x : Expression.Ident},
+        x ∈ Imperative.HasVarsPure.getVars (P:=Expression) fn →
+        x ∈ Imperative.HasVarsPure.getVars (P:=Expression)
+              (Lambda.LExpr.app m fn arg) := by
+      intro x Hx
+      show x ∈ Lambda.LExpr.LExpr.getVars fn ++ Lambda.LExpr.LExpr.getVars arg
+      exact List.mem_append.mpr (Or.inl Hx)
+    have HmkR : ∀ {x : Expression.Ident},
+        x ∈ Imperative.HasVarsPure.getVars (P:=Expression) arg →
+        x ∈ Imperative.HasVarsPure.getVars (P:=Expression)
+              (Lambda.LExpr.app m fn arg) := by
+      intro x Hx
+      show x ∈ Lambda.LExpr.LExpr.getVars fn ++ Lambda.LExpr.LExpr.getVars arg
+      exact List.mem_append.mpr (Or.inr Hx)
+    have Hfn := fih (fun v Hv Hnone => Hsurv v (HmkL Hv) Hnone)
+                    (fun k w Hk Hf => Hsub k w (HmkL Hk) Hf)
+    have Harg := aih (fun v Hv Hnone => Hsurv v (HmkR Hv) Hnone)
+                     (fun k w Hk Hf => Hsub k w (HmkR Hk) Hf)
     exact Hwfc.appcongr σ' σ m _ _ _ _ Hfn Harg
   | ite m c t f cih tih fih =>
     simp only [Lambda.LExpr.substFvars_ite]
@@ -1037,46 +980,24 @@ theorem subst_fvars_eval_bridge
     exact Hwfc.itecongr σ' σ m _ _ _ _ _ _ Ht Hf' Hc
   | eq m e1 e2 e1ih e2ih =>
     simp only [Lambda.LExpr.substFvars_eq]
-    have Hsurv_l :
-        ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) e1,
-          Map.find? sm v = none →
-          δ σ' (Lambda.LExpr.fvar () v none) =
-            δ σ (Lambda.LExpr.fvar () v none) := by
-      intro v Hv Hnone
-      apply Hsurv v ?_ Hnone
-      show v ∈ Lambda.LExpr.LExpr.getVars (Lambda.LExpr.eq m e1 e2)
-      simp [Lambda.LExpr.LExpr.getVars, List.mem_append]
-      exact Or.inl Hv
-    have Hsurv_r :
-        ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) e2,
-          Map.find? sm v = none →
-          δ σ' (Lambda.LExpr.fvar () v none) =
-            δ σ (Lambda.LExpr.fvar () v none) := by
-      intro v Hv Hnone
-      apply Hsurv v ?_ Hnone
-      show v ∈ Lambda.LExpr.LExpr.getVars (Lambda.LExpr.eq m e1 e2)
-      simp [Lambda.LExpr.LExpr.getVars, List.mem_append]
-      exact Or.inr Hv
-    have Hsub_l :
-        ∀ k w, k ∈ Imperative.HasVarsPure.getVars (P:=Expression) e1 →
-          Map.find? sm k = some w →
-          δ σ' w = δ σ (Lambda.LExpr.fvar () k none) := by
-      intro k w Hk Hf
-      apply Hsub k w ?_ Hf
-      show k ∈ Lambda.LExpr.LExpr.getVars (Lambda.LExpr.eq m e1 e2)
-      simp [Lambda.LExpr.LExpr.getVars, List.mem_append]
-      exact Or.inl Hk
-    have Hsub_r :
-        ∀ k w, k ∈ Imperative.HasVarsPure.getVars (P:=Expression) e2 →
-          Map.find? sm k = some w →
-          δ σ' w = δ σ (Lambda.LExpr.fvar () k none) := by
-      intro k w Hk Hf
-      apply Hsub k w ?_ Hf
-      show k ∈ Lambda.LExpr.LExpr.getVars (Lambda.LExpr.eq m e1 e2)
-      simp [Lambda.LExpr.LExpr.getVars, List.mem_append]
-      exact Or.inr Hk
-    have Hl := e1ih Hsurv_l Hsub_l
-    have Hr := e2ih Hsurv_r Hsub_r
+    have HmkL : ∀ {x : Expression.Ident},
+        x ∈ Imperative.HasVarsPure.getVars (P:=Expression) e1 →
+        x ∈ Imperative.HasVarsPure.getVars (P:=Expression)
+              (Lambda.LExpr.eq m e1 e2) := by
+      intro x Hx
+      show x ∈ Lambda.LExpr.LExpr.getVars e1 ++ Lambda.LExpr.LExpr.getVars e2
+      exact List.mem_append.mpr (Or.inl Hx)
+    have HmkR : ∀ {x : Expression.Ident},
+        x ∈ Imperative.HasVarsPure.getVars (P:=Expression) e2 →
+        x ∈ Imperative.HasVarsPure.getVars (P:=Expression)
+              (Lambda.LExpr.eq m e1 e2) := by
+      intro x Hx
+      show x ∈ Lambda.LExpr.LExpr.getVars e1 ++ Lambda.LExpr.LExpr.getVars e2
+      exact List.mem_append.mpr (Or.inr Hx)
+    have Hl := e1ih (fun v Hv Hnone => Hsurv v (HmkL Hv) Hnone)
+                    (fun k w Hk Hf => Hsub k w (HmkL Hk) Hf)
+    have Hr := e2ih (fun v Hv Hnone => Hsurv v (HmkR Hv) Hnone)
+                    (fun k w Hk Hf => Hsub k w (HmkR Hk) Hf)
     exact Hwfc.eqcongr σ' σ m _ _ _ _ Hl Hr
 
 /-! ### Small-step block helpers for assert/assume sequences -/
