@@ -35,6 +35,9 @@ Laurel is an intermediate verification language designed to serve as a target fo
 garbage-collected languages that include imperative features, such as Java, Python, and
 JavaScript. Laurel tries to include any features that are common to those three languages.
 
+In the feature lists below, items marked *(WIP)* are designed or planned but not
+yet fully implemented; everything else is available today.
+
 Laurel enables doing various forms of verification:
 - Deductive verification
 - (WIP) Model checking
@@ -84,11 +87,24 @@ share a single implementation type, the StmtExpr. This reduces duplication for c
 like conditionals and variable declarations. Each StmtExpr has a user facing type, which for
 statement-like constructs could be void.
 
+## Roadmap
+
+This manual follows the language from the ground up: it first describes Laurel's
+types, then its unified expression/statement model, then procedures and whole
+programs. It then turns to the bidirectional type checker, and finally to the
+translation pipeline that lowers a checked Laurel program to Strata Core.
+
 # Types
 
 Laurel's type system includes primitive types, collection types, and user-defined types.
 
-## Primitive Types
+## The Type System
+
+The {name Strata.Laurel.HighType}`HighType` type enumerates every type Laurel
+tracks — primitives, collections, and user-defined types, alongside a few
+internal constructors (such as `THeap`, `Unknown`, and `MultiValuedExpr`) that
+the compilation pipeline introduces and that cannot be written in the surface
+grammar.
 
 {docstring Strata.Laurel.HighType}
 
@@ -206,7 +222,31 @@ Each construct is given as a derivation. `Γ` is the current lexical scope (see
 every premise and conclusion unless a rule explicitly extends it (written `Γ, x : T`).
 
 Each rule is tagged with `[⇒]` (synthesis) or `[⇐]` (checking) to make the
-direction explicit.
+direction explicit. The {ref "rules-procedure"}[*Procedure*] rule is the one
+exception: it is a top-level well-formedness judgment and carries no direction
+tag.
+
+The following notation recurs throughout the rules:
+
+- $`A <: B` — subtyping ({name Strata.Laurel.isSubtype}`isSubtype`); see
+  *Gradual typing* above.
+- $`A \sim B` — the *consistency* relation
+  {name Strata.Laurel.isConsistent}`isConsistent`: symmetric, with
+  $`\mathsf{Unknown}` acting as a wildcard.
+- $`A <:_\sim B` — the *consistent-subtype* relation
+  {name Strata.Laurel.isConsistentSubtype}`isConsistentSubtype`, the gradual
+  combination of the two above.
+- $`\mathsf{Numeric}\;T` — a predicate holding when $`T` is consistent with one
+  of $`\mathsf{TInt}`, $`\mathsf{TReal}`, $`\mathsf{TFloat64}`.
+- $`\dashv \Gamma'` — a rule's *output scope*: the judgment threads $`\Gamma` in
+  and produces $`\Gamma'` out. Only \[⇐\] Var-Declare and \[⇐\] Block-Cons use
+  this to extend the scope.
+- $`\rightsquigarrow \text{error: …}` — the rule emits an error and aborts; no
+  type is produced.
+- $`[\text{emits …}]` — the rule produces its type but also emits a diagnostic.
+- $`\mapsto` — elaboration: the construct is rewritten to the form on the right.
+
+The Index below links to each construct's subsection.
 
 ### Index
 
@@ -214,8 +254,8 @@ direction explicit.
 - {ref "rules-literals"}[*Literals*] — \[⇒\] Lit-Int, \[⇒\] Lit-Bool, \[⇒\] Lit-String, \[⇒\] Lit-Decimal
 - {ref "rules-variables"}[*Variables*] — \[⇒\] Var-Local, \[⇒\] Var-Field, \[⇐\] Var-Declare
 - {ref "rules-control-flow"}[*Control flow*] — \[⇐\] If, \[⇐\] If-NoElse;
-  \[⇐\] Block-Singleton, \[⇐\] Block-Cons, \[⇒\] Skip,
-  \[⇐\] Discard-Call-Last, \[⇐\] Discard-Call-Cons; \[⇐\] Exit;
+  \[⇐\] Block-Singleton, \[⇐\] Block-Cons,
+  \[⇐\] Discard-Call-Cons, \[⇐\] Discard-Call-Last, \[⇒\] Skip; \[⇐\] Exit;
   \[⇐\] Return-None-Void, \[⇐\] Return-None-Single, \[⇐\] Return-None-Multi,
   \[⇐\] Return-Some, \[⇐\] Return-Void-Error,
   \[⇐\] Return-Multi-Error; \[⇐\] While
@@ -540,8 +580,8 @@ combination is rejected. So `1 + 2` synthesizes $`\mathsf{TInt}`,
 $`\mathsf{TInt}` (the $`\mathsf{Unknown}` operand promotes to its
 neighbour), `<?> + <?>` synthesizes $`\mathsf{Unknown}`, and
 `1 + 2.0` is rejected with a "cannot apply '+' to operands of types
-'int', 'real'" diagnostic. The fold runs via `consistencyLub`, a
-pure predicate, so the search has no diagnostic side-effects.
+'int', 'real'" diagnostic. The fold runs via `join`, a
+pure function, so the search has no diagnostic side-effects.
 
 $$`\frac{\Gamma \vdash \mathit{args}_i \Rightarrow U_i \quad U_i <: \mathsf{TString} \quad \mathit{op} = \mathsf{StrConcat}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;\mathit{args} \Rightarrow \mathsf{TString}} \quad \text{([⇒] Op-Concat)}`
 
@@ -674,7 +714,7 @@ resolved under a scope that includes the procedure's input and output
 parameters. The Return rules above refer to the same output list
 $`\overline{T_o}` that the procedure binds here.
 
-$$`\frac{\overline{T_o} = \mathit{proc}.\mathit{outputs}.\mathit{types} \quad A = \mathsf{bodyType}(\mathit{proc}) \quad \Gamma_\mathit{global},\,\mathit{params}(\mathit{proc}) \vdash \mathit{proc}.\mathit{body} \Leftarrow A}{\Gamma_\mathit{global} \vdash \mathsf{Procedure}\;\mathit{proc}} \quad \text{(Procedure)}`
+$$`\frac{\overline{T_o} = \mathit{proc}.\mathit{outputs}.\mathit{types} \quad A = \mathsf{procedureBodyType}(\mathit{proc}) \quad \Gamma_\mathit{global},\,\mathit{params}(\mathit{proc}) \vdash \mathit{proc}.\mathit{body} \Leftarrow A}{\Gamma_\mathit{global} \vdash \mathsf{Procedure}\;\mathit{proc}} \quad \text{(Procedure)}`
 
 The body's value type $`A` is computed by `procedureBodyType`: a
 single-output functional procedure expects $`A = T` (its body's last
