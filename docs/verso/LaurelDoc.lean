@@ -230,13 +230,6 @@ names; post-resolution, the `uniqueId` is authoritative. If a pass needs to know
 type of a field, it should use the field's `uniqueId` to look up its declaration in the
 model rather than walking back through the composite type hierarchy.
 
-## Determinism of procedure calls
-
-A procedure modelled as a Core function is deterministic: two calls with the same arguments
-produce the same result. A procedure modelled via axiomatic postconditions is
-non-deterministic unless explicitly declared otherwise. This is why `Body.External` does
-not imply transparency: external bodies can still be non-deterministic.
-
 # Translation Pipeline
 
 Laurel programs are verified by translating them to Strata Core and then invoking the Core
