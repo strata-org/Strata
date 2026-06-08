@@ -8,7 +8,7 @@ set -eo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
-LAUREL_TO_CBMC="$PROJECT_ROOT/StrataTest/Languages/Laurel/laurel_to_cbmc.sh"
+LAUREL_TO_CBMC="lake -d $PROJECT_ROOT env lean --run $PROJECT_ROOT/Scripts/LaurelToCBMC.lean"
 
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
