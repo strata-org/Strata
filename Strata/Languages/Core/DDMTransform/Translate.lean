@@ -1244,14 +1244,12 @@ def translateMeasure (p : Program) (bindings : TransBindings) (arg : Arg) :
     where the measure carries an assertion label, mirroring how invariant
     assertions are labeled. -/
 def translateLoopMeasure (p : Program) (bindings : TransBindings) (arg : Arg) :
-    TransM (Option (String × Core.Expression.Expr)) := do
+    TransM (Option Core.Expression.Expr) := do
   match arg with
   | .option _ (.some m) =>
     let args ← checkOpArg m q`Core.measure_mk 1
     let e ← translateExpr p bindings args[0]!
-    let sr := arg.ann
-    let label := s!"measure_{sr.start}_{sr.stop}"
-    pure (some (label, e))
+    pure (some e)
   | _ => pure none
 
 

@@ -110,7 +110,7 @@ match ss with
   let (measureCmds, bodyK, decreaseBlocks) ←
     match m with
     | none => pure ([], lentry, [])
-    | some (_, mExpr) => do
+    | some mExpr => do
       let mLabel ← StringGenState.gen "loop_measure$"
       let mIdent := HasIdent.ident mLabel
       let mOldExpr := HasFvar.mkFvar mIdent

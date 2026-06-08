@@ -66,7 +66,7 @@ structure WFblockProp (Cmd : Type) (p : Program) (label : String) (b : Block) : 
 
 structure WFifProp    (Cmd : Type) (p : Program) (cond : ExprOrNondet Expression)  (thenb : Block) (elseb : Block) : Prop where
 
-structure WFloopProp    (Cmd : Type) (p : Program) (guard : ExprOrNondet Expression) (measure : Option (String × Expression.Expr)) (invariant : List (String × Expression.Expr)) (b : Block) : Prop where
+structure WFloopProp    (Cmd : Type) (p : Program) (guard : ExprOrNondet Expression) (measure : Option Expression.Expr) (invariant : List (String × Expression.Expr)) (b : Block) : Prop where
 
 structure WFexitProp  (p : Program) (label : String) : Prop where
 
@@ -90,7 +90,7 @@ def WFStatementProp (p : Program) (stmt : Statement) : Prop := match stmt with
   | .block (label : String) (b : Block) _ => WFblockProp (CmdExt Expression) p label b
   | .ite   (cond : ExprOrNondet Expression) (thenb : Block) (elseb : Block) _ =>
      WFifProp (CmdExt Expression) p cond thenb elseb
-  | .loop  (guard : ExprOrNondet Expression) (measure : Option (String × Expression.Expr))
+  | .loop  (guard : ExprOrNondet Expression) (measure : Option Expression.Expr)
            (invariant : List (String × Expression.Expr)) (body : Block) _ =>
      WFloopProp (CmdExt Expression) p guard measure invariant body
   | .exit (label : String) _ => WFexitProp p label

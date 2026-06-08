@@ -39,10 +39,10 @@ def translate_opt_expr (e : Option C_Simp.Expression.Expr) : Option (Lambda.LExp
   | none => none
 
 def translate_opt_labeled_expr
-    (e : Option (String × C_Simp.Expression.Expr)) :
-    Option (String × Lambda.LExpr Core.CoreLParams.mono) :=
+    (e : Option C_Simp.Expression.Expr) :
+    Option (Lambda.LExpr Core.CoreLParams.mono) :=
   match e with
-  | some (l, e) => some (l, translate_expr e)
+  | some e => some (translate_expr e)
   | none => none
 
 def translate_cmd (c: C_Simp.Command) : Core.Command :=
@@ -94,7 +94,7 @@ def loop_elimination_statement(s : C_Simp.Statement) : Core.Statement :=
   match s with
   | .loop guard measure invList body _ =>
     match guard, measure, invList with
-    | .det guard_expr, .some (_, measure), _ =>
+    | .det guard_expr, .some measure, _ =>
       let assigned_vars := (Imperative.Block.modifiedVars body).map (λ s => ⟨s.name, ()⟩)
       let havocd : Core.Statement := .block "loop havoc" (assigned_vars.map (λ n => Core.Statement.havoc n {})) {}
 

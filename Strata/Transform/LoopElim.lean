@@ -159,7 +159,7 @@ def Stmt.removeLoopsM
         let termination_stmts ←
           match measure with
           | none => pure ([], [])
-          | some (_, m) =>
+          | some m =>
             let m_old_ident    := HasIdent.ident s!"$__loop_measure_{loop_num}"
             let m_old_expr     := HasFvar.mkFvar m_old_ident
             let init_m_old     := Stmt.cmd (HasInit.init m_old_ident HasInt.intTy .nondet md)

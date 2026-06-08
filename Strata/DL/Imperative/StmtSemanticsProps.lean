@@ -321,7 +321,7 @@ theorem stmts_append_terminates
 local macro "apply_step" : tactic => `(tactic| first
   | exact .step_cmd ‹_›        | exact .step_ite_true ‹_› ‹_›
   | exact .step_ite_false ‹_› ‹_›
-  | exact .step_loop_enter ‹_› ‹_› ‹_› ‹_› ‹_› ‹_› ‹_›
+  | exact .step_loop_enter ‹_› ‹_› ‹_› ‹_› ‹_›
   | exact .step_loop_exit ‹_› ‹_› ‹_› ‹_› ‹_›
   | exact .step_block
   | exact .step_exit            | exact .step_funcDecl
@@ -351,7 +351,7 @@ private def step_simulation
   -- Non-recursive cases where c₁ is `.stmt` or `.stmts`: exactly one c₂
   -- constructor is valid, and the output ConfigSE follows by `simp_all`.
   | step_cmd _ | step_block | step_ite_true _ _ | step_ite_false _ _
-  | step_loop_enter _ _ _ _ _ _ _ | step_loop_exit _ _ _ _ _
+  | step_loop_enter _ _ _ _ _ | step_loop_exit _ _ _ _ _
   | step_exit | step_funcDecl | step_typeDecl | step_stmts_nil | step_stmts_cons =>
     cases c₂ <;> try contradiction
     obtain ⟨rfl, hs, he⟩ := heq; rename_i ρ₂; cases ρ₂; subst hs; subst he
@@ -829,9 +829,7 @@ private theorem noMatchingAssert_not_isAtAssert
   | .stmt (.loop _ m inv _ _) _ =>
     simp [Config.noMatchingAssert, Stmt.noMatchingAssert] at hno
     intro hat
-    rcases hat with hinv | ⟨lp, hm_eq, hlbl, _⟩
-    · exact hno.1 label expr hinv rfl
-    · exact hno.2.1 lp.1 lp.2 (by rw [hm_eq]) (hlbl.symm)
+    exact hno.1 label expr hat rfl
   | .stmts [] _ => simp [isAtAssert]
   | .stmts ((.cmd (.assert l _ _)) :: _) _ =>
     simp [Config.noMatchingAssert, Stmt.noMatchingAssert.Stmts.noMatchingAssert, Stmt.noMatchingAssert] at hno
@@ -847,9 +845,7 @@ private theorem noMatchingAssert_not_isAtAssert
     simp [Config.noMatchingAssert, Stmt.noMatchingAssert.Stmts.noMatchingAssert,
       Stmt.noMatchingAssert] at hno
     intro hat
-    rcases hat with hinv | ⟨lp, hm_eq, hlbl, _⟩
-    · exact hno.1.1 label expr hinv rfl
-    · exact hno.1.2.1 lp.1 lp.2 (by rw [hm_eq]) (hlbl.symm)
+    exact hno.1.1 label expr hat rfl
   | .terminal _ | .exiting _ _ => simp [isAtAssert]
   | .block _ _ _ inner => exact noMatchingAssert_not_isAtAssert inner label expr hno
   | .seq inner _ => exact noMatchingAssert_not_isAtAssert inner label expr hno.1
@@ -883,11 +879,11 @@ private def step_preserves_noMatchingAssert
     -- New shape: .seq (.block .none ρ.store (.stmts body ρ')) [loop]
     -- noMatchingAssert: inner covers, AND [loop] covers.
     simp only [Config.noMatchingAssert, Stmt.noMatchingAssert] at hno ⊢
-    exact ⟨hno.2.2, hno, True.intro⟩
+    exact ⟨hno.2, hno, True.intro⟩
   | step_loop_exit => trivial
   | step_loop_nondet_enter =>
     simp only [Config.noMatchingAssert, Stmt.noMatchingAssert] at hno ⊢
-    exact ⟨hno.2.2, hno, True.intro⟩
+    exact ⟨hno.2, hno, True.intro⟩
   | step_loop_nondet_exit => trivial
   | step_exit => trivial
   | step_funcDecl => trivial
@@ -927,7 +923,7 @@ theorem noMatchingAssert_implies_no_reachable_assert
   induction hstar_c with
   | refl => exact hno_c
   | step _ _ _ hstep _ ih =>
-    exact ih (@step_preserves_noMatchingAssert P _ _ _ _ _ _ extendEval _ _ _ hstep hno_c)
+    exact ih (step_preserves_noMatchingAssert (P := P) (extendEval := extendEval) _ _ _ hstep hno_c)
 
 /-! ## isAtAssert inversion lemmas -/
 
@@ -1037,53 +1033,6 @@ to the loop / seq / block structure of configurations. -/
 
 omit [HasFvar P] [HasOps P] in
 /-- Helper: when all asserts at a loop config pass (via `hv`), the
-    loop-step's `hasMeasureFailure` boolean is forced to `false`.
-
-    The measure assertion expression is `¬(measure < 0)`; when measure
-    fails (i.e., `measure < 0` evaluates to `tt`), `wfBool` forces the
-    assertion expression to evaluate to `ff`, contradicting `hv`. -/
-theorem loop_step_hasMeasureFailure_false
-    {CmdT : Type} {EvalCmd : EvalCmdParam P CmdT}
-    (IsAtAssert : Config P CmdT → AssertId P → Prop)
-    (h_IsAtAssert_loop_meas : ∀ {g m inv body md ρ lp},
-      m = some lp →
-      IsAtAssert (.stmt (.loop g m inv body md) ρ) ⟨lp.1, measureAssertExpr P lp.2⟩)
-    {c : Config P CmdT} {ρ : Env P}
-    {inv : List (String × P.Expr)} {guard : ExprOrNondet P}
-    {m : Option (String × P.Expr)} {body : List (Stmt P CmdT)} {md : MetaData P}
-    {hasMeasureFailure : Bool}
-    (hc_shape : c = .stmt (.loop guard m inv body md) ρ)
-    (hwfb : WellFormedSemanticEvalBool ρ.eval)
-    (hv : ∀ a cfg, StepStmtStar P EvalCmd extendEval c cfg →
-      IsAtAssert cfg a → cfg.getEval cfg.getStore a.expr = some HasBool.tt)
-    (hmf_iff : hasMeasureFailure = true ↔ ∃ me, m = .some me ∧
-      ρ.eval ρ.store (HasIntOps.lt me.2 HasInt.zero) = .some HasBool.tt) :
-    hasMeasureFailure = false := by
-  cases hb : hasMeasureFailure with
-  | false => rfl
-  | true =>
-    exfalso
-    rw [hb] at hmf_iff
-    obtain ⟨me, hm_eq, hlt_tt⟩ := hmf_iff.mp rfl
-    have hat : IsAtAssert c ⟨me.1, measureAssertExpr P me.2⟩ :=
-      hc_shape ▸ h_IsAtAssert_loop_meas hm_eq
-    have htt := hv ⟨me.1, measureAssertExpr P me.2⟩ c (.refl _) hat
-    rw [hc_shape] at htt
-    simp only [Config.getEval, Config.getStore, Config.getEnv] at htt
-    -- htt : ρ.eval ρ.store (¬(lt me.2 zero)) = some tt
-    -- hlt_tt : ρ.eval ρ.store (lt me.2 zero) = some tt
-    -- wfBool: eval e = tt ↔ eval (¬e) = ff, so eval (¬(lt me.2 zero)) = ff,
-    -- contradicting htt.
-    have hwfb' := hwfb ρ.store (HasIntOps.lt me.2 HasInt.zero)
-    have := hwfb'.1.mp hlt_tt
-    -- this : eval (¬(lt me.2 zero)) = some ff
-    rw [show measureAssertExpr P me.2 =
-          HasBoolOps.not (HasIntOps.lt me.2 HasInt.zero) from rfl] at htt
-    rw [this] at htt
-    exact absurd (Option.some.inj htt) HasBool.tt_is_not_ff.symm
-
-omit [HasFvar P] [HasOps P] in
-/-- Helper: when all asserts at a loop config pass (via `hv`), the
     loop-step's `hasInvFailure` boolean is forced to `false`. -/
 theorem loop_step_hasInvFailure_false
     {CmdT : Type} {EvalCmd : EvalCmdParam P CmdT}
@@ -1093,7 +1042,7 @@ theorem loop_step_hasInvFailure_false
       IsAtAssert (.stmt (.loop g m inv body md) ρ) ⟨lbl, e⟩)
     {c : Config P CmdT} {ρ : Env P}
     {inv : List (String × P.Expr)} {guard : ExprOrNondet P}
-    {m : Option (String × P.Expr)} {body : List (Stmt P CmdT)} {md : MetaData P}
+    {m : Option P.Expr} {body : List (Stmt P CmdT)} {md : MetaData P}
     {hasInvFailure : Bool}
     (hc_shape : c = .stmt (.loop guard m inv body md) ρ)
     (hv : ∀ a cfg, StepStmtStar P EvalCmd extendEval c cfg →
@@ -1132,9 +1081,6 @@ theorem step_preserves_noFailure
     (h_IsAtAssert_loop : ∀ {g m inv body md ρ lbl e},
       (lbl, e) ∈ inv →
       IsAtAssert (.stmt (.loop g m inv body md) ρ) ⟨lbl, e⟩)
-    (h_IsAtAssert_loop_meas : ∀ {g m inv body md ρ lp},
-      m = some lp →
-      IsAtAssert (.stmt (.loop g m inv body md) ρ) ⟨lp.1, measureAssertExpr P lp.2⟩)
     (h_IsAtAssert_seq : ∀ {inner ss a},
       IsAtAssert inner a → IsAtAssert (.seq inner ss) a)
     (h_IsAtAssert_block : ∀ {label σ_parent e_parent inner a},
@@ -1159,14 +1105,12 @@ theorem step_preserves_noFailure
       rw [hff] at htt
       exact absurd (Option.some.inj htt) HasBool.tt_is_not_ff.symm
   | step_block | step_funcDecl => simp [Config.getEnv]; exact hnf
-  | step_loop_enter _ _ hff_iff hwfb _ hmf_iff _ =>
+  | step_loop_enter _ _ hff_iff _ _ =>
     simp only [Config.getEnv]
     have hinv := loop_step_hasInvFailure_false (P := P) (extendEval := extendEval)
       IsAtAssert h_IsAtAssert_loop rfl hv hff_iff
-    have hmeas := loop_step_hasMeasureFailure_false (P := P) (extendEval := extendEval)
-      IsAtAssert h_IsAtAssert_loop_meas rfl hwfb hv hmf_iff
     simp [Config.getEnv] at hnf
-    rw [hnf, Bool.false_or, hinv, Bool.false_or]; exact hmeas
+    rw [hnf, Bool.false_or]; exact hinv
   | step_loop_exit _ _ hff_iff _
   | step_loop_nondet_enter _ hff_iff | step_loop_nondet_exit _ hff_iff =>
     simp only [Config.getEnv]
@@ -1212,8 +1156,7 @@ theorem allAssertsValid_preserves_noFailure
         (fun hcmd => by
           cases hcmd with
           | eval_assert_fail hff _ => exact ⟨⟨_, _⟩, ⟨rfl, rfl⟩, hff⟩)
-        (fun hmem => Or.inl hmem)
-        (fun {_ _ _ _ _ _ lp} hm_eq => Or.inr ⟨lp, hm_eq, rfl, rfl⟩)
+        (fun hmem => hmem)
         (fun h => h)
         (fun h => h)
         _ _ hv hnf hstep)
@@ -1241,8 +1184,8 @@ private theorem step_hasFailure_monotone
   | step_ite_false _ _ => exact hf
   | step_ite_nondet_true => exact hf
   | step_ite_nondet_false => exact hf
-  | step_loop_enter _ _ _ _ _ _ _ =>
-    simp [Config.getEnv]; left; left; exact hf
+  | step_loop_enter _ _ _ _ _ =>
+    simp [Config.getEnv]; left; exact hf
   | step_loop_exit _ _ _ _ =>
     simp [Config.getEnv]; left; exact hf
   | step_loop_nondet_enter _ _ =>

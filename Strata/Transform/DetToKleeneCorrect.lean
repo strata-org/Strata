@@ -89,7 +89,7 @@ private theorem ite_transform_some_nondet
 
 omit [HasFvar P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P] in
 private theorem loop_transform_some_det
-    (g : P.Expr) (m : Option (String × P.Expr)) (inv : List (String × P.Expr))
+    (g : P.Expr) (m : Option P.Expr) (inv : List (String × P.Expr))
     (body : List (Stmt P (Cmd P))) (md : MetaData P)
     (ns : KleeneStmt P (Cmd P))
     (ht : StmtToKleeneStmt (.loop (.det g) m inv body md) = some ns) :
@@ -107,7 +107,7 @@ private theorem loop_transform_some_det
 
 omit [HasFvar P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P] in
 private theorem loop_transform_some_nondet
-    (m : Option (String × P.Expr)) (inv : List (String × P.Expr))
+    (m : Option P.Expr) (inv : List (String × P.Expr))
     (body : List (Stmt P (Cmd P))) (md : MetaData P)
     (ns : KleeneStmt P (Cmd P))
     (ht : StmtToKleeneStmt (.loop .nondet m inv body md) = some ns) :
@@ -347,21 +347,6 @@ private theorem empty_inv_no_failure
     have ⟨_, hmem, _⟩ := hff_iff.mp rfl
     exact ((List.mem_nil_iff _).mp hmem).elim
 
-/-- With a `none` measure, the `hasMeasureFailure` flag from
-    `step_loop_enter` is vacuously `false`: the boolean iff cannot witness
-    a measure expression when the measure is absent. -/
-private theorem none_meas_no_failure
-    {α : Type} {Q : α → Prop} {hasMeasureFailure : Bool}
-    (hmf_iff : hasMeasureFailure = true ↔
-      ∃ me, (none : Option α) = some me ∧ Q me) :
-    hasMeasureFailure = false := by
-  cases hb : hasMeasureFailure with
-  | false => rfl
-  | true =>
-    rw [hb] at hmf_iff
-    have ⟨_, h, _⟩ := hmf_iff.mp rfl
-    exact nomatch h
-
 /-- Prove that adding the loop guard 'g' as an extra assume statement 'assume g'
     in the beginning of loop body does not reduce the set of possible final
     states. Note that hstarT assumption is using the deterministic
@@ -380,7 +365,7 @@ private def loop_sim
     (ρ₀ ρ' : Env P) (n : Nat)
     (hwfv : WellFormedSemanticEvalVal ρ₀.eval)
     (hstarT : ReflTransT (StepStmt P (EvalCmd P) extendEval)
-      (.stmt (.loop (.det g) none ([] : List (String × P.Expr)) body md) ρ₀) (.terminal ρ'))
+      (.stmt (.loop (.det g) (none : Option P.Expr) ([] : List (String × P.Expr)) body md) ρ₀) (.terminal ρ'))
     (hlen : hstarT.len ≤ n) :
     StepKleeneStar P (EvalCmd P)
       (.stmt (.loop (.seq (.cmd (.assume "guard" g md)) b)) ρ₀) (.terminal ρ') := by
@@ -391,7 +376,7 @@ private def loop_sim
     | .step _ _ _ _ _, hlen => simp [ReflTransT.len] at hlen
   | succ n ih =>
     match hstarT, hlen with
-    | .step _ _ _ (@StepStmt.step_loop_exit _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+    | .step _ _ _ (@StepStmt.step_loop_exit _ _ _ _ _ _ _ _ _ _ _ _ _ _
         hasInvFailure _ _ hff_iff _ _) hrest, hlen =>
       have h_no : hasInvFailure = false := empty_inv_no_failure hff_iff
       subst h_no
@@ -399,13 +384,11 @@ private def loop_sim
       match hrest with
       | .refl _ => exact .step _ _ _ .step_loop_zero (.refl _)
       | .step _ _ _ h _ => exact nomatch h
-    | .step _ _ _ (@StepStmt.step_loop_enter _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
-        hasInvFailure hasMeasureFailure hg _ hff_iff hwfb _ hmf_iff _) hrest, hlen =>
+    | .step _ _ _ (@StepStmt.step_loop_enter _ _ _ _ _ _ _ _ _ _ _ _ _ _
+        hasInvFailure hg _ hff_iff hwfb _) hrest, hlen =>
       have h_no : hasInvFailure = false := empty_inv_no_failure hff_iff
-      have h_no_meas : hasMeasureFailure = false :=
-        none_meas_no_failure hmf_iff
-      subst h_no; subst h_no_meas
-      let ρ₀' : Env P := {ρ₀ with hasFailure := ρ₀.hasFailure || false || false}
+      subst h_no
+      let ρ₀' : Env P := {ρ₀ with hasFailure := ρ₀.hasFailure || false}
       have hρ₀_eq : ρ₀' = ρ₀ := by simp [ρ₀', Bool.or_false]
       -- New shape: hrest : .seq (.block .none ρ₀'.store (.stmts body ρ₀')) [loop] →*T .terminal ρ'.
       -- Step 1: Split via seqT_reaches_terminal:
@@ -487,7 +470,7 @@ private def loop_sim_kleene
     (hwfb : WellFormedSemanticEvalBool ρ₀.eval)
     (hwfv : WellFormedSemanticEvalVal ρ₀.eval)
     (hstarT : ReflTransT (StepStmt P (EvalCmd P) extendEval)
-      (.stmt (.loop .nondet none ([] : List (String × P.Expr)) body md) ρ₀) (.terminal ρ'))
+      (.stmt (.loop .nondet (none : Option P.Expr) ([] : List (String × P.Expr)) body md) ρ₀) (.terminal ρ'))
     (hlen : hstarT.len ≤ n) :
     StepKleeneStar P (EvalCmd P)
       (.stmt (.loop b) ρ₀) (.terminal ρ') := by
@@ -498,7 +481,7 @@ private def loop_sim_kleene
     | .step _ _ _ _ _, hlen => simp [ReflTransT.len] at hlen
   | succ n ih =>
     match hstarT, hlen with
-    | .step _ _ _ (@StepStmt.step_loop_nondet_exit _ _ _ _ _ _ _ _ _ _ _ _ _
+    | .step _ _ _ (@StepStmt.step_loop_nondet_exit _ _ _ _ _ _ _ _ _ _ _ _
         hasInvFailure _ hff_iff) hrest, hlen =>
       have h_no : hasInvFailure = false := empty_inv_no_failure hff_iff
       subst h_no
@@ -506,7 +489,7 @@ private def loop_sim_kleene
       match hrest with
       | .refl _ => exact .step _ _ _ .step_loop_zero (.refl _)
       | .step _ _ _ h _ => exact nomatch h
-    | .step _ _ _ (@StepStmt.step_loop_nondet_enter _ _ _ _ _ _ _ _ _ _ _ _ _ _
+    | .step _ _ _ (@StepStmt.step_loop_nondet_enter _ _ _ _ _ _ _ _ _ _ _ _ _
         hasInvFailure _ hff_iff) hrest, hlen =>
       have h_no : hasInvFailure = false := empty_inv_no_failure hff_iff
       subst h_no

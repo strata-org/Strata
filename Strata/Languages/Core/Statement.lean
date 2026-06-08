@@ -408,7 +408,7 @@ def Statement.substFvar (s : Core.Statement)
           (Block.substFvar elseb fr to) metadata
   | .loop guard measure invariant body metadata =>
     .loop (guard.map (Lambda.LExpr.substFvar · fr to))
-          (measure.map (fun (l, e) => (l, Lambda.LExpr.substFvar e fr to)))
+          (measure.map (Lambda.LExpr.substFvar · fr to))
           (invariant.map (fun (l, e) => (l, Lambda.LExpr.substFvar e fr to)))
           (Block.substFvar body fr to)
           metadata
@@ -499,10 +499,10 @@ def Statement.collectExprs :
     tss.flatMap Statement.collectExprs ++
     ess.flatMap Statement.collectExprs
   | .loop (.det g) measure inv body _ =>
-    [g] ++ (measure.map Prod.snd).toList ++
+    [g] ++ measure.toList ++
     inv.map Prod.snd ++ body.flatMap Statement.collectExprs
   | .loop .nondet measure inv body _ =>
-    (measure.map Prod.snd).toList ++
+    measure.toList ++
     inv.map Prod.snd ++ body.flatMap Statement.collectExprs
   | .cmd (.cmd (.init _ _ .nondet _)) => []
   | .cmd (.cmd (.set _ .nondet _)) => []

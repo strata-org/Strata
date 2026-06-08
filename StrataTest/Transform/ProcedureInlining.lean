@@ -148,7 +148,7 @@ def alphaEquivStatement (s1 s2: Core.Statement) (map:IdMap)
       | _, _ => false
     if !guardsMatch then
       .error "guard does not match"
-    else if ¬ (← alphaEquivExprsOpt (m1.map (·.2)) (m2.map (·.2)) map) then
+    else if ¬ (← alphaEquivExprsOpt m1 m2 map) then
       .error "measure does not match"
     else if ¬ (← alphaEquivLoopInvs i1 i2 map) then
       .error "invariant does not match"

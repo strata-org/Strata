@@ -36,12 +36,12 @@ inductive Stmt (P : PureExpr) (Cmd : Type) : Type where
   /-- A conditional execution statement. When `cond` is `.nondet`, the branch
   is chosen non-deterministically. -/
   | ite      (cond : ExprOrNondet P)  (thenb : List (Stmt P Cmd)) (elseb : List (Stmt P Cmd)) (md : MetaData P)
-  /-- An iterated execution statement. Includes an optional labeled measure
-  (for termination) and labeled invariants. When `guard` is `.nondet`, the
+  /-- An iterated execution statement. Includes an optional measure (for
+  termination) and labeled invariants. When `guard` is `.nondet`, the
   loop iterates a non-deterministic number of times and measure must be none.
-  Each invariant and the optional measure carry a label string (expected to be
-  distinct, like assert labels do). -/
-  | loop     (guard : ExprOrNondet P) (measure : Option (String × P.Expr))
+  Each invariant carries a label string (expected to be distinct, like
+  assert labels do). -/
+  | loop     (guard : ExprOrNondet P) (measure : Option P.Expr)
              (invariants : List (String × P.Expr))
              (body : List (Stmt P Cmd)) (md : MetaData P)
   /-- An exit statement that transfers control out of the enclosing block
@@ -76,7 +76,7 @@ def Stmt.inductionOn {P : PureExpr} {Cmd : Type}
       (∀ s, s ∈ thenb → motive s) →
       (∀ s, s ∈ elseb → motive s) →
       motive (Stmt.ite cond thenb elseb md))
-    (loop_case : ∀ (guard : ExprOrNondet P) (measure : Option (String × P.Expr)) (invariant : List (String × P.Expr))
+    (loop_case : ∀ (guard : ExprOrNondet P) (measure : Option P.Expr) (invariant : List (String × P.Expr))
       (body : List (Stmt P Cmd)) (md : MetaData P),
       (∀ s, s ∈ body → motive s) →
       motive (Stmt.loop guard measure invariant body md))
@@ -179,11 +179,11 @@ def Stmt.mapExpr (fExpr : P.Expr → P.Expr) (mapCmd : C → C)
   | .ite .nondet tss ess md =>
     .ite .nondet (Block.mapExpr fExpr mapCmd tss) (Block.mapExpr fExpr mapCmd ess) md
   | .loop (.det g) measure inv body md =>
-    .loop (.det (fExpr g)) (measure.map fun (l, e) => (l, fExpr e))
+    .loop (.det (fExpr g)) (measure.map fExpr)
       (inv.map fun (l, e) => (l, fExpr e))
       (Block.mapExpr fExpr mapCmd body) md
   | .loop .nondet measure inv body md =>
-    .loop .nondet (measure.map fun (l, e) => (l, fExpr e))
+    .loop .nondet (measure.map fExpr)
       (inv.map fun (l, e) => (l, fExpr e))
       (Block.mapExpr fExpr mapCmd body) md
   | .exit l md => .exit l md
@@ -243,7 +243,7 @@ def Stmt.getVars [HasFvars P] [HasVarsPure P C] (s : Stmt P C) : List P.Ident :=
   | .ite cond tbss ebss _ => cond.getVars ++ Block.getVars tbss ++ Block.getVars ebss
   | .loop guard measure invariants bss _ =>
     guard.getVars ++
-    (measure.map (fun lp => HasFvars.getFvars lp.2)).getD [] ++
+    (measure.map HasFvars.getFvars).getD [] ++
     (invariants.flatMap fun lp => HasFvars.getFvars lp.2) ++
     Block.getVars bss
   | .exit _ _  => []
@@ -289,7 +289,7 @@ def Stmt.getOps [HasOps P] [HasOpsImp P C] (s : Stmt P C) : List P.Ident :=
     cond.getOps ++ Block.getOps tbss ++ Block.getOps ebss
   | .loop guard measure invariants bss _ =>
     guard.getOps ++
-    (measure.map (fun lp => HasOps.getOps (P := P) lp.2)).getD [] ++
+    (measure.map (HasOps.getOps (P := P))).getD [] ++
     (invariants.flatMap fun lp => HasOps.getOps (P := P) lp.2) ++
     Block.getOps bss
   | .exit _ _  => []
@@ -466,7 +466,7 @@ def formatStmt (P : PureExpr) (s : Stmt P C)
       let invFmt : Format := f!"[{Format.joinSep invParts f!", "}]"
       let measureFmt : Format := match measure with
         | none => f!"none"
-        | some (l, e) => if l.isEmpty then f!"{e}" else f!"[{l}]: {e}"
+        | some e => f!"{e}"
       let beforeBody := nestD f!"{line}{guard}{line}({measureFmt}){line}{invFmt}"
       let children := group f!"{beforeBody}{line}{body}"
       f!"{md}while{children}"

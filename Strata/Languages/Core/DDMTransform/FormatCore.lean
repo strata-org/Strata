@@ -921,11 +921,11 @@ partial def invariantsToCST {M} [Inhabited M]
     pure (.consInvariants default labelAnn exprCST restCST)
 
 partial def measureToCST {M} [Inhabited M]
-    (measure : Option (String × Lambda.LExpr CoreLParams.mono)) :
+    (measure : Option (Lambda.LExpr CoreLParams.mono)) :
     ToCSTM M (Ann (Option (Measure M)) M) := do
   match measure with
   | none => pure ⟨default, none⟩
-  | some (_, e) =>
+  | some e =>
     let exprCST ← lexprToExpr e 0
     pure ⟨default, some (.measure_mk default exprCST)⟩
 end

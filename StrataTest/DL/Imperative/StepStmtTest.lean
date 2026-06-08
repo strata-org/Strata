@@ -164,14 +164,10 @@ theorem progReachesTerminal :
     (StepStmt.step_block_body
       (StepStmt.step_seq_inner
         (StepStmt.step_loop_enter
-          (hasInvFailure := false) (hasMeasureFailure := false)
+          (hasInvFailure := false)
           htt ?inv_bool ?inv_iff miniEval_wfBool
-          ?meas_bool ?meas_iff ?meas_num))) ?_
+          ?meas_num))) ?_
   · intro _ hmem; nomatch hmem
-  · constructor <;> intro h
-    · cases h
-    · rcases h with ⟨_, hmem, _⟩; nomatch hmem
-  · intro _ h; nomatch h
   · constructor <;> intro h
     · cases h
     · rcases h with ⟨_, hmem, _⟩; nomatch hmem

@@ -415,14 +415,10 @@ def withOldBindings
     aid.label = label ∧ aid.expr = expr
   | .stmts ((.cmd (.cmd (.assert label expr _))) :: _) _, aid =>
     aid.label = label ∧ aid.expr = expr
-  | .stmt (.loop _ m inv _ _) _, aid =>
-    (aid.label, aid.expr) ∈ inv ∨
-    (∃ lp, m = some lp ∧ aid.label = lp.1 ∧
-      aid.expr = Imperative.measureAssertExpr Expression lp.2)
-  | .stmts ((.loop _ m inv _ _) :: _) _, aid =>
-    (aid.label, aid.expr) ∈ inv ∨
-    (∃ lp, m = some lp ∧ aid.label = lp.1 ∧
-      aid.expr = Imperative.measureAssertExpr Expression lp.2)
+  | .stmt (.loop _ _ inv _ _) _, aid =>
+    (aid.label, aid.expr) ∈ inv
+  | .stmts ((.loop _ _ inv _ _) :: _) _, aid =>
+    (aid.label, aid.expr) ∈ inv
   | .block _ _ _ inner, aid => coreIsAtAssert inner aid
   | .seq inner _, aid => coreIsAtAssert inner aid
   | _, _ => False

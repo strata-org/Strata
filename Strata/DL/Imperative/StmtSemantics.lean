@@ -118,9 +118,8 @@ a given label.  This is specific to `Cmd P`. -/
   | .block _ ss _, label => Stmts.noMatchingAssert ss label
   | .ite _ tss ess _, label =>
     Stmts.noMatchingAssert tss label ∧ Stmts.noMatchingAssert ess label
-  | .loop _ m inv body _, label =>
+  | .loop _ _ inv body _, label =>
     (∀ (le : String × P.Expr), le ∈ inv → le.1 ≠ label) ∧
-    (∀ (mp : String × P.Expr), m = some mp → mp.1 ≠ label) ∧
     Stmts.noMatchingAssert body label
   | .exit _ _, _ => True
   | .funcDecl _ _, _ => True
@@ -271,36 +270,27 @@ inductive StepStmt
       evaluated.
 
       Similarly, when a measure is present, it must evaluate to some integer
-      `v` and `v < 0` must evaluate to a boolean.  If `v < 0` evaluates to
-      `tt`, the cumulative `hasFailure` flag is set via `hasMeasureFailure`,
-      matching the invariant-failure pattern.  The measure is a labeled pair
-      `(String × P.Expr)` whose label can join the assertion-label collection
-      via `isAtAssert`.
+      `v`.
 
       The body alone is wrapped in an unnamed `.block`, sequenced with the
       recursive loop.  This means each iteration runs the body in its own
       block scope: variables `init`'d inside body are projected away at the
       end of each iteration, allowing the next iteration's body to re-`init`
       the same names. -/
-  | step_loop_enter {hasInvFailure hasMeasureFailure : Bool} :
+  | step_loop_enter {hasInvFailure : Bool} :
     ρ.eval ρ.store g = .some HasBool.tt →
     (∀ le ∈ inv, ρ.eval ρ.store le.2 = .some HasBool.tt ∨
                  ρ.eval ρ.store le.2 = .some HasBool.ff) →
     (hasInvFailure ↔ ∃ le ∈ inv, ρ.eval ρ.store le.2 = .some HasBool.ff) →
     WellFormedSemanticEvalBool ρ.eval →
     (∀ me, m = .some me →
-      ρ.eval ρ.store (HasIntOps.lt me.2 HasInt.zero) = .some HasBool.tt ∨
-      ρ.eval ρ.store (HasIntOps.lt me.2 HasInt.zero) = .some HasBool.ff) →
-    (hasMeasureFailure ↔ ∃ me, m = .some me ∧
-      ρ.eval ρ.store (HasIntOps.lt me.2 HasInt.zero) = .some HasBool.tt) →
-    (∀ me, m = .some me →
-      ∃ v, ρ.eval ρ.store me.2 = .some v ∧ HasInt.isNumeral v = Bool.true) →
+      ∃ v, ρ.eval ρ.store me = .some v ∧ HasInt.isNumeral v = Bool.true) →
     ----
     StepStmt EvalCmd extendEval
       (.stmt (.loop (.det g) m inv body md) ρ)
       (.seq
         (.block .none ρ.store ρ.eval (.stmts body
-          { ρ with hasFailure := ρ.hasFailure || hasInvFailure || hasMeasureFailure }))
+          { ρ with hasFailure := ρ.hasFailure || hasInvFailure }))
         [.loop (.det g) m inv body md])
 
   /-- If a loop guard is false, terminate the loop.  As with `step_loop_enter`,
@@ -312,7 +302,7 @@ inductive StepStmt
     (hasInvFailure ↔ ∃ le ∈ inv, ρ.eval ρ.store le.2 = .some HasBool.ff) →
     WellFormedSemanticEvalBool ρ.eval →
     (∀ me, m = .some me →
-      ∃ v, ρ.eval ρ.store me.2 = .some v ∧ HasInt.isNumeral v = Bool.true) →
+      ∃ v, ρ.eval ρ.store me = .some v ∧ HasInt.isNumeral v = Bool.true) →
     ----
     StepStmt EvalCmd extendEval
       (.stmt (.loop (.det g) m inv body _) ρ)
@@ -491,30 +481,20 @@ structure AssertId where
 
 /-! ## Detecting an assert in a configuration -/
 
-/-- The boolean assertion expression encoding "measure ≥ 0" used by the
-    measure-decrease check: a labeled measure `(lbl, e)` contributes the
-    assertion `(lbl, ¬(e < 0))` to the assertion-label collection. -/
-@[expose] def measureAssertExpr (e : P.Expr) : P.Expr :=
-  HasBoolOps.not (HasIntOps.lt e HasInt.zero)
-
 /-- `isAtAssert cfg aid` holds when the head of `cfg` is either an `assert`
     command whose label and expression match `aid`, or a loop statement
     whose invariant list contains an entry with matching label and
-    expression, or whose labeled measure `(lbl, e)` matches `aid` via the
-    derived assertion expression `¬(e < 0)`.  Recurses into `block` and
-    `seq` wrappers so that assertions inside compound statements are
-    visible. -/
+    expression. Recurses into `block` and `seq` wrappers so that
+    assertions inside compound statements are visible. -/
 @[expose] def isAtAssert : Config P (Cmd P) → AssertId P → Prop
   | .stmt (.cmd (.assert label expr _)) _, aid =>
     aid.label = label ∧ aid.expr = expr
   | .stmts ((.cmd (.assert label expr _)) :: _) _, aid =>
     aid.label = label ∧ aid.expr = expr
-  | .stmt (.loop _ m inv _ _) _, aid =>
-    (aid.label, aid.expr) ∈ inv ∨
-    (∃ lp, m = some lp ∧ aid.label = lp.1 ∧ aid.expr = measureAssertExpr P lp.2)
-  | .stmts ((.loop _ m inv _ _) :: _) _, aid =>
-    (aid.label, aid.expr) ∈ inv ∨
-    (∃ lp, m = some lp ∧ aid.label = lp.1 ∧ aid.expr = measureAssertExpr P lp.2)
+  | .stmt (.loop _ _ inv _ _) _, aid =>
+    (aid.label, aid.expr) ∈ inv
+  | .stmts ((.loop _ _ inv _ _) :: _) _, aid =>
+    (aid.label, aid.expr) ∈ inv
   | .block _ _ _ inner, aid => isAtAssert inner aid
   | .seq inner _, aid => isAtAssert inner aid
   | _, _ => False

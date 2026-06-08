@@ -2622,15 +2622,7 @@ theorem stmts_allAssert_preserves_store
 private theorem coreIsAtAssert_of_inv_mem
     {g m inv body md} {ρ : Env Expression} {lbl e}
     (hmem : (lbl, e) ∈ inv) :
-    coreIsAtAssert (.stmt (.loop g m inv body md) ρ) ⟨lbl, e⟩ := Or.inl hmem
-
-private theorem coreIsAtAssert_of_meas
-    {g} {m : Option (String × Expression.Expr)} {inv body md}
-    {ρ : Env Expression} {lp}
-    (hm : m = some lp) :
-    coreIsAtAssert (.stmt (.loop g m inv body md) ρ)
-      ⟨lp.1, Imperative.measureAssertExpr Expression lp.2⟩ :=
-  Or.inr ⟨lp, hm, rfl, rfl⟩
+    coreIsAtAssert (.stmt (.loop g m inv body md) ρ) ⟨lbl, e⟩ := hmem
 
 private theorem coreIsAtAssert_seq_of_inner
     {inner : CoreConfig} {ss a}
@@ -2681,7 +2673,6 @@ theorem core_noFailure_preserved
         coreIsAtAssert
         evalCommand_failure_implies_assert_ff
         coreIsAtAssert_of_inv_mem
-        coreIsAtAssert_of_meas
         coreIsAtAssert_seq_of_inner
         coreIsAtAssert_block_of_inner
         _ _
