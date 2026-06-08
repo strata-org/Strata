@@ -2633,6 +2633,13 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
               initStates_get_notin Hinitin Hk1_notin_inputs]
         rw [HAO_eq_σ, Hold_eq_σ]
       exact ⟨Hinv, Hpred_disj⟩
+    -- Hoisted subst_fvars_correct: δ σAO expr = δ σ_old (substFvars expr …).
+    have HsubstCorrect : ∀ entry ∈ presFiltered,
+        δ σAO entry.snd.expr =
+          δ σ_old (Lambda.LExpr.substFvars entry.snd.expr
+                    (ks_L4.zip (Core.Transform.createFvars ks'_L4))) := fun entry H =>
+      subst_fvars_correct Hwfc Hwfvars Hwfval Hks_len_L4
+        Hdef_L4 Hnd_L4 Hsubst_L4_flipped (HpresInfo entry H).2 (HpresInfo entry H).1
     -- Per-pair tt-or-ff witness at σ_old.
     have HboolAtOld :
         ∀ pair ∈ presFiltered.zip assertLabels,
@@ -2645,13 +2652,7 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
       intro pair Hpair
       have Hentry_in : pair.fst ∈ presFiltered :=
         (List.of_mem_zip Hpair).1
-      have ⟨Hinv, Hpred_disj⟩ := HpresInfo pair.fst Hentry_in
-      -- subst_fvars_correct: δ σAO expr = δ σ_old (substFvars expr (ks.zip createFvars ks')).
-      have Heq : δ σAO pair.fst.snd.expr =
-                  δ σ_old (Lambda.LExpr.substFvars pair.fst.snd.expr
-                            (ks_L4.zip (Core.Transform.createFvars ks'_L4))) :=
-        subst_fvars_correct Hwfc Hwfvars Hwfval Hks_len_L4
-          Hdef_L4 Hnd_L4 Hsubst_L4_flipped Hpred_disj Hinv
+      have Heq := HsubstCorrect pair.fst Hentry_in
       have Hbool_AO := HpreFilteredBool pair.fst Hentry_in
       cases Hbool_AO with
       | inl Htt => left; rw [← Heq]; exact Htt
@@ -2690,12 +2691,7 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
         | inl Htt => exact absurd Htt HentryFail_ne_tt
         | inr Hff => exact Hff
       -- Transport to σ_old.
-      have ⟨Hinv, Hpred_disj⟩ := HpresInfo entryFail HentryFail_in
-      have Heq : δ σAO entryFail.snd.expr =
-                  δ σ_old (Lambda.LExpr.substFvars entryFail.snd.expr
-                            (ks_L4.zip (Core.Transform.createFvars ks'_L4))) :=
-        subst_fvars_correct Hwfc Hwfvars Hwfval Hks_len_L4
-          Hdef_L4 Hnd_L4 Hsubst_L4_flipped Hpred_disj Hinv
+      have Heq := HsubstCorrect entryFail HentryFail_in
       have HentryFail_old_ff :
           δ σ_old (Lambda.LExpr.substFvars entryFail.snd.expr
                     (ks_L4.zip (Core.Transform.createFvars ks'_L4))) =
