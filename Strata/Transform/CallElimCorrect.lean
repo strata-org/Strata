@@ -2973,19 +2973,12 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
         exact Hlhs_disj_filt_argT Ha Hb
       · intro a Ha b Hb Heq
         subst Heq
-        cases List.mem_append.mp Ha with
-        | inl HaOuts =>
-          cases List.mem_append.mp Hb with
-          | inl HbLhs =>
-            exact HoutKeys_disj_lhs HaOuts HbLhs
-          | inr HbArgT =>
-            exact HoutKeys_disj_filt_argT HaOuts HbArgT
-        | inr HaIn =>
-          cases List.mem_append.mp Hb with
-          | inl HbLhs =>
-            exact Hfilt_in_disj_lhs HaIn HbLhs
-          | inr HbArgT =>
-            exact Hfilt_in_disj_filt_argT HaIn HbArgT
+        rcases List.mem_append.mp Ha with HaOuts | HaIn <;>
+          rcases List.mem_append.mp Hb with HbLhs | HbArgT
+        · exact HoutKeys_disj_lhs HaOuts HbLhs
+        · exact HoutKeys_disj_filt_argT HaOuts HbArgT
+        · exact Hfilt_in_disj_lhs HaIn HbLhs
+        · exact Hfilt_in_disj_filt_argT HaIn HbArgT
     -- σO/σ_R1/σ_havoc definedness facts.
     have HσO_def_outs :
         Imperative.isDefined σO proc.header.outputs.keys :=
@@ -3079,11 +3072,11 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
       · simp [argTemps, outTemps, List.length_append, List.unzip_eq_map,
               Hargtriplen, Houttriplen, HgenOldOldValsLen]
       · intro v Hv1 Hv2
-        cases List.mem_append.mp Hv2 with
-        | inl h => cases List.mem_append.mp h with
-          | inl ha => exact HlhsDisjArg Hv1 ha
-          | inr ho => exact HlhsDisjOut Hv1 ho
-        | inr ho => exact HlhsDisjOld Hv1 ho
+        simp only [List.mem_append] at Hv2
+        rcases Hv2 with (ha | ho) | ho
+        · exact HlhsDisjArg Hv1 ha
+        · exact HlhsDisjOut Hv1 ho
+        · exact HlhsDisjOld Hv1 ho
       · rw [Hσ'_eq]
         exact readValues_updatedStatesSame HmodvalsLen' HlhsNd
     have Hsubst : Imperative.substStores σ_R1 σ_havoc
@@ -4735,19 +4728,12 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                       --   (lhs ++ filtered_argTemps).
                       intro a Ha b Hb Heq
                       subst Heq
-                      cases List.mem_append.mp Ha with
-                      | inl HaOuts =>
-                        cases List.mem_append.mp Hb with
-                        | inl HbLhs =>
-                          exact HoutKeys_disj_lhs HaOuts HbLhs
-                        | inr HbArgT =>
-                          exact HoutKeys_disj_filt_argT HaOuts HbArgT
-                      | inr HaIn =>
-                        cases List.mem_append.mp Hb with
-                        | inl HbLhs =>
-                          exact Hfilt_in_disj_lhs HaIn HbLhs
-                        | inr HbArgT =>
-                          exact Hfilt_in_disj_filt_argT HaIn HbArgT
+                      rcases List.mem_append.mp Ha with HaOuts | HaIn <;>
+                        rcases List.mem_append.mp Hb with HbLhs | HbArgT
+                      · exact HoutKeys_disj_lhs HaOuts HbLhs
+                      · exact HoutKeys_disj_filt_argT HaOuts HbArgT
+                      · exact Hfilt_in_disj_lhs HaIn HbLhs
+                      · exact Hfilt_in_disj_filt_argT HaIn HbArgT
                   -- Hdef: substDefined σ_R1 σ_havoc.
                   have HσO_def_outs :
                       Imperative.isDefined σO proc.header.outputs.keys :=
@@ -4914,11 +4900,11 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                     apply readValues_updatedStates
                     · simp [argTemps, outTemps, List.length_append, List.unzip_eq_map, Hargtriplen, Houttriplen, HgenOldOldValsLen]
                     · intro v Hv1 Hv2
-                      cases List.mem_append.mp Hv2 with
-                      | inl h => cases List.mem_append.mp h with
-                        | inl ha => exact HlhsDisjArg Hv1 ha
-                        | inr ho => exact HlhsDisjOut Hv1 ho
-                      | inr ho => exact HlhsDisjOld Hv1 ho
+                      simp only [List.mem_append] at Hv2
+                      rcases Hv2 with (ha | ho) | ho
+                      · exact HlhsDisjArg Hv1 ha
+                      · exact HlhsDisjOut Hv1 ho
+                      · exact HlhsDisjOld Hv1 ho
                     · rw [Hσ'_eq]
                       exact readValues_updatedStatesSame HmodvalsLen' HlhsNd
                   -- Filtered halves via the triple zip.
