@@ -45,23 +45,23 @@ def Statement.labelsOfBlocksAndAssertAssumes (s : Core.Statement) : List String 
 end
 
 mutual
-def Block.replaceLabelsOfAndAssertAssumes (b : Block) (map:Map String String)
+def Block.replaceLabelsOfBlocksAndAssertAssumes (b : Block) (map:Map String String)
     : Block :=
-  b.map (fun s => Statement.replaceLabelsOfAndAssertAssumes s map)
+  b.map (fun s => Statement.replaceLabelsOfBlocksAndAssertAssumes s map)
 
-def Statement.replaceLabelsOfAndAssertAssumes
+def Statement.replaceLabelsOfBlocksAndAssertAssumes
     (s : Core.Statement) (map:Map String String) : Core.Statement :=
   let app (s:String) :=
     match Map.find? map s with
     | .none => s
     | .some s' => s'
   match s with
-  | .block lbl b m => .block (app lbl) (Block.replaceLabelsOfAndAssertAssumes b map) m
+  | .block lbl b m => .block (app lbl) (Block.replaceLabelsOfBlocksAndAssertAssumes b map) m
   | .exit lbl m => .exit (app lbl) m
   | .ite cond thenb elseb m =>
-    .ite cond (Block.replaceLabelsOfAndAssertAssumes thenb map) (Block.replaceLabelsOfAndAssertAssumes elseb map) m
+    .ite cond (Block.replaceLabelsOfBlocksAndAssertAssumes thenb map) (Block.replaceLabelsOfBlocksAndAssertAssumes elseb map) m
   | .loop g measure inv body m =>
-    .loop g measure inv (Block.replaceLabelsOfAndAssertAssumes body map) m
+    .loop g measure inv (Block.replaceLabelsOfBlocksAndAssertAssumes body map) m
   | .assume lbl e m => .assume (app lbl) e m
   | .assert lbl e m => .assert (app lbl) e m
   | .cover lbl e m => .cover (app lbl) e m
@@ -109,7 +109,7 @@ private def renameAllLocalNames (c:Procedure)
     var_map.foldl (fun (s:Statement) (old_id,new_id) =>
         let s := Statement.substFvar s old_id (.fvar () new_id .none)
         let s := Statement.renameLhs s old_id new_id
-        Statement.replaceLabelsOfAndAssertAssumes s label_map)
+        Statement.replaceLabelsOfBlocksAndAssertAssumes s label_map)
       s0) c.body
   let new_header := { c.header with
     inputs := c.header.inputs.map (fun (id,ty) =>

@@ -93,17 +93,16 @@ private theorem loop_transform_some_det
     (body : List (Stmt P (Cmd P))) (md : MetaData P)
     (ns : KleeneStmt P (Cmd P))
     (ht : StmtToKleeneStmt (.loop (.det g) m inv body md) = some ns) :
-    inv = [] ∧ m = none ∧ ∃ b, BlockToKleeneStmt body = some b ∧
+    inv = [] ∧ ∃ b, BlockToKleeneStmt body = some b ∧
       ns = .loop (.seq (.cmd (.assume "guard" g md)) b) := by
   simp [StmtToKleeneStmt] at ht
-  match hinv : inv, hm : m with
-  | [], none =>
+  match hinv : inv with
+  | [] =>
     simp [Option.bind] at ht
     match hb : BlockToKleeneStmt body with
-    | some b => simp [hb] at ht; exact ⟨rfl, rfl, b, rfl, ht.symm⟩
+    | some b => simp [hb] at ht; exact ⟨rfl, b, rfl, ht.symm⟩
     | none => simp [hb] at ht
-  | [], some _ => simp [Option.bind] at ht
-  | _ :: _, _ => simp [Option.bind] at ht
+  | _ :: _ => simp [Option.bind] at ht
 
 omit [HasFvar P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P] in
 private theorem loop_transform_some_nondet
@@ -111,17 +110,16 @@ private theorem loop_transform_some_nondet
     (body : List (Stmt P (Cmd P))) (md : MetaData P)
     (ns : KleeneStmt P (Cmd P))
     (ht : StmtToKleeneStmt (.loop .nondet m inv body md) = some ns) :
-    inv = [] ∧ m = none ∧ ∃ b, BlockToKleeneStmt body = some b ∧
+    inv = [] ∧ ∃ b, BlockToKleeneStmt body = some b ∧
       ns = .loop b := by
   simp [StmtToKleeneStmt] at ht
-  match hinv : inv, hm : m with
-  | [], none =>
+  match hinv : inv with
+  | [] =>
     simp [Option.bind] at ht
     match hb : BlockToKleeneStmt body with
-    | some b => simp [hb] at ht; exact ⟨rfl, rfl, b, rfl, ht.symm⟩
+    | some b => simp [hb] at ht; exact ⟨rfl, b, rfl, ht.symm⟩
     | none => simp [hb] at ht
-  | [], some _ => simp [Option.bind] at ht
-  | _ :: _, _ => simp [Option.bind] at ht
+  | _ :: _ => simp [Option.bind] at ht
 
 omit [HasFvar P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P] in
 private theorem block_transform_some
@@ -168,11 +166,11 @@ private theorem stmtToKleene_some_exitsCovered
   | .loop guard _ _ body _ =>
     match guard with
     | .det _ =>
-      have ⟨_, _, b, hb, _⟩ := loop_transform_some_det _ _ _ body _ _ ht
+      have ⟨_, b, hb, _⟩ := loop_transform_some_det _ _ _ body _ _ ht
       simp [Stmt.exitsCoveredByBlocks]
       exact blockHelper labels body b hb
     | .nondet =>
-      have ⟨_, _, b, hb, _⟩ := loop_transform_some_nondet _ _ body _ _ ht
+      have ⟨_, b, hb, _⟩ := loop_transform_some_nondet _ _ body _ _ ht
       simp [Stmt.exitsCoveredByBlocks]
       exact blockHelper labels body b hb
   | .typeDecl _ _ => simp [StmtToKleeneStmt.eq_5] at ht
@@ -218,11 +216,11 @@ private theorem stmtToKleene_some_noFuncDecl
   | .loop guard _ _ body _ =>
     match guard with
     | .det _ =>
-      have ⟨_, _, b, hb, _⟩ := loop_transform_some_det _ _ _ body _ _ ht
+      have ⟨_, b, hb, _⟩ := loop_transform_some_det _ _ _ body _ _ ht
       simp [Stmt.noFuncDecl]
       exact blockHelper body b hb
     | .nondet =>
-      have ⟨_, _, b, hb, _⟩ := loop_transform_some_nondet _ _ body _ _ ht
+      have ⟨_, b, hb, _⟩ := loop_transform_some_nondet _ _ body _ _ ht
       simp [Stmt.noFuncDecl]
       exact blockHelper body b hb
   | .typeDecl _ _ => simp [StmtToKleeneStmt.eq_5] at ht
@@ -353,7 +351,7 @@ private theorem empty_inv_no_failure
     Imperative.Stmt whereas the conclusion is using KleeneStmt. -/
 private def loop_sim
     (extendEval : ExtendEval P)
-    (g : P.Expr)
+    (g : P.Expr) (m : Option P.Expr)
     (body : List (Stmt P (Cmd P))) (md : MetaData P)
     (b : KleeneStmt P (Cmd P))
     (sim_body : ∀ ρ₀ ρ',
@@ -365,7 +363,7 @@ private def loop_sim
     (ρ₀ ρ' : Env P) (n : Nat)
     (hwfv : WellFormedSemanticEvalVal ρ₀.eval)
     (hstarT : ReflTransT (StepStmt P (EvalCmd P) extendEval)
-      (.stmt (.loop (.det g) (none : Option P.Expr) ([] : List (String × P.Expr)) body md) ρ₀) (.terminal ρ'))
+      (.stmt (.loop (.det g) m ([] : List (String × P.Expr)) body md) ρ₀) (.terminal ρ'))
     (hlen : hstarT.len ≤ n) :
     StepKleeneStar P (EvalCmd P)
       (.stmt (.loop (.seq (.cmd (.assume "guard" g md)) b)) ρ₀) (.terminal ρ') := by
@@ -458,6 +456,7 @@ private def loop_sim
     non-deterministically. -/
 private def loop_sim_kleene
     (extendEval : ExtendEval P)
+    (m : Option P.Expr)
     (body : List (Stmt P (Cmd P))) (md : MetaData P)
     (b : KleeneStmt P (Cmd P))
     (sim_body : ∀ ρ₀ ρ',
@@ -470,7 +469,7 @@ private def loop_sim_kleene
     (hwfb : WellFormedSemanticEvalBool ρ₀.eval)
     (hwfv : WellFormedSemanticEvalVal ρ₀.eval)
     (hstarT : ReflTransT (StepStmt P (EvalCmd P) extendEval)
-      (.stmt (.loop .nondet (none : Option P.Expr) ([] : List (String × P.Expr)) body md) ρ₀) (.terminal ρ'))
+      (.stmt (.loop .nondet m ([] : List (String × P.Expr)) body md) ρ₀) (.terminal ρ'))
     (hlen : hstarT.len ≤ n) :
     StepKleeneStar P (EvalCmd P)
       (.stmt (.loop b) ρ₀) (.terminal ρ') := by
@@ -712,9 +711,9 @@ private theorem simulation
       | .loop guard m' inv body md =>
         match guard with
         | .det g =>
-          have ⟨hinv_empty, hm_none, b, hb, hns⟩ := loop_transform_some_det g m' inv body md ns ht
+          have ⟨hinv_empty, b, hb, hns⟩ := loop_transform_some_det g m' inv body md ns ht
           subst hns
-          subst hinv_empty; subst hm_none
+          subst hinv_empty
           have hsz_body : Block.sizeOf body ≤ n := by
             simp_all [Stmt.sizeOf]; omega
           have sim_body : ∀ ρ₀ ρ',
@@ -726,12 +725,12 @@ private theorem simulation
           have hnofd_body : Block.noFuncDecl body = true :=
             stmtToKleene_some_noFuncDecl.blockHelper body b hb
           have hstarT := reflTrans_to_T hstar
-          exact loop_sim extendEval g body md b sim_body hcov hnofd_body ρ₀ ρ' hstarT.len hwfv
+          exact loop_sim extendEval g m' body md b sim_body hcov hnofd_body ρ₀ ρ' hstarT.len hwfv
             hstarT (Nat.le_refl _)
         | .nondet =>
-          have ⟨hinv_empty, hm_none, b, hb, hns⟩ := loop_transform_some_nondet m' inv body md ns ht
+          have ⟨hinv_empty, b, hb, hns⟩ := loop_transform_some_nondet m' inv body md ns ht
           subst hns
-          subst hinv_empty; subst hm_none
+          subst hinv_empty
           have hsz_body : Block.sizeOf body ≤ n := by
             simp_all [Stmt.sizeOf]; omega
           have sim_body : ∀ ρ₀ ρ',
@@ -743,7 +742,7 @@ private theorem simulation
           have hnofd_body : Block.noFuncDecl body = true :=
             stmtToKleene_some_noFuncDecl.blockHelper body b hb
           have hstarT := reflTrans_to_T hstar
-          exact loop_sim_kleene extendEval body md b sim_body hcov hnofd_body ρ₀ ρ'
+          exact loop_sim_kleene extendEval m' body md b sim_body hcov hnofd_body ρ₀ ρ'
             hstarT.len hwfb hwfv hstarT (Nat.le_refl _)
 
       | .typeDecl _ _ => simp [StmtToKleeneStmt.eq_5] at ht

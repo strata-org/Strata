@@ -144,11 +144,13 @@ structure ProcedureCorrect (proc : Procedure) (p : Program) : Prop where
     WF.WFProcedureProp p proc →
     ∀ (ρ₀ ρ' : Env Expression),
       ProcEnvWF proc ρ₀ →
-      CoreStepStar π φ (.stmts proc.body ρ₀) (.terminal ρ') →
+      -- Wrap the body in `Stmt.block "" proc.body #[]`, consistent with
+      -- `AssertValidInProcedure` above.
+      CoreStepStar π φ (.stmt (Stmt.block "" proc.body #[]) ρ₀) (.terminal ρ') →
       (∀ (label : CoreLabel) (check : Procedure.Check),
         (label, check) ∈ proc.spec.postconditions.toList →
         check.attr = Procedure.CheckAttr.Default →
-        ρ₀.eval (projectStore ρ₀.store ρ'.store) check.expr = some HasBool.tt) ∧
+        ρ'.eval ρ'.store check.expr = some HasBool.tt) ∧
       ρ'.hasFailure = Bool.false
 
 end Core.Specification
