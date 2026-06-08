@@ -41,10 +41,13 @@ garbage-collected source languages (Java, Python, JavaScript, TypeScript).
   Python's `Any` lives in `Strata/Languages/Python/`; Laurel sees it as
   a single composite type with constructors, and that is the intended
   abstraction.
-* **Do not lift procedure calls into assert/contract bodies.** Pure
-  contexts must remain pure. If a front-end wants to check a property
-  about a procedure call's result, it must first bind the result to a
-  local.
+* **Do not leave procedure calls inside assert/contract bodies.** A source
+  language may accept `assert(foo() == 3)` even when `foo` touches the heap, and
+  Laurel front-ends should accept that too — but the front-end must bind the
+  result to a local *before* the pure context (`r := foo(); assert(r == 3)`).
+  Pure contexts (`Assert`, `Assume`, quantifiers, contract expressions) must not
+  themselves contain calls; otherwise the pipeline emits `calls to procedures
+  are not supported in functions or contracts`.
 
 ## Do
 
