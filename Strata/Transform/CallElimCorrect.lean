@@ -2270,14 +2270,8 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
             outTemps oVals)
           genOldIdents := by
       intro v Hv
-      have Hv_notin_out :
-          ¬ v ∈ outTemps := by
-        intro Hin
-        exact HoutOldDisj Hin Hv
-      have Hv_notin_arg :
-          ¬ v ∈ argTemps := by
-        intro Hin
-        exact HargOldDisj Hin Hv
+      have Hv_notin_out : ¬ v ∈ outTemps := fun Hin => HoutOldDisj Hin Hv
+      have Hv_notin_arg : ¬ v ∈ argTemps := fun Hin => HargOldDisj Hin Hv
       rw [updatedStates_2layer_get_notin
             Hv_notin_arg Hv_notin_out]
       exact HndefOld_σ v Hv
@@ -3109,14 +3103,12 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
         ∀ {v}, v ∉ genOldIdents → σ_R1 v = σO v := fun Hv =>
       updatedStates_get_notin Hv
     have Hσ_R1_def_outs :
-        Imperative.isDefined σ_R1 proc.header.outputs.keys :=
-      fun v Hv => by
-        exact (show σ_R1 v = σO v from σR1_off_olds (HoutKeys_disj_olds Hv)) ▸ HσO_def_outs v Hv
+        Imperative.isDefined σ_R1 proc.header.outputs.keys := fun v Hv =>
+      (show σ_R1 v = σO v from σR1_off_olds (HoutKeys_disj_olds Hv)) ▸ HσO_def_outs v Hv
     have Hσ_R1_def_filt_in :
-        Imperative.isDefined σ_R1 filtered_inputs :=
-      fun v Hv => by
-        have Hv_in := Hfilt_in_sub_inputs v Hv
-        exact (show σ_R1 v = σO v from σR1_off_olds (HinKeys_disj_olds Hv_in)) ▸ HσO_def_inputs v Hv_in
+        Imperative.isDefined σ_R1 filtered_inputs := fun v Hv =>
+      let Hv_in := Hfilt_in_sub_inputs v Hv
+      (show σ_R1 v = σO v from σR1_off_olds (HinKeys_disj_olds Hv_in)) ▸ HσO_def_inputs v Hv_in
     have Hσ_havoc_def_lhs :
         Imperative.isDefined σ_havoc lhs := by
       intro v Hv
@@ -4903,14 +4895,12 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                       ∀ {v}, v ∉ genOldIdents → σ_R1 v = σO v := fun Hv =>
                     updatedStates_get_notin Hv
                   have Hσ_R1_def_outs :
-                      Imperative.isDefined σ_R1 proc.header.outputs.keys :=
-                    fun v Hv => by
-                      exact (show σ_R1 v = σO v from σR1_off_olds (HoutKeys_disj_olds Hv)) ▸ HσO_def_outs v Hv
+                      Imperative.isDefined σ_R1 proc.header.outputs.keys := fun v Hv =>
+                    (show σ_R1 v = σO v from σR1_off_olds (HoutKeys_disj_olds Hv)) ▸ HσO_def_outs v Hv
                   have Hσ_R1_def_filt_in :
-                      Imperative.isDefined σ_R1 filtered_inputs :=
-                    fun v Hv => by
-                      have Hv_in := Hfilt_in_sub_inputs v Hv
-                      exact (show σ_R1 v = σO v from σR1_off_olds (HinKeys_disj_olds Hv_in)) ▸ HσO_def_inputs v Hv_in
+                      Imperative.isDefined σ_R1 filtered_inputs := fun v Hv =>
+                    let Hv_in := Hfilt_in_sub_inputs v Hv
+                    (show σ_R1 v = σO v from σR1_off_olds (HinKeys_disj_olds Hv_in)) ▸ HσO_def_inputs v Hv_in
                   -- σ_havoc definedness on lhs.
                   have Hσ_havoc_def_lhs :
                       Imperative.isDefined σ_havoc lhs := by
@@ -5002,10 +4992,9 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                   -- σO on inputs = σA on inputs (Hhav1 preserves on non-outputs;
                   -- Hinitout preserves on non-outputs).
                   have HσO_ins_eq_σA :
-                      ∀ v ∈ proc.header.inputs.keys, σO v = σA v := fun v Hv => by
-                    have Hv_notin : v ∉ proc.header.outputs.keys :=
-                      fun h => Hiodisj Hv h
-                    exact (σO_eq_σAO_off_outs Hv_notin) ▸ initStates_get_notin Hinitout Hv_notin
+                      ∀ v ∈ proc.header.inputs.keys, σO v = σA v := fun v Hv =>
+                    let Hv_notin : v ∉ proc.header.outputs.keys := fun h => Hiodisj Hv h
+                    (σO_eq_σAO_off_outs Hv_notin) ▸ initStates_get_notin Hinitout Hv_notin
                   -- σA on inputs = positional argVals (via Hinitin).
                   have HrdA : ReadValues σA proc.header.inputs.keys argVals :=
                     InitStatesReadValues Hinitin
