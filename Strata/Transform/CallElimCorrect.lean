@@ -1305,6 +1305,61 @@ private theorem fresh_triple_σ_facts
   · exact HOut v h
   · exact HOld v h
 
+/-- Bundle of WF/generated/Nodup facts threaded through the
+    `genArgExprIdentsTrip → genOutExprIdentsTrip → genOldExprIdents`
+    pipeline.  Both call-elim arms (success and failure) need the same
+    Nodup-of-the-combined-list witness in order to invoke
+    `fresh_triple_σ_facts`; this helper absorbs the seven `have`-blocks
+    that previously expanded inline in each arm. -/
+private theorem genTrips_combined_nodup
+    {s0 s_arg s_out : Core.Transform.CoreTransformState}
+    {s_old : CoreGenState}
+    {inputs : @Lambda.LTySignature Visibility} {args : List Expression.Expr}
+    {argTrips : List ((Expression.Ident × Lambda.LTy) × Expression.Expr)}
+    {outputs : @Lambda.LTySignature Visibility} {lhs : List Expression.Ident}
+    {outTrips : List ((Expression.Ident × Expression.Ty) × Expression.Ident)}
+    {oldVars : List Expression.Ident}
+    {genOldIdents : List Expression.Ident}
+    (Heqarg : Core.Transform.genArgExprIdentsTrip inputs args s0
+                = (Except.ok argTrips, s_arg))
+    (Heqout : Core.Transform.genOutExprIdentsTrip outputs lhs s_arg
+                = (Except.ok outTrips, s_out))
+    (Heqold : Core.Transform.genOldExprIdents oldVars s_out.genState
+                = (genOldIdents, s_old))
+    (Hwf0 : CoreGenState.WF s0.genState) :
+    (s0.genState.generated.reverse ++
+       argTrips.unzip.fst.unzip.fst ++
+         outTrips.unzip.fst.unzip.fst ++
+           genOldIdents).Nodup := by
+  have Hwfgenargs : CoreGenState.WF s_arg.genState :=
+    genArgExprIdentsTripWFMono Hwf0 Heqarg
+  have Hwfgenouts : CoreGenState.WF s_out.genState :=
+    genOutExprIdentsTripWFMono Hwfgenargs Heqout
+  have Hwfgenolds : CoreGenState.WF s_old :=
+    genOldExprIdentsTripWFMono Hwfgenouts Heqold
+  have Hgenargs : s_arg.genState.generated =
+      argTrips.unzip.fst.unzip.fst.reverse ++ s0.genState.generated :=
+    genArgExprIdentsTripGeneratedWF Heqarg
+  have Hgenouts : s_out.genState.generated =
+      outTrips.unzip.fst.unzip.fst.reverse ++ s_arg.genState.generated :=
+    genOutExprIdentsTripGeneratedWF Heqout
+  have Hgenolds : s_old.generated =
+      genOldIdents.reverse ++ s_out.genState.generated :=
+    genOldExprIdents_GeneratedWF Heqold
+  have HgenApp : s_old.generated =
+      genOldIdents.reverse ++
+        outTrips.unzip.fst.unzip.fst.reverse ++
+          argTrips.unzip.fst.unzip.fst.reverse ++
+            s0.genState.generated := by
+    rw [Hgenolds, Hgenouts, Hgenargs]
+    simp [List.append_assoc]
+  have HndOld : s_old.generated.Nodup := Hwfgenolds.right.right
+  rw [HgenApp] at HndOld
+  have Hnd := nodup_reverse HndOld
+  simp only [List.reverse_append, List.reverse_reverse,
+             ← List.append_assoc] at Hnd
+  exact Hnd
+
 /-- Per-index δ-eval bridge for `mkOld`-prefixed old-variable fvars at the
     post-havoc store `σO`.
 
@@ -1702,58 +1757,20 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
   let outTemps : List Expression.Ident :=
     outTrips.unzip.fst.unzip.fst
   -- C1: aux facts derived from the destructured binders.
-  have Hwfgenargs : CoreGenState.WF s_arg.genState := by
-    apply genArgExprIdentsTripWFMono ?_ Heqarg
-    exact Hgenrel.wfgen
-  have Hwfgenouts : CoreGenState.WF s_out.genState :=
-    genOutExprIdentsTripWFMono Hwfgenargs Heqout
-  have Hgenargs :
-      s_arg.genState.generated =
-        argTemps.reverse ++
-          γ.genState.generated := by
-    have HH := genArgExprIdentsTripGeneratedWF Heqarg
-    exact HH
-  have Hgenouts :
-      s_out.genState.generated =
-        outTemps.reverse ++
-          s_arg.genState.generated :=
-    genOutExprIdentsTripGeneratedWF Heqout
   have HargTemp :
-      Forall (fun x => isTempIdent x)
-        argTemps :=
+      Forall (fun x => isTempIdent x) argTemps :=
     genArgExprIdentsTrip_isTempIdent Heqarg
   have HoutTemp :
-      Forall (fun x => isTempIdent x)
-        outTemps :=
+      Forall (fun x => isTempIdent x) outTemps :=
     genOutExprIdentsTrip_isTempIdent Heqout
-  have Hwfgenolds : CoreGenState.WF s_old :=
-    genOldExprIdentsTripWFMono Hwfgenouts Heqold
-  have Hgenolds :
-      s_old.generated =
-        genOldIdents.reverse ++ s_out.genState.generated :=
-    genOldExprIdents_GeneratedWF Heqold
   have HoldIdentsTemp :
       Forall (fun x => isOldTempIdent x) genOldIdents :=
     genOldExprIdents_isOldTempIdent Heqold
-  have HgenApp :
-      s_old.generated =
-        genOldIdents.reverse ++
-          outTemps.reverse ++
-            argTemps.reverse ++
-              γ.genState.generated := by
-    rw [Hgenolds, Hgenouts, Hgenargs]
-    simp [List.append_assoc]
   have Hgennd' :
       (γ.genState.generated.reverse ++
-        argTemps ++
-          outTemps ++
-            genOldIdents).Nodup := by
-    have HndOld : s_old.generated.Nodup := Hwfgenolds.right.right
-    rw [HgenApp] at HndOld
-    have Hnd := nodup_reverse HndOld
-    simp only [List.reverse_append, List.reverse_reverse,
-               ← List.append_assoc] at Hnd
-    exact Hnd
+        argTemps ++ outTemps ++ genOldIdents).Nodup := by
+    apply genTrips_combined_nodup Heqarg Heqout Heqold
+    exact Hgenrel.wfgen
   obtain ⟨Hgennd, HndefArg_σ, HndefOut_σ, HndefOld_σ, Hndefgen⟩ :=
     fresh_triple_σ_facts Hgenrel Hgennd' HargTemp HoutTemp
       HoldIdentsTemp Hupdate
@@ -3947,65 +3964,20 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                 -- Generic δ-fvar lookup: `δ σ (fvar v) = σ v` for any σ.
                 have δ_fvar_eq := delta_fvar_eq_of_wfvars Hwfvars (delta := δ)
                 -- C1: aux facts derived from the destructured binders.
-                have Hwfgenargs : CoreGenState.WF s_arg.genState := by
-                  apply genArgExprIdentsTripWFMono ?_ Heqarg
-                  exact Hgenrel.wfgen
-                have Hwfgenouts : CoreGenState.WF s_out.genState :=
-                  genOutExprIdentsTripWFMono Hwfgenargs Heqout
-                have Hgenargs :
-                    s_arg.genState.generated =
-                      argTemps.reverse ++
-                        γ.genState.generated := by
-                  have HH := genArgExprIdentsTripGeneratedWF Heqarg
-                  -- {γ with ...}.genState = γ.genState; reduce.
-                  exact HH
-                have Hgenouts :
-                    s_out.genState.generated =
-                      outTemps.reverse ++
-                        s_arg.genState.generated :=
-                  genOutExprIdentsTripGeneratedWF Heqout
                 have HargTemp :
-                    Forall (fun x => isTempIdent x)
-                      argTemps :=
+                    Forall (fun x => isTempIdent x) argTemps :=
                   genArgExprIdentsTrip_isTempIdent Heqarg
                 have HoutTemp :
-                    Forall (fun x => isTempIdent x)
-                      outTemps :=
+                    Forall (fun x => isTempIdent x) outTemps :=
                   genOutExprIdentsTrip_isTempIdent Heqout
-                -- Old-related aux facts.  `oldVars` is the filter
-                -- expression in the live `callElimCmd`.
-                have Hwfgenolds : CoreGenState.WF s_old :=
-                  genOldExprIdentsTripWFMono Hwfgenouts Heqold
-                have Hgenolds :
-                    s_old.generated =
-                      genOldIdents.reverse ++ s_out.genState.generated :=
-                  genOldExprIdents_GeneratedWF Heqold
                 have HoldIdentsTemp :
                     Forall (fun x => isOldTempIdent x) genOldIdents :=
                   genOldExprIdents_isOldTempIdent Heqold
-                -- Combined-extension equation: the post-old gen list is
-                -- the concatenation of all three reverse-segments and γ's gen.
-                have HgenApp :
-                    s_old.generated =
-                      genOldIdents.reverse ++
-                        outTemps.reverse ++
-                          argTemps.reverse ++
-                            γ.genState.generated := by
-                  rw [Hgenolds, Hgenouts, Hgenargs]
-                  simp [List.append_assoc]
-                -- Nodup of the combined list, in reversed-segment shape.
                 have Hgennd' :
                     (γ.genState.generated.reverse ++
-                      argTemps ++
-                        outTemps ++
-                          genOldIdents).Nodup := by
-                  -- Project Nodup conjunct from Hwfgenolds (3-conj WF predicate).
-                  have HndOld : s_old.generated.Nodup := Hwfgenolds.right.right
-                  rw [HgenApp] at HndOld
-                  have Hnd := nodup_reverse HndOld
-                  simp only [List.reverse_append, List.reverse_reverse,
-                             ← List.append_assoc] at Hnd
-                  exact Hnd
+                      argTemps ++ outTemps ++ genOldIdents).Nodup := by
+                  apply genTrips_combined_nodup Heqarg Heqout Heqold
+                  exact Hgenrel.wfgen
                 -- Hgennd' nodup → 3-segment Nodup + arg/out/old σ-fresh + lifted to σ'.
                 obtain ⟨Hgennd, HndefArg_σ, HndefOut_σ, HndefOld_σ, Hndefgen⟩ :=
                   fresh_triple_σ_facts Hgenrel Hgennd' HargTemp HoutTemp
