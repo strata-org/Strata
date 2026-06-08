@@ -1924,15 +1924,11 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
     (Hinitout :
       InitStates σA (ListMap.keys proc.header.outputs) oVals σAO)
     (Hpre_def :
-      ∀ pre, (Procedure.Spec.getCheckExprs
-                (proc.spec.preconditions.filter
-                  (fun (_, c) => c.attr ≠ .Free))).contains pre →
+      ∀ pre, (Procedure.Spec.getCheckExprs proc.spec.checkedPreconditions).contains pre →
         Imperative.isDefinedOver (Imperative.HasVarsPure.getVars) σAO pre)
     (Hpre_iff :
       true = false ↔
-      ∀ pre, (Procedure.Spec.getCheckExprs
-                (proc.spec.preconditions.filter
-                  (fun (_, c) => c.attr ≠ .Free))).contains pre →
+      ∀ pre, (Procedure.Spec.getCheckExprs proc.spec.checkedPreconditions).contains pre →
         δ σAO pre = .some Imperative.HasBool.tt)
     (Hhav1 :
       HavocVars σAO (ListMap.keys proc.header.outputs) σO)
@@ -2385,8 +2381,7 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
       exact σ_some_contradiction (Hlhs_isLocl v Hv2) Hvσ_none
     -- Filtered preconditions.
     let presFiltered : List (CoreLabel × Procedure.Check) :=
-      proc.spec.preconditions.filter
-        (fun (_, c) => c.attr ≠ .Free)
+      proc.spec.checkedPreconditions
     -- Pre-var freshness restricted to presFiltered (filtered ⊆ unfiltered).
     have HpresVarsFresh' :
         ∀ entry ∈ presFiltered,
@@ -2562,9 +2557,7 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
         List.contains_iff_mem.mp Hcontains
       -- Use HpreBoolTyped at (δ, σAO) with the definedness witness.
       have Hcontains_filt :
-          (Procedure.Spec.getCheckExprs
-            (proc.spec.preconditions.filter
-              (fun (_, c) => c.attr ≠ .Free))).contains entry.snd.expr := by
+          (Procedure.Spec.getCheckExprs proc.spec.checkedPreconditions).contains entry.snd.expr := by
         rw [List.contains_iff_mem]
         simp only [Procedure.Spec.getCheckExprs,
                    ListMap.values_eq_map_snd, List.mem_map,
@@ -2674,9 +2667,7 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
       right
       -- "Not all preconditions evaluate to tt at σAO" via Hpre_iff.mpr.
       have Hnot_all :
-          ¬ (∀ pre, (Procedure.Spec.getCheckExprs
-                      (proc.spec.preconditions.filter
-                        (fun (_, c) => c.attr ≠ .Free))).contains pre →
+          ¬ (∀ pre, (Procedure.Spec.getCheckExprs proc.spec.checkedPreconditions).contains pre →
                   δ σAO pre = .some Imperative.HasBool.tt) := by
         intro Hall
         have : true = false := Hpre_iff.mpr Hall
@@ -3885,15 +3876,11 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                 -- eval-tt over non-Free preconditions only — exactly what
                 -- the L4 callElim asserts chain (which filters out Free) needs.
                 have Hpre_evalTt :
-                    ∀ pre, (Procedure.Spec.getCheckExprs
-                             (proc.spec.preconditions.filter
-                               (fun (_, c) => c.attr ≠ .Free))).contains pre →
+                    ∀ pre, (Procedure.Spec.getCheckExprs proc.spec.checkedPreconditions).contains pre →
                       δ σAO pre = .some Imperative.HasBool.tt :=
                   Hpre_iff.mp rfl
                 have Hpre :
-                    ∀ pre, (Procedure.Spec.getCheckExprs
-                             (proc.spec.preconditions.filter
-                               (fun (_, c) => c.attr ≠ .Free))).contains pre →
+                    ∀ pre, (Procedure.Spec.getCheckExprs proc.spec.checkedPreconditions).contains pre →
                       Imperative.isDefinedOver
                         (Imperative.HasVarsPure.getVars (P:=Expression)) σAO pre ∧
                       δ σAO pre = .some Imperative.HasBool.tt :=
@@ -4395,8 +4382,7 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                     exact σ_some_contradiction (Hlhs_isLocl v Hv2) Hvσ_none
                   -- Restrict to the filtered preconditions.
                   let presFiltered : List (CoreLabel × Procedure.Check) :=
-                    proc.spec.preconditions.filter
-                      (fun (_, c) => c.attr ≠ .Free)
+                    proc.spec.checkedPreconditions
                   -- Bind σAO definedness/eval-tt for each filtered entry.
                   -- Hpre's domain is `getCheckExprs presFiltered.contains`, so
                   -- mapping `entry ∈ presFiltered` to that contains-membership
