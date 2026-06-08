@@ -1125,19 +1125,15 @@ private theorem callElimStmt_non_call_eq
                  Prod.mk.injEq, Except.ok.injEq] at hH
       exact hH.1
 
-/-- Call-site WF/disjointness invariants required by `callElimStatementCorrect`.
+/-- Call-site WF clauses specialized at a fixed call form
+    `(procName, args, md)` and a fixed procedure `proc`.
 
-    Bundles the seven call-site WF clauses as named fields.  Each field is a
-    universally-quantified property that fires only when `st` is a call;
-    for non-call statements every field is vacuously true. -/
-structure WFCallSiteProp (p : Program)
-                         (π : String → Option Procedure)
-                         (st : Statement) : Prop where
+    Bundles the eight call-site WF clauses as named fields, so call-site
+    code can `obtain ⟨...⟩ := Hwfcs.specialize Hst Hlkup` in one step. -/
+structure WFCallSiteSpec (proc : Procedure) (args : List (CallArg Expression)) : Prop where
   /-- Pre-condition free vars are not `tmp_`/`old_`-prefixed and not in the
       call's `lhs`. -/
   preVarsFresh :
-    ∀ procName args md, st = .cmd (CmdExt.call procName args md) →
-    ∀ proc, π procName = some proc →
     ∀ pre ∈ Procedure.Spec.getCheckExprs proc.spec.preconditions,
     ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) pre,
       ¬ isTempIdent v ∧ ¬ isOldTempIdent v ∧
@@ -1145,38 +1141,28 @@ structure WFCallSiteProp (p : Program)
   /-- Post-condition free vars are not `tmp_`/`old_`-prefixed and not in the
       call's `lhs`. -/
   postVarsFresh :
-    ∀ procName args md, st = .cmd (CmdExt.call procName args md) →
-    ∀ proc, π procName = some proc →
     ∀ post ∈ Procedure.Spec.getCheckExprs proc.spec.postconditions,
     ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) post,
       ¬ isTempIdent v ∧ ¬ isOldTempIdent v ∧
       v ∉ CallArg.getLhs args
   /-- Argument-expression free vars are disjoint from the call's `lhs`. -/
   argVarsNotInLhs :
-    ∀ procName args md, st = .cmd (CmdExt.call procName args md) →
-    ∀ _proc, π procName = some _proc →
     ∀ argExpr ∈ CallArg.getInputExprs args,
     ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) argExpr,
       v ∉ CallArg.getLhs args
   /-- Procedure input/output parameter names are not `tmp_`/`old_`-prefixed. -/
   inoutFresh :
-    ∀ procName args md, st = .cmd (CmdExt.call procName args md) →
-    ∀ proc, π procName = some proc →
     ∀ v ∈ proc.header.inputs.keys ++ proc.header.outputs.keys,
       ¬ isTempIdent v ∧ ¬ isOldTempIdent v
   /-- Argument-expression free vars are disjoint from the procedure's
       `outputs.keys` (the global modset). -/
   argVarsNotInOutKeys :
-    ∀ procName args md, st = .cmd (CmdExt.call procName args md) →
-    ∀ proc, π procName = some proc →
     ∀ argExpr ∈ CallArg.getInputExprs args,
     ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) argExpr,
       v ∉ ListMap.keys proc.header.outputs
   /-- Argument-expression free vars are disjoint from the procedure's
       `inputs.keys` (procedure parameter names). -/
   argVarsNotInInKeys :
-    ∀ procName args md, st = .cmd (CmdExt.call procName args md) →
-    ∀ proc, π procName = some proc →
     ∀ argExpr ∈ CallArg.getInputExprs args,
     ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) argExpr,
       v ∉ ListMap.keys proc.header.inputs
@@ -1185,8 +1171,6 @@ structure WFCallSiteProp (p : Program)
       the call's lhs index for `v` agrees with the procedure's outputs-keys
       index.  Backs the L6 `HoldEval_bridge` derivation. -/
   outAlignment :
-    ∀ procName args md, st = .cmd (CmdExt.call procName args md) →
-    ∀ proc, π procName = some proc →
     ∀ v ∈ ListMap.keys proc.header.outputs,
       v ∈ CallArg.getLhs args →
       (CallArg.getLhs args).idxOf v =
@@ -1196,8 +1180,6 @@ structure WFCallSiteProp (p : Program)
       its free variables are defined in the store.  Backs the failing-arm
       witness derivation in `callElimStatementCorrect_terminal_call_arm_fail`. -/
   preBoolTyped :
-    ∀ procName args md, st = .cmd (CmdExt.call procName args md) →
-    ∀ proc, π procName = some proc →
     ∀ pre ∈ Procedure.Spec.getCheckExprs proc.spec.preconditions,
     ∀ (δ : Imperative.SemanticEval Expression)
       (σ : Imperative.SemanticStore Expression),
@@ -1206,60 +1188,21 @@ structure WFCallSiteProp (p : Program)
       δ σ pre = some Imperative.HasBool.tt ∨
       δ σ pre = some Imperative.HasBool.ff
 
-/-- Call-site WF clauses already specialized at a fixed call form
-    `(procName, args, md)` and a fixed procedure `proc`.
+/-- Call-site WF/disjointness invariants required by `callElimStatementCorrect`.
 
-    Bundles the seven `WFCallSiteProp` fields with the per-call
-    `(procName, args, md, rfl, proc, lkup)` instantiation already
-    applied, so call-site code can `obtain ⟨...⟩ := ... .specialize ...`
-    in one step instead of repeating the instantiation per field. -/
-structure WFCallSiteSpec (proc : Procedure) (args : List (CallArg Expression)) : Prop where
-  preVarsFresh :
-    ∀ pre ∈ Procedure.Spec.getCheckExprs proc.spec.preconditions,
-    ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) pre,
-      ¬ isTempIdent v ∧ ¬ isOldTempIdent v ∧
-      v ∉ CallArg.getLhs args
-  postVarsFresh :
-    ∀ post ∈ Procedure.Spec.getCheckExprs proc.spec.postconditions,
-    ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) post,
-      ¬ isTempIdent v ∧ ¬ isOldTempIdent v ∧
-      v ∉ CallArg.getLhs args
-  argVarsNotInLhs :
-    ∀ argExpr ∈ CallArg.getInputExprs args,
-    ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) argExpr,
-      v ∉ CallArg.getLhs args
-  inoutFresh :
-    ∀ v ∈ proc.header.inputs.keys ++ proc.header.outputs.keys,
-      ¬ isTempIdent v ∧ ¬ isOldTempIdent v
-  argVarsNotInOutKeys :
-    ∀ argExpr ∈ CallArg.getInputExprs args,
-    ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) argExpr,
-      v ∉ ListMap.keys proc.header.outputs
-  argVarsNotInInKeys :
-    ∀ argExpr ∈ CallArg.getInputExprs args,
-    ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) argExpr,
-      v ∉ ListMap.keys proc.header.inputs
-  outAlignment :
-    ∀ v ∈ ListMap.keys proc.header.outputs,
-      v ∈ CallArg.getLhs args →
-      (CallArg.getLhs args).idxOf v =
-        (ListMap.keys proc.header.outputs).idxOf v
-  preBoolTyped :
-    ∀ pre ∈ Procedure.Spec.getCheckExprs proc.spec.preconditions,
-    ∀ (δ : Imperative.SemanticEval Expression)
-      (σ : Imperative.SemanticStore Expression),
-      Imperative.isDefinedOver
-        (Imperative.HasVarsPure.getVars (P := Expression)) σ pre →
-      δ σ pre = some Imperative.HasBool.tt ∨
-      δ σ pre = some Imperative.HasBool.ff
+    A `WFCallSiteSpec` parameterized by the call form: fires only when
+    `st` is a call; for non-call statements vacuously true.  Specialize
+    via `Hwfcs.specialize Hst Hlkup`. -/
+def WFCallSiteProp (_p : Program)
+                   (π : String → Option Procedure)
+                   (st : Statement) : Prop :=
+  ∀ procName args md, st = .cmd (CmdExt.call procName args md) →
+  ∀ proc, π procName = some proc →
+    WFCallSiteSpec proc args
 
-/-- Specialize all seven `WFCallSiteProp` fields at a fixed call form
-    `st = .cmd (CmdExt.call procName args md)` and procedure lookup
-    `π procName = some proc`.
-
-    Lets the call-site case discharge the `(procName, args, md, rfl,
-    proc, lkup)` instantiation once and reuse the seven specialized
-    facts via `obtain ⟨...⟩ := Hwfcs.specialize Hst Hlkup`. -/
+/-- Specialize the universally-quantified `WFCallSiteProp` at a fixed call
+    form `st = .cmd (CmdExt.call procName args md)` and procedure lookup
+    `π procName = some proc`. -/
 theorem WFCallSiteProp.specialize {p : Program}
     {π : String → Option Procedure} {st : Statement}
     {procName : String} {args : List (CallArg Expression)} {md}
@@ -1267,14 +1210,7 @@ theorem WFCallSiteProp.specialize {p : Program}
     (Hwfcs : WFCallSiteProp p π st)
     (Hst : st = .cmd (CmdExt.call procName args md))
     (Hlkup : π procName = some proc) : WFCallSiteSpec proc args :=
-  ⟨ Hwfcs.preVarsFresh procName args md Hst proc Hlkup
-  , Hwfcs.postVarsFresh procName args md Hst proc Hlkup
-  , Hwfcs.argVarsNotInLhs procName args md Hst proc Hlkup
-  , Hwfcs.inoutFresh procName args md Hst proc Hlkup
-  , Hwfcs.argVarsNotInOutKeys procName args md Hst proc Hlkup
-  , Hwfcs.argVarsNotInInKeys procName args md Hst proc Hlkup
-  , Hwfcs.outAlignment procName args md Hst proc Hlkup
-  , Hwfcs.preBoolTyped procName args md Hst proc Hlkup ⟩
+  Hwfcs procName args md Hst proc Hlkup
 
 /-- Relation between the source store `σ` and the call-elim transform
     state `γ`'s tracked fresh-name set.
