@@ -2534,9 +2534,8 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
       unfold Imperative.substNodup
       exact (List.unzip_zip Hks_len_L4) ▸ Hbignd_L4
     have HσAO_def_in_L4 :
-        Imperative.isDefined σAO proc.header.inputs.keys := by
-      apply InitStatesDefMonotone ?_ Hinitout
-      exact InitStatesDefined Hinitin
+        Imperative.isDefined σAO proc.header.inputs.keys :=
+      InitStatesDefMonotone (InitStatesDefined Hinitin) Hinitout
     have HσAO_def_out_L4 :
         Imperative.isDefined σAO proc.header.outputs.keys :=
       InitStatesDefined Hinitout
@@ -2923,9 +2922,8 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
       lhs ++ filtered_argTemps
     have Hzip_unzip :
         (proc.header.inputs.keys.zip argTemps).unzip =
-        (proc.header.inputs.keys, argTemps) := by
-      apply List.unzip_zip
-      exact HinKeys_argTemps_len
+        (proc.header.inputs.keys, argTemps) :=
+      List.unzip_zip HinKeys_argTemps_len
     have Hfilter_in :
         ∀ pr ∈ filtered_argSubst,
           pr ∈ proc.header.inputs.keys.zip argTemps ∧
@@ -3101,14 +3099,12 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
             exact Hfilt_in_disj_filt_argT HaIn HbArgT
     -- σO/σ_R1/σ_havoc definedness facts.
     have HσO_def_outs :
-        Imperative.isDefined σO proc.header.outputs.keys := by
-      apply HavocVarsDefMonotone ?_ Hhav1
-      exact InitStatesDefined Hinitout
+        Imperative.isDefined σO proc.header.outputs.keys :=
+      HavocVarsDefMonotone (InitStatesDefined Hinitout) Hhav1
     have HσO_def_inputs :
-        Imperative.isDefined σO proc.header.inputs.keys := by
-      apply HavocVarsDefMonotone ?_ Hhav1
-      apply InitStatesDefMonotone ?_ Hinitout
-      exact InitStatesDefined Hinitin
+        Imperative.isDefined σO proc.header.inputs.keys :=
+      HavocVarsDefMonotone
+        (InitStatesDefMonotone (InitStatesDefined Hinitin) Hinitout) Hhav1
     have σR1_off_olds :
         ∀ {v}, v ∉ genOldIdents → σ_R1 v = σO v := fun Hv =>
       updatedStates_get_notin Hv
@@ -3159,9 +3155,8 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
     have Hrd_R1_in_full :
         ReadValues σ_R1 proc.header.inputs.keys argVals := by
       apply readValues_updatedStates HgenOldOldValsLen HinKeys_disj_olds
-      have HrdAO : ReadValues σAO proc.header.inputs.keys argVals := by
-        apply InitStatesReadValuesMonotone (σ:=σA) ?_ Hinitout
-        exact InitStatesReadValues Hinitin
+      have HrdAO : ReadValues σAO proc.header.inputs.keys argVals :=
+        InitStatesReadValuesMonotone (σ:=σA) (InitStatesReadValues Hinitin) Hinitout
       have Hh1 := HavocVarsUpdateStates Hhav1
       rcases Hh1 with ⟨ovh, Hup_havoc⟩
       apply UpdateStatesReadValuesMonotone (σ:=σAO) _ ?_ Hup_havoc
@@ -4687,9 +4682,8 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                   -- Pre-filter zip's unzip = (inputs.keys, argTemps).
                   have Hzip_unzip :
                       (proc.header.inputs.keys.zip argTemps).unzip =
-                      (proc.header.inputs.keys, argTemps) := by
-                    apply List.unzip_zip
-                    exact HinKeys_argTemps_len
+                      (proc.header.inputs.keys, argTemps) :=
+                    List.unzip_zip HinKeys_argTemps_len
                   -- Filter sub-membership: each (id, t) ∈ filtered_argSubst
                   -- is in the original zip and satisfies the filter.
                   have Hfilter_in :
@@ -4898,14 +4892,12 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                           exact Hfilt_in_disj_filt_argT HaIn HbArgT
                   -- Hdef: substDefined σ_R1 σ_havoc.
                   have HσO_def_outs :
-                      Imperative.isDefined σO proc.header.outputs.keys := by
-                    apply HavocVarsDefMonotone ?_ Hhav1
-                    exact InitStatesDefined Hinitout
+                      Imperative.isDefined σO proc.header.outputs.keys :=
+                    HavocVarsDefMonotone (InitStatesDefined Hinitout) Hhav1
                   have HσO_def_inputs :
-                      Imperative.isDefined σO proc.header.inputs.keys := by
-                    apply HavocVarsDefMonotone ?_ Hhav1
-                    apply InitStatesDefMonotone ?_ Hinitout
-                    exact InitStatesDefined Hinitin
+                      Imperative.isDefined σO proc.header.inputs.keys :=
+                    HavocVarsDefMonotone
+                      (InitStatesDefMonotone (InitStatesDefined Hinitin) Hinitout) Hhav1
                   -- σ_R1 = σO off genOldIdents (single closure).
                   have σR1_off_olds :
                       ∀ {v}, v ∉ genOldIdents → σ_R1 v = σO v := fun Hv =>
@@ -5026,9 +5018,8 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                       ReadValues σ_R1 proc.header.inputs.keys argVals := by
                     apply readValues_updatedStates HgenOldOldValsLen HinKeys_disj_olds
                     -- ReadValues σO inputs.keys argVals.
-                    have HrdAO : ReadValues σAO proc.header.inputs.keys argVals := by
-                      apply InitStatesReadValuesMonotone (σ:=σA) ?_ Hinitout
-                      exact InitStatesReadValues Hinitin
+                    have HrdAO : ReadValues σAO proc.header.inputs.keys argVals :=
+                      InitStatesReadValuesMonotone (σ:=σA) (InitStatesReadValues Hinitin) Hinitout
                     have Hh1 := HavocVarsUpdateStates Hhav1
                     rcases Hh1 with ⟨ovh, Hup_havoc⟩
                     apply UpdateStatesReadValuesMonotone (σ:=σAO) _ ?_ Hup_havoc
@@ -5277,9 +5268,8 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                     exact (List.unzip_zip Hks_len_L4) ▸ Hbignd_L4
                   -- ── L4 substDefined ──
                   have HσAO_def_in_L4 :
-                      Imperative.isDefined σAO proc.header.inputs.keys := by
-                    apply InitStatesDefMonotone ?_ Hinitout
-                    exact InitStatesDefined Hinitin
+                      Imperative.isDefined σAO proc.header.inputs.keys :=
+                    InitStatesDefMonotone (InitStatesDefined Hinitin) Hinitout
                   have HσAO_def_out_L4 :
                       Imperative.isDefined σAO proc.header.outputs.keys :=
                     InitStatesDefined Hinitout
