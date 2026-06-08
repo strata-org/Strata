@@ -374,10 +374,11 @@ private theorem pair_in_zip_of_pos
   List.mem_iff_get.mpr
     ⟨⟨n, by rw [List.length_zip]; omega⟩, List.getElem_zip⟩
 
-/-- Bridge from the `tmp_` half of `Hwfgenst` to `isNotDefined` for a list
-    of fresh temp names: if a name is `isTempIdent` and is *not* in
-    `γ.generated`, then it must be undefined in σ (otherwise the iff in
-    `Hwfgentmp` would put it in `γ.generated`).
+/-- Bridge from the `tmp_*` alignment between `γ.genState.generated` and
+    `σ`'s defined keys to `isNotDefined` for a list of fresh temp names:
+    if a name is `isTempIdent` and is *not* in `γ.generated`, then it
+    must be undefined in σ (otherwise the iff in `Hwfgentmp` would put
+    it in `γ.generated`).
 
     Takes the dual-clause `tmp_` half: for every `v`, `v ∈ generated ∧
     isTempIdent v ↔ (σ v).isSome ∧ isTempIdent v`. -/
@@ -1226,10 +1227,9 @@ private theorem callArgsLhs_nodup_of_wf {p : Program} {procName : String}
 /-- Relation between the source store `σ` and the call-elim transform
     state `γ`'s tracked fresh-name set.
 
-    Bundles the three fields of the legacy `Hwfgenst` hypothesis: the
-    `tmp_*` alignment between `γ.genState.generated` and `σ`'s defined
-    keys, the `old_*` freshness against `σ`, and `CoreGenState.WF` of
-    `γ.genState`. -/
+    Bundles three facts: the `tmp_*` alignment between
+    `γ.genState.generated` and `σ`'s defined keys, the `old_*` freshness
+    against `σ`, and `CoreGenState.WF` of `γ.genState`. -/
 structure CoreGenStateRel (σ : CoreStore) (γ : CoreTransformState) : Prop where
   /-- `tmp_*`-prefixed names in `γ.genState.generated` are exactly the
       `tmp_*`-defined names in `σ`. -/
