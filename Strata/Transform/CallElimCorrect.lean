@@ -1355,9 +1355,11 @@ private theorem genTrips_combined_nodup
 
 /-- Prelude bundle for `HoldEval_bridge_at_σO` call sites.
 
-    Both arms of `_terminal`'s call branch derive the same four facts:
-    the per-output `Hwf2.2`-bridge, `σAO`-reads-outputs, and the two
-    `oldVars`-subset facts (filtered into `lhs`/`outputs.keys`). -/
+    Both arms of `_terminal`'s call branch derive the same three facts:
+    the per-output `Hwf2.2`-bridge, `σAO`-reads-outputs, and the
+    `oldVars ⊆ outputs.keys` subset fact. (Membership in `lhs` /
+    `CallArg.getLhs args` is recovered locally via `hCallArgsLhs` and
+    `List.mem_filter`.) -/
 private theorem holdEval_bridge_prelude
     {σ₀ σ σA σAO σO : CoreStore}
     {proc proc' : Procedure} {args : List (CallArg Expression)}
@@ -1370,17 +1372,14 @@ private theorem holdEval_bridge_prelude
     (∀ v ∈ proc.header.outputs.keys,
        δ σO (Lambda.LExpr.fvar () (CoreIdent.mkOld v.name) none) = σAO v) ∧
     ReadValues σAO proc.header.outputs.keys oVals ∧
-    (∀ v ∈ callElim_oldVars proc' args, v ∈ CallArg.getLhs args) ∧
     (∀ v ∈ callElim_oldVars proc' args,
        v ∈ ListMap.keys proc.header.outputs) := by
-  refine ⟨?_, InitStatesReadValues Hinitout, ?_, ?_⟩
+  refine ⟨?_, InitStatesReadValues Hinitout, ?_⟩
   · intro v Hv
     simp only [WellFormedCoreEvalTwoState] at Hwf2
     have HH := Hwf2.2 proc.header.outputs.keys [] σAO σO σO
                 ⟨Hhav1, InitVars.init_none⟩ v
     exact HH.1 Hv
-  · intro v Hv
-    exact (List.mem_filter.mp Hv).1
   · intro v Hv
     have Hv_filt := List.mem_filter.mp Hv
     have Hbool := Hv_filt.2
@@ -1407,9 +1406,10 @@ private theorem holdEval_bridge_prelude
       shape equality.
     * `HoutAlign`: positional alignment from `WFCallSiteSpec` (lhs idx
       agrees with outputs.keys idx for shared inout outputs).
-    * `HoldVars_sub_outs`, `HoldVars_sub_lhs`, `HoldVars_sub_callLhs`:
-      `oldVars` is the filter that narrows `lhs` ↪ `oldVars`, so each
-      element is in `outputs.keys`, `lhs`, and `CallArg.getLhs args`.
+    * `HoldVars_sub_outs`, `HoldVars_sub_lhs`: `oldVars` is the filter
+      that narrows `lhs` ↪ `oldVars`, so each element is in
+      `outputs.keys` and `lhs` (membership in `CallArg.getLhs args`
+      follows from `hCallArgsLhs`).
     * `HoldVals`: `ReadValues σ oldVars oldVals`.
     * `HoldValsLen`: `oldVals.length = oldVars.length`. -/
 private theorem HoldEval_bridge_at_σO
@@ -1432,7 +1432,6 @@ private theorem HoldEval_bridge_at_σO
           (ListMap.keys proc.header.outputs).idxOf v)
     (HoldVars_sub_outs : ∀ v ∈ oldVars, v ∈ proc.header.outputs.keys)
     (HoldVars_sub_lhs : ∀ v ∈ oldVars, v ∈ lhs)
-    (HoldVars_sub_callLhs : ∀ v ∈ oldVars, v ∈ CallArg.getLhs args)
     (HoldVals : ReadValues σ oldVars oldVals)
     (HoldValsLen : oldVals.length = oldVars.length) :
     ∀ (i : Nat) (Hi : i < oldVars.length),
@@ -1446,8 +1445,7 @@ private theorem HoldEval_bridge_at_σO
   have Hv_out : v ∈ ListMap.keys proc.header.outputs :=
     HoldVars_sub_outs v Hv_mem
   have Hv_lhs : v ∈ lhs := HoldVars_sub_lhs v Hv_mem
-  have Hv_callLhs : v ∈ CallArg.getLhs args :=
-    HoldVars_sub_callLhs v Hv_mem
+  have Hv_callLhs : v ∈ CallArg.getLhs args := hCallArgsLhs ▸ Hv_lhs
   -- ReadValues σ' ks vs ∧ v ∈ ks ⇒ σ' v = some vs[ks.idxOf v].
   have read_at : ∀ {σ' : Expression.Ident → Option _}
       {ks : List Expression.Ident} {vs : List _}
@@ -3214,8 +3212,7 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
     -- The success arm derives this; we copy.
     -- ── L6 plumbing (mirror success arm) ──
     have HInitVars_empty : InitVars σO [] σO := InitVars.init_none
-    obtain ⟨Hwf2_univ, HσAO_reads_outs, HoldVars_sub_callLhs,
-            HoldVars_sub_outs⟩ :=
+    obtain ⟨Hwf2_univ, HσAO_reads_outs, HoldVars_sub_outs⟩ :=
       holdEval_bridge_prelude (args := args) Hwf2 Hhav1 Hinitout HprocEq
     have HσAO_notin_eq_σ :
         ∀ v, v ∉ proc.header.outputs.keys →
@@ -3243,7 +3240,7 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
             some (oldVals[i]'(HoldValsLen.symm ▸ Hi)) :=
       HoldEval_bridge_at_σO Hwf2_univ Hinitout HσAO_reads_outs
         Hevalouts hCallArgsLhs _HoutAlign HoldVars_sub_outs
-        HoldVars_sub_lhs HoldVars_sub_callLhs HoldVals HoldValsLen
+        HoldVars_sub_lhs HoldVals HoldValsLen
     -- L6 oldTripsCanonical/oldSubst/posts_filtered shape.
     let oldTripsCanonical_L6 :
         List ((Expression.Ident × Expression.Ty) ×
@@ -5226,8 +5223,7 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                   -- (a) Trivial empty-init witness (used by callee bridges).
                   have HInitVars_empty : InitVars σO [] σO := InitVars.init_none
                   -- (b) Per-output bridge, σAO reads outputs, oldVars ⊆ lhs/outs.
-                  obtain ⟨Hwf2_univ, HσAO_reads_outs, HoldVars_sub_callLhs,
-                          HoldVars_sub_outs⟩ :=
+                  obtain ⟨Hwf2_univ, HσAO_reads_outs, HoldVars_sub_outs⟩ :=
                     holdEval_bridge_prelude (args := args)
                       Hwf2 Hhav1 Hinitout HprocEq
                   -- (b) σAO[v] = σ[v] for v ∉ outputs ∪ inputs.
@@ -5247,7 +5243,7 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                           some (oldVals[i]'(HoldValsLen.symm ▸ Hi)) :=
                     HoldEval_bridge_at_σO Hwf2_univ Hinitout HσAO_reads_outs
                       Hevalouts hCallArgsLhs HoutAlign HoldVars_sub_outs
-                      HoldVars_sub_lhs HoldVars_sub_callLhs HoldVals HoldValsLen
+                      HoldVars_sub_lhs HoldVals HoldValsLen
                   -- D2d: Structural pieces of HpostPayload (per-entry).
                   let oldTripsCanonical_L6 :
                       List ((Expression.Ident × Expression.Ty) ×
