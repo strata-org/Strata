@@ -91,11 +91,10 @@ features or refactorings that violate them tend to be pushed back.
 
 ## Shared between source languages, or don't add it
 
-The defining criterion for a Laurel feature is that it is "useful for Java and something
-else". Features that make sense only for one source language (for example, nominal
-subtyping specifically for Java generics, or Python's `__getattr__`) belong in the
-source-language translator, not in Laurel. Front-ends are expected to encode
-language-specific constructs using Laurel's primitives.
+Beyond the shared features listed in the introduction, the operative rule is that a Laurel
+feature must be "useful for Java and something else". Constructs that make sense only for one
+source language (for example, nominal subtyping for Java generics, or Python's `__getattr__`)
+belong in that front-end's translator, encoded using Laurel's primitives.
 
 Concrete instances of the principle:
 
@@ -107,11 +106,9 @@ Concrete instances of the principle:
 
 ## Imperative code need not hide behind a functional specification
 
-Laurel does not require imperative code to be encapsulated using a functional specification.
-Sometimes the imperative code is as readable as, or more readable than, a functional
-specification would be.
-
-Consequences of this decision:
+The introduction's "Verification design choices" section notes that Laurel does not require
+imperative code to be encapsulated behind a functional specification. Two consequences for
+the design:
 
 - A Laurel procedure body may be transparent to its callers. There is no requirement that a
   caller only see an `ensures` clause; if the body has no postcondition the caller can see
@@ -121,18 +118,6 @@ Consequences of this decision:
   to lift them out eventually (see Lifting Expression Assignments below), but the AST
   admits programs in which an assignment appears as part of an expression. The fact that
   Core cannot represent such programs is not Laurel's problem.
-
-## One AST for statements and expressions
-
-Laurel has a single algebraic type `StmtExpr` that mixes statement-like (`Assign`, `While`,
-`Return`, …) and expression-like (`LiteralInt`, `PrimitiveOp`, `IfThenElse`, …)
-constructors. Every `StmtExpr` has a user-facing type which, for statement-like
-constructors, is `void`. A conditional therefore only needs to be defined once, instead of
-once for the expression language and once for the statement language.
-
-The same choice drives why blocks can occur inside expressions: the machinery that handles
-a block of statements is exactly the machinery that handles a block used as an
-expression-with-side-effects.
 
 ## One AST node, many back-ends
 
@@ -145,10 +130,9 @@ not need to take opacity into account.
 
 ## Constructs are not defined by their Core encoding
 
-Laurel features are designed in terms of user expressivity, not in terms of how they lower
-to Core. The Core encoding of a Laurel construct can change, and has changed (the heap
-encoding was rewritten to use datatypes instead of axioms), without altering the meaning of
-the construct in Laurel.
+Laurel features are designed in terms of user expressivity, not their Core lowering: the
+Core encoding can change — as the heap encoding did, moving from axioms to datatypes —
+without altering a construct's meaning in Laurel.
 
 # Types
 
