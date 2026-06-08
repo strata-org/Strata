@@ -35,6 +35,14 @@ Laurel is an intermediate verification language designed to serve as a target fo
 garbage-collected languages that include imperative features, such as Java, Python, and
 JavaScript. Laurel tries to include any features that are common to those three languages.
 
+This manual follows the language from the ground up: it first describes Laurel's
+types, then its unified expression/statement model, then procedures and whole
+programs. It then turns to type checking — a per-construct reference for the
+bidirectional rules — and finally to the translation pipeline that lowers a
+checked Laurel program to Strata Core.
+
+## Features
+
 In the feature lists below, items marked *(WIP)* are designed or planned but not
 yet fully implemented; everything else is available today.
 
@@ -87,24 +95,16 @@ share a single implementation type, the StmtExpr. This reduces duplication for c
 like conditionals and variable declarations. Each StmtExpr has a user facing type, which for
 statement-like constructs could be void.
 
-## Roadmap
-
-This manual follows the language from the ground up: it first describes Laurel's
-types, then its unified expression/statement model, then procedures and whole
-programs. It then turns to the bidirectional type checker, and finally to the
-translation pipeline that lowers a checked Laurel program to Strata Core.
-
 # Types
 
-Laurel's type system includes primitive types, collection types, and user-defined types.
-
-## The Type System
+Laurel's types come in two groups: those a user can write — primitives,
+collections, and user-defined types — and a few internal constructors the
+implementation introduces that have no surface syntax.
 
 The {name Strata.Laurel.HighType}`HighType` type enumerates every type Laurel
-tracks — primitives, collections, and user-defined types, alongside a few
-internal constructors (such as `THeap`, `Unknown`, and `MultiValuedExpr`) that
-the compilation pipeline introduces and that cannot be written in the surface
-grammar.
+tracks. Alongside the user-writable types it also includes internal constructors
+(such as `THeap`, `Unknown`, and `MultiValuedExpr`) that the compiler introduces
+during resolution and later passes; these have no surface syntax.
 
 {docstring Strata.Laurel.HighType}
 
