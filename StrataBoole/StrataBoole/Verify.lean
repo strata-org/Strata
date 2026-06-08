@@ -555,7 +555,7 @@ def lowerFor
     (id : Core.Expression.Ident)
     (ty : Lambda.LMonoTy)
     (initExpr guardExpr stepExpr : Core.Expression.Expr)
-    (measure : Option (String × Core.Expression.Expr))
+    (measure : Option Core.Expression.Expr)
     (invs : List (String × Core.Expression.Expr))
     (body : List Core.Statement) : TranslateM Core.Statement := do
   let blockLabel ← defaultLabel m "for" none
@@ -680,7 +680,7 @@ def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement 
       | .condNondet _ => pure .nondet
     let measureExpr ← (match decr? with
       | none => pure none
-      | some (.measure_mk _ e) => return some ("", ← toCoreExpr e))
+      | some (.measure_mk _ e) => return some (← toCoreExpr e))
     return .loop guard measureExpr (← toCoreInvariants invs) (← withBVars [] (toCoreBlock b)) (← toCoreMetaData m)
   | .boole_call_statement m ⟨_, lhs⟩ ⟨_, n⟩ ⟨_, args⟩ => do
     let globalsPrefix ← constructProcArgsPrefix n
@@ -769,7 +769,7 @@ def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement 
         | some (.step _ e) => toCoreExpr e) : TranslateM Core.Expression.Expr)
       let measureExpr ← (match decr? with
         | none => pure none
-        | some (.measure_mk _ e) => return some ("", ← toCoreExpr e))
+        | some (.measure_mk _ e) => return some (← toCoreExpr e))
       let body ← withBVars [] (toCoreBlock body)
       lowerFor m id ty initExpr guard
         (mkCoreApp addOp [.fvar () id none, stepExpr])
@@ -786,7 +786,7 @@ def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement 
         | some (.step _ e) => toCoreExpr e) : TranslateM Core.Expression.Expr)
       let measureExpr ← (match decr? with
         | none => pure none
-        | some (.measure_mk _ e) => return some ("", ← toCoreExpr e))
+        | some (.measure_mk _ e) => return some (← toCoreExpr e))
       let body ← withBVars [] (toCoreBlock body)
       lowerFor m id ty initExpr guard
         (mkCoreApp subOp [.fvar () id none, stepExpr])
