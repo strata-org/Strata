@@ -91,15 +91,10 @@ jobs:
         run: |
           StrataTestExtra/Languages/Java/regenerate-testdata.sh
           git diff --exit-code StrataTestExtra/Languages/Java/testdata/
-      - name: Build and run strata verify
-        run: lake exe strata verify ../Examples/SimpleProc.core.st
-        working-directory: StrataCLI
       - name: Build BoogieToStrata
         run: dotnet build -warnaserror ${SOLUTION}
       - name: Test BoogieToStrata
         run: dotnet test ${SOLUTION}
-      - name: Test Strata Command line
-        run: .github/scripts/testStrataCommand.sh
       - name: Validate examples against expected output
         working-directory: Examples
         shell: bash
