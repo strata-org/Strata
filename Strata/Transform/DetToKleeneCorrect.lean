@@ -237,98 +237,6 @@ where
       simp [Block.noFuncDecl]
       exact ⟨stmtToKleene_some_noFuncDecl s s' hs, blockHelper rest r' hr⟩
 
-/-! ## ReflTransT decomposition helpers -/
-
-omit [HasOps P] in
-private theorem seqT_reaches_terminal
-    (extendEval : ExtendEval P)
-    {inner : Config P (Cmd P)} {ss : List (Stmt P (Cmd P))} {ρ' : Env P}
-    (hstar : ReflTransT (StepStmt P (EvalCmd P) extendEval) (.seq inner ss) (.terminal ρ')) :
-    ∃ (ρ₁ : Env P), ∃ (h1 : ReflTransT (StepStmt P (EvalCmd P) extendEval) inner (.terminal ρ₁)),
-      ∃ (h2 : ReflTransT (StepStmt P (EvalCmd P) extendEval) (.stmts ss ρ₁) (.terminal ρ')),
-      h1.len + h2.len < hstar.len := by
-  match hstar with
-  | .step _ _ _ (.step_seq_inner h) hrest =>
-    have ⟨ρ₁, hterm, htail, hlen⟩ := seqT_reaches_terminal extendEval hrest
-    exact ⟨ρ₁, .step _ _ _ h hterm, htail, by simp [ReflTransT.len]; omega⟩
-  | .step _ _ _ .step_seq_done hrest => exact ⟨_, .refl _, hrest, by show 0 + hrest.len < 1 + hrest.len; omega⟩
-  | .step _ _ _ .step_seq_exit hrest =>
-    match hrest with
-    | .step _ _ _ h _ => exact nomatch h
-
-omit [HasOps P] in
-private theorem stmtsT_cons_terminal
-    (extendEval : ExtendEval P)
-    {s : Stmt P (Cmd P)} {rest : List (Stmt P (Cmd P))} {ρ₀ ρ' : Env P}
-    (hstar : ReflTransT (StepStmt P (EvalCmd P) extendEval) (.stmts (s :: rest) ρ₀) (.terminal ρ')) :
-    ∃ (ρ₁ : Env P), ∃ (h1 : ReflTransT (StepStmt P (EvalCmd P) extendEval) (.stmt s ρ₀) (.terminal ρ₁)),
-      ∃ (h2 : ReflTransT (StepStmt P (EvalCmd P) extendEval) (.stmts rest ρ₁) (.terminal ρ')),
-      h1.len + h2.len + 2 ≤ hstar.len := by
-  match hstar with
-  | .step _ _ _ .step_stmts_cons hrest =>
-    have ⟨ρ₁, h1, h2, hlen⟩ := seqT_reaches_terminal extendEval hrest
-    exact ⟨ρ₁, h1, h2, by simp [ReflTransT.len]; omega⟩
-
-omit [HasOps P] in
-/-- Invert a block execution reaching terminal when the inner config cannot
-    exit: the inner reaches terminal with a strictly shorter derivation. -/
-private theorem blockT_reaches_terminal_noExit
-    (extendEval : ExtendEval P)
-    {inner : Config P (Cmd P)} {l : Option String} {σ_parent : SemanticStore P} {e_parent : SemanticEval P} {ρ' : Env P}
-    (hstar : ReflTransT (StepStmt P (EvalCmd P) extendEval) (.block l σ_parent e_parent inner) (.terminal ρ'))
-    (h_no_exit : ∀ lbl ρ_x,
-      ¬ StepStmtStar P (EvalCmd P) extendEval inner (.exiting lbl ρ_x)) :
-    ∃ (ρ_inner : Env P) (h : ReflTransT (StepStmt P (EvalCmd P) extendEval) inner (.terminal ρ_inner)),
-      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store, eval := e_parent } ∧
-      h.len < hstar.len := by
-  match hstar with
-  | .step _ (.block _ _ _ inner₁) _ (.step_block_body h) hrest =>
-    have h_no_exit' : ∀ lbl ρ_x,
-        ¬ StepStmtStar P (EvalCmd P) extendEval inner₁ (.exiting lbl ρ_x) := by
-      intro lbl ρ_x hinner₁
-      exact h_no_exit lbl ρ_x (.step _ _ _ h hinner₁)
-    have ⟨ρ_inner, hterm, heq, hlen⟩ := blockT_reaches_terminal_noExit extendEval hrest h_no_exit'
-    exact ⟨ρ_inner, .step _ _ _ h hterm, heq, by simp [ReflTransT.len]; omega⟩
-  | .step _ _ _ .step_block_done hrest =>
-    match hrest with
-    | .refl _ => exact ⟨_, .refl _, rfl, by simp [ReflTransT.len]⟩
-    | .step _ _ _ h _ => exact nomatch h
-  | .step _ _ _ (.step_block_exit_match _) hrest =>
-    exfalso
-    exact h_no_exit _ _ (.refl _)
-  | .step _ _ _ (.step_block_exit_mismatch _) hrest =>
-    match hrest with
-    | .step _ _ _ h _ => exact nomatch h
-
-omit [HasOps P] in
-private theorem stmtsT_append_terminal
-    (extendEval : ExtendEval P)
-    (ss₁ : List (Stmt P (Cmd P))) (s : Stmt P (Cmd P)) (ρ₀ ρ' : Env P)
-    (hstar : ReflTransT (StepStmt P (EvalCmd P) extendEval) (.stmts (ss₁ ++ [s]) ρ₀) (.terminal ρ'))
-    (hcov : Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks (P := P) (CmdT := Cmd P) [] ss₁) :
-    ∃ (ρ₁ : Env P), ∃ (_ : StepStmtStar P (EvalCmd P) extendEval (.stmts ss₁ ρ₀) (.terminal ρ₁)),
-      ∃ (hs : ReflTransT (StepStmt P (EvalCmd P) extendEval) (.stmt s ρ₁) (.terminal ρ')),
-      hs.len < hstar.len := by
-  induction ss₁ generalizing ρ₀ with
-  | nil =>
-    have ⟨ρ₁, h1, h2, hlen⟩ := stmtsT_cons_terminal extendEval hstar
-    -- h2 : ReflTransT ... (.stmts [] ρ₁) (.terminal ρ')
-    -- Must be: step via step_stmts_nil then refl, so ρ₁ = ρ'
-    have hρ : ρ₁ = ρ' := by
-      match h2 with
-      | .step _ _ _ .step_stmts_nil (.refl _) => rfl
-    subst hρ
-    exact ⟨ρ₀, .step _ _ _ .step_stmts_nil (.refl _), h1, by grind⟩
-  | cons s' rest' ih =>
-    -- Note: (s' :: rest') ++ [s] = s' :: (rest' ++ [s]) by definitional reduction
-    have ⟨ρ₁, h_s', h_rest, hlen₁⟩ := stmtsT_cons_terminal extendEval hstar
-    have ⟨ρ₂, h_rest', h_s, hlen₂⟩ := ih ρ₁ h_rest hcov.2
-    exact ⟨ρ₂,
-      ReflTrans_Transitive _ _ _ _
-        (stmts_cons_step P (EvalCmd P) extendEval s' rest' ρ₀ ρ₁ (reflTransT_to_prop h_s'))
-        h_rest',
-      h_s, by grind⟩
-
 /-! ## Loop simulation -/
 
 /-- With an empty invariant list, the `hasInvFailure` flag returned by any
@@ -391,16 +299,16 @@ private def loop_sim
       -- New shape: hrest : .seq (.block .none ρ₀'.store (.stmts body ρ₀')) [loop] →*T .terminal ρ'.
       -- Step 1: Split via seqT_reaches_terminal:
       have ⟨ρ_block, h_block_term, h_loop_stmts, hlen_seq⟩ :=
-        seqT_reaches_terminal extendEval hrest
+        seqT_reaches_terminal hrest
       -- Step 2: Unwrap the block. Body cannot exit (by hcov).
       have h_noescape_body : ∀ lbl ρ_x,
           ¬ StepStmtStar P (EvalCmd P) extendEval (.stmts body ρ₀') (.exiting lbl ρ_x) :=
         block_exitsCoveredByBlocks_noEscape P (EvalCmd P) extendEval body hcov ρ₀'
       have ⟨ρ_inner, h_inner_term, heq_ρ_block, hlen_inner⟩ :=
-        blockT_reaches_terminal_noExit extendEval h_block_term h_noescape_body
+        blockT_reaches_terminal_noExit h_block_term h_noescape_body
       -- Step 3: Decompose [loop] ρ_block via stmtsT_cons_terminal.
       have ⟨ρ_x, h_loop_T_T, h_nil, hlen_cons⟩ :=
-        stmtsT_cons_terminal extendEval h_loop_stmts
+        stmtsT_cons_terminal h_loop_stmts
       -- h_nil is .stmts [] ρ_x →*T .terminal ρ' — must be step_stmts_nil + refl.
       have hρ_x_eq : ρ_x = ρ' := by
         match h_nil with
@@ -494,16 +402,15 @@ private def loop_sim_kleene
       subst h_no
       let ρ₀' : Env P := {ρ₀ with hasFailure := ρ₀.hasFailure || false}
       have hρ₀_eq : ρ₀' = ρ₀ := by simp [ρ₀', Bool.or_false]
-      -- New shape: hrest : .seq (.block .none ρ₀'.store (.stmts body ρ₀')) [loop] →*T .terminal ρ'
       have ⟨ρ_block, h_block_term, h_loop_stmts, hlen_seq⟩ :=
-        seqT_reaches_terminal extendEval hrest
+        seqT_reaches_terminal hrest
       have h_noescape_body : ∀ lbl ρ_x,
           ¬ StepStmtStar P (EvalCmd P) extendEval (.stmts body ρ₀') (.exiting lbl ρ_x) :=
         block_exitsCoveredByBlocks_noEscape P (EvalCmd P) extendEval body hcov ρ₀'
       have ⟨ρ_inner, h_inner_term, heq_ρ_block, hlen_inner⟩ :=
-        blockT_reaches_terminal_noExit extendEval h_block_term h_noescape_body
+        blockT_reaches_terminal_noExit h_block_term h_noescape_body
       have ⟨ρ_x, h_loop_T_T, h_nil, hlen_cons⟩ :=
-        stmtsT_cons_terminal extendEval h_loop_stmts
+        stmtsT_cons_terminal h_loop_stmts
       have hρ_x_eq : ρ_x = ρ' := by
         match h_nil with
         | .step _ _ _ .step_stmts_nil hr2 =>
