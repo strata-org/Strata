@@ -892,7 +892,14 @@ def Synth.varField (exprMd : StmtExprMd)
     the new binding for the remainder of the enclosing block. The
     declaration itself does no work other than registering `x : T_x`,
     and yields no value, so its rule accepts whatever type `A` the
-    context expects (the rule ignores `A`). -/
+    context expects (the rule ignores `A`).
+
+    `x ∉ dom(Γ)` is a soft side condition, not a hard premise: when `x`
+    is already bound in the current scope, `defineNameCheckDup` emits a
+    `"Duplicate definition '<x>' is already defined in this scope"`
+    diagnostic and still extends the scope — but with an *unresolved*
+    placeholder rather than `x : T_x`, so later uses of `x` do not
+    cascade further type errors. -/
 def Check.varDeclare (param : Parameter) (source : Option FileRange) :
     ResolveM StmtExprMd := do
   let ty' ← resolveHighType param.type
@@ -1442,10 +1449,11 @@ def Check.assign (exprMd : StmtExprMd)
 
 /-- Cases on the arity of the callee's declared outputs.
     ```
-    Γ(callee) = static-procedure with input T and output T'      (Static-Call)
-    Γ ⊢ arg ⇐ T
+    Γ(callee) = static-procedure with inputs Ts                  (Static-Call)
+      and output [T'] (single output)
+    Γ ⊢ args_i ⇐ Ts_i (pairwise)
     ──────────────────────────────────────────────────────
-    Γ ⊢ StaticCall callee arg ⇒ T'
+    Γ ⊢ StaticCall callee args ⇒ T'
 
     Γ(callee) = static-procedure with inputs Ts                  (Static-Call-Multi)
       and outputs [T_1; …; T_n] (n ≠ 1)
@@ -1453,9 +1461,13 @@ def Check.assign (exprMd : StmtExprMd)
     ──────────────────────────────────────────────────────
     Γ ⊢ StaticCall callee args ⇒ MultiValuedExpr [T_1; …; T_n]
     ```
-    Callee is resolved against the expected kinds (parameter, static
-    procedure, datatype constructor, datatype destructor, constant); each
-    argument is *checked* against the corresponding parameter type. The
+    The two rules differ only in *output* arity — argument checking is
+    identical. Callee is resolved against the expected kinds (parameter,
+    static procedure, datatype constructor, datatype destructor, constant);
+    each argument is *checked* against the corresponding parameter type.
+    Surplus arguments (beyond the declared parameters, or when the callee is
+    unresolved so `paramTypes = []`) are checked against `Unknown`, the
+    gradual escape hatch, rather than flagged as an arity error. The
     bidirectional
     push lets impure-expression arguments (`{x := 1; x}`, `if c then …`,
     holes) flow through their own check rules instead of bottoming out at
@@ -1487,20 +1499,29 @@ def Synth.staticCall (exprMd : StmtExprMd)
     have := List.sizeOf_lt_of_mem ‹_ ∈ args›
     omega
 
-/-- (Instance-Call)
+/-- Cases on the arity of the callee's declared outputs.
     ```
-    Γ ⊢ target ⇒ _
+    Γ ⊢ target ⇒ _                                            (Instance-Call)
     Γ(callee) = instance- or static-procedure
-      with inputs [self; T] and output T'
-    Γ ⊢ arg ⇐ T
+      with inputs [self; Ts] and output [T'] (single output)
+    Γ ⊢ args_i ⇐ Ts_i (pairwise; self dropped)
     ─────────────────────────────────────────
-    Γ ⊢ InstanceCall target callee arg ⇒ T'
+    Γ ⊢ InstanceCall target callee args ⇒ T'
+
+    Γ ⊢ target ⇒ _                                            (Instance-Call-Multi)
+    Γ(callee) = instance- or static-procedure
+      with inputs [self; Ts] and outputs [T_1; …; T_n] (n ≠ 1)
+    Γ ⊢ args_i ⇐ Ts_i (pairwise; self dropped)
+    ─────────────────────────────────────────
+    Γ ⊢ InstanceCall target callee args ⇒ MultiValuedExpr [T_1; …; T_n]
     ```
-    Target is synthesized; callee resolves to an instance or static
-    procedure; arguments are checked pairwise against the callee's
-    parameter types after dropping `self`. Like `Synth.staticCall`, the
-    push is bidirectional so block- and conditional-shaped arguments
-    route through their own check rules. -/
+    The two rules differ only in *output* arity. Target is synthesized;
+    callee resolves to an instance or static procedure; arguments are
+    checked pairwise against the callee's parameter types after dropping
+    `self`, with surplus arguments checked against `Unknown` (as in
+    `Synth.staticCall`). Like `Synth.staticCall`, the push is bidirectional
+    so block- and conditional-shaped arguments route through their own
+    check rules. -/
 def Synth.instanceCall (exprMd : StmtExprMd)
     (target : StmtExprMd) (callee : Identifier) (args : List StmtExprMd)
     (source : Option FileRange)
@@ -1741,17 +1762,23 @@ def Check.primitiveOp (exprMd : StmtExprMd)
 
 /-- Cases on whether `ref` resolves to a composite/datatype.
     ```
-    Γ(ref) is a composite or datatype T      (New-Ok)
-    ───────────────────────────────────
-    Γ ⊢ New ref ⇒ UserDefined T
+    ref is a composite or datatype,                (New-Ok)
+      or is unresolved, or is absent from Γ
+    ──────────────────────────────────────
+    Γ ⊢ New ref ⇒ UserDefined ref
 
-    Γ(ref) is not a composite or datatype    (New-Fallback)
-    ───────────────────────────────────
+    ref resolves to a non-type kind               (New-Fallback)
+    ──────────────────────────────────────
     Γ ⊢ New ref ⇒ Unknown
     ```
     When `ref` resolves to a composite or datatype, the type is
-    `UserDefined ref`; otherwise `Unknown` (suppresses cascading errors
-    after the kind diagnostic has already fired). -/
+    `UserDefined ref`. The `Unknown` fallback fires *only* when `ref`
+    resolves to a present definition whose kind is neither composite nor
+    datatype (e.g. a variable or procedure name); this suppresses
+    cascading errors after the kind diagnostic has already fired. An
+    *unresolved* `ref`, or one absent from scope, takes the `UserDefined`
+    branch instead — `resolveRef` has already reported the name, so
+    re-flagging it here would only duplicate that diagnostic. -/
 def Synth.new (ref : Identifier) (source : Option FileRange) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let ref' ← resolveRef ref source
@@ -2107,18 +2134,19 @@ def Synth.all (source : Option FileRange) : StmtExpr × HighTypeMd :=
 
     ```
     fn = Var (.Local id)                                       (ContractOf-Bool)
-    Γ(id) ∈ {staticProcedure, instanceProcedure}
+    Γ(id) ∈ {staticProcedure, instanceProcedure, unresolved}
     ────────────────────────────────────────────
     Γ ⊢ ContractOf Precondition fn ⇒ TBool
     Γ ⊢ ContractOf PostCondition fn ⇒ TBool
 
     fn = Var (.Local id)                                       (ContractOf-Set)
-    Γ(id) ∈ {staticProcedure, instanceProcedure}
+    Γ(id) ∈ {staticProcedure, instanceProcedure, unresolved}
     ────────────────────────────────────────────
     Γ ⊢ ContractOf Reads fn ⇒ TSet Unknown
     Γ ⊢ ContractOf Modifies fn ⇒ TSet Unknown
 
-    fn is not a procedure reference                            (ContractOf-Error)
+    fn is not a Var (.Local) resolving to a procedure          (ContractOf-Error)
+      or unresolved name
     ────────────────────────────────────────────
     Γ ⊢ ContractOf _ fn ↝ error: "'contractOf' expected a procedure reference"
     ```
@@ -2126,10 +2154,13 @@ def Synth.all (source : Option FileRange) : StmtExpr × HighTypeMd :=
     its preconditions (`Precondition`), postconditions (`PostCondition`),
     reads set (`Reads`), or modifies set (`Modifies`). `fn` must be a
     direct identifier reference resolving to a procedure — a contract
-    belongs to a *named* procedure, not an arbitrary expression. Anything
-    else fires the diagnostic *"'contractOf' expected a procedure
-    reference"* and the construct synthesizes `Unknown` to suppress
-    cascading errors.
+    belongs to a *named* procedure, not an arbitrary expression. The
+    diagnostic *"'contractOf' expected a procedure reference"* fires (and
+    the construct synthesizes `Unknown` to suppress cascading errors) when
+    `fn` is anything other than a `Var (.Local id)`, or resolves to a
+    present definition that is not a procedure. An *unresolved* `id`, or
+    one absent from scope, is accepted without firing the diagnostic —
+    its name-resolution error was already reported.
 
     `Precondition` and `PostCondition` are propositions, hence `TBool`.
     `Reads` and `Modifies` are sets of heap-allocated locations —

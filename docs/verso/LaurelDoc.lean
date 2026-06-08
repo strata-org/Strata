@@ -229,7 +229,12 @@ tag.
 The following notation recurs throughout the rules:
 
 - $`A <: B` — subtyping ({name Strata.Laurel.isSubtype}`isSubtype`); see
-  *Gradual typing* above.
+  *Gradual typing* above. In a *checking* premise or side condition (e.g.
+  \[⇐\] Sub, \[⇐\] If-NoElse, \[⇐\] Assign, the check-mode operator rules, and
+  \[⇐\] Hole-Some) the boundary check is the gradual consistent-subtype
+  relation $`<:_\sim` below — the implementation routes every such check
+  through {name Strata.Laurel.isConsistentSubtype}`isConsistentSubtype`, never
+  bare $`<:` — so $`\mathsf{Unknown}` is admitted on either side.
 - $`A \sim B` — the *consistency* relation
   {name Strata.Laurel.isConsistent}`isConsistent`: symmetric, with
   $`\mathsf{Unknown}` acting as a wildcard.
@@ -320,6 +325,12 @@ $$`\frac{\Gamma \vdash e \Rightarrow \_ \quad \Gamma(f) = T_f}{\Gamma \vdash \ma
 {docstring Strata.Laurel.Resolution.Synth.varField}
 
 $$`\frac{x \notin \mathrm{dom}(\Gamma)}{\Gamma \vdash \mathsf{Var}\;(\mathsf{.Declare}\;\langle x, T_x\rangle) \Leftarrow A \quad \dashv \quad \Gamma, x : T_x} \quad \text{([⇐] Var-Declare)}`
+
+$`x \notin \mathrm{dom}(\Gamma)` is a soft side condition rather than a
+hard premise: when $`x` is already bound in the current scope the rule still
+fires, $`[\text{emits “Duplicate definition …”}]`, and extends the scope —
+but with an *unresolved* placeholder instead of $`x : T_x`, so later uses of
+$`x` don't cascade further type errors.
 
 {docstring Strata.Laurel.Resolution.Check.varDeclare}
 
@@ -531,13 +542,13 @@ discarded.
 tag := "rules-calls"
 %%%
 
-$$`\frac{\Gamma(\mathit{callee}) = \text{static-procedure with input } T \text{ and output } T' \quad \Gamma \vdash \mathit{arg} \Leftarrow T}{\Gamma \vdash \mathsf{StaticCall}\;\mathit{callee}\;\mathit{arg} \Rightarrow T'} \quad \text{([⇒] Static-Call)}`
+$$`\frac{\Gamma(\mathit{callee}) = \text{static-procedure with inputs } Ts \text{ and output } [T'] \text{ (single output)} \quad \Gamma \vdash \mathit{args}_i \Leftarrow Ts_i \text{ (pairwise)}}{\Gamma \vdash \mathsf{StaticCall}\;\mathit{callee}\;\mathit{args} \Rightarrow T'} \quad \text{([⇒] Static-Call)}`
 
 $$`\frac{\Gamma(\mathit{callee}) = \text{static-procedure with inputs } Ts \text{ and outputs } [T_1; \ldots; T_n],\; n \ne 1 \quad \Gamma \vdash \mathit{args}_i \Leftarrow Ts_i \text{ (pairwise)}}{\Gamma \vdash \mathsf{StaticCall}\;\mathit{callee}\;\mathit{args} \Rightarrow \mathsf{MultiValuedExpr}\;[T_1; \ldots; T_n]} \quad \text{([⇒] Static-Call-Multi)}`
 
 {docstring Strata.Laurel.Resolution.Synth.staticCall}
 
-$$`\frac{\Gamma \vdash \mathit{target} \Rightarrow \_ \quad \Gamma(\mathit{callee}) = \text{instance- or static-procedure with inputs } [\mathit{self}; T] \text{ and output } T' \quad \Gamma \vdash \mathit{arg} \Leftarrow T}{\Gamma \vdash \mathsf{InstanceCall}\;\mathit{target}\;\mathit{callee}\;\mathit{arg} \Rightarrow T'} \quad \text{([⇒] Instance-Call)}`
+$$`\frac{\Gamma \vdash \mathit{target} \Rightarrow \_ \quad \Gamma(\mathit{callee}) = \text{instance- or static-procedure with inputs } [\mathit{self}; Ts] \text{ and output } [T'] \text{ (single output)} \quad \Gamma \vdash \mathit{args}_i \Leftarrow Ts_i \text{ (pairwise; self dropped)}}{\Gamma \vdash \mathsf{InstanceCall}\;\mathit{target}\;\mathit{callee}\;\mathit{args} \Rightarrow T'} \quad \text{([⇒] Instance-Call)}`
 
 $$`\frac{\Gamma \vdash \mathit{target} \Rightarrow \_ \quad \Gamma(\mathit{callee}) = \text{instance- or static-procedure with inputs } [\mathit{self}; Ts] \text{ and outputs } [T_1; \ldots; T_n],\; n \ne 1 \quad \Gamma \vdash \mathit{args}_i \Leftarrow Ts_i \text{ (pairwise; self dropped)}}{\Gamma \vdash \mathsf{InstanceCall}\;\mathit{target}\;\mathit{callee}\;\mathit{args} \Rightarrow \mathsf{MultiValuedExpr}\;[T_1; \ldots; T_n]} \quad \text{([⇒] Instance-Call-Multi)}`
 
@@ -546,7 +557,11 @@ static procedure (the latter handles uniformly-dispatched call syntax
 where the receiver is forwarded as `self`). Output arity is forwarded
 identically to
 {name Strata.Laurel.Resolution.Synth.staticCall}`Synth.staticCall`'s
-single-vs-multi split.
+single-vs-multi split. In both call families the single- and multi-output
+rules differ only in the *output* arity; argument checking is the same, and
+surplus arguments (beyond the declared parameters, or when the callee is
+unresolved) are checked against $`\mathsf{Unknown}` rather than flagged as an
+arity error.
 
 {docstring Strata.Laurel.Resolution.Synth.instanceCall}
 
@@ -604,9 +619,14 @@ $$`\frac{\mathsf{TBool} <: T \quad \Gamma \vdash \mathit{args}_i \Leftarrow \mat
 tag := "rules-object-forms"
 %%%
 
-$$`\frac{\Gamma(\mathit{ref}) \text{ is a composite or datatype } T}{\Gamma \vdash \mathsf{New}\;\mathit{ref} \Rightarrow \mathsf{UserDefined}\;T} \quad \text{([⇒] New-Ok)}`
+$$`\frac{\mathit{ref} \text{ is a composite or datatype, or is unresolved, or is absent from } \Gamma}{\Gamma \vdash \mathsf{New}\;\mathit{ref} \Rightarrow \mathsf{UserDefined}\;\mathit{ref}} \quad \text{([⇒] New-Ok)}`
 
-$$`\frac{\Gamma(\mathit{ref}) \text{ is not a composite or datatype}}{\Gamma \vdash \mathsf{New}\;\mathit{ref} \Rightarrow \mathsf{Unknown}} \quad \text{([⇒] New-Fallback)}`
+$$`\frac{\mathit{ref} \text{ resolves to a non-type kind}}{\Gamma \vdash \mathsf{New}\;\mathit{ref} \Rightarrow \mathsf{Unknown}} \quad \text{([⇒] New-Fallback)}`
+
+The $`\mathsf{Unknown}` fallback fires *only* when $`\mathit{ref}` resolves to
+a present definition whose kind is neither composite nor datatype. An
+unresolved or out-of-scope $`\mathit{ref}` takes the New-Ok branch instead, so
+the kind diagnostic that `resolveRef` already emitted is not duplicated.
 
 {docstring Strata.Laurel.Resolution.Synth.new}
 
@@ -683,11 +703,16 @@ $$`\frac{}{\Gamma \vdash \mathsf{Abstract}\,/\,\mathsf{All}\;\ldots \Rightarrow 
 tag := "rules-contract-of"
 %%%
 
-$$`\frac{\mathit{fn} = \mathsf{Var}\;(\mathsf{.Local}\;\mathit{id}) \quad \Gamma(\mathit{id}) \in \{\mathit{staticProcedure}, \mathit{instanceProcedure}\}}{\Gamma \vdash \mathsf{ContractOf}\;\mathsf{Precondition}\;\mathit{fn} \Rightarrow \mathsf{TBool} \qquad \Gamma \vdash \mathsf{ContractOf}\;\mathsf{PostCondition}\;\mathit{fn} \Rightarrow \mathsf{TBool}} \quad \text{([⇒] ContractOf-Bool)}`
+$$`\frac{\mathit{fn} = \mathsf{Var}\;(\mathsf{.Local}\;\mathit{id}) \quad \Gamma(\mathit{id}) \in \{\mathit{staticProcedure}, \mathit{instanceProcedure}, \mathit{unresolved}\}}{\Gamma \vdash \mathsf{ContractOf}\;\mathsf{Precondition}\;\mathit{fn} \Rightarrow \mathsf{TBool} \qquad \Gamma \vdash \mathsf{ContractOf}\;\mathsf{PostCondition}\;\mathit{fn} \Rightarrow \mathsf{TBool}} \quad \text{([⇒] ContractOf-Bool)}`
 
-$$`\frac{\mathit{fn} = \mathsf{Var}\;(\mathsf{.Local}\;\mathit{id}) \quad \Gamma(\mathit{id}) \in \{\mathit{staticProcedure}, \mathit{instanceProcedure}\}}{\Gamma \vdash \mathsf{ContractOf}\;\mathsf{Reads}\;\mathit{fn} \Rightarrow \mathsf{TSet}\;\mathsf{Unknown} \qquad \Gamma \vdash \mathsf{ContractOf}\;\mathsf{Modifies}\;\mathit{fn} \Rightarrow \mathsf{TSet}\;\mathsf{Unknown}} \quad \text{([⇒] ContractOf-Set)}`
+$$`\frac{\mathit{fn} = \mathsf{Var}\;(\mathsf{.Local}\;\mathit{id}) \quad \Gamma(\mathit{id}) \in \{\mathit{staticProcedure}, \mathit{instanceProcedure}, \mathit{unresolved}\}}{\Gamma \vdash \mathsf{ContractOf}\;\mathsf{Reads}\;\mathit{fn} \Rightarrow \mathsf{TSet}\;\mathsf{Unknown} \qquad \Gamma \vdash \mathsf{ContractOf}\;\mathsf{Modifies}\;\mathit{fn} \Rightarrow \mathsf{TSet}\;\mathsf{Unknown}} \quad \text{([⇒] ContractOf-Set)}`
 
-$$`\frac{\mathit{fn} \text{ is not a procedure reference}}{\Gamma \vdash \mathsf{ContractOf}\;\ldots\;\mathit{fn} \rightsquigarrow \text{error: “‘contractOf’ expected a procedure reference”}} \quad \text{([⇒] ContractOf-Error)}`
+$$`\frac{\mathit{fn} \text{ is not a } \mathsf{Var}\;(\mathsf{.Local}) \text{ resolving to a procedure or unresolved name}}{\Gamma \vdash \mathsf{ContractOf}\;\ldots\;\mathit{fn} \rightsquigarrow \text{error: “‘contractOf’ expected a procedure reference”}} \quad \text{([⇒] ContractOf-Error)}`
+
+The $`\mathit{unresolved}` kind is admitted so an already-reported
+name-resolution error is not duplicated; ContractOf-Error fires only when
+$`\mathit{fn}` resolves to a *present* non-procedure definition (or is not a
+local reference at all).
 
 {docstring Strata.Laurel.Resolution.Synth.contractOf}
 
