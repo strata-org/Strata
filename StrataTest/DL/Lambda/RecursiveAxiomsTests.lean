@@ -6,7 +6,7 @@
 module
 
 meta import Strata.DL.Lambda.RecursiveAxioms
-meta import Strata.DL.Lambda.Lambda
+meta import Strata.DL.Lambda
 meta import Strata.DL.Lambda.IntBoolFactory
 
 /-!
