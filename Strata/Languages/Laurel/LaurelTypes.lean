@@ -27,6 +27,11 @@ def getCallType (source : Option FileRange) (model : SemanticModel) (callee : Id
       | [] => { val := .TVoid, source := source }
       | [singleOutput] => singleOutput.type
       | outputs => { val := .MultiValuedExpr (outputs.map (·.type)), source := none }
+    -- Mirrors `.staticProcedure`; currently unreachable (instance calls are lowered to static calls / not yet emitted).
+    | .instanceProcedure _ proc => match proc.outputs with
+      | [] => { val := .TVoid, source := source }
+      | [singleOutput] => singleOutput.type
+      | outputs => { val := .MultiValuedExpr (outputs.map (·.type)), source := none }
     | .unresolved source => { val := HighType.Unknown, source := source }
     | astNode =>
       dbg_trace s!"BUG: static call to {callee} not to a procedure but to a {repr astNode}"
