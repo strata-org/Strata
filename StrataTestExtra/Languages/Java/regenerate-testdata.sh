@@ -15,7 +15,7 @@ if [ ! -f "$JAR" ]; then
 fi
 
 echo "=== Generating Java classes from dialect ==="
-(cd "$STRATA_ROOT" && ./StrataCLI/.lake/build/bin/strata javaGen "$STRATA_ROOT/StrataTestExtra/Languages/Java/$TESTDATA/Simple.dialect.st" com.strata.simple "$STRATA_ROOT/StrataTestExtra/Languages/Java/$GEN_DIR")
+(cd "$STRATA_ROOT" && lake env lean --run Scripts/JavaGenTestData.lean javaGen "$STRATA_ROOT/StrataTestExtra/Languages/Java/$TESTDATA/Simple.dialect.st" com.strata.simple "$STRATA_ROOT/StrataTestExtra/Languages/Java/$GEN_DIR")
 
 echo "=== Compiling Java ==="
 javac -cp "$JAR" $GEN_DIR/com/strata/simple/*.java $TESTDATA/GenerateTestData.java
@@ -28,7 +28,7 @@ rm -rf "$GEN_DIR"
 rm -f $TESTDATA/*.class
 
 echo "=== Verifying with Lean ==="
-(cd "$STRATA_ROOT" && ./StrataCLI/.lake/build/bin/strata print --include "$STRATA_ROOT/StrataTestExtra/Languages/Java/$TESTDATA" "$STRATA_ROOT/StrataTestExtra/Languages/Java/$TESTDATA/comprehensive.ion" 2>&1 | tail -1)
+(cd "$STRATA_ROOT" && lake env lean --run Scripts/JavaGenTestData.lean print --include "$STRATA_ROOT/StrataTestExtra/Languages/Java/$TESTDATA" "$STRATA_ROOT/StrataTestExtra/Languages/Java/$TESTDATA/comprehensive.ion" 2>&1 | tail -1)
 
 echo ""
 echo "Done! Regenerated $TESTDATA/comprehensive.ion and $TESTDATA/comprehensive-files.ion"
