@@ -61,13 +61,13 @@ private def runWithOptions {α} (options : PythonToStrataOptions) (label : Strin
   let _ ← IO.eprintln s!"[perf] {label}: {elapsedMs}ms" |>.toBaseIO
   pure result
 
-/-- Runs `python -m strata.gen py_to_strata` to convert a Python file into a Strata file. -/
+/-- Runs `python -m strata_python.gen py_to_strata` to convert a Python file into a Strata file. -/
 private def runPyToStrata (pythonCmd : String) (extraPythonArgs : Array String)
     (dialectFile pythonFile strataFile : System.FilePath)
     : EIO String Unit := do
   let spawnArgs : IO.Process.SpawnArgs := {
       cmd := pythonCmd
-      args := extraPythonArgs ++ #["-m", "strata.gen", "py_to_strata",
+      args := extraPythonArgs ++ #["-m", "strata_python.gen", "py_to_strata",
           "--dialect", dialectFile.toString,
           pythonFile.toString,
           strataFile.toString
@@ -99,7 +99,7 @@ private def runPyToStrata (pythonCmd : String) (extraPythonArgs : Array String)
     if let some msg := formatParseFailureStderr stderr then
       throw <| s!"{pythonFile} parse error:\n  {msg}"
   if exitCode ≠ 0 then
-    let msg := s!"Internal: Python strata.gen failed (exitCode = {exitCode})\n"
+    let msg := s!"Internal: Python strata_python.gen failed (exitCode = {exitCode})\n"
     let msg := s!"{msg}Standard output:\n"
     let msg := stdout.splitOn.foldl (init := msg) fun msg ln => s!"{msg}  {ln}\n"
     let msg := s!"{msg}Standard error:\n"
@@ -119,7 +119,7 @@ def readPythonStrata (strataPath : String) : EIO String (Array (stmt StrataDDM.S
   | .error msg => throw msg
 
 /--
-This runs `python -m strata.gen py_to_strata` to convert a
+This runs `python -m strata_python.gen py_to_strata` to convert a
 Python file into a Strata file, and then reads it in.
 
 This function fails if the environment isn't configured correctly
