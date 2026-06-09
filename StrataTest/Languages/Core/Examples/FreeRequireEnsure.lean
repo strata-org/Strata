@@ -46,13 +46,6 @@ g_eq_15: g@1 == 15
 Obligation:
 g@1 > 10
 
-Label: g_lt_10
-Property: assert
-Assumptions:
-g_eq_15: g@1 == 15
-Obligation:
-true
-
 Label: g_eq_15_internal
 Property: assert
 Assumptions:
@@ -66,15 +59,11 @@ Obligation: g_gt_10_internal
 Property: assert
 Result: ✅ pass
 
-Obligation: g_lt_10
-Property: assert
-Result: ✅ pass
-
 Obligation: g_eq_15_internal
 Property: assert
 Result: ❓ unknown
 Model:
-(g@5, 0) (g@1, 0)
+(g@5, 0)
 -/
 #guard_msgs in
 #eval Core.verify freeReqEnsPgm
