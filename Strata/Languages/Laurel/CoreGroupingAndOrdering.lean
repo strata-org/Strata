@@ -201,8 +201,14 @@ open Std (Format ToFormat)
 
 public section
 
+/-- Format a procedure as a function, replacing the leading "procedure" keyword with "function". -/
+private def formatAsFunction (proc : Procedure) : Format :=
+  let s := (ToFormat.format proc).pretty 100
+  let s := if s.startsWith "procedure" then "function" ++ s.drop "procedure".length else s
+  Format.text s
+
 def formatOrderedDecl : OrderedDecl → Format
-  | .funcs funcs _ => Format.joinSep (funcs.map ToFormat.format) "\n\n"
+  | .funcs funcs _ => Format.joinSep (funcs.map formatAsFunction) "\n\n"
   | .procedure proc => ToFormat.format proc
   | .datatypes dts => Format.joinSep (dts.map ToFormat.format) "\n\n"
   | .constant c => ToFormat.format c

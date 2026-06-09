@@ -26,8 +26,6 @@ public section
 private def returnLabel : String := "$return"
 
 
-
-
 /-- Transform a single procedure: wrap body in a labelled block and replace returns. -/
 private def eliminateReturnStmts (proc : Procedure) : Procedure :=
   match proc.body with

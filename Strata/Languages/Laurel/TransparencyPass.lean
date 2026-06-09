@@ -188,7 +188,14 @@ def formatUnorderedCoreWithLaurelTypes (p : UnorderedCoreWithLaurelTypes) : Form
   let constantFmts := p.constants.map ToFormat.format
   let functionFmts := p.functions.map ToFormat.format
   let procFmts := p.coreProcedures.map ToFormat.format
-  Format.joinSep (datatypeFmts ++ constantFmts ++ functionFmts ++ procFmts) "\n\n"
+  let preamble := datatypeFmts ++ constantFmts
+  let functionSection :=
+    if functionFmts.isEmpty then []
+    else [Format.text "// FUNCTIONS"] ++ functionFmts
+  let procSection :=
+    if procFmts.isEmpty then []
+    else [Format.text "// PROCEDURES"] ++ procFmts
+  Format.joinSep (preamble ++ functionSection ++ procSection) "\n\n"
 
 instance : ToFormat UnorderedCoreWithLaurelTypes where
   format := formatUnorderedCoreWithLaurelTypes

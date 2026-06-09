@@ -54,7 +54,7 @@ def hasValuedReturn (stmt : StmtExprMd) : Bool :=
     all_goals omega
 
 /-- Apply value-return elimination to a single procedure. Only applies to
-    non-functional procedures with exactly one output parameter.
+    procedures with exactly one output parameter.
     Emits an error if a valued return is used with multiple output parameters. -/
 def eliminateValuesInReturnsInProc (proc : Procedure) : Procedure × Array DiagnosticModel :=
   match proc.outputs with
