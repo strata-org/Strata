@@ -59,12 +59,6 @@ lean_copyright_header = """/-
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/"""
 
-python_copyright_header = """\
-# Copyright Strata Contributors
-#
-#  SPDX-License-Identifier: Apache-2.0 OR MIT
-"""
-
 def main():
     """Main function to handle command line arguments"""
     if len(sys.argv) != 2:
@@ -73,15 +67,7 @@ def main():
         sys.exit(1)
 
     directory_path = Path(sys.argv[1])
-    success = True
-
-    if not check_all_source_files(directory_path, ext=".lean", header=lean_copyright_header):
-        success = False
-
-    if not check_all_source_files(directory_path / 'Tools', ext=".py", header=python_copyright_header):
-        success = False
-
-    # Exit with appropriate code
+    success = check_all_source_files(directory_path, ext=".lean", header=lean_copyright_header)
     sys.exit(0 if success else 1)
 
 if __name__ == "__main__":

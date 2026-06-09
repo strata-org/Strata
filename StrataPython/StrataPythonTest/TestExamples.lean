@@ -31,7 +31,7 @@ def withPythonToLaurel (pythonCmd : System.FilePath) (input : InputContext)
     let ionFile := tmpDir / "test.python.st.ion"
     let child ← IO.Process.spawn {
       cmd := pythonCmd.toString
-      args := #["-m", "strata.gen", "py_to_strata",
+      args := #["-m", "strata_python.gen", "py_to_strata",
                 "--dialect", dialectFile.toString,
                 pyFile.toString, ionFile.toString]
       inheritEnv := true
@@ -62,7 +62,7 @@ public def processPythonToLaurel (pythonCmd : System.FilePath) (input : InputCon
     (Python → Ion → Laurel → Core → verify) and return diagnostics.
 
     The `input` should contain raw Python source code. The `pythonCmd`
-    must point to a Python 3 interpreter with `strata.gen` installed. -/
+    must point to a Python 3 interpreter with `strata_python.gen` installed. -/
 public def processPythonFile (pythonCmd : System.FilePath) (input : InputContext)
     : IO (Array Diagnostic) := do
   withPythonToLaurel pythonCmd input fun laurel pyFile => do

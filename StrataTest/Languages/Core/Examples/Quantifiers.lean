@@ -3,12 +3,11 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import Strata.Languages.Core
+import Strata.Languages.Core
 import StrataDDM.Integration.Lean.HashCommands
+import Strata.MetaVerifier
 
-meta section
 ---------------------------------------------------------------------
 namespace Strata
 
@@ -152,5 +151,8 @@ Result: ✅ pass
 #guard_msgs in
 #eval Core.verify triggerPgm
 
+theorem triggerPgm_correct : smtVCsCorrect triggerPgm := by
+  gen_smt_vcs
+  all_goals (try grind)
+
 end Strata
-end
