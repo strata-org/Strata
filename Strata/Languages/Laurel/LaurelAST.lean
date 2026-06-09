@@ -196,8 +196,6 @@ structure Procedure : Type where
   -- TODO: add back determinism together with an implementation
   /-- Optional termination measure for recursive procedures. -/
   decreases : Option (AstNode StmtExpr) -- optionally prove termination
-  /-- If true, the body may only have functional constructs, so no destructive assignments or loops. -/
-  isFunctional : Bool
   /-- The procedure body: transparent, opaque, or abstract. -/
   body : Body
   /-- Optional trigger for auto-invocation. When present, the translator also emits an axiom

@@ -52,9 +52,14 @@ structure TranslateState where
       why the program was deemed invalid so that if no other diagnostics explain
       the suppression, these can be surfaced to the user. -/
   coreDiagnostics : List DiagnosticModel := []
+  procedureNames: Std.HashSet String
 
 /-- The translation monad: state over Except, allowing both accumulated diagnostics and hard failures -/
 @[expose] abbrev TranslateM := OptionT (StateM TranslateState)
+
+/-- Emit a diagnostic into the translation state (soft warning, does not abort) -/
+def containsProcedure (name : Identifier) : TranslateM Bool := do
+  return (← get).procedureNames.contains name.text
 
 /-- Emit a diagnostic into the translation state (soft warning, does not abort) -/
 def emitDiagnostic (d : DiagnosticModel) : TranslateM Unit :=
@@ -220,7 +225,7 @@ def translateExpr (expr : StmtExprMd)
       return .ite () bcond bthen belse
   | .StaticCall callee args =>
       -- In a pure context, only Core functions (not procedures) are allowed
-      if isPureContext && !model.isFunction callee then
+      if isPureContext && (← containsProcedure callee) then
         disallowed expr.source s!"calls to procedures are not supported in functions or contracts"
       else
         let fnOp : Core.Expression.Expr := .op () ⟨callee.text, ()⟩ none
@@ -419,7 +424,9 @@ def translateStmt (stmt : StmtExprMd)
       -- Match on the value to decide how to translate
       match _hv : value.val with
       | .StaticCall callee args =>
-        if model.isFunction callee then
+        if (← containsProcedure callee) then
+          translateCallTargets callee.text args
+        else
           -- Function call: translate as a normal expression assignment
           let coreExpr ← translateExpr value
           match targets with
@@ -430,8 +437,6 @@ def translateStmt (stmt : StmtExprMd)
             return result
           | _ =>
             throwStmtDiagnostic $ md.toDiagnostic "function call without a single target" DiagnosticType.StrataBug
-        else
-          translateCallTargets callee.text args
       | .InstanceCall _target callee args =>
           translateCallTargets callee.text args
       | .Hole _ _ =>
@@ -457,7 +462,7 @@ def translateStmt (stmt : StmtExprMd)
       return [Imperative.Stmt.ite (.det bcond) bthen belse md]
   | .StaticCall callee args =>
       -- Check if this is a function or procedure
-      if model.isFunction callee then
+      if !(← containsProcedure callee) then
         -- Function call in statement position: preserve as unused init
         exprAsUnusedInit stmt md
       else

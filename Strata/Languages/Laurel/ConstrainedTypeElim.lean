@@ -79,7 +79,6 @@ def mkConstraintFunc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : Proce
     inputs := [{ name := ct.valueName, type := baseType }]
     outputs := [{ name := mkId "result", type := { val := .TBool, source := none } }]
     body := .Transparent { val := .Block [bodyExpr] none, source := none }
-    isFunctional := true
     decreases := none
     preconditions := [] }
 
@@ -184,7 +183,7 @@ def elimProc (ptMap : ConstrainedTypeMap) (proc : Procedure) : Procedure :=
   let inputRequires : List Condition := proc.inputs.filterMap fun p =>
     (constraintCallFor ptMap p.type.val p.name (src := p.type.source)).map
       fun c => { condition := c }
-  let outputEnsures : List Condition := if proc.isFunctional then [] else proc.outputs.filterMap fun p =>
+  let outputEnsures : List Condition := proc.outputs.filterMap fun p =>
     (constraintCallFor ptMap p.type.val p.name (src := p.type.source)).map
       fun c => { condition := ⟨c.val, p.type.source⟩ }
   let initVars : PredVarMap := proc.inputs.foldl (init := {}) fun s p =>
@@ -195,8 +194,7 @@ def elimProc (ptMap : ConstrainedTypeMap) (proc : Procedure) : Procedure :=
     let body := wrap stmts bodyExpr.source
     if outputEnsures.isEmpty then .Transparent body
     else
-      let retBody := if proc.isFunctional then ⟨.Return (some body), bodyExpr.source⟩ else body
-      .Opaque outputEnsures (some retBody) []
+      .Opaque outputEnsures (some body) []
   | .Opaque postconds impl modif =>
     let impl' := impl.map fun b => wrap ((elimStmt ptMap b).run initVars).1 b.source
     .Opaque (postconds ++ outputEnsures) impl' modif
@@ -227,7 +225,6 @@ private def mkWitnessProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : 
     outputs := []
     body := .Opaque [] (some ⟨.Block [witnessInit, assert] none, src⟩) []
     preconditions := []
-    isFunctional := false
     decreases := none }
 
 public def constrainedTypeElim (_model : SemanticModel) (program : Program)
@@ -238,14 +235,10 @@ public def constrainedTypeElim (_model : SemanticModel) (program : Program)
     | .Constrained ct => some (mkConstraintFunc ptMap ct) | _ => none
   let witnessProcedures := program.types.filterMap fun
     | .Constrained ct => some (mkWitnessProc ptMap ct) | _ => none
-  let funcDiags := program.staticProcedures.foldl (init := []) fun acc proc =>
-    if proc.isFunctional && proc.outputs.any (fun p => isConstrainedType ptMap p.type.val) then
-      acc.cons (diagnosticFromSource proc.name.source "constrained return types on functions are not yet supported")
-    else acc
   ({ program with
     staticProcedures := constraintFuncs ++ program.staticProcedures.map (elimProc ptMap)
                         ++ witnessProcedures
     types := program.types.filter fun | .Constrained _ => false | _ => true },
-   funcDiags)
+    [])
 
 end Strata.Laurel

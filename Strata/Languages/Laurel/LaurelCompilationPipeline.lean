@@ -302,7 +302,13 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
     return (none, passDiags, program, stats)
   else
       emit "CoreWithLaurelTypes" "core.st" coreWithLaurelTypes
-    let initState : TranslateState := { model := fnModel, overflowChecks := options.overflowChecks }
+    let initState : TranslateState := {
+      model := fnModel,
+      overflowChecks := options.overflowChecks,
+      procedureNames := coreWithLaurelTypes.decls.foldl (fun r d => match d with
+        | .procedure p => r.insert p.name.text
+        | _ => r ) (Std.HashSet.emptyWithCapacity 0)
+    }
     let (coreProgramOption, translateState) :=
       runTranslateM initState (translateLaurelToCore options coreWithLaurelTypes)
     -- Because of the duplication between functions and procedures, this translation is liable to create duplicate diagnostics

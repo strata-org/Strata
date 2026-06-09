@@ -137,7 +137,7 @@ private def mkFunctionCopy (asFunctionNames : Std.HashSet String) (proc : Proced
     | .Transparent b => .Transparent (rewriteCallsToFunctional asFunctionNames (if hasProcedureTwin then stripAssertAssume b else b))
     | .Opaque _ _ _ => if hasProcedureTwin then .Opaque [] none [] else proc.body
     | x => x
-  { proc with name := funcName, isFunctional := true, body := body }
+  { proc with name := funcName, body := body }
 
 /-- Append a free postcondition to a procedure's body postconditions.
     For Opaque and Abstract bodies, the free condition is appended to the
@@ -167,13 +167,13 @@ For each procedure:
 - If the function has a body, add a free postcondition equating the procedure output to the function
 -/
 def transparencyPass (program : Program) : UnorderedCoreWithLaurelTypes :=
-  let (toUpdate, _) := program.staticProcedures.partition (fun p => !p.body.isExternal && !p.isFunctional)
+  let (toUpdate, _) := program.staticProcedures.partition (fun p => !p.body.isExternal)
   let toUpdateNames : Std.HashSet String := toUpdate.foldl (fun s p => s.insert p.name.text) {}
   -- $asFunction copies for non-external procedures
   let functions := program.staticProcedures.map (mkFunctionCopy toUpdateNames)
   let coreProcedures := toUpdate.map fun proc =>
     let freePostcondition := mkFreePostcondition proc
-    let proc := { proc with isFunctional := false, axioms := proc.axioms.map (rewriteCallsToFunctional toUpdateNames) }
+    let proc := { proc with axioms := proc.axioms.map (rewriteCallsToFunctional toUpdateNames) }
     let proc := rewriteQuantifierBodiesInProc toUpdateNames proc
     addFreePostcondition proc freePostcondition
   let datatypes := program.types.filterMap fun td => match td with

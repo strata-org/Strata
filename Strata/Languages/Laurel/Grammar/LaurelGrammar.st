@@ -190,15 +190,6 @@ op procedure (name : Ident, parameters: CommaSepBy Parameter,
   body : Option Body) : Procedure =>
   "procedure " name "(" parameters ")" returnType returnParameters requires invokeOn opaqueSpec body ";";
 
-op function (name : Ident, parameters: CommaSepBy Parameter,
-  returnType: Option ReturnType,
-  returnParameters: Option ReturnParameters,
-  requires: Seq RequiresClause,
-  invokeOn: Option InvokeOnClause,
-  opaqueSpec: Option OpaqueSpec,
-  body : Option Body) : Procedure =>
-  "function " name "(" parameters ")" returnType returnParameters requires invokeOn opaqueSpec body ";";
-
 op composite (name: Ident, extending: Option Extends, fields: Seq Field, procedures: Seq Procedure): Composite => "composite " name extending " {" fields procedures " }";
 
 category ConstrainedType;

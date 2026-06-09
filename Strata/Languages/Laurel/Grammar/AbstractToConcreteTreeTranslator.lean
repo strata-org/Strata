@@ -218,7 +218,6 @@ private def modifiesClausesToArgs (modifies : List StmtExprMd) : Array Arg :=
   wildcardArgs ++ specificArgs
 
 private def procedureToOp (proc : Procedure) : StrataDDM.Operation :=
-  let opName := if proc.isFunctional then "function" else "procedure"
   let params := proc.inputs.map parameterToArg |>.toArray
   let returnTypeArg : Arg :=
     match proc.outputs with
@@ -241,14 +240,7 @@ private def procedureToOp (proc : Procedure) : StrataDDM.Operation :=
     laurelOp "invokeOnClause" #[stmtExprToArg e])
   let (opaqueSpecArg, bodyArg) := match proc.body with
     | .Transparent body =>
-      -- For functions, the body is implicitly wrapped in a Return by ConcreteToAbstract;
-      -- unwrap it here so the concrete output doesn't show an explicit `return`.
-      let emitBody := if proc.isFunctional then
-        match body.val with
-        | .Return (some inner) => inner
-        | _ => body
-      else body
-      (optionArg none, optionArg (some (laurelOp "body" #[stmtExprToArg emitBody])))
+      (optionArg none, optionArg (some (laurelOp "body" #[stmtExprToArg body])))
     | .Opaque postconds impl modifies =>
       let ens := postconds.map ensuresClauseToArg |>.toArray
       let mods := if modifies.isEmpty then #[] else modifiesClausesToArgs modifies
@@ -260,7 +252,7 @@ private def procedureToOp (proc : Procedure) : StrataDDM.Operation :=
     | .External =>
       (optionArg none, optionArg (some (laurelOp "externalBody")))
   { ann := sr
-    name := { dialect := "Laurel", name := opName }
+    name := { dialect := "Laurel", name := "procedure" }
     args := #[
       ident proc.name.text,
       commaSep params,

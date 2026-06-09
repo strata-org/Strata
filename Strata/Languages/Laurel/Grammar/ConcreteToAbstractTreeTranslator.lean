@@ -150,7 +150,6 @@ instance : Inhabited Procedure where
     outputs := []
     preconditions := []
     decreases := none
-    isFunctional := false
     invokeOn := none
     body := .Transparent { val := .LiteralBool true, source := none }
   }
@@ -518,11 +517,6 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
         | _, _ => TransM.error s!"Expected body or externalBody operation, got {repr bodyOp.name}"
       | .option _ none => pure none
       | _ => TransM.error s!"Expected body, got {repr bodyArg}"
-    -- For functions, wrap the body in a Return so the last expression
-    -- is treated as the return value by downstream passes.
-    let body := if op.name == q`Laurel.function then
-      body.map fun b => ⟨.Return (some b), b.source⟩
-    else body
     -- Determine procedure body kind
     let procBody :=
       if isExternal then Body.External
@@ -536,7 +530,6 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
       outputs := returnParameters
       preconditions := preconditions
       decreases := none
-      isFunctional := op.name == q`Laurel.function
       invokeOn := invokeOn
       body := procBody
     }

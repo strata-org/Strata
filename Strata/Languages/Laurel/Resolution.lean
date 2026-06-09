@@ -180,18 +180,6 @@ def SemanticModel.get? (model: SemanticModel) (iden: Identifier): Option Resolve
 def SemanticModel.get (model: SemanticModel) (iden: Identifier): ResolvedNode :=
   (model.get? iden).getD default
 
-def SemanticModel.isFunction (model: SemanticModel) (id: Identifier): Bool :=
-  match model.get id with
-      | .staticProcedure proc => proc.isFunctional
-      | .parameter _ => true
-      | .datatypeConstructor _ _ => true
-      | .datatypeDestructor _ _ => true
-      | .constant _ => true
-      | .unresolved _ => true -- functions calls are more permissive, so true avoids possibly incorrect errors
-      | node =>
-          dbg_trace s!"Sound but incomplete BUG! id: {repr id}, is not a procedure, but a node {repr node}"
-          false
-
 /-- The output of the resolution pass. -/
 structure ResolutionResult where
   /-- The program with unique IDs on all definition and reference nodes. -/
@@ -591,7 +579,6 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
     let invokeOn' ← proc.invokeOn.mapM resolveStmtExpr
     let axioms' ← proc.axioms.mapM resolveStmtExpr
     return { name := procName', inputs := inputs', outputs := outputs',
-             isFunctional := proc.isFunctional,
              preconditions := pres', decreases := dec',
              invokeOn := invokeOn',
              axioms := axioms',
@@ -623,7 +610,6 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
     modify fun s => { s with instanceTypeName := savedInstType }
     let axioms' ← proc.axioms.mapM resolveStmtExpr
     return { name := procName', inputs := inputs', outputs := outputs',
-             isFunctional := proc.isFunctional,
              preconditions := pres', decreases := dec',
              invokeOn := invokeOn',
              axioms := axioms',
@@ -720,7 +706,6 @@ private def mkTesterProcedure (dt : DatatypeDefinition) (ctor : DatatypeConstruc
     outputs := [outputParam]
     preconditions := []
     decreases := none
-    isFunctional := true
     body := .External }
 
 /-- Insert a definition into the refToDef map using the ID already on the identifier. -/
@@ -978,32 +963,6 @@ def resolve (program : Program) (existingModel: Option SemanticModel := none) : 
 /-! ## Resolution for UnorderedCoreWithLaurelTypes -/
 
 /--
-Convert an `UnorderedCoreWithLaurelTypes` to a flat `Program` suitable for
-resolution. Additional type definitions (e.g. composite types from the original
-Laurel program) can be supplied so that `UserDefined` type references resolve
-correctly.
--/
-private def unorderedCoreToProgram (uc : UnorderedCoreWithLaurelTypes)
-    (additionalTypes : List TypeDefinition := []) : Program :=
-  { staticProcedures := uc.functions ++ uc.coreProcedures,
-    staticFields := [],
-    types := uc.datatypes.map TypeDefinition.Datatype ++ additionalTypes,
-    constants := uc.constants }
-
-/--
-Reconstruct an `UnorderedCoreWithLaurelTypes` from a resolved `Program`.
--/
-private def fromResolvedProgram (resolvedProgram : Program)
-    : UnorderedCoreWithLaurelTypes :=
-  let resolvedProcs := resolvedProgram.staticProcedures
-  let resolvedDatatypes := resolvedProgram.types.filterMap fun td =>
-    match td with | .Datatype dt => some dt | _ => none
-  { functions := resolvedProcs.filter (·.isFunctional)
-    coreProcedures := resolvedProcs.filter (!·.isFunctional)
-    datatypes := resolvedDatatypes
-    constants := resolvedProgram.constants }
-
-/--
 Resolve an `UnorderedCoreWithLaurelTypes` by converting to a flat `Program`,
 running the resolution pass, and reconstructing the result. Returns the
 resolved `UnorderedCoreWithLaurelTypes` and the `SemanticModel`.
@@ -1016,9 +975,7 @@ but they are because certain type references have incorrectly not been updated.
 def resolveUnorderedCore (uc : UnorderedCoreWithLaurelTypes)
     (existingModel : Option SemanticModel := none)
     (additionalTypes : List TypeDefinition := [])
-    : UnorderedCoreWithLaurelTypes × SemanticModel × Array DiagnosticModel :=
-  let fnProgram := unorderedCoreToProgram uc additionalTypes
-  let fnResolveResult := resolve fnProgram existingModel
-  (fromResolvedProgram fnResolveResult.program, fnResolveResult.model, fnResolveResult.errors)
+    : UnorderedCoreWithLaurelTypes × SemanticModel × Array DiagnosticModel := sorry
+    -- should not try to convert to a Laurel.Program and back. Probably needs to have its own version of resolve
 
 end
