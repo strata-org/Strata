@@ -11,9 +11,6 @@ import StrataDDM
 Usage:
   lake env lean --run Scripts/JavaGenTestData.lean javaGen <dialect-file> <package> <output-dir>
   lake env lean --run Scripts/JavaGenTestData.lean print --include <dir> <file>
-
-This script replaces the StrataCLI commands used by
-`StrataTestExtra/Languages/Java/regenerate-testdata.sh`.
 -/
 
 open StrataDDM

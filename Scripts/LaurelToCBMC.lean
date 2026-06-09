@@ -10,8 +10,8 @@ import Strata.Util.Json
 
 /-! # LaurelToCBMC
 
-Standalone executable that replaces `laurel_to_cbmc.sh`. Translates a Laurel
-`.lr.st` source file through the full Strata pipeline to CBMC verification:
+Script for testing the translation of a Laurel `.lr.st` source file through the
+full Strata pipeline to CBMC verification:
 
 1. Parse Laurel source → Laurel AST
 2. Translate Laurel → Core
