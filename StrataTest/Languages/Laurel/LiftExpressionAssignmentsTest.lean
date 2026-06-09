@@ -45,8 +45,7 @@ def parseLaurelAndLift (input : String) : IO Program := do
   | .ok program =>
     let result := resolve program
     let (program, model) := (result.program, result.model)
-    let imperativeCallees := program.staticProcedures.filter (fun p => !p.isFunctional)
-      |>.map (fun p => p.name.text)
+    let imperativeCallees := program.staticProcedures |>.map (fun p => p.name.text)
     pure (liftExpressionAssignments program model imperativeCallees)
 
 /--

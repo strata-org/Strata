@@ -26,17 +26,20 @@ procedure hasMutatingAssignment(): int
 
 procedure transparentWithMutatingAssignment(x: int): int
 {
-  x := x + 1
+  x := x + 1;
 //^^^^^^^^^^ error: destructive assignments are not supported in transparent bodies or contracts
+  return 3
 };
 
 procedure transparentWithWhile(x: int): int
 {
-  while(false) {}
+  while(false) {};
 //^^^^^^^^^^^^^^^ error: loops are not supported in transparent bodies or contracts
+  return 3
 };
 
 procedure callsHasMutatingAssignment(x: int): int
+ opaque
 {
   hasMutatingAssignment()
 };

@@ -23,18 +23,6 @@ procedure assertAndAssumeInTransparent(a: int) returns (r: int)
   return a
 };
 
-procedure letExpressionsInTransparent() returns (r: int) {
-  var x: int := 0;
-  var y: int := x + 1;
-  var z: int := y + 1;
-  z
-};
-
-procedure callLetExpressionsInTransparent() opaque {
-  var x: int := letExpressionsInTransparent();
-  assert x == 2
-};
-
 procedure returnAtEnd(x: int) returns (r: int)
 {
   if x > 0 then {

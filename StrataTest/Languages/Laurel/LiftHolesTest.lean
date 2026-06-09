@@ -7,7 +7,7 @@ module
 
 /-
 Tests that the eliminateHoles pass correctly replaces `.Hole` nodes with calls
-to freshly generated uninterpreted functions, with types inferred from context.
+to freshly generated uninterpreted procedures, with types inferred from context.
 -/
 
 meta import StrataDDM.Elab
@@ -46,7 +46,7 @@ private def parseElimAndPrint (input : String) : IO Unit := do
 
 -- Hole in Add arg inside typed local variable → int.
 /--
-info: function $hole_0()
+info: procedure $hole_0()
   returns ($result: int)
   opaque;
 procedure test()
@@ -64,7 +64,7 @@ procedure test()
 
 -- Bare Hole as Assign Declare initializer → replaced with call (no longer preserved as havoc).
 /--
-info: function $hole_0()
+info: procedure $hole_0()
   returns ($result: int)
   opaque;
 procedure test()
@@ -82,7 +82,7 @@ procedure test()
 
 -- Hole in comparison arg inside assert → int (inferred from sibling literal).
 /--
-info: function $hole_0()
+info: procedure $hole_0()
   returns ($result: int)
   opaque;
 procedure test()
@@ -100,7 +100,7 @@ procedure test()
 
 -- Hole directly as assert condition → bool.
 /--
-info: function $hole_0()
+info: procedure $hole_0()
   returns ($result: bool)
   opaque;
 procedure test()
@@ -118,7 +118,7 @@ procedure test()
 
 -- Hole directly as assume condition → bool.
 /--
-info: function $hole_0()
+info: procedure $hole_0()
   returns ($result: bool)
   opaque;
 procedure test()
@@ -136,7 +136,7 @@ procedure test()
 
 -- Hole as if-then-else condition → bool.
 /--
-info: function $hole_0()
+info: procedure $hole_0()
   returns ($result: bool)
   opaque;
 procedure test()
@@ -157,7 +157,7 @@ procedure test()
 
 -- Hole in then-branch of if-then-else inside typed local variable → int.
 /--
-info: function $hole_0()
+info: procedure $hole_0()
   returns ($result: int)
   opaque;
 procedure test()
@@ -177,7 +177,7 @@ procedure test()
 
 -- Hole as while-loop condition → bool.
 /--
-info: function $hole_0()
+info: procedure $hole_0()
   returns ($result: bool)
   opaque;
 procedure test()
@@ -197,7 +197,7 @@ procedure test()
 
 -- Hole as while-loop invariant → bool.
 /--
-info: function $hole_0()
+info: procedure $hole_0()
   returns ($result: bool)
   opaque;
 procedure test()
@@ -220,7 +220,7 @@ procedure test()
 
 -- Hole in And arg inside assert → bool.
 /--
-info: function $hole_0()
+info: procedure $hole_0()
   returns ($result: bool)
   opaque;
 procedure test()
@@ -238,7 +238,7 @@ procedure test()
 
 -- Hole in Neg inside typed local variable → int.
 /--
-info: function $hole_0()
+info: procedure $hole_0()
   returns ($result: int)
   opaque;
 procedure test()
@@ -256,7 +256,7 @@ procedure test()
 
 -- Hole in StrConcat inside typed local variable → string.
 /--
-info: function $hole_0()
+info: procedure $hole_0()
   returns ($result: string)
   opaque;
 procedure test()
@@ -270,12 +270,12 @@ procedure test()
 
 /-! ## Multiple holes -/
 
--- Two holes in Add → both int, separate functions.
+-- Two holes in Add → both int, separate procedures.
 /--
-info: function $hole_0()
+info: procedure $hole_0()
   returns ($result: int)
   opaque;
-function $hole_1()
+procedure $hole_1()
   returns ($result: int)
   opaque;
 procedure test()
@@ -293,10 +293,10 @@ procedure test()
 
 -- Holes across statements: Mul arg (int) then assert condition (bool).
 /--
-info: function $hole_0()
+info: procedure $hole_0()
   returns ($result: int)
   opaque;
-function $hole_1()
+procedure $hole_1()
   returns ($result: bool)
   opaque;
 procedure test()
@@ -317,7 +317,7 @@ procedure test()
 
 -- Hole in Add inside Gt inside if condition → int (inferred from sibling literal 0).
 /--
-info: function $hole_0()
+info: procedure $hole_0()
   returns ($result: int)
   opaque;
 procedure test()
@@ -338,7 +338,7 @@ procedure test()
 
 -- Hole in Implies inside while invariant → bool.
 /--
-info: function $hole_0()
+info: procedure $hole_0()
   returns ($result: bool)
   opaque;
 procedure test()
@@ -360,7 +360,7 @@ procedure test()
 
 -- Hole in Mul inside typed local variable with real type → real.
 /--
-info: function $hole_0()
+info: procedure $hole_0()
   returns ($result: real)
   opaque;
 procedure test()
@@ -378,9 +378,9 @@ procedure test()
 
 /-! ## Call argument and return type inference -/
 
--- Hole in comparison with variable sibling → hole function takes the procedure's params.
+-- Hole in comparison with variable sibling → hole procedure takes the procedure's params.
 /--
-info: function $hole_0(n: int)
+info: procedure $hole_0(n: int)
   returns ($result: int)
   opaque;
 procedure test(n: int)
@@ -396,21 +396,21 @@ procedure test(n: int)
 { assert n > <?> };
 "
 
-/-! ## Holes in functions -/
+/-! ## Holes in procedures -/
 
--- Hole in function body → same treatment as procedures.
+-- Hole in procedure body → same treatment as procedures.
 /--
-info: function $hole_0(x: int)
+info: procedure $hole_0(x: int)
   returns ($result: int)
   opaque;
-function test(x: int): int
+procedure test(x: int): int
 {
   $hole_0(x)
 };
 -/
 #guard_msgs in
 #eval! parseElimAndPrint r"
-function test(x: int): int
+procedure test(x: int): int
 { <?> };
 "
 
@@ -433,7 +433,7 @@ procedure test()
 
 -- Mixed: det hole eliminated, nondet hole preserved.
 /--
-info: function $hole_0()
+info: procedure $hole_0()
   returns ($result: int)
   opaque;
 procedure test()
@@ -450,7 +450,7 @@ procedure test()
 { var x: int := <?>; assert <??> };
 "
 
--- Nondet hole in function → should be rejected (not tested here since
+-- Nondet hole in procedure → should be rejected (not tested here since
 -- the error occurs at Core translation time, which requires the full pipeline).
 
 /-! ## Holes inside datatype destructor / tester arguments -/
@@ -461,7 +461,7 @@ procedure test()
 -- parent datatype's resolved Identifier (with `uniqueId`), so this works
 -- without textual decoding of the override name.
 /--
-info: function $hole_0()
+info: procedure $hole_0()
   returns ($result: IntList)
   opaque;
 procedure test()
@@ -477,7 +477,7 @@ procedure test() { var x: int := IntList..head(<?>) };
 
 -- Hole as argument to an unsafe `!` destructor → same datatype recovery.
 /--
-info: function $hole_0()
+info: procedure $hole_0()
   returns ($result: IntList)
   opaque;
 procedure test()
@@ -493,7 +493,7 @@ procedure test() { var x: int := IntList..head!(<?>) };
 
 -- Hole as argument to a tester → typed as the parent datatype.
 /--
-info: function $hole_0()
+info: procedure $hole_0()
   returns ($result: IntList)
   opaque;
 procedure test()

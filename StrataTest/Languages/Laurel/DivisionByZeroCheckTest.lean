@@ -40,10 +40,10 @@ procedure unsafeDivision(x: int)
 // Error ranges are too wide because Core does not use expression locations
 };
 
-function pureDiv(x: int, y: int): int
+procedure pureDiv(x: int, y: int): int
   requires y != 0
 {
-  x / y
+  return x / y
 };
 
 procedure callPureDivSafe()
@@ -57,7 +57,7 @@ procedure callPureDivUnsafe(x: int)
   opaque
 {
   var z: int := pureDiv(10, x)
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
 // Error ranges are too wide because Core does not use expression locations
 };
 "

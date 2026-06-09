@@ -115,9 +115,9 @@ procedure imperativeCallInConditionalExpression(b: bool)
   }
 };
 
-function add(x: int, y: int): int
+procedure add(x: int, y: int): int
 {
-  x + y
+  return x + y
 };
 
 procedure repeatedBlockExpressions()

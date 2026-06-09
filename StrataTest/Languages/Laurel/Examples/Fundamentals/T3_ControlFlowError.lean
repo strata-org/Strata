@@ -24,4 +24,4 @@ procedure localVariableWithoutInitializer(): int {
 "
 
 #guard_msgs (error, drop all) in
-#eval! testInputWithOffset "ControlFlowError" program 14 processLaurelFile
+#eval! testInputWithOffset "ControlFlowError" program 17 processLaurelFile

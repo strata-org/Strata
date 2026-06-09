@@ -16,7 +16,6 @@ open Strata
 namespace Strata.Laurel
 
 def program := r"
-
 procedure deadCodeAfterIfElse(x: int) returns (r: int) {
   if x > 0 then { return 1 } else { return 2 };
 //^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: in a transparent body, if-then-else is only supported as the last statement in a block

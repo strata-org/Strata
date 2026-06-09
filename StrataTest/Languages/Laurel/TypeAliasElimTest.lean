@@ -32,8 +32,7 @@ private def mkTy (ty : HighType) : HighTypeMd := { val := ty, source := none }
 /-- Helper: construct a minimal procedure. -/
 private def mkProc (name : String) (inputs : List Parameter) (outputs : List Parameter)
     (body : Body := .Transparent ⟨.Block [] none, none⟩) : Procedure :=
-  { name := mkId name, inputs, outputs, preconditions := [], decreases := none,
-    isFunctional := false, body }
+  { name := mkId name, inputs, outputs, preconditions := [], decreases := none, body }
 
 /-- Helper: run resolve + typeAliasElim on a program. -/
 private def resolveAndElim (program : Program) : Program :=
