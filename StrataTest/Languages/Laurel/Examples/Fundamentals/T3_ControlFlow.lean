@@ -16,7 +16,8 @@ open Strata
 namespace Strata.Laurel
 
 def program := r"
-function returnAtEnd(x: int) returns (r: int) {
+function returnAtEnd(x: int) returns (r: int)
+{
   if x > 0 then {
     if x == 1 then {
       return 1

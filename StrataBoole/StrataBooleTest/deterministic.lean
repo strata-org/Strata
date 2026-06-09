@@ -46,10 +46,6 @@ procedure Check(x1:int, x2:int) returns ()
 
 /--
 info:
-Obligation: Foo_ensures_0_256
-Property: assert
-Result: ✅ pass
-
 Obligation: assert_1_562
 Property: assert
 Result: ✅ pass
