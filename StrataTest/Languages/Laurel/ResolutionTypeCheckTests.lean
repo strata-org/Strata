@@ -265,4 +265,23 @@ function foo(c: bool): bool {
 #guard_msgs (error, drop all) in
 #eval testInputWithOffset "IfBranchesIncompatible" ifBranchesIncompatible 218 processResolution
 
+/-! ## Void procedure call in value position
+
+A call to a `void` procedure (no `returns` clause) used where a value is
+expected now synthesizes `TVoid` rather than the internal-only empty
+`MultiValuedExpr []`. The diagnostic therefore reports the type as `'void'`
+instead of the placeholder `'()'` that an empty tuple rendered as. (Regression
+guard for `getCallInfo` mapping an empty output list to `TVoid`.) -/
+
+def voidCallInValuePosition := r"
+procedure act() opaque;
+procedure test() opaque {
+  assert act() == 1
+//       ^^^^^^^^^^ error: cannot compare 'void' with 'int' using '=='
+};
+"
+
+#guard_msgs (error, drop all) in
+#eval testInputWithOffset "VoidCallInValuePosition" voidCallInValuePosition 234 processResolution
+
 end Laurel
