@@ -12,6 +12,7 @@ public meta import StrataDDM.Integration.Lean.Env
 meta import StrataDDM.Integration.Lean.HashCommands  -- For #load_dialect
 public meta import StrataDDM.Ion
 import Strata.Languages.Core.DDMTransform.Grammar  -- Loads Strata Core dialect into env
+import Strata.Languages.Laurel.Grammar.LaurelGrammar  -- Loads Laurel dialect into env
 
 namespace StrataDDM.Java.Test
 
@@ -403,22 +404,23 @@ elab "#testRoundtripFiles" : command => do
 
 #testRoundtripFiles
 
--- Test 15: javaGen works on preloaded dialects via CLI
+-- Test 15: javaGen works on preloaded dialects via library API
 elab "#testJavaGenPreloaded" : command => do
-  IO.FS.withTempDir fun parentDir => do
-    let dir := parentDir / "javagen-output"
-    let result ← IO.Process.output {
-      cmd := "lake"
-      args := #["exe", "strata", "javaGen", "Laurel", "com.test.laurel", dir.toString]
-      cwd := "StrataCLI"
-    }
-    if result.exitCode != 0 then
-      Lean.throwError s!"javaGen on preloaded Laurel dialect failed:\n{result.stdout}\n{result.stderr}"
-    -- Verify some expected files exist (now one file per category)
-    let pkgDir := (dir / "com" / "test" / "laurel").toString
-    for expected in #["Node.java", "StmtExpr.java", "Procedure.java", "Parameter.java"] do
-      if !(← System.FilePath.pathExists (pkgDir ++ "/" ++ expected)) then
-        Lean.throwError s!"Expected file {expected} not found in {pkgDir}"
+  let env ← Lean.getEnv
+  let state := StrataDDM.dialectExt.getState env
+  let some laurel := state.loaded.dialects["Laurel"]?
+    | Lean.throwError "Laurel dialect not found in environment"
+  match generateDialect laurel "com.test.laurel" with
+  | .error msg => Lean.throwError s!"javaGen on preloaded Laurel dialect failed:\n{msg}"
+  | .ok files =>
+    IO.FS.withTempDir fun parentDir => do
+      let dir := parentDir / "javagen-output"
+      writeJavaFiles dir "com.test.laurel" files
+      -- Verify some expected files exist (now one file per category)
+      let pkgDir := (dir / "com" / "test" / "laurel").toString
+      for expected in #["Node.java", "StmtExpr.java", "Procedure.java", "Parameter.java"] do
+        if !(← System.FilePath.pathExists (pkgDir ++ "/" ++ expected)) then
+          Lean.throwError s!"Expected file {expected} not found in {pkgDir}"
 
 #testJavaGenPreloaded
 

@@ -52,7 +52,6 @@ jobs:
         with:
           path: |
             .lake
-            StrataCLI/.lake
             StrataPython/.lake
           fail-on-cache-miss: "false"
           use-restore-keys: "false"
