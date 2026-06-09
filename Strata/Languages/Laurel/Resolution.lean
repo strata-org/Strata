@@ -975,7 +975,107 @@ but they are because certain type references have incorrectly not been updated.
 def resolveUnorderedCore (uc : UnorderedCoreWithLaurelTypes)
     (existingModel : Option SemanticModel := none)
     (additionalTypes : List TypeDefinition := [])
-    : UnorderedCoreWithLaurelTypes × SemanticModel × Array DiagnosticModel := sorry
-    -- should not try to convert to a Laurel.Program and back. Probably needs to have its own version of resolve
+    : UnorderedCoreWithLaurelTypes × SemanticModel × Array DiagnosticModel :=
+  -- Phase 1: pre-register all top-level names, then resolve references
+  let phase1 : ResolveM UnorderedCoreWithLaurelTypes := do
+    -- Pre-register additional types (e.g. composite types from the original Laurel program)
+    for td in additionalTypes do
+      match td with
+      | .Composite ct =>
+        let _ ← defineNameCheckDup ct.name (.compositeType ct)
+        for field in ct.fields do
+          let qualifiedName := ct.name.text ++ "." ++ field.name.text
+          let _ ← defineNameCheckDup field.name (.field ct.name field) (some qualifiedName)
+        for proc in ct.instanceProcedures do
+          let _ ← defineNameCheckDup proc.name (.instanceProcedure ct.name proc)
+      | .Constrained ct =>
+        let _ ← defineNameCheckDup ct.name (.constrainedType ct)
+      | .Datatype dt =>
+        let _ ← defineNameCheckDup dt.name (.datatypeDefinition dt)
+        for ctor in dt.constructors do
+          let _ ← defineNameCheckDup ctor.name (.datatypeConstructor dt.name ctor)
+          let testerProc := mkTesterProcedure dt ctor
+          let _ ← defineNameCheckDup (mkId (dt.testerName ctor))
+            (.staticProcedure testerProc) (some (dt.testerName ctor))
+          for p in ctor.args do
+            let pName ← defineNameCheckDup p.name (.datatypeDestructor dt.name p) (some (dt.destructorName p))
+            let _ ← defineNameCheckDup pName (.datatypeDestructor dt.name p) (some (dt.unsafeDestructorName p))
+      | .Alias ta =>
+        let _ ← defineNameCheckDup ta.name (.typeAlias ta)
+
+    -- Pre-register datatypes from the unordered core
+    for dt in uc.datatypes do
+      let _ ← defineNameCheckDup dt.name (.datatypeDefinition dt)
+      for ctor in dt.constructors do
+        let _ ← defineNameCheckDup ctor.name (.datatypeConstructor dt.name ctor)
+        let testerProc := mkTesterProcedure dt ctor
+        let _ ← defineNameCheckDup (mkId (dt.testerName ctor))
+          (.staticProcedure testerProc) (some (dt.testerName ctor))
+        for p in ctor.args do
+          let pName ← defineNameCheckDup p.name (.datatypeDestructor dt.name p) (some (dt.destructorName p))
+          let _ ← defineNameCheckDup pName (.datatypeDestructor dt.name p) (some (dt.unsafeDestructorName p))
+
+    -- Pre-register constants
+    for c in uc.constants do
+      let _ ← defineNameCheckDup c.name (.constant c)
+
+    -- Pre-register functions and core procedures
+    for proc in uc.functions do
+      let _ ← defineNameCheckDup proc.name (.staticProcedure proc)
+    for proc in uc.coreProcedures do
+      let _ ← defineNameCheckDup proc.name (.staticProcedure proc)
+
+    -- Build type scopes for additional composite types (for field resolution)
+    for td in additionalTypes do
+      if let .Composite ct := td then
+        let s ← get
+        let mut typeScope : Scope := {}
+        for parent in ct.extending do
+          match s.typeScopes.get? parent.text with
+          | some parentScope =>
+            for (k, v) in parentScope do
+              typeScope := typeScope.insert k v
+          | none => pure ()
+        for field in ct.fields do
+          let qualifiedKey := ct.name.text ++ "." ++ field.name.text
+          match s.scope.get? qualifiedKey with
+          | some entry => typeScope := typeScope.insert field.name.text entry
+          | none => pure ()
+        modify fun s => { s with typeScopes := s.typeScopes.insert ct.name.text typeScope }
+
+    -- Resolve datatypes
+    let datatypes' ← uc.datatypes.mapM fun dt => do
+      match ← resolveTypeDefinition (.Datatype dt) with
+      | .Datatype dt' => pure dt'
+      | _ => pure dt -- unreachable
+
+    -- Resolve constants
+    let constants' ← uc.constants.mapM resolveConstant
+
+    -- Resolve functions and core procedures
+    let functions' ← uc.functions.mapM resolveProcedure
+    let coreProcedures' ← uc.coreProcedures.mapM resolveProcedure
+
+    return { functions := functions', coreProcedures := coreProcedures',
+             datatypes := datatypes', constants := constants' }
+
+  let nextId := existingModel.elim 1 (fun m => m.nextId)
+  let (uc', finalState) := phase1.run { nextId := nextId }
+
+  -- Phase 2: build refToDef from the resolved unordered core
+  let program' : Program := {
+    staticProcedures := uc'.functions ++ uc'.coreProcedures,
+    staticFields := [],
+    types := uc'.datatypes.map .Datatype ++ additionalTypes,
+    constants := uc'.constants
+  }
+  let refToDef := buildRefToDef program'
+
+  let model : SemanticModel := {
+    compositeCount := additionalTypes.length,
+    refToDef := refToDef,
+    nextId := finalState.nextId
+  }
+  (uc', model, finalState.errors)
 
 end

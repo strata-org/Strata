@@ -85,13 +85,13 @@ info: procedure add(x: int, y: int): int
 { x + y };")
 
 /--
-info: function aFunction(x: int): int
+info: procedure aFunction(x: int): int
 {
   x
 };
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip r"function aFunction(x: int): int
+#eval do IO.println (← roundtrip r"procedure aFunction(x: int): int
 { x };")
 
 /--
