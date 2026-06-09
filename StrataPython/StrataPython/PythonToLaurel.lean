@@ -1360,7 +1360,7 @@ def extractMultiOutputCalls (ctx : TranslationContext) (e : StmtExprMd)
         return ([], e)
       else
         return (preamble, mkStmtExprMdWithLoc (.StaticCall callee.text newArgs) e.source)
-  | .PrimitiveOp op args =>
+  | .PrimitiveOp op args _ =>
     let results ← args.attach.mapM fun ⟨arg, _⟩ => extractMultiOutputCalls ctx arg
     let preamble := (results.map (fun (pre, _) => pre)).flatten
     let newArgs := results.map (·.2)
@@ -1651,7 +1651,7 @@ partial def getMaybeExceptionExprs (ctx : TranslationContext) (e : StmtExprMd) :
     if isMaybeExceptAnyFunc ctx funcname.text then
       [e]
     else args.flatMap $ getMaybeExceptionExprs ctx
-  | .PrimitiveOp _ args => args.flatMap $ getMaybeExceptionExprs ctx
+  | .PrimitiveOp _ args _ => args.flatMap $ getMaybeExceptionExprs ctx
   | .IfThenElse cond thenBranch elseBranch =>
       ([cond, thenBranch] ++ elseBranch.toList).flatMap $ getMaybeExceptionExprs ctx
   | _ => []
@@ -1677,7 +1677,7 @@ partial def containsUserCall (ctx : TranslationContext) (e : StmtExprMd) : Bool 
     callee.text ∈ ctx.userFunctions ||
     withException ctx callee.text ||
     args.any (containsUserCall ctx)
-  | .PrimitiveOp _ args => args.any (containsUserCall ctx)
+  | .PrimitiveOp _ args _ => args.any (containsUserCall ctx)
   | .IfThenElse cond thenBranch elseBranch =>
     containsUserCall ctx cond || containsUserCall ctx thenBranch ||
       elseBranch.any (containsUserCall ctx)
