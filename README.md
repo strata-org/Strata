@@ -28,10 +28,10 @@ changes!**
    (`cvc5` and `z3`). See [Installing dependencies → SMT Solvers](#smt-solvers)
    below.
 
-4. **Java JDK (11 or later)**: required for Java code generation tests.
+3. **Java JDK (11 or later)**: required for Java code generation tests.
    See [Installing dependencies → Java](#java-for-code-generation-tests) below.
 
-5. **ion-java jar (1.11.11)**: required for the Java/Ion integration test.
+4. **ion-java jar (1.11.11)**: required for the Java/Ion integration test.
    See [Installing dependencies → Java](#java-for-code-generation-tests) below.
 
 ### Installing dependencies
