@@ -536,8 +536,11 @@ partial def TypeContext.unfold (ctx : TypeContext) (ty : HighTypeMd)
   | _ => ty
 
 /-- All ancestors of a composite type (including itself), reachable via
-    repeated `extending` lookups. The `fuel` cap is the number of distinct
-    type names ever registered, bounding the BFS even with malformed input. -/
+    repeated `extending` lookups. Implemented as a visited-set BFS over the
+    `extending` graph: the accumulator `acc` doubles as the visited set, and
+    every node is `insert`ed before its parents are enqueued, so each name is
+    processed at most once. The accumulator only grows, hence cycles in the
+    (possibly malformed) graph terminate — no `fuel` parameter is needed. -/
 partial def TypeContext.ancestors (ctx : TypeContext) (name : String) : Std.HashSet String :=
   let rec go (acc : Std.HashSet String) (frontier : List String) : Std.HashSet String :=
     match frontier with
