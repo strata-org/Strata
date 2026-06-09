@@ -633,7 +633,7 @@ rules* index in `LaurelDoc.lean`:
 - Object forms — `Synth.new`, `Synth.asType`, `Synth.isType`, `Synth.refEq`,
   `Synth.pureFieldUpdate`
 - Verification expressions — `Synth.quantifier`, `Synth.assigned`,
-  `Synth.fresh`, `Check.old`, `Check.proveBy`
+  `Synth.fresh`, `Synth.old`/`Check.old`, `Synth.proveBy`/`Check.proveBy`
 - Self reference — `Synth.this`
 - Untyped forms — `Synth.abstract`, `Synth.all`
 - ContractOf — `Synth.contractOf`
@@ -703,6 +703,10 @@ def Synth.resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTy
     Synth.assigned exprMd name source (by rw [h_node])
   | .Fresh val =>
     Synth.fresh exprMd expr val source h_expr (by rw [h_node])
+  | .Old val =>
+    Synth.old exprMd val source (by rw [h_node])
+  | .ProveBy val proof =>
+    Synth.proveBy exprMd val proof source (by rw [h_node])
   | .ContractOf ty fn =>
     Synth.contractOf exprMd ty fn source (by rw [h_node])
   | .Abstract => pure (Synth.abstract source)
@@ -2146,6 +2150,34 @@ def Check.old (exprMd : StmtExprMd)
     simp [h] at hsz
     omega
 
+/-- (Old-Synth)
+    ```
+    Γ ⊢ v ⇒ T
+    ───────────────
+    Γ ⊢ Old v ⇒ T
+    ```
+    `old` is a *universal morphism*: it is fully type-transparent, so
+    `old(v)` has exactly the type of `v` and passes through every
+    operation. When `old(...)` appears in a synthesis position (e.g. as
+    an operand of `==`/`<`/`++`, which synthesize their operands — the
+    documented postcondition pattern `ensures counter.value ==
+    old(counter.value) + 1`), `v` is synthesized and its type `T` is
+    returned unchanged, wrapped back up as `Old v'`. Without this rule the
+    construct would fall into the synth wildcard and spuriously report
+    that its type cannot be synthesized. -/
+def Synth.old (exprMd : StmtExprMd)
+    (val : StmtExprMd) (source : Option FileRange)
+    (h : exprMd.val = .Old val) :
+    ResolveM (StmtExpr × HighTypeMd) := do
+  let (val', valTy) ← Synth.resolveStmtExpr val
+  pure (.Old val', valTy)
+  termination_by (exprMd, 1)
+  decreasing_by
+    apply Prod.Lex.left
+    have hsz := exprMd.sizeOf_val_lt
+    simp [h] at hsz
+    omega
+
 /-- (Fresh)
     ```
     Γ ⊢ v ⇒ T
@@ -2192,6 +2224,33 @@ def Check.proveBy (exprMd : StmtExprMd)
   let (proof', _) ← Synth.resolveStmtExpr proof
   pure { val := .ProveBy val' proof', source := source }
   termination_by (exprMd, 0)
+  decreasing_by
+    all_goals
+      apply Prod.Lex.left
+      have hsz := exprMd.sizeOf_val_lt
+      simp [h] at hsz
+      omega
+
+/-- (ProveBy-Synth)
+    ```
+    Γ ⊢ v ⇒ T
+    Γ ⊢ proof ⇒ _
+    ────────────────────────────
+    Γ ⊢ ProveBy v proof ⇒ T
+    ```
+    Like `old`, `ProveBy v proof` is type-transparent in `v` — the proof
+    is just a hint for downstream verification and carries no typing
+    constraint. In a synthesis position `v` is synthesized for its type
+    `T`, `proof` is synthesized only for its name-resolution side effects
+    (its type is discarded), and `T` is returned. -/
+def Synth.proveBy (exprMd : StmtExprMd)
+    (val proof : StmtExprMd) (source : Option FileRange)
+    (h : exprMd.val = .ProveBy val proof) :
+    ResolveM (StmtExpr × HighTypeMd) := do
+  let (val', valTy) ← Synth.resolveStmtExpr val
+  let (proof', _) ← Synth.resolveStmtExpr proof
+  pure (.ProveBy val' proof', valTy)
+  termination_by (exprMd, 1)
   decreasing_by
     all_goals
       apply Prod.Lex.left
