@@ -1654,7 +1654,22 @@ def Synth.instanceCall (exprMd : StmtExprMd)
   let callee' ← resolveRef callee source
     (expected := #[.instanceProcedure, .staticProcedure])
   let (retTy, paramTypes) ← getCallInfo callee
-  let callParamTypes := match paramTypes with | _ :: rest => rest | [] => []
+  -- The callee resolves to either an instance- or a static-procedure. An
+  -- instance procedure's first parameter is the implicit `self` receiver,
+  -- which is not supplied positionally here, so it must be dropped before
+  -- pairing parameter types with `args`. A static procedure (also accepted
+  -- on this path) has no `self`, so all its parameters are real and none may
+  -- be dropped. We distinguish the two by the same scope lookup `getCallInfo`
+  -- uses. (NOTE: this branch is currently unreachable — no Laurel/Python
+  -- frontend produces a `StmtExpr.InstanceCall`; the only call production
+  -- lowers to `StaticCall`. The guard below keeps this rule correct should a
+  -- method-call production ever be added.)
+  let dropSelf : Bool := match (← get).scope.get? callee.text with
+    | some (_, .instanceProcedure ..) => true
+    | _ => false
+  let callParamTypes :=
+    if dropSelf then (match paramTypes with | _ :: rest => rest | [] => [])
+    else paramTypes
   let unknownTy : HighTypeMd := { val := .Unknown, source := none }
   let expectedTys : List HighTypeMd :=
     callParamTypes ++ List.replicate (args.length - callParamTypes.length) unknownTy
