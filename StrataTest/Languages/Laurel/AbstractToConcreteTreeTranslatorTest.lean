@@ -9,19 +9,20 @@ Tests that the Laurel AST to DDM concrete syntax tree conversion
 (programToStrata) preserves program structure through roundtripping.
 -/
 
-import Strata.DDM.Elab
-import Strata.DDM.BuiltinDialects.Init
-import Strata.DDM.Integration.Lean.HashCommands
+import StrataDDM.Elab
+import StrataDDM.BuiltinDialects.Init
+import StrataDDM.Integration.Lean.HashCommands
 import Strata.Languages.Laurel.Grammar.LaurelGrammar
 import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 
 open Strata
-open Strata.Elab (parseStrataProgramFromDialect)
+open StrataDDM (initDialect)
+open StrataDDM.Elab (parseStrataProgramFromDialect)
 
 namespace Strata.Laurel
 
-private def parseFromStrata (strataProgram : Strata.Program) : IO Program := do
+private def parseFromStrata (strataProgram : StrataDDM.Program) : IO Program := do
   match Laurel.TransM.run (Strata.Uri.file "test") (Laurel.parseProgram strataProgram) with
   | .error e => throw (IO.userError s!"Translation errors: {e}")
   | .ok program => pure program
@@ -31,21 +32,21 @@ private def laurelToText (prog : Program) : String :=
   let lines := text.splitOn "\n" |>.map (fun s => (s.trimAsciiEnd).toString)
   "\n".intercalate lines
 
-/-- Roundtrip through the DDM tree: Laurel AST → Strata.Program → Laurel AST → text -/
+/-- Roundtrip through the DDM tree: Laurel AST → StrataDDM.Program → Laurel AST → text -/
 private def roundtripViaDDM (prog : Program) : IO String := do
   let strataProgram := programToStrata prog
   match Laurel.TransM.run .none (Laurel.parseProgram strataProgram) with
   | .error e => throw (IO.userError s!"DDM roundtrip parse errors: {e}")
   | .ok program2 => pure (laurelToText program2)
 
-/-- Roundtrip a `Strata.Program` (already parsed by `#strata`) through DDM,
+/-- Roundtrip a `StrataDDM.Program` (already parsed by `#strata`) through DDM,
     pretty-print, re-parse, and verify convergence. -/
-private def roundtrip (strataProgram : Strata.Program) : IO String := do
+private def roundtrip (strataProgram : StrataDDM.Program) : IO String := do
   let program ← parseFromStrata strataProgram
   let firstPass ← roundtripViaDDM program
   -- Re-parse the output and verify it produces the same text (convergence)
-  let inputCtx := Strata.Parser.stringInputContext "test" firstPass
-  let dialects := Strata.Elab.LoadedDialects.ofDialects! #[initDialect, Laurel]
+  let inputCtx := StrataDDM.Parser.stringInputContext "test" firstPass
+  let dialects := StrataDDM.Elab.LoadedDialects.ofDialects! #[initDialect, Laurel]
   let reparsedStrata ← parseStrataProgramFromDialect dialects Laurel.name inputCtx
   let reparsed ← parseFromStrata reparsedStrata
   let secondPass ← roundtripViaDDM reparsed

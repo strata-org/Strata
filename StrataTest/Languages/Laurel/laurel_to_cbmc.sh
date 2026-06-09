@@ -7,7 +7,7 @@
 #   CBMC              - path to cbmc binary (default: cbmc)
 #   GOTO_CC           - path to goto-cc binary (default: goto-cc)
 #   GOTO_INSTRUMENT   - path to goto-instrument binary (default: goto-instrument)
-#   STRATA            - path to strata binary (default: uses lake exe strata)
+#   STRATA            - path to strata binary (default: uses StrataCLI/.lake/build/bin/strata)
 
 if [ -z "$1" ]; then
   echo "Usage: $0 <file.lr.st>" >&2
@@ -46,7 +46,7 @@ run() {
 if [ -n "$STRATA" ]; then
   run "strata laurelAnalyzeToGoto" "$STRATA" laurelAnalyzeToGoto "$LAUREL"
 else
-  (cd "$PROJECT_ROOT" && run "lake exe strata laurelAnalyzeToGoto" lake exe strata laurelAnalyzeToGoto "$LAUREL") || exit $?
+  (cd "$PROJECT_ROOT" && run "lake exe strata laurelAnalyzeToGoto" ./StrataCLI/.lake/build/bin/strata laurelAnalyzeToGoto "$LAUREL") || exit $?
 fi
 
 # Intermediate files are created in cwd with basename

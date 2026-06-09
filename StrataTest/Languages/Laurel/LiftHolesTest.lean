@@ -19,7 +19,7 @@ open StrataTest.Util
 namespace Strata.Laurel
 
 /-- Resolve, eliminate holes, and print all procedures. -/
-private def parseElimAndPrint (program : Strata.Program) : IO Unit := do
+private def parseElimAndPrint (program : StrataDDM.Program) : IO Unit := do
   let laurelProgram ← translateLaurel program
   let result := resolve laurelProgram
   let (laurelProgram, model) := (result.program, result.model)

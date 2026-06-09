@@ -18,12 +18,12 @@ open StrataTest.Util
 
 namespace Strata.Laurel
 
-private def parseLaurelAndElim (program : Strata.Program) : IO Program := do
+private def parseLaurelAndElim (program : StrataDDM.Program) : IO Program := do
   let laurelProgram ← translateLaurel program
   let result := resolve laurelProgram
   pure (constrainedTypeElim result.model result.program).1
 
-private def printElim (program : Strata.Program) : IO Unit := do
+private def printElim (program : StrataDDM.Program) : IO Unit := do
   let result ← parseLaurelAndElim program
   for proc in result.staticProcedures do
     IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))

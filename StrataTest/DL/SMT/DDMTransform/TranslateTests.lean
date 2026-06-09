@@ -3,11 +3,16 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.SMT.DDMTransform.Translate
-import Strata.DDM.Elab
+meta import Strata.DL.SMT.DDMTransform.Translate
+meta import StrataDDM.Elab
+
+meta section
 
 /-! ## Tests for SMT DDM Translate -/
+
+open StrataDDM (Decimal)
 
 namespace Strata.SMTDDM
 
@@ -56,16 +61,15 @@ namespace Strata.SMTDDM
 #guard_msgs in #eval (termToString (.some (.prim (.bool true))))
 
 end Strata.SMTDDM
-
 /-! ## Tests for bitvec literal decoding in translateFromDDMTermToUntyped -/
 
 namespace Strata.SMTResponseDDM
 
 /-- Helper: parse a get-value response term and decode it. -/
 private def decodeTerm (s : String) : IO (Except String Strata.SMT.Term) := do
-  let inputCtx := Strata.Parser.stringInputContext "test" s
+  let inputCtx := StrataDDM.Parser.stringInputContext "test" s
   let op ←
-    try pure (some (← Strata.Elab.parseCategoryFromDialect
+    try pure (some (← StrataDDM.Elab.parseCategoryFromDialect
           smtResponseDialects q`SMTCore.Term inputCtx))
     catch _ => pure none
   match op with
@@ -86,3 +90,5 @@ private def decodeTerm (s : String) : IO (Except String Strata.SMT.Term) := do
 #guard_msgs in #eval decodeTerm "(_ bv0 64)"
 
 end Strata.SMTResponseDDM
+
+end

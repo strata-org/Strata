@@ -4,24 +4,25 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.DDM.Integration.Lean.HashCommands
-import Strata.DDM.Elab
-import Strata.DDM.BuiltinDialects.Init
+import StrataDDM.Integration.Lean.HashCommands
+import StrataDDM.Elab
+import StrataDDM.BuiltinDialects.Init
 import Strata.Languages.Laurel.Grammar.LaurelGrammar
 import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 import Strata.Languages.Laurel.Resolution
 import Strata.Languages.Laurel.LaurelCompilationPipeline
-import Strata.Languages.Laurel.Laurel
+import Strata.Languages.Laurel
 
 open Strata
 open Strata.Laurel
+open StrataDDM (SourcedProgram)
 
 namespace StrataTest.Util
 
-/-- Translate a `Strata.Program` (typically produced by `#strata`) to a Laurel
+/-- Translate a `StrataDDM.Program` (typically produced by `#strata`) to a Laurel
     `Program`. Used by tests that need to plug in a custom post-translation
     pipeline stage; throws if translation fails. -/
-def translateLaurel (program : Strata.Program) : IO Laurel.Program := do
+def translateLaurel (program : StrataDDM.Program) : IO Laurel.Program := do
   match Laurel.TransM.run (Strata.Uri.file "<#strata>") (Laurel.parseProgram program) with
   | .error e => throw (IO.userError s!"Translation errors: {e}")
   | .ok laurelProgram => pure laurelProgram
@@ -64,7 +65,7 @@ def defaultLaurelTestOptions : LaurelVerifyOptions :=
     Returns diagnostics as `DiagnosticModel`s so the caller can choose how to
     render them (snippet-local for inline annotations, file-global for editor
     navigation). -/
-private def runLaurelResolutionRaw (program : Strata.Program) :
+private def runLaurelResolutionRaw (program : StrataDDM.Program) :
     IO (Array Strata.DiagnosticModel) := do
   let uri := Strata.Uri.file "<#strata>"
   match Laurel.TransM.run uri (Laurel.parseProgram program) with
@@ -76,7 +77,7 @@ private def runLaurelResolutionRaw (program : Strata.Program) :
 
 /-- Run the full Laurel pipeline (translate + resolve + verify).
     Returns diagnostics as `DiagnosticModel`s. -/
-private def runLaurelPipelineRaw (program : Strata.Program)
+private def runLaurelPipelineRaw (program : StrataDDM.Program)
     (options : LaurelVerifyOptions) : IO (Array Strata.DiagnosticModel) := do
   let uri := Strata.Uri.file "<#strata>"
   match Laurel.TransM.run uri (Laurel.parseProgram program) with
@@ -210,7 +211,7 @@ private def formatAnnotation (a : DiagnosticAnnotation) : String :=
     - Otherwise asserts an exact match: every diagnostic must be annotated,
       every annotation must fire. Throws on mismatch. -/
 private def runAndCheck (block : SourcedProgram)
-    (run : Strata.Program → IO (Array Strata.DiagnosticModel)) : IO Unit := do
+    (run : StrataDDM.Program → IO (Array Strata.DiagnosticModel)) : IO Unit := do
   let annotations := parseAnnotations block.source
   let dms ← run block.program
   let actual := renderSnippetLocal block.basePos block.source dms

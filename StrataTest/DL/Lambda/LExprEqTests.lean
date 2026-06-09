@@ -3,11 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Lambda.LExprEval
-import Strata.DL.Lambda.IntBoolFactory
-import Strata.DL.Lambda.TypeFactory
-import Strata.DL.Lambda.Lambda
+meta import Strata.DL.Lambda.LExprEval
+meta import Strata.DL.Lambda.IntBoolFactory
+meta import Strata.DL.Lambda.TypeFactory
+meta import Strata.DL.Lambda.Lambda
 
 /-!
 ## Tests for `eql`
@@ -18,6 +19,7 @@ Tests that equality comparison correctly:
 - Proves equality and inequality of datatype constructor applications
 -/
 
+meta section
 namespace Lambda
 open LTy.Syntax LExpr.SyntaxMono
 
@@ -174,3 +176,4 @@ private def constrFactory : Factory TP :=
   esM[(((~MkTriple #1) #3) y)]
 
 end Lambda
+end

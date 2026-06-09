@@ -5,7 +5,6 @@
 -/
 module
 
-public import Strata.DL.Util.Counter
 import all Strata.DL.Util.Counter
 public import Strata.DL.Util.StringGen
 import all Strata.DL.Util.StringGen

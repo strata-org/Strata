@@ -18,7 +18,7 @@ open StrataTest.Util
 
 namespace Strata.Laurel
 
-private def parseAndResolve (program : Strata.Program) : IO Program := do
+private def parseAndResolve (program : StrataDDM.Program) : IO Program := do
   let laurelProgram ← translateLaurel program
   pure (resolve laurelProgram).program
 
@@ -31,7 +31,7 @@ private def printProcs (program : Program) : IO String := do
 
 /-- Verify `mapStmtExpr id` is the identity by comparing printed output before
     and after the transformation. -/
-private def testMapStmtExprId (program : Strata.Program) : IO Unit := do
+private def testMapStmtExprId (program : StrataDDM.Program) : IO Unit := do
   let parsed ← parseAndResolve program
   let mapped := mapProgram (mapStmtExpr id) parsed
   let before ← printProcs parsed

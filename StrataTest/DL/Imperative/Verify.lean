@@ -3,11 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import StrataTest.DL.Imperative.DDMTranslate
-import StrataTest.DL.Imperative.SMTEncoder
-import Strata.DL.Imperative.SMTUtils
-import Strata.Pipeline.Messages
+meta import all StrataTest.DL.Imperative.DDMTranslate
+meta import all StrataTest.DL.Imperative.SMTEncoder
+meta import Strata.DL.Imperative.SMTUtils
+meta import Strata.Pipeline.Messages
+
+meta section
 
 ---------------------------------------------------------------------
 namespace Arith
@@ -84,6 +87,7 @@ end Arith
 
 namespace Strata
 namespace ArithPrograms
+open StrataDDM (Program)
 
 def verify (pgm : Program)
     (verbose : Bool := false) : IO (Imperative.VCResults Arith.PureExpr) := do
@@ -99,3 +103,4 @@ end ArithPrograms
 end Strata
 
 ---------------------------------------------------------------------
+end

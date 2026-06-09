@@ -3,10 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.B3.Verifier
-import Strata.Languages.B3.DDMTransform.ParseCST
-import Strata.Languages.B3.DDMTransform.Conversion
+import StrataDDM.Integration.Lean.HashCommands
+meta import Strata.Languages.B3.Verifier
+meta import Strata.Languages.B3.DDMTransform.ParseCST
+meta import Strata.Languages.B3.DDMTransform.Conversion
+
+meta section
 
 /-!
 # B3 to SMT Translation Tests
@@ -17,6 +21,7 @@ These tests verify the generated SMT-LIB output without running solvers.
 
 namespace B3.Verifier.TranslationTests
 
+open StrataDDM
 open Strata
 open Strata.B3.Verifier
 
@@ -183,3 +188,4 @@ procedure test_invalid_pattern() {
 #end
 
 end B3.Verifier.TranslationTests
+end

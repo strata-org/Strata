@@ -13,22 +13,23 @@ Not used by any test in this repo. The regular test framework lives in
 -/
 
 import StrataTest.Util.TestDiagnostics
-import Strata.DDM.Elab
-import Strata.DDM.BuiltinDialects.Init
-import Strata.Util.IO
+import StrataDDM.Elab
+import StrataDDM.BuiltinDialects.Init
+import StrataDDM.Util.IO
 import Strata.Languages.Laurel.Grammar.LaurelGrammar
 import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 import Strata.Languages.Laurel.LaurelCompilationPipeline
 
 open StrataTest.Util
 open Strata
-open Strata.Elab (parseStrataProgramFromDialect)
+open StrataDDM (initDialect)
+open StrataDDM.Elab (parseStrataProgramFromDialect)
 open Lean.Parser (InputContext)
 
 namespace Strata.Laurel
 
 def processLaurelFileWithOptions (options : LaurelVerifyOptions) (input : InputContext) : IO (Array Diagnostic) := do
-  let dialects := Strata.Elab.LoadedDialects.ofDialects! #[initDialect, Laurel]
+  let dialects := StrataDDM.Elab.LoadedDialects.ofDialects! #[initDialect, Laurel]
   let strataProgram ← parseStrataProgramFromDialect dialects Laurel.name input
 
   let uri := Strata.Uri.file input.fileName

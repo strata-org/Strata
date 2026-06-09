@@ -20,7 +20,7 @@ open StrataTest.Util
 namespace Strata.Laurel
 
 /-- Translate the program through the full Laurel pipeline and print stats. -/
-private def printStats (program : Strata.Program) : IO Unit := do
+private def printStats (program : StrataDDM.Program) : IO Unit := do
   let laurelProgram ← translateLaurel program
   let (_, _, _, stats) ← translateWithLaurel {} laurelProgram
   IO.print stats.format

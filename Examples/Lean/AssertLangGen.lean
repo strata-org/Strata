@@ -6,7 +6,7 @@
 
 -- Generate Lean types for an AssertLang dialect (based on the DDM manual).
 -- Used to produce trace output for documentation.
-import Strata.DDM.Integration.Lean
+import StrataDDM.Integration.Lean
 
 namespace Strata
 

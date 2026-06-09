@@ -686,4 +686,13 @@ theorem zip_map_snd_eq {α β: Type} (l1: List α) (l2: List β) :
   (l1.zip l2).map Prod.snd = l2 := by
   induction l1 generalizing l2 <;> cases l2 <;> simp_all
 
+/-- If `find?` returns a pair from a zipped list, its second component belongs to the
+    second input list. -/
+theorem zip_find_mem_snd [BEq α] (l1 : List α) (l2 : List β)
+    (x : α) (p : α × β)
+    (h : (List.zip l1 l2).find? (fun p => p.1 == x) = some p) :
+    p.2 ∈ l2 := by
+  have h_mem := List.mem_of_find?_eq_some h
+  exact (List.of_mem_zip h_mem).2
+
 end
