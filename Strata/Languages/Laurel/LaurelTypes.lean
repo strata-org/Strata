@@ -24,6 +24,7 @@ def getCallType (source : Option FileRange) (model : SemanticModel) (callee : Id
     | .datatypeDestructor _ fld => fld.type
     | .parameter p => p.type
     | .staticProcedure proc => match proc.outputs with
+      | [] => { val := .TVoid, source := source }
       | [singleOutput] => singleOutput.type
       | outputs => { val := .MultiValuedExpr (outputs.map (·.type)), source := none }
     | .unresolved source => { val := HighType.Unknown, source := source }
