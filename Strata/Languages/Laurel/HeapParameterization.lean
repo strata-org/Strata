@@ -409,20 +409,24 @@ where
     | .PureFieldUpdate t f v => return [⟨ .PureFieldUpdate (← recurseOne t) f (← recurseOne v), source ⟩]
     | .PrimitiveOp op args _ =>
       let args' ← args.mapM (recurseOne ·)
-      -- For == and != on Composite types, compare refs instead
+      -- For == and != on Composite types, compare refs instead. Note
+      -- `.UserDefined` covers BOTH composites (heap references — `ref!` is
+      -- correct) and datatypes (values — `ref!` is wrong and would unify a
+      -- datatype value against `Composite`). Only ref-compare composites;
+      -- datatype equality falls through to structural comparison.
       match op, args with
       | .Eq, [e1, _e2] =>
-        let ty := (computeExprType model e1).val
-        match ty with
-        | .UserDefined _ =>
+        match (computeExprType model e1).val with
+        | .UserDefined name =>
+          if isDatatype model name then return [⟨ .PrimitiveOp op args', source ⟩]
           let ref1 := mkMd (.StaticCall "Composite..ref!" [args'[0]!])
           let ref2 := mkMd (.StaticCall "Composite..ref!" [args'[1]!])
           return [⟨ .PrimitiveOp .Eq [ref1, ref2], source ⟩]
         | _ => return [⟨ .PrimitiveOp op args', source ⟩]
       | .Neq, [e1, _e2] =>
-        let ty := (computeExprType model e1).val
-        match ty with
-        | .UserDefined _ =>
+        match (computeExprType model e1).val with
+        | .UserDefined name =>
+          if isDatatype model name then return [⟨ .PrimitiveOp op args', source ⟩]
           let ref1 := mkMd (.StaticCall "Composite..ref!" [args'[0]!])
           let ref2 := mkMd (.StaticCall "Composite..ref!" [args'[1]!])
           return [⟨ .PrimitiveOp .Neq [ref1, ref2], source ⟩]
