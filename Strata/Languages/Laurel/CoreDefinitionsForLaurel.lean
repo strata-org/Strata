@@ -35,13 +35,13 @@ datatype LaurelUnit { MkLaurelUnit() }
 // And remove the hacky filter in HeapParameterization
 datatype Box { MkBox() }
 
-function select(map: int, key: int) : Box
+procedure select(map: int, key: int) : Box
   external;
 
-function update(map: int, key: int, value: int) : Box
+procedure update(map: int, key: int, value: int) : Box
   external;
 
-function const(value: int) : Box
+procedure const(value: int) : Box
   external;
 
 #end

@@ -53,21 +53,21 @@ datatype Heap {
 }
 
 // Read a field from the heap: readField(heap, obj, field) = Heap..data!(heap)[obj][field]
-function readField(heap: Heap, obj: Composite, field: Field): Box {
-  select(select(Heap..data!(heap), obj), field)
+procedure readField(heap: Heap, obj: Composite, field: Field): Box {
+  return select(select(Heap..data!(heap), obj), field)
 };
 
 // Update a field in the heap
-function updateField(heap: Heap, obj: Composite, field: Field, val: Box): Heap {
-  MkHeap(
+procedure updateField(heap: Heap, obj: Composite, field: Field, val: Box): Heap {
+  return MkHeap(
     update(Heap..data!(heap), obj,
       update(select(Heap..data!(heap), obj), field, val)),
     Heap..nextReference!(heap))
 };
 
 // Increment the heap allocation nextReference, returning a new heap
-function increment(heap: Heap): Heap {
-  MkHeap(Heap..data!(heap), Heap..nextReference!(heap) + 1)
+procedure increment(heap: Heap): Heap {
+  return MkHeap(Heap..data!(heap), Heap..nextReference!(heap) + 1)
 };
 
 #end
