@@ -206,7 +206,11 @@ pattern the CFG cannot replicate. -/
 Predicate stating that a statement or block has a "simple" shape suitable
 for the structured-to-CFG soundness proof under axiom-free assumptions:
 - no nondeterministic `.ite`
-- no `.loop` of any kind (the `.loop` arm discharges by contradiction)
+- `.loop` is permitted **provided its body is itself simple-shape**.
+  Auxiliary predicates `loopBodyNoInits`, `loopHasNoInvariants`, and
+  `noMeasureLoops` further restrict which loops are admissible for the
+  current proof scope (no body-local var inits, no labeled invariants,
+  no termination measure). Those predicates are defined below.
 
 `.ite (.det _)`, `.block`, sequential `.cmd`s, `.exit`, `.funcDecl`,
 and `.typeDecl` are all allowed.
@@ -220,7 +224,7 @@ mutual
   | .block _ bss _ => Block.simpleShape bss
   | .ite (.det _) tss ess _ => Block.simpleShape tss && Block.simpleShape ess
   | .ite .nondet _ _ _ => false
-  | .loop _ _ _ _ _ => false
+  | .loop _ _ _ bss _ => Block.simpleShape bss
   | .exit _ _ => true
   | .funcDecl _ _ => true
   | .typeDecl _ _ => true
@@ -258,6 +262,263 @@ theorem Stmt.simpleShape_branch_else
   simp only [Stmt.simpleShape, Bool.and_eq_true]
   intro h
   exact h.2
+
+/-- The body of a `.block` is simple when the whole block-statement is. -/
+theorem Stmt.simpleShape_block_body
+    {label : String} {body : List (Stmt P (Cmd P))} {md : MetaData P} :
+    Stmt.simpleShape (.block label body md) = true →
+    Block.simpleShape body = true := by
+  simp only [Stmt.simpleShape]
+  intro h; exact h
+
+/-- The body of a `.loop` is simple when the whole loop-statement is. -/
+theorem Stmt.simpleShape_loop_body
+    {g : ExprOrNondet P} {m : Option P.Expr}
+    {is : List (String × P.Expr)} {body : List (Stmt P (Cmd P))}
+    {md : MetaData P} :
+    Stmt.simpleShape (.loop g m is body md) = true →
+    Block.simpleShape body = true := by
+  simp only [Stmt.simpleShape]
+  intro h; exact h
+
+---------------------------------------------------------------------
+
+/-! ### LoopBodyNoInits
+
+Predicate stating that every `.loop _ _ _ bss _` reachable inside a
+statement (or block) has `Block.initVars bss = []`. Used by the
+structured-to-CFG soundness proof: the CFG flat namespace cannot
+re-execute body inits at iteration ≥ 2, so we restrict to loops whose
+body declares no local variables.
+-/
+
+mutual
+/-- Returns true if every reachable loop's body declares no local vars. -/
+@[expose] def Stmt.loopBodyNoInits (s : Stmt P (Cmd P)) : Bool :=
+  match s with
+  | .cmd _ => true
+  | .block _ bss _ => Block.loopBodyNoInits bss
+  | .ite _ tss ess _ => Block.loopBodyNoInits tss && Block.loopBodyNoInits ess
+  | .loop _ _ _ bss _ =>
+      (Block.initVars bss).isEmpty && Block.loopBodyNoInits bss
+  | .exit _ _ => true
+  | .funcDecl _ _ => true
+  | .typeDecl _ _ => true
+  termination_by (Stmt.sizeOf s)
+
+/-- Block-level lifting of `Stmt.loopBodyNoInits`. -/
+@[expose] def Block.loopBodyNoInits (ss : List (Stmt P (Cmd P))) : Bool :=
+  match ss with
+  | [] => true
+  | s :: srest => Stmt.loopBodyNoInits s && Block.loopBodyNoInits srest
+  termination_by (Block.sizeOf ss)
+end
+
+theorem Block.loopBodyNoInits_cons_iff
+    {s : Stmt P (Cmd P)} {rest : List (Stmt P (Cmd P))} :
+    Block.loopBodyNoInits (s :: rest) = true ↔
+      Stmt.loopBodyNoInits s = true ∧ Block.loopBodyNoInits rest = true := by
+  simp only [Block.loopBodyNoInits, Bool.and_eq_true]
+
+theorem Stmt.loopBodyNoInits_branch_then
+    {g : ExprOrNondet P} {tss ess : List (Stmt P (Cmd P))} {md : MetaData P} :
+    Stmt.loopBodyNoInits (.ite g tss ess md) = true →
+    Block.loopBodyNoInits tss = true := by
+  simp only [Stmt.loopBodyNoInits, Bool.and_eq_true]
+  intro h; exact h.1
+
+theorem Stmt.loopBodyNoInits_branch_else
+    {g : ExprOrNondet P} {tss ess : List (Stmt P (Cmd P))} {md : MetaData P} :
+    Stmt.loopBodyNoInits (.ite g tss ess md) = true →
+    Block.loopBodyNoInits ess = true := by
+  simp only [Stmt.loopBodyNoInits, Bool.and_eq_true]
+  intro h; exact h.2
+
+theorem Stmt.loopBodyNoInits_block_body
+    {label : String} {body : List (Stmt P (Cmd P))} {md : MetaData P} :
+    Stmt.loopBodyNoInits (.block label body md) = true →
+    Block.loopBodyNoInits body = true := by
+  simp only [Stmt.loopBodyNoInits]
+  intro h; exact h
+
+/-- A loop's body has no local variable initializations. -/
+theorem Stmt.loopBodyNoInits_loop_body
+    {g : ExprOrNondet P} {m : Option P.Expr}
+    {is : List (String × P.Expr)} {body : List (Stmt P (Cmd P))}
+    {md : MetaData P} :
+    Stmt.loopBodyNoInits (.loop g m is body md) = true →
+    Block.initVars body = [] := by
+  simp only [Stmt.loopBodyNoInits, Bool.and_eq_true, List.isEmpty_iff]
+  intro h; exact h.1
+
+/-- The recursive `loopBodyNoInits` discharge for a loop's body. -/
+theorem Stmt.loopBodyNoInits_loop_body_rec
+    {g : ExprOrNondet P} {m : Option P.Expr}
+    {is : List (String × P.Expr)} {body : List (Stmt P (Cmd P))}
+    {md : MetaData P} :
+    Stmt.loopBodyNoInits (.loop g m is body md) = true →
+    Block.loopBodyNoInits body = true := by
+  simp only [Stmt.loopBodyNoInits, Bool.and_eq_true]
+  intro h; exact h.2
+
+---------------------------------------------------------------------
+
+/-! ### LoopHasNoInvariants
+
+Predicate stating that every `.loop _ _ is _ _` reachable inside a
+statement (or block) has `is = []` (no labeled invariants). Used by
+the structured-to-CFG soundness proof to collapse the assert-chain
+at the loop entry block to empty.
+-/
+
+mutual
+/-- Returns true if every reachable loop has no invariants. -/
+@[expose] def Stmt.loopHasNoInvariants (s : Stmt P (Cmd P)) : Bool :=
+  match s with
+  | .cmd _ => true
+  | .block _ bss _ => Block.loopHasNoInvariants bss
+  | .ite _ tss ess _ => Block.loopHasNoInvariants tss && Block.loopHasNoInvariants ess
+  | .loop _ _ is bss _ =>
+      is.isEmpty && Block.loopHasNoInvariants bss
+  | .exit _ _ => true
+  | .funcDecl _ _ => true
+  | .typeDecl _ _ => true
+  termination_by (Stmt.sizeOf s)
+
+/-- Block-level lifting of `Stmt.loopHasNoInvariants`. -/
+@[expose] def Block.loopHasNoInvariants (ss : List (Stmt P (Cmd P))) : Bool :=
+  match ss with
+  | [] => true
+  | s :: srest => Stmt.loopHasNoInvariants s && Block.loopHasNoInvariants srest
+  termination_by (Block.sizeOf ss)
+end
+
+theorem Block.loopHasNoInvariants_cons_iff
+    {s : Stmt P (Cmd P)} {rest : List (Stmt P (Cmd P))} :
+    Block.loopHasNoInvariants (s :: rest) = true ↔
+      Stmt.loopHasNoInvariants s = true ∧ Block.loopHasNoInvariants rest = true := by
+  simp only [Block.loopHasNoInvariants, Bool.and_eq_true]
+
+theorem Stmt.loopHasNoInvariants_branch_then
+    {g : ExprOrNondet P} {tss ess : List (Stmt P (Cmd P))} {md : MetaData P} :
+    Stmt.loopHasNoInvariants (.ite g tss ess md) = true →
+    Block.loopHasNoInvariants tss = true := by
+  simp only [Stmt.loopHasNoInvariants, Bool.and_eq_true]
+  intro h; exact h.1
+
+theorem Stmt.loopHasNoInvariants_branch_else
+    {g : ExprOrNondet P} {tss ess : List (Stmt P (Cmd P))} {md : MetaData P} :
+    Stmt.loopHasNoInvariants (.ite g tss ess md) = true →
+    Block.loopHasNoInvariants ess = true := by
+  simp only [Stmt.loopHasNoInvariants, Bool.and_eq_true]
+  intro h; exact h.2
+
+theorem Stmt.loopHasNoInvariants_block_body
+    {label : String} {body : List (Stmt P (Cmd P))} {md : MetaData P} :
+    Stmt.loopHasNoInvariants (.block label body md) = true →
+    Block.loopHasNoInvariants body = true := by
+  simp only [Stmt.loopHasNoInvariants]
+  intro h; exact h
+
+/-- A loop has no labeled invariants. -/
+theorem Stmt.loopHasNoInvariants_loop_invs
+    {g : ExprOrNondet P} {m : Option P.Expr}
+    {is : List (String × P.Expr)} {body : List (Stmt P (Cmd P))}
+    {md : MetaData P} :
+    Stmt.loopHasNoInvariants (.loop g m is body md) = true →
+    is = [] := by
+  simp only [Stmt.loopHasNoInvariants, Bool.and_eq_true, List.isEmpty_iff]
+  intro h; exact h.1
+
+/-- The recursive `loopHasNoInvariants` discharge for a loop's body. -/
+theorem Stmt.loopHasNoInvariants_loop_body_rec
+    {g : ExprOrNondet P} {m : Option P.Expr}
+    {is : List (String × P.Expr)} {body : List (Stmt P (Cmd P))}
+    {md : MetaData P} :
+    Stmt.loopHasNoInvariants (.loop g m is body md) = true →
+    Block.loopHasNoInvariants body = true := by
+  simp only [Stmt.loopHasNoInvariants, Bool.and_eq_true]
+  intro h; exact h.2
+
+---------------------------------------------------------------------
+
+/-! ### NoMeasureLoops
+
+Predicate stating that every `.loop _ m _ _ _` reachable inside a
+statement (or block) has `m = .none` (no termination measure). Used
+by the structured-to-CFG soundness proof to collapse the
+`measure_lb` / `measure_decrease` blocks in the translator's loop
+CFG layout.
+-/
+
+mutual
+/-- Returns true if every reachable loop has no termination measure. -/
+@[expose] def Stmt.noMeasureLoops (s : Stmt P (Cmd P)) : Bool :=
+  match s with
+  | .cmd _ => true
+  | .block _ bss _ => Block.noMeasureLoops bss
+  | .ite _ tss ess _ => Block.noMeasureLoops tss && Block.noMeasureLoops ess
+  | .loop _ m _ bss _ =>
+      m.isNone && Block.noMeasureLoops bss
+  | .exit _ _ => true
+  | .funcDecl _ _ => true
+  | .typeDecl _ _ => true
+  termination_by (Stmt.sizeOf s)
+
+/-- Block-level lifting of `Stmt.noMeasureLoops`. -/
+@[expose] def Block.noMeasureLoops (ss : List (Stmt P (Cmd P))) : Bool :=
+  match ss with
+  | [] => true
+  | s :: srest => Stmt.noMeasureLoops s && Block.noMeasureLoops srest
+  termination_by (Block.sizeOf ss)
+end
+
+theorem Block.noMeasureLoops_cons_iff
+    {s : Stmt P (Cmd P)} {rest : List (Stmt P (Cmd P))} :
+    Block.noMeasureLoops (s :: rest) = true ↔
+      Stmt.noMeasureLoops s = true ∧ Block.noMeasureLoops rest = true := by
+  simp only [Block.noMeasureLoops, Bool.and_eq_true]
+
+theorem Stmt.noMeasureLoops_branch_then
+    {g : ExprOrNondet P} {tss ess : List (Stmt P (Cmd P))} {md : MetaData P} :
+    Stmt.noMeasureLoops (.ite g tss ess md) = true →
+    Block.noMeasureLoops tss = true := by
+  simp only [Stmt.noMeasureLoops, Bool.and_eq_true]
+  intro h; exact h.1
+
+theorem Stmt.noMeasureLoops_branch_else
+    {g : ExprOrNondet P} {tss ess : List (Stmt P (Cmd P))} {md : MetaData P} :
+    Stmt.noMeasureLoops (.ite g tss ess md) = true →
+    Block.noMeasureLoops ess = true := by
+  simp only [Stmt.noMeasureLoops, Bool.and_eq_true]
+  intro h; exact h.2
+
+theorem Stmt.noMeasureLoops_block_body
+    {label : String} {body : List (Stmt P (Cmd P))} {md : MetaData P} :
+    Stmt.noMeasureLoops (.block label body md) = true →
+    Block.noMeasureLoops body = true := by
+  simp only [Stmt.noMeasureLoops]
+  intro h; exact h
+
+/-- A loop has no termination measure. -/
+theorem Stmt.noMeasureLoops_loop_measure
+    {g : ExprOrNondet P} {m : Option P.Expr}
+    {is : List (String × P.Expr)} {body : List (Stmt P (Cmd P))}
+    {md : MetaData P} :
+    Stmt.noMeasureLoops (.loop g m is body md) = true →
+    m = .none := by
+  simp only [Stmt.noMeasureLoops, Bool.and_eq_true, Option.isNone_iff_eq_none]
+  intro h; exact h.1
+
+/-- The recursive `noMeasureLoops` discharge for a loop's body. -/
+theorem Stmt.noMeasureLoops_loop_body_rec
+    {g : ExprOrNondet P} {m : Option P.Expr}
+    {is : List (String × P.Expr)} {body : List (Stmt P (Cmd P))}
+    {md : MetaData P} :
+    Stmt.noMeasureLoops (.loop g m is body md) = true →
+    Block.noMeasureLoops body = true := by
+  simp only [Stmt.noMeasureLoops, Bool.and_eq_true]
+  intro h; exact h.2
 
 ---------------------------------------------------------------------
 
