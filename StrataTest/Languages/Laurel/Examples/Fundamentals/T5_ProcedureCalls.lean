@@ -43,18 +43,6 @@ procedure fooProof()
 // because we don't yet support making fooReassign transparent
 //  assert x == y;
 };
-
-function aFunction(x: int): int
-{
-  x
-};
-
-procedure aFunctionCaller()
-  opaque
-{
-  var x: int := aFunction(3);
-  assert x == 3
-};
 "
 
 #guard_msgs (drop info, error) in

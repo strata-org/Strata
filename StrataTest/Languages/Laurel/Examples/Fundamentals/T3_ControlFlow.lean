@@ -16,6 +16,24 @@ open Strata
 namespace Strata.Laurel
 
 def program := r"
+procedure assertAndAssumeInTransparent(a: int) returns (r: int)
+{
+  assert 2 == 3;
+  assume true;
+  return a
+};
+
+procedure letExpressionsInTransparent() returns (r: int) {
+  var x: int := 0;
+  var y: int := x + 1;
+  var z: int := y + 1;
+  z
+};
+
+procedure callLetExpressionsInTransparent() opaque {
+  var x: int := letExpressionsInTransparent();
+  assert x == 2
+};
 
 procedure returnAtEnd(x: int) returns (r: int)
 {
@@ -30,9 +48,9 @@ procedure returnAtEnd(x: int) returns (r: int)
   }
 };
 
-function elseWithCall(): int
+procedure elseWithCall(): int
 {
-  if true then 3 else returnAtEnd(3)
+  return if true then 3 else returnAtEnd(3)
 };
 
 procedure guardInFunction(x: int) returns (r: int)

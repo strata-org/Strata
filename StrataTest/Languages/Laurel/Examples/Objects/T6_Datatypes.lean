@@ -55,14 +55,13 @@ procedure unsafeDestructor() opaque {
 //^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 
-// Datatype in function
-function listHead(xs: IntList): int
+procedure listHead(xs: IntList): int
   requires IntList..isCons(xs)
 {
-  IntList..head(xs)
+  return IntList..head(xs)
 };
 
-procedure testFunction() opaque {
+procedure testListHead() opaque {
   var xs: IntList := Cons(10, Nil());
   var h: int := listHead(xs);
   assert h == 10

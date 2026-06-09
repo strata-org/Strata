@@ -16,7 +16,7 @@ namespace Strata
 namespace Laurel
 
 def arityMismatchProgram := r"
-function f(x: int): int { x };
+procedure f(x: int): int { x };
 
 procedure caller()
   opaque

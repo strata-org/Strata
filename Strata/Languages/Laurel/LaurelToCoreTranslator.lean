@@ -256,7 +256,7 @@ def translateExpr (expr : StmtExprMd)
   | .Assign _ _ =>
       disallowed expr.source "destructive assignments are not supported in transparent bodies or contracts"
   | .While _ _ _ _ =>
-      disallowed expr.source "loops are not supported in functions or contracts"
+      disallowed expr.source "loops are not supported in transparent bodies or contracts"
   | .Exit _ => disallowed expr.source "exit is not supported in expression position"
 
   | .Block (⟨ .Assert _, innerSrc⟩ :: rest) label => do
@@ -271,7 +271,7 @@ def translateExpr (expr : StmtExprMd)
       let coreMonoType ← translateType ty
       return .app () (.abs () name.text (some coreMonoType) bodyExpr) valueExpr
   | .Block (⟨ .Var (.Declare _), innerSrc⟩ :: rest) label => do
-    _ ← disallowed innerSrc "local variables in functions must have initializers"
+    _ ← disallowed innerSrc "local variables must have initializers in transparent bodies or contracts "
     translateExpr { val := StmtExpr.Block rest label, source := innerSrc } boundVars isPureContext
   | .Block (⟨ .IfThenElse cond thenBranch (some elseBranch), innerSrc⟩ :: rest) label =>
     disallowed innerSrc "if-then-else only supported as the last statement in a block"

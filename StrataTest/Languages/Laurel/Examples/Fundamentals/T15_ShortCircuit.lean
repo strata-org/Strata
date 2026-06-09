@@ -16,37 +16,12 @@ namespace Strata
 namespace Laurel
 
 def shortCircuitProgram := r"
-function mustNotCallFunc(x: int): int
-  requires false
-{ x };
 
 procedure mustNotCallProc(): int
   requires false
   opaque
 {
   return 0
-};
-
-// Pure path: function with requires false
-procedure testAndThenFunc()
-  opaque
-{
-  var b: bool := false && mustNotCallFunc(0) > 0;
-  assert !b
-};
-
-procedure testOrElseFunc()
-  opaque
-{
-  var b: bool := true || mustNotCallFunc(0) > 0;
-  assert b
-};
-
-procedure testImpliesFunc()
-  opaque
-{
-  var b: bool := false ==> mustNotCallFunc(0) > 0;
-  assert b
 };
 
 // Pure path: division by zero

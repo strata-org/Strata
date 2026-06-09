@@ -24,18 +24,19 @@ procedure hasMutatingAssignment(): int
   x
 };
 
-function functionWithMutatingAssignment(x: int): int
+procedure transparentWithMutatingAssignment(x: int): int
 {
   x := x + 1
 //^^^^^^^^^^ error: destructive assignments are not supported in transparent bodies or contracts
 };
 
-function functionWithWhile(x: int): int
+procedure transparentWithWhile(x: int): int
 {
   while(false) {}
-//^^^^^^^^^^^^^^^ error: loops are not supported in functions or contracts
+//^^^^^^^^^^^^^^^ error: loops are not supported in transparent bodies or contracts
 };
-function functionCallingHasMutationAssignment(x: int): int
+
+procedure callsHasMutatingAssignment(x: int): int
 {
   hasMutatingAssignment()
 };
