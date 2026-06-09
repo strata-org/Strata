@@ -22,6 +22,7 @@ A procedure with a decreases clause may be called in an erased context.
 
 def program := r"
 procedure noDecreases(x: int): boolean;
+
 procedure caller(x: int)
   requires noDecreases(x)
 //                    ^ error: noDecreases can not be called from a pure context, because it is not proven to terminate

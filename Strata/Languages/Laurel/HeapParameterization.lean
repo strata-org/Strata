@@ -80,7 +80,7 @@ def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
         | .Local _ | .Declare _ => pure ()
       collectExprMd v
   | .PureFieldUpdate t _ v => collectExprMd t; collectExprMd v
-  | .PrimitiveOp _ args => for a in args do collectExprMd a
+  | .PrimitiveOp _ args _ => for a in args do collectExprMd a
   | .New _ => modify fun s => { s with writesHeapDirectly := true }
   | .ReferenceEquals l r => collectExprMd l; collectExprMd r
   | .AsType t _ => collectExprMd t
@@ -89,7 +89,7 @@ def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
   | .Assigned n => collectExprMd n
   | .Old v => collectExprMd v
   | .Fresh v => collectExprMd v
-  | .Assert ⟨c, _⟩ => collectExprMd c
+  | .Assert ⟨c, _, _⟩ => collectExprMd c
   | .Assume c => collectExprMd c
   | .ProveBy v p => collectExprMd v; collectExprMd p
   | .ContractOf _ f => collectExprMd f
@@ -403,7 +403,7 @@ where
       return newAssign :: suffixes
 
     | .PureFieldUpdate t f v => return [⟨ .PureFieldUpdate (← recurseOne t) f (← recurseOne v), source ⟩]
-    | .PrimitiveOp op args =>
+    | .PrimitiveOp op args _ =>
       let args' ← args.mapM (recurseOne ·)
       -- For == and != on Composite types, compare refs instead
       match op, args with
@@ -438,8 +438,8 @@ where
     | .Assigned n => return [⟨ .Assigned (← recurseOne n), source ⟩]
     | .Old v => return [⟨ .Old (← recurseOne v), source ⟩]
     | .Fresh v => return [⟨ .Fresh (← recurseOne v), source ⟩]
-    | .Assert ⟨condExpr, summary⟩ =>
-        return [⟨ .Assert { condition := ← recurseOne condExpr, summary }, source ⟩]
+    | .Assert ⟨condExpr, summary, free⟩ =>
+        return [⟨ .Assert { condition := ← recurseOne condExpr, summary, free }, source ⟩]
     | .Assume c => return [⟨ .Assume (← recurseOne c), source ⟩]
     | .ProveBy v p => return [⟨ .ProveBy (← recurseOne v) (← recurseOne p), source ⟩]
     | .ContractOf ty f => return [⟨ .ContractOf ty (← recurseOne f), source ⟩]
