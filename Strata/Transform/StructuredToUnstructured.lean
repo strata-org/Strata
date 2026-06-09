@@ -43,7 +43,7 @@ def flushCmds
       pure (k, [])
     else
       let l ← StringGenState.gen pfx
-      let b := (l, { cmds := accum.reverse, transfer := .goto k })
+      let b := (l, { cmds := accum.reverse, transfer := .goto k .empty })
       pure (l, [b])
   | some tr =>
     let l ← StringGenState.gen pfx
