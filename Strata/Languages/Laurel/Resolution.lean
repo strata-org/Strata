@@ -491,13 +491,14 @@ private def checkSubtype (source : Option FileRange) (expected : HighTypeMd) (ac
   unless isConsistentSubtype ctx actual expected do
     typeMismatch source none s!"expected '{formatType expected}'" actual
 
-/-- Test whether a type is in the set of numeric primitives. `Unknown` is
+/-- Test whether a type is in the set of numeric primitives
+    (`TInt` / `TReal` / `TFloat64` / `TBv`). `Unknown` is
     accepted as a gradual escape hatch. Aliases and constrained types are
     unfolded first so e.g. `nat` (constrained over `int`) counts as numeric.
     Used by Op-Cmp / Op-Arith. -/
 private def isNumeric (ctx : TypeContext) (ty : HighTypeMd) : Bool :=
   match (ctx.unfold ty).val with
-  | .TInt | .TReal | .TFloat64 | .Unknown => true
+  | .TInt | .TReal | .TFloat64 | .TBv _ | .Unknown => true
   | _ => false
 
 /-- Least upper bound of two types under the consistency relation

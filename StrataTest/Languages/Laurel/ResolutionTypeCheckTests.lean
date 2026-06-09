@@ -284,4 +284,21 @@ procedure test() opaque {
 #guard_msgs (error, drop all) in
 #eval testInputWithOffset "VoidCallInValuePosition" voidCallInValuePosition 234 processResolution
 
+/-! ## Bitvectors are numeric
+
+Bitvector operands (`bv n`) participate in arithmetic and comparison
+operators just like the other numeric primitives. `isNumeric` therefore
+accepts `TBv`, so a comparison of two bitvector parameters resolves
+cleanly with no diagnostics. (Regression guard for `isNumeric` previously
+rejecting `TBv` and emitting a spurious "expected a numeric type" error.) -/
+
+def bitvectorComparisonOk := r"
+function cmp(x: bv 32, y: bv 32): bool {
+  x < y
+};
+"
+
+#guard_msgs (drop info) in
+#eval testInputWithOffset "BitvectorComparisonOk" bitvectorComparisonOk 250 processResolution
+
 end Laurel
