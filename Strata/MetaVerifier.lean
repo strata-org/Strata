@@ -175,7 +175,7 @@ def genSMTVCs (program : Program) : Option SMT.SMTVCs := do
 State semantic correctness of the SMT verification conditions generated for a
 program.
 -/
-def smtVCsCorrect (program : Program) : Prop :=
+@[expose] def smtVCsCorrect (program : Program) : Prop :=
   match genSMTVCs program with
   | some vcs => (denoteQueries vcs).getD False
   | none     => False
