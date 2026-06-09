@@ -258,9 +258,10 @@ The Index below links to each construct's subsection.
 - {ref "rules-subsumption"}[*Subsumption*] — \[⇐\] Sub
 - {ref "rules-literals"}[*Literals*] — \[⇒\] Lit-Int, \[⇒\] Lit-Bool, \[⇒\] Lit-String, \[⇒\] Lit-Decimal
 - {ref "rules-variables"}[*Variables*] — \[⇒\] Var-Local, \[⇒\] Var-Field, \[⇐\] Var-Declare
-- {ref "rules-control-flow"}[*Control flow*] — \[⇐\] If, \[⇐\] If-NoElse;
+- {ref "rules-control-flow"}[*Control flow*] — \[⇐\] If, \[⇐\] If-NoElse,
+  \[⇒\] If-Synth, \[⇒\] If-Synth-NoElse;
   \[⇐\] Block-Singleton, \[⇐\] Block-Cons,
-  \[⇐\] Discard-Call-Cons, \[⇐\] Discard-Call-Last, \[⇒\] Skip; \[⇐\] Exit;
+  \[⇐\] Discard-Call-Cons, \[⇐\] Discard-Call-Last, \[⇒\] Skip, \[⇒\] Block-Synth; \[⇐\] Exit;
   \[⇐\] Return-None-Void, \[⇐\] Return-None-Single, \[⇐\] Return-None-Multi,
   \[⇐\] Return-Some, \[⇐\] Return-Void-Error,
   \[⇐\] Return-Multi-Error; \[⇐\] While
@@ -273,7 +274,7 @@ The Index below links to each construct's subsection.
 - {ref "rules-object-forms"}[*Object forms*] — \[⇒\] New-Ok, \[⇒\] New-Fallback; \[⇒\] AsType; \[⇒\] IsType;
   \[⇒\] RefEq; \[⇒\] PureFieldUpdate
 - {ref "rules-verification-expressions"}[*Verification expressions*] — \[⇒\] Quantifier, \[⇒\] Assigned, \[⇐\] Old,
-  \[⇒\] Fresh, \[⇐\] ProveBy
+  \[⇒\] Old-Synth, \[⇒\] Fresh, \[⇐\] ProveBy, \[⇒\] ProveBy-Synth
 - {ref "rules-self-reference"}[*Self reference*] — \[⇒\] This-Inside, \[⇒\] This-Outside
 - {ref "rules-untyped-forms"}[*Untyped forms*] — \[⇒\] Abstract / All
 - {ref "rules-contract-of"}[*ContractOf*] — \[⇒\] ContractOf-Bool, \[⇒\] ContractOf-Set, \[⇒\] ContractOf-Error
@@ -345,6 +346,22 @@ $$`\frac{\Gamma \vdash \mathit{cond} \Leftarrow \mathsf{TBool} \quad \Gamma \vda
 
 {docstring Strata.Laurel.Resolution.Check.ifThenElse}
 
+When an `if` appears in *operand* position — where no expected type is
+available to push down (e.g. as an operand of $`==` / $`<` / $`+\!+`,
+whose operands are synthesized) — the synth counterpart fires instead.
+With an `else`, both branches are synthesized and their types must be
+mutually consistent ($`\sim`, the symmetric gradual relation);
+inconsistent branches $`[\text{emits “'if' branches have incompatible
+types X and Y”}]` and synthesize $`\mathsf{Unknown}`. Without an
+`else`, the missing branch cannot produce a value, so the `if`
+synthesizes $`\mathsf{TVoid}`.
+
+$$`\frac{\Gamma \vdash \mathit{cond} \Leftarrow \mathsf{TBool} \quad \Gamma \vdash \mathit{thenBr} \Rightarrow T_t \quad \Gamma \vdash \mathit{elseBr} \Rightarrow T_e \quad T_t \sim T_e}{\Gamma \vdash \mathsf{IfThenElse}\;\mathit{cond}\;\mathit{thenBr}\;(\mathsf{some}\;\mathit{elseBr}) \Rightarrow T_t} \quad \text{([⇒] If-Synth)}`
+
+$$`\frac{\Gamma \vdash \mathit{cond} \Leftarrow \mathsf{TBool} \quad \Gamma \vdash \mathit{thenBr} \Rightarrow \_}{\Gamma \vdash \mathsf{IfThenElse}\;\mathit{cond}\;\mathit{thenBr}\;\mathsf{none} \Rightarrow \mathsf{TVoid}} \quad \text{([⇒] If-Synth-NoElse)}`
+
+{docstring Strata.Laurel.Resolution.Synth.ifThenElse}
+
 A non-empty block is typed by structural recursion on the statement
 list: the last statement inherits the surrounding expected type, and
 each non-last statement is checked at $`\mathsf{TVoid}`, *except*
@@ -406,6 +423,17 @@ standard \[⇐\] Sub rule fires at the boundary
 $`\mathsf{TVoid} <: \mathit{expected}`).
 
 {docstring Strata.Laurel.Resolution.Synth.emptyBlock}
+
+A *non-empty* block also synthesizes when used in operand position
+(e.g. $`\{\,x := 1;\; x\,\} == y`). It mirrors \[⇐\] Block-Cons /
+\[⇐\] Block-Singleton — fresh scope, optional label, non-last
+statements checked in effect position ($`\diamond`), dead-code
+diagnostics — but *synthesizes* the last statement instead of checking
+it, and returns that type as the block's value type.
+
+$$`\frac{\Gamma \vdash s \;\diamond \;(\text{for each non-last } s) \quad \Gamma \vdash \mathit{last} \Rightarrow T}{\Gamma \vdash \mathsf{Block}\;(\mathit{init} \mathbin{+\!+} [\mathit{last}])\;\mathit{label} \Rightarrow T} \quad \text{([⇒] Block-Synth)}`
+
+{docstring Strata.Laurel.Resolution.Synth.block}
 
 {docstring Strata.Laurel.Resolution.Check.block}
 
@@ -668,6 +696,15 @@ $$`\frac{\Gamma \vdash v \Leftarrow T}{\Gamma \vdash \mathsf{Old}\;v \Leftarrow 
 
 {docstring Strata.Laurel.Resolution.Check.old}
 
+`old` is type-transparent, so it also synthesizes: in operand position
+(e.g. the postcondition pattern `ensures counter.value == old(counter.value) + 1`,
+where $`==` synthesizes its operands) $`v` is synthesized and its type
+returned unchanged.
+
+$$`\frac{\Gamma \vdash v \Rightarrow T}{\Gamma \vdash \mathsf{Old}\;v \Rightarrow T} \quad \text{([⇒] Old-Synth)}`
+
+{docstring Strata.Laurel.Resolution.Synth.old}
+
 $$`\frac{\Gamma \vdash v \Rightarrow T \quad \mathsf{isReference}\;T}{\Gamma \vdash \mathsf{Fresh}\;v \Rightarrow \mathsf{TBool}} \quad \text{([⇒] Fresh)}`
 
 {docstring Strata.Laurel.Resolution.Synth.fresh}
@@ -675,6 +712,15 @@ $$`\frac{\Gamma \vdash v \Rightarrow T \quad \mathsf{isReference}\;T}{\Gamma \vd
 $$`\frac{\Gamma \vdash v \Leftarrow T \quad \Gamma \vdash \mathit{proof} \Rightarrow \_}{\Gamma \vdash \mathsf{ProveBy}\;v\;\mathit{proof} \Leftarrow T} \quad \text{([⇐] ProveBy)}`
 
 {docstring Strata.Laurel.Resolution.Check.proveBy}
+
+Like `old`, `ProveBy` is type-transparent in `v`, so it also
+synthesizes: in operand position $`v` is synthesized for its type $`T`,
+$`\mathit{proof}` is synthesized only for its name-resolution side
+effects (its type discarded), and $`T` is returned.
+
+$$`\frac{\Gamma \vdash v \Rightarrow T \quad \Gamma \vdash \mathit{proof} \Rightarrow \_}{\Gamma \vdash \mathsf{ProveBy}\;v\;\mathit{proof} \Rightarrow T} \quad \text{([⇒] ProveBy-Synth)}`
+
+{docstring Strata.Laurel.Resolution.Synth.proveBy}
 
 ### Self reference
 %%%
