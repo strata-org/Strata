@@ -222,4 +222,47 @@ procedure test() opaque {
 #guard_msgs (error, drop all) in
 #eval testInputWithOffset "FieldShadowedByLocal" fieldShadowedByLocal 184 processResolution
 
+/-! ## `if`/`block` in synth-only operand position
+
+An `if`/`then`/`else` (or non-empty block) used where operands are
+synthesized — e.g. as an operand of `==`/`<`/`++` — now has a synth rule
+(`Synth.ifThenElse` / `Synth.block`). Previously it hit the synth wildcard
+and emitted a spurious "type cannot be synthesized" error. With both
+branches consistent, the `if` synthesizes the branch type and resolves
+cleanly (no diagnostics). -/
+
+def ifInSynthPositionOk := r"
+function foo(c: bool): bool {
+  (if c then 1 else 2) == 3
+};
+"
+
+#guard_msgs (drop info) in
+#eval testInputWithOffset "IfInSynthPositionOk" ifInSynthPositionOk 198 processResolution
+
+def blockInSynthPositionOk := r"
+function foo(): bool {
+  { 1 } == 1
+};
+"
+
+#guard_msgs (drop info) in
+#eval testInputWithOffset "BlockInSynthPositionOk" blockInSynthPositionOk 208 processResolution
+
+/-! ## `if` with incompatible branch types (synth position)
+
+When an `if` is synthesized and its two branches have mutually
+inconsistent types, `Synth.ifThenElse` reports the mismatch at the `if`
+and synthesizes `Unknown` to suppress cascading errors. -/
+
+def ifBranchesIncompatible := r"
+function foo(c: bool): bool {
+  (if c then 1 else true) == 3
+// ^^^^^^^^^^^^^^^^^^^^^ error: 'if' branches have incompatible types 'int' and 'bool'
+};
+"
+
+#guard_msgs (error, drop all) in
+#eval testInputWithOffset "IfBranchesIncompatible" ifBranchesIncompatible 218 processResolution
+
 end Laurel

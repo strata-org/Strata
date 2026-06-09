@@ -705,7 +705,11 @@ def Synth.resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTy
     Synth.contractOf exprMd ty fn source (by rw [h_node])
   | .Abstract => pure (Synth.abstract source)
   | .All => pure (Synth.all source)
+  | .IfThenElse cond thenBr elseBr =>
+    Synth.ifThenElse exprMd cond thenBr elseBr source (by rw [h_node])
   | .Block [] label => pure (.Block [] label, Synth.emptyBlock source)
+  | .Block (head :: tail) label =>
+    Synth.block exprMd (head :: tail) label source (by rw [h_node])
   -- Holes in synth position are gradual: an annotated hole synthesizes its
   -- declared type; an unannotated one is `Unknown`. Without this carve-out,
   -- a hole appearing as the target of e.g. a field access (`<?>.f`) would
@@ -1286,6 +1290,119 @@ def Check.ifThenElse (exprMd : StmtExprMd)
       apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       simp [h] at hsz
+      try simp_all
+      omega
+
+/-- (If-Synth)
+    ```
+    Γ ⊢ cond ⇐ TBool   Γ ⊢ thenBr ⇒ T_t   Γ ⊢ elseBr ⇒ T_e   T_t ~ T_e   (If-Synth)
+    ──────────────────────────────────────────────────────────────────────────
+    Γ ⊢ IfThenElse cond thenBr (some elseBr) ⇒ T_t
+
+    Γ ⊢ cond ⇐ TBool   Γ ⊢ thenBr ⇒ _                          (If-Synth-NoElse)
+    ──────────────────────────────────────────────────────────────────────────
+    Γ ⊢ IfThenElse cond thenBr none ⇒ TVoid
+    ```
+    Synth-mode rule for an `if` used where no expected type is available
+    (e.g. as an operand of `==`/`<`/`++`, whose operands are synthesized).
+    `cond` is checked against `TBool`; both branches are *synthesized*.
+    With an `else`, the two branch types must be mutually consistent
+    (`isConsistent`, the symmetric gradual relation — `Unknown` flows
+    freely either way); the result is the then-branch's type as a
+    representative. Inconsistent branches (e.g. `if c then 1 else "x"`)
+    emit a diagnostic and synthesize `Unknown` to suppress cascading
+    errors. Without an `else`, the `if` cannot produce a value on the
+    missing branch, so it synthesizes `TVoid`.
+
+    This is the synth counterpart to `Check.ifThenElse`: when an expected
+    type *is* available the dispatcher prefers the check rule (pushing the
+    type into both branches); this rule fires only at the synth wildcard. -/
+def Synth.ifThenElse (exprMd : StmtExprMd)
+    (cond thenBr : StmtExprMd) (elseBr : Option StmtExprMd)
+    (source : Option FileRange)
+    (h : exprMd.val = .IfThenElse cond thenBr elseBr) :
+    ResolveM (StmtExpr × HighTypeMd) := do
+  let cond' ← Check.resolveStmtExpr cond { val := .TBool, source := cond.source }
+  let (thenBr', thenTy) ← Synth.resolveStmtExpr thenBr
+  match elseBr with
+  | none =>
+    pure (.IfThenElse cond' thenBr' none, { val := .TVoid, source := source })
+  | some e =>
+    let (e', elseTy) ← Synth.resolveStmtExpr e
+    let ctx := (← get).typeContext
+    let ty ←
+      if isConsistent ctx thenTy elseTy then
+        pure thenTy
+      else
+        let diag := diagnosticFromSource source
+          s!"'if' branches have incompatible types '{formatType thenTy}' and '{formatType elseTy}'"
+        modify fun s => { s with errors := s.errors.push diag }
+        pure { val := .Unknown, source := source }
+    pure (.IfThenElse cond' thenBr' (some e'), ty)
+  termination_by (exprMd, 1)
+  decreasing_by
+    all_goals
+      apply Prod.Lex.left
+      have hsz := exprMd.sizeOf_val_lt
+      simp [h] at hsz
+      try simp_all
+      omega
+
+/-- (Block-Synth)
+    ```
+    Γ ⊢ s ⋄ (for each non-last s)   Γ ⊢ last ⇒ T   (Block-Synth)
+    ──────────────────────────────────────────────────────────────
+    Γ ⊢ Block (init ++ [last]) label ⇒ T
+    ```
+    Synth-mode rule for a non-empty block used where no expected type is
+    available (e.g. `{ x := 1; x } == y`). Mirrors `Check.block`'s
+    structure — fresh scope, optional label, non-last statements checked
+    in effect position (`Check.statement`, i.e. at `TVoid` with the
+    Discard-Call carve-out), dead-code-after-terminator diagnostic — but
+    *synthesizes* the last statement instead of checking it against an
+    expected type, and returns that synthesized type as the block's value
+    type. The empty block is handled by `Synth.emptyBlock` at the
+    dispatch site; this rule only runs on `head :: tail`. -/
+def Synth.block (exprMd : StmtExprMd)
+    (stmts : List StmtExprMd) (label : Option String)
+    (source : Option FileRange)
+    (h : exprMd.val = .Block stmts label) : ResolveM (StmtExpr × HighTypeMd) := do
+  withScope <| withLabel label do
+    let init' ← stmts.dropLast.attach.mapM fun ⟨s, hMem⟩ => do
+      have h_mem : s ∈ stmts := List.dropLast_subset stmts hMem
+      Check.statement s
+    let isTerminator (s : StmtExprMd) : Bool :=
+      match s.val with
+      | .Exit _ | .Return _ => true
+      | _ => false
+    match init'.findIdx? isTerminator with
+    | some i =>
+      let nextSource : Option FileRange :=
+        match init'[i + 1]? with
+        | some next => next.source
+        | none      => (stmts.getLast?.bind (·.source))
+      let termName : String :=
+        match init'[i]? with
+        | some s => s.val.constrName
+        | none   => "exit"
+      let diag := diagnosticFromSource nextSource
+        s!"dead code after '{termName}'"
+      modify fun st => { st with errors := st.errors.push diag }
+    | none => pure ()
+    match _lastResult: stmts.getLast? with
+    | none =>
+      pure (.Block init' label, Synth.emptyBlock source)
+    | some last =>
+      have := List.mem_of_getLast? _lastResult
+      let (last', lastTy) ← Synth.resolveStmtExpr last
+      pure (.Block (init' ++ [last']) label, lastTy)
+  termination_by (exprMd, 1)
+  decreasing_by
+    all_goals
+      apply Prod.Lex.left
+      have hsz := exprMd.sizeOf_val_lt
+      simp [h] at hsz
+      try (have := List.sizeOf_lt_of_mem ‹_ ∈ stmts›)
       try simp_all
       omega
 
