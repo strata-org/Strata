@@ -92,13 +92,13 @@ def eval (E : Env) (p : Procedure) : Env × Statistics :=
                 match check.attr with
                 | .Free =>
                     -- NOTE: A free postcondition is not checked.
-                    -- We simply change a free-postcondition to "true", but
+                    -- We simply change a free-postcondition to "assume true", but
                     -- keep a record in the metadata field.
                     -- TODO: Perhaps introduce an "opaque" expression construct
                     -- that hides the expression from the evaluator, allowing us
                     -- to retain the postcondition body instead of replacing it
                     -- with "true".
-                  (.assert label (Core.true)
+                  (.assume label (Core.true)
                                  ((Imperative.MetaData.pushElem
                                   #[]
                                   (.label label)
