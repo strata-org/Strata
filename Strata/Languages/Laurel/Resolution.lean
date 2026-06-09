@@ -895,8 +895,8 @@ def Synth.varField (exprMd : StmtExprMd)
 /-- (Var-Declare)
     ```
     x ∉ dom(Γ)
-    ─────────────────────────────────────────  ⊣ Γ, x : T_x
-    Γ ⊢ Var (.Declare ⟨x, T_x⟩) ⇐ A
+    ────────────────────────────────────────────
+    Γ ⊢ Var (.Declare ⟨x, T_x⟩) ⇐ A ⊣ Γ, x : T_x
     ```
     `⊣ Γ, x : T_x` records that the surrounding scope is extended with
     the new binding for the remainder of the enclosing block. The
