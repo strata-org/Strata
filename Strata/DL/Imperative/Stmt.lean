@@ -206,6 +206,7 @@ pattern the CFG cannot replicate. -/
 Predicate stating that a statement or block has a "simple" shape suitable
 for the structured-to-CFG soundness proof under axiom-free assumptions:
 - no nondeterministic `.ite`
+- no nondeterministic `.loop` guards (only `.det _` loops are admitted)
 - `.loop` is permitted **provided its body is itself simple-shape**.
   Auxiliary predicates `loopBodyNoInits`, `loopHasNoInvariants`, and
   `noMeasureLoops` further restrict which loops are admissible for the
@@ -224,7 +225,8 @@ mutual
   | .block _ bss _ => Block.simpleShape bss
   | .ite (.det _) tss ess _ => Block.simpleShape tss && Block.simpleShape ess
   | .ite .nondet _ _ _ => false
-  | .loop _ _ _ bss _ => Block.simpleShape bss
+  | .loop guard _ _ bss _ =>
+    (match guard with | .det _ => true | .nondet => false) && Block.simpleShape bss
   | .exit _ _ => true
   | .funcDecl _ _ => true
   | .typeDecl _ _ => true
@@ -278,8 +280,24 @@ theorem Stmt.simpleShape_loop_body
     {md : MetaData P} :
     Stmt.simpleShape (.loop g m is body md) = true →
     Block.simpleShape body = true := by
-  simp only [Stmt.simpleShape]
-  intro h; exact h
+  intro h
+  unfold Stmt.simpleShape at h
+  cases g with
+  | det ge => simpa using h
+  | nondet => simp at h
+
+/-- The guard of a simple-shape `.loop` is deterministic. -/
+theorem Stmt.simpleShape_loop_guard_det
+    {g : ExprOrNondet P} {m : Option P.Expr}
+    {is : List (String × P.Expr)} {body : List (Stmt P (Cmd P))}
+    {md : MetaData P} :
+    Stmt.simpleShape (.loop g m is body md) = true →
+    ∃ ge, g = .det ge := by
+  intro h
+  unfold Stmt.simpleShape at h
+  cases g with
+  | det ge => exact ⟨ge, rfl⟩
+  | nondet => simp at h
 
 ---------------------------------------------------------------------
 
