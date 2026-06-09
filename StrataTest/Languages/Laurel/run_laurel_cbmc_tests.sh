@@ -8,7 +8,9 @@
 # appears in CBMC output with the correct status.
 #
 # Environment variables:
-#   CBMC   - path to cbmc binary (default: cbmc)
+#   CBMC              - path to cbmc binary (default: cbmc)
+#   GOTO_CC           - path to goto-cc binary (default: goto-cc)
+#   GOTO_INSTRUMENT   - path to goto-instrument binary (default: goto-instrument)
 
 set -o pipefail
 

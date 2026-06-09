@@ -8,20 +8,19 @@ import Strata.Languages.Laurel
 
 /-! # LaurelToCBMC
 
-Script for testing the translation of a Laurel `.lr.st` source file through the
-full Strata pipeline to CBMC verification:
+Script that replaces `laurel_to_cbmc.sh`. Translates a Laurel `.lr.st` source
+file through the full Strata pipeline to CBMC verification:
 
 1. Parse Laurel source → Laurel AST
 2. Translate Laurel → Core
-3. Type-check Core program
-4. Generate CProver GOTO JSON (symtab + goto-functions)
-5. Invoke `symtab2gb` to produce a GOTO binary
-6. Invoke `goto-cc` to add C scaffolding
-7. Invoke `goto-instrument --dfcc` for contract instrumentation
-8. Invoke `cbmc` for bounded model checking
+3. Inline procedures, type-check, generate CProver GOTO JSON
+4. Invoke `symtab2gb` to produce a GOTO binary
+5. Invoke `goto-cc` to add C scaffolding
+6. Invoke `goto-instrument --dfcc` for contract instrumentation
+7. Invoke `cbmc` for bounded model checking
 
 Usage:
-  lake exe LaurelToCBMC <file.lr.st>
+  lake env lean --run Scripts/LaurelToCBMC.lean <file.lr.st>
 
 Environment variables:
   CBMC              - path to cbmc binary (default: cbmc)
@@ -47,12 +46,10 @@ private def getEnvOrDefault (var : String) (default : String) : IO String := do
 
 /-- Run an external process. Prints stdout/stderr to the caller's streams and
     returns the exit code. -/
-private def runProcess (step : String) (cmd : String) (args : Array String)
-    (cwd : Option String := none) : IO UInt32 := do
+private def runProcess (step : String) (cmd : String) (args : Array String) : IO UInt32 := do
   let proc ← IO.Process.spawn {
     cmd := cmd
     args := args
-    cwd := cwd
     stdout := .inherit
     stderr := .inherit
     stdin := .inherit

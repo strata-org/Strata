@@ -11,6 +11,10 @@ import StrataDDM
 Usage:
   lake env lean --run Scripts/JavaGenTestData.lean javaGen <dialect-file> <package> <output-dir>
   lake env lean --run Scripts/JavaGenTestData.lean print --include <dir> <file>
+
+Note: Unlike the former CLI `javaGen` command, this script only loads dialects
+from files — it does not support referencing preloaded dialect names directly.
+This is sufficient for the testdata regeneration workflow.
 -/
 
 open StrataDDM
