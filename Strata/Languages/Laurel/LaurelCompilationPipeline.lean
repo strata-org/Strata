@@ -124,8 +124,7 @@ private def runLaurelPasses (options : LaurelTranslateOptions)
 
   -- Initial resolution
   let result := resolve program
-  let resolutionErrors : List DiagnosticModel :=
-    if options.emitResolutionErrors then result.errors.toList else []
+  let resolutionErrors : List DiagnosticModel := result.errors.toList
   let (program, model) := (result.program, result.model)
 
   let mut program := program
