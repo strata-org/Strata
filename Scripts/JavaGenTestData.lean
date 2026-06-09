@@ -17,17 +17,13 @@ open StrataDDM
 
 def javaGen (dialectPath packageName outputDir : String) : IO Unit := do
   let fm ← mkDialectFileMap
-  match ← readStrataFile fm dialectPath with
-  | .dialect d =>
-    match StrataDDM.Java.generateDialect d packageName with
-    | .ok files =>
-      StrataDDM.Java.writeJavaFiles outputDir packageName files
-      IO.println s!"Generated Java files for {d.name} in {outputDir}/{StrataDDM.Java.packageToPath packageName}"
-    | .error msg =>
-      IO.eprintln s!"Error generating Java: {msg}"
-      IO.Process.exit 1
-  | .program _ =>
-    IO.eprintln "Expected a dialect file, not a program file."
+  let d ← readStrataDialectFile fm dialectPath
+  match StrataDDM.Java.generateDialect d packageName with
+  | .ok files =>
+    StrataDDM.Java.writeJavaFiles outputDir packageName files
+    IO.println s!"Generated Java files for {d.name} in {outputDir}/{StrataDDM.Java.packageToPath packageName}"
+  | .error msg =>
+    IO.eprintln s!"Error generating Java: {msg}"
     IO.Process.exit 1
 
 def printFile (includeDirs : List String) (file : String) : IO Unit := do
@@ -46,10 +42,11 @@ def printFile (includeDirs : List String) (file : String) : IO Unit := do
   match ← readStrataFile fm file with
   | .dialect d =>
     let ld ← fm.getLoaded
-    let .isTrue mem := (inferInstance : Decidable (d.name ∈ ld.dialects))
-      | IO.eprintln "Internal error reading file."
-        IO.Process.exit 1
-    IO.print <| ld.dialects.format d.name mem
+    if mem : d.name ∈ ld.dialects then
+      IO.print <| ld.dialects.format d.name mem
+    else
+      IO.eprintln "Internal error reading file."
+      IO.Process.exit 1
   | .program pgm =>
     IO.print <| toString pgm
 
