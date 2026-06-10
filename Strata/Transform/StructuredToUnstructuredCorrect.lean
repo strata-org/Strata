@@ -17,6 +17,7 @@ public import Strata.DL.Util.StringGen
 public import Strata.Languages.Core.StatementSemantics
 import all Strata.DL.Imperative.BasicBlock
 import all Strata.DL.Imperative.Cmd
+import all Strata.DL.Util.Relations
 
 /-! # Structured-to-Unstructured Transformation Correctness
 
@@ -4177,6 +4178,143 @@ below). Helpers may freely use CFG semantics, small-step stmt semantics,
 and any prior file-level lemmas. -/
 
 namespace InlineLoopHelpers
+
+/-! ### ReflTransT structured-side peeling helpers
+
+These are length-indexed (Type-valued) variants of the `seq`/`block`/`stmts`
+inversion lemmas, used to drive the loop-iteration induction on the structured
+derivation length.  They are re-declared here (verbatim ports of the `private`
+versions in `DetToKleeneCorrect.lean` and the smoke-test) because the upstream
+ones are `private`. -/
+
+private theorem seqT_reaches_terminal' {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
+    [HasVarsPure P P.Expr]
+    (extendEval : ExtendEval P)
+    {inner : Config P (Cmd P)} {ss : List (Stmt P (Cmd P))} {ρ' : Env P}
+    (hstar : ReflTransT (StepStmt P (EvalCmd P) extendEval) (.seq inner ss) (.terminal ρ')) :
+    ∃ (ρ₁ : Env P), ∃ (h1 : ReflTransT (StepStmt P (EvalCmd P) extendEval) inner (.terminal ρ₁)),
+      ∃ (h2 : ReflTransT (StepStmt P (EvalCmd P) extendEval) (.stmts ss ρ₁) (.terminal ρ')),
+      h1.len + h2.len < hstar.len := by
+  match hstar with
+  | .step _ _ _ (.step_seq_inner h) hrest =>
+    have ⟨ρ₁, hterm, htail, hlen⟩ := seqT_reaches_terminal' extendEval hrest
+    exact ⟨ρ₁, .step _ _ _ h hterm, htail, by simp [ReflTransT.len]; omega⟩
+  | .step _ _ _ .step_seq_done hrest =>
+    exact ⟨_, .refl _, hrest, by show 0 + hrest.len < 1 + hrest.len; omega⟩
+  | .step _ _ _ .step_seq_exit hrest =>
+    match hrest with
+    | .step _ _ _ h _ => exact nomatch h
+
+private theorem stmtsT_cons_terminal' {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
+    [HasVarsPure P P.Expr]
+    (extendEval : ExtendEval P)
+    {s : Stmt P (Cmd P)} {rest : List (Stmt P (Cmd P))} {ρ₀ ρ' : Env P}
+    (hstar : ReflTransT (StepStmt P (EvalCmd P) extendEval) (.stmts (s :: rest) ρ₀) (.terminal ρ')) :
+    ∃ (ρ₁ : Env P), ∃ (h1 : ReflTransT (StepStmt P (EvalCmd P) extendEval) (.stmt s ρ₀) (.terminal ρ₁)),
+      ∃ (h2 : ReflTransT (StepStmt P (EvalCmd P) extendEval) (.stmts rest ρ₁) (.terminal ρ')),
+      h1.len + h2.len + 2 ≤ hstar.len := by
+  match hstar with
+  | .step _ _ _ .step_stmts_cons hrest =>
+    have ⟨ρ₁, h1, h2, hlen⟩ := seqT_reaches_terminal' extendEval hrest
+    exact ⟨ρ₁, h1, h2, by simp [ReflTransT.len]; omega⟩
+
+private theorem seqT_reaches_exiting' {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
+    [HasVarsPure P P.Expr]
+    (extendEval : ExtendEval P)
+    {inner : Config P (Cmd P)} {ss : List (Stmt P (Cmd P))}
+    {label : String} {ρ' : Env P}
+    (hstar : ReflTransT (StepStmt P (EvalCmd P) extendEval)
+              (.seq inner ss) (.exiting label ρ')) :
+    (∃ (h : ReflTransT (StepStmt P (EvalCmd P) extendEval) inner (.exiting label ρ')),
+      h.len < hstar.len) ∨
+    (∃ (ρ₁ : Env P)
+      (h1 : ReflTransT (StepStmt P (EvalCmd P) extendEval) inner (.terminal ρ₁))
+      (h2 : ReflTransT (StepStmt P (EvalCmd P) extendEval)
+              (.stmts ss ρ₁) (.exiting label ρ')),
+      h1.len + h2.len < hstar.len) := by
+  match hstar with
+  | .step _ _ _ (.step_seq_inner h) hrest =>
+    match seqT_reaches_exiting' extendEval hrest with
+    | .inl ⟨hexit, hlen⟩ =>
+      exact .inl ⟨.step _ _ _ h hexit, by simp [ReflTransT.len]; omega⟩
+    | .inr ⟨ρ₁, h1, h2, hlen⟩ =>
+      exact .inr ⟨ρ₁, .step _ _ _ h h1, h2, by simp [ReflTransT.len]; omega⟩
+  | .step _ _ _ .step_seq_done hrest =>
+    exact .inr ⟨_, .refl _, hrest, by show 0 + hrest.len < 1 + hrest.len; omega⟩
+  | .step _ _ _ .step_seq_exit hrest =>
+    match hrest with
+    | .refl _ => exact .inl ⟨.refl _, by show 0 < 1; omega⟩
+    | .step _ _ _ h _ => exact nomatch h
+
+private theorem stmtsT_cons_exiting' {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
+    [HasVarsPure P P.Expr]
+    (extendEval : ExtendEval P)
+    {s : Stmt P (Cmd P)} {rest : List (Stmt P (Cmd P))}
+    {ρ₀ : Env P} {label : String} {ρ' : Env P}
+    (hstar : ReflTransT (StepStmt P (EvalCmd P) extendEval)
+              (.stmts (s :: rest) ρ₀) (.exiting label ρ')) :
+    (∃ (h : ReflTransT (StepStmt P (EvalCmd P) extendEval)
+              (.stmt s ρ₀) (.exiting label ρ')),
+      h.len < hstar.len) ∨
+    (∃ (ρ₁ : Env P)
+      (h1 : ReflTransT (StepStmt P (EvalCmd P) extendEval)
+              (.stmt s ρ₀) (.terminal ρ₁))
+      (h2 : ReflTransT (StepStmt P (EvalCmd P) extendEval)
+              (.stmts rest ρ₁) (.exiting label ρ')),
+      h1.len + h2.len < hstar.len) := by
+  match hstar with
+  | .step _ _ _ .step_stmts_cons hrest =>
+    match seqT_reaches_exiting' extendEval hrest with
+    | .inl ⟨hexit, hlen⟩ =>
+      exact .inl ⟨hexit, by simp [ReflTransT.len]; omega⟩
+    | .inr ⟨ρ₁, h1, h2, hlen⟩ =>
+      exact .inr ⟨ρ₁, h1, h2, by simp [ReflTransT.len]; omega⟩
+
+private theorem blockT_none_reaches_terminal' {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
+    [HasVarsPure P P.Expr]
+    (extendEval : ExtendEval P)
+    {inner : Config P (Cmd P)} {σ_parent : SemanticStore P} {ρ' : Env P}
+    (hstar : ReflTransT (StepStmt P (EvalCmd P) extendEval)
+              (.block .none σ_parent inner) (.terminal ρ')) :
+    ∃ (ρ_inner : Env P) (h : ReflTransT (StepStmt P (EvalCmd P) extendEval) inner (.terminal ρ_inner)),
+      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store } ∧
+      h.len < hstar.len := by
+  match hstar with
+  | .step _ (.block _ _ inner₁) _ (.step_block_body h) hrest =>
+    have ⟨ρ_inner, hterm, heq, hlen⟩ := blockT_none_reaches_terminal' extendEval hrest
+    exact ⟨ρ_inner, .step _ _ _ h hterm, heq, by simp [ReflTransT.len]; omega⟩
+  | .step _ _ _ .step_block_done hrest =>
+    match hrest with
+    | .refl _ => exact ⟨_, .refl _, rfl, by simp [ReflTransT.len]⟩
+    | .step _ _ _ h _ => exact nomatch h
+  | .step _ _ _ (.step_block_exit_match heq) hrest => exact (nomatch heq)
+  | .step _ _ _ (.step_block_exit_mismatch _) hrest =>
+    match hrest with
+    | .step _ _ _ h _ => exact nomatch h
+
+private theorem blockT_none_reaches_exiting' {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
+    [HasVarsPure P P.Expr]
+    (extendEval : ExtendEval P)
+    {inner : Config P (Cmd P)} {σ_parent : SemanticStore P}
+    {label : String} {ρ' : Env P}
+    (hstar : ReflTransT (StepStmt P (EvalCmd P) extendEval)
+              (.block .none σ_parent inner) (.exiting label ρ')) :
+    ∃ (ρ_inner : Env P)
+      (h : ReflTransT (StepStmt P (EvalCmd P) extendEval) inner (.exiting label ρ_inner)),
+      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store } ∧
+      h.len < hstar.len := by
+  match hstar with
+  | .step _ (.block _ _ inner₁) _ (.step_block_body h) hrest =>
+    have ⟨ρ_inner, hexit, heq, hlen⟩ := blockT_none_reaches_exiting' extendEval hrest
+    exact ⟨ρ_inner, .step _ _ _ h hexit, heq, by simp [ReflTransT.len]; omega⟩
+  | .step _ _ _ .step_block_done hrest =>
+    match hrest with
+    | .step _ _ _ h _ => exact nomatch h
+  | .step _ _ _ (.step_block_exit_match heq) _ => exact (nomatch heq)
+  | .step _ _ _ (.step_block_exit_mismatch hne) hrest =>
+    match hrest with
+    | .refl _ => exact ⟨_, .refl _, rfl, by simp [ReflTransT.len]⟩
+    | .step _ _ _ h _ => exact nomatch h
 
 /-- Decompose `h_gen` for the
 `.loop (.det g) none [] body md :: rest` arm of the translator.
