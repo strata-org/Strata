@@ -2609,7 +2609,7 @@ private theorem stmtsToBlocks_invariant
           have h_target :
               accumBlocks ++ [(lentry, lentryBlk)] ++ bbs ++ ([] : List (String × DetBlock String (Cmd P) P)) ++ bsNext
               = accumBlocks ++ ((lentry, lentryBlk) :: (bbs ++ bsNext)) := by
-            simp [List.append_assoc, List.singleton_append]
+            simp [List.append_assoc]
           rw [h_target]
           have h1 : ((lentry, lentryBlk) :: ((bsNext ++ bbs) ++ accumBlocks)).Perm
                     ((lentry, lentryBlk) :: (accumBlocks ++ (bsNext ++ bbs))) :=
@@ -2797,7 +2797,7 @@ private theorem stmtsToBlocks_invariant
           have h_target :
               accumBlocks ++ [(lentry, lentryBlk)] ++ bbs ++ ([] : List (String × DetBlock String (Cmd P) P)) ++ bsNext
               = accumBlocks ++ ((lentry, lentryBlk) :: (bbs ++ bsNext)) := by
-            simp [List.append_assoc, List.singleton_append]
+            simp [List.append_assoc]
           rw [h_target]
           have h1 : ((lentry, lentryBlk) :: ((bsNext ++ bbs) ++ accumBlocks)).Perm
                     ((lentry, lentryBlk) :: (accumBlocks ++ (bsNext ++ bbs))) :=
@@ -3081,7 +3081,7 @@ private theorem stmtsToBlocks_invariant
           have h_target :
               accumBlocks ++ [(lentry, lentryBlk)] ++ bbs ++ [decBlock] ++ bsNext
               = accumBlocks ++ ((lentry, lentryBlk) :: (bbs ++ [decBlock] ++ bsNext)) := by
-            simp [List.append_assoc, List.singleton_append]
+            simp [List.append_assoc]
           rw [h_target]
           have h1 : ((lentry, lentryBlk) :: ((bsNext ++ [decBlock] ++ bbs) ++ accumBlocks)).Perm
                     ((lentry, lentryBlk) :: (accumBlocks ++ (bsNext ++ [decBlock] ++ bbs))) :=
@@ -3342,7 +3342,7 @@ private theorem stmtsToBlocks_invariant
           have h_target :
               accumBlocks ++ [(lentry, lentryBlk)] ++ bbs ++ [decBlock] ++ bsNext
               = accumBlocks ++ ((lentry, lentryBlk) :: (bbs ++ [decBlock] ++ bsNext)) := by
-            simp [List.append_assoc, List.singleton_append]
+            simp [List.append_assoc]
           rw [h_target]
           have h1 : ((lentry, lentryBlk) :: ((bsNext ++ [decBlock] ++ bbs) ++ accumBlocks)).Perm
                     ((lentry, lentryBlk) :: (accumBlocks ++ (bsNext ++ [decBlock] ++ bbs))) :=
