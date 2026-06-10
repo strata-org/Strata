@@ -4707,6 +4707,162 @@ private theorem loop_iterations_det
       rw [h_hf_block] at h_run_recurse
       exact StepDetCFGStar_trans (StepDetCFGStar_trans h_step_enter h_step_body) h_run_recurse
 
+set_option linter.unusedVariables false in
+/-- `_to_cont` iteration helper for the det loop: the loop runs some number of
+terminating iterations, then on some iteration the body exits with `label`,
+propagating out of the surrounding `.block .none` and hence out of the loop.
+The CFG side runs `lentry →(true) bl →(body terminal sim) lentry` for each
+completed iteration, then `lentry →(true) bl →(body _to_cont sim) bk_target`
+for the exiting iteration. -/
+private theorem loop_iterations_to_cont_det
+    {P : PureExpr} [HasFvar P] [HasNot P]
+    [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P]
+    [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [LawfulHasFvar P] [LawfulHasBool P] [LawfulHasIdent P]
+    [LawfulHasIntOrder P] [LawfulHasNot P]
+    (extendEval : ExtendEval P)
+    (g : P.Expr) (body : List (Stmt P (Cmd P))) (md : MetaData P)
+    (ρ_pre ρ_post_loop : Env P) (label : String)
+    (cfg : CFG String (DetBlock String (Cmd P) P))
+    (lentry kNext bl bk_target : String)
+    (σ_cfg_pre : SemanticStore P)
+    (h_lentry_lkp : cfg.blocks.lookup lentry = some ⟨[], .condGoto g bl kNext md⟩)
+    (h_agree_pre : StoreAgreement ρ_pre.store σ_cfg_pre)
+    (h_exit : StepStmtStar P (EvalCmd P) extendEval
+       (.stmt (Stmt.loop (.det g) none [] body md) ρ_pre)
+       (.exiting label ρ_post_loop))
+    (h_nofd_body : Block.noFuncDecl body = true)
+    (h_body_sim_at :
+       ∀ (ρ_iter : Env P) (σ_cfg_iter : SemanticStore P),
+         ρ_iter.eval = ρ_pre.eval →
+         StoreAgreement ρ_iter.store σ_cfg_iter →
+         ∀ (ρ_body : Env P), StepStmtStar P (EvalCmd P) extendEval
+             (.stmts body ρ_iter) (.terminal ρ_body) →
+           ∃ σ_cfg_after_body,
+             StepDetCFGStar extendEval cfg
+               (.atBlock bl σ_cfg_iter ρ_iter.hasFailure)
+               (.atBlock lentry σ_cfg_after_body ρ_body.hasFailure) ∧
+             StoreAgreement ρ_body.store σ_cfg_after_body)
+    (h_body_sim_exit_at :
+       ∀ (ρ_iter : Env P) (σ_cfg_iter : SemanticStore P),
+         ρ_iter.eval = ρ_pre.eval →
+         StoreAgreement ρ_iter.store σ_cfg_iter →
+         ∀ (ρ_body : Env P), StepStmtStar P (EvalCmd P) extendEval
+             (.stmts body ρ_iter) (.exiting label ρ_body) →
+           ∃ σ_cfg_after_body,
+             StepDetCFGStar extendEval cfg
+               (.atBlock bl σ_cfg_iter ρ_iter.hasFailure)
+               (.atBlock bk_target σ_cfg_after_body ρ_body.hasFailure) ∧
+             StoreAgreement ρ_body.store σ_cfg_after_body)
+    (hwfb_pre : WellFormedSemanticEvalBool ρ_pre.eval)
+    (hwf_def_pre : WellFormedSemanticEvalDef ρ_pre.eval)
+    (hwfcongr_pre : WellFormedSemanticEvalExprCongr ρ_pre.eval) :
+    ∃ σ_cfg_bk,
+      StepDetCFGStar extendEval cfg
+        (.atBlock lentry σ_cfg_pre ρ_pre.hasFailure)
+        (.atBlock bk_target σ_cfg_bk ρ_post_loop.hasFailure) ∧
+      StoreAgreement ρ_post_loop.store σ_cfg_bk := by
+  have hT : ReflTransT (StepStmt P (EvalCmd P) extendEval)
+      (.stmt (Stmt.loop (.det g) none [] body md) ρ_pre)
+      (.exiting label ρ_post_loop) := reflTrans_to_T h_exit
+  suffices h_inner :
+    ∀ n (ρ_pre' ρ_post' : Env P) (σ_cfg_pre' : SemanticStore P),
+      ρ_pre'.eval = ρ_pre.eval →
+      WellFormedSemanticEvalBool ρ_pre'.eval →
+      WellFormedSemanticEvalDef ρ_pre'.eval →
+      WellFormedSemanticEvalExprCongr ρ_pre'.eval →
+      StoreAgreement ρ_pre'.store σ_cfg_pre' →
+      ∀ (hT' : ReflTransT (StepStmt P (EvalCmd P) extendEval)
+                 (.stmt (Stmt.loop (.det g) none [] body md) ρ_pre')
+                 (.exiting label ρ_post')),
+        hT'.len ≤ n →
+        ∃ σ_cfg_bk',
+          StepDetCFGStar extendEval cfg
+            (.atBlock lentry σ_cfg_pre' ρ_pre'.hasFailure)
+            (.atBlock bk_target σ_cfg_bk' ρ_post'.hasFailure) ∧
+          StoreAgreement ρ_post'.store σ_cfg_bk' from
+    h_inner hT.len ρ_pre ρ_post_loop σ_cfg_pre rfl
+      hwfb_pre hwf_def_pre hwfcongr_pre h_agree_pre hT (Nat.le_refl _)
+  intro n
+  induction n with
+  | zero =>
+    intros ρ_pre' ρ_post' σ_cfg_pre' h_eval_eq hwfb' hwf_def' hwfcongr' h_agree' hT' hlen'
+    match hT', hlen' with
+    | .step _ _ _ hab hbc, hl => simp [ReflTransT.len] at hl
+  | succ n ih =>
+    intros ρ_pre' ρ_post' σ_cfg_pre' h_eval_eq hwfb' hwf_def' hwfcongr' h_agree' hT' hlen'
+    match hT', hlen' with
+    | .step _ _ _ (@StepStmt.step_loop_exit _ _ _ _ _ _ _ _ _ _ _ _
+                    hasInvFailure hg_false hinv_eval hff_iff hwfb_step) hrest, hl_succ =>
+      -- A loop that exits via guard-false would reach .terminal, not .exiting.
+      exfalso
+      match hrest with
+      | .step _ _ _ h _ => exact nomatch h
+    | .step _ _ _ (@StepStmt.step_loop_enter _ _ _ _ _ _ _ _ _ _ _ _
+                    hasInvFailure hg_true hinv_eval hff_iff hwfb_step) hrest, hl_succ =>
+      have h_hif : hasInvFailure = false := by
+        cases hasInvFailure with
+        | false => rfl
+        | true =>
+          obtain ⟨le, hle, _⟩ := hff_iff.mp rfl
+          simp at hle
+      subst h_hif
+      have h_body_init_eq :
+          ({ ρ_pre' with hasFailure := ρ_pre'.hasFailure || false } : Env P) = ρ_pre' := by
+        simp
+      -- CFG step 1: lentry → bl (guard true).
+      have h_step_enter : StepDetCFGStar extendEval cfg
+          (.atBlock lentry σ_cfg_pre' ρ_pre'.hasFailure)
+          (.atBlock bl σ_cfg_pre' ρ_pre'.hasFailure) :=
+        lentry_condGoto_true extendEval cfg lentry bl kNext md g
+          ρ_pre'.eval ρ_pre'.store σ_cfg_pre' ρ_pre'.hasFailure h_lentry_lkp h_agree'
+          hwfb' hwf_def' hwfcongr' hg_true
+      rcases peel_off_one_iteration_to_cont_det extendEval g body md ρ_pre' ρ_post' label hrest with
+        h_caseA | h_caseB
+      · -- caseA: this iteration's body exits with label.
+        obtain ⟨ρ_body_exit, h_body_exit_struct, hρ_post_eq⟩ := h_caseA
+        rw [h_body_init_eq] at h_body_exit_struct
+        have ⟨σ_cfg_after_body, h_step_body, h_agree_after_body⟩ :=
+          h_body_sim_exit_at ρ_pre' σ_cfg_pre' h_eval_eq h_agree' ρ_body_exit h_body_exit_struct
+        -- ρ_post' = { ρ_body_exit with store := projectStore ρ_pre'.store ρ_body_exit.store }.
+        have h_agree_post : StoreAgreement ρ_post'.store σ_cfg_after_body :=
+          StoreAgreement.through_projectStore hρ_post_eq h_agree_after_body
+        have h_hf_post : ρ_post'.hasFailure = ρ_body_exit.hasFailure := by rw [hρ_post_eq]
+        refine ⟨σ_cfg_after_body, ?_, h_agree_post⟩
+        rw [h_hf_post]
+        exact StepDetCFGStar_trans h_step_enter h_step_body
+      · -- caseB: this iteration terminates; recurse on next iteration's exit.
+        obtain ⟨ρ_inner, ρ_block, h_body_struct, hρ_block_eq, h_inner_T, h_inner_len⟩ := h_caseB
+        rw [h_body_init_eq] at h_body_struct
+        have ⟨σ_cfg_after_body, h_step_body, h_agree_after_body⟩ :=
+          h_body_sim_at ρ_pre' σ_cfg_pre' h_eval_eq h_agree' ρ_inner h_body_struct
+        have h_agree_block : StoreAgreement ρ_block.store σ_cfg_after_body :=
+          StoreAgreement.through_projectStore hρ_block_eq h_agree_after_body
+        have h_hf_block : ρ_block.hasFailure = ρ_inner.hasFailure := by rw [hρ_block_eq]
+        have hρ_block_eval : ρ_block.eval = ρ_pre'.eval := by
+          rw [hρ_block_eq]
+          show ρ_inner.eval = ρ_pre'.eval
+          have := smallStep_noFuncDecl_preserves_eval_block P (EvalCmd P) extendEval body
+                  ρ_pre' ρ_inner h_nofd_body h_body_struct
+          rw [this]
+        have h_eval_eq_block : ρ_block.eval = ρ_pre.eval := by
+          rw [hρ_block_eval]; exact h_eval_eq
+        have hwfb_block : WellFormedSemanticEvalBool ρ_block.eval := by
+          rw [hρ_block_eval]; exact hwfb'
+        have hwf_def_block : WellFormedSemanticEvalDef ρ_block.eval := by
+          rw [hρ_block_eval]; exact hwf_def'
+        have hwfcongr_block : WellFormedSemanticEvalExprCongr ρ_block.eval := by
+          rw [hρ_block_eval]; exact hwfcongr'
+        have h_inner_le_n : h_inner_T.len ≤ n := by
+          simp [ReflTransT.len] at hl_succ; omega
+        have ⟨σ_cfg_bk, h_run_recurse, h_agree_post⟩ :=
+          ih ρ_block ρ_post' σ_cfg_after_body h_eval_eq_block
+             hwfb_block hwf_def_block hwfcongr_block
+             h_agree_block h_inner_T h_inner_le_n
+        refine ⟨σ_cfg_bk, ?_, h_agree_post⟩
+        rw [h_hf_block] at h_run_recurse
+        exact StepDetCFGStar_trans (StepDetCFGStar_trans h_step_enter h_step_body) h_run_recurse
+
 end InlineLoopHelpers
 
 set_option maxHeartbeats 3200000 in
