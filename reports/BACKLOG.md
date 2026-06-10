@@ -49,7 +49,23 @@ EQ portfolio sweep + A6 counter-axis → INDEX "Aaron's EQ portfolio sweep".)
 
 **EQ-portfolio reproducers** (all 3 trip the same root cause): `EQ_koudjso4dzv_out.bpl`, `EQ_wvadqhmgjvk_out.bpl`, `EQ_cjromzqjo0n_out.bpl`.
 
-**Next action.** Track #1331 review/merge. Local issue-draft kept at `boogietostrata-old-rejects-unmodified-global.md` for reference.
+**Corpus measurement (workflow `w26mmijqh`, 2026-06-10; report `reports/verify-1331-fix-corpus-2026-06-10.md`).** The fix (`188255668`) was verified at corpus scale, not just on the 3 reproducers. Regenerated an 80-file stratified sample (the prior 200-sample was cleared from `/tmp`; 3,529 source `.bpl` survive), translated each through pre-fix vs post-fix BoogieToStrata, type-checked both:
+- **old-fvar error cleared: 24/24 = 100%** (zero `Cannot find this fvar … old` across all 80 post-fix type-check outputs). **0 regressions** (matrix strictly monotone).
+- Pre-fix old-fvar incidence **30% (24/80)** — corroborates the prior 56/200 ≈ 28%. Projects to ~1,059 corpus files (95% CI ~735–1,447) with the error eliminated.
+- **But only 67% (16/24) reach the type-check finish line.** The other **33% (8/24)** clear #1331 then hit a *different*, pre-existing type-check error — all the same one: modifies-completeness ("This procedure modifies variables it is not allowed to!"). So the fix's reach is real but bounded: ~⅔ of the ELAB_FAIL bucket proceeds toward SMT; ~⅓ is immediately re-blocked.
+- Scope: type-check/ELAB layer only (the correct layer — #1331's impact is precisely the ELAB_FAIL bucket), NOT end-to-end SMT verdicts. A full SMT re-sweep of the 67% that now type-check is a separate, heavier follow-up.
+
+**Next action.** Track #1331 review/merge. Local issue-draft kept at `boogietostrata-old-rejects-unmodified-global.md` for reference. **New follow-up surfaced by the measurement: the modifies-completeness blocker** (next entry) gates 33% of the #1331-cleared files.
+
+### Strata/translator-side: modifies-clause completeness for callee-modified globals — NEW
+
+**Status:** OPEN — surfaced 2026-06-10 by the #1331 corpus measurement; unmasked once #1331 stops short-circuiting type-check. Not yet diagnosed in depth or filed.
+
+**Summary.** 33% (8/24) of files cleared by the #1331 fix then fail type-check with "This procedure modifies variables it is not allowed to!" — a global is modified (often transitively, through a callee) but absent from the procedure's `modifies` clause, so BoogieToStrata emits it read-only and the Strata modifies-check rejects the body. First seen on `EQ_wvadqhmgjvk_out` (`reffile__heap` modified via a callee, not in modifies). Same root *family* as #1331 (modifies-clause incompleteness from SMACK output) but for *modified* globals, not just `old`-read ones — so the #1331 `old`-widening doesn't cover it.
+
+**Likely fix direction.** Extend the effective-modifies widening (the #1331 `EffectiveModifies` machinery in `StrataGenerator.cs`) to also union the *transitive modifies* of called procedures — i.e. if proc P calls Q and Q modifies g, then g ∈ effective-modifies(P). This is the standard modifies-closure computation. Needs care: it's a fixpoint over the call graph, and must stay consistent at both partition sites (`WriteProcedureHeader` + `VisitCallCmd`) exactly as the #1331 fix does.
+
+**Next action.** Diagnose the 8 files (confirm all are callee-transitive-modifies, not direct-modify-omissions); decide whether SMACK should have emitted the modifies (upstream) or BoogieToStrata should compute the closure (translator-side, like #1331). Estimate: ~1 day if it's the call-graph-closure extension of the existing `EffectiveModifies` pass.
 
 ### Body-eval cost regression on bodyOrContract (partially resolved by e-15 fix; remainder deferred)
 
@@ -93,11 +109,18 @@ CFG-eval loop-handling fix, remains below.)
 
 **Root cause (confirmed).** `evalCFGBlocks` (`ProcedureEval.lean:133-149`) is a **fuel-only worklist with no visited-set / fixpoint / back-edge awareness**, and `evalCFGStep` (`:106-130`) forks *both* successors on a symbolic `condGoto`. So it literally **unrolls** reducible loop back-edges (the decrease block's `.goto lentry` at `StructuredToUnstructured.lean:132`) until fuel runs out — heap grows one `Env` per pseudo-iteration. The structured path doesn't OOM because `LoopElim` runs its acyclic havoc-and-cut on `.loop` Stmts; the CFG path never does (`LoopElim.lean:249` passes `.cfg` bodies through unchanged). NOT an irreducibility problem — the census found **0 irreducible CFGs across all 3,767 procedures** in the three corpora; every loop is a clean single-header reducible natural loop.
 
-**Recommended fix — CFG-level loop-elim pre-pass (priority HIGH).** A `Program → Program` `PipelinePhase` on `.cfg` bodies, run before symbolicEval/evalCFGBody, mirroring `loopElimPipelinePhase`'s role for structured bodies. Per procedure: (1) compute dominators + identify natural-loop regions from dominator back-edges (the census analyzer already prototypes this; all-reducible so no irreducible fallback needed); (2) recover the loop contract from the header `condGoto`'s `specLoopInvariant`/`specDecreases` transfer metadata — **already present**, attached at `StructuredToUnstructured.lean:146-151`, no re-inference; (3) splice the loop region with the same acyclic havoc+assume-invariant sequence `LoopElim` emits (`LoopElim.lean:125-203`), removing the `.goto lentry` back-edge. Result: `evalCFGBlocks` sees a DAG, terminates bounded, #29 OOM eliminated *structurally* (not papered over with `maxHeartbeats`/memory bounds), and CFG verdicts converge with structured-form. **Scope boundary: verification path ONLY — must NOT touch the CBMC/GOTO path, which wants the real cyclic CFG for unwinding.** Gate the pass to fire only when a CFG carries loop-contract metadata.
+**Recommended fix — net-new CFG-native loop-elim pre-pass `cfgLoopElimPipelinePhase` (priority HIGH).** A `Program → Program` `PipelinePhase` on `.cfg` bodies, slotted after `loopElimPipelinePhase` in `transformPipelinePhases` (`Verifier.lean:893`), gated to fire only when a `.cfg` body has a back-edge. Per procedure: compute dominators, identify the natural-loop region, and replace it with the **full** structured-recipe acyclic cut, removing the back-edge so `evalCFGBlocks` sees a DAG and terminates bounded. **Scope boundary: verification path ONLY — must NOT touch the CBMC/GOTO path** (`corePipelinePhases` is not called by the CBMC GOTO entry).
 
-**Superseded mitigations.** The earlier stop-gaps (maxHeartbeats / separate Lake target / partial-loop-bound / env-list collapse) are now superseded by the structural fix above; the test-harness split (Part1-4) remains a reasonable OOM-avoidance for the test surface in the interim.
+**Refined by the effect study (workflow `w7gh4f4nk`, 2026-06-09; report `reports/cfg-loopelim-effect-2026-06-09.md`). Three load-bearing corrections to the original sketch:**
+1. **Framing A (net-new CFG pass) confirmed; Framing B ruled out.** The 310-of-313 loop-bearing procs are born as `.cfg` directly from the SMACK/DDM translator (`translateCFGProcedure`, `Translate.lean:1808/1826`) and **never pass through `stmtsToCFG`** — so reordering `loopElim` before lowering (B1) touches nothing that OOMs, and reconstructing a structured `.loop` from `.cfg` (B2) is a full de-lowering, harder than the direct CFG cut. Build A.
+2. **SOUNDNESS DEFECT in the naive cut — must NOT ship as prototyped.** The simple cut (`havoc M; assume ¬G; goto kNext`) is sound for *termination* but **drops the invariant-maintenance VC** (`arbitrary_iter_maintain_invariant`, VC2). A wrong-invariant program would spuriously PASS. The pass MUST emit the full recipe: pre-body `havoc(M) + assume(G ∧ I)`, body, post-body `assert(I)` (= VC2), then exit `havoc(M) + assume(¬G ∧ I)`. Verified against Loops.lean gauss golden (`:220-260`).
+3. **Default to `assume true` for contract-less loops.** Only 3 of 313 loop-bearing procs carry `specLoopInvariant`/`specDecreases` metadata; the other 310 are contract-less SMACK CFGs. The pass must default the invariant to `true` to fix them (sound: `havoc M; assume true` is the standard no-invariant loop abstraction).
 
-**Next action.** Scope the CFG-level loop-elim pass as a `Strata/Transform/` addition (new file, e.g. `CFGLoopElim.lean`, modeled on `LoopElim.lean`) + a `PipelinePhase` wiring in `Verifier.lean`'s `corePipelinePhases`. Estimated 1-2 days. Workflow `wpqfi3man` (evalCFGBody OOM TDD) may produce a complementary direct-fix candidate; reconcile when it lands.
+**Acceptance gate.** Re-run the Measure phase on htd/smack under a guarded harness (`gtimeout 60` + `maxHeartbeats`, single-thread Z3) and gate acceptance on **verdict-set equality with the structured form** on Loops.lean countUp/gauss/nested — NOT merely `cfgHasBackEdge` toggling. The #29 OOM closure is structurally plausible (prototype produces a DAG) but was **never measured end-to-end** — the Measure phase died on a transient 503 all three attempts (`w2bl3s9l1`, `wikpaagrw`, `w7gh4f4nk`), so the reproducer `loopGuardPrecondPgm` was never actually run post-elimination.
+
+**Superseded mitigations.** The earlier stop-gaps (maxHeartbeats / separate Lake target / partial-loop-bound / env-list collapse) are superseded by the structural fix; the test-harness split (Part1-4) remains a reasonable OOM-avoidance for the test surface in the interim.
+
+**Next action.** Execute the compile-ready implementation plan at [`reports/plan-cfg-loopelim-pass-2026-06-10.md`](plan-cfg-loopelim-pass-2026-06-10.md) — 5 tasks (dominator/region analysis → full-recipe acyclic synthesis → pipeline wiring → build+measure → regression+soundness), with the VC2-preserving recipe and `assume-true` default baked in. Hands-on Lean code task, ~2-3 days; the build/measure steps need a machine clear of other heavy Strata builds (the #29 measurement has died on transient 503s three times and must actually complete). The `wpqfi3man` evalCFGBody workflow was **dropped** (2026-06-10) as redundant — the census + effect study settled root cause and fix; its only net-new value (the loopGuardPrecondPgm measurement) is folded into the plan's Task 4 acceptance gate.
 
 (The resolved "Irreducible control flow census" investigation — 0 irreducible
 CFGs across all 3,767 procedures; confirmed the #29 root cause — moved to
@@ -207,24 +230,9 @@ the CBM pipeline skips abstract procedures at `CoreCFGToGOTOPipeline.lean:533`.
 
 **If pursued for readability/proof-corpus size:** fold into the **same dominator/natural-loop machinery the CFG-level loop-elim pass needs** (the predecessor-count map is a strict subset of loop-elim's dominator dataflow), run as a post-loop-elim cleanup phase (loop-elim splices acyclic blocks that create fresh single-pred chains; coalescing collapses them). Both are verification-path-only `Program → Program` pre-passes. Bundled it's nearly free; standalone the ROI doesn't justify a second framework. Tracked as a sub-task of the CFG-level loop-elim pass (*Investigations → CFG-eval memory profile #29*).
 
-### evalCFGBody OOM root-cause + TDD fix (PAUSED mid-run — resume)
+### evalCFGBody OOM root-cause + TDD fix (workflow `wpqfi3man`) — DROPPED
 
-**Status:** PAUSED — launched as workflow `wpqfi3man` (run ID `wf_c84e1cfd-ad1`), stopped via `TaskStop` on 2026-06-09 while still early (Reproduce phase, setting up the `htd/unstructured-procedure` worktree). Resume, don't relaunch — completed `agent()` calls return cached results.
-
-**Script:** `/Users/htd/.claude/projects/-Users-htd-Documents-Strata-smack/d3648beb-ea46-4635-9a8d-6b7b138d0f3d/workflows/scripts/evalcfgbody-oom-investigation-wf_c84e1cfd-ad1.js`
-
-**Resume with:**
-```
-Workflow({
-  scriptPath: "/Users/htd/.claude/projects/-Users-htd-Documents-Strata-smack/d3648beb-ea46-4635-9a8d-6b7b138d0f3d/workflows/scripts/evalcfgbody-oom-investigation-wf_c84e1cfd-ad1.js",
-  resumeFromRunId: "wf_c84e1cfd-ad1"
-})
-```
-(Same session only — the resume journal lives under this session's workflow directory.)
-
-**What it does.** Five phases: reproduce the OOM on both htd/smack and htd/unstructured-procedure → diagnose from three angles (profiling, code-read, structured-vs-CFG) → propose fix candidates → TDD-verify each in isolated worktrees → synthesize.
-
-**Overlap caveat.** The diagnose + propose phases largely duplicate the already-completed irreducible-CFG census (`wqlj6z95v`), which confirmed the #29 root cause (fuel-only worklist unrolls reducible loops) and recommended the CFG-level loop-elim pass. The net-new value is the **TDD-Verify phase** — actually testing candidate fixes in worktrees, which the census did not do. Consider resuming only for that phase, or skip it and scope the CFG-level loop-elim pass directly (tracked under *Investigations → CFG-eval memory profile* above). Reconcile any fix candidate it produces with that recommendation.
+**Status:** DROPPED (2026-06-10) as redundant. The irreducible-CFG census (`wqlj6z95v`) confirmed the #29 root cause and the CFG-loop-elim effect study (`w7gh4f4nk`) settled the fix design (Framing A, full VC2-preserving recipe, assume-true default). This workflow's diagnose/propose phases duplicate both; its only net-new value — the `loopGuardPrecondPgm` OOM measurement — is now folded into Task 4 of `reports/plan-cfg-loopelim-pass-2026-06-10.md`. (That measurement died on transient 503s three times across `w2bl3s9l1`/`wikpaagrw`/`w7gh4f4nk`; the plan's guarded harness must finally complete it.) The paused run `wf_c84e1cfd-ad1` is left in place but should not be resumed.
 
 ### Translator-side fix for `old(<unmodified-global>)` typecheck failure (#1331) — IMPLEMENTED
 
