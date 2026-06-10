@@ -478,6 +478,9 @@ procedure test()
 { var x: int := <?>; assert <??> };
 #end
 
+-- Nondet hole in function → should be rejected (not tested here since
+-- the error occurs at Core translation time, which requires the full pipeline).
+
 /-! ## Holes inside datatype destructor / tester arguments -/
 
 -- Hole as argument to a (safe) datatype destructor → typed as the parent
