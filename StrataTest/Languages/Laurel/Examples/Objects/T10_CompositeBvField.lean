@@ -32,6 +32,14 @@ procedure writeAndRead(r: Register, x: bv 32)
 {
   r#value := x
 };
+
+// Error: postcondition violation — field does not change without assignment
+procedure readWithoutWrite(r: Register, x: bv 32)
+  opaque
+  ensures r#value == x
+//        ^^^^^^^^^^^^ error: assertion does not hold
+{
+};
 "
 
 #guard_msgs (drop info, error) in
