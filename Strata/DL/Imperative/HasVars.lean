@@ -21,7 +21,16 @@ class HasVarsPure (P : PureExpr) (α : Type) where
 class HasVarsImp (P : PureExpr) (α : Type) where
   definedVars :
     α →
-    Bool/-If true, the returned List P.Ident excludes vars not visible from outside.-/ →
+    Bool/-If true, the returned List P.Ident excludes vars not visible from outside.
+      For example, if α is:
+      ```
+      var x := 1;
+      {
+        var y := 2;
+      }
+      ```
+      and this flag is true, definedVars will only return 'x'.
+      (example: Stmt.definedVars) -/ →
     List P.Ident
   modifiedVars : α → List P.Ident
 
