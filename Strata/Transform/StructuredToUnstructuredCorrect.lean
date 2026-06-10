@@ -4203,17 +4203,15 @@ theorem loop_det_decompose_h_gen
     (h_gen : stmtsToBlocks k (.loop (.det g) none [] body md :: rest)
               exitConts accum gen = ((entry, blocks), gen')) :
     ∃ kNext lentry bl bbs bsRest accumEntry accumBlocks,
-      ∃ gen_kn gen_le gen_b gen_r gen_f,
-        StringGenState.gen "kNext$" gen = (kNext, gen_kn) ∧
-        StringGenState.gen "loop_entry$" gen_kn = (lentry, gen_le) ∧
-        stmtsToBlocks k rest exitConts [] gen = ((kNext, bsRest), gen_kn) ∧
+      ∃ gen_r gen_le gen_b gen_f,
+        stmtsToBlocks k rest exitConts [] gen = ((kNext, bsRest), gen_r) ∧
+        StringGenState.gen "loop_entry$" gen_r = (lentry, gen_le) ∧
         stmtsToBlocks lentry body ((.none, kNext) :: exitConts) [] gen_le
           = ((bl, bbs), gen_b) ∧
         flushCmds (P := P) (CmdT := Cmd P) "before_loop$" accum .none lentry gen_b
           = ((accumEntry, accumBlocks), gen_f) ∧
         gen_f = gen' ∧
         accumEntry = entry ∧
-        gen_r = gen_b ∧
         let lentryBlk : DetBlock String (Cmd P) P :=
           { cmds := [],
             transfer := DetTransferCmd.condGoto g bl kNext md }
@@ -4224,9 +4222,9 @@ theorem loop_det_decompose_h_gen
   let restStep := stmtsToBlocks k rest exitConts [] gen
   let kNext := restStep.1.1
   let bsRest := restStep.1.2
-  let gen_kn := restStep.2
-  let lentry := (StringGenState.gen "loop_entry$" gen_kn).1
-  let gen_le := (StringGenState.gen "loop_entry$" gen_kn).2
+  let gen_r := restStep.2
+  let lentry := (StringGenState.gen "loop_entry$" gen_r).1
+  let gen_le := (StringGenState.gen "loop_entry$" gen_r).2
   let body_step := stmtsToBlocks lentry body ((none, kNext) :: exitConts) [] gen_le
   let bl := body_step.1.1
   let bbs := body_step.1.2
@@ -4235,13 +4233,37 @@ theorem loop_det_decompose_h_gen
   let accumEntry := flushStep.1.1
   let accumBlocks := flushStep.1.2
   let gen_f := flushStep.2
-  have h_kn_eq : StringGenState.gen "kNext$" gen = (kNext, gen_kn) := by
-    -- The translator generates "kNext$" but actually `kNext` is stmtsToBlocks's
-    -- output entry label. The skeleton's "kNext$" gen step is *fictional*; the
-    -- translator's `let (kNext, bsNext) ← stmtsToBlocks k rest ...` simply
-    -- threads `gen` through `rest` directly. So `gen_kn = gen_r`.
-    sorry
-  sorry
+  have h_rest_eq : stmtsToBlocks k rest exitConts [] gen = ((kNext, bsRest), gen_r) := by
+    show restStep = ((restStep.1.1, restStep.1.2), restStep.2); rfl
+  have h_le_eq : StringGenState.gen "loop_entry$" gen_r = (lentry, gen_le) := by
+    show StringGenState.gen "loop_entry$" gen_r
+        = ((StringGenState.gen "loop_entry$" gen_r).1, (StringGenState.gen "loop_entry$" gen_r).2)
+    rfl
+  have h_body_eq :
+      stmtsToBlocks lentry body ((none, kNext) :: exitConts) [] gen_le = ((bl, bbs), gen_b) := by
+    show body_step = ((body_step.1.1, body_step.1.2), body_step.2); rfl
+  have h_flush_eq :
+      flushCmds (P := P) (CmdT := Cmd P) "before_loop$" accum .none lentry gen_b
+        = ((accumEntry, accumBlocks), gen_f) := by
+    show flushStep = ((flushStep.1.1, flushStep.1.2), flushStep.2); rfl
+  let lentryBlk : DetBlock String (Cmd P) P :=
+    { cmds := ([] : List (Cmd P)),
+      transfer := DetTransferCmd.condGoto g bl kNext md }
+  have h_gen_red :
+      stmtsToBlocks k (.loop (.det g) none [] body md :: rest) exitConts accum gen
+        = ((accumEntry, accumBlocks ++ [(lentry, lentryBlk)] ++ bbs ++ bsRest), gen_f) := by
+    unfold stmtsToBlocks
+    simp only [bind, StateT.bind, pure, StateT.pure, List.append_nil,
+      List.nil_append, List.foldl_nil]
+    rfl
+  have h_eq_full := h_gen_red.symm.trans h_gen
+  have h_pair := (Prod.mk.inj h_eq_full).1
+  have h_entry_eq : accumEntry = entry := (Prod.mk.inj h_pair).1
+  have h_blocks_eq := (Prod.mk.inj h_pair).2
+  have h_gen_eq : gen_f = gen' := (Prod.mk.inj h_eq_full).2
+  exact ⟨kNext, lentry, bl, bbs, bsRest, accumEntry, accumBlocks,
+         gen_r, gen_le, gen_b, gen_f,
+         h_rest_eq, h_le_eq, h_body_eq, h_flush_eq, h_gen_eq, h_entry_eq, h_blocks_eq⟩
 
 end InlineLoopHelpers
 
