@@ -44,8 +44,10 @@ def parseLowerIncrDecr (input : String) : IO Program := do
     let (program, model) := (result.program, result.model)
     pure (liftExpressionAssignments model program)
 
-/-- Statement form: `x++;` and `x--;` lower to clean assignments without
-    creating a dead snapshot. -/
+/-- Statement form: `x++;` and `--x` as statements. Prefix (`--x`) produces
+    a clean assignment. Postfix (`x++`) emits the same assignment-based form as
+    the expression position; the lift pass snapshots the pre-assignment value
+    even though it is unused here. -/
 def stmtFormProgram : String := r"
 procedure stmtForm()
   opaque
@@ -61,6 +63,7 @@ info: procedure stmtForm()
   opaque
 {
   var x: int := 0;
+  var $x_0: int := x;
   x := x + 1;
   x := x - 1
 };
