@@ -27,7 +27,9 @@ def singleCFG (p : Program) (n : Nat) : Imperative.CFG String
   let corePgm : Core.Program := TransM.run Inhabited.default (translateProgram p) |>.fst
   let proc := match corePgm.decls[n]? with
               | .some (.proc p _) => p | _ => Inhabited.default
-  Imperative.stmtsToCFG proc.body
+  match proc.body with
+  | .structured ss => Imperative.stmtsToCFG ss
+  | .cfg cfg => cfg
 
 ---------------------------------------------------------------------
 
