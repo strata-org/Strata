@@ -4,7 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.MetaVerifier
+import StrataBoole.MetaVerifier
 
 open Strata
 
@@ -22,7 +22,7 @@ Gap #6 implemented: `e as_int` lowers to native `Bv{n}.ToUInt` Core op → SMT-L
 No axioms injected.
 -/
 
-private def wideningCastsSeed : Strata.Program :=
+private def wideningCastsSeed : StrataDDM.Program :=
 #strata
 program Boole;
 
@@ -38,11 +38,11 @@ spec {
 #end
 
 /-- info:
-Obligation: assert_2_997
+Obligation: assert_2_1005
 Property: assert
 Result: ✅ pass
 
-Obligation: widening_cast_seed_ensures_1_929
+Obligation: widening_cast_seed_ensures_1_937
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in

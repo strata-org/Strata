@@ -46,4 +46,4 @@ import StrataBooleTest.FeatureRequests.reveal_with_fuel
 import StrataBooleTest.FeatureRequests.seq_slicing
 import StrataBooleTest.FeatureRequests.struct_field_access
 import StrataBooleTest.FeatureRequests.trait_spec_methods
-import StrataBooleTest.FeatureRequests.widening_casts
+import StrataBooleTest.widening_casts
