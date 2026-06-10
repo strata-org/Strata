@@ -44,12 +44,17 @@ namespace Strata
 
 public section
 
-private def renameIdent (rn : Std.HashMap String String) (id : Core.CoreIdent) : Core.CoreIdent :=
+/-- Rewrite a `Core.CoreIdent` according to a name-substitution map. Names absent
+from `rn` pass through unchanged; metadata is preserved. -/
+def renameIdent (rn : Std.HashMap String String) (id : Core.CoreIdent) : Core.CoreIdent :=
   match rn[id.name]? with
   | some new => ⟨new, id.metadata⟩
   | none => id
 
-private partial def renameExpr
+/-- Rewrite all free variable names in a `Core.Expression.Expr` according to `rn`.
+Recurses through binders and other expression forms; bound-variable indices are
+unchanged. -/
+partial def renameExpr
     (rn : Std.HashMap String String)
     : Core.Expression.Expr → Core.Expression.Expr
   | .fvar m name ty => .fvar m (renameIdent rn name) ty
@@ -60,7 +65,9 @@ private partial def renameExpr
   | .eq m e1 e2 => .eq m (renameExpr rn e1) (renameExpr rn e2)
   | e => e
 
-private def renameCmd
+/-- Apply a name-substitution map to identifiers and expressions inside an
+`Imperative.Cmd` over Core expressions. -/
+def renameCmd
     (rn : Std.HashMap String String)
     : Imperative.Cmd Core.Expression → Imperative.Cmd Core.Expression
   | .init name ty e md => .init (renameIdent rn name) ty (e.map (renameExpr rn)) md
@@ -106,7 +113,7 @@ private def hasCallStmt : List Core.Statement → Bool
 Collect all funcDecl statements from a procedure body (recursively)
 and return them as Core.Functions, stripping them from the body.
 -/
-private def collectFuncDecls : List Core.Statement →
+def collectFuncDecls : List Core.Statement →
     Except Std.Format (List Core.Function × List Core.Statement)
   | [] => return ([], [])
   | .funcDecl decl _ :: rest => do
@@ -263,7 +270,11 @@ def procedureToGotoCtx
     : Except Std.Format
         (CoreToGOTO.CProverGOTO.Context × List Core.Function) := do
   -- Lift local function declarations out of the body
-  let (liftedFuncs, body) ← collectFuncDecls p.body
+  -- TODO: This pass could be split into a two-stage transformation:
+  -- 1. structured → cfg (via StructuredToUnstructured)
+  -- 2. cfg → CProverGOTO (always operates on CFG, no pattern matching needed)
+  let bodyStmts ← p.body.getStructured.mapError fun s => f!"{s}"
+  let (liftedFuncs, body) ← collectFuncDecls bodyStmts
   let pname := Core.CoreIdent.toPretty p.header.name
   if !p.header.typeArgs.isEmpty then
     .error f!"[procedureToGotoCtx] Polymorphic procedures unsupported."
