@@ -4001,12 +4001,12 @@ private theorem inner_guard_step_r {P : PureExpr} [HasIdent P]
   | Or.inr h_not_in => Or.inr (fun h_in_r => h_not_in
       (h_gen_eq_f ▸ h_step_b_to_f.subset (h_step_r_to_b.subset h_in_r)))
 
-/-- Freshness lift through `flushCmds` for `rest`'s init vars.
-    Discharges `σ_cfg_after x = none` for every `x ∈ Block.initVars rest`,
-    given the standard combined-Nodup, fresh-on-combined, and
+/-- Freshness lift through `flushCmds` for both the `body` and `rest` slots'
+    init vars, given the standard combined-Nodup, fresh-on-combined, and
     `flushCmds`-preservation hypotheses, plus the 2-way `h_initvars_eq` shape.
+    The `.1` component covers `body`, `.2` covers `rest`.
     Used at every body/then/else paired site in `stmtsToBlocks_simulation`. -/
-private theorem fresh_rest_inits_after_step {P : PureExpr} [HasIdent P]
+private theorem fresh_inits_after_step {P : PureExpr} [HasIdent P]
     {accum : List (Cmd P)}
     {head : Stmt P (Cmd P)} {body rest : List (Stmt P (Cmd P))}
     {σ_base σ_cfg_after : SemanticStore P}
@@ -4019,50 +4019,26 @@ private theorem fresh_rest_inits_after_step {P : PureExpr} [HasIdent P]
         σ_base x = none)
     (h_preserve_flush : ∀ x : P.Ident,
         σ_base x = none → x ∉ Cmds.definedVars accum.reverse → σ_cfg_after x = none) :
-    ∀ x ∈ Block.initVars rest, σ_cfg_after x = none := by
-  intro x hx
-  have h_x_not_accum : x ∉ Cmds.definedVars accum.reverse := fun h_in_accum =>
-    (h_initvars_eq ▸ List.nodup_append.mp h_unique_combined).2.2
-      x h_in_accum x (List.mem_append_right _ hx) rfl
-  have h_σ_base_x : σ_base x = none := by
-    apply h_fresh_combined
-    apply List.mem_append_right
-    rw [h_initvars_eq]
-    exact List.mem_append_right _ hx
-  exact h_preserve_flush x h_σ_base_x h_x_not_accum
-
-/-- Freshness lift through `flushCmds` for `body`'s init vars (mirror of
-    `fresh_rest_inits_after_step`, but for the left slot of the 2-way
-    `h_initvars_eq`).  Discharges `σ_cfg_after x = none` for every
-    `x ∈ Block.initVars body`. -/
-private theorem fresh_body_inits_after_step {P : PureExpr} [HasIdent P]
-    {accum : List (Cmd P)}
-    {head : Stmt P (Cmd P)} {body rest : List (Stmt P (Cmd P))}
-    {σ_base σ_cfg_after : SemanticStore P}
-    (h_initvars_eq : Block.initVars (head :: rest) =
-        Block.initVars body ++ Block.initVars rest)
-    (h_unique_combined :
-        (Cmds.definedVars accum.reverse ++ Block.initVars (head :: rest)).Nodup)
-    (h_fresh_combined :
-        ∀ x ∈ Cmds.definedVars accum.reverse ++ Block.initVars (head :: rest),
-        σ_base x = none)
-    (h_preserve_flush : ∀ x : P.Ident,
-        σ_base x = none → x ∉ Cmds.definedVars accum.reverse → σ_cfg_after x = none) :
-    ∀ x ∈ Block.initVars body, σ_cfg_after x = none := by
-  intro x hx
-  have h_x_not_accum : x ∉ Cmds.definedVars accum.reverse := fun h_in_accum =>
-    (h_initvars_eq ▸ List.nodup_append.mp h_unique_combined).2.2
-      x h_in_accum x (List.mem_append_left _ hx) rfl
-  have h_σ_base_x : σ_base x = none := by
-    apply h_fresh_combined
-    apply List.mem_append_right
-    rw [h_initvars_eq]
-    exact List.mem_append_left _ hx
-  exact h_preserve_flush x h_σ_base_x h_x_not_accum
+    (∀ x ∈ Block.initVars body, σ_cfg_after x = none)
+      ∧ (∀ x ∈ Block.initVars rest, σ_cfg_after x = none) := by
+  -- Both slots share the same proof; `h_mem` selects the append side.
+  have lift : ∀ (seg : List (Stmt P (Cmd P))),
+      (∀ x, x ∈ Block.initVars seg →
+        x ∈ Block.initVars body ++ Block.initVars rest) →
+      ∀ x ∈ Block.initVars seg, σ_cfg_after x = none := by
+    intro seg h_mem x hx
+    have h_x_in : x ∈ Block.initVars (head :: rest) := h_initvars_eq ▸ h_mem x hx
+    have h_x_not_accum : x ∉ Cmds.definedVars accum.reverse := fun h_in_accum =>
+      (List.nodup_append.mp h_unique_combined).2.2 x h_in_accum x h_x_in rfl
+    have h_σ_base_x : σ_base x = none :=
+      h_fresh_combined x (List.mem_append_right _ h_x_in)
+    exact h_preserve_flush x h_σ_base_x h_x_not_accum
+  exact ⟨lift body (fun _ hx => List.mem_append_left _ hx),
+         lift rest (fun _ hx => List.mem_append_right _ hx)⟩
 
 /-- Freshness lift through the body sub-simulation's `h_preserve_body` for
     `rest`'s init vars.  Consumes the `_after` freshness from
-    `fresh_rest_inits_after_step`, plus `h_unique`, the 2-way `h_initvars_eq`,
+    `fresh_inits_after_step`, plus `h_unique`, the 2-way `h_initvars_eq`,
     `h_preserve_body` (5-premise form), `h_wf_b`, and the per-element
     no-gen-suffix discharge.
     Used at every body/then/else paired site in `stmtsToBlocks_simulation`. -/
@@ -6155,8 +6131,8 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
         have hwf_var₁ : WellFormedSemanticEvalVar ρ_blk.eval := h_eval_blk ▸ hwf_var
         -- Freshness for rest's inits at σ_cfg_body.
         have h_fresh_rest_inits_after : ∀ x ∈ Block.initVars rest, σ_cfg_after x = none :=
-          fresh_rest_inits_after_step h_initvars_eq h_unique_combined h_fresh_combined
-            h_preserve_flush
+          (fresh_inits_after_step h_initvars_eq h_unique_combined h_fresh_combined
+            h_preserve_flush).2
         have h_fresh_rest_inits_body : ∀ x ∈ Block.initVars rest, σ_cfg_body x = none :=
           fresh_rest_inits_body_step h_initvars_eq h_unique h_preserve_body h_wf_b
             h_rest_no_gen_suffix h_fresh_rest_inits_after
@@ -6227,8 +6203,8 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
           simp [List.lookup]
         -- Freshness for body recursion.
         have h_fresh_body_inits_after : ∀ x ∈ Block.initVars body, σ_cfg_after x = none :=
-          fresh_body_inits_after_step h_initvars_eq h_unique_combined h_fresh_combined
-            h_preserve_flush
+          (fresh_inits_after_step h_initvars_eq h_unique_combined h_fresh_combined
+            h_preserve_flush).1
         have h_combined_body :
             ∀ x ∈ Cmds.definedVars [].reverse ++ Block.initVars body,
             σ_cfg_after x = none :=
@@ -6274,8 +6250,8 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
         have hwf_var₁ : WellFormedSemanticEvalVar ρ_blk.eval := h_eval_blk ▸ hwf_var
         -- Freshness for rest's inits at σ_cfg_body.
         have h_fresh_rest_inits_after : ∀ x ∈ Block.initVars rest, σ_cfg_after x = none :=
-          fresh_rest_inits_after_step h_initvars_eq h_unique_combined h_fresh_combined
-            h_preserve_flush
+          (fresh_inits_after_step h_initvars_eq h_unique_combined h_fresh_combined
+            h_preserve_flush).2
         have h_fresh_rest_inits_body : ∀ x ∈ Block.initVars rest, σ_cfg_body x = none :=
           fresh_rest_inits_body_step h_initvars_eq h_unique h_preserve_body h_wf_b
             h_rest_no_gen_suffix h_fresh_rest_inits_after
@@ -6383,8 +6359,8 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
       rcases h_body_term_or_exit with h_body_term | h_body_exit_star
       · -- Body terminates with ρ_inner.
         have h_fresh_body_inits_after : ∀ x ∈ Block.initVars body, σ_cfg_after x = none :=
-          fresh_body_inits_after_step h_initvars_eq h_unique_combined h_fresh_combined
-            h_preserve_flush
+          (fresh_inits_after_step h_initvars_eq h_unique_combined h_fresh_combined
+            h_preserve_flush).1
         have h_combined_body :
             ∀ x ∈ Cmds.definedVars [].reverse ++ Block.initVars body,
             σ_cfg_after x = none :=
@@ -6419,8 +6395,8 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
         have hwf_congr₁ : WellFormedSemanticEvalExprCongr ρ_blk.eval := h_eval_blk ▸ hwf_congr
         have hwf_var₁ : WellFormedSemanticEvalVar ρ_blk.eval := h_eval_blk ▸ hwf_var
         have h_fresh_rest_inits_after : ∀ x ∈ Block.initVars rest, σ_cfg_after x = none :=
-          fresh_rest_inits_after_step h_initvars_eq h_unique_combined h_fresh_combined
-            h_preserve_flush
+          (fresh_inits_after_step h_initvars_eq h_unique_combined h_fresh_combined
+            h_preserve_flush).2
         have h_fresh_rest_inits_body : ∀ x ∈ Block.initVars rest, σ_cfg_body x = none :=
           fresh_rest_inits_body_step h_initvars_eq h_unique h_preserve_body h_wf_b
             h_rest_no_gen_suffix h_fresh_rest_inits_after
@@ -6479,8 +6455,8 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
             ((some label, kNext) :: exitConts).lookup (some label) = some kNext := by
           simp [List.lookup]
         have h_fresh_body_inits_after : ∀ x ∈ Block.initVars body, σ_cfg_after x = none :=
-          fresh_body_inits_after_step h_initvars_eq h_unique_combined h_fresh_combined
-            h_preserve_flush
+          (fresh_inits_after_step h_initvars_eq h_unique_combined h_fresh_combined
+            h_preserve_flush).1
         have h_combined_body :
             ∀ x ∈ Cmds.definedVars [].reverse ++ Block.initVars body,
             σ_cfg_after x = none :=
@@ -6515,8 +6491,8 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
         have hwf_congr₁ : WellFormedSemanticEvalExprCongr ρ_blk.eval := h_eval_blk ▸ hwf_congr
         have hwf_var₁ : WellFormedSemanticEvalVar ρ_blk.eval := h_eval_blk ▸ hwf_var
         have h_fresh_rest_inits_after : ∀ x ∈ Block.initVars rest, σ_cfg_after x = none :=
-          fresh_rest_inits_after_step h_initvars_eq h_unique_combined h_fresh_combined
-            h_preserve_flush
+          (fresh_inits_after_step h_initvars_eq h_unique_combined h_fresh_combined
+            h_preserve_flush).2
         have h_fresh_rest_inits_body : ∀ x ∈ Block.initVars rest, σ_cfg_body x = none :=
           fresh_rest_inits_body_step h_initvars_eq h_unique h_preserve_body h_wf_b
             h_rest_no_gen_suffix h_fresh_rest_inits_after
@@ -7156,8 +7132,8 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
           rw [h_beq]; exact h_label
         -- Freshness for body recursion at σ_cfg_after.
         have h_fresh_body_inits_after : ∀ x ∈ Block.initVars body, σ_cfg_after x = none :=
-          fresh_body_inits_after_step h_initvars_eq h_unique_combined h_fresh_combined
-            h_preserve_flush
+          (fresh_inits_after_step h_initvars_eq h_unique_combined h_fresh_combined
+            h_preserve_flush).1
         have h_combined_body :
             ∀ x ∈ Cmds.definedVars [].reverse ++ Block.initVars body,
             σ_cfg_after x = none :=
@@ -7202,8 +7178,8 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
         obtain ⟨ρ_blk, h_body_or_match, h_rest_exit⟩ := h_caseB
         -- Freshness for body recursion at σ_cfg_after.
         have h_fresh_body_inits_after : ∀ x ∈ Block.initVars body, σ_cfg_after x = none :=
-          fresh_body_inits_after_step h_initvars_eq h_unique_combined h_fresh_combined
-            h_preserve_flush
+          (fresh_inits_after_step h_initvars_eq h_unique_combined h_fresh_combined
+            h_preserve_flush).1
         have h_combined_body :
             ∀ x ∈ Cmds.definedVars [].reverse ++ Block.initVars body,
             σ_cfg_after x = none :=
@@ -7246,8 +7222,8 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
           have hwf_congr₁ : WellFormedSemanticEvalExprCongr ρ_blk.eval := h_eval_blk ▸ hwf_congr
           have hwf_var₁ : WellFormedSemanticEvalVar ρ_blk.eval := h_eval_blk ▸ hwf_var
           have h_fresh_rest_inits_after : ∀ x ∈ Block.initVars rest, σ_cfg_after x = none :=
-            fresh_rest_inits_after_step h_initvars_eq h_unique_combined h_fresh_combined
-              h_preserve_flush
+            (fresh_inits_after_step h_initvars_eq h_unique_combined h_fresh_combined
+              h_preserve_flush).2
           have h_fresh_rest_inits_body : ∀ x ∈ Block.initVars rest, σ_cfg_body x = none :=
             fresh_rest_inits_body_step h_initvars_eq h_unique h_preserve_body h_wf_b
               h_rest_no_gen_suffix h_fresh_rest_inits_after
@@ -7328,8 +7304,8 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
           have hwf_congr₁ : WellFormedSemanticEvalExprCongr ρ_blk.eval := h_eval_blk ▸ hwf_congr
           have hwf_var₁ : WellFormedSemanticEvalVar ρ_blk.eval := h_eval_blk ▸ hwf_var
           have h_fresh_rest_inits_after : ∀ x ∈ Block.initVars rest, σ_cfg_after x = none :=
-            fresh_rest_inits_after_step h_initvars_eq h_unique_combined h_fresh_combined
-              h_preserve_flush
+            (fresh_inits_after_step h_initvars_eq h_unique_combined h_fresh_combined
+              h_preserve_flush).2
           have h_fresh_rest_inits_body : ∀ x ∈ Block.initVars rest, σ_cfg_body x = none :=
             fresh_rest_inits_body_step h_initvars_eq h_unique h_preserve_body h_wf_b
               h_rest_no_gen_suffix h_fresh_rest_inits_after
@@ -7438,8 +7414,8 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
             rw [beq_eq_false_iff_ne]; intro h; exact h_label_ne h.symm
           rw [h_beq]; exact h_label
         have h_fresh_body_inits_after : ∀ x ∈ Block.initVars body, σ_cfg_after x = none :=
-          fresh_body_inits_after_step h_initvars_eq h_unique_combined h_fresh_combined
-            h_preserve_flush
+          (fresh_inits_after_step h_initvars_eq h_unique_combined h_fresh_combined
+            h_preserve_flush).1
         have h_combined_body :
             ∀ x ∈ Cmds.definedVars [].reverse ++ Block.initVars body,
             σ_cfg_after x = none :=
@@ -7479,8 +7455,8 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
           exact h_preserve_body x h_σ_after_x h_nil_not h_x_not_body h_inner_guard_b
       · obtain ⟨ρ_blk, h_body_or_match, h_rest_exit⟩ := h_caseB
         have h_fresh_body_inits_after : ∀ x ∈ Block.initVars body, σ_cfg_after x = none :=
-          fresh_body_inits_after_step h_initvars_eq h_unique_combined h_fresh_combined
-            h_preserve_flush
+          (fresh_inits_after_step h_initvars_eq h_unique_combined h_fresh_combined
+            h_preserve_flush).1
         have h_combined_body :
             ∀ x ∈ Cmds.definedVars [].reverse ++ Block.initVars body,
             σ_cfg_after x = none :=
@@ -7521,8 +7497,8 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
           have hwf_congr₁ : WellFormedSemanticEvalExprCongr ρ_blk.eval := h_eval_blk ▸ hwf_congr
           have hwf_var₁ : WellFormedSemanticEvalVar ρ_blk.eval := h_eval_blk ▸ hwf_var
           have h_fresh_rest_inits_after : ∀ x ∈ Block.initVars rest, σ_cfg_after x = none :=
-            fresh_rest_inits_after_step h_initvars_eq h_unique_combined h_fresh_combined
-              h_preserve_flush
+            (fresh_inits_after_step h_initvars_eq h_unique_combined h_fresh_combined
+              h_preserve_flush).2
           have h_fresh_rest_inits_body : ∀ x ∈ Block.initVars rest, σ_cfg_body x = none :=
             fresh_rest_inits_body_step h_initvars_eq h_unique h_preserve_body h_wf_b
               h_rest_no_gen_suffix h_fresh_rest_inits_after
@@ -7603,8 +7579,8 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
           have hwf_congr₁ : WellFormedSemanticEvalExprCongr ρ_blk.eval := h_eval_blk ▸ hwf_congr
           have hwf_var₁ : WellFormedSemanticEvalVar ρ_blk.eval := h_eval_blk ▸ hwf_var
           have h_fresh_rest_inits_after : ∀ x ∈ Block.initVars rest, σ_cfg_after x = none :=
-            fresh_rest_inits_after_step h_initvars_eq h_unique_combined h_fresh_combined
-              h_preserve_flush
+            (fresh_inits_after_step h_initvars_eq h_unique_combined h_fresh_combined
+              h_preserve_flush).2
           have h_fresh_rest_inits_body : ∀ x ∈ Block.initVars rest, σ_cfg_body x = none :=
             fresh_rest_inits_body_step h_initvars_eq h_unique h_preserve_body h_wf_b
               h_rest_no_gen_suffix h_fresh_rest_inits_after
