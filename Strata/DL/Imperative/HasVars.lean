@@ -22,7 +22,7 @@ class HasVarsImp (P : PureExpr) (α : Type) where
   definedVars :
     α →
     Bool/-If true, the returned List P.Ident excludes vars not visible from outside.
-      For example, if α is:
+      For example, if the first argument (whose type is α) is:
       ```
       var x := 1;
       {
