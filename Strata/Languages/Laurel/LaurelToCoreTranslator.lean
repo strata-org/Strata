@@ -572,7 +572,7 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
   -- Wrap body in a labeled block so early returns (exit) work correctly.
   let body : List Core.Statement := [.block "$body" bodyStmts mdWithUnknownLoc]
   let spec : Core.Procedure.Spec := { preconditions, postconditions }
-  return { header, spec, body }
+  return { header, spec, body := .structured body }
 
 def translateInvokeOnAxiom (proc : Procedure) (trigger : StmtExprMd)
     : TranslateM (Option Core.Decl) := do
