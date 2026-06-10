@@ -108,7 +108,7 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd) : InferHol
       else
         modify fun s => { s with statistics := s.statistics.increment s!"{InferHoleTypesStats.holesAnnotated}" }
         return ⟨.Hole det (some expectedType), source⟩
-  | .PrimitiveOp op args =>
+  | .PrimitiveOp op args _ =>
       let argType := match op with
         | .Eq | .Neq | .Lt | .Leq | .Gt | .Geq => inferComparisonArgType model args source
         | _ =>
@@ -150,9 +150,10 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd) : InferHol
         | some d => pure (some (← inferExpr d (⟨ .TInt, source ⟩)))
         | none => pure none
       return ⟨.While (← inferExpr cond ⟨ .TBool, source ⟩) (← invs.mapM (inferExpr · ⟨ .TBool, source ⟩)) dec' (← inferExpr body ⟨ .TVoid, source⟩), source⟩
-  | .Assert ⟨condExpr, summary⟩ =>
-      return ⟨.Assert { condition := ← inferExpr condExpr ⟨ .TBool, source ⟩, summary }, source⟩
-  | .Assume cond => return ⟨.Assume (← inferExpr cond ⟨ .TBool, source ⟩), source⟩
+  | .Assert ⟨condExpr, summary, free⟩ =>
+      return ⟨.Assert { condition := ← inferExpr condExpr ⟨ .TBool, source ⟩, summary, free }, source⟩
+  | .Assume cond =>
+      return ⟨.Assume (← inferExpr cond ⟨ .TBool, source ⟩), source⟩
   | .Return (some retExpr) =>
       return ⟨.Return (some (← inferExpr retExpr (← get).currentOutputType)), source⟩
   | .Old v => return ⟨.Old (← inferExpr v expectedType), source⟩
@@ -181,6 +182,7 @@ private def inferProcedure (proc : Procedure) : InferHoleM Procedure := do
 
 /--
 Annotate every `.Hole` in the program with a type inferred from context.
+Returns the updated program and any diagnostics (e.g. holes whose type could not be inferred).
 -/
 def inferHoleTypes (model : SemanticModel) (program : Program) : Program × List DiagnosticModel × Statistics :=
   let initState : InferHoleState := { model := model, currentOutputType := { val := .Unknown, source := none }}

@@ -22,7 +22,6 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TESTS_DIR="$SCRIPT_DIR/tests"
 EXPECTED_DIR="$SCRIPT_DIR/expected_interpret"
 STRATA_PYTHON_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-PROJECT_ROOT="$(cd "$STRATA_PYTHON_DIR/.." && pwd)"
 
 passed=0
 errors=0
@@ -70,7 +69,7 @@ for test_file in "$TESTS_DIR"/test_*.py; do
     fi
 
     # Compile Python to Ion
-    if ! (cd "$PROJECT_ROOT/Tools/Python" && python3 -m strata.gen py_to_strata \
+    if ! (cd "$STRATA_PYTHON_DIR/Tools/strata-python" && python3 -m strata_python.gen py_to_strata \
         --dialect "dialects/Python.dialect.st.ion" \
         "$test_file" "$ion_file") 2>/dev/null; then
         echo "SKIP (parse): $base_name"
