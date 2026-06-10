@@ -146,11 +146,11 @@ where
       let calleeArg := laurelOp "identifier" #[ident callee.text]
       let argsArr := args.map stmtExprToArg |>.toArray
       laurelOp "call" #[calleeArg, commaSep argsArr]
-    | .PrimitiveOp op [a] =>
+    | .PrimitiveOp op [a] _skipProof =>
       laurelOp (operationName op) #[stmtExprToArg a]
-    | .PrimitiveOp op [a, b] =>
+    | .PrimitiveOp op [a, b] _skipProof =>
       laurelOp (operationName op) #[stmtExprToArg a, stmtExprToArg b]
-    | .PrimitiveOp op args =>
+    | .PrimitiveOp op args _skipProof =>
       -- Fallback for unusual arities
       let argsArr := args.map stmtExprToArg |>.toArray
       laurelOp (operationName op) argsArr
