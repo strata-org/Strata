@@ -1714,33 +1714,42 @@ private instance : Inhabited (Imperative.BasicBlock (Imperative.DetTransferCmd S
 private instance : Inhabited (Imperative.CFG String (Imperative.DetBlock String Core.Command Core.Expression)) := ⟨⟨"", []⟩⟩
 
 partial def translateTransfer (p : Program) (bindings : TransBindings) (arg : Arg) :
-  TransM (Imperative.DetTransferCmd String Core.Expression × TransBindings) := do
+  TransM (List Core.Command × Imperative.DetTransferCmd String Core.Expression × TransBindings) := do
   let .op op := arg
     | TransM.error s!"translateTransfer expected op {repr arg}"
   let md ← getOpMetaData op
   match op.name with
   | q`Core.transfer_goto =>
     let label ← translateIdent String op.args[0]!
-    return (.condGoto (Lambda.LExpr.boolConst () Bool.true) label label md, bindings)
+    return ([], .condGoto (Lambda.LExpr.boolConst () Bool.true) label label md, bindings)
   | q`Core.transfer_nondet_goto =>
     let label1 ← translateIdent String op.args[0]!
     let label2 ← translateIdent String op.args[1]!
-    -- Nondeterministic choice: introduce an unbound free variable as the branch
-    -- condition.  The symbolic evaluator returns the fvar unchanged (via findD),
-    -- which is neither .true nor .false, causing evalCFGStep to fork into both
-    -- paths with complementary path conditions.  The concrete interpreter (runCFG)
-    -- will error on this, which is expected — nondeterministic gotos are only
-    -- meaningful under symbolic execution.
-    let condName := s!"$__nondet_{bindings.gen.var_def}"
+    -- Nondeterministic choice: declare a fresh boolean variable and use it as the
+    -- branch condition. The accompanying `init` command (prepended to the block in
+    -- `translateCFGBlock`) puts the variable in the type environment, so type
+    -- checking and symbolic execution can both see it. Without the declaration the
+    -- fvar is unbound and the type checker rejects the program with
+    -- "Cannot find this fvar in the context! $__nondet_N"
+    -- (https://github.com/strata-org/Strata/issues/1162). The symbolic evaluator
+    -- still returns the fvar unchanged (via findD) — neither `.true` nor `.false` —
+    -- so `evalCFGStep` forks into both paths with complementary path conditions;
+    -- the concrete interpreter (runCFG) errors on it, as expected (nondeterministic
+    -- gotos are only meaningful under symbolic execution).
+    let condName : Core.CoreIdent := ⟨s!"$__nondet_{bindings.gen.var_def}", ()⟩
     let bindings := incrNum .var_def bindings
-    return (.condGoto (Lambda.LExpr.fvar () ⟨condName, ()⟩ none) label1 label2 md, bindings)
+    let boolMono := Lambda.LMonoTy.bool
+    let boolTy : Lambda.LTy := .forAll [] boolMono
+    let initCmd : Core.Command := .cmd (.init condName boolTy .nondet md)
+    let condExpr := Lambda.LExpr.fvar () condName (some boolMono)
+    return ([initCmd], .condGoto condExpr label1 label2 md, bindings)
   | q`Core.transfer_cond_goto =>
     let cond ← translateExpr p bindings op.args[0]!
     let lt ← translateIdent String op.args[1]!
     let lf ← translateIdent String op.args[2]!
-    return (.condGoto cond lt lf md, bindings)
+    return ([], .condGoto cond lt lf md, bindings)
   | q`Core.transfer_return =>
-    return (.finish md, bindings)
+    return ([], .finish md, bindings)
   | _ => TransM.error s!"translateTransfer: unknown transfer {repr op.name}"
 
 /-- Translate a single CFG block -/
@@ -1764,8 +1773,10 @@ partial def translateCFGBlock (p : Program) (bindings : TransBindings) (arg : Ar
         match stmt with
         | .cmd c => cmds := cmds.push c
         | _ => TransM.error s!"translateCFGBlock: only commands allowed in CFG blocks, got statement"
-  let (transfer, bindings') ← translateTransfer p bindings op.args[2]!
-  return (label, ⟨cmds.toList, transfer⟩, bindings')
+  let (transferCmds, transfer, bindings') ← translateTransfer p bindings op.args[2]!
+  -- Append any commands the transfer needs declared in scope (e.g. the `$__nondet_N`
+  -- declaration for a nondeterministic goto, see #1162) after the block's own commands.
+  return (label, ⟨cmds.toList ++ transferCmds, transfer⟩, bindings')
 
 /-- Translate a list of CFG blocks -/
 partial def translateCFGBlocks (p : Program) (bindings : TransBindings) (arg : Arg) :
