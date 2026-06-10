@@ -182,12 +182,10 @@ def Stmt.mapExpr (fExpr : P.Expr → P.Expr) (mapCmd : C → C)
   | .ite .nondet tss ess md =>
     .ite .nondet (Block.mapExpr fExpr mapCmd tss) (Block.mapExpr fExpr mapCmd ess) md
   | .loop (.det g) measure inv body md =>
-    .loop (.det (fExpr g)) (measure.map fExpr)
-      (inv.map fun (l, e) => (l, fExpr e))
+    .loop (.det (fExpr g)) (measure.map fExpr) (inv.map fun (l, e) => (l, fExpr e))
       (Block.mapExpr fExpr mapCmd body) md
   | .loop .nondet measure inv body md =>
-    .loop .nondet (measure.map fExpr)
-      (inv.map fun (l, e) => (l, fExpr e))
+    .loop .nondet (measure.map fExpr) (inv.map fun (l, e) => (l, fExpr e))
       (Block.mapExpr fExpr mapCmd body) md
   | .exit l md => .exit l md
   | .funcDecl decl md => .funcDecl decl md
@@ -252,10 +250,7 @@ def Stmt.getVars [HasFvars P] [HasVarsPure P C] (s : Stmt P C) : List P.Ident :=
   | .exit _ _  => []
   | .funcDecl decl _ =>
     -- Get free variables from function body and axioms, excluding formal
-    -- parameters. Axiom free variables are included because `closureCapture`
-    -- (which is invoked by `step_funcDecl`) substitutes them using the
-    -- current store at the funcDecl point — so they are read-dependencies
-    -- on the surrounding scope, just like body free variables.
+    -- parameters. Axiom free variables are included.
     (match decl.body with
       | some body => (HasFvars.getFvars body).filter
           (fun v => (decl.inputs.map (·.1)).all (fun f => !(P.EqIdent v f).decide))

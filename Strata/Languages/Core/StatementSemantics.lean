@@ -440,13 +440,6 @@ structure WFEvalExtension (φ : CoreEval → Imperative.PureFunc Expression → 
   preserves_wfExprCongr : ∀ δ σ decl,
     @Imperative.WellFormedSemanticEvalExprCongr Expression _ δ →
     @Imperative.WellFormedSemanticEvalExprCongr Expression _ (EvalPureFunc φ δ σ decl)
-  /-- A funcDecl-extended evaluator preserves `WellFormedSemanticEvalInt`.
-      This is a Core-specific obligation because `WellFormedSemanticEvalInt`
-      depends on `HasIntOps.lt`, whose semantic reduction must remain
-      bool-valued in the extended environment. -/
-  preserves_wfInt : ∀ δ σ decl,
-    @Imperative.WellFormedSemanticEvalInt Expression _ _ _ _ δ →
-    @Imperative.WellFormedSemanticEvalInt Expression _ _ _ _ (EvalPureFunc φ δ σ decl)
 
 ---------------------------------------------------------------------
 
