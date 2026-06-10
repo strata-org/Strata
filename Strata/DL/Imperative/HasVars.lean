@@ -19,7 +19,10 @@ class HasVarsPure (P : PureExpr) (α : Type) where
 /-! # Imperative Variable Lookup : HasVarsImp -/
 
 class HasVarsImp (P : PureExpr) (α : Type) where
-  definedVars : α → Bool/-exclude vars not visible from outside?-/ → List P.Ident
+  definedVars :
+    α →
+    Bool/-If true, the returned List P.Ident excludes vars not visible from outside.-/ →
+    List P.Ident
   modifiedVars : α → List P.Ident
 
 /-! # Operator/Function Name Lookup over Commands : HasOpsImp

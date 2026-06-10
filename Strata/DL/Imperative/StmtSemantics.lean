@@ -323,13 +323,13 @@ inductive StepStmt
           { ρ with hasFailure := ρ.hasFailure || hasInvFailure }))
         [.loop .nondet m inv body md])
 
-  /-- Non-deterministic loop: exit the loop.  Measure must be `.none`. -/
+  /-- Non-deterministic loop: exit the loop. -/
   | step_loop_nondet_exit {hasInvFailure : Bool} :
     (∀ le ∈ inv, ρ.eval ρ.store le.2 = .some HasBool.tt ∨
                  ρ.eval ρ.store le.2 = .some HasBool.ff) →
     (hasInvFailure ↔ ∃ le ∈ inv, ρ.eval ρ.store le.2 = .some HasBool.ff) →
     StepStmt EvalCmd extendEval
-      (.stmt (.loop .nondet .none inv body _) ρ)
+      (.stmt (.loop .nondet m inv body _) ρ)
       (.terminal { ρ with hasFailure := ρ.hasFailure || hasInvFailure })
 
   /-- An exit statement produces an exiting configuration. -/

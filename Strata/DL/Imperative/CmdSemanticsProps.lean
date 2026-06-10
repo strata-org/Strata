@@ -254,7 +254,7 @@ theorem InitStateUniqueResult
 /-! ### Assert / set commutation -/
 
 theorem eval_assert_store_cst
-  [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P]:
+  [HasFvar P] [HasBool P] [HasBoolOps P] [HasOps P]:
   EvalCmd P δ σ (.assert l e md) σ' f → σ = σ' := by
   intros Heval; cases Heval with
   | eval_assert_pass _ => rfl
@@ -313,8 +313,7 @@ theorem UpdateState_InitStateComm {P: PureExpr} {x1 x2: P.Ident} {σ σ' σ'' σ
   simp_all
 
 theorem semantic_eval_eq_of_eval_cmd_set_unrelated_var
-  [HasVarsImp P (Cmd P)] [HasFvars P]
-  [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P]:
+  [HasVarsImp P (Cmd P)] [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P]:
   WellFormedSemanticEvalExprCongr δ →
   ¬ v ∈ HasFvars.getFvars e →
   EvalCmd P δ σ (Cmd.set v (.det e') md) σ' f →
@@ -337,7 +336,7 @@ theorem semantic_eval_eq_of_eval_cmd_set_unrelated_var
 
 theorem eval_cmd_set_comm'
   [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)]
-  [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P] [DecidableEq P.Ident] :
+  [HasFvar P] [HasBool P] [HasBoolOps P] [HasOps P] [DecidableEq P.Ident] :
   ¬ x1 = x2 →
   δ σ v1 = δ σ2 v1 →
   δ σ v2 = δ σ1 v2 →
@@ -355,8 +354,8 @@ theorem eval_cmd_set_comm'
   exact UpdateStateComm Hneq Hu1 Hu2 Hu3 Hu4
 
 theorem eval_cmd_set_comm
-  [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)] [HasFvars P]
-  [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P] [DecidableEq P.Ident]:
+  [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)]
+  [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [DecidableEq P.Ident]:
   WellFormedSemanticEvalExprCongr δ →
   ¬ x1 = x2 →
   ¬ x1 ∈ HasFvars.getFvars v2 →
