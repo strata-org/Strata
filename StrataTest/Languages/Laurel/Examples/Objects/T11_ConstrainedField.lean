@@ -34,6 +34,15 @@ procedure setCount(c: Counter)
 {
   c#count := 1
 };
+
+// Error: assigning -1 to a nat field violates the constraint
+procedure setCountInvalid(c: Counter)
+  opaque
+  modifies c
+{
+  c#count := -1
+//^^^^^^^^^^^^^ error: assertion does not hold
+};
 "
 
 #guard_msgs (drop info, error) in
