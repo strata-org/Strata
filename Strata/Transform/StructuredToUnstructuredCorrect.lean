@@ -5550,8 +5550,6 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
       · exact StepDetCFGStar_trans
           (StepDetCFGStar_trans h_flush_sim h_else_step) h_rest_sim
       · intro x h_σ_x h_x_not_accum h_x_not_inits h_outer_guard
-        have h_x_not_then : x ∉ Block.initVars thenBranch := fun hx =>
-          h_x_not_inits (h_initvars_eq ▸ List.mem_append_left _ (List.mem_append_left _ hx))
         have h_x_not_else : x ∉ Block.initVars elseBranch := fun hx =>
           h_x_not_inits (h_initvars_eq ▸ List.mem_append_left _ (List.mem_append_right _ hx))
         have h_x_not_rest : x ∉ Block.initVars rest := fun hx =>
