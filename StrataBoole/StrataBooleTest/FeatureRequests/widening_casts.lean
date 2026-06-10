@@ -56,8 +56,22 @@ Result: ✅ pass-/
 #guard_msgs in
 #eval Strata.Boole.verify "cvc5" wideningCastsSeed (options := .quiet)
 
-example : Strata.smtVCsCorrectBoole wideningCastsSeed := by
-  gen_smt_vcs_boole
-  all_goals
-    intro bv32_to_int_u n v hNonneg hn i hi
-    exact hNonneg (v.select i)
+/--
+The VCs are provable regardless of `useArrayTheory`: under `true` the `Map` is
+encoded as an SMT array (denoted by `SmtArray`), under `false` as an
+uninterpreted sort with an axiomatized `select` function.
+-/
+example : ∀ useArrayTheory,
+    Strata.smtVCsCorrectBoole wideningCastsSeed { useArrayTheory } := by
+  intro useArrayTheory
+  cases useArrayTheory
+  case false =>
+    gen_smt_vcs_boole
+    all_goals
+      intro Map inst n bv32_to_int_u select v hNonneg hn i hi
+      exact hNonneg (select v i)
+  case true =>
+    gen_smt_vcs_boole
+    all_goals
+      intro bv32_to_int_u n v hNonneg hn i hi
+      exact hNonneg (v.select i)

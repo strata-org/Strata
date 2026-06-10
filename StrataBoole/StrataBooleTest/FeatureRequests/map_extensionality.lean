@@ -49,11 +49,25 @@ Result: ✅ pass-/
 #guard_msgs in
 #eval Strata.Boole.verify "cvc5" mapExtensionalitySeed (options := .quiet)
 
-example : Strata.smtVCsCorrectBoole mapExtensionalitySeed := by
-  gen_smt_vcs_boole
-  all_goals
-    intro a b hPointwise i
-    exact hPointwise i
+/--
+The VCs are provable regardless of `useArrayTheory`: under `true` the `Map` is
+encoded as an SMT array (denoted by `SmtArray`), under `false` as an
+uninterpreted sort with an axiomatized `select` function.
+-/
+example : ∀ useArrayTheory,
+    Strata.smtVCsCorrectBoole mapExtensionalitySeed { useArrayTheory } := by
+  intro useArrayTheory
+  cases useArrayTheory
+  case false =>
+    gen_smt_vcs_boole
+    all_goals
+      intro Map inst select a b hPointwise i
+      exact hPointwise i
+  case true =>
+    gen_smt_vcs_boole
+    all_goals
+      intro a b hPointwise i
+      exact hPointwise i
 
 /-!
 Regression test for extensional equality nested under an outer quantifier.
