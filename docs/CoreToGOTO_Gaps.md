@@ -5,6 +5,9 @@ translation pipeline used for CBMC verification.
 
 ## Pipeline Overview
 
+The following steps need the `strata` executable from
+[`Strata-CLI`](https://github.com/strata-org/Strata-CLI) installed.
+
 ### Laurel pipeline (with DFCC — Dynamic Frame Condition Checking — contracts)
 
 ```
@@ -202,7 +205,7 @@ the Python pipeline.
 
 The CI builds CBMC 6.8.0 from source with four patches applied:
 
-1. **`cbmc-string-support.patch`** (`StrataPython/StrataPythonTest/`): Adds
+1. **`cbmc-string-support.patch`** (`StrataTest/Backends/CBMC/`): Adds
    `String` as a recognized type in CBMC's SMT2 backend, enabling string
    constants and operations to be encoded in SMT-LIB.
 

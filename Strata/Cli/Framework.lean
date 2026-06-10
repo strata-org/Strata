@@ -10,7 +10,7 @@ public import Std.Data.HashMap.Basic
 
 Exit codes, flag parsing, command dispatch, and help-printing for the
 Strata family of CLI executables. Used by the unified `strata` binary
-in `StrataCLI` and by the per-command executables in `StrataPython/Scripts`. -/
+in `Strata-CLI`, among possibly many other tools. -/
 
 public section
 
