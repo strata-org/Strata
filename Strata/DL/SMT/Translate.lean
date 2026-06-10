@@ -6,6 +6,7 @@
 module
 
 
+public import Strata.DL.SMT.SmtArray
 public import Strata.Languages.Core.SMTEncoder
 
 public section
@@ -104,6 +105,11 @@ private def getBitVecWidth (α : Expr) : TranslateM Nat :=
     | some w => return w
     | none => throw m!"Error: expected natural number for BitVec width, got '{w}'"
   | _ => throw m!"Error: expected BitVec type, got '{α}'"
+
+private def getArrayTypes (α : Expr) : TranslateM (Expr × Expr) :=
+  match α with
+  | mkApp2 (.const ``SmtArray [0, 0]) αTy βTy => return (αTy, βTy)
+  | _ => throw m!"Error: expected Array type, got '{α}'"
 
 private def mkString : Expr :=
   toTypeExpr String
@@ -292,6 +298,10 @@ def translateSort (ty : TermType) : TranslateM Expr := do
   | .option ty => do
     let ty ← translateSort ty
     return .app (.const ``Option [0]) ty
+  | .constr "Array" [α, β] => do
+    let α ← translateSort α
+    let β ← translateSort β
+    return mkApp2 (.const ``SmtArray [0, 0]) α β
   | .constr n as =>
     let (_, t) ← findVar (.us { name := n, arity := as.length })
     let as ← as.mapM translateSort
@@ -523,6 +533,27 @@ def translateTerm (t : SMT.Term) : TranslateM (Expr × Expr) := do
     let (α, x) ← translateTerm x
     let w ← getBitVecWidth α
     return (mkBitVec (w + i), mkApp3 (.const ``BitVec.zeroExtend []) (toExpr w) (toExpr (w + i)) x)
+  | .app .ubv_to_int [x] _ =>
+    let (_, x) ← translateTerm x
+    return (mkInt, mkApp (.const ``Int.ofNat []) (mkApp (.const ``BitVec.toNat []) x))
+  | .app .sbv_to_int [x] _ =>
+    let (_, x) ← translateTerm x
+    return (mkInt, mkApp (.const ``BitVec.toInt []) x)
+  | .app (.int_to_bv n) [x] _ =>
+    let (_, x) ← translateTerm x
+    return (mkBitVec n, mkApp2 (.const ``BitVec.ofInt []) (toExpr n) x)
+  -- SMT-Lib theory of arrays
+  | .app .select [x, i] _ =>
+    let (τ, x) ← translateTerm x
+    let (_, i) ← translateTerm i
+    let (α, β) ← getArrayTypes τ
+    return (β, mkApp4 (.const ``SmtArray.select [0, 0]) α β x i)
+  | .app .store [x, i, v] _ =>
+    let (τ, x) ← translateTerm x
+    let (_, i) ← translateTerm i
+    let (_, v) ← translateTerm v
+    let (α, β) ← getArrayTypes τ
+    return (τ, mkApp6 (.const ``SmtArray.store [0, 0]) α β (.app (.const ``Classical.typeDecidableEq [1]) α) x i v)
   -- SMT-Lib theory of strings
   | .prim (.string s) =>
     return (mkString, toExpr s)
