@@ -3,23 +3,22 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
+
 import Strata.Languages.Core.Verifier
-meta import Strata.Languages.Core
+import Strata.Languages.Core
 import Strata.Transform.StructuredToUnstructured
 import Lean.Parser.Types
-meta import Strata.Languages.Core.DDMTransform.Grammar
-meta import Strata.Languages.Core.DDMTransform.Translate
-meta import Strata.Languages.Core.Options
-public import StrataDDM.AST
-public import Strata.DL.Imperative.BasicBlock
-public import Strata.Languages.Core.Statement
-public import Strata.Languages.Core.Expressions
-public import StrataDDM.Integration.Lean.HashCommands
+import Strata.Languages.Core.DDMTransform.Grammar
+import Strata.Languages.Core.DDMTransform.Translate
+import Strata.Languages.Core.Options
+import StrataDDM.AST
+import Strata.DL.Imperative.BasicBlock
+import Strata.Languages.Core.Statement
+import Strata.Languages.Core.Expressions
+import StrataDDM.Integration.Lean.HashCommands
 import Strata.Languages.Core.StatementSemantics
-public import Strata.MetaVerifier
+import Strata.MetaVerifier
 
-public section
 open StrataDDM (Program)
 namespace Strata
 
@@ -712,4 +711,3 @@ Result: ✅ pass
 #eval Core.verify precondElimMeasureBodyMutatesPgm (options := .quiet)
 
 end Strata
-end
