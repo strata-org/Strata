@@ -37,13 +37,8 @@ def buildConstrainedTypeMap (types : List TypeDefinition) : ConstrainedTypeMap :
   types.foldl (init := {}) fun m td =>
     match td with | .Constrained ct => m.insert ct.name.text ct | _ => m
 
-partial def resolveBaseType (ptMap : ConstrainedTypeMap) (ty : HighType) : HighType :=
-  match ty with
-  | .UserDefined name => match ptMap.get? name.text with
-    | some ct => resolveBaseType ptMap ct.base.val | none => ty
-  | .Applied ctor args =>
-    .Applied ctor (args.map fun a => ⟨resolveBaseType ptMap a.val, a.source⟩)
-  | _ => ty
+def resolveBaseType (ptMap : ConstrainedTypeMap) (ty : HighType) : HighType :=
+  resolveConstrainedTypeWith (fun name => ptMap.get? name.text) ty
 
 def resolveType (ptMap : ConstrainedTypeMap) (ty : HighTypeMd) : HighTypeMd :=
   ⟨resolveBaseType ptMap ty.val, ty.source⟩
