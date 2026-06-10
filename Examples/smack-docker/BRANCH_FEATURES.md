@@ -906,6 +906,18 @@ New tests in `StrataTest/Languages/Core/Tests/`:
   CFG under `.Body` low-fuel (surfaces `OutOfFuel`), looping CFG
   under `.BodyOrContract` low-fuel (falls back to contract).
 
+### Multi-`Env` regression fixture: `EQ_vtepk5bv3ld_out.bpl`
+
+A deterministic forward-witness for the multi-`Env` eval change (§4.6).
+`REVE.triangularMod.Neq.SameV`, medium bucket. Pre-multi-`Env`, this file
+stack-overflowed under `--call-policy contract` and timed out under
+`--call-policy bodyOrContract`; post-multi-`Env` it passes both cleanly
+(280 goals on contract, 1516 on bodyOrContract). Use to confirm multi-`Env`
+hasn't been silently reverted: post-change produces `All 1516 goals passed`;
+reverting eval to the pre-multi-`Env` squeeze makes contract policy
+stack-overflow again. (Regenerating it requires the SMACK Docker image;
+the `.bpl` is in the EQ corpus, not committed to `programs/`.)
+
 `Tools/BoogieToStrata/IntegrationTests/BoogieToStrataIntegrationTests.cs`
 — `--smack` marker support: each `.bpl` test fixture may carry a
 `{:smack}` annotation in its first 5 lines to opt into the

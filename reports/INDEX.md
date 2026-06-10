@@ -49,6 +49,10 @@ The cluster's umbrella issue, "non-TCO walker family across the verify pipeline,
 | [aaron-eq-portfolio-anomalies-audit-2026-06-05.md](aaron-eq-portfolio-anomalies-audit-2026-06-05.md) | audit of v2's anomalies — six independent threads (vacuous-PASS rate, SO end-to-end, witness extraction, Java-SMACK behavior, e-15 emission, counter-axis gap) | Inputs to the autonomous closeout pass (link below). |
 | [aaron-eq-portfolio-methodology-note-2026-06-05.md](aaron-eq-portfolio-methodology-note-2026-06-05.md) | external-facing methodology note (drafted for Aaron) | Send when ready; awaits Aaron's confirmation on three benchmark-design questions. |
 | [eq-autonomous-closeout-2026-06-05.md](eq-autonomous-closeout-2026-06-05.md) | autonomous-closeout pass — consolidates probes 1-3, Tier 1 (Java-SMACK n=28 + A3 witness extraction + A6 counter-axis), and the e-15 fix | Track three follow-ups: (a) push/file the e-15 issue draft, (b) merge `6f5e74fa6` into htd/smack, (c) one-or-two-file `--profile` follow-up on the post-SO-fix silent timeouts. |
+
+Findings closed within the EQ sweep (no standalone report; detail in the closeout above):
+- **A6 — [INLINE-CALL]/[CFG-CALL] counter-axis gap:** EXPLAINED-AND-CLOSED, benign. The 421-event apparent gap is the two counters measuring different axes (per-call vs per-recursion-iteration); no gating divergence, no leak, not filed. Detail in `so-localization-probe4-2026-06-05.md`.
+- **Multi-`Env` precision-restoring fixture `EQ_vtepk5bv3ld_out.bpl`:** migrated to a regression fixture — see BRANCH_FEATURES.md §8.
 | [`../strata-decimal-e15-emission-bug.md`](../strata-decimal-e15-emission-bug.md) (repo root) | drafted upstream issue for the SMT2 e-15 emission bug; fix landed on side branch `htd/decimal-e15-fix` at `6f5e74fa6` | Push side branch and file upstream; then merge into htd/smack. |
 
 ## Filing & follow-up tracking

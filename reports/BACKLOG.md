@@ -2,48 +2,16 @@
 
 Open feature work on `htd/smack` not tied to a specific bug report. Each entry: status + design pointer + next action.
 
-**Document convention.** This file tracks **open** work. When an item lands
-(fix merged on `htd/smack`, investigation closed), its detail moves to the
-bug ledger / feature catalog in
+**Document convention.** This file tracks **open** work only. When an item
+lands, its detail moves out of this file: **features and fixes** go to the
+catalog / bug ledger in
 [`Examples/smack-docker/BRANCH_FEATURES.md`](../Examples/smack-docker/BRANCH_FEATURES.md)
-and only a one-line pointer remains here. Resolved items below were migrated
-on 2026-06-09; see the referenced BRANCH_FEATURES sections for full lineage.
-
-## Resolved — migrated to BRANCH_FEATURES.md
-
-- **Multi-`Env` return signature for `Command.eval`** (`5648bdf62`) — widened
-  eval to `Command × List Env`; verdict-neutral on the matrix but closes a
-  per-path soundness gap. Full detail: BRANCH_FEATURES.md §4.6. Residual
-  follow-up: add a `caller → helper(symbolic if) → assert` matrix
-  demonstration when the SMACK Docker image is available.
-- **Stack overflow under `bodyOrContract` (`balancedNondetIte`)** (`494cf1147`
-  / `346f55083`) — depth-2.86M nondet-ITE tree in `toCoreProofObligationProgram`
-  crashed `ANFEncoder`; fixed via balanced bisection (depth O(log n)). Full
-  detail: BRANCH_FEATURES.md §4.5 + §9.5 #23. Residual follow-up: run 1-2 of
-  the 7 SO reproducers under `--profile` / 300-600s budget to confirm whether
-  the post-fix silent TIMEOUTs are transform-bound or solver-bound (the fix is
-  a confirmed crash-suppressor; end-to-end correctness on those 7 not yet
-  demonstrated).
-- **SMT2 e-15 scientific-notation emission** (`6f5e74fa6` on side branch
-  `htd/decimal-e15-fix`) — `Decimal.lean` emitted `1e-15`, rejected by z3/cvc5;
-  fix always emits decimal form. Full detail: BRANCH_FEATURES.md §9.4 #24.
-  Residual follow-up: push the side branch, file upstream from the draft at
-  `strata-decimal-e15-emission-bug.md`, merge `6f5e74fa6` into htd/smack.
-- **EQ portfolio sweep (72 files + Tier-1 n=28 + probes)** — RESOLVED-PROVISIONAL
-  (2026-06-05). Multi-env body-eval sound and decisive (30/72 verdict-differ);
-  vacuous-PASS 81% point estimate; Java-SMACK 25% real-PASS post-SO-fix; pinned
-  solver options suppress decidable counterexamples (6/7 files yield witnesses
-  under default z3). Outputs: `reports/eq-autonomous-closeout-2026-06-05.md`,
-  `reports/aaron-eq-portfolio-{methodology-note,anomalies-audit}-2026-06-05.md`.
-  Residual follow-ups tracked under *Investigations* below where still open.
-- **[INLINE-CALL]/[CFG-CALL] counter-axis gap (Tier 1 A6)** — EXPLAINED-AND-CLOSED
-  (2026-06-05), benign. The two counters measure different axes (per-call vs
-  per-recursion-iteration); no gating divergence, no leak. Not filed. Detail in
-  `reports/so-localization-probe4-2026-06-05.md`.
-- **Multi-Env precision-restoring fixture `EQ_vtepk5bv3ld_out.bpl`** — documented
-  as a deterministic forward-witness (post-multi-Env: `All 1516 goals passed`;
-  reverting eval makes contract policy stack-overflow). Use as a multi-Env
-  regression fixture.
+(§4 features, §9 bug ledger); **observational findings** (sweeps, probes,
+triage write-ups) go to [`reports/INDEX.md`](INDEX.md). Resolved items are not
+retained here, even as pointers — consult those two indexes for landed work.
+(Resolved items previously staged here were migrated on 2026-06-09: Multi-`Env`
+→ BRANCH_FEATURES §4.6; balancedNondetIte SO → §4.5 + §9.5 #23; e-15 → §9.4 #24;
+EQ portfolio sweep + A6 counter-axis → INDEX "Aaron's EQ portfolio sweep".)
 
 ## Benchmarks
 
