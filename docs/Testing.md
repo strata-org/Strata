@@ -59,7 +59,7 @@ line directly below the offending source line, with carets pointing at the
 column range and the kind + (substring of the) message after the carets:
 
 ```lean
-#eval testLaurel <|
+#eval testLaurel
 #strata
 program Laurel;
 procedure unsafeDivision(x: int)
@@ -72,11 +72,19 @@ procedure unsafeDivision(x: int)
 ```
 
 `testLaurel` auto-detects: when annotations are present, it requires an
-**exact match** (every diagnostic annotated, every annotation fires,
-positions agree, kind matches, message is a substring); when absent, it
-expects no diagnostics. A mismatch throws with a precise summary of which
-annotations went unmatched and which actual diagnostics had no annotation,
-so `#guard_msgs` isn't needed for negative tests.
+**exact match on everything except the message text** — every diagnostic
+annotated, every annotation fires, positions (line + column range) agree,
+kind matches — and the annotation's message must appear as a **substring**
+of the actual diagnostic message. When no annotations are present, it expects
+no diagnostics. A mismatch throws with a precise summary of which annotations
+went unmatched and which actual diagnostics had no annotation, so
+`#guard_msgs` isn't needed for negative tests.
+
+The message is matched as a substring (not a prefix, and not exact) on
+purpose: real diagnostic messages often carry volatile detail — variable
+names with unique-id suffixes, full type descriptions, fix suggestions — that
+you don't want to pin verbatim. Annotate the stable, identifying fragment of
+the message and the test stays robust as messages are reworded.
 
 `kind` is one of `error`, `warning`, `not-yet-implemented`, `strata-bug`.
 
@@ -88,8 +96,20 @@ unrelated noise (`dbg_trace` warnings, vacuous VCs). Use
 `testLaurelResolution` — same auto-detect behavior as `testLaurel`, but
 stops after `resolve`.
 
+The gap between the two is not just the SMT call: `testLaurel` runs the full
+compilation pipeline, which after `resolve` applies roughly a dozen
+Laurel-to-Laurel lowering passes (type-alias elimination, heap
+parameterization, type-hierarchy and modifies-clause transforms, hole-type
+inference and elimination, short-circuit desugaring, imperative-expression
+lifting, constrained-type elimination, …) before translating to Core and
+verifying. Several of those passes re-run `resolve` on their output. So a
+diagnostic that only `testLaurel` surfaces may originate from a later pass,
+not the verifier. The pass list and ordering live in
+[`Strata/Languages/Laurel/LaurelCompilationPipeline.lean`](../Strata/Languages/Laurel/LaurelCompilationPipeline.lean)
+(`laurelPipeline`); there is no separate prose doc for the pipeline yet.
+
 ```lean
-#eval testLaurelResolution <|
+#eval testLaurelResolution
 #strata
 program Laurel;
 procedure foo() opaque {
@@ -146,7 +166,7 @@ procedure test()
 { var x: int := 1 + $hole_0() };
 -/
 #guard_msgs in
-#eval! parseElimAndPrint
+#eval parseElimAndPrint
 #strata
 program Laurel;
 procedure test() { var x: int := 1 + <?> };
@@ -158,11 +178,18 @@ end Strata.Laurel
 The pattern: `translateLaurel : Strata.Program → IO Laurel.Program` is the
 common entry point; everything after is dialect/test-specific.
 
-### 5. Mixed positive / negative inside one feature
+### 5. One `#strata` block per independent unit; group only on dependency
 
-When a feature has both happy and sad paths, prefer **separate** `#strata`
-blocks. Each one is independently checked, and a regression in one doesn't
-mask a regression in the other.
+The rule here is about **independence**, not about positive-vs-negative.
+Every negative test still contains plenty of correct code — the procedure
+that *does* verify so the broken one can be reached, the declarations the
+failing statement refers to, and so on. That mix inside a single block is
+expected and fine.
+
+What matters is the boundary *between* blocks: give each independently
+checkable unit its own `#strata` block, so a regression in one can't mask a
+regression in another and a failure points at the smallest reproducing
+snippet.
 
 ```lean
 /-! ### Safe paths verify cleanly -/
@@ -175,7 +202,7 @@ procedure safeDivision() opaque {
 #end
 
 /-! ### Unsafe division: divisor not constrained, fails verification -/
-#eval testLaurel <| #strata
+#eval testLaurel #strata
 program Laurel;
 procedure unsafeDivision(x: int) opaque {
   var z: int := 10 / x
@@ -184,8 +211,11 @@ procedure unsafeDivision(x: int) opaque {
 #end
 ```
 
-If the procedures genuinely depend on each other (one calls the other), keep
-them in one `#strata` block and list the union of expected diagnostics.
+**The exception — and the more important point:** when the units genuinely
+depend on each other (one procedure calls another, or they share a type or
+declaration), they *must* live in the same `#strata` block, because
+resolution needs them together. In that case, list the union of expected
+diagnostics across all the contained procedures in one block.
 
 ## Practical workflow
 
@@ -200,13 +230,16 @@ them in one `#strata` block and list the union of expected diagnostics.
 When `lake env lean` exits silently with no output, every assertion in the
 file held.
 
+> There is no auto-update ("bless") mode yet that rewrites the inline
+> annotations to match the actual diagnostics. For now step 4 is a manual
+> copy from the failure report; adding a bless mode is a natural follow-up.
+
 ## Other dialects
 
 - **Boole** uses `#strata program Boole; … #end` directly with hand-written
   helpers (e.g. `Strata.Boole.verify`); see
   [`StrataTest/Languages/Boole/find_max.lean`](../StrataTest/Languages/Boole/find_max.lean)
   for the canonical pattern. `#strata` is dialect-agnostic — Boole could use
-  inline annotations the same way once a Boole-side helper analogous to
   inline annotations the same way once a Boole-side helper analogous to
   `testLaurel` is written.
 - **Python** has its own pipeline-driven harness; see
@@ -219,4 +252,4 @@ file held.
 | `#strata` elaborator + `SourcedProgram` | `Strata/DDM/Integration/Lean/HashCommands.lean` |
 | `Diagnostic` data type | `Strata/Languages/Core/Verifier.lean` |
 | Laurel test helpers | `StrataTest/Util/TestLaurel.lean` |
-| Migrated examples | `StrataTest/Languages/Laurel/Examples/**/*.lean` |
+| Examples | `StrataTest/Languages/Laurel/Examples/**/*.lean` |
