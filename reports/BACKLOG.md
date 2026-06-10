@@ -120,6 +120,8 @@ on 2026-06-09; see the referenced BRANCH_FEATURES sections for full lineage.
 
 **Next action.** Identify the loop-modified-set per CFG cycle in `Strata/Languages/Core/ProcedureEval.lean`'s `evalCFGStep` (use the back-edge information already present in the CFG analyzer); on exit-branch construction, fold a `havoc` of the modified set into `env_f` before adding the path-condition assumption. Validate against the 15 PASS-? programs from the classification report.
 
+**Relationship to CFG loop-elim (#29) — likely the same fix.** This havoc-on-exit-branch patch and the #29 OOM both stem from one root: `evalCFGBlocks` has no loop-aware abstraction, so it unrolls the back-edge using concrete pre-loop induction-variable values. #29 is the memory symptom (unrolling blows up); the 15 PASS-? cases are the soundness symptom (the concrete-valued exit branch collapses to `assume false`, discharging the assertion vacuously). A **CFG-level loop-elim pass** that cuts the back-edge AND havocs the loop-modified set *subsumes this patch*: replacing the modified set with fresh symbolic values at exit is exactly what loop-elim's havoc does. Crucially, the 15 PASS-? programs are mostly invariant-less `while(1)`/bare loops — `LoopElim` requires an invariant (`LoopElim.lean:41`), so a CFG loop-elim pass must handle the no-invariant case with a plain havoc-the-modified-set fallback (assume nothing). With that fallback: the 9 would-be-PASS programs reach real PASS (exit no longer vacuous), and the 6 would-be-FAIL programs fail honestly against havoc'd state — the projected 68/15/11 → ~77/0/17 matrix shift. So **implementing CFG loop-elim would very likely flip these PASS-? results**; this standalone patch is the narrower alternative that fixes only the soundness symptom, not the OOM. The CFG-level-loop-elim effect study (in *Ready to execute*) should measure the PASS-? programs explicitly, not just the invariant-bearing #29 reproducer.
+
 ### CFG-eval memory profile on loop-with-invariant programs — ROOT CAUSE FOUND: build a CFG-level loop-elim pass
 
 **Status:** OPEN — root cause confirmed (irreducible-CFG census workflow `wqlj6z95v`, 2026-06-09); recommended fix is a new CFG-level loop-elimination pass. Tracked as BRANCH_FEATURES.md §9.5 #29.
@@ -197,6 +199,21 @@ on 2026-06-09; see the referenced BRANCH_FEATURES sections for full lineage.
 Pre-authored workflow scripts, reviewed and staged but not yet launched. Each
 is self-contained; launch with `Workflow({scriptPath: "<path>"})`.
 
+**⚠️ Memory caution (applies to every entry below).** These workflows build
+Strata, run the SMT verifier (`#eval verify` / `strata verify`), and in some
+cases cbmc — each a large-memory-footprint process (a single `strata` run has
+been observed at 28.5 GB RSS on a 48 GB box; the CFGForm test surface OOM-killed
+a Lean process at 13 sequential SMT calls). When running these, **bound
+parallelism and per-process memory**: cap `lake` / `xargs -P` worker counts
+(≤4 build workers, ≤8 xargs on this box), apply `set_option maxHeartbeats` per
+`#eval`, single-thread Z3, run each isolated-worktree TDD agent's build
+sequentially rather than fanning out many concurrent heavy builds, and prefer
+splitting a large test target over running it monolithically. Do **not** launch
+two of these workflows concurrently, and avoid running them alongside other
+heavy builds — their combined peak RSS can thrash or swap-kill the machine. See
+the persistent `smt-test-memory-pressure` memory note for the full knob list and
+the EQ-200 incident that motivated it.
+
 ### Call-elim-on-CBM prototype
 
 **Status:** READY TO EXECUTE — script written and reviewed, not started.
@@ -246,3 +263,68 @@ counts + a value assessment (optimization vs cosmetic, per consumer).
 the irreducible-CFG census (`reports/irreducible-cfg-census-2026-06-09.md`); the
 synthesis explicitly considers whether a coalescing pass could share
 infrastructure with the proposed CFG-level loop-elim pass (above).
+
+### evalCFGBody OOM root-cause + TDD fix (PAUSED mid-run — resume)
+
+**Status:** PAUSED — launched as workflow `wpqfi3man` (run ID `wf_c84e1cfd-ad1`), stopped via `TaskStop` on 2026-06-09 while still early (Reproduce phase, setting up the `htd/unstructured-procedure` worktree). Resume, don't relaunch — completed `agent()` calls return cached results.
+
+**Script:** `/Users/htd/.claude/projects/-Users-htd-Documents-Strata-smack/d3648beb-ea46-4635-9a8d-6b7b138d0f3d/workflows/scripts/evalcfgbody-oom-investigation-wf_c84e1cfd-ad1.js`
+
+**Resume with:**
+```
+Workflow({
+  scriptPath: "/Users/htd/.claude/projects/-Users-htd-Documents-Strata-smack/d3648beb-ea46-4635-9a8d-6b7b138d0f3d/workflows/scripts/evalcfgbody-oom-investigation-wf_c84e1cfd-ad1.js",
+  resumeFromRunId: "wf_c84e1cfd-ad1"
+})
+```
+(Same session only — the resume journal lives under this session's workflow directory.)
+
+**What it does.** Five phases: reproduce the OOM on both htd/smack and htd/unstructured-procedure → diagnose from three angles (profiling, code-read, structured-vs-CFG) → propose fix candidates → TDD-verify each in isolated worktrees → synthesize.
+
+**Overlap caveat.** The diagnose + propose phases largely duplicate the already-completed irreducible-CFG census (`wqlj6z95v`), which confirmed the #29 root cause (fuel-only worklist unrolls reducible loops) and recommended the CFG-level loop-elim pass. The net-new value is the **TDD-Verify phase** — actually testing candidate fixes in worktrees, which the census did not do. Consider resuming only for that phase, or skip it and scope the CFG-level loop-elim pass directly (tracked under *Investigations → CFG-eval memory profile* above). Reconcile any fix candidate it produces with that recommendation.
+
+### Translator-side fix for `old(<unmodified-global>)` typecheck failure (#1331)
+
+**Status:** READY TO EXECUTE — plan below; no script (this is a direct code change, not a workflow). Upstream issue [#1331](https://github.com/strata-org/Strata/issues/1331) is filed; this is the translator-side fix path it proposes. Closes 56 ELAB_FAILs + ~17 latent-in-TIMEOUT on the mem-capped EQ-200 sweep (the largest single ELAB unblock available). See also the typechecker-side alternative under *Translator → extend `mkOld`* above; this translator-side path is the smaller, less invasive fix and is preferred first.
+
+**Root cause (re-confirmed against current source).** `WriteProcedureHeader` (`Tools/BoogieToStrata/Source/StrataGenerator.cs:1890-1894`) partitions globals into `inout` (in `proc.Modifies`) vs read-only (everything else). Strata's `mkOld` mints `old`-resolvable fvars only for `inout` params (`Strata/Languages/Core/ProcedureType.lean:100-105`), so a global referenced via `old(g)` in a `requires`/`ensures` but **not** in `proc.Modifies` is emitted read-only and has no `old`-fvar → `Cannot find this fvar in the context! old <g>`. Confirmed (inferModifies-investigation-2026-06-09) that `InferModifies = true` does **not** help: ModSetCollector only adds globals the body *writes*, and these globals are only *read* (in a contract `old`), so the modifies set stays empty correctly.
+
+**Fix: widen the effective-modifies set with `old`-referenced globals.** Before partitioning, walk the procedure's `Requires` and `Ensures` conditions collecting every global that appears under an `OldExpr`, and union those names into `modifiesNames`. Sound widening (a global declared `inout` but not actually written is a no-op havoc-and-restore at the Strata level); preserves Strata's clean inout-only `old` model.
+
+**Critical subtlety — two partition sites must stay consistent.** Widening is NOT a local edit to `WriteProcedureHeader`. There are two sites that partition globals in the same inout-then-readonly order:
+1. **Declaration** — `WriteProcedureHeader` (`StrataGenerator.cs:1890-1894`): proc P's own param list.
+2. **Call site** — `VisitCallCmd` (`StrataGenerator.cs:1030-1047`): every caller of P emits args in the inout-then-readonly order matching P's params.
+
+If P gains `g` as `inout` at the declaration but a caller still passes `g` read-only, the call-site arg order won't match P's param order — a translation bug worse than the original. So the fix must compute a **per-procedure effective-modifies set** (`proc.Modifies ∪ old-referenced-globals(proc)`) once, key it by procedure name, and consult the same map at *both* sites.
+
+**Implementation plan.**
+1. **Add an `OldGlobalCollector : ReadOnlyVisitor`** (mirror the existing `FieldTypeCollector` at `StrataGenerator.cs:17-28`): override `VisitOldExpr` to recurse into the `old(...)` body collecting `IdentifierExpr` names that are in `_globalVariables`; expose the collected `HashSet<string>`. (Note: nested `old` is illegal in Boogie, so a single-level walk suffices, but collect all `IdentifierExpr` under the `OldExpr` subtree to catch `old(g[i])`, `old(f(g))`, etc.)
+2. **Add a per-procedure cache** `Dictionary<string, HashSet<string>> _effectiveModifies` on `StrataGenerator`. Compute lazily or in a pre-pass over `_program.Procedures`: for each proc, run `OldGlobalCollector` over all `Requires`/`Ensures` conditions, union with `proc.Modifies.Select(m => m.Name)`.
+3. **Replace `modifiesNames` at both sites** with a lookup into `_effectiveModifies[proc.Name]`:
+   - `WriteProcedureHeader:1892` — use `_effectiveModifies[proc.Name]` instead of `proc.Modifies` only.
+   - `VisitCallCmd:1032` — use `_effectiveModifies[callee.Name]` instead of `callee.Modifies` only. (The callee's effective set, so the call site matches the callee's widened declaration.)
+4. **Edge case — `--smack` synthetic specs.** `VisitProcedure` injects synthetic `requires`/`ensures` on `__VERIFIER_assume`/`assert_` (`StrataGenerator.cs:1948-1996`); those reference params, not `old(global)`, so they won't widen anything — but verify the collector runs after injection or is robust to it.
+
+**TDD plan.**
+- *Failing test first:* the 3 EQ-portfolio reproducers (`EQ_koudjso4dzv_out.bpl`, `EQ_wvadqhmgjvk_out.bpl`, `EQ_cjromzqjo0n_out.bpl`) and the 5-line minimal Boogie repro from #1331 — confirm `strata verify` emits `Cannot find this fvar in the context! old <g>` before the change.
+- *After:* re-translate + verify; the `old`-fvar error is gone (verdict reaches PASS/PARTIAL/TIMEOUT, not ELAB_FAIL).
+- *No-regression:* `dotnet test Tools/BoogieToStrata/IntegrationTests/` stays green; a proc with `old(g)` where `g` IS in modifies still emits `g` as a single `inout` (no double-listing); call sites of a widened proc still type-check.
+- *Scale validation:* re-run the mem-capped EQ-200 sweep; expect the 56 ELAB_FAIL bucket to shrink substantially (toward 0 for the #1331 sub-class) and shift into PASS/PARTIAL/TIMEOUT.
+
+**Branch locality.** The `--smack` BoogieToStrata path is htd/smack-only, but the underlying `mkOld`-inout-only restriction is on main+main2+htd/smack (`ProcedureType.lean`). This translator-side fix lands on htd/smack; the typechecker-side alternative (path b) would be the main-targeting fix if StrataGenerator changes are blocked on review.
+
+**Estimated effort.** Half-day (one collector class + one cache + two call-site swaps + tests).
+
+### CFG-level loop-elimination effect study
+
+**Status:** READY TO EXECUTE — script written and reviewed, not started.
+
+**Script:** `/Users/htd/.claude/jobs/d3648beb/tmp/wf-cfg-loopelim-effect.js`
+
+**Confirmed precondition (checked 2026-06-09).** Loop elimination for CFG bodies is **not implemented**: `Strata/Transform/LoopElim.lean:240-251` runs the real acyclic havoc-and-assume-invariant rewrite only on `.structured` bodies; the `.cfg _` arm at `:249` is a no-op passthrough (`-- CFG bodies have no structured loops; pass through unchanged.`). `evalCFGBlocks` (`ProcedureEval.lean:106-149`) is a fuel-only worklist with no loop-elim, which is why it unrolls reducible loop back-edges until fuel runs out (the #29 OOM root cause). So this study is about the *effect of a would-be pass*, not measuring an existing one.
+
+**What it does.** Six phases: baseline (re-confirm CFG loop-elim is unimplemented + the loop contract IS on the header `condGoto` transfer metadata + pull the census's 313 loop-bearing reducible procedures) → design (two framings: **A** a net-new CFG-native pass recovering the contract from transfer metadata and splicing `LoopElim`'s recipe; **B** reorder the pipeline so `loopElimPipelinePhase` runs *before* the structured→CFG lowering, possibly sidestepping a CFG-native pass entirely) → prototype the cheaper viable framing in an isolated worktree (phase-reorder ~5 LoC if B works, else a minimal `CFGLoopElim`, else hand-simulated acyclic `.core.st`) → measure the effect on a test set (does it close the #29 OOM on `loopGuardPrecondPgm`? do CFG-form verdicts converge with structured-form? RSS delta?) → skeptic verification (soundness of the eliminated form — right havoc set, preserved measure, after-verdict matches structured) → synthesize.
+
+**Relationship to other entries.** Directly answers the open *Investigations → CFG-eval memory profile #29* question (whether the recommended CFG-level loop-elim pass actually closes the OOM, before committing 1-2 days to build it) and overlaps the paused `wpqfi3man` workflow's Propose/TDD-Verify phases — reconcile findings. Framing B (pipeline reorder) is a cheap hypothesis worth testing first; if it works, #29 closes for far less than the 1-2 day net-new-pass estimate. **Also subsumes the *CFG-eval loop-handling: havoc loop-modified-set on exit-branch* item** — loop-elim's havoc of the modified set is exactly that fix, so the study must include the 15 PASS-? programs (invariant-less `while(1)` loops needing the no-invariant havoc fallback) alongside the invariant-bearing #29 reproducer, and report whether elimination flips the projected 68/15/11 → ~77/0/17 matrix.
+
+**Memory.** Runs the #29 OOM reproducer's verify — see the section-header memory caution. The script bounds every verify with `gtimeout 60` + `maxHeartbeats`, single-threads Z3, builds sequentially, and only fans out light analysis agents in parallel (never concurrent heavy SMT builds).
