@@ -187,7 +187,6 @@ def Config.noFuncDecl : Config P CmdT → Prop
 @[expose] def projectStore (σ_parent σ_inner : SemanticStore P) : SemanticStore P :=
   fun x => if (σ_parent x).isSome then σ_inner x else none
 
-
 /-! ## Single-step relation -/
 
 section

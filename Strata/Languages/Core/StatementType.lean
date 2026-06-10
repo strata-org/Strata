@@ -164,14 +164,14 @@ where
             else
               .error <| md.toDiagnosticF f!"[{s}]: Loop's invariant {i} is not of type `bool`!"
           ) (([] : List (String × _)), Env)
-          let mty := mt.map (fun e => e.toLMonoTy)
+          let mty := mt.map LExpr.toLMonoTy
           match mty with
           | none | some (.tcons "int" []) =>
             let (tb, Env, C) ← goBlock C Env bss [] labels
             let guarda' : ExprOrNondet Expression := match guarda with
               | some e => .det e.unresolved
               | none => .nondet
-            let s' := Stmt.loop guarda' (mt.map (fun e => e.unresolved))
+            let s' := Stmt.loop guarda' (mt.map LExpr.unresolved)
               (it.map (fun (lbl, e) => (lbl, e.unresolved))) tb md
             .ok (s', Env, C)
           | _ =>
