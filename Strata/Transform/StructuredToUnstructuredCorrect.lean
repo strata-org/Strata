@@ -3682,13 +3682,13 @@ private theorem flushCmds_simulation_agree {P : PureExpr} [HasFvar P] [HasNot P]
         h_unique_accum
     have h_mem :
         ((StringGenState.gen pfx gen).fst,
-          ({ cmds := accum.reverse, transfer := DetTransferCmd.goto k }
+          ({ cmds := accum.reverse, transfer := DetTransferCmd.goto k .empty }
             : DetBlock String (Cmd P) P)) ∈ cfg.blocks :=
       h_cfg_blocks _ (List.Mem.head _)
     have h_cond_tt : ρ₀.eval σ_cfg_after HasBool.tt = .some HasBool.tt :=
       eval_tt_is_tt ρ₀.eval σ_cfg_after hwfv
     have h_lkp : cfg.blocks.lookup (StringGenState.gen pfx gen).fst =
-        some { cmds := accum.reverse, transfer := DetTransferCmd.goto k } :=
+        some { cmds := accum.reverse, transfer := DetTransferCmd.goto k .empty } :=
       List.lookup_of_mem_nodup cfg.blocks h_cfg_nodup _ _ h_mem
     -- `.goto k` ≡ `.condGoto tt k k .empty`; reuse `run_block_goto_true`.
     have h_lkp' : cfg.blocks.lookup (StringGenState.gen pfx gen).fst =
