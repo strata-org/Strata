@@ -5852,12 +5852,11 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
             (h_rest_no_gen_suffix x (by simpa [Cmds.definedVars] using hx) s heq) h_in_b)
       exact h_inv_loop x h_keep (h_fresh_rest_inits_after x hx)
     -- ρ_loop_post.eval = ρ₀.eval (loop body has no funcDecls).
-    have h_eval_loop : ρ_loop_post.eval = ρ₀.eval := by
-      have := smallStep_noFuncDecl_preserves_eval_block P (EvalCmd P) extendEval
+    have h_eval_loop : ρ_loop_post.eval = ρ₀.eval :=
+      smallStep_noFuncDecl_preserves_eval_block P (EvalCmd P) extendEval
         [.loop (.det guardExpr) none [] body md] ρ₀ ρ_loop_post
         (by simp [Block.noFuncDecl, Stmt.noFuncDecl, h_nofd_body])
         (by simpa using h_loop_term)
-      exact this
     have hwfb_loop : WellFormedSemanticEvalBool ρ_loop_post.eval := h_eval_loop ▸ hwfb
     have hwfv_loop : WellFormedSemanticEvalVal ρ_loop_post.eval := h_eval_loop ▸ hwfv
     have hwf_def_loop : WellFormedSemanticEvalDef ρ_loop_post.eval := h_eval_loop ▸ hwf_def
