@@ -1725,17 +1725,11 @@ partial def translateTransfer (p : Program) (bindings : TransBindings) (arg : Ar
   | q`Core.transfer_nondet_goto =>
     let label1 ← translateIdent String op.args[0]!
     let label2 ← translateIdent String op.args[1]!
-    -- Nondeterministic choice: declare a fresh boolean variable and use it as the
-    -- branch condition. The accompanying `init` command (prepended to the block in
-    -- `translateCFGBlock`) puts the variable in the type environment, so type
-    -- checking and symbolic execution can both see it. Without the declaration the
-    -- fvar is unbound and the type checker rejects the program with
-    -- "Cannot find this fvar in the context! $__nondet_N"
-    -- (https://github.com/strata-org/Strata/issues/1162). The symbolic evaluator
-    -- still returns the fvar unchanged (via findD) — neither `.true` nor `.false` —
-    -- so `evalCFGStep` forks into both paths with complementary path conditions;
-    -- the concrete interpreter (runCFG) errors on it, as expected (nondeterministic
-    -- gotos are only meaningful under symbolic execution).
+    -- Nondeterministic choice: use a fresh boolean variable as the branch
+    -- condition, declared by the `init` command below (prepended to the block in
+    -- `translateCFGBlock`) so the type checker can see it. The symbolic evaluator
+    -- leaves the fvar unchanged, so `evalCFGStep` forks into both paths; the
+    -- concrete interpreter (runCFG) errors on it, as expected.
     let condName : Core.CoreIdent := ⟨s!"$__nondet_{bindings.gen.var_def}", ()⟩
     let bindings := incrNum .var_def bindings
     let boolMono := Lambda.LMonoTy.bool
@@ -1774,8 +1768,8 @@ partial def translateCFGBlock (p : Program) (bindings : TransBindings) (arg : Ar
         | .cmd c => cmds := cmds.push c
         | _ => TransM.error s!"translateCFGBlock: only commands allowed in CFG blocks, got statement"
   let (transferCmds, transfer, bindings') ← translateTransfer p bindings op.args[2]!
-  -- Append any commands the transfer needs declared in scope (e.g. the `$__nondet_N`
-  -- declaration for a nondeterministic goto, see #1162) after the block's own commands.
+  -- Append any commands the transfer needs declared in scope (e.g. the
+  -- `$__nondet_N` declaration for a nondeterministic goto).
   return (label, ⟨cmds.toList ++ transferCmds, transfer⟩, bindings')
 
 /-- Translate a list of CFG blocks -/
