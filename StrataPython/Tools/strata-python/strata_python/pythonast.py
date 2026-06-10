@@ -12,7 +12,7 @@ import typing
 from typing import Any
 import types
 import strata.base as strata
-from .base import ArgDecl, FileMapping, Init, SourceRange, SyntaxCat, reserved
+from strata.base import ArgDecl, FileMapping, Init, SourceRange, SyntaxCat, reserved
 
 @dataclass
 class OpArg:

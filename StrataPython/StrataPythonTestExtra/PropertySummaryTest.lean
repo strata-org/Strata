@@ -30,7 +30,7 @@ meta def getPropertySummaries (pythonCmd : System.FilePath) (source : String)
     let ionFile := tmpDir / "test.python.st.ion"
     let child ← IO.Process.spawn {
       cmd := pythonCmd.toString
-      args := #["-m", "strata.gen", "py_to_strata",
+      args := #["-m", "strata_python.gen", "py_to_strata",
                 "--dialect", dialectFile.toString,
                 pyFile.toString, ionFile.toString]
       inheritEnv := true
