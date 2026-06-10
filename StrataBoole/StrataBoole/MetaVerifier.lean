@@ -42,28 +42,34 @@ open StrataDDM (Program)
 Generate verification conditions for a `StrataDDM.Program`, with Boole support.
 Extends `Strata.genCoreVCs` to handle the Boole dialect.
 -/
-def genCoreVCsBoole (program : Program) : Option Core.coreVCs := do
+def genCoreVCsBoole (program : Program)
+    (options : MetaVerifier.Options := {}) : Option Core.coreVCs := do
   if program.dialect == "Boole" then
     match Boole.getProgram program with
     | .ok booleProgram =>
-      Boole.genVCs booleProgram program.globalContext { (default : Core.VerifyOptions) with verbose := .quiet : Core.VerifyOptions }
+      Boole.genVCs booleProgram program.globalContext options.toVerifyOptions
     | .error _ => none
   else
-    genCoreVCs program
+    genCoreVCs program options
 
 /--
 Generate SMT verification conditions for a `StrataDDM.Program`, with Boole support.
 -/
-def genSMTVCsBoole (program : Program) : Option SMT.SMTVCs := do
-  let coreVCs ← genCoreVCsBoole program
-  toSMTVCs coreVCs
+def genSMTVCsBoole (program : Program)
+    (options : MetaVerifier.Options := {}) : Option SMT.SMTVCs := do
+  let coreVCs ← genCoreVCsBoole program options
+  toSMTVCs coreVCs options
 
 /--
 State semantic correctness of the SMT verification conditions generated for a
-program, with Boole dialect support.
+program under the given metaverifier options, with Boole dialect support. For
+example, `options.useArrayTheory` selects how the SMT encoder treats `Map`
+types: under `true` they become SMT-LIB arrays, under `false` an uninterpreted
+sort with axiomatized `select`/`update` functions.
 -/
-def smtVCsCorrectBoole (program : Program) : Prop :=
-  match genSMTVCsBoole program with
+def smtVCsCorrectBoole (program : Program)
+    (options : MetaVerifier.Options := {}) : Prop :=
+  match genSMTVCsBoole program options with
   | some vcs => (denoteQueries vcs).getD False
   | none     => False
 
@@ -75,10 +81,11 @@ open Lean hiding Options
 
 private unsafe def genSMTVCsBooleUnsafe (mv : MVarId) : MetaM (List MVarId) := do
   let type ← mv.getType
-  let some program := type.app1? ``Strata.smtVCsCorrectBoole | throwError "Expected a Strata.smtVCsCorrectBoole goal"
+  let some (program, options) := type.app2? ``Strata.smtVCsCorrectBoole
+    | throwError "Expected a Strata.smtVCsCorrectBoole goal"
   trace[debug] m!"Generating SMT VCs for {program}"
   let mv ← Meta.unfoldTarget mv ``Strata.smtVCsCorrectBoole
-  let ovcs := .app (.const ``Strata.genSMTVCsBoole []) program
+  let ovcs := mkApp2 (.const ``Strata.genSMTVCsBoole []) program options
   let ovcsType := .app (.const ``Option [0]) (.const ``Strata.SMT.SMTVCs [])
   let some evcs ← Meta.evalExpr (Option Strata.SMT.SMTVCs) ovcsType ovcs
     | throwError "Failed to generate VCs"
