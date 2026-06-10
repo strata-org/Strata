@@ -388,7 +388,7 @@ private def loop_sim_kleene
     | .step _ _ _ _ _, hlen => simp [ReflTransT.len] at hlen
   | succ n ih =>
     match hstarT, hlen with
-    | .step _ _ _ (@StepStmt.step_loop_nondet_exit _ _ _ _ _ _ _ _ _ _ _ _
+    | .step _ _ _ (@StepStmt.step_loop_nondet_exit _ _ _ _ _ _ _ _ _ _ _ _ _
         hasInvFailure _ hff_iff) hrest, hlen =>
       have h_no : hasInvFailure = false := empty_inv_no_failure hff_iff
       subst h_no
