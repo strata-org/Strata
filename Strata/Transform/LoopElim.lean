@@ -244,7 +244,8 @@ def loopElim (p : Program) : Program × Statistics :=
       | .structured ss =>
         let (body, st) := StateT.run (Block.removeLoopsM ss) {}
         ((.proc { proc with body := .structured body } md) :: acc, stats.merge st.statistics)
-      -- CFG bodies have no structured loops; pass through unchanged.
+      -- CFG bodies have no structured loops; pass through unchanged. An
+      -- unstructured loop elimination process could be applied here later.
       | .cfg _ => ((.proc proc md) :: acc, stats)
     | other => (other :: acc, stats)) ([], {})
   ({ decls := decls.reverse }, stats)

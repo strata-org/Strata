@@ -115,7 +115,7 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p :
     | .structured ss => pure ss
     | .cfg _ =>
       Except.error (DiagnosticModel.withRange fileRange
-        f!"[{proc.header.name}]: CFG procedures not supported on procedure-body branch")
+        f!"[{proc.header.name}]: CFG procedures not supported yet")
   let (annotated_body, finalEnv) ← Statement.typeCheck C envAfterPostconds p (.some proc) bodyStmts
 
   -- Remove formals and returns from the context -- they ought to be local to

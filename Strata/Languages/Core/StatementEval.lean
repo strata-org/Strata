@@ -812,7 +812,7 @@ def Command.runCall (lhs : List Expression.Ident) (procName : String) (args : Li
                 Imperative.runStmt ops fuel' config
               | .cfg _ =>
                 .terminal (CmdEval.updateError callEnv
-                  (.Misc s!"procedure '{procName}': CFG bodies not supported on procedure-body branch"))
+                  (.Misc s!"procedure '{procName}': CFG bodies not supported yet"))
             match configAfter with
             | .terminal callEnv' =>
               match callEnv'.error with

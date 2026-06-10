@@ -117,8 +117,8 @@ def eval (E : Env) (p : Procedure) : Env × Statistics :=
     let (ssEs, evalStats) := Statement.eval E old_g_subst (precond_assumes ++ bodyStmts ++ postcond_asserts)
     (mergeResults E (ssEs.map (fun sE => fixupError sE)), evalStats)
   | .cfg _ =>
-    -- CFG bodies not supported on procedure-body branch.
-    let errEnv := { E with error := some (.Misc s!"procedure '{p.header.name}': CFG bodies not supported on procedure-body branch") }
+    -- CFG bodies are not supported here.
+    let errEnv := { E with error := some (.Misc s!"procedure '{p.header.name}': CFG bodies not supported yet") }
     (errEnv, {})
 
 ---------------------------------------------------------------------

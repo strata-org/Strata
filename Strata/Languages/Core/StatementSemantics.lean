@@ -286,12 +286,9 @@ inductive CoreStepStar
     ----
     CoreStepStar π φ c₁ c₃
 
-/-- Execution of a procedure body. On the procedure-body branch, only
-    structured bodies have an executable semantics; CFG-body execution is
-    delivered together with the unstructured-infra changes (which add the
-    `cmd`-constructor refactoring in `EvalDetBlock` that lets a Core-level
-    `CoreCFGStepStar` live in a mutual block). For now, the `.cfg` arm of
-    `Procedure.Body` simply has no inhabitant of `CoreBodyExec`. -/
+/-- Execution of a procedure body. Only structured bodies have an executable
+    semantics; the `.cfg` arm of `Procedure.Body` has no inhabitant of
+    `CoreBodyExec`. -/
 inductive CoreBodyExec
     (π : String → Option Procedure)
     (φ : CoreEval → PureFunc Expression → CoreEval) :

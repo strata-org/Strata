@@ -389,7 +389,7 @@ where
             | .structured ss =>
               let (c, body') ← transformStmts ss
               pure (c, { proc with body := .structured body' })
-            -- CFG bodies pass through untouched on procedure-body branch.
+            -- CFG bodies pass through untouched.
             | .cfg _ => pure (false, proc)
           setFactory F
           let procDecl := Decl.proc proc' md
