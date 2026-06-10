@@ -174,18 +174,10 @@ private def isDatatype (model : SemanticModel) (name : Identifier) : Bool :=
     E.g., `UserDefined "nat"` where `nat` is `constrained nat = x: int | x >= 0`
     resolves to `TInt`. Chains through multiple levels of constrained types. -/
 private def resolveConstrainedType (model : SemanticModel) (ty : HighType) : HighType :=
-  go 100 ty
-where
-  go (fuel : Nat) (ty : HighType) : HighType :=
-    match fuel with
-    | 0 => ty
-    | n + 1 =>
-      match ty with
-      | .UserDefined name =>
-        match model.get name with
-        | .constrainedType ct => go n ct.base.val
-        | _ => ty
-      | _ => ty
+  resolveConstrainedTypeWith
+    (fun name => match model.get name with
+      | .constrainedType ct => some ct
+      | _ => none) ty
 
 /-- Get the Box destructor name for a given Laurel HighType.
     For UserDefined datatypes, uses "Box..<datatypeName>Val!";
