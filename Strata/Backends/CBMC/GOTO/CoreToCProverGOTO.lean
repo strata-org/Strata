@@ -204,7 +204,11 @@ def transformToGoto (cprog : Core.Program) : Except Format CProverGOTO.Context :
       if !p.header.typeArgs.isEmpty then
         throw f!"[transformToGoto] Translation for polymorphic Strata Core procedures is unimplemented."
 
-      let cmds ← p.body.mapM
+      -- TODO: This pass could be split into a two-stage transformation:
+      -- 1. structured → cfg (via StructuredToUnstructured)
+      -- 2. cfg → CProverGOTO (always operates on CFG, no pattern matching needed)
+      let bodyStmts ← p.body.getStructured.mapError fun s => f!"{s}"
+      let cmds ← bodyStmts.mapM
         (fun b => match b with
           | .cmd (.cmd c) => return c
           | _ => throw f!"[transformToGoto] We can process Strata Core commands only, not statements! \
@@ -221,7 +225,7 @@ def transformToGoto (cprog : Core.Program) : Except Format CProverGOTO.Context :
       let formals_renamed := formals.zip new_formals
       let formals_tys : Map String CProverGOTO.Ty := formals.zip formals_tys
 
-      let locals := (Imperative.Block.definedVars p.body).map Core.CoreIdent.toPretty
+      let locals := (Imperative.Block.definedVars bodyStmts).map Core.CoreIdent.toPretty
       let new_locals := locals.map (fun l => CProverGOTO.mkLocalSymbol pname l)
       let locals_renamed := locals.zip new_locals
 

@@ -793,7 +793,7 @@ def translateFunctions (a : Array (stmt SourceRange)) (translation_ctx: Translat
                inputs := [],
                outputs := [("maybe_except", (.tcons "ExceptOrNone" []))]},
         spec := default,
-        body := varDecls ++ [.block "end" ((ArrPyStmtToCore translation_ctx body.val).fst) .empty]
+        body := .structured (varDecls ++ [.block "end" ((ArrPyStmtToCore translation_ctx body.val).fst) .empty])
       }
       some (.proc proc .empty)
     | _ => none)
@@ -824,7 +824,7 @@ def pythonFuncToCore (name : String) (args: List (String × String)) (body: Arra
                inputs,
                outputs},
     spec,
-    body
+    body := .structured body
   }
 
 def unpackPyArguments (args: arguments SourceRange) : List (String × String) :=

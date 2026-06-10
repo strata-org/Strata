@@ -956,7 +956,7 @@ private def translateProcedureDecl
   return [.proc {
     header := { name := mkIdent n, typeArgs := tys, inputs := allInputs, outputs := allOutputs }
     spec := spec
-    body := body
+    body := .structured body
   } .empty]
 
 def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Decl) := do
@@ -978,6 +978,8 @@ def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Dec
     withTypeBVars tys do
       let inputs ← (bindingsToList ins).mapM toCoreBinding
       translateProcedureDecl m n tys inputs [] specAnn.val bodyAnn.val
+  | .command_cfg_procedure m nameAnn _ _ _ _ =>
+    throwAt m s!"Boole procedure '{nameAnn.val}': CFG-form procedure bodies (`cfg ENTRY \{ ... }`) are not supported in Boole; use a structured body."
   | .command_typedecl _ ⟨_, n⟩ ⟨_, args?⟩ =>
     let params := match args? with
       | none => []
@@ -1031,7 +1033,7 @@ def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Dec
     return [.proc {
       header := { name := mkIdent topLevelBlockProcedureName, typeArgs := [], inputs := [], outputs := [] }
       spec := { preconditions := [], postconditions := [] }
-      body := ← toCoreBlock b
+      body := .structured (← toCoreBlock b)
     } .empty]
   | .command_datatypes _ ⟨_, decls⟩ =>
     return [.type (.data (← decls.toList.mapM toCoreDatatypeDecl)) .empty]
