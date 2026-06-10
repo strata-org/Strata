@@ -4101,43 +4101,25 @@ private theorem fresh_rest_inits_body_step {P : PureExpr} [HasIdent P]
       (StringGenState.not_mem_stringGens_of_not_hasUnderscoreDigitSuffix h_wf_b
         (h_rest_no_gen_suffix x (by simp [Cmds.definedVars]; exact hx) s heq)))
 
-/-- Project the `thenBranch` slot's init-vars Nodup out of the .ite-arm
-    `h_unique_outer_inits`.  Used for `h_unique_combined_then`. -/
-private theorem unique_combined_ite_then {P : PureExpr} [HasIdent P]
+/-- Project all three slot init-vars `Nodup` facts (`thenBranch`, `elseBranch`,
+    `rest`) out of the .ite-arm `h_unique_outer_inits`.  Components are consumed
+    via `.1` / `.2.1` / `.2.2` for `h_unique_combined_{then,else,rest}`. -/
+private theorem unique_combined_ite {P : PureExpr} [HasIdent P]
     {accum : List (Cmd P)} {thenBranch elseBranch rest : List (Stmt P (Cmd P))}
     (h_unique_outer_inits :
         (Cmds.definedVars accum.reverse ++
           ((Block.initVars thenBranch ++ Block.initVars elseBranch) ++
             Block.initVars rest)).Nodup) :
-    (Cmds.definedVars ([] : List (Cmd P)).reverse ++ Block.initVars thenBranch).Nodup := by
-  simp [Cmds.definedVars]
-  exact (List.nodup_append.mp
-    (List.nodup_append.mp (List.nodup_append.mp h_unique_outer_inits).2.1).1).1
-
-/-- Project the `elseBranch` slot's init-vars Nodup out of the .ite-arm
-    `h_unique_outer_inits`.  Used for `h_unique_combined_else`. -/
-private theorem unique_combined_ite_else {P : PureExpr} [HasIdent P]
-    {accum : List (Cmd P)} {thenBranch elseBranch rest : List (Stmt P (Cmd P))}
-    (h_unique_outer_inits :
-        (Cmds.definedVars accum.reverse ++
-          ((Block.initVars thenBranch ++ Block.initVars elseBranch) ++
-            Block.initVars rest)).Nodup) :
-    (Cmds.definedVars ([] : List (Cmd P)).reverse ++ Block.initVars elseBranch).Nodup := by
-  simp [Cmds.definedVars]
-  exact (List.nodup_append.mp
-    (List.nodup_append.mp (List.nodup_append.mp h_unique_outer_inits).2.1).1).2.1
-
-/-- Project the `rest` slot's init-vars Nodup out of the .ite-arm
-    `h_unique_outer_inits`.  Used for `h_unique_combined_rest` after .ite. -/
-private theorem unique_combined_ite_rest {P : PureExpr} [HasIdent P]
-    {accum : List (Cmd P)} {thenBranch elseBranch rest : List (Stmt P (Cmd P))}
-    (h_unique_outer_inits :
-        (Cmds.definedVars accum.reverse ++
-          ((Block.initVars thenBranch ++ Block.initVars elseBranch) ++
-            Block.initVars rest)).Nodup) :
-    (Cmds.definedVars ([] : List (Cmd P)).reverse ++ Block.initVars rest).Nodup := by
-  simp [Cmds.definedVars]
-  exact (List.nodup_append.mp (List.nodup_append.mp h_unique_outer_inits).2.1).2.1
+    (Cmds.definedVars ([] : List (Cmd P)).reverse ++ Block.initVars thenBranch).Nodup
+      ∧ (Cmds.definedVars ([] : List (Cmd P)).reverse ++ Block.initVars elseBranch).Nodup
+      ∧ (Cmds.definedVars ([] : List (Cmd P)).reverse ++ Block.initVars rest).Nodup := by
+  simp only [Cmds.definedVars, List.reverse_nil, List.nil_append]
+  refine ⟨?_, ?_, ?_⟩
+  · exact (List.nodup_append.mp
+      (List.nodup_append.mp (List.nodup_append.mp h_unique_outer_inits).2.1).1).1
+  · exact (List.nodup_append.mp
+      (List.nodup_append.mp (List.nodup_append.mp h_unique_outer_inits).2.1).1).2.1
+  · exact (List.nodup_append.mp (List.nodup_append.mp h_unique_outer_inits).2.1).2.1
 
 /-- No-op-prepend bundle for the `.typeDecl` arm of `stmtsToBlocks_simulation`. -/
 private theorem typeDecl_arm_combined_lemmas {P : PureExpr}
@@ -5255,16 +5237,17 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
         ∀ x ∈ Cmds.definedVars [].reverse ++ Block.initVars thenBranch,
         σ_cfg_after x = none :=
       fun x hx => h_fresh_then_inits x (by simpa [Cmds.definedVars] using hx)
+    have h_unique_combined_ite := unique_combined_ite h_unique_outer_inits
     have h_unique_combined_then :
         (Cmds.definedVars [].reverse ++ Block.initVars thenBranch).Nodup :=
-      unique_combined_ite_then h_unique_outer_inits
+      h_unique_combined_ite.1
     have h_combined_else :
         ∀ x ∈ Cmds.definedVars [].reverse ++ Block.initVars elseBranch,
         σ_cfg_after x = none :=
       fun x hx => h_fresh_else_inits x (by simpa [Cmds.definedVars] using hx)
     have h_unique_combined_else :
         (Cmds.definedVars [].reverse ++ Block.initVars elseBranch).Nodup :=
-      unique_combined_ite_else h_unique_outer_inits
+      h_unique_combined_ite.2.1
     -- Lookup helper for the condGoto helpers
     have h_lookup : ∀ lbl blk, (lbl, blk) ∈ cfg.blocks →
         cfg.blocks.lookup lbl = some blk :=
@@ -5408,7 +5391,7 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
         h_fresh_rest_inits_branch x (by simpa [Cmds.definedVars] using hx)
       have h_unique_combined_rest :
           (Cmds.definedVars [].reverse ++ Block.initVars rest).Nodup :=
-        unique_combined_ite_rest h_unique_outer_inits
+        (unique_combined_ite h_unique_outer_inits).2.2
       -- Recurse on rest.
       have h_accum_nil_r : EvalCmds P (EvalCmd P) ρ₁.eval ρ₁.store
           [].reverse ρ₁.store false := EvalCmds.eval_cmds_none
@@ -5519,7 +5502,7 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
         h_fresh_rest_inits_branch x (by simpa [Cmds.definedVars] using hx)
       have h_unique_combined_rest :
           (Cmds.definedVars [].reverse ++ Block.initVars rest).Nodup :=
-        unique_combined_ite_rest h_unique_outer_inits
+        (unique_combined_ite h_unique_outer_inits).2.2
       -- Recurse on rest.
       have h_accum_nil_r : EvalCmds P (EvalCmd P) ρ₁.eval ρ₁.store
           [].reverse ρ₁.store false := EvalCmds.eval_cmds_none
@@ -7861,16 +7844,17 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
         ∀ x ∈ Cmds.definedVars [].reverse ++ Block.initVars thenBranch,
         σ_cfg_after x = none :=
       fun x hx => h_fresh_then_inits x (by simpa [Cmds.definedVars] using hx)
+    have h_unique_combined_ite := unique_combined_ite h_unique_outer_inits
     have h_unique_combined_then :
         (Cmds.definedVars [].reverse ++ Block.initVars thenBranch).Nodup :=
-      unique_combined_ite_then h_unique_outer_inits
+      h_unique_combined_ite.1
     have h_combined_else :
         ∀ x ∈ Cmds.definedVars [].reverse ++ Block.initVars elseBranch,
         σ_cfg_after x = none :=
       fun x hx => h_fresh_else_inits x (by simpa [Cmds.definedVars] using hx)
     have h_unique_combined_else :
         (Cmds.definedVars [].reverse ++ Block.initVars elseBranch).Nodup :=
-      unique_combined_ite_else h_unique_outer_inits
+      h_unique_combined_ite.2.1
     have h_lookup : ∀ lbl blk, (lbl, blk) ∈ cfg.blocks →
         cfg.blocks.lookup lbl = some blk :=
       fun lbl blk h_mem => List.lookup_of_mem_nodup cfg.blocks h_cfg_nodup lbl blk h_mem
@@ -8113,7 +8097,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
           h_fresh_rest_inits_branch x (by simpa [Cmds.definedVars] using hx)
         have h_unique_combined_rest :
             (Cmds.definedVars [].reverse ++ Block.initVars rest).Nodup :=
-          unique_combined_ite_rest h_unique_outer_inits
+          (unique_combined_ite h_unique_outer_inits).2.2
         have h_accum_nil_r : EvalCmds P (EvalCmd P) ρ_mid.eval ρ_mid.store
             [].reverse ρ_mid.store false := EvalCmds.eval_cmds_none
         -- Lift `h_store_no_gens_upper` through the thenBranch sub-simulation
@@ -8212,7 +8196,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
           h_fresh_rest_inits_branch x (by simpa [Cmds.definedVars] using hx)
         have h_unique_combined_rest :
             (Cmds.definedVars [].reverse ++ Block.initVars rest).Nodup :=
-          unique_combined_ite_rest h_unique_outer_inits
+          (unique_combined_ite h_unique_outer_inits).2.2
         have h_accum_nil_r : EvalCmds P (EvalCmd P) ρ_mid.eval ρ_mid.store
             [].reverse ρ_mid.store false := EvalCmds.eval_cmds_none
         -- Lift `h_store_no_gens_upper` through the elseBranch sub-simulation
