@@ -197,29 +197,15 @@ calls to bodyless intrinsics instead. See the conversation analysis: empty bodie
 are inserted because the procedures are genuinely bodyless SMACK intrinsics, and
 the CBM pipeline skips abstract procedures at `CoreCFGToGOTOPipeline.lean:533`.
 
-### Block-coalescing applicability census
+### Block-coalescing applicability census — DONE (verdict: don't build standalone)
 
-**Status:** READY TO EXECUTE — script written and reviewed, not started.
+**Status:** DONE (2026-06-09, workflow `w0sdli249`). Full detail: [`reports/block-coalescing-applicability-2026-06-09.md`](block-coalescing-applicability-2026-06-09.md).
 
-**Script:** `/Users/htd/.claude/jobs/d3648beb/tmp/wf-block-coalescing-applicability.js`
+**Findings.** Coalesceable-block density is wildly corpus-dependent: **EQ 38.4%** (79,464/206,860 blocks; 100% of procs; mostly length-2 `anonN` jump-chains) vs **SMACK 0.33%** (170/52,248; only 19.8% of procs) — 118× sparser, because SMACK's alternating-diamond CFGs split "unconditional source" and "single-pred target" onto different edges (verified: 384 uncond + 384 single-pred blocks, 0 edges with both). `stmtsToCFG` output *is* coalesceable (straight-line runs, block trampolines, ite-join tails, loop-body tails; ~20–80% per proc) and **never erases loop-contract metadata** — the feared `condGoto true L L` trap doesn't occur.
 
-**What it does.** Censuses whether a basic-block coalescing pass (merge chains of
-unconditional single-pred/single-succ branches into one block) has applicable
-opportunities across the three corpora (SMACK pilot, equalizer, StrataTest). Six
-phases: pin the coalesce criterion against the IR's actual unconditional-branch
-form (the `condGoto true L L` equal-target pattern + inter-block `.goto` links) →
-build a coalesceable-chain analyzer (reuses the CFG parser + dominator machinery
-from the reducibility analyzer) → census EQ + SMACK → source-analyze whether
-`stmtsToCFG` output is coalesceable (the load-bearing StrataTest question: which
-structured constructs lower to coalesceable chains) → skeptic verification
-(equal-target edge counting, hand-traced spot-checks, practical-value challenge)
-→ synthesize. Answers all three of the user's questions with block-removable
-counts + a value assessment (optimization vs cosmetic, per consumer).
+**Verdict: do NOT build it standalone.** (1) SMT query count is **invariant** under coalescing (obligation count = assert/cover count, preserved by `B.cmds ++ C.cmds`) — not a perf optimization. (2) Its only verify-path benefit (fewer false alarms from the per-block pc reset) is explicitly scheduled to be subsumed by the dominator-based pc-propagation TODO at `ObligationExtraction.lean:106`. (3) It pays off only on EQ (equivalence-checking), not the SMACK C-pipeline. CBMC/GOTO path must NOT coalesce (wants the real CFG).
 
-**Shared machinery.** The analyzer reuses the dominator/CFG-analysis code from
-the irreducible-CFG census (`reports/irreducible-cfg-census-2026-06-09.md`); the
-synthesis explicitly considers whether a coalescing pass could share
-infrastructure with the proposed CFG-level loop-elim pass (above).
+**If pursued for readability/proof-corpus size:** fold into the **same dominator/natural-loop machinery the CFG-level loop-elim pass needs** (the predecessor-count map is a strict subset of loop-elim's dominator dataflow), run as a post-loop-elim cleanup phase (loop-elim splices acyclic blocks that create fresh single-pred chains; coalescing collapses them). Both are verification-path-only `Program → Program` pre-passes. Bundled it's nearly free; standalone the ROI doesn't justify a second framework. Tracked as a sub-task of the CFG-level loop-elim pass (*Investigations → CFG-eval memory profile #29*).
 
 ### evalCFGBody OOM root-cause + TDD fix (PAUSED mid-run — resume)
 
@@ -240,9 +226,11 @@ Workflow({
 
 **Overlap caveat.** The diagnose + propose phases largely duplicate the already-completed irreducible-CFG census (`wqlj6z95v`), which confirmed the #29 root cause (fuel-only worklist unrolls reducible loops) and recommended the CFG-level loop-elim pass. The net-new value is the **TDD-Verify phase** — actually testing candidate fixes in worktrees, which the census did not do. Consider resuming only for that phase, or skip it and scope the CFG-level loop-elim pass directly (tracked under *Investigations → CFG-eval memory profile* above). Reconcile any fix candidate it produces with that recommendation.
 
-### Translator-side fix for `old(<unmodified-global>)` typecheck failure (#1331)
+### Translator-side fix for `old(<unmodified-global>)` typecheck failure (#1331) — IMPLEMENTED
 
-**Status:** READY TO EXECUTE — plan below; no script (this is a direct code change, not a workflow). Upstream issue [#1331](https://github.com/strata-org/Strata/issues/1331) is filed; this is the translator-side fix path it proposes. Closes 56 ELAB_FAILs + ~17 latent-in-TIMEOUT on the mem-capped EQ-200 sweep (the largest single ELAB unblock available). See also the typechecker-side alternative under *Translator → extend `mkOld`* above; this translator-side path is the smaller, less invasive fix and is preferred first.
+**Status:** IMPLEMENTED on htd/smack at `188255668` (2026-06-09, local — not yet pushed). The `OldGlobalCollector`/`EffectiveModifies` widening landed in `StrataGenerator.cs` with the `OldUnmodifiedGlobal` regression fixture (`.bpl` + `.expect`). Verified: minimal repro flips `Cannot find this fvar ... old h` → `✅ pass`; all 3 EQ reproducers clear the old-fvar ELAB error (0 occurrences post-fix); integration suite 91 pass / 7 pre-existing fail (no regressions). **Two residual follow-ups:** (a) `EQ_wvadqhmgjvk_out` now surfaces a *separate, pre-existing* modifies-clause-completeness issue (a callee-modified `reffile__heap` not in the proc's modifies) that the old-fvar error previously masked — worth a distinct ticket; (b) run the mem-capped EQ-200 sweep to quantify how much of the 56 ELAB_FAIL bucket this clears (do this in the workflow-queue's memory budget, not concurrently). The plan that follows is retained for reference.
+
+**Original plan (for reference):** READY TO EXECUTE — plan below; no script (this is a direct code change, not a workflow). Upstream issue [#1331](https://github.com/strata-org/Strata/issues/1331) is filed; this is the translator-side fix path it proposes. Closes 56 ELAB_FAILs + ~17 latent-in-TIMEOUT on the mem-capped EQ-200 sweep (the largest single ELAB unblock available). See also the typechecker-side alternative under *Translator → extend `mkOld`* above; this translator-side path is the smaller, less invasive fix and is preferred first.
 
 **Root cause (re-confirmed against current source).** `WriteProcedureHeader` (`Tools/BoogieToStrata/Source/StrataGenerator.cs:1890-1894`) partitions globals into `inout` (in `proc.Modifies`) vs read-only (everything else). Strata's `mkOld` mints `old`-resolvable fvars only for `inout` params (`Strata/Languages/Core/ProcedureType.lean:100-105`), so a global referenced via `old(g)` in a `requires`/`ensures` but **not** in `proc.Modifies` is emitted read-only and has no `old`-fvar → `Cannot find this fvar in the context! old <g>`. Confirmed (inferModifies-investigation-2026-06-09) that `InferModifies = true` does **not** help: ModSetCollector only adds globals the body *writes*, and these globals are only *read* (in a contract `old`), so the modifies set stays empty correctly.
 
