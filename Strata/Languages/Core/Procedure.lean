@@ -306,12 +306,17 @@ def Procedure.Body.getCfg : Procedure.Body → Except String DetCFG
   | .cfg c => .ok c
   | .structured _ => .error "expected CFG body, got structured"
 
-/-- Get variables referenced in the body. -/
+/-- Get variables referenced in the body. For a CFG body, this includes the
+variables read by the guard of each conditional transfer (`condGoto`), mirroring
+how the structured form collects the condition variables of `if`/`while`. -/
 @[simp]
 def Procedure.Body.getVars : Procedure.Body → List Expression.Ident
   | .structured ss => ss.flatMap Imperative.HasVarsPure.getVars
   | .cfg c => c.blocks.flatMap fun (_, blk) =>
-    blk.cmds.flatMap Imperative.HasVarsPure.getVars
+    blk.cmds.flatMap Imperative.HasVarsPure.getVars ++
+    (match blk.transfer with
+      | .condGoto p _ _ _ => Imperative.HasVarsPure.getVars p
+      | .finish _ => [])
 
 /-- Is this body abstract (no implementation)? Only empty structured bodies
     are abstract. CFG bodies always have an implementation. -/
