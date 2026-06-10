@@ -105,6 +105,17 @@ def laurelPipeline : Array LaurelPass := #[
   constrainedTypeElimPass
 ]
 
+/-- Every `comesBefore` constraint is respected by the pipeline order. -/
+def comesBeforeRespected : Bool :=
+  let names := laurelPipeline.toList.map (·.name)
+  (List.range laurelPipeline.size).zip laurelPipeline.toList |>.all fun (i, p) =>
+    p.comesBefore.all fun cb =>
+      match names.findIdx? (· == cb.pass.name) with
+      | some j => i < j
+      | none   => false   -- target not in laurelPipeline
+
+#guard comesBeforeRespected
+
 /--
 Run all Laurel-to-Laurel lowering passes on a program, returning the lowered
 program, the semantic model, accumulated diagnostics, and merged statistics.
