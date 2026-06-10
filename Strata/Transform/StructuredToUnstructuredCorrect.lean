@@ -4567,6 +4567,7 @@ private theorem loop_iterations_det
     (cfg : CFG String (DetBlock String (Cmd P) P))
     (lentry kNext bl : String)
     (σ_cfg_pre : SemanticStore P)
+    (freshVars : P.Ident → Prop)
     (h_lentry_lkp : cfg.blocks.lookup lentry = some ⟨[], .condGoto g bl kNext md⟩)
     (h_agree_pre : StoreAgreement ρ_pre.store σ_cfg_pre)
     (h_term : StepStmtStar P (EvalCmd P) extendEval
@@ -4584,7 +4585,8 @@ private theorem loop_iterations_det
              StepDetCFGStar extendEval cfg
                (.atBlock bl σ_cfg_iter ρ_iter.hasFailure)
                (.atBlock lentry σ_cfg_after_body ρ_body.hasFailure) ∧
-             StoreAgreement ρ_body.store σ_cfg_after_body)
+             StoreAgreement ρ_body.store σ_cfg_after_body ∧
+             (∀ x, freshVars x → σ_cfg_iter x = none → σ_cfg_after_body x = none))
     (hwfb_pre : WellFormedSemanticEvalBool ρ_pre.eval)
     (hwfv_pre : WellFormedSemanticEvalVal ρ_pre.eval)
     (hwfvar_pre : WellFormedSemanticEvalVar ρ_pre.eval)
@@ -4594,7 +4596,8 @@ private theorem loop_iterations_det
       StepDetCFGStar extendEval cfg
         (.atBlock lentry σ_cfg_pre ρ_pre.hasFailure)
         (.atBlock kNext σ_cfg_kNext ρ_post_loop.hasFailure) ∧
-      StoreAgreement ρ_post_loop.store σ_cfg_kNext := by
+      StoreAgreement ρ_post_loop.store σ_cfg_kNext ∧
+      (∀ x, freshVars x → σ_cfg_pre x = none → σ_cfg_kNext x = none) := by
   have hT : ReflTransT (StepStmt P (EvalCmd P) extendEval)
       (.stmt (Stmt.loop (.det g) none [] body md) ρ_pre)
       (.terminal ρ_post_loop) := reflTrans_to_T h_term
@@ -4613,7 +4616,8 @@ private theorem loop_iterations_det
           StepDetCFGStar extendEval cfg
             (.atBlock lentry σ_cfg_pre' ρ_pre'.hasFailure)
             (.atBlock kNext σ_cfg_kNext' ρ_post'.hasFailure) ∧
-          StoreAgreement ρ_post'.store σ_cfg_kNext' from
+          StoreAgreement ρ_post'.store σ_cfg_kNext' ∧
+          (∀ x, freshVars x → σ_cfg_pre' x = none → σ_cfg_kNext' x = none) from
     h_inner hT.len ρ_pre ρ_post_loop σ_cfg_pre rfl
       hwfb_pre hwf_def_pre hwfcongr_pre h_agree_pre hT (Nat.le_refl _)
   intro n
@@ -4642,7 +4646,7 @@ private theorem loop_iterations_det
           | .step _ _ _ h _ => exact nomatch h
         simpa using this
       subst hρ_eq
-      refine ⟨σ_cfg_pre', ?_, h_agree'⟩
+      refine ⟨σ_cfg_pre', ?_, h_agree', fun x _ h => h⟩
       exact lentry_condGoto_false extendEval cfg lentry bl kNext md g
         ρ_post'.eval ρ_post'.store σ_cfg_pre' ρ_post'.hasFailure h_lentry_lkp h_agree'
         hwfb' hwf_def' hwfcongr' hg_false
@@ -4673,7 +4677,7 @@ private theorem loop_iterations_det
           ρ_pre'.eval ρ_pre'.store σ_cfg_pre' ρ_pre'.hasFailure h_lentry_lkp h_agree'
           hwfb' hwf_def' hwfcongr' hg_true
       -- CFG step 2: bl → lentry (body sim).
-      have ⟨σ_cfg_after_body, h_step_body, h_agree_after_body⟩ :=
+      have ⟨σ_cfg_after_body, h_step_body, h_agree_after_body, h_preserve_body⟩ :=
         h_body_sim_at ρ_pre' σ_cfg_pre' h_eval_eq h_agree' ρ_inner h_body_struct
       -- ρ_block = { ρ_inner with store := projectStore ρ_pre'.store ρ_inner.store }.
       -- Block.initVars body = [], so projection leaves the store agreement intact.
@@ -4697,15 +4701,18 @@ private theorem loop_iterations_det
       have h_inner_le_n : h_inner_T.len ≤ n := by
         simp [ReflTransT.len] at hl_succ; omega
       -- Recurse on the next iteration.
-      have ⟨σ_cfg_kNext, h_run_recurse, h_agree_post⟩ :=
+      have ⟨σ_cfg_kNext, h_run_recurse, h_agree_post, h_preserve_recurse⟩ :=
         ih ρ_block ρ_post' σ_cfg_after_body h_eval_eq_block
            hwfb_block hwf_def_block hwfcongr_block
            h_agree_block h_inner_T h_inner_le_n
-      refine ⟨σ_cfg_kNext, ?_, h_agree_post⟩
-      -- Compose: lentry → bl → lentry → ... → kNext.
-      -- Transport h_run_recurse's start flag ρ_block.hasFailure to ρ_inner.hasFailure.
-      rw [h_hf_block] at h_run_recurse
-      exact StepDetCFGStar_trans (StepDetCFGStar_trans h_step_enter h_step_body) h_run_recurse
+      refine ⟨σ_cfg_kNext, ?_, h_agree_post, ?_⟩
+      · -- Compose: lentry → bl → lentry → ... → kNext.
+        -- Transport h_run_recurse's start flag ρ_block.hasFailure to ρ_inner.hasFailure.
+        rw [h_hf_block] at h_run_recurse
+        exact StepDetCFGStar_trans (StepDetCFGStar_trans h_step_enter h_step_body) h_run_recurse
+      · -- Freshness: thread through one iteration then the recursion.
+        intro x h_fresh h_σ_pre
+        exact h_preserve_recurse x h_fresh (h_preserve_body x h_fresh h_σ_pre)
 
 set_option linter.unusedVariables false in
 /-- `_to_cont` iteration helper for the det loop: the loop runs some number of
