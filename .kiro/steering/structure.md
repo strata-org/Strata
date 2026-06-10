@@ -15,8 +15,6 @@ Strata is a Lean4 verification framework using **dialects** as composable langua
 - `Strata/` - Core implementation (DDM, dialects, languages, transforms, backends)
 - `StrataTest/` - Unit tests (mirrors Strata/ structure)
 - `Examples/` - Sample programs (`.st` files, naming: `<name>.<dialect>.st`)
-- `Tools/` - External tools (Python utilities)
-- `vcs/` - Generated SMT2 verification conditions
 
 ### Core Components
 
@@ -34,9 +32,7 @@ Strata is a Lean4 verification framework using **dialects** as composable langua
 - `Core/` - Primary verification language (procedures, contracts, VCG, SMT encoding)
 - `C_Simp/` - Simplified C-like language
 - `Dyn/` - Dynamic language example
-- `Laurel/` - A common representation for front-end languages like Java, Python and JavaScript.
-Translated to Core.
-- `Python/` - The well-known Python language
+- `Laurel/` - A common representation for front-end languages like Java, Python and JavaScript. Translated to Core.
 
 **`Strata/Transform/`** - Program Transformations
 - Each transformation has implementation + optional correctness proof (`*Correct.lean`)
