@@ -1,9 +1,3 @@
-Python:
-  - changed-files:
-      - any-glob-to-any-file:
-          - 'StrataPython/**'
-          - 'Tools/Python-base/**'
-
 Laurel:
   - changed-files:
       - any-glob-to-any-file:
@@ -41,8 +35,6 @@ dependencies:
           - 'lake-manifest.json'
           - 'lakefile.toml'
           - 'lean-toolchain'
-          - 'Tools/Python-base/pyproject.toml'
-          - 'StrataPython/Tools/strata-python/pyproject.toml'
 
 github_actions:
   - changed-files:

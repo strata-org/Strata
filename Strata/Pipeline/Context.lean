@@ -145,7 +145,7 @@ public def getToolErrors (ctx : PipelineContext) : BaseIO (Array PipelineMessage
   ctx.toolErrorsRef.get
 
 /-- Messages with `.userCodeIssue` impact.
-    These represent definite errors in the user's Python source code. -/
+    These represent definite errors in the user's source code. -/
 public def getUserCodeErrors (ctx : PipelineContext) : BaseIO (Array PipelineMessage) :=
   ctx.userCodeErrorsRef.get
 

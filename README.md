@@ -28,13 +28,10 @@ changes!**
    (`cvc5` and `z3`). See [Installing dependencies → SMT Solvers](#smt-solvers)
    below.
 
-3. **Python 3.11+**: required for Python-related tests and the `strata`
-   Python tooling. See [Installing dependencies → Python](#python) below.
-
-4. **Java JDK (11 or later)**: required for Java code generation tests.
+3. **Java JDK (11 or later)**: required for Java code generation tests.
    See [Installing dependencies → Java](#java-for-code-generation-tests) below.
 
-5. **ion-java jar (1.11.11)**: required for the Java/Ion integration test.
+4. **ion-java jar (1.11.11)**: required for the Java/Ion integration test.
    See [Installing dependencies → Java](#java-for-code-generation-tests) below.
 
 ### Installing dependencies
@@ -54,18 +51,6 @@ cp /path/to/cvc5 /path/to/z3 ~/.local/bin/
 # or: sudo cp /path/to/cvc5 /path/to/z3 /usr/local/bin/
 ```
 
-#### Python
-
-Python 3.11 or later is required. Install the `strata` Python package inside a
-virtual environment (recommended; avoids PEP 668's `externally-managed-environment`
-error on Debian/Ubuntu 23.04+):
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install ./Tools/Python
-```
-
 #### Java (for code generation tests)
 
 A JDK (11+) providing `javac` must be on your `PATH`. For running the
@@ -81,7 +66,6 @@ wget -q -O StrataTestExtra/DDM/Integration/Java/testdata/ion-java-1.11.11.jar \
 ```bash
 cvc5 --version    # should print version info
 z3 --version      # should print version info
-python3 --version # should be 3.11+
 ```
 
 ## Build
@@ -110,13 +94,10 @@ Two kinds of tests coexist in this repo:
   These accept prefix filters:
 
 ```bash
-# Run all extra tests except Python (which requires the Python package)
-lake test -- --exclude Languages.Python
+# Run all extra tests except those in the Imperative namespace
+lake test -- --exclude DL.Imperative
 
-# Run only Python extra tests (requires `pip install ./Tools/Python`)
-lake test -- Languages.Python
-
-# Run all extra tests (Python tests will fail without the Python package above)
+# Run all extra tests
 lake test
 ```
 
