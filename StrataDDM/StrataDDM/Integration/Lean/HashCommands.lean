@@ -201,8 +201,8 @@ def strataDialectImpl: CommandElab := fun (stx : Syntax) => do
 declare_tagged_region term strataProgram "#strata" "#end"
 
 @[term_elab strataProgram]
-meta def strataProgramImpl : TermElab := fun stx _ => do
-  let .atom i _ := stx[1]
+meta def strataProgramImpl : TermElab := fun stx tp => do
+  let .atom i v := stx[1]
         | throwError s!"Bad {stx[1]}"
   let .original _ p _ e := i
         | throwError s!"Expected input context"
