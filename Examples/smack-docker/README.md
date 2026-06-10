@@ -137,6 +137,7 @@ baseline used by the *Default-policy results* below.
 | v4 (bodyOrContract) | 82 | — | 11 | `--split-procs --call-policy bodyOrContract` | body-eval at call sites (`dd0c0d7cd`) on the combined 93-program suite |
 | v5 (PASS-? surfacing) | 57 | 18 | 11 | `--split-procs --call-policy bodyOrContract --check-level full` | run-pipeline emits `--check-level full` and surfaces `path unreachable` as `PASS-?` (`a817909fc`); 8 large `.bpl` (≥20K lines) excluded due to the deferred-obligation hang since fixed in v6 — see *Resolved blockers (history)* |
 | v6 (deferred-dedup) | **68** | **15** | **11** | `--split-procs --call-policy bodyOrContract --inline-fuel 100 --check-level full` | CFG `condGoto` deferred-dedup fix (`277c468cb`) on the full 94-program suite (no programs excluded) |
+| v7 (post-Jun-9-fixes) | **68** | **15** | **11** | `--split-procs --call-policy bodyOrContract --inline-fuel 100 --check-level full` | First full round on the binary rebuilt 2026-06-10 with the Jun-9 fixes — flushCmds (`437d38683`) + effective-modifies widening for `old(<unmodified-global>)` (#1331, `188255668`). **Zero verdict changes vs v6 (per-program diff = 0/94 across Ded/Bug/CBM); regression-free.** Both Jun-9 fixes target the EQ corpus and the Lean CFGForm test surface, neither of which is exercised by the SMACK pilot, so verdict-stability here is the expected and correct result. |
 
 The deductive PASS climb from 21 → 39 → 82 → 57 → 68 is the project
 arc: each bend was driven by a specific fix landing on `htd/smack`.
@@ -162,6 +163,23 @@ The 86 v5 numbers come from a single matrix run on 85 programs (which
 preemptively also excluded `sv_locks_11.bpl` on a misread of a prior
 hang) plus a standalone re-run of `sv_locks_11.bpl` that confirmed it
 completes as PASS-? rather than hanging.
+
+v6 → v7 is a **regression-confirmation round, not a verdict-moving one.**
+The `strata` binary was rebuilt 2026-06-10 with the two fixes that landed
+on `htd/smack` on 2026-06-09 — flushCmds (`437d38683`) and the
+effective-modifies widening for `old(<unmodified-global>)` (#1331,
+`188255668`). Re-running the full 94-program pilot under the v6 flag set
+produced an **exact per-program match**: 0/94 verdicts changed across all
+three backends (deductive 68/15/11, bugFinding 68/15/11 with Ded==Bug on
+every row, Strata-CBMC 94 FAIL). This is the expected outcome — #1331's
+effective-modifies widening only fires on `old()`-referenced unmodified
+globals, which the EQ/equalizer corpus exhibits but the SMACK pilot does
+not, and the flushCmds fix only changes the Lean CFGForm runtime test
+surface. The v6 per-program detail table below therefore stands unchanged
+for v7. (Note: a discovered staleness trap — Lake's exe-link trace does
+not pick up transitive `.olean` changes, so a `lake build strata` that
+reports "success" can leave a stale binary; the v7 round was run only
+after force-relinking `strata`, confirmed by mtime.)
 
 ### Default-policy results (contract; today's behaviour)
 

@@ -1,0 +1,24 @@
+[1/4] translate
+[2/4] enumerate
+    worklist: 1253 procs
+[3/4] verify (2 parallel workers, single-thread Z3, gtimeout 60/proc, resumable)
+[4/4] tally
+=== PROGRAM-LEVEL (file  nprocs  pass  pass?  partial  err  timeout  verdict) ===
+EQ_4yipg2qisfn_out  44   39   0   0  5  0   PARTIAL
+EQ_ofggc1dth0s_out  36   35   0   0  0  1   PARTIAL
+EQ_putl12axces_out  47   46   0   0  0  1   PARTIAL
+EQ_jqp2kinnr5j_out  172  137  21  0  0  14  PARTIAL
+EQ_52uajzr2i5s_out  49   44   0   0  4  1   PARTIAL
+EQ_bsowhr2fu12_out  70   63   4   0  0  3   PARTIAL
+EQ_sz1wo0jj0sg_out  147  120  10  0  0  17  PARTIAL
+
+=== AGGREGATE proc-level ===
+  PASS             398
+  PASS_0           114
+  PASSQ            38
+  TIMEOUT          37
+  ERR_FNAME        9
+  TOTAL procs: 596
+
+=== #1331 REGRESSION CHECK (old-fvar) ===
+  proc-outs with old-fvar error: 0  (expect 0)

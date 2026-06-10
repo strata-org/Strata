@@ -21,3 +21,16 @@ wt-test/
 
 # Local git worktrees (used by the using-git-worktrees skill).
 .worktrees/
+
+# Large benchmark corpora + regenerable per-run artifacts (kept locally only).
+Examples/smack-docker/boogie-files/
+Examples/smack-docker/strata-files/
+Examples/smack-docker/__pycache__/
+# EQ re-sweep: keep the driver + result TSVs + analysis; drop bulky regenerable
+# translations and raw per-proc logs.
+Examples/smack-docker/eq-resweep/core-st/
+Examples/smack-docker/eq-resweep/proc-out/
+Examples/smack-docker/eq-resweep/chunk.*.tsv
+Examples/smack-docker/eq-resweep/reprobe/
+.DS_Store
+**/.DS_Store

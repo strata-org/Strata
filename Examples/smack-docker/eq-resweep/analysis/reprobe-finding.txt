@@ -1,0 +1,10 @@
+Budget re-probe (gtimeout 240, solver-timeout 60) of 4 single-timeout small-file procs:
+- EQ_yo1ortq3kh2 :: JavaCodeGenerator<clinit>: COMPLETED 69s -> 807 passed, 1 FAILED.
+    => 60s harness cap was MASKING A REAL PARTIAL (failing goal), not a timeout.
+- EQ_htqg3z5agdx :: NumberMemory.getSt...: ran 240s, 239 solver-activity lines.
+    => genuinely hard SMT instance (solver actively grinding).
+- EQ_ofggc1dth0s :: Eq.SameVtestCollision2: 240s, 0 output lines.
+- EQ_putl12axces :: HttpGetSnippet.httpGet: 240s, 0 output lines.
+    => stuck PRE-SOLVER (VC-gen/parse of big program), never reached Z3.
+CONCLUSION: the 73 "TIMEOUT" are a MIX: pre-solver stalls + hard-SMT + >=1 masked real failure.
+NOT a uniform harness artifact.

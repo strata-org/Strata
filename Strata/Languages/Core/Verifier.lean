@@ -19,6 +19,7 @@ import Strata.Transform.FilterProcedures
 import Strata.Transform.PrecondElim
 import Strata.Transform.TerminationCheck
 import Strata.Transform.LoopElim
+import Strata.Transform.CFGLoopElim
 import Strata.Transform.ANFEncoder
 import Strata.Languages.Core.ObligationExtraction
 public import Strata.Transform.IrrelevantAxioms
@@ -890,7 +891,7 @@ def transformPipelinePhases (procs : Option (List String) := none)
     if options.callPolicy = .Contract then [callElimPipelinePhase] else []
   -- precondElimPipelinePhase will immediately return if there is no Factory
   -- set up at CoreTransformState.
-  filterPhases ++ callElimPhases ++ [termCheckPipelinePhase] ++ [precondElimPipelinePhase] ++ postFilterPhases ++ [loopElimPipelinePhase]
+  filterPhases ++ callElimPhases ++ [termCheckPipelinePhase] ++ [precondElimPipelinePhase] ++ postFilterPhases ++ [loopElimPipelinePhase, cfgLoopElimPipelinePhase]
 
 /-- The full pipeline phases for program-to-program transforms, including
     type checking, symbolic evaluation, and ANF encoding.

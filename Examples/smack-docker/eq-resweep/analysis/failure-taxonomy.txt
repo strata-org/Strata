@@ -1,0 +1,39 @@
+EQ re-sweep failure taxonomy (1253 procs total, 87 non-PASS) — derived from existing logs, no re-run.
+
+SOUNDNESS (load-bearing):
+- 0 / 1253 proc-outs emit the #1331 old-fvar error. Fix is regression-free end-to-end through SMT.
+- All 14 ERROR procs (13 ERR_FNAME + 1 ERR_SOLVERCRASH) have rc=3 AND 0 "goals passed" lines.
+  => they fail LOUDLY; none masks a spurious pass. No soundness hole from the error buckets.
+
+TIMEOUT sub-classification (73 total, from the original 60s/10s logs):
+- 70 / 73 produced ZERO body output in 60s  => PRE_SOLVER_STALL (stuck in VC-gen/parse of
+    large multi-proc .core.st; never reached Z3). This is a SCALING problem in VC generation,
+    not hard SMT.
+-  3 / 73 emitted solver output at 60s (12 / 216 / 300 body lines) => REACHED_SOLVER even
+    within the original cap: EQ_htqg3z5agdx, EQ_qacza51n1bc, EQ_jqp2kinnr5j.
+- IMPORTANT correction: "pre-solver-stall at 60s" does NOT mean "stall forever". The budget
+    re-probe (240s/60s) of 4 procs that were 0-output at 60s found:
+      * EQ_yo1ortq3kh2 <clinit>: at 240s it got PAST the stall and reached a REAL FAILURE
+        (807 passed, 1 failed at 69s) -> a MASKED PARTIAL hidden by the 60s cap;
+      * EQ_htqg3z5agdx: hard-SMT (239 activity lines, still 124 at 240s);
+      * EQ_ofggc1dth0s, EQ_putl12axces: still 0 output at 240s -> genuine deep pre-solver stall.
+  => the masked-failure risk is NOT confined to the 3 reached-solver cases; at least one of the
+     70 "0-output-at-60s" procs becomes a real failing goal with more time. So TIMEOUT is a
+     genuinely MIXED bucket (deep-stall + hard-SMT + masked-real-failure) and cannot be assumed
+     to be would-be-PASS.
+
+ERROR buckets (14 total):
+- ERR_FNAME (13): proc names 265-278 chars; strata writes per-obligation temp .smt2 files named
+    after the unhashed mangled-Java obligation name -> exceeds OS 255-byte path-component limit
+    (errno 63). Deterministic, name-length-driven. NOT #1331. Fails loudly (no soundness risk).
+    Fix: hash/truncate obligation names in strata temp-file paths.
+- ERR_SOLVERCRASH (1): EQ_knmfqqxigdy; Z3 parse error "Subexpressions must have the same type"
+    equating a floatArrHeap (Map StrataRef (Map BV32 Real)) with a null (StrataRef) — type
+    mismatch in the Java float-array heap SMT lowering. NOT #1331. Fails loudly.
+
+VERIFY RATE: PASS 927 + PASS_0 158 + PASSQ 81 = 1166/1253 = 93.1% — but this is an UPPER BOUND
+on real soundness: the 60s cap hid >=1 real failing goal among the timeouts (confirmed by the
+re-probe), and PASS_0/PASSQ (239) are vacuous discharges. Real-PROOF PASS is 927/1253 = 74.0%.
+The honest statement: ">=74% real proofs, <=93% non-failing; 73 timeouts unresolved (a mix of
+deep VC-gen stalls, hard-SMT, and at least one masked real failure); 14 loud tooling errors;
+0 soundness holes; 0 #1331 regressions."
