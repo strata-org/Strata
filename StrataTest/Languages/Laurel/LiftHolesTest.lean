@@ -45,7 +45,9 @@ procedure test()
 #eval! parseElimAndPrint
 #strata
 program Laurel;
-procedure test() opaque { var x: int := 1 + <?> };
+procedure test()
+  opaque
+{ var x: int := 1 + <?> };
 #end
 
 -- Bare Hole as Assign Declare initializer → replaced with call (no longer preserved as havoc).
@@ -63,7 +65,9 @@ procedure test()
 #eval! parseElimAndPrint
 #strata
 program Laurel;
-procedure test() opaque { var x: int := <?> };
+procedure test()
+  opaque
+{ var x: int := <?> };
 #end
 
 -- Hole in comparison arg inside assert → int (inferred from sibling literal).
@@ -81,7 +85,9 @@ procedure test()
 #eval! parseElimAndPrint
 #strata
 program Laurel;
-procedure test() opaque { assert <?> > 0 };
+procedure test()
+  opaque
+{ assert <?> > 0 };
 #end
 
 -- Hole directly as assert condition → bool.
@@ -99,7 +105,9 @@ procedure test()
 #eval! parseElimAndPrint
 #strata
 program Laurel;
-procedure test() opaque { assert <?> };
+procedure test()
+  opaque
+{ assert <?> };
 #end
 
 -- Hole directly as assume condition → bool.
@@ -117,7 +125,9 @@ procedure test()
 #eval! parseElimAndPrint
 #strata
 program Laurel;
-procedure test() opaque { assume <?> };
+procedure test()
+  opaque
+{ assume <?> };
 #end
 
 -- Hole as if-then-else condition → bool.
@@ -137,7 +147,9 @@ procedure test()
 #eval! parseElimAndPrint
 #strata
 program Laurel;
-procedure test() opaque { if <?> then { assert true } };
+procedure test()
+  opaque
+{ if <?> then { assert true } };
 #end
 
 -- Hole in then-branch of if-then-else inside typed local variable → int.
@@ -155,7 +167,9 @@ procedure test()
 #eval! parseElimAndPrint
 #strata
 program Laurel;
-procedure test() opaque { var x: int := if true then <?> else 0 };
+procedure test()
+  opaque
+{ var x: int := if true then <?> else 0 };
 #end
 
 -- Hole as while-loop condition → bool.
@@ -175,7 +189,9 @@ procedure test()
 #eval! parseElimAndPrint
 #strata
 program Laurel;
-procedure test() opaque { while(<?>) {} };
+procedure test()
+  opaque
+{ while(<?>) {} };
 #end
 
 -- Hole as while-loop invariant → bool.
@@ -196,7 +212,9 @@ procedure test()
 #eval! parseElimAndPrint
 #strata
 program Laurel;
-procedure test() opaque { while(true) invariant <?> {} };
+procedure test()
+  opaque
+{ while(true) invariant <?> {} };
 #end
 
 /-! ## Operators -/
@@ -216,7 +234,9 @@ procedure test()
 #eval! parseElimAndPrint
 #strata
 program Laurel;
-procedure test() opaque { assert true && <?> };
+procedure test()
+  opaque
+{ assert true && <?> };
 #end
 
 -- Hole in Neg inside typed local variable → int.
@@ -234,7 +254,9 @@ procedure test()
 #eval! parseElimAndPrint
 #strata
 program Laurel;
-procedure test() opaque { var x: int := -<?> };
+procedure test()
+  opaque
+{ var x: int := -<?> };
 #end
 
 -- Hole in StrConcat inside typed local variable → string.
@@ -243,7 +265,6 @@ info: function $hole_0()
   returns ($result: string)
   opaque;
 procedure test()
-  opaque
 {
   var s: string := "hello" ++ $hole_0()
 };
@@ -252,7 +273,8 @@ procedure test()
 #eval! parseElimAndPrint
 #strata
 program Laurel;
-procedure test() opaque { var s: string := "hello" ++ <?> };
+procedure test()
+{ var s: string := "hello" ++ <?> };
 #end
 
 /-! ## Multiple holes -/
@@ -275,7 +297,9 @@ procedure test()
 #eval! parseElimAndPrint
 #strata
 program Laurel;
-procedure test() opaque { var x: int := <?> + <?> };
+procedure test()
+  opaque
+{ var x: int := <?> + <?> };
 #end
 
 -- Holes across statements: Mul arg (int) then assert condition (bool).
@@ -297,7 +321,9 @@ procedure test()
 #eval! parseElimAndPrint
 #strata
 program Laurel;
-procedure test() opaque { var x: int := 2 * <?>; assert <?> };
+procedure test()
+  opaque
+{ var x: int := 2 * <?>; assert <?> };
 #end
 
 /-! ## Combinations: holes in nested contexts -/
@@ -319,7 +345,9 @@ procedure test()
 #eval! parseElimAndPrint
 #strata
 program Laurel;
-procedure test() opaque { if 1 + <?> > 0 then { assert true } };
+procedure test()
+  opaque
+{ if 1 + <?> > 0 then { assert true } };
 #end
 
 -- Hole in Implies inside while invariant → bool.
@@ -341,7 +369,9 @@ procedure test()
 #eval! parseElimAndPrint
 #strata
 program Laurel;
-procedure test() opaque { var p: bool; while(true) invariant p ==> <?> {} };
+procedure test()
+  opaque
+{ var p: bool; while(true) invariant p ==> <?> {} };
 #end
 
 -- Hole in Mul inside typed local variable with real type → real.
@@ -359,7 +389,9 @@ procedure test()
 #eval! parseElimAndPrint
 #strata
 program Laurel;
-procedure test() opaque { var r: real := 3.14 * <?> };
+procedure test()
+  opaque
+{ var r: real := 3.14 * <?> };
 #end
 
 /-! ## Call argument and return type inference -/
@@ -379,7 +411,9 @@ procedure test(n: int)
 #eval! parseElimAndPrint
 #strata
 program Laurel;
-procedure test(n: int) opaque { assert n > <?> };
+procedure test(n: int)
+  opaque
+{ assert n > <?> };
 #end
 
 /-! ## Holes in functions -/
@@ -399,7 +433,9 @@ function test(x: int): int
 #eval! parseElimAndPrint
 #strata
 program Laurel;
-function test(x: int): int opaque { <?> };
+function test(x: int): int
+  opaque
+{ <?> };
 #end
 
 /-! ## Nondeterministic holes (<??>) -/
@@ -416,7 +452,9 @@ info: procedure test()
 #eval! parseElimAndPrint
 #strata
 program Laurel;
-procedure test() opaque { assert <??> };
+procedure test()
+  opaque
+{ assert <??> };
 #end
 
 -- Mixed: det hole eliminated, nondet hole preserved.
@@ -435,7 +473,9 @@ procedure test()
 #eval! parseElimAndPrint
 #strata
 program Laurel;
-procedure test() opaque { var x: int := <?>; assert <??> };
+procedure test()
+  opaque
+{ var x: int := <?>; assert <??> };
 #end
 
 /-! ## Holes inside datatype destructor / tester arguments -/
