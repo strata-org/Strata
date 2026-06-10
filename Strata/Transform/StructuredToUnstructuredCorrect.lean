@@ -8664,27 +8664,6 @@ decreasing_by
 end
 
 
-/-- Variant of `stmtsToBlocks_simulation` for when the structured execution
-"exits". Under the `exitsCoveredByBlocks` invariant such an execution is
-impossible, so the conclusion holds vacuously. -/
-private theorem stmtsToBlocks_simulation_exiting {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
-    [HasVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr]
-    (extendEval : ExtendEval P)
-    (ss : List (Stmt P (Cmd P)))
-    (entry : String)
-    (σ_base : SemanticStore P)
-    (hf_base : Bool)
-    (ρ₀ ρ' : Env P) (lbl : String)
-    (h_exits : Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks [] ss)
-    (h_exit : StepStmtStar P (EvalCmd P) extendEval
-      (.stmts ss ρ₀) (.exiting lbl ρ'))
-    (cfg : CFG String (DetBlock String (Cmd P) P)) :
-    ∃ σ_final failed, StepDetCFGStar extendEval cfg
-      (.atBlock entry σ_base hf_base)
-      (.terminal σ_final failed) ∧ σ_final = ρ'.store :=
-  absurd h_exit
-    (block_exitsCoveredByBlocks_noEscape (P := P) (EvalCmd P) extendEval ss h_exits ρ₀ lbl ρ')
-
 /-! ## Top-level theorems -/
 
 /-- Specification lemma: `stmtsToCFG` produces a CFG whose blocks come from
@@ -8872,26 +8851,6 @@ theorem stmtsToCFG_terminal {P : PureExpr} [HasFvar P] [HasNot P]
       cfg h_blocks h_nodup
   have h_end := end_block_terminal extendEval cfg lend σ_cfg ρ'.eval ρ'.hasFailure h_lend
   exact ⟨σ_cfg, StepDetCFGStar_trans h_sim h_end, h_agree⟩
-
-/-- If the structured program reaches an exiting state, the CFG also reaches
-    a corresponding terminal state (vacuously, since `exitsCoveredByBlocks`
-    rules out top-level `.exiting`). -/
-theorem stmtsToCFG_exiting {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
-    [HasVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr]
-    (extendEval : ExtendEval P)
-    (ss : List (Stmt P (Cmd P)))
-    (ρ₀ ρ' : Env P) (lbl : String)
-    (h_exits : Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks [] ss)
-    (h_exit : StepStmtStar P (EvalCmd P) extendEval
-      (.stmts ss ρ₀) (.exiting lbl ρ')) :
-    let cfg := stmtsToCFG ss
-    ∃ σ_final failed,
-      StepDetCFGStar extendEval cfg
-        (.atBlock cfg.entry ρ₀.store false)
-        (.terminal σ_final failed) ∧
-      σ_final = ρ'.store :=
-  stmtsToBlocks_simulation_exiting extendEval ss (stmtsToCFG ss).entry
-    ρ₀.store false ρ₀ ρ' lbl h_exits h_exit (stmtsToCFG ss)
 
 /-! ## Main theorems -/
 
