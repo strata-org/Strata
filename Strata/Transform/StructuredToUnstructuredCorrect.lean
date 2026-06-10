@@ -4403,6 +4403,310 @@ theorem loop_det_decompose_h_gen
          gen_r, gen_le, gen_b, gen_f,
          h_rest_eq, h_le_eq, h_body_eq, h_flush_eq, h_gen_eq, h_entry_eq, h_blocks_eq⟩
 
+/-- Run the (empty-cmds) loop-entry `condGoto` to its true branch: from
+`.atBlock lentry σ hf` to `.atBlock bl σ hf`.  Bridges the structured guard
+`ρ.eval ρ.store g = tt` to the CFG store via `StoreAgreement` + congruence. -/
+private theorem lentry_condGoto_true {P : PureExpr} [HasFvar P] [HasNot P]
+    [HasVarsPure P P.Expr]
+    (extendEval : ExtendEval P)
+    (cfg : CFG String (DetBlock String (Cmd P) P))
+    (lentry bl kNext : String) (md : MetaData P) (g : P.Expr)
+    (δ : SemanticEval P) (σ_struct σ_cfg : SemanticStore P) (hf : Bool)
+    (h_lkp : cfg.blocks.lookup lentry = some ⟨[], .condGoto g bl kNext md⟩)
+    (h_agree : StoreAgreement σ_struct σ_cfg)
+    (hwfb : WellFormedSemanticEvalBool δ)
+    (h_wf_def : WellFormedSemanticEvalDef δ)
+    (h_congr : WellFormedSemanticEvalExprCongr δ)
+    (h_cond : δ σ_struct g = .some HasBool.tt) :
+    StepDetCFGStar extendEval cfg
+      (.atBlock lentry σ_cfg hf) (.atBlock bl σ_cfg hf) := by
+  have h_def_g : isDefined σ_struct (HasVarsPure.getVars g) :=
+    h_wf_def g HasBool.tt σ_struct h_cond
+  have h_pointwise : ∀ y ∈ HasVarsPure.getVars g, σ_struct y = σ_cfg y :=
+    store_agreement_pointwise_on_expr_vars σ_struct σ_cfg g h_agree h_def_g
+  have h_cond_cfg : δ σ_cfg g = .some HasBool.tt :=
+    h_cond ▸ (h_congr g σ_struct σ_cfg h_pointwise).symm
+  have h_run := run_block_goto_true (extendEval := extendEval) (cfg := cfg)
+                  (f_base := hf) h_lkp (EvalCmds.eval_cmds_none) h_cond_cfg hwfb h_congr
+  simpa using h_run
+
+/-- Run the (empty-cmds) loop-entry `condGoto` to its false branch: from
+`.atBlock lentry σ hf` to `.atBlock kNext σ hf`. -/
+private theorem lentry_condGoto_false {P : PureExpr} [HasFvar P] [HasNot P]
+    [HasVarsPure P P.Expr]
+    (extendEval : ExtendEval P)
+    (cfg : CFG String (DetBlock String (Cmd P) P))
+    (lentry bl kNext : String) (md : MetaData P) (g : P.Expr)
+    (δ : SemanticEval P) (σ_struct σ_cfg : SemanticStore P) (hf : Bool)
+    (h_lkp : cfg.blocks.lookup lentry = some ⟨[], .condGoto g bl kNext md⟩)
+    (h_agree : StoreAgreement σ_struct σ_cfg)
+    (hwfb : WellFormedSemanticEvalBool δ)
+    (h_wf_def : WellFormedSemanticEvalDef δ)
+    (h_congr : WellFormedSemanticEvalExprCongr δ)
+    (h_cond : δ σ_struct g = .some HasBool.ff) :
+    StepDetCFGStar extendEval cfg
+      (.atBlock lentry σ_cfg hf) (.atBlock kNext σ_cfg hf) := by
+  have h_def_g : isDefined σ_struct (HasVarsPure.getVars g) :=
+    h_wf_def g HasBool.ff σ_struct h_cond
+  have h_pointwise : ∀ y ∈ HasVarsPure.getVars g, σ_struct y = σ_cfg y :=
+    store_agreement_pointwise_on_expr_vars σ_struct σ_cfg g h_agree h_def_g
+  have h_cond_cfg : δ σ_cfg g = .some HasBool.ff :=
+    h_cond ▸ (h_congr g σ_struct σ_cfg h_pointwise).symm
+  have h_run := run_block_goto_false (extendEval := extendEval) (cfg := cfg)
+                  (f_base := hf) h_lkp (EvalCmds.eval_cmds_none) h_cond_cfg hwfb h_congr
+  simpa using h_run
+
+/-- Peel one iteration off a det loop's body+continuation derivation.  Given
+the `step_loop_enter` continuation `.seq (.block .none ρ_pre.store (.stmts body
+ρ_body_init)) [.loop ...]` reaches terminal, decompose into: the body's stmts
+run reaches `.terminal ρ_inner`; the block projection produces `ρ_block`; and
+the next loop iteration's `.stmt loop ρ_block` derivation reaches the same
+terminal with strictly smaller length.  Specialized to `inv = []`, `m = none`,
+and `ρ_body_init = ρ_pre` (the `|| false` collapse). -/
+private theorem peel_off_one_iteration_det {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
+    [HasVal P] [HasBoolVal P] [HasVarsPure P P.Expr]
+    (extendEval : ExtendEval P)
+    (g : P.Expr) (body : List (Stmt P (Cmd P))) (md : MetaData P)
+    (ρ_pre ρ_post_loop : Env P)
+    (hrest : ReflTransT (StepStmt P (EvalCmd P) extendEval)
+       (.seq (.block .none ρ_pre.store
+                (.stmts body { ρ_pre with hasFailure := ρ_pre.hasFailure || false }))
+             [.loop (.det g) none [] body md])
+       (.terminal ρ_post_loop)) :
+    ∃ (ρ_inner : Env P) (ρ_block : Env P),
+      StepStmtStar P (EvalCmd P) extendEval
+        (.stmts body { ρ_pre with hasFailure := ρ_pre.hasFailure || false })
+        (.terminal ρ_inner) ∧
+      ρ_block = { ρ_inner with store := projectStore ρ_pre.store ρ_inner.store } ∧
+      ∃ (h_inner_T : ReflTransT (StepStmt P (EvalCmd P) extendEval)
+                      (.stmt (Stmt.loop (.det g) none [] body md) ρ_block)
+                      (.terminal ρ_post_loop)),
+        h_inner_T.len < hrest.len := by
+  have ⟨ρ_block_temp, h_block_term, h_loop_stmts, hlen_seq⟩ :=
+    seqT_reaches_terminal' extendEval hrest
+  have ⟨ρ_inner, h_inner_term, heq_ρ_block, hlen_inner⟩ :=
+    blockT_none_reaches_terminal' extendEval h_block_term
+  have ⟨ρ_x, h_loop_T_T, h_nil, hlen_cons⟩ :=
+    stmtsT_cons_terminal' extendEval h_loop_stmts
+  have hρ_x_eq : ρ_x = ρ_post_loop := by
+    match h_nil with
+    | .step _ _ _ .step_stmts_nil hr2 =>
+      match hr2 with
+      | .refl _ => rfl
+      | .step _ _ _ h _ => exact nomatch h
+  subst hρ_x_eq
+  refine ⟨ρ_inner, ρ_block_temp, ?_, heq_ρ_block, h_loop_T_T, ?_⟩
+  · exact reflTransT_to_prop h_inner_term
+  · omega
+
+/-- `_to_cont` peel for the det loop: given the body+continuation derivation
+reaches `.exiting label`, decompose into a `Sum`: either this iteration's body
+exits (caseA), or this iteration terminates and the next loop iteration exits
+(caseB, with strictly smaller derivation length). -/
+private theorem peel_off_one_iteration_to_cont_det {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
+    [HasVal P] [HasBoolVal P] [HasVarsPure P P.Expr]
+    (extendEval : ExtendEval P)
+    (g : P.Expr) (body : List (Stmt P (Cmd P))) (md : MetaData P)
+    (ρ_pre ρ_post_loop : Env P) (label : String)
+    (hrest : ReflTransT (StepStmt P (EvalCmd P) extendEval)
+       (.seq (.block .none ρ_pre.store
+                (.stmts body { ρ_pre with hasFailure := ρ_pre.hasFailure || false }))
+             [.loop (.det g) none [] body md])
+       (.exiting label ρ_post_loop)) :
+    (∃ ρ_body_exit,
+      StepStmtStar P (EvalCmd P) extendEval
+        (.stmts body { ρ_pre with hasFailure := ρ_pre.hasFailure || false })
+        (.exiting label ρ_body_exit) ∧
+      ρ_post_loop = { ρ_body_exit with
+        store := projectStore ρ_pre.store ρ_body_exit.store }) ∨
+    (∃ (ρ_inner : Env P) (ρ_block : Env P),
+      StepStmtStar P (EvalCmd P) extendEval
+        (.stmts body { ρ_pre with hasFailure := ρ_pre.hasFailure || false })
+        (.terminal ρ_inner) ∧
+      ρ_block = { ρ_inner with store := projectStore ρ_pre.store ρ_inner.store } ∧
+      ∃ (h_inner_T : ReflTransT (StepStmt P (EvalCmd P) extendEval)
+                      (.stmt (Stmt.loop (.det g) none [] body md) ρ_block)
+                      (.exiting label ρ_post_loop)),
+        h_inner_T.len < hrest.len) := by
+  match seqT_reaches_exiting' extendEval hrest with
+  | .inl ⟨h_block_exit, hlen_seq⟩ =>
+    have ⟨ρ_body_exit, h_body_exit_T, heq_ρ_post, hlen_block⟩ :=
+      blockT_none_reaches_exiting' extendEval h_block_exit
+    exact .inl ⟨ρ_body_exit, reflTransT_to_prop h_body_exit_T, heq_ρ_post⟩
+  | .inr ⟨ρ_block_temp, h_block_term, h_loop_stmts, hlen_seq⟩ =>
+    have ⟨ρ_inner, h_inner_term, heq_ρ_block, hlen_inner⟩ :=
+      blockT_none_reaches_terminal' extendEval h_block_term
+    match stmtsT_cons_exiting' extendEval h_loop_stmts with
+    | .inl ⟨h_loop_T_E, hlen_cons⟩ =>
+      refine .inr ⟨ρ_inner, ρ_block_temp, reflTransT_to_prop h_inner_term,
+        heq_ρ_block, h_loop_T_E, ?_⟩
+      omega
+    | .inr ⟨ρ_x, h_loop_T_T, h_nil, hlen_cons⟩ =>
+      exfalso
+      match h_nil with
+      | .step _ _ _ .step_stmts_nil hr2 =>
+        match hr2 with
+        | .step _ _ _ h _ => exact nomatch h
+
+set_option linter.unusedVariables false in
+/-- Iterate the deterministic loop until termination (small-step).  Inducts on
+the structured-loop derivation length; each iteration consumes a
+`step_loop_enter` prefix of `h_term`, leaving a strictly shorter tail.
+Base case: `step_loop_exit` (guard false), where lentry's condGoto picks
+`kNext`.  The CFG side of each iteration is `lentry →(cond true) bl →(body
+sim) lentry`; the failure flag tracks `ρ_pre'.hasFailure` per iteration. -/
+private theorem loop_iterations_det
+    {P : PureExpr} [HasFvar P] [HasNot P]
+    [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P]
+    [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [LawfulHasFvar P] [LawfulHasBool P] [LawfulHasIdent P]
+    [LawfulHasIntOrder P] [LawfulHasNot P]
+    (extendEval : ExtendEval P)
+    (g : P.Expr) (body : List (Stmt P (Cmd P))) (md : MetaData P)
+    (ρ_pre ρ_post_loop : Env P)
+    (cfg : CFG String (DetBlock String (Cmd P) P))
+    (lentry kNext bl : String)
+    (σ_cfg_pre : SemanticStore P)
+    (h_lentry_lkp : cfg.blocks.lookup lentry = some ⟨[], .condGoto g bl kNext md⟩)
+    (h_agree_pre : StoreAgreement ρ_pre.store σ_cfg_pre)
+    (h_term : StepStmtStar P (EvalCmd P) extendEval
+       (.stmt (Stmt.loop (.det g) none [] body md) ρ_pre)
+       (.terminal ρ_post_loop))
+    (h_body_no_inits : Block.initVars body = [])
+    (h_nofd_body : Block.noFuncDecl body = true)
+    (h_body_sim_at :
+       ∀ (ρ_iter : Env P) (σ_cfg_iter : SemanticStore P),
+         ρ_iter.eval = ρ_pre.eval →
+         StoreAgreement ρ_iter.store σ_cfg_iter →
+         ∀ (ρ_body : Env P), StepStmtStar P (EvalCmd P) extendEval
+             (.stmts body ρ_iter) (.terminal ρ_body) →
+           ∃ σ_cfg_after_body,
+             StepDetCFGStar extendEval cfg
+               (.atBlock bl σ_cfg_iter ρ_iter.hasFailure)
+               (.atBlock lentry σ_cfg_after_body ρ_body.hasFailure) ∧
+             StoreAgreement ρ_body.store σ_cfg_after_body)
+    (hwfb_pre : WellFormedSemanticEvalBool ρ_pre.eval)
+    (hwfv_pre : WellFormedSemanticEvalVal ρ_pre.eval)
+    (hwfvar_pre : WellFormedSemanticEvalVar ρ_pre.eval)
+    (hwf_def_pre : WellFormedSemanticEvalDef ρ_pre.eval)
+    (hwfcongr_pre : WellFormedSemanticEvalExprCongr ρ_pre.eval) :
+    ∃ σ_cfg_kNext,
+      StepDetCFGStar extendEval cfg
+        (.atBlock lentry σ_cfg_pre ρ_pre.hasFailure)
+        (.atBlock kNext σ_cfg_kNext ρ_post_loop.hasFailure) ∧
+      StoreAgreement ρ_post_loop.store σ_cfg_kNext := by
+  have hT : ReflTransT (StepStmt P (EvalCmd P) extendEval)
+      (.stmt (Stmt.loop (.det g) none [] body md) ρ_pre)
+      (.terminal ρ_post_loop) := reflTrans_to_T h_term
+  suffices h_inner :
+    ∀ n (ρ_pre' ρ_post' : Env P) (σ_cfg_pre' : SemanticStore P),
+      ρ_pre'.eval = ρ_pre.eval →
+      WellFormedSemanticEvalBool ρ_pre'.eval →
+      WellFormedSemanticEvalDef ρ_pre'.eval →
+      WellFormedSemanticEvalExprCongr ρ_pre'.eval →
+      StoreAgreement ρ_pre'.store σ_cfg_pre' →
+      ∀ (hT' : ReflTransT (StepStmt P (EvalCmd P) extendEval)
+                 (.stmt (Stmt.loop (.det g) none [] body md) ρ_pre')
+                 (.terminal ρ_post')),
+        hT'.len ≤ n →
+        ∃ σ_cfg_kNext',
+          StepDetCFGStar extendEval cfg
+            (.atBlock lentry σ_cfg_pre' ρ_pre'.hasFailure)
+            (.atBlock kNext σ_cfg_kNext' ρ_post'.hasFailure) ∧
+          StoreAgreement ρ_post'.store σ_cfg_kNext' from
+    h_inner hT.len ρ_pre ρ_post_loop σ_cfg_pre rfl
+      hwfb_pre hwf_def_pre hwfcongr_pre h_agree_pre hT (Nat.le_refl _)
+  intro n
+  induction n with
+  | zero =>
+    intros ρ_pre' ρ_post' σ_cfg_pre' h_eval_eq hwfb' hwf_def' hwfcongr' h_agree' hT' hlen'
+    match hT', hlen' with
+    | .step _ _ _ hab hbc, hl => simp [ReflTransT.len] at hl
+  | succ n ih =>
+    intros ρ_pre' ρ_post' σ_cfg_pre' h_eval_eq hwfb' hwf_def' hwfcongr' h_agree' hT' hlen'
+    match hT', hlen' with
+    | .step _ _ _ (@StepStmt.step_loop_exit _ _ _ _ _ _ _ _ _ _ _ _
+                    hasInvFailure hg_false hinv_eval hff_iff hwfb_step) hrest, hl_succ =>
+      -- BASE CASE: guard false.  inv = [], so hasInvFailure = false.
+      have h_hif : hasInvFailure = false := by
+        cases hasInvFailure with
+        | false => rfl
+        | true =>
+          obtain ⟨le, hle, _⟩ := hff_iff.mp rfl
+          simp at hle
+      subst h_hif
+      have hρ_eq : ρ_post' = ρ_pre' := by
+        have : ρ_post' = { ρ_pre' with hasFailure := ρ_pre'.hasFailure || false } := by
+          match hrest with
+          | .refl _ => rfl
+          | .step _ _ _ h _ => exact nomatch h
+        simpa using this
+      subst hρ_eq
+      refine ⟨σ_cfg_pre', ?_, h_agree'⟩
+      exact lentry_condGoto_false extendEval cfg lentry bl kNext md g
+        ρ_post'.eval ρ_post'.store σ_cfg_pre' ρ_post'.hasFailure h_lentry_lkp h_agree'
+        hwfb' hwf_def' hwfcongr' hg_false
+    | .step _ _ _ (@StepStmt.step_loop_enter _ _ _ _ _ _ _ _ _ _ _ _
+                    hasInvFailure hg_true hinv_eval hff_iff hwfb_step) hrest, hl_succ =>
+      -- INDUCTIVE CASE: guard true.  inv = [], so hasInvFailure = false.
+      have h_hif : hasInvFailure = false := by
+        cases hasInvFailure with
+        | false => rfl
+        | true =>
+          obtain ⟨le, hle, _⟩ := hff_iff.mp rfl
+          simp at hle
+      subst h_hif
+      -- Peel one iteration off the structured derivation.
+      have ⟨ρ_inner, ρ_block, h_body_struct, hρ_block_eq, h_inner_T, h_inner_len⟩ :=
+        peel_off_one_iteration_det extendEval g body md ρ_pre' ρ_post' hrest
+      -- The body runs from ρ_body_init := { ρ_pre' with hasFailure := ρ_pre'.hasFailure || false }.
+      -- Simplify: ρ_body_init = ρ_pre' (since || false is identity on hasFailure).
+      have h_body_init_eq :
+          ({ ρ_pre' with hasFailure := ρ_pre'.hasFailure || false } : Env P) = ρ_pre' := by
+        simp
+      rw [h_body_init_eq] at h_body_struct
+      -- CFG step 1: lentry → bl (guard true).
+      have h_step_enter : StepDetCFGStar extendEval cfg
+          (.atBlock lentry σ_cfg_pre' ρ_pre'.hasFailure)
+          (.atBlock bl σ_cfg_pre' ρ_pre'.hasFailure) :=
+        lentry_condGoto_true extendEval cfg lentry bl kNext md g
+          ρ_pre'.eval ρ_pre'.store σ_cfg_pre' ρ_pre'.hasFailure h_lentry_lkp h_agree'
+          hwfb' hwf_def' hwfcongr' hg_true
+      -- CFG step 2: bl → lentry (body sim).
+      have ⟨σ_cfg_after_body, h_step_body, h_agree_after_body⟩ :=
+        h_body_sim_at ρ_pre' σ_cfg_pre' h_eval_eq h_agree' ρ_inner h_body_struct
+      -- ρ_block = { ρ_inner with store := projectStore ρ_pre'.store ρ_inner.store }.
+      -- Block.initVars body = [], so projection leaves the store agreement intact.
+      have h_agree_block : StoreAgreement ρ_block.store σ_cfg_after_body :=
+        StoreAgreement.through_projectStore hρ_block_eq h_agree_after_body
+      have h_hf_block : ρ_block.hasFailure = ρ_inner.hasFailure := by rw [hρ_block_eq]
+      have hρ_block_eval : ρ_block.eval = ρ_pre'.eval := by
+        rw [hρ_block_eq]
+        show ρ_inner.eval = ρ_pre'.eval
+        have := smallStep_noFuncDecl_preserves_eval_block P (EvalCmd P) extendEval body
+                ρ_pre' ρ_inner h_nofd_body h_body_struct
+        rw [this]
+      have h_eval_eq_block : ρ_block.eval = ρ_pre.eval := by
+        rw [hρ_block_eval]; exact h_eval_eq
+      have hwfb_block : WellFormedSemanticEvalBool ρ_block.eval := by
+        rw [hρ_block_eval]; exact hwfb'
+      have hwf_def_block : WellFormedSemanticEvalDef ρ_block.eval := by
+        rw [hρ_block_eval]; exact hwf_def'
+      have hwfcongr_block : WellFormedSemanticEvalExprCongr ρ_block.eval := by
+        rw [hρ_block_eval]; exact hwfcongr'
+      have h_inner_le_n : h_inner_T.len ≤ n := by
+        simp [ReflTransT.len] at hl_succ; omega
+      -- Recurse on the next iteration.
+      have ⟨σ_cfg_kNext, h_run_recurse, h_agree_post⟩ :=
+        ih ρ_block ρ_post' σ_cfg_after_body h_eval_eq_block
+           hwfb_block hwf_def_block hwfcongr_block
+           h_agree_block h_inner_T h_inner_le_n
+      refine ⟨σ_cfg_kNext, ?_, h_agree_post⟩
+      -- Compose: lentry → bl → lentry → ... → kNext.
+      -- Transport h_run_recurse's start flag ρ_block.hasFailure to ρ_inner.hasFailure.
+      rw [h_hf_block] at h_run_recurse
+      exact StepDetCFGStar_trans (StepDetCFGStar_trans h_step_enter h_step_body) h_run_recurse
+
 end InlineLoopHelpers
 
 set_option maxHeartbeats 3200000 in
