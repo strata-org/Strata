@@ -22,10 +22,10 @@ namespace Strata.Laurel
 
 def compositeBv32Field := r"
 composite Register {
-  var value: bv 32
+  var value: bv 16
 }
 
-procedure writeAndRead(r: Register, x: bv 32)
+procedure writeValue(r: Register, x: bv 16)
   opaque
   ensures r#value == x
   modifies r
@@ -33,12 +33,23 @@ procedure writeAndRead(r: Register, x: bv 32)
   r#value := x
 };
 
-// Error: postcondition violation — field does not change without assignment
-procedure readWithoutWrite(r: Register, x: bv 32)
+// Test using bv literal directly
+procedure writeLiteral(r: Register)
   opaque
-  ensures r#value == x
-//        ^^^^^^^^^^^^ error: assertion does not hold
+  ensures r#value == 100 bv 16
+  modifies r
 {
+  r#value := 100 bv 16
+};
+
+// Error: postcondition claims field equals wrong literal
+procedure writeWrongLiteral(r: Register)
+  opaque
+  ensures r#value == 100 bv 16
+//        ^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+  modifies r
+{
+  r#value := 200 bv 16
 };
 "
 
