@@ -48,7 +48,7 @@ private def mkProc (name : String) (postcond : Expression.Expr) : Decl :=
       preconditions  := []
       postconditions := [(s!"{name}_ensures_0", { expr := postcond })]
     }
-    body := [.assume "body" (.true ()) #[]]
+    body := .structured [.assume "body" (.true ()) #[]]
   } #[]
 
 private def castVerifyProg : Core.Program :=
