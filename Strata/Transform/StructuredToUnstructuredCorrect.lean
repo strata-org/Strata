@@ -1962,7 +1962,7 @@ private theorem stmtsToBlocks_invariant
     -- Sub-computations: rest, gen "ite", tss, fss, optional gen "$__nondet_ite$",
     -- flushCmds (with condGoto transfer). The output is
     -- accumBlocks ++ tbs ++ fbs ++ bsNext.
-    simp only [stmtsToBlocks, bind, StateT.bind, pure, StateT.pure] at h_gen
+    simp only [stmtsToBlocks, bind, StateT.bind, pure] at h_gen
     -- Decompose monadic chain
     generalize h_rest_eq : stmtsToBlocks k rest exitConts [] gen = r_rest at h_gen
     obtain ⟨⟨kNext, bsNext⟩, gen_r⟩ := r_rest
@@ -5927,7 +5927,7 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
               (h_step_b_to_f.subset (h_step_le_to_b.subset (h_step_r_to_le.subset h_in_r))))
       exact h_preserve_rest x h_x_fresh_loop h_nil_not h_x_not_rest h_guard_rest
   | .block label body md :: rest =>
-    simp only [stmtsToBlocks, bind, StateT.bind, pure, StateT.pure] at h_gen
+    simp only [stmtsToBlocks, bind, StateT.bind, pure] at h_gen
     -- Decompose the monadic chain
     generalize h_rest_eq : stmtsToBlocks k rest exitConts [] gen = r_rest at h_gen
     obtain ⟨⟨kNext, bsNext⟩, gen_r⟩ := r_rest
@@ -6980,7 +6980,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
     intro x h_σ_x h_x_not_accum _ _
     exact h_preserve x h_σ_x h_x_not_accum
   | .block label' body md :: rest =>
-    simp only [stmtsToBlocks, bind, StateT.bind, pure, StateT.pure] at h_gen
+    simp only [stmtsToBlocks, bind, StateT.bind, pure] at h_gen
     -- Decompose the monadic chain
     generalize h_rest_eq : stmtsToBlocks k rest exitConts [] gen = r_rest at h_gen
     obtain ⟨⟨kNext, bsNext⟩, gen_r⟩ := r_rest
