@@ -27,6 +27,47 @@ public class FieldTypeCollector : ReadOnlyVisitor {
     }
 }
 
+// Collects the names of global variables referenced under an `old(...)`
+// expression anywhere in the visited subtree. Strata's typechecker mints
+// `old`-resolvable fvars only for inout parameters; BoogieToStrata emits a
+// global as inout iff it is in the procedure's `modifies`. So a global that is
+// only *read* via `old(g)` in a requires/ensures (g ∉ modifies) is emitted
+// read-only and has no `old`-fvar, producing
+// `Cannot find this fvar in the context! old g`. The translator widens the
+// effective-modifies set with these names so such globals become inout.
+// Boogie permits `old(e)` for any in-scope `e` regardless of modifies; widening
+// the Strata modifies set is sound (a wider modifies is a strictly weaker spec).
+public class OldGlobalCollector : ReadOnlyVisitor {
+    private readonly HashSet<string> _globalNames;
+    private readonly HashSet<string> _collected = [];
+    private int _oldDepth = 0;
+
+    public OldGlobalCollector(IEnumerable<string> globalNames) {
+        _globalNames = new HashSet<string>(globalNames);
+    }
+
+    public IReadOnlySet<string> Collected => _collected;
+
+    public override Expr VisitOldExpr(OldExpr node) {
+        _oldDepth++;
+        var result = base.VisitOldExpr(node);
+        _oldDepth--;
+        return result;
+    }
+
+    public override Expr VisitIdentifierExpr(IdentifierExpr node) {
+        // Only collect identifiers that appear under an `old(...)` and name a
+        // global. `node.Decl is GlobalVariable` is the post-resolution check;
+        // fall back to the name set if Decl is unavailable.
+        if (_oldDepth > 0 &&
+            (node.Decl is GlobalVariable || _globalNames.Contains(node.Name)) &&
+            _globalNames.Contains(node.Name)) {
+            _collected.Add(node.Name);
+        }
+        return base.VisitIdentifierExpr(node);
+    }
+}
+
 public class StrataGenerator : ReadOnlyVisitor {
     /// <summary>
     /// Synthetic label representing procedure exit. Used as a goto target for
@@ -53,6 +94,14 @@ public class StrataGenerator : ReadOnlyVisitor {
     // Global variables collected from the program, used to convert them
     // into inout/input parameters on procedure headers and call sites.
     private List<GlobalVariable> _globalVariables = [];
+    // Per-procedure cache of the *effective* modifies set: the declared
+    // `modifies` union the globals referenced under `old(...)` in the proc's
+    // requires/ensures. Keyed by procedure name. Both the declaration site
+    // (WriteProcedureHeader) and every call site (VisitCallCmd) must agree on
+    // this set so the inout-then-readonly parameter/argument order stays in
+    // sync; computing it once per procedure and consulting it at both sites is
+    // what keeps them consistent. See OldGlobalCollector.
+    private readonly Dictionary<string, HashSet<string>> _effectiveModifiesCache = new();
     // Renames for declarations whose sanitized name collides with another
     // declaration. Keyed by Boogie Declaration object to avoid ambiguity
     // when two entities share the same original name (e.g., const main and
@@ -1029,7 +1078,10 @@ public class StrataGenerator : ReadOnlyVisitor {
 
     public override Cmd VisitCallCmd(CallCmd node) {
         var callee = node.Proc;
-        var modifiesNames = new HashSet<string>(callee.Modifies.Select(m => m.Name));
+        // Use the callee's *effective* modifies set so the inout-then-readonly
+        // argument order here matches the callee's widened parameter order in
+        // WriteProcedureHeader.
+        var modifiesNames = EffectiveModifies(callee);
 
         Indent("call ");
         WriteText($"{NameOf(callee, callee.Name)}(");
@@ -1887,9 +1939,33 @@ public class StrataGenerator : ReadOnlyVisitor {
         return false;
     }
 
+    // The effective modifies set for `proc`: declared `modifies` union the
+    // globals referenced under `old(...)` in its requires/ensures. Cached and
+    // keyed by procedure name so the declaration and all call sites agree.
+    private HashSet<string> EffectiveModifies(Procedure proc) {
+        if (_effectiveModifiesCache.TryGetValue(proc.Name, out var cached)) {
+            return cached;
+        }
+        var names = new HashSet<string>(proc.Modifies.Select(m => m.Name));
+        var globalNames = _globalVariables.Select(g => g.Name);
+        var collector = new OldGlobalCollector(globalNames);
+        foreach (var req in proc.Requires) {
+            collector.Visit(req.Condition);
+        }
+        foreach (var ens in proc.Ensures) {
+            collector.Visit(ens.Condition);
+        }
+        names.UnionWith(collector.Collected);
+        _effectiveModifiesCache[proc.Name] = names;
+        return names;
+    }
+
     private void WriteProcedureHeader(Procedure proc) {
-        // Modifies globals become inout params; read-only globals become input params.
-        var modifiesNames = new HashSet<string>(proc.Modifies.Select(m => m.Name));
+        // Modifies globals become inout params; read-only globals become input
+        // params. "Modifies" here is the *effective* set: declared modifies plus
+        // any global referenced under `old(...)` in the spec (so the `old`-fvar
+        // resolves in Strata's typechecker, which only mints them for inout).
+        var modifiesNames = EffectiveModifies(proc);
         var modifiesGlobals = _globalVariables.Where(g => modifiesNames.Contains(g.Name)).ToList();
         var readOnlyGlobals = _globalVariables.Where(g => !modifiesNames.Contains(g.Name)).ToList();
 
