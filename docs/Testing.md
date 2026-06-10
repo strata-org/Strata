@@ -104,9 +104,11 @@ inference and elimination, short-circuit desugaring, imperative-expression
 lifting, constrained-type elimination, …) before translating to Core and
 verifying. Several of those passes re-run `resolve` on their output. So a
 diagnostic that only `testLaurel` surfaces may originate from a later pass,
-not the verifier. The pass list and ordering live in
+not the verifier. The major passes are described in the **Translation
+Pipeline** section of [the Laurel language manual](verso/LaurelDoc.lean); the
+full pass list and exact ordering live in
 [`Strata/Languages/Laurel/LaurelCompilationPipeline.lean`](../Strata/Languages/Laurel/LaurelCompilationPipeline.lean)
-(`laurelPipeline`); there is no separate prose doc for the pipeline yet.
+(`laurelPipeline`).
 
 ```lean
 #eval testLaurelResolution
