@@ -66,15 +66,10 @@ EQ portfolio sweep + A6 counter-axis → INDEX "Aaron's EQ portfolio sweep".)
 
 ## Investigations
 
-### Qualitative analysis of the 15 PASS-? unreachable cases
-
-**Status:** RESOLVED — see [`v6-pass-question-mark-classification.md`](v6-pass-question-mark-classification.md).
-
-**Outcome.** All 15 PASS-? cases share one mechanism: CFG-eval explores the loop's exit branch using *concrete pre-loop* induction-variable values, producing path conditions `assume false` whenever the loop guard is initially true. This is an EVALUATOR-GAP class (not a translator artifact, not a genuine vacuity). Caught with local `dbg_trace` instrumentation in `Verifier.lean`.
-
-**Implication for matrix interpretation.** Of the 15: 9 are **would-be-PASS** (genuinely safe, vacuous due to evaluator gap) and 6 are **would-be-FAIL** (genuinely unsafe under SV-COMP oracle, hidden behind vacuity). Matrix's PASS column over-counts by 9 in the safe direction and under-counts unsafe-detection by 6.
-
-**Follow-up (separate item).** Implement CFG-eval loop-handling fix: replace loop-modified-set with fresh symbolic variables on entering the loop, so the exit branch's path conditions don't pin the guard to pre-loop concrete values. See classification report §"Recommended fixes, ranked" for three options.
+(The resolved "Qualitative analysis of the 15 PASS-? unreachable cases"
+investigation moved to [`reports/INDEX.md`](INDEX.md) on 2026-06-09 — see the
+`v6-pass-question-mark-classification.md` row. Its open follow-up, the
+CFG-eval loop-handling fix, remains below.)
 
 ### CFG-eval loop-handling: havoc loop-modified-set on exit-branch entry
 
@@ -104,15 +99,11 @@ EQ portfolio sweep + A6 counter-axis → INDEX "Aaron's EQ portfolio sweep".)
 
 **Next action.** Scope the CFG-level loop-elim pass as a `Strata/Transform/` addition (new file, e.g. `CFGLoopElim.lean`, modeled on `LoopElim.lean`) + a `PipelinePhase` wiring in `Verifier.lean`'s `corePipelinePhases`. Estimated 1-2 days. Workflow `wpqfi3man` (evalCFGBody OOM TDD) may produce a complementary direct-fix candidate; reconcile when it lands.
 
-### Irreducible control flow census — closed (0 found); motivates CFG-level loop-elim
-
-**Status:** RESOLVED-OBSERVATIONAL (2026-06-09, workflow `wqlj6z95v`). Full detail: [`reports/irreducible-cfg-census-2026-06-09.md`](irreducible-cfg-census-2026-06-09.md).
-
-**Finding.** **Zero irreducible CFGs** across all three corpora — EQ-200 (0/3293 procs), SMACK pilot (0/469), StrataExamples (0/5); 3,767 procedures total, 313 loop-bearing, all reducible single-header natural loops (`n_back_edges == n_natural_loops` on every proc). Structural reason: SMACK lowers C (incl. goto/break/continue) and javac lowers Java, and `stmtsToCFG` lowers every `while`, all into reducible CFGs by construction. `Tools/BoogieToStrata/Source/StrataGenerator.cs:1329,1340` actively *rejects* irreducible flow with a `StrataConversionException`, so it never reaches Strata. (Note: the planning premise about `Tools/BoogieToStrata/Docs/cfg-emission-design.md` was wrong — that file doesn't exist; motivation lives in `STATUS.md` + the StrataGenerator rejection.)
-
-**Consequence for loop-elim.** Irreducible-loop handling (node-splitting / per-entry invariants) is moot — zero frequency, real cost, no payoff; the existing rejection is correct. But the census's load-bearing byproduct is the **confirmed root cause of #29** and the recommendation to build a **CFG-level loop-elim pass** for the reducible common case — see the "CFG-eval memory profile" entry above.
-
-**Next action.** None for irreducibility itself. The actionable output is the CFG-level loop-elim pass (tracked above). Cheap cleanup: the SMACK pilot census covered 48/94 `.bpl` (loop-weighted sample); translating the other 46 would close the coverage caveat (expect same all-reducible result).
+(The resolved "Irreducible control flow census" investigation — 0 irreducible
+CFGs across all 3,767 procedures; confirmed the #29 root cause — moved to
+[`reports/INDEX.md`](INDEX.md) on 2026-06-09. Its actionable output, the
+CFG-level loop-elim pass, is tracked in the *CFG-eval memory profile #29* entry
+above.)
 
 ### EQ-200 corpus: pre-solver elaboration TIMEOUT cluster (anomaly A7)
 
@@ -156,11 +147,9 @@ EQ portfolio sweep + A6 counter-axis → INDEX "Aaron's EQ portfolio sweep".)
 
 ### Operational: push 437d38683 (F1+F4 `flushCmds` fix) to origin/htd/smack
 
-**Status:** OPEN — local working-branch commit, not yet on origin.
+**Status:** DONE (2026-06-09) — pushed. `git merge-base --is-ancestor 437d38683 origin/htd/smack` now returns true; `origin/htd/smack` is at `8908eb668` (the F1+F4 fix plus the three docs commits, fast-forward `8c588fb89..8908eb668`). origin and local are in sync (0 ahead).
 
-**Why call it out.** The fix exists locally on `htd/smack` but `git merge-base --is-ancestor 437d38683 origin/htd/smack` returns false. Anyone pulling from `origin/htd/smack` today still hits the F1+F4 bug (`Entry label "ite_1" not found` on `RecursiveProcIte` / `BinaryTreeSize` / `MapBranching` / `Cover/Test`). This is the canonical "fixed-but-not-pushed" gap that BRANCH_FEATURES.md #25 should call out.
-
-**Next action.** `git push origin htd/smack` once the cherry-pick is verified bit-clean against any pending upstream PR #1342 review feedback.
+**Residual.** The fix is still `htd/smack`-only relative to `main`/`main2`; landing upstream remains gated on the underlying PRs (see §9 *Path to upstream* in BRANCH_FEATURES). Kept here only as the record of the push.
 
 ## Ready to execute
 
