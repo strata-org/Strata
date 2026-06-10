@@ -4398,7 +4398,7 @@ theorem loop_det_decompose_h_gen
         = ((accumEntry, accumBlocks ++ [(lentry, lentryBlk)] ++ bbs ++ bsRest), gen_f) := by
     unfold stmtsToBlocks
     simp only [bind, StateT.bind, pure, StateT.pure, List.append_nil,
-      List.nil_append, List.foldl_nil]
+      List.foldl_nil]
     rfl
   have h_eq_full := h_gen_red.symm.trans h_gen
   have h_pair := (Prod.mk.inj h_eq_full).1
@@ -5728,7 +5728,7 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
         (HasVarsPure.getVars guardExpr ++ Block.getVars body) ++ Block.getVars rest := by
       show Stmt.getVars (Stmt.loop (.det guardExpr) none [] body md) ++ Block.getVars rest = _
       simp only [Stmt.getVars, ExprOrNondet.getVars, List.flatMap_nil,
-        List.append_nil, List.nil_append]
+        List.append_nil]
     have h_body_no_gen_suffix_get :
         NoGenSuffix (P := P) (Cmds.getVars [].reverse ++ Block.getVars body) :=
       fun x hx s heq => h_combined_no_gen_suffix_get x
@@ -8418,7 +8418,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
         (HasVarsPure.getVars guardExpr ++ Block.getVars body) ++ Block.getVars rest := by
       show Stmt.getVars (Stmt.loop (.det guardExpr) none [] body md) ++ Block.getVars rest = _
       simp only [Stmt.getVars, ExprOrNondet.getVars, List.flatMap_nil,
-        List.append_nil, List.nil_append]
+        List.append_nil]
     have h_body_no_gen_suffix_get :
         NoGenSuffix (P := P) (Cmds.getVars [].reverse ++ Block.getVars body) :=
       fun x hx s heq => h_combined_no_gen_suffix_get x
