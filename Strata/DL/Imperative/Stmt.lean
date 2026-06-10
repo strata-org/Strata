@@ -55,12 +55,6 @@ inductive Stmt (P : PureExpr) (Cmd : Type) : Type where
 /-- A block is simply an abbreviation for a list of commands. -/
 @[expose] abbrev Block (P : PureExpr) (Cmd : Type) := List (Stmt P Cmd)
 
-def Stmt.isCmd {P : PureExpr} {Cmd : Type} (s : Stmt P Cmd) : Bool :=
-  match s with
-  | .cmd _ => true
-  | _ => false
-
-
 /--
 Induction principle for `Stmt`
 -/
@@ -264,14 +258,6 @@ theorem Stmt.simpleShape_branch_else
   simp only [Stmt.simpleShape, Bool.and_eq_true]
   intro h
   exact h.2
-
-/-- The body of a `.block` is simple when the whole block-statement is. -/
-theorem Stmt.simpleShape_block_body
-    {label : String} {body : List (Stmt P (Cmd P))} {md : MetaData P} :
-    Stmt.simpleShape (.block label body md) = true →
-    Block.simpleShape body = true := by
-  simp only [Stmt.simpleShape]
-  intro h; exact h
 
 /-- The body of a `.loop` is simple when the whole loop-statement is. -/
 theorem Stmt.simpleShape_loop_body
@@ -517,16 +503,6 @@ theorem Stmt.noMeasureLoops_block_body
     Block.noMeasureLoops body = true := by
   simp only [Stmt.noMeasureLoops]
   intro h; exact h
-
-/-- A loop has no termination measure. -/
-theorem Stmt.noMeasureLoops_loop_measure
-    {g : ExprOrNondet P} {m : Option P.Expr}
-    {is : List (String × P.Expr)} {body : List (Stmt P (Cmd P))}
-    {md : MetaData P} :
-    Stmt.noMeasureLoops (.loop g m is body md) = true →
-    m = .none := by
-  simp only [Stmt.noMeasureLoops, Bool.and_eq_true, Option.isNone_iff_eq_none]
-  intro h; exact h.1
 
 /-- The recursive `noMeasureLoops` discharge for a loop's body. -/
 theorem Stmt.noMeasureLoops_loop_body_rec
