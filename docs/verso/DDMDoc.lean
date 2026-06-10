@@ -843,14 +843,14 @@ for serialization, pretty-printing, and cross-dialect interoperability.
 ### Basic Syntax
 
 ```
-import Strata.DDM.Integration.Lean
+import StrataDDM.Integration.Lean
 
 namespace MyDialect
 #strata_gen MyDialect
 end MyDialect
 ```
 
-`#strata_gen` requires `import Strata.DDM.Integration.Lean` and takes a single
+`#strata_gen` requires `import StrataDDM.Integration.Lean` and takes a single
 argument: the name of a dialect that has already been defined (via
 `#dialect ... #end` or `#load_dialect`).  The command should typically be placed
 inside a `namespace` block so that the generated types and functions are scoped
@@ -1119,15 +1119,15 @@ and the literal and collection types (`Ident`, `NumLit`, `StrLit`, `Seq`,
 
 For documentation specific to the auto-generated Python dialect and the
 `py_to_strata` command-line tool, see
-[PythonDialect.md](https://github.com/strata-org/Strata/blob/main/Tools/Python/PythonDialect.md)
+[PythonDialect.md](https://github.com/strata-org/Strata/blob/main/StrataPython/Tools/strata-python/PythonDialect.md)
 in the repository.
 
 ## Installation
 
-The `strata` package can be installed from the `Tools/Python` directory:
+Install both Python packages from the repository root:
 
 ```
-pip install .
+pip install ./Tools/Python-base ./StrataPython/Tools/strata-python
 ```
 
 The package requires Python 3.11 or later and depends on the `amazon.ion`

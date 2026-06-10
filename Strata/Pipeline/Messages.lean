@@ -5,8 +5,9 @@
 -/
 module
 
-public import Strata.DDM.Util.SourceRange
-import all Strata.DDM.Util.String
+public import StrataDDM.Util.SourceRange
+import all StrataDDM.Util.String
+open StrataDDM
 
 public section
 namespace Strata.Pipeline

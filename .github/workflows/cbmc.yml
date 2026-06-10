@@ -31,7 +31,7 @@ jobs:
           sudo apt-get -qq install -y cmake ninja-build flex bison ccache
           git clone --depth 1 --branch cbmc-6.8.0 https://github.com/diffblue/cbmc.git cbmc-src
           cd cbmc-src
-          git apply "$GITHUB_WORKSPACE/StrataTest/Languages/Python/cbmc-string-support.patch"
+          git apply "$GITHUB_WORKSPACE/StrataPython/StrataPythonTest/cbmc-string-support.patch"
           git apply "$GITHUB_WORKSPACE/StrataTest/Languages/Laurel/cbmc-bounds-check.patch"
           git apply "$GITHUB_WORKSPACE/StrataTest/Backends/CBMC/cbmc-regex-support.patch"
           git apply "$GITHUB_WORKSPACE/StrataTest/Backends/CBMC/cbmc-quantifier-simplify.patch"
@@ -50,7 +50,10 @@ jobs:
         # https://github.com/strata-org/Strata/issues/952
         uses: ./.github/actions/restore-lake-cache
         with:
-          fail-on-cache-miss: "true"
+          path: |
+            .lake
+            StrataPython/.lake
+          fail-on-cache-miss: "false"
           use-restore-keys: "false"
       - name: Build Strata
         uses: leanprover/lean-action@v1
@@ -73,8 +76,8 @@ jobs:
       - name: Run Python CBMC pipeline tests
         shell: bash
         run: |
-          pip install ./Tools/Python
-          ./StrataTest/Languages/Python/run_py_cbmc_tests.sh
+          pip install ./Tools/Python-base ./StrataPython/Tools/strata-python
+          ./StrataPython/StrataPythonTest/run_py_cbmc_tests.sh
       - name: Run property summary tests
         shell: bash
         run: |

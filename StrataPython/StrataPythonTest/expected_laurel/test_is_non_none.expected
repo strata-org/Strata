@@ -1,0 +1,15 @@
+DETAIL: Unsupported construct: `is` is only supported with None
+AST: StrataPython.expr.Compare
+  { start := { byteIdx := 61 }, stop := { byteIdx := 67 } }
+  (StrataPython.expr.Name
+    { start := { byteIdx := 61 }, stop := { byteIdx := 62 } }
+    { ann := { start := { byteIdx := 0 }, stop := { byteIdx := 0 } }, val := "x" }
+    (StrataPython.expr_context.Load { start := { byteIdx := 0 }, stop := { byteIdx := 0 } }))
+  { ann := { start := { byteIdx := 0 }, stop := { byteIdx := 0 } },
+    val := #[StrataPython.cmpop.Is { start := { byteIdx := 0 }, stop := { byteIdx := 0 } }] }
+  { ann := { start := { byteIdx := 0 }, stop := { byteIdx := 0 } },
+    val := #[StrataPython.expr.Name
+               { start := { byteIdx := 66 }, stop := { byteIdx := 67 } }
+               { ann := { start := { byteIdx := 0 }, stop := { byteIdx := 0 } }, val := "y" }
+               (StrataPython.expr_context.Load { start := { byteIdx := 0 }, stop := { byteIdx := 0 } })] }
+RESULT: Known limitation

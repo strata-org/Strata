@@ -3,10 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.SMT.DDMTransform.Translate
+meta import Strata.DL.SMT.DDMTransform.Translate
+
+meta section
 
 /-! ## Tests for SMT DDM Translate -/
+
+open StrataDDM (Decimal)
 
 namespace Strata.SMTDDM
 
@@ -49,3 +54,4 @@ namespace Strata.SMTDDM
      .quant .all [⟨"a", bv32⟩] trigger body))
 
 end Strata.SMTDDM
+end

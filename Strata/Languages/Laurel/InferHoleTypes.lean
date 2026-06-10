@@ -5,10 +5,9 @@
 -/
 module
 
-public import Strata.Languages.Laurel.Laurel
-public import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
-public import Strata.Languages.Laurel.LaurelTypes
 public import Strata.Util.Statistics
+public import Strata.Languages.Laurel.Resolution
+import Strata.Languages.Laurel.LaurelTypes
 
 /-!
 # Hole Type Inference
@@ -35,10 +34,20 @@ private def inferComparisonArgType (model : SemanticModel) (args : List StmtExpr
   args.findSome? (fun a => match a.val with | .Hole _ _ => none | _ => some (computeExprType model a))
     |>.getD ⟨ .TInt, source ⟩ -- use Int as a default type for comparisons where both operands are holes
 
-/-- Get the expected type for each argument of a call from the callee's parameter list. -/
+/-- Get the expected type for each argument of a call from the callee's parameter list.
+
+    Auto-generated datatype destructors (`TypeName..fieldName[!]`) and testers
+    (`TypeName..isCtor`) are unary, taking the datatype itself as their single
+    input. Their `ResolvedNode` (`.datatypeDestructor` / `.datatypeConstructor`)
+    carries the resolved type Identifier (with its `uniqueId`), so we can
+    construct the input `HighType` directly without falling back to textual
+    decoding of the override name. -/
 private def calleeParamTypes (model : SemanticModel) (callee : Identifier) : Option (List HighTypeMd) :=
   match model.get callee with
   | .staticProcedure proc => some (proc.inputs.map (·.type))
+  | .datatypeConstructor typeName _
+  | .datatypeDestructor typeName _ =>
+      some [⟨.UserDefined typeName, callee.source⟩]
   | _ => none
 
 inductive InferHoleTypesStats where

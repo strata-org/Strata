@@ -3,6 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 /-
 Tests that the Core verification pipeline produces the expected statistics
@@ -10,15 +11,18 @@ counters for a simple program. Uses `Core.typeCheckAndEval` which
 returns `Statistics` directly.
 -/
 
-import Strata.Languages.Core.Core
-import Strata.Languages.Core.Verifier
-import Strata.Util.Statistics
+meta import Strata.Languages.Core
+meta import Strata.Languages.Core.Verifier
+meta import Strata.Util.Statistics
+import StrataDDM.Integration.Lean.HashCommands
+
+meta section
 
 open Strata
 
 /-! ## Core Statistics: simple procedure -/
 
-def statsPgm : Strata.Program :=
+def statsPgm : StrataDDM.Program :=
 #strata
 program Core;
 
@@ -49,7 +53,7 @@ info: [statistics] Evaluator.factoryOps: 286
 
 /-! ## Core Statistics: two procedures with a function -/
 
-def statsPgm2 : Strata.Program :=
+def statsPgm2 : StrataDDM.Program :=
 #strata
 program Core;
 
@@ -89,3 +93,5 @@ info: [statistics] Evaluator.factoryOps: 286
   match Core.typeCheckAndEval .quiet program with
   | .error e => IO.println s!"Error: {e.message}"
   | .ok (_, stats) => IO.print stats.format
+
+end

@@ -5,8 +5,9 @@
 -/
 module
 
-public import Strata.Languages.Laurel.MapStmtExpr
 public import Strata.Languages.Laurel.Resolution
+import Strata.Languages.Laurel.MapStmtExpr
+import Strata.Util.Tactics
 
 /-!
 # Constrained Type Elimination
@@ -224,7 +225,7 @@ private def mkWitnessProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : 
   { name := mkId s!"$witness_{ct.name.text}"
     inputs := []
     outputs := []
-    body := .Transparent ⟨.Block [witnessInit, assert] none, src⟩
+    body := .Opaque [] (some ⟨.Block [witnessInit, assert] none, src⟩) []
     preconditions := []
     isFunctional := false
     decreases := none }

@@ -11,8 +11,16 @@ import Strata.Languages.Laurel.EliminateReturnsInExpression
 import Strata.Languages.Laurel.EliminateValueReturns
 import Strata.Languages.Laurel.ConstrainedTypeElim
 import Strata.Languages.Laurel.TypeAliasElim
-import Strata.Languages.Core.Verifier
-import Strata.Util.Statistics
+public import Strata.Languages.Core
+import Strata.Languages.Core.DDMTransform.ASTtoCST
+import Strata.Languages.Laurel.CoreDefinitionsForLaurel
+import Strata.Languages.Laurel.EliminateHoles
+import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
+import Strata.Languages.Laurel.HeapParameterization
+import Strata.Languages.Laurel.InferHoleTypes
+import Strata.Languages.Laurel.LiftImperativeExpressions
+import Strata.Languages.Laurel.ModifiesClauses
+import Strata.Languages.Laurel.TypeHierarchy
 
 /-!
 ## Laurel Compilation Pipeline
@@ -179,6 +187,9 @@ private def runLaurelPasses (options : LaurelTranslateOptions)
     -- Run resolve after the pass if needed
     if pass.needsResolves then
       let result := resolve program (some model)
+      let newErrors := result.errors.filter fun e => !resolutionErrors.contains e
+      if !newErrors.isEmpty then
+        emit pass.name "laurel.st" program
       program := result.program
       model := result.model
     emit pass.name "laurel.st" program
@@ -238,7 +249,7 @@ def verifyToVcResults (program : Program)
     let options := { options.verifyOptions with removeIrrelevantAxioms := .Precise }
     let runner tempDir :=
       EIO.toIO (fun f => IO.Error.userError (toString f))
-          (Core.verify coreProgram tempDir .none options)
+          (_root_.Core.verify coreProgram tempDir .none options)
     let ioResult ← match options.vcDirectory with
       | .none => IO.FS.withTempDir runner
       | .some p => IO.FS.createDirAll ⟨p.toString⟩; runner ⟨p.toString⟩

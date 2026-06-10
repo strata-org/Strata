@@ -5,16 +5,13 @@
 -/
 module
 
-public import Strata.DL.Lambda.LExprTypeEnv
 import all Strata.DL.Lambda.LExprTypeEnv
-public import Strata.DL.Lambda.LExprWF
 import all Strata.DL.Lambda.LExprWF
 import all Strata.DL.Lambda.LExpr
 import all Strata.DL.Lambda.LTy
 import all Strata.DL.Lambda.LTyUnify
 import all Strata.DL.Util.Map
 import all Strata.DL.Util.Maps
-import Strata.DL.Lambda.Factory
 import all Strata.DL.Lambda.Identifiers
 import all Strata.DL.Util.Func
 import all Strata.DL.Util.ListMap
@@ -22,6 +19,7 @@ import all Strata.DL.Util.List
 public import Strata.DL.Lambda.LExprT
 import all Strata.DL.Lambda.LExprT
 public import Strata.DL.Lambda.FactoryWF
+public meta import Init.Grind.Cases
 
 /-! ## Typing Relation for Lambda Expressions
 

@@ -5,16 +5,8 @@
 -/
 module
 
-public import Strata.Languages.Core.DDMTransform.Translate
-public import Strata.Languages.Core.DDMTransform.ASTtoCST
-public import Strata.Languages.Core.Options
-public import Strata.Languages.Core.CallGraph
 public import Strata.Languages.Core.SMTEncoder
-public import Strata.DL.Imperative.MetaData
-public import Strata.DL.Imperative.SMTUtils
-public import Strata.DDM.AST
 public import Strata.Languages.Core.PipelinePhase
-import Strata.DL.SMT.IncrementalSolver
 import Strata.Transform.CallElim
 import Strata.Transform.FilterProcedures
 import Strata.Transform.PrecondElim
@@ -23,7 +15,15 @@ import Strata.Transform.LoopElim
 import Strata.Transform.ANFEncoder
 import Strata.Languages.Core.ObligationExtraction
 public import Strata.Transform.IrrelevantAxioms
-import Strata.Pipeline.Context
+public import Std.Tactic.BVDecide.Normalize.BitVec
+public import Strata.Languages.Core.DDMTransform.ASTtoCST -- shake: keep
+public import Strata.Languages.Core.DDMTransform.Translate -- shake: keep
+public import Strata.Languages.Core.Statistics -- shake: keep
+public import Strata.Languages.Core.Env
+public import Strata.Languages.Core.Options
+public import Strata.Languages.Core.ProgramEval
+import Strata.Languages.Core.ProgramType
+import Strata.Util.Tactics
 
 open Strata.Pipeline (PipelineContext)
 
@@ -589,6 +589,184 @@ open Strata
 
 public section
 
+def typeCheck (options : VerifyOptions) (program : Program)
+    (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
+    Except DiagnosticModel Program := do
+  let T := Lambda.TEnv.default
+  let factory ← Core.Factory.addFactory moreFns
+  let C := { Lambda.LContext.default with
+                functions := factory,
+                knownTypes := Core.KnownTypes }
+  match Factory.typeCheck C T with
+  | .error k =>
+    -- TODO: DiagnosticModel for functions defined in Factory?
+    throw (DiagnosticModel.fromFormat k)
+  | .ok T =>
+    let (program, _T) ← Program.typeCheck C T program
+    -- dbg_trace f!"[Strata.Core] Annotated program:\n{program}"
+    if options.verbose >= .normal then dbg_trace f!"[Strata.Core] Type checking succeeded.\n"
+    return program
+
+def formatProofObligation (ob : Imperative.ProofObligation Expression) :
+    Std.Format :=
+  let flatEntries := ob.assumptions.flatten
+  let assumptionFmt := flatEntries.filterMap fun
+    | .assumption label expr => some f!"{label}: {Core.formatExprs [expr]}"
+    | _ => none
+  let assumptionLine := if assumptionFmt.isEmpty then f!""
+                        else f!"\nAssumptions:\n{Std.Format.joinSep assumptionFmt "\n"}"
+  f!"Label: {ob.label}\n\
+     Property: {ob.property}{assumptionLine}\n\
+     Obligation:\n{Core.formatExprs [ob.obligation]}\n"
+
+def formatProofObligations (obs : Array (Imperative.ProofObligation Expression)) :
+    Std.Format :=
+  Std.Format.joinSep (obs.toList.map formatProofObligation) "\n"
+
+/-- Build an evaluation environment from a program.
+    Loads the factory, datatypes, and processes all declarations.
+    When `registerCustomFunctions` is true, also loads function declarations,
+    distinct constraints, and local function declarations from procedure
+    bodies into the factory (needed for SMT encoding). -/
+def buildEnv (options : VerifyOptions) (program : Program)
+    (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default)
+    (registerCustomFunctions : Bool := false) :
+    Except DiagnosticModel (Env × Statistics) := do
+  let factory ← Core.Factory.addFactory moreFns
+  let σ ← (Lambda.LState.init).addFactory factory
+  let datatypes := program.decls.filterMap fun decl =>
+    match decl with | .type (.data d) _ => some d | _ => none
+  let mut E : Env := { Env.init with exprEnv := σ, program := program, pathCap := options.pathCap }
+  E ← E.addDatatypes datatypes
+
+  if registerCustomFunctions then
+    for decl in program.decls do
+      match decl with
+      | .func func _ => E ← E.addFactoryFunc func
+      | .recFuncBlock funcs _ =>
+        validateCasesTypes funcs E.datatypes
+        for func in funcs do E ← E.addFactoryFunc func
+      | .distinct _ es _ => E := { E with distinct := es :: E.distinct }
+      | .proc proc _ =>
+        for stmt in proc.body.flatMap collectFuncDecls do
+          match E.exprEnv.addFactoryFunc stmt with
+          | .ok σ' => E := { E with exprEnv := σ' }
+          | .error _ => pure ()
+      | _ => pure ()
+
+  -- Collect declaration statistics
+  let stats := program.decls.foldl (fun s d =>
+    match d with
+    | .type _ _          => s.increment s!"{Evaluator.Stats.typeDecls}"
+    | .ax _ _            => s.increment s!"{Evaluator.Stats.axioms}"
+    | .distinct _ _ _    => s.increment s!"{Evaluator.Stats.distincts}"
+    | .proc _ _          => s.increment s!"{Evaluator.Stats.procedures}"
+    | .func _ _          => s.increment s!"{Evaluator.Stats.functions}"
+    | .recFuncBlock fs _ => s.increment s!"{Evaluator.Stats.recursiveFunctions}" fs.length)
+    ({} : Statistics)
+  let stats := stats.increment s!"{Evaluator.Stats.factoryOps}" factory.toArray.size
+  return (E, stats)
+where
+  collectFuncDecls : Statement → List (@Lambda.LFunc CoreLParams)
+    | .funcDecl decl _ => [{
+        name := decl.name, typeArgs := decl.typeArgs, isConstr := decl.isConstr,
+        inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.toMonoTypeUnsafe ty)),
+        output := Lambda.LTy.toMonoTypeUnsafe decl.output,
+        body := decl.body, attr := decl.attr,
+        concreteEval := decl.concreteEval, axioms := decl.axioms }]
+    | .block _ ss _ => ss.flatMap collectFuncDecls
+    | .ite _ tss ess _ => tss.flatMap collectFuncDecls ++ ess.flatMap collectFuncDecls
+    | .loop _ _ _ body _ => body.flatMap collectFuncDecls
+    | _ => []
+
+/-- Proof obligation program construction: Program → Program.
+    Runs symbolic execution and converts obligations to a program
+    suitable for downstream phases (ANF encoding, SMT encoding). -/
+def toCoreProofObligationProgram (options : VerifyOptions) (program : Program)
+    (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
+    Except DiagnosticModel (Program × Statistics) := do
+  let (E, declStats) ← buildEnv options program moreFns
+  let (pEs, evalStats) ← Program.eval E
+  -- Note: all .program fields in pEs will have identical values, because
+  -- Program.eval does not modify the program. The Program field is
+  -- kept for convenience.
+  let stats := declStats.merge evalStats
+  let stats := stats.increment s!"{Evaluator.Stats.verificationEnvironments}" pEs.length
+
+  -- Convert the evaluation Env's deferred obligations into a procedure body.
+  -- Program.eval accumulates all procedures into a single Env, so pEs
+  -- is always a single-element list. We extract the single Env and build
+  -- one obligation procedure containing all deferred obligations.
+  -- Type/datatype declarations come from the original program.
+  let typeDecls := program.decls.filter fun d =>
+    match d with | .type _ _ => true | _ => false
+  let postEvalEnv ← match pEs with
+    | [e] => pure e
+    | _ => throw (DiagnosticModel.fromMessage s!"toCoreProofObligationProgram: expected exactly 1 evaluation Env, got {pEs.length}")
+  -- The procedure name is only used for the obligation procedure header;
+  -- downstream phases (ObligationExtraction) walk the body and ignore it.
+  -- We pick the first procedure name as a representative label.
+  let procName := program.decls.findSome? fun
+    | .proc p _ => some p.header.name | _ => none
+  let blocks := postEvalEnv.deferred.toList.map fun ob =>
+    let assumes := ob.assumptions.reverse.flatten.filterMap fun
+      | .assumption label e =>
+        some (Imperative.Stmt.cmd (CmdExt.cmd (Imperative.Cmd.assume label e ob.metadata)))
+      | _ => none
+    let assertStmt := Imperative.Stmt.cmd (CmdExt.cmd (
+      if ob.property == .cover
+      then Imperative.Cmd.cover ob.label ob.obligation ob.metadata
+      else Imperative.Cmd.assert ob.label ob.obligation ob.metadata))
+    assumes ++ [assertStmt]
+  let body := match blocks with
+    | [] => []
+    | [b] => b
+    | b :: rest => rest.foldl (fun acc block =>
+        [Imperative.Stmt.ite .nondet acc block .empty]) b
+  let oblProcs := match procName with
+    | some name => [Decl.proc {
+        header := { name := name, typeArgs := [], inputs := [], outputs := [] },
+        spec := { preconditions := [], postconditions := [] },
+        body := body
+      } .empty]
+    | none => []
+
+  -- Include function declarations and distinct constraints from the
+  -- evaluation environment so the obligations program is self-contained
+  -- for downstream phases (ANF encoding, SMT encoding).
+  -- Get functions added during evaluation (not in the initial factory)
+  let initialFactorySize := E.exprEnv.config.factory.toArray.size
+  let evalFuncs := postEvalEnv.exprEnv.config.factory.toArray.toList.drop initialFactorySize
+  let funcDecls := evalFuncs.map fun func => Decl.func func .empty
+  let distinctDecls := postEvalEnv.distinct.mapIdx fun i es =>
+    Decl.distinct s!"distinct_{i}" es .empty
+  let oblProgram : Program := { decls := typeDecls ++ funcDecls ++ distinctDecls ++ oblProcs }
+
+  if options.verbose >= .normal then do
+    dbg_trace f!"{Std.Format.line}VCs:"
+    dbg_trace f!"{formatProofObligations postEvalEnv.deferred}"
+  return (oblProgram, stats)
+
+
+/-- Convenience: type check then build obligation program. -/
+def typeCheckAndBuildObligationProgram (options : VerifyOptions) (program : Program)
+    (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
+    Except DiagnosticModel (Program × Statistics) := do
+  let program ← typeCheck options program moreFns
+  toCoreProofObligationProgram options program moreFns
+
+/-- Convenience: type check then symbolic eval. Returns the list of
+    evaluation environments and statistics. -/
+def typeCheckAndEval (options : VerifyOptions) (program : Program)
+    (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
+    Except DiagnosticModel ((List Env) × Statistics) := do
+  let program ← typeCheck options program moreFns
+  let (E, declStats) ← buildEnv options program moreFns
+  let (pEs, evalStats) ← Program.eval E
+  let stats := declStats.merge evalStats
+  let stats := stats.increment s!"{Evaluator.Stats.verificationEnvironments}" pEs.length
+  return (pEs, stats)
+
 /-- A solver log entry recording the SMT result after a specific pipeline phase. -/
 structure SolverPhaseLog where
   /-- Name of the pipeline phase that produced this entry. -/
@@ -915,7 +1093,6 @@ def VCOutcome.merge (a b : VCOutcome) : VCOutcome :=
     validityProperty := a.validityProperty.merge b.validityProperty
     solverLog := a.solverLog ++ b.solverLog
     mergedFrom := aPaths ++ bPaths }
-
 
 /--
 A model with values lifted to LExpr for display purposes.
@@ -1395,6 +1572,91 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
                     lexprModel := model }
     return result
 
+/-- Data needed to dispatch a single obligation to the solver. Produced by the
+    sequential preprocessing phase and consumed by the (potentially parallel)
+    solver dispatch phase. -/
+private structure SolverJob where
+  obligation : ProofObligation Expression
+  assumptionTerms : List Term
+  obligationTerm : Term
+  ctx : SMT.Context
+  needSatCheck : Bool
+  needValCheck : Bool
+  peSatResult? : Option SMT.Result
+  peValResult? : Option SMT.Result
+  typedVarsInObligation : List Expression.TypedIdent
+  varDefs : List VarDefinition := []
+  varDecls : List VarDeclaration := []
+
+/-- Dispatch a single solver job. Spawns a solver process and reads the result. -/
+private def dispatchSolverJob (job : SolverJob) (p : Program)
+    (options : VerifyOptions) (counter : IO.Ref Nat) (tempDir : System.FilePath)
+    (phases : List AbstractedPhase)
+    (mkDischarge : MkDischargeFn := mkDischargeFn)
+    (pctx : PipelineContext)
+    : IO (Except DiagnosticModel VCResult) := do
+  let discharge := mkDischarge options counter tempDir
+    job.typedVarsInObligation job.obligation.metadata job.obligation.label pctx
+  let resultOrErr ← (getObligationResult job.assumptionTerms job.obligationTerm job.ctx
+    job.obligation p options discharge job.needSatCheck job.needValCheck phases
+    (varDefinitions := job.varDefs) (varDeclarations := job.varDecls)).toBaseIO
+  match resultOrErr with
+  | .error diag => return .error diag
+  | .ok result =>
+    let result := match result.outcome with
+      | .ok solverOutcome =>
+        let satResult := job.peSatResult?.getD solverOutcome.satisfiabilityProperty
+        let valResult := job.peValResult?.getD solverOutcome.validityProperty
+        { result with outcome := .ok { solverOutcome with
+            satisfiabilityProperty := satResult,
+            validityProperty := valResult } }
+      | .error _ => result
+    return .ok result
+
+/-- Dispatch solver jobs using a bounded worker pool. Workers pull from a shared
+    queue; results returned in original order. -/
+private def dispatchJobsParallel (jobs : List SolverJob) (p : Program)
+    (options : VerifyOptions) (counter : IO.Ref Nat) (tempDir : System.FilePath)
+    (phases : List AbstractedPhase) (workers : Nat)
+    (mkDischarge : MkDischargeFn := mkDischargeFn)
+    (pctx : PipelineContext)
+    : IO (List (Option (Except DiagnosticModel VCResult))) := do
+  let queue ← IO.mkRef (jobs.zipIdx : List (SolverJob × Nat))
+  let resultMap ← IO.mkRef ({} : Std.HashMap Nat (Except DiagnosticModel VCResult))
+  let shouldStop ← IO.mkRef false
+  let workerFn : IO Unit := do
+    let mut running := true
+    while running do
+      if ← shouldStop.get then break
+      let entry ← queue.modifyGet fun q =>
+        match q with
+        | [] => (none, [])
+        | hd :: tl => (some hd, tl)
+      match entry with
+      | none => running := false
+      | some (job, idx) =>
+        let result ← dispatchSolverJob job p options counter tempDir phases mkDischarge pctx
+        resultMap.modify (·.insert idx result)
+        if options.stopOnFirstError then
+          match result with
+          | .ok r => if r.isNotSuccess then shouldStop.set true
+          | .error _ => shouldStop.set true
+  let numWorkers := min workers jobs.length
+  let workerTasks ← (List.range numWorkers).mapM fun _ =>
+    IO.asTask (prio := .dedicated) workerFn
+  -- Join all tasks before throwing to prevent orphaned processes
+  let mut firstError : Option IO.Error := none
+  for task in workerTasks do
+    match task.get with
+    | .ok () => pure ()
+    | .error e => if firstError.isNone then firstError := some e
+  if let some e := firstError then throw e
+  let rmap ← resultMap.get
+  let mut results : List (Option (Except DiagnosticModel VCResult)) := []
+  for idx in (List.range jobs.length).reverse do
+    results := rmap[idx]? :: results
+  return results
+
 private
 def verifySingleEnv (oblProgram : Program)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default)
@@ -1422,6 +1684,9 @@ def verifySingleEnv (oblProgram : Program)
   let mut stats : Statistics := ({} : Statistics)
     |>.increment s!"{Evaluator.Stats.verify_numObligations}" obligations.size
   let mut results := (#[] : VCResults)
+  let mut solverJobs : List SolverJob := []
+  let mut solverJobIndices : List Nat := []
+  let useParallel := options.parallelWorkers > 1
   for obligation in obligations do
     -- Determine which checks to perform based on metadata or check mode/amount
     let (satisfiabilityCheck, validityCheck) :=
@@ -1489,27 +1754,52 @@ def verifySingleEnv (oblProgram : Program)
           match ty with
           | .some ty => return (v,LTy.forAll [] ty)
           | .none => throw (DiagnosticModel.fromMessage s!"{v} untyped"))
-      let discharge := mkDischarge options counter tempDir
-        typedVarsInObligation obligation.metadata obligation.label pctx
-      let result ← pctx.withRepeatedPhase "solver" do
-        getObligationResult assumptionTerms obligationTerm ctx obligation p options
-                    discharge needSatCheck needValCheck (externalPhases ++ corePhases)
-                    (varDefinitions := varDefs) (varDeclarations := varDecls)
-      -- Merge evaluator results with solver results
-      let result := match result.outcome with
-        | .ok solverOutcome =>
-          let satResult := peSatResult?.getD solverOutcome.satisfiabilityProperty
-          let valResult := peValResult?.getD solverOutcome.validityProperty
-          { result with outcome := .ok { solverOutcome with
-              satisfiabilityProperty := satResult,
-              validityProperty := valResult } }
-        | .error _ => result
-      results := results.push result
-      if result.isNotSuccess then
-        if options.verbose >= .debug then
-          let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
-          dbg_trace f!"\n\nResult: {result}\n{prog}"
-        if options.stopOnFirstError then break
+      if useParallel then
+        let job : SolverJob := {
+          obligation, assumptionTerms, obligationTerm, ctx,
+          needSatCheck, needValCheck, peSatResult?, peValResult?,
+          typedVarsInObligation, varDefs, varDecls }
+        solverJobs := job :: solverJobs
+        solverJobIndices := results.size :: solverJobIndices
+        results := results.push { obligation, outcome := .error (.encoding "pending parallel dispatch"),
+                                  verbose := options.verbose, checkLevel := options.checkLevel,
+                                  checkMode := options.checkMode, lexprModel := [] }
+      else
+        let discharge := mkDischarge options counter tempDir
+          typedVarsInObligation obligation.metadata obligation.label pctx
+        let result ← pctx.withRepeatedPhase "solver" do
+          getObligationResult assumptionTerms obligationTerm ctx obligation p options
+                      discharge needSatCheck needValCheck (externalPhases ++ corePhases)
+                      (varDefinitions := varDefs) (varDeclarations := varDecls)
+        -- Merge evaluator results with solver results
+        let result := match result.outcome with
+          | .ok solverOutcome =>
+            let satResult := peSatResult?.getD solverOutcome.satisfiabilityProperty
+            let valResult := peValResult?.getD solverOutcome.validityProperty
+            { result with outcome := .ok { solverOutcome with
+                satisfiabilityProperty := satResult,
+                validityProperty := valResult } }
+          | .error _ => result
+        results := results.push result
+        if result.isNotSuccess then
+          if options.verbose >= .debug then
+            let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
+            dbg_trace f!"\n\nResult: {result}\n{prog}"
+          if options.stopOnFirstError then break
+  -- Phase 2: Parallel solver dispatch
+  if useParallel && !solverJobs.isEmpty then
+    let phases := externalPhases ++ corePhases
+    let jobResults ← IO.toEIO (fun e => DiagnosticModel.fromFormat f!"{e}")
+      (dispatchJobsParallel solverJobs.reverse p options counter tempDir phases options.parallelWorkers mkDischarge pctx)
+    let mut firstError : Option DiagnosticModel := none
+    for (jobResult?, jobIdx) in jobResults.zip solverJobIndices.reverse do
+      match jobResult? with
+      | some (.ok result) =>
+        results := results.setIfInBounds jobIdx result
+      | some (.error diag) =>
+        if firstError.isNone then firstError := some diag
+      | none => pure ()
+    if let some diag := firstError then throw diag
   return (results, stats)
 
 /-- Construct the default `CoreSMTSolver` that discharges obligations
@@ -1562,32 +1852,11 @@ def verify (program : Program)
   let pipelinePhases := prefixPhases ++ corePipelinePhases (procs := proceduresToVerify) (options := options) (moreFns := moreFns)
   let phases := pipelinePhases.map (·.phase)
   let (oblProgram, pipelineStats) ← pctx.withPhase "programTransformations" do
-    if let some pfx := keepAllFilesPrefix then
-      if let some parent := (System.FilePath.mk pfx).parent then
-        IO.toEIO (fun e => DiagnosticModel.fromFormat f!"{e}")
-          (IO.FS.createDirAll parent)
-    let mut current := program
-    let mut state : Transform.CoreTransformState := { Transform.CoreTransformState.emp with factory := some factory }
-    let mut step := 0
-    have : Inhabited (Except Transform.Err Program × Transform.CoreTransformState) :=
-      ⟨(.error default, Transform.CoreTransformState.emp)⟩
-    for pp in pipelinePhases do
-      let (result, newState) ← pctx.withRepeatedPhasePure pp.phase.name fun () =>
-        Transform.runWith current (fun prog => do
-          let (_, next) ← pp.transform prog
-          return next) state
-      match result with
-      | .ok next =>
-        current := next
-        state := newState
-        step := step + 1
-        if let some pfx := keepAllFilesPrefix then
-          let path := s!"{pfx}.{step}.{pp.phase.name}.core.st"
-          IO.toEIO (fun e => DiagnosticModel.fromFormat f!"{e}")
-            (IO.FS.writeFile path (toString current ++ "\n"))
-      | .error e =>
-        throw e
-    .ok (current, state.statistics)
+    let (prog, state) ← runTransforms program pipelinePhases
+      (initState := { Transform.CoreTransformState.emp with factory := some factory })
+      (pipelineCtx := some pctx)
+      (keepAllFilesPrefix := keepAllFilesPrefix)
+    pure (prog, state.statistics)
   let allStats := pipelineStats
   let axiomNames := program.decls.filterMap fun decl =>
     match decl with | .ax a _ => some a.name | _ => none
@@ -1618,6 +1887,7 @@ namespace Strata
 
 open Lean.Parser
 open Strata (DiagnosticModel FileRange)
+open StrataDDM (Program)
 
 public section
 
@@ -1631,46 +1901,9 @@ def typeCheck (ictx : InputContext) (env : Program) (options : Core.VerifyOption
     .error <| DiagnosticModel.fromFormat s!"DDM Transform Error: {repr errors}"
 
 def Core.getProgram
-  (p : Strata.Program)
+  (p : StrataDDM.Program)
   (ictx : InputContext := Inhabited.default) : Core.Program × Array String :=
   TransM.run ictx (translateProgram p)
-
-/-- Front-end phase: any translation from a source language to Core may
-    introduce over-approximations. Until front-ends can validate models or
-    determine that an assertion is unaffected, all sat results are converted
-    to unknown. -/
-def frontEndPhase : Core.AbstractedPhase where
-  name := "FrontEnd"
-  getValidation _ := .modelToValidate (fun _ => /- TODO -/ false)
-
-def verify
-    (env : Program)
-    (ictx : InputContext := Inhabited.default)
-    (proceduresToVerify : Option (List String) := none)
-    (options : Core.VerifyOptions := Core.VerifyOptions.default)
-    (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default)
-    (externalPhases : List Core.AbstractedPhase := [])
-    (keepAllFilesPrefix : Option String := none)
-    (solver : Option Core.CoreSMTSolver := none)
-    (mkDischarge : Core.MkDischargeFn := Core.mkDischargeFn)
-    : IO Core.VCResults := do
-  let (program, errors) := Core.getProgram env ictx
-  if errors.isEmpty then
-    let runner tempDir :=
-      EIO.toIO (fun dm => IO.Error.userError (toString (dm.format (some ictx.fileMap))))
-                  (Core.verify program tempDir proceduresToVerify options moreFns
-                    (externalPhases := externalPhases)
-                    (keepAllFilesPrefix := keepAllFilesPrefix)
-                    (solver := solver)
-                    (mkDischarge := mkDischarge))
-    match options.vcDirectory with
-    | .none =>
-      IO.FS.withTempDir runner
-    | .some p =>
-      IO.FS.createDirAll ⟨p.toString⟩
-      runner ⟨p.toString⟩
-  else
-    panic! s!"DDM Transform Error: {repr errors}"
 
 def toDiagnosticModel (vcr : Core.VCResult)
     (phases : List Core.AbstractedPhase := []) : Option DiagnosticModel :=
@@ -1718,11 +1951,6 @@ def DiagnosticModel.toDiagnostic (files: Map Strata.Uri Lean.FileMap) (dm: Diagn
     message := dm.message
     type := dm.type
   }
-
-def Core.VCResult.toDiagnostic (files: Map Strata.Uri Lean.FileMap) (vcr : Core.VCResult)
-    (phases : List Core.AbstractedPhase := []) : Option Diagnostic := do
-  let modelOption := toDiagnosticModel vcr phases
-  modelOption.map (fun dm => dm.toDiagnostic files)
 
 end -- public section
 end Strata

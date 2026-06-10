@@ -3,8 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core
+import StrataDDM.Integration.Lean.HashCommands
+
+meta section
+open StrataDDM (Program)
 
 /-!
 # Termination Checking Tests
@@ -98,7 +103,7 @@ Obligation: TestListLen_ensures_0
 Property: assert
 Result: ✅ pass -/
 #guard_msgs in
-#eval verify listLenTermPgm (options := .default)
+#eval Core.verify listLenTermPgm (options := .default)
 
 ---------------------------------------------------------------------
 -- Test 2: contains — recursion on non-first parameter
@@ -131,7 +136,7 @@ Obligation: contains_terminates_0
 Property: assert
 Result: ✅ pass -/
 #guard_msgs in
-#eval verify containsTermPgm (options := .quiet)
+#eval Core.verify containsTermPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 3: non-terminating — f(xs) = f(xs) (should fail)
@@ -154,7 +159,7 @@ Obligation: bad_terminates_0
 Property: assert
 Result: ❓ unknown -/
 #guard_msgs in
-#eval verify nonTermPgm (options := .quiet)
+#eval Core.verify nonTermPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 4: non-terminating — wrong direction f(xs) = f(Cons(1, xs))
@@ -177,7 +182,7 @@ Obligation: bad_terminates_0
 Property: assert
 Result: ❓ unknown -/
 #guard_msgs in
-#eval verify wrongDirPgm (options := .quiet)
+#eval Core.verify wrongDirPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 5: multiple recursive calls in branches — both must decrease
@@ -218,7 +223,7 @@ Obligation: sumList_terminates_0
 Property: assert
 Result: ✅ pass -/
 #guard_msgs in
-#eval verify multiBranchPgm (options := .quiet)
+#eval Core.verify multiBranchPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 6: mutual recursion — isEven/isOdd over MyNat
@@ -277,7 +282,7 @@ Obligation: TestMutual_ensures_0
 Property: assert
 Result: ✅ pass -/
 #guard_msgs in
-#eval verify mutualTermPgm (options := .quiet)
+#eval Core.verify mutualTermPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 7: two recFuncBlocks using the same datatype (no duplicate dtRank)
@@ -396,7 +401,7 @@ Obligation: Test_ensures_0
 Property: assert
 Result: ✅ pass -/
 #guard_msgs in
-#eval verify sharedDtPgm (options := .default)
+#eval Core.verify sharedDtPgm (options := .default)
 
 ---------------------------------------------------------------------
 -- Test 8: multiple recursive calls per branch — Tree with Branch and Chain
@@ -550,7 +555,7 @@ Obligation: TestTreeSize_ensures_0
 Property: assert
 Result: ✅ pass -/
 #guard_msgs in
-#eval verify treeSizePgm (options := .default)
+#eval Core.verify treeSizePgm (options := .default)
 
 ---------------------------------------------------------------------
 -- Test 9: polymorphic datatype specialized in monomorphic recursive function
@@ -598,7 +603,7 @@ Obligation: intListLen_terminates_0
 Property: assert
 Result: ✅ pass -/
 #guard_msgs in
-#eval verify polyDtTermPgm (options := .default)
+#eval Core.verify polyDtTermPgm (options := .default)
 
 ---------------------------------------------------------------------
 -- Test 10: explicit `decreases` clause matching @[cases] parameter
@@ -626,7 +631,7 @@ Obligation: listLen_terminates_0
 Property: assert
 Result: ✅ pass -/
 #guard_msgs in
-#eval verify decreasesExplicitPgm (options := .quiet)
+#eval Core.verify decreasesExplicitPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 11: `decreases` on non-@[cases] ADT parameter
@@ -713,7 +718,7 @@ Obligation: TestZipLen_ensures_0
 Property: assert
 Result: ✅ pass -/
 #guard_msgs in
-#eval verify decreasesNonCasesPgm (options := .default)
+#eval Core.verify decreasesNonCasesPgm (options := .default)
 
 ---------------------------------------------------------------------
 -- Test 12: error — recursive function with no @[cases] or decreases
@@ -733,7 +738,7 @@ rec function bad (xs : IntList) : int
 
 /-- error: recursive function 'bad' requires a 'decreases' clause or a '@[cases]' parameter for termination checking -/
 #guard_msgs in
-#eval verify noCasesNoDecreasesPgm (options := .quiet)
+#eval Core.verify noCasesNoDecreasesPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 13: error — decreases on non-ADT parameter (temporary)
@@ -754,7 +759,7 @@ rec function bad (@[cases] xs : IntList, n : int) : int
 
 /-- error: recursive function 'bad': decreasing parameter type 'int' is not a known datatype -/
 #guard_msgs in
-#eval verify decreasesNonADTPgm (options := .quiet)
+#eval Core.verify decreasesNonADTPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 14: mutual recursion over different mutual datatypes
@@ -823,7 +828,7 @@ Obligation: TestMutualDt_ensures_0
 Property: assert
 Result: ✅ pass -/
 #guard_msgs in
-#eval verify mutualDtTermPgm (options := .quiet)
+#eval Core.verify mutualDtTermPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 15: mutual recursion over different datatypes — non-decreasing
@@ -860,7 +865,7 @@ Obligation: badList_terminates_0
 Property: assert
 Result: ❓ unknown -/
 #guard_msgs in
-#eval verify mutualDtNonTermPgm (options := .quiet)
+#eval Core.verify mutualDtNonTermPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 16: polymorphic mutual datatypes with monomorphic instantiation
@@ -909,7 +914,7 @@ Obligation: intListSize_terminates_1
 Property: assert
 Result: ✅ pass -/
 #guard_msgs in
-#eval verify polyMutualDtTermPgm (options := .quiet)
+#eval Core.verify polyMutualDtTermPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 17: precondition used to prove termination
@@ -947,7 +952,7 @@ Obligation: predVal_terminates_0
 Property: assert
 Result: ✅ pass -/
 #guard_msgs in
-#eval verify precondTermPgm (options := .quiet)
+#eval Core.verify precondTermPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 18: recursive call nested inside a non-recursive function call
@@ -976,7 +981,7 @@ Obligation: listLen_terminates_0
 Property: assert
 Result: ✅ pass -/
 #guard_msgs in
-#eval verify nestedInNonRecPgm (options := .quiet)
+#eval Core.verify nestedInNonRecPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 19: error — decreasing argument contains a bound variable
@@ -997,7 +1002,7 @@ rec function bad (@[cases] xs : IntList) : bool
 
 /-- error: termination checking: decreasing argument contains a bound variable -/
 #guard_msgs in
-#eval verify boundVarDecrArgPgm (options := .quiet)
+#eval Core.verify boundVarDecrArgPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 20: error — decreasing argument contains a recursive call
@@ -1017,7 +1022,7 @@ rec function bad (@[cases] xs : IntList) : IntList
 
 /-- error: termination checking: decreasing argument contains a recursive call -/
 #guard_msgs in
-#eval verify recCallInDecrArgPgm (options := .quiet)
+#eval Core.verify recCallInDecrArgPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 21: recursive call nested inside non-recursive call — should fail
@@ -1043,7 +1048,7 @@ Obligation: bad_terminates_0
 Property: assert
 Result: ❓ unknown -/
 #guard_msgs in
-#eval verify nestedInNonRecFailPgm (options := .quiet)
+#eval Core.verify nestedInNonRecFailPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 22: recursive call under a binder but decreasing arg is free
@@ -1076,7 +1081,7 @@ Obligation: allPos_terminates_0
 Property: assert
 Result: ✅ pass -/
 #guard_msgs in
-#eval verify recUnderBinderFreePgm (options := .quiet)
+#eval Core.verify recUnderBinderFreePgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 23: let-binding (lambda application) with valid decreasing arg
@@ -1109,7 +1114,7 @@ Obligation: listLen_terminates_0
 Property: assert
 Result: ✅ pass -/
 #guard_msgs in
-#eval verify letBindingTermPgm (options := .quiet)
+#eval Core.verify letBindingTermPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 24: axiom filtering — mutual rec block with two unrelated datatypes
@@ -1186,7 +1191,7 @@ Obligation: natToInt_terminates_0
 Property: assert
 Result: ✅ pass -/
 #guard_msgs in
-#eval verify extraAxiomsPgm (options := .default)
+#eval Core.verify extraAxiomsPgm (options := .default)
 
 ---------------------------------------------------------------------
 -- Test 25: error — decreases with non-variable expression
@@ -1207,6 +1212,8 @@ rec function bad (@[cases] xs : IntList) : int
 
 /-- error: recursive function 'bad': decreases clause must be a parameter name. Non-structural recursion is not yet supported -/
 #guard_msgs in
-#eval verify decreasesNonVarPgm (options := .quiet)
+#eval Core.verify decreasesNonVarPgm (options := .quiet)
 
 end Strata.TerminationCheckTest
+
+end

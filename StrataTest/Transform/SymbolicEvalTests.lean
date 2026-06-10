@@ -3,10 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Core
-import Strata.Languages.Core.DDMTransform.Translate
-import Strata.SimpleAPI
+meta import Strata.Languages.Core
+meta import Strata.Languages.Core.DDMTransform.Translate
+meta import Strata.SimpleAPI
+import StrataDDM.Integration.Lean.HashCommands
+
+meta section
 
 /-! ## Symbolic evaluation phase tests -/
 
@@ -14,10 +18,10 @@ namespace Core.SymbolicEval.Tests
 
 open Strata
 
-private def translateCore (p : Strata.Program) : Core.Program :=
+private def translateCore (p : StrataDDM.Program) : Core.Program :=
   (TransM.run Inhabited.default (translateProgram p)).fst
 
-private def evalAndPrint (p : Strata.Program) : IO Unit := do
+private def evalAndPrint (p : StrataDDM.Program) : IO Unit := do
   match typeCheckAndBuildObligationProgram .quiet (translateCore p) with
   | .ok (oblProg, _) =>
     let s := (Core.formatProgram oblProg).pretty
@@ -242,3 +246,4 @@ procedure blockTest ()
 #eval evalAndPrint blockExitIfProg
 
 end Core.SymbolicEval.Tests
+end

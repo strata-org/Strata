@@ -6,9 +6,8 @@
 module
 
 public import Strata.DL.SMT.AbstractSolver
-public import Strata.DL.SMT.Factory
-import Strata.DDM.Format
-import Std.Data.HashMap
+import Strata.DL.SMT.DDMTransform.Translate
+import Strata.DL.SMT.Factory
 
 /-!
 # Incremental SMT-LIB Backend
@@ -23,6 +22,8 @@ repeated declarations of the same name. The shadow depth is tracked per name.
 -/
 
 namespace Strata.SMT
+
+open StrataDDM (quoteIdent)
 
 public section
 
