@@ -28,6 +28,7 @@ private def parseFromStrata (strataProgram : StrataDDM.Program) : IO Program := 
   | .ok program => pure program
 
 private def laurelToText (prog : Program) : String :=
+  -- Trim trailing whitespace per line to avoid whitespace-sensitive test issues
   let text := (formatProgram prog).pretty
   let lines := text.splitOn "\n" |>.map (fun s => (s.trimAsciiEnd).toString)
   "\n".intercalate lines
