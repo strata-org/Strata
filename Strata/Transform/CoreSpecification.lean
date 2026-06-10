@@ -82,8 +82,19 @@ variable (φ : CoreEval → PureFunc Expression → CoreEval)
 @[expose] def AssertValidInProcedure
     (proc : Procedure)
     (a : Imperative.AssertId Expression) : Prop :=
-  Imperative.Specification.AssertValidWhen (Specification.Lang.core π φ)
-    (ProcEnvWF proc) (Stmt.block "" proc.body #[]) a
+  match proc.body with
+  | .structured ss =>
+    Imperative.Specification.AssertValidWhen (Specification.Lang.core π φ)
+      (ProcEnvWF proc) (Stmt.block "" ss #[]) a
+  -- CFG bodies don't yet have a small-step semantics, so there is nothing to
+  -- certify.  We pick `False` rather than `True` to be conservative: a CFG
+  -- procedure cannot be claimed asserts-valid (and hence cannot be proven
+  -- `ProcedureCorrect`) until CFG bodies gain an executable semantics.  This
+  -- is sound against the current proofs because the only producer of
+  -- `ProcedureCorrect` (`procBodyVerify_procedureCorrect`) is gated on
+  -- `procToVerifyStmt` succeeding, which forces `proc.body = .structured _`
+  -- (see `procToVerifyStmt_is_structured`), so this arm is never entered.
+  | .cfg _ => False
 
 /-- A procedure is correct with respect to its specification.
 
@@ -139,18 +150,21 @@ variable (φ : CoreEval → PureFunc Expression → CoreEval)
 structure ProcedureCorrect (proc : Procedure) (p : Program) : Prop where
   /-- (1) The asserts in the body of proc are valid. -/
   assertsValid : ∀ a, AssertValidInProcedure π φ proc a
-  /-- (2) The postconditions hold on termination. -/
+  /-- (2) The postconditions hold on termination.
+      Uses `CoreBodyExec` to abstract over both structured and CFG bodies.
+      For structured bodies, the terminal eval `δ'` comes from the terminal
+      `Env` (may differ from `δ` due to `funcDecl` extensions). For CFG
+      bodies, `δ' = δ` since `CoreCFGStepStar` does not track eval changes. -/
   postconditionsValid :
     WF.WFProcedureProp p proc →
-    ∀ (ρ₀ ρ' : Env Expression),
+    ∀ (ρ₀ : Env Expression),
       ProcEnvWF proc ρ₀ →
-      -- Wrap the body in `Stmt.block "" proc.body #[]`, consistent with
-      -- `AssertValidInProcedure` above.
-      CoreStepStar π φ (.stmt (Stmt.block "" proc.body #[]) ρ₀) (.terminal ρ') →
-      (∀ (label : CoreLabel) (check : Procedure.Check),
-        (label, check) ∈ proc.spec.postconditions.toList →
-        check.attr = Procedure.CheckAttr.Default →
-        ρ'.eval ρ'.store check.expr = some HasBool.tt) ∧
-      ρ'.hasFailure = Bool.false
+      ∀ (σ' : CoreStore) (δ' : CoreEval) (failed : Bool),
+        CoreBodyExec π φ proc.body ρ₀.store ρ₀.eval σ' δ' failed →
+        (∀ (label : CoreLabel) (check : Procedure.Check),
+          (label, check) ∈ proc.spec.postconditions.toList →
+          check.attr = Procedure.CheckAttr.Default →
+          δ' σ' check.expr = some HasBool.tt) ∧
+        failed = Bool.false
 
 end Core.Specification

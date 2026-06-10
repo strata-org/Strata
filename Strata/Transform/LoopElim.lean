@@ -246,8 +246,13 @@ def loopElim (p : Program) : Program × Statistics :=
   let (decls, stats) := p.decls.foldl (fun (acc, stats) d =>
     match d with
     | .proc proc md =>
-      let (body, st) := StateT.run (Block.removeLoopsM proc.body) {}
-      ((.proc { proc with body := body } md) :: acc, stats.merge st.statistics)
+      match proc.body with
+      | .structured ss =>
+        let (body, st) := StateT.run (Block.removeLoopsM ss) {}
+        ((.proc { proc with body := .structured body } md) :: acc, stats.merge st.statistics)
+      -- CFG bodies have no structured loops; pass through unchanged. An
+      -- unstructured loop elimination process could be applied here later.
+      | .cfg _ => ((.proc proc md) :: acc, stats)
     | other => (other :: acc, stats)) ([], {})
   ({ decls := decls.reverse }, stats)
 

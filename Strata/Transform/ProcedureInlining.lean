@@ -86,14 +86,17 @@ private def renameAllLocalNames (c:Procedure)
   let var_map: Map Expression.Ident Expression.Ident := []
   let proc_name := c.header.name.name
 
-  -- Make a map for renaming local variables
-  let lhs_vars := List.flatMap (fun (s:Statement) => s.definedVars false) c.body
+  -- Extract local names from the body. Although ProcedureInlining only supports
+  -- structured bodies for inlining, extracting defined variables is a generic
+  -- facility that supports both structured and CFG bodies.
+  let bodyStmts : List Statement := match c.body with | .structured ss => ss | .cfg _ => []
+  let lhs_vars := List.flatMap (fun (s:Statement) => s.definedVars false) bodyStmts
   let lhs_vars := lhs_vars ++ c.header.inputs.unzip.fst ++
                   c.header.outputs.unzip.fst
   let var_map <- genOldToFreshIdMappings lhs_vars var_map proc_name
 
   -- Make a map for renaming label names
-  let labels := List.flatMap (fun s => Statement.labelsOfBlocksAndAssertAssumes s) c.body
+  let labels := List.flatMap (fun s => Statement.labelsOfBlocksAndAssertAssumes s) bodyStmts
   -- Reuse genOldToFreshIdMappings by introducing dummy data to Identifier
   let label_ids:List Expression.Ident := labels.map
       (fun s => { name:=s, metadata := () })
@@ -105,12 +108,17 @@ private def renameAllLocalNames (c:Procedure)
   -- by genOldToFreshIdMappings (counter-based), so a fresh new_id cannot collide with
   -- a later old_id. The iteration is intentionally sequential because each step also
   -- renames LHS variables and labels.
-  let new_body := List.map (fun (s0:Statement) =>
-    var_map.foldl (fun (s:Statement) (old_id,new_id) =>
-        let s := Statement.substFvar s old_id (.fvar () new_id .none)
-        let s := Statement.renameLhs s old_id new_id
-        Statement.replaceLabelsOfBlocksAndAssertAssumes s label_map)
-      s0) c.body
+  let new_body : Procedure.Body ← match c.body with
+    | .structured bodyStmts =>
+      pure <| .structured (List.map (fun (s0:Statement) =>
+        var_map.foldl (fun (s:Statement) (old_id,new_id) =>
+            let s := Statement.substFvar s old_id (.fvar () new_id .none)
+            let s := Statement.renameLhs s old_id new_id
+            Statement.replaceLabelsOfBlocksAndAssertAssumes s label_map)
+          s0) bodyStmts)
+    | .cfg _ =>
+      throw (Strata.DiagnosticModel.fromMessage
+        "renameAllLocalNames: CFG body renaming not yet implemented")
   let new_header := { c.header with
     inputs := c.header.inputs.map (fun (id,ty) =>
       match var_map.find? id with
@@ -259,9 +267,17 @@ def inlineCallCmd
               Statement.set lhs_var (.fvar () out_var (.none)) md)
             outs_lhs_and_sig
 
+        -- Cannot inline unstructured (CFG) bodies into structured code.
+        -- CFG-level inlining is a separate, more complex pass that operates
+        -- entirely in the CFG domain (graph splicing).
+        let procBodyStmts ← match proc.body with
+        | .cfg _ => throw (Strata.DiagnosticModel.fromMessage
+            "cannot inline procedure with CFG body into structured code")
+        | .structured ss => pure ss
+
         let stmts:List (Imperative.Stmt Core.Expression Core.Command)
           := inputInits ++ outputInits
-             ++ Block.setCallSiteMetadata proc.body md
+             ++ Block.setCallSiteMetadata procBodyStmts md
              ++ outputSetStmts
 
         -- Update CallGraph if available
