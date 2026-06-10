@@ -2561,11 +2561,9 @@ private theorem stmtsToBlocks_invariant
               rcases h_inv_rest.fresh lentry h_bs with h_gr | h_user
               · exact h_lentry_notin_gen_r h_gr.1
               · have h_shape := h_inv_rest.user_shape lentry h_user
-                have h_shape_lentry :
-                    String.HasUnderscoreDigitSuffix lentry := by
-                  have := StringGenState.hasUnderscoreDigitSuffix_of_mem_generated
-                            (h_inv_le_step.wf_out) h_lentry_in_gen_le
-                  exact this
+                have h_shape_lentry : String.HasUnderscoreDigitSuffix lentry :=
+                  StringGenState.hasUnderscoreDigitSuffix_of_mem_generated
+                    h_inv_le_step.wf_out h_lentry_in_gen_le
                 exact h_shape h_shape_lentry
             · -- bbs: from h_inv_body.fresh
               rcases h_inv_body.fresh lentry h_bb with h_gb | h_user
