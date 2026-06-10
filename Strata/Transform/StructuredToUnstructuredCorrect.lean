@@ -4887,7 +4887,7 @@ private theorem loop_iterations_to_cont_det
 
 end InlineLoopHelpers
 
-set_option maxHeartbeats 3200000 in
+set_option maxHeartbeats 12800000 in
 set_option maxRecDepth 4096 in
 mutual
 /-- The central simulation lemma, written in a StoreAgreement-based shape.
@@ -8293,13 +8293,371 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
     have h_invs_nil : invariants = [] :=
       Stmt.loopHasNoInvariants_loop_invs h_lhni_head
     subst h_invs_nil
-    -- Now we have `.loop (.det guardExpr) none [] body md :: rest` to handle
-    -- in the _to_cont arm. The body is wrapped in `.block .none ρ.store ...`
-    -- so the loop itself never produces an `.exiting`; instead `rest` exits
-    -- with `label` and we route through the post-loop continuation. This
-    -- residual obstacle inherits the same iteration-induction infrastructure
-    -- gap as the terminal arm.
-    sorry
+    -- === STEP 1: Decompose h_gen. ===
+    obtain ⟨kNext, lentry, bl, bbs, bsRest, accumEntry, accumBlocks,
+           gen_r, gen_le, gen_b, gen_f,
+           h_rest_eq, h_le_eq, h_body_eq, h_flush_eq, h_gen_eq, h_entry_eq, h_blocks_eq⟩ :=
+      InlineLoopHelpers.loop_det_decompose_h_gen k gen gen' entry blocks accum
+        guardExpr body md exitConts rest h_gen
+    -- === STEP 2: Project sub-block preconditions (same as terminal arm). ===
+    have h_body_no_inits : Block.initVars body = [] :=
+      Stmt.loopBodyNoInits_loop_body ((Block.loopBodyNoInits_cons_iff.mp h_lbni).1)
+    have h_nofd_body : Block.noFuncDecl body = true := by
+      simp [Block.noFuncDecl, Stmt.noFuncDecl] at h_nofd; exact h_nofd.1
+    have h_nofd_rest : Block.noFuncDecl rest = true := by
+      simp [Block.noFuncDecl, Stmt.noFuncDecl] at h_nofd; exact h_nofd.2
+    have h_simple_body : Block.simpleShape body = true :=
+      Stmt.simpleShape_loop_body h_simple_head
+    have h_simple_rest : Block.simpleShape rest = true :=
+      (Block.simpleShape_cons_iff.mp h_simple).2
+    have h_unique_body : Block.uniqueInits body := by
+      have h := Block.uniqueInits.head_stmt h_unique
+      simp only [Stmt.initVars] at h; exact h
+    have h_unique_rest : Block.uniqueInits rest := Block.uniqueInits.tail h_unique
+    have h_lbni_body : Block.loopBodyNoInits body = true :=
+      Stmt.loopBodyNoInits_loop_body_rec ((Block.loopBodyNoInits_cons_iff.mp h_lbni).1)
+    have h_lbni_rest : Block.loopBodyNoInits rest = true :=
+      (Block.loopBodyNoInits_cons_iff.mp h_lbni).2
+    have h_lhni_body : Block.loopHasNoInvariants body = true :=
+      Stmt.loopHasNoInvariants_loop_body_rec h_lhni_head
+    have h_lhni_rest : Block.loopHasNoInvariants rest = true :=
+      (Block.loopHasNoInvariants_cons_iff.mp h_lhni).2
+    have h_nml_body : Block.noMeasureLoops body = true :=
+      Stmt.noMeasureLoops_loop_body_rec h_nml_head
+    have h_nml_rest : Block.noMeasureLoops rest = true :=
+      (Block.noMeasureLoops_cons_iff.mp h_nml).2
+    have h_initvars_eq :
+        Block.initVars (Stmt.loop (.det guardExpr) none [] body md :: rest) =
+        Block.initVars rest := by
+      rw [Block.initVars]; simp only [Stmt.initVars, h_body_no_inits, List.nil_append]
+    -- === STEP 3: Split h_exit (loop :: rest exits with label). ===
+    -- Two cases: (a) the loop body exits with label (loop produces .exiting), or
+    -- (b) the loop terminates, then rest exits with label.
+    have h_exit_dispatch :
+        (∃ ρ_loop_post, StepStmtStar P (EvalCmd P) extendEval
+            (.stmt (Stmt.loop (.det guardExpr) none [] body md) ρ₀) (.exiting label ρ_loop_post) ∧
+          ρ' = ρ_loop_post) ∨
+        (∃ ρ_loop_post, StepStmtStar P (EvalCmd P) extendEval
+            (.stmt (Stmt.loop (.det guardExpr) none [] body md) ρ₀) (.terminal ρ_loop_post) ∧
+          StepStmtStar P (EvalCmd P) extendEval
+            (.stmts rest ρ_loop_post) (.exiting label ρ')) := by
+      cases h_exit with
+      | step _ _ _ hstep1 hrest1 =>
+        cases hstep1 with
+        | step_stmts_cons =>
+          rcases seq_reaches_exiting P (EvalCmd P) extendEval hrest1 with h_inner | h_term
+          · exact Or.inl ⟨ρ', h_inner, rfl⟩
+          · obtain ⟨ρ_loop_post, h_loop_term, h_rest_exit⟩ := h_term
+            exact Or.inr ⟨ρ_loop_post, h_loop_term, h_rest_exit⟩
+    -- === STEP 3b: GenStep chain. ===
+    subst h_entry_eq
+    subst h_gen_eq
+    have h_step_gen_to_r : StringGenState.GenStep gen gen_r :=
+      stmtsToBlocks_genStep _ _ _ _ _ _ _ _ h_rest_eq
+    have h_step_r_to_le : StringGenState.GenStep gen_r gen_le := by
+      rw [show gen_le = (StringGenState.gen "loop_entry$" gen_r).2 from (by rw [h_le_eq])]
+      exact StringGenState.GenStep.of_gen "loop_entry$" gen_r
+    have h_step_le_to_b : StringGenState.GenStep gen_le gen_b :=
+      stmtsToBlocks_genStep _ _ _ _ _ _ _ _ h_body_eq
+    have h_step_b_to_f : StringGenState.GenStep gen_b gen_f :=
+      flushCmds_genStep _ _ _ _ _ _ _ _ h_flush_eq
+    have h_step_gen_to_le : StringGenState.GenStep gen gen_le := h_step_gen_to_r.trans h_step_r_to_le
+    have h_step_gen_to_b : StringGenState.GenStep gen gen_b := h_step_gen_to_le.trans h_step_le_to_b
+    have h_wf_r : StringGenState.WF gen_r := h_step_gen_to_r.wf_mono h_wf_gen
+    have h_wf_le : StringGenState.WF gen_le := h_step_gen_to_le.wf_mono h_wf_gen
+    have h_wf_b : StringGenState.WF gen_b := h_step_gen_to_b.wf_mono h_wf_gen
+    have h_outer_upper_b : StringGenState.stringGens gen_b ⊆ StringGenState.stringGens genUpperBound :=
+      h_step_b_to_f.subset.trans h_outer_upper
+    have h_outer_upper_le : StringGenState.stringGens gen_le ⊆ StringGenState.stringGens genUpperBound :=
+      h_step_le_to_b.subset.trans h_outer_upper_b
+    have h_outer_upper_r : StringGenState.stringGens gen_r ⊆ StringGenState.stringGens genUpperBound :=
+      h_step_r_to_le.subset.trans h_outer_upper_le
+    -- === STEP 3c: Block-list membership. ===
+    let lentryBlk : DetBlock String (Cmd P) P :=
+      { cmds := ([] : List (Cmd P)), transfer := DetTransferCmd.condGoto guardExpr bl kNext md }
+    have h_blocks_full :
+        accumBlocks ++ [(lentry, lentryBlk)] ++ bbs ++ bsRest = blocks := h_blocks_eq
+    subst h_blocks_full
+    have h_cfg_accum : ∀ b ∈ accumBlocks, b ∈ cfg.blocks := fun b hb =>
+      h_cfg_blocks b (List.mem_append_left _ (List.mem_append_left _ (List.mem_append_left _ hb)))
+    have h_cfg_lentry : (lentry, lentryBlk) ∈ cfg.blocks :=
+      h_cfg_blocks _ (List.mem_append_left _ (List.mem_append_left _
+        (List.mem_append_right _ (List.Mem.head _))))
+    have h_cfg_bbs : ∀ b ∈ bbs, b ∈ cfg.blocks := fun b hb =>
+      h_cfg_blocks b (List.mem_append_left _ (List.mem_append_right _ hb))
+    have h_cfg_bsRest : ∀ b ∈ bsRest, b ∈ cfg.blocks := fun b hb =>
+      h_cfg_blocks b (List.mem_append_right _ hb)
+    have h_lentry_lkp : cfg.blocks.lookup lentry = some lentryBlk :=
+      List.lookup_of_mem_nodup cfg.blocks h_cfg_nodup _ _ h_cfg_lentry
+    -- === STEP 4: Lift accum to CFG (accumEntry → lentry). ===
+    have h_fresh_accum : ∀ x ∈ Cmds.definedVars accum.reverse, σ_base x = none := fun x hx =>
+      h_fresh_combined x (List.mem_append_left _ hx)
+    have h_unique_accum : (Cmds.definedVars accum.reverse).Nodup :=
+      (List.nodup_append.mp h_unique_combined).1
+    have ⟨σ_cfg_after, h_step_flush, h_agree_after, h_preserve_flush⟩ :=
+      flushCmds_simulation_agree extendEval "before_loop$" lentry accum gen_b gen_f
+        accumEntry accumBlocks h_flush_eq σ_struct_base σ_base hf_base hf_accum ρ₀
+        hwfb hwfv hwf_def hwf_congr h_accum h_agree_entry h_fresh_accum h_unique_accum
+        h_hf cfg h_cfg_accum h_cfg_nodup
+    -- === STEP 5: no-gen-suffix discharges and the store invariant. ===
+    have h_body_no_gen_suffix :
+        NoGenSuffix (P := P) (Cmds.definedVars [].reverse ++ Block.initVars body) := by
+      rw [h_body_no_inits]; intro x hx; simp [Cmds.definedVars] at hx
+    have h_rest_no_gen_suffix :
+        NoGenSuffix (P := P) (Cmds.definedVars [].reverse ++ Block.initVars rest) := fun x hx s heq =>
+      h_combined_no_gen_suffix x (List.mem_append_right _ (h_initvars_eq ▸
+        (by simpa [Cmds.definedVars] using hx))) s heq
+    have h_body_no_gen_suffix_mod :
+        NoGenSuffix (P := P) (Cmds.modifiedVars [].reverse ++ transformBlockModVars body) :=
+      fun x hx s heq => h_combined_no_gen_suffix_mod x
+        (List.mem_append_right _ (by
+          rw [transformBlockModVars_cons, transformStmtModVars_loop]
+          exact List.mem_append_left _ (by simpa [Cmds.modifiedVars] using hx))) s heq
+    have h_getvars_eq :
+        Block.getVars (Stmt.loop (.det guardExpr) none [] body md :: rest) =
+        (HasVarsPure.getVars guardExpr ++ Block.getVars body) ++ Block.getVars rest := by
+      show Stmt.getVars (Stmt.loop (.det guardExpr) none [] body md) ++ Block.getVars rest = _
+      simp only [Stmt.getVars, ExprOrNondet.getVars, List.flatMap_nil,
+        List.append_nil, List.nil_append]
+    have h_body_no_gen_suffix_get :
+        NoGenSuffix (P := P) (Cmds.getVars [].reverse ++ Block.getVars body) :=
+      fun x hx s heq => h_combined_no_gen_suffix_get x
+        (List.mem_append_right _ (h_getvars_eq ▸
+          List.mem_append_left _ (List.mem_append_right _
+            (by simpa [Cmds.getVars] using hx)))) s heq
+    let P_keep : P.Ident → Prop := fun x =>
+      ∀ s : String, x = HasIdent.ident (P := P) s →
+        s ∈ StringGenState.stringGens gen_le ∨ s ∉ StringGenState.stringGens gen_b
+    let storeInv : SemanticStore P → Prop := fun σ =>
+      ∀ x, P_keep x → σ_cfg_after x = none → σ x = none
+    have h_inv_after : storeInv σ_cfg_after := fun x _ h => h
+    have h_store_no_gens_upper_after :
+        ∀ x : String, String.HasUnderscoreDigitSuffix x →
+          x ∉ StringGenState.stringGens genUpperBound →
+          σ_cfg_after (HasIdent.ident (P := P) x) = none :=
+      store_no_gens_lift_after_flush h_preserve_flush genUpperBound h_store_no_gens_upper
+        (fun y hy => h_combined_no_gen_suffix y (List.mem_append_left _ hy))
+    have h_fresh_rest_inits_after : ∀ x ∈ Block.initVars rest, σ_cfg_after x = none := by
+      intro x hx
+      have h_x_not_accum : x ∉ Cmds.definedVars accum.reverse := fun h_in_accum =>
+        (List.nodup_append.mp (h_initvars_eq ▸ h_unique_combined)).2.2 x h_in_accum x hx rfl
+      have h_σ_base_x : σ_base x = none :=
+        h_fresh_combined x (h_initvars_eq ▸ List.mem_append_right _ hx)
+      exact h_preserve_flush x h_σ_base_x h_x_not_accum
+    -- The store-no-gens-iter derivation shared between the two body-sim oracles.
+    have h_sng_of_inv : ∀ σ, storeInv σ →
+        ∀ x : String, String.HasUnderscoreDigitSuffix x →
+          x ∉ StringGenState.stringGens genUpperBound →
+          σ (HasIdent.ident (P := P) x) = none := by
+      intro σ h_inv x hx_sfx hx_notin
+      have h_keep : P_keep (HasIdent.ident (P := P) x) := by
+        intro s heq
+        have hs_eq : x = s := LawfulHasIdent.ident_inj heq
+        subst hs_eq
+        exact Or.inr (fun h_in_b => hx_notin (h_outer_upper_b h_in_b))
+      exact h_inv _ h_keep (h_store_no_gens_upper_after x hx_sfx hx_notin)
+    -- === STEP 6: Body-sim oracle for terminating iterations. ===
+    have h_body_sim_at :
+        ∀ (ρ_iter : Env P) (σ_cfg_iter : SemanticStore P),
+          ρ_iter.eval = ρ₀.eval →
+          StoreAgreement ρ_iter.store σ_cfg_iter →
+          storeInv σ_cfg_iter →
+          ∀ (ρ_body : Env P), StepStmtStar P (EvalCmd P) extendEval
+              (.stmts body ρ_iter) (.terminal ρ_body) →
+            ∃ σ_cfg_after_body,
+              StepDetCFGStar extendEval cfg
+                (.atBlock bl σ_cfg_iter ρ_iter.hasFailure)
+                (.atBlock lentry σ_cfg_after_body ρ_body.hasFailure) ∧
+              StoreAgreement ρ_body.store σ_cfg_after_body ∧
+              storeInv σ_cfg_after_body := by
+      intro ρ_iter σ_cfg_iter h_eval_iter h_agree_iter h_inv_iter ρ_body h_body_run
+      have hwfb_iter : WellFormedSemanticEvalBool ρ_iter.eval := h_eval_iter ▸ hwfb
+      have hwfv_iter : WellFormedSemanticEvalVal ρ_iter.eval := h_eval_iter ▸ hwfv
+      have hwf_def_iter : WellFormedSemanticEvalDef ρ_iter.eval := h_eval_iter ▸ hwf_def
+      have hwf_congr_iter : WellFormedSemanticEvalExprCongr ρ_iter.eval := h_eval_iter ▸ hwf_congr
+      have hwf_var_iter : WellFormedSemanticEvalVar ρ_iter.eval := h_eval_iter ▸ hwf_var
+      have h_combined_body : ∀ x ∈ Cmds.definedVars [].reverse ++ Block.initVars body,
+          σ_cfg_iter x = none := by
+        intro x hx; rw [h_body_no_inits] at hx; simp [Cmds.definedVars] at hx
+      have h_unique_combined_body : (Cmds.definedVars [].reverse ++ Block.initVars body).Nodup := by
+        rw [h_body_no_inits]; simp [Cmds.definedVars]
+      have h_accum_nil : EvalCmds P (EvalCmd P) ρ_iter.eval ρ_iter.store
+          [].reverse ρ_iter.store false := EvalCmds.eval_cmds_none
+      have h_hf_iter : ρ_iter.hasFailure = (ρ_iter.hasFailure || false) := by simp
+      have ⟨σ_cfg_after_body, h_step_body, h_agree_body, h_preserve_body⟩ :=
+        stmtsToBlocks_simulation extendEval lentry body ((.none, kNext) :: exitConts) []
+          gen_le gen_b bl bbs h_body_eq h_nofd_body h_simple_body h_unique_body
+          h_lbni_body h_lhni_body h_nml_body
+          ρ_iter.store σ_cfg_iter ρ_iter.hasFailure false
+          ρ_iter ρ_body hwfb_iter hwfv_iter hwf_def_iter hwf_congr_iter hwf_var_iter
+          h_body_run h_accum_nil h_agree_iter
+          h_combined_body h_unique_combined_body h_hf_iter
+          h_wf_le h_body_no_gen_suffix h_body_no_gen_suffix_mod h_body_no_gen_suffix_get
+          genUpperBound h_outer_upper_b (h_sng_of_inv σ_cfg_iter h_inv_iter)
+          cfg h_cfg_bbs h_cfg_nodup
+      refine ⟨σ_cfg_after_body, h_step_body, h_agree_body, ?_⟩
+      intro x h_keep h_after_x
+      have h_iter_x : σ_cfg_iter x = none := h_inv_iter x h_keep h_after_x
+      have h_nil_not : x ∉ Cmds.definedVars ([] : List (Cmd P)).reverse := by simp [Cmds.definedVars]
+      have h_not_body : x ∉ Block.initVars body := by rw [h_body_no_inits]; simp
+      exact h_preserve_body x h_iter_x h_nil_not h_not_body h_keep
+    -- === STEP 6b: Body-sim oracle for the exiting iteration. ===
+    -- The label resolution: ((.none, kNext) :: exitConts).lookup (.some label) = bk_target.
+    have h_label_lookup :
+        ((.none, kNext) :: exitConts).lookup (.some label) = some bk_target := by
+      simp [List.lookup, h_label]
+    have h_body_sim_exit_at :
+        ∀ (ρ_iter : Env P) (σ_cfg_iter : SemanticStore P),
+          ρ_iter.eval = ρ₀.eval →
+          StoreAgreement ρ_iter.store σ_cfg_iter →
+          storeInv σ_cfg_iter →
+          ∀ (ρ_body : Env P), StepStmtStar P (EvalCmd P) extendEval
+              (.stmts body ρ_iter) (.exiting label ρ_body) →
+            ∃ σ_cfg_after_body,
+              StepDetCFGStar extendEval cfg
+                (.atBlock bl σ_cfg_iter ρ_iter.hasFailure)
+                (.atBlock bk_target σ_cfg_after_body ρ_body.hasFailure) ∧
+              StoreAgreement ρ_body.store σ_cfg_after_body ∧
+              storeInv σ_cfg_after_body := by
+      intro ρ_iter σ_cfg_iter h_eval_iter h_agree_iter h_inv_iter ρ_body h_body_exit
+      have hwfb_iter : WellFormedSemanticEvalBool ρ_iter.eval := h_eval_iter ▸ hwfb
+      have hwfv_iter : WellFormedSemanticEvalVal ρ_iter.eval := h_eval_iter ▸ hwfv
+      have hwf_def_iter : WellFormedSemanticEvalDef ρ_iter.eval := h_eval_iter ▸ hwf_def
+      have hwf_congr_iter : WellFormedSemanticEvalExprCongr ρ_iter.eval := h_eval_iter ▸ hwf_congr
+      have hwf_var_iter : WellFormedSemanticEvalVar ρ_iter.eval := h_eval_iter ▸ hwf_var
+      have h_combined_body : ∀ x ∈ Cmds.definedVars [].reverse ++ Block.initVars body,
+          σ_cfg_iter x = none := by
+        intro x hx; rw [h_body_no_inits] at hx; simp [Cmds.definedVars] at hx
+      have h_unique_combined_body : (Cmds.definedVars [].reverse ++ Block.initVars body).Nodup := by
+        rw [h_body_no_inits]; simp [Cmds.definedVars]
+      have h_accum_nil : EvalCmds P (EvalCmd P) ρ_iter.eval ρ_iter.store
+          [].reverse ρ_iter.store false := EvalCmds.eval_cmds_none
+      have h_hf_iter : ρ_iter.hasFailure = (ρ_iter.hasFailure || false) := by simp
+      have ⟨σ_cfg_after_body, h_step_body, h_agree_body, h_preserve_body⟩ :=
+        stmtsToBlocks_simulation_to_cont extendEval lentry body ((.none, kNext) :: exitConts) []
+          gen_le gen_b bl bbs h_body_eq h_nofd_body h_simple_body h_unique_body
+          h_lbni_body h_lhni_body h_nml_body
+          ρ_iter.store σ_cfg_iter ρ_iter.hasFailure false
+          ρ_iter ρ_body label bk_target h_label_lookup
+          hwfb_iter hwfv_iter hwf_def_iter hwf_congr_iter hwf_var_iter
+          h_body_exit h_accum_nil h_agree_iter
+          h_combined_body h_unique_combined_body h_hf_iter
+          h_wf_le h_body_no_gen_suffix h_body_no_gen_suffix_mod h_body_no_gen_suffix_get
+          genUpperBound h_outer_upper_b (h_sng_of_inv σ_cfg_iter h_inv_iter)
+          cfg h_cfg_bbs h_cfg_nodup
+      refine ⟨σ_cfg_after_body, h_step_body, h_agree_body, ?_⟩
+      intro x h_keep h_after_x
+      have h_iter_x : σ_cfg_iter x = none := h_inv_iter x h_keep h_after_x
+      have h_nil_not : x ∉ Cmds.definedVars ([] : List (Cmd P)).reverse := by simp [Cmds.definedVars]
+      have h_not_body : x ∉ Block.initVars body := by rw [h_body_no_inits]; simp
+      exact h_preserve_body x h_iter_x h_nil_not h_not_body h_keep
+    -- === STEP 7: Dispatch on the exit. ===
+    rcases h_exit_dispatch with ⟨ρ_loop_post, h_loop_exit, hρ'_eq⟩ | h_caseB
+    · -- CASE A: loop body exits with label → bk_target directly.
+      subst hρ'_eq
+      have ⟨σ_cfg_bk, h_loop_run, h_agree_bk, h_inv_bk⟩ :=
+        InlineLoopHelpers.loop_iterations_to_cont_det extendEval guardExpr body md
+          ρ₀ ρ' label cfg lentry kNext bl bk_target σ_cfg_after storeInv
+          h_lentry_lkp h_agree_after h_inv_after h_loop_exit h_nofd_body
+          h_body_sim_at h_body_sim_exit_at hwfb hwf_def hwf_congr
+      refine ⟨σ_cfg_bk, ?_, h_agree_bk, ?_⟩
+      · exact StepDetCFGStar_trans h_step_flush h_loop_run
+      · intro x h_σ_x h_x_not_accum h_x_not_inits h_outer_guard
+        have h_x_not_rest : x ∉ Block.initVars rest := fun hx =>
+          h_x_not_inits (h_initvars_eq ▸ hx)
+        have h_σ_after_x : σ_cfg_after x = none := h_preserve_flush x h_σ_x h_x_not_accum
+        have h_keep : P_keep x := by
+          intro s heq
+          rcases h_outer_guard s heq with h_in_gen | h_notin_gen'
+          · exact Or.inl (h_step_gen_to_le.subset h_in_gen)
+          · exact Or.inr (fun h_in_b => h_notin_gen' (h_step_b_to_f.subset h_in_b))
+        exact h_inv_bk x h_keep h_σ_after_x
+    · -- CASE B: loop terminates, then rest exits with label.
+      obtain ⟨ρ_loop_post, h_loop_term, h_rest_exit⟩ := h_caseB
+      have h_loop_stmt := h_loop_term
+      have ⟨σ_cfg_kNext, h_loop_run, h_agree_loop, h_inv_loop⟩ :=
+        InlineLoopHelpers.loop_iterations_det extendEval guardExpr body md ρ₀ ρ_loop_post
+          cfg lentry kNext bl σ_cfg_after storeInv h_lentry_lkp h_agree_after h_inv_after
+          h_loop_stmt h_body_no_inits h_nofd_body h_body_sim_at
+          hwfb hwfv hwf_var hwf_def hwf_congr
+      have h_sng_loop : ∀ x : String, String.HasUnderscoreDigitSuffix x →
+          x ∉ StringGenState.stringGens genUpperBound →
+          σ_cfg_kNext (HasIdent.ident (P := P) x) = none :=
+        h_sng_of_inv σ_cfg_kNext h_inv_loop
+      have h_fresh_rest_loop : ∀ x ∈ Block.initVars rest, σ_cfg_kNext x = none := by
+        intro x hx
+        have h_keep : P_keep x := by
+          intro s heq
+          exact Or.inr (fun h_in_b =>
+            StringGenState.not_mem_stringGens_of_not_hasUnderscoreDigitSuffix h_wf_b
+              (h_rest_no_gen_suffix x (by simpa [Cmds.definedVars] using hx) s heq) h_in_b)
+        exact h_inv_loop x h_keep (h_fresh_rest_inits_after x hx)
+      have h_loop_stmts : StepStmtStar P (EvalCmd P) extendEval
+          (.stmts [.loop (.det guardExpr) none [] body md] ρ₀) (.terminal ρ_loop_post) :=
+        ReflTrans_Transitive _ _ _ _
+          (stmts_cons_step P (EvalCmd P) extendEval _ [] ρ₀ ρ_loop_post h_loop_term)
+          (.step _ _ _ .step_stmts_nil (.refl _))
+      have h_eval_loop : ρ_loop_post.eval = ρ₀.eval :=
+        smallStep_noFuncDecl_preserves_eval_block P (EvalCmd P) extendEval
+          [.loop (.det guardExpr) none [] body md] ρ₀ ρ_loop_post
+          (by simp [Block.noFuncDecl, Stmt.noFuncDecl, h_nofd_body])
+          h_loop_stmts
+      have hwfb_loop : WellFormedSemanticEvalBool ρ_loop_post.eval := h_eval_loop ▸ hwfb
+      have hwfv_loop : WellFormedSemanticEvalVal ρ_loop_post.eval := h_eval_loop ▸ hwfv
+      have hwf_def_loop : WellFormedSemanticEvalDef ρ_loop_post.eval := h_eval_loop ▸ hwf_def
+      have hwf_congr_loop : WellFormedSemanticEvalExprCongr ρ_loop_post.eval := h_eval_loop ▸ hwf_congr
+      have hwf_var_loop : WellFormedSemanticEvalVar ρ_loop_post.eval := h_eval_loop ▸ hwf_var
+      have h_combined_rest : ∀ x ∈ Cmds.definedVars [].reverse ++ Block.initVars rest,
+          σ_cfg_kNext x = none := fun x hx =>
+        h_fresh_rest_loop x (by simpa [Cmds.definedVars] using hx)
+      have h_unique_combined_rest : (Cmds.definedVars [].reverse ++ Block.initVars rest).Nodup := by
+        simpa [Cmds.definedVars, Block.uniqueInits] using h_unique_rest
+      have h_accum_nil_r : EvalCmds P (EvalCmd P) ρ_loop_post.eval ρ_loop_post.store
+          [].reverse ρ_loop_post.store false := EvalCmds.eval_cmds_none
+      have h_hf_loop : ρ_loop_post.hasFailure = (ρ_loop_post.hasFailure || false) := by simp
+      have h_rest_no_gen_suffix_mod :
+          NoGenSuffix (P := P) (Cmds.modifiedVars [].reverse ++ transformBlockModVars rest) :=
+        fun x hx s heq => h_combined_no_gen_suffix_mod x
+          (List.mem_append_right _ (by
+            rw [transformBlockModVars_cons, transformStmtModVars_loop]
+            exact List.mem_append_right _ (by simpa [Cmds.modifiedVars] using hx))) s heq
+      have h_rest_no_gen_suffix_get :
+          NoGenSuffix (P := P) (Cmds.getVars [].reverse ++ Block.getVars rest) :=
+        fun x hx s heq => h_combined_no_gen_suffix_get x
+          (List.mem_append_right _ (h_getvars_eq ▸
+            List.mem_append_right _ (by simpa [Cmds.getVars] using hx))) s heq
+      have ⟨σ_cfg, h_rest_sim, h_agree_rest, h_preserve_rest⟩ :=
+        stmtsToBlocks_simulation_to_cont extendEval k rest exitConts [] gen gen_r kNext bsRest
+          h_rest_eq h_nofd_rest h_simple_rest h_unique_rest
+          h_lbni_rest h_lhni_rest h_nml_rest
+          ρ_loop_post.store σ_cfg_kNext ρ_loop_post.hasFailure false
+          ρ_loop_post ρ' label bk_target h_label
+          hwfb_loop hwfv_loop hwf_def_loop hwf_congr_loop hwf_var_loop
+          h_rest_exit h_accum_nil_r h_agree_loop
+          h_combined_rest h_unique_combined_rest h_hf_loop
+          h_wf_gen h_rest_no_gen_suffix h_rest_no_gen_suffix_mod h_rest_no_gen_suffix_get
+          genUpperBound h_outer_upper_r h_sng_loop
+          cfg h_cfg_bsRest h_cfg_nodup
+      refine ⟨σ_cfg, ?_, h_agree_rest, ?_⟩
+      · exact StepDetCFGStar_trans (StepDetCFGStar_trans h_step_flush h_loop_run) h_rest_sim
+      · intro x h_σ_x h_x_not_accum h_x_not_inits h_outer_guard
+        have h_x_not_rest : x ∉ Block.initVars rest := fun hx =>
+          h_x_not_inits (h_initvars_eq ▸ hx)
+        have h_σ_after_x : σ_cfg_after x = none := h_preserve_flush x h_σ_x h_x_not_accum
+        have h_nil_not : x ∉ Cmds.definedVars [].reverse := by simp [Cmds.definedVars]
+        have h_keep : P_keep x := by
+          intro s heq
+          rcases h_outer_guard s heq with h_in_gen | h_notin_gen'
+          · exact Or.inl (h_step_gen_to_le.subset h_in_gen)
+          · exact Or.inr (fun h_in_b => h_notin_gen' (h_step_b_to_f.subset h_in_b))
+        have h_x_fresh_loop : σ_cfg_kNext x = none := h_inv_loop x h_keep h_σ_after_x
+        have h_guard_rest : ∀ s : String, x = HasIdent.ident (P := P) s →
+            s ∈ StringGenState.stringGens gen ∨ s ∉ StringGenState.stringGens gen_r :=
+          fun s heq => match h_outer_guard s heq with
+            | Or.inl h_in => Or.inl h_in
+            | Or.inr h_notin => Or.inr (fun h_in_r => h_notin
+                (h_step_b_to_f.subset (h_step_le_to_b.subset (h_step_r_to_le.subset h_in_r))))
+        exact h_preserve_rest x h_x_fresh_loop h_nil_not h_x_not_rest h_guard_rest
 termination_by sizeOf ss
 decreasing_by
   all_goals (subst h_match; simp_wf; omega)
