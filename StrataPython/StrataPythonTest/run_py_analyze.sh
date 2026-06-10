@@ -59,7 +59,7 @@ for test_file in tests/test_*.py; do
         expected_file="${expected_dir}/${base_name}.expected"
 
         if [ -f "$expected_file" ]; then
-            (cd ../../Tools/Python && python3 -m strata.gen py_to_strata --dialect "dialects/Python.dialect.st.ion" "../../StrataPython/StrataPythonTest/$test_file" "../../StrataPython/StrataPythonTest/$ion_file")
+            (cd ../Tools/strata-python && python3 -m strata_python.gen py_to_strata --dialect "dialects/Python.dialect.st.ion" "../../StrataPythonTest/$test_file" "../../StrataPythonTest/$ion_file")
 
             # Check for per-file strata arguments (e.g. # strata-args: --check-mode bugFinding)
             extra_args=$(grep '^# strata-args:' "$test_file" | sed 's/^# strata-args://' | head -1)
@@ -151,7 +151,7 @@ if [ $pending -eq 1 ]; then
         pending_total=$((pending_total + 1))
         ion_file="tests/pending/${base_name}.python.st.ion"
 
-        parse_output=$(cd ../../Tools/Python && python3 -m strata.gen py_to_strata --dialect "dialects/Python.dialect.st.ion" "../../StrataPython/StrataPythonTest/$test_file" "../../StrataPython/StrataPythonTest/$ion_file" 2>&1)
+        parse_output=$(cd ../Tools/strata-python && python3 -m strata_python.gen py_to_strata --dialect "dialects/Python.dialect.st.ion" "../../StrataPythonTest/$test_file" "../../StrataPythonTest/$ion_file" 2>&1)
         parse_exit=$?
 
         if [ $parse_exit -ne 0 ]; then
