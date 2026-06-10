@@ -14,7 +14,7 @@ open Strata
 #strata
 program Laurel;
 procedure testStringKO()
-returns (result: string)
+  returns (result: string)
   opaque
 {
   var message: string := "Hello";

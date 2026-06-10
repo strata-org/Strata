@@ -126,7 +126,7 @@ procedure modifiesWildcardBodilessCaller()
   var x: int := d#value;
   modifiesWildcardBodiless(c, d);
   assert x == d#value // this should fail because modifies * means anything can change
-//^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+//^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
 };
 
 procedure modifiesWildcardWithBody(c: Container, d: Container)
@@ -151,6 +151,6 @@ procedure modifiesWildcardAndSpecificCaller()
   var x: int := d#value;
   modifiesWildcardAndSpecific(c, d);
   assert x == d#value // fails because modifies * subsumes modifies c
-//^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+//^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
 };
 #end

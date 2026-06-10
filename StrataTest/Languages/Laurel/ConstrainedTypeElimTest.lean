@@ -70,6 +70,7 @@ info: function pos$constraint(v: int): bool
   v > 0
 };
 procedure test(b: bool)
+  opaque
 {
   if b then {
     var x: int := 1;
@@ -92,7 +93,7 @@ procedure $witness_pos()
 #strata
 program Laurel;
 constrained pos = v: int where v > 0 witness 1
-procedure test(b: bool) {
+procedure test(b: bool) opaque {
   if b then {
     var x: pos := 1
   };

@@ -30,9 +30,9 @@ procedure callerOfOpaqueProcedure()
 };
 
 procedure invalidPostcondition(x: int)
-    opaque
-    ensures false
-//          ^^^^^ error: assertion does not hold
+  opaque
+  ensures false
+//        ^^^^^ error: assertion does not hold
 {
 };
 #end

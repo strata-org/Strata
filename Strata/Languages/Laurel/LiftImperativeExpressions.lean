@@ -84,12 +84,6 @@ structure LiftState where
 
 private def emptyMd : Option String := none
 
-/-- Wrap a StmtExpr value with empty metadata -/
-private def bare (v : StmtExpr) : StmtExprMd := ⟨v, none⟩
-
-/-- Wrap a HighType value with empty metadata -/
-private def bareType (v : HighType) : HighTypeMd := ⟨v, none⟩
-
 private def freshTempFor (varName : Identifier) : LiftM Identifier := do
   let counters := (← get).varCounters
   let counter := counters.find? (·.1 == varName) |>.map (·.2) |>.getD 0
@@ -161,7 +155,7 @@ def containsAssignment (expr : StmtExprMd) : Bool :=
   match val with
   | .Assign .. => true
   | .StaticCall _ args => args.attach.any (fun x => containsAssignment x.val)
-  | .PrimitiveOp _ args => args.attach.any (fun x => containsAssignment x.val)
+  | .PrimitiveOp _ args _ => args.attach.any (fun x => containsAssignment x.val)
   | .Block stmts _ => stmts.attach.any (fun x => containsAssignment x.val)
   | .IfThenElse cond th el =>
       containsAssignment cond || containsAssignment th ||
@@ -179,7 +173,7 @@ def containsBareAssignment (expr : StmtExprMd) : Bool :=
   match val with
   | .Assign .. => true
   | .StaticCall _ args => args.attach.any (fun x => containsBareAssignment x.val)
-  | .PrimitiveOp _ args => args.attach.any (fun x => containsBareAssignment x.val)
+  | .PrimitiveOp _ args _ => args.attach.any (fun x => containsBareAssignment x.val)
   | .Block _ _ => false
   | .IfThenElse cond th el =>
       containsBareAssignment cond || containsBareAssignment th ||
@@ -199,7 +193,7 @@ def containsImperativeCall (model : SemanticModel) (expr : StmtExprMd) : Bool :=
     | .staticProcedure proc => !proc.isFunctional
     | _ => false) ||
       args.attach.any (fun x => containsImperativeCall model x.val)
-  | .PrimitiveOp _ args => args.attach.any (fun x => containsImperativeCall model x.val)
+  | .PrimitiveOp _ args _ => args.attach.any (fun x => containsImperativeCall model x.val)
   | .Block stmts _ => stmts.attach.any (fun x => containsImperativeCall model x.val)
   | .IfThenElse cond th el =>
       containsImperativeCall model cond ||
@@ -228,7 +222,7 @@ private def liftAssignExpr (targets : List VariableMd) (seqValue : StmtExprMd)
     match target.val with
     | .Local varName =>
         let snapshotName ← freshTempFor varName
-        let varType ← computeType (bare (.Var (.Local varName)))
+        let varType ← computeType (⟨ .Var (.Local varName), source⟩)
         -- Snapshot goes before the assignment (cons pushes to front)
         prepend (⟨.Assign [⟨.Declare ⟨snapshotName, varType⟩, source⟩] (⟨.Var (.Local varName), source⟩), source⟩)
         setSubst varName snapshotName
@@ -251,8 +245,8 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
   | .Hole false (some holeType) =>
       -- Nondeterministic typed hole: lift to a fresh variable with no initializer (havoc)
       let holeVar ← freshCondVar
-      prepend (bare (.Var (.Declare ⟨holeVar, holeType⟩)))
-      return bare (.Var (.Local holeVar))
+      prepend ⟨ .Var (.Declare ⟨holeVar, holeType⟩), source⟩
+      return ⟨ .Var (.Local holeVar), source ⟩
 
   | .Assign targets value =>
       -- The expression result is the current substitution for the first target
@@ -280,7 +274,7 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
 
       return resultExpr
 
-  | .PrimitiveOp op args =>
+  | .PrimitiveOp op args _ =>
       -- Process arguments right to left
       let seqArgs ← args.reverse.mapM transformExpr
       return ⟨.PrimitiveOp op seqArgs.reverse, source⟩
@@ -310,7 +304,7 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
         ⟨.Assign [⟨.Local callResultVar, source⟩] seqCall, source⟩
       ]
       modify fun s => { s with prependedStmts := s.prependedStmts ++ liftedCall}
-      return bare (.Var (.Local callResultVar))
+      return ⟨.Var (.Local callResultVar), source⟩
 
   | .IfThenElse cond thenBranch elseBranch =>
       let model :=  (← get).model
@@ -329,14 +323,14 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
         modify fun s => { s with prependedStmts := [], subst := [] }
         let seqThen ← transformExpr thenBranch
         let thenPrepends ← takePrepends
-        let thenBlock := bare (.Block (thenPrepends ++ [⟨.Assign [⟨ .Local condVar, source⟩] seqThen, source⟩]) none)
+        let thenBlock := ⟨.Block (thenPrepends ++ [⟨.Assign [⟨ .Local condVar, source⟩] seqThen, source⟩]) none, source⟩
         -- Process else-branch from scratch
         modify fun s => { s with prependedStmts := [], subst := [] }
         let seqElse ← match elseBranch with
           | some e => do
               let se ← transformExpr e
               let elsePrepends ← takePrepends
-              pure (some (bare (.Block (elsePrepends ++ [⟨.Assign [⟨ .Local condVar, source⟩] se, source⟩]) none)))
+              pure (some ⟨.Block (elsePrepends ++ [⟨.Assign [⟨ .Local condVar, source⟩] se, source⟩]) none, source⟩)
           | none => pure none
         -- Restore outer state
         modify fun s => { s with subst := savedSubst, prependedStmts := savedPrepends }
@@ -347,8 +341,8 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
         -- IfThenElse added first (cons puts it deeper), then declaration (cons puts it on top)
         -- Output order: declaration, then if-then-else
         prepend (⟨.IfThenElse seqCond thenBlock seqElse, source⟩)
-        prepend (bare (.Var (.Declare ⟨condVar, condType⟩)))
-        return bare (.Var (.Local condVar))
+        prepend ⟨.Var (.Declare ⟨condVar, condType⟩), source⟩
+        return ⟨.Var (.Local condVar), source⟩
       else
         -- No assignments in branches — recurse normally
         let seqCond ← transformExpr cond
@@ -433,7 +427,7 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
 
   | .Block stmts metadata =>
       let seqStmts ← stmts.mapM transformStmt
-      return [bare (.Block seqStmts.flatten metadata)]
+      return [⟨.Block seqStmts.flatten metadata, source⟩]
 
   | .Var (.Declare _) =>
       return [stmt]
@@ -467,11 +461,11 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
       let condPrepends ← takePrepends
       let seqThen ← do
         let stmts ← transformStmt thenBranch
-        pure (bare (.Block stmts none))
+        pure ⟨.Block stmts none, source⟩
       let seqElse ← match elseBranch with
         | some e => do
             let se ← transformStmt e
-            pure (some (bare (.Block se none)))
+            pure $ some ⟨.Block se none, source⟩
         | none => pure none
       return condPrepends ++ [⟨.IfThenElse seqCond seqThen seqElse, source⟩]
 
@@ -487,7 +481,7 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
       let decPrepends ← takePrepends
       let seqBody ← do
         let stmts ← transformStmt body
-        pure (bare (.Block stmts none))
+        pure ⟨.Block stmts none, source⟩
       return condPrepends ++ invPrepends ++ decPrepends ++
         [⟨.While seqCond seqInvs seqDec seqBody, source⟩]
 
@@ -510,20 +504,20 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
     all_goals (apply Prod.Lex.left; try term_by_mem)
 end
 
-def transformProcedureBody (body : StmtExprMd) : LiftM StmtExprMd := do
+def transformProcedureBody (proc : Procedure) (body : StmtExprMd) : LiftM StmtExprMd := do
   let stmts ← transformStmt body
   match stmts with
   | [single] => pure single
-  | multiple => pure (bare (.Block multiple none))
+  | multiple => pure ⟨.Block multiple none, proc.name.source⟩
 
 def transformProcedure (proc : Procedure) : LiftM Procedure := do
   modify fun s => { s with subst := [], prependedStmts := [], varCounters := [] }
   match proc.body with
   | .Transparent bodyExpr =>
-      let seqBody ← transformProcedureBody bodyExpr
+      let seqBody ← transformProcedureBody proc bodyExpr
       pure { proc with body := .Transparent seqBody }
   | .Opaque postconds impl modif =>
-      let impl' ← impl.mapM transformProcedureBody
+      let impl' ← impl.mapM (transformProcedureBody proc)
       pure { proc with body := .Opaque postconds impl' modif }
   | .Abstract _ =>
       pure proc

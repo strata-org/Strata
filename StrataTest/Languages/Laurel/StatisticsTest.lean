@@ -57,6 +57,7 @@ procedure p1(a: bool, b: bool) returns (r: bool)
 };
 
 procedure p2(x: int) returns (y: int)
+  opaque
 {
   y := x + <?>
 };
