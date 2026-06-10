@@ -129,7 +129,7 @@ Generate verification conditions for a `StrataDDM.Program` by translating it to 
 appropriate frontend verifier and collecting its deferred proof obligations.
 
 Note that this can be extended to new dialects by using
-`unsafe/@[implemented_by]` as in `StrataBoole.MetaVerifier`.
+`unsafe/@[implemented_by]` as in [`StrataBoole.MetaVerifier`](https://github.com/strata-org/Strata-Boole).
 -/
 def genCoreVCs (program : Program)
     (options : MetaVerifier.Options := {}) : Option Core.coreVCs := do

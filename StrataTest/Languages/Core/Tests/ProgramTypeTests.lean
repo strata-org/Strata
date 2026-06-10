@@ -164,8 +164,8 @@ info: [Strata.Core] Type checking succeeded.
 ---
 info: ok: program Core;
 
-function identity<$__ty0> (x : $__ty0) : $__ty0;
-function makePair<$__ty1, $__ty2> (x : $__ty1, y : $__ty2) : Map $__ty1 $__ty2;
+function identity<a> (x : a) : a;
+function makePair<a, b> (x : a, y : b) : Map a b;
 procedure Test ()
 {
   var m : (Map int bool);
