@@ -489,7 +489,15 @@ def translateStmt (stmt : StmtExprMd)
       let invExprs ← invariants.mapM (fun i => do return ("", ← translateExpr i))
       let decreasingExprCore ← decreasesExpr.mapM (translateExpr)
       let bodyStmts ← translateStmt body
-      return [Imperative.Stmt.loop (.det condExpr) decreasingExprCore invExprs bodyStmts md]
+      -- Attach each invariant's source provenance to the loop metadata, in
+      -- invariant order, so loop elimination can point an invariant's
+      -- verification condition at the specific invariant rather than the whole
+      -- loop. (The Core loop IR stores invariants as `(label, expr)` pairs with
+      -- no per-invariant metadata slot, and Core expressions carry no source
+      -- range, so we thread the ranges through the loop metadata instead.)
+      let mdWithInvs := invariants.foldl
+        (fun acc i => acc.pushInvariantProvenance (fileRangeToProvenance i.source)) md
+      return [Imperative.Stmt.loop (.det condExpr) decreasingExprCore invExprs bodyStmts mdWithInvs]
   | .Exit target =>
       return [Imperative.Stmt.exit target md]
   | .Hole _ _ =>

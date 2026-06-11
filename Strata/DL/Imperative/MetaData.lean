@@ -293,6 +293,27 @@ def MetaData.eraseAllElems {P : PureExpr} [BEq P.Ident]
     (md : MetaData P) (fld : MetaDataElem.Field P) : MetaData P :=
   md.filter (fun e => !(e.fld == fld))
 
+/-- Label for a per-loop-invariant source provenance. Loop lowering stores one
+    such element per invariant, in invariant order, so that loop elimination can
+    attribute each invariant's verification condition to the specific invariant's
+    source location rather than to the whole loop. -/
+def MetaData.invariantProvenanceLabel : String := "invariantProvenance"
+
+/-- Append a loop invariant's provenance to metadata. These are appended in
+    invariant order. Note this matches on the `.label` constructor directly, so
+    it needs no `BEq P.Ident` instance. -/
+def MetaData.pushInvariantProvenance {P : PureExpr} (md : MetaData P) (p : Provenance) : MetaData P :=
+  md.push { fld := .label MetaData.invariantProvenanceLabel, value := .provenance p }
+
+/-- Get all per-invariant provenances from metadata, in the order they were
+    pushed (matching the loop's invariant order). -/
+def getInvariantProvenances {P : PureExpr} (md : MetaData P) : Array Provenance :=
+  md.filterMap fun elem =>
+    match elem.fld, elem.value with
+    | .label l, .provenance p =>
+      if l == MetaData.invariantProvenanceLabel then some p else none
+    | _, _ => none
+
 /-- Replace the primary provenance with a new one, shifting existing related
     provenances and prepending the old primary provenance. -/
 def MetaData.setCallSiteFileRange {P : PureExpr} [BEq P.Ident]
