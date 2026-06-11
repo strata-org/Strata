@@ -1831,6 +1831,22 @@ def Synth.primitiveOp (exprMd : StmtExprMd) (expr : StmtExpr)
     (h : exprMd.val = .PrimitiveOp op args skipProof) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let _ := h_expr  -- carries the constructor identity for `expr` in diagnostics
+  -- Guard (all operator families): a `MultiValuedExpr` operand is a
+  -- multi-output call (`multi(x)` declared `returns (a, b)`) used in value
+  -- position. It is an internal pseudo-type with no Core lowering, so it must
+  -- never reach an operator slot — letting it through crashes a later pass as
+  -- a `StrataBug`. Emit the position-oriented diagnostic per offending operand
+  -- and return `true` so the caller short-circuits to the operator's natural
+  -- result type, suppressing the per-family check (and its cascading error)
+  -- on that operand.
+  let reportMultiValued (a : StmtExprMd) (aTy : HighTypeMd) : ResolveM Bool := do
+    match aTy.val with
+    | .MultiValuedExpr _ =>
+      let diag := diagnosticFromSource a.source
+        "multi-output call cannot be used as a value here; it returns multiple values. Use a multi-target assignment instead"
+      modify fun s => { s with errors := s.errors.push diag }
+      pure true
+    | _ => pure false
   match op with
   -- Arithmetic: synth each operand's type, then take the LUB under
   -- the consistency relation. This is the same discipline as
@@ -1842,6 +1858,14 @@ def Synth.primitiveOp (exprMd : StmtExprMd) (expr : StmtExpr)
       Synth.resolveStmtExpr a.val)
     let args' := results.map (·.1)
     let argTypes := results.map (·.2)
+    let unknownTy : HighTypeMd := { val := .Unknown, source := source }
+    -- Multi-output operand guard: short-circuit to `Unknown` (arithmetic's
+    -- natural cascade-suppression type) once any operand is multi-valued.
+    let mut hasMulti := false
+    for (a, aTy) in args'.zip argTypes do
+      if (← reportMultiValued a aTy) then hasMulti := true
+    if hasMulti then
+      return (.PrimitiveOp op args' skipProof, unknownTy)
     let ctx := (← get).typeLattice
     -- Per-operand numeric check: surface the bad operand directly.
     for (a, aTy) in args'.zip argTypes do
@@ -1851,7 +1875,6 @@ def Synth.primitiveOp (exprMd : StmtExprMd) (expr : StmtExpr)
     -- empty list (impossible for these ops, but kept for totality)
     -- yields `Unknown` and a single-operand fold (`Neg`) yields the
     -- operand's type.
-    let unknownTy : HighTypeMd := { val := .Unknown, source := source }
     let resultTy := argTypes.foldl
       (fun acc aTy =>
         match acc with
@@ -1877,6 +1900,14 @@ def Synth.primitiveOp (exprMd : StmtExprMd) (expr : StmtExpr)
       | .StrConcat => HighType.TString
       -- Unreachable: filtered above.
       | _ => HighType.Unknown
+    -- Multi-output operand guard: short-circuit to the operator's natural
+    -- result type (`TBool` for bool/cmp/eq, `TString` for concat) once any
+    -- operand is multi-valued, suppressing the per-family check below.
+    let mut hasMulti := false
+    for (a, aTy) in args'.zip argTypes do
+      if (← reportMultiValued a aTy) then hasMulti := true
+    if hasMulti then
+      return (.PrimitiveOp op args' skipProof, { val := resultTy, source := source })
     match op with
     | .And | .Or | .AndThen | .OrElse | .Not | .Implies =>
       for (a, aTy) in args'.zip argTypes do

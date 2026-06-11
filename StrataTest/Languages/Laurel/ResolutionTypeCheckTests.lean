@@ -162,12 +162,30 @@ def multiOutputInExpr := r"
 procedure multi(x: int) returns (a: int, b: int) opaque;
 procedure test() opaque {
   assert multi(1) == 1
-//       ^^^^^^^^^^^^^ error: cannot compare '(int, int)' with 'int' using '=='
+//       ^^^^^^^^ error: multi-output call cannot be used as a value here
 };
 "
 
 #guard_msgs (error, drop all) in
 #eval testInputWithOffset "MultiOutputInExpr" multiOutputInExpr 146 processResolution
+
+/-- A multi-output call in operator-operand (value) position is rejected with a
+position-oriented diagnostic, even when both operands have the *same*
+`MultiValuedExpr` shape (so `isConsistent` would otherwise accept them). Without
+this guard `multi(1) == multi(2)` passes resolution and crashes a later pass as
+a `StrataBug`, since `MultiValuedExpr` has no Core lowering. The guard fires per
+offending operand (here both), short-circuiting the per-family equality check. -/
+def multiOutputBothSides := r"
+procedure multi(x: int) returns (a: int, b: int) opaque;
+procedure test() opaque {
+  assert multi(1) == multi(2)
+//       ^^^^^^^^ error: multi-output call cannot be used as a value here
+//                   ^^^^^^^^ error: multi-output call cannot be used as a value here
+};
+"
+
+#guard_msgs (error, drop all) in
+#eval testInputWithOffset "MultiOutputBothSides" multiOutputBothSides 146 processResolution
 
 def assignTargetCountMismatch := r"
 procedure multi() returns (a: int, b: int) opaque;
