@@ -149,10 +149,20 @@ procedure addProcCaller(): int
   // var z: int := addProc({x := 1; x}, {x := x + 10; x}) + (x := 3);
   // assert z == 15
 };
+
+procedure assertInsideConditionalExpression(a: int): int
+  return if a > 2
+    then 4
+    else {
+      assert a <= 2;
+      assert a < 2;
+//    ^^^^^^^^^^^^ error: assertion does not hold
+      5
+    };
 "
 
 #guard_msgs (error, drop all) in
-#eval! testInputWithOffset "NestedImpureStatements" program 14 processLaurelFile
+#eval! testInputWithOffset "NestedImpureStatements" program 17 processLaurelFile
 
 
 end Laurel
