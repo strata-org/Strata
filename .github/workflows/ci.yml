@@ -86,6 +86,7 @@ jobs:
           lake-package-directory: StrataCLI
           use-github-cache: false
       - name: Save lake cache
+        if: '!cancelled()'
         uses: ./.github/actions/save-lake-cache
         with:
           path: |
