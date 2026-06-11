@@ -92,6 +92,7 @@ abbrev TranslateResultWithLaurel := (Option Core.Program) × (List DiagnosticMod
 /-- The ordered sequence of Laurel-to-Laurel lowering passes. -/
 def laurelPipeline : Array LaurelPass := #[
   typeAliasElimPass,
+  constrainedTypeElimPass,
   filterNonCompositeModifiesPass,
   eliminateValueInReturnsPass,
   heapParameterizationPass,
@@ -101,8 +102,7 @@ def laurelPipeline : Array LaurelPass := #[
   eliminateDeterministicHolesPass,
   desugarShortCircuitPass,
   liftExpressionAssignmentsPass,
-  mergeAndLiftReturnsPass,
-  constrainedTypeElimPass
+  mergeAndLiftReturnsPass
 ]
 
 /-- Every `comesBefore` constraint is respected by the pipeline order.
