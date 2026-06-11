@@ -1239,20 +1239,6 @@ def translateMeasure (p : Program) (bindings : TransBindings) (arg : Arg) :
     pure (some e)
   | _ => pure none
 
-/-- Like `translateMeasure`, but tags the resulting measure expression with a
-    label derived from the source location.  Used by the loop translation
-    where the measure carries an assertion label, mirroring how invariant
-    assertions are labeled. -/
-def translateLoopMeasure (p : Program) (bindings : TransBindings) (arg : Arg) :
-    TransM (Option Core.Expression.Expr) := do
-  match arg with
-  | .option _ (.some m) =>
-    let args ← checkOpArg m q`Core.measure_mk 1
-    let e ← translateExpr p bindings args[0]!
-    pure (some e)
-  | _ => pure none
-
-
 def initVarStmts (tpids : ListMap Core.Expression.Ident LTy) (bindings : TransBindings)
     (md : MetaData Core.Expression):
   TransM ((List Core.Statement) × TransBindings) := do
@@ -1411,7 +1397,7 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     let cond ← translateCondBool p bindings ca
     return ([.ite cond tss fss md], { bindings with gen := elseBindings.gen })
   | q`Core.while_statement, #[ca, ma, ia, ba] =>
-    let measure ← translateLoopMeasure p bindings ma
+    let measure ← translateMeasure p bindings ma
     let invs ← translateInvariants p bindings ia
     let (bodyss, bindings) ← translateBlock p bindings ba
     let md ← getOpMetaData op

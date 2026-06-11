@@ -483,10 +483,8 @@ structure AssertId where
     aid.label = label ∧ aid.expr = expr
   | .stmts ((.cmd (.assert label expr _)) :: _) _, aid =>
     aid.label = label ∧ aid.expr = expr
-  | .stmt (.loop _ _ inv _ _) _, aid =>
-    (aid.label, aid.expr) ∈ inv
-  | .stmts ((.loop _ _ inv _ _) :: _) _, aid =>
-    (aid.label, aid.expr) ∈ inv
+  | .stmt (.loop _ _ inv _ _) _, aid => (aid.label, aid.expr) ∈ inv
+  | .stmts ((.loop _ _ inv _ _) :: _) _, aid => (aid.label, aid.expr) ∈ inv
   | .block _ _ _ inner, aid => isAtAssert inner aid
   | .seq inner _, aid => isAtAssert inner aid
   | _, _ => False

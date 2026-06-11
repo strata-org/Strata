@@ -37,10 +37,9 @@ inductive Stmt (P : PureExpr) (Cmd : Type) : Type where
   is chosen non-deterministically. -/
   | ite      (cond : ExprOrNondet P)  (thenb : List (Stmt P Cmd)) (elseb : List (Stmt P Cmd)) (md : MetaData P)
   /-- An iterated execution statement. Includes an optional measure (for
-  termination) and labeled invariants. When `guard` is `.nondet`, the
-  loop iterates a non-deterministic number of times and measure must be none.
-  Each invariant carries a label string (expected to be distinct, like
-  assert labels do).
+  termination) and labeled invariants. When `guard` is `.nondet`, the loop iterates
+  a non-deterministic number of times. Each invariant carries a label string
+  (expected to be distinct, like assert labels do).
   TODO: measure will be moved to metadata md, since it doesn't contribute to
   the small-step semantics (StepStmt).
   -/

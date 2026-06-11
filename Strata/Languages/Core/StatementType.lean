@@ -269,8 +269,7 @@ def Statement.subst (S : Subst) (s : Statement) : Statement :=
   | .ite cond tss ess md =>
     .ite (cond.map (LExpr.applySubst · S)) (go S tss []) (go S ess []) md
   | .loop guard m i bss md =>
-    .loop (guard.map (LExpr.applySubst · S))
-      (m.map (·.applySubst S))
+    .loop (guard.map (LExpr.applySubst · S)) (substOptionExpr S m)
       (i.map (fun (l, e) => (l, e.applySubst S))) (go S bss []) md
   | .exit _ _ => s
   | .funcDecl decl md =>

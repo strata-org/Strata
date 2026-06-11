@@ -38,13 +38,6 @@ def translate_opt_expr (e : Option C_Simp.Expression.Expr) : Option (Lambda.LExp
   | some e => translate_expr e
   | none => none
 
-def translate_opt_labeled_expr
-    (e : Option C_Simp.Expression.Expr) :
-    Option (Lambda.LExpr Core.CoreLParams.mono) :=
-  match e with
-  | some e => some (translate_expr e)
-  | none => none
-
 def translate_cmd (c: C_Simp.Command) : Core.Command :=
   match c with
   | .init name ty e _md =>
@@ -64,7 +57,7 @@ def translate_stmt (s: Imperative.Stmt C_Simp.Expression C_Simp.Command) : Core.
   | .ite cond thenb elseb _md =>
     .ite (cond.map translate_expr) (thenb.map translate_stmt) (elseb.map translate_stmt) {}
   | .loop guard measure invariant body _md =>
-    .loop (guard.map translate_expr) (translate_opt_labeled_expr measure)
+    .loop (guard.map translate_expr) (translate_opt_expr measure)
       (invariant.map (fun (l, e) => (l, translate_expr e))) (body.map translate_stmt) {}
   | .funcDecl _ _ => panic! "C_Simp does not support function declarations"
   | .typeDecl _ _ => panic! "C_Simp does not support type declarations"
