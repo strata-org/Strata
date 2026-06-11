@@ -699,6 +699,18 @@ def Check.resolveStmtExpr (exprMd : StmtExprMd) (expected : HighTypeMd) : Resolv
     Check.old exprMd val expected source (by rw [h_node])
   | .ProveBy val proof =>
     Check.proveBy exprMd val proof expected source (by rw [h_node])
+  -- Only the arithmetic (`Neg`/`Add`/…/`ModT`) and boolean
+  -- (`And`/`Or`/…/`Implies`) families get a dedicated check arm: these push
+  -- `expected` inward through `Check.primitiveOp`. The remaining operators —
+  -- comparison/equality (`Eq`/`Neq`/`Lt`/…) and `StrConcat` — have no inward
+  -- push, so they are deliberately omitted here and fall through to the
+  -- synth-then-subsume wildcard at the bottom of this match.
+  --
+  -- The arms are written out one operator per line rather than collapsed: an
+  -- inner `match op` would duplicate the wildcard's subsumption body, and a
+  -- binder distributed across an or-pattern (`.PrimitiveOp (op@.Neg) …`)
+  -- defeats the `by rw [h_node]` dependent-match proof, so the explicit
+  -- enumeration is the form that actually typechecks.
   | .PrimitiveOp .Neg args skipProof =>
     Check.primitiveOp exprMd .Neg args skipProof expected source (by rw [h_node])
   | .PrimitiveOp .Add args skipProof =>
