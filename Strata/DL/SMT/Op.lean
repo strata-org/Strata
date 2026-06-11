@@ -315,7 +315,7 @@ def Op.mkName : Op → String
   | .bvsmulo       => "bvsmulo"
   | .bvconcat      => "concat"
   | .zero_extend _ => "zero_extend"
-  | .ubv_to_int    => "bv2nat"
+  | .ubv_to_int    => "ubv_to_int"
   | .sbv_to_int    => "sbv_to_int"
   | .int_to_bv _   => "int_to_bv"
   | .triggers      => "triggers"

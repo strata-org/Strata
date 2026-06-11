@@ -214,7 +214,7 @@ partial def translateFromTerm (t:SMT.Term): Except String (SMTDDM.Term Provenanc
         (smtAnn #[.ind_numeral smtProv n])
       return mk_qual_identifier (.qi_ident smtProv iden)
     | .bv (.int_to_bv n) =>
-      let iden := SMTIdentifier.iden_indexed smtProv (mkSymbol "int2bv")
+      let iden := SMTIdentifier.iden_indexed smtProv (mkSymbol "int_to_bv")
         (smtAnn #[.ind_numeral smtProv n])
       return mk_qual_identifier (.qi_ident smtProv iden)
     | .str (.re_index n) =>

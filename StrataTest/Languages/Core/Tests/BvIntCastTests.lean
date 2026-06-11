@@ -27,7 +27,7 @@ private def coreEnv : Env := {Env.init with exprEnv := {
 /-! ## Bv8.ToUInt — unsigned bitvector → Int (ubv_to_int) -/
 
 /--
-info: "; x\n(declare-const x (_ BitVec 8))\n(assert (bv2nat x))\n"
+info: "; x\n(declare-const x (_ BitVec 8))\n(assert (ubv_to_int x))\n"
 -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
@@ -37,7 +37,7 @@ info: "; x\n(declare-const x (_ BitVec 8))\n(assert (bv2nat x))\n"
 /-! ## Bv8.ToInt — signed bitvector → Int (sbv_to_int) -/
 
 /--
-info: "; x\n(declare-const x (_ BitVec 8))\n(assert (ite (bvslt x (_ bv0 8)) (- (bv2nat x) 256) (bv2nat x)))\n"
+info: "; x\n(declare-const x (_ BitVec 8))\n(assert (sbv_to_int x))\n"
 -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
@@ -47,7 +47,7 @@ info: "; x\n(declare-const x (_ BitVec 8))\n(assert (ite (bvslt x (_ bv0 8)) (- 
 /-! ## Int.ToBv8 — Int → bitvector (int_to_bv 8) -/
 
 /--
-info: "; x\n(declare-const x Int)\n(assert ((_ int2bv 8) x))\n"
+info: "; x\n(declare-const x Int)\n(assert ((_ int_to_bv 8) x))\n"
 -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
