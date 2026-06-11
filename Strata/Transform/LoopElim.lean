@@ -140,16 +140,26 @@ def Stmt.removeLoopsM
     -- reference to the source invariant.
     let invSuffix : Nat → String → String := fun i lbl =>
       if lbl.isEmpty then toString i else s!"{i}_{lbl}"
+    -- Per-invariant source provenance, threaded through the loop metadata by the
+    -- Laurel→Core translation (in invariant order). When present, each
+    -- invariant's generated assert/assume is attributed to that invariant's own
+    -- source location instead of the whole loop; otherwise we fall back to the
+    -- loop metadata `md` (e.g. for loops not originating from Laurel).
+    let invProvs := getInvariantProvenances md
+    let invMd : Nat → MetaData P := fun i =>
+      match invProvs[i]? with
+      | some p => MetaData.ofProvenance p
+      | none => md
     let entry_invariants := invariants.mapIdx fun i (lbl, inv) =>
-      Stmt.cmd (HasPassiveCmds.assert s!"entry_invariant_{loop_num}_{invSuffix i lbl}" inv md)
+      Stmt.cmd (HasPassiveCmds.assert s!"entry_invariant_{loop_num}_{invSuffix i lbl}" inv (invMd i))
     let entry_invariant_assumes := invariants.mapIdx fun i (lbl, inv) =>
-      Stmt.cmd (HasPassiveCmds.assume s!"assume_entry_invariant_{loop_num}_{invSuffix i lbl}" inv md)
+      Stmt.cmd (HasPassiveCmds.assume s!"assume_entry_invariant_{loop_num}_{invSuffix i lbl}" inv (invMd i))
     let first_iter_facts :=
       .block s!"first_iter_asserts_{loop_num}" (entry_invariants ++ entry_invariant_assumes) {}
     let inv_assumes := invariants.mapIdx fun i (lbl, inv) =>
-      Stmt.cmd (HasPassiveCmds.assume s!"{loopElimInvariantPrefix}{loop_num}_{invSuffix i lbl}" inv md)
+      Stmt.cmd (HasPassiveCmds.assume s!"{loopElimInvariantPrefix}{loop_num}_{invSuffix i lbl}" inv (invMd i))
     let maintain_invariants := invariants.mapIdx fun i (lbl, inv) =>
-      Stmt.cmd (HasPassiveCmds.assert s!"arbitrary_iter_maintain_invariant_{loop_num}_{invSuffix i lbl}" inv md)
+      Stmt.cmd (HasPassiveCmds.assert s!"arbitrary_iter_maintain_invariant_{loop_num}_{invSuffix i lbl}" inv (invMd i))
     -- Guard-specific parts: assume_guard, termination, not_guard
     let (guard_assumes, pre_termination, post_termination, exit_guard) ← match guard with
       | .det g => do
@@ -181,7 +191,7 @@ def Stmt.removeLoopsM
       ([havocd, arbitrary_iter_assumes] ++ pre_termination ++
        body_statements ++ maintain_invariants ++ post_termination) {}
     let invariant_assumes := invariants.mapIdx fun i (lbl, inv) =>
-      Stmt.cmd (HasPassiveCmds.assume s!"invariant_{loop_num}_{invSuffix i lbl}" inv md)
+      Stmt.cmd (HasPassiveCmds.assume s!"invariant_{loop_num}_{invSuffix i lbl}" inv (invMd i))
     let exit_state_assumes := [havocd] ++ exit_guard ++ invariant_assumes
     let loop_passive :=
       .ite guard (arbitrary_iter_facts :: exit_state_assumes) [] {}
