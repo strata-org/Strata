@@ -432,13 +432,7 @@ private def getVarType (ref : Identifier) : ResolveM HighTypeMd := do
 private def getCallInfo (callee : Identifier) : ResolveM (HighTypeMd × List HighTypeMd) := do
   let s ← get
   match s.scope.get? callee.text with
-  | some (_, .staticProcedure proc) =>
-    let retTy := match proc.outputs with
-      | [] => { val := .TVoid, source := callee.source }
-      | [singleOutput] => singleOutput.type
-      | outputs => { val := .MultiValuedExpr (outputs.map (·.type)), source := none }
-    pure (retTy, proc.inputs.map (·.type))
-  | some (_, .instanceProcedure _ proc) =>
+  | some (_, .staticProcedure proc) | some (_, .instanceProcedure _ proc) =>
     let retTy := match proc.outputs with
       | [] => { val := .TVoid, source := callee.source }
       | [singleOutput] => singleOutput.type
