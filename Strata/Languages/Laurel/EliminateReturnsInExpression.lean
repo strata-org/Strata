@@ -49,24 +49,17 @@ def removeReturns (stmt : StmtExprMd) : Except DiagnosticModel StmtExprMd :=
       .ok ⟨ .IfThenElse cond thenExpr (some elseExpr), stmt.source⟩
   | _ => .error (diagnosticFromSource stmt.source
       s!"ending a transparent body with a {stmt.val.constructorName} statement is not supported")
-termination_by sizeOf stmt
-decreasing_by all_goals (
-  have hs : sizeOf stmt = 1 + sizeOf stmt.val + sizeOf stmt.source := by
-    cases stmt; simp [AstNode.mk.sizeOf_spec]
-  rw [_h] at hs
-  simp only [StmtExpr.Block.sizeOf_spec, StmtExpr.IfThenElse.sizeOf_spec,
-    List.cons.sizeOf_spec, List.nil.sizeOf_spec, Option.some.sizeOf_spec] at hs
-  first
-  | (have hh : sizeOf head = 1 + sizeOf head.val + sizeOf head.source := by
-       cases head; simp [AstNode.mk.sizeOf_spec]
-     rw [_hhead] at hh
-     simp only [StmtExpr.IfThenElse.sizeOf_spec, Option.none.sizeOf_spec] at hh
-     omega)
-  | (simp only [AstNode.mk.sizeOf_spec, StmtExpr.Block.sizeOf_spec, Option.none.sizeOf_spec]
-     have hh : sizeOf head = 1 + sizeOf head.val + sizeOf head.source := by
-       cases head; simp [AstNode.mk.sizeOf_spec]
-     omega)
-  | omega)
+termination_by sizeOf stmt.val
+decreasing_by
+  all_goals
+    simp only [_h, StmtExpr.Block.sizeOf_spec, StmtExpr.IfThenElse.sizeOf_spec,
+      List.cons.sizeOf_spec, List.nil.sizeOf_spec, Option.none.sizeOf_spec,
+      Option.some.sizeOf_spec]
+    try have hhd := AstNode.sizeOf_val_lt head
+    try have htb := AstNode.sizeOf_val_lt thenBr
+    try have heb := AstNode.sizeOf_val_lt elseBr
+    try simp only [_hhead, StmtExpr.IfThenElse.sizeOf_spec, Option.none.sizeOf_spec] at hhd
+    omega
 
 /-- Transform a single procedure by applying the guard-return elimination to its body.
     Returns the procedure and any diagnostic emitted on failure. -/
