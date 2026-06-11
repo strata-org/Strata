@@ -60,7 +60,7 @@ structure WFLFunc (T : LExprParams) where
 def WFLFunc.name (f : WFLFunc T) : T.Identifier := f.func.name
 
 /-- The operator expression for the underlying LFunc. -/
-def WFLFunc.opExpr [Inhabited T.Metadata] (f : WFLFunc T) : LExpr T.mono :=
+@[expose] def WFLFunc.opExpr [Inhabited T.Metadata] (f : WFLFunc T) : LExpr T.mono :=
   f.func.opExpr
 
 /-- An array of well-formed LFuncs with a proof that function
@@ -71,7 +71,7 @@ structure WFLFactory (T : LExprParams) where
 
 /-- Construct a `WFLFactory` from an array of `WFLFunc`s.
     The `name_nodup` proof defaults to `by decide`. -/
-def WFLFactory.ofArray {T} (funcs : Array (WFLFunc T))
+@[expose] def WFLFactory.ofArray {T} (funcs : Array (WFLFunc T))
     (name_nodup : List.Nodup (funcs.toList.map (·.func.name.name)) := by decide)
     : WFLFactory T :=
   let a := funcs.map (·.func)

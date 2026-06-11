@@ -3,19 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import all StrataTest.Util.TestDiagnostics
-meta import all StrataTest.Languages.Laurel.TestExamples
-
-meta section
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
 open Strata
 
-namespace Strata.Laurel
-
-def program := r#"
+#eval testLaurel <|
+#strata
+program Laurel;
 procedure divide(x: int, y: int) returns (result: int)
   requires y != 0 summary "divisor is non-zero"
 // Call elimination reports precondition errors at the call site.
@@ -32,9 +28,4 @@ procedure checkPositive(n: int) returns (ok: bool)
   var x: int := divide(3, 0)
 //^^^^^^^^^^^^^^^^^^^^^^^^^^ error: divisor is non-zero does not hold
 };
-"#
-
-#guard_msgs (drop info, error) in
-#eval testInputWithOffset "PropertySummary" program 14 processLaurelFile
-
-end Strata.Laurel
+#end
