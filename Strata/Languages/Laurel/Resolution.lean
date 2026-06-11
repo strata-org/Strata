@@ -6,6 +6,8 @@
 module
 
 public import Strata.Languages.Laurel.LaurelAST
+public import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
+public import Strata.Languages.Laurel.TransparencyPass
 import Strata.Util.Tactics
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 
@@ -307,7 +309,6 @@ private def freshId : ResolveM Nat := do
   let id := s.nextId
   set { s with nextId := id + 1 }
   return id
-
 
 /-- Like `defineName`, but reports a diagnostic if the name already exists in the current scope.
     Inserts an `.unresolved` node so subsequent references still resolve without cascading errors. -/
@@ -651,6 +652,13 @@ namespace Resolution
 -- look unused to the linter, but each one is referenced by that helper's
 -- `decreasing_by` tactic to relate `sizeOf args` to `sizeOf exprMd`.
 set_option linter.unusedVariables false in
+-- The well-founded-recursion termination proofs for every helper in this
+-- large mutual block share a single elaboration heartbeat budget. Each
+-- `decreasing_by` is individually cheap (a directed `rw [h]` plus a targeted
+-- `simp only [<ctor>.sizeOf_spec]` then `omega`), but their cumulative cost
+-- across ~30 functions sits just above the 200k default, so the budget is
+-- raised modestly for the block.
+set_option maxHeartbeats 400000 in
 mutual
 
 -- ### Dispatch
@@ -686,8 +694,8 @@ def Synth.resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTy
     Synth.pureFieldUpdate exprMd target fieldName newVal (by rw [h_node])
   | .StaticCall callee args =>
     Synth.staticCall exprMd callee args source (by rw [h_node])
-  | .PrimitiveOp op args =>
-    Synth.primitiveOp exprMd expr op args source h_expr (by rw [h_node])
+  | .PrimitiveOp op args skipProof =>
+    Synth.primitiveOp exprMd expr op args skipProof source h_expr (by rw [h_node])
   | .New ref => Synth.new ref source
   | .This => Synth.this source
   | .ReferenceEquals lhs rhs =>
@@ -787,42 +795,42 @@ def Check.resolveStmtExpr (exprMd : StmtExprMd) (expected : HighTypeMd) : Resolv
   | .Exit target => Check.exit target source
   | .Return val =>
     Check.return exprMd val source (by rw [h_node])
-  | .Assert ⟨condExpr, summary⟩ =>
-    Check.assert exprMd condExpr summary source (by rw [h_node])
+  | .Assert ⟨condExpr, summary, free⟩ =>
+    Check.assert exprMd condExpr summary free source (by rw [h_node])
   | .Assume cond =>
     Check.assume exprMd cond source (by rw [h_node])
   | .Old val =>
     Check.old exprMd val expected source (by rw [h_node])
   | .ProveBy val proof =>
     Check.proveBy exprMd val proof expected source (by rw [h_node])
-  | .PrimitiveOp .Neg args =>
-    Check.primitiveOp exprMd .Neg args expected source (by rw [h_node])
-  | .PrimitiveOp .Add args =>
-    Check.primitiveOp exprMd .Add args expected source (by rw [h_node])
-  | .PrimitiveOp .Sub args =>
-    Check.primitiveOp exprMd .Sub args expected source (by rw [h_node])
-  | .PrimitiveOp .Mul args =>
-    Check.primitiveOp exprMd .Mul args expected source (by rw [h_node])
-  | .PrimitiveOp .Div args =>
-    Check.primitiveOp exprMd .Div args expected source (by rw [h_node])
-  | .PrimitiveOp .Mod args =>
-    Check.primitiveOp exprMd .Mod args expected source (by rw [h_node])
-  | .PrimitiveOp .DivT args =>
-    Check.primitiveOp exprMd .DivT args expected source (by rw [h_node])
-  | .PrimitiveOp .ModT args =>
-    Check.primitiveOp exprMd .ModT args expected source (by rw [h_node])
-  | .PrimitiveOp .And args =>
-    Check.primitiveOp exprMd .And args expected source (by rw [h_node])
-  | .PrimitiveOp .Or args =>
-    Check.primitiveOp exprMd .Or args expected source (by rw [h_node])
-  | .PrimitiveOp .AndThen args =>
-    Check.primitiveOp exprMd .AndThen args expected source (by rw [h_node])
-  | .PrimitiveOp .OrElse args =>
-    Check.primitiveOp exprMd .OrElse args expected source (by rw [h_node])
-  | .PrimitiveOp .Not args =>
-    Check.primitiveOp exprMd .Not args expected source (by rw [h_node])
-  | .PrimitiveOp .Implies args =>
-    Check.primitiveOp exprMd .Implies args expected source (by rw [h_node])
+  | .PrimitiveOp .Neg args skipProof =>
+    Check.primitiveOp exprMd .Neg args skipProof expected source (by rw [h_node])
+  | .PrimitiveOp .Add args skipProof =>
+    Check.primitiveOp exprMd .Add args skipProof expected source (by rw [h_node])
+  | .PrimitiveOp .Sub args skipProof =>
+    Check.primitiveOp exprMd .Sub args skipProof expected source (by rw [h_node])
+  | .PrimitiveOp .Mul args skipProof =>
+    Check.primitiveOp exprMd .Mul args skipProof expected source (by rw [h_node])
+  | .PrimitiveOp .Div args skipProof =>
+    Check.primitiveOp exprMd .Div args skipProof expected source (by rw [h_node])
+  | .PrimitiveOp .Mod args skipProof =>
+    Check.primitiveOp exprMd .Mod args skipProof expected source (by rw [h_node])
+  | .PrimitiveOp .DivT args skipProof =>
+    Check.primitiveOp exprMd .DivT args skipProof expected source (by rw [h_node])
+  | .PrimitiveOp .ModT args skipProof =>
+    Check.primitiveOp exprMd .ModT args skipProof expected source (by rw [h_node])
+  | .PrimitiveOp .And args skipProof =>
+    Check.primitiveOp exprMd .And args skipProof expected source (by rw [h_node])
+  | .PrimitiveOp .Or args skipProof =>
+    Check.primitiveOp exprMd .Or args skipProof expected source (by rw [h_node])
+  | .PrimitiveOp .AndThen args skipProof =>
+    Check.primitiveOp exprMd .AndThen args skipProof expected source (by rw [h_node])
+  | .PrimitiveOp .OrElse args skipProof =>
+    Check.primitiveOp exprMd .OrElse args skipProof expected source (by rw [h_node])
+  | .PrimitiveOp .Not args skipProof =>
+    Check.primitiveOp exprMd .Not args skipProof expected source (by rw [h_node])
+  | .PrimitiveOp .Implies args skipProof =>
+    Check.primitiveOp exprMd .Implies args skipProof expected source (by rw [h_node])
   | _ =>
     -- Subsumption fallback: synth then check `actual <: expected`.
     let (e', actual) ← Synth.resolveStmtExpr exprMd
@@ -889,8 +897,8 @@ def Synth.varField (exprMd : StmtExprMd)
   decreasing_by
     apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
-    simp [h] at hsz
-    try simp_all
+    rw [h] at hsz
+    simp only [StmtExpr.Var.sizeOf_spec, Variable.Field.sizeOf_spec] at hsz
     omega
 
 /-- (Var-Declare)
@@ -965,9 +973,10 @@ def Check.while (exprMd : StmtExprMd)
     all_goals
       apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
-      simp [h] at hsz
+      rw [h] at hsz
+      simp only [StmtExpr.While.sizeOf_spec] at hsz
       try (have := List.sizeOf_lt_of_mem ‹_ ∈ invs›)
-      try simp_all
+      try (rw [‹dec = some _›, Option.some.sizeOf_spec] at hsz)
       omega
 
 /-- (Exit)
@@ -1099,8 +1108,9 @@ def Check.return (exprMd : StmtExprMd)
     all_goals
       apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
-      simp [h] at hsz
-      simp_all
+      rw [h] at hsz
+      simp only [StmtExpr.Return.sizeOf_spec] at hsz
+      rw [Option.mem_def.mp ‹_ ∈ val›, Option.some.sizeOf_spec] at hsz
       omega
 
 /-- (Skip)
@@ -1252,9 +1262,9 @@ def Check.block (exprMd : StmtExprMd)
     all_goals
       apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
-      simp [h] at hsz
+      rw [h] at hsz
+      simp only [StmtExpr.Block.sizeOf_spec] at hsz
       try (have := List.sizeOf_lt_of_mem ‹_ ∈ stmts›)
-      try simp_all
       omega
 
 /-- (If / If-NoElse)
@@ -1296,8 +1306,9 @@ def Check.ifThenElse (exprMd : StmtExprMd)
     all_goals
       apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
-      simp [h] at hsz
-      try simp_all
+      rw [h] at hsz
+      simp only [StmtExpr.IfThenElse.sizeOf_spec] at hsz
+      try (rw [Option.mem_def.mp ‹_ ∈ elseBr›, Option.some.sizeOf_spec] at hsz)
       omega
 
 /-- (If-Synth)
@@ -1351,8 +1362,8 @@ def Synth.ifThenElse (exprMd : StmtExprMd)
     all_goals
       apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
-      simp [h] at hsz
-      try simp_all
+      rw [h] at hsz
+      simp only [StmtExpr.IfThenElse.sizeOf_spec, Option.some.sizeOf_spec] at hsz
       omega
 
 /-- (Block-Synth)
@@ -1408,9 +1419,9 @@ def Synth.block (exprMd : StmtExprMd)
     all_goals
       apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
-      simp [h] at hsz
+      rw [h] at hsz
+      simp only [StmtExpr.Block.sizeOf_spec] at hsz
       try (have := List.sizeOf_lt_of_mem ‹_ ∈ stmts›)
-      try simp_all
       omega
 
 -- ### Verification statements
@@ -1425,18 +1436,18 @@ def Synth.block (exprMd : StmtExprMd)
     yields no value, so the rule accepts whatever type `A` the context
     expects (the rule ignores `A`). -/
 def Check.assert (exprMd : StmtExprMd)
-    (condExpr : StmtExprMd) (summary : Option String)
+    (condExpr : StmtExprMd) (summary : Option String) (free : Bool)
     (source : Option FileRange)
-    (h : exprMd.val = .Assert ⟨condExpr, summary⟩) :
+    (h : exprMd.val = .Assert ⟨condExpr, summary, free⟩) :
     ResolveM StmtExprMd := do
   let cond' ← Check.resolveStmtExpr condExpr { val := .TBool, source := condExpr.source }
-  pure { val := .Assert { condition := cond', summary }, source := source }
+  pure { val := .Assert { condition := cond', summary, free }, source := source }
   termination_by (exprMd, 0)
   decreasing_by
     apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
-    simp [h] at hsz
-    try simp_all
+    rw [h] at hsz
+    simp only [StmtExpr.Assert.sizeOf_spec, Condition.mk.sizeOf_spec] at hsz
     omega
 
 /-- (Assume)
@@ -1458,8 +1469,8 @@ def Check.assume (exprMd : StmtExprMd)
   decreasing_by
     apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
-    simp [h] at hsz
-    try simp_all
+    rw [h] at hsz
+    simp only [StmtExpr.Assume.sizeOf_spec] at hsz
     omega
 
 -- ### Assignment
@@ -1512,9 +1523,10 @@ def Synth.assign (exprMd : StmtExprMd)
     all_goals
       apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
-      simp [h] at hsz
-      try simp_all
-      try (have := List.sizeOf_lt_of_mem ‹_ ∈ targets›; simp_all)
+      rw [h] at hsz
+      simp only [StmtExpr.Assign.sizeOf_spec] at hsz
+      try (have hmem := List.sizeOf_lt_of_mem ‹_ ∈ targets›
+           simp only [AstNode.mk.sizeOf_spec, Variable.Field.sizeOf_spec] at hmem)
       omega
 
 /-- Check-mode rule for assignment. Synthesizes the assignment's type
@@ -1564,9 +1576,10 @@ def Check.assign (exprMd : StmtExprMd)
     all_goals
       apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
-      simp [h] at hsz
-      try simp_all
-      try (have := List.sizeOf_lt_of_mem ‹_ ∈ targets›; simp_all)
+      rw [h] at hsz
+      simp only [StmtExpr.Assign.sizeOf_spec] at hsz
+      try (have hmem := List.sizeOf_lt_of_mem ‹_ ∈ targets›
+           simp only [AstNode.mk.sizeOf_spec, Variable.Field.sizeOf_spec] at hmem)
       omega
 
 -- ### Calls
@@ -1619,7 +1632,8 @@ def Synth.staticCall (exprMd : StmtExprMd)
   decreasing_by
     apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
-    simp [h] at hsz
+    rw [h] at hsz
+    simp only [StmtExpr.StaticCall.sizeOf_spec] at hsz
     have := List.sizeOf_lt_of_mem ‹_ ∈ args›
     omega
 
@@ -1683,9 +1697,9 @@ def Synth.instanceCall (exprMd : StmtExprMd)
     all_goals
       apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
-      simp [h] at hsz
+      rw [h] at hsz
+      simp only [StmtExpr.InstanceCall.sizeOf_spec] at hsz
       try (have := List.sizeOf_lt_of_mem ‹_ ∈ args›)
-      try simp_all
       omega
 
 -- ### Primitive operations
@@ -1751,9 +1765,9 @@ def Synth.instanceCall (exprMd : StmtExprMd)
     `Check.resolveStmtExpr` instead of synth-then-`checkSubtype`,
     surfacing operand-shaped errors at their natural location. -/
 def Synth.primitiveOp (exprMd : StmtExprMd) (expr : StmtExpr)
-    (op : Operation) (args : List StmtExprMd) (source : Option FileRange)
-    (h_expr : expr = .PrimitiveOp op args)
-    (h : exprMd.val = .PrimitiveOp op args) :
+    (op : Operation) (args : List StmtExprMd) (skipProof : Bool) (source : Option FileRange)
+    (h_expr : expr = .PrimitiveOp op args skipProof)
+    (h : exprMd.val = .PrimitiveOp op args skipProof) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let _ := h_expr  -- carries the constructor identity for `expr` in diagnostics
   match op with
@@ -1784,13 +1798,13 @@ def Synth.primitiveOp (exprMd : StmtExprMd) (expr : StmtExpr)
         | none => none)
       (some unknownTy)
     match resultTy with
-    | some ty => pure (.PrimitiveOp op args', ty)
+    | some ty => pure (.PrimitiveOp op args' skipProof, ty)
     | none =>
       let formatted := ", ".intercalate (argTypes.map (fun t => s!"'{formatType t}'"))
       let diag := diagnosticFromSource source
         s!"cannot apply '{op}' to operands of types {formatted}"
       modify fun s => { s with errors := s.errors.push diag }
-      pure (.PrimitiveOp op args', unknownTy)
+      pure (.PrimitiveOp op args' skipProof, unknownTy)
   | _ =>
     let results ← args.attach.mapM (fun a => have := a.property; do
       Synth.resolveStmtExpr a.val)
@@ -1824,13 +1838,14 @@ def Synth.primitiveOp (exprMd : StmtExprMd) (expr : StmtExpr)
       for (a, aTy) in args'.zip argTypes do
         checkSubtype a.source { val := .TString, source := a.source } aTy
     | _ => pure ()  -- unreachable
-    pure (.PrimitiveOp op args', { val := resultTy, source := source })
+    pure (.PrimitiveOp op args' skipProof, { val := resultTy, source := source })
   termination_by (exprMd, 1)
   decreasing_by
     all_goals
       apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
-      simp [h] at hsz
+      rw [h] at hsz
+      simp only [StmtExpr.PrimitiveOp.sizeOf_spec] at hsz
       have := List.sizeOf_lt_of_mem ‹_ ∈ args›
       omega
 
@@ -1867,9 +1882,9 @@ def Synth.primitiveOp (exprMd : StmtExprMd) (expr : StmtExpr)
     equality is symmetric). The dispatcher routes those to the wildcard
     `_ =>` arm of `Check.resolveStmtExpr`. -/
 def Check.primitiveOp (exprMd : StmtExprMd)
-    (op : Operation) (args : List StmtExprMd)
+    (op : Operation) (args : List StmtExprMd) (skipProof : Bool)
     (expected : HighTypeMd) (source : Option FileRange)
-    (h : exprMd.val = .PrimitiveOp op args) :
+    (h : exprMd.val = .PrimitiveOp op args skipProof) :
     ResolveM StmtExprMd := do
   let operandTy : HighTypeMd ← match op with
     | .Neg | .Add | .Sub | .Mul | .Div | .Mod | .DivT | .ModT =>
@@ -1888,12 +1903,13 @@ def Check.primitiveOp (exprMd : StmtExprMd)
       pure { val := .Unknown, source := source }
   let args' ← args.attach.mapM (fun a => have := a.property; do
     Check.resolveStmtExpr a.val operandTy)
-  pure { val := .PrimitiveOp op args', source := source }
+  pure { val := .PrimitiveOp op args' skipProof, source := source }
   termination_by (exprMd, 0)
   decreasing_by
     apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
-    simp [h] at hsz
+    rw [h] at hsz
+    simp only [StmtExpr.PrimitiveOp.sizeOf_spec] at hsz
     have := List.sizeOf_lt_of_mem ‹_ ∈ args›
     omega
 
@@ -1963,7 +1979,8 @@ def Synth.asType (exprMd : StmtExprMd)
   decreasing_by
     apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
-    simp [h] at hsz
+    rw [h] at hsz
+    simp only [StmtExpr.AsType.sizeOf_spec] at hsz
     omega
 
 /-- (IsType)
@@ -1992,7 +2009,8 @@ def Synth.isType (exprMd : StmtExprMd)
   decreasing_by
     apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
-    simp [h] at hsz
+    rw [h] at hsz
+    simp only [StmtExpr.IsType.sizeOf_spec] at hsz
     omega
 
 /-- (RefEq)
@@ -2035,7 +2053,8 @@ def Synth.refEq (exprMd : StmtExprMd) (expr : StmtExpr)
     all_goals
       apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
-      simp [h] at hsz
+      rw [h] at hsz
+      simp only [StmtExpr.ReferenceEquals.sizeOf_spec] at hsz
       omega
 
 /-- (PureFieldUpdate)
@@ -2064,7 +2083,8 @@ def Synth.pureFieldUpdate (exprMd : StmtExprMd)
     all_goals
       apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
-      simp [h] at hsz
+      rw [h] at hsz
+      simp only [StmtExpr.PureFieldUpdate.sizeOf_spec] at hsz
       omega
 
 -- ### Verification expressions
@@ -2097,8 +2117,9 @@ def Synth.quantifier (exprMd : StmtExprMd)
     all_goals
       apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
-      simp [h] at hsz
-      try simp_all
+      rw [h] at hsz
+      simp only [StmtExpr.Quantifier.sizeOf_spec] at hsz
+      try (rw [Option.mem_def.mp ‹_ ∈ trigger›, Option.some.sizeOf_spec] at hsz)
       omega
 
 /-- (Assigned)
@@ -2131,7 +2152,8 @@ def Synth.assigned (exprMd : StmtExprMd)
   decreasing_by
     apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
-    simp [h] at hsz
+    rw [h] at hsz
+    simp only [StmtExpr.Assigned.sizeOf_spec] at hsz
     omega
 
 /-- (Old)
@@ -2163,7 +2185,8 @@ def Check.old (exprMd : StmtExprMd)
   decreasing_by
     apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
-    simp [h] at hsz
+    rw [h] at hsz
+    simp only [StmtExpr.Old.sizeOf_spec] at hsz
     omega
 
 /-- (Old-Synth)
@@ -2191,7 +2214,8 @@ def Synth.old (exprMd : StmtExprMd)
   decreasing_by
     apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
-    simp [h] at hsz
+    rw [h] at hsz
+    simp only [StmtExpr.Old.sizeOf_spec] at hsz
     omega
 
 /-- (Fresh)
@@ -2218,7 +2242,8 @@ def Synth.fresh (exprMd : StmtExprMd) (expr : StmtExpr)
   decreasing_by
     apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
-    simp [h] at hsz
+    rw [h] at hsz
+    simp only [StmtExpr.Fresh.sizeOf_spec] at hsz
     omega
 
 /-- (ProveBy)
@@ -2244,7 +2269,8 @@ def Check.proveBy (exprMd : StmtExprMd)
     all_goals
       apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
-      simp [h] at hsz
+      rw [h] at hsz
+      simp only [StmtExpr.ProveBy.sizeOf_spec] at hsz
       omega
 
 /-- (ProveBy-Synth)
@@ -2271,7 +2297,8 @@ def Synth.proveBy (exprMd : StmtExprMd)
     all_goals
       apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
-      simp [h] at hsz
+      rw [h] at hsz
+      simp only [StmtExpr.ProveBy.sizeOf_spec] at hsz
       omega
 
 -- ### Self reference
@@ -2393,7 +2420,8 @@ def Synth.contractOf (exprMd : StmtExprMd)
   decreasing_by
     apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
-    simp [h] at hsz
+    rw [h] at hsz
+    simp only [StmtExpr.ContractOf.sizeOf_spec] at hsz
     omega
 
 -- ### Holes
@@ -2511,10 +2539,11 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
     -- (e.g. PythonToLaurel) don't trip Check.exit's label-scope check.
     let body' ← withLabel (some bodyLabel) <| resolveBody proc.body bodyExpected
     modify fun s => { s with answerType := savedAnswer }
-    if !proc.isFunctional && body'.isTransparent then
-      let diag := diagnosticFromSource proc.name.source
-        s!"transparent procedures are not yet supported. Add 'opaque' to make the procedure opaque"
-      modify fun s => { s with errors := s.errors.push diag }
+    -- Transparent (static) procedure bodies are supported (#1215): the
+    -- TransparencyPass derives a functional `$asFunction` copy, and the
+    -- LaurelToCore translator rejects the genuinely-unsupported constructs
+    -- (e.g. destructive assignments) inside a transparent body. So there is
+    -- no transparent-body rejection here, unlike `resolveInstanceProcedure`.
     let invokeOn' ← proc.invokeOn.mapM resolveStmtExpr
     return { name := procName', inputs := inputs', outputs := outputs',
              isFunctional := proc.isFunctional,
@@ -2549,9 +2578,9 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
     -- See `resolveProcedure` for the rationale on `bodyLabel`.
     let body' ← withLabel (some bodyLabel) <| resolveBody proc.body bodyExpected
     modify fun s => { s with answerType := savedAnswer }
-    if !proc.isFunctional && body'.isTransparent then
+    if !proc.isFunctional && body'.isTransparent && !proc.name.text.any (· == '$') then
       let diag := diagnosticFromSource proc.name.source
-        s!"transparent procedures are not yet supported. Add 'opaque' to make the procedure opaque"
+        s!"transparent statement bodies are not supported. Add 'opaque' to make the procedure opaque"
       modify fun s => { s with errors := s.errors.push diag }
     let invokeOn' ← proc.invokeOn.mapM resolveStmtExpr
     modify fun s => { s with instanceTypeName := savedInstType }
@@ -2688,7 +2717,7 @@ private def collectStmtExpr (map : Std.HashMap Nat ResolvedNode) (expr : StmtExp
     let map := collectStmtExpr map target
     collectStmtExpr map newVal
   | .StaticCall _ args => args.foldl collectStmtExpr map
-  | .PrimitiveOp _ args => args.foldl collectStmtExpr map
+  | .PrimitiveOp _ args _ => args.foldl collectStmtExpr map
   | .ReferenceEquals lhs rhs =>
     let map := collectStmtExpr map lhs
     collectStmtExpr map rhs
@@ -2709,7 +2738,7 @@ private def collectStmtExpr (map : Std.HashMap Nat ResolvedNode) (expr : StmtExp
   | .Assigned name => collectStmtExpr map name
   | .Old val => collectStmtExpr map val
   | .Fresh val => collectStmtExpr map val
-  | .Assert ⟨cond, _⟩ => collectStmtExpr map cond
+  | .Assert ⟨cond, _, _⟩ => collectStmtExpr map cond
   | .Assume cond => collectStmtExpr map cond
   | .ProveBy val proof =>
     let map := collectStmtExpr map val
@@ -2847,8 +2876,18 @@ private def preRegisterTopLevel (program : Program) : ResolveM Unit := do
 
 /-- Run the full resolution pass on a Laurel program. -/
 def resolve (program : Program) (existingModel: Option SemanticModel := none) : ResolutionResult :=
+
   -- Phase 1: pre-register all top-level names, then assign IDs and resolve references
   let phase1 : ResolveM Program := do
+
+    for td in program.types do
+      if let .Composite ct := td then
+        for proc in ct.instanceProcedures do
+          let diag := diagnosticFromSource proc.name.source
+            s!"Instance procedure '{proc.name.text}' on composite type '{ct.name.text}' is not yet supported"
+            DiagnosticType.NotYetImplemented
+          modify fun s => { s with errors := s.errors.push diag }
+
     preRegisterTopLevel program
     let types' ← program.types.mapM resolveTypeDefinition
     let constants' ← program.constants.mapM resolveConstant
@@ -2869,5 +2908,51 @@ def resolve (program : Program) (existingModel: Option SemanticModel := none) : 
     },
     errors := finalState.errors
   }
+
+/-! ## Resolution for UnorderedCoreWithLaurelTypes -/
+
+/--
+Convert an `UnorderedCoreWithLaurelTypes` to a flat `Program` suitable for
+resolution. Additional type definitions (e.g. composite types from the original
+Laurel program) can be supplied so that `UserDefined` type references resolve
+correctly.
+-/
+private def unorderedCoreToProgram (uc : UnorderedCoreWithLaurelTypes)
+    (additionalTypes : List TypeDefinition := []) : Program :=
+  { staticProcedures := uc.functions ++ uc.coreProcedures,
+    staticFields := [],
+    types := uc.datatypes.map TypeDefinition.Datatype ++ additionalTypes,
+    constants := uc.constants }
+
+/--
+Reconstruct an `UnorderedCoreWithLaurelTypes` from a resolved `Program`.
+-/
+private def fromResolvedProgram (resolvedProgram : Program)
+    : UnorderedCoreWithLaurelTypes :=
+  let resolvedProcs := resolvedProgram.staticProcedures
+  let resolvedDatatypes := resolvedProgram.types.filterMap fun td =>
+    match td with | .Datatype dt => some dt | _ => none
+  { functions := resolvedProcs.filter (·.isFunctional)
+    coreProcedures := resolvedProcs.filter (!·.isFunctional)
+    datatypes := resolvedDatatypes
+    constants := resolvedProgram.constants }
+
+/--
+Resolve an `UnorderedCoreWithLaurelTypes` by converting to a flat `Program`,
+running the resolution pass, and reconstructing the result. Returns the
+resolved `UnorderedCoreWithLaurelTypes` and the `SemanticModel`.
+
+`additionalTypes` can supply extra type definitions (e.g. composite types) that
+are not part of the `UnorderedCoreWithLaurelTypes` but are needed for resolving
+`UserDefined` type references. These additional types should not be necessary
+but they are because certain type references have incorrectly not been updated.
+-/
+def resolveUnorderedCore (uc : UnorderedCoreWithLaurelTypes)
+    (existingModel : Option SemanticModel := none)
+    (additionalTypes : List TypeDefinition := [])
+    : UnorderedCoreWithLaurelTypes × SemanticModel :=
+  let fnProgram := unorderedCoreToProgram uc additionalTypes
+  let fnResolveResult := resolve fnProgram existingModel
+  (fromResolvedProgram fnResolveResult.program, fnResolveResult.model)
 
 end
