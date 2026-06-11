@@ -197,9 +197,11 @@ def TripleBlock
 
 omit [HasVal P] in
 /-- A postcondition is well-formed if it is stable under `projectStore` and
-    `eval`-replacement (the parent's eval is restored on block exit). -/
+    `eval`-replacement by any parent eval that the inner `ρ.eval` extends. -/
 def PostWF (Post : Env P → Prop) : Prop :=
-  ∀ ρ σ_parent e_parent, Post ρ → ρ.hasFailure = false →
+  ∀ ρ σ_parent e_parent,
+    EvalExtensionOf extendEval e_parent ρ.eval →
+    Post ρ → ρ.hasFailure = false →
     Post { ρ with store := projectStore σ_parent ρ.store, eval := e_parent } ∧
       ({ ρ with store := projectStore σ_parent ρ.store, eval := e_parent } : Env P).hasFailure = false
 

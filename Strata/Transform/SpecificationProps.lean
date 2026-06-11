@@ -131,19 +131,28 @@ omit [HasVal P] [HasOps P] in
 theorem TripleBlock.toTriple {ss : List (Stmt P CmdT)} {l : String} {md : MetaData P}
     {Pre Post : Env P → Prop}
     (h : TripleBlock evalCmd extendEval Pre ss Post)
-    (hpost_proj : PostWF Post) :
+    (hpost_proj : PostWF extendEval Post) :
     Triple (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) Pre (.block l ss md) Post := by
   intro ρ₀ ρ' hpre hwfb hf₀ hstar
   cases hstar with
   | step _ _ _ hstep hrest => cases hstep with
     | step_block =>
+      -- At block entry the inner is `.stmts ss ρ₀` whose eval is `ρ₀.eval`,
+      -- which is exactly `e_parent`.  So `evalExtendsOf ρ₀.eval inner` is
+      -- reflexive, and `star_preserves_evalExtendsOf` lifts the inner trace.
+      have hinv₀ : Config.evalExtendsOf P extendEval ρ₀.eval (.stmts ss ρ₀) := by
+        simp only [Config.evalExtendsOf]; exact .refl
       match block_reaches_terminal P evalCmd extendEval hrest with
       | .inl ⟨ρ_inner, hterm, heq⟩ =>
         have ⟨hpost, hf⟩ := h ρ₀ ρ_inner hpre hwfb hf₀ (.inl hterm)
-        subst heq; exact hpost_proj ρ_inner _ _ hpost hf
+        have hext : EvalExtensionOf extendEval ρ₀.eval ρ_inner.eval :=
+          star_preserves_evalExtendsOf P evalCmd extendEval hinv₀ hterm
+        subst heq; exact hpost_proj ρ_inner _ _ hext hpost hf
       | .inr ⟨lbl, ρ_inner, hexit, heq⟩ =>
         have ⟨hpost, hf⟩ := h ρ₀ ρ_inner hpre hwfb hf₀ (.inr ⟨lbl, hexit⟩)
-        subst heq; exact hpost_proj ρ_inner _ _ hpost hf
+        have hext : EvalExtensionOf extendEval ρ₀.eval ρ_inner.eval :=
+          star_preserves_evalExtendsOf P evalCmd extendEval hinv₀ hexit
+        subst heq; exact hpost_proj ρ_inner _ _ hext hpost hf
 
 omit [HasVal P] [HasOps P] in
 /-- Lift a `Triple` to a `TripleBlock` for a singleton list. -/
@@ -181,7 +190,7 @@ theorem Triple.toTripleBlock {s : Stmt P CmdT}
 omit [HasVal P] [HasOps P] in
 /-- Empty block is skip. -/
 theorem skip (l : String) (md : MetaData P) (Pre : Env P → Prop)
-    (hpre_proj : PostWF Pre) :
+    (hpre_proj : PostWF extendEval Pre) :
     Triple (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) Pre (.block l [] md) Pre :=
   TripleBlock.toTriple evalCmd extendEval isAtAssertFn (skip_block evalCmd extendEval Pre) hpre_proj
 
@@ -191,27 +200,35 @@ theorem ite {c : P.Expr} {tss ess : List (Stmt P CmdT)} {md : MetaData P}
     {Pre Post : Env P → Prop}
     (ht : TripleBlock evalCmd extendEval (fun ρ => Pre ρ ∧ ρ.eval ρ.store c = some HasBool.tt) tss Post)
     (he : TripleBlock evalCmd extendEval (fun ρ => Pre ρ ∧ ρ.eval ρ.store c = some HasBool.ff) ess Post)
-    (hpost_proj : PostWF Post) :
+    (hpost_proj : PostWF extendEval Post) :
     Triple (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) Pre (.ite (.det c) tss ess md) Post := by
   intro ρ₀ ρ' hpre hwfb hf₀ hstar
   cases hstar with
   | step _ _ _ h1 r1 => cases h1 with
     | step_ite_true hc _ =>
+      have hinv₀ : Config.evalExtendsOf P extendEval ρ₀.eval (.stmts tss ρ₀) := by
+        simp only [Config.evalExtendsOf]; exact .refl
       match block_reaches_terminal P evalCmd extendEval r1 with
       | .inl ⟨ρ_inner, hterm, heq⟩ =>
         have ⟨hpost, hf⟩ := ht ρ₀ ρ_inner ⟨hpre, hc⟩ hwfb hf₀ (.inl hterm)
-        subst heq; exact hpost_proj ρ_inner _ _ hpost hf
+        have hext := star_preserves_evalExtendsOf P evalCmd extendEval hinv₀ hterm
+        subst heq; exact hpost_proj ρ_inner _ _ hext hpost hf
       | .inr ⟨lbl, ρ_inner, hexit, heq⟩ =>
         have ⟨hpost, hf⟩ := ht ρ₀ ρ_inner ⟨hpre, hc⟩ hwfb hf₀ (.inr ⟨lbl, hexit⟩)
-        subst heq; exact hpost_proj ρ_inner _ _ hpost hf
+        have hext := star_preserves_evalExtendsOf P evalCmd extendEval hinv₀ hexit
+        subst heq; exact hpost_proj ρ_inner _ _ hext hpost hf
     | step_ite_false hc _ =>
+      have hinv₀ : Config.evalExtendsOf P extendEval ρ₀.eval (.stmts ess ρ₀) := by
+        simp only [Config.evalExtendsOf]; exact .refl
       match block_reaches_terminal P evalCmd extendEval r1 with
       | .inl ⟨ρ_inner, hterm, heq⟩ =>
         have ⟨hpost, hf⟩ := he ρ₀ ρ_inner ⟨hpre, hc⟩ hwfb hf₀ (.inl hterm)
-        subst heq; exact hpost_proj ρ_inner _ _ hpost hf
+        have hext := star_preserves_evalExtendsOf P evalCmd extendEval hinv₀ hterm
+        subst heq; exact hpost_proj ρ_inner _ _ hext hpost hf
       | .inr ⟨lbl, ρ_inner, hexit, heq⟩ =>
         have ⟨hpost, hf⟩ := he ρ₀ ρ_inner ⟨hpre, hc⟩ hwfb hf₀ (.inr ⟨lbl, hexit⟩)
-        subst heq; exact hpost_proj ρ_inner _ _ hpost hf
+        have hext := star_preserves_evalExtendsOf P evalCmd extendEval hinv₀ hexit
+        subst heq; exact hpost_proj ρ_inner _ _ hext hpost hf
 
 /- TODO: the WHILE rule -/
 

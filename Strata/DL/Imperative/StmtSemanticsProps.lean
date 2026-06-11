@@ -191,6 +191,70 @@ theorem seq_reaches_exiting
     | step_seq_done => subst htgt; exact .inr ⟨_, .refl _, hrest⟩
     | step_seq_exit => exact .inl (htgt ▸ hrest)
 
+/-! ### EvalExtensionOf preservation along block executions -/
+
+omit [HasOps P] in
+/-- Structural invariant: every "stacked" eval inside `c` (the active eval
+    plus every `e_parent` saved at a `.block` wrapper) extends `e_root`. -/
+def Config.evalExtendsOf (e_root : SemanticEval P) :
+    Config P CmdT → Prop
+  | .stmt _ ρ => EvalExtensionOf extendEval e_root ρ.eval
+  | .stmts _ ρ => EvalExtensionOf extendEval e_root ρ.eval
+  | .terminal ρ => EvalExtensionOf extendEval e_root ρ.eval
+  | .exiting _ ρ => EvalExtensionOf extendEval e_root ρ.eval
+  | .block _ _ e_parent inner =>
+    EvalExtensionOf extendEval e_root e_parent ∧
+    Config.evalExtendsOf e_root inner
+  | .seq inner _ => Config.evalExtendsOf e_root inner
+
+omit [HasOps P] in
+/-- A single `StepStmt` step preserves `Config.evalExtendsOf e_root`. -/
+private theorem step_preserves_evalExtendsOf
+    {c c' : Config P CmdT} {e_root : SemanticEval P}
+    (hinv : Config.evalExtendsOf P extendEval e_root c)
+    (h : StepStmt P EvalCmd extendEval c c') :
+    Config.evalExtendsOf P extendEval e_root c' := by
+  induction h with
+  -- Rules whose post-config has the same active eval as the pre-config,
+  -- and no stacked block frames are added or removed.
+  | step_cmd _ | step_exit | step_typeDecl
+  | step_stmts_nil | step_stmts_cons | step_seq_done | step_seq_exit
+  | step_loop_exit _ _ _ _ | step_loop_nondet_exit _ _ =>
+    simp only [Config.evalExtendsOf] at hinv ⊢; exact hinv
+  -- Rules that wrap the body in a fresh block (or seq-of-block).  The active
+  -- eval is unchanged, and the new block's e_parent is also the pre-config's
+  -- eval, so both halves of the resulting product are `hinv`.
+  | step_block
+  | step_ite_true _ _ | step_ite_false _ _
+  | step_ite_nondet_true | step_ite_nondet_false
+  | step_loop_enter _ _ _ _ | step_loop_nondet_enter _ _ =>
+    simp only [Config.evalExtendsOf] at hinv ⊢; exact ⟨hinv, hinv⟩
+  -- Block-exit rules: drop the inner active eval and restore e_parent.
+  | step_block_done | step_block_exit_match _ | step_block_exit_mismatch _ =>
+    simp only [Config.evalExtendsOf] at hinv ⊢; exact hinv.1
+  -- Recursive (inner) cases.
+  | step_seq_inner _ ih =>
+    simp only [Config.evalExtendsOf] at hinv ⊢; exact ih hinv
+  | step_block_body _ ih =>
+    simp only [Config.evalExtendsOf] at hinv ⊢; exact ⟨hinv.1, ih hinv.2⟩
+  -- The only rule that mutates the active eval.
+  | step_funcDecl =>
+    simp only [Config.evalExtendsOf] at hinv ⊢
+    rename_i decl _ _ _
+    exact .step _ decl hinv
+
+omit [HasOps P] in
+/-- Multi-step lift of `step_preserves_evalExtendsOf`. -/
+theorem star_preserves_evalExtendsOf
+    {c c' : Config P CmdT} {e_root : SemanticEval P}
+    (hinv : Config.evalExtendsOf P extendEval e_root c)
+    (h : StepStmtStar P EvalCmd extendEval c c') :
+    Config.evalExtendsOf P extendEval e_root c' := by
+  induction h with
+  | refl => exact hinv
+  | step _ _ _ hstep _ ih =>
+    exact ih (step_preserves_evalExtendsOf P EvalCmd extendEval hinv hstep)
+
 omit [HasOps P] in
 /-- Invert a block execution reaching terminal: the inner either
     terminated or exited (caught by the block).  In both cases the inner

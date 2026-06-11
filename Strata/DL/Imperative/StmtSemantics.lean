@@ -35,6 +35,25 @@ structure Env (P : PureExpr) where
 /-- Type of a function that extends the semantic evaluator with a new function definition. -/
 @[expose] abbrev ExtendEval (P : PureExpr) := SemanticEval P → SemanticStore P → PureFunc P → SemanticEval P
 
+/-- An evaluator `e` is reachable from `e_parent` by a chain of `extendEval`
+    extensions.  Since `step_funcDecl` is the only rule that mutates
+    `Env.eval` (it tacks on `extendEval ρ.eval ρ.store decl`), the eval at
+    any reachable config is related to the eval at the source config by this
+    predicate.
+
+    This is the honest relation between a block's parent eval and the
+    block's inner `ρ.eval`: the inner eval extends the parent's, but is not
+    arbitrary. -/
+inductive EvalExtensionOf {P : PureExpr} (extendEval : ExtendEval P) :
+    SemanticEval P → SemanticEval P → Prop where
+  /-- Reflexivity: `e_parent` extends itself. -/
+  | refl {e : SemanticEval P} : EvalExtensionOf extendEval e e
+  /-- Step: if `e` extends `e_parent`, then `extendEval e σ decl` does too. -/
+  | step {e_parent e : SemanticEval P}
+         (σ : SemanticStore P) (decl : PureFunc P) :
+      EvalExtensionOf extendEval e_parent e →
+      EvalExtensionOf extendEval e_parent (extendEval e σ decl)
+
 /-! ## Small-Step Operational Semantics for Statements
 
 This module defines small-step operational semantics for the Imperative
