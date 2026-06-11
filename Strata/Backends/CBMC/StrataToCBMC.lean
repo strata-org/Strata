@@ -7,7 +7,7 @@ module
 
 public import Strata.Backends.CBMC.Common
 public import StrataDDM.AST
-import StrataDDM.Integration.Lean.HashCommands -- shake: keep
+public import StrataDDM.Integration.Lean.HashCommands -- shake: keep
 public import Strata.Languages.C_Simp.C_Simp
 import Strata.Languages.C_Simp.DDMTransform.Parse
 import Strata.Languages.C_Simp.DDMTransform.Translate
