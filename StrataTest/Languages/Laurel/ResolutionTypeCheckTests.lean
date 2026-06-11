@@ -301,6 +301,43 @@ function cmp(x: bv 32, y: bv 32): bool {
 #guard_msgs (drop info) in
 #eval testInputWithOffset "BitvectorComparisonOk" bitvectorComparisonOk 250 processResolution
 
+/-! ## Over-arity calls are rejected
+
+A call that supplies more arguments than the callee declares is rejected with
+an arity diagnostic. The check fires only when the callee genuinely resolves to
+a procedure with a known parameter count (`procArity`). Under-arity (too few
+arguments) is deliberately not flagged. -/
+
+def overArityCall := r"
+function foo(x: int): int { x };
+function bar(): int {
+  foo(1, 2)
+//^^^^^^^^^ error: call to 'foo' expects 1 argument(s) but 2 were provided
+};
+"
+
+#guard_msgs (error, drop all) in
+#eval testInputWithOffset "OverArityCall" overArityCall 269 processResolution
+
+/-! ## A too-many-args call to an *unresolved* name does not double-report
+
+Calling a name that does not resolve to any definition with surplus arguments
+reports only the name-resolution error — not a spurious arity error on top.
+`procArity` returns `none` for an unresolved name (its empty `paramTypes` is an
+artifact of the name not being found, not a zero-arity procedure), so the
+over-arity check is skipped. (Regression guard for the no-duplicate-diagnostic
+behavior.) -/
+
+def overArityUnresolvedCallNoDouble := r"
+function bar(): int {
+  nope(1, 2)
+//^^^^^^^^^^ error: 'nope' is not defined
+};
+"
+
+#guard_msgs (error, drop all) in
+#eval testInputWithOffset "OverArityUnresolvedCallNoDouble" overArityUnresolvedCallNoDouble 289 processResolution
+
 /-! ## An unresolved declared type collapses to `Unknown` (no cascade)
 
 A variable declared with an undefined type name reports only the single

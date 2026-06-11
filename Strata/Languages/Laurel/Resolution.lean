@@ -579,6 +579,27 @@ private def getCallInfo (callee : Identifier) : ResolveM (HighTypeMd × List Hig
   | some (_, .constant c) => pure (c.type, [])
   | _ => pure ({ val := .Unknown, source := callee.source }, [])
 
+/-- The number of positional arguments `callee` accepts, *only* when it
+    genuinely resolves to a procedure with a known parameter count. Returns
+    `none` for every other resolution kind — unresolved names (whose
+    `getCallInfo` `paramTypes` is `[]` purely because the name was not found),
+    datatype constructors/testers, parameters, and constants — so that the
+    over-arity check in the call rules does not fire on those (which would
+    duplicate the already-reported name-resolution error, or wrongly flag a
+    constructor/parameter/constant call).
+
+    For an instance procedure the implicit `self` receiver is not supplied
+    positionally at an `InstanceCall` site, so it is dropped here exactly as
+    the `dropSelf` logic in `Synth.instanceCall` does. `dropSelf` is passed by
+    the caller: `false` for `Synth.staticCall` (no `self`), and `true` for an
+    instance procedure reached through `Synth.instanceCall`. -/
+private def procArity (callee : Identifier) (dropSelf : Bool) : ResolveM (Option Nat) := do
+  match (← get).scope.get? callee.text with
+  | some (_, .staticProcedure proc) => pure (some proc.inputs.length)
+  | some (_, .instanceProcedure _ proc) =>
+    pure (some (if dropSelf then proc.inputs.length - 1 else proc.inputs.length))
+  | _ => pure none
+
 /-! ## Typing rules
 
 The judgment is bidirectional:
@@ -1607,17 +1628,23 @@ def Check.assign (exprMd : StmtExprMd)
     The two rules differ only in *output* arity — argument checking is
     identical. Callee is resolved against the expected kinds (parameter,
     static procedure, datatype constructor, datatype destructor, constant);
-    each argument is *checked* against the corresponding parameter type.
-    Surplus arguments (beyond the declared parameters, or when the callee is
-    unresolved so `paramTypes = []`) are checked against `Unknown`, the
-    gradual escape hatch, rather than flagged as an arity error. The
-    bidirectional
-    push lets impure-expression arguments (`{x := 1; x}`, `if c then …`,
-    holes) flow through their own check rules instead of bottoming out at
-    the synth wildcard. Arguments past the declared parameter list (or
-    when the callee is unresolved and `paramTypes = []`) are checked
-    against `Unknown`, the gradual escape hatch — this preserves the old
-    behavior of resolving args without flagging arity mismatches here.
+    each argument is *checked* against the corresponding parameter type. The
+    bidirectional push lets impure-expression arguments (`{x := 1; x}`,
+    `if c then …`, holes) flow through their own check rules instead of
+    bottoming out at the synth wildcard.
+
+    When the callee resolves to a static procedure with a known parameter
+    count and the call supplies *more* arguments than it declares, an
+    over-arity diagnostic is emitted (the surplus arguments are still
+    resolved first, against `Unknown`, so errors inside them are reported
+    too). The check fires *only* for genuine procedures (`procArity`); for an
+    unresolved name (where `paramTypes = []` purely because the name was not
+    found), a datatype constructor/tester, a parameter, or a constant, no
+    arity diagnostic is emitted — surplus arguments are checked against
+    `Unknown`, the gradual escape hatch, exactly as before, so no
+    spurious/duplicate diagnostic is produced. Under-arity (too few
+    arguments) is deliberately not flagged.
+
     The result type is the (possibly multi-valued) declared output type
     from `getCallInfo`. -/
 def Synth.staticCall (exprMd : StmtExprMd)
@@ -1633,6 +1660,20 @@ def Synth.staticCall (exprMd : StmtExprMd)
   let args' ← (args.attach.zip expectedTys).mapM (fun (⟨a, hMem⟩, paramTy) => do
     have := hMem
     Check.resolveStmtExpr a paramTy)
+  -- Over-arity check: reject calls that supply MORE arguments than the callee
+  -- declares, but *only* when the callee genuinely resolves to a procedure with
+  -- a known parameter count (`procArity`). For any other resolution kind —
+  -- unresolved name, datatype constructor/tester, parameter, constant — we leave
+  -- the Unknown-padding behavior above untouched, so no spurious/duplicate
+  -- arity diagnostic is emitted (an unresolved name already reported "not
+  -- defined"). Args are resolved above regardless, so errors inside surplus
+  -- arguments are still reported. The return type is unchanged to suppress
+  -- cascading errors. Under-arity (too few args) is deliberately not flagged.
+  if let some arity ← procArity callee (dropSelf := false) then
+    if args.length > arity then
+      let diag := diagnosticFromSource source
+        s!"call to '{callee}' expects {arity} argument(s) but {args.length} were provided"
+      modify fun s => { s with errors := s.errors.push diag }
   pure (.StaticCall callee' args', retTy)
   termination_by (exprMd, 1)
   decreasing_by
@@ -1662,10 +1703,13 @@ def Synth.staticCall (exprMd : StmtExprMd)
     The two rules differ only in *output* arity. Target is synthesized;
     callee resolves to an instance or static procedure; arguments are
     checked pairwise against the callee's parameter types after dropping
-    `self`, with surplus arguments checked against `Unknown` (as in
-    `Synth.staticCall`). Like `Synth.staticCall`, the push is bidirectional
-    so block- and conditional-shaped arguments route through their own
-    check rules. -/
+    `self`. As in `Synth.staticCall`, supplying *more* arguments than the
+    callee declares (compared against the post-`self` parameter count) emits
+    an over-arity diagnostic when the callee genuinely resolves to a
+    procedure, while surplus arguments against any other resolution kind are
+    still checked against `Unknown` with no arity diagnostic. Like
+    `Synth.staticCall`, the push is bidirectional so block- and
+    conditional-shaped arguments route through their own check rules. -/
 def Synth.instanceCall (exprMd : StmtExprMd)
     (target : StmtExprMd) (callee : Identifier) (args : List StmtExprMd)
     (source : Option FileRange)
@@ -1697,6 +1741,17 @@ def Synth.instanceCall (exprMd : StmtExprMd)
   let args' ← (args.attach.zip expectedTys).mapM (fun (⟨a, hMem⟩, paramTy) => do
     have := hMem
     Check.resolveStmtExpr a paramTy)
+  -- Over-arity check (mirrors `Synth.staticCall`): reject calls supplying more
+  -- arguments than the callee declares, comparing against the post-`self`
+  -- parameter count. `procArity` is given the same `dropSelf` flag computed
+  -- above, so an instance procedure's implicit `self` is excluded; it returns
+  -- `none` for any non-procedure resolution, leaving the Unknown-padding (and
+  -- no duplicate diagnostic) for those. Args are resolved above regardless.
+  if let some arity ← procArity callee dropSelf then
+    if args.length > arity then
+      let diag := diagnosticFromSource source
+        s!"call to '{callee}' expects {arity} argument(s) but {args.length} were provided"
+      modify fun s => { s with errors := s.errors.push diag }
   pure (.InstanceCall target' callee' args', retTy)
   termination_by (exprMd, 1)
   decreasing_by
