@@ -77,6 +77,7 @@ lake build && lake test
 ```
 
 Unit tests are run with `#guard_msgs` commands. No output means the tests passed.
+For how to write a new test, see [docs/Testing.md](docs/Testing.md).
 
 To build executable files only and omit proof checks that might take a long time, use
 

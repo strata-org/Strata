@@ -3,14 +3,9 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import all StrataTest.Util.TestDiagnostics
-meta import all StrataTest.Languages.Laurel.TestExamples
+import Strata.Languages.Laurel
 
-meta section
-
-open StrataTest.Util
 open Strata
 
 namespace Laurel
