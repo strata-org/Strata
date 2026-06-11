@@ -268,9 +268,6 @@ inductive StepStmt
       labeled pairs `(String × P.Expr)`; only the expression part is
       evaluated.
 
-      Similarly, when a measure is present, it must evaluate to some integer
-      `v`.
-
       The body alone is wrapped in an unnamed `.block`, sequenced with the
       recursive loop.  This means each iteration runs the body in its own
       block scope: variables `init`'d inside body are projected away at the
@@ -282,8 +279,6 @@ inductive StepStmt
                  ρ.eval ρ.store le.2 = .some HasBool.ff) →
     (hasInvFailure ↔ ∃ le ∈ inv, ρ.eval ρ.store le.2 = .some HasBool.ff) →
     WellFormedSemanticEvalBool ρ.eval →
-    (∀ me, m = .some me →
-      ∃ v, ρ.eval ρ.store me = .some v ∧ HasInt.isNumeral v = Bool.true) →
     ----
     StepStmt EvalCmd extendEval
       (.stmt (.loop (.det g) m inv body md) ρ)
@@ -300,8 +295,6 @@ inductive StepStmt
                  ρ.eval ρ.store le.2 = .some HasBool.ff) →
     (hasInvFailure ↔ ∃ le ∈ inv, ρ.eval ρ.store le.2 = .some HasBool.ff) →
     WellFormedSemanticEvalBool ρ.eval →
-    (∀ me, m = .some me →
-      ∃ v, ρ.eval ρ.store me = .some v ∧ HasInt.isNumeral v = Bool.true) →
     ----
     StepStmt EvalCmd extendEval
       (.stmt (.loop (.det g) m inv body _) ρ)

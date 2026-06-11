@@ -30,7 +30,7 @@ public section
 
 open Imperative Specification
 
-variable {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P]
+variable {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P]
 
 /-! ## Lang instances -/
 
@@ -55,7 +55,7 @@ abbrev Lang.kleene : Lang P where
 
 /-! ## Transform-success helpers: extract sub-transform results -/
 
-omit [HasFvar P] [HasFvars P] [HasOps P] [HasInt P] in
+omit [HasFvar P] [HasFvars P] [HasOps P] in
 private theorem ite_transform_some_det
     (cond : P.Expr) (tss ess : List (Stmt P (Cmd P))) (md : MetaData P)
     (ns : KleeneStmt P (Cmd P))
@@ -72,7 +72,7 @@ private theorem ite_transform_some_det
   | some _, none => simp [h1, h2, Option.bind] at ht
   | none, _ => simp [h1, Option.bind] at ht
 
-omit [HasFvar P] [HasFvars P] [HasOps P] [HasInt P] in
+omit [HasFvar P] [HasFvars P] [HasOps P] in
 private theorem ite_transform_some_nondet
     (tss ess : List (Stmt P (Cmd P))) (md : MetaData P)
     (ns : KleeneStmt P (Cmd P))
@@ -87,7 +87,7 @@ private theorem ite_transform_some_nondet
   | some _, none => simp [h1, h2, Option.bind] at ht
   | none, _ => simp [h1, Option.bind] at ht
 
-omit [HasFvar P] [HasFvars P] [HasOps P] [HasInt P] in
+omit [HasFvar P] [HasFvars P] [HasOps P] in
 private theorem loop_transform_some_det
     (g : P.Expr) (m : Option P.Expr) (inv : List (String × P.Expr))
     (body : List (Stmt P (Cmd P))) (md : MetaData P)
@@ -104,7 +104,7 @@ private theorem loop_transform_some_det
     | none => simp [hb] at ht
   | _ :: _ => simp [Option.bind] at ht
 
-omit [HasFvar P] [HasFvars P] [HasOps P] [HasInt P] in
+omit [HasFvar P] [HasFvars P] [HasOps P] in
 private theorem loop_transform_some_nondet
     (m : Option P.Expr) (inv : List (String × P.Expr))
     (body : List (Stmt P (Cmd P))) (md : MetaData P)
@@ -121,7 +121,7 @@ private theorem loop_transform_some_nondet
     | none => simp [hb] at ht
   | _ :: _ => simp [Option.bind] at ht
 
-omit [HasFvar P] [HasFvars P] [HasOps P] [HasInt P] in
+omit [HasFvar P] [HasFvars P] [HasOps P] in
 private theorem block_transform_some
     (s : Stmt P (Cmd P)) (rest : List (Stmt P (Cmd P)))
     (ns : KleeneStmt P (Cmd P))
@@ -138,7 +138,7 @@ private theorem block_transform_some
 
 /-! ## exitsCoveredByBlocks from successful transform -/
 
-omit [HasFvar P] [HasFvars P] [HasOps P] [HasInt P] in
+omit [HasFvar P] [HasFvars P] [HasOps P] in
 private theorem stmtToKleene_some_exitsCovered
     (labels : List String)
     (st : Stmt P (Cmd P)) (ns : KleeneStmt P (Cmd P))
@@ -189,7 +189,7 @@ where
 
 /-! ## noFuncDecl from successful transform -/
 
-omit [HasFvar P] [HasFvars P] [HasOps P] [HasInt P] in
+omit [HasFvar P] [HasFvars P] [HasOps P] in
 private theorem stmtToKleene_some_noFuncDecl
     (st : Stmt P (Cmd P)) (ns : KleeneStmt P (Cmd P))
     (ht : StmtToKleeneStmt st = some ns) :
@@ -282,16 +282,16 @@ private def loop_sim
     | .step _ _ _ _ _, hlen => simp [ReflTransT.len] at hlen
   | succ n ih =>
     match hstarT, hlen with
-    | .step _ _ _ (@StepStmt.step_loop_exit _ _ _ _ _ _ _ _ _ _ _ _ _ _
-        hasInvFailure _ _ hff_iff _ _) hrest, hlen =>
+    | .step _ _ _ (@StepStmt.step_loop_exit _ _ _ _ _ _ _ _ _ _ _ _
+        hasInvFailure _ _ hff_iff _) hrest, hlen =>
       have h_no : hasInvFailure = false := empty_inv_no_failure hff_iff
       subst h_no
       rw [assume_env_eq] at hrest
       match hrest with
       | .refl _ => exact .step _ _ _ .step_loop_zero (.refl _)
       | .step _ _ _ h _ => exact nomatch h
-    | .step _ _ _ (@StepStmt.step_loop_enter _ _ _ _ _ _ _ _ _ _ _ _ _ _
-        hasInvFailure hg _ hff_iff hwfb _) hrest, hlen =>
+    | .step _ _ _ (@StepStmt.step_loop_enter _ _ _ _ _ _ _ _ _ _ _ _
+        hasInvFailure hg _ hff_iff hwfb) hrest, hlen =>
       have h_no : hasInvFailure = false := empty_inv_no_failure hff_iff
       subst h_no
       let ρ₀' : Env P := {ρ₀ with hasFailure := ρ₀.hasFailure || false}
@@ -388,7 +388,7 @@ private def loop_sim_kleene
     | .step _ _ _ _ _, hlen => simp [ReflTransT.len] at hlen
   | succ n ih =>
     match hstarT, hlen with
-    | .step _ _ _ (@StepStmt.step_loop_nondet_exit _ _ _ _ _ _ _ _ _ _ _ _ _
+    | .step _ _ _ (@StepStmt.step_loop_nondet_exit _ _ _ _ _ _ _ _ _ _ _
         hasInvFailure _ hff_iff) hrest, hlen =>
       have h_no : hasInvFailure = false := empty_inv_no_failure hff_iff
       subst h_no
@@ -396,7 +396,7 @@ private def loop_sim_kleene
       match hrest with
       | .refl _ => exact .step _ _ _ .step_loop_zero (.refl _)
       | .step _ _ _ h _ => exact nomatch h
-    | .step _ _ _ (@StepStmt.step_loop_nondet_enter _ _ _ _ _ _ _ _ _ _ _ _ _
+    | .step _ _ _ (@StepStmt.step_loop_nondet_enter _ _ _ _ _ _ _ _ _ _ _
         hasInvFailure _ hff_iff) hrest, hlen =>
       have h_no : hasInvFailure = false := empty_inv_no_failure hff_iff
       subst h_no
@@ -453,7 +453,7 @@ private def loop_sim_kleene
 
 /-! ## Core simulation by strong induction on statement/block size -/
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] in
 private theorem simulation
     (extendEval : ExtendEval P) (sz : Nat) :
     (∀ (st : Stmt P (Cmd P)) (ns : KleeneStmt P (Cmd P)),
@@ -691,7 +691,7 @@ private theorem simulation
               (ih.1 s s' hsz_s hs ρ₀ ρ₁ hwfb hwfv hterm_s)
               (ih.2 rest rest' hsz_r hr ρ₁ ρ' hwfb₁ hwfv₁ hterm_rest)
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] in
 /-- If det stmt reaches terminal, Kleene transform reaches terminal. -/
 theorem stmtToKleene_terminal
     (extendEval : ExtendEval P)
@@ -704,7 +704,7 @@ theorem stmtToKleene_terminal
     StepKleeneStar P (EvalCmd P) (.stmt ns ρ₀) (.terminal ρ') :=
   (simulation extendEval st.sizeOf).1 st ns (Nat.le_refl _) ht ρ₀ ρ' hwfb hwfv hstar
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] in
 /-- If det block reaches terminal, Kleene transform reaches terminal. -/
 theorem blockToKleene_terminal
     (extendEval : ExtendEval P)

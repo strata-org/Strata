@@ -23,7 +23,7 @@ namespace Imperative
 
 namespace Specification
 
-variable {P : PureExpr} [HasFvar P] [HasFvars P] [HasOps P] [HasBool P] [HasBoolOps P] [HasInt P] [HasVal P]
+variable {P : PureExpr} [HasFvar P] [HasFvars P] [HasOps P] [HasBool P] [HasBoolOps P] [HasVal P]
 variable (L : Lang P)
 
 namespace Hoare
@@ -55,7 +55,7 @@ section StmtRules
 variable {CmdT : Type} (evalCmd : EvalCmdParam P CmdT) (extendEval : ExtendEval P)
 variable (isAtAssertFn : Config P CmdT → AssertId P → Prop)
 
- omit [HasFvar P] [HasVal P] [HasOps P] in
+ omit [HasFvar P] [HasVal P] [HasOps P] [HasFvars P] in
 /-- Empty statement list is skip. -/
 theorem skip_block (Pre : Env P → Prop) :
     TripleBlock evalCmd extendEval Pre [] Pre := by
@@ -222,7 +222,7 @@ end StmtRules
 
 section StandardConnection
 
-variable (P' : PureExpr) [HasFvar P'] [HasFvars P'] [HasOps P'] [HasBool P'] [HasBoolOps P'] [HasInt P']
+variable (P' : PureExpr) [HasFvar P'] [HasFvars P'] [HasOps P'] [HasBool P'] [HasBoolOps P']
 variable (extendEval : ExtendEval P')
 
 omit [HasOps P'] in

@@ -164,13 +164,11 @@ theorem progReachesTerminal :
       (StepStmt.step_seq_inner
         (StepStmt.step_loop_enter
           (hasInvFailure := false)
-          htt ?inv_bool ?inv_iff miniEval_wfBool
-          ?meas_num))) ?_
+          htt ?inv_bool ?inv_iff miniEval_wfBool))) ?_
   · intro _ hmem; nomatch hmem
   · constructor <;> intro h
     · cases h
     · rcases h with ⟨_, hmem, _⟩; nomatch hmem
-  · intro _ h; nomatch h
   -- Now: outer block (L) > seq > seq > body's block (.none) > stmts [exit "L"]
   -- Step 4: descend into the inner seq, then into the body's block,
   --         then through stmts_cons.
