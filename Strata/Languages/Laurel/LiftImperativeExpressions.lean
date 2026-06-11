@@ -294,11 +294,28 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
       return ⟨.Var (.Local callResultVar), source⟩
 
   | .IfThenElse cond thenBranch elseBranch =>
-      let imperativeCallees := (← get).imperativeCallees
-      let thenHasAssign := containsAssignmentOrImperativeCall imperativeCallees thenBranch
-      let elseHasAssign := match elseBranch with
-        | some e => containsAssignmentOrImperativeCall imperativeCallees e
-        | none => false
+      -- Decide whether the whole if-then-else must be lifted into statement
+      -- position. This is needed whenever processing a branch lifts *anything*
+      -- (assignments, imperative calls, asserts, assumes, nondeterministic
+      -- holes, ...) — not just assignments. If we left such lifted statements
+      -- in the surrounding prepend stack, they would escape the branch's guard
+      -- and run unconditionally.
+      --
+      -- Rather than statically enumerating every liftable construct, we
+      -- trial-run `transformExpr` on each branch and observe whether it pushed
+      -- anything onto the prepend stack. The full state (including fresh-name
+      -- counters and substitutions) is saved and restored, so the trial has no
+      -- observable effect on the real transformation below.
+      let savedState ← get
+      modify fun s => { s with prependedStmts := [], subst := [] }
+      let _ ← transformExpr thenBranch
+      let thenHasAssign := !(← get).prependedStmts.isEmpty
+      modify fun s => { s with prependedStmts := [], subst := [] }
+      let _ ← match elseBranch with
+        | some e => do let _ ← transformExpr e; pure ()
+        | none => pure ()
+      let elseHasAssign := !(← get).prependedStmts.isEmpty
+      set savedState
       if thenHasAssign || elseHasAssign then
 
         -- Infer type from the ORIGINAL then-branch (not the transformed one),
