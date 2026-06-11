@@ -282,5 +282,22 @@ info: procedure test(): int
   opaque
 { <??> };")
 
+-- Valueless return (issue #1353): a bare `return` round-trips as `.Return none`,
+-- not as the old `return { }` block hack, and re-parses stably.
+/--
+info: procedure earlyExit(b: bool)
+  opaque
+{
+  if b then {
+    return
+  };
+  assert true
+};
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip r"procedure earlyExit(b: bool)
+  opaque
+{ if b then { return }; assert true };")
+
 end Strata.Laurel
 end
