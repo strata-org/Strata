@@ -174,20 +174,16 @@ private def isDatatype (model : SemanticModel) (name : Identifier) : Bool :=
   | .datatypeDefinition _ => true
   | _ => false
 
-/-- Resolve a HighType through constrained type aliases to the underlying base type.
-    E.g., `UserDefined "nat"` where `nat` is `constrained nat = x: int | x >= 0`
-    resolves to `TInt`. Chains through multiple levels of constrained types. -/
-private def resolveConstrainedType (model : SemanticModel) (ty : HighType) : HighType :=
-  resolveConstrainedTypeWith
-    (fun name => match model.get name with
-      | .constrainedType ct => some ct
-      | _ => none) ty
-
 /-- Get the Box destructor name for a given Laurel HighType.
     For UserDefined datatypes, uses "Box..<datatypeName>Val!";
-    for Composite types, uses "Box..compositeVal!". -/
+    for Composite types, uses "Box..compositeVal!".
+
+    Constrained types do not need resolving here: `ConstrainedTypeElim` runs
+    before this pass and has already lowered every constrained type to its base
+    type (and removed the constrained type definitions), so `ty` is never a
+    constrained-type reference. -/
 def boxDestructorName (model : SemanticModel) (ty : HighType) : Identifier :=
-  match resolveConstrainedType model ty with
+  match ty with
   | .TInt => "Box..intVal!"
   | .TBool => "Box..boolVal!"
   | .TFloat64 => "Box..float64Val!"
@@ -203,7 +199,7 @@ def boxDestructorName (model : SemanticModel) (ty : HighType) : Identifier :=
     For UserDefined datatypes, uses "Box..<datatypeName>";
     for Composite types, uses "BoxComposite". -/
 def boxConstructorName (model : SemanticModel) (ty : HighType) : Identifier :=
-  match resolveConstrainedType model ty with
+  match ty with
   | .TInt => "BoxInt"
   | .TBool => "BoxBool"
   | .TFloat64 => "BoxFloat64"
@@ -217,7 +213,7 @@ def boxConstructorName (model : SemanticModel) (ty : HighType) : Identifier :=
 
 /-- Build the DatatypeConstructor for a Box variant from a HighType, for datatype generation -/
 private def boxConstructorDef (model : SemanticModel) (ty : HighType) : Option DatatypeConstructor :=
-  match resolveConstrainedType model ty with
+  match ty with
   | .TInt => some { name := "BoxInt", args := [{ name := "intVal", type := ⟨.TInt, none⟩ }] }
   | .TBool => some { name := "BoxBool", args := [{ name := "boolVal", type := ⟨.TBool, none⟩ }] }
   | .TReal => some { name := "BoxReal", args := [{ name := "realVal", type := ⟨.TReal, none⟩ }] }
