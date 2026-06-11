@@ -18,13 +18,11 @@ Emits a diagnostic if it fails at any step.
 
 namespace Strata.Laurel
 
-mutual
-
 /-- Recurse into a statement, applying the guard-return rewrite inside blocks and branches.
     Returns `Except DiagnosticModel StmtExprMd` so that unsupported statement forms produce
     a diagnostic instead of panicking. -/
-partial def removeReturns (stmt : StmtExprMd) : Except DiagnosticModel StmtExprMd :=
-  match stmt.val with
+def removeReturns (stmt : StmtExprMd) : Except DiagnosticModel StmtExprMd :=
+  match _h : stmt.val with
   | .Return (some expr) => .ok expr
   | .Block [head] _ => removeReturns head
   | .Block (head :: tail) label => do
@@ -34,7 +32,7 @@ partial def removeReturns (stmt : StmtExprMd) : Except DiagnosticModel StmtExprM
         | .Block stmts _ => stmts
         | _ => [newTail]
       ⟨ .Block (head :: tailList) label, stmt.source ⟩
-    match head.val with
+    match _hhead : head.val with
     | .IfThenElse cond thenBr none =>
       let newThen ← removeReturns thenBr
       .ok ⟨ .IfThenElse cond newThen newTail, head.source ⟩
@@ -51,8 +49,24 @@ partial def removeReturns (stmt : StmtExprMd) : Except DiagnosticModel StmtExprM
       .ok ⟨ .IfThenElse cond thenExpr (some elseExpr), stmt.source⟩
   | _ => .error (diagnosticFromSource stmt.source
       s!"ending a transparent body with a {stmt.val.constructorName} statement is not supported")
-
-end
+termination_by sizeOf stmt
+decreasing_by all_goals (
+  have hs : sizeOf stmt = 1 + sizeOf stmt.val + sizeOf stmt.source := by
+    cases stmt; simp [AstNode.mk.sizeOf_spec]
+  rw [_h] at hs
+  simp only [StmtExpr.Block.sizeOf_spec, StmtExpr.IfThenElse.sizeOf_spec,
+    List.cons.sizeOf_spec, List.nil.sizeOf_spec, Option.some.sizeOf_spec] at hs
+  first
+  | (have hh : sizeOf head = 1 + sizeOf head.val + sizeOf head.source := by
+       cases head; simp [AstNode.mk.sizeOf_spec]
+     rw [_hhead] at hh
+     simp only [StmtExpr.IfThenElse.sizeOf_spec, Option.none.sizeOf_spec] at hh
+     omega)
+  | (simp only [AstNode.mk.sizeOf_spec, StmtExpr.Block.sizeOf_spec, Option.none.sizeOf_spec]
+     have hh : sizeOf head = 1 + sizeOf head.val + sizeOf head.source := by
+       cases head; simp [AstNode.mk.sizeOf_spec]
+     omega)
+  | omega)
 
 /-- Transform a single procedure by applying the guard-return elimination to its body.
     Returns the procedure and any diagnostic emitted on failure. -/
