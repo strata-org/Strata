@@ -270,6 +270,10 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
     | none => Strata.Pipeline.PipelineContext.create (outputMode := .quiet)
   runPipelineM options.keepAllFilesPrefix do
   let (program, model, passDiags, stats) ← runLaurelPasses options pctx program
+  -- This early return is a simple way to protect against duplicative errors. Without this return,
+  -- resolution errors reported by Laurel would also be reported by Core.
+  -- There might be better solution that allows getting some resolution errors from Laurel and some verification errors from Core,
+  -- but that would need more consideration.
   if ! passDiags.isEmpty then
     return (none, passDiags, program, stats)
 
@@ -294,28 +298,21 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
     emit pass.name "unorderedCoreWithLaurelTypes.st" unorderedCore
 
   let coreWithLaurelTypes := orderFunctionsAndProcedures unorderedCore
-  -- This early return is a simple way to protect against duplicative errors. Without this return,
-  -- resolution errors reported by Laurel would also be reported by Core.
-  -- There might be better solution that allows getting some resolution errors from Laurel and some verification errors from Core,
-  -- but that would need more consideration.
-  if ! passDiags.isEmpty then
-    return (none, passDiags, program, stats)
-  else
-      emit "CoreWithLaurelTypes" "core.st" coreWithLaurelTypes
-    let initState : TranslateState := { model := fnModel, overflowChecks := options.overflowChecks }
-    let (coreProgramOption, translateState) :=
-      runTranslateM initState (translateLaurelToCore options coreWithLaurelTypes)
-    -- Because of the duplication between functions and procedures, this translation is liable to create duplicate diagnostics
-    let mut allDiagnostics: List DiagnosticModel := passDiags ++ translateState.diagnostics.eraseDups;
+    emit "CoreWithLaurelTypes" "core.st" coreWithLaurelTypes
+  let initState : TranslateState := { model := fnModel, overflowChecks := options.overflowChecks }
+  let (coreProgramOption, translateState) :=
+    runTranslateM initState (translateLaurelToCore options coreWithLaurelTypes)
+  -- Because of the duplication between functions and procedures, this translation is liable to create duplicate diagnostics
+  let mut allDiagnostics: List DiagnosticModel := passDiags ++ translateState.diagnostics.eraseDups;
 
-    if !translateState.coreDiagnostics.isEmpty && allDiagnostics.isEmpty then
-      allDiagnostics := allDiagnostics ++ translateState.coreDiagnostics
+  if !translateState.coreDiagnostics.isEmpty && allDiagnostics.isEmpty then
+    allDiagnostics := allDiagnostics ++ translateState.coreDiagnostics
 
-    if coreProgramOption.isSome then
-      emit "Core" "core.st" coreProgramOption.get!
-    let coreProgramOption :=
-      if translateState.coreDiagnostics.isEmpty then coreProgramOption else none
-    return (coreProgramOption, allDiagnostics, program, stats)
+  if coreProgramOption.isSome then
+    emit "Core" "core.st" coreProgramOption.get!
+  let coreProgramOption :=
+    if translateState.coreDiagnostics.isEmpty then coreProgramOption else none
+  return (coreProgramOption, allDiagnostics, program, stats)
 
 /--
 Translate Laurel Program to Core Program.
