@@ -118,7 +118,7 @@ an error message if the input program contains constructs that are not yet
 supported.
 -/
 def laurelToCore (p : Laurel.Program) : IO (Except String Core.Program) := do
-  let (coreOpt, diags) ← Laurel.translate { emitResolutionErrors := true } p
+  let (coreOpt, diags) ← Laurel.translate { } p
   match coreOpt with
   | some core => return .ok core
   | none => return .error s!"Laurel to Core translation failed: {diags.map (·.message)}"

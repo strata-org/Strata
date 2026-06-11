@@ -33,5 +33,5 @@ procedure diamondField(b: Bottom)
 };
 "
 
-#guard_msgs (drop info) in
+#guard_msgs (drop info, error) in
 #eval testInputWithOffset "InheritanceError" program 14 processLaurelFile

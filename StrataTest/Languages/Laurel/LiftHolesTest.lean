@@ -15,7 +15,7 @@ meta import StrataDDM.BuiltinDialects.Init
 meta import Strata.Languages.Laurel.Grammar.LaurelGrammar
 meta import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 meta import Strata.Languages.Laurel.InferHoleTypes
-meta import Strata.Languages.Laurel.EliminateHoles
+meta import Strata.Languages.Laurel.EliminateDeterministicHoles
 meta import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 
 meta section
@@ -38,7 +38,7 @@ private def parseElimAndPrint (input : String) : IO Unit := do
     let result := resolve program
     let (program, model) := (result.program, result.model)
     let (program, _, _) := inferHoleTypes model program
-    let (program, _) := eliminateHoles program
+    let (program, _) := eliminateDeterministicHoles program
     for proc in program.staticProcedures do
       IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
 
