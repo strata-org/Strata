@@ -15,12 +15,6 @@ open StrataTest.Util
 namespace Strata
 namespace Laurel
 
--- Over-arity is now caught in the resolution pass (type checking added to
--- Laurel resolution): calling `f` (1 parameter) with 2 arguments is rejected
--- with the resolution-pass arity diagnostic. Because resolution errors short-
--- circuit the pipeline before Core translation, the call no longer reaches the
--- Core unifier, so the old `ArityMismatch ❌ Type checking error / Impossible to
--- unify …` message is replaced by the resolution diagnostic below.
 def arityMismatchProgram := r"
 function f(x: int): int { x };
 
