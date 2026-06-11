@@ -580,7 +580,7 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
 
   let body : List Core.Statement := [.block "$body" (bodyStmts.getD []) mdWithUnknownLoc]
   let spec : Core.Procedure.Spec := { preconditions, postconditions }
-  return { header, spec, body }
+  return { header, spec, body := .structured body }
 
 def translateInvokeOnAxiom (proc : Procedure) (trigger : StmtExprMd)
     : TranslateM (Option Core.Decl) := do
