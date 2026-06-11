@@ -22,13 +22,20 @@ open Imperative (MetaData)
 structure TransState where
   uri : Option Uri
   errors : Array String
+  /-- Monotonic counter for generating fresh, collision-free labels during
+      desugaring (e.g. the exit label of a `do-while`). -/
+  freshCounter : Nat := 0
 
 @[expose] abbrev TransM := StateT TransState (Except String)
 
 def TransM.run (uri : Option Uri) (m : TransM α) : Except String α :=
-  match StateT.run m { uri := uri, errors := #[] } with
+  match StateT.run m { uri := uri, errors := #[], freshCounter := 0 } with
   | .ok (v, _) => .ok v
   | .error e => .error e
+
+/-- Generate a fresh label with the given prefix, unique within this translation. -/
+def freshLabel (pfx : String) : TransM String :=
+  modifyGet fun s => let n := s.freshCounter + 1; (s!"${pfx}_{n}", { s with freshCounter := n })
 
 def TransM.error (msg : String) : TransM α :=
   throw msg
@@ -184,6 +191,20 @@ def getUnaryOp? (name : QualifiedIdent) : Option Operation :=
   | q`Laurel.neg => some Operation.Neg
   | _ => none
 
+/-- Translate a `Seq InvariantClause` into the list of invariant conditions,
+    using `translate` for each clause body. Shared by the `while`, `forLoop`,
+    and `doWhile` arms. Takes `translate` as a parameter so it can stay outside
+    the `translateStmtExpr` mutual block and thus be a total `def`. -/
+def translateInvariantClauses (translate : Arg → TransM StmtExprMd) (arg : Arg) :
+    TransM (List StmtExprMd) := do
+  match arg with
+  | .seq _ _ clauses => clauses.toList.mapM fun clause => match clause with
+      | .op invOp => match invOp.name, invOp.args with
+        | q`Laurel.invariantClause, #[exprArg] => translate exprArg
+        | _, _ => TransM.error "Expected invariantClause"
+      | _ => TransM.error "Expected operation"
+  | _ => pure []
+
 mutual
 
 partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
@@ -315,30 +336,37 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
       return mkStmtExprMd (.Var (.Field obj field)) fieldSrc
     | q`Laurel.while, #[condArg, invSeqArg, bodyArg] =>
       let cond ← translateStmtExpr condArg
-      let invariants ← match invSeqArg with
-        | .seq _ _ clauses => clauses.toList.mapM fun arg => match arg with
-            | .op invOp => match invOp.name, invOp.args with
-              | q`Laurel.invariantClause, #[exprArg] => translateStmtExpr exprArg
-              | _, _ => TransM.error "Expected invariantClause"
-            | _ => TransM.error "Expected operation"
-        | _ => pure []
+      let invariants ← translateInvariantClauses translateStmtExpr invSeqArg
       let body ← translateStmtExpr bodyArg
       return mkStmtExprMd (.While cond invariants none body) src
     | q`Laurel.forLoop, #[initArg, condArg, stepArg, invSeqArg, bodyArg] =>
       let init ← translateStmtExpr initArg
       let cond ← translateStmtExpr condArg
       let step ← translateStmtExpr stepArg
-      let invariants ← match invSeqArg with
-        | .seq _ _ clauses => clauses.toList.mapM fun arg => match arg with
-            | .op invOp => match invOp.name, invOp.args with
-              | q`Laurel.invariantClause, #[exprArg] => translateStmtExpr exprArg
-              | _, _ => TransM.error "Expected invariantClause"
-            | _ => TransM.error "Expected operation"
-        | _ => pure []
+      let invariants ← translateInvariantClauses translateStmtExpr invSeqArg
       let body ← translateStmtExpr bodyArg
       let whileBody := mkStmtExprMd (.Block [body, step] none) src
       let whileStmt := mkStmtExprMd (.While cond invariants none whileBody) src
       return mkStmtExprMd (.Block [init, whileStmt] none) src
+    | q`Laurel.doWhile, #[bodyArg, condArg, invSeqArg] =>
+      -- Desugar the body-tested `do S while(G) invariant I` into a head-tested loop:
+      --   `{ while(true) invariant I { S; if (!G) exit L } } L`
+      -- The body runs once per iteration with the guard re-checked after it; the
+      -- real guard reaches post-loop code via the structured `exit L`, keeping the
+      -- encoding complete. `I` is checked at the head (before each body), matching
+      -- `while`. The fresh label `L` keeps nested do-whiles from capturing each
+      -- other's exits.
+      let body ← translateStmtExpr bodyArg
+      let cond ← translateStmtExpr condArg
+      let invariants ← translateInvariantClauses translateStmtExpr invSeqArg
+      let exitLabel ← freshLabel "dowhile_exit"
+      let notCond := mkStmtExprMd (.PrimitiveOp .Not [cond]) src
+      let exitStmt := mkStmtExprMd (.Exit exitLabel) src
+      let guardCheck := mkStmtExprMd (.IfThenElse notCond exitStmt none) src
+      let loopBody := mkStmtExprMd (.Block [body, guardCheck] none) src
+      let trueCond := mkStmtExprMd (.LiteralBool true) src
+      let whileStmt := mkStmtExprMd (.While trueCond invariants none loopBody) src
+      return mkStmtExprMd (.Block [whileStmt] (some exitLabel)) src
     | q`Laurel.forallExpr, #[nameArg, tyArg, triggerArg, bodyArg] =>
       let name ← translateIdent nameArg
       let ty ← translateHighType tyArg

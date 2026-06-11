@@ -120,6 +120,9 @@ op while (cond: StmtExpr, invariants: Seq InvariantClause, body: StmtExpr): Stmt
 op forLoop (init: StmtExpr, cond: StmtExpr, step: StmtExpr, invariants: Seq InvariantClause, body: StmtExpr): StmtExpr
   => "for" "(" init ";" cond ";" step ")" invariants " " body:0;
 
+op doWhile (body: StmtExpr, cond: StmtExpr, invariants: Seq InvariantClause): StmtExpr
+  => "do " body:0 " while" "(" cond ")" invariants;
+
 category Parameter;
 op parameter (name: Ident, paramType: LaurelType): Parameter => name ": " paramType;
 
