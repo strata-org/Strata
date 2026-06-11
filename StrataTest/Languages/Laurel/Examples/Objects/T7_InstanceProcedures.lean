@@ -3,37 +3,28 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import all StrataTest.Util.TestDiagnostics
-meta import all StrataTest.Languages.Laurel.TestExamples
-
-meta section
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
 open Strata
 
-namespace Strata.Laurel
-
-def instanceProcedureProgram := r"
+#eval testLaurel <|
+#strata
+program Laurel;
 composite Counter {
   var count: int
   procedure self_increment(self: Counter)
-//          ^^^^^^^^^^^^^^ error: Instance procedure 'self_increment' on composite type 'Counter' is not yet supported
+//          ^^^^^^^^^^^^^^ not-yet-implemented: Instance procedure 'self_increment' on composite type 'Counter' is not yet supported
     opaque
   {
     self#count := self#count + 1
   };
   procedure reset(self: Counter)
-//          ^^^^^ error: Instance procedure 'reset' on composite type 'Counter' is not yet supported
+//          ^^^^^ not-yet-implemented: Instance procedure 'reset' on composite type 'Counter' is not yet supported
     opaque
   {
     self#count := 0
   };
 }
-"
-
-#guard_msgs (error, drop all) in
-#eval! testInputWithOffset "InstanceProcedures" instanceProcedureProgram 14 processLaurelFile
-
-end Laurel
+#end

@@ -3,19 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import all StrataTest.Util.TestDiagnostics
-meta import all StrataTest.Languages.Laurel.TestExamples
-
-meta section
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
+open Strata
 
-namespace Strata
-namespace Laurel
-
-def shortCircuitProgram := r"
+#eval testLaurel
+#strata
+program Laurel;
 function mustNotCallFunc(x: int): int
   requires false
 { x };
@@ -92,10 +88,4 @@ procedure testImpliesProc()
   var b: bool := false ==> mustNotCallProc() > 0;
   assert b
 };
-"
-
-#guard_msgs(drop info) in
-#eval testInputWithOffset "ShortCircuit" shortCircuitProgram 15 processLaurelFile
-
-end Laurel
-end Strata
+#end
