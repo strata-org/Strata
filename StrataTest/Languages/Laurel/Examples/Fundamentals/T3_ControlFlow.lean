@@ -84,4 +84,15 @@ procedure dag(a: int) returns (r: int)
 //^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
   return b
 };
+
+// Valueless early return (issue #1353): a bare `return` parses to `.Return none`.
+// Must verify cleanly — no value, used as an early exit.
+procedure valuelessEarlyReturn(b: bool)
+  opaque
+{
+  if b then {
+    return
+  };
+  assert true
+};
 #end
