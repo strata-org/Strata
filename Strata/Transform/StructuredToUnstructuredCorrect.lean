@@ -3476,12 +3476,15 @@ These variants take the CFG-side accumulated trace pre-lifted via
 `EvalCmds_under_agreement`, allowing the agreement gap (between structured and
 CFG entry stores) to be threaded through the simulation. -/
 
-/-- Variant of `flushCmds_condGoto_true` that operates under StoreAgreement:
-the input accum trace is on the CFG side (lifted via `EvalCmds_under_agreement`)
-and reaches `σ_cfg_after`, which agrees with `ρ₀.store`. -/
-private theorem flushCmds_condGoto_true_agree {P : PureExpr} [HasFvar P] [HasNot P]
+/-- Variant of `flushCmds_condGoto_true`/`_false` that operates under
+StoreAgreement: the input accum trace is on the CFG side (lifted via
+`EvalCmds_under_agreement`) and reaches `σ_cfg_after`, which agrees with
+`ρ₀.store`. The boolean `b` selects the taken branch (`tl` when `tt`, `fl`
+when `ff`). -/
+private theorem flushCmds_condGoto_agree {P : PureExpr} [HasFvar P] [HasNot P]
     [HasVarsPure P P.Expr]
     (extendEval : ExtendEval P)
+    (b : Bool)
     (accum : List (Cmd P))
     (e : P.Expr) (tl fl : String) (md : MetaData P)
     (l_ite : String) (gen_e gen_f : StringGenState)
@@ -3496,76 +3499,33 @@ private theorem flushCmds_condGoto_true_agree {P : PureExpr} [HasFvar P] [HasNot
     (h_accum_cfg : EvalCmds P (EvalCmd P) ρ₀.eval σ_base accum.reverse σ_cfg_after hf_accum)
     (h_agree_after : StoreAgreement ρ₀.store σ_cfg_after)
     (h_hf : ρ₀.hasFailure = (hf_base || hf_accum))
-    (h_cond : ρ₀.eval ρ₀.store e = .some HasBool.tt)
+    (h_cond : ρ₀.eval ρ₀.store e = .some (if b then HasBool.tt else HasBool.ff))
     (cfg : CFG String (DetBlock String (Cmd P) P))
     (h_cfg_accum : ∀ b ∈ accumBlocks, b ∈ cfg.blocks)
     (h_lookup : ∀ lbl blk, (lbl, blk) ∈ cfg.blocks →
       cfg.blocks.lookup lbl = some blk) :
     StepDetCFGStar extendEval cfg
       (.atBlock accumEntry σ_base hf_base)
-      (.atBlock tl σ_cfg_after ρ₀.hasFailure) := by
+      (.atBlock (if b then tl else fl) σ_cfg_after ρ₀.hasFailure) := by
   simp only [flushCmds, bind, StateT.bind, pure, StateT.pure, Id] at h_flush_eq
   injection h_flush_eq with h_pair h_gen_eq
   injection h_pair with h_entry_eq h_blks_eq
   subst h_entry_eq; subst h_blks_eq
   have h_def_e : isDefined ρ₀.store (HasVarsPure.getVars e) :=
-    h_wf_def e HasBool.tt ρ₀.store h_cond
+    h_wf_def e _ ρ₀.store h_cond
   have h_pointwise :
       ∀ y ∈ HasVarsPure.getVars e, ρ₀.store y = σ_cfg_after y :=
     store_agreement_pointwise_on_expr_vars ρ₀.store σ_cfg_after e h_agree_after h_def_e
-  have h_cond_cfg : ρ₀.eval σ_cfg_after e = .some HasBool.tt := by
-    exact h_cond ▸ (h_congr e ρ₀.store σ_cfg_after h_pointwise).symm
+  have h_cond_cfg : ρ₀.eval σ_cfg_after e = .some (if b then HasBool.tt else HasBool.ff) :=
+    h_cond ▸ (h_congr e ρ₀.store σ_cfg_after h_pointwise).symm
   have h_mem := h_cfg_accum _ (List.Mem.head _)
   have h_lkp := h_lookup _ _ h_mem
-  have h_run := run_block_goto_true (extendEval := extendEval) (cfg := cfg)
-                  (f_base := hf_base) h_lkp h_accum_cfg h_cond_cfg hwfb h_congr
-  -- (hf_base || hf_accum) = ρ₀.hasFailure  via h_hf
-  rw [← h_hf] at h_run
-  exact h_run
-
-/-- Variant of `flushCmds_condGoto_false` that operates under StoreAgreement. -/
-private theorem flushCmds_condGoto_false_agree {P : PureExpr} [HasFvar P] [HasNot P]
-    [HasVarsPure P P.Expr]
-    (extendEval : ExtendEval P)
-    (accum : List (Cmd P))
-    (e : P.Expr) (tl fl : String) (md : MetaData P)
-    (l_ite : String) (gen_e gen_f : StringGenState)
-    (accumEntry : String) (accumBlocks : DetBlocks String (Cmd P) P)
-    (h_flush_eq : flushCmds "ite$" accum
-      (some (DetTransferCmd.condGoto e tl fl md)) l_ite gen_e = ((accumEntry, accumBlocks), gen_f))
-    (σ_base σ_cfg_after : SemanticStore P) (hf_base hf_accum : Bool)
-    (ρ₀ : Env P)
-    (hwfb : WellFormedSemanticEvalBool ρ₀.eval)
-    (h_wf_def : WellFormedSemanticEvalDef ρ₀.eval)
-    (h_congr : WellFormedSemanticEvalExprCongr ρ₀.eval)
-    (h_accum_cfg : EvalCmds P (EvalCmd P) ρ₀.eval σ_base accum.reverse σ_cfg_after hf_accum)
-    (h_agree_after : StoreAgreement ρ₀.store σ_cfg_after)
-    (h_hf : ρ₀.hasFailure = (hf_base || hf_accum))
-    (h_cond : ρ₀.eval ρ₀.store e = .some HasBool.ff)
-    (cfg : CFG String (DetBlock String (Cmd P) P))
-    (h_cfg_accum : ∀ b ∈ accumBlocks, b ∈ cfg.blocks)
-    (h_lookup : ∀ lbl blk, (lbl, blk) ∈ cfg.blocks →
-      cfg.blocks.lookup lbl = some blk) :
-    StepDetCFGStar extendEval cfg
-      (.atBlock accumEntry σ_base hf_base)
-      (.atBlock fl σ_cfg_after ρ₀.hasFailure) := by
-  simp only [flushCmds, bind, StateT.bind, pure, StateT.pure, Id] at h_flush_eq
-  injection h_flush_eq with h_pair h_gen_eq
-  injection h_pair with h_entry_eq h_blks_eq
-  subst h_entry_eq; subst h_blks_eq
-  have h_def_e : isDefined ρ₀.store (HasVarsPure.getVars e) :=
-    h_wf_def e HasBool.ff ρ₀.store h_cond
-  have h_pointwise :
-      ∀ y ∈ HasVarsPure.getVars e, ρ₀.store y = σ_cfg_after y :=
-    store_agreement_pointwise_on_expr_vars ρ₀.store σ_cfg_after e h_agree_after h_def_e
-  have h_cond_cfg : ρ₀.eval σ_cfg_after e = .some HasBool.ff := by
-    exact h_cond ▸ (h_congr e ρ₀.store σ_cfg_after h_pointwise).symm
-  have h_mem := h_cfg_accum _ (List.Mem.head _)
-  have h_lkp := h_lookup _ _ h_mem
-  have h_run := run_block_goto_false (extendEval := extendEval) (cfg := cfg)
-                  (f_base := hf_base) h_lkp h_accum_cfg h_cond_cfg hwfb h_congr
-  rw [← h_hf] at h_run
-  exact h_run
+  rw [h_hf]
+  cases b with
+  | true => exact run_block_goto_true (extendEval := extendEval) (cfg := cfg)
+              (f_base := hf_base) h_lkp h_accum_cfg h_cond_cfg hwfb h_congr
+  | false => exact run_block_goto_false (extendEval := extendEval) (cfg := cfg)
+              (f_base := hf_base) h_lkp h_accum_cfg h_cond_cfg hwfb h_congr
 /-! ## Block.uniqueInits projection helpers
 
 `Block.uniqueInits ss` is a Nodup property of the cumulative `Block.initVars ss`
@@ -4339,12 +4299,15 @@ theorem loop_det_decompose_h_gen
          gen_r, gen_le, gen_b, gen_f,
          h_rest_eq, h_le_eq, h_body_eq, h_flush_eq, h_gen_eq, h_entry_eq, h_blocks_eq⟩
 
-/-- Run the (empty-cmds) loop-entry `condGoto` to its true branch: from
-`.atBlock lentry σ hf` to `.atBlock bl σ hf`.  Bridges the structured guard
-`ρ.eval ρ.store g = tt` to the CFG store via `StoreAgreement` + congruence. -/
-private theorem lentry_condGoto_true {P : PureExpr} [HasFvar P] [HasNot P]
+/-- Run the (empty-cmds) loop-entry `condGoto` to the branch selected by `b`:
+from `.atBlock lentry σ hf` to `.atBlock bl σ hf` (when `b = true`) or
+`.atBlock kNext σ hf` (when `b = false`).  Bridges the structured guard
+`ρ.eval ρ.store g = (if b then tt else ff)` to the CFG store via
+`StoreAgreement` + congruence. -/
+private theorem lentry_condGoto {P : PureExpr} [HasFvar P] [HasNot P]
     [HasVarsPure P P.Expr]
     (extendEval : ExtendEval P)
+    (b : Bool)
     (cfg : CFG String (DetBlock String (Cmd P) P))
     (lentry bl kNext : String) (md : MetaData P) (g : P.Expr)
     (δ : SemanticEval P) (σ_struct σ_cfg : SemanticStore P) (hf : Bool)
@@ -4353,44 +4316,20 @@ private theorem lentry_condGoto_true {P : PureExpr} [HasFvar P] [HasNot P]
     (hwfb : WellFormedSemanticEvalBool δ)
     (h_wf_def : WellFormedSemanticEvalDef δ)
     (h_congr : WellFormedSemanticEvalExprCongr δ)
-    (h_cond : δ σ_struct g = .some HasBool.tt) :
+    (h_cond : δ σ_struct g = .some (if b then HasBool.tt else HasBool.ff)) :
     StepDetCFGStar extendEval cfg
-      (.atBlock lentry σ_cfg hf) (.atBlock bl σ_cfg hf) := by
+      (.atBlock lentry σ_cfg hf) (.atBlock (if b then bl else kNext) σ_cfg hf) := by
   have h_def_g : isDefined σ_struct (HasVarsPure.getVars g) :=
-    h_wf_def g HasBool.tt σ_struct h_cond
+    h_wf_def g _ σ_struct h_cond
   have h_pointwise : ∀ y ∈ HasVarsPure.getVars g, σ_struct y = σ_cfg y :=
     store_agreement_pointwise_on_expr_vars σ_struct σ_cfg g h_agree h_def_g
-  have h_cond_cfg : δ σ_cfg g = .some HasBool.tt :=
+  have h_cond_cfg : δ σ_cfg g = .some (if b then HasBool.tt else HasBool.ff) :=
     h_cond ▸ (h_congr g σ_struct σ_cfg h_pointwise).symm
-  have h_run := run_block_goto_true (extendEval := extendEval) (cfg := cfg)
-                  (f_base := hf) h_lkp (EvalCmds.eval_cmds_none) h_cond_cfg hwfb h_congr
-  simpa using h_run
-
-/-- Run the (empty-cmds) loop-entry `condGoto` to its false branch: from
-`.atBlock lentry σ hf` to `.atBlock kNext σ hf`. -/
-private theorem lentry_condGoto_false {P : PureExpr} [HasFvar P] [HasNot P]
-    [HasVarsPure P P.Expr]
-    (extendEval : ExtendEval P)
-    (cfg : CFG String (DetBlock String (Cmd P) P))
-    (lentry bl kNext : String) (md : MetaData P) (g : P.Expr)
-    (δ : SemanticEval P) (σ_struct σ_cfg : SemanticStore P) (hf : Bool)
-    (h_lkp : cfg.blocks.lookup lentry = some ⟨[], .condGoto g bl kNext md⟩)
-    (h_agree : StoreAgreement σ_struct σ_cfg)
-    (hwfb : WellFormedSemanticEvalBool δ)
-    (h_wf_def : WellFormedSemanticEvalDef δ)
-    (h_congr : WellFormedSemanticEvalExprCongr δ)
-    (h_cond : δ σ_struct g = .some HasBool.ff) :
-    StepDetCFGStar extendEval cfg
-      (.atBlock lentry σ_cfg hf) (.atBlock kNext σ_cfg hf) := by
-  have h_def_g : isDefined σ_struct (HasVarsPure.getVars g) :=
-    h_wf_def g HasBool.ff σ_struct h_cond
-  have h_pointwise : ∀ y ∈ HasVarsPure.getVars g, σ_struct y = σ_cfg y :=
-    store_agreement_pointwise_on_expr_vars σ_struct σ_cfg g h_agree h_def_g
-  have h_cond_cfg : δ σ_cfg g = .some HasBool.ff :=
-    h_cond ▸ (h_congr g σ_struct σ_cfg h_pointwise).symm
-  have h_run := run_block_goto_false (extendEval := extendEval) (cfg := cfg)
-                  (f_base := hf) h_lkp (EvalCmds.eval_cmds_none) h_cond_cfg hwfb h_congr
-  simpa using h_run
+  cases b with
+  | true => simpa using run_block_goto_true (extendEval := extendEval) (cfg := cfg)
+              (f_base := hf) h_lkp (EvalCmds.eval_cmds_none) h_cond_cfg hwfb h_congr
+  | false => simpa using run_block_goto_false (extendEval := extendEval) (cfg := cfg)
+              (f_base := hf) h_lkp (EvalCmds.eval_cmds_none) h_cond_cfg hwfb h_congr
 
 /-- Peel one iteration off a det loop's body+continuation derivation.  Given
 the `step_loop_enter` continuation `.seq (.block .none ρ_pre.store (.stmts body
@@ -4583,7 +4522,7 @@ private theorem loop_iterations_det
         simpa using this
       subst hρ_eq
       refine ⟨σ_cfg_pre', ?_, h_agree', h_inv'⟩
-      exact lentry_condGoto_false extendEval cfg lentry bl kNext md g
+      exact lentry_condGoto extendEval false cfg lentry bl kNext md g
         ρ_post'.eval ρ_post'.store σ_cfg_pre' ρ_post'.hasFailure h_lentry_lkp h_agree'
         hwfb' hwf_def' hwfcongr' hg_false
     | .step _ _ _ (@StepStmt.step_loop_enter _ _ _ _ _ _ _ _ _ _ _ _
@@ -4609,7 +4548,7 @@ private theorem loop_iterations_det
       have h_step_enter : StepDetCFGStar extendEval cfg
           (.atBlock lentry σ_cfg_pre' ρ_pre'.hasFailure)
           (.atBlock bl σ_cfg_pre' ρ_pre'.hasFailure) :=
-        lentry_condGoto_true extendEval cfg lentry bl kNext md g
+        lentry_condGoto extendEval true cfg lentry bl kNext md g
           ρ_pre'.eval ρ_pre'.store σ_cfg_pre' ρ_pre'.hasFailure h_lentry_lkp h_agree'
           hwfb' hwf_def' hwfcongr' hg_true
       -- CFG step 2: bl → lentry (body sim).
@@ -4763,7 +4702,7 @@ private theorem loop_iterations_to_cont_det
       have h_step_enter : StepDetCFGStar extendEval cfg
           (.atBlock lentry σ_cfg_pre' ρ_pre'.hasFailure)
           (.atBlock bl σ_cfg_pre' ρ_pre'.hasFailure) :=
-        lentry_condGoto_true extendEval cfg lentry bl kNext md g
+        lentry_condGoto extendEval true cfg lentry bl kNext md g
           ρ_pre'.eval ρ_pre'.store σ_cfg_pre' ρ_pre'.hasFailure h_lentry_lkp h_agree'
           hwfb' hwf_def' hwfcongr' hg_true
       rcases peel_off_one_iteration_to_cont_det extendEval g body md ρ_pre' ρ_post' label hrest with
@@ -4813,6 +4752,24 @@ private theorem loop_iterations_to_cont_det
         exact StepDetCFGStar_trans (StepDetCFGStar_trans h_step_enter h_step_body) h_run_recurse
 
 end InlineLoopHelpers
+
+/-- Project the four shape predicates (`simpleShape`, `loopBodyNoInits`,
+`loopHasNoInvariants`, `noMeasureLoops`) of an `.ite (.det e)` statement down to
+its `then`/`else` branches, given each predicate's head fact. -/
+private theorem ite_branch_shape {P : PureExpr}
+    {e : P.Expr} {thenBranch elseBranch : List (Stmt P (Cmd P))} {md : MetaData P}
+    (h_simple_head : Stmt.simpleShape (.ite (.det e) thenBranch elseBranch md) = true)
+    (h_lbni_head : Stmt.loopBodyNoInits (.ite (.det e) thenBranch elseBranch md) = true)
+    (h_lhni_head : Stmt.loopHasNoInvariants (.ite (.det e) thenBranch elseBranch md) = true)
+    (h_nml_head : Stmt.noMeasureLoops (.ite (.det e) thenBranch elseBranch md) = true) :
+    Block.simpleShape thenBranch = true ∧ Block.simpleShape elseBranch = true ∧
+    Block.loopBodyNoInits thenBranch = true ∧ Block.loopBodyNoInits elseBranch = true ∧
+    Block.loopHasNoInvariants thenBranch = true ∧ Block.loopHasNoInvariants elseBranch = true ∧
+    Block.noMeasureLoops thenBranch = true ∧ Block.noMeasureLoops elseBranch = true :=
+  ⟨Stmt.simpleShape_branch_then h_simple_head, Stmt.simpleShape_branch_else h_simple_head,
+   Stmt.loopBodyNoInits_branch_then h_lbni_head, Stmt.loopBodyNoInits_branch_else h_lbni_head,
+   Stmt.loopHasNoInvariants_branch_then h_lhni_head, Stmt.loopHasNoInvariants_branch_else h_lhni_head,
+   Stmt.noMeasureLoops_branch_then h_nml_head, Stmt.noMeasureLoops_branch_else h_nml_head⟩
 
 set_option maxHeartbeats 12800000 in
 set_option maxRecDepth 4096 in
@@ -5071,35 +5028,22 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
       (Block.simpleShape_cons_iff.mp h_simple).1
     have h_simple_rest : Block.simpleShape rest = true :=
       (Block.simpleShape_cons_iff.mp h_simple).2
-    have h_simple_then : Block.simpleShape thenBranch = true :=
-      Stmt.simpleShape_branch_then h_simple_head
-    have h_simple_else : Block.simpleShape elseBranch = true :=
-      Stmt.simpleShape_branch_else h_simple_head
     -- Extract loopBodyNoInits / loopHasNoInvariants / noMeasureLoops for sub-blocks.
     have h_lbni_head : Stmt.loopBodyNoInits (.ite (.det e) thenBranch elseBranch md) = true :=
       (Block.loopBodyNoInits_cons_iff.mp h_lbni).1
     have h_lbni_rest : Block.loopBodyNoInits rest = true :=
       (Block.loopBodyNoInits_cons_iff.mp h_lbni).2
-    have h_lbni_then : Block.loopBodyNoInits thenBranch = true :=
-      Stmt.loopBodyNoInits_branch_then h_lbni_head
-    have h_lbni_else : Block.loopBodyNoInits elseBranch = true :=
-      Stmt.loopBodyNoInits_branch_else h_lbni_head
     have h_lhni_head : Stmt.loopHasNoInvariants (.ite (.det e) thenBranch elseBranch md) = true :=
       (Block.loopHasNoInvariants_cons_iff.mp h_lhni).1
     have h_lhni_rest : Block.loopHasNoInvariants rest = true :=
       (Block.loopHasNoInvariants_cons_iff.mp h_lhni).2
-    have h_lhni_then : Block.loopHasNoInvariants thenBranch = true :=
-      Stmt.loopHasNoInvariants_branch_then h_lhni_head
-    have h_lhni_else : Block.loopHasNoInvariants elseBranch = true :=
-      Stmt.loopHasNoInvariants_branch_else h_lhni_head
     have h_nml_head : Stmt.noMeasureLoops (.ite (.det e) thenBranch elseBranch md) = true :=
       (Block.noMeasureLoops_cons_iff.mp h_nml).1
     have h_nml_rest : Block.noMeasureLoops rest = true :=
       (Block.noMeasureLoops_cons_iff.mp h_nml).2
-    have h_nml_then : Block.noMeasureLoops thenBranch = true :=
-      Stmt.noMeasureLoops_branch_then h_nml_head
-    have h_nml_else : Block.noMeasureLoops elseBranch = true :=
-      Stmt.noMeasureLoops_branch_else h_nml_head
+    obtain ⟨h_simple_then, h_simple_else, h_lbni_then, h_lbni_else,
+            h_lhni_then, h_lhni_else, h_nml_then, h_nml_else⟩ :=
+      ite_branch_shape h_simple_head h_lbni_head h_lhni_head h_nml_head
     -- Eval well-formedness preservation through ite branch
     have h_eval_eq : ρ₁.eval = ρ₀.eval := by
       rcases h_ite_inv with h | h
@@ -5267,7 +5211,7 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
       have h_flush_sim : StepDetCFGStar extendEval cfg
           (.atBlock accumEntry σ_base hf_base)
           (.atBlock tl σ_cfg_after ρ₀.hasFailure) :=
-        flushCmds_condGoto_true_agree extendEval accum e tl fl md l_ite gen_e gen_f
+        flushCmds_condGoto_agree extendEval true accum e tl fl md l_ite gen_e gen_f
           accumEntry accumBlocks h_flush_eq σ_base σ_cfg_after hf_base hf_accum ρ₀
           hwfb hwf_def hwf_congr h_accum_cfg h_agree_after h_hf h_cond_tt cfg
           h_cfg_accum h_lookup
@@ -5376,7 +5320,7 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
       have h_flush_sim : StepDetCFGStar extendEval cfg
           (.atBlock accumEntry σ_base hf_base)
           (.atBlock fl σ_cfg_after ρ₀.hasFailure) :=
-        flushCmds_condGoto_false_agree extendEval accum e tl fl md l_ite gen_e gen_f
+        flushCmds_condGoto_agree extendEval false accum e tl fl md l_ite gen_e gen_f
           accumEntry accumBlocks h_flush_eq σ_base σ_cfg_after hf_base hf_accum ρ₀
           hwfb hwf_def hwf_congr h_accum_cfg h_agree_after h_hf h_cond_ff cfg
           h_cfg_accum h_lookup
@@ -7593,35 +7537,22 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
       (Block.simpleShape_cons_iff.mp h_simple).1
     have h_simple_rest : Block.simpleShape rest = true :=
       (Block.simpleShape_cons_iff.mp h_simple).2
-    have h_simple_then : Block.simpleShape thenBranch = true :=
-      Stmt.simpleShape_branch_then h_simple_head
-    have h_simple_else : Block.simpleShape elseBranch = true :=
-      Stmt.simpleShape_branch_else h_simple_head
     -- loopBodyNoInits/loopHasNoInvariants/noMeasureLoops projections.
     have h_lbni_head : Stmt.loopBodyNoInits (.ite (.det e) thenBranch elseBranch md) = true :=
       (Block.loopBodyNoInits_cons_iff.mp h_lbni).1
     have h_lbni_rest : Block.loopBodyNoInits rest = true :=
       (Block.loopBodyNoInits_cons_iff.mp h_lbni).2
-    have h_lbni_then : Block.loopBodyNoInits thenBranch = true :=
-      Stmt.loopBodyNoInits_branch_then h_lbni_head
-    have h_lbni_else : Block.loopBodyNoInits elseBranch = true :=
-      Stmt.loopBodyNoInits_branch_else h_lbni_head
     have h_lhni_head : Stmt.loopHasNoInvariants (.ite (.det e) thenBranch elseBranch md) = true :=
       (Block.loopHasNoInvariants_cons_iff.mp h_lhni).1
     have h_lhni_rest : Block.loopHasNoInvariants rest = true :=
       (Block.loopHasNoInvariants_cons_iff.mp h_lhni).2
-    have h_lhni_then : Block.loopHasNoInvariants thenBranch = true :=
-      Stmt.loopHasNoInvariants_branch_then h_lhni_head
-    have h_lhni_else : Block.loopHasNoInvariants elseBranch = true :=
-      Stmt.loopHasNoInvariants_branch_else h_lhni_head
     have h_nml_head : Stmt.noMeasureLoops (.ite (.det e) thenBranch elseBranch md) = true :=
       (Block.noMeasureLoops_cons_iff.mp h_nml).1
     have h_nml_rest : Block.noMeasureLoops rest = true :=
       (Block.noMeasureLoops_cons_iff.mp h_nml).2
-    have h_nml_then : Block.noMeasureLoops thenBranch = true :=
-      Stmt.noMeasureLoops_branch_then h_nml_head
-    have h_nml_else : Block.noMeasureLoops elseBranch = true :=
-      Stmt.noMeasureLoops_branch_else h_nml_head
+    obtain ⟨h_simple_then, h_simple_else, h_lbni_then, h_lbni_else,
+            h_lhni_then, h_lhni_else, h_nml_then, h_nml_else⟩ :=
+      ite_branch_shape h_simple_head h_lbni_head h_lhni_head h_nml_head
     have h_unique_then : Block.uniqueInits thenBranch :=
       Block.uniqueInits.ite_then h_unique
     have h_unique_else : Block.uniqueInits elseBranch :=
@@ -7774,7 +7705,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
         have h_flush_sim : StepDetCFGStar extendEval cfg
             (.atBlock accumEntry σ_base hf_base)
             (.atBlock tl σ_cfg_after ρ₀.hasFailure) :=
-          flushCmds_condGoto_true_agree extendEval accum e tl fl md l_ite gen_e gen_f
+          flushCmds_condGoto_agree extendEval true accum e tl fl md l_ite gen_e gen_f
             accumEntry accumBlocks h_flush_eq σ_base σ_cfg_after hf_base hf_accum ρ₀
             hwfb hwf_def hwf_congr h_accum_cfg h_agree_after h_hf h_cond_tt cfg
             h_cfg_accum h_lookup
@@ -7812,7 +7743,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
         have h_flush_sim : StepDetCFGStar extendEval cfg
             (.atBlock accumEntry σ_base hf_base)
             (.atBlock fl σ_cfg_after ρ₀.hasFailure) :=
-          flushCmds_condGoto_false_agree extendEval accum e tl fl md l_ite gen_e gen_f
+          flushCmds_condGoto_agree extendEval false accum e tl fl md l_ite gen_e gen_f
             accumEntry accumBlocks h_flush_eq σ_base σ_cfg_after hf_base hf_accum ρ₀
             hwfb hwf_def hwf_congr h_accum_cfg h_agree_after h_hf h_cond_ff cfg
             h_cfg_accum h_lookup
@@ -7873,7 +7804,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
         have h_flush_sim : StepDetCFGStar extendEval cfg
             (.atBlock accumEntry σ_base hf_base)
             (.atBlock tl σ_cfg_after ρ₀.hasFailure) :=
-          flushCmds_condGoto_true_agree extendEval accum e tl fl md l_ite gen_e gen_f
+          flushCmds_condGoto_agree extendEval true accum e tl fl md l_ite gen_e gen_f
             accumEntry accumBlocks h_flush_eq σ_base σ_cfg_after hf_base hf_accum ρ₀
             hwfb hwf_def hwf_congr h_accum_cfg h_agree_after h_hf h_cond_tt cfg
             h_cfg_accum h_lookup
@@ -7971,7 +7902,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
         have h_flush_sim : StepDetCFGStar extendEval cfg
             (.atBlock accumEntry σ_base hf_base)
             (.atBlock fl σ_cfg_after ρ₀.hasFailure) :=
-          flushCmds_condGoto_false_agree extendEval accum e tl fl md l_ite gen_e gen_f
+          flushCmds_condGoto_agree extendEval false accum e tl fl md l_ite gen_e gen_f
             accumEntry accumBlocks h_flush_eq σ_base σ_cfg_after hf_base hf_accum ρ₀
             hwfb hwf_def hwf_congr h_accum_cfg h_agree_after h_hf h_cond_ff cfg
             h_cfg_accum h_lookup
