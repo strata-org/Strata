@@ -148,8 +148,8 @@ where
     | .While cond invs _decreases body =>
       let invArgs := invs.map (fun i => laurelOp "invariantClause" #[stmtExprToArg i]) |>.toArray
       laurelOp "while" #[stmtExprToArg cond, seqArg invArgs, stmtExprToArg body]
-    | .Return (some value) => laurelOp "return" #[stmtExprToArg value]
-    | .Return none => laurelOp "return" #[laurelOp "block" #[semicolonSep #[]]]
+    | .Return (some value) => laurelOp "return" #[optionArg (some (stmtExprToArg value))]
+    | .Return none => laurelOp "return" #[optionArg none]
     | .Exit label => laurelOp "exit" #[ident label]
     | .Assert cond =>
       let errOpt := optionArg (cond.summary.map fun msg =>
