@@ -242,7 +242,9 @@ The following notation recurs throughout the rules:
   {name Strata.Laurel.isConsistentSubtype}`isConsistentSubtype`, the gradual
   combination of the two above.
 - $`\mathsf{Numeric}\;T` — a predicate holding when $`T` is consistent with one
-  of $`\mathsf{TInt}`, $`\mathsf{TReal}`, $`\mathsf{TFloat64}`.
+  of $`\mathsf{TInt}`, $`\mathsf{TReal}`, $`\mathsf{TFloat64}`, or
+  $`\mathsf{TBv}_w` (a bitvector of any width $`w`), with $`\mathsf{Unknown}`
+  admitted as the gradual escape hatch.
 - $`\dashv \Gamma'` — a rule's *output scope*: the judgment threads $`\Gamma` in
   and produces $`\Gamma'` out. Only \[⇐\] Var-Declare and \[⇐\] Block-Cons use
   this to extend the scope.
@@ -516,9 +518,9 @@ The optional $`\mathit{decreases}` clause is synthesized and required
 to have a numeric type via the same $`\mathsf{Numeric}` predicate
 used by the arithmetic primitive operations. $`\mathsf{Numeric}` is
 a predicate (it admits $`\mathsf{TInt}`, $`\mathsf{TReal}`,
-$`\mathsf{TFloat64}`, and $`\mathsf{Unknown}` as the gradual escape
-hatch), not a single type, so the clause runs in synth mode rather
-than check mode.
+$`\mathsf{TFloat64}`, $`\mathsf{TBv}_w` (a bitvector of any width), and
+$`\mathsf{Unknown}` as the gradual escape hatch), not a single type, so
+the clause runs in synth mode rather than check mode.
 
 {docstring Strata.Laurel.Resolution.Check.while}
 
@@ -600,7 +602,9 @@ tag := "rules-primitive-operations"
 
 `Numeric` abbreviates "consistent with one of {name Strata.Laurel.HighType.TInt}`TInt`,
 {name Strata.Laurel.HighType.TReal}`TReal`,
-{name Strata.Laurel.HighType.TFloat64}`TFloat64`".
+{name Strata.Laurel.HighType.TFloat64}`TFloat64`, or
+{name Strata.Laurel.HighType.TBv}`TBv` (a bitvector of any width)", with
+`Unknown` admitted as the gradual escape hatch.
 
 $$`\frac{\Gamma \vdash \mathit{args}_i \Rightarrow U_i \quad U_i <: \mathsf{TBool} \quad \mathit{op} \in \{\mathsf{And}, \mathsf{Or}, \mathsf{AndThen}, \mathsf{OrElse}, \mathsf{Not}, \mathsf{Implies}\}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;\mathit{args} \Rightarrow \mathsf{TBool}} \quad \text{([⇒] Op-Bool)}`
 
@@ -613,7 +617,8 @@ $$`\frac{\Gamma \vdash \mathit{args}_i \Rightarrow U_i \quad \mathsf{Numeric}\;U
 The arithmetic synth rule mirrors $`[⇒]\,\text{Op-Eq}` but generalised
 to $`n` operands. Each operand is synthesized and required to be
 $`\mathsf{Numeric}` (i.e. $`\mathsf{TInt}`, $`\mathsf{TReal}`,
-$`\mathsf{TFloat64}`, or the gradual $`\mathsf{Unknown}`). The
+$`\mathsf{TFloat64}`, $`\mathsf{TBv}_w` (a bitvector of any width), or
+the gradual $`\mathsf{Unknown}`). The
 result type is the *consistency LUB* $`\bigsqcup_i U_i` — a fold of
 the operand types under
 {name Strata.Laurel.isConsistent}`isConsistent`'s flat lattice:
