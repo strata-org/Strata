@@ -563,27 +563,6 @@ structure ConstrainedType where
   /-- A witness value proving the type is inhabited. -/
   witness : StmtExprMd
 
-/-- Resolve a `HighType` through constrained-type aliases to its underlying base type.
-
-    `lookup` maps a type name to its `ConstrainedType` definition (or `none` if the name
-    is not a constrained type). The traversal chases chains of constrained types and
-    recurses into the arguments of type applications.
-
-    This is the single, canonical resolution algorithm. Both `HeapParameterization`
-    (when choosing a `Box` variant) and `ConstrainedTypeElim` (when lowering constrained
-    types) call this with their own `lookup` source, guaranteeing they always agree on the
-    base type chosen for any constrained type. Do not duplicate this logic; supply a new
-    `lookup` instead. -/
-partial def resolveConstrainedTypeWith
-    (lookup : Identifier → Option ConstrainedType) : HighType → HighType
-  | .UserDefined name =>
-    match lookup name with
-    | some ct => resolveConstrainedTypeWith lookup ct.base.val
-    | none => .UserDefined name
-  | .Applied ctor args =>
-    .Applied ctor (args.map fun a => ⟨resolveConstrainedTypeWith lookup a.val, a.source⟩)
-  | ty => ty
-
 /-- A constructor of a Laurel datatype, with a name and typed arguments. -/
 structure DatatypeConstructor where
   name : Identifier
