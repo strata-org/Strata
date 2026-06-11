@@ -1409,6 +1409,32 @@ private theorem flushCmds_genStep {P : PureExpr} [HasBool P]
     rw [this]
     exact StringGenState.GenStep.of_gen pfx gen
 
+/-- The invariant-assert generating `mapM` in the loop arm only ever calls
+`StringGenState.gen "inv$"` (for empty source labels) or no generator at all,
+so it produces a `GenStep` from its input to its output state. Shared by both
+`stmtsToBlocks_genStep` and `stmtsToBlocks_invariant` across the none/some
+measure branches. -/
+private theorem invMapM_genStep {P : PureExpr} [HasPassiveCmds P (Cmd P)]
+    (is : List (String × P.Expr)) (gen_b gen_i : StringGenState) (invCmds : List (Cmd P))
+    (h_inv_def :
+      ((is.mapM (fun (srcLabel, i) => do
+          let assertLabel ←
+            if srcLabel.isEmpty then StringGenState.gen "inv$"
+            else pure srcLabel
+          pure (HasPassiveCmds.assert (P := P) (CmdT := Cmd P) assertLabel i synthesizedMd)))
+       : LabelGen.StringGenM (List (Cmd P))) gen_b = (invCmds, gen_i)) :
+    StringGenState.GenStep gen_b gen_i := by
+  apply mapM_genStep _ _ is gen_b gen_i invCmds h_inv_def
+  intro a g g' b h_step
+  obtain ⟨srcLabel, i⟩ := a
+  by_cases h_empty : srcLabel.isEmpty
+  · simp only [h_empty, if_true, bind, StateT.bind, pure, StateT.pure] at h_step
+    have h_g_eq : g' = (StringGenState.gen "inv$" g).2 := (Prod.mk.inj h_step).2.symm
+    rw [h_g_eq]; exact StringGenState.GenStep.of_gen "inv$" g
+  · simp only [h_empty, bind, pure] at h_step
+    have h_g_eq : g' = g := (Prod.mk.inj h_step).2.symm
+    rw [h_g_eq]; exact StringGenState.GenStep.refl g
+
 /-- A weaker invariant for `stmtsToBlocks`: just the `GenStep` part
 (WF preservation + monotone label list). This holds without any
 disjointness assumption and is used to bootstrap the full invariant. -/
@@ -1556,19 +1582,8 @@ private theorem stmtsToBlocks_genStep
          : LabelGen.StringGenM (List (Cmd P))) gen_b = r_inv at h_gen
       obtain ⟨invCmds, gen_i⟩ := r_inv
       have h_step_body := stmtsToBlocks_genStep lentry bss _ [] gen_le gen_b bl bbs h_body_eq
-      have h_step_inv : StringGenState.GenStep gen_b gen_i := by
-        apply mapM_genStep _ _ is gen_b gen_i invCmds h_inv_def
-        intro a g g' b h_step
-        obtain ⟨srcLabel, i⟩ := a
-        by_cases h_empty : srcLabel.isEmpty
-        · simp only [h_empty, if_true, bind, StateT.bind, pure, StateT.pure] at h_step
-          have h_g_eq : g' = (StringGenState.gen "inv$" g).2 := (Prod.mk.inj h_step).2.symm
-          rw [h_g_eq]
-          exact StringGenState.GenStep.of_gen "inv$" g
-        · simp only [h_empty, bind, pure] at h_step
-          have h_g_eq : g' = g := (Prod.mk.inj h_step).2.symm
-          rw [h_g_eq]
-          exact StringGenState.GenStep.refl g
+      have h_step_inv : StringGenState.GenStep gen_b gen_i :=
+        invMapM_genStep is gen_b gen_i invCmds h_inv_def
       have h_step_prefix : StringGenState.GenStep gen gen_i :=
         ((h_step_rest.trans h_step_le).trans h_step_body).trans h_step_inv
       cases c with
@@ -1628,19 +1643,8 @@ private theorem stmtsToBlocks_genStep
          : LabelGen.StringGenM (List (Cmd P))) gen_b = r_inv at h_gen
       obtain ⟨invCmds, gen_i⟩ := r_inv
       have h_step_body := stmtsToBlocks_genStep ldec bss _ [] gen_ldec gen_b bl bbs h_body_eq
-      have h_step_inv : StringGenState.GenStep gen_b gen_i := by
-        apply mapM_genStep _ _ is gen_b gen_i invCmds h_inv_def
-        intro a g g' b h_step
-        obtain ⟨srcLabel, i⟩ := a
-        by_cases h_empty : srcLabel.isEmpty
-        · simp only [h_empty, if_true, bind, StateT.bind, pure, StateT.pure] at h_step
-          have h_g_eq : g' = (StringGenState.gen "inv$" g).2 := (Prod.mk.inj h_step).2.symm
-          rw [h_g_eq]
-          exact StringGenState.GenStep.of_gen "inv$" g
-        · simp only [h_empty, bind, pure] at h_step
-          have h_g_eq : g' = g := (Prod.mk.inj h_step).2.symm
-          rw [h_g_eq]
-          exact StringGenState.GenStep.refl g
+      have h_step_inv : StringGenState.GenStep gen_b gen_i :=
+        invMapM_genStep is gen_b gen_i invCmds h_inv_def
       have h_step_prefix : StringGenState.GenStep gen gen_i :=
         ((((h_step_rest.trans h_step_le).trans h_step_ml).trans h_step_ldec).trans
           h_step_body).trans h_step_inv
@@ -2395,17 +2399,8 @@ private theorem stmtsToBlocks_invariant
       obtain ⟨invCmds, gen_i⟩ := r_inv
       simp only at h_gen
       have h_step_body := stmtsToBlocks_genStep lentry bss _ [] gen_le gen_b bl bbs h_body_eq
-      have h_step_inv : StringGenState.GenStep gen_b gen_i := by
-        apply mapM_genStep _ _ is gen_b gen_i invCmds h_inv_def
-        intro a g g' b' h_step
-        obtain ⟨srcLabel, i⟩ := a
-        by_cases h_empty : srcLabel.isEmpty
-        · simp only [h_empty, if_true, bind, StateT.bind, pure, StateT.pure] at h_step
-          have h_g_eq : g' = (StringGenState.gen "inv$" g).2 := (Prod.mk.inj h_step).2.symm
-          rw [h_g_eq]; exact StringGenState.GenStep.of_gen "inv$" g
-        · simp only [h_empty, bind, pure] at h_step
-          have h_g_eq : g' = g := (Prod.mk.inj h_step).2.symm
-          rw [h_g_eq]; exact StringGenState.GenStep.refl g
+      have h_step_inv : StringGenState.GenStep gen_b gen_i :=
+        invMapM_genStep is gen_b gen_i invCmds h_inv_def
       cases h_c : c with
       | det e =>
         rw [h_c] at h_gen
@@ -2852,17 +2847,8 @@ private theorem stmtsToBlocks_invariant
       obtain ⟨invCmds, gen_i⟩ := r_inv
       simp only at h_gen
       have h_step_body := stmtsToBlocks_genStep ldec bss _ [] gen_ldec gen_b bl bbs h_body_eq
-      have h_step_inv : StringGenState.GenStep gen_b gen_i := by
-        apply mapM_genStep _ _ is gen_b gen_i invCmds h_inv_def
-        intro a g g' b' h_step
-        obtain ⟨srcLabel, i⟩ := a
-        by_cases h_empty : srcLabel.isEmpty
-        · simp only [h_empty, if_true, bind, StateT.bind, pure, StateT.pure] at h_step
-          have h_g_eq : g' = (StringGenState.gen "inv$" g).2 := (Prod.mk.inj h_step).2.symm
-          rw [h_g_eq]; exact StringGenState.GenStep.of_gen "inv$" g
-        · simp only [h_empty, bind, pure] at h_step
-          have h_g_eq : g' = g := (Prod.mk.inj h_step).2.symm
-          rw [h_g_eq]; exact StringGenState.GenStep.refl g
+      have h_step_inv : StringGenState.GenStep gen_b gen_i :=
+        invMapM_genStep is gen_b gen_i invCmds h_inv_def
       cases h_c : c with
       | det e =>
         rw [h_c] at h_gen
@@ -4892,12 +4878,11 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
         h_accum heval_c
     have h_hf' : ρ₁.hasFailure = (hf_base || (hf_accum || failed_c)) := by
       rw [hfail_c, h_hf, Bool.or_assoc]
-    have hwfb' : WellFormedSemanticEvalBool ρ₁.eval := by rw [heval_eq_c]; exact hwfb
-    have hwfv' : WellFormedSemanticEvalVal ρ₁.eval := by rw [heval_eq_c]; exact hwfv
-    have hwf_def' : WellFormedSemanticEvalDef ρ₁.eval := by rw [heval_eq_c]; exact hwf_def
-    have hwf_congr' : WellFormedSemanticEvalExprCongr ρ₁.eval := by
-      rw [heval_eq_c]; exact hwf_congr
-    have hwf_var' : WellFormedSemanticEvalVar ρ₁.eval := by rw [heval_eq_c]; exact hwf_var
+    have hwfb' : WellFormedSemanticEvalBool ρ₁.eval := heval_eq_c ▸ hwfb
+    have hwfv' : WellFormedSemanticEvalVal ρ₁.eval := heval_eq_c ▸ hwfv
+    have hwf_def' : WellFormedSemanticEvalDef ρ₁.eval := heval_eq_c ▸ hwf_def
+    have hwf_congr' : WellFormedSemanticEvalExprCongr ρ₁.eval := heval_eq_c ▸ hwf_congr
+    have hwf_var' : WellFormedSemanticEvalVar ρ₁.eval := heval_eq_c ▸ hwf_var
     have h_nofd_rest : Block.noFuncDecl rest = true := by
       simp [Block.noFuncDecl] at h_nofd; exact h_nofd.2
     have h_simple_rest : Block.simpleShape rest = true :=
@@ -6594,12 +6579,11 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
         h_accum heval_c
     have h_hf' : ρ₁.hasFailure = (hf_base || (hf_accum || failed_c)) := by
       rw [hfail_c, h_hf, Bool.or_assoc]
-    have hwfb' : WellFormedSemanticEvalBool ρ₁.eval := by rw [heval_eq_c]; exact hwfb
-    have hwfv' : WellFormedSemanticEvalVal ρ₁.eval := by rw [heval_eq_c]; exact hwfv
-    have hwf_def' : WellFormedSemanticEvalDef ρ₁.eval := by rw [heval_eq_c]; exact hwf_def
-    have hwf_congr' : WellFormedSemanticEvalExprCongr ρ₁.eval := by
-      rw [heval_eq_c]; exact hwf_congr
-    have hwf_var' : WellFormedSemanticEvalVar ρ₁.eval := by rw [heval_eq_c]; exact hwf_var
+    have hwfb' : WellFormedSemanticEvalBool ρ₁.eval := heval_eq_c ▸ hwfb
+    have hwfv' : WellFormedSemanticEvalVal ρ₁.eval := heval_eq_c ▸ hwfv
+    have hwf_def' : WellFormedSemanticEvalDef ρ₁.eval := heval_eq_c ▸ hwf_def
+    have hwf_congr' : WellFormedSemanticEvalExprCongr ρ₁.eval := heval_eq_c ▸ hwf_congr
+    have hwf_var' : WellFormedSemanticEvalVar ρ₁.eval := heval_eq_c ▸ hwf_var
     have h_nofd_rest : Block.noFuncDecl rest = true := by
       simp [Block.noFuncDecl] at h_nofd; exact h_nofd.2
     have h_simple_rest : Block.simpleShape rest = true :=
