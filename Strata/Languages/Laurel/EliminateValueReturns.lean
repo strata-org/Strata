@@ -5,7 +5,9 @@
 -/
 module
 
-public import Strata.Languages.Laurel.MapStmtExpr
+public import Strata.Languages.Laurel.LaurelAST
+import Strata.Languages.Laurel.MapStmtExpr
+import Strata.Util.Tactics
 
 /-!
 # Eliminate Value Returns

@@ -3,8 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core
+import StrataDDM.Integration.Lean.HashCommands
+
+meta section
+open StrataDDM (Program)
 
 /-!
 # Polymorphic Procedure Test
@@ -63,7 +68,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify polyProcPgm
+#eval Core.verify polyProcPgm
 
 end Strata.PolymorphicProcedureTest
 
@@ -92,11 +97,6 @@ info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
-Label: MkCons_ensures_0
-Property: assert
-Obligation:
-true
-
 Label: assert_0
 Property: assert
 Assumptions:
@@ -113,10 +113,6 @@ true
 
 ---
 info:
-Obligation: MkCons_ensures_0
-Property: assert
-Result: ✅ pass
-
 Obligation: assert_0
 Property: assert
 Result: ✅ pass
@@ -126,6 +122,8 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify polyPostPgm
+#eval Core.verify polyPostPgm
 
 end Strata.PolymorphicPostconditionTest
+
+end

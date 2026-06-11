@@ -3,27 +3,32 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 /-
 Tests that the constrained type elimination pass correctly transforms
 Laurel programs by comparing the output against expected results.
 -/
 
-import Strata.DDM.Elab
-import Strata.DDM.BuiltinDialects.Init
-import Strata.Languages.Laurel.Grammar.LaurelGrammar
-import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
-import Strata.Languages.Laurel.ConstrainedTypeElim
-import Strata.Languages.Laurel.Resolution
+meta import StrataDDM.Elab
+meta import StrataDDM.BuiltinDialects.Init
+meta import Strata.Languages.Laurel.Grammar
+meta import Strata.Languages.Laurel.ConstrainedTypeElim
+meta import Strata.Languages.Laurel.Resolution
+
+meta section
 
 open Strata
-open Strata.Elab (parseStrataProgramFromDialect)
+open StrataDDM (initDialect)
+open StrataDDM.Elab (parseStrataProgramFromDialect)
 
 namespace Strata.Laurel
 
 def testProgram : String := r"
 constrained nat = x: int where x >= 0 witness 0
-procedure test(n: nat) returns (r: nat) {
+procedure test(n: nat) returns (r: nat)
+  opaque
+{
   assert r >= 0;
   var y: nat := n;
   return y
@@ -31,8 +36,8 @@ procedure test(n: nat) returns (r: nat) {
 "
 
 def parseLaurelAndElim (input : String) : IO Program := do
-  let inputCtx := Strata.Parser.stringInputContext "test" input
-  let dialects := Strata.Elab.LoadedDialects.ofDialects! #[initDialect, Laurel]
+  let inputCtx := StrataDDM.Parser.stringInputContext "test" input
+  let dialects := StrataDDM.Elab.LoadedDialects.ofDialects! #[initDialect, Laurel]
   let strataProgram ← parseStrataProgramFromDialect dialects Laurel.name inputCtx
   let uri := Strata.Uri.file "test"
   match Laurel.TransM.run uri (Laurel.parseProgram strataProgram) with
@@ -74,7 +79,9 @@ procedure $witness_nat()
 -- Scope management: constrained variable in if-branch must not leak into sibling block
 def scopeProgram : String := r"
 constrained pos = v: int where v > 0 witness 1
-procedure test(b: bool) {
+procedure test(b: bool)
+  opaque
+{
   if b then {
     var x: pos := 1
   };
@@ -91,6 +98,7 @@ info: function pos$constraint(v: int): bool
   v > 0
 };
 procedure test(b: bool)
+  opaque
 {
   if b then {
     var x: int := 1;
@@ -118,7 +126,9 @@ procedure $witness_pos()
 -- The variable has no known value, only the type constraint is assumed.
 def uninitProgram : String := r"
 constrained posint = x: int where x > 0 witness 1
-procedure f() opaque {
+procedure f()
+  opaque
+{
   var x: posint;
   assert x == 1
 };
@@ -150,3 +160,5 @@ procedure $witness_posint()
     IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
 
 end Laurel
+end Strata
+end

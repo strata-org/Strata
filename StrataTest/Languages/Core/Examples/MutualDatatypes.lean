@@ -3,9 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core
+import StrataDDM.Integration.Lean.HashCommands
 
+meta section
+open StrataDDM (Program)
 /-!
 # Mutual Datatype Integration Tests
 
@@ -79,7 +83,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify roseTreeTesterPgm Inhabited.default
+#eval Core.verify roseTreeTesterPgm Inhabited.default
   (options := .quiet)
 
 ---------------------------------------------------------------------
@@ -175,7 +179,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify roseTreeDestructorPgm Inhabited.default
+#eval Core.verify roseTreeDestructorPgm Inhabited.default
   (options := .quiet)
 
 ---------------------------------------------------------------------
@@ -238,7 +242,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify roseTreeEqualityPgm Inhabited.default
+#eval Core.verify roseTreeEqualityPgm Inhabited.default
   (options := .quiet)
 
 ---------------------------------------------------------------------
@@ -313,7 +317,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify polyRoseTreeHavocPgm Inhabited.default
+#eval Core.verify polyRoseTreeHavocPgm Inhabited.default
   (options := .quiet)
 
 ---------------------------------------------------------------------
@@ -413,7 +417,8 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify stmtListHavocPgm Inhabited.default
+#eval Core.verify stmtListHavocPgm Inhabited.default
   (options := .quiet)
 
 end Strata.MutualDatatypeTest
+end

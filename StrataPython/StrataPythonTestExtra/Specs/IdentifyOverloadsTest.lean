@@ -1,0 +1,166 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
+module
+
+meta import Strata.SimpleAPI
+meta import StrataPython.PySpecPipeline
+meta import StrataPython.ReadPython
+meta import StrataPython.PythonToCore
+meta import StrataPython.Specs.IdentifyOverloads
+meta import StrataPythonTest.Util.Python
+meta import StrataPython
+
+/-! ## Unit tests for `resolveOverloads`
+
+These tests call `resolveOverloads` directly and assert exact module
+sets, ensuring we identify precisely the needed specs — no more, no
+fewer.
+-/
+
+open Strata (SourceRange)
+
+open StrataPython
+open StrataPython.Specs.IdentifyOverloads
+
+private meta def testDir : System.FilePath :=
+  "StrataPythonTestExtra/Specs/dispatch_test"
+
+/-- Compile a Python source file to Ion and return the path. -/
+private meta def compilePython
+    (pythonCmd : System.FilePath)
+    (pyFile : System.FilePath) (outDir : System.FilePath)
+    : IO System.FilePath := do
+  IO.FS.withTempFile fun _handle dialectFile => do
+    IO.FS.writeBinFile dialectFile Python.toIon
+    let some stem := pyFile.fileStem
+      | throw <| .userError s!"No stem for {pyFile}"
+    let ionPath := outDir / s!"{stem}.python.st.ion"
+    let spawnArgs : IO.Process.SpawnArgs := {
+      cmd := toString pythonCmd
+      args := #["-m", "strata_python.gen", "py_to_strata",
+                "--dialect", dialectFile.toString,
+                pyFile.toString, ionPath.toString]
+      cwd := none
+      inheritEnv := true
+      stdin := .null
+      stdout := .piped
+      stderr := .piped
+    }
+    let child ← IO.Process.spawn spawnArgs
+    let _stdout ← child.stdout.readToEnd
+    let stderr ← child.stderr.readToEnd
+    let exitCode ← child.wait
+    if exitCode ≠ 0 then
+      throw <| .userError
+        s!"py_to_strata failed for {pyFile} (exit {exitCode}): {stderr}"
+    return ionPath
+
+/-- Compile the dispatch pyspec and return the overload table. -/
+private meta def buildOverloadTable
+    (pythonCmd : System.FilePath)
+    (outDir : System.FilePath) : IO OverloadTable := do
+  IO.FS.withTempFile fun _handle dialectFile => do
+    IO.FS.writeBinFile dialectFile Python.toIon
+    -- Compile servicelib dispatch file to pyspec Ion
+    let pyFile := testDir / "servicelib" / "__init__.py"
+    match ← pySpecsDir testDir outDir dialectFile
+        (modules := #["servicelib"])
+        (warningOutput := .none)
+        (pythonCmd := toString pythonCmd) |>.toBaseIO with
+    | .ok () => pure ()
+    | .error msg =>
+      throw <| .userError s!"pySpecsDir failed for {pyFile}: {msg}"
+    let some ionPath := pySpecOutputPath testDir outDir pyFile
+      | throw <| .userError s!"Cannot derive output path for {pyFile}"
+    let ctx ← Strata.Pipeline.PipelineContext.create
+    match ← (readDispatchOverloads ctx #[ionPath.toString]).toBaseIO with
+    | .ok tbl => return tbl
+    | .error () =>
+      throw <| .userError s!"readDispatchOverloads failed for {ionPath}"
+
+/-- Parse a user Python Ion file into statements. -/
+private meta def parseStmts (ionPath : System.FilePath)
+    : IO (Array (stmt SourceRange)) := do
+  match ← StrataPython.readPythonStrata ionPath.toString |>.toBaseIO with
+  | .ok stmts =>
+    return stmts
+  | .error msg =>
+    throw <| .userError s!"readPythonStrata failed: {msg}"
+
+/-- Run resolveOverloads on a test file and return the module set. -/
+private meta def resolveFile
+    (pythonCmd : System.FilePath)
+    (tbl : OverloadTable) (pyFile : System.FilePath)
+    (outDir : System.FilePath)
+    : IO (Std.HashSet ModuleName) := do
+  let ionPath ← compilePython pythonCmd pyFile outDir
+  let stmts ← parseStmts ionPath
+  return (resolveOverloads tbl stmts).modules
+
+/-- A test case: Python file and exact expected module set. -/
+private structure TestCase where
+  file : System.FilePath
+  expected : List ModuleName
+
+private meta def testCases : List TestCase := [
+  -- Single service at top level
+  { file := "test_single_service.py"
+    expected := [.ofString! "servicelib.Storage"] },
+  -- Multiple services
+  { file := "test_multi_service.py"
+    expected := [.ofString! "servicelib.Storage", .ofString! "servicelib.Messaging"] },
+  -- Dispatch inside a class method
+  { file := "test_class_dispatch.py"
+    expected := [.ofString! "servicelib.Storage"] },
+  -- Dispatch in both branches of an if/else
+  { file := "test_dispatch_in_conditional.py"
+    expected := [.ofString! "servicelib.Storage", .ofString! "servicelib.Messaging"] },
+  -- Dispatch inside a try block
+  { file := "test_dispatch_in_try.py"
+    expected := [.ofString! "servicelib.Storage"] },
+  -- No dispatch calls at all
+  { file := "test_no_dispatch.py"
+    expected := [] },
+  -- Loop with variable (not string literal) — not resolved
+  { file := "test_dispatch_in_loop.py"
+    expected := [] }
+]
+
+/-- Run a single test case and return an error message on failure. -/
+private meta def runTestCase
+    (pythonCmd : System.FilePath)
+    (tbl : OverloadTable) (outDir : System.FilePath)
+    (tc : TestCase) : IO (Option String) := do
+  let modules ← resolveFile pythonCmd tbl (testDir / tc.file) outDir
+  let expected : Std.HashSet ModuleName :=
+    tc.expected.foldl (init := {}) fun s m => s.insert m
+  if modules == expected then return none
+  let got := modules.toList.map toString
+  let exp := expected.toList.map toString
+  return some
+    s!"{tc.file}: expected modules {exp}, got {got}"
+
+#eval withPython fun pythonCmd => do
+  IO.FS.withTempDir fun tmpDir => do
+    let tbl ← buildOverloadTable pythonCmd tmpDir
+    -- Launch all tests concurrently
+    let mut seen : Std.HashSet System.FilePath := {}
+    let mut tasks : Array (System.FilePath × Task (Except IO.Error (Option String))) := #[]
+    for tc in testCases do
+      if tc.file ∈ seen then
+        throw <| IO.userError s!"Duplicate test filename: {tc.file}"
+      seen := seen.insert tc.file
+      let task ← IO.asTask (runTestCase pythonCmd tbl tmpDir tc)
+      tasks := tasks.push (tc.file, task)
+    -- Collect results
+    let mut errors : Array String := #[]
+    for (_, task) in tasks do
+      match ← IO.wait task with
+      | .ok (some err) => errors := errors.push err
+      | .ok none => pure ()
+      | .error e => errors := errors.push s!"Task error: {e}"
+    if errors.size > 0 then
+      throw <| IO.userError ("\n".intercalate errors.toList)

@@ -4,7 +4,9 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Core.Verifier
+import Strata.Languages.Core
+import StrataDDM.Integration.Lean.HashCommands
+import Strata.MetaVerifier
 
 ---------------------------------------------------------------------
 namespace Strata
@@ -83,7 +85,7 @@ Model:
 (x@1, 0)
 -/
 #guard_msgs in
-#eval verify quantPgm (options := .default)
+#eval Core.verify quantPgm (options := .default)
 
 /--
 info: [Strata.Core] Type checking succeeded.
@@ -147,4 +149,10 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify triggerPgm
+#eval Core.verify triggerPgm
+
+theorem triggerPgm_correct : smtVCsCorrect triggerPgm := by
+  gen_smt_vcs
+  all_goals (try grind)
+
+end Strata

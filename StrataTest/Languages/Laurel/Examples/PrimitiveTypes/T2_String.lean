@@ -3,10 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 
-import StrataTest.Util.TestDiagnostics
-import StrataTest.Languages.Laurel.TestExamples
+meta import all StrataTest.Util.TestDiagnostics
+meta import all StrataTest.Languages.Laurel.TestExamples
+
+meta section
 
 open StrataTest.Util
 
@@ -15,7 +18,7 @@ namespace Laurel
 
 def program := r#"
 procedure testStringKO()
-returns (result: string)
+  returns (result: string)
   opaque
 {
   var message: string := "Hello";

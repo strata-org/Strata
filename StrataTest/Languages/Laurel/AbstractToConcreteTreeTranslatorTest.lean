@@ -3,27 +3,30 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 /-
 Tests that the Laurel AST to DDM concrete syntax tree conversion
 (programToStrata) preserves program structure through roundtripping.
 -/
 
-import Strata.DDM.Elab
-import Strata.DDM.BuiltinDialects.Init
-import Strata.Languages.Laurel.Grammar.LaurelGrammar
-import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
-import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
-import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
+meta import StrataDDM.Elab
+meta import StrataDDM.BuiltinDialects.Init
+meta import Strata.Languages.Laurel.Grammar.LaurelGrammar
+meta import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
+meta import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
+
+meta section
 
 open Strata
-open Strata.Elab (parseStrataProgramFromDialect)
+open StrataDDM (initDialect)
+open StrataDDM.Elab (parseStrataProgramFromDialect)
 
 namespace Strata.Laurel
 
 private def parseLaurel (input : String) : IO Program := do
-  let inputCtx := Strata.Parser.stringInputContext "test" input
-  let dialects := Strata.Elab.LoadedDialects.ofDialects! #[initDialect, Laurel]
+  let inputCtx := StrataDDM.Parser.stringInputContext "test" input
+  let dialects := StrataDDM.Elab.LoadedDialects.ofDialects! #[initDialect, Laurel]
   let strataProgram ← parseStrataProgramFromDialect dialects Laurel.name inputCtx
   let uri := Strata.Uri.file "test"
   match Laurel.TransM.run uri (Laurel.parseProgram strataProgram) with
@@ -36,7 +39,7 @@ private def laurelToText (prog : Program) : String :=
   let lines := text.splitOn "\n" |>.map (fun s => (s.trimAsciiEnd).toString)
   "\n".intercalate lines
 
-/-- Roundtrip through the DDM tree: Laurel AST → Strata.Program → Laurel AST → text -/
+/-- Roundtrip through the DDM tree: Laurel AST → StrataDDM.Program → Laurel AST → text -/
 private def roundtripViaDDM (prog : Program) : IO String := do
   let strataProgram := programToStrata prog
   match Laurel.TransM.run .none (Laurel.parseProgram strataProgram) with
@@ -65,7 +68,9 @@ info: procedure foo()
 };
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip r"procedure foo() opaque { assert true; assert false };")
+#eval do IO.println (← roundtrip r"procedure foo()
+  opaque
+{ assert true; assert false };")
 
 /--
 info: procedure add(x: int, y: int): int
@@ -75,7 +80,9 @@ info: procedure add(x: int, y: int): int
 };
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip r"procedure add(x: int, y: int): int opaque { x + y };")
+#eval do IO.println (← roundtrip r"procedure add(x: int, y: int): int
+  opaque
+{ x + y };")
 
 /--
 info: function aFunction(x: int): int
@@ -84,7 +91,8 @@ info: function aFunction(x: int): int
 };
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip r"function aFunction(x: int): int { x };")
+#eval do IO.println (← roundtrip r"function aFunction(x: int): int
+{ x };")
 
 /--
 info: composite Point { var x: int var y: int }
@@ -105,7 +113,9 @@ info: procedure test(x: int): int
 };
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip r"procedure test(x: int): int opaque { if x > 0 then x else 0 - x };")
+#eval do IO.println (← roundtrip r"procedure test(x: int): int
+  opaque
+{ if x > 0 then x else 0 - x };")
 
 /--
 info: procedure divide(x: int, y: int): int
@@ -135,7 +145,9 @@ info: procedure test()
 -/
 #guard_msgs in
 #eval do IO.println (← roundtrip r"
-procedure test() opaque {
+procedure test()
+  opaque
+{
     assert forall(x: int) => x == x;
     assert exists(y: int) => y > 0
 };
@@ -158,7 +170,9 @@ composite Point {
   var x: int
   var y: int
 }
-procedure test(): int opaque {
+procedure test(): int
+  opaque
+{
     var p: Point := new Point;
     p#x := 5;
     p#x
@@ -192,7 +206,9 @@ procedure test(a: Animal): bool
 #eval do IO.println (← roundtrip r"
 composite Animal {}
 composite Dog extends Animal {}
-procedure test(a: Animal): bool opaque { a is Dog };
+procedure test(a: Animal): bool
+  opaque
+{ a is Dog };
 ")
 
 -- Additional coverage: while loops
@@ -210,7 +226,9 @@ info: procedure test()
 -/
 #guard_msgs in
 #eval do IO.println (← roundtrip r"
-procedure test() opaque {
+procedure test()
+  opaque
+{
     var x: int := 0;
     while(x < 10)
       invariant x >= 0
@@ -260,6 +278,26 @@ info: procedure test(): int
 };
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip r"procedure test(): int opaque { <??> };")
+#eval do IO.println (← roundtrip r"procedure test(): int
+  opaque
+{ <??> };")
+
+-- Valueless return (issue #1353): a bare `return` round-trips as `.Return none`,
+-- not as the old `return { }` block hack, and re-parses stably.
+/--
+info: procedure earlyExit(b: bool)
+  opaque
+{
+  if b then {
+    return
+  };
+  assert true
+};
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip r"procedure earlyExit(b: bool)
+  opaque
+{ if b then { return }; assert true };")
 
 end Strata.Laurel
+end

@@ -3,8 +3,11 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.B3.DDMTransform.Conversion
+meta import Strata.Languages.B3.DDMTransform.Conversion
+
+meta section
 
 /-!
 # B3 Conversion Error Tests
@@ -115,3 +118,4 @@ Variable @1 not supported in concrete syntax
   (.binaryOp 0 (.add 0) (.id 10 1) (.id 20 1))
 
 end StrataTest.B3.ConversionErrors
+end

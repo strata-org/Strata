@@ -3,9 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import StrataTest.Util.TestDiagnostics
-import StrataTest.Languages.Laurel.TestExamples
+meta import all StrataTest.Util.TestDiagnostics
+meta import all StrataTest.Languages.Laurel.TestExamples
+
+meta section
 
 open StrataTest.Util
 open Strata
@@ -13,7 +16,8 @@ open Strata
 namespace Strata.Laurel
 
 def program := r"
-function returnAtEnd(x: int) returns (r: int) {
+function returnAtEnd(x: int) returns (r: int)
+{
   if x > 0 then {
     if x == 1 then {
       return 1
@@ -84,6 +88,17 @@ procedure dag(a: int) returns (r: int)
   assert if a > 0 then { b == 2 } else { true };
 //^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
   return b
+};
+
+// Valueless early return (issue #1353): a bare `return` parses to `.Return none`.
+// Must verify cleanly — no value, used as an early exit.
+procedure valuelessEarlyReturn(b: bool)
+  opaque
+{
+  if b then {
+    return
+  };
+  assert true
 };
 "
 

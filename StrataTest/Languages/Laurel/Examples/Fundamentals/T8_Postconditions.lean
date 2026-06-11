@@ -3,9 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import StrataTest.Util.TestDiagnostics
-import StrataTest.Languages.Laurel.TestExamples
+meta import all StrataTest.Util.TestDiagnostics
+meta import all StrataTest.Languages.Laurel.TestExamples
+
+meta section
 
 open StrataTest.Util
 open Strata
@@ -31,9 +34,9 @@ procedure callerOfOpaqueProcedure()
 };
 
 procedure invalidPostcondition(x: int)
-    opaque
-    ensures false
-//          ^^^^^ error: assertion does not hold
+  opaque
+  ensures false
+//        ^^^^^ error: assertion does not hold
 {
 };
 "

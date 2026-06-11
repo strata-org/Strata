@@ -5,10 +5,8 @@
 -/
 module
 
-public import Strata.Languages.Core.Statement
 public import Strata.Languages.Core.CallGraph
 public import Strata.Languages.Core.CoreGen
-public import Strata.DL.Util.LabelGen
 public import Strata.Util.Statistics
 
 /-! # Utility functions for program transformation in Strata Core -/
@@ -332,10 +330,14 @@ def runProgram
           currentProcedureName := .some proc.header.name.1
         })
 
-        let (changed, new_body) ← runStmtsRec f proc.body
+        let bodyStmts ← match proc.body with
+          | .structured ss => pure ss
+          | .cfg _ => throw (Strata.DiagnosticModel.fromMessage
+              s!"runProgram: cannot apply statement-level transform to CFG body (procedure '{proc.header.name.1}')")
+        let (changed, new_body) ← runStmtsRec f bodyStmts
 
         if changed then
-          newDecls := newDecls.set i (Decl.proc { proc with body := new_body } md)
+          newDecls := newDecls.set i (Decl.proc { proc with body := .structured new_body } md)
           anyChanged := true
           modify (fun σ => { σ with
             currentProgram := .some { decls := newDecls }

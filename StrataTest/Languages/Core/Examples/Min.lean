@@ -4,8 +4,11 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Core.Verifier
+import Strata.Languages.Core
+import StrataDDM.Integration.Lean.HashCommands
+import Strata.MetaVerifier
 
+open StrataDDM (Program)
 ---------------------------------------------------------------------
 namespace Strata
 
@@ -41,6 +44,11 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify testPgm
+#eval Core.verify testPgm
 
+theorem testPgm_correct : smtVCsCorrect testPgm := by
+  gen_smt_vcs
+  grind
+
+end Strata
 ---------------------------------------------------------------------

@@ -3,8 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.SimpleAPI
+meta import all Strata.SimpleAPI
+meta import all StrataTest.Util.TestDiagnostics
+meta import all StrataTest.Languages.Laurel.TestExamples
+
+meta section
 
 /-! # Bodiless Procedure Inlining Test
 
@@ -15,6 +20,9 @@ Now the body assumes the postconditions instead, so `assert false` after
 the inlined call is correctly rejected. -/
 
 namespace Strata.Laurel.BodilessInliningTest
+
+open StrataTest.Util
+open Strata
 
 private def laurelSource := "
 procedure bodilessProcedure() returns (r: int)
@@ -28,32 +36,13 @@ procedure caller()
   var x: int := bodilessProcedure();
   assert x > 0;
   assert false
+//^^^^^^^^^^^^ error: assertion could not be proved
 };
 "
 
-/-- info: "assert(161): ❌ fail" -/
-#guard_msgs in
-#eval show IO String from do
-  let laurelProg ← Strata.parseLaurelText "test.laurel" laurelSource
-  let coreProg ← match ← Strata.laurelToCore laurelProg with
-    | .ok p => pure p
-    | .error e => throw (IO.userError s!"Translation failed: {e}")
-  let inlined ← match Strata.Core.inlineProcedures coreProg {} with
-    | .ok p => pure p
-    | .error e => throw (IO.userError s!"Inlining failed: {e}")
-  let vcResults ←
-    EIO.toIO (fun e => IO.Error.userError e)
-      (Strata.Core.verifyProgram inlined
-        { Core.VerifyOptions.default with verbose := .quiet }
-        (proceduresToVerify := some ["caller"]))
-  -- Collect only failing results
-  let failures := vcResults.filter fun vcr =>
-    match vcr.outcome with
-    | .ok o => o.validityProperty != .unsat
-    | .error _ => true
-  let mut output := ""
-  for vcr in failures do
-    output := output ++ s!"{vcr.obligation.label}: {vcr.formatOutcome}"
-  return output
+#guard_msgs (drop info, error) in
+#eval testInputWithOffset "Postconditions" laurelSource 23
+  (fun p => processLaurelFileWithOptions { translateOptions := { inlineFunctionsWhenPossible := true} } p)
 
 end Strata.Laurel.BodilessInliningTest
+end

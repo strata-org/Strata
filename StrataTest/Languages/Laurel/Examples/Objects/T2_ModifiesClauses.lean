@@ -3,6 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 /-
 A modifies clause CAN be placed on any procedure to generate a modifies axiom.
@@ -14,8 +15,10 @@ since otherwise all heap state is lost after calling them.
 
 -/
 
-import StrataTest.Util.TestDiagnostics
-import StrataTest.Languages.Laurel.TestExamples
+meta import all StrataTest.Util.TestDiagnostics
+meta import all StrataTest.Languages.Laurel.TestExamples
+
+meta section
 
 open StrataTest.Util
 
@@ -127,7 +130,7 @@ procedure modifiesWildcardBodilessCaller()
   var x: int := d#value;
   modifiesWildcardBodiless(c, d);
   assert x == d#value // this should fail because modifies * means anything can change
-//^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+//^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
 };
 
 procedure modifiesWildcardWithBody(c: Container, d: Container)
@@ -152,7 +155,7 @@ procedure modifiesWildcardAndSpecificCaller()
   var x: int := d#value;
   modifiesWildcardAndSpecific(c, d);
   assert x == d#value // fails because modifies * subsumes modifies c
-//^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+//^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
 };
 "
 

@@ -3,10 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
-import Strata.Languages.Core.CallGraph
+meta import Strata.Languages.Core
+meta import Strata.Languages.Core.CallGraph
+import StrataDDM.Integration.Lean.HashCommands
 
+meta section
+open StrataDDM (Program)
 ---------------------------------------------------------------------
 namespace Strata
 
@@ -165,7 +169,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify globalCounterPgm
+#eval Core.verify globalCounterPgm
 
 ---------------------------------------------------------------------
 
@@ -177,4 +181,6 @@ Result: ✅ pass
 #eval TransM.run (translateProgram (globalCounterEnv.commands))
 -/
 
+end Strata
+end
 ---------------------------------------------------------------------

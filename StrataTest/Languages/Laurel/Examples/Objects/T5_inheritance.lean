@@ -3,9 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import StrataTest.Util.TestDiagnostics
-import StrataTest.Languages.Laurel.TestExamples
+meta import all StrataTest.Util.TestDiagnostics
+meta import all StrataTest.Languages.Laurel.TestExamples
+
+meta section
 
 open StrataTest.Util
 
@@ -89,7 +92,7 @@ procedure diamondInheritance()
 };
 
 // Currently does not pass. Implementation needs b type invariant mechanism that we have yet to add.
-//procedure typedParameter(b: Bottom) {
+//procedure typedParameter(b: Bottom) opaque {
 //  var b: Bottom := b;
 //  assert b is Left;
 //  assert b is Right;

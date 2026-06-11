@@ -3,17 +3,20 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DDM.Integration.Lean
-import Strata.DDM.Util.Format
-import Strata.Languages.Core.Core
-import Strata.Languages.Core.DDMTransform.Translate
-import Strata.Languages.Core.StatementSemantics
-import Strata.Languages.Core.ProgramType
-import Strata.Languages.Core.ProgramWF
-import Strata.Transform.CoreTransform
-import Strata.Transform.ProcedureInlining
-import Strata.Util.Tactics
+import StrataDDM.Integration.Lean
+meta import StrataDDM.Util.Format
+meta import Strata.Languages.Core
+meta import Strata.Languages.Core.DDMTransform.Translate
+meta import Strata.Languages.Core.StatementSemantics
+meta import Strata.Languages.Core.ProgramType
+meta import Strata.Languages.Core.ProgramWF
+meta import Strata.Transform.CoreTransform
+meta import Strata.Transform.ProcedureInlining
+meta import Strata.Util.Tactics
+
+meta section
 
 open Core
 open Core.Transform
@@ -212,22 +215,23 @@ def alphaEquivStatement (s1 s2: Core.Statement) (map:IdMap)
 end
 
 private def alphaEquiv (p1 p2:Core.Procedure):Except Format Bool := do
-  if p1.body.length ≠ p2.body.length then
-    .error (s!"# statements do not match: in {p1.header.name}, "
-        ++ s!"inlined fn one has {p1.body.length}"
-        ++ s!" whereas the answer has {p2.body.length}")
-  else
-    let newmap:IdMap := IdMap.mk ([], []) []
-    let stmts := (p1.body.zip p2.body)
-    let m ← List.foldlM (fun (map:IdMap) (s1,s2) =>
-        alphaEquivStatement s1 s2 map)
-      newmap stmts
-    -- The corresponding outputs should be pairwise α-equivalent
-    return ((p1.header.outputs.zip p2.header.outputs).map (fun ((x, _), (y, _)) => alphaEquivIdents x y m)).all id
+  match p1.body, p2.body with
+  | .structured ss1, .structured ss2 =>
+    if ss1.length ≠ ss2.length then
+      .error (s!"# statements do not match: in {p1.header.name}, "
+          ++ s!"inlined fn one has {ss1.length}"
+          ++ s!" whereas the answer has {ss2.length}")
+    else
+      let newmap:IdMap := IdMap.mk ([], []) []
+      let m ← List.foldlM (fun (map:IdMap) (s1,s2) =>
+          alphaEquivStatement s1 s2 map)
+        newmap (ss1.zip ss2)
+      return ((p1.header.outputs.zip p2.header.outputs).map (fun ((x, _), (y, _)) => alphaEquivIdents x y m)).all id
+  | _, _ => .error f!"alphaEquiv: CFG procedure bodies are not supported in the inlining test harness"
 
 
 
-def translate (t : Strata.Program) : Core.Program :=
+def translate (t : StrataDDM.Program) : Core.Program :=
   (TransM.run Inhabited.default (translateProgram t)).fst
 
 def runInlineCall (p : Core.Program) : Core.Program :=
@@ -481,3 +485,4 @@ def testThreeChainCG := do
   | ⟨.error m, _⟩ => s!"ERROR: {m}"))
 
 end ProcedureInliningExamples
+end

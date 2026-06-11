@@ -3,8 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import StrataTest.DL.Imperative.Verify
+meta import all StrataTest.DL.Imperative.Verify
+import StrataDDM.Integration.Lean.HashCommands
+
+meta section
+open StrataDDM (Program)
 
 ---------------------------------------------------------------------
 namespace Strata
@@ -95,3 +100,5 @@ Result: verified
 #eval Strata.ArithPrograms.verify testProgram3
 
 ---------------------------------------------------------------------
+end Strata
+end

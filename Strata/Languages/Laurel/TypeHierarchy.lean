@@ -5,11 +5,12 @@
 -/
 module
 
-public import Strata.Languages.Laurel.MapStmtExpr
-public import Strata.Languages.Laurel.LaurelTypes
-public import Strata.DL.Imperative.MetaData
 import Strata.Languages.Laurel.HeapParameterizationConstants
 import Strata.Util.Tactics
+public import Strata.Languages.Laurel.Resolution
+import Std.Tactic.BVDecide.Normalize.Prop
+import Strata.Languages.Laurel.LaurelTypes
+import Strata.Languages.Laurel.MapStmtExpr
 
 public section
 
@@ -168,7 +169,7 @@ def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
     invs.attach.foldl (fun acc ⟨inv, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr model inv) errs
   | .Assert cond => validateDiamondFieldAccessesForStmtExpr model cond.condition
   | .Assume cond => validateDiamondFieldAccessesForStmtExpr model cond
-  | .PrimitiveOp _ args =>
+  | .PrimitiveOp _ args _ =>
     args.attach.foldl (fun acc ⟨a, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr model a) []
   | .StaticCall _ args =>
     args.attach.foldl (fun acc ⟨a, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr model a) []

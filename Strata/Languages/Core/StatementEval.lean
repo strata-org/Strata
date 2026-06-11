@@ -5,18 +5,15 @@
 -/
 module
 
-public import Strata.Languages.Core.Statement
 import all Strata.Languages.Core.Statement
-public import Strata.Languages.Core.Program
-public import Strata.Languages.Core.Env
 public import Strata.Languages.Core.CmdEval
 public import Strata.Languages.Core.Statistics
-public import Strata.DL.Lambda.LTyUnify
-public import Strata.DL.Lambda.LExprT
 public import Strata.DL.Imperative.StmtEval
 public import Strata.Languages.Core.StatementSemantics
 import all Strata.DL.Imperative.Stmt
 import all Strata.DL.Imperative.CmdEval
+public import Strata.DL.Imperative.CmdEval
+public import Strata.Util.Statistics
 
 ---------------------------------------------------------------------
 
@@ -768,7 +765,7 @@ def Command.runCall (lhs : List Expression.Ident) (procName : String) (args : Li
     match Program.Procedure.find? E.program ⟨procName, ()⟩ with
     | none => CmdEval.updateError E (.Misc s!"procedure '{procName}' not found")
     | some proc =>
-      if proc.body.isEmpty then CmdEval.updateError E (.Misc s!"procedure '{proc.header.name}' has no body")
+      if proc.body.isAbstract then CmdEval.updateError E (.Misc s!"procedure '{proc.header.name}' has no body")
       else
         match args.mapM (LExpr.run E.exprEnv) with
         | .error s => CmdEval.updateError E (.Misc s)
@@ -808,9 +805,14 @@ def Command.runCall (lhs : List Expression.Ident) (procName : String) (args : Li
               hasError := fun E => E.error.isSome
               addError := fun E msg => CmdEval.updateError E (.Misc msg)
             }
-            let config : Imperative.RunConfig Expression Command Env :=
-              .stmts proc.body callEnv
-            let configAfter := Imperative.runStmt ops fuel' config
+            let configAfter := match proc.body with
+              | .structured ss =>
+                let config : Imperative.RunConfig Expression Command Env :=
+                  .stmts ss callEnv
+                Imperative.runStmt ops fuel' config
+              | .cfg _ =>
+                .terminal (CmdEval.updateError callEnv
+                  (.Misc s!"procedure '{procName}': CFG bodies not supported yet"))
             match configAfter with
             | .terminal callEnv' =>
               match callEnv'.error with

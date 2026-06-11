@@ -3,9 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import StrataTest.Util.TestDiagnostics
-import StrataTest.Languages.Laurel.TestExamples
+meta import all StrataTest.Util.TestDiagnostics
+meta import all StrataTest.Languages.Laurel.TestExamples
+
+meta section
 
 open StrataTest.Util
 open Strata
@@ -27,6 +30,11 @@ function letsInFunction() returns (r: int) {
   var y: int := x + 1;
   var z: int := y + 1;
   z
+};
+
+procedure callLetsInFunction() opaque {
+  var x: int := letsInFunction();
+  assert x == 2
 };
 
 function localVariableWithoutInitializer(): int {

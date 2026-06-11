@@ -2,7 +2,6 @@ Successfully parsed.
 HeapReasoning.core.st(98, 2) [modifiesFrameRef1]: ✅ pass
 HeapReasoning.core.st(103, 2) [modifiesFrameRef1]: ✅ pass
 HeapReasoning.core.st(108, 2) [modifiesFrameRef1]: ✅ pass
- [Container_ctor_ensures_4]: ✅ pass
 HeapReasoning.core.st(86, 2) [Container_ctor_ensures_7]: ✅ pass
 HeapReasoning.core.st(87, 2) [Container_ctor_ensures_8]: ✅ pass
 HeapReasoning.core.st(88, 2) [Container_ctor_ensures_9]: ✅ pass
@@ -12,7 +11,6 @@ HeapReasoning.core.st(169, 2) [modifiesFrameRef2]: ✅ pass
 HeapReasoning.core.st(172, 2) [modifiesFrameRef1Next]: ✅ pass
 HeapReasoning.core.st(177, 2) [modifiesFrameRef2Next]: ✅ pass
 HeapReasoning.core.st(132, 2) [UpdateContainers_ensures_5]: ✅ pass
- [UpdateContainers_ensures_6]: ✅ pass
 HeapReasoning.core.st(150, 2) [UpdateContainers_ensures_14]: ✅ pass
 HeapReasoning.core.st(151, 2) [UpdateContainers_ensures_15]: ✅ pass
 HeapReasoning.core.st(152, 2) [UpdateContainers_ensures_16]: ✅ pass
@@ -51,5 +49,4 @@ HeapReasoning.core.st(238, 2) [c2Pineapple0]: ✅ pass
 HeapReasoning.core.st(240, 2) [c1NextEqC2]: ✅ pass
 HeapReasoning.core.st(241, 2) [c2NextEqC1]: ✅ pass
 HeapReasoning.core.st(195, 2) [Main_ensures_1]: ✅ pass
- [Main_ensures_2]: ✅ pass
-All 53 goals passed.
+All 50 goals passed.
