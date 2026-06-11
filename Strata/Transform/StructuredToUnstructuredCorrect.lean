@@ -74,7 +74,7 @@ theorem StepDetCFGStar_trans {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [
 /-- `NoGenSuffix xs` says every ident in `xs` was supplied by user source —
 i.e. is `HasIdent.ident s` only for strings `s` that are *not* of the
 underscore-digit-suffix gen shape. Abbreviates a 1-line predicate that
-appears verbatim ~89 times in the proofs below. -/
+appears throughout the proofs below. -/
 @[expose] abbrev NoGenSuffix {P : PureExpr} [HasIdent P]
     (xs : List P.Ident) : Prop :=
   ∀ x ∈ xs, ∀ s : String,
@@ -220,8 +220,6 @@ theorem run_block_finish {P : PureExpr} [HasFvar P] [HasNot P] [HasVarsPure P P.
   exact ReflTrans.step _ _ _ h_fetch
     (ReflTrans_Transitive _ _ _ _ h_chain
       (ReflTrans.step _ _ _ h_finish (ReflTrans.refl _)))
-
-/-! ## Temporary -/
 
 theorem stmts_nil_terminal {P : PureExpr} [HasBool P] [HasNot P]
     {CmdT : Type}
@@ -3456,17 +3454,16 @@ private theorem StepStmtStar_wfv_preserved {P : PureExpr} [HasFvar P] [HasBool P
   rw [h_eval_eq]
   exact hwfv
 
-/-! ## Agreement-based variants of flushCmds_condGoto_*
+/-! ## Agreement-based condGoto flushing
 
-These variants take the CFG-side accumulated trace pre-lifted via
+This lemma takes the CFG-side accumulated trace pre-lifted via
 `EvalCmds_under_agreement`, allowing the agreement gap (between structured and
 CFG entry stores) to be threaded through the simulation. -/
 
-/-- Variant of `flushCmds_condGoto_true`/`_false` that operates under
-StoreAgreement: the input accum trace is on the CFG side (lifted via
-`EvalCmds_under_agreement`) and reaches `σ_cfg_after`, which agrees with
-`ρ₀.store`. The boolean `b` selects the taken branch (`tl` when `tt`, `fl`
-when `ff`). -/
+/-- Runs the flushed `condGoto` block under StoreAgreement: the input accum
+trace is on the CFG side (lifted via `EvalCmds_under_agreement`) and reaches
+`σ_cfg_after`, which agrees with `ρ₀.store`. The boolean `b` selects the taken
+branch (`tl` when `tt`, `fl` when `ff`). -/
 private theorem flushCmds_condGoto_agree {P : PureExpr} [HasFvar P] [HasNot P]
     [HasVarsPure P P.Expr]
     (extendEval : ExtendEval P)
@@ -3636,7 +3633,7 @@ private theorem flushCmds_simulation_agree {P : PureExpr} [HasFvar P] [HasNot P]
     have h_lkp : cfg.blocks.lookup (StringGenState.gen pfx gen).fst =
         some { cmds := accum.reverse, transfer := DetTransferCmd.goto k .empty } :=
       List.lookup_of_mem_nodup cfg.blocks h_cfg_nodup _ _ h_mem
-    -- `.goto k` ≡ `.condGoto tt k k .empty`; reuse `run_block_goto_true`.
+    -- `.goto k .empty` ≡ `.condGoto tt k k .empty`; reuse `run_block_goto_true`.
     have h_lkp' : cfg.blocks.lookup (StringGenState.gen pfx gen).fst =
         some { cmds := accum.reverse,
                transfer := DetTransferCmd.condGoto HasBool.tt k k .empty } := h_lkp
