@@ -20,7 +20,7 @@ open Strata
 
 namespace Strata.Laurel
 
-def compositeBv32Field := r"
+def compositeBv16Field := r"
 composite Register {
   var value: bv 16
 }
@@ -54,6 +54,6 @@ procedure writeWrongLiteral(r: Register)
 "
 
 #guard_msgs (drop info, error) in
-#eval testInputWithOffset "CompositeBv32Field" compositeBv32Field 23 processLaurelFile
+#eval testInputWithOffset "CompositeBv16Field" compositeBv16Field 23 processLaurelFile
 
 end Laurel
