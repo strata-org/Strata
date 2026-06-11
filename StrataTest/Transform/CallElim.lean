@@ -189,7 +189,7 @@ procedure h(inout j : bool, k : bool) {
 };
 #end
 
-def translate (t : StrataDDM.Program) : Core.Program := (TransM.run Inhabited.default (translateProgram t)).fst
+def translate (t : StrataDDM.SourcedProgram) : Core.Program := (TransM.run Inhabited.default (translateProgram t)).fst
 
 def env : Lambda.LContext CoreLParams := .default (functions := Core.Factory)
 
