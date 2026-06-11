@@ -75,7 +75,8 @@ private def seqEmptyTysIn (p : StrataDDM.Program) : Except String (List String) 
   for d in cp.decls do
     match d with
     | .proc proc _ =>
-      for stmt in proc.body do
+      let stmts ← proc.body.getStructured
+      for stmt in stmts do
         out := out ++ (collectFromStmt stmt).map fmtSeqEmptyTy
     | _ => pure ()
   return out
