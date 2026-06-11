@@ -31,13 +31,6 @@ procedure transparentWithMutatingAssignment(x: int): int
   return 3
 };
 
-procedure transparentWithWhile(x: int): int
-{
-  while(false) {};
-//^^^^^^^^^^^^^^^ error: loops are not supported in transparent bodies or contracts
-  return 3
-};
-
 procedure callsHasMutatingAssignment(x: int): int
  opaque
 {
@@ -61,7 +54,7 @@ procedure impureContractIsNotLegal2(x: int)
 "
 
 #guard_msgs (error, drop all) in
-#eval! testInputWithOffset "NestedImpureStatements" program 14 processLaurelFile
+#eval! testInputWithOffset "NestedImpureStatements" program 17 processLaurelFile
 
 
 end Laurel

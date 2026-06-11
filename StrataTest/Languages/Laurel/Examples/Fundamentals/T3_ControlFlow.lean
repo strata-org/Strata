@@ -19,6 +19,7 @@ def program := r"
 procedure assertAndAssumeInTransparent(a: int) returns (r: int)
 {
   assert 2 == 3;
+//^^^^^^^^^^^^^ error: assertion does not hold
   assume true;
   return a
 };
@@ -111,4 +112,4 @@ procedure valuelessEarlyReturn(b: bool)
 "
 
 #guard_msgs (error, drop all) in
-#eval! testInputWithOffset "ControlFlow" program 14 processLaurelFile
+#eval! testInputWithOffset "ControlFlow" program 17 processLaurelFile

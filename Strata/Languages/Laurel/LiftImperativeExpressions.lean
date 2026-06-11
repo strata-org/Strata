@@ -190,27 +190,6 @@ def containsAssignmentOrImperativeCall (imperativeCallees : List String) (expr :
     all_goals (try term_by_mem)
     all_goals omega
 
-<<<<<<< HEAD
-/-- Like containsAssignment but does NOT recurse into Blocks (treats them as opaque).
-    Used by assert/assume handlers to allow generated Block wrappers through. -/
-def containsBareAssignment (expr : StmtExprMd) : Bool :=
-  match expr with
-  | AstNode.mk val _ =>
-  match val with
-  | .Assign .. => true
-  | .StaticCall _ args => args.attach.any (fun x => containsBareAssignment x.val)
-  | .PrimitiveOp _ args _ => args.attach.any (fun x => containsBareAssignment x.val)
-  | .Block _ _ => false
-  | .IfThenElse cond th el =>
-      containsBareAssignment cond || containsBareAssignment th ||
-      match el with | some e => containsBareAssignment e | none => false
-  | _ => false
-  termination_by expr
-  decreasing_by
-    all_goals ((try cases x); simp_all; try term_by_mem)
-
-=======
->>>>>>> issue-924-contract-and-proof-pass
 /--
 Shared logic for lifting an assignment in expression position:
 prepends the assignment, creates before-snapshots for all targets,

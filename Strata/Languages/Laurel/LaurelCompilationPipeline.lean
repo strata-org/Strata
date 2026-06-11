@@ -293,31 +293,15 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
     emit pass.name "unorderedCoreWithLaurelTypes.st" unorderedCore
 
   let coreWithLaurelTypes := orderFunctionsAndProcedures unorderedCore
-<<<<<<< HEAD
-  -- This early return is a simple way to protect against duplicative errors. Without this return,
-  -- resolution errors reported by Laurel would also be reported by Core.
-  -- There might be better solution that allows getting some resolution errors from Laurel and some verification errors from Core,
-  -- but that would need more consideration.
-  if ! passDiags.isEmpty then
-    return (none, passDiags, program, stats)
-  else
-      emit "CoreWithLaurelTypes" "core.st" coreWithLaurelTypes
-    let initState : TranslateState := {
-      model := fnModel,
-      overflowChecks := options.overflowChecks,
-      procedureNames := coreWithLaurelTypes.decls.foldl (fun r d => match d with
-        | .procedure p => r.insert p.name.text
-        | _ => r ) (Std.HashSet.emptyWithCapacity 0)
-    }
-    let (coreProgramOption, translateState) :=
-      runTranslateM initState (translateLaurelToCore options coreWithLaurelTypes)
-    -- Because of the duplication between functions and procedures, this translation is liable to create duplicate diagnostics
-    let mut allDiagnostics: List DiagnosticModel := passDiags ++ translateState.diagnostics.eraseDups;
-=======
->>>>>>> issue-924-contract-and-proof-pass
 
   emit "CoreWithLaurelTypes" "core.st" coreWithLaurelTypes
-  let initState : TranslateState := { model := fnModel, overflowChecks := options.overflowChecks }
+  let initState : TranslateState := {
+    model := fnModel,
+    overflowChecks := options.overflowChecks,
+    procedureNames := coreWithLaurelTypes.decls.foldl (fun r d => match d with
+      | .procedure p => r.insert p.name.text
+      | _ => r ) (Std.HashSet.emptyWithCapacity 0)
+  }
   let (coreProgramOption, translateState) :=
     runTranslateM initState (translateLaurelToCore options coreWithLaurelTypes)
   -- Because of the duplication between functions and procedures, this translation is liable to create duplicate diagnostics

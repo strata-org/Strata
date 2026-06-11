@@ -41,6 +41,8 @@ def removeReturns (stmt : StmtExprMd) : Except DiagnosticModel StmtExprMd :=
     | .Assert _ => .ok passThrough
     | .Block _ _ => .ok passThrough
     | .IfThenElse _ _ (some _) => .error (diagnosticFromSource head.source "in a transparent body, if-then-else is only supported as the last statement in a block")
+    | .While _ _ _ _ => .error $ diagnosticFromSource head.source $ "loops are not supported in transparent bodies or contracts"
+    | .Var (.Declare _) => .error $ diagnosticFromSource head.source $ "local variables must have initializers in transparent bodies or contracts"
     | _ => .error (diagnosticFromSource head.source
         s!"unsupported statement {head.val.constructorName} in block head")
   | .IfThenElse cond thenBr (some elseBr) => do

@@ -25,7 +25,7 @@ procedure hasRequires(x: int) returns (r: int)
 {
   assert x > 0;
   assert x > 3;
-//^^^^^^^^^^^^ error: assertion does not hold
+//^^^^^^^^^^^^ error: assertion could not be proved
   x + 1
 };
 
@@ -33,7 +33,7 @@ procedure caller()
   opaque
 {
   var x: int := hasRequires(1);
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
   var y: int := hasRequires(3)
 };
 
@@ -55,4 +55,4 @@ procedure multipleRequiresCaller()
 "
 
 #guard_msgs (drop info, error) in
-#eval testInputWithOffset "Preconditions" program 14 processLaurelFile
+#eval testInputWithOffset "Preconditions" program 17 processLaurelFile
