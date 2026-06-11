@@ -589,6 +589,34 @@ def isSubtype (ctx : TypeLattice) (sub sup : HighTypeMd) : Bool :=
     (ctx.ancestors subName.text).contains supName.text || highEq sub' sup'
   | _, _ => highEq sub' sup'
 
+/- ### Variance policy (covers `isSubtype` and `isConsistent`)
+   All child-carrying constructors are INVARIANT by design: `isConsistent`
+   bottoms out in `highEq` (structural equality) for `TSet`, `TMap`,
+   `TTypedField`, `Applied`, `Pure`, and `Intersection`. So `TSet Unknown ~
+   TSet TInt` is FALSE — `Unknown` is a wildcard only at the TOP of a type,
+   never under a constructor. This is intentional: `TSet` / `TMap` are MUTABLE
+   collections, where covariance would be unsound; if you don't know the
+   element type, write a bare `Unknown`, not `TSet Unknown`.
+
+   `MultiValuedExpr` is the SOLE exception that recurses (element-wise
+   consistency, not equality). It is not a mutable container: it is a transient
+   tuple of independent procedure-output values matched against multi-assignment
+   targets, so per-element consistency (letting an `Unknown` output flow into
+   one slot) is correct rather than unsound.
+
+   `Pure b` is invariant today, but it is the one constructor where covariance
+   would be SOUND and desirable — it is the immutable value-view of a composite,
+   and immutability is exactly the condition that makes covariance safe.
+   TODO: Pure could be covariant once it matters (immutable value-view ⇒ covariance is sound)
+
+   `Applied` (generics) is invariant as the safe default for not-yet-designed
+   parametric types; real variance is per-constructor and deliberately deferred.
+
+   `Intersection` is NOT a variance question: `A & B` has lattice structure
+   (`A & B <: A`, `A & B <: B`, etc.) that is not modeled, and the current
+   `highEq` arm zips element-wise IN DECLARATION ORDER, so `A & B ≠ B & A` even
+   though intersection is conceptually unordered. Known limitation, to fix with
+   bespoke subtyping rules when intersections become live. -/
 /-- Consistency `~` (Siek–Taha): the symmetric gradual relation. `Unknown`
     is the dynamic type and is consistent with everything; otherwise
     structural equality after unfolding aliases / constrained types.
