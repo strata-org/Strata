@@ -22,89 +22,19 @@ Also provides `mapProcedureBodiesM` and `mapProgramM` to eliminate the
 
 namespace Strata.Laurel
 
+/-- Shared termination tactic for `mapStmtExpr*` traversals. The argument is
+    the variable representing the expression being recursed on. -/
+local syntax "map_stmt_expr_decreasing" ident : tactic
+macro_rules
+  | `(tactic| map_stmt_expr_decreasing $x:ident) =>
+    `(tactic| (
+      all_goals simp_wf
+      all_goals (try have := AstNode.sizeOf_val_lt $x)
+      all_goals (try have := Condition.sizeOf_condition_lt ‹_›)
+      all_goals (try term_by_mem)
+      all_goals (revert $x; intro x; cases x; simp_all; omega)))
+
 public section
-
-/--
-Bottom-up monadic traversal of `StmtExprMd`. Recurses into all `StmtExprMd`
-children first, then applies `f` to the rebuilt node.
--/
-def mapStmtExprM [Monad m] (f : StmtExprMd → m StmtExprMd) (expr : StmtExprMd) : m StmtExprMd := do
-  let source := expr.source
-  -- `.attach` wraps each element with a proof of membership, which the
-  -- termination checker uses to show the recursive call is on a smaller value.
-  let rebuilt ← match _h : expr.val with
-  | .IfThenElse cond th el =>
-    pure ⟨.IfThenElse (← mapStmtExprM f cond) (← mapStmtExprM f th)
-      (← el.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e), source⟩
-  | .Block stmts label =>
-    pure ⟨.Block (← stmts.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e) label, source⟩
-  | .While cond invs dec body =>
-    pure ⟨.While (← mapStmtExprM f cond)
-      (← invs.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e)
-      (← dec.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e)
-      (← mapStmtExprM f body), source⟩
-  | .Return v =>
-    pure ⟨.Return (← v.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e), source⟩
-  | .Assign targets value =>
-    let targets' ← targets.attach.mapM fun ⟨v, _⟩ => do
-      let ⟨vv, vs⟩ := v
-      match vv with
-      | .Field target fieldName =>
-        pure ⟨Variable.Field (← mapStmtExprM f target) fieldName, vs⟩
-      | .Local _ | .Declare _ => pure v
-    pure ⟨.Assign targets' (← mapStmtExprM f value), source⟩
-  | .Var (.Field target fieldName) =>
-    pure ⟨.Var (.Field (← mapStmtExprM f target) fieldName), source⟩
-  | .PureFieldUpdate target fieldName newValue =>
-    pure ⟨.PureFieldUpdate (← mapStmtExprM f target) fieldName (← mapStmtExprM f newValue), source⟩
-  | .StaticCall callee args =>
-    pure ⟨.StaticCall callee (← args.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e), source⟩
-  | .PrimitiveOp op args skipProof =>
-    pure ⟨.PrimitiveOp op (← args.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e) skipProof, source⟩
-  | .ReferenceEquals lhs rhs =>
-    pure ⟨.ReferenceEquals (← mapStmtExprM f lhs) (← mapStmtExprM f rhs), source⟩
-  | .AsType target ty =>
-    pure ⟨.AsType (← mapStmtExprM f target) ty, source⟩
-  | .IsType target ty =>
-    pure ⟨.IsType (← mapStmtExprM f target) ty, source⟩
-  | .InstanceCall target callee args =>
-    pure ⟨.InstanceCall (← mapStmtExprM f target) callee
-      (← args.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e), source⟩
-  | .Quantifier mode param trigger body =>
-    pure ⟨.Quantifier mode param (← trigger.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e)
-      (← mapStmtExprM f body), source⟩
-  | .Assigned name =>
-    pure ⟨.Assigned (← mapStmtExprM f name), source⟩
-  | .Old value =>
-    pure ⟨.Old (← mapStmtExprM f value), source⟩
-  | .Fresh value =>
-    pure ⟨.Fresh (← mapStmtExprM f value), source⟩
-  | .Assert cond =>
-    pure ⟨.Assert { cond with condition := ← mapStmtExprM f cond.condition }, source⟩
-  | .Assume cond =>
-    pure ⟨.Assume (← mapStmtExprM f cond), source⟩
-  | .ProveBy value proof =>
-    pure ⟨.ProveBy (← mapStmtExprM f value) (← mapStmtExprM f proof), source⟩
-  | .ContractOf ty func =>
-    pure ⟨.ContractOf ty (← mapStmtExprM f func), source⟩
-  -- Leaves: no StmtExprMd children.
-  -- ⚠ If a new StmtExpr constructor with StmtExprMd children is added,
-  -- it must get its own arm above; otherwise all passes will silently
-  -- skip recursion into those children.
-  | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _
-  | .Var (.Local _) | .Var (.Declare _) | .New _ | .This | .Abstract | .All | .Hole .. => pure expr
-  f rebuilt
-termination_by sizeOf expr
-decreasing_by
-  all_goals simp_wf
-  all_goals (try have := AstNode.sizeOf_val_lt expr)
-  all_goals (try have := Condition.sizeOf_condition_lt ‹_›)
-  all_goals (try term_by_mem)
-  all_goals (cases expr; simp_all; omega)
-
-/-- Pure bottom-up traversal of `StmtExprMd`. -/
-def mapStmtExpr (f : StmtExprMd → StmtExprMd) (expr : StmtExprMd) : StmtExprMd :=
-  (mapStmtExprM (m := Id) f expr)
 
 /--
 Bottom-up monadic traversal with a pre-filter. Before recursing into a node's
@@ -177,12 +107,18 @@ def mapStmtExprPrePostM [Monad m] (pre : StmtExprMd → m (Option StmtExprMd))
   | .Var (.Local _) | .Var (.Declare _) | .New _ | .This | .Abstract | .All | .Hole .. => pure expr
   post rebuilt
 termination_by sizeOf expr
-decreasing_by
-  all_goals simp_wf
-  all_goals (try have := AstNode.sizeOf_val_lt expr)
-  all_goals (try have := Condition.sizeOf_condition_lt ‹_›)
-  all_goals (try term_by_mem)
-  all_goals (cases expr; simp_all; omega)
+decreasing_by map_stmt_expr_decreasing expr
+
+/--
+Bottom-up monadic traversal of `StmtExprMd`. Recurses into all `StmtExprMd`
+children first, then applies `f` to the rebuilt node.
+-/
+def mapStmtExprM [Monad m] (f : StmtExprMd → m StmtExprMd) (expr : StmtExprMd) : m StmtExprMd :=
+  mapStmtExprPrePostM (fun _ => pure none) f expr
+
+/-- Pure bottom-up traversal of `StmtExprMd`. -/
+def mapStmtExpr (f : StmtExprMd → StmtExprMd) (expr : StmtExprMd) : StmtExprMd :=
+  (mapStmtExprM (m := Id) f expr)
 
 /--
 Bottom-up monadic traversal where `post` returns a list of statements.
@@ -267,12 +203,7 @@ def mapStmtExprFlattenM [Monad m] (pre : StmtExprMd → m (Option (List StmtExpr
     let results ← post rebuilt
     return collapse results source
   termination_by sizeOf e
-  decreasing_by
-    all_goals simp_wf
-    all_goals (try have := AstNode.sizeOf_val_lt e)
-    all_goals (try have := Condition.sizeOf_condition_lt ‹_›)
-    all_goals (try term_by_mem)
-    all_goals (cases e; simp_all; omega)
+  decreasing_by map_stmt_expr_decreasing e
   go expr
 
 /-- Apply a monadic transformation to all procedure bodies. -/

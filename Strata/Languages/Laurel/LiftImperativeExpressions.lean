@@ -190,27 +190,6 @@ def containsAssignmentOrImperativeCall (imperativeCallees : List String) (expr :
     all_goals (try term_by_mem)
     all_goals omega
 
-/-- Check if an expression contains any non-functional procedure calls (recursively). -/
-def containsImperativeCall (model : SemanticModel) (expr : StmtExprMd) : Bool :=
-  match expr with
-  | AstNode.mk val _ =>
-  match val with
-  | .StaticCall name args =>
-    (match model.get name with
-    | .staticProcedure proc => !proc.isFunctional
-    | _ => false) ||
-      args.attach.any (fun x => containsImperativeCall model x.val)
-  | .PrimitiveOp _ args _ => args.attach.any (fun x => containsImperativeCall model x.val)
-  | .Block stmts _ => stmts.attach.any (fun x => containsImperativeCall model x.val)
-  | .IfThenElse cond th el =>
-      containsImperativeCall model cond ||
-      containsImperativeCall model th ||
-      match el with | some e => containsImperativeCall model e | none => false
-  | _ => false
-  termination_by expr
-  decreasing_by
-    all_goals ((try cases x); simp_all; try term_by_mem)
-
 /--
 Shared logic for lifting an assignment in expression position:
 prepends the assignment, creates before-snapshots for all targets,

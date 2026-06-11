@@ -274,8 +274,7 @@ def contractPass (program : Program) : Program :=
     let preProcs := proc.preconditions.zipIdx.map fun (c, i) =>
       mkConditionProc (preCondProcName proc.name.text i) proc.inputs c
     let postProcs := postconds.zipIdx.map fun (c, i) =>
-      mkPostConditionProc (postCondProcName proc.name.text i)
-        proc.inputs proc.outputs c
+      mkConditionProc (postCondProcName proc.name.text i) (proc.inputs ++ proc.outputs) c
     preProcs ++ postProcs
 
   -- Transform procedures: strip contracts, add assume/assert, rewrite call sites
