@@ -39,8 +39,8 @@ op call(callee: StmtExpr, args: CommaSepBy StmtExpr): StmtExpr =>
 // Instantiation
 op new(name: Ident): StmtExpr => "new " name;
 
-// Field access
-op fieldAccess (obj: StmtExpr, field: Ident): StmtExpr => @[prec(90)] obj "#" field;
+// Field access. `leftassoc` so chained access (`a#b#c`) parses as `(a#b)#c`.
+op fieldAccess (obj: StmtExpr, field: Ident): StmtExpr => @[prec(90), leftassoc] obj "#" field;
 
 // Identifiers/Variables - must come after fieldAccess so c.value parses as fieldAccess not identifier
 op identifier (name: Ident): StmtExpr => name;

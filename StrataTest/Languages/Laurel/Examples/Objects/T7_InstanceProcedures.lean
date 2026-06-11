@@ -209,4 +209,48 @@ procedure useAccount()
 #guard_msgs (drop info, error) in
 #eval testInputWithOffset "OpaqueMethodNoBody" opaqueMethodNoBody 184 processLaurelFile
 
+/-! ## 7. Instance method called through a field-selected receiver:
+    `obj#field#method()`. -/
+
+def fieldSelectedReceiver := r"
+composite Inner {
+  var x: int
+  procedure isOne(self: Inner) returns (r: bool)
+    opaque
+    ensures r == (self#x == 1)
+  ;
+}
+
+composite Outer {
+  var inner: Inner
+}
+
+procedure useOuter()
+  opaque
+{
+  var o: Outer := new Outer;
+  var b: bool := o#inner#isOne()
+};
+"
+
+#guard_msgs (drop info, error) in
+#eval testInputWithOffset "FieldSelectedReceiver" fieldSelectedReceiver 219 processLaurelFile
+
+/-! ## 8. Chained field read: `obj#field#x`. -/
+
+def chainedFieldRead := r"
+composite Inner { var x: int }
+composite Outer { var inner: Inner }
+
+procedure useOuter()
+  opaque
+{
+  var o: Outer := new Outer;
+  var v: int := o#inner#x
+};
+"
+
+#guard_msgs (drop info, error) in
+#eval testInputWithOffset "ChainedFieldRead" chainedFieldRead 243 processLaurelFile
+
 end Laurel

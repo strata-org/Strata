@@ -278,7 +278,8 @@ where
           | return [⟨ .Hole, source ⟩]
 
         let valTy := (model.get fieldName).getType
-        let readExpr := ⟨ .StaticCall "readField" [mkMd (.Var (.Local heapVar)), selectTarget, mkMd (.StaticCall qualifiedName [])], source ⟩
+        let selectTarget' ← recurseOne selectTarget
+        let readExpr := ⟨ .StaticCall "readField" [mkMd (.Var (.Local heapVar)), selectTarget', mkMd (.StaticCall qualifiedName [])], source ⟩
         -- Unwrap Box: apply the appropriate destructor
         recordBoxConstructor model valTy.val
         return [mkMd <| .StaticCall (boxDestructorName model valTy.val) [readExpr]]

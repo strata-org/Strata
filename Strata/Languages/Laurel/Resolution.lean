@@ -287,7 +287,7 @@ def resolveRef (name : Identifier) (source : Option FileRange := none)
 /-- Extract the UserDefined type name from a resolved target expression by looking up its scope entry. -/
 private def targetTypeName (target : StmtExprMd) : ResolveM (Option String) := do
   let s ← get
-  match target.val with
+  match _h : target.val with
   | .Var (.Local ref) =>
     match s.scope.get? ref.text with
     | some (_, node) =>
@@ -295,7 +295,26 @@ private def targetTypeName (target : StmtExprMd) : ResolveM (Option String) := d
       | .UserDefined typRef => pure (some typRef.text)
       | _ => pure none
     | none => pure none
+  | .Var (.Field inner fieldName) => do
+    match (← targetTypeName inner) with
+    | none => pure none
+    | some innerTy =>
+      match s.typeScopes.get? innerTy with
+      | none => pure none
+      | some typeScope =>
+        match typeScope.get? fieldName.text with
+        | some (_, node) =>
+          match node.getType.val with
+          | .UserDefined typRef => pure (some typRef.text)
+          | _ => pure none
+        | none => pure none
   | _ => pure none
+  termination_by sizeOf target
+  decreasing_by
+    have := AstNode.sizeOf_val_lt target
+    have : sizeOf target.val = sizeOf (StmtExpr.Var (Variable.Field inner fieldName)) := congrArg sizeOf _h
+    simp at this
+    omega
 
 /-- Try to resolve a field name via a type scope lookup. Returns `some id` on success. -/
 private def resolveFieldInTypeScope (typeName : String) (fieldName : Identifier) : ResolveM (Option Identifier) := do

@@ -5,6 +5,7 @@
 -/
 -- Grammar updated: renamed Optional* categories (op names updated)
 -- Grammar updated: `call` callee at prec 89 to accept fieldAccess (prec 90) chains
+-- Grammar updated: `fieldAccess` is leftassoc so `a#b#c` parses as `(a#b)#c`
 module
 
 -- Laurel dialect definition, loaded from LaurelGrammar.st
