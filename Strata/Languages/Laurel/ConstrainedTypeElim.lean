@@ -121,7 +121,58 @@ private def inScope (action : ElimM α) : ElimM α := do
   set saved
   return result
 
-def elimStmt (ptMap : ConstrainedTypeMap)
+/-- If `target` is an assignment target of a constrained type, return the
+    constrained type's name together with an expression that reads the target
+    back. The declared type is taken from the `Declare` parameter or, for
+    `Local`/`Field` targets, from the semantic model. -/
+def constrainedTargetReadback (ptMap : ConstrainedTypeMap) (model : SemanticModel)
+    (target : VariableMd) : Option (Identifier × StmtExprMd) :=
+  let src := target.source
+  let check (ty : HighType) (ref : StmtExprMd) : Option (Identifier × StmtExprMd) :=
+    match ty with
+    | .UserDefined name => if ptMap.contains name.text then some (name, ref) else none
+    | _ => none
+  match target.val with
+  | .Local name => check (model.get name).getType.val ⟨.Var (.Local name), src⟩
+  | .Declare param => check param.type.val ⟨.Var (.Local param.name), src⟩
+  | .Field tgt fieldName => check (model.get fieldName).getType.val ⟨.Var (.Field tgt fieldName), src⟩
+
+/-- Wrap an assignment that appears in *expression* position so that the
+    constraint of any constrained-typed target is checked.
+
+    For `x := v` where `x : T` is constrained, produces the block expression
+    `{ x := v; assert T$constraint(x); x }`, whose value is the assigned value.
+    The constraint is asserted on a read-back of the target (after the
+    assignment) rather than on the value `v`, so `v` is evaluated exactly once
+    and the check is semantics-preserving.
+
+    `elimStmt` already handles assignments that appear as statements; this covers
+    assignments nested inside expressions (e.g. `y := (x := -1) + 1`), which are
+    only hoisted to statement level by the later `LiftExpressionAssignments`
+    pass. That pass preserves the order of side-effecting statements within an
+    expression-position block, so the assertion stays after the assignment.
+    Non-`Assign` nodes are returned unchanged. -/
+def wrapAssignNode (ptMap : ConstrainedTypeMap) (model : SemanticModel)
+    (node : StmtExprMd) : StmtExprMd :=
+  match node.val with
+  | .Assign targets _value =>
+    match targets.filterMap (constrainedTargetReadback ptMap model) with
+    | [] => node
+    | infos@((_, resultRef) :: _) =>
+      let src := node.source
+      let asserts : List StmtExprMd := infos.map fun (name, ref) =>
+        ⟨.Assert { condition := ⟨.StaticCall (mkId s!"{name.text}$constraint") [ref], src⟩ }, src⟩
+      ⟨.Block ([node] ++ asserts ++ [resultRef]) none, src⟩
+  | _ => node
+
+/-- Insert constraint assertions for every assignment to a constrained-typed
+    target that appears within an expression. A no-op on expressions that
+    contain no such assignment. -/
+def wrapExprAssigns (ptMap : ConstrainedTypeMap) (model : SemanticModel)
+    (expr : StmtExprMd) : StmtExprMd :=
+  mapStmtExpr (wrapAssignNode ptMap model) expr
+
+def elimStmt (ptMap : ConstrainedTypeMap) (model : SemanticModel)
     (stmt : StmtExprMd) : ElimM (List StmtExprMd) := do
   let source := stmt.source
 
@@ -134,7 +185,11 @@ def elimStmt (ptMap : ConstrainedTypeMap)
       | none => []
     pure ([stmt] ++ check)
 
-  | .Assign targets _value =>
+  | .Assign targets value =>
+    -- Wrap any assignments nested in the value expression (expression-position
+    -- assignments) so their constrained-type constraints are checked too.
+    let value := wrapExprAssigns ptMap model value
+    let stmt' : StmtExprMd := ⟨.Assign targets value, source⟩
     -- Handle Declare targets for constrained type elimination
     let declareChecks ← targets.foldlM (init := ([] : List StmtExprMd)) fun acc target =>
       match target.val with
@@ -149,23 +204,39 @@ def elimStmt (ptMap : ConstrainedTypeMap)
             fun c => ⟨.Assert { condition := c }, source⟩
           pure (acc ++ assert)
         | none => pure acc
-      | _ => pure acc
-    pure ([stmt] ++ declareChecks)
+      | .Field _fieldTarget fieldName => do
+        -- Writing to a constrained-typed composite field: assert the
+        -- constraint holds for the value being stored. The field's declared
+        -- type comes from the semantic model. (When this pass ran after
+        -- HeapParameterization, this check was produced via the `Declare`
+        -- temporary that lowering introduced; running first, we must emit it
+        -- directly from the field write, asserting on the assigned value.)
+        match (model.get fieldName).getType.val with
+        | .UserDefined name =>
+          if ptMap.contains name.text then
+            let c : StmtExprMd := ⟨.StaticCall (mkId s!"{name.text}$constraint") [value], source⟩
+            pure (acc ++ [⟨.Assert { condition := c }, source⟩])
+          else pure acc
+        | _ => pure acc
+    pure ([stmt'] ++ declareChecks)
 
   | .Block stmts sep =>
-    let stmtss ← inScope (stmts.mapM (elimStmt ptMap))
+    let stmtss ← inScope (stmts.mapM (elimStmt ptMap model))
     pure [⟨.Block stmtss.flatten sep, source⟩]
 
   | .IfThenElse cond thenBr (some elseBr) =>
-    let thenSs ← inScope (elimStmt ptMap thenBr)
-    let elseSs ← inScope (elimStmt ptMap elseBr)
+    let cond := wrapExprAssigns ptMap model cond
+    let thenSs ← inScope (elimStmt ptMap model thenBr)
+    let elseSs ← inScope (elimStmt ptMap model elseBr)
     pure [⟨.IfThenElse cond (wrap thenSs source) (some (wrap elseSs source)), source⟩]
   | .IfThenElse cond thenBr none =>
-    let thenSs ← inScope (elimStmt ptMap thenBr)
+    let cond := wrapExprAssigns ptMap model cond
+    let thenSs ← inScope (elimStmt ptMap model thenBr)
     pure [⟨.IfThenElse cond (wrap thenSs source) none, source⟩]
 
   | .While cond inv dec body =>
-    let bodySs ← inScope (elimStmt ptMap body)
+    let cond := wrapExprAssigns ptMap model cond
+    let bodySs ← inScope (elimStmt ptMap model body)
     pure [⟨.While cond inv dec (wrap bodySs source), source⟩]
 
   | _ => pure [stmt]
@@ -176,7 +247,7 @@ decreasing_by
   all_goals (try term_by_mem)
   all_goals omega
 
-def elimProc (ptMap : ConstrainedTypeMap) (proc : Procedure) : Procedure :=
+def elimProc (ptMap : ConstrainedTypeMap) (model : SemanticModel) (proc : Procedure) : Procedure :=
   let inputRequires : List Condition := proc.inputs.filterMap fun p =>
     (constraintCallFor ptMap p.type.val p.name (src := p.type.source)).map
       fun c => { condition := c }
@@ -187,14 +258,14 @@ def elimProc (ptMap : ConstrainedTypeMap) (proc : Procedure) : Procedure :=
     if isConstrainedType ptMap p.type.val then s.insert p.name.text p.type.val else s
   let body' := match proc.body with
   | .Transparent bodyExpr =>
-    let (stmts, _) := (elimStmt ptMap bodyExpr).run initVars
+    let (stmts, _) := (elimStmt ptMap model bodyExpr).run initVars
     let body := wrap stmts bodyExpr.source
     if outputEnsures.isEmpty then .Transparent body
     else
       let retBody := if proc.isFunctional then ⟨.Return (some body), bodyExpr.source⟩ else body
       .Opaque outputEnsures (some retBody) []
   | .Opaque postconds impl modif =>
-    let impl' := impl.map fun b => wrap ((elimStmt ptMap b).run initVars).1 b.source
+    let impl' := impl.map fun b => wrap ((elimStmt ptMap model b).run initVars).1 b.source
     .Opaque (postconds ++ outputEnsures) impl' modif
   | .Abstract postconds => .Abstract (postconds ++ outputEnsures)
   | .External => .External
@@ -226,7 +297,20 @@ private def mkWitnessProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : 
     isFunctional := false
     decreases := none }
 
-public def constrainedTypeElim (_model : SemanticModel) (program : Program)
+/-- Eliminate constrained types within a composite type definition: resolve
+    constrained field types to their base types and run constrained type
+    elimination on the composite's instance procedures.
+
+    This is necessary because `constrainedTypeElim` removes the constrained type
+    definitions from the program. Any reference to a constrained type left inside
+    a composite (e.g. a `count: nat` field) would otherwise dangle and fail to
+    resolve in later passes and the final Core translation. -/
+def elimCompositeType (ptMap : ConstrainedTypeMap) (model : SemanticModel) (ct : CompositeType) : CompositeType :=
+  { ct with
+    fields := ct.fields.map fun f => { f with type := resolveType ptMap f.type }
+    instanceProcedures := ct.instanceProcedures.map (elimProc ptMap model) }
+
+public def constrainedTypeElim (model : SemanticModel) (program : Program)
     : Program × List DiagnosticModel :=
   let ptMap := buildConstrainedTypeMap program.types
   if ptMap.isEmpty then (program, []) else
@@ -239,9 +323,12 @@ public def constrainedTypeElim (_model : SemanticModel) (program : Program)
       acc.cons (diagnosticFromSource proc.name.source "constrained return types on functions are not yet supported")
     else acc
   ({ program with
-    staticProcedures := constraintFuncs ++ program.staticProcedures.map (elimProc ptMap)
+    staticProcedures := constraintFuncs ++ program.staticProcedures.map (elimProc ptMap model)
                         ++ witnessProcedures
-    types := program.types.filter fun | .Constrained _ => false | _ => true },
+    types := program.types.filterMap fun
+      | .Constrained _ => none
+      | .Composite ct => some (.Composite (elimCompositeType ptMap model ct))
+      | other => some other },
    funcDiags)
 
 /-- Pipeline pass: constrained type elimination. -/

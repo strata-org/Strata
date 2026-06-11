@@ -89,7 +89,7 @@ def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
     | some (.datatypeDefinition dt) => return .tcons dt.name.text []
     | some (.datatypeConstructor typeName _) => return .tcons typeName.text []
     | _ => do -- resolution should have already emitted a diagnostic
-      emitCoreDiagnostic (diagnosticFromSource ty.source s!"UserDefined type could not be resolved to a composite or datatype" DiagnosticType.StrataBug)
+      emitCoreDiagnostic (diagnosticFromSource ty.source s!"UserDefined type {name} could not be resolved to a composite or datatype" DiagnosticType.StrataBug)
       return .tcons "Composite" []
   | .TCore s => return .tcons s []
   | .TReal => return LMonoTy.real
