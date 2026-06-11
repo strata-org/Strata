@@ -1239,6 +1239,7 @@ def translateMeasure (p : Program) (bindings : TransBindings) (arg : Arg) :
     pure (some e)
   | _ => pure none
 
+
 def initVarStmts (tpids : ListMap Core.Expression.Ident LTy) (bindings : TransBindings)
     (md : MetaData Core.Expression):
   TransM ((List Core.Statement) × TransBindings) := do
