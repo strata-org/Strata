@@ -40,6 +40,20 @@ procedure invalidPostcondition(x: int)
 //        ^^^^^ error: postcondition does not hold
 {
 };
+
+procedure bar(x: int) returns (r: int)
+  requires x > 0
+  opaque
+  ensures r > 0
+{
+  r := x + 1
+};
+
+procedure caller() returns (out: int)
+  opaque
+{
+  out := bar(bar(5))
+};
 "
 
 #guard_msgs (drop info, error) in

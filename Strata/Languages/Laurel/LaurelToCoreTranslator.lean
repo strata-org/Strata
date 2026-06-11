@@ -580,43 +580,7 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
 
   let body : List Core.Statement := [.block "$body" (bodyStmts.getD []) mdWithUnknownLoc]
   let spec : Core.Procedure.Spec := { preconditions, postconditions }
-  return { header, spec, body }
-
-def translateInvokeOnAxiom (proc : Procedure) (trigger : StmtExprMd)
-    : TranslateM (Option Core.Decl) := do
-  let postconds := match proc.body with
-    | .Opaque postconds _ _ | .Abstract postconds => postconds
-    | _ => []
-  if postconds.isEmpty then return none
-  -- All input param names become bound variables.
-  -- buildQuants nests ∀ p1, ∀ p2, ..., ∀ pn :: body, so inside body the innermost
-  -- binder (pn) is de Bruijn index 0, and the outermost (p1) is index n-1.
-  -- translateExpr uses findIdx? on boundVars, so we must list params innermost-first
-  -- (i.e. reversed) so that pn → 0, ..., p1 → n-1.
-  let boundVars := proc.inputs.reverse.map (·.name)
-  -- Translate postconditions and trigger with the full bound-var context
-  let postcondExprs ← postconds.mapM (fun pc => translateExpr pc.condition boundVars (isPureContext := true))
-  let bodyExpr : Core.Expression.Expr := match postcondExprs with
-    | [] => .const () (.boolConst true)
-    | [e] => e
-    | e :: rest => rest.foldl (fun acc x => LExpr.mkApp () boolAndOp [acc, x]) e
-  let triggerExpr ← translateExpr trigger boundVars (isPureContext := true)
-  -- Wrap in ∀ from outermost (first param) to innermost (last param).
-  -- The trigger is placed on the innermost quantifier.
-  let quantified ← buildQuants proc.inputs bodyExpr triggerExpr
-  return some (.ax { name := s!"invokeOn_{proc.name.text}", e := quantified } (identifierToCoreMd proc.name))
-where
-  /-- Build `∀ p1 ... pn :: { trigger } body`. The trigger is on the innermost quantifier. -/
-  buildQuants (params : List Parameter)
-      (body : Core.Expression.Expr) (trigger : Core.Expression.Expr)
-      : TranslateM Core.Expression.Expr := do
-    match params with
-    | [] => return body
-    | [p] =>
-      return LExpr.allTr () p.name.text (some (← translateType p.type)) trigger body
-    | p :: rest => do
-      let inner ← buildQuants rest body trigger
-      return LExpr.all () p.name.text (some (← translateType p.type)) inner
+  return { header, spec, body := .structured body }
 
 structure LaurelTranslateOptions where
   emitResolutionErrors : Bool := true
@@ -633,6 +597,13 @@ structure LaurelVerifyOptions where
 
 instance : Inhabited LaurelVerifyOptions where
   default := {}
+
+/-- Unwrap the pattern produced by EliminateValuesInReturns + EliminateReturnStatements:
+    `{ result := <expr>; exit "$return" } $return` → `<expr>` -/
+private def unwrapReturnBlock (b : StmtExprMd) : StmtExprMd :=
+  match b.val with
+  | .Block [⟨.Assign [⟨.Local _, _⟩] value, _⟩, ⟨.Exit "$return", _⟩] (some "$return") => value
+  | _ => b
 
 /--
 Translate a Laurel Procedure to a Core Function (when applicable) using `TranslateM`.
@@ -670,18 +641,10 @@ def translateProcedureToFunction (options: LaurelTranslateOptions) (isRecursive:
 
   let body ← match proc.body with
     | .Transparent bodyExpr =>
-      -- Unwrap the pattern produced by EliminateValuesInReturns + EliminateReturnStatements:
-      -- { result := <expr>; exit "$return" } $return  →  <expr>
-      let unwrapped := match bodyExpr.val with
-        | .Block [⟨.Assign [⟨.Local _, _⟩] value, _⟩, ⟨.Exit "$return", _⟩] (some "$return") => value
-        | _ => bodyExpr
-      some <$> translateExpr unwrapped [] (isPureContext := true)
+      some <$> translateExpr (unwrapReturnBlock bodyExpr) [] (isPureContext := true)
     | .Opaque _ (some bodyExpr) _ =>
       emitDiagnostic (diagnosticFromSource proc.name.source "functions with postconditions are not yet supported")
-      let unwrapped := match bodyExpr.val with
-        | .Block [⟨.Assign [⟨.Local _, _⟩] value, _⟩, ⟨.Exit "$return", _⟩] (some "$return") => value
-        | _ => bodyExpr
-      some <$> translateExpr unwrapped [] (isPureContext := true)
+      some <$> translateExpr (unwrapReturnBlock bodyExpr) [] (isPureContext := true)
     | _ => pure none
   let f : Core.Function := {
     name := ⟨proc.name.text, ()⟩

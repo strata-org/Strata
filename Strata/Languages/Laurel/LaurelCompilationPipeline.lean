@@ -246,11 +246,6 @@ structure CorePass where
 
 /-- The ordered sequence of passes on the unordered Core representation. -/
 private def corePipeline : Array CorePass := #[
-  -- { name := "EliminateMultipleOutputs"
-  --   run := fun uc _m => eliminateMultipleOutputs uc },
-  -- { name := "InlineLocalVariablesInExpressions"
-  --   needsResolves := true
-  --   run := fun uc _m => inlineLocalVariablesInExpressions uc },
   { name := "LiftImperativeExpressionsInCore"
     needsResolves := true
     run := fun uc m => liftImperativeExpressionsInCore uc m }
@@ -270,6 +265,10 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
     | none => Strata.Pipeline.PipelineContext.create (outputMode := .quiet)
   runPipelineM options.keepAllFilesPrefix do
   let (program, model, passDiags, stats) ← runLaurelPasses options pctx program
+  -- This early return is a simple way to protect against duplicative errors. Without this return,
+  -- resolution errors reported by Laurel would also be reported by Core.
+  -- There might be better solution that allows getting some resolution errors from Laurel and some verification errors from Core,
+  -- but that would need more consideration.
   if ! passDiags.isEmpty then
     return (none, passDiags, program, stats)
 
@@ -294,6 +293,7 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
     emit pass.name "unorderedCoreWithLaurelTypes.st" unorderedCore
 
   let coreWithLaurelTypes := orderFunctionsAndProcedures unorderedCore
+<<<<<<< HEAD
   -- This early return is a simple way to protect against duplicative errors. Without this return,
   -- resolution errors reported by Laurel would also be reported by Core.
   -- There might be better solution that allows getting some resolution errors from Laurel and some verification errors from Core,
@@ -313,15 +313,24 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
       runTranslateM initState (translateLaurelToCore options coreWithLaurelTypes)
     -- Because of the duplication between functions and procedures, this translation is liable to create duplicate diagnostics
     let mut allDiagnostics: List DiagnosticModel := passDiags ++ translateState.diagnostics.eraseDups;
+=======
+>>>>>>> issue-924-contract-and-proof-pass
 
-    if !translateState.coreDiagnostics.isEmpty && allDiagnostics.isEmpty then
-      allDiagnostics := allDiagnostics ++ translateState.coreDiagnostics
+  emit "CoreWithLaurelTypes" "core.st" coreWithLaurelTypes
+  let initState : TranslateState := { model := fnModel, overflowChecks := options.overflowChecks }
+  let (coreProgramOption, translateState) :=
+    runTranslateM initState (translateLaurelToCore options coreWithLaurelTypes)
+  -- Because of the duplication between functions and procedures, this translation is liable to create duplicate diagnostics
+  let mut allDiagnostics: List DiagnosticModel := passDiags ++ translateState.diagnostics.eraseDups;
 
-    if coreProgramOption.isSome then
-      emit "Core" "core.st" coreProgramOption.get!
-    let coreProgramOption :=
-      if translateState.coreDiagnostics.isEmpty then coreProgramOption else none
-    return (coreProgramOption, allDiagnostics, program, stats)
+  if !translateState.coreDiagnostics.isEmpty && allDiagnostics.isEmpty then
+    allDiagnostics := allDiagnostics ++ translateState.coreDiagnostics
+
+  if coreProgramOption.isSome then
+    emit "Core" "core.st" coreProgramOption.get!
+  let coreProgramOption :=
+    if translateState.coreDiagnostics.isEmpty then coreProgramOption else none
+  return (coreProgramOption, allDiagnostics, program, stats)
 
 /--
 Translate Laurel Program to Core Program.

@@ -208,6 +208,32 @@ info: ok: {
 #eval do let ans ← typeCheck LContext.default TEnv.default Program.init none testFuncDeclTypeCheck
          return format ans.fst
 
+-- Regression test for #1289: outer type variable captured in local function body.
+def testOuterTyVarCapture : List Statement :=
+  let localFunc : PureFunc Expression := {
+    name := ⟨"f", ()⟩,
+    typeArgs := ["b"],
+    isConstr := false,
+    inputs := [(⟨"y", ()⟩, .forAll [] (.ftvar "b"))],
+    output := .forAll [] (.ftvar "b"),
+    body := some (.app () (.abs () "z" (some (.ftvar "a")) (.bvar () 0))
+                          (.fvar () ⟨"y", ()⟩ none)),
+    attr := #[],
+    concreteEval := none,
+    axioms := []
+  }
+  [.funcDecl localFunc .empty]
+
+/--
+info: error: Function 'f': body contains undeclared type variables [a] (not in typeArgs [b])
+-/
+#guard_msgs in
+#eval do
+  -- "a" is in the outer context as a type variable (simulating a polymorphic procedure)
+  let Env := TEnv.default.updateContext {types := [[("x", .forAll ["a"] (.ftvar "a"))]]}
+  let ans ← typeCheck LContext.default Env Program.init none testOuterTyVarCapture
+  return format ans.fst
+
 end FuncDeclTests
 
 section NondetCondTests
@@ -256,7 +282,7 @@ private def testProc : Procedure :=
       inputs := [(⟨"x", ()⟩, .int)],
       outputs := [(⟨"x", ()⟩, .int), (⟨"y", ()⟩, .int)] },
     spec := { preconditions := [], postconditions := [] },
-    body := [] }
+    body := .structured [] }
 
 private def testProgram : Program :=
   { decls := [.proc testProc .empty] }

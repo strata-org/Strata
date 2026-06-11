@@ -55,24 +55,12 @@ private def mkCall (callee : String) (args : List StmtExprMd) : StmtExprMd :=
 private def paramsToArgs (params : List Parameter) : List StmtExprMd :=
   params.map fun p => mkMd (.Var (.Local p.name))
 
-/-- Build a helper function for a single condition. -/
+/-- Build a helper function for a single condition over the given parameters.
+    Preconditions pass `proc.inputs`; postconditions pass `proc.inputs ++ proc.outputs`. -/
 private def mkConditionProc (name : String) (params : List Parameter)
     (condition : Condition) : Procedure :=
   { name := mkId name
     inputs := params
-    outputs := [⟨mkId "$result", { val := .TBool, source := none }⟩]
-    preconditions := []
-    decreases := none
-    body := .Transparent condition.condition }
-
-/-- Build a postcondition function for a single condition that takes all inputs
-    and all outputs as parameters. -/
-private def mkPostConditionProc (name : String)
-    (inputParams : List Parameter) (outputParams : List Parameter)
-    (condition : Condition) : Procedure :=
-  let allParams := inputParams ++ outputParams
-  { name := mkId name
-    inputs := allParams
     outputs := [⟨mkId "$result", { val := .TBool, source := none }⟩]
     preconditions := []
     decreases := none
@@ -129,23 +117,33 @@ private def transformProcBody (proc : Procedure) (info : ContractInfo) : Body :=
     .Abstract postconds
   | b => b
 
+/-- Monad used by the contract-pass rewriter; carries a global counter for
+    generating fresh temporary variable names. -/
+private abbrev ContractM := StateM Nat
+
+/-- Allocate a fresh temporary name with the `$cp_` prefix.  The global counter
+    guarantees uniqueness across the entire pass. -/
+private def freshTemp : ContractM String := do
+  let n ← get
+  set (n + 1)
+  return s!"$cp_{n}"
+
 /-- Generate temporary variable assignments for input arguments at a call site.
     Returns (temp declarations+assignments, temp variable references). -/
-private def mkTempAssignments (args : List StmtExprMd) (calleeName : String)
-    (inputParams : List Parameter) (callIdx : Nat) (src : Option FileRange)
-    : List StmtExprMd × List StmtExprMd :=
-  let indexed := args.zipIdx
-  let decls := indexed.map fun (arg, i) =>
-    let tempName := s!"${calleeName}${callIdx}$arg{i}"
+private def mkTempAssignments (args : List StmtExprMd)
+    (inputParams : List Parameter) (src : Option FileRange)
+    : ContractM (List StmtExprMd × List StmtExprMd) := do
+  let mut decls : List StmtExprMd := []
+  let mut refs : List StmtExprMd := []
+  for arg in args, i in List.range args.length do
+    let tempName ← freshTemp
     let paramType := match inputParams[i]? with
       | some p => p.type
       | none => { val := .Unknown, source := none }
     let param : Parameter := { name := mkId tempName, type := paramType }
-    ⟨StmtExpr.Assign [mkVarMd (.Declare param)] arg, src⟩
-  let refs := indexed.map fun (_, i) =>
-    let tempName := s!"${calleeName}${callIdx}$arg{i}"
-    mkMd (.Var (.Local (mkId tempName)))
-  (decls, refs)
+    decls := decls ++ [⟨StmtExpr.Assign [mkVarMd (.Declare param)] arg, src⟩]
+    refs := refs ++ [mkMd (.Var (.Local (mkId tempName)))]
+  return (decls, refs)
 
 /-- Generate precondition checks (one per precondition) for a call site. -/
 private def mkPreChecks (info : ContractInfo)
@@ -164,53 +162,50 @@ private def mkPostAssumes (info : ContractInfo)
 
 /-- Rewrite call sites in a statement/expression tree. -/
 private def rewriteCallSites (contractInfoMap : Std.HashMap String ContractInfo)
-    (expr : StmtExprMd) : StmtExprMd :=
-  let rewriteStaticCall (counter : Nat) (callee : Identifier) (args : List StmtExprMd)
+    (expr : StmtExprMd) : ContractM StmtExprMd := do
+  let rewriteStaticCall (callee : Identifier) (args : List StmtExprMd)
       (info : ContractInfo) (src : Option FileRange)
-      : List StmtExprMd × Nat :=
-    let (tempDecls, tempRefs) := mkTempAssignments args callee.text info.inputParams counter src
+      : ContractM (List StmtExprMd) := do
+    let (tempDecls, tempRefs) ← mkTempAssignments args info.inputParams src
     let preCheck := mkPreChecks info tempRefs src
-    let (callStmt, postAssume, returnValue) :=
-      if info.hasPostCondition && !info.outputParams.isEmpty then
-        let outputTempDecls := info.outputParams.zipIdx.map fun (p, i) =>
-          let tempName := s!"${callee.text}${counter}$out{i}"
-          mkVarMd (.Declare { name := mkId tempName, type := p.type })
+    let (callStmt, postAssume, returnValue) ←
+      if info.hasPostCondition && !info.outputParams.isEmpty then do
+        let mut outputTempDecls : List VariableMd := []
+        let mut outputRefs : List StmtExprMd := []
+        for p in info.outputParams do
+          let tempName ← freshTemp
+          outputTempDecls := outputTempDecls ++ [mkVarMd (.Declare { name := mkId tempName, type := p.type })]
+          outputRefs := outputRefs ++ [mkMd (.Var (.Local (mkId tempName)))]
         let callWithOutputs : StmtExprMd :=
           ⟨.Assign outputTempDecls ⟨.StaticCall callee tempRefs, src⟩, src⟩
-        let outputRefs := info.outputParams.zipIdx.map fun (_, i) =>
-          let tempName := s!"${callee.text}${counter}$out{i}"
-          mkMd (.Var (.Local (mkId tempName)))
         let assume := mkPostAssumes info tempRefs outputRefs src
         let retVal : List StmtExprMd := match outputRefs with
           | [single] => [single]
           | _ => []
-        (callWithOutputs, assume, retVal)
+        pure (callWithOutputs, assume, retVal)
       else
-        (⟨.StaticCall callee tempRefs, src⟩, [], [])
-    (tempDecls ++ preCheck ++ [callStmt] ++ postAssume ++ returnValue, counter + 1)
-  let (result, _) := StateT.run (s := (0 : Nat)) <|
-    mapStmtExprFlattenM (m := StateM Nat)
+        pure (⟨.StaticCall callee tempRefs, src⟩, [], [])
+    return tempDecls ++ preCheck ++ [callStmt] ++ postAssume ++ returnValue
+  let result ←
+    mapStmtExprFlattenM (m := ContractM)
       -- Pre: intercept Assign targets (StaticCall ...) before recursion
       (fun e => do
         match e.val with
         | .Assign targets (.mk (.StaticCall callee args) callSrc) =>
           match contractInfoMap.get? callee.text with
           | some info =>
-            let counter ← get
             let src := e.source
             -- Recurse into arguments
-            let args' ← args.mapM (mapStmtExprM (m := StateM Nat) (fun e' => do
+            let args' ← args.mapM (mapStmtExprM (m := ContractM) (fun e' => do
               match e'.val with
               | .StaticCall callee' args' =>
                 match contractInfoMap.get? callee'.text with
                 | some info' =>
-                  let counter' ← get
-                  let (stmts, counter'') := rewriteStaticCall counter' callee' args' info' e'.source
-                  set counter''
+                  let stmts ← rewriteStaticCall callee' args' info' e'.source
                   return ⟨.Block stmts none, e'.source⟩
                 | none => return e'
               | _ => return e'))
-            let (tempDecls, tempRefs) := mkTempAssignments args' callee.text info.inputParams counter src
+            let (tempDecls, tempRefs) ← mkTempAssignments args' info.inputParams src
             let callWithTemps : StmtExprMd := ⟨.Assign targets ⟨.StaticCall callee tempRefs, callSrc⟩, src⟩
             let preCheck := mkPreChecks info tempRefs src
             let outputArgs := targets.filterMap fun t =>
@@ -219,7 +214,6 @@ private def rewriteCallSites (contractInfoMap : Std.HashMap String ContractInfo)
               | .Declare param => some (mkMd (.Var (.Local param.name)))
               | _ => none
             let postAssume := mkPostAssumes info tempRefs outputArgs src
-            set (counter + 1)
             return some (tempDecls ++ preCheck ++ [callWithTemps] ++ postAssume)
           | none => return none
         | _ => return none)
@@ -229,25 +223,26 @@ private def rewriteCallSites (contractInfoMap : Std.HashMap String ContractInfo)
         | .StaticCall callee args =>
           match contractInfoMap.get? callee.text with
           | some info =>
-            let counter ← get
-            let (stmts, counter') := rewriteStaticCall counter callee args info e.source
-            set counter'
+            let stmts ← rewriteStaticCall callee args info e.source
             return stmts
           | none => return [e]
         | _ => return [e]) expr
-  result
+  return result
 
 /-- Rewrite call sites in all bodies of a procedure. -/
 private def rewriteCallSitesInProc (contractInfoMap : Std.HashMap String ContractInfo)
-    (proc : Procedure) : Procedure :=
+    (proc : Procedure) : ContractM Procedure := do
   let rw := rewriteCallSites contractInfoMap
   match proc.body with
   | .Transparent body =>
-    { proc with body := .Transparent (rw body) }
+    let body' ← rw body
+    return { proc with body := .Transparent body' }
   | .Opaque posts impl mods =>
-    let body := Body.Opaque (posts.map (·.mapCondition rw)) (impl.map rw) (mods.map rw)
-    { proc with body := body }
-  | _ => proc
+    let posts' ← posts.mapM (·.mapM rw)
+    let impl' ← impl.mapM rw
+    let mods' ← mods.mapM rw
+    return { proc with body := Body.Opaque posts' impl' mods' }
+  | _ => return proc
 
 /-- Build an axiom expression from `invokeOn` trigger and ensures clauses.
     Produces `∀ p1, ∀ p2, ..., ∀ pn :: { trigger } (ensures1 && ensures2 && ...)`.
@@ -275,13 +270,13 @@ def contractPass (program : Program) : Program :=
     let preProcs := proc.preconditions.zipIdx.map fun (c, i) =>
       mkConditionProc (preCondProcName proc.name.text i) proc.inputs c
     let postProcs := postconds.zipIdx.map fun (c, i) =>
-      mkPostConditionProc (postCondProcName proc.name.text i)
-        proc.inputs proc.outputs c
+      mkConditionProc (postCondProcName proc.name.text i) (proc.inputs ++ proc.outputs) c
     preProcs ++ postProcs
 
   -- Transform procedures: strip contracts, add assume/assert, rewrite call sites
-  let transformedProcs := program.staticProcedures.map fun proc =>
-    let proc := match proc.invokeOn with
+  -- Run all call-site rewriting in a single ContractM to share the global counter.
+  let (transformedProcs, _) := (program.staticProcedures.mapM fun (proc : Procedure) => do
+    let proc : Procedure := match proc.invokeOn with
       | some trigger =>
         let postconds := getPostconditions proc.body
         if postconds.isEmpty then { proc with invokeOn := none }
@@ -289,14 +284,14 @@ def contractPass (program : Program) : Program :=
           axioms := [mkInvokeOnAxiom proc.inputs trigger postconds]
           invokeOn := none }
       | none => proc
-    let proc := match contractInfoMap.get? proc.name.text with
+    let proc : Procedure := match contractInfoMap.get? proc.name.text with
       | some info =>
         { proc with
           preconditions := []
           body := transformProcBody proc info }
       | none => proc
     -- Rewrite call sites in the procedure body
-    rewriteCallSitesInProc contractInfoMap proc
+    rewriteCallSitesInProc contractInfoMap proc).run 0
 
   { program with staticProcedures := helperProcs ++ transformedProcs }
 

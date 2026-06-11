@@ -33,7 +33,7 @@ def bad_prog : Program := { decls := [
               spec := {
                   preconditions := [],
                   postconditions := [] },
-              body := [
+              body := .structured [
                 Statement.assert "test" eb[(~fooAliasVal == ~fooVal)] .empty
               ]
       } .empty
@@ -63,7 +63,7 @@ def good_prog : Program := { decls := [
               spec := {
                   preconditions := [],
                   postconditions := [] },
-              body := [
+              body := .structured [
                 Statement.assert "test" eb[(~fooAliasVal == ~fooVal)] .empty
               ]
       } .empty
@@ -105,7 +105,7 @@ def outOfScopeVarProg : Program := { decls := [
               spec := {
                   preconditions := [],
                   postconditions := [] },
-              body := [
+              body := .structured [
                 Statement.set "y" eb[((~Bool.Or x) x)] .empty,
                 .ite (.det eb[(x == #true)])
                   [Statement.init "q" t[int] (.det eb[#0]) .empty,
@@ -149,7 +149,7 @@ def polyFuncProg : Program := { decls := [
                       outputs := [] },
           spec := { preconditions := [],
                     postconditions := [] },
-          body := [
+          body := .structured [
             -- var m : Map int bool;
             Statement.init "m" (.forAll [] (.tcons "Map" [.tcons "int" [], .tcons "bool" []])) Imperative.ExprOrNondet.nondet .empty,
             -- m := makePair(identity(42), identity(true));
@@ -164,8 +164,8 @@ info: [Strata.Core] Type checking succeeded.
 ---
 info: ok: program Core;
 
-function identity<$__ty0> (x : $__ty0) : $__ty0;
-function makePair<$__ty1, $__ty2> (x : $__ty1, y : $__ty2) : Map $__ty1 $__ty2;
+function identity<a> (x : a) : a;
+function makePair<a, b> (x : a, y : b) : Map a b;
 procedure Test ()
 {
   var m : (Map int bool);

@@ -190,6 +190,7 @@ def containsAssignmentOrImperativeCall (imperativeCallees : List String) (expr :
     all_goals (try term_by_mem)
     all_goals omega
 
+<<<<<<< HEAD
 /-- Like containsAssignment but does NOT recurse into Blocks (treats them as opaque).
     Used by assert/assume handlers to allow generated Block wrappers through. -/
 def containsBareAssignment (expr : StmtExprMd) : Bool :=
@@ -208,6 +209,8 @@ def containsBareAssignment (expr : StmtExprMd) : Bool :=
   decreasing_by
     all_goals ((try cases x); simp_all; try term_by_mem)
 
+=======
+>>>>>>> issue-924-contract-and-proof-pass
 /--
 Shared logic for lifting an assignment in expression position:
 prepends the assignment, creates before-snapshots for all targets,
