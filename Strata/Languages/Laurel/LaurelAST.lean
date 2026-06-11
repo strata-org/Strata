@@ -523,8 +523,18 @@ deriving instance BEq for HighType
       unwraps to (alias target / constrained base). Followed transitively to
       reach a non-alias, non-constrained type.
     - `extendingMap` maps a composite type's name to the *direct* parents in
-      its `extending` list. Walked transitively for the subtype check. -/
-structure TypeContext where
+      its `extending` list. Walked transitively for the subtype check.
+
+    Keyed by type-name *text* (`String`), not `Identifier`: this is consistent
+    with how `highEq` decides `UserDefined` equality (by `.text`), and is forced
+    because the lattice is built from the *unresolved* program in
+    `TypeLattice.ofTypes`, before the resolution pass assigns `uniqueId`s.
+    Consequence: nominal type identity is by name text, so subtyping
+    (`ancestors` walking `extendingMap`) assumes type names are globally unique.
+    Safe today (no module system); revisit when modules / namespacing / imports
+    land, since two distinct same-named types would otherwise share an
+    inheritance chain. -/
+structure TypeLattice where
   unfoldMap : Std.HashMap String HighTypeMd := {}
   extendingMap : Std.HashMap String (List String) := {}
   deriving Inhabited
@@ -533,7 +543,7 @@ structure TypeContext where
     Composites and primitives are returned unchanged. A `visited` set guards
     against cycles in the alias/constrained graph (already cycle-checked
     elsewhere, but keeps `unfold` safe to call independently). -/
-partial def TypeContext.unfold (ctx : TypeContext) (ty : HighTypeMd)
+partial def TypeLattice.unfold (ctx : TypeLattice) (ty : HighTypeMd)
     (visited : Std.HashSet String := {}) : HighTypeMd :=
   match ty.val with
   | .UserDefined name =>
@@ -549,7 +559,7 @@ partial def TypeContext.unfold (ctx : TypeContext) (ty : HighTypeMd)
     every node is `insert`ed before its parents are enqueued, so each name is
     processed at most once. The accumulator only grows, hence cycles in the
     (possibly malformed) graph terminate — no `fuel` parameter is needed. -/
-partial def TypeContext.ancestors (ctx : TypeContext) (name : String) : Std.HashSet String :=
+partial def TypeLattice.ancestors (ctx : TypeLattice) (name : String) : Std.HashSet String :=
   let rec go (acc : Std.HashSet String) (frontier : List String) : Std.HashSet String :=
     match frontier with
     | [] => acc
@@ -562,14 +572,14 @@ partial def TypeContext.ancestors (ctx : TypeContext) (name : String) : Std.Hash
   go {} [name]
 
 /-- Pure subtyping `<:`. Walks the `extending` chain for `CompositeType`
-    (via `TypeContext.ancestors`), unfolds `TypeAlias` to its target, and
-    unwraps `ConstrainedType` to its base (both via `TypeContext.unfold`),
+    (via `TypeLattice.ancestors`), unfolds `TypeAlias` to its target, and
+    unwraps `ConstrainedType` to its base (both via `TypeLattice.unfold`),
     then falls back to structural equality via `highEq`.
 
     Used together with `isConsistent` to form `isConsistentSubtype`, which
     is what the bidirectional checker invokes at every check-mode boundary
     (rule `[⇐] Sub`). -/
-def isSubtype (ctx : TypeContext) (sub sup : HighTypeMd) : Bool :=
+def isSubtype (ctx : TypeLattice) (sub sup : HighTypeMd) : Bool :=
   let sub' := ctx.unfold sub
   let sup' := ctx.unfold sup
   match sub'.val, sup'.val with
@@ -591,7 +601,7 @@ def isSubtype (ctx : TypeContext) (sub sup : HighTypeMd) : Bool :=
     Used directly by `[⇒] Op-Eq`, where the operand types must be mutually
     consistent (no subtype direction is privileged), and as one half of
     `isConsistentSubtype`. -/
-def isConsistent (ctx : TypeContext) (a b : HighTypeMd) : Bool :=
+def isConsistent (ctx : TypeLattice) (a b : HighTypeMd) : Bool :=
   -- `MultiValuedExpr` is checked element-wise *before* unfolding so elements
   -- remain demonstrable subterms of `a`/`b`. `unfold` is `partial`, and is in
   -- any case the identity on `MultiValuedExpr`, so this loses no precision.
@@ -628,7 +638,7 @@ def isConsistent (ctx : TypeContext) (a b : HighTypeMd) : Bool :=
     carve-out — user-defined types are now a regular participant in `<:`,
     with `isSubtype` walking inheritance chains and unwrapping aliases
     and constrained types to deliver real checking on user-defined code. -/
-def isConsistentSubtype (ctx : TypeContext) (sub sup : HighTypeMd) : Bool :=
+def isConsistentSubtype (ctx : TypeLattice) (sub sup : HighTypeMd) : Bool :=
   isConsistent ctx sub sup || isSubtype ctx sub sup
 
 def HighType.isBool : HighType → Bool
@@ -803,11 +813,11 @@ def TypeDefinition.name : TypeDefinition → Identifier
   | .Datatype ty => ty.name
   | .Alias ty => ty.name
 
-/-- Build a `TypeContext` from a list of `TypeDefinition`s.
+/-- Build a `TypeLattice` from a list of `TypeDefinition`s.
     Aliases populate `unfoldMap` with their target; constrained types populate
     it with their base; composites populate `extendingMap` with their direct
     parents. Datatypes contribute nothing — they're nominal and irreducible. -/
-def TypeContext.ofTypes (types : List TypeDefinition) : TypeContext :=
+def TypeLattice.ofTypes (types : List TypeDefinition) : TypeLattice :=
   types.foldl (init := {}) fun ctx td =>
     match td with
     | .Alias ta => { ctx with unfoldMap := ctx.unfoldMap.insert ta.name.text ta.target }
