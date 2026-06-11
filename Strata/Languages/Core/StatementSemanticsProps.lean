@@ -2566,11 +2566,11 @@ private theorem coreIsAtAssert_block_of_inner
 @[expose] def CalleesNoFailure
     (π : String → Option Procedure)
     (φ : CoreEval → PureFunc Expression → CoreEval) : Prop :=
-  ∀ (n : String) (p : Procedure) (ρ ρ' : Env Expression),
+  ∀ (n : String) (p : Procedure) (σ : CoreStore) (δ : CoreEval)
+    (σ' : CoreStore) (δ' : CoreEval) (failed : Bool),
     π n = some p →
-    ρ.hasFailure = false →
-    CoreStepStar π φ (.stmts p.body ρ) (.terminal ρ') →
-    ρ'.hasFailure = false
+    CoreBodyExec π φ p.body σ δ σ' δ' failed →
+    failed = false
 
 private theorem evalCommand_failure_implies_assert_ff
     {π : String → Option Procedure} {φ : CoreEval → PureFunc Expression → CoreEval}
@@ -2580,22 +2580,13 @@ private theorem evalCommand_failure_implies_assert_ff
     ∃ a : AssertId Expression,
       coreIsAtAssert (.stmt (.cmd c) ρ) a ∧
       ρ.eval ρ.store a.expr = some HasBool.ff := by
-  -- Generalize the `true` index so dependent elimination can split both
-  -- constructors of `EvalCommand` (the `call_sem` case carries an opaque
-  -- `ρ'.hasFailure` index that does not unify with the literal `true`).
-  generalize hb : (true : Bool) = b at hcmd
+  -- `call_sem` concludes `EvalCommand ... σ' false`, whose `false` failure
+  -- index cannot unify with the `true` index of `hcmd`, so dependent
+  -- elimination discards it automatically, leaving only `cmd_sem`.
   cases hcmd with
   | cmd_sem heval =>
-    subst hb
     cases heval with
     | eval_assert_fail hff _ => exact ⟨⟨_, _⟩, ⟨rfl, rfl⟩, hff⟩
-  | call_sem hπ _ _ _ _ _ _ _ _ _ _ _ _ hbody _ _ _ =>
-    -- `call_sem` body trace: `CoreStepStar π φ (.stmts p.body ⟨σAO, δ, false⟩)
-    --                                            (.terminal ρ')` plus
-    -- `hb : true = ρ'.hasFailure`. Apply `hCallees` to extract
-    -- `ρ'.hasFailure = false`, contradicting `hb`.
-    have hρ' : _ = false := hCallees _ _ _ _ hπ rfl hbody
-    exact absurd (hb.trans hρ') (by decide)
 
 theorem core_noFailure_preserved
     (c₁ c₂ : CoreConfig)

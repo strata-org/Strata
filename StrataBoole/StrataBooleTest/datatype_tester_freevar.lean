@@ -164,8 +164,40 @@ spec {
 };
 #end
 
-#guard_msgs (drop info) in
-#eval Strata.Boole.verify "cvc5" recfndefsMultiSeed
+/-- info:
+Obligation: even_body_calls_MyNat..pred_0
+Property: assert
+Result: ✅ pass
+
+Obligation: odd_body_calls_MyNat..pred_0
+Property: assert
+Result: ✅ pass
+
+Obligation: even_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: odd_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_2_4408
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_3_4439
+Property: assert
+Result: ✅ pass
+
+Obligation: test_parity_ensures_0_4340
+Property: assert
+Result: ✅ pass
+
+Obligation: test_parity_ensures_1_4372
+Property: assert
+Result: ✅ pass-/
+#guard_msgs in
+#eval Strata.Boole.verify "cvc5" recfndefsMultiSeed (options := .quiet)
 
 example : Strata.smtVCsCorrectBoole recfndefsMultiSeed := by
   gen_smt_vcs_boole

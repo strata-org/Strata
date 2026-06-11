@@ -6,6 +6,8 @@
 module
 
 public import Strata.DL.Imperative.StmtSemantics
+public import Strata.DL.Imperative.CFGSemantics
+public import Strata.Languages.Core.CoreGen
 public import Strata.Languages.Core.Procedure
 public import Strata.Languages.Core.Factory
 import Std.Tactic.BVDecide.Normalize.Prop
@@ -288,6 +290,19 @@ inductive CoreStepStar
     ----
     CoreStepStar π φ c₁ c₃
 
+/-- Execution of a procedure body. Only structured bodies have an executable
+    semantics; the `.cfg` arm of `Procedure.Body` has no inhabitant of
+    `CoreBodyExec`. -/
+inductive CoreBodyExec
+    (π : String → Option Procedure)
+    (φ : CoreEval → PureFunc Expression → CoreEval) :
+    Procedure.Body → CoreStore → CoreEval → CoreStore → CoreEval → Bool → Prop where
+  | structured :
+    CoreStepStar π φ
+      (.stmts ss ⟨σ, δ, false⟩)
+      (.terminal ρ') →
+    CoreBodyExec π φ (.structured ss) σ δ ρ'.store ρ'.eval ρ'.hasFailure
+
 inductive EvalCommand (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) : CoreEval →
   CoreStore → Command → CoreStore → Bool → Prop where
   | cmd_sem {δ σ c σ' f} :
@@ -298,7 +313,7 @@ inductive EvalCommand (π : String → Option Procedure) (φ : CoreEval → Pure
   /-- Arguments are matched positionally: `inArgs` (from `getInputExprs`)
       aligns with `p.header.inputs`, and `lhs` (from `getLhs`) aligns
       with `p.header.outputs`. -/
-  | call_sem {δ σ₀ σ inArgs vals oVals σA σAO n p modvals callArgs σ' ρ' md} :
+  | call_sem {δ σ₀ σ inArgs vals oVals σA σAO n p modvals callArgs σ' σ_final δ_final failed md} :
     π n = .some p →
     -- inArg exprs + fvar refs for inoutArg ids
     CallArg.getInputExprs callArgs = inArgs →
@@ -320,17 +335,15 @@ inductive EvalCommand (π : String → Option Procedure) (φ : CoreEval → Pure
     (∀ pre, (Procedure.Spec.getCheckExprs p.spec.preconditions).contains pre →
       isDefinedOver (HasVarsPure.getVars) σAO pre ∧
       δ σAO pre = .some HasBool.tt) →
-    CoreStepStar π φ
-      (.stmts p.body ⟨σAO, δ, false⟩)
-      (.terminal ρ') →
+    CoreBodyExec π φ p.body σAO δ σ_final δ_final failed →
     (∀ post, (Procedure.Spec.getCheckExprs p.spec.postconditions).contains post →
       isDefinedOver (HasVarsPure.getVars) σAO post ∧
-      δ ρ'.store post = .some HasBool.tt) →
-    ReadValues ρ'.store (ListMap.keys (p.header.outputs)) modvals →
+      δ_final σ_final post = .some HasBool.tt) →
+    ReadValues σ_final (ListMap.keys (p.header.outputs)) modvals →
     -- positional: modvals[i] written back to lhs[i]
     UpdateStates σ lhs modvals σ' →
     ----
-    EvalCommand π φ δ σ (CmdExt.call n callArgs md) σ' ρ'.hasFailure
+    EvalCommand π φ δ σ (CmdExt.call n callArgs md) σ' false
 
 end
 
