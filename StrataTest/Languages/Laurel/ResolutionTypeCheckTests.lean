@@ -301,4 +301,27 @@ function cmp(x: bv 32, y: bv 32): bool {
 #guard_msgs (drop info) in
 #eval testInputWithOffset "BitvectorComparisonOk" bitvectorComparisonOk 250 processResolution
 
+/-! ## An unresolved declared type collapses to `Unknown` (no cascade)
+
+A variable declared with an undefined type name reports only the single
+"is not defined" name-resolution error. `resolveHighType` collapses the
+dangling `UserDefined` to `Unknown` once its name fails to resolve, so the
+variable's later uses are not type-checked against a phantom type and no
+cascade of follow-on mismatches (`0` vs the bad type, `x` vs `int`) is emitted.
+(Regression guard: before the collapse-to-`Unknown` fix this program produced
+three diagnostics — the name-resolution error plus the `0`-vs-`UndefinedType`
+initializer mismatch and the `x`-vs-`int` use mismatch; it must now produce
+exactly one.) -/
+
+def unresolvedDeclaredTypeNoCascade := r"
+procedure useUndef() opaque {
+  var x: UndefinedType := 0;
+//       ^^^^^^^^^^^^^ error: 'UndefinedType' is not defined
+  var y: int := x + 2
+};
+"
+
+#guard_msgs (error, drop all) in
+#eval testInputWithOffset "UnresolvedDeclaredTypeNoCascade" unresolvedDeclaredTypeNoCascade 308 processResolution
+
 end Laurel

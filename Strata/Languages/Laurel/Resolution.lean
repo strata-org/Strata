@@ -425,12 +425,18 @@ def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
   | .UserDefined ref =>
     let ref' ← resolveRef ref ty.source
       (expected := #[.compositeType, .constrainedType, .datatypeDefinition, .typeAlias])
-    -- If the reference resolved to the wrong kind, treat the type as Unknown to avoid cascading errors
+    -- If the reference failed to resolve (name not defined) or resolved to the
+    -- wrong kind, treat the type as Unknown to avoid cascading errors. The single
+    -- "is not defined" / "wrong kind" diagnostic was already emitted by `resolveRef`;
+    -- collapsing the dangling `UserDefined` to `Unknown` keeps the variable's later
+    -- uses from being type-checked against a phantom type. A name that genuinely
+    -- resolves to a composite/datatype/alias/constrained type stays `UserDefined`
+    -- so real subtype checking still works.
     let s ← get
     let kindOk : Bool := match s.scope.get? ref.text with
       | some (_, node) => node.kind == .unresolved ||
           (#[ResolvedNodeKind.compositeType, .constrainedType, .datatypeDefinition, .typeAlias].contains node.kind)
-      | none => true  -- unresolved references already reported
+      | none => false  -- name not defined: resolveRef already reported it
     if kindOk then pure (HighType.UserDefined ref')
     else pure HighType.Unknown
   | .TTypedField vt =>
