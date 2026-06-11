@@ -806,6 +806,9 @@ def Command.runCall (lhs : List Expression.Ident) (procName : String) (args : Li
               popScope := fun E => E.popScope
               hasError := fun E => E.error.isSome
               addError := fun E msg => CmdEval.updateError E (.Misc msg)
+              isTt := fun e => match e with
+                | .const _ (.boolConst true) => true
+                | _ => false
             }
             let configAfter := match proc.body with
               | .structured ss =>

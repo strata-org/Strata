@@ -43,6 +43,8 @@ structure RunOps (P : PureExpr) (CmdT : Type) (S : Type) where
   addError : S → String -> S
   /-- Check if the state has an error (to short-circuit execution). -/
   hasError : S → Bool := fun _ => false
+  /-- Check if a value represents `true`. May ignore metadata. -/
+  isTt : P.Expr → Bool
 
 def runStep [BEq P.Expr] [HasBool P]
     (ops : RunOps P CmdT S)
@@ -61,7 +63,7 @@ def runStep [BEq P.Expr] [HasBool P]
     | .det e =>
       match ops.evalExpr ρ e with
       | some v =>
-        if HasBool.isTt v then .stmts tss ρ
+        if ops.isTt v then .stmts tss ρ
         else .stmts ess ρ
       | none => .terminal (ops.addError ρ "ITE condition did not reduce to bool")
 
@@ -71,7 +73,7 @@ def runStep [BEq P.Expr] [HasBool P]
     | .det g =>
       match ops.evalExpr ρ g with
       | some v =>
-        if HasBool.isTt v then .stmts (body ++ [s]) ρ
+        if ops.isTt v then .stmts (body ++ [s]) ρ
         else .terminal ρ
       | none => .terminal (ops.addError ρ "Loop guard did not reduce to bool")
 

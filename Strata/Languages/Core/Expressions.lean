@@ -32,8 +32,11 @@ abbrev Expression : Imperative.PureExpr :=
      TyContext := @Lambda.LContext ⟨ExpressionMetadata, Unit⟩,
      EvalEnv := Lambda.LState ⟨ExpressionMetadata, Unit⟩ }
 
-instance : Imperative.HasVarsPure Expression Expression.Expr where
-  getVars := Lambda.LExpr.LExpr.getVars
+instance : Imperative.HasFvars Expression where
+  getFvars := Lambda.LExpr.LExpr.getVars
+
+instance : Imperative.HasOps Expression where
+  getOps := Lambda.LExpr.getOps
 
 -- Inhabited default uses synthesized "core" provenance
 instance : Inhabited Expression.Expr where
