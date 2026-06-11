@@ -544,12 +544,6 @@ def DatatypeDefinition.destructorName (dt : DatatypeDefinition) (field : Paramet
 def DatatypeDefinition.unsafeDestructorName (dt : DatatypeDefinition) (field : Parameter) : String :=
   s!"{dt.name.text}..{field.name.text}!"
 
-/-- Canonical lifted name for an instance procedure, used by both Resolution
-    pre-registration and the `LiftInstanceProcedures` pass.
-    Format: `"<CompositeName>$<methodName>"`. -/
-def liftedProcName (typeName methodName : Identifier) : Identifier :=
-  mkId s!"{typeName.text}${methodName.text}"
-
 /-- A type alias, mapping a name to an existing type. Eliminated by the
     `TypeAliasElim` pass after the first resolution. -/
 structure TypeAlias where

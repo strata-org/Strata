@@ -284,6 +284,11 @@ def resolveRef (name : Identifier) (source : Option FileRange := none)
     modify fun s => { s with errors := s.errors.push diag }
     return { name with uniqueId := none }
 
+/-- Scope key for a name nested inside a container (composite, datatype),
+    used to disambiguate members in the flat global scope. -/
+private def containerScopedName (containerName memberName : Identifier) : Identifier :=
+  mkId s!"{containerName.text}${memberName.text}"
+
 /-- Extract the UserDefined type name from a resolved target expression by looking up its scope entry. -/
 private def targetTypeName (target : StmtExprMd) : ResolveM (Option String) := do
   let s ← get
@@ -522,16 +527,14 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
     pure (.IsType target' ty')
   | .InstanceCall target callee args =>
     let target' ← resolveStmtExpr target
-    -- Look up the callee under the lifted key `<CompositeName>$<methodName>`,
-    -- matching how `preRegisterTopLevel` registers instance procedures. Fall
-    -- back to the bare name when the target's composite type is not yet
-    -- determinable (resolution still emits a diagnostic via `resolveRef`).
+    -- Look up under the container-scoped key matching `preRegisterTopLevel`.
+    -- Fall back to the bare name when the target's type can't be determined.
     let lookupKey ← match (← targetTypeName target') with
-      | some tyName => pure (liftedProcName (mkId tyName) callee)
+      | some tyName => pure (containerScopedName (mkId tyName) callee)
       | none => pure callee
     let resolved ← resolveRef lookupKey source
       (expected := #[.instanceProcedure, .staticProcedure])
-    -- Preserve the user-facing callee text (e.g. `tick`) for diagnostics;
+    -- Preserve the user-facing callee text for diagnostics;
     -- only stamp the resolved `uniqueId` from the lifted lookup.
     let callee' := { callee with uniqueId := resolved.uniqueId }
     let args' ← args.mapM resolveStmtExpr
@@ -637,11 +640,8 @@ def resolveField (ownerName : Identifier) (field : Field) : ResolveM Field := do
 
 /-- Resolve an instance procedure on a composite type. -/
 def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : ResolveM Procedure := do
-  -- Look up by the lifted key `<CompositeName>$<methodName>`, matching how
-  -- `preRegisterTopLevel` registers instance procedures. Keep the original
-  -- (unqualified) procedure name in the AST; only adopt the resolved uniqueId.
-  let liftedKey := liftedProcName typeName proc.name
-  let resolved ← resolveRef liftedKey
+  let scopedKey := containerScopedName typeName proc.name
+  let resolved ← resolveRef scopedKey
   let procName' := { proc.name with uniqueId := resolved.uniqueId }
   withScope do
     let savedInstType := (← get).instanceTypeName
@@ -917,13 +917,9 @@ private def preRegisterTopLevel (program : Program) : ResolveM Unit := do
         let qualifiedName := ct.name.text ++ "." ++ field.name.text
         let _ ← defineNameCheckDup field.name (.field ct.name field) (some qualifiedName)
       for proc in ct.instanceProcedures do
-        -- Register the instance procedure under its lifted name
-        -- (`<CompositeName>$<methodName>`) so two composites can share a method
-        -- name without colliding in the global scope. `obj#method(args)` call
-        -- sites are resolved by `resolveStmtExpr` looking up this lifted key.
-        let liftedKey := (liftedProcName ct.name proc.name).text
+        let scopedKey := (containerScopedName ct.name proc.name).text
         let _ ← defineNameCheckDup proc.name (.instanceProcedure ct.name proc)
-                                   (some liftedKey)
+                                   (some scopedKey)
     | .Constrained ct =>
       let _ ← defineNameCheckDup ct.name (.constrainedType ct)
     | .Datatype dt =>

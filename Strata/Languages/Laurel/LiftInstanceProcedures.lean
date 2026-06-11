@@ -35,6 +35,10 @@ Then, rewrite caller-side of `obj#proc` to call the lifted procedure
 
 -/
 
+/-- Top-level name produced for a lifted instance procedure. -/
+def liftedProcName (typeName methodName : Identifier) : Identifier :=
+  mkId s!"{typeName.text}${methodName.text}"
+
 /-- Rewrite a single node so that any callee resolving to an instance procedure
     is replaced by its lifted name. -/
 private def rewriteCallNode (model : SemanticModel) (expr : StmtExprMd) : StmtExprMd :=
