@@ -18,11 +18,11 @@ namespace Strata.Laurel
 def program := r"
 procedure letExpressionsInTransparent() returns (r: int) {
   var x: int := 0;
-//^^^^^^^^^^^^^^^ error: local variables in functions are not YET supported
+//^^^^^^^^^^^^^^^ error: local variables in transparent bodies are not YET supported
   var y: int := x + 1;
-//^^^^^^^^^^^^^^^^^^^ error: local variables in functions are not YET supported
+//^^^^^^^^^^^^^^^^^^^ error: local variables in transparent bodies are not YET supported
   var z: int := y + 1;
-//^^^^^^^^^^^^^^^^^^^ error: local variables in functions are not YET supported
+//^^^^^^^^^^^^^^^^^^^ error: local variables in transparent bodies are not YET supported
   return z
 };
 

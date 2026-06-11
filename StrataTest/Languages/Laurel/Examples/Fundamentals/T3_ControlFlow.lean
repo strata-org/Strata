@@ -69,21 +69,35 @@ procedure testFunctions()
 
 procedure guards(a: int) returns (r: int)
 {
-  var b: int := a + 2;
-  if b > 2 then {
-      var c: int := b + 3;
-      if c > 3 then {
-          return c + 4
+  if a > 2 then {
+      if a > 3 then {
+          return 4
       };
-      var d: int := c + 5;
-      return d + 6
+      return 6
   };
-  var e: int := b + 1;
-  assert e <= 3;
-  assert e < 3;
+  assert a <= 2;
+  assert a < 2;
 //^^^^^^^^^^^^ error: assertion does not hold
-  return e
+  return 5
 };
+
+//
+// procedure guards(a: int) returns (r: int)
+// {
+//   var b: int := a + 2;
+//   if b > 2 then {
+//       var c: int := b + 3;
+//       if c > 3 then {
+//           return c + 4
+//       };
+//       //var d: int := c + 5;
+//       return d + 6
+//   };
+//   //var e: int := b + 1;
+//   assert e <= 3;
+//   assert e < 3;
+//   return e
+// };
 
 procedure dag(a: int) returns (r: int)
   opaque

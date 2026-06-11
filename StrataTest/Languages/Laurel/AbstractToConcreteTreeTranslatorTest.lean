@@ -290,7 +290,8 @@ info: procedure test(): int
 info: procedure earlyExit(b: bool)
   opaque
 {
-  if b then {
+  if b
+  then {
     return
   };
   assert true
