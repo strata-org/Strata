@@ -11,7 +11,7 @@ to freshly generated uninterpreted functions, with types inferred from context.
 
 import StrataTest.Util.TestLaurel
 import Strata.Languages.Laurel.InferHoleTypes
-import Strata.Languages.Laurel.EliminateHoles
+import Strata.Languages.Laurel.EliminateDeterministicHoles
 
 open Strata
 open StrataTest.Util
@@ -24,7 +24,7 @@ private def parseElimAndPrint (program : StrataDDM.Program) : IO Unit := do
   let result := resolve laurelProgram
   let (laurelProgram, model) := (result.program, result.model)
   let (laurelProgram, _, _) := inferHoleTypes model laurelProgram
-  let (laurelProgram, _) := eliminateHoles laurelProgram
+  let (laurelProgram, _) := eliminateDeterministicHoles laurelProgram
   for proc in laurelProgram.staticProcedures do
     IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
 

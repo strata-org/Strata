@@ -339,8 +339,12 @@ info: procedure earlyExit(b: bool)
 };
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip r"procedure earlyExit(b: bool)
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+procedure earlyExit(b: bool)
   opaque
-{ if b then { return }; assert true };")
+{ if b then { return }; assert true };
+#end)
 
 end Strata.Laurel

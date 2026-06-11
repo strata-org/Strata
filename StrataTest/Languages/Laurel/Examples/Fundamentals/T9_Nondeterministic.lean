@@ -10,6 +10,7 @@ open Strata
 
 namespace Laurel
 
+-- TODO test non-det vs det holes. Make the default of holes non-det.
 def program := r"
 nondet procedure nonDeterministic(x: int): (r: int)
   opaque
