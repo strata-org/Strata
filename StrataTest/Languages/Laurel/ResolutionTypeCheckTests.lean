@@ -283,6 +283,52 @@ function foo(c: bool): bool {
 #guard_msgs (error, drop all) in
 #eval testInputWithOffset "IfBranchesIncompatible" ifBranchesIncompatible 218 processResolution
 
+/-! ## `if` in operand position synthesizes a *symmetric* branch join
+
+`Synth.ifThenElse` returns the symmetric join of the two consistent branch
+types as the representative type (`(join ctx thenTy elseTy).getD thenTy`),
+not just the then-branch type. So a hole branch (`<?>`, type `Unknown`)
+promotes to the other branch's concrete type regardless of branch order:
+both `(if c then <?> else "x")` and `(if c then "x" else <?>)` synthesize
+`string`. As the operand of a numeric `<`, both orders therefore report the
+*same* "expected a numeric type, got 'string'" diagnostic at the *same*
+span — locking in symmetry. (Before the join, the then-first order returned
+`Unknown` and was silently accepted, while only the else-first order
+errored.) -/
+
+def ifJoinSymmetricThenHole : String :=
+  "\nfunction foo(c: bool): bool {\n" ++
+  "  (if c then <?> else \"x\") < 1\n" ++
+  "// ^^^^^^^^^^^^^^^^^^^^^^ error: '<' expected a numeric type, got 'string'\n" ++
+  "};\n"
+
+#guard_msgs (error, drop all) in
+#eval testInputWithOffset "IfJoinSymmetricThenHole" ifJoinSymmetricThenHole 246 processResolution
+
+def ifJoinSymmetricElseHole : String :=
+  "\nfunction foo(c: bool): bool {\n" ++
+  "  (if c then \"x\" else <?>) < 1\n" ++
+  "// ^^^^^^^^^^^^^^^^^^^^^^ error: '<' expected a numeric type, got 'string'\n" ++
+  "};\n"
+
+#guard_msgs (error, drop all) in
+#eval testInputWithOffset "IfJoinSymmetricElseHole" ifJoinSymmetricElseHole 256 processResolution
+
+/-! ## `if` branch join recovers precision from a hole
+
+When one branch is a hole (`Unknown`) and the other is a concrete numeric
+type, the join recovers the concrete type (`Unknown ⊔ int = int`) rather
+than collapsing to `Unknown`. So `if c then <?> else 5` synthesizes a usable
+`int` and resolves cleanly where an `int` is expected — no diagnostics. -/
+
+def ifJoinRecoversInt : String :=
+  "\nfunction bar(c: bool): int {\n" ++
+  "  if c then <?> else 5\n" ++
+  "};\n"
+
+#guard_msgs (drop info) in
+#eval testInputWithOffset "IfJoinRecoversInt" ifJoinRecoversInt 270 processResolution
+
 /-! ## Void procedure call in value position
 
 A call to a `void` procedure (no `returns` clause) used where a value is

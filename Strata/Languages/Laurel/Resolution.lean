@@ -1353,11 +1353,16 @@ def Check.ifThenElse (exprMd : StmtExprMd)
     `cond` is checked against `TBool`; both branches are *synthesized*.
     With an `else`, the two branch types must be mutually consistent
     (`isConsistent`, the symmetric gradual relation — `Unknown` flows
-    freely either way); the result is the then-branch's type as a
-    representative. Inconsistent branches (e.g. `if c then 1 else "x"`)
-    emit a diagnostic and synthesize `Unknown` to suppress cascading
-    errors. Without an `else`, the `if` cannot produce a value on the
-    missing branch, so it synthesizes `TVoid`.
+    freely either way); when consistent, the result is their symmetric
+    `join` (`Unknown ⊔ T = T`), so a hole branch promotes to the other
+    branch's concrete type and the synthesized type is independent of
+    branch order. (`isConsistent` stays the accept/reject gate: it admits
+    a lone `TCore` corner where `join` is `none`, for which the result
+    falls back to the then-branch type, leaving that boundary unchanged.)
+    Inconsistent branches (e.g. `if c then 1 else "x"`) emit a diagnostic
+    and synthesize `Unknown` to suppress cascading errors. Without an
+    `else`, the `if` cannot produce a value on the missing branch, so it
+    synthesizes `TVoid`.
 
     This is the synth counterpart to `Check.ifThenElse`: when an expected
     type *is* available the dispatcher prefers the check rule (pushing the
@@ -1377,7 +1382,7 @@ def Synth.ifThenElse (exprMd : StmtExprMd)
     let ctx := (← get).typeLattice
     let ty ←
       if isConsistent ctx thenTy elseTy then
-        pure thenTy
+        pure ((join ctx thenTy elseTy).getD thenTy)
       else
         let diag := diagnosticFromSource source
           s!"'if' branches have incompatible types '{formatType thenTy}' and '{formatType elseTy}'"
