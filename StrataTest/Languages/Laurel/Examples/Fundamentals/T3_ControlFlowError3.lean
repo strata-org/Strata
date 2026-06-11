@@ -18,8 +18,11 @@ namespace Strata.Laurel
 def program := r"
 procedure letExpressionsInTransparent() returns (r: int) {
   var x: int := 0;
+//^^^^^^^^^^^^^^^ error: local variables in functions are not YET supported
   var y: int := x + 1;
+//^^^^^^^^^^^^^^^^^^^ error: local variables in functions are not YET supported
   var z: int := y + 1;
+//^^^^^^^^^^^^^^^^^^^ error: local variables in functions are not YET supported
   return z
 };
 
@@ -30,4 +33,4 @@ procedure callLetExpressionsInTransparent() opaque {
 "
 
 #guard_msgs (error, drop all) in
-#eval! testInputWithOffset "ControlFlowError" program 14 processLaurelFile
+#eval! testInputWithOffset "ControlFlowError" program 17 processLaurelFile

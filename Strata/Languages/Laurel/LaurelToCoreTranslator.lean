@@ -269,7 +269,9 @@ def translateExpr (expr : StmtExprMd)
       let valueExpr ← translateExpr initializer boundVars isPureContext
       let bodyExpr ← translateExpr { val := StmtExpr.Block rest label, source := innerSrc } (name :: boundVars) isPureContext
       let coreMonoType ← translateType ty
-      return .app () (.abs () name.text (some coreMonoType) bodyExpr) valueExpr
+      disallowed innerSrc "local variables in functions are not YET supported"
+      -- This doesn't work because of a limitation in Core.
+      -- return .app () (.abs () (some coreMonoType) bodyExpr) valueExpr
   | .Block (⟨ .Var (.Declare _), innerSrc⟩ :: rest) label => do
     _ ← disallowed innerSrc "local variables must have initializers in transparent bodies or contracts "
     translateExpr { val := StmtExpr.Block rest label, source := innerSrc } boundVars isPureContext
