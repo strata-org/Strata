@@ -215,18 +215,19 @@ def alphaEquivStatement (s1 s2: Core.Statement) (map:IdMap)
 end
 
 private def alphaEquiv (p1 p2:Core.Procedure):Except Format Bool := do
-  if p1.body.length ≠ p2.body.length then
-    .error (s!"# statements do not match: in {p1.header.name}, "
-        ++ s!"inlined fn one has {p1.body.length}"
-        ++ s!" whereas the answer has {p2.body.length}")
-  else
-    let newmap:IdMap := IdMap.mk ([], []) []
-    let stmts := (p1.body.zip p2.body)
-    let m ← List.foldlM (fun (map:IdMap) (s1,s2) =>
-        alphaEquivStatement s1 s2 map)
-      newmap stmts
-    -- The corresponding outputs should be pairwise α-equivalent
-    return ((p1.header.outputs.zip p2.header.outputs).map (fun ((x, _), (y, _)) => alphaEquivIdents x y m)).all id
+  match p1.body, p2.body with
+  | .structured ss1, .structured ss2 =>
+    if ss1.length ≠ ss2.length then
+      .error (s!"# statements do not match: in {p1.header.name}, "
+          ++ s!"inlined fn one has {ss1.length}"
+          ++ s!" whereas the answer has {ss2.length}")
+    else
+      let newmap:IdMap := IdMap.mk ([], []) []
+      let m ← List.foldlM (fun (map:IdMap) (s1,s2) =>
+          alphaEquivStatement s1 s2 map)
+        newmap (ss1.zip ss2)
+      return ((p1.header.outputs.zip p2.header.outputs).map (fun ((x, _), (y, _)) => alphaEquivIdents x y m)).all id
+  | _, _ => .error f!"alphaEquiv: CFG procedure bodies are not supported in the inlining test harness"
 
 
 

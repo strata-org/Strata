@@ -580,7 +580,7 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
   -- `bodyLabel` is the shared "$body" constant the resolver pre-registers.
   let body : List Core.Statement := [.block bodyLabel (bodyStmts.getD []) mdWithUnknownLoc]
   let spec : Core.Procedure.Spec := { preconditions, postconditions }
-  return { header, spec, body }
+  return { header, spec, body := .structured body }
 
 def translateInvokeOnAxiom (proc : Procedure) (trigger : StmtExprMd)
     : TranslateM (Option Core.Decl) := do
@@ -619,7 +619,6 @@ where
       return LExpr.all () p.name.text (some (← translateType p.type)) inner
 
 structure LaurelTranslateOptions where
-  emitResolutionErrors : Bool := true
   inlineFunctionsWhenPossible : Bool := false
   overflowChecks : Core.OverflowChecks := {}
   keepAllFilesPrefix : Option String := none
