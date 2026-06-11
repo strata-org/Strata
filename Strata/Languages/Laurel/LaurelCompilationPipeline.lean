@@ -105,7 +105,8 @@ def laurelPipeline : Array LaurelPass := #[
   constrainedTypeElimPass
 ]
 
-/-- Every `comesBefore` constraint is respected by the pipeline order. -/
+/-- Every `comesBefore` constraint is respected by the pipeline order.
+    Checked at elaboration time so that mis-ordered passes are caught immediately. -/
 def comesBeforeRespected : Bool :=
   let names := laurelPipeline.toList.map (·.name)
   (List.range laurelPipeline.size).zip laurelPipeline.toList |>.all fun (i, p) =>
@@ -114,7 +115,11 @@ def comesBeforeRespected : Bool :=
       | some j => i < j
       | none   => false   -- target not in laurelPipeline
 
-#guard comesBeforeRespected
+-- Use `initialize` to check at load time instead of `#guard` which requires
+-- interpreter IR that is not available for passes defined in `module` files.
+initialize do
+  unless comesBeforeRespected do
+    throw <| .userError "laurelPipeline: comesBefore ordering constraints violated"
 
 /--
 Run all Laurel-to-Laurel lowering passes on a program, returning the lowered
