@@ -1,0 +1,19 @@
+# Copyright Strata Contributors
+# SPDX-License-Identifier: Apache-2.0 OR MIT
+name: Lint whitespace
+description: >
+  Check .lean files for trailing whitespace and missing final newlines.
+
+inputs:
+  directory:
+    description: Directory to scan for .lean files (relative to the workspace).
+    required: false
+    default: "Strata"
+
+runs:
+  using: composite
+  steps:
+    - name: Check for trailing whitespace
+      shell: bash
+      run: |
+        "${{ github.action_path }}/../../scripts/lintWhitespace.sh" "${{ inputs.directory }}"
