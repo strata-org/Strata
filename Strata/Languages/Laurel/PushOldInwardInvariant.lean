@@ -114,10 +114,10 @@ theorem insideOld_inout_var
       = ((⟨.Old ⟨.Var (.Local n), src⟩, src⟩, true), s) := by
   show ((insideOld _).run b).run s = _
   simp only [insideOld]
-  simp [getThe, MonadStateOf.get, set, MonadState.set, StateT.run,
+  simp [getThe, MonadStateOf.get, set, StateT.run,
         StateT.bind, bind, pure, StateT.pure, StateT.set,
         StateT.lift, StateT.get, liftM, MonadLift.monadLift, monadLift,
-        Functor.map, StateT.map, hIn]
+          hIn]
 
 /-- `insideOld` on a leaf `Var (.Local n)` with `n` not inout: identity. -/
 theorem insideOld_non_inout_var
@@ -127,10 +127,10 @@ theorem insideOld_non_inout_var
       = ((⟨.Var (.Local n), src⟩, b), s) := by
   show ((insideOld _).run b).run s = _
   simp only [insideOld]
-  simp [getThe, MonadStateOf.get, set, MonadState.set, StateT.run,
-        StateT.bind, bind, pure, StateT.pure, StateT.set,
+  simp [getThe, MonadStateOf.get, StateT.run,
+        StateT.bind, bind, pure, StateT.pure,
         StateT.lift, StateT.get, liftM, MonadLift.monadLift, monadLift,
-        Functor.map, StateT.map, hOut]
+          hOut]
 
 /-- `insideOld` on a `.Old inner`: drops the wrapper (warning emitted).
     Critically, returns `inner` unchanged (so any canonical structure
@@ -142,10 +142,10 @@ theorem insideOld_old
   simp only [insideOld]
   refine ⟨{ s with diagnostics := s.diagnostics ++
                                   [diagnosticFromSource src "nested `old(...)` has no effect" .Warning] }, ?_⟩
-  simp [warn, getThe, MonadStateOf.get, set, MonadState.set,
-        StateT.run, StateT.bind, bind, pure, StateT.pure, StateT.set,
-        StateT.lift, StateT.get, liftM, MonadLift.monadLift, monadLift,
-        Functor.map, StateT.map, modify, modifyGet, MonadStateOf.modifyGet,
+  simp [warn,
+        StateT.run, StateT.bind, bind, pure, StateT.pure,
+        StateT.lift, liftM, MonadLift.monadLift, monadLift,
+          modify, modifyGet, MonadStateOf.modifyGet,
         StateT.modifyGet]
 
 /-- `insideOld` on anything else (not `Var Local`, not `Old`): identity. -/
@@ -240,9 +240,9 @@ private theorem mapStmtExprM_insideOld_literalInt_id
   -- mapStmtExprM is bottom-up; the leaf case is `pure expr`, then `insideOld`
   -- on a literal returns it unchanged.
   simp [mapStmtExprM, insideOld, StateT.run, StateT.bind, bind, StateT.pure,
-        pure, getThe, MonadStateOf.get, set, MonadState.set, StateT.set,
-        StateT.lift, StateT.get, liftM, MonadLift.monadLift, monadLift,
-        Functor.map, StateT.map]
+        pure
+
+         ]
 
 /-- Specialized lemma: `mapStmtExprM insideOld` on a literal-int leaf. -/
 private theorem mapStmtExprM_insideOld_canonical_literalInt
@@ -258,9 +258,9 @@ private theorem mapStmtExprM_insideOld_literalBool_id
     (((mapStmtExprM insideOld ⟨.LiteralBool v, src⟩).run b).run s).fst.fst =
     ⟨.LiteralBool v, src⟩ := by
   simp [mapStmtExprM, insideOld, StateT.run, StateT.bind, bind, StateT.pure,
-        pure, getThe, MonadStateOf.get, set, MonadState.set, StateT.set,
-        StateT.lift, StateT.get, liftM, MonadLift.monadLift, monadLift,
-        Functor.map, StateT.map]
+        pure
+
+         ]
 
 private theorem mapStmtExprM_insideOld_canonical_literalBool
     (s : PushOldState) (b : Bool) (v : Bool) (src : Option FileRange) :
@@ -305,8 +305,8 @@ private theorem mapStmtExprM_insideOld_literalString_id
     (s : PushOldState) (b : Bool) (str : String) (src : Option FileRange) :
     (((mapStmtExprM insideOld ⟨.LiteralString str, src⟩).run b).run s).fst.fst =
     ⟨.LiteralString str, src⟩ := by
-  simp [mapStmtExprM, insideOld, StateT.run, StateT.bind, bind, StateT.pure, pure,
-        getThe, MonadStateOf.get, StateT.lift, StateT.get, liftM, MonadLift.monadLift, monadLift]
+  simp [mapStmtExprM, insideOld, StateT.run, StateT.bind, bind, StateT.pure, pure
+              ]
 
 private theorem mapStmtExprM_insideOld_canonical_literalString
     (s : PushOldState) (b : Bool) (str : String) (src : Option FileRange) :
@@ -320,8 +320,8 @@ private theorem mapStmtExprM_insideOld_literalDecimal_id
     (s : PushOldState) (b : Bool) (d : Decimal) (src : Option FileRange) :
     (((mapStmtExprM insideOld ⟨.LiteralDecimal d, src⟩).run b).run s).fst.fst =
     ⟨.LiteralDecimal d, src⟩ := by
-  simp [mapStmtExprM, insideOld, StateT.run, StateT.bind, bind, StateT.pure, pure,
-        getThe, MonadStateOf.get, StateT.lift, StateT.get, liftM, MonadLift.monadLift, monadLift]
+  simp [mapStmtExprM, insideOld, StateT.run, StateT.bind, bind, StateT.pure, pure
+              ]
 
 private theorem mapStmtExprM_insideOld_canonical_literalDecimal
     (s : PushOldState) (b : Bool) (d : Decimal) (src : Option FileRange) :
@@ -337,9 +337,9 @@ private theorem mapStmtExprM_insideOld_new_id
     (((mapStmtExprM insideOld ⟨.New ref, src⟩).run b).run s).fst.fst =
     ⟨.New ref, src⟩ := by
   simp [mapStmtExprM, insideOld, StateT.run, StateT.bind, bind, StateT.pure,
-        pure, getThe, MonadStateOf.get, set, MonadState.set, StateT.set,
-        StateT.lift, StateT.get, liftM, MonadLift.monadLift, monadLift,
-        Functor.map, StateT.map]
+        pure
+
+         ]
 
 private theorem mapStmtExprM_insideOld_canonical_new
     (s : PushOldState) (b : Bool) (ref : Identifier) (src : Option FileRange) :
@@ -356,8 +356,8 @@ private theorem mapStmtExprM_insideOld_canonical_this
       (((mapStmtExprM insideOld ⟨.This, src⟩).run b).run s).fst.fst := by
   have hRes : (((mapStmtExprM insideOld ⟨.This, src⟩).run b).run s).fst.fst =
               ⟨.This, src⟩ := by
-    simp [mapStmtExprM, insideOld, StateT.run, StateT.bind, bind, StateT.pure, pure,
-          getThe, MonadStateOf.get, StateT.lift, StateT.get, liftM, MonadLift.monadLift, monadLift]
+    simp [mapStmtExprM, insideOld, StateT.run, StateT.bind, bind, StateT.pure, pure
+                ]
   rw [hRes]
   exact allSubOldsCanonical_of_subOlds_nil (subOlds_this src)
 
@@ -367,8 +367,8 @@ private theorem mapStmtExprM_insideOld_canonical_abstract
       (((mapStmtExprM insideOld ⟨.Abstract, src⟩).run b).run s).fst.fst := by
   have hRes : (((mapStmtExprM insideOld ⟨.Abstract, src⟩).run b).run s).fst.fst =
               ⟨.Abstract, src⟩ := by
-    simp [mapStmtExprM, insideOld, StateT.run, StateT.bind, bind, StateT.pure, pure,
-          getThe, MonadStateOf.get, StateT.lift, StateT.get, liftM, MonadLift.monadLift, monadLift]
+    simp [mapStmtExprM, insideOld, StateT.run, StateT.bind, bind, StateT.pure, pure
+                ]
   rw [hRes]
   exact allSubOldsCanonical_of_subOlds_nil (subOlds_abstract src)
 
@@ -378,8 +378,8 @@ private theorem mapStmtExprM_insideOld_canonical_all
       (((mapStmtExprM insideOld ⟨.All, src⟩).run b).run s).fst.fst := by
   have hRes : (((mapStmtExprM insideOld ⟨.All, src⟩).run b).run s).fst.fst =
               ⟨.All, src⟩ := by
-    simp [mapStmtExprM, insideOld, StateT.run, StateT.bind, bind, StateT.pure, pure,
-          getThe, MonadStateOf.get, StateT.lift, StateT.get, liftM, MonadLift.monadLift, monadLift]
+    simp [mapStmtExprM, insideOld, StateT.run, StateT.bind, bind, StateT.pure, pure
+                ]
   rw [hRes]
   exact allSubOldsCanonical_of_subOlds_nil (subOlds_all src)
 
@@ -389,8 +389,8 @@ private theorem mapStmtExprM_insideOld_canonical_exit
       (((mapStmtExprM insideOld ⟨.Exit label, src⟩).run b).run s).fst.fst := by
   have hRes : (((mapStmtExprM insideOld ⟨.Exit label, src⟩).run b).run s).fst.fst =
               ⟨.Exit label, src⟩ := by
-    simp [mapStmtExprM, insideOld, StateT.run, StateT.bind, bind, StateT.pure, pure,
-          getThe, MonadStateOf.get, StateT.lift, StateT.get, liftM, MonadLift.monadLift, monadLift]
+    simp [mapStmtExprM, insideOld, StateT.run, StateT.bind, bind, StateT.pure, pure
+                ]
   rw [hRes]
   exact allSubOldsCanonical_of_subOlds_nil (subOlds_exit label src)
 
@@ -400,8 +400,8 @@ private theorem mapStmtExprM_insideOld_canonical_varDeclare
       (((mapStmtExprM insideOld ⟨.Var (.Declare p), src⟩).run b).run s).fst.fst := by
   have hRes : (((mapStmtExprM insideOld ⟨.Var (.Declare p), src⟩).run b).run s).fst.fst =
               ⟨.Var (.Declare p), src⟩ := by
-    simp [mapStmtExprM, insideOld, StateT.run, StateT.bind, bind, StateT.pure, pure,
-          getThe, MonadStateOf.get, StateT.lift, StateT.get, liftM, MonadLift.monadLift, monadLift]
+    simp [mapStmtExprM, insideOld, StateT.run, StateT.bind, bind, StateT.pure, pure
+                ]
   rw [hRes]
   have : StmtExprMd.subOlds (⟨.Var (.Declare p), src⟩ : StmtExprMd) = [] := by
     rw [StmtExprMd.subOlds]
@@ -422,8 +422,8 @@ private theorem mapStmtExprM_insideOld_assigned_run
   generalize hM : (mapStmtExprM insideOld n b) s = res
   obtain ⟨⟨n', b'⟩, s'⟩ := res
   unfold insideOld
-  simp only [StateT.run, StateT.bind, bind, StateT.pure, pure,
-             liftM, MonadLift.monadLift, monadLift]
+  simp only [StateT.pure, pure
+               ]
 
 /-- Canonical for `.Assigned n` given canonical for the rewritten inner. -/
 private theorem mapStmtExprM_insideOld_canonical_assigned
@@ -451,8 +451,8 @@ private theorem mapStmtExprM_insideOld_fresh_run
   generalize hM : (mapStmtExprM insideOld v b) s = res
   obtain ⟨⟨v', b'⟩, s'⟩ := res
   unfold insideOld
-  simp only [StateT.run, StateT.bind, bind, StateT.pure, pure,
-             liftM, MonadLift.monadLift, monadLift]
+  simp only [StateT.pure, pure
+               ]
 
 private theorem mapStmtExprM_insideOld_canonical_fresh
     (s : PushOldState) (b : Bool) (v : StmtExprMd) (src : Option FileRange)
@@ -479,8 +479,8 @@ private theorem mapStmtExprM_insideOld_varField_run
   generalize hM : (mapStmtExprM insideOld target b) s = res
   obtain ⟨⟨target', b'⟩, s'⟩ := res
   unfold insideOld
-  simp only [StateT.run, StateT.bind, bind, StateT.pure, pure,
-             liftM, MonadLift.monadLift, monadLift]
+  simp only [StateT.pure, pure
+               ]
 
 private theorem mapStmtExprM_insideOld_canonical_varField
     (s : PushOldState) (b : Bool) (target : StmtExprMd) (fn : Identifier) (src : Option FileRange)
@@ -506,8 +506,8 @@ private theorem mapStmtExprM_insideOld_asType_run
   generalize hM : (mapStmtExprM insideOld target b) s = res
   obtain ⟨⟨target', b'⟩, s'⟩ := res
   unfold insideOld
-  simp only [StateT.run, StateT.bind, bind, StateT.pure, pure,
-             liftM, MonadLift.monadLift, monadLift]
+  simp only [StateT.pure, pure
+               ]
 
 private theorem mapStmtExprM_insideOld_canonical_asType
     (s : PushOldState) (b : Bool) (target : StmtExprMd) (ty : AstNode HighType) (src : Option FileRange)
@@ -533,8 +533,8 @@ private theorem mapStmtExprM_insideOld_isType_run
   generalize hM : (mapStmtExprM insideOld target b) s = res
   obtain ⟨⟨target', b'⟩, s'⟩ := res
   unfold insideOld
-  simp only [StateT.run, StateT.bind, bind, StateT.pure, pure,
-             liftM, MonadLift.monadLift, monadLift]
+  simp only [StateT.pure, pure
+               ]
 
 private theorem mapStmtExprM_insideOld_canonical_isType
     (s : PushOldState) (b : Bool) (target : StmtExprMd) (ty : AstNode HighType) (src : Option FileRange)
@@ -560,8 +560,8 @@ private theorem mapStmtExprM_insideOld_assume_run
   generalize hM : (mapStmtExprM insideOld cond b) s = res
   obtain ⟨⟨cond', b'⟩, s'⟩ := res
   unfold insideOld
-  simp only [StateT.run, StateT.bind, bind, StateT.pure, pure,
-             liftM, MonadLift.monadLift, monadLift]
+  simp only [StateT.pure, pure
+               ]
 
 private theorem mapStmtExprM_insideOld_canonical_assume
     (s : PushOldState) (b : Bool) (cond : StmtExprMd) (src : Option FileRange)
@@ -587,8 +587,8 @@ private theorem mapStmtExprM_insideOld_contractOf_run
   generalize hM : (mapStmtExprM insideOld fn b) s = res
   obtain ⟨⟨fn', b'⟩, s'⟩ := res
   unfold insideOld
-  simp only [StateT.run, StateT.bind, bind, StateT.pure, pure,
-             liftM, MonadLift.monadLift, monadLift]
+  simp only [StateT.pure, pure
+               ]
 
 private theorem mapStmtExprM_insideOld_canonical_contractOf
     (s : PushOldState) (b : Bool) (ty : ContractType) (fn : StmtExprMd) (src : Option FileRange)
@@ -639,9 +639,9 @@ private theorem mapStmtExprM_insideOld_return_none_run
     ⟨.Return none, src⟩ := by
   rw [mapStmtExprM]
   simp [StateT.run, StateT.bind, bind, StateT.pure, pure,
-        List.attach, List.attachWith, List.mapM_nil,
+
         Option.attach, Option.attachWith, Option.mapM,
-        insideOld, liftM, MonadLift.monadLift, monadLift]
+        insideOld   ]
 
 private theorem mapStmtExprM_insideOld_canonical_return_none
     (s : PushOldState) (b : Bool) (src : Option FileRange) :
@@ -662,8 +662,8 @@ private theorem mapStmtExprM_insideOld_return_some_run
   generalize hM : (mapStmtExprM insideOld v b) s = res
   obtain ⟨⟨v', b'⟩, s'⟩ := res
   unfold insideOld
-  simp only [StateT.run, StateT.bind, bind, StateT.pure, pure,
-             liftM, MonadLift.monadLift, monadLift]
+  simp only [StateT.pure, pure
+               ]
 
 private theorem mapStmtExprM_insideOld_canonical_return_some
     (s : PushOldState) (b : Bool) (v : StmtExprMd) (src : Option FileRange)
@@ -688,21 +688,21 @@ theorem insideOld_preserves_inoutNames
     cases v with
     | Local nm =>
       by_cases hIn : nm.text ∈ s.inoutNames
-      · simp [h, hIn, StateT.run, StateT.bind, bind, StateT.pure, pure,
-              getThe, MonadStateOf.get, set, MonadState.set, StateT.set,
+      · simp [hIn, StateT.run, StateT.bind, bind, StateT.pure, pure,
+              getThe, MonadStateOf.get, set, StateT.set,
               StateT.lift, StateT.get, liftM, MonadLift.monadLift, monadLift]
-      · simp [h, hIn, StateT.run, StateT.bind, bind, StateT.pure, pure,
+      · simp [hIn, StateT.run, StateT.bind, bind, StateT.pure, pure,
               getThe, MonadStateOf.get, StateT.lift, StateT.get,
               liftM, MonadLift.monadLift, monadLift]
     | Field _ _ =>
-      simp [h, StateT.run, StateT.pure, pure]
+      simp [StateT.run, StateT.pure, pure]
     | Declare _ =>
-      simp [h, StateT.run, StateT.pure, pure]
+      simp [StateT.run, StateT.pure, pure]
   | Old inner =>
-    simp only [h, StateT.run, StateT.bind, bind, StateT.pure, pure,
+    simp only [StateT.run, StateT.bind, bind, StateT.pure, pure,
                warn, modify, modifyGet, MonadStateOf.modifyGet, StateT.modifyGet,
                liftM, MonadLift.monadLift, monadLift, StateT.lift]
-  | _ => simp [h, StateT.run, StateT.pure, pure]
+  | _ => simp [StateT.run, StateT.pure, pure]
 
 /-- `xs.attach.mapM (fun ⟨e, _⟩ => mapStmtExprM insideOld e) = xs.mapM (mapStmtExprM insideOld)`. -/
 private theorem mapStmtExprM_insideOld_attach_mapM_eq (xs : List StmtExprMd) :
@@ -732,7 +732,7 @@ private theorem listMapM_insideOld_preserves_inoutNames_of
       show (mapStmtExprM insideOld x b s).snd = sX
       rw [hM]
     rw [hSX] at hPresX
-    simp only [StateT.run, StateT.bind, bind, StateT.pure, pure]
+    simp only []
     generalize hRest : xs.mapM (mapStmtExprM insideOld) bX sX = resRest
     obtain ⟨⟨ys', bRest⟩, sRest⟩ := resRest
     have hRestPres : ((xs.mapM (mapStmtExprM insideOld)).run bX sX).snd.inoutNames = sX.inoutNames := by
@@ -839,7 +839,7 @@ private theorem listMapM_mapAssignTargetsAux_preserves_inoutNames_of
       show (mapAssignTargetsAux y b' s').snd = sY
       rw [hM]
     rw [hSY] at hPresY
-    simp only [StateT.run, StateT.bind, bind, StateT.pure, pure]
+    simp only []
     generalize hRest : ys.mapM mapAssignTargetsAux bY sY = resRest
     obtain ⟨⟨ys', bRest⟩, sRest⟩ := resRest
     have hYsSubTail : ∀ z ∈ ys, z ∈ xs :=
@@ -898,63 +898,63 @@ theorem mapStmtExprM_insideOld_preserves_inoutNames
     | LiteralInt v =>
       have he : e = ⟨.LiteralInt v, e.source⟩ := by cases e; simp_all
       rw [he, mapStmtExprM]
-      simp [insideOld, StateT.run, StateT.bind, bind, StateT.pure, pure,
-            getThe, MonadStateOf.get, StateT.lift, StateT.get,
-            liftM, MonadLift.monadLift, monadLift]
+      simp [insideOld, StateT.run, StateT.bind, bind, StateT.pure, pure
+
+              ]
     | LiteralBool v =>
       have he : e = ⟨.LiteralBool v, e.source⟩ := by cases e; simp_all
       rw [he, mapStmtExprM]
-      simp [insideOld, StateT.run, StateT.bind, bind, StateT.pure, pure,
-            getThe, MonadStateOf.get, StateT.lift, StateT.get,
-            liftM, MonadLift.monadLift, monadLift]
+      simp [insideOld, StateT.run, StateT.bind, bind, StateT.pure, pure
+
+              ]
     | LiteralString str =>
       have he : e = ⟨.LiteralString str, e.source⟩ := by cases e; simp_all
       rw [he, mapStmtExprM]
-      simp [insideOld, StateT.run, StateT.bind, bind, StateT.pure, pure,
-            getThe, MonadStateOf.get, StateT.lift, StateT.get,
-            liftM, MonadLift.monadLift, monadLift]
+      simp [insideOld, StateT.run, StateT.bind, bind, StateT.pure, pure
+
+              ]
     | LiteralDecimal d =>
       have he : e = ⟨.LiteralDecimal d, e.source⟩ := by cases e; simp_all
       rw [he, mapStmtExprM]
-      simp [insideOld, StateT.run, StateT.bind, bind, StateT.pure, pure,
-            getThe, MonadStateOf.get, StateT.lift, StateT.get,
-            liftM, MonadLift.monadLift, monadLift]
+      simp [insideOld, StateT.run, StateT.bind, bind, StateT.pure, pure
+
+              ]
     | New ref =>
       have he : e = ⟨.New ref, e.source⟩ := by cases e; simp_all
       rw [he, mapStmtExprM]
-      simp [insideOld, StateT.run, StateT.bind, bind, StateT.pure, pure,
-            getThe, MonadStateOf.get, StateT.lift, StateT.get,
-            liftM, MonadLift.monadLift, monadLift]
+      simp [insideOld, StateT.run, StateT.bind, bind, StateT.pure, pure
+
+              ]
     | This =>
       have he : e = ⟨.This, e.source⟩ := by cases e; simp_all
       rw [he, mapStmtExprM]
-      simp [insideOld, StateT.run, StateT.bind, bind, StateT.pure, pure,
-            getThe, MonadStateOf.get, StateT.lift, StateT.get,
-            liftM, MonadLift.monadLift, monadLift]
+      simp [insideOld, StateT.run, StateT.bind, bind, StateT.pure, pure
+
+              ]
     | Abstract =>
       have he : e = ⟨.Abstract, e.source⟩ := by cases e; simp_all
       rw [he, mapStmtExprM]
-      simp [insideOld, StateT.run, StateT.bind, bind, StateT.pure, pure,
-            getThe, MonadStateOf.get, StateT.lift, StateT.get,
-            liftM, MonadLift.monadLift, monadLift]
+      simp [insideOld, StateT.run, StateT.bind, bind, StateT.pure, pure
+
+              ]
     | All =>
       have he : e = ⟨.All, e.source⟩ := by cases e; simp_all
       rw [he, mapStmtExprM]
-      simp [insideOld, StateT.run, StateT.bind, bind, StateT.pure, pure,
-            getThe, MonadStateOf.get, StateT.lift, StateT.get,
-            liftM, MonadLift.monadLift, monadLift]
+      simp [insideOld, StateT.run, StateT.bind, bind, StateT.pure, pure
+
+              ]
     | Exit label =>
       have he : e = ⟨.Exit label, e.source⟩ := by cases e; simp_all
       rw [he, mapStmtExprM]
-      simp [insideOld, StateT.run, StateT.bind, bind, StateT.pure, pure,
-            getThe, MonadStateOf.get, StateT.lift, StateT.get,
-            liftM, MonadLift.monadLift, monadLift]
+      simp [insideOld, StateT.run, StateT.bind, bind, StateT.pure, pure
+
+              ]
     | Hole det ty =>
       have he : e = ⟨.Hole det ty, e.source⟩ := by cases e; simp_all
       rw [he, mapStmtExprM]
-      simp [insideOld, StateT.run, StateT.bind, bind, StateT.pure, pure,
-            getThe, MonadStateOf.get, StateT.lift, StateT.get,
-            liftM, MonadLift.monadLift, monadLift]
+      simp [insideOld, StateT.run, StateT.bind, bind, StateT.pure, pure
+
+              ]
     | Var v =>
       cases v with
       | Local nm =>
@@ -963,7 +963,7 @@ theorem mapStmtExprM_insideOld_preserves_inoutNames
         rw [mapStmtExprM]
         by_cases hIn : nm.text ∈ s.inoutNames
         · simp [insideOld, hIn, StateT.run, StateT.bind, bind, StateT.pure, pure,
-                getThe, MonadStateOf.get, set, MonadState.set, StateT.set,
+                getThe, MonadStateOf.get, set, StateT.set,
                 StateT.lift, StateT.get, liftM, MonadLift.monadLift, monadLift]
         · simp [insideOld, hIn, StateT.run, StateT.bind, bind, StateT.pure, pure,
                 getThe, MonadStateOf.get, StateT.lift, StateT.get,
@@ -971,9 +971,9 @@ theorem mapStmtExprM_insideOld_preserves_inoutNames
       | Declare p =>
         have he : e = ⟨.Var (.Declare p), e.source⟩ := by cases e; simp_all
         rw [he, mapStmtExprM]
-        simp [insideOld, StateT.run, StateT.bind, bind, StateT.pure, pure,
-              getThe, MonadStateOf.get, StateT.lift, StateT.get,
-              liftM, MonadLift.monadLift, monadLift]
+        simp [insideOld, StateT.run, StateT.bind, bind, StateT.pure, pure
+
+                ]
       | Field target fn =>
         have he : e = ⟨.Var (.Field target fn), e.source⟩ := by cases e; simp_all
         rw [he, mapStmtExprM]
@@ -987,8 +987,8 @@ theorem mapStmtExprM_insideOld_preserves_inoutNames
         generalize hM : (mapStmtExprM insideOld target b) s = res
         obtain ⟨⟨target', b'⟩, s'⟩ := res
         unfold insideOld
-        simp only [StateT.run, StateT.bind, bind, StateT.pure, pure,
-                   liftM, MonadLift.monadLift, monadLift]
+        simp only [StateT.pure, pure
+                     ]
         have : (((mapStmtExprM insideOld target).run b).run s).snd = s' := by
           show (mapStmtExprM insideOld target b s).snd = s'
           rw [hM]
@@ -1006,8 +1006,8 @@ theorem mapStmtExprM_insideOld_preserves_inoutNames
       generalize hM : (mapStmtExprM insideOld m b) s = res
       obtain ⟨⟨m', b'⟩, s'⟩ := res
       unfold insideOld
-      simp only [StateT.run, StateT.bind, bind, StateT.pure, pure,
-                 liftM, MonadLift.monadLift, monadLift]
+      simp only [StateT.pure, pure
+                   ]
       have : (((mapStmtExprM insideOld m).run b).run s).snd = s' := by
         show (mapStmtExprM insideOld m b s).snd = s'
         rw [hM]
@@ -1025,8 +1025,8 @@ theorem mapStmtExprM_insideOld_preserves_inoutNames
       generalize hM : (mapStmtExprM insideOld v b) s = res
       obtain ⟨⟨v', b'⟩, s'⟩ := res
       unfold insideOld
-      simp only [StateT.run, StateT.bind, bind, StateT.pure, pure,
-                 liftM, MonadLift.monadLift, monadLift]
+      simp only [StateT.pure, pure
+                   ]
       have : (((mapStmtExprM insideOld v).run b).run s).snd = s' := by
         show (mapStmtExprM insideOld v b s).snd = s'
         rw [hM]
@@ -1044,8 +1044,8 @@ theorem mapStmtExprM_insideOld_preserves_inoutNames
       generalize hM : (mapStmtExprM insideOld target b) s = res
       obtain ⟨⟨t', b'⟩, s'⟩ := res
       unfold insideOld
-      simp only [StateT.run, StateT.bind, bind, StateT.pure, pure,
-                 liftM, MonadLift.monadLift, monadLift]
+      simp only [StateT.pure, pure
+                   ]
       have : (((mapStmtExprM insideOld target).run b).run s).snd = s' := by
         show (mapStmtExprM insideOld target b s).snd = s'
         rw [hM]
@@ -1063,8 +1063,8 @@ theorem mapStmtExprM_insideOld_preserves_inoutNames
       generalize hM : (mapStmtExprM insideOld target b) s = res
       obtain ⟨⟨t', b'⟩, s'⟩ := res
       unfold insideOld
-      simp only [StateT.run, StateT.bind, bind, StateT.pure, pure,
-                 liftM, MonadLift.monadLift, monadLift]
+      simp only [StateT.pure, pure
+                   ]
       have : (((mapStmtExprM insideOld target).run b).run s).snd = s' := by
         show (mapStmtExprM insideOld target b s).snd = s'
         rw [hM]
@@ -1082,8 +1082,8 @@ theorem mapStmtExprM_insideOld_preserves_inoutNames
       generalize hM : (mapStmtExprM insideOld cond b) s = res
       obtain ⟨⟨c', b'⟩, s'⟩ := res
       unfold insideOld
-      simp only [StateT.run, StateT.bind, bind, StateT.pure, pure,
-                 liftM, MonadLift.monadLift, monadLift]
+      simp only [StateT.pure, pure
+                   ]
       have : (((mapStmtExprM insideOld cond).run b).run s).snd = s' := by
         show (mapStmtExprM insideOld cond b s).snd = s'
         rw [hM]
@@ -1101,8 +1101,8 @@ theorem mapStmtExprM_insideOld_preserves_inoutNames
       generalize hM : (mapStmtExprM insideOld fn b) s = res
       obtain ⟨⟨f', b'⟩, s'⟩ := res
       unfold insideOld
-      simp only [StateT.run, StateT.bind, bind, StateT.pure, pure,
-                 liftM, MonadLift.monadLift, monadLift]
+      simp only [StateT.pure, pure
+                   ]
       have : (((mapStmtExprM insideOld fn).run b).run s).snd = s' := by
         show (mapStmtExprM insideOld fn b s).snd = s'
         rw [hM]
@@ -1120,9 +1120,9 @@ theorem mapStmtExprM_insideOld_preserves_inoutNames
       generalize hM : (mapStmtExprM insideOld inner b) s = res
       obtain ⟨⟨inner', b'⟩, s'⟩ := res
       unfold insideOld
-      simp only [StateT.run, StateT.bind, bind, StateT.pure, pure,
+      simp only [StateT.bind, bind, StateT.pure, pure,
                  liftM, MonadLift.monadLift, monadLift, warn,
-                 modify, modifyGet, MonadStateOf.modifyGet, StateT.modifyGet]
+                 modify, modifyGet, MonadStateOf.modifyGet ]
       have : (((mapStmtExprM insideOld inner).run b).run s).snd = s' := by
         show (mapStmtExprM insideOld inner b s).snd = s'
         rw [hM]
@@ -1134,9 +1134,9 @@ theorem mapStmtExprM_insideOld_preserves_inoutNames
         have he : e = ⟨.Return none, e.source⟩ := by cases e; simp_all
         rw [he, mapStmtExprM]
         simp [insideOld, StateT.run, StateT.bind, bind, StateT.pure, pure,
-              Option.attach, Option.attachWith, Option.mapM,
-              getThe, MonadStateOf.get, StateT.lift, StateT.get,
-              liftM, MonadLift.monadLift, monadLift]
+              Option.attach, Option.attachWith, Option.mapM
+
+                ]
       | some r =>
         have he : e = ⟨.Return (some r), e.source⟩ := by cases e; simp_all
         rw [he, mapStmtExprM]
@@ -1151,8 +1151,8 @@ theorem mapStmtExprM_insideOld_preserves_inoutNames
         generalize hM : (mapStmtExprM insideOld r b) s = res
         obtain ⟨⟨r', b'⟩, s'⟩ := res
         unfold insideOld
-        simp only [StateT.run, StateT.bind, bind, StateT.pure, pure,
-                   liftM, MonadLift.monadLift, monadLift]
+        simp only [StateT.pure, pure
+                     ]
         have : (((mapStmtExprM insideOld r).run b).run s).snd = s' := by
           show (mapStmtExprM insideOld r b s).snd = s'
           rw [hM]
@@ -1171,8 +1171,8 @@ theorem mapStmtExprM_insideOld_preserves_inoutNames
       generalize hM : (mapStmtExprM insideOld c.condition b) s = res
       obtain ⟨⟨c', b'⟩, s'⟩ := res
       unfold insideOld
-      simp only [StateT.run, StateT.bind, bind, StateT.pure, pure,
-                 liftM, MonadLift.monadLift, monadLift]
+      simp only [StateT.pure, pure
+                   ]
       have : (((mapStmtExprM insideOld c.condition).run b).run s).snd = s' := by
         show (mapStmtExprM insideOld c.condition b s).snd = s'
         rw [hM]
@@ -1197,7 +1197,7 @@ theorem mapStmtExprM_insideOld_preserves_inoutNames
         show (mapStmtExprM insideOld v b s).snd = sV
         rw [hMv]
       rw [hSV] at hPresV
-      simp only [StateT.run, StateT.bind, bind, StateT.pure, pure]
+      simp only []
       generalize hMp : (mapStmtExprM insideOld p bV) sV = resP
       obtain ⟨⟨p', bP⟩, sP⟩ := resP
       have hPresP := ih (sizeOf p) hSizeP sV bV p rfl
@@ -1206,8 +1206,8 @@ theorem mapStmtExprM_insideOld_preserves_inoutNames
         rw [hMp]
       rw [hSP] at hPresP
       unfold insideOld
-      simp only [StateT.run, StateT.bind, bind, StateT.pure, pure,
-                 liftM, MonadLift.monadLift, monadLift]
+      simp only [StateT.pure, pure
+                   ]
       exact hPresP.trans hPresV
     | ReferenceEquals lhs rhs =>
       have he : e = ⟨.ReferenceEquals lhs rhs, e.source⟩ := by cases e; simp_all
@@ -1228,7 +1228,7 @@ theorem mapStmtExprM_insideOld_preserves_inoutNames
         show (mapStmtExprM insideOld lhs b s).snd = sL
         rw [hML]
       rw [hSL] at hPresL
-      simp only [StateT.run, StateT.bind, bind, StateT.pure, pure]
+      simp only []
       generalize hMR : (mapStmtExprM insideOld rhs bL) sL = resR
       obtain ⟨⟨rhs', bR⟩, sR⟩ := resR
       have hPresR := ih (sizeOf rhs) hSizeR sL bL rhs rfl
@@ -1237,8 +1237,8 @@ theorem mapStmtExprM_insideOld_preserves_inoutNames
         rw [hMR]
       rw [hSR] at hPresR
       unfold insideOld
-      simp only [StateT.run, StateT.bind, bind, StateT.pure, pure,
-                 liftM, MonadLift.monadLift, monadLift]
+      simp only [StateT.pure, pure
+                   ]
       exact hPresR.trans hPresL
     | IfThenElse cond th el =>
       cases el with
@@ -1254,7 +1254,7 @@ theorem mapStmtExprM_insideOld_preserves_inoutNames
           have := AstNode.sizeOf_val_lt e
           omega
         simp only [StateT.run, StateT.bind, bind, StateT.pure, pure,
-                   Option.attach, Option.attachWith, Option.mapM, Functor.map, StateT.map]
+                   Option.attach, Option.attachWith, Option.mapM  ]
         generalize hMc : (mapStmtExprM insideOld cond b) s = resC
         obtain ⟨⟨cond', bC⟩, sC⟩ := resC
         have hPresC := ih (sizeOf cond) hSizeC s b cond rfl
@@ -1262,7 +1262,7 @@ theorem mapStmtExprM_insideOld_preserves_inoutNames
           show (mapStmtExprM insideOld cond b s).snd = sC
           rw [hMc]
         rw [hSC] at hPresC
-        simp only [StateT.run, StateT.bind, bind, StateT.pure, pure]
+        simp only []
         generalize hMt : (mapStmtExprM insideOld th bC) sC = resT
         obtain ⟨⟨th', bT⟩, sT⟩ := resT
         have hPresT := ih (sizeOf th) hSizeT sC bC th rfl
@@ -1271,8 +1271,8 @@ theorem mapStmtExprM_insideOld_preserves_inoutNames
           rw [hMt]
         rw [hST] at hPresT
         unfold insideOld
-        simp only [StateT.run, StateT.bind, bind, StateT.pure, pure,
-                   liftM, MonadLift.monadLift, monadLift]
+        simp only [StateT.pure, pure
+                     ]
         exact hPresT.trans hPresC
       | some elE =>
         have he : e = ⟨.IfThenElse cond th (some elE), e.source⟩ := by cases e; simp_all
@@ -1299,7 +1299,7 @@ theorem mapStmtExprM_insideOld_preserves_inoutNames
           show (mapStmtExprM insideOld cond b s).snd = sC
           rw [hMc]
         rw [hSC] at hPresC
-        simp only [StateT.run, StateT.bind, bind, StateT.pure, pure]
+        simp only []
         generalize hMt : (mapStmtExprM insideOld th bC) sC = resT
         obtain ⟨⟨th', bT⟩, sT⟩ := resT
         have hPresT := ih (sizeOf th) hSizeT sC bC th rfl
@@ -1307,8 +1307,8 @@ theorem mapStmtExprM_insideOld_preserves_inoutNames
           show (mapStmtExprM insideOld th bC sC).snd = sT
           rw [hMt]
         rw [hST] at hPresT
-        simp only [StateT.run, StateT.bind, bind, StateT.pure, pure,
-                   Functor.map, StateT.map]
+        simp only [
+                    ]
         generalize hMe : (mapStmtExprM insideOld elE bT) sT = resE
         obtain ⟨⟨elE', bE⟩, sE⟩ := resE
         have hPresE := ih (sizeOf elE) hSizeE sT bT elE rfl
@@ -1317,8 +1317,8 @@ theorem mapStmtExprM_insideOld_preserves_inoutNames
           rw [hMe]
         rw [hSE] at hPresE
         unfold insideOld
-        simp only [StateT.run, StateT.bind, bind, StateT.pure, pure,
-                   liftM, MonadLift.monadLift, monadLift]
+        simp only [StateT.pure, pure
+                     ]
         exact (hPresE.trans hPresT).trans hPresC
     | Quantifier mode param trigger body =>
       cases trigger with
@@ -1332,8 +1332,8 @@ theorem mapStmtExprM_insideOld_preserves_inoutNames
           omega
         have hPres := ih (sizeOf body) hSize s b body rfl
         simp only [StateT.run, StateT.bind, bind, StateT.pure, pure,
-                   Option.attach, Option.attachWith, Option.mapM,
-                   Functor.map, StateT.map]
+                   Option.attach, Option.attachWith, Option.mapM
+                    ]
         generalize hM : (mapStmtExprM insideOld body b) s = res
         obtain ⟨⟨body', b'⟩, s'⟩ := res
         have hSS : (((mapStmtExprM insideOld body).run b).run s).snd = s' := by
@@ -1341,8 +1341,8 @@ theorem mapStmtExprM_insideOld_preserves_inoutNames
           rw [hM]
         rw [hSS] at hPres
         unfold insideOld
-        simp only [StateT.run, StateT.bind, bind, StateT.pure, pure,
-                   liftM, MonadLift.monadLift, monadLift]
+        simp only [StateT.pure, pure
+                     ]
         exact hPres
       | some tr =>
         have he : e = ⟨.Quantifier mode param (some tr) body, e.source⟩ := by cases e; simp_all
@@ -1368,7 +1368,7 @@ theorem mapStmtExprM_insideOld_preserves_inoutNames
           show (mapStmtExprM insideOld tr b s).snd = sT
           rw [hMt]
         rw [hST] at hPresT
-        simp only [StateT.run, StateT.bind, bind, StateT.pure, pure]
+        simp only []
         generalize hMb : (mapStmtExprM insideOld body bT) sT = resB
         obtain ⟨⟨body', bB⟩, sB⟩ := resB
         have hPresB := ih (sizeOf body) hSizeB sT bT body rfl
@@ -1377,8 +1377,8 @@ theorem mapStmtExprM_insideOld_preserves_inoutNames
           rw [hMb]
         rw [hSB] at hPresB
         unfold insideOld
-        simp only [StateT.run, StateT.bind, bind, StateT.pure, pure,
-                   liftM, MonadLift.monadLift, monadLift]
+        simp only [StateT.pure, pure
+                     ]
         exact hPresB.trans hPresT
     | PureFieldUpdate t fn nv =>
       have he : e = ⟨.PureFieldUpdate t fn nv, e.source⟩ := by cases e; simp_all
@@ -1399,7 +1399,7 @@ theorem mapStmtExprM_insideOld_preserves_inoutNames
         show (mapStmtExprM insideOld t b s).snd = sT
         rw [hMt]
       rw [hST] at hPresT
-      simp only [StateT.run, StateT.bind, bind, StateT.pure, pure]
+      simp only []
       generalize hMnv : (mapStmtExprM insideOld nv bT) sT = resNv
       obtain ⟨⟨nv', bNv⟩, sNv⟩ := resNv
       have hPresNv := ih (sizeOf nv) hSizeNv sT bT nv rfl
@@ -1408,8 +1408,8 @@ theorem mapStmtExprM_insideOld_preserves_inoutNames
         rw [hMnv]
       rw [hSNv] at hPresNv
       unfold insideOld
-      simp only [StateT.run, StateT.bind, bind, StateT.pure, pure,
-                 liftM, MonadLift.monadLift, monadLift]
+      simp only [StateT.pure, pure
+                   ]
       exact hPresNv.trans hPresT
     | Block stmts label =>
       have he : e = ⟨.Block stmts label, e.source⟩ := by cases e; simp_all
@@ -1449,7 +1449,7 @@ theorem mapStmtExprM_insideOld_preserves_inoutNames
         exact ih (sizeOf x) hxSize s' b' x rfl
       simp only [StateT.run, StateT.bind, bind, StateT.pure, pure, insideOld,
                  Option.attach, Option.attachWith, Option.mapM,
-                 Functor.map, StateT.map]
+                 Functor.map ]
       rw [mapStmtExprM_insideOld_attach_mapM_eq]
       generalize hC : (mapStmtExprM insideOld cond b) s = resC
       obtain ⟨⟨cond', bC⟩, sC⟩ := resC
@@ -1468,7 +1468,7 @@ theorem mapStmtExprM_insideOld_preserves_inoutNames
       rw [hSI'] at hPresI
       cases dec with
       | none =>
-        simp only [Option.attach, Option.attachWith, Option.mapM, StateT.pure, pure]
+        simp only [StateT.pure, pure]
         generalize hBd : (mapStmtExprM insideOld body bI) sI = resBd
         obtain ⟨⟨body', bBd⟩, sBd⟩ := resBd
         have hPresBd := ih (sizeOf body) hBSz sI bI body rfl
@@ -1480,8 +1480,8 @@ theorem mapStmtExprM_insideOld_preserves_inoutNames
       | some d =>
         have hDecSpec : sizeOf (some d) = 1 + sizeOf d := rfl
         have hDSz : sizeOf d < n := by omega
-        simp only [Option.attach, Option.attachWith, Option.mapM, StateT.pure, pure,
-                   Functor.map, StateT.map, StateT.bind, bind]
+        simp only [StateT.pure, pure,
+                    StateT.map, StateT.bind, bind]
         generalize hD : (mapStmtExprM insideOld d bI) sI = resD
         obtain ⟨⟨d', bD⟩, sD⟩ := resD
         have hPresD := ih (sizeOf d) hDSz sI bI d rfl
@@ -1581,7 +1581,7 @@ theorem mapStmtExprM_insideOld_preserves_inoutNames
       have hSpec : sizeOf (StmtExpr.Assign targets value) = 1 + sizeOf targets + sizeOf value :=
         StmtExpr.Assign.sizeOf_spec targets value
       have hVSz : sizeOf value < n := by omega
-      simp only [Prod.fst, Prod.snd]
+      simp only []
       have ihV := ih (sizeOf value) hVSz (mapAssignTargets targets b s).snd
                      (mapAssignTargets targets b s).fst.snd value rfl
       -- Need: (mapAssignTargets targets b s).snd.inoutNames = s.inoutNames.
@@ -1620,8 +1620,8 @@ private theorem mapStmtExprM_insideOld_quantifier_no_trigger_run
   rw [mapStmtExprM]
   simp only [StateT.run, StateT.bind, bind, StateT.pure, pure,
              Option.attach, Option.attachWith, Option.mapM,
-             Functor.map, StateT.map,
-             insideOld, liftM, MonadLift.monadLift, monadLift]
+
+             insideOld   ]
   generalize hM : (mapStmtExprM insideOld body b) s = res
   obtain ⟨⟨body', b'⟩, s'⟩ := res
   rfl
@@ -1656,8 +1656,8 @@ private theorem mapStmtExprM_insideOld_ifThenElse_none_run
   rw [mapStmtExprM]
   simp only [StateT.run, StateT.bind, bind, StateT.pure, pure,
              Option.attach, Option.attachWith, Option.mapM,
-             Functor.map, StateT.map,
-             insideOld, liftM, MonadLift.monadLift, monadLift]
+
+             insideOld   ]
   generalize hC : (mapStmtExprM insideOld cond b) s = resC
   obtain ⟨⟨cond', bC⟩, sC⟩ := resC
   simp only []
@@ -1722,8 +1722,8 @@ private theorem mapStmtExprM_insideOld_assert_run
   generalize hM : (mapStmtExprM insideOld c.condition b) s = res
   obtain ⟨⟨cond', b'⟩, s'⟩ := res
   unfold insideOld
-  simp only [StateT.run, StateT.bind, bind, StateT.pure, pure,
-             liftM, MonadLift.monadLift, monadLift]
+  simp only [StateT.pure, pure
+               ]
 
 private theorem mapStmtExprM_insideOld_canonical_assert
     (s : PushOldState) (b : Bool) (c : Condition) (src : Option FileRange)
@@ -1748,8 +1748,8 @@ private theorem mapStmtExprM_insideOld_old_run
   generalize hM : (mapStmtExprM insideOld inner b) s = res
   obtain ⟨⟨inner', b'⟩, s'⟩ := res
   unfold insideOld
-  simp only [StateT.run, StateT.bind, bind, StateT.pure, pure, warn,
-             modify, modifyGet, MonadStateOf.modifyGet, StateT.modifyGet,
+  simp only [StateT.bind, bind, StateT.pure, pure, warn,
+             modify, modifyGet, MonadStateOf.modifyGet,
              liftM, MonadLift.monadLift, monadLift]
   rfl
 
@@ -1767,8 +1767,8 @@ private theorem mapStmtExprM_insideOld_canonical_hole
       (((mapStmtExprM insideOld ⟨.Hole det ty, src⟩).run b).run s).fst.fst := by
   have hRes : (((mapStmtExprM insideOld ⟨.Hole det ty, src⟩).run b).run s).fst.fst =
               ⟨.Hole det ty, src⟩ := by
-    simp [mapStmtExprM, insideOld, StateT.run, StateT.bind, bind, StateT.pure, pure,
-          getThe, MonadStateOf.get, StateT.lift, StateT.get, liftM, MonadLift.monadLift, monadLift]
+    simp [mapStmtExprM, insideOld, StateT.run, StateT.bind, bind, StateT.pure, pure
+                ]
   rw [hRes]
   have : StmtExprMd.subOlds (⟨.Hole det ty, src⟩ : StmtExprMd) = [] := by
     rw [StmtExprMd.subOlds]
@@ -1830,7 +1830,7 @@ private theorem mapStmtExprM_insideOld_listMapM_preserves_inoutNames
       show (mapStmtExprM insideOld x b s).snd = sX
       rw [hM]
     rw [hSX] at hPresX
-    simp only [StateT.run, StateT.bind, bind, StateT.pure, pure]
+    simp only []
     generalize hRest : xs.mapM (mapStmtExprM insideOld) bX sX = resRest
     obtain ⟨⟨ys', bRest⟩, sRest⟩ := resRest
     have hRestPres := ih sX bX
@@ -1863,7 +1863,7 @@ private theorem mapStmtExprM_insideOld_listMapM_canonical
     simp only [StateT.run, StateT.bind, bind, StateT.pure, pure] at hy
     generalize hM : (mapStmtExprM insideOld x b) s = resX at hy
     obtain ⟨⟨x', bX⟩, sX⟩ := resX
-    simp only [StateT.run, StateT.bind, bind, StateT.pure, pure] at hy
+    simp only [] at hy
     generalize hRest : xs.mapM (mapStmtExprM insideOld) bX sX = resRest at hy
     obtain ⟨⟨ys', bRest⟩, sRest⟩ := resRest
     simp at hy
@@ -2139,8 +2139,8 @@ private theorem mapStmtExprM_insideOld_while_none_run
           (((mapStmtExprM insideOld cond).run b).run s).snd).snd).fst.fst, src⟩ := by
   rw [mapStmtExprM]
   simp only [StateT.run, StateT.bind, bind, StateT.pure, pure, insideOld,
-             Option.attach, Option.attachWith, Option.mapM,
-             Functor.map, StateT.map]
+             Option.attach, Option.attachWith, Option.mapM
+              ]
   rw [mapStmtExprM_insideOld_attach_mapM_eq]
   generalize hC : (mapStmtExprM insideOld cond b) s = resC
   obtain ⟨⟨cond', bC⟩, sC⟩ := resC
@@ -2835,7 +2835,7 @@ private theorem listMapM_mapAssignTargetOne_preserves_inoutNames
       show (mapAssignTargetOne x b s).snd = sX
       rw [hM]
     rw [hSX] at hPresX
-    simp only [StateT.run, StateT.bind, bind, StateT.pure, pure]
+    simp only []
     generalize hRest : xs.mapM mapAssignTargetOne bX sX = resRest
     obtain ⟨⟨ys', bRest⟩, sRest⟩ := resRest
     have hRestPres := ih sX bX
@@ -2887,10 +2887,10 @@ private theorem mapStmtExprM_insideOld_canonical_assign
     rw [← hRun]
     show subOld ∈ (mapStmtExprM insideOld ⟨.Assign targets value, src⟩ b s).fst.fst.subOlds
     rw [mapStmtExprM]
-    simp only [StateT.run, StateT.bind, bind, StateT.pure, pure, insideOld]
+    simp only [StateT.bind, bind, StateT.pure, pure, insideOld]
     exact hSub
   obtain ⟨⟨result, bRes⟩, sRes⟩ := run0
-  simp only [Prod.fst, Prod.snd] at hSub_named
+  simp only [] at hSub_named
   have hResShape :
       ∃ (ts' : List (AstNode Variable)) (val' : StmtExprMd) (bT : Bool) (sT : PushOldState),
         result = ⟨.Assign ts' val', src⟩ ∧
@@ -3314,7 +3314,7 @@ private theorem visitOld_preserves_inoutNames (s : PushOldState) (e : StmtExprMd
   unfold visitOld
   cases h : e.val with
   | Old inner =>
-    simp only [StateT.run, StateT.bind, bind, StateT.pure, pure]
+    simp only [StateT.run, StateT.bind, bind, pure]
     generalize hM : (mapStmtExprM insideOld inner false) s = res
     obtain ⟨⟨inner', changed⟩, s'⟩ := res
     have hPres := mapStmtExprM_insideOld_preserves_inoutNames s false inner
@@ -3328,7 +3328,7 @@ private theorem visitOld_preserves_inoutNames (s : PushOldState) (e : StmtExprMd
     · simp [hc, warn, modify, modifyGet, MonadStateOf.modifyGet, StateT.modifyGet,
             StateT.bind, StateT.pure, bind, pure]
       exact hPres
-  | _ => simp [h, StateT.run, StateT.pure, pure]
+  | _ => simp [StateT.run, StateT.pure, pure]
 
 
 /-- Generic list-preservation helper for `pushOldInwardExpr`. -/
@@ -3350,7 +3350,7 @@ private theorem listMapM_pushOldInwardExpr_preserves_inoutNames_of
       show (pushOldInwardExpr x s).snd = sX
       rw [hM]
     rw [hSX] at hPresX
-    simp only [StateT.run, StateT.bind, bind, StateT.pure, pure]
+    simp only []
     generalize hRest : xs.mapM pushOldInwardExpr sX = resRest
     obtain ⟨ys', sRest⟩ := resRest
     have hRestPres : ((xs.mapM pushOldInwardExpr).run sX).snd.inoutNames = sX.inoutNames := by
@@ -3645,8 +3645,8 @@ private theorem pushOldInwardExpr_ifThenElse_none_preserves
   rw [mapStmtExprPrePostM]
   unfold visitOld
   simp only [StateT.run, StateT.bind, bind, StateT.pure, pure,
-             Option.attach, Option.attachWith, Option.mapM,
-             Functor.map, StateT.map]
+             Option.attach, Option.attachWith, Option.mapM
+              ]
   generalize hC : (mapStmtExprPrePostM visitOld pure cond) s = resC
   obtain ⟨cond', sC⟩ := resC
   generalize hT : (mapStmtExprPrePostM visitOld pure th sC) = resT
@@ -3684,8 +3684,8 @@ private theorem pushOldInwardExpr_quantifier_none_preserves
   rw [mapStmtExprPrePostM]
   unfold visitOld
   simp only [StateT.run, StateT.bind, bind, StateT.pure, pure,
-             Option.attach, Option.attachWith, Option.mapM,
-             Functor.map, StateT.map]
+             Option.attach, Option.attachWith, Option.mapM
+              ]
   generalize hB : (mapStmtExprPrePostM visitOld pure body) s = resB
   obtain ⟨body', sB⟩ := resB
   rfl
@@ -3722,10 +3722,10 @@ private theorem listMapM_pushOldInwardExpr_preserves
               ((pushOldInwardExpr x).run s').snd.inoutNames = s'.inoutNames) :
     ((xs.mapM pushOldInwardExpr) s).snd.inoutNames = s.inoutNames := by
   induction xs generalizing s with
-  | nil => simp [List.mapM_nil, StateT.run, StateT.pure, pure]
+  | nil => simp [List.mapM_nil, StateT.pure, pure]
   | cons x xs ih =>
     rw [List.mapM_cons]
-    simp only [StateT.run, StateT.bind, bind, StateT.pure, pure]
+    simp only [StateT.bind, bind, StateT.pure, pure]
     generalize hM : (pushOldInwardExpr x) s = resX
     obtain ⟨x', sX⟩ := resX
     have hPresX := hPres x List.mem_cons_self s
@@ -3733,7 +3733,7 @@ private theorem listMapM_pushOldInwardExpr_preserves
       show (pushOldInwardExpr x s).snd = sX
       rw [hM]
     rw [hSX] at hPresX
-    simp only [StateT.run, StateT.bind, bind, StateT.pure, pure]
+    simp only []
     generalize hRest : xs.mapM pushOldInwardExpr sX = resRest
     obtain ⟨ys', sRest⟩ := resRest
     have hRestPres : ((xs.mapM pushOldInwardExpr) sX).snd.inoutNames = sX.inoutNames := by
@@ -3799,7 +3799,7 @@ private theorem pushOldInwardExpr_instanceCall_preserves
   rw [pushOldInwardExpr_attach_mapM_eq]
   generalize hT : (mapStmtExprPrePostM visitOld pure t) s = resT
   obtain ⟨t', sT⟩ := resT
-  simp only [Prod.snd]
+  simp only []
   generalize hA : (args.mapM pushOldInwardExpr sT) = resA
   obtain ⟨ys, sR⟩ := resA
   rfl
@@ -3815,15 +3815,15 @@ private theorem pushOldInwardExpr_while_none_preserves
   rw [mapStmtExprPrePostM]
   rw [show (visitOld ⟨.While cond invs none body, src⟩) = (StateT.pure none : PushOldM _) from rfl]
   simp only [StateT.run, StateT.bind, bind, StateT.pure, pure,
-             Option.attach, Option.attachWith, Option.mapM,
-             Functor.map, StateT.map]
+             Option.attach, Option.attachWith, Option.mapM
+              ]
   rw [pushOldInwardExpr_attach_mapM_eq]
   generalize hC : (mapStmtExprPrePostM visitOld pure cond) s = resC
   obtain ⟨cond', sC⟩ := resC
-  simp only [Prod.snd]
+  simp only []
   generalize hI : (invs.mapM pushOldInwardExpr sC) = resI
   obtain ⟨invs', sI⟩ := resI
-  simp only [Prod.snd]
+  simp only []
   generalize hB : (mapStmtExprPrePostM visitOld pure body sI) = resB
   obtain ⟨body', sB⟩ := resB
   rfl
@@ -3846,13 +3846,13 @@ private theorem pushOldInwardExpr_while_some_preserves
   rw [pushOldInwardExpr_attach_mapM_eq]
   generalize hC : (mapStmtExprPrePostM visitOld pure cond) s = resC
   obtain ⟨cond', sC⟩ := resC
-  simp only [Prod.snd]
+  simp only []
   generalize hI : (invs.mapM pushOldInwardExpr sC) = resI
   obtain ⟨invs', sI⟩ := resI
-  simp only [Prod.snd]
+  simp only []
   generalize hD : (mapStmtExprPrePostM visitOld pure d sI) = resD
   obtain ⟨d', sD⟩ := resD
-  simp only [Prod.snd]
+  simp only []
   generalize hB : (mapStmtExprPrePostM visitOld pure body sD) = resB
   obtain ⟨body', sB⟩ := resB
   rfl
@@ -3864,7 +3864,7 @@ private theorem pushOldInwardExpr_old_preserves
     ((pushOldInwardExpr ⟨.Old inner, src⟩).run s).snd.inoutNames = s.inoutNames := by
   show ((mapStmtExprPrePostM visitOld pure ⟨.Old inner, src⟩).run s).snd.inoutNames = s.inoutNames
   unfold mapStmtExprPrePostM visitOld
-  simp only [StateT.run, StateT.bind, bind, StateT.pure, pure]
+  simp only [StateT.run, StateT.bind, bind, pure]
   generalize hM : (mapStmtExprM insideOld inner false) s = res
   obtain ⟨⟨inner', changed⟩, s'⟩ := res
   have hPres := mapStmtExprM_insideOld_preserves_inoutNames s false inner
@@ -4116,7 +4116,7 @@ private theorem pushOldInwardExpr_old_run
   show ((mapStmtExprPrePostM visitOld pure ⟨.Old inner, src⟩).run s).fst =
     (((mapStmtExprM insideOld inner).run false).run s).fst.fst
   unfold mapStmtExprPrePostM visitOld
-  simp only [StateT.run, StateT.bind, bind, StateT.pure, pure]
+  simp only [StateT.run, StateT.bind, bind, pure]
   generalize hM : (mapStmtExprM insideOld inner false) s = res
   obtain ⟨⟨inner', changed⟩, s'⟩ := res
   by_cases h : changed
@@ -4231,7 +4231,7 @@ private theorem listMapM_pushAssignTargetsAux_preserves_inoutNames_of
       show (pushAssignTargetsAux y s').snd = sY
       rw [hM]
     rw [hSY] at hPresY
-    simp only [StateT.run, StateT.bind, bind, StateT.pure, pure]
+    simp only []
     generalize hRest : ys.mapM pushAssignTargetsAux sY = resRest
     obtain ⟨ys', sRest⟩ := resRest
     have hYsSubTail : ∀ z ∈ ys, z ∈ xs :=
@@ -4508,7 +4508,7 @@ theorem pushOldInwardExpr_preserves_inoutNames
         StmtExpr.Assign.sizeOf_spec targets value
       rw [hVal] at hValLt
       have hVSz : sizeOf value < n := by omega
-      simp only [Prod.fst, Prod.snd]
+      simp only []
       have ihV := ih (sizeOf value) hVSz (pushAssignTargets targets s).snd value rfl
       have hPresT : (pushAssignTargets targets s).snd.inoutNames = s.inoutNames := by
         apply pushAssignTargets_preserves_inoutNames_ofIH
@@ -4640,8 +4640,8 @@ private theorem pushOldInwardExpr_ifThenElse_none_run
   rw [mapStmtExprPrePostM]
   unfold visitOld
   simp only [StateT.run, StateT.bind, bind, StateT.pure, pure,
-             Option.attach, Option.attachWith, Option.mapM,
-             Functor.map, StateT.map]
+             Option.attach, Option.attachWith, Option.mapM
+              ]
   generalize hC : (mapStmtExprPrePostM visitOld pure cond) s = resC
   obtain ⟨cond', sC⟩ := resC
   generalize hT : (mapStmtExprPrePostM visitOld pure th sC) = resT
@@ -4724,8 +4724,8 @@ private theorem pushOldInwardExpr_quantifier_none_run
   rw [mapStmtExprPrePostM]
   unfold visitOld
   simp only [StateT.run, StateT.bind, bind, StateT.pure, pure,
-             Option.attach, Option.attachWith, Option.mapM,
-             Functor.map, StateT.map]
+             Option.attach, Option.attachWith, Option.mapM
+              ]
   generalize hB : (mapStmtExprPrePostM visitOld pure body) s = resB
   obtain ⟨body', sB⟩ := resB
   rfl
@@ -4798,7 +4798,7 @@ private theorem listMapM_pushOldInwardExpr_canonical
     simp only [StateT.run, StateT.bind, bind, StateT.pure, pure] at hy
     generalize hM : (pushOldInwardExpr x) s = resX at hy
     obtain ⟨x', sX⟩ := resX
-    simp only [StateT.run, StateT.bind, bind, StateT.pure, pure] at hy
+    simp only [] at hy
     generalize hRest : xs.mapM pushOldInwardExpr sX = resRest at hy
     obtain ⟨ys', sRest⟩ := resRest
     simp at hy
@@ -5003,15 +5003,15 @@ private theorem pushOldInwardExpr_while_none_run
   rw [mapStmtExprPrePostM]
   rw [show (visitOld ⟨.While cond invs none body, src⟩) = (StateT.pure none : PushOldM _) from rfl]
   simp only [StateT.run, StateT.bind, bind, StateT.pure, pure,
-             Option.attach, Option.attachWith, Option.mapM,
-             Functor.map, StateT.map]
+             Option.attach, Option.attachWith, Option.mapM
+              ]
   rw [pushOldInwardExpr_attach_mapM_eq']
   generalize hC : (mapStmtExprPrePostM visitOld pure cond) s = resC
   obtain ⟨cond', sC⟩ := resC
-  simp only [Prod.fst, Prod.snd]
+  simp only []
   generalize hI : (invs.mapM pushOldInwardExpr sC) = resI
   obtain ⟨invs', sI⟩ := resI
-  simp only [Prod.fst, Prod.snd]
+  simp only []
   generalize hB : (mapStmtExprPrePostM visitOld pure body sI) = resB
   obtain ⟨body', sB⟩ := resB
   rfl
@@ -5106,13 +5106,13 @@ private theorem pushOldInwardExpr_while_some_run
   rw [pushOldInwardExpr_attach_mapM_eq']
   generalize hC : (mapStmtExprPrePostM visitOld pure cond) s = resC
   obtain ⟨cond', sC⟩ := resC
-  simp only [Prod.fst, Prod.snd]
+  simp only []
   generalize hI : (invs.mapM pushOldInwardExpr sC) = resI
   obtain ⟨invs', sI⟩ := resI
-  simp only [Prod.fst, Prod.snd]
+  simp only []
   generalize hD : (mapStmtExprPrePostM visitOld pure d sI) = resD
   obtain ⟨d', sD⟩ := resD
-  simp only [Prod.fst, Prod.snd]
+  simp only []
   generalize hB : (mapStmtExprPrePostM visitOld pure body sD) = resB
   obtain ⟨body', sB⟩ := resB
   rfl
@@ -5211,7 +5211,7 @@ private theorem pushOldInwardExpr_instanceCall_run
   rw [pushOldInwardExpr_attach_mapM_eq']
   generalize hT : (mapStmtExprPrePostM visitOld pure t) s = resT
   obtain ⟨t', sT⟩ := resT
-  simp only [Prod.fst]
+  simp only []
   generalize hA : (args.mapM pushOldInwardExpr sT) = resA
   obtain ⟨ys, sR⟩ := resA
   rfl
@@ -5544,7 +5544,7 @@ theorem pushOldInwardExpr_canonical
       rw [← hRun]
       exact hSub
     obtain ⟨result, sRes⟩ := run0
-    simp only [Prod.fst, Prod.snd] at hSub_named
+    simp only [] at hSub_named
     -- Extract the result's shape via injection on the explicit form.
     have hResShape :
         ∃ (ts' : List (AstNode Variable)) (val' : StmtExprMd) (sT : PushOldState),
@@ -5613,7 +5613,7 @@ private theorem listMapM_pushOldInwardExpr_mem
     simp only [StateT.run, StateT.bind, bind, StateT.pure, pure] at h
     generalize hM : (pushOldInwardExpr x) s = resX at h
     obtain ⟨x', sX⟩ := resX
-    simp only [StateT.run, StateT.bind, bind, StateT.pure, pure] at h
+    simp only [] at h
     generalize hRest : xs.mapM pushOldInwardExpr sX = resRest at h
     obtain ⟨ys', sRest⟩ := resRest
     simp at h
@@ -5645,7 +5645,7 @@ private theorem optionMapM_pushOldInwardExpr_mem
   | none =>
     simp [Option.mapM, StateT.run, StateT.pure, pure] at h
   | some r =>
-    simp only [Option.mapM, StateT.run, StateT.bind, bind, StateT.pure, pure,
+    simp only [Option.mapM, StateT.run, bind, pure,
                Functor.map, StateT.map] at h
     generalize hM : (pushOldInwardExpr r) s = resR at h
     obtain ⟨r', sR⟩ := resR
@@ -5669,7 +5669,7 @@ private theorem listMapM_conditionMapM_mem
     simp only [Condition.mapM, StateT.run, StateT.bind, bind, StateT.pure, pure] at h
     generalize hM : (pushOldInwardExpr x.condition) s = resX at h
     obtain ⟨c', sX⟩ := resX
-    simp only [StateT.run, StateT.bind, bind, StateT.pure, pure] at h
+    simp only [] at h
     generalize hRest : xs.mapM (Condition.mapM pushOldInwardExpr) sX = resRest at h
     obtain ⟨ys', sRest⟩ := resRest
     simp [List.map_cons] at h
@@ -5707,7 +5707,7 @@ private theorem listMapM_conditionMapM_preserves_inoutNames
     have hSX : ((pushOldInwardExpr x.condition).run s).snd = sX := by
       show (pushOldInwardExpr x.condition s).snd = sX; rw [hM]
     rw [hSX] at hPresX
-    simp only [StateT.run, StateT.bind, bind, StateT.pure, pure]
+    simp only []
     generalize hRest : xs.mapM (Condition.mapM pushOldInwardExpr) sX = resRest
     obtain ⟨ys', sRest⟩ := resRest
     have hRestPres := ih sX
@@ -5724,7 +5724,7 @@ private theorem optionMapM_pushOldInwardExpr_preserves_inoutNames
   cases o with
   | none => simp [Option.mapM, StateT.run, StateT.pure, pure]
   | some r =>
-    simp only [Option.mapM, StateT.run, StateT.bind, bind, StateT.pure, pure,
+    simp only [Option.mapM, StateT.run, bind, pure,
                Functor.map, StateT.map]
     generalize hM : (pushOldInwardExpr r) s = resR
     obtain ⟨r', sR⟩ := resR
@@ -5757,14 +5757,14 @@ private theorem mapProcedureBodiesM_pushOldInwardExpr_preserves_inoutNames
     have hSP : ((posts.mapM (Condition.mapM pushOldInwardExpr)).run s).snd = sP := by
       show (posts.mapM (Condition.mapM pushOldInwardExpr) s).snd = sP; rw [hP]
     rw [hSP] at hPresP
-    simp only [StateT.run, StateT.bind, bind, StateT.pure, pure]
+    simp only []
     generalize hI : (impl.mapM pushOldInwardExpr) sP = resI
     obtain ⟨i', sI⟩ := resI
     have hPresI := optionMapM_pushOldInwardExpr_preserves_inoutNames impl sP
     have hSI : ((impl.mapM pushOldInwardExpr).run sP).snd = sI := by
       show (impl.mapM pushOldInwardExpr sP).snd = sI; rw [hI]
     rw [hSI] at hPresI
-    simp only [StateT.run, StateT.bind, bind, StateT.pure, pure]
+    simp only []
     generalize hMo : (mods.mapM pushOldInwardExpr) sI = resMo
     obtain ⟨m', sM⟩ := resMo
     have hPresM : ((mods.mapM pushOldInwardExpr).run sI).snd.inoutNames = sI.inoutNames :=
@@ -5824,14 +5824,14 @@ private theorem mapProcedureBodiesM_body_form
     have hSP : ((posts.mapM (Condition.mapM pushOldInwardExpr)).run s).snd = sP := by
       show (posts.mapM (Condition.mapM pushOldInwardExpr) s).snd = sP; rw [hP]
     rw [hSP] at hPresP
-    simp only [StateT.run, StateT.bind, bind, StateT.pure, pure] at hE
+    simp only [] at hE
     generalize hI : (impl.mapM pushOldInwardExpr) sP = resI at hE
     obtain ⟨i', sI⟩ := resI
     have hPresI := optionMapM_pushOldInwardExpr_preserves_inoutNames impl sP
     have hSI : ((impl.mapM pushOldInwardExpr).run sP).snd = sI := by
       show (impl.mapM pushOldInwardExpr sP).snd = sI; rw [hI]
     rw [hSI] at hPresI
-    simp only [StateT.run, StateT.bind, bind, StateT.pure, pure] at hE
+    simp only [] at hE
     generalize hMo : (mods.mapM pushOldInwardExpr) sI = resMo at hE
     obtain ⟨m', sM⟩ := resMo
     have hPresM : ((mods.mapM pushOldInwardExpr).run sI).snd.inoutNames = sI.inoutNames :=
@@ -5890,21 +5890,21 @@ private theorem mapProcedureM_allStmtExprs_form
   have hSB : ((mapProcedureBodiesM pushOldInwardExpr proc).run s).snd = sB := by
     show (mapProcedureBodiesM pushOldInwardExpr proc s).snd = sB; rw [hB]
   rw [hSB] at hPresB
-  simp only [StateT.run, StateT.bind, bind, StateT.pure, pure] at hE
+  simp only [] at hE
   generalize hP : (procB.preconditions.mapM (Condition.mapM pushOldInwardExpr)) sB = resP at hE
   obtain ⟨preconds, sP⟩ := resP
   have hPresP := listMapM_conditionMapM_preserves_inoutNames procB.preconditions sB
   have hSP : ((procB.preconditions.mapM (Condition.mapM pushOldInwardExpr)).run sB).snd = sP := by
     show (procB.preconditions.mapM (Condition.mapM pushOldInwardExpr) sB).snd = sP; rw [hP]
   rw [hSP] at hPresP
-  simp only [StateT.run, StateT.bind, bind, StateT.pure, pure] at hE
+  simp only [] at hE
   generalize hD : (procB.decreases.mapM pushOldInwardExpr) sP = resD at hE
   obtain ⟨dec, sD⟩ := resD
   have hPresD := optionMapM_pushOldInwardExpr_preserves_inoutNames procB.decreases sP
   have hSD : ((procB.decreases.mapM pushOldInwardExpr).run sP).snd = sD := by
     show (procB.decreases.mapM pushOldInwardExpr sP).snd = sD; rw [hD]
   rw [hSD] at hPresD
-  simp only [StateT.run, StateT.bind, bind, StateT.pure, pure] at hE
+  simp only [] at hE
   generalize hI : (procB.invokeOn.mapM pushOldInwardExpr) sD = resI at hE
   obtain ⟨invk, sI⟩ := resI
   have hSPres : sP.inoutNames = s.inoutNames := hPresP.trans hPresB
@@ -6017,8 +6017,8 @@ theorem pushOldInward_canonical (p : Program) :
         ((transformProcedurePushOld inProc).run s_in).fst.outputs = inProc.outputs := by
       simp [transformProcedurePushOld, mapProcedureM, mapProcedureBodiesM]
       cases inProc.body <;>
-        (simp only [StateT.run, StateT.bind, bind, StateT.pure, pure, modify,
-                    modifyGet, MonadStateOf.modifyGet, StateT.modifyGet]
+        (simp only [StateT.run, StateT.bind, bind, StateT.pure, pure
+                      ]
          exact ⟨rfl, rfl⟩)
     rw [hEq]
     unfold procInoutNames
