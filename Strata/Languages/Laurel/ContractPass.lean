@@ -55,25 +55,12 @@ private def mkCall (callee : String) (args : List StmtExprMd) : StmtExprMd :=
 private def paramsToArgs (params : List Parameter) : List StmtExprMd :=
   params.map fun p => mkMd (.Var (.Local p.name))
 
-/-- Build a helper function for a single condition. -/
+/-- Build a helper function for a single condition over the given parameters.
+    Preconditions pass `proc.inputs`; postconditions pass `proc.inputs ++ proc.outputs`. -/
 private def mkConditionProc (name : String) (params : List Parameter)
     (condition : Condition) : Procedure :=
   { name := mkId name
     inputs := params
-    outputs := [⟨mkId "$result", { val := .TBool, source := none }⟩]
-    preconditions := []
-    decreases := none
-    isFunctional := true
-    body := .Transparent condition.condition }
-
-/-- Build a postcondition function for a single condition that takes all inputs
-    and all outputs as parameters. -/
-private def mkPostConditionProc (name : String)
-    (inputParams : List Parameter) (outputParams : List Parameter)
-    (condition : Condition) : Procedure :=
-  let allParams := inputParams ++ outputParams
-  { name := mkId name
-    inputs := allParams
     outputs := [⟨mkId "$result", { val := .TBool, source := none }⟩]
     preconditions := []
     decreases := none
