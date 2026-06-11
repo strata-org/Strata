@@ -386,9 +386,11 @@ Look up the callee's signature and convert positional `coreArgs` into Core
 `CallArg`s, emitting `.inoutArg ident` for parameters that appear in both
 inputs and outputs (true inout) and `.inArg` otherwise. Returns the call args
 along with the callee's outputs and inout names so the caller can build the
-matching `.outArg` list.
+matching `.outArg` list. `md` locates the StrataBug diagnostic emitted when
+an inout argument is not a variable reference.
 -/
 private def buildCallArgs (calleeId : Identifier) (coreArgs : List Core.Expression.Expr)
+    (md : Imperative.MetaData Core.Expression)
     : TranslateM (List (Core.CallArg Core.Expression) × List Parameter × List String) := do
   let s ← get
   let (calleeInputs, calleeOutputs) := match s.model.get calleeId with
@@ -405,7 +407,15 @@ private def buildCallArgs (calleeId : Identifier) (coreArgs : List Core.Expressi
     if inoutInputIndices.contains i then
       match arg with
       | .fvar _ ident _ => callArgs := callArgs ++ [.inoutArg ident]
-      | _ => callArgs := callArgs ++ [.inArg arg]
+      | _ =>
+        -- Non-fvar inout arg can't be wired as `.inoutArg`; flag it.
+        emitDiagnostic $ md.toDiagnostic
+          s!"inout argument at index {i} of call to '{calleeId.text}' is not a \
+             variable reference, so the output side of the inout cannot be \
+             wired through. This should not happen after the preceding passes."
+          DiagnosticType.StrataBug
+        modify fun st => { st with coreProgramHasSuperfluousErrors := true }
+        callArgs := callArgs ++ [.inArg arg]
     else
       callArgs := callArgs ++ [.inArg arg]
   return (callArgs, calleeOutputs, calleeInoutNames)
@@ -483,7 +493,7 @@ def translateStmt (stmt : StmtExprMd)
       let translateCallTargets (calleeId : Identifier) (args : List StmtExprMd) : TranslateM (List Core.Statement) := do
         let coreArgs ← args.mapM (fun a => translateExpr a)
         let (inits, lhs) ← initTargetsNondet
-        let (callArgs, _, calleeInoutNames) ← buildCallArgs calleeId coreArgs
+        let (callArgs, _, calleeInoutNames) ← buildCallArgs calleeId coreArgs md
         let outArgs : List (Core.CallArg Core.Expression) :=
           lhs.filter (fun id => !calleeInoutNames.contains id.name) |>.map .outArg
         return inits ++ [Core.Statement.call calleeId.text (callArgs ++ outArgs) md]
@@ -533,7 +543,7 @@ def translateStmt (stmt : StmtExprMd)
         exprAsUnusedInit stmt md
       else
         let coreArgs ← args.mapM (fun a => translateExpr a)
-        let (callArgs, calleeOutputs, calleeInoutNames) ← buildCallArgs callee coreArgs
+        let (callArgs, calleeOutputs, calleeInoutNames) ← buildCallArgs callee coreArgs md
         -- Generate throwaway LHS for output-only params so Core arity checking passes.
         let mut inits : List Core.Statement := []
         let mut outArgs : List (Core.CallArg Core.Expression) := []
