@@ -59,18 +59,20 @@ abbrev KleeneStmt.assume {P : PureExpr} (label : String) (b : P.Expr) (md : Meta
 
 mutual
 /-- Get all variables defined by the statement `s`. -/
-def KleeneStmt.definedVars [HasVarsImp P C] (s : KleeneStmt P C) : List P.Ident :=
+def KleeneStmt.definedVars [HasVarsImp P C] (s : KleeneStmt P C)
+    (excludeScoped : Bool): List P.Ident :=
   match s with
-  | .cmd c => HasVarsImp.definedVars c
-  | .seq s1 s2 => KleeneStmt.definedVars s1 ++ KleeneStmt.definedVars s2
-  | .choice s1 s2 => KleeneStmt.definedVars s1 ++ KleeneStmt.definedVars s2
-  | .loop s => KleeneStmt.definedVars s
-  | .block s => KleeneStmt.definedVars s
+  | .cmd c => HasVarsImp.definedVars c excludeScoped
+  | .seq s1 s2 => KleeneStmt.definedVars s1 excludeScoped ++ KleeneStmt.definedVars s2 excludeScoped
+  | .choice s1 s2 => KleeneStmt.definedVars s1 excludeScoped ++ KleeneStmt.definedVars s2 excludeScoped
+  | .loop s => KleeneStmt.definedVars s excludeScoped
+  | .block s => KleeneStmt.definedVars s excludeScoped
 
-def KleeneStmts.definedVars [HasVarsImp P C] (ss : List (KleeneStmt P C)) : List P.Ident :=
+def KleeneStmts.definedVars [HasVarsImp P C] (ss : List (KleeneStmt P C))
+    (excludeScoped : Bool) : List P.Ident :=
   match ss with
   | [] => []
-  | s :: srest => KleeneStmt.definedVars s ++ KleeneStmts.definedVars srest
+  | s :: srest => KleeneStmt.definedVars s excludeScoped ++ KleeneStmts.definedVars srest excludeScoped
 end
 
 mutual
