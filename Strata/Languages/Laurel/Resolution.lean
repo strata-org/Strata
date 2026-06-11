@@ -854,8 +854,7 @@ def Check.varDeclare (param : Parameter) (source : Option FileRange) :
     (the rule ignores `A`).
 
     The optional `decreases` clause is synthesized and required to
-    have a numeric type (`TInt`, `TReal`, `TFloat64`, or `Unknown` as
-    the gradual escape hatch), via the same `Numeric U` predicate
+    have a numeric type, via the same `Numeric U` predicate
     used by the arithmetic primitive ops. `Numeric` is a predicate,
     not a single type, so the clause runs in synth mode rather than
     check mode. -/
