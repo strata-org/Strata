@@ -4536,7 +4536,6 @@ private theorem loop_iterations_det
     (h_term : StepStmtStar P (EvalCmd P) extendEval
        (.stmt (Stmt.loop (.det g) none [] body md) ρ_pre)
        (.terminal ρ_post_loop))
-    (h_body_no_inits : Block.initVars body = [])
     (h_nofd_body : Block.noFuncDecl body = true)
     (h_body_sim_at :
        ∀ (ρ_iter : Env P) (σ_cfg_iter : SemanticStore P),
@@ -4552,8 +4551,6 @@ private theorem loop_iterations_det
              StoreAgreement ρ_body.store σ_cfg_after_body ∧
              storeInv σ_cfg_after_body)
     (hwfb_pre : WellFormedSemanticEvalBool ρ_pre.eval)
-    (hwfv_pre : WellFormedSemanticEvalVal ρ_pre.eval)
-    (hwfvar_pre : WellFormedSemanticEvalVar ρ_pre.eval)
     (hwf_def_pre : WellFormedSemanticEvalDef ρ_pre.eval)
     (hwfcongr_pre : WellFormedSemanticEvalExprCongr ρ_pre.eval) :
     ∃ σ_cfg_kNext,
@@ -5787,8 +5784,8 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
     have ⟨σ_cfg_kNext, h_loop_run, h_agree_loop, h_inv_loop⟩ :=
       InlineLoopHelpers.loop_iterations_det extendEval guardExpr body md ρ₀ ρ_loop_post
         cfg lentry kNext bl σ_cfg_after storeInv h_lentry_lkp h_agree_after h_inv_after
-        h_loop_stmt h_body_no_inits h_nofd_body h_body_sim_at
-        hwfb hwfv hwf_var hwf_def hwf_congr
+        h_loop_stmt h_nofd_body h_body_sim_at
+        hwfb hwf_def hwf_congr
     -- Recover store-no-gens and rest-freshness at σ_cfg_kNext from storeInv.
     have h_sng_loop : ∀ x : String, String.HasUnderscoreDigitSuffix x →
         x ∉ StringGenState.stringGens genUpperBound →
@@ -8533,8 +8530,8 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
       have ⟨σ_cfg_kNext, h_loop_run, h_agree_loop, h_inv_loop⟩ :=
         InlineLoopHelpers.loop_iterations_det extendEval guardExpr body md ρ₀ ρ_loop_post
           cfg lentry kNext bl σ_cfg_after storeInv h_lentry_lkp h_agree_after h_inv_after
-          h_loop_stmt h_body_no_inits h_nofd_body h_body_sim_at
-          hwfb hwfv hwf_var hwf_def hwf_congr
+          h_loop_stmt h_nofd_body h_body_sim_at
+          hwfb hwf_def hwf_congr
       have h_sng_loop : ∀ x : String, String.HasUnderscoreDigitSuffix x →
           x ∉ StringGenState.stringGens genUpperBound →
           σ_cfg_kNext (HasIdent.ident (P := P) x) = none :=
