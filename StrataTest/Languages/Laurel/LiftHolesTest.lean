@@ -143,9 +143,9 @@ procedure test()
   opaque
 {
   if $hole_0()
-  then {
-    assert true
-  }
+    then {
+      assert true
+    }
 };
 -/
 #guard_msgs in
@@ -164,8 +164,8 @@ procedure test()
   opaque
 {
   var x: int := if true
-  then $hole_0()
-  else 0
+    then $hole_0()
+    else 0
 };
 -/
 #guard_msgs in
@@ -324,9 +324,9 @@ procedure test()
   opaque
 {
   if 1 + $hole_0() > 0
-  then {
-    assert true
-  }
+    then {
+      assert true
+    }
 };
 -/
 #guard_msgs in

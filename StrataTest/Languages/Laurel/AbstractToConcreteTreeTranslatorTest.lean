@@ -110,8 +110,8 @@ info: procedure test(x: int): int
   opaque
 {
   if x > 0
-  then x
-  else 0 - x
+    then x
+    else 0 - x
 };
 -/
 #guard_msgs in
@@ -291,9 +291,9 @@ info: procedure earlyExit(b: bool)
   opaque
 {
   if b
-  then {
-    return
-  };
+    then {
+      return
+    };
   assert true
 };
 -/
