@@ -3,19 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import all StrataTest.Util.TestDiagnostics
-meta import all StrataTest.Languages.Laurel.TestExamples
-
-meta section
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
 open Strata
 
-namespace Strata.Laurel
-
-def program := r"
+#eval testLaurel
+#strata
+program Laurel;
 procedure fooReassign(): int
   opaque // required because we don't yet support destructive assignment in transparent bodies
 {
@@ -55,7 +51,4 @@ procedure aFunctionCaller()
   var x: int := aFunction(3);
   assert x == 3
 };
-"
-
-#guard_msgs (drop info, error) in
-#eval testInputWithOffset "ProcedureCalls" program 14 processLaurelFile
+#end
