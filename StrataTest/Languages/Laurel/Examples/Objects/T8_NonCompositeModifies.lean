@@ -3,7 +3,6 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
 /-
 Regression test for issue #490: a modifies clause referencing a non-composite
@@ -12,17 +11,14 @@ in laurelAnalyze. The fix filters out non-composite modifies entries and emits
 a diagnostic error.
 -/
 
-meta import all StrataTest.Util.TestDiagnostics
-meta import all StrataTest.Languages.Laurel.TestExamples
-
-meta section
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
+open Strata
 
-namespace Strata
-namespace Laurel
-
-def program := r"
+#eval testLaurel <|
+#strata
+program Laurel;
 composite Container {
   var value: int
 }
@@ -43,7 +39,4 @@ procedure modifyContainerAndPrimitive(c: Container, x: int)
 {
   c#value := 1
 };
-"
-
-#guard_msgs (drop info, error) in
-#eval testInputWithOffset "NonCompositeModifies" program 22 processLaurelFile
+#end

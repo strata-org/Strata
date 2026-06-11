@@ -3,19 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import all StrataTest.Util.TestDiagnostics
-meta import all StrataTest.Languages.Laurel.TestExamples
-
-meta section
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
 open Strata
 
-namespace Strata.Laurel
-
-def program := r"
+#eval testLaurel <|
+#strata
+program Laurel;
 function assertAndAssumeInFunctions(a: int) returns (r: int)
 {
   assert 2 == 3;
@@ -48,7 +44,4 @@ function deadCodeAfterIfElse(x: int) returns (r: int) {
 //^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: if-then-else only supported as the last statement in a block
   return 3
 };
-"
-
-#guard_msgs (error, drop all) in
-#eval! testInputWithOffset "ControlFlowError" program 14 processLaurelFile
+#end
