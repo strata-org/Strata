@@ -7,6 +7,7 @@ module
 
 public import Strata.Languages.Laurel.MapStmtExpr
 public import Strata.Languages.Laurel.Resolution
+public import Strata.Languages.Laurel.LaurelPass
 
 /-!
 # Lift Instance Procedures
@@ -119,5 +120,13 @@ def liftInstanceProcedures (model : SemanticModel) (program : Program) : Program
     types := cleanedTypes }
 
 end -- public section
+
+/-- Pipeline pass: lift instance procedures to top-level static procedures
+    and rewrite call sites to use the lifted names. -/
+public def liftInstanceProceduresPass : LaurelPass where
+  name := "LiftInstanceProcedures"
+  documentation := "Lifts every procedure declared inside a `composite` block to a top-level static procedure named `<CompositeName>$<methodName>` and rewrites call sites resolved to an instance procedure (including `obj#method(args)` surface syntax) to point at the lifted name. Clears `instanceProcedures` on every composite. Must run before HeapParameterization."
+  needsResolves := true
+  run := fun p m => (liftInstanceProcedures m p, [], {})
 
 end Strata.Laurel

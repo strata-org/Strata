@@ -134,11 +134,11 @@ where
       let calleeArg := laurelOp "identifier" #[ident callee.text]
       let argsArr := args.map stmtExprToArg |>.toArray
       laurelOp "call" #[calleeArg, commaSep argsArr]
-    | .PrimitiveOp op [a] =>
+    | .PrimitiveOp op [a] _skipProof =>
       laurelOp (operationName op) #[stmtExprToArg a]
-    | .PrimitiveOp op [a, b] =>
+    | .PrimitiveOp op [a, b] _skipProof =>
       laurelOp (operationName op) #[stmtExprToArg a, stmtExprToArg b]
-    | .PrimitiveOp op args =>
+    | .PrimitiveOp op args _skipProof =>
       -- Fallback for unusual arities
       let argsArr := args.map stmtExprToArg |>.toArray
       laurelOp (operationName op) argsArr
@@ -148,8 +148,8 @@ where
     | .While cond invs _decreases body =>
       let invArgs := invs.map (fun i => laurelOp "invariantClause" #[stmtExprToArg i]) |>.toArray
       laurelOp "while" #[stmtExprToArg cond, seqArg invArgs, stmtExprToArg body]
-    | .Return (some value) => laurelOp "return" #[stmtExprToArg value]
-    | .Return none => laurelOp "return" #[laurelOp "block" #[semicolonSep #[]]]
+    | .Return (some value) => laurelOp "return" #[optionArg (some (stmtExprToArg value))]
+    | .Return none => laurelOp "return" #[optionArg none]
     | .Exit label => laurelOp "exit" #[ident label]
     | .Assert cond =>
       let errOpt := optionArg (cond.summary.map fun msg =>

@@ -302,8 +302,10 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
       | _ =>
         return mkStmtExprMd (.StaticCall (mkId "") argsList) src
     | q`Laurel.return, #[arg0] =>
-      let value ← translateStmtExpr arg0
-      return mkStmtExprMd (.Return (some value)) src
+      let value ← match arg0 with
+        | .option _ (some valArg) => some <$> translateStmtExpr valArg
+        | _ => pure none
+      return mkStmtExprMd (.Return value) src
     | q`Laurel.ifThenElse, #[arg0, arg1, elseArg] =>
       let cond ← translateStmtExpr arg0
       let thenBranch ← translateStmtExpr arg1

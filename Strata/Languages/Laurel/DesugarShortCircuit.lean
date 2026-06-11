@@ -6,6 +6,7 @@
 module
 
 public import Strata.Languages.Laurel.Resolution
+public import Strata.Languages.Laurel.LaurelPass
 import Strata.Languages.Laurel.LiftImperativeExpressions
 import Strata.Languages.Laurel.MapStmtExpr
 
@@ -30,7 +31,7 @@ private def bare (v : StmtExpr) : StmtExprMd := ⟨v, none⟩
 private def desugarShortCircuitNode (model : SemanticModel) (expr : StmtExprMd) : StmtExprMd :=
   let source := expr.source
   match expr.val with
-  | .PrimitiveOp op args =>
+  | .PrimitiveOp op args _ =>
     match op, args with
     -- With bottom-up traversal, `a` and `b` are already desugared (nested
     -- short-circuits converted to IfThenElse). The check still works because
@@ -52,4 +53,14 @@ def desugarShortCircuit (model : SemanticModel) (program : Program) : Program :=
   mapProgram (mapStmtExpr (desugarShortCircuitNode model)) program
 
 end -- public section
+
+/-- Pipeline pass: desugar short-circuit operators. -/
+public def desugarShortCircuitPass : LaurelPass where
+  name := "DesugarShortCircuit"
+  documentation := "Rewrites short-circuit boolean operators (`&&` and `||`) into equivalent conditional expressions. This simplifies subsequent passes and the final translation to Core, which does not have short-circuit semantics built in."
+  run := fun p m =>
+    (desugarShortCircuit m p, [], {})
+  comesBefore := [
+      ⟨ liftExpressionAssignmentsPass, "The desugar short circuit pass introduces if-then-else expressions whose control-flow must be taken into account by the lifting pass."⟩]
+
 end Strata.Laurel
