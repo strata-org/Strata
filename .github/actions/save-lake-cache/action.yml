@@ -28,13 +28,6 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Delete existing cache entry (if any)
-      shell: bash
-      env:
-        GH_TOKEN: ${{ github.token }}
-        CACHE_KEY: ${{ inputs.key-prefix }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
-      run: |
-        gh actions-cache delete "$CACHE_KEY" --repo "$GITHUB_REPOSITORY" --confirm 2>/dev/null || true
     - name: Save lake cache
       uses: actions/cache/save@v5
       with:

@@ -24,9 +24,6 @@ jobs:
   build_and_test_lean:
     name: Build and test Lean
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      actions: write
     strategy:
       matrix:
         toolchain:
