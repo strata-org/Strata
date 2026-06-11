@@ -193,7 +193,6 @@ structure Procedure : Type where
   outputs : List Parameter
   /-- The preconditions that callers must satisfy. -/
   preconditions : List Condition
-  -- TODO: add back determinism together with an implementation
   /-- Optional termination measure for recursive procedures. -/
   decreases : Option (AstNode StmtExpr) -- optionally prove termination
   /-- If true, the body may only have functional constructs, so no destructive assignments or loops. -/
@@ -237,6 +236,8 @@ inductive Body where
       (postconditions : List Condition)
       (implementation : Option (AstNode StmtExpr))
       (modifies : List (AstNode StmtExpr))
+      -- TODO: add back non-determinism together with an implementation
+      -- deterministic : Bool
   /-- An abstract body that must be overridden in extending types. A type containing any members with abstract bodies cannot be instantiated. -/
   | Abstract (postconditions : List Condition)
   /-- An external body for procedures that are not translated to Core (e.g., built-in primitives). -/
@@ -326,12 +327,17 @@ inductive StmtExpr : Type where
   | Abstract
   /-- Refers to all objects in the heap. Used in reads or modifies clauses. -/
   | All
-  /-- A hole representing an unknown expression.
+  /-- A hole represents an unknown expression.
+      This can be used to represent programs that are still under development, for example the program `3 + `
+      The defining property of a hole is that interaction with it and other code should not produce any errors.
+      Besides representing partial user programs,
+      holes can also be used to handle under development parts of compilers that target Laurel.
       - `deterministic`: if true, the hole represents a deterministic unknown
         (translated as an uninterpreted function); if false, a nondeterministic
         unknown (translated as a havoced variable). Nondeterministic holes are
         not allowed in functions.
-      - `type`: inferred by the hole type inference pass; `none` means not yet inferred. -/
+      - `type`: this property is used internally by Laurel and can be left to its default value.
+        Internal usage: inferred by the hole type inference pass; `none` means not yet inferred. -/
   | Hole (deterministic : Bool := true) (type : Option (AstNode HighType) := none)
 
 inductive ContractType where
