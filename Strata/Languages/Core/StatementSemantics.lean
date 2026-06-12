@@ -328,7 +328,6 @@ inductive CoreStepStar
     ----
     CoreStepStar π φ c₁ c₃
 
-<<<<<<< HEAD
 /-- Reflexive-transitive closure of CFG steps for the Core language.
     Each step looks up a block by label and evaluates it using the generic
     `Imperative.EvalDetBlock` instantiated with `EvalCommand`. This works
@@ -350,27 +349,21 @@ inductive CoreCFGStepStar
 /-- Execution of a procedure body: either structured (via `CoreStepStar`)
     or unstructured CFG (via `CoreCFGStepStar`).
 
-    The `cfg` constructor passes through the initial eval `δ` as terminal eval
-    because `CoreCFGStepStar` does not track eval changes. If CFG execution
-    ever needs `funcDecl` support, `CoreCFGStepStar` would need enrichment. -/
-=======
-/-- Execution of a procedure body. Only structured bodies have an executable
-    semantics; the `.cfg` arm of `Procedure.Body` has no inhabitant of
-    `CoreBodyExec`.
-
     For structured bodies, the body is wrapped in `Stmt.block "" ss #[]` so that
     `funcDecl` extensions and other inner scoping introduced by the body do not
     leak past the procedure boundary.  This wrapping mirrors
-    `Specification.AssertValidInProcedure` and the `procToVerifyStmt` pipeline. -/
->>>>>>> origin/main2
+    `Specification.AssertValidInProcedure` and the `procToVerifyStmt` pipeline.
+
+    The `cfg` constructor passes through the initial eval `δ` as terminal eval
+    because `CoreCFGStepStar` does not track eval changes. If CFG execution
+    ever needs `funcDecl` support, `CoreCFGStepStar` would need enrichment. -/
 inductive CoreBodyExec
     (π : String → Option Procedure)
     (φ : CoreEval → PureFunc Expression → CoreEval) :
     Procedure.Body → CoreStore → CoreEval → CoreStore → CoreEval → Bool → Prop where
   | structured :
     CoreStepStar π φ
-<<<<<<< HEAD
-      (.stmts ss ⟨σ, δ, false⟩)
+      (.stmt (Stmt.block "" ss #[]) ⟨σ, δ, false⟩)
       (.terminal ρ') →
     CoreBodyExec π φ (.structured ss) σ δ ρ'.store ρ'.eval ρ'.hasFailure
   | cfg :
@@ -378,11 +371,6 @@ inductive CoreBodyExec
       (.cont cfg.entry σ false)
       (.terminal σ' failed) →
     CoreBodyExec π φ (.cfg cfg) σ δ σ' δ failed
-=======
-      (.stmt (Stmt.block "" ss #[]) ⟨σ, δ, false⟩)
-      (.terminal ρ') →
-    CoreBodyExec π φ (.structured ss) σ δ ρ'.store ρ'.eval ρ'.hasFailure
->>>>>>> origin/main2
 
 inductive EvalCommand (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) : CoreEval →
   CoreStore → Command → CoreStore → Bool → Prop where
@@ -418,11 +406,7 @@ inductive EvalCommand (π : String → Option Procedure) (φ : CoreEval → Pure
       δ σAO pre = .some HasBool.tt) →
     CoreBodyExec π φ p.body σAO δ σ_final δ_final failed →
     (∀ post, (Procedure.Spec.getCheckExprs p.spec.postconditions).contains post →
-<<<<<<< HEAD
-      isDefinedOver (HasVarsPure.getVars) σAO post ∧
-=======
       isDefinedOver (HasFvars.getFvars) σAO post ∧
->>>>>>> origin/main2
       δ_final σ_final post = .some HasBool.tt) →
     ReadValues σ_final (ListMap.keys (p.header.outputs)) modvals →
     -- positional: modvals[i] written back to lhs[i]
