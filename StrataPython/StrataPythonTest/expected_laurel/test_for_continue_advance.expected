@@ -1,6 +1,5 @@
-test_for_continue_advance.py(3, 4): ✅ pass - assert(72)
 test_for_continue_advance.py(4, 4): ✅ pass - assume_assume(87)_calls_PIn_0
 test_for_continue_advance.py(1, 35): ✅ pass - (test_for_continue_advance ensures) Return type constraint
-test_for_continue_advance.py(7, 12): ❓ unknown - Check PAdd exception
-DETAIL: 3 passed, 0 failed, 1 inconclusive
-RESULT: Inconclusive
+test_for_continue_advance.py(7, 8): ✅ pass - set_s_calls_as_int_checked_0
+DETAIL: 3 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success

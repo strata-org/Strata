@@ -1,4 +1,9 @@
-test_missing_required_param.py(8, 0): ✅ pass - assert(212)
-test_missing_required_param.py(9, 0): ✅ pass - assert(245)
-DETAIL: 2 passed, 0 failed, 0 inconclusive
-RESULT: Analysis success
+test_missing_required_param.py(38, 4): ❓ unknown - init_calls_as_str_checked_0
+test_missing_required_param.py(38, 4): ✅ pass - init_calls_as_str_checked_1
+test_missing_required_param.py(38, 4): ✅ pass - init_calls_as_str_checked_2
+test_missing_required_param.py(23, 4): ✅ pass - init_calls_as_str_checked_0
+test_missing_required_param.py(25, 4): ❓ unknown - init_calls_as_str_checked_0
+test_missing_required_param.py(25, 4): ✅ pass - init_calls_as_str_checked_1
+test_missing_required_param.py(25, 4): ✅ pass - init_calls_as_str_checked_2
+DETAIL: 5 passed, 0 failed, 2 inconclusive
+RESULT: Inconclusive

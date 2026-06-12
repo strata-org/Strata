@@ -1,2 +1,6 @@
-DETAIL: 0 passed, 0 failed, 0 inconclusive
-RESULT: Analysis success
+test_invalid_client_type.py(13, 4): ✅ pass - init_calls_as_str_checked_0
+test_invalid_client_type.py(15, 4): ❓ unknown - init_calls_as_str_checked_0
+test_invalid_client_type.py(15, 4): ✅ pass - init_calls_as_str_checked_1
+test_invalid_client_type.py(15, 4): ✅ pass - init_calls_as_str_checked_2
+DETAIL: 3 passed, 0 failed, 1 inconclusive
+RESULT: Inconclusive

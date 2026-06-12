@@ -1,5 +1,4 @@
-test_class_field_use.py(14, 4): ✔️ always true if reached - Check PMul exception
-test_class_field_use.py(14, 4): ✔️ always true if reached - assert(302)
+test_class_field_use.py(19, 4): ✔️ always true if reached - set_process_buffer_LaurelResult_12_calls_as_int_checked_0
 test_class_field_use.py(15, 4): ✔️ always true if reached - Doubling of buffer did not work
-DETAIL: 3 passed, 0 failed, 0 inconclusive
+DETAIL: 2 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

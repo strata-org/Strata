@@ -1,0 +1,2 @@
+(set-info :file "tests/test_reassign_different_type.py")
+(set-info :error-message "expected 'int', got 'string'")

@@ -1,0 +1,2 @@
+(set-info :file "tests/test_int_truthy.py")
+(set-info :error-message "expected 'bool', got 'int'")
