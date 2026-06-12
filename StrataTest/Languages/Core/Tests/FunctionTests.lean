@@ -6,6 +6,7 @@
 module
 
 meta import Strata.Languages.Core.Function
+-- Test fixtures build Core expressions directly with synthesized provenance
 
 meta section
 
@@ -23,7 +24,7 @@ open LTy.Syntax LExpr.SyntaxMono
                         typeArgs := ["a", "b"],
                         inputs := [(⟨"w", ()⟩, mty[int]), (⟨"x", ()⟩, mty[%a]), (⟨"y", ()⟩, mty[%b]), (⟨"z", ()⟩, mty[%a])],
                         output := mty[%a],
-                        body := some (LExpr.fvar () (⟨"x", ()⟩) none) } : Function)
+                        body := some (LExpr.fvar (ExprSourceLoc.synthesized "test") (⟨"x", ()⟩) none) } : Function)
          return format type
 
 end Core

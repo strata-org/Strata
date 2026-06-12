@@ -9,6 +9,7 @@ meta import Strata.Languages.Core
 meta import Strata.DL.Lambda.Preconditions
 import StrataDDM.Integration.Lean.HashCommands
 import Strata.Languages.Core.StatementEval
+-- Test fixtures build Core expressions directly with synthesized provenance
 
 meta section
 open StrataDDM (Program)
@@ -90,13 +91,13 @@ namespace Core
 open Lambda
 
 private def precond : LExpr CoreLParams.mono :=
-  .eq () (.fvar () ⟨"x", ()⟩ (some .int)) (.fvar () ⟨"y", ()⟩ (some .int))
+  .eq (ExprSourceLoc.synthesized "test") (.fvar (ExprSourceLoc.synthesized "test") ⟨"x", ()⟩ (some .int)) (.fvar (ExprSourceLoc.synthesized "test") ⟨"y", ()⟩ (some .int))
 
 private def formals : List (Identifier Unit × LMonoTy) :=
   [(⟨"x", ()⟩, .int), (⟨"y", ()⟩, .int)]
 
 private def actuals : List (LExpr CoreLParams.mono) :=
-  [.fvar () ⟨"y", ()⟩ (some .int), .intConst () 0]
+  [.fvar (ExprSourceLoc.synthesized "test") ⟨"y", ()⟩ (some .int), .intConst (ExprSourceLoc.synthesized "test") 0]
 
 -- f(y,0): iterated [x↦y][y↦0] on `x==y` produces `0==0`. Correct: `y==0`.
 /-- info: y == 0 -/
@@ -107,12 +108,12 @@ private def actuals : List (LExpr CoreLParams.mono) :=
 /-! ## substitutePrecondition: bvar capture under quantifier -/
 
 private def precondBvar : LExpr CoreLParams.mono :=
-  .quant () .all "z" (some .int) (.bvar () 0)
-    (.app () (.app () (.op () ⟨"Int.Gt", ()⟩ (some (.arrow .int (.arrow .int .bool))))
-      (.fvar () ⟨"x", ()⟩ (some .int))) (.bvar () 0))
+  .quant (ExprSourceLoc.synthesized "test") .all "z" (some .int) (.bvar (ExprSourceLoc.synthesized "test") 0)
+    (.app (ExprSourceLoc.synthesized "test") (.app (ExprSourceLoc.synthesized "test") (.op (ExprSourceLoc.synthesized "test") ⟨"Int.Gt", ()⟩ (some (.arrow .int (.arrow .int .bool))))
+      (.fvar (ExprSourceLoc.synthesized "test") ⟨"x", ()⟩ (some .int))) (.bvar (ExprSourceLoc.synthesized "test") 0))
 
 private def formalsBvar : List (Identifier Unit × LMonoTy) := [(⟨"x", ()⟩, .int)]
-private def actualsBvar : List (LExpr CoreLParams.mono) := [.bvar () 0]
+private def actualsBvar : List (LExpr CoreLParams.mono) := [.bvar (ExprSourceLoc.synthesized "test") 0]
 
 -- bvar!1 refers to an outer binder not present in this subexpression
 -- (collectWFObligations wraps it in a quantifier).
@@ -138,10 +139,10 @@ namespace Core.Statement
 open Lambda
 
 private def mkId (s : String) : Identifier Unit := ⟨s, ()⟩
-private def mkFv (s : String) : LExpr CoreLParams.mono := .fvar () (mkId s) (some .int)
-private def mkInt (n : Int) : LExpr CoreLParams.mono := .intConst () n
+private def mkFv (s : String) : LExpr CoreLParams.mono := .fvar (ExprSourceLoc.synthesized "test") (mkId s) (some .int)
+private def mkInt (n : Int) : LExpr CoreLParams.mono := .intConst (ExprSourceLoc.synthesized "test") n
 private def mkAdd (a b : LExpr CoreLParams.mono) : LExpr CoreLParams.mono :=
-  .app () (.app () (.op () (mkId "Int.Add") (some (.arrow .int (.arrow .int .int)))) a) b
+  .app (ExprSourceLoc.synthesized "test") (.app (ExprSourceLoc.synthesized "test") (.op (ExprSourceLoc.synthesized "test") (mkId "Int.Add") (some (.arrow .int (.arrow .int .int)))) a) b
 
 private def testEnv : Env :=
   let e := Env.init

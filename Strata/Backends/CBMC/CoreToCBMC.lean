@@ -11,6 +11,7 @@ public import Strata.Languages.Core.Procedure
 public import StrataDDM.AST
 import StrataDDM.Integration.Lean.HashCommands -- shake: keep
 import Strata.Languages.Core.DDMTransform.Translate
+import Strata.Languages.Core.StatementSemantics
 
 public section
 
@@ -209,7 +210,7 @@ end
 
 def listToExpr (l: ListMap CoreLabel Core.Procedure.Check) : Core.Expression.Expr :=
   match l with
-  | _ => .true ()
+  | _ => Core.true
 
 def createContractSymbolFromAST (func : Core.Procedure) : Except String CBMCSymbol := do
   let location : Location := {

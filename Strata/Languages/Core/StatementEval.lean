@@ -26,6 +26,9 @@ namespace Statement
 open Std (ToFormat Format format)
 open Lambda
 
+/-- Metadata for expressions synthesized during statement evaluation. -/
+private abbrev evalSynthLoc : ExprSourceLoc := ExprSourceLoc.synthesized "eval"
+
 ---------------------------------------------------------------------
 
 inductive CondType where
@@ -82,7 +85,7 @@ LHS mapping: `[("x", fresh_var)]`
 -/
 private def mkReturnSubst (proc : Procedure) (lhs : List Expression.Ident) (E : Env) :
     VarSubst × VarSubst × Env :=
-  let lhs_tys := lhs.map (fun l => (E.exprEnv.state.findD l (none, .fvar () l none)).fst)
+  let lhs_tys := lhs.map (fun l => (E.exprEnv.state.findD l (none, .fvar evalSynthLoc l none)).fst)
   let lhs_typed := lhs.zip lhs_tys
   let (lhs_fvars, E') := E.genFVars lhs_typed
   let return_tys := proc.header.outputs.keys.map
@@ -90,7 +93,6 @@ private def mkReturnSubst (proc : Procedure) (lhs : List Expression.Ident) (E : 
   let return_lhs_subst := List.zip return_tys lhs_fvars
   let lhs_post_subst := List.zip lhs_typed lhs_fvars
   (return_lhs_subst, lhs_post_subst, E')
-
 
 /--
 Extract the type from an expression that has already been typechecked (so e.g.
@@ -126,7 +128,7 @@ private def computeTypeSubst (input_tys output_tys: List LMonoTy)
   Subst :=
   let actual_tys := args.filterMap getExprType
   let lhs_tys := lhs.filterMap (fun l =>
-    (E.exprEnv.state.findD l (none, .fvar () l none)).fst)
+    (E.exprEnv.state.findD l (none, .fvar evalSynthLoc l none)).fst)
   let input_constraints := actual_tys.zip input_tys
   let output_constraints := lhs_tys.zip output_tys
   let constraints := input_constraints ++ output_constraints
@@ -304,7 +306,7 @@ private def createUnreachableCoverObligations
     Imperative.ProofObligations Expression :=
   covers.toArray.map
     (fun (label, md) =>
-      (Imperative.ProofObligation.mk label .cover pathConditions (LExpr.false ()) md))
+      (Imperative.ProofObligation.mk label .cover pathConditions (LExpr.boolConst evalSynthLoc false) md))
 
 /--
 Create assert obligations for asserts in an unreachable (dead) branch, including
@@ -318,7 +320,7 @@ private def createUnreachableAssertObligations
   asserts.toArray.map
     (fun (label, md) =>
       let propType := Imperative.convertMetaDataPropertyType md
-      (Imperative.ProofObligation.mk label propType pathConditions (LExpr.true ()) md))
+      (Imperative.ProofObligation.mk label propType pathConditions (LExpr.boolConst evalSynthLoc true) md))
 
 /--
 Substitute free variables in an expression with their current values from the environment,
@@ -373,7 +375,7 @@ private def collectDeadBranchDeferred
     Imperative.ProofObligations Expression :=
   if Statements.containsCovers ss_f || Statements.containsAsserts ss_f then
     let deadLabel := toString (f!"<dead_branch: {cond.eraseTypes}>")
-    let deadPathConds := pathConditions.push [.assumption deadLabel (LExpr.false ())]
+    let deadPathConds := pathConditions.push [.assumption deadLabel (LExpr.boolConst evalSynthLoc false)]
     createUnreachableCoverObligations deadPathConds (Statements.collectCovers ss_f) ++
     createUnreachableAssertObligations deadPathConds (Statements.collectAsserts ss_f)
   else
@@ -577,7 +579,7 @@ private def evalOneStmt (old_var_subst : SubstMap)
     match cond with
     | .nondet =>
       let freshName : CoreIdent := ⟨s!"$__nondet_cond_{Ewn.env.pathConditions.length}", ()⟩
-      let freshVar : Expression.Expr := .fvar () freshName none
+      let freshVar : Expression.Expr := .fvar evalSynthLoc freshName none
       let initStmt := Statement.init freshName (.forAll [] (.tcons "bool" [])) .nondet (Imperative.MetaData.ofProvenance (.synthesized .nondetIte))
       let iteStmt := Imperative.Stmt.ite (.det freshVar) then_ss else_ss (Imperative.MetaData.ofProvenance (.synthesized .nondetIte))
       evalSub Ewn [initStmt, iteStmt] nextSplitId
@@ -672,7 +674,7 @@ def processIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNe
   let label_false := toString (f!"<label_ite_cond_false: !({cond.eraseTypes})>")
   let path_conds_true := Ewn.env.pathConditions.push [.assumption label_true cond']
   let path_conds_false := Ewn.env.pathConditions.push
-                            [.assumption label_false (Lambda.LExpr.ite () cond' (LExpr.false ()) (LExpr.true ()))]
+                            [.assumption label_false (Lambda.LExpr.ite evalSynthLoc cond' (LExpr.boolConst evalSynthLoc false) (LExpr.boolConst evalSynthLoc true))]
   have : 1 <= Imperative.Block.sizeOf then_ss := by
    unfold Imperative.Block.sizeOf; split <;> omega
   have : 1 <= Imperative.Block.sizeOf else_ss := by
@@ -778,7 +780,7 @@ def Command.runCall (lhs : List Expression.Ident) (procName : String) (args : Li
           else
             let outputBindings : List (CoreIdent × (Option LMonoTy × Expression.Expr)) :=
               proc.header.outputs.keys.zip proc.header.outputs.values
-              |>.map fun (name, ty) => (name, (some ty, LExpr.fvar () name none))
+              |>.map fun (name, ty) => (name, (some ty, LExpr.fvar evalSynthLoc name none))
             let callEnv : Env := { E with
               exprEnv := { E.exprEnv with
                 state := [formalBindings ++ outputBindings] } }
@@ -804,6 +806,9 @@ def Command.runCall (lhs : List Expression.Ident) (procName : String) (args : Li
               popScope := fun E => E.popScope
               hasError := fun E => E.error.isSome
               addError := fun E msg => CmdEval.updateError E (.Misc msg)
+              isTt := fun e => match e with
+                | .const _ (.boolConst true) => true
+                | _ => false
             }
             let configAfter := match proc.body with
               | .structured ss =>
@@ -822,7 +827,7 @@ def Command.runCall (lhs : List Expression.Ident) (procName : String) (args : Li
                   CmdEval.updateError E (.Misc s!"procedure '{procName}': expected {proc.header.outputs.keys.length} output arguments, got {lhs.length}")
                 else
                   let outputVals := proc.header.outputs.keys.map fun name =>
-                    (callEnv'.exprEnv.state.findD name (none, LExpr.fvar () name none)).snd
+                    (callEnv'.exprEnv.state.findD name (none, LExpr.fvar evalSynthLoc name none)).snd
                   lhs.zip outputVals |>.foldl (fun env (name, val) =>
                     env.insertInContext (name, none) val) E
             | _ => CmdEval.updateError E (.Misc "failed to terminate")

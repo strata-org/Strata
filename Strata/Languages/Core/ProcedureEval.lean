@@ -98,7 +98,7 @@ def eval (E : Env) (p : Procedure) : Env × Statistics :=
                     -- that hides the expression from the evaluator, allowing us
                     -- to retain the postcondition body instead of replacing it
                     -- with "true".
-                  (.assume label (.true ())
+                  (.assume label (Core.true)
                                  ((Imperative.MetaData.pushElem
                                   #[]
                                   (.label label)

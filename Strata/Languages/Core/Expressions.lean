@@ -3,11 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+-- Default instances and operator constructors use synthesized provenance
 module
 
 public import Strata.Languages.Core.Identifiers
 public import Strata.Languages.Core.CoreOp
 public import Strata.DL.Imperative.HasVars
+public import StrataDDM.Util.SourceRange
 public import Strata.DL.Lambda.LExprTypeEnv
 public import Strata.DL.Lambda.LState
 
@@ -17,7 +19,7 @@ open Std (ToFormat Format format)
 
 public section
 
-@[expose] abbrev ExpressionMetadata := Unit
+@[expose] abbrev ExpressionMetadata := ExprSourceLoc
 
 @[expose]
 abbrev Expression : Imperative.PureExpr :=
@@ -36,12 +38,14 @@ instance : Imperative.HasFvars Expression where
 instance : Imperative.HasOps Expression where
   getOps := Lambda.LExpr.getOps
 
+-- Inhabited default uses synthesized "core" provenance
 instance : Inhabited Expression.Expr where
-  default := .intConst () 0
+  default := .intConst (ExprSourceLoc.synthesized "core") 0
 
-/-- Build an `LExpr.op` node from a structured `CoreOp`. -/
+/-- Build an `LExpr.op` node from a structured `CoreOp`.
+    `CoreOp` values are language-level operators with synthesized provenance. -/
 def coreOpExpr (op : CoreOp) (ty : Option Lambda.LMonoTy := none) : Expression.Expr :=
-  .op () op.toString ty
+  .op (ExprSourceLoc.synthesized "core") op.toString ty
 
 ---------------------------------------------------------------------
 

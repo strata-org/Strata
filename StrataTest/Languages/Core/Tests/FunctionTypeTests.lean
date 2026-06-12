@@ -33,7 +33,7 @@ private def inferredBinderFunc : Core.Function :=
     typeArgs := ["T"],
     inputs := [(⟨"x", ()⟩, .ftvar "T")],
     output := .ftvar "T",
-    body := some (.app () (.abs () "y" none (.bvar () 0)) (.fvar () ⟨"x", ()⟩ none)) }
+    body := some (.app default (.abs default "y" none (.bvar default 0)) (.fvar default ⟨"x", ()⟩ none)) }
 
 /--
 info: ok: typeArgs: [T]
@@ -113,7 +113,7 @@ private def identifyParamsFunc : Core.Function :=
     typeArgs := ["a", "b"],
     inputs := [(⟨"x", ()⟩, .ftvar "a"), (⟨"y", ()⟩, .ftvar "b")],
     output := .ftvar "a",
-    body := some (LExpr.fvar () ⟨"y", ()⟩ none) }
+    body := some (LExpr.fvar default ⟨"y", ()⟩ none) }
 
 /--
 info: error: Function 'swap': body constrains the type to '(arrow b (arrow b b))', incompatible with declared polymorphic signature '(arrow a (arrow b a))'
@@ -151,7 +151,7 @@ private def strayBodyVarFunc : Core.Function :=
     typeArgs := ["T"],
     inputs := [(⟨"x", ()⟩, .ftvar "T")],
     output := .ftvar "T",
-    body := some (.app () (.abs () "y" (some (.ftvar "U")) (.bvar () 0)) (.fvar () ⟨"x", ()⟩ none)) }
+    body := some (.app default (.abs default "y" (some (.ftvar "U")) (.bvar default 0)) (.fvar default ⟨"x", ()⟩ none)) }
 
 /--
 info: error: Function 'id': body contains undeclared type variables [U] (not in typeArgs [T])
@@ -172,7 +172,7 @@ private def issue1287_func : Core.Function :=
     typeArgs := ["T"],
     inputs := [(⟨"x", ()⟩, .ftvar "T"), (⟨"y", ()⟩, .ftvar "$__ty0")],
     output := .ftvar "T",
-    body := some (LExpr.fvar () ⟨"y", ()⟩ none) }
+    body := some (LExpr.fvar default ⟨"y", ()⟩ none) }
 
 /--
 info: error: Function 'bad': type variables [$__ty0] appear in the signature but are not declared in typeArgs [T]
@@ -217,9 +217,9 @@ private def strayQuantVarFunc : Core.Function :=
     typeArgs := ["T"],
     inputs := [(⟨"x", ()⟩, .ftvar "T")],
     output := .ftvar "T",
-    body := some (.app ()
-      (.quant () .all "y" (some (.ftvar "U")) (.bvar () 0) (.bvar () 0))
-      (.fvar () ⟨"x", ()⟩ none)) }
+    body := some (.app default
+      (.quant default .all "y" (some (.ftvar "U")) (.bvar default 0) (.bvar default 0))
+      (.fvar default ⟨"x", ()⟩ none)) }
 
 /--
 info: error: Function 'f': body contains undeclared type variables [U] (not in typeArgs [T])
@@ -236,7 +236,7 @@ private def strayFvarAnnotFunc : Core.Function :=
     typeArgs := ["T"],
     inputs := [(⟨"x", ()⟩, .ftvar "T")],
     output := .ftvar "T",
-    body := some (.fvar () ⟨"x", ()⟩ (some (.ftvar "V"))) }
+    body := some (.fvar default ⟨"x", ()⟩ (some (.ftvar "V"))) }
 
 /--
 info: ok: typeArgs: [T]
@@ -257,9 +257,9 @@ private def nonTrivialBwdFunc : Core.Function :=
     typeArgs := ["a", "b"],
     inputs := [(⟨"f", ()⟩, .arrow (.ftvar "a") (.ftvar "b")), (⟨"x", ()⟩, .ftvar "a")],
     output := .ftvar "b",
-    body := some (.app ()
-      (.abs () "y" none (.app () (.fvar () ⟨"f", ()⟩ none) (.bvar () 0)))
-      (.fvar () ⟨"x", ()⟩ none)) }
+    body := some (.app default
+      (.abs default "y" none (.app default (.fvar default ⟨"f", ()⟩ none) (.bvar default 0)))
+      (.fvar default ⟨"x", ()⟩ none)) }
 
 /--
 info: ok: typeArgs: [a, b]

@@ -6,6 +6,7 @@
 module
 meta import Strata.Languages.Core.Statement
 meta import Strata.Languages.Core.DDMTransform.FormatCore
+-- Test fixtures build Core expressions directly with synthesized provenance
 
 meta section
 
@@ -20,16 +21,16 @@ private abbrev Ss := List S
 private abbrev E := Expression.Expr
 
 private def intTy : Expression.Ty := .forAll [] .int
-private def x : E := .fvar () (⟨"x", ()⟩) (some .int)
-private def y : E := .fvar () (⟨"y", ()⟩) (some .int)
-private def tt : E := .boolConst () true
-private def int0 : E := .intConst () 0
-private def int1 : E := .intConst () 1
-private def int2 : E := .intConst () 2
-private def int42 : E := .intConst () 42
-private def xEq0 : E := .eq () x int0
-private def xEq5 : E := .eq () x (.intConst () 5)
-private def xEq1 : E := .eq () x int1
+private def x : E := .fvar (ExprSourceLoc.synthesized "test") (⟨"x", ()⟩) (some .int)
+private def y : E := .fvar (ExprSourceLoc.synthesized "test") (⟨"y", ()⟩) (some .int)
+private def tt : E := .boolConst (ExprSourceLoc.synthesized "test") true
+private def int0 : E := .intConst (ExprSourceLoc.synthesized "test") 0
+private def int1 : E := .intConst (ExprSourceLoc.synthesized "test") 1
+private def int2 : E := .intConst (ExprSourceLoc.synthesized "test") 2
+private def int42 : E := .intConst (ExprSourceLoc.synthesized "test") 42
+private def xEq0 : E := .eq (ExprSourceLoc.synthesized "test") x int0
+private def xEq5 : E := .eq (ExprSourceLoc.synthesized "test") x (.intConst (ExprSourceLoc.synthesized "test") 5)
+private def xEq1 : E := .eq (ExprSourceLoc.synthesized "test") x int1
 
 -- 1. cmd: init
 /-- info: var x : int := 0; -/

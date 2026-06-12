@@ -6,6 +6,7 @@
 module
 
 public import Strata.Languages.Core.PipelinePhase
+import Strata.DL.Lambda.LExprEval
 import Strata.Util.List
 
 /-! # ANF Encoder
@@ -28,6 +29,8 @@ assert $__anf.0+$__anf.0 == 2*$__anf.0
 The pass walks procedure bodies via `anfEncodeProgram`, hoisting duplicated
 subexpressions into `var` declarations prepended to the body.
 -/
+
+-- ANF-synthesized fresh variables carry the source location of the expression they replace.
 
 public section
 
@@ -71,7 +74,7 @@ private structure ExprKey where
   expr : Expression.Expr
 
 private instance : BEq ExprKey where
-  beq a b := a.expr == b.expr
+  beq a b := a.expr.eqModuloMeta b.expr
 
 private instance : Hashable ExprKey where
   hash k := LExpr.hashExpr k.expr
@@ -139,7 +142,7 @@ where
   check (h : UInt64) (e : Expression.Expr) : UInt64 × Expression.Expr :=
     match replacements[h]? with
     | some pairs =>
-      match pairs.find? (fun (t, _) => e == t) with
+      match pairs.find? (fun (t, _) => e.eqModuloMeta t) with
       | some (_, replacement) => (h, replacement)
       | none => (h, e)
     | none => (h, e)
@@ -251,7 +254,7 @@ where
         let (revDecls, replacements, nextIdx) := targets.foldl (fun (decls, repMap, idx) dup =>
           let freshName : CoreIdent := ⟨s!"{anfVarPrefix}{idx}", ()⟩
           let freshTy := dup.typeOf
-          let freshVar : Expression.Expr := .fvar () freshName freshTy
+          let freshVar : Expression.Expr := .fvar dup.metadata freshName freshTy
           let ty : Expression.Ty := match freshTy with
             | some mty => LTy.forAll [] mty
             | none => LTy.forAll ["α"] (.ftvar "α")

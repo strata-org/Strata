@@ -18,19 +18,29 @@ public section
 
 namespace Core
 
-/-- expressions that can't be reduced when evaluating -/
+-- Proof terms and semantic definitions use semLoc provenance
+-- (canonical forms represent abstract values, not parsed source terms).
+
+abbrev semLoc : ExprSourceLoc :=
+  { uri := some (.file "<synthesized:semantics>"), range := Strata.SourceRange.none }
+
+/-- Expressions that can't be reduced when evaluating.
+    These are canonical forms used in semantic definitions; they carry synthesized provenance
+    because they represent abstract values, not parsed source terms. -/
 inductive Value : Core.Expression.Expr → Prop where
-  | const :  Value (.const () _)
-  | bvar  :  Value (.bvar () _)
-  | op    :  Value (.op () _ _)
-  | abs   :  Value (.abs () _ _ _)
+  | const :  Value (.const semLoc _)
+  | bvar  :  Value (.bvar semLoc _)
+  | op    :  Value (.op semLoc _ _)
+  | abs   :  Value (.abs semLoc _ _ _)
 
 open Imperative
 
 instance : HasVal Core.Expression where value := Value
 
+-- Semantic typeclass instances construct canonical expressions with synthesized provenance.
+
 instance : HasFvar Core.Expression where
-  mkFvar := (.fvar () · none)
+  mkFvar := (.fvar semLoc · none)
   getFvar
   | .fvar _ v _ => some v
   | _ => none
@@ -39,17 +49,19 @@ instance : HasSubstFvar Core.Expression where
   substFvar := Lambda.LExpr.substFvar
   substFvars := Lambda.LExpr.substFvars
 
+
 instance : HasIdent Core.Expression where
   ident s := ⟨s, ()⟩
 
 @[expose, match_pattern]
-def Core.true : Core.Expression.Expr := .boolConst () Bool.true
+def Core.true : Core.Expression.Expr := .boolConst semLoc Bool.true
 @[expose, match_pattern]
-def Core.false : Core.Expression.Expr := .boolConst () Bool.false
+def Core.false : Core.Expression.Expr := .boolConst semLoc Bool.false
 
-/-- Syntactic check for integer numeral literals in Core. -/
+/-- Syntactic check for integer numeral literals in Core.
+    Only recognises numerals with `semLoc` provenance, matching the `Value` type. -/
 def Core.isNumeral : Core.Expression.Expr → Bool
-  | .const _ (.intConst _) => Bool.true
+  | .const m (.intConst _) => decide (m = semLoc)
   | _ => Bool.false
 
 instance : HasBool Core.Expression where
@@ -77,7 +89,7 @@ theorem numeralHasNoVars_aux : ∀ (n : Core.Expression.Expr),
   | .eq _ _ _, hn => by simp [Core.isNumeral] at hn
 
 instance : HasInt Core.Expression where
-  zero        := .intConst () 0
+  zero        := .intConst semLoc 0
   intTy       := .forAll [] (.tcons "int" [])
   isNumeral   := Core.isNumeral
   numeralIsValue n hn := by
@@ -85,26 +97,29 @@ instance : HasInt Core.Expression where
     cases n with
     | const m c =>
       cases c with
-      | intConst _ => exact Value.const
+      | intConst _ =>
+        simp [Core.isNumeral] at hn
+        subst hn
+        exact Value.const
       | _ => simp [Core.isNumeral] at hn
     | _ => simp [Core.isNumeral] at hn
   zeroIsNumeral := by
-    show Core.isNumeral (.intConst () 0) = Bool.true
-    rfl
+    show Core.isNumeral (.intConst semLoc 0) = Bool.true
+    native_decide
   numeralHasNoFvars := numeralHasNoVars_aux
 
 instance : HasIntOps Core.Expression where
-  eq    e1 e2 := .eq () e1 e2
-  lt    e1 e2 := .app () (.app () Core.intLtOp e1) e2
+  eq    e1 e2 := .eq semLoc e1 e2
+  lt    e1 e2 := .app semLoc (.app semLoc Core.intLtOp e1) e2
 
 instance : HasBoolOps Core.Expression where
   not
   | Core.true => Core.false
   | Core.false => Core.true
-  | e => Lambda.LExpr.app () (Lambda.boolNotFunc (T:=CoreLParams)).opExpr e
-  and e1 e2 := Lambda.LExpr.app () (Lambda.LExpr.app ()
+  | e => Lambda.LExpr.app semLoc (Lambda.boolNotFunc (T:=CoreLParams)).opExpr e
+  and e1 e2 := Lambda.LExpr.app semLoc (Lambda.LExpr.app semLoc
     (Lambda.boolAndFunc (T:=CoreLParams)).opExpr e1) e2
-  imp e1 e2 := Lambda.LExpr.app () (Lambda.LExpr.app ()
+  imp e1 e2 := Lambda.LExpr.app semLoc (Lambda.LExpr.app semLoc
     (Lambda.boolImpliesFunc (T:=CoreLParams)).opExpr e1) e2
 
 @[expose] abbrev CoreEval := SemanticEval Expression
@@ -230,12 +245,12 @@ def updatedStates
   : SemanticStore P :=
   updatedStates' σ $ idents.zip vals
 
-/-- The evaluator handles old expressions correctly
--- It should specify the exact expression form that would map to the old store
--- This can be used to implement more general two-state functions, as in Dafny
--- https://dafny.org/latest/DafnyRef/DafnyRef#sec-two-state
--- where this condition will be asserted at procedures utilizing those two-state functions
--/
+/-- The evaluator handles old expressions correctly.
+It should specify the exact expression form that would map to the old store.
+This can be used to implement more general two-state functions, as in Dafny
+https://dafny.org/latest/DafnyRef/DafnyRef#sec-two-state
+where this condition will be asserted at procedures utilizing those two-state functions.
+Synthesized `old` variable references carry no source location. -/
 def WellFormedCoreEvalTwoState (δ : CoreEval) (σ₀ σ : CoreStore) : Prop :=
       (∃ vs vs' σ₁, HavocVars σ₀ vs σ₁ ∧ InitVars σ₁ vs' σ) ∧
       (∀ vs vs' σ₀ σ₁ σ,
@@ -243,10 +258,10 @@ def WellFormedCoreEvalTwoState (δ : CoreEval) (σ₀ σ : CoreStore) : Prop :=
         ∀ v,
           -- "old g" in the post-state holds the pre-state value of g
           (v ∈ vs →
-            δ σ (.fvar () (CoreIdent.mkOld v.name) none) = σ₀ v) ∧
+            δ σ (.fvar semLoc (CoreIdent.mkOld v.name) none) = σ₀ v) ∧
           -- if the variable is not modified, "old g" is the same as g
           (¬ v ∈ vs →
-            δ σ (.fvar () (CoreIdent.mkOld v.name) none) = σ v))
+            δ σ (.fvar semLoc (CoreIdent.mkOld v.name) none) = σ v))
 
 /-! ### Closure Capture for Function Declarations -/
 

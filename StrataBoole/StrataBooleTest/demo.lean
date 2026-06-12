@@ -95,6 +95,7 @@ theorem loopSimple_smtVCsCorrectBoole : smtVCsCorrectBoole loopSimple := by
  Core.bv8SafeUAddFunc._native.native_decide.ax_1✝,
  Core.bv8SafeUMulFunc._native.native_decide.ax_1✝,
  Core.bv8SafeUNegFunc._native.native_decide.ax_1✝,
- Core.bv8SafeUSubFunc._native.native_decide.ax_1✝]-/
+ Core.bv8SafeUSubFunc._native.native_decide.ax_1✝,
+ Core.instHasIntExpression._native.native_decide.ax_5✝]-/
 #guard_msgs in
 #print axioms loopSimple_smtVCsCorrectBoole

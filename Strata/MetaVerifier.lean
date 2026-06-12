@@ -17,6 +17,7 @@ import Strata.Languages.C_Simp.Verify
 import Strata.Languages.Core
 import Strata.Languages.Core.DDMTransform.Translate
 import Strata.Languages.Core.ProgramEval
+meta import StrataDDM.Integration.Lean.ToExpr
 
 -- For some reason shake wants to meta import the following
 -- while lake itself only requires imports.
@@ -244,7 +245,22 @@ deriving instance ToExpr for SMT.Term
 deriving instance ToExpr for Core.SMT.Sort
 deriving instance ToExpr for Core.SMT.IF
 deriving instance ToExpr for SanitizedContext
-deriving instance ToExpr for Core.CoreExprMetadata
+meta instance : ToExpr Strata.Uri where
+  toTypeExpr := mkConst ``Strata.Uri
+  toExpr
+    | .file p => mkApp (mkConst ``Strata.Uri.file) (toExpr p)
+
+meta instance : ToExpr String.Pos.Raw where
+  toTypeExpr := mkConst ``String.Pos.Raw
+  toExpr p := mkApp (mkConst ``String.Pos.Raw.mk) (toExpr p.byteIdx)
+
+meta instance : ToExpr StrataDDM.SourceRange where
+  toTypeExpr := mkConst ``StrataDDM.SourceRange
+  toExpr sr := mkApp2 (mkConst ``StrataDDM.SourceRange.mk) (toExpr sr.start) (toExpr sr.stop)
+
+meta instance : ToExpr ExprSourceLoc where
+  toTypeExpr := mkConst ``ExprSourceLoc
+  toExpr e := mkApp3 (mkConst ``ExprSourceLoc.mk) (toExpr e.uri) (toExpr e.range) (toExpr e.relatedLocs)
 deriving instance ToExpr for Lambda.LMonoTy
 
 instance [ToExpr α] : ToExpr (Lambda.Identifier α) where

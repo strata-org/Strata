@@ -15,6 +15,7 @@ meta import Strata.Languages.Core.ProgramWF
 meta import Strata.Transform.CoreTransform
 meta import Strata.Transform.ProcedureInlining
 meta import Strata.Util.Tactics
+-- Test fixtures build Core expressions directly with synthesized provenance
 
 meta section
 
@@ -71,14 +72,14 @@ private def substExpr (e1:Expression.Expr) (map:Map String String) :=
       -- created by CoreGenM.
       -- All variables now have Unit metadata; we substitute by name.
       let old_id : Expression.Ident := { name := i1, metadata := () }
-      let new_expr : Expression.Expr := .fvar () { name := i2, metadata := () } .none
+      let new_expr : Expression.Expr := .fvar (ExprSourceLoc.synthesized "test") { name := i2, metadata := () } .none
       e.substFvar old_id new_expr)
     e1
 
 private def alphaEquivExprs (e1 e2: Expression.Expr) (map:IdMap)
     : Bool :=
-  (substExpr e1 (map.vars.fst)).eraseTypes == e2.eraseTypes &&
-  (substExpr e2 (map.vars.snd)).eraseTypes == e1.eraseTypes
+  (substExpr e1 (map.vars.fst)).eraseTypes.eraseMetadata == e2.eraseTypes.eraseMetadata &&
+  (substExpr e2 (map.vars.snd)).eraseTypes.eraseMetadata == e1.eraseTypes.eraseMetadata
 
 private def alphaEquivExprsOpt (e1 e2: Option Expression.Expr) (map:IdMap)
     : Except Format Bool :=

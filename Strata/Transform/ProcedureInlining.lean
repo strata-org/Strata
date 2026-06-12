@@ -7,7 +7,10 @@ module
 
 public import Strata.Languages.Core.PipelinePhase
 
-/-! # Procedure Inlining Transformation -/
+/-! # Procedure Inlining Transformation
+
+-- Variable references synthesized during inlining carry ExprSourceLoc.synthesized "inlining" provenance.
+-/
 
 public section
 
@@ -112,7 +115,7 @@ private def renameAllLocalNames (c:Procedure)
     | .structured bodyStmts =>
       pure <| .structured (List.map (fun (s0:Statement) =>
         var_map.foldl (fun (s:Statement) (old_id,new_id) =>
-            let s := Statement.substFvar s old_id (.fvar () new_id .none)
+            let s := Statement.substFvar s old_id (.fvar (ExprSourceLoc.synthesized "inlining") new_id .none)
             let s := Statement.renameLhs s old_id new_id
             Statement.replaceLabelsOfBlocksAndAssertAssumes s label_map)
           s0) bodyStmts)
@@ -264,7 +267,7 @@ def inlineCallCmd
           let outs_lhs_and_sig := List.zip lhs out_vars
           List.map
             (fun (lhs_var,out_var) =>
-              Statement.set lhs_var (.fvar () out_var (.none)) md)
+              Statement.set lhs_var (.fvar (ExprSourceLoc.synthesized "inlining") out_var (.none)) md)
             outs_lhs_and_sig
 
         -- Cannot inline unstructured (CFG) bodies into structured code.

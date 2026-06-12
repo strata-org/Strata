@@ -9,6 +9,7 @@ meta import Strata.Languages.Core.Verifier
 meta import Strata.Languages.Core.ProcedureEval
 meta import Strata.Languages.Core.StatementEval
 import StrataDDM.Integration.Lean.HashCommands
+-- Test fixtures build Core expressions directly with synthesized provenance
 
 meta section
 
@@ -503,7 +504,7 @@ procedure Test(x : int, out y : int)
 
 /-- info: y = (some 10) -/
 #guard_msgs in
-#eval runProc arithPgm "Test" [.intConst () 5]
+#eval runProc arithPgm "Test" [.intConst (ExprSourceLoc.synthesized "test") 5]
 
 -- If-then-else
 private def itePgm : StrataDDM.Program :=
@@ -521,11 +522,11 @@ procedure Test(x : int, out y : int)
 
 /-- info: y = (some 7) -/
 #guard_msgs in
-#eval runProc itePgm "Test" [.intConst () 7]
+#eval runProc itePgm "Test" [.intConst (ExprSourceLoc.synthesized "test") 7]
 
 /-- info: y = (some 3) -/
 #guard_msgs in
-#eval runProc itePgm "Test" [.intConst () (-3)]
+#eval runProc itePgm "Test" [.intConst (ExprSourceLoc.synthesized "test") (-3)]
 
 -- Procedure call
 private def callPgm : StrataDDM.Program :=
@@ -543,7 +544,7 @@ procedure Test(x : int, out y : int)
 
 /-- info: y = (some 20) -/
 #guard_msgs in
-#eval runProc callPgm "Test" [.intConst () 10]
+#eval runProc callPgm "Test" [.intConst (ExprSourceLoc.synthesized "test") 10]
 
 -- Chained procedure calls (DoubleTwice)
 private def chainedCallPgm : StrataDDM.Program :=
@@ -562,7 +563,7 @@ procedure Test(x : int, out output : int)
 
 /-- info: output = (some 20) -/
 #guard_msgs in
-#eval runProc chainedCallPgm "Test" [.intConst () 5]
+#eval runProc chainedCallPgm "Test" [.intConst (ExprSourceLoc.synthesized "test") 5]
 
 -- Loop (sum of 0..n-1)
 private def loopPgm : StrataDDM.Program :=
@@ -583,7 +584,7 @@ procedure Test(n : int, out sum : int)
 
 /-- info: sum = (some 15) -/
 #guard_msgs in
-#eval runProc loopPgm "Test" [.intConst () 5]
+#eval runProc loopPgm "Test" [.intConst (ExprSourceLoc.synthesized "test") 5]
 
 -- Assertion success
 private def assertSuccessPgm : StrataDDM.Program :=

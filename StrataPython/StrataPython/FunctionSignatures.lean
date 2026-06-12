@@ -150,18 +150,23 @@ def addCoreDecls : SignatureM Unit := do
 
 end
 
+/-- Build a `None` value expression for a given `OrNone` type.
+    Synthesized expression for default parameter values. -/
 def TypeStrToCoreExpr (ty: String) : Core.Expression.Expr :=
   if !ty.endsWith "OrNone" then
     panic! s!"Should only be called for possibly None types. Called for: {ty}"
   else
+    let loc := ExprSourceLoc.synthesized "python-default-value"
+    let mkNoneExpr (ty : String) : Core.Expression.Expr :=
+      .app loc (.op loc (ty ++ "_mk_none") none) (.op loc "None_none" none)
     match ty with
-    | "StrOrNone" => .app () (.op () "StrOrNone_mk_none" none) (.op () "None_none" none)
-    | "BoolOrNone" => .app () (.op () "BoolOrNone_mk_none" none) (.op () "None_none" none)
-    | "BoolOrStrOrNone" => .app () (.op () "BoolOrStrOrNone_mk_none" none) (.op () "None_none" none)
-    | "AnyOrNone" => .app () (.op () "AnyOrNone_mk_none" none) (.op () "None_none" none)
-    | "IntOrNone" => .app () (.op () "IntOrNone_mk_none" none) (.op () "None_none" none)
-    | "BytesOrStrOrNone" => .app () (.op () "BytesOrStrOrNone_mk_none" none) (.op () "None_none" none)
-    | "DictStrStrOrNone" => .app () (.op () "DictStrStrOrNone_mk_none" none) (.op () "None_none" none)
+    | "StrOrNone" => mkNoneExpr "StrOrNone"
+    | "BoolOrNone" => mkNoneExpr "BoolOrNone"
+    | "BoolOrStrOrNone" => mkNoneExpr "BoolOrStrOrNone"
+    | "AnyOrNone" => mkNoneExpr "AnyOrNone"
+    | "IntOrNone" => mkNoneExpr "IntOrNone"
+    | "BytesOrStrOrNone" => mkNoneExpr "BytesOrStrOrNone"
+    | "DictStrStrOrNone" => mkNoneExpr "DictStrStrOrNone"
     | _ => panic! s!"unsupported type: {ty}"
 
 end StrataPython

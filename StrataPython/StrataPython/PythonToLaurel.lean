@@ -1763,7 +1763,7 @@ partial def translateStmt (ctx : TranslationContext) (s : stmt SourceRange)
       let typeAssert := match target with
         | .Name _ n _ =>
           if !typeAssertSafe then []
-          else if s.toAst.ann == default then [] -- compiler-generated statement, no source location
+          else if s.toAst.ann.isNone then [] -- compiler-generated statement, no source location
           else
           let annStr := pyExprToString annotation
           match typeTester? annStr with

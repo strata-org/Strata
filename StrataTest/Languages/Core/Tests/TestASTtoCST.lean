@@ -8,6 +8,7 @@ module
 meta import Strata.Languages.Core.DDMTransform.ASTtoCST
 meta import Strata.Languages.Core.DDMTransform.Translate
 import StrataDDM.Integration.Lean.HashCommands
+-- Test fixtures build Core expressions directly with synthesized provenance
 
 meta section
 open StrataDDM (Program)
@@ -650,7 +651,7 @@ private def formatCore (p : Core.Program) : IO Unit :=
 private def lambdaIdentityPgm : Core.Program := { decls := [
   .func { name := "intID", typeArgs := [], inputs := [],
           output := .arrow .int .int,
-          body := some (.abs () "" (.some .int) (.bvar () 0)) } .empty
+          body := some (.abs (ExprSourceLoc.synthesized "test") "" (.some .int) (.bvar (ExprSourceLoc.synthesized "test") 0)) } .empty
 ]}
 
 /--
@@ -666,8 +667,8 @@ function intID () : int -> int {
 private def lambdaNestedPgm : Core.Program := { decls := [
   .func { name := "constFn", typeArgs := [], inputs := [],
           output := .arrow .int (.arrow .int .int),
-          body := some (.abs () "" (.some .int)
-            (.abs () "" (.some .int) (.bvar () 1))) } .empty
+          body := some (.abs (ExprSourceLoc.synthesized "test") "" (.some .int)
+            (.abs (ExprSourceLoc.synthesized "test") "" (.some .int) (.bvar (ExprSourceLoc.synthesized "test") 1))) } .empty
 ]}
 
 /--
@@ -683,7 +684,7 @@ function constFn () : int -> int -> int {
 private def lambdaNamedPgm : Core.Program := { decls := [
   .func { name := "namedLam", typeArgs := [], inputs := [],
           output := .arrow .int .int,
-          body := some (.abs () "x" (.some .int) (.bvar () 0)) } .empty
+          body := some (.abs (ExprSourceLoc.synthesized "test") "x" (.some .int) (.bvar (ExprSourceLoc.synthesized "test") 0)) } .empty
 ]}
 
 /--
@@ -700,7 +701,7 @@ function namedLam () : int -> int {
 private def lambdaAppliedPgm : Core.Program := { decls := [
   .func { name := "test", typeArgs := [], inputs := [],
           output := .int,
-          body := some (.app () (.abs () "x" (.some .int) (.bvar () 0)) (.intConst () 5)) } .empty
+          body := some (.app (ExprSourceLoc.synthesized "test") (.abs (ExprSourceLoc.synthesized "test") "x" (.some .int) (.bvar (ExprSourceLoc.synthesized "test") 0)) (.intConst (ExprSourceLoc.synthesized "test") 5)) } .empty
 ]}
 
 /--
@@ -717,9 +718,9 @@ function test () : int {
 private def lambdaMultiBindPgm : Core.Program := { decls := [
   .func { name := "add", typeArgs := [], inputs := [],
           output := .arrow .int (.arrow .int .int),
-          body := some (.abs () "x" (.some .int)
-            (.abs () "y" (.some .int)
-              (.app () (.app () Core.intAddOp (.bvar () 1)) (.bvar () 0)))) } .empty
+          body := some (.abs (ExprSourceLoc.synthesized "test") "x" (.some .int)
+            (.abs (ExprSourceLoc.synthesized "test") "y" (.some .int)
+              (.app (ExprSourceLoc.synthesized "test") (.app (ExprSourceLoc.synthesized "test") Core.intAddOp (.bvar (ExprSourceLoc.synthesized "test") 1)) (.bvar (ExprSourceLoc.synthesized "test") 0)))) } .empty
 ]}
 
 /--
@@ -736,9 +737,9 @@ function add () : int -> int -> int {
 private def lambdaHigherOrderPgm : Core.Program := { decls := [
   .func { name := "applyFn", typeArgs := [], inputs := [],
           output := .arrow (.arrow .int .int) (.arrow .int .int),
-          body := some (.abs () "f" (.some (.arrow .int .int))
-            (.abs () "x" (.some .int)
-              (.app () (.bvar () 1) (.bvar () 0)))) } .empty
+          body := some (.abs (ExprSourceLoc.synthesized "test") "f" (.some (.arrow .int .int))
+            (.abs (ExprSourceLoc.synthesized "test") "x" (.some .int)
+              (.app (ExprSourceLoc.synthesized "test") (.bvar (ExprSourceLoc.synthesized "test") 1) (.bvar (ExprSourceLoc.synthesized "test") 0)))) } .empty
 ]}
 
 /-- info: program Core;

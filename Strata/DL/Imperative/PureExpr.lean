@@ -44,6 +44,7 @@ structure PureExpr : Type 1 where
 
 /-! ## Type Classes for Expressions -/
 
+
 class HasIdent (P : PureExpr) where
   ident : String → P.Ident
 

@@ -3,6 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+-- Synthesized expressions for environment operations and path conditions
 module
 
 public import Strata.Languages.Core.Program
@@ -18,7 +19,7 @@ open Imperative
 open Strata
 
 instance : ToFormat ExpressionMetadata :=
-  show ToFormat Unit from inferInstance
+  show ToFormat ExprSourceLoc from inferInstance
 
 -- ToFormat instance for Expression.Expr
 instance : ToFormat Expression.Expr := by
@@ -41,13 +42,35 @@ instance : ToFormat (Map CoreIdent (Option Lambda.LMonoTy × Expression.Expr)) w
   format := formatScope
 
 instance : Inhabited ExpressionMetadata :=
-  show Inhabited Unit from inferInstance
+  show Inhabited ExprSourceLoc from inferInstance
 
+-- When combining provenance during evaluation, use the Original expression's
+-- source location as primary and collect other non-none locations as related,
+-- so that both the original expression and the substituted argument can be reported.
 instance : Lambda.Traceable Lambda.LExpr.EvalProvenance ExpressionMetadata where
-  combine _ := ()
+  combine reasons :=
+    let findLoc (prov : Lambda.LExpr.EvalProvenance) : Option ExprSourceLoc :=
+      reasons.find? (fun p => match p.1, prov with
+        | .Original, .Original | .ReplacementVar, .ReplacementVar
+        | .Abstraction, .Abstraction => true
+        | _, _ => false) |>.map (·.2)
+    -- Pick the primary location: prefer Original > ReplacementVar > Abstraction
+    let priority := [.Original, .ReplacementVar, .Abstraction]
+    match priority.findSome? findLoc with
+    | none => ExprSourceLoc.synthesized "env"
+    | some primaryLoc =>
+      -- Collect related locations from all other non-none provenance entries,
+      -- including their own relatedLocs.
+      let related := priority.foldl (init := primaryLoc.relatedLocs) fun acc prov =>
+        match findLoc prov with
+        | some loc =>
+          if loc == primaryLoc then acc
+          else (loc.uri, loc.range) :: (loc.relatedLocs ++ acc)
+        | none => acc
+      { primaryLoc with relatedLocs := related }
 
 instance : Inhabited (Lambda.LExpr ⟨⟨ExpressionMetadata, CoreIdent⟩, LMonoTy⟩) :=
-  show Inhabited (Lambda.LExpr ⟨⟨Unit, CoreIdent⟩, LMonoTy⟩) from inferInstance
+  show Inhabited (Lambda.LExpr ⟨⟨ExprSourceLoc, CoreIdent⟩, LMonoTy⟩) from inferInstance
 
 ---------------------------------------------------------------------
 
@@ -293,14 +316,14 @@ def Env.genVars (xs : List String) (σ : Lambda.LState CoreLParams) : (List Core
 
 /--
 Generate a fresh variable using the base name and pre-existing type, if any,
-from `xt`.
+from `xt`. Synthesized variable references carry no source location.
 -/
 def Env.genFVar (E : Env) (xt : (Lambda.IdentT Lambda.LMonoTy Unit)) :
   Expression.Expr × Env :=
   let (xid, E) := E.genVar xt.ident
   let xe := match xt.ty? with
-            | none => .fvar () xid none
-            | some xty => .fvar () xid (some xty)
+            | none => .fvar (ExprSourceLoc.synthesized "env") xid none
+            | some xty => .fvar (ExprSourceLoc.synthesized "env") xid (some xty)
   (xe, E)
 
 /--
@@ -322,28 +345,31 @@ def Env.genFVars (E : Env) (xs : List (Lambda.IdentT Lambda.LMonoTy Unit)) :
 /--
 Insert `(xi, .fvar xi)`, for each `xi` in `xs`, in the _oldest_ scope in `ss`,
 only if `xi` is the identifier of a free variable, i.e., it is not in `ss`.
+Synthesized variable references carry no source location.
 -/
 def Env.insertFreeVarsInOldestScope
   (xs : List (Lambda.IdentT Lambda.LMonoTy Unit)) (E : Env) : Env :=
   let (xis, xtyei) := xs.foldl
     (fun (acc_ids, acc_pairs) x =>
-      (x.fst :: acc_ids, (x.snd, .fvar () x.fst x.snd) :: acc_pairs))
+      (x.fst :: acc_ids, (x.snd, .fvar (ExprSourceLoc.synthesized "env") x.fst x.snd) :: acc_pairs))
     ([], [])
   let state' := Maps.addInOldest E.exprEnv.state xis xtyei
   { E with exprEnv := { E.exprEnv with state := state' }}
 
 
+-- Synthesized path condition logic
 open Imperative Lambda in
 def PathCondition.merge (cond : Expression.Expr) (pc1 pc2 : PathCondition Expression) : PathCondition Expression :=
   let wrapAssumption (ant : Expression.Expr) : PathConditionEntry Expression → PathConditionEntry Expression
     | .assumption label e => .assumption label (mkImplies ant e)
     | entry => entry
-  let negCond := LExpr.ite () cond (LExpr.false ()) (LExpr.true ())
+  let envLoc := ExprSourceLoc.synthesized "env"
+  let negCond := LExpr.ite envLoc cond (LExpr.boolConst envLoc false) (LExpr.boolConst envLoc true)
   let pc1' := pc1.map (wrapAssumption cond)
   let pc2' := pc2.map (wrapAssumption negCond)
   pc1' ++ pc2'
   where mkImplies (ant con : Expression.Expr) : Expression.Expr :=
-  LExpr.ite () ant con (LExpr.true ())
+  LExpr.ite (ExprSourceLoc.synthesized "env") ant con (LExpr.boolConst (ExprSourceLoc.synthesized "env") true)
 
 def Env.performMerge (cond : Expression.Expr) (E1 E2 : Env)
     (_h1 : E1.error.isNone) (_h2 : E2.error.isNone) : Env :=

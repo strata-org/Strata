@@ -8,6 +8,7 @@ module
 meta import all Strata.Languages.Core.Factory
 meta import all Strata.DL.Lambda.Preconditions
 meta import all Strata.Transform.PrecondElim
+-- Test fixtures build Core expressions directly with synthesized provenance
 
 meta section
 
@@ -35,26 +36,26 @@ example := Core.bv32SNegOverflowOp
 
 -- Verify WF obligations are generated for safe add (1 precondition)
 #guard (collectWFObligations Core.Factory
-  (LExpr.mkApp () Core.bv32SafeAddOp [
-    .fvar () ⟨"x", ()⟩ (some (.bitvec 32)),
-    .fvar () ⟨"y", ()⟩ (some (.bitvec 32))])).length == 1
+  (LExpr.mkApp (ExprSourceLoc.synthesized "test") Core.bv32SafeAddOp [
+    .fvar (ExprSourceLoc.synthesized "test") ⟨"x", ()⟩ (some (.bitvec 32)),
+    .fvar (ExprSourceLoc.synthesized "test") ⟨"y", ()⟩ (some (.bitvec 32))])).length == 1
 
 -- Verify WF obligations are generated for safe neg (1 precondition)
 #guard (collectWFObligations Core.Factory
-  (.app () Core.bv8SafeNegOp
-    (.fvar () ⟨"x", ()⟩ (some (.bitvec 8))))).length == 1
+  (.app (ExprSourceLoc.synthesized "test") Core.bv8SafeNegOp
+    (.fvar (ExprSourceLoc.synthesized "test") ⟨"x", ()⟩ (some (.bitvec 8))))).length == 1
 
 -- Verify no WF obligations for unsafe add (no precondition)
 #guard (collectWFObligations Core.Factory
-  (LExpr.mkApp () Core.bv32AddOp [
-    .fvar () ⟨"x", ()⟩ (some (.bitvec 32)),
-    .fvar () ⟨"y", ()⟩ (some (.bitvec 32))])).length == 0
+  (LExpr.mkApp (ExprSourceLoc.synthesized "test") Core.bv32AddOp [
+    .fvar (ExprSourceLoc.synthesized "test") ⟨"x", ()⟩ (some (.bitvec 32)),
+    .fvar (ExprSourceLoc.synthesized "test") ⟨"y", ()⟩ (some (.bitvec 32))])).length == 0
 
 -- Verify SafeSDiv has 2 preconditions (div-by-zero + overflow)
 #guard (collectWFObligations Core.Factory
-  (LExpr.mkApp () Core.bv32SafeSDivOp [
-    .fvar () ⟨"x", ()⟩ (some (.bitvec 32)),
-    .fvar () ⟨"y", ()⟩ (some (.bitvec 32))])).length == 2
+  (LExpr.mkApp (ExprSourceLoc.synthesized "test") Core.bv32SafeSDivOp [
+    .fvar (ExprSourceLoc.synthesized "test") ⟨"x", ()⟩ (some (.bitvec 32)),
+    .fvar (ExprSourceLoc.synthesized "test") ⟨"y", ()⟩ (some (.bitvec 32))])).length == 2
 
 -- Verify SDivOverflow predicate and SafeSDiv/SafeSMod exist
 example := Core.bv32SDivOverflowOp
@@ -63,9 +64,9 @@ example := Core.bv32SafeSModOp
 
 -- Verify SafeUAdd has 1 precondition (unsigned overflow)
 #guard (collectWFObligations Core.Factory
-  (LExpr.mkApp () Core.bv8SafeUAddOp [
-    .fvar () ⟨"x", ()⟩ (some (.bitvec 8)),
-    .fvar () ⟨"y", ()⟩ (some (.bitvec 8))])).length == 1
+  (LExpr.mkApp (ExprSourceLoc.synthesized "test") Core.bv8SafeUAddOp [
+    .fvar (ExprSourceLoc.synthesized "test") ⟨"x", ()⟩ (some (.bitvec 8)),
+    .fvar (ExprSourceLoc.synthesized "test") ⟨"y", ()⟩ (some (.bitvec 8))])).length == 1
 
 -- Verify unsigned overflow predicates and safe ops exist
 example := Core.bv32UAddOverflowOp
@@ -80,9 +81,9 @@ example := Core.bv32SafeUNegOp
 -- Verify SafeSDiv precondition classification: precond 0 = divisionByZero, precond 1 = arithmeticOverflow
 open Strata Core Lambda Core.PrecondElim Imperative in
 #eval do
-  let expr := LExpr.mkApp () Core.bv32SafeSDivOp [
-    .fvar () ⟨"x", ()⟩ (some (.bitvec 32)),
-    .fvar () ⟨"y", ()⟩ (some (.bitvec 32))]
+  let expr := LExpr.mkApp (ExprSourceLoc.synthesized "test") Core.bv32SafeSDivOp [
+    .fvar (ExprSourceLoc.synthesized "test") ⟨"x", ()⟩ (some (.bitvec 32)),
+    .fvar (ExprSourceLoc.synthesized "test") ⟨"y", ()⟩ (some (.bitvec 32))]
   let stmts := collectPrecondAsserts Core.Factory expr "test" #[]
   assert! stmts.length == 2
   -- First should be divisionByZero
@@ -95,12 +96,12 @@ open Strata Core Lambda Core.PrecondElim Imperative in
 -- Verify nested SafeSDiv: both inner and outer calls get correct classification
 open Strata Core Lambda Core.PrecondElim Imperative in
 #eval do
-  let innerDiv := LExpr.mkApp () Core.bv32SafeSDivOp [
-    .fvar () ⟨"x", ()⟩ (some (.bitvec 32)),
-    .fvar () ⟨"y", ()⟩ (some (.bitvec 32))]
-  let outerDiv := LExpr.mkApp () Core.bv32SafeSDivOp [
+  let innerDiv := LExpr.mkApp (ExprSourceLoc.synthesized "test") Core.bv32SafeSDivOp [
+    .fvar (ExprSourceLoc.synthesized "test") ⟨"x", ()⟩ (some (.bitvec 32)),
+    .fvar (ExprSourceLoc.synthesized "test") ⟨"y", ()⟩ (some (.bitvec 32))]
+  let outerDiv := LExpr.mkApp (ExprSourceLoc.synthesized "test") Core.bv32SafeSDivOp [
     innerDiv,
-    .fvar () ⟨"z", ()⟩ (some (.bitvec 32))]
+    .fvar (ExprSourceLoc.synthesized "test") ⟨"z", ()⟩ (some (.bitvec 32))]
   let stmts := collectPrecondAsserts Core.Factory outerDiv "test" #[]
   assert! stmts.length == 4
   -- Inner call: precond 0 = divisionByZero, precond 1 = arithmeticOverflow

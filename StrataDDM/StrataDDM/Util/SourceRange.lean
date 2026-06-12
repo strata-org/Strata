@@ -25,10 +25,11 @@ structure SourceRange where
   start : String.Pos.Raw
   /-- One past the end of the range. -/
   stop : String.Pos.Raw
-deriving DecidableEq, Inhabited, Repr
+deriving Inhabited, Repr, DecidableEq, BEq
 
 namespace SourceRange
 
+@[expose]
 def none : SourceRange := { start := 0, stop := 0 }
 
 def isNone (loc : SourceRange) : Bool := loc.start = 0 ∧ loc.stop = 0
