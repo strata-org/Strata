@@ -20,6 +20,7 @@ op literalBool (b: Bool): StmtExpr => b;
 op int(n : Num) : StmtExpr => n;
 op real(d : Decimal) : StmtExpr => d;
 op string (s: Str): StmtExpr => s;
+op bvLiteral(value: Num, width: Num): StmtExpr => value "bv" width;
 op hole: StmtExpr => "<?>";
 op nondetHole: StmtExpr => "<??>";
 
