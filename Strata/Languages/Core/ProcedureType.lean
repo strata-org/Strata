@@ -21,6 +21,12 @@ open Strata (DiagnosticModel FileRange)
 
 namespace Procedure
 
+private def renameTypeVars (userSubst : Lambda.Subst) (msg : String) : String :=
+  userSubst.flatten.foldl (fun acc (fresh, v) =>
+    match v with
+    | .ftvar orig => acc.replace (toString fresh) (toString orig)
+    | _ => acc) msg
+
 private def checkNoDuplicates (proc : Procedure) (sourceLoc : FileRange) :
     Except DiagnosticModel Unit := do
   if !proc.header.inputs.keys.Nodup then
@@ -129,7 +135,12 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p :
   let rigidVars := tyArgSubst.flatten.filterMap fun (_, v) =>
     match v with | .ftvar id => some id | _ => none
   let C := { C with rigidTypeVars := rigidVars }
-  let (annotated_body, finalEnv) ← Statement.typeCheck C envForBody p (.some proc) bodyStmts
+  -- Substitution to rename fresh type variables back to user-supplied names.
+  let userSubst : Lambda.Subst :=
+    [tyArgSubst.flatten.filterMap fun (orig, v) =>
+      match v with | .ftvar fresh => some (fresh, .ftvar orig) | _ => none]
+  let (annotated_body, finalEnv) ← (Statement.typeCheck C envForBody p (.some proc) bodyStmts)
+    |>.mapError (fun e => { e with message := renameTypeVars userSubst e.message })
 
   -- Remove formals and returns from the context -- they ought to be local to
   -- the procedure body.
@@ -138,12 +149,12 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p :
   -- Construct final result.
   let finalPreconditions := Procedure.Spec.updateCheckExprs preconditions.toList proc.spec.preconditions
   let finalPostconditions := Procedure.Spec.updateCheckExprs postconditions.toList proc.spec.postconditions
-  -- Type arguments are empty below because we've replaced polytypes with monotypes.
   let new_hdr := { proc.header with typeArgs := [],
-                                    inputs := inp_mty_sig,
-                                    outputs := out_mty_sig }
+                                    inputs := inp_mty_sig.map (fun (id, mty) => (id, Lambda.LMonoTy.subst userSubst mty)),
+                                    outputs := out_mty_sig.map (fun (id, mty) => (id, Lambda.LMonoTy.subst userSubst mty)) }
   let new_spec := { proc.spec with preconditions := finalPreconditions,
                                    postconditions := finalPostconditions }
+  let annotated_body := annotated_body.map (Core.Statement.Statement.subst userSubst)
   let new_proc := { proc with header := new_hdr, spec := new_spec, body := .structured annotated_body }
 
   return (new_proc, finalEnv)

@@ -46,7 +46,7 @@ spec { ensures true; }
 
 /--
 error: ❌ Type checking error.
-Rigid type variable '$__ty0' was refined to 'int' by the initializer
+Rigid type variable 'a' was refined to 'int' by the initializer
 -/
 #guard_msgs in
 #eval Core.verify refineThenCallBool
@@ -69,7 +69,7 @@ spec { ensures true; }
 
 /--
 error: ❌ Type checking error.
-Rigid type variable '$__ty0' was refined to 'int' by the initializer
+Rigid type variable 'a' was refined to 'int' by the initializer
 -/
 #guard_msgs in
 #eval Core.verify refineThenCallInt
@@ -160,7 +160,7 @@ spec { ensures true; }
 
 /--
 error: ❌ Type checking error.
-Rigid type variable '$__ty1' was refined to '$__ty0' by the initializer
+Rigid type variable 'b' was refined to 'a' by the initializer
 -/
 #guard_msgs in
 #eval Core.verify equateTwoTypeParams
@@ -226,7 +226,7 @@ spec { ensures true; }
 };
 #end
 
-/-- info: error: (5563-5578) Rigid type variable '$__ty0' was refined to 'int' by the initializer -/
+/-- info: error: (5543-5558) Rigid type variable 'a' was refined to 'int' by the initializer -/
 #guard_msgs in
 #eval Core.typeCheck .quiet (TransM.run Inhabited.default (translateProgram q2a_refineRigidVar)).fst
 
@@ -246,11 +246,11 @@ spec { ensures true; }
 /--
 info: ok: program Core;
 ⏎
-procedure Q2b (z : $__ty0)
+procedure Q2b (z : a)
 spec {
   ensures [Q2b_ensures_0]: true;
   } {
-  var x : $__ty0 := z;
+  var x : a := z;
   x := z;
 };
 -/
@@ -270,7 +270,7 @@ spec { ensures true; }
 };
 #end
 
-/-- info: error: (6791-6808) Rigid type variable '$__ty0' was refined to 'int' by the initializer -/
+/-- info: error: (6756-6773) Rigid type variable 'a' was refined to 'int' by the initializer -/
 #guard_msgs in
 #eval Core.typeCheck .quiet (TransM.run Inhabited.default (translateProgram q2c_inferredSideRefine)).fst
 
@@ -278,7 +278,7 @@ spec { ensures true; }
 -- via expression-internal unification. Correctly rejected.
 -- (Cannot be expressed in concrete syntax: the translator rejects `lt` on type vars.)
 /--
-info: error: Rigid type variable '$__ty0' was refined to 'int' by the initializer
+info: error: Rigid type variable 'a' was refined to 'int' by the initializer
 -/
 #guard_msgs in
 #eval do let ans ← typeCheck (LContext.default (functions := Core.Factory)) TEnv.default
