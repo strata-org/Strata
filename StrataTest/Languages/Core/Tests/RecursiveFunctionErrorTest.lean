@@ -94,7 +94,7 @@ rec function bad (n : int) : int
 /-- error: ❌ Type checking error.
 recursive function 'bad': non-variable decreases expression must have type int, got 'bool'. For structural recursion, use a parameter name-/
 #guard_msgs in
-#eval verify decreasesNonIntPgm (options := .quiet)
+#eval Core.verify decreasesNonIntPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 4: error — decreasing argument contains recursive call
@@ -113,7 +113,7 @@ rec function bad (n : int) : int
 
 /-- error: termination checking 'bad': decreasing argument contains a recursive call -/
 #guard_msgs in
-#eval verify decreasesRecCallPgm (options := .quiet)
+#eval Core.verify decreasesRecCallPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 5: error — decreases expression calls function in same mutual block
@@ -137,7 +137,7 @@ function bad (n : int) : int
 
 /-- error: termination checking 'bad': decreasing argument contains a recursive call -/
 #guard_msgs in
-#eval verify decreasesMutualCallPgm (options := .quiet)
+#eval Core.verify decreasesMutualCallPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 6: error — mutual block mixes structural and int-valued measures
@@ -162,7 +162,7 @@ function countdown (n : int) : int
 
 /-- error: mutual recursive block mixes structural and int-valued termination measures; all functions in a mutual block must use the same kind of measure -/
 #guard_msgs in
-#eval verify mixedMutualPgm (options := .quiet)
+#eval Core.verify mixedMutualPgm (options := .quiet)
 
 end Strata.RecursiveFunctionErrorTest
 

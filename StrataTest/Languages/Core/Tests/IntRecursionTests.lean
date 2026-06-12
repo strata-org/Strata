@@ -3,8 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core
+import StrataDDM.Integration.Lean.HashCommands
+
+meta section
 
 /-!
 # Int-Valued Recursion Termination Checking Tests
@@ -14,6 +18,8 @@ termination measures (`decreases <int expr>`).
 -/
 
 namespace Strata.IntRecursionTermCheckTest
+
+open StrataDDM (Program)
 
 ---------------------------------------------------------------------
 -- Test 1: int-valued recursion — decreases on int parameter
@@ -46,7 +52,7 @@ Obligation: bad_terminates_1
 Property: assert
 Result: ✅ pass -/
 #guard_msgs in
-#eval verify decreasesIntNoPrecondPgm (options := .quiet)
+#eval Core.verify decreasesIntNoPrecondPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 2: fib
@@ -104,7 +110,7 @@ Obligation: fib_terminates_3
 Property: assert
 Result: ✅ pass -/
 #guard_msgs in
-#eval verify fibPgm (options := .default)
+#eval Core.verify fibPgm (options := .default)
 
 ---------------------------------------------------------------------
 -- Test 3: factorial — int recursion with precondition
@@ -135,7 +141,7 @@ Obligation: factorial_terminates_1
 Property: assert
 Result: ✅ pass -/
 #guard_msgs in
-#eval verify factorialPgm (options := .quiet)
+#eval Core.verify factorialPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 4: non-terminating — f(n) calls f(n+1), termination VC fails
@@ -166,7 +172,7 @@ Obligation: bad_terminates_1
 Property: assert
 Result: ❌ fail-/
 #guard_msgs in
-#eval verify nonTermIntPgm (options := .quiet)
+#eval Core.verify nonTermIntPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 5: power function — two params, decreases on one
@@ -192,7 +198,7 @@ Obligation: power_terminates_1
 Property: assert
 Result: ✅ pass -/
 #guard_msgs in
-#eval verify powerPgm (options := .quiet)
+#eval Core.verify powerPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 6: compound measure — decreases on expression over params
@@ -289,7 +295,7 @@ Obligation: merge_terminates_3
 Property: assert
 Result: ✅ pass -/
 #guard_msgs in
-#eval verify compoundMeasurePgm (options := .quiet)
+#eval Core.verify compoundMeasurePgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 7: compound measure with provable non-negativity
@@ -343,7 +349,7 @@ Obligation: diagonal_terminates_3
 Property: assert
 Result: ✅ pass -/
 #guard_msgs in
-#eval verify compoundArithPgm (options := .quiet)
+#eval Core.verify compoundArithPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 8: mutual int recursion
@@ -392,7 +398,7 @@ Obligation: isOdd_terminates_1
 Property: assert
 Result: ✅ pass -/
 #guard_msgs in
-#eval verify mutualIntRecPgm (options := .quiet)
+#eval Core.verify mutualIntRecPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 8b: mutual int recursion — concrete evaluation via PE
@@ -487,7 +493,7 @@ Obligation: TestMutualConcrete_ensures_0
 Property: assert
 Result: ✅ pass -/
 #guard_msgs in
-#eval verify mutualIntRecConcretePgm (options := .quiet)
+#eval Core.verify mutualIntRecConcretePgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 9: int-recursive function is a pure UF — no definitional axioms.
@@ -559,7 +565,7 @@ Obligation: TestFibUF_ensures_1
 Property: assert
 Result: ✅ pass -/
 #guard_msgs in
-#eval verify intRecUFPgm (options := .quiet)
+#eval Core.verify intRecUFPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 10: concrete evaluation — factorial evaluates concretely
@@ -627,7 +633,7 @@ Obligation: TestFactConcrete_ensures_0
 Property: assert
 Result: ✅ pass -/
 #guard_msgs in
-#eval verify factorialConcretePgm (options := .quiet)
+#eval Core.verify factorialConcretePgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 11: @[cases] with int-valued decreases — int measure takes priority
@@ -695,7 +701,7 @@ Obligation: TestSumFirstCons_ensures_1
 Property: assert
 Result: ✅ pass -/
 #guard_msgs in
-#eval verify casesWithIntMeasurePgm (options := .quiet)
+#eval Core.verify casesWithIntMeasurePgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 12: constant measure `decreases 10` should fail termination
@@ -721,6 +727,8 @@ Obligation: loop_terminates_1
 Property: assert
 Result: ❌ fail -/
 #guard_msgs in
-#eval verify constantMeasureFailPgm (options := .quiet)
+#eval Core.verify constantMeasureFailPgm (options := .quiet)
 
 end Strata.IntRecursionTermCheckTest
+
+end
