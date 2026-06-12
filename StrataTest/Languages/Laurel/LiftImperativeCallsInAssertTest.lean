@@ -22,7 +22,7 @@ namespace Strata.Laurel
 private def parseLaurelAndLift (program : StrataDDM.Program) : IO Program := do
   let laurelProgram ← translateLaurel program
   let result := resolve laurelProgram
-  pure (liftExpressionAssignments program model ["impure", "multi_out"])
+  pure (liftExpressionAssignments result.program result.model ["impure", "multi_out"])
 
 private def printLifted (program : StrataDDM.Program) : IO Unit := do
   let lifted ← parseLaurelAndLift program
