@@ -7,15 +7,13 @@ module
 
 public import Strata.DL.Imperative.StmtSemantics
 public import Strata.DL.Imperative.StmtSemanticsProps
-public import Strata.DL.Imperative.CmdSemanticsProps
 public import Strata.DL.Imperative.CFGSemantics
 public import Strata.DL.Imperative.KleeneSemanticsProps
 public import Strata.Transform.StructuredToUnstructured
-public import Strata.Transform.Specification
 public import Strata.Transform.SpecificationProps
 public import Strata.DL.Util.StringGen
 public import Strata.Languages.Core.StatementSemantics
-import all Strata.DL.Imperative.BasicBlock
+import Strata.DL.Imperative.BasicBlock
 import all Strata.DL.Imperative.Cmd
 import all Strata.DL.Util.Relations
 
@@ -56,7 +54,6 @@ namespace StructuredToUnstructuredCorrect
 open Imperative Specification
 
 /-! ## Abbreviations -/
-@[simp]
 abbrev StepDetCFGStar {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
     (extendEval : ExtendEval P)
     (cfg : CFG String (DetBlock String (Cmd P) P)) :=
@@ -75,7 +72,7 @@ theorem StepDetCFGStar_trans {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [
 i.e. is `HasIdent.ident s` only for strings `s` that are *not* of the
 underscore-digit-suffix gen shape. Abbreviates a 1-line predicate that
 appears throughout the proofs below. -/
-@[expose] abbrev NoGenSuffix {P : PureExpr} [HasIdent P]
+abbrev NoGenSuffix {P : PureExpr} [HasIdent P]
     (xs : List P.Ident) : Prop :=
   ∀ x ∈ xs, ∀ s : String,
     x = HasIdent.ident (P := P) s → ¬ String.HasUnderscoreDigitSuffix s
@@ -4406,7 +4403,6 @@ private theorem peel_off_one_iteration_to_cont_det {P : PureExpr} [HasFvar P] [H
         match hr2 with
         | .step _ _ _ h _ => exact nomatch h
 
-set_option linter.unusedVariables false in
 /-- Iterate the deterministic loop until termination (small-step).  Inducts on
 the structured-loop derivation length; each iteration consumes a
 `step_loop_enter` prefix of `h_term`, leaving a strictly shorter tail.
@@ -4569,7 +4565,6 @@ private theorem loop_iterations_det
       rw [h_hf_block] at h_run_recurse
       exact StepDetCFGStar_trans (StepDetCFGStar_trans h_step_enter h_step_body) h_run_recurse
 
-set_option linter.unusedVariables false in
 /-- `_to_cont` iteration helper for the det loop: the loop runs some number of
 terminating iterations, then on some iteration the body exits with `label`,
 propagating out of the surrounding `.block .none` and hence out of the loop.
@@ -4755,7 +4750,7 @@ private theorem ite_branch_shape {P : PureExpr}
    Stmt.noMeasureLoops_branch_then h_nml_head, Stmt.noMeasureLoops_branch_else h_nml_head⟩
 
 set_option maxHeartbeats 12800000 in
-set_option maxRecDepth 4096 in
+set_option maxRecDepth 1024 in
 mutual
 /-- The central simulation lemma, written in a StoreAgreement-based shape.
 
