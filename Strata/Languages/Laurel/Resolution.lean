@@ -572,6 +572,71 @@ private def getCallInfo (callee : Identifier) : ResolveM (HighTypeMd × List Hig
   | some (_, .constant c) => pure (c.type, [])
   | _ => pure ({ val := .Unknown, source := callee.source }, [])
 
+/-- Test whether `op` is in the arithmetic family. -/
+private def isArithmeticOp : Operation → Bool
+  | .Neg | .Add | .Sub | .Mul | .Div | .Mod | .DivT | .ModT => true
+  | _ => false
+
+/-- LUB of the operand types, or `none` if inconsistent. -/
+private def joinAll (ctx : TypeContext) (argTypes : List HighTypeMd)
+    (source : Option FileRange) : Option HighTypeMd :=
+  argTypes.foldl
+    (fun acc t => match acc with | some l => join ctx l t | none => none)
+    (some { val := .Unknown, source := source })
+
+/-- Native arithmetic typing: every operand must be numeric, and the result is
+    the LUB of the operand types under the consistency relation. -/
+private def nativeArith (op : Operation) (expr : StmtExpr) (args' : List StmtExprMd)
+    (argTypes : List HighTypeMd) (source : Option FileRange) :
+    ResolveM (StmtExpr × HighTypeMd) := do
+  let ctx := (← get).typeContext
+  for (a, aTy) in args'.zip argTypes do
+    unless isNumeric ctx aTy do
+      typeMismatch a.source (some expr) "expected a numeric type" aTy
+  match joinAll ctx argTypes source with
+  | some ty => pure (.PrimitiveOp op args', ty)
+  | none =>
+    let formatted := ", ".intercalate (argTypes.map (fun t => s!"'{formatType t}'"))
+    let diag := diagnosticFromSource source s!"cannot apply '{op}' to operands of types {formatted}"
+    modify fun s => { s with errors := s.errors.push diag }
+    pure (.PrimitiveOp op args', { val := .Unknown, source := source })
+
+/-- Native typing for the boolean / comparison / equality / string-concat
+    families: a fixed result type (`TBool` / `TString`) with the family's operand
+    constraint (booleans subtype `TBool`, comparisons are numeric, equality is
+    consistent, concat operands subtype `TString`). -/
+private def nativeOther (op : Operation) (expr : StmtExpr) (args' : List StmtExprMd)
+    (argTypes : List HighTypeMd) (source : Option FileRange) :
+    ResolveM (StmtExpr × HighTypeMd) := do
+  let resultTy := match op with
+    | .Eq | .Neq | .And | .Or | .AndThen | .OrElse | .Not | .Implies
+    | .Lt | .Leq | .Gt | .Geq => HighType.TBool
+    | .StrConcat => HighType.TString
+    | _ => HighType.Unknown
+  match op with
+  | .And | .Or | .AndThen | .OrElse | .Not | .Implies =>
+    for (a, aTy) in args'.zip argTypes do
+      checkSubtype a.source { val := .TBool, source := a.source } aTy
+  | .Lt | .Leq | .Gt | .Geq =>
+    let ctx := (← get).typeContext
+    for (a, aTy) in args'.zip argTypes do
+      unless isNumeric ctx aTy do
+        typeMismatch a.source (some expr) "expected a numeric type" aTy
+  | .Eq | .Neq =>
+    match argTypes with
+    | [lhsTy, rhsTy] =>
+      let ctx := (← get).typeContext
+      unless isConsistent ctx lhsTy rhsTy do
+        let diag := diagnosticFromSource source
+          s!"cannot compare '{formatType lhsTy}' with '{formatType rhsTy}' using '{op}'"
+        modify fun s => { s with errors := s.errors.push diag }
+    | _ => pure ()
+  | .StrConcat =>
+    for (a, aTy) in args'.zip argTypes do
+      checkSubtype a.source { val := .TString, source := a.source } aTy
+  | _ => pure ()
+  pure (.PrimitiveOp op args', { val := resultTy, source := source })
+
 /-! ## Typing rules
 
 The judgment is bidirectional:
@@ -1756,75 +1821,12 @@ def Synth.primitiveOp (exprMd : StmtExprMd) (expr : StmtExpr)
     (h : exprMd.val = .PrimitiveOp op args) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let _ := h_expr  -- carries the constructor identity for `expr` in diagnostics
-  match op with
-  -- Arithmetic: synth each operand's type, then take the LUB under
-  -- the consistency relation. This is the same discipline as
-  -- `Op-Eq`: operands must be pairwise consistent (with `Unknown`
-  -- promoting to whichever side is more informative). Each operand
-  -- is also required to be numeric.
-  | .Neg | .Add | .Sub | .Mul | .Div | .Mod | .DivT | .ModT =>
-    let results ← args.attach.mapM (fun a => have := a.property; do
-      Synth.resolveStmtExpr a.val)
-    let args' := results.map (·.1)
-    let argTypes := results.map (·.2)
-    let ctx := (← get).typeContext
-    -- Per-operand numeric check: surface the bad operand directly.
-    for (a, aTy) in args'.zip argTypes do
-      unless isNumeric ctx aTy do
-        typeMismatch a.source (some expr) "expected a numeric type" aTy
-    -- Fold operands by join, starting from `Unknown` so the
-    -- empty list (impossible for these ops, but kept for totality)
-    -- yields `Unknown` and a single-operand fold (`Neg`) yields the
-    -- operand's type.
-    let unknownTy : HighTypeMd := { val := .Unknown, source := source }
-    let resultTy := argTypes.foldl
-      (fun acc aTy =>
-        match acc with
-        | some lub => join ctx lub aTy
-        | none => none)
-      (some unknownTy)
-    match resultTy with
-    | some ty => pure (.PrimitiveOp op args', ty)
-    | none =>
-      let formatted := ", ".intercalate (argTypes.map (fun t => s!"'{formatType t}'"))
-      let diag := diagnosticFromSource source
-        s!"cannot apply '{op}' to operands of types {formatted}"
-      modify fun s => { s with errors := s.errors.push diag }
-      pure (.PrimitiveOp op args', unknownTy)
-  | _ =>
-    let results ← args.attach.mapM (fun a => have := a.property; do
-      Synth.resolveStmtExpr a.val)
-    let args' := results.map (·.1)
-    let argTypes := results.map (·.2)
-    let resultTy := match op with
-      | .Eq | .Neq | .And | .Or | .AndThen | .OrElse | .Not | .Implies
-      | .Lt | .Leq | .Gt | .Geq => HighType.TBool
-      | .StrConcat => HighType.TString
-      -- Unreachable: filtered above.
-      | _ => HighType.Unknown
-    match op with
-    | .And | .Or | .AndThen | .OrElse | .Not | .Implies =>
-      for (a, aTy) in args'.zip argTypes do
-        checkSubtype a.source { val := .TBool, source := a.source } aTy
-    | .Lt | .Leq | .Gt | .Geq =>
-      let ctx := (← get).typeContext
-      for (a, aTy) in args'.zip argTypes do
-        unless isNumeric ctx aTy do
-          typeMismatch a.source (some expr) "expected a numeric type" aTy
-    | .Eq | .Neq =>
-      match argTypes with
-      | [lhsTy, rhsTy] =>
-        let ctx := (← get).typeContext
-        unless isConsistent ctx lhsTy rhsTy do
-          let diag := diagnosticFromSource source
-            s!"cannot compare '{formatType lhsTy}' with '{formatType rhsTy}' using '{op}'"
-          modify fun s => { s with errors := s.errors.push diag }
-      | _ => pure ()
-    | .StrConcat =>
-      for (a, aTy) in args'.zip argTypes do
-        checkSubtype a.source { val := .TString, source := a.source } aTy
-    | _ => pure ()  -- unreachable
-    pure (.PrimitiveOp op args', { val := resultTy, source := source })
+  let results ← args.attach.mapM (fun a => have := a.property; do
+    Synth.resolveStmtExpr a.val)
+  let args' := results.map (·.1)
+  let argTypes := results.map (·.2)
+  if isArithmeticOp op then nativeArith op expr args' argTypes source
+  else nativeOther op expr args' argTypes source
   termination_by (exprMd, 1)
   decreasing_by
     all_goals
