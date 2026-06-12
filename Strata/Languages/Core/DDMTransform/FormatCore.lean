@@ -1044,7 +1044,6 @@ def procToCST {M} [Inhabited M] (proc : Core.Procedure) : ToCSTM M (Command M) :
       ⟨default, none⟩
     else
       ⟨default, some (Spec.spec_mk default specAnn)⟩
-<<<<<<< HEAD
   let cmd ← match proc.body with
     | .structured ss =>
       let bodyCST ← blockToCST ss
@@ -1053,15 +1052,6 @@ def procToCST {M} [Inhabited M] (proc : Core.Procedure) : ToCSTM M (Command M) :
     | .cfg c =>
       let cfgBody ← detCFGToCST c
       pure (.command_cfg_procedure default name typeArgs arguments spec cfgBody)
-=======
-  let bodyStmts ← match proc.body with
-    | .structured ss => pure ss
-    | .cfg _ => do
-        ToCSTM.logError "procToCST" "CFG bodies not yet supported in CST conversion" proc.header.name.toPretty
-        pure []
-  let bodyCST ← blockToCST bodyStmts
-  let body : Ann (Option (CoreDDM.Block M)) M := ⟨default, some bodyCST⟩
->>>>>>> origin/main2
   modify ToCSTContext.popScope
   pure cmd
 

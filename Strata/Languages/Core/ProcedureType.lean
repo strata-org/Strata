@@ -31,11 +31,7 @@ private def checkNoDuplicates (proc : Procedure) (sourceLoc : FileRange) :
 private def checkModificationRights (proc : Procedure) (sourceLoc : FileRange) :
     Except DiagnosticModel Unit := do
   let modifiedVars := (HasVarsImp.modifiedVars (P := Expression) proc.body).eraseDups
-<<<<<<< HEAD
-  let definedVars := (HasVarsImp.definedVars (P := Expression) proc.body).eraseDups
-=======
   let definedVars := (HasVarsImp.definedVars (P := Expression) proc.body false).eraseDups
->>>>>>> origin/main2
   let allowedVars := proc.header.outputs.keys ++ definedVars
   let disallowed := modifiedVars.filter (fun v => !allowedVars.contains v)
   if !disallowed.isEmpty then
@@ -182,7 +178,6 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p :
   -- Type check body.
   -- Note that `Statement.typeCheck` already reports source locations in
   -- error messages.
-<<<<<<< HEAD
   let (annotated_body, annotated_cfg, finalEnv) ← match proc.body with
     | .structured ss =>
       let (ss', env') ← Statement.typeCheck C envAfterPostconds p (.some proc) ss
@@ -190,14 +185,6 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p :
     | .cfg cfgBody =>
       let (cfg', env') ← typeCheckCFG C envAfterPostconds p proc cfgBody fileRange
       pure ([], some cfg', env')
-=======
-  let bodyStmts : List Statement ← match proc.body with
-    | .structured ss => pure ss
-    | .cfg _ =>
-      Except.error (DiagnosticModel.withRange fileRange
-        f!"[{proc.header.name}]: CFG procedures not supported yet")
-  let (annotated_body, finalEnv) ← Statement.typeCheck C envAfterPostconds p (.some proc) bodyStmts
->>>>>>> origin/main2
 
   -- Remove formals and returns from the context -- they ought to be local to
   -- the procedure body.
@@ -212,14 +199,10 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p :
                                     outputs := out_mty_sig }
   let new_spec := { proc.spec with preconditions := finalPreconditions,
                                    postconditions := finalPostconditions }
-<<<<<<< HEAD
   let new_body := match annotated_cfg with
     | some cfg' => .cfg cfg'
     | none => .structured annotated_body
   let new_proc := { proc with header := new_hdr, spec := new_spec, body := new_body }
-=======
-  let new_proc := { proc with header := new_hdr, spec := new_spec, body := .structured annotated_body }
->>>>>>> origin/main2
 
   return (new_proc, finalEnv)
 
