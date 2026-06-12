@@ -104,20 +104,12 @@ abbrev Lang.imperative (P : PureExpr) [HasFvar P] [HasBool P] [HasBoolOps P] [Ha
    .stmt, .terminal, .exiting, isAtAssert, Config.getEnv⟩
 
 /-- The standard `Lang` for `Cmd P` / `EvalCmd P` / `isAtAssert`. -/
-<<<<<<< HEAD
-abbrev Lang.standard (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
-=======
 abbrev Lang.standard (P : PureExpr) [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P]
->>>>>>> origin/main2
     (extendEval : ExtendEval P) : Lang P :=
   Lang.imperative P (Cmd P) (EvalCmd P) extendEval (Imperative.isAtAssert P)
 
 
-<<<<<<< HEAD
-variable {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasVarsPure P P.Expr]
-=======
 variable {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasInt P] [HasVal P]
->>>>>>> origin/main2
 variable (L : Lang P)
 
 
