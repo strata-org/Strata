@@ -258,7 +258,19 @@ def LMonoTy.toSMTType (E: Env) (ty : LMonoTy) (ctx : SMT.Context) (useArrayTheor
   | .ftvar tyv => match ctx.tySubst.find? tyv with
                     | .some termTy =>
                       .ok (termTy, ctx)
-                    | _ => .error f!"Unimplemented encoding for type var {tyv}"
+                    | _ =>
+                      -- Encoding `tyv` as an uninterpreted sort would be unsound
+                      -- for `--check-mode bugFinding`: the solver could satisfy
+                      -- the obligation in the synthetic sort and report "no bug"
+                      -- when no concrete instantiation admits one. Sound under
+                      -- deductive mode (would let us verify polymorphic function
+                      -- bodies for any T), but mode-aware encoding is not yet
+                      -- wired through; reject for now until a concrete use case
+                      -- justifies the plumbing.
+                      .error f!"Cannot encode unresolved type variable '{tyv}' to SMT. \
+                                Polymorphic function body verification is not yet \
+                                supported (would require mode-aware encoding to \
+                                stay sound for bugFinding)."
 
 def LMonoTys.toSMTType (E: Env) (args : LMonoTys) (ctx : SMT.Context) (useArrayTheory : Bool := false) :
     Except Format ((List TermType) × SMT.Context) := do
