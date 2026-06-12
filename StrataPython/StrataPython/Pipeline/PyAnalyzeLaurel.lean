@@ -46,7 +46,7 @@ public structure PyAnalyzeConfig where
 
 private def runPipeline (config : PyAnalyzeConfig)
     : PipelineM (PyAnalyzeOutcome × Statistics) := do
-  let combinedLaurel ← withPhase "pythonAndSpecToLaurel" do
+  let (combinedLaurel, gradualConfig) ← withPhase "pythonAndSpecToLaurel" do
     StrataPython.pythonAndSpecToLaurel
       (specDir := config.specDir)
       config.filePath config.dispatchModules config.pyspecModules config.sourcePath
@@ -64,7 +64,8 @@ private def runPipeline (config : PyAnalyzeConfig)
     let laurelResult ←
       StrataPython.translateCombinedLaurelWithLowered combinedLaurel
         (keepAllFilesPrefix := config.keepAllFilesPrefix)
-        (pipelineCtx := some ctx) |>.toBaseIO
+        (pipelineCtx := some ctx)
+        (gradualConfig := some gradualConfig) |>.toBaseIO
     match laurelResult with
     | .ok (coreOpt, diags, _, stats) =>
       let phase ← getPhase

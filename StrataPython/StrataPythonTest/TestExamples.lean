@@ -22,7 +22,7 @@ namespace StrataPython
 /-- Run the Python → Ion → Laurel pipeline inside a temp directory and pass
     the resulting Laurel program and the temp source path to a continuation. -/
 def withPythonToLaurel (pythonCmd : System.FilePath) (input : InputContext)
-    (k : Laurel.Program → System.FilePath → IO α) : IO α := do
+    (k : Laurel.Program → Laurel.GradualConfig → System.FilePath → IO α) : IO α := do
   IO.FS.withTempDir fun tmpDir => do
     let pyFile := tmpDir / "test.py"
     IO.FS.writeFile pyFile input.inputString
@@ -44,7 +44,7 @@ def withPythonToLaurel (pythonCmd : System.FilePath) (input : InputContext)
     let pctx ← Pipeline.PipelineContext.create (outputMode := .quiet)
     match ← (pythonAndSpecToLaurel ionFile.toString
         (sourcePath := some pyFile.toString)).run pctx |>.toBaseIO with
-    | .ok r => k r pyFile
+    | .ok (laurel, gconfig) => k laurel gconfig pyFile
     | .error () =>
       let msgs ← pctx.getMessages
       let detail := match msgs.back? with
@@ -56,7 +56,7 @@ def withPythonToLaurel (pythonCmd : System.FilePath) (input : InputContext)
     The caller can inspect the Laurel IR directly or continue to Core/SMT. -/
 public def processPythonToLaurel (pythonCmd : System.FilePath) (input : InputContext)
     : IO Laurel.Program :=
-  withPythonToLaurel pythonCmd input fun laurel _ => pure laurel
+  withPythonToLaurel pythonCmd input fun laurel _ _ => pure laurel
 
 /-- Process a Python source file through the full verification pipeline
     (Python → Ion → Laurel → Core → verify) and return diagnostics.
@@ -65,8 +65,8 @@ public def processPythonToLaurel (pythonCmd : System.FilePath) (input : InputCon
     must point to a Python 3 interpreter with `strata.gen` installed. -/
 public def processPythonFile (pythonCmd : System.FilePath) (input : InputContext)
     : IO (Array Diagnostic) := do
-  withPythonToLaurel pythonCmd input fun laurel pyFile => do
-    let (coreOpt, translateDiags) ← translateCombinedLaurel laurel
+  withPythonToLaurel pythonCmd input fun laurel gconfig pyFile => do
+    let (coreOpt, translateDiags) ← translateCombinedLaurel laurel (gradualConfig := some gconfig)
     let uri := Uri.file pyFile.toString
     let files := Map.insert Map.empty uri input.fileMap
     match coreOpt with

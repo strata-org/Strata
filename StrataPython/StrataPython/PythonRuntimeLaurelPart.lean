@@ -325,6 +325,24 @@ function to_bool_any(v: Any) : Any
   from_bool(Any_to_bool(v))
 };
 
+// Checked downcasts: the `requires` makes coercing a non-matching `Any`
+// (e.g. `None` into `int`) a verification failure rather than silent garbage.
+function as_int_checked (v: Any) : int
+  requires Any..isfrom_int(v)
+{ Any..as_int!(v) };
+
+function as_bool_checked (v: Any) : bool
+  requires Any..isfrom_bool(v)
+{ Any..as_bool!(v) };
+
+function as_str_checked (v: Any) : string
+  requires Any..isfrom_str(v)
+{ Any..as_string!(v) };
+
+function as_float_checked (v: Any) : real
+  requires Any..isfrom_float(v)
+{ Any..as_float!(v) };
+
 // /////////////////////////////////////////////////////////////////////////////////////
 // ListAny functions
 // /////////////////////////////////////////////////////////////////////////////////////

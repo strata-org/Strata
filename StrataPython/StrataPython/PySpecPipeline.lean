@@ -7,6 +7,7 @@ module
 
 import all StrataDDM.Util.String
 import Strata.Languages.Laurel.FilterPrelude
+public import Strata.Languages.Laurel.Resolution
 import Strata.Languages.Laurel.LaurelCompilationPipeline
 public import StrataPython.PythonToLaurel
 import StrataPython.ReadPython
@@ -388,6 +389,54 @@ public def splitProcNames (prog : Core.Program)
     d.getProc?.map (Core.CoreIdent.toPretty ·.header.name)
   (preludeNames, userProcNames)
 
+/-- Box constructor and checked downcast accessor for each native primitive —
+    the single source for `box`, `unbox`, and their retained seeds. -/
+def pyPrim : Laurel.HighType → Option (String × String)
+  | .TInt    => some ("from_int",   "as_int_checked")
+  | .TBool   => some ("from_bool",  "as_bool_checked")
+  | .TString => some ("from_str",   "as_str_checked")
+  | .TReal   => some ("from_float", "as_float_checked")
+  | _        => none
+
+/-- Dynamic prelude operator backing each native operation. -/
+def pyOpPrelude : Laurel.Operation → Option String
+  | .Add => some "PAdd" | .Sub => some "PSub" | .Mul => some "PMul"
+  | .Div => some "PFloorDiv" | .Mod => some "PMod" | .Neg => some "PNeg"
+  | .Eq => some "PEq" | .Neq => some "PNEq"
+  | .Lt => some "PLt" | .Leq => some "PLe" | .Gt => some "PGt" | .Geq => some "PGe"
+  | .Not => some "PNot" | .AndThen => some "PAnd" | .OrElse => some "POr"
+  | .And => some "PAnd" | .Or => some "POr"
+  | _ => none
+
+private def pyPrimTypes : List Laurel.HighType := [.TInt, .TBool, .TString, .TReal]
+private def pyOps : List Laurel.Operation :=
+  [.Add, .Sub, .Mul, .Div, .Mod, .Neg, .Eq, .Neq, .Lt, .Leq, .Gt, .Geq,
+   .Not, .AndThen, .OrElse, .And, .Or]
+
+/-- Description of Python's `Any` dynamic-typing prelude, used by Laurel
+    resolution to elaborate generic ops/coercions into native types where
+    possible and the `Any` prelude operators otherwise. `userProcs` are the
+    procedure names to elaborate (the translated Python code); the prelude is
+    left untouched. -/
+def pythonGradualConfig (userProcs : Std.HashSet String) : Laurel.GradualConfig where
+  dynamic := .TCore "Any"
+  isDynamic := fun t => match t with
+    | .TCore "Any" => true
+    | .UserDefined n => n.text == "Any"
+    | _ => false
+  box := fun t => (pyPrim t).map (·.1)
+  unbox := fun t => (pyPrim t).map (·.2)
+  toBool := "Any_to_bool"
+  opPrelude := pyOpPrelude
+  shouldElaborate := (userProcs.contains ·)
+
+/-- Prelude names the gradual elaboration may introduce; retained by
+    `filterPrelude` so they survive even when user code never names them.
+    Derived from `pyPrim`/`pyOpPrelude` so it cannot drift out of sync. -/
+def pythonGradualSeeds : List String :=
+  ("Any_to_bool" :: (pyPrimTypes.filterMap pyPrim).flatMap (fun (b, u) => [b, u])
+    ++ pyOps.filterMap pyOpPrelude).eraseDups
+
 /-- Like `translateCombinedLaurel` but also returns the lowered Laurel program
     (after all Laurel-to-Laurel passes, before translation to Core).
 
@@ -396,17 +445,21 @@ public def splitProcNames (prog : Core.Program)
 public def translateCombinedLaurelWithLowered (combined : Laurel.Program)
     (keepAllFilesPrefix : Option String := none)
     (pipelineCtx : Option Pipeline.PipelineContext := none)
+    (gradualConfig : Option Laurel.GradualConfig := none)
     : IO (Option Core.Program × List DiagnosticModel × Laurel.Program × Statistics) := do
   let (coreOption, errors, lowered, stats) ←
-    Laurel.translateWithLaurel { inlineFunctionsWhenPossible := true, keepAllFilesPrefix }
+    Laurel.translateWithLaurel
+      { inlineFunctionsWhenPossible := true, keepAllFilesPrefix, gradualConfig }
       combined (pipelineCtx := pipelineCtx)
   return (coreOption.map appendCorePartOfRuntime, errors, lowered, stats)
 
 /-- Translate a combined Laurel program to Core and prepend the full
     runtime prelude. -/
 public def translateCombinedLaurel (combined : Laurel.Program)
+    (gradualConfig : Option Laurel.GradualConfig := none)
     : IO (Option Core.Program × List DiagnosticModel) := do
-  let (coreOption, errors, _, _) ← translateCombinedLaurelWithLowered combined
+  let (coreOption, errors, _, _) ←
+    translateCombinedLaurelWithLowered combined (gradualConfig := gradualConfig)
   return (coreOption, errors)
 
 /-- Run the pyAnalyzeLaurel pipeline: read a Python Ion program,
@@ -427,7 +480,7 @@ public def pythonAndSpecToLaurel
     (pyspecModules : Array String := #[])
     (sourcePath : Option String := none)
     (specDir : System.FilePath := ".")
-    : Pipeline.PipelineM Laurel.Program := do
+    : Pipeline.PipelineM (Laurel.Program × Laurel.GradualConfig) := do
   let stmts ← Pipeline.withPhase "readPythonIon" do
     match ← readPythonStrata pythonIonPath |>.toBaseIO with
     | .ok r => pure r
@@ -454,12 +507,15 @@ public def pythonAndSpecToLaurel
     | .ok result => pure result
 
   let filteredPrelude ←
-    match Laurel.filterPrelude result.laurelProgram laurelProgram with
+    match Laurel.filterPrelude result.laurelProgram laurelProgram pythonGradualSeeds with
     | .ok prog => pure prog
     | .error msg =>
       emitMessageAndAbort (file := sourcePath.getD pythonIonPath) .laurelLoweringError msg
 
   let combined := combinePySpecLaurel filteredPrelude laurelProgram
-  return combined
+  -- Only the translated user procedures are elaborated; the prelude is left as-is.
+  let userProcs : Std.HashSet String :=
+    laurelProgram.staticProcedures.foldl (fun s p => s.insert p.name.text) {}
+  return (combined, pythonGradualConfig userProcs)
 
 end StrataPython
