@@ -1,0 +1,14 @@
+# tree-sitter build output — regenerated from grammar.js + conflicts.json by
+# `tree-sitter generate`. The committed source of truth is grammar.js,
+# conflicts.json, resolve-conflicts.cjs, and queries/.
+*/src/
+*/build/
+*/node_modules/
+*/bindings/
+*/Cargo.toml
+*/package.json
+*/binding.gyp
+*/tree-sitter.json
+*.wasm
+*.so
+*.dylib

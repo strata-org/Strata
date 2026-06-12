@@ -1,6 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
-  "_comment": "AUTO-GENERATED from the Core DDM grammar. Do not edit by hand; run: lake env lean --run editors/GenSyntax.lean vscode",
+  "_comment": "AUTO-GENERATED from the Strata Core DDM grammar. Do not edit by hand; run: lake env lean --run editors/GenSyntax.lean vscode",
   "name": "Strata Core",
   "scopeName": "source.core-st",
   "patterns": [

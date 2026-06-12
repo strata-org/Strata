@@ -15,6 +15,12 @@
         "aliases": ["Strata Core", "core-st"],
         "extensions": [".core.st"],
         "configuration": "./language-configuration.json"
+      },
+      {
+        "id": "laurel-st",
+        "aliases": ["Strata Laurel", "laurel-st"],
+        "extensions": [".laurel.st"],
+        "configuration": "./language-configuration.json"
       }
     ],
     "grammars": [
@@ -22,6 +28,11 @@
         "language": "core-st",
         "scopeName": "source.core-st",
         "path": "./syntaxes/core-st.tmLanguage.json"
+      },
+      {
+        "language": "laurel-st",
+        "scopeName": "source.laurel-st",
+        "path": "./syntaxes/laurel-st.tmLanguage.json"
       }
     ]
   }

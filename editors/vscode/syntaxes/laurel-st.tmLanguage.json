@@ -1,0 +1,97 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "_comment": "AUTO-GENERATED from the Strata Laurel DDM grammar. Do not edit by hand; run: lake env lean --run editors/GenSyntax.lean vscode",
+  "name": "Strata Laurel",
+  "scopeName": "source.laurel-st",
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#string" },
+    { "include": "#attribute" },
+    { "include": "#label" },
+    { "include": "#number" },
+    { "include": "#keyword" },
+    { "include": "#type" },
+    { "include": "#constant" },
+    { "include": "#operator" },
+    { "include": "#function-call" },
+    { "include": "#identifier" }
+  ],
+  "repository": {
+    "comment": {
+      "name": "comment.line.double-slash.laurel-st",
+      "match": "//.*$"
+    },
+    "string": {
+      "name": "string.quoted.double.laurel-st",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.laurel-st",
+          "match": "\\\\."
+        }
+      ]
+    },
+    "attribute": {
+      "name": "meta.attribute.laurel-st",
+      "match": "@\\[[^\\]]*\\]",
+      "captures": {
+        "0": { "name": "entity.other.attribute-name.laurel-st" }
+      }
+    },
+    "label": {
+      "name": "meta.label.laurel-st",
+      "match": "\\[([a-zA-Z_][a-zA-Z0-9_]*)\\]\\s*:",
+      "captures": {
+        "0": { "name": "entity.name.label.laurel-st" },
+        "1": { "name": "entity.name.tag.laurel-st" }
+      }
+    },
+    "number": {
+      "patterns": [
+        {
+          "name": "constant.numeric.decimal.laurel-st",
+          "match": "\\b[0-9]+(\\.[0-9]+)?\\b"
+        }
+      ]
+    },
+    "keyword": {
+      "name": "keyword.laurel-st",
+      "match": "\\b(var|new|assign|forall|exists|summary|else|if|then|assert|assume|return|exit|invariant|while|for|is|as|extends|datatype|invokeOn|requires|ensures|modifies|returns|opaque|external|procedure|function|composite|constrained|where|witness)\\b"
+    },
+    "type": {
+      "name": "support.type.laurel-st",
+      "match": "\\b(int|bool|real|float64|string|bv|Core|Map)\\b"
+    },
+    "constant": {
+      "name": "constant.language.laurel-st",
+      "match": "\\b(true|false)\\b"
+    },
+    "operator": {
+      "patterns": [
+        {
+          "name": "keyword.operator.assignment.laurel-st",
+          "match": ":="
+        },
+        {
+          "name": "keyword.operator.word.laurel-st",
+          "match": "\\b()\\b"
+        },
+        {
+          "name": "keyword.operator.symbol.laurel-st",
+          "match": "(==>|&&|:=|==|<=|>=|!=|\\|\\||\\+\\+|=>|=|<|#|\\+|&|\\||-|\\*|/|%|!|>)"
+        }
+      ]
+    },
+    "function-call": {
+      "match": "\\b(|bvconcat\\{[0-9]+\\}\\{[0-9]+\\}|bvextract\\{[0-9]+\\}\\{[0-9]+\\}\\{[0-9]+\\})\\b",
+      "captures": {
+        "1": { "name": "support.function.builtin.laurel-st" }
+      }
+    },
+    "identifier": {
+      "name": "variable.other.laurel-st",
+      "match": "\\b[a-zA-Z_$][a-zA-Z0-9_$]*\\b"
+    }
+  }
+}

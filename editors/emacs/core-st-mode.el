@@ -1,6 +1,6 @@
 ;;; core-st-mode.el --- Major mode for Strata Core (.core.st) files -*- lexical-binding: t; -*-
 
-;; AUTO-GENERATED from the Core DDM grammar.
+;; AUTO-GENERATED from the Strata Core DDM grammar.
 ;; Do not edit by hand; run: lake env lean --run editors/GenSyntax.lean emacs
 
 ;; Keywords
@@ -75,7 +75,7 @@
     st))
 
 ;;;###autoload
-(define-derived-mode core-st-mode prog-mode "Core.st"
+(define-derived-mode core-st-mode prog-mode "Strata Core"
   "Major mode for editing Strata Core (.core.st) files."
   :syntax-table core-st-mode-syntax-table
   (setq-local font-lock-defaults '(core-st-font-lock-keywords))
