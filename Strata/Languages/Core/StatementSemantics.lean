@@ -43,12 +43,6 @@ instance : HasSubstFvar Core.Expression where
   substFvar := Lambda.LExpr.substFvar
   substFvars := Lambda.LExpr.substFvars
 
-instance : HasIntOrder Core.Expression where
-  eq    e1 e2 := .eq () e1 e2
-  lt    e1 e2 := .app () (.app () Core.intLtOp e1) e2
-  zero        := .intConst () 0
-  intTy       := .forAll [] (.tcons "int" [])
-
 instance : HasIdent Core.Expression where
   ident s := ⟨s, ()⟩
 
@@ -57,17 +51,65 @@ def Core.true : Core.Expression.Expr := .boolConst () Bool.true
 @[expose, match_pattern]
 def Core.false : Core.Expression.Expr := .boolConst () Bool.false
 
+/-- Syntactic check for integer numeral literals in Core. -/
+def Core.isNumeral : Core.Expression.Expr → Bool
+  | .const _ (.intConst _) => Bool.true
+  | _ => Bool.false
+
 instance : HasBool Core.Expression where
   tt := Core.true
   ff := Core.false
   tt_is_not_ff := by unfold Core.true Core.false; unfold Lambda.LExpr.boolConst; simp
   boolTy := .forAll [] (.tcons "bool" [])
+  boolIsVal := ⟨Value.const, Value.const⟩
 
-instance : HasNot Core.Expression where
+theorem numeralHasNoVars_aux : ∀ (n : Core.Expression.Expr),
+    Core.isNumeral n = Bool.true →
+    HasFvars.getFvars (P := Core.Expression) n = []
+  | .const _ (.intConst _), _ => rfl
+  | .const _ (.boolConst _), hn => by simp [Core.isNumeral] at hn
+  | .const _ (.strConst _), hn => by simp [Core.isNumeral] at hn
+  | .const _ (.realConst _), hn => by simp [Core.isNumeral] at hn
+  | .const _ (.bitvecConst _ _), hn => by simp [Core.isNumeral] at hn
+  | .bvar _ _, hn => by simp [Core.isNumeral] at hn
+  | .fvar _ _ _, hn => by simp [Core.isNumeral] at hn
+  | .op _ _ _, hn => by simp [Core.isNumeral] at hn
+  | .abs _ _ _ _, hn => by simp [Core.isNumeral] at hn
+  | .quant _ _ _ _ _ _, hn => by simp [Core.isNumeral] at hn
+  | .app _ _ _, hn => by simp [Core.isNumeral] at hn
+  | .ite _ _ _ _, hn => by simp [Core.isNumeral] at hn
+  | .eq _ _ _, hn => by simp [Core.isNumeral] at hn
+
+instance : HasInt Core.Expression where
+  zero        := .intConst () 0
+  intTy       := .forAll [] (.tcons "int" [])
+  isNumeral   := Core.isNumeral
+  numeralIsValue n hn := by
+    show Value n
+    cases n with
+    | const m c =>
+      cases c with
+      | intConst _ => exact Value.const
+      | _ => simp [Core.isNumeral] at hn
+    | _ => simp [Core.isNumeral] at hn
+  zeroIsNumeral := by
+    show Core.isNumeral (.intConst () 0) = Bool.true
+    rfl
+  numeralHasNoFvars := numeralHasNoVars_aux
+
+instance : HasIntOps Core.Expression where
+  eq    e1 e2 := .eq () e1 e2
+  lt    e1 e2 := .app () (.app () Core.intLtOp e1) e2
+
+instance : HasBoolOps Core.Expression where
   not
   | Core.true => Core.false
   | Core.false => Core.true
   | e => Lambda.LExpr.app () (Lambda.boolNotFunc (T:=CoreLParams)).opExpr e
+  and e1 e2 := Lambda.LExpr.app () (Lambda.LExpr.app ()
+    (Lambda.boolAndFunc (T:=CoreLParams)).opExpr e1) e2
+  imp e1 e2 := Lambda.LExpr.app () (Lambda.LExpr.app ()
+    (Lambda.boolImpliesFunc (T:=CoreLParams)).opExpr e1) e2
 
 /-! ### Lawful instances for `Core.Expression`
 
@@ -182,11 +224,11 @@ structure WellFormedCoreEvalCong (δ : CoreEval): Prop where
     /-- Definedness-propagation properties for compound expressions. -/
     definedness : WellFormedCoreEvalDefinedness δ
 
-inductive EvalExpressions {P} [HasVarsPure P P.Expr] : SemanticEval P → SemanticStore P → List P.Expr → List P.Expr → Prop where
+inductive EvalExpressions {P} [HasFvars P] : SemanticEval P → SemanticStore P → List P.Expr → List P.Expr → Prop where
   | eval_none :
     EvalExpressions δ σ [] []
   | eval_some :
-    isDefined σ (HasVarsPure.getVars e) →
+    isDefined σ (HasFvars.getFvars e) →
     δ σ e = .some v →
     EvalExpressions δ σ es vs →
     EvalExpressions δ σ (e :: es) (v :: vs)
@@ -294,7 +336,7 @@ def WellFormedCoreEvalTwoState (δ : CoreEval) (σ₀ σ : CoreStore) : Prop :=
 Build a list of substitutions from the store for the given identifiers.
 Returns pairs of (identifier, value) for each identifier that has a value in the store.
 -/
-def buildSubstitutions (σ : CoreStore) (ids : List Expression.Ident) : List (Expression.Ident × Expression.Expr) :=
+@[expose] def buildSubstitutions (σ : CoreStore) (ids : List Expression.Ident) : List (Expression.Ident × Expression.Expr) :=
   ids.filterMap (fun id =>
     match σ id with
     | some v => some (id, v)
@@ -305,16 +347,16 @@ Apply closure capture to a function declaration by substituting current variable
 values into the function body and axioms. Variables that are function parameters
 are not substituted (they are bound, not free in the closure sense).
 -/
-def closureCapture
+@[expose] def closureCapture
     (σ : CoreStore) (decl : PureFunc Expression) : PureFunc Expression :=
   let paramNames := decl.inputs.map (·.1)
   -- Get free variables from body (if it exists), excluding parameters
   let bodyFreeVars := match decl.body with
-    | some body => (HasVarsPure.getVars body).filter (· ∉ paramNames)
+    | some body => (HasFvars.getFvars body).filter (· ∉ paramNames)
     | none => []
   -- Get free variables from axioms, excluding parameters
   let axiomFreeVars := decl.axioms.flatMap (fun ax =>
-    (HasVarsPure.getVars ax).filter (· ∉ paramNames))
+    (HasFvars.getFvars ax).filter (· ∉ paramNames))
   -- Combine and deduplicate
   let allFreeVars := (bodyFreeVars ++ axiomFreeVars).eraseDups
   -- Build substitutions from the store
@@ -333,7 +375,7 @@ the newly declared function by substituting arguments into the captured body.
 Takes a parameter `φ` that specifies how to extend the evaluator with a captured
 closure (without the store, since closure capture is handled here).
 -/
-def EvalPureFunc (φ : CoreEval → PureFunc Expression → CoreEval) : Imperative.ExtendEval Expression :=
+@[expose] def EvalPureFunc (φ : CoreEval → PureFunc Expression → CoreEval) : Imperative.ExtendEval Expression :=
   fun δ σ decl =>
     let capturedDecl := closureCapture σ decl
     φ δ capturedDecl
@@ -370,14 +412,19 @@ inductive CoreStepStar
 
 /-- Execution of a procedure body. Only structured bodies have an executable
     semantics; the `.cfg` arm of `Procedure.Body` has no inhabitant of
-    `CoreBodyExec`. -/
+    `CoreBodyExec`.
+
+    For structured bodies, the body is wrapped in `Stmt.block "" ss #[]` so that
+    `funcDecl` extensions and other inner scoping introduced by the body do not
+    leak past the procedure boundary.  This wrapping mirrors
+    `Specification.AssertValidInProcedure` and the `procToVerifyStmt` pipeline. -/
 inductive CoreBodyExec
     (π : String → Option Procedure)
     (φ : CoreEval → PureFunc Expression → CoreEval) :
     Procedure.Body → CoreStore → CoreEval → CoreStore → CoreEval → Bool → Prop where
   | structured :
     CoreStepStar π φ
-      (.stmts ss ⟨σ, δ, false⟩)
+      (.stmt (Stmt.block "" ss #[]) ⟨σ, δ, false⟩)
       (.terminal ρ') →
     CoreBodyExec π φ (.structured ss) σ δ ρ'.store ρ'.eval ρ'.hasFailure
 
@@ -411,11 +458,11 @@ inductive EvalCommand (π : String → Option Procedure) (φ : CoreEval → Pure
     -- positional: oVals[i] initializes p.header.outputs[i]
     InitStates σA (ListMap.keys (p.header.outputs)) oVals σAO →
     (∀ pre, (Procedure.Spec.getCheckExprs p.spec.preconditions).contains pre →
-      isDefinedOver (HasVarsPure.getVars) σAO pre ∧
+      isDefinedOver (HasFvars.getFvars) σAO pre ∧
       δ σAO pre = .some HasBool.tt) →
     CoreBodyExec π φ p.body σAO δ σ_final δ_final failed →
     (∀ post, (Procedure.Spec.getCheckExprs p.spec.postconditions).contains post →
-      isDefinedOver (HasVarsPure.getVars) σAO post ∧
+      isDefinedOver (HasFvars.getFvars) σAO post ∧
       δ_final σ_final post = .some HasBool.tt) →
     ReadValues σ_final (ListMap.keys (p.header.outputs)) modvals →
     -- positional: modvals[i] written back to lhs[i]
@@ -467,9 +514,11 @@ def withOldBindings
     aid.label = label ∧ aid.expr = expr
   | .stmts ((.cmd (.cmd (.assert label expr _))) :: _) _, aid =>
     aid.label = label ∧ aid.expr = expr
-  | .stmt (.loop _ _ inv _ _) _, aid => (aid.label, aid.expr) ∈ inv
-  | .stmts ((.loop _ _ inv _ _) :: _) _, aid => (aid.label, aid.expr) ∈ inv
-  | .block _ _ inner, aid => coreIsAtAssert inner aid
+  | .stmt (.loop _ _ inv _ _) _, aid =>
+    (aid.label, aid.expr) ∈ inv
+  | .stmts ((.loop _ _ inv _ _) :: _) _, aid =>
+    (aid.label, aid.expr) ∈ inv
+  | .block _ _ _ inner, aid => coreIsAtAssert inner aid
   | .seq inner _, aid => coreIsAtAssert inner aid
   | _, _ => False
 
@@ -520,11 +569,11 @@ inductive EvalCommandContract : (String → Option Procedure)  → CoreEval →
     -- positional: oVals[i] initializes p.header.outputs[i]
     InitStates σA (ListMap.keys (p.header.outputs)) oVals σAO →
     (∀ pre, (Procedure.Spec.getCheckExprs p.spec.preconditions).contains pre →
-      isDefinedOver (HasVarsPure.getVars) σAO pre ∧
+      isDefinedOver (HasFvars.getFvars) σAO pre ∧
       δ σAO pre = .some HasBool.tt) →
     HavocVars σAO (ListMap.keys p.header.outputs) σO →
     (∀ post, (Procedure.Spec.getCheckExprs p.spec.postconditions).contains post →
-      isDefinedOver (HasVarsPure.getVars) σAO post ∧
+      isDefinedOver (HasFvars.getFvars) σAO post ∧
       δ σO post = .some HasBool.tt) →
     ReadValues σO (ListMap.keys (p.header.outputs)) modvals →
     -- positional: modvals[i] written back to lhs[i]

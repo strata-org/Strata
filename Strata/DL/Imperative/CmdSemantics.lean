@@ -113,16 +113,11 @@ def substSwap {P : PureExpr} (substs : List (P.Ident × P.Ident))
 
 /-! ### Well-Formedness of `SemanticEval`s -/
 
-/-- The boolean evaluator and the general evaluator are in agreement
--- only defined conservatively,
--- since there could be coercions like [1 >>= True] and [0 >>= False]
--- or that when δ evaluates to none, δP evaluates to False
-  -/
-def WellFormedSemanticEvalBool {P : PureExpr} [HasBool P] [HasNot P]
+@[expose] def WellFormedSemanticEvalBool {P : PureExpr} [HasBool P] [HasBoolOps P]
     (δ : SemanticEval P) : Prop :=
     ∀ σ e,
-      (δ σ e = some Imperative.HasBool.tt ↔ δ σ (Imperative.HasNot.not e) = (some HasBool.ff)) ∧
-      (δ σ e = some Imperative.HasBool.ff ↔ δ σ (Imperative.HasNot.not e) = (some HasBool.tt))
+      (δ σ e = some Imperative.HasBool.tt ↔ δ σ (Imperative.HasBoolOps.not e) = (some HasBool.ff)) ∧
+      (δ σ e = some Imperative.HasBool.ff ↔ δ σ (Imperative.HasBoolOps.not e) = (some HasBool.tt))
 
 def WellFormedSemanticEvalVal {P : PureExpr} [HasVal P]
     (δ : SemanticEval P) : Prop :=
@@ -134,8 +129,8 @@ def WellFormedSemanticEvalVal {P : PureExpr} [HasVal P]
 @[expose] def WellFormedSemanticEvalVar {P : PureExpr} [HasFvar P] (δ : SemanticEval P)
     : Prop := (∀ e v σ, HasFvar.getFvar e = some v → δ σ e = σ v)
 
-@[expose] def WellFormedSemanticEvalExprCongr {P : PureExpr} [HasVarsPure P P.Expr] (δ : SemanticEval P)
-    : Prop := ∀ e σ σ', (∀ x ∈ HasVarsPure.getVars e, σ x = σ' x) → δ σ e = δ σ' e
+@[expose] def WellFormedSemanticEvalExprCongr {P : PureExpr} [HasFvars P] (δ : SemanticEval P)
+    : Prop := ∀ e σ σ', (∀ x ∈ HasFvars.getFvars e, σ x = σ' x) → δ σ e = δ σ' e
 
 /-- A successful evaluation implies all the read-vars are defined. -/
 @[expose] def WellFormedSemanticEvalDef {P : PureExpr} [HasVarsPure P P.Expr]
@@ -184,7 +179,11 @@ sets it to `true`; all other constructors report `false`.
 The failure flag is accumulated in `Env.hasFailure` by the statement
 semantics (`EvalStmt`).
 -/
+<<<<<<< HEAD
 inductive EvalCmd [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] :
+=======
+inductive EvalCmd [HasFvar P] [HasBool P] [HasBoolOps P] :
+>>>>>>> origin/main2
   SemanticEval P → SemanticStore P → Cmd P → SemanticStore P → Bool → Prop where
   /-- If `e` evaluates to a value `v`, initialize `x` according to `InitState`. -/
   | eval_init :

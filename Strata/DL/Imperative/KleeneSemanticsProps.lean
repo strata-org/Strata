@@ -18,26 +18,29 @@ namespace Imperative
 
 public section
 
+<<<<<<< HEAD
 variable {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P]
   [HasVarsPure P P.Expr]
+=======
+variable {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P]
+>>>>>>> origin/main2
 
 /-! ## Env helpers -/
 
-omit [HasFvar P] [HasVal P] [HasBool P] [HasNot P] in
+omit [HasFvar P] [HasBool P] [HasBoolOps P] in
 theorem assume_env_eq (ρ : Env P) :
     ({ ρ with store := ρ.store, hasFailure := ρ.hasFailure || false } : Env P) = ρ := by
   cases ρ; simp [Bool.or_false]
 
-omit [HasFvar P] [HasNot P] in
+omit [HasFvar P] [HasBoolOps P] in
 theorem eval_tt_is_tt
     (δ : SemanticEval P) (σ : SemanticStore P)
     (hwfv : WellFormedSemanticEvalVal δ) :
     δ σ HasBool.tt = some HasBool.tt :=
-  hwfv.2 HasBool.tt σ HasBoolVal.bool_is_val.1
+  hwfv.2 HasBool.tt σ HasBool.boolIsVal.1
 
 /-! ## Kleene small-step helpers -/
 
-omit [HasVal P] [HasBoolVal P] in
 theorem kleene_block_inner_star
     (σ_parent : SemanticStore P)
     (inner inner' : KleeneConfig P (Cmd P))
@@ -47,7 +50,6 @@ theorem kleene_block_inner_star
   | refl => exact .refl _
   | step _ mid _ hstep _ ih => exact .step _ _ _ (.step_block_body hstep) ih
 
-omit [HasVal P] [HasBoolVal P] in
 /-- Lift an inner execution through a block wrapper to terminal (with projection). -/
 theorem kleene_block_terminal
     (σ_parent : SemanticStore P)
@@ -59,7 +61,6 @@ theorem kleene_block_terminal
     (kleene_block_inner_star σ_parent inner (.terminal ρ') h)
     (.step _ _ _ .step_block_done (.refl _))
 
-omit [HasVal P] [HasBoolVal P] in
 theorem kleene_seq_inner_star
     (inner inner' : KleeneConfig P (Cmd P)) (s2 : KleeneStmt P (Cmd P))
     (h : StepKleeneStar P (EvalCmd P) inner inner') :
@@ -68,7 +69,6 @@ theorem kleene_seq_inner_star
   | refl => exact .refl _
   | step _ mid _ hstep _ ih => exact .step _ _ _ (.step_seq_inner hstep) ih
 
-omit [HasVal P] [HasBoolVal P] in
 theorem kleene_seq_terminal
     (s1 s2 : KleeneStmt P (Cmd P)) (ρ ρ₁ ρ' : Env P)
     (h1 : StepKleeneStar P (EvalCmd P) (.stmt s1 ρ) (.terminal ρ₁))
@@ -78,7 +78,6 @@ theorem kleene_seq_terminal
     (ReflTrans_Transitive _ _ _ _ (kleene_seq_inner_star _ _ s2 h1)
       (.step _ _ _ .step_seq_done (.refl _))) h2)
 
-omit [HasVal P] [HasBoolVal P] in
 theorem kleene_assume_terminal
     {label : String} {expr : P.Expr} {md : MetaData P} {ρ₀ : Env P}
     (hcond : ρ₀.eval ρ₀.store expr = some HasBool.tt)
@@ -91,6 +90,18 @@ theorem kleene_assume_terminal
       (.terminal { ρ₀ with store := ρ₀.store, hasFailure := ρ₀.hasFailure || false }) :=
     .step _ _ _ (.step_cmd (EvalCmd.eval_assume hcond hwfb hwfc)) (.refl _)
   rwa [assume_env_eq] at raw
+
+theorem kleene_assume_then
+    {label : String} {expr : P.Expr} {md : MetaData P}
+    {b : KleeneStmt P (Cmd P)} {ρ₀ : Env P}
+    (h_assume : StepKleeneStar P (EvalCmd P)
+      (.stmt (.cmd (.assume label expr md)) ρ₀) (.terminal ρ₀)) :
+    StepKleeneStar P (EvalCmd P)
+      (.stmt (.seq (.cmd (.assume label expr md)) b) ρ₀) (.stmt b ρ₀) :=
+  .step _ _ _ .step_seq
+    (ReflTrans_Transitive _ _ _ _
+      (kleene_seq_inner_star _ _ b h_assume)
+      (.step _ _ _ .step_seq_done (.refl _)))
 
 end -- public section
 end Imperative

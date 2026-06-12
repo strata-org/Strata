@@ -44,6 +44,7 @@ inductive CFGConfig (l CmdT : Type) (P : PureExpr) : Type where
   /-- Halt. -/
   | terminal : SemanticStore P → Bool → CFGConfig l CmdT P
 
+<<<<<<< HEAD
 /-- Monotonically update the `failure` flag in a `CFGConfig`. It will be set
 to `true` if the provided Boolean is `true`. -/
 @[expose] def updateFailure {l CmdT : Type} {P : PureExpr} :
@@ -51,6 +52,20 @@ to `true` if the provided Boolean is `true`. -/
 | .atBlock t σ failed,        failed' => .atBlock t σ (failed || failed')
 | .inBlock t cs tr σ failed,  failed' => .inBlock t cs tr σ (failed || failed')
 | .terminal σ failed,         failed' => .terminal σ (failed || failed')
+=======
+/-- Small-step operational semantics for deterministic basic blocks. Each case
+first evaluates the commands in the block. A block ending in `.condGoto` results
+in a configuration pointing to the true or false label, depending on the
+evaluation of the condition. A block ending in `.finish` results in a terminal
+configuration. -/
+inductive EvalDetBlock
+  {CmdT : Type}
+  (P : PureExpr)
+  (EvalCmd : EvalCmdParam P CmdT)
+  (extendEval : ExtendEval P)
+  [HasBoolOps P] :
+  SemanticStore P → DetBlock l CmdT P → CFGConfig l P → Prop where
+>>>>>>> origin/main2
 
 /-- Project the running store from a `CFGConfig`. -/
 @[expose] def CFGConfig.getStore {l CmdT : Type} {P : PureExpr} :
@@ -67,7 +82,23 @@ to `true` if the provided Boolean is `true`. -/
 | .terminal _ f        => f
 
 /--
+<<<<<<< HEAD
 Per-command small-step operational semantics for a deterministic CFG.
+=======
+Small-step operational semantics for non-deterministic basic blocks. Each case
+first evaluates the commands in the block. A block ending in `.goto` with no
+labels results in a terminal configuration. A block ending in `.goto` with a
+non-empty list of labels results in a configuration pointing to a
+non-deterministic choice of one of the labels.
+-/
+inductive EvalNondetBlock
+  {CmdT : Type}
+  (P : PureExpr)
+  (EvalCmd : EvalCmdParam P CmdT)
+  (extendEval : ExtendEval P)
+  [HasBoolOps P] :
+  SemanticStore P → NondetBlock l CmdT P → CFGConfig l P → Prop where
+>>>>>>> origin/main2
 
 There are five constructors:
 

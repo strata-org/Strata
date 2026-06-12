@@ -3,19 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import all StrataTest.Util.TestDiagnostics
-meta import all StrataTest.Languages.Laurel.TestExamples
-
-meta section
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
+open Strata
 
-namespace Strata
-namespace Laurel
-
-def program := r"
+#eval testLaurel <|
+#strata
+program Laurel;
 composite Base {
   var xValue: int
 }
@@ -99,7 +95,4 @@ procedure diamondInheritance()
 //  assert b is Top;
 //  assert b is Bottom;
 //}
-"
-
-#guard_msgs (drop info) in
-#eval testInputWithOffset "Inheritance" program 14 processLaurelFile
+#end
