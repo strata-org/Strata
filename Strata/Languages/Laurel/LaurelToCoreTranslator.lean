@@ -615,6 +615,9 @@ structure LaurelTranslateOptions where
   inlineFunctionsWhenPossible : Bool := false
   overflowChecks : Core.OverflowChecks := {}
   keepAllFilesPrefix : Option String := none
+  /-- Gradual-typing elaboration config; when set, resolution lowers generic
+      ops/coercions to the frontend's dynamic-typing prelude. -/
+  gradualConfig : Option GradualConfig := none
 
 instance : Inhabited LaurelTranslateOptions where
   default := {}

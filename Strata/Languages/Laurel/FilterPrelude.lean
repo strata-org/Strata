@@ -262,7 +262,7 @@ private def collectProgramRefs (prog : Laurel.Program) : CollectState :=
 
 /-- Filter a prelude Laurel program to only include declarations
     transitively needed by the user program. -/
-public def filterPrelude (prelude user : Laurel.Program)
+public def filterPrelude (prelude user : Laurel.Program) (extraSeeds : List String := [])
     : Except String Laurel.Program := do
   -- Guard: filterPrelude does not yet track dependencies through static fields
   -- or constants.  Error early if either program contains them so a silent
@@ -277,7 +277,7 @@ public def filterPrelude (prelude user : Laurel.Program)
     throw "FilterPrelude: user program contains constants, which are not yet supported"
   let refs := collectProgramRefs user
   let depMap ← buildDependencyMap prelude
-  let seeds := refs.allNames.fold (init := []) fun acc s => s :: acc
+  let seeds := refs.allNames.fold (init := extraSeeds) fun acc s => s :: acc
   let needed := reachableNamesAux depMap seeds {}
   return { prelude with
     staticProcedures := prelude.staticProcedures.filter fun p => p.name.text ∈ needed
