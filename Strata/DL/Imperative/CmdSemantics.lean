@@ -133,9 +133,9 @@ def WellFormedSemanticEvalVal {P : PureExpr} [HasVal P]
     : Prop := ∀ e σ σ', (∀ x ∈ HasFvars.getFvars e, σ x = σ' x) → δ σ e = δ σ' e
 
 /-- A successful evaluation implies all the read-vars are defined. -/
-@[expose] def WellFormedSemanticEvalDef {P : PureExpr} [HasVarsPure P P.Expr]
+@[expose] def WellFormedSemanticEvalDef {P : PureExpr} [HasFvars P]
     (δ : SemanticEval P) : Prop :=
-  ∀ e v σ, δ σ e = some v → isDefined σ (HasVarsPure.getVars e)
+  ∀ e v σ, δ σ e = some v → isDefined σ (HasFvars.getFvars e)
 
 /--
 Abstract variable update.
@@ -179,11 +179,7 @@ sets it to `true`; all other constructors report `false`.
 The failure flag is accumulated in `Env.hasFailure` by the statement
 semantics (`EvalStmt`).
 -/
-<<<<<<< HEAD
-inductive EvalCmd [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] :
-=======
-inductive EvalCmd [HasFvar P] [HasBool P] [HasBoolOps P] :
->>>>>>> origin/main2
+inductive EvalCmd [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] :
   SemanticEval P → SemanticStore P → Cmd P → SemanticStore P → Bool → Prop where
   /-- If `e` evaluates to a value `v`, initialize `x` according to `InitState`. -/
   | eval_init :
