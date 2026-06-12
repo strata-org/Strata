@@ -240,7 +240,11 @@ def toCoreMonoType (t : Boole.Type) : TranslateM Lambda.LMonoTy := do
   match t with
   | .bvar m n => return .ftvar (← getTypeBVarName m n)
   | .tvar _ n => return .ftvar n
-  | .fvar m i args => return .tcons (← getFVarName m i) (← args.mapM toCoreMonoType).toList
+  | .fvar m i args =>
+    -- DDM stores a type application's arguments in reverse order — `Tuple A B`
+    -- arrives as `#[B, A]` — so restore the declared parameter order here, as
+    -- Core's `translateLMonoTy` (DDMTransform/Translate.lean) does.
+    return .tcons (← getFVarName m i) (← args.mapM toCoreMonoType).toList.reverse
   | .arrow _ a b => return .arrow (← toCoreMonoType a) (← toCoreMonoType b)
   | .bool _ => return .bool
   | .int _ => return .int
