@@ -1,0 +1,2 @@
+(set-info :file "tests/test_truthiness_edge_cases.py")
+(set-info :error-message "expected 'bool', got 'int'")
