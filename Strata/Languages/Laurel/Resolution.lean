@@ -562,12 +562,14 @@ private def getCallInfo (callee : Identifier) : ResolveM (HighTypeMd × List Hig
       | [singleOutput] => singleOutput.type
       | outputs => { val := .MultiValuedExpr (outputs.map (·.type)), source := none }
     pure (retTy, proc.inputs.map (·.type))
-  | some (_, .datatypeConstructor t _) =>
+  | some (_, .datatypeConstructor t ctor) =>
     -- Testers (e.g. "Color..isRed") return Bool; constructors return the type
+    -- and carry their declared argument types so call-site checking (and
+    -- gradual boxing) applies to constructor arguments.
     if (callee.text.splitOn "..is").length > 1 then
       pure ({ val := .TBool, source := callee.source }, [])
     else
-      pure ({ val := .UserDefined t, source := callee.source }, [])
+      pure ({ val := .UserDefined t, source := callee.source }, ctor.args.map (·.type))
   | some (_, .parameter p) => pure (p.type, [])
   | some (_, .constant c) => pure (c.type, [])
   | _ => pure ({ val := .Unknown, source := callee.source }, [])
