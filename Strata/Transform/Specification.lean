@@ -169,7 +169,7 @@ namespace Hoare
     TODO: We will want to define Triple for total correctness. It will be useful
     when proving preservation of termination after program transformation.
 -/
-def Triple [HasVarsPure P P.Expr]
+def Triple
     (Pre : Env P → Prop) (s : L.StmtT) (Post : Env P → Prop) : Prop :=
   ∀ (ρ₀ ρ' : Env P),
     Pre ρ₀ → WellFormedSemanticEvalBool ρ₀.eval →
@@ -188,7 +188,7 @@ variable (isAtAssertFn : Config P CmdT → AssertId P → Prop)
 /-- Partial-correctness Hoare triple for a block body.
     The output configuration is allowed to be still in an exiting mode
     (see Config.exiting) because the outer block can catch the exit. -/
-def TripleBlock [HasVarsPure P P.Expr]
+def TripleBlock
     {CmdT : Type} (evalCmd : EvalCmdParam P CmdT) (extendEval : ExtendEval P)
     (Pre : Env P → Prop) (ss : List (Stmt P CmdT)) (Post : Env P → Prop) : Prop :=
   ∀ (ρ₀ ρ' : Env P),

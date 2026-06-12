@@ -23,24 +23,20 @@ namespace Imperative
 
 namespace Specification
 
-<<<<<<< HEAD
-variable {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasVarsPure P P.Expr]
-=======
 variable {P : PureExpr} [HasFvar P] [HasFvars P] [HasOps P] [HasBool P] [HasBoolOps P] [HasVal P]
->>>>>>> origin/main2
 variable (L : Lang P)
 
 namespace Hoare
 
 /-! ## Parametric Hoare rules -/
 
-omit [HasVal P] [HasOps P] [HasFvar P] [HasFvars P] in
+omit [HasVal P] [HasOps P] [HasFvar P] in
 /-- False precondition proves anything -/
 theorem false_pre (s : L.StmtT) (Post : Env P → Prop) :
     Triple L (fun _ => False) s Post := by
   intro _ _ hpre; exact absurd hpre id
 
-omit [HasVal P] [HasOps P] [HasFvar P] [HasFvars P] in
+omit [HasVal P] [HasOps P] [HasFvar P] in
 /-- Consequence (weakening): strengthen precondition, weaken postconditions. -/
 theorem consequence
     {Pre Pre' : Env P → Prop} {Post Post' : Env P → Prop} {s : L.StmtT}
@@ -59,7 +55,7 @@ section StmtRules
 variable {CmdT : Type} (evalCmd : EvalCmdParam P CmdT) (extendEval : ExtendEval P)
 variable (isAtAssertFn : Config P CmdT → AssertId P → Prop)
 
- omit [HasFvar P] [HasVal P] [HasOps P] [HasFvars P] in
+ omit [HasFvar P] [HasVal P] [HasOps P] in
 /-- Empty statement list is skip. -/
 theorem skip_block (Pre : Env P → Prop) :
     TripleBlock evalCmd extendEval Pre [] Pre := by
@@ -153,23 +149,15 @@ theorem TripleBlock.toTriple {ss : List (Stmt P CmdT)} {l : String} {md : MetaDa
         simp only [Config.evalExtendsOf]; exact .refl
       match block_reaches_terminal P evalCmd extendEval hrest with
       | .inl ⟨ρ_inner, hterm, heq⟩ =>
-<<<<<<< HEAD
         have ⟨hpost, hf⟩ := h ρ₀ ρ_inner hpre hwfb hwfcongr hf₀ (.inl hterm)
-        subst heq; exact hpost_proj ρ_inner _ hpost hf
-      | .inr ⟨lbl, ρ_inner, hexit, heq⟩ =>
-        have ⟨hpost, hf⟩ := h ρ₀ ρ_inner hpre hwfb hwfcongr hf₀ (.inr ⟨lbl, hexit⟩)
-        subst heq; exact hpost_proj ρ_inner _ hpost hf
-=======
-        have ⟨hpost, hf⟩ := h ρ₀ ρ_inner hpre hwfb hf₀ (.inl hterm)
         have hext : EvalExtensionOf extendEval ρ₀.eval ρ_inner.eval :=
           star_preserves_evalExtendsOf P evalCmd extendEval hinv₀ hterm
         subst heq; exact hpost_proj ρ_inner _ _ hext hpost hf
       | .inr ⟨lbl, ρ_inner, hexit, heq⟩ =>
-        have ⟨hpost, hf⟩ := h ρ₀ ρ_inner hpre hwfb hf₀ (.inr ⟨lbl, hexit⟩)
+        have ⟨hpost, hf⟩ := h ρ₀ ρ_inner hpre hwfb hwfcongr hf₀ (.inr ⟨lbl, hexit⟩)
         have hext : EvalExtensionOf extendEval ρ₀.eval ρ_inner.eval :=
           star_preserves_evalExtendsOf P evalCmd extendEval hinv₀ hexit
         subst heq; exact hpost_proj ρ_inner _ _ hext hpost hf
->>>>>>> origin/main2
 
 omit [HasVal P] [HasOps P] in
 /-- Lift a `Triple` to a `TripleBlock` for a singleton list. -/
@@ -222,20 +210,16 @@ theorem ite {c : P.Expr} {tss ess : List (Stmt P CmdT)} {md : MetaData P}
   intro ρ₀ ρ' hpre hwfb hwfcongr hf₀ hstar
   cases hstar with
   | step _ _ _ h1 r1 => cases h1 with
-<<<<<<< HEAD
-    | step_ite_true hc _ => exact ht ρ₀ ρ' ⟨hpre, hc⟩ hwfb hwfcongr hf₀ (.inl r1)
-    | step_ite_false hc _ => exact he ρ₀ ρ' ⟨hpre, hc⟩ hwfb hwfcongr hf₀ (.inl r1)
-=======
     | step_ite_true hc _ =>
       have hinv₀ : Config.evalExtendsOf P extendEval ρ₀.eval (.stmts tss ρ₀) := by
         simp only [Config.evalExtendsOf]; exact .refl
       match block_reaches_terminal P evalCmd extendEval r1 with
       | .inl ⟨ρ_inner, hterm, heq⟩ =>
-        have ⟨hpost, hf⟩ := ht ρ₀ ρ_inner ⟨hpre, hc⟩ hwfb hf₀ (.inl hterm)
+        have ⟨hpost, hf⟩ := ht ρ₀ ρ_inner ⟨hpre, hc⟩ hwfb hwfcongr hf₀ (.inl hterm)
         have hext := star_preserves_evalExtendsOf P evalCmd extendEval hinv₀ hterm
         subst heq; exact hpost_proj ρ_inner _ _ hext hpost hf
       | .inr ⟨lbl, ρ_inner, hexit, heq⟩ =>
-        have ⟨hpost, hf⟩ := ht ρ₀ ρ_inner ⟨hpre, hc⟩ hwfb hf₀ (.inr ⟨lbl, hexit⟩)
+        have ⟨hpost, hf⟩ := ht ρ₀ ρ_inner ⟨hpre, hc⟩ hwfb hwfcongr hf₀ (.inr ⟨lbl, hexit⟩)
         have hext := star_preserves_evalExtendsOf P evalCmd extendEval hinv₀ hexit
         subst heq; exact hpost_proj ρ_inner _ _ hext hpost hf
     | step_ite_false hc _ =>
@@ -243,14 +227,13 @@ theorem ite {c : P.Expr} {tss ess : List (Stmt P CmdT)} {md : MetaData P}
         simp only [Config.evalExtendsOf]; exact .refl
       match block_reaches_terminal P evalCmd extendEval r1 with
       | .inl ⟨ρ_inner, hterm, heq⟩ =>
-        have ⟨hpost, hf⟩ := he ρ₀ ρ_inner ⟨hpre, hc⟩ hwfb hf₀ (.inl hterm)
+        have ⟨hpost, hf⟩ := he ρ₀ ρ_inner ⟨hpre, hc⟩ hwfb hwfcongr hf₀ (.inl hterm)
         have hext := star_preserves_evalExtendsOf P evalCmd extendEval hinv₀ hterm
         subst heq; exact hpost_proj ρ_inner _ _ hext hpost hf
       | .inr ⟨lbl, ρ_inner, hexit, heq⟩ =>
-        have ⟨hpost, hf⟩ := he ρ₀ ρ_inner ⟨hpre, hc⟩ hwfb hf₀ (.inr ⟨lbl, hexit⟩)
+        have ⟨hpost, hf⟩ := he ρ₀ ρ_inner ⟨hpre, hc⟩ hwfb hwfcongr hf₀ (.inr ⟨lbl, hexit⟩)
         have hext := star_preserves_evalExtendsOf P evalCmd extendEval hinv₀ hexit
         subst heq; exact hpost_proj ρ_inner _ _ hext hpost hf
->>>>>>> origin/main2
 
 /- TODO: the WHILE rule -/
 
@@ -261,11 +244,7 @@ end StmtRules
 
 section StandardConnection
 
-<<<<<<< HEAD
-variable (P' : PureExpr) [HasFvar P'] [HasBool P'] [HasNot P'] [HasVarsPure P' P'.Expr]
-=======
 variable (P' : PureExpr) [HasFvar P'] [HasFvars P'] [HasOps P'] [HasBool P'] [HasBoolOps P']
->>>>>>> origin/main2
 variable (extendEval : ExtendEval P')
 
 omit [HasOps P'] in
@@ -460,7 +439,7 @@ omit [HasVal P] [HasOps P] [HasFvar P] [HasFvars P] [HasBoolOps P] in
 theorem sound_id : Sound L L some := by
   intro s s' a ht hvalid; simp at ht; subst ht; exact hvalid
 
-omit [HasOps P] [HasFvar P] [HasFvars P] in
+omit [HasOps P] [HasFvar P] in
 /-- If `T` overapproximates and a Hoare triple holds on `T(st)` in L₂,
     then the triple holds on `st` in L₁. -/
 theorem overapproximates_triple (L₁ L₂ : Lang P)
@@ -475,14 +454,14 @@ theorem overapproximates_triple (L₁ L₂ : Lang P)
   exact htriple ρ₀ ρ' hpre hwfb hwfcongr hf₀
     ((hsem st s' ht ρ₀ ρ' hwfb (hwfv ρ₀ hpre) hwfcongr).1 hstar)
 
-omit [HasOps P] [HasFvar P] [HasFvars P] in
+omit [HasOps P] [HasFvar P] in
 theorem overapproximates_id (L₁ : Lang P) :
     Overapproximates L₁ L₁ some := by
   intro st s' ht ρ₀ ρ' _ _ _
   simp at ht; subst ht
   exact ⟨id, fun _ => id⟩
 
-omit [HasOps P] [HasFvar P] [HasFvars P] in
+omit [HasOps P] [HasFvar P] in
 theorem overapproximates_comp (L₁ L₂ L₃ : Lang P)
     (T₁ : L₁.StmtT → Option L₂.StmtT) (T₂ : L₂.StmtT → Option L₃.StmtT)
     (h₁ : Overapproximates L₁ L₂ T₁)
