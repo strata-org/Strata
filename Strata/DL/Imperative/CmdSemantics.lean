@@ -102,6 +102,16 @@ def WellFormedSemanticEvalVal {P : PureExpr} [HasVal P]
 @[expose] def WellFormedSemanticEvalExprCongr {P : PureExpr} [HasFvars P] (δ : SemanticEval P)
     : Prop := ∀ e σ σ', (∀ x ∈ HasFvars.getFvars e, σ x = σ' x) → δ σ e = δ σ' e
 
+/-- Well-formedness for the integer fragment of an evaluator. -/
+structure WellFormedSemanticEvalInt {P : PureExpr}
+    [HasBool P] [HasFvars P] [HasInt P] [HasIntOps P]
+    (δ : SemanticEval P) : Prop where
+  ltReduces : ∀ σ x y nx ny,
+    δ σ x = some nx → HasInt.isNumeral nx = Bool.true →
+    δ σ y = some ny → HasInt.isNumeral ny = Bool.true →
+    δ σ (HasIntOps.lt x y) = some HasBool.tt ∨
+    δ σ (HasIntOps.lt x y) = some HasBool.ff
+
 /--
 Abstract variable update.
 

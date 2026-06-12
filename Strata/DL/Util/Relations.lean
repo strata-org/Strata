@@ -12,6 +12,35 @@ section Relation
 def Reflexive (r: Relation A) : Prop := ∀ x, r x x
 abbrev Transitive (r: Relation A) : Prop := ∀ x y z, r x y → r y z → r x z
 
+/-- Composition of two relations: `RComp R₁ R₂ a c` holds when some intermediate
+    `b` has `R₁ a b` and `R₂ b c`.  Read left-to-right: "first `R₁`, then `R₂`".
+
+    The scoped notation `R₁ ∘ R₂` is available via `open scoped Relations`. -/
+@[expose] def RComp {A : Type} (R₁ R₂ : Relation A) : Relation A :=
+  fun a c => ∃ b, R₁ a b ∧ R₂ b c
+
+namespace Relations
+/- Scoped infix `∘` for relation composition (`RComp`).  Enable with
+   `open scoped Relations`.  Distinct from `Function.comp`'s `∘` by being
+   scoped, so it does not globally shadow function composition. -/
+scoped infixr:90 " ∘ " => RComp
+end Relations
+
+/-- `RComp R₁ R₂` reduces to `R` when `R` is transitive and `R₁, R₂ ⊆ R`. -/
+theorem RComp.collapse {A : Type} {R₁ R₂ R : Relation A} {a c : A}
+    (htrans : Transitive R)
+    (h₁ : ∀ x y, R₁ x y → R x y) (h₂ : ∀ x y, R₂ x y → R x y)
+    (h : RComp R₁ R₂ a c) : R a c := by
+  obtain ⟨b, hr₁, hr₂⟩ := h
+  exact htrans _ _ _ (h₁ _ _ hr₁) (h₂ _ _ hr₂)
+
+/-- `RComp` is monotone in both arguments. -/
+theorem RComp.mono {A : Type} {R₁ R₁' R₂ R₂' : Relation A}
+    (h₁ : ∀ x y, R₁ x y → R₁' x y) (h₂ : ∀ x y, R₂ x y → R₂' x y)
+    {a c : A} (h : RComp R₁ R₂ a c) : RComp R₁' R₂' a c := by
+  obtain ⟨b, hr₁, hr₂⟩ := h
+  exact ⟨b, h₁ _ _ hr₁, h₂ _ _ hr₂⟩
+
 inductive ReflTrans {A: Type} (r: Relation A) : Relation A where
   | refl : ∀ x, ReflTrans r x x
   | step: ∀ x y z, r x y → ReflTrans r y z → ReflTrans r x z
