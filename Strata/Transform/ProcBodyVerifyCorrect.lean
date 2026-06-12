@@ -755,11 +755,7 @@ theorem procBodyVerify_procedureCorrect
       (h_assert : coreIsAtAssert cfg a)
     -- Extract first step: .stmt (block "" body #[]) ρ₀ → .block (.some "") ρ₀.store (.stmts body ρ₀)
     have h_block_star : StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
-<<<<<<< HEAD
-        (.block (.some "") ρ₀.store (.stmts ss ρ₀)) cfg := by
-=======
         (.block (.some "") ρ₀.store ρ₀.eval (.stmts ss ρ₀)) cfg := by
->>>>>>> origin/main2
       cases h_body with
       | refl => simp [coreIsAtAssert] at h_assert
       | step _ _ _ hstep hrest => cases hstep; exact hrest
@@ -785,26 +781,6 @@ theorem procBodyVerify_procedureCorrect
     simpa [Config.getEval, Config.getStore] using h_valid
 
   · ----- Part 2: Postconditions + hasFailure on termination -----
-<<<<<<< HEAD
-    -- The unified field uses CoreBodyExec. Since procToVerifyStmt only
-    -- succeeds for structured bodies, we invert the CoreBodyExec to get
-    -- a CoreStepStar witness.
-    intro _ ρ₀ h_wf σ' δ' failed h_body_exec
-    -- Invert CoreBodyExec: since proc.body = .structured ss, the only
-    -- matching constructor is .structured, giving us a CoreStepStar witness.
-    rw [h_body_eq] at h_body_exec
-    -- Invert: the .structured constructor builds the initial env as
-    -- ⟨σ, δ, false⟩.  ProcEnvWF gives us ρ₀.hasFailure = false, so
-    -- ⟨ρ₀.store, ρ₀.eval, false⟩ = ρ₀.
-    have h_env_eq : (⟨ρ₀.store, ρ₀.eval, false⟩ : Env Expression) = ρ₀ := by
-      have := h_wf.noFailure; cases ρ₀; simp_all
-    obtain ⟨ρ', h_term⟩ : ∃ ρ' : Env Expression,
-        CoreStepStar π φ (.stmts ss ρ₀) (.terminal ρ') ∧
-        σ' = ρ'.store ∧ δ' = ρ'.eval ∧ failed = ρ'.hasFailure := by
-      cases h_body_exec with
-      | structured h_step => exact ⟨_, h_env_eq ▸ h_step, rfl, rfl, rfl⟩
-    obtain ⟨h_term, rfl, rfl, rfl⟩ := h_term
-=======
     -- The unified field uses CoreBodyExec, which wraps the body in
     -- `Stmt.block "" ss #[]`.  Since procToVerifyStmt only succeeds for
     -- structured bodies, we invert the CoreBodyExec to get a CoreStepStar
@@ -820,7 +796,6 @@ theorem procBodyVerify_procedureCorrect
         σ' = ρ'.store ∧ δ' = ρ'.eval ∧ failed = ρ'.hasFailure := by
       cases h_body_exec with
       | structured h_step => exact ⟨_, h_env_eq ▸ h_step, rfl, rfl, rfl⟩
->>>>>>> origin/main2
     obtain ⟨ρ_init, h_prefix⟩ := h_prefix_trace ρ₀ h_wf
     -- Decompose the outer block-wrapped trace into the inner body trace.
     -- h_term_block : CoreStepStar π φ (.stmt (Stmt.block "" body #[]) ρ₀) (.terminal ρ')
@@ -854,24 +829,12 @@ theorem procBodyVerify_procedureCorrect
     -- hasFailure = false on the inner env, hence on ρ' too.
     have h_nf_inner : ρ_inner.hasFailure = Bool.false :=
       Core.core_noFailure_preserved π φ
-<<<<<<< HEAD
-        (.stmts ss ρ₀) (.terminal ρ') h_valid h_wf.noFailure h_term
-    -- wfBool preservation
-    have h_wfb_term : WellFormedSemanticEvalBool ρ'.eval :=
-      Core.core_wfBool_preserved π φ h_wf_ext
-        (.stmts ss ρ₀) (.terminal ρ') h_wf.wfBool h_term
-
-    -- After the body block terminates via step_block_done, the store is projected.
-    -- We define the projected env.
-    let ρ_proj : Env Expression := { ρ' with store := projectStore ρ₀.store ρ'.store }
-=======
         (.stmts ss ρ₀) (.terminal ρ_inner) h_valid h_wf.noFailure h_term_inner
     have h_nf' : ρ'.hasFailure = Bool.false := by
       rw [h_ρ'_eq]; exact h_nf_inner
     -- wfBool preservation
     have h_wfb_term : WellFormedSemanticEvalBool ρ_inner.eval :=
       Core.core_wfBool_preserved_stmts π φ h_wf_ext h_wf.wfBool h_term_inner
->>>>>>> origin/main2
 
     -- After the body block terminates via step_block_done, the store and eval are projected.
     -- ρ_proj coincides with ρ' by h_ρ'_eq.
@@ -901,27 +864,7 @@ theorem procBodyVerify_procedureCorrect
                     (.step _ _ _ .step_block_done (.refl _)))
                   (.step _ _ _ .step_seq_done (.refl _)))))))
 
-<<<<<<< HEAD
-    have h_proj_store_agree : ∀ x, (ρ₀.store x).isSome →
-        ρ_proj.store x = ρ'.store x := by
-      intro x hx
-      simp only [ρ_proj, projectStore]
-      simp [hx]
-
-    have h_proj_eval : ρ_proj.eval = ρ'.eval := rfl
-    have h_proj_hasFailure : ρ_proj.hasFailure = ρ'.hasFailure := rfl
-    have h_wfVar_term : WellFormedSemanticEvalVar ρ'.eval :=
-      Core.core_wfVar_preserved π φ h_wf_ext
-        (.stmts ss ρ₀) (.terminal ρ') h_wf.wfVar h_term
-    have h_wfCong_term : Core.WellFormedCoreEvalCong ρ'.eval :=
-      Core.core_wfCong_preserved π φ h_wf_ext
-        (.stmts ss ρ₀) (.terminal ρ') h_wf.wfCong h_term
-    have h_wfExprCongr_term : WellFormedSemanticEvalExprCongr ρ'.eval :=
-      Core.core_wfExprCongr_preserved π φ h_wf_ext
-        (.stmts ss ρ₀) (.terminal ρ') h_wf.wfExprCongr h_term
-=======
     have h_proj_eval : ρ_proj.eval = ρ₀.eval := rfl
->>>>>>> origin/main2
 
     have h_all_post_valid : ∀ s ∈ postAsserts, ∀ l e md,
         s = Statement.assert l e md →
