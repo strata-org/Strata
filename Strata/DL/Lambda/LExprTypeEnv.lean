@@ -886,6 +886,18 @@ theorem LTy_subst_instantiate {IDMeta : Type} [ToFormat IDMeta]
 instance : Inhabited (Option LMonoTy × TEnv IDMeta) where
   default := (none, TEnv.default)
 
+/-- Check whether `name` matches an alias but with the wrong number of type
+    arguments. Returns an error on arity mismatch, or `.ok ()` otherwise. -/
+def LMonoTy.checkAliasArity (name : String) (args : LMonoTys)
+    (aliases : List TypeAlias) : Except Format Unit :=
+  match aliases.find? (fun a => a.name == name) with
+  | none => .ok ()
+  | some alias =>
+    if alias.typeArgs.length == args.length then .ok ()
+    else .error f!"Arity mismatch for type alias '{name}': \
+                   expected {alias.typeArgs.length} type argument(s), \
+                   got {args.length}"
+
 /--
 Return the instantiated definition of `.tcons name args` if it is a registered
 type alias.
@@ -900,7 +912,10 @@ def LMonoTy.tconsAlias [ToFormat IDMeta] (name : String) (args : LMonoTys)
   let matchingAlias := Env.context.aliases.find?
                         (fun a => a.name == name && a.typeArgs.length == args.length)
   match matchingAlias with
-  | none => return (inputMty, Env)
+  | none =>
+    -- Check for arity mismatch: name matches but arity doesn't.
+    LMonoTy.checkAliasArity name args Env.context.aliases
+    return (inputMty, Env)
   | some alias =>
     -- Create instantiation pair: [alias pattern, alias definition].
     -- The alias pattern and definition share the same type variables here.
@@ -949,7 +964,9 @@ check whether the de-aliased types are registered/known.
 def LMonoTy.aliasDef? [ToFormat IDMeta] (mty : LMonoTy) (Env : TEnv IDMeta)
     : Except Format (LMonoTy × TEnv IDMeta) := do
   match mty with
-  | .tcons name args => return (LMonoTy.tconsAliasSimple name args Env.context.aliases, Env)
+  | .tcons name args =>
+    LMonoTy.checkAliasArity name args Env.context.aliases
+    return (LMonoTy.tconsAliasSimple name args Env.context.aliases, Env)
   | .bitvec _ | .ftvar _ => return (mty, Env)
 
 mutual
@@ -1670,8 +1687,11 @@ theorem tconsAlias_tyGen_mono
   -- Case split on whether a matching alias is found
   split at h
   case h_1 =>
-    -- No matching alias: Env' = Env
-    simp [Pure.pure, Except.pure] at h; obtain ⟨_, h2⟩ := h; subst h2; omega
+    -- No matching alias: split on checkAliasArity
+    simp only [Bind.bind, Except.bind] at h
+    split at h
+    · simp at h
+    · simp [Pure.pure, Except.pure] at h; obtain ⟨_, h2⟩ := h; subst h2; omega
   case h_2 alias_val =>
     -- Matching alias found: calls instantiateEnv then unify + updateSubst
     split at h
@@ -1690,10 +1710,12 @@ theorem aliasDef_tyGen_mono
     (mty' : LMonoTy) (Env' : TEnv T.IDMeta)
     (h : LMonoTy.aliasDef? mty Env = .ok (mty', Env')) :
     Env'.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen := by
-  simp only [LMonoTy.aliasDef?] at h
+  simp only [LMonoTy.aliasDef?, Bind.bind, Except.bind] at h
   split at h
-  · -- tconsAliasSimple doesn't change Env
-    simp [Pure.pure, Except.pure] at h; obtain ⟨_, h2⟩ := h; subst h2; omega
+  · -- .tcons case: split on checkAliasArity
+    split at h
+    · simp at h
+    · simp [Pure.pure, Except.pure] at h; obtain ⟨_, h2⟩ := h; subst h2; omega
   · simp [Pure.pure, Except.pure] at h; obtain ⟨_, h2⟩ := h; subst h2; omega
   · simp [Pure.pure, Except.pure] at h; obtain ⟨_, h2⟩ := h; subst h2; omega
 

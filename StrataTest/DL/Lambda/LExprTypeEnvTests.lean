@@ -71,7 +71,7 @@ Subst:
                                           type := mty[bool]}]} )
          return format ans
 
-/-- info: ok: myInt -/
+/-- info: error: Arity mismatch for type alias 'myInt': expected 1 type argument(s), got 0 -/
 #guard_msgs in
 #eval do let (ans, _) ← LMonoTy.aliasDef? mty[myInt]
                         ( (@TEnv.default String).updateContext
@@ -120,6 +120,17 @@ Subst:
                                                         name := "FooAlias",
                                                         type := mty[bool]}]} )
           return (format ans)
+
+-- Test: arity mismatch produces a clear error (issue #1239)
+/-- info: error: Arity mismatch for type alias 'MyAlias': expected 1 type argument(s), got 2 -/
+#guard_msgs in
+#eval do let (ans, _) ← LMonoTy.aliasDef? mty[MyAlias int bool]
+                        ( (@TEnv.default String).updateContext
+                          { aliases := [{
+                             typeArgs := ["a"],
+                             name := "MyAlias",
+                             type := mty[Wrapped %a]}] })
+         return format ans
 
 /-- info: false -/
 #guard_msgs in
