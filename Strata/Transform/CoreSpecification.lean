@@ -8,6 +8,11 @@ module
 public import Strata.Languages.Core.StatementSemantics
 public import Strata.Transform.Specification
 public import Strata.Languages.Core.WF
+public import Strata.Languages.Core.Factory
+import all Strata.Languages.Core.Factory
+import all Strata.DL.Lambda.IntBoolFactory
+import all Strata.DL.Lambda.FactoryWF
+import all Strata.DL.Lambda.Factory
 
 public section
 
@@ -30,6 +35,71 @@ open Core Imperative
 
 /-! ## Core `Lang` bundle -/
 
+/-- Store-well-formedness needed for a statement `s` to execute in env `ρ` without
+    getting stuck. -/
+structure InitEnvWF (reserved : List String)
+    (declaredFuncs : Expression.Ident → Bool)
+    (s : Statement) (ρ : Env Expression) :
+    Prop where
+  readWritesDefined : ∀ n ∈ Stmt.touchedVars s, n ∉ Stmt.definedVars s false →
+    (ρ.store n).isSome
+  defsUndefined : ∀ n ∈ Stmt.definedVars s false, (ρ.store n).isNone
+  /-- Source's `definedVars` don't use any of the reserved prefixes. -/
+  definedVarsNotReserved : ∀ n ∈ Stmt.definedVars s false, ∀ p ∈ reserved,
+    ¬ p.toList.isPrefixOf n.name.toList
+  /-- Source's `funcDeclNames` don't use any of the reserved prefixes.
+      `funcDecl` names live in the evaluator (not the store), so they aren't
+      covered by `definedVarsNotReserved`. -/
+  funcDeclNamesNotReserved : ∀ n ∈ Stmt.funcDeclNames s false, ∀ p ∈ reserved,
+    ¬ p.toList.isPrefixOf n.name.toList
+  reservedFresh : ∀ n, (ρ.store n).isSome →
+    ∀ p ∈ reserved, ¬ p.toList.isPrefixOf n.name.toList
+  wfBool : WellFormedSemanticEvalBool ρ.eval
+  wfVal  : WellFormedSemanticEvalVal ρ.eval
+  wfVar  : WellFormedSemanticEvalVar ρ.eval
+  wfInt : WellFormedSemanticEvalInt ρ.eval
+  evalCong : WellFormedCoreEvalCong ρ.eval
+  exprCongr : WellFormedSemanticEvalExprCongr ρ.eval
+  defUseOk : Stmt.defUseWellFormed (fun n => (ρ.store n).isSome) declaredFuncs s = Bool.true
+  factoryDeclared : ∀ s, Core.isNameInFactory s = Bool.true →
+    declaredFuncs ⟨s, ()⟩ = Bool.true
+
+/-- Block-level analog of `InitEnvWF`: well-formedness for executing a block of
+    statements `bss` from env `ρ`. -/
+structure BlockInitEnvWF (reserved : List String)
+    (declaredFuncs : Expression.Ident → Bool)
+    (bss : Statements)
+    (ρ : Env Expression) : Prop where
+  readWritesDefined : ∀ n ∈ Block.touchedVars bss, n ∉ Block.definedVars bss false →
+    (ρ.store n).isSome
+  defsUndefined : ∀ n ∈ Block.definedVars bss false, (ρ.store n).isNone
+  definedVarsNotReserved : ∀ n ∈ Block.definedVars bss false, ∀ p ∈ reserved,
+    ¬ p.toList.isPrefixOf n.name.toList
+  funcDeclNamesNotReserved : ∀ n ∈ Block.funcDeclNames bss false, ∀ p ∈ reserved,
+    ¬ p.toList.isPrefixOf n.name.toList
+  reservedFresh : ∀ n, (ρ.store n).isSome →
+    ∀ p ∈ reserved, ¬ p.toList.isPrefixOf n.name.toList
+  wfBool : WellFormedSemanticEvalBool ρ.eval
+  wfVal  : WellFormedSemanticEvalVal ρ.eval
+  wfVar  : WellFormedSemanticEvalVar ρ.eval
+  wfInt : WellFormedSemanticEvalInt ρ.eval
+  evalCong : WellFormedCoreEvalCong ρ.eval
+  exprCongr : WellFormedSemanticEvalExprCongr ρ.eval
+  defUseOk : Block.defUseWellFormed (fun n => (ρ.store n).isSome) declaredFuncs bss = Bool.true
+  factoryDeclared : ∀ s, Core.isNameInFactory s = Bool.true →
+    declaredFuncs ⟨s, ()⟩ = Bool.true
+
+/-! ## Core factory-membership lemmas
+
+Used by transforms (e.g. `LoopElim`) that synthesize references to standard
+ops to discharge the `factoryDeclared` precondition for those specific ops. -/
+
+theorem boolNot_isNameInFactory :
+    Core.isNameInFactory "Bool.Not" = Bool.true := by native_decide
+
+theorem intLt_isNameInFactory :
+    Core.isNameInFactory "Int.Lt" = Bool.true := by native_decide
+
 /-- The `Lang Expression` bundle for Core small-step semantics. -/
 @[expose] def Lang.core
     (π : String → Option Procedure)
@@ -37,6 +107,7 @@ open Core Imperative
     Imperative.Specification.Lang Expression :=
   Imperative.Specification.Lang.imperative
     Expression Command (EvalCommand π φ) (EvalPureFunc φ) coreIsAtAssert
+    InitEnvWF
 
 /-! ## Well-formed program state at the entry of procedure -/
 

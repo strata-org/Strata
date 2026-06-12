@@ -429,6 +429,76 @@ mutual
                  Block.funcDeclNames rest excludeScoped
 end
 
+mutual
+/-- Def-use well-formedness check for a statement. Any read/write of a variable
+    must be followed by the definition of the var, and fresh var definition must
+    not collide with previously defined vars.
+    `declaredFuncs` tracks function names introduced by enclosing `funcDecl`s. -/
+@[expose] def Stmt.defUseWellFormed [HasVarsImp P C] [HasFvars P] [HasOps P]
+    [HasOpsImp P C] [HasVarsPure P C] [DecidableEq P.Ident]
+    (definedVars : P.Ident → Bool) (declaredFuncs : P.Ident → Bool)
+    (s : Stmt P C) : Bool :=
+  match s with
+  | .cmd c =>
+    (HasVarsPure.getVars (P := P) c).all (fun n => definedVars n) &&
+    (HasVarsImp.modifiedVars (P := P) c).all (fun n => definedVars n) &&
+    -- All fresh variable names that are being initialized in command c must not
+    -- have existed in the already defined vars 'definedVars'. Otherwise, var
+    -- initialization in c will stuck due to duplicated name.
+    (HasVarsImp.definedVars (P := P) c false).all (fun n => ¬definedVars n) &&
+    -- All operator/function names referenced in c must have been declared.
+    (HasOpsImp.getOps (P := P) c).all (fun n => declaredFuncs n)
+  | .block _ bss _ => Block.defUseWellFormed definedVars declaredFuncs bss
+  | .ite cond tbss ebss _ =>
+    cond.getVars.all (fun n => definedVars n) &&
+    cond.getOps.all (fun n => declaredFuncs n) &&
+    Block.defUseWellFormed definedVars declaredFuncs tbss &&
+    Block.defUseWellFormed definedVars declaredFuncs ebss
+  | .loop guard measure invariants body _ =>
+    guard.getVars.all (fun n => definedVars n) &&
+    guard.getOps.all (fun n => declaredFuncs n) &&
+    ((measure.map HasFvars.getFvars).getD []).all (fun n => definedVars n) &&
+    ((measure.map (HasOps.getOps (P := P))).getD []).all
+      (fun n => declaredFuncs n) &&
+    (invariants.flatMap fun lp => HasFvars.getFvars lp.2).all
+      (fun n => definedVars n) &&
+    (invariants.flatMap fun lp => HasOps.getOps (P := P) lp.2).all
+      (fun n => declaredFuncs n) &&
+    Block.defUseWellFormed definedVars declaredFuncs body
+  | .exit _ _ => true
+  | .funcDecl decl _ =>
+    -- Free variables with formals excluded by `Stmt.getVars` must be in `definedVars`.
+    (Stmt.getVars (P := P) (C := C) (.funcDecl decl .empty)).all
+      (fun n => definedVars n) &&
+    -- The function name itself must NOT be in `definedVars`: this is
+    -- not a store-level conflict (`step_funcDecl` only updates `eval`),
+    -- but the freshness invariant lets us derive that funcDecl-introduced
+    -- names are disjoint from variables referenced by surrounding code.
+    !definedVars decl.name &&
+    -- Operator/function names referenced by the body and axioms must
+    -- already be declared.
+    (Stmt.getOps (P := P) (C := C) (.funcDecl decl .empty)).all
+      (fun n => declaredFuncs n) &&
+    -- The new name `decl.name` itself must be fresh against `declaredFuncs`.
+    !declaredFuncs decl.name
+  | .typeDecl _ _ => true
+
+@[expose] def Block.defUseWellFormed [HasVarsImp P C] [HasFvars P] [HasOps P]
+    [HasOpsImp P C] [HasVarsPure P C] [DecidableEq P.Ident]
+    (definedVars : P.Ident → Bool) (declaredFuncs : P.Ident → Bool)
+    (bss : Block P C) : Bool :=
+  match bss with
+  | [] => true
+  | s :: rest =>
+    Stmt.defUseWellFormed definedVars declaredFuncs s &&
+      Block.defUseWellFormed
+        (fun n => definedVars n || decide (n ∈ Stmt.definedVars s true))
+        -- Only top-level `funcDecl` statements add to siblings' `declaredFuncs`;
+        -- `funcDecl`s inside nested `.block`/`.ite`/`.loop` are scoped to those
+        -- inner constructs (parallel to `Stmt.definedVars _ true`).
+        (fun n => declaredFuncs n || decide (n ∈ Stmt.funcDeclNames s true)) rest
+end
+
 
 instance (P : PureExpr) [HasVarsImp P C] : HasVarsImp P (Stmt P C) where
   definedVars := Stmt.definedVars

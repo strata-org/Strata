@@ -36,6 +36,10 @@ variable {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [Has
 
 abbrev Lang.det (extendEval : ExtendEval P) : Lang P :=
   Lang.imperative P (Cmd P) (EvalCmd P) extendEval (isAtAssert P)
+    (initEnvWF := fun _ _ _ ρ =>
+      WellFormedSemanticEvalBool ρ.eval ∧
+      WellFormedSemanticEvalVal ρ.eval ∧
+      WellFormedSemanticEvalVar ρ.eval)
 
 def isAtKleeneAssert : KleeneConfig P (Cmd P) → AssertId P → Prop
   | .stmt (.cmd (.assert label expr _)) _, a => a.label = label ∧ a.expr = expr
@@ -52,6 +56,10 @@ abbrev Lang.kleene : Lang P where
   exitingCfg := fun _ ρ => .terminal ρ
   isAtAssert := isAtKleeneAssert
   getEnv := KleeneConfig.getEnv
+  initEnvWF := fun _ _ _ ρ =>
+    WellFormedSemanticEvalBool ρ.eval ∧
+    WellFormedSemanticEvalVal ρ.eval ∧
+    WellFormedSemanticEvalVar ρ.eval
 
 /-! ## Transform-success helpers: extract sub-transform results -/
 
@@ -451,6 +459,227 @@ private def loop_sim_kleene
           h_kleene_loop
       exact .step _ _ _ .step_loop_step h_seq_to_ρ'
 
+/-! ## Loop CanFail simulation -/
+
+private noncomputable def loop_canfail_sim
+    (extendEval : ExtendEval P)
+    (g : P.Expr) (m : Option P.Expr)
+    (body : List (Stmt P (Cmd P))) (md : MetaData P)
+    (b : KleeneStmt P (Cmd P))
+    (sim_body_canfail : ∀ ρ₀,
+      WellFormedSemanticEvalBool ρ₀.eval → WellFormedSemanticEvalVal ρ₀.eval →
+      (∃ cfg, cfg.getEnv.hasFailure = true ∧
+        StepStmtStar P (EvalCmd P) extendEval (.stmts body ρ₀) cfg) →
+      ∃ cfg', (KleeneConfig.getEnv cfg').hasFailure = true ∧
+        StepKleeneStar P (EvalCmd P) (.stmt b ρ₀) cfg')
+    (sim_body_terminal : ∀ ρ₀ ρ',
+      WellFormedSemanticEvalBool ρ₀.eval → WellFormedSemanticEvalVal ρ₀.eval →
+      StepStmtStar P (EvalCmd P) extendEval (.stmts body ρ₀) (.terminal ρ') →
+      StepKleeneStar P (EvalCmd P) (.stmt b ρ₀) (.terminal ρ'))
+    (hcov : Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks
+      (P := P) (CmdT := Cmd P) [] body)
+    (hnofd_body : Block.noFuncDecl body = true)
+    (ρ₀ : Env P) {cfg : Config P (Cmd P)}
+    (hwfv : WellFormedSemanticEvalVal ρ₀.eval)
+    (hstarT : ReflTransT (StepStmt P (EvalCmd P) extendEval)
+      (.stmt (.loop (.det g) m ([] : List (String × P.Expr)) body md) ρ₀) cfg)
+    (hf : cfg.getEnv.hasFailure = true) :
+    ∃ cfg', (KleeneConfig.getEnv cfg').hasFailure = true ∧
+      StepKleeneStar P (EvalCmd P)
+        (.stmt (.loop (.seq (.cmd (.assume "guard" g md)) b)) ρ₀) cfg' := by
+  match hstarT with
+  | .refl _ => exact ⟨.stmt _ ρ₀, hf, .refl _⟩
+  | .step _ _ _ (@StepStmt.step_loop_exit _ _ _ _ _ _ _ _ _ _ _ _
+      hasInvFailure _ _ hff_iff _) hrest =>
+    have h_no : hasInvFailure = false := empty_inv_no_failure hff_iff
+    subst h_no
+    have hcfg_eq : cfg = .terminal ρ₀ := by
+      rw [assume_env_eq] at hrest
+      match hrest with | .refl _ => rfl | .step _ _ _ h _ => exact nomatch h
+    subst hcfg_eq
+    exact ⟨.stmt _ ρ₀, hf, .refl _⟩
+  | .step _ _ _ (@StepStmt.step_loop_enter _ _ _ _ _ _ _ _ _ _ _ _
+      hasInvFailure hg _ hff_iff hwfb) hrest_seq =>
+    have h_no : hasInvFailure = false := empty_inv_no_failure hff_iff
+    let ρ₀' : Env P := {ρ₀ with hasFailure := ρ₀.hasFailure || hasInvFailure}
+    have hρ₀_eq : ρ₀' = ρ₀ := by simp [ρ₀', h_no, Bool.or_false]
+    have h_assume : StepKleeneStar P (EvalCmd P)
+        (.stmt (.cmd (.assume "guard" g md)) ρ₀) (.terminal ρ₀) :=
+      kleene_assume_terminal hg hwfb
+    match seqT_canfail hrest_seq hf with
+    | .inl ⟨cfg_block, h_block, hf_block, _⟩ =>
+      have ⟨inner_body, h_inner, hf_inner, _⟩ :=
+        blockT_canfail_to_inner h_block hf_block
+      have ⟨kcfg, hkf, hkstar⟩ := sim_body_canfail ρ₀ hwfb hwfv
+        ⟨inner_body, hf_inner, hρ₀_eq ▸ reflTransT_to_prop h_inner⟩
+      let b' : KleeneStmt P (Cmd P) := .seq (.cmd (.assume "guard" g md)) b
+      have h_inner_run : StepKleeneStar P (EvalCmd P)
+          (.stmt b' ρ₀) kcfg := by
+        show StepKleeneStar P (EvalCmd P)
+          (.stmt (.seq (.cmd (.assume "guard" g md)) b) ρ₀) kcfg
+        refine .step _ _ _ .step_seq ?_
+        refine ReflTrans_Transitive _ _ _ _
+          (kleene_seq_inner_star _ _ b h_assume) ?_
+        refine .step _ _ _ .step_seq_done ?_
+        exact hkstar
+      have h_block_run : StepKleeneStar P (EvalCmd P)
+          (.block ρ₀.store (.stmt b' ρ₀))
+          (.block ρ₀.store kcfg) :=
+        kleene_block_inner_star ρ₀.store _ _ h_inner_run
+      have h_seq_run : StepKleeneStar P (EvalCmd P)
+          (.seq (.block ρ₀.store (.stmt b' ρ₀)) (.loop b'))
+          (.seq (.block ρ₀.store kcfg) (.loop b')) :=
+        kleene_seq_inner_star _ _ (.loop b') h_block_run
+      refine ⟨.seq (.block ρ₀.store kcfg) (.loop b'), ?_, ?_⟩
+      · show (kcfg.getEnv).hasFailure = true
+        exact hkf
+      · exact .step _ _ _ .step_loop_step h_seq_run
+    | .inr ⟨ρ_block, h_block_term, h_loop_stmts, hlen_total⟩ =>
+      have h_noescape_body : ∀ lbl ρ_x,
+          ¬ StepStmtStar P (EvalCmd P) extendEval (.stmts body ρ₀') (.exiting lbl ρ_x) :=
+        block_exitsCoveredByBlocks_noEscape P (EvalCmd P) extendEval body hcov ρ₀'
+      have ⟨ρ_inner, h_inner_term, heq_ρ_block, _⟩ :=
+        blockT_reaches_terminal_noExit h_block_term h_noescape_body
+      have ⟨cfg_loop, h_loop_T, hf_loop, hlen_loop_le⟩ :=
+        stmtsT_singleton_canfail (s := .loop (.det g) m ([] : List (String × P.Expr)) body md)
+          (ρ₀ := ρ_block) h_loop_stmts hf
+      have hlen_loop : h_loop_T.len < hrest_seq.len := by omega
+      have hterm_body_eq : StepStmtStar P (EvalCmd P) extendEval (.stmts body ρ₀) (.terminal ρ_inner) :=
+        hρ₀_eq ▸ reflTransT_to_prop h_inner_term
+      have h_sim_body : StepKleeneStar P (EvalCmd P) (.stmt b ρ₀) (.terminal ρ_inner) :=
+        sim_body_terminal ρ₀ ρ_inner hwfb hwfv hterm_body_eq
+      have h_kleene_body : StepKleeneStar P (EvalCmd P)
+          (.stmt (.seq (.cmd (.assume "guard" g md)) b) ρ₀) (.terminal ρ_inner) :=
+        kleene_seq_terminal _ b ρ₀ ρ₀ ρ_inner h_assume h_sim_body
+      have heval_inner : ρ_inner.eval = ρ₀.eval :=
+        block_noFuncDecl_preserves_eval P (EvalCmd P) extendEval body ρ₀ ρ_inner hnofd_body hterm_body_eq
+      have hwfv_block : WellFormedSemanticEvalVal ρ_block.eval := by
+        rw [heq_ρ_block]; exact hρ₀_eq ▸ hwfv
+      have ⟨kcfg_loop, hkf_loop, hkstar_loop⟩ :=
+        loop_canfail_sim extendEval g m body md b sim_body_canfail sim_body_terminal
+          hcov hnofd_body ρ_block hwfv_block h_loop_T hf_loop
+      have heq_ρ_block_full : ρ_block =
+          { ρ_inner with store := projectStore ρ₀.store ρ_inner.store } := by
+        have hstore : ρ₀'.store = ρ₀.store := by rw [hρ₀_eq]
+        rw [heq_ρ_block, hstore]
+        rw [show (ρ₀'.eval : SemanticEval P) = ρ_inner.eval from by rw [heval_inner, hρ₀_eq]]
+      have h_block_to_ρ_block : StepKleeneStar P (EvalCmd P)
+          (.block ρ₀.store (.stmt (.seq (.cmd (.assume "guard" g md)) b) ρ₀))
+          (.terminal ρ_block) := by
+        rw [heq_ρ_block_full]
+        exact kleene_block_terminal ρ₀.store _ ρ_inner h_kleene_body
+      exact ⟨kcfg_loop, hkf_loop,
+        .step _ _ _ .step_loop_step
+          (ReflTrans_Transitive _ _ _ _
+            (ReflTrans_Transitive _ _ _ _
+              (kleene_seq_inner_star _ _ (.loop _) h_block_to_ρ_block)
+              (.step _ _ _ .step_seq_done (.refl _)))
+            hkstar_loop)⟩
+  termination_by hstarT.len
+  decreasing_by
+    simp_wf
+    omega
+
+private noncomputable def loop_canfail_sim_kleene
+    (extendEval : ExtendEval P) (m : Option P.Expr)
+    (body : List (Stmt P (Cmd P))) (md : MetaData P)
+    (b : KleeneStmt P (Cmd P))
+    (sim_body_canfail : ∀ ρ₀,
+      WellFormedSemanticEvalBool ρ₀.eval → WellFormedSemanticEvalVal ρ₀.eval →
+      (∃ cfg, cfg.getEnv.hasFailure = true ∧
+        StepStmtStar P (EvalCmd P) extendEval (.stmts body ρ₀) cfg) →
+      ∃ cfg', (KleeneConfig.getEnv cfg').hasFailure = true ∧
+        StepKleeneStar P (EvalCmd P) (.stmt b ρ₀) cfg')
+    (sim_body_terminal : ∀ ρ₀ ρ',
+      WellFormedSemanticEvalBool ρ₀.eval → WellFormedSemanticEvalVal ρ₀.eval →
+      StepStmtStar P (EvalCmd P) extendEval (.stmts body ρ₀) (.terminal ρ') →
+      StepKleeneStar P (EvalCmd P) (.stmt b ρ₀) (.terminal ρ'))
+    (hcov : Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks
+      (P := P) (CmdT := Cmd P) [] body)
+    (hnofd_body : Block.noFuncDecl body = true)
+    (ρ₀ : Env P) {cfg : Config P (Cmd P)}
+    (hwfb : WellFormedSemanticEvalBool ρ₀.eval)
+    (hwfv : WellFormedSemanticEvalVal ρ₀.eval)
+    (hstarT : ReflTransT (StepStmt P (EvalCmd P) extendEval)
+      (.stmt (.loop .nondet m ([] : List (String × P.Expr)) body md) ρ₀) cfg)
+    (hf : cfg.getEnv.hasFailure = true) :
+    ∃ cfg', (KleeneConfig.getEnv cfg').hasFailure = true ∧
+      StepKleeneStar P (EvalCmd P) (.stmt (.loop b) ρ₀) cfg' := by
+  match hstarT with
+  | .refl _ => exact ⟨.stmt _ ρ₀, hf, .refl _⟩
+  | .step _ _ _ (@StepStmt.step_loop_nondet_exit _ _ _ _ _ _ _ _ _ _ _
+      hasInvFailure _ hff_iff) hrest =>
+    have h_no : hasInvFailure = false := empty_inv_no_failure hff_iff
+    subst h_no
+    have hcfg_eq : cfg = .terminal ρ₀ := by
+      rw [assume_env_eq] at hrest
+      match hrest with | .refl _ => rfl | .step _ _ _ h _ => exact nomatch h
+    subst hcfg_eq; exact ⟨.stmt _ ρ₀, hf, .refl _⟩
+  | .step _ _ _ (@StepStmt.step_loop_nondet_enter _ _ _ _ _ _ _ _ _ _ _
+      hasInvFailure _ hff_iff) hrest_seq =>
+    have h_no : hasInvFailure = false := empty_inv_no_failure hff_iff
+    let ρ₀' : Env P := {ρ₀ with hasFailure := ρ₀.hasFailure || hasInvFailure}
+    have hρ₀_eq : ρ₀' = ρ₀ := by simp [ρ₀', h_no, Bool.or_false]
+    match seqT_canfail hrest_seq hf with
+    | .inl ⟨cfg_block, h_block, hf_block, _⟩ =>
+      have ⟨inner_body, h_inner, hf_inner, _⟩ :=
+        blockT_canfail_to_inner h_block hf_block
+      have ⟨kcfg, hkf, hkstar⟩ := sim_body_canfail ρ₀ hwfb hwfv
+        ⟨inner_body, hf_inner, hρ₀_eq ▸ reflTransT_to_prop h_inner⟩
+      have h_block_run : StepKleeneStar P (EvalCmd P)
+          (.block ρ₀.store (.stmt b ρ₀))
+          (.block ρ₀.store kcfg) :=
+        kleene_block_inner_star ρ₀.store _ _ hkstar
+      have h_seq_run : StepKleeneStar P (EvalCmd P)
+          (.seq (.block ρ₀.store (.stmt b ρ₀)) (.loop b))
+          (.seq (.block ρ₀.store kcfg) (.loop b)) :=
+        kleene_seq_inner_star _ _ (.loop b) h_block_run
+      refine ⟨.seq (.block ρ₀.store kcfg) (.loop b), ?_, ?_⟩
+      · show (kcfg.getEnv).hasFailure = true; exact hkf
+      · exact .step _ _ _ .step_loop_step h_seq_run
+    | .inr ⟨ρ_block, h_block_term, h_loop_stmts, hlen_total⟩ =>
+      have h_noescape_body : ∀ lbl ρ_x,
+          ¬ StepStmtStar P (EvalCmd P) extendEval (.stmts body ρ₀') (.exiting lbl ρ_x) :=
+        block_exitsCoveredByBlocks_noEscape P (EvalCmd P) extendEval body hcov ρ₀'
+      have ⟨ρ_inner, h_inner_term, heq_ρ_block, _⟩ :=
+        blockT_reaches_terminal_noExit h_block_term h_noescape_body
+      have ⟨cfg_loop, h_loop_T, hf_loop, hlen_loop_le⟩ :=
+        stmtsT_singleton_canfail (s := .loop .nondet m ([] : List (String × P.Expr)) body md)
+          (ρ₀ := ρ_block) h_loop_stmts hf
+      have hlen_loop : h_loop_T.len < hrest_seq.len := by omega
+      have hterm_body_eq : StepStmtStar P (EvalCmd P) extendEval (.stmts body ρ₀) (.terminal ρ_inner) :=
+        hρ₀_eq ▸ reflTransT_to_prop h_inner_term
+      have h_sim_body : StepKleeneStar P (EvalCmd P) (.stmt b ρ₀) (.terminal ρ_inner) :=
+        sim_body_terminal ρ₀ ρ_inner hwfb hwfv hterm_body_eq
+      have heval_inner : ρ_inner.eval = ρ₀.eval :=
+        block_noFuncDecl_preserves_eval P (EvalCmd P) extendEval body ρ₀ ρ_inner hnofd_body hterm_body_eq
+      have hwfv_block : WellFormedSemanticEvalVal ρ_block.eval := by
+        rw [heq_ρ_block]; exact hρ₀_eq ▸ hwfv
+      have hwfb_block : WellFormedSemanticEvalBool ρ_block.eval := by
+        rw [heq_ρ_block]; exact hρ₀_eq ▸ hwfb
+      have ⟨kcfg_loop, hkf_loop, hkstar_loop⟩ :=
+        loop_canfail_sim_kleene extendEval m body md b sim_body_canfail sim_body_terminal
+          hcov hnofd_body ρ_block hwfb_block hwfv_block h_loop_T hf_loop
+      have heq_ρ_block_full : ρ_block =
+          { ρ_inner with store := projectStore ρ₀.store ρ_inner.store } := by
+        have hstore : ρ₀'.store = ρ₀.store := by rw [hρ₀_eq]
+        rw [heq_ρ_block, hstore]
+        rw [show (ρ₀'.eval : SemanticEval P) = ρ_inner.eval from by rw [heval_inner, hρ₀_eq]]
+      have h_block_to_ρ_block : StepKleeneStar P (EvalCmd P)
+          (.block ρ₀.store (.stmt b ρ₀))
+          (.terminal ρ_block) := by
+        rw [heq_ρ_block_full]
+        exact kleene_block_terminal ρ₀.store _ ρ_inner h_sim_body
+      exact ⟨kcfg_loop, hkf_loop,
+        .step _ _ _ .step_loop_step
+          (ReflTrans_Transitive _ _ _ _
+            (ReflTrans_Transitive _ _ _ _
+              (kleene_seq_inner_star _ _ (.loop b) h_block_to_ρ_block)
+              (.step _ _ _ .step_seq_done (.refl _)))
+            hkstar_loop)⟩
+  termination_by hstarT.len
+  decreasing_by simp_wf; omega
+
 /-! ## Core simulation by strong induction on statement/block size -/
 
 omit [HasOps P] [HasFvars P] in
@@ -717,6 +946,195 @@ theorem blockToKleene_terminal
     StepKleeneStar P (EvalCmd P) (.stmt ns ρ₀) (.terminal ρ') :=
   (simulation extendEval (Block.sizeOf bss)).2 bss ns (Nat.le_refl _) ht ρ₀ ρ' hwfb hwfv hstar
 
+/-! ## CanFail simulation: mutual induction -/
+
+omit [HasOps P] [HasFvars P] in
+private theorem canfail_simulation
+    (extendEval : ExtendEval P) (sz : Nat) :
+    (∀ (st : Stmt P (Cmd P)) (ns : KleeneStmt P (Cmd P)),
+      st.sizeOf ≤ sz → StmtToKleeneStmt st = some ns →
+      ∀ (ρ₀ : Env P),
+        WellFormedSemanticEvalBool ρ₀.eval → WellFormedSemanticEvalVal ρ₀.eval →
+        (∃ cfg, cfg.getEnv.hasFailure = true ∧
+          StepStmtStar P (EvalCmd P) extendEval (.stmt st ρ₀) cfg) →
+        ∃ cfg', (KleeneConfig.getEnv cfg').hasFailure = true ∧
+          StepKleeneStar P (EvalCmd P) (.stmt ns ρ₀) cfg')
+    ∧
+    (∀ (bss : List (Stmt P (Cmd P))) (ns : KleeneStmt P (Cmd P)),
+      Block.sizeOf bss ≤ sz → BlockToKleeneStmt bss = some ns →
+      ∀ (ρ₀ : Env P),
+        WellFormedSemanticEvalBool ρ₀.eval → WellFormedSemanticEvalVal ρ₀.eval →
+        (∃ cfg, cfg.getEnv.hasFailure = true ∧
+          StepStmtStar P (EvalCmd P) extendEval (.stmts bss ρ₀) cfg) →
+        ∃ cfg', (KleeneConfig.getEnv cfg').hasFailure = true ∧
+          StepKleeneStar P (EvalCmd P) (.stmt ns ρ₀) cfg') := by
+  induction sz with
+  | zero =>
+    constructor
+    · intro st ns hsz ht ρ₀ _ _ ⟨cfg, hfcfg, hstar⟩
+      match st with
+      | .cmd _ | .block .. | .ite .. | .loop .. | .exit .. | .funcDecl ..
+      | .typeDecl .. => simp_all [Stmt.sizeOf]
+    · intro bss ns hsz ht ρ₀ hwfb hwfv ⟨cfg, hfcfg, hstar⟩
+      match bss with
+      | [] => exact ⟨.stmt ns ρ₀, stmts_nil_canfail_env hstar hfcfg, .refl _⟩
+      | s :: _ => simp_all [Block.sizeOf]
+  | succ n ih =>
+    constructor
+    · intro st ns hsz ht ρ₀ hwfb hwfv ⟨cfg, hfcfg, hstar⟩
+      match st with
+      | .cmd c =>
+        simp [StmtToKleeneStmt.eq_1] at ht; subst ht
+        cases hstar with
+        | refl => exact ⟨.stmt (.cmd c) ρ₀, hfcfg, .refl _⟩
+        | step _ _ _ h1 r1 => cases h1 with
+          | step_cmd hcmd =>
+            cases r1 with
+            | refl =>
+              exact ⟨.terminal _, hfcfg,
+                .step _ _ _ (.step_cmd hcmd) (.refl _)⟩
+            | step _ _ _ h _ => exact nomatch h
+
+      | .block _l bss _md =>
+        simp [StmtToKleeneStmt] at ht
+        match hb : BlockToKleeneStmt bss, ht with
+        | some b, ht =>
+          simp at ht; subst ht
+          cases hstar with
+          | refl => exact ⟨.stmt (.block b) ρ₀, hfcfg, .refl _⟩
+          | step _ _ _ h1 r1 => cases h1 with
+            | step_block =>
+              have ⟨inner', hf', hstar'⟩ := block_canfail_to_inner r1 hfcfg
+              have : Block.sizeOf bss ≤ n := by simp_all [Stmt.sizeOf]; omega
+              have ⟨kcfg, hkf, hkstar⟩ := ih.2 bss b this hb ρ₀ hwfb hwfv ⟨inner', hf', hstar'⟩
+              exact ⟨.block ρ₀.store kcfg, hkf, .step _ _ _ .step_block (kleene_block_inner_star ρ₀.store _ kcfg hkstar)⟩
+
+      | .ite cond tss ess md =>
+        match cond with
+        | .det c =>
+          have ⟨t, e, ht_tss, ht_ess, hns⟩ :=
+            ite_transform_some_det c tss ess md ns ht
+          subst hns
+          cases hstar with
+          | refl => exact ⟨.stmt _ ρ₀, hfcfg, .refl _⟩
+          | step _ _ _ h1 r1 => cases h1 with
+            | step_ite_true hcond hwfb_ite =>
+              have : Block.sizeOf tss ≤ n := by simp_all [Stmt.sizeOf]; omega
+              have ⟨inner', hf', hstar'⟩ := block_canfail_to_inner r1 hfcfg
+              have ⟨kcfg, hkf, hkstar⟩ := ih.2 tss t this ht_tss ρ₀ hwfb hwfv
+                ⟨_, hf', hstar'⟩
+              exact ⟨.block ρ₀.store kcfg, hkf,
+                .step _ _ _ .step_choice_left
+                  (.step _ _ _ .step_block
+                    (kleene_block_inner_star ρ₀.store _ _
+                      (ReflTrans_Transitive _ _ _ _
+                        (kleene_assume_then (kleene_assume_terminal hcond hwfb_ite))
+                        hkstar)))⟩
+            | step_ite_false hcond hwfb_ite =>
+              have : Block.sizeOf ess ≤ n := by simp_all [Stmt.sizeOf]; omega
+              have ⟨inner', hf', hstar'⟩ := block_canfail_to_inner r1 hfcfg
+              have ⟨kcfg, hkf, hkstar⟩ := ih.2 ess e this ht_ess ρ₀ hwfb hwfv
+                ⟨_, hf', hstar'⟩
+              exact ⟨.block ρ₀.store kcfg, hkf,
+                .step _ _ _ .step_choice_right
+                  (.step _ _ _ .step_block
+                    (kleene_block_inner_star ρ₀.store _ _
+                      (ReflTrans_Transitive _ _ _ _
+                        (kleene_assume_then (kleene_assume_terminal
+                          ((hwfb ρ₀.store c).2.mp hcond) hwfb_ite))
+                        hkstar)))⟩
+        | .nondet =>
+          have ⟨t, e, ht_tss, ht_ess, hns⟩ :=
+            ite_transform_some_nondet tss ess md ns ht
+          subst hns
+          cases hstar with
+          | refl => exact ⟨.stmt _ ρ₀, hfcfg, .refl _⟩
+          | step _ _ _ h1 r1 => cases h1 with
+            | step_ite_nondet_true =>
+              have : Block.sizeOf tss ≤ n := by simp_all [Stmt.sizeOf]; omega
+              have ⟨inner', hf', hstar'⟩ := block_canfail_to_inner r1 hfcfg
+              have ⟨kcfg, hkf, hkstar⟩ := ih.2 tss t this ht_tss ρ₀ hwfb hwfv
+                ⟨_, hf', hstar'⟩
+              exact ⟨.block ρ₀.store kcfg, hkf,
+                .step _ _ _ .step_choice_left
+                  (.step _ _ _ .step_block
+                    (kleene_block_inner_star ρ₀.store _ _ hkstar))⟩
+            | step_ite_nondet_false =>
+              have : Block.sizeOf ess ≤ n := by simp_all [Stmt.sizeOf]; omega
+              have ⟨inner', hf', hstar'⟩ := block_canfail_to_inner r1 hfcfg
+              have ⟨kcfg, hkf, hkstar⟩ := ih.2 ess e this ht_ess ρ₀ hwfb hwfv
+                ⟨_, hf', hstar'⟩
+              exact ⟨.block ρ₀.store kcfg, hkf,
+                .step _ _ _ .step_choice_right
+                  (.step _ _ _ .step_block
+                    (kleene_block_inner_star ρ₀.store _ _ hkstar))⟩
+
+      | .loop guard m' inv body md =>
+        match guard with
+        | .det g =>
+          have ⟨hinv_empty, b, hb, hns⟩ := loop_transform_some_det g m' inv body md ns ht
+          subst hns
+          subst hinv_empty
+          have hsz_body : Block.sizeOf body ≤ n := by simp_all [Stmt.sizeOf]; omega
+          exact loop_canfail_sim extendEval g m' body md b
+            (fun ρ₀ hwfb' hwfv' h => ih.2 body b hsz_body hb ρ₀ hwfb' hwfv' h)
+            (fun ρ₀ ρ' hwfb' hwfv' h =>
+              (simulation extendEval n).2 body b hsz_body hb ρ₀ ρ' hwfb' hwfv' h)
+            (stmtToKleene_some_exitsCovered.blockHelper [] body b hb)
+            (stmtToKleene_some_noFuncDecl.blockHelper body b hb)
+            ρ₀ hwfv (reflTrans_to_T hstar) hfcfg
+        | .nondet =>
+          have ⟨hinv_empty, b, hb, hns⟩ := loop_transform_some_nondet m' inv body md ns ht
+          subst hns
+          subst hinv_empty
+          have hsz_body : Block.sizeOf body ≤ n := by simp_all [Stmt.sizeOf]; omega
+          exact loop_canfail_sim_kleene extendEval m' body md b
+            (fun ρ₀ hwfb' hwfv' h => ih.2 body b hsz_body hb ρ₀ hwfb' hwfv' h)
+            (fun ρ₀ ρ' hwfb' hwfv' h =>
+              (simulation extendEval n).2 body b hsz_body hb ρ₀ ρ' hwfb' hwfv' h)
+            (stmtToKleene_some_exitsCovered.blockHelper [] body b hb)
+            (stmtToKleene_some_noFuncDecl.blockHelper body b hb)
+            ρ₀ hwfb hwfv (reflTrans_to_T hstar) hfcfg
+
+      | .typeDecl _ _ => simp [StmtToKleeneStmt.eq_5] at ht
+      | .exit _ _ => simp [StmtToKleeneStmt.eq_6] at ht
+      | .funcDecl _ _ => simp [StmtToKleeneStmt.eq_7] at ht
+
+    · intro bss ns hsz ht ρ₀ hwfb hwfv ⟨cfg, hfcfg, hstar⟩
+      match bss with
+      | [] =>
+        exact ⟨.stmt ns ρ₀, stmts_nil_canfail_env hstar hfcfg, .refl _⟩
+
+      | s :: rest =>
+        have ⟨s', rest', hs, hr, hns⟩ :=
+          block_transform_some s rest ns ht
+        subst hns
+        cases hstar with
+        | refl => exact ⟨.stmt (.seq s' rest') ρ₀, hfcfg, .refl _⟩
+        | step _ _ _ h1 r1 => cases h1 with
+          | step_stmts_cons =>
+            match seq_canfail_prop r1 hfcfg with
+            | .inl ⟨cfg', hf', hstar'⟩ =>
+              have ⟨kcfg, hkf, hkstar⟩ := ih.1 s s'
+                (by simp_all [Block.sizeOf]; omega) hs ρ₀ hwfb hwfv ⟨cfg', hf', hstar'⟩
+              exact ⟨.seq kcfg rest', hkf,
+                .step _ _ _ .step_seq (kleene_seq_inner_star _ _ rest' hkstar)⟩
+            | .inr ⟨ρ₁, hterm_s, cfg', hf', hstar_rest⟩ =>
+              have hsz_s : Stmt.sizeOf s ≤ n := by simp_all [Block.sizeOf]; omega
+              have heval_eq := smallStep_noFuncDecl_preserves_eval P (EvalCmd P)
+                extendEval s ρ₀ ρ₁ (stmtToKleene_some_noFuncDecl s s' hs) hterm_s
+              have ⟨kcfg, hkf, hkstar⟩ := ih.2 rest rest'
+                (by simp_all [Block.sizeOf]; omega) hr ρ₁
+                (heval_eq ▸ hwfb) (heval_eq ▸ hwfv) ⟨cfg', hf', hstar_rest⟩
+              exact ⟨kcfg, hkf,
+                .step _ _ _ .step_seq
+                  (ReflTrans_Transitive _ _ _ _
+                    (ReflTrans_Transitive _ _ _ _
+                      (kleene_seq_inner_star _ _ rest'
+                        ((simulation extendEval n).1 s s' hsz_s hs ρ₀ ρ₁ hwfb hwfv hterm_s))
+                      (.step _ _ _ .step_seq_done (.refl _)))
+                    hkstar)⟩
+
 /-! ## Main theorem -/
 
 omit [HasOps P] in
@@ -729,11 +1147,18 @@ theorem detToKleene_overapproximates
     (extendEval : ExtendEval P) :
     Transform.Overapproximates (Lang.det extendEval) (Lang.kleene (P := P))
       (StmtToKleeneStmt (P := P)) := by
-  intro st ns ht ρ₀ ρ' hwfb hwfv
-  refine ⟨?_, ?_⟩
-  · exact stmtToKleene_terminal extendEval st ns ht ρ₀ ρ' hwfb hwfv
-  · intro lbl hstar
-    exact absurd hstar (exitsCoveredByBlocks_noEscape P (EvalCmd P) extendEval st
-      (stmtToKleene_some_exitsCovered [] st ns ht) ρ₀ lbl ρ')
+  intro prefixIdents st ns ht _ _ _ ρ₀ _ hwf
+  obtain ⟨hwfb, hwfv, hwfvar⟩ := hwf
+  refine ⟨?_, ?_, ⟨hwfb, hwfv, hwfvar⟩⟩
+  · intro ρ'
+    refine ⟨?_, ?_⟩
+    · intro hstar
+      exact stmtToKleene_terminal extendEval st ns ht ρ₀ ρ' hwfb hwfv hstar
+    · intro lbl hstar
+      exact absurd hstar (exitsCoveredByBlocks_noEscape P (EvalCmd P) extendEval st
+        (stmtToKleene_some_exitsCovered [] st ns ht) ρ₀ lbl ρ')
+  · exact fun ⟨cfg, hfcfg, hstar⟩ =>
+      (canfail_simulation extendEval st.sizeOf).1 st ns (Nat.le_refl _) ht ρ₀ hwfb hwfv
+        ⟨cfg, hfcfg, hstar⟩
 
 end

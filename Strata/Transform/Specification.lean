@@ -94,14 +94,33 @@ structure Lang (P : PureExpr) where
   isAtAssert : CfgT → AssertId P → Prop
   /-- Extract env from a configuration. -/
   getEnv : CfgT → Env P
+  /-- Initial environment well-formedness: includes store definedness for touched
+      variables and any evaluator well-formedness conditions needed by the language.
+
+      The `List String` parameter lists "fresh-prefixes": prefixes of identifiers
+      that must NOT appear in the initial environment.  Downstream transforms
+      reserve such prefixes so they can introduce fresh names with that prefix
+      without colliding with user names.  `Overapproximates` and
+      `OverapproximatesAggressively` extend this list with the transform's own
+      `prefixIdent` for the L₂ side.
+
+      The `(P.Ident → Bool)` parameter (`declaredFuncs`) characterizes the
+      set of operator/function names already defined in the initial evaluator.
+      Concrete instantiations use this to enforce a `defUseWellFormed` invariant
+      that all operator references in the program are pre-declared, and any
+      `funcDecl` introduces a fresh name. -/
+  initEnvWF : List String → (P.Ident → Bool) → StmtT → Env P → Prop
 
 /-- Build a `Lang` from `Imperative.Stmt`/`Config` with a given command
     type and evaluator. -/
-abbrev Lang.imperative (P : PureExpr) [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P]
+abbrev Lang.imperative (P : PureExpr) [HasBool P] [HasBoolOps P]
     (CmdT : Type) (evalCmd : EvalCmdParam P CmdT) (extendEval : ExtendEval P)
-    (isAtAssert : Config P CmdT → AssertId P → Prop) : Lang P :=
+    (isAtAssert : Config P CmdT → AssertId P → Prop)
+    (initEnvWF : List String → (P.Ident → Bool) → Stmt P CmdT → Env P → Prop :=
+      fun _ _ _ _ => True) :
+    Lang P :=
   ⟨Stmt P CmdT, Config P CmdT, StepStmtStar P evalCmd extendEval,
-   .stmt, .terminal, .exiting, isAtAssert, Config.getEnv⟩
+   .stmt, .terminal, .exiting, isAtAssert, Config.getEnv, initEnvWF⟩
 
 /-- The standard `Lang` for `Cmd P` / `EvalCmd P` / `isAtAssert`. -/
 abbrev Lang.standard (P : PureExpr) [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P]
@@ -109,7 +128,7 @@ abbrev Lang.standard (P : PureExpr) [HasFvar P] [HasBool P] [HasBoolOps P] [HasF
   Lang.imperative P (Cmd P) (EvalCmd P) extendEval (Imperative.isAtAssert P)
 
 
-variable {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasInt P] [HasVal P]
+variable {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P] [HasVal P]
 variable (L : Lang P)
 
 
@@ -169,14 +188,15 @@ namespace Hoare
     TODO: We will want to define Triple for total correctness. It will be useful
     when proving preservation of termination after program transformation.
 -/
-def Triple
+@[expose] def Triple
     (Pre : Env P → Prop) (s : L.StmtT) (Post : Env P → Prop) : Prop :=
   ∀ (ρ₀ ρ' : Env P),
     Pre ρ₀ → WellFormedSemanticEvalBool ρ₀.eval → ρ₀.hasFailure = false →
     L.star (L.stmtCfg s ρ₀) (L.terminalCfg ρ') →
     Post ρ' ∧ ρ'.hasFailure = false
 
-/-! ## Definitions for structural Hoare rules (Imperative-specific) -/
+
+/-! ## Structural Hoare rules (Imperative-specific) -/
 
 section StmtRules
 
@@ -186,7 +206,7 @@ variable (isAtAssertFn : Config P CmdT → AssertId P → Prop)
 /-- Partial-correctness Hoare triple for a block body.
     The output configuration is allowed to be still in an exiting mode
     (see Config.exiting) because the outer block can catch the exit. -/
-def TripleBlock
+@[expose] def TripleBlock
     {CmdT : Type} (evalCmd : EvalCmdParam P CmdT) (extendEval : ExtendEval P)
     (Pre : Env P → Prop) (ss : List (Stmt P CmdT)) (Post : Env P → Prop) : Prop :=
   ∀ (ρ₀ ρ' : Env P),
@@ -212,11 +232,11 @@ end StmtRules
 
 section StandardConnection
 
-variable (P' : PureExpr) [HasFvar P'] [HasBool P'] [HasBoolOps P'] [HasFvars P'] [HasInt P'] [HasIntOps P']
+variable (P' : PureExpr) [HasFvar P'] [HasBool P'] [HasBoolOps P'] [HasFvars P']
 variable (extendEval : ExtendEval P')
 
 /-- The composite statement `assume pre; st; assert post` wrapped in a block. -/
-def PredicatedStmt
+@[expose] def PredicatedStmt
     (pre_label : String) (pre_expr : P'.Expr) (pre_md : MetaData P')
     (st : Stmt P' (Cmd P'))
     (post_label : String) (post_expr : P'.Expr) (post_md : MetaData P')
@@ -234,31 +254,134 @@ namespace Transform
 
 /-- A transformation is *sound* if it preserves assertion validity.
     Bilingual: source and target may live in different languages. -/
-def Sound (L₁ L₂ : Lang P) (T : L₁.StmtT → Option L₂.StmtT) : Prop :=
+@[expose] def Sound (L₁ L₂ : Lang P) (T : L₁.StmtT → Option L₂.StmtT) : Prop :=
   ∀ (s : L₁.StmtT) (s' : L₂.StmtT) (a : AssertId P),
     T s = some s' → AssertValid L₂ s' a → AssertValid L₁ s a
 
 /-! ## Overapproximate predicate
 
-`Overapproximates L₁ L₂ T` says that any terminal or exiting env reachable
-from `st` in `L₁` is also reachable from `T st` in `L₂`.
+`Overapproximates L₁ L₂ T` says that (1) any terminal or exiting env reachable
+from `st` in `L₁` is also reachable from `T st` in `L₂`, and (2) if there is
+a state reachable from `st` in `L₁` that fails an assertion, there also is
+a state  reachable from `T st` in `L₂` that fails an assertion.
 When `L₁ = L₂`, this specializes to the single-language case. -/
 
-/-- Overapproximation: terminal/exiting envs reachable from the
-    source are also reachable from the target. -/
-def Overapproximates (L₁ L₂ : Lang P) (T : L₁.StmtT → Option L₂.StmtT) : Prop :=
-  ∀ (st : L₁.StmtT) (s' : L₂.StmtT),
-    T st = some s' →
-    ∀ (ρ₀ ρ' : Env P),
-      WellFormedSemanticEvalBool ρ₀.eval →
-      WellFormedSemanticEvalVal ρ₀.eval →
-      (L₁.star (L₁.stmtCfg st ρ₀) (L₁.terminalCfg ρ') →
-       L₂.star (L₂.stmtCfg s' ρ₀) (L₂.terminalCfg ρ'))
-      ∧
-      (∀ lbl, L₁.star (L₁.stmtCfg st ρ₀) (L₁.exitingCfg lbl ρ') →
-              L₂.star (L₂.stmtCfg s' ρ₀) (L₂.exitingCfg lbl ρ'))
+/-- After steps from s, it reaches to a configuration whose hasFailure is
+    true. Doesn't have to be terminalCfg or exitingCfg. -/
+@[expose] public def CanFail (L : Lang P) (s : L.StmtT) (ρ₀ : Env P) : Prop :=
+  ∃ cfg, (L.getEnv cfg).hasFailure = true ∧ L.star (L.stmtCfg s ρ₀) cfg
 
-/-! ## Statement-list overapproximation (Imperative-specific) -/
+/-- `CanFail` specialized to a list of imperative statements (a block body).
+    There exists a reachable config from `(.stmts ss ρ₀)` whose env has
+    `hasFailure = true`. -/
+@[expose] public def CanFailBlock
+    {CmdT : Type} (evalCmd : EvalCmdParam P CmdT) (extendEval : ExtendEval P)
+    (ss : List (Stmt P CmdT)) (ρ₀ : Env P) : Prop :=
+  ∃ cfg : Config P CmdT, cfg.getEnv.hasFailure = true ∧
+    StepStmtStar P evalCmd extendEval (.stmts ss ρ₀) cfg
+
+/-- `PrefixDisjoint newPrefix prefixIdents` says: every prefix in
+    `prefixIdents` is prefix-disjoint from `newPrefix`, i.e., neither
+    is a string prefix of the other (as `Char` lists). -/
+@[expose] public def PrefixDisjoint (newPrefix : String) (prefixIdents : List String) : Prop :=
+  ∀ p ∈ prefixIdents,
+    ¬ p.toList.isPrefixOf newPrefix.toList ∧
+    ¬ newPrefix.toList.isPrefixOf p.toList
+
+/-- Overapproximation under a precondition `pre`: terminal/exiting envs
+    reachable from the source are also reachable from the target, and failing
+    programs are preserved.
+
+    `newPrefix` is the identifier prefix that the transform `T` may introduce
+    in its output.  The L₂ side's `initEnvWF` is invoked with `newPrefix`
+    ERASED from the L₁ side's prefix list — since the output may use names
+    with that prefix, the prefix can no longer be treated as "fresh" for
+    downstream transforms. -/
+@[expose] def OverapproximatesWhen (L₁ L₂ : Lang P) (T : L₁.StmtT → Option L₂.StmtT)
+    (pre : L₁.StmtT → Prop) (newPrefix : Option String := none) : Prop :=
+  ∀ (prefixIdents : List String)
+    (st : L₁.StmtT) (st' : L₂.StmtT),
+    T st = some st' →
+    pre st →
+    (∀ p, newPrefix = some p → p ∈ prefixIdents) →
+    (∀ p, newPrefix = some p → PrefixDisjoint p (prefixIdents.erase p)) →
+    ∀ (ρ₀ : Env P) (declaredFuncs : P.Ident → Bool),
+      L₁.initEnvWF prefixIdents declaredFuncs st ρ₀ →
+      -- Terminal/exiting envs are a subset.
+      (∀ (ρ' : Env P),
+        (L₁.star (L₁.stmtCfg st ρ₀) (L₁.terminalCfg ρ') →
+          L₂.star (L₂.stmtCfg st' ρ₀) (L₂.terminalCfg ρ'))
+        ∧
+        (∀ lbl, L₁.star (L₁.stmtCfg st ρ₀) (L₁.exitingCfg lbl ρ') →
+                L₂.star (L₂.stmtCfg st' ρ₀) (L₂.exitingCfg lbl ρ')))
+      ∧
+      -- Fail preservation.
+      (CanFail L₁ st ρ₀ → CanFail L₂ st' ρ₀)
+      ∧
+      -- Store WF preservation: when `newPrefix = some p`, `p` is erased from
+      -- the prefix list since the output may have introduced names with that
+      -- prefix.  When `newPrefix = none`, the prefix list is unchanged.
+      L₂.initEnvWF (match newPrefix with | some p => prefixIdents.erase p | none => prefixIdents)
+        declaredFuncs st' ρ₀
+
+/-- Overapproximation: `OverapproximatesWhen` with no precondition. -/
+@[expose] def Overapproximates (L₁ L₂ : Lang P) (T : L₁.StmtT → Option L₂.StmtT)
+    (newPrefix : Option String := none) : Prop :=
+  OverapproximatesWhen L₁ L₂ T (fun _ => True) newPrefix
+
+/-! ## Aggressive overapproximation
+
+`OverapproximatesAggressively` relaxes `Overapproximates`: the target may
+terminate with `hasFailure = true` instead of matching the source's
+terminal/exiting env exactly.  -/
+
+/-- Aggressive overapproximation under a precondition `pre`: the target program
+    can assert-fail spuriously.
+
+    `newPrefix` is the identifier prefix that the transform `T` may introduce
+    in its output (see `Overapproximates`). -/
+@[expose] public def OverapproximatesAggressivelyWhen (L₁ L₂ : Lang P)
+    (T : L₁.StmtT → Option L₂.StmtT)
+    (pre : L₁.StmtT → Prop) (newPrefix : Option String := none) : Prop :=
+  ∀ (prefixIdents : List String)
+    (st : L₁.StmtT) (st' : L₂.StmtT),
+    T st = some st' →
+    pre st →
+    (∀ p, newPrefix = some p → p ∈ prefixIdents) →
+    (∀ p, newPrefix = some p → PrefixDisjoint p (prefixIdents.erase p)) →
+    ∀ (ρ₀ : Env P) (declaredFuncs : P.Ident → Bool),
+      L₁.initEnvWF prefixIdents declaredFuncs st ρ₀ →
+      -- Terminal case
+      (∀ ρ', L₁.star (L₁.stmtCfg st ρ₀) (L₁.terminalCfg ρ') →
+        CanFail L₂ st' ρ₀ ∨
+        (ρ'.hasFailure = false →
+          L₂.star (L₂.stmtCfg st' ρ₀) (L₂.terminalCfg ρ')))
+      ∧
+      -- Exiting case
+      (∀ lbl ρ', L₁.star (L₁.stmtCfg st ρ₀) (L₁.exitingCfg lbl ρ') →
+        CanFail L₂ st' ρ₀ ∨
+        (ρ'.hasFailure = false →
+          L₂.star (L₂.stmtCfg st' ρ₀) (L₂.exitingCfg lbl ρ')))
+      ∧
+      -- Fail preservation, but does not exactly track the counterexample.
+      (CanFail L₁ st ρ₀ → CanFail L₂ st' ρ₀)
+      ∧
+      -- Store WF preservation: when `newPrefix = some p`, `p` is erased from
+      -- the prefix list.  When `newPrefix = none`, the prefix list is unchanged.
+      L₂.initEnvWF (match newPrefix with | some p => prefixIdents.erase p | none => prefixIdents)
+        declaredFuncs st' ρ₀
+
+/-- Aggressive overapproximation: `OverapproximatesAggressivelyWhen` with no
+    precondition. -/
+@[expose] public def OverapproximatesAggressively (L₁ L₂ : Lang P)
+    (T : L₁.StmtT → Option L₂.StmtT) (newPrefix : Option String := none) : Prop :=
+  OverapproximatesAggressivelyWhen L₁ L₂ T (fun _ => True) newPrefix
+
+/-! ## Statement-list overapproximation (Imperative-specific)
+
+Uses `Overapproximates L L T` (single-language): the proof decomposes
+seq execution into terminal/exiting outcomes of individual statements,
+which is exactly what `Overapproximates` provides. -/
 
 section ImperativeStmts
 
@@ -276,6 +399,10 @@ abbrev Lang.imperativeBlock : Lang P where
   exitingCfg := .exiting
   isAtAssert := isAtAssertFn
   getEnv := Config.getEnv
+  initEnvWF := fun _ _ _ ρ =>
+    WellFormedSemanticEvalBool ρ.eval ∧
+    WellFormedSemanticEvalVal ρ.eval ∧
+    WellFormedSemanticEvalVar ρ.eval
 
 end ImperativeStmts
 

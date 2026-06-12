@@ -5,6 +5,7 @@
 -/
 module
 
+public import Strata.DL.Imperative.StmtSemantics
 public import Strata.Transform.Specification
 import all Strata.Transform.Specification
 import all Strata.DL.Imperative.CmdSemantics
@@ -12,10 +13,12 @@ import all Strata.DL.Imperative.CmdSemanticsProps
 import all Strata.DL.Imperative.StmtSemanticsProps
 import Strata.DL.Util.ListUtils
 
-/-! # Theorems for the Soundness Specification
+/-! # Soundness Specification — Theorems
 
-Theorems and proofs that complement the definitions in
-`Strata.Transform.Specification`. -/
+This module contains the theorems associated with the definitions in
+`Strata.Transform.Specification`. See that file's module docstring for the
+overall structure of the soundness-specification framework.
+-/
 
 public section
 
@@ -23,20 +26,22 @@ namespace Imperative
 
 namespace Specification
 
-variable {P : PureExpr} [HasFvar P] [HasFvars P] [HasOps P] [HasBool P] [HasBoolOps P] [HasVal P]
+variable {P : PureExpr} [HasOps P] [HasBool P] [HasBoolOps P] [HasVal P]
 variable (L : Lang P)
+
+
 
 namespace Hoare
 
 /-! ## Parametric Hoare rules -/
 
-omit [HasVal P] [HasOps P] [HasFvar P] [HasFvars P] in
+omit [HasVal P] [HasOps P] in
 /-- False precondition proves anything -/
 theorem false_pre (s : L.StmtT) (Post : Env P → Prop) :
     Triple L (fun _ => False) s Post := by
   intro _ _ hpre; exact absurd hpre id
 
-omit [HasVal P] [HasOps P] [HasFvar P] [HasFvars P] in
+omit [HasVal P] [HasOps P] in
 /-- Consequence (weakening): strengthen precondition, weaken postconditions. -/
 theorem consequence
     {Pre Pre' : Env P → Prop} {Post Post' : Env P → Prop} {s : L.StmtT}
@@ -55,7 +60,7 @@ section StmtRules
 variable {CmdT : Type} (evalCmd : EvalCmdParam P CmdT) (extendEval : ExtendEval P)
 variable (isAtAssertFn : Config P CmdT → AssertId P → Prop)
 
- omit [HasFvar P] [HasVal P] [HasOps P] [HasFvars P] in
+ omit [HasVal P] [HasOps P] in
 /-- Empty statement list is skip. -/
 theorem skip_block (Pre : Env P → Prop) :
     TripleBlock evalCmd extendEval Pre [] Pre := by
@@ -405,7 +410,7 @@ end Hoare
 
 namespace Transform
 
-omit [HasVal P] [HasOps P] [HasFvar P] [HasFvars P] [HasBoolOps P] in
+omit [HasVal P] [HasOps P] [HasBoolOps P] in
 theorem sound_comp (L₁ L₂ L₃ : Lang P)
     (T₁ : L₁.StmtT → Option L₂.StmtT) (T₂ : L₂.StmtT → Option L₃.StmtT)
     (h₁ : Sound L₁ L₂ T₁) (h₂ : Sound L₂ L₃ T₂) :
@@ -416,63 +421,137 @@ theorem sound_comp (L₁ L₂ L₃ : Lang P)
   | some s' => rw [h1] at hrun; exact h₁ s s' a h1 (h₂ s' s'' a hrun hvalid)
   | none => rw [h1] at hrun; exact absurd hrun (by nofun)
 
-omit [HasVal P] [HasOps P] [HasFvar P] [HasFvars P] [HasBoolOps P] in
+omit [HasVal P] [HasOps P] [HasBoolOps P] in
 theorem sound_assertValid (L₁ L₂ : Lang P)
     (T : L₁.StmtT → Option L₂.StmtT) (a : AssertId P)
     (s : L₁.StmtT) (s' : L₂.StmtT)
     (ht : T s = some s') (hsound : Sound L₁ L₂ T) (hvalid : AssertValid L₂ s' a) :
     AssertValid L₁ s a := hsound s s' a ht hvalid
 
-omit [HasVal P] [HasOps P] [HasFvar P] [HasFvars P] [HasBoolOps P] in
+omit [HasVal P] [HasOps P] [HasBoolOps P] in
 theorem sound_allAsserts (L₁ L₂ : Lang P)
     (T : L₁.StmtT → Option L₂.StmtT)
     (s : L₁.StmtT) (s' : L₂.StmtT) (ht : T s = some s')
     (hsound : Sound L₁ L₂ T) (hvalid : AllAssertsValid L₂ s') :
     AllAssertsValid L₁ s := fun a => hsound s s' a ht (hvalid a)
 
-omit [HasVal P] [HasOps P] [HasFvar P] [HasFvars P] [HasBoolOps P] in
+omit [HasVal P] [HasOps P] [HasBoolOps P] in
 theorem sound_id : Sound L L some := by
   intro s s' a ht hvalid; simp at ht; subst ht; exact hvalid
 
-omit [HasOps P] [HasFvar P] [HasFvars P] in
+omit [HasOps P] [HasVal P] in
 /-- If `T` overapproximates and a Hoare triple holds on `T(st)` in L₂,
     then the triple holds on `st` in L₁. -/
 theorem overapproximates_triple (L₁ L₂ : Lang P)
-    (T : L₁.StmtT → Option L₂.StmtT)
+    (T : L₁.StmtT → Option L₂.StmtT) (newPrefix : Option String)
+    (declaredFuncs : P.Ident → Bool)
     (st : L₁.StmtT) (s' : L₂.StmtT) (ht : T st = some s')
-    (hsem : Overapproximates L₁ L₂ T)
+    (hsem : Overapproximates L₁ L₂ T newPrefix)
     {Pre Post : Env P → Prop}
     (htriple : Hoare.Triple L₂ Pre s' Post)
-    (hwfv : ∀ ρ₀ : Env P, Pre ρ₀ → WellFormedSemanticEvalVal ρ₀.eval) :
+    (hswf : ∀ ρ₀ : Env P, Pre ρ₀ → L₁.initEnvWF (newPrefix.toList) declaredFuncs st ρ₀) :
     Hoare.Triple L₁ Pre st Post := by
   intro ρ₀ ρ' hpre hwfb hf₀ hstar
-  exact htriple ρ₀ ρ' hpre hwfb hf₀
-    ((hsem st s' ht ρ₀ ρ' hwfb (hwfv ρ₀ hpre)).1 hstar)
+  have hmem : ∀ p, newPrefix = some p → p ∈ newPrefix.toList := by
+    intro p heq; subst heq; simp [Option.toList]
+  have hpd : ∀ p, newPrefix = some p → PrefixDisjoint p (newPrefix.toList.erase p) := by
+    intro p heq; subst heq
+    intro q hq; simp [Option.toList, List.erase_cons_head] at hq
+  have hr := hsem newPrefix.toList st s' ht trivial hmem hpd ρ₀ declaredFuncs (hswf ρ₀ hpre)
+  exact htriple ρ₀ ρ' hpre hwfb hf₀ (hr.1 ρ' |>.1 hstar)
 
-omit [HasOps P] [HasFvar P] [HasFvars P] in
-theorem overapproximates_id (L₁ : Lang P) :
-    Overapproximates L₁ L₁ some := by
-  intro st s' ht ρ₀ ρ' _ _
-  simp at ht; subst ht
-  exact ⟨id, fun _ => id⟩
+omit [HasOps P] [HasVal P] [HasBool P] [HasBoolOps P] in
+/-- `OverapproximatesWhen` implies `OverapproximatesAggressivelyWhen` (same
+    precondition).  An exact transform that handles all preconditioned inputs
+    is also an aggressive transform that handles them. -/
+theorem OverapproximatesWhen.toAggressivelyWhen (L₁ L₂ : Lang P)
+    (T : L₁.StmtT → Option L₂.StmtT) (pre : L₁.StmtT → Prop) (newPrefix : Option String)
+    (h : OverapproximatesWhen L₁ L₂ T pre newPrefix) :
+    OverapproximatesAggressivelyWhen L₁ L₂ T pre newPrefix := by
+  intro prefixIdents st s' ht hpre hmem hpd ρ₀ declaredFuncs hswf
+  have hr := h prefixIdents st s' ht hpre hmem hpd ρ₀ declaredFuncs hswf
+  refine ⟨?_, ?_, hr.2.1, hr.2.2⟩
+  · intro ρ' hstar
+    exact .inr (fun _ => (hr.1 ρ').1 hstar)
+  · intro lbl ρ' hstar
+    exact .inr (fun _ => (hr.1 ρ').2 lbl hstar)
 
-omit [HasOps P] [HasFvar P] [HasFvars P] in
-theorem overapproximates_comp (L₁ L₂ L₃ : Lang P)
-    (T₁ : L₁.StmtT → Option L₂.StmtT) (T₂ : L₂.StmtT → Option L₃.StmtT)
-    (h₁ : Overapproximates L₁ L₂ T₁)
-    (h₂ : Overapproximates L₂ L₃ T₂) :
-    Overapproximates L₁ L₃ (fun s => T₁ s >>= T₂) := by
-  intro st s'' ht ρ₀ ρ' hwfb hwfv
-  simp [bind, Option.bind] at ht
-  match h : T₁ st with
-  | some s' =>
-    rw [h] at ht
-    have hr₁ := h₁ st s' h ρ₀ ρ' hwfb hwfv
-    have hr₂ := h₂ s' s'' ht ρ₀ ρ' hwfb hwfv
-    refine ⟨?_, ?_⟩
-    · intro hstar; exact hr₂.1 (hr₁.1 hstar)
-    · intro lbl hstar; exact hr₂.2 lbl (hr₁.2 lbl hstar)
-  | none => rw [h] at ht; exact absurd ht (by nofun)
+omit [HasOps P] [HasVal P] [HasBool P] [HasBoolOps P] in
+/-- `Overapproximates` implies `OverapproximatesAggressively`. -/
+theorem Overapproximates.toAggressive (L₁ L₂ : Lang P)
+    (T : L₁.StmtT → Option L₂.StmtT) (newPrefix : Option String)
+    (h : Overapproximates L₁ L₂ T newPrefix) :
+    OverapproximatesAggressively L₁ L₂ T newPrefix :=
+  OverapproximatesWhen.toAggressivelyWhen L₁ L₂ T (fun _ => True) newPrefix h
+
+omit [HasOps P] [HasVal P] [HasBool P] [HasBoolOps P] in
+/-- Precondition strengthening for `OverapproximatesWhen` -/
+theorem OverapproximatesWhen.strengthen (L₁ L₂ : Lang P)
+    (T : L₁.StmtT → Option L₂.StmtT) {pre pre' : L₁.StmtT → Prop}
+    (newPrefix : Option String)
+    (himp : ∀ st, pre' st → pre st)
+    (h : OverapproximatesWhen L₁ L₂ T pre newPrefix) :
+    OverapproximatesWhen L₁ L₂ T pre' newPrefix := by
+  intro prefixIdents st st' ht hpre' hmem hpd ρ₀ declaredFuncs hswf
+  exact h prefixIdents st st' ht (himp st hpre') hmem hpd ρ₀ declaredFuncs hswf
+
+omit [HasOps P] [HasVal P] [HasBool P] [HasBoolOps P] in
+/-- Precondition strengthening for `OverapproximatesAggressivelyWhen`. -/
+theorem OverapproximatesAggressivelyWhen.strengthen (L₁ L₂ : Lang P)
+    (T : L₁.StmtT → Option L₂.StmtT) {pre pre' : L₁.StmtT → Prop}
+    (newPrefix : Option String)
+    (himp : ∀ st, pre' st → pre st)
+    (h : OverapproximatesAggressivelyWhen L₁ L₂ T pre newPrefix) :
+    OverapproximatesAggressivelyWhen L₁ L₂ T pre' newPrefix := by
+  intro prefixIdents st st' ht hpre' hmem hpd ρ₀ declaredFuncs hswf
+  exact h prefixIdents st st' ht (himp st hpre') hmem hpd ρ₀ declaredFuncs hswf
+
+omit [HasOps P] [HasVal P] [HasBool P] [HasBoolOps P] in
+/-- An unconditional `Overapproximates` is the strongest case: it gives
+    `OverapproximatesWhen` for ANY precondition. -/
+theorem Overapproximates.toWhen (L₁ L₂ : Lang P)
+    (T : L₁.StmtT → Option L₂.StmtT) (pre : L₁.StmtT → Prop)
+    (newPrefix : Option String)
+    (h : Overapproximates L₁ L₂ T newPrefix) :
+    OverapproximatesWhen L₁ L₂ T pre newPrefix :=
+  OverapproximatesWhen.strengthen L₁ L₂ T newPrefix (fun _ _ => trivial) h
+
+omit [HasOps P] [HasVal P] [HasBool P] [HasBoolOps P] in
+/-- An unconditional `OverapproximatesAggressively` likewise gives
+    `OverapproximatesAggressivelyWhen` for any precondition. -/
+theorem OverapproximatesAggressively.toWhen (L₁ L₂ : Lang P)
+    (T : L₁.StmtT → Option L₂.StmtT) (pre : L₁.StmtT → Prop)
+    (newPrefix : Option String)
+    (h : OverapproximatesAggressively L₁ L₂ T newPrefix) :
+    OverapproximatesAggressivelyWhen L₁ L₂ T pre newPrefix :=
+  OverapproximatesAggressivelyWhen.strengthen L₁ L₂ T newPrefix (fun _ _ => trivial) h
+
+omit [HasOps P] [HasVal P] in
+/-- Hoare-triple corollary for `OverapproximatesWhen`: if `T` overapproximates
+    when `pre` holds, and the source state's WF (under `Pre`) implies `pre st`,
+    then a Hoare triple on `T(st)` in L₂ lifts to a Hoare triple on `st` in L₁.
+
+    The new `hsource_pre` hypothesis carries the precondition through; for the
+    unconditional version use `pre := fun _ => True` and `hsource_pre` becomes
+    `fun _ _ => trivial`. -/
+theorem overapproximatesWhen_triple (L₁ L₂ : Lang P)
+    (T : L₁.StmtT → Option L₂.StmtT) (pre : L₁.StmtT → Prop) (newPrefix : Option String)
+    (declaredFuncs : P.Ident → Bool)
+    (st : L₁.StmtT) (s' : L₂.StmtT) (ht : T st = some s')
+    (hsem : OverapproximatesWhen L₁ L₂ T pre newPrefix)
+    {Pre Post : Env P → Prop}
+    (htriple : Hoare.Triple L₂ Pre s' Post)
+    (hsource_pre : pre st)
+    (hswf : ∀ ρ₀ : Env P, Pre ρ₀ → L₁.initEnvWF (newPrefix.toList) declaredFuncs st ρ₀) :
+    Hoare.Triple L₁ Pre st Post := by
+  intro ρ₀ ρ' hpre hwfb hf₀ hstar
+  have hmem : ∀ p, newPrefix = some p → p ∈ newPrefix.toList := by
+    intro p heq; subst heq; simp [Option.toList]
+  have hpd : ∀ p, newPrefix = some p → PrefixDisjoint p (newPrefix.toList.erase p) := by
+    intro p heq; subst heq
+    intro q hq; simp [Option.toList, List.erase_cons_head] at hq
+  have hr := hsem newPrefix.toList st s' ht hsource_pre hmem hpd ρ₀ declaredFuncs (hswf ρ₀ hpre)
+  exact htriple ρ₀ ρ' hpre hwfb hf₀ (hr.1 ρ' |>.1 hstar)
 
 /-! ## Statement-list overapproximation (Imperative-specific)
 
@@ -484,31 +563,132 @@ section ImperativeStmts
 
 variable {CmdT : Type} (evalCmd : EvalCmdParam P CmdT) (extendEval : ExtendEval P)
 variable (isAtAssertFn : Config P CmdT → AssertId P → Prop)
+variable [HasFvar P]
 
-omit [HasFvar P] [HasFvars P] [HasOps P] [HasBool P] [HasBoolOps P] [HasVal P] in
-private theorem mapM_noFuncDecl
+omit [HasVal P] [HasOps P] [HasFvar P] in
+/-- Decompose a seq execution reaching a config with `hasFailure = true`:
+    either the inner config reaches a failing config, or the inner terminates
+    and the tail stmts reach a failing config. -/
+private theorem seq_hasFailure_cases
+    {inner : Config P CmdT} {ss : List (Stmt P CmdT)} {cfg : Config P CmdT}
+    (hstar : StepStmtStar P evalCmd extendEval (.seq inner ss) cfg)
+    (hfail : cfg.getEnv.hasFailure = true) :
+    (∃ inner_cfg, inner_cfg.getEnv.hasFailure = true ∧
+      StepStmtStar P evalCmd extendEval inner inner_cfg)
+    ∨
+    (∃ ρ₁, StepStmtStar P evalCmd extendEval inner (.terminal ρ₁) ∧
+      ∃ tail_cfg, tail_cfg.getEnv.hasFailure = true ∧
+        StepStmtStar P evalCmd extendEval (.stmts ss ρ₁) tail_cfg) := by
+  suffices ∀ src dst, StepStmtStar P evalCmd extendEval src dst →
+      ∀ inner ss, src = .seq inner ss → dst.getEnv.hasFailure = true →
+      (∃ inner_cfg, inner_cfg.getEnv.hasFailure = true ∧
+        StepStmtStar P evalCmd extendEval inner inner_cfg)
+      ∨
+      (∃ ρ₁, StepStmtStar P evalCmd extendEval inner (.terminal ρ₁) ∧
+        ∃ tail_cfg, tail_cfg.getEnv.hasFailure = true ∧
+          StepStmtStar P evalCmd extendEval (.stmts ss ρ₁) tail_cfg) from
+    this _ _ hstar _ _ rfl hfail
+  intro src dst hstar_g
+  induction hstar_g with
+  | refl =>
+    intro inner ss hsrc hf
+    subst hsrc; simp [Config.getEnv] at hf
+    exact Or.inl ⟨inner, hf, .refl _⟩
+  | step _ mid _ hstep hrest ih =>
+    intro inner ss hsrc hf; subst hsrc
+    cases hstep with
+    | step_seq_inner h =>
+      match ih _ _ rfl hf with
+      | Or.inl ⟨inner_cfg, hfi, hreach⟩ =>
+        exact Or.inl ⟨inner_cfg, hfi, .step _ _ _ h hreach⟩
+      | Or.inr ⟨ρ₁, hterm, tail_cfg, hft, htail⟩ =>
+        exact Or.inr ⟨ρ₁, .step _ _ _ h hterm, tail_cfg, hft, htail⟩
+    | step_seq_done =>
+      exact Or.inr ⟨_, .refl _, _, hf, hrest⟩
+    | step_seq_exit =>
+      cases hrest with
+      | refl => exact Or.inl ⟨.exiting _ _, hf, .refl _⟩
+      | step _ _ _ h _ => cases h
+
+/-- CanFail preservation for statement-list overapproximation. -/
+private theorem overapproximates_stmts_canfail
+    (hwf_ext : WFEvalExtension P extendEval)
     (T : Stmt P CmdT → Option (Stmt P CmdT))
-    (hnofd_T : ∀ s s', T s = some s' → Stmt.noFuncDecl s = true)
-    (ss : List (Stmt P CmdT)) (ss' : List (Stmt P CmdT))
-    (hmap : ss.mapM T = some ss') :
-    Block.noFuncDecl ss = true := by
-  induction ss generalizing ss' with
-  | nil => simp [Block.noFuncDecl]
+    (newPrefix : Option String)
+    (hsem : Overapproximates (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn)
+      (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) T newPrefix)
+    (prefixIdents : List String)
+    (hmem : ∀ p, newPrefix = some p → p ∈ prefixIdents)
+    (hpd : ∀ p, newPrefix = some p → PrefixDisjoint p (prefixIdents.erase p))
+    (ss : List (Stmt P CmdT)) :
+    ∀ (ss' : List (Stmt P CmdT)),
+      ss.mapM T = some ss' →
+      ∀ (ρ₀ : Env P),
+        WellFormedSemanticEvalBool ρ₀.eval →
+        WellFormedSemanticEvalVal ρ₀.eval →
+        WellFormedSemanticEvalVar ρ₀.eval →
+        CanFail (Lang.imperativeBlock evalCmd extendEval isAtAssertFn) ss ρ₀ →
+        CanFail (Lang.imperativeBlock evalCmd extendEval isAtAssertFn) ss' ρ₀ := by
+  induction ss with
+  | nil =>
+    intro ss' hmap ρ₀ _ _ _ ⟨cfg, hfail, hreach⟩
+    have : ss' = [] := by simp [List.mapM_nil] at hmap; exact hmap
+    subst this
+    exact ⟨cfg, hfail, hreach⟩
   | cons s rest ih =>
+    intro ss' hmap ρ₀ hwfb hwfv hwfvar ⟨cfg, hfail, hreach⟩
     have ⟨s', rest', hs, hrm, hss'⟩ := List.mapM_cons_some hmap
-    simp [Block.noFuncDecl, hnofd_T s s' hs, ih rest' hrm]
+    subst hss'
+    cases hreach with
+    | refl =>
+      simp [Config.getEnv] at hfail
+      exact ⟨.stmts (s' :: rest') ρ₀, by simp [Config.getEnv, hfail], .refl _⟩
+    | step _ _ _ hstep hrest_exec =>
+      cases hstep with
+      | step_stmts_cons =>
+        match seq_hasFailure_cases evalCmd extendEval hrest_exec hfail with
+        | .inl ⟨inner_cfg, hf_inner, hreach_inner⟩ =>
+          have hcanfail_s : CanFail (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) s ρ₀ :=
+            ⟨inner_cfg, hf_inner, hreach_inner⟩
+          have hcanfail_s' := (hsem prefixIdents s s' hs trivial hmem hpd ρ₀ (fun _ => false) trivial).2.1 hcanfail_s
+          obtain ⟨cfg', hf', hreach'⟩ := hcanfail_s'
+          exact ⟨.seq cfg' rest', by simp [Config.getEnv]; exact hf',
+            .step _ _ _ .step_stmts_cons (seq_inner_star P evalCmd extendEval _ _ rest' hreach')⟩
+        | .inr ⟨ρ₁, hterm_s, tail_cfg, hf_tail, htail⟩ =>
+          -- WF eval preservation across `s`'s execution: use `WFEvalExtension` (no
+          -- `noFuncDecl` requirement; works even when `s` contains funcDecls).
+          have hwfb₁ : WellFormedSemanticEvalBool ρ₁.eval :=
+            star_preserves_wfBool P evalCmd extendEval hwf_ext hterm_s hwfb
+          have hwfv₁ : WellFormedSemanticEvalVal ρ₁.eval :=
+            star_preserves_wfVal P evalCmd extendEval hwf_ext hterm_s hwfv
+          have hwfvar₁ : WellFormedSemanticEvalVar ρ₁.eval :=
+            star_preserves_wfVar P evalCmd extendEval hwf_ext hterm_s hwfvar
+          have hcanfail_rest : CanFail (Lang.imperativeBlock evalCmd extendEval isAtAssertFn) rest ρ₁ :=
+            ⟨tail_cfg, hf_tail, htail⟩
+          have hcanfail_rest' := ih rest' hrm ρ₁ hwfb₁ hwfv₁ hwfvar₁ hcanfail_rest
+          obtain ⟨cfg', hf', hreach'⟩ := hcanfail_rest'
+          have hterm_s' := (hsem prefixIdents s s' hs trivial hmem hpd ρ₀ (fun _ => false) trivial).1 ρ₁ |>.1 hterm_s
+          exact ⟨cfg', hf',
+            ReflTrans_Transitive _ _ _ _
+              (stmts_cons_step P evalCmd extendEval s' rest' ρ₀ ρ₁ hterm_s')
+              hreach'⟩
 
-omit [HasOps P] in
 private theorem overapproximates_stmts_aux
+    (hwf_ext : WFEvalExtension P extendEval)
     (T : Stmt P CmdT → Option (Stmt P CmdT))
-    (hsem : Overapproximates (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) T)
-    (ss : List (Stmt P CmdT))
-    (hnofd : Block.noFuncDecl ss = true) :
+    (newPrefix : Option String)
+    (hsem : Overapproximates (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn)
+      (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) T newPrefix)
+    (prefixIdents : List String)
+    (hmem : ∀ p, newPrefix = some p → p ∈ prefixIdents)
+    (hpd : ∀ p, newPrefix = some p → PrefixDisjoint p (prefixIdents.erase p))
+    (ss : List (Stmt P CmdT)) :
     ∀ (ss' : List (Stmt P CmdT)),
       ss.mapM T = some ss' →
       ∀ (ρ₀ ρ' : Env P),
         WellFormedSemanticEvalBool ρ₀.eval →
         WellFormedSemanticEvalVal ρ₀.eval →
+        WellFormedSemanticEvalVar ρ₀.eval →
         (StepStmtStar P evalCmd extendEval (.stmts ss ρ₀) (.terminal ρ') →
          StepStmtStar P evalCmd extendEval (.stmts ss' ρ₀) (.terminal ρ'))
         ∧
@@ -516,32 +696,32 @@ private theorem overapproximates_stmts_aux
                 StepStmtStar P evalCmd extendEval (.stmts ss' ρ₀) (.exiting lbl ρ')) := by
   induction ss with
   | nil =>
-    intro ss' hmap ρ₀ ρ' _ _
+    intro ss' hmap ρ₀ ρ' _ _ _
     have : ss' = [] := by simp [List.mapM_nil] at hmap; exact hmap
     subst this; exact ⟨id, fun _ => id⟩
   | cons s rest ih =>
-    intro ss' hmap ρ₀ ρ' hwfb hwfv
-    simp [Block.noFuncDecl, Bool.and_eq_true] at hnofd
-    have ⟨hnofd_s, hnofd_rest⟩ := hnofd
+    intro ss' hmap ρ₀ ρ' hwfb hwfv hwfvar
     have ⟨s', rest', hs, hrm, hss'⟩ := List.mapM_cons_some hmap
     subst hss'
     have eval_preserved : ∀ ρ₁ : Env P,
         StepStmtStar P evalCmd extendEval (.stmt s ρ₀) (.terminal ρ₁) →
-        WellFormedSemanticEvalBool ρ₁.eval ∧ WellFormedSemanticEvalVal ρ₁.eval := by
+        WellFormedSemanticEvalBool ρ₁.eval ∧ WellFormedSemanticEvalVal ρ₁.eval ∧
+        WellFormedSemanticEvalVar ρ₁.eval := by
       intro ρ₁ hterm_s
-      have heq := smallStep_noFuncDecl_preserves_eval P evalCmd extendEval s ρ₀ ρ₁ hnofd_s hterm_s
-      exact ⟨heq ▸ hwfb, heq ▸ hwfv⟩
+      exact ⟨star_preserves_wfBool P evalCmd extendEval hwf_ext hterm_s hwfb,
+             star_preserves_wfVal P evalCmd extendEval hwf_ext hterm_s hwfv,
+             star_preserves_wfVar P evalCmd extendEval hwf_ext hterm_s hwfvar⟩
     constructor
     · intro hstar
       cases hstar with
       | step _ _ _ hstep hrest_exec => cases hstep with
         | step_stmts_cons =>
           have ⟨ρ₁, hterm_s, hterm_rest⟩ := seq_reaches_terminal P evalCmd extendEval hrest_exec
-          have ⟨hwfb₁, hwfv₁⟩ := eval_preserved ρ₁ hterm_s
+          have ⟨hwfb₁, hwfv₁, hwfvar₁⟩ := eval_preserved ρ₁ hterm_s
           exact ReflTrans_Transitive _ _ _ _
             (stmts_cons_step P evalCmd extendEval s' rest' ρ₀ ρ₁
-              ((hsem s s' hs ρ₀ ρ₁ hwfb hwfv).1 hterm_s))
-            ((ih hnofd_rest rest' hrm ρ₁ ρ' hwfb₁ hwfv₁).1 hterm_rest)
+              ((hsem prefixIdents s s' hs trivial hmem hpd ρ₀ (fun _ => false) trivial).1 ρ₁ |>.1 hterm_s))
+            ((ih rest' hrm ρ₁ ρ' hwfb₁ hwfv₁ hwfvar₁).1 hterm_rest)
     · intro lbl hstar
       cases hstar with
       | step _ _ _ hstep hrest_exec => cases hstep with
@@ -550,27 +730,554 @@ private theorem overapproximates_stmts_aux
           | .inl hexit_s =>
             exact .step _ _ _ .step_stmts_cons
               (ReflTrans_Transitive _ _ _ _ (seq_inner_star P evalCmd extendEval _ _ rest'
-                ((hsem s s' hs ρ₀ ρ' hwfb hwfv).2 lbl hexit_s))
+                ((hsem prefixIdents s s' hs trivial hmem hpd ρ₀ (fun _ => false) trivial).1 ρ' |>.2 lbl hexit_s))
                 (.step _ _ _ .step_seq_exit (.refl _)))
           | .inr ⟨ρ₁, hterm_s, hexit_rest⟩ =>
-            have ⟨hwfb₁, hwfv₁⟩ := eval_preserved ρ₁ hterm_s
+            have ⟨hwfb₁, hwfv₁, hwfvar₁⟩ := eval_preserved ρ₁ hterm_s
             exact ReflTrans_Transitive _ _ _ _
               (stmts_cons_step P evalCmd extendEval s' rest' ρ₀ ρ₁
-                ((hsem s s' hs ρ₀ ρ₁ hwfb hwfv).1 hterm_s))
-              ((ih hnofd_rest rest' hrm ρ₁ ρ' hwfb₁ hwfv₁).2 lbl hexit_rest)
+                ((hsem prefixIdents s s' hs trivial hmem hpd ρ₀ (fun _ => false) trivial).1 ρ₁ |>.1 hterm_s))
+              ((ih rest' hrm ρ₁ ρ' hwfb₁ hwfv₁ hwfvar₁).2 lbl hexit_rest)
 
-omit [HasOps P] in
 theorem overapproximates_stmts
+    (hwf_ext : WFEvalExtension P extendEval)
     (T : Stmt P CmdT → Option (Stmt P CmdT))
-    (hsem : Overapproximates (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) T)
-    (hnofd_T : ∀ s s', T s = some s' → Stmt.noFuncDecl s = true) :
+    (newPrefix : Option String)
+    (hsem : Overapproximates
+        (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn)
+        (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) T newPrefix) :
     Overapproximates
       (Lang.imperativeBlock evalCmd extendEval isAtAssertFn)
       (Lang.imperativeBlock evalCmd extendEval isAtAssertFn)
-      (fun ss => ss.mapM T) := by
-  intro ss ss' hmap ρ₀ ρ' hwfb hwfv
-  exact overapproximates_stmts_aux evalCmd extendEval isAtAssertFn T hsem ss
-    (mapM_noFuncDecl T hnofd_T ss ss' hmap) ss' hmap ρ₀ ρ' hwfb hwfv
+      (fun ss => ss.mapM T) newPrefix := by
+  intro prefixIdents ss ss' hmap _ hmem hpd ρ₀ declaredFuncs hwf
+  obtain ⟨hwfb, hwfv, hwfvar⟩ := hwf
+  refine ⟨fun ρ' => overapproximates_stmts_aux evalCmd extendEval isAtAssertFn hwf_ext T newPrefix
+    hsem prefixIdents hmem hpd ss ss' hmap ρ₀ ρ' hwfb hwfv hwfvar, ?_, ⟨hwfb, hwfv, hwfvar⟩⟩
+  exact overapproximates_stmts_canfail evalCmd extendEval isAtAssertFn hwf_ext T newPrefix
+    hsem prefixIdents hmem hpd ss ss' hmap ρ₀ hwfb hwfv hwfvar
+
+private theorem overapproximatesAggressively_stmts_canfail
+    (hwf_ext : WFEvalExtension P extendEval)
+    (T : Stmt P CmdT → Option (Stmt P CmdT))
+    (newPrefix : Option String)
+    (hsem : OverapproximatesAggressively (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn)
+      (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) T newPrefix)
+    (prefixIdents : List String)
+    (hmem : ∀ p, newPrefix = some p → p ∈ prefixIdents)
+    (hpd : ∀ p, newPrefix = some p → PrefixDisjoint p (prefixIdents.erase p))
+    (ss : List (Stmt P CmdT)) :
+    ∀ (ss' : List (Stmt P CmdT)),
+      ss.mapM T = some ss' →
+      ∀ (ρ₀ : Env P),
+        WellFormedSemanticEvalBool ρ₀.eval →
+        WellFormedSemanticEvalVal ρ₀.eval →
+        WellFormedSemanticEvalVar ρ₀.eval →
+        CanFail (Lang.imperativeBlock evalCmd extendEval isAtAssertFn) ss ρ₀ →
+        CanFail (Lang.imperativeBlock evalCmd extendEval isAtAssertFn) ss' ρ₀ := by
+  induction ss with
+  | nil =>
+    intro ss' hmap ρ₀ _ _ _ ⟨cfg, hfail, hreach⟩
+    have : ss' = [] := by simp [List.mapM_nil] at hmap; exact hmap
+    subst this
+    exact ⟨cfg, hfail, hreach⟩
+  | cons s rest ih =>
+    intro ss' hmap ρ₀ hwfb hwfv hwfvar ⟨cfg, hfail, hreach⟩
+    have ⟨s', rest', hs, hrm, hss'⟩ := List.mapM_cons_some hmap
+    subst hss'
+    cases hreach with
+    | refl =>
+      simp [Config.getEnv] at hfail
+      exact ⟨.stmts (s' :: rest') ρ₀, by simp [Config.getEnv, hfail], .refl _⟩
+    | step _ _ _ hstep hrest_exec =>
+      cases hstep with
+      | step_stmts_cons =>
+        match seq_hasFailure_cases evalCmd extendEval hrest_exec hfail with
+        | .inl ⟨inner_cfg, hf_inner, hreach_inner⟩ =>
+          have hcanfail_s : CanFail (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) s ρ₀ :=
+            ⟨inner_cfg, hf_inner, hreach_inner⟩
+          have hcanfail_s' := (hsem prefixIdents s s' hs trivial hmem hpd ρ₀ (fun _ => false) trivial).2.2.1 hcanfail_s
+          obtain ⟨cfg', hf', hreach'⟩ := hcanfail_s'
+          exact ⟨.seq cfg' rest', by simp [Config.getEnv]; exact hf',
+            .step _ _ _ .step_stmts_cons (seq_inner_star P evalCmd extendEval _ _ rest' hreach')⟩
+        | .inr ⟨ρ₁, hterm_s, tail_cfg, hf_tail, htail⟩ =>
+          have hwfb₁ : WellFormedSemanticEvalBool ρ₁.eval :=
+            star_preserves_wfBool P evalCmd extendEval hwf_ext hterm_s hwfb
+          have hwfv₁ : WellFormedSemanticEvalVal ρ₁.eval :=
+            star_preserves_wfVal P evalCmd extendEval hwf_ext hterm_s hwfv
+          have hwfvar₁ : WellFormedSemanticEvalVar ρ₁.eval :=
+            star_preserves_wfVar P evalCmd extendEval hwf_ext hterm_s hwfvar
+          have hcanfail_rest : CanFail (Lang.imperativeBlock evalCmd extendEval isAtAssertFn) rest ρ₁ :=
+            ⟨tail_cfg, hf_tail, htail⟩
+          have hcanfail_rest' := ih rest' hrm ρ₁ hwfb₁ hwfv₁ hwfvar₁ hcanfail_rest
+          obtain ⟨cfg', hf', hreach'⟩ := hcanfail_rest'
+          -- hsem gives CanFail ∨ (hasFailure = false → terminates) for s' at ρ₁
+          match (hsem prefixIdents s s' hs trivial hmem hpd ρ₀ (fun _ => false) trivial).1 ρ₁ hterm_s with
+          | .inl canfail_s' =>
+            obtain ⟨cfg'', hf'', hreach''⟩ := canfail_s'
+            exact ⟨.seq cfg'' rest', by simp [Config.getEnv]; exact hf'',
+              .step _ _ _ .step_stmts_cons (seq_inner_star P evalCmd extendEval _ _ rest' hreach'')⟩
+          | .inr hterm_s' =>
+            by_cases hf₁ : ρ₁.hasFailure = false
+            · exact ⟨cfg', hf',
+                ReflTrans_Transitive _ _ _ _
+                  (stmts_cons_step P evalCmd extendEval s' rest' ρ₀ ρ₁ (hterm_s' hf₁))
+                  hreach'⟩
+            · have hf₁' : ρ₁.hasFailure = true := by
+                cases h : ρ₁.hasFailure <;> simp_all
+              have hcanfail_s : CanFail (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) s ρ₀ :=
+                ⟨.terminal ρ₁, by simp [Config.getEnv]; exact hf₁', hterm_s⟩
+              have hcanfail_s' := (hsem prefixIdents s s' hs trivial hmem hpd ρ₀ (fun _ => false) trivial).2.2.1 hcanfail_s
+              obtain ⟨cfg'', hf'', hreach''⟩ := hcanfail_s'
+              exact ⟨.seq cfg'' rest', by simp [Config.getEnv]; exact hf'',
+                .step _ _ _ .step_stmts_cons (seq_inner_star P evalCmd extendEval _ _ rest' hreach'')⟩
+
+/-! ## Block / ite execution helpers (generic over `CmdT`/`evalCmd`/`extendEval`) -/
+
+omit [HasFvar P] [HasVal P] [HasOps P] in
+/-- A terminal execution of the block body lifts to a terminal execution of
+    the enclosing block statement (with parent-store projection applied). -/
+theorem block_wrap_terminal
+    (l : String) (bss : List (Stmt P CmdT)) (md : MetaData P)
+    (ρ₀ ρ' : Env P)
+    (h : StepStmtStar P evalCmd extendEval (.stmts bss ρ₀) (.terminal ρ')) :
+    StepStmtStar P evalCmd extendEval (.stmt (.block l bss md) ρ₀)
+      (.terminal { ρ' with store := projectStore ρ₀.store ρ'.store, eval := ρ₀.eval }) :=
+  ReflTrans_Transitive _ _ _ _
+    (step_block_enter P evalCmd extendEval l bss md ρ₀)
+    (ReflTrans_Transitive _ _ _ _
+      (block_inner_star P evalCmd extendEval _ _ (some l) ρ₀.store ρ₀.eval h)
+      (.step _ _ _ .step_block_done (.refl _)))
+
+omit [HasFvar P] [HasVal P] [HasOps P] in
+/-- Taking the false/else branch of a det-ite with empty else-block terminates at the
+    same env (after scoped-ite projection, which is identity on self). -/
+theorem ite_det_false_empty_terminal
+    (g : P.Expr) (then_branch : List (Stmt P CmdT)) (md : MetaData P)
+    (ρ₀ : Env P)
+    (hg_ff : ρ₀.eval ρ₀.store g = some HasBool.ff)
+    (hwfb : WellFormedSemanticEvalBool ρ₀.eval) :
+    StepStmtStar P evalCmd extendEval
+      (.stmt (.ite (.det g) then_branch [] md) ρ₀) (.terminal ρ₀) := by
+  have h_inner : StepStmtStar P evalCmd extendEval
+      (.stmts ([] : List (Stmt P CmdT)) ρ₀) (.terminal ρ₀) :=
+    .step _ _ _ .step_stmts_nil (.refl _)
+  have h_block : StepStmtStar P evalCmd extendEval
+      (.block .none ρ₀.store ρ₀.eval (.stmts ([] : List (Stmt P CmdT)) ρ₀))
+      (.terminal { ρ₀ with store := projectStore ρ₀.store ρ₀.store, eval := ρ₀.eval }) :=
+    ReflTrans_Transitive _ _ _ _
+      (block_inner_star P evalCmd extendEval _ _ .none ρ₀.store ρ₀.eval h_inner)
+      (.step _ _ _ .step_block_done (.refl _))
+  rw [projectStore_self_env] at h_block
+  have henv : ({ ρ₀ with store := ρ₀.store, eval := ρ₀.eval } : Env P) = ρ₀ := by cases ρ₀; rfl
+  rw [henv] at h_block
+  exact .step _ _ _ (.step_ite_false hg_ff hwfb) h_block
+
+omit [HasFvar P] [HasVal P] [HasOps P] in
+/-- Taking the false/else branch of a nondet-ite with empty else-block terminates at the
+    same env (after scoped-ite projection, which is identity on self). -/
+theorem ite_nondet_false_empty_terminal
+    (then_branch : List (Stmt P CmdT)) (md : MetaData P)
+    (ρ₀ : Env P) :
+    StepStmtStar P evalCmd extendEval
+      (.stmt (.ite .nondet then_branch [] md) ρ₀) (.terminal ρ₀) := by
+  have h_inner : StepStmtStar P evalCmd extendEval
+      (.stmts ([] : List (Stmt P CmdT)) ρ₀) (.terminal ρ₀) :=
+    .step _ _ _ .step_stmts_nil (.refl _)
+  have h_block : StepStmtStar P evalCmd extendEval
+      (.block .none ρ₀.store ρ₀.eval (.stmts ([] : List (Stmt P CmdT)) ρ₀))
+      (.terminal { ρ₀ with store := projectStore ρ₀.store ρ₀.store, eval := ρ₀.eval }) :=
+    ReflTrans_Transitive _ _ _ _
+      (block_inner_star P evalCmd extendEval _ _ .none ρ₀.store ρ₀.eval h_inner)
+      (.step _ _ _ .step_block_done (.refl _))
+  rw [projectStore_self_env] at h_block
+  have henv : ({ ρ₀ with store := ρ₀.store, eval := ρ₀.eval } : Env P) = ρ₀ := by cases ρ₀; rfl
+  rw [henv] at h_block
+  exact .step _ _ _ .step_ite_nondet_false h_block
+
+omit [HasFvar P] [HasVal P] [HasOps P] in
+/-- An exiting execution of the block body whose label does NOT match the
+    block's label lifts to an exiting execution of the enclosing block. -/
+theorem block_wrap_exiting_mismatch
+    (l : String) (bss : List (Stmt P CmdT)) (md : MetaData P)
+    (lv : String) (ρ₀ ρ' : Env P)
+    (hne : lv ≠ l)
+    (h : StepStmtStar P evalCmd extendEval (.stmts bss ρ₀) (.exiting lv ρ')) :
+    StepStmtStar P evalCmd extendEval (.stmt (.block l bss md) ρ₀)
+      (.exiting lv { ρ' with store := projectStore ρ₀.store ρ'.store, eval := ρ₀.eval }) :=
+  ReflTrans_Transitive _ _ _ _
+    (step_block_enter P evalCmd extendEval l bss md ρ₀)
+    (ReflTrans_Transitive _ _ _ _
+      (block_inner_star P evalCmd extendEval _ _ (some l) ρ₀.store ρ₀.eval h)
+      (.step _ _ _ (.step_block_exit_mismatch (fun h => hne (Option.some.inj h).symm)) (.refl _)))
+
+omit [HasFvar P] [HasVal P] [HasOps P] in
+/-- An exiting execution of the block body whose label matches the
+    block's label lifts to a TERMINAL execution of the enclosing block. -/
+theorem block_wrap_exiting_match
+    (l : String) (bss : List (Stmt P CmdT)) (md : MetaData P)
+    (ρ₀ ρ' : Env P)
+    (h : StepStmtStar P evalCmd extendEval (.stmts bss ρ₀) (.exiting l ρ')) :
+    StepStmtStar P evalCmd extendEval (.stmt (.block l bss md) ρ₀)
+      (.terminal { ρ' with store := projectStore ρ₀.store ρ'.store, eval := ρ₀.eval }) :=
+  ReflTrans_Transitive _ _ _ _
+    (step_block_enter P evalCmd extendEval l bss md ρ₀)
+    (ReflTrans_Transitive _ _ _ _
+      (block_inner_star P evalCmd extendEval _ _ (some l) ρ₀.store ρ₀.eval h)
+      (.step _ _ _ (.step_block_exit_match rfl) (.refl _)))
+
+omit [HasFvar P] [HasVal P] [HasOps P] in
+/-- Refined inversion of `.block` reaching `.terminal`: the inner config either
+    terminates or exits with the matching label, and the final env is the parent
+    projection of that inner env. -/
+theorem block_reaches_terminal_refined
+    {inner : Config P CmdT} {l : String} {σ_parent : SemanticStore P}
+    {e_parent : SemanticEval P} {ρ' : Env P}
+    (hstar : StepStmtStar P evalCmd extendEval
+      (.block (some l) σ_parent e_parent inner) (.terminal ρ')) :
+    ∃ ρ_inner, (StepStmtStar P evalCmd extendEval inner (.terminal ρ_inner) ∨
+      StepStmtStar P evalCmd extendEval inner (.exiting l ρ_inner)) ∧
+      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store, eval := e_parent } := by
+  suffices ∀ src tgt, StepStmtStar P evalCmd extendEval src tgt →
+      ∀ inner σ_parent e_parent ρ',
+        src = .block (some l) σ_parent e_parent inner → tgt = .terminal ρ' →
+      ∃ ρ_inner, (StepStmtStar P evalCmd extendEval inner (.terminal ρ_inner) ∨
+        StepStmtStar P evalCmd extendEval inner (.exiting l ρ_inner)) ∧
+        ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store, eval := e_parent } from
+    this _ _ hstar _ _ _ _ rfl rfl
+  intro src tgt hstar_g
+  induction hstar_g with
+  | refl => intro _ _ _ _ hsrc htgt; subst hsrc; cases htgt
+  | step _ mid _ hstep hrest ih =>
+    intro inner σ_parent e_parent ρ' hsrc htgt; subst hsrc
+    cases hstep with
+    | step_block_body h =>
+      obtain ⟨ρ_inner, hinner, heq⟩ := ih _ _ _ _ rfl htgt
+      exact ⟨ρ_inner, hinner.elim
+        (fun hterm => .inl (.step _ _ _ h hterm))
+        (fun hexit_match => .inr (.step _ _ _ h hexit_match)), heq⟩
+    | step_block_done =>
+      subst htgt; cases hrest with
+      | refl => exact ⟨_, .inl (.refl _), rfl⟩
+      | step _ _ _ h _ => cases h
+    | step_block_exit_match heq =>
+      subst htgt; cases heq; cases hrest with
+      | refl => exact ⟨_, .inr (.refl _), rfl⟩
+      | step _ _ _ h _ => cases h
+    | step_block_exit_mismatch =>
+      subst htgt; cases hrest with | step _ _ _ h _ => cases h
+
+omit [HasFvar P] [HasVal P] [HasOps P] in
+/-- Refined inversion of `.block` reaching `.exiting`: the inner config exits
+    with the SAME label (forced different from the block's label), and the
+    final env is the parent projection of that inner env. -/
+theorem block_reaches_exiting_refined
+    {inner : Config P CmdT} {l : String} {σ_parent : SemanticStore P}
+    {e_parent : SemanticEval P} {lbl : String} {ρ' : Env P}
+    (hstar : StepStmtStar P evalCmd extendEval
+      (.block (some l) σ_parent e_parent inner) (.exiting lbl ρ')) :
+    ∃ ρ_inner, lbl ≠ l ∧
+      StepStmtStar P evalCmd extendEval inner (.exiting lbl ρ_inner) ∧
+      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store, eval := e_parent } := by
+  suffices ∀ src tgt, StepStmtStar P evalCmd extendEval src tgt →
+      ∀ inner σ_parent e_parent lbl ρ',
+        src = .block (some l) σ_parent e_parent inner → tgt = .exiting lbl ρ' →
+      ∃ ρ_inner, lbl ≠ l ∧
+        StepStmtStar P evalCmd extendEval inner (.exiting lbl ρ_inner) ∧
+        ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store, eval := e_parent } from
+    this _ _ hstar _ _ _ _ _ rfl rfl
+  intro src tgt hstar_g
+  induction hstar_g with
+  | refl => intro _ _ _ _ _ hsrc htgt; subst hsrc; cases htgt
+  | step _ mid _ hstep hrest ih =>
+    intro inner σ_parent e_parent lbl ρ' hsrc htgt; subst hsrc
+    cases hstep with
+    | step_block_body h =>
+      obtain ⟨ρ_inner, hne, hexit, hproj⟩ := ih _ _ _ _ _ rfl htgt
+      exact ⟨ρ_inner, hne, .step _ _ _ h hexit, hproj⟩
+    | step_block_done =>
+      subst htgt; cases hrest with | step _ _ _ h _ => cases h
+    | step_block_exit_match =>
+      subst htgt; cases hrest with | step _ _ _ h _ => cases h
+    | step_block_exit_mismatch hne =>
+      subst htgt
+      cases hrest with
+      | refl => exact ⟨_, fun heq => hne (congrArg Option.some heq.symm), .refl _, rfl⟩
+      | step _ _ _ h _ => cases h
+
+omit [HasFvar P] [HasVal P] [HasOps P] in
+/-- A head statement that exits causes the cons list to exit with the same label. -/
+theorem stmts_cons_exiting
+    (s : Stmt P CmdT) (ss : List (Stmt P CmdT)) (lbl : String)
+    (ρ₀ ρ' : Env P)
+    (h : StepStmtStar P evalCmd extendEval (.stmt s ρ₀) (.exiting lbl ρ')) :
+    StepStmtStar P evalCmd extendEval (.stmts (s :: ss) ρ₀) (.exiting lbl ρ') :=
+  ReflTrans_Transitive _ _ _ _
+    (.step _ _ _ .step_stmts_cons (.refl _))
+    (ReflTrans_Transitive _ _ _ _
+      (seq_inner_star P evalCmd extendEval _ _ ss h)
+      (.step _ _ _ .step_seq_exit (.refl _)))
+
+omit [HasVal P] [HasOps P] [HasFvar P] in
+/-- Lifting CanFail from a head statement to a block (cons of statement list). -/
+theorem canFail_head_to_block
+    (s : Stmt P CmdT) (ss : List (Stmt P CmdT)) (ρ₀ : Env P)
+    (h : CanFail (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) s ρ₀) :
+    CanFailBlock evalCmd extendEval (s :: ss) ρ₀ := by
+  obtain ⟨cfg, hfail, hreach⟩ := h
+  refine ⟨.seq cfg ss, ?_, ?_⟩
+  · simp [Config.getEnv]; exact hfail
+  · exact ReflTrans_Transitive _ _ _ _
+      (.step _ _ _ .step_stmts_cons (.refl _))
+      (seq_inner_star P evalCmd extendEval _ _ ss hreach)
+
+omit [HasFvar P] [HasVal P] [HasOps P] in
+/-- Lifting CanFail from a tail block to the cons block, given the head terminates. -/
+theorem canFail_tail_to_block
+    (s : Stmt P CmdT) (ss : List (Stmt P CmdT)) (ρ₀ ρ₁ : Env P)
+    (hhead : StepStmtStar P evalCmd extendEval (.stmt s ρ₀) (.terminal ρ₁))
+    (htail : CanFailBlock evalCmd extendEval ss ρ₁) :
+    CanFailBlock evalCmd extendEval (s :: ss) ρ₀ := by
+  obtain ⟨cfg, hfail, hreach⟩ := htail
+  exact ⟨cfg, hfail,
+    ReflTrans_Transitive _ _ _ _
+      (stmts_cons_step P evalCmd extendEval s ss ρ₀ ρ₁ hhead)
+      hreach⟩
+
+omit [HasVal P] [HasOps P] [HasFvar P] in
+/-- A failing block body lifts to a failing block statement. -/
+theorem canFailBlock_to_canFail_block
+    (l : String) (bss : List (Stmt P CmdT)) (md : MetaData P) (ρ₀ : Env P)
+    (h : CanFailBlock evalCmd extendEval bss ρ₀) :
+    CanFail (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) (.block l bss md) ρ₀ := by
+  obtain ⟨cfg, hfail, hreach⟩ := h
+  exact ⟨.block (.some l) ρ₀.store ρ₀.eval cfg,
+    by show cfg.getEnv.hasFailure = Bool.true; exact hfail,
+    ReflTrans_Transitive _ _ _ _
+      (step_block_enter P evalCmd extendEval l bss md ρ₀)
+      (block_inner_star P evalCmd extendEval _ _ (.some l) ρ₀.store ρ₀.eval hreach)⟩
+
+omit [HasFvar P] [HasVal P] [HasOps P] in
+/-- CanFail in a prefix lifts to CanFail in `prefix ++ suffix`. -/
+theorem canFailBlock_append_left
+    (ss₁ ss₂ : List (Stmt P CmdT)) (ρ₀ : Env P)
+    (h : CanFailBlock evalCmd extendEval ss₁ ρ₀) :
+    CanFailBlock evalCmd extendEval (ss₁ ++ ss₂) ρ₀ := by
+  obtain ⟨cfg, hfail, hreach⟩ := h
+  by_cases hnf : ρ₀.hasFailure = Bool.true
+  · exact ⟨.stmts (ss₁ ++ ss₂) ρ₀, by simp [Config.getEnv]; exact hnf, .refl _⟩
+  · suffices ∀ src tgt, StepStmtStar P evalCmd extendEval src tgt →
+        tgt.getEnv.hasFailure = Bool.true →
+        (∀ ss ρ, src = .stmts ss ρ →
+          ∃ tgt', tgt'.getEnv.hasFailure = Bool.true ∧
+            StepStmtStar P evalCmd extendEval (.stmts (ss ++ ss₂) ρ) tgt') ∧
+        (∀ inner ss, src = .seq inner ss →
+          ∃ tgt', tgt'.getEnv.hasFailure = Bool.true ∧
+            StepStmtStar P evalCmd extendEval (.seq inner (ss ++ ss₂)) tgt') by
+      have ⟨tgt', hf', hr'⟩ := (this _ _ hreach hfail).1 ss₁ ρ₀ rfl
+      exact ⟨tgt', hf', hr'⟩
+    intro src tgt hstar hf
+    induction hstar with
+    | refl =>
+      exact ⟨fun ss ρ heq => by subst heq; exact ⟨_, by simp [Config.getEnv] at hf ⊢; exact hf, .refl _⟩,
+             fun inner ss heq => by subst heq; exact ⟨_, by simp [Config.getEnv] at hf ⊢; exact hf, .refl _⟩⟩
+    | step _ mid _ hstep hrest ih =>
+      have ⟨ih1, ih2⟩ := ih hf
+      exact ⟨fun ss ρ heq => by
+        subst heq; cases hstep with
+        | step_stmts_nil =>
+          have hf_ρ : ρ.hasFailure = Bool.true := by
+            cases hrest with
+            | refl => simp [Config.getEnv] at hf; exact hf
+            | step _ _ _ hstep' _ => cases hstep'
+          exact ⟨.stmts ss₂ ρ, by simp [Config.getEnv]; exact hf_ρ, .refl _⟩
+        | step_stmts_cons =>
+          have ⟨tgt', hf', hr'⟩ := ih2 _ _ rfl
+          exact ⟨tgt', hf', .step _ _ _ .step_stmts_cons hr'⟩,
+      fun inner ss heq => by
+        subst heq; cases hstep with
+        | step_seq_inner h =>
+          have ⟨tgt', hf', hr'⟩ := ih2 _ _ rfl
+          exact ⟨tgt', hf', .step _ _ _ (.step_seq_inner h) hr'⟩
+        | step_seq_done =>
+          have ⟨tgt', hf', hr'⟩ := ih1 _ _ rfl
+          exact ⟨tgt', hf', .step _ _ _ .step_seq_done hr'⟩
+        | step_seq_exit =>
+          cases hrest with
+          | refl =>
+            exact ⟨_, hf, .step _ _ _ .step_seq_exit (.refl _)⟩
+          | step _ _ _ h _ => cases h⟩
+
+omit [HasFvar P] [HasVal P] [HasOps P] in
+/-- CanFail in a suffix lifts to CanFail in `prefix ++ suffix`, given the prefix terminates. -/
+theorem canFailBlock_append_right
+    (ss₁ ss₂ : List (Stmt P CmdT)) (ρ₀ ρ₁ : Env P)
+    (hpfx : StepStmtStar P evalCmd extendEval (.stmts ss₁ ρ₀) (.terminal ρ₁))
+    (h : CanFailBlock evalCmd extendEval ss₂ ρ₁) :
+    CanFailBlock evalCmd extendEval (ss₁ ++ ss₂) ρ₀ := by
+  obtain ⟨cfg, hfail, hreach⟩ := h
+  exact ⟨cfg, hfail, ReflTrans_Transitive _ _ _ _
+    (stmts_prefix_terminal_append P evalCmd extendEval ss₁ ss₂ ρ₀ ρ₁ hpfx)
+    hreach⟩
+
+private theorem overapproximatesAggressively_stmts_aux
+    (hwf_ext : WFEvalExtension P extendEval)
+    (T : Stmt P CmdT → Option (Stmt P CmdT))
+    (newPrefix : Option String)
+    (hsem : OverapproximatesAggressively (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn)
+      (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) T newPrefix)
+    (prefixIdents : List String)
+    (hmem : ∀ p, newPrefix = some p → p ∈ prefixIdents)
+    (hpd : ∀ p, newPrefix = some p → PrefixDisjoint p (prefixIdents.erase p))
+    (ss : List (Stmt P CmdT)) :
+    ∀ (ss' : List (Stmt P CmdT)),
+      ss.mapM T = some ss' →
+      ∀ (ρ₀ ρ' : Env P),
+        WellFormedSemanticEvalBool ρ₀.eval →
+        WellFormedSemanticEvalVal ρ₀.eval →
+        WellFormedSemanticEvalVar ρ₀.eval →
+        (StepStmtStar P evalCmd extendEval (.stmts ss ρ₀) (.terminal ρ') →
+          CanFail (Lang.imperativeBlock evalCmd extendEval isAtAssertFn) ss' ρ₀ ∨
+          (ρ'.hasFailure = false →
+            StepStmtStar P evalCmd extendEval (.stmts ss' ρ₀) (.terminal ρ')))
+        ∧
+        (∀ lbl, StepStmtStar P evalCmd extendEval (.stmts ss ρ₀) (.exiting lbl ρ') →
+          CanFail (Lang.imperativeBlock evalCmd extendEval isAtAssertFn) ss' ρ₀ ∨
+          (ρ'.hasFailure = false →
+            StepStmtStar P evalCmd extendEval (.stmts ss' ρ₀) (.exiting lbl ρ'))) := by
+  induction ss with
+  | nil =>
+    intro ss' hmap ρ₀ ρ' _ _ _
+    have : ss' = [] := by simp [List.mapM_nil] at hmap; exact hmap
+    subst this; exact ⟨fun h => .inr (fun _ => h), fun lbl h => .inr (fun _ => h)⟩
+  | cons s rest ih =>
+    intro ss' hmap ρ₀ ρ' hwfb hwfv hwfvar
+    have ⟨s', rest', hs, hrm, hss'⟩ := List.mapM_cons_some hmap
+    subst hss'
+    have eval_preserved : ∀ ρ₁ : Env P,
+        StepStmtStar P evalCmd extendEval (.stmt s ρ₀) (.terminal ρ₁) →
+        WellFormedSemanticEvalBool ρ₁.eval ∧ WellFormedSemanticEvalVal ρ₁.eval
+        ∧ WellFormedSemanticEvalVar ρ₁.eval := by
+      intro ρ₁ hterm_s
+      exact ⟨star_preserves_wfBool P evalCmd extendEval hwf_ext hterm_s hwfb,
+             star_preserves_wfVal P evalCmd extendEval hwf_ext hterm_s hwfv,
+             star_preserves_wfVar P evalCmd extendEval hwf_ext hterm_s hwfvar⟩
+    have ⟨hsem_term, hsem_exit, hsem_fail, _hsem_swf⟩ :=
+      hsem prefixIdents s s' hs trivial hmem hpd ρ₀ (fun _ => false) trivial
+    -- Helper for the common pattern: ρ₁.hasFailure = true → s can fail → s' can fail → lift
+    have canfail_from_failure : ∀ (ρ₁ : Env P),
+        StepStmtStar P evalCmd extendEval (.stmt s ρ₀) (.terminal ρ₁) →
+        ρ₁.hasFailure = true →
+        CanFail (Lang.imperativeBlock evalCmd extendEval isAtAssertFn) (s' :: rest') ρ₀ := by
+      intro ρ₁ hterm_s hf₁
+      have hcanfail_s : CanFail (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) s ρ₀ :=
+        ⟨.terminal ρ₁, by simp [Config.getEnv]; exact hf₁, hterm_s⟩
+      exact canFail_head_to_block evalCmd extendEval isAtAssertFn s' rest' ρ₀
+        (hsem_fail hcanfail_s)
+    constructor
+    · -- Terminal case
+      intro hstar
+      cases hstar with
+      | step _ _ _ hstep hrest_exec => cases hstep with
+        | step_stmts_cons =>
+          have ⟨ρ₁, hterm_s, hterm_rest⟩ := seq_reaches_terminal P evalCmd extendEval hrest_exec
+          have ⟨hwfb₁, hwfv₁, hwfvar₁⟩ := eval_preserved ρ₁ hterm_s
+          match hsem_term ρ₁ hterm_s with
+          | .inl canfail_s' =>
+            exact .inl (canFail_head_to_block evalCmd extendEval isAtAssertFn s' rest' ρ₀ canfail_s')
+          | .inr hterm_s' =>
+            -- First check if ρ₁.hasFailure = false; if not, we get CanFail directly
+            by_cases hf₁ : ρ₁.hasFailure = false
+            · -- ρ₁ has no failure, so s' terminates at ρ₁
+              have ih_result := (ih rest' hrm ρ₁ ρ' hwfb₁ hwfv₁ hwfvar₁).1 hterm_rest
+              match ih_result with
+              | .inl canfail_rest' =>
+                obtain ⟨cfg', hf', hreach'⟩ := canfail_rest'
+                exact .inl ⟨cfg', hf',
+                  ReflTrans_Transitive _ _ _ _
+                    (stmts_cons_step P evalCmd extendEval s' rest' ρ₀ ρ₁ (hterm_s' hf₁))
+                    hreach'⟩
+              | .inr hterm_rest' =>
+                exact .inr fun hf =>
+                  ReflTrans_Transitive _ _ _ _
+                    (stmts_cons_step P evalCmd extendEval s' rest' ρ₀ ρ₁ (hterm_s' hf₁))
+                    (hterm_rest' hf)
+            · -- ρ₁.hasFailure = true, so s can fail → s' can fail → lift to whole list
+              have hf₁' : ρ₁.hasFailure = true := by
+                rcases Bool.eq_false_or_eq_true ρ₁.hasFailure with h | h
+                · exact h
+                · exact absurd h hf₁
+              exact .inl (canfail_from_failure ρ₁ hterm_s hf₁')
+    · -- Exiting case
+      intro lbl hstar
+      cases hstar with
+      | step _ _ _ hstep hrest_exec => cases hstep with
+        | step_stmts_cons =>
+          match seq_reaches_exiting P evalCmd extendEval hrest_exec with
+          | .inl hexit_s =>
+            match hsem_exit lbl ρ' hexit_s with
+            | .inl canfail_s' =>
+              exact .inl (canFail_head_to_block evalCmd extendEval isAtAssertFn s' rest' ρ₀ canfail_s')
+            | .inr hexit_s' =>
+              exact .inr fun hf =>
+                .step _ _ _ .step_stmts_cons
+                  (ReflTrans_Transitive _ _ _ _ (seq_inner_star P evalCmd extendEval _ _ rest'
+                    (hexit_s' hf))
+                    (.step _ _ _ .step_seq_exit (.refl _)))
+          | .inr ⟨ρ₁, hterm_s, hexit_rest⟩ =>
+            have ⟨hwfb₁, hwfv₁, hwfvar₁⟩ := eval_preserved ρ₁ hterm_s
+            match hsem_term ρ₁ hterm_s with
+            | .inl canfail_s' =>
+              exact .inl (canFail_head_to_block evalCmd extendEval isAtAssertFn s' rest' ρ₀ canfail_s')
+            | .inr hterm_s' =>
+              have ih_result := (ih rest' hrm ρ₁ ρ' hwfb₁ hwfv₁ hwfvar₁).2 lbl hexit_rest
+              match ih_result with
+              | .inl canfail_rest' =>
+                by_cases hf₁ : ρ₁.hasFailure = false
+                · obtain ⟨cfg', hf', hreach'⟩ := canfail_rest'
+                  exact .inl ⟨cfg', hf',
+                    ReflTrans_Transitive _ _ _ _
+                      (stmts_cons_step P evalCmd extendEval s' rest' ρ₀ ρ₁ (hterm_s' hf₁))
+                      hreach'⟩
+                · have hf₁' : ρ₁.hasFailure = true := by
+                    rcases Bool.eq_false_or_eq_true ρ₁.hasFailure with h | h
+                    · exact h
+                    · exact absurd h hf₁
+                  exact .inl (canfail_from_failure ρ₁ hterm_s hf₁')
+              | .inr hexit_rest' =>
+                exact .inr fun hf => by
+                  by_cases hf₁ : ρ₁.hasFailure = false
+                  · exact ReflTrans_Transitive _ _ _ _
+                      (stmts_cons_step P evalCmd extendEval s' rest' ρ₀ ρ₁ (hterm_s' hf₁))
+                      (hexit_rest' hf)
+                  · exfalso
+                    have hf₁' : ρ₁.hasFailure = true := by
+                      rcases Bool.eq_false_or_eq_true ρ₁.hasFailure with h | h
+                      · exact h
+                      · exact absurd h hf₁
+                    have : ρ'.hasFailure = true :=
+                      StepStmtStar_hasFailure_monotone hexit_rest hf₁'
+                    exact absurd hf (by simp [this])
+
+theorem overapproximatesAggressively_stmts
+    (hwf_ext : WFEvalExtension P extendEval)
+    (T : Stmt P CmdT → Option (Stmt P CmdT))
+    (newPrefix : Option String)
+    (hsem : OverapproximatesAggressively (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn)
+      (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) T newPrefix) :
+    OverapproximatesAggressively
+      (Lang.imperativeBlock evalCmd extendEval isAtAssertFn)
+      (Lang.imperativeBlock evalCmd extendEval isAtAssertFn)
+      (fun ss => ss.mapM T) newPrefix := by
+  intro prefixIdents ss ss' hmap _ hmem hpd ρ₀ declaredFuncs hwf
+  obtain ⟨hwfb, hwfv, hwfvar⟩ := hwf
+  refine ⟨fun ρ' hstar => ?_, fun lbl ρ' hstar => ?_, ?_, ⟨hwfb, hwfv, hwfvar⟩⟩
+  · exact (overapproximatesAggressively_stmts_aux evalCmd extendEval isAtAssertFn hwf_ext T newPrefix
+      hsem prefixIdents hmem hpd ss ss' hmap ρ₀ ρ' hwfb hwfv hwfvar).1 hstar
+  · exact (overapproximatesAggressively_stmts_aux evalCmd extendEval isAtAssertFn hwf_ext T newPrefix
+      hsem prefixIdents hmem hpd ss ss' hmap ρ₀ ρ' hwfb hwfv hwfvar).2 lbl hstar
+  · exact overapproximatesAggressively_stmts_canfail evalCmd extendEval isAtAssertFn hwf_ext T
+      newPrefix hsem prefixIdents hmem hpd ss ss' hmap ρ₀ hwfb hwfv hwfvar
 
 end ImperativeStmts
 
