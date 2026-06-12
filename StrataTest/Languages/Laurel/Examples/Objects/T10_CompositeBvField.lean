@@ -11,7 +11,6 @@ parameterization pass correctly boxes/unboxes bv-typed fields.
 -/
 
 meta import all StrataTest.Util.TestDiagnostics
-meta import all StrataTest.Languages.Laurel.TestExamples
 
 meta section
 
