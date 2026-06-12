@@ -254,11 +254,7 @@ theorem InitStateUniqueResult
 /-! ### Assert / set commutation -/
 
 theorem eval_assert_store_cst
-<<<<<<< HEAD
-  [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]:
-=======
-  [HasFvar P] [HasBool P] [HasBoolOps P] [HasOps P]:
->>>>>>> origin/main2
+  [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P]:
   EvalCmd P δ σ (.assert l e md) σ' f → σ = σ' := by
   intros Heval; cases Heval with
   | eval_assert_pass _ => rfl
@@ -339,13 +335,8 @@ theorem semantic_eval_eq_of_eval_cmd_set_unrelated_var
   exact Hwf this
 
 theorem eval_cmd_set_comm'
-<<<<<<< HEAD
-  [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)] [HasVarsPure P P.Expr]
-  [HasFvar P] [HasVal P] [HasBool P] [HasNot P] [DecidableEq P.Ident] :
-=======
   [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)]
-  [HasFvar P] [HasBool P] [HasBoolOps P] [HasOps P] [DecidableEq P.Ident] :
->>>>>>> origin/main2
+  [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [DecidableEq P.Ident] :
   ¬ x1 = x2 →
   δ σ v1 = δ σ2 v1 →
   δ σ v2 = δ σ1 v2 →
