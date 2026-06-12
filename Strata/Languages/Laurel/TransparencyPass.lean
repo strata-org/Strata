@@ -8,6 +8,7 @@ module
 public import Strata.Languages.Laurel.MapStmtExpr
 public import Strata.Languages.Laurel.LaurelAST
 public import Strata.Languages.Laurel.LaurelPass
+public import Strata.Languages.Laurel.CoreGroupingAndOrdering
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 import Strata.DL.Lambda.TypeFactory
 
@@ -28,18 +29,6 @@ This IR sits between Laurel and CoreWithLaurelTypes in the pipeline:
 namespace Strata.Laurel
 
 public section
-
-/--
-An intermediate representation produced by the transparency pass.
-Functions are pure computational procedures (suffixed `$asFunction`);
-coreProcedures are the original procedures with any free postconditions
-embedded in their `Body.Opaque` postcondition lists.
--/
-public structure UnorderedCoreWithLaurelTypes where
-  functions : List Procedure
-  coreProcedures : List Procedure
-  datatypes : List DatatypeDefinition
-  constants : List Constant
 
 /-- Deep traversal that strips all Assert and Assume nodes from a StmtExpr tree.
     Assert/Assume nodes are replaced with `LiteralBool true`, and Block nodes
@@ -176,7 +165,7 @@ def createFunctionsForTransparentBodies (program : Program) : UnorderedCoreWithL
 
 public def transparencyPass : LaurelPass Laurel.Program UnorderedCoreWithLaurelTypes where
   name := "TransparencyPass"
-  comesBefore := []
+  comesBefore := [⟨ orderingPass.meta, "Transparency pass creates functions that are not ordered" ⟩]
   documentation := "Translate a Laurel program to the UnorderedCoreWithLaurelTypes IR.
 For each procedure:
 - Generate a function with the same signature, named `foo$asFunction`
@@ -184,18 +173,6 @@ For each procedure:
 - If the function has a body, add a free postcondition equating the procedure output to the function"
   run := fun p _ =>
     (createFunctionsForTransparentBodies p, [], {})
-
-open Std (Format ToFormat)
-
-def formatUnorderedCoreWithLaurelTypes (p : UnorderedCoreWithLaurelTypes) : Format :=
-  let datatypeFmts := p.datatypes.map ToFormat.format
-  let constantFmts := p.constants.map ToFormat.format
-  let functionFmts := p.functions.map ToFormat.format
-  let procFmts := p.coreProcedures.map ToFormat.format
-  Format.joinSep (datatypeFmts ++ constantFmts ++ functionFmts ++ procFmts) "\n\n"
-
-instance : ToFormat UnorderedCoreWithLaurelTypes where
-  format := formatUnorderedCoreWithLaurelTypes
 
 end -- public section
 end Strata.Laurel

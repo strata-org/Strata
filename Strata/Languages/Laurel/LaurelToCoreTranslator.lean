@@ -7,7 +7,6 @@ module
 
 public import Strata.Languages.Core.Program
 public import Strata.Languages.Core.Options
-public import Strata.Languages.Laurel.CoreGroupingAndOrdering
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 import Strata.Util.Tactics
 public import Strata.Languages.Laurel.Resolution

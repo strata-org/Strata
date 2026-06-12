@@ -5,7 +5,8 @@
 -/
 
 module
-public import Strata.Languages.Laurel.TransparencyPass
+public import Strata.Languages.Laurel.LaurelAST
+public import Strata.Languages.Laurel.LaurelPass
 import Strata.DL.Lambda.LExpr
 import StrataDDM.Util.Graph.Tarjan
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
@@ -27,6 +28,29 @@ declarations before they are emitted as Strata Core declarations.
 namespace Strata.Laurel
 
 open Lambda (LMonoTy LExpr)
+open Std (Format ToFormat)
+
+/--
+An intermediate representation produced by the transparency pass.
+Functions are pure computational procedures (suffixed `$asFunction`);
+coreProcedures are the original procedures with any free postconditions
+embedded in their `Body.Opaque` postcondition lists.
+-/
+public structure UnorderedCoreWithLaurelTypes where
+  functions : List Procedure
+  coreProcedures : List Procedure
+  datatypes : List DatatypeDefinition
+  constants : List Constant
+
+public def formatUnorderedCoreWithLaurelTypes (p : UnorderedCoreWithLaurelTypes) : Format :=
+  let datatypeFmts := p.datatypes.map ToFormat.format
+  let constantFmts := p.constants.map ToFormat.format
+  let functionFmts := p.functions.map ToFormat.format
+  let procFmts := p.coreProcedures.map ToFormat.format
+  Format.joinSep (datatypeFmts ++ constantFmts ++ functionFmts ++ procFmts) "\n\n"
+
+public instance : ToFormat UnorderedCoreWithLaurelTypes where
+  format := formatUnorderedCoreWithLaurelTypes
 
 /-- Collect all `UserDefined` type names referenced in a `HighType`, including nested ones. -/
 def collectTypeRefs : HighTypeMd → List String
@@ -227,7 +251,7 @@ Functions are grouped into SCCs (for mutual recursion). Proofs are emitted
 as individual `procedure` decls. Both participate in the topological ordering
 so that axioms are available to functions that need them.
 -/
-public def orderFunctionsAndProcedures (program : UnorderedCoreWithLaurelTypes) : CoreWithLaurelTypes :=
+def orderFunctionsAndProcedures (program : UnorderedCoreWithLaurelTypes) : CoreWithLaurelTypes :=
   let datatypeDecls := (groupDatatypesByScc' program).map OrderedDecl.datatypes
   let constantDecls := program.constants.map OrderedDecl.constant
   let funcNames : Std.HashSet String :=
@@ -255,5 +279,18 @@ where
     OutGraph.tarjan g |>.toList.filterMap fun comp =>
       let members := comp.toList.filterMap fun idx => dtsArr[idx]?
       if members.isEmpty then none else some members
+
+public def orderingPass : LaurelPass UnorderedCoreWithLaurelTypes CoreWithLaurelTypes where
+  name := "OrderingPass"
+  comesBefore := []
+  documentation := "Produce a `CoreWithLaurelTypes` from a `UnorderedCoreWithLaurelTypes` by
+computing a combined ordering of functions and proofs using the call graph,
+then collecting datatypes and constants.
+
+Functions are grouped into SCCs (for mutual recursion). Proofs are emitted
+as individual `procedure` decls. Both participate in the topological ordering
+so that axioms are available to functions that need them."
+  run := fun p _ =>
+    (orderFunctionsAndProcedures p, [], {})
 
 end Strata.Laurel
