@@ -10,9 +10,52 @@ public import Strata.Languages.Laurel.PushOldInward
 /-!
 # `pushOldInward` output invariant
 
-`pushOldInward_old_normalized`: every `Old` subterm of `pushOldInward p`'s
-output has the form `.Old ⟨.Var (.Local n), _⟩` with `n.text` an inout
-parameter of the enclosing procedure.
+## What this file shows
+
+The main result, `pushOldInward_old_normalized` (at the bottom of the file),
+says: once a program has been through `pushOldInward`, every `old(...)` in it
+wraps a single local variable, and that variable is always an inout parameter
+of the procedure it sits in. In other words, `old(...)` is left in a tidy,
+predictable shape that the rest of the pipeline can rely on.
+
+## How it was written
+
+This proof was not written by hand (as you may have already guessed). It was
+generated with Claude Code using Claude Sonnet 4.7. I (@julesmt) spent about an
+hour up front on the skeleton — deciding how to break the result into lemmas and
+what each one needed to say. After that, I left the model in a loop to work
+through the lemmas one at a time, filling them in until the top-level theorem
+went through.
+
+## Review status
+
+Nobody has read this file line by line — that was a deliberate choice given how
+it was produced. The guarantee here is just the usual one: it goes through the
+kernel with no `axiom`, `sorry`, `admit`, or `native_decide`
+(`#print axioms pushOldInward_old_normalized` if you want to see for yourself).
+
+## Maintenance
+
+This file stands on its own. Nothing in the compiler imports it or depends on
+it — it sits off to the side as a check on `pushOldInward`. So if it ever breaks
+(say someone reshapes the Laurel AST or `pushOldInward` itself), the worst that
+happens is this one file stops compiling; no actual compiler code goes down with
+it. And if keeping it in sync ever turns into real work, the plan is to just
+regenerate it or drop it rather than hand-maintain it.
+
+## Why this doesn't let us delete the `_ =>` fallback in the translator
+
+`LaurelToCoreTranslator` has a catch-all branch in its `old(...)` handling that
+raises a "this shouldn't happen" error. This proof shows that branch can never
+actually be hit on real input. It's tempting to then delete it — but we can't.
+
+The translator takes an ordinary expression and has no way, from its type alone,
+of knowing the expression came out of `pushOldInward`. Lean still insists every
+case be handled, so the fallback has to stay for the code to compile. Removing
+it for real would mean carrying this guarantee around in the types themselves,
+which is a much bigger change that this standalone proof intentionally steps
+around. So treat the proof as reassurance that the fallback is genuinely
+unreachable, not as something that lets us delete it.
 -/
 
 namespace Strata
