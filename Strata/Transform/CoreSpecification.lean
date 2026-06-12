@@ -56,9 +56,60 @@ open Core Imperative
 
 /-! ## Core `Lang` bundle -/
 
+/-- `Config.atLoopWithMeasure cfg me` holds when the head of `cfg` is a `.loop`
+    statement whose measure is `some me` — recursing through `.block` / `.seq`
+    wrappers so that loops nested inside compound configurations are visible. -/
+@[expose] def Config.atLoopWithMeasure :
+    Imperative.Config Expression Command → Expression.Expr → Prop
+  | .stmt (.loop _ (some m) _ _ _) _, me => m = me
+  | .stmts ((.loop _ (some m) _ _ _) :: _) _, me => m = me
+  | .block _ _ _ inner, me => Config.atLoopWithMeasure inner me
+  | .seq inner _, me => Config.atLoopWithMeasure inner me
+  | _, _ => False
+
+/-- `Config.atLoopEnv cfg` projects out the `Env` at the head of an
+    `atLoopWithMeasure` config — it walks through the same wrappers as
+    `atLoopWithMeasure` and returns the inner loop's env.  This is the env
+    against which the measure is evaluated when the loop is about to take a
+    `step_loop_enter` / `step_loop_exit` step. -/
+@[expose] def Config.atLoopEnv :
+    Imperative.Config Expression Command → Option (Imperative.Env Expression)
+  | .stmt (.loop _ (some _) _ _ _) ρ => some ρ
+  | .stmts ((.loop _ (some _) _ _ _) :: _) ρ => some ρ
+  | .block _ _ _ inner => Config.atLoopEnv inner
+  | .seq inner _ => Config.atLoopEnv inner
+  | _ => none
+
+/-! ## Syntactic predicate: loop measures are int-typed
+
+`Statement.measuresAreIntTypes` / `Statements.measuresAreIntTypes` is a purely
+syntactic check that every loop's measure (if present) satisfies
+`HasInt.isIntTy`.  Used as a precondition that survives the loop-elimination
+transform: the transform copies loop bodies verbatim into the output, so it
+preserves this property structurally. -/
+
+mutual
+@[expose] def Statement.measuresAreIntTypes : Statement → Prop
+  | .cmd _ => True
+  | .exit _ _ => True
+  | .funcDecl _ _ => True
+  | .typeDecl _ _ => True
+  | .block _ bss _ => Statements.measuresAreIntTypes bss
+  | .ite _ tss ess _ =>
+    Statements.measuresAreIntTypes tss ∧ Statements.measuresAreIntTypes ess
+  | .loop _ none _ body _ => Statements.measuresAreIntTypes body
+  | .loop _ (some m) _ body _ =>
+    HasInt.isIntTy m ∧ Statements.measuresAreIntTypes body
+
+@[expose] def Statements.measuresAreIntTypes : Statements → Prop
+  | [] => True
+  | s :: ss => Statement.measuresAreIntTypes s ∧ Statements.measuresAreIntTypes ss
+end
+
 /-- Store-well-formedness needed for a statement `s` to execute in env `ρ` without
     getting stuck. -/
-structure InitEnvWF (reserved : List String)
+structure InitEnvWF
+    (reserved : List String)
     (declaredFuncs : Expression.Ident → Bool)
     (s : Statement) (ρ : Imperative.Env Expression) :
     Prop where
@@ -84,10 +135,19 @@ structure InitEnvWF (reserved : List String)
   defUseOk : Stmt.defUseWellFormed (fun n => (ρ.store n).isSome) declaredFuncs s = Bool.true
   factoryDeclared : ∀ s, Core.isNameInFactory s = Bool.true →
     declaredFuncs ⟨s, ()⟩ = Bool.true
+  /-- Every `.loop` in `s` has an int-typed measure (when a measure is
+      present).  This is a purely syntactic property of `s` — it does not
+      depend on the trace or env — and is preserved by the loop-elimination
+      transform (which copies loop bodies verbatim into its output).  It is
+      what `WellFormedSemanticEvalInt.ltReduces` consumes (through the
+      evaluator's int-type-respecting behavior) to discharge
+      `assert(¬(m_old < 0))` / `assert(D < m_old)` checks. -/
+  loopMeasuresAreIntTypes : Statement.measuresAreIntTypes s
 
 /-- Block-level analog of `InitEnvWF`: well-formedness for executing a block of
     statements `bss` from env `ρ`. -/
-structure BlockInitEnvWF (reserved : List String)
+structure BlockInitEnvWF
+    (reserved : List String)
     (declaredFuncs : Expression.Ident → Bool)
     (bss : Statements)
     (ρ : Imperative.Env Expression) : Prop where
@@ -109,6 +169,51 @@ structure BlockInitEnvWF (reserved : List String)
   defUseOk : Block.defUseWellFormed (fun n => (ρ.store n).isSome) declaredFuncs bss = Bool.true
   factoryDeclared : ∀ s, Core.isNameInFactory s = Bool.true →
     declaredFuncs ⟨s, ()⟩ = Bool.true
+  /-- Block-level analog of `InitEnvWF.loopMeasuresAreIntTypes`. -/
+  loopMeasuresAreIntTypes : Statements.measuresAreIntTypes bss
+
+/-! ## Helpers for measure-evaluation
+
+Bridge from the syntactic `loopMeasuresAreIntTypes` field plus the
+evaluator-side `intTyEvalClosed` field to a closed int-typed evaluation
+witness for the loop's measure expression.  Consumers feed the witness into
+`WellFormedSemanticEvalInt.ltReduces` to dispatch
+`assert(¬(m_old < 0))` / `assert(D < m_old)` checks. -/
+
+theorem InitEnvWF.measure_eval_closed_intTy
+    {reserved : List String}
+    {declaredFuncs : Expression.Ident → Bool}
+    {guard : ExprOrNondet Expression} {m : Expression.Expr}
+    {inv : List (String × Expression.Expr)} {body : Statements}
+    {md : MetaData Expression} {ρ : Imperative.Env Expression}
+    (h : InitEnvWF reserved declaredFuncs
+            (.loop guard (some m) inv body md) ρ) :
+    ∃ v, ρ.eval ρ.store m = some v ∧
+      HasInt.isIntTy v ∧ HasFvars.getFvars v = [] := by
+  -- Step 1: extract `isIntTy m` from the syntactic field.
+  have hmIsIntTy : HasInt.isIntTy m := by
+    have hm := h.loopMeasuresAreIntTypes
+    show HasInt.isIntTy m
+    exact hm.1
+  -- Step 2: extract "all of m's fvars are defined in ρ.store" from defUseOk.
+  have h_m_vars_isSome : ∀ x ∈ HasFvars.getFvars m, (ρ.store x).isSome := by
+    intro x hx
+    have hdu := h.defUseOk
+    simp only [Stmt.defUseWellFormed, Bool.and_eq_true] at hdu
+    obtain ⟨⟨⟨⟨⟨⟨_, _⟩, hmeasOk⟩, _⟩, _⟩, _⟩, _⟩ := hdu
+    have hmem : x ∈ ((some m).map (fun lp => HasFvars.getFvars lp)).getD [] := by
+      simp only [Option.map, Option.getD]; exact hx
+    exact (List.all_eq_true.mp hmeasOk) x hmem
+  -- Step 3: combine three orthogonal obligations:
+  --   (a) `intTyEvalSome`: existence + type preservation;
+  --   (b) `wfVal`: evaluator returns values;
+  --   (c) `intValueIsClosed`: int-typed values have no free variables.
+  obtain ⟨v, hv_eval, hv_intTy⟩ :=
+    h.wfInt.intTyEvalSome ρ.store m hmIsIntTy h_m_vars_isSome
+  have hv_value : (@HasVal.value Expression) v := h.wfVal.1 m v ρ.store hv_eval
+  have hv_noFvars : HasFvars.getFvars v = [] :=
+    HasInt.intValueIsClosed v hv_value hv_intTy
+  exact ⟨v, hv_eval, hv_intTy, hv_noFvars⟩
 
 /-! ## Core factory-membership lemmas
 

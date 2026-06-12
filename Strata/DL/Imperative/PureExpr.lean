@@ -88,8 +88,27 @@ class HasInt (P : PureExpr) [HasVal P] [HasFvars P] where
   isNumeral : P.Expr → Bool
   numeralIsValue : ∀ n, isNumeral n = Bool.true → (@HasVal.value P) n
   zeroIsNumeral : isNumeral zero = Bool.true
-  numeralHasNoFvars : ∀ (n : P.Expr), isNumeral n = Bool.true →
-    HasFvars.getFvars (P := P) n = []
+  /-- Predicate "this expression has integer type."  Phrased as `Prop`
+      rather than `Bool` so that concrete instances can express the
+      property abstractly (in terms of an underlying typing judgment, the
+      factory's int-yielding operators, fvar type annotations, etc.)
+      without committing to a decidable check.  Ideally an instance would
+      define this in terms of a `HasType`-style predicate; a concrete
+      Bool-decidable approximation is acceptable as long as it satisfies
+      the laws below. -/
+  isIntTy : P.Expr → Prop
+  /-- Every numeral is int-typed. -/
+  numeralIsIntTy : ∀ (n : P.Expr), isNumeral n = Bool.true → isIntTy n
+  /-- Every int value is closed. -/
+  intValueIsClosed : ∀ (e : P.Expr), (@HasVal.value P) e → isIntTy e →
+    HasFvars.getFvars (P := P) e = []
+
+/-- Derived: every numeral is closed.  (Numeral → value → int-typed value →
+    closed.)  Kept as a theorem for call-site convenience. -/
+theorem HasInt.numeralHasNoFvars {P : PureExpr} [HasVal P] [HasFvars P] [HasInt P]
+    (n : P.Expr) (hn : HasInt.isNumeral n = Bool.true) :
+    HasFvars.getFvars (P := P) n = [] :=
+  HasInt.intValueIsClosed n (HasInt.numeralIsValue n hn) (HasInt.numeralIsIntTy n hn)
 
 /-- Integer arithmetic / comparison primitives. -/
 class HasIntOps (P : PureExpr) [HasBool P] [HasFvars P] [HasInt P] where

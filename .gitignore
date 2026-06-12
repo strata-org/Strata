@@ -1,15 +1,14 @@
-.vscode
-/.lake
-
-# SMT files generated when running tests
-vcs/*.smt2
 
 # CBMC pipeline intermediate files
+# SMT files generated when running tests
 *.full-symtab.json
-*.symtab.json
-*.goto.json
 *.gb
+*.goto.json
 *.py.ion
 *.py.ion.core.st
-
+*.symtab.json
+.claude/
+.vscode
+/.lake
 Strata.code-workspace
+vcs/*.smt2

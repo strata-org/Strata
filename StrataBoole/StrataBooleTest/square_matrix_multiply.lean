@@ -53,53 +53,54 @@ spec
 
 #end
 
-/-- info: Obligation: entry_invariant_0_0
+/-- info:
+Obligation: loopElimAssert_loop_0_entry_invariant_0
 Property: assert
 Result: ✅ pass
 
-Obligation: entry_invariant_0_1
+Obligation: loopElimAssert_loop_0_entry_invariant_1
 Property: assert
 Result: ✅ pass
 
-Obligation: entry_invariant_1_0
+Obligation: loopElimAssert_loop_1_entry_invariant_0
 Property: assert
 Result: ✅ pass
 
-Obligation: entry_invariant_1_1
+Obligation: loopElimAssert_loop_1_entry_invariant_1
 Property: assert
 Result: ✅ pass
 
-Obligation: entry_invariant_2_0
+Obligation: loopElimAssert_loop_2_entry_invariant_0
 Property: assert
 Result: ✅ pass
 
-Obligation: entry_invariant_2_1
+Obligation: loopElimAssert_loop_2_entry_invariant_1
 Property: assert
 Result: ✅ pass
 
-Obligation: arbitrary_iter_maintain_invariant_2_0
+Obligation: loopElimAssert_loop_2_arbitrary_iter_maintain_invariant_0
 Property: assert
 Result: ✅ pass
 
-Obligation: arbitrary_iter_maintain_invariant_2_1
+Obligation: loopElimAssert_loop_2_arbitrary_iter_maintain_invariant_1
 Property: assert
 Result: ✅ pass
 
-Obligation: arbitrary_iter_maintain_invariant_1_0
+Obligation: loopElimAssert_loop_1_arbitrary_iter_maintain_invariant_0
 Property: assert
 Result: ✅ pass
 
-Obligation: arbitrary_iter_maintain_invariant_1_1
+Obligation: loopElimAssert_loop_1_arbitrary_iter_maintain_invariant_1
 Property: assert
 Result: ✅ pass
 
-Obligation: arbitrary_iter_maintain_invariant_0_0
+Obligation: loopElimAssert_loop_0_arbitrary_iter_maintain_invariant_0
 Property: assert
 Result: ✅ pass
 
-Obligation: arbitrary_iter_maintain_invariant_0_1
+Obligation: loopElimAssert_loop_0_arbitrary_iter_maintain_invariant_1
 Property: assert
-Result: ✅ pass -/
+Result: ✅ pass-/
 #guard_msgs in
 #eval Strata.Boole.verify "cvc5" squareMatrixMult (options := .quiet)
 

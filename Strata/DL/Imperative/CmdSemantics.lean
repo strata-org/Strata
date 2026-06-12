@@ -89,7 +89,7 @@ def substSwap {P : PureExpr} (substs : List (P.Ident × P.Ident))
       (δ σ e = some Imperative.HasBool.tt ↔ δ σ (Imperative.HasBoolOps.not e) = (some HasBool.ff)) ∧
       (δ σ e = some Imperative.HasBool.ff ↔ δ σ (Imperative.HasBoolOps.not e) = (some HasBool.tt))
 
-def WellFormedSemanticEvalVal {P : PureExpr} [HasVal P]
+@[expose] def WellFormedSemanticEvalVal {P : PureExpr} [HasVal P]
     (δ : SemanticEval P) : Prop :=
   -- evaluator only evaluates to values
     (∀ v v' σ, δ σ v = some v' → HasVal.value v') ∧
@@ -106,11 +106,28 @@ def WellFormedSemanticEvalVal {P : PureExpr} [HasVal P]
 structure WellFormedSemanticEvalInt {P : PureExpr}
     [HasBool P] [HasFvars P] [HasInt P] [HasIntOps P]
     (δ : SemanticEval P) : Prop where
+  /-- `lt x y` reduces to a boolean whenever `x` and `y` evaluate to closed
+      int-typed values.  This is the property that lets us discharge
+      `assert(¬(m_old < 0))` / `assert(D < m_old)` in the loop-elim proof
+      without forcing the source measure to be a literal. -/
   ltReduces : ∀ σ x y nx ny,
-    δ σ x = some nx → HasInt.isNumeral nx = Bool.true →
-    δ σ y = some ny → HasInt.isNumeral ny = Bool.true →
+    δ σ x = some nx → HasInt.isIntTy nx →
+      HasFvars.getFvars nx = [] →
+    δ σ y = some ny → HasInt.isIntTy ny →
+      HasFvars.getFvars ny = [] →
     δ σ (HasIntOps.lt x y) = some HasBool.tt ∨
     δ σ (HasIntOps.lt x y) = some HasBool.ff
+  /-- `δ` evaluates int-typed source expressions to an int-typed result
+      whenever the source's free variables are all defined in `σ`.
+      Two obligations: existence (`some`) and type preservation (`isIntTy`).
+      Closure of the result (`getFvars v = []`) is deferred to
+      `HasInt.intValueIsClosed` (combined with `WellFormedSemanticEvalVal`'s
+      "evaluator returns values").  This split keeps the evaluator-side and
+      value-side obligations orthogonal. -/
+  intTyEvalSome : ∀ σ x,
+    HasInt.isIntTy x →
+    (∀ fv ∈ HasFvars.getFvars x, (σ fv).isSome) →
+    ∃ v, δ σ x = some v ∧ HasInt.isIntTy v
 
 /--
 Abstract variable update.

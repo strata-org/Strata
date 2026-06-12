@@ -110,6 +110,37 @@ abbrev Statement := Imperative.Stmt Core.Expression Core.Command
 @[expose]
 abbrev Statements := List Statement
 
+/-! ### NoCall
+
+Predicate stating that a Core statement or block contains no procedure-call
+commands.  Lives in `Core` (rather than generic `Imperative`) because calls
+are a Core-only concept — `Imperative.Cmd` has no procedure-call constructor.
+
+Used by `Imperative.LoopElim.removeLoopsLoopCase` to reject loop bodies that
+contain procedure calls. -/
+
+mutual
+/-- Returns true if every command syntactically inside `s` is not a procedure
+    call. -/
+@[expose] def Statement.noCall (s : Statement) : Bool :=
+  match s with
+  | .cmd (.cmd _) => true
+  | .cmd (.call _ _ _) => false
+  | .block _ bss _ => Statements.noCall bss
+  | .ite _ tss ess _ => Statements.noCall tss && Statements.noCall ess
+  | .loop _ _ _ bss _ => Statements.noCall bss
+  | .exit _ _ => true
+  | .funcDecl _ _ => true
+  | .typeDecl _ _ => true
+
+/-- Returns true if every command syntactically inside `ss` is not a procedure
+    call. -/
+@[expose] def Statements.noCall (ss : Statements) : Bool :=
+  match ss with
+  | [] => true
+  | s :: srest => Statement.noCall s && Statements.noCall srest
+end
+
 @[expose, match_pattern]
 abbrev Statement.init (name : Expression.Ident) (ty : Expression.Ty) (expr : ExprOrNondet Expression)
     (md : MetaData Expression) :=

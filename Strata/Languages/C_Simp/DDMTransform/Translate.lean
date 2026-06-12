@@ -268,7 +268,8 @@ partial def translateExprs (bindings : TransBindings) (args : Array Arg) :
   args.mapM (fun a => translateExpr bindings a)
 end
 
-def translateMeasure (bindings : TransBindings) (arg : Arg) : TransM (Option (LExpr CSimpLParams.mono)) := do
+def translateMeasure (bindings : TransBindings) (arg : Arg) :
+    TransM (Option (LExpr CSimpLParams.mono)) := do
   translateOption (fun maybe_arg => do
                     match maybe_arg with
                     | none => return none

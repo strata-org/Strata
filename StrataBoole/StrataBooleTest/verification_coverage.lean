@@ -171,27 +171,27 @@ Obligation: assert_3_514
 Property: assert
 Result: ✅ pass
 
-Obligation: entry_invariant_0_0
+Obligation: loopElimAssert_loop_14_entry_invariant_0
 Property: assert
 Result: ✅ pass
 
-Obligation: entry_invariant_0_1
+Obligation: loopElimAssert_loop_14_entry_invariant_1
 Property: assert
 Result: ✅ pass
 
-Obligation: entry_invariant_0_2
+Obligation: loopElimAssert_loop_14_entry_invariant_2
 Property: assert
 Result: ✅ pass
 
-Obligation: arbitrary_iter_maintain_invariant_0_0
+Obligation: loopElimAssert_loop_14_arbitrary_iter_maintain_invariant_0
 Property: assert
 Result: ✅ pass
 
-Obligation: arbitrary_iter_maintain_invariant_0_1
+Obligation: loopElimAssert_loop_14_arbitrary_iter_maintain_invariant_1
 Property: assert
 Result: ✅ pass
 
-Obligation: arbitrary_iter_maintain_invariant_0_2
+Obligation: loopElimAssert_loop_14_arbitrary_iter_maintain_invariant_2
 Property: assert
 Result: ✅ pass
 
