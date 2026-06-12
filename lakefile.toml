@@ -7,6 +7,7 @@ lintDriver = "CheckImports"
 [[require]]
 name = "StrataDDM"
 git = "https://github.com/strata-org/Strata-DDM"
+rev = "port/main2-ddm-fixes"
 
 [[require]]
 name = "plausible"
