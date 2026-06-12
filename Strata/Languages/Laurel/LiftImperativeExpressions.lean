@@ -142,45 +142,50 @@ private def computeType (expr : StmtExprMd) : LiftM HighTypeMd := do
   let s ← get
   return computeExprType s.model expr
 
-/-- Check if an expression contains any assignments or imperative calls (recursively). -/
-def containsAssignmentOrImperativeCall (imperativeCallees : List String) (expr : StmtExprMd) : Bool :=
+/-- Check if an expression contains any assignments or imperative calls
+(recursively). When `liftsAssertsAssumes` is set, asserts and assumes also
+count — these are lifted into statement position by `transformExpr`, so an
+if-then-else whose branch contains one must itself be lifted to keep the
+statement guarded by the condition. -/
+def containsAssignmentOrImperativeCall (imperativeCallees : List String) (expr : StmtExprMd)
+    (liftsAssertsAssumes : Bool := false) : Bool :=
   match expr with
   | AstNode.mk val _ =>
   match val with
   | .Assign .. => true
   | .StaticCall name args1 =>
     imperativeCallees.contains name.text ||
-      args1.attach.any (fun x => containsAssignmentOrImperativeCall imperativeCallees x.val)
-  | .PrimitiveOp _ args2 _ => args2.attach.any (fun x => containsAssignmentOrImperativeCall imperativeCallees x.val)
-  | .Block stmts _ => stmts.attach.any (fun x => containsAssignmentOrImperativeCall imperativeCallees x.val)
+      args1.attach.any (fun x => containsAssignmentOrImperativeCall imperativeCallees x.val liftsAssertsAssumes)
+  | .PrimitiveOp _ args2 _ => args2.attach.any (fun x => containsAssignmentOrImperativeCall imperativeCallees x.val liftsAssertsAssumes)
+  | .Block stmts _ => stmts.attach.any (fun x => containsAssignmentOrImperativeCall imperativeCallees x.val liftsAssertsAssumes)
   | .IfThenElse cond th el =>
-      containsAssignmentOrImperativeCall imperativeCallees cond ||
-      containsAssignmentOrImperativeCall imperativeCallees th ||
-      match el with | some e => containsAssignmentOrImperativeCall imperativeCallees e | none => false
-  | .Assume cond => containsAssignmentOrImperativeCall imperativeCallees cond
-  | .Assert cond => containsAssignmentOrImperativeCall imperativeCallees cond.condition
+      containsAssignmentOrImperativeCall imperativeCallees cond liftsAssertsAssumes ||
+      containsAssignmentOrImperativeCall imperativeCallees th liftsAssertsAssumes ||
+      match el with | some e => containsAssignmentOrImperativeCall imperativeCallees e liftsAssertsAssumes | none => false
+  | .Assume cond => liftsAssertsAssumes || containsAssignmentOrImperativeCall imperativeCallees cond liftsAssertsAssumes
+  | .Assert cond => liftsAssertsAssumes || containsAssignmentOrImperativeCall imperativeCallees cond.condition liftsAssertsAssumes
   | .InstanceCall target _ args =>
-      containsAssignmentOrImperativeCall imperativeCallees target ||
-      args.attach.any (fun x => containsAssignmentOrImperativeCall imperativeCallees x.val)
+      containsAssignmentOrImperativeCall imperativeCallees target liftsAssertsAssumes ||
+      args.attach.any (fun x => containsAssignmentOrImperativeCall imperativeCallees x.val liftsAssertsAssumes)
   | .Quantifier _ _ trigger body =>
-      containsAssignmentOrImperativeCall imperativeCallees body ||
-      match trigger with | some t => containsAssignmentOrImperativeCall imperativeCallees t | none => false
-  | .Old value => containsAssignmentOrImperativeCall imperativeCallees value
-  | .Fresh value => containsAssignmentOrImperativeCall imperativeCallees value
+      containsAssignmentOrImperativeCall imperativeCallees body liftsAssertsAssumes ||
+      match trigger with | some t => containsAssignmentOrImperativeCall imperativeCallees t liftsAssertsAssumes | none => false
+  | .Old value => containsAssignmentOrImperativeCall imperativeCallees value liftsAssertsAssumes
+  | .Fresh value => containsAssignmentOrImperativeCall imperativeCallees value liftsAssertsAssumes
   | .ProveBy value proof =>
-      containsAssignmentOrImperativeCall imperativeCallees value ||
-      containsAssignmentOrImperativeCall imperativeCallees proof
+      containsAssignmentOrImperativeCall imperativeCallees value liftsAssertsAssumes ||
+      containsAssignmentOrImperativeCall imperativeCallees proof liftsAssertsAssumes
   | .ReferenceEquals lhs rhs =>
-      containsAssignmentOrImperativeCall imperativeCallees lhs ||
-      containsAssignmentOrImperativeCall imperativeCallees rhs
+      containsAssignmentOrImperativeCall imperativeCallees lhs liftsAssertsAssumes ||
+      containsAssignmentOrImperativeCall imperativeCallees rhs liftsAssertsAssumes
   | .PureFieldUpdate target _ newValue =>
-      containsAssignmentOrImperativeCall imperativeCallees target ||
-      containsAssignmentOrImperativeCall imperativeCallees newValue
-  | .AsType target _ => containsAssignmentOrImperativeCall imperativeCallees target
-  | .IsType target _ => containsAssignmentOrImperativeCall imperativeCallees target
-  | .Assigned name => containsAssignmentOrImperativeCall imperativeCallees name
-  | .ContractOf _ func => containsAssignmentOrImperativeCall imperativeCallees func
-  | .Return (some v) => containsAssignmentOrImperativeCall imperativeCallees v
+      containsAssignmentOrImperativeCall imperativeCallees target liftsAssertsAssumes ||
+      containsAssignmentOrImperativeCall imperativeCallees newValue liftsAssertsAssumes
+  | .AsType target _ => containsAssignmentOrImperativeCall imperativeCallees target liftsAssertsAssumes
+  | .IsType target _ => containsAssignmentOrImperativeCall imperativeCallees target liftsAssertsAssumes
+  | .Assigned name => containsAssignmentOrImperativeCall imperativeCallees name liftsAssertsAssumes
+  | .ContractOf _ func => containsAssignmentOrImperativeCall imperativeCallees func liftsAssertsAssumes
+  | .Return (some v) => containsAssignmentOrImperativeCall imperativeCallees v liftsAssertsAssumes
   | _ => false
   termination_by expr
   decreasing_by
@@ -294,28 +299,15 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
       return ⟨.Var (.Local callResultVar), source⟩
 
   | .IfThenElse cond thenBranch elseBranch =>
-      -- Decide whether the whole if-then-else must be lifted into statement
-      -- position. This is needed whenever processing a branch lifts *anything*
-      -- (assignments, imperative calls, asserts, assumes, nondeterministic
-      -- holes, ...) — not just assignments. If we left such lifted statements
-      -- in the surrounding prepend stack, they would escape the branch's guard
-      -- and run unconditionally.
-      --
-      -- Rather than statically enumerating every liftable construct, we
-      -- trial-run `transformExpr` on each branch and observe whether it pushed
-      -- anything onto the prepend stack. The full state (including fresh-name
-      -- counters and substitutions) is saved and restored, so the trial has no
-      -- observable effect on the real transformation below.
-      let savedState ← get
-      modify fun s => { s with prependedStmts := [], subst := [] }
-      let _ ← transformExpr thenBranch
-      let thenHasAssign := !(← get).prependedStmts.isEmpty
-      modify fun s => { s with prependedStmts := [], subst := [] }
-      let _ ← match elseBranch with
-        | some e => do let _ ← transformExpr e; pure ()
-        | none => pure ()
-      let elseHasAssign := !(← get).prependedStmts.isEmpty
-      set savedState
+      let imperativeCallees := (← get).imperativeCallees
+      -- A branch must be lifted if it contains anything `transformExpr` would
+      -- hoist: assignments, imperative calls, asserts, or assumes. (Asserts and
+      -- assumes matter because hoisting them out of the branch would drop the
+      -- condition's guard — see `liftsAssertsAssumes`.)
+      let thenHasAssign := containsAssignmentOrImperativeCall imperativeCallees thenBranch (liftsAssertsAssumes := true)
+      let elseHasAssign := match elseBranch with
+        | some e => containsAssignmentOrImperativeCall imperativeCallees e (liftsAssertsAssumes := true)
+        | none => false
       if thenHasAssign || elseHasAssign then
 
         -- Infer type from the ORIGINAL then-branch (not the transformed one),
@@ -360,7 +352,7 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
           modify fun s => { s with prependedStmts := condPrepends ++ s.prependedStmts }
           return default
       else
-        -- No assignments in branches — recurse normally
+        -- No liftable statements in branches — recurse normally.
         let seqCond ← transformExpr cond
         let seqThen ← transformExpr thenBranch
         let seqElse ← match elseBranch with
