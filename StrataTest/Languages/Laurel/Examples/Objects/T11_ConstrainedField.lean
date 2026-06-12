@@ -3,7 +3,6 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
 /-
 Test: constrained types as composite fields. Verifies that heap
@@ -16,17 +15,15 @@ in a follow-up PR by assuming the constraint on field reads and maintaining
 it across havoc/modifies.
 -/
 
-meta import all StrataTest.Util.TestDiagnostics
-meta import all StrataTest.Languages.Laurel.TestExamples
-
-meta section
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
 open Strata
 
-namespace Strata.Laurel
+#eval testLaurel
+#strata
+program Laurel;
 
-def constrainedFieldTest := r"
 constrained nat = x: int where x >= 0 witness 0
 
 composite Counter {
@@ -65,9 +62,4 @@ procedure readCountCompletenessGap(c: Counter)
   assert x >= 0
 //^^^^^^^^^^^^^ error: assertion does not hold
 };
-"
-
-#guard_msgs (drop info, error) in
-#eval testInputWithOffset "ConstrainedField" constrainedFieldTest 23 processLaurelFile
-
-end Laurel
+#end
