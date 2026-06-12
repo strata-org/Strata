@@ -91,7 +91,7 @@ def mapStmtExprM [Monad m] (f : StmtExprMd → m StmtExprMd) (expr : StmtExprMd)
   -- ⚠ If a new StmtExpr constructor with StmtExprMd children is added,
   -- it must get its own arm above; otherwise all passes will silently
   -- skip recursion into those children.
-  | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _
+  | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
   | .Var (.Local _) | .Var (.Declare _) | .New _ | .This | .Abstract | .All | .Hole .. => pure expr
   f rebuilt
 termination_by sizeOf expr

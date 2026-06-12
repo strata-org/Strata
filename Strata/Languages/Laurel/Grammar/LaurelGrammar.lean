@@ -3,7 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
--- Grammar updated: renamed Optional* categories (op names updated)
+-- Grammar updated: added bitvector literal support (bvLiteral)
 module
 
 -- Laurel dialect definition, loaded from LaurelGrammar.st

@@ -223,6 +223,10 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
     | q`Laurel.string, #[arg0] =>
       let s ← translateString arg0
       return mkStmtExprMd (.LiteralString s) src
+    | q`Laurel.bvLiteral, #[valueArg, widthArg] =>
+      let value ← translateNat valueArg
+      let width ← translateNat widthArg
+      return mkStmtExprMd (.LiteralBv value width) src
     | q`Laurel.hole, #[] => return mkStmtExprMd (.Hole true none) src
     | q`Laurel.nondetHole, #[] => return mkStmtExprMd (.Hole false none) src
     | q`Laurel.varDecl, #[arg0, typeArg, assignArg] =>
