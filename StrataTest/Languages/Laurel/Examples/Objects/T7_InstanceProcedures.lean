@@ -3,7 +3,6 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
 /-
 Tests for the `obj#method(args)` syntax for calling instance procedures.
@@ -16,19 +15,16 @@ name without colliding. `c#m(args)` parses as `InstanceCall c m args` and
 the lifting pass rewrites it to `StaticCall Counter$m (c :: args)`.
 -/
 
-meta import all StrataTest.Util.TestDiagnostics
-meta import all StrataTest.Languages.Laurel.TestExamples
-
-meta section
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
 open Strata
 
-namespace Strata.Laurel
-
 /-! ## 1. Basic instance method call: `c#reset()` -/
 
-def basicInstanceCall := r"
+#eval testLaurel <|
+#strata
+program Laurel;
 composite Counter {
   var count: int
   procedure reset(self: Counter)
@@ -47,16 +43,15 @@ procedure useCounter()
   c#reset();
   assert c#count == 0
 };
-"
-
-#guard_msgs (drop info, error) in
-#eval testInputWithOffset "BasicInstanceCall" basicInstanceCall 31 processLaurelFile
+#end
 
 /-! ## 2. Two composites with the same method name resolve independently.
     Without per-composite scoping, `tick` would collide in the global scope
     during pre-registration. -/
 
-def sameMethodNameAcrossComposites := r"
+#eval testLaurel <|
+#strata
+program Laurel;
 composite Counter {
   var count: int
   procedure tick(self: Counter)
@@ -94,14 +89,13 @@ procedure runClock()
   k#tick();
   assert k#time == 1
 };
-"
-
-#guard_msgs (drop info, error) in
-#eval testInputWithOffset "SameMethodNameAcrossComposites" sameMethodNameAcrossComposites 60 processLaurelFile
+#end
 
 /-! ## 3. Method with multiple parameters: `c#setTo(v)` -/
 
-def methodWithExtraArgs := r"
+#eval testLaurel <|
+#strata
+program Laurel;
 composite Cell {
   var value: int
   procedure setTo(self: Cell, v: int)
@@ -120,15 +114,14 @@ procedure useCell(x: int)
   b#setTo(x);
   assert b#value == x
 };
-"
-
-#guard_msgs (drop info, error) in
-#eval testInputWithOffset "MethodWithExtraArgs" methodWithExtraArgs 107 processLaurelFile
+#end
 
 /-! ## 4. Boolean-typed field updated through an instance method, and read
     back via field access in the caller's `assert`. -/
 
-def liftedNameRoundTrip := r"
+#eval testLaurel <|
+#strata
+program Laurel;
 composite Widget {
   var enabled: bool
   procedure activate(self: Widget)
@@ -147,17 +140,16 @@ procedure useWidget()
   w#activate();
   assert w#enabled == true
 };
-"
-
-#guard_msgs (drop info, error) in
-#eval testInputWithOffset "LiftedNameRoundTrip" liftedNameRoundTrip 138 processLaurelFile
+#end
 
 /-! ## 5. Calling an instance method from a top-level procedure that takes
     the receiver as a parameter. The caller's own modifies clause covers
     only `a`; the unused `b` parameter is included to confirm method
     dispatch picks the right receiver. -/
 
-def callViaLiftedName := r"
+#eval testLaurel <|
+#strata
+program Laurel;
 composite Counter {
   var count: int
   procedure reset(self: Counter)
@@ -176,16 +168,15 @@ procedure resetTwoCounters(a: Counter, b: Counter)
 {
   a#reset()
 };
-"
-
-#guard_msgs (drop info, error) in
-#eval testInputWithOffset "CallViaLiftedName" callViaLiftedName 162 processLaurelFile
+#end
 
 /-! ## 6. Instance method whose extra parameter is unused in the body:
     confirms an extra (unused) method parameter doesn't break call
     dispatch or framing. -/
 
-def opaqueMethodNoBody := r"
+#eval testLaurel <|
+#strata
+program Laurel;
 composite Account {
   var balance: int
   procedure deposit(self: Account, amount: int)
@@ -204,15 +195,14 @@ procedure useAccount()
   a#deposit(100);
   assert a#balance == 1
 };
-"
-
-#guard_msgs (drop info, error) in
-#eval testInputWithOffset "OpaqueMethodNoBody" opaqueMethodNoBody 184 processLaurelFile
+#end
 
 /-! ## 7. Instance method called through a field-selected receiver:
     `obj#field#method()`. -/
 
-def fieldSelectedReceiver := r"
+#eval testLaurel <|
+#strata
+program Laurel;
 composite Inner {
   var x: int
   procedure isOne(self: Inner) returns (r: bool)
@@ -231,14 +221,13 @@ procedure useOuter()
   var o: Outer := new Outer;
   var b: bool := o#inner#isOne()
 };
-"
-
-#guard_msgs (drop info, error) in
-#eval testInputWithOffset "FieldSelectedReceiver" fieldSelectedReceiver 219 processLaurelFile
+#end
 
 /-! ## 8. Chained field read: `obj#field#x`. -/
 
-def chainedFieldRead := r"
+#eval testLaurel <|
+#strata
+program Laurel;
 composite Inner { var x: int }
 composite Outer { var inner: Inner }
 
@@ -248,9 +237,4 @@ procedure useOuter()
   var o: Outer := new Outer;
   var v: int := o#inner#x
 };
-"
-
-#guard_msgs (drop info, error) in
-#eval testInputWithOffset "ChainedFieldRead" chainedFieldRead 243 processLaurelFile
-
-end Laurel
+#end

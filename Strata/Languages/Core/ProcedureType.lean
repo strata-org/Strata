@@ -31,7 +31,7 @@ private def checkNoDuplicates (proc : Procedure) (sourceLoc : FileRange) :
 private def checkModificationRights (proc : Procedure) (sourceLoc : FileRange) :
     Except DiagnosticModel Unit := do
   let modifiedVars := (HasVarsImp.modifiedVars (P := Expression) proc.body).eraseDups
-  let definedVars := (HasVarsImp.definedVars (P := Expression) proc.body).eraseDups
+  let definedVars := (HasVarsImp.definedVars (P := Expression) proc.body false).eraseDups
   let allowedVars := proc.header.outputs.keys ++ definedVars
   let disallowed := modifiedVars.filter (fun v => !allowedVars.contains v)
   if !disallowed.isEmpty then

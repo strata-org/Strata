@@ -285,7 +285,7 @@ def procedureToGotoCtx
   let formals_tys : Map String CProverGOTO.Ty := formals.zip formals_tys
   let outputs := p.header.outputs.keys.map Core.CoreIdent.toPretty
   let new_outputs := outputs.map (CProverGOTO.mkLocalSymbol pname ·)
-  let locals := (Imperative.Block.definedVars body).map Core.CoreIdent.toPretty
+  let locals := (Imperative.Block.definedVars body false).map Core.CoreIdent.toPretty
   let new_locals := locals.map (CProverGOTO.mkLocalSymbol pname ·)
   let rn : Std.HashMap String String :=
     (formals.zip new_formals ++ outputs.zip new_outputs ++ locals.zip new_locals).foldl

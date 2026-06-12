@@ -7,7 +7,7 @@ module
 
 public import Strata.Languages.Core.Program
 import Strata.Languages.Core.Verifier
-import StrataDDM.Integration.Lean.HashCommands -- shake: keep
+public import StrataDDM.Integration.Lean.HashCommands -- shake: keep
 
 open Strata
 
