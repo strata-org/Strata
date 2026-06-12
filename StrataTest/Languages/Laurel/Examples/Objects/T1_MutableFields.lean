@@ -200,4 +200,4 @@ procedure fieldTargetInMultiAssign()
 "#
 
 #guard_msgs (drop info, error) in
-#eval testInputWithOffset "MutableFields" program 14 processLaurelFile
+#eval testInputWithOffset "MutableFields" program 14 processLaurelFileKeepIntermediates

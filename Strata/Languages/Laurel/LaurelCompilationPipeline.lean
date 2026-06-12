@@ -109,7 +109,7 @@ private def laurelPipeline : Array LaurelPass := #[
     run := fun p _m =>
       let (p', diags) := eliminateReturnsInExpressionTransform p
       (p', diags.toList, {}) },
-  { name := "EliminateValuesInReturns"
+  { name := "EliminateValuesInReturns" -- Record that it should be before HeapParam
     run := fun p _m =>
       let (p', diags) := eliminateValuesInReturnsTransform p
       (p', diags.toList, {}) },
@@ -137,9 +137,6 @@ private def laurelPipeline : Array LaurelPass := #[
   { name := "DesugarShortCircuit"
     run := fun p _ =>
       (desugarShortCircuit p, [], {}) },
-  -- { name := "LiftExpressionAssignments"
-  --   run := fun p m =>
-  --     (liftExpressionAssignments p m [], [], {}) },
   { name := "ConstrainedTypeElim"
     needsResolves := true
     run := fun p m =>

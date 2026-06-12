@@ -341,7 +341,8 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
           return ⟨.Var (.Local condVar), source⟩
         else
           modify fun s => { s with prependedStmts := condPrepends ++ s.prependedStmts }
-          return default
+          -- Unused value
+          return ⟨ .Hole, expr.source ⟩
       else
         -- No assignments in branches — recurse normally
         let seqCond ← transformExpr cond

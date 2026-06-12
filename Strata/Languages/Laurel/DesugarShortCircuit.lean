@@ -49,7 +49,7 @@ private def desugarShortCircuitNode (imperativeCallees : List String) (expr : St
 
 /-- Desugar short-circuit operators in a program. -/
 def desugarShortCircuit (program : Program) : Program :=
-  let imperativeCallees := program.staticProcedures.map (fun p => p.name.text)
+  let imperativeCallees := (program.staticProcedures.filter (!·.isFunctional)).map (·.name.text)
   mapProgram (mapStmtExpr (desugarShortCircuitNode imperativeCallees)) program
 
 end -- public section
