@@ -6,6 +6,7 @@
 module
 
 public import Strata.DL.Imperative.StmtSemantics
+public import Strata.DL.Util.Relations
 import all Strata.DL.Imperative.CmdSemantics
 
 /-! # Soundness Specification
@@ -260,31 +261,185 @@ namespace Transform
   ∀ (s : L₁.StmtT) (s' : L₂.StmtT) (a : AssertId P),
     T s = some s' → AssertValid L₂ s' a → AssertValid L₁ s a
 
-/-! ## Overapproximate predicate
+/-! ## A family of Overapproximate predicates
 
-`Overapproximates L₁ L₂ T params₁ params₂` says that any terminal or exiting
-env reachable from `st` in `L₁` is also reachable from `T st` in `L₂`, and
-that `T` preserves initial-env well-formedness from the source's
-`params₁`-parameterized `initEnvWF` to the target's `params₂`-parameterized
-`initEnvWF`.  When `L₁ = L₂` and `params₁ = params₂`, this specializes to
-the single-language case. -/
+`Overapproximates L₁ L₂ T params₁ params₂` says that
+(1) any terminal or exiting env reachable from `st` in `L₁` is also reachable
+    from `T st` in `L₂`,
+(2) if there is a state reachable from `st` in `L₁` that fails an assertion,
+    there also is a state reachable from `T st` in `L₂` that fails an assertion, and
+(3) target-side well-formedness holds on the target initial env.
 
-/-- Overapproximation: terminal/exiting envs reachable from the source are
-    also reachable from the target. -/
-@[expose] def Overapproximates
+The precondition-bearing variant `OverapproximatesWhen`, the state-relation
+variant `OverapproximatesUpto(When)`, and the assertion-failure-relaxed
+`OverapproximatesAggressively(When)` provide progressively-more-general
+formulations, each described below. -/
+
+/-- After steps from `s`, some reachable configuration has `hasFailure = true`.
+    The configuration doesn't have to be terminal or exiting. -/
+@[expose] public def CanFail (L : Lang P) (s : L.StmtT) (ρ₀ : Env P) : Prop :=
+  ∃ cfg, (L.getEnv cfg).hasFailure = true ∧ L.star (L.stmtCfg s ρ₀) cfg
+
+/-- `CanFail` specialized to a list of imperative statements (a block body).
+    There exists a reachable config from `(.stmts ss ρ₀)` whose env has
+    `hasFailure = true`. -/
+@[expose] public def CanFailBlock
+    {CmdT : Type} (evalCmd : EvalCmdParam P CmdT) (extendFactory : ExtendFactory P)
+    (ss : List (Stmt P CmdT)) (ρ₀ : Env P) : Prop :=
+  ∃ cfg : Config P CmdT, cfg.getEnv.hasFailure = true ∧
+    StepStmtStar P evalCmd extendFactory (.stmts ss ρ₀) cfg
+
+/-! ## Overapproximation up to a mapping relation of program states
+
+`OverapproximatesUptoWhen R` relates the source and target executions up to a
+mapping relation `R`: initial environments are related by `R` and final
+environments by `R`.  This is useful for transformations that
+rename/restructure the state.
+
+`OverapproximatesWhen` (the same-environment version below) is the special case
+`R = (· = ·)`. -/
+
+/-- Overapproximation up to a mapping relation `R`, under a precondition `pre`.
+
+    For every transformed pair `T st = some st'`, every source initial env `ρ₀`
+    that is well-formed, and every target initial env `ρ₀'` related to it by `R`:
+    1. every terminal (resp. exiting) env `ρ'` reachable from `st` in `L₁` has a
+       target counterpart `ρ''` reachable from `st'` in `L₂`, related by `R`;
+    2. failure is preserved (from `ρ₀` in `L₁` to `ρ₀'` in `L₂`);
+    3. the target initial env `ρ₀'` is well-formed (`L₂.initEnvWF params₂`),
+       so the guarantee can be threaded into a further transform.
+-/
+@[expose] public def OverapproximatesUptoWhen
+    (R : Relation (Env P))
     (L₁ L₂ : Lang P) (T : L₁.StmtT → Option L₂.StmtT)
+    (pre : L₁.StmtT → Prop)
     (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy) : Prop :=
-  ∀ (st : L₁.StmtT) (s' : L₂.StmtT),
-    T st = some s' →
-    ∀ (ρ₀ : Env P),
+  ∀ (st : L₁.StmtT) (st' : L₂.StmtT),
+    T st = some st' →
+    pre st →
+    ∀ (ρ₀ ρ₀' : Env P),
+      R ρ₀ ρ₀' →
       L₁.initEnvWF params₁ st ρ₀ →
+      -- Terminal/exiting envs have an `R`-related target counterpart.
       (∀ (ρ' : Env P),
         (L₁.star (L₁.stmtCfg st ρ₀) (L₁.terminalCfg ρ') →
-         L₂.star (L₂.stmtCfg s' ρ₀) (L₂.terminalCfg ρ'))
+          ∃ ρ'', R ρ' ρ'' ∧ L₂.star (L₂.stmtCfg st' ρ₀') (L₂.terminalCfg ρ''))
         ∧
         (∀ lbl, L₁.star (L₁.stmtCfg st ρ₀) (L₁.exitingCfg lbl ρ') →
-                L₂.star (L₂.stmtCfg s' ρ₀) (L₂.exitingCfg lbl ρ')))
-      ∧ L₂.initEnvWF params₂ s' ρ₀
+                ∃ ρ'', R ρ' ρ'' ∧ L₂.star (L₂.stmtCfg st' ρ₀') (L₂.exitingCfg lbl ρ'')))
+      ∧
+      -- Fail preservation.
+      (CanFail L₁ st ρ₀ → CanFail L₂ st' ρ₀')
+      ∧
+      -- Store WF preservation on the target side, with the target's parameters.
+      L₂.initEnvWF params₂ st' ρ₀'
+
+/-- Overapproximation up to a mapping relation `R`, with no precondition. -/
+@[expose] public def OverapproximatesUpto
+    (R : Relation (Env P))
+    (L₁ L₂ : Lang P) (T : L₁.StmtT → Option L₂.StmtT)
+    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy) : Prop :=
+  OverapproximatesUptoWhen R L₁ L₂ T (fun _ => True) params₁ params₂
+
+/-- Overapproximation under a precondition `pre`: terminal/exiting envs
+    reachable from the source are also reachable from the target, and failing
+    programs are preserved.
+
+    This is the special case of `OverapproximatesUptoWhen` where the state
+    relation is equality — source and target run from the *same* initial env
+    and reach the *same* final env. -/
+@[expose] def OverapproximatesWhen (L₁ L₂ : Lang P) (T : L₁.StmtT → Option L₂.StmtT)
+    (pre : L₁.StmtT → Prop)
+    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy) : Prop :=
+  OverapproximatesUptoWhen (· = ·) L₁ L₂ T pre params₁ params₂
+
+/-- Overapproximation: `OverapproximatesWhen` with no precondition. -/
+@[expose] def Overapproximates (L₁ L₂ : Lang P) (T : L₁.StmtT → Option L₂.StmtT)
+    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy) : Prop :=
+  OverapproximatesWhen L₁ L₂ T (fun _ => True) params₁ params₂
+
+
+/-! ## Aggressive overapproximation
+
+`OverapproximatesAggressively` relaxes `Overapproximates`: the target may
+terminate with `hasFailure = true` instead of matching the source's
+terminal/exiting env exactly.  -/
+
+/-- Aggressive overapproximation under a precondition `pre`: the target program
+    can assert-fail spuriously.
+
+    TODO: generalize this to OverapproximatesAggressivelyUptoWhen if necessary.
+-/
+@[expose] public def OverapproximatesAggressivelyWhen (L₁ L₂ : Lang P)
+    (T : L₁.StmtT → Option L₂.StmtT)
+    (pre : L₁.StmtT → Prop)
+    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy) : Prop :=
+  ∀ (st : L₁.StmtT) (st' : L₂.StmtT),
+    T st = some st' →
+    pre st →
+    ∀ (ρ₀ : Env P),
+      L₁.initEnvWF params₁ st ρ₀ →
+      -- Terminal case
+      (∀ ρ', L₁.star (L₁.stmtCfg st ρ₀) (L₁.terminalCfg ρ') →
+        CanFail L₂ st' ρ₀ ∨
+        (ρ'.hasFailure = false →
+          L₂.star (L₂.stmtCfg st' ρ₀) (L₂.terminalCfg ρ')))
+      ∧
+      -- Exiting case
+      (∀ lbl ρ', L₁.star (L₁.stmtCfg st ρ₀) (L₁.exitingCfg lbl ρ') →
+        CanFail L₂ st' ρ₀ ∨
+        (ρ'.hasFailure = false →
+          L₂.star (L₂.stmtCfg st' ρ₀) (L₂.exitingCfg lbl ρ')))
+      ∧
+      -- Fail preservation, but does not exactly track the counterexample.
+      (CanFail L₁ st ρ₀ → CanFail L₂ st' ρ₀)
+      ∧
+      -- Store WF preservation on the target side, with the target's parameters.
+      L₂.initEnvWF params₂ st' ρ₀
+
+/-- Aggressive overapproximation: `OverapproximatesAggressivelyWhen` with no
+    precondition. -/
+@[expose] public def OverapproximatesAggressively (L₁ L₂ : Lang P)
+    (T : L₁.StmtT → Option L₂.StmtT)
+    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy) : Prop :=
+  OverapproximatesAggressivelyWhen L₁ L₂ T (fun _ => True) params₁ params₂
+
+/-! ## Underapproximation
+
+`Underapproximates` is the dual of `Overapproximates`.  Where an
+overapproximation guarantees the target reproduces *at least* the source's
+behaviours (source ⊆ target), an underapproximation guarantees the target
+exhibits *at most* them (target ⊆ source)
+-/
+
+@[expose] public def Underapproximates (L₁ L₂ : Lang P) (T : L₁.StmtT → Option L₂.StmtT)
+    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy) : Prop :=
+  ∀ (st : L₁.StmtT) (st' : L₂.StmtT),
+    T st = some st' →
+    ∀ (ρ₀ : Env P),
+      L₂.initEnvWF params₂ st' ρ₀ →
+      -- Terminal/exiting envs reachable by the target are reachable by the source.
+      (∀ (ρ' : Env P),
+        (L₂.star (L₂.stmtCfg st' ρ₀) (L₂.terminalCfg ρ') →
+          L₁.star (L₁.stmtCfg st ρ₀) (L₁.terminalCfg ρ'))
+        ∧
+        (∀ lbl, L₂.star (L₂.stmtCfg st' ρ₀) (L₂.exitingCfg lbl ρ') →
+                L₁.star (L₁.stmtCfg st ρ₀) (L₁.exitingCfg lbl ρ')))
+      ∧
+      -- Fail reflection (target → source).
+      (CanFail L₂ st' ρ₀ → CanFail L₁ st ρ₀)
+      ∧
+      -- Source-side WF.
+      L₁.initEnvWF params₁ st ρ₀
+
+/-! ## Semantic equivalence -/
+
+/-- Semantic equivalence of a transform: `T` both over- and under-approximates.
+    The source `st` and target `st'` reach exactly the same terminal/exiting envs and
+    fail on exactly the same initial states. -/
+@[expose] public def SemanticallyEquivalent (L₁ L₂ : Lang P) (T : L₁.StmtT → Option L₂.StmtT)
+    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy) : Prop :=
+  Overapproximates L₁ L₂ T params₁ params₂ ∧ Underapproximates L₁ L₂ T params₁ params₂
 
 /-! ## Statement-list overapproximation (Imperative-specific) -/
 
