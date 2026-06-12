@@ -207,7 +207,6 @@ def eval (E : Env) (p : Procedure) : Env × Statistics :=
       (.assume label check.expr check.md))
       p.spec.preconditions
   match p.body with
-<<<<<<< HEAD
   | .cfg cfgBody =>
     -- 100 iterations per block: enough to unroll moderate loops while keeping
     -- symbolic execution bounded.  Fuel is consumed per block visit, so a
@@ -219,15 +218,6 @@ def eval (E : Env) (p : Procedure) : Env × Statistics :=
   | .structured bodyStmts =>
     let (ssEs, evalStats) := Statement.eval E old_g_subst (precond_assumes ++ bodyStmts ++ postcond_asserts)
     (mergeResults E (ssEs.map (fun sE => fixupError sE)), evalStats)
-=======
-  | .structured bodyStmts =>
-    let (ssEs, evalStats) := Statement.eval E old_g_subst (precond_assumes ++ bodyStmts ++ postcond_asserts)
-    (mergeResults E (ssEs.map (fun sE => fixupError sE)), evalStats)
-  | .cfg _ =>
-    -- CFG bodies are not supported here.
-    let errEnv := { E with error := some (.Misc s!"procedure '{p.header.name}': CFG bodies not supported yet") }
-    (errEnv, {})
->>>>>>> origin/main2
 
 ---------------------------------------------------------------------
 
