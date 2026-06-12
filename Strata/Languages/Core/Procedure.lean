@@ -323,7 +323,7 @@ def Procedure.Body.getVars : Procedure.Body → List Expression.Ident
   | .cfg c => c.blocks.flatMap fun (_, blk) =>
     blk.cmds.flatMap Imperative.HasVarsPure.getVars ++
     (match blk.transfer with
-      | .condGoto p _ _ _ => Imperative.HasVarsPure.getVars p
+      | .condGoto p _ _ _ => Imperative.HasFvars.getFvars p
       | .finish _ => [])
 
 /-- Is this body abstract (no implementation)? Only empty structured bodies
@@ -370,13 +370,9 @@ structure Procedure where
 
 open Imperative
 
-def Procedure.definedVars (_ : Procedure) : List Expression.Ident := []
-def Procedure.modifiedVars (p : Procedure) : List Expression.Ident :=
-  p.header.outputs.keys
-
 def Procedure.getVars (p : Procedure) : List Expression.Ident :=
-  (p.spec.postconditions.values.map Procedure.Check.expr).flatMap HasVarsPure.getVars ++
-  (p.spec.preconditions.values.map Procedure.Check.expr).flatMap HasVarsPure.getVars ++
+  (p.spec.postconditions.values.map Procedure.Check.expr).flatMap HasFvars.getFvars ++
+  (p.spec.preconditions.values.map Procedure.Check.expr).flatMap HasFvars.getFvars ++
   p.body.getVars |> List.filter (not $ Membership.mem p.header.inputs.keys ·)
 
 instance : HasVarsPure Expression Procedure where
@@ -386,22 +382,22 @@ instance : HasVarsPure Expression Procedure.Body where
   getVars := Procedure.Body.getVars
 
 instance : HasVarsImp Expression DetCFG where
-  definedVars cfg := cfg.blocks.flatMap fun (_, blk) =>
+  definedVars cfg _ := cfg.blocks.flatMap fun (_, blk) =>
     blk.cmds.flatMap Command.definedVars
   modifiedVars cfg := cfg.blocks.flatMap fun (_, blk) =>
     blk.cmds.flatMap Command.modifiedVars
 
 instance : HasVarsImp Expression Procedure.Body where
-  definedVars b := match b with
-    | .structured ss => HasVarsImp.definedVars ss
-    | .cfg cfgBody => HasVarsImp.definedVars cfgBody
+  definedVars b excludeScoped := match b with
+    | .structured ss => HasVarsImp.definedVars ss excludeScoped
+    | .cfg cfgBody => HasVarsImp.definedVars cfgBody excludeScoped
   modifiedVars b := match b with
     | .structured ss => HasVarsImp.modifiedVars ss
     | .cfg cfgBody => HasVarsImp.modifiedVars cfgBody
 
 instance : HasVarsImp Expression Procedure where
-  definedVars := Procedure.definedVars
-  modifiedVars := Procedure.modifiedVars
+  definedVars _ _ := []
+  modifiedVars p := p.header.outputs.keys
 
 def DetCFG.eraseTypes (cfg : DetCFG) : DetCFG :=
   { cfg with blocks := cfg.blocks.map fun (lbl, blk) =>

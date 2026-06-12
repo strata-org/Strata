@@ -49,7 +49,7 @@ theorem subst_fvar_correct
     (Hwfvl : Imperative.WellFormedSemanticEvalVal (P:=Expression) δ)
     (Hsubst : Imperative.substStores σ σ' [(fro, to)])
     (Hinv : Imperative.invStores σ σ'
-              ((Imperative.HasVarsPure.getVars (P:=Expression) e).removeAll [fro])) :
+              ((Imperative.HasFvars.getFvars (P:=Expression) e).removeAll [fro])) :
     δ σ e = δ σ' (e.substFvar fro (Core.Transform.createFvar to)) := by
   induction e <;> simp [Lambda.LExpr.substFvar, Core.Transform.createFvar] at *
   case const c | op o ty | bvar x =>
@@ -68,7 +68,7 @@ theorem subst_fvar_correct
       simp [Imperative.HasFvar.getFvar]
     . next Hne =>
       simp [Imperative.invStores, Imperative.substStores,
-            Imperative.HasVarsPure.getVars,
+            Imperative.HasFvars.getFvars,
             Lambda.LExpr.LExpr.getVars, List.removeAll, Hne] at Hinv
       rw [Hwfvr]
       rw [Hwfvr]
@@ -81,7 +81,7 @@ theorem subst_fvar_correct
     grind
   case quant m k ty tr e trih eih =>
     simp [Imperative.invStores, Imperative.substStores,
-          Imperative.HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars] at *
+          Imperative.HasFvars.getFvars, Lambda.LExpr.LExpr.getVars] at *
     simp [List.app_removeAll, List.zip_append] at *
     specialize eih ?_
     · intros k1 k2 Hin
@@ -96,7 +96,7 @@ theorem subst_fvar_correct
     apply Hwfc.quantcongr <;> grind
   case app m c fn fih eih =>
     simp [Imperative.invStores, Imperative.substStores,
-          Imperative.HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars] at *
+          Imperative.HasFvars.getFvars, Lambda.LExpr.LExpr.getVars] at *
     simp [List.app_removeAll, List.zip_append] at *
     specialize fih ?_
     . intros k1 k2 Hin
@@ -109,7 +109,7 @@ theorem subst_fvar_correct
     apply Hwfc.appcongr <;> grind
   case ite m c t e cih tih eih =>
     simp [Imperative.invStores, Imperative.substStores,
-          Imperative.HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars] at *
+          Imperative.HasFvars.getFvars, Lambda.LExpr.LExpr.getVars] at *
     simp [List.app_removeAll, List.zip_append] at *
     specialize cih ?_
     . intros k1 k2 Hin
@@ -126,7 +126,7 @@ theorem subst_fvar_correct
     apply Hwfc.itecongr <;> grind
   case eq m e1 e2 e1ih e2ih =>
     simp [Imperative.invStores, Imperative.substStores,
-          Imperative.HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars] at *
+          Imperative.HasFvars.getFvars, Lambda.LExpr.LExpr.getVars] at *
     simp [List.app_removeAll, List.zip_append] at *
     specialize e1ih ?_
     . intros k1 k2 Hin
@@ -149,7 +149,7 @@ theorem subst_fvarsZero_correct
     (Hwfvr : Imperative.WellFormedSemanticEvalVar (P:=Expression) δ)
     (Hwfvl : Imperative.WellFormedSemanticEvalVal (P:=Expression) δ)
     (Hinv : Imperative.invStores σ σ'
-              (Imperative.HasVarsPure.getVars (P:=Expression) e)) :
+              (Imperative.HasFvars.getFvars (P:=Expression) e)) :
     δ σ e = δ σ' e := by
   induction e <;> simp at *
   case const c | op o ty | bvar x =>
@@ -163,7 +163,7 @@ theorem subst_fvarsZero_correct
     rw [Hwfvr]
     rw [Hwfvr]
     rw [Hinv]
-    simp [Imperative.HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars]
+    simp [Imperative.HasFvars.getFvars, Lambda.LExpr.LExpr.getVars]
     simp [Imperative.HasFvar.getFvar]
     simp [Imperative.HasFvar.getFvar]
   case abs m ty e ih =>
@@ -172,7 +172,7 @@ theorem subst_fvarsZero_correct
     apply Hwfca
   case quant m k ty tr e trih eih =>
     simp [Imperative.invStores, Imperative.substStores,
-          Imperative.HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars] at *
+          Imperative.HasFvars.getFvars, Lambda.LExpr.LExpr.getVars] at *
     simp [List.zip_append] at *
     specialize trih ?_
     . intros k1 k2 Hin
@@ -185,7 +185,7 @@ theorem subst_fvarsZero_correct
     apply Hwfc.quantcongr <;> grind
   case app m fn e fih eih =>
     simp [Imperative.invStores, Imperative.substStores,
-          Imperative.HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars] at *
+          Imperative.HasFvars.getFvars, Lambda.LExpr.LExpr.getVars] at *
     simp [List.zip_append] at *
     specialize fih ?_
     . intros k1 k2 Hin
@@ -198,7 +198,7 @@ theorem subst_fvarsZero_correct
     apply Hwfc.appcongr <;> grind
   case ite m c t e cih tih eih =>
     simp [Imperative.invStores, Imperative.substStores,
-          Imperative.HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars] at *
+          Imperative.HasFvars.getFvars, Lambda.LExpr.LExpr.getVars] at *
     simp [List.zip_append] at *
     specialize cih ?_
     . intros k1 k2 Hin
@@ -215,7 +215,7 @@ theorem subst_fvarsZero_correct
     apply Hwfc.itecongr <;> grind
   case eq m e1 e2 e1ih e2ih =>
     simp [Imperative.invStores, Imperative.substStores,
-          Imperative.HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars] at *
+          Imperative.HasFvars.getFvars, Lambda.LExpr.LExpr.getVars] at *
     simp [List.zip_append] at *
     specialize e1ih ?_
     . intros k1 k2 Hin
@@ -279,13 +279,13 @@ theorem subst_nodup_ht
 
 theorem getVars_substFvar_or
     {e : Expression.Expr} {h h' v : Expression.Ident} :
-    v ∈ (Imperative.HasVarsPure.getVars (P:=Expression)
+    v ∈ (Imperative.HasFvars.getFvars (P:=Expression)
           (Lambda.LExpr.substFvar e h (Core.Transform.createFvar h'))) →
-    v ∈ (Imperative.HasVarsPure.getVars (P:=Expression) e) ∨ v = h' := by
+    v ∈ (Imperative.HasFvars.getFvars (P:=Expression) e) ∨ v = h' := by
   intros Hin
   induction e <;>
     simp [Lambda.LExpr.substFvar,
-          Imperative.HasVarsPure.getVars,
+          Imperative.HasFvars.getFvars,
           Lambda.LExpr.LExpr.getVars,
           Core.Transform.createFvar
          ] at * <;> try simp_all
@@ -313,11 +313,11 @@ theorem getVars_substFvar_or
 
 theorem getVars_substFvar_replace
     {e : Expression.Expr} {h h' : Expression.Ident} :
-    (Imperative.HasVarsPure.getVars
+    (Imperative.HasFvars.getFvars
         (Lambda.LExpr.substFvar e h (Core.Transform.createFvar h'))) =
-    (Imperative.HasVarsPure.getVars (P:=Expression) e).replaceAll h h' := by
+    (Imperative.HasFvars.getFvars (P:=Expression) e).replaceAll h h' := by
   induction e <;>
-    simp [Imperative.HasVarsPure.getVars,
+    simp [Imperative.HasFvars.getFvars,
           Lambda.LExpr.LExpr.getVars,
           Lambda.LExpr.substFvar,
           Core.Transform.createFvar,
@@ -538,9 +538,9 @@ theorem subst_fvars_correct
     (Hdef : Imperative.substDefined σ σ' (fro.zip to))
     (Hnd : Imperative.substNodup (fro.zip to))
     (Hsubst : Imperative.substStores σ σ' (fro.zip to))
-    (Hnin : to.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression) e))
+    (Hnin : to.Disjoint (Imperative.HasFvars.getFvars (P:=Expression) e))
     (Hinv : Imperative.invStores σ σ'
-              ((Imperative.HasVarsPure.getVars (P:=Expression) e).removeAll (fro ++ to))) :
+              ((Imperative.HasFvars.getFvars (P:=Expression) e).removeAll (fro ++ to))) :
     δ σ e = δ σ' (e.substFvars (fro.zip (Core.Transform.createFvars to))) := by
   induction fro generalizing to σ σ' e
   case nil =>
@@ -555,7 +555,7 @@ theorem subst_fvars_correct
     -- Hinv came in with `removeAll ([] ++ [])`, simplify
     have HinvSimp :
         Imperative.invStores σ σ'
-          (Imperative.HasVarsPure.getVars (P:=Expression) e) := by
+          (Imperative.HasFvars.getFvars (P:=Expression) e) := by
       have := Hinv
       simp at this
       exact this
@@ -577,7 +577,7 @@ theorem subst_fvars_correct
       subst Hstore
       -- Step 1: rewrite δ σ e using subst_fvar_correct.
       have Hinv_head : Imperative.invStores σ (updatedState σ h' v₁)
-                          ((Imperative.HasVarsPure.getVars (P:=Expression) e).removeAll [h]) := by
+                          ((Imperative.HasFvars.getFvars (P:=Expression) e).removeAll [h]) := by
         apply invStores_subst_head Hsubst'
         intro Hin
         exact Hnin (List.mem_cons_self) Hin
@@ -589,7 +589,7 @@ theorem subst_fvars_correct
       -- Step 2: rewrite using IH. We apply IH at e' = substFvar e h (createFvar h').
       have Hdef_σ₁ : Imperative.substDefined (updatedState σ h' v₁) σ' (t.zip t') :=
         subst_defined_updatedState (subst_defined_tail Hdef)
-      have Hnin_t : t'.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression)
+      have Hnin_t : t'.Disjoint (Imperative.HasFvars.getFvars (P:=Expression)
                       (Lambda.LExpr.substFvar e h (Core.Transform.createFvar h'))) := by
         intros a' Hin Hin2
         have Hor := getVars_substFvar_or Hin2
@@ -600,12 +600,12 @@ theorem subst_fvars_correct
           subst Heq
           exact Hht.2 Hin
       have Hinv_t : Imperative.invStores (updatedState σ h' v₁) σ'
-          ((Imperative.HasVarsPure.getVars
+          ((Imperative.HasFvars.getFvars
               (Lambda.LExpr.substFvar e h (Core.Transform.createFvar h'))).removeAll
             (t ++ t')) := by
         rw [getVars_substFvar_replace]
         have HinvE : Imperative.invStores σ σ'
-            ((Imperative.HasVarsPure.getVars (P:=Expression) e).removeAll
+            ((Imperative.HasFvars.getFvars (P:=Expression) e).removeAll
               ((h :: t) ++ (h' :: t'))) := by
           have heq : (h :: t) ++ (h' :: t') = h :: t ++ h' :: t' := by simp
           rw [heq]; exact Hinv
@@ -666,28 +666,28 @@ theorem subst_fvars_correct
 theorem getVars_substFvars_mem
     {e : Expression.Expr} {v : Expression.Ident}
     {sm : Map Expression.Ident Expression.Expr}
-    (Hin : v ∈ Imperative.HasVarsPure.getVars (P:=Expression)
+    (Hin : v ∈ Imperative.HasFvars.getFvars (P:=Expression)
               (Lambda.LExpr.substFvars e sm)) :
-    (v ∈ Imperative.HasVarsPure.getVars (P:=Expression) e ∧
+    (v ∈ Imperative.HasFvars.getFvars (P:=Expression) e ∧
       Map.find? sm v = none) ∨
     (∃ k w,
-        k ∈ Imperative.HasVarsPure.getVars (P:=Expression) e ∧
+        k ∈ Imperative.HasFvars.getFvars (P:=Expression) e ∧
         Map.find? sm k = some w ∧
-        v ∈ Imperative.HasVarsPure.getVars (P:=Expression) w) := by
+        v ∈ Imperative.HasFvars.getFvars (P:=Expression) w) := by
   induction e with
   | const m c =>
     simp only [Lambda.LExpr.substFvars_const',
-               Imperative.HasVarsPure.getVars,
+               Imperative.HasFvars.getFvars,
                Lambda.LExpr.LExpr.getVars,
                List.not_mem_nil] at Hin
   | op m n t =>
     simp only [Lambda.LExpr.substFvars_op',
-               Imperative.HasVarsPure.getVars,
+               Imperative.HasFvars.getFvars,
                Lambda.LExpr.LExpr.getVars,
                List.not_mem_nil] at Hin
   | bvar m i =>
     simp only [Lambda.LExpr.substFvars_bvar,
-               Imperative.HasVarsPure.getVars,
+               Imperative.HasFvars.getFvars,
                Lambda.LExpr.LExpr.getVars,
                List.not_mem_nil] at Hin
   | fvar m name ty =>
@@ -695,34 +695,34 @@ theorem getVars_substFvars_mem
     by_cases hfind : Map.find? sm name = none
     · rw [Lambda.LExpr.substFvars_fvar_none m name ty sm hfind] at Hin
       -- Hin : v ∈ getVars (fvar name) = [name]
-      simp only [Imperative.HasVarsPure.getVars,
+      simp only [Imperative.HasFvars.getFvars,
                  Lambda.LExpr.LExpr.getVars,
                  List.mem_singleton] at Hin
       subst Hin
       refine Or.inl ⟨?_, hfind⟩
-      simp [Imperative.HasVarsPure.getVars,
+      simp [Imperative.HasFvars.getFvars,
             Lambda.LExpr.LExpr.getVars]
     · -- find? returns some w
       rcases Option.ne_none_iff_exists.mp hfind with ⟨w, hf⟩
       rw [Lambda.LExpr.substFvars_fvar_find m name ty sm w hf.symm] at Hin
       -- Hin : v ∈ getVars w
       refine Or.inr ⟨name, w, ?_, hf.symm, Hin⟩
-      simp [Imperative.HasVarsPure.getVars,
+      simp [Imperative.HasFvars.getFvars,
             Lambda.LExpr.LExpr.getVars]
   | abs m name ty body ih =>
     simp only [Lambda.LExpr.substFvars_abs,
-               Imperative.HasVarsPure.getVars,
+               Imperative.HasFvars.getFvars,
                Lambda.LExpr.LExpr.getVars] at Hin
     have Hbody := ih Hin
-    simp only [Imperative.HasVarsPure.getVars,
+    simp only [Imperative.HasFvars.getFvars,
                Lambda.LExpr.LExpr.getVars]
     exact Hbody
   | quant m qk name ty tr body trih bih =>
     simp only [Lambda.LExpr.substFvars_quant,
-               Imperative.HasVarsPure.getVars,
+               Imperative.HasFvars.getFvars,
                Lambda.LExpr.LExpr.getVars,
                List.mem_append] at Hin
-    simp only [Imperative.HasVarsPure.getVars,
+    simp only [Imperative.HasFvars.getFvars,
                Lambda.LExpr.LExpr.getVars,
                List.mem_append]
     cases Hin with
@@ -740,10 +740,10 @@ theorem getVars_substFvars_mem
         exact Or.inr ⟨k, w, Or.inr Hk, Hf, Hv⟩
   | app m fn arg fih aih =>
     simp only [Lambda.LExpr.substFvars_app,
-               Imperative.HasVarsPure.getVars,
+               Imperative.HasFvars.getFvars,
                Lambda.LExpr.LExpr.getVars,
                List.mem_append] at Hin
-    simp only [Imperative.HasVarsPure.getVars,
+    simp only [Imperative.HasFvars.getFvars,
                Lambda.LExpr.LExpr.getVars,
                List.mem_append]
     cases Hin with
@@ -761,10 +761,10 @@ theorem getVars_substFvars_mem
         exact Or.inr ⟨k, w, Or.inr Hk, Hf, Hv⟩
   | ite m c t f cih tih fih =>
     simp only [Lambda.LExpr.substFvars_ite,
-               Imperative.HasVarsPure.getVars,
+               Imperative.HasFvars.getFvars,
                Lambda.LExpr.LExpr.getVars,
                List.mem_append] at Hin
-    simp only [Imperative.HasVarsPure.getVars,
+    simp only [Imperative.HasFvars.getFvars,
                Lambda.LExpr.LExpr.getVars,
                List.mem_append]
     cases Hin with
@@ -790,10 +790,10 @@ theorem getVars_substFvars_mem
         exact Or.inr ⟨k, w, Or.inr Hk, Hf, Hv⟩
   | eq m e1 e2 e1ih e2ih =>
     simp only [Lambda.LExpr.substFvars_eq,
-               Imperative.HasVarsPure.getVars,
+               Imperative.HasFvars.getFvars,
                Lambda.LExpr.LExpr.getVars,
                List.mem_append] at Hin
-    simp only [Imperative.HasVarsPure.getVars,
+    simp only [Imperative.HasFvars.getFvars,
                Lambda.LExpr.LExpr.getVars,
                List.mem_append]
     cases Hin with
@@ -828,11 +828,11 @@ theorem subst_fvars_eval_bridge
     (Hwfc : Core.WellFormedCoreEvalCong δ)
     (Hwfvr : Imperative.WellFormedSemanticEvalVar (P:=Expression) δ)
     (Hwfvl : Imperative.WellFormedSemanticEvalVal (P:=Expression) δ)
-    (Hsurv : ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) e,
+    (Hsurv : ∀ v ∈ Imperative.HasFvars.getFvars (P:=Expression) e,
               Map.find? sm v = none →
               δ σ' (Lambda.LExpr.fvar () v none) =
                 δ σ (Lambda.LExpr.fvar () v none))
-    (Hsub : ∀ k w, k ∈ Imperative.HasVarsPure.getVars (P:=Expression) e →
+    (Hsub : ∀ k w, k ∈ Imperative.HasFvars.getFvars (P:=Expression) e →
               Map.find? sm k = some w →
               δ σ' w = δ σ (Lambda.LExpr.fvar () k none)) :
     δ σ' (Lambda.LExpr.substFvars e sm) = δ σ e := by
@@ -860,7 +860,7 @@ theorem subst_fvars_eval_bridge
         simp [Imperative.HasFvar.getFvar]
       have HsurvAt :=
         Hsurv name
-          (by simp [Imperative.HasVarsPure.getVars,
+          (by simp [Imperative.HasFvars.getFvars,
                     Lambda.LExpr.LExpr.getVars])
           hfind
       rw [HwfL', HwfR'] at HsurvAt
@@ -869,9 +869,9 @@ theorem subst_fvars_eval_bridge
     · rcases Option.ne_none_iff_exists.mp hfind with ⟨w, hf⟩
       rw [Lambda.LExpr.substFvars_fvar_find m name ty sm w hf.symm]
       have Hself :
-          name ∈ Imperative.HasVarsPure.getVars (P:=Expression)
+          name ∈ Imperative.HasFvars.getFvars (P:=Expression)
                   (Lambda.LExpr.fvar m name ty) := by
-        simp [Imperative.HasVarsPure.getVars,
+        simp [Imperative.HasFvars.getFvars,
               Lambda.LExpr.LExpr.getVars]
       have HsubAt := Hsub name w Hself hf.symm
       simp [Imperative.WellFormedSemanticEvalVar] at Hwfvr
@@ -887,8 +887,8 @@ theorem subst_fvars_eval_bridge
   | abs m name ty body ih =>
     simp only [Lambda.LExpr.substFvars_abs]
     have Hmk : ∀ {x : Expression.Ident},
-        x ∈ Imperative.HasVarsPure.getVars (P:=Expression) body →
-        x ∈ Imperative.HasVarsPure.getVars (P:=Expression)
+        x ∈ Imperative.HasFvars.getFvars (P:=Expression) body →
+        x ∈ Imperative.HasFvars.getFvars (P:=Expression)
               (Lambda.LExpr.abs m name ty body) := by
       intro x Hx
       show x ∈ Lambda.LExpr.LExpr.getVars body
@@ -899,15 +899,15 @@ theorem subst_fvars_eval_bridge
   | quant m qk name ty tr body trih bih =>
     simp only [Lambda.LExpr.substFvars_quant]
     have HmkL : ∀ {x : Expression.Ident},
-        x ∈ Imperative.HasVarsPure.getVars (P:=Expression) tr →
-        x ∈ Imperative.HasVarsPure.getVars (P:=Expression)
+        x ∈ Imperative.HasFvars.getFvars (P:=Expression) tr →
+        x ∈ Imperative.HasFvars.getFvars (P:=Expression)
               (Lambda.LExpr.quant m qk name ty tr body) := by
       intro x Hx
       show x ∈ Lambda.LExpr.LExpr.getVars tr ++ Lambda.LExpr.LExpr.getVars body
       exact List.mem_append.mpr (Or.inl Hx)
     have HmkR : ∀ {x : Expression.Ident},
-        x ∈ Imperative.HasVarsPure.getVars (P:=Expression) body →
-        x ∈ Imperative.HasVarsPure.getVars (P:=Expression)
+        x ∈ Imperative.HasFvars.getFvars (P:=Expression) body →
+        x ∈ Imperative.HasFvars.getFvars (P:=Expression)
               (Lambda.LExpr.quant m qk name ty tr body) := by
       intro x Hx
       show x ∈ Lambda.LExpr.LExpr.getVars tr ++ Lambda.LExpr.LExpr.getVars body
@@ -920,15 +920,15 @@ theorem subst_fvars_eval_bridge
   | app m fn arg fih aih =>
     simp only [Lambda.LExpr.substFvars_app]
     have HmkL : ∀ {x : Expression.Ident},
-        x ∈ Imperative.HasVarsPure.getVars (P:=Expression) fn →
-        x ∈ Imperative.HasVarsPure.getVars (P:=Expression)
+        x ∈ Imperative.HasFvars.getFvars (P:=Expression) fn →
+        x ∈ Imperative.HasFvars.getFvars (P:=Expression)
               (Lambda.LExpr.app m fn arg) := by
       intro x Hx
       show x ∈ Lambda.LExpr.LExpr.getVars fn ++ Lambda.LExpr.LExpr.getVars arg
       exact List.mem_append.mpr (Or.inl Hx)
     have HmkR : ∀ {x : Expression.Ident},
-        x ∈ Imperative.HasVarsPure.getVars (P:=Expression) arg →
-        x ∈ Imperative.HasVarsPure.getVars (P:=Expression)
+        x ∈ Imperative.HasFvars.getFvars (P:=Expression) arg →
+        x ∈ Imperative.HasFvars.getFvars (P:=Expression)
               (Lambda.LExpr.app m fn arg) := by
       intro x Hx
       show x ∈ Lambda.LExpr.LExpr.getVars fn ++ Lambda.LExpr.LExpr.getVars arg
@@ -941,24 +941,24 @@ theorem subst_fvars_eval_bridge
   | ite m c t f cih tih fih =>
     simp only [Lambda.LExpr.substFvars_ite]
     have HmkLeft : ∀ {x : Expression.Ident},
-        x ∈ Imperative.HasVarsPure.getVars (P:=Expression) c →
-        x ∈ Imperative.HasVarsPure.getVars (P:=Expression)
+        x ∈ Imperative.HasFvars.getFvars (P:=Expression) c →
+        x ∈ Imperative.HasFvars.getFvars (P:=Expression)
               (Lambda.LExpr.ite m c t f) := by
       intro x Hx
       show x ∈ Lambda.LExpr.LExpr.getVars c ++ Lambda.LExpr.LExpr.getVars t
                   ++ Lambda.LExpr.LExpr.getVars f
       exact List.mem_append.mpr (Or.inl (List.mem_append.mpr (Or.inl Hx)))
     have HmkMid : ∀ {x : Expression.Ident},
-        x ∈ Imperative.HasVarsPure.getVars (P:=Expression) t →
-        x ∈ Imperative.HasVarsPure.getVars (P:=Expression)
+        x ∈ Imperative.HasFvars.getFvars (P:=Expression) t →
+        x ∈ Imperative.HasFvars.getFvars (P:=Expression)
               (Lambda.LExpr.ite m c t f) := by
       intro x Hx
       show x ∈ Lambda.LExpr.LExpr.getVars c ++ Lambda.LExpr.LExpr.getVars t
                   ++ Lambda.LExpr.LExpr.getVars f
       exact List.mem_append.mpr (Or.inl (List.mem_append.mpr (Or.inr Hx)))
     have HmkRight : ∀ {x : Expression.Ident},
-        x ∈ Imperative.HasVarsPure.getVars (P:=Expression) f →
-        x ∈ Imperative.HasVarsPure.getVars (P:=Expression)
+        x ∈ Imperative.HasFvars.getFvars (P:=Expression) f →
+        x ∈ Imperative.HasFvars.getFvars (P:=Expression)
               (Lambda.LExpr.ite m c t f) := by
       intro x Hx
       show x ∈ Lambda.LExpr.LExpr.getVars c ++ Lambda.LExpr.LExpr.getVars t
@@ -974,15 +974,15 @@ theorem subst_fvars_eval_bridge
   | eq m e1 e2 e1ih e2ih =>
     simp only [Lambda.LExpr.substFvars_eq]
     have HmkL : ∀ {x : Expression.Ident},
-        x ∈ Imperative.HasVarsPure.getVars (P:=Expression) e1 →
-        x ∈ Imperative.HasVarsPure.getVars (P:=Expression)
+        x ∈ Imperative.HasFvars.getFvars (P:=Expression) e1 →
+        x ∈ Imperative.HasFvars.getFvars (P:=Expression)
               (Lambda.LExpr.eq m e1 e2) := by
       intro x Hx
       show x ∈ Lambda.LExpr.LExpr.getVars e1 ++ Lambda.LExpr.LExpr.getVars e2
       exact List.mem_append.mpr (Or.inl Hx)
     have HmkR : ∀ {x : Expression.Ident},
-        x ∈ Imperative.HasVarsPure.getVars (P:=Expression) e2 →
-        x ∈ Imperative.HasVarsPure.getVars (P:=Expression)
+        x ∈ Imperative.HasFvars.getFvars (P:=Expression) e2 →
+        x ∈ Imperative.HasFvars.getFvars (P:=Expression)
               (Lambda.LExpr.eq m e1 e2) := by
       intro x Hx
       show x ∈ Lambda.LExpr.LExpr.getVars e1 ++ Lambda.LExpr.LExpr.getVars e2
@@ -1023,9 +1023,9 @@ theorem H_check_block_zip_poly
     (Hsubst : Imperative.substStores σA σ' (ks.zip ks'))
     (Hentries : ∀ entry, entry ∈ entries →
        Imperative.invStores σA σ'
-         ((Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr).removeAll
+         ((Imperative.HasFvars.getFvars (P:=Expression) entry.snd.expr).removeAll
             (ks ++ ks')) ∧
-       ks'.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr) ∧
+       ks'.Disjoint (Imperative.HasFvars.getFvars (P:=Expression) entry.snd.expr) ∧
        δ σA entry.snd.expr = some Imperative.HasBool.tt) :
     EvalStatementsContract π φ ⟨σ', δ, f⟩
       ((entries.zip labels).map (fun (entry, lbl) =>
@@ -1048,9 +1048,9 @@ theorem H_check_block_zip_poly
       have HtailHyp :
           ∀ entry, entry ∈ tail →
             Imperative.invStores σA σ'
-              ((Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr).removeAll
+              ((Imperative.HasFvars.getFvars (P:=Expression) entry.snd.expr).removeAll
                 (ks ++ ks')) ∧
-            ks'.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr) ∧
+            ks'.Disjoint (Imperative.HasFvars.getFvars (P:=Expression) entry.snd.expr) ∧
             δ σA entry.snd.expr = some Imperative.HasBool.tt := by
         intros entry hin; exact Hentries entry (List.mem_cons_of_mem _ hin)
       have Htail := ih (labels := labels') HtailHyp
@@ -1093,9 +1093,9 @@ theorem H_asserts_zip
     (Hsubst : Imperative.substStores σ' σA (ks'.zip ks))
     (Hpres : ∀ entry, entry ∈ pres →
        Imperative.invStores σA σ'
-         ((Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr).removeAll
+         ((Imperative.HasFvars.getFvars (P:=Expression) entry.snd.expr).removeAll
             (ks ++ ks')) ∧
-       ks'.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr) ∧
+       ks'.Disjoint (Imperative.HasFvars.getFvars (P:=Expression) entry.snd.expr) ∧
        δ σA entry.snd.expr = some Imperative.HasBool.tt) :
     EvalStatementsContract π φ ⟨σ', δ, false⟩
       ((pres.zip labels).map (fun (entry, lbl) =>
@@ -1134,9 +1134,9 @@ theorem H_assumes_zip_poly
     (Hsubst : Imperative.substStores σA σ' (ks.zip ks'))
     (Hposts : ∀ entry, entry ∈ posts →
        Imperative.invStores σA σ'
-         ((Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr).removeAll
+         ((Imperative.HasFvars.getFvars (P:=Expression) entry.snd.expr).removeAll
             (ks ++ ks')) ∧
-       ks'.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr) ∧
+       ks'.Disjoint (Imperative.HasFvars.getFvars (P:=Expression) entry.snd.expr) ∧
        δ σA entry.snd.expr = some Imperative.HasBool.tt) :
     EvalStatementsContract π φ ⟨σ', δ, f⟩
       ((posts.zip labels).map (fun (entry, lbl) =>

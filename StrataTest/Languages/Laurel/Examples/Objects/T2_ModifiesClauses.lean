@@ -3,7 +3,6 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
 /-
 A modifies clause CAN be placed on any procedure to generate a modifies axiom.
@@ -15,17 +14,14 @@ since otherwise all heap state is lost after calling them.
 
 -/
 
-meta import all StrataTest.Util.TestDiagnostics
-meta import all StrataTest.Languages.Laurel.TestExamples
-
-meta section
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
+open Strata
 
-namespace Strata
-namespace Laurel
-
-def program := r"
+#eval testLaurel <|
+#strata
+program Laurel;
 composite Container {
   var value: int
 }
@@ -157,7 +153,4 @@ procedure modifiesWildcardAndSpecificCaller()
   assert x == d#value // fails because modifies * subsumes modifies c
 //^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
 };
-"
-
-#guard_msgs (drop info, error) in
-#eval testInputWithOffset "ModifiesClauses" program 24 processLaurelFile
+#end

@@ -326,12 +326,12 @@ private theorem zip_removeAll4_decompose
     {l₁ l₂ l₃ l₄ : List Expression.Ident}
     {k1 k2 : Expression.Ident}
     (Hkin : (k1, k2) ∈
-              ((Imperative.HasVarsPure.getVars (P:=Expression) expr).removeAll
+              ((Imperative.HasFvars.getFvars (P:=Expression) expr).removeAll
                   ((l₁ ++ l₂) ++ (l₃ ++ l₄))).zip
-                ((Imperative.HasVarsPure.getVars (P:=Expression) expr).removeAll
+                ((Imperative.HasFvars.getFvars (P:=Expression) expr).removeAll
                   ((l₁ ++ l₂) ++ (l₃ ++ l₄)))) :
     k1 = k2 ∧
-    k1 ∈ Imperative.HasVarsPure.getVars (P:=Expression) expr ∧
+    k1 ∈ Imperative.HasFvars.getFvars (P:=Expression) expr ∧
     k1 ∉ l₁ ∧ k1 ∉ l₂ ∧ k1 ∉ l₃ ∧ k1 ∉ l₄ := by
   refine ⟨zip_self_eq Hkin, ?_⟩
   have Hk1_in := (List.of_mem_zip Hkin).1
@@ -1139,20 +1139,20 @@ structure WFCallSiteSpec (proc : Procedure) (args : List (CallArg Expression)) :
       call's `lhs`. -/
   preVarsFresh :
     ∀ pre ∈ Procedure.Spec.getCheckExprs proc.spec.preconditions,
-    ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) pre,
+    ∀ v ∈ Imperative.HasFvars.getFvars (P:=Expression) pre,
       ¬ isTempIdent v ∧ ¬ isOldTempIdent v ∧
       v ∉ CallArg.getLhs args
   /-- Post-condition free vars are not `tmp_`/`old_`-prefixed and not in the
       call's `lhs`. -/
   postVarsFresh :
     ∀ post ∈ Procedure.Spec.getCheckExprs proc.spec.postconditions,
-    ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) post,
+    ∀ v ∈ Imperative.HasFvars.getFvars (P:=Expression) post,
       ¬ isTempIdent v ∧ ¬ isOldTempIdent v ∧
       v ∉ CallArg.getLhs args
   /-- Argument-expression free vars are disjoint from the call's `lhs`. -/
   argVarsNotInLhs :
     ∀ argExpr ∈ CallArg.getInputExprs args,
-    ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) argExpr,
+    ∀ v ∈ Imperative.HasFvars.getFvars (P:=Expression) argExpr,
       v ∉ CallArg.getLhs args
   /-- Procedure input/output parameter names are not `tmp_`/`old_`-prefixed. -/
   inoutFresh :
@@ -1162,13 +1162,13 @@ structure WFCallSiteSpec (proc : Procedure) (args : List (CallArg Expression)) :
       `outputs.keys` (the global modset). -/
   argVarsNotInOutKeys :
     ∀ argExpr ∈ CallArg.getInputExprs args,
-    ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) argExpr,
+    ∀ v ∈ Imperative.HasFvars.getFvars (P:=Expression) argExpr,
       v ∉ ListMap.keys proc.header.outputs
   /-- Argument-expression free vars are disjoint from the procedure's
       `inputs.keys` (procedure parameter names). -/
   argVarsNotInInKeys :
     ∀ argExpr ∈ CallArg.getInputExprs args,
-    ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) argExpr,
+    ∀ v ∈ Imperative.HasFvars.getFvars (P:=Expression) argExpr,
       v ∉ ListMap.keys proc.header.inputs
   /-- Positional-alignment WF for inout outputs: for each output parameter
       `v ∈ outputs.keys` that is also an `lhs` entry (i.e., an inout pass),
@@ -1188,7 +1188,7 @@ structure WFCallSiteSpec (proc : Procedure) (args : List (CallArg Expression)) :
     ∀ (δ : Imperative.SemanticEval Expression)
       (σ : Imperative.SemanticStore Expression),
       Imperative.isDefinedOver
-        (Imperative.HasVarsPure.getVars (P := Expression)) σ pre →
+        (Imperative.HasFvars.getFvars (P := Expression)) σ pre →
       δ σ pre = some Imperative.HasBool.tt ∨
       δ σ pre = some Imperative.HasBool.ff
 
@@ -1594,7 +1594,7 @@ private theorem b1_var_witness_at_oldSubst
             (oldVars.map (fun g => CoreIdent.mkOld g.name))).map
             fun (((fresh, ty), _orig), oldG) => ((fresh, ty), oldG)) ++
           callElim_inputOnlyOldSubst proc' args) k = some w)
-      (_Hv_in : var ∈ Imperative.HasVarsPure.getVars (P:=Expression) w),
+      (_Hv_in : var ∈ Imperative.HasFvars.getFvars (P:=Expression) w),
     ∃ (ni : Nat) (Hni : ni < genOldIdents.length),
       var = genOldIdents[ni]'Hni := by
   intro var k w w' hfind Hf Hv_in
@@ -1609,12 +1609,12 @@ private theorem b1_var_witness_at_oldSubst
   refine ⟨ni_val, Hni_lt_genOld, ?_⟩
   rw [Hw_eq] at Hv_in
   have Hv_in' :
-      var ∈ Imperative.HasVarsPure.getVars (P:=Expression)
+      var ∈ Imperative.HasFvars.getFvars (P:=Expression)
               (Core.Transform.createFvar
                 (genOldIdents[ni_val]'Hni_lt_genOld)) := Hv_in
   show var = _
   simp [Core.Transform.createFvar,
-        Imperative.HasVarsPure.getVars,
+        Imperative.HasFvars.getFvars,
         Lambda.LExpr.LExpr.getVars] at Hv_in'
   exact Hv_in'
 
@@ -1643,10 +1643,10 @@ private theorem b2_var_witness_at_oldSubst
             (oldVars.map (fun g => CoreIdent.mkOld g.name))).map
             fun (((fresh, ty), _orig), oldG) => ((fresh, ty), oldG)) ++
           callElim_inputOnlyOldSubst proc' args) k = some w)
-      (_Hv_in : var ∈ Imperative.HasVarsPure.getVars (P:=Expression) w),
+      (_Hv_in : var ∈ Imperative.HasFvars.getFvars (P:=Expression) w),
       w ∈ CallArg.getInputExprs args ∧
       var ∈ List.flatMap
-              (Imperative.HasVarsPure.getVars (P:=Expression))
+              (Imperative.HasFvars.getFvars (P:=Expression))
               inArgs := by
   intro var k w hfind_none Hf Hv_in
   obtain ⟨ni2_val, _Hni2_lt_inKeys, Hni2_lt_inArgs,
@@ -1673,7 +1673,7 @@ private theorem b2_var_witness_at_oldSubst
     rw [HargExpr_def]; exact List.getElem_mem _
   have Hk1_flat :
       var ∈ List.flatMap
-            (Imperative.HasVarsPure.getVars (P:=Expression))
+            (Imperative.HasFvars.getFvars (P:=Expression))
             inArgs := by
     rw [List.mem_flatMap]
     exact ⟨w, Hk1_in_inArgs, Hv_in⟩
@@ -1718,7 +1718,7 @@ private theorem HinputSubBridge_at_σO
     (hCallArgsIn : CallArg.getInputExprs args = inArgs)
     (HargIsDef :
       ∀ v ∈ List.flatMap
-              (Imperative.HasVarsPure.getVars (P:=Expression))
+              (Imperative.HasFvars.getFvars (P:=Expression))
               inArgs,
         (σ v).isSome)
     (HoldIdentsTemp :
@@ -1726,11 +1726,11 @@ private theorem HinputSubBridge_at_σO
     (Hgenrel : CoreGenStateRel σ γ)
     (HargVarsNotInInKeys :
       ∀ argExpr ∈ CallArg.getInputExprs args,
-      ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) argExpr,
+      ∀ v ∈ Imperative.HasFvars.getFvars (P:=Expression) argExpr,
         v ∉ proc.header.inputs.keys)
     (HargVarsNotInOutKeys :
       ∀ argExpr ∈ CallArg.getInputExprs args,
-      ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) argExpr,
+      ∀ v ∈ Imperative.HasFvars.getFvars (P:=Expression) argExpr,
         v ∉ proc.header.outputs.keys)
     (Hσ_R1_eq :
       σ_R1 = updatedStates σO genOldIdents oldVals) :
@@ -1819,7 +1819,7 @@ private theorem HinputSubBridge_at_σO
   have HargExpr_in_callList :
       argExpr ∈ CallArg.getInputExprs args := HargExpr_in
   have Hσ_R1_eq_σ_argVars :
-      ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression)
+      ∀ v ∈ Imperative.HasFvars.getFvars (P:=Expression)
               argExpr,
         σ_R1 v = σ v := by
     intro v Hv
@@ -1837,7 +1837,7 @@ private theorem HinputSubBridge_at_σO
   have Hδ_R1_eq_δ_σ :
       δ σ_R1 argExpr = δ σ argExpr := by
     have Hsurv :
-        ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression)
+        ∀ v ∈ Imperative.HasFvars.getFvars (P:=Expression)
                 argExpr,
           Map.find? (∅ : Map Expression.Ident
                         Expression.Expr) v = none →
@@ -1847,7 +1847,7 @@ private theorem HinputSubBridge_at_σO
       rw [δ_fvar_eq σ_R1 v, δ_fvar_eq σ v]
       exact Hσ_R1_eq_σ_argVars v Hv
     have Hsub :
-        ∀ k' w', k' ∈ Imperative.HasVarsPure.getVars
+        ∀ k' w', k' ∈ Imperative.HasFvars.getFvars
                         (P:=Expression) argExpr →
           Map.find? (∅ : Map Expression.Ident
                         Expression.Expr) k' = some w' →
@@ -1928,7 +1928,7 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
       InitStates σA (ListMap.keys proc.header.outputs) oVals σAO)
     (Hpre_def :
       ∀ pre, (Procedure.Spec.getCheckExprs proc.spec.checkedPreconditions).contains pre →
-        Imperative.isDefinedOver (Imperative.HasVarsPure.getVars) σAO pre)
+        Imperative.isDefinedOver (Imperative.HasFvars.getFvars) σAO pre)
     (Hpre_iff :
       true = false ↔
       ∀ pre, (Procedure.Spec.getCheckExprs proc.spec.checkedPreconditions).contains pre →
@@ -1937,7 +1937,7 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
       HavocVars σAO (ListMap.keys proc.header.outputs) σO)
     (Hpost :
       ∀ post, (Procedure.Spec.getCheckExprs proc.spec.postconditions).contains post →
-        Imperative.isDefinedOver (Imperative.HasVarsPure.getVars) σAO post ∧
+        Imperative.isDefinedOver (Imperative.HasFvars.getFvars) σAO post ∧
         δ σO post = .some Imperative.HasBool.tt)
     (Hrd :
       ReadValues σO (ListMap.keys proc.header.outputs) modvals)
@@ -1961,7 +1961,7 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
   -- Hoisted: arg-expr vars defined in σ (via Hevalargs).
   have HargIsDef : Imperative.isDefined σ
       (List.flatMap
-        (Imperative.HasVarsPure.getVars (P:=Expression))
+        (Imperative.HasFvars.getFvars (P:=Expression))
         inArgs) :=
     evalExpressions_isDefined_flatMap Hevalargs
   -- Hoisted abbreviations for argument/output temp idents.
@@ -2067,13 +2067,13 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
     -- argTemps fresh from σ; arg-expr vars defined in σ ⇒ disjoint.
     have HdefVars : Imperative.isDefined σ
         (List.flatMap
-          (Imperative.HasVarsPure.getVars (P:=Expression))
+          (Imperative.HasFvars.getFvars (P:=Expression))
           (CallArg.getInputExprs args)) :=
       hCallArgsIn ▸ HargIsDef
     have HargExprDisj :
         argTemps.Disjoint
           (List.flatMap
-            (Imperative.HasVarsPure.getVars (P:=Expression))
+            (Imperative.HasFvars.getFvars (P:=Expression))
             argTrips.unzip.snd) := by
       intro x Hin1 Hin2
       rw [Heqargs] at Hin2
@@ -2380,7 +2380,7 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
     -- Pre-var freshness restricted to presFiltered (filtered ⊆ unfiltered).
     have HpresVarsFresh' :
         ∀ entry ∈ presFiltered,
-          ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr,
+          ∀ v ∈ Imperative.HasFvars.getFvars (P:=Expression) entry.snd.expr,
             ¬ isTempIdent v ∧ ¬ isOldTempIdent v ∧
             v ∉ CallArg.getLhs args := fun entry Hentry v Hv =>
       HpreVarsFresh entry.snd.expr
@@ -2556,7 +2556,7 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
                    List.map_map]
         refine ⟨entry, Hentry, rfl⟩
       have HdefAO : Imperative.isDefinedOver
-          (Imperative.HasVarsPure.getVars (P:=Expression))
+          (Imperative.HasFvars.getFvars (P:=Expression))
           σAO entry.snd.expr :=
         Hpre_def entry.snd.expr Hcontains_filt
       exact HpreBoolTyped entry.snd.expr Hpre_in δ σAO HdefAO
@@ -2567,17 +2567,17 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
     have HpresInfo :
         ∀ entry ∈ presFiltered,
           Imperative.invStores σAO σ_old
-            ((Imperative.HasVarsPure.getVars (P:=Expression)
+            ((Imperative.HasFvars.getFvars (P:=Expression)
                 entry.snd.expr).removeAll
               (ks_L4 ++ ks'_L4)) ∧
           ks'_L4.Disjoint
-            (Imperative.HasVarsPure.getVars (P:=Expression)
+            (Imperative.HasFvars.getFvars (P:=Expression)
               entry.snd.expr) := by
       intro entry Hentry
       have HfreshEnt := HpresVarsFresh' entry Hentry
       have Hpred_disj :
           ks'_L4.Disjoint
-            (Imperative.HasVarsPure.getVars (P:=Expression)
+            (Imperative.HasFvars.getFvars (P:=Expression)
               entry.snd.expr) := by
         intro x Hin1 Hin2
         cases List.mem_append.mp Hin1 with
@@ -2593,7 +2593,7 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
           exact HxNotInLhs HxLhs
       have Hinv :
           Imperative.invStores σAO σ_old
-            ((Imperative.HasVarsPure.getVars (P:=Expression)
+            ((Imperative.HasFvars.getFvars (P:=Expression)
                 entry.snd.expr).removeAll
               (ks_L4 ++ ks'_L4)) := by
         simp only [Imperative.invStores, Imperative.substStores]
@@ -3291,7 +3291,7 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
         forall_post_filtered_decompose entry Hentry
       rw [Hentry_eq]
       have Hsub :
-          ∀ k w, k ∈ Imperative.HasVarsPure.getVars
+          ∀ k w, k ∈ Imperative.HasFvars.getFvars
                         (P:=Expression) c.expr →
             Map.find? oldSubst_L6 k = some w →
             δ σ_R1 w =
@@ -3307,13 +3307,13 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
           exact HinputSubBridge k w (find?_append_none_elim hfind Hf)
       have HpostVarsFresh_via_c :
           ∀ c ∈ proc'.spec.postconditions.values,
-          ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) c.expr,
+          ∀ v ∈ Imperative.HasFvars.getFvars (P:=Expression) c.expr,
             ¬ isTempIdent v ∧ ¬ isOldTempIdent v ∧
             v ∉ CallArg.getLhs args := by
         intro c Hc_in v Hv
         exact HpostVarsFresh c.expr (c_in_postExprs_of_proc' c Hc_in) v Hv
       have HsurvBridgeC :
-          ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression)
+          ∀ v ∈ Imperative.HasFvars.getFvars (P:=Expression)
                   c.expr,
             Map.find? oldSubst_L6 v = none →
             δ σ_R1 (Lambda.LExpr.fvar () v none) =
@@ -3407,11 +3407,11 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
       rw [HσR1_σ, H5, H6]
     have HargVarsNotInLhs :
         ∀ argExpr ∈ CallArg.getInputExprs args,
-        ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) argExpr,
+        ∀ v ∈ Imperative.HasFvars.getFvars (P:=Expression) argExpr,
           v ∉ CallArg.getLhs args := _HargVarsNotInLhs
     have HpostVarsFresh_via_c :
         ∀ c ∈ proc'.spec.postconditions.values,
-        ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) c.expr,
+        ∀ v ∈ Imperative.HasFvars.getFvars (P:=Expression) c.expr,
           ¬ isTempIdent v ∧ ¬ isOldTempIdent v ∧
           v ∉ CallArg.getLhs args := by
       intro c Hc_in v Hv
@@ -3432,7 +3432,7 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
         ∀ entry : CoreLabel × Procedure.Check,
           entry ∈ posts_filtered_L6.toList →
           Imperative.invStores σ_R1 σ_havoc
-            ((Imperative.HasVarsPure.getVars (P:=Expression)
+            ((Imperative.HasFvars.getFvars (P:=Expression)
                 entry.snd.expr).removeAll
               (filtered_ks ++ filtered_ks')) := by
       intro entry Hentry
@@ -3529,7 +3529,7 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
         ∀ entry : CoreLabel × Procedure.Check,
           entry ∈ posts_filtered_L6.toList →
           filtered_ks'.Disjoint
-            (Imperative.HasVarsPure.getVars (P:=Expression)
+            (Imperative.HasFvars.getFvars (P:=Expression)
               entry.snd.expr) := by
       intro entry Hentry
       obtain ⟨c, Hc_in, Hentry_eq⟩ :=
@@ -3593,11 +3593,11 @@ private theorem callElimStatementCorrect_terminal_call_arm_fail
         ∀ entry : CoreLabel × Procedure.Check,
           entry ∈ posts_filtered_L6.toList →
           Imperative.invStores σ_R1 σ_havoc
-            ((Imperative.HasVarsPure.getVars (P:=Expression)
+            ((Imperative.HasFvars.getFvars (P:=Expression)
                 entry.snd.expr).removeAll
               (filtered_ks ++ filtered_ks')) ∧
           filtered_ks'.Disjoint
-            (Imperative.HasVarsPure.getVars (P:=Expression)
+            (Imperative.HasFvars.getFvars (P:=Expression)
               entry.snd.expr) ∧
           δ σ_R1 entry.snd.expr =
             some Imperative.HasBool.tt := by
@@ -3842,7 +3842,7 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                 have Hpre :
                     ∀ pre, (Procedure.Spec.getCheckExprs proc.spec.checkedPreconditions).contains pre →
                       Imperative.isDefinedOver
-                        (Imperative.HasVarsPure.getVars (P:=Expression)) σAO pre ∧
+                        (Imperative.HasFvars.getFvars (P:=Expression)) σAO pre ∧
                       δ σAO pre = .some Imperative.HasBool.tt :=
                   fun pre h => ⟨Hpre_def pre h, Hpre_evalTt pre h⟩
                 -- B1-tail: destructure heq_ce via callElimCmd_call_eq.
@@ -3861,7 +3861,7 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                 -- Hoisted: arg-expr vars defined in σ (via Hevalargs).
                 have HargIsDef : Imperative.isDefined σ
                     (List.flatMap
-                      (Imperative.HasVarsPure.getVars (P:=Expression))
+                      (Imperative.HasFvars.getFvars (P:=Expression))
                       inArgs) :=
                   evalExpressions_isDefined_flatMap Hevalargs
                 -- Hoisted abbreviations for argument/output temp idents.
@@ -3986,13 +3986,13 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                   -- argTemps fresh from σ; arg-expr vars defined in σ ⇒ disjoint.
                   have HdefVars : Imperative.isDefined σ
                       (List.flatMap
-                        (Imperative.HasVarsPure.getVars (P:=Expression))
+                        (Imperative.HasFvars.getFvars (P:=Expression))
                         (CallArg.getInputExprs args)) :=
                     hCallArgsIn ▸ HargIsDef
                   have HargExprDisj :
                       argTemps.Disjoint
                         (List.flatMap
-                          (Imperative.HasVarsPure.getVars (P:=Expression))
+                          (Imperative.HasFvars.getFvars (P:=Expression))
                           argTrips.unzip.snd) := by
                     intro x Hin1 Hin2
                     -- Rewrite Hin2 via Heqargs so we can use HdefVars.
@@ -4286,7 +4286,7 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                   -- Lift HpostVarsFresh to take c ∈ proc'.spec.postconditions.values.
                   have HpostVarsFresh_via_c :
                       ∀ c ∈ proc'.spec.postconditions.values,
-                      ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) c.expr,
+                      ∀ v ∈ Imperative.HasFvars.getFvars (P:=Expression) c.expr,
                         ¬ isTempIdent v ∧ ¬ isOldTempIdent v ∧
                         v ∉ CallArg.getLhs args := by
                     intro c Hc_in v Hv
@@ -4342,7 +4342,7 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                   have HpreFiltered :
                       ∀ entry ∈ presFiltered,
                         Imperative.isDefinedOver
-                          (Imperative.HasVarsPure.getVars (P:=Expression))
+                          (Imperative.HasFvars.getFvars (P:=Expression))
                           σAO entry.snd.expr ∧
                         δ σAO entry.snd.expr = some Imperative.HasBool.tt := by
                     intro entry Hentry
@@ -4356,7 +4356,7 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                   -- Pre-var freshness lemma against σ_old / σAO.
                   have HpresVarsFresh' :
                       ∀ entry ∈ presFiltered,
-                        ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr,
+                        ∀ v ∈ Imperative.HasFvars.getFvars (P:=Expression) entry.snd.expr,
                           ¬ isTempIdent v ∧ ¬ isOldTempIdent v ∧
                           v ∉ CallArg.getLhs args := fun entry Hentry v Hv =>
                     HpreVarsFresh entry.snd.expr
@@ -4371,13 +4371,13 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                                 argTemps argVals)
                               outTemps oVals)
                             oldTrips.unzip.fst.unzip.fst oldVals)
-                          ((Imperative.HasVarsPure.getVars (P:=Expression)
+                          ((Imperative.HasFvars.getFvars (P:=Expression)
                               entry.snd.expr).removeAll
                             ((proc.header.inputs.keys ++
                                 proc.header.outputs.keys) ++
                               (argTemps ++ lhs))) ∧
                         (argTemps ++ lhs).Disjoint
-                          (Imperative.HasVarsPure.getVars (P:=Expression)
+                          (Imperative.HasFvars.getFvars (P:=Expression)
                             entry.snd.expr) ∧
                         δ σAO entry.snd.expr = some Imperative.HasBool.tt := by
                     intro entry Hentry
@@ -4388,7 +4388,7 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                     -- (1) Hpred_disj: (argT ++ lhs).Disjoint preVars.
                     have Hpred_disj :
                         (argTemps ++ lhs).Disjoint
-                          (Imperative.HasVarsPure.getVars (P:=Expression)
+                          (Imperative.HasFvars.getFvars (P:=Expression)
                             entry.snd.expr) := by
                       intro x Hin1 Hin2
                       cases List.mem_append.mp Hin1 with
@@ -4413,7 +4413,7 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                                 argTemps argVals)
                               outTemps oVals)
                             oldTrips.unzip.fst.unzip.fst oldVals)
-                          ((Imperative.HasVarsPure.getVars (P:=Expression)
+                          ((Imperative.HasFvars.getFvars (P:=Expression)
                               entry.snd.expr).removeAll
                             ((proc.header.inputs.keys ++
                                 proc.header.outputs.keys) ++
@@ -5301,7 +5301,7 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                     rw [Hentry_eq]
                     -- Build the combined Hsub for subst_fvars_eval_bridge.
                     have Hsub :
-                        ∀ k w, k ∈ Imperative.HasVarsPure.getVars
+                        ∀ k w, k ∈ Imperative.HasFvars.getFvars
                                       (P:=Expression) c.expr →
                           Map.find? oldSubst_L6 k = some w →
                           δ σ_R1 w =
@@ -5323,7 +5323,7 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                       right; exact Hc_in
                     -- v ∈ getVars c.expr ⇒ ¬ isOldTempIdent v, via HpostVarsFresh.
                     have HsurvBridgeC :
-                        ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression)
+                        ∀ v ∈ Imperative.HasFvars.getFvars (P:=Expression)
                                 c.expr,
                           Map.find? oldSubst_L6 v = none →
                           δ σ_R1 (Lambda.LExpr.fvar () v none) =
@@ -5406,7 +5406,7 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                       ∀ entry : CoreLabel × Procedure.Check,
                         entry ∈ posts_filtered_L6.toList →
                         Imperative.invStores σ_R1 σ_havoc
-                          ((Imperative.HasVarsPure.getVars (P:=Expression)
+                          ((Imperative.HasFvars.getFvars (P:=Expression)
                               entry.snd.expr).removeAll
                             (filtered_ks ++ filtered_ks')) := by
                     intro entry Hentry
@@ -5532,7 +5532,7 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                       ∀ entry : CoreLabel × Procedure.Check,
                         entry ∈ posts_filtered_L6.toList →
                         filtered_ks'.Disjoint
-                          (Imperative.HasVarsPure.getVars (P:=Expression)
+                          (Imperative.HasFvars.getFvars (P:=Expression)
                             entry.snd.expr) := by
                     intro entry Hentry
                     obtain ⟨c, Hc_in, Hentry_eq⟩ :=
@@ -5612,11 +5612,11 @@ private theorem callElimStatementCorrect_terminal [LawfulBEq Expression.Expr]
                       ∀ entry : CoreLabel × Procedure.Check,
                         entry ∈ posts_filtered_L6.toList →
                         Imperative.invStores σ_R1 σ_havoc
-                          ((Imperative.HasVarsPure.getVars (P:=Expression)
+                          ((Imperative.HasFvars.getFvars (P:=Expression)
                               entry.snd.expr).removeAll
                             (filtered_ks ++ filtered_ks')) ∧
                         filtered_ks'.Disjoint
-                          (Imperative.HasVarsPure.getVars (P:=Expression)
+                          (Imperative.HasFvars.getFvars (P:=Expression)
                             entry.snd.expr) ∧
                         δ σ_R1 entry.snd.expr =
                           some Imperative.HasBool.tt := by

@@ -3,16 +3,11 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import all StrataTest.Util.TestDiagnostics
-meta import all StrataTest.Languages.Laurel.TestExamples
-
-meta section
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
-
-namespace Strata.Laurel
+open Strata
 
 /-! ## End-to-end test: safe division (no errors) and unsafe division (error)
 
@@ -21,7 +16,11 @@ built-in preconditions (divisor ≠ 0). The PrecondElim transform automatically
 generates verification conditions for these preconditions.
 -/
 
-def e2eProgram := r"
+/-! ### Safe paths verify cleanly -/
+
+#eval testLaurel
+#strata
+program Laurel;
 procedure safeDivision()
   opaque
 {
@@ -29,15 +28,6 @@ procedure safeDivision()
   var y: int := 2;
   var z: int := x / y;
   assert z == 5
-};
-
-// Error ranges are too wide because Core does not use expression locations
-procedure unsafeDivision(x: int)
-  opaque
-{
-  var z: int := 10 / x
-//^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
-// Error ranges are too wide because Core does not use expression locations
 };
 
 function pureDiv(x: int, y: int): int
@@ -52,18 +42,37 @@ procedure callPureDivSafe()
   var z: int := pureDiv(10, 2);
   assert z == 5
 };
+#end
+
+/-! ### Unsafe division: divisor not constrained, fails verification -/
+
+-- Error ranges are too wide because Core does not use expression locations.
+#eval testLaurel <|
+#strata
+program Laurel;
+procedure unsafeDivision(x: int)
+  opaque
+{
+  var z: int := 10 / x
+//^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+};
+#end
+
+/-! ### Unsafe call to function with `requires y != 0` -/
+
+#eval testLaurel <|
+#strata
+program Laurel;
+function pureDiv(x: int, y: int): int
+  requires y != 0
+{
+  x / y
+};
 
 procedure callPureDivUnsafe(x: int)
   opaque
 {
   var z: int := pureDiv(10, x)
 //^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
-// Error ranges are too wide because Core does not use expression locations
 };
-"
-
-#guard_msgs(drop info, error) in
-#eval testInputWithOffset "DivByZeroE2E" e2eProgram 20 processLaurelFile
-
-end Strata.Laurel
-end
+#end

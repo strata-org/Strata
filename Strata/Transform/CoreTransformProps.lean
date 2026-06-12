@@ -316,7 +316,7 @@ theorem evalExpression_updatedState
     (Hwfv : Imperative.WellFormedSemanticEvalVar δ)
     (Hwfc : Core.WellFormedCoreEvalCong δ)
     (Hwfvl : Imperative.WellFormedSemanticEvalVal δ)
-    (Hnin : ¬ k ∈ Imperative.HasVarsPure.getVars e)
+    (Hnin : ¬ k ∈ Imperative.HasFvars.getFvars e)
     (Heval : δ σ e = some v') :
     δ (updatedState σ k v) e = some v' := by
   simp [Imperative.WellFormedSemanticEvalVar, Imperative.HasFvar.getFvar] at Hwfv
@@ -324,7 +324,7 @@ theorem evalExpression_updatedState
   have Hval := Hwfvl.2
   simp [← Heval] at *
   induction e <;>
-    simp [Imperative.HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars] at *
+    simp [Imperative.HasFvars.getFvars, Lambda.LExpr.LExpr.getVars] at *
   case const c | op o ty | bvar b =>
     rw [Hval]; rw [Hval]; constructor; constructor
   case fvar m n ty =>
@@ -352,7 +352,7 @@ theorem evalExpressions_updatedState
     (Hwfv : Imperative.WellFormedSemanticEvalVar δ)
     (Hwfc : Core.WellFormedCoreEvalCong δ)
     (Hwfvl : Imperative.WellFormedSemanticEvalVal δ)
-    (Hnin : ¬ k ∈ es.flatMap (Imperative.HasVarsPure.getVars (P:=Expression)))
+    (Hnin : ¬ k ∈ es.flatMap (Imperative.HasFvars.getFvars (P:=Expression)))
     (Heval : EvalExpressions (P:=Core.Expression) δ σ es vs) :
     EvalExpressions (P:=Core.Expression) δ (updatedState σ k v) es vs := by
   induction es generalizing vs with
@@ -365,13 +365,13 @@ theorem evalExpressions_updatedState
     | cons v_h vs_t =>
       cases Heval with
       | eval_some Hdef He Hes =>
-      have Hnin_h : ¬ k ∈ Imperative.HasVarsPure.getVars (P:=Expression) e' := by
+      have Hnin_h : ¬ k ∈ Imperative.HasFvars.getFvars (P:=Expression) e' := by
         intro Hin
         apply Hnin
         simp [List.mem_flatMap]
         exact Or.inl Hin
       have Hnin_t : ¬ k ∈
-          es_t.flatMap (Imperative.HasVarsPure.getVars (P:=Expression)) := by
+          es_t.flatMap (Imperative.HasFvars.getFvars (P:=Expression)) := by
         intro Hin
         apply Hnin
         simp [List.mem_flatMap]
@@ -380,7 +380,7 @@ theorem evalExpressions_updatedState
         obtain ⟨e2, He2_in, He2_var⟩ := Hin
         exact ⟨e2, He2_in, He2_var⟩
       have Hdef' : Imperative.isDefined (updatedState σ k v)
-                    (Imperative.HasVarsPure.getVars e') := by
+                    (Imperative.HasFvars.getFvars e') := by
         unfold Imperative.isDefined
         intro x Hx
         have Hsome := Hdef x Hx
@@ -404,7 +404,7 @@ theorem H_inits
     (Hwfvl : Imperative.WellFormedSemanticEvalVal δ)
     (Hwfc : Core.WellFormedCoreEvalCong δ)
     (Hdisj : trips.unzip.fst.unzip.fst.Disjoint
-              (List.flatMap (Imperative.HasVarsPure.getVars (P:=Expression))
+              (List.flatMap (Imperative.HasFvars.getFvars (P:=Expression))
                   trips.unzip.snd))
     (Hndup : List.Nodup trips.unzip.fst.unzip.fst)
     (Heval : EvalExpressions (P:=Core.Expression) δ σ trips.unzip.snd evalVals)
@@ -425,20 +425,20 @@ theorem H_inits
     rename_i tail_vals vv Hdef He Hes
     have Hndup_t : List.Nodup t.unzip.fst.unzip.fst :=
       (List.nodup_cons.mp Hndup).2
-    have Hxnotin_e : ¬ x' ∈ Imperative.HasVarsPure.getVars (P:=Expression) e := by
+    have Hxnotin_e : ¬ x' ∈ Imperative.HasFvars.getFvars (P:=Expression) e := by
       intro Hin
       have Hxmem : x' ∈ (x' :: t.unzip.fst.unzip.fst) := by simp
       have Hflat : x' ∈ (e :: t.unzip.snd).flatMap
-                  (Imperative.HasVarsPure.getVars (P:=Expression)) := by
+                  (Imperative.HasFvars.getFvars (P:=Expression)) := by
         simp [List.mem_flatMap]
         exact Or.inl Hin
       exact Hdisj Hxmem Hflat
     have Hxnotin_es : ¬ x' ∈ t.unzip.snd.flatMap
-        (Imperative.HasVarsPure.getVars (P:=Expression)) := by
+        (Imperative.HasFvars.getFvars (P:=Expression)) := by
       intro Hin
       have Hxmem : x' ∈ (x' :: t.unzip.fst.unzip.fst) := by simp
       have Hflat : x' ∈ (e :: t.unzip.snd).flatMap
-                  (Imperative.HasVarsPure.getVars (P:=Expression)) := by
+                  (Imperative.HasFvars.getFvars (P:=Expression)) := by
         simp [List.mem_flatMap]
         right
         simp [List.mem_flatMap] at Hin
@@ -467,13 +467,13 @@ theorem H_inits
       exact Hndef_t y hy
     have Hdisj_t :
         t.unzip.fst.unzip.fst.Disjoint
-          (List.flatMap (Imperative.HasVarsPure.getVars (P:=Expression))
+          (List.flatMap (Imperative.HasFvars.getFvars (P:=Expression))
             t.unzip.snd) := by
       intro y Hy_in_t Hy_in_var
       have Hy_in_h : y ∈ (x' :: t.unzip.fst.unzip.fst) :=
         List.mem_cons_of_mem _ Hy_in_t
       have Hflat : y ∈ (e :: t.unzip.snd).flatMap
-                  (Imperative.HasVarsPure.getVars (P:=Expression)) := by
+                  (Imperative.HasFvars.getFvars (P:=Expression)) := by
         simp [List.mem_flatMap]
         right
         simp [List.mem_flatMap] at Hy_in_var
