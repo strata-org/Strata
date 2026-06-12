@@ -25,8 +25,8 @@ def KleeneTest1 : Stmt Expression (Cmd Expression) :=
 
 def KleeneTest1Ans : Option (KleeneStmt Expression (Cmd Expression)) :=
   .some (.choice
-    (.seq (.cmd (.assume "true_cond" Core.true .empty)) (.seq (.cmd $ .set "x" .nondet .empty) (.assert "$__skip" Imperative.HasBool.tt .empty)))
-    (.seq (.cmd (.assume "false_cond" Core.false .empty)) (.seq (.cmd $ .set "y" .nondet .empty) (.assert "$__skip" Imperative.HasBool.tt .empty))))
+    (.block (.seq (.cmd (.assume "true_cond" Core.true .empty)) (.seq (.cmd $ .set "x" .nondet .empty) (.assert "$__skip" Imperative.HasBool.tt .empty))))
+    (.block (.seq (.cmd (.assume "false_cond" Core.false .empty)) (.seq (.cmd $ .set "y" .nondet .empty) (.assert "$__skip" Imperative.HasBool.tt .empty)))))
 
 -- #eval toString $ Std.format (StmtToKleeneStmt KleeneTest1)
 -- #eval toString $ Std.format KleeneTest1Ans

@@ -5,7 +5,7 @@
 -/
 module
 
-import StrataDDM.Integration.Lean.HashCommands -- shake: keep
+public meta import StrataDDM.Integration.Lean.HashCommands -- shake: keep
 public import Strata.Languages.B3.Verifier.Expression
 public import Strata.Languages.B3.Verifier.Formatter
 public import Strata.Languages.B3.Verifier.State

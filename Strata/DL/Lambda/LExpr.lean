@@ -313,6 +313,7 @@ def LExpr.getVars (e : LExpr T) : List (Identifier T.base.IDMeta) := match e wit
   | .ite _ c t e => LExpr.getVars c ++ LExpr.getVars t ++ LExpr.getVars e
   | .eq _ e1 e2 => LExpr.getVars e1 ++ LExpr.getVars e2
 
+@[expose]
 def getOps (e : LExpr T) := match e with
   | .op _ name _ => [name]
   | .const _ _ => [] | .bvar _ _ => [] | .fvar _ _ _ => []

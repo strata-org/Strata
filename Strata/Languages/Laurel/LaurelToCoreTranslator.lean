@@ -624,7 +624,6 @@ where
       return LExpr.all () p.name.text (some (← translateType p.type)) inner
 
 structure LaurelTranslateOptions where
-  emitResolutionErrors : Bool := true
   inlineFunctionsWhenPossible : Bool := false
   overflowChecks : Core.OverflowChecks := {}
   keepAllFilesPrefix : Option String := none
