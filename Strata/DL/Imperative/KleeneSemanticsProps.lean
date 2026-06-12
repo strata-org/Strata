@@ -18,21 +18,16 @@ namespace Imperative
 
 public section
 
-<<<<<<< HEAD
-variable {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P]
-  [HasVarsPure P P.Expr]
-=======
-variable {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P]
->>>>>>> origin/main2
+variable {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P]
 
 /-! ## Env helpers -/
 
-omit [HasFvar P] [HasBool P] [HasBoolOps P] in
+omit [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] in
 theorem assume_env_eq (ρ : Env P) :
     ({ ρ with store := ρ.store, hasFailure := ρ.hasFailure || false } : Env P) = ρ := by
   cases ρ; simp [Bool.or_false]
 
-omit [HasFvar P] [HasBoolOps P] in
+omit [HasFvar P] [HasBoolOps P] [HasFvars P] in
 theorem eval_tt_is_tt
     (δ : SemanticEval P) (σ : SemanticStore P)
     (hwfv : WellFormedSemanticEvalVal δ) :
