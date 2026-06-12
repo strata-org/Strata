@@ -88,7 +88,7 @@ inductive StepCFG
     {l CmdT : Type} [BEq l] (P : PureExpr)
     (EvalCmd   : EvalCmdParam P CmdT)
     (extendEval : ExtendEval P)
-    [HasNot P] [HasVarsPure P P.Expr] :
+    [HasBoolOps P] [HasFvars P] :
     CFG l (DetBlock l CmdT P) → CFGConfig l CmdT P → CFGConfig l CmdT P → Prop where
   /-- Fetch: turn `.atBlock t` into `.inBlock t b.cmds b.transfer`. -/
   | fetch :
@@ -133,7 +133,7 @@ def StepCFGStar
     (P : PureExpr)
     (EvalCmd : EvalCmdParam P CmdT)
     (extendEval : ExtendEval P)
-    [HasNot P] [HasVarsPure P P.Expr]
+    [HasBoolOps P] [HasFvars P]
     (cfg : CFG l (DetBlock l CmdT P)) :
     CFGConfig l CmdT P → CFGConfig l CmdT P → Prop :=
   ReflTrans (StepCFG P EvalCmd extendEval cfg)

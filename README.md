@@ -72,7 +72,7 @@ A JDK (11+) providing `javac` must be on your `PATH`. For running the
 Java/Ion integration test, download the ion-java jar:
 
 ```bash
-wget -q -O StrataTestExtra/DDM/Integration/Java/testdata/ion-java-1.11.11.jar \
+wget -q -O StrataTestExtra/Languages/Java/testdata/ion-java-1.11.11.jar \
   https://github.com/amazon-ion/ion-java/releases/download/v1.11.11/ion-java-1.11.11.jar
 ```
 
@@ -93,6 +93,7 @@ lake build && lake test
 ```
 
 Unit tests are run with `#guard_msgs` commands. No output means the tests passed.
+For how to write a new test, see [docs/Testing.md](docs/Testing.md).
 
 To build executable files only and omit proof checks that might take a long time, use
 

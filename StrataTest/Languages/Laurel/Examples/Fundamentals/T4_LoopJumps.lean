@@ -3,20 +3,17 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import all StrataTest.Util.TestDiagnostics
-meta import all StrataTest.Languages.Laurel.TestExamples
+import Strata.Languages.Laurel
 
-meta section
-
-open StrataTest.Util
 open Strata
 
 namespace Laurel
 
 def program := r"
-procedure whileWithBreakAndContinue(steps: int, continueSteps: int, exitSteps: int): int {
+procedure whileWithBreakAndContinue(steps: int, continueSteps: int, exitSteps: int): int
+  opaque
+{
   var counter = 0
   {
     while(steps > 0)

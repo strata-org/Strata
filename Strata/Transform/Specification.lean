@@ -77,7 +77,7 @@ namespace Specification
 
 /-- Bundles the abstract ingredients for small-step statement semantics,
     parameterized by a shared pure-expression system `P`. -/
-structure Lang (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P] where
+structure Lang (P : PureExpr) where
   /-- Statement type. -/
   StmtT : Type
   /-- Configuration type. -/
@@ -97,19 +97,19 @@ structure Lang (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P] where
 
 /-- Build a `Lang` from `Imperative.Stmt`/`Config` with a given command
     type and evaluator. -/
-abbrev Lang.imperative (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P]
+abbrev Lang.imperative (P : PureExpr) [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P]
     (CmdT : Type) (evalCmd : EvalCmdParam P CmdT) (extendEval : ExtendEval P)
     (isAtAssert : Config P CmdT → AssertId P → Prop) : Lang P :=
   ⟨Stmt P CmdT, Config P CmdT, StepStmtStar P evalCmd extendEval,
    .stmt, .terminal, .exiting, isAtAssert, Config.getEnv⟩
 
 /-- The standard `Lang` for `Cmd P` / `EvalCmd P` / `isAtAssert`. -/
-abbrev Lang.standard (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
+abbrev Lang.standard (P : PureExpr) [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P]
     (extendEval : ExtendEval P) : Lang P :=
   Lang.imperative P (Cmd P) (EvalCmd P) extendEval (Imperative.isAtAssert P)
 
 
-variable {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasVarsPure P P.Expr]
+variable {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasInt P] [HasVal P]
 variable (L : Lang P)
 
 
@@ -169,7 +169,7 @@ namespace Hoare
     TODO: We will want to define Triple for total correctness. It will be useful
     when proving preservation of termination after program transformation.
 -/
-def Triple [HasVarsPure P P.Expr]
+def Triple
     (Pre : Env P → Prop) (s : L.StmtT) (Post : Env P → Prop) : Prop :=
   ∀ (ρ₀ ρ' : Env P),
     Pre ρ₀ → WellFormedSemanticEvalBool ρ₀.eval →
@@ -188,7 +188,7 @@ variable (isAtAssertFn : Config P CmdT → AssertId P → Prop)
 /-- Partial-correctness Hoare triple for a block body.
     The output configuration is allowed to be still in an exiting mode
     (see Config.exiting) because the outer block can catch the exit. -/
-def TripleBlock [HasVarsPure P P.Expr]
+def TripleBlock
     {CmdT : Type} (evalCmd : EvalCmdParam P CmdT) (extendEval : ExtendEval P)
     (Pre : Env P → Prop) (ss : List (Stmt P CmdT)) (Post : Env P → Prop) : Prop :=
   ∀ (ρ₀ ρ' : Env P),
@@ -200,11 +200,14 @@ def TripleBlock [HasVarsPure P P.Expr]
     Post ρ' ∧ ρ'.hasFailure = false
 
 omit [HasVal P] in
-/-- A postcondition is well-formed if it is stable under `projectStore`. -/
+/-- A postcondition is well-formed if it is stable under `projectStore` and
+    `eval`-replacement by any parent eval that the inner `ρ.eval` extends. -/
 def PostWF (Post : Env P → Prop) : Prop :=
-  ∀ ρ σ_parent, Post ρ → ρ.hasFailure = false →
-    Post { ρ with store := projectStore σ_parent ρ.store } ∧
-      ({ ρ with store := projectStore σ_parent ρ.store } : Env P).hasFailure = false
+  ∀ ρ σ_parent e_parent,
+    EvalExtensionOf extendEval e_parent ρ.eval →
+    Post ρ → ρ.hasFailure = false →
+    Post { ρ with store := projectStore σ_parent ρ.store, eval := e_parent } ∧
+      ({ ρ with store := projectStore σ_parent ρ.store, eval := e_parent } : Env P).hasFailure = false
 
 end StmtRules
 
@@ -213,7 +216,7 @@ end StmtRules
 
 section StandardConnection
 
-variable (P' : PureExpr) [HasFvar P'] [HasBool P'] [HasNot P']
+variable (P' : PureExpr) [HasFvar P'] [HasBool P'] [HasBoolOps P'] [HasFvars P'] [HasInt P'] [HasIntOps P']
 variable (extendEval : ExtendEval P')
 
 /-- The composite statement `assume pre; st; assert post` wrapped in a block. -/

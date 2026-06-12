@@ -35,6 +35,25 @@ structure Env (P : PureExpr) where
 /-- Type of a function that extends the semantic evaluator with a new function definition. -/
 @[expose] abbrev ExtendEval (P : PureExpr) := SemanticEval P → SemanticStore P → PureFunc P → SemanticEval P
 
+/-- An evaluator `e` is reachable from `e_parent` by a chain of `extendEval`
+    extensions.  Since `step_funcDecl` is the only rule that mutates
+    `Env.eval` (it tacks on `extendEval ρ.eval ρ.store decl`), the eval at
+    any reachable config is related to the eval at the source config by this
+    predicate.
+
+    This is the honest relation between a block's parent eval and the
+    block's inner `ρ.eval`: the inner eval extends the parent's, but is not
+    arbitrary. -/
+inductive EvalExtensionOf {P : PureExpr} (extendEval : ExtendEval P) :
+    SemanticEval P → SemanticEval P → Prop where
+  /-- Reflexivity: `e_parent` extends itself. -/
+  | refl {e : SemanticEval P} : EvalExtensionOf extendEval e e
+  /-- Step: if `e` extends `e_parent`, then `extendEval e σ decl` does too. -/
+  | step {e_parent e : SemanticEval P}
+         (σ : SemanticStore P) (decl : PureFunc P) :
+      EvalExtensionOf extendEval e_parent e →
+      EvalExtensionOf extendEval e_parent (extendEval e σ decl)
+
 /-! ## Small-Step Operational Semantics for Statements
 
 This module defines small-step operational semantics for the Imperative
@@ -69,11 +88,15 @@ inductive Config (P : PureExpr) (CmdT : Type) : Type where
       The label identifies which block to exit to. -/
   | exiting : String → Env P → Config P CmdT
   /-- A block context: execute the inner config, then consume matching exits.
-      The label is `Option String` — `none` denotes an unnamed block that only
-      catches unlabeled exits.  The `SemanticStore P` is the parent store at
-      block entry; on exit, the result is projected through it so that
-      variables initialized inside the block are not visible outside. -/
-  | block : Option String → SemanticStore P → Config P CmdT → Config P CmdT
+      - The block label is `Option String` — `none` denotes an unnamed block, and is only
+        used for scoping of variables; no explicit exit statement can reach this block.
+      - The `SemanticStore P` is the parent store at
+        block entry; on exit, the result is projected through it so that
+        variables initialized inside the block are not visible outside.
+      - The `SemanticEval P` is the parent evaluator at block entry; on exit,
+        the result evaluator is restored to it so that any internal function
+        declarations introduced inside the block are not visible outside. -/
+  | block : Option String → SemanticStore P → SemanticEval P → Config P CmdT → Config P CmdT
   /-- A sequence context: execute the first statement (as a sub-config), then
       continue with the remaining statements. -/
   | seq : Config P CmdT → List (Stmt P CmdT) → Config P CmdT
@@ -88,7 +111,7 @@ variable {P : PureExpr} {CmdT : Type}
   | .stmts _ ρ => ρ
   | .terminal ρ => ρ
   | .exiting _ ρ => ρ
-  | .block _ _ inner => inner.getEnv
+  | .block _ _ _ inner => inner.getEnv
   | .seq inner _ => inner.getEnv
 
 /-- Extract the store from a configuration. -/
@@ -132,32 +155,48 @@ where
   | .stmts ss _, label => Stmt.noMatchingAssert.Stmts.noMatchingAssert ss label
   | .terminal _, _ => True
   | .exiting _ _, _ => True
-  | .block _ _ inner, label => inner.noMatchingAssert label
+  | .block _ _ _ inner, label => inner.noMatchingAssert label
   | .seq inner ss, label =>
     inner.noMatchingAssert label ∧ Stmt.noMatchingAssert.Stmts.noMatchingAssert ss label
 
-/-- Config-level noFuncDecl predicate. -/
+/-- Config-level noFuncDecl predicate.
+
+    For `.block` we additionally require that the snapshotted parent eval
+    `e_parent` matches the inner config's current eval.  Together with
+    no-funcDecl-inside, this ensures that on `step_block_done` the eval
+    restoration is a no-op (it puts back the same eval that was already
+    there), so eval is preserved throughout. -/
 def Config.noFuncDecl : Config P CmdT → Prop
   | .stmt s _ => Stmt.noFuncDecl s = true
   | .stmts ss _ => Block.noFuncDecl ss = true
   | .terminal _ => True
   | .exiting _ _ => True
-  | .block _ _ inner => Config.noFuncDecl inner
+  | .block _ _ e_parent inner => Config.noFuncDecl inner ∧ e_parent = inner.getEnv.eval
   | .seq inner ss => Config.noFuncDecl inner ∧ Block.noFuncDecl ss = true
+
+/-- Config-level `funcDeclNames`: collects all `decl.name`s from `funcDecl`
+    AST nodes syntactically present anywhere in the config. -/
+@[expose] def Config.funcDeclNames : Config P CmdT → List P.Ident
+  | .stmt s _ => Stmt.funcDeclNames s false
+  | .stmts ss _ => Block.funcDeclNames ss false
+  | .terminal _ => []
+  | .exiting _ _ => []
+  | .block _ _ _ inner => Config.funcDeclNames inner
+  | .seq inner ss => Config.funcDeclNames inner ++ Block.funcDeclNames ss false
 
 /-- Extend `exitsCoveredByBlocks` to configurations.
 
     The label list has type `List String` (matching `Stmt.exit`'s mandatory-label
     AST).  An anonymous (`.none`) `Config.block` (introduced by the loop/if's body
-    wrapper) does NOT contribute a label — labeled exits cannot match `.none`,
+    wrapper) does not contribute a label — labeled exits cannot match `.none`,
     and unlabeled exits do not exist as user statements. -/
 @[expose] def Config.exitsCoveredByBlocks : List String → Config P CmdT → Prop
   | labels, .stmt s _ => s.exitsCoveredByBlocks labels
   | labels, .stmts ss _ => Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks labels ss
   | _, .terminal _ => True
   | labels, .exiting l _ => l ∈ labels
-  | labels, .block none _ inner => Config.exitsCoveredByBlocks labels inner
-  | labels, .block (some l) _ inner => Config.exitsCoveredByBlocks (l :: labels) inner
+  | labels, .block none _ _ inner => Config.exitsCoveredByBlocks labels inner
+  | labels, .block (some l) _ _ inner => Config.exitsCoveredByBlocks (l :: labels) inner
   | labels, .seq inner ss =>
     Config.exitsCoveredByBlocks labels inner ∧ Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks labels ss
 
@@ -205,7 +244,7 @@ theorem StoreAgreement.through_projectStore {P : PureExpr}
 
 section
 
-variable {CmdT : Type} (P : PureExpr) [HasBool P] [HasNot P]
+variable {CmdT : Type} (P : PureExpr) [HasBool P] [HasBoolOps P] [HasFvars P] [HasInt P] [HasIntOps P]
 
 /--
 `StepStmt` defines a single execution step from one configuration to another.
@@ -232,44 +271,46 @@ inductive StepStmt
   /-- A labeled block steps to a block context that wraps its body as `.stmts`.
       The AST label `label : String` is lifted into `.some label` for the
       `Config.block` wrapper (whose label is `Option String`).
-      The parent store `ρ.store` is saved so that block-local variables
-      can be popped on exit. -/
+      The parent store `ρ.store` and parent eval `ρ.eval` are saved so that
+      block-local variables and function declarations can be popped on exit. -/
   | step_block :
     StepStmt EvalCmd extendEval
       (.stmt (.block label ss _) ρ)
-      (.block (.some label) ρ.store (.stmts ss ρ))
+      (.block (.some label) ρ.store ρ.eval (.stmts ss ρ))
 
   /-- If the condition of an `ite` statement evaluates to true, step to the
-      then branch. -/
+      then branch.  The branch is wrapped in a block so that variables
+      `init`'d inside are projected away on exit (matching `definedVars`
+      with `excludeScoped = true`). -/
   | step_ite_true :
     ρ.eval ρ.store c = .some HasBool.tt →
     WellFormedSemanticEvalBool ρ.eval →
     ----
     StepStmt EvalCmd extendEval
       (.stmt (.ite (.det c) tss ess _) ρ)
-      (.stmts tss ρ)
+      (.block .none ρ.store ρ.eval (.stmts tss ρ))
 
   /-- If the condition of an `ite` statement evaluates to false, step to the
-      else branch. -/
+      else branch (scoped via block wrapper). -/
   | step_ite_false :
     ρ.eval ρ.store c = .some HasBool.ff →
     WellFormedSemanticEvalBool ρ.eval →
     ----
     StepStmt EvalCmd extendEval
       (.stmt (.ite (.det c) tss ess _) ρ)
-      (.stmts ess ρ)
+      (.block .none ρ.store ρ.eval (.stmts ess ρ))
 
-  /-- Non-deterministic ite: step to the then branch. -/
+  /-- Non-deterministic ite: step to the then branch (scoped). -/
   | step_ite_nondet_true :
     StepStmt EvalCmd extendEval
       (.stmt (.ite .nondet tss ess _) ρ)
-      (.stmts tss ρ)
+      (.block .none ρ.store ρ.eval (.stmts tss ρ))
 
-  /-- Non-deterministic ite: step to the else branch. -/
+  /-- Non-deterministic ite: step to the else branch (scoped). -/
   | step_ite_nondet_false :
     StepStmt EvalCmd extendEval
       (.stmt (.ite .nondet tss ess _) ρ)
-      (.stmts ess ρ)
+      (.block .none ρ.store ρ.eval (.stmts ess ρ))
 
   /-- If a loop guard is true, execute the body (followed by the loop again).
       Each invariant expression must evaluate to a boolean (`tt` or `ff`);
@@ -295,7 +336,7 @@ inductive StepStmt
     StepStmt EvalCmd extendEval
       (.stmt (.loop (.det g) m inv body md) ρ)
       (.seq
-        (.block .none ρ.store (.stmts body
+        (.block .none ρ.store ρ.eval (.stmts body
           { ρ with hasFailure := ρ.hasFailure || hasInvFailure }))
         [.loop (.det g) m inv body md])
 
@@ -323,7 +364,7 @@ inductive StepStmt
     StepStmt EvalCmd extendEval
       (.stmt (.loop .nondet m inv body md) ρ)
       (.seq
-        (.block .none ρ.store (.stmts body
+        (.block .none ρ.store ρ.eval (.stmts body
           { ρ with hasFailure := ρ.hasFailure || hasInvFailure }))
         [.loop .nondet m inv body md])
 
@@ -343,7 +384,7 @@ inductive StepStmt
       (.exiting label ρ)
 
   /-- A function declaration extends the evaluator with the new function. -/
-  | step_funcDecl [HasSubstFvar P] [HasVarsPure P P.Expr] :
+  | step_funcDecl [HasSubstFvar P] :
     StepStmt EvalCmd extendEval
       (.stmt (.funcDecl decl md) ρ)
       (.terminal { ρ with eval := extendEval ρ.eval ρ.store decl })
@@ -395,37 +436,40 @@ inductive StepStmt
     StepStmt EvalCmd extendEval inner inner' →
     ----
     StepStmt EvalCmd extendEval
-      (.block label σ_parent inner)
-      (.block label σ_parent inner')
+      (.block label σ_parent e_parent inner)
+      (.block label σ_parent e_parent inner')
 
   /-- When a block's inner body reaches terminal, the block terminates.
       The resulting store is projected through the parent store: only variables
       that existed before the block keep their (possibly updated) values;
-      variables initialized inside the block are discarded. -/
+      variables initialized inside the block are discarded.  The evaluator is
+      restored to the parent's: function declarations introduced inside the
+      block are not visible outside. -/
   | step_block_done :
     StepStmt EvalCmd extendEval
-      (.block label σ_parent (.terminal ρ'))
-      (.terminal { ρ' with store := projectStore σ_parent ρ'.store })
+      (.block label σ_parent e_parent (.terminal ρ'))
+      (.terminal { ρ' with store := projectStore σ_parent ρ'.store, eval := e_parent })
 
   /-- When a block's inner body exits with a matching label, the block consumes it.
-      Store is projected. -/
+      Store and eval are projected/restored. -/
   | step_block_exit_match :
     label = .some l →
     ----
     StepStmt EvalCmd extendEval
-      (.block label σ_parent (.exiting l ρ'))
-      (.terminal { ρ' with store := projectStore σ_parent ρ'.store })
+      (.block label σ_parent e_parent (.exiting l ρ'))
+      (.terminal { ρ' with store := projectStore σ_parent ρ'.store, eval := e_parent })
 
   /-- When a block's inner body exits with a non-matching label, the exit propagates.
       Includes the case where the block's own label is `.none` (anonymous loop/ite
       wrapper, which never matches a labeled exit) as well as any other mismatched
-      `.some` label.  Store is projected since we're leaving this block. -/
+      `.some` label.  Store and eval are projected/restored since we're leaving
+      this block. -/
   | step_block_exit_mismatch :
     label ≠ .some l →
     ----
     StepStmt EvalCmd extendEval
-      (.block label σ_parent (.exiting l ρ'))
-      (.exiting l { ρ' with store := projectStore σ_parent ρ'.store })
+      (.block label σ_parent e_parent (.exiting l ρ'))
+      (.exiting l { ρ' with store := projectStore σ_parent ρ'.store, eval := e_parent })
 
 end
 
@@ -436,7 +480,7 @@ section
 variable
   {CmdT : Type}
   (P : PureExpr)
-  [HasBool P] [HasNot P]
+  [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P]
   (EvalCmd : EvalCmdParam P CmdT)
   (extendEval : ExtendEval P)
 
@@ -458,6 +502,8 @@ abbrev EvalStmtsSmall
     (ρ' : Env P) : Prop :=
   StepStmtStar P EvalCmd extendEval (.stmts ss ρ) (.terminal ρ')
 
+---------------------------------------------------------------------
+
 /-- Configuration is terminal if no further steps are possible. -/
 def IsTerminal
     (c : Config P CmdT) : Prop :=
@@ -467,7 +513,7 @@ end -- section
 
 section
 
-variable (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P]
+variable (P : PureExpr) [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P]
 variable (extendEval : ExtendEval P)
 
 /-! ## Assertion Identity -/
@@ -483,7 +529,7 @@ structure AssertId where
 /-- `isAtAssert cfg aid` holds when the head of `cfg` is either an `assert`
     command whose label and expression match `aid`, or a loop statement
     whose invariant list contains an entry with matching label and
-    expression.  Recurses into `block` and `seq` wrappers so that
+    expression. Recurses into `block` and `seq` wrappers so that
     assertions inside compound statements are visible. -/
 @[expose] def isAtAssert : Config P (Cmd P) → AssertId P → Prop
   | .stmt (.cmd (.assert label expr _)) _, aid =>
@@ -492,7 +538,7 @@ structure AssertId where
     aid.label = label ∧ aid.expr = expr
   | .stmt (.loop _ _ inv _ _) _, aid => (aid.label, aid.expr) ∈ inv
   | .stmts ((.loop _ _ inv _ _) :: _) _, aid => (aid.label, aid.expr) ∈ inv
-  | .block _ _ inner, aid => isAtAssert inner aid
+  | .block _ _ _ inner, aid => isAtAssert inner aid
   | .seq inner _, aid => isAtAssert inner aid
   | _, _ => False
 

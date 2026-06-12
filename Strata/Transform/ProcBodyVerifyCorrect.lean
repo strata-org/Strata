@@ -449,6 +449,17 @@ private theorem mapM_stateT_pure_eq {α β : Type} {σ : Type} {ε : Type}
 
 /-! ## Verification Statement Structure -/
 
+/-- if `procToVerifyStmt` succeeds, then the input procedure has `.structured` body -/
+theorem procToVerifyStmt_is_structured
+    (h : (procToVerifyStmt proc).run st = (Except.ok verifyStmt, st')) :
+      ∃ ss, proc.body = .structured ss := by
+    simp [ExceptT.run, procToVerifyStmt] at h
+    cases hb: proc.body with
+    | structured ss => simp
+    | cfg blk =>
+      simp [hb] at h
+      cases h
+
 /-- Structure: the output of `procToVerifyStmt` is a block
     `prefix ++ [bodyBlock] ++ postAsserts`, and all prefix statements
     are `.cmd` (init/assume commands).
@@ -461,16 +472,19 @@ theorem procToVerifyStmt_structure
     (π : String → Option Procedure)
     (φ : CoreEval → PureFunc Expression → CoreEval)
     (h_wf_proc : WF.WFProcedureProp p proc) :
-    ∃ (prefixStmts : List Statement),
+    ∃ (prefixStmts ss : List Statement),
+      proc.body = .structured ss ∧
       verifyStmt = Stmt.block s!"verify_{proc.header.name.name}"
-        (prefixStmts ++ [Stmt.block s!"body_{proc.header.name.name}" proc.body #[]] ++
+        (prefixStmts ++ [Stmt.block s!"body_{proc.header.name.name}" ss #[]] ++
           ensuresToAsserts proc.spec.postconditions) #[] ∧
       (∀ s ∈ prefixStmts, ∃ c, s = Stmt.cmd c) ∧
       (∀ ρ₀, Core.Specification.ProcEnvWF proc ρ₀ →
         ∃ ρ_init,
           Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
             (.stmts prefixStmts ρ_init) (.terminal ρ₀)) := by
+  obtain ⟨ss, h_body_eq⟩ := procToVerifyStmt_is_structured h
   unfold procToVerifyStmt at h
+  rw [h_body_eq] at h
   simp only [bind, ExceptT.bind, ExceptT.mk, ExceptT.run, ExceptT.bindCont,
     pure, ExceptT.pure, StateT.bind] at h
   rw [mapM_stateT_pure_eq] at h
@@ -485,7 +499,8 @@ theorem procToVerifyStmt_structure
       (.det (LExpr.fvar () id none)) #[]
   let assumes := requiresToAssumes proc.spec.preconditions
   let prefixStmts := inputInits ++ outputOnlyInits ++ oldInoutInits ++ assumes
-  refine ⟨prefixStmts, h_eq.symm, ?_, ?_⟩
+  rw [h_body_eq]
+  refine ⟨prefixStmts, ss, rfl, h_eq.symm, ?_, ?_⟩
   · intro s hs
     simp only [prefixStmts, List.mem_append] at hs
     rcases hs with ((hs | hs) | hs) | hs
@@ -645,9 +660,13 @@ theorem procBodyVerify_procedureCorrect
     (h_wf_proc : WF.WFProcedureProp p proc) :
     -- Conclusion: ProcedureCorrect holds.
     Core.Specification.ProcedureCorrect π φ proc p := by
-
-  obtain ⟨prefixStmts, h_eq, h_prefix_cmd, h_prefix_trace⟩ :=
+  obtain ⟨ss, h_body_eq⟩ := procToVerifyStmt_is_structured h_transform
+  obtain ⟨prefixStmts, ss', h_body, h_eq, h_prefix_cmd, h_prefix_trace⟩ :=
     procToVerifyStmt_structure proc p st st' verifyStmt h_transform π φ h_wf_proc
+  have h_ss_eq : ss = ss' := by
+    have := h_body_eq.symm.trans h_body
+    exact Procedure.Body.structured.inj this
+  subst h_ss_eq
   let verifyLabel := s!"verify_{proc.header.name.name}"
   let bodyLabel := s!"body_{proc.header.name.name}"
   let postAsserts := ensuresToAsserts proc.spec.postconditions
@@ -658,18 +677,18 @@ theorem procBodyVerify_procedureCorrect
      verifyStmt context (block verifyLabel > seq > block bodyLabel). -/
   have h_embed_body : ∀ ρ₀ (h_wf : Specification.ProcEnvWF proc ρ₀)
       (cfg : CoreConfig),
-      CoreStepStar π φ (.stmts proc.body ρ₀) cfg →
+      CoreStepStar π φ (.stmts ss ρ₀) cfg →
       ∃ ρ_init,
         StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
           (.stmt verifyStmt ρ_init)
-          (.block (.some verifyLabel) ρ_init.store (.seq (.block (.some bodyLabel) ρ₀.store cfg) postAsserts)) := by
+          (.block (.some verifyLabel) ρ_init.store ρ_init.eval (.seq (.block (.some bodyLabel) ρ₀.store ρ₀.eval cfg) postAsserts)) := by
     intro ρ₀ h_wf cfg h_body
     obtain ⟨ρ_init, h_prefix⟩ := h_prefix_trace ρ₀ h_wf
     exact ⟨ρ_init, by
       rw [h_eq]
       exact ReflTrans_Transitive _ _ _ _
         (step_block_enter Expression (EvalCommand π φ) (EvalPureFunc φ) verifyLabel _ #[] ρ_init)
-        (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ (.some verifyLabel) ρ_init.store
+        (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ (.some verifyLabel) ρ_init.store ρ_init.eval
           (ReflTrans_Transitive _ _ _ _
             (by rw [List.append_assoc]
                 exact stmts_prefix_terminal_append Expression (EvalCommand π φ) (EvalPureFunc φ)
@@ -679,27 +698,27 @@ theorem procBodyVerify_procedureCorrect
               (seq_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ postAsserts
                 (ReflTrans_Transitive _ _ _ _
                   (step_block_enter Expression (EvalCommand π φ) (EvalPureFunc φ) bodyLabel _ #[] ρ₀)
-                  (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ (.some bodyLabel) ρ₀.store
+                  (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ (.some bodyLabel) ρ₀.store ρ₀.eval
                     (CoreStepStar_to_StepStmtStar h_body)))))))⟩
 
   /- Helper: coreIsAtAssert and getEval/getStore are preserved through
      the verifyStmt wrapping (block > seq > block). -/
-  have h_wrapped_assert : ∀ (σ_v σ_b : SemanticStore Expression) (cfg : CoreConfig) (a : AssertId Expression),
+  have h_wrapped_assert : ∀ (σ_v σ_b : SemanticStore Expression) (e_v e_b : SemanticEval Expression) (cfg : CoreConfig) (a : AssertId Expression),
       coreIsAtAssert cfg a →
-      coreIsAtAssert (.block (.some verifyLabel) σ_v (.seq (.block (.some bodyLabel) σ_b cfg) postAsserts)) a := by
-    intro σ_v σ_b cfg a h
+      coreIsAtAssert (.block (.some verifyLabel) σ_v e_v (.seq (.block (.some bodyLabel) σ_b e_b cfg) postAsserts)) a := by
+    intro σ_v σ_b e_v e_b cfg a h
     simp only [coreIsAtAssert]
     exact h
 
-  have h_wrapped_eval : ∀ (σ_v σ_b : SemanticStore Expression) (cfg : CoreConfig),
-      Config.getEval (.block (.some verifyLabel) σ_v (.seq (.block (.some bodyLabel) σ_b cfg) postAsserts)) =
+  have h_wrapped_eval : ∀ (σ_v σ_b : SemanticStore Expression) (e_v e_b : SemanticEval Expression) (cfg : CoreConfig),
+      Config.getEval (.block (.some verifyLabel) σ_v e_v (.seq (.block (.some bodyLabel) σ_b e_b cfg) postAsserts)) =
       Config.getEval cfg := by
-    intro σ_v σ_b cfg; simp [Config.getEval, Config.getEnv]
+    intro σ_v σ_b e_v e_b cfg; simp [Config.getEval, Config.getEnv]
 
-  have h_wrapped_store : ∀ (σ_v σ_b : SemanticStore Expression) (cfg : CoreConfig),
-      Config.getStore (.block (.some verifyLabel) σ_v (.seq (.block (.some bodyLabel) σ_b cfg) postAsserts)) =
+  have h_wrapped_store : ∀ (σ_v σ_b : SemanticStore Expression) (e_v e_b : SemanticEval Expression) (cfg : CoreConfig),
+      Config.getStore (.block (.some verifyLabel) σ_v e_v (.seq (.block (.some bodyLabel) σ_b e_b cfg) postAsserts)) =
       Config.getStore cfg := by
-    intro σ_v σ_b cfg; simp [Config.getStore, Config.getEnv]
+    intro σ_v σ_b e_v e_b cfg; simp [Config.getStore, Config.getEnv]
 
   -- Unfold h_correct for easier application
   have h_correct' : ∀ (a : AssertId Expression) (ρ_init : Env Expression)
@@ -714,14 +733,14 @@ theorem procBodyVerify_procedureCorrect
   -- Unified helper: all asserts reachable from proc.body are valid
   have body_asserts_valid : ∀ ρ₀ (h_wf : Specification.ProcEnvWF proc ρ₀)
       (a : AssertId Expression) (cfg : CoreConfig),
-      CoreStepStar π φ (.stmts proc.body ρ₀) cfg →
+      CoreStepStar π φ (.stmts ss ρ₀) cfg →
       coreIsAtAssert cfg a →
       cfg.getEval cfg.getStore a.expr = some HasBool.tt := by
     intro ρ₀ h_wf a cfg h_body h_assert
     obtain ⟨ρ_init, h_vt⟩ := h_embed_body ρ₀ h_wf cfg h_body
     have h_v := h_correct' a ρ_init
-      (.block (.some verifyLabel) ρ_init.store (.seq (.block (.some bodyLabel) ρ₀.store cfg) postAsserts))
-      h_vt (h_wrapped_assert ρ_init.store ρ₀.store cfg a h_assert)
+      (.block (.some verifyLabel) ρ_init.store ρ_init.eval (.seq (.block (.some bodyLabel) ρ₀.store ρ₀.eval cfg) postAsserts))
+      h_vt (h_wrapped_assert ρ_init.store ρ₀.store ρ_init.eval ρ₀.eval cfg a h_assert)
     rw [h_wrapped_eval, h_wrapped_store] at h_v
     exact h_v
 
@@ -729,23 +748,25 @@ theorem procBodyVerify_procedureCorrect
 
   · ----- Part 1: All asserts in proc.body are valid -----
     intro a
-    unfold Specification.AssertValidInProcedure Specification.AssertValidWhen
+    unfold Specification.AssertValidInProcedure
+    rw [h_body_eq]
+    unfold Specification.AssertValidWhen
     simp only [Specification.Lang.core, Specification.Lang.imperative]
     intro ρ₀ cfg (h_wf : Specification.ProcEnvWF proc ρ₀)
       (h_body : StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
-        (.stmt (Stmt.block "" proc.body #[]) ρ₀) cfg)
+        (.stmt (Stmt.block "" ss #[]) ρ₀) cfg)
       (h_assert : coreIsAtAssert cfg a)
     -- Extract first step: .stmt (block "" body #[]) ρ₀ → .block (.some "") ρ₀.store (.stmts body ρ₀)
     have h_block_star : StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
-        (.block (.some "") ρ₀.store (.stmts proc.body ρ₀)) cfg := by
+        (.block (.some "") ρ₀.store ρ₀.eval (.stmts ss ρ₀)) cfg := by
       cases h_body with
       | refl => simp [coreIsAtAssert] at h_assert
       | step _ _ _ hstep hrest => cases hstep; exact hrest
     -- Body never exits (from WFProcedureProp.bodyExitsCovered)
     have h_no_exit : ∀ lbl ρ', ¬ StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
-        (.stmts proc.body ρ₀) (.exiting lbl ρ') :=
-      block_exitsCoveredByBlocks_noEscape Expression (EvalCommand π φ) (EvalPureFunc φ)
-        proc.body h_wf_proc.bodyExitsCovered ρ₀
+        (.stmts ss ρ₀) (.exiting lbl ρ') :=
+      have hcov := h_wf_proc.bodyExitsCovered ss h_body_eq
+      block_exitsCoveredByBlocks_noEscape Expression (EvalCommand π φ) (EvalPureFunc φ) ss hcov ρ₀
     -- cfg is not terminal or exiting (has an assert)
     have h_nt : ∀ ρ', cfg ≠ .terminal ρ' := by
       intro ρ' heq; subst heq; exact coreIsAtAssert_not_terminal ρ' a h_assert
@@ -763,33 +784,72 @@ theorem procBodyVerify_procedureCorrect
     simpa [Config.getEval, Config.getStore] using h_valid
 
   · ----- Part 2: Postconditions + hasFailure on termination -----
-    intro h_wf_proc ρ₀ ρ' h_wf h_term
+    -- The unified field uses CoreBodyExec, which wraps the body in
+    -- `Stmt.block "" ss #[]`.  Since procToVerifyStmt only succeeds for
+    -- structured bodies, we invert the CoreBodyExec to get a CoreStepStar
+    -- witness through that wrapping.
+    intro h_wf_proc ρ₀ h_wf σ' δ' failed h_body_exec
+    rw [h_body_eq] at h_body_exec
+    -- ProcEnvWF gives us ρ₀.hasFailure = false, so
+    -- ⟨ρ₀.store, ρ₀.eval, false⟩ = ρ₀.
+    have h_env_eq : (⟨ρ₀.store, ρ₀.eval, false⟩ : Env Expression) = ρ₀ := by
+      have := h_wf.noFailure; cases ρ₀; simp_all
+    obtain ⟨ρ', h_term_block, rfl, rfl, rfl⟩ : ∃ ρ' : Env Expression,
+        CoreStepStar π φ (.stmt (Stmt.block "" ss #[]) ρ₀) (.terminal ρ') ∧
+        σ' = ρ'.store ∧ δ' = ρ'.eval ∧ failed = ρ'.hasFailure := by
+      cases h_body_exec with
+      | structured h_step => exact ⟨_, h_env_eq ▸ h_step, rfl, rfl, rfl⟩
     obtain ⟨ρ_init, h_prefix⟩ := h_prefix_trace ρ₀ h_wf
+    -- Decompose the outer block-wrapped trace into the inner body trace.
+    -- h_term_block : CoreStepStar π φ (.stmt (Stmt.block "" body #[]) ρ₀) (.terminal ρ')
+    -- First step is step_block to .block (.some "") ρ₀.store ρ₀.eval (.stmts body ρ₀);
+    -- then block_reaches_terminal yields either an inner terminal or exiting.
+    have h_term_block' := CoreStepStar_to_StepStmtStar h_term_block
+    have h_block_star : StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
+        (.block (.some "") ρ₀.store ρ₀.eval (.stmts ss ρ₀)) (.terminal ρ') := by
+      cases h_term_block' with
+      | step _ _ _ hstep hrest => cases hstep; exact hrest
+    have h_no_exit : ∀ lbl ρ_x, ¬ StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
+        (.stmts ss ρ₀) (.exiting lbl ρ_x) :=
+      block_exitsCoveredByBlocks_noEscape Expression (EvalCommand π φ) (EvalPureFunc φ)
+        ss (h_wf_proc.bodyExitsCovered ss h_body_eq) ρ₀
+    have ⟨ρ_inner, h_term, h_ρ'_eq⟩ : ∃ ρ_inner,
+        StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
+          (.stmts ss ρ₀) (.terminal ρ_inner) ∧
+        ρ' = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store, eval := ρ₀.eval } := by
+      match block_reaches_terminal Expression (EvalCommand π φ) (EvalPureFunc φ) h_block_star with
+      | .inl ⟨ρ_inner, hterm, heq⟩ => exact ⟨ρ_inner, hterm, heq⟩
+      | .inr ⟨lbl, ρ_x, hexit, _⟩ => exact absurd hexit (h_no_exit lbl ρ_x)
+    -- Convert the inner trace to CoreStepStar.
+    have h_term_inner : CoreStepStar π φ (.stmts ss ρ₀) (.terminal ρ_inner) :=
+      StepStmtStar_to_CoreStepStar h_term
     -- h_valid: all asserts in body from ρ₀ evaluate to true
     have h_valid : ∀ (a : AssertId Expression) (cfg : CoreConfig),
-        CoreStepStar π φ (.stmts proc.body ρ₀) cfg →
+        CoreStepStar π φ (.stmts ss ρ₀) cfg →
         coreIsAtAssert cfg a →
         cfg.getEval cfg.getStore a.expr = some HasBool.tt :=
       fun a cfg h h' => body_asserts_valid ρ₀ h_wf a cfg h h'
-    -- hasFailure = false
-    have h_nf' : ρ'.hasFailure = Bool.false :=
+    -- hasFailure = false on the inner env, hence on ρ' too.
+    have h_nf_inner : ρ_inner.hasFailure = Bool.false :=
       Core.core_noFailure_preserved π φ
-        (.stmts proc.body ρ₀) (.terminal ρ') h_valid h_wf.noFailure h_term
+        (.stmts ss ρ₀) (.terminal ρ_inner) h_valid h_wf.noFailure h_term_inner
+    have h_nf' : ρ'.hasFailure = Bool.false := by
+      rw [h_ρ'_eq]; exact h_nf_inner
     -- wfBool preservation
-    have h_wfb_term : WellFormedSemanticEvalBool ρ'.eval :=
-      Core.core_wfBool_preserved π φ h_wf_ext
-        (.stmts proc.body ρ₀) (.terminal ρ') h_wf.wfBool h_term
+    have h_wfb_term : WellFormedSemanticEvalBool ρ_inner.eval :=
+      Core.core_wfBool_preserved_stmts π φ h_wf_ext h_wf.wfBool h_term_inner
 
-    -- After the body block terminates via step_block_done, the store is projected.
-    -- We define the projected env.
-    let ρ_proj : Env Expression := { ρ' with store := projectStore ρ₀.store ρ'.store }
+    -- After the body block terminates via step_block_done, the store and eval are projected.
+    -- ρ_proj coincides with ρ' by h_ρ'_eq.
+    let ρ_proj : Env Expression := { ρ_inner with store := projectStore ρ₀.store ρ_inner.store, eval := ρ₀.eval }
+    have h_ρ_proj_eq : ρ_proj = ρ' := by simp [ρ_proj, h_ρ'_eq]
 
     have h_to_post : StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
-        (.stmt verifyStmt ρ_init) (.block (.some verifyLabel) ρ_init.store (.stmts postAsserts ρ_proj)) := by
+        (.stmt verifyStmt ρ_init) (.block (.some verifyLabel) ρ_init.store ρ_init.eval (.stmts postAsserts ρ_proj)) := by
       rw [h_eq]
       exact ReflTrans_Transitive _ _ _ _
         (step_block_enter Expression (EvalCommand π φ) (EvalPureFunc φ) verifyLabel _ #[] ρ_init)
-        (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ (.some verifyLabel) ρ_init.store
+        (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ (.some verifyLabel) ρ_init.store ρ_init.eval
           (ReflTrans_Transitive _ _ _ _
             (by rw [List.append_assoc]
                 exact stmts_prefix_terminal_append Expression (EvalCommand π φ) (EvalPureFunc φ)
@@ -800,41 +860,26 @@ theorem procBodyVerify_procedureCorrect
                 (seq_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ postAsserts
                   (ReflTrans_Transitive _ _ _ _
                     (step_block_enter Expression (EvalCommand π φ) (EvalPureFunc φ) bodyLabel _ #[] ρ₀)
-                    (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ (.some bodyLabel) ρ₀.store
-                      (CoreStepStar_to_StepStmtStar h_term))))
+                    (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ (.some bodyLabel) ρ₀.store ρ₀.eval
+                      h_term)))
                 (ReflTrans_Transitive _ _ _ _
                   (seq_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ postAsserts
                     (.step _ _ _ .step_block_done (.refl _)))
                   (.step _ _ _ .step_seq_done (.refl _)))))))
 
-    have h_proj_store_agree : ∀ x, (ρ₀.store x).isSome →
-        ρ_proj.store x = ρ'.store x := by
-      intro x hx
-      simp only [ρ_proj, projectStore]
-      simp [hx]
-
-    have h_proj_eval : ρ_proj.eval = ρ'.eval := rfl
-    have h_proj_hasFailure : ρ_proj.hasFailure = ρ'.hasFailure := rfl
-    have h_wfVar_term : WellFormedSemanticEvalVar ρ'.eval :=
-      Core.core_wfVar_preserved π φ h_wf_ext
-        (.stmts proc.body ρ₀) (.terminal ρ') h_wf.wfVar h_term
-    have h_wfCong_term : Core.WellFormedCoreEvalCong ρ'.eval :=
-      Core.core_wfCong_preserved π φ h_wf_ext
-        (.stmts proc.body ρ₀) (.terminal ρ') h_wf.wfCong h_term
-    have h_wfExprCongr_term : WellFormedSemanticEvalExprCongr ρ'.eval :=
-      Core.core_wfExprCongr_preserved π φ h_wf_ext
-        (.stmts proc.body ρ₀) (.terminal ρ') h_wf.wfExprCongr h_term
+    have h_proj_eval : ρ_proj.eval = ρ₀.eval := rfl
 
     have h_all_post_valid : ∀ s ∈ postAsserts, ∀ l e md,
-        s = Statement.assert l e md → ρ'.eval ρ'.store e = some HasBool.tt := by
+        s = Statement.assert l e md →
+        ρ_proj.eval ρ_proj.store e = some HasBool.tt := by
       suffices h_sfx :
           ∀ (sfx : List Statement),
             (∀ s ∈ sfx, ∃ l e md, s = Statement.assert l e md) →
             StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
-              (.stmt verifyStmt ρ_init) (.block (.some verifyLabel) ρ_init.store (.stmts sfx ρ_proj)) →
+              (.stmt verifyStmt ρ_init) (.block (.some verifyLabel) ρ_init.store ρ_init.eval (.stmts sfx ρ_proj)) →
             ∀ s ∈ sfx, ∀ l e md,
               s = Statement.assert l e md →
-              ρ'.eval ρ'.store e = some HasBool.tt by
+              ρ_proj.eval ρ_proj.store e = some HasBool.tt by
         exact h_sfx postAsserts
           (fun s hs => ensuresToAsserts_mem_is_assert hs) h_to_post
       intro sfx h_all_assert h_trace
@@ -845,13 +890,11 @@ theorem procBodyVerify_procedureCorrect
         have ⟨lh, eh, mdh, h_hd_eq⟩ := h_all_assert hd (.head _)
         subst h_hd_eq
         have h_at_head : coreIsAtAssert
-            (.block (.some verifyLabel) ρ_init.store (.stmts (Statement.assert lh eh mdh :: tl) ρ_proj))
+            (.block (.some verifyLabel) ρ_init.store ρ_init.eval (.stmts (Statement.assert lh eh mdh :: tl) ρ_proj))
             ⟨lh, eh⟩ := by
           simp only [coreIsAtAssert]; exact ⟨trivial, trivial⟩
-        have h_head_eval_proj := h_correct' ⟨lh, eh⟩ ρ_init _ h_trace h_at_head
-        simp only [Config.getEval, Config.getStore] at h_head_eval_proj
-        have h_head_eval : ρ'.eval ρ'.store eh = some HasBool.tt :=
-          eval_projectStore_to_full h_head_eval_proj h_wfVar_term h_wfCong_term h_wfExprCongr_term
+        have h_head_eval := h_correct' ⟨lh, eh⟩ ρ_init _ h_trace h_at_head
+        simp only [Config.getEval, Config.getStore] at h_head_eval
         cases h_mem with
         | head _ =>
           injection h_s_eq with h1; injection h1 with h2
@@ -865,15 +908,15 @@ theorem procBodyVerify_procedureCorrect
               .step _ _ _
                 (.step_cmd (@EvalCommand.cmd_sem π φ ρ_proj.eval ρ_proj.store
                   (Cmd.assert lh eh mdh) ρ_proj.store false
-                  (EvalCmd.eval_assert_pass h_head_eval_proj
-                    (by rw [h_proj_eval]; exact h_wfb_term)
-                    (by rw [h_proj_eval]; exact h_wfExprCongr_term))))
+                  (EvalCmd.eval_assert_pass h_head_eval
+                    (by rw [h_proj_eval]; exact h_wf.wfBool)
+                    (by rw [h_proj_eval]; exact h_wf.wfExprCongr))))
                 (.refl _)
             have h2 : (⟨ρ_proj.store, ρ_proj.eval, ρ_proj.hasFailure || false⟩ : Env Expression) = ρ_proj := by
-              cases ρ'; simp [ρ_proj, Bool.or_false]
+              cases ρ_inner; simp [ρ_proj, Bool.or_false]
             rw [h2] at h1; exact h1
           have h_trace_tl := ReflTrans_Transitive _ _ _ _ h_trace
-            (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ (.some verifyLabel) ρ_init.store
+            (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ (.some verifyLabel) ρ_init.store ρ_init.eval
               (stmts_cons_step Expression (EvalCommand π φ) (EvalPureFunc φ)
                 (Statement.assert lh eh mdh) tl ρ_proj ρ_proj h_assert_step))
           exact ih (fun s' hs' => h_all_assert s' (.tail _ hs'))
@@ -885,7 +928,9 @@ theorem procBodyVerify_procedureCorrect
       have h_in : Statement.assert label check.expr check.md ∈ postAsserts := by
         simp only [postAsserts, ensuresToAsserts, List.mem_filterMap]
         exact ⟨(label, check), h_mem, by simp [h_attr]⟩
-      exact h_all_post_valid _ h_in label check.expr check.md rfl
+      have h := h_all_post_valid _ h_in label check.expr check.md rfl
+      rw [h_ρ_proj_eq] at h
+      exact h
     · exact h_nf'
 
 end ProcBodyVerifyCorrect
