@@ -164,14 +164,14 @@ where
             else
               .error <| md.toDiagnosticF f!"[{s}]: Loop's invariant {i} is not of type `bool`!"
           ) (([] : List (String × _)), Env)
-          let mty := mt.map LExpr.toLMonoTy
+          let mty := mt.map (fun e => e.toLMonoTy)
           match mty with
           | none | some (.tcons "int" []) =>
             let (tb, Env, C) ← goBlock C Env bss [] labels
             let guarda' : ExprOrNondet Expression := match guarda with
               | some e => .det e.unresolved
               | none => .nondet
-            let s' := Stmt.loop guarda' (mt.map LExpr.unresolved)
+            let s' := Stmt.loop guarda' (mt.map (fun e => e.unresolved))
               (it.map (fun (lbl, e) => (lbl, e.unresolved))) tb md
             .ok (s', Env, C)
           | _ =>
@@ -269,7 +269,8 @@ def Statement.subst (S : Subst) (s : Statement) : Statement :=
   | .ite cond tss ess md =>
     .ite (cond.map (LExpr.applySubst · S)) (go S tss []) (go S ess []) md
   | .loop guard m i bss md =>
-    .loop (guard.map (LExpr.applySubst · S)) (substOptionExpr S m)
+    .loop (guard.map (LExpr.applySubst · S))
+      (m.map (LExpr.applySubst · S))
       (i.map (fun (l, e) => (l, e.applySubst S))) (go S bss []) md
   | .exit _ _ => s
   | .funcDecl decl md =>

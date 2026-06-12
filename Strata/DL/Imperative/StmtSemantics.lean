@@ -35,6 +35,39 @@ structure Env (P : PureExpr) where
 /-- Type of a function that extends the semantic evaluator with a new function definition. -/
 @[expose] abbrev ExtendEval (P : PureExpr) := SemanticEval P → SemanticStore P → PureFunc P → SemanticEval P
 
+/-- A well-formed evaluator extension preserves all `WellFormedSemanticEval*`
+    predicates through funcDecl steps.  This is the only step that modifies the
+    evaluator (`step_funcDecl`); all other small-step rules leave it unchanged. -/
+structure WFEvalExtension (P : PureExpr) [HasBool P] [HasBoolOps P] [HasFvar P] [HasVal P]
+    [HasOps P]
+    (extendEval : ExtendEval P) : Prop where
+  preserves_wfBool : ∀ δ σ decl, WellFormedSemanticEvalBool δ →
+    WellFormedSemanticEvalBool (extendEval δ σ decl)
+  preserves_wfVal : ∀ δ σ decl, WellFormedSemanticEvalVal δ →
+    WellFormedSemanticEvalVal (extendEval δ σ decl)
+  preserves_wfVar : ∀ δ σ decl, WellFormedSemanticEvalVar δ →
+    WellFormedSemanticEvalVar (extendEval δ σ decl)
+  /-- If δ already evaluated expression `e` to some value `v`,
+    `extendEval` shouldn't change the returned value. -/
+  preserves_eval_some_on_disjoint_op : ∀ δ σ decl σ' e v,
+    decl.name ∉ HasOps.getOps (P := P) e →
+    δ σ' e = some v →
+    (extendEval δ σ decl) σ' e = some v
+  /-- The backward (reverse) direction of `preserves_eval_some_on_disjoint_op`:
+      if the extended evaluator reduces `e` to `some v`, and `e` didn't contain
+      any operation using `decl`, then the original evaluator already did `e` .
+      This is supposed to hold by case analysis. Let's assume that `decl` is
+      some function `f`.
+      (1) If `e` directly used `.op f`: contradicts with `decl.name ∉ HasOps.getOps`
+      (2) If `e` didn't use `.op f`, but say use `.op g` and the definition of `g`
+          transitively uses `f`: this is impossible because definition of `g`
+          couldn't have seen `f` before `f` is declared.
+  -/
+  preserves_eval_some_on_disjoint_op_back : ∀ δ σ decl σ' e v,
+    decl.name ∉ HasOps.getOps (P := P) e →
+    (extendEval δ σ decl) σ' e = some v →
+    δ σ' e = some v
+
 /-- An evaluator `e` is reachable from `e_parent` by a chain of `extendEval`
     extensions.  Since `step_funcDecl` is the only rule that mutates
     `Env.eval` (it tacks on `extendEval ρ.eval ρ.store decl`), the eval at
@@ -210,7 +243,7 @@ def Config.noFuncDecl : Config P CmdT → Prop
 
 section
 
-variable {CmdT : Type} (P : PureExpr) [HasBool P] [HasBoolOps P] [HasFvars P] [HasInt P] [HasIntOps P]
+variable {CmdT : Type} (P : PureExpr) [HasBool P] [HasBoolOps P]
 
 /--
 `StepStmt` defines a single execution step from one configuration to another.
@@ -446,7 +479,7 @@ section
 variable
   {CmdT : Type}
   (P : PureExpr)
-  [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P]
+  [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P]
   (EvalCmd : EvalCmdParam P CmdT)
   (extendEval : ExtendEval P)
 
@@ -475,11 +508,62 @@ def IsTerminal
     (c : Config P CmdT) : Prop :=
   ∀ c', ¬ StepStmt P EvalCmd extendEval c c'
 
+/-! ## Config-level WF predicates -/
+
+variable [HasFvar P] [HasVal P]
+
+/-- Config-level `WellFormedSemanticEvalBool` invariant.  Requires WF on
+    the current eval AND on every captured `e_parent` snapshot stored
+    inside enclosing blocks (recursively).  This is necessary because
+    `step_block_done` restores eval to `e_parent`, so we need to know
+    `e_parent` itself was WF. -/
+def Config.wfBool : Config P CmdT → Prop
+  | .stmt _ ρ => WellFormedSemanticEvalBool ρ.eval
+  | .stmts _ ρ => WellFormedSemanticEvalBool ρ.eval
+  | .terminal ρ => WellFormedSemanticEvalBool ρ.eval
+  | .exiting _ ρ => WellFormedSemanticEvalBool ρ.eval
+  | .block _ _ e_parent inner =>
+    WellFormedSemanticEvalBool e_parent ∧ Config.wfBool inner
+  | .seq inner _ => Config.wfBool inner
+
+def Config.wfVal : Config P CmdT → Prop
+  | .stmt _ ρ => WellFormedSemanticEvalVal ρ.eval
+  | .stmts _ ρ => WellFormedSemanticEvalVal ρ.eval
+  | .terminal ρ => WellFormedSemanticEvalVal ρ.eval
+  | .exiting _ ρ => WellFormedSemanticEvalVal ρ.eval
+  | .block _ _ e_parent inner =>
+    WellFormedSemanticEvalVal e_parent ∧ Config.wfVal inner
+  | .seq inner _ => Config.wfVal inner
+
+def Config.wfVar : Config P CmdT → Prop
+  | .stmt _ ρ => WellFormedSemanticEvalVar ρ.eval
+  | .stmts _ ρ => WellFormedSemanticEvalVar ρ.eval
+  | .terminal ρ => WellFormedSemanticEvalVar ρ.eval
+  | .exiting _ ρ => WellFormedSemanticEvalVar ρ.eval
+  | .block _ _ e_parent inner =>
+    WellFormedSemanticEvalVar e_parent ∧ Config.wfVar inner
+  | .seq inner _ => Config.wfVar inner
+
+/-! ## Eval preservation on disjoint expressions -/
+
+/-- All captured `e_parent` snapshots in the config agree **bidirectionally**
+    with the inner eval on `(σ', e)` in `some`-monotone form. -/
+def Config.evalSnapAgrees (σ' : SemanticStore P) (e : P.Expr) :
+    Config P CmdT → Prop
+  | .stmt _ _ => True
+  | .stmts _ _ => True
+  | .terminal _ => True
+  | .exiting _ _ => True
+  | .block _ _ e_p inner =>
+    (∀ v, e_p σ' e = some v ↔ inner.getEnv.eval σ' e = some v) ∧
+      Config.evalSnapAgrees σ' e inner
+  | .seq inner _ => Config.evalSnapAgrees σ' e inner
+
 end -- section
 
 section
 
-variable (P : PureExpr) [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P]
+variable (P : PureExpr) [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P]
 variable (extendEval : ExtendEval P)
 
 /-! ## Assertion Identity -/

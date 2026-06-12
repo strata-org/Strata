@@ -446,18 +446,23 @@ def withOldBindings
     through `funcDecl` steps.  This is the only step that modifies the
     evaluator; all other small-step rules leave it unchanged.
 
+    This Core-specific version extends the generic `Imperative.WFEvalExtension`
+    with two Core-specific preservation fields (`preserves_wfCong` for
+    `WellFormedCoreEvalCong`, `preserves_wfExprCongr` for
+    `WellFormedSemanticEvalExprCongr`).
+
     Concrete instantiations of `φ` (e.g., lookup-table extensions) should
     prove this once at the instantiation site. -/
-structure WFEvalExtension (φ : CoreEval → Imperative.PureFunc Expression → CoreEval) : Prop where
-  preserves_wfBool : ∀ δ σ decl, Imperative.WellFormedSemanticEvalBool δ →
-    Imperative.WellFormedSemanticEvalBool (EvalPureFunc φ δ σ decl)
-  preserves_wfVar : ∀ δ σ decl, Imperative.WellFormedSemanticEvalVar δ →
-    Imperative.WellFormedSemanticEvalVar (EvalPureFunc φ δ σ decl)
+structure WFEvalExtension (φ : CoreEval → Imperative.PureFunc Expression → CoreEval) :
+    Prop extends Imperative.WFEvalExtension Expression (EvalPureFunc φ) where
   preserves_wfCong : ∀ δ σ decl, WellFormedCoreEvalCong δ →
     WellFormedCoreEvalCong (EvalPureFunc φ δ σ decl)
   preserves_wfExprCongr : ∀ δ σ decl,
     @Imperative.WellFormedSemanticEvalExprCongr Expression _ δ →
     @Imperative.WellFormedSemanticEvalExprCongr Expression _ (EvalPureFunc φ δ σ decl)
+  preserves_wfInt : ∀ δ σ decl,
+    @Imperative.WellFormedSemanticEvalInt Expression _ _ _ _ δ →
+    @Imperative.WellFormedSemanticEvalInt Expression _ _ _ _ (EvalPureFunc φ δ σ decl)
 
 ---------------------------------------------------------------------
 
