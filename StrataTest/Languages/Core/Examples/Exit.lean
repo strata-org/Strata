@@ -131,7 +131,6 @@ end$_0:
 #eval (Std.format (singleCFG exitPgm 0))
 
 /--
-<<<<<<< HEAD
 info: Entry: ite$_7
 
 l5:
@@ -142,18 +141,6 @@ l4_before:
   #[<[provenance]: :632-1025>] condGoto true ite$_7 ite$_7
 l3_before:
   #[<[provenance]: :655-962>] condGoto true ite$_7 ite$_7
-=======
-info: Entry: ite$_5
-
-l5:
-  condGoto true ite$_5 ite$_5
-l4:
-  condGoto true ite$_5 ite$_5
-l4_before:
-  condGoto true ite$_5 ite$_5
-l3_before:
-  condGoto true ite$_5 ite$_5
->>>>>>> origin/main2
 l1:
   #[<[provenance]: :680-864>] condGoto true ite$_7 ite$_7
 ite$_7:
