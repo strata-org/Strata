@@ -5,7 +5,7 @@
 -/
 module
 
-public import Strata.Languages.Laurel.Resolution
+public import Strata.Languages.Laurel.SemanticModel
 
 public section
 

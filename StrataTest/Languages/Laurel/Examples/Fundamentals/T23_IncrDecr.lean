@@ -4,17 +4,12 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-module
-
-meta import all StrataTest.Util.TestDiagnostics
-meta import all StrataTest.Languages.Laurel.TestExamples
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
+open Strata
 
-namespace Strata
-namespace Laurel
-
-/-
+/-!
 End-to-end verification of Java-style `++` and `--` operators.
 
 Covers:
@@ -36,7 +31,10 @@ Increment of a composite-type field is verified separately in
 parameterization which interacts poorly with counterexample search
 for the failing tests in this file).
 -/
-def program := r"
+
+#eval testLaurel <|
+#strata
+program Laurel;
 procedure stmtForm()
   opaque
 {
@@ -219,9 +217,7 @@ procedure mixedIncrInArithmetic()
 {
   var x: int := 1;
   // `x++ * 2 + ++x - x--` parses as `((x++ * 2) + ++x) - x--`.
-  // Lift evaluates right-to-left:
-  //   x-- → snapshot $x_0 (= 1), x := 0;     (yielded value: $x_0 = 1)
-  // wait, let me re-trace... actually with our pass, the values seen are:
+  // Evaluated left-to-right:
   //   x    starts at 1
   //   x++  yields 1, x := 2
   //   ++x  yields 3 (NEW), x := 3
@@ -265,10 +261,4 @@ procedure failingAssertOnSkippedShortCircuit()
   assert y == 1
 //^^^^^^^^^^^^^ error: assertion does not hold
 };
-"
-
-#guard_msgs(drop info, error) in
-#eval testInputWithOffset "IncrDecr" program 14 processLaurelFile
-
-end Laurel
-
+#end

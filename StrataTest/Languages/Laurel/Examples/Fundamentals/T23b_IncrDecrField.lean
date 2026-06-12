@@ -4,17 +4,12 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-module
-
-meta import all StrataTest.Util.TestDiagnostics
-meta import all StrataTest.Languages.Laurel.TestExamples
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
+open Strata
 
-namespace Strata
-namespace Laurel
-
-/-
+/-!
 End-to-end verification of `++` and `--` applied to composite-type fields
 (`obj#field`), in both statement and expression positions. The composite
 type triggers Laurel's heap parameterization pass, so this is split out
@@ -40,7 +35,10 @@ The parentheses around `(c#n)` are needed in the surface syntax because
 `#field` and `++` are both trailing operators with the same precedence
 (90); `c#n++` parses ambiguously without them.
 -/
-def program := r"
+
+#eval testLaurel <|
+#strata
+program Laurel;
 composite IncrDecrCounter {
   var n: int
 }
@@ -125,9 +123,4 @@ procedure postDecrFieldInExpression()
   assert c#n == 4;
   assert y == 5
 };
-"
-
-#guard_msgs(drop info, error) in
-#eval testInputWithOffset "IncrDecrField" program 14 processLaurelFile
-
-end Laurel
+#end

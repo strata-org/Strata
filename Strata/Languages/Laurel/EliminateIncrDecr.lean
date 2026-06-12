@@ -6,6 +6,7 @@
 module
 
 public import Strata.Languages.Laurel.LaurelAST
+public import Strata.Languages.Laurel.LaurelPass
 import Strata.Languages.Laurel.MapStmtExpr
 import Strata.Util.Tactics
 
@@ -103,6 +104,12 @@ def eliminateIncrDecr (program : Program) : Program :=
       .Composite { ct with instanceProcedures := ct.instanceProcedures.map lowerProcedure }
     | other => other
   { program with staticProcedures := staticProcs, types := types }
+
+/-- Pipeline pass: eliminate increment/decrement operators. -/
+public def eliminateIncrDecrPass : LaurelPass where
+  name := "EliminateIncrDecr"
+  documentation := "Lowers Java-style increment/decrement operators (`++x`, `x++`, `--x`, `x--`) into existing Laurel assignment and arithmetic constructs. Prefix forms yield the new value; postfix forms yield the old value. Runs early so that no later pass observes an `.IncrDecr` node."
+  run := fun p _m => (eliminateIncrDecr p, [], {})
 
 end -- public section
 end Strata.Laurel

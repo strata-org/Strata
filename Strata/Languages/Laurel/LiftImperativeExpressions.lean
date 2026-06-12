@@ -6,6 +6,7 @@
 module
 
 import Strata.Util.Tactics
+public import Strata.Languages.Laurel.LaurelPass
 public import Strata.Languages.Laurel.Resolution
 import Strata.Languages.Laurel.LaurelTypes
 
@@ -551,4 +552,12 @@ def liftExpressionAssignments (model: SemanticModel) (program : Program) : Progr
   { program with staticProcedures := seqProcedures }
 
 end -- public section
+
+/-- Pipeline pass: lift expression assignments. -/
+public def liftExpressionAssignmentsPass : LaurelPass where
+  name := "LiftExpressionAssignments"
+  documentation := "Lifts assignments that appear in expression contexts into preceding statements. This is necessary because Strata Core does not support assignments within expressions. The pass introduces fresh temporary variables where needed."
+  run := fun p m =>
+    (liftExpressionAssignments m p, [], {})
+
 end Laurel
