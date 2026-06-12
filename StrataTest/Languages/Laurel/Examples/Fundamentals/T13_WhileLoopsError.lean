@@ -3,19 +3,21 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import all StrataTest.Util.TestDiagnostics
-meta import all StrataTest.Languages.Laurel.TestExamples
-
-meta section
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
+open Strata
 
-namespace Strata
-namespace Laurel
+/-! ## Loop-invariant failures point at the specific invariant
 
-def badInitialInvariantProgram := r"
+These negative tests pin each failing loop invariant's diagnostic to that
+invariant's own source range (per-invariant source ranges threaded through
+loop elimination), rather than the whole loop. -/
+
+#eval testLaurel
+#strata
+program Laurel;
 procedure badInitialInvariant()
   opaque
 {
@@ -27,12 +29,11 @@ procedure badInitialInvariant()
         i := i + 1
     }
 };
-"
+#end
 
-#guard_msgs (drop info, error) in
-#eval testInputWithOffset "BadInitialInvariant" badInitialInvariantProgram 40 processLaurelFile
-
-def secondInvariantFailsProgram := r"
+#eval testLaurel
+#strata
+program Laurel;
 procedure secondInvariantFails()
   opaque
 {
@@ -47,12 +48,11 @@ procedure secondInvariantFails()
         j := j + 1
     }
 };
-"
+#end
 
-#guard_msgs (drop info, error) in
-#eval testInputWithOffset "SecondInvariantFails" secondInvariantFailsProgram 60 processLaurelFile
-
-def forSecondInvFailsProgram := r"
+#eval testLaurel
+#strata
+program Laurel;
 procedure forSecondInvFails()
   opaque
 {
@@ -65,9 +65,4 @@ procedure forSecondInvFails()
         j := j + 1
     }
 };
-"
-
-#guard_msgs (drop info, error) in
-#eval testInputWithOffset "ForSecondInvFails" forSecondInvFailsProgram 60 processLaurelFile
-
-end Laurel
+#end
