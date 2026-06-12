@@ -3,29 +3,21 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import all StrataTest.Util.TestDiagnostics
-meta import all StrataTest.Languages.Laurel.TestExamples
-
-meta section
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
-
-namespace Strata
-namespace Laurel
+open Strata
 
 /-
-When an `if/else` is checked against an expected type, the rule pushes
-that type into both branches rather than going through synth + subsumption
-at the boundary. So `var y: Left := if c then new Left else new Right`,
-with `Left, Right <: Top`, errors at the *else-branch*: `new Right` is
-checked against `Left`, and since `Right` is not a subtype of `Left`, a
-"expected 'Left', got 'Right'" diagnostic fires there. The then-branch
-(`new Left`) and the `var x: Top := …` assignment both pass.
+An `if/else` in check position pushes the expected type into *both* branches
+(rather than synth + subsume at the boundary), so a branch whose value doesn't
+match the expected type errors at that branch.
 -/
 
-def program := r"
+#eval testLaurelResolution <|
+#strata
+program Laurel;
 composite Top { }
 composite Left extends Top { }
 composite Right extends Top { }
@@ -34,7 +26,4 @@ procedure test(c: bool) opaque {
   var y: Left := if c then new Left else new Right
 //                                       ^^^^^^^^^ error: expected 'Left', got 'Right'
 };
-"
-
-#guard_msgs (drop info) in
-#eval testInputWithOffset "IfBranchJoin" program 22 processLaurelFile
+#end

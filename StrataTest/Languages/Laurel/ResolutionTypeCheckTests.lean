@@ -3,200 +3,163 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
 /-
 Tests that the resolution pass detects type checking errors — e.g. using an int
 where a bool is expected, or passing the wrong type to a procedure.
 -/
 
-meta import all StrataTest.Util.TestDiagnostics
-meta import StrataDDM.Elab
-meta import StrataDDM.BuiltinDialects.Init
-meta import Strata.Languages.Laurel.Grammar.LaurelGrammar
-meta import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
-meta import Strata.Languages.Laurel.Resolution
-
-meta section
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
 open Strata
-open StrataDDM (initDialect)
-open StrataDDM.Elab (parseStrataProgramFromDialect)
-
-namespace Strata.Laurel
-
-/-- Run only parsing + resolution and return diagnostics (no SMT verification). -/
-private def processResolution (input : Lean.Parser.InputContext) : IO (Array Diagnostic) := do
-  let dialects := StrataDDM.Elab.LoadedDialects.ofDialects! #[initDialect, Laurel]
-  let strataProgram ← parseStrataProgramFromDialect dialects Laurel.name input
-  let uri := Strata.Uri.file input.fileName
-  match Laurel.TransM.run uri (Laurel.parseProgram strataProgram) with
-  | .error e => throw (IO.userError s!"Translation errors: {e}")
-  | .ok program =>
-    let result := resolve program
-    let files := Map.insert Map.empty uri input.fileMap
-    return result.errors.toList.map (fun dm => dm.toDiagnostic files) |>.toArray
 
 /-! ## Non-boolean conditions -/
 
-def ifCondNotBool := r"
+#eval testLaurelResolution <|
+#strata
+program Laurel;
 function foo(x: int): int {
   if x then 1 else 0
 //   ^ error: expected 'bool', got 'int'
 };
-"
+#end
 
-#guard_msgs (error, drop all) in
-#eval testInputWithOffset "IfCondNotBool" ifCondNotBool 44 processResolution
-
-def assertCondNotBool := r"
+#eval testLaurelResolution <|
+#strata
+program Laurel;
 procedure baz() opaque {
   var x: int := 42;
   assert x
 //       ^ error: expected 'bool', got 'int'
 };
-"
+#end
 
-#guard_msgs (error, drop all) in
-#eval testInputWithOffset "AssertCondNotBool" assertCondNotBool 54 processResolution
-
-def assumeCondNotBool := r"
+#eval testLaurelResolution <|
+#strata
+program Laurel;
 procedure qux() opaque {
   var x: int := 42;
   assume x
 //       ^ error: expected 'bool', got 'int'
 };
-"
+#end
 
-#guard_msgs (error, drop all) in
-#eval testInputWithOffset "AssumeCondNotBool" assumeCondNotBool 64 processResolution
-
-def whileCondNotBool := r"
+#eval testLaurelResolution <|
+#strata
+program Laurel;
 procedure wh() opaque {
   var x: int := 1;
   while (x) { }
 //       ^ error: expected 'bool', got 'int'
 };
-"
-
-#guard_msgs (error, drop all) in
-#eval testInputWithOffset "WhileCondNotBool" whileCondNotBool 74 processResolution
+#end
 
 /-! ## Logical operator type checks -/
 
-def logicalAndNotBool := r"
+#eval testLaurelResolution <|
+#strata
+program Laurel;
 function foo(x: int, y: bool): bool {
   x && y
 //^ error: expected 'bool', got 'int'
 };
-"
-
-#guard_msgs (error, drop all) in
-#eval testInputWithOffset "LogicalAndNotBool" logicalAndNotBool 84 processResolution
+#end
 
 /-! ## Numeric operator type checks -/
 
-def comparisonNotNumeric := r"
+#eval testLaurelResolution <|
+#strata
+program Laurel;
 function cmp(x: string, y: int): bool {
   x < y
 //^ error: '<' expected a numeric type, got 'string'
 };
-"
-
-#guard_msgs (error, drop all) in
-#eval testInputWithOffset "ComparisonNotNumeric" comparisonNotNumeric 94 processResolution
+#end
 
 /-! ## Assignment type checks -/
 
-def assignTypeMismatch := r"
+#eval testLaurelResolution <|
+#strata
+program Laurel;
 procedure foo() opaque {
   var x: int := true
 //              ^^^^ error: expected 'int', got 'bool'
 };
-"
-
-#guard_msgs (error, drop all) in
-#eval testInputWithOffset "AssignTypeMismatch" assignTypeMismatch 104 processResolution
+#end
 
 /-! ## Function return type checks -/
 
-def returnTypeMismatch := r"
+#eval testLaurelResolution <|
+#strata
+program Laurel;
 function foo(): int {
   true
 //^^^^ error: expected 'int', got 'bool'
 };
-"
-
-#guard_msgs (error, drop all) in
-#eval testInputWithOffset "ReturnTypeMismatch" returnTypeMismatch 114 processResolution
+#end
 
 /-! ## Call argument type checks -/
 
-def callArgTypeMismatch := r"
+#eval testLaurelResolution <|
+#strata
+program Laurel;
 function bar(x: int): int { x };
 function foo(): int {
   bar(true)
 //    ^^^^ error: expected 'int', got 'bool'
 };
-"
-
-#guard_msgs (error, drop all) in
-#eval testInputWithOffset "CallArgTypeMismatch" callArgTypeMismatch 124 processResolution
+#end
 
 /-! ## Equality operator type checks -/
 
-def equalityTypeMismatch := r"
+#eval testLaurelResolution <|
+#strata
+program Laurel;
 function cmp(x: int, y: string): bool {
   x == y
 //^^^^^^ error: cannot compare 'int' with 'string' using '=='
 };
-"
-
-#guard_msgs (error, drop all) in
-#eval testInputWithOffset "EqualityTypeMismatch" equalityTypeMismatch 134 processResolution
+#end
 
 /-! ## Multi-output procedures -/
 
-def multiOutputInExpr := r"
+#eval testLaurelResolution <|
+#strata
+program Laurel;
 procedure multi(x: int) returns (a: int, b: int) opaque;
 procedure test() opaque {
   assert multi(1) == 1
 //       ^^^^^^^^ error: multi-output call cannot be used as a value here
 };
-"
+#end
 
-#guard_msgs (error, drop all) in
-#eval testInputWithOffset "MultiOutputInExpr" multiOutputInExpr 146 processResolution
-
-/-- A multi-output call in operator-operand (value) position is rejected with a
+/-! A multi-output call in operator-operand (value) position is rejected with a
 position-oriented diagnostic, even when both operands have the *same*
 `MultiValuedExpr` shape (so `isConsistent` would otherwise accept them). Without
 this guard `multi(1) == multi(2)` passes resolution and crashes a later pass as
 a `StrataBug`, since `MultiValuedExpr` has no Core lowering. The guard fires per
 offending operand (here both), short-circuiting the per-family equality check. -/
-def multiOutputBothSides := r"
+#eval testLaurelResolution <|
+#strata
+program Laurel;
 procedure multi(x: int) returns (a: int, b: int) opaque;
 procedure test() opaque {
   assert multi(1) == multi(2)
 //       ^^^^^^^^ error: multi-output call cannot be used as a value here
 //                   ^^^^^^^^ error: multi-output call cannot be used as a value here
 };
-"
+#end
 
-#guard_msgs (error, drop all) in
-#eval testInputWithOffset "MultiOutputBothSides" multiOutputBothSides 146 processResolution
-
-def assignTargetCountMismatch := r"
+#eval testLaurelResolution <|
+#strata
+program Laurel;
 procedure multi() returns (a: int, b: int) opaque;
 procedure test() opaque {
   var x: int := multi()
 //              ^^^^^^^ error: expected 'int', got '(int, int)'
 };
-"
-
-#guard_msgs (error, drop all) in
-#eval testInputWithOffset "AssignTargetCountMismatch" assignTargetCountMismatch 156 processResolution
+#end
 
 /-! ## UserDefined cross-type assignment
 
@@ -204,17 +167,16 @@ Assignments between unrelated composites are rejected: `isSubtype` walks
 `extending` chains, so two composites with no common ancestor are not
 subtypes of each other. -/
 
-def userDefinedCrossType := r"
+#eval testLaurelResolution <|
+#strata
+program Laurel;
 composite Dog { }
 composite Cat { }
 procedure test() opaque {
   var x: Dog := new Cat
 //              ^^^^^^^ error: expected 'Dog', got 'Cat'
 };
-"
-
-#guard_msgs (error, drop all) in
-#eval testInputWithOffset "UserDefinedCrossType" userDefinedCrossType 170 processResolution
+#end
 
 /-! ## Field type is read from the field, not a shadowing local
 
@@ -225,7 +187,9 @@ assignment of an `int` to a `bool` field is still rejected. (Regression guard
 for the scope-first lookup that previously returned the local's type and
 silently dropped the mismatch.) -/
 
-def fieldShadowedByLocal := r"
+#eval testLaurelResolution <|
+#strata
+program Laurel;
 composite C {
   var flag: bool
 }
@@ -235,10 +199,7 @@ procedure test() opaque {
   c#flag := flag
 //          ^^^^ error: expected 'bool', got 'int'
 };
-"
-
-#guard_msgs (error, drop all) in
-#eval testInputWithOffset "FieldShadowedByLocal" fieldShadowedByLocal 184 processResolution
+#end
 
 /-! ## `if`/`block` in synth-only operand position
 
@@ -249,23 +210,21 @@ and emitted a spurious "type cannot be synthesized" error. With both
 branches consistent, the `if` synthesizes the branch type and resolves
 cleanly (no diagnostics). -/
 
-def ifInSynthPositionOk := r"
+#eval testLaurelResolution <|
+#strata
+program Laurel;
 function foo(c: bool): bool {
   (if c then 1 else 2) == 3
 };
-"
+#end
 
-#guard_msgs (drop info) in
-#eval testInputWithOffset "IfInSynthPositionOk" ifInSynthPositionOk 198 processResolution
-
-def blockInSynthPositionOk := r"
+#eval testLaurelResolution <|
+#strata
+program Laurel;
 function foo(): bool {
   { 1 } == 1
 };
-"
-
-#guard_msgs (drop info) in
-#eval testInputWithOffset "BlockInSynthPositionOk" blockInSynthPositionOk 208 processResolution
+#end
 
 /-! ## `if` with incompatible branch types (synth position)
 
@@ -273,15 +232,14 @@ When an `if` is synthesized and its two branches have mutually
 inconsistent types, `Synth.ifThenElse` reports the mismatch at the `if`
 and synthesizes `Unknown` to suppress cascading errors. -/
 
-def ifBranchesIncompatible := r"
+#eval testLaurelResolution <|
+#strata
+program Laurel;
 function foo(c: bool): bool {
   (if c then 1 else true) == 3
 // ^^^^^^^^^^^^^^^^^^^^^ error: 'if' branches have incompatible types 'int' and 'bool'
 };
-"
-
-#guard_msgs (error, drop all) in
-#eval testInputWithOffset "IfBranchesIncompatible" ifBranchesIncompatible 218 processResolution
+#end
 
 /-! ## `if` in operand position synthesizes a *symmetric* branch join
 
@@ -296,23 +254,23 @@ span — locking in symmetry. (Before the join, the then-first order returned
 `Unknown` and was silently accepted, while only the else-first order
 errored.) -/
 
-def ifJoinSymmetricThenHole : String :=
-  "\nfunction foo(c: bool): bool {\n" ++
-  "  (if c then <?> else \"x\") < 1\n" ++
-  "// ^^^^^^^^^^^^^^^^^^^^^^ error: '<' expected a numeric type, got 'string'\n" ++
-  "};\n"
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+function foo(c: bool): bool {
+  (if c then <?> else "x") < 1
+// ^^^^^^^^^^^^^^^^^^^^^^ error: '<' expected a numeric type, got 'string'
+};
+#end
 
-#guard_msgs (error, drop all) in
-#eval testInputWithOffset "IfJoinSymmetricThenHole" ifJoinSymmetricThenHole 246 processResolution
-
-def ifJoinSymmetricElseHole : String :=
-  "\nfunction foo(c: bool): bool {\n" ++
-  "  (if c then \"x\" else <?>) < 1\n" ++
-  "// ^^^^^^^^^^^^^^^^^^^^^^ error: '<' expected a numeric type, got 'string'\n" ++
-  "};\n"
-
-#guard_msgs (error, drop all) in
-#eval testInputWithOffset "IfJoinSymmetricElseHole" ifJoinSymmetricElseHole 256 processResolution
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+function foo(c: bool): bool {
+  (if c then "x" else <?>) < 1
+// ^^^^^^^^^^^^^^^^^^^^^^ error: '<' expected a numeric type, got 'string'
+};
+#end
 
 /-! ## `if` branch join recovers precision from a hole
 
@@ -321,13 +279,13 @@ type, the join recovers the concrete type (`Unknown ⊔ int = int`) rather
 than collapsing to `Unknown`. So `if c then <?> else 5` synthesizes a usable
 `int` and resolves cleanly where an `int` is expected — no diagnostics. -/
 
-def ifJoinRecoversInt : String :=
-  "\nfunction bar(c: bool): int {\n" ++
-  "  if c then <?> else 5\n" ++
-  "};\n"
-
-#guard_msgs (drop info) in
-#eval testInputWithOffset "IfJoinRecoversInt" ifJoinRecoversInt 270 processResolution
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+function bar(c: bool): int {
+  if c then <?> else 5
+};
+#end
 
 /-! ## Void procedure call in value position
 
@@ -337,16 +295,15 @@ expected now synthesizes `TVoid` rather than the internal-only empty
 instead of the placeholder `'()'` that an empty tuple rendered as. (Regression
 guard for `getCallInfo` mapping an empty output list to `TVoid`.) -/
 
-def voidCallInValuePosition := r"
+#eval testLaurelResolution <|
+#strata
+program Laurel;
 procedure act() opaque;
 procedure test() opaque {
   assert act() == 1
 //       ^^^^^^^^^^ error: cannot compare 'void' with 'int' using '=='
 };
-"
-
-#guard_msgs (error, drop all) in
-#eval testInputWithOffset "VoidCallInValuePosition" voidCallInValuePosition 234 processResolution
+#end
 
 /-! ## Bitvectors are numeric
 
@@ -356,14 +313,13 @@ accepts `TBv`, so a comparison of two bitvector parameters resolves
 cleanly with no diagnostics. (Regression guard for `isNumeric` previously
 rejecting `TBv` and emitting a spurious "expected a numeric type" error.) -/
 
-def bitvectorComparisonOk := r"
+#eval testLaurelResolution <|
+#strata
+program Laurel;
 function cmp(x: bv 32, y: bv 32): bool {
   x < y
 };
-"
-
-#guard_msgs (drop info) in
-#eval testInputWithOffset "BitvectorComparisonOk" bitvectorComparisonOk 250 processResolution
+#end
 
 /-! ## Over-arity calls are rejected
 
@@ -372,16 +328,15 @@ an arity diagnostic. The check fires only when the callee genuinely resolves to
 a procedure with a known parameter count (`procArity`). Under-arity (too few
 arguments) is deliberately not flagged. -/
 
-def overArityCall := r"
+#eval testLaurelResolution <|
+#strata
+program Laurel;
 function foo(x: int): int { x };
 function bar(): int {
   foo(1, 2)
 //^^^^^^^^^ error: call to 'foo' expects 1 argument(s) but 2 were provided
 };
-"
-
-#guard_msgs (error, drop all) in
-#eval testInputWithOffset "OverArityCall" overArityCall 269 processResolution
+#end
 
 /-! ## A too-many-args call to an *unresolved* name does not double-report
 
@@ -392,15 +347,14 @@ artifact of the name not being found, not a zero-arity procedure), so the
 over-arity check is skipped. (Regression guard for the no-duplicate-diagnostic
 behavior.) -/
 
-def overArityUnresolvedCallNoDouble := r"
+#eval testLaurelResolution <|
+#strata
+program Laurel;
 function bar(): int {
   nope(1, 2)
 //^^^^^^^^^^ error: 'nope' is not defined
 };
-"
-
-#guard_msgs (error, drop all) in
-#eval testInputWithOffset "OverArityUnresolvedCallNoDouble" overArityUnresolvedCallNoDouble 289 processResolution
+#end
 
 /-! ## An unresolved declared type collapses to `Unknown` (no cascade)
 
@@ -414,15 +368,12 @@ three diagnostics — the name-resolution error plus the `0`-vs-`UndefinedType`
 initializer mismatch and the `x`-vs-`int` use mismatch; it must now produce
 exactly one.) -/
 
-def unresolvedDeclaredTypeNoCascade := r"
+#eval testLaurelResolution <|
+#strata
+program Laurel;
 procedure useUndef() opaque {
   var x: UndefinedType := 0;
 //       ^^^^^^^^^^^^^ error: 'UndefinedType' is not defined
   var y: int := x + 2
 };
-"
-
-#guard_msgs (error, drop all) in
-#eval testInputWithOffset "UnresolvedDeclaredTypeNoCascade" unresolvedDeclaredTypeNoCascade 308 processResolution
-
-end Laurel
+#end

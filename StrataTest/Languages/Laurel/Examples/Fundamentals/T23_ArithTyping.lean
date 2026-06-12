@@ -3,41 +3,28 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import all StrataTest.Util.TestDiagnostics
-meta import all StrataTest.Languages.Laurel.TestExamples
-
-meta section
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
-
-namespace Strata
-namespace Laurel
+open Strata
 
 /-! Documents the current behaviour of the arithmetic typing rules.
 
     Two rules apply:
 
-    - [⇐] Op-Arith — the *check* path. When the surrounding context
-      provides an expected type (e.g. an annotated `var` declaration,
-      a procedure parameter, an assignment target), the arithmetic
-      expression is checked at that type, and the type is pushed into
-      every operand. The error surfaces as "expected '<T>', got
-      '<U>'" at the offending operand.
+    - [⇐] Op-Arith — the *check* path: an expected type from context
+      is pushed into every operand.
+    - [⇒] Op-Arith — the *synth* path: operands are synthesized and
+      folded under `join` to the result type.
 
-    - [⇒] Op-Arith — the *synth* path. Each operand is synthesized,
-      required to be `Numeric` (`TInt` / `TReal` / `TFloat64` /
-      `Unknown`), and the result type is the consistency LUB of the
-      operand types: `Unknown ⊔ T = T`, `T ⊔ T = T`, anything else
-      is rejected. Same shape as `Op-Eq` but extended to n operands
-      and returning the LUB rather than `TBool`.
+    Homogeneous numeric operands type-check via either path;
+    heterogeneous ones (e.g. `int + real`) are rejected by both. The
+    gradual `Unknown` wildcard flows freely. -/
 
-    Homogeneous numeric operands type-check via either path.
-    Heterogeneous numeric operands (e.g. `int + real`) are rejected
-    by both paths. The gradual `Unknown` wildcard flows freely. -/
-
-def arithTypingProgram := r"
+#eval testLaurelResolution <|
+#strata
+program Laurel;
 procedure homogeneousInt()
   opaque
 {
@@ -52,8 +39,7 @@ procedure homogeneousReal()
   assert x == 4.0
 };
 
-// [⇐] Op-Arith path: the outer 'real' expectation is pushed into both
-// operands. Operand '1' synthesizes 'int' and fails the check.
+// [⇐] Op-Arith: check path (the `var: real` annotation drives it).
 procedure heterogeneousCheckPath()
   opaque
 {
@@ -61,12 +47,7 @@ procedure heterogeneousCheckPath()
 //               ^ error: expected 'real', got 'int'
 };
 
-// [⇒] Op-Arith path: '<' synthesizes its operands, so '1 + 2.0' is
-// resolved in synth position. The arithmetic synth rule synthesizes
-// the operands ('int' and 'real') and folds them under
-// consistencyLub. 'int' and 'real' are mutually inconsistent, so
-// the fold fails: a single error fires at the operator's source
-// position listing the operand types.
+// [⇒] Op-Arith: synth path (the `<` forces `1 + 2.0` into synth position).
 procedure heterogeneousSynthPath()
   opaque
 {
@@ -85,22 +66,14 @@ procedure unaryNegHomogeneous()
   assert d == 0.0 - 1.5
 };
 
-// Unknown promotes to its neighbour under consistencyLub:
-// 'Unknown + TInt' folds to TInt. The hole '<?>' synthesizes to
-// 'Unknown' (the gradual escape hatch — holes are first-class in
-// synth mode and don't error). The fold then yields TInt, and
-// comparing to '2.0' (real) produces a 'cannot compare' diagnostic —
-// proving the LUB returned TInt rather than Unknown (which would
-// have passed the consistency check silently).
+// The hole '<?>' synthesizes to 'Unknown', and `join` promotes it to
+// its neighbour: 'Unknown + TInt' folds to TInt. The error against
+// '2.0' (real) is what proves the join returned TInt, not Unknown
+// (Unknown would have compared silently).
 procedure unknownPromotesToNeighbour()
   opaque
 {
   assert (<?> + 1) == 2.0
 //       ^^^^^^^^^^^^^^^^ error: cannot compare 'int' with 'real' using '=='
 };
-"
-
-#guard_msgs(drop info, error) in
-#eval testInputWithOffset "ArithTyping" arithTypingProgram 14 processLaurelFile
-
-end Laurel
+#end
