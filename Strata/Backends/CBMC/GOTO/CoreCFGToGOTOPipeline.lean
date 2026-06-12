@@ -205,7 +205,7 @@ def procedureToGotoCtxViaCFG
   let outputs := p.header.outputs.keys.map Core.CoreIdent.toPretty
   let new_outputs := outputs.map (CProverGOTO.mkLocalSymbol pname ·)
   let locals_from_body := match p.body with
-    | .structured ss => (Imperative.Block.definedVars ss).map Core.CoreIdent.toPretty
+    | .structured ss => (Imperative.Block.definedVars ss false).map Core.CoreIdent.toPretty
     | .cfg c => c.blocks.flatMap (fun (_, blk) =>
         blk.cmds.flatMap Core.Command.definedVars)
       |>.map Core.CoreIdent.toPretty
