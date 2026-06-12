@@ -18,7 +18,7 @@ Test that the Python CorePrelude can be serialized to Ion format and
 deserialized back without loss of information.
 -/
 private def testCorePreludeRoundTrip : Bool :=
-  let prelude := corePrelude
+  let prelude : Program := corePrelude
   let bytes := prelude.toIon
   match Program.fromIon Strata.Core_map Strata.Core.name bytes with
   | .ok pgm => pgm.commands.size == prelude.commands.size

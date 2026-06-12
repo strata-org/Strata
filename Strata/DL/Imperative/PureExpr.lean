@@ -43,31 +43,6 @@ structure PureExpr : Type 1 where
 @[expose] abbrev PureExpr.TypedExpr (P : PureExpr)  := P.Expr × P.Ty
 
 /-! ## Type Classes for Expressions -/
-/-- Boolean expressions -/
-class HasBool (P : PureExpr) where
-  tt : P.Expr
-  ff : P.Expr
-  tt_is_not_ff: tt ≠ ff
-  boolTy : P.Ty
-
-class HasNot (P : PureExpr) extends HasBool P where
-  not : P.Expr → P.Expr
-
-class HasAnd (P : PureExpr) extends HasBool P where
-  and : P.Expr → P.Expr → P.Expr
-
-class HasImp (P : PureExpr) extends HasBool P where
-  imp : P.Expr → P.Expr → P.Expr
-
-/-- Integer ordering primitives.
-    `zero` is the lower-bound constant for well-foundedness (measure ≥ 0).
-    `intTy` is the type of integer expressions, for variable declarations.
-    `ge` is derivable as `HasNot.not (lt b a)` and is therefore omitted. -/
-class HasIntOrder (P : PureExpr) where
-  eq    : P.Expr → P.Expr → P.Expr
-  lt    : P.Expr → P.Expr → P.Expr
-  zero  : P.Expr
-  intTy : P.Ty
 
 class HasIdent (P : PureExpr) where
   ident : String → P.Ident
@@ -76,11 +51,50 @@ class HasFvar (P : PureExpr) where
   mkFvar : P.Ident → P.Expr
   getFvar : P.Expr → Option P.Ident
 
+/-- Multi-variable version of `HasFvar.getFvar`: returns ALL free variables in
+    a (possibly compound) expression.  `HasFvar.getFvar` only returns Some when
+    the expression is a single fvar atom; `HasFvars.getFvars` recurses into
+    compounds. -/
+class HasFvars (P : PureExpr) where
+  getFvars : P.Expr → List P.Ident
+
+/-- Returns ALL operator/function names referenced in an expression
+    (e.g., `.op` constructs in Lambda). -/
+class HasOps (P : PureExpr) where
+  getOps : P.Expr → List P.Ident
+
 class HasVal (P : PureExpr) where
   value : P.Expr → Prop
 
-class HasBoolVal (P : PureExpr) [HasBool P] [HasVal P] where
-  bool_is_val : (@HasVal.value P) HasBool.tt ∧ (@HasVal.value P) HasBool.ff
+/-- Boolean expressions.  Extends `HasVal P` (folding in the former
+    `HasBoolVal`).  `boolIsVal` ensures `tt`/`ff` are values. -/
+class HasBool (P : PureExpr) extends HasVal P where
+  tt : P.Expr
+  ff : P.Expr
+  tt_is_not_ff: tt ≠ ff
+  boolTy : P.Ty
+  boolIsVal : (@HasVal.value P) tt ∧ (@HasVal.value P) ff
+
+/-- Boolean operations: not, and, imp. -/
+class HasBoolOps (P : PureExpr) extends HasBool P where
+  not : P.Expr → P.Expr
+  and : P.Expr → P.Expr → P.Expr
+  imp : P.Expr → P.Expr → P.Expr
+
+/-- Integer constants and the integer type. -/
+class HasInt (P : PureExpr) [HasVal P] [HasFvars P] where
+  zero  : P.Expr
+  intTy : P.Ty
+  isNumeral : P.Expr → Bool
+  numeralIsValue : ∀ n, isNumeral n = Bool.true → (@HasVal.value P) n
+  zeroIsNumeral : isNumeral zero = Bool.true
+  numeralHasNoFvars : ∀ (n : P.Expr), isNumeral n = Bool.true →
+    HasFvars.getFvars (P := P) n = []
+
+/-- Integer arithmetic / comparison primitives. -/
+class HasIntOps (P : PureExpr) [HasBool P] [HasFvars P] [HasInt P] where
+  eq    : P.Expr → P.Expr → P.Expr
+  lt    : P.Expr → P.Expr → P.Expr
 
 /-- Substitution of free variables in expressions.
     Used for closure capture in function declarations. -/

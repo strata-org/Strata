@@ -4,11 +4,11 @@ set -e
 
 # Get the directory where this script is located
 script_dir="$(cd "$(dirname "$0")" && pwd)"
-# Change to the parent directory (Tools/Python) so dialects and imports match other scripts
-tools_python_dir="$(cd "$script_dir/.." && pwd)"
-cd "$tools_python_dir"
+# Change to the strata-python package root so dialects and imports work
+strata_python_dir="$(cd "$script_dir/.." && pwd)"
+cd "$strata_python_dir"
 
-strata=../../StrataCLI/.lake/build/bin/strata
+strata=../../../StrataCLI/.lake/build/bin/strata
 
 if [ ! -f $strata ]; then
   echo "strata is not built: $strata"
@@ -19,7 +19,7 @@ dialect_dir="dialects"
 
 mkdir -p "$dialect_dir"
 
-python3 -m strata.gen dialect "$dialect_dir"
+python3 -m strata_python.gen dialect "$dialect_dir"
 $strata print "$dialect_dir/Python.dialect.st.ion" > "$dialect_dir/Python.dialect.st"
 
 $strata check "$dialect_dir/Python.dialect.st.ion"

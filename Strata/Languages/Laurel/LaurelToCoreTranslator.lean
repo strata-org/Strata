@@ -17,7 +17,7 @@ import Strata.Languages.Core.Factory
 import Strata.Languages.Laurel.LaurelTypes
 
 open Core (VerifyOptions)
-open Core (intAddOp intSubOp intMulOp intSafeDivOp intSafeModOp intSafeDivTOp intSafeModTOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp boolImpliesOp strConcatOp)
+open Core (intAddOp intSubOp intMulOp intDivOp intSafeDivOp intModOp intSafeModOp intDivTOp intSafeDivTOp intModTOp intSafeModTOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp boolImpliesOp strConcatOp)
 open Core (realAddOp realSubOp realMulOp realDivOp realNegOp realLtOp realLeOp realGtOp realGeOp)
 
 namespace Strata.Laurel
@@ -108,9 +108,6 @@ def lookupType (name : Identifier) : TranslateM LMonoTy := do
 def runTranslateM (s : TranslateState) (m : TranslateM α) : (Option α × TranslateState) :=
   m s
 
-def returnNone: TranslateM α :=
-  StateT.pure none
-
 /-- Allocate a fresh unique ID. -/
 private def freshId : TranslateM Nat := do
   let s ← get
@@ -122,8 +119,7 @@ private def freshId : TranslateM Nat := do
 def throwExprDiagnostic (d : DiagnosticModel): TranslateM Core.Expression.Expr := do
   emitDiagnostic d
   emitCoreDiagnostic d
-  let id ← freshId
-  return LExpr.fvar () (⟨s!"DUMMY_VAR_{id}", ()⟩) none
+  return default
 
 /--
 Translate Laurel StmtExpr to Core Expression using the `TranslateM` monad.
@@ -169,7 +165,7 @@ def translateExpr (expr : StmtExprMd)
             return .fvar () ⟨name.text, ()⟩ (some (← translateType astNode.getType))
   | .Var (.Declare _) =>
       throwExprDiagnostic $ md.toDiagnostic "variable declaration in expression context should have been lowered" DiagnosticType.StrataBug
-  | .PrimitiveOp op [e] =>
+  | .PrimitiveOp op [e] _ =>
     match op with
     | .Not =>
       let re ← translateExpr e boundVars isPureContext
@@ -181,7 +177,7 @@ def translateExpr (expr : StmtExprMd)
       return .app () (if isReal then realNegOp else intNegOp) re
     | _ =>
       throwExprDiagnostic $ diagnosticFromSource expr.source s!"translateExpr: Invalid unary op: {repr op}" DiagnosticType.StrataBug
-  | .PrimitiveOp op [e1, e2] =>
+  | .PrimitiveOp op [e1, e2] skipProof =>
     let re1 ← translateExpr e1 boundVars isPureContext
     let re2 ← translateExpr e2 boundVars isPureContext
     let binOp (bop : Core.Expression.Expr) : Core.Expression.Expr :=
@@ -200,10 +196,10 @@ def translateExpr (expr : StmtExprMd)
     | .Add => return binOp (if isReal then realAddOp else intAddOp)
     | .Sub => return binOp (if isReal then realSubOp else intSubOp)
     | .Mul => return binOp (if isReal then realMulOp else intMulOp)
-    | .Div => return binOp (if isReal then realDivOp else intSafeDivOp)
-    | .Mod => return binOp intSafeModOp
-    | .DivT => return binOp intSafeDivTOp
-    | .ModT => return binOp intSafeModTOp
+    | .Div => return binOp (if isReal then realDivOp else if skipProof then intDivOp else intSafeDivOp )
+    | .Mod => return binOp (if skipProof then intModOp else intSafeModOp)
+    | .DivT => return binOp (if skipProof then intDivTOp else intSafeDivTOp)
+    | .ModT => return binOp (if skipProof then intModTOp else intSafeModTOp)
     | .Lt => return binOp (if isReal then realLtOp else intLtOp)
     | .Leq => return binOp (if isReal then realLeOp else intLeOp)
     | .Gt => return binOp (if isReal then realGtOp else intGtOp)
@@ -211,7 +207,7 @@ def translateExpr (expr : StmtExprMd)
     | .StrConcat => return binOp strConcatOp
     | _ =>
         throwExprDiagnostic $ diagnosticFromSource expr.source s!"Invalid binary op: {repr op}" DiagnosticType.NotYetImplemented
-  | .PrimitiveOp op args =>
+  | .PrimitiveOp op args _ =>
       throwExprDiagnostic $ diagnosticFromSource expr.source s!"PrimitiveOp {repr op} with {args.length} args is not supported" DiagnosticType.UserError
   | .IfThenElse cond thenBranch elseBranch =>
       let bcond ← translateExpr cond boundVars isPureContext
@@ -228,7 +224,7 @@ def translateExpr (expr : StmtExprMd)
   | .StaticCall callee args =>
       -- In a pure context, only Core functions (not procedures) are allowed
       if isPureContext && !model.isFunction callee then
-        disallowed expr.source "calls to procedures are not supported in functions or contracts"
+        disallowed expr.source s!"calls to procedures are not supported in functions or contracts"
       else
         let fnOp : Core.Expression.Expr := .op () ⟨callee.text, ()⟩ none
         args.attach.foldlM (fun acc ⟨arg, _⟩ => do
@@ -256,7 +252,7 @@ def translateExpr (expr : StmtExprMd)
       let re2 ← translateExpr e2 boundVars isPureContext
       return .eq () re1 re2
   | .Assign _ _ =>
-      disallowed expr.source "destructive assignments are not supported in functions or contracts"
+      disallowed expr.source "destructive assignments are not supported in transparent bodies or contracts"
   | .While _ _ _ _ =>
       disallowed expr.source "loops are not supported in functions or contracts"
   | .Exit _ => disallowed expr.source "exit is not supported in expression position"
@@ -285,8 +281,12 @@ def translateExpr (expr : StmtExprMd)
       -- Field selects should have been eliminated by heap parameterization
       -- If we see one here, it's an error in the pipeline
       throwExprDiagnostic $ diagnosticFromSource expr.source s!"FieldSelect should have been eliminated by heap parameterization: {Std.ToFormat.format target}#{fieldId.text}" DiagnosticType.StrataBug
-  | .Block _ _ =>
-      throwExprDiagnostic $ diagnosticFromSource expr.source "block expression should have been lowered in a separate pass" DiagnosticType.StrataBug
+  | .Block (⟨ .Assign _ _, assignSource⟩ :: tail) _ =>
+      disallowed assignSource "destructive assignments are not supported in transparent bodies or contracts"
+  | .Block (head :: tail) _ =>
+      throwExprDiagnostic $ diagnosticFromSource expr.source s!"block expression starting with {head.val.constructorName} should have been lowered in a separate pass" DiagnosticType.StrataBug
+  | .Block [] _ =>
+      throwExprDiagnostic $ diagnosticFromSource expr.source "empty block expression should have been lowered in a separate pass" DiagnosticType.StrataBug
   | .Return _ => disallowed expr.source "return expression should be lowered in a separate pass"
 
   | .AsType target _ => throwExprDiagnostic $ diagnosticFromSource expr.source "AsType expression translation" DiagnosticType.NotYetImplemented
@@ -332,9 +332,12 @@ private def exprAsUnusedInit (expr : StmtExprMd) (md : Imperative.MetaData Core.
     : TranslateM (List Core.Statement) := do
   let coreExpr ← translateExpr expr
   let id ← freshId
+  let model := (← get).model
   let ident : Core.CoreIdent := ⟨s!"$unused_{id}", ()⟩
-  let tyVarName := s!"$__ty_unused_{id}"
-  let coreType := LTy.forAll [tyVarName] (.ftvar tyVarName)
+  let ty ← translateType (computeExprType model expr)
+  -- The empty type-variable list is valid because Laurel does not currently
+  -- support polymorphism. If polymorphism is added, this will need updating.
+  let coreType := LTy.forAll [] ty
   return [Core.Statement.init ident coreType (.det coreExpr) md]
 
 def throwStmtDiagnostic (d : DiagnosticModel): TranslateM (List Core.Statement) := do
@@ -515,7 +518,7 @@ def translateStmt (stmt : StmtExprMd)
 Translate a list of checks (preconditions or postconditions) to Core checks.
 Each check gets a label like `"requires"` or `"requires_0"`, `"requires_1"`, etc.
 -/
-private def translateChecks (checks : List Condition) (labelBase : String)
+private def translateChecks (checks : List Condition) (labelBase : String) (overrideFree: Bool)
     : TranslateM (ListMap Core.CoreLabel Core.Procedure.Check) :=
   checks.mapIdxM (fun i check => do
     let label := if checks.length == 1 then labelBase else s!"{labelBase}_{i}"
@@ -524,7 +527,8 @@ private def translateChecks (checks : List Condition) (labelBase : String)
     let md := match check.summary with
       | some msg => baseMd.pushElem Imperative.MetaData.propertySummary (.msg msg)
       | none => baseMd
-    let c : Core.Procedure.Check := { expr := checkExpr, md }
+    let attr := if check.free || overrideFree then Core.Procedure.CheckAttr.Free else .Default
+    let c : Core.Procedure.Check := { expr := checkExpr, attr, md }
     return (label, c))
 
 /--
@@ -551,26 +555,27 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
     outputs := outputs
   }
   -- Translate preconditions
-  let preconditions ← translateChecks proc.preconditions "requires"
+  let preconditions ← translateChecks proc.preconditions "requires" false
+
+  let bodyStmts : Option (List Core.Statement) ←
+    match proc.body with
+    | .Transparent bodyExpr =>
+      let r ← translateStmt bodyExpr
+      pure $ some r
+    | .Opaque _postconds (some impl) _ =>
+      let r ← translateStmt impl
+      pure $ some r
+    | _ =>
+      pure none
 
   -- Translate postconditions for Opaque and Abstract bodies
   let postconditions : ListMap Core.CoreLabel Core.Procedure.Check ←
     match proc.body with
     | .Opaque postconds _ _ | .Abstract postconds =>
-        translateChecks postconds "postcondition"
+        translateChecks postconds s!"postcondition" bodyStmts.isNone
     | _ => pure []
-  let bodyStmts : List Core.Statement ←
-    match proc.body with
-    | .Transparent bodyExpr => translateStmt bodyExpr
-    | .Opaque _postconds (some impl) _ => translateStmt impl
-    | _ =>
-      -- Bodiless procedure: assume postconditions so that verification of the
-      -- procedure itself passes trivially, and inlining only introduces the
-      -- postconditions as assumptions (not the unsound `assume false`).
-      pure (postconditions.map fun (label, check) =>
-        Core.Statement.assume label check.expr mdWithUnknownLoc)
-  -- Wrap body in a labeled block so early returns (exit) work correctly.
-  let body : List Core.Statement := [.block "$body" bodyStmts mdWithUnknownLoc]
+
+  let body : List Core.Statement := [.block "$body" (bodyStmts.getD []) mdWithUnknownLoc]
   let spec : Core.Procedure.Spec := { preconditions, postconditions }
   return { header, spec, body := .structured body }
 
@@ -611,7 +616,6 @@ where
       return LExpr.all () p.name.text (some (← translateType p.type)) inner
 
 structure LaurelTranslateOptions where
-  emitResolutionErrors : Bool := true
   inlineFunctionsWhenPossible : Bool := false
   overflowChecks : Core.OverflowChecks := {}
   keepAllFilesPrefix : Option String := none
@@ -705,35 +709,31 @@ def translateDatatypeDefinition (dt : DatatypeDefinition)
 abbrev TranslateResult := (Option Core.Program) × (List DiagnosticModel)
 
 /--
-Translate an `OrderedLaurel` program to a `Core.Program`.
+Translate a `CoreWithLaurelTypes` program to a `Core.Program`.
 The `program` parameter is the lowered Laurel program, used for type definitions.
 -/
-def translateLaurelToCore (options: LaurelTranslateOptions) (program : Program) (ordered : OrderedLaurel): TranslateM Core.Program := do
+def translateLaurelToCore (options: LaurelTranslateOptions) (ordered : CoreWithLaurelTypes): TranslateM Core.Program := do
 
   let coreDecls ← ordered.decls.flatMapM fun
-    | .procs procs isRecursive => do
-      -- For each SCC, determine if it is purely functional or contains procedures.
-      let isFuncSCC := procs.all (·.isFunctional)
-      if isFuncSCC then
-        let funcs ← procs.mapM (translateProcedureToFunction options isRecursive)
-        if isRecursive then
-          let coreFuncs := funcs.filterMap (fun d => match d with
-            | .func f _ => some f
-            | _ => none)
-          return [Core.Decl.recFuncBlock coreFuncs mdWithUnknownLoc]
-        else
-          return funcs
+    | .funcs funcs isRecursive => do
+      let nonExternal := funcs.filter (fun p => !p.body.isExternal)
+      let coreFuncs ← nonExternal.mapM (translateProcedureToFunction options isRecursive)
+      if isRecursive then
+        let coreFuncValues := coreFuncs.filterMap (fun d => match d with
+          | .func f _ => some f
+          | _ => none)
+        return [Core.Decl.recFuncBlock coreFuncValues mdWithUnknownLoc]
       else
-        let procDecls ← procs.flatMapM fun proc => do
-          let procDecl ← translateProcedure proc
-          -- Turn free postconditions into axioms placed right behind the related procedure
-          let axiomDecls : List Core.Decl ← match proc.invokeOn with
-            | none => pure []
-            | some trigger => do
-              let axDecl? ← translateInvokeOnAxiom proc trigger
-              pure axDecl?.toList
-          return [Core.Decl.proc procDecl (identifierToCoreMd proc.name)] ++ axiomDecls
-        return procDecls
+        return coreFuncs
+    | .procedure proc => do
+      let procDecl ← translateProcedure proc
+      -- Translate axioms from invokeOn
+      let invokeOnDecls ← match proc.invokeOn with
+        | some trigger => do
+          let axDecl? ← translateInvokeOnAxiom proc trigger
+          pure axDecl?.toList
+        | none => pure []
+      return [Core.Decl.proc procDecl (identifierToCoreMd proc.name)] ++ invokeOnDecls
     | .datatypes dts => do
       let ldatatypes ← dts.mapM translateDatatypeDefinition
       return [Core.Decl.type (.data ldatatypes) mdWithUnknownLoc]
@@ -748,14 +748,6 @@ def translateLaurelToCore (options: LaurelTranslateOptions) (program : Program) 
         body := body
       } mdWithUnknownLoc]
 
-
-  -- Emit diagnostics for composite types with instance procedures.
-  for td in program.types do
-    if let .Composite ct := td then
-      for proc in ct.instanceProcedures do
-        emitDiagnostic $ diagnosticFromSource proc.name.source
-          s!"Instance procedure '{proc.name.text}' on composite type '{ct.name.text}' is not yet supported"
-          DiagnosticType.NotYetImplemented
   pure { decls := coreDecls }
 
 end -- public section

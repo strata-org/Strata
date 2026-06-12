@@ -57,7 +57,7 @@ inductive EvalDetBlock
   (P : PureExpr)
   (EvalCmd : EvalCmdParam P CmdT)
   (extendEval : ExtendEval P)
-  [HasNot P] :
+  [HasBoolOps P] :
   SemanticStore P → DetBlock l CmdT P → CFGConfig l P → Prop where
 
   | cmd :
@@ -91,7 +91,7 @@ inductive EvalNondetBlock
   (P : PureExpr)
   (EvalCmd : EvalCmdParam P CmdT)
   (extendEval : ExtendEval P)
-  [HasNot P] :
+  [HasBoolOps P] :
   SemanticStore P → NondetBlock l CmdT P → CFGConfig l P → Prop where
 
   | cmd :

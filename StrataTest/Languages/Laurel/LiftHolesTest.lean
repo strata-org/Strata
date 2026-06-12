@@ -3,44 +3,30 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
 /-
 Tests that the eliminateHoles pass correctly replaces `.Hole` nodes with calls
 to freshly generated uninterpreted functions, with types inferred from context.
 -/
 
-meta import StrataDDM.Elab
-meta import StrataDDM.BuiltinDialects.Init
-meta import Strata.Languages.Laurel.Grammar.LaurelGrammar
-meta import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
-meta import Strata.Languages.Laurel.InferHoleTypes
-meta import Strata.Languages.Laurel.EliminateHoles
-meta import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
-
-meta section
+import StrataTest.Util.TestLaurel
+import Strata.Languages.Laurel.InferHoleTypes
+import Strata.Languages.Laurel.EliminateDeterministicHoles
 
 open Strata
-open StrataDDM (initDialect)
-open StrataDDM.Elab (parseStrataProgramFromDialect)
+open StrataTest.Util
 
 namespace Strata.Laurel
 
-/-- Parse a Laurel source string, resolve, eliminate holes, and print all procedures. -/
-private def parseElimAndPrint (input : String) : IO Unit := do
-  let inputCtx := StrataDDM.Parser.stringInputContext "test" input
-  let dialects := StrataDDM.Elab.LoadedDialects.ofDialects! #[initDialect, Laurel]
-  let strataProgram ← parseStrataProgramFromDialect dialects Laurel.name inputCtx
-  let uri := Strata.Uri.file "test"
-  match Laurel.TransM.run uri (Laurel.parseProgram strataProgram) with
-  | .error e => throw (IO.userError s!"Translation errors: {e}")
-  | .ok program =>
-    let result := resolve program
-    let (program, model) := (result.program, result.model)
-    let (program, _, _) := inferHoleTypes model program
-    let (program, _) := eliminateHoles program
-    for proc in program.staticProcedures do
-      IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
+/-- Resolve, eliminate holes, and print all procedures. -/
+private def parseElimAndPrint (program : StrataDDM.Program) : IO Unit := do
+  let laurelProgram ← translateLaurel program
+  let result := resolve laurelProgram
+  let (laurelProgram, model) := (result.program, result.model)
+  let (laurelProgram, _, _) := inferHoleTypes model laurelProgram
+  let (laurelProgram, _) := eliminateDeterministicHoles laurelProgram
+  for proc in laurelProgram.staticProcedures do
+    IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
 
 /-! ## Basic: single hole in various positions -/
 
@@ -56,9 +42,13 @@ procedure test()
 };
 -/
 #guard_msgs in
-#eval! parseElimAndPrint r"
-procedure test() opaque { var x: int := 1 + <?> };
-"
+#eval! parseElimAndPrint
+#strata
+program Laurel;
+procedure test()
+  opaque
+{ var x: int := 1 + <?> };
+#end
 
 -- Bare Hole as Assign Declare initializer → replaced with call (no longer preserved as havoc).
 /--
@@ -72,9 +62,13 @@ procedure test()
 };
 -/
 #guard_msgs in
-#eval! parseElimAndPrint r"
-procedure test() opaque { var x: int := <?> };
-"
+#eval! parseElimAndPrint
+#strata
+program Laurel;
+procedure test()
+  opaque
+{ var x: int := <?> };
+#end
 
 -- Hole in comparison arg inside assert → int (inferred from sibling literal).
 /--
@@ -88,9 +82,13 @@ procedure test()
 };
 -/
 #guard_msgs in
-#eval! parseElimAndPrint r"
-procedure test() opaque { assert <?> > 0 };
-"
+#eval! parseElimAndPrint
+#strata
+program Laurel;
+procedure test()
+  opaque
+{ assert <?> > 0 };
+#end
 
 -- Hole directly as assert condition → bool.
 /--
@@ -104,9 +102,13 @@ procedure test()
 };
 -/
 #guard_msgs in
-#eval! parseElimAndPrint r"
-procedure test() opaque { assert <?> };
-"
+#eval! parseElimAndPrint
+#strata
+program Laurel;
+procedure test()
+  opaque
+{ assert <?> };
+#end
 
 -- Hole directly as assume condition → bool.
 /--
@@ -120,9 +122,13 @@ procedure test()
 };
 -/
 #guard_msgs in
-#eval! parseElimAndPrint r"
-procedure test() opaque { assume <?> };
-"
+#eval! parseElimAndPrint
+#strata
+program Laurel;
+procedure test()
+  opaque
+{ assume <?> };
+#end
 
 -- Hole as if-then-else condition → bool.
 /--
@@ -138,9 +144,13 @@ procedure test()
 };
 -/
 #guard_msgs in
-#eval! parseElimAndPrint r"
-procedure test() opaque { if <?> then { assert true } };
-"
+#eval! parseElimAndPrint
+#strata
+program Laurel;
+procedure test()
+  opaque
+{ if <?> then { assert true } };
+#end
 
 -- Hole in then-branch of if-then-else inside typed local variable → int.
 /--
@@ -154,9 +164,13 @@ procedure test()
 };
 -/
 #guard_msgs in
-#eval! parseElimAndPrint r"
-procedure test() opaque { var x: int := if true then <?> else 0 };
-"
+#eval! parseElimAndPrint
+#strata
+program Laurel;
+procedure test()
+  opaque
+{ var x: int := if true then <?> else 0 };
+#end
 
 -- Hole as while-loop condition → bool.
 /--
@@ -172,9 +186,13 @@ procedure test()
 };
 -/
 #guard_msgs in
-#eval! parseElimAndPrint r"
-procedure test() opaque { while(<?>) {} };
-"
+#eval! parseElimAndPrint
+#strata
+program Laurel;
+procedure test()
+  opaque
+{ while(<?>) {} };
+#end
 
 -- Hole as while-loop invariant → bool.
 /--
@@ -191,9 +209,13 @@ procedure test()
 };
 -/
 #guard_msgs in
-#eval! parseElimAndPrint r"
-procedure test() opaque { while(true) invariant <?> {} };
-"
+#eval! parseElimAndPrint
+#strata
+program Laurel;
+procedure test()
+  opaque
+{ while(true) invariant <?> {} };
+#end
 
 /-! ## Operators -/
 
@@ -209,9 +231,13 @@ procedure test()
 };
 -/
 #guard_msgs in
-#eval! parseElimAndPrint r"
-procedure test() opaque { assert true && <?> };
-"
+#eval! parseElimAndPrint
+#strata
+program Laurel;
+procedure test()
+  opaque
+{ assert true && <?> };
+#end
 
 -- Hole in Neg inside typed local variable → int.
 /--
@@ -225,9 +251,13 @@ procedure test()
 };
 -/
 #guard_msgs in
-#eval! parseElimAndPrint r"
-procedure test() opaque { var x: int := -<?> };
-"
+#eval! parseElimAndPrint
+#strata
+program Laurel;
+procedure test()
+  opaque
+{ var x: int := -<?> };
+#end
 
 -- Hole in StrConcat inside typed local variable → string.
 /--
@@ -235,14 +265,17 @@ info: function $hole_0()
   returns ($result: string)
   opaque;
 procedure test()
-  opaque
 {
   var s: string := "hello" ++ $hole_0()
 };
 -/
 #guard_msgs in
 #eval! parseElimAndPrint
-  "procedure test() opaque { var s: string := \"hello\" ++ <?> };"
+#strata
+program Laurel;
+procedure test()
+{ var s: string := "hello" ++ <?> };
+#end
 
 /-! ## Multiple holes -/
 
@@ -261,9 +294,13 @@ procedure test()
 };
 -/
 #guard_msgs in
-#eval! parseElimAndPrint r"
-procedure test() opaque { var x: int := <?> + <?> };
-"
+#eval! parseElimAndPrint
+#strata
+program Laurel;
+procedure test()
+  opaque
+{ var x: int := <?> + <?> };
+#end
 
 -- Holes across statements: Mul arg (int) then assert condition (bool).
 /--
@@ -281,9 +318,13 @@ procedure test()
 };
 -/
 #guard_msgs in
-#eval! parseElimAndPrint r"
-procedure test() opaque { var x: int := 2 * <?>; assert <?> };
-"
+#eval! parseElimAndPrint
+#strata
+program Laurel;
+procedure test()
+  opaque
+{ var x: int := 2 * <?>; assert <?> };
+#end
 
 /-! ## Combinations: holes in nested contexts -/
 
@@ -301,9 +342,13 @@ procedure test()
 };
 -/
 #guard_msgs in
-#eval! parseElimAndPrint r"
-procedure test() opaque { if 1 + <?> > 0 then { assert true } };
-"
+#eval! parseElimAndPrint
+#strata
+program Laurel;
+procedure test()
+  opaque
+{ if 1 + <?> > 0 then { assert true } };
+#end
 
 -- Hole in Implies inside while invariant → bool.
 /--
@@ -321,9 +366,13 @@ procedure test()
 };
 -/
 #guard_msgs in
-#eval! parseElimAndPrint r"
-procedure test() opaque { var p: bool; while(true) invariant p ==> <?> {} };
-"
+#eval! parseElimAndPrint
+#strata
+program Laurel;
+procedure test()
+  opaque
+{ var p: bool; while(true) invariant p ==> <?> {} };
+#end
 
 -- Hole in Mul inside typed local variable with real type → real.
 /--
@@ -337,9 +386,13 @@ procedure test()
 };
 -/
 #guard_msgs in
-#eval! parseElimAndPrint r"
-procedure test() opaque { var r: real := 3.14 * <?> };
-"
+#eval! parseElimAndPrint
+#strata
+program Laurel;
+procedure test()
+  opaque
+{ var r: real := 3.14 * <?> };
+#end
 
 /-! ## Call argument and return type inference -/
 
@@ -355,9 +408,13 @@ procedure test(n: int)
 };
 -/
 #guard_msgs in
-#eval! parseElimAndPrint r"
-procedure test(n: int) opaque { assert n > <?> };
-"
+#eval! parseElimAndPrint
+#strata
+program Laurel;
+procedure test(n: int)
+  opaque
+{ assert n > <?> };
+#end
 
 /-! ## Holes in functions -/
 
@@ -373,9 +430,13 @@ function test(x: int): int
 };
 -/
 #guard_msgs in
-#eval! parseElimAndPrint r"
-function test(x: int): int opaque { <?> };
-"
+#eval! parseElimAndPrint
+#strata
+program Laurel;
+function test(x: int): int
+  opaque
+{ <?> };
+#end
 
 /-! ## Nondeterministic holes (<??>) -/
 
@@ -388,9 +449,13 @@ info: procedure test()
 };
 -/
 #guard_msgs in
-#eval! parseElimAndPrint r"
-procedure test() opaque { assert <??> };
-"
+#eval! parseElimAndPrint
+#strata
+program Laurel;
+procedure test()
+  opaque
+{ assert <??> };
+#end
 
 -- Mixed: det hole eliminated, nondet hole preserved.
 /--
@@ -405,9 +470,13 @@ procedure test()
 };
 -/
 #guard_msgs in
-#eval! parseElimAndPrint r"
-procedure test() opaque { var x: int := <?>; assert <??> };
-"
+#eval! parseElimAndPrint
+#strata
+program Laurel;
+procedure test()
+  opaque
+{ var x: int := <?>; assert <??> };
+#end
 
 -- Nondet hole in function → should be rejected (not tested here since
 -- the error occurs at Core translation time, which requires the full pipeline).
@@ -429,10 +498,12 @@ procedure test()
 };
 -/
 #guard_msgs in
-#eval! parseElimAndPrint r"
+#eval! parseElimAndPrint
+#strata
+program Laurel;
 datatype IntList { Nil(), Cons(head: int, tail: IntList) }
 procedure test() { var x: int := IntList..head(<?>) };
-"
+#end
 
 -- Hole as argument to an unsafe `!` destructor → same datatype recovery.
 /--
@@ -445,10 +516,12 @@ procedure test()
 };
 -/
 #guard_msgs in
-#eval! parseElimAndPrint r"
+#eval! parseElimAndPrint
+#strata
+program Laurel;
 datatype IntList { Nil(), Cons(head: int, tail: IntList) }
 procedure test() { var x: int := IntList..head!(<?>) };
-"
+#end
 
 -- Hole as argument to a tester → typed as the parent datatype.
 /--
@@ -461,11 +534,11 @@ procedure test()
 };
 -/
 #guard_msgs in
-#eval! parseElimAndPrint r"
+#eval! parseElimAndPrint
+#strata
+program Laurel;
 datatype IntList { Nil(), Cons(head: int, tail: IntList) }
 procedure test() { assert IntList..isCons(<?>) };
-"
+#end
 
 end Laurel
-end Strata
-end

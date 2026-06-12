@@ -114,7 +114,7 @@ structure WFPreProp (p : Program) (d : Procedure) (pp : CoreLabel × Procedure.C
 
 structure WFPostProp (p : Program) (d : Procedure) (pp : CoreLabel × Procedure.Check)
   : Prop extends WFPrePostProp p d pp where
-  oldOnlyInout : ∀ id ∈ Imperative.HasVarsPure.getVars (P := Expression) pp.2.expr,
+  oldOnlyInout : ∀ id ∈ Imperative.HasFvars.getFvars (P := Expression) pp.2.expr,
     CoreIdent.isOldIdent id → id ∈ ListMap.keys (d.header.getInoutParams.map
       (fun (x, ty) => (CoreIdent.mkOld x.name, ty)))
 
@@ -144,7 +144,11 @@ structure WFDistinctDeclarationProp (p : Program) (l : Expression.Ident) (es : L
 --   * target labels of transfer commands exist
 structure WFProcedureProp (p : Program) (d : Procedure) : Prop where
   wfstmts : ∀ ss, d.body = .structured ss → WFStatementsProp p ss
+<<<<<<< HEAD
   wfloclnd : ∀ ss, d.body = .structured ss → (HasVarsImp.definedVars (P:=Expression) ss).Nodup
+=======
+  wfloclnd : ∀ ss, d.body = .structured ss → (HasVarsImp.definedVars (P:=Expression) ss false).Nodup
+>>>>>>> origin/main2
   inputsNodup : (ListMap.keys d.header.inputs).Nodup
   outputsNodup : (ListMap.keys d.header.outputs).Nodup
   ioNotOld : ∀ id ∈ ListMap.keys d.header.inputs ++ ListMap.keys d.header.outputs,

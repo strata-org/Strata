@@ -1714,13 +1714,18 @@ private instance : Inhabited (Imperative.BasicBlock (Imperative.DetTransferCmd S
 private instance : Inhabited (Imperative.CFG String (Imperative.DetBlock String Core.Command Core.Expression)) := ⟨⟨"", []⟩⟩
 
 partial def translateTransfer (p : Program) (bindings : TransBindings) (arg : Arg) :
+<<<<<<< HEAD
   TransM (Imperative.DetTransferCmd String Core.Expression × TransBindings) := do
+=======
+  TransM (List Core.Command × Imperative.DetTransferCmd String Core.Expression × TransBindings) := do
+>>>>>>> origin/main2
   let .op op := arg
     | TransM.error s!"translateTransfer expected op {repr arg}"
   let md ← getOpMetaData op
   match op.name with
   | q`Core.transfer_goto =>
     let label ← translateIdent String op.args[0]!
+<<<<<<< HEAD
     return (.condGoto (Lambda.LExpr.boolConst () Bool.true) label label md, bindings)
   | q`Core.transfer_nondet_goto =>
     let label1 ← translateIdent String op.args[0]!
@@ -1734,13 +1739,37 @@ partial def translateTransfer (p : Program) (bindings : TransBindings) (arg : Ar
     let condName := s!"$__nondet_{bindings.gen.var_def}"
     let bindings := incrNum .var_def bindings
     return (.condGoto (Lambda.LExpr.fvar () ⟨condName, ()⟩ none) label1 label2 md, bindings)
+=======
+    return ([], .condGoto (Lambda.LExpr.boolConst () Bool.true) label label md, bindings)
+  | q`Core.transfer_nondet_goto =>
+    let label1 ← translateIdent String op.args[0]!
+    let label2 ← translateIdent String op.args[1]!
+    -- Nondeterministic choice: use a fresh boolean variable as the branch
+    -- condition, declared by the `init` command below (prepended to the block in
+    -- `translateCFGBlock`) so the type checker can see it. The symbolic evaluator
+    -- leaves the fvar unchanged, so `evalCFGStep` forks into both paths; the
+    -- concrete interpreter (runCFG) errors on it, as expected.
+    let condName : Core.CoreIdent := ⟨s!"$__nondet_{bindings.gen.var_def}", ()⟩
+    let bindings := incrNum .var_def bindings
+    let boolMono := Lambda.LMonoTy.bool
+    let boolTy : Lambda.LTy := .forAll [] boolMono
+    let initCmd : Core.Command := .cmd (.init condName boolTy .nondet md)
+    let condExpr := Lambda.LExpr.fvar () condName (some boolMono)
+    return ([initCmd], .condGoto condExpr label1 label2 md, bindings)
+>>>>>>> origin/main2
   | q`Core.transfer_cond_goto =>
     let cond ← translateExpr p bindings op.args[0]!
     let lt ← translateIdent String op.args[1]!
     let lf ← translateIdent String op.args[2]!
+<<<<<<< HEAD
     return (.condGoto cond lt lf md, bindings)
   | q`Core.transfer_return =>
     return (.finish md, bindings)
+=======
+    return ([], .condGoto cond lt lf md, bindings)
+  | q`Core.transfer_return =>
+    return ([], .finish md, bindings)
+>>>>>>> origin/main2
   | _ => TransM.error s!"translateTransfer: unknown transfer {repr op.name}"
 
 /-- Translate a single CFG block -/
@@ -1764,8 +1793,15 @@ partial def translateCFGBlock (p : Program) (bindings : TransBindings) (arg : Ar
         match stmt with
         | .cmd c => cmds := cmds.push c
         | _ => TransM.error s!"translateCFGBlock: only commands allowed in CFG blocks, got statement"
+<<<<<<< HEAD
   let (transfer, bindings') ← translateTransfer p bindings op.args[2]!
   return (label, ⟨cmds.toList, transfer⟩, bindings')
+=======
+  let (transferCmds, transfer, bindings') ← translateTransfer p bindings op.args[2]!
+  -- Append any commands the transfer needs declared in scope (e.g. the
+  -- `$__nondet_N` declaration for a nondeterministic goto).
+  return (label, ⟨cmds.toList ++ transferCmds, transfer⟩, bindings')
+>>>>>>> origin/main2
 
 /-- Translate a list of CFG blocks -/
 partial def translateCFGBlocks (p : Program) (bindings : TransBindings) (arg : Arg) :

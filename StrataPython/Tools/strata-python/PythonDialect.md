@@ -49,22 +49,22 @@ A few Python field names conflict with DDM reserved words and are renamed:
 
 ## Installation
 
-Install the `strata` package from the `Tools/Python` directory:
+Install both packages from the repo root:
 
 ```
-pip install .
+pip install ./Tools/Python-base ./StrataPython/Tools/strata-python
 ```
 
 This requires Python 3.11 or later and installs the `amazon.ion` dependency.
 
 ## Command-Line Interface
 
-The `strata.gen` module provides a CLI accessible via `python -m strata.gen`.
+The `strata_python.gen` module provides a CLI accessible via `python -m strata_python.gen`.
 
 ### Generating the dialect
 
 ```
-python -m strata.gen dialect <output_dir>
+python -m strata_python.gen dialect <output_dir>
 ```
 
 Requires Python 3.13 or later.  Writes `<output_dir>/Python.dialect.st.ion`
@@ -77,7 +77,7 @@ strata check "<output_dir>/Python.dialect.st.ion"
 ### Parsing Python to Strata
 
 ```
-python -m strata.gen py_to_strata [--dialect <path>] <input.py> <output.st.ion>
+python -m strata_python.gen py_to_strata [--dialect <path>] <input.py> <output.st.ion>
 ```
 
 Translates a Python source file into a Strata program in Ion format.  The
@@ -87,7 +87,7 @@ Python >= 3.13, the dialect is generated on the fly.
 Example:
 
 ```
-python -m strata.gen py_to_strata --dialect dialects/Python.dialect.st.ion \
+python -m strata_python.gen py_to_strata --dialect dialects/Python.dialect.st.ion \
     my_script.py my_script.py.st.ion
 ```
 
@@ -102,7 +102,7 @@ Exit code 100 indicates a Python parse failure.
 ### Checking the AST parser
 
 ```
-python -m strata.gen check_ast [--dialect <path>] <dir>
+python -m strata_python.gen check_ast [--dialect <path>] <dir>
 ```
 
 Batch-parses all `.py` files under `<dir>` and reports how many were

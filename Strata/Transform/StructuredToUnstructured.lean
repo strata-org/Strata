@@ -5,8 +5,12 @@
 -/
 module
 
+import Strata.DL.Imperative.PureExpr
 public import Strata.DL.Imperative.BasicBlock
+public import Strata.DL.Imperative.CFGSemantics
+import Strata.DL.Imperative.Cmd
 public import Strata.DL.Imperative.Stmt
+import Strata.DL.Lambda.LExpr
 public import Strata.DL.Util.LabelGen
 
 public section
@@ -42,7 +46,11 @@ def flushCmds
       pure (k, [])
     else
       let l ← StringGenState.gen pfx
+<<<<<<< HEAD
       let b := (l, { cmds := accum.reverse, transfer := .goto k synthesizedMd })
+=======
+      let b := (l, { cmds := accum.reverse, transfer := .goto k })
+>>>>>>> origin/main2
       pure (l, [b])
   | some tr =>
     let l ← StringGenState.gen pfx
@@ -52,7 +60,7 @@ def flushCmds
 /-- Translate a list of statements to basic blocks, accumulating commands -/
 def stmtsToBlocks
   [HasBool P] [HasPassiveCmds P CmdT] [HasInit P CmdT]
-  [HasIdent P] [HasFvar P] [HasIntOrder P] [HasNot P]
+  [HasIdent P] [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P] [HasBoolOps P]
   (k : String)
   (ss : List (Stmt P CmdT))
   (exitConts : List (Option String × String))
@@ -83,9 +91,15 @@ match ss with
     -- Empty accumulated block
     pure (accumEntry, accumBlocks ++ bbs ++ bsNext)
   else
+<<<<<<< HEAD
     let b := (l, { cmds := [], transfer := .goto bl md })
     pure (accumEntry, accumBlocks ++ [b] ++ bbs ++ bsNext)
 | .ite c tss fss md :: rest => do
+=======
+    let b := (l, { cmds := [], transfer := .goto bl })
+    pure (accumEntry, accumBlocks ++ [b] ++ bbs ++ bsNext)
+| .ite c tss fss _md :: rest => do
+>>>>>>> origin/main2
   -- Process rest first
   let (kNext, bsNext) ← stmtsToBlocks k rest exitConts []
   -- Create ite block
@@ -117,13 +131,13 @@ match ss with
       let mLabel ← StringGenState.gen "loop_measure$"
       let mIdent := HasIdent.ident mLabel
       let mOldExpr := HasFvar.mkFvar mIdent
-      let initCmd  := HasInit.init mIdent HasIntOrder.intTy .nondet synthesizedMd
+      let initCmd  := HasInit.init mIdent HasInt.intTy .nondet synthesizedMd
       let assumeCmd := HasPassiveCmds.assume s!"assume_{mLabel}"
-                         (HasIntOrder.eq mOldExpr mExpr) synthesizedMd
+                         (HasIntOps.eq mOldExpr mExpr) synthesizedMd
       let lbCmd    := HasPassiveCmds.assert s!"measure_lb_{mLabel}"
-                         (HasNot.not (HasIntOrder.lt mOldExpr HasIntOrder.zero)) synthesizedMd
+                         (HasBoolOps.not (HasIntOps.lt mOldExpr HasInt.zero)) synthesizedMd
       let decCmd   := HasPassiveCmds.assert s!"measure_decrease_{mLabel}"
-                         (HasIntOrder.lt mExpr mOldExpr) synthesizedMd
+                         (HasIntOps.lt mExpr mOldExpr) synthesizedMd
       let ldec ← StringGenState.gen "measure_decrease$"
       let decBlock := (ldec, { cmds := [decCmd], transfer := .goto lentry synthesizedMd })
       pure ([initCmd, assumeCmd, lbCmd], ldec, [decBlock])
@@ -175,7 +189,7 @@ match ss with
 
 def stmtsToCFGM
   [HasBool P] [HasPassiveCmds P CmdT] [HasInit P CmdT]
-  [HasIdent P] [HasFvar P] [HasIntOrder P] [HasNot P]
+  [HasIdent P] [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P] [HasBoolOps P]
   (ss : List (Stmt P CmdT)) :
   StringGenM (CFG String (DetBlock String CmdT P)) := do
   let lend ← StringGenState.gen "end$"
@@ -185,7 +199,7 @@ def stmtsToCFGM
 
 def stmtsToCFG
   [HasBool P] [HasPassiveCmds P CmdT] [HasInit P CmdT]
-  [HasIdent P] [HasFvar P] [HasIntOrder P] [HasNot P]
+  [HasIdent P] [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P] [HasBoolOps P]
   (ss : List (Stmt P CmdT)) :
   CFG String (DetBlock String CmdT P) :=
   (stmtsToCFGM ss StringGenState.emp).fst

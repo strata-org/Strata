@@ -214,6 +214,7 @@ def alphaEquivStatement (s1 s2: Core.Statement) (map:IdMap)
 
 end
 
+<<<<<<< HEAD
 private def alphaEquivCmds (cmds1 cmds2 : List Core.Command) (map : IdMap)
     : Except Format IdMap := do
   if cmds1.length ≠ cmds2.length then
@@ -245,6 +246,8 @@ private def alphaEquivCFG (cfg1 cfg2 : Core.DetCFG) (map : IdMap)
       let map ← alphaEquivCmds blk1.cmds blk2.cmds map
       alphaEquivTransfer blk1.transfer blk2.transfer map) map
 
+=======
+>>>>>>> origin/main2
 private def alphaEquiv (p1 p2:Core.Procedure):Except Format Bool := do
   match p1.body, p2.body with
   | .structured ss1, .structured ss2 =>
@@ -258,12 +261,16 @@ private def alphaEquiv (p1 p2:Core.Procedure):Except Format Bool := do
           alphaEquivStatement s1 s2 map)
         newmap (ss1.zip ss2)
       return ((p1.header.outputs.zip p2.header.outputs).map (fun ((x, _), (y, _)) => alphaEquivIdents x y m)).all id
+<<<<<<< HEAD
   | .cfg cfg1, .cfg cfg2 =>
     let newmap:IdMap := IdMap.mk ([], []) []
     let m ← alphaEquivCFG cfg1 cfg2 newmap
     return ((p1.header.outputs.zip p2.header.outputs).map (fun ((x, _), (y, _)) => alphaEquivIdents x y m)).all id
   | .structured _, .cfg _ => .error "body type mismatch: structured vs cfg"
   | .cfg _, .structured _ => .error "body type mismatch: cfg vs structured"
+=======
+  | _, _ => .error f!"alphaEquiv: CFG procedure bodies are not supported in the inlining test harness"
+>>>>>>> origin/main2
 
 
 

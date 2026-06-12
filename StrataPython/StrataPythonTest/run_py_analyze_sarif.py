@@ -50,12 +50,12 @@ def run(test_file: str) -> bool:
     # Generate Ion file
     subprocess.run(
         [
-            sys.executable, "-m", "strata.gen", "py_to_strata",
+            sys.executable, "-m", "strata_python.gen", "py_to_strata",
             "--dialect", "dialects/Python.dialect.st.ion",
             str(test_path),
             str(ion_abs),
         ],
-        cwd=REPO_ROOT / "Tools" / "Python",
+        cwd=STRATA_PYTHON_DIR / "Tools" / "strata-python",
         check=True,
     )
 

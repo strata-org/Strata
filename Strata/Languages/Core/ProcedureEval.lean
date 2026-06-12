@@ -186,13 +186,13 @@ def eval (E : Env) (p : Procedure) : Env × Statistics :=
                 match check.attr with
                 | .Free =>
                     -- NOTE: A free postcondition is not checked.
-                    -- We simply change a free-postcondition to "true", but
+                    -- We simply change a free-postcondition to "assume true", but
                     -- keep a record in the metadata field.
                     -- TODO: Perhaps introduce an "opaque" expression construct
                     -- that hides the expression from the evaluator, allowing us
                     -- to retain the postcondition body instead of replacing it
                     -- with "true".
-                  (.assert label (.true ())
+                  (.assume label (.true ())
                                  ((Imperative.MetaData.pushElem
                                   #[]
                                   (.label label)
@@ -207,6 +207,7 @@ def eval (E : Env) (p : Procedure) : Env × Statistics :=
       (.assume label check.expr check.md))
       p.spec.preconditions
   match p.body with
+<<<<<<< HEAD
   | .cfg cfgBody =>
     -- 100 iterations per block: enough to unroll moderate loops while keeping
     -- symbolic execution bounded.  Fuel is consumed per block visit, so a
@@ -218,6 +219,15 @@ def eval (E : Env) (p : Procedure) : Env × Statistics :=
   | .structured bodyStmts =>
     let (ssEs, evalStats) := Statement.eval E old_g_subst (precond_assumes ++ bodyStmts ++ postcond_asserts)
     (mergeResults E (ssEs.map (fun sE => fixupError sE)), evalStats)
+=======
+  | .structured bodyStmts =>
+    let (ssEs, evalStats) := Statement.eval E old_g_subst (precond_assumes ++ bodyStmts ++ postcond_asserts)
+    (mergeResults E (ssEs.map (fun sE => fixupError sE)), evalStats)
+  | .cfg _ =>
+    -- CFG bodies are not supported here.
+    let errEnv := { E with error := some (.Misc s!"procedure '{p.header.name}': CFG bodies not supported yet") }
+    (errEnv, {})
+>>>>>>> origin/main2
 
 ---------------------------------------------------------------------
 
