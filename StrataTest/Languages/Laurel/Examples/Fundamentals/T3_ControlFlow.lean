@@ -12,7 +12,7 @@ open Strata
 #eval testLaurel <|
 #strata
 program Laurel;
-function returnAtEnd(x: int) returns (r: int) {
+procedure returnAtEnd(x: int) returns (r: int) {
   if x > 0 then {
     if x == 1 then {
       return 1
@@ -29,6 +29,18 @@ function elseWithCall(): int
   if true then 3 else returnAtEnd(3)
 };
 
+procedure testFunctions()
+  opaque
+{
+  assert returnAtEnd(1) == 1;
+  assert returnAtEnd(1) == 2;
+//^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+
+  assert guardInFunction(1) == 1;
+  assert guardInFunction(1) == 2
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+};
+
 procedure guardInFunction(x: int) returns (r: int)
 {
   if x > 0 then {
@@ -40,18 +52,6 @@ procedure guardInFunction(x: int) returns (r: int)
   };
 
   return 3
-};
-
-procedure testFunctions()
-  opaque
-{
-  assert returnAtEnd(1) == 1;
-  assert returnAtEnd(1) == 2;
-//^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
-
-  assert guardInFunction(1) == 1;
-  assert guardInFunction(1) == 2
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
 };
 
 procedure guards(a: int) returns (r: int)

@@ -307,7 +307,8 @@ def lowerContracts (program : Program) : Program :=
 public def contractPass : LoweringPass where
   name := "ContractPass"
   documentation := "Lowers pre and postcondition to assertions and assumptions around call-sites and procedure bodies"
-  comesAfter := [⟨ eliminateReturnStatementsPass.meta, "The contract pass wraps the body of procedures to get: assume <preconditions>; <body>; assert <postconditions>. Eliminating returns first means that the postcondition assertions are guaranteed to execute."⟩ ]
+  comesAfter := [⟨ eliminateReturnStatementsPass.meta, "The contract pass wraps the body of procedures to get: `assume preconditions; body; assert postconditions`. Eliminating returns first means that the postcondition assertions are guaranteed to execute."⟩ ]
+  needsResolves := true
   run := fun p _m =>
     let p' := lowerContracts p
     (p', [], {})

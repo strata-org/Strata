@@ -24,10 +24,12 @@ open Verso.Genre.Manual.InlineLean
 
 set_option pp.rawOnError true
 
-/-- Block command that generates documentation for all Laurel pipeline passes.
-    Usage inside a `#doc` block: `{laurelPipelineDocs}` -/
-@[block_command]
-def laurelPipelineDocs : Verso.Doc.Elab.BlockCommandOf Unit := fun () => do
+/-- Markdown documentation for all Laurel passes, including their
+    `comesBefore`/`comesAfter` ordering rationales. Note: pass
+    `documentation`/`reason` strings are rendered as Markdown, so avoid raw
+    `<angle-bracket>` text (it is treated as inline HTML and crashes Verso's
+    converter); use backticks for inline code instead. -/
+def laurelPipelineDocsMarkdown : String :=
   let entries := allPasses.map fun pass =>
     let base := s!"- **{pass.name}**: {pass.documentation}"
     let beforeDeps := pass.comesBefore.map fun cb =>
@@ -37,18 +39,11 @@ def laurelPipelineDocs : Verso.Doc.Elab.BlockCommandOf Unit := fun () => do
     let deps := beforeDeps ++ afterDeps
     if deps.isEmpty then base
     else base ++ "\n" ++ "\n".intercalate deps
+  "\n".intercalate entries.toList
 
-  let md := "\n".intercalate entries.toList
-  let some ast := MD4Lean.parse md
-    | Lean.throwError "Failed to parse laurelPipelineDocumentation as Markdown"
-  let blocks ← ast.blocks.mapM (Markdown.blockFromMarkdown · (handleHeaders := Markdown.strongEmphHeaders))
-  `(Verso.Doc.Block.concat #[$blocks,*])
-
-/-- Block command that generates a dependency graph for the Laurel pipeline passes
-    based on the `comesBefore` and `comesAfter` properties.
-    Usage inside a `#doc` block: `{laurelPipelineDependencyGraph}` -/
-@[block_command]
-def laurelPipelineDependencyGraph : Verso.Doc.Elab.BlockCommandOf Unit := fun () => do
+/-- Markdown dependency graph for the Laurel passes, derived from the
+    `comesBefore`/`comesAfter` properties. -/
+def laurelPipelineDependencyGraphMarkdown : String := Id.run do
   -- Collect all edges: (source, target, reason) where source comesBefore target
   let mut edges : List (String × String × String) := []
   for pass in allPasses do
@@ -83,7 +78,24 @@ def laurelPipelineDependencyGraph : Verso.Doc.Elab.BlockCommandOf Unit := fun ()
     md := md ++ s!"{idx}. {pass.name}{depStr}\n"
     idx := idx + 1
   md := md ++ "```\n"
+  return md
 
+/-- Block command that generates documentation for all Laurel pipeline passes.
+    Usage inside a `#doc` block: `{laurelPipelineDocs}` -/
+@[block_command]
+def laurelPipelineDocs : Verso.Doc.Elab.BlockCommandOf Unit := fun () => do
+  let md := laurelPipelineDocsMarkdown
+  let some ast := MD4Lean.parse md
+    | Lean.throwError "Failed to parse laurelPipelineDocumentation as Markdown"
+  let blocks ← ast.blocks.mapM (Markdown.blockFromMarkdown · (handleHeaders := Markdown.strongEmphHeaders))
+  `(Verso.Doc.Block.concat #[$blocks,*])
+
+/-- Block command that generates a dependency graph for the Laurel pipeline passes
+    based on the `comesBefore` and `comesAfter` properties.
+    Usage inside a `#doc` block: `{laurelPipelineDependencyGraph}` -/
+@[block_command]
+def laurelPipelineDependencyGraph : Verso.Doc.Elab.BlockCommandOf Unit := fun () => do
+  let md := laurelPipelineDependencyGraphMarkdown
   let some ast := MD4Lean.parse md
     | Lean.throwError "Failed to parse laurelPipelineDependencyGraph as Markdown"
   let blocks ← ast.blocks.mapM (Markdown.blockFromMarkdown · (handleHeaders := Markdown.strongEmphHeaders))
