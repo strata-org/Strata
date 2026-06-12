@@ -384,7 +384,7 @@ private def isNumeric (ctx : TypeLattice) (ty : HighTypeMd) : Bool :=
   | _ => false
 
 /-- Least upper bound of two types under the consistency relation
-    (Siek–Taha). On Laurel's flat lattice the LUB collapses to the
+    (Siek–Taha). On Laurel's flat lattice the join collapses to the
     "more informative" side: `Unknown` and `T` yields `T`; equal
     types (after unfolding) yield themselves; everything else is
     inconsistent and yields `none`.
@@ -562,7 +562,7 @@ mutual
 /-- Synth-mode resolution: resolve `e` and synthesize its `HighType`,
     written `Γ ⊢ e ⇒ T`. Each constructor with a synthesis rule delegates
     to its rule's helper; constructors without one (statement-shaped
-    constructs like `IfThenElse`, `Block`, `While`, `Return`, …) hit
+    constructs like `While`, `Exit`, `Return`, …) hit
     a wildcard arm that emits a `typeMismatch` diagnostic and
     returns `Unknown` to suppress cascading errors.
 
@@ -1220,9 +1220,10 @@ def Check.ifThenElse (exprMd : StmtExprMd)
 
 /-- (If-Synth)
     ```
-    Γ ⊢ cond ⇐ TBool   Γ ⊢ thenBr ⇒ T_t   Γ ⊢ elseBr ⇒ T_e   T_t ~ T_e   (If-Synth)
+    Γ ⊢ cond ⇐ TBool   Γ ⊢ thenBr ⇒ T_t   Γ ⊢ elseBr ⇒ T_e
+    T_t ~ T_e   T = T_t ⨆ T_e (consistency join)                (If-Synth)
     ──────────────────────────────────────────────────────────────────────────
-    Γ ⊢ IfThenElse cond thenBr (some elseBr) ⇒ T_t
+    Γ ⊢ IfThenElse cond thenBr (some elseBr) ⇒ T
 
     Γ ⊢ cond ⇐ TBool   Γ ⊢ thenBr ⇒ _                          (If-Synth-NoElse)
     ──────────────────────────────────────────────────────────────────────────
@@ -1505,11 +1506,12 @@ def Check.assign (exprMd : StmtExprMd)
     Γ ⊢ StaticCall callee args ⇒ T'
 
     Γ(callee) = static-procedure with inputs Ts                  (Static-Call-Multi)
-      and outputs [T_1; …; T_n] (n ≠ 1)
+      and outputs [T_1; …; T_n] (n ≥ 2)
     Γ ⊢ args_i ⇐ Ts_i (pairwise)
     ──────────────────────────────────────────────────────
     Γ ⊢ StaticCall callee args ⇒ MultiValuedExpr [T_1; …; T_n]
     ```
+    A callee with *zero* outputs synthesizes `TVoid` (the n = 0 case).
     The two rules differ only in *output* arity — argument checking is
     identical. Callee is resolved against the expected kinds (parameter,
     static procedure, datatype constructor, datatype destructor, constant);
@@ -1580,11 +1582,12 @@ def Synth.staticCall (exprMd : StmtExprMd)
 
     Γ ⊢ target ⇒ _                                            (Instance-Call-Multi)
     Γ(callee) = instance- or static-procedure
-      with inputs [self; Ts] and outputs [T_1; …; T_n] (n ≠ 1)
+      with inputs [self; Ts] and outputs [T_1; …; T_n] (n ≥ 2)
     Γ ⊢ args_i ⇐ Ts_i (pairwise; self dropped)
     ─────────────────────────────────────────
     Γ ⊢ InstanceCall target callee args ⇒ MultiValuedExpr [T_1; …; T_n]
     ```
+    A callee with *zero* outputs synthesizes `TVoid` (the n = 0 case).
     The two rules differ only in *output* arity. Target is synthesized;
     callee resolves to an instance or static procedure; arguments are
     checked pairwise against the callee's parameter types after dropping
@@ -1673,7 +1676,7 @@ def Synth.instanceCall (exprMd : StmtExprMd)
 
     Γ ⊢ args_i ⇒ U_i                                            (Op-Arith)
     Numeric U_i
-    T = ⨆ U_i (consistency LUB)
+    T = ⨆ U_i (consistency join)
     op ∈ {Neg, Add, Sub, Mul, Div, Mod, DivT, ModT}
     ─────────────────────────────────────────────
     Γ ⊢ PrimitiveOp op args ⇒ T
@@ -1684,7 +1687,7 @@ def Synth.instanceCall (exprMd : StmtExprMd)
     ─────────────────────────────────────────────
     Γ ⊢ PrimitiveOp op args ⇒ TString
     ```
-    `Numeric T` is the predicate "T unfolds to TInt / TReal / TFloat64
+    `Numeric T` is the predicate "T unfolds to TInt / TReal / TFloat64 / TBv
     (or Unknown via the gradual escape hatch)" — not a single type, so it
     cannot serve as an `expected` for `Check.resolveStmtExpr`. `~` is
     symmetric consistency under the gradual relation, so equality has no
@@ -1698,7 +1701,7 @@ def Synth.instanceCall (exprMd : StmtExprMd)
 
     Arithmetic follows the same shape as `Op-Eq` but for n operands:
     synthesize each operand's type, require it to be `Numeric`, and
-    fold the operand types under `join` (the LUB on the
+    fold the operand types under `join` (the join on the
     flat consistency lattice — `Unknown ⊔ T = T`, `T ⊔ T = T`,
     everything else inconsistent). The fold's result is the
     synthesized type. If any pair is inconsistent the rule emits a
@@ -1728,12 +1731,12 @@ def Synth.primitiveOp (exprMd : StmtExprMd) (expr : StmtExpr)
     match aTy.val with
     | .MultiValuedExpr _ =>
       let diag := diagnosticFromSource a.source
-        "multi-output call cannot be used as a value here; it returns multiple values. Use a multi-target assignment instead"
+        "multi-output call cannot be used as a value here; it returns multiple values. Unpack it into separate variables first"
       modify fun s => { s with errors := s.errors.push diag }
       pure true
     | _ => pure false
   match op with
-  -- Arithmetic: synth each operand's type, then take the LUB under
+  -- Arithmetic: synth each operand's type, then take the join under
   -- the consistency relation. This is the same discipline as
   -- `Op-Eq`: operands must be pairwise consistent (with `Unknown`
   -- promoting to whichever side is more informative). Each operand
@@ -1763,7 +1766,7 @@ def Synth.primitiveOp (exprMd : StmtExprMd) (expr : StmtExpr)
     let resultTy := argTypes.foldl
       (fun acc aTy =>
         match acc with
-        | some lub => join ctx lub aTy
+        | some acc => join ctx acc aTy
         | none => none)
       (some unknownTy)
     match resultTy with
@@ -2450,8 +2453,8 @@ def resolveParameter (param : Parameter) : ResolveM Parameter := do
 
 /-- Resolve a procedure body, checking its impl block (if any) against
     `expected`. The expected type comes from the procedure's declared
-    output: a single output `T` for functional procedures, `TVoid`
-    otherwise. Bodies without an impl block (`Abstract`, `External`) ignore
+    output: a single output `T` for single-output functional procedures,
+    `Unknown` otherwise. Bodies without an impl block (`Abstract`, `External`) ignore
     `expected`. -/
 def resolveBody (body : Body) (expected : HighTypeMd) : ResolveM Body := do
   match body with

@@ -340,7 +340,7 @@ The Index below links to each construct's subsection.
 - {ref "rules-self-reference"}[*Self reference*] — \[⇒\] This-Inside, \[⇒\] This-Outside
 - {ref "rules-untyped-forms"}[*Untyped forms*] — \[⇒\] Abstract / All
 - {ref "rules-contract-of"}[*ContractOf*] — \[⇒\] ContractOf-Bool, \[⇒\] ContractOf-Set, \[⇒\] ContractOf-Error
-- {ref "rules-holes"}[*Holes*] — \[⇐\] Hole-Some, \[⇐\] Hole-None
+- {ref "rules-holes"}[*Holes*] — \[⇐\] Hole-Some, \[⇐\] Hole-None, \[⇒\] Hole-Synth-None, \[⇒\] Hole-Synth-Some
 - {ref "rules-procedure"}[*Procedure*] — Procedure
 
 ### Subsumption
@@ -414,11 +414,14 @@ whose operands are synthesized) — the synth counterpart fires instead.
 With an `else`, both branches are synthesized and their types must be
 mutually consistent ($`\sim`, the symmetric gradual relation);
 inconsistent branches $`[\text{emits “'if' branches have incompatible
-types X and Y”}]` and synthesize $`\mathsf{Unknown}`. Without an
-`else`, the missing branch cannot produce a value, so the `if`
+types X and Y”}]` and synthesize $`\mathsf{Unknown}`. The result is the
+join $`T_t \sqcup T_e` of the two branch types, so when one branch is a
+hole ($`\mathsf{Unknown}`) the join promotes to the other branch's
+concrete type, and the synthesized type is independent of branch order.
+Without an `else`, the missing branch cannot produce a value, so the `if`
 synthesizes $`\mathsf{TVoid}`.
 
-$$`\frac{\Gamma \vdash \mathit{cond} \Leftarrow \mathsf{TBool} \quad \Gamma \vdash \mathit{thenBr} \Rightarrow T_t \quad \Gamma \vdash \mathit{elseBr} \Rightarrow T_e \quad T_t \sim T_e}{\Gamma \vdash \mathsf{IfThenElse}\;\mathit{cond}\;\mathit{thenBr}\;(\mathsf{some}\;\mathit{elseBr}) \Rightarrow T_t} \quad \text{([⇒] If-Synth)}`
+$$`\frac{\Gamma \vdash \mathit{cond} \Leftarrow \mathsf{TBool} \quad \Gamma \vdash \mathit{thenBr} \Rightarrow T_t \quad \Gamma \vdash \mathit{elseBr} \Rightarrow T_e \quad T_t \sim T_e}{\Gamma \vdash \mathsf{IfThenElse}\;\mathit{cond}\;\mathit{thenBr}\;(\mathsf{some}\;\mathit{elseBr}) \Rightarrow T_t \sqcup T_e} \quad \text{([⇒] If-Synth)}`
 
 $$`\frac{\Gamma \vdash \mathit{cond} \Leftarrow \mathsf{TBool} \quad \Gamma \vdash \mathit{thenBr} \Rightarrow \_}{\Gamma \vdash \mathsf{IfThenElse}\;\mathit{cond}\;\mathit{thenBr}\;\mathsf{none} \Rightarrow \mathsf{TVoid}} \quad \text{([⇒] If-Synth-NoElse)}`
 
@@ -634,13 +637,13 @@ tag := "rules-calls"
 
 $$`\frac{\Gamma(\mathit{callee}) = \text{static-procedure with inputs } Ts \text{ and output } [T'] \text{ (single output)} \quad \Gamma \vdash \mathit{args}_i \Leftarrow Ts_i \text{ (pairwise)}}{\Gamma \vdash \mathsf{StaticCall}\;\mathit{callee}\;\mathit{args} \Rightarrow T'} \quad \text{([⇒] Static-Call)}`
 
-$$`\frac{\Gamma(\mathit{callee}) = \text{static-procedure with inputs } Ts \text{ and outputs } [T_1; \ldots; T_n],\; n \ne 1 \quad \Gamma \vdash \mathit{args}_i \Leftarrow Ts_i \text{ (pairwise)}}{\Gamma \vdash \mathsf{StaticCall}\;\mathit{callee}\;\mathit{args} \Rightarrow \mathsf{MultiValuedExpr}\;[T_1; \ldots; T_n]} \quad \text{([⇒] Static-Call-Multi)}`
+$$`\frac{\Gamma(\mathit{callee}) = \text{static-procedure with inputs } Ts \text{ and outputs } [T_1; \ldots; T_n],\; n \ge 2 \quad \Gamma \vdash \mathit{args}_i \Leftarrow Ts_i \text{ (pairwise)}}{\Gamma \vdash \mathsf{StaticCall}\;\mathit{callee}\;\mathit{args} \Rightarrow \mathsf{MultiValuedExpr}\;[T_1; \ldots; T_n]} \quad \text{([⇒] Static-Call-Multi)}`
 
 {docstring Strata.Laurel.Resolution.Synth.staticCall}
 
 $$`\frac{\Gamma \vdash \mathit{target} \Rightarrow \_ \quad \Gamma(\mathit{callee}) = \text{instance- or static-procedure with inputs } [\mathit{self}; Ts] \text{ and output } [T'] \text{ (single output)} \quad \Gamma \vdash \mathit{args}_i \Leftarrow Ts_i \text{ (pairwise; self dropped)}}{\Gamma \vdash \mathsf{InstanceCall}\;\mathit{target}\;\mathit{callee}\;\mathit{args} \Rightarrow T'} \quad \text{([⇒] Instance-Call)}`
 
-$$`\frac{\Gamma \vdash \mathit{target} \Rightarrow \_ \quad \Gamma(\mathit{callee}) = \text{instance- or static-procedure with inputs } [\mathit{self}; Ts] \text{ and outputs } [T_1; \ldots; T_n],\; n \ne 1 \quad \Gamma \vdash \mathit{args}_i \Leftarrow Ts_i \text{ (pairwise; self dropped)}}{\Gamma \vdash \mathsf{InstanceCall}\;\mathit{target}\;\mathit{callee}\;\mathit{args} \Rightarrow \mathsf{MultiValuedExpr}\;[T_1; \ldots; T_n]} \quad \text{([⇒] Instance-Call-Multi)}`
+$$`\frac{\Gamma \vdash \mathit{target} \Rightarrow \_ \quad \Gamma(\mathit{callee}) = \text{instance- or static-procedure with inputs } [\mathit{self}; Ts] \text{ and outputs } [T_1; \ldots; T_n],\; n \ge 2 \quad \Gamma \vdash \mathit{args}_i \Leftarrow Ts_i \text{ (pairwise; self dropped)}}{\Gamma \vdash \mathsf{InstanceCall}\;\mathit{target}\;\mathit{callee}\;\mathit{args} \Rightarrow \mathsf{MultiValuedExpr}\;[T_1; \ldots; T_n]} \quad \text{([⇒] Instance-Call-Multi)}`
 
 The callee is resolved against either an instance procedure or a
 static procedure (the latter handles uniformly-dispatched call syntax
@@ -651,7 +654,9 @@ single-vs-multi split. In both call families the single- and multi-output
 rules differ only in the *output* arity; argument checking is the same, and
 surplus arguments (beyond the declared parameters, or when the callee is
 unresolved) are checked against $`\mathsf{Unknown}` rather than flagged as an
-arity error.
+arity error. A zero-output ($`n = 0`) procedure call is the third case in the
+arity split: it synthesizes $`\mathsf{TVoid}` rather than a
+$`\mathsf{MultiValuedExpr}`.
 
 {docstring Strata.Laurel.Resolution.Synth.instanceCall}
 
@@ -672,14 +677,14 @@ $$`\frac{\Gamma \vdash \mathit{args}_i \Rightarrow U_i \quad \mathsf{Numeric}\;U
 
 $$`\frac{\Gamma \vdash \mathit{lhs} \Rightarrow T_l \quad \Gamma \vdash \mathit{rhs} \Rightarrow T_r \quad T_l \sim T_r \quad \mathit{op} \in \{\mathsf{Eq}, \mathsf{Neq}\}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;[\mathit{lhs}; \mathit{rhs}] \Rightarrow \mathsf{TBool}} \quad \text{([⇒] Op-Eq)}`
 
-$$`\frac{\Gamma \vdash \mathit{args}_i \Rightarrow U_i \quad \mathsf{Numeric}\;U_i \quad T = \bigsqcup_i U_i \text{ (consistency LUB)} \quad \mathit{op} \in \{\mathsf{Neg}, \mathsf{Add}, \mathsf{Sub}, \mathsf{Mul}, \mathsf{Div}, \mathsf{Mod}, \mathsf{DivT}, \mathsf{ModT}\}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;\mathit{args} \Rightarrow T} \quad \text{([⇒] Op-Arith)}`
+$$`\frac{\Gamma \vdash \mathit{args}_i \Rightarrow U_i \quad \mathsf{Numeric}\;U_i \quad T = \bigsqcup_i U_i \text{ (consistency join)} \quad \mathit{op} \in \{\mathsf{Neg}, \mathsf{Add}, \mathsf{Sub}, \mathsf{Mul}, \mathsf{Div}, \mathsf{Mod}, \mathsf{DivT}, \mathsf{ModT}\}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;\mathit{args} \Rightarrow T} \quad \text{([⇒] Op-Arith)}`
 
 The arithmetic synth rule mirrors $`[⇒]\,\text{Op-Eq}` but generalised
 to $`n` operands. Each operand is synthesized and required to be
 $`\mathsf{Numeric}` (i.e. $`\mathsf{TInt}`, $`\mathsf{TReal}`,
 $`\mathsf{TFloat64}`, $`\mathsf{TBv}_w` (a bitvector of any width), or
 the gradual $`\mathsf{Unknown}`). The
-result type is the *consistency LUB* $`\bigsqcup_i U_i` — a fold of
+result type is the *consistency join* $`\bigsqcup_i U_i` — a fold of
 the operand types under
 {name Strata.Laurel.isConsistent}`isConsistent`'s flat lattice:
 $`\mathsf{Unknown} \sqcup T = T`, $`T \sqcup T = T`, and any other
@@ -839,6 +844,15 @@ $$`\frac{T_h <: T}{\Gamma \vdash \mathsf{Hole}\;d\;(\mathsf{some}\;T_h) \Leftarr
 $$`\frac{}{\Gamma \vdash \mathsf{Hole}\;d\;\mathsf{none} \Leftarrow T \quad \mapsto \quad \mathsf{Hole}\;d\;(\mathsf{some}\;T)} \quad \text{([⇐] Hole-None)}`
 
 {docstring Strata.Laurel.Resolution.Check.holeNone}
+
+In synth position no expected type is available to push into the hole, so
+an unannotated hole synthesizes the gradual $`\mathsf{Unknown}` while an
+annotated hole synthesizes its annotation $`T_h` (this is what lets
+`<?> + 1` synthesize $`\mathsf{TInt}`).
+
+$$`\frac{}{\Gamma \vdash \mathsf{Hole}\;d\;\mathsf{none} \Rightarrow \mathsf{Unknown}} \quad \text{([⇒] Hole-Synth-None)}`
+
+$$`\frac{}{\Gamma \vdash \mathsf{Hole}\;d\;(\mathsf{some}\;T_h) \Rightarrow T_h} \quad \text{([⇒] Hole-Synth-Some)}`
 
 ### Procedure
 %%%
