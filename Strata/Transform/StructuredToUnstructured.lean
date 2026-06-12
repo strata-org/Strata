@@ -46,11 +46,7 @@ def flushCmds
       pure (k, [])
     else
       let l ← StringGenState.gen pfx
-<<<<<<< HEAD
       let b := (l, { cmds := accum.reverse, transfer := .goto k synthesizedMd })
-=======
-      let b := (l, { cmds := accum.reverse, transfer := .goto k })
->>>>>>> origin/main2
       pure (l, [b])
   | some tr =>
     let l ← StringGenState.gen pfx
@@ -91,15 +87,9 @@ match ss with
     -- Empty accumulated block
     pure (accumEntry, accumBlocks ++ bbs ++ bsNext)
   else
-<<<<<<< HEAD
     let b := (l, { cmds := [], transfer := .goto bl md })
     pure (accumEntry, accumBlocks ++ [b] ++ bbs ++ bsNext)
 | .ite c tss fss md :: rest => do
-=======
-    let b := (l, { cmds := [], transfer := .goto bl })
-    pure (accumEntry, accumBlocks ++ [b] ++ bbs ++ bsNext)
-| .ite c tss fss _md :: rest => do
->>>>>>> origin/main2
   -- Process rest first
   let (kNext, bsNext) ← stmtsToBlocks k rest exitConts []
   -- Create ite block

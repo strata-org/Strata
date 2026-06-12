@@ -89,23 +89,14 @@ private def renameAllLocalNames (c:Procedure)
   -- Extract local names from the body. Although ProcedureInlining only supports
   -- structured bodies for inlining, extracting defined variables is a generic
   -- facility that supports both structured and CFG bodies.
-<<<<<<< HEAD
-  let lhs_vars : List Expression.Ident := Imperative.HasVarsImp.definedVars c.body
-  let bodyStmts := match c.body with | .structured ss => ss | .cfg _ => []
-=======
   let bodyStmts : List Statement := match c.body with | .structured ss => ss | .cfg _ => []
   let lhs_vars := List.flatMap (fun (s:Statement) => s.definedVars false) bodyStmts
->>>>>>> origin/main2
   let lhs_vars := lhs_vars ++ c.header.inputs.unzip.fst ++
                   c.header.outputs.unzip.fst
   let var_map <- genOldToFreshIdMappings lhs_vars var_map proc_name
 
   -- Make a map for renaming label names
-<<<<<<< HEAD
-  let labels := List.flatMap (fun s => Statement.labels s) bodyStmts
-=======
   let labels := List.flatMap (fun s => Statement.labelsOfBlocksAndAssertAssumes s) bodyStmts
->>>>>>> origin/main2
   -- Reuse genOldToFreshIdMappings by introducing dummy data to Identifier
   let label_ids:List Expression.Ident := labels.map
       (fun s => { name:=s, metadata := () })
@@ -123,11 +114,7 @@ private def renameAllLocalNames (c:Procedure)
         var_map.foldl (fun (s:Statement) (old_id,new_id) =>
             let s := Statement.substFvar s old_id (.fvar () new_id .none)
             let s := Statement.renameLhs s old_id new_id
-<<<<<<< HEAD
-            Statement.replaceLabels s label_map)
-=======
             Statement.replaceLabelsOfBlocksAndAssertAssumes s label_map)
->>>>>>> origin/main2
           s0) bodyStmts)
     | .cfg _ =>
       throw (Strata.DiagnosticModel.fromMessage

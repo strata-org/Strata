@@ -445,7 +445,6 @@ where
           acc := acc.push d
         else
           let F ← getFactory
-<<<<<<< HEAD
           let (bodyChanged, body') ← match proc.body with
             | .structured ss => do
               let (c, ss') ← transformStmts ss
@@ -453,15 +452,8 @@ where
             | .cfg cfg =>
               let (c, cfg') := transformDetCFG F cfg
               pure (c, Procedure.Body.cfg cfg')
-=======
-          let (bodyChanged, proc') ← match proc.body with
-            | .structured ss =>
-              let (c, body') ← transformStmts ss
-              pure (c, { proc with body := .structured body' })
-            -- CFG bodies pass through untouched.
-            | .cfg _ => pure (false, proc)
->>>>>>> origin/main2
           setFactory F
+          let proc' := { proc with body := body' }
           let procDecl := Decl.proc proc' md
           match mkContractWFProc F proc md with
           | some wfDecl => do

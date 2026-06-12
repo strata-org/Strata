@@ -127,21 +127,9 @@ variable (φ : CoreEval → PureFunc Expression → CoreEval)
   | .structured ss =>
     Imperative.Specification.AssertValidWhen (Specification.Lang.core π φ)
       (ProcEnvWF proc) (Stmt.block "" ss #[]) a
-<<<<<<< HEAD
   | .cfg cfg =>
     Imperative.Specification.AssertValidWhen (Specification.Lang.coreCFG π φ cfg)
       (ProcEnvWF proc) cfg a
-=======
-  -- CFG bodies don't yet have a small-step semantics, so there is nothing to
-  -- certify.  We pick `False` rather than `True` to be conservative: a CFG
-  -- procedure cannot be claimed asserts-valid (and hence cannot be proven
-  -- `ProcedureCorrect`) until CFG bodies gain an executable semantics.  This
-  -- is sound against the current proofs because the only producer of
-  -- `ProcedureCorrect` (`procBodyVerify_procedureCorrect`) is gated on
-  -- `procToVerifyStmt` succeeding, which forces `proc.body = .structured _`
-  -- (see `procToVerifyStmt_is_structured`), so this arm is never entered.
-  | .cfg _ => False
->>>>>>> origin/main2
 
 /-- A procedure is correct with respect to its specification.
 
