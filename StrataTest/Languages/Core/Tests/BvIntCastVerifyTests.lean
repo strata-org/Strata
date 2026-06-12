@@ -67,7 +67,7 @@ spec {
 
 #end
 
-private def mkProc (name : String) (postcond : Expression.Expr) : Decl :=
+private def mkProc (name : String) (postcond : Core.Expression.Expr) : Core.Decl :=
   .proc {
     header := {
       name     := ⟨name, ()⟩
