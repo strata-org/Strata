@@ -6,7 +6,7 @@
 
 /- NOTE: This grammar is the source of truth for Core.st syntax. If you change
    keywords, operators, types, or built-in functions here, regenerate the
-   editor syntax files by running:
+   editor syntax files (VSCode, Emacs, Vim/Neovim, tree-sitter) by running:
      lake env lean --run editors/GenSyntax.lean all
 -/
 module
