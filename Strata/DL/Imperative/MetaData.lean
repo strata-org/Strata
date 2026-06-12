@@ -307,7 +307,7 @@ def MetaData.pushInvariantProvenance {P : PureExpr} (md : MetaData P) (p : Prove
 
 /-- Get all per-invariant provenances from metadata, in the order they were
     pushed (matching the loop's invariant order). -/
-def getInvariantProvenances {P : PureExpr} (md : MetaData P) : Array Provenance :=
+def MetaData.getInvariantProvenances {P : PureExpr} (md : MetaData P) : Array Provenance :=
   md.filterMap fun elem =>
     match elem.fld, elem.value with
     | .label l, .provenance p =>

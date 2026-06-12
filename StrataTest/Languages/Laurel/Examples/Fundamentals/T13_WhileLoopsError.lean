@@ -52,4 +52,22 @@ procedure secondInvariantFails()
 #guard_msgs (drop info, error) in
 #eval testInputWithOffset "SecondInvariantFails" secondInvariantFailsProgram 60 processLaurelFile
 
+def forSecondInvFailsProgram := r"
+procedure forSecondInvFails()
+  opaque
+{
+    var j: int := -1;
+    for(var i: int := 0; i < 10; i := i + 1)
+      invariant i >= 0
+      invariant j >= 0
+//              ^^^^^^ error: assertion does not hold
+    {
+        j := j + 1
+    }
+};
+"
+
+#guard_msgs (drop info, error) in
+#eval testInputWithOffset "ForSecondInvFails" forSecondInvFailsProgram 60 processLaurelFile
+
 end Laurel

@@ -145,11 +145,19 @@ def Stmt.removeLoopsM
     -- invariant's generated assert/assume is attributed to that invariant's own
     -- source location instead of the whole loop; otherwise we fall back to the
     -- loop metadata `md` (e.g. for loops not originating from Laurel).
-    let invProvs := getInvariantProvenances md
+    -- Contract: `invProvs` holds one provenance per invariant, in invariant
+    -- order, pushed by the Laurel→Core translation (`pushInvariantProvenance`).
+    -- When the sizes disagree (e.g. a loop not originating from Laurel, or a
+    -- future desync between push and retrieval) we fall back to the loop `md`
+    -- via the index lookup below, so a mismatch degrades gracefully rather than
+    -- mis-attributing ranges.
+    let invProvs := MetaData.getInvariantProvenances md
     let invMd : Nat → MetaData P := fun i =>
+      -- Only real source locations (`.loc`) refine the diagnostic; a synthesized
+      -- provenance carries no usable range, so fall back to the loop `md`
       match invProvs[i]? with
-      | some p => MetaData.ofProvenance p
-      | none => md
+      | some (p@(.loc ..)) => MetaData.ofProvenance p
+      | _ => md
     let entry_invariants := invariants.mapIdx fun i (lbl, inv) =>
       Stmt.cmd (HasPassiveCmds.assert s!"entry_invariant_{loop_num}_{invSuffix i lbl}" inv (invMd i))
     let entry_invariant_assumes := invariants.mapIdx fun i (lbl, inv) =>
