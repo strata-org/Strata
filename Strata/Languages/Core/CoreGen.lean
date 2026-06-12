@@ -27,6 +27,7 @@ structure CoreGenState where
   cs : StringGenState
   generated : List CoreIdent := []
 
+@[expose]
 def CoreGenState.WF (σ : CoreGenState)
   := StringGenState.WF σ.cs ∧
     List.map (fun s => (⟨s, ()⟩ : CoreIdent)) σ.cs.generated.unzip.snd = σ.generated ∧
@@ -42,6 +43,7 @@ def CoreGenState.emp : CoreGenState := { cs := .emp, generated := [] }
     NOTE: we need to wrap the prefix into a CoreIdent in order to conform with the interface of UniqueLabelGen.gen
     TODO: Maybe use genIdent or genIdents?
     -/
+@[expose]
 def CoreGenState.gen (pf : CoreIdent) (σ : CoreGenState)
   : CoreIdent × CoreGenState :=
   let (s, cs') := StringGenState.gen pf.name σ.cs

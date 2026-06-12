@@ -18,9 +18,12 @@ namespace Transform
 
 open LabelGen
 
+@[expose]
 def oldVarPrefix (id : String) : String := s!"old_{id}"
+@[expose]
 def tmpVarPrefix (id : String) : String := s!"tmp_{id}"
 
+@[expose]
 def createHavoc (ident : Expression.Ident)
     (md : Imperative.MetaData Expression)
   : Statement := Statement.havoc ident md
@@ -29,6 +32,7 @@ def createHavoc (ident : Expression.Ident)
 def createHavocs (ident : List Expression.Ident) (md : (Imperative.MetaData Expression))
   : List Statement := ident.map (createHavoc · md)
 
+@[expose]
 def createFvar (ident : Expression.Ident)
   : Expression.Expr
   := Lambda.LExpr.fvar ((): ExpressionMetadata) ident none
@@ -38,6 +42,7 @@ def createFvars (ident : List Expression.Ident)
   : List Expression.Expr
   := ident.map createFvar
 
+@[expose]
 def genIdent (ident : Expression.Ident) (pf : String → String)
   : CoreGenM Expression.Ident :=
     CoreGenState.gen (pf ident.name)
@@ -45,10 +50,12 @@ def genIdent (ident : Expression.Ident) (pf : String → String)
 /--
 Generate identifiers in the form of arg_... that can be used to reduce argument expressions to temporary variables.
 -/
+@[expose]
 def genArgExprIdent
   : CoreGenM Expression.Ident :=
     genIdent "arg" tmpVarPrefix
 
+@[expose]
 def genArgExprIdents (n:Nat)
   : CoreGenM (List Expression.Ident) :=
   List.mapM (fun _ => genArgExprIdent) (List.replicate n ())
@@ -57,10 +64,12 @@ def genArgExprIdents (n:Nat)
 Retrieves a fresh identifier from the counter generator the given identifier "ident" within old(...), or retrieve an existing one from the exprMap
 Assumes that ident contains no duplicates
 -/
+@[expose]
 def genOutExprIdent (ident : Expression.Ident)
   : CoreGenM Expression.Ident :=
     genIdent ident tmpVarPrefix
 
+@[expose]
 def genOutExprIdents (idents : List Expression.Ident)
   : CoreGenM (List Expression.Ident)
   := List.mapM genOutExprIdent idents
@@ -69,10 +78,12 @@ def genOutExprIdents (idents : List Expression.Ident)
 Retrieves a fresh identifier from the counter generator the given identifier "ident" within old(...), or retrieve an existing one from the exprMap
 Assumes that ident contains no duplicates
 -/
+@[expose]
 def genOldExprIdent (ident : Expression.Ident)
   : CoreGenM Expression.Ident :=
     genIdent ident oldVarPrefix
 
+@[expose]
 def genOldExprIdents (idents : List Expression.Ident)
   : CoreGenM (List Expression.Ident)
   := List.mapM genOldExprIdent idents
@@ -131,6 +142,7 @@ abbrev Err := Strata.DiagnosticModel
 abbrev CoreTransformM := ExceptT Err (StateM CoreTransformState)
 
 /-- A lifter from CoreGenM to (StateM CoreTransformState) -/
+@[expose]
 def liftCoreGenM {α : Type} (cgm : CoreGenM α) : StateM CoreTransformState α :=
   fun coreTransformState =>
     let res := cgm coreTransformState.genState
@@ -162,6 +174,7 @@ def setFactory (F : @Lambda.Factory CoreLParams) : CoreTransformM Unit :=
   modify fun σ => { σ with factory := some F }
 
 /-- Increment a statistics counter by `n` (default 1), initializing if absent. -/
+@[expose]
 def incrementStat (key : String) (n : Nat := 1) : CoreTransformM Unit :=
   modify fun σ => { σ with statistics := σ.statistics.increment key n }
 
@@ -172,6 +185,7 @@ returned list has the shape
 ((generated_name, ty), original_expr)
 Only types of the 'inputs' parameter are used
 -/
+@[expose]
 def genArgExprIdentsTrip
   (inputs : @Lambda.LTySignature Visibility)
   (args : List Expression.Expr)
@@ -186,6 +200,7 @@ returned list has the shape
 `((generated_name, ty), original_name)`
 Only types of the 'outputs' parameter are used.
 -/
+@[expose]
 def genOutExprIdentsTrip
   (outputs : @Lambda.LTySignature Visibility)
   (lhs : List Expression.Ident)
@@ -197,12 +212,14 @@ def genOutExprIdentsTrip
 /--
 Generate an init statement with rhs as expression
 -/
+@[expose]
 def createInit (trip : (Expression.Ident × Expression.Ty) × Expression.Expr)
     (md:Imperative.MetaData Expression)
   : Statement :=
   match trip with
   | ((v', ty), e) => Statement.init v' ty (.det e) md
 
+@[expose]
 def createInits (trips : List ((Expression.Ident × Expression.Ty) × Expression.Expr))
     (md: (Imperative.MetaData Expression))
   : List Statement :=
@@ -211,18 +228,21 @@ def createInits (trips : List ((Expression.Ident × Expression.Ty) × Expression
 /--
 Generate an init statement with rhs as a free variable reference
 -/
+@[expose]
 def createInitVar (trip : (Expression.Ident × Expression.Ty) × Expression.Ident)
     (md:Imperative.MetaData Expression)
   : Statement :=
   match trip with
   | ((v', ty), v) => Statement.init v' ty (.det (Lambda.LExpr.fvar () v none)) md
 
+@[expose]
 def createInitVars (trips : List ((Expression.Ident × Expression.Ty) × Expression.Ident))
     (md : (Imperative.MetaData Expression))
   : List Statement :=
   trips.map (createInitVar · md)
 
 /-- turns a list of preconditions into asserts with substitution -/
+@[expose]
 def createAsserts
     (conds : ListMap CoreLabel Procedure.Check)
     (subst : Map Expression.Ident Expression.Expr)
@@ -238,6 +258,7 @@ def createAsserts
           return Statement.assert newLabel.toPretty (Lambda.LExpr.substFvars check.expr subst) assertMd)
 
 /-- turns a list of preconditions into assumes with substitution -/
+@[expose]
 def createAssumes
     (conds : ListMap CoreLabel Procedure.Check)
     (subst : Map Expression.Ident Expression.Expr)
@@ -256,6 +277,7 @@ def createAssumes
 /--
 Generate the substitution pairs needed for the body of the procedure
 -/
+@[expose]
 def createOldVarsSubst
   (trips : List ((Expression.Ident × Expression.Ty) × Expression.Ident))
   : Map Expression.Ident Expression.Expr :=

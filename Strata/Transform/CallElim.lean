@@ -28,10 +28,30 @@ def callElimAssertPrefix : String := "callElimAssert_"
 /-- Label prefix for call-elimination assume statements. -/
 def callElimAssumePrefix : String := "callElimAssume_"
 
+/-- The lookup body used inside `callElimCmd` to convert each `oldVar`
+    identifier to its (forall-closed) type via
+    `proc.header.inputs.find?`.
+
+    Factoring this lookup out as a named definition is what makes the
+    correctness proof in `CallElimCorrect.callElimCmd_call_eq` go through:
+    when the inner `match` is inlined into two distinct `do`-blocks,
+    Lean compiles each occurrence to a *different* private auxiliary
+    (e.g., `match_1` vs `match_3`), and the resulting terms are no
+    longer syntactically rewriteable.  Sharing the same definition here
+    keeps both occurrences alpha-equivalent. -/
+@[expose]
+def oldTyLookupCallElim (proc : Procedure) (id : Expression.Ident)
+    : CoreTransformM Lambda.LTy := do
+  match proc.header.inputs.find? id with
+  | some ty => pure (Lambda.LTy.forAll [] ty)
+  | none => throw (Strata.DiagnosticModel.fromFormat
+      f!"failed to find type for {Std.format id}")
+
 /--
 The main call elimination transformation algorithm on a single command.
 The returned result is a sequence of statements
 -/
+@[expose]
 def callElimCmd (cmd: Command)
   : CoreTransformM (Option (List Statement)) := do
     match cmd with
@@ -67,10 +87,7 @@ def callElimCmd (cmd: Command)
         -- Generate fresh variables for "old g" (one per modified variable in lhs).
         -- For input/output parameters, look up types from the callee's inputs.
         let genOldIdents ← genOldExprIdents oldVars
-        let oldTys ← oldVars.mapM fun id => do
-          match proc.header.inputs.find? id with
-          | some ty => pure (Lambda.LTy.forAll [] ty)
-          | none => throw (Strata.DiagnosticModel.fromFormat f!"failed to find type for {Std.format id}")
+        let oldTys ← oldVars.mapM (oldTyLookupCallElim proc)
         let oldTripsRaw := (genOldIdents.zip oldTys).zip oldVars
         let oldGVars := oldVars.map (fun g => CoreIdent.mkOld g.name)
         let oldTrips := oldTripsRaw.zip oldGVars |>.map fun (((fresh, ty), _orig), oldG) =>
@@ -151,7 +168,11 @@ def callElimPipelinePhase : PipelinePhase where
   phase.name := "CallElim"
   phase.getValidation obligation :=
     if obligationHasLabelPrefix obligation CallElim.callElimAssumePrefix then
-      .modelToValidate (fun _ => /- TODO -/ false)
+      -- Call elimination replaces a callee body with its contract, which is
+      -- an over-approximation; the validation hook is intentionally
+      -- conservative (returns `false`) until a per-obligation proof witness
+      -- is available.
+      .modelToValidate (fun _ => false)
     else .modelPreserving
   phase.getAssertDescription label :=
     if label.startsWith CallElim.callElimAssertPrefix then

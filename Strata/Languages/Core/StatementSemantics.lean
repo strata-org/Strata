@@ -206,6 +206,7 @@ inductive TouchVars : SemanticStore P → List P.Ident → SemanticStore P → P
 inductive Inits : SemanticStore P → SemanticStore P → Prop where
   | init : InitVars σ xs σ' → Inits σ σ'
 
+@[expose]
 def updatedState
   (σ : SemanticStore P)
   (ident : P.Ident)
@@ -215,6 +216,7 @@ def updatedState
     then some val
     else (σ k)
 
+@[expose]
 def updatedStates'
   (σ : SemanticStore P)
   (idvals : List (P.Ident × P.Expr))
@@ -223,6 +225,7 @@ def updatedStates'
   | [] => σ
   | (ident, val) :: rest  => updatedStates' (updatedState σ ident val) rest
 
+@[expose]
 def updatedStates
   (σ : SemanticStore P)
   (idents : List P.Ident)
@@ -236,6 +239,7 @@ def updatedStates
 -- https://dafny.org/latest/DafnyRef/DafnyRef#sec-two-state
 -- where this condition will be asserted at procedures utilizing those two-state functions
 -/
+@[expose]
 def WellFormedCoreEvalTwoState (δ : CoreEval) (σ₀ σ : CoreStore) : Prop :=
       (∃ vs vs' σ₁, HavocVars σ₀ vs σ₁ ∧ InitVars σ₁ vs' σ) ∧
       (∀ vs vs' σ₀ σ₁ σ,
@@ -470,8 +474,16 @@ inductive EvalCommandContract : (String → Option Procedure)  → CoreEval →
 
   /-- Contract-based semantics: like `EvalCommand.call_sem` but replaces
       body execution with havoc + postcondition check.
+      The Bool failure flag `failed` is connected to the precondition status
+      via an iff: the call fails iff some *checked* precondition fails to
+      evaluate to `tt` at the post-init/pre-havoc store `σAO`.  Free
+      preconditions (`free requires`) are assumed by the implementation but
+      not checked at call sites (Procedure.lean §92), so they are excluded
+      from the iff — the iff and definedness premises both range over
+      non-Free preconditions only.  The result store `σ'` is unconditionally
+      the writeback result via `UpdateStates`, regardless of `failed`.
       Same positional matching as `EvalCommand.call_sem`. -/
-  | call_sem {π δ σ σ₀ inArgs oVals vals σA σAO σO n p modvals callArgs σ' md} :
+  | call_sem {π δ σ σ₀ inArgs oVals vals σA σAO σO n p modvals callArgs σ' md failed} :
     π n = .some p →
     CallArg.getInputExprs callArgs = inArgs →
     CallArg.getLhs callArgs = lhs →
@@ -486,18 +498,21 @@ inductive EvalCommandContract : (String → Option Procedure)  → CoreEval →
     InitStates σ (ListMap.keys (p.header.inputs)) vals σA →
     -- positional: oVals[i] initializes p.header.outputs[i]
     InitStates σA (ListMap.keys (p.header.outputs)) oVals σAO →
-    (∀ pre, (Procedure.Spec.getCheckExprs p.spec.preconditions).contains pre →
-      isDefinedOver (HasFvars.getFvars) σAO pre ∧
-      δ σAO pre = .some HasBool.tt) →
+    -- non-Free preconditions are always defined; their truth controls `failed`
+    (∀ pre, (Procedure.Spec.getCheckExprs p.spec.checkedPreconditions).contains pre →
+      isDefinedOver (HasFvars.getFvars) σAO pre) →
+    (failed = false ↔
+      (∀ pre, (Procedure.Spec.getCheckExprs p.spec.checkedPreconditions).contains pre →
+        δ σAO pre = .some HasBool.tt)) →
     HavocVars σAO (ListMap.keys p.header.outputs) σO →
     (∀ post, (Procedure.Spec.getCheckExprs p.spec.postconditions).contains post →
       isDefinedOver (HasFvars.getFvars) σAO post ∧
       δ σO post = .some HasBool.tt) →
     ReadValues σO (ListMap.keys (p.header.outputs)) modvals →
-    -- positional: modvals[i] written back to lhs[i]
+    -- positional write-back (unconditional)
     UpdateStates σ lhs modvals σ' →
     ----
-    EvalCommandContract π δ σ (.call n callArgs md) σ' false
+    EvalCommandContract π δ σ (.call n callArgs md) σ' failed
 
 @[expose] abbrev EvalStatementContract (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) :
     Imperative.Env Expression → Statement → Imperative.Env Expression → Prop :=

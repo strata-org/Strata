@@ -91,7 +91,7 @@ theorem List.Forall_append : Forall P (a ++ b) ↔ Forall P a ∧ Forall P b := 
 * `replace [1, 4, 2, 3, 3, 7] 5 6 = [1, 4, 2, 3, 3, 7]`
 Adapted from List.replace
 -/
-def List.replaceAll [BEq α] : List α → α → α → List α
+@[expose] def List.replaceAll [BEq α] : List α → α → α → List α
   | [],    _, _ => []
   | a::as, b, c => match b == a with
     | true  => c :: replaceAll as b c
@@ -260,7 +260,7 @@ theorem List.Subset.subset_app_of_or_4 {l: List α}: l ⊆ l1 ∨ l ⊆ l2 ∨ l
 theorem List.Subset.assoc {l: List α}: l ⊆ l1 ++ l2 ++ l3 ↔ l ⊆ l1 ++ (l2 ++ l3) := by
   simp [Subset, List.Subset]
 
-theorem List.replaceAll_app {α : Type} [DecidableEq α] {h h' : α} {as bs : List α}:
+public theorem List.replaceAll_app {α : Type} [DecidableEq α] {h h' : α} {as bs : List α}:
   List.replaceAll as h h' ++ List.replaceAll bs h h' = List.replaceAll (as ++ bs) h h' := by
   induction as generalizing bs
   case nil => simp [List.replaceAll]
@@ -278,7 +278,7 @@ theorem cons_removeAll [BEq α] {x : α} {xs ys : List α} :
         xs.removeAll ys := by
   simp [List.removeAll, List.filter_cons]
 
-theorem List.app_removeAll {α : Type} [BEq α] {xs₁ xs₂ ys : List α}:
+public theorem List.app_removeAll {α : Type} [BEq α] {xs₁ xs₂ ys : List α}:
   (xs₁ ++ xs₂).removeAll ys =
   (xs₁.removeAll ys) ++ (xs₂.removeAll ys) := by
   induction xs₁ <;> simp_all
@@ -325,13 +325,13 @@ theorem List.removeAll_comm {α : Type} [BEq α] {xs₁ xs₂ ys : List α}:
 
 /-- From Mathlib4 https://github.com/leanprover-community/mathlib4/blob/e70dc4ede17dd5fcda9926c84268e0f270147cba/Mathlib/Data/List/Zip.lean#L32-L37 -/
 @[simp]
-theorem zip_swap : ∀ (l₁ : List α) (l₂ : List β), (List.zip l₁ l₂).map Prod.swap = List.zip l₂ l₁
+public theorem zip_swap : ∀ (l₁ : List α) (l₂ : List β), (List.zip l₁ l₂).map Prod.swap = List.zip l₂ l₁
   | [], _ => List.zip_nil_right.symm
   | l₁, [] => by rw [List.zip_nil_right]; rfl
   | a :: l₁, b :: l₂ => by
     simp only [List.zip_cons_cons, List.map_cons, zip_swap l₁ l₂, Prod.swap_prod_mk]
 
-theorem replaceAll_mem {α : Type u} [BEq α] [LawfulBEq α] {h h' k : α} {t: List α}:
+public theorem replaceAll_mem {α : Type u} [BEq α] [LawfulBEq α] {h h' k : α} {t: List α}:
   k ∈ (t.replaceAll h h') → k ∈ t ∨ k = h' := by
   intros Hr
   induction t generalizing k h h' <;> simp [List.replaceAll] at *
@@ -348,21 +348,21 @@ theorem replaceAll_mem {α : Type u} [BEq α] [LawfulBEq α] {h h' k : α} {t: L
       specialize ih hin
       cases ih <;> simp_all
 
-theorem zip_self_eq :
+public theorem zip_self_eq :
 (k1, k2) ∈ List.zip ks ks → k1 = k2 := by
   intros Hin
   induction ks <;> simp_all
   case cons h t ih =>
   cases Hin <;> simp_all
 
-theorem zip_self_eq' :
+public theorem zip_self_eq' :
 k ∈ ks → (k, k) ∈ List.zip ks ks := by
   intros Hin
   induction ks <;> simp_all
   case cons h t ih =>
   cases Hin <;> simp_all
 
-theorem in_replaceAll_removeAll {α : Type u} [BEq α] [LawfulBEq α] {h h' k2 : α} {vs t: List α}:
+public theorem in_replaceAll_removeAll {α : Type u} [BEq α] [LawfulBEq α] {h h' k2 : α} {vs t: List α}:
   k2 ∈ (vs.replaceAll h h').removeAll t → k2 = h' ∨ k2 ∈ vs.removeAll t := by
   intros H
   induction vs generalizing k2 <;> simp [List.removeAll, List.replaceAll] at *
@@ -380,7 +380,7 @@ theorem in_replaceAll_removeAll {α : Type u} [BEq α] [LawfulBEq α] {h h' k2 :
       have Hor := replaceAll_mem Hin
       cases Hor <;> simp_all
 
-theorem removeAll_cons {α : Type u} [BEq α] [LawfulBEq α] {k h : α} {vs t : List α} :
+public theorem removeAll_cons {α : Type u} [BEq α] [LawfulBEq α] {k h : α} {vs t : List α} :
   k ≠ h →
   k ∈ List.removeAll vs t →
   k ∈ List.removeAll vs (h :: t) := by
@@ -389,11 +389,11 @@ theorem removeAll_cons {α : Type u} [BEq α] [LawfulBEq α] {k h : α} {vs t : 
   case cons h' t' ih =>
     simp_all
 
-theorem removeAll_sublist {α : Type u} [BEq α] [LawfulBEq α] (as bs : List α):
+public theorem removeAll_sublist {α : Type u} [BEq α] [LawfulBEq α] (as bs : List α):
   (List.removeAll as bs).Sublist as := by
   induction as <;> simp [List.removeAll]
 
-theorem replaceAll_not_mem {α : Type u} [BEq α] [LawfulBEq α] {h h' : α} {vs : List α}:
+public theorem replaceAll_not_mem {α : Type u} [BEq α] [LawfulBEq α] {h h' : α} {vs : List α}:
   h ≠ h' →
   ¬ h ∈ (vs.replaceAll h h') := by
   intros Hne Hin
@@ -507,3 +507,131 @@ theorem List.Forall_flatMap :
     intros Hfa
     have Hfa := List.Forall_append.mp Hfa
     exact ⟨Hfa.1, ih Hfa.2⟩
+
+/-- Decompose a non-membership fact over a balanced 4-way append
+    `a ∉ (l₁ ++ l₂) ++ (l₃ ++ l₄)` into four leaf-level non-membership
+    facts.  Used at the L4 (preVars) and L6 (postVars) `Hinv` sites in
+    `callElimStatementCorrect` to flatten the per-`removeAll` decomposition
+    cascades. -/
+public theorem List.notin_append4
+    {α} {a : α} {l₁ l₂ l₃ l₄ : List α}
+    (Hnin : a ∉ (l₁ ++ l₂) ++ (l₃ ++ l₄)) :
+    a ∉ l₁ ∧ a ∉ l₂ ∧ a ∉ l₃ ∧ a ∉ l₄ :=
+  ⟨fun h => Hnin (List.mem_append.mpr (Or.inl (List.mem_append.mpr (Or.inl h)))),
+   fun h => Hnin (List.mem_append.mpr (Or.inl (List.mem_append.mpr (Or.inr h)))),
+   fun h => Hnin (List.mem_append.mpr (Or.inr (List.mem_append.mpr (Or.inl h)))),
+   fun h => Hnin (List.mem_append.mpr (Or.inr (List.mem_append.mpr (Or.inr h))))⟩
+
+/-- The length of `trips.unzip.snd` matches `trips.length`.  Convenient
+    one-liner used to bridge `genXxxExprIdentsTrip_snd` shape facts to a
+    `triplen` length equation, instead of inlining the `simp
+    [List.unzip_eq_map]` rewrite at every length proof. -/
+public theorem List.unzip_snd_length {α β : Type _} (trips : List (α × β)) :
+    trips.unzip.snd.length = trips.length := by
+  simp [List.unzip_eq_map]
+
+/-- Pairwise disjointness between three concatenated lists, extracted
+    from `(a ++ b ++ c).Nodup`.  Convenience re-packaging used downstream
+    to peel `cs'.generated`'s Nodup into per-segment disjointness. -/
+public theorem List.disjoint_of_nodup_append_three
+    {α} {a b c : List α}
+    (Hnd : (a ++ b ++ c).Nodup) :
+    a.Disjoint b ∧ a.Disjoint c ∧ b.Disjoint c := by
+  rw [List.append_assoc] at Hnd
+  have Hnd' := List.nodup_append.mp Hnd
+  have Hbc := List.nodup_append.mp Hnd'.2.1
+  refine ⟨?_, ?_, ?_⟩
+  · intro x hxa hxb
+    exact Hnd'.2.2 x hxa x (List.mem_append_left c hxb) rfl
+  · intro x hxa hxc
+    exact Hnd'.2.2 x hxa x (List.mem_append_right b hxc) rfl
+  · intro x hxb hxc
+    exact Hbc.2.2 x hxb x hxc rfl
+
+/-- If `(h, x) ∉ List.zip t t'` for every `x : β` and `t.length = t'.length`,
+    then `h ∉ t`.  Pure list lemma with no Imperative or Core dependencies. -/
+public theorem List.zip_notin_fst_pair {α β : Type _}
+    {h : α} {t : List α} {t' : List β} :
+    t.length = t'.length →
+    (∀ x, ¬(h, x) ∈ List.zip t t') →
+    ¬ h ∈ t := by
+  intros Hlen H
+  induction t generalizing t' h <;> simp_all
+  case cons h t ih =>
+    cases t' with
+    | nil => simp at Hlen
+    | cons h' t' =>
+      simp_all
+      have HH := H h'
+      simp_all
+      exact ih rfl H
+
+/-- Symmetric to `zip_notin_fst_pair`: if `(x, h) ∉ List.zip t t'` for every
+    `x : α` and `t.length = t'.length`, then `h ∉ t'`. -/
+public theorem List.zip_notin_snd_pair {α β : Type _}
+    {h : β} {t : List α} {t' : List β} :
+    t.length = t'.length →
+    (∀ x, ¬(x, h) ∈ List.zip t t') →
+    ¬ h ∈ t' := by
+  intros Hlen H
+  induction t' generalizing t h <;> simp_all
+  case cons h t ih =>
+    cases t with
+    | nil => simp at Hlen
+    | cons h' t' =>
+      simp_all
+      have HH := H h'
+      simp_all
+      exact ih Hlen H
+
+/-- Decompose `(ks.zip ks').get n = (k1, k2)` into per-component equalities,
+    given explicit bounds for each list. -/
+public theorem List.zip_pair_split {α β} {ks : List α} {ks' : List β}
+    {n : Fin (ks.zip ks').length} {k1 : α} {k2 : β}
+    (hn : n.val < ks.length) (hn' : n.val < ks'.length)
+    (heq : (ks.zip ks').get n = (k1, k2)) :
+    k1 = ks[n.val]'hn ∧ k2 = ks'[n.val]'hn' := by
+  rw [show (ks.zip ks').get n = (ks.zip ks')[n.val]'n.isLt from rfl,
+      List.getElem_zip] at heq
+  exact ⟨((Prod.mk.injEq _ _ _ _).mp heq.symm).1,
+         ((Prod.mk.injEq _ _ _ _).mp heq.symm).2⟩
+
+/-- Decompose `(a ++ b ++ c).Nodup` into its three component-Nodups and three
+    pairwise disjointnesses (in the local `List.Disjoint` form: `a → b → False`).
+    Repackages `List.nodup_append` and `List.disjoint_of_nodup_append_three`. -/
+public theorem List.nodup_3_decompose {α} {a b c : List α}
+    (Hnd : (a ++ b ++ c).Nodup) :
+    a.Nodup ∧ b.Nodup ∧ c.Nodup ∧
+      a.Disjoint b ∧ a.Disjoint c ∧ b.Disjoint c :=
+  let Hsplit := List.nodup_append.mp Hnd
+  let Hab := List.nodup_append.mp Hsplit.1
+  let ⟨Hd_ab, Hd_ac, Hd_bc⟩ := List.disjoint_of_nodup_append_three Hnd
+  ⟨Hab.1, Hab.2.1, Hsplit.2.1, Hd_ab, Hd_ac, Hd_bc⟩
+
+/-- Build `x ∉ a ++ b ++ c` from per-list non-membership. -/
+public theorem List.notin_3_append_of {α} [DecidableEq α] {a b c : List α} {x : α}
+    (h₁ : x ∉ a) (h₂ : x ∉ b) (h₃ : x ∉ c) : x ∉ a ++ b ++ c := by
+  simp only [List.mem_append, not_or]; exact ⟨⟨h₁, h₂⟩, h₃⟩
+
+/-- Project the snd-component out of a doubly-zipped triple-list, given the
+    matching length facts.  Pure list-shape geometry helper used in
+    trip-shape computations. -/
+public theorem List.zip_zip_unzip_snd_of_lengths {α β γ}
+    {g : List α} {ys : List β} {xs : List γ}
+    (Hgx : g.length = xs.length) (Hyx : ys.length = xs.length) :
+    ((g.zip ys).zip xs).unzip.snd = xs := by
+  rw [List.unzip_zip_right]
+  rw [List.length_zip]
+  omega
+
+/-- Project the fst-fst-component out of a doubly-zipped triple-list, given
+    the matching length facts.  Pure list-shape geometry helper. -/
+public theorem List.zip_zip_unzip_fst_unzip_fst_of_lengths {α β γ}
+    {g : List α} {ys : List β} {xs : List γ}
+    (Hgx : g.length = xs.length) (Hyx : ys.length = xs.length) :
+    ((g.zip ys).zip xs).unzip.fst.unzip.fst = g := by
+  rw [List.unzip_zip_left (l₁ := (g.zip ys)) (l₂ := xs)]
+  · rw [List.unzip_zip_left (l₁ := g) (l₂ := ys)]
+    omega
+  · rw [List.length_zip]
+    omega

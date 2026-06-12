@@ -9,7 +9,10 @@ public import Strata.DL.Imperative.CmdSemantics
 import all Strata.DL.Imperative.CmdSemantics
 import all Strata.DL.Imperative.Cmd
 public import Strata.DL.Imperative.Stmt
+public import Strata.DL.Util.ListUtils
+public import Strata.DL.Util.Nodup
 import all Strata.DL.Util.ListUtils
+import all Strata.DL.Util.Nodup
 
 ---------------------------------------------------------------------
 
@@ -369,5 +372,35 @@ theorem eval_cmd_set_comm
   have Heval2:= semantic_eval_eq_of_eval_cmd_set_unrelated_var Hwf Hnin1 Hs1
   have Heval1:= semantic_eval_eq_of_eval_cmd_set_unrelated_var Hwf Hnin2 Hs3
   exact eval_cmd_set_comm' Hneq Heval1 Heval2 Hs1 Hs2 Hs3 Hs4
+
+/-! ## `substDefined` / `substNodup` tail lemmas
+
+  Pure-Imperative property lemmas about `substDefined` / `substNodup`
+  that do not depend on any specific `PureExpr` instantiation (e.g.,
+  Core).  Live here rather than in `Strata.Transform.SubstProps`
+  because they are reusable across any transform that introduces fresh
+  variables and substitutes them. -/
+
+/-- The tail of a `substDefined` cons-list still satisfies `substDefined`. -/
+theorem subst_defined_tail
+    {P : PureExpr} {σ σ' : SemanticStore P}
+    {h : P.Ident × P.Ident}
+    {t : List (P.Ident × P.Ident)} :
+    Imperative.substDefined σ σ' (h :: t) →
+    Imperative.substDefined σ σ' t := by
+  intros Hsubst k1 k2 Hin
+  apply Hsubst
+  exact List.mem_cons_of_mem h Hin
+
+/-- The tail of a `substNodup` cons-list still satisfies `substNodup`. -/
+theorem subst_nodup_tail
+    {P : PureExpr}
+    {h : P.Ident × P.Ident}
+    {t : List (P.Ident × P.Ident)} :
+    Imperative.substNodup (h :: t) →
+    Imperative.substNodup t := by
+  intros Hsubst
+  simp [Imperative.substNodup] at *
+  exact (List.nodup_cons.mp (nodup_middle Hsubst.right)).right
 
 end -- public section
