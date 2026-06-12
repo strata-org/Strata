@@ -1750,20 +1750,19 @@ theorem EvalCmdDefMonotone' :
   EvalCmd Core.Expression δ σ c σ' f →
   isDefined σ' v := by
   intros Hdef Heval
-<<<<<<< HEAD
-  cases Heval <;> try exact Hdef
-  next _ Hup => exact InitStateDefMonotone Hdef Hup  -- eval_init
-  next Hup => exact InitStateDefMonotone Hdef Hup    -- eval_init_unconstrained
-  next _ Hup => exact UpdateStateDefMonotone Hdef Hup
-  next Hup => exact UpdateStateDefMonotone Hdef Hup
+  cases Heval with
+  | eval_init Hsm Hup Hwf => exact InitStateDefMonotone Hdef Hup
+  | eval_init_unconstrained Hup Hwf => exact InitStateDefMonotone Hdef Hup
+  | eval_set Hsm Hup Hwf => exact UpdateStateDefMonotone Hdef Hup
+  | eval_set_nondet Hup Hwf => exact UpdateStateDefMonotone Hdef Hup
+  | _ => exact Hdef
 
 theorem EvalCmdTouch
-  [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasNot P]
-  [HasVarsPure P P.Expr] :
+  [HasVal P] [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] :
   EvalCmd P δ σ c σ' f →
-  TouchVars σ (HasVarsImp.modifiedOrDefinedVars c) σ' := by
+  TouchVars σ (Cmd.definedVars c ++ Cmd.modifiedVars c) σ' := by
   intro Heval
-  induction Heval <;> simp [HasVarsImp.modifiedOrDefinedVars, Cmd.definedVars, Cmd.modifiedVars]
+  induction Heval <;> simp [Cmd.definedVars, Cmd.modifiedVars]
   case eval_init x' δ σ x v σ' σ₀ e Hsm Hup Hwf Hcongr =>
     apply TouchVars.init_some Hup
     constructor
@@ -1778,14 +1777,6 @@ theorem EvalCmdTouch
   case eval_assert_fail => exact TouchVars.none
   case eval_assume => exact TouchVars.none
   case eval_cover => exact TouchVars.none
-=======
-  cases Heval with
-  | eval_init Hsm Hup Hwf => exact InitStateDefMonotone Hdef Hup
-  | eval_init_unconstrained Hup Hwf => exact InitStateDefMonotone Hdef Hup
-  | eval_set Hsm Hup Hwf => exact UpdateStateDefMonotone Hdef Hup
-  | eval_set_nondet Hup Hwf => exact UpdateStateDefMonotone Hdef Hup
-  | _ => exact Hdef
->>>>>>> origin/main2
 
 theorem UpdateStatesHavocVars : UpdateStates σ vars modvals σ' → HavocVars σ vars σ' := by
   intros H

@@ -908,14 +908,9 @@ theorem procBodyVerify_procedureCorrect
               .step _ _ _
                 (.step_cmd (@EvalCommand.cmd_sem π φ ρ_proj.eval ρ_proj.store
                   (Cmd.assert lh eh mdh) ρ_proj.store false
-<<<<<<< HEAD
-                  (EvalCmd.eval_assert_pass h_head_eval_proj
-                    (by rw [h_proj_eval]; exact h_wfb_term)
-                    (by rw [h_proj_eval]; exact h_wfExprCongr_term))))
-=======
                   (EvalCmd.eval_assert_pass h_head_eval
-                    (by rw [h_proj_eval]; exact h_wf.wfBool))))
->>>>>>> origin/main2
+                    (by rw [h_proj_eval]; exact h_wf.wfBool)
+                    (by rw [h_proj_eval]; exact h_wf.wfExprCongr))))
                 (.refl _)
             have h2 : (⟨ρ_proj.store, ρ_proj.eval, ρ_proj.hasFailure || false⟩ : Env Expression) = ρ_proj := by
               cases ρ_inner; simp [ρ_proj, Bool.or_false]
