@@ -295,29 +295,30 @@ theorem block_reaches_terminal
     | step_block_exit_mismatch =>
       subst htgt; cases hrest with | step _ _ _ h _ => cases h
 
-<<<<<<< HEAD
-/-- Stronger inversion of `.block (.some label) σ_parent inner → .terminal`:
+omit [HasOps P] in
+/-- Stronger inversion of `.block (.some label) σ_parent e_parent inner → .terminal`:
     when the block has an explicit label, the second disjunct (exit-match)
     constrains the inner exit-label to equal the block's label.  This is
     needed for downstream simulation lemmas that look up the exit's
     continuation in `exitConts` keyed by the matching label. -/
 theorem block_some_reaches_terminal
-    {inner : Config P CmdT} {label : String} {σ_parent : SemanticStore P} {ρ' : Env P}
+    {inner : Config P CmdT} {label : String} {σ_parent : SemanticStore P}
+    {e_parent : SemanticEval P} {ρ' : Env P}
     (hstar : StepStmtStar P EvalCmd extendEval
-      (.block (.some label) σ_parent inner) (.terminal ρ')) :
+      (.block (.some label) σ_parent e_parent inner) (.terminal ρ')) :
     (∃ ρ_inner, StepStmtStar P EvalCmd extendEval inner (.terminal ρ_inner) ∧
-      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store }) ∨
+      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store, eval := e_parent }) ∨
     (∃ ρ_inner, StepStmtStar P EvalCmd extendEval inner (.exiting label ρ_inner) ∧
-      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store }) := by
+      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store, eval := e_parent }) := by
   -- Same structure as block_reaches_terminal, but specialized to .some label.
   -- At step_block_exit_match, the rule's `l` is unified with `label` (because
   -- the rule premise `.some label = .some l` forces this).
   suffices ∀ src tgt, StepStmtStar P EvalCmd extendEval src tgt →
-      ∀ inner ρ', src = .block (.some label) σ_parent inner → tgt = .terminal ρ' →
+      ∀ inner ρ', src = .block (.some label) σ_parent e_parent inner → tgt = .terminal ρ' →
       (∃ ρ_inner, StepStmtStar P EvalCmd extendEval inner (.terminal ρ_inner) ∧
-        ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store }) ∨
+        ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store, eval := e_parent }) ∨
       (∃ ρ_inner, StepStmtStar P EvalCmd extendEval inner (.exiting label ρ_inner) ∧
-        ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store }) from
+        ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store, eval := e_parent }) from
     this _ _ hstar _ _ rfl rfl
   intro src tgt hstar_g
   induction hstar_g with
@@ -345,9 +346,7 @@ theorem block_some_reaches_terminal
     | step_block_exit_mismatch =>
       subst htgt; cases hrest with | step _ _ _ h _ => cases h
 
-=======
 omit [HasOps P] in
->>>>>>> origin/main2
 /-- Invert a block execution reaching exiting: the inner must have
     exited with a label that didn't match the block.  The env is projected. -/
 theorem block_reaches_exiting
@@ -898,7 +897,7 @@ theorem block_noFuncDecl_preserves_eval
     ρ'.eval = ρ.eval :=
   smallStep_noFuncDecl_preserves_eval_block P EvalCmd extendEval ss ρ ρ' hnofd hterm
 
-<<<<<<< HEAD
+omit [HasOps P] in
 /-- When a block has no function declarations, small-step execution
     preserves the evaluator (variant for `.exiting` target). -/
 theorem smallStep_noFuncDecl_preserves_eval_block_exiting
@@ -918,109 +917,6 @@ theorem smallStep_noFuncDecl_preserves_eval_block_exiting
     have ⟨heq, hnofd_mid⟩ := step_preserves_eval_noFuncDecl P EvalCmd extendEval _ _ hstep hnofd_c
     rw [ih hnofd_mid, heq]
 
-/-! ### hasFailure monotonicity and irrelevance
-
-`hasFailure` is never consulted by any `StepStmt` premise,
-so it is both *monotone* (once `true`, stays `true`) and *irrelevant*
-(changing only `hasFailure` in the input env yields an execution with the
-same `store` and `eval` in the output).
--/
-
-private theorem step_hasFailure_monotone
-  {c c' : Config P CmdT}
-  (hstep : StepStmt P EvalCmd extendEval c c')
-  (hf : c.getEnv.hasFailure = true) :
-  c'.getEnv.hasFailure = true := by
-  induction hstep with
-  | step_cmd _ => simp [Config.getEnv]; left; exact hf
-  | step_block => simp [Config.getEnv]; exact hf
-  | step_ite_true _ _ => exact hf
-  | step_ite_false _ _ => exact hf
-  | step_ite_nondet_true => exact hf
-  | step_ite_nondet_false => exact hf
-  | step_loop_enter _ _ _ _ =>
-    simp [Config.getEnv]; left; exact hf
-  | step_loop_exit _ _ _ _ =>
-    simp [Config.getEnv]; left; exact hf
-  | step_loop_nondet_enter _ _ =>
-    simp [Config.getEnv]; left; exact hf
-  | step_loop_nondet_exit _ _ =>
-    simp [Config.getEnv]; left; exact hf
-  | step_exit => exact hf
-  | step_funcDecl => simp [Config.getEnv]; exact hf
-  | step_typeDecl => exact hf
-  | step_stmts_nil => exact hf
-  | step_stmts_cons => exact hf
-  | step_seq_inner _ ih => exact ih hf
-  | step_seq_done => exact hf
-  | step_seq_exit => exact hf
-  | step_block_body _ ih => exact ih hf
-  | step_block_done => exact hf
-  | step_block_exit_match _ => exact hf
-  | step_block_exit_mismatch _ => exact hf
-
-theorem EvalStmtSmall_hasFailure_monotone
-  {ρ ρ' : Env P} {s : Stmt P CmdT} :
-  EvalStmtSmall P EvalCmd extendEval ρ s ρ' →
-  ρ.hasFailure = true → ρ'.hasFailure = true := by
-  intro Heval Hf
-  suffices ∀ c c', StepStmtStar P EvalCmd extendEval c c' →
-      c.getEnv.hasFailure = true → c'.getEnv.hasFailure = true by
-    exact this _ _ Heval Hf
-  intro c c' hstar hf
-  induction hstar with
-  | refl => exact hf
-  | step _ _ _ hstep _ ih => exact ih (step_hasFailure_monotone P EvalCmd extendEval hstep hf)
-
-theorem EvalStmtsSmall_hasFailure_monotone
-  {ρ ρ' : Env P} {ss : List (Stmt P CmdT)} :
-  EvalStmtsSmall P EvalCmd extendEval ρ ss ρ' →
-  ρ.hasFailure = true → ρ'.hasFailure = true := by
-  intro Heval Hf
-  suffices ∀ c c', StepStmtStar P EvalCmd extendEval c c' →
-      c.getEnv.hasFailure = true → c'.getEnv.hasFailure = true by
-    exact this _ _ Heval Hf
-  intro c c' hstar hf
-  induction hstar with
-  | refl => exact hf
-  | step _ _ _ hstep _ ih => exact ih (step_hasFailure_monotone P EvalCmd extendEval hstep hf)
-
-theorem StepStmtStar_hasFailure_monotone
-  {c c' : Config P CmdT}
-  (hstar : StepStmtStar P EvalCmd extendEval c c')
-  (hf : c.getEnv.hasFailure = true) :
-  c'.getEnv.hasFailure = true := by
-  induction hstar with
-  | refl => exact hf
-  | step _ _ _ hstep _ ih => exact ih (step_hasFailure_monotone P EvalCmd extendEval hstep hf)
-
-theorem EvalStmtSmall_hasFailure_irrel
-  {ρ ρ' : Env P} {s : Stmt P CmdT} :
-  EvalStmtSmall P EvalCmd extendEval ρ s ρ' →
-  ∀ (ρ₂ : Env P), ρ₂.store = ρ.store → ρ₂.eval = ρ.eval →
-  ∃ ρ₂', EvalStmtSmall P EvalCmd extendEval ρ₂ s ρ₂' ∧
-    ρ₂'.store = ρ'.store ∧ ρ₂'.eval = ρ'.eval :=
-  smallStep_hasFailure_irrel P EvalCmd extendEval s ρ ρ'
-
-theorem EvalStmtsSmall_hasFailure_irrel
-  {ρ ρ' : Env P} {ss : List (Stmt P CmdT)} :
-  EvalStmtsSmall P EvalCmd extendEval ρ ss ρ' →
-  ∀ (ρ₂ : Env P), ρ₂.store = ρ.store → ρ₂.eval = ρ.eval →
-  ∃ ρ₂', EvalStmtsSmall P EvalCmd extendEval ρ₂ ss ρ₂' ∧
-    ρ₂'.store = ρ'.store ∧ ρ₂'.eval = ρ'.eval := by
-  intro Heval ρ₂ Hstore Heval_eq
-  suffices ∀ (c₁ c₂ : Config P CmdT),
-      ConfigSE P c₁ c₂ →
-      ∀ c₁', StepStmtStar P EvalCmd extendEval c₁ c₁' →
-      ∃ c₂', StepStmtStar P EvalCmd extendEval c₂ c₂' ∧ ConfigSE P c₁' c₂' by
-    have heq_init : ConfigSE P (.stmts ss ρ) (.stmts ss ρ₂) := ⟨rfl, Hstore.symm, Heval_eq.symm⟩
-    have ⟨c₂', hstar₂, heq₂⟩ := this _ _ heq_init _ Heval
-    match c₂', heq₂ with
-    | .terminal ρ₂', heq_t => exact ⟨ρ₂', hstar₂, heq_t.1.symm, heq_t.2.symm⟩
-  intro c₁ c₂ heq c₁' hstar
-  induction hstar generalizing c₂ with
-  | refl => exact ⟨c₂, .refl _, heq⟩
-=======
 omit [HasOps P] in
 /-- `.exiting` variant: When a block has no function declarations, an exiting
     execution preserves the evaluator. -/
@@ -1037,7 +933,6 @@ theorem block_noFuncDecl_preserves_eval_exiting
   intro c₁ c₂ hnofd_c hstar_c
   induction hstar_c with
   | refl => rfl
->>>>>>> origin/main2
   | step _ mid _ hstep _ ih =>
     have ⟨heq, hnofd_mid⟩ := step_preserves_eval_noFuncDecl P EvalCmd extendEval _ _ hstep hnofd_c
     rw [ih hnofd_mid, heq]
@@ -1047,17 +942,10 @@ end -- section
 
 section
 
-<<<<<<< HEAD
-variable (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
+variable (P : PureExpr) [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P]
 variable (extendEval : ExtendEval P)
 
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] in
-=======
-variable (P : PureExpr) [HasFvar P] [HasBool P] [HasBoolOps P] [HasOps P]
-variable (extendEval : ExtendEval P)
-
-omit [HasFvar P] [HasOps P] [HasBool P] [HasBoolOps P] in
->>>>>>> origin/main2
+omit [HasFvar P] [HasOps P] [HasBool P] [HasBoolOps P] [HasFvars P] in
 /-- If a config has no matching assert, then `isAtAssert` doesn't match. -/
 private theorem noMatchingAssert_not_isAtAssert
     (cfg : Config P (Cmd P)) (label : String) (expr : P.Expr)
@@ -1097,7 +985,7 @@ private theorem noMatchingAssert_not_isAtAssert
   | .block _ _ _ inner => exact noMatchingAssert_not_isAtAssert inner label expr hno
   | .seq inner _ => exact noMatchingAssert_not_isAtAssert inner label expr hno.1
 
-omit [HasFvar P] [HasBool P] [HasBoolOps P] [HasOps P] in
+omit [HasFvar P] [HasBool P] [HasBoolOps P] [HasOps P] [HasFvars P] in
 /-- Helper: `Stmts.noMatchingAssert` for concatenation. -/
 private theorem stmts_noMatchingAssert_append
     (ss₁ ss₂ : List (Stmt P (Cmd P))) (label : String)
@@ -1171,11 +1059,7 @@ theorem noMatchingAssert_implies_no_reachable_assert
   induction hstar_c with
   | refl => exact hno_c
   | step _ _ _ hstep _ ih =>
-<<<<<<< HEAD
-    exact ih (@step_preserves_noMatchingAssert P _ _ _ _ extendEval _ _ _ hstep hno_c)
-=======
     exact ih (step_preserves_noMatchingAssert (P := P) (extendEval := extendEval) _ _ _ hstep hno_c)
->>>>>>> origin/main2
 
 /-! ## isAtAssert inversion lemmas -/
 
@@ -1283,7 +1167,7 @@ evaluator `EvalCmd`, and an `IsAtAssert` predicate.  Language extensions
 `IsAtAssert` predicate together with a few simple hypotheses relating it
 to the loop / seq / block structure of configurations. -/
 
-omit [HasFvar P] [HasOps P] in
+omit [HasFvar P] [HasOps P] [HasFvars P] in
 /-- Helper: when all asserts at a loop config pass (via `hv`), the
     loop-step's `hasInvFailure` boolean is forced to `false`. -/
 theorem loop_step_hasInvFailure_false
@@ -1315,7 +1199,7 @@ theorem loop_step_hasInvFailure_false
     rw [he_ff] at htt
     exact absurd (Option.some.inj htt) HasBool.tt_is_not_ff.symm
 
-omit [HasFvar P] [HasOps P] in
+omit [HasFvar P] [HasOps P] [HasFvars P] in
 /-- Single-step: if hasFailure is false and all reachable asserts pass,
     then hasFailure stays false after one step.
 
@@ -1516,13 +1400,7 @@ end -- section
 
 section AssertSetProps
 
-<<<<<<< HEAD
-/-! ### Assert command properties (statement-level) -/
-
-variable {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
-=======
-variable {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P] [HasOps P]
->>>>>>> origin/main2
+variable {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P]
 variable {extendEval : ExtendEval P}
 
 /-! ### Assert command properties (statement-level) -/
@@ -1677,6 +1555,7 @@ theorem assert_elim :
 
 /-! ### Set command commutation -/
 
+omit [HasFvars P] in
 theorem eval_stmt_set_comm
   [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)] [HasFvars P]
   [DecidableEq P.Ident]:
@@ -1699,6 +1578,7 @@ theorem eval_stmt_set_comm
     simp
     exact eval_cmd_set_comm Hwf Hneq Hnin1 Hnin2 Hc1 Hc2 Hc3 Hc4
 
+omit [HasFvars P] in
 theorem eval_stmts_set_comm
   [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)] [HasFvars P]
   [DecidableEq P.Ident] :
