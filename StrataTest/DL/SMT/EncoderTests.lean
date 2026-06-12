@@ -8,6 +8,8 @@ module
 meta import all Strata.DL.SMT.Encoder
 meta import all Strata.Languages.Core.Verifier
 import all Strata.DL.SMT.Encoder
+import Strata.DL.SMT.Solver
+import Strata.DL.SMT.AbstractSolver
 import all Strata.Languages.Core.Verifier
 import all Init.Data.Repr
 import all Strata.Util.Name
