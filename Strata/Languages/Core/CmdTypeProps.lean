@@ -115,7 +115,7 @@ theorem preprocess_isInstance (C : LContext CoreLParams) (Env Env' : TEnv Unit)
     Lambda.LExpr.LTy_instantiateWithCheck_isInstance xty C Env mty Env_iwc hiwc' h_aw
   refine ⟨tys, h_len, ?_⟩
   have h_mty_pre : mty_pre = LMonoTy.subst Env_iwc.stateSubstInfo.subst mty := by
-    have := LTy.forAll.inj h_fst; exact this.2.symm
+    have h_inj := LTy.forAll.inj h_fst; exact h_inj.2.symm
   rw [h_mty_pre]
   exact AnnotCompat_subst Env_iwc.stateSubstInfo.subst
     (⟨[], by unfold LMonoTy.subst; simp [Subst.hasEmptyScopes, Map.isEmpty]; exact h_ae⟩) h_aw
@@ -142,7 +142,7 @@ theorem preprocess_isInstance_rigidAnnotCompat (C : LContext CoreLParams) (Env E
   simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
   obtain ⟨h_fst, h_snd⟩ := h
   have h_mty_pre : mty_pre = LMonoTy.subst Env_iwc.stateSubstInfo.subst mty := by
-    have := LTy.forAll.inj h_fst; exact this.2.symm
+    have h_inj := LTy.forAll.inj h_fst; exact h_inj.2.symm
   -- instantiateWithCheck preserves stateSubstInfo (only changes genEnv).
   have h_iwc_subst : Env_iwc.stateSubstInfo = Env.stateSubstInfo :=
     LTy_instantiateWithCheck_preserves_stateSubstInfo xty C Env mty Env_iwc hiwc'
@@ -270,8 +270,8 @@ theorem inferType_absorbs (C : LContext CoreLParams) (Env Env' : TEnv Unit)
 
 /-- The `checkAnnotCompat` success implies all rigid vars are identity under the
     current substitution. This is the direct computational content of the check. -/
-theorem checkAnnotCompat_rigid (C : LContext CoreLParams) (Env : TEnv Unit) (xty : LTy)
-    (h : CmdType.checkAnnotCompat C Env xty = .ok ()) :
+theorem checkAnnotCompat_rigid (C : LContext CoreLParams) (Env : TEnv Unit)
+    (h : CmdType.checkAnnotCompat C Env = .ok ()) :
     ∀ v, v ∈ C.rigidTypeVars → LMonoTy.subst Env.stateSubstInfo.subst (.ftvar v) = .ftvar v := by
   intro v hv
   simp only [CmdType.checkAnnotCompat] at h
@@ -393,7 +393,7 @@ theorem Cmd.typeCheck_preserves_rigid_inv (C : LContext CoreLParams) (Env : TEnv
         (CmdType.postprocess_result C Env_unified v3.snd _  v3.fst
           (by rw [← (CmdType.preprocess_mono C Env xty v1.fst v1.snd h_preprocess).choose_spec]
               exact h_postprocess)).2]
-      exact CmdType.checkAnnotCompat_rigid C Env_unified v1.fst h_check
+      exact CmdType.checkAnnotCompat_rigid C Env_unified h_check
     · -- nondet
       elim_err h; rename_i v1 h_preprocess
       elim_err h; rename_i v2 h_postprocess; cases h
@@ -413,7 +413,7 @@ theorem Cmd.typeCheck_preserves_rigid_inv (C : LContext CoreLParams) (Env : TEnv
       elim_err h; elim_err h; rename_i Env_unified h_unify
       elim_err h; rename_i _u h_check; cases h
       simp only [TypeContext.checkAnnotCompat] at *
-      exact CmdType.checkAnnotCompat_rigid C Env' xty h_check
+      exact CmdType.checkAnnotCompat_rigid C Env' h_check
     | nondet => simp at h; cases h; exact h_rigid_inv
   | assert label e md =>
     simp only [Cmd.typeCheck, Bind.bind, Except.bind] at h
@@ -421,21 +421,21 @@ theorem Cmd.typeCheck_preserves_rigid_inv (C : LContext CoreLParams) (Env : TEnv
     elim_err h; rename_i _u h_check
     elim_err h; cases h
     simp only [TypeContext.checkAnnotCompat] at *
-    exact CmdType.checkAnnotCompat_rigid C v.2.snd v.2.fst h_check
+    exact CmdType.checkAnnotCompat_rigid C v.2.snd h_check
   | assume label e md =>
     simp only [Cmd.typeCheck, Bind.bind, Except.bind] at h
     elim_err h; rename_i v h_infer
     elim_err h; rename_i _u h_check
     elim_err h; cases h
     simp only [TypeContext.checkAnnotCompat] at *
-    exact CmdType.checkAnnotCompat_rigid C v.2.snd v.2.fst h_check
+    exact CmdType.checkAnnotCompat_rigid C v.2.snd h_check
   | cover label e md =>
     simp only [Cmd.typeCheck, Bind.bind, Except.bind] at h
     elim_err h; rename_i v h_infer
     elim_err h; rename_i _u h_check
     elim_err h; cases h
     simp only [TypeContext.checkAnnotCompat] at *
-    exact CmdType.checkAnnotCompat_rigid C v.2.snd v.2.fst h_check
+    exact CmdType.checkAnnotCompat_rigid C v.2.snd h_check
 
 end
 end Core

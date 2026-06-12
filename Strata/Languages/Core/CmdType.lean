@@ -94,7 +94,7 @@ def unifyTypes (Env: TEnv Unit) (constraints : List (LTy × LTy)) :
 
 /-- Reject any assignment that refines a rigid (skolemized) type variable.
     See `Cmd.typeCheck_sound` for the full invariant. -/
-def checkAnnotCompat (C : LContext CoreLParams) (Env : TEnv Unit) (_xty : LTy) :
+def checkAnnotCompat (C : LContext CoreLParams) (Env : TEnv Unit) :
     Except DiagnosticModel Unit := do
   if C.rigidTypeVars.isEmpty then
     .ok ()

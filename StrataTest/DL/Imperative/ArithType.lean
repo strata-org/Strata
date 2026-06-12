@@ -110,7 +110,7 @@ instance : TypeContext PureExpr Unit TEnv DiagnosticModel where
   inferType := fun _ => Arith.TypeCheck.inferType
   unifyTypes := Arith.TypeCheck.unifyTypes
   typeErrorFmt := fun dm => f!"{dm.message}"
-  checkAnnotCompat := fun _ _ _ => .ok ()
+  checkAnnotCompat := fun _ _ => .ok ()
 
 instance : ToFormat (Cmds PureExpr × TEnv) where
   format arg :=

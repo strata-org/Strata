@@ -333,7 +333,7 @@ theorem Cmd.typeCheck_sound (C : LContext CoreLParams) (Env : TEnv Unit)
       rw [h_mty_eq]
       have h_pp : CmdType.preprocess C Env xty = .ok (.forAll [] mty_pre, v1.snd) := by
         rw [h_preprocess, ← h_mty_pre]
-      have h_rigid_unified := CmdType.checkAnnotCompat_rigid C Env_unified v1.fst h_checkAnnot1
+      have h_rigid_unified := CmdType.checkAnnotCompat_rigid C Env_unified h_checkAnnot1
       have h_preprocess_subst := CmdType.preprocess_preserves_stateSubstInfo C Env xty v1.fst v1.snd h_preprocess
       have h_infer_absorbs := CmdType.inferType_absorbs C v1.snd v2.2.snd
         (.init x xty (.det heq_det) md) heq_det v2.1 v2.2.fst h_infer h_wf_pre h_fwf
@@ -556,8 +556,8 @@ private theorem inferType_bool_HasTypeA (C : LContext CoreLParams) (Env Env_out 
   obtain ⟨mty, h_ety, h_hta⟩ := CmdType.inferType_HasTypeA C Env Env_out c e e' ety
     h_infer h_wf h_fwf h_resolved
   have h_bool_mty : mty = .bool := by
-    have := CmdType.isBoolType_eq _ h_isbool
-    rw [h_ety] at this; cases this; rfl
+    have h_eq := CmdType.isBoolType_eq _ h_isbool
+    rw [h_ety] at h_eq; cases h_eq; rfl
   subst h_bool_mty
   have h_ctx := CmdType.inferType_preserves_context C Env Env_out c e e' ety h_infer h_wf h_ne h_fwf
   have h_hta_subst := applySubst_typeCheck Env_out.stateSubstInfo.subst h_hta

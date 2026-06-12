@@ -584,7 +584,7 @@ private theorem resolveAux_HasTypeA_aux [DecidableEq T.IDMeta] [HasGen T.IDMeta]
     split at heq_inferConst
     · simp at heq_inferConst ⊢
       rw [← heq_inferConst]
-      simp
+      simp only []
       rw [LConst.ty_subst]
       exact HasTypeA.const
     · simp at heq_inferConst

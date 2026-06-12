@@ -165,6 +165,43 @@ Rigid type variable 'b' was refined to 'a' by the initializer
 #guard_msgs in
 #eval Core.verify equateTwoTypeParams
 
+/-! ### A6: `set` command refines rigid type var — `y := 0` forces `a = int`. -/
+def setRefinesRigidVar : Program :=
+#strata
+program Core;
+procedure Foo<a>(x : a, out y : a)
+spec { ensures true; }
+{
+  y := x;
+  y := 0;
+};
+#end
+
+/--
+error: ❌ Type checking error.
+Rigid type variable 'a' was refined to 'int' by the initializer
+-/
+#guard_msgs in
+#eval Core.verify setRefinesRigidVar
+
+/-! ### A7: Multiple type params, only `b` is violated — `y := 0` refines `b` but not `a`. -/
+def multiParamOnlyOneViolated : Program :=
+#strata
+program Core;
+procedure Foo<a, b>(x : a, out y : b)
+spec { ensures true; }
+{
+  y := 0;
+};
+#end
+
+/--
+error: ❌ Type checking error.
+Rigid type variable 'b' was refined to 'int' by the initializer
+-/
+#guard_msgs in
+#eval Core.verify multiParamOnlyOneViolated
+
 end Strata.RigidTypeVarsTests
 
 ---------------------------------------------------------------------
@@ -226,7 +263,7 @@ spec { ensures true; }
 };
 #end
 
-/-- info: error: (5543-5558) Rigid type variable 'a' was refined to 'int' by the initializer -/
+/-- info: error: (6335-6350) Rigid type variable 'a' was refined to 'int' by the initializer -/
 #guard_msgs in
 #eval Core.typeCheck .quiet (TransM.run Inhabited.default (translateProgram q2a_refineRigidVar)).fst
 
@@ -270,7 +307,7 @@ spec { ensures true; }
 };
 #end
 
-/-- info: error: (6756-6773) Rigid type variable 'a' was refined to 'int' by the initializer -/
+/-- info: error: (7548-7565) Rigid type variable 'a' was refined to 'int' by the initializer -/
 #guard_msgs in
 #eval Core.typeCheck .quiet (TransM.run Inhabited.default (translateProgram q2c_inferredSideRefine)).fst
 
