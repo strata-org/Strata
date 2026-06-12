@@ -43,11 +43,22 @@ private inductive QuantifierSepState where
 | outside
 | inBinder
 | sawColon
+-- States for matching the ASCII keyword "choose" character-by-character.
+-- Once "choose " (with trailing whitespace) is recognized, transitions to
+-- `inBinder` so that a subsequent `.` is rewritten to `::`, mirroring the
+-- behaviour of Unicode quantifiers (∀/∃).
+| matchChoose1  -- matched 'c'
+| matchChoose2  -- matched 'ch'
+| matchChoose3  -- matched 'cho'
+| matchChoose4  -- matched 'choo'
+| matchChoose5  -- matched 'choos'
+| afterChoose   -- matched 'choose', awaiting whitespace to confirm keyword boundary
 
 /--
-Canonicalize the legacy dotted Unicode quantifier separator to `::` before DDM
-parsing. This keeps `#strata` generic while accepting both `∀ x . P` and
-`∀ x :: P`.
+Canonicalize dotted binder separators to `::` before DDM parsing.
+Handles both Unicode quantifiers (`∀ x . P` → `∀ x :: P`) and the Boole
+`choose` keyword (`choose z : T . pred` → `choose z : T :: pred`).
+Both `x . P` and `x :: P` forms remain accepted.
 -/
 private def normalizeUnicodeQuantifierSeparators (src : String) : String :=
   (src.foldl
@@ -56,22 +67,46 @@ private def normalizeUnicodeQuantifierSeparators (src : String) : String :=
       let (acc, qstate) := st
       match qstate with
       | .outside =>
-        if ch == '∀' || ch == '∃' then
-          (acc.push ch, .inBinder)
-        else
-          (acc.push ch, .outside)
+        if ch == '∀' || ch == '∃' then (acc.push ch, .inBinder)
+        else if ch == 'c' then (acc.push ch, .matchChoose1)
+        else (acc.push ch, .outside)
       | .inBinder =>
-        if ch == '.' then
-          (acc ++ "::", .outside)
-        else if ch == ':' then
-          (acc.push ch, .sawColon)
-        else
-          (acc.push ch, .inBinder)
+        if ch == '.' then (acc ++ "::", .outside)
+        else if ch == ':' then (acc.push ch, .sawColon)
+        else (acc.push ch, .inBinder)
       | .sawColon =>
-        if ch == ':' then
-          (acc.push ch, .outside)
-        else
-          (acc.push ch, .inBinder))).fst
+        if ch == ':' then (acc.push ch, .outside)
+        else (acc.push ch, .inBinder)
+      | .matchChoose1 =>
+        if ch == 'h' then (acc.push ch, .matchChoose2)
+        else if ch == '∀' || ch == '∃' then (acc.push ch, .inBinder)
+        else if ch == 'c' then (acc.push ch, .matchChoose1)
+        else (acc.push ch, .outside)
+      | .matchChoose2 =>
+        if ch == 'o' then (acc.push ch, .matchChoose3)
+        else if ch == '∀' || ch == '∃' then (acc.push ch, .inBinder)
+        else if ch == 'c' then (acc.push ch, .matchChoose1)
+        else (acc.push ch, .outside)
+      | .matchChoose3 =>
+        if ch == 'o' then (acc.push ch, .matchChoose4)
+        else if ch == '∀' || ch == '∃' then (acc.push ch, .inBinder)
+        else if ch == 'c' then (acc.push ch, .matchChoose1)
+        else (acc.push ch, .outside)
+      | .matchChoose4 =>
+        if ch == 's' then (acc.push ch, .matchChoose5)
+        else if ch == '∀' || ch == '∃' then (acc.push ch, .inBinder)
+        else if ch == 'c' then (acc.push ch, .matchChoose1)
+        else (acc.push ch, .outside)
+      | .matchChoose5 =>
+        if ch == 'e' then (acc.push ch, .afterChoose)
+        else if ch == '∀' || ch == '∃' then (acc.push ch, .inBinder)
+        else if ch == 'c' then (acc.push ch, .matchChoose1)
+        else (acc.push ch, .outside)
+      | .afterChoose =>
+        if ch == ' ' || ch == '\t' || ch == '\n' then (acc.push ch, .inBinder)
+        else if ch == '∀' || ch == '∃' then (acc.push ch, .inBinder)
+        else if ch == 'c' then (acc.push ch, .matchChoose1)
+        else (acc.push ch, .outside))).fst
 
 private def normalizeInputContext (inputContext : InputContext) : InputContext :=
   let inputString := normalizeUnicodeQuantifierSeparators inputContext.inputString
@@ -80,22 +115,46 @@ private def normalizeInputContext (inputContext : InputContext) : InputContext :
 private def normalizedQuantifierSepStep (state : QuantifierSepState) (ch : Char) : Nat × QuantifierSepState :=
   match state with
   | .outside =>
-    if ch == '∀' || ch == '∃' then
-      (ch.utf8Size, .inBinder)
-    else
-      (ch.utf8Size, .outside)
+    if ch == '∀' || ch == '∃' then (ch.utf8Size, .inBinder)
+    else if ch == 'c' then (ch.utf8Size, .matchChoose1)
+    else (ch.utf8Size, .outside)
   | .inBinder =>
-    if ch == '.' then
-      ("::".utf8ByteSize, .outside)
-    else if ch == ':' then
-      (ch.utf8Size, .sawColon)
-    else
-      (ch.utf8Size, .inBinder)
+    if ch == '.' then ("::".utf8ByteSize, .outside)
+    else if ch == ':' then (ch.utf8Size, .sawColon)
+    else (ch.utf8Size, .inBinder)
   | .sawColon =>
-    if ch == ':' then
-      (ch.utf8Size, .outside)
-    else
-      (ch.utf8Size, .inBinder)
+    if ch == ':' then (ch.utf8Size, .outside)
+    else (ch.utf8Size, .inBinder)
+  | .matchChoose1 =>
+    if ch == 'h' then (ch.utf8Size, .matchChoose2)
+    else if ch == '∀' || ch == '∃' then (ch.utf8Size, .inBinder)
+    else if ch == 'c' then (ch.utf8Size, .matchChoose1)
+    else (ch.utf8Size, .outside)
+  | .matchChoose2 =>
+    if ch == 'o' then (ch.utf8Size, .matchChoose3)
+    else if ch == '∀' || ch == '∃' then (ch.utf8Size, .inBinder)
+    else if ch == 'c' then (ch.utf8Size, .matchChoose1)
+    else (ch.utf8Size, .outside)
+  | .matchChoose3 =>
+    if ch == 'o' then (ch.utf8Size, .matchChoose4)
+    else if ch == '∀' || ch == '∃' then (ch.utf8Size, .inBinder)
+    else if ch == 'c' then (ch.utf8Size, .matchChoose1)
+    else (ch.utf8Size, .outside)
+  | .matchChoose4 =>
+    if ch == 's' then (ch.utf8Size, .matchChoose5)
+    else if ch == '∀' || ch == '∃' then (ch.utf8Size, .inBinder)
+    else if ch == 'c' then (ch.utf8Size, .matchChoose1)
+    else (ch.utf8Size, .outside)
+  | .matchChoose5 =>
+    if ch == 'e' then (ch.utf8Size, .afterChoose)
+    else if ch == '∀' || ch == '∃' then (ch.utf8Size, .inBinder)
+    else if ch == 'c' then (ch.utf8Size, .matchChoose1)
+    else (ch.utf8Size, .outside)
+  | .afterChoose =>
+    if ch == ' ' || ch == '\t' || ch == '\n' then (ch.utf8Size, .inBinder)
+    else if ch == '∀' || ch == '∃' then (ch.utf8Size, .inBinder)
+    else if ch == 'c' then (ch.utf8Size, .matchChoose1)
+    else (ch.utf8Size, .outside)
 
 /--
 Translate a byte position in the original input to the corresponding byte

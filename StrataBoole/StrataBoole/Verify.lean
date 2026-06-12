@@ -998,6 +998,42 @@ def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Dec
   | .command_fndef m ⟨_, n⟩ ⟨_, targs?⟩ bs ret ⟨_, pres⟩ body ⟨_, inline?⟩ =>
     let tys := match targs? with | none => [] | some ts => typeArgsToList ts
     return [.func (← lowerPureFuncDef m n tys bs ret pres body inline?.isSome) .empty]
+  | .command_choosefndef _ ⟨_, n⟩ ⟨_, targs?⟩ bs ret v pred =>
+    -- `function f(params) : R := choose z :: pred(z, params)`
+    -- Emits: uninterpreted function declaration + axiom
+    --   ∀ p1:T1,...,pn:Tn, ∀ z:Tz, (z = f(p1,...,pn)) → pred(z, p1,...,pn)
+    -- De Bruijn context for pred (from @[scope(b)] v + @[scope(v)] pred):
+    --   bvar 0 = z, bvar 1 = pn (innermost param), ..., bvar n = p1 (outermost param)
+    -- This matches the 3-forall wrapping (z innermost, params outer) exactly.
+    let tys := match targs? with | none => [] | some ts => typeArgsToList ts
+    withTypeBVars tys do
+      let bsList := bindingsToList bs
+      let inputs ← bsList.mapM toCoreBinding
+      let retTy ← toCoreMonoType ret
+      let (_, vTy) ← toCoreMonoBind v
+      let numParams := bsList.length
+      let funcDecl : Core.Decl :=
+        .func { name := mkIdent n, typeArgs := tys, inputs := inputs, output := retTy,
+                body := none, concreteEval := none, attr := #[], axioms := [] } .empty
+      -- Push n+1 passthrough bvar entries (for z=bvar0, pn=bvar1, ..., p1=bvar n) so that
+      -- getBVarExpr doesn't throw. Passthrough entries return the original index unchanged,
+      -- so pred's natural de Bruijn indices are preserved exactly as needed by the 3-forall.
+      let bvarPassthroughs := Array.range (numParams + 1) |>.map (.bvar () ·)
+      let predCore ← withBVarExprs bvarPassthroughs (toCoreExpr pred)
+      -- f(p1,...,pn): p1 = bvar n (outermost), p2 = bvar n-1, ..., pn = bvar 1 (innermost param)
+      let funcCallBvar : Core.Expression.Expr :=
+        (List.range numParams).foldl (fun acc i =>
+          .app () acc (.bvar () (numParams - i)))
+          (.op () (mkIdent n) none)
+      let zEqF : Core.Expression.Expr := .eq () (.bvar () 0) funcCallBvar
+      let axiomInner := mkCoreApp Core.boolImpliesOp [zEqF, predCore]
+      -- Wrap ∀ p1:T1,...,∀ pn:Tn, ∀ z:Tz using foldr (z innermost = processed first by foldr)
+      let allTys := (inputs.map Prod.snd) ++ [vTy]
+      let axiomExpr := allTys.foldr (fun ty acc =>
+        .quant () .all "" (some ty) (.bvar () 0) acc) axiomInner
+      let axiomDecl : Core.Decl :=
+        .ax { name := s!"{n}_choose_axiom", e := axiomExpr } .empty
+      return [funcDecl, axiomDecl]
   | .command_recfndefs _ ⟨_, funcs⟩ =>
     -- Mirror the DDM elaborator's @[declareFn] sibling-bvar accumulation:
     -- the i-th function's body sees the i preceding siblings as bvars.

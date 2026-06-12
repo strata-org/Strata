@@ -13,7 +13,7 @@ Near-upstream anchors from `differential_status.md`:
 - `verus-examples:trigger_loops` (`choose_example`, `quantifier_example`)
 - Verus link:
   `trigger_loops`: https://github.com/verus-lang/verus/blob/main/examples/trigger_loops.rs
-- Status: implemented — `w := choose z: T :: pred(z)` desugars to:
+- Status: implemented — `w := choose z: T . pred(z)` desugars to:
     assert ∃ z : T . pred(z);   -- existence obligation (soundness guard)
     havoc w;
     assume pred[z/w];
@@ -33,16 +33,16 @@ spec {
   ensures good(w, x);
 }
 {
-  w := choose z: int :: good(z, x);
+  w := choose z: int . good(z, x);
 };
 #end
 
 /-- info:
-Obligation: choose_2_884_exists
+Obligation: choose_2_883_exists
 Property: assert
 Result: ✅ pass
 
-Obligation: choose_seed_ensures_1_858
+Obligation: choose_seed_ensures_1_857
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
@@ -64,16 +64,16 @@ spec {
   ensures true;
 }
 {
-  w := choose z: int :: z != z;
+  w := choose z: int . z != z;
 };
 #end
 
 /-- info:
-Obligation: choose_1_1613_exists
+Obligation: choose_1_1611_exists
 Property: assert
 Result: ❌ fail
 
-Obligation: choose_unsat_ensures_0_1593
+Obligation: choose_unsat_ensures_0_1591
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
