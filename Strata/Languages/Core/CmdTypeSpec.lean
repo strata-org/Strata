@@ -48,17 +48,29 @@ Declarative typing for imperative commands, parameterized over `ExprTypingSpec`.
 inductive CmdHasType' (C : LContext CoreLParams) [S : ExprTypingSpec τ] :
     TContext Unit → Cmd Expression → TContext Unit → Prop where
 
-  /-- `var x : T := e` — `x` must be fresh, `e` must have a type unifiable with `T`. -/
-  | init_det : ∀ Γ x (xty : LTy) e mty md,
+  /-- `var x : T := e` — `x` must be fresh, and the stored monotype `mty` must be
+      an instantiation of the declared scheme `T` up to `RigidAnnotCompat`. The
+      `tys`/`openFull` premises mirror the checker: `preprocess` instantiates `T`'s
+      ∀-bound variables. `RigidAnnotCompat` then allows free type variables to be
+      refined by a substitution σ — EXCEPT those in `C.rigidTypeVars`, which σ must
+      leave untouched. This prevents the body of `procedure<a>` from refining `a`
+      while still allowing CallElim-introduced free vars to be unified. -/
+  | init_det : ∀ Γ x (xty : LTy) e mty tys md,
       Γ.types.find? x = none →
       x ∉ HasVarsPure.getVars (P := Expression) e →
+      tys.length = xty.boundVars.length →
+      RigidAnnotCompat Γ.aliases C.rigidTypeVars (LTy.openFull xty tys) mty →
       S.exprTyped C Γ e (S.embed mty) →
       CmdHasType' C Γ (.init x xty (.det e) md)
         { Γ with types := Γ.types.insert x (.forAll [] mty) }
 
-  /-- `var x : T := *` — `x` must be fresh. -/
-  | init_nondet : ∀ Γ x (xty : LTy) mty md,
+  /-- `var x : T := *` — `x` must be fresh, and the stored monotype `mty` must be
+      an instantiation of the declared scheme `T` (`RigidAnnotCompat` as in
+      `init_det`), as produced by the checker's `preprocess`. -/
+  | init_nondet : ∀ Γ x (xty : LTy) mty tys md,
       Γ.types.find? x = none →
+      tys.length = xty.boundVars.length →
+      RigidAnnotCompat Γ.aliases C.rigidTypeVars (LTy.openFull xty tys) mty →
       CmdHasType' C Γ (.init x xty .nondet md)
         { Γ with types := Γ.types.insert x (.forAll [] mty) }
 

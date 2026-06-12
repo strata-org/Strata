@@ -9,6 +9,10 @@ public import Strata.Languages.Core.CmdType
 import all Strata.Languages.Core.CmdType
 import all Strata.DL.Lambda.LTy
 import all Strata.DL.Lambda.LExprTypeEnv
+import all Strata.DL.Lambda.LExprTypeSpec
+import all Strata.DL.Lambda.LExprResolveProps
+public import Strata.DL.Imperative.CmdType
+import all Strata.DL.Imperative.CmdType
 import Strata.Util.Tactics
 
 /-! ## Soundness helper lemmas for the Core command typechecker
@@ -76,6 +80,103 @@ theorem preprocess_mono (C : LContext CoreLParams) (Env : TEnv Unit)
   elim_err h
   simp only [Except.ok.injEq, Prod.mk.injEq, pure, Except.pure] at h
   exact ⟨_, h.1.symm⟩
+
+/-- `preprocess` preserves `stateSubstInfo` (only modifies `genEnv`). -/
+theorem preprocess_preserves_stateSubstInfo (C : LContext CoreLParams) (Env : TEnv Unit)
+    (ty ty' : LTy) (Env' : TEnv Unit)
+    (h : CmdType.preprocess C Env ty = .ok (ty', Env')) :
+    Env'.stateSubstInfo = Env.stateSubstInfo := by
+  simp [CmdType.preprocess, Bind.bind, Except.bind, Except.mapError] at h
+  elim_err h
+  rename_i v hiwc; obtain ⟨mty, Env_iwc⟩ := v
+  simp only [Except.ok.injEq, Prod.mk.injEq, pure, Except.pure] at h
+  rw [← h.2]
+  elim_err hiwc
+  cases hiwc
+  rename_i hiwc
+  exact LTy_instantiateWithCheck_preserves_stateSubstInfo ty C Env mty Env_iwc hiwc
+
+/-- `preprocess` produces a monotype satisfying `AnnotCompat` with `openFull xty`. -/
+theorem preprocess_isInstance (C : LContext CoreLParams) (Env Env' : TEnv Unit)
+    (xty : LTy) (mty_pre : LMonoTy)
+    (h : CmdType.preprocess C Env xty = .ok (.forAll [] mty_pre, Env'))
+    (h_aw : TContext.AliasesWF Env.context) :
+    ∃ tys, tys.length = (LTy.boundVars xty).length ∧
+      AnnotCompat Env.context.aliases (LTy.openFull xty tys) mty_pre := by
+  simp only [CmdType.preprocess, Bind.bind, Except.bind, Except.mapError] at h
+  elim_err h
+  rename_i v hiwc; obtain ⟨mty, Env_iwc⟩ := v
+  elim_err hiwc
+  cases hiwc
+  rename_i hiwc'
+  simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
+  obtain ⟨h_fst, h_snd⟩ := h
+  obtain ⟨tys, h_len, h_ae⟩ :=
+    Lambda.LExpr.LTy_instantiateWithCheck_isInstance xty C Env mty Env_iwc hiwc' h_aw
+  refine ⟨tys, h_len, ?_⟩
+  have h_mty_pre : mty_pre = LMonoTy.subst Env_iwc.stateSubstInfo.subst mty := by
+    have := LTy.forAll.inj h_fst; exact this.2.symm
+  rw [h_mty_pre]
+  exact AnnotCompat_subst Env_iwc.stateSubstInfo.subst
+    (⟨[], by unfold LMonoTy.subst; simp [Subst.hasEmptyScopes, Map.isEmpty]; exact h_ae⟩) h_aw
+
+/-- After the unification substitution `S` is applied, `preprocess`'s output satisfies
+    `RigidAnnotCompat`.
+
+    Requires `h_rigid`: the post-unification substitution `S` is identity on rigid
+    vars, AND `S` absorbs `Env'`'s substitution (so the composed double-subst
+    collapses to a single application of `S`).
+
+    **The rigid-var-identity invariant** (used to discharge `h_rigid` at call sites):
+
+    `∀ v ∈ C.rigidTypeVars, subst S (ftvar v) = ftvar v`
+
+    where `S` is the substitution after the current command's `unifyTypes`.
+
+    **Establishment:** In `ProcedureType.typeCheck`, `setupInputEnv` generates fresh
+    type variables (e.g. `$__ty0`) via `genTyVars` and records them as
+    `C.rigidTypeVars`. It then unifies the original names with these fresh vars
+    (e.g. `a → $__ty0`). The resulting substitution has keys `{a, ...}` — the
+    original type-parameter names. The rigid vars `{$__ty0, ...}` are values, not
+    keys. Since `subst S (ftvar v) = ftvar v` whenever `v` is not a key of `S`,
+    the invariant holds at the start of body typechecking.
+
+    **Preservation:** Each statement in the body runs `unifyTypes` followed by
+    `checkAnnotCompat`. The updated `checkAnnotCompat` iterates over ALL of
+    `C.rigidTypeVars` and verifies that `subst S_new (ftvar v) = ftvar v` for each.
+    If any rigid var was added as a key (directly or transitively), `checkAnnotCompat`
+    rejects the command. So if typechecking proceeds past `checkAnnotCompat`, no
+    rigid var was refined, and the invariant holds for the next statement. -/
+theorem preprocess_isInstance_rigidAnnotCompat (C : LContext CoreLParams) (Env Env' : TEnv Unit)
+    (S : Subst) (xty : LTy) (mty_pre : LMonoTy)
+    (h : CmdType.preprocess C Env xty = .ok (.forAll [] mty_pre, Env'))
+    (h_wf : TEnvWF (T := CoreLParams) Env)
+    (h_rigid : ∀ v, v ∈ C.rigidTypeVars → LMonoTy.subst S (.ftvar v) = .ftvar v)
+    (h_absorbs : Subst.absorbs S Env.stateSubstInfo.subst) :
+    ∃ tys, tys.length = (LTy.boundVars xty).length ∧
+      RigidAnnotCompat Env.context.aliases C.rigidTypeVars
+        (LTy.openFull xty tys) (LMonoTy.subst S mty_pre) := by
+  simp only [CmdType.preprocess, Bind.bind, Except.bind, Except.mapError] at h
+  elim_err h
+  rename_i v hiwc; obtain ⟨mty, Env_iwc⟩ := v
+  elim_err hiwc
+  cases hiwc
+  rename_i hiwc'
+  simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
+  obtain ⟨h_fst, h_snd⟩ := h
+  have h_mty_pre : mty_pre = LMonoTy.subst Env_iwc.stateSubstInfo.subst mty := by
+    have := LTy.forAll.inj h_fst; exact this.2.symm
+  -- instantiateWithCheck preserves stateSubstInfo (only changes genEnv).
+  have h_iwc_subst : Env_iwc.stateSubstInfo = Env.stateSubstInfo :=
+    LTy_instantiateWithCheck_preserves_stateSubstInfo xty C Env mty Env_iwc hiwc'
+  obtain ⟨tys, h_len, h_ae⟩ :=
+    Lambda.LExpr.LTy_instantiateWithCheck_isInstance xty C Env mty Env_iwc hiwc' h_wf.aliasesWF
+  refine ⟨tys, h_len, ?_⟩
+  -- Collapse: subst S (subst Env_iwc.subst mty) = subst S mty, since
+  -- Env_iwc.subst = Env.subst (by h_iwc_subst) and S absorbs Env.subst (by h_absorbs).
+  rw [h_mty_pre, congrArg (·.subst) h_iwc_subst,
+    LMonoTy.subst_absorbs S Env.stateSubstInfo.subst mty h_absorbs]
+  exact RigidAnnotCompat_subst S (.of_aliasEquiv h_ae) h_wf.aliasesWF h_rigid
 
 /-- `postprocess` on a mono type applies the current substitution and preserves the environment. -/
 theorem postprocess_result (C : LContext CoreLParams) (Env Env' : TEnv Unit)
@@ -154,6 +255,59 @@ theorem inferType_decompose (C : LContext CoreLParams) (Env : TEnv Unit)
       revert h_resolve
       cases h_r : LExpr.resolve C Env e <;> simp
     exact ⟨ea, h_res, rfl, rfl⟩
+
+/-- `inferType` produces a substitution that absorbs the input substitution.
+    Follows from `resolveAux_properties.absorbs`. -/
+theorem inferType_absorbs (C : LContext CoreLParams) (Env Env' : TEnv Unit)
+    (c : Cmd Expression) (e e' : LExpr CoreLParams.mono) (ety : LTy)
+    (h : CmdType.inferType C Env c e = .ok (e', ety, Env'))
+    (h_wf : TEnvWF (T := CoreLParams) Env)
+    (h_fwf : FactoryWF C.functions) :
+    Subst.absorbs Env'.stateSubstInfo.subst Env.stateSubstInfo.subst := by
+  obtain ⟨ea, h_resolve, _, _⟩ := inferType_decompose C Env c e e' ety Env' h
+  unfold LExpr.resolve at h_resolve
+  simp only [Bind.bind, Except.bind] at h_resolve
+  generalize h_init : (if Env.context.types.isEmpty = true then
+      Env.updateContext { types := [[]], aliases := Env.context.aliases }
+    else Env) = Env0 at h_resolve
+  match h_res : resolveAux C Env0 e with
+  | .error _ => simp [h_res] at h_resolve
+  | .ok (et, Env_out) =>
+    simp [h_res] at h_resolve
+    obtain ⟨_, h_env'⟩ := h_resolve
+    subst h_env'
+    have h_envwf0 : TEnvWF (T := CoreLParams) Env0 :=
+      h_init ▸ Lambda.TEnvWF_resolve_init (T := CoreLParams) Env h_wf
+    have h_ne0 : Env0.context.types ≠ [] := by
+      subst h_init; split
+      · exact List.cons_ne_nil _ _
+      · rename_i h_not_empty; intro h_abs; simp_all; contradiction
+    have h_props := resolveAux_properties e et C Env0 Env_out h_res h_ne0
+      h_envwf0.aliasesWF h_fwf h_envwf0.substFreshForGen h_envwf0.ctxFreshForGen
+      h_envwf0.boundVarsFresh
+    have h_subst_eq : Env0.stateSubstInfo = Env.stateSubstInfo := by
+      subst h_init; split <;> simp [TEnv.updateContext]
+    have h_abs := h_props.absorbs
+    rw [congrArg (·.subst) h_subst_eq] at h_abs
+    exact h_abs
+
+/-- The `checkAnnotCompat` success implies all rigid vars are identity under the
+    current substitution. This is the direct computational content of the check. -/
+theorem checkAnnotCompat_rigid (C : LContext CoreLParams) (Env : TEnv Unit) (xty : LTy)
+    (h : CmdType.checkAnnotCompat C Env xty = .ok ()) :
+    ∀ v, v ∈ C.rigidTypeVars → LMonoTy.subst Env.stateSubstInfo.subst (.ftvar v) = .ftvar v := by
+  intro v hv
+  simp only [CmdType.checkAnnotCompat] at h
+  split at h
+  · rename_i h_empty
+    cases C.rigidTypeVars <;> grind
+  · rename_i h_not_empty
+    split at h
+    · contradiction
+    · rename_i h_find_none
+      have h_pred := List.find?_eq_none.mp h_find_none v hv
+      simp only [bne, Bool.not_eq_true', beq_eq_false_iff_ne, ne_eq, Decidable.not_not] at h_pred
+      exact h_pred
 
 /--
 `inferType` success implies all free vars of `e` are in `Env.context.knownVars`.
@@ -236,6 +390,77 @@ theorem inferType_HasType (C : LContext CoreLParams) (Env Env' : TEnv Unit)
 
 
 end CmdType
+
+/-- The rigid-var-identity invariant is preserved by `Cmd.typeCheck`: if no rigid
+    var is refined at entry, none is refined at exit. Each branch that performs
+    unification or expression inference is followed by `checkAnnotCompat`, which
+    rejects any refinement. Branches without unification preserve `stateSubstInfo`. -/
+theorem Cmd.typeCheck_preserves_rigid_inv (C : LContext CoreLParams) (Env : TEnv Unit)
+    (cmd cmd' : Cmd Expression) (Env' : TEnv Unit)
+    (h : Imperative.Cmd.typeCheck C Env cmd = .ok (cmd', Env'))
+    (h_rigid_inv : ∀ v, v ∈ C.rigidTypeVars →
+      LMonoTy.subst Env.stateSubstInfo.subst (.ftvar v) = .ftvar v) :
+    ∀ v, v ∈ C.rigidTypeVars →
+      LMonoTy.subst Env'.stateSubstInfo.subst (.ftvar v) = .ftvar v := by
+  cases cmd with
+  | init x xty e md =>
+    simp only [Cmd.typeCheck, Bind.bind, Except.bind] at h
+    elim_err h; rename_i h_lookup
+    split at h
+    · -- det
+      elim_err h; elim_err h; rename_i v1 h_preprocess
+      elim_err h; elim_err h; rename_i Env_unified h_unify
+      elim_err h; rename_i _u h_check
+      elim_err h; rename_i v3 h_postprocess; cases h
+      simp only [TypeContext.update, TypeContext.checkAnnotCompat, TypeContext.preprocess,
+        TypeContext.postprocess] at *
+      rw [CmdType.update_preserves_subst,
+        (CmdType.postprocess_result C Env_unified v3.snd _  v3.fst
+          (by rw [← (CmdType.preprocess_mono C Env xty v1.fst v1.snd h_preprocess).choose_spec]
+              exact h_postprocess)).2]
+      exact CmdType.checkAnnotCompat_rigid C Env_unified v1.fst h_check
+    · -- nondet
+      elim_err h; rename_i v1 h_preprocess
+      elim_err h; rename_i v2 h_postprocess; cases h
+      simp only [TypeContext.update, TypeContext.preprocess, TypeContext.postprocess] at *
+      rw [CmdType.update_preserves_subst,
+        (CmdType.postprocess_result C v1.snd v2.snd _ v2.fst
+          (by rw [← (CmdType.preprocess_mono C Env xty v1.fst v1.snd h_preprocess).choose_spec]
+              exact h_postprocess)).2,
+        congrArg (·.subst) (CmdType.preprocess_preserves_stateSubstInfo C Env xty v1.fst v1.snd h_preprocess)]
+      exact h_rigid_inv
+  | set x e md =>
+    simp only [Cmd.typeCheck, Bind.bind, Except.bind] at h
+    elim_err h; rename_i xty h_lookup
+    cases e with
+    | det expr =>
+      simp only [] at h
+      elim_err h; elim_err h; rename_i Env_unified h_unify
+      elim_err h; rename_i _u h_check; cases h
+      simp only [TypeContext.checkAnnotCompat] at *
+      exact CmdType.checkAnnotCompat_rigid C Env' xty h_check
+    | nondet => simp at h; cases h; exact h_rigid_inv
+  | assert label e md =>
+    simp only [Cmd.typeCheck, Bind.bind, Except.bind] at h
+    elim_err h; rename_i v h_infer
+    elim_err h; rename_i _u h_check
+    elim_err h; cases h
+    simp only [TypeContext.checkAnnotCompat] at *
+    exact CmdType.checkAnnotCompat_rigid C v.2.snd v.2.fst h_check
+  | assume label e md =>
+    simp only [Cmd.typeCheck, Bind.bind, Except.bind] at h
+    elim_err h; rename_i v h_infer
+    elim_err h; rename_i _u h_check
+    elim_err h; cases h
+    simp only [TypeContext.checkAnnotCompat] at *
+    exact CmdType.checkAnnotCompat_rigid C v.2.snd v.2.fst h_check
+  | cover label e md =>
+    simp only [Cmd.typeCheck, Bind.bind, Except.bind] at h
+    elim_err h; rename_i v h_infer
+    elim_err h; rename_i _u h_check
+    elim_err h; cases h
+    simp only [TypeContext.checkAnnotCompat] at *
+    exact CmdType.checkAnnotCompat_rigid C v.2.snd v.2.fst h_check
 
 end
 end Core

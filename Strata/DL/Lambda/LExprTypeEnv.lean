@@ -495,6 +495,8 @@ structure LContext (T: LExprParams) where
   knownTypes : KnownTypes
   /-- The set of identifiers that have been seen or generated so far. -/
   idents : Identifiers T.IDMeta
+  /-- Type variables that are rigid (skolemized) in the current scope. -/
+  rigidTypeVars : List TyIdentifier := []
 deriving Inhabited
 
 def LContext.empty {IDMeta} : LContext IDMeta :=
@@ -863,6 +865,13 @@ def LMonoTys.instantiateEnv [ToFormat IDMeta] (ids : List TyIdentifier) (mtys : 
   match LMonoTys.instantiate ids mtys T.genEnv with
   | .error e => .error e
   | .ok (a, genEnv') => .ok (a, {T with genEnv := genEnv'})
+
+/-- Like `instantiateEnv` but also returns the generated substitution. -/
+def LMonoTys.instantiateEnvWithSubst [ToFormat IDMeta] (ids : List TyIdentifier) (mtys : LMonoTys) (T : (TEnv IDMeta)) :
+  Except Format (LMonoTys × (TEnv IDMeta) × Subst) := do
+  let (freshtvs, genEnv') ← TGenEnv.genTyVars ids.length T.genEnv
+  let S : Subst := [List.zip ids (freshtvs.map LMonoTy.ftvar)]
+  .ok (LMonoTys.subst S mtys, {T with genEnv := genEnv'}, S)
 
 theorem LMonoTys.substLogic_length (S : Subst) (mtys : LMonoTys) :
     (LMonoTys.substLogic S mtys).length = mtys.length := by
@@ -1271,6 +1280,21 @@ def LMonoTySignature.instantiate (C: LContext T)  (Env : TEnv T.IDMeta) (tyArgs 
   let tys := mtys.map (fun mty => (LTy.forAll [] mty))
   let (newtys, Env) ← go Env tys
   .ok ((sig.keys.zip newtys), Env)
+  where go (Env : TEnv T.IDMeta) (tys : LTys) : Except Format (LMonoTys × TEnv T.IDMeta) :=
+    match tys with
+    | [] => .ok ([], Env)
+    | t :: trest => do
+      let (mt, Env) ← LTy.instantiateWithCheck t C Env
+      let (mtrest, Env) ← go Env trest
+      .ok (mt :: mtrest, Env)
+
+/-- Like `instantiate` but also returns the typeArg substitution. -/
+def LMonoTySignature.instantiateWithSubst (C: LContext T)  (Env : TEnv T.IDMeta) (tyArgs : List TyIdentifier) (sig : @LMonoTySignature T.IDMeta) :
+  Except Format ((@LMonoTySignature T.IDMeta) × TEnv T.IDMeta × Subst) := do
+  let (mtys, Env, S) ← LMonoTys.instantiateEnvWithSubst tyArgs sig.values Env
+  let tys := mtys.map (fun mty => (LTy.forAll [] mty))
+  let (newtys, Env) ← go Env tys
+  .ok ((sig.keys.zip newtys), Env, S)
   where go (Env : TEnv T.IDMeta) (tys : LTys) : Except Format (LMonoTys × TEnv T.IDMeta) :=
     match tys with
     | [] => .ok ([], Env)

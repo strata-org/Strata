@@ -265,6 +265,10 @@ declarative `CmdHasType` relation holds between the substituted input/output con
 
 The theorem uses the **final** substitution from `Env'` applied to both the input
 and output contexts, since unification during the command may refine type variables.
+
+`h_rigid_inv` is the rigid-var-identity invariant: `Env`'s substitution has not
+refined any rigid type variable. This is provided by the Statement-level caller:
+at procedure entry, rigid vars are freshly generated (not in the subst's domain), and we proved preservation in `Cmd.typeCheck_preserves_rigid_inv`.
 -/
 -- h_mono: In Core, all context types are `forAll [] mty` (boundVars = []) because
 -- preprocess instantiates poly annotations into fresh unification vars, and
@@ -275,7 +279,9 @@ theorem Cmd.typeCheck_sound (C : LContext CoreLParams) (Env : TEnv Unit)
     (h_wf : TEnvWF (T := CoreLParams) Env)
     (h_fwf : FactoryWF C.functions)
     (h_ne : Env.context.types ≠ [])
-    (h_mono : ContextMono Env.context) :
+    (h_mono : ContextMono Env.context)
+    (h_rigid_inv : ∀ v, v ∈ C.rigidTypeVars →
+      LMonoTy.subst Env.stateSubstInfo.subst (.ftvar v) = .ftvar v) :
     CmdHasType C (TContext.subst Env.context Env'.stateSubstInfo.subst) cmd
       (TContext.subst Env'.context Env'.stateSubstInfo.subst) := by
   cases cmd with
@@ -296,11 +302,13 @@ theorem Cmd.typeCheck_sound (C : LContext CoreLParams) (Env : TEnv Unit)
       elim_err h
       rename_i Env_unified h_unify
       elim_err h
+      rename_i _u1 h_checkAnnot1
+      elim_err h
       rename_i v3 h_postprocess
       cases h
       simp only [TypeContext.update, TypeContext.lookup, TypeContext.preprocess,
         TypeContext.postprocess, TypeContext.inferType, TypeContext.unifyTypes,
-        TypeContext.freeVars] at *
+        TypeContext.freeVars, TypeContext.checkAnnotCompat] at *
       have h_find_none := (CmdType.lookup_none_iff_find_none Env x).mp h_lookup_none
       obtain ⟨h_ctx_eq, h_wf_pre, mty_pre, h_mty_pre, mty, h_mty, h_mty_eq, h_v3_eq⟩ :=
         init_det_context_setup C Env x xty heq_det md v1 v2 Env_unified v3
@@ -322,8 +330,24 @@ theorem Cmd.typeCheck_sound (C : LContext CoreLParams) (Env : TEnv Unit)
           v2.1 xty v1.fst v2.2.fst mty_pre md h_preprocess h_mty_pre
           h_infer h_unify h_wf h_fwf h_mono
       rw [h_mty_eq]
-      exact CmdHasType'.init_det _ x xty heq_det _ md
-        h_find_none_subst h_not_in_vars h_hastype
+      have h_pp : CmdType.preprocess C Env xty = .ok (.forAll [] mty_pre, v1.snd) := by
+        rw [h_preprocess, ← h_mty_pre]
+      have h_rigid_unified := CmdType.checkAnnotCompat_rigid C Env_unified v1.fst h_checkAnnot1
+      have h_preprocess_subst := CmdType.preprocess_preserves_stateSubstInfo C Env xty v1.fst v1.snd h_preprocess
+      have h_infer_absorbs := CmdType.inferType_absorbs C v1.snd v2.2.snd
+        (.init x xty (.det heq_det) md) heq_det v2.1 v2.2.fst h_infer h_wf_pre h_fwf
+      have h_unify_absorbs := CmdType.unifyTypes_absorbs v2.2.snd Env_unified _ h_unify
+      have h_absorbs_unified : Subst.absorbs Env_unified.stateSubstInfo.subst
+          Env.stateSubstInfo.subst :=
+        Subst.absorbs_trans _ _ _
+          (h_preprocess_subst ▸ h_infer_absorbs) h_unify_absorbs
+      obtain ⟨tys, h_tys_len, h_rac⟩ := CmdType.preprocess_isInstance_rigidAnnotCompat C Env v1.snd
+        Env_unified.stateSubstInfo.subst xty mty_pre h_pp h_wf
+        h_rigid_unified h_absorbs_unified
+      rw [← TContext.subst_aliases Env.context
+        (CmdType.update v3.snd x v3.fst).stateSubstInfo.subst] at h_rac
+      exact CmdHasType'.init_det _ x xty heq_det _ tys md
+        h_find_none_subst h_not_in_vars h_tys_len h_rac h_hastype
     · -- nondet case
       rename_i heq_nondet
       elim_err h
@@ -341,7 +365,45 @@ theorem Cmd.typeCheck_sound (C : LContext CoreLParams) (Env : TEnv Unit)
       have h_update_ctx := CmdType.update_subst_context v2.snd x v2.fst
         (CmdType.update v2.snd x v2.fst).stateSubstInfo.subst h_fresh_v2
       rw [h_update_ctx, h_ctx_eq, h_mty]
-      exact CmdHasType'.init_nondet _ x xty mty md h_find_none_subst
+      -- Recover the form of the stored monotype `mty`: postprocess applies
+      -- `v1.snd`'s substitution, then `update` applies it again (it is preserved).
+      obtain ⟨mty_pre, h_mty_pre⟩ := CmdType.preprocess_mono C Env xty v1.fst v1.snd h_preprocess
+      have h_pr := CmdType.postprocess_result C v1.snd v2.snd mty_pre v2.fst
+        (h_mty_pre ▸ h_postprocess)
+      have h_subst_eq := CmdType.update_preserves_subst v2.snd x v2.fst
+      -- In the nondet case, `v2.snd = v1.snd` (postprocess preserves env), so the
+      -- double-substitution in `h_mty` collapses by idempotence to a single one.
+      have h_mty_eq : mty = LMonoTy.subst v2.snd.stateSubstInfo.subst mty_pre := by
+        have h_mty' := h_mty
+        rw [h_subst_eq, h_pr.1, LTy.subst_forAll_nil] at h_mty'
+        have h_eq := ((LTy.forAll.injEq _ _ _ _ ▸ h_mty').2).symm
+        rw [h_pr.2] at h_eq
+        rw [LMonoTy.subst_idempotent v1.snd.stateSubstInfo.subst
+          v1.snd.stateSubstInfo.isWF mty_pre] at h_eq
+        rw [← h_pr.2] at h_eq
+        exact h_eq
+      have h_pp : CmdType.preprocess C Env xty = .ok (.forAll [] mty_pre, v1.snd) := by
+        rw [h_preprocess, ← h_mty_pre]
+      -- In nondet, v2.snd = v1.snd (postprocess preserves env) and preprocess
+      -- preserves stateSubstInfo, so v2.snd.subst = Env.subst.
+      have h_v2_subst : v2.snd.stateSubstInfo = Env.stateSubstInfo := by
+        rw [h_pr.2]
+        exact CmdType.preprocess_preserves_stateSubstInfo C Env xty v1.fst v1.snd h_preprocess
+      have h_rigid_v2 : ∀ v, v ∈ C.rigidTypeVars →
+          LMonoTy.subst v2.snd.stateSubstInfo.subst (.ftvar v) = .ftvar v := by
+        intro v hv; rw [congrArg (·.subst) h_v2_subst]; exact h_rigid_inv v hv
+      have h_absorbs_nondet : Subst.absorbs v2.snd.stateSubstInfo.subst
+          Env.stateSubstInfo.subst := by
+        rw [congrArg (·.subst) h_v2_subst]
+        exact Subst.absorbs_refl _ Env.stateSubstInfo.isWF
+      obtain ⟨tys, h_tys_len, h_rac0⟩ :=
+        CmdType.preprocess_isInstance_rigidAnnotCompat C Env v1.snd
+          v2.snd.stateSubstInfo.subst xty mty_pre h_pp h_wf
+          h_rigid_v2 h_absorbs_nondet
+      rw [← h_mty_eq] at h_rac0
+      rw [← TContext.subst_aliases Env.context
+        (CmdType.update v2.snd x v2.fst).stateSubstInfo.subst] at h_rac0
+      exact CmdHasType'.init_nondet _ x xty mty tys md h_find_none_subst h_tys_len h_rac0
   | set x e md =>
     simp only [Cmd.typeCheck, Bind.bind, Except.bind] at h
     elim_err h
@@ -353,6 +415,8 @@ theorem Cmd.typeCheck_sound (C : LContext CoreLParams) (Env : TEnv Unit)
       rename_i v heq
       elim_err h
       rename_i Env_unified h_unify
+      elim_err h
+      rename_i _u h_checkAnnot
       cases h
       obtain ⟨e', ety, Env_infer⟩ := v
       simp only at heq h_unify ⊢
@@ -384,6 +448,8 @@ theorem Cmd.typeCheck_sound (C : LContext CoreLParams) (Env : TEnv Unit)
     elim_err h
     rename_i v heq
     elim_err h
+    rename_i _u h_checkAnnot_a
+    elim_err h
     rename_i h_bool
     cases h
     obtain ⟨e', ety, Env_out⟩ := v
@@ -396,6 +462,8 @@ theorem Cmd.typeCheck_sound (C : LContext CoreLParams) (Env : TEnv Unit)
     elim_err h
     rename_i v heq
     elim_err h
+    rename_i _u h_checkAnnot_a
+    elim_err h
     rename_i h_bool
     cases h
     obtain ⟨e', ety, Env_out⟩ := v
@@ -407,6 +475,8 @@ theorem Cmd.typeCheck_sound (C : LContext CoreLParams) (Env : TEnv Unit)
     simp only [Cmd.typeCheck, Bind.bind, Except.bind] at h
     elim_err h
     rename_i v heq
+    elim_err h
+    rename_i _u h_checkAnnot_a
     elim_err h
     rename_i h_bool
     cases h
@@ -535,11 +605,13 @@ theorem Cmd.typeCheck_annotated_sound (C : LContext CoreLParams) (Env : TEnv Uni
       elim_err h
       rename_i Env_unified h_unify
       elim_err h
+      rename_i _u2 h_checkAnnot2
+      elim_err h
       rename_i v3 h_postprocess
       cases h
       simp only [TypeContext.update, TypeContext.lookup, TypeContext.preprocess,
         TypeContext.postprocess, TypeContext.inferType, TypeContext.unifyTypes,
-        TypeContext.freeVars] at *
+        TypeContext.freeVars, TypeContext.checkAnnotCompat] at *
       have h_find_none := (CmdType.lookup_none_iff_find_none Env x).mp h_lookup_none
       obtain ⟨h_ctx_eq, h_wf_pre, mty_pre, h_mty_pre, mty, h_mty, h_mty_eq, h_v3_eq⟩ :=
         init_det_context_setup C Env x xty heq_det md v1 v2 Env_unified v3
@@ -590,8 +662,23 @@ theorem Cmd.typeCheck_annotated_sound (C : LContext CoreLParams) (Env : TEnv Uni
       simp only [Cmd.applySubst]
       have h_find_none_subst := Lambda.TContext.subst_find_none Env.context
         (CmdType.update v3.snd x v3.fst).stateSubstInfo.subst x h_find_none
-      exact CmdHasType'.init_det _ x v3.fst _ _ md
-        h_find_none_subst h_not_in_v2 h_hta_subst
+      -- The output command's declared type `v3.fst` is already the monotype `mty`,
+      -- so the instantiation is trivial (`tys = []`) and `AliasEquiv` is reflexive.
+      have h_pr := CmdType.postprocess_result C Env_unified v3.snd mty_pre v3.fst
+        (h_mty_pre ▸ h_postprocess)
+      have h_v3_mty : v3.fst = LTy.forAll [] mty := by rw [h_pr.1, h_mty_eq]
+      have h_open : LTy.openFull v3.fst [] = mty := by
+        rw [h_v3_mty]
+        simp only [LTy.openFull, LTy.boundVars, LTy.toMonoTypeUnsafe, List.zip_nil_left]
+        exact LMonoTy.subst_emptyS (by simp [Subst.hasEmptyScopes, Map.isEmpty])
+      have h_tyslen : ([] : List LMonoTy).length = (LTy.boundVars v3.fst).length := by
+        rw [h_v3_mty]; simp [LTy.boundVars]
+      have h_rac : RigidAnnotCompat (Env.context.subst
+          (CmdType.update v3.snd x v3.fst).stateSubstInfo.subst).aliases
+          C.rigidTypeVars (LTy.openFull v3.fst []) mty := by
+        rw [h_open]; exact .of_eq
+      exact CmdHasType'.init_det _ x v3.fst _ _ [] md
+        h_find_none_subst h_not_in_v2 h_tyslen h_rac h_hta_subst
     · -- nondet case
       rename_i heq_nondet
       elim_err h
@@ -610,7 +697,30 @@ theorem Cmd.typeCheck_annotated_sound (C : LContext CoreLParams) (Env : TEnv Uni
         (CmdType.update v2.snd x v2.fst).stateSubstInfo.subst h_fresh_v2
       rw [h_update_ctx, h_ctx_eq, h_mty]
       simp only [Cmd.applySubst]
-      exact CmdHasType'.init_nondet _ x v2.fst mty md h_find_none_subst
+      -- The output command's declared type `v2.fst` is already the monotype `mty`.
+      obtain ⟨mty_pre, h_mty_pre⟩ := CmdType.preprocess_mono C Env xty v1.fst v1.snd h_preprocess
+      have h_pr := CmdType.postprocess_result C v1.snd v2.snd mty_pre v2.fst
+        (h_mty_pre ▸ h_postprocess)
+      have h_subst_eq := CmdType.update_preserves_subst v2.snd x v2.fst
+      have h_v2_mty : v2.fst = LTy.forAll [] mty := by
+        have h_mty' := h_mty
+        rw [h_subst_eq, h_pr.1, LTy.subst_forAll_nil] at h_mty'
+        rw [h_pr.2] at h_mty'
+        have h_idem := LMonoTy.subst_idempotent v1.snd.stateSubstInfo.subst
+          v1.snd.stateSubstInfo.isWF mty_pre
+        rw [h_idem] at h_mty'
+        rw [h_pr.1]; exact h_mty'
+      have h_open : LTy.openFull v2.fst [] = mty := by
+        rw [h_v2_mty]
+        simp only [LTy.openFull, LTy.boundVars, LTy.toMonoTypeUnsafe, List.zip_nil_left]
+        exact LMonoTy.subst_emptyS (by simp [Subst.hasEmptyScopes, Map.isEmpty])
+      have h_tyslen : ([] : List LMonoTy).length = (LTy.boundVars v2.fst).length := by
+        rw [h_v2_mty]; simp [LTy.boundVars]
+      have h_rac : RigidAnnotCompat (Env.context.subst
+          (CmdType.update v2.snd x v2.fst).stateSubstInfo.subst).aliases
+          C.rigidTypeVars (LTy.openFull v2.fst []) mty := by
+        rw [h_open]; exact .of_eq
+      exact CmdHasType'.init_nondet _ x v2.fst mty [] md h_find_none_subst h_tyslen h_rac
   | set x e md =>
     simp only [Cmd.typeCheck, Bind.bind, Except.bind] at h
     elim_err h
@@ -622,6 +732,8 @@ theorem Cmd.typeCheck_annotated_sound (C : LContext CoreLParams) (Env : TEnv Uni
       rename_i v heq
       elim_err h
       rename_i Env_unified h_unify
+      elim_err h
+      rename_i _u h_checkAnnot
       cases h
       obtain ⟨e', ety, Env_infer⟩ := v
       simp at heq h_unify ⊢
@@ -661,6 +773,8 @@ theorem Cmd.typeCheck_annotated_sound (C : LContext CoreLParams) (Env : TEnv Uni
     elim_err h
     rename_i v heq
     elim_err h
+    rename_i _u h_checkAnnot_a2
+    elim_err h
     rename_i h_bool
     cases h
     obtain ⟨e', ety, Env_out⟩ := v
@@ -674,6 +788,8 @@ theorem Cmd.typeCheck_annotated_sound (C : LContext CoreLParams) (Env : TEnv Uni
     elim_err h
     rename_i v heq
     elim_err h
+    rename_i _u h_checkAnnot_a2
+    elim_err h
     rename_i h_bool
     cases h
     obtain ⟨e', ety, Env_out⟩ := v
@@ -686,6 +802,8 @@ theorem Cmd.typeCheck_annotated_sound (C : LContext CoreLParams) (Env : TEnv Uni
     simp only [Cmd.typeCheck, Bind.bind, Except.bind] at h
     elim_err h
     rename_i v heq
+    elim_err h
+    rename_i _u h_checkAnnot_a2
     elim_err h
     rename_i h_bool
     cases h

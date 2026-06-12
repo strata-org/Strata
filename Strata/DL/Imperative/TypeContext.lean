@@ -38,6 +38,7 @@ class TypeContext (P : PureExpr) (Context TypeEnv TypeError : Type) where
   inferType    : Context → TypeEnv → Cmd P → P.Expr → Except TypeError (P.Expr × P.Ty × TypeEnv)
   unifyTypes   : TypeEnv → List (P.Ty × P.Ty) → Except TypeError TypeEnv
   typeErrorFmt : TypeError → Std.Format
+  checkAnnotCompat : Context → TypeEnv → P.Ty → Except TypeError Unit
 
 ---------------------------------------------------------------------
 end -- public section

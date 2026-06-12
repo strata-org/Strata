@@ -42,13 +42,13 @@ private def checkModificationRights (proc : Procedure) (sourceLoc : FileRange) :
 
 private def setupInputEnv (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
     (proc : Procedure) (sourceLoc : FileRange) :
-    Except DiagnosticModel (@Lambda.LMonoTySignature Unit × Core.Expression.TyEnv) := do
+    Except DiagnosticModel (@Lambda.LMonoTySignature Unit × Core.Expression.TyEnv × Lambda.Subst) := do
   let Env := Env.pushEmptyContext
-  let (inp_mty_sig, Env) ← Lambda.LMonoTySignature.instantiate C Env proc.header.typeArgs
+  let (inp_mty_sig, Env, tyArgSubst) ← Lambda.LMonoTySignature.instantiateWithSubst C Env proc.header.typeArgs
                             proc.header.inputs |>.mapError (fun e => DiagnosticModel.withRange sourceLoc e)
   let inp_lty_sig := Lambda.LMonoTySignature.toTrivialLTy inp_mty_sig
   let Env := Env.addInNewestContext inp_lty_sig
-  return (inp_mty_sig, Env)
+  return (inp_mty_sig, Env, tyArgSubst)
 
 -- Error message prefix for errors in processing procedure pre/post conditions.
 def conditionErrorMsgPrefix (procName : CoreIdent) (condName : CoreLabel)
@@ -81,7 +81,7 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p :
   checkModificationRights proc fileRange
 
   -- Temporarily add the formals into the context.
-  let (inp_mty_sig, envWithInputs) ← setupInputEnv C Env proc fileRange
+  let (inp_mty_sig, envWithInputs, tyArgSubst) ← setupInputEnv C Env proc fileRange
 
   -- Type check preconditions.
   -- Note: `envWithInputs` does not have the return variables in the context,
@@ -90,12 +90,12 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p :
   let (preconditions, envAfterPreconds) ← typeCheckConditions C envWithInputs
                                             proc.spec.preconditions proc.header.name
 
-  -- Temporarily add returns into the context.
-  let (out_mty_sig, envWithOutputs) ← Lambda.LMonoTySignature.instantiate C
-                                        envAfterPreconds proc.header.typeArgs
-                                        proc.header.outputs |>.mapError (fun e => DiagnosticModel.withRange fileRange e)
+  -- Temporarily add returns into the context, reusing the same typeArg substitution
+  -- as the inputs so that both share the same fresh vars for each type parameter.
+  let out_mtys := proc.header.outputs.values.map (Lambda.LMonoTy.subst tyArgSubst)
+  let out_mty_sig : @Lambda.LMonoTySignature Unit := proc.header.outputs.keys.zip out_mtys
   let out_lty_sig := Lambda.LMonoTySignature.toTrivialLTy out_mty_sig
-  let envWithOutputs := envWithOutputs.addInNewestContext out_lty_sig
+  let envWithOutputs := Lambda.TEnv.addInNewestContext (T := CoreLParams) envAfterPreconds out_lty_sig
 
   -- Add "old" variables for in-out parameters (those in both inputs and outputs)
   -- so that postconditions and body can reference `old x`.
@@ -109,9 +109,18 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p :
                                               proc.spec.postconditions proc.header.name
 
   -- Type check body.
-  -- Note that `Statement.typeCheck` already reports source locations in
-  -- error messages.
-  let (annotated_body, finalEnv) ← Statement.typeCheck C envAfterPostconds p (.some proc) proc.body
+  -- Add the typeArg substitution (e.g. [a → $__ty0]) so that body type annotations
+  -- referencing the original names get normalized to the fresh vars by `preprocess`.
+  let tyArgConstraints : Lambda.Constraints := tyArgSubst.flatten.map fun (k, v) => (.ftvar k, v)
+  let S ← Lambda.Constraints.unify tyArgConstraints envAfterPostconds.stateSubstInfo
+          |>.mapError (fun e => DiagnosticModel.withRange fileRange (format e))
+  let envForBody := envAfterPostconds.updateSubst S
+  -- The rigid type variables are the fresh vars representing the procedure's type
+  -- parameters. These must not be refined by unification in the body.
+  let rigidVars := tyArgSubst.flatten.filterMap fun (_, v) =>
+    match v with | .ftvar id => some id | _ => none
+  let C := { C with rigidTypeVars := rigidVars }
+  let (annotated_body, finalEnv) ← Statement.typeCheck C envForBody p (.some proc) proc.body
 
   -- Remove formals and returns from the context -- they ought to be local to
   -- the procedure body.

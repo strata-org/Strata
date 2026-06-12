@@ -76,6 +76,28 @@ theorem AnnotCompat.of_eq {aliases : List TypeAlias} {ann : LMonoTy} :
     AnnotCompat aliases ann ann :=
   ⟨[], by unfold LMonoTy.subst; simp [Subst.hasEmptyScopes, Map.isEmpty]; exact .refl⟩
 
+/-- Like `AnnotCompat` but the existential substitution must be identity on rigid
+    type variables. When `rigidVars = []` this reduces to `AnnotCompat`.
+    When all free vars of `ann` are rigid this forces `AliasEquiv ann mty` directly
+    (since σ is identity on all free vars, `subst [σ] ann = ann`). -/
+def RigidAnnotCompat (aliases : List TypeAlias) (rigidVars : List TyIdentifier)
+    (ann mty : LMonoTy) : Prop :=
+  ∃ (σ : Map TyIdentifier LMonoTy),
+    (∀ v, v ∈ rigidVars → LMonoTy.subst [σ] (.ftvar v) = .ftvar v) ∧
+    AliasEquiv aliases (LMonoTy.subst [σ] ann) mty
+
+theorem RigidAnnotCompat.of_eq {aliases : List TypeAlias} {rigidVars : List TyIdentifier}
+    {ann : LMonoTy} : RigidAnnotCompat aliases rigidVars ann ann :=
+  ⟨[], fun _ _ => by unfold LMonoTy.subst; simp [Subst.hasEmptyScopes, Map.isEmpty], by
+    unfold LMonoTy.subst; simp [Subst.hasEmptyScopes, Map.isEmpty]; exact .refl⟩
+
+theorem RigidAnnotCompat.of_aliasEquiv {aliases : List TypeAlias}
+    {rigidVars : List TyIdentifier} {ann mty : LMonoTy}
+    (h : AliasEquiv aliases ann mty) : RigidAnnotCompat aliases rigidVars ann mty :=
+  ⟨[], fun _ _ => by unfold LMonoTy.subst; simp [Subst.hasEmptyScopes, Map.isEmpty], by
+    unfold LMonoTy.subst; simp [Subst.hasEmptyScopes, Map.isEmpty]; exact h⟩
+
+
 -- `AnnotCompat_subst` is defined later (after `AliasEquiv_subst` which it depends on).
 -- See the actual definition below the `AliasEquiv_subst` theorem.
 
@@ -601,6 +623,18 @@ theorem LTy.resolveAliases_context {IDMeta : Type} [ToFormat IDMeta]
   have h_ra := LMonoTy.resolveAliases_context _ _ mty Env' h
   rw [h_ra]; simp [TEnv.context]
   exact LTy.instantiate_context ty Env.genEnv mty0 genEnv' h_inst
+
+/-- `LTy.resolveAliases` preserves `stateSubstInfo` (only modifies `genEnv`). -/
+theorem LTy.resolveAliases_preserves_stateSubstInfo {IDMeta : Type} [ToFormat IDMeta]
+    (ty : LTy) (Env : TEnv IDMeta) (mty : LMonoTy) (Env' : TEnv IDMeta)
+    (h : LTy.resolveAliases ty Env = .ok (mty, Env')) :
+    Env'.stateSubstInfo = Env.stateSubstInfo := by
+  simp [LTy.resolveAliases, Bind.bind, Except.bind] at h
+  elim_err h
+  rename_i v1 h_inst
+  obtain ⟨mty0, genEnv'⟩ := v1; simp at h h_inst
+  have h_env := LMonoTy.resolveAliases_env mty0 {Env with genEnv := genEnv'} mty Env' h
+  rw [h_env]
 
 variable {T : LExprParams} [ToString T.IDMeta] [DecidableEq T.IDMeta]
   [Std.ToFormat T.IDMeta] [HasGen T.IDMeta] [Std.ToFormat (LFunc T)]
@@ -2169,6 +2203,21 @@ private theorem checkNoFutureGenVars_imp_fresh (mty : LMonoTy) (state : TState)
   intro v hv n hn
   simp [LMonoTy.checkNoFutureGenVars, List.all_eq_true] at h
   exact not_isFutureGenVar_imp_ne state v (by simp [h v hv]) n hn
+
+omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
+/-- `instantiateWithCheck` preserves `stateSubstInfo` (only modifies `genEnv`). -/
+theorem LTy_instantiateWithCheck_preserves_stateSubstInfo
+    (ty : LTy) (C : LContext T) (Env : TEnv T.IDMeta)
+    (mty : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : LTy.instantiateWithCheck ty C Env = .ok (mty, Env')) :
+    Env'.stateSubstInfo = Env.stateSubstInfo := by
+  simp [LTy.instantiateWithCheck, Bind.bind, Except.bind] at h
+  elim_err h
+  rename_i v1 h_ra; obtain ⟨mty', Env1⟩ := v1
+  elim_errs h
+  simp at h
+  obtain ⟨_, h2⟩ := h; rw [← h2]
+  exact LTy.resolveAliases_preserves_stateSubstInfo ty Env mty' Env1 h_ra
 
 omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /-- Context preservation for `LTy.instantiateWithCheck`. -/
@@ -4834,41 +4883,103 @@ private theorem LMonoTy.subst_ftvar_eq (S : Subst) (v : TyIdentifier) (t : LMono
     LMonoTy.subst S (.ftvar v) = t := by
   simp only [LMonoTy.subst, h_ne, h_find, Bool.false_eq_true, ↓reduceIte]
 
-theorem AnnotCompat_subst {aliases : List TypeAlias} {ann xty : LMonoTy}
-    (S : Subst)
-    (h : AnnotCompat aliases ann xty)
+omit [ToString
+  T.IDMeta] [DecidableEq T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
+/-- `LTy.instantiate` opens the scheme's bound variables with freshly generated
+    type variables — i.e. it is exactly `LTy.openFull ty` applied to those fresh
+    variables, with the count matching `ty.boundVars`. -/
+theorem LTy_instantiate_eq_openFull (ty : LTy) (Env Env' : TGenEnv T.IDMeta)
+    (mty : LMonoTy) (h : LTy.instantiate ty Env = .ok (mty, Env')) :
+    ∃ tys, tys.length = (LTy.boundVars ty).length ∧ LTy.openFull ty tys = mty := by
+  match ty with
+  | .forAll [] body =>
+    simp only [LTy.instantiate, Except.ok.injEq, Prod.mk.injEq] at h
+    refine ⟨[], by simp [LTy.boundVars], ?_⟩
+    simp only [LTy.openFull, LTy.boundVars, LTy.toMonoTypeUnsafe, List.zip_nil_left]
+    rw [LMonoTy.subst_emptyS (by simp [Subst.hasEmptyScopes, Map.isEmpty]), h.1]
+  | .forAll (x :: xs) body =>
+    simp only [LTy.instantiate, Bind.bind, Except.bind] at h
+    elim_err h
+    rename_i v1 h_gen; obtain ⟨freshtvs, genEnv1⟩ := v1
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h
+    have h_len := TGenEnv.genTyVars_length (x :: xs).length Env freshtvs genEnv1 h_gen
+    refine ⟨freshtvs.map LMonoTy.ftvar, ?_, ?_⟩
+    · simp [LTy.boundVars, h_len]
+    · simp only [LTy.openFull, LTy.boundVars, LTy.toMonoTypeUnsafe]
+      rw [← h.1]
+
+omit [ToString
+  T.IDMeta] [DecidableEq T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
+/-- `LTy.instantiateWithCheck` produces a monotype that is an instantiation of the
+    declared scheme `ty`, up to alias equivalence: there is a list of monotypes `tys`
+    (one per bound variable of `ty`) such that `openFull ty tys` is alias-equivalent
+    to the produced monotype. `instantiateWithCheck` first instantiates the scheme's
+    ∀-bound variables with fresh type variables (`LTy.instantiate`, giving `openFull`)
+    and then resolves type aliases (`LMonoTy.resolveAliases`, giving the `AliasEquiv`). -/
+theorem LTy_instantiateWithCheck_isInstance
+    (ty : LTy) (C : LContext T) (Env : TEnv T.IDMeta)
+    (mty : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : LTy.instantiateWithCheck ty C Env = .ok (mty, Env'))
+    (h_aw : TContext.AliasesWF Env.context) :
+    ∃ tys, tys.length = (LTy.boundVars ty).length ∧
+      AliasEquiv Env.context.aliases (LTy.openFull ty tys) mty := by
+  -- Peel off `LTy.resolveAliases`; the two registration checks are pure (`mty = mty_ra`).
+  simp only [LTy.instantiateWithCheck, Bind.bind, Except.bind] at h
+  elim_err h
+  rename_i v1 h_ra; obtain ⟨mty_ra, Env_ra⟩ := v1
+  elim_errs h
+  cases h
+  -- Decompose `LTy.resolveAliases` into `instantiate` then `LMonoTy.resolveAliases`.
+  simp only [LTy.resolveAliases, Bind.bind, Except.bind] at h_ra
+  elim_err h_ra
+  rename_i v2 h_inst; obtain ⟨mty_inst, genEnv1⟩ := v2
+  obtain ⟨tys, h_len, h_open⟩ :=
+    LTy_instantiate_eq_openFull ty Env.genEnv genEnv1 mty_inst h_inst
+  refine ⟨tys, h_len, ?_⟩
+  rw [h_open]
+  have h_ctx_inst := LTy.instantiate_context ty Env.genEnv mty_inst genEnv1 h_inst
+  have h_aliases_eq : Env.context.aliases =
+      ({Env with genEnv := genEnv1} : TEnv T.IDMeta).context.aliases := by
+    simp [TEnv.context]; rw [h_ctx_inst]
+  exact resolveAliases_aliasEquiv (Γ := Env.context) mty_inst
+    { Env with genEnv := genEnv1 } mty_ra Env_ra h_ra h_aliases_eq h_aw
+
+/-- The concrete σ produced by composing an inner AnnotCompat substitution with
+    an outer S. Maps `v ↦ subst S (subst [σ] (ftvar v))` for each `v ∈ freeVars ann`. -/
+def AnnotCompat_subst_witness (ann : LMonoTy) (σ : Map TyIdentifier LMonoTy) (S : Subst) :
+    Map TyIdentifier LMonoTy :=
+  (LMonoTy.freeVars ann).map (fun v => (v, LMonoTy.subst S (LMonoTy.subst [σ] (.ftvar v))))
+
+/-- The concrete witness satisfies `AliasEquiv aliases (subst [σ'] ann) (subst S xty)`. -/
+theorem AnnotCompat_subst_witness_spec {aliases : List TypeAlias} {ann xty : LMonoTy}
+    (σ : Map TyIdentifier LMonoTy) (S : Subst)
+    (h_ae : AliasEquiv aliases (LMonoTy.subst [σ] ann) xty)
     (h_aw : ∀ alias, alias ∈ aliases → TypeAlias.WF alias) :
-    AnnotCompat aliases ann (LMonoTy.subst S xty) := by
-  obtain ⟨σ, h_ae⟩ := h
+    AliasEquiv aliases (LMonoTy.subst [AnnotCompat_subst_witness ann σ S] ann)
+      (LMonoTy.subst S xty) := by
   have h_ae_S := AliasEquiv_subst aliases (LMonoTy.subst [σ] ann) xty S h_ae h_aw
-  -- Build σ' mapping each v ∈ freeVars ann to subst S (subst [σ] (ftvar v))
   let g : TyIdentifier → LMonoTy := fun v => LMonoTy.subst S (LMonoTy.subst [σ] (.ftvar v))
-  refine ⟨(LMonoTy.freeVars ann).map (fun v => (v, g v)), ?_⟩
-  suffices h_eq : LMonoTy.subst [(LMonoTy.freeVars ann).map (fun v => (v, g v))] ann =
+  suffices h_eq : LMonoTy.subst [AnnotCompat_subst_witness ann σ S] ann =
       LMonoTy.subst S (LMonoTy.subst [σ] ann) by
     rw [h_eq]; exact h_ae_S
-  -- Helper: find? on the constructed map gives the right value
   have h_find : ∀ v, v ∈ LMonoTy.freeVars ann →
-      Maps.find? [(LMonoTy.freeVars ann).map (fun v => (v, g v))] v = some (g v) := by
-    intro v hv; unfold Maps.find?; rw [Map.find?_of_map_self _ g v hv]
-  -- Prove by structural induction with freeVars subset condition
+      Maps.find? [AnnotCompat_subst_witness ann σ S] v = some (g v) := by
+    intro v hv; unfold AnnotCompat_subst_witness Maps.find?; rw [Map.find?_of_map_self _ g v hv]
   suffices h_subst_gen : ∀ (mty : LMonoTy),
       (∀ v, v ∈ LMonoTy.freeVars mty → v ∈ LMonoTy.freeVars ann) →
-      LMonoTy.subst [(LMonoTy.freeVars ann).map (fun v => (v, g v))] mty =
+      LMonoTy.subst [AnnotCompat_subst_witness ann σ S] mty =
         LMonoTy.subst S (LMonoTy.subst [σ] mty) from
     h_subst_gen ann (fun v hv => hv)
   intro mty h_sub
-  -- Abbreviate the constructed map
-  let σ' := (LMonoTy.freeVars ann).map (fun v => (v, g v))
+  let σ' := AnnotCompat_subst_witness ann σ S
   by_cases hσ'_e : Subst.hasEmptyScopes [σ']
-  · -- σ' empty → ann has no freeVars → mty ground
-    have h_no_fv_ann : LMonoTy.freeVars ann = [] := by
+  · have h_no_fv_ann : LMonoTy.freeVars ann = [] := by
       cases h_fv : LMonoTy.freeVars ann with
       | nil => rfl
       | cons v vs =>
         exfalso
         change Subst.hasEmptyScopes [σ'] = true at hσ'_e
-        simp only [σ', h_fv, Subst.hasEmptyScopes, List.map] at hσ'_e
+        simp only [σ', AnnotCompat_subst_witness, h_fv, Subst.hasEmptyScopes, List.map] at hσ'_e
         exact absurd hσ'_e (by unfold Map.isEmpty; simp)
     have h_ground : ∀ v, v ∈ LMonoTy.freeVars mty → False := by
       intro v hv; exact absurd (h_no_fv_ann ▸ h_sub v hv) (by simp)
@@ -4878,12 +4989,8 @@ theorem AnnotCompat_subst {aliases : List TypeAlias} {ann xty : LMonoTy}
   · have hσ'_ne : Subst.hasEmptyScopes [σ'] = false := Bool.eq_false_iff.mpr hσ'_e
     induction mty with
     | ftvar v =>
-      -- LHS: subst [σ'] (ftvar v) = match find? [σ'] v ... (since σ' non-empty)
-      -- RHS: subst S (subst [σ] (ftvar v)) = g v (by def of g)
-      -- Use h_find to match
       have hv := h_sub v (by simp [LMonoTy.freeVars])
       have h_fv := h_find v hv
-      -- Goal: subst [σ'] (ftvar v) = subst S (subst [σ] (ftvar v))
       exact LMonoTy.subst_ftvar_eq [σ'] v (g v) hσ'_ne h_fv
     | bitvec n =>
       simp only [LMonoTy.subst]
@@ -4894,14 +5001,53 @@ theorem AnnotCompat_subst {aliases : List TypeAlias} {ann xty : LMonoTy}
       induction args with
       | nil => simp [LMonoTys.subst_eq_substLogic, LMonoTys.substLogic]
       | cons hd tl ih_tl =>
-        -- Goal already in cons form after subst_tcons + let unfolding
-        -- Just need to combine head (ih) and tail (ih_tl) results
         have h1 := ih hd (.head _) (fun v hv => h_sub v
             (by simp only [LMonoTy.freeVars]; exact List.mem_append_left _ hv))
         have h2 := ih_tl (fun a ha => ih a (.tail _ ha)) (fun v hv => h_sub v
             (by simp only [LMonoTy.freeVars]; exact List.mem_append_right _ hv))
-        -- Goal: LMonoTys.subst [σ'] (hd :: tl) = LMonoTys.subst S (LMonoTys.subst [σ] (hd :: tl))
         rw [LMonoTys.subst_cons_eq, LMonoTys.subst_cons_eq, LMonoTys.subst_cons_eq, h1, h2]
+
+/-- Corollary: `AnnotCompat` is preserved under substitution. -/
+theorem AnnotCompat_subst {aliases : List TypeAlias} {ann xty : LMonoTy}
+    (S : Subst)
+    (h : AnnotCompat aliases ann xty)
+    (h_aw : ∀ alias, alias ∈ aliases → TypeAlias.WF alias) :
+    AnnotCompat aliases ann (LMonoTy.subst S xty) := by
+  obtain ⟨σ, h_ae⟩ := h
+  exact ⟨AnnotCompat_subst_witness ann σ S, AnnotCompat_subst_witness_spec σ S h_ae h_aw⟩
+
+/-- `RigidAnnotCompat` is preserved under substitution when `S` is identity on
+    rigid vars. Uses the concrete `AnnotCompat_subst_witness`. -/
+theorem RigidAnnotCompat_subst {aliases : List TypeAlias} {rigidVars : List TyIdentifier}
+    {ann xty : LMonoTy}
+    (S : Subst)
+    (h : RigidAnnotCompat aliases rigidVars ann xty)
+    (h_aw : ∀ alias, alias ∈ aliases → TypeAlias.WF alias)
+    (h_rigid : ∀ v, v ∈ rigidVars → LMonoTy.subst S (.ftvar v) = .ftvar v) :
+    RigidAnnotCompat aliases rigidVars ann (LMonoTy.subst S xty) := by
+  obtain ⟨σ, h_σ_rigid, h_ae⟩ := h
+  refine ⟨AnnotCompat_subst_witness ann σ S, fun v hv => ?_,
+    AnnotCompat_subst_witness_spec σ S h_ae h_aw⟩
+  have h_gv : LMonoTy.subst S (LMonoTy.subst [σ] (.ftvar v)) = .ftvar v := by
+    rw [h_σ_rigid v hv, h_rigid v hv]
+  show LMonoTy.subst [AnnotCompat_subst_witness ann σ S] (.ftvar v) = .ftvar v
+  by_cases h_mem : v ∈ LMonoTy.freeVars ann
+  · have h_find : Maps.find? [AnnotCompat_subst_witness ann σ S] v = some (.ftvar v) := by
+      unfold AnnotCompat_subst_witness Maps.find?
+      rw [Map.find?_of_map_self _ _ v h_mem]; exact congrArg some h_gv
+    by_cases hσ'_e : Subst.hasEmptyScopes [AnnotCompat_subst_witness ann σ S]
+    · exact LMonoTy.subst_emptyS hσ'_e
+    · exact LMonoTy.subst_ftvar_eq _ v (.ftvar v) (Bool.eq_false_iff.mpr hσ'_e) h_find
+  · by_cases hσ'_e : Subst.hasEmptyScopes [AnnotCompat_subst_witness ann σ S]
+    · exact LMonoTy.subst_emptyS hσ'_e
+    · have hσ'_ne := Bool.eq_false_iff.mpr hσ'_e
+      have h_keys : Map.keys (AnnotCompat_subst_witness ann σ S) = LMonoTy.freeVars ann := by
+        unfold AnnotCompat_subst_witness; rw[Map.keys_eq_map_fst];
+        simp [List.map_map]
+        apply List.map_id'' ; simp
+      have h_none : Map.find? (AnnotCompat_subst_witness ann σ S) v = none :=
+        Map.find?_none_of_not_mem_keys' _ v (h_keys ▸ h_mem)
+      simp [LMonoTy.subst, hσ'_ne, Maps.find?, h_none]
 
 omit [ToFormat T.Metadata] [ToString T.IDMeta] [DecidableEq T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] in
 /-- `LMonoTy.instantiateWithCheck` produces a type that is `AnnotCompat` with
