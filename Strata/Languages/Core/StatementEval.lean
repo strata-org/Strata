@@ -818,26 +818,15 @@ def Command.runCall (lhs : List Expression.Ident) (procName : String) (args : Li
               hasError := fun E => E.error.isSome
               addError := fun E msg => CmdEval.updateError E (.Misc msg)
             }
-<<<<<<< HEAD
             let callEnvAfter := match proc.body with
-=======
-            let configAfter := match proc.body with
->>>>>>> origin/main2
               | .structured ss =>
                 let config : Imperative.RunConfig Expression Command Env :=
                   .stmts ss callEnv
                 Imperative.runStmt ops fuel' config
-<<<<<<< HEAD
               | .cfg cfgBody =>
                 -- Interpret CFG by following control flow from the entry block.
                 .terminal (runCFG cfgBody fuel' callEnv ops)
             match callEnvAfter with
-=======
-              | .cfg _ =>
-                .terminal (CmdEval.updateError callEnv
-                  (.Misc s!"procedure '{procName}': CFG bodies not supported yet"))
-            match configAfter with
->>>>>>> origin/main2
             | .terminal callEnv' =>
               match callEnv'.error with
               | some _ => { E with error := callEnv'.error }
