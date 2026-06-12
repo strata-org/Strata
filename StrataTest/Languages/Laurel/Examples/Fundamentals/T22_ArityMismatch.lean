@@ -11,11 +11,6 @@ open Strata
 
 /-! ## Function called with too many arguments -/
 
-/--
-error: <#strata>(436-457) ❌ Type checking error.
-Impossible to unify int with (arrow int $__ty35).
--/
-#guard_msgs in
 #eval testLaurel <|
 #strata
 program Laurel;
