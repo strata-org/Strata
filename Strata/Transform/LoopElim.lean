@@ -241,20 +241,27 @@ def Stmt.removeLoops
 
 /-- Eliminate loops in all procedures of a Core program by replacing each loop
     with assertions and assumptions about its invariants.
-    Returns the transformed program together with accumulated statistics. -/
+    Returns the transformed program together with accumulated statistics.
+
+    The `LoopElimState` (and so `loopCounter`) is threaded across procedures
+    rather than reset per procedure, so the generated labels
+    (`assume_invariant_{loop_num}_…`, `loop_havoc_{loop_num}`, etc.) are unique
+    program-wide. The downstream verifier accumulates path conditions across all
+    procedures in a single run, so a per-procedure reset would make the first
+    loop of every procedure collide on `…_0_…`. -/
 def loopElim (p : Program) : Program × Statistics :=
-  let (decls, stats) := p.decls.foldl (fun (acc, stats) d =>
+  let (decls, st) := p.decls.foldl (fun (acc, st) d =>
     match d with
     | .proc proc md =>
       match proc.body with
       | .structured ss =>
-        let (body, st) := StateT.run (Block.removeLoopsM ss) {}
-        ((.proc { proc with body := .structured body } md) :: acc, stats.merge st.statistics)
+        let (body, st) := StateT.run (Block.removeLoopsM ss) st
+        ((.proc { proc with body := .structured body } md) :: acc, st)
       -- CFG bodies have no structured loops; pass through unchanged. An
       -- unstructured loop elimination process could be applied here later.
-      | .cfg _ => ((.proc proc md) :: acc, stats)
-    | other => (other :: acc, stats)) ([], {})
-  ({ decls := decls.reverse }, stats)
+      | .cfg _ => ((.proc proc md) :: acc, st)
+    | other => (other :: acc, st)) ([], ({} : LoopElimState))
+  ({ decls := decls.reverse }, st.statistics)
 
 /-- Loop elimination as a `CoreTransformM` pass suitable for the pipeline. -/
 def loopElim' (p : Program) : Transform.CoreTransformM (Bool × Program) := do

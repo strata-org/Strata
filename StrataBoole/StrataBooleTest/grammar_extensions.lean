@@ -100,7 +100,7 @@ Obligation: arbitrary_iter_maintain_invariant_0_0
 Property: assert
 Result: ✅ pass
 
-Obligation: entry_invariant_0_0
+Obligation: entry_invariant_1_0
 Property: assert
 Result: ✅ pass
 
@@ -108,15 +108,15 @@ Obligation: assert_2_648
 Property: assert
 Result: ✅ pass
 
-Obligation: arbitrary_iter_maintain_invariant_0_0
+Obligation: arbitrary_iter_maintain_invariant_1_0
 Property: assert
 Result: ✅ pass
 
-Obligation: entry_invariant_0_0
+Obligation: entry_invariant_2_0
 Property: assert
 Result: ✅ pass
 
-Obligation: entry_invariant_0_1
+Obligation: entry_invariant_2_1
 Property: assert
 Result: ✅ pass
 
@@ -128,23 +128,23 @@ Obligation: assert_5_834
 Property: assert
 Result: ✅ pass
 
-Obligation: arbitrary_iter_maintain_invariant_0_0
+Obligation: arbitrary_iter_maintain_invariant_2_0
 Property: assert
 Result: ✅ pass
 
-Obligation: arbitrary_iter_maintain_invariant_0_1
+Obligation: arbitrary_iter_maintain_invariant_2_1
 Property: assert
 Result: ✅ pass
 
-Obligation: entry_invariant_0_0
+Obligation: entry_invariant_3_0
 Property: assert
 Result: ✅ pass
 
-Obligation: entry_invariant_0_1
+Obligation: entry_invariant_3_1
 Property: assert
 Result: ✅ pass
 
-Obligation: entry_invariant_0_2
+Obligation: entry_invariant_3_2
 Property: assert
 Result: ✅ pass
 
@@ -152,31 +152,31 @@ Obligation: assert_7_990
 Property: assert
 Result: ✅ pass
 
-Obligation: arbitrary_iter_maintain_invariant_0_0
+Obligation: arbitrary_iter_maintain_invariant_3_0
 Property: assert
 Result: ✅ pass
 
-Obligation: arbitrary_iter_maintain_invariant_0_1
+Obligation: arbitrary_iter_maintain_invariant_3_1
 Property: assert
 Result: ✅ pass
 
-Obligation: arbitrary_iter_maintain_invariant_0_2
+Obligation: arbitrary_iter_maintain_invariant_3_2
 Property: assert
 Result: ✅ pass
 
-Obligation: entry_invariant_0_0
+Obligation: entry_invariant_4_0
 Property: assert
 Result: ✅ pass
 
-Obligation: entry_invariant_0_1
+Obligation: entry_invariant_4_1
 Property: assert
 Result: ✅ pass
 
-Obligation: arbitrary_iter_maintain_invariant_0_0
+Obligation: arbitrary_iter_maintain_invariant_4_0
 Property: assert
 Result: ✅ pass
 
-Obligation: arbitrary_iter_maintain_invariant_0_1
+Obligation: arbitrary_iter_maintain_invariant_4_1
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
