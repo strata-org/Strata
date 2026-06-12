@@ -3,23 +3,22 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
 /-
 Test: bitvector types as composite fields. Verifies that the heap
 parameterization pass correctly boxes/unboxes bv-typed fields.
 -/
 
-meta import all StrataTest.Util.TestDiagnostics
-
-meta section
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
 open Strata
 
-namespace Strata.Laurel
+#eval testLaurel <|
+#strata
 
-def compositeBv16Field := r"
+program Laurel;
+
 composite Register {
   var value: bv 16
 }
@@ -50,9 +49,4 @@ procedure writeWrongLiteral(r: Register)
 {
   r#value := 200 bv 16
 };
-"
-
-#guard_msgs (drop info, error) in
-#eval testInputWithOffset "CompositeBv16Field" compositeBv16Field 23 processLaurelFile
-
-end Laurel
+#end
