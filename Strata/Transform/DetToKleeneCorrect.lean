@@ -30,11 +30,7 @@ public section
 
 open Imperative Specification
 
-<<<<<<< HEAD
-variable {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasVarsPure P P.Expr]
-=======
 variable {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P]
->>>>>>> origin/main2
 
 /-! ## Lang instances -/
 
@@ -336,23 +332,12 @@ private def loop_sim
       have h_kleene_assume_b : StepKleeneStar P (EvalCmd P)
           (.stmt (.seq (.cmd (.assume "guard" g md)) b) ρ₀) (.terminal ρ_inner) :=
         kleene_seq_terminal _ b ρ₀ ρ₀ ρ_inner h_assume h_sim_body
-<<<<<<< HEAD
-      have heval_eq : ρ_inner.eval = ρ₀.eval :=
-        block_noFuncDecl_preserves_eval P (EvalCmd P) extendEval body ρ₀ ρ_inner hnofd_body hterm_body_eq
-      have hwfv_inner : WellFormedSemanticEvalVal ρ_inner.eval := by
-        rw [heval_eq]; exact hwfv
-      have hwfcongr_inner : WellFormedSemanticEvalExprCongr ρ_inner.eval := by
-        rw [heval_eq]; exact hwfcongr
-      have hwfv_block : WellFormedSemanticEvalVal ρ_block.eval := by
-        rw [heq_ρ_block]; exact hwfv_inner
-      have hwfcongr_block : WellFormedSemanticEvalExprCongr ρ_block.eval := by
-        rw [heq_ρ_block]; exact hwfcongr_inner
-=======
       have heval_inner : ρ_inner.eval = ρ₀.eval :=
         block_noFuncDecl_preserves_eval P (EvalCmd P) extendEval body ρ₀ ρ_inner hnofd_body hterm_body_eq
       have hwfv_block : WellFormedSemanticEvalVal ρ_block.eval := by
         rw [heq_ρ_block]; exact hρ₀_eq ▸ hwfv
->>>>>>> origin/main2
+      have hwfcongr_block : WellFormedSemanticEvalExprCongr ρ_block.eval := by
+        rw [heq_ρ_block]; exact hρ₀_eq ▸ hwfcongr
       have h_kleene_loop : StepKleeneStar P (EvalCmd P)
           (.stmt (.loop (.seq (.cmd (.assume "guard" g md)) b)) ρ_block) (.terminal _) :=
         ih ρ_block _ hwfv_block hwfcongr_block h_loop_T_T (by simp [ReflTransT.len] at hlen; omega)
@@ -442,31 +427,15 @@ private def loop_sim_kleene
       have hterm_body_eq : StepStmtStar P (EvalCmd P) extendEval (.stmts body ρ₀) (.terminal ρ_inner) :=
         hρ₀_eq ▸ reflTransT_to_prop h_inner_term
       have h_sim_body : StepKleeneStar P (EvalCmd P) (.stmt b ρ₀) (.terminal ρ_inner) :=
-<<<<<<< HEAD
         sim_body ρ₀ ρ_inner hwfb hwfv hwfcongr hterm_body_eq
-      have heval_eq : ρ_inner.eval = ρ₀.eval :=
-        block_noFuncDecl_preserves_eval P (EvalCmd P) extendEval body ρ₀ ρ_inner hnofd_body hterm_body_eq
-      have hwfv_inner : WellFormedSemanticEvalVal ρ_inner.eval := by
-        rw [heval_eq]; exact hwfv
-      have hwfb_inner : WellFormedSemanticEvalBool ρ_inner.eval := by
-        rw [heval_eq]; exact hwfb
-      have hwfcongr_inner : WellFormedSemanticEvalExprCongr ρ_inner.eval := by
-        rw [heval_eq]; exact hwfcongr
-=======
-        sim_body ρ₀ ρ_inner hwfb hwfv hterm_body_eq
       have heval_inner : ρ_inner.eval = ρ₀.eval :=
         block_noFuncDecl_preserves_eval P (EvalCmd P) extendEval body ρ₀ ρ_inner hnofd_body hterm_body_eq
->>>>>>> origin/main2
       have hwfv_block : WellFormedSemanticEvalVal ρ_block.eval := by
         rw [heq_ρ_block]; exact hρ₀_eq ▸ hwfv
       have hwfb_block : WellFormedSemanticEvalBool ρ_block.eval := by
-<<<<<<< HEAD
-        rw [heq_ρ_block]; exact hwfb_inner
-      have hwfcongr_block : WellFormedSemanticEvalExprCongr ρ_block.eval := by
-        rw [heq_ρ_block]; exact hwfcongr_inner
-=======
         rw [heq_ρ_block]; exact hρ₀_eq ▸ hwfb
->>>>>>> origin/main2
+      have hwfcongr_block : WellFormedSemanticEvalExprCongr ρ_block.eval := by
+        rw [heq_ρ_block]; exact hρ₀_eq ▸ hwfcongr
       have h_kleene_loop : StepKleeneStar P (EvalCmd P)
           (.stmt (.loop b) ρ_block) (.terminal _) :=
         ih ρ_block _ hwfb_block hwfv_block hwfcongr_block h_loop_T_T (by simp [ReflTransT.len] at hlen; omega)
@@ -492,7 +461,7 @@ private def loop_sim_kleene
 
 /-! ## Core simulation by strong induction on statement/block size -/
 
-omit [HasOps P] [HasFvars P] in
+omit [HasOps P] in
 private theorem simulation
     (extendEval : ExtendEval P) (sz : Nat) :
     (∀ (st : Stmt P (Cmd P)) (ns : KleeneStmt P (Cmd P)),
@@ -562,16 +531,10 @@ private theorem simulation
                   block_noFuncDecl_preserves_eval P (EvalCmd P) extendEval bss ρ₀ ρ_inner
                     (stmtToKleene_some_noFuncDecl.blockHelper bss b hb) hterm
                 subst heq_ρ'
-<<<<<<< HEAD
-                exact .step _ _ _ .step_block
-                  (kleene_block_terminal ρ₀.store _ ρ_inner
-                    (ih.2 bss b hsz_bss hb ρ₀ ρ_inner hwfb hwfv hwfcongr hterm))
-=======
                 refine .step _ _ _ .step_block ?_
                 rw [show (ρ₀.eval : SemanticEval P) = ρ_inner.eval from heval_inner.symm]
                 exact kleene_block_terminal ρ₀.store _ ρ_inner
-                  (ih.2 bss b hsz_bss hb ρ₀ ρ_inner hwfb hwfv hterm)
->>>>>>> origin/main2
+                  (ih.2 bss b hsz_bss hb ρ₀ ρ_inner hwfb hwfv hwfcongr hterm)
               | .inr ⟨lbl, ρ_inner, hexit, _⟩ =>
                 exact absurd hexit (block_exitsCoveredByBlocks_noEscape P (EvalCmd P) extendEval bss
                   (stmtToKleene_some_exitsCovered.blockHelper [] bss b hb) ρ₀ lbl ρ_inner)
@@ -586,21 +549,6 @@ private theorem simulation
           cases hstar with
           | step _ _ _ h1 r1 => cases h1 with
             | step_ite_true hcond hwfb =>
-<<<<<<< HEAD
-              have : Block.sizeOf tss ≤ n := by
-                simp_all [Stmt.sizeOf]; omega
-              have hnd := ih.2 tss t this ht_tss ρ₀ ρ' hwfb hwfv hwfcongr r1
-              have h_assume := kleene_assume_terminal (label := "true_cond") (md := md) hcond hwfb hwfcongr
-              exact .step _ _ _ .step_choice_left
-                (kleene_seq_terminal _ t ρ₀ ρ₀ ρ' h_assume hnd)
-            | step_ite_false hcond hwfb =>
-              have : Block.sizeOf ess ≤ n := by
-                simp_all [Stmt.sizeOf]; omega
-              have hnd := ih.2 ess e this ht_ess ρ₀ ρ' hwfb hwfv hwfcongr r1
-              have h_assume := kleene_assume_terminal (label := "false_cond") (md := md) ((hwfb ρ₀.store c).2.mp hcond) hwfb hwfcongr
-              exact .step _ _ _ .step_choice_right
-                (kleene_seq_terminal _ e ρ₀ ρ₀ ρ' h_assume hnd)
-=======
               have hsz_tss : Block.sizeOf tss ≤ n := by simp_all [Stmt.sizeOf]; omega
               match block_reaches_terminal P (EvalCmd P) extendEval r1 with
               | .inl ⟨ρ_inner, hterm, heq_ρ'⟩ =>
@@ -608,8 +556,8 @@ private theorem simulation
                   block_noFuncDecl_preserves_eval P (EvalCmd P) extendEval tss ρ₀ ρ_inner
                     (stmtToKleene_some_noFuncDecl.blockHelper tss t ht_tss) hterm
                 subst heq_ρ'
-                have hnd := ih.2 tss t hsz_tss ht_tss ρ₀ ρ_inner hwfb hwfv hterm
-                have h_assume := kleene_assume_terminal (label := "true_cond") (md := md) hcond hwfb
+                have hnd := ih.2 tss t hsz_tss ht_tss ρ₀ ρ_inner hwfb hwfv hwfcongr hterm
+                have h_assume := kleene_assume_terminal (label := "true_cond") (md := md) hcond hwfb hwfcongr
                 refine .step _ _ _ .step_choice_left
                   (.step _ _ _ .step_block ?_)
                 rw [show (ρ₀.eval : SemanticEval P) = ρ_inner.eval from heval_inner.symm]
@@ -626,9 +574,9 @@ private theorem simulation
                   block_noFuncDecl_preserves_eval P (EvalCmd P) extendEval ess ρ₀ ρ_inner
                     (stmtToKleene_some_noFuncDecl.blockHelper ess e ht_ess) hterm
                 subst heq_ρ'
-                have hnd := ih.2 ess e hsz_ess ht_ess ρ₀ ρ_inner hwfb hwfv hterm
+                have hnd := ih.2 ess e hsz_ess ht_ess ρ₀ ρ_inner hwfb hwfv hwfcongr hterm
                 have h_assume := kleene_assume_terminal (label := "false_cond") (md := md)
-                  ((hwfb ρ₀.store c).2.mp hcond) hwfb
+                  ((hwfb ρ₀.store c).2.mp hcond) hwfb hwfcongr
                 refine .step _ _ _ .step_choice_right
                   (.step _ _ _ .step_block ?_)
                 rw [show (ρ₀.eval : SemanticEval P) = ρ_inner.eval from heval_inner.symm]
@@ -637,7 +585,6 @@ private theorem simulation
               | .inr ⟨lbl, ρ_inner, hexit, _⟩ =>
                 exact absurd hexit (block_exitsCoveredByBlocks_noEscape P (EvalCmd P) extendEval ess
                   hcov_ess ρ₀ lbl ρ_inner)
->>>>>>> origin/main2
         | .nondet =>
           have ⟨t, e, ht_tss, ht_ess, hns⟩ := ite_transform_some_nondet tss ess md ns ht
           subst hns
@@ -646,17 +593,6 @@ private theorem simulation
           cases hstar with
           | step _ _ _ h1 r1 => cases h1 with
             | step_ite_nondet_true =>
-<<<<<<< HEAD
-              have : Block.sizeOf tss ≤ n := by
-                simp_all [Stmt.sizeOf]; omega
-              exact .step _ _ _ .step_choice_left
-                (ih.2 tss t this ht_tss ρ₀ ρ' hwfb hwfv hwfcongr r1)
-            | step_ite_nondet_false =>
-              have : Block.sizeOf ess ≤ n := by
-                simp_all [Stmt.sizeOf]; omega
-              exact .step _ _ _ .step_choice_right
-                (ih.2 ess e this ht_ess ρ₀ ρ' hwfb hwfv hwfcongr r1)
-=======
               have hsz_tss : Block.sizeOf tss ≤ n := by simp_all [Stmt.sizeOf]; omega
               match block_reaches_terminal P (EvalCmd P) extendEval r1 with
               | .inl ⟨ρ_inner, hterm, heq_ρ'⟩ =>
@@ -664,7 +600,7 @@ private theorem simulation
                   block_noFuncDecl_preserves_eval P (EvalCmd P) extendEval tss ρ₀ ρ_inner
                     (stmtToKleene_some_noFuncDecl.blockHelper tss t ht_tss) hterm
                 subst heq_ρ'
-                have hnd := ih.2 tss t hsz_tss ht_tss ρ₀ ρ_inner hwfb hwfv hterm
+                have hnd := ih.2 tss t hsz_tss ht_tss ρ₀ ρ_inner hwfb hwfv hwfcongr hterm
                 refine .step _ _ _ .step_choice_left
                   (.step _ _ _ .step_block ?_)
                 rw [show (ρ₀.eval : SemanticEval P) = ρ_inner.eval from heval_inner.symm]
@@ -680,7 +616,7 @@ private theorem simulation
                   block_noFuncDecl_preserves_eval P (EvalCmd P) extendEval ess ρ₀ ρ_inner
                     (stmtToKleene_some_noFuncDecl.blockHelper ess e ht_ess) hterm
                 subst heq_ρ'
-                have hnd := ih.2 ess e hsz_ess ht_ess ρ₀ ρ_inner hwfb hwfv hterm
+                have hnd := ih.2 ess e hsz_ess ht_ess ρ₀ ρ_inner hwfb hwfv hwfcongr hterm
                 refine .step _ _ _ .step_choice_right
                   (.step _ _ _ .step_block ?_)
                 rw [show (ρ₀.eval : SemanticEval P) = ρ_inner.eval from heval_inner.symm]
@@ -688,7 +624,6 @@ private theorem simulation
               | .inr ⟨lbl, ρ_inner, hexit, _⟩ =>
                 exact absurd hexit (block_exitsCoveredByBlocks_noEscape P (EvalCmd P) extendEval ess
                   hcov_ess ρ₀ lbl ρ_inner)
->>>>>>> origin/main2
 
       | .loop guard m' inv body md =>
         match guard with
@@ -769,7 +704,7 @@ private theorem simulation
               (ih.1 s s' hsz_s hs ρ₀ ρ₁ hwfb hwfv hwfcongr hterm_s)
               (ih.2 rest rest' hsz_r hr ρ₁ ρ' hwfb₁ hwfv₁ hwfcongr₁ hterm_rest)
 
-omit [HasOps P] [HasFvars P] in
+omit [HasOps P] in
 /-- If det stmt reaches terminal, Kleene transform reaches terminal. -/
 theorem stmtToKleene_terminal
     (extendEval : ExtendEval P)
@@ -783,7 +718,7 @@ theorem stmtToKleene_terminal
     StepKleeneStar P (EvalCmd P) (.stmt ns ρ₀) (.terminal ρ') :=
   (simulation extendEval st.sizeOf).1 st ns (Nat.le_refl _) ht ρ₀ ρ' hwfb hwfv hwfcongr hstar
 
-omit [HasOps P] [HasFvars P] in
+omit [HasOps P] in
 /-- If det block reaches terminal, Kleene transform reaches terminal. -/
 theorem blockToKleene_terminal
     (extendEval : ExtendEval P)
