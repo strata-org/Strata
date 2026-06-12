@@ -62,6 +62,6 @@ public def desugarShortCircuitPass : LoweringPass where
   run := fun p _ =>
     (desugarShortCircuit p, [], {})
   comesBefore := [
-      ⟨ liftExpressionAssignmentsPass.meta, "The desugar short circuit pass introduces if-then-else expressions whose control-flow must be taken into account by the lifting pass."⟩]
+      ⟨ liftImperativeExpressionsPass.meta, "The desugar short circuit pass introduces if-then-else expressions whose control-flow must be taken into account by the lifting pass."⟩]
 
 end Strata.Laurel

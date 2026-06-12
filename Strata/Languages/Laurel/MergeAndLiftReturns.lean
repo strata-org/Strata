@@ -8,6 +8,7 @@ module
 public import Strata.Languages.Laurel.LaurelAST
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 import Strata.Util.Tactics
+import Strata.Languages.Laurel.EliminateValueInReturns
 public import Strata.Languages.Laurel.LaurelPass
 
 /-!
@@ -75,7 +76,7 @@ private def eliminateReturnsInExpression (proc : Procedure) : Procedure × List 
 public section
 
 /--
-Transform a program by eliminating returns in all functional procedure bodies.
+Transform a program by eliminating returns in all procedure bodies.
 -/
 def mergeAndLiftReturns (program : Program) : Program × List DiagnosticModel :=
   let (procs, diags) := program.staticProcedures.foldl (fun (ps, ds) proc =>
@@ -91,6 +92,7 @@ public def mergeAndLiftReturnsPass : LoweringPass where
   name := "MergeAndLiftReturns"
   documentation := "Attempts to merge and lift returns so that only a single outer return remains, enabling the procedure to be more easily converted to a functional form."
   needsResolves := true
+  comesBefore := [⟨ eliminateValueInReturnsPass.meta, "Lifts returns with a value, so the value should not yet have been lowered."⟩]
   run := fun p _m =>
     let (p', diags) := mergeAndLiftReturns p
     (p', diags, {})

@@ -168,9 +168,9 @@ public def transparencyPass : LaurelPass Laurel.Program UnorderedCoreWithLaurelT
   comesBefore := [⟨ orderingPass.meta, "Transparency pass creates functions that are not ordered" ⟩]
   documentation := "Translate a Laurel program to the UnorderedCoreWithLaurelTypes IR.
 For each procedure:
-- Generate a function with the same signature, named `foo$asFunction`
-- If transparent, the function gets a functional body (assertions erased, calls to functional versions)
-- If the function has a body, add a free postcondition equating the procedure output to the function"
+  - Generate a function with the same signature, named `foo$asFunction`
+  - If transparent, the function gets a functional body (assertions erased, calls to functional versions)
+  - If the function has a body, add a free postcondition equating the procedure output to the function"
   run := fun p _ =>
     (createFunctionsForTransparentBodies p, [], {})
 

@@ -28,13 +28,15 @@ set_option pp.rawOnError true
     Usage inside a `#doc` block: `{laurelPipelineDocs}` -/
 @[block_command]
 def laurelPipelineDocs : Verso.Doc.Elab.BlockCommandOf Unit := fun () => do
-  let entries := laurelPipeline.map fun pass =>
+  let entries := allPasses.map fun pass =>
     let base := s!"- **{pass.name}**: {pass.documentation}"
-    if pass.comesBefore.isEmpty then base
-    else
-      let deps := pass.comesBefore.map fun cb =>
-        s!"  - Comes before **{cb.pass.name}** because: {cb.reason}"
-      base ++ "\n" ++ "\n".intercalate deps
+    let beforeDeps := pass.comesBefore.map fun cb =>
+      s!"  - Comes before **{cb.pass.name}** because: {cb.reason}"
+    let afterDeps := pass.comesAfter.map fun ca =>
+      s!"  - Comes after **{ca.pass.name}** because: {ca.reason}"
+    let deps := beforeDeps ++ afterDeps
+    if deps.isEmpty then base
+    else base ++ "\n" ++ "\n".intercalate deps
 
   let md := "\n".intercalate entries.toList
   let some ast := MD4Lean.parse md
@@ -43,15 +45,23 @@ def laurelPipelineDocs : Verso.Doc.Elab.BlockCommandOf Unit := fun () => do
   `(Verso.Doc.Block.concat #[$blocks,*])
 
 /-- Block command that generates a dependency graph for the Laurel pipeline passes
-    based on the `comesBefore` property.
+    based on the `comesBefore` and `comesAfter` properties.
     Usage inside a `#doc` block: `{laurelPipelineDependencyGraph}` -/
 @[block_command]
 def laurelPipelineDependencyGraph : Verso.Doc.Elab.BlockCommandOf Unit := fun () => do
   -- Collect all edges: (source, target, reason) where source comesBefore target
   let mut edges : List (String × String × String) := []
-  for pass in laurelPipeline do
+  for pass in allPasses do
+    -- `pass.comesBefore` declares: pass must run before cb.pass, i.e. pass → cb.pass
     for cb in pass.comesBefore do
       edges := edges ++ [(pass.name, cb.pass.name, cb.reason)]
+    -- `pass.comesAfter` declares: pass must run after ca.pass, i.e. ca.pass → pass
+    for ca in pass.comesAfter do
+      edges := edges ++ [(ca.pass.name, pass.name, ca.reason)]
+
+  -- Deduplicate edges with the same (source, target), keeping the first reason.
+  edges := edges.foldl (init := []) fun acc e =>
+    if acc.any (fun a => a.1 == e.1 && a.2.1 == e.2.1) then acc else acc ++ [e]
 
   -- Build the graph as a markdown list showing dependencies
   let mut md := "**Dependency edges** (A → B means A must run before B):\n\n"
@@ -62,11 +72,13 @@ def laurelPipelineDependencyGraph : Verso.Doc.Elab.BlockCommandOf Unit := fun ()
       md := md ++ s!"- **{src}** → **{tgt}**\n  - *{reason}*\n"
 
   -- Add a textual rendering of the pipeline order with dependency annotations
-  md := md ++ "\n**Pipeline execution order:**\n\n"
+  md := md ++ "\n**Pipeline execution order** (→ X: must run before X; ← X: must run after X):\n\n"
   md := md ++ "```\n"
   let mut idx := 1
-  for pass in laurelPipeline do
-    let deps := pass.comesBefore.map (s!" → {·.pass.name}")
+  for pass in allPasses do
+    let beforeDeps := pass.comesBefore.map (s!" → {·.pass.name}")
+    let afterDeps := pass.comesAfter.map (s!" ← {·.pass.name}")
+    let deps := beforeDeps ++ afterDeps
     let depStr := if deps.isEmpty then "" else String.join deps
     md := md ++ s!"{idx}. {pass.name}{depStr}\n"
     idx := idx + 1

@@ -7,6 +7,7 @@ module
 
 public import Strata.Languages.Laurel.MapStmtExpr
 public import Strata.Languages.Laurel.LaurelPass
+import Strata.Languages.Laurel.EliminateReturnStatements
 
 /-!
 ## Contract Pass (Laurel → Laurel)
@@ -304,12 +305,12 @@ def lowerContracts (program : Program) : Program :=
   { program with staticProcedures := helperProcs ++ transformedProcs }
 
 public def contractPass : LoweringPass where
-  name := "LowerContract"
+  name := "ContractPass"
   documentation := "Lowers pre and postcondition to assertions and assumptions around call-sites and procedure bodies"
+  comesAfter := [⟨ eliminateReturnStatementsPass.meta, "The contract pass wraps the body of procedures to get: assume <preconditions>; <body>; assert <postconditions>. Eliminating returns first means that the postcondition assertions are guaranteed to execute."⟩ ]
   run := fun p _m =>
     let p' := lowerContracts p
     (p', [], {})
-  comesBefore := []
 
 end -- public section
 end Strata.Laurel

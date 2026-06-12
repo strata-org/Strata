@@ -6,8 +6,8 @@
 module
 
 public import Strata.Languages.Laurel.LaurelAST
+public import Strata.Languages.Laurel.UnorderedCore
 public import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
-public import Strata.Languages.Laurel.TransparencyPass
 import Strata.Util.Tactics
 public import Strata.Languages.Laurel.SemanticModel
 public import Strata.Languages.Laurel.LaurelTypes

@@ -12,9 +12,8 @@ import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 import Strata.Languages.Laurel.HeapParameterizationConstants
 import Strata.Languages.Laurel.LaurelTypes
 import Strata.Util.Tactics
-import Strata.Languages.Laurel.TypeHierarchy
-import Strata.Languages.Laurel.ModifiesClauses
 import Strata.Languages.Laurel.LiftImperativeExpressions
+import Strata.Languages.Laurel.EliminateValueInReturns
 
 /-
 Heap Parameterization Pass
@@ -239,7 +238,7 @@ def readsHeap (name : Identifier) : TransformM Bool := do
 def writesHeap (name : Identifier) : TransformM Bool := do
   return (← get).heapWriters.contains name
 
-def freshVarName : TransformM Identifier := do
+private def freshVarName : TransformM Identifier := do
   let s ← get
   set { s with freshCounter := s.freshCounter + 1 }
   return s!"$tmp{s.freshCounter}"
@@ -589,11 +588,8 @@ public def heapParameterizationPass : LoweringPass where
   needsResolves := true
   run := fun p m =>
     (heapParameterization m p, [], {})
-  comesBefore := [
-      ⟨ typeHierarchyTransformPass.meta, "the type hierarchy pass modifies the 'Composite' datatype that is introduced by this pass." ⟩,
-      ⟨ modifiesClausesTransformPass.meta, "the modifies pass refers to several types and variables introduced by heap parameterization: Composite, Field, $heap_in, $heap." ⟩,
-      ⟨ liftExpressionAssignmentsPass.meta, "the heap parameterization pass introduces assignments (to the heap variables) that need to be lifted."⟩
-      ]
+  comesAfter := [⟨ eliminateValueInReturnsPass.meta, "eliminate value in returns need to come before any passes that change the amount of output parameters of procedures." ⟩]
+  comesBefore := [⟨ liftImperativeExpressionsPass.meta, "the heap parameterization pass introduces assignments (to the heap variables) that need to be lifted."⟩]
 
 end Strata.Laurel
 

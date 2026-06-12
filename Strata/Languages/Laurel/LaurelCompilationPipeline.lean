@@ -17,6 +17,7 @@ import Strata.Languages.Laurel.InferHoleTypes
 import Strata.Languages.Laurel.EliminateDeterministicHoles
 import Strata.Languages.Laurel.CoreDefinitionsForLaurel
 import Strata.Languages.Laurel.CoreGroupingAndOrdering
+import Strata.Languages.Laurel.TransparencyPass
 import Strata.Languages.Laurel.LiftImperativeExpressions
 import Strata.Languages.Laurel.ConstrainedTypeElim
 import Strata.Languages.Laurel.ContractPass
@@ -95,6 +96,7 @@ abbrev TranslateResultWithLaurel := (Option Core.Program) × (List DiagnosticMod
 def laurelPipeline : Array LoweringPass := #[
   typeAliasElimPass,
   filterNonCompositeModifiesPass,
+  mergeAndLiftReturnsPass,
   eliminateValueInReturnsPass,
   heapParameterizationPass,
   typeHierarchyTransformPass,
@@ -102,7 +104,6 @@ def laurelPipeline : Array LoweringPass := #[
   inferHoleTypesPass,
   eliminateDeterministicHolesPass,
   desugarShortCircuitPass,
-  mergeAndLiftReturnsPass,
   constrainedTypeElimPass,
   eliminateReturnStatementsPass,
   contractPass
@@ -160,20 +161,9 @@ private def runLaurelPasses
 
   return (program, model, allDiags, allStats)
 
-/-- A single pass on the unordered Core representation. Each pass receives the
-    current `UnorderedCoreWithLaurelTypes` and the semantic model and returns
-    the (possibly modified) program. -/
-structure CorePass where
-  /-- Human-readable name, used for profiling and file emission. -/
-  name : String
-  /-- Whether `resolveUnorderedCore` should be run after the pass. -/
-  needsResolves : Bool := false
-  /-- The pass action. -/
-  run : UnorderedCoreWithLaurelTypes → SemanticModel → UnorderedCoreWithLaurelTypes
-
 /-- The ordered sequence of passes on the unordered Core representation. -/
 private def unorderedCorePipeline : Array (LaurelPass UnorderedCoreWithLaurelTypes UnorderedCoreWithLaurelTypes) := #[
-  liftExpressionAssignmentsPass
+  liftImperativeExpressionsPass
 ]
 
 /-- All pipeline passes, projected to their parameter-free metadata. Combines
@@ -300,21 +290,31 @@ def verifyToDiagnosticModels (program : Program) (options : LaurelVerifyOptions 
 end -- public section
 
 public def allPasses: Array PassMeta := laurelPipeline.map (fun p => p.meta) ++
-  unorderedCorePipeline.map (fun p => p.meta) ++ [transparencyPass.meta, orderingPass.meta]
+  [transparencyPass.meta] ++
+  unorderedCorePipeline.map (fun p => p.meta) ++
+  [orderingPass.meta]
 
-/-- Every `comesBefore` constraint is respected by the pipeline order. -/
-def comesBeforeRespected : Bool :=
+/-- Every `comesBefore` and `comesAfter` constraint is respected by the
+    pipeline order. A `comesBefore` dependency requires this pass to appear
+    earlier than its target; a `comesAfter` dependency requires it to appear
+    later. -/
+def orderingRespected : Bool :=
   let names := allPasses.map (·.name)
   (List.range allPasses.size).zip allPasses.toList |>.all fun (i, p) =>
-    p.comesBefore.all fun cb =>
+    (p.comesBefore.all fun cb =>
       match names.findIdx? (· == cb.pass.name) with
       | some j => i < j
-      | none   => false   -- target not in laurelPipeline
+      | none   => false)  -- target not in allPasses
+    &&
+    (p.comesAfter.all fun ca =>
+      match names.findIdx? (· == ca.pass.name) with
+      | some j => j < i
+      | none   => false)  -- target not in allPasses
 
 -- Use `initialize` to check at load time instead of `#guard` which requires
 -- interpreter IR that is not available for passes defined in `module` files.
 initialize do
-  unless comesBeforeRespected do
-    throw <| .userError "laurelPipeline: comesBefore ordering constraints violated"
+  unless orderingRespected do
+    throw <| .userError "laurelPipeline: comesBefore/comesAfter ordering constraints violated"
 
 end Laurel

@@ -9,6 +9,7 @@ import Strata.Util.Tactics
 public import Strata.Languages.Laurel.LaurelPass
 public import Strata.Languages.Laurel.Resolution
 import Strata.Languages.Laurel.LaurelTypes
+import Strata.Languages.Laurel.TransparencyPass
 
 namespace Strata
 namespace Laurel
@@ -638,9 +639,10 @@ def liftImperativeExpressionsInCore (uc : UnorderedCoreWithLaurelTypes)
     coreProcedures := liftedProcs
   }
 
-public def liftExpressionAssignmentsPass : LaurelPass UnorderedCoreWithLaurelTypes UnorderedCoreWithLaurelTypes where
-  name := "LiftExpressionAssignments"
-  documentation := "Lifts assignments that appear in expression contexts into preceding statements. This is necessary because Strata Core does not support assignments within expressions. The pass introduces fresh temporary variables where needed."
+public def liftImperativeExpressionsPass : LaurelPass UnorderedCoreWithLaurelTypes UnorderedCoreWithLaurelTypes where
+  name := "LiftImperativeExpressionsPass"
+  documentation := "Lifts assignments and other imperative expressions that appear in expression contexts into preceding statements. This is necessary because Strata Core does not support assignments within expressions. The pass introduces fresh temporary variables where needed."
+  comesAfter := [⟨ transparencyPass.meta, "The imperative expression lifting is only done in procedures, so it comes after the transparency pass"⟩]
   run := fun p m =>
     (liftImperativeExpressionsInCore p m, [], {})
 

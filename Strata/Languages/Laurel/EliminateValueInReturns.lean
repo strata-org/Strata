@@ -8,7 +8,6 @@ module
 public import Strata.Languages.Laurel.LaurelAST
 public import Strata.Languages.Laurel.LaurelPass
 import Strata.Languages.Laurel.MapStmtExpr
-import Strata.Languages.Laurel.HeapParameterization
 import Strata.Util.Tactics
 
 /-!
@@ -110,6 +109,5 @@ public def eliminateValueInReturnsPass : LoweringPass where
   run := fun p _m =>
     let (p', diags) := eliminateValueInReturnsTransform p
     (p', diags.toList, {})
-  comesBefore := [⟨ heapParameterizationPass.meta, "eliminate value in returns need to come before any passes that change the amount of output parameters of procedures." ⟩]
 
 end Laurel
