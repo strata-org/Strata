@@ -93,6 +93,8 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p :
   -- Temporarily add returns into the context, reusing the same typeArg substitution
   -- as the inputs so that both share the same fresh vars for each type parameter.
   let out_mtys := proc.header.outputs.values.map (Lambda.LMonoTy.subst tyArgSubst)
+  let (out_mtys, envAfterPreconds) ← Lambda.LMonoTys.resolveAliases out_mtys envAfterPreconds
+    |>.mapError (fun e => DiagnosticModel.withRange fileRange e)
   let out_mty_sig : @Lambda.LMonoTySignature Unit := proc.header.outputs.keys.zip out_mtys
   let out_lty_sig := Lambda.LMonoTySignature.toTrivialLTy out_mty_sig
   let envWithOutputs := Lambda.TEnv.addInNewestContext (T := CoreLParams) envAfterPreconds out_lty_sig
