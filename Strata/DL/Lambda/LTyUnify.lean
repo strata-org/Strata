@@ -731,6 +731,10 @@ def LTy.subst (S : Subst) (ty : LTy) : LTy :=
   match xs with
   | [] => S | x :: rest => go rest (S.remove x)
 
+theorem LTy.subst_forAll_nil (S : Subst) (mty : LMonoTy) :
+    LTy.subst S (.forAll [] mty) = .forAll [] (LMonoTy.subst S mty) := by
+  simp [LTy.subst, LTy.subst.go]
+
 /--
 Open `ty` by instantiating the bound type variable `x` with `xty`.
 Note: there is function LTy.close in LTy.lean. LTy.open is located in

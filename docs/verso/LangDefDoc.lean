@@ -17,7 +17,7 @@ import Strata.DL.Lambda.LExpr
 import Strata.DL.Lambda.Semantics
 import Strata.DL.Lambda.LExprTypeSpec
 import Strata.DL.Lambda.Denote.LExprDenote
-import Strata.DL.Lambda.Denote.LExprResolveAnnotated
+import Strata.DL.Lambda.LExprResolveProps
 import Strata.DL.Lambda.Denote.LExprSemanticsConsistent
 import Strata.Languages.Core.Procedure
 import Strata.Languages.Core.Program

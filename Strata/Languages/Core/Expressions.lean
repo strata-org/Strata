@@ -33,6 +33,9 @@ abbrev Expression : Imperative.PureExpr :=
 instance : Imperative.HasFvars Expression where
   getFvars := Lambda.LExpr.LExpr.getVars
 
+instance : Imperative.HasVarsPure Expression Expression.Expr where
+  getVars := Lambda.LExpr.LExpr.getVars
+
 instance : Imperative.HasOps Expression where
   getOps := Lambda.LExpr.getOps
 

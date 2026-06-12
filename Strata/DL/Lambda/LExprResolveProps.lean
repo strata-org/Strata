@@ -10,22 +10,33 @@ import all Strata.DL.Lambda.LExprAliasFree
 import Strata.DL.Lambda.Denote.LExprAnnotated
 import all Strata.DL.Lambda.Denote.LExprAnnotated
 
-/-! ## `resolve` produces well-annotated expressions (`HasTypeA`)
+/-! ## Properties of `LExpr.resolve`
 
-This module proves that when `LExpr.resolve` succeeds, the resulting expression
-satisfies `HasTypeA` — i.e., the type annotations placed by resolution are
-internally consistent.
+This module proves two major results about `LExpr.resolve`, both for the case
+where resolution succeeds:
+
+1. **`resolve_HasTypeA`** — the resulting expression satisfies `HasTypeA`, i.e.
+   the type annotations placed by resolution are internally consistent.
+
+2. **`resolve_eqModuloAnnotations`** — the resulting expression is equal to the
+   input *modulo annotations* (`EqModuloAnnotations`): resolution preserves the
+   structure (constructors, identifiers, constants), changing only metadata and
+   type annotations. In particular it leaves the free variables unchanged.
+
+Together these characterize resolution: it produces a well-typed annotation of
+the *same* underlying expression.
 
 ### Comparison with `resolve_HasType`
 
 `resolve_HasType` (in `LExprTypeSpec`) proves full polymorphic typing
-(`HasType`) but requires `WellScoped`, `allKeysFresh`, and
+(`HasType`) for the input but requires `WellScoped`, `allKeysFresh`, and
 `checkContextTypesClosed` assumptions. `resolve_HasTypeA` here proves
-annotation-consistency (`HasTypeA`) under different assumptions: `TEnvWF`,
-`FactoryWF`, and `AliasesResolved`. It drops the scoping/freshness/closure
-conditions but adds `AliasesResolved`, which `resolve_HasType` does not need.
+annotation-consistency (`HasTypeA`) for the output under different assumptions:
+`TEnvWF`, `FactoryWF`, and `AliasesResolved`. It drops the scoping/freshness/
+closure conditions but adds `AliasesResolved`, which `resolve_HasType` does not
+need.
 
-### Proof structure
+### Proof structure of `resolve_HasTypeA`
 
 The proof proceeds in layers:
 
@@ -573,7 +584,7 @@ private theorem resolveAux_HasTypeA_aux [DecidableEq T.IDMeta] [HasGen T.IDMeta]
     split at heq_inferConst
     · simp at heq_inferConst ⊢
       rw [← heq_inferConst]
-      simp
+      simp only []
       rw [LConst.ty_subst]
       exact HasTypeA.const
     · simp at heq_inferConst
@@ -891,5 +902,309 @@ theorem resolve_HasTypeA [DecidableEq T.IDMeta] [HasGen T.IDMeta]
     exact resolveAux_HasTypeA C _ e val.fst val.snd h_res h_envwf0 h_ne0 h_fwf h_resolved0
 
 end
+
+end Lambda
+
+/-! ## `EqModuloAnnotations` and `resolve_eqModuloAnnotations`
+
+Two expressions are equal modulo annotations if they have the same structure
+(constructors, identifiers, constants) but may differ in metadata and type
+annotations. We prove that `resolve` preserves this structure.
+-/
+
+namespace Lambda
+open LExpr
+
+section EqModuloAnnotations
+
+/-- Two expressions over param types sharing the same `IDMeta` are equal modulo
+    annotations: same constructors, same identifiers, same constants, but
+    potentially different metadata and type annotations. -/
+def EqModuloAnnotations (e₁ : LExpr ⟨⟨M₁, IDMeta⟩, Ty₁⟩) (e₂ : LExpr ⟨⟨M₂, IDMeta⟩, Ty₂⟩) : Prop :=
+  match e₁, e₂ with
+  | .const _ c₁, .const _ c₂ => c₁ = c₂
+  | .op _ o₁ _, .op _ o₂ _ => o₁ = o₂
+  | .bvar _ i₁, .bvar _ i₂ => i₁ = i₂
+  | .fvar _ x₁ _, .fvar _ x₂ _ => x₁ = x₂
+  | .app _ fn₁ arg₁, .app _ fn₂ arg₂ =>
+      EqModuloAnnotations fn₁ fn₂ ∧ EqModuloAnnotations arg₁ arg₂
+  | .abs _ n₁ _ body₁, .abs _ n₂ _ body₂ =>
+      n₁ = n₂ ∧ EqModuloAnnotations body₁ body₂
+  | .quant _ qk₁ n₁ _ tr₁ body₁, .quant _ qk₂ n₂ _ tr₂ body₂ =>
+      qk₁ = qk₂ ∧ n₁ = n₂ ∧ EqModuloAnnotations tr₁ tr₂ ∧ EqModuloAnnotations body₁ body₂
+  | .ite _ c₁ t₁ f₁, .ite _ c₂ t₂ f₂ =>
+      EqModuloAnnotations c₁ c₂ ∧ EqModuloAnnotations t₁ t₂ ∧ EqModuloAnnotations f₁ f₂
+  | .eq _ l₁ r₁, .eq _ l₂ r₂ =>
+      EqModuloAnnotations l₁ l₂ ∧ EqModuloAnnotations r₁ r₂
+  | _, _ => False
+
+private theorem eqModuloAnnotations_trans
+    {e₁ : LExpr ⟨⟨M₁, IDMeta⟩, Ty₁⟩} {e₂ : LExpr ⟨⟨M₂, IDMeta⟩, Ty₂⟩} {e₃ : LExpr ⟨⟨M₃, IDMeta⟩, Ty₃⟩}
+    (h₁₂ : EqModuloAnnotations e₁ e₂) (h₂₃ : EqModuloAnnotations e₂ e₃) :
+    EqModuloAnnotations e₁ e₃ := by
+  induction e₁ generalizing e₂ e₃ <;>
+  cases e₂ <;> simp [EqModuloAnnotations] at h₁₂ <;>
+  cases e₃ <;> simp [EqModuloAnnotations] at h₂₃ ⊢ <;>
+  grind
+
+private theorem applySubstT_unresolved_eqMod {T : LExprParams} (et : LExprT T.mono) (S : Subst) :
+    EqModuloAnnotations (applySubstT et S).unresolved et.unresolved := by
+  induction et with
+  | const => simp [applySubstT, replaceMetadata, unresolved, EqModuloAnnotations]
+  | op => simp [applySubstT, replaceMetadata, unresolved, EqModuloAnnotations]
+  | bvar => simp [applySubstT, replaceMetadata, unresolved, EqModuloAnnotations]
+  | fvar => simp [applySubstT, replaceMetadata, unresolved, EqModuloAnnotations]
+  | app _ e1 e2 ih1 ih2 =>
+    simp only [applySubstT, replaceMetadata, unresolved, EqModuloAnnotations]
+    exact ⟨ih1, ih2⟩
+  | abs m name ty e ih =>
+    simp only [applySubstT, replaceMetadata, unresolved]
+    split <;> split <;> (simp only [EqModuloAnnotations]; exact ⟨trivial, ih⟩)
+  | quant m qk name ty tr e ih_tr ih_e =>
+    simp only [applySubstT, replaceMetadata, unresolved, EqModuloAnnotations]
+    exact ⟨trivial, trivial, ih_tr, ih_e⟩
+  | ite _ c t f ih_c ih_t ih_f =>
+    simp only [applySubstT, replaceMetadata, unresolved, EqModuloAnnotations]
+    exact ⟨ih_c, ih_t, ih_f⟩
+  | eq _ e1 e2 ih1 ih2 =>
+    simp only [applySubstT, replaceMetadata, unresolved, EqModuloAnnotations]
+    exact ⟨ih1, ih2⟩
+
+private theorem varCloseT_varOpen_eqModuloAnnotations {T : LExprParams} [DecidableEq T.IDMeta]
+    (k : Nat) (xv : T.Identifier) (xty : LMonoTy)
+    (et : LExprT T.mono) (body : LExpr T.mono)
+    (h : EqModuloAnnotations et.unresolved (LExpr.varOpen k (xv, some xty) body))
+    (h_fresh : xv ∉ LExpr.getVars body) :
+    EqModuloAnnotations (LExpr.varCloseT k xv et).unresolved body := by
+  induction et generalizing k body with
+  | const m c =>
+    cases body <;> simp only [varOpen, substK, unresolved, LExpr.varCloseT, EqModuloAnnotations] at h ⊢
+    · exact h
+    · split at h <;> simp [EqModuloAnnotations] at h
+  | op m o ty =>
+    cases body <;> simp only [varOpen, substK, unresolved, LExpr.varCloseT, EqModuloAnnotations] at h ⊢
+    · exact h
+    · split at h <;> simp [EqModuloAnnotations] at h
+  | bvar m i =>
+    cases body <;> simp only [varOpen, substK, unresolved, LExpr.varCloseT, EqModuloAnnotations] at h ⊢
+    split at h
+    · simp [EqModuloAnnotations] at h
+    · exact h
+  | fvar m x fty =>
+    cases body with
+    | bvar m' i' =>
+      simp only [varOpen, substK, unresolved] at h ⊢
+      split at h
+      · simp only [EqModuloAnnotations] at h
+        subst h
+        simp only [LExpr.varCloseT, beq_self_eq_true, ite_true, unresolved, EqModuloAnnotations]
+        rename_i h_eq; exact (beq_iff_eq.mp h_eq).symm
+      · simp [EqModuloAnnotations] at h
+    | fvar m' y fty' =>
+      simp only [varOpen, substK, unresolved, EqModuloAnnotations] at h
+      subst h
+      simp only [LExpr.getVars, List.mem_singleton] at h_fresh
+      simp only [LExpr.varCloseT]
+      split
+      · rename_i h_eq
+        exact absurd (beq_iff_eq.mp h_eq) h_fresh
+      · simp [unresolved, EqModuloAnnotations]
+    | _ => simp only [varOpen, substK, unresolved, EqModuloAnnotations] at h
+  | app m e1 e2 ih1 ih2 =>
+    cases body with
+    | app m' e1' e2' =>
+      simp only [varOpen, substK, unresolved, LExpr.varCloseT, EqModuloAnnotations] at h ⊢
+      simp only [LExpr.getVars, List.mem_append] at h_fresh
+      exact ⟨ih1 k _ h.1 (fun hm => h_fresh (Or.inl hm)),
+             ih2 k _ h.2 (fun hm => h_fresh (Or.inr hm))⟩
+    | bvar _ _ => simp only [varOpen, substK, unresolved, LExpr.varCloseT, EqModuloAnnotations] at h ⊢; split at h <;> simp [EqModuloAnnotations] at h
+    | _ => simp only [varOpen, substK, unresolved, EqModuloAnnotations] at h
+  | abs m name ty e ih =>
+    cases body with
+    | abs m' name' ty' body' =>
+      simp only [varOpen, substK] at h
+      simp only [LExpr.getVars] at h_fresh
+      simp only [unresolved] at h
+      split at h
+      · simp only [EqModuloAnnotations] at h
+        obtain ⟨h_n, h_body⟩ := h
+        simp only [LExpr.varCloseT, unresolved]
+        split <;> (simp only [EqModuloAnnotations]; exact ⟨h_n, ih (k + 1) _ h_body h_fresh⟩)
+      · simp only [EqModuloAnnotations] at h
+        obtain ⟨h_n, h_body⟩ := h
+        simp only [LExpr.varCloseT, unresolved]
+        split <;> (simp only [EqModuloAnnotations]; exact ⟨h_n, ih (k + 1) _ h_body h_fresh⟩)
+    | bvar _ _ =>
+      simp only [varOpen, substK, unresolved] at h
+      split at h <;> (split at h <;> simp_all [EqModuloAnnotations])
+    | _ =>
+      simp only [varOpen, substK, unresolved] at h
+      split at h <;> simp [EqModuloAnnotations] at h
+  | quant m qk name ty tr e ih_tr ih_e =>
+    cases body with
+    | quant m' qk' name' ty' tr' body' =>
+      simp only [varOpen, substK, unresolved, EqModuloAnnotations] at h ⊢
+      simp only [LExpr.getVars, List.mem_append] at h_fresh
+      obtain ⟨h_qk, h_n, h_tr, h_body⟩ := h
+      simp only [LExpr.varCloseT, unresolved, EqModuloAnnotations]
+      exact ⟨h_qk, h_n,
+             ih_tr (k + 1) _ h_tr (fun hm => h_fresh (Or.inl hm)),
+             ih_e (k + 1) _ h_body (fun hm => h_fresh (Or.inr hm))⟩
+    | bvar _ _ => simp only [varOpen, substK, unresolved] at h ⊢; split at h <;> simp [EqModuloAnnotations] at h
+    | _ => simp only [varOpen, substK, unresolved, EqModuloAnnotations] at h
+  | ite m c t f ih_c ih_t ih_f =>
+    cases body with
+    | ite m' c' t' f' =>
+      simp only [varOpen, substK, unresolved, LExpr.varCloseT, EqModuloAnnotations] at h ⊢
+      simp only [LExpr.getVars, List.mem_append] at h_fresh
+      exact ⟨ih_c k _ h.1 (fun hm => h_fresh (Or.inl (Or.inl hm))),
+             ih_t k _ h.2.1 (fun hm => h_fresh (Or.inl (Or.inr hm))),
+             ih_f k _ h.2.2 (fun hm => h_fresh (Or.inr hm))⟩
+    | bvar _ _ => simp only [varOpen, substK, unresolved, LExpr.varCloseT, EqModuloAnnotations] at h ⊢; split at h <;> simp [EqModuloAnnotations] at h
+    | _ => simp only [varOpen, substK, unresolved, EqModuloAnnotations] at h
+  | eq m e1 e2 ih1 ih2 =>
+    cases body with
+    | eq m' e1' e2' =>
+      simp only [varOpen, substK, unresolved, LExpr.varCloseT, EqModuloAnnotations] at h ⊢
+      simp only [LExpr.getVars, List.mem_append] at h_fresh
+      exact ⟨ih1 k _ h.1 (fun hm => h_fresh (Or.inl hm)),
+             ih2 k _ h.2 (fun hm => h_fresh (Or.inr hm))⟩
+    | bvar _ _ => simp only [varOpen, substK, unresolved] at h ⊢; split at h <;> simp [EqModuloAnnotations] at h
+    | _ => simp only [varOpen, substK, unresolved, EqModuloAnnotations] at h
+
+private theorem resolveAux_eqModuloAnnotations {T : LExprParams}
+    [DecidableEq T.IDMeta] [HasGen T.IDMeta] [Std.ToFormat T.IDMeta]
+    (e : LExpr T.mono) (et : LExprT T.mono) (C : LContext T)
+    (Env Env' : TEnv T.IDMeta)
+    (h_res : resolveAux C Env e = .ok (et, Env'))
+    (h_wf : ResolveAuxWF Env)
+    (h_fwf : FactoryWF C.functions)
+    (h_ws : WellScoped e Env.context) :
+    EqModuloAnnotations et.unresolved e := by
+  apply resolveAux_ind
+    (P := fun e et C Env Env' => WellScoped e Env.context → EqModuloAnnotations et.unresolved e)
+    (e := e) (et := et) (C := C) (Env := Env) (Env' := Env')
+    (h_res := h_res) (h_envwf := h_wf.envwf) (h_ne := h_wf.ne) (h_fwf := h_fwf)
+  case h_const =>
+    intro m c et C Env Env' h_res h_envwf h_ne h_fwf h_ws
+    simp only [resolveAux, Bind.bind, Except.bind] at h_res
+    elim_err h_res
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h_res
+    obtain ⟨h_et, _⟩ := h_res; subst h_et
+    simp [unresolved, EqModuloAnnotations]
+  case h_op =>
+    intro m o oty et C Env Env' h_res h_envwf h_ne h_fwf h_ws
+    simp only [resolveAux, Bind.bind, Except.bind] at h_res
+    elim_errs h_res
+    split at h_res
+    · cases h_res; simp [unresolved, EqModuloAnnotations]
+    · elim_errs h_res; cases h_res; simp [unresolved, EqModuloAnnotations]
+  case h_fvar =>
+    intro m x fty et C Env Env' h_res h_envwf h_ne h_fwf h_ws
+    simp only [resolveAux, Bind.bind, Except.bind] at h_res
+    elim_err h_res
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h_res
+    obtain ⟨h_et, _⟩ := h_res; subst h_et
+    simp [unresolved, EqModuloAnnotations]
+  case h_app =>
+    intro m e1 e2 et C Env Env' e1t Env1 e2t Env2 fresh_name Env_gen substInfo
+      h_res h1 h2 h3 h_unify h_et _ _ _ _ _ _ h_envwf h_ne h_fwf h_envwf1 h_ctx1 h_envwf2 h_ctx2
+      h_ih1 h_ih2 h_ws
+    subst h_et
+    have h_ws1 : WellScoped e1 Env.context :=
+      fun x hx => h_ws x (by simp [LExpr.freeVars]; exact Or.inl hx)
+    have h_ws2 : WellScoped e2 Env1.context :=
+      h_ctx1 ▸ (fun x hx => h_ws x (by simp [LExpr.freeVars]; exact Or.inr hx))
+    simp only [unresolved, EqModuloAnnotations]
+    exact ⟨h_ih1 h_ws1, h_ih2 h_ws2⟩
+  case h_abs =>
+    intro m name bty body et C Env Env' xv xty Env1 et_body Env2
+      h_res h_tbv h_res_body h_et h_env' h_envwf h_ne h_fwf h_envwf1 h_ne1 h_aliases_eq h_ih h_ws
+    subst h_et
+    have h_ws_body : WellScoped body Env.context :=
+      fun x hx => h_ws x (by simp [LExpr.freeVars]; exact hx)
+    have h_xv_fresh := typeBoundVar_xv_not_in_knownVars C Env bty xv xty Env1 h_tbv
+    have h_fresh := WellScoped_fresh_not_in_getVars body Env.context xv h_ws_body h_xv_fresh
+    have h_ws_open := WellScoped_varOpen_typeBoundVar C Env bty xv xty Env1 body h_tbv h_ws_body
+    have h_ih_body := h_ih h_ws_open
+    simp only [unresolved]
+    split <;> (simp only [EqModuloAnnotations];
+               exact ⟨trivial, varCloseT_varOpen_eqModuloAnnotations 0 xv xty et_body body h_ih_body h_fresh⟩)
+  case h_quant =>
+    intro m qk name bty triggers body et C Env Env' xv xty Env1 et_body Env2 et_tr Env3
+      h_res h_tbv h_res_body h_res_tr h_et h_env' _ h_envwf h_ne h_fwf h_envwf1 h_ne1 h_aliases_eq
+      h_envwf2 h_ctx2 h_ih_body h_ih_tr h_ws
+    subst h_et
+    have h_ws_body : WellScoped body Env.context :=
+      fun x hx => h_ws x (by simp [LExpr.freeVars]; exact Or.inr hx)
+    have h_ws_tr : WellScoped triggers Env.context :=
+      fun x hx => h_ws x (by simp [LExpr.freeVars]; exact Or.inl hx)
+    have h_xv_fresh := typeBoundVar_xv_not_in_knownVars C Env bty xv xty Env1 h_tbv
+    have h_fresh_body := WellScoped_fresh_not_in_getVars body Env.context xv h_ws_body h_xv_fresh
+    have h_fresh_tr := WellScoped_fresh_not_in_getVars triggers Env.context xv h_ws_tr h_xv_fresh
+    have h_ws_open_body := WellScoped_varOpen_typeBoundVar C Env bty xv xty Env1 body h_tbv h_ws_body
+    have h_ws_open_tr := WellScoped_varOpen_typeBoundVar C Env bty xv xty Env1 triggers h_tbv h_ws_tr
+    have h_ws_open_tr' : WellScoped (LExpr.varOpen 0 (xv, some xty) triggers) Env2.context :=
+      h_ctx2 ▸ h_ws_open_tr
+    have h_ih_b := h_ih_body h_ws_open_body
+    have h_ih_t := h_ih_tr h_ws_open_tr'
+    simp only [unresolved, EqModuloAnnotations]
+    exact ⟨trivial, trivial,
+           varCloseT_varOpen_eqModuloAnnotations 0 xv xty et_tr triggers h_ih_t h_fresh_tr,
+           varCloseT_varOpen_eqModuloAnnotations 0 xv xty et_body body h_ih_b h_fresh_body⟩
+  case h_eq =>
+    intro m e1 e2 et C Env Env' e1t Env1 e2t Env2 substInfo
+      h_res h1 h2 h_unify h_et _ _ _ h_envwf h_ne h_fwf h_envwf1 h_ctx1 h_envwf2 h_ctx2
+      h_ih1 h_ih2 h_ws
+    subst h_et
+    have h_ws1 : WellScoped e1 Env.context :=
+      fun x hx => h_ws x (by simp [LExpr.freeVars]; exact Or.inl hx)
+    have h_ws2 : WellScoped e2 Env1.context :=
+      h_ctx1 ▸ (fun x hx => h_ws x (by simp [LExpr.freeVars]; exact Or.inr hx))
+    simp only [unresolved, EqModuloAnnotations]
+    exact ⟨h_ih1 h_ws1, h_ih2 h_ws2⟩
+  case h_ite =>
+    intro m c th el et C Env Env' ct Env1 tht Env2 elt Env3 substInfo
+      h_res hc ht he h_unify h_et _ _ _ h_envwf h_ne h_fwf h_envwf1 h_ctx1 h_envwf2 h_ctx2
+      h_envwf3 h_ctx3 h_ihc h_iht h_ihe h_ws
+    subst h_et
+    have h_wsc : WellScoped c Env.context :=
+      fun x hx => h_ws x (by simp [LExpr.freeVars, List.mem_append]; exact Or.inl hx)
+    have h_wsth : WellScoped th Env1.context :=
+      h_ctx1 ▸ (fun x hx => h_ws x (by simp [LExpr.freeVars, List.mem_append]; exact Or.inr (Or.inl hx)))
+    have h_wsel : WellScoped el Env2.context :=
+      h_ctx2 ▸ (fun x hx => h_ws x (by simp [LExpr.freeVars, List.mem_append]; exact Or.inr (Or.inr hx)))
+    simp only [unresolved, EqModuloAnnotations]
+    exact ⟨h_ihc h_wsc, h_iht h_wsth, h_ihe h_wsel⟩
+  exact h_ws
+
+/-- `resolve` only changes annotations: the unresolved output is structurally
+    identical to the input. -/
+theorem resolve_eqModuloAnnotations {T : LExprParams}
+    [DecidableEq T.IDMeta] [HasGen T.IDMeta] [Std.ToFormat T.IDMeta]
+    (e : LExpr T.mono) (e_typed : LExprT T.mono) (C : LContext T)
+    (Env : TEnv T.IDMeta) (Env' : TEnv T.IDMeta)
+    (h : e.resolve C Env = Except.ok (e_typed, Env'))
+    (h_envwf : TEnvWF Env)
+    (h_ne : Env.context.types ≠ [])
+    (h_resolved : TContext.AliasesResolved Env.context)
+    (h_fwf : FactoryWF C.functions)
+    (h_ws : WellScoped e Env.context) :
+    EqModuloAnnotations e_typed.unresolved e := by
+  have h_not_empty : Env.context.types.isEmpty = false := by
+    cases h_types : Env.context.types <;> simp_all [Maps.isEmpty]
+  simp only [LExpr.resolve, h_not_empty, Bind.bind, Except.bind] at h
+  match h_res : resolveAux C Env e with
+  | .error _ => simp [h_res] at h
+  | .ok (et, Env'') =>
+    simp [h_res] at h
+    obtain ⟨h_et, h_env⟩ := h
+    subst h_et h_env
+    exact eqModuloAnnotations_trans
+      (applySubstT_unresolved_eqMod et Env''.stateSubstInfo.subst)
+      (resolveAux_eqModuloAnnotations e et C Env Env'' h_res
+        ⟨h_envwf, h_ne, h_resolved⟩ h_fwf h_ws)
+
+end EqModuloAnnotations
 
 end Lambda

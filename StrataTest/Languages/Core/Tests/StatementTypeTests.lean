@@ -102,6 +102,15 @@ subst:
                     ]
           return format ans
 
+-- A declared type that conflicts with a well-typed initializer is rejected:
+-- `var x : int := true`. This is the behavior captured by the `init_det`/`init_nondet`
+-- `AnnotCompat` premise of the `CmdHasType'` spec.
+/-- info: error: Impossible to unify int with bool. -/
+#guard_msgs in
+#eval do let ans ← typeCheck LContext.default TEnv.default Program.init none
+                    [ .init "x" t[int] (.det eb[#true]) .empty ]
+          return format ans
+
 /--
 info: ok: context:
 types:   [(x, int)]

@@ -7,10 +7,10 @@ module
 
 public import Strata.Languages.Core.Expressions
 public import Strata.DL.Imperative.TypeContext
-import Strata.DL.Lambda.LExprT
+public import Strata.DL.Lambda.LExprTypeSpec
 
 namespace Core
-open Lambda Imperative
+open Lambda Imperative LExpr
 open Std (ToFormat Format format)
 open Strata (DiagnosticModel FileRange)
 
@@ -42,6 +42,7 @@ Preprocess a user-facing type in Core amounts to converting a poly-type (i.e.,
 def preprocess (C: LContext CoreLParams) (Env : TEnv Unit) (ty : LTy) :
     Except DiagnosticModel (LTy × TEnv Unit) := do
   let (mty, Env) ← ty.instantiateWithCheck C Env |>.mapError DiagnosticModel.fromFormat
+  let mty := LMonoTy.subst Env.stateSubstInfo.subst mty
   return (.forAll [] mty, Env)
 
 def postprocess (_: LContext CoreLParams) (Env: TEnv Unit) (ty : LTy) :
@@ -91,21 +92,37 @@ def unifyTypes (Env: TEnv Unit) (constraints : List (LTy × LTy)) :
   let Env := Env.updateSubst S
   return Env
 
+/-- Reject any assignment that refines a rigid (skolemized) type variable.
+    See `Cmd.typeCheck_sound` for the full invariant. -/
+def checkAnnotCompat (C : LContext CoreLParams) (Env : TEnv Unit) :
+    Except DiagnosticModel Unit := do
+  if C.rigidTypeVars.isEmpty then
+    .ok ()
+  else
+    let S := Env.stateSubstInfo.subst
+    match C.rigidTypeVars.find? (fun v => LMonoTy.subst S (.ftvar v) != .ftvar v) with
+    | some v =>
+      let inferred := LMonoTy.subst S (.ftvar v)
+      .error <| DiagnosticModel.fromFormat
+        f!"Rigid type variable '{v}' was refined to '{inferred}' by the initializer"
+    | none => .ok ()
+
 def typeErrorFmt (e : DiagnosticModel) : Format :=
   e.format none
 
 ---------------------------------------------------------------------
 
 instance : Imperative.TypeContext Expression (LContext CoreLParams) (TEnv Unit) DiagnosticModel where
-  isBoolType   := CmdType.isBoolType
-  freeVars     := CmdType.freeVars
-  preprocess   := CmdType.preprocess
-  postprocess  := CmdType.postprocess
-  update       := CmdType.update
-  lookup       := CmdType.lookup
-  inferType    := CmdType.inferType
-  unifyTypes   := CmdType.unifyTypes
-  typeErrorFmt := CmdType.typeErrorFmt
+  isBoolType       := CmdType.isBoolType
+  freeVars         := CmdType.freeVars
+  preprocess       := CmdType.preprocess
+  postprocess      := CmdType.postprocess
+  update           := CmdType.update
+  lookup           := CmdType.lookup
+  inferType        := CmdType.inferType
+  unifyTypes       := CmdType.unifyTypes
+  typeErrorFmt     := CmdType.typeErrorFmt
+  checkAnnotCompat := CmdType.checkAnnotCompat
 
 end CmdType
 ---------------------------------------------------------------------

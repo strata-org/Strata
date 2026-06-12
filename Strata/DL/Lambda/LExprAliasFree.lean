@@ -31,15 +31,6 @@ section
 
 variable {T : LExprParams} [Std.ToFormat T.IDMeta]
 
-/-- Splits on `h` once and closes the first (error) branch via `simp at h` or `contradiction`.
-    Fails if neither closes the branch. -/
-macro "elim_err" h:ident : tactic =>
-  `(tactic| (split at $h:ident; · (solve | simp at $h:ident | contradiction)))
-
-/-- Repeatedly splits on `h` and closes error branches until a split fails or
-    the error branch can't be closed. -/
-macro "elim_errs" h:ident : tactic =>
-  `(tactic| repeat (split at $h:ident; · (solve | simp at $h:ident | contradiction)))
 
 /-! ### `resolveAliases` identity lemmas -/
 
@@ -74,37 +65,6 @@ theorem resolveAliases_aliasFree (mty : LMonoTy) (Env : TEnv T.IDMeta)
     rw [h_af.1]
 termination_by sizeOf mty
 end
-
-
-/-- `typeBoundVar` only adds to the type scope — it does not modify the alias list. -/
-theorem typeBoundVar_aliases_eq [DecidableEq T.IDMeta] [HasGen T.IDMeta] (C : LContext T) (Env : TEnv T.IDMeta)
-    (bty : Option LMonoTy) (xv : T.Identifier) (xty : LMonoTy) (Env' : TEnv T.IDMeta)
-    (h : typeBoundVar C Env bty = .ok (xv, xty, Env')) :
-    Env'.context.aliases = Env.context.aliases := by
-  simp only [typeBoundVar, Bind.bind, Except.bind] at h
-  elim_err h
-  rename_i v_gen h_gen; obtain ⟨xv_raw, Env_g⟩ := v_gen
-  dsimp at h; cases bty with
-  | some bty_val =>
-    dsimp at h; elim_err h
-    rename_i v_ic h_ic; obtain ⟨bty_ic, Env_ic⟩ := v_ic
-    cases h
-    simp only [TEnv.addInNewestContext, TEnv.updateContext, TEnv.context]
-    have h_ctx_g := liftGenEnv_context Env xv Env_g h_gen
-    have h_ctx_ic := LMonoTy_instantiateWithCheck_context' bty_val C Env_g _ ⟨bty_ic, Env_ic⟩ h_ic
-    have h_ctx : (⟨bty_ic, Env_ic⟩ : TEnv T.IDMeta).context = Env.context := by
-      simp [TEnv.context] at h_ctx_ic h_ctx_g ⊢; rw [h_ctx_ic, h_ctx_g]
-    exact congrArg TContext.aliases h_ctx
-  | none =>
-    dsimp at h; elim_err h
-    rename_i v_tg h_tg; obtain ⟨tv, Env_tv⟩ := v_tg
-    cases h
-    simp only [TEnv.addInNewestContext, TEnv.updateContext, TEnv.context]
-    have h_ctx_g := liftGenEnv_context Env xv Env_g h_gen
-    have h_ctx_tg := TEnv.genTyVar_context Env_g tv Env_tv h_tg
-    have h_ctx : Env_tv.context = Env.context := by
-      simp [TEnv.context] at h_ctx_tg h_ctx_g ⊢; rw [h_ctx_tg, h_ctx_g]
-    exact congrArg TContext.aliases h_ctx
 
 
 /-- A member of an alias-free type list is itself alias-free. -/

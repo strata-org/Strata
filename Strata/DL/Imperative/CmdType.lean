@@ -37,6 +37,7 @@ def Cmd.typeCheck {P C T} [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
           let (xty, τ) ← TC.preprocess ctx τ xty
           let (expr, ety, τ) ← TC.inferType ctx τ c expr
           let τ ← TC.unifyTypes τ [(xty, ety)]
+          let _ ← TC.checkAnnotCompat ctx τ
           let (xty, τ) ← TC.postprocess ctx τ xty
           let τ := TC.update τ x xty
           let c := Cmd.init x xty (.det expr) md
@@ -58,6 +59,7 @@ def Cmd.typeCheck {P C T} [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
       | .det expr =>
         let (expr, ety, τ) ← TC.inferType ctx τ c expr
         let τ ← TC.unifyTypes τ [(xty, ety)]
+        let _ ← TC.checkAnnotCompat ctx τ
         let c := Cmd.set x (.det expr) md
         .ok (c, τ)
       | .nondet =>
@@ -65,6 +67,7 @@ def Cmd.typeCheck {P C T} [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
 
   | .assert label e md =>
     let (e, ety, τ) ← TC.inferType ctx τ c e
+    let _ ← TC.checkAnnotCompat ctx τ
     if TC.isBoolType ety then
        let c := Cmd.assert label e md
        .ok (c, τ)
@@ -74,6 +77,7 @@ def Cmd.typeCheck {P C T} [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
 
   | .assume label e md =>
     let (e, ety, τ) ← TC.inferType ctx τ c e
+    let _ ← TC.checkAnnotCompat ctx τ
     if TC.isBoolType ety then
        let c := Cmd.assume label e md
        .ok (c, τ)
@@ -83,6 +87,7 @@ def Cmd.typeCheck {P C T} [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
 
   | .cover label e md =>
     let (e, ety, τ) ← TC.inferType ctx τ c e
+    let _ ← TC.checkAnnotCompat ctx τ
     if TC.isBoolType ety then
        let c := Cmd.cover label e md
        .ok (c, τ)
