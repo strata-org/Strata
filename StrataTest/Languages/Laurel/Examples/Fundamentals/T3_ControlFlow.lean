@@ -3,21 +3,16 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import all StrataTest.Util.TestDiagnostics
-meta import all StrataTest.Languages.Laurel.TestExamples
-
-meta section
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
 open Strata
 
-namespace Strata.Laurel
-
-def program := r"
-function returnAtEnd(x: int) returns (r: int)
-{
+#eval testLaurel <|
+#strata
+program Laurel;
+function returnAtEnd(x: int) returns (r: int) {
   if x > 0 then {
     if x == 1 then {
       return 1
@@ -100,7 +95,4 @@ procedure valuelessEarlyReturn(b: bool)
   };
   assert true
 };
-"
-
-#guard_msgs (error, drop all) in
-#eval! testInputWithOffset "ControlFlow" program 14 processLaurelFile
+#end
