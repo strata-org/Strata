@@ -67,6 +67,21 @@ spec {
 
 #end
 
+private def mkProc (name : String) (postcond : Expression.Expr) : Decl :=
+  .proc {
+    header := {
+      name     := ⟨name, ()⟩
+      typeArgs := []
+      inputs   := [(⟨"x", ()⟩, .bitvec 8)]
+      outputs  := []
+    }
+    spec := {
+      preconditions  := []
+      postconditions := [(s!"{name}_ensures_0", { expr := postcond })]
+    }
+    body := .structured [.assume "body" (.true ()) #[]]
+  } #[]
+
 /--
 info:
 Obligation: test_ubv_nonneg_ensures_0

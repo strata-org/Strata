@@ -3,13 +3,11 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import all Strata.SimpleAPI
-meta import all StrataTest.Util.TestDiagnostics
-meta import all StrataTest.Languages.Laurel.TestExamples
+import StrataTest.Util.TestLaurel
 
-meta section
+open StrataTest.Util
+open Strata
 
 /-! # Bodiless Procedure Inlining Test
 
@@ -19,12 +17,9 @@ body, so inlining would make everything after the call trivially provable.
 Now the body assumes the postconditions instead, so `assert false` after
 the inlined call is correctly rejected. -/
 
-namespace Strata.Laurel.BodilessInliningTest
-
-open StrataTest.Util
-open Strata
-
-private def laurelSource := "
+#eval testLaurel (options := { translateOptions := { inlineFunctionsWhenPossible := true } }) <|
+#strata
+program Laurel;
 procedure bodilessProcedure() returns (r: int)
   opaque
   ensures r > 0
@@ -38,11 +33,4 @@ procedure caller()
   assert false
 //^^^^^^^^^^^^ error: assertion could not be proved
 };
-"
-
-#guard_msgs (drop info, error) in
-#eval testInputWithOffset "Postconditions" laurelSource 23
-  (fun p => processLaurelFileWithOptions { translateOptions := { inlineFunctionsWhenPossible := true} } p)
-
-end Strata.Laurel.BodilessInliningTest
-end
+#end

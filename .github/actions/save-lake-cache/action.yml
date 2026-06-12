@@ -32,4 +32,4 @@ runs:
       uses: actions/cache/save@v5
       with:
         path: ${{ inputs.path }}
-        key: ${{ inputs.key-prefix }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
+        key: ${{ inputs.key-prefix }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('[^.]*/**/*.st', '*.st') }}-${{ github.sha }}

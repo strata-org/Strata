@@ -3,49 +3,30 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
 /-
 Tests that the constrained type elimination pass correctly transforms
 Laurel programs by comparing the output against expected results.
 -/
 
-meta import StrataDDM.Elab
-meta import StrataDDM.BuiltinDialects.Init
-meta import Strata.Languages.Laurel.Grammar
-meta import Strata.Languages.Laurel.ConstrainedTypeElim
-meta import Strata.Languages.Laurel.Resolution
-
-meta section
+import StrataTest.Util.TestLaurel
+import Strata.Languages.Laurel.ConstrainedTypeElim
+import Strata.Languages.Laurel.Resolution
 
 open Strata
-open StrataDDM (initDialect)
-open StrataDDM.Elab (parseStrataProgramFromDialect)
+open StrataTest.Util
 
 namespace Strata.Laurel
 
-def testProgram : String := r"
-constrained nat = x: int where x >= 0 witness 0
-procedure test(n: nat) returns (r: nat)
-  opaque
-{
-  assert r >= 0;
-  var y: nat := n;
-  return y
-};
-"
+private def parseLaurelAndElim (program : StrataDDM.Program) : IO Program := do
+  let laurelProgram ← translateLaurel program
+  let result := resolve laurelProgram
+  pure (constrainedTypeElim result.model result.program).1
 
-def parseLaurelAndElim (input : String) : IO Program := do
-  let inputCtx := StrataDDM.Parser.stringInputContext "test" input
-  let dialects := StrataDDM.Elab.LoadedDialects.ofDialects! #[initDialect, Laurel]
-  let strataProgram ← parseStrataProgramFromDialect dialects Laurel.name inputCtx
-  let uri := Strata.Uri.file "test"
-  match Laurel.TransM.run uri (Laurel.parseProgram strataProgram) with
-  | .error e => throw (IO.userError s!"Translation errors: {e}")
-  | .ok program =>
-    let result := resolve program
-    let (program, model) := (result.program, result.model)
-    pure (constrainedTypeElim model program).1
+private def printElim (program : StrataDDM.Program) : IO Unit := do
+  let result ← parseLaurelAndElim program
+  for proc in result.staticProcedures do
+    IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
 
 /--
 info: function nat$constraint(x: int): bool
@@ -71,27 +52,18 @@ procedure $witness_nat()
 };
 -/
 #guard_msgs in
-#eval! do
-  let program ← parseLaurelAndElim testProgram
-  for proc in program.staticProcedures do
-    IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
+#eval! printElim
+#strata
+program Laurel;
+constrained nat = x: int where x >= 0 witness 0
+procedure test(n: nat) returns (r: nat) opaque {
+  assert r >= 0;
+  var y: nat := n;
+  return y
+};
+#end
 
 -- Scope management: constrained variable in if-branch must not leak into sibling block
-def scopeProgram : String := r"
-constrained pos = v: int where v > 0 witness 1
-procedure test(b: bool)
-  opaque
-{
-  if b then {
-    var x: pos := 1
-  };
-  {
-    var x: int := -5;
-    x := -10
-  }
-};
-"
-
 /--
 info: function pos$constraint(v: int): bool
 {
@@ -117,23 +89,23 @@ procedure $witness_pos()
 };
 -/
 #guard_msgs in
-#eval! do
-  let program ← parseLaurelAndElim scopeProgram
-  for proc in program.staticProcedures do
-    IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
+#eval! printElim
+#strata
+program Laurel;
+constrained pos = v: int where v > 0 witness 1
+procedure test(b: bool) opaque {
+  if b then {
+    var x: pos := 1
+  };
+  {
+    var x: int := -5;
+    x := -10
+  }
+};
+#end
 
 -- Uninitialized constrained variable: havoc + assume constraint.
 -- The variable has no known value, only the type constraint is assumed.
-def uninitProgram : String := r"
-constrained posint = x: int where x > 0 witness 1
-procedure f()
-  opaque
-{
-  var x: posint;
-  assert x == 1
-};
-"
-
 /--
 info: function posint$constraint(x: int): bool
 {
@@ -154,11 +126,14 @@ procedure $witness_posint()
 };
 -/
 #guard_msgs in
-#eval! do
-  let program ← parseLaurelAndElim uninitProgram
-  for proc in program.staticProcedures do
-    IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
+#eval! printElim
+#strata
+program Laurel;
+constrained posint = x: int where x > 0 witness 1
+procedure f() opaque {
+  var x: posint;
+  assert x == 1
+};
+#end
 
 end Laurel
-end Strata
-end

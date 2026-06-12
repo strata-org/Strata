@@ -24,7 +24,7 @@ namespace Strata
 
 -- Sequence operations and lambda/application syntax increase the grammar size enough
 -- to require higher recursion and heartbeat limits.
-set_option maxRecDepth 10000
+set_option maxRecDepth 20000
 set_option maxHeartbeats 400000
 
 /- DDM support for parsing and pretty-printing Strata Core -/
@@ -477,6 +477,59 @@ op datatype_decl (name : Ident,
 @[scope(datatypes), preRegisterTypes(datatypes)]
 op command_datatypes (@[nonempty] datatypes : NewlineSepBy DatatypeDecl) : Command =>
   datatypes ";\n";
+
+// =====================================================================
+// CFG (Unstructured Control Flow) Syntax
+// =====================================================================
+
+// Transfer commands: how a basic block ends
+category Transfer;
+
+// Unconditional goto: exactly one target.
+op transfer_goto (label : Ident) : Transfer =>
+  "goto " label ";";
+
+// Nondeterministic goto: exactly two targets chosen nondeterministically.
+op transfer_nondet_goto (label1 : Ident, label2 : Ident) : Transfer =>
+  "goto " label1 ", " label2 ";";
+
+// Conditional goto (deterministic: condition selects between two targets)
+// NOTE: We use "branch" instead of "if" to avoid ambiguity with the
+// structured if-statement syntax. The DDM parser registers tokens globally,
+// so "if (" in Transfer would conflict with "if (" in Statement.
+op transfer_cond_goto (c : Expr, lt : Ident, lf : Ident) : Transfer =>
+  "branch (" c ") goto " lt " else " "goto " lf ";";
+
+// Return/finish (terminate execution)
+op transfer_return : Transfer =>
+  "return;";
+
+// A single CFG basic block: label, commands, transfer
+category CFGBlock;
+@[scope(cmds)]
+op cfg_block (label : Ident, cmds : Seq Statement, tr : Transfer) : CFGBlock =>
+  label ":" " {\n" indent(2, cmds) "  " tr "\n}";
+
+// A list of CFG blocks
+category CFGBlocks;
+op cfg_blocks_one (b : CFGBlock) : CFGBlocks => b;
+op cfg_blocks_cons (b : CFGBlock, rest : CFGBlocks) : CFGBlocks =>
+  b "\n" rest;
+
+// CFG body: entry label + blocks
+category CFGBody;
+op cfg_body (entry : Ident, blocks : CFGBlocks) : CFGBody =>
+  "cfg " entry " {\n" indent(2, blocks) "\n}";
+
+// Procedure with CFG body
+op command_cfg_procedure (name : Ident,
+                          typeArgs : Option TypeArgs,
+                          @[scope(typeArgs)] b : Bindings,
+                          @[scope(b)] s : Option Spec,
+                          @[scope(b)] body : CFGBody) :
+  Command =>
+  @[prec(10)] "procedure " name typeArgs b "\n"
+              s body ";\n";
 
 #end
 
