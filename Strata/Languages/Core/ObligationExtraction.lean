@@ -123,12 +123,7 @@ def extractObligations (p : Program) : Except String (ProofObligations Expressio
       let globalPc : PathConditions Expression := [axiomPc]
       let obs ← match proc.body with
         | .structured ss => extractFromStatements globalPc ss
-<<<<<<< HEAD
         | .cfg c => extractFromDetCFG globalPc c
-=======
-        -- CFG bodies are not supported on procedure-body branch.
-        | .cfg _ => .ok #[]
->>>>>>> origin/main2
       .ok (axiomPc, allObs ++ obs)
     | _ => .ok (axiomPc, allObs)
   return allObs
