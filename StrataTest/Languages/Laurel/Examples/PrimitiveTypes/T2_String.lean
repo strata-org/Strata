@@ -3,22 +3,18 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
 
-meta import all StrataTest.Util.TestDiagnostics
-meta import all StrataTest.Languages.Laurel.TestExamples
-
-meta section
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
+open Strata
 
-namespace Strata
-namespace Laurel
-
-def program := r#"
+#eval testLaurel <|
+#strata
+program Laurel;
 procedure testStringKO()
-returns (result: string)
+  returns (result: string)
   opaque
 {
   var message: string := "Hello";
@@ -69,7 +65,4 @@ procedure testStringVarConcatKO()
   assert(result == "Goodbye")
 //^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
-"#
-
-#guard_msgs(drop info, error) in
-#eval testInputWithOffset "String" program 14 processLaurelFile
+#end

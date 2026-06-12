@@ -3,19 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import all StrataTest.Util.TestDiagnostics
-meta import all StrataTest.Languages.Laurel.TestExamples
-
-meta section
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
 open Strata
 
-namespace Strata.Laurel
-
-def program: String := r"
+#eval testLaurel <|
+#strata
+program Laurel;
 procedure nestedImpureStatements()
   opaque
 {
@@ -83,7 +79,6 @@ procedure nestedImpureStatementsAndOpaque()
 // An imperative procedure call in expression position is lifted before the
 // surrounding expression is evaluated.
 procedure imperativeProc(x: int) returns (r: int)
-   // ensures clause required because Core's symbolic verification does not support transparent proceduces yet
   opaque
   ensures r == x + 1
 {
@@ -142,18 +137,9 @@ procedure addProcCaller(): int
 {
   var x: int := 0;
   var y: int := addProc({x := 1; x}, {x := x + 10; x});
-  assert y == 11
+  assert y == 11 // TOOD should be 12. Fix in other PR
 
-  // The next statement is not translated correctly.
-  // I think it's a bug in the handling of StaticCall
-  // Where a reference is substituted when it should not be
   // var z: int := addProc({x := 1; x}, {x := x + 10; x}) + (x := 3);
-  // assert z == 14
+  // assert z == 15
 };
-"
-
-#guard_msgs (error, drop all) in
-#eval! testInputWithOffset "NestedImpureStatements" program 14 processLaurelFile
-
-
-end Laurel
+#end

@@ -1119,15 +1119,15 @@ and the literal and collection types (`Ident`, `NumLit`, `StrLit`, `Seq`,
 
 For documentation specific to the auto-generated Python dialect and the
 `py_to_strata` command-line tool, see
-[PythonDialect.md](https://github.com/strata-org/Strata/blob/main/Tools/Python/PythonDialect.md)
+[PythonDialect.md](https://github.com/strata-org/Strata/blob/main/StrataPython/Tools/strata-python/PythonDialect.md)
 in the repository.
 
 ## Installation
 
-The `strata` package can be installed from the `Tools/Python` directory:
+Install both Python packages from the repository root:
 
 ```
-pip install .
+pip install ./Tools/Python-base ./StrataPython/Tools/strata-python
 ```
 
 The package requires Python 3.11 or later and depends on the `amazon.ion`

@@ -189,13 +189,11 @@ info: ok: (procedure Q1 ()
  aliases: [] state: tyGen: 1 tyPrefix: $__ty exprGen: 0 exprPrefix: $__var subst: [($__ty0, bool)])
 -/
 #guard_msgs in
-#eval do let ans ← typeCheck { LContext.default with functions := Core.Factory } TEnv.default
+#eval do let ans ← typeCheck (LContext.default (functions := Core.Factory)) TEnv.default
                     Program.init
                     { header := {name := "Q1", typeArgs := [], inputs := [], outputs := [] },
                       spec := { preconditions := [], postconditions := [] },
-                      body := [ Statement.init "x" t[∀a. %a] (.det eb[#true]) .empty],
-                           --     Statement.set "x" eb[((~Int.Add x) #1)] .empty ] }
-                    }
+                      body := .structured [ Statement.init "x" t[∀a. %a] (.det eb[#true]) .empty] }
                     .empty
          return format ans
 
@@ -206,11 +204,11 @@ info: error: Impossible to unify (arrow int (arrow int int)) with (arrow bool $_
 First mismatch: int with bool.
 -/
 #guard_msgs in
-#eval do let ans ← typeCheck { LContext.default with functions := Core.Factory } TEnv.default
+#eval do let ans ← typeCheck (LContext.default (functions := Core.Factory)) TEnv.default
                     Program.init
                     { header := {name := "Q1", typeArgs := [], inputs := [], outputs := [] },
                       spec := { preconditions := [], postconditions := [] },
-                      body := [ Statement.init "x" t[∀a. %a] (.det eb[#true]) .empty,
+                      body := .structured [ Statement.init "x" t[∀a. %a] (.det eb[#true]) .empty,
                                 Statement.set "x" eb[((~Int.Add x) #1)] .empty ] }
                     .empty
          return format ans
@@ -228,7 +226,7 @@ spec { ensures true; }
 };
 #end
 
-/-- info: error: (5655-5670) Rigid type variable '$__ty0' was refined to 'int' by the initializer -/
+/-- info: error: (5563-5578) Rigid type variable '$__ty0' was refined to 'int' by the initializer -/
 #guard_msgs in
 #eval Core.typeCheck .quiet (TransM.run Inhabited.default (translateProgram q2a_refineRigidVar)).fst
 
@@ -272,7 +270,7 @@ spec { ensures true; }
 };
 #end
 
-/-- info: error: (6883-6900) Rigid type variable '$__ty0' was refined to 'int' by the initializer -/
+/-- info: error: (6791-6808) Rigid type variable '$__ty0' was refined to 'int' by the initializer -/
 #guard_msgs in
 #eval Core.typeCheck .quiet (TransM.run Inhabited.default (translateProgram q2c_inferredSideRefine)).fst
 
@@ -283,12 +281,12 @@ spec { ensures true; }
 info: error: Rigid type variable '$__ty0' was refined to 'int' by the initializer
 -/
 #guard_msgs in
-#eval do let ans ← typeCheck { LContext.default with functions := Core.Factory } TEnv.default
+#eval do let ans ← typeCheck (LContext.default (functions := Core.Factory)) TEnv.default
                     Program.init
                     { header := {name := "Q2d", typeArgs := ["a"],
                                  inputs := [("z", mty[%a])], outputs := [] },
                       spec := { preconditions := [], postconditions := [] },
-                      body := [ Statement.assert "lbl" eb[((~Int.Lt z) #0)] .empty ] }
+                      body := .structured [ Statement.assert "lbl" eb[((~Int.Lt z) #0)] .empty ] }
                     .empty
          return format ans
 
