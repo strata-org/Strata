@@ -260,19 +260,20 @@ private theorem inferType_bool_HasType (C : LContext CoreLParams) (Env Env_out :
 /-! ### Main Soundness Theorem -/
 
 /--
-Soundness of the command typechecker: if `Cmd.typeCheck` succeeds, then the
-declarative `CmdHasType` relation holds between the substituted input/output contexts.
+Soundness of the command typechecker: if `Cmd.typeCheck` succeeds, then
+`CmdHasType` holds between the substituted input/output contexts.
 
-The theorem uses the **final** substitution from `Env'` applied to both the input
-and output contexts, since unification during the command may refine type variables.
+**Rigid-var-identity invariant** (`h_rigid_inv`):
+`∀ v ∈ C.rigidTypeVars, subst S (ftvar v) = ftvar v`.
 
-`h_rigid_inv` is the rigid-var-identity invariant: `Env`'s substitution has not
-refined any rigid type variable. This is provided by the Statement-level caller:
-at procedure entry, rigid vars are freshly generated (not in the subst's domain), and we proved preservation in `Cmd.typeCheck_preserves_rigid_inv`.
+*Established* in `ProcedureType.typeCheck`: `setupInputEnv` generates fresh vars
+(e.g. `$__ty0`) as rigid, then unifies the original names with them — the rigid
+vars are values (not keys) of the initial substitution, so the invariant holds.
+(TODO: prove)
+
+*Preserved* by `Cmd.typeCheck_preserves_rigid_inv`: each command's `checkAnnotCompat`
+verifies identity on all rigid vars after unification, rejecting any refinement.
 -/
--- h_mono: In Core, all context types are `forAll [] mty` (boundVars = []) because
--- preprocess instantiates poly annotations into fresh unification vars, and
--- update/postprocess always stores `forAll [] _`. Makes polyKeysFresh vacuous.
 theorem Cmd.typeCheck_sound (C : LContext CoreLParams) (Env : TEnv Unit)
     (cmd cmd' : Cmd Expression) (Env' : TEnv Unit)
     (h : Imperative.Cmd.typeCheck C Env cmd = .ok (cmd', Env'))
@@ -365,14 +366,11 @@ theorem Cmd.typeCheck_sound (C : LContext CoreLParams) (Env : TEnv Unit)
       have h_update_ctx := CmdType.update_subst_context v2.snd x v2.fst
         (CmdType.update v2.snd x v2.fst).stateSubstInfo.subst h_fresh_v2
       rw [h_update_ctx, h_ctx_eq, h_mty]
-      -- Recover the form of the stored monotype `mty`: postprocess applies
-      -- `v1.snd`'s substitution, then `update` applies it again (it is preserved).
       obtain ⟨mty_pre, h_mty_pre⟩ := CmdType.preprocess_mono C Env xty v1.fst v1.snd h_preprocess
       have h_pr := CmdType.postprocess_result C v1.snd v2.snd mty_pre v2.fst
         (h_mty_pre ▸ h_postprocess)
       have h_subst_eq := CmdType.update_preserves_subst v2.snd x v2.fst
-      -- In the nondet case, `v2.snd = v1.snd` (postprocess preserves env), so the
-      -- double-substitution in `h_mty` collapses by idempotence to a single one.
+      -- Double-subst collapses by idempotence since postprocess preserves env.
       have h_mty_eq : mty = LMonoTy.subst v2.snd.stateSubstInfo.subst mty_pre := by
         have h_mty' := h_mty
         rw [h_subst_eq, h_pr.1, LTy.subst_forAll_nil] at h_mty'
@@ -384,8 +382,7 @@ theorem Cmd.typeCheck_sound (C : LContext CoreLParams) (Env : TEnv Unit)
         exact h_eq
       have h_pp : CmdType.preprocess C Env xty = .ok (.forAll [] mty_pre, v1.snd) := by
         rw [h_preprocess, ← h_mty_pre]
-      -- In nondet, v2.snd = v1.snd (postprocess preserves env) and preprocess
-      -- preserves stateSubstInfo, so v2.snd.subst = Env.subst.
+      -- v2.snd = v1.snd (postprocess preserves), so v2.snd.subst = Env.subst.
       have h_v2_subst : v2.snd.stateSubstInfo = Env.stateSubstInfo := by
         rw [h_pr.2]
         exact CmdType.preprocess_preserves_stateSubstInfo C Env xty v1.fst v1.snd h_preprocess

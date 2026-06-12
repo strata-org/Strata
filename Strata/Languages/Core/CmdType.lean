@@ -92,10 +92,8 @@ def unifyTypes (Env: TEnv Unit) (constraints : List (LTy × LTy)) :
   let Env := Env.updateSubst S
   return Env
 
--- Reject any assignment that refines a rigid (skolemized) type variable.
--- Checks ALL rigid vars in the substitution after unification — not just those
--- appearing in the declared type — because the inferred-type side can also force
--- a rigid var to be refined (e.g. `var y : int := z` where `z : a` forces `a = int`).
+/-- Reject any assignment that refines a rigid (skolemized) type variable.
+    See `Cmd.typeCheck_sound` for the full invariant. -/
 def checkAnnotCompat (C : LContext CoreLParams) (Env : TEnv Unit) (_xty : LTy) :
     Except DiagnosticModel Unit := do
   if C.rigidTypeVars.isEmpty then

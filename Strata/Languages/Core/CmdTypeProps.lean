@@ -121,32 +121,9 @@ theorem preprocess_isInstance (C : LContext CoreLParams) (Env Env' : TEnv Unit)
     (⟨[], by unfold LMonoTy.subst; simp [Subst.hasEmptyScopes, Map.isEmpty]; exact h_ae⟩) h_aw
 
 /-- After the unification substitution `S` is applied, `preprocess`'s output satisfies
-    `RigidAnnotCompat`.
-
-    Requires `h_rigid`: the post-unification substitution `S` is identity on rigid
-    vars, AND `S` absorbs `Env'`'s substitution (so the composed double-subst
-    collapses to a single application of `S`).
-
-    **The rigid-var-identity invariant** (used to discharge `h_rigid` at call sites):
-
-    `∀ v ∈ C.rigidTypeVars, subst S (ftvar v) = ftvar v`
-
-    where `S` is the substitution after the current command's `unifyTypes`.
-
-    **Establishment:** In `ProcedureType.typeCheck`, `setupInputEnv` generates fresh
-    type variables (e.g. `$__ty0`) via `genTyVars` and records them as
-    `C.rigidTypeVars`. It then unifies the original names with these fresh vars
-    (e.g. `a → $__ty0`). The resulting substitution has keys `{a, ...}` — the
-    original type-parameter names. The rigid vars `{$__ty0, ...}` are values, not
-    keys. Since `subst S (ftvar v) = ftvar v` whenever `v` is not a key of `S`,
-    the invariant holds at the start of body typechecking.
-
-    **Preservation:** Each statement in the body runs `unifyTypes` followed by
-    `checkAnnotCompat`. The updated `checkAnnotCompat` iterates over ALL of
-    `C.rigidTypeVars` and verifies that `subst S_new (ftvar v) = ftvar v` for each.
-    If any rigid var was added as a key (directly or transitively), `checkAnnotCompat`
-    rejects the command. So if typechecking proceeds past `checkAnnotCompat`, no
-    rigid var was refined, and the invariant holds for the next statement. -/
+    `RigidAnnotCompat`. Requires that `S` is identity on rigid vars and absorbs
+    `Env'`'s substitution. See `Cmd.typeCheck_sound` for the full rigid-var-identity
+    invariant (establishment and preservation). -/
 theorem preprocess_isInstance_rigidAnnotCompat (C : LContext CoreLParams) (Env Env' : TEnv Unit)
     (S : Subst) (xty : LTy) (mty_pre : LMonoTy)
     (h : CmdType.preprocess C Env xty = .ok (.forAll [] mty_pre, Env'))
@@ -391,10 +368,8 @@ theorem inferType_HasType (C : LContext CoreLParams) (Env Env' : TEnv Unit)
 
 end CmdType
 
-/-- The rigid-var-identity invariant is preserved by `Cmd.typeCheck`: if no rigid
-    var is refined at entry, none is refined at exit. Each branch that performs
-    unification or expression inference is followed by `checkAnnotCompat`, which
-    rejects any refinement. Branches without unification preserve `stateSubstInfo`. -/
+/-- `Cmd.typeCheck` preserves the rigid-var-identity invariant.
+    See `Cmd.typeCheck_sound` for the full invariant. -/
 theorem Cmd.typeCheck_preserves_rigid_inv (C : LContext CoreLParams) (Env : TEnv Unit)
     (cmd cmd' : Cmd Expression) (Env' : TEnv Unit)
     (h : Imperative.Cmd.typeCheck C Env cmd = .ok (cmd', Env'))

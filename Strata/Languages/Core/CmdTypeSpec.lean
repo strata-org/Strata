@@ -49,12 +49,7 @@ inductive CmdHasType' (C : LContext CoreLParams) [S : ExprTypingSpec τ] :
     TContext Unit → Cmd Expression → TContext Unit → Prop where
 
   /-- `var x : T := e` — `x` must be fresh, and the stored monotype `mty` must be
-      an instantiation of the declared scheme `T` up to `RigidAnnotCompat`. The
-      `tys`/`openFull` premises mirror the checker: `preprocess` instantiates `T`'s
-      ∀-bound variables. `RigidAnnotCompat` then allows free type variables to be
-      refined by a substitution σ — EXCEPT those in `C.rigidTypeVars`, which σ must
-      leave untouched. This prevents the body of `procedure<a>` from refining `a`
-      while still allowing CallElim-introduced free vars to be unified. -/
+      an instantiation of `T` up to `RigidAnnotCompat` (see `Cmd.typeCheck_sound`). -/
   | init_det : ∀ Γ x (xty : LTy) e mty tys md,
       Γ.types.find? x = none →
       x ∉ HasVarsPure.getVars (P := Expression) e →
@@ -64,9 +59,8 @@ inductive CmdHasType' (C : LContext CoreLParams) [S : ExprTypingSpec τ] :
       CmdHasType' C Γ (.init x xty (.det e) md)
         { Γ with types := Γ.types.insert x (.forAll [] mty) }
 
-  /-- `var x : T := *` — `x` must be fresh, and the stored monotype `mty` must be
-      an instantiation of the declared scheme `T` (`RigidAnnotCompat` as in
-      `init_det`), as produced by the checker's `preprocess`. -/
+  /-- `var x : T := *` — `x` must be fresh, and `mty` must be an instantiation of
+      `T` up to `RigidAnnotCompat` (as in `init_det`). -/
   | init_nondet : ∀ Γ x (xty : LTy) mty tys md,
       Γ.types.find? x = none →
       tys.length = xty.boundVars.length →
