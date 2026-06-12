@@ -389,3 +389,30 @@ procedure useUndef() opaque {
   var y: int := x + 2
 };
 #end
+
+/-! ## Datatype-constructor argument type checks
+
+Constructor arguments are now type-checked against the declared parameter types,
+so `Wrap(true)` for `Wrap(v: int)` is rejected (it was silently accepted before). -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+datatype Box { Wrap(v: int) }
+function foo(): Box {
+  Wrap(true)
+//     ^^^^ error: expected 'int', got 'bool'
+};
+#end
+
+/-! A correctly-typed constructor call still resolves cleanly (no
+over-rejection): `Wrap(1)` matches the declared `int` field. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+datatype Box { Wrap(v: int) }
+function foo(): Box {
+  Wrap(1)
+};
+#end
