@@ -7,22 +7,25 @@ module
 
 public import Strata.Languages.Laurel.LaurelToCoreTranslator
 import Strata.Languages.Laurel.DesugarShortCircuit
-import Strata.Languages.Laurel.EliminateReturnsInExpression
 import Strata.Languages.Laurel.EliminateReturnStatements
-import Strata.Languages.Laurel.EliminateValuesInReturns
+import Strata.Languages.Laurel.MergeAndLiftReturns
+import Strata.Languages.Laurel.EliminateValueInReturns
+import Strata.Languages.Laurel.ModifiesClauses
+import Strata.Languages.Laurel.HeapParameterization
+import Strata.Languages.Laurel.TypeHierarchy
+import Strata.Languages.Laurel.InferHoleTypes
+import Strata.Languages.Laurel.EliminateDeterministicHoles
+import Strata.Languages.Laurel.CoreDefinitionsForLaurel
+import Strata.Languages.Laurel.LiftImperativeExpressions
 import Strata.Languages.Laurel.ConstrainedTypeElim
 import Strata.Languages.Laurel.ContractPass
 import Strata.Languages.Laurel.TypeAliasElim
+public import Strata.Languages.Laurel.LaurelPass
 public import Strata.Languages.Core
 import Strata.Languages.Core.DDMTransform.ASTtoCST
-import Strata.Languages.Laurel.CoreDefinitionsForLaurel
-import Strata.Languages.Laurel.EliminateHoles
+import Strata.Languages.Core.Verifier
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
-import Strata.Languages.Laurel.HeapParameterization
-import Strata.Languages.Laurel.InferHoleTypes
-import Strata.Languages.Laurel.LiftImperativeExpressions
-import Strata.Languages.Laurel.ModifiesClauses
-import Strata.Languages.Laurel.TypeHierarchy
+import Strata.Util.Statistics
 
 /-!
 ## Laurel Compilation Pipeline
@@ -87,72 +90,37 @@ public section
     Laurel-to-Laurel passes, before the final translation to Core). -/
 abbrev TranslateResultWithLaurel := (Option Core.Program) × (List DiagnosticModel) × Program × Statistics
 
-/-- A single Laurel-to-Laurel pass. Each pass receives the current program and
-    semantic model and returns the (possibly modified) program, accumulated
-    diagnostics, and statistics. -/
-structure LaurelPass where
-  /-- Human-readable name, used for profiling and file emission. -/
-  name : String
-  /-- Whether `resolve` should be run after the pass. -/
-  needsResolves : Bool := false
-  /-- The pass action. -/
-  run : Program → SemanticModel → Program × List DiagnosticModel × Statistics
-
 /-- The ordered sequence of Laurel-to-Laurel lowering passes. -/
-private def laurelPipeline : Array LaurelPass := #[
-  { name := "FilterNonCompositeModifies"
-    run := fun p m =>
-      let (p', diags) := filterNonCompositeModifies m p
-      (p', diags, {}) },
-  { name := "EliminateReturnsInExpressions"
-    needsResolves := true
-    run := fun p _m =>
-      let (p', diags) := eliminateReturnsInExpressionTransform p
-      (p', diags.toList, {}) },
-  { name := "EliminateValuesInReturns" -- Record that it should be before HeapParam
-    run := fun p _m =>
-      let (p', diags) := eliminateValuesInReturnsTransform p
-      (p', diags.toList, {}) },
-  { name := "HeapParameterization"
-    needsResolves := true
-    run := fun p m =>
-      (heapParameterization m p, [], {}) },
-  { name := "TypeHierarchyTransform"
-    needsResolves := true
-    run := fun p m =>
-      (typeHierarchyTransform m p, [], {}) },
-  { name := "ModifiesClausesTransform"
-    needsResolves := true
-    run := fun p m =>
-      let (p', diags) := modifiesClausesTransform m p
-      (p', diags, {}) },
-  { name := "InferHoleTypes"
-    run := fun p m =>
-      let (p', diags, stats) := inferHoleTypes m p
-      (p', diags, stats) },
-  { name := "EliminateHoles"
-    run := fun p _m =>
-      let (p', stats) := eliminateHoles p
-      (p', [], stats) },
-  { name := "DesugarShortCircuit"
-    run := fun p _ =>
-      (desugarShortCircuit p, [], {}) },
-  { name := "ConstrainedTypeElim"
-    needsResolves := true
-    run := fun p m =>
-      let (p', diags) := constrainedTypeElim m p
-      (p', diags, {}) },
-  { name := "EliminateReturnStatements"
-    needsResolves := false
-    run := fun p _ =>
-      let (p') := eliminateReturnStatements p
-      (p', [], {}) },
-  { name := "ContractPass"
-    needsResolves := true
-    run := fun p _ =>
-      let (p') := contractPass p
-      (p', [], {}) }
+def laurelPipeline : Array LoweringPass := #[
+  typeAliasElimPass,
+  filterNonCompositeModifiesPass,
+  eliminateValueInReturnsPass,
+  heapParameterizationPass,
+  typeHierarchyTransformPass,
+  modifiesClausesTransformPass,
+  inferHoleTypesPass,
+  eliminateDeterministicHolesPass,
+  desugarShortCircuitPass,
+  mergeAndLiftReturnsPass,
+  constrainedTypeElimPass,
+  eliminateReturnStatementsPass,
+  contractPass
 ]
+
+/-- Every `comesBefore` constraint is respected by the pipeline order. -/
+def comesBeforeRespected : Bool :=
+  let names := laurelPipeline.toList.map (·.name)
+  (List.range laurelPipeline.size).zip laurelPipeline.toList |>.all fun (i, p) =>
+    p.comesBefore.all fun cb =>
+      match names.findIdx? (· == cb.passName) with
+      | some j => i < j
+      | none   => false   -- target not in laurelPipeline
+
+-- Use `initialize` to check at load time instead of `#guard` which requires
+-- interpreter IR that is not available for passes defined in `module` files.
+initialize do
+  unless comesBeforeRespected do
+    throw <| .userError "laurelPipeline: comesBefore ordering constraints violated"
 
 /--
 Run all Laurel-to-Laurel lowering passes on a program, returning the lowered
@@ -162,7 +130,7 @@ When `keepAllFilesPrefix` is provided (via the `PipelineM` context), the
 program state after each named Laurel pass is written to
 `{prefix}.{n}.{passName}.laurel.st`.
 -/
-private def runLaurelPasses (options : LaurelTranslateOptions)
+private def runLaurelPasses
     (pctx : Strata.Pipeline.PipelineContext) (program : Program)
     : PipelineM (Program × SemanticModel × List DiagnosticModel × Statistics) := do
   let program := { program with
@@ -175,19 +143,12 @@ private def runLaurelPasses (options : LaurelTranslateOptions)
 
   -- Initial resolution
   let result := resolve program
-  let resolutionErrors : List DiagnosticModel :=
-    if options.emitResolutionErrors then result.errors.toList else []
+  let resolutionErrors : List DiagnosticModel := result.errors.toList
   let (program, model) := (result.program, result.model)
-  emit "Resolve" "laurel.st" program
-
-  let program := typeAliasElim model program
-  emit "TypeAliasElim" "laurel.st" program
-
-  let diamondErrors := validateDiamondFieldAccesses model program
 
   let mut program := program
   let mut model := model
-  let mut allDiags : List DiagnosticModel := resolutionErrors ++ diamondErrors
+  let mut allDiags : List DiagnosticModel := resolutionErrors
   let mut allStats : Statistics := {}
 
   for pass in laurelPipeline do
@@ -213,23 +174,6 @@ private def runLaurelPasses (options : LaurelTranslateOptions)
 
   return (program, model, allDiags, allStats)
 
-/--
-Apply `liftExpressionAssignments` to the core (non-functional) procedures in an
-`UnorderedCoreWithLaurelTypes`. Only procedures whose names appear in the core
-procedure list are transformed; functions are left unchanged.
--/
-def liftImperativeExpressionsInCore (uc : UnorderedCoreWithLaurelTypes)
-    (model : SemanticModel) : UnorderedCoreWithLaurelTypes :=
-  let imperativeCallees := uc.coreProcedures.map (·.name.text)
-  let liftedProgram := liftExpressionAssignments
-    { staticProcedures := uc.coreProcedures, staticFields := [], types := [], constants := [] }
-    model imperativeCallees
-  let liftedProcs := liftedProgram.staticProcedures
-  { uc with
-    functions := uc.functions
-    coreProcedures := liftedProcs
-  }
-
 /-- A single pass on the unordered Core representation. Each pass receives the
     current `UnorderedCoreWithLaurelTypes` and the semantic model and returns
     the (possibly modified) program. -/
@@ -242,10 +186,8 @@ structure CorePass where
   run : UnorderedCoreWithLaurelTypes → SemanticModel → UnorderedCoreWithLaurelTypes
 
 /-- The ordered sequence of passes on the unordered Core representation. -/
-private def corePipeline : Array CorePass := #[
-  { name := "LiftImperativeExpressionsInCore"
-    needsResolves := true
-    run := fun uc m => liftImperativeExpressionsInCore uc m }
+private def unorderedCorePipeline : Array (LaurelPass UnorderedCoreWithLaurelTypes UnorderedCoreWithLaurelTypes) := #[
+  liftExpressionAssignmentsPass
 ]
 
 /--
@@ -261,7 +203,7 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
     | some ctx => pure ctx
     | none => Strata.Pipeline.PipelineContext.create (outputMode := .quiet)
   runPipelineM options.keepAllFilesPrefix do
-  let (program, model, passDiags, stats) ← runLaurelPasses options pctx program
+  let (program, model, passDiags, stats) ← runLaurelPasses pctx program
   -- This early return is a simple way to protect against duplicative errors. Without this return,
   -- resolution errors reported by Laurel would also be reported by Core.
   -- There might be better solution that allows getting some resolution errors from Laurel and some verification errors from Core,
@@ -274,8 +216,8 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
   let mut unorderedCore := unorderedCore
   let mut fnModel := model
 
-  for pass in corePipeline do
-    unorderedCore := pass.run unorderedCore fnModel
+  for pass in unorderedCorePipeline do
+    unorderedCore := (pass.run unorderedCore fnModel).1
     if pass.needsResolves then
       let compositeTypes := program.types.filter (fun t => match t with | .Composite _ => true | _ => false)
       let (uc', m', errors) := resolveUnorderedCore unorderedCore (some fnModel) compositeTypes

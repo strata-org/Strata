@@ -578,7 +578,6 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
   return { header, spec, body := .structured body }
 
 structure LaurelTranslateOptions where
-  emitResolutionErrors : Bool := true
   inlineFunctionsWhenPossible : Bool := false
   overflowChecks : Core.OverflowChecks := {}
   keepAllFilesPrefix : Option String := none

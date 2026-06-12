@@ -6,6 +6,7 @@
 module
 
 public import Strata.Languages.Laurel.MapStmtExpr
+public import Strata.Languages.Laurel.LaurelPass
 
 /-!
 ## Contract Pass (Laurel → Laurel)
@@ -265,7 +266,7 @@ private def mkInvokeOnAxiom (params : List Parameter) (trigger : StmtExprMd)
 
 /-- Run the contract pass on a Laurel program.
     All procedures with contracts are transformed. -/
-def contractPass (program : Program) : Program :=
+def lowerContracts (program : Program) : Program :=
   let contractInfoMap := collectContractInfo program.staticProcedures
 
   -- Generate helper procedures for all procedures with contracts
@@ -301,6 +302,14 @@ def contractPass (program : Program) : Program :=
       rewriteCallSitesInProc contractInfoMap proc).run 0
 
   { program with staticProcedures := helperProcs ++ transformedProcs }
+
+public def contractPass : LoweringPass where
+  name := "LowerContract"
+  documentation := "Lowers pre and postcondition to assertions and assumptions around call-sites and procedure bodies"
+  run := fun p _m =>
+    let p' := lowerContracts p
+    (p', [], {})
+  comesBefore := []
 
 end -- public section
 end Strata.Laurel

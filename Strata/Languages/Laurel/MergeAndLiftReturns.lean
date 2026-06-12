@@ -8,6 +8,7 @@ module
 public import Strata.Languages.Laurel.LaurelAST
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 import Strata.Util.Tactics
+public import Strata.Languages.Laurel.LaurelPass
 
 /-!
 
@@ -63,26 +64,35 @@ decreasing_by
 
 /-- Transform a single procedure by applying the guard-return elimination to its body.
     Returns the procedure and any diagnostic emitted on failure. -/
-private def eliminateReturnsInExpression (proc : Procedure) : Procedure × Array DiagnosticModel :=
+private def eliminateReturnsInExpression (proc : Procedure) : Procedure × List DiagnosticModel :=
   match proc.body with
   | .Transparent body =>
     match removeReturns body with
-    | .ok result => ({ proc with body := .Transparent ⟨.Return result, body.source ⟩ }, #[])
-    | .error diag => (proc, #[diag])
-  | _ => (proc, #[])
+    | .ok result => ({ proc with body := .Transparent ⟨.Return result, body.source ⟩ }, [])
+    | .error diag => (proc, [diag])
+  | _ => (proc, [])
 
 public section
 
 /--
 Transform a program by eliminating returns in all functional procedure bodies.
 -/
-def eliminateReturnsInExpressionTransform (program : Program) : Program × Array DiagnosticModel :=
+def mergeAndLiftReturns (program : Program) : Program × List DiagnosticModel :=
   let (procs, diags) := program.staticProcedures.foldl (fun (ps, ds) proc =>
     let (proc', procDiags) := eliminateReturnsInExpression proc
     (proc' :: ps, ds ++ procDiags)
-  ) ([], #[])
+  ) ([], [])
   ({ program with staticProcedures := procs.reverse }, diags)
 
 end -- public section
+
+/-- Pipeline pass: merge and lift returns. -/
+public def mergeAndLiftReturnsPass : LoweringPass where
+  name := "MergeAndLiftReturns"
+  documentation := "Attempts to merge and lift returns so that only a single outer return remains, enabling the procedure to be more easily converted to a functional form."
+  needsResolves := true
+  run := fun p _m =>
+    let (p', diags) := mergeAndLiftReturns p
+    (p', diags, {})
 
 end Laurel

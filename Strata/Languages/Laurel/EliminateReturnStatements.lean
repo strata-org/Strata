@@ -6,6 +6,7 @@
 module
 
 public import Strata.Languages.Laurel.MapStmtExpr
+public import Strata.Languages.Laurel.LaurelPass
 
 /-!
 # Eliminate Return Statements
@@ -68,6 +69,14 @@ where
 /-- Transform a program by eliminating return statements in all procedure bodies. -/
 def eliminateReturnStatements (program : Program) : Program :=
   { program with staticProcedures := program.staticProcedures.map eliminateReturnStmts }
+
+public def eliminateReturnStatementsPass : LoweringPass where
+  name := "EliminateReturnStatements"
+  documentation := "Lower return statements to exit statements. Wrap each procedure body with a 'return' block"
+  run := fun p _m =>
+    let p' := eliminateReturnStatements p
+    (p', [], {})
+  -- comesBefore := [contractPass]
 
 end -- public section
 

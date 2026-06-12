@@ -6,6 +6,7 @@
 module
 
 import Strata.Util.Tactics
+public import Strata.Languages.Laurel.LaurelPass
 public import Strata.Languages.Laurel.Resolution
 import Strata.Languages.Laurel.LaurelTypes
 
@@ -619,4 +620,28 @@ def liftExpressionAssignments (program : Program)
   { program with staticProcedures := seqProcedures }
 
 end -- public section
+
+/--
+Apply `liftExpressionAssignments` to the core (non-functional) procedures in an
+`UnorderedCoreWithLaurelTypes`. Only procedures whose names appear in the core
+procedure list are transformed; functions are left unchanged.
+-/
+def liftImperativeExpressionsInCore (uc : UnorderedCoreWithLaurelTypes)
+    (model : SemanticModel) : UnorderedCoreWithLaurelTypes :=
+  let imperativeCallees := uc.coreProcedures.map (·.name.text)
+  let liftedProgram := liftExpressionAssignments
+    { staticProcedures := uc.coreProcedures, staticFields := [], types := [], constants := [] }
+    model imperativeCallees
+  let liftedProcs := liftedProgram.staticProcedures
+  { uc with
+    functions := uc.functions
+    coreProcedures := liftedProcs
+  }
+
+public def liftExpressionAssignmentsPass : LaurelPass UnorderedCoreWithLaurelTypes UnorderedCoreWithLaurelTypes where
+  name := "LiftExpressionAssignments"
+  documentation := "Lifts assignments that appear in expression contexts into preceding statements. This is necessary because Strata Core does not support assignments within expressions. The pass introduces fresh temporary variables where needed."
+  run := fun p m =>
+    (liftImperativeExpressionsInCore p m, [], {})
+
 end Laurel

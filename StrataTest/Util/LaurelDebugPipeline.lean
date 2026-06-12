@@ -3,17 +3,22 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import all StrataTest.Util.TestDiagnostics
-meta import StrataDDM.Elab
-meta import StrataDDM.BuiltinDialects.Init
-meta import StrataDDM.Util.IO
-meta import Strata.Languages.Laurel.Grammar.LaurelGrammar
-meta import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
-meta import Strata.Languages.Laurel.LaurelCompilationPipeline
+/-
+Debug-only helpers for running the Laurel compilation pipeline manually
+(e.g. via `#eval`) when diagnosing pass-internal issues.
 
-meta section
+Not used by any test in this repo. The regular test framework lives in
+`StrataTest.Util.TestLaurel`; see `docs/Testing.md`.
+-/
+
+import StrataTest.Util.TestDiagnostics
+import StrataDDM.Elab
+import StrataDDM.BuiltinDialects.Init
+import StrataDDM.Util.IO
+import Strata.Languages.Laurel.Grammar.LaurelGrammar
+import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
+import Strata.Languages.Laurel.LaurelCompilationPipeline
 
 open StrataTest.Util
 open Strata
@@ -54,5 +59,3 @@ def processLaurelFileKeepIntermediates (input : InputContext) : IO (Array Diagno
   processLaurelFileWithOptions { translateOptions := { keepAllFilesPrefix := dir}} input
 
 end Laurel
-end Strata
-end

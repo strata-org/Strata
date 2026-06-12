@@ -3,19 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import all StrataTest.Util.TestDiagnostics
-meta import all StrataTest.Languages.Laurel.TestExamples
-
-meta section
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
 open Strata
 
-namespace Strata.Laurel
-
-def program: String := r"
+#eval testLaurel <|
+#strata
+program Laurel;
 procedure nestedImpureStatements()
   opaque
 {
@@ -149,10 +145,4 @@ procedure addProcCaller(): int
   // var z: int := addProc({x := 1; x}, {x := x + 10; x}) + (x := 3);
   // assert z == 15
 };
-"
-
-#guard_msgs (error, drop all) in
-#eval! testInputWithOffset "NestedImpureStatements" program 14 processLaurelFile
-
-
-end Laurel
+#end

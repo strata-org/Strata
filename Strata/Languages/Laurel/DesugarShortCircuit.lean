@@ -6,6 +6,7 @@
 module
 
 public import Strata.Languages.Laurel.Resolution
+public import Strata.Languages.Laurel.LaurelPass
 import Strata.Languages.Laurel.LiftImperativeExpressions
 import Strata.Languages.Laurel.MapStmtExpr
 
@@ -53,4 +54,14 @@ def desugarShortCircuit (program : Program) : Program :=
   mapProgram (mapStmtExpr (desugarShortCircuitNode imperativeCallees)) program
 
 end -- public section
+
+/-- Pipeline pass: desugar short-circuit operators. -/
+public def desugarShortCircuitPass : LoweringPass where
+  name := "DesugarShortCircuit"
+  documentation := "Rewrites short-circuit boolean operators (`&&` and `||`) into equivalent conditional expressions. This simplifies subsequent passes and the final translation to Core, which does not have short-circuit semantics built in."
+  run := fun p _ =>
+    (desugarShortCircuit p, [], {})
+  comesBefore := [
+      ⟨ liftExpressionAssignmentsPass.name, "The desugar short circuit pass introduces if-then-else expressions whose control-flow must be taken into account by the lifting pass."⟩]
+
 end Strata.Laurel
