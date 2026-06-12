@@ -243,6 +243,73 @@ def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
   | other => pure other
   return { val := val', source := ty.source }
 
+/-- Unfold any constrained types down to their underlying base type
+    (e.g. `nat` ⇒ `int`). `fuel` keeps the function total; chains longer than
+    `fuel` simply stop unfolding (the conservative, no-false-positive direction). -/
+private def underlyingBaseType (s : ResolveState) (fuel : Nat) (ty : HighType) : HighType :=
+  match fuel with
+  | 0 => ty
+  | fuel + 1 =>
+    match ty with
+    | .UserDefined typRef =>
+      match s.scope.get? typRef.text with
+      | some (_, .constrainedType ct) => underlyingBaseType s fuel ct.base.val
+      | _ => ty
+    | _ => ty
+
+/-- Look up the declared type of an `IncrDecr` target during resolution.
+    Handles `Local` (scope lookup) and `Field` (type-scope lookup); returns
+    `none` when the type cannot be determined (e.g. an unresolved name). -/
+private def incrDecrTargetType (target : VariableMd) : ResolveM (Option HighType) := do
+  let s ← get
+  match target.val with
+  | .Local ref =>
+    match s.scope.get? ref.text with
+    | some (_, node) => pure (some node.getType.val)
+    | none => pure none
+  | .Field tgt fieldName =>
+    match (← targetTypeName tgt) with
+    | some typeName =>
+      match s.typeScopes.get? typeName with
+      | some typeScope =>
+        match typeScope.get? fieldName.text with
+        | some (_, node) => pure (some node.getType.val)
+        | none => pure none
+      | none => pure none
+    | none => pure none
+  | .Declare param => pure (some param.type.val)
+
+/-- Emit a diagnostic if `++`/`--` is applied to an unsupported element type.
+    Only `int` and int-based constrained types (e.g. `nat`) are supported by the
+    `EliminateIncrDecr` lowering; `bv`, `real`, and `float64` are rejected here
+    with a clear Laurel diagnostic (and a source range) rather than leaking a raw
+    Core unification error from a later pass. Unknown/unresolved types are left
+    alone so that resolution errors are not duplicated as spurious incr/decr
+    errors. -/
+private def checkIncrDecrTargetType (op : IncrDecrOp) (target : VariableMd)
+    (source : Option FileRange) : ResolveM Unit := do
+  match (← incrDecrTargetType target) with
+  | none => pure ()
+  | some ty =>
+    let s ← get
+    let baseTy := underlyingBaseType s 100 ty
+    let unsupported? : Option String := match baseTy with
+      | .TReal => some "real"
+      | .TFloat64 => some "float64"
+      | .TBv n => some s!"bv{n}"
+      | _ => none
+    match unsupported? with
+    | none => pure ()
+    | some tyName =>
+      let opName := match op with
+        | .Incr => "increment ('++')"
+        | .Decr => "decrement ('--')"
+      let diag := diagnosticFromSource source
+        s!"The {opName} operator is only supported on 'int' and int-based \
+           constrained types (e.g. 'nat'), but the operand has type '{tyName}'. \
+           Use an explicit assignment instead, e.g. 'x := x + 1'."
+      modify fun s => { s with errors := s.errors.push diag }
+
 def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
   match _: exprMd with
   | AstNode.mk expr source =>
@@ -321,10 +388,12 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
     pure (.Assign targets' value')
   | .IncrDecr mode op ⟨.Local ref, vs⟩ =>
     let ref' ← resolveRef ref source
+    checkIncrDecrTargetType op ⟨.Local ref', vs⟩ source
     pure (.IncrDecr mode op ⟨.Local ref', vs⟩)
   | .IncrDecr mode op ⟨.Field tgt fieldName, vs⟩ =>
     let tgt' ← resolveStmtExpr tgt
     let fieldName' ← resolveFieldRef tgt' fieldName source
+    checkIncrDecrTargetType op ⟨.Field tgt' fieldName', vs⟩ source
     pure (.IncrDecr mode op ⟨.Field tgt' fieldName', vs⟩)
   | .IncrDecr mode op ⟨.Declare param, vs⟩ =>
     -- Should not occur — translator rejects; treat conservatively.
