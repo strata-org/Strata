@@ -142,12 +142,26 @@ async def run_workflow(agent, inp: Any, result_type: type[T] | None = None):
 
     await agent._emit("status_change", "running")
 
-    if hasattr(agent, '_restored_state') and agent._restored_state:
-        state = WorkflowState(**{
-            k: v for k, v in agent._restored_state.items()
-            if k in WorkflowState.__dataclass_fields__
-        })
-        await agent._emit("message", f"[TM] Resumed: {state.stage.value} / {state.mode.value}")
+    restored = getattr(agent, '_restored_state', None)
+    if restored and isinstance(restored, dict):
+        # Convert enum strings back to enum values
+        fields = {}
+        for k, v in restored.items():
+            if k not in WorkflowState.__dataclass_fields__:
+                continue
+            if k == "stage":
+                fields[k] = Stage(v) if isinstance(v, str) else v
+            elif k == "mode":
+                fields[k] = WorkflowMode(v) if isinstance(v, str) else v
+            elif k == "active_handler":
+                fields[k] = Handler(v) if isinstance(v, str) else v
+            else:
+                fields[k] = v
+        state = WorkflowState(**fields)
+        agent._restored_state = None
+        await agent._emit("message",
+            f"[TM] RESUMED from checkpoint: stage={state.stage.value}, mode={state.mode.value}, "
+            f"task={state.task.get('theorem_file', 'none')}")
     else:
         state = WorkflowState()
 
@@ -172,6 +186,7 @@ async def run_workflow(agent, inp: Any, result_type: type[T] | None = None):
             state.stage = next_stage
             state.retries = 0
             agent._workflow_state = state
+            _write_tm_checkpoint(agent, state)
 
         except Exception as e:
             state.retries += 1
@@ -180,6 +195,7 @@ async def run_workflow(agent, inp: Any, result_type: type[T] | None = None):
                 state.stage = Stage.IDLE
                 state.retries = 0
             agent._workflow_state = state
+            _write_tm_checkpoint(agent, state)
 
     result = AgentResult(name=agent.spec.name, status=AgentStatus.COMPLETED)
     result.output = {"status": "cancelled", "history": state.history}
@@ -236,6 +252,9 @@ async def _state_thinking(state: WorkflowState, agent) -> Transition:
         await agent._emit("message", f"[TM → user]: {decision.user_message}")
     if decision.mode_change:
         state.mode = decision.mode_change
+        # Checkpoint when task is confirmed (mode switches to proving/clarifying)
+        if decision.mode_change in (WorkflowMode.PROVING, WorkflowMode.CLARIFYING):
+            _write_tm_checkpoint(agent, state)
     if decision.forward_to:
         state.active_handler = decision.forward_to
 
@@ -258,6 +277,16 @@ async def _state_setup(state: WorkflowState, agent) -> Transition:
 
     shutil.copy2(src, dst)
     await agent._emit("message", f"[TM] Copied {task.theorem_file} → Sandbox/Stub.lean")
+
+    # Checkpoint: task is set up, file copied — don't redo this on resume
+    _write_tm_checkpoint(agent, state)
+    swarm = getattr(agent, 'swarm', None)
+    if swarm and hasattr(swarm, 'checkpoint'):
+        try:
+            await swarm.checkpoint(reason=f"tm_setup:{task.theorem_file}")
+        except Exception:
+            pass
+
     return Transition.READY
 
 
@@ -535,6 +564,22 @@ async def _cleanup_prover(agent):
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
+
+def _write_tm_checkpoint(agent, state: WorkflowState):
+    """Write TM state to tm_checkpoint.json for crash recovery."""
+    import json
+    from dataclasses import asdict
+    from pathlib import Path
+
+    cwd = Path(agent._cwd) if agent._cwd else Path.cwd()
+    cp_dir = cwd / "StrataAgent" / "strataswarm" / "temp"
+    cp_dir.mkdir(parents=True, exist_ok=True)
+    cp_file = cp_dir / "tm_checkpoint.json"
+
+    state_dict = asdict(state)
+    # Enums serialize as their .value automatically via asdict
+    cp_file.write_text(json.dumps(state_dict, indent=2, default=str))
+
 
 async def _send_to_user(agent, message: str):
     await agent.channel_bus.send_to("user:messages", sender=agent.spec.name, payload=message)

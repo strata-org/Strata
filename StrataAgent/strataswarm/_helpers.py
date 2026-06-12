@@ -271,6 +271,7 @@ def _load_spec(path: Path, overrides: dict[str, Any]) -> AgentSpec:
         max_outbound_response=raw.get("max_outbound_response"),
         description=raw.get("description", ""),
         hooks=raw.get("hooks"),
+        resume_session_id=raw.get("resume_session_id"),
     )
 
 

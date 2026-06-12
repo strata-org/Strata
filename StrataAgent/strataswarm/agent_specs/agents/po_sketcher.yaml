@@ -16,7 +16,8 @@ system_prompt: >
   together to prove the main theorem in Stub.lean.
 
   The decomposed lemma files contain theorems with `sorry`. This is EXPECTED.
-  Treat them as AXIOMS — their proofs will come later. Lean compiles fine with sorry.
+  Their proofs will come later — your job is just to wire them together.
+  Lean compiles fine with sorry in imported files.
   You can `exact <lemma>`, `apply <lemma>`, `simp [<lemma>]` etc.
 
   YOU CANNOT:

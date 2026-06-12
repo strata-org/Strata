@@ -24,6 +24,7 @@ import base64
 import json
 import logging
 import os
+import shutil
 import signal
 import subprocess
 import threading
@@ -297,15 +298,37 @@ class SwarmLeanTools:
         return ImportsResult(imports=result.get("imports", []))
 
     def check_compiles(self, file_path: str) -> CompileResult:
-        """Check if a file compiles (shells out to lake env lean)."""
-        result = self._send("check__compile_", file_path)
-        if "error" in result:
-            return CompileResult(error=result["error"])
-        return CompileResult(
-            success=result.get("success", False),
-            has_sorry=result.get("has_sorry", False),
-            has_error=result.get("has_error", False),
-        )
+        """Check if a file compiles. Runs lake env lean directly from Python.
+
+        NOTE: lake env lean outputs diagnostics on STDOUT (not stderr).
+        We check both to be safe.
+        """
+        import subprocess
+        try:
+            result = subprocess.run(
+                ["lake", "env", "lean", file_path],
+                cwd=str(self._root),
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            # Lean outputs diagnostics on stdout; check both stdout and stderr
+            output = result.stdout + "\n" + result.stderr
+            has_sorry = "sorry" in output or "declaration uses 'sorry'" in output
+            has_error = any(
+                ": error:" in line and "sorry" not in line
+                for line in output.splitlines()
+            )
+            # Also treat non-zero exit code as error (unless only sorry warnings)
+            if result.returncode != 0 and not has_error:
+                # Check if the only issues are sorry warnings
+                has_error = result.returncode != 0 and not has_sorry
+            success = not has_error
+            return CompileResult(success=success, has_sorry=has_sorry, has_error=has_error)
+        except subprocess.TimeoutExpired:
+            return CompileResult(error="compilation timed out (120s)")
+        except Exception as e:
+            return CompileResult(error=str(e))
 
     def check_axioms(self, file_path: str) -> AxiomCheckResult:
         """Check if a file contains axiom declarations (unsound).
@@ -359,20 +382,18 @@ class SwarmLeanTools:
     # ─── Refactoring: extract sorry theorems into separate files ─────────
 
     def extract_sorry_theorems(self, file_path: str, output_dir: str | None = None) -> ExtractResult:
-        """Extract ALL sorry theorems from a file into individual files.
+        """Extract sorry theorems from a file into individual files for child POs.
 
-        Each sorry theorem gets its own file. The original file is rewritten
-        to contain ONLY proved theorems (or becomes empty/header-only if all
-        theorems had sorry).
+        The original file is LEFT UNCHANGED — it already compiles (with sorry
+        warnings from the inline helper definitions). Child POs prove each helper
+        independently, and assembly copies the proved versions back.
 
-        Invariant: every output file has exactly ONE theorem.
+        What this does:
+        1. Identifies sorry theorem blocks via split_theorems_
+        2. Copies each sorry theorem (with header) into its own file
+        3. Returns the list of created files for child PO spawning
 
-        Args:
-            file_path: Relative path to the source file.
-            output_dir: Directory for extracted files. Defaults to same dir as source.
-
-        Returns:
-            ExtractResult with list of created files.
+        The original keeps working as-is. No import rewriting needed.
 
         Naming: lemma_helper_<ascii_escaped_theorem_name>.lean
         """
@@ -397,10 +418,13 @@ class SwarmLeanTools:
         header = "\n".join(lines[:first_thm_line])
 
         # Output directory
-        out_path = root / output_dir if output_dir else source.parent
+        if output_dir:
+            out_path = root / output_dir
+        else:
+            out_path = source.parent
         out_path.mkdir(parents=True, exist_ok=True)
 
-        # Extract EVERY sorry theorem into its own file
+        # Extract each sorry theorem into its own file
         created_files: list[str] = []
         extracted_names: list[str] = []
 
@@ -417,17 +441,26 @@ class SwarmLeanTools:
             created_files.append(rel_path)
             extracted_names.append(block.name)
 
-        # Rewrite original: keep ONLY proved theorems + header
-        proved_blocks = [b for b in split.blocks if not b.has_sorry]
-        if proved_blocks:
-            kept_lines = lines[:first_thm_line]
-            for block in proved_blocks:
-                kept_lines.extend(lines[block.start:block.end + 1])
-                kept_lines.append("")  # blank line between theorems
-            source.write_text("\n".join(kept_lines) + "\n")
-        else:
-            # All theorems extracted — original becomes header-only
-            source.write_text(header.rstrip() + "\n\n-- All theorems extracted to individual files.\n")
+        # Verify: each extracted file should compile (with sorry)
+        failed_files: list[str] = []
+        for f in created_files:
+            cr = self.check_compiles(f)
+            if not cr.success:
+                failed_files.append(f)
+
+        if failed_files:
+            # Move failed extractions to extraction_failed/ for debugging
+            failed_dir = out_path / "extraction_failed"
+            failed_dir.mkdir(exist_ok=True)
+            for f in failed_files:
+                src_file = root / f
+                if src_file.exists():
+                    shutil.move(str(src_file), str(failed_dir / src_file.name))
+            created_files = [f for f in created_files if f not in failed_files]
+            extracted_names = [n for n, f in zip(extracted_names, created_files)]
+
+        if not created_files:
+            return ExtractResult(error="All extracted files failed to compile")
 
         return ExtractResult(
             created_files=created_files,

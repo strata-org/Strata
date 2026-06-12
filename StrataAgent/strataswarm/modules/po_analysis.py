@@ -1,17 +1,17 @@
 """PO Analysis: difficulty assessment + refactoring logic.
 
-Determines which files need direct attempts vs recursive decomposition,
-and handles extracting sorry theorems into individual files.
+Uses SwarmLeanTools for definitive file analysis (theorem listing,
+sorry counting, dependency tracking). Falls back to text heuristics
+only for patterns the RPC doesn't cover (branch analysis, tactic counting).
 """
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from .po_verify import verify_no_sorry, count_sorries, is_bare_sorry
-from .po_util import find_sorry_theorems, extract_imports
+from .po_verify import verify_no_sorry, count_sorries
+from .po_lean import get_lean_tools
 
 WRITER_MAX_TURNS = 50
 WRITER_EXTENDED_TURNS = 80
@@ -29,17 +29,16 @@ class DifficultyAssessment:
 def analyze_files(files: list[str], cwd: Path) -> list[DifficultyAssessment]:
     """Classify each file as direct/recursive/proved.
 
-    Heuristics:
-    1. No sorry → "proved"
-    2. Bare sorry (no structure) → "recursive"
-    3. Multiple sorry theorems in large file → "recursive" (needs refactoring)
-    4. Mutual induction pattern → "recursive"
-    5. Single sorry in case branch of complete proof → "direct" (extended)
-    6. ≤2 sorries with structural proof → "direct" (extended)
-    7. ≤3 sorries → "direct" (normal turns)
-    8. ≤5 sorries with structure → "direct" (one shot)
-    9. >5 sorries → "recursive"
+    Uses Lean RPC for:
+    - Sorry count (definitive)
+    - Theorem block listing (split_theorems_)
+    - Dependency analysis (thm_depends_on_)
+
+    Falls back to text heuristics for:
+    - Branch analysis (single sorry in case branch)
+    - Tactic line counting
     """
+    tools = get_lean_tools()
     results = []
 
     for f in files:
@@ -51,37 +50,47 @@ def analyze_files(files: list[str], cwd: Path) -> list[DifficultyAssessment]:
         if not path.exists():
             continue
 
+        sorry_count = count_sorries(cwd, f)
         content = path.read_text()
         lines = content.splitlines()
-        sorry_count = count_sorries(cwd, f)
         line_count = len(lines)
 
-        if is_bare_sorry(cwd, f):
+        # ── Use Lean RPC: get theorem blocks ──
+        split = tools.split_theorems(f)
+        sorry_blocks = [b for b in split.blocks if b.has_sorry] if not split.error else []
+        total_blocks = len(split.blocks) if not split.error else 0
+
+        # Very short file with single sorry → needs decomposition
+        if sorry_count == 1 and line_count <= 10:
             results.append(DifficultyAssessment(
                 file=f, difficulty="recursive",
-                reason="bare sorry — no structure, needs decomposition"))
+                reason="single sorry, very short file — needs decomposition"))
             continue
 
-        sorry_theorems = find_sorry_theorems(path)
-        if len(sorry_theorems) > 1:
+        # Multiple sorry theorems in one file → needs refactoring (recursive)
+        if len(sorry_blocks) > 1:
             if line_count <= 80 and sorry_count <= 3:
                 results.append(DifficultyAssessment(
                     file=f, difficulty="direct",
-                    reason=f"{len(sorry_theorems)} sorry theorems but small file — direct attempt",
+                    reason=f"{len(sorry_blocks)} sorry theorems but small file — direct attempt",
                     estimated_turns=WRITER_EXTENDED_TURNS))
             else:
                 results.append(DifficultyAssessment(
                     file=f, difficulty="recursive",
-                    reason=f"{len(sorry_theorems)} sorry theorems in {line_count} lines — needs refactoring"))
+                    reason=f"{len(sorry_blocks)} sorry theorems in {line_count} lines — needs refactoring"))
             continue
 
-        # Single sorry theorem
-        if _has_mutual_references(content) and sorry_count >= 2:
-            results.append(DifficultyAssessment(
-                file=f, difficulty="recursive",
-                reason="mutual induction pattern — needs specialized decomposition"))
-            continue
+        # ── Use Lean RPC: check mutual dependencies ──
+        if total_blocks >= 2 and sorry_count >= 2:
+            # Check if theorems reference each other (mutual induction)
+            has_mutual = _check_mutual_deps(f, split.blocks, tools)
+            if has_mutual:
+                results.append(DifficultyAssessment(
+                    file=f, difficulty="recursive",
+                    reason="mutual induction pattern — needs specialized decomposition"))
+                continue
 
+        # ── Text heuristic: single branch sorry ──
         if _is_single_branch_sorry(content):
             results.append(DifficultyAssessment(
                 file=f, difficulty="direct",
@@ -89,9 +98,8 @@ def analyze_files(files: list[str], cwd: Path) -> list[DifficultyAssessment]:
                 estimated_turns=WRITER_EXTENDED_TURNS))
             continue
 
-        tactic_lines = sum(1 for l in lines if l.strip().startswith((
-            "cases", "induction", "apply", "exact", "simp", "rw",
-            "have", "obtain", "intro", "match", "refine")))
+        # ── Text heuristic: tactic line count ──
+        tactic_lines = _count_tactic_lines(lines)
         has_structure = tactic_lines >= 3
 
         if sorry_count <= 2 and has_structure:
@@ -121,57 +129,47 @@ def refactor_multi_theorem_files(decomposed_dir: Path, workspace: str,
                                   proved_files: list[str]) -> list[str]:
     """Extract sorry theorems from multi-theorem files into individual files.
 
+    Uses SwarmLeanTools.extract_sorry_theorems (which internally uses
+    split_theorems_ RPC for precise block boundaries).
+
     Returns list of newly created file paths (relative to cwd).
     """
+    tools = get_lean_tools()
     new_files = []
 
     for lean_file in list(decomposed_dir.glob("*.lean")):
         rel_path = f"{workspace}/decomposed/{lean_file.name}"
         if rel_path in proved_files:
             continue
-        if verify_no_sorry(decomposed_dir.parent.parent, rel_path):
+        if tools.is_proved(rel_path):
             continue
 
-        sorry_theorems = find_sorry_theorems(lean_file)
-        if len(sorry_theorems) <= 1:
-            continue
-
-        content = lean_file.read_text()
-        parent_stem = lean_file.stem
-        imports_section = extract_imports(content)
-
-        # Extract all but the last sorry theorem (keep one in the original)
-        for i, (thm_name, thm_block) in enumerate(sorry_theorems[:-1]):
-            new_name = f"helper_{parent_stem}_{i}_{thm_name[:30]}.lean"
-            new_path = decomposed_dir / new_name
-            new_rel = f"{workspace}/decomposed/{new_name}"
-
-            new_content = imports_section + "\n\n" + thm_block + "\n"
-            new_path.write_text(new_content)
-            new_files.append(new_rel)
-
-            content = content.replace(thm_block,
-                f"-- Extracted to {new_name}")
-
-        lean_file.write_text(content)
+        result = tools.extract_sorry_theorems(rel_path,
+            output_dir=f"{workspace}/decomposed")
+        if result.created_files:
+            new_files.extend(result.created_files)
 
     return new_files
 
 
-# ─── Internal heuristics ─────────────────────────────────────────────────────
+# ─── Internal helpers ────────────────────────────────────────────────────────
 
-def _has_mutual_references(content: str) -> bool:
-    """Detect mutual induction: theorem A references theorem B and vice versa."""
-    theorem_names = re.findall(r'(?:private\s+)?theorem\s+(\w+)', content)
-    if len(theorem_names) < 2:
+def _check_mutual_deps(file: str, blocks, tools) -> bool:
+    """Check if theorems in a file reference each other (mutual induction)."""
+    names = [b.name for b in blocks]
+    if len(names) < 2:
         return False
 
-    cross_refs = 0
-    for name in theorem_names:
-        uses = content.count(name) - 1
-        if uses > 0:
-            cross_refs += 1
-    return cross_refs >= 2
+    for name in names:
+        result = tools._send("thm_depends_on_", f"{file}:{name}")
+        if "error" in result:
+            continue
+        uses = result.get("uses", [])
+        # If this theorem uses another theorem from the same file → mutual
+        for used in uses:
+            if used in names and used != name:
+                return True
+    return False
 
 
 def _is_single_branch_sorry(content: str) -> bool:
@@ -192,3 +190,13 @@ def _is_single_branch_sorry(content: str) -> bool:
             sorry_branches += 1
 
     return total_branches >= 3 and sorry_branches == 1
+
+
+def _count_tactic_lines(lines: list[str]) -> int:
+    """Count lines that start with known tactic keywords."""
+    tactic_keywords = (
+        "cases", "induction", "apply", "exact", "simp", "rw",
+        "have", "obtain", "intro", "match", "refine", "constructor",
+        "unfold", "ext", "funext", "calc", "· ", "omega", "decide",
+    )
+    return sum(1 for l in lines if l.strip().startswith(tactic_keywords))

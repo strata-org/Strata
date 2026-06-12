@@ -98,7 +98,7 @@ def write_checkpoint(cwd: Path, state: Any):
     """Persist ProverState as JSON for crash recovery."""
     workspace_abs = cwd / state.workspace
     workspace_abs.mkdir(parents=True, exist_ok=True)
-    (workspace_abs / "checkpoint.json").write_text(json.dumps(asdict(state), indent=2))
+    (workspace_abs / "po_checkpoint.json").write_text(json.dumps(asdict(state), indent=2))
 
 
 def write_progress(cwd: Path, state: Any):
@@ -107,25 +107,25 @@ def write_progress(cwd: Path, state: Any):
     workspace_abs.mkdir(parents=True, exist_ok=True)
     progress = workspace_abs / "progress.md"
 
+    decomposed = getattr(state, 'decomposed_files', [])
+    proved = getattr(state, 'proved_files', [])
+
     content = (
         f"# Proof Progress\n\n"
         f"- **Stage**: {state.stage.value}\n"
         f"- **Theorem**: {state.theorem_name}\n"
         f"- **Attempt**: {state.attempt + 1}/3\n"
         f"- **Depth**: {state.depth}/2\n"
-        f"- **Drain round**: {state.drain_round}/5\n"
-        f"- **Proved**: {len(state.proved_files)}\n"
-        f"- **Direct queue**: {len(state.direct_files)}\n"
-        f"- **Recursive queue**: {len(state.recursive_files)}\n"
+        f"- **Decomposed**: {len(decomposed)}\n"
+        f"- **Proved**: {len(proved)}\n"
         f"- **Details**: {state.last_failure_details or 'none'}\n\n"
         f"## Files\n"
     )
-    for f in state.proved_files:
+    for f in proved:
         content += f"- ✅ `{Path(f).name}`\n"
-    for f in state.direct_files:
-        content += f"- 🔄 `{Path(f).name}` (direct)\n"
-    for f in state.recursive_files:
-        content += f"- 🔁 `{Path(f).name}` (recursive)\n"
+    for f in decomposed:
+        if f not in proved:
+            content += f"- ⏳ `{Path(f).name}`\n"
 
     progress.write_text(content)
 
@@ -134,23 +134,33 @@ def write_progress(cwd: Path, state: Any):
 
 def setup_child_workspace(cwd: Path, lemma_file: str, parent_workspace: str) -> str:
     """Create child workspace, copy Stub.lean + Def.lean, rewrite imports.
-    Returns the child workspace relative path."""
+    Returns the child workspace relative path.
+
+    IDEMPOTENT: if the child workspace already has a po_checkpoint.json,
+    it was previously set up and may have made progress. Don't overwrite.
+    """
     lemma_path = Path(lemma_file)
     child_workspace = f"{lemma_path.parent}/{lemma_path.stem}"
-    (cwd / child_workspace).mkdir(parents=True, exist_ok=True)
+    child_ws_path = cwd / child_workspace
+
+    # If child already has a checkpoint, it was previously running — don't clobber
+    if (child_ws_path / "po_checkpoint.json").exists():
+        return child_workspace
+
+    child_ws_path.mkdir(parents=True, exist_ok=True)
 
     # Copy as child's Stub.lean
-    shutil.copy2(cwd / lemma_file, cwd / child_workspace / "Stub.lean")
+    shutil.copy2(cwd / lemma_file, child_ws_path / "Stub.lean")
 
     # Inherit Def.lean
     parent_def = cwd / parent_workspace / "Stub" / "Def.lean"
     if parent_def.exists():
-        child_def_dir = cwd / child_workspace / "Stub"
+        child_def_dir = child_ws_path / "Stub"
         child_def_dir.mkdir(parents=True, exist_ok=True)
         shutil.copy2(parent_def, child_def_dir / "Def.lean")
 
     # Import isolation
-    child_stub = cwd / child_workspace / "Stub.lean"
+    child_stub = child_ws_path / "Stub.lean"
     rewrite_imports_for_child(child_stub, parent_workspace, child_workspace)
 
     return child_workspace

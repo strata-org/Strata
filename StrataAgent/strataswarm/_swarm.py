@@ -733,6 +733,15 @@ class Swarm:
         self._registry.results[name] = result
         await self._context.set(f"result:{name}", result)
 
+        # Auto-restart reply_only service agents that crashed (not cancelled)
+        # These are critical infrastructure (SearchAgent, ProofLedger) that must stay alive.
+        if (node.spec.reply_only and
+                result.halted_by not in ("cancelled", "exit_signal") and
+                not agent.cancellation.is_cancelled):
+            logger.warning(f"[AUTO-RESTART] {name}: reply_only agent crashed (halted_by={result.halted_by}), restarting...")
+            await asyncio.sleep(2)  # brief cooldown to avoid tight restart loops
+            return await self._run_node(name)
+
         # Handoff-restart: agent hit context limit, restart with fresh context
         if result.halted_by == "context_handoff":
             handoff = getattr(agent.backend, '_last_handoff', '')

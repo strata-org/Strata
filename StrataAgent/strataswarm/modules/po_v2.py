@@ -1,14 +1,16 @@
-"""Proof Orchestrator v4: Worklist-based pipeline (state machine).
+"""Proof Orchestrator v5: Recursive with parallel child POs.
 
 Pipeline:
-  SOUNDNESS → SPLIT → DECOMPOSE → [ANALYZE → PROVE_DIRECT → REFACTOR]* → PROVE_RECURSIVE → ASSEMBLE → VALIDATE → DONE
+  SOUNDNESS → SPLIT → ASSESS → (PROVE_DIRECT | DECOMPOSE → SKETCH → CHILD_CEA → REFACTOR → CHILD_POS) → ASSEMBLE → VALIDATE → DONE
 
-This file is the STATE MACHINE only — thin orchestration layer.
-Logic lives in:
-  - po_agents.py    → Agent spawning + verified_run pattern
-  - po_analysis.py  → Difficulty assessment + refactoring
-  - po_verify.py    → Programmatic checks
-  - po_util.py      → File ops, checkpointing, import rewriting
+Key design:
+- ASSESS evaluates the MAIN theorem only (direct or decompose?)
+- Parent never proves decomposed lemmas — always spawns child POs
+- Child POs are parallel (capped by global proof_writer semaphore)
+- Each child is a full PO (self-assesses, may decompose further)
+- At max depth, ASSESS forces "direct" (no further decomposition)
+- All verification via SwarmLeanTools (deterministic, no agents)
+- Agents used ONLY for: proof_writer, decomposer, sketcher, CEA
 """
 
 from __future__ import annotations
@@ -22,31 +24,38 @@ from typing import Any, TypeVar
 
 from .po_agents import (
     ProofResult, SketchResult, SoundnessVerdict, ValidationResult, LoopOutcome,
-    verified_loop, run_proof_writer, run_cea, run_validator, run_splitter,
+    verified_loop, run_proof_writer, run_cea,
     run_sketcher, run_child_po, swarm_checkpoint,
-)
-from .po_analysis import (
-    DifficultyAssessment, analyze_files, refactor_multi_theorem_files,
 )
 from .po_verify import (
     check_import_dag, verify_file_exists, verify_no_sorry,
-    count_sorries, is_bare_sorry, verify_split_complete,
+    count_sorries, verify_split_complete,
 )
 from .po_util import (
     rewrite_imports_for_child, write_checkpoint, write_progress,
     setup_child_workspace,
 )
+from .po_lean import get_lean_tools
 from .._helpers import swarm_agent
 
 T = TypeVar("T")
 
 MAX_RETRIES = 3
 MAX_RECURSION_DEPTH = 2
-MAX_PARALLEL_DIRECT = 3
-MAX_DRAIN_ROUNDS = 5
+MAX_CONCURRENT_WRITERS = 1
 DECOMPOSER_MAX_TURNS = 100
 WRITER_MAX_TURNS = 50
 WRITER_EXTENDED_TURNS = 80
+
+# Global semaphore shared across all PO instances in this process
+_writer_semaphore: asyncio.Semaphore | None = None
+
+
+def _get_writer_semaphore() -> asyncio.Semaphore:
+    global _writer_semaphore
+    if _writer_semaphore is None:
+        _writer_semaphore = asyncio.Semaphore(MAX_CONCURRENT_WRITERS)
+    return _writer_semaphore
 
 
 # ─── Enums ────────────────────────────────────────────────────────────────────
@@ -55,10 +64,11 @@ class Stage(str, Enum):
     SOUNDNESS = "soundness"
     SPLIT = "split"
     DECOMPOSE = "decompose"
-    ANALYZE = "analyze"
     PROVE_DIRECT = "prove_direct"
+    SKETCH = "sketch"
+    CHILD_CEA = "child_cea"
     REFACTOR = "refactor"
-    PROVE_RECURSIVE = "prove_recursive"
+    CHILD_POS = "child_pos"
     ASSEMBLE = "assemble"
     VALIDATE = "validate"
     RETRY = "retry"
@@ -72,15 +82,17 @@ class Trans(str, Enum):
     UNSOUND = "unsound"
     SPLIT_DONE = "split_done"
     SPLIT_FAILED = "split_failed"
+    DIRECT = "direct"
     DECOMPOSED = "decomposed"
-    SIMPLE_ENOUGH = "simple_enough"
-    NEEDS_DECOMP = "needs_decomp"
-    HAS_DIRECT = "has_direct"
-    ALL_RECURSIVE = "all_recursive"
+    NEEDS_RETRY = "needs_retry"
+    PROVED = "proved"
+    HAS_CHILDREN = "has_children"
+    NO_PROGRESS = "no_progress"
+    SKETCH_OK = "sketch_ok"
+    SKETCH_FAILED = "sketch_failed"
+    ALL_SOUND = "all_sound"
+    SOME_UNSOUND = "some_unsound"
     ALL_PROVED = "all_proved"
-    SOME_REMAINING = "some_remaining"
-    NEW_WORK = "new_work"
-    STABLE = "stable"
     CHILD_FAILED = "child_failed"
     ASSEMBLED = "assembled"
     VALID = "valid"
@@ -91,65 +103,47 @@ class Trans(str, Enum):
 
 
 TRANSITIONS: dict[tuple[Stage, Trans], Stage] = {
-    (Stage.SOUNDNESS, Trans.SOUND):         Stage.SPLIT,
-    (Stage.SOUNDNESS, Trans.SKIPPED):       Stage.SPLIT,
-    (Stage.SOUNDNESS, Trans.UNSOUND):       Stage.FAILED,
+    (Stage.SOUNDNESS, Trans.SOUND):              Stage.SPLIT,
+    (Stage.SOUNDNESS, Trans.SKIPPED):            Stage.SPLIT,
+    (Stage.SOUNDNESS, Trans.UNSOUND):            Stage.FAILED,
 
-    (Stage.SPLIT, Trans.SPLIT_DONE):        Stage.DECOMPOSE,
-    (Stage.SPLIT, Trans.SPLIT_FAILED):      Stage.DECOMPOSE,
+    (Stage.SPLIT, Trans.SPLIT_DONE):             Stage.DECOMPOSE,
+    (Stage.SPLIT, Trans.SPLIT_FAILED):           Stage.DECOMPOSE,
 
-    (Stage.DECOMPOSE, Trans.DECOMPOSED):    Stage.ANALYZE,
-    (Stage.DECOMPOSE, Trans.SIMPLE_ENOUGH): Stage.ANALYZE,
-    (Stage.DECOMPOSE, Trans.NEEDS_DECOMP):  Stage.RETRY,
+    # DECOMPOSE decides: "direct" (skip sketch, go straight to prove) or "decompose" (sketch)
+    (Stage.DECOMPOSE, Trans.DIRECT):             Stage.PROVE_DIRECT,
+    (Stage.DECOMPOSE, Trans.DECOMPOSED):         Stage.SKETCH,
+    (Stage.DECOMPOSE, Trans.NEEDS_RETRY):        Stage.RETRY,
 
-    (Stage.ANALYZE, Trans.HAS_DIRECT):      Stage.PROVE_DIRECT,
-    (Stage.ANALYZE, Trans.ALL_RECURSIVE):   Stage.PROVE_RECURSIVE,
-    (Stage.ANALYZE, Trans.ALL_PROVED):      Stage.ASSEMBLE,
+    # PROVE_DIRECT: attempt → extract sorries → child POs if any
+    (Stage.PROVE_DIRECT, Trans.PROVED):          Stage.ASSEMBLE,
+    (Stage.PROVE_DIRECT, Trans.HAS_CHILDREN):    Stage.CHILD_POS,
+    (Stage.PROVE_DIRECT, Trans.NO_PROGRESS):     Stage.RETRY,
 
-    (Stage.PROVE_DIRECT, Trans.ALL_PROVED):     Stage.ASSEMBLE,
-    (Stage.PROVE_DIRECT, Trans.SOME_REMAINING): Stage.REFACTOR,
+    (Stage.SKETCH, Trans.SKETCH_OK):             Stage.CHILD_CEA,
+    (Stage.SKETCH, Trans.SKETCH_FAILED):         Stage.RETRY,
 
-    (Stage.REFACTOR, Trans.NEW_WORK):       Stage.ANALYZE,
-    (Stage.REFACTOR, Trans.STABLE):         Stage.PROVE_RECURSIVE,
-    (Stage.REFACTOR, Trans.ALL_PROVED):     Stage.ASSEMBLE,
+    (Stage.CHILD_CEA, Trans.ALL_SOUND):          Stage.REFACTOR,
+    (Stage.CHILD_CEA, Trans.SOME_UNSOUND):       Stage.RETRY,
 
-    (Stage.PROVE_RECURSIVE, Trans.ALL_PROVED):    Stage.ASSEMBLE,
-    (Stage.PROVE_RECURSIVE, Trans.CHILD_FAILED):  Stage.RETRY,
+    (Stage.REFACTOR, Trans.HAS_CHILDREN):        Stage.CHILD_POS,
+    (Stage.REFACTOR, Trans.ALL_PROVED):          Stage.ASSEMBLE,
 
-    (Stage.ASSEMBLE, Trans.ASSEMBLED):      Stage.VALIDATE,
-    (Stage.ASSEMBLE, Trans.FAILED):         Stage.RETRY,
+    (Stage.CHILD_POS, Trans.ALL_PROVED):         Stage.ASSEMBLE,
+    (Stage.CHILD_POS, Trans.CHILD_FAILED):       Stage.RETRY,
 
-    (Stage.VALIDATE, Trans.VALID):          Stage.DONE,
-    (Stage.VALIDATE, Trans.INVALID):        Stage.RETRY,
+    (Stage.ASSEMBLE, Trans.ASSEMBLED):           Stage.VALIDATE,
+    (Stage.ASSEMBLE, Trans.FAILED):              Stage.RETRY,
 
-    (Stage.RETRY, Trans.NEW_APPROACH):      Stage.DECOMPOSE,
-    (Stage.RETRY, Trans.MAX_RETRIES):       Stage.FAILED,
+    (Stage.VALIDATE, Trans.VALID):               Stage.DONE,
+    (Stage.VALIDATE, Trans.INVALID):             Stage.RETRY,
+
+    (Stage.RETRY, Trans.NEW_APPROACH):           Stage.DECOMPOSE,
+    (Stage.RETRY, Trans.MAX_RETRIES):            Stage.FAILED,
 }
 
 
 # ─── State ────────────────────────────────────────────────────────────────────
-
-@dataclass
-class ProverState:
-    stage: Stage = Stage.SOUNDNESS
-    theorem_file: str = ""
-    theorem_name: str = ""
-    workspace: str = ""
-    skip_soundness: bool = False
-    depth: int = 0
-
-    proved_files: list[str] = field(default_factory=list)
-    direct_files: list[str] = field(default_factory=list)
-    recursive_files: list[str] = field(default_factory=list)
-
-    drain_round: int = 0
-    attempt: int = 0
-    parent_agent: str = "TaskManager"
-    failure_reason: str = ""
-    last_failure_details: str = ""
-
-
-# ─── Decompose helper types ──────────────────────────────────────────────────
 
 @dataclass
 class SubGoal:
@@ -165,6 +159,30 @@ class DecomposeResult:
     sub_goals: list[SubGoal] = field(default_factory=list)
     proof_sketch: str = ""
     reasoning: str = ""
+
+
+@dataclass
+class ProverState:
+    stage: Stage = Stage.SOUNDNESS
+    theorem_file: str = ""
+    theorem_name: str = ""
+    workspace: str = ""
+    skip_soundness: bool = False
+    depth: int = 0
+
+    # Files in decomposed/ (populated after DECOMPOSE + REFACTOR)
+    decomposed_files: list[str] = field(default_factory=list)
+    proved_files: list[str] = field(default_factory=list)
+
+    # Meta
+    attempt: int = 0
+    parent_agent: str = "TaskManager"
+    failure_reason: str = ""
+    last_failure_details: str = ""
+
+    # Identity (for recursive checkpoint recovery via swarm checkpoint visibility graph)
+    agent_name: str = ""
+    internal_agents: dict = field(default_factory=dict)  # e.g. {"decomposer": "po_decomposer_19"}
 
 
 # ─── Main loop ────────────────────────────────────────────────────────────────
@@ -209,7 +227,7 @@ async def run_workflow(agent, inp: Any, result_type: type[T] | None = None):
     if not (originals_dir / "Stub.lean").exists():
         shutil.copy2(stub_file, originals_dir / "Stub.lean")
 
-    # Resume or fresh start
+    # Resume from checkpoint or fresh start
     restored = getattr(agent, '_restored_state', None)
     if restored and isinstance(restored, dict):
         state = ProverState(**{k: (Stage(v) if k == "stage" else v)
@@ -223,10 +241,10 @@ async def run_workflow(agent, inp: Any, result_type: type[T] | None = None):
             parent_agent=parent_agent, depth=depth,
         )
 
+    state.agent_name = agent.spec.name
     agent._workflow_state = state
-    await agent._emit("message", f"[PO] Starting: {theorem_name} in {workspace_rel} (depth={depth})")
+    await agent._emit("message", f"[PO] Starting: {theorem_name} in {workspace_rel} (depth={depth}, agent={state.agent_name})")
 
-    # Main state machine loop
     while not agent.cancellation.is_cancelled:
         if state.stage in (Stage.DONE, Stage.FAILED):
             break
@@ -244,7 +262,12 @@ async def run_workflow(agent, inp: Any, result_type: type[T] | None = None):
             write_checkpoint(cwd, state)
         except Exception as e:
             await agent._emit("message", f"[PO] Error in {state.stage.value}: {e}")
-            state.stage = Stage.RETRY
+            if state.stage == Stage.RETRY:
+                # Error in retry handler itself — force fail to prevent infinite loop
+                state.stage = Stage.FAILED
+                state.failure_reason = f"retry handler crashed: {e}"
+            else:
+                state.stage = Stage.RETRY
             write_checkpoint(cwd, state)
 
     await _notify_parent(agent, state,
@@ -275,8 +298,9 @@ async def _stage_split(state: ProverState, agent) -> Trans:
     if state.depth > 0 and verify_split_complete(cwd, state.workspace):
         return Trans.SPLIT_DONE
 
+    # Use splitter agent in verified loop
+    from .po_agents import run_splitter
     outcome = await run_splitter(agent, state.workspace, f"{state.workspace}/Stub.lean")
-
     if outcome.success:
         return Trans.SPLIT_DONE
     if verify_file_exists(cwd, f"{state.workspace}/Stub/Def.lean"):
@@ -284,255 +308,553 @@ async def _stage_split(state: ProverState, agent) -> Trans:
     return Trans.SPLIT_FAILED
 
 
-async def _stage_decompose(state: ProverState, agent) -> Trans:
-    decomposer = await _get_internal(agent, "decomposer")
+async def _stage_prove_direct(state: ProverState, agent) -> Trans:
+    """Direct proof attempt → extract sorries as children if any remain.
+
+    Flow:
+    1. proof_writer attempts the theorem
+    2. If sorry-free → PROVED (go to ASSEMBLE)
+    3. If broken (doesn't compile) or bare sorry (no progress) → NO_PROGRESS (go to RETRY)
+    4. If has sorries but structural progress → extract each sorry into
+       decomposed/lemma_helper_<name>.lean → HAS_CHILDREN (go to CHILD_POS)
+    """
     cwd = _resolve(agent)
+    stub_rel = f"{state.workspace}/Stub.lean"
+    tools = get_lean_tools()
+
+    # Save backup for comparison and revert
+    backup = cwd / f"{stub_rel}.bak"
+    shutil.copy2(cwd / stub_rel, backup)
+
+    # Also keep Stub.clean.lean for "no progress" detection
+    stub_clean = cwd / state.workspace / "Stub.clean.lean"
+    if not stub_clean.exists():
+        shutil.copy2(cwd / stub_rel, stub_clean)
+
+    sorry_ct = count_sorries(cwd, stub_rel)
+    turns = WRITER_EXTENDED_TURNS if sorry_ct <= 2 else WRITER_MAX_TURNS
+    rounds = 3 if sorry_ct <= 2 else 2
+    action = _build_writer_action(sorry_ct)
+
+    # Acquire global semaphore for proof_writer
+    sem = _get_writer_semaphore()
+    async with sem:
+        await run_proof_writer(
+            agent, state.workspace, stub_rel, action,
+            max_turns=turns, max_rounds=rounds,
+        )
+
+        # After main attempt: check if main theorem body still has sorry.
+        # If yes, push proof_writer to factor remaining sorries into named helpers.
+        if tools.has_sorry(stub_rel):
+            split = tools.split_theorems(stub_rel)
+            if not split.error:
+                # Find the main theorem (last one, or the one matching theorem_name)
+                main_block = split.blocks[-1] if split.blocks else None
+                if main_block and main_block.has_sorry:
+                    await agent._emit("message",
+                        "[PO] Main theorem still has sorry — pushing to factor into helpers")
+                    await run_proof_writer(
+                        agent, state.workspace, stub_rel,
+                        (
+                            "CRITICAL: The main theorem's proof body still contains `sorry`. "
+                            "You MUST factor each remaining sorry into a named helper theorem:\n"
+                            "  theorem helper_<descriptive_name> : <exact_goal_type> := by sorry\n"
+                            "Then use `exact helper_<name>` at the sorry position in the main proof.\n"
+                            "The main theorem's proof body must have NO sorry — only helper theorems can.\n"
+                            "Use lean_goal at each sorry to get the exact type for the helper."
+                        ),
+                        max_turns=WRITER_MAX_TURNS, max_rounds=2,
+                    )
+
+    # ── Check result ──
+
+    # Axiom check
+    axiom_check = tools.check_axioms(stub_rel)
+    if axiom_check.has_axiom:
+        shutil.copy2(backup, cwd / stub_rel)
+        backup.unlink(missing_ok=True)
+        state.last_failure_details = f"Proof uses axiom: {axiom_check.axiom_names}"
+        return Trans.NO_PROGRESS
+
+    # Sorry-free = fully proved
+    if not tools.has_sorry(stub_rel):
+        backup.unlink(missing_ok=True)
+        await agent._emit("message", "[PO] Direct proof succeeded ✅")
+        return Trans.PROVED
+
+    # Compilation check
+    compile_result = tools.check_compiles(stub_rel)
+    if not compile_result.success:
+        shutil.copy2(backup, cwd / stub_rel)
+        backup.unlink(missing_ok=True)
+        await agent._emit("message", "[PO] Proof broke compilation — reverted")
+        state.last_failure_details = "Direct attempt broke compilation"
+        return Trans.NO_PROGRESS
+
+    # ── Check if file is unchanged (byte-equal = no progress) ──
+    stub_clean_path = cwd / state.workspace / "Stub.clean.lean"
+    if stub_clean_path.exists():
+        if (cwd / stub_rel).read_text().strip() == stub_clean_path.read_text().strip():
+            shutil.copy2(backup, cwd / stub_rel)
+            backup.unlink(missing_ok=True)
+            await agent._emit("message", "[PO] No progress — file unchanged from original")
+            state.last_failure_details = "Direct attempt made no changes"
+            return Trans.NO_PROGRESS
+
+    # ── Check if main theorem is sorry-free (only helpers have sorry) ──
+    split = tools.split_theorems(stub_rel)
+    if split.error or not split.blocks:
+        backup.unlink(missing_ok=True)
+        state.last_failure_details = "Could not parse theorem blocks"
+        return Trans.NO_PROGRESS
+
+    main_block = split.blocks[-1]  # main theorem is typically last
+    sorry_helpers = [b for b in split.blocks[:-1] if b.has_sorry]
+
+    if main_block.has_sorry:
+        # Main theorem still has sorry in its body — proof_writer couldn't factor it out
+        backup.unlink(missing_ok=True)
+        state.last_failure_details = (
+            "Main theorem body still has sorry (not factored into helpers). "
+            "Needs decomposition.")
+        return Trans.NO_PROGRESS
+
+    if not sorry_helpers:
+        # Main theorem proved AND no helpers with sorry — shouldn't reach here
+        # (we already checked has_sorry above) but handle gracefully
+        backup.unlink(missing_ok=True)
+        await agent._emit("message", "[PO] Direct proof succeeded ✅")
+        return Trans.PROVED
+
+    # ── Main theorem is sorry-free, helpers have sorry → EXTRACT ──
+    await agent._emit("message",
+        f"[PO] Main theorem proved! {len(sorry_helpers)} helpers need proving → extracting")
+
+    decomposed_dir = cwd / state.workspace / "decomposed"
+    decomposed_dir.mkdir(parents=True, exist_ok=True)
+
+    extract_result = tools.extract_sorry_theorems(stub_rel,
+        output_dir=f"{state.workspace}/decomposed")
+
+    if extract_result.created_files:
+        state.decomposed_files = extract_result.created_files
+        await agent._emit("message",
+            f"[PO] Extracted {len(extract_result.created_files)} helpers → spawning child POs")
+        backup.unlink(missing_ok=True)
+        return Trans.HAS_CHILDREN
+
+    # Extraction failed (compilation issue with extracted files)
+    backup.unlink(missing_ok=True)
+    state.last_failure_details = f"Extraction failed: {extract_result.error or 'unknown'}"
+    return Trans.NO_PROGRESS
+
+
+async def _stage_decompose(state: ProverState, agent) -> Trans:
+    """Decomposer decides: direct attempt or decompose into sub-goals.
+
+    At max recursion depth, forces direct (no further decomposition).
+    Otherwise, decomposer agent decides based on theorem complexity.
+    """
+    cwd = _resolve(agent)
+    tools = get_lean_tools()
+    stub_rel = f"{state.workspace}/Stub.lean"
+
+    # Already proved? (can happen on resume)
+    if not tools.has_sorry(stub_rel):
+        return Trans.DIRECT
+
+    # At max depth: always direct (no further decomposition)
+    if state.depth >= MAX_RECURSION_DEPTH:
+        await agent._emit("message", f"[PO] Max depth ({MAX_RECURSION_DEPTH}) — forcing direct attempt")
+        return Trans.DIRECT
+
+    decomposer = await _get_internal(agent, "decomposer")
 
     msg = (f"Decompose theorem: {state.theorem_name}\nFile: {state.workspace}/Stub.lean\n"
-           f"Write lemma files to: {state.workspace}/decomposed/lemma_<n>_<name>.lean\n"
-           f"RULE: Each file must contain EXACTLY ONE theorem with sorry.\n")
+           f"Write each sub-goal using write_decomposed_lemma tool.\n"
+           f"RULE: Each file must contain EXACTLY ONE theorem with sorry.\n"
+           f"RULE: Must create at least 2 sub-goals (or say strategy='direct' if simple).\n")
     if state.attempt > 0:
-        msg += (f"Attempt {state.attempt + 1}/{MAX_RETRIES}. Previous failed: {state.last_failure_details}\n"
-                f"decomposed/ is CLEARED. Write completely NEW files.\n")
-    msg += f"Read the file, use lean_goal at the sorry, decide strategy.\n"
+        msg += (f"Attempt {state.attempt + 1}/{MAX_RETRIES}. Previous: {state.last_failure_details}\n"
+                f"Try a DIFFERENT decomposition strategy.\n")
+    msg += f"Read the file, use lean_goal at the sorry, ask SearchAgent about types. Decide strategy.\n"
 
     output = await _get_decomposition(decomposer, msg, state, agent)
     if output is None:
-        return Trans.NEEDS_DECOMP if state.attempt > 0 else Trans.SIMPLE_ENOUGH
+        state.last_failure_details = "Decomposer produced no output"
+        return Trans.NEEDS_RETRY
     if output.strategy == "direct":
-        return Trans.SIMPLE_ENOUGH
+        await agent._emit("message", "[PO] Decomposer chose: direct attempt")
+        return Trans.DIRECT
 
-    # Collect lemma files
-    all_lemmas = []
-    originals_dir = cwd / state.workspace / "_originals"
-    originals_dir.mkdir(exist_ok=True)
-    for goal in (output.sub_goals or []):
-        src = cwd / goal.filename
-        if src.exists() and not check_import_dag(src, state.workspace):
-            all_lemmas.append(goal.filename)
-            shutil.copy2(src, originals_dir / Path(goal.filename).name)
-
-    if not all_lemmas:
-        return Trans.SIMPLE_ENOUGH
-
-    all_lemmas = list(dict.fromkeys(all_lemmas))
-    await agent._emit("message", f"[PO] Decomposed: {len(all_lemmas)} lemmas")
-
-    # Parallel CEA
-    unsound = await _parallel_cea(all_lemmas, state, agent)
-    all_lemmas = [f for f in all_lemmas if f not in unsound]
-    if not all_lemmas:
-        state.last_failure_details = "All lemmas rejected by CEA"
-        return Trans.NEEDS_DECOMP
-
-    # Sketch verification loop
-    sketch_ok = await _verify_sketch(all_lemmas, state, agent, decomposer, output)
-    if sketch_ok:
-        await swarm_checkpoint(agent, f"decomposed:{len(all_lemmas)}_lemmas")
-        return Trans.DECOMPOSED
-
-    state.last_failure_details = "Sketch couldn't use decomposed lemmas"
-    return Trans.NEEDS_DECOMP
-
-
-async def _stage_analyze(state: ProverState, agent) -> Trans:
-    cwd = _resolve(agent)
+    # Collect files from decomposed/ (decomposer wrote them via write_decomposed_lemma)
     decomposed_dir = cwd / state.workspace / "decomposed"
+    if not decomposed_dir.exists() or not list(decomposed_dir.glob("*.lean")):
+        state.last_failure_details = "No files in decomposed/ after decomposition"
+        return Trans.NEEDS_RETRY
 
-    # Gather unproved files
-    all_files = ([f"{state.workspace}/decomposed/{f.name}" for f in decomposed_dir.glob("*.lean")]
-                 if decomposed_dir.exists() else [])
+    state.decomposed_files = [
+        f"{state.workspace}/decomposed/{f.name}"
+        for f in decomposed_dir.glob("*.lean")
+    ]
 
-    # If no decomposed files, check Stub.lean directly
-    if not all_files:
-        stub = f"{state.workspace}/Stub.lean"
-        all_files = [stub] if not verify_no_sorry(cwd, stub) else []
+    # Must have at least 2 sub-goals (otherwise decomposition is pointless)
+    if len(state.decomposed_files) < 2:
+        state.last_failure_details = (
+            f"Decomposition produced only {len(state.decomposed_files)} sub-goal(s). "
+            f"Must produce at least 2. Try splitting into more independent parts.")
+        return Trans.NEEDS_RETRY
 
-    unproved = [f for f in all_files if f not in state.proved_files and not verify_no_sorry(cwd, f)]
+    # Verify all files with tools (axiom check)
+    tools = get_lean_tools()
+    for f in state.decomposed_files:
+        axiom_check = tools.check_axioms(f)
+        if axiom_check.has_axiom:
+            state.last_failure_details = f"{Path(f).name} contains axiom: {axiom_check.axiom_names}"
+            return Trans.NEEDS_RETRY
 
-    # Mark newly proved
-    for f in all_files:
-        if f not in state.proved_files and verify_no_sorry(cwd, f):
-            state.proved_files.append(f)
-
-    if not unproved:
-        return Trans.ALL_PROVED
-
-    if state.drain_round >= MAX_DRAIN_ROUNDS:
-        state.recursive_files = unproved
-        state.direct_files = []
-        return Trans.ALL_RECURSIVE
-
-    await agent._emit("message", f"[PO] Analyzing {len(unproved)} files (round {state.drain_round + 1})...")
-    assessments = analyze_files(unproved, cwd)
-
-    state.direct_files = [a.file for a in assessments if a.difficulty == "direct"]
-    state.recursive_files = [a.file for a in assessments if a.difficulty == "recursive"]
-    for a in assessments:
-        if a.difficulty == "proved" and a.file not in state.proved_files:
-            state.proved_files.append(a.file)
-
-    await agent._emit("message",
-        f"[PO] Analysis: {len(state.direct_files)} direct, {len(state.recursive_files)} recursive")
-
-    if state.direct_files:
-        return Trans.HAS_DIRECT
-    if state.recursive_files:
-        return Trans.ALL_RECURSIVE
-    return Trans.ALL_PROVED
+    await agent._emit("message", f"[PO] Decomposed into {len(state.decomposed_files)} sub-goals")
+    await swarm_checkpoint(agent, f"decomposed:{len(state.decomposed_files)}")
+    return Trans.DECOMPOSED
 
 
-async def _stage_prove_direct(state: ProverState, agent) -> Trans:
-    to_prove = list(state.direct_files)
-    if not to_prove:
-        return Trans.ALL_PROVED
-
-    await agent._emit("message", f"[PO] Direct proving {len(to_prove)} files...")
-    semaphore = asyncio.Semaphore(MAX_PARALLEL_DIRECT)
+async def _stage_sketch(state: ProverState, agent) -> Trans:
+    """Sketch: wire decomposed lemmas together in Stub.lean."""
     cwd = _resolve(agent)
-    newly_proved = []
+    decomposer = await _get_internal(agent, "decomposer")
 
-    async def _attempt(f: str):
-        async with semaphore:
-            backup = cwd / f"{f}.bak"
-            shutil.copy2(cwd / f, backup)
+    stub_path = cwd / state.workspace / "Stub.lean"
+    backup = cwd / state.workspace / "Stub.clean.lean"
+    if not backup.exists():
+        shutil.copy2(stub_path, backup)
 
-            sorry_ct = count_sorries(cwd, f)
-            turns = WRITER_EXTENDED_TURNS if sorry_ct <= 2 else WRITER_MAX_TURNS
-            rounds = 3 if sorry_ct <= 2 else 2
-            action = _build_writer_action(sorry_ct)
+    for attempt in range(3):
+        shutil.copy2(backup, stub_path)
 
-            # Run proof_writer with in-context verification loop
-            # Agent stays alive across rounds — sees its own errors and fixes them
-            outcome = await run_proof_writer(
-                agent, state.workspace, f, action,
-                max_turns=turns, max_rounds=rounds,
-            )
+        # Get proof sketch from decomposer's last output
+        proof_sketch = getattr(decomposer, '_last_sketch', '') or "(combine sub-goals)"
 
-            # Final safety: DAG violations → revert
-            bad = check_import_dag(cwd / f, state.workspace)
-            if bad:
-                await agent._emit("message", f"[PO] ⚠️ {Path(f).name}: DAG violation — reverting")
-                shutil.copy2(backup, cwd / f)
-            elif outcome.success:
-                newly_proved.append(f)
-                await agent._emit("message", f"[PO] ✅ Proved: {Path(f).name}")
-            else:
-                await agent._emit("message",
-                    f"[PO] ⏳ {Path(f).name}: {count_sorries(cwd, f)} sorries after {outcome.attempts} rounds")
+        result = await run_sketcher(
+            agent, state.workspace, f"{state.workspace}/Stub.lean",
+            state.theorem_name, state.decomposed_files, proof_sketch,
+        )
 
-            backup.unlink(missing_ok=True)
+        if result and result.success:
+            # Verify with tools
+            tools = get_lean_tools()
+            bad = tools.check_dag(f"{state.workspace}/Stub.lean",
+                                  state.workspace.replace("/", "."))
+            if not bad:
+                # Check for unused imports: remove each decomposed import one-by-one
+                # and see if Stub.lean still compiles. Unused = spurious decomposition.
+                unused = await _find_unused_decomposed_imports(
+                    cwd, state.workspace, state.decomposed_files, tools)
+                if unused:
+                    # Report back to decomposer and retry
+                    shutil.copy2(backup, stub_path)
+                    unused_names = [Path(f).stem for f in unused]
+                    await agent._emit("message",
+                        f"[PO] Sketch uses only {len(state.decomposed_files) - len(unused)}/{len(state.decomposed_files)} lemmas. "
+                        f"Unused: {unused_names}")
+                    # Remove unused files and ask decomposer to redo
+                    for f in unused:
+                        (cwd / f).unlink(missing_ok=True)
+                    state.decomposed_files = [f for f in state.decomposed_files if f not in unused]
+                    if len(state.decomposed_files) < 2:
+                        state.last_failure_details = (
+                            f"After removing unused lemmas ({unused_names}), only "
+                            f"{len(state.decomposed_files)} remain. Need at least 2.")
+                        return Trans.SKETCH_FAILED
+                    # Retry sketch with the pruned set
+                    continue
+                await agent._emit("message", "[PO] Sketch verified ✅ (all lemmas used)")
+                return Trans.SKETCH_OK
+            shutil.copy2(backup, stub_path)
+            await agent._emit("message", f"[PO] Sketch DAG violation: {bad}")
+        else:
+            shutil.copy2(backup, stub_path)
+            reason = result.blocking_reason if result else "no output"
+            await agent._emit("message", f"[PO] Sketch failed: {reason}")
 
-    await asyncio.gather(*[_attempt(f) for f in to_prove])
+        if attempt >= 2:
+            break
 
-    state.proved_files.extend(newly_proved)
-    state.direct_files = [f for f in state.direct_files if f not in newly_proved]
+        # Ask decomposer to revise
+        await decomposer.run_ai(
+            inp=f"Sketch failed: {reason}. Revise decomposition.",
+            result_type=DecomposeResult, max_turns=DECOMPOSER_MAX_TURNS)
 
-    if newly_proved:
-        write_checkpoint(cwd, state)
-        await swarm_checkpoint(agent, f"prove_direct:{len(newly_proved)}_proved")
+    state.last_failure_details = "Sketch could not wire lemmas together"
+    return Trans.SKETCH_FAILED
 
-    # Check if everything in decomposed/ is done
-    decomposed_dir = cwd / state.workspace / "decomposed"
-    if decomposed_dir.exists():
-        all_done = all(verify_no_sorry(cwd, f"{state.workspace}/decomposed/{f.name}")
-                       for f in decomposed_dir.glob("*.lean"))
-        if all_done:
-            return Trans.ALL_PROVED
 
-    return Trans.SOME_REMAINING
+async def _stage_child_cea(state: ProverState, agent) -> Trans:
+    """Parallel CEA on all decomposed lemma files."""
+    await agent._emit("message", f"[PO] CEA on {len(state.decomposed_files)} lemmas...")
+
+    sem = asyncio.Semaphore(MAX_CONCURRENT_WRITERS)
+    unsound = []
+
+    async def _check(f: str):
+        async with sem:
+            v = await run_cea(agent, state.workspace, f, Path(f).stem)
+            if v and not v.sound and v.confidence == "high":
+                unsound.append(f)
+                await agent._emit("message", f"[PO] CEA: {Path(f).name} UNSOUND")
+
+    await asyncio.gather(*[_check(f) for f in state.decomposed_files])
+
+    if unsound:
+        state.last_failure_details = f"CEA rejected: {[Path(f).name for f in unsound]}"
+        return Trans.SOME_UNSOUND
+
+    await agent._emit("message", "[PO] All lemmas sound ✅")
+    return Trans.ALL_SOUND
 
 
 async def _stage_refactor(state: ProverState, agent) -> Trans:
+    """Enforce one-sorry-per-file. Uses tools, no agents."""
     cwd = _resolve(agent)
+    tools = get_lean_tools()
+
+    # Scan decomposed/ and refactor multi-sorry files
     decomposed_dir = cwd / state.workspace / "decomposed"
     if not decomposed_dir.exists():
-        return Trans.STABLE
-
-    state.drain_round += 1
-    new_files = refactor_multi_theorem_files(decomposed_dir, state.workspace, state.proved_files)
-
-    if new_files:
-        await agent._emit("message", f"[PO] Refactored: {len(new_files)} new files")
-        return Trans.NEW_WORK
-
-    # Check if all done after refactoring
-    all_done = all(
-        verify_no_sorry(cwd, f"{state.workspace}/decomposed/{f.name}")
-        for f in decomposed_dir.glob("*.lean")
-    )
-    if all_done:
         return Trans.ALL_PROVED
 
-    return Trans.STABLE
+    sorry_files = []
+    for lean_file in decomposed_dir.glob("*.lean"):
+        rel = f"{state.workspace}/decomposed/{lean_file.name}"
+        if tools.is_proved(rel):
+            if rel not in state.proved_files:
+                state.proved_files.append(rel)
+            continue
+
+        # Check if file has multiple sorry theorems → extract
+        split = tools.split_theorems(rel)
+        if split.error:
+            continue
+        sorry_blocks = [b for b in split.blocks if b.has_sorry]
+
+        if len(sorry_blocks) > 1:
+            # Refactor: extract each sorry theorem into its own file
+            result = tools.extract_sorry_theorems(rel,
+                output_dir=f"{state.workspace}/decomposed")
+            if result.created_files:
+                await agent._emit("message",
+                    f"[PO] Refactored {Path(rel).name}: extracted {len(result.created_files)} files")
+                sorry_files.extend(result.created_files)
+            else:
+                sorry_files.append(rel)
+        else:
+            sorry_files.append(rel)
+
+    # Update decomposed_files list
+    state.decomposed_files = [
+        f"{state.workspace}/decomposed/{f.name}"
+        for f in decomposed_dir.glob("*.lean")
+        if f"{state.workspace}/decomposed/{f.name}" not in state.proved_files
+    ]
+
+    if not state.decomposed_files:
+        return Trans.ALL_PROVED
+
+    await agent._emit("message", f"[PO] Refactor done: {len(state.decomposed_files)} files need proving")
+    return Trans.HAS_CHILDREN
 
 
-async def _stage_prove_recursive(state: ProverState, agent) -> Trans:
-    remaining = [f for f in state.recursive_files if f not in state.proved_files]
+async def _stage_child_pos(state: ProverState, agent) -> Trans:
+    """Parallel child POs for all sorry files in decomposed/.
+
+    Before spawning, checks each child's po_checkpoint.json:
+    - stage=done → already proved, skip
+    - stage=other → resume from checkpoint (child will pick up where it left off)
+    - no checkpoint → fresh start
+    """
+    cwd = _resolve(agent)
+    remaining = [f for f in state.decomposed_files if f not in state.proved_files]
+
     if not remaining:
         return Trans.ALL_PROVED
 
-    if state.depth >= MAX_RECURSION_DEPTH:
-        state.last_failure_details = f"Depth limit: {len(remaining)} files need deeper decomposition"
-        return Trans.CHILD_FAILED
-
-    cwd = _resolve(agent)
-    await agent._emit("message", f"[PO] Recursive: {len(remaining)} files (depth={state.depth + 1})")
-
+    # Check which children already completed (from prior run/checkpoint)
+    import json as _json
+    to_spawn = []
     for lemma_file in remaining:
-        if is_bare_sorry(cwd, lemma_file):
-            continue
+        child_workspace = str(Path(lemma_file).parent / Path(lemma_file).stem)
+        child_cp = cwd / child_workspace / "po_checkpoint.json"
+        if child_cp.exists():
+            try:
+                cp_data = _json.loads(child_cp.read_text())
+                if cp_data.get("stage") == "done":
+                    state.proved_files.append(lemma_file)
+                    await agent._emit("message", f"[PO] ✅ {Path(lemma_file).name}: already proved (from checkpoint)")
+                    write_checkpoint(cwd, state)
+                    continue
+            except (ValueError, KeyError):
+                pass
+        to_spawn.append(lemma_file)
 
+    if not to_spawn:
+        return Trans.ALL_PROVED
+
+    await agent._emit("message", f"[PO] Running {len(to_spawn)} child POs (sequential, depth={state.depth + 1})")
+
+    failed = []
+
+    for lemma_file in to_spawn:
         child_workspace = setup_child_workspace(cwd, lemma_file, state.workspace)
-        await agent._emit("message", f"[PO] Child PO: {Path(lemma_file).name}")
+
+        # Check if child has a checkpoint to resume from
+        child_cp = cwd / child_workspace / "po_checkpoint.json"
+        if child_cp.exists():
+            await agent._emit("message", f"[PO] Resuming child: {Path(lemma_file).name}")
 
         result = await run_child_po(agent, child_workspace, lemma_file, state.depth + 1)
 
         if result and result.get("stage") == "done":
             state.proved_files.append(lemma_file)
+            await agent._emit("message", f"[PO] ✅ Child proved: {Path(lemma_file).name}")
             write_checkpoint(cwd, state)
             await swarm_checkpoint(agent, f"child_proved:{Path(lemma_file).name}")
-            await agent._emit("message", f"[PO] ✅ Child proved: {Path(lemma_file).name}")
         else:
             reason = result.get("details", "unknown") if result else "no output"
-            state.last_failure_details = f"Child failed: {Path(lemma_file).name}: {reason}"
-            return Trans.CHILD_FAILED
+            failed.append((lemma_file, reason))
+            await agent._emit("message", f"[PO] ❌ Child failed: {Path(lemma_file).name}")
+
+    if failed:
+        state.last_failure_details = f"{len(failed)} children failed: {[Path(f).name for f, _ in failed[:3]]}"
+        return Trans.CHILD_FAILED
 
     return Trans.ALL_PROVED
 
 
 async def _stage_assemble(state: ProverState, agent) -> Trans:
-    cwd = _resolve(agent)
+    """Merge Def.lean bottom-up and rewrite imports. No file merging/inlining.
 
-    # Copy child results back
+    Strategy:
+    - Child workspaces stay intact (decomposed/ files keep their own imports)
+    - Each child's local Def.lean gets merged INTO the top-level Def.lean
+    - All imports of local Def.lean are rewritten to point to top-level Def.lean
+    - This is done bottom-up: deepest children first, then their parents
+    - Files keep their inter-dependencies (decomposed imports stay valid via Lean module paths)
+
+    After assembly: top-level Stub.lean should compile sorry-free because
+    all decomposed lemmas are now proved and their Def.lean contents are
+    in the top-level Def.lean.
+    """
+    cwd = _resolve(agent)
+    tools = get_lean_tools()
+    top_module = state.workspace.replace("/", ".")
+    top_def = cwd / state.workspace / "Stub" / "Def.lean"
+
+    if not top_def.exists():
+        state.last_failure_details = "Top-level Stub/Def.lean missing"
+        return Trans.FAILED
+
+    # Step 1: Copy each proved child's Stub.lean back to the parent's lemma file.
+    # This replaces the sorry version with the proved version.
     for f in state.proved_files:
-        child_stub = cwd / Path(f).parent / Path(f).stem / "Stub.lean"
+        lemma_path = Path(f)
+        child_workspace = lemma_path.parent / lemma_path.stem
+        child_stub = cwd / child_workspace / "Stub.lean"
         if child_stub.exists():
             shutil.copy2(child_stub, cwd / f)
-            if check_import_dag(cwd / f, state.workspace):
-                state.last_failure_details = f"Assembly DAG violation: {Path(f).name}"
-                return Trans.FAILED
+            await agent._emit("message", f"[PO] Assembled: {lemma_path.name} ← child Stub.lean")
 
-    # Validate Stub.lean
+    top_def_content = top_def.read_text()
+
+    # Step 2: Merge all child Def.lean into top-level (bottom-up by path depth)
+    child_defs = sorted(
+        (cwd / state.workspace).rglob("Stub/Def.lean"),
+        key=lambda p: len(p.parts),
+        reverse=True,  # deepest first
+    )
+
+    for child_def in child_defs:
+        if child_def == top_def:
+            continue
+        child_content = child_def.read_text()
+        if child_content.strip() == top_def_content.strip():
+            continue  # identical — nothing to merge
+        # Find new lines not already in top-level
+        new_lines = [l for l in child_content.splitlines()
+                     if l.strip() and l not in top_def_content and not l.strip().startswith("import ")]
+        if new_lines:
+            top_def_content = top_def_content.rstrip() + "\n" + "\n".join(new_lines) + "\n"
+            top_def.write_text(top_def_content)
+            await agent._emit("message",
+                f"[PO] Merged {len(new_lines)} lines from {child_def.relative_to(cwd)}")
+
+    # Rewrite all local Def.lean imports to point to top-level
+    for lean_file in (cwd / state.workspace).rglob("*.lean"):
+        if lean_file.name == "Def.lean":
+            continue
+        content = lean_file.read_text()
+        rewritten = False
+        new_lines = []
+        for line in content.splitlines():
+            stripped = line.strip()
+            # Replace any import of a local Stub.Def with the top-level one
+            if (stripped.startswith("import ") and
+                    "Stub.Def" in stripped and
+                    stripped != f"import {top_module}.Stub.Def"):
+                new_lines.append(f"import {top_module}.Stub.Def")
+                rewritten = True
+            else:
+                new_lines.append(line)
+        if rewritten:
+            lean_file.write_text("\n".join(new_lines) + "\n")
+
+    # Verify: Stub.lean compiles sorry-free
     stub_rel = f"{state.workspace}/Stub.lean"
-    original_rel = f"{state.workspace}/_originals/Stub.lean"
-    v = await run_validator(agent, state.workspace, original_rel, stub_rel)
-    if v and v.compiles and not v.has_sorry:
+    compile_result = tools.check_compiles(stub_rel)
+
+    if compile_result.success and not compile_result.has_sorry:
         await agent._emit("message", "[PO] Assembly verified ✅")
         return Trans.ASSEMBLED
 
-    state.last_failure_details = f"Assembly: {'no compile' if v and not v.compiles else 'has sorry'}"
+    if not compile_result.success:
+        state.last_failure_details = "Stub.lean doesn't compile after assembly"
+    else:
+        state.last_failure_details = "Stub.lean still has sorry after assembly"
     return Trans.FAILED
 
 
 async def _stage_validate(state: ProverState, agent) -> Trans:
+    """Final validation: tools check compile/sorry/axiom, then agent checks statement integrity."""
     stub_rel = f"{state.workspace}/Stub.lean"
     original_rel = f"{state.workspace}/_originals/Stub.lean"
-    v = await run_validator(agent, state.workspace, original_rel, stub_rel)
-    if v and v.compiles and not v.has_sorry and v.statements_match:
-        return Trans.VALID
-    state.last_failure_details = f"Validation failed"
-    return Trans.INVALID
+    tools = get_lean_tools()
+
+    # Fast deterministic checks first (no agent needed)
+    compile_result = tools.check_compiles(stub_rel)
+    if not compile_result.success:
+        state.last_failure_details = "Validation: doesn't compile"
+        return Trans.INVALID
+
+    if tools.has_sorry(stub_rel):
+        state.last_failure_details = "Validation: still has sorry"
+        return Trans.INVALID
+
+    axiom_check = tools.check_axioms(stub_rel)
+    if axiom_check.has_axiom:
+        state.last_failure_details = f"Validation: uses axiom ({axiom_check.axiom_names})"
+        return Trans.INVALID
+
+    # Statement integrity check via validator agent
+    # (compares theorem signature between original and completed file)
+    cwd = _resolve(agent)
+    if (cwd / original_rel).exists():
+        from .po_agents import run_validator
+        v = await run_validator(agent, state.workspace, original_rel, stub_rel)
+        if v and not v.statements_match:
+            state.last_failure_details = "Validation: theorem signature changed"
+            return Trans.INVALID
+
+    await agent._emit("message", "[PO] Validation passed ✅")
+    return Trans.VALID
 
 
 async def _stage_retry(state: ProverState, agent) -> Trans:
@@ -543,8 +865,11 @@ async def _stage_retry(state: ProverState, agent) -> Trans:
     cwd = _resolve(agent)
     decomposed_dir = cwd / state.workspace / "decomposed"
     if decomposed_dir.exists():
-        decomposed_dir.rename(cwd / state.workspace / f"decomposed_attempt_{state.attempt}")
-        decomposed_dir.mkdir()
+        target = cwd / state.workspace / f"decomposed_attempt_{state.attempt}"
+        if target.exists():
+            shutil.rmtree(target)
+        decomposed_dir.rename(target)
+    decomposed_dir.mkdir(parents=True, exist_ok=True)
 
     stub_clean = cwd / state.workspace / "Stub.clean.lean"
     if stub_clean.exists():
@@ -552,31 +877,70 @@ async def _stage_retry(state: ProverState, agent) -> Trans:
 
     await _cleanup_internal(agent, "decomposer")
 
+    # Preserve proved files
     preserved = list(state.proved_files)
     state.proved_files = preserved
-    state.direct_files = []
-    state.recursive_files = []
-    state.drain_round = 0
+    state.decomposed_files = []
 
     await agent._emit("message", f"[PO] Retry {state.attempt}/{MAX_RETRIES}, preserved {len(preserved)} proofs")
     return Trans.NEW_APPROACH
 
 
+# ─── Handler registry ────────────────────────────────────────────────────────
+
 HANDLERS: dict[Stage, Any] = {
     Stage.SOUNDNESS: _stage_soundness,
     Stage.SPLIT: _stage_split,
     Stage.DECOMPOSE: _stage_decompose,
-    Stage.ANALYZE: _stage_analyze,
     Stage.PROVE_DIRECT: _stage_prove_direct,
+    Stage.SKETCH: _stage_sketch,
+    Stage.CHILD_CEA: _stage_child_cea,
     Stage.REFACTOR: _stage_refactor,
-    Stage.PROVE_RECURSIVE: _stage_prove_recursive,
+    Stage.CHILD_POS: _stage_child_pos,
     Stage.ASSEMBLE: _stage_assemble,
     Stage.VALIDATE: _stage_validate,
     Stage.RETRY: _stage_retry,
 }
 
 
-# ─── Private helpers (thin) ──────────────────────────────────────────────────
+# ─── Helpers ─────────────────────────────────────────────────────────────────
+
+async def _find_unused_decomposed_imports(cwd: Path, workspace: str,
+                                            decomposed_files: list[str], tools) -> list[str]:
+    """After sketch succeeds, check which decomposed imports are actually needed.
+
+    For each decomposed file, temporarily remove its import from Stub.lean and
+    re-compile. If it still compiles → that lemma is unused (spurious decomposition).
+
+    Returns list of unused file paths.
+    """
+    stub_path = cwd / workspace / "Stub.lean"
+    original_content = stub_path.read_text()
+    stub_rel = f"{workspace}/Stub.lean"
+    unused = []
+
+    for f in decomposed_files:
+        # Build the import line for this file
+        module_path = f.replace("/", ".").removesuffix(".lean")
+        import_line = f"import {module_path}"
+
+        # Remove this specific import
+        lines = original_content.splitlines()
+        filtered = [l for l in lines if l.strip() != import_line]
+        if len(filtered) == len(lines):
+            continue  # import line not found (shouldn't happen)
+
+        stub_path.write_text("\n".join(filtered) + "\n")
+
+        # Check if it still compiles without this import
+        compile_result = tools.check_compiles(stub_rel)
+        if compile_result.success:
+            unused.append(f)
+
+    # Restore original
+    stub_path.write_text(original_content)
+    return unused
+
 
 def _resolve(agent) -> Path:
     return Path(agent._cwd) if agent._cwd else Path.cwd()
@@ -586,65 +950,13 @@ def _build_writer_action(sorry_count: int) -> str:
     if sorry_count <= 2:
         return (
             f"File has {sorry_count} sorry(s) — CLOSE to done.\n"
-            "Try simple tactics first. If stuck, factor into helper theorems in same file.\n"
-            "Leave stubborn helpers with sorry — they'll be extracted later."
+            "Try simple tactics first. Factor hard goals into helpers.\n"
+            "Leave stubborn helpers with sorry."
         )
     return (
-        "Write a proof. Start with structural sketch, fill each sorry.\n"
-        "For hard sub-goals: factor into helper theorems in same file.\n"
-        "Leave stubborn helpers with sorry — they'll be extracted later."
+        "Write a proof. Structural sketch first, fill each sorry.\n"
+        "Factor hard sub-goals into helpers. Leave stubborn ones with sorry."
     )
-
-
-async def _parallel_cea(lemma_files: list[str], state: ProverState, agent) -> list[str]:
-    unsound = []
-    semaphore = asyncio.Semaphore(MAX_PARALLEL_DIRECT)
-
-    async def _check(f: str):
-        async with semaphore:
-            v = await run_cea(agent, state.workspace, f, Path(f).stem)
-            if v and not v.sound and v.confidence == "high":
-                unsound.append(f)
-                await agent._emit("message", f"[PO] CEA: {Path(f).name} UNSOUND")
-
-    await asyncio.gather(*[_check(f) for f in lemma_files])
-    return unsound
-
-
-async def _verify_sketch(all_lemmas: list[str], state: ProverState, agent, decomposer, output) -> bool:
-    cwd = _resolve(agent)
-    stub_path = cwd / state.workspace / "Stub.lean"
-    backup = cwd / state.workspace / "Stub.clean.lean"
-    if not backup.exists():
-        shutil.copy2(stub_path, backup)
-
-    for attempt in range(3):
-        shutil.copy2(backup, stub_path)
-        result = await run_sketcher(agent, state.workspace, f"{state.workspace}/Stub.lean",
-                                    state.theorem_name, all_lemmas, output.proof_sketch)
-
-        if result and result.success:
-            if not check_import_dag(stub_path, state.workspace):
-                return True
-            shutil.copy2(backup, stub_path)
-        else:
-            shutil.copy2(backup, stub_path)
-
-        if attempt >= 2:
-            break
-
-        # Ask decomposer to revise
-        rev = await decomposer.run_ai(
-            inp=f"Sketch failed: {result.blocking_reason if result else 'no output'}. Revise.",
-            result_type=DecomposeResult, max_turns=DECOMPOSER_MAX_TURNS)
-        if rev.output and rev.output.sub_goals:
-            all_lemmas.clear()
-            for goal in rev.output.sub_goals:
-                if (cwd / goal.filename).exists():
-                    all_lemmas.append(goal.filename)
-            output = rev.output
-
-    return False
 
 
 async def _get_decomposition(decomposer, msg, state, agent) -> DecomposeResult | None:
@@ -658,6 +970,7 @@ async def _get_decomposition(decomposer, msg, state, agent) -> DecomposeResult |
             inp="Produce your StructuredOutput now.", result_type=DecomposeResult, max_turns=DECOMPOSER_MAX_TURNS)
         output = result.output
 
+    # Fallback: check if files were written via the tool
     if output is None:
         cwd = _resolve(agent)
         decomposed_dir = cwd / state.workspace / "decomposed"
@@ -667,10 +980,15 @@ async def _get_decomposition(decomposer, msg, state, agent) -> DecomposeResult |
                 output = DecomposeResult(
                     strategy="decompose",
                     sub_goals=[SubGoal(name=f.stem, filename=f"{state.workspace}/decomposed/{f.name}") for f in files],
-                    proof_sketch="(from directory)")
+                    proof_sketch="(from files)")
+
+    if output:
+        # Store sketch for later use by sketcher
+        decomposer._last_sketch = output.proof_sketch
 
     await agent._emit("message",
-        f"[PO] Decompose: {output.strategy if output else 'None'}, {len(output.sub_goals) if output else 0} lemmas")
+        f"[PO] Decompose: {output.strategy if output else 'None'}, "
+        f"{len(output.sub_goals) if output else 0} sub-goals")
     return output
 
 
@@ -683,16 +1001,57 @@ async def _notify_parent(agent, state, message):
 
 
 async def _get_internal(agent, which: str):
+    """Get or create a persistent internal agent. On resume, reconnects to prior session."""
     attr = f"_po_{which}"
     attr_ctx = f"_po_{which}_ctx"
     if getattr(agent, attr, None) is None:
-        workspace = getattr(agent, '_workflow_state', None)
-        workspace = workspace.workspace if workspace else None
-        ctx = swarm_agent(f"po_{which}", swarm=agent.swarm, cwd=agent._cwd, workspace=workspace)
+        state = getattr(agent, '_workflow_state', None)
+        workspace = state.workspace if state else None
+
+        # Check if we have a prior session to resume from checkpoint
+        resume_session_id = None
+        if state and state.internal_agents.get(which):
+            prior_name = state.internal_agents[which]
+            resume_session_id = _lookup_session_id(agent, prior_name)
+
+        ctx = swarm_agent(f"po_{which}", swarm=agent.swarm, cwd=agent._cwd,
+                          workspace=workspace, resume_session_id=resume_session_id)
         internal = await ctx.__aenter__()
         setattr(agent, attr_ctx, ctx)
         setattr(agent, attr, internal)
+
+        # Store the new agent's name for future checkpoints
+        if state:
+            state.internal_agents[which] = internal.spec.name
+
     return getattr(agent, attr)
+
+
+def _lookup_session_id(agent, agent_name: str) -> str | None:
+    """Look up a session ID from the swarm checkpoint state.yaml."""
+    import json as _json
+    from pathlib import Path as _P
+
+    # Try the latest checkpoint
+    cp_dir = _P(agent._cwd or ".") / "StrataAgent" / "strataswarm" / "temp" / "checkpoints"
+    if not cp_dir.exists():
+        return None
+
+    # Find latest checkpoint
+    checkpoints = sorted(cp_dir.iterdir(), key=lambda p: p.name, reverse=True)
+    if not checkpoints:
+        return None
+
+    state_file = checkpoints[0] / "state.yaml"
+    if not state_file.exists():
+        return None
+
+    try:
+        import yaml
+        state = yaml.safe_load(state_file.read_text())
+        return state.get("sessions", {}).get(agent_name)
+    except Exception:
+        return None
 
 
 async def _cleanup_internal(agent, which: str):

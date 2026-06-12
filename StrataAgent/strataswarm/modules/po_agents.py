@@ -285,8 +285,21 @@ async def run_sketcher(agent, workspace: str, file: str, theorem: str,
 
 
 async def run_child_po(agent, child_workspace: str, lemma_file: str, depth: int) -> dict | None:
-    """Spawn a child PO (module agent, no loop — it has its own internal loop)."""
+    """Spawn a child PO. Resumes from po_checkpoint.json if available."""
+    import json as _json
+
+    cwd = Path(agent._cwd) if agent._cwd else Path.cwd()
+
     async with swarm_agent("prover", swarm=agent.swarm, cwd=agent._cwd, workspace=child_workspace) as child:
+        # Restore from checkpoint if the child was previously running
+        child_cp = cwd / child_workspace / "po_checkpoint.json"
+        if child_cp.exists():
+            try:
+                cp_data = _json.loads(child_cp.read_text())
+                child._restored_state = cp_data
+            except (ValueError, KeyError):
+                pass
+
         result = await child.run(
             inp={
                 "theorem_file": lemma_file,
