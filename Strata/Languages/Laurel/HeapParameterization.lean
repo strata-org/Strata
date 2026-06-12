@@ -590,9 +590,9 @@ public def heapParameterizationPass : LoweringPass where
   run := fun p m =>
     (heapParameterization m p, [], {})
   comesBefore := [
-      ⟨ typeHierarchyTransformPass.name, "the type hierarchy pass modifies the 'Composite' datatype that is introduced by this pass." ⟩,
-      ⟨ modifiesClausesTransformPass.name, "the modifies pass refers to several types and variables introduced by heap parameterization: Composite, Field, $heap_in, $heap." ⟩,
-      ⟨ liftExpressionAssignmentsPass.name, "the heap parameterization pass introduces assignments (to the heap variables) that need to be lifted."⟩
+      ⟨ typeHierarchyTransformPass.meta, "the type hierarchy pass modifies the 'Composite' datatype that is introduced by this pass." ⟩,
+      ⟨ modifiesClausesTransformPass.meta, "the modifies pass refers to several types and variables introduced by heap parameterization: Composite, Field, $heap_in, $heap." ⟩,
+      ⟨ liftExpressionAssignmentsPass.meta, "the heap parameterization pass introduces assignments (to the heap variables) that need to be lifted."⟩
       ]
 
 end Strata.Laurel

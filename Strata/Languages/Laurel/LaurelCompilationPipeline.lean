@@ -112,7 +112,7 @@ def comesBeforeRespected : Bool :=
   let names := laurelPipeline.toList.map (·.name)
   (List.range laurelPipeline.size).zip laurelPipeline.toList |>.all fun (i, p) =>
     p.comesBefore.all fun cb =>
-      match names.findIdx? (· == cb.passName) with
+      match names.findIdx? (· == cb.pass.name) with
       | some j => i < j
       | none   => false   -- target not in laurelPipeline
 
@@ -190,6 +190,12 @@ private def unorderedCorePipeline : Array (LaurelPass UnorderedCoreWithLaurelTyp
   liftExpressionAssignmentsPass
 ]
 
+/-- All pipeline passes, projected to their parameter-free metadata. Combines
+    the differently-parameterized `laurelPipeline` and `unorderedCorePipeline`
+    into a single homogeneous list. -/
+def allPassMeta : List PassMeta :=
+  laurelPipeline.toList.map (·.meta) ++ unorderedCorePipeline.toList.map (·.meta)
+
 /--
 Translate Laurel Program to Core Program, also returning the lowered Laurel program.
 
@@ -211,7 +217,7 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
   if ! passDiags.isEmpty then
     return (none, passDiags, program, stats)
 
-  let unorderedCore := transparencyPass program
+  let unorderedCore := (transparencyPass.run program model).1
   emit "transparencyPass" "core.st" unorderedCore
   let mut unorderedCore := unorderedCore
   let mut fnModel := model

@@ -199,6 +199,6 @@ public def inferHoleTypesPass : LoweringPass where
     let (p', diags, stats) := inferHoleTypes m p
     (p', diags, stats)
   comesBefore := [
-      ⟨ eliminateDeterministicHolesPass.name, "eliminating deterministic holes relies on knowing the type of holes"⟩]
+      ⟨ eliminateDeterministicHolesPass.meta, "eliminating deterministic holes relies on knowing the type of holes"⟩]
 
 end Laurel

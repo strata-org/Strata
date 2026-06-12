@@ -7,6 +7,7 @@ module
 
 public import Strata.Languages.Laurel.MapStmtExpr
 public import Strata.Languages.Laurel.LaurelAST
+public import Strata.Languages.Laurel.LaurelPass
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 import Strata.DL.Lambda.TypeFactory
 
@@ -158,15 +159,7 @@ private def addFreePostcondition (proc : Procedure) (freePost : StmtExprMd) : Pr
       { proc with body := .Opaque [freeCond] (some body) [] }
     | _ => proc
 
-/--
-Transparency pass: translate a Laurel program to the UnorderedCoreWithLaurelTypes IR.
-
-For each procedure:
-- Generate a function with the same signature, named `foo$asFunction`
-- If transparent, the function gets a functional body (assertions erased, calls to functional versions)
-- If the function has a body, add a free postcondition equating the procedure output to the function
--/
-def transparencyPass (program : Program) : UnorderedCoreWithLaurelTypes :=
+def createFunctionsForTransparentBodies (program : Program) : UnorderedCoreWithLaurelTypes :=
   let (toUpdate, _) := program.staticProcedures.partition (fun p => !p.body.isExternal && !p.isFunctional)
   let toUpdateNames : Std.HashSet String := toUpdate.foldl (fun s p => s.insert p.name.text) {}
   -- $asFunction copies for non-external procedures
@@ -180,6 +173,17 @@ def transparencyPass (program : Program) : UnorderedCoreWithLaurelTypes :=
     | .Datatype dt => some dt
     | _ => none
   { functions, coreProcedures, datatypes, constants := program.constants }
+
+public def transparencyPass : LaurelPass Laurel.Program UnorderedCoreWithLaurelTypes where
+  name := "TransparencyPass"
+  comesBefore := []
+  documentation := "Translate a Laurel program to the UnorderedCoreWithLaurelTypes IR.
+For each procedure:
+- Generate a function with the same signature, named `foo$asFunction`
+- If transparent, the function gets a functional body (assertions erased, calls to functional versions)
+- If the function has a body, add a free postcondition equating the procedure output to the function"
+  run := fun p _ =>
+    (createFunctionsForTransparentBodies p, [], {})
 
 open Std (Format ToFormat)
 
