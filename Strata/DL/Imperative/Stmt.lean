@@ -368,27 +368,17 @@ end
 
 mutual
 /-- Get all variables accessed by `s`. -/
-<<<<<<< HEAD
-@[expose] def Stmt.getVars [HasVarsPure P P.Expr] [HasVarsPure P C] (s : Stmt P C) : List P.Ident :=
-=======
 @[expose]
 def Stmt.getVars [HasFvars P] [HasVarsPure P C] (s : Stmt P C) : List P.Ident :=
->>>>>>> origin/main2
   match s with
   | .cmd cmd => HasVarsPure.getVars cmd
   | .block _ bss _ => Block.getVars bss
   | .ite cond tbss ebss _ => cond.getVars ++ Block.getVars tbss ++ Block.getVars ebss
   | .loop guard measure invariants bss _ =>
     guard.getVars ++
-<<<<<<< HEAD
-      (invariants.flatMap (fun p => HasVarsPure.getVars p.snd)) ++
-      (match measure with | none => [] | some m => HasVarsPure.getVars m) ++
-      Block.getVars bss
-=======
     (measure.map HasFvars.getFvars).getD [] ++
     (invariants.flatMap fun lp => HasFvars.getFvars lp.2) ++
     Block.getVars bss
->>>>>>> origin/main2
   | .exit _ _  => []
   | .funcDecl decl _ =>
     -- Get free variables from function body and axioms, excluding formal
@@ -401,12 +391,8 @@ def Stmt.getVars [HasFvars P] [HasVarsPure P C] (s : Stmt P C) : List P.Ident :=
       (fun v => (decl.inputs.map (·.1)).all (fun f => !(P.EqIdent v f).decide)))
   | .typeDecl _ _ => []  -- Type declarations don't reference variables
 
-<<<<<<< HEAD
-@[expose] def Block.getVars [HasVarsPure P P.Expr] [HasVarsPure P C] (ss : Block P C) : List P.Ident :=
-=======
 @[expose]
 def Block.getVars [HasFvars P] [HasVarsPure P C] (ss : Block P C) : List P.Ident :=
->>>>>>> origin/main2
   match ss with
   | [] => []
   | s :: srest => Stmt.getVars s ++ Block.getVars srest
@@ -421,16 +407,11 @@ instance (P : PureExpr) [HasFvars P] [HasVarsPure P C]
   getVars := Block.getVars
 
 mutual
-<<<<<<< HEAD
-/-- Get all variables defined by the statement `s`. -/
-@[expose] def Stmt.definedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
-=======
 /-- Get all operator/function names referenced by `s`.  Mirrors
     `Stmt.getVars` but collects `.op`-style names (resolved via the evaluator)
     rather than free variables (resolved via the store). -/
 @[expose]
 def Stmt.getOps [HasOps P] [HasOpsImp P C] (s : Stmt P C) : List P.Ident :=
->>>>>>> origin/main2
   match s with
   | .cmd cmd => HasOpsImp.getOps cmd
   | .block _ bss _ => Block.getOps bss
@@ -449,12 +430,8 @@ def Stmt.getOps [HasOps P] [HasOpsImp P C] (s : Stmt P C) : List P.Ident :=
     decl.axioms.flatMap (HasOps.getOps (P := P))
   | .typeDecl _ _ => []
 
-<<<<<<< HEAD
-@[expose] def Block.definedVars [HasVarsImp P C] (ss : Block P C) : List P.Ident :=
-=======
 @[expose]
 def Block.getOps [HasOps P] [HasOpsImp P C] (ss : Block P C) : List P.Ident :=
->>>>>>> origin/main2
   match ss with
   | [] => []
   | s :: srest => Stmt.getOps s ++ Block.getOps srest
@@ -496,12 +473,8 @@ end
 
 mutual
 /-- Get all variables modified by the statement `s`. -/
-<<<<<<< HEAD
-@[expose] def Stmt.modifiedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
-=======
 @[simp, expose]
 def Stmt.modifiedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
->>>>>>> origin/main2
   match s with
   | .cmd cmd => HasVarsImp.modifiedVars cmd
   | .exit _ _ => []
@@ -511,38 +484,13 @@ def Stmt.modifiedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
   | .funcDecl _ _ => []  -- Function declarations don't modify variables
   | .typeDecl _ _ => []  -- Type declarations don't modify variables
 
-<<<<<<< HEAD
-@[expose] def Block.modifiedVars [HasVarsImp P C] (ss : Block P C) : List P.Ident :=
-=======
 @[simp, expose]
 def Block.modifiedVars [HasVarsImp P C] (ss : Block P C) : List P.Ident :=
->>>>>>> origin/main2
   match ss with
   | [] => []
   | s :: srest => Stmt.modifiedVars s ++ Block.modifiedVars srest
 end
 
-<<<<<<< HEAD
-mutual
-/-- Get all variables modified/defined by the statement `s`.
-    Note that we need a separate function because order matters here for sub-blocks
- -/
-@[expose] def Stmt.modifiedOrDefinedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
-  match s with
-  | .block _ bss _ => Block.modifiedOrDefinedVars bss
-  | .ite _ tbss ebss _ => Block.modifiedOrDefinedVars tbss ++ Block.modifiedOrDefinedVars ebss
-  | _ => Stmt.definedVars s ++ Stmt.modifiedVars s
-
-@[expose] def Block.modifiedOrDefinedVars [HasVarsImp P C] (ss : Block P C) : List P.Ident :=
-  match ss with
-  | [] => []
-  | s :: srest => Stmt.modifiedOrDefinedVars s ++ Block.modifiedOrDefinedVars srest
-end
-
-mutual
-/-- Get all variables touched (modified, defined, or read) by the statement `s`. -/
-@[expose] def Stmt.touchedVars [HasVarsImp P C] [HasVarsPure P P.Expr] [HasVarsPure P C]
-=======
 /-- Get all variables modified/defined by the statement `s` (the write-set). -/
 @[simp, expose]
 def Stmt.modifiedOrDefinedVars [HasVarsImp P C] (s : Stmt P C)
@@ -558,16 +506,11 @@ mutual
 /-- Get all variables touched (modified, defined, or read) by the statement `s`. -/
 @[simp, expose]
 def Stmt.touchedVars [HasVarsImp P C] [HasFvars P] [HasVarsPure P C]
->>>>>>> origin/main2
     (s : Stmt P C) : List P.Ident :=
   Stmt.modifiedOrDefinedVars s true ++ Stmt.getVars s
 
-<<<<<<< HEAD
-@[expose] def Block.touchedVars [HasVarsImp P C] [HasVarsPure P P.Expr] [HasVarsPure P C]
-=======
 @[simp, expose]
 def Block.touchedVars [HasVarsImp P C] [HasFvars P] [HasVarsPure P C]
->>>>>>> origin/main2
     (ss : Block P C) : List P.Ident :=
   Block.modifiedOrDefinedVars ss true ++ Block.getVars ss
 end

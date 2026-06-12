@@ -120,7 +120,7 @@ instance : LawfulHasFvar Core.Expression where
   getFvar_mkFvar := fun _ => rfl
   mkFvar_getVars := fun _ => by
     -- mkFvar x = .fvar () x none, getVars = [x] ⊆ [x]
-    simp [HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars]
+    simp [HasFvars.getFvars, Lambda.LExpr.LExpr.getVars]
 
 instance : LawfulHasBool Core.Expression where
   -- HasBool.tt = Core.true = .boolConst () true = .const _ _, getVars = []
@@ -135,15 +135,15 @@ instance : LawfulHasIdent Core.Expression where
     rfl
 
 instance : LawfulHasIntOrder Core.Expression where
-  -- HasIntOrder.eq a b = .eq () a b. getVars (.eq _ a b) = getVars a ++ getVars b.
+  -- HasIntOps.eq a b = .eq () a b. getVars (.eq _ a b) = getVars a ++ getVars b.
   eq_getVars := fun _ _ => by
-    simp [HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars]
-  -- HasIntOrder.lt a b = .app () (.app () intLtOp a) b. getVars expands and
+    simp [HasFvars.getFvars, Lambda.LExpr.LExpr.getVars]
+  -- HasIntOps.lt a b = .app () (.app () intLtOp a) b. getVars expands and
   -- getVars intLtOp = [] (it's an .op node), giving getVars a ++ getVars b.
   lt_getVars := fun a b => by
-    show HasVarsPure.getVars
+    show HasFvars.getFvars
       (Lambda.LExpr.app () (Lambda.LExpr.app () Core.intLtOp a) b)
-        ⊆ HasVarsPure.getVars a ++ HasVarsPure.getVars b
+        ⊆ HasFvars.getFvars a ++ HasFvars.getFvars b
     change Lambda.LExpr.LExpr.getVars _
               ⊆ Lambda.LExpr.LExpr.getVars a ++ Lambda.LExpr.LExpr.getVars b
     rw [Lambda.LExpr.LExpr.getVars, Lambda.LExpr.LExpr.getVars]
@@ -163,20 +163,20 @@ instance : LawfulHasNot Core.Expression where
     -- (getVars = []) and the input also has getVars = [], so subset is vacuous.
     -- For the general branch, `not e = .app () boolNotFunc.opExpr e`, and
     -- getVars expands as getVars boolNotFunc.opExpr ++ getVars e = [] ++ getVars e.
-    show HasVarsPure.getVars (HasNot.not a) ⊆ HasVarsPure.getVars a
-    unfold HasNot.not instHasNotExpression
+    show HasFvars.getFvars (HasBoolOps.not a) ⊆ HasFvars.getFvars a
+    unfold HasBoolOps.not instHasBoolOpsExpression
     simp only
     split
     · -- not Core.true = Core.false: getVars Core.false = [] ⊆ getVars Core.true
-      simp [HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars]
+      simp [HasFvars.getFvars, Lambda.LExpr.LExpr.getVars]
     · -- not Core.false = Core.true: symmetric
-      simp [HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars]
+      simp [HasFvars.getFvars, Lambda.LExpr.LExpr.getVars]
     · -- not e = .app () boolNotFunc.opExpr e
       -- getVars (.app _ x y) = getVars x ++ getVars y
       -- boolNotFunc.opExpr is .op _ _ _ so getVars = []
-      show HasVarsPure.getVars
+      show HasFvars.getFvars
         (Lambda.LExpr.app () (Lambda.boolNotFunc (T:=CoreLParams)).opExpr a)
-          ⊆ HasVarsPure.getVars a
+          ⊆ HasFvars.getFvars a
       change Lambda.LExpr.LExpr.getVars _ ⊆ Lambda.LExpr.LExpr.getVars a
       rw [Lambda.LExpr.LExpr.getVars]
       -- Now: getVars boolNotFunc.opExpr ++ getVars a ⊆ getVars a.
