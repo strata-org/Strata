@@ -148,6 +148,7 @@ def translateExpr (expr : StmtExprMd)
   | .LiteralInt i => return .const () (.intConst i)
   | .LiteralString s => return .const () (.strConst s)
   | .LiteralDecimal d => return .const () (.realConst (StrataDDM.Decimal.toRat d))
+  | .LiteralBv value width => return .const () (.bitvecConst width (BitVec.ofNat width value))
   | .Var (.Local name) =>
       -- First check if this name is bound by an enclosing quantifier
       match boundVars.findIdx? (· == name) with

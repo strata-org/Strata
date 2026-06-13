@@ -103,7 +103,11 @@ def mapStmtExprPrePostM [Monad m] (pre : StmtExprMd → m (Option StmtExprMd))
     pure ⟨.ProveBy (← mapStmtExprPrePostM pre post value) (← mapStmtExprPrePostM pre post proof), source⟩
   | .ContractOf ty func =>
     pure ⟨.ContractOf ty (← mapStmtExprPrePostM pre post func), source⟩
-  | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _
+  -- Leaves: no StmtExprMd children.
+  -- ⚠ If a new StmtExpr constructor with StmtExprMd children is added,
+  -- it must get its own arm above; otherwise all passes will silently
+  -- skip recursion into those children.
+  | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
   | .Var (.Local _) | .Var (.Declare _) | .New _ | .This | .Abstract | .All | .Hole .. => pure expr
   post rebuilt
 termination_by sizeOf expr
@@ -198,7 +202,7 @@ def mapStmtExprFlattenM [Monad m] (pre : StmtExprMd → m (Option (List StmtExpr
     | .ProveBy value proof =>
       pure ⟨.ProveBy (← go value) (← go proof), source⟩
     | .ContractOf ty func => pure ⟨.ContractOf ty (← go func), source⟩
-    | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _
+    | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
     | .Var (.Local _) | .Var (.Declare _) | .New _ | .This | .Abstract | .All | .Hole .. => pure e
     let results ← post rebuilt
     return collapse results source

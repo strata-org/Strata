@@ -291,6 +291,8 @@ inductive StmtExpr : Type where
   | LiteralString (value : String)
   /-- A decimal literal. -/
   | LiteralDecimal (value : Decimal)
+  /-- A bitvector literal with value and width. -/
+  | LiteralBv (value : Nat) (width : Nat)
   /-- A variable reference or declaration. When `var` is `Variable.Local`, this is a reference
       that evaluates to the variable's value. When `var` is `Variable.Declare`, this is a
       declaration without an initializer (used as a standalone statement in a block). -/
@@ -478,6 +480,7 @@ def StmtExpr.constructorName (e : StmtExpr) : String :=
   | .LiteralBool .. => "LiteralBool"
   | .LiteralString .. => "LiteralString"
   | .LiteralDecimal .. => "LiteralDecimal"
+  | .LiteralBv .. => "LiteralBv"
   | .Var .. => "Var"
   | .Assign .. => "Assign"
   | .PureFieldUpdate .. => "PureFieldUpdate"
