@@ -254,7 +254,7 @@ public def constrainedTypeElimPass : LoweringPass where
   name := "ConstrainedTypeElim"
   documentation := "Eliminates constrained types by replacing them with their base types and generating constraint-checking functions and witness procedures. Type tests against constrained types are rewritten to call the generated constraint function."
   needsResolves := true
-  run := fun p m =>
+  run := fun p m _ =>
     let (p', diags) := constrainedTypeElim m p
     (p', diags, {})
 

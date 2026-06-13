@@ -6,7 +6,7 @@
 module
 
 public import Strata.Languages.Core.Program
-public import Strata.Languages.Core.Options
+
 public import Strata.Languages.Laurel.CoreGroupingAndOrdering
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 import Strata.Util.Tactics
@@ -577,14 +577,6 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
   let spec : Core.Procedure.Spec := { preconditions, postconditions }
   return { header, spec, body := .structured body }
 
-structure LaurelTranslateOptions where
-  inlineFunctionsWhenPossible : Bool := false
-  overflowChecks : Core.OverflowChecks := {}
-  keepAllFilesPrefix : Option String := none
-
-instance : Inhabited LaurelTranslateOptions where
-  default := {}
-
 structure LaurelVerifyOptions where
   translateOptions : LaurelTranslateOptions := {}
   verifyOptions : Core.VerifyOptions := .default
@@ -717,6 +709,23 @@ def translateLaurelToCore (options: LaurelTranslateOptions) (ordered : CoreWithL
       } mdWithUnknownLoc]
 
   pure { decls := coreDecls }
+
+public def laurelToCoreSchemaPass : LaurelPass CoreWithLaurelTypes Core.Program where
+  name := "LaurelToCoreSchemaPass"
+  comesBefore := []
+  documentation := "Produce a `Core` program from a `CoreWithLaurelTypes` program. Intended to be dumb 1-to-1 translation. However, there are several smart translations still happening:
+  - The @[cases] parameter is inferred for recursive functions.
+  - Laurel parameter definitions are translated to Core ones.
+  - Laurel calling conventions are translated to Core ones."
+  run := fun p fnModel options =>
+    let initState : TranslateState := { model := fnModel, overflowChecks := options.overflowChecks }
+    let (coreProgramOption, translateState) :=
+      runTranslateM initState (translateLaurelToCore options p)
+    let diagnostics : List DiagnosticModel :=
+      -- Because of the duplication between functions and procedures, this translation is liable to create duplicate diagnostics
+      let d := translateState.diagnostics.eraseDups
+      if d.isEmpty then translateState.coreDiagnostics else d
+    (coreProgramOption.getD default, diagnostics, {})
 
 end -- public section
 end Laurel

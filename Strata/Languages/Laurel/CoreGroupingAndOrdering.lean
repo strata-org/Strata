@@ -268,7 +268,7 @@ then collecting datatypes and constants.
 Functions are grouped into SCCs (for mutual recursion). Proofs are emitted
 as individual `procedure` decls. Both participate in the topological ordering
 so that axioms are available to functions that need them."
-  run := fun p _ =>
+  run := fun p _ _ =>
     (orderFunctionsAndProcedures p, [], {})
 
 end Strata.Laurel

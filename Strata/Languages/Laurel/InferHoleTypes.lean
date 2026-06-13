@@ -195,7 +195,7 @@ end -- public section
 public def inferHoleTypesPass : LoweringPass where
   name := "InferHoleTypes"
   documentation := "Annotates every verification hole (`.Hole`) in the program with a type inferred from context. This type information is needed by subsequent passes that replace holes with uninterpreted functions or nondeterministic values."
-  run := fun p m =>
+  run := fun p m _ =>
     let (p', diags, stats) := inferHoleTypes m p
     (p', diags, stats)
   comesBefore := [

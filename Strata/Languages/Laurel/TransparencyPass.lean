@@ -171,7 +171,7 @@ For each procedure:
   - Generate a function with the same signature, named `foo$asFunction`
   - If transparent, the function gets a functional body (assertions erased, calls to functional versions)
   - If the function has a body, add a free postcondition equating the procedure output to the function"
-  run := fun p _ =>
+  run := fun p _ _ =>
     (createFunctionsForTransparentBodies p, [], {})
 
 end -- public section

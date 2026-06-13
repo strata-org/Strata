@@ -7,10 +7,19 @@ module
 
 public import Strata.Languages.Laurel.SemanticModel
 public import Strata.Util.Statistics
+public import Strata.Languages.Core.Options
 
 namespace Strata.Laurel
 
 public section
+
+structure LaurelTranslateOptions where
+  inlineFunctionsWhenPossible : Bool := false
+  overflowChecks : Core.OverflowChecks := {}
+  keepAllFilesPrefix : Option String := none
+
+instance : Inhabited LaurelTranslateOptions where
+  default := {}
 
 mutual
 
@@ -43,7 +52,7 @@ end
     metadata fields remain directly accessible (e.g. `p.name`). -/
 structure LaurelPass (Input: Type) (Output: Type) extends PassMeta where
   /-- The pass action. -/
-  run : Input → SemanticModel → Output × List DiagnosticModel × Statistics
+  run : Input → SemanticModel → LaurelTranslateOptions → Output × List DiagnosticModel × Statistics
 
 abbrev LoweringPass := LaurelPass Laurel.Program Laurel.Program
 

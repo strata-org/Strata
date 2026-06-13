@@ -121,6 +121,6 @@ public def typeAliasElimPass : LoweringPass where
   name := "TypeAliasElim"
   documentation := "Eliminates type aliases by replacing all UserDefined references to alias names with their resolved target types. Chained aliases are resolved transitively. Alias entries are removed from the type list."
   needsResolves := true
-  run := fun p m => (typeAliasElim m p, [], {})
+  run := fun p m _ => (typeAliasElim m p, [], {})
 
 end Strata.Laurel

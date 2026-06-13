@@ -164,7 +164,7 @@ public def typeHierarchyTransformPass : LoweringPass where
   documentation := "Encodes the object-oriented type hierarchy (inheritance, dynamic dispatch, type tests, and casts) into explicit operations on a flat representation. Composite types with parents are flattened, and dynamic dispatch is resolved through type-test chains."
   needsResolves := true
   comesAfter := [⟨ heapParameterizationPass.meta, "the type hierarchy pass modifies the 'Composite' datatype that is introduced by this pass."⟩]
-  run := fun p m =>
+  run := fun p m _ =>
     (typeHierarchyTransform m p, [], {})
 
 end Strata.Laurel

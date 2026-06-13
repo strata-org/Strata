@@ -644,7 +644,7 @@ public def liftImperativeExpressionsPass : LaurelPass UnorderedCoreWithLaurelTyp
   documentation := "Lifts assignments and other imperative expressions that appear in expression contexts into preceding statements. This is necessary because Strata Core does not support assignments within expressions. The pass introduces fresh temporary variables where needed."
   comesAfter := [⟨ transparencyPass.meta, "The imperative expression lifting is only done in procedures, so it comes after the transparency pass"⟩]
   needsResolves := true
-  run := fun p m =>
+  run := fun p m _ =>
     (liftImperativeExpressionsInCore p m, [], {})
 
 end Laurel

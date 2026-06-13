@@ -5,7 +5,7 @@
 -/
 module
 
-public import Strata.Languages.Laurel.LaurelToCoreTranslator
+public import Strata.Languages.Laurel.LaurelToCoreSchemaPass
 import Strata.Languages.Laurel.DesugarShortCircuit
 import Strata.Languages.Laurel.EliminateReturnStatements
 import Strata.Languages.Laurel.MergeAndLiftReturns
@@ -118,6 +118,7 @@ program state after each named Laurel pass is written to
 `{prefix}.{n}.{passName}.laurel.st`.
 -/
 private def runLaurelPasses
+    (options: LaurelTranslateOptions)
     (pctx : Strata.Pipeline.PipelineContext) (program : Program)
     : PipelineM (Program × SemanticModel × List DiagnosticModel × Statistics) := do
   let program := { program with
@@ -139,7 +140,7 @@ private def runLaurelPasses
   let mut allStats : Statistics := {}
 
   for pass in laurelPipeline do
-    let (program', diags, stats) ← pctx.withPhase pass.name do pure (pass.run program model)
+    let (program', diags, stats) ← pctx.withPhase pass.name do pure (pass.run program model options)
     program := program'
     allDiags := allDiags ++ diags
     allStats := allStats.merge stats
@@ -185,7 +186,7 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
     | some ctx => pure ctx
     | none => Strata.Pipeline.PipelineContext.create (outputMode := .quiet)
   runPipelineM options.keepAllFilesPrefix do
-  let (program, model, passDiags, stats) ← runLaurelPasses pctx program
+  let (program, model, passDiags, stats) ← runLaurelPasses options pctx program
   -- This early return is a simple way to protect against duplicative errors. Without this return,
   -- resolution errors reported by Laurel would also be reported by Core.
   -- There might be better solution that allows getting some resolution errors from Laurel and some verification errors from Core,
@@ -193,13 +194,13 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
   if ! passDiags.isEmpty then
     return (none, passDiags, program, stats)
 
-  let unorderedCore := (transparencyPass.run program model).1
+  let unorderedCore := (transparencyPass.run program model options).1
   emit "transparencyPass" "core.st" unorderedCore
   let mut unorderedCore := unorderedCore
   let mut fnModel := model
 
   for pass in unorderedCorePipeline do
-    unorderedCore := (pass.run unorderedCore fnModel).1
+    unorderedCore := (pass.run unorderedCore fnModel options).1
     if pass.needsResolves then
       let compositeTypes := program.types.filter (fun t => match t with | .Composite _ => true | _ => false)
       let (uc', m', errors) := resolveUnorderedCore unorderedCore (some fnModel) compositeTypes
@@ -213,22 +214,15 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
       fnModel := m'
     emit pass.name "unorderedCoreWithLaurelTypes.st" unorderedCore
 
-  let coreWithLaurelTypes := (orderingPass.run unorderedCore model).1
+  let coreWithLaurelTypes := (orderingPass.run unorderedCore model options).1
 
   emit "CoreWithLaurelTypes" "core.st" coreWithLaurelTypes
-  let initState : TranslateState := { model := fnModel, overflowChecks := options.overflowChecks }
-  let (coreProgramOption, translateState) :=
-    runTranslateM initState (translateLaurelToCore options coreWithLaurelTypes)
-  -- Because of the duplication between functions and procedures, this translation is liable to create duplicate diagnostics
-  let mut allDiagnostics: List DiagnosticModel := passDiags ++ translateState.diagnostics.eraseDups;
+  let (coreProgram, coreDiagnostics, _) := laurelToCoreSchemaPass.run coreWithLaurelTypes model options
+  let mut allDiagnostics: List DiagnosticModel := passDiags ++ coreDiagnostics;
 
-  if !translateState.coreDiagnostics.isEmpty && allDiagnostics.isEmpty then
-    allDiagnostics := allDiagnostics ++ translateState.coreDiagnostics
-
-  if coreProgramOption.isSome then
-    emit "Core" "core.st" coreProgramOption.get!
+  emit "Core" "core.st" coreProgram
   let coreProgramOption :=
-    if translateState.coreDiagnostics.isEmpty then coreProgramOption else none
+    if coreDiagnostics.isEmpty then some coreProgram else none
   return (coreProgramOption, allDiagnostics, program, stats)
 
 /--
@@ -292,7 +286,7 @@ end -- public section
 public def allPasses: Array PassMeta := laurelPipeline.map (fun p => p.meta) ++
   [transparencyPass.meta] ++
   unorderedCorePipeline.map (fun p => p.meta) ++
-  [orderingPass.meta]
+  [orderingPass.meta, laurelToCoreSchemaPass.meta]
 
 /-- Every `comesBefore` and `comesAfter` constraint is respected by the
     pipeline order. A `comesBefore` dependency requires this pass to appear
