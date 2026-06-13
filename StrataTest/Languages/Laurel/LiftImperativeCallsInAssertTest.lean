@@ -11,7 +11,7 @@ out of assert and assume conditions, while leaving assignments untouched
 -/
 
 import StrataTest.Util.TestLaurel
-import Strata.Languages.Laurel.LaurelToCoreTranslator
+import Strata.Languages.Laurel.LaurelToCoreSchemaPass
 import Strata.Languages.Laurel.Resolution
 
 open Strata

@@ -217,7 +217,7 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
   let coreWithLaurelTypes := (orderingPass.run unorderedCore model options).1
 
   emit "CoreWithLaurelTypes" "core.st" coreWithLaurelTypes
-  let (coreProgram, coreDiagnostics, _) := laurelToCoreSchemaPass.run coreWithLaurelTypes model options
+  let (coreProgram, coreDiagnostics, _) := laurelToCoreSchemaPass.run coreWithLaurelTypes fnModel options
   let mut allDiagnostics: List DiagnosticModel := passDiags ++ coreDiagnostics;
 
   emit "Core" "core.st" coreProgram

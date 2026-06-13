@@ -11,7 +11,7 @@ by comparing the lifted Laurel against expected output.
 -/
 
 import StrataTest.Util.TestLaurel
-import Strata.Languages.Laurel.LaurelToCoreTranslator
+import Strata.Languages.Laurel.LaurelToCoreSchemaPass
 import Strata.Languages.Laurel.Resolution
 
 open Strata

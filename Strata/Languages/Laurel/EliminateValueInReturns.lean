@@ -14,9 +14,7 @@ import Strata.Util.Tactics
 # Eliminate Values In Returns
 
 Rewrites `return expr` into `outParam := expr; return` for imperative
-(non-functional) procedures that have an output parameter. This decouples
-the return-value assignment from the `LaurelToCoreTranslator`, which no
-longer needs to know about output parameters when translating returns.
+(non-functional) procedures that have an output parameter.
 
 The pass is a Laurel-to-Laurel rewrite that runs before Core translation.
 -/
