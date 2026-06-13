@@ -313,10 +313,10 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
         let condVar ← freshCondVar
         -- Save outer state
         let savedSubst := (← get).subst
-        let savedPrepends := (← get).prependedStmts
+        let savedPrepends ← takePrepends
 
         let seqCond ← transformExpr cond
-        let condPrepends := (← get).prependedStmts
+        let condPrepends ← takePrepends
         -- Process then-branch from scratch
         modify fun s => { s with prependedStmts := [], subst := [] }
         let seqThen ← transformExpr thenBranch
