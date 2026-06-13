@@ -13,7 +13,7 @@ every expression as it resolves a program. A thin elaboration layer reuses
 those types to choose the operator.
 
 The two pieces are complementary: **his engine computes the types; this
-layer spends them.** Because the work rides on the typechecker, there is no
+layer uses them.** Because the work rides on the typechecker, there is no
 second type system to build or keep in sync.
 
 ## What it does
@@ -25,10 +25,11 @@ to "turn it on."
 
 ## Why it's faster
 
-`Any` wraps every value in one big datatype, so the solver must reason
-about *which* kind each value carries. Every operator then case-splits over
-all the runtime types of its operands, and that cost compounds with
-expression depth — exponential in the worst case.
+`Any` wraps every value in one big datatype. Even when the tag is known,
+each operator has to unwrap its operands, compute, and re-wrap the result,
+and the solver drags that boxed structure through the whole expression — a
+cost that compounds with depth (and explodes outright when the tags are
+*unknown*, since the operator then case-splits over every possible kind).
 
 Native sorts remove the wrapper. Each operation is a single case, handed
 straight to the solver's built-in theories (integer, real, string,
@@ -36,26 +37,24 @@ boolean). Exponential becomes linear.
 
 ## The evidence
 
-A microbenchmark verifies small symbolic functions twice — once with native
-types, once forced through `Any` (✓ = proved, ✗ = could not prove: timed
-out or inconclusive):
+We run the **same type-annotated program on `main` (before this change) and
+on this branch (after)**. On `main`, every value — even an annotated `int`
+— was boxed in `Any` (the annotation survived only as an `isfrom_int`
+precondition); here it lowers to a native sort. The proposition proved is
+identical on both; only the encoding differs. So the gap is the cost of the
+representation, nothing else (✓ = proved, ✗ = did not finish within 12 s):
 
-| scenario               | native      | `Any`         | speed-up |
-|------------------------|-------------|---------------|----------|
-| sum of squares ≥ 0     | ✓ 53 ms     | ✗ timeout     | ∞        |
-| polynomial identity    | ✓ 55 ms     | ✗ timeout     | ∞        |
-| distributivity         | ✓ 51 ms     | ✗ 575 ms      | 11×      |
-| trichotomy             | ✓ 52 ms     | ✗ 2.4 s       | 46×      |
-| string associativity   | ✓ 52 ms     | ✗ 0.31 s      | 6×       |
-| empty-string identity  | ✓ 51 ms     | ✗ 59 ms       | 1.1×     |
-| De Morgan              | ✓ 52 ms     | ✓ 99 ms       | 1.9×     |
-| max bounds             | ✓ 53 ms     | ✗ timeout     | ∞        |
-| real norm ≥ 0          | ✓ 52 ms     | ✗ timeout     | ∞        |
-
-**Native proves 9 of 9 in ~52 ms median; `Any` proves only 1 of 9.** The
-win is not merely speed: on most of these goals `Any` times out or gives up
-entirely, while native settles them in tens of milliseconds. Native proves
-things `Any` simply cannot.
+| property               | before — boxed `Any` | after — native | speed-up |
+|------------------------|----------------------|----------------|----------|
+| distributivity         | ✓ 0.8 s              | ✓ 74 ms        | ~11×     |
+| binomial identity      | ✗ timeout            | ✓ 74 ms        | ∞        |
+| sum of squares ≥ 0     | ✗ timeout            | ✓ 76 ms        | ∞        |
+| trichotomy             | ✓ 2.6 s              | ✓ 75 ms        | ~35×     |
+| string associativity   | ✓ 0.4 s              | ✓ 75 ms        | ~5×      |
+| empty-string identity  | ✓ 0.10 s             | ✓ 73 ms        | ~1.4×    |
+| De Morgan              | ✓ 0.20 s             | ✓ 74 ms        | ~2.7×    |
+| max bounds             | ✗ timeout            | ✓ 74 ms        | ∞        |
+| real norm ≥ 0          | ✗ timeout            | ✓ 76 ms        | ∞        |
 
 ## What it buys, and soundness
 
