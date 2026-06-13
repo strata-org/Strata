@@ -237,17 +237,20 @@ If new references or definitions are created during compilation, `resolve` must 
 
 ## Translation Pipeline
 
-Laurel programs are verified by translating them to Strata Core and then invoking the Core
-verification pipeline. The Laurel compilation pipeline consists of three parts:
-- Lowering, consisting of many phases. Maps Laurel to Laurel
-- Ordering, consisting of a single pass. Maps Laurel to OrderedLaurel
-- Translation, consisting of a single pass. Maps OrderedLaurel to Core.
+The Laurel to Core translation pipeline relates to four IRs:
+- Laurel
+- UnorderedCoreWithLaurelTypes
+- CoreWithLaurelTypes
+- Core
 
-Ideally the translation pass only translates between types but does not change the structure of the program.
+Most of the passes are in the Laurel IR.
+The transparency pass goes from `Laurel` to `UnorderedCoreWithLaurelTypes`.
+The CoreGroupingAndOrdering goes from `UnorderedCoreWithLaurelTypes` to `CoreWithLaurelTypes`
+And the LaurelToCoreSchemaPass goes from `CoreWithLaurelTypes` to `Core`.
 
-## Lowering Passes
+## Passes
 
-The following passes are part of the lowering group:
+The following passes making up the compilation of Laurel to Core:
 
 {laurelPipelineDocs}
 
