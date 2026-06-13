@@ -237,7 +237,7 @@ If new references or definitions are created during compilation, `resolve` must 
 
 ## Translation Pipeline
 
-The Laurel to Core translation pipeline relates to four IRs:
+The Laurel to Core translation pipeline uses these IRs:
 - Laurel
 - UnorderedCoreWithLaurelTypes
 - CoreWithLaurelTypes
