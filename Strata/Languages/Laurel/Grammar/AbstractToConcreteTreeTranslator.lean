@@ -46,6 +46,8 @@ partial def highTypeValToArg : HighType → Arg
   | .TString => laurelOp "stringType"
   | .TBv n => laurelOp "bvType" #[.num sr n]
   | .TMap k v => laurelOp "mapType" #[highTypeToArg k, highTypeToArg v]
+  | .TSeq et => laurelOp "seqType" #[highTypeToArg et]
+  | .TArray et => laurelOp "arrayType" #[highTypeToArg et]
   | .UserDefined name => laurelOp "compositeType" #[ident name.text]
   | .TCore s => laurelOp "coreType" #[ident s]
   | .TVoid => laurelOp "compositeType" #[ident "void"]
@@ -195,6 +197,15 @@ where
     | .ContractOf _type fn => stmtExprValToArg fn.val
     | .Abstract => laurelOp "identifier" #[ident "abstract"]
     | .All => laurelOp "identifier" #[ident "all"]
+    | .Subscript target index update =>
+      let updateOpt := optionArg (update.map fun v => laurelOp "seqUpdateValue" #[stmtExprToArg v])
+      laurelOp "subscript" #[stmtExprToArg target, stmtExprToArg index, updateOpt]
+    | .SubscriptWrite target index value =>
+      -- `a[i] := v`: assignment whose target is a (read-shaped) subscript.
+      laurelOp "assign" #[
+        laurelOp "subscript" #[stmtExprToArg target, stmtExprToArg index, optionArg none],
+        stmtExprToArg value
+      ]
     | .PureFieldUpdate target field value =>
       -- Not directly in grammar; emit as assignment to field
       laurelOp "assign" #[

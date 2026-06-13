@@ -251,6 +251,222 @@ type. Algebraic datatypes can be encoded using composite and constrained types.
 
 {docstring Strata.Laurel.TypeDefinition}
 
+# Sequences and Arrays
+%%%
+tag := "sec-sequences-arrays"
+%%%
+
+Laurel provides two collection types that share a subscript syntax but differ in their
+semantics:
+
+- `Seq<T>` — immutable value sequences. Operations like functional update produce new
+  sequences, leaving the input unchanged.
+- `Array<T>` — mutable, heap-backed arrays.
+
+Their equality and aliasing behaviour is covered under [Equality and aliasing](#equality-and-aliasing) below.
+
+Currently `Array<T>` is supported only for `T = int`; other element types are
+rejected by the pre-pass validator. `Seq<T>` supports any element type.
+
+## Sequence literals
+
+Square-bracket literals construct a `Seq<T>`:
+
+```
+var s: Seq<int> := [1, 2, 3];
+```
+
+The empty literal `[]` produces `Sequence.empty()`.
+
+## Subscript syntax
+
+The expression `s[i]` reads the element at index `i`:
+
+```
+assert s[0] == 1;
+```
+
+On a `Seq<T>`, `s[i := v]` produces a new sequence with index `i` set to `v`:
+
+```
+var t: Seq<int> := s[0 := 99];  // t differs from s at index 0
+```
+
+On an `Array<T>`, `a[i] := v` updates the array in place:
+
+```
+var a: Array<int> := [1, 2, 3];
+a[0] := 42;
+assert a[0] == 42;
+```
+
+Out-of-bounds access is a proof obligation. `Sequence.select`,
+`Sequence.update`, `Sequence.take`, and `Sequence.drop` carry preconditions
+that the index or length argument is in range; the subscript sugar inherits
+them. A proof obligation is generated at each subscript site — both
+in imperative code and in pure positions like `requires`/`ensures` clauses,
+quantifier bodies, and function bodies. If the index cannot be shown to be
+in bounds, verification fails with an `outOfBoundsAccess` diagnostic. This
+matches how division by zero is checked.
+
+## Sequence operations
+
+The `Sequence` namespace exposes the following operations:
+
+- `Sequence.empty()` — the empty sequence
+- `Sequence.build(s, v)` — append `v` to the end of `s`
+- `Sequence.select(s, i)` — read index `i`; equivalent to `s[i]`
+- `Sequence.update(s, i, v)` — functional update; equivalent to `s[i := v]`
+- `Sequence.length(s)` — length
+- `Sequence.append(s1, s2)` — concatenate two sequences
+- `Sequence.contains(s, v)` — membership test
+- `Sequence.take(s, n)` — prefix of length `n`
+- `Sequence.drop(s, n)` — suffix after the first `n` elements
+
+## Array length
+
+`Array.length(a)` returns the length of an array. It requires its argument to be
+of type `Array<T>`.
+
+## Array to sequence conversion
+
+`Sequence.fromArray(a)` returns a `Seq<T>` snapshot of an `Array<T>`'s current
+contents. The snapshot is independent: subsequent mutations to the array are
+not reflected in the returned sequence.
+
+```
+var a: Array<int> := [1, 2, 3];
+var s: Seq<int> := Sequence.fromArray(a);
+a[0] := 99;
+assert s[0] == 1;   // the snapshot still holds the original value
+assert a[0] == 99;
+```
+
+This is the supported idiom for extracting values out of an array. Laurel does
+not support implicit `Array<T>` → `Seq<T>` conversion, nor the reverse: there is
+no `Seq<T>` → `Array<T>` conversion. Construct an array directly from a literal,
+e.g. `var a: Array<int> := [1, 2, 3]`.
+
+## Common mistakes
+
+A pre-pass validator flags five common misuses with helpful messages:
+
+- Using `a[i := v]` (functional update) on an `Array<T>`:
+
+  ```
+  var a: Array<int> := [1, 2, 3];
+  var b: Array<int> := a[0 := 99];
+  //                   ~~~~~~~~~~
+  // error: `a[i := v]` is not supported on `Array<T>`: arrays are mutable.
+  ```
+
+- Using `s[i] := v` (destructive update) on a `Seq<T>`:
+
+  ```
+  var s: Seq<int> := [1, 2, 3];
+  s[0] := 42;
+  // ~~~~
+  // error: `s[i] := v` is not allowed: sequences (`Seq<T>`) are immutable.
+  ```
+
+- Calling `Array.length` on something that is not an `Array<T>`:
+
+  ```
+  var s: Seq<int> := [1, 2, 3];
+  assert Array.length(s) == 3;
+  //     ~~~~~~~~~~~~~~~
+  // error: `Array.length` requires an argument of type `Array<T>`, got `Seq<int>`.
+  ```
+
+- Calling `Sequence.fromArray` on something that is not an `Array<T>`:
+
+  ```
+  var s: Seq<int> := [1, 2, 3];
+  var t: Seq<int> := Sequence.fromArray(s);
+  //                 ~~~~~~~~~~~~~~~~~~~~~
+  // error: `Sequence.fromArray` requires an argument of type `Array<T>`,
+  //        got `Seq<int>`.
+  ```
+
+- Declaring `Array<T>` with a `T` other than `int` (not yet implemented at the
+  Laurel layer):
+
+  ```
+  var a: Array<bool> := [true, false];
+  //     ~~~~~~~~~~~
+  // error: `Array<T>` is currently only supported for `T = int`.
+  ```
+
+## Internal representation
+
+Arrays are represented internally by a synthetic `$Array` composite with a single
+`$data: Seq<int>` field (the `int` element type matches the current
+`Array<int>`-only restriction). The `$` prefix is a naming convention used for
+compiler-internal names to avoid collisions with user-declared types. The
+`$Array` composite is only injected into programs that actually use `Array<T>`.
+
+## Equality and aliasing
+%%%
+tag := "equality-and-aliasing"
+%%%
+
+`Seq<T>` has *value* semantics and `Array<T>` has *reference* semantics, and
+this is what distinguishes the two types.
+
+A `Seq<T>` is compared by content: two sequences are equal exactly when they
+hold the same elements, regardless of how each was constructed. Sequences are
+immutable, so there is no aliasing to worry about.
+
+An `Array<T>` is a heap reference. Assigning an array to a new variable creates
+an *alias* — both names refer to the same underlying array, so a mutation
+through one is visible through the other — and `==` compares *identity*, not
+contents:
+
+```
+var a1: Array<int> := [1, 2, 3];
+var b: Array<int> := a1;        // alias of a1
+b[0] := 99;
+assert a1[0] == 99;            // mutation visible through a1
+assert a1 == b;                 // holds: same reference
+
+var a2: Array<int> := [1, 2, 3];
+assert a1 != a2;                // holds: distinct references, equal contents
+```
+
+### Arrays in datatypes
+
+`Array<T>` may be used as a datatype constructor argument:
+
+```
+datatype Wrapped { Wrap(arr: Array<int>) }
+```
+
+Reference semantics carry through the field: a datatype value that stores an
+array compares by reference on that field. Two values built from the same
+array are equal; two built from distinct arrays are not, even with identical
+contents:
+
+```
+var a1: Array<int> := [1, 2, 3];
+var a2: Array<int> := [1, 2, 3];
+var w1: Wrapped := Wrap(a1);
+var w2: Wrapped := Wrap(a1);   // same array as w1
+var w3: Wrapped := Wrap(a2);   // distinct array, equal contents
+assert w1 == w2;               // holds: same reference
+assert w1 != w3;               // holds: different references
+```
+
+For a datatype field with value semantics, store a `Seq<T>` instead — take a
+snapshot of the array's contents with `Sequence.fromArray(arr)`:
+
+```
+datatype WrappedSeq { WrapSeq(items: Seq<int>) }
+// ...
+var w1: WrappedSeq := WrapSeq(Sequence.fromArray(a1));
+var w2: WrappedSeq := WrapSeq(Sequence.fromArray(a2));
+assert w1 == w2;               // holds when a1, a2 have equal contents
+```
+
 # Expressions and Statements
 
 Laurel uses a unified `StmtExpr` type that contains both expression-like and statement-like
@@ -395,6 +611,7 @@ The Index below links to each construct's subsection.
   \[⇒\] Op-Arith, \[⇒\] Op-Concat; \[⇐\] Op-Arith, \[⇐\] Op-Bool
 - {ref "rules-object-forms"}[*Object forms*] — \[⇒\] New-Ok, \[⇒\] New-Fallback; \[⇒\] AsType; \[⇒\] IsType;
   \[⇒\] RefEq; \[⇒\] PureFieldUpdate
+- {ref "rules-subscript"}[*Subscript*] — \[⇒\] Subscript-Read, \[⇒\] Subscript-Update, \[⇒\] SubscriptWrite
 - {ref "rules-verification-expressions"}[*Verification expressions*] — \[⇒\] Quantifier, \[⇒\] Assigned, \[⇐\] Old,
   \[⇒\] Old-Synth, \[⇒\] Fresh, \[⇐\] ProveBy, \[⇒\] ProveBy-Synth
 - {ref "rules-self-reference"}[*Self reference*] — \[⇒\] This-Inside, \[⇒\] This-Outside
@@ -804,6 +1021,60 @@ or {name Strata.Laurel.HighType.Unknown}`Unknown` type. `~` is the consistency r
 $$`\frac{\Gamma \vdash \mathit{target} \Rightarrow T_t \quad \Gamma(f) = T_f \quad \Gamma \vdash \mathit{newVal} \Leftarrow T_f}{\Gamma \vdash \mathsf{PureFieldUpdate}\;\mathit{target}\;f\;\mathit{newVal} \Rightarrow T_t} \quad \text{([⇒] PureFieldUpdate)}`
 
 {docstring Strata.Laurel.Resolution.Synth.pureFieldUpdate}
+
+### Subscript
+%%%
+tag := "rules-subscript"
+%%%
+
+The {ref "sec-sequences-arrays"}[*sequence and array*] subscript forms. The
+read `s[i]` and functional update `s[i := v]` are values; the destructive write
+`a[i] := v` is a statement. In each, the *element type* $`U` is the only thing
+needed from the target: the index is checked against $`\mathsf{TInt}` and the
+update/written value against $`U`, so `a[0] := true` on an `Array<int>` is
+rejected here. The remaining $`\mathsf{Seq}`/$`\mathsf{Array}` misuse rules and
+bounds-safety obligations are handled by
+{name Strata.Laurel.validateSubscriptUsage}`ValidateSubscriptUsage` and
+{name Strata.Laurel.subscriptElimPass}`SubscriptElim`, not here.
+
+The element type is computed by a total $`\mathsf{elem}(T)` metafunction that
+also decides whether the target is indexable at all. Three cases:
+
+- $`\mathsf{unfold}\;T` is $`\mathsf{Seq}\;U` or $`\mathsf{Array}\;U`:
+  $`\mathsf{elem}(T) = U`.
+- $`T` is *gradual* — $`\mathsf{Unknown}` (an unresolved name or hole) or
+  $`\mathsf{TCore}` — : $`\mathsf{elem}(T) = \mathsf{Unknown}`, tolerated
+  silently. The index and value checks are then vacuous (anything is consistent
+  with $`\mathsf{Unknown}`) and a read synthesizes $`\mathsf{Unknown}`, so no
+  cascading error piles on top of the name-resolution error that was already
+  reported.
+- $`T` is any *concrete* non-collection (e.g. $`\mathsf{TInt}`, a composite, a
+  $`\mathsf{Map}`): the subscript is rejected with `expected a sequence or
+  array`, and $`\mathsf{elem}(T) = \mathsf{Unknown}` is returned only to
+  suppress follow-on errors on the index and value. This mirrors how
+  $`\mathsf{Fresh}` / $`\mathsf{RefEq}` reject a concrete non-reference target
+  while letting $`\mathsf{Unknown}` flow.
+
+Only the concrete-non-collection case emits a diagnostic; the gradual case is
+the $`\mathsf{New}`-$`\mathsf{Fallback}`-style escape hatch.
+
+$$`\frac{\Gamma \vdash \mathit{target} \Rightarrow T \quad \Gamma \vdash i \Leftarrow \mathsf{TInt}}{\Gamma \vdash \mathsf{Subscript}\;\mathit{target}\;i\;\mathsf{none} \Rightarrow \mathsf{elem}(T)} \quad \text{([⇒] Subscript-Read)}`
+
+$$`\frac{\Gamma \vdash \mathit{target} \Rightarrow T \quad \Gamma \vdash i \Leftarrow \mathsf{TInt} \quad \Gamma \vdash v \Leftarrow \mathsf{elem}(T)}{\Gamma \vdash \mathsf{Subscript}\;\mathit{target}\;i\;(\mathsf{some}\;v) \Rightarrow T} \quad \text{([⇒] Subscript-Update)}`
+
+{docstring Strata.Laurel.Resolution.Synth.subscript}
+
+$$`\frac{\Gamma \vdash \mathit{target} \Rightarrow T \quad \Gamma \vdash i \Leftarrow \mathsf{TInt} \quad \Gamma \vdash v \Leftarrow \mathsf{elem}(T)}{\Gamma \vdash \mathsf{SubscriptWrite}\;\mathit{target}\;i\;v \Rightarrow \mathsf{TVoid}} \quad \text{([⇒] SubscriptWrite)}`
+
+{docstring Strata.Laurel.Resolution.Check.subscriptWrite}
+
+Sequence/array literals and operations (`[…]`, `Sequence.select`,
+`Array.length`, …) desugar to calls on polymorphic primitives, typed by the
+{ref "rules-calls"}[*Calls*] escape hatch in
+{name Strata.Laurel.Resolution.Synth.staticCall}`Synth.staticCall`: their result
+type is inferred structurally from the arguments rather than checked against the
+primitives' placeholder `int` signatures (so `[1, 2, 3]` synthesizes
+`Seq<int>`).
 
 ### Verification expressions
 %%%

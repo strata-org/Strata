@@ -66,6 +66,8 @@ private def fmtHighType : HighType → String
   | .TString => "TString"
   | .TSet _ => "TSet"
   | .TMap _ _ => "TMap"
+  | .TSeq _ => "TSeq"
+  | .TArray _ => "TArray"
   | .UserDefined name => s!"UserDefined({name})"
   | .Applied _ _ => "Applied"
   | .Pure _ => "Pure"

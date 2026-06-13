@@ -156,6 +156,10 @@ inductive HighType : Type where
   | TSet (elementType : AstNode HighType)
   /-- Map type. -/
   | TMap (keyType : AstNode HighType) (valueType : AstNode HighType)
+  /-- Immutable sequence type, e.g. `Seq<int>`. Maps to Core's polymorphic `Sequence` type. -/
+  | TSeq (elementType : AstNode HighType)
+  /-- Mutable heap-backed array type, e.g. `Array<int>`. Has reference (aliasing) semantics. -/
+  | TArray (elementType : AstNode HighType)
   /-- A Identifier to a user-defined composite or constrained type by name. -/
   | UserDefined (name : Identifier)
   /-- A generic type application, e.g. `List<Int>`. -/
@@ -381,6 +385,17 @@ inductive StmtExpr : Type where
       - `type`: this property is used internally by Laurel and can be left to its default value.
         Internal usage: inferred by the hole type inference pass; `none` means not yet inferred. -/
   | Hole (deterministic : Bool := true) (type : Option (AstNode HighType) := none)
+  /-- Subscript read `s[i]` or functional update `s[i := v]`, both *values*.
+      `update = none` is a read; `update = some v` is a functional update that
+      produces a new sequence (it does not mutate `target`). Eliminated by
+      `SubscriptElim`. Destructive in-place writes are `.SubscriptWrite`. -/
+  | Subscript (target : AstNode StmtExpr) (index : AstNode StmtExpr) (update : Option (AstNode StmtExpr))
+  /-- Destructive in-place subscript write `a[i] := v` on a mutable `Array<T>`,
+      a *statement* (not a value). Distinct from `.Subscript t i (some v)`
+      (functional update) so the two need not be disambiguated by syntactic
+      position. Produced by the grammar translator for `a[i] := v`; eliminated
+      by `SubscriptElim`. -/
+  | SubscriptWrite (target : AstNode StmtExpr) (index : AstNode StmtExpr) (value : AstNode StmtExpr)
 
 inductive ContractType where
   | Reads | Modifies | Precondition | PostCondition
@@ -419,6 +434,8 @@ def StmtExpr.constrName : StmtExpr → String
   | .Assume ..           => "assume"
   | .ProveBy ..          => "by"
   | .ContractOf ..       => "contractOf"
+  | .Subscript ..        => "subscript"
+  | .SubscriptWrite ..   => "subscript write"
   | .Abstract            => "abstract"
   | .All                 => "all"
   | .Hole ..             => "hole"
@@ -444,6 +461,14 @@ def bodyLabel : String := "$body"
 
 theorem AstNode.sizeOf_val_lt {t : Type} [SizeOf t] (e : AstNode t) : sizeOf e.val < sizeOf e := by
   cases e; grind
+
+/-- Termination helper for AST walkers that recurse on a child of `n.val`,
+where the match arm bound a hypothesis `h : n.val = Constructor … child …`.
+From `sizeOf n.val < sizeOf n` (`AstNode.sizeOf_val_lt`), rewrite via `h` and
+let `simp` expand the constructor's `sizeOf`, closing `sizeOf child < sizeOf n`.
+Use as `all_goals (try (term_by_val n h))`. -/
+macro "term_by_val" n:term "," h:ident : tactic =>
+  `(tactic| (have hlt := AstNode.sizeOf_val_lt $n; rw [$h:ident] at hlt; simp at hlt; omega))
 
 theorem Condition.sizeOf_condition_lt (c : Condition) : sizeOf c.condition < 1 + sizeOf c := by
   cases c; grind
@@ -526,6 +551,8 @@ def highEq (a : HighTypeMd) (b : HighTypeMd) : Bool := match _a: a.val, _b: b.va
   | HighType.TBv n1, HighType.TBv n2 => n1 == n2
   | HighType.TSet t1, HighType.TSet t2 => highEq t1 t2
   | HighType.TMap k1 v1, HighType.TMap k2 v2 => highEq k1 k2 && highEq v1 v2
+  | HighType.TSeq t1, HighType.TSeq t2 => highEq t1 t2
+  | HighType.TArray t1, HighType.TArray t2 => highEq t1 t2
   | HighType.UserDefined r1, HighType.UserDefined r2 => r1.text == r2.text
   | HighType.TCore s1, HighType.TCore s2 => s1 == s2
   | HighType.Applied b1 args1, HighType.Applied b2 args2 =>
@@ -649,6 +676,17 @@ def isSubtype (ctx : TypeLattice) (sub sup : HighTypeMd) : Bool :=
    `highEq` arm zips element-wise IN DECLARATION ORDER, so `A & B ≠ B & A` even
    though intersection is conceptually unordered. Known limitation, to fix with
    bespoke subtyping rules when intersections become live. -/
+
+/-- Name of the synthetic composite `SubscriptElim` injects to model `Array<T>`
+    (the `$` prefix avoids colliding with user types). Defined here, rather than
+    with the other array names below, so the consistency relation can name it. -/
+def arrayCompositeName := "$Array"
+
+/-- Name of the flattened composite reference type that `TypeHierarchy`'s
+    `compositeRefToComposite` collapses every composite (including `$Array`)
+    into. After that pass all composite values share this single static type. -/
+def compositeTypeName := "Composite"
+
 /-- Consistency `~` (Siek–Taha): the symmetric gradual relation. `Unknown`
     is the dynamic type and is consistent with everything; otherwise
     structural equality after unfolding aliases / constrained types.
@@ -672,14 +710,34 @@ def isConsistent (ctx : TypeLattice) (a b : HighTypeMd) : Bool :=
   | _, _ =>
     let a' := ctx.unfold a
     let b' := ctx.unfold b
+    -- A surface `Array<T>` is mutually consistent with its lowered forms
+    -- (`$Array`, then `Composite`): the declaration type is never rewritten, so
+    -- re-resolution after lowering compares the two (e.g. a modifies clause's
+    -- `$obj != a` guard). `isArrayInitCompatible` covers the related init case.
+    let isLoweredArrayName (n : String) : Bool :=
+      n == arrayCompositeName || n == compositeTypeName
     match a'.val, b'.val with
     | .Unknown, _ | _, .Unknown => true
     | .TCore _, _ | _, .TCore _ => true
+    | .TArray _, .UserDefined n | .UserDefined n, .TArray _ => isLoweredArrayName n.text
     | _, _ => highEq a' b'
   termination_by (SizeOf.sizeOf a)
   decreasing_by
     all_goals (cases a; cases b; try term_by_mem)
     cases t1; term_by_mem
+
+/-- A `Seq<U>` flows into an `Array<T>` slot when `U <: T` — an array is
+    *initialized* from a sequence literal (`var a: Array<int> := [1, 2, 3]`).
+    The element types are checked, so `Array<int> := [true]` is rejected.
+
+    `isConsistent` does *not* admit this (it is element-invariant), so it needs
+    its own rule; the complementary `Array<T>`/lowered-form consistency lives in
+    `isConsistent`. Uses `isConsistent`/`isSubtype` directly to stay
+    non-recursive. -/
+def isArrayInitCompatible (ctx : TypeLattice) (sub sup : HighTypeMd) : Bool :=
+  match (ctx.unfold sup).val, (ctx.unfold sub).val with
+  | .TArray et, .TSeq st => isConsistent ctx st et || isSubtype ctx st et
+  | _, _ => false
 
 /-- Consistent subtyping: `∃ R. sub ~ R ∧ R <: sup`. For our flat lattice
     this collapses to `sub ~ sup ∨ sub <: sup` — the standard collapse.
@@ -697,12 +755,23 @@ def isConsistent (ctx : TypeLattice) (a b : HighTypeMd) : Bool :=
     user type was ever rejected. The bidirectional design retires that
     carve-out — user-defined types are now a regular participant in `<:`,
     with `isSubtype` walking inheritance chains and unwrapping aliases
-    and constrained types to deliver real checking on user-defined code. -/
+    and constrained types to deliver real checking on user-defined code.
+
+    The `isArrayInitCompatible` disjunct adds the narrow `Array<T>` surface-vs-
+    lowered carve-out documented on that helper. -/
 def isConsistentSubtype (ctx : TypeLattice) (sub sup : HighTypeMd) : Bool :=
-  isConsistent ctx sub sup || isSubtype ctx sub sup
+  isConsistent ctx sub sup || isSubtype ctx sub sup || isArrayInitCompatible ctx sub sup
 
 def HighType.isBool : HighType → Bool
   | TBool => true
+  | _ => false
+
+def HighType.isArray : HighType → Bool
+  | TArray _ => true
+  | _ => false
+
+def HighType.isSeq : HighType → Bool
+  | TSeq _ => true
   | _ => false
 
 /-- Return the constructor name of a `StmtExprMd` as a `String`. -/
@@ -737,6 +806,8 @@ def StmtExpr.constructorName (e : StmtExpr) : String :=
   | .Assume .. => "Assume"
   | .ProveBy .. => "ProveBy"
   | .ContractOf .. => "ContractOf"
+  | .Subscript .. => "Subscript"
+  | .SubscriptWrite .. => "SubscriptWrite"
   | .Abstract => "Abstract"
   | .All => "All"
   | .Hole .. => "Hole"
@@ -907,6 +978,50 @@ structure Program where
   /-- Named constants. -/
   constants : List Constant := []
   deriving Inhabited
+
+/-! ## Sequence and Array well-known names
+
+`SubscriptElim` and `ConcreteToAbstractTreeTranslator` reference these names
+when lowering `Seq<T>` and `Array<T>` to Core. They are collected here so
+changes do not silently diverge between passes.
+-/
+
+/-- `Sequence.empty() : Seq<T>` — the empty sequence. -/
+def SeqOp.empty    := "Sequence.empty"
+/-- `Sequence.build(s, v) : Seq<T>` — append `v` to the end of `s`. -/
+def SeqOp.build    := "Sequence.build"
+/-- `Sequence.select(s, i) : T` — read the element at index `i`. -/
+def SeqOp.select   := "Sequence.select"
+/-- `Sequence.update(s, i, v) : Seq<T>` — functional update. -/
+def SeqOp.update   := "Sequence.update"
+/-- `Sequence.length(s) : int` — length of the sequence. -/
+def SeqOp.length   := "Sequence.length"
+/-- `Sequence.append(s1, s2) : Seq<T>` — concatenation. -/
+def SeqOp.append   := "Sequence.append"
+/-- `Sequence.contains(s, v) : bool` — membership test. -/
+def SeqOp.contains := "Sequence.contains"
+/-- `Sequence.take(s, n) : Seq<T>` — prefix of length `n`. -/
+def SeqOp.take     := "Sequence.take"
+/-- `Sequence.drop(s, n) : Seq<T>` — suffix after dropping `n`. -/
+def SeqOp.drop     := "Sequence.drop"
+
+/-- Name of the `$data` field on the synthetic `$Array` composite.
+    This is a field name, not a `Sequence.*` operation — kept out of the
+    `SeqOp.*` namespace since it's semantically different from the entries
+    above. -/
+def arrayDataField := "$data"
+
+-- `arrayCompositeName` ("$Array") is defined earlier, alongside the
+-- consistency relation that also needs it.
+
+/-- Name of the `Array.length` function. Calls to this name are desugared by
+    `SubscriptElim` into `Sequence.length(a.$data)`. -/
+def arrayLengthName := "Array.length"
+
+/-- Name of the `Sequence.fromArray` function. Takes a snapshot of an array's
+    contents as an immutable `Seq<T>`. Calls are desugared by `SubscriptElim`
+    into `a#$data`. -/
+def sequenceFromArrayName := "Sequence.fromArray"
 
 end -- public section
 

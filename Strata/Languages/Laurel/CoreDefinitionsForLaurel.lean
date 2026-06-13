@@ -39,6 +39,44 @@ function update(map: int, key: int, value: int) : int
 function const(value: int) : int
   external;
 
+// Sequence operations. Parameter types and Seq-valued results use int as a
+// placeholder (like Map operations); Core infers the real polymorphic types
+// via WFFactory. Sequence.contains is declared bool because its result is
+// boolean regardless of element type.
+function Sequence.empty() : int
+  external;
+
+function Sequence.build(s: int, v: int) : int
+  external;
+
+function Sequence.select(s: int, i: int) : int
+  external;
+
+function Sequence.update(s: int, i: int, v: int) : int
+  external;
+
+function Sequence.length(s: int) : int
+  external;
+
+function Sequence.append(s1: int, s2: int) : int
+  external;
+
+function Sequence.contains(s: int, v: int) : bool
+  external;
+
+function Sequence.take(s: int, n: int) : int
+  external;
+
+function Sequence.drop(s: int, n: int) : int
+  external;
+
+// Array operations. Desugared by SubscriptElim into Sequence operations on $data.
+function Array.length(a: int) : int
+  external;
+
+function Sequence.fromArray(a: int) : int
+  external;
+
 #end
 
 /--

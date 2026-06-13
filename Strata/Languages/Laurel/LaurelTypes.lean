@@ -52,6 +52,18 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   | .Var (.Declare _) => ⟨ .TVoid, source ⟩
   -- Field access
   | .Var (.Field _ fieldName) => (model.get fieldName).getType
+  -- Subscript read returns the element type; functional update `s[i := v]`
+  -- returns a new sequence of the same type as the target.
+  | .Subscript target _ update =>
+    match update with
+    | some _ => computeExprType model target
+    | none =>
+      match (computeExprType model target).val with
+      | .TSeq et => et
+      | .TArray et => et
+      | _ => ⟨ HighType.Unknown, source ⟩
+  -- Destructive write `a[i] := v` is a statement.
+  | .SubscriptWrite _ _ _ => ⟨ .TVoid, source ⟩
   -- Pure field update returns the same type as the target
   | .PureFieldUpdate target _ _ => computeExprType model target
   -- Calls — return the declared output type when available, fall back to Unknown otherwise
@@ -120,6 +132,7 @@ non-heap-relevant types. Single source of truth for which types participate
 in modifies clauses and heap parameterization. -/
 def classifyModifiesHighType : HighType → Option ModifiesTypeKind
   | .UserDefined _ => some .composite
+  | .TArray _      => some .composite
   | .TSet _        => some .compositeSet
   | _              => none
 

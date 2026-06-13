@@ -88,6 +88,8 @@ def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
   | .TVoid => return LMonoTy.bool -- Using bool as placeholder for void
   | .TSet elementType => return Core.mapTy (← translateType elementType) LMonoTy.bool
   | .TMap keyType valueType => return Core.mapTy (← translateType keyType) (← translateType valueType)
+  | .TSeq elementType => return Core.seqTy (← translateType elementType)
+  | .TArray _ => return .tcons compositeTypeName []
   | .UserDefined name =>
     match model.get? name with
     | some (.datatypeDefinition dt) => return .tcons dt.name.text []
@@ -335,6 +337,7 @@ def translateExpr (expr : StmtExprMd)
   | .InstanceCall target callee args => throwExprDiagnostic $ diagnosticFromSource expr.source "instance call expression translation" DiagnosticType.NotYetImplemented
   | .PureFieldUpdate _ _ _ => throwExprDiagnostic $ diagnosticFromSource expr.source "pure field update expression translation" DiagnosticType.NotYetImplemented
   | .This => throwExprDiagnostic $ diagnosticFromSource expr.source "this expression translation" DiagnosticType.NotYetImplemented
+  | .Subscript _ _ _ | .SubscriptWrite _ _ _ => throwExprDiagnostic $ diagnosticFromSource expr.source "Subscript should have been eliminated by SubscriptElim" DiagnosticType.StrataBug
   termination_by expr
   decreasing_by
     all_goals (have := AstNode.sizeOf_val_lt expr; term_by_mem)

@@ -22,6 +22,8 @@ import Strata.Languages.Laurel.PushOldInward
 import Strata.Languages.Laurel.LiftInstanceProcedures
 import Strata.Languages.Laurel.TypeAliasElim
 public import Strata.Languages.Laurel.LaurelPass
+import Strata.Languages.Laurel.SubscriptElim
+import Strata.Languages.Laurel.ValidateSubscriptUsage
 public import Strata.Languages.Core
 import Strata.Languages.Core.DDMTransform.ASTtoCST
 import Strata.Languages.Core.Verifier
@@ -93,6 +95,7 @@ abbrev TranslateResultWithLaurel := (Option Core.Program) × (List DiagnosticMod
 
 /-- The ordered sequence of Laurel-to-Laurel lowering passes. -/
 def laurelPipeline : Array LaurelPass := #[
+  subscriptElimPass,
   eliminateIncrDecrPass,
   typeAliasElimPass,
   filterNonCompositeModifiesPass,
@@ -154,10 +157,20 @@ private def runLaurelPasses
   let resolutionErrors : Std.HashSet DiagnosticModel := Std.HashSet.ofArray result.errors
   let (program, model) := (result.program, result.model)
 
+  -- Subscript validation runs here (rather than folded into `resolve`, as
+  -- diamond-access validation is) because `ValidateSubscriptUsage` imports
+  -- `Resolution`, so calling it from inside `resolve` would be circular.
+  let subscriptErrors := validateSubscriptUsage model program
+
   let mut program := program
   let mut model := model
-  let mut allDiags : List DiagnosticModel := result.errors.toList
+  let mut allDiags : List DiagnosticModel := result.errors.toList ++ subscriptErrors
   let mut allStats : Statistics := {}
+
+  -- Whether the program was already rejected before lowering began. Its
+  -- diagnostics are collected into `allDiags` above; the flag additionally
+  -- disarms the StrataBug guard below (see there).
+  let programIsKnownInvalid := !subscriptErrors.isEmpty
 
   for pass in laurelPipeline do
     let (program', diags, stats) ← pctx.withPhase pass.name do pure (pass.run program model)
@@ -169,12 +182,21 @@ private def runLaurelPasses
       let result := resolve program (some model)
       let newErrors := result.errors.filter fun e => !resolutionErrors.contains e
       if !newErrors.isEmpty then
+        emit pass.name "laurel.st" program
+        if programIsKnownInvalid then
+          -- The program was already rejected before lowering, so a pass
+          -- transforming it into something that no longer re-resolves is
+          -- expected fallout, not a compiler bug. Stop here and report only the
+          -- diagnostics already collected (the real, user-facing errors),
+          -- dropping the downstream noise rather than mislabeling it `StrataBug`.
+          return (program, model, allDiags, allStats)
+        -- The program resolved cleanly before this pass, so a newly-introduced
+        -- error means the pass itself corrupted the program: a compiler bug.
         let newDiags := newErrors.toList.map fun d =>
           { d with
               message :=
                 s!"Internal error: resolution after '{pass.name}' introduced this diagnostic: {d.message}"
               type := .StrataBug }
-        emit pass.name "laurel.st" program
         return (program, model, allDiags ++ newDiags, allStats)
       program := result.program
       model := result.model
