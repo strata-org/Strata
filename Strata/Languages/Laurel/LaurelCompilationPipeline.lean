@@ -163,7 +163,7 @@ private def runLaurelPasses (options : LaurelTranslateOptions)
   emit "Initial" "laurel.st" program
 
   -- Initial resolution
-  let result := resolve program
+  let result := resolve program (gradual := options.gradualConfig)
   let resolutionErrors : List DiagnosticModel :=
     if options.emitResolutionErrors then result.errors.toList else []
   let (program, model) := (result.program, result.model)
@@ -186,7 +186,7 @@ private def runLaurelPasses (options : LaurelTranslateOptions)
     allStats := allStats.merge stats
     -- Run resolve after the pass if needed
     if pass.needsResolves then
-      let result := resolve program (some model)
+      let result := resolve program (existingModel := some model) (gradual := options.gradualConfig)
       let newErrors := result.errors.filter fun e => !resolutionErrors.contains e
       if !newErrors.isEmpty then
         emit pass.name "laurel.st" program
