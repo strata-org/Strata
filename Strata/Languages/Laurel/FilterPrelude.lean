@@ -57,6 +57,11 @@ structure CollectState where
   procNames : Std.HashSet String := {}
   /-- Names from UserDefined types, New, extending. -/
   typeNames : Std.HashSet String := {}
+  /-- For a primitive operator present in the program, the prelude name a
+      frontend's elaboration would insert for it; that name is then retained as
+      if referenced. `fun _ => none` (the default) disables on-demand operator
+      seeding. -/
+  opSeed : Operation → Option String := fun _ => none
 
 abbrev CollectM := StateM CollectState
 
@@ -108,7 +113,9 @@ private partial def collectExprNames (expr : StmtExprMd) : CollectM Unit := do
   | .Var (.Declare param) => collectHighTypeNames param.type
   | .PureFieldUpdate target _ newVal =>
     collectExprNames target; collectExprNames newVal
-  | .PrimitiveOp _ args => args.forM collectExprNames
+  | .PrimitiveOp op args =>
+    if let some n := (← get).opSeed op then addProcName n
+    args.forM collectExprNames
   | .AsType target ty => collectExprNames target; collectHighTypeNames ty
   | .IsType target ty => collectExprNames target; collectHighTypeNames ty
   | .Quantifier _ param trigger body =>
@@ -255,14 +262,17 @@ private partial def reachableNamesAux
       | none => reachableNamesAux depMap rest visited
 
 /-- Collect all names referenced by a user Laurel program. -/
-private def collectProgramRefs (prog : Laurel.Program) : CollectState :=
+private def collectProgramRefs (prog : Laurel.Program)
+    (opSeed : Operation → Option String := fun _ => none) : CollectState :=
   runCollect do
+    modify fun s => { s with opSeed := opSeed }
     prog.staticProcedures.forM collectProcDeps
     prog.types.forM collectTypeDefDeps
 
 /-- Filter a prelude Laurel program to only include declarations
     transitively needed by the user program. -/
-public def filterPrelude (prelude user : Laurel.Program)
+public def filterPrelude (prelude user : Laurel.Program) (extraSeeds : List String := [])
+    (opSeed : Operation → Option String := fun _ => none)
     : Except String Laurel.Program := do
   -- Guard: filterPrelude does not yet track dependencies through static fields
   -- or constants.  Error early if either program contains them so a silent
@@ -275,9 +285,9 @@ public def filterPrelude (prelude user : Laurel.Program)
     throw "FilterPrelude: user program contains static fields, which are not yet supported"
   unless user.constants.isEmpty do
     throw "FilterPrelude: user program contains constants, which are not yet supported"
-  let refs := collectProgramRefs user
+  let refs := collectProgramRefs user opSeed
   let depMap ← buildDependencyMap prelude
-  let seeds := refs.allNames.fold (init := []) fun acc s => s :: acc
+  let seeds := refs.allNames.fold (init := extraSeeds) fun acc s => s :: acc
   let needed := reachableNamesAux depMap seeds {}
   return { prelude with
     staticProcedures := prelude.staticProcedures.filter fun p => p.name.text ∈ needed
