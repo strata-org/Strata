@@ -232,9 +232,10 @@ projection of the inner env's store, and an agreement between the inner store
 and a CFG store, derive agreement between the outer store and the CFG store. -/
 theorem StoreAgreement.through_projectStore {P : PureExpr}
     {σ_parent : SemanticStore P}
-    {ρ_inner ρ_blk : Env P}
+    {ρ_inner ρ_blk : Env P} {e_parent : SemanticEval P}
     {σ_cfg : SemanticStore P}
-    (h_ρ_blk_eq : ρ_blk = { ρ_inner with store := projectStore σ_parent ρ_inner.store })
+    (h_ρ_blk_eq : ρ_blk =
+      { ρ_inner with store := projectStore σ_parent ρ_inner.store, eval := e_parent })
     (h_agree_body : StoreAgreement ρ_inner.store σ_cfg) :
     StoreAgreement ρ_blk.store σ_cfg := by
   rw [h_ρ_blk_eq]

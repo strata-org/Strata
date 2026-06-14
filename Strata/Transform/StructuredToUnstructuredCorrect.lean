@@ -3747,6 +3747,42 @@ private theorem block_some_reaches_exiting {P : PureExpr} {CmdT : Type}
     | step_block_done | step_block_exit_match =>
       subst htgt; cases hrest with | step _ _ _ h _ => cases h
 
+/-- Inversion of a `.none`-labelled block reaching terminal (`StepStmtStar`
+variant).  An anonymous block (the wrapper introduced by `ite`/loop bodies)
+never catches an exit (`step_block_exit_match` requires `.some`), so the only
+way it reaches `.terminal` is via its inner body terminating; the resulting
+store is projected and the evaluator restored to `e_parent`. -/
+private theorem block_none_reaches_terminal {P : PureExpr} {CmdT : Type}
+    [HasBool P] [HasBoolOps P]
+    {EvalCmd : EvalCmdParam P CmdT} {extendEval : ExtendEval P}
+    {inner : Config P CmdT} {σ_parent : SemanticStore P}
+    {e_parent : SemanticEval P} {ρ' : Env P}
+    (hstar : StepStmtStar P EvalCmd extendEval
+      (.block .none σ_parent e_parent inner) (.terminal ρ')) :
+    ∃ ρ_inner, StepStmtStar P EvalCmd extendEval inner (.terminal ρ_inner) ∧
+      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store, eval := e_parent } := by
+  suffices h_gen : ∀ src tgt, StepStmtStar P EvalCmd extendEval src tgt →
+      ∀ inner ρ', src = .block .none σ_parent e_parent inner → tgt = .terminal ρ' →
+      ∃ ρ_inner, StepStmtStar P EvalCmd extendEval inner (.terminal ρ_inner) ∧
+        ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store, eval := e_parent } from
+    h_gen _ _ hstar _ _ rfl rfl
+  intro src tgt hstar_g
+  induction hstar_g with
+  | refl => intro _ _ hsrc htgt; subst hsrc; cases htgt
+  | step _ mid _ hstep hrest ih =>
+    intro inner ρ' hsrc htgt; subst hsrc
+    cases hstep with
+    | step_block_body h =>
+      have ⟨ρ_inner, hterm, heq⟩ := ih _ _ rfl htgt
+      exact ⟨ρ_inner, .step _ _ _ h hterm, heq⟩
+    | step_block_done =>
+      subst htgt; cases hrest with
+      | refl => exact ⟨_, .refl _, rfl⟩
+      | step _ _ _ h _ => cases h
+    | step_block_exit_match heq => exact nomatch heq
+    | step_block_exit_mismatch =>
+      subst htgt; cases hrest with | step _ _ _ h _ => cases h
+
 /-- Helper for cascading the `h_store_no_gens` precondition from `σ_base`
 to `σ_cfg_after = (lifted accum)` after running accum on the CFG side.
 Uses the digit-suffix property of `s` together with the assumption that no
@@ -4332,7 +4368,7 @@ private theorem peel_off_one_iteration_det {P : PureExpr} [HasFvar P] [HasBool P
       StepStmtStar P (EvalCmd P) extendEval
         (.stmts body { ρ_pre with hasFailure := ρ_pre.hasFailure || false })
         (.terminal ρ_inner) ∧
-      ρ_block = { ρ_inner with store := projectStore ρ_pre.store ρ_inner.store } ∧
+      ρ_block = ({ ρ_inner with store := projectStore ρ_pre.store ρ_inner.store, eval := ρ_pre.eval } : Env P) ∧
       ∃ (h_inner_T : ReflTransT (StepStmt P (EvalCmd P) extendEval)
                       (.stmt (Stmt.loop (.det g) none [] body md) ρ_block)
                       (.terminal ρ_post_loop)),
@@ -4373,12 +4409,12 @@ private theorem peel_off_one_iteration_to_cont_det {P : PureExpr} [HasFvar P] [H
         (.stmts body { ρ_pre with hasFailure := ρ_pre.hasFailure || false })
         (.exiting label ρ_body_exit) ∧
       ρ_post_loop = { ρ_body_exit with
-        store := projectStore ρ_pre.store ρ_body_exit.store }) ∨
+        store := projectStore ρ_pre.store ρ_body_exit.store, eval := ρ_pre.eval }) ∨
     (∃ (ρ_inner : Env P) (ρ_block : Env P),
       StepStmtStar P (EvalCmd P) extendEval
         (.stmts body { ρ_pre with hasFailure := ρ_pre.hasFailure || false })
         (.terminal ρ_inner) ∧
-      ρ_block = { ρ_inner with store := projectStore ρ_pre.store ρ_inner.store } ∧
+      ρ_block = ({ ρ_inner with store := projectStore ρ_pre.store ρ_inner.store, eval := ρ_pre.eval } : Env P) ∧
       ∃ (h_inner_T : ReflTransT (StepStmt P (EvalCmd P) extendEval)
                       (.stmt (Stmt.loop (.det g) none [] body md) ρ_block)
                       (.exiting label ρ_post_loop)),
@@ -4540,10 +4576,6 @@ private theorem loop_iterations_det
       have h_hf_block : ρ_block.hasFailure = ρ_inner.hasFailure := by rw [hρ_block_eq]
       have hρ_block_eval : ρ_block.eval = ρ_pre'.eval := by
         rw [hρ_block_eq]
-        show ρ_inner.eval = ρ_pre'.eval
-        have := smallStep_noFuncDecl_preserves_eval_block P (EvalCmd P) extendEval body
-                ρ_pre' ρ_inner h_nofd_body h_body_struct
-        rw [this]
       have h_eval_eq_block : ρ_block.eval = ρ_pre.eval := by
         rw [hρ_block_eval]; exact h_eval_eq
       have hwfb_block : WellFormedSemanticEvalBool ρ_block.eval := by
@@ -4707,10 +4739,6 @@ private theorem loop_iterations_to_cont_det
         have h_hf_block : ρ_block.hasFailure = ρ_inner.hasFailure := by rw [hρ_block_eq]
         have hρ_block_eval : ρ_block.eval = ρ_pre'.eval := by
           rw [hρ_block_eq]
-          show ρ_inner.eval = ρ_pre'.eval
-          have := smallStep_noFuncDecl_preserves_eval_block P (EvalCmd P) extendEval body
-                  ρ_pre' ρ_inner h_nofd_body h_body_struct
-          rw [this]
         have h_eval_eq_block : ρ_block.eval = ρ_pre.eval := by
           rw [hρ_block_eval]; exact h_eval_eq
         have hwfb_block : WellFormedSemanticEvalBool ρ_block.eval := by
@@ -4959,11 +4987,16 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasBoolOps 
         [.ite (.det e) thenBranch elseBranch md] rest ρ₀ ρ'
         (by simp at h_term ⊢; exact h_term)
     -- Invert: the ite steps to either then-branch or else-branch
-    have h_ite_inv : (StepStmtStar P (EvalCmd P) extendEval
-          (.stmts thenBranch ρ₀) (.terminal ρ₁) ∧
+    -- Each branch is now wrapped in a `.block .none ρ₀.store ρ₀.eval (.stmts _ ρ₀)`
+    -- (scoping); invert the block to recover the raw branch terminal `ρ_inner`
+    -- together with the projection equation for `ρ₁`.
+    have h_ite_inv : (∃ ρ_inner, StepStmtStar P (EvalCmd P) extendEval
+          (.stmts thenBranch ρ₀) (.terminal ρ_inner) ∧
+          ρ₁ = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store, eval := ρ₀.eval } ∧
           ρ₀.eval ρ₀.store e = .some HasBool.tt) ∨
-        (StepStmtStar P (EvalCmd P) extendEval
-          (.stmts elseBranch ρ₀) (.terminal ρ₁) ∧
+        (∃ ρ_inner, StepStmtStar P (EvalCmd P) extendEval
+          (.stmts elseBranch ρ₀) (.terminal ρ_inner) ∧
+          ρ₁ = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store, eval := ρ₀.eval } ∧
           ρ₀.eval ρ₀.store e = .some HasBool.ff) := by
       cases h_ite_star with
       | step _ _ _ hstep1 hrest1 =>
@@ -4977,9 +5010,14 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasBoolOps 
           | step _ _ _ hstep2 hrest2 =>
             cases hstep2 with
             | step_ite_true h_eval_tt _ =>
-              exact Or.inl ⟨hrest2, h_eval_tt⟩
+              -- `hrest2 : .block .none ρ₀.store ρ₀.eval (.stmts thenBranch ρ₀) → .terminal ρ₁`
+              have ⟨ρ_inner, h_term, h_eq⟩ :=
+                block_none_reaches_terminal (P := P) (EvalCmd := EvalCmd P) hrest2
+              exact Or.inl ⟨ρ_inner, h_term, h_eq, h_eval_tt⟩
             | step_ite_false h_eval_ff _ =>
-              exact Or.inr ⟨hrest2, h_eval_ff⟩
+              have ⟨ρ_inner, h_term, h_eq⟩ :=
+                block_none_reaches_terminal (P := P) (EvalCmd := EvalCmd P) hrest2
+              exact Or.inr ⟨ρ_inner, h_term, h_eq, h_eval_ff⟩
     -- Block membership: distribute h_cfg_blocks over concatenated blocks
     subst h_blocks
     have h_cfg_accum : ∀ b ∈ accumBlocks, b ∈ cfg.blocks := fun b hb =>
@@ -5021,13 +5059,10 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasBoolOps 
     obtain ⟨h_simple_then, h_simple_else, h_lbni_then, h_lbni_else,
             h_lhni_then, h_lhni_else, h_nml_then, h_nml_else⟩ :=
       ite_branch_shape h_simple_head h_lbni_head h_lhni_head h_nml_head
-    -- Eval well-formedness preservation through ite branch
+    -- Eval well-formedness preservation through ite branch: the branch's block
+    -- wrapper restores `ρ₀.eval` on exit, so `ρ₁.eval = ρ₀.eval` directly.
     have h_eval_eq : ρ₁.eval = ρ₀.eval := by
-      rcases h_ite_inv with h | h
-      · exact smallStep_noFuncDecl_preserves_eval_block P (EvalCmd P) extendEval
-          thenBranch ρ₀ ρ₁ h_nofd_then h.1
-      · exact smallStep_noFuncDecl_preserves_eval_block P (EvalCmd P) extendEval
-          elseBranch ρ₀ ρ₁ h_nofd_else h.1
+      rcases h_ite_inv with ⟨_, _, h_eq, _⟩ | ⟨_, _, h_eq, _⟩ <;> rw [h_eq]
     have hwfb₁ : WellFormedSemanticEvalBool ρ₁.eval := h_eval_eq ▸ hwfb
     have hwfv₁ : WellFormedSemanticEvalVal ρ₁.eval := h_eval_eq ▸ hwfv
     have hwf_def₁ : WellFormedSemanticEvalDef ρ₁.eval := h_eval_eq ▸ hwf_def
@@ -5183,7 +5218,7 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasBoolOps 
       h_combined_no_gen_suffix_mod x (List.mem_append_right _ (h_modvars_eq ▸
         List.mem_append_right _ (by simpa [Cmds.modifiedVars] using hx))) s heq
     rcases h_ite_inv with h_true | h_false
-    · obtain ⟨h_then_term, h_cond_tt⟩ := h_true
+    · obtain ⟨ρ_then_inner, h_then_term, h_ρ₁_eq, h_cond_tt⟩ := h_true
       -- Step from accumEntry to tl via the lifted accum + condGoto.
       have h_flush_sim : StepDetCFGStar extendEval cfg
           (.atBlock accumEntry σ_base hf_base)
@@ -5192,20 +5227,24 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasBoolOps 
           accumEntry accumBlocks h_flush_eq σ_base σ_cfg_after hf_base hf_accum ρ₀
           hwfb hwf_def hwf_congr h_accum_cfg h_agree_after h_hf h_cond_tt cfg
           h_cfg_accum h_lookup
-      -- Recurse on thenBranch.
+      -- Recurse on thenBranch (terminating at the raw inner env `ρ_then_inner`).
       have h_accum_nil_t : EvalCmds P (EvalCmd P) ρ₀.eval ρ₀.store
           [].reverse ρ₀.store false := EvalCmds.eval_cmds_none
-      have ⟨σ_branch, h_then_step, h_agree_then, h_preserve_then⟩ :=
+      have ⟨σ_branch, h_then_step, h_agree_then_inner, h_preserve_then⟩ :=
         stmtsToBlocks_simulation extendEval kNext thenBranch exitConts []
           gen_ite gen_t tl tbs h_then_eq h_nofd_then h_simple_then h_unique_then
           h_lbni_then h_lhni_then h_nml_then
           ρ₀.store σ_cfg_after ρ₀.hasFailure false
-          ρ₀ ρ₁ hwfb hwfv hwf_def hwf_congr hwf_var
+          ρ₀ ρ_then_inner hwfb hwfv hwf_def hwf_congr hwf_var
           h_then_term h_accum_nil_t h_agree_after
           h_combined_then h_unique_combined_then (by simp)
           h_wf_ite h_then_no_gen_suffix h_then_no_gen_suffix_mod
           genUpperBound h_outer_upper_t h_store_no_gens_upper_after
           cfg h_cfg_tbs h_cfg_nodup
+      -- Bridge the raw-inner store agreement through the block projection
+      -- to the post-ite env `ρ₁`.
+      have h_agree_then : StoreAgreement ρ₁.store σ_branch :=
+        StoreAgreement.through_projectStore h_ρ₁_eq h_agree_then_inner
       -- Freshness of rest's inits at σ_branch.
       have h_fresh_rest_inits_branch :
           ∀ x ∈ Block.initVars rest, σ_branch x = none := by
@@ -5292,7 +5331,7 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasBoolOps 
         have h_σ_branch_x : σ_branch x = none :=
           h_preserve_then x h_σ_after_x h_nil_not h_x_not_then h_inner_guard_t
         exact h_preserve_rest x h_σ_branch_x h_nil_not h_x_not_rest h_inner_guard_r
-    · obtain ⟨h_else_term, h_cond_ff⟩ := h_false
+    · obtain ⟨ρ_else_inner, h_else_term, h_ρ₁_eq, h_cond_ff⟩ := h_false
       -- Step from accumEntry to fl via the lifted accum + condGoto.
       have h_flush_sim : StepDetCFGStar extendEval cfg
           (.atBlock accumEntry σ_base hf_base)
@@ -5301,20 +5340,24 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasBoolOps 
           accumEntry accumBlocks h_flush_eq σ_base σ_cfg_after hf_base hf_accum ρ₀
           hwfb hwf_def hwf_congr h_accum_cfg h_agree_after h_hf h_cond_ff cfg
           h_cfg_accum h_lookup
-      -- Recurse on elseBranch.
+      -- Recurse on elseBranch (terminating at the raw inner env `ρ_else_inner`).
       have h_accum_nil_f : EvalCmds P (EvalCmd P) ρ₀.eval ρ₀.store
           [].reverse ρ₀.store false := EvalCmds.eval_cmds_none
-      have ⟨σ_branch, h_else_step, h_agree_else, h_preserve_else⟩ :=
+      have ⟨σ_branch, h_else_step, h_agree_else_inner, h_preserve_else⟩ :=
         stmtsToBlocks_simulation extendEval kNext elseBranch exitConts []
           gen_t gen_e fl fbs h_else_eq h_nofd_else h_simple_else h_unique_else
           h_lbni_else h_lhni_else h_nml_else
           ρ₀.store σ_cfg_after ρ₀.hasFailure false
-          ρ₀ ρ₁ hwfb hwfv hwf_def hwf_congr hwf_var
+          ρ₀ ρ_else_inner hwfb hwfv hwf_def hwf_congr hwf_var
           h_else_term h_accum_nil_f h_agree_after
           h_combined_else h_unique_combined_else (by simp)
           h_wf_t h_else_no_gen_suffix h_else_no_gen_suffix_mod
           genUpperBound h_outer_upper_e h_store_no_gens_upper_after
           cfg h_cfg_fbs h_cfg_nodup
+      -- Bridge the raw-inner store agreement through the block projection
+      -- to the post-ite env `ρ₁`.
+      have h_agree_else : StoreAgreement ρ₁.store σ_branch :=
+        StoreAgreement.through_projectStore h_ρ₁_eq h_agree_else_inner
       -- Freshness of rest's inits at σ_branch.
       have h_fresh_rest_inits_branch :
           ∀ x ∈ Block.initVars rest, σ_branch x = none := by
@@ -5753,10 +5796,10 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasBoolOps 
     have h_block_inv :
         (∃ ρ_inner, StepStmtStar P (EvalCmd P) extendEval
           (.stmts body ρ₀) (.terminal ρ_inner) ∧
-          ρ_blk = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store }) ∨
+          ρ_blk = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store, eval := ρ₀.eval }) ∨
         (∃ ρ_inner, StepStmtStar P (EvalCmd P) extendEval
           (.stmts body ρ₀) (.exiting label ρ_inner) ∧
-          ρ_blk = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store }) := by
+          ρ_blk = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store, eval := ρ₀.eval }) := by
       cases h_block_star with
       | step _ _ _ hstep1 hrest1 =>
         cases hstep1 with
@@ -5776,7 +5819,7 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasBoolOps 
           (.stmts body ρ₀) (.terminal ρ_inner) ∨
          StepStmtStar P (EvalCmd P) extendEval
           (.stmts body ρ₀) (.exiting label ρ_inner)) ∧
-        ρ_blk = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store } := by
+        ρ_blk = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store, eval := ρ₀.eval } := by
       rcases h_block_inv with h | h
       · obtain ⟨ρ_i, hterm, heq⟩ := h
         exact ⟨ρ_i, Or.inl hterm, heq⟩
@@ -5948,11 +5991,10 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasBoolOps 
         -- Bridge structured-side projection to CFG.
         have h_agree_block_body : StoreAgreement ρ_blk.store σ_cfg_body :=
           StoreAgreement.through_projectStore h_ρ_blk_eq h_agree_body
-        -- Eval well-formedness preservation through body.
+        -- Eval well-formedness preservation through body: the block wrapper
+        -- restores `ρ₀.eval` on exit, so this holds directly from `h_ρ_blk_eq`.
         have h_eval_blk : ρ_blk.eval = ρ₀.eval := by
           rw [h_ρ_blk_eq]
-          exact smallStep_noFuncDecl_preserves_eval_block P (EvalCmd P) extendEval
-            body ρ₀ ρ_inner h_nofd_body h_body_term
         have hwfb₁ : WellFormedSemanticEvalBool ρ_blk.eval := h_eval_blk ▸ hwfb
         have hwfv₁ : WellFormedSemanticEvalVal ρ_blk.eval := h_eval_blk ▸ hwfv
         have hwf_def₁ : WellFormedSemanticEvalDef ρ_blk.eval := h_eval_blk ▸ hwf_def
