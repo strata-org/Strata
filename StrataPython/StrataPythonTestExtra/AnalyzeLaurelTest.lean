@@ -88,7 +88,7 @@ meta def runAnalyze
     : IO (Except String Core.Program) := do
   let testIon ← compileTestScript pythonCmd (testDir / scriptName) tmpDir
   let pctx ← quietCtx
-  let laurel ←
+  let (laurel, gconfig) ←
     match ← (pythonAndSpecToLaurel testIon.toString
         (dispatchModules := #["servicelib"])
         (specDir := tmpDir)).run pctx |>.toBaseIO with
@@ -102,7 +102,7 @@ meta def runAnalyze
       if let some m := (←pctx.getMessages).back? then
         return .error m.message
       return .error "Pipeline aborted for unspecified reason (bug)"
-  match ← translateCombinedLaurel laurel with
+  match ← translateCombinedLaurel laurel (gradualConfig := some gconfig) with
   | (some core, []) =>
     -- Also run Core type checking to catch semantic errors (e.g. Heap vs Any)
     match Core.typeCheck Core.VerifyOptions.quiet core (moreFns := StrataPython.ReFactory) with
@@ -120,7 +120,7 @@ meta def runAnalyzeAndVerify
     : IO (Except String (Array Core.VCResult)) := do
   let testIon ← compileTestScript pythonCmd (testDir / scriptName) tmpDir
   let pctx ← quietCtx
-  let laurel ←
+  let (laurel, gconfig) ←
     match ← (pythonAndSpecToLaurel testIon.toString
         (dispatchModules := #["servicelib"])
         (specDir := tmpDir)).run pctx |>.toBaseIO with
@@ -129,7 +129,7 @@ meta def runAnalyzeAndVerify
       let msgs ← pctx.getMessages
       let detail := match msgs.back? with | some m => m.message | none => "Pipeline aborted"
       return .error detail
-  let (coreProgramOption, _) ← translateCombinedLaurel laurel
+  let (coreProgramOption, _) ← translateCombinedLaurel laurel (gradualConfig := some gconfig)
   let coreProgram ← match coreProgramOption with
     | none => return .error "Laurel to Core translation failed"
     | some core => pure core
@@ -264,7 +264,7 @@ meta def runTestCase (pythonCmd : System.FilePath) (tmpDir : System.FilePath)
     let task ← IO.asTask do
       let testIon ← compileTestScript pythonCmd (testDir / "test_class_any_as_composite.py") tmpDir
       let pctx ← quietCtx
-      let laurel ←
+      let (laurel, gconfig) ←
         match ← (pythonAndSpecToLaurel testIon.toString
             (dispatchModules := #["servicelib"])
             (pyspecModules := #["servicelib.Storage"])
@@ -274,7 +274,7 @@ meta def runTestCase (pythonCmd : System.FilePath) (tmpDir : System.FilePath)
           let msgs ← pctx.getMessages
           let detail := match msgs.back? with | some m => m.message | none => "Pipeline aborted"
           return some s!"test_class_any_as_composite.py: {detail}"
-      match ← translateCombinedLaurel laurel with
+      match ← translateCombinedLaurel laurel (gradualConfig := some gconfig) with
       | (some core, []) =>
         match Core.typeCheck Core.VerifyOptions.quiet core (moreFns := StrataPython.ReFactory) with
         | .error diag =>
@@ -394,7 +394,7 @@ recursively translates subclasses, so the type
     let testIon ← compileTestScript pythonCmd
       (testDir / "test_resolution_after_filter.py") tmpDir
     let pctx ← quietCtx
-    let combined ←
+    let (combined, gconfig) ←
       match ← (pythonAndSpecToLaurel testIon.toString
           (dispatchModules := #["servicelib"])
           (specDir := tmpDir)).run pctx |>.toBaseIO with
@@ -403,7 +403,7 @@ recursively translates subclasses, so the type
         let msgs ← pctx.getMessages
         let detail := match msgs.back? with | some m => m.message | none => "Pipeline aborted"
         throw <| IO.userError s!"pyAnalyzeLaurel failed: {detail}"
-    let result := Strata.Laurel.resolve combined
+    let result := Strata.Laurel.resolve combined none (some gconfig)
     unless result.errors.isEmpty do
       let msgs := result.errors.toList.map (·.message)
       throw <| IO.userError s!"Resolution errors after FilterPrelude:\n{"\n".intercalate msgs}"
