@@ -3567,7 +3567,7 @@ entry label to the continuation `k` (or the resolved exit target). -/
 runs from `σ_struct_base` (struct side) to `ρ₀.store` (struct side), and
 `StoreAgreement σ_struct_base σ_base` holds at the entry. -/
 private theorem flushCmds_simulation_agree {P : PureExpr} [HasFvar P] [HasBoolOps P]
-    [HasVal P] [HasFvars P] [DecidableEq P.Ident]
+    [HasFvars P] [DecidableEq P.Ident]
     (extendEval : ExtendEval P)
     (pfx : String)
     (k : String)
@@ -3647,7 +3647,7 @@ constructor of `stmtsToBlocks`).  The block always materializes a single
 fresh block (regardless of whether `accum` is empty), since the transfer is
 explicit. -/
 private theorem flushCmds_goto_simulation_agree {P : PureExpr} [HasFvar P] [HasBoolOps P]
-    [HasVal P] [HasFvars P] [DecidableEq P.Ident]
+    [HasFvars P] [DecidableEq P.Ident]
     (extendEval : ExtendEval P)
     (pfx : String) (accum : List (Cmd P)) (md : MetaData P) (bk : String)
     (gen gen' : StringGenState)
@@ -3713,18 +3713,18 @@ private theorem block_some_reaches_exiting {P : PureExpr} {CmdT : Type}
     [HasBool P] [HasBoolOps P]
     {EvalCmd : EvalCmdParam P CmdT} {extendEval : ExtendEval P}
     {inner : Config P CmdT} {label' : String} {σ_parent : SemanticStore P}
-    {lbl : String} {ρ' : Env P}
+    {e_parent : SemanticEval P} {lbl : String} {ρ' : Env P}
     (hstar : StepStmtStar P EvalCmd extendEval
-      (.block (.some label') σ_parent inner) (.exiting lbl ρ')) :
+      (.block (.some label') σ_parent e_parent inner) (.exiting lbl ρ')) :
     label' ≠ lbl ∧
     ∃ ρ_inner, StepStmtStar P EvalCmd extendEval inner (.exiting lbl ρ_inner) ∧
-      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store } := by
+      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store, eval := e_parent } := by
   suffices ∀ src tgt, StepStmtStar P EvalCmd extendEval src tgt →
-      ∀ inner lbl ρ', src = .block (.some label') σ_parent inner →
+      ∀ inner lbl ρ', src = .block (.some label') σ_parent e_parent inner →
         tgt = .exiting lbl ρ' →
       label' ≠ lbl ∧
       ∃ ρ_inner, StepStmtStar P EvalCmd extendEval inner (.exiting lbl ρ_inner) ∧
-        ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store } from
+        ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store, eval := e_parent } from
     this _ _ hstar _ _ _ rfl rfl
   intro src tgt hstar_g
   induction hstar_g with
@@ -4149,14 +4149,14 @@ private theorem stmtsT_cons_exiting' {P : PureExpr} [HasFvar P] [HasBool P] [Has
 private theorem blockT_none_reaches_terminal' {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P]
     [HasFvars P]
     (extendEval : ExtendEval P)
-    {inner : Config P (Cmd P)} {σ_parent : SemanticStore P} {ρ' : Env P}
+    {inner : Config P (Cmd P)} {σ_parent : SemanticStore P} {e_parent : SemanticEval P} {ρ' : Env P}
     (hstar : ReflTransT (StepStmt P (EvalCmd P) extendEval)
-              (.block .none σ_parent inner) (.terminal ρ')) :
+              (.block .none σ_parent e_parent inner) (.terminal ρ')) :
     ∃ (ρ_inner : Env P) (h : ReflTransT (StepStmt P (EvalCmd P) extendEval) inner (.terminal ρ_inner)),
-      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store } ∧
+      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store, eval := e_parent } ∧
       h.len < hstar.len := by
   match hstar with
-  | .step _ (.block _ _ inner₁) _ (.step_block_body h) hrest =>
+  | .step _ (.block _ _ _ inner₁) _ (.step_block_body h) hrest =>
     have ⟨ρ_inner, hterm, heq, hlen⟩ := blockT_none_reaches_terminal' extendEval hrest
     exact ⟨ρ_inner, .step _ _ _ h hterm, heq, by simp [ReflTransT.len]; omega⟩
   | .step _ _ _ .step_block_done hrest =>
@@ -4171,16 +4171,16 @@ private theorem blockT_none_reaches_terminal' {P : PureExpr} [HasFvar P] [HasBoo
 private theorem blockT_none_reaches_exiting' {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P]
     [HasFvars P]
     (extendEval : ExtendEval P)
-    {inner : Config P (Cmd P)} {σ_parent : SemanticStore P}
+    {inner : Config P (Cmd P)} {σ_parent : SemanticStore P} {e_parent : SemanticEval P}
     {label : String} {ρ' : Env P}
     (hstar : ReflTransT (StepStmt P (EvalCmd P) extendEval)
-              (.block .none σ_parent inner) (.exiting label ρ')) :
+              (.block .none σ_parent e_parent inner) (.exiting label ρ')) :
     ∃ (ρ_inner : Env P)
       (h : ReflTransT (StepStmt P (EvalCmd P) extendEval) inner (.exiting label ρ_inner)),
-      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store } ∧
+      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store, eval := e_parent } ∧
       h.len < hstar.len := by
   match hstar with
-  | .step _ (.block _ _ inner₁) _ (.step_block_body h) hrest =>
+  | .step _ (.block _ _ _ inner₁) _ (.step_block_body h) hrest =>
     have ⟨ρ_inner, hexit, heq, hlen⟩ := blockT_none_reaches_exiting' extendEval hrest
     exact ⟨ρ_inner, .step _ _ _ h hexit, heq, by simp [ReflTransT.len]; omega⟩
   | .step _ _ _ .step_block_done hrest =>
@@ -4319,12 +4319,12 @@ the next loop iteration's `.stmt loop ρ_block` derivation reaches the same
 terminal with strictly smaller length.  Specialized to `inv = []`, `m = none`,
 and `ρ_body_init = ρ_pre` (the `|| false` collapse). -/
 private theorem peel_off_one_iteration_det {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P]
-    [HasVal P] [HasFvars P]
+    [HasFvars P]
     (extendEval : ExtendEval P)
     (g : P.Expr) (body : List (Stmt P (Cmd P))) (md : MetaData P)
     (ρ_pre ρ_post_loop : Env P)
     (hrest : ReflTransT (StepStmt P (EvalCmd P) extendEval)
-       (.seq (.block .none ρ_pre.store
+       (.seq (.block .none ρ_pre.store ρ_pre.eval
                 (.stmts body { ρ_pre with hasFailure := ρ_pre.hasFailure || false }))
              [.loop (.det g) none [] body md])
        (.terminal ρ_post_loop)) :
@@ -4359,12 +4359,12 @@ reaches `.exiting label`, decompose into a `Sum`: either this iteration's body
 exits (caseA), or this iteration terminates and the next loop iteration exits
 (caseB, with strictly smaller derivation length). -/
 private theorem peel_off_one_iteration_to_cont_det {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P]
-    [HasVal P] [HasFvars P]
+    [HasFvars P]
     (extendEval : ExtendEval P)
     (g : P.Expr) (body : List (Stmt P (Cmd P))) (md : MetaData P)
     (ρ_pre ρ_post_loop : Env P) (label : String)
     (hrest : ReflTransT (StepStmt P (EvalCmd P) extendEval)
-       (.seq (.block .none ρ_pre.store
+       (.seq (.block .none ρ_pre.store ρ_pre.eval
                 (.stmts body { ρ_pre with hasFailure := ρ_pre.hasFailure || false }))
              [.loop (.det g) none [] body md])
        (.exiting label ρ_post_loop)) :
