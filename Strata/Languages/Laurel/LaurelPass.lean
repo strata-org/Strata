@@ -6,6 +6,7 @@
 module
 
 public import Strata.Languages.Laurel.SemanticModel
+public import Strata.Languages.Laurel.Resolution
 public import Strata.Util.Statistics
 public import Strata.Languages.Core.Options
 
@@ -21,6 +22,9 @@ structure LaurelTranslateOptions where
       this option has no effect. Use with the verifier's `useArrayTheory`. -/
   enumeratedModifiesClauses : Bool := false
   keepAllFilesPrefix : Option String := none
+  /-- Gradual-typing elaboration config; when set, resolution lowers generic
+      ops/coercions to the frontend's dynamic-typing prelude. -/
+  gradualConfig : Option GradualConfig := none
 
 instance : Inhabited LaurelTranslateOptions where
   default := {}
