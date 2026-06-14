@@ -259,8 +259,39 @@ structure ResolutionResult where
 /-- Per-composite-type scope mapping field names to their scope entries. -/
 @[expose] abbrev TypeScopes := Std.HashMap String Scope
 
+/-- Frontend-supplied description of a gradual-typing prelude. When present,
+    resolution *elaborates* a generically-typed program: operations on dynamic
+    (`dynamic`) operands are rewritten to the named prelude operators, and the
+    implicit gradual casts that the consistency relation silently accepts at
+    boundaries are materialized as explicit box/unbox/`toBool` calls.
+
+    All names refer to prelude definitions that must already be in scope. The
+    mechanism lives in core resolution; only these (Python-specific) names do,
+    keeping the typechecker frontend-agnostic. `none` ⇒ no elaboration. -/
+structure GradualConfig where
+  /-- The dynamic type whose values are boxed (`TCore "Any"` for Python). -/
+  dynamic : HighType
+  /-- Whether a type is the dynamic type (may have several spellings). -/
+  isDynamic : HighType → Bool
+  /-- Box constructor name for a primitive type (e.g. `TInt ↦ "from_int"`). -/
+  box : HighType → Option String
+  /-- Unbox destructor name for a primitive type (e.g. `TInt ↦ "Any..as_int!"`). -/
+  unbox : HighType → Option String
+  /-- Coercion of a dynamic value to `bool` for condition positions. -/
+  toBool : String
+  /-- Dynamic prelude operator backing a native `Operation` (e.g. `Add ↦ "PAdd"`). -/
+  opPrelude : Operation → Option String
+  /-- Whether a procedure (by name) should be elaborated. Restricts elaboration
+      to frontend (user) code, leaving hand-written prelude bodies untouched. -/
+  shouldElaborate : String → Bool
+
 /-- State threaded through the resolution pass. -/
 structure ResolveState where
+  /-- Gradual-typing elaboration config, if the frontend requested it. -/
+  gradual : Option GradualConfig := none
+  /-- Whether gradual elaboration is active for the procedure being resolved.
+      Set per-procedure by `resolveProcedure` so only user code is elaborated. -/
+  gradualActive : Bool := false
   /-- Next fresh ID to allocate. -/
   nextId : Nat := 1
   /-- Current lexical scope (name → definition ID). -/
@@ -574,71 +605,6 @@ private def getCallInfo (callee : Identifier) : ResolveM (HighTypeMd × List Hig
   | some (_, .constant c) => pure (c.type, [])
   | _ => pure ({ val := .Unknown, source := callee.source }, [])
 
-/-- Test whether `op` is in the arithmetic family. -/
-private def isArithmeticOp : Operation → Bool
-  | .Neg | .Add | .Sub | .Mul | .Div | .Mod | .DivT | .ModT => true
-  | _ => false
-
-/-- LUB of the operand types, or `none` if inconsistent. -/
-private def joinAll (ctx : TypeContext) (argTypes : List HighTypeMd)
-    (source : Option FileRange) : Option HighTypeMd :=
-  argTypes.foldl
-    (fun acc t => match acc with | some l => join ctx l t | none => none)
-    (some { val := .Unknown, source := source })
-
-/-- Native arithmetic typing: every operand must be numeric, and the result is
-    the LUB of the operand types under the consistency relation. -/
-private def nativeArith (op : Operation) (expr : StmtExpr) (args' : List StmtExprMd)
-    (argTypes : List HighTypeMd) (source : Option FileRange) :
-    ResolveM (StmtExpr × HighTypeMd) := do
-  let ctx := (← get).typeContext
-  for (a, aTy) in args'.zip argTypes do
-    unless isNumeric ctx aTy do
-      typeMismatch a.source (some expr) "expected a numeric type" aTy
-  match joinAll ctx argTypes source with
-  | some ty => pure (.PrimitiveOp op args', ty)
-  | none =>
-    let formatted := ", ".intercalate (argTypes.map (fun t => s!"'{formatType t}'"))
-    let diag := diagnosticFromSource source s!"cannot apply '{op}' to operands of types {formatted}"
-    modify fun s => { s with errors := s.errors.push diag }
-    pure (.PrimitiveOp op args', { val := .Unknown, source := source })
-
-/-- Native typing for the boolean / comparison / equality / string-concat
-    families: a fixed result type (`TBool` / `TString`) with the family's operand
-    constraint (booleans subtype `TBool`, comparisons are numeric, equality is
-    consistent, concat operands subtype `TString`). -/
-private def nativeOther (op : Operation) (expr : StmtExpr) (args' : List StmtExprMd)
-    (argTypes : List HighTypeMd) (source : Option FileRange) :
-    ResolveM (StmtExpr × HighTypeMd) := do
-  let resultTy := match op with
-    | .Eq | .Neq | .And | .Or | .AndThen | .OrElse | .Not | .Implies
-    | .Lt | .Leq | .Gt | .Geq => HighType.TBool
-    | .StrConcat => HighType.TString
-    | _ => HighType.Unknown
-  match op with
-  | .And | .Or | .AndThen | .OrElse | .Not | .Implies =>
-    for (a, aTy) in args'.zip argTypes do
-      checkSubtype a.source { val := .TBool, source := a.source } aTy
-  | .Lt | .Leq | .Gt | .Geq =>
-    let ctx := (← get).typeContext
-    for (a, aTy) in args'.zip argTypes do
-      unless isNumeric ctx aTy do
-        typeMismatch a.source (some expr) "expected a numeric type" aTy
-  | .Eq | .Neq =>
-    match argTypes with
-    | [lhsTy, rhsTy] =>
-      let ctx := (← get).typeContext
-      unless isConsistent ctx lhsTy rhsTy do
-        let diag := diagnosticFromSource source
-          s!"cannot compare '{formatType lhsTy}' with '{formatType rhsTy}' using '{op}'"
-        modify fun s => { s with errors := s.errors.push diag }
-    | _ => pure ()
-  | .StrConcat =>
-    for (a, aTy) in args'.zip argTypes do
-      checkSubtype a.source { val := .TString, source := a.source } aTy
-  | _ => pure ()
-  pure (.PrimitiveOp op args', { val := resultTy, source := source })
-
 /-! ## Typing rules
 
 The judgment is bidirectional:
@@ -713,6 +679,211 @@ pattern-match on the constructor and delegate to the corresponding helper.
 hit a wildcard arm that emits a diagnostic and returns `Unknown`. -/
 
 namespace Resolution
+
+/-! ## Gradual-typing elaboration helpers
+
+These build nodes from already-resolved pieces and resolve inserted callees via
+`resolveRef`; they never recurse into the `Synth`/`Check` mutual block, so its
+termination measure is unaffected. No-ops unless a `GradualConfig` is active. -/
+
+/-- The active config — `some` only inside a user procedure being elaborated. -/
+private def activeGradual : ResolveM (Option GradualConfig) := do
+  let s ← get
+  return if s.gradualActive then s.gradual else none
+
+/-- A `name(args)` call with its callee resolved in-pass, so phase 2 sees its id. -/
+private def mkPreludeCall (name : String) (args : List StmtExprMd)
+    (source : Option FileRange) : ResolveM StmtExprMd := do
+  let callee ← resolveRef { text := name } source
+  return { val := .StaticCall callee args, source := source }
+
+/-- Materialize an implicit `Any`↔primitive cast (box / unbox / `Any_to_bool`),
+    or `none` if none applies. Assumes elaboration is active (caller holds `g`). -/
+private def tryCoerce (g : GradualConfig) (expected actual : HighType) (e : StmtExprMd)
+    (source : Option FileRange) : ResolveM (Option StmtExprMd) := do
+  if g.isDynamic expected && !g.isDynamic actual then
+    match g.box actual with
+    | some b => return some (← mkPreludeCall b [e] source)
+    | none => return none
+  else if !g.isDynamic expected && g.isDynamic actual then
+    match expected, g.unbox expected with
+    | .TBool, _ => return some (← mkPreludeCall g.toBool [e] source)
+    | _, some u => return some (← mkPreludeCall u [e] source)
+    | _, none => return none
+  else return none
+
+/-- `tryCoerce` gated by the active config — a no-op when elaboration is off.
+    The single entry point for coercion insertion outside the `synthArith` /
+    `synthOther` dispatch, which already holds the config. -/
+private def tryCoerceActive (expected actual : HighType) (e : StmtExprMd)
+    (source : Option FileRange) : ResolveM (Option StmtExprMd) := do
+  match ← activeGradual with
+  | some g => tryCoerce g expected actual e source
+  | none => pure none
+
+/-- Coerce every operand to `target`. -/
+private def coerceEach (g : GradualConfig) (target : HighType) (args' : List StmtExprMd)
+    (argTypes : List HighTypeMd) (source : Option FileRange) :
+    ResolveM (List StmtExprMd) :=
+  (args'.zip argTypes).mapM fun (a, t) => return (← tryCoerce g target t.val a source).getD a
+
+/-- Rewrite `op` to its dynamic prelude operator, boxing all operands; `none` if
+    `op` has no prelude operator. -/
+private def forcePrelude (g : GradualConfig) (op : Operation) (args' : List StmtExprMd)
+    (argTypes : List HighTypeMd) (source : Option FileRange) :
+    ResolveM (Option (StmtExpr × HighTypeMd)) := do
+  let some name := g.opPrelude op | return none
+  let boxed ← coerceEach g g.dynamic args' argTypes source
+  let call ← mkPreludeCall name boxed source
+  return some (call.val, { val := g.dynamic, source := source })
+
+/-- `forcePrelude` only when some operand is already dynamic. -/
+private def elaborateDynamicOp (g : GradualConfig) (op : Operation) (args' : List StmtExprMd)
+    (argTypes : List HighTypeMd) (source : Option FileRange) :
+    ResolveM (Option (StmtExpr × HighTypeMd)) := do
+  unless argTypes.any (fun t => g.isDynamic t.val) do return none
+  forcePrelude g op args' argTypes source
+
+/-- LUB of the operand types, or `none` if inconsistent. -/
+private def joinAll (ctx : TypeContext) (argTypes : List HighTypeMd)
+    (source : Option FileRange) : Option HighTypeMd :=
+  argTypes.foldl
+    (fun acc t => match acc with | some l => join ctx l t | none => none)
+    (some { val := .Unknown, source := source })
+
+/-- Whether the operands join to a single numeric type. -/
+private def joinsToNumeric (ctx : TypeContext) (argTypes : List HighTypeMd)
+    (source : Option FileRange) : Bool :=
+  match joinAll ctx argTypes source with
+  | some jt => isNumeric ctx jt
+  | none => false
+
+private def isComparisonOp : Operation → Bool
+  | .Lt | .Leq | .Gt | .Geq => true
+  | _ => false
+
+private def isArithmeticOp : Operation → Bool
+  | .Neg | .Add | .Sub | .Mul | .Div | .Mod | .DivT | .ModT => true
+  | _ => false
+
+/-- A candidate lowering: `some` if it applies, else `none`. -/
+private abbrev OpAlt := ResolveM (Option (StmtExpr × HighTypeMd))
+
+/-- The first applicable candidate lowering, else the native `dflt`. -/
+private def firstElab (alts : List OpAlt) (dflt : ResolveM (StmtExpr × HighTypeMd)) :
+    ResolveM (StmtExpr × HighTypeMd) := do
+  for alt in alts do
+    if let some r ← alt then return r
+  dflt
+
+/-- The dynamic prelude operator for `op` when `cond` holds, else decline. -/
+private def preludeWhen (g : GradualConfig) (cond : Bool) (op : Operation) (args' : List StmtExprMd)
+    (argTypes : List HighTypeMd) (source : Option FileRange) : OpAlt :=
+  if cond then forcePrelude g op args' argTypes source else pure none
+
+/-- String concatenation, whether it arrives as `+` on all-string operands or as
+    an explicit `StrConcat`: emit `StrConcat`, coercing each operand to string
+    across the `Any` boundary (a no-op for operands already typed string). -/
+private def strConcatAlt (g : GradualConfig) (op : Operation) (args' : List StmtExprMd)
+    (argTypes : List HighTypeMd) (source : Option FileRange) : OpAlt := do
+  let isConcat := (op matches .StrConcat) ||
+    ((op matches .Add) && !argTypes.isEmpty && argTypes.all (fun t => t.val matches .TString))
+  unless isConcat do return none
+  let coerced ← coerceEach g (.TString) args' argTypes source
+  return some (.PrimitiveOp .StrConcat coerced, { val := .TString, source := source })
+
+/-- Native arithmetic typing: all operands must be numeric; the result is their
+    LUB under the consistency relation. -/
+private def nativeArith (op : Operation) (expr : StmtExpr) (args' : List StmtExprMd)
+    (argTypes : List HighTypeMd) (source : Option FileRange) :
+    ResolveM (StmtExpr × HighTypeMd) := do
+  let ctx := (← get).typeContext
+  for (a, aTy) in args'.zip argTypes do
+    unless isNumeric ctx aTy do
+      typeMismatch a.source (some expr) "expected a numeric type" aTy
+  match joinAll ctx argTypes source with
+  | some ty => pure (.PrimitiveOp op args', ty)
+  | none =>
+    let formatted := ", ".intercalate (argTypes.map (fun t => s!"'{formatType t}'"))
+    let diag := diagnosticFromSource source s!"cannot apply '{op}' to operands of types {formatted}"
+    modify fun s => { s with errors := s.errors.push diag }
+    pure (.PrimitiveOp op args', { val := .Unknown, source := source })
+
+/-- Native typing for the boolean / comparison / equality / string-concat
+    families: a fixed result type with each family's operand constraint. -/
+private def nativeOther (op : Operation) (expr : StmtExpr) (args' : List StmtExprMd)
+    (argTypes : List HighTypeMd) (source : Option FileRange) :
+    ResolveM (StmtExpr × HighTypeMd) := do
+  let resultTy := match op with
+    | .Eq | .Neq | .And | .Or | .AndThen | .OrElse | .Not | .Implies
+    | .Lt | .Leq | .Gt | .Geq => HighType.TBool
+    | .StrConcat => HighType.TString
+    | _ => HighType.Unknown
+  match op with
+  | .And | .Or | .AndThen | .OrElse | .Not | .Implies =>
+    for (a, aTy) in args'.zip argTypes do
+      checkSubtype a.source { val := .TBool, source := a.source } aTy
+  | .Lt | .Leq | .Gt | .Geq =>
+    let ctx := (← get).typeContext
+    for (a, aTy) in args'.zip argTypes do
+      unless isNumeric ctx aTy do
+        typeMismatch a.source (some expr) "expected a numeric type" aTy
+  | .Eq | .Neq =>
+    match argTypes with
+    | [lhsTy, rhsTy] =>
+      let ctx := (← get).typeContext
+      unless isConsistent ctx lhsTy rhsTy do
+        let diag := diagnosticFromSource source
+          s!"cannot compare '{formatType lhsTy}' with '{formatType rhsTy}' using '{op}'"
+        modify fun s => { s with errors := s.errors.push diag }
+    | _ => pure ()
+  | .StrConcat =>
+    for (a, aTy) in args'.zip argTypes do
+      checkSubtype a.source { val := .TString, source := a.source } aTy
+  | _ => pure ()
+  pure (.PrimitiveOp op args', { val := resultTy, source := source })
+
+/-- Lower an arithmetic-family `PrimitiveOp` over already-synthesized operands. -/
+private def synthArith (g : GradualConfig) (op : Operation) (expr : StmtExpr) (args' : List StmtExprMd)
+    (argTypes : List HighTypeMd) (source : Option FileRange) :
+    ResolveM (StmtExpr × HighTypeMd) := do
+  let ctx := (← get).typeContext
+  firstElab
+    [ elaborateDynamicOp g op args' argTypes source,
+      strConcatAlt g op args' argTypes source,
+      preludeWhen g (!joinsToNumeric ctx argTypes source) op args' argTypes source ]
+    (nativeArith op expr args' argTypes source)
+
+/-- Lower the boolean / comparison / equality / string-concat `PrimitiveOp`
+    family over already-synthesized operands. -/
+private def synthOther (g : GradualConfig) (op : Operation) (expr : StmtExpr) (args' : List StmtExprMd)
+    (argTypes : List HighTypeMd) (source : Option FileRange) :
+    ResolveM (StmtExpr × HighTypeMd) := do
+  let ctx := (← get).typeContext
+  firstElab
+    [ elaborateDynamicOp g op args' argTypes source,
+      preludeWhen g (isComparisonOp op && !joinsToNumeric ctx argTypes source)
+        op args' argTypes source,
+      strConcatAlt g op args' argTypes source ]
+    (nativeOther op expr args' argTypes source)
+
+/-- Strict native typing, dispatched by operator family. Used in non-user code
+    (the hand-written `Any` prelude, library bodies): a type mismatch is a hard
+    error, never a coercion. -/
+private def nativeOp (op : Operation) (expr : StmtExpr) (args' : List StmtExprMd)
+    (argTypes : List HighTypeMd) (source : Option FileRange) :
+    ResolveM (StmtExpr × HighTypeMd) :=
+  if isArithmeticOp op then nativeArith op expr args' argTypes source
+  else nativeOther op expr args' argTypes source
+
+/-- Gradual typing, dispatched by operator family. Used inside frontend
+    procedures: pick a native or `Any`-prelude operator and insert coercions,
+    with `nativeOp`'s strict rule as the fallback. -/
+private def gradualOp (g : GradualConfig) (op : Operation) (expr : StmtExpr)
+    (args' : List StmtExprMd) (argTypes : List HighTypeMd) (source : Option FileRange) :
+    ResolveM (StmtExpr × HighTypeMd) :=
+  if isArithmeticOp op then synthArith g op expr args' argTypes source
+  else synthOther g op expr args' argTypes source
 
 -- The `h : exprMd.val = .Foo args ...` parameters on the recursive helpers
 -- look unused to the linter, but each one is referenced by that helper's
@@ -834,6 +1005,14 @@ def Synth.resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTy
     synthesized type, used at sites where typing is not enforced —
     verification annotations, modifies/reads clauses). -/
 def Check.resolveStmtExpr (exprMd : StmtExprMd) (expected : HighTypeMd) : ResolveM StmtExprMd := do
+  -- In user code, lower primitive ops via synthesis then coerce to `expected`.
+  if (← get).gradualActive && (exprMd.val matches .PrimitiveOp _ _) then
+    let (e', actual) ← Synth.resolveStmtExpr exprMd
+    match ← tryCoerceActive expected.val actual.val e' exprMd.source with
+    | some c => return c
+    | none =>
+      checkSubtype exprMd.source expected actual
+      return e'
   match h_node: exprMd with
   | AstNode.mk expr source =>
   match h_expr: expr with
@@ -891,10 +1070,14 @@ def Check.resolveStmtExpr (exprMd : StmtExprMd) (expected : HighTypeMd) : Resolv
   | .PrimitiveOp .Implies args =>
     Check.primitiveOp exprMd .Implies args expected source (by rw [h_node])
   | _ =>
-    -- Subsumption fallback: synth then check `actual <: expected`.
+    -- Subsumption fallback: synth, then either materialize an implicit gradual
+    -- cast (box/unbox/toBool) or check `actual <: expected` as usual.
     let (e', actual) ← Synth.resolveStmtExpr exprMd
-    checkSubtype source expected actual
-    pure e'
+    match ← tryCoerceActive expected.val actual.val e' source with
+    | some coerced => pure coerced
+    | none =>
+      checkSubtype source expected actual
+      pure e'
   termination_by (exprMd, 3)
   decreasing_by all_goals first
     | (apply Prod.Lex.left; term_by_mem)
@@ -1827,8 +2010,12 @@ def Synth.primitiveOp (exprMd : StmtExprMd) (expr : StmtExpr)
     Synth.resolveStmtExpr a.val)
   let args' := results.map (·.1)
   let argTypes := results.map (·.2)
-  if isArithmeticOp op then nativeArith op expr args' argTypes source
-  else nativeOther op expr args' argTypes source
+  -- Gradual typing only inside user procedures; strict native typing elsewhere.
+  -- Kept apart on purpose: the `Any` prelude and library bodies must stay
+  -- verified under the strict rules, so don't unify these two arms.
+  match ← activeGradual with
+  | some g => gradualOp g op expr args' argTypes source
+  | none   => nativeOp op expr args' argTypes source
   termination_by (exprMd, 1)
   decreasing_by
     all_goals
@@ -2513,8 +2700,11 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
     -- translator wraps every body in (`Core.Statement.block bodyLabel …`),
     -- so that frontends emitting `Exit bodyLabel` for early-return lowering
     -- (e.g. PythonToLaurel) don't trip Check.exit's label-scope check.
+    let savedGradual := (← get).gradualActive
+    modify fun s => { s with gradualActive :=
+      (s.gradual.elim false fun g => g.shouldElaborate proc.name.text) }
     let body' ← withLabel (some bodyLabel) <| resolveBody proc.body bodyExpected
-    modify fun s => { s with answerType := savedAnswer }
+    modify fun s => { s with answerType := savedAnswer, gradualActive := savedGradual }
     if !proc.isFunctional && body'.isTransparent then
       let diag := diagnosticFromSource proc.name.source
         s!"transparent procedures are not yet supported. Add 'opaque' to make the procedure opaque"
@@ -2551,8 +2741,11 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
     modify fun s => { s with answerType := some (outputs'.map (·.type)) }
     let bodyExpected := procedureBodyType proc.isFunctional outputs' proc.name.source
     -- See `resolveProcedure` for the rationale on `bodyLabel`.
+    let savedGradual := (← get).gradualActive
+    modify fun s => { s with gradualActive :=
+      (s.gradual.elim false fun g => g.shouldElaborate proc.name.text) }
     let body' ← withLabel (some bodyLabel) <| resolveBody proc.body bodyExpected
-    modify fun s => { s with answerType := savedAnswer }
+    modify fun s => { s with answerType := savedAnswer, gradualActive := savedGradual }
     if !proc.isFunctional && body'.isTransparent then
       let diag := diagnosticFromSource proc.name.source
         s!"transparent procedures are not yet supported. Add 'opaque' to make the procedure opaque"
@@ -2850,7 +3043,8 @@ private def preRegisterTopLevel (program : Program) : ResolveM Unit := do
 /-! ## Entry point -/
 
 /-- Run the full resolution pass on a Laurel program. -/
-def resolve (program : Program) (existingModel: Option SemanticModel := none) : ResolutionResult :=
+def resolve (program : Program) (existingModel: Option SemanticModel := none)
+    (gradual : Option GradualConfig := none) : ResolutionResult :=
   -- Phase 1: pre-register all top-level names, then assign IDs and resolve references
   let phase1 : ResolveM Program := do
     preRegisterTopLevel program
@@ -2862,7 +3056,7 @@ def resolve (program : Program) (existingModel: Option SemanticModel := none) : 
              types := types', constants := constants' }
   let nextId := existingModel.elim 1 (fun m => m.nextId)
   let typeContext := TypeContext.ofTypes program.types
-  let (program', finalState) := phase1.run { nextId := nextId, typeContext }
+  let (program', finalState) := phase1.run { nextId := nextId, typeContext, gradual }
   -- Phase 2: build refToDef from the resolved program (all definitions now have UUIDs)
   let refToDef := buildRefToDef program'
   { program := program',
