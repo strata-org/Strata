@@ -47,6 +47,26 @@ procedure setCountInvalid(c: Counter)
 //^^^^^^^^^^^^^ error: assertion could not be proved
 };
 
+// SOUNDNESS REGRESSION (Fabio Madge, PR #1364):
+// The field-write constraint check must assert on a read-back of the field,
+// not on the RHS `value`. The RHS is already emitted as the field-write
+// statement, so asserting the constraint on `value` re-emits it and runs any
+// side effect in the RHS twice. With the buggy version, `x := x + 1` inside
+// the stored value ran twice (x: 0 -> 2) for the legal write below; the
+// read-back fix evaluates the RHS exactly once (x: 0 -> 1). Verifying that
+// `x == 1` (and not 2) after the write confirms the RHS is evaluated once.
+// This passes non-vacuously: `x` is a plain local int, so its value is tracked
+// precisely (no heap read involved), and were the double-evaluation bug
+// reintroduced this assertion would fail.
+procedure fieldWriteEvaluatesRhsOnce(c: Counter)
+  opaque
+  modifies c
+{
+  var x: int := 0;
+  c#count := (x := x + 1) + 1;
+  assert x == 1
+};
+
 // KNOWN COMPLETENESS GAP (to be fixed in a follow-up PR):
 // Reading a constrained-typed field does NOT recover its constraint. Because
 // HeapParameterization boxes the field as its unconstrained base type (BoxInt),
