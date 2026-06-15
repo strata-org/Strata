@@ -45,6 +45,7 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   | .LiteralBool _ => ⟨ .TBool, source ⟩
   | .LiteralString _ => ⟨ .TString, source ⟩
   | .LiteralDecimal _ => ⟨ .TReal, source ⟩
+  | .LiteralBv _ width => ⟨ .TBv width, source ⟩
   -- Variables
   | .Var (.Local id) => (model.get id).getType
   | .Var (.Declare _) => ⟨ .TVoid, source ⟩
