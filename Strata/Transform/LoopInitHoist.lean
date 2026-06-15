@@ -1490,6 +1490,107 @@ theorem Block.liftInitsInLoopBodyM_genStep
   termination_by sizeOf ss
 end
 
+/-! ### The lift's freshly-minted labels carry the hoist mint kind `Q`.
+
+Every label the lift adds to the generator state is minted by `gen
+hoistFreshPrefix` (the lift's only generator call, at each `.init`), so it lies
+in the image of the mint witness `hQmint`.  This is the building block that lets
+the source-kind-freedom hypothesis (`∀ str, Q str → …`) discharge the
+generator-step threading of the σ-membership freshness invariant: a label the
+lift adds over `σ` is `Q`-kind, hence the kind-free source names avoid it. -/
+
+open StringGenState (GenStep) in
+mutual
+/-- Every label the statement lift adds over `σ` carries the mint kind `Q`. -/
+theorem Stmt.liftInitsInLoopBodyM_genStep_delta_Q {Q : String → Prop}
+    (hQmint : ∀ sg, Q (StringGenState.gen hoistFreshPrefix sg).1)
+    (s : Stmt P (Cmd P)) (σ : StringGenState) :
+    ∀ str ∈ StringGenState.stringGens (Stmt.liftInitsInLoopBodyM s σ).2,
+      str ∉ StringGenState.stringGens σ → Q str := by
+  match s with
+  | .cmd c =>
+      cases c with
+      | init x ty rhs md =>
+          intro str h_in h_nin
+          rw [Stmt.liftInitsInLoopBodyM] at h_in
+          rw [StringGenState.stringGens_gen, List.mem_cons] at h_in
+          rcases h_in with h_new | h_old
+          · subst h_new; exact hQmint σ
+          · exact absurd h_old h_nin
+      | set x rhs md =>
+          intro str h_in h_nin
+          simp only [Stmt.liftInitsInLoopBodyM] at h_in; exact absurd h_in h_nin
+      | assert l e md =>
+          intro str h_in h_nin
+          simp only [Stmt.liftInitsInLoopBodyM] at h_in; exact absurd h_in h_nin
+      | assume l e md =>
+          intro str h_in h_nin
+          simp only [Stmt.liftInitsInLoopBodyM] at h_in; exact absurd h_in h_nin
+      | cover l e md =>
+          intro str h_in h_nin
+          simp only [Stmt.liftInitsInLoopBodyM] at h_in; exact absurd h_in h_nin
+  | .block lbl bss md =>
+      intro str h_in h_nin
+      have h_state : (Stmt.liftInitsInLoopBodyM (.block lbl bss md) σ).2
+          = (Block.liftInitsInLoopBodyM bss σ).2 := by
+        rw [Stmt.liftInitsInLoopBodyM]
+        rcases h : Block.liftInitsInLoopBodyM bss σ with ⟨⟨hs, rn, bss'⟩, σ'⟩
+        simp only [h]
+      rw [h_state] at h_in
+      exact Block.liftInitsInLoopBodyM_genStep_delta_Q hQmint bss σ str h_in h_nin
+  | .ite g tss ess md =>
+      intro str h_in h_nin
+      have h_state : (Stmt.liftInitsInLoopBodyM (.ite g tss ess md) σ).2
+          = (Block.liftInitsInLoopBodyM ess (Block.liftInitsInLoopBodyM tss σ).2).2 := by
+        rw [Stmt.liftInitsInLoopBodyM]
+        rcases h₁ : Block.liftInitsInLoopBodyM tss σ with ⟨⟨ths, trn, tss'⟩, σ₁⟩
+        rcases h₂ : Block.liftInitsInLoopBodyM ess σ₁ with ⟨⟨ehs, ern, ess'⟩, σ₂⟩
+        simp only [h₁, h₂]
+      rw [h_state] at h_in
+      by_cases h_mid : str ∈ StringGenState.stringGens (Block.liftInitsInLoopBodyM tss σ).2
+      · exact Block.liftInitsInLoopBodyM_genStep_delta_Q hQmint tss σ str h_mid h_nin
+      · exact Block.liftInitsInLoopBodyM_genStep_delta_Q hQmint ess
+          (Block.liftInitsInLoopBodyM tss σ).2 str h_in h_mid
+  | .loop g m inv body md =>
+      intro str h_in h_nin
+      simp only [Stmt.liftInitsInLoopBodyM] at h_in; exact absurd h_in h_nin
+  | .exit lbl md =>
+      intro str h_in h_nin
+      simp only [Stmt.liftInitsInLoopBodyM] at h_in; exact absurd h_in h_nin
+  | .funcDecl d md =>
+      intro str h_in h_nin
+      simp only [Stmt.liftInitsInLoopBodyM] at h_in; exact absurd h_in h_nin
+  | .typeDecl t md =>
+      intro str h_in h_nin
+      simp only [Stmt.liftInitsInLoopBodyM] at h_in; exact absurd h_in h_nin
+  termination_by sizeOf s
+
+/-- Every label the block lift adds over `σ` carries the mint kind `Q`. -/
+theorem Block.liftInitsInLoopBodyM_genStep_delta_Q {Q : String → Prop}
+    (hQmint : ∀ sg, Q (StringGenState.gen hoistFreshPrefix sg).1)
+    (ss : List (Stmt P (Cmd P))) (σ : StringGenState) :
+    ∀ str ∈ StringGenState.stringGens (Block.liftInitsInLoopBodyM ss σ).2,
+      str ∉ StringGenState.stringGens σ → Q str := by
+  match ss with
+  | [] =>
+      intro str h_in h_nin
+      rw [Block.liftInitsInLoopBodyM] at h_in; exact absurd h_in h_nin
+  | s :: rest =>
+      intro str h_in h_nin
+      have h_state : (Block.liftInitsInLoopBodyM (s :: rest) σ).2
+          = (Block.liftInitsInLoopBodyM rest (Stmt.liftInitsInLoopBodyM s σ).2).2 := by
+        rw [Block.liftInitsInLoopBodyM]
+        rcases h₁ : Stmt.liftInitsInLoopBodyM s σ with ⟨⟨hs_s, rn_s, ss_s⟩, σ₁⟩
+        rcases h₂ : Block.liftInitsInLoopBodyM rest σ₁ with ⟨⟨hs_r, rn_r, ss_r⟩, σ₂⟩
+        simp only [h₁, h₂]
+      rw [h_state] at h_in
+      by_cases h_mid : str ∈ StringGenState.stringGens (Stmt.liftInitsInLoopBodyM s σ).2
+      · exact Stmt.liftInitsInLoopBodyM_genStep_delta_Q hQmint s σ str h_mid h_nin
+      · exact Block.liftInitsInLoopBodyM_genStep_delta_Q hQmint rest
+          (Stmt.liftInitsInLoopBodyM s σ).2 str h_in h_mid
+  termination_by sizeOf ss
+end
+
 open StringGenState (GenStep) in
 mutual
 /-- The pass's final generator state is a `GenStep` from its input. -/
@@ -1549,6 +1650,103 @@ theorem Block.hoistLoopPrefixInitsM_genStep
   termination_by sizeOf ss
 end
 
+/-! ### The post-order pass's freshly-minted labels carry the mint kind `Q`.
+
+Every label `hoistLoopPrefixInitsM` adds to the generator state is minted by
+`gen hoistFreshPrefix` — either by the post-order recursion or by the nested
+`liftInitsInLoopBodyM` of a `.loop` body — so it lies in the image of the mint
+witness `hQmint`.  This is the pass-level companion of
+`liftInitsInLoopBodyM_genStep_delta_Q`, and it is what lets the source
+kind-freedom hypothesis discharge the generator-step threading of the
+σ-membership freshness invariant in the §E `.cons`/`.ite` arms. -/
+
+open StringGenState (GenStep) in
+mutual
+/-- Every label the statement pass adds over `σ` carries the mint kind `Q`. -/
+theorem Stmt.hoistLoopPrefixInitsM_genStep_delta_Q {Q : String → Prop}
+    (hQmint : ∀ sg, Q (StringGenState.gen hoistFreshPrefix sg).1)
+    (s : Stmt P (Cmd P)) (σ : StringGenState) :
+    ∀ str ∈ StringGenState.stringGens (Stmt.hoistLoopPrefixInitsM s σ).2,
+      str ∉ StringGenState.stringGens σ → Q str := by
+  match s with
+  | .cmd c =>
+      intro str h_in h_nin
+      rw [Stmt.hoistLoopPrefixInitsM] at h_in; exact absurd h_in h_nin
+  | .block lbl bss md =>
+      intro str h_in h_nin
+      have h_state : (Stmt.hoistLoopPrefixInitsM (.block lbl bss md) σ).2
+          = (Block.hoistLoopPrefixInitsM bss σ).2 := by
+        rw [Stmt.hoistLoopPrefixInitsM]
+        rcases h : Block.hoistLoopPrefixInitsM bss σ with ⟨bss', σ'⟩
+        simp only [h]
+      rw [h_state] at h_in
+      exact Block.hoistLoopPrefixInitsM_genStep_delta_Q hQmint bss σ str h_in h_nin
+  | .ite g tss ess md =>
+      intro str h_in h_nin
+      have h_state : (Stmt.hoistLoopPrefixInitsM (.ite g tss ess md) σ).2
+          = (Block.hoistLoopPrefixInitsM ess (Block.hoistLoopPrefixInitsM tss σ).2).2 := by
+        rw [Stmt.hoistLoopPrefixInitsM]
+        rcases h₁ : Block.hoistLoopPrefixInitsM tss σ with ⟨tss', σ₁⟩
+        rcases h₂ : Block.hoistLoopPrefixInitsM ess σ₁ with ⟨ess', σ₂⟩
+        simp only [h₁, h₂]
+      rw [h_state] at h_in
+      by_cases h_mid : str ∈ StringGenState.stringGens (Block.hoistLoopPrefixInitsM tss σ).2
+      · exact Block.hoistLoopPrefixInitsM_genStep_delta_Q hQmint tss σ str h_mid h_nin
+      · exact Block.hoistLoopPrefixInitsM_genStep_delta_Q hQmint ess
+          (Block.hoistLoopPrefixInitsM tss σ).2 str h_in h_mid
+  | .loop g m inv body md =>
+      intro str h_in h_nin
+      -- output state = lift (post-order body₁) σ₁, where σ₁ = post-order body state.
+      have h_state : (Stmt.hoistLoopPrefixInitsM (.loop g m inv body md) σ).2
+          = (Block.liftInitsInLoopBodyM (Block.hoistLoopPrefixInitsM body σ).1
+              (Block.hoistLoopPrefixInitsM body σ).2).2 := by
+        rw [Stmt.hoistLoopPrefixInitsM]
+        rcases h₁ : Block.hoistLoopPrefixInitsM body σ with ⟨body₁, σ₁⟩
+        rcases h₂ : Block.liftInitsInLoopBodyM body₁ σ₁ with ⟨⟨havocs, renames, body₂⟩, σ₂⟩
+        simp only [h₁, h₂]
+      rw [h_state] at h_in
+      by_cases h_mid : str ∈ StringGenState.stringGens (Block.hoistLoopPrefixInitsM body σ).2
+      · exact Block.hoistLoopPrefixInitsM_genStep_delta_Q hQmint body σ str h_mid h_nin
+      · exact Block.liftInitsInLoopBodyM_genStep_delta_Q hQmint
+          (Block.hoistLoopPrefixInitsM body σ).1 (Block.hoistLoopPrefixInitsM body σ).2
+          str h_in h_mid
+  | .exit lbl md =>
+      intro str h_in h_nin
+      rw [Stmt.hoistLoopPrefixInitsM] at h_in; exact absurd h_in h_nin
+  | .funcDecl d md =>
+      intro str h_in h_nin
+      rw [Stmt.hoistLoopPrefixInitsM] at h_in; exact absurd h_in h_nin
+  | .typeDecl t md =>
+      intro str h_in h_nin
+      rw [Stmt.hoistLoopPrefixInitsM] at h_in; exact absurd h_in h_nin
+  termination_by sizeOf s
+
+/-- Every label the block pass adds over `σ` carries the mint kind `Q`. -/
+theorem Block.hoistLoopPrefixInitsM_genStep_delta_Q {Q : String → Prop}
+    (hQmint : ∀ sg, Q (StringGenState.gen hoistFreshPrefix sg).1)
+    (ss : List (Stmt P (Cmd P))) (σ : StringGenState) :
+    ∀ str ∈ StringGenState.stringGens (Block.hoistLoopPrefixInitsM ss σ).2,
+      str ∉ StringGenState.stringGens σ → Q str := by
+  match ss with
+  | [] =>
+      intro str h_in h_nin
+      rw [Block.hoistLoopPrefixInitsM] at h_in; exact absurd h_in h_nin
+  | s :: rest =>
+      intro str h_in h_nin
+      have h_state : (Block.hoistLoopPrefixInitsM (s :: rest) σ).2
+          = (Block.hoistLoopPrefixInitsM rest (Stmt.hoistLoopPrefixInitsM s σ).2).2 := by
+        rw [Block.hoistLoopPrefixInitsM]
+        rcases h₁ : Stmt.hoistLoopPrefixInitsM s σ with ⟨ss_s, σ₁⟩
+        rcases h₂ : Block.hoistLoopPrefixInitsM rest σ₁ with ⟨ss_r, σ₂⟩
+        simp only [h₁, h₂]
+      rw [h_state] at h_in
+      by_cases h_mid : str ∈ StringGenState.stringGens (Stmt.hoistLoopPrefixInitsM s σ).2
+      · exact Stmt.hoistLoopPrefixInitsM_genStep_delta_Q hQmint s σ str h_mid h_nin
+      · exact Block.hoistLoopPrefixInitsM_genStep_delta_Q hQmint rest
+          (Stmt.hoistLoopPrefixInitsM s σ).2 str h_in h_mid
+  termination_by sizeOf ss
+end
+
 /-! ### Fresh-from-generator-state disjointness, and its threading
 
 Every label a `GenStep` adds is suffix-shaped (`_<digits>`, the shape every
@@ -1600,6 +1798,30 @@ theorem SrcNamesFreshFromGen.genStep
   rcases StringGenState.genStep_label_mem_or_suffix h_wf h_step h_mem with h_in_σ | h_suffix
   · exact h_fresh str h_in_σ
   · exact h_src_shapefree str h_suffix
+
+/-- Kind-aware threading of the fresh-from-σ precondition across a `GenStep`.
+Where `SrcNamesFreshFromGen.genStep` re-derives the genStep-fresh names' shape
+from generator monotonicity (`HasUnderscoreDigitSuffix`), this variant takes a
+caller-supplied `h_delta` recording that every newly-added label carries a
+client kind `Q` (for the hoist pass, via `…_genStep_delta_Q` + the mint witness
+`hQmint`).  It then needs only the `Q`-restricted source kind-freedom
+`h_src_shapefree`, so a composition partner is never forced to keep *every*
+generator-shaped name fresh — only labels of its own kind. -/
+theorem SrcNamesFreshFromGen.genStep_of_delta {Q : String → Prop}
+    {A B ivs : List P.Ident} {σ σ' : StringGenState}
+    (h_delta : ∀ str ∈ StringGenState.stringGens σ',
+      str ∉ StringGenState.stringGens σ → Q str)
+    (h_src_shapefree :
+      ∀ str : String, Q str →
+        HasIdent.ident (P := P) str ∉ A ∧
+        HasIdent.ident (P := P) str ∉ B ∧
+        HasIdent.ident (P := P) str ∉ ivs)
+    (h_fresh : SrcNamesFreshFromGen (P := P) A B ivs σ) :
+    SrcNamesFreshFromGen (P := P) A B ivs σ' := by
+  intro str h_mem
+  by_cases h_in_σ : str ∈ StringGenState.stringGens σ
+  · exact h_fresh str h_in_σ
+  · exact h_src_shapefree str (h_delta str h_mem h_in_σ)
 
 /-! ### Top-level `allLoopBodiesInitFree` postcondition (monadic + pure) -/
 

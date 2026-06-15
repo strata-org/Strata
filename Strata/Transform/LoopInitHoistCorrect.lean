@@ -656,28 +656,26 @@ private theorem y_not_mem_residual_initVars
     [HasIdent P] [LawfulHasIdent P] [HasSubstFvar P]
     [HasIntOrder P] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P]
     [DecidableEq P.Ident]
+    {Q : String → Prop}
+    (hQmint : ∀ sg, Q (StringGenState.gen hoistFreshPrefix sg).1)
     {y : P.Ident} {s : Stmt P (Cmd P)} {σ : StringGenState}
     (h_wf : StringGenState.WF σ)
     (h_unique_s : (Stmt.initVars s).Nodup)
-    (h_shapefree_s : ∀ str : String, String.HasUnderscoreDigitSuffix str →
+    (h_shapefree_s : ∀ str : String, Q str →
         HasIdent.ident (P := P) str ∉ Stmt.initVars s)
     (h_y_not_src : y ∉ Stmt.initVars s)
     (h_y_shapefree : ∀ str : String, y = HasIdent.ident str →
-        ¬ String.HasUnderscoreDigitSuffix str) :
+        ¬ Q str) :
     y ∉ Block.initVars (Stmt.hoistLoopPrefixInitsM s σ).1 := by
   intro h_mem
   have h_class :=
     (LoopInitHoistLoopArmWF.Stmt.hoistLoopPrefixInitsM_initVars_classified
-      s σ h_wf h_unique_s h_shapefree_s).1 y h_mem
-  rcases h_class with h_orig | ⟨str, h_y_eq, h_str_in, _⟩
+      hQmint s σ h_wf h_unique_s h_shapefree_s).1 y h_mem
+  rcases h_class with h_orig | ⟨str, h_y_eq, h_str_in, _, h_str_Q⟩
   · exact h_y_not_src h_orig
-  · -- `y = ident str` with `str` freshly generated in the output state, hence
-    -- suffix-shaped (output state WF), contradicting `y`'s shape-freeness.
-    have h_wf' : StringGenState.WF (Stmt.hoistLoopPrefixInitsM s σ).2 :=
-      (Stmt.hoistLoopPrefixInitsM_genStep s σ).wf_mono h_wf
-    have h_suf : String.HasUnderscoreDigitSuffix str :=
-      StringGenState.hasUnderscoreDigitSuffix_of_mem_generated h_wf' h_str_in
-    exact h_y_shapefree str h_y_eq h_suf
+  · -- `y = ident str` with `str` freshly minted (carrying kind `Q`), contradicting
+    -- `y`'s kind-freedom.
+    exact h_y_shapefree str h_y_eq h_str_Q
 
 /-- A terminating run of the residual block `(Stmt.hoistLoopPrefixInitsM s σ).1`
 preserves `store y = none` when `y` is a shape-free source name disjoint from
@@ -691,15 +689,17 @@ private theorem residual_run_terminal_preserves_none
     [HasIntOrder P] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P]
     [DecidableEq P.Ident]
     {extendEval : ExtendEval P}
+    {Q : String → Prop}
+    (hQmint : ∀ sg, Q (StringGenState.gen hoistFreshPrefix sg).1)
     {y : P.Ident} {s : Stmt P (Cmd P)} {σ : StringGenState} {ρ ρ' : Env P}
     (h_wf : StringGenState.WF σ)
     (h_unique_s : (Stmt.initVars s).Nodup)
-    (h_shapefree_s : ∀ str : String, String.HasUnderscoreDigitSuffix str →
+    (h_shapefree_s : ∀ str : String, Q str →
         HasIdent.ident (P := P) str ∉ Stmt.initVars s)
     (h_no_fd : Stmt.containsFuncDecl s = false)
     (h_y_not_src : y ∉ Stmt.initVars s)
     (h_y_shapefree : ∀ str : String, y = HasIdent.ident str →
-        ¬ String.HasUnderscoreDigitSuffix str)
+        ¬ Q str)
     (h_none : ρ.store y = none)
     (h_run : StepStmtStar P (EvalCmd P) extendEval
               (.stmts (Stmt.hoistLoopPrefixInitsM s σ).1 ρ) (.terminal ρ')) :
@@ -708,7 +708,7 @@ private theorem residual_run_terminal_preserves_none
       Block.containsFuncDecl (Stmt.hoistLoopPrefixInitsM s σ).1 = false := by
     rw [Stmt.hoistLoopPrefixInitsM_containsFuncDecl]; exact h_no_fd
   have h_y_not_residual : y ∉ Block.initVars (Stmt.hoistLoopPrefixInitsM s σ).1 :=
-    y_not_mem_residual_initVars h_wf h_unique_s h_shapefree_s h_y_not_src h_y_shapefree
+    y_not_mem_residual_initVars hQmint h_wf h_unique_s h_shapefree_s h_y_not_src h_y_shapefree
   have h_y_not_def : y ∉ Block.definedVars (Stmt.hoistLoopPrefixInitsM s σ).1 := by
     rw [Block.definedVars_eq_initVars_of_no_fd _ h_residual_nofd]; exact h_y_not_residual
   -- `NoneAtY (.stmts residual ρ)` needs per-statement non-membership; derive it
@@ -1064,6 +1064,7 @@ private theorem cmd_arm
     [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P]
     [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr]
     [DecidableEq P.Ident]
+    {Q : String → Prop}
     {extendEval : ExtendEval P}
     (A B : List P.Ident)
     (subst : List (P.Ident × P.Ident))
@@ -1079,9 +1080,9 @@ private theorem cmd_arm
     (h_mod_disjoint_B : ∀ x ∈ Block.modifiedVars (P := P) (C := Cmd P) [.cmd c], x ∉ B)
     (h_hoist_undef : ∀ y ∈ Block.initVars [.cmd c], ρ_src.store y = none)
     (h_hoist_undef_h : ∀ y ∈ Block.initVars [.cmd c], ρ_hoist.store y = none)
-    (_h_src_store_shapefree : ∀ str : String, String.HasUnderscoreDigitSuffix str →
+    (_h_src_store_shapefree : ∀ str : String, Q str →
       str ∉ StringGenState.stringGens σ → ρ_src.store (HasIdent.ident (P := P) str) = none)
-    (_h_hoist_store_shapefree : ∀ str : String, String.HasUnderscoreDigitSuffix str →
+    (_h_hoist_store_shapefree : ∀ str : String, Q str →
       str ∉ StringGenState.stringGens σ → ρ_hoist.store (HasIdent.ident (P := P) str) = none)
     (h_subst_wf : ∀ a b, (a, b) ∈ subst → a ∈ A ∧ b ∈ B)
     (h_hinv : HoistInv (P := P) A B subst ρ_src.store ρ_hoist.store)
@@ -1409,11 +1410,12 @@ The sum-typed conclusion is required by the `.block` arm: the body of
 a labeled block can produce `.exiting lbl_inner` for `lbl_inner ≠ lbl`,
 which propagates as `.exiting lbl_inner` at the outer block level. The
 old terminal-only conclusion could not transport such body subtraces. -/
-private theorem Stmt.hoistLoopPrefixInits_preserves
+private theorem Stmt.hoistLoopPrefixInits_preserves {Q : String → Prop}
     [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P]
     [HasIdent P] [LawfulHasIdent P] [HasSubstFvar P]
     [HasIntOrder P] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P]
     [DecidableEq P.Ident]
+    (hQmint : ∀ sg, Q (StringGenState.gen hoistFreshPrefix sg).1)
     {extendEval : ExtendEval P}
     (A : List P.Ident)
     (B : List P.Ident)
@@ -1427,7 +1429,7 @@ private theorem Stmt.hoistLoopPrefixInits_preserves
     (h_no_inv     : Stmt.loopHasNoInvariants s = true)
     (h_no_measure : Stmt.loopMeasureNone s = true)
     (h_no_exit    : Block.noExit [s] = true)
-    (h_exprs_shapefree : Block.exprsShapeFree (P := P) String.HasUnderscoreDigitSuffix [s])
+    (h_exprs_shapefree : Block.exprsShapeFree (P := P) Q [s])
     (h_unique     : Block.uniqueInits [s])
     (h_fresh      : Block.hoistedNamesFreshInRhsAndGuards (P := P) [s] = true)
     (h_names_fresh : Block.namesFreshInExprs A [s] = true)
@@ -1438,9 +1440,9 @@ private theorem Stmt.hoistLoopPrefixInits_preserves
     (h_mod_disjoint_B : ∀ x ∈ Block.modifiedVars [s], x ∉ B)
     (h_hoist_undef : ∀ y ∈ Block.initVars [s], ρ_src.store y = none)
     (h_hoist_undef_h : ∀ y ∈ Block.initVars [s], ρ_hoist.store y = none)
-    (h_src_store_shapefree : ∀ str : String, String.HasUnderscoreDigitSuffix str →
+    (h_src_store_shapefree : ∀ str : String, Q str →
       str ∉ StringGenState.stringGens σ → ρ_src.store (HasIdent.ident (P := P) str) = none)
-    (h_hoist_store_shapefree : ∀ str : String, String.HasUnderscoreDigitSuffix str →
+    (h_hoist_store_shapefree : ∀ str : String, Q str →
       str ∉ StringGenState.stringGens σ → ρ_hoist.store (HasIdent.ident (P := P) str) = none)
     (h_wf_σ       : StringGenState.WF σ)
     (h_src_namesFreshFromσ :
@@ -1449,7 +1451,7 @@ private theorem Stmt.hoistLoopPrefixInits_preserves
         HasIdent.ident (P := P) str ∉ B ∧
         HasIdent.ident (P := P) str ∉ Block.initVars [s])
     (h_src_shapefree :
-      ∀ str : String, String.HasUnderscoreDigitSuffix str →
+      ∀ str : String, Q str →
         HasIdent.ident (P := P) str ∉ A ∧
         HasIdent.ident (P := P) str ∉ B ∧
         HasIdent.ident (P := P) str ∉ Block.initVars [s] ∧
@@ -1517,7 +1519,7 @@ private theorem Stmt.hoistLoopPrefixInits_preserves
       simpa only [Block.loopMeasureNone, Stmt.loopMeasureNone, Bool.and_true] using h_no_measure
     have h_noexit_bss : Block.noExit bss = true := by
       simpa only [Block.noExit, Stmt.noExit, Bool.and_true] using h_no_exit
-    have h_exprs_shapefree_bss : Block.exprsShapeFree (P := P) String.HasUnderscoreDigitSuffix bss := by
+    have h_exprs_shapefree_bss : Block.exprsShapeFree (P := P) Q bss := by
       have h := h_exprs_shapefree
       simp only [Block.exprsShapeFree, Stmt.exprsShapeFree] at h
       exact h.1
@@ -1564,7 +1566,7 @@ private theorem Stmt.hoistLoopPrefixInits_preserves
       obtain ⟨hA, hB, hiv⟩ := h_src_namesFreshFromσ str hstr
       exact ⟨hA, hB, fun h => hiv (h_iv_eq ▸ h)⟩
     have h_src_shapefree_bss :
-        ∀ str : String, String.HasUnderscoreDigitSuffix str →
+        ∀ str : String, Q str →
           HasIdent.ident (P := P) str ∉ A ∧ HasIdent.ident (P := P) str ∉ B ∧
           HasIdent.ident (P := P) str ∉ Block.initVars bss ∧
           HasIdent.ident (P := P) str ∉ Block.modifiedVars bss := by
@@ -1591,7 +1593,7 @@ private theorem Stmt.hoistLoopPrefixInits_preserves
           ⟨ρ_inner, h_inner_run, h_proj⟩ | ⟨ρ_inner, h_inner_run, h_proj⟩
         · -- inner terminates.
           obtain ⟨ρ_h', cfg_hoist, h_body_hoist, h_outcome⟩ :=
-            Block.hoistLoopPrefixInits_preserves A B subst bss σ
+            Block.hoistLoopPrefixInits_preserves hQmint A B subst bss σ
               h_nd_bss h_fd_bss h_inv_bss h_measure_bss h_noexit_bss h_exprs_shapefree_bss h_unique_bss h_fresh_bss
               h_names_fresh_bss h_names_fresh_B_bss h_lhs_disjoint_bss h_extra_disjoint_bss
               h_mod_disjoint_A_bss h_mod_disjoint_B_bss
@@ -1635,7 +1637,7 @@ private theorem Stmt.hoistLoopPrefixInits_preserves
             rw [h_parent_some]; exact h_bound_inner y hy
         · -- inner exits with the matching label `lbl`: block catches it, terminates.
           obtain ⟨ρ_h', cfg_hoist, h_body_hoist, h_outcome⟩ :=
-            Block.hoistLoopPrefixInits_preserves A B subst bss σ
+            Block.hoistLoopPrefixInits_preserves hQmint A B subst bss σ
               h_nd_bss h_fd_bss h_inv_bss h_measure_bss h_noexit_bss h_exprs_shapefree_bss h_unique_bss h_fresh_bss
               h_names_fresh_bss h_names_fresh_B_bss h_lhs_disjoint_bss h_extra_disjoint_bss
               h_mod_disjoint_A_bss h_mod_disjoint_B_bss
@@ -1680,7 +1682,7 @@ private theorem Stmt.hoistLoopPrefixInits_preserves
           block_some_reaches_exiting_ne (extendEval := extendEval) hr1
         subst h_li_eq
         obtain ⟨ρ_h', cfg_hoist, h_body_hoist, h_outcome⟩ :=
-          Block.hoistLoopPrefixInits_preserves A B subst bss σ
+          Block.hoistLoopPrefixInits_preserves hQmint A B subst bss σ
             h_nd_bss h_fd_bss h_inv_bss h_measure_bss h_noexit_bss h_exprs_shapefree_bss h_unique_bss h_fresh_bss
             h_names_fresh_bss h_names_fresh_B_bss h_lhs_disjoint_bss h_extra_disjoint_bss
             h_mod_disjoint_A_bss h_mod_disjoint_B_bss
@@ -1746,8 +1748,8 @@ private theorem Stmt.hoistLoopPrefixInits_preserves
       simp only [Block.noExit, Stmt.noExit, Bool.and_true,
         Bool.and_eq_true] at h_no_exit; exact h_no_exit
     have h_exprs_shapefree_branches :
-        Block.exprsShapeFree (P := P) String.HasUnderscoreDigitSuffix tss ∧
-          Block.exprsShapeFree (P := P) String.HasUnderscoreDigitSuffix ess := by
+        Block.exprsShapeFree (P := P) Q tss ∧
+          Block.exprsShapeFree (P := P) Q ess := by
       have h := h_exprs_shapefree
       simp only [Block.exprsShapeFree, Stmt.exprsShapeFree] at h
       exact ⟨h.1.2.1, h.1.2.2⟩
@@ -1835,7 +1837,7 @@ private theorem Stmt.hoistLoopPrefixInits_preserves
       obtain ⟨hA, hB, hiv⟩ := h_src_namesFreshFromσ str hstr
       exact ⟨hA, hB, fun h => hiv (h_sub_tss h)⟩
     have h_src_shapefree_tss :
-        ∀ str : String, String.HasUnderscoreDigitSuffix str →
+        ∀ str : String, Q str →
           HasIdent.ident (P := P) str ∉ A ∧ HasIdent.ident (P := P) str ∉ B ∧
           HasIdent.ident (P := P) str ∉ Block.initVars tss ∧
           HasIdent.ident (P := P) str ∉ Block.modifiedVars tss := by
@@ -1843,7 +1845,7 @@ private theorem Stmt.hoistLoopPrefixInits_preserves
       obtain ⟨hA, hB, hiv, hmv⟩ := h_src_shapefree str hstr
       exact ⟨hA, hB, fun h => hiv (h_sub_tss h), fun h => hmv (h_mod_sub_tss h)⟩
     have h_src_shapefree_ess :
-        ∀ str : String, String.HasUnderscoreDigitSuffix str →
+        ∀ str : String, Q str →
           HasIdent.ident (P := P) str ∉ A ∧ HasIdent.ident (P := P) str ∉ B ∧
           HasIdent.ident (P := P) str ∉ Block.initVars ess ∧
           HasIdent.ident (P := P) str ∉ Block.modifiedVars ess := by
@@ -1864,18 +1866,19 @@ private theorem Stmt.hoistLoopPrefixInits_preserves
         intro str hstr
         obtain ⟨hA, hB, hiv⟩ := h_src_namesFreshFromσ str hstr
         exact ⟨hA, hB, fun h => hiv (h_sub_ess h)⟩
-      exact SrcNamesFreshFromGen.genStep h_wf_σ h_genStep_tss
+      exact SrcNamesFreshFromGen.genStep_of_delta
+        (Block.hoistLoopPrefixInitsM_genStep_delta_Q hQmint tss σ)
         (fun str hsuf => let ⟨a, b, c, _⟩ := h_src_shapefree_ess str hsuf; ⟨a, b, c⟩) h_fresh_σ_ess
     -- Store-shapefree at σ1 for the ELSE branch.  The else branch runs from the
     -- SAME entry stores `ρ_src`/`ρ_hoist` (the `.ite` selects one branch), so the
     -- store facts are unchanged; only the generator state index advances to σ1.
     -- A suffix name `∉ stringGens σ1` is `∉ stringGens σ` by genStep monotonicity,
     -- so the σ-version facts transfer.
-    have h_src_store_shapefree_σ1 : ∀ str : String, String.HasUnderscoreDigitSuffix str →
+    have h_src_store_shapefree_σ1 : ∀ str : String, Q str →
         str ∉ StringGenState.stringGens (Block.hoistLoopPrefixInitsM tss σ).2 →
         ρ_src.store (HasIdent.ident (P := P) str) = none := fun str h_suf h_notσ1 =>
       h_src_store_shapefree str h_suf (fun h => h_notσ1 (h_genStep_tss.subset h))
-    have h_hoist_store_shapefree_σ1 : ∀ str : String, String.HasUnderscoreDigitSuffix str →
+    have h_hoist_store_shapefree_σ1 : ∀ str : String, Q str →
         str ∉ StringGenState.stringGens (Block.hoistLoopPrefixInitsM tss σ).2 →
         ρ_hoist.store (HasIdent.ident (P := P) str) = none := fun str h_suf h_notσ1 =>
       h_hoist_store_shapefree str h_suf (fun h => h_notσ1 (h_genStep_tss.subset h))
@@ -1956,7 +1959,7 @@ private theorem Stmt.hoistLoopPrefixInits_preserves
         IteGoal := by
       intro hr1 h_step
       obtain ⟨ρ_h', cfg_hoist, h_branch_hoist, h_outcome⟩ :=
-        Block.hoistLoopPrefixInits_preserves A B subst tss σ
+        Block.hoistLoopPrefixInits_preserves hQmint A B subst tss σ
           h_nd_branches.1 h_fd_branches.1 h_inv_branches.1 h_measure_branches.1
           h_noexit_branches.1 h_exprs_shapefree_branches.1
           h_unique_tss h_fresh_tss h_names_fresh_A_split.1 h_names_fresh_B_split.1
@@ -1976,7 +1979,7 @@ private theorem Stmt.hoistLoopPrefixInits_preserves
         IteGoal := by
       intro hr1 h_step
       obtain ⟨ρ_h', cfg_hoist, h_branch_hoist, h_outcome⟩ :=
-        Block.hoistLoopPrefixInits_preserves A B subst ess (Block.hoistLoopPrefixInitsM tss σ).2
+        Block.hoistLoopPrefixInits_preserves hQmint A B subst ess (Block.hoistLoopPrefixInitsM tss σ).2
           h_nd_branches.2 h_fd_branches.2 h_inv_branches.2 h_measure_branches.2
           h_noexit_branches.2 h_exprs_shapefree_branches.2
           h_unique_ess h_fresh_ess h_names_fresh_A_split.2 h_names_fresh_B_split.2
@@ -2050,7 +2053,7 @@ private theorem Stmt.hoistLoopPrefixInits_preserves
       have : Stmt.noExit (Stmt.loop (.det g') none [] body md) = true := by
         simpa only [Block.noExit, Bool.and_true] using h_no_exit
       rw [Stmt.noExit] at this; exact this
-    have h_exprs_shapefree_body : Block.exprsShapeFree (P := P) String.HasUnderscoreDigitSuffix body := by
+    have h_exprs_shapefree_body : Block.exprsShapeFree (P := P) Q body := by
       have h := h_exprs_shapefree
       simp only [Block.exprsShapeFree, Stmt.exprsShapeFree] at h
       exact h.1.2.2.2
@@ -2126,7 +2129,7 @@ private theorem Stmt.hoistLoopPrefixInits_preserves
       obtain ⟨hA, hB, hiv⟩ := h_src_namesFreshFromσ str hstr
       exact ⟨hA, hB, fun h => hiv (by rw [h_iv_body]; exact h)⟩
     have h_src_shapefree_body :
-        ∀ str : String, String.HasUnderscoreDigitSuffix str →
+        ∀ str : String, Q str →
           HasIdent.ident (P := P) str ∉ A ∧ HasIdent.ident (P := P) str ∉ B ∧
           HasIdent.ident (P := P) str ∉ Block.initVars body ∧
           HasIdent.ident (P := P) str ∉ Block.modifiedVars body := by
@@ -2174,9 +2177,9 @@ private theorem Stmt.hoistLoopPrefixInits_preserves
         (∀ y ∈ B, ρ_h.store y ≠ none) →
         (∀ y ∈ Block.initVars body, ρ_s.store y = none) →
         (∀ y ∈ Block.initVars body, ρ_h.store y = none) →
-        (∀ str : String, String.HasUnderscoreDigitSuffix str →
+        (∀ str : String, Q str →
            str ∉ StringGenState.stringGens σ → ρ_s.store (HasIdent.ident (P := P) str) = none) →
-        (∀ str : String, String.HasUnderscoreDigitSuffix str →
+        (∀ str : String, Q str →
            str ∉ StringGenState.stringGens σ → ρ_h.store (HasIdent.ident (P := P) str) = none) →
         ∀ (ρ_s' : Env P),
           StepStmtStar P (EvalCmd P) extendEval (.stmts body ρ_s) (.terminal ρ_s') →
@@ -2186,7 +2189,7 @@ private theorem Stmt.hoistLoopPrefixInits_preserves
             ρ_s'.hasFailure = ρ_h'.hasFailure ∧ (∀ y ∈ B, ρ_h'.store y ≠ none) := by
       intro ρ_s ρ_h h_hinv_i h_eval_i h_hf_i h_bnd_i h_Vs_i h_Vh_i h_src_sf_i h_hoist_sf_i ρ_s' h_run_i
       obtain ⟨ρ_h', cfg_h, h_run_h, h_out⟩ :=
-        Block.hoistLoopPrefixInits_preserves A B subst body σ
+        Block.hoistLoopPrefixInits_preserves hQmint A B subst body σ
           h_nd_body h_fd_body h_inv_body h_measure_body h_noexit_body
           h_exprs_shapefree_body h_unique_body h_fresh_body
           h_names_fresh_A_body h_names_fresh_B_body
@@ -2201,13 +2204,13 @@ private theorem Stmt.hoistLoopPrefixInits_preserves
         exact ⟨ρ_h', h_run_h, hr3, hr4, hr5⟩
       · exact absurd hr1 (by rintro ⟨⟩)
     -- === Step B: the lift renaming simulation at `body₁`'s own harvest carriers. ===
-    have h_src_shapefree_body_iv : ∀ str : String, String.HasUnderscoreDigitSuffix str →
+    have h_src_shapefree_body_iv : ∀ str : String, Q str →
         HasIdent.ident (P := P) str ∉ Block.initVars body := fun str h_suf =>
       (h_src_shapefree_body str h_suf).2.2.1
     -- Source-side modifiedVars-shape-freedom, projected from the threaded
-    -- 4-conjunct `h_src_shapefree_body`: a suffix-shaped string never names a
+    -- 4-conjunct `h_src_shapefree_body`: a `Q`-kind string never names a
     -- source set-target.
-    have h_mod_shapefree_body : ∀ str : String, String.HasUnderscoreDigitSuffix str →
+    have h_mod_shapefree_body : ∀ str : String, Q str →
         HasIdent.ident (P := P) str ∉ Block.modifiedVars body := fun str h_suf =>
       (h_src_shapefree_body str h_suf).2.2.2
     -- `targetsOf' E` are minted in the lift σ₁ → σ₂ (so ∉ stringGens σ₁) and are
@@ -2218,7 +2221,7 @@ private theorem Stmt.hoistLoopPrefixInits_preserves
     -- Both classes are disjoint from the suffix-shaped, ∉-σ₁ targets.
     have h_mod_disjoint_B1 : ∀ x ∈ Block.modifiedVars body₁,
         x ∉ LoopInitHoistLoopDriver.targetsOf' E :=
-      LoopInitHoistLoopArmWF.Block.modifiedVars_disjoint_targetsOf'_self body σ h_wf_σ
+      LoopInitHoistLoopArmWF.Block.modifiedVars_disjoint_targetsOf'_self hQmint body σ h_wf_σ
         h_unique_body h_src_shapefree_body_iv h_mod_shapefree_body
     -- `body₃` (arm-local) uses the lift's OWN renames `(lift body₁ σ₁).1.2.1`,
     -- whereas `stepB_self_of_lift` produces `body₃` over `substOf' E`; the two
@@ -2227,7 +2230,7 @@ private theorem Stmt.hoistLoopPrefixInits_preserves
         (LoopInitHoistLoopDriver.sourcesOf' E) (LoopInitHoistLoopDriver.targetsOf' E)
         (LoopInitHoistLoopDriver.substOf' E) body₁ body₃ := by
       have hB :=
-        LoopInitHoistLoopArmWF.Block.stepB_self_of_lift (extendEval := extendEval) body σ h_wf_σ
+        LoopInitHoistLoopArmWF.Block.stepB_self_of_lift hQmint (extendEval := extendEval) body σ h_wf_σ
           h_nd_body h_fd_body h_inv_body h_measure_body h_noexit_body h_unique_body
           h_exprs_shapefree_body h_src_shapefree_body_iv h_mod_disjoint_B1
           h_wfvar h_wfcongr h_wfsubst h_wfdef
@@ -2243,37 +2246,35 @@ private theorem Stmt.hoistLoopPrefixInits_preserves
       (Block.hoistLoopPrefixInitsM_genStep body σ).wf_mono h_wf_σ
     -- Sources ⊆ initVars body₁; targets are `_<digit>`-suffixed and ∉ σ₁.
     -- Source-side classification: each harvested source is ORIGINAL (∈ initVars
-    -- body) or FRESH (= ident str, str suffix-shaped, ∈ σ₁ \ σ).
+    -- body) or FRESH (= ident str, `Q str`, ∈ σ₁ \ σ).
     have h_src_class : ∀ a ∈ LoopInitHoistLoopDriver.sourcesOf' E,
         (a ∈ Block.initVars body) ∨
-        (∃ str : String, a = HasIdent.ident str ∧ String.HasUnderscoreDigitSuffix str ∧
+        (∃ str : String, a = HasIdent.ident str ∧ Q str ∧
           str ∈ StringGenState.stringGens σ₁ ∧ str ∉ StringGenState.stringGens σ) := by
       intro a ha
       have h_a_in₁ : a ∈ Block.initVars body₁ :=
         LoopInitHoistLoopDriver.Block.sourcesOf_entriesOf_subset body₁ σ₁ a ha
       have h_class :=
-        (LoopInitHoistLoopArmWF.Block.hoistLoopPrefixInitsM_initVars_classified body σ
+        (LoopInitHoistLoopArmWF.Block.hoistLoopPrefixInitsM_initVars_classified hQmint body σ
           h_wf_σ h_unique_body h_src_shapefree_body_iv).1 a h_a_in₁
-      rcases h_class with h_o | ⟨str, he, hin, hnot⟩
+      rcases h_class with h_o | ⟨str, he, hin, hnot, hQ⟩
       · exact Or.inl h_o
-      · exact Or.inr ⟨str, he,
-          StringGenState.hasUnderscoreDigitSuffix_of_mem_generated h_wf_σ₁ hin, hin, hnot⟩
-    -- Each harvested target is `ident str` with str suffix-shaped and ∉ σ₁ ⊇ σ.
+      · exact Or.inr ⟨str, he, hQ, hin, hnot⟩
+    -- Each harvested target is `ident str` with `Q str` and ∉ σ₁ ⊇ σ.
     have h_tgt_class : ∀ b ∈ LoopInitHoistLoopDriver.targetsOf' E,
-        ∃ str : String, b = HasIdent.ident str ∧ String.HasUnderscoreDigitSuffix str ∧
+        ∃ str : String, b = HasIdent.ident str ∧ Q str ∧
           str ∉ StringGenState.stringGens σ₁ := by
       intro b hb
       obtain ⟨e, he_mem, he_eq⟩ := List.mem_map.mp hb
       obtain ⟨str, h_b_eq, _, h_notσ₁⟩ :=
         (LoopInitHoistLoopArmWF.Block.entriesOf_targetGen body₁ σ₁ h_wf_σ₁).1 e he_mem
-      obtain ⟨str', h_eq', h_suf'⟩ :=
+      obtain ⟨str', h_eq', h_Q'⟩ :=
         LoopInitHoistLoopArmWF.Block.mem_targetsOf'_entriesOf_hasUnderscoreDigitSuffix
-          (fun sg => StringGenState.gen_hasUnderscoreDigitSuffix hoistFreshPrefix sg)
-          body₁ σ₁ hb
+          hQmint body₁ σ₁ hb
       have h_b_eq' : b = HasIdent.ident str := he_eq.symm.trans h_b_eq
       have h_id : (HasIdent.ident str' : P.Ident) = HasIdent.ident str := h_eq'.symm.trans h_b_eq'
       have : str' = str := LawfulHasIdent.ident_inj h_id
-      exact ⟨str, h_b_eq', this ▸ h_suf', this ▸ h_notσ₁⟩
+      exact ⟨str, h_b_eq', this ▸ h_Q', this ▸ h_notσ₁⟩
     -- Targets are undef at the source post-store (loop entry undef + no-exit).
     -- Sources/targets disjoint from ambient A/B and from initVars body.
     have h_As_notA : ∀ x ∈ LoopInitHoistLoopDriver.sourcesOf' E, x ∉ A := by
@@ -2301,12 +2302,12 @@ private theorem Stmt.hoistLoopPrefixInits_preserves
       cases heq
       exact ⟨List.mem_map.mpr ⟨e, he, rfl⟩, List.mem_map.mpr ⟨e, he, rfl⟩⟩
     -- guard `g'` is shape-free: it never reads a `_<digit>`-suffixed ident.
-    have h_guard_sf : ∀ str : String, String.HasUnderscoreDigitSuffix str →
+    have h_guard_sf : ∀ str : String, Q str →
         HasIdent.ident (P := P) str ∉ ExprOrNondet.getVars (ExprOrNondet.det g') := by
       have h := h_exprs_shapefree
       simp only [Block.exprsShapeFree, Stmt.exprsShapeFree] at h
       exact h.1.1
-    have h_guard_sf' : ∀ str : String, String.HasUnderscoreDigitSuffix str →
+    have h_guard_sf' : ∀ str : String, Q str →
         HasIdent.ident (P := P) str ∉ HasVarsPure.getVars g' := by
       intro str h_suf
       have := h_guard_sf str h_suf
@@ -2351,7 +2352,7 @@ private theorem Stmt.hoistLoopPrefixInits_preserves
         (Block.applyRenames (Block.liftInitsInLoopBodyM body₁ σ₁).1.2.1
           (Block.liftInitsInLoopBodyM body₁ σ₁).1.2.2) = true
       rw [h_renames_eq]
-      exact LoopInitHoistLoopArmWF.Block.stepB_noFuncDecl_h_of_lift body σ h_wf_σ
+      exact LoopInitHoistLoopArmWF.Block.stepB_noFuncDecl_h_of_lift hQmint body σ h_wf_σ
         h_nd_body h_fd_body h_inv_body h_measure_body h_noexit_body h_unique_body
         h_exprs_shapefree_body h_src_shapefree_body_iv h_mod_disjoint_B1
     -- entry-undef of sources/targets at ρ_hoist (the harvest carriers are undef there).
@@ -2395,13 +2396,13 @@ private theorem Stmt.hoistLoopPrefixInits_preserves
     have h_tgt_nodup : (LoopInitHoistLoopDriver.targetsOf' E).Nodup :=
       (LoopInitHoistLoopArmWF.Block.entriesOf_targetGen body₁ σ₁ h_wf_σ₁).2
     -- σ_sf-relative source-store shape-freedom at ρ_src for the driver.
-    have h_arm_src_sf : ∀ str : String, String.HasUnderscoreDigitSuffix str →
+    have h_arm_src_sf : ∀ str : String, Q str →
         str ∉ StringGenState.stringGens σ → ρ_src.store (HasIdent.ident (P := P) str) = none :=
       h_src_store_shapefree
-    have h_sf_notA : ∀ str : String, String.HasUnderscoreDigitSuffix str →
+    have h_sf_notA : ∀ str : String, Q str →
         str ∉ StringGenState.stringGens σ → HasIdent.ident (P := P) str ∉ A :=
       fun str h_suf _ => (h_src_shapefree_body str h_suf).1
-    have h_sf_notB : ∀ str : String, String.HasUnderscoreDigitSuffix str →
+    have h_sf_notB : ∀ str : String, Q str →
         str ∉ StringGenState.stringGens σ → HasIdent.ident (P := P) str ∉ B :=
       fun str h_suf _ => (h_src_shapefree_body str h_suf).2.1
     exact LoopInitHoistLoopArmWF.loop_arm_close (σ_sf := σ) (Vs := Block.initVars body)
@@ -2491,11 +2492,12 @@ records that any source identifier carrying the generator's `_<digits>` suffix
 shape is disjoint from `A`, `B`, and the `.init` LHS names (front-end source
 names never collide with the generator's naming scheme).  `h_subst_wf` records
 that every substitution pair `(a, b)` relates an `A`-name to a `B`-name. -/
-private theorem Block.hoistLoopPrefixInits_preserves
+private theorem Block.hoistLoopPrefixInits_preserves {Q : String → Prop}
     [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P]
     [HasIdent P] [LawfulHasIdent P] [HasSubstFvar P]
     [HasIntOrder P] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P]
     [DecidableEq P.Ident]
+    (hQmint : ∀ sg, Q (StringGenState.gen hoistFreshPrefix sg).1)
     {extendEval : ExtendEval P}
     (A : List P.Ident)
     (B : List P.Ident)
@@ -2509,7 +2511,7 @@ private theorem Block.hoistLoopPrefixInits_preserves
     (h_no_inv     : Block.loopHasNoInvariants ss = true)
     (h_no_measure : Block.loopMeasureNone ss = true)
     (h_no_exit    : Block.noExit ss = true)
-    (h_exprs_shapefree : Block.exprsShapeFree (P := P) String.HasUnderscoreDigitSuffix ss)
+    (h_exprs_shapefree : Block.exprsShapeFree (P := P) Q ss)
     (h_unique     : Block.uniqueInits ss)
     (h_fresh      : Block.hoistedNamesFreshInRhsAndGuards (P := P) ss = true)
     (h_names_fresh : Block.namesFreshInExprs A ss = true)
@@ -2520,9 +2522,9 @@ private theorem Block.hoistLoopPrefixInits_preserves
     (h_mod_disjoint_B : ∀ x ∈ Block.modifiedVars ss, x ∉ B)
     (h_hoist_undef : ∀ y ∈ Block.initVars ss, ρ_src.store y = none)
     (h_hoist_undef_h : ∀ y ∈ Block.initVars ss, ρ_hoist.store y = none)
-    (h_src_store_shapefree : ∀ str : String, String.HasUnderscoreDigitSuffix str →
+    (h_src_store_shapefree : ∀ str : String, Q str →
       str ∉ StringGenState.stringGens σ → ρ_src.store (HasIdent.ident (P := P) str) = none)
-    (h_hoist_store_shapefree : ∀ str : String, String.HasUnderscoreDigitSuffix str →
+    (h_hoist_store_shapefree : ∀ str : String, Q str →
       str ∉ StringGenState.stringGens σ → ρ_hoist.store (HasIdent.ident (P := P) str) = none)
     (h_wf_σ       : StringGenState.WF σ)
     (h_src_namesFreshFromσ :
@@ -2531,7 +2533,7 @@ private theorem Block.hoistLoopPrefixInits_preserves
         HasIdent.ident (P := P) str ∉ B ∧
         HasIdent.ident (P := P) str ∉ Block.initVars ss)
     (h_src_shapefree :
-      ∀ str : String, String.HasUnderscoreDigitSuffix str →
+      ∀ str : String, Q str →
         HasIdent.ident (P := P) str ∉ A ∧
         HasIdent.ident (P := P) str ∉ B ∧
         HasIdent.ident (P := P) str ∉ Block.initVars ss ∧
@@ -2610,8 +2612,8 @@ private theorem Block.hoistLoopPrefixInits_preserves
       rw [Block.noExit, Bool.and_eq_true] at h_no_exit
       exact ⟨by simpa only [Block.noExit, Bool.and_true] using h_no_exit.1, h_no_exit.2⟩
     have h_exprs_shapefree_s :
-        Block.exprsShapeFree (P := P) String.HasUnderscoreDigitSuffix [s] ∧
-          Block.exprsShapeFree (P := P) String.HasUnderscoreDigitSuffix rest := by
+        Block.exprsShapeFree (P := P) Q [s] ∧
+          Block.exprsShapeFree (P := P) Q rest := by
       -- `Block.exprsShapeFree (s :: rest) = Stmt.exprsShapeFree s ∧ Block.exprsShapeFree rest`
       -- and `Block.exprsShapeFree [s] = Stmt.exprsShapeFree s ∧ True`.
       have h := h_exprs_shapefree
@@ -2707,7 +2709,7 @@ private theorem Block.hoistLoopPrefixInits_preserves
       obtain ⟨hA, hB, hiv⟩ := h_src_namesFreshFromσ str hstr
       exact ⟨hA, hB, fun h => hiv (by rw [h_iv_split]; exact List.mem_append.mpr (Or.inl h))⟩
     have h_src_shapefree_s :
-        ∀ str : String, String.HasUnderscoreDigitSuffix str →
+        ∀ str : String, Q str →
           HasIdent.ident (P := P) str ∉ A ∧
           HasIdent.ident (P := P) str ∉ B ∧
           HasIdent.ident (P := P) str ∉ Block.initVars [s] ∧
@@ -2717,7 +2719,7 @@ private theorem Block.hoistLoopPrefixInits_preserves
       exact ⟨hA, hB, fun h => hiv (by rw [h_iv_split]; exact List.mem_append.mpr (Or.inl h)),
         fun h => hmv (by rw [h_mod_split]; exact List.mem_append.mpr (Or.inl h))⟩
     have h_src_shapefree_rest :
-        ∀ str : String, String.HasUnderscoreDigitSuffix str →
+        ∀ str : String, Q str →
           HasIdent.ident (P := P) str ∉ A ∧
           HasIdent.ident (P := P) str ∉ B ∧
           HasIdent.ident (P := P) str ∉ Block.initVars rest ∧
@@ -2737,7 +2739,8 @@ private theorem Block.hoistLoopPrefixInits_preserves
         intro str hstr
         obtain ⟨hA, hB, hiv⟩ := h_src_namesFreshFromσ str hstr
         exact ⟨hA, hB, fun h => hiv (by rw [h_iv_split]; exact List.mem_append.mpr (Or.inr h))⟩
-      exact SrcNamesFreshFromGen.genStep h_wf_σ h_genStep_head
+      exact SrcNamesFreshFromGen.genStep_of_delta
+        (Stmt.hoistLoopPrefixInitsM_genStep_delta_Q hQmint s σ)
         (fun str hsuf => let ⟨a, b, c, _⟩ := h_src_shapefree_rest str hsuf; ⟨a, b, c⟩) h_fresh_σ_rest
     have h_src_fresh_rest :
         ∀ str ∈ StringGenState.stringGens (Stmt.hoistLoopPrefixInitsM s σ).2,
@@ -2775,7 +2778,7 @@ private theorem Block.hoistLoopPrefixInits_preserves
         rw [Block.loopMeasureNone, Bool.and_eq_true] at h_measure_s; exact h_measure_s.1.1
       -- HEAD §E Stmt-IH at σ.
       obtain ⟨ρ_h_mid, cfg_h_head, h_head_hoist, h_head_outcome⟩ :=
-        Stmt.hoistLoopPrefixInits_preserves A B subst s σ
+        Stmt.hoistLoopPrefixInits_preserves hQmint A B subst s σ
           h_nd_stmt h_fd_stmt h_inv_stmt h_measure_stmt h_noexit_s.1 h_exprs_shapefree_s.1 h_unique_s h_fresh_s
           h_names_fresh_s h_names_fresh_B_s h_lhs_disjoint_s h_extra_disjoint_s
           h_mod_disjoint_A_s h_mod_disjoint_B_s h_hoist_undef_s h_hoist_undef_h_s
@@ -2808,7 +2811,7 @@ private theorem Block.hoistLoopPrefixInits_preserves
         rw [h_src_mid_eval, h_h_mid_eval, h_eval_eq]
       -- TAIL §E Block-IH at σ1.
       obtain ⟨ρ_h_fin, cfg_hoist_tail, h_tail_hoist, h_tail_outcome⟩ :=
-        Block.hoistLoopPrefixInits_preserves A B subst rest (Stmt.hoistLoopPrefixInitsM s σ).2
+        Block.hoistLoopPrefixInits_preserves hQmint A B subst rest (Stmt.hoistLoopPrefixInitsM s σ).2
           h_nd_s.2 h_fd_s.2 h_inv_s.2 h_measure_s.2 h_noexit_s.2 h_exprs_shapefree_s.2 h_unique_rest h_fresh_rest
           h_names_fresh_rest h_names_fresh_B_rest h_lhs_disjoint_rest h_extra_disjoint_rest
           h_mod_disjoint_A_rest h_mod_disjoint_B_rest
@@ -2834,7 +2837,7 @@ private theorem Block.hoistLoopPrefixInits_preserves
             have h_unique_s_stmt : (Stmt.initVars s).Nodup := by
               have : (Block.initVars [s]).Nodup := h_unique_s
               simpa only [Block.initVars, List.append_nil] using this
-            have h_shapefree_s_stmt : ∀ str : String, String.HasUnderscoreDigitSuffix str →
+            have h_shapefree_s_stmt : ∀ str : String, Q str →
                 HasIdent.ident (P := P) str ∉ Stmt.initVars s := by
               intro str h_shape hc
               exact (h_src_shapefree_s str h_shape).2.2.1
@@ -2843,11 +2846,11 @@ private theorem Block.hoistLoopPrefixInits_preserves
               (List.nodup_append.mp h_unique_full).2.2 y
                 (by simp only [Block.initVars, List.append_nil]; exact hc) y hy rfl
             have h_y_shapefree : ∀ str : String, y = HasIdent.ident str →
-                ¬ String.HasUnderscoreDigitSuffix str := by
+                ¬ Q str := by
               intro str h_y_eq h_shape
               exact (h_src_shapefree str h_shape).2.2.1
                 (h_y_eq ▸ (by rw [h_iv_split]; exact List.mem_append.mpr (Or.inr hy)))
-            exact residual_run_terminal_preserves_none h_wf_σ h_unique_s_stmt
+            exact residual_run_terminal_preserves_none hQmint h_wf_σ h_unique_s_stmt
               h_shapefree_s_stmt h_fd_stmt h_y_not_src h_y_shapefree h_y_h_none h_head_hoist)
           (by
             -- Mid-store source store-shapefree (at σ1): a suffix-shaped name `z` with
@@ -2885,7 +2888,7 @@ private theorem Block.hoistLoopPrefixInits_preserves
             have h_unique_s_stmt : (Stmt.initVars s).Nodup := by
               have : (Block.initVars [s]).Nodup := h_unique_s
               simpa only [Block.initVars, List.append_nil] using this
-            have h_shapefree_s_stmt : ∀ str : String, String.HasUnderscoreDigitSuffix str →
+            have h_shapefree_s_stmt : ∀ str : String, Q str →
                 HasIdent.ident (P := P) str ∉ Stmt.initVars s := by
               intro str' h_shape' hc
               exact (h_src_shapefree_s str' h_shape').2.2.1
@@ -2895,8 +2898,8 @@ private theorem Block.hoistLoopPrefixInits_preserves
               intro h_mem
               have h_class :=
                 (LoopInitHoistLoopArmWF.Stmt.hoistLoopPrefixInitsM_initVars_classified
-                  s σ h_wf_σ h_unique_s_stmt h_shapefree_s_stmt).1 _ h_mem
-              rcases h_class with h_orig | ⟨str', h_eq, h_str'_in, _⟩
+                  hQmint s σ h_wf_σ h_unique_s_stmt h_shapefree_s_stmt).1 _ h_mem
+              rcases h_class with h_orig | ⟨str', h_eq, h_str'_in, _, _⟩
               · exact h_shapefree_s_stmt str h_shape h_orig
               · exact h_notσ1 ((LawfulHasIdent.ident_inj h_eq) ▸ h_str'_in)
             have h_residual_contains_nofd :
@@ -2938,7 +2941,7 @@ private theorem Block.hoistLoopPrefixInits_preserves
           h_head_exit | ⟨ρ_s_mid, h_head_term, h_tail_exit⟩
         · -- HEAD exits: tail never runs.
           obtain ⟨ρ_h_fin, cfg_h_head, h_head_hoist, h_head_outcome⟩ :=
-            Stmt.hoistLoopPrefixInits_preserves A B subst s σ
+            Stmt.hoistLoopPrefixInits_preserves hQmint A B subst s σ
               h_nd_stmt h_fd_stmt h_inv_stmt h_measure_stmt h_noexit_s.1 h_exprs_shapefree_s.1 h_unique_s h_fresh_s
               h_names_fresh_s h_names_fresh_B_s h_lhs_disjoint_s h_extra_disjoint_s
               h_mod_disjoint_A_s h_mod_disjoint_B_s h_hoist_undef_s h_hoist_undef_h_s
@@ -2964,7 +2967,7 @@ private theorem Block.hoistLoopPrefixInits_preserves
           have h_head_stmt : StepStmtStar P (EvalCmd P) extendEval
               (.stmt s ρ_src) (.terminal ρ_s_mid) := h_head_term
           obtain ⟨ρ_h_mid, cfg_h_head, h_head_hoist, h_head_outcome⟩ :=
-            Stmt.hoistLoopPrefixInits_preserves A B subst s σ
+            Stmt.hoistLoopPrefixInits_preserves hQmint A B subst s σ
               h_nd_stmt h_fd_stmt h_inv_stmt h_measure_stmt h_noexit_s.1 h_exprs_shapefree_s.1 h_unique_s h_fresh_s
               h_names_fresh_s h_names_fresh_B_s h_lhs_disjoint_s h_extra_disjoint_s
               h_mod_disjoint_A_s h_mod_disjoint_B_s h_hoist_undef_s h_hoist_undef_h_s
@@ -3009,7 +3012,7 @@ private theorem Block.hoistLoopPrefixInits_preserves
             have h_unique_s_stmt : (Stmt.initVars s).Nodup := by
               have : (Block.initVars [s]).Nodup := h_unique_s
               simpa only [Block.initVars, List.append_nil] using this
-            have h_shapefree_s_stmt : ∀ str : String, String.HasUnderscoreDigitSuffix str →
+            have h_shapefree_s_stmt : ∀ str : String, Q str →
                 HasIdent.ident (P := P) str ∉ Stmt.initVars s := by
               intro str h_shape hc
               exact (h_src_shapefree_s str h_shape).2.2.1
@@ -3018,15 +3021,15 @@ private theorem Block.hoistLoopPrefixInits_preserves
               (List.nodup_append.mp h_unique_full).2.2 y
                 (by simp only [Block.initVars, List.append_nil]; exact hc) y hy rfl
             have h_y_shapefree : ∀ str : String, y = HasIdent.ident str →
-                ¬ String.HasUnderscoreDigitSuffix str := by
+                ¬ Q str := by
               intro str h_y_eq h_shape
               exact (h_src_shapefree str h_shape).2.2.1
                 (h_y_eq ▸ (by rw [h_iv_split]; exact List.mem_append.mpr (Or.inr hy)))
-            exact residual_run_terminal_preserves_none h_wf_σ h_unique_s_stmt
+            exact residual_run_terminal_preserves_none hQmint h_wf_σ h_unique_s_stmt
               h_shapefree_s_stmt h_fd_stmt h_y_not_src h_y_shapefree h_y_h_none h_head_hoist
           -- Mid-store store-shapefree (σ1-relative) for the tail: same derivation as the
-          -- terminal branch — the head run defines no suffix-shaped name `str ∉ stringGens σ1`.
-          have h_src_store_shapefree_mid : ∀ str : String, String.HasUnderscoreDigitSuffix str →
+          -- terminal branch — the head run defines no `Q`-kind name `str ∉ stringGens σ1`.
+          have h_src_store_shapefree_mid : ∀ str : String, Q str →
               str ∉ StringGenState.stringGens (Stmt.hoistLoopPrefixInitsM s σ).2 →
               ρ_s_mid.store (HasIdent.ident (P := P) str) = none := by
             intro str h_shape h_notσ1
@@ -3042,7 +3045,7 @@ private theorem Block.hoistLoopPrefixInits_preserves
                 (by rw [h_iv_split]; exact List.mem_append.mpr (Or.inl
                   (by simp only [Block.initVars, List.append_nil]; exact hc)))
             exact stmt_run_terminal_preserves_none h_z_src_none h_z_not_def_s h_head_stmt
-          have h_hoist_store_shapefree_mid : ∀ str : String, String.HasUnderscoreDigitSuffix str →
+          have h_hoist_store_shapefree_mid : ∀ str : String, Q str →
               str ∉ StringGenState.stringGens (Stmt.hoistLoopPrefixInitsM s σ).2 →
               ρ_h_mid.store (HasIdent.ident (P := P) str) = none := by
             intro str h_shape h_notσ1
@@ -3053,7 +3056,7 @@ private theorem Block.hoistLoopPrefixInits_preserves
             have h_unique_s_stmt : (Stmt.initVars s).Nodup := by
               have : (Block.initVars [s]).Nodup := h_unique_s
               simpa only [Block.initVars, List.append_nil] using this
-            have h_shapefree_s_stmt : ∀ str : String, String.HasUnderscoreDigitSuffix str →
+            have h_shapefree_s_stmt : ∀ str : String, Q str →
                 HasIdent.ident (P := P) str ∉ Stmt.initVars s := by
               intro str' h_shape' hc
               exact (h_src_shapefree_s str' h_shape').2.2.1
@@ -3063,8 +3066,8 @@ private theorem Block.hoistLoopPrefixInits_preserves
               intro h_mem
               have h_class :=
                 (LoopInitHoistLoopArmWF.Stmt.hoistLoopPrefixInitsM_initVars_classified
-                  s σ h_wf_σ h_unique_s_stmt h_shapefree_s_stmt).1 _ h_mem
-              rcases h_class with h_orig | ⟨str', h_eq, h_str'_in, _⟩
+                  hQmint s σ h_wf_σ h_unique_s_stmt h_shapefree_s_stmt).1 _ h_mem
+              rcases h_class with h_orig | ⟨str', h_eq, h_str'_in, _, _⟩
               · exact h_shapefree_s_stmt str h_shape h_orig
               · exact h_notσ1 ((LawfulHasIdent.ident_inj h_eq) ▸ h_str'_in)
             have h_residual_contains_nofd :
@@ -3073,7 +3076,7 @@ private theorem Block.hoistLoopPrefixInits_preserves
             exact block_run_terminal_preserves_none_of_not_initVars
               h_residual_contains_nofd h_z_not_residual h_z_h_none h_head_hoist
           obtain ⟨ρ_h_fin, cfg_hoist_tail, h_tail_hoist, h_tail_outcome⟩ :=
-            Block.hoistLoopPrefixInits_preserves A B subst rest (Stmt.hoistLoopPrefixInitsM s σ).2
+            Block.hoistLoopPrefixInits_preserves hQmint A B subst rest (Stmt.hoistLoopPrefixInitsM s σ).2
               h_nd_s.2 h_fd_s.2 h_inv_s.2 h_measure_s.2 h_noexit_s.2 h_exprs_shapefree_s.2 h_unique_rest h_fresh_rest
               h_names_fresh_rest h_names_fresh_B_rest h_lhs_disjoint_rest h_extra_disjoint_rest
               h_mod_disjoint_A_rest h_mod_disjoint_B_rest h_hoist_undef_mid h_hoist_undef_h_mid
@@ -3094,6 +3097,137 @@ private theorem Block.hoistLoopPrefixInits_preserves
   decreasing_by all_goals (subst h_match; simp_wf; omega)
 
 end
+
+/-! ### The loop-init-hoist label *kind*
+
+`hoistLoopPrefixInits` mints labels under exactly one prefix, `hoistFreshPrefix`
+(`"_hoist"`).  `hoistKind s` is the precise predicate "`s` is a label this pass
+could have minted": it carries the `hoistFreshPrefix` generator prefix and is
+equal to some `gen` output.  This is the per-kind `Q` to instantiate the
+kind-generalized soundness at, replacing the blanket `HasUnderscoreDigitSuffix`
+(which would overcommit a composition partner to keeping *every* gen-shaped name
+fresh). -/
+
+/-- A label that `hoistLoopPrefixInits` could have minted: it carries the
+`hoistFreshPrefix` generator prefix and equals a corresponding `gen` output. -/
+@[expose] def hoistKind (s : String) : Prop :=
+  ∃ sg, String.HasGenPrefix hoistFreshPrefix s
+      ∧ s = (StringGenState.gen hoistFreshPrefix sg).1
+
+/-- The single prefix `hoistLoopPrefixInits` mints under lands inside
+`hoistKind`: this is exactly the `hQmint` obligation at `Q := hoistKind`. -/
+theorem hoistKind_gen :
+    ∀ sg, hoistKind (StringGenState.gen hoistFreshPrefix sg).1 :=
+  fun sg => ⟨sg, StringGenState.gen_hasGenPrefix hoistFreshPrefix sg, rfl⟩
+
+/-- Kind-generalized soundness of the loop-init hoist: the pass is sound for any
+source program whose `hoistKind`-labelled slots are undefined / unwritten — only
+the labels *this* pass mints, not every gen-shaped name.  This weaker entry
+precondition is what lets a composition partner (one minting under a disjoint
+prefix) satisfy it vacuously.  Instantiating `Q := String.HasUnderscoreDigitSuffix`
+recovers the blanket `hoistLoopPrefixInits_preserves`. -/
+theorem hoistLoopPrefixInits_preserves_kind {Q : String → Prop}
+    [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P]
+    [HasIdent P] [LawfulHasIdent P] [HasSubstFvar P]
+    [HasIntOrder P] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P]
+    [DecidableEq P.Ident]
+    (hQmint : ∀ sg, Q (StringGenState.gen hoistFreshPrefix sg).1)
+    {extendEval : ExtendEval P}
+    (ss : List (Stmt P (Cmd P)))
+    {ρ_src ρ_src' : Env P}
+    (h_no_nd      : Block.containsNondetLoop ss = false)
+    (h_no_fd      : Block.containsFuncDecl ss = false)
+    (h_no_inv     : Block.loopHasNoInvariants ss = true)
+    (h_no_measure : Block.loopMeasureNone ss = true)
+    (h_no_exit    : Block.noExit ss = true)
+    (h_exprs_shapefree : Block.exprsShapeFree (P := P) Q ss)
+    (h_unique     : Block.uniqueInits ss)
+    (h_fresh      : Block.hoistedNamesFreshInRhsAndGuards (P := P) ss = true)
+    (h_src_initVars_shapefree :
+      ∀ str : String, Q str →
+        HasIdent.ident (P := P) str ∉ Block.initVars ss)
+    (h_src_modifiedVars_shapefree :
+      ∀ str : String, Q str →
+        HasIdent.ident (P := P) str ∉ Block.modifiedVars ss)
+    (h_hoist_undef : ∀ y ∈ Block.initVars ss, ρ_src.store y = none)
+    (h_src_store_shapefree :
+      ∀ str : String, Q str →
+        ρ_src.store (HasIdent.ident (P := P) str) = none)
+    (_h_hf₀        : ρ_src.hasFailure = false)
+    (h_run_src    : StepStmtStar P (EvalCmd P) extendEval
+                       (.stmts ss ρ_src) (.terminal ρ_src'))
+    (h_wfvar      : ∀ ρ : Env P, WellFormedSemanticEvalVar ρ.eval)
+    (h_wfcongr    : ∀ ρ : Env P, WellFormedSemanticEvalExprCongr ρ.eval)
+    (h_wfsubst    : ∀ ρ : Env P, WellFormedSemanticEvalSubstFvar ρ.eval)
+    (h_wfdef      : ∀ ρ : Env P, WellFormedSemanticEvalDef ρ.eval) :
+    ∃ ρ_h',
+      StepStmtStar P (EvalCmd P) extendEval
+        (.stmts (Block.hoistLoopPrefixInits ss) ρ_src) (.terminal ρ_h')
+      ∧ StoreAgreement ρ_src'.store ρ_h'.store
+      ∧ ρ_h'.hasFailure = ρ_src'.hasFailure := by
+  -- Discharge §F by invoking the widened §E Block sibling at `A := []`, `B := []`,
+  -- `subst := []`, `σ := emp`, with `ρ_hoist := ρ_src` (no hoisting at the
+  -- outermost call site).  The σ-relative obligations collapse at `emp` (its
+  -- `stringGens` is empty) to the global front-end kind-freedom facts.
+  have h_names_fresh_initVars : Block.namesFreshInExprs (P := P)
+      (Block.initVars ss) ss = true := by
+    unfold Block.hoistedNamesFreshInRhsAndGuards at h_fresh
+    simp only [Bool.and_eq_true] at h_fresh
+    exact h_fresh.2
+  have h_names_fresh_nil : Block.namesFreshInExprs (P := P) [] ss = true := by
+    have h_sub : ([] : List P.Ident) ⊆ Block.initVars (P := P) ss :=
+      fun _ h => absurd h List.not_mem_nil
+    exact Block.namesFreshInExprs_subset h_sub ss h_names_fresh_initVars
+  have h_lhs_disjoint_nil : ∀ y ∈ Block.initVars (P := P) ss, y ∉ ([] : List P.Ident) :=
+    fun _ _ => List.not_mem_nil
+  have h_mod_disjoint_nil : ∀ x ∈ Block.modifiedVars (P := P) (C := Cmd P) ss, x ∉ ([] : List P.Ident) :=
+    fun _ _ => List.not_mem_nil
+  have h_hinv_refl : HoistInv (P := P) [] [] [] ρ_src.store ρ_src.store :=
+    HoistInv.refl_id [] ρ_src.store
+  have h_hoist_bound_nil : ∀ y ∈ ([] : List P.Ident), ρ_src.store y ≠ none :=
+    fun _ h => absurd h (List.not_mem_nil)
+  have h_wf_emp : StringGenState.WF StringGenState.emp := StringGenState.wf_emp
+  have h_src_fresh_emp :
+      ∀ str ∈ StringGenState.stringGens StringGenState.emp,
+        HasIdent.ident (P := P) str ∉ ([] : List P.Ident) ∧
+        HasIdent.ident (P := P) str ∉ ([] : List P.Ident) ∧
+        HasIdent.ident (P := P) str ∉ Block.initVars (P := P) ss := by
+    intro str h_str
+    exact absurd h_str (StringGenState.not_mem_stringGens_emp str)
+  have h_src_shapefree_F :
+      ∀ str : String, Q str →
+        HasIdent.ident (P := P) str ∉ ([] : List P.Ident) ∧
+        HasIdent.ident (P := P) str ∉ ([] : List P.Ident) ∧
+        HasIdent.ident (P := P) str ∉ Block.initVars (P := P) ss ∧
+        HasIdent.ident (P := P) str ∉ Block.modifiedVars (P := P) ss :=
+    fun str h_shape =>
+      ⟨List.not_mem_nil, List.not_mem_nil, h_src_initVars_shapefree str h_shape,
+        h_src_modifiedVars_shapefree str h_shape⟩
+  have h_subst_wf_nil :
+      ∀ a b : P.Ident, (a, b) ∈ ([] : List (P.Ident × P.Ident)) → a ∈ ([] : List P.Ident) ∧ b ∈ ([] : List P.Ident) :=
+    fun _ _ h => absurd h List.not_mem_nil
+  have h_src_store_shapefree_emp :
+      ∀ str : String, Q str →
+        str ∉ StringGenState.stringGens StringGenState.emp →
+        ρ_src.store (HasIdent.ident (P := P) str) = none :=
+    fun str h_shape _ => h_src_store_shapefree str h_shape
+  obtain ⟨ρ_h', cfg_hoist, h_run_h, h_disj⟩ :=
+    Block.hoistLoopPrefixInits_preserves hQmint (extendEval := extendEval) [] [] [] ss
+      StringGenState.emp
+      h_no_nd h_no_fd h_no_inv h_no_measure h_no_exit h_exprs_shapefree h_unique h_fresh
+      h_names_fresh_nil h_names_fresh_nil h_lhs_disjoint_nil h_lhs_disjoint_nil
+      h_mod_disjoint_nil h_mod_disjoint_nil
+      h_hoist_undef h_hoist_undef h_src_store_shapefree_emp h_src_store_shapefree_emp
+      h_wf_emp h_src_fresh_emp h_src_shapefree_F h_subst_wf_nil
+      h_hinv_refl rfl rfl h_hoist_bound_nil
+      h_run_src (Or.inl ⟨ρ_src', rfl⟩) h_wfvar h_wfcongr h_wfsubst h_wfdef
+  rcases h_disj with
+    ⟨ρ_src'', h_eq_src, h_eq_hoist, h_hinv_final, h_hf_final, _⟩
+    | ⟨_, _, h_eq_src_e, _⟩
+  · cases h_eq_src
+    subst h_eq_hoist
+    exact ⟨ρ_h', h_run_h, HoistInv.to_storeAgreement_nil h_hinv_final, h_hf_final.symm⟩
+  · exact absurd h_eq_src_e (by simp)
 
 /-! ## §F — Top-level forward-simulation theorem
 
@@ -3196,101 +3330,21 @@ theorem hoistLoopPrefixInits_preserves
       StepStmtStar P (EvalCmd P) extendEval
         (.stmts (Block.hoistLoopPrefixInits ss) ρ_src) (.terminal ρ_h')
       ∧ StoreAgreement ρ_src'.store ρ_h'.store
-      ∧ ρ_h'.hasFailure = ρ_src'.hasFailure := by
-  -- Phase 8 OptE-F: discharge §F by invoking the widened §E sibling
-  -- `Block.hoistLoopPrefixInits_preserves` at `A := []`, `B := []`, and
-  -- `subst := []`, with `ρ_hoist := ρ_src` (no hoisting at the outermost
-  -- call site). The HoistInv conclusion's terminal disjunct delivers
-  -- `HoistInv [] [] [] ρ_src'.store ρ_h'.store`; with `A = B = []` the FRAME
-  -- component (1) instantiates to pointwise equality at every `x` (the
-  -- `x ∉ []` side-conditions are discharged by `List.not_mem_nil`).
-  -- `Block.namesFreshInExprs [] ss = true` follows from the existing fact
-  -- `Block.namesFreshInExprs (Block.initVars ss) ss = true` (extracted from
-  -- `h_fresh`) by weakening on the names argument: `[]` is a subset of every
-  -- list, and `Block.namesFreshInExprs_subset` weakens accordingly.
-  have h_names_fresh_initVars : Block.namesFreshInExprs (P := P)
-      (Block.initVars ss) ss = true := by
-    unfold Block.hoistedNamesFreshInRhsAndGuards at h_fresh
-    simp only [Bool.and_eq_true] at h_fresh
-    exact h_fresh.2
-  have h_names_fresh_nil : Block.namesFreshInExprs (P := P) [] ss = true := by
-    have h_sub : ([] : List P.Ident) ⊆ Block.initVars (P := P) ss :=
-      fun _ h => absurd h List.not_mem_nil
-    exact Block.namesFreshInExprs_subset h_sub ss h_names_fresh_initVars
-  have h_lhs_disjoint_nil : ∀ y ∈ Block.initVars (P := P) ss, y ∉ ([] : List P.Ident) :=
-    fun _ _ => List.not_mem_nil
-  have h_extra_disjoint_nil : ∀ y ∈ Block.initVars (P := P) ss, y ∉ ([] : List P.Ident) :=
-    fun _ _ => List.not_mem_nil
-  have h_mod_disjoint_nil : ∀ x ∈ Block.modifiedVars (P := P) (C := Cmd P) ss, x ∉ ([] : List P.Ident) :=
-    fun _ _ => List.not_mem_nil
-  have h_hinv_refl : HoistInv (P := P) [] [] [] ρ_src.store ρ_src.store :=
-    HoistInv.refl_id [] ρ_src.store
-  have h_hoist_bound_nil : ∀ y ∈ ([] : List P.Ident), ρ_src.store y ≠ none :=
-    fun _ h => absurd h (List.not_mem_nil)
-  -- The monadic §E sibling is instantiated at `σ := StringGenState.emp`, which
-  -- is exactly what `Block.hoistLoopPrefixInits ss` unfolds to by definition.
-  -- Its two generator-state preconditions discharge trivially at `emp`:
-  --   * `h_wf_σ` is `StringGenState.wf_emp`;
-  --   * `h_src_namesFreshFromσ` is vacuous because `stringGens emp = []`, so
-  --     the bounded quantifier over an empty membership has no instances.
-  have h_wf_emp : StringGenState.WF StringGenState.emp := StringGenState.wf_emp
-  have h_src_fresh_emp :
-      ∀ str ∈ StringGenState.stringGens StringGenState.emp,
-        HasIdent.ident (P := P) str ∉ ([] : List P.Ident) ∧
-        HasIdent.ident (P := P) str ∉ ([] : List P.Ident) ∧
-        HasIdent.ident (P := P) str ∉ Block.initVars (P := P) ss := by
-    intro str h_str
-    exact absurd h_str (StringGenState.not_mem_stringGens_emp str)
-  -- The §E `h_src_shapefree` obligation at `A = B = []`: its `A`/`B` conjuncts
-  -- are vacuous (`List.not_mem_nil`); the `.init`-LHS conjunct is exactly the
-  -- §F precondition `h_src_initVars_shapefree`.
-  have h_src_shapefree_F :
-      ∀ str : String, String.HasUnderscoreDigitSuffix str →
-        HasIdent.ident (P := P) str ∉ ([] : List P.Ident) ∧
-        HasIdent.ident (P := P) str ∉ ([] : List P.Ident) ∧
-        HasIdent.ident (P := P) str ∉ Block.initVars (P := P) ss ∧
-        HasIdent.ident (P := P) str ∉ Block.modifiedVars (P := P) ss :=
-    fun str h_shape =>
-      ⟨List.not_mem_nil, List.not_mem_nil, h_src_initVars_shapefree str h_shape,
-        h_src_modifiedVars_shapefree str h_shape⟩
-  -- The §E `h_subst_wf` obligation at `subst = []`: vacuous, no pair is a
-  -- member of the empty substitution.
-  have h_subst_wf_nil :
-      ∀ a b : P.Ident, (a, b) ∈ ([] : List (P.Ident × P.Ident)) → a ∈ ([] : List P.Ident) ∧ b ∈ ([] : List P.Ident) :=
-    fun _ _ h => absurd h List.not_mem_nil
-  -- The §E store-shapefree obligation at `σ = emp`: the `str ∉ stringGens emp`
-  -- guard is vacuously discharged (`stringGens emp = []`), so the σ-relative
-  -- precondition reduces to the global §F front-end fact `h_src_store_shapefree`.
-  -- With `ρ_hoist := ρ_src` (no hoisting at the outermost call), the same fact
-  -- serves both the source and hoist obligations.
-  have h_src_store_shapefree_emp :
-      ∀ str : String, String.HasUnderscoreDigitSuffix str →
-        str ∉ StringGenState.stringGens StringGenState.emp →
-        ρ_src.store (HasIdent.ident (P := P) str) = none :=
-    fun str h_shape _ => h_src_store_shapefree str h_shape
-  obtain ⟨ρ_h', cfg_hoist, h_run_h, h_disj⟩ :=
-    Block.hoistLoopPrefixInits_preserves (extendEval := extendEval) [] [] [] ss
-      StringGenState.emp
-      h_no_nd h_no_fd h_no_inv h_no_measure h_no_exit h_exprs_shapefree h_unique h_fresh
-      h_names_fresh_nil h_names_fresh_nil h_lhs_disjoint_nil h_extra_disjoint_nil
-      h_mod_disjoint_nil h_mod_disjoint_nil
-      h_hoist_undef h_hoist_undef h_src_store_shapefree_emp h_src_store_shapefree_emp
-      h_wf_emp h_src_fresh_emp h_src_shapefree_F h_subst_wf_nil
-      h_hinv_refl rfl rfl h_hoist_bound_nil
-      h_run_src (Or.inl ⟨ρ_src', rfl⟩) h_wfvar h_wfcongr h_wfsubst h_wfdef
-  rcases h_disj with
-    ⟨ρ_src'', h_eq_src, h_eq_hoist, h_hinv_final, h_hf_final, _⟩
-    | ⟨_, _, h_eq_src_e, _⟩
-  · -- Terminal branch: bridge `HoistInv [] [] []` to `StoreAgreement` and project
-    -- `hasFailure`.
-    cases h_eq_src  -- ρ_src'' = ρ_src'
-    subst h_eq_hoist  -- cfg_hoist = .terminal ρ_h'
-    -- The `HoistInv [] [] [] ρ_src'.store ρ_h'.store` bridges to the sound
-    -- source-on-left forward-simulation relation `StoreAgreement` via
-    -- `HoistInv.to_storeAgreement_nil` (all `A`/`B`/`subst` side-premises vacuous).
-    exact ⟨ρ_h', h_run_h, HoistInv.to_storeAgreement_nil h_hinv_final, h_hf_final.symm⟩
-  · -- Exiting branch: vacuous because `h_run_src` reaches `.terminal ρ_src'`.
-    exact absurd h_eq_src_e (by simp)
+      ∧ ρ_h'.hasFailure = ρ_src'.hasFailure :=
+  -- The blanket statement is the `Q := String.HasUnderscoreDigitSuffix`
+  -- instance of the kind-generalized `hoistLoopPrefixInits_preserves_kind`:
+  -- the blanket "shape-free" hypotheses (no source name is the image of any
+  -- gen-suffix-shaped string) are exactly that lemma's per-kind hypotheses at
+  -- `Q := String.HasUnderscoreDigitSuffix`, and the mint witness `hQmint` is
+  -- `StringGenState.gen_hasUnderscoreDigitSuffix` (every minted name is
+  -- suffix-shaped).
+  hoistLoopPrefixInits_preserves_kind
+    (Q := String.HasUnderscoreDigitSuffix)
+    (fun sg => StringGenState.gen_hasUnderscoreDigitSuffix hoistFreshPrefix sg)
+    ss
+    h_no_nd h_no_fd h_no_inv h_no_measure h_no_exit h_exprs_shapefree h_unique h_fresh
+    h_src_initVars_shapefree h_src_modifiedVars_shapefree h_hoist_undef
+    h_src_store_shapefree _h_hf₀ h_run_src h_wfvar h_wfcongr h_wfsubst h_wfdef
 
 -- NOTE: the former `hoistLoopPrefixInits_preserves_funext` corollary (extensional
 -- store equality `ρ_h'.store = ρ_src'.store`) is intentionally dropped: that
