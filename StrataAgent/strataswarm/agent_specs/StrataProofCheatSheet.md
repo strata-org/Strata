@@ -2,22 +2,23 @@
 
 ## Project Context
 
-Strata is a verified compiler framework for translating deterministic imperative
-programs to Kleene-algebra-based non-deterministic programs. The main verification
-goals are:
+Strata is a verified program transformation framework. Transformations operate on
+Imperative programs (which may include nondeterministic operations) and produce
+Imperative programs. Some transforms target specialized sublanguages (e.g.,
+`DetToKleene` produces Kleene algebra programs), but the framework is generic.
 
-1. **Overapproximation** — every terminal/exiting/failing behavior of the
-   deterministic program is also a behavior of the Kleene program.
-2. **Assertion validity preservation** — if all asserts pass in the transformed
-   program, they pass in the original.
-3. **Hoare-triple preservation** — partial-correctness specifications transfer
-   across transformations.
+Transforms include: `DetToKleene`, `CallElim`, `ANFEncoder`, `ProcedureInlining`,
+`FilterProcedures`, `PrecondElim`, `LoopElim`, `ProcBodyVerify`, and others.
+
+The main verification goal is **overapproximation** — every terminal/exiting/failing
+behavior of the source program is also a behavior of the target program. Assertion
+validity preservation follows from overapproximation via metatheory already proved
+in the codebase (`overapproximates_triple`, `sound_assertValid`).
 
 The proofs draw on CompCert's simulation technique and are structured around:
 - Forward simulation (terminal states, exiting states, failure states)
 - Mutual recursion on `Stmt`/`Block` (7 constructors for Stmt, recursive Block)
 - Reflexive-transitive closure of step relations (`StepStmtStar`, `StepKleeneStar`)
-- Hoare-logic structural rules for compositional reasoning
 
 ---
 
@@ -28,12 +29,11 @@ The proofs draw on CompCert's simulation technique and are structured around:
 3. [Common Proof Patterns](#common-proof-patterns)
 4. [Transform Correctness Proofs](#transform-correctness-proofs)
 5. [Semantic Correctness Proofs](#semantic-correctness-proofs)
-6. [Hoare Logic Proofs](#hoare-logic-proofs)
-7. [Advanced Techniques](#advanced-techniques)
-8. [Helper Lemma Catalog](#helper-lemma-catalog)
-9. [Proof Methodology](#proof-methodology)
-10. [Anti-patterns](#anti-patterns)
-11. [External References](#external-references)
+6. [Advanced Techniques](#advanced-techniques)
+7. [Finding Helper Lemmas](#finding-helper-lemmas)
+8. [Proof Methodology](#proof-methodology)
+9. [Anti-patterns](#anti-patterns)
+10. [External References](#external-references)
 
 ---
 
@@ -43,7 +43,7 @@ The proofs draw on CompCert's simulation technique and are structured around:
 
 | Type | Description | File |
 |------|-------------|------|
-| `Stmt P (Cmd P)` | Deterministic statements (cmd, block, ite, loop, exit, funcDecl, typeDecl) | `DL/Imperative/Stmt.lean` |
+| `Stmt P (Cmd P)` | Imperative statements (cmd, block, ite, loop, exit, funcDecl, typeDecl) | `DL/Imperative/Stmt.lean` |
 | `KleeneStmt P (Cmd P)` | Kleene statements (cmd, seq, choice, loop, assert, block) | `DL/Imperative/KleeneStmt.lean` |
 | `Block P CmdT` | `List (Stmt P CmdT)` — a block body | `DL/Imperative/Stmt.lean` |
 
@@ -65,21 +65,10 @@ The proofs draw on CompCert's simulation technique and are structured around:
 
 ### Translation Functions
 
-```lean
-def StmtToKleeneStmt (st : Stmt P (Cmd P)) : Option (KleeneStmt P (Cmd P))
-def BlockToKleeneStmt (ss : Block P (Cmd P)) : Option (KleeneStmt P (Cmd P))
-```
-
-Returns `none` for `.exit`, `.funcDecl`, `.typeDecl`.
-
-Translation rules:
-- `cmd c` → `cmd c`
-- `block _ bss _` → `block (translate bss)`
-- `ite (.det c) tss ess` → `choice (block (seq (assume c) T)) (block (seq (assume ¬c) E))`
-- `ite .nondet tss ess` → `choice (block T) (block E)`
-- `loop (.det g) _ [] bss` → `loop (seq (assume g) B)` (only loops with no invariants)
-- `[] (empty block)` → `assert "$__skip" tt` (skip)
-- `s :: ss` → `seq (translate s) (translate ss)`
+Transforms are typically `Option`-valued functions: `Stmt → Option TargetStmt`.
+Returning `none` signals that the input contains unsupported constructs.
+Read the specific transform's definition in `Strata/Transform/` to understand
+what it produces — each transform has its own file.
 
 ### Reflexive-Transitive Closure
 
@@ -160,19 +149,19 @@ def Overapproximates (L₁ L₂ : Lang P) (T : L₁.StmtT → Option L₂.StmtT)
       ∧ L₂.initEnvWF (prefixIdents.erase newPrefix) st' ρ₀
 ```
 
-### Hoare Triples
+### Assertion Validity
 
 ```lean
-def Hoare.Triple (Pre : Env P → Prop) (s : L.StmtT) (Post : Env P → Prop) : Prop :=
-  ∀ (ρ₀ ρ' : Env P),
-    Pre ρ₀ → WellFormedSemanticEvalBool ρ₀.eval → ρ₀.hasFailure = false →
-    L.star (L.stmtCfg s ρ₀) (L.terminalCfg ρ') →
-    Post ρ' ∧ ρ'.hasFailure = false
+def AssertValid (s : L.StmtT) (a : AssertId P) : Prop :=
+  ∀ (ρ₀ : Env P) (cfg : L.CfgT),
+    L.star (L.stmtCfg s ρ₀) cfg →
+    L.isAtAssert cfg a →
+    (L.getEnv cfg).eval (L.getEnv cfg).store a.expr = some HasBool.tt
 ```
 
-Bidirectional connection:
-- `hoareTriple_implies_assertValid` — Triple → AssertValid (for postcondition asserts)
-- `allAssertsValid_implies_hoareTriple` — AllAssertsValid → Triple
+The metatheory connects overapproximation to assertion validity:
+- `overapproximates_triple` — overapproximation preserves Hoare triples
+- `sound_assertValid` — soundness implies assertion validity
 
 ---
 
@@ -187,11 +176,12 @@ cases st with
 | block label ss md => ...
 | ite cond tss ess md => ...
 | loop guard measure inv body md => ...
-| exit label md => ...       -- StmtToKleeneStmt returns none → contradiction
-| funcDecl decl md => ...    -- StmtToKleeneStmt returns none → contradiction
-| typeDecl tc md => ...      -- StmtToKleeneStmt returns none → contradiction
+| exit label md => ...       -- often contradiction if transform rejects exits
+| funcDecl decl md => ...    -- often contradiction if transform rejects funcDecl
+| typeDecl tc md => ...      -- often contradiction if transform rejects typeDecl
 ```
-The last 3 are contradictions: `simp [StmtToKleeneStmt] at hT` closes the goal.
+For cases where the translation returns `none`, `simp [TranslationFn] at hT`
+closes the goal by contradiction.
 
 ### 2. Mutual Induction on Stmt/Block
 
@@ -256,12 +246,11 @@ cases hrest with
 
 ### 6. Translation Success Implies Properties
 
-If `StmtToKleeneStmt st = some st'` then:
-- `st` contains no `.exit` statements (`exitsCovered`)
-- `st` contains no `.funcDecl` (`noFuncDecl`)
-- Loops have no invariants
-
-Proved by structural recursion on the `StmtToKleeneStmt` definition.
+When a translation function returns `some`, it often implicitly guarantees
+structural properties of the input (e.g., a transform that returns `none` for
+unsupported constructs means success implies their absence). These facts are
+proved by structural recursion on the translation definition and can be used
+to discharge impossible cases in the simulation proof.
 
 ### 7. WellFormed Preservation Across Steps
 
@@ -331,23 +320,22 @@ theorem myTransform_overapproximates :
   · ...
 ```
 
-### The Embedding Pattern (from ProcBodyVerifyCorrect)
+### The Embedding Pattern
 
-When proving that a sub-trace can be embedded into a larger context:
+When proving that a sub-trace can be embedded into a larger context
+(e.g., showing a body trace lifts through surrounding block/seq wrappers):
 ```lean
 -- Key insight: build the full trace layer by layer, inside-out
+-- Use the lifting lemmas (block_inner_star, seq_inner_star) to push
+-- an inner trace through each enclosing wrapper, then use the
+-- "done" steps (step_block_done, step_seq_done) to complete.
 exact ReflTrans_Transitive _ _ _ _
-  (step_block_enter ...)        -- enter outer block
-  (block_inner_star ...         -- lift inner steps through block wrapper
+  (enter_outer_wrapper ...)
+  (lift_inner_star ...
     (ReflTrans_Transitive _ _ _ _
-      (stmts_prefix_terminal_append ...)  -- execute prefix statements
-      (ReflTrans_Transitive _ _ _ _
-        (.step _ _ _ .step_stmts_cons (.refl _))  -- enter the seq
-        (seq_inner_star ...     -- lift through seq wrapper
-          (ReflTrans_Transitive _ _ _ _
-            (step_block_enter ...)    -- enter inner block
-            (block_inner_star ...     -- lift actual body trace
-              body_trace))))))
+      (execute_prefix ...)
+      (lift_through_next_wrapper ...
+        (actual_inner_trace))))
 ```
 
 ### Compositional Soundness
@@ -361,21 +349,6 @@ sound_comp
 overapproximates_stmts
 -- If f overapproximates per-statement, then mapM f overapproximates for lists
 ```
-
-### Det-to-Kleene Simulation (Sketch)
-
-For each deterministic construct, build a matching Kleene trace:
-
-| Det construct | Kleene simulation |
-|---------------|-------------------|
-| `cmd c` | Same `cmd c` |
-| `block label ss` | Inner trace lifted through `kleene_block_terminal` |
-| `ite (.det c) T E` (c=tt) | `choice` left branch: `assume c` succeeds → T trace |
-| `ite (.det c) T E` (c=ff) | `choice` right branch: `assume ¬c` succeeds → E trace |
-| `loop (.det g) body` (enter) | `loop_step`: `assume g` → body → recurse |
-| `loop (.det g) body` (exit) | `loop_zero`: exit immediately (assume ¬g is NOT needed) |
-
-The loop case requires well-founded induction on trace length (using `ReflTransT.len`).
 
 ---
 
@@ -426,46 +399,6 @@ EvalStmtSmall_hasFailure_irrel
 
 ---
 
-## Hoare Logic Proofs
-
-### Structural Rules Available
-
-| Rule | Type | Description |
-|------|------|-------------|
-| `Hoare.false_pre` | `Triple L (fun _ => False) s Post` | False precondition |
-| `Hoare.consequence` | weaken pre / strengthen post | Rule of consequence |
-| `Hoare.skip_block` | empty block = skip | `Triple L Pre (.block _ [] _) Pre` |
-| `Hoare.cmd` | single command | Forward through EvalCmd |
-| `Hoare.seq_cons` | sequential composition | Compose via intermediate predicate |
-| `Hoare.ite` | if-then-else | Split on condition |
-| `TripleBlock.toTriple` | lift block triple | From list-level to stmt-level |
-
-### Pattern: Proving a Hoare Triple
-
-```lean
-theorem my_triple : Hoare.Triple L Pre stmt Post := by
-  intro ρ₀ ρ' hpre hwfb hf₀ hstar
-  -- hpre : Pre ρ₀
-  -- hwfb : WellFormedSemanticEvalBool ρ₀.eval
-  -- hf₀  : ρ₀.hasFailure = false
-  -- hstar : L.star (L.stmtCfg stmt ρ₀) (L.terminalCfg ρ')
-  -- Goal: Post ρ' ∧ ρ'.hasFailure = false
-  constructor
-  · -- Show postcondition holds
-    ...
-  · -- Show no failure
-    ...
-```
-
-### From Overapproximation to Hoare Triple
-
-```lean
--- If T overapproximates and a triple holds on T(st), the triple holds on st:
-overapproximates_triple L₁ L₂ T newPrefix st s' ht hsem htriple hswf
-```
-
----
-
 ## Advanced Techniques
 
 ### Loop Simulation via Well-Founded Induction on Trace Length
@@ -496,11 +429,9 @@ termination_by hstarT.len
 
 ### Config Accessor Simplification
 
-Use `simp` with config accessors to normalize goals:
+Use `simp` with config accessors to normalize goals involving environment extraction:
 ```lean
 simp [Config.getEnv, Config.getEval, Config.getStore]
--- Or for Kleene:
-simp [KleeneConfig.getEnv, KleeneConfig.getEval, KleeneConfig.getStore]
 ```
 
 ### isAtAssert Propagation Through Wrappers
@@ -515,16 +446,16 @@ simp only [coreIsAtAssert]  -- unfolds through all wrapper layers
 
 ### Dealing with Option-valued Translations
 
-When `StmtToKleeneStmt` is in the hypothesis:
+When the translation function `T` returns `Option` and you have `hT : T st = some st'`:
 ```lean
--- Extract the translated statement:
-have hT : StmtToKleeneStmt st = some st' := ...
--- Use do-notation inversion:
-simp [StmtToKleeneStmt] at hT
--- For block translation:
-simp [BlockToKleeneStmt] at hT
--- Often need to split the Option.bind:
+-- Unfold the translation to expose its structure:
+simp [myTranslation] at hT
+-- For monadic (do-notation) translations, split the Option.bind:
 obtain ⟨intermediate, h1, h2⟩ := Option.bind_eq_some.mp hT
+-- For case-producing translations, use match/split:
+split at hT
+· simp at hT  -- impossible case (returns none) → contradiction
+· simp at hT; obtain ⟨...⟩ := hT  -- possible case
 ```
 
 ### Prefix Freshness and PrefixDisjoint
@@ -556,19 +487,16 @@ induction hstar with
 
 ### Lifting Inner Traces Through Wrappers
 
-The key lifting lemmas:
+When a sub-configuration executes inside a wrapper (block, seq), you need
+lifting lemmas to propagate the inner trace to the outer config. Look for
+lemmas named `*_inner_star` (lift multi-step) and `*_terminal` (complete
+from inner terminal to outer terminal) in the relevant `SemanticsProps` file.
+
 ```lean
--- Det semantics:
-seq_inner_star       -- .stmt s ρ →* cfg  ⟹  .seq (.stmt s ρ) ss →* .seq cfg ss
-block_inner_star     -- inner →* inner'   ⟹  .block lbl σ inner →* .block lbl σ inner'
-
--- Kleene semantics:
-kleene_seq_inner_star   -- inner →* inner'  ⟹  .seq inner s₂ →* .seq inner' s₂
-kleene_block_inner_star -- inner →* inner'  ⟹  .block σ inner →* .block σ inner'
-
--- Completion (from inner terminal to outer terminal):
-kleene_seq_terminal     -- s₁ →* terminal ρ₁ → s₂ →* terminal ρ'  ⟹  seq s₁ s₂ →* terminal ρ'
-kleene_block_terminal   -- inner →* terminal ρ'  ⟹  block σ inner →* terminal (project σ ρ')
+-- General pattern:
+-- 1. Lift inner steps: inner →* inner'  ⟹  wrapper(inner) →* wrapper(inner')
+-- 2. Complete wrapper: wrapper(terminal ρ') → terminal (project ρ')
+-- Chain them with ReflTrans_Transitive
 ```
 
 ### CanFail Proofs
@@ -593,80 +521,49 @@ When a block terminates, the store is projected (local vars removed):
 
 ---
 
-## Helper Lemma Catalog
+## Finding Helper Lemmas
 
-### ReflTrans / Transitivity
+### Where to Look
 
-| Lemma | Signature |
-|-------|-----------|
-| `ReflTrans_Reflexive` | `∀ x, ReflTrans r x x` |
-| `ReflTrans_Transitive` | `Transitive (ReflTrans r)` — used as `ReflTrans_Transitive _ _ _ _ h1 h2` |
-| `reflTrans_to_T` | `ReflTrans r a b → ReflTransT r a b` (noncomputable, uses Classical.choice) |
-| `reflTransT_to_prop` | `ReflTransT r a b → ReflTrans r a b` |
-| `ReflTransT.len` | Step count for termination arguments |
+| What you need | Where to find it |
+|---------------|-----------------|
+| ReflTrans properties (transitivity, conversion) | `Strata/DL/Util/Relations.lean` |
+| Imperative step-relation helpers (lifting, inversion) | `Strata/DL/Imperative/SemanticsProps.lean` |
+| Kleene step-relation helpers | `Strata/DL/Imperative/KleeneSemanticsProps.lean` |
+| Command-level properties (store/eval preservation) | `Strata/DL/Imperative/CmdSemantics.lean` |
+| Specification metatheory (soundness composition) | `Strata/Transform/Specification.lean` |
+| WellFormed predicates | `Strata/DL/Imperative/CmdSemantics.lean`, `StmtSemantics.lean` |
 
-### Deterministic Semantics Helpers
+### How to Discover Lemmas
 
-| Lemma | Description |
-|-------|-------------|
-| `step_block_enter` | `.stmt (block lbl ss md) ρ → .block lbl ρ.store (.stmts ss ρ)` |
-| `seq_inner_star` | Lift multi-step through `.seq` wrapper |
-| `block_inner_star` | Lift multi-step through `.block` wrapper |
-| `stmts_cons_step` | `.stmts (s::ss) ρ → .seq (.stmt s ρ) ss` |
-| `seq_reaches_terminal` | Invert: `.seq (.stmt s ρ) ss →* .terminal ρ'` decomposes |
-| `seq_reaches_exiting` | Invert: `.seq (.stmt s ρ) ss →* .exiting lbl ρ'` decomposes |
-| `block_reaches_terminal` | Invert block terminal: inner terminated or exited-and-caught |
-| `stmts_prefix_terminal_append` | If prefix terminates at ρ₁, full list steps to `.stmts suffix ρ₁` |
-| `stmts_append_terminates` | Decompose terminating execution of `ss1 ++ ss2` |
-| `exitsCoveredByBlocks_noEscape` | Well-paired exit/block → never reaches `.exiting` |
+1. **Read the relevant `*Props.lean` file** — these contain pre-proved helpers
+2. **Use `exact?` / `apply?`** — Lean's tactic search finds applicable lemmas
+3. **Use `#check` with partial names** — e.g., `#check seq_reaches` to find inversion lemmas
+4. **Search for patterns** — lifting lemmas are named `*_inner_star`,
+   inversion lemmas are named `*_reaches_terminal` / `*_reaches_exiting`,
+   completion lemmas are named `*_terminal`
 
-### Kleene Semantics Helpers
+### Key Utility Lemmas (always needed)
 
-| Lemma | Description |
-|-------|-------------|
-| `kleene_block_inner_star` | Lift inner execution through block wrapper |
-| `kleene_block_terminal` | Block inner reaches terminal → whole block terminates (with projection) |
-| `kleene_seq_inner_star` | Lift inner execution through seq wrapper |
-| `kleene_seq_terminal` | `s₁` terminates at `ρ₁`, `s₂` terminates at `ρ'` → `seq s₁ s₂` terminates at `ρ'` |
-| `kleene_assume_terminal` | `assume e` with `eval e = tt` terminates immediately (env unchanged) |
-| `kleene_assume_then` | `assume; body` steps to `body` when assume succeeds |
-| `eval_tt_is_tt` | `WellFormedSemanticEvalVal δ → δ σ HasBool.tt = some HasBool.tt` |
-| `assume_env_eq` | `{ ρ with store := ρ.store, hasFailure := ρ.hasFailure || false } = ρ` |
+These are from `Relations.lean` and used in virtually every simulation proof:
 
-### Store/Eval/Failure Properties
+| Lemma | Usage |
+|-------|-------|
+| `ReflTrans_Transitive` | Chain traces: `ReflTrans_Transitive _ _ _ _ h1 h2` |
+| `ReflTrans.refl` | Zero-step trace: `.refl _` |
+| `ReflTrans.step` | Single step + rest: `.step _ _ _ hstep hrest` |
+| `reflTrans_to_T` | Convert Prop trace to Type (for structural recursion) |
+| `ReflTransT.len` | Step count (for `termination_by`) |
 
-| Lemma | Description |
-|-------|-------------|
-| `eval_assert_store_cst` | Assert preserves store |
-| `eval_stmt_assert_eval_cst` | Assert preserves eval |
-| `smallStep_noFuncDecl_preserves_eval` | No funcDecl → eval unchanged across steps |
-| `smallStep_hasFailure_irrel` | Terminal store/eval independent of initial hasFailure |
-| `StepStmtStar_hasFailure_monotone` | hasFailure monotone |
-| `eval_stmts_assert_elim` | Assert can be eliminated preserving store/eval |
-| `star_preserves_wfBool` / `wfVal` / `wfVar` | WF predicates preserved under WFEvalExtension |
+### What Kinds of Helpers Exist
 
-### Hoare Logic
+The semantics helper files typically provide:
 
-| Lemma | Description |
-|-------|-------------|
-| `Hoare.false_pre` | False precondition proves any triple |
-| `Hoare.consequence` | Weaken pre / strengthen post |
-| `Hoare.skip_block` | Empty block is skip |
-| `Hoare.cmd` | Single-command rule |
-| `Hoare.seq_cons` | Sequential composition |
-| `Hoare.ite` | If-then-else |
-| `TripleBlock.toTriple` | Lift block-level triple to statement-level |
-
-### Composition
-
-| Lemma | Description |
-|-------|-------------|
-| `sound_comp` | Compose two sound transforms |
-| `sound_id` | Identity is sound |
-| `Overapproximates.toAggressive` | Exact → aggressive |
-| `overapproximates_triple` | Overapproximation preserves Hoare triples |
-| `overapproximates_stmts` | Statement-level → list-level (via mapM) |
-| `overapproximatesAggressively_stmts` | Same for aggressive variant |
+- **Lifting lemmas** — propagate inner multi-step through wrappers (seq, block)
+- **Inversion lemmas** — decompose a trace reaching terminal/exiting into sub-traces
+- **Monotonicity lemmas** — `hasFailure` is monotone, WF predicates preserved
+- **Store/eval constancy** — certain commands don't modify store or eval
+- **Composition lemmas** — combine sub-proofs into a full overapproximation proof
 
 ---
 
@@ -705,13 +602,14 @@ A transform correctness proof typically decomposes into:
 3. **Property preservation** — show properties (isAtAssert, getEnv) transfer
 4. **Main theorem** — compose the above
 
-### Using `plausible` for Early Validation
+### Using `plausible` for Early Validation (Limited)
 
+`plausible` often won't work on Strata types (they lack `Repr`/`Shrinkable`
+instances), but when it does work it can catch false assertions early:
 ```lean
--- Use plausible instead of sorry to catch false assertions early:
+-- Try plausible — if it finds a counterexample, your assertion is WRONG:
 have h : some_property := by plausible
--- If plausible finds a counterexample, your assertion is WRONG
--- Only fall back to sorry when plausible is not applicable
+-- Fall back to sorry when plausible times out or isn't applicable (common)
 ```
 
 ### Structured Proof Template
@@ -796,11 +694,11 @@ theorem name : statement := by
 - **Lean4 Docs: Well-Founded Recursion** — https://lean-lang.org/lean4/doc/well_founded_recursion.html
   - `termination_by`, `decreasing_by`, WF proof techniques
 
-### Program Semantics and Hoare Logic
+### Program Semantics and Simulation
 
 - **Software Foundations** (Coq, but concepts transfer) — https://softwarefoundations.cis.upenn.edu/
   - Volume 1 (LF): Induction, lists, basic tactics
-  - Volume 2 (PLF): Small-step semantics, Hoare logic, simulation proofs
+  - Volume 2 (PLF): Small-step semantics, simulation proofs
   - Volume 3 (VFA): Verified functional algorithms
 
 - **Concrete Semantics** (Isabelle/HOL) — https://concrete-semantics.org/
@@ -882,18 +780,17 @@ theorem name : statement := by
 1. **Always search existing lemmas first** — the codebase has many helper lemmas
    already proved. Use `#check`, `exact?`, `apply?`.
 2. **Check if `simp` lemmas exist** — many rewrites are tagged `@[simp]`
-3. **For Kleene construction**: `kleene_seq_terminal`, `kleene_block_terminal`,
-   `kleene_assume_terminal` combine individual steps into multi-step traces
-4. **For contradiction cases**: `simp [StmtToKleeneStmt] at hT` closes exit/funcDecl/typeDecl
+3. **Read the `*Props.lean` files** — `SemanticsProps.lean` and
+   `KleeneSemanticsProps.lean` contain the lifting/inversion/completion helpers
+4. **For contradiction cases**: `simp [TranslationFn] at hT` closes cases where the translation returns `none`
 5. **For loop cases**: need well-founded recursion on trace length
-6. **`eval_tt_is_tt`**: proves `eval store HasBool.tt = some HasBool.tt` (for assert/assume)
-7. **Don't try `induction` on Stmt** — use `cases` + mutual theorem pattern
-8. **Use `ReflTrans_Transitive _ _ _ _`** for chaining — always provide 4 underscores
+6. **Don't try `induction` on Stmt** — use `cases` + mutual theorem pattern
+7. **Use `ReflTrans_Transitive _ _ _ _`** for chaining — always provide 4 underscores
    for the implicit args
-9. **Terminal configs cannot step** — use `exact absurd hstep (by intro h; cases h)`
-10. **`simp only [...]`** is safer than bare `simp` — avoids unexpected rewrites
-11. **Custom tactic `term_by_mem`** — solves termination goals for rose-tree recursion
-12. **`generalize_lhs_last_arg`** — useful for generalizing the last argument of the
+8. **Terminal configs cannot step** — use `exact absurd hstep (by intro h; cases h)`
+9. **`simp only [...]`** is safer than bare `simp` — avoids unexpected rewrites
+10. **Custom tactic `term_by_mem`** — solves termination goals for rose-tree recursion
+11. **`generalize_lhs_last_arg`** — useful for generalizing the last argument of the
     LHS when the goal is an equality
 
 ---
@@ -926,12 +823,16 @@ theorem myTransform_correct :
 ### Skeleton: Multi-step Trace Construction
 
 ```lean
--- Goal: StepKleeneStar P (EvalCmd P) (.stmt st' ρ₀) (.terminal ρ')
-exact kleene_seq_terminal _ _ _ _ _
-  -- First part reaches terminal ρ₁
-  (kleene_assume_then (kleene_assume_terminal hcond hwfb))
-  -- Second part reaches terminal ρ'
-  (ih ρ₁ rest_trace)
+-- Goal: build a multi-step trace in the target language
+-- Pattern: chain together individual steps/sub-traces via transitivity
+exact ReflTrans_Transitive _ _ _ _
+  (first_sub_trace)   -- source → intermediate config
+  (ReflTrans_Transitive _ _ _ _
+    (second_sub_trace)  -- intermediate → another intermediate
+    (final_sub_trace))  -- → terminal
+
+-- For single step + rest:
+exact .step _ _ _ (single_step_constructor args) (rest_of_trace)
 ```
 
 ### Skeleton: Structural Inversion of a Trace
@@ -951,18 +852,19 @@ match hstar with
 ### Skeleton: Loop Simulation with Decreasing Measure
 
 ```lean
+-- Generic pattern: induction on trace length for loop constructs
 noncomputable def loop_sim
     (hstarT : ReflTransT (StepStmt ...) (.stmt (.loop ...) ρ) (.terminal ρ'))
-    : StepKleeneStar ... (.stmt (.loop ...) ρ) (.terminal ρ') := by
+    : TargetStar ... (.stmt target_loop ρ) (.terminal ρ') := by
   match hstarT with
   | .step _ _ _ (.step_loop_exit hcond) hrest =>
-    -- Guard false → exit
+    -- Guard false → exit immediately
     cases hrest with | refl => exact ...
   | .step _ _ _ (.step_loop_enter hcond) hrest =>
-    -- Guard true → body → recurse
+    -- Guard true → body executes → recurse on smaller trace
     have smaller : ReflTransT ... := extract_smaller_trace hrest
     exact ReflTrans_Transitive _ _ _ _
-      (.step _ _ _ .step_loop_step (.refl _))
+      (target_enter_step)
       (loop_sim smaller)
 termination_by hstarT.len
 ```
